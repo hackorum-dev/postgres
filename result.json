@@ -1,0 +1,56 @@
+{
+  "schema": 1,
+  "branch": "t253752_1",
+  "run_id": 36056814991,
+  "run_attempt": 1,
+  "head_sha": "ad5e17765d971895422853ab09b8fb24b53de91e",
+  "base_sha": "df3978c2340d79c6319f8239a69abbd27b1069df",
+  "pg_major": 20,
+  "status": "tests_failed",
+  "build": {
+    "ok": true,
+    "seconds": 172
+  },
+  "tests": {
+    "ok": false,
+    "seconds": 516,
+    "timed_out": false,
+    "failed": [
+      "libpq/003_load_balance_host_list",
+      "authentication/001_password",
+      "authentication/003_peer",
+      "authentication/004_file_inclusion",
+      "authentication/007_pre_auth",
+      "postmaster/002_connection_limits",
+      "postmaster/003_start_stop",
+      "postmaster/004_negotiate"
+    ],
+    "executed": [
+      "libpq/001_uri",
+      "libpq/002_api",
+      "libpq/003_load_balance_host_list",
+      "libpq/004_load_balance_dns",
+      "libpq/005_negotiate_encryption",
+      "libpq/006_service",
+      "authentication/001_password",
+      "authentication/002_saslprep",
+      "authentication/003_peer",
+      "authentication/004_file_inclusion",
+      "authentication/005_sspi",
+      "authentication/006_login_trigger",
+      "authentication/007_pre_auth",
+      "postmaster/001_basic",
+      "postmaster/002_connection_limits",
+      "postmaster/003_start_stop",
+      "postmaster/004_negotiate"
+    ]
+  },
+  "ccache": {
+    "hit": 78,
+    "miss": 6469
+  },
+  "image": {
+    "ref": "ghcr.io/hackorum-dev/postgres-patch:t253752",
+    "digest": "sha256:30061de649107fbf5c0fcc2ec869d285f5784d1b587ff3d760e158a2aa9c0bff"
+  }
+}
