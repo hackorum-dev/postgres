@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "branch": "t52052_1",
+  "run_id": 36822372957,
+  "run_attempt": 1,
+  "head_sha": "3d566edf5646e3a671954b5aed7c1e6bedd5dca2",
+  "base_sha": "45277ca0d1cb6dbe722a01b3b5461c30abd40eee",
+  "pg_major": 20,
+  "status": "build_failed",
+  "build": {
+    "ok": false,
+    "seconds": 40
+  },
+  "tests": {
+    "ok": false,
+    "seconds": 0,
+    "timed_out": false,
+    "failed": [],
+    "executed": []
+  },
+  "ccache": {
+    "hit": 78,
+    "miss": 5379
+  },
+  "image": null
+}
