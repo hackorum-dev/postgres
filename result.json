@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "branch": "t253624_14",
+  "run_id": 33893112689,
+  "run_attempt": 1,
+  "head_sha": "e71734547fe7f6fb83063ef05ca2a5b3fd7cb5ad",
+  "base_sha": "7344937cbe640cd8c5304cefe7d6b726187ad4ab",
+  "pg_major": 20,
+  "status": "tests_failed",
+  "build": {
+    "ok": true,
+    "seconds": 179
+  },
+  "tests": {
+    "ok": false,
+    "seconds": 257,
+    "timed_out": false,
+    "failed": [
+      "libpq/003_load_balance_host_list",
+      "authentication/001_password",
+      "authentication/002_saslprep",
+      "authentication/003_peer",
+      "authentication/004_file_inclusion",
+      "authentication/006_login_trigger",
+      "authentication/007_pre_auth"
+    ],
+    "executed": [
+      "libpq/001_uri",
+      "libpq/002_api",
+      "libpq/003_load_balance_host_list",
+      "authentication/001_password",
+      "authentication/002_saslprep",
+      "authentication/003_peer",
+      "authentication/004_file_inclusion",
+      "authentication/005_sspi",
+      "authentication/006_login_trigger",
+      "authentication/007_pre_auth"
+    ]
+  },
+  "ccache": {
+    "hit": 98,
+    "miss": 6451
+  },
+  "image": {
+    "ref": "ghcr.io/hackorum-dev/postgres-patch:t253624",
+    "digest": "sha256:a8dca1d38e485d69f3c8ffffaef789583bf66767639a4ae163f988ed8e36cbc3"
+  }
+}
