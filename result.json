@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "status": "infra_error",
+  "build": {
+    "ok": false,
+    "seconds": 0
+  },
+  "tests": {
+    "ok": false,
+    "seconds": 0,
+    "timed_out": false,
+    "failed": []
+  },
+  "ccache": {
+    "hit": 0,
+    "miss": 0
+  },
+  "run_id": 31115381479,
+  "run_attempt": 1,
+  "head_sha": "a33bc8247f32ed71ead74cf62945d1380c97f2b1",
+  "base_sha": "f0178deecbb56283fda8f4c504c8fe16ce23e1a6",
+  "branch": "t139738_1",
+  "pg_major": 20,
+  "image": null
+}
