@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "branch": "t41485_1",
+  "run_id": 41372675696,
+  "run_attempt": 1,
+  "head_sha": "1e686b47a714613b0dab640e860ce3700a794aa4",
+  "base_sha": "180f3dcd415825af1c0d08dd7f4cc19b31112118",
+  "pg_major": 20,
+  "status": "build_failed",
+  "build": {
+    "ok": false,
+    "seconds": 89
+  },
+  "tests": {
+    "ok": false,
+    "seconds": 0,
+    "timed_out": false,
+    "failed": [],
+    "executed": []
+  },
+  "ccache": {
+    "hit": 78,
+    "miss": 5656
+  },
+  "image": null
+}
