@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "branch": "t50617_1",
+  "run_id": 30210804453,
+  "run_attempt": 1,
+  "head_sha": "4deec428cdfb0ceb4336b3d538cc01b985c6ac09",
+  "base_sha": "d4d11940df94ee13166dda70271ff3b97e43bc9b",
+  "pg_major": 18,
+  "status": "tests_failed",
+  "build": {
+    "ok": true,
+    "seconds": 160
+  },
+  "tests": {
+    "ok": false,
+    "seconds": 117,
+    "timed_out": false,
+    "failed": [
+      "pg_upgrade/002_pg_upgrade"
+    ]
+  },
+  "ccache": {
+    "hit": 80,
+    "miss": 6417
+  },
+  "image": {
+    "ref": "ghcr.io/hackorum-dev/postgres-patch:t50617",
+    "digest": "sha256:320dd6ab141be7464344a3691df27f32df6533d69f148edc0f7db29658e20566"
+  }
+}
