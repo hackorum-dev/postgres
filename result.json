@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "branch": "t139183_5",
+  "run_id": 32836716953,
+  "run_attempt": 1,
+  "head_sha": "b3c0a5a38e8a5c82a2c35b02deecb83bb95042e3",
+  "base_sha": "5c52858ecdc052b2a9fc2a7f30e338ec6777c4ae",
+  "pg_major": 20,
+  "status": "tests_failed",
+  "build": {
+    "ok": true,
+    "seconds": 171
+  },
+  "tests": {
+    "ok": false,
+    "seconds": 6,
+    "timed_out": false,
+    "failed": [],
+    "executed": []
+  },
+  "ccache": {
+    "hit": 98,
+    "miss": 6417
+  },
+  "image": {
+    "ref": "ghcr.io/hackorum-dev/postgres-patch:t139183",
+    "digest": "sha256:99f385d458c65b6dfba6f0f648b01653c7e1c5d3e6b32111cedc4df8d9a8f874"
+  }
+}
