@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "branch": "t40413_113",
+  "run_id": 30210798835,
+  "run_attempt": 1,
+  "head_sha": "22fac9c4f40ee1e7565509cddc03b76d64ebefb7",
+  "base_sha": "9e38c2bb5093ceb0c04d6315ccd8975bd17add66",
+  "pg_major": 14,
+  "status": "tests_failed",
+  "build": {
+    "ok": true,
+    "seconds": 126
+  },
+  "tests": {
+    "ok": false,
+    "seconds": 105,
+    "timed_out": false,
+    "failed": [
+      "regress/sanity_check",
+      "regress/select_parallel",
+      "regress/_int"
+    ]
+  },
+  "ccache": {
+    "hit": 208,
+    "miss": 4139
+  },
+  "image": {
+    "ref": "ghcr.io/hackorum-dev/postgres-patch:t40413",
+    "digest": "sha256:9dfcee244833183d022a60c31bdeed5486d39a0d8e1e6bceda410f93ee7a0d37"
+  }
+}
