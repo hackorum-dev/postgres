@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "branch": "probe_pg20",
+  "run_id": 30204301364,
+  "run_attempt": 1,
+  "head_sha": "efb16ee00dfe41526cd74b41c749d718b3485c0b",
+  "base_sha": "1c4b1de888559a47df599dcef356ea7fbf96fd0c",
+  "pg_major": 20,
+  "status": "tests_failed",
+  "build": {
+    "ok": true,
+    "seconds": 0
+  },
+  "tests": {
+    "ok": false,
+    "seconds": 0,
+    "timed_out": false,
+    "failed": []
+  },
+  "ccache": {
+    "hit": 76,
+    "miss": 6543
+  },
+  "image": {
+    "ref": "ghcr.io/hackorum-dev/postgres-patch:t999020",
+    "digest": "sha256:228164f5c9f717483cdf9654afaa5039b2620666e4dd32d01296b447d9d795eb"
+  }
+}
