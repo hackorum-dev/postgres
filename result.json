@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "branch": "t37144_3",
+  "run_id": 32163032810,
+  "run_attempt": 1,
+  "head_sha": "28a1386e29dce23f0c1a10d0ea9557615d9ef5fd",
+  "base_sha": "de2af6e001a3d6aeb2a10a802e73af8c7d1d3405",
+  "pg_major": 10,
+  "status": "tests_failed",
+  "build": {
+    "ok": true,
+    "seconds": 112
+  },
+  "tests": {
+    "ok": false,
+    "seconds": 6,
+    "timed_out": false,
+    "failed": [
+      "tap/001_initdb",
+      "initdb/001_initdb",
+      "pg_basebackup/010_pg_basebackup",
+      "pg_controldata/001_pg_controldata"
+    ],
+    "executed": [
+      "tap/001_pg_config",
+      "tap/001_initdb",
+      "initdb/001_initdb",
+      "pg_basebackup/010_pg_basebackup",
+      "pg_controldata/001_pg_controldata"
+    ]
+  },
+  "ccache": {
+    "hit": 48,
+    "miss": 4920
+  },
+  "image": {
+    "ref": "ghcr.io/hackorum-dev/postgres-patch:t37144",
+    "digest": "sha256:22c7ab3d7279993f2abde530d358f6ef5369fb87e443b0dc9256fd7357f5bcc2"
+  }
+}
