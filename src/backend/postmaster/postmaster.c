@@ -187,7 +187,6 @@ static char ExtraOptions[MAXPGPATH];
  * shared data structures.	(Reinit is currently dead code, though.)
  */
 static bool Reinit = true;
-static int	SendStop = false;
 
 /* still more option variables */
 bool		EnableSSL = false;
@@ -544,7 +543,7 @@ PostmasterMain(int argc, char *argv[])
 	 * tcop/postgres.c (the option sets should not conflict) and with the
 	 * common help() function in main/main.c.
 	 */
-	while ((opt = getopt(argc, argv, "A:B:bc:C:D:d:EeFf:h:ijk:lN:nOo:Pp:r:S:sTt:W:-:")) != -1)
+	while ((opt = getopt(argc, argv, "A:B:bc:C:D:d:EeFf:h:ijk:lN:nOo:Pp:r:S:st:W:-:")) != -1)
 	{
 		switch (opt)
 		{
@@ -652,16 +651,6 @@ PostmasterMain(int argc, char *argv[])
 
 			case 's':
 				SetConfigOption("log_statement_stats", "true", PGC_POSTMASTER, PGC_S_ARGV);
-				break;
-
-			case 'T':
-
-				/*
-				 * In the event that some backend dumps core, send SIGSTOP,
-				 * rather than SIGQUIT, to all its peers.  This lets the wily
-				 * post_hacker collect core dumps from everyone.
-				 */
-				SendStop = true;
 				break;
 
 			case 't':
@@ -2704,9 +2693,7 @@ HandleChildCrash(int pid, int exitstatus, const char *procname)
 			 * to commit hara-kiri.
 			 *
 			 * SIGQUIT is the special signal that says exit without proc_exit
-			 * and let the user know what's going on. But if SendStop is set
-			 * (-s on command line), then we send SIGSTOP instead, so that we
-			 * can get core dumps from all backends by hand.
+			 * and let the user know what's going on.
 			 *
 			 * We could exclude dead_end children here, but at least in the
 			 * SIGSTOP case it seems better to include them.
@@ -2715,9 +2702,8 @@ HandleChildCrash(int pid, int exitstatus, const char *procname)
 			{
 				ereport(DEBUG2,
 						(errmsg_internal("sending %s to process %d",
-										 (SendStop ? "SIGSTOP" : "SIGQUIT"),
-										 (int) bp->pid)));
-				signal_child(bp->pid, (SendStop ? SIGSTOP : SIGQUIT));
+										 "SIGQUIT", (int) bp->pid)));
+				signal_child(bp->pid, SIGQUIT);
 			}
 		}
 	}
@@ -2729,9 +2715,8 @@ HandleChildCrash(int pid, int exitstatus, const char *procname)
 	{
 		ereport(DEBUG2,
 				(errmsg_internal("sending %s to process %d",
-								 (SendStop ? "SIGSTOP" : "SIGQUIT"),
-								 (int) StartupPID)));
-		signal_child(StartupPID, (SendStop ? SIGSTOP : SIGQUIT));
+								 "SIGQUIT", (int) StartupPID)));
+		signal_child(StartupPID, SIGQUIT);
 	}
 
 	/* Take care of the bgwriter too */
@@ -2741,9 +2726,8 @@ HandleChildCrash(int pid, int exitstatus, const char *procname)
 	{
 		ereport(DEBUG2,
 				(errmsg_internal("sending %s to process %d",
-								 (SendStop ? "SIGSTOP" : "SIGQUIT"),
-								 (int) BgWriterPID)));
-		signal_child(BgWriterPID, (SendStop ? SIGSTOP : SIGQUIT));
+								 "SIGQUIT", (int) BgWriterPID)));
+		signal_child(BgWriterPID, SIGQUIT);
 	}
 
 	/* Take care of the checkpointer too */
@@ -2753,9 +2737,8 @@ HandleChildCrash(int pid, int exitstatus, const char *procname)
 	{
 		ereport(DEBUG2,
 				(errmsg_internal("sending %s to process %d",
-								 (SendStop ? "SIGSTOP" : "SIGQUIT"),
-								 (int) CheckpointerPID)));
-		signal_child(CheckpointerPID, (SendStop ? SIGSTOP : SIGQUIT));
+								 "SIGQUIT", (int) CheckpointerPID)));
+		signal_child(CheckpointerPID, SIGQUIT);
 	}
 
 	/* Take care of the walwriter too */
@@ -2765,9 +2748,8 @@ HandleChildCrash(int pid, int exitstatus, const char *procname)
 	{
 		ereport(DEBUG2,
 				(errmsg_internal("sending %s to process %d",
-								 (SendStop ? "SIGSTOP" : "SIGQUIT"),
-								 (int) WalWriterPID)));
-		signal_child(WalWriterPID, (SendStop ? SIGSTOP : SIGQUIT));
+								 "SIGQUIT", (int) WalWriterPID)));
+		signal_child(WalWriterPID, SIGQUIT);
 	}
 
 	/* Take care of the walreceiver too */
@@ -2777,9 +2759,8 @@ HandleChildCrash(int pid, int exitstatus, const char *procname)
 	{
 		ereport(DEBUG2,
 				(errmsg_internal("sending %s to process %d",
-								 (SendStop ? "SIGSTOP" : "SIGQUIT"),
-								 (int) WalReceiverPID)));
-		signal_child(WalReceiverPID, (SendStop ? SIGSTOP : SIGQUIT));
+								 "SIGQUIT", (int) WalReceiverPID)));
+		signal_child(WalReceiverPID, SIGQUIT);
 	}
 
 	/* Take care of the autovacuum launcher too */
@@ -2789,9 +2770,8 @@ HandleChildCrash(int pid, int exitstatus, const char *procname)
 	{
 		ereport(DEBUG2,
 				(errmsg_internal("sending %s to process %d",
-								 (SendStop ? "SIGSTOP" : "SIGQUIT"),
-								 (int) AutoVacPID)));
-		signal_child(AutoVacPID, (SendStop ? SIGSTOP : SIGQUIT));
+								 "SIGQUIT", (int) AutoVacPID)));
+		signal_child(AutoVacPID, SIGQUIT);
 	}
 
 	/*
