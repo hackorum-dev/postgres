@@ -3651,8 +3651,9 @@ PQescapeBytea(const unsigned char *from, size_t from_length, size_t *to_length)
  *		\ooo == a byte whose value = ooo (ooo is an octal number)
  *		\x	 == x (x is any character not matched by the above transformations)
  */
-unsigned char *
-PQunescapeBytea(const unsigned char *strtext, size_t *retbuflen)
+static unsigned char *
+PQunescapeByteaInternal(PGconn *conn,
+					  const unsigned char *strtext, size_t *retbuflen)
 {
 	size_t		strtextlen,
 				buflen;
@@ -3761,4 +3762,20 @@ PQunescapeBytea(const unsigned char *strtext, size_t *retbuflen)
 
 	*retbuflen = buflen;
 	return tmpbuf;
+}
+
+unsigned char *
+PQunescapeByteaConn(PGconn *conn,
+				  const unsigned char *strtext, size_t *retbuflen)
+{
+	if (!conn)
+	    return NULL;
+
+	return PQunescapeByteaInternal(conn, strtext, retbuflen);
+}
+
+unsigned char *
+PQunescapeBytea(const unsigned char *strtext, size_t *retbuflen)
+{
+	return PQunescapeByteaInternal(NULL, strtext, retbuflen);
 }
