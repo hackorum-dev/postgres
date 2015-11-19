@@ -3336,6 +3336,11 @@ makeEmptyPGconn(void)
 	conn->noticeHooks.noticeRec = defaultNoticeReceiver;
 	conn->noticeHooks.noticeProc = defaultNoticeProcessor;
 
+	/* set default allocators */
+	conn->malloc = malloc;
+	conn->realloc = realloc;
+	conn->free = free;
+
 	conn->status = CONNECTION_BAD;
 	conn->asyncStatus = PGASYNC_IDLE;
 	conn->xactStatus = PQTRANS_IDLE;

@@ -141,7 +141,7 @@ PQmakeEmptyPGresult(PGconn *conn, ExecStatusType status)
 {
 	PGresult   *result;
 
-	result = (PGresult *) malloc(sizeof(PGresult));
+	result = (PGresult *) conn->malloc(sizeof(PGresult));
 	if (!result)
 		return NULL;
 
@@ -164,6 +164,9 @@ PQmakeEmptyPGresult(PGconn *conn, ExecStatusType status)
 	result->curBlock = NULL;
 	result->curOffset = 0;
 	result->spaceLeft = 0;
+	result->malloc = conn->malloc;
+	result->realloc = conn->realloc;
+	result->free = conn->free;
 
 	if (conn)
 	{
@@ -546,7 +549,7 @@ pqResultAlloc(PGresult *res, size_t nBytes, bool isBinary)
 	 */
 	if (nBytes >= PGRESULT_SEP_ALLOC_THRESHOLD)
 	{
-		block = (PGresult_data *) malloc(nBytes + PGRESULT_BLOCK_OVERHEAD);
+		block = (PGresult_data *) res->malloc(nBytes + PGRESULT_BLOCK_OVERHEAD);
 		if (!block)
 			return NULL;
 		space = block->space + PGRESULT_BLOCK_OVERHEAD;
@@ -570,7 +573,7 @@ pqResultAlloc(PGresult *res, size_t nBytes, bool isBinary)
 	}
 
 	/* Otherwise, start a new block. */
-	block = (PGresult_data *) malloc(PGRESULT_DATA_BLOCKSIZE);
+	block = (PGresult_data *) res->malloc(PGRESULT_DATA_BLOCKSIZE);
 	if (!block)
 		return NULL;
 	block->next = res->curBlock;
@@ -666,22 +669,22 @@ PQclear(PGresult *res)
 			(void) res->events[i].proc(PGEVT_RESULTDESTROY, &evt,
 									   res->events[i].passThrough);
 		}
-		free(res->events[i].name);
+		res->free(res->events[i].name);
 	}
 
 	if (res->events)
-		free(res->events);
+		res->free(res->events);
 
 	/* Free all the subsidiary blocks */
 	while ((block = res->curBlock) != NULL)
 	{
 		res->curBlock = block->next;
-		free(block);
+		res->free(block);
 	}
 
 	/* Free the top-level tuple pointer array */
 	if (res->tuples)
-		free(res->tuples);
+		res->free(res->tuples);
 
 	/* zero out the pointer fields to catch programming errors */
 	res->attDescs = NULL;
@@ -693,7 +696,7 @@ PQclear(PGresult *res)
 	/* res->curBlock was zeroed out earlier */
 
 	/* Free the PGresult structure itself */
-	free(res);
+	res->free(res);
 }
 
 /*
@@ -870,10 +873,10 @@ pqAddTuple(PGresult *res, PGresAttValue *tup)
 
 		if (res->tuples == NULL)
 			newTuples = (PGresAttValue **)
-				malloc(newSize * sizeof(PGresAttValue *));
+				res->malloc(newSize * sizeof(PGresAttValue *));
 		else
 			newTuples = (PGresAttValue **)
-				realloc(res->tuples, newSize * sizeof(PGresAttValue *));
+				res->realloc(res->tuples, newSize * sizeof(PGresAttValue *));
 		if (!newTuples)
 			return FALSE;		/* malloc or realloc failed */
 		res->tupArrSize = newSize;
@@ -931,7 +934,7 @@ pqSaveParameterStatus(PGconn *conn, const char *name, const char *value)
 				prev->next = pstatus->next;
 			else
 				conn->pstatus = pstatus->next;
-			free(pstatus);		/* frees name and value strings too */
+			conn->free(pstatus);		/* frees name and value strings too */
 			break;
 		}
 	}
@@ -939,7 +942,7 @@ pqSaveParameterStatus(PGconn *conn, const char *name, const char *value)
 	/*
 	 * Store new info as a single malloc block
 	 */
-	pstatus = (pgParameterStatus *) malloc(sizeof(pgParameterStatus) +
+	pstatus = (pgParameterStatus *) conn->malloc(sizeof(pgParameterStatus) +
 										   strlen(name) + strlen(value) + 2);
 	if (pstatus)
 	{
@@ -1157,7 +1160,7 @@ PQsendQuery(PGconn *conn, const char *query)
 	/* and remember the query text too, if possible */
 	/* if insufficient memory, last_query just winds up NULL */
 	if (conn->last_query)
-		free(conn->last_query);
+		conn->free(conn->last_query);
 	conn->last_query = strdup(query);
 
 	/*
@@ -1297,7 +1300,7 @@ PQsendPrepare(PGconn *conn,
 	/* and remember the query text too, if possible */
 	/* if insufficient memory, last_query just winds up NULL */
 	if (conn->last_query)
-		free(conn->last_query);
+		conn->free(conn->last_query);
 	conn->last_query = strdup(query);
 
 	/*
@@ -1546,7 +1549,7 @@ PQsendQueryGuts(PGconn *conn,
 	/* and remember the query text too, if possible */
 	/* if insufficient memory, last_query just winds up NULL */
 	if (conn->last_query)
-		free(conn->last_query);
+		conn->free(conn->last_query);
 	if (command)
 		conn->last_query = strdup(command);
 	else
@@ -2159,7 +2162,7 @@ PQsendDescribe(PGconn *conn, char desc_type, const char *desc_target)
 	/* reset last-query string (not relevant now) */
 	if (conn->last_query)
 	{
-		free(conn->last_query);
+		conn->free(conn->last_query);
 		conn->last_query = NULL;
 	}
 
@@ -2866,11 +2869,11 @@ PQfnumber(const PGresult *res, const char *field_name)
 	{
 		if (strcmp(field_case, res->attDescs[i].name) == 0)
 		{
-			free(field_case);
+			res->free(field_case);
 			return i;
 		}
 	}
-	free(field_case);
+	res->free(field_case);
 	return -1;
 }
 
@@ -3391,7 +3394,7 @@ PQescapeInternal(PGconn *conn, const char *str, size_t len, bool as_ident)
 	result_size = input_len + num_quotes + 3;	/* two quotes, plus a NUL */
 	if (!as_ident && num_backslashes > 0)
 		result_size += num_backslashes + 2;
-	result = rp = (char *) malloc(result_size);
+	result = rp = (char *) conn->malloc(result_size);
 	if (rp == NULL)
 	{
 		printfPQExpBuffer(&conn->errorMessage,
@@ -3555,7 +3558,15 @@ PQescapeByteaInternal(PGconn *conn,
 	}
 
 	*to_length = len;
-	rp = result = (unsigned char *) malloc(len);
+	if (conn)
+	{
+		rp = result = (unsigned char *) conn->malloc(len);
+	}
+	else
+	{
+		rp = result = (unsigned char *) malloc(len);
+	}
+
 	if (rp == NULL)
 	{
 		if (conn)
@@ -3674,7 +3685,14 @@ PQunescapeByteaInternal(PGconn *conn,
 
 		buflen = (strtextlen - 2) / 2;
 		/* Avoid unportable malloc(0) */
-		buffer = (unsigned char *) malloc(buflen > 0 ? buflen : 1);
+		if (conn)
+		{
+			buffer = (unsigned char *) conn->malloc(buflen > 0 ? buflen : 1);
+		}
+		else
+		{
+			buffer = (unsigned char *) malloc(buflen > 0 ? buflen : 1);
+		}
 		if (buffer == NULL)
 			return NULL;
 
@@ -3705,7 +3723,14 @@ PQunescapeByteaInternal(PGconn *conn,
 		 * Length of input is max length of output, but add one to avoid
 		 * unportable malloc(0) if input is zero-length.
 		 */
-		buffer = (unsigned char *) malloc(strtextlen + 1);
+		if (conn)
+		{
+			buffer = (unsigned char *) conn->malloc(strtextlen + 1);
+		}
+		else
+		{
+			buffer = (unsigned char *) malloc(strtextlen + 1);
+		}
 		if (buffer == NULL)
 			return NULL;
 
@@ -3751,12 +3776,26 @@ PQunescapeByteaInternal(PGconn *conn,
 
 	/* Shrink the buffer to be no larger than necessary */
 	/* +1 avoids unportable behavior when buflen==0 */
-	tmpbuf = realloc(buffer, buflen + 1);
+	if (conn)
+	{
+		tmpbuf = conn->realloc(buffer, buflen + 1);
+	}
+	else
+	{
+		tmpbuf = realloc(buffer, buflen + 1);
+	}
 
 	/* It would only be a very brain-dead realloc that could fail, but... */
 	if (!tmpbuf)
 	{
-		free(buffer);
+		if (conn)
+		{
+			conn->free(buffer);
+		}
+		else
+		{
+			free(buffer);
+		}
 		return NULL;
 	}
 

@@ -80,6 +80,14 @@ typedef struct
 #endif
 #endif							/* USE_OPENSSL */
 
+ /* ----------------
+ * malloc/realloc/free for PGResult is replasable for in-backend use
+ * ----------------
+ */
+typedef void *(*PQpgresult_malloc)(size_t size);
+typedef void *(*PQpgresult_realloc)(void *ptr, size_t size);
+typedef void (*PQpgresult_free)(void *ptr);
+
 /*
  * POSTGRES backend dependent Constants.
  */
@@ -162,6 +170,9 @@ typedef struct PGEvent
 	void	   *passThrough;	/* pointer supplied at registration time */
 	void	   *data;			/* optional state (instance) data */
 	bool		resultInitialized;	/* T if RESULTCREATE/COPY succeeded */
+	PQpgresult_malloc malloc;
+	PQpgresult_realloc realloc;
+	PQpgresult_free free;
 } PGEvent;
 
 struct pg_result
@@ -208,6 +219,10 @@ struct pg_result
 	PGresult_data *curBlock;	/* most recently allocated block */
 	int			curOffset;		/* start offset of free space in block */
 	int			spaceLeft;		/* number of free bytes remaining in block */
+
+	PQpgresult_malloc malloc;
+	PQpgresult_realloc realloc;
+	PQpgresult_free free;
 };
 
 /* PGAsyncStatusType defines the state of the query-execution state machine */
@@ -492,6 +507,10 @@ struct pg_conn
 
 	/* Buffer for receiving various parts of messages */
 	PQExpBufferData workBuffer; /* expansible string */
+
+	PQpgresult_malloc malloc;
+	PQpgresult_realloc realloc;
+	PQpgresult_free free;
 };
 
 /* PGcancel stores all data necessary to cancel a connection. A copy of this
