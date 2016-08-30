@@ -24,6 +24,8 @@
 #include "postgres.h"
 #else
 /* From src/include/c.h" */
+#ifndef __cplusplus
+
 #ifndef bool
 typedef char bool;
 #endif
@@ -35,6 +37,8 @@ typedef char bool;
 #ifndef false
 #define false	((bool) 0)
 #endif
+#endif
+
 #endif
 
 #include <stdio.h>
