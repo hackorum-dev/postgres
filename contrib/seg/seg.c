@@ -47,6 +47,7 @@ PG_FUNCTION_INFO_V1(seg_center);
 /*
 ** GiST support methods
 */
+extern "C" {
 bool gseg_consistent(GISTENTRY *entry,
 				SEG *query,
 				StrategyNumber strategy,
@@ -61,11 +62,13 @@ bool		gseg_internal_consistent(SEG *key, SEG *query, StrategyNumber strategy);
 SEG		   *gseg_union(GistEntryVector *entryvec, int *sizep);
 SEG		   *gseg_binary_union(SEG *r1, SEG *r2, int *sizep);
 bool	   *gseg_same(SEG *b1, SEG *b2, bool *result);
+}
 
 
 /*
 ** R-tree support functions
 */
+extern "C" {
 bool		seg_same(SEG *a, SEG *b);
 bool		seg_contains_int(SEG *a, int *b);
 bool		seg_contains_float4(SEG *a, float4 *b);
@@ -80,16 +83,19 @@ bool		seg_over_right(SEG *a, SEG *b);
 SEG		   *seg_union(SEG *a, SEG *b);
 SEG		   *seg_inter(SEG *a, SEG *b);
 void		rt_seg_size(SEG *a, float *sz);
+}
 
 /*
 ** Various operators
 */
+extern "C" {
 int32		seg_cmp(SEG *a, SEG *b);
 bool		seg_lt(SEG *a, SEG *b);
 bool		seg_le(SEG *a, SEG *b);
 bool		seg_gt(SEG *a, SEG *b);
 bool		seg_ge(SEG *a, SEG *b);
 bool		seg_different(SEG *a, SEG *b);
+}
 
 /*
 ** Auxiliary funxtions

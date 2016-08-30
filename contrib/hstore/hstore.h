@@ -147,7 +147,7 @@ typedef struct
 	} while (0)
 
 /* DatumGetHStoreP includes support for reading old-format hstore values */
-extern HStore *hstoreUpgrade(Datum orig);
+extern "C" HStore *hstoreUpgrade(Datum orig);
 
 #define DatumGetHStoreP(d) hstoreUpgrade(d)
 
@@ -168,6 +168,7 @@ typedef struct
 	bool		needfree;		/* need to pfree the value? */
 } Pairs;
 
+extern "C" {
 extern int	hstoreUniquePairs(Pairs *a, int32 l, int32 *buflen);
 extern HStore *hstorePairs(Pairs *pairs, int32 pcount, int32 buflen);
 
@@ -176,6 +177,7 @@ extern size_t hstoreCheckValLen(size_t len);
 
 extern int	hstoreFindKey(HStore *hs, int *lowbound, char *key, int keylen);
 extern Pairs *hstoreArrayToPairs(ArrayType *a, int *npairs);
+}
 
 #define HStoreContainsStrategyNumber	7
 #define HStoreExistsStrategyNumber		9
@@ -194,8 +196,8 @@ extern Pairs *hstoreArrayToPairs(ArrayType *a, int *npairs);
 #if HSTORE_POLLUTE_NAMESPACE
 #define HSTORE_POLLUTE(newname_,oldname_) \
 	PG_FUNCTION_INFO_V1(oldname_);		  \
-	Datum newname_(PG_FUNCTION_ARGS);	  \
-	Datum oldname_(PG_FUNCTION_ARGS) { return newname_(fcinfo); } \
+	extern "C" Datum newname_(PG_FUNCTION_ARGS);	  \
+	extern "C" Datum oldname_(PG_FUNCTION_ARGS) { return newname_(fcinfo); } \
 	extern int no_such_variable
 #else
 #define HSTORE_POLLUTE(newname_,oldname_) \

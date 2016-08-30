@@ -45,8 +45,8 @@
 
 extern PATH *poly2path(POLYGON *poly);
 extern void regress_lseg_construct(LSEG *lseg, Point *pt1, Point *pt2);
-extern char *reverse_name(char *string);
-extern int	oldstyle_length(int n, text *t);
+extern "C" char *reverse_name(char *string);
+extern "C" int	oldstyle_length(int n, text *t);
 
 #ifdef PG_MODULE_MAGIC
 PG_MODULE_MAGIC;
@@ -240,8 +240,10 @@ typedef struct
 	double		radius;
 } WIDGET;
 
+extern "C" {
 WIDGET	   *widget_in(char *str);
-char	   *widget_out(WIDGET *widget);
+char	   *widget_out(WIDGET * widget);
+}
 
 #define NARGS	3
 

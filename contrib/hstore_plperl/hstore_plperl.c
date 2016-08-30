@@ -9,7 +9,7 @@
 
 PG_MODULE_MAGIC;
 
-extern void _PG_init(void);
+extern "C" void _PG_init(void);
 
 /* Linkage to functions in hstore module */
 typedef HStore *(*hstoreUpgrade_t) (Datum orig);

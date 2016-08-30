@@ -246,7 +246,9 @@ static plperl_call_data *current_call_data = NULL;
 /**********************************************************************
  * Forward declarations
  **********************************************************************/
+extern "C" {
 void		_PG_init(void);
+}
 
 static PerlInterpreter *plperl_init_interp(void);
 static void plperl_destroy_interp(PerlInterpreter **);

@@ -355,8 +355,8 @@ typedef const Pg_finfo_record *(*PGFInfoFunction) (void);
  *	info function, since authors shouldn't need to be explicitly aware of it.
  */
 #define PG_FUNCTION_INFO_V1(funcname) \
-extern Datum funcname(PG_FUNCTION_ARGS); \
-extern PGDLLEXPORT const Pg_finfo_record * CppConcat(pg_finfo_,funcname)(void); \
+extern "C" Datum funcname(PG_FUNCTION_ARGS); \
+extern "C" PGDLLEXPORT const Pg_finfo_record * CppConcat(pg_finfo_,funcname)(void); \
 const Pg_finfo_record * \
 CppConcat(pg_finfo_,funcname) (void) \
 { \
@@ -425,7 +425,7 @@ typedef const Pg_magic_struct *(*PGModuleMagicFunction) (void);
 #define PG_MAGIC_FUNCTION_NAME_STRING "Pg_magic_func"
 
 #define PG_MODULE_MAGIC \
-extern PGDLLEXPORT const Pg_magic_struct *PG_MAGIC_FUNCTION_NAME(void); \
+extern "C" PGDLLEXPORT const Pg_magic_struct *PG_MAGIC_FUNCTION_NAME(void); \
 const Pg_magic_struct * \
 PG_MAGIC_FUNCTION_NAME(void) \
 { \

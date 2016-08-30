@@ -112,7 +112,7 @@ geo_distance(PG_FUNCTION_ARGS)
 }
 #else							/* !USE_FLOAT8_BYVAL */
 
-double	   *geo_distance(Point *pt1, Point *pt2);
+extern "C" double	   *geo_distance(Point *pt1, Point *pt2);
 
 double *
 geo_distance(Point *pt1, Point *pt2)

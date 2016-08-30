@@ -33,7 +33,7 @@
 
 PG_MODULE_MAGIC;
 
-void		_PG_init(void);
+extern "C" void		_PG_init(void);
 
 struct WalReceiverConn
 {

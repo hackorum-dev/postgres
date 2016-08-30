@@ -27,7 +27,7 @@
 
 PG_MODULE_MAGIC;
 
-extern void _PG_output_plugin_init(OutputPluginCallbacks *cb);
+extern "C" void _PG_output_plugin_init(OutputPluginCallbacks *cb);
 
 static void pgoutput_startup(LogicalDecodingContext * ctx,
 							  OutputPluginOptions *opt, bool is_init);

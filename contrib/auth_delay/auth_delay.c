@@ -20,7 +20,7 @@
 
 PG_MODULE_MAGIC;
 
-void		_PG_init(void);
+extern "C" void		_PG_init(void);
 
 /* GUC Variables */
 static int	auth_delay_milliseconds;

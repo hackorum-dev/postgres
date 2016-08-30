@@ -1085,7 +1085,7 @@ extern void plpgsql_HashTableInit(void);
 /*
  * Functions in pl_handler.c
  */
-extern void _PG_init(void);
+extern "C" void _PG_init(void);
 
 /*
  * Functions in pl_exec.c

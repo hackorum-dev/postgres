@@ -39,7 +39,9 @@
 #define plpython_inline_handler plpython3_inline_handler
 #endif
 
+extern "C" {
 extern void _PG_init(void);
+}
 
 PG_MODULE_MAGIC;
 

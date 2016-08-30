@@ -130,6 +130,7 @@ typedef struct
 
 
 /* use in array iterator */
+extern "C" {
 Datum		ltree_isparent(PG_FUNCTION_ARGS);
 Datum		ltree_risparent(PG_FUNCTION_ARGS);
 Datum		ltq_regex(PG_FUNCTION_ARGS);
@@ -154,6 +155,7 @@ Datum		ltree_textadd(PG_FUNCTION_ARGS);
 
 /* Util function */
 Datum		ltree_in(PG_FUNCTION_ARGS);
+}
 
 bool ltree_execute(ITEM *curitem, void *checkval,
 			  bool calcnot, bool (*chkcond) (void *checkval, ITEM *val));
