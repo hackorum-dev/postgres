@@ -385,7 +385,7 @@ static double asyncQueueUsage(void);
 static void asyncQueueFillWarning(void);
 static bool SignalBackends(void);
 static void asyncQueueReadAllNotifications(void);
-static bool asyncQueueProcessPageEntries(volatile QueuePosition *current,
+static bool asyncQueueProcessPageEntries(/*volatile*/ QueuePosition *current,
 							 QueuePosition stop,
 							 char *page_buffer);
 static void asyncQueueAdvanceTail(void);
@@ -1741,7 +1741,7 @@ ProcessNotifyInterrupt(void)
 static void
 asyncQueueReadAllNotifications(void)
 {
-	volatile QueuePosition pos;
+	/*volatile*/ QueuePosition pos;
 	QueuePosition oldpos;
 	QueuePosition head;
 	bool		advanceTail;
@@ -1901,7 +1901,7 @@ asyncQueueReadAllNotifications(void)
  * The QueuePosition *current is advanced past all processed messages.
  */
 static bool
-asyncQueueProcessPageEntries(volatile QueuePosition *current,
+asyncQueueProcessPageEntries(/*volatile*/ QueuePosition *current,
 							 QueuePosition stop,
 							 char *page_buffer)
 {
