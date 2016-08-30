@@ -98,7 +98,7 @@ extern char *inet_cidr_ntop(int af, const void *src, int bits,
 			   char *dst, size_t size);
 
 /* inet_net_pton.c */
-extern int inet_net_pton(int af, const char *src,
+extern "C" int inet_net_pton(int af, const char *src,
 			  void *dst, size_t size);
 
 /* network.c */

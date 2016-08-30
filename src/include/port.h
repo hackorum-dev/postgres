@@ -452,7 +452,7 @@ extern int	pg_codepage_to_encoding(UINT cp);
 #endif
 
 /* port/inet_net_ntop.c */
-extern char *inet_net_ntop(int af, const void *src, int bits,
+extern "C" char *inet_net_ntop(int af, const void *src, int bits,
 			  char *dst, size_t size);
 
 /* port/pg_strong_random.c */
