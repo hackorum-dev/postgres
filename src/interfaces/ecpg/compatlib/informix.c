@@ -181,17 +181,17 @@ ecpg_strndup(const char *str, size_t len)
 	size_t		real_len = strlen(str);
 	int			use_len = (int) ((real_len > len) ? len : real_len);
 
-	char	   *new = malloc(use_len + 1);
+	char	   *newstr = malloc(use_len + 1);
 
-	if (new)
+	if (newstr)
 	{
-		memcpy(new, str, use_len);
-		new[use_len] = '\0';
+		memcpy(newstr, str, use_len);
+		newstr[use_len] = '\0';
 	}
 	else
 		errno = ENOMEM;
 
-	return new;
+	return newstr;
 }
 
 int

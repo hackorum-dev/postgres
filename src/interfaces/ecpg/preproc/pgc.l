@@ -954,14 +954,14 @@ cppline			{space}*#([^i][A-Za-z]*|{if}|{ifdef}|{ifndef}|{import})((\/\*[^*/]*\*+
 
 					for (ptr = defines; ptr != NULL; ptr2 = ptr, ptr = ptr->next)
 					{
-						if (strcmp(yytext, ptr->old) == 0)
+						if (strcmp(yytext, ptr->oldval) == 0)
 						{
 							if (ptr2 == NULL)
 								defines = ptr->next;
 							else
 								ptr2->next = ptr->next;
-							free(ptr->new);
-							free(ptr->old);
+							free(ptr->newval);
+							free(ptr->oldval);
 							free(ptr);
 							break;
 						}
@@ -1140,7 +1140,7 @@ cppline			{space}*#([^i][A-Za-z]*|{if}|{ifdef}|{ifndef}|{import})((\/\*[^*/]*\*+
 						yytext[i+1] = '\0';
 
 						for (defptr = defines;
-							 defptr != NULL && strcmp(yytext, defptr->old) != 0;
+							 defptr != NULL && strcmp(yytext, defptr->oldval) != 0;
 							 defptr = defptr->next);
 
 						preproc_tos++;
@@ -1169,26 +1169,26 @@ cppline			{space}*#([^i][A-Za-z]*|{if}|{ifdef}|{ifndef}|{import})((\/\*[^*/]*\*+
 				yyterminate();
 			}
 <def>{space}*";"	{
-						struct _defines *ptr, *this;
+						struct _defines *ptr, *d;
 
 						for (ptr = defines; ptr != NULL; ptr = ptr->next)
 						{
-							 if (strcmp(old, ptr->old) == 0)
+							 if (strcmp(old, ptr->oldval) == 0)
 							 {
-								free(ptr->new);
-								ptr->new = mm_strdup(literalbuf);
+								free(ptr->newval);
+								ptr->newval = mm_strdup(literalbuf);
 							 }
 						}
 						if (ptr == NULL)
 						{
-							this = (struct _defines *) mm_alloc(sizeof(struct _defines));
+							d = (struct _defines *) mm_alloc(sizeof(struct _defines));
 
 							/* initial definition */
-							this->old = old;
-							this->new = mm_strdup(literalbuf);
-							this->next = defines;
-							this->used = NULL;
-							defines = this;
+							d->oldval = old;
+							d->newval = mm_strdup(literalbuf);
+							d->next = defines;
+							d->used = NULL;
+							defines = d;
 						}
 
 						BEGIN(C);
@@ -1426,7 +1426,7 @@ static bool isdefine(void)
 	/* is it a define? */
 	for (ptr = defines; ptr; ptr = ptr->next)
 	{
-		if (strcmp(yytext, ptr->old) == 0 && ptr->used == NULL)
+		if (strcmp(yytext, ptr->oldval) == 0 && ptr->used == NULL)
 		{
 			struct _yy_buffer *yb;
 
@@ -1439,7 +1439,7 @@ static bool isdefine(void)
 
 			ptr->used = yy_buffer = yb;
 
-			yy_scan_string(ptr->new);
+			yy_scan_string(ptr->newval);
 			return true;
 		}
 	}
@@ -1449,16 +1449,16 @@ static bool isdefine(void)
 
 static bool isinformixdefine(void)
 {
-	const char *new = NULL;
+	const char *newstr = NULL;
 
 	if (strcmp(yytext, "dec_t") == 0)
-		new = "decimal";
+		newstr = "decimal";
 	else if (strcmp(yytext, "intrvl_t") == 0)
-		new = "interval";
+		newstr = "interval";
 	else if (strcmp(yytext, "dtime_t") == 0)
-		new = "timestamp";
+		newstr = "timestamp";
 
-	if (new)
+	if (newstr)
 	{
 		struct _yy_buffer *yb;
 
@@ -1470,7 +1470,7 @@ static bool isinformixdefine(void)
 		yb->next = yy_buffer;
 		yy_buffer = yb;
 
-		yy_scan_string(new);
+		yy_scan_string(newstr);
 		return true;
 	}
 

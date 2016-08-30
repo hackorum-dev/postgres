@@ -470,9 +470,9 @@ make_const(ParseState *pstate, Value *value, int location)
 	Const	   *con;
 	Datum		val;
 	int64		val64;
-	Oid			typeid;
-	int			typelen;
-	bool		typebyval;
+	Oid			typid;
+	int			typlen;
+	bool		typbyval;
 	ParseCallbackState pcbstate;
 
 	switch (nodeTag(value))
@@ -480,9 +480,9 @@ make_const(ParseState *pstate, Value *value, int location)
 		case T_Integer:
 			val = Int32GetDatum(intVal(value));
 
-			typeid = INT4OID;
-			typelen = sizeof(int32);
-			typebyval = true;
+			typid = INT4OID;
+			typlen = sizeof(int32);
+			typbyval = true;
 			break;
 
 		case T_Float:
@@ -499,17 +499,17 @@ make_const(ParseState *pstate, Value *value, int location)
 				{
 					val = Int32GetDatum(val32);
 
-					typeid = INT4OID;
-					typelen = sizeof(int32);
-					typebyval = true;
+					typid = INT4OID;
+					typlen = sizeof(int32);
+					typbyval = true;
 				}
 				else
 				{
 					val = Int64GetDatum(val64);
 
-					typeid = INT8OID;
-					typelen = sizeof(int64);
-					typebyval = FLOAT8PASSBYVAL;		/* int8 and float8 alike */
+					typid = INT8OID;
+					typlen = sizeof(int64);
+					typbyval = FLOAT8PASSBYVAL;		/* int8 and float8 alike */
 				}
 			}
 			else
@@ -522,9 +522,9 @@ make_const(ParseState *pstate, Value *value, int location)
 										  Int32GetDatum(-1));
 				cancel_parser_errposition_callback(&pcbstate);
 
-				typeid = NUMERICOID;
-				typelen = -1;	/* variable len */
-				typebyval = false;
+				typid = NUMERICOID;
+				typlen = -1;	/* variable len */
+				typbyval = false;
 			}
 			break;
 
@@ -536,9 +536,9 @@ make_const(ParseState *pstate, Value *value, int location)
 			 */
 			val = CStringGetDatum(strVal(value));
 
-			typeid = UNKNOWNOID;	/* will be coerced later */
-			typelen = -2;		/* cstring-style varwidth type */
-			typebyval = false;
+			typid = UNKNOWNOID;	/* will be coerced later */
+			typlen = -2;		/* cstring-style varwidth type */
+			typbyval = false;
 			break;
 
 		case T_BitString:
@@ -549,9 +549,9 @@ make_const(ParseState *pstate, Value *value, int location)
 									  ObjectIdGetDatum(InvalidOid),
 									  Int32GetDatum(-1));
 			cancel_parser_errposition_callback(&pcbstate);
-			typeid = BITOID;
-			typelen = -1;
-			typebyval = false;
+			typid = BITOID;
+			typlen = -1;
+			typbyval = false;
 			break;
 
 		case T_Null:
@@ -571,13 +571,13 @@ make_const(ParseState *pstate, Value *value, int location)
 			return NULL;		/* keep compiler quiet */
 	}
 
-	con = makeConst(typeid,
+	con = makeConst(typid,
 					-1,			/* typmod -1 is OK for all cases */
 					InvalidOid, /* all cases are uncollatable types */
-					typelen,
+					typlen,
 					val,
 					false,
-					typebyval);
+					typbyval);
 	con->location = location;
 
 	return con;

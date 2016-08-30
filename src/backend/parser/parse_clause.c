@@ -57,7 +57,7 @@ static Node *transformJoinUsingClause(ParseState *pstate,
 						 RangeTblEntry *leftRTE, RangeTblEntry *rightRTE,
 						 List *leftVars, List *rightVars);
 static Node *transformJoinOnClause(ParseState *pstate, JoinExpr *j,
-					  List *namespace);
+					  List *namespaces);
 static RangeTblEntry *transformTableEntry(ParseState *pstate, RangeVar *r);
 static RangeTblEntry *transformCTEReference(ParseState *pstate, RangeVar *r,
 					  CommonTableExpr *cte, Index levelsup);
@@ -69,14 +69,14 @@ static TableSampleClause *transformRangeTableSample(ParseState *pstate,
 						  RangeTableSample *rts);
 static Node *transformFromClauseItem(ParseState *pstate, Node *n,
 						RangeTblEntry **top_rte, int *top_rti,
-						List **namespace);
+						List **namespaces);
 static Node *buildMergedJoinVar(ParseState *pstate, JoinType jointype,
 				   Var *l_colvar, Var *r_colvar);
 static ParseNamespaceItem *makeNamespaceItem(RangeTblEntry *rte,
 				  bool rel_visible, bool cols_visible,
 				  bool lateral_only, bool lateral_ok);
-static void setNamespaceColumnVisibility(List *namespace, bool cols_visible);
-static void setNamespaceLateralState(List *namespace,
+static void setNamespaceColumnVisibility(List *namespaces, bool cols_visible);
+static void setNamespaceLateralState(List *namespaces,
 						 bool lateral_only, bool lateral_ok);
 static void checkExprIsVarFree(ParseState *pstate, Node *n,
 				   const char *constructName);
@@ -124,20 +124,20 @@ transformFromClause(ParseState *pstate, List *frmList)
 		Node	   *n = lfirst(fl);
 		RangeTblEntry *rte;
 		int			rtindex;
-		List	   *namespace;
+		List	   *namespaces;
 
 		n = transformFromClauseItem(pstate, n,
 									&rte,
 									&rtindex,
-									&namespace);
+									&namespaces);
 
-		checkNameSpaceConflicts(pstate, pstate->p_namespace, namespace);
+		checkNameSpaceConflicts(pstate, pstate->p_namespace, namespaces);
 
 		/* Mark the new namespace items as visible only to LATERAL */
-		setNamespaceLateralState(namespace, true, true);
+		setNamespaceLateralState(namespaces, true, true);
 
 		pstate->p_joinlist = lappend(pstate->p_joinlist, n);
-		pstate->p_namespace = list_concat(pstate->p_namespace, namespace);
+		pstate->p_namespace = list_concat(pstate->p_namespace, namespaces);
 	}
 
 	/*
@@ -376,7 +376,7 @@ transformJoinUsingClause(ParseState *pstate,
  *	  Result is a transformed qualification expression.
  */
 static Node *
-transformJoinOnClause(ParseState *pstate, JoinExpr *j, List *namespace)
+transformJoinOnClause(ParseState *pstate, JoinExpr *j, List *namespaces)
 {
 	Node	   *result;
 	List	   *save_namespace;
@@ -389,10 +389,10 @@ transformJoinOnClause(ParseState *pstate, JoinExpr *j, List *namespace)
 	 * already did.)  All namespace items are marked visible regardless of
 	 * LATERAL state.
 	 */
-	setNamespaceLateralState(namespace, false, true);
+	setNamespaceLateralState(namespaces, false, true);
 
 	save_namespace = pstate->p_namespace;
-	pstate->p_namespace = namespace;
+	pstate->p_namespace = namespaces;
 
 	result = transformWhereClause(pstate, j->quals,
 								  EXPR_KIND_JOIN_ON, "JOIN/ON");
@@ -820,7 +820,7 @@ transformRangeTableSample(ParseState *pstate, RangeTableSample *rts)
 static Node *
 transformFromClauseItem(ParseState *pstate, Node *n,
 						RangeTblEntry **top_rte, int *top_rti,
-						List **namespace)
+						List **namespaces)
 {
 	if (IsA(n, RangeVar))
 	{
@@ -850,7 +850,7 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 		Assert(rte == rt_fetch(rtindex, pstate->p_rtable));
 		*top_rte = rte;
 		*top_rti = rtindex;
-		*namespace = list_make1(makeDefaultNSItem(rte));
+		*namespaces = list_make1(makeDefaultNSItem(rte));
 		rtr = makeNode(RangeTblRef);
 		rtr->rtindex = rtindex;
 		return (Node *) rtr;
@@ -868,7 +868,7 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 		Assert(rte == rt_fetch(rtindex, pstate->p_rtable));
 		*top_rte = rte;
 		*top_rti = rtindex;
-		*namespace = list_make1(makeDefaultNSItem(rte));
+		*namespaces = list_make1(makeDefaultNSItem(rte));
 		rtr = makeNode(RangeTblRef);
 		rtr->rtindex = rtindex;
 		return (Node *) rtr;
@@ -886,7 +886,7 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 		Assert(rte == rt_fetch(rtindex, pstate->p_rtable));
 		*top_rte = rte;
 		*top_rti = rtindex;
-		*namespace = list_make1(makeDefaultNSItem(rte));
+		*namespaces = list_make1(makeDefaultNSItem(rte));
 		rtr = makeNode(RangeTblRef);
 		rtr->rtindex = rtindex;
 		return (Node *) rtr;
@@ -901,7 +901,7 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 
 		/* Recursively transform the contained relation */
 		rel = transformFromClauseItem(pstate, rts->relation,
-									  top_rte, top_rti, namespace);
+									  top_rte, top_rti, namespaces);
 		/* Currently, grammar could only return a RangeVar as contained rel */
 		rtr = castNode(RangeTblRef, rel);
 		rte = rt_fetch(rtr->rtindex, pstate->p_rtable);
@@ -1230,7 +1230,7 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 		 * The join RTE itself is always made visible for unqualified column
 		 * names.  It's visible as a relation name only if it has an alias.
 		 */
-		*namespace = lappend(my_namespace,
+		*namespaces = lappend(my_namespace,
 							 makeNamespaceItem(rte,
 											   (j->alias != NULL),
 											   true,
@@ -1387,11 +1387,11 @@ makeNamespaceItem(RangeTblEntry *rte, bool rel_visible, bool cols_visible,
  *	  Convenience subroutine to update cols_visible flags in a namespace list.
  */
 static void
-setNamespaceColumnVisibility(List *namespace, bool cols_visible)
+setNamespaceColumnVisibility(List *namespaces, bool cols_visible)
 {
 	ListCell   *lc;
 
-	foreach(lc, namespace)
+	foreach(lc, namespaces)
 	{
 		ParseNamespaceItem *nsitem = (ParseNamespaceItem *) lfirst(lc);
 
@@ -1404,11 +1404,11 @@ setNamespaceColumnVisibility(List *namespace, bool cols_visible)
  *	  Convenience subroutine to update LATERAL flags in a namespace list.
  */
 static void
-setNamespaceLateralState(List *namespace, bool lateral_only, bool lateral_ok)
+setNamespaceLateralState(List *namespaces, bool lateral_only, bool lateral_ok)
 {
 	ListCell   *lc;
 
-	foreach(lc, namespace)
+	foreach(lc, namespaces)
 	{
 		ParseNamespaceItem *nsitem = (ParseNamespaceItem *) lfirst(lc);
 

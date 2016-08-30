@@ -272,7 +272,7 @@ ECPGconnect(int lineno, int c, const char *name, const char *user, const char *p
 {
 	struct sqlca_t *sqlca = ECPGget_sqlca();
 	enum COMPAT_MODE compat = c;
-	struct connection *this;
+	struct connection *conn;
 	int			i,
 				connect_params = 0;
 	char	   *dbname = name ? ecpg_strdup(name, lineno) : NULL,
@@ -334,7 +334,7 @@ ECPGconnect(int lineno, int c, const char *name, const char *user, const char *p
 		return false;
 	}
 
-	if ((this = (struct connection *) ecpg_alloc(sizeof(struct connection), lineno)) == NULL)
+	if ((conn = (struct connection *) ecpg_alloc(sizeof(struct connection), lineno)) == NULL)
 	{
 		ecpg_free(dbname);
 		return false;
@@ -411,7 +411,7 @@ ECPGconnect(int lineno, int c, const char *name, const char *user, const char *p
 								ecpg_free(realname);
 							if (dbname)
 								ecpg_free(dbname);
-							free(this);
+							free(conn);
 							return false;
 						}
 					}
@@ -438,7 +438,7 @@ ECPGconnect(int lineno, int c, const char *name, const char *user, const char *p
 							ecpg_free(realname);
 						if (dbname)
 							ecpg_free(dbname);
-						free(this);
+						free(conn);
 						return false;
 					}
 				}
@@ -489,19 +489,19 @@ ECPGconnect(int lineno, int c, const char *name, const char *user, const char *p
 	pthread_mutex_lock(&connections_mutex);
 #endif
 	if (connection_name != NULL)
-		this->name = ecpg_strdup(connection_name, lineno);
+		conn->name = ecpg_strdup(connection_name, lineno);
 	else
-		this->name = ecpg_strdup(realname, lineno);
+		conn->name = ecpg_strdup(realname, lineno);
 
-	this->cache_head = NULL;
-	this->prep_stmts = NULL;
+	conn->cache_head = NULL;
+	conn->prep_stmts = NULL;
 
 	if (all_connections == NULL)
-		this->next = NULL;
+		conn->next = NULL;
 	else
-		this->next = all_connections;
+		conn->next = all_connections;
 
-	all_connections = this;
+	all_connections = conn;
 #ifdef ENABLE_THREAD_SAFETY
 	pthread_setspecific(actual_connection_key, all_connections);
 #endif
@@ -544,7 +544,7 @@ ECPGconnect(int lineno, int c, const char *name, const char *user, const char *p
 			ecpg_free(conn_keywords);
 		if (conn_values)
 			ecpg_free(conn_values);
-		free(this);
+		free(conn);
 		return false;
 	}
 
@@ -619,7 +619,7 @@ ECPGconnect(int lineno, int c, const char *name, const char *user, const char *p
 	}
 	conn_keywords[i] = NULL;	/* terminator */
 
-	this->connection = PQconnectdbParams(conn_keywords, conn_values, 0);
+	conn->connection = PQconnectdbParams(conn_keywords, conn_values, 0);
 
 	if (host)
 		ecpg_free(host);
@@ -632,14 +632,14 @@ ECPGconnect(int lineno, int c, const char *name, const char *user, const char *p
 	ecpg_free(conn_values);
 	ecpg_free(conn_keywords);
 
-	if (PQstatus(this->connection) == CONNECTION_BAD)
+	if (PQstatus(conn->connection) == CONNECTION_BAD)
 	{
-		const char *errmsg = PQerrorMessage(this->connection);
+		const char *errmsg = PQerrorMessage(conn->connection);
 		const char *db = realname ? realname : ecpg_gettext("<DEFAULT>");
 
 		ecpg_log("ECPGconnect: could not open database: %s\n", errmsg);
 
-		ecpg_finish(this);
+		ecpg_finish(conn);
 #ifdef ENABLE_THREAD_SAFETY
 		pthread_mutex_unlock(&connections_mutex);
 #endif
@@ -658,9 +658,9 @@ ECPGconnect(int lineno, int c, const char *name, const char *user, const char *p
 	pthread_mutex_unlock(&connections_mutex);
 #endif
 
-	this->autocommit = autocommit;
+	conn->autocommit = autocommit;
 
-	PQsetNoticeReceiver(this->connection, &ECPGnoticeReceiver, (void *) this);
+	PQsetNoticeReceiver(conn->connection, &ECPGnoticeReceiver, (void *) conn);
 
 	return true;
 }

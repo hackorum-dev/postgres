@@ -113,7 +113,7 @@ static Oid	convert_server_name(text *servername);
 static AclMode convert_server_priv_string(text *priv_type_text);
 static Oid	convert_tablespace_name(text *tablespacename);
 static AclMode convert_tablespace_priv_string(text *priv_type_text);
-static Oid	convert_type_name(text *typename);
+static Oid	convert_type_name(text *typeName);
 static AclMode convert_type_priv_string(text *priv_type_text);
 static AclMode convert_role_priv_string(text *priv_type_text);
 static AclResult pg_role_aclcheck(Oid role_oid, Oid roleid, AclMode mode);
@@ -4213,7 +4213,7 @@ Datum
 has_type_privilege_name_name(PG_FUNCTION_ARGS)
 {
 	Name		username = PG_GETARG_NAME(0);
-	text	   *typename = PG_GETARG_TEXT_P(1);
+	text	   *typname = PG_GETARG_TEXT_P(1);
 	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
 	Oid			roleid;
 	Oid			typeoid;
@@ -4221,7 +4221,7 @@ has_type_privilege_name_name(PG_FUNCTION_ARGS)
 	AclResult	aclresult;
 
 	roleid = get_role_oid_or_public(NameStr(*username));
-	typeoid = convert_type_name(typename);
+	typeoid = convert_type_name(typname);
 	mode = convert_type_priv_string(priv_type_text);
 
 	aclresult = pg_type_aclcheck(typeoid, roleid, mode);
@@ -4238,7 +4238,7 @@ has_type_privilege_name_name(PG_FUNCTION_ARGS)
 Datum
 has_type_privilege_name(PG_FUNCTION_ARGS)
 {
-	text	   *typename = PG_GETARG_TEXT_P(0);
+	text	   *typname = PG_GETARG_TEXT_P(0);
 	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
 	Oid			roleid;
 	Oid			typeoid;
@@ -4246,7 +4246,7 @@ has_type_privilege_name(PG_FUNCTION_ARGS)
 	AclResult	aclresult;
 
 	roleid = GetUserId();
-	typeoid = convert_type_name(typename);
+	typeoid = convert_type_name(typname);
 	mode = convert_type_priv_string(priv_type_text);
 
 	aclresult = pg_type_aclcheck(typeoid, roleid, mode);
@@ -4315,13 +4315,13 @@ Datum
 has_type_privilege_id_name(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
-	text	   *typename = PG_GETARG_TEXT_P(1);
+	text	   *typname = PG_GETARG_TEXT_P(1);
 	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
 	Oid			typeoid;
 	AclMode		mode;
 	AclResult	aclresult;
 
-	typeoid = convert_type_name(typename);
+	typeoid = convert_type_name(typname);
 	mode = convert_type_priv_string(priv_type_text);
 
 	aclresult = pg_type_aclcheck(typeoid, roleid, mode);
@@ -4361,9 +4361,9 @@ has_type_privilege_id_id(PG_FUNCTION_ARGS)
  * Given a type name expressed as a string, look it up and return Oid
  */
 static Oid
-convert_type_name(text *typename)
+convert_type_name(text *typeName)
 {
-	char	   *typname = text_to_cstring(typename);
+	char	   *typname = text_to_cstring(typeName);
 	Oid			oid;
 
 	oid = DatumGetObjectId(DirectFunctionCall1(regtypein,

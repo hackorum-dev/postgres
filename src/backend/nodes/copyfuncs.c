@@ -4368,17 +4368,17 @@ _copyDropSubscriptionStmt(const DropSubscriptionStmt *from)
 static List *
 _copyList(const List *from)
 {
-	List	   *new;
+	List	   *newnode;
 	ListCell   *curr_old;
 	ListCell   *prev_new;
 
 	Assert(list_length(from) >= 1);
 
-	new = makeNode(List);
-	new->length = from->length;
+	newnode = makeNode(List);
+	newnode->length = from->length;
 
-	COPY_NODE_CELL(new->head, from->head);
-	prev_new = new->head;
+	COPY_NODE_CELL(newnode->head, from->head);
+	prev_new = newnode->head;
 	curr_old = lnext(from->head);
 
 	while (curr_old)
@@ -4388,9 +4388,9 @@ _copyList(const List *from)
 		curr_old = curr_old->next;
 	}
 	prev_new->next = NULL;
-	new->tail = prev_new;
+	newnode->tail = prev_new;
 
-	return new;
+	return newnode;
 }
 
 /* ****************************************************************

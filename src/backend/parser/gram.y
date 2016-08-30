@@ -144,9 +144,9 @@ static RawStmt *makeRawStmt(Node *stmt, int stmt_location);
 static void updateRawStmtEnd(RawStmt *rs, int end_location);
 static Node *makeColumnRef(char *colname, List *indirection,
 						   int location, core_yyscan_t yyscanner);
-static Node *makeTypeCast(Node *arg, TypeName *typename, int location);
+static Node *makeTypeCast(Node *arg, TypeName *typname, int location);
 static Node *makeStringConst(char *str, int location);
-static Node *makeStringConstCast(char *str, int location, TypeName *typename);
+static Node *makeStringConstCast(char *str, int location, TypeName *typname);
 static Node *makeIntConst(int val, int location);
 static Node *makeFloatConst(char *str, int location);
 static Node *makeBitStringConst(char *str, int location);
@@ -14840,11 +14840,11 @@ makeColumnRef(char *colname, List *indirection,
 }
 
 static Node *
-makeTypeCast(Node *arg, TypeName *typename, int location)
+makeTypeCast(Node *arg, TypeName *typname, int location)
 {
 	TypeCast *n = makeNode(TypeCast);
 	n->arg = arg;
-	n->typeName = typename;
+	n->typeName = typname;
 	n->location = location;
 	return (Node *) n;
 }
@@ -14862,11 +14862,11 @@ makeStringConst(char *str, int location)
 }
 
 static Node *
-makeStringConstCast(char *str, int location, TypeName *typename)
+makeStringConstCast(char *str, int location, TypeName *typname)
 {
 	Node *s = makeStringConst(str, location);
 
-	return makeTypeCast(s, typename, -1);
+	return makeTypeCast(s, typname, -1);
 }
 
 static Node *

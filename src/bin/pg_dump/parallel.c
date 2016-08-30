@@ -384,7 +384,7 @@ archive_close_connection(int code, void *arg)
 			 * the other end of the pipe.)
 			 */
 			if (slot->AH)
-				DisconnectDatabase(&(slot->AH->public));
+				DisconnectDatabase(&(slot->AH->archive));
 
 #ifdef WIN32
 			closesocket(slot->pipeRevRead);
@@ -874,7 +874,7 @@ RunWorker(ArchiveHandle *AH, ParallelSlot *slot)
 	 * Disconnect from database and clean up.
 	 */
 	set_cancel_slot_archive(slot, NULL);
-	DisconnectDatabase(&(AH->public));
+	DisconnectDatabase(&(AH->archive));
 	DeCloneArchive(AH);
 }
 
@@ -911,15 +911,15 @@ ParallelBackupStart(ArchiveHandle *AH)
 	ParallelState *pstate;
 	int			i;
 
-	Assert(AH->public.numWorkers > 0);
+	Assert(AH->archive.numWorkers > 0);
 
 	pstate = (ParallelState *) pg_malloc(sizeof(ParallelState));
 
-	pstate->numWorkers = AH->public.numWorkers;
+	pstate->numWorkers = AH->archive.numWorkers;
 	pstate->te = NULL;
 	pstate->parallelSlot = NULL;
 
-	if (AH->public.numWorkers == 1)
+	if (AH->archive.numWorkers == 1)
 		return pstate;
 
 	pstate->te = (TocEntry **)
@@ -1180,7 +1180,7 @@ buildWorkerResponse(ArchiveHandle *AH, TocEntry *te, T_Action act, int status,
 	snprintf(buf, buflen, "OK %d %d %d",
 			 te->dumpId,
 			 status,
-			 status == WORKER_IGNORED_ERRORS ? AH->public.n_errors : 0);
+			 status == WORKER_IGNORED_ERRORS ? AH->archive.n_errors : 0);
 }
 
 /*
@@ -1204,7 +1204,7 @@ parseWorkerResponse(ArchiveHandle *AH, TocEntry *te,
 		Assert(dumpId == te->dumpId);
 		Assert(nBytes == strlen(msg));
 
-		AH->public.n_errors += n_errors;
+		AH->archive.n_errors += n_errors;
 	}
 	else
 		exit_horribly(modulename,
@@ -1332,7 +1332,7 @@ lockTableForWorker(ArchiveHandle *AH, TocEntry *te)
 
 	query = createPQExpBuffer();
 
-	qualId = fmtQualifiedId(AH->public.remoteVersion, te->namespace, te->tag);
+	qualId = fmtQualifiedId(AH->archive.remoteVersion, te->schema, te->tag);
 
 	appendPQExpBuffer(query, "LOCK TABLE %s IN ACCESS SHARE MODE NOWAIT",
 					  qualId);

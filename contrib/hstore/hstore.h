@@ -188,7 +188,7 @@ extern Pairs *hstoreArrayToPairs(ArrayType *a, int *npairs);
  * for now, we default to on for the benefit of people restoring old dumps
  */
 #ifndef HSTORE_POLLUTE_NAMESPACE
-#define HSTORE_POLLUTE_NAMESPACE 1
+#define HSTORE_POLLUTE_NAMESPACE 0
 #endif
 
 #if HSTORE_POLLUTE_NAMESPACE

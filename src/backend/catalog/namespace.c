@@ -2153,7 +2153,7 @@ TSParserIsVisible(Oid prsId)
 {
 	HeapTuple	tup;
 	Form_pg_ts_parser form;
-	Oid			namespace;
+	Oid			prsnamespace;
 	bool		visible;
 
 	tup = SearchSysCache1(TSPARSEROID, ObjectIdGetDatum(prsId));
@@ -2168,9 +2168,9 @@ TSParserIsVisible(Oid prsId)
 	 * the system namespace are surely in the path and so we needn't even do
 	 * list_member_oid() for them.
 	 */
-	namespace = form->prsnamespace;
-	if (namespace != PG_CATALOG_NAMESPACE &&
-		!list_member_oid(activeSearchPath, namespace))
+	prsnamespace = form->prsnamespace;
+	if (prsnamespace != PG_CATALOG_NAMESPACE &&
+		!list_member_oid(activeSearchPath, prsnamespace))
 		visible = false;
 	else
 	{
@@ -2190,7 +2190,7 @@ TSParserIsVisible(Oid prsId)
 			if (namespaceId == myTempNamespace)
 				continue;		/* do not look in temp namespace */
 
-			if (namespaceId == namespace)
+			if (namespaceId == prsnamespace)
 			{
 				/* Found it first in path */
 				visible = true;
@@ -2279,7 +2279,7 @@ TSDictionaryIsVisible(Oid dictId)
 {
 	HeapTuple	tup;
 	Form_pg_ts_dict form;
-	Oid			namespace;
+	Oid			dictnamespace;
 	bool		visible;
 
 	tup = SearchSysCache1(TSDICTOID, ObjectIdGetDatum(dictId));
@@ -2295,9 +2295,9 @@ TSDictionaryIsVisible(Oid dictId)
 	 * the system namespace are surely in the path and so we needn't even do
 	 * list_member_oid() for them.
 	 */
-	namespace = form->dictnamespace;
-	if (namespace != PG_CATALOG_NAMESPACE &&
-		!list_member_oid(activeSearchPath, namespace))
+	dictnamespace = form->dictnamespace;
+	if (dictnamespace != PG_CATALOG_NAMESPACE &&
+		!list_member_oid(activeSearchPath, dictnamespace))
 		visible = false;
 	else
 	{
@@ -2317,7 +2317,7 @@ TSDictionaryIsVisible(Oid dictId)
 			if (namespaceId == myTempNamespace)
 				continue;		/* do not look in temp namespace */
 
-			if (namespaceId == namespace)
+			if (namespaceId == dictnamespace)
 			{
 				/* Found it first in path */
 				visible = true;
@@ -2406,7 +2406,7 @@ TSTemplateIsVisible(Oid tmplId)
 {
 	HeapTuple	tup;
 	Form_pg_ts_template form;
-	Oid			namespace;
+	Oid			tmplnamespace;
 	bool		visible;
 
 	tup = SearchSysCache1(TSTEMPLATEOID, ObjectIdGetDatum(tmplId));
@@ -2421,9 +2421,9 @@ TSTemplateIsVisible(Oid tmplId)
 	 * the system namespace are surely in the path and so we needn't even do
 	 * list_member_oid() for them.
 	 */
-	namespace = form->tmplnamespace;
-	if (namespace != PG_CATALOG_NAMESPACE &&
-		!list_member_oid(activeSearchPath, namespace))
+	tmplnamespace = form->tmplnamespace;
+	if (tmplnamespace != PG_CATALOG_NAMESPACE &&
+		!list_member_oid(activeSearchPath, tmplnamespace))
 		visible = false;
 	else
 	{
@@ -2443,7 +2443,7 @@ TSTemplateIsVisible(Oid tmplId)
 			if (namespaceId == myTempNamespace)
 				continue;		/* do not look in temp namespace */
 
-			if (namespaceId == namespace)
+			if (namespaceId == tmplnamespace)
 			{
 				/* Found it first in path */
 				visible = true;
@@ -2532,7 +2532,7 @@ TSConfigIsVisible(Oid cfgid)
 {
 	HeapTuple	tup;
 	Form_pg_ts_config form;
-	Oid			namespace;
+	Oid			cfgnamespace;
 	bool		visible;
 
 	tup = SearchSysCache1(TSCONFIGOID, ObjectIdGetDatum(cfgid));
@@ -2548,9 +2548,9 @@ TSConfigIsVisible(Oid cfgid)
 	 * the system namespace are surely in the path and so we needn't even do
 	 * list_member_oid() for them.
 	 */
-	namespace = form->cfgnamespace;
-	if (namespace != PG_CATALOG_NAMESPACE &&
-		!list_member_oid(activeSearchPath, namespace))
+	cfgnamespace = form->cfgnamespace;
+	if (cfgnamespace != PG_CATALOG_NAMESPACE &&
+		!list_member_oid(activeSearchPath, cfgnamespace))
 		visible = false;
 	else
 	{
@@ -2570,7 +2570,7 @@ TSConfigIsVisible(Oid cfgid)
 			if (namespaceId == myTempNamespace)
 				continue;		/* do not look in temp namespace */
 
-			if (namespaceId == namespace)
+			if (namespaceId == cfgnamespace)
 			{
 				/* Found it first in path */
 				visible = true;

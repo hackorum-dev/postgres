@@ -43,16 +43,16 @@
 /* Maximum number of items to consider in join selectivity calculations */
 #define MAX_CONSIDERED_ELEMS 1024
 
-static Selectivity networkjoinsel_inner(Oid operator,
+static Selectivity networkjoinsel_inner(Oid opid,
 					 VariableStatData *vardata1, VariableStatData *vardata2);
-static Selectivity networkjoinsel_semi(Oid operator,
+static Selectivity networkjoinsel_semi(Oid opid,
 					VariableStatData *vardata1, VariableStatData *vardata2);
 static Selectivity mcv_population(float4 *mcv_numbers, int mcv_nvalues);
 static Selectivity inet_hist_value_sel(Datum *values, int nvalues,
 					Datum constvalue, int opr_codenum);
 static Selectivity inet_mcv_join_sel(Datum *mcv1_values,
 				  float4 *mcv1_numbers, int mcv1_nvalues, Datum *mcv2_values,
-				  float4 *mcv2_numbers, int mcv2_nvalues, Oid operator);
+				  float4 *mcv2_numbers, int mcv2_nvalues, Oid opid);
 static Selectivity inet_mcv_hist_sel(Datum *mcv_values, float4 *mcv_numbers,
 				  int mcv_nvalues, Datum *hist_values, int hist_nvalues,
 				  int opr_codenum);
@@ -65,7 +65,7 @@ static Selectivity inet_semi_join_sel(Datum lhs_value,
 				   bool hist_exists, Datum *hist_values, int hist_nvalues,
 				   double hist_weight,
 				   FmgrInfo *proc, int opr_codenum);
-static int	inet_opr_codenum(Oid operator);
+static int	inet_opr_codenum(Oid opid);
 static int	inet_inclusion_cmp(inet *left, inet *right, int opr_codenum);
 static int inet_masklen_inclusion_cmp(inet *left, inet *right,
 						   int opr_codenum);
@@ -79,7 +79,7 @@ Datum
 networksel(PG_FUNCTION_ARGS)
 {
 	PlannerInfo *root = (PlannerInfo *) PG_GETARG_POINTER(0);
-	Oid			operator = PG_GETARG_OID(1);
+	Oid			opid = PG_GETARG_OID(1);
 	List	   *args = (List *) PG_GETARG_POINTER(2);
 	int			varRelid = PG_GETARG_INT32(3);
 	VariableStatData vardata;
@@ -102,7 +102,7 @@ networksel(PG_FUNCTION_ARGS)
 	 */
 	if (!get_restriction_variable(root, args, varRelid,
 								  &vardata, &other, &varonleft))
-		PG_RETURN_FLOAT8(DEFAULT_SEL(operator));
+		PG_RETURN_FLOAT8(DEFAULT_SEL(opid));
 
 	/*
 	 * Can't do anything useful if the something is not a constant, either.
@@ -110,7 +110,7 @@ networksel(PG_FUNCTION_ARGS)
 	if (!IsA(other, Const))
 	{
 		ReleaseVariableStats(vardata);
-		PG_RETURN_FLOAT8(DEFAULT_SEL(operator));
+		PG_RETURN_FLOAT8(DEFAULT_SEL(opid));
 	}
 
 	/* All of the operators handled here are strict. */
@@ -125,7 +125,7 @@ networksel(PG_FUNCTION_ARGS)
 	if (!HeapTupleIsValid(vardata.statsTuple))
 	{
 		ReleaseVariableStats(vardata);
-		PG_RETURN_FLOAT8(DEFAULT_SEL(operator));
+		PG_RETURN_FLOAT8(DEFAULT_SEL(opid));
 	}
 
 	stats = (Form_pg_statistic) GETSTRUCT(vardata.statsTuple);
@@ -137,7 +137,7 @@ networksel(PG_FUNCTION_ARGS)
 	 * to the result selectivity.  Also add up the total fraction represented
 	 * by MCV entries.
 	 */
-	fmgr_info(get_opcode(operator), &proc);
+	fmgr_info(get_opcode(opid), &proc);
 	mcv_selec = mcv_selectivity(&vardata, &proc, constvalue, varonleft,
 								&sumcommon);
 
@@ -153,7 +153,7 @@ networksel(PG_FUNCTION_ARGS)
 						 &hist_values, &hist_nvalues,
 						 NULL, NULL))
 	{
-		int			opr_codenum = inet_opr_codenum(operator);
+		int			opr_codenum = inet_opr_codenum(opid);
 
 		/* Commute if needed, so we can consider histogram to be on the left */
 		if (!varonleft)
@@ -164,7 +164,7 @@ networksel(PG_FUNCTION_ARGS)
 		free_attstatsslot(vardata.atttype, hist_values, hist_nvalues, NULL, 0);
 	}
 	else
-		non_mcv_selec = DEFAULT_SEL(operator);
+		non_mcv_selec = DEFAULT_SEL(opid);
 
 	/* Combine selectivities for MCV and non-MCV populations */
 	selec = mcv_selec + (1.0 - nullfrac - sumcommon) * non_mcv_selec;
@@ -199,7 +199,7 @@ Datum
 networkjoinsel(PG_FUNCTION_ARGS)
 {
 	PlannerInfo *root = (PlannerInfo *) PG_GETARG_POINTER(0);
-	Oid			operator = PG_GETARG_OID(1);
+	Oid			opid = PG_GETARG_OID(1);
 	List	   *args = (List *) PG_GETARG_POINTER(2);
 #ifdef NOT_USED
 	JoinType	jointype = (JoinType) PG_GETARG_INT16(3);
@@ -223,15 +223,15 @@ networkjoinsel(PG_FUNCTION_ARGS)
 			 * Selectivity for left/full join is not exactly the same as inner
 			 * join, but we neglect the difference, as eqjoinsel does.
 			 */
-			selec = networkjoinsel_inner(operator, &vardata1, &vardata2);
+			selec = networkjoinsel_inner(opid, &vardata1, &vardata2);
 			break;
 		case JOIN_SEMI:
 		case JOIN_ANTI:
 			/* Here, it's important that we pass the outer var on the left. */
 			if (!join_is_reversed)
-				selec = networkjoinsel_semi(operator, &vardata1, &vardata2);
+				selec = networkjoinsel_semi(opid, &vardata1, &vardata2);
 			else
-				selec = networkjoinsel_semi(get_commutator(operator),
+				selec = networkjoinsel_semi(get_commutator(opid),
 											&vardata2, &vardata1);
 			break;
 		default:
@@ -263,7 +263,7 @@ networkjoinsel(PG_FUNCTION_ARGS)
  * Also, MCV vs histogram selectivity is not neglected as in eqjoinsel_inner().
  */
 static Selectivity
-networkjoinsel_inner(Oid operator,
+networkjoinsel_inner(Oid opid,
 					 VariableStatData *vardata1, VariableStatData *vardata2)
 {
 	Form_pg_statistic stats;
@@ -338,7 +338,7 @@ networkjoinsel_inner(Oid operator,
 			sumcommon2 = mcv_population(mcv2_numbers, mcv2_length);
 	}
 
-	opr_codenum = inet_opr_codenum(operator);
+	opr_codenum = inet_opr_codenum(opid);
 
 	/*
 	 * Calculate selectivity for MCV vs MCV matches.
@@ -346,7 +346,7 @@ networkjoinsel_inner(Oid operator,
 	if (mcv1_exists && mcv2_exists)
 		selec += inet_mcv_join_sel(mcv1_values, mcv1_numbers, mcv1_length,
 								   mcv2_values, mcv2_numbers, mcv2_length,
-								   operator);
+								   opid);
 
 	/*
 	 * Add in selectivities for MCV vs histogram matches, scaling according to
@@ -380,7 +380,7 @@ networkjoinsel_inner(Oid operator,
 	 * We can apply null fractions if known, though.
 	 */
 	if ((!mcv1_exists && !hist1_exists) || (!mcv2_exists && !hist2_exists))
-		selec = (1.0 - nullfrac1) * (1.0 - nullfrac2) * DEFAULT_SEL(operator);
+		selec = (1.0 - nullfrac1) * (1.0 - nullfrac2) * DEFAULT_SEL(opid);
 
 	/* Release stats. */
 	if (mcv1_exists)
@@ -406,7 +406,7 @@ networkjoinsel_inner(Oid operator,
  * histogram selectivity for semi/anti join cases.
  */
 static Selectivity
-networkjoinsel_semi(Oid operator,
+networkjoinsel_semi(Oid opid,
 					VariableStatData *vardata1, VariableStatData *vardata2)
 {
 	Form_pg_statistic stats;
@@ -484,8 +484,8 @@ networkjoinsel_semi(Oid operator,
 			sumcommon2 = mcv_population(mcv2_numbers, mcv2_length);
 	}
 
-	opr_codenum = inet_opr_codenum(operator);
-	fmgr_info(get_opcode(operator), &proc);
+	opr_codenum = inet_opr_codenum(opid);
+	fmgr_info(get_opcode(opid), &proc);
 
 	/* Estimate number of input rows represented by RHS histogram. */
 	if (hist2_exists && vardata2->rel)
@@ -547,7 +547,7 @@ networkjoinsel_semi(Oid operator,
 	 * We can apply null fractions if known, though.
 	 */
 	if ((!mcv1_exists && !hist1_exists) || (!mcv2_exists && !hist2_exists))
-		selec = (1.0 - nullfrac1) * (1.0 - nullfrac2) * DEFAULT_SEL(operator);
+		selec = (1.0 - nullfrac1) * (1.0 - nullfrac2) * DEFAULT_SEL(opid);
 
 	/* Release stats. */
 	if (mcv1_exists)
@@ -707,14 +707,14 @@ inet_hist_value_sel(Datum *values, int nvalues, Datum constvalue,
 static Selectivity
 inet_mcv_join_sel(Datum *mcv1_values, float4 *mcv1_numbers, int mcv1_nvalues,
 				  Datum *mcv2_values, float4 *mcv2_numbers, int mcv2_nvalues,
-				  Oid operator)
+				  Oid opid)
 {
 	Selectivity selec = 0.0;
 	FmgrInfo	proc;
 	int			i,
 				j;
 
-	fmgr_info(get_opcode(operator), &proc);
+	fmgr_info(get_opcode(opid), &proc);
 
 	for (i = 0; i < mcv1_nvalues; i++)
 	{
@@ -868,9 +868,9 @@ inet_semi_join_sel(Datum lhs_value,
  * operator.
  */
 static int
-inet_opr_codenum(Oid operator)
+inet_opr_codenum(Oid opid)
 {
-	switch (operator)
+	switch (opid)
 	{
 		case OID_INET_SUP_OP:
 			return -2;
@@ -884,7 +884,7 @@ inet_opr_codenum(Oid operator)
 			return 2;
 		default:
 			elog(ERROR, "unrecognized operator %u for inet selectivity",
-				 operator);
+				 opid);
 	}
 	return 0;					/* unreached, but keep compiler quiet */
 }

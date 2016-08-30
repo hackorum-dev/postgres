@@ -11391,7 +11391,7 @@ ATExecAddOf(Relation rel, const TypeName *ofTypename, LOCKMODE lockmode)
 {
 	Oid			relid = RelationGetRelid(rel);
 	Type		typetuple;
-	Oid			typeid;
+	Oid			typid;
 	Relation	inheritsRelation,
 				relationRelation;
 	SysScanDesc scan;
@@ -11407,7 +11407,7 @@ ATExecAddOf(Relation rel, const TypeName *ofTypename, LOCKMODE lockmode)
 	/* Validate the type. */
 	typetuple = typenameType(NULL, ofTypename, NULL);
 	check_of_type(typetuple);
-	typeid = HeapTupleGetOid(typetuple);
+	typid = HeapTupleGetOid(typetuple);
 
 	/* Fail if the table has any inheritance parents. */
 	inheritsRelation = heap_open(InheritsRelationId, AccessShareLock);
@@ -11429,7 +11429,7 @@ ATExecAddOf(Relation rel, const TypeName *ofTypename, LOCKMODE lockmode)
 	 * require that the order also match.  However, attnotnull need not match.
 	 * Also unlike inheritance, we do not require matching relhasoids.
 	 */
-	typeTupleDesc = lookup_rowtype_tupdesc(typeid, -1);
+	typeTupleDesc = lookup_rowtype_tupdesc(typid, -1);
 	tableTupleDesc = RelationGetDescr(rel);
 	table_attno = 1;
 	for (type_attno = 1; type_attno <= typeTupleDesc->natts; type_attno++)
@@ -11496,7 +11496,7 @@ ATExecAddOf(Relation rel, const TypeName *ofTypename, LOCKMODE lockmode)
 	tableobj.objectId = relid;
 	tableobj.objectSubId = 0;
 	typeobj.classId = TypeRelationId;
-	typeobj.objectId = typeid;
+	typeobj.objectId = typid;
 	typeobj.objectSubId = 0;
 	recordDependencyOn(&tableobj, &typeobj, DEPENDENCY_NORMAL);
 
@@ -11505,7 +11505,7 @@ ATExecAddOf(Relation rel, const TypeName *ofTypename, LOCKMODE lockmode)
 	classtuple = SearchSysCacheCopy1(RELOID, ObjectIdGetDatum(relid));
 	if (!HeapTupleIsValid(classtuple))
 		elog(ERROR, "cache lookup failed for relation %u", relid);
-	((Form_pg_class) GETSTRUCT(classtuple))->reloftype = typeid;
+	((Form_pg_class) GETSTRUCT(classtuple))->reloftype = typid;
 	CatalogTupleUpdate(relationRelation, &classtuple->t_self, classtuple);
 
 	InvokeObjectPostAlterHook(RelationRelationId, relid, 0);

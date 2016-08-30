@@ -139,7 +139,7 @@ brin_inclusion_add_value(PG_FUNCTION_ARGS)
 	Oid			colloid = PG_GET_COLLATION();
 	FmgrInfo   *finfo;
 	Datum		result;
-	bool		new = false;
+	bool		isnew = false;
 	AttrNumber	attno;
 	Form_pg_attribute attr;
 
@@ -170,7 +170,7 @@ brin_inclusion_add_value(PG_FUNCTION_ARGS)
 		column->bv_values[INCLUSION_UNMERGEABLE] = BoolGetDatum(false);
 		column->bv_values[INCLUSION_CONTAINS_EMPTY] = BoolGetDatum(false);
 		column->bv_allnulls = false;
-		new = true;
+		isnew = true;
 	}
 
 	/*
@@ -197,7 +197,7 @@ brin_inclusion_add_value(PG_FUNCTION_ARGS)
 		PG_RETURN_BOOL(false);
 	}
 
-	if (new)
+	if (isnew)
 		PG_RETURN_BOOL(true);
 
 	/* Check if the new value is already contained. */

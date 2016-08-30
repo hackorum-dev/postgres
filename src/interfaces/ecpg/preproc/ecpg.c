@@ -65,18 +65,18 @@ static void
 add_include_path(char *path)
 {
 	struct _include_path *ip = include_paths,
-			   *new;
+			   *newpath;
 
-	new = mm_alloc(sizeof(struct _include_path));
-	new->path = path;
-	new->next = NULL;
+	newpath = mm_alloc(sizeof(struct _include_path));
+	newpath->path = path;
+	newpath->next = NULL;
 
 	if (ip == NULL)
-		include_paths = new;
+		include_paths = newpath;
 	else
 	{
 		for (; ip->next != NULL; ip = ip->next);
-		ip->next = new;
+		ip->next = newpath;
 	}
 }
 
@@ -98,13 +98,13 @@ add_preprocessor_define(char *define)
 		/* symbol has a value */
 		for (tmp = ptr - 1; *tmp == ' '; tmp--);
 		tmp[1] = '\0';
-		defines->old = define_copy;
-		defines->new = ptr + 1;
+		defines->oldval = define_copy;
+		defines->newval = ptr + 1;
 	}
 	else
 	{
-		defines->old = define_copy;
-		defines->new = mm_strdup("1");
+		defines->oldval = define_copy;
+		defines->newval = mm_strdup("1");
 	}
 	defines->pertinent = true;
 	defines->used = NULL;
@@ -345,7 +345,7 @@ main(int argc, char *const argv[])
 				/* remove old cursor definitions if any are still there */
 				for (ptr = cur; ptr != NULL;)
 				{
-					struct cursor *this = ptr;
+					struct cursor *c = ptr;
 					struct arguments *l1,
 							   *l2;
 
@@ -363,7 +363,7 @@ main(int argc, char *const argv[])
 						free(l1);
 					}
 					ptr = ptr->next;
-					free(this);
+					free(c);
 				}
 				cur = NULL;
 
@@ -373,35 +373,35 @@ main(int argc, char *const argv[])
 					defptr = defines;
 					defines = defines->next;
 
-					free(defptr->new);
-					free(defptr->old);
+					free(defptr->newval);
+					free(defptr->oldval);
 					free(defptr);
 				}
 
 				for (defptr = defines; defptr != NULL; defptr = defptr->next)
 				{
-					struct _defines *this = defptr->next;
+					struct _defines *d = defptr->next;
 
-					if (this && !this->pertinent)
+					if (d && !d->pertinent)
 					{
-						defptr->next = this->next;
+						defptr->next = d->next;
 
-						free(this->new);
-						free(this->old);
-						free(this);
+						free(d->newval);
+						free(d->oldval);
+						free(d);
 					}
 				}
 
 				/* and old typedefs */
 				for (typeptr = types; typeptr != NULL;)
 				{
-					struct typedefs *this = typeptr;
+					struct typedefs *td = typeptr;
 
 					free(typeptr->name);
 					ECPGfree_struct_member(typeptr->struct_member_list);
 					free(typeptr->type);
 					typeptr = typeptr->next;
-					free(this);
+					free(td);
 				}
 				types = NULL;
 

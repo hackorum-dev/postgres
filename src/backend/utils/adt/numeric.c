@@ -934,7 +934,7 @@ numeric		(PG_FUNCTION_ARGS)
 {
 	Numeric		num = PG_GETARG_NUMERIC(0);
 	int32		typmod = PG_GETARG_INT32(1);
-	Numeric		new;
+	Numeric		newnum;
 	int32		tmp_typmod;
 	int			precision;
 	int			scale;
@@ -954,9 +954,9 @@ numeric		(PG_FUNCTION_ARGS)
 	 */
 	if (typmod < (int32) (VARHDRSZ))
 	{
-		new = (Numeric) palloc(VARSIZE(num));
-		memcpy(new, num, VARSIZE(num));
-		PG_RETURN_NUMERIC(new);
+		newnum = (Numeric) palloc(VARSIZE(num));
+		memcpy(newnum, num, VARSIZE(num));
+		PG_RETURN_NUMERIC(newnum);
 	}
 
 	/*
@@ -979,16 +979,16 @@ numeric		(PG_FUNCTION_ARGS)
 		&& (NUMERIC_CAN_BE_SHORT(scale, NUMERIC_WEIGHT(num))
 			|| !NUMERIC_IS_SHORT(num)))
 	{
-		new = (Numeric) palloc(VARSIZE(num));
-		memcpy(new, num, VARSIZE(num));
+		newnum = (Numeric) palloc(VARSIZE(num));
+		memcpy(newnum, num, VARSIZE(num));
 		if (NUMERIC_IS_SHORT(num))
-			new->choice.n_short.n_header =
+			newnum->choice.n_short.n_header =
 				(num->choice.n_short.n_header & ~NUMERIC_SHORT_DSCALE_MASK)
 				| (scale << NUMERIC_SHORT_DSCALE_SHIFT);
 		else
-			new->choice.n_long.n_sign_dscale = NUMERIC_SIGN(new) |
+			newnum->choice.n_long.n_sign_dscale = NUMERIC_SIGN(newnum) |
 				((uint16) scale & NUMERIC_DSCALE_MASK);
-		PG_RETURN_NUMERIC(new);
+		PG_RETURN_NUMERIC(newnum);
 	}
 
 	/*
@@ -999,11 +999,11 @@ numeric		(PG_FUNCTION_ARGS)
 
 	set_var_from_num(num, &var);
 	apply_typmod(&var, typmod);
-	new = make_result(&var);
+	newnum = make_result(&var);
 
 	free_var(&var);
 
-	PG_RETURN_NUMERIC(new);
+	PG_RETURN_NUMERIC(newnum);
 }
 
 Datum

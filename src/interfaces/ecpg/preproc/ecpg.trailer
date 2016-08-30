@@ -289,7 +289,7 @@ prepared_name: name
  */
 ECPGCursorStmt:  DECLARE cursor_name cursor_options CURSOR opt_hold FOR prepared_name
 		{
-			struct cursor *ptr, *this;
+			struct cursor *ptr, *cursor;
 			char *cursor_marker = $2[0] == ':' ? mm_strdup("$0") : mm_strdup($2);
 			int (* strcmp_fn)(const char *, const char *) = (($2[0] == ':' || $2[0] == '"') ? strcmp : pg_strcasecmp);
 			struct variable *thisquery = (struct variable *)mm_alloc(sizeof(struct variable));
@@ -308,16 +308,16 @@ ECPGCursorStmt:  DECLARE cursor_name cursor_options CURSOR opt_hold FOR prepared
 				}
 			}
 
-			this = (struct cursor *) mm_alloc(sizeof(struct cursor));
+			cursor = (struct cursor *) mm_alloc(sizeof(struct cursor));
 
 			/* initial definition */
-			this->next = cur;
-			this->name = $2;
-			this->function = (current_function ? mm_strdup(current_function) : NULL);
-			this->connection = connection;
-			this->command =  cat_str(6, mm_strdup("declare"), cursor_marker, $3, mm_strdup("cursor"), $5, mm_strdup("for $1"));
-			this->argsresult = NULL;
-			this->argsresult_oos = NULL;
+			cursor->next = cur;
+			cursor->name = $2;
+			cursor->function = (current_function ? mm_strdup(current_function) : NULL);
+			cursor->connection = connection;
+			cursor->command =  cat_str(6, mm_strdup("declare"), cursor_marker, $3, mm_strdup("cursor"), $5, mm_strdup("for $1"));
+			cursor->argsresult = NULL;
+			cursor->argsresult_oos = NULL;
 
 			thisquery->type = &ecpg_query;
 			thisquery->brace_level = 0;
@@ -325,26 +325,26 @@ ECPGCursorStmt:  DECLARE cursor_name cursor_options CURSOR opt_hold FOR prepared
 			thisquery->name = (char *) mm_alloc(sizeof("ECPGprepared_statement(, , __LINE__)") + strlen(con) + strlen($7));
 			sprintf(thisquery->name, "ECPGprepared_statement(%s, %s, __LINE__)", con, $7);
 
-			this->argsinsert = NULL;
-			this->argsinsert_oos = NULL;
+			cursor->argsinsert = NULL;
+			cursor->argsinsert_oos = NULL;
 			if ($2[0] == ':')
 			{
 				struct variable *var = find_variable($2 + 1);
 				remove_variable_from_list(&argsinsert, var);
-				add_variable_to_head(&(this->argsinsert), var, &no_indicator);
+				add_variable_to_head(&(cursor->argsinsert), var, &no_indicator);
 			}
-			add_variable_to_head(&(this->argsinsert), thisquery, &no_indicator);
+			add_variable_to_head(&(cursor->argsinsert), thisquery, &no_indicator);
 
-			cur = this;
+			cur = cursor;
 
-			comment = cat_str(3, mm_strdup("/*"), mm_strdup(this->command), mm_strdup("*/"));
+			comment = cat_str(3, mm_strdup("/*"), mm_strdup(cursor->command), mm_strdup("*/"));
 
 			if ((braces_open > 0) && INFORMIX_MODE) /* we're in a function */
-				$$ = cat_str(3, adjust_outofscope_cursor_vars(this),
+				$$ = cat_str(3, adjust_outofscope_cursor_vars(cursor),
 					mm_strdup("ECPG_informix_reset_sqlca();"),
 					comment);
 			else
-				$$ = cat2_str(adjust_outofscope_cursor_vars(this), comment);
+				$$ = cat2_str(adjust_outofscope_cursor_vars(cursor), comment);
 		}
 		;
 
@@ -625,25 +625,25 @@ var_type:	simple_type
 			else
 			{
 				/* this is for typedef'ed types */
-				struct typedefs *this = get_typedef($1);
+				struct typedefs *td = get_typedef($1);
 
-				$$.type_str = (this->type->type_enum == ECPGt_varchar) ? EMPTY : mm_strdup(this->name);
-				$$.type_enum = this->type->type_enum;
-				$$.type_dimension = this->type->type_dimension;
-				$$.type_index = this->type->type_index;
-				if (this->type->type_sizeof && strlen(this->type->type_sizeof) != 0)
-					$$.type_sizeof = this->type->type_sizeof;
+				$$.type_str = (td->type->type_enum == ECPGt_varchar) ? EMPTY : mm_strdup(td->name);
+				$$.type_enum = td->type->type_enum;
+				$$.type_dimension = td->type->type_dimension;
+				$$.type_index = td->type->type_index;
+				if (td->type->type_sizeof && strlen(td->type->type_sizeof) != 0)
+					$$.type_sizeof = td->type->type_sizeof;
 				else
-					$$.type_sizeof = cat_str(3, mm_strdup("sizeof("), mm_strdup(this->name), mm_strdup(")"));
+					$$.type_sizeof = cat_str(3, mm_strdup("sizeof("), mm_strdup(td->name), mm_strdup(")"));
 
-				struct_member_list[struct_level] = ECPGstruct_member_dup(this->struct_member_list);
+				struct_member_list[struct_level] = ECPGstruct_member_dup(td->struct_member_list);
 			}
 		}
 		| s_struct_union_symbol
 		{
 			/* this is for named structs/unions */
 			char *name;
-			struct typedefs *this;
+			struct typedefs *td;
 			bool forward = (forward_name != NULL && strcmp($1.symbol, forward_name) == 0 && strcmp($1.su, "struct") == 0);
 
 			name = cat2_str($1.su, $1.symbol);
@@ -652,13 +652,13 @@ var_type:	simple_type
 			{
 				/* No */
 
-				this = get_typedef(name);
-				$$.type_str = mm_strdup(this->name);
-				$$.type_enum = this->type->type_enum;
-				$$.type_dimension = this->type->type_dimension;
-				$$.type_index = this->type->type_index;
-				$$.type_sizeof = this->type->type_sizeof;
-				struct_member_list[struct_level] = ECPGstruct_member_dup(this->struct_member_list);
+				td = get_typedef(name);
+				$$.type_str = mm_strdup(td->name);
+				$$.type_enum = td->type->type_enum;
+				$$.type_dimension = td->type->type_dimension;
+				$$.type_index = td->type->type_index;
+				$$.type_sizeof = td->type->type_sizeof;
+				struct_member_list[struct_level] = ECPGstruct_member_dup(td->struct_member_list);
 				free(name);
 			}
 			else
@@ -693,7 +693,7 @@ struct_union_type_with_symbol: s_struct_union_symbol
 		}
 		'{' variable_declarations '}'
 		{
-			struct typedefs *ptr, *this;
+			struct typedefs *ptr, *td;
 			struct this_type su_type;
 
 			ECPGfree_struct_member(struct_member_list[struct_level]);
@@ -716,21 +716,21 @@ struct_union_type_with_symbol: s_struct_union_symbol
 							mmerror(PARSE_ERROR, ET_ERROR, "type \"%s\" is already defined", su_type.type_str);
 			}
 
-			this = (struct typedefs *) mm_alloc(sizeof(struct typedefs));
+			td = (struct typedefs *) mm_alloc(sizeof(struct typedefs));
 
 			/* initial definition */
-			this->next = types;
-			this->name = mm_strdup(su_type.type_str);
-			this->brace_level = braces_open;
-			this->type = (struct this_type *) mm_alloc(sizeof(struct this_type));
-			this->type->type_enum = su_type.type_enum;
-			this->type->type_str = mm_strdup(su_type.type_str);
-			this->type->type_dimension = mm_strdup("-1"); /* dimension of array */
-			this->type->type_index = mm_strdup("-1");	/* length of string */
-			this->type->type_sizeof = ECPGstruct_sizeof;
-			this->struct_member_list = struct_member_list[struct_level];
+			td->next = types;
+			td->name = mm_strdup(su_type.type_str);
+			td->brace_level = braces_open;
+			td->type = (struct this_type *) mm_alloc(sizeof(struct this_type));
+			td->type->type_enum = su_type.type_enum;
+			td->type->type_str = mm_strdup(su_type.type_str);
+			td->type->type_dimension = mm_strdup("-1"); /* dimension of array */
+			td->type->type_index = mm_strdup("-1");	/* length of string */
+			td->type->type_sizeof = ECPGstruct_sizeof;
+			td->struct_member_list = struct_member_list[struct_level];
 
-			types = this;
+			types = td;
 			$$ = cat_str(4, su_type.type_str, mm_strdup("{"), $4, mm_strdup("}"));
 		}
 		;

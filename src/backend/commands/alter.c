@@ -609,7 +609,7 @@ AlterObjectNamespace_internal(Relation rel, Oid objid, Oid nspOid)
 	AclObjectKind acl_kind = get_object_aclkind(classId);
 	Oid			oldNspOid;
 	Datum		name,
-				namespace;
+				nsp;
 	bool		isnull;
 	HeapTuple	tup,
 				newtup;
@@ -624,10 +624,10 @@ AlterObjectNamespace_internal(Relation rel, Oid objid, Oid nspOid)
 
 	name = heap_getattr(tup, Anum_name, RelationGetDescr(rel), &isnull);
 	Assert(!isnull);
-	namespace = heap_getattr(tup, Anum_namespace, RelationGetDescr(rel),
+	nsp = heap_getattr(tup, Anum_namespace, RelationGetDescr(rel),
 							 &isnull);
 	Assert(!isnull);
-	oldNspOid = DatumGetObjectId(namespace);
+	oldNspOid = DatumGetObjectId(nsp);
 
 	/*
 	 * If the object is already in the correct namespace, we don't need to do

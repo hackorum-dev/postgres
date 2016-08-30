@@ -4128,12 +4128,12 @@ ReadRecord(XLogReaderState *xlogreader, XLogRecPtr RecPtr, int emode,
 		   bool fetching_ckpt)
 {
 	XLogRecord *record;
-	XLogPageReadPrivate *private = (XLogPageReadPrivate *) xlogreader->private_data;
+	XLogPageReadPrivate *private_data = (XLogPageReadPrivate *) xlogreader->private_data;
 
 	/* Pass through parameters to XLogPageRead */
-	private->fetching_ckpt = fetching_ckpt;
-	private->emode = emode;
-	private->randAccess = (RecPtr != InvalidXLogRecPtr);
+	private_data->fetching_ckpt = fetching_ckpt;
+	private_data->emode = emode;
+	private_data->randAccess = (RecPtr != InvalidXLogRecPtr);
 
 	/* This is the first attempt to read this page. */
 	lastSourceFailed = false;
@@ -6148,7 +6148,7 @@ StartupXLOG(void)
 	bool		backupFromStandby = false;
 	DBState		dbstate_at_startup;
 	XLogReaderState *xlogreader;
-	XLogPageReadPrivate private;
+	XLogPageReadPrivate private_data;
 	bool		fast_promoted = false;
 	struct stat st;
 
@@ -6285,8 +6285,8 @@ StartupXLOG(void)
 		OwnLatch(&XLogCtl->recoveryWakeupLatch);
 
 	/* Set up XLOG reader facility */
-	MemSet(&private, 0, sizeof(XLogPageReadPrivate));
-	xlogreader = XLogReaderAllocate(&XLogPageRead, &private);
+	MemSet(&private_data, 0, sizeof(XLogPageReadPrivate));
+	xlogreader = XLogReaderAllocate(&XLogPageRead, &private_data);
 	if (!xlogreader)
 		ereport(ERROR,
 				(errcode(ERRCODE_OUT_OF_MEMORY),
@@ -11339,9 +11339,9 @@ static int
 XLogPageRead(XLogReaderState *xlogreader, XLogRecPtr targetPagePtr, int reqLen,
 			 XLogRecPtr targetRecPtr, char *readBuf, TimeLineID *readTLI)
 {
-	XLogPageReadPrivate *private =
+	XLogPageReadPrivate *private_data =
 	(XLogPageReadPrivate *) xlogreader->private_data;
-	int			emode = private->emode;
+	int			emode = private_data->emode;
 	uint32		targetPageOff;
 	XLogSegNo targetSegNo PG_USED_FOR_ASSERTS_ONLY;
 
@@ -11382,8 +11382,8 @@ retry:
 		 receivedUpto < targetPagePtr + reqLen))
 	{
 		if (!WaitForWALToBecomeAvailable(targetPagePtr + reqLen,
-										 private->randAccess,
-										 private->fetching_ckpt,
+										 private_data->randAccess,
+										 private_data->fetching_ckpt,
 										 targetRecPtr))
 		{
 			if (readFile >= 0)

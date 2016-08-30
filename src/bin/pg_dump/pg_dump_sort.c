@@ -224,10 +224,10 @@ DOTypeNameCompare(const void *p1, const void *p2)
 	 * either have or not have a namespace link, so we needn't be fancy about
 	 * cases where one link is null and the other not.
 	 */
-	if (obj1->namespace && obj2->namespace)
+	if (obj1->namespaceinfo && obj2->namespaceinfo)
 	{
-		cmpval = strcmp(obj1->namespace->dobj.name,
-						obj2->namespace->dobj.name);
+		cmpval = strcmp(obj1->namespaceinfo->dobj.name,
+						obj2->namespaceinfo->dobj.name);
 		if (cmpval != 0)
 			return cmpval;
 	}
@@ -254,10 +254,10 @@ DOTypeNameCompare(const void *p1, const void *p2)
 
 			if (argtype1 && argtype2)
 			{
-				if (argtype1->dobj.namespace && argtype2->dobj.namespace)
+				if (argtype1->dobj.namespaceinfo && argtype2->dobj.namespaceinfo)
 				{
-					cmpval = strcmp(argtype1->dobj.namespace->dobj.name,
-									argtype2->dobj.namespace->dobj.name);
+					cmpval = strcmp(argtype1->dobj.namespaceinfo->dobj.name,
+									argtype2->dobj.namespaceinfo->dobj.name);
 					if (cmpval != 0)
 						return cmpval;
 				}

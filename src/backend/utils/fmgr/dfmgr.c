@@ -482,8 +482,8 @@ static char *
 expand_dynamic_library_name(const char *name)
 {
 	bool		have_slash;
-	char	   *new;
-	char	   *full;
+	char	   *newname;
+	char	   *fullname;
 
 	AssertArg(name);
 
@@ -491,34 +491,34 @@ expand_dynamic_library_name(const char *name)
 
 	if (!have_slash)
 	{
-		full = find_in_dynamic_libpath(name);
-		if (full)
-			return full;
+		fullname = find_in_dynamic_libpath(name);
+		if (fullname)
+			return fullname;
 	}
 	else
 	{
-		full = substitute_libpath_macro(name);
-		if (file_exists(full))
-			return full;
-		pfree(full);
+		fullname = substitute_libpath_macro(name);
+		if (file_exists(fullname))
+			return fullname;
+		pfree(fullname);
 	}
 
-	new = psprintf("%s%s", name, DLSUFFIX);
+	newname = psprintf("%s%s", name, DLSUFFIX);
 
 	if (!have_slash)
 	{
-		full = find_in_dynamic_libpath(new);
-		pfree(new);
-		if (full)
-			return full;
+		fullname = find_in_dynamic_libpath(newname);
+		pfree(newname);
+		if (fullname)
+			return fullname;
 	}
 	else
 	{
-		full = substitute_libpath_macro(new);
-		pfree(new);
-		if (file_exists(full))
-			return full;
-		pfree(full);
+		fullname = substitute_libpath_macro(newname);
+		pfree(newname);
+		if (file_exists(fullname))
+			return fullname;
+		pfree(fullname);
 	}
 
 	/*

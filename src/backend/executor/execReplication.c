@@ -63,7 +63,7 @@ build_replindex_scan_key(ScanKey skey, Relation rel, Relation idxrel,
 	/* Build scankey for every attribute in the index. */
 	for (attoff = 0; attoff < RelationGetNumberOfAttributes(idxrel); attoff++)
 	{
-		Oid			operator;
+		Oid			opid;
 		Oid			opfamily;
 		RegProcedure regop;
 		int			pkattno = attoff + 1;
@@ -76,15 +76,15 @@ build_replindex_scan_key(ScanKey skey, Relation rel, Relation idxrel,
 		 */
 		opfamily = get_opclass_family(opclass->values[attoff]);
 
-		operator = get_opfamily_member(opfamily, optype,
+		opid = get_opfamily_member(opfamily, optype,
 									   optype,
 									   BTEqualStrategyNumber);
 
-		if (!OidIsValid(operator))
+		if (!OidIsValid(opid))
 			elog(ERROR, "could not find member %d(%u,%u) of opfamily %u",
 				 BTEqualStrategyNumber, optype, optype, opfamily);
 
-		regop = get_opcode(operator);
+		regop = get_opcode(opid);
 
 		/* Initialize the scankey. */
 		ScanKeyInit(&skey[attoff],

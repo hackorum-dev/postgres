@@ -257,8 +257,8 @@ range_gist_penalty(PG_FUNCTION_ARGS)
 	GISTENTRY  *origentry = (GISTENTRY *) PG_GETARG_POINTER(0);
 	GISTENTRY  *newentry = (GISTENTRY *) PG_GETARG_POINTER(1);
 	float	   *penalty = (float *) PG_GETARG_POINTER(2);
-	RangeType  *orig = DatumGetRangeType(origentry->key);
-	RangeType  *new = DatumGetRangeType(newentry->key);
+	RangeType  *origkey = DatumGetRangeType(origentry->key);
+	RangeType  *newkey = DatumGetRangeType(newentry->key);
 	TypeCacheEntry *typcache;
 	bool		has_subtype_diff;
 	RangeBound	orig_lower,
@@ -268,15 +268,15 @@ range_gist_penalty(PG_FUNCTION_ARGS)
 	bool		orig_empty,
 				new_empty;
 
-	if (RangeTypeGetOid(orig) != RangeTypeGetOid(new))
+	if (RangeTypeGetOid(origkey) != RangeTypeGetOid(newkey))
 		elog(ERROR, "range types do not match");
 
-	typcache = range_get_typcache(fcinfo, RangeTypeGetOid(orig));
+	typcache = range_get_typcache(fcinfo, RangeTypeGetOid(origkey));
 
 	has_subtype_diff = OidIsValid(typcache->rng_subdiff_finfo.fn_oid);
 
-	range_deserialize(typcache, orig, &orig_lower, &orig_upper, &orig_empty);
-	range_deserialize(typcache, new, &new_lower, &new_upper, &new_empty);
+	range_deserialize(typcache, origkey, &orig_lower, &orig_upper, &orig_empty);
+	range_deserialize(typcache, newkey, &new_lower, &new_upper, &new_empty);
 
 	/*
 	 * Distinct branches for handling distinct classes of ranges.  Note that
@@ -295,7 +295,7 @@ range_gist_penalty(PG_FUNCTION_ARGS)
 			 */
 			*penalty = 0.0;
 		}
-		else if (RangeIsOrContainsEmpty(orig))
+		else if (RangeIsOrContainsEmpty(origkey))
 		{
 			/*
 			 * The second case is to insert empty range into range which
@@ -356,7 +356,7 @@ range_gist_penalty(PG_FUNCTION_ARGS)
 			*penalty = 2 * INFINITE_BOUND_PENALTY;
 		}
 
-		if (RangeIsOrContainsEmpty(orig))
+		if (RangeIsOrContainsEmpty(origkey))
 		{
 			/*
 			 * Original range is narrower when it doesn't contain empty
@@ -952,17 +952,17 @@ range_gist_class_split(TypeCacheEntry *typcache,
 	for (i = FirstOffsetNumber; i <= maxoff; i = OffsetNumberNext(i))
 	{
 		RangeType  *range = DatumGetRangeType(entryvec->vector[i].key);
-		int			class;
+		int			classNumber;
 
 		/* Get class of range */
-		class = get_gist_range_class(range);
+		classNumber = get_gist_range_class(range);
 
 		/* Place range to appropriate page */
-		if (classes_groups[class] == SPLIT_LEFT)
+		if (classes_groups[classNumber] == SPLIT_LEFT)
 			PLACE_LEFT(range, i);
 		else
 		{
-			Assert(classes_groups[class] == SPLIT_RIGHT);
+			Assert(classes_groups[classNumber] == SPLIT_RIGHT);
 			PLACE_RIGHT(range, i);
 		}
 	}

@@ -528,7 +528,7 @@ add_typedef(char *name, char *dimension, char *length, enum ECPGttype type_enum,
 			char *type_dimension, char *type_index, int initializer, int array)
 {
 	/* add entry to list */
-	struct typedefs *ptr, *this;
+	struct typedefs *ptr, *td;
 
 	if ((type_enum == ECPGt_struct ||
 		 type_enum == ECPGt_union) &&
@@ -546,29 +546,29 @@ add_typedef(char *name, char *dimension, char *length, enum ECPGttype type_enum,
 		}
 		adjust_array(type_enum, &dimension, &length, type_dimension, type_index, array, true);
 
-		this = (struct typedefs *) mm_alloc(sizeof(struct typedefs));
+		td = (struct typedefs *) mm_alloc(sizeof(struct typedefs));
 
 		/* initial definition */
-		this->next = types;
-		this->name = name;
-		this->brace_level = braces_open;
-		this->type = (struct this_type *) mm_alloc(sizeof(struct this_type));
-		this->type->type_enum = type_enum;
-		this->type->type_str = mm_strdup(name);
-		this->type->type_dimension = dimension; /* dimension of array */
-		this->type->type_index = length;	/* length of string */
-		this->type->type_sizeof = ECPGstruct_sizeof;
-		this->struct_member_list = (type_enum == ECPGt_struct || type_enum == ECPGt_union) ?
+		td->next = types;
+		td->name = name;
+		td->brace_level = braces_open;
+		td->type = (struct this_type *) mm_alloc(sizeof(struct this_type));
+		td->type->type_enum = type_enum;
+		td->type->type_str = mm_strdup(name);
+		td->type->type_dimension = dimension; /* dimension of array */
+		td->type->type_index = length;	/* length of string */
+		td->type->type_sizeof = ECPGstruct_sizeof;
+		td->struct_member_list = (type_enum == ECPGt_struct || type_enum == ECPGt_union) ?
 		ECPGstruct_member_dup(struct_member_list[struct_level]) : NULL;
 
 		if (type_enum != ECPGt_varchar &&
 			type_enum != ECPGt_char &&
 			type_enum != ECPGt_unsigned_char &&
 			type_enum != ECPGt_string &&
-			atoi(this->type->type_index) >= 0)
+			atoi(td->type->type_index) >= 0)
 			mmerror(PARSE_ERROR, ET_ERROR, "multidimensional arrays for simple data types are not supported");
 
-		types = this;
+		types = td;
 	}
 }
 %}

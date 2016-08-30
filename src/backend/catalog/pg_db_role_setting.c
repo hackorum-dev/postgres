@@ -62,7 +62,7 @@ AlterSetting(Oid databaseid, Oid roleid, VariableSetStmt *setstmt)
 	{
 		if (HeapTupleIsValid(tuple))
 		{
-			ArrayType  *new = NULL;
+			ArrayType  *newarray = NULL;
 			Datum		datum;
 			bool		isnull;
 
@@ -70,9 +70,9 @@ AlterSetting(Oid databaseid, Oid roleid, VariableSetStmt *setstmt)
 								 RelationGetDescr(rel), &isnull);
 
 			if (!isnull)
-				new = GUCArrayReset(DatumGetArrayTypeP(datum));
+				newarray = GUCArrayReset(DatumGetArrayTypeP(datum));
 
-			if (new)
+			if (newarray)
 			{
 				Datum		repl_val[Natts_pg_db_role_setting];
 				bool		repl_null[Natts_pg_db_role_setting];
@@ -82,7 +82,7 @@ AlterSetting(Oid databaseid, Oid roleid, VariableSetStmt *setstmt)
 				memset(repl_repl, false, sizeof(repl_repl));
 
 				repl_val[Anum_pg_db_role_setting_setconfig - 1] =
-					PointerGetDatum(new);
+					PointerGetDatum(newarray);
 				repl_repl[Anum_pg_db_role_setting_setconfig - 1] = true;
 				repl_null[Anum_pg_db_role_setting_setconfig - 1] = false;
 

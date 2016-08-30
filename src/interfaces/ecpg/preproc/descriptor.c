@@ -20,13 +20,13 @@ static struct assignment *assignments;
 void
 push_assignment(char *var, enum ECPGdtype value)
 {
-	struct assignment *new = (struct assignment *) mm_alloc(sizeof(struct assignment));
+	struct assignment *newa = (struct assignment *) mm_alloc(sizeof(struct assignment));
 
-	new->next = assignments;
-	new->variable = mm_alloc(strlen(var) + 1);
-	strcpy(new->variable, var);
-	new->value = value;
-	assignments = new;
+	newa->next = assignments;
+	newa->variable = mm_alloc(strlen(var) + 1);
+	strcpy(newa->variable, var);
+	newa->value = value;
+	assignments = newa;
 }
 
 static void
@@ -75,24 +75,24 @@ static struct descriptor *descriptors;
 void
 add_descriptor(char *name, char *connection)
 {
-	struct descriptor *new;
+	struct descriptor *newd;
 
 	if (name[0] != '"')
 		return;
 
-	new = (struct descriptor *) mm_alloc(sizeof(struct descriptor));
+	newd = (struct descriptor *) mm_alloc(sizeof(struct descriptor));
 
-	new->next = descriptors;
-	new->name = mm_alloc(strlen(name) + 1);
-	strcpy(new->name, name);
+	newd->next = descriptors;
+	newd->name = mm_alloc(strlen(name) + 1);
+	strcpy(newd->name, name);
 	if (connection)
 	{
-		new->connection = mm_alloc(strlen(connection) + 1);
-		strcpy(new->connection, connection);
+		newd->connection = mm_alloc(strlen(connection) + 1);
+		strcpy(newd->connection, connection);
 	}
 	else
-		new->connection = connection;
-	descriptors = new;
+		newd->connection = connection;
+	descriptors = newd;
 }
 
 void

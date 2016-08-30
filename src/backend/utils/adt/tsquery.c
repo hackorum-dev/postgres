@@ -220,7 +220,7 @@ typedef enum
  */
 static ts_tokentype
 gettoken_query(TSQueryParserState state,
-			   int8 *operator,
+			   int8 *oper,
 			   int *lenval, char **strval, int16 *weight, bool *prefix)
 {
 	*weight = 0;
@@ -236,7 +236,7 @@ gettoken_query(TSQueryParserState state,
 				{
 					(state->buf)++;		/* can safely ++, t_iseq guarantee
 										 * that pg_mblen()==1 */
-					*operator = OP_NOT;
+					*oper = OP_NOT;
 					state->state = WAITOPERAND;
 					return PT_OPR;
 				}
@@ -280,21 +280,21 @@ gettoken_query(TSQueryParserState state,
 				if (t_iseq(state->buf, '&'))
 				{
 					state->state = WAITOPERAND;
-					*operator = OP_AND;
+					*oper = OP_AND;
 					(state->buf)++;
 					return PT_OPR;
 				}
 				else if (t_iseq(state->buf, '|'))
 				{
 					state->state = WAITOPERAND;
-					*operator = OP_OR;
+					*oper = OP_OR;
 					(state->buf)++;
 					return PT_OPR;
 				}
 				else if (t_iseq(state->buf, '<'))
 				{
 					state->state = WAITOPERAND;
-					*operator = OP_PHRASE;
+					*oper = OP_PHRASE;
 					/* weight var is used as storage for distance */
 					state->buf = parse_phrase_operator(state->buf, weight);
 					if (*weight < 0)
@@ -477,7 +477,7 @@ makepol(TSQueryParserState state,
 		PushFunction pushval,
 		Datum opaque)
 {
-	int8		operator = 0;
+	int8		oper = 0;
 	ts_tokentype type;
 	int			lenval = 0;
 	char	   *strval = NULL;
@@ -489,7 +489,7 @@ makepol(TSQueryParserState state,
 	/* since this function recurses, it could be driven to stack overflow */
 	check_stack_depth();
 
-	while ((type = gettoken_query(state, &operator, &lenval, &strval, &weight, &prefix)) != PT_END)
+	while ((type = gettoken_query(state, &oper, &lenval, &strval, &weight, &prefix)) != PT_END)
 	{
 		switch (type)
 		{
@@ -497,8 +497,8 @@ makepol(TSQueryParserState state,
 				pushval(opaque, state, strval, lenval, weight, prefix);
 				break;
 			case PT_OPR:
-				cleanOpStack(state, opstack, &lenstack, operator);
-				pushOpStack(opstack, &lenstack, operator, weight);
+				cleanOpStack(state, opstack, &lenstack, oper);
+				pushOpStack(opstack, &lenstack, oper, weight);
 				break;
 			case PT_OPEN:
 				makepol(state, pushval, opaque);

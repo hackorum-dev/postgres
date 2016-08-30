@@ -46,14 +46,14 @@ _check_database_version(ArchiveHandle *AH)
 	if (remoteversion == 0 || !remoteversion_str)
 		exit_horribly(modulename, "could not get server_version from libpq\n");
 
-	AH->public.remoteVersionStr = pg_strdup(remoteversion_str);
-	AH->public.remoteVersion = remoteversion;
+	AH->archive.remoteVersionStr = pg_strdup(remoteversion_str);
+	AH->archive.remoteVersion = remoteversion;
 	if (!AH->archiveRemoteVersion)
-		AH->archiveRemoteVersion = AH->public.remoteVersionStr;
+		AH->archiveRemoteVersion = AH->archive.remoteVersionStr;
 
 	if (remoteversion != PG_VERSION_NUM
-		&& (remoteversion < AH->public.minRemoteVersion ||
-			remoteversion > AH->public.maxRemoteVersion))
+		&& (remoteversion < AH->archive.minRemoteVersion ||
+			remoteversion > AH->archive.maxRemoteVersion))
 	{
 		write_msg(NULL, "server version: %s; %s version: %s\n",
 				  remoteversion_str, progname, PG_VERSION);
@@ -68,11 +68,11 @@ _check_database_version(ArchiveHandle *AH)
 	{
 		res = ExecuteSqlQueryForSingleRow((Archive *) AH, "SELECT pg_catalog.pg_is_in_recovery()");
 
-		AH->public.isStandby = (strcmp(PQgetvalue(res, 0, 0), "t") == 0);
+		AH->archive.isStandby = (strcmp(PQgetvalue(res, 0, 0), "t") == 0);
 		PQclear(res);
 	}
 	else
-		AH->public.isStandby = false;
+		AH->archive.isStandby = false;
 }
 
 /*
@@ -551,7 +551,7 @@ ExecuteSimpleCommands(ArchiveHandle *AH, const char *buf, size_t bufLen)
 				/* We needn't handle '' specially */
 				if (ch == '\'' && !AH->sqlparse.backSlash)
 					AH->sqlparse.state = SQL_SCAN;
-				else if (ch == '\\' && !AH->public.std_strings)
+				else if (ch == '\\' && !AH->archive.std_strings)
 					AH->sqlparse.backSlash = !AH->sqlparse.backSlash;
 				else
 					AH->sqlparse.backSlash = false;

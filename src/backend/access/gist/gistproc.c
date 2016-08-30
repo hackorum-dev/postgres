@@ -92,12 +92,12 @@ size_box(const BOX *box)
  * the original BOX's area.  The result can be +Infinity, but not NaN.
  */
 static double
-box_penalty(const BOX *original, const BOX *new)
+box_penalty(const BOX *originalbox, const BOX *newbox)
 {
 	BOX			unionbox;
 
-	rt_box_union(&unionbox, original, new);
-	return size_box(&unionbox) - size_box(original);
+	rt_box_union(&unionbox, originalbox, newbox);
+	return size_box(&unionbox) - size_box(originalbox);
 }
 
 /*

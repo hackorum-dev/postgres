@@ -3352,7 +3352,7 @@ static const char *
 map_sql_type_to_xmlschema_type(Oid typeoid, int typmod)
 {
 	StringInfoData result;
-	const char *typename = map_sql_type_to_xml_name(typeoid, typmod);
+	const char *typname = map_sql_type_to_xml_name(typeoid, typmod);
 
 	initStringInfo(&result);
 
@@ -3368,7 +3368,7 @@ map_sql_type_to_xmlschema_type(Oid typeoid, int typmod)
 	else
 	{
 		appendStringInfo(&result,
-						 "<xsd:simpleType name=\"%s\">\n", typename);
+						 "<xsd:simpleType name=\"%s\">\n", typname);
 
 		switch (typeoid)
 		{

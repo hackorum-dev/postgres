@@ -629,17 +629,17 @@ inet_gist_penalty(PG_FUNCTION_ARGS)
 	GISTENTRY  *origent = (GISTENTRY *) PG_GETARG_POINTER(0);
 	GISTENTRY  *newent = (GISTENTRY *) PG_GETARG_POINTER(1);
 	float	   *penalty = (float *) PG_GETARG_POINTER(2);
-	GistInetKey *orig = DatumGetInetKeyP(origent->key),
-			   *new = DatumGetInetKeyP(newent->key);
+	GistInetKey *origkey = DatumGetInetKeyP(origent->key),
+			   *newkey = DatumGetInetKeyP(newent->key);
 	int			commonbits;
 
-	if (gk_ip_family(orig) == gk_ip_family(new))
+	if (gk_ip_family(origkey) == gk_ip_family(newkey))
 	{
-		if (gk_ip_minbits(orig) <= gk_ip_minbits(new))
+		if (gk_ip_minbits(origkey) <= gk_ip_minbits(newkey))
 		{
-			commonbits = bitncommon(gk_ip_addr(orig), gk_ip_addr(new),
-									Min(gk_ip_commonbits(orig),
-										gk_ip_commonbits(new)));
+			commonbits = bitncommon(gk_ip_addr(origkey), gk_ip_addr(newkey),
+									Min(gk_ip_commonbits(origkey),
+										gk_ip_commonbits(newkey)));
 			if (commonbits > 0)
 				*penalty = 1.0f / commonbits;
 			else

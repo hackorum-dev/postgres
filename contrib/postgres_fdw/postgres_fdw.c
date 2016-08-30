@@ -486,7 +486,7 @@ postgresGetForeignRelSize(PlannerInfo *root,
 	PgFdwRelationInfo *fpinfo;
 	ListCell   *lc;
 	RangeTblEntry *rte = planner_rt_fetch(baserel->relid, root);
-	const char *namespace;
+	const char *nspname;
 	const char *relname;
 	const char *refname;
 
@@ -659,11 +659,11 @@ postgresGetForeignRelSize(PlannerInfo *root,
 	 * not, so always schema-qualify the foreign table name.
 	 */
 	fpinfo->relation_name = makeStringInfo();
-	namespace = get_namespace_name(get_rel_namespace(foreigntableid));
+	nspname = get_namespace_name(get_rel_namespace(foreigntableid));
 	relname = get_rel_name(foreigntableid);
 	refname = rte->eref->aliasname;
 	appendStringInfo(fpinfo->relation_name, "%s.%s",
-					 quote_identifier(namespace),
+					 quote_identifier(nspname),
 					 quote_identifier(relname));
 	if (*refname && strcmp(refname, relname) != 0)
 		appendStringInfo(fpinfo->relation_name, " %s",
@@ -3938,7 +3938,7 @@ postgresImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 			do
 			{
 				char	   *attname;
-				char	   *typename;
+				char	   *typname;
 				char	   *attnotnull;
 				char	   *attdefault;
 				char	   *collname;
@@ -3949,7 +3949,7 @@ postgresImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 					continue;
 
 				attname = PQgetvalue(res, i, 1);
-				typename = PQgetvalue(res, i, 2);
+				typname = PQgetvalue(res, i, 2);
 				attnotnull = PQgetvalue(res, i, 3);
 				attdefault = PQgetisnull(res, i, 4) ? (char *) NULL :
 					PQgetvalue(res, i, 4);
@@ -3966,7 +3966,7 @@ postgresImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 				/* Print column name and type */
 				appendStringInfo(&buf, "  %s %s",
 								 quote_identifier(attname),
-								 typename);
+								 typname);
 
 				/*
 				 * Add column_name option so that renaming the foreign table's

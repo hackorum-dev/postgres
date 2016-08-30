@@ -972,13 +972,13 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 
 		foreach(lc, castNode(List, transformDefElem))
 		{
-			Oid			typeid = typenameTypeId(NULL, lfirst(lc));
-			Oid			elt = get_base_element_type(typeid);
+			Oid			typid = typenameTypeId(NULL, lfirst(lc));
+			Oid			elt = get_base_element_type(typid);
 
-			typeid = elt ? elt : typeid;
+			typid = elt ? elt : typid;
 
-			get_transform_oid(typeid, languageOid, false);
-			trftypes_list = lappend_oid(trftypes_list, typeid);
+			get_transform_oid(typid, languageOid, false);
+			trftypes_list = lappend_oid(trftypes_list, typid);
 		}
 	}
 
@@ -1779,7 +1779,7 @@ check_transform_function(Form_pg_proc procstruct)
 ObjectAddress
 CreateTransform(CreateTransformStmt *stmt)
 {
-	Oid			typeid;
+	Oid			typid;
 	char		typtype;
 	Oid			langid;
 	Oid			fromsqlfuncid;
@@ -1800,8 +1800,8 @@ CreateTransform(CreateTransformStmt *stmt)
 	/*
 	 * Get the type
 	 */
-	typeid = typenameTypeId(NULL, stmt->type_name);
-	typtype = get_typtype(typeid);
+	typid = typenameTypeId(NULL, stmt->type_name);
+	typtype = get_typtype(typid);
 
 	if (typtype == TYPTYPE_PSEUDO)
 		ereport(ERROR,
@@ -1815,12 +1815,12 @@ CreateTransform(CreateTransformStmt *stmt)
 				 errmsg("data type %s is a domain",
 						TypeNameToString(stmt->type_name))));
 
-	if (!pg_type_ownercheck(typeid, GetUserId()))
-		aclcheck_error_type(ACLCHECK_NOT_OWNER, typeid);
+	if (!pg_type_ownercheck(typid, GetUserId()))
+		aclcheck_error_type(ACLCHECK_NOT_OWNER, typid);
 
-	aclresult = pg_type_aclcheck(typeid, GetUserId(), ACL_USAGE);
+	aclresult = pg_type_aclcheck(typid, GetUserId(), ACL_USAGE);
 	if (aclresult != ACLCHECK_OK)
-		aclcheck_error_type(aclresult, typeid);
+		aclcheck_error_type(aclresult, typid);
 
 	/*
 	 * Get the language
@@ -1875,7 +1875,7 @@ CreateTransform(CreateTransformStmt *stmt)
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "cache lookup failed for function %u", tosqlfuncid);
 		procstruct = (Form_pg_proc) GETSTRUCT(tuple);
-		if (procstruct->prorettype != typeid)
+		if (procstruct->prorettype != typid)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 					 errmsg("return data type of TO SQL function must be the transform data type")));
@@ -1888,7 +1888,7 @@ CreateTransform(CreateTransformStmt *stmt)
 	/*
 	 * Ready to go
 	 */
-	values[Anum_pg_transform_trftype - 1] = ObjectIdGetDatum(typeid);
+	values[Anum_pg_transform_trftype - 1] = ObjectIdGetDatum(typid);
 	values[Anum_pg_transform_trflang - 1] = ObjectIdGetDatum(langid);
 	values[Anum_pg_transform_trffromsql - 1] = ObjectIdGetDatum(fromsqlfuncid);
 	values[Anum_pg_transform_trftosql - 1] = ObjectIdGetDatum(tosqlfuncid);
@@ -1898,7 +1898,7 @@ CreateTransform(CreateTransformStmt *stmt)
 	relation = heap_open(TransformRelationId, RowExclusiveLock);
 
 	tuple = SearchSysCache2(TRFTYPELANG,
-							ObjectIdGetDatum(typeid),
+							ObjectIdGetDatum(typid),
 							ObjectIdGetDatum(langid));
 	if (HeapTupleIsValid(tuple))
 	{
@@ -1906,7 +1906,7 @@ CreateTransform(CreateTransformStmt *stmt)
 			ereport(ERROR,
 					(errcode(ERRCODE_DUPLICATE_OBJECT),
 			   errmsg("transform for type %s language \"%s\" already exists",
-					  format_type_be(typeid),
+					  format_type_be(typid),
 					  stmt->lang)));
 
 		MemSet(replaces, false, sizeof(replaces));
@@ -1943,7 +1943,7 @@ CreateTransform(CreateTransformStmt *stmt)
 
 	/* dependency on type */
 	referenced.classId = TypeRelationId;
-	referenced.objectId = typeid;
+	referenced.objectId = typid;
 	referenced.objectSubId = 0;
 	recordDependencyOn(&myself, &referenced, DEPENDENCY_NORMAL);
 

@@ -246,7 +246,7 @@ static void exec_assign_value(PLpgSQL_execstate *estate,
 				  Oid valtype, int32 valtypmod);
 static void exec_eval_datum(PLpgSQL_execstate *estate,
 				PLpgSQL_datum *datum,
-				Oid *typeid,
+				Oid *typid,
 				int32 *typetypmod,
 				Datum *value,
 				bool *isnull);
@@ -1032,29 +1032,29 @@ copy_plpgsql_datum(PLpgSQL_datum *datum)
 	{
 		case PLPGSQL_DTYPE_VAR:
 			{
-				PLpgSQL_var *new = palloc(sizeof(PLpgSQL_var));
+				PLpgSQL_var *newvar = palloc(sizeof(PLpgSQL_var));
 
-				memcpy(new, datum, sizeof(PLpgSQL_var));
+				memcpy(newvar, datum, sizeof(PLpgSQL_var));
 				/* should be preset to null/non-freeable */
-				Assert(new->isnull);
-				Assert(!new->freeval);
+				Assert(newvar->isnull);
+				Assert(!newvar->freeval);
 
-				result = (PLpgSQL_datum *) new;
+				result = (PLpgSQL_datum *) newvar;
 			}
 			break;
 
 		case PLPGSQL_DTYPE_REC:
 			{
-				PLpgSQL_rec *new = palloc(sizeof(PLpgSQL_rec));
+				PLpgSQL_rec *newrec = palloc(sizeof(PLpgSQL_rec));
 
-				memcpy(new, datum, sizeof(PLpgSQL_rec));
+				memcpy(newrec, datum, sizeof(PLpgSQL_rec));
 				/* should be preset to null/non-freeable */
-				Assert(new->tup == NULL);
-				Assert(new->tupdesc == NULL);
-				Assert(!new->freetup);
-				Assert(!new->freetupdesc);
+				Assert(newrec->tup == NULL);
+				Assert(newrec->tupdesc == NULL);
+				Assert(!newrec->freetup);
+				Assert(!newrec->freetupdesc);
 
-				result = (PLpgSQL_datum *) new;
+				result = (PLpgSQL_datum *) newrec;
 			}
 			break;
 
@@ -3361,13 +3361,13 @@ exec_stmt_assert(PLpgSQL_execstate *estate, PLpgSQL_stmt_assert *stmt)
 		if (stmt->message != NULL)
 		{
 			Datum		val;
-			Oid			typeid;
+			Oid			typid;
 			int32		typmod;
 
 			val = exec_eval_expr(estate, stmt->message,
-								 &isnull, &typeid, &typmod);
+								 &isnull, &typid, &typmod);
 			if (!isnull)
-				message = convert_value_to_string(estate, val, typeid);
+				message = convert_value_to_string(estate, val, typid);
 			/* we mustn't do exec_eval_cleanup here */
 		}
 
@@ -4823,7 +4823,7 @@ exec_assign_value(PLpgSQL_execstate *estate,
 static void
 exec_eval_datum(PLpgSQL_execstate *estate,
 				PLpgSQL_datum *datum,
-				Oid *typeid,
+				Oid *typid,
 				int32 *typetypmod,
 				Datum *value,
 				bool *isnull)
@@ -4836,7 +4836,7 @@ exec_eval_datum(PLpgSQL_execstate *estate,
 			{
 				PLpgSQL_var *var = (PLpgSQL_var *) datum;
 
-				*typeid = var->datatype->typoid;
+				*typid = var->datatype->typoid;
 				*typetypmod = var->datatype->atttypmod;
 				*value = var->value;
 				*isnull = var->isnull;
@@ -4856,7 +4856,7 @@ exec_eval_datum(PLpgSQL_execstate *estate,
 				tup = make_tuple_from_row(estate, row, row->rowtupdesc);
 				if (tup == NULL)	/* should not happen */
 					elog(ERROR, "row not compatible with its own tupdesc");
-				*typeid = row->rowtupdesc->tdtypeid;
+				*typid = row->rowtupdesc->tdtypeid;
 				*typetypmod = row->rowtupdesc->tdtypmod;
 				*value = HeapTupleGetDatum(tup);
 				*isnull = false;
@@ -4879,7 +4879,7 @@ exec_eval_datum(PLpgSQL_execstate *estate,
 				BlessTupleDesc(rec->tupdesc);
 
 				oldcontext = MemoryContextSwitchTo(get_eval_mcontext(estate));
-				*typeid = rec->tupdesc->tdtypeid;
+				*typid = rec->tupdesc->tdtypeid;
 				*typetypmod = rec->tupdesc->tdtypmod;
 				*value = heap_copy_tuple_as_datum(rec->tup, rec->tupdesc);
 				*isnull = false;
@@ -4906,7 +4906,7 @@ exec_eval_datum(PLpgSQL_execstate *estate,
 							(errcode(ERRCODE_UNDEFINED_COLUMN),
 							 errmsg("record \"%s\" has no field \"%s\"",
 									rec->refname, recfield->fieldname)));
-				*typeid = SPI_gettypeid(rec->tupdesc, fno);
+				*typid = SPI_gettypeid(rec->tupdesc, fno);
 				if (fno > 0)
 					*typetypmod = rec->tupdesc->attrs[fno - 1]->atttypmod;
 				else
@@ -4932,7 +4932,7 @@ Oid
 plpgsql_exec_get_datum_type(PLpgSQL_execstate *estate,
 							PLpgSQL_datum *datum)
 {
-	Oid			typeid;
+	Oid			typid;
 
 	switch (datum->dtype)
 	{
@@ -4940,7 +4940,7 @@ plpgsql_exec_get_datum_type(PLpgSQL_execstate *estate,
 			{
 				PLpgSQL_var *var = (PLpgSQL_var *) datum;
 
-				typeid = var->datatype->typoid;
+				typid = var->datatype->typoid;
 				break;
 			}
 
@@ -4952,7 +4952,7 @@ plpgsql_exec_get_datum_type(PLpgSQL_execstate *estate,
 					elog(ERROR, "row variable has no tupdesc");
 				/* Make sure we have a valid type/typmod setting */
 				BlessTupleDesc(row->rowtupdesc);
-				typeid = row->rowtupdesc->tdtypeid;
+				typid = row->rowtupdesc->tdtypeid;
 				break;
 			}
 
@@ -4968,7 +4968,7 @@ plpgsql_exec_get_datum_type(PLpgSQL_execstate *estate,
 						   errdetail("The tuple structure of a not-yet-assigned record is indeterminate.")));
 				/* Make sure we have a valid type/typmod setting */
 				BlessTupleDesc(rec->tupdesc);
-				typeid = rec->tupdesc->tdtypeid;
+				typid = rec->tupdesc->tdtypeid;
 				break;
 			}
 
@@ -4991,17 +4991,17 @@ plpgsql_exec_get_datum_type(PLpgSQL_execstate *estate,
 							(errcode(ERRCODE_UNDEFINED_COLUMN),
 							 errmsg("record \"%s\" has no field \"%s\"",
 									rec->refname, recfield->fieldname)));
-				typeid = SPI_gettypeid(rec->tupdesc, fno);
+				typid = SPI_gettypeid(rec->tupdesc, fno);
 				break;
 			}
 
 		default:
 			elog(ERROR, "unrecognized dtype: %d", datum->dtype);
-			typeid = InvalidOid;	/* keep compiler quiet */
+			typid = InvalidOid;	/* keep compiler quiet */
 			break;
 	}
 
-	return typeid;
+	return typid;
 }
 
 /*
@@ -5013,7 +5013,7 @@ plpgsql_exec_get_datum_type(PLpgSQL_execstate *estate,
 void
 plpgsql_exec_get_datum_type_info(PLpgSQL_execstate *estate,
 								 PLpgSQL_datum *datum,
-								 Oid *typeid, int32 *typmod, Oid *collation)
+								 Oid *typid, int32 *typmod, Oid *collation)
 {
 	switch (datum->dtype)
 	{
@@ -5021,7 +5021,7 @@ plpgsql_exec_get_datum_type_info(PLpgSQL_execstate *estate,
 			{
 				PLpgSQL_var *var = (PLpgSQL_var *) datum;
 
-				*typeid = var->datatype->typoid;
+				*typid = var->datatype->typoid;
 				*typmod = var->datatype->atttypmod;
 				*collation = var->datatype->collation;
 				break;
@@ -5035,7 +5035,7 @@ plpgsql_exec_get_datum_type_info(PLpgSQL_execstate *estate,
 					elog(ERROR, "row variable has no tupdesc");
 				/* Make sure we have a valid type/typmod setting */
 				BlessTupleDesc(row->rowtupdesc);
-				*typeid = row->rowtupdesc->tdtypeid;
+				*typid = row->rowtupdesc->tdtypeid;
 				/* do NOT return the mutable typmod of a RECORD variable */
 				*typmod = -1;
 				/* composite types are never collatable */
@@ -5055,7 +5055,7 @@ plpgsql_exec_get_datum_type_info(PLpgSQL_execstate *estate,
 						   errdetail("The tuple structure of a not-yet-assigned record is indeterminate.")));
 				/* Make sure we have a valid type/typmod setting */
 				BlessTupleDesc(rec->tupdesc);
-				*typeid = rec->tupdesc->tdtypeid;
+				*typid = rec->tupdesc->tdtypeid;
 				/* do NOT return the mutable typmod of a RECORD variable */
 				*typmod = -1;
 				/* composite types are never collatable */
@@ -5082,7 +5082,7 @@ plpgsql_exec_get_datum_type_info(PLpgSQL_execstate *estate,
 							(errcode(ERRCODE_UNDEFINED_COLUMN),
 							 errmsg("record \"%s\" has no field \"%s\"",
 									rec->refname, recfield->fieldname)));
-				*typeid = SPI_gettypeid(rec->tupdesc, fno);
+				*typid = SPI_gettypeid(rec->tupdesc, fno);
 				if (fno > 0)
 					*typmod = rec->tupdesc->attrs[fno - 1]->atttypmod;
 				else
@@ -5096,7 +5096,7 @@ plpgsql_exec_get_datum_type_info(PLpgSQL_execstate *estate,
 
 		default:
 			elog(ERROR, "unrecognized dtype: %d", datum->dtype);
-			*typeid = InvalidOid;		/* keep compiler quiet */
+			*typid = InvalidOid;		/* keep compiler quiet */
 			*typmod = -1;
 			*collation = InvalidOid;
 			break;

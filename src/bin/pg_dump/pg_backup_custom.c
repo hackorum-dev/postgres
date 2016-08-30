@@ -272,7 +272,7 @@ _PrintExtraToc(ArchiveHandle *AH, TocEntry *te)
 {
 	lclTocEntry *ctx = (lclTocEntry *) te->formatData;
 
-	if (AH->public.verbose)
+	if (AH->archive.verbose)
 		ahprintf(AH, "-- Data Pos: " INT64_FORMAT "\n",
 				 (int64) ctx->dataPos);
 }
@@ -495,7 +495,7 @@ _PrintTocData(ArchiveHandle *AH, TocEntry *te)
 			break;
 
 		case BLK_BLOBS:
-			_LoadBlobs(AH, AH->public.ropt->dropSchema);
+			_LoadBlobs(AH, AH->archive.ropt->dropSchema);
 			break;
 
 		default:				/* Always have a default */

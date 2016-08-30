@@ -437,9 +437,9 @@ oidvectortypes(PG_FUNCTION_ARGS)
 
 	for (num = 0; num < numargs; num++)
 	{
-		char	   *typename = format_type_internal(oidArray->values[num], -1,
+		char	   *typname = format_type_internal(oidArray->values[num], -1,
 													false, true, false);
-		size_t		slen = strlen(typename);
+		size_t		slen = strlen(typname);
 
 		if (left < (slen + 2))
 		{
@@ -453,7 +453,7 @@ oidvectortypes(PG_FUNCTION_ARGS)
 			strcat(result, ", ");
 			left -= 2;
 		}
-		strcat(result, typename);
+		strcat(result, typname);
 		left -= slen;
 	}
 

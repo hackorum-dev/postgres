@@ -469,7 +469,7 @@ flagInhAttrs(DumpOptions *dopt, TableInfo *tblinfo, int numTables)
 				attrDef->dobj.catId.oid = 0;
 				AssignDumpId(&attrDef->dobj);
 				attrDef->dobj.name = pg_strdup(tbinfo->dobj.name);
-				attrDef->dobj.namespace = tbinfo->dobj.namespace;
+				attrDef->dobj.namespaceinfo = tbinfo->dobj.namespaceinfo;
 				attrDef->dobj.dump = tbinfo->dobj.dump;
 
 				attrDef->adtable = tbinfo;
@@ -510,7 +510,7 @@ AssignDumpId(DumpableObject *dobj)
 {
 	dobj->dumpId = ++lastDumpId;
 	dobj->name = NULL;			/* must be set later */
-	dobj->namespace = NULL;		/* may be set later */
+	dobj->namespaceinfo = NULL;		/* may be set later */
 	dobj->dump = DUMP_COMPONENT_ALL;	/* default assumption */
 	dobj->ext_member = false;	/* default assumption */
 	dobj->dependencies = NULL;

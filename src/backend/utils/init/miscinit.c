@@ -92,16 +92,16 @@ SetDatabasePath(const char *path)
 void
 SetDataDir(const char *dir)
 {
-	char	   *new;
+	char	   *newdir;
 
 	AssertArg(dir);
 
 	/* If presented path is relative, convert to absolute */
-	new = make_absolute_path(dir);
+	newdir = make_absolute_path(dir);
 
 	if (DataDir)
 		free(DataDir);
-	DataDir = new;
+	DataDir = newdir;
 }
 
 /*

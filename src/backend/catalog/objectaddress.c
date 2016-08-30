@@ -936,9 +936,9 @@ get_object_address(ObjectType objtype, List *objname, List *objargs,
 				break;
 			case OBJECT_TRANSFORM:
 				{
-					TypeName   *typename = (TypeName *) linitial(objname);
+					TypeName   *typname = (TypeName *) linitial(objname);
 					char	   *langname = strVal(linitial(objargs));
-					Oid			type_id = LookupTypeNameOid(NULL, typename, missing_ok);
+					Oid			type_id = LookupTypeNameOid(NULL, typname, missing_ok);
 					Oid			lang_id = get_language_oid(langname, missing_ok);
 
 					address.classId = TransformRelationId;
@@ -1533,23 +1533,23 @@ static ObjectAddress
 get_object_address_type(ObjectType objtype, ListCell *typecell, bool missing_ok)
 {
 	ObjectAddress address;
-	TypeName   *typename;
+	TypeName   *typname;
 	Type		tup;
 
-	typename = (TypeName *) lfirst(typecell);
+	typname = (TypeName *) lfirst(typecell);
 
 	address.classId = TypeRelationId;
 	address.objectId = InvalidOid;
 	address.objectSubId = 0;
 
-	tup = LookupTypeName(NULL, typename, NULL, missing_ok);
+	tup = LookupTypeName(NULL, typname, NULL, missing_ok);
 	if (!HeapTupleIsValid(tup))
 	{
 		if (!missing_ok)
 			ereport(ERROR,
 					(errcode(ERRCODE_UNDEFINED_OBJECT),
 					 errmsg("type \"%s\" does not exist",
-							TypeNameToString(typename))));
+							TypeNameToString(typname))));
 		return address;
 	}
 	address.objectId = typeTypeId(tup);
@@ -1560,7 +1560,7 @@ get_object_address_type(ObjectType objtype, ListCell *typecell, bool missing_ok)
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("\"%s\" is not a domain",
-							TypeNameToString(typename))));
+							TypeNameToString(typname))));
 	}
 
 	ReleaseSysCache(tup);
@@ -2285,11 +2285,11 @@ check_object_ownership(Oid roleid, ObjectType objtype, ObjectAddress address,
 			break;
 		case OBJECT_TRANSFORM:
 			{
-				TypeName   *typename = (TypeName *) linitial(objname);
-				Oid			typeid = typenameTypeId(NULL, typename);
+				TypeName   *typname = (TypeName *) linitial(objname);
+				Oid			typid = typenameTypeId(NULL, typname);
 
-				if (!pg_type_ownercheck(typeid, roleid))
-					aclcheck_error_type(ACLCHECK_NOT_OWNER, typeid);
+				if (!pg_type_ownercheck(typid, roleid))
+					aclcheck_error_type(ACLCHECK_NOT_OWNER, typid);
 			}
 			break;
 		case OBJECT_TABLESPACE:

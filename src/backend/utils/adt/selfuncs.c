@@ -39,13 +39,13 @@
  * The call convention for a restriction estimator (oprrest function) is
  *
  *		Selectivity oprrest (PlannerInfo *root,
- *							 Oid operator,
+ *							 Oid opid,
  *							 List *args,
  *							 int varRelid);
  *
  * root: general information about the query (rtable and RelOptInfo lists
  * are particularly important for the estimator).
- * operator: OID of the specific operator in question.
+ * opid: OID of the specific operator in question.
  * args: argument list from the operator clause.
  * varRelid: if not zero, the relid (rtable index) of the relation to
  * be treated as the variable relation.  May be zero if the args list
@@ -64,7 +64,7 @@
  * supplied:
  *
  *		Selectivity oprjoin (PlannerInfo *root,
- *							 Oid operator,
+ *							 Oid opid,
  *							 List *args,
  *							 JoinType jointype,
  *							 SpecialJoinInfo *sjinfo);
@@ -148,19 +148,19 @@
 get_relation_stats_hook_type get_relation_stats_hook = NULL;
 get_index_stats_hook_type get_index_stats_hook = NULL;
 
-static double var_eq_const(VariableStatData *vardata, Oid operator,
+static double var_eq_const(VariableStatData *vardata, Oid opid,
 			 Datum constval, bool constisnull,
 			 bool varonleft);
-static double var_eq_non_const(VariableStatData *vardata, Oid operator,
+static double var_eq_non_const(VariableStatData *vardata, Oid opid,
 				 Node *other,
 				 bool varonleft);
 static double ineq_histogram_selectivity(PlannerInfo *root,
 						   VariableStatData *vardata,
 						   FmgrInfo *opproc, bool isgt,
 						   Datum constval, Oid consttype);
-static double eqjoinsel_inner(Oid operator,
+static double eqjoinsel_inner(Oid opid,
 				VariableStatData *vardata1, VariableStatData *vardata2);
-static double eqjoinsel_semi(Oid operator,
+static double eqjoinsel_semi(Oid opid,
 			   VariableStatData *vardata1, VariableStatData *vardata2,
 			   RelOptInfo *inner_rel);
 static bool convert_to_scalar(Datum value, Oid valuetypid, double *scaledvalue,
@@ -220,7 +220,7 @@ Datum
 eqsel(PG_FUNCTION_ARGS)
 {
 	PlannerInfo *root = (PlannerInfo *) PG_GETARG_POINTER(0);
-	Oid			operator = PG_GETARG_OID(1);
+	Oid			opid = PG_GETARG_OID(1);
 	List	   *args = (List *) PG_GETARG_POINTER(2);
 	int			varRelid = PG_GETARG_INT32(3);
 	VariableStatData vardata;
@@ -242,12 +242,12 @@ eqsel(PG_FUNCTION_ARGS)
 	 * in the query.)
 	 */
 	if (IsA(other, Const))
-		selec = var_eq_const(&vardata, operator,
+		selec = var_eq_const(&vardata, opid,
 							 ((Const *) other)->constvalue,
 							 ((Const *) other)->constisnull,
 							 varonleft);
 	else
-		selec = var_eq_non_const(&vardata, operator, other,
+		selec = var_eq_non_const(&vardata, opid, other,
 								 varonleft);
 
 	ReleaseVariableStats(vardata);
@@ -261,7 +261,7 @@ eqsel(PG_FUNCTION_ARGS)
  * This is split out so that some other estimation functions can use it.
  */
 static double
-var_eq_const(VariableStatData *vardata, Oid operator,
+var_eq_const(VariableStatData *vardata, Oid opid,
 			 Datum constval, bool constisnull,
 			 bool varonleft)
 {
@@ -313,7 +313,7 @@ var_eq_const(VariableStatData *vardata, Oid operator,
 		{
 			FmgrInfo	eqproc;
 
-			fmgr_info(get_opcode(operator), &eqproc);
+			fmgr_info(get_opcode(opid), &eqproc);
 
 			for (i = 0; i < nvalues; i++)
 			{
@@ -403,7 +403,7 @@ var_eq_const(VariableStatData *vardata, Oid operator,
  * var_eq_non_const --- eqsel for var = something-other-than-const case
  */
 static double
-var_eq_non_const(VariableStatData *vardata, Oid operator,
+var_eq_non_const(VariableStatData *vardata, Oid opid,
 				 Node *other,
 				 bool varonleft)
 {
@@ -487,7 +487,7 @@ Datum
 neqsel(PG_FUNCTION_ARGS)
 {
 	PlannerInfo *root = (PlannerInfo *) PG_GETARG_POINTER(0);
-	Oid			operator = PG_GETARG_OID(1);
+	Oid			opid = PG_GETARG_OID(1);
 	List	   *args = (List *) PG_GETARG_POINTER(2);
 	int			varRelid = PG_GETARG_INT32(3);
 	Oid			eqop;
@@ -497,7 +497,7 @@ neqsel(PG_FUNCTION_ARGS)
 	 * We want 1 - eqsel() where the equality operator is the one associated
 	 * with this != operator, that is, its negator.
 	 */
-	eqop = get_negator(operator);
+	eqop = get_negator(opid);
 	if (eqop)
 	{
 		result = DatumGetFloat8(DirectFunctionCall4(eqsel,
@@ -529,7 +529,7 @@ neqsel(PG_FUNCTION_ARGS)
  * it will return a default estimate.
  */
 static double
-scalarineqsel(PlannerInfo *root, Oid operator, bool isgt,
+scalarineqsel(PlannerInfo *root, Oid opid, bool isgt,
 			  VariableStatData *vardata, Datum constval, Oid consttype)
 {
 	Form_pg_statistic stats;
@@ -546,7 +546,7 @@ scalarineqsel(PlannerInfo *root, Oid operator, bool isgt,
 	}
 	stats = (Form_pg_statistic) GETSTRUCT(vardata->statsTuple);
 
-	fmgr_info(get_opcode(operator), &opproc);
+	fmgr_info(get_opcode(opid), &opproc);
 
 	/*
 	 * If we have most-common-values info, add up the fractions of the MCV
@@ -963,7 +963,7 @@ Datum
 scalarltsel(PG_FUNCTION_ARGS)
 {
 	PlannerInfo *root = (PlannerInfo *) PG_GETARG_POINTER(0);
-	Oid			operator = PG_GETARG_OID(1);
+	Oid			opid = PG_GETARG_OID(1);
 	List	   *args = (List *) PG_GETARG_POINTER(2);
 	int			varRelid = PG_GETARG_INT32(3);
 	VariableStatData vardata;
@@ -1014,8 +1014,8 @@ scalarltsel(PG_FUNCTION_ARGS)
 	else
 	{
 		/* we have other < var, commute to make var > other */
-		operator = get_commutator(operator);
-		if (!operator)
+		opid = get_commutator(opid);
+		if (!opid)
 		{
 			/* Use default selectivity (should we raise an error instead?) */
 			ReleaseVariableStats(vardata);
@@ -1024,7 +1024,7 @@ scalarltsel(PG_FUNCTION_ARGS)
 		isgt = true;
 	}
 
-	selec = scalarineqsel(root, operator, isgt, &vardata, constval, consttype);
+	selec = scalarineqsel(root, opid, isgt, &vardata, constval, consttype);
 
 	ReleaseVariableStats(vardata);
 
@@ -1038,7 +1038,7 @@ Datum
 scalargtsel(PG_FUNCTION_ARGS)
 {
 	PlannerInfo *root = (PlannerInfo *) PG_GETARG_POINTER(0);
-	Oid			operator = PG_GETARG_OID(1);
+	Oid			opid = PG_GETARG_OID(1);
 	List	   *args = (List *) PG_GETARG_POINTER(2);
 	int			varRelid = PG_GETARG_INT32(3);
 	VariableStatData vardata;
@@ -1089,8 +1089,8 @@ scalargtsel(PG_FUNCTION_ARGS)
 	else
 	{
 		/* we have other > var, commute to make var < other */
-		operator = get_commutator(operator);
-		if (!operator)
+		opid = get_commutator(opid);
+		if (!opid)
 		{
 			/* Use default selectivity (should we raise an error instead?) */
 			ReleaseVariableStats(vardata);
@@ -1099,7 +1099,7 @@ scalargtsel(PG_FUNCTION_ARGS)
 		isgt = false;
 	}
 
-	selec = scalarineqsel(root, operator, isgt, &vardata, constval, consttype);
+	selec = scalarineqsel(root, opid, isgt, &vardata, constval, consttype);
 
 	ReleaseVariableStats(vardata);
 
@@ -1113,7 +1113,7 @@ static double
 patternsel(PG_FUNCTION_ARGS, Pattern_Type ptype, bool negate)
 {
 	PlannerInfo *root = (PlannerInfo *) PG_GETARG_POINTER(0);
-	Oid			operator = PG_GETARG_OID(1);
+	Oid			opid = PG_GETARG_OID(1);
 	List	   *args = (List *) PG_GETARG_POINTER(2);
 	int			varRelid = PG_GETARG_INT32(3);
 	Oid			collation = PG_GET_COLLATION();
@@ -1137,8 +1137,8 @@ patternsel(PG_FUNCTION_ARGS, Pattern_Type ptype, bool negate)
 	 */
 	if (negate)
 	{
-		operator = get_negator(operator);
-		if (!OidIsValid(operator))
+		opid = get_negator(opid);
+		if (!OidIsValid(opid))
 			elog(ERROR, "patternsel called for operator without a negator");
 		result = 1.0 - DEFAULT_MATCH_SEL;
 	}
@@ -1294,7 +1294,7 @@ patternsel(PG_FUNCTION_ARGS, Pattern_Type ptype, bool negate)
 					sumcommon;
 
 		/* Try to use the histogram entries to get selectivity */
-		fmgr_info(get_opcode(operator), &opproc);
+		fmgr_info(get_opcode(opid), &opproc);
 
 		selec = histogram_selectivity(&vardata, &opproc, constval, true,
 									  10, 1, &hist_size);
@@ -1763,7 +1763,7 @@ scalararraysel(PlannerInfo *root,
 			   JoinType jointype,
 			   SpecialJoinInfo *sjinfo)
 {
-	Oid			operator = clause->opno;
+	Oid			opid = clause->opno;
 	bool		useOr = clause->useOr;
 	bool		isEquality = false;
 	bool		isInequality = false;
@@ -1803,9 +1803,9 @@ scalararraysel(PlannerInfo *root,
 	typentry = lookup_type_cache(nominal_element_type, TYPECACHE_EQ_OPR);
 	if (OidIsValid(typentry->eq_opr))
 	{
-		if (operator == typentry->eq_opr)
+		if (opid == typentry->eq_opr)
 			isEquality = true;
-		else if (get_negator(operator) == typentry->eq_opr)
+		else if (get_negator(opid) == typentry->eq_opr)
 			isInequality = true;
 	}
 
@@ -1829,9 +1829,9 @@ scalararraysel(PlannerInfo *root,
 	 * hasn't got one.
 	 */
 	if (is_join_clause)
-		oprsel = get_oprjoin(operator);
+		oprsel = get_oprjoin(opid);
 	else
-		oprsel = get_oprrest(operator);
+		oprsel = get_oprrest(opid);
 	if (!oprsel)
 		return (Selectivity) 0.5;
 	fmgr_info(oprsel, &oprselproc);
@@ -1917,7 +1917,7 @@ scalararraysel(PlannerInfo *root,
 				s2 = DatumGetFloat8(FunctionCall5Coll(&oprselproc,
 													  clause->inputcollid,
 													  PointerGetDatum(root),
-												  ObjectIdGetDatum(operator),
+												  ObjectIdGetDatum(opid),
 													  PointerGetDatum(args),
 													  Int16GetDatum(jointype),
 												   PointerGetDatum(sjinfo)));
@@ -1925,7 +1925,7 @@ scalararraysel(PlannerInfo *root,
 				s2 = DatumGetFloat8(FunctionCall4Coll(&oprselproc,
 													  clause->inputcollid,
 													  PointerGetDatum(root),
-												  ObjectIdGetDatum(operator),
+												  ObjectIdGetDatum(opid),
 													  PointerGetDatum(args),
 												   Int32GetDatum(varRelid)));
 
@@ -1984,7 +1984,7 @@ scalararraysel(PlannerInfo *root,
 				s2 = DatumGetFloat8(FunctionCall5Coll(&oprselproc,
 													  clause->inputcollid,
 													  PointerGetDatum(root),
-												  ObjectIdGetDatum(operator),
+												  ObjectIdGetDatum(opid),
 													  PointerGetDatum(args),
 													  Int16GetDatum(jointype),
 												   PointerGetDatum(sjinfo)));
@@ -1992,7 +1992,7 @@ scalararraysel(PlannerInfo *root,
 				s2 = DatumGetFloat8(FunctionCall4Coll(&oprselproc,
 													  clause->inputcollid,
 													  PointerGetDatum(root),
-												  ObjectIdGetDatum(operator),
+												  ObjectIdGetDatum(opid),
 													  PointerGetDatum(args),
 												   Int32GetDatum(varRelid)));
 
@@ -2036,7 +2036,7 @@ scalararraysel(PlannerInfo *root,
 			s2 = DatumGetFloat8(FunctionCall5Coll(&oprselproc,
 												  clause->inputcollid,
 												  PointerGetDatum(root),
-												  ObjectIdGetDatum(operator),
+												  ObjectIdGetDatum(opid),
 												  PointerGetDatum(args),
 												  Int16GetDatum(jointype),
 												  PointerGetDatum(sjinfo)));
@@ -2044,7 +2044,7 @@ scalararraysel(PlannerInfo *root,
 			s2 = DatumGetFloat8(FunctionCall4Coll(&oprselproc,
 												  clause->inputcollid,
 												  PointerGetDatum(root),
-												  ObjectIdGetDatum(operator),
+												  ObjectIdGetDatum(opid),
 												  PointerGetDatum(args),
 												  Int32GetDatum(varRelid)));
 		s1 = useOr ? 0.0 : 1.0;
@@ -2183,7 +2183,7 @@ Datum
 eqjoinsel(PG_FUNCTION_ARGS)
 {
 	PlannerInfo *root = (PlannerInfo *) PG_GETARG_POINTER(0);
-	Oid			operator = PG_GETARG_OID(1);
+	Oid			opid = PG_GETARG_OID(1);
 	List	   *args = (List *) PG_GETARG_POINTER(2);
 
 #ifdef NOT_USED
@@ -2204,7 +2204,7 @@ eqjoinsel(PG_FUNCTION_ARGS)
 		case JOIN_INNER:
 		case JOIN_LEFT:
 		case JOIN_FULL:
-			selec = eqjoinsel_inner(operator, &vardata1, &vardata2);
+			selec = eqjoinsel_inner(opid, &vardata1, &vardata2);
 			break;
 		case JOIN_SEMI:
 		case JOIN_ANTI:
@@ -2218,10 +2218,10 @@ eqjoinsel(PG_FUNCTION_ARGS)
 			inner_rel = find_join_input_rel(root, sjinfo->min_righthand);
 
 			if (!join_is_reversed)
-				selec = eqjoinsel_semi(operator, &vardata1, &vardata2,
+				selec = eqjoinsel_semi(opid, &vardata1, &vardata2,
 									   inner_rel);
 			else
-				selec = eqjoinsel_semi(get_commutator(operator),
+				selec = eqjoinsel_semi(get_commutator(opid),
 									   &vardata2, &vardata1,
 									   inner_rel);
 			break;
@@ -2248,7 +2248,7 @@ eqjoinsel(PG_FUNCTION_ARGS)
  * that it's worth trying to distinguish them here.
  */
 static double
-eqjoinsel_inner(Oid operator,
+eqjoinsel_inner(Oid opid,
 				VariableStatData *vardata1, VariableStatData *vardata2)
 {
 	double		selec;
@@ -2329,7 +2329,7 @@ eqjoinsel_inner(Oid operator,
 		int			i,
 					nmatches;
 
-		fmgr_info(get_opcode(operator), &eqproc);
+		fmgr_info(get_opcode(opid), &eqproc);
 		hasmatch1 = (bool *) palloc0(nvalues1 * sizeof(bool));
 		hasmatch2 = (bool *) palloc0(nvalues2 * sizeof(bool));
 
@@ -2474,7 +2474,7 @@ eqjoinsel_inner(Oid operator,
  * Caller has ensured that vardata1 is the LHS variable.
  */
 static double
-eqjoinsel_semi(Oid operator,
+eqjoinsel_semi(Oid opid,
 			   VariableStatData *vardata1, VariableStatData *vardata2,
 			   RelOptInfo *inner_rel)
 {
@@ -2556,7 +2556,7 @@ eqjoinsel_semi(Oid operator,
 									  &numbers2, &nnumbers2);
 	}
 
-	if (have_mcvs1 && have_mcvs2 && OidIsValid(operator))
+	if (have_mcvs1 && have_mcvs2 && OidIsValid(opid))
 	{
 		/*
 		 * We have most-common-value lists for both relations.  Run through
@@ -2586,7 +2586,7 @@ eqjoinsel_semi(Oid operator,
 		 */
 		clamped_nvalues2 = Min(nvalues2, nd2);
 
-		fmgr_info(get_opcode(operator), &eqproc);
+		fmgr_info(get_opcode(opid), &eqproc);
 		hasmatch1 = (bool *) palloc0(nvalues1 * sizeof(bool));
 		hasmatch2 = (bool *) palloc0(clamped_nvalues2 * sizeof(bool));
 
@@ -2693,7 +2693,7 @@ Datum
 neqjoinsel(PG_FUNCTION_ARGS)
 {
 	PlannerInfo *root = (PlannerInfo *) PG_GETARG_POINTER(0);
-	Oid			operator = PG_GETARG_OID(1);
+	Oid			opid = PG_GETARG_OID(1);
 	List	   *args = (List *) PG_GETARG_POINTER(2);
 	JoinType	jointype = (JoinType) PG_GETARG_INT16(3);
 	SpecialJoinInfo *sjinfo = (SpecialJoinInfo *) PG_GETARG_POINTER(4);
@@ -2704,7 +2704,7 @@ neqjoinsel(PG_FUNCTION_ARGS)
 	 * We want 1 - eqjoinsel() where the equality operator is the one
 	 * associated with this != operator, that is, its negator.
 	 */
-	eqop = get_negator(operator);
+	eqop = get_negator(opid);
 	if (eqop)
 	{
 		result = DatumGetFloat8(DirectFunctionCall5(eqjoinsel,
@@ -5297,7 +5297,7 @@ like_fixed_prefix(Const *patt_const, bool case_insensitive, Oid collation,
 	char	   *match;
 	char	   *patt;
 	int			pattlen;
-	Oid			typeid = patt_const->consttype;
+	Oid			typid = patt_const->consttype;
 	int			pos,
 				match_pos;
 	bool		is_multibyte = (pg_database_encoding_max_length() > 1);
@@ -5305,11 +5305,11 @@ like_fixed_prefix(Const *patt_const, bool case_insensitive, Oid collation,
 	bool		locale_is_c = false;
 
 	/* the right-hand const is type text or bytea */
-	Assert(typeid == BYTEAOID || typeid == TEXTOID);
+	Assert(typid == BYTEAOID || typid == TEXTOID);
 
 	if (case_insensitive)
 	{
-		if (typeid == BYTEAOID)
+		if (typid == BYTEAOID)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 			errmsg("case insensitive matching not supported on type bytea")));
@@ -5334,7 +5334,7 @@ like_fixed_prefix(Const *patt_const, bool case_insensitive, Oid collation,
 		}
 	}
 
-	if (typeid != BYTEAOID)
+	if (typid != BYTEAOID)
 	{
 		patt = TextDatumGetCString(patt_const->constvalue);
 		pattlen = strlen(patt);
@@ -5377,8 +5377,8 @@ like_fixed_prefix(Const *patt_const, bool case_insensitive, Oid collation,
 
 	match[match_pos] = '\0';
 
-	if (typeid != BYTEAOID)
-		*prefix_const = string_to_const(match, typeid);
+	if (typid != BYTEAOID)
+		*prefix_const = string_to_const(match, typid);
 	else
 		*prefix_const = string_to_bytea_const(match, match_pos);
 
@@ -5403,7 +5403,7 @@ static Pattern_Prefix_Status
 regex_fixed_prefix(Const *patt_const, bool case_insensitive, Oid collation,
 				   Const **prefix_const, Selectivity *rest_selec)
 {
-	Oid			typeid = patt_const->consttype;
+	Oid			typid = patt_const->consttype;
 	char	   *prefix;
 	bool		exact;
 
@@ -5412,7 +5412,7 @@ regex_fixed_prefix(Const *patt_const, bool case_insensitive, Oid collation,
 	 * such, it should be noted that the rest of this function has *not* been
 	 * made safe for binary (possibly NULL containing) strings.
 	 */
-	if (typeid == BYTEAOID)
+	if (typid == BYTEAOID)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 		 errmsg("regular-expression matching not supported on type bytea")));
@@ -5439,7 +5439,7 @@ regex_fixed_prefix(Const *patt_const, bool case_insensitive, Oid collation,
 		return Pattern_Prefix_None;
 	}
 
-	*prefix_const = string_to_const(prefix, typeid);
+	*prefix_const = string_to_const(prefix, typid);
 
 	if (rest_selec != NULL)
 	{

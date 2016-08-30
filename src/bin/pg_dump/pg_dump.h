@@ -130,7 +130,7 @@ typedef struct _dumpableObject
 	CatalogId	catId;			/* zero if not a cataloged object */
 	DumpId		dumpId;			/* assigned by AssignDumpId() */
 	char	   *name;			/* object name (should never be NULL) */
-	struct _namespaceInfo *namespace;	/* containing namespace, or NULL */
+	struct _namespaceInfo *namespaceinfo;	/* containing namespace, or NULL */
 	DumpComponents dump;		/* bitmask of components to dump */
 	DumpComponents dump_contains;		/* as above, but for contained objects */
 	bool		ext_member;		/* true if object is member of extension */
@@ -152,7 +152,7 @@ typedef struct _namespaceInfo
 typedef struct _extensionInfo
 {
 	DumpableObject dobj;
-	char	   *namespace;		/* schema containing extension's objects */
+	char	   *extschema;		/* schema containing extension's objects */
 	bool		relocatable;
 	char	   *extversion;
 	char	   *extconfig;		/* info about configuration tables */

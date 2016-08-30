@@ -53,7 +53,7 @@ main(int argc, char *argv[])
 	bool		echo = false;
 	char	   *owner = NULL;
 	char	   *tablespace = NULL;
-	char	   *template = NULL;
+	char	   *templatedb = NULL;
 	char	   *encoding = NULL;
 	char	   *lc_collate = NULL;
 	char	   *lc_ctype = NULL;
@@ -98,7 +98,7 @@ main(int argc, char *argv[])
 				tablespace = pg_strdup(optarg);
 				break;
 			case 'T':
-				template = pg_strdup(optarg);
+				templatedb = pg_strdup(optarg);
 				break;
 			case 'E':
 				encoding = pg_strdup(optarg);
@@ -188,8 +188,8 @@ main(int argc, char *argv[])
 		appendPQExpBuffer(&sql, " TABLESPACE %s", fmtId(tablespace));
 	if (encoding)
 		appendPQExpBuffer(&sql, " ENCODING '%s'", encoding);
-	if (template)
-		appendPQExpBuffer(&sql, " TEMPLATE %s", fmtId(template));
+	if (templatedb)
+		appendPQExpBuffer(&sql, " TEMPLATE %s", fmtId(templatedb));
 	if (lc_collate)
 		appendPQExpBuffer(&sql, " LC_COLLATE '%s'", lc_collate);
 	if (lc_ctype)

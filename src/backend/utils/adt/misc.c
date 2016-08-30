@@ -651,17 +651,17 @@ pg_typeof(PG_FUNCTION_ARGS)
 Datum
 pg_collation_for(PG_FUNCTION_ARGS)
 {
-	Oid			typeid;
+	Oid			typid;
 	Oid			collid;
 
-	typeid = get_fn_expr_argtype(fcinfo->flinfo, 0);
-	if (!typeid)
+	typid = get_fn_expr_argtype(fcinfo->flinfo, 0);
+	if (!typid)
 		PG_RETURN_NULL();
-	if (!type_is_collatable(typeid) && typeid != UNKNOWNOID)
+	if (!type_is_collatable(typid) && typid != UNKNOWNOID)
 		ereport(ERROR,
 				(errcode(ERRCODE_DATATYPE_MISMATCH),
 				 errmsg("collations are not supported by type %s",
-						format_type_be(typeid))));
+						format_type_be(typid))));
 
 	collid = PG_GET_COLLATION();
 	if (!collid)

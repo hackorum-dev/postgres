@@ -162,7 +162,7 @@ geqo_eval(PlannerInfo *root, Gene *tour, int num_gene)
 RelOptInfo *
 gimme_tree(PlannerInfo *root, Gene *tour, int num_gene)
 {
-	GeqoPrivateData *private = (GeqoPrivateData *) root->join_search_private;
+	GeqoPrivateData *private_data = (GeqoPrivateData *) root->join_search_private;
 	List	   *clumps;
 	int			rel_count;
 
@@ -187,7 +187,7 @@ gimme_tree(PlannerInfo *root, Gene *tour, int num_gene)
 
 		/* Get the next input relation */
 		cur_rel_index = (int) tour[rel_count];
-		cur_rel = (RelOptInfo *) list_nth(private->initial_rels,
+		cur_rel = (RelOptInfo *) list_nth(private_data->initial_rels,
 										  cur_rel_index - 1);
 
 		/* Make it into a single-rel clump */

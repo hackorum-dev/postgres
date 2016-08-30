@@ -22,7 +22,7 @@ static PgBenchExprList *make_elist(PgBenchExpr *exp, PgBenchExprList *list);
 static PgBenchExpr *make_integer_constant(int64 ival);
 static PgBenchExpr *make_double_constant(double dval);
 static PgBenchExpr *make_variable(char *varname);
-static PgBenchExpr *make_op(yyscan_t yyscanner, const char *operator,
+static PgBenchExpr *make_op(yyscan_t yyscanner, const char *oper,
 		PgBenchExpr *lexpr, PgBenchExpr *rexpr);
 static int	find_func(yyscan_t yyscanner, const char *fname);
 static PgBenchExpr *make_func(yyscan_t yyscanner, int fnumber, PgBenchExprList *args);
@@ -120,10 +120,10 @@ make_variable(char *varname)
 }
 
 static PgBenchExpr *
-make_op(yyscan_t yyscanner, const char *operator,
+make_op(yyscan_t yyscanner, const char *oper,
 		PgBenchExpr *lexpr, PgBenchExpr *rexpr)
 {
-	return make_func(yyscanner, find_func(yyscanner, operator),
+	return make_func(yyscanner, find_func(yyscanner, oper),
 					 make_elist(rexpr, make_elist(lexpr, NULL)));
 }
 

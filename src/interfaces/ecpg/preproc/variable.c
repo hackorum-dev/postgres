@@ -391,18 +391,18 @@ void
 add_variable_to_tail(struct arguments ** list, struct variable * var, struct variable * ind)
 {
 	struct arguments *p,
-			   *new = (struct arguments *) mm_alloc(sizeof(struct arguments));
+			   *newa = (struct arguments *) mm_alloc(sizeof(struct arguments));
 
 	for (p = *list; p && p->next; p = p->next);
 
-	new->variable = var;
-	new->indicator = ind;
-	new->next = NULL;
+	newa->variable = var;
+	newa->indicator = ind;
+	newa->next = NULL;
 
 	if (p)
-		p->next = new;
+		p->next = newa;
 	else
-		*list = new;
+		*list = newa;
 }
 
 void
@@ -499,13 +499,13 @@ check_indicator(struct ECPGtype * var)
 struct typedefs *
 get_typedef(char *name)
 {
-	struct typedefs *this;
+	struct typedefs *td;
 
-	for (this = types; this && strcmp(this->name, name) != 0; this = this->next);
-	if (!this)
+	for (td = types; td && strcmp(td->name, name) != 0; td = td->next);
+	if (!td)
 		mmfatal(PARSE_ERROR, "unrecognized data type name \"%s\"", name);
 
-	return (this);
+	return (td);
 }
 
 void

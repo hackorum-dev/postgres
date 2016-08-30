@@ -191,10 +191,10 @@ IsThereCollationInNamespace(const char *collname, Oid nspOid)
  */
 pg_attribute_unused()
 static bool
-normalize_locale_name(char *new, const char *old)
+normalize_locale_name(char *newname, const char *oldname)
 {
-	char	   *n = new;
-	const char *o = old;
+	char	   *n = newname;
+	const char *o = oldname;
 	bool		changed = false;
 
 	while (*o)

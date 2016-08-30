@@ -8,21 +8,21 @@
 char *
 pgtypes_alloc(long size)
 {
-	char	   *new = (char *) calloc(1L, size);
+	char	   *newval = (char *) calloc(1L, size);
 
-	if (!new)
+	if (!newval)
 		errno = ENOMEM;
-	return (new);
+	return (newval);
 }
 
 char *
 pgtypes_strdup(const char *str)
 {
-	char	   *new = (char *) strdup(str);
+	char	   *newval = (char *) strdup(str);
 
-	if (!new)
+	if (!newval)
 		errno = ENOMEM;
-	return (new);
+	return (newval);
 }
 
 int

@@ -1259,10 +1259,10 @@ get_qual_for_list(PartitionKey key, PartitionBoundSpec *spec)
 		result = list_make2(nulltest1, opexpr);
 	else if (nulltest2)
 	{
-		Expr	   *or;
+		Expr	   *or_expr;
 
-		or = makeBoolExpr(OR_EXPR, list_make2(nulltest2, opexpr), -1);
-		result = list_make1(or);
+		or_expr = makeBoolExpr(OR_EXPR, list_make2(nulltest2, opexpr), -1);
+		result = list_make1(or_expr);
 	}
 	else
 		result = list_make1(opexpr);

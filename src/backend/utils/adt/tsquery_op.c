@@ -28,7 +28,7 @@ tsquery_numnode(PG_FUNCTION_ARGS)
 }
 
 static QTNode *
-join_tsqueries(TSQuery a, TSQuery b, int8 operator, uint16 distance)
+join_tsqueries(TSQuery a, TSQuery b, int8 oper, uint16 distance)
 {
 	QTNode	   *res = (QTNode *) palloc0(sizeof(QTNode));
 
@@ -36,8 +36,8 @@ join_tsqueries(TSQuery a, TSQuery b, int8 operator, uint16 distance)
 
 	res->valnode = (QueryItem *) palloc0(sizeof(QueryItem));
 	res->valnode->type = QI_OPR;
-	res->valnode->qoperator.oper = operator;
-	if (operator == OP_PHRASE)
+	res->valnode->qoperator.oper = oper;
+	if (oper == OP_PHRASE)
 		res->valnode->qoperator.distance = distance;
 
 	res->child = (QTNode **) palloc0(sizeof(QTNode *) * 2);

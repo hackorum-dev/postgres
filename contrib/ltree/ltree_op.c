@@ -545,7 +545,7 @@ Datum
 ltreeparentsel(PG_FUNCTION_ARGS)
 {
 	PlannerInfo *root = (PlannerInfo *) PG_GETARG_POINTER(0);
-	Oid			operator = PG_GETARG_OID(1);
+	Oid			opid = PG_GETARG_OID(1);
 	List	   *args = (List *) PG_GETARG_POINTER(2);
 	int			varRelid = PG_GETARG_INT32(3);
 	VariableStatData vardata;
@@ -582,7 +582,7 @@ ltreeparentsel(PG_FUNCTION_ARGS)
 		double		nullfrac;
 		int			hist_size;
 
-		fmgr_info(get_opcode(operator), &contproc);
+		fmgr_info(get_opcode(opid), &contproc);
 
 		/*
 		 * Is the constant "<@" to any of the column's most common values?

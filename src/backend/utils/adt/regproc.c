@@ -1881,11 +1881,11 @@ parseNameAndArgTypes(const char *string, bool allowNone, List **names,
 	char	   *rawname;
 	char	   *ptr;
 	char	   *ptr2;
-	char	   *typename;
+	char	   *typname;
 	bool		in_quote;
 	bool		had_comma;
 	int			paren_count;
-	Oid			typeid;
+	Oid			typid;
 	int32		typmod;
 
 	/* We need a modifiable copy of the input string. */
@@ -1941,7 +1941,7 @@ parseNameAndArgTypes(const char *string, bool allowNone, List **names,
 						 errmsg("expected a type name")));
 			break;
 		}
-		typename = ptr;
+		typname = ptr;
 		/* Find end of type name --- end of string or comma */
 		/* ... but not a quoted or parenthesized comma */
 		in_quote = false;
@@ -1984,30 +1984,30 @@ parseNameAndArgTypes(const char *string, bool allowNone, List **names,
 			Assert(*ptr == '\0');
 		}
 		/* Lop off trailing whitespace */
-		while (--ptr2 >= typename)
+		while (--ptr2 >= typname)
 		{
 			if (!isspace((unsigned char) *ptr2))
 				break;
 			*ptr2 = '\0';
 		}
 
-		if (allowNone && pg_strcasecmp(typename, "none") == 0)
+		if (allowNone && pg_strcasecmp(typname, "none") == 0)
 		{
 			/* Special case for NONE */
-			typeid = InvalidOid;
+			typid = InvalidOid;
 			typmod = -1;
 		}
 		else
 		{
 			/* Use full parser to resolve the type name */
-			parseTypeString(typename, &typeid, &typmod, false);
+			parseTypeString(typname, &typid, &typmod, false);
 		}
 		if (*nargs >= FUNC_MAX_ARGS)
 			ereport(ERROR,
 					(errcode(ERRCODE_TOO_MANY_ARGUMENTS),
 					 errmsg("too many arguments")));
 
-		argtypes[*nargs] = typeid;
+		argtypes[*nargs] = typid;
 		(*nargs)++;
 	}
 

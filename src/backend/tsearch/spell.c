@@ -2388,7 +2388,7 @@ SplitToVariants(IspellDict *Conf, SPNode *snode, SplitVar *orig, char *word, int
 			if (subres)
 			{
 				/* Yes, it was a word from dictionary */
-				SplitVar   *new = CopyVar(var, 0);
+				SplitVar   *newvar = CopyVar(var, 0);
 				SplitVar   *ptr = var;
 				char	  **sptr = subres;
 
@@ -2396,17 +2396,17 @@ SplitToVariants(IspellDict *Conf, SPNode *snode, SplitVar *orig, char *word, int
 
 				while (*sptr)
 				{
-					AddStem(new, *sptr);
+					AddStem(newvar, *sptr);
 					sptr++;
 				}
 				pfree(subres);
 
 				while (ptr->next)
 					ptr = ptr->next;
-				ptr->next = SplitToVariants(Conf, NULL, new, word, wordlen, startpos + lenaff, startpos + lenaff);
+				ptr->next = SplitToVariants(Conf, NULL, newvar, word, wordlen, startpos + lenaff, startpos + lenaff);
 
-				pfree(new->stem);
-				pfree(new);
+				pfree(newvar->stem);
+				pfree(newvar);
 			}
 		}
 

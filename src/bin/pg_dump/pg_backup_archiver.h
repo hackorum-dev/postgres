@@ -212,7 +212,7 @@ typedef enum
 
 struct _archiveHandle
 {
-	Archive		public;			/* Public part of archive */
+	Archive		archive;		/* Public part of archive */
 	int			version;		/* Version of file */
 
 	char	   *archiveRemoteVersion;	/* When reading an archive, the
@@ -342,7 +342,7 @@ struct _tocEntry
 	bool		hadDumper;		/* Archiver was passed a dumper routine (used
 								 * in restore) */
 	char	   *tag;			/* index tag */
-	char	   *namespace;		/* null or empty string if not in a schema */
+	char	   *schema;			/* null or empty string if not in a schema */
 	char	   *tablespace;		/* null if not in a tablespace; empty string
 								 * means use database default */
 	char	   *owner;
@@ -393,10 +393,10 @@ TocEntry   *getTocEntryByDumpId(ArchiveHandle *AH, DumpId id);
 extern bool checkSeek(FILE *fp);
 
 #define appendStringLiteralAHX(buf,str,AH) \
-	appendStringLiteral(buf, str, (AH)->public.encoding, (AH)->public.std_strings)
+	appendStringLiteral(buf, str, (AH)->archive.encoding, (AH)->archive.std_strings)
 
 #define appendByteaLiteralAHX(buf,str,len,AH) \
-	appendByteaLiteral(buf, str, len, (AH)->public.std_strings)
+	appendByteaLiteral(buf, str, len, (AH)->archive.std_strings)
 
 /*
  * Mandatory routines for each supported format

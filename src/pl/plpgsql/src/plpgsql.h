@@ -1078,7 +1078,7 @@ extern PLpgSQL_rec *plpgsql_build_record(const char *refname, int lineno,
 extern int plpgsql_recognize_err_condition(const char *condname,
 								bool allow_sqlstate);
 extern PLpgSQL_condition *plpgsql_parse_err_condition(char *condname);
-extern void plpgsql_adddatum(PLpgSQL_datum *new);
+extern void plpgsql_adddatum(PLpgSQL_datum *newdatum);
 extern int	plpgsql_add_initdatums(int **varnos);
 extern void plpgsql_HashTableInit(void);
 
@@ -1104,7 +1104,7 @@ extern Oid plpgsql_exec_get_datum_type(PLpgSQL_execstate *estate,
 							PLpgSQL_datum *datum);
 extern void plpgsql_exec_get_datum_type_info(PLpgSQL_execstate *estate,
 								 PLpgSQL_datum *datum,
-								 Oid *typeid, int32 *typmod, Oid *collation);
+								 Oid *typid, int32 *typmod, Oid *collation);
 
 /*
  * Functions for namespace handling in pl_funcs.c

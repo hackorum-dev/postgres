@@ -396,9 +396,9 @@ static void get_rule_windowspec(WindowClause *wc, List *targetList,
 static char *get_variable(Var *var, int levelsup, bool istoplevel,
 			 deparse_context *context);
 static void get_special_variable(Node *node, deparse_context *context,
-					 void *private);
+					 void *private_data);
 static void resolve_special_varno(Node *node, deparse_context *context,
-					  void *private,
+					  void *private_data,
 					  void (*callback) (Node *, deparse_context *, void *));
 static Node *find_param_referent(Param *param, deparse_context *context,
 					deparse_namespace **dpns_p, ListCell **ancestor_cell_p);
@@ -418,7 +418,7 @@ static void get_func_expr(FuncExpr *expr, deparse_context *context,
 static void get_agg_expr(Aggref *aggref, deparse_context *context,
 			 Aggref *original_aggref);
 static void get_agg_combine_expr(Node *node, deparse_context *context,
-					 void *private);
+					 void *private_data);
 static void get_windowfunc_expr(WindowFunc *wfunc, deparse_context *context);
 static void get_coercion_expr(Node *arg, deparse_context *context,
 				  Oid resulttype, int32 resulttypmod,
@@ -6349,7 +6349,7 @@ get_variable(Var *var, int levelsup, bool istoplevel, deparse_context *context)
  * get_rule_expr.
  */
 static void
-get_special_variable(Node *node, deparse_context *context, void *private)
+get_special_variable(Node *node, deparse_context *context, void *private_data)
 {
 	StringInfo	buf = context->buf;
 
@@ -6370,7 +6370,7 @@ get_special_variable(Node *node, deparse_context *context, void *private)
  * invoke the callback provided.
  */
 static void
-resolve_special_varno(Node *node, deparse_context *context, void *private,
+resolve_special_varno(Node *node, deparse_context *context, void *private_data,
 					  void (*callback) (Node *, deparse_context *, void *))
 {
 	Var		   *var;
@@ -6379,7 +6379,7 @@ resolve_special_varno(Node *node, deparse_context *context, void *private,
 	/* If it's not a Var, invoke the callback. */
 	if (!IsA(node, Var))
 	{
-		callback(node, context, private);
+		callback(node, context, private_data);
 		return;
 	}
 
@@ -6401,7 +6401,7 @@ resolve_special_varno(Node *node, deparse_context *context, void *private,
 			elog(ERROR, "bogus varattno for OUTER_VAR var: %d", var->varattno);
 
 		push_child_plan(dpns, dpns->outer_planstate, &save_dpns);
-		resolve_special_varno((Node *) tle->expr, context, private, callback);
+		resolve_special_varno((Node *) tle->expr, context, private_data, callback);
 		pop_child_plan(dpns, &save_dpns);
 		return;
 	}
@@ -6415,7 +6415,7 @@ resolve_special_varno(Node *node, deparse_context *context, void *private,
 			elog(ERROR, "bogus varattno for INNER_VAR var: %d", var->varattno);
 
 		push_child_plan(dpns, dpns->inner_planstate, &save_dpns);
-		resolve_special_varno((Node *) tle->expr, context, private, callback);
+		resolve_special_varno((Node *) tle->expr, context, private_data, callback);
 		pop_child_plan(dpns, &save_dpns);
 		return;
 	}
@@ -6427,14 +6427,14 @@ resolve_special_varno(Node *node, deparse_context *context, void *private,
 		if (!tle)
 			elog(ERROR, "bogus varattno for INDEX_VAR var: %d", var->varattno);
 
-		resolve_special_varno((Node *) tle->expr, context, private, callback);
+		resolve_special_varno((Node *) tle->expr, context, private_data, callback);
 		return;
 	}
 	else if (var->varno < 1 || var->varno > list_length(dpns->rtable))
 		elog(ERROR, "bogus varno: %d", var->varno);
 
 	/* Not special.  Just invoke the callback. */
-	callback(node, context, private);
+	callback(node, context, private_data);
 }
 
 /*
@@ -8827,10 +8827,10 @@ get_agg_expr(Aggref *aggref, deparse_context *context,
  * Aggref and then calls this.
  */
 static void
-get_agg_combine_expr(Node *node, deparse_context *context, void *private)
+get_agg_combine_expr(Node *node, deparse_context *context, void *private_data)
 {
 	Aggref	   *aggref;
-	Aggref	   *original_aggref = private;
+	Aggref	   *original_aggref = private_data;
 
 	if (!IsA(node, Aggref))
 		elog(ERROR, "combining Aggref does not point to an Aggref");

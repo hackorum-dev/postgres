@@ -28,7 +28,7 @@
 
 /* common code for bpchartypmodin and varchartypmodin */
 static int32
-anychar_typmodin(ArrayType *ta, const char *typename)
+anychar_typmodin(ArrayType *ta, const char *typname)
 {
 	int32		typmod;
 	int32	   *tl;
@@ -48,12 +48,12 @@ anychar_typmodin(ArrayType *ta, const char *typename)
 	if (*tl < 1)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("length for type %s must be at least 1", typename)));
+				 errmsg("length for type %s must be at least 1", typname)));
 	if (*tl > MaxAttrSize)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("length for type %s cannot exceed %d",
-						typename, MaxAttrSize)));
+						typname, MaxAttrSize)));
 
 	/*
 	 * For largely historical reasons, the typmod is VARHDRSZ plus the number

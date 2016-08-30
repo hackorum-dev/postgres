@@ -308,7 +308,7 @@ _PrintExtraToc(ArchiveHandle *AH, TocEntry *te)
 {
 	lclTocEntry *tctx = (lclTocEntry *) te->formatData;
 
-	if (AH->public.verbose && tctx->filename)
+	if (AH->archive.verbose && tctx->filename)
 		ahprintf(AH, "-- File: %s\n", tctx->filename);
 }
 
@@ -458,7 +458,7 @@ _LoadBlobs(ArchiveHandle *AH)
 			exit_horribly(modulename, "invalid line in large object TOC file \"%s\": \"%s\"\n",
 						  fname, line);
 
-		StartRestoreBlob(AH, oid, AH->public.ropt->dropSchema);
+		StartRestoreBlob(AH, oid, AH->archive.ropt->dropSchema);
 		snprintf(path, MAXPGPATH, "%s/%s", ctx->directory, fname);
 		_PrintFileData(AH, path);
 		EndRestoreBlob(AH, oid);

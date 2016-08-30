@@ -24,19 +24,19 @@ mm_alloc(size_t size)
 char *
 mm_strdup(const char *string)
 {
-	char	   *new = strdup(string);
+	char	   *newstr = strdup(string);
 
-	if (new == NULL)
+	if (newstr == NULL)
 		mmfatal(OUT_OF_MEMORY, "out of memory");
 
-	return new;
+	return newstr;
 }
 
 /* duplicate memberlist */
 struct ECPGstruct_member *
 ECPGstruct_member_dup(struct ECPGstruct_member * rm)
 {
-	struct ECPGstruct_member *new = NULL;
+	struct ECPGstruct_member *newval = NULL;
 
 	while (rm)
 	{
@@ -64,12 +64,12 @@ ECPGstruct_member_dup(struct ECPGstruct_member * rm)
 				break;
 		}
 
-		ECPGmake_struct_member(rm->name, type, &new);
+		ECPGmake_struct_member(rm->name, type, &newval);
 
 		rm = rm->next;
 	}
 
-	return (new);
+	return (newval);
 }
 
 /* The NAME argument is copied. The type argument is preserved as a pointer. */

@@ -164,7 +164,7 @@ typedef struct RI_QueryHashEntry
 typedef struct RI_CompareKey
 {
 	Oid			eq_opr;			/* the equality operator to apply */
-	Oid			typeid;			/* the data type to apply it to */
+	Oid			typid;			/* the data type to apply it to */
 } RI_CompareKey;
 
 
@@ -217,14 +217,14 @@ static void ri_BuildQueryKey(RI_QueryKey *key,
 				 int32 constr_queryno);
 static bool ri_KeysEqual(Relation rel, HeapTuple oldtup, HeapTuple newtup,
 			 const RI_ConstraintInfo *riinfo, bool rel_is_pk);
-static bool ri_AttributesEqual(Oid eq_opr, Oid typeid,
+static bool ri_AttributesEqual(Oid eq_opr, Oid typid,
 				   Datum oldvalue, Datum newvalue);
 
 static void ri_InitHashTables(void);
 static void InvalidateConstraintCacheCallBack(Datum arg, int cacheid, uint32 hashvalue);
 static SPIPlanPtr ri_FetchPreparedPlan(RI_QueryKey *key);
 static void ri_HashPreparedPlan(RI_QueryKey *key, SPIPlanPtr plan);
-static RI_CompareHashEntry *ri_HashCompareOp(Oid eq_opr, Oid typeid);
+static RI_CompareHashEntry *ri_HashCompareOp(Oid eq_opr, Oid typid);
 
 static void ri_CheckTrigger(FunctionCallInfo fcinfo, const char *funcname,
 				int tgkind);
@@ -3574,10 +3574,10 @@ ri_KeysEqual(Relation rel, HeapTuple oldtup, HeapTuple newtup,
  * ----------
  */
 static bool
-ri_AttributesEqual(Oid eq_opr, Oid typeid,
+ri_AttributesEqual(Oid eq_opr, Oid typid,
 				   Datum oldvalue, Datum newvalue)
 {
-	RI_CompareHashEntry *entry = ri_HashCompareOp(eq_opr, typeid);
+	RI_CompareHashEntry *entry = ri_HashCompareOp(eq_opr, typid);
 
 	/* Do we need to cast the values? */
 	if (OidIsValid(entry->cast_func_finfo.fn_oid))
@@ -3608,7 +3608,7 @@ ri_AttributesEqual(Oid eq_opr, Oid typeid,
  * ----------
  */
 static RI_CompareHashEntry *
-ri_HashCompareOp(Oid eq_opr, Oid typeid)
+ri_HashCompareOp(Oid eq_opr, Oid typid)
 {
 	RI_CompareKey key;
 	RI_CompareHashEntry *entry;
@@ -3625,7 +3625,7 @@ ri_HashCompareOp(Oid eq_opr, Oid typeid)
 	 * contains no struct padding.
 	 */
 	key.eq_opr = eq_opr;
-	key.typeid = typeid;
+	key.typid = typid;
 	entry = (RI_CompareHashEntry *) hash_search(ri_compare_cache,
 												(void *) &key,
 												HASH_ENTER, &found);
@@ -3662,11 +3662,11 @@ ri_HashCompareOp(Oid eq_opr, Oid typeid)
 		 */
 		op_input_types(eq_opr, &lefttype, &righttype);
 		Assert(lefttype == righttype);
-		if (typeid == lefttype)
+		if (typid == lefttype)
 			castfunc = InvalidOid;		/* simplest case */
 		else
 		{
-			pathtype = find_coercion_pathway(lefttype, typeid,
+			pathtype = find_coercion_pathway(lefttype, typid,
 											 COERCION_IMPLICIT,
 											 &castfunc);
 			if (pathtype != COERCION_PATH_FUNC &&
@@ -3678,9 +3678,9 @@ ri_HashCompareOp(Oid eq_opr, Oid typeid)
 				 * special cases such as RECORD; find_coercion_pathway
 				 * currently doesn't subsume these special cases.
 				 */
-				if (!IsBinaryCoercible(typeid, lefttype))
+				if (!IsBinaryCoercible(typid, lefttype))
 					elog(ERROR, "no conversion function from %s to %s",
-						 format_type_be(typeid),
+						 format_type_be(typid),
 						 format_type_be(lefttype));
 			}
 		}
