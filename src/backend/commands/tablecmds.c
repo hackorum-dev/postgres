@@ -10107,7 +10107,7 @@ ATExecSetTableSpace(Oid tableOid, Oid newTableSpace, LOCKMODE lockmode)
 	Relation	pg_class;
 	HeapTuple	tuple;
 	Form_pg_class rd_rel;
-	ForkNumber	forkNum;
+	int			forkNum;
 	List	   *reltoastidxids = NIL;
 	ListCell   *lc;
 

@@ -296,7 +296,7 @@ void
 smgrclose(SMgrRelation reln)
 {
 	SMgrRelation *owner;
-	ForkNumber	forknum;
+	int			forknum;
 
 	for (forknum = 0; forknum <= MAX_FORKNUM; forknum++)
 		(*(smgrsw[reln->smgr_which].smgr_close)) (reln, forknum);
@@ -415,7 +415,7 @@ smgrdounlink(SMgrRelation reln, bool isRedo)
 {
 	RelFileNodeBackend rnode = reln->smgr_rnode;
 	int			which = reln->smgr_which;
-	ForkNumber	forknum;
+	int			forknum;
 
 	/* Close the forks at smgr level */
 	for (forknum = 0; forknum <= MAX_FORKNUM; forknum++)
@@ -472,7 +472,7 @@ smgrdounlinkall(SMgrRelation *rels, int nrels, bool isRedo)
 {
 	int			i = 0;
 	RelFileNodeBackend *rnodes;
-	ForkNumber	forknum;
+	int			forknum;
 
 	if (nrels == 0)
 		return;

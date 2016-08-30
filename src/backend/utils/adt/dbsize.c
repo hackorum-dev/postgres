@@ -341,7 +341,7 @@ calculate_toast_table_size(Oid toastrelid)
 {
 	int64		size = 0;
 	Relation	toastRel;
-	ForkNumber	forkNum;
+	int			forkNum;
 	ListCell   *lc;
 	List	   *indexlist;
 
@@ -386,7 +386,7 @@ static int64
 calculate_table_size(Relation rel)
 {
 	int64		size = 0;
-	ForkNumber	forkNum;
+	int			forkNum;
 
 	/*
 	 * heap size, including FSM and VM
@@ -426,7 +426,7 @@ calculate_indexes_size(Relation rel)
 		{
 			Oid			idxOid = lfirst_oid(cell);
 			Relation	idxRel;
-			ForkNumber	forkNum;
+			int			forkNum;
 
 			idxRel = relation_open(idxOid, AccessShareLock);
 

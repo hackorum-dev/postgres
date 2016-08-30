@@ -47,7 +47,7 @@ const char *const forkNames[] = {
 ForkNumber
 forkname_to_number(const char *forkName)
 {
-	ForkNumber	forkNum;
+	int		forkNum;
 
 	for (forkNum = 0; forkNum <= MAX_FORKNUM; forkNum++)
 		if (strcmp(forkNames[forkNum], forkName) == 0)
@@ -78,7 +78,7 @@ forkname_to_number(const char *forkName)
 int
 forkname_chars(const char *str, ForkNumber *fork)
 {
-	ForkNumber	forkNum;
+	int			forkNum;
 
 	for (forkNum = 1; forkNum <= MAX_FORKNUM; forkNum++)
 	{

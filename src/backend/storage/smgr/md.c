@@ -398,7 +398,7 @@ mdunlink(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo)
 	/* Now do the per-fork work */
 	if (forkNum == InvalidForkNumber)
 	{
-		for (forkNum = 0; forkNum <= MAX_FORKNUM; forkNum++)
+		for (int forkNum = 0; forkNum <= MAX_FORKNUM; forkNum++)
 			mdunlinkfork(rnode, forkNum, isRedo);
 	}
 	else
@@ -1130,7 +1130,7 @@ mdsync(void)
 	hash_seq_init(&hstat, pendingOpsTable);
 	while ((entry = (PendingOperationEntry *) hash_seq_search(&hstat)) != NULL)
 	{
-		ForkNumber	forknum;
+		int		forknum;
 
 		/*
 		 * If the entry is new then don't process it this time; it might
@@ -1535,7 +1535,7 @@ RememberFsyncRequest(RelFileNode rnode, ForkNumber forknum, BlockNumber segno)
 			if (forknum == InvalidForkNumber)
 			{
 				/* remove requests for all forks */
-				for (forknum = 0; forknum <= MAX_FORKNUM; forknum++)
+				for (int forknum = 0; forknum <= MAX_FORKNUM; forknum++)
 				{
 					bms_free(entry->requests[forknum]);
 					entry->requests[forknum] = NULL;
@@ -1567,7 +1567,7 @@ RememberFsyncRequest(RelFileNode rnode, ForkNumber forknum, BlockNumber segno)
 			if (entry->rnode.dbNode == rnode.dbNode)
 			{
 				/* remove requests for all forks */
-				for (forknum = 0; forknum <= MAX_FORKNUM; forknum++)
+				for (int forknum = 0; forknum <= MAX_FORKNUM; forknum++)
 				{
 					bms_free(entry->requests[forknum]);
 					entry->requests[forknum] = NULL;

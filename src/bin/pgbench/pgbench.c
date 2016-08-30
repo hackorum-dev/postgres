@@ -3901,9 +3901,12 @@ main(int argc, char **argv)
 					fprintf(stderr, "query mode (-M) should be specified before any transaction scripts (-f or -b)\n");
 					exit(1);
 				}
-				for (querymode = 0; querymode < NUM_QUERYMODE; querymode++)
+				for (int qm = 0; qm < NUM_QUERYMODE; qm++)
 					if (strcmp(optarg, QUERYMODE[querymode]) == 0)
+					{
+						querymode = qm;
 						break;
+					}
 				if (querymode >= NUM_QUERYMODE)
 				{
 					fprintf(stderr, "invalid query mode (-M): \"%s\"\n",
