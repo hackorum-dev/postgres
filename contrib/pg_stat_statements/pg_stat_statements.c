@@ -1594,7 +1594,7 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 			volatile pgssEntry *e = (volatile pgssEntry *) entry;
 
 			SpinLockAcquire(&e->mutex);
-			tmp = e->counters;
+			tmp = const_cast<pgssEntry *>(e)->counters;
 			SpinLockRelease(&e->mutex);
 		}
 
