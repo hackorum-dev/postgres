@@ -52,10 +52,28 @@ PGDLLIMPORT fmgr_hook_type fmgr_hook = NULL;
  * with suitably ugly casts in fmgr_oldstyle().
  */
 #if (defined(__mc68000__) || (defined(__m68k__))) && defined(__ELF__)
-typedef int32 (*func_ptr) ();
+#define func_ptr_ret int32
 #else
-typedef char *(*func_ptr) ();
+#define func_ptr_ret char*
 #endif
+
+typedef func_ptr_ret (*func_ptr) ();
+typedef func_ptr_ret (*func1_ptr) (Datum, bool);
+typedef func_ptr_ret (*func2_ptr) (Datum, Datum);
+typedef func_ptr_ret (*func3_ptr) (Datum, Datum, Datum);
+typedef func_ptr_ret (*func4_ptr) (Datum, Datum, Datum, Datum);
+typedef func_ptr_ret (*func5_ptr) (Datum, Datum, Datum, Datum, Datum);
+typedef func_ptr_ret (*func6_ptr) (Datum, Datum, Datum, Datum, Datum, Datum);
+typedef func_ptr_ret (*func7_ptr) (Datum, Datum, Datum, Datum, Datum, Datum, Datum);
+typedef func_ptr_ret (*func8_ptr) (Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum);
+typedef func_ptr_ret (*func9_ptr) (Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum);
+typedef func_ptr_ret (*func10_ptr) (Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum);
+typedef func_ptr_ret (*func11_ptr) (Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum);
+typedef func_ptr_ret (*func12_ptr) (Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum);
+typedef func_ptr_ret (*func13_ptr) (Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum);
+typedef func_ptr_ret (*func14_ptr) (Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum);
+typedef func_ptr_ret (*func15_ptr) (Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum);
+typedef func_ptr_ret (*func16_ptr) (Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum, Datum);
 
 /*
  * For an oldstyle function, fn_extra points to a record like this:
@@ -657,7 +675,7 @@ fmgr_oldstyle(PG_FUNCTION_ARGS)
 	switch (n_arguments)
 	{
 		case 0:
-			returnValue = (char *) (*user_fn) ();
+			returnValue = (char *) (user_fn) ();
 			break;
 		case 1:
 
@@ -666,33 +684,33 @@ fmgr_oldstyle(PG_FUNCTION_ARGS)
 			 * there are other functions still out there that also rely on
 			 * this undocumented hack?
 			 */
-			returnValue = (char *) (*user_fn) (fcinfo->arg[0],
+			returnValue = (char *) ((func1_ptr) user_fn) (fcinfo->arg[0],
 											   &fcinfo->isnull);
 			break;
 		case 2:
-			returnValue = (char *) (*user_fn) (fcinfo->arg[0],
+			returnValue = (char *) ((func2_ptr) user_fn) (fcinfo->arg[0],
 											   fcinfo->arg[1]);
 			break;
 		case 3:
-			returnValue = (char *) (*user_fn) (fcinfo->arg[0],
+			returnValue = (char *) ((func3_ptr) user_fn) (fcinfo->arg[0],
 											   fcinfo->arg[1],
 											   fcinfo->arg[2]);
 			break;
 		case 4:
-			returnValue = (char *) (*user_fn) (fcinfo->arg[0],
+			returnValue = (char *) ((func4_ptr) user_fn) (fcinfo->arg[0],
 											   fcinfo->arg[1],
 											   fcinfo->arg[2],
 											   fcinfo->arg[3]);
 			break;
 		case 5:
-			returnValue = (char *) (*user_fn) (fcinfo->arg[0],
+			returnValue = (char *) ((func5_ptr) user_fn) (fcinfo->arg[0],
 											   fcinfo->arg[1],
 											   fcinfo->arg[2],
 											   fcinfo->arg[3],
 											   fcinfo->arg[4]);
 			break;
 		case 6:
-			returnValue = (char *) (*user_fn) (fcinfo->arg[0],
+			returnValue = (char *) ((func6_ptr) user_fn) (fcinfo->arg[0],
 											   fcinfo->arg[1],
 											   fcinfo->arg[2],
 											   fcinfo->arg[3],
@@ -700,7 +718,7 @@ fmgr_oldstyle(PG_FUNCTION_ARGS)
 											   fcinfo->arg[5]);
 			break;
 		case 7:
-			returnValue = (char *) (*user_fn) (fcinfo->arg[0],
+			returnValue = (char *) ((func7_ptr) user_fn) (fcinfo->arg[0],
 											   fcinfo->arg[1],
 											   fcinfo->arg[2],
 											   fcinfo->arg[3],
@@ -709,7 +727,7 @@ fmgr_oldstyle(PG_FUNCTION_ARGS)
 											   fcinfo->arg[6]);
 			break;
 		case 8:
-			returnValue = (char *) (*user_fn) (fcinfo->arg[0],
+			returnValue = (char *) ((func8_ptr) user_fn) (fcinfo->arg[0],
 											   fcinfo->arg[1],
 											   fcinfo->arg[2],
 											   fcinfo->arg[3],
@@ -719,7 +737,7 @@ fmgr_oldstyle(PG_FUNCTION_ARGS)
 											   fcinfo->arg[7]);
 			break;
 		case 9:
-			returnValue = (char *) (*user_fn) (fcinfo->arg[0],
+			returnValue = (char *) ((func9_ptr) user_fn) (fcinfo->arg[0],
 											   fcinfo->arg[1],
 											   fcinfo->arg[2],
 											   fcinfo->arg[3],
@@ -730,7 +748,7 @@ fmgr_oldstyle(PG_FUNCTION_ARGS)
 											   fcinfo->arg[8]);
 			break;
 		case 10:
-			returnValue = (char *) (*user_fn) (fcinfo->arg[0],
+			returnValue = (char *) ((func10_ptr) user_fn) (fcinfo->arg[0],
 											   fcinfo->arg[1],
 											   fcinfo->arg[2],
 											   fcinfo->arg[3],
@@ -742,7 +760,7 @@ fmgr_oldstyle(PG_FUNCTION_ARGS)
 											   fcinfo->arg[9]);
 			break;
 		case 11:
-			returnValue = (char *) (*user_fn) (fcinfo->arg[0],
+			returnValue = (char *) ((func11_ptr) user_fn) (fcinfo->arg[0],
 											   fcinfo->arg[1],
 											   fcinfo->arg[2],
 											   fcinfo->arg[3],
@@ -755,7 +773,7 @@ fmgr_oldstyle(PG_FUNCTION_ARGS)
 											   fcinfo->arg[10]);
 			break;
 		case 12:
-			returnValue = (char *) (*user_fn) (fcinfo->arg[0],
+			returnValue = (char *) ((func12_ptr) user_fn) (fcinfo->arg[0],
 											   fcinfo->arg[1],
 											   fcinfo->arg[2],
 											   fcinfo->arg[3],
@@ -769,7 +787,7 @@ fmgr_oldstyle(PG_FUNCTION_ARGS)
 											   fcinfo->arg[11]);
 			break;
 		case 13:
-			returnValue = (char *) (*user_fn) (fcinfo->arg[0],
+			returnValue = (char *) ((func13_ptr) user_fn) (fcinfo->arg[0],
 											   fcinfo->arg[1],
 											   fcinfo->arg[2],
 											   fcinfo->arg[3],
@@ -784,7 +802,7 @@ fmgr_oldstyle(PG_FUNCTION_ARGS)
 											   fcinfo->arg[12]);
 			break;
 		case 14:
-			returnValue = (char *) (*user_fn) (fcinfo->arg[0],
+			returnValue = (char *) ((func14_ptr) user_fn) (fcinfo->arg[0],
 											   fcinfo->arg[1],
 											   fcinfo->arg[2],
 											   fcinfo->arg[3],
@@ -800,7 +818,7 @@ fmgr_oldstyle(PG_FUNCTION_ARGS)
 											   fcinfo->arg[13]);
 			break;
 		case 15:
-			returnValue = (char *) (*user_fn) (fcinfo->arg[0],
+			returnValue = (char *) ((func15_ptr) user_fn) (fcinfo->arg[0],
 											   fcinfo->arg[1],
 											   fcinfo->arg[2],
 											   fcinfo->arg[3],
@@ -817,7 +835,7 @@ fmgr_oldstyle(PG_FUNCTION_ARGS)
 											   fcinfo->arg[14]);
 			break;
 		case 16:
-			returnValue = (char *) (*user_fn) (fcinfo->arg[0],
+			returnValue = (char *) ((func16_ptr) user_fn) (fcinfo->arg[0],
 											   fcinfo->arg[1],
 											   fcinfo->arg[2],
 											   fcinfo->arg[3],
