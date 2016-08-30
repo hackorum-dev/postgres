@@ -90,6 +90,7 @@ pgxml_parser_init(PgXmlStrictness strictness)
  * definitions for the contrib module, this won't be called.
  */
 
+#ifdef BROKEN
 PG_FUNCTION_INFO_V1(xml_is_well_formed);
 
 Datum
@@ -124,6 +125,7 @@ xml_is_well_formed(PG_FUNCTION_ARGS)
 
 	PG_RETURN_BOOL(result);
 }
+#endif
 
 
 /* Encodes special characters (<, >, &, " and \r) as XML entities */
