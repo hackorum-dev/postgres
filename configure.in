@@ -445,7 +445,9 @@ fi
 # but has its own.  Also check other compiler-specific flags here.
 
 if test "$GCC" = yes -a "$ICC" = no; then
-  CFLAGS="-Wall -Wmissing-prototypes -Wpointer-arith"
+  CFLAGS="-Wall -Wpointer-arith"
+  # not valid for C++
+  PGAC_PROG_CC_CFLAGS_OPT([-Wmissing-prototypes])
   # These work in some but not all gcc versions
   PGAC_PROG_CC_CFLAGS_OPT([-Wdeclaration-after-statement])
   PGAC_PROG_CC_CFLAGS_OPT([-Wendif-labels])
