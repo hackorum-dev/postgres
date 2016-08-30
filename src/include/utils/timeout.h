@@ -20,22 +20,21 @@
  * Identifiers for timeout reasons.  Note that in case multiple timeouts
  * trigger at the same time, they are serviced in the order of this enum.
  */
-typedef enum TimeoutId
-{
+typedef int TimeoutId;
+
 	/* Predefined timeout reasons */
-	STARTUP_PACKET_TIMEOUT,
-	DEADLOCK_TIMEOUT,
-	LOCK_TIMEOUT,
-	STATEMENT_TIMEOUT,
-	STANDBY_DEADLOCK_TIMEOUT,
-	STANDBY_TIMEOUT,
-	STANDBY_LOCK_TIMEOUT,
-	IDLE_IN_TRANSACTION_SESSION_TIMEOUT,
+const int STARTUP_PACKET_TIMEOUT = 1;
+const int DEADLOCK_TIMEOUT = 2;
+const int LOCK_TIMEOUT = 3;
+const int STATEMENT_TIMEOUT = 4;
+const int STANDBY_DEADLOCK_TIMEOUT = 5;
+const int STANDBY_TIMEOUT = 6;
+const int STANDBY_LOCK_TIMEOUT = 7;
+const int IDLE_IN_TRANSACTION_SESSION_TIMEOUT = 8;
 	/* First user-definable timeout reason */
-	USER_TIMEOUT,
+const int USER_TIMEOUT = 9;
 	/* Maximum number of timeout reasons */
-	MAX_TIMEOUTS = 16
-} TimeoutId;
+const int MAX_TIMEOUTS = 16;
 
 /* callback function signature */
 typedef void (*timeout_handler_proc) (void);
