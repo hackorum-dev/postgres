@@ -437,9 +437,11 @@ typedef uint32 (*utf_local_conversion_func) (uint32 code);
  * These functions are considered part of libpq's exported API and
  * are also declared in libpq-fe.h.
  */
+extern "C" {
 extern int	pg_char_to_encoding(const char *name);
 extern const char *pg_encoding_to_char(int encoding);
 extern int	pg_valid_server_encoding_id(int encoding);
+}
 
 /*
  * Remaining functions are not considered part of libpq's API, though many
@@ -491,11 +493,23 @@ extern int	pg_bind_textdomain_codeset(const char *domainname);
 #endif
 
 extern int	pg_valid_client_encoding(const char *name);
+#ifdef LIBPQ
+extern "C" {
+#endif
 extern int	pg_valid_server_encoding(const char *name);
+#ifdef LIBPQ
+}
+#endif
 
 extern unsigned char *unicode_to_utf8(pg_wchar c, unsigned char *utf8string);
 extern pg_wchar utf8_to_unicode(const unsigned char *c);
+#ifdef LIBPQ
+extern "C" {
+#endif
 extern int	pg_utf_mblen(const unsigned char *);
+#ifdef LIBPQ
+}
+#endif
 extern unsigned char *pg_do_encoding_conversion(unsigned char *src, int len,
 						  int src_encoding,
 						  int dest_encoding);

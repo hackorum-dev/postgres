@@ -467,8 +467,14 @@ extern int	pg_check_dir(const char *dir);
 extern int	pg_mkdir_p(char *path, int omode);
 
 /* port/pqsignal.c */
+#ifdef LIBPQ
+extern "C" {
+#endif
 typedef void (*pqsigfunc) (int signo);
 extern pqsigfunc pqsignal(int signo, pqsigfunc func);
+#ifdef LIBPQ
+}
+#endif
 
 /* port/quotes.c */
 extern char *escape_single_quotes_ascii(const char *src);

@@ -505,6 +505,7 @@ extern void PQclear(PGresult *res);
 extern void PQfreemem(void *ptr);
 
 /* Exists for backward compatibility.  bjm 2003-03-24 */
+extern void PQfreeNotify(PGnotify *notify);
 #define PQfreeNotify(ptr) PQfreemem(ptr)
 
 /* Error when no password was given. */

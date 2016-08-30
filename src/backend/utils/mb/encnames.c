@@ -6,6 +6,9 @@
  */
 #ifdef FRONTEND
 #include "postgres_fe.h"
+#ifdef LIBPQ
+#include "libpq-fe.h"
+#endif
 #else
 #include "postgres.h"
 #include "utils/builtins.h"

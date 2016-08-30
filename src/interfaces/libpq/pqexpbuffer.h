@@ -25,6 +25,11 @@
 #ifndef PQEXPBUFFER_H
 #define PQEXPBUFFER_H
 
+#ifdef __cplusplus
+extern      "C"
+{
+#endif
+
 /*-------------------------
  * PQExpBufferData holds information about an extensible string.
  *		data	is the current buffer for the string (allocated with malloc).
@@ -178,5 +183,9 @@ extern void appendPQExpBufferChar(PQExpBuffer str, char ch);
  */
 extern void appendBinaryPQExpBuffer(PQExpBuffer str,
 						const char *data, size_t datalen);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif   /* PQEXPBUFFER_H */
