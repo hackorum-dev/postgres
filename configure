@@ -16025,7 +16025,14 @@ if test "$cross_compiling" = yes; then :
 else
   cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
-extern void $link_test_func (); void (*fptr) () = $link_test_func;
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern void $link_test_func ();
+#ifdef __cplusplus
+}
+#endif
+void (*fptr) () = $link_test_func;
 int
 main ()
 {
@@ -16064,7 +16071,14 @@ if test "$cross_compiling" = yes; then :
 else
   cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
-extern void $link_test_func (); void (*fptr) () = $link_test_func;
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern void $link_test_func ();
+#ifdef __cplusplus
+}
+#endif
+void (*fptr) () = $link_test_func;
 int
 main ()
 {
@@ -16103,7 +16117,14 @@ if test "$cross_compiling" = yes; then :
 else
   cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
-extern void $link_test_func (); void (*fptr) () = $link_test_func;
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern void $link_test_func ();
+#ifdef __cplusplus
+}
+#endif
+void (*fptr) () = $link_test_func;
 int
 main ()
 {

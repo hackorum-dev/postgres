@@ -353,7 +353,14 @@ AC_DEFUN([PGAC_PROG_CC_LDFLAGS_OPT],
 AC_CACHE_CHECK([whether $CC supports $1], [Ac_cachevar],
 [pgac_save_LDFLAGS=$LDFLAGS
 LDFLAGS="$pgac_save_LDFLAGS $1"
-AC_RUN_IFELSE([AC_LANG_PROGRAM([extern void $2 (); void (*fptr) () = $2;],[])],
+AC_RUN_IFELSE([AC_LANG_PROGRAM([#ifdef __cplusplus
+extern "C" {
+#endif
+extern void $2 ();
+#ifdef __cplusplus
+}
+#endif
+void (*fptr) () = $2;],[])],
               [Ac_cachevar=yes],
               [Ac_cachevar=no],
               [Ac_cachevar="assuming no"])
