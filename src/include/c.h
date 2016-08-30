@@ -1103,7 +1103,7 @@ extern int	vsnprintf(char *str, size_t count, const char *fmt, va_list args);
 #endif
 
 #if defined(HAVE_FDATASYNC) && !HAVE_DECL_FDATASYNC
-extern int	fdatasync(int fildes);
+extern "C" int	fdatasync(int fildes);
 #endif
 
 /* If strtoq() exists, rename it to the more standard strtoll() */
