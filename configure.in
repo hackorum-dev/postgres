@@ -446,6 +446,10 @@ fi
 
 if test "$GCC" = yes -a "$ICC" = no; then
   CFLAGS="-Wall -Wpointer-arith"
+  # C++ support
+  PGAC_PROG_CC_CFLAGS_OPT([-fpermissive])
+  PGAC_PROG_CC_CFLAGS_OPT([-Wno-sign-compare])
+  PGAC_PROG_CC_CFLAGS_OPT([-Wno-write-strings])
   # not valid for C++
   PGAC_PROG_CC_CFLAGS_OPT([-Wmissing-prototypes])
   # These work in some but not all gcc versions
