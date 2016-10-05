@@ -280,7 +280,7 @@ ECPGget_desc(int lineno, const char *desc_name, int index,...)
 	ecpg_log("ECPGget_desc: reading items for tuple %d\n", index);
 	--index;
 
-	type = va_arg(args, enum ECPGdtype);
+	type = va_arg(args, int);
 
 	memset(&data_var, 0, sizeof data_var);
 	data_var.type = ECPGt_EORT;
@@ -295,7 +295,7 @@ ECPGget_desc(int lineno, const char *desc_name, int index,...)
 		enum ECPGttype vartype;
 		void	   *var;
 
-		vartype = va_arg(args, enum ECPGttype);
+		vartype = va_arg(args, int);
 		var = va_arg(args, void *);
 		varcharsize = va_arg(args, long);
 		arrsize = va_arg(args, long);
@@ -476,7 +476,7 @@ ECPGget_desc(int lineno, const char *desc_name, int index,...)
 				return (false);
 		}
 
-		type = va_arg(args, enum ECPGdtype);
+		type = va_arg(args, int);
 	}
 
 	if (data_var.type != ECPGt_EORT)
@@ -603,12 +603,12 @@ ECPGset_desc(int lineno, const char *desc_name, int index,...)
 		enum ECPGdtype itemtype;
 		char	   *tobeinserted = NULL;
 
-		itemtype = va_arg(args, enum ECPGdtype);
+		itemtype = va_arg(args, int);
 
 		if (itemtype == ECPGd_EODT)
 			break;
 
-		var->type = va_arg(args, enum ECPGttype);
+		var->type = va_arg(args, int);
 		var->pointer = va_arg(args, char *);
 
 		var->varcharsize = va_arg(args, long);
@@ -848,7 +848,7 @@ ECPGdescribe(int line, int compat, bool input, const char *connection_name, cons
 		void	   *ptr;
 
 		/* variable type */
-		type = va_arg(args, enum ECPGttype);
+		type = va_arg(args, int);
 
 		if (type == ECPGt_EORT)
 			break;
@@ -860,7 +860,7 @@ ECPGdescribe(int line, int compat, bool input, const char *connection_name, cons
 		(void) va_arg(args, long);
 
 		/* variable indicator */
-		(void) va_arg(args, enum ECPGttype);
+		(void) va_arg(args, int);
 		(void) va_arg(args, void *);	/* skip args */
 		(void) va_arg(args, long);
 		(void) va_arg(args, long);

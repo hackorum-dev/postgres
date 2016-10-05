@@ -1864,7 +1864,7 @@ ecpg_do_prologue(int lineno, const int compat, const int force_indicator,
 
 	list = &(stmt->inlist);
 
-	type = va_arg(args, enum ECPGttype);
+	type = va_arg(args, int);
 
 	while (type != ECPGt_EORT)
 	{
@@ -1912,7 +1912,7 @@ ecpg_do_prologue(int lineno, const int compat, const int force_indicator,
 
 			var->next = NULL;
 
-			var->ind_type = va_arg(args, enum ECPGttype);
+			var->ind_type = va_arg(args, int);
 			var->ind_pointer = va_arg(args, char *);
 			var->ind_varcharsize = va_arg(args, long);
 			var->ind_arrsize = va_arg(args, long);
@@ -1952,7 +1952,7 @@ ecpg_do_prologue(int lineno, const int compat, const int force_indicator,
 				ptr->next = var;
 		}
 
-		type = va_arg(args, enum ECPGttype);
+		type = va_arg(args, int);
 	}
 
 	/* are we connected? */
