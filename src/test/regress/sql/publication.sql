@@ -112,6 +112,10 @@ ALTER PUBLICATION testpub_default OWNER TO regress_publication_user2;
 
 \dRp testpub_default
 
+GRANT USAGE ON PUBLICATION testpub_default TO regress_publication_user;
+
+\dRp+ testpub_default
+
 DROP PUBLICATION testpub_default;
 DROP PUBLICATION testpib_ins_trunct;
 DROP PUBLICATION testpub_fortbl;

@@ -316,6 +316,11 @@
   </para>
 
   <para>
+   To use a publication, the remote user of a subscription connection must
+   have the <literal>USAGE</literal> privilege on the publication.
+  </para>
+
+  <para>
    The subscription apply process will run in the local database with the
    privileges of a superuser.
   </para>

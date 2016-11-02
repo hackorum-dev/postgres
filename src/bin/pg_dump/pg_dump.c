@@ -3349,7 +3349,11 @@ dumpPolicy(Archive *fout, PolicyInfo *polinfo)
 void
 getPublications(Archive *fout)
 {
-	PQExpBuffer query;
+	PQExpBuffer acl_subquery = createPQExpBuffer();
+	PQExpBuffer racl_subquery = createPQExpBuffer();
+	PQExpBuffer initacl_subquery = createPQExpBuffer();
+	PQExpBuffer initracl_subquery = createPQExpBuffer();
+	PQExpBuffer query = createPQExpBuffer();
 	PGresult   *res;
 	PublicationInfo *pubinfo;
 	int			i_tableoid;
@@ -3360,23 +3364,45 @@ getPublications(Archive *fout)
 	int			i_pubinsert;
 	int			i_pubupdate;
 	int			i_pubdelete;
+	int			i_pubacl;
+	int			i_rpubacl;
+	int			i_initpubacl;
+	int			i_initrpubacl;
 	int			i,
 				ntups;
+
 
 	if (fout->remoteVersion < 100000)
 		return;
 
-	query = createPQExpBuffer();
-
-	resetPQExpBuffer(query);
+	buildACLQueries(acl_subquery, racl_subquery, initacl_subquery,
+					initracl_subquery, "p.pubacl", "p.pubowner", "'p'",
+					fout->dopt->binary_upgrade);
 
 	/* Get the publications. */
 	appendPQExpBuffer(query,
 					  "SELECT p.tableoid, p.oid, p.pubname, "
+					  "%s AS pubacl, "
+					  "%s AS rpubacl, "
+					  "%s AS initpubacl, "
+					  "%s AS initrpubacl, "
 					  "(%s p.pubowner) AS rolname, "
 					  "p.puballtables, p.pubinsert, p.pubupdate, p.pubdelete "
-					  "FROM pg_catalog.pg_publication p",
+					  "FROM pg_catalog.pg_publication p "
+					  "LEFT JOIN pg_init_privs pip ON "
+					  "(p.oid = pip.objoid "
+					  "AND pip.classoid = 'pg_publication'::regclass "
+					  "AND pip.objsubid = 0) ",
+					  acl_subquery->data,
+					  racl_subquery->data,
+					  initacl_subquery->data,
+					  initracl_subquery->data,
 					  username_subquery);
+
+	destroyPQExpBuffer(acl_subquery);
+	destroyPQExpBuffer(racl_subquery);
+	destroyPQExpBuffer(initacl_subquery);
+	destroyPQExpBuffer(initracl_subquery);
 
 	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
 
@@ -3390,6 +3416,10 @@ getPublications(Archive *fout)
 	i_pubinsert = PQfnumber(res, "pubinsert");
 	i_pubupdate = PQfnumber(res, "pubupdate");
 	i_pubdelete = PQfnumber(res, "pubdelete");
+	i_pubacl = PQfnumber(res, "pubacl");
+	i_rpubacl = PQfnumber(res, "rpubacl");
+	i_initpubacl = PQfnumber(res, "initpubacl");
+	i_initrpubacl = PQfnumber(res, "initrpubacl");
 
 	pubinfo = pg_malloc(ntups * sizeof(PublicationInfo));
 
@@ -3410,6 +3440,10 @@ getPublications(Archive *fout)
 			(strcmp(PQgetvalue(res, i, i_pubupdate), "t") == 0);
 		pubinfo[i].pubdelete =
 			(strcmp(PQgetvalue(res, i, i_pubdelete), "t") == 0);
+		pubinfo[i].pubacl = pg_strdup(PQgetvalue(res, i, i_pubacl));
+		pubinfo[i].rpubacl = pg_strdup(PQgetvalue(res, i, i_rpubacl));
+		pubinfo[i].initpubacl = pg_strdup(PQgetvalue(res, i, i_initpubacl));
+		pubinfo[i].initrpubacl = pg_strdup(PQgetvalue(res, i, i_initrpubacl));
 
 		if (strlen(pubinfo[i].rolname) == 0)
 			write_msg(NULL, "WARNING: owner of publication \"%s\" appears to be invalid\n",
@@ -3430,6 +3464,7 @@ dumpPublication(Archive *fout, PublicationInfo *pubinfo)
 	DumpOptions *dopt = fout->dopt;
 	PQExpBuffer delq;
 	PQExpBuffer query;
+	char	   *qpubname;
 
 	if (dopt->dataOnly)
 		return;
@@ -3437,11 +3472,11 @@ dumpPublication(Archive *fout, PublicationInfo *pubinfo)
 	delq = createPQExpBuffer();
 	query = createPQExpBuffer();
 
-	appendPQExpBuffer(delq, "DROP PUBLICATION %s;\n",
-					  fmtId(pubinfo->dobj.name));
+	qpubname = pg_strdup(fmtId(pubinfo->dobj.name));
 
-	appendPQExpBuffer(query, "CREATE PUBLICATION %s",
-					  fmtId(pubinfo->dobj.name));
+	appendPQExpBuffer(delq, "DROP PUBLICATION %s;\n", qpubname);
+
+	appendPQExpBuffer(query, "CREATE PUBLICATION %s", qpubname);
 
 	if (pubinfo->puballtables)
 		appendPQExpBufferStr(query, " FOR ALL TABLES");
@@ -3474,6 +3509,13 @@ dumpPublication(Archive *fout, PublicationInfo *pubinfo)
 				 NULL, 0,
 				 NULL, NULL);
 
+	if (pubinfo->dobj.dump & DUMP_COMPONENT_ACL)
+		dumpACL(fout, pubinfo->dobj.catId, pubinfo->dobj.dumpId, "PUBLICATION",
+				qpubname, NULL, pubinfo->dobj.name,
+				NULL, pubinfo->rolname, pubinfo->pubacl, pubinfo->rpubacl,
+				pubinfo->initpubacl, pubinfo->initrpubacl);
+
+	free(qpubname);
 	destroyPQExpBuffer(delq);
 	destroyPQExpBuffer(query);
 }

@@ -2800,6 +2800,7 @@ psql_completion(const char *text, int start, int end)
 								   " UNION SELECT 'FUNCTION'"
 								   " UNION SELECT 'LANGUAGE'"
 								   " UNION SELECT 'LARGE OBJECT'"
+								   " UNION SELECT 'PUBLICATION'"
 								   " UNION SELECT 'SCHEMA'"
 								   " UNION SELECT 'SEQUENCE'"
 								   " UNION SELECT 'TABLE'"

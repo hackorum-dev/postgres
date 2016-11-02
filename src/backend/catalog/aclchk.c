@@ -109,6 +109,7 @@ static void ExecGrant_Function(InternalGrant *grantStmt);
 static void ExecGrant_Language(InternalGrant *grantStmt);
 static void ExecGrant_Largeobject(InternalGrant *grantStmt);
 static void ExecGrant_Namespace(InternalGrant *grantStmt);
+static void ExecGrant_Publication(InternalGrant *grantStmt);
 static void ExecGrant_Tablespace(InternalGrant *grantStmt);
 static void ExecGrant_Type(InternalGrant *grantStmt);
 
@@ -282,6 +283,9 @@ restrict_and_check_grant(bool is_grant, AclMode avail_goptions, bool all_privs,
 			return ACL_NO_RIGHTS;
 		case ACL_KIND_TYPE:
 			whole_mask = ACL_ALL_RIGHTS_TYPE;
+			break;
+		case ACL_KIND_PUBLICATION:
+			whole_mask = ACL_ALL_RIGHTS_PUBLICATION;
 			break;
 		default:
 			elog(ERROR, "unrecognized object kind: %d", objkind);
@@ -497,6 +501,10 @@ ExecuteGrantStmt(GrantStmt *stmt)
 			all_privileges = ACL_ALL_RIGHTS_FOREIGN_SERVER;
 			errormsg = gettext_noop("invalid privilege type %s for foreign server");
 			break;
+		case ACL_OBJECT_PUBLICATION:
+			all_privileges = ACL_ALL_RIGHTS_PUBLICATION;
+			errormsg = gettext_noop("invalid privilege type %s for publication");
+			break;
 		default:
 			elog(ERROR, "unrecognized GrantStmt.objtype: %d",
 				 (int) stmt->objtype);
@@ -593,6 +601,9 @@ ExecGrantStmt_oids(InternalGrant *istmt)
 			break;
 		case ACL_OBJECT_NAMESPACE:
 			ExecGrant_Namespace(istmt);
+			break;
+		case ACL_OBJECT_PUBLICATION:
+			ExecGrant_Publication(istmt);
 			break;
 		case ACL_OBJECT_TABLESPACE:
 			ExecGrant_Tablespace(istmt);
@@ -734,6 +745,15 @@ objectNamesToOids(GrantObjectType objtype, List *objnames)
 				Oid			srvid = get_foreign_server_oid(srvname, false);
 
 				objects = lappend_oid(objects, srvid);
+			}
+			break;
+		case ACL_OBJECT_PUBLICATION:
+			foreach(cell, objnames)
+			{
+				char	   *pubname = strVal(lfirst(cell));
+				Oid			pubid = get_publication_oid(pubname, false);
+
+				objects = lappend_oid(objects, pubid);
 			}
 			break;
 		default:
@@ -2936,6 +2956,126 @@ ExecGrant_Namespace(InternalGrant *istmt)
 }
 
 static void
+ExecGrant_Publication(InternalGrant *istmt)
+{
+	Relation	relation;
+	ListCell   *cell;
+
+	if (istmt->all_privs && istmt->privileges == ACL_NO_RIGHTS)
+		istmt->privileges = ACL_ALL_RIGHTS_PUBLICATION;
+
+	relation = heap_open(PublicationRelationId, RowExclusiveLock);
+
+	foreach(cell, istmt->objects)
+	{
+		Oid			pubId = lfirst_oid(cell);
+		Form_pg_publication pg_publication_tuple;
+		Datum		aclDatum;
+		bool		isNull;
+		AclMode		avail_goptions;
+		AclMode		this_privileges;
+		Acl		   *old_acl;
+		Acl		   *new_acl;
+		Oid			grantorId;
+		Oid			ownerId;
+		HeapTuple	newtuple;
+		Datum		values[Natts_pg_publication];
+		bool		nulls[Natts_pg_publication];
+		bool		replaces[Natts_pg_publication];
+		int			noldmembers;
+		int			nnewmembers;
+		Oid		   *oldmembers;
+		Oid		   *newmembers;
+		HeapTuple	tuple;
+
+		/* Search syscache for pg_publication */
+		tuple = SearchSysCache1(PUBLICATIONOID, ObjectIdGetDatum(pubId));
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for publication %u", pubId);
+
+		pg_publication_tuple = (Form_pg_publication) GETSTRUCT(tuple);
+
+		/*
+		 * Get owner ID and working copy of existing ACL. If there's no ACL,
+		 * substitute the proper default.
+		 */
+		ownerId = pg_publication_tuple->pubowner;
+		aclDatum = heap_getattr(tuple, Anum_pg_publication_pubacl,
+								RelationGetDescr(relation), &isNull);
+		if (isNull)
+		{
+			old_acl = acldefault(ACL_OBJECT_PUBLICATION, ownerId);
+			/* There are no old member roles according to the catalogs */
+			noldmembers = 0;
+			oldmembers = NULL;
+		}
+		else
+		{
+			old_acl = DatumGetAclPCopy(aclDatum);
+			/* Get the roles mentioned in the existing ACL */
+			noldmembers = aclmembers(old_acl, &oldmembers);
+		}
+
+		/* Determine ID to do the grant as, and available grant options */
+		select_best_grantor(GetUserId(), istmt->privileges,
+							old_acl, ownerId,
+							&grantorId, &avail_goptions);
+
+		/*
+		 * Restrict the privileges to what we can actually grant, and emit the
+		 * standards-mandated warning and error messages.
+		 */
+		this_privileges =
+			restrict_and_check_grant(istmt->is_grant, avail_goptions,
+									 istmt->all_privs, istmt->privileges,
+									 pubId, grantorId, ACL_KIND_PUBLICATION,
+									 NameStr(pg_publication_tuple->pubname),
+									 0, NULL);
+
+		/*
+		 * Generate new ACL.
+		 */
+		new_acl = merge_acl_with_grant(old_acl, istmt->is_grant,
+									   istmt->grant_option, istmt->behavior,
+									   istmt->grantees, this_privileges,
+									   grantorId, ownerId);
+
+		/*
+		 * We need the members of both old and new ACLs so we can correct the
+		 * shared dependency information.
+		 */
+		nnewmembers = aclmembers(new_acl, &newmembers);
+
+		/* finished building new ACL value, now insert it */
+		MemSet(values, 0, sizeof(values));
+		MemSet(nulls, false, sizeof(nulls));
+		MemSet(replaces, false, sizeof(replaces));
+
+		replaces[Anum_pg_publication_pubacl - 1] = true;
+		values[Anum_pg_publication_pubacl - 1] = PointerGetDatum(new_acl);
+
+		newtuple = heap_modify_tuple(tuple, RelationGetDescr(relation), values,
+									 nulls, replaces);
+
+		CatalogTupleUpdate(relation, &newtuple->t_self, newtuple);
+
+		/* Update the shared dependency ACL info */
+		updateAclDependencies(PublicationRelationId, pubId, 0,
+							  ownerId,
+							  noldmembers, oldmembers,
+							  nnewmembers, newmembers);
+
+		ReleaseSysCache(tuple);
+		pfree(new_acl);
+
+		/* prevent error when processing duplicate objects */
+		CommandCounterIncrement();
+	}
+
+	heap_close(relation, RowExclusiveLock);
+}
+
+static void
 ExecGrant_Tablespace(InternalGrant *istmt)
 {
 	Relation	relation;
@@ -4192,6 +4332,67 @@ pg_foreign_server_aclmask(Oid srv_oid, Oid roleid,
 }
 
 /*
+ * Exported routine for examining a user's privileges for a publication.
+ */
+AclMode
+pg_publication_aclmask(Oid pub_oid, Oid roleid,
+					   AclMode mask, AclMaskHow how)
+{
+	AclMode		result;
+	HeapTuple	tuple;
+	Datum		aclDatum;
+	bool		isNull;
+	Acl		   *acl;
+	Oid			ownerId;
+
+	Form_pg_publication pubForm;
+
+	/* Bypass permission checks for superusers */
+	if (superuser_arg(roleid))
+		return mask;
+
+	/*
+	 * Must get the publication's tuple from pg_publication
+	 */
+	tuple = SearchSysCache1(PUBLICATIONOID, ObjectIdGetDatum(pub_oid));
+	if (!HeapTupleIsValid(tuple))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("publication with OID %u does not exist",
+						pub_oid)));
+	pubForm = (Form_pg_publication) GETSTRUCT(tuple);
+
+	/*
+	 * Normal case: get the publication's ACL from pg_publication
+	 */
+	ownerId = pubForm->pubowner;
+
+	aclDatum = SysCacheGetAttr(PUBLICATIONOID, tuple,
+							   Anum_pg_publication_pubacl, &isNull);
+	if (isNull)
+	{
+		/* No ACL, so build default ACL */
+		acl = acldefault(ACL_OBJECT_PUBLICATION, ownerId);
+		aclDatum = (Datum) 0;
+	}
+	else
+	{
+		/* detoast rel's ACL if necessary */
+		acl = DatumGetAclP(aclDatum);
+	}
+
+	result = aclmask(acl, roleid, ownerId, mask, how);
+
+	/* if we have a detoasted copy, free it */
+	if (acl && (Pointer) acl != DatumGetPointer(aclDatum))
+		pfree(acl);
+
+	ReleaseSysCache(tuple);
+
+	return result;
+}
+
+/*
  * Exported routine for examining a user's privileges for a type.
  */
 AclMode
@@ -4496,6 +4697,18 @@ AclResult
 pg_foreign_server_aclcheck(Oid srv_oid, Oid roleid, AclMode mode)
 {
 	if (pg_foreign_server_aclmask(srv_oid, roleid, mode, ACLMASK_ANY) != 0)
+		return ACLCHECK_OK;
+	else
+		return ACLCHECK_NO_PRIV;
+}
+
+/*
+ * Exported routine for checking a user's access privileges to a publication
+ */
+AclResult
+pg_publication_aclcheck(Oid pub_oid, Oid roleid, AclMode mode)
+{
+	if (pg_publication_aclmask(pub_oid, roleid, mode, ACLMASK_ANY) != 0)
 		return ACLCHECK_OK;
 	else
 		return ACLCHECK_NO_PRIV;

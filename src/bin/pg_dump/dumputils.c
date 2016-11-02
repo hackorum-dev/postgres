@@ -520,6 +520,8 @@ do { \
 		CONVERT_PRIV('X', "EXECUTE");
 	else if (strcmp(type, "LANGUAGE") == 0)
 		CONVERT_PRIV('U', "USAGE");
+	else if (strcmp(type, "PUBLICATION") == 0)
+		CONVERT_PRIV('U', "USAGE");
 	else if (strcmp(type, "SCHEMA") == 0)
 	{
 		CONVERT_PRIV('C', "CREATE");

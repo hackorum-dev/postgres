@@ -6769,6 +6769,14 @@ privilege_target:
 					n->objs = $3;
 					$$ = n;
 				}
+			| PUBLICATION name_list
+				{
+					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
+					n->targtype = ACL_TARGET_OBJECT;
+					n->objtype = ACL_OBJECT_PUBLICATION;
+					n->objs = $2;
+					$$ = n;
+				}
 			| SCHEMA name_list
 				{
 					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));

@@ -14,6 +14,8 @@
 
 #include "catalog/pg_publication.h"
 
+#include "miscadmin.h"
+
 #include "replication/logical.h"
 #include "replication/logicalproto.h"
 #include "replication/origin.h"
@@ -398,6 +400,12 @@ LoadPublications(List *pubnames)
 	{
 		char		   *pubname = (char *) lfirst(lc);
 		Publication	   *pub = GetPublicationByName(pubname, false);
+		AclResult		aclresult;
+
+		aclresult = pg_publication_aclcheck(pub->oid, GetUserId(), ACL_USAGE);
+		if (aclresult != ACLCHECK_OK)
+			aclcheck_error(aclresult, ACL_KIND_PUBLICATION,
+						   get_publication_name(pub->oid));
 
 		result = lappend(result, pub);
 	}

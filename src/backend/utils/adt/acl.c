@@ -106,6 +106,8 @@ static Oid	convert_function_name(text *functionname);
 static AclMode convert_function_priv_string(text *priv_type_text);
 static Oid	convert_language_name(text *languagename);
 static AclMode convert_language_priv_string(text *priv_type_text);
+static Oid	convert_publication_name(text *publicationname);
+static AclMode convert_publication_priv_string(text *priv_type_text);
 static Oid	convert_schema_name(text *schemaname);
 static AclMode convert_schema_priv_string(text *priv_type_text);
 static Oid	convert_server_name(text *servername);
@@ -791,6 +793,10 @@ acldefault(GrantObjectType objtype, Oid ownerId)
 			world_default = ACL_USAGE;
 			owner_default = ACL_ALL_RIGHTS_TYPE;
 			break;
+		case ACL_OBJECT_PUBLICATION:
+			world_default = ACL_NO_RIGHTS;
+			owner_default = ACL_ALL_RIGHTS_PUBLICATION;
+			break;
 		default:
 			elog(ERROR, "unrecognized objtype: %d", (int) objtype);
 			world_default = ACL_NO_RIGHTS;		/* keep compiler quiet */
@@ -882,6 +888,9 @@ acldefault_sql(PG_FUNCTION_ARGS)
 			break;
 		case 'S':
 			objtype = ACL_OBJECT_FOREIGN_SERVER;
+			break;
+		case 'p':
+			objtype = ACL_OBJECT_PUBLICATION;
 			break;
 		case 'T':
 			objtype = ACL_OBJECT_TYPE;
@@ -3617,6 +3626,197 @@ convert_language_priv_string(text *priv_type_text)
 	};
 
 	return convert_any_priv_string(priv_type_text, language_priv_map);
+}
+
+
+/*
+ * has_publication_privilege variants
+ *		These are all named "has_publication_privilege" at the SQL level.
+ *		They take various combinations of publication name, publication OID,
+ *		user name, user OID, or implicit user = current_user.
+ *
+ *		The result is a boolean value: true if user has the indicated
+ *		privilege, false if not, or NULL if object doesn't exist.
+ */
+
+/*
+ * has_publication_privilege_name_name
+ *		Check user privileges on a publication given
+ *		name username, text publicationname, and text priv name.
+ */
+Datum
+has_publication_privilege_name_name(PG_FUNCTION_ARGS)
+{
+	Name		username = PG_GETARG_NAME(0);
+	text	   *publicationname = PG_GETARG_TEXT_P(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	Oid			roleid;
+	Oid			publicationoid;
+	AclMode		mode;
+	AclResult	aclresult;
+
+	roleid = get_role_oid_or_public(NameStr(*username));
+	publicationoid = convert_publication_name(publicationname);
+	mode = convert_publication_priv_string(priv_type_text);
+
+	aclresult = pg_publication_aclcheck(publicationoid, roleid, mode);
+
+	PG_RETURN_BOOL(aclresult == ACLCHECK_OK);
+}
+
+/*
+ * has_publication_privilege_name
+ *		Check user privileges on a publication given
+ *		text publicationname and text priv name.
+ *		current_user is assumed
+ */
+Datum
+has_publication_privilege_name(PG_FUNCTION_ARGS)
+{
+	text	   *publicationname = PG_GETARG_TEXT_P(0);
+	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
+	Oid			roleid;
+	Oid			publicationoid;
+	AclMode		mode;
+	AclResult	aclresult;
+
+	roleid = GetUserId();
+	publicationoid = convert_publication_name(publicationname);
+	mode = convert_publication_priv_string(priv_type_text);
+
+	aclresult = pg_publication_aclcheck(publicationoid, roleid, mode);
+
+	PG_RETURN_BOOL(aclresult == ACLCHECK_OK);
+}
+
+/*
+ * has_publication_privilege_name_id
+ *		Check user privileges on a publication given
+ *		name usename, publication oid, and text priv name.
+ */
+Datum
+has_publication_privilege_name_id(PG_FUNCTION_ARGS)
+{
+	Name		username = PG_GETARG_NAME(0);
+	Oid			publicationoid = PG_GETARG_OID(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	Oid			roleid;
+	AclMode		mode;
+	AclResult	aclresult;
+
+	roleid = get_role_oid_or_public(NameStr(*username));
+	mode = convert_publication_priv_string(priv_type_text);
+
+	if (!SearchSysCacheExists1(PUBLICATIONOID, ObjectIdGetDatum(publicationoid)))
+		PG_RETURN_NULL();
+
+	aclresult = pg_publication_aclcheck(publicationoid, roleid, mode);
+
+	PG_RETURN_BOOL(aclresult == ACLCHECK_OK);
+}
+
+/*
+ * has_publication_privilege_id
+ *		Check user privileges on a publication given
+ *		publication oid, and text priv name.
+ *		current_user is assumed
+ */
+Datum
+has_publication_privilege_id(PG_FUNCTION_ARGS)
+{
+	Oid			publicationoid = PG_GETARG_OID(0);
+	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
+	Oid			roleid;
+	AclMode		mode;
+	AclResult	aclresult;
+
+	roleid = GetUserId();
+	mode = convert_publication_priv_string(priv_type_text);
+
+	if (!SearchSysCacheExists1(PUBLICATIONOID, ObjectIdGetDatum(publicationoid)))
+		PG_RETURN_NULL();
+
+	aclresult = pg_publication_aclcheck(publicationoid, roleid, mode);
+
+	PG_RETURN_BOOL(aclresult == ACLCHECK_OK);
+}
+
+/*
+ * has_publication_privilege_id_name
+ *		Check user privileges on a publication given
+ *		roleid, text publicationname, and text priv name.
+ */
+Datum
+has_publication_privilege_id_name(PG_FUNCTION_ARGS)
+{
+	Oid			roleid = PG_GETARG_OID(0);
+	text	   *publicationname = PG_GETARG_TEXT_P(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	Oid			publicationoid;
+	AclMode		mode;
+	AclResult	aclresult;
+
+	publicationoid = convert_publication_name(publicationname);
+	mode = convert_publication_priv_string(priv_type_text);
+
+	aclresult = pg_publication_aclcheck(publicationoid, roleid, mode);
+
+	PG_RETURN_BOOL(aclresult == ACLCHECK_OK);
+}
+
+/*
+ * has_publication_privilege_id_id
+ *		Check user privileges on a publication given
+ *		roleid, publication oid, and text priv name.
+ */
+Datum
+has_publication_privilege_id_id(PG_FUNCTION_ARGS)
+{
+	Oid			roleid = PG_GETARG_OID(0);
+	Oid			publicationoid = PG_GETARG_OID(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	AclMode		mode;
+	AclResult	aclresult;
+
+	mode = convert_publication_priv_string(priv_type_text);
+
+	if (!SearchSysCacheExists1(PUBLICATIONOID, ObjectIdGetDatum(publicationoid)))
+		PG_RETURN_NULL();
+
+	aclresult = pg_publication_aclcheck(publicationoid, roleid, mode);
+
+	PG_RETURN_BOOL(aclresult == ACLCHECK_OK);
+}
+
+/*
+ *		Support routines for has_publication_privilege family.
+ */
+
+/*
+ * Given a publication name expressed as a string, look it up and return Oid
+ */
+static Oid
+convert_publication_name(text *publicationname)
+{
+	char	   *pubname = text_to_cstring(publicationname);
+
+	return get_publication_oid(pubname, false);
+}
+
+/*
+ * convert_publication_priv_string
+ *		Convert text string to AclMode value.
+ */
+static AclMode
+convert_publication_priv_string(text *priv_type_text)
+{
+	static const priv_map publication_priv_map[] = {
+		{"USAGE", ACL_USAGE},
+		{"USAGE WITH GRANT OPTION", ACL_GRANT_OPTION_FOR(ACL_USAGE)},
+		{NULL, 0}
+	};
+
+	return convert_any_priv_string(priv_type_text, publication_priv_map);
 }
 
 

@@ -5378,6 +5378,18 @@
       <entry>If true, <command>DELETE</command> operations are replicated for
        tables in the publication.</entry>
      </row>
+
+     <row>
+      <entry><structfield>pubacl</structfield></entry>
+      <entry><type>aclitem[]</type></entry>
+      <entry></entry>
+      <entry>
+       Access privileges; see
+       <xref linkend="sql-grant"> and
+       <xref linkend="sql-revoke">
+       for details
+      </entry>
+     </row>
     </tbody>
    </tgroup>
   </table>

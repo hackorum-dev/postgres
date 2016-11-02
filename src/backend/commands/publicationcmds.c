@@ -212,6 +212,8 @@ CreatePublication(CreatePublicationStmt *stmt)
 	values[Anum_pg_publication_pubdelete - 1] =
 		BoolGetDatum(publish_delete);
 
+	nulls[Anum_pg_publication_pubacl - 1] = true;
+
 	tup = heap_form_tuple(RelationGetDescr(rel), values, nulls);
 
 	/* Insert tuple into catalog. */

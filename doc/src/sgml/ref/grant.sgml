@@ -67,6 +67,10 @@ GRANT { { SELECT | UPDATE } [, ...] | ALL [ PRIVILEGES ] }
     ON LARGE OBJECT <replaceable class="PARAMETER">loid</replaceable> [, ...]
     TO <replaceable class="PARAMETER">role_specification</replaceable> [, ...] [ WITH GRANT OPTION ]
 
+GRANT { USAGE | ALL [ PRIVILEGES ] }
+    ON PUBLICATION <replaceable>publication_name</replaceable> [, ...]
+    TO <replaceable class="PARAMETER">role_specification</replaceable> [, ...] [ WITH GRANT OPTION ]
+
 GRANT { { CREATE | USAGE } [, ...] | ALL [ PRIVILEGES ] }
     ON SCHEMA <replaceable>schema_name</replaceable> [, ...]
     TO <replaceable class="PARAMETER">role_specification</replaceable> [, ...] [ WITH GRANT OPTION ]
@@ -367,6 +371,10 @@ GRANT <replaceable class="PARAMETER">role_name</replaceable> [, ...] TO <replace
        For servers, this privilege enables the grantee to create foreign
        tables using the server, and also to create, alter, or drop their own
        user's user mappings associated with that server.
+      </para>
+      <para>
+       For publications, this privilege allows a subscription to use the
+       publication.
       </para>
      </listitem>
     </varlistentry>

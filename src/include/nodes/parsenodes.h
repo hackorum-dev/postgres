@@ -1782,6 +1782,7 @@ typedef enum GrantObjectType
 	ACL_OBJECT_LANGUAGE,		/* procedural language */
 	ACL_OBJECT_LARGEOBJECT,		/* largeobject */
 	ACL_OBJECT_NAMESPACE,		/* namespace */
+	ACL_OBJECT_PUBLICATION,		/* publication */
 	ACL_OBJECT_TABLESPACE,		/* tablespace */
 	ACL_OBJECT_TYPE				/* type */
 } GrantObjectType;

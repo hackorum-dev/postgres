@@ -1199,6 +1199,7 @@ EventTriggerSupportsGrantObjectType(GrantObjectType objtype)
 		case ACL_OBJECT_LANGUAGE:
 		case ACL_OBJECT_LARGEOBJECT:
 		case ACL_OBJECT_NAMESPACE:
+		case ACL_OBJECT_PUBLICATION:
 		case ACL_OBJECT_TYPE:
 			return true;
 		default:

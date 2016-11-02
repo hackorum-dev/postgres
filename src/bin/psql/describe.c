@@ -5003,7 +5003,9 @@ describePublications(const char *pattern)
 
 	printfPQExpBuffer(&buf,
 					  "SELECT oid, pubname, puballtables, pubinsert,\n"
-					  "  pubupdate, pubdelete\n"
+					  "  pubupdate, pubdelete, ");
+	printACLColumn(&buf, "pubacl");
+	appendPQExpBuffer(&buf,
 					  "FROM pg_catalog.pg_publication\n");
 
 	processSQLNamePattern(pset.db, &buf, pattern, false, false,
@@ -5022,7 +5024,7 @@ describePublications(const char *pattern)
 	for (i = 0; i < PQntuples(res); i++)
 	{
 		const char	align = 'l';
-		int			ncols = 3;
+		int			ncols = 4;
 		int			nrows = 1;
 		int			tables = 0;
 		PGresult   *tabres;
@@ -5041,10 +5043,12 @@ describePublications(const char *pattern)
 		printTableAddHeader(&cont, gettext_noop("Inserts"), true, align);
 		printTableAddHeader(&cont, gettext_noop("Updates"), true, align);
 		printTableAddHeader(&cont, gettext_noop("Deletes"), true, align);
+		printTableAddHeader(&cont, gettext_noop("Access privileges"), true, align);
 
 		printTableAddCell(&cont, PQgetvalue(res, i, 3), false, false);
 		printTableAddCell(&cont, PQgetvalue(res, i, 4), false, false);
 		printTableAddCell(&cont, PQgetvalue(res, i, 5), false, false);
+		printTableAddCell(&cont, PQgetvalue(res, i, 6), false, false);
 
 		if (puballtables)
 			printfPQExpBuffer(&buf,

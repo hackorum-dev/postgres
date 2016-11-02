@@ -3611,6 +3611,19 @@ DESCR("current user privilege on language by language name");
 DATA(insert OID = 2267 (  has_language_privilege		   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 2 0 16 "26 25" _null_ _null_ _null_ _null_ _null_ has_language_privilege_id _null_ _null_ _null_ ));
 DESCR("current user privilege on language by language oid");
 
+DATA(insert OID = 4001 (  has_publication_privilege		   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 3 0 16 "19 25 25" _null_ _null_ _null_ _null_ _null_	has_publication_privilege_name_name _null_ _null_ _null_ ));
+DESCR("user privilege on publication by username, publication name");
+DATA(insert OID = 4002 (  has_publication_privilege		   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 3 0 16 "19 26 25" _null_ _null_ _null_ _null_ _null_	has_publication_privilege_name_id _null_ _null_ _null_ ));
+DESCR("user privilege on publication by username, publication oid");
+DATA(insert OID = 4003 (  has_publication_privilege		   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 3 0 16 "26 25 25" _null_ _null_ _null_ _null_ _null_	has_publication_privilege_id_name _null_ _null_ _null_ ));
+DESCR("user privilege on publication by user oid, publication name");
+DATA(insert OID = 4004 (  has_publication_privilege		   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 3 0 16 "26 26 25" _null_ _null_ _null_ _null_ _null_	has_publication_privilege_id_id _null_ _null_ _null_ ));
+DESCR("user privilege on publication by user oid, publication oid");
+DATA(insert OID = 4005 (  has_publication_privilege		   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 2 0 16 "25 25" _null_ _null_ _null_ _null_ _null_ has_publication_privilege_name _null_ _null_ _null_ ));
+DESCR("current user privilege on publication by publication name");
+DATA(insert OID = 4006 (  has_publication_privilege		   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 2 0 16 "26 25" _null_ _null_ _null_ _null_ _null_ has_publication_privilege_id _null_ _null_ _null_ ));
+DESCR("current user privilege on publication by publication oid");
+
 DATA(insert OID = 2268 (  has_schema_privilege		   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 3 0 16 "19 25 25" _null_ _null_ _null_ _null_ _null_	has_schema_privilege_name_name _null_ _null_ _null_ ));
 DESCR("user privilege on schema by username, schema name");
 DATA(insert OID = 2269 (  has_schema_privilege		   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 3 0 16 "19 26 25" _null_ _null_ _null_ _null_ _null_	has_schema_privilege_name_id _null_ _null_ _null_ ));

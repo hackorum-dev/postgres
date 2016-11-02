@@ -583,6 +583,10 @@ typedef struct _PublicationInfo
 	bool		pubinsert;
 	bool		pubupdate;
 	bool		pubdelete;
+	char	   *pubacl;
+	char	   *rpubacl;
+	char	   *initpubacl;
+	char	   *initrpubacl;
 } PublicationInfo;
 
 /*
