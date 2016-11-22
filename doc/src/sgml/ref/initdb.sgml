@@ -442,6 +442,13 @@ PostgreSQL documentation
    <command>initdb</command> can also be invoked via
    <command>pg_ctl initdb</command>.
   </para>
+
+  <para>
+   The data directory path cannot include newline or carriage return characters
+   as those could be at the origin of security breaches, particularly on
+   Windows where the command shell is unusable with arguments containing
+   such characters.
+  </para>
  </refsect1>
 
  <refsect1>

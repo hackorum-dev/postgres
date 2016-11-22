@@ -6,7 +6,7 @@ use strict;
 use warnings;
 use PostgresNode;
 use TestLib;
-use Test::More tests => 15;
+use Test::More tests => 16;
 
 my $tempdir = TestLib::tempdir;
 my $xlogdir = "$tempdir/pgxlog";
@@ -39,3 +39,5 @@ command_ok([ 'initdb', '-N', '-T', 'german', '-X', $xlogdir, $datadir ],
 
 command_ok([ 'initdb', '-S', $datadir ], 'sync only');
 command_fails([ 'initdb', $datadir ], 'existing data directory');
+command_fails([ 'initdb', $datadir . "foo\n\rbar" ],
+	'data directory with \n\r');

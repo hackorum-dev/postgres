@@ -417,6 +417,31 @@ appendByteaLiteral(PQExpBuffer buf, const unsigned char *str, size_t length,
 
 
 /*
+ * Check whether the given string is suited to be used within a shell command.
+ *
+ * The same restrictions as for appendShellString apply.
+ */
+void
+checkShellString(const char *str)
+{
+	if (strchr(str, '\n') != NULL)
+	{
+		fprintf(stderr,
+				_("string contains a newline character: \"%s\"\n"),
+				str);
+		exit(EXIT_FAILURE);
+	}
+	if (strchr(str, '\r') != NULL)
+	{
+		fprintf(stderr,
+				_("string contains a carriage return character: \"%s\"\n"),
+				str);
+		exit(EXIT_FAILURE);
+	}
+}
+
+
+/*
  * Append the given string to the shell command being built in the buffer,
  * with shell-style quoting as needed to create exactly one argument.
  *

@@ -43,6 +43,7 @@ extern void appendByteaLiteral(PQExpBuffer buf,
 				   const unsigned char *str, size_t length,
 				   bool std_strings);
 
+extern void checkShellString(const char *str);
 extern void appendShellString(PQExpBuffer buf, const char *str);
 extern void appendConnStrVal(PQExpBuffer buf, const char *str);
 extern void appendPsqlMetaConnect(PQExpBuffer buf, const char *dbname);

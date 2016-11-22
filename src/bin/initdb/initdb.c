@@ -3103,6 +3103,8 @@ main(int argc, char *argv[])
 		exit(1);
 	}
 
+	checkShellString(pg_data);
+
 	/* If we only need to fsync, just do it and exit */
 	if (sync_only)
 	{
