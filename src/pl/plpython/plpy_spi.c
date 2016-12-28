@@ -31,8 +31,6 @@
 
 static PyObject *PLy_spi_execute_query(char *query, long limit);
 static PyObject *PLy_spi_execute_plan(PyObject *ob, PyObject *list, long limit);
-static PyObject *PLy_spi_execute_fetch_result(SPITupleTable *tuptable,
-							 uint64 rows, int status);
 static void PLy_spi_exception_set(PyObject *excclass, ErrorData *edata);
 
 
@@ -291,7 +289,10 @@ PLy_spi_execute_plan(PyObject *ob, PyObject *list, long limit)
 
 		rv = SPI_execute_plan(plan->plan, plan->values, nulls,
 							  exec_ctx->curr_proc->fn_readonly, limit);
-		ret = PLy_spi_execute_fetch_result(SPI_tuptable, SPI_processed, rv);
+		ret = PLy_execute_fetch_result(SPI_tuptable ? SPI_tuptable->vals : NULL,
+									   SPI_tuptable ? SPI_tuptable->tupdesc : NULL,
+									   SPI_processed, rv);
+		SPI_freetuptable(SPI_tuptable);
 
 		if (nargs > 0)
 			pfree(nulls);
@@ -360,7 +361,10 @@ PLy_spi_execute_query(char *query, long limit)
 
 		pg_verifymbstr(query, strlen(query), false);
 		rv = SPI_execute(query, exec_ctx->curr_proc->fn_readonly, limit);
-		ret = PLy_spi_execute_fetch_result(SPI_tuptable, SPI_processed, rv);
+		ret = PLy_execute_fetch_result(SPI_tuptable ? SPI_tuptable->vals : NULL,
+									   SPI_tuptable ? SPI_tuptable->tupdesc : 0,
+									   SPI_processed, rv);
+		SPI_freetuptable(SPI_tuptable);
 
 		PLy_spi_subtransaction_commit(oldcontext, oldowner);
 	}
@@ -383,8 +387,8 @@ PLy_spi_execute_query(char *query, long limit)
 	return ret;
 }
 
-static PyObject *
-PLy_spi_execute_fetch_result(SPITupleTable *tuptable, uint64 rows, int status)
+PyObject *
+PLy_execute_fetch_result(HeapTuple *tuples, TupleDesc tupdesc, uint64 rows, int status)
 {
 	PLyResultObject *result;
 	volatile MemoryContext oldcontext;
@@ -393,14 +397,14 @@ PLy_spi_execute_fetch_result(SPITupleTable *tuptable, uint64 rows, int status)
 	Py_DECREF(result->status);
 	result->status = PyInt_FromLong(status);
 
-	if (status > 0 && tuptable == NULL)
+	if (status >= 0 && tuples == NULL)
 	{
 		Py_DECREF(result->nrows);
 		result->nrows = (rows > (uint64) LONG_MAX) ?
 			PyFloat_FromDouble((double) rows) :
 			PyInt_FromLong((long) rows);
 	}
-	else if (status > 0 && tuptable != NULL)
+	else if (status >= 0 && tuples != NULL)
 	{
 		PLyTypeInfo args;
 		MemoryContext cxt;
@@ -437,12 +441,12 @@ PLy_spi_execute_fetch_result(SPITupleTable *tuptable, uint64 rows, int status)
 				Py_DECREF(result->rows);
 				result->rows = PyList_New(rows);
 
-				PLy_input_tuple_funcs(&args, tuptable->tupdesc);
+				PLy_input_tuple_funcs(&args, tupdesc);
 				for (i = 0; i < rows; i++)
 				{
 					PyObject   *row = PLyDict_FromTuple(&args,
-														tuptable->vals[i],
-														tuptable->tupdesc);
+														tuples[i],
+														tupdesc);
 
 					PyList_SetItem(result->rows, i, row);
 				}
@@ -457,7 +461,7 @@ PLy_spi_execute_fetch_result(SPITupleTable *tuptable, uint64 rows, int status)
 			 * leaked due to errors.)
 			 */
 			oldcontext2 = MemoryContextSwitchTo(TopMemoryContext);
-			result->tupdesc = CreateTupleDescCopy(tuptable->tupdesc);
+			result->tupdesc = CreateTupleDescCopy(tupdesc);
 			MemoryContextSwitchTo(oldcontext2);
 		}
 		PG_CATCH();
@@ -470,7 +474,6 @@ PLy_spi_execute_fetch_result(SPITupleTable *tuptable, uint64 rows, int status)
 		PG_END_TRY();
 
 		MemoryContextDelete(cxt);
-		SPI_freetuptable(tuptable);
 	}
 
 	return (PyObject *) result;

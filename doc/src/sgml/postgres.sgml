@@ -221,6 +221,7 @@
 
   &spi;
   &bgworker;
+  &bgsession;
   &logicaldecoding;
   &replication-origins;
 
