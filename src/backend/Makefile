@@ -53,6 +53,8 @@ endif
 
 all: submake-libpgport submake-schemapg postgres $(POSTGRES_IMP)
 
+$(DOTSILENT): postgres
+
 ifneq ($(PORTNAME), cygwin)
 ifneq ($(PORTNAME), win32)
 ifneq ($(PORTNAME), aix)
