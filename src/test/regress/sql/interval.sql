@@ -281,3 +281,23 @@ select make_interval(months := 'NaN'::float::int);
 select make_interval(secs := 'inf');
 select make_interval(secs := 'NaN');
 select make_interval(secs := 7e12);
+
+-- overflow check
+-- To be sure an error is raised by an internal check (not output) function, INSERT is used instead of SELECT.
+CREATE TABLE interval_chk(i interval);
+INSERT INTO interval_chk VALUES(7730941132799 * interval '1 second'); -- ok, maximal allowed value
+INSERT INTO interval_chk VALUES(7730941132800 * interval '1 second');
+INSERT INTO interval_chk VALUES(-7730941132799 * interval '1 second'); -- ok, minimal allowed value
+INSERT INTO interval_chk VALUES(-7730941132800 * interval '1 second');
+
+INSERT INTO interval_chk VALUES('2147483647:59:59'::interval);  -- OK
+INSERT INTO interval_chk VALUES('-2147483647:59:59'::interval);  -- OK
+
+INSERT INTO interval_chk VALUES('2147483647:59:59'::interval + '1s'::interval);
+INSERT INTO interval_chk VALUES('-2147483647:59:59'::interval - '1s'::interval);
+
+INSERT INTO interval_chk VALUES(make_interval(hours =>  2147483647, secs =>  3599)); --OK
+INSERT INTO interval_chk VALUES(make_interval(hours =>  2147483647, secs =>  3600));
+INSERT INTO interval_chk VALUES(make_interval(hours => -2147483647, secs => -3599)); --OK
+INSERT INTO interval_chk VALUES(make_interval(hours => -2147483647, secs => -3600));
+DROP TABLE interval_chk;

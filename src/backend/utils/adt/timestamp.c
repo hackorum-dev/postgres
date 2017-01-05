@@ -1034,6 +1034,29 @@ interval_out(PG_FUNCTION_ARGS)
 	PG_RETURN_CSTRING(result);
 }
 
+static void
+interval_check_overflow(Interval *i)
+{
+	/* We compare hours with INT_MIN and INT_MAX because "int" type is used
+	 * in interval_out (pg_tm->hour) and can lead to overflow.
+	 * Also make bounds be the same in modulus to be able to use the unary '-'
+	 * operator for negative intervals without possible UB.
+	 */
+#ifdef HAVE_INT64_TIMESTAMP
+	if (i->time >= ( ((int64)INT_MAX + 1) * SECS_PER_HOUR * USECS_PER_SEC) ||
+		i->time <= (-((int64)INT_MAX + 1) * SECS_PER_HOUR * USECS_PER_SEC))
+		ereport(ERROR,
+				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+				 errmsg("interval out of range")));
+#else
+	if (i->time >= ( ((int64)INT_MAX + 1) * SECS_PER_HOUR) ||
+		i->time <= (-((int64)INT_MAX + 1) * SECS_PER_HOUR))
+		ereport(ERROR,
+				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+				 errmsg("interval out of range")));
+#endif
+}
+
 /*
  *		interval_recv			- converts external binary format to interval
  */
@@ -1057,6 +1080,8 @@ interval_recv(PG_FUNCTION_ARGS)
 #endif
 	interval->day = pq_getmsgint(buf, sizeof(interval->day));
 	interval->month = pq_getmsgint(buf, sizeof(interval->month));
+
+	interval_check_overflow(interval);
 
 	AdjustIntervalForTypmod(interval, typmod);
 
@@ -1610,6 +1635,9 @@ make_interval(PG_FUNCTION_ARGS)
 	double		secs = PG_GETARG_FLOAT8(6);
 	Interval   *result;
 
+	int32		years_month;
+	int32		weeks_days;
+
 	/*
 	 * Reject out-of-range inputs.  We really ought to check the integer
 	 * inputs as well, but it's not entirely clear what limits to apply.
@@ -1619,9 +1647,23 @@ make_interval(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
 				 errmsg("interval out of range")));
 
+	years_month = years * MONTHS_PER_YEAR;
+	weeks_days = weeks * 7;
+
+	if((years_month / MONTHS_PER_YEAR != years) || (weeks_days / 7 != weeks))
+		ereport(ERROR,
+				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+				 errmsg("interval out of range")));
+
 	result = (Interval *) palloc(sizeof(Interval));
-	result->month = years * MONTHS_PER_YEAR + months;
-	result->day = weeks * 7 + days;
+	result->month = years_month + months;
+	result->day = weeks_days + days;
+
+	if ((SAMESIGN(years_month, months) && !SAMESIGN(result->month, months)) ||
+		(SAMESIGN(weeks_days, days) && !SAMESIGN(result->day, days)))
+		ereport(ERROR,
+				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+				 errmsg("interval out of range")));
 
 	secs += hours * (double) SECS_PER_HOUR + mins * (double) SECS_PER_MINUTE;
 
@@ -1630,6 +1672,8 @@ make_interval(PG_FUNCTION_ARGS)
 #else
 	result->time = secs;
 #endif
+
+	interval_check_overflow(result);
 
 	PG_RETURN_INTERVAL_P(result);
 }
@@ -3383,6 +3427,8 @@ interval_pl(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
 				 errmsg("interval out of range")));
 
+	interval_check_overflow(result);
+
 	PG_RETURN_INTERVAL_P(result);
 }
 
@@ -3416,6 +3462,8 @@ interval_mi(PG_FUNCTION_ARGS)
 		ereport(ERROR,
 				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
 				 errmsg("interval out of range")));
+
+	interval_check_overflow(result);
 
 	PG_RETURN_INTERVAL_P(result);
 }
@@ -3503,6 +3551,8 @@ interval_mul(PG_FUNCTION_ARGS)
 #else
 	result->time = span->time * factor + sec_remainder;
 #endif
+
+	interval_check_overflow(result);
 
 	PG_RETURN_INTERVAL_P(result);
 }
