@@ -216,6 +216,8 @@ static	void			check_raise_parameters(PLpgSQL_stmt_raise *stmt);
 %type <ival>	opt_scrollable
 %type <fetch>	opt_fetch_direction
 
+%type <boolean>	onoff
+
 %type <keyword>	unreserved_keyword
 
 
@@ -306,6 +308,8 @@ static	void			check_raise_parameters(PLpgSQL_stmt_raise *stmt);
 %token <keyword>	K_NOT
 %token <keyword>	K_NOTICE
 %token <keyword>	K_NULL
+%token <keyword>	K_OFF
+%token <keyword>	K_ON
 %token <keyword>	K_OPEN
 %token <keyword>	K_OPTION
 %token <keyword>	K_OR
@@ -315,9 +319,11 @@ static	void			check_raise_parameters(PLpgSQL_stmt_raise *stmt);
 %token <keyword>	K_PG_EXCEPTION_CONTEXT
 %token <keyword>	K_PG_EXCEPTION_DETAIL
 %token <keyword>	K_PG_EXCEPTION_HINT
+%token <keyword>	K_PRAGMA
 %token <keyword>	K_PRINT_STRICT_PARAMS
 %token <keyword>	K_PRIOR
 %token <keyword>	K_QUERY
+%token <keyword>	K_QUERY_PLAN_CACHE
 %token <keyword>	K_RAISE
 %token <keyword>	K_RELATIVE
 %token <keyword>	K_RESULT_OID
@@ -348,9 +354,9 @@ static	void			check_raise_parameters(PLpgSQL_stmt_raise *stmt);
 
 %%
 
-pl_function		: comp_options pl_block opt_semi
+pl_function		: comp_options pragmas_opt pl_block opt_semi
 					{
-						plpgsql_parse_result = (PLpgSQL_stmt_block *) $2;
+						plpgsql_parse_result = (PLpgSQL_stmt_block *) $3;
 					}
 				;
 
@@ -398,6 +404,30 @@ opt_semi		:
 				| ';'
 				;
 
+onoff			: K_ON
+					{
+						$$ = true;
+					}
+				| K_OFF
+					{
+						$$ = false;
+					}
+				;
+
+pragma			: K_PRAGMA K_QUERY_PLAN_CACHE '(' onoff ')' ';'
+					{
+						plpgsql_settings_pragma(PLPGSQL_PRAGMA_QUERY_PLAN_CACHE, $4);
+					}
+				;
+
+pragmas			: pragmas pragma
+				| pragma
+				;
+
+pragmas_opt		:
+				| pragmas
+				;
+
 pl_block		: decl_sect K_BEGIN proc_sect exception_sect K_END opt_label
 					{
 						PLpgSQL_stmt_block *new;
@@ -414,6 +444,7 @@ pl_block		: decl_sect K_BEGIN proc_sect exception_sect K_END opt_label
 
 						check_labels($1.label, $6, @6);
 						plpgsql_ns_pop();
+						plpgsql_settings_pop();
 
 						$$ = (PLpgSQL_stmt *)new;
 					}
@@ -448,6 +479,10 @@ decl_start		: K_DECLARE
 					{
 						/* Forget any variables created before block */
 						plpgsql_add_initdatums(NULL);
+
+						/* clone compiler settings */
+						plpgsql_settings_clone();
+
 						/*
 						 * Disable scanner lookup of identifiers while
 						 * we process the decl_stmts
@@ -476,6 +511,7 @@ decl_stmt		: decl_statement
 								 errmsg("block label must be placed before DECLARE, not after"),
 								 parser_errposition(@1)));
 					}
+				| pragma
 				;
 
 decl_statement	: decl_varname decl_const decl_datatype decl_collate decl_notnull decl_defval
@@ -579,6 +615,7 @@ decl_statement	: decl_varname decl_const decl_datatype decl_collate decl_notnull
 						}
 						strcpy(cp2, "'::pg_catalog.refcursor");
 						curname_def->query = pstrdup(buf);
+						curname_def->use_query_plan_cache = plpgsql_settings_top()->use_query_plan_cache;
 						new->default_val = curname_def;
 
 						new->cursor_explicit_expr = $7;
@@ -2442,6 +2479,8 @@ unreserved_keyword	:
 				| K_NEXT
 				| K_NO
 				| K_NOTICE
+				| K_OFF
+				| K_ON
 				| K_OPEN
 				| K_OPTION
 				| K_PERFORM
@@ -2453,6 +2492,7 @@ unreserved_keyword	:
 				| K_PRINT_STRICT_PARAMS
 				| K_PRIOR
 				| K_QUERY
+				| K_QUERY_PLAN_CACHE
 				| K_RAISE
 				| K_RELATIVE
 				| K_RESULT_OID
@@ -2689,6 +2729,7 @@ read_sql_construct(int until,
 	expr->paramnos		= NULL;
 	expr->rwparam		= -1;
 	expr->ns			= plpgsql_ns_top();
+	expr->use_query_plan_cache = plpgsql_settings_top()->use_query_plan_cache;
 	pfree(ds.data);
 
 	if (valid_sql)
@@ -2937,6 +2978,7 @@ make_execsql_stmt(int firsttoken, int location)
 	expr->paramnos		= NULL;
 	expr->rwparam		= -1;
 	expr->ns			= plpgsql_ns_top();
+	expr->use_query_plan_cache = plpgsql_settings_top()->use_query_plan_cache;
 	pfree(ds.data);
 
 	check_sql_expr(expr->query, location, 0);
@@ -3821,6 +3863,7 @@ read_cursor_args(PLpgSQL_var *cursor, int until, const char *expected)
 	expr->paramnos		= NULL;
 	expr->rwparam		= -1;
 	expr->ns            = plpgsql_ns_top();
+	expr->use_query_plan_cache = plpgsql_settings_top()->use_query_plan_cache;
 	pfree(ds.data);
 
 	/* Next we'd better find the until token */

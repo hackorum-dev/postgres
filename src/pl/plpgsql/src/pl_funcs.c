@@ -33,6 +33,7 @@
  * ----------
  */
 static PLpgSQL_nsitem *ns_top = NULL;
+static PLpgSQL_settings *settings_top = NULL;
 
 
 /* ----------
@@ -224,6 +225,66 @@ plpgsql_ns_find_nearest_loop(PLpgSQL_nsitem *ns_cur)
 	return NULL;				/* no loop found */
 }
 
+
+/*
+ * Compilator settings routines
+ */
+
+void
+plpgsql_settings_init(PLpgSQL_settings *defval)
+{
+	settings_top = defval;
+}
+
+/*
+ * Creates new settings based on previous settings
+ */
+void
+plpgsql_settings_clone(void)
+{
+	PLpgSQL_settings *new = palloc(sizeof(PLpgSQL_settings));
+
+	Assert(settings_top != NULL);
+
+	memcpy(new, settings_top, sizeof(PLpgSQL_settings));
+	new->prev = settings_top;
+	settings_top = new;
+}
+
+/*
+ * apply a pragma to current settings
+ */
+void
+plpgsql_settings_pragma(PLpgSQL_pragma_type typ, bool value)
+{
+	Assert(settings_top != NULL);
+
+	switch (typ)
+	{
+		case PLPGSQL_PRAGMA_QUERY_PLAN_CACHE:
+			settings_top->use_query_plan_cache = value;
+	}
+}
+
+/*
+ * restore previous compiler settings
+ */
+void
+plpgsql_settings_pop(void)
+{
+	PLpgSQL_settings *prev;
+
+	Assert(settings_top != NULL);
+	prev = settings_top->prev;
+	pfree(settings_top);
+	settings_top = prev;
+}
+
+PLpgSQL_settings *
+plpgsql_settings_top(void)
+{
+	return settings_top;
+}
 
 /*
  * Statement type as a string, for use in error messages etc.
@@ -1534,7 +1595,7 @@ dump_getdiag(PLpgSQL_stmt_getdiag *stmt)
 static void
 dump_expr(PLpgSQL_expr *expr)
 {
-	printf("'%s'", expr->query);
+	printf("%s'%s'", expr->use_query_plan_cache ? "*" : "", expr->query);
 }
 
 void

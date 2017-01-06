@@ -288,6 +288,7 @@ do_compile(FunctionCallInfo fcinfo,
 	int		   *in_arg_varnos = NULL;
 	PLpgSQL_variable **out_arg_variables;
 	MemoryContext func_cxt;
+	PLpgSQL_settings settings;
 
 	/*
 	 * Setup the scanner input and error info.  We assume that this function
@@ -372,6 +373,11 @@ do_compile(FunctionCallInfo fcinfo,
 	plpgsql_ns_push(NameStr(procStruct->proname), PLPGSQL_LABEL_BLOCK);
 	plpgsql_DumpExecTree = false;
 	plpgsql_start_datums();
+
+	/* Prepare default for PRAGMA directives */
+	settings.prev = NULL;
+	settings.use_query_plan_cache = true;
+	plpgsql_settings_init(&settings);
 
 	switch (function->fn_is_trigger)
 	{
@@ -796,6 +802,7 @@ plpgsql_compile_inline(char *proc_source)
 	PLpgSQL_variable *var;
 	int			parse_rc;
 	MemoryContext func_cxt;
+	PLpgSQL_settings settings;
 
 	/*
 	 * Setup the scanner input and error info.  We assume that this function
@@ -850,6 +857,11 @@ plpgsql_compile_inline(char *proc_source)
 	plpgsql_ns_push(func_name, PLPGSQL_LABEL_BLOCK);
 	plpgsql_DumpExecTree = false;
 	plpgsql_start_datums();
+
+	/* Prepare default for PRAGMA directives */
+	settings.prev = NULL;
+	settings.use_query_plan_cache = true;
+	plpgsql_settings_init(&settings);
 
 	/* Set up as though in a function returning VOID */
 	function->fn_rettype = VOIDOID;

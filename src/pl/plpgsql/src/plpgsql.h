@@ -35,6 +35,14 @@
 #define _(x) dgettext(TEXTDOMAIN, x)
 
 /*
+ * Compiler directives
+ */
+typedef enum PLpgSQL_pragma_type
+{
+	PLPGSQL_PRAGMA_QUERY_PLAN_CACHE
+} PLpgSQL_pragma_type;
+
+/*
  * Compiler's namespace item types
  */
 typedef enum PLpgSQL_nsitem_type
@@ -224,6 +232,7 @@ typedef struct PLpgSQL_expr
 	int			dno;
 	char	   *query;
 	SPIPlanPtr	plan;
+	bool		use_query_plan_cache;
 	Bitmapset  *paramnos;		/* all dnos referenced by this query */
 	int			rwparam;		/* dno of read/write param, or -1 if none */
 
@@ -1004,6 +1013,15 @@ typedef struct PLwdatum
 	List	   *idents;			/* valid if composite name */
 } PLwdatum;
 
+/*
+ * Compiler directives
+ */
+typedef struct PLpgSQL_settings
+{
+	struct PLpgSQL_settings *prev;
+	bool		use_query_plan_cache;
+} PLpgSQL_settings;
+
 /**********************************************************************
  * Global variable declarations
  **********************************************************************/
@@ -1121,6 +1139,15 @@ extern PLpgSQL_nsitem *plpgsql_ns_lookup(PLpgSQL_nsitem *ns_cur, bool localmode,
 extern PLpgSQL_nsitem *plpgsql_ns_lookup_label(PLpgSQL_nsitem *ns_cur,
 						const char *name);
 extern PLpgSQL_nsitem *plpgsql_ns_find_nearest_loop(PLpgSQL_nsitem *ns_cur);
+
+/*
+ * Function for compiler directives processing in pl_func.c
+ */
+extern void plpgsql_settings_init(PLpgSQL_settings *defval);
+extern void plpgsql_settings_clone(void);
+extern void plpgsql_settings_pragma(PLpgSQL_pragma_type typ, bool value);
+extern PLpgSQL_settings *plpgsql_settings_top(void);
+extern void plpgsql_settings_pop(void);
 
 /*
  * Other functions in pl_funcs.c
