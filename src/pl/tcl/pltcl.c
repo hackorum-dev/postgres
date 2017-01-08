@@ -3035,7 +3035,7 @@ pltcl_build_tuple_result(Tcl_Interp *interp, Tcl_Obj **kvObjv, int kvObjc,
 
 	for (i = 0; i < kvObjc; i += 2)
 	{
-		char	   *fieldName = utf_e2u(Tcl_GetString(kvObjv[i]));
+		char	   *fieldName = utf_u2e(Tcl_GetString(kvObjv[i]));
 		int			attn = SPI_fnumber(call_state->ret_tupdesc, fieldName);
 
 		/*
@@ -3058,7 +3058,7 @@ pltcl_build_tuple_result(Tcl_Interp *interp, Tcl_Obj **kvObjv, int kvObjc,
 					 errmsg("cannot set system attribute \"%s\"",
 							fieldName)));
 
-		values[attn - 1] = utf_e2u(Tcl_GetString(kvObjv[i + 1]));
+		values[attn - 1] = utf_u2e(Tcl_GetString(kvObjv[i + 1]));
 	}
 
 	return BuildTupleFromCStrings(call_state->attinmeta, values);
