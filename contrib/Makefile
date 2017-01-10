@@ -45,6 +45,7 @@ SUBDIRS = \
 		pg_visibility	\
 		pg_walinspect	\
 		postgres_fdw	\
+		require_where	\
 		seg		\
 		spi		\
 		tablefunc	\
