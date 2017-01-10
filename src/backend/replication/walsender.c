@@ -91,7 +91,7 @@
  * because signals are checked only between messages.  128kB (with
  * default 8k blocks) seems like a reasonable guess for now.
  */
-#define MAX_SEND_SIZE (XLOG_BLCKSZ * 16)
+int	max_wal_send_guc = 0;
 
 /* Array of WalSnds in shared memory */
 WalSndCtlData *WalSndCtl = NULL;
@@ -2194,7 +2194,7 @@ retry:
 /*
  * Send out the WAL in its normal physical/stored form.
  *
- * Read up to MAX_SEND_SIZE bytes of WAL that's been flushed to disk,
+ * Read up to max_wal_send kilobytes of WAL that's been flushed to disk,
  * but not yet sent to the client, and buffer it in the libpq output
  * buffer.
  *
@@ -2208,6 +2208,7 @@ XLogSendPhysical(void)
 	XLogRecPtr	startptr;
 	XLogRecPtr	endptr;
 	Size		nbytes;
+	int             max_wal_send = max_wal_send_guc * 1024;
 
 	if (streamingDoneSending)
 	{
@@ -2346,8 +2347,8 @@ XLogSendPhysical(void)
 
 	/*
 	 * Figure out how much to send in one message. If there's no more than
-	 * MAX_SEND_SIZE bytes to send, send everything. Otherwise send
-	 * MAX_SEND_SIZE bytes, but round back to logfile or page boundary.
+	 * max_wal_send bytes to send, send everything. Otherwise send
+	 * max_wal_send bytes, but round back to logfile or page boundary.
 	 *
 	 * The rounding is not only for performance reasons. Walreceiver relies on
 	 * the fact that we never split a WAL record across two messages. Since a
@@ -2357,7 +2358,7 @@ XLogSendPhysical(void)
 	 */
 	startptr = sentPtr;
 	endptr = startptr;
-	endptr += MAX_SEND_SIZE;
+	endptr += max_wal_send;
 
 	/* if we went beyond SendRqstPtr, back off */
 	if (SendRqstPtr <= endptr)
@@ -2376,7 +2377,7 @@ XLogSendPhysical(void)
 	}
 
 	nbytes = endptr - startptr;
-	Assert(nbytes <= MAX_SEND_SIZE);
+	Assert(nbytes <= max_wal_send);
 
 	/*
 	 * OK to read and send the slice.

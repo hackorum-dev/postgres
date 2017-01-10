@@ -112,6 +112,7 @@ extern char *default_tablespace;
 extern char *temp_tablespaces;
 extern bool ignore_checksum_failure;
 extern bool synchronize_seqscans;
+extern int  max_wal_send_guc;
 
 #ifdef TRACE_SYNCSCAN
 extern bool trace_syncscan;
@@ -2338,6 +2339,17 @@ static struct config_int ConfigureNamesInt[] =
 		},
 		&wal_sender_timeout,
 		60 * 1000, 0, INT_MAX,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"max_wal_send", PGC_SIGHUP, REPLICATION_SENDING,
+			gettext_noop("Sets the maximum WAL payload size for WAL replication."),
+			NULL,
+			GUC_UNIT_KB
+		},
+		&max_wal_send_guc,
+		128, 4, XLOG_SEG_SIZE / 1024,
 		NULL, NULL, NULL
 	},
 
