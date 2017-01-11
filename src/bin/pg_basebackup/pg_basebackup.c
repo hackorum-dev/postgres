@@ -40,8 +40,6 @@
 #include "streamutil.h"
 
 
-#define atooid(x)  ((Oid) strtoul((x), NULL, 10))
-
 typedef struct TablespaceListCell
 {
 	struct TablespaceListCell *next;
