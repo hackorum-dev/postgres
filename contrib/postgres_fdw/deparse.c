@@ -66,7 +66,6 @@
  */
 typedef struct foreign_glob_cxt
 {
-	PlannerInfo *root;			/* global planner state */
 	RelOptInfo *foreignrel;		/* the foreign relation we are planning for */
 	Relids		relids;			/* relids of base relations in the underlying
 								 * scan */
@@ -253,7 +252,6 @@ is_foreign_expr(PlannerInfo *root,
 	 * Check that the expression consists of nodes that are safe to execute
 	 * remotely.
 	 */
-	glob_cxt.root = root;
 	glob_cxt.foreignrel = baserel;
 
 	/*
