@@ -338,7 +338,7 @@ _hash_first(IndexScanDesc scan, ScanDirection dir)
 	 * being populated, we need to skip tuples that are moved from bucket
 	 * being split.  We need to maintain the pin on bucket being split to
 	 * ensure that split-cleanup work done by vacuum doesn't remove tuples
-	 * from it till this scan is done.  We need to main to maintain the pin on
+	 * from it till this scan is done.  We need to maintain the pin on
 	 * bucket being populated to ensure that vacuum doesn't squeeze that
 	 * bucket till this scan is complete, otherwise the ordering of tuples
 	 * can't be maintained during forward and backward scans.  Here, we have
