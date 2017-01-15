@@ -481,7 +481,7 @@ LogStreamerMain(logstreamer_param *param)
 	stream.partial_suffix = NULL;
 
 	if (format == 'p')
-		stream.walmethod = CreateWalDirectoryMethod(param->xlog, do_sync);
+		stream.walmethod = CreateWalDirectoryMethod(param->xlog, 0, do_sync);
 	else
 		stream.walmethod = CreateWalTarMethod(param->xlog, compresslevel, do_sync);
 
