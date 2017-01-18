@@ -4903,6 +4903,7 @@ DESCR("GIN support");
 DATA(insert OID = 3301 (  jsonb_concat	   PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 3802 "3802 3802" _null_ _null_ _null_ _null_ _null_ jsonb_concat _null_ _null_ _null_ ));
 DATA(insert OID = 3302 (  jsonb_delete	   PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 3802 "3802 25" _null_ _null_ _null_ _null_ _null_ jsonb_delete _null_ _null_ _null_ ));
 DATA(insert OID = 3303 (  jsonb_delete	   PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 3802 "3802 23" _null_ _null_ _null_ _null_ _null_ jsonb_delete_idx _null_ _null_ _null_ ));
+DATA(insert OID = 3353 (  jsonb_delete     PGNSP PGUID 12 1 0 25 0 f f f f t f i s 2 0 3802 "3802 1009" "{3802,1009}" "{i,v}" "{from_json,path_elems}" _null_ _null_ jsonb_delete_array _null_ _null_ _null_ ));
 DATA(insert OID = 3304 (  jsonb_delete_path    PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 3802 "3802 1009" _null_ _null_ _null_ _null_ _null_ jsonb_delete_path _null_ _null_ _null_ ));
 DATA(insert OID = 3305 (  jsonb_set    PGNSP PGUID 12 1 0 0 0 f f f f t f i s 4 0 3802 "3802 1009 3802 16" _null_ _null_ _null_ _null_ _null_ jsonb_set _null_ _null_ _null_ ));
 DESCR("Set part of a jsonb");
