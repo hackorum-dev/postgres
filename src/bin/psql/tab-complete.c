@@ -1438,7 +1438,8 @@ psql_completion(const char *text, int start, int end)
 	/* ALTER PUBLICATION <name> ...*/
 	else if (Matches3("ALTER","PUBLICATION",MatchAny))
 	{
-		COMPLETE_WITH_LIST5("WITH", "ADD TABLE", "SET TABLE", "DROP TABLE", "OWNER TO");
+		COMPLETE_WITH_LIST6("WITH", "ADD TABLE", "SET TABLE", "DROP TABLE",
+							"OWNER TO", "RENAME TO");
 	}
 	/* ALTER PUBLICATION <name> .. WITH ( ... */
 	else if (HeadMatches3("ALTER", "PUBLICATION",MatchAny) && TailMatches2("WITH", "("))
@@ -1449,7 +1450,8 @@ psql_completion(const char *text, int start, int end)
 	/* ALTER SUBSCRIPTION <name> ... */
 	else if (Matches3("ALTER","SUBSCRIPTION",MatchAny))
 	{
-		COMPLETE_WITH_LIST6("WITH", "CONNECTION", "SET PUBLICATION", "ENABLE", "DISABLE", "OWNER TO");
+		COMPLETE_WITH_LIST7("WITH", "CONNECTION", "SET PUBLICATION", "ENABLE",
+							"DISABLE", "OWNER TO", "RENAME TO");
 	}
 	else if (HeadMatches3("ALTER", "SUBSCRIPTION", MatchAny) && TailMatches2("WITH", "("))
 	{
