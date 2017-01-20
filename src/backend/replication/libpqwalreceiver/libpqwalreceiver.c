@@ -112,6 +112,7 @@ libpqrcv_connect(const char *conninfo, bool logical, const char *appname,
 				 char **err)
 {
 	WalReceiverConn *conn;
+	PostgresPollingStatusType status;
 	const char *keys[5];
 	const char *vals[5];
 	int			i = 0;
@@ -138,7 +139,53 @@ libpqrcv_connect(const char *conninfo, bool logical, const char *appname,
 	vals[i] = NULL;
 
 	conn = palloc0(sizeof(WalReceiverConn));
-	conn->streamConn = PQconnectdbParams(keys, vals, /* expand_dbname = */ true);
+	conn->streamConn = PQconnectStartParams(keys, vals,
+											/* expand_dbname = */ true);
+	/* Check for conn status. */
+	if (PQstatus(conn->streamConn) == CONNECTION_BAD)
+	{
+		*err = pstrdup(PQerrorMessage(conn->streamConn));
+		return NULL;
+	}
+
+	/* Poll connection. */
+	do
+	{
+		int		rc;
+
+		/* Determine current state of the connection. */
+		status = PQconnectPoll(conn->streamConn);
+
+		/* Sleep a bit if waiting for socket. */
+		if (status == PGRES_POLLING_READING ||
+			status == PGRES_POLLING_WRITING)
+		{
+			int		extra_flag;
+
+			extra_flag = status == PGRES_POLLING_READING ? WL_SOCKET_READABLE :
+				WL_SOCKET_WRITEABLE;
+
+			ResetLatch(&MyProc->procLatch);
+			rc = WaitLatchOrSocket(&MyProc->procLatch,
+								   WL_POSTMASTER_DEATH |
+								   WL_LATCH_SET | extra_flag,
+								   PQsocket(conn->streamConn),
+								   0,
+								   WAIT_EVENT_LIBPQWALRECEIVER);
+
+			/* Emergency bailout. */
+			if (rc & WL_POSTMASTER_DEATH)
+				exit(1);
+
+			/* Interrupted. */
+			if (rc & WL_LATCH_SET)
+				CHECK_FOR_INTERRUPTS();
+		}
+
+		/* Otherwise loop until we have OK or FAILED status. */
+	} while (status != PGRES_POLLING_OK && status != PGRES_POLLING_FAILED);
+
+	/* Check the status. */
 	if (PQstatus(conn->streamConn) != CONNECTION_OK)
 	{
 		*err = pstrdup(PQerrorMessage(conn->streamConn));
@@ -521,7 +568,7 @@ libpqrcv_PQexec(PGconn *streamConn, const char *query)
 								   WL_LATCH_SET,
 								   PQsocket(streamConn),
 								   0,
-								   WAIT_EVENT_LIBPQWALRECEIVER_READ);
+								   WAIT_EVENT_LIBPQWALRECEIVER);
 			if (rc & WL_POSTMASTER_DEATH)
 				exit(1);
 
