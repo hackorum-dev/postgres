@@ -1113,6 +1113,43 @@ db_comparator(const void *a, const void *b)
 }
 
 /*
+ * Returns true if database has been processed recently (less than
+ * autovacuum_naptime seconds ago).
+ */
+static boolean
+recent_activity(Oid datid)
+{
+	dlist_iter	iter;
+
+	dlist_reverse_foreach(iter, &DatabaseList)
+	{
+		avl_dbase  *dbp = dlist_container(avl_dbase, adl_node, iter.cur);
+
+		if (dbp->adl_datid == datid)
+		{
+			/*
+			 * Skip this database if its next_worker value falls between
+			 * the current time and the current time plus naptime.
+			 */
+			if (!TimestampDifferenceExceeds(dbp->adl_next_worker,
+											current_time, 0) &&
+				!TimestampDifferenceExceeds(current_time,
+											dbp->adl_next_worker,
+											autovacuum_naptime * 1000))
+				return true;
+			return false;
+
+		}
+	}
+
+	/*
+	 * Didn't find the database on the internal list, so it must be new. Skip
+	 * it for now.
+	 */
+	return true;
+}
+
+/*
  * do_start_worker
  *
  * Bare-bones procedure for starting an autovacuum worker from the launcher.
@@ -1206,24 +1243,33 @@ do_start_worker(void)
 	foreach(cell, dblist)
 	{
 		avw_dbase  *tmp = lfirst(cell);
-		dlist_iter	iter;
 
 		/* Check to see if this one is at risk of wraparound */
 		if (TransactionIdPrecedes(tmp->adw_frozenxid, xidForceLimit))
 		{
-			if (avdb == NULL ||
+			/*
+			 * We won't re-launch if this database was recently hit by a
+			 * worker. Otherwise, we want to find the database with the oldest
+			 * frozen XID. Previously, we only looked for the oldest frozen
+			 * XID, but by skipping recently hit databases we'll make sure we
+			 * hit everything that's in risk of wraparound.
+			 */
+			if (!recent_activity(tmp->adw_datid) &&
+				(avdb == NULL ||
 				TransactionIdPrecedes(tmp->adw_frozenxid,
-									  avdb->adw_frozenxid))
+									  avdb->adw_frozenxid)))
 				avdb = tmp;
 			for_xid_wrap = true;
 			continue;
 		}
 		else if (for_xid_wrap)
 			continue;			/* ignore not-at-risk DBs */
+		/* Same as above, but for multixacts. */
 		else if (MultiXactIdPrecedes(tmp->adw_minmulti, multiForceLimit))
 		{
-			if (avdb == NULL ||
-				MultiXactIdPrecedes(tmp->adw_minmulti, avdb->adw_minmulti))
+			if (!recent_activity(tmp->adw_datid) &&
+				(avdb == NULL ||
+				MultiXactIdPrecedes(tmp->adw_minmulti, avdb->adw_minmulti)))
 				avdb = tmp;
 			for_multi_wrap = true;
 			continue;
@@ -1248,28 +1294,7 @@ do_start_worker(void)
 		 * selected, but that pgstat hasn't gotten around to updating the last
 		 * autovacuum time yet.
 		 */
-		skipit = false;
-
-		dlist_reverse_foreach(iter, &DatabaseList)
-		{
-			avl_dbase  *dbp = dlist_container(avl_dbase, adl_node, iter.cur);
-
-			if (dbp->adl_datid == tmp->adw_datid)
-			{
-				/*
-				 * Skip this database if its next_worker value falls between
-				 * the current time and the current time plus naptime.
-				 */
-				if (!TimestampDifferenceExceeds(dbp->adl_next_worker,
-												current_time, 0) &&
-					!TimestampDifferenceExceeds(current_time,
-												dbp->adl_next_worker,
-												autovacuum_naptime * 1000))
-					skipit = true;
-
-				break;
-			}
-		}
+		skipit = recent_activity(tmp->adw_datid)
 		if (skipit)
 			continue;
 
