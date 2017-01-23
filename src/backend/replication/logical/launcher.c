@@ -477,6 +477,9 @@ ApplyLauncherRegister(void)
 	if (max_logical_replication_workers == 0)
 		return;
 
+	if (wal_level < WAL_LEVEL_LOGICAL)
+		return;
+
 	bgw.bgw_flags =	BGWORKER_SHMEM_ACCESS |
 		BGWORKER_BACKEND_DATABASE_CONNECTION;
 	bgw.bgw_start_time = BgWorkerStart_RecoveryFinished;
