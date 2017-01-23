@@ -639,12 +639,14 @@ partition_bounds_equal(PartitionKey key,
 					continue;
 			}
 
-			/* Compare the actual values */
-			cmpval = DatumGetInt32(FunctionCall2Coll(&key->partsupfunc[j],
-													 key->partcollation[j],
-													 b1->datums[i][j],
-													 b2->datums[i][j]));
-			if (cmpval != 0)
+			/*
+			 * Compare the actual values; note that we do not invoke the
+			 * partitioning specific comparison operator here, because we
+			 * could be in an aborted transaction.
+			 */
+			if (!datumIsEqual(b1->datums[i][j], b2->datums[i][j],
+							  key->parttypbyval[j],
+							  key->parttyplen[j]))
 				return false;
 		}
 
