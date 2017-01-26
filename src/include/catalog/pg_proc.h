@@ -5359,6 +5359,10 @@ DESCR("pg_controldata init state information as a function");
 DATA(insert OID = 3445 ( pg_import_system_collations PGNSP PGUID 12 100 0 0 0 f f f f t f v r 2 0 2278 "16 4089" _null_ _null_ "{if_not_exists,schema}" _null_ _null_ pg_import_system_collations _null_ _null_ _null_ ));
 DESCR("import collations from operating system");
 
+DATA(insert OID = 3353 (  copy_srf PGNSP PGUID 12 1 0 0 0 f f f f f t v u 9 0 2249 "25 16 25 25 25 16 25 25 25" _null_ _null_ _null_ _null_ _null_ copy_srf _null_ _null_ _null_ ));
+DESCR("set-returning COPY proof of concept");
+
+
 /*
  * Symbolic values for provolatile column: these indicate whether the result
  * of a function is dependent *only* on the values of its explicit arguments,

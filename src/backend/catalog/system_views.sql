@@ -1065,6 +1065,21 @@ LANGUAGE INTERNAL
 STRICT IMMUTABLE PARALLEL SAFE
 AS 'jsonb_insert';
 
+CREATE OR REPLACE FUNCTION copy_srf(
+	IN filename text,
+	IN is_program boolean DEFAULT false,
+	IN format text DEFAULT null,
+	IN delimiter text DEFAULT null,
+	IN null_string text DEFAULT null,
+	IN header boolean DEFAULT null,
+	IN quote text DEFAULT null,
+	IN escape text DEFAULT null,
+	IN encoding text DEFAULT null)
+RETURNS SETOF RECORD
+LANGUAGE INTERNAL
+VOLATILE ROWS 1000 COST 1000 CALLED ON NULL INPUT
+AS 'copy_srf';
+
 -- The default permissions for functions mean that anyone can execute them.
 -- A number of functions shouldn't be executable by just anyone, but rather
 -- than use explicit 'superuser()' checks in those functions, we use the GRANT

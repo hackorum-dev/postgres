@@ -27,8 +27,8 @@ extern void DoCopy(ParseState *state, const CopyStmt *stmt,
 	   uint64 *processed);
 
 extern void ProcessCopyOptions(ParseState *pstate, CopyState cstate, bool is_from, List *options);
-extern CopyState BeginCopyFrom(ParseState *pstate, Relation rel, const char *filename,
-			  bool is_program, List *attnamelist, List *options);
+extern CopyState BeginCopyFrom(ParseState *pstate, Relation rel, TupleDesc rsTupDesc,
+					const char *filename, bool is_program, List *attnamelist, List *options);
 extern void EndCopyFrom(CopyState cstate);
 extern bool NextCopyFrom(CopyState cstate, ExprContext *econtext,
 			 Datum *values, bool *nulls, Oid *tupleOid);
@@ -37,5 +37,8 @@ extern bool NextCopyFromRawFields(CopyState cstate,
 extern void CopyFromErrorCallback(void *arg);
 
 extern DestReceiver *CreateCopyDestReceiver(void);
+
+extern Datum copy_srf(PG_FUNCTION_ARGS);
+
 
 #endif   /* COPY_H */
