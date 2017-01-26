@@ -392,6 +392,33 @@ SELECT testfunc1(5); -- ok
 
 DROP FUNCTION testfunc1(int); -- fail
 
+-- try to use built-in functions that are superuser-only by default
+-- these should all fail with permissions errors
+SELECT pg_start_backup('regress', false, false);
+SELECT pg_stop_backup();
+SELECT pg_stop_backup(false);
+SELECT pg_create_restore_point('regress');
+SELECT pg_switch_xlog();
+SELECT pg_xlog_replay_pause();
+SELECT pg_xlog_replay_resume();
+SELECT pg_rotate_logfile();
+SELECT pg_reload_conf();
+SELECT pg_import_system_collations(false, 'public'::regnamespace);
+SELECT pg_stat_reset();
+SELECT pg_stat_reset_shared('regress');
+SELECT pg_stat_reset_single_table_counters(0);
+SELECT pg_stat_reset_single_function_counters(0);
+SELECT pg_read_binary_file('regress');
+SELECT pg_read_binary_file('regress', 0, 0);
+SELECT pg_read_binary_file('regress', 0, 0, false);
+SELECT pg_read_file('regress');
+SELECT pg_read_file('regress', 0, 0);
+SELECT pg_read_file('regress', 0, 0, false);
+SELECT pg_stat_file('regress');
+SELECT pg_stat_file('regress', false);
+SELECT pg_ls_dir('regress');
+SELECT pg_ls_dir('regress', false, false);
+
 \c -
 
 DROP FUNCTION testfunc1(int); -- ok

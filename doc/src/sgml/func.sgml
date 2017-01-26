@@ -19238,6 +19238,10 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
     present on the operating system are never removed by this function.)
    </para>
 
+   <para>
+    By default, use of this function is restricted to superusers, but access
+    can be given to other users via <command>GRANT</>.
+   </para>
   </sect2>
 
   <sect2 id="functions-admin-index">
@@ -19318,7 +19322,9 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
     database cluster directory and the <varname>log_directory</> can be
     accessed.  Use a relative path for files in the cluster directory,
     and a path matching the <varname>log_directory</> configuration setting
-    for log files.  Use of these functions is restricted to superusers.
+    for log files.  Use of these functions is restricted to superusers
+    by default but access may be granted to others using
+    <command>GRANT</command>.
    </para>
 
    <table id="functions-admin-genfile-table">

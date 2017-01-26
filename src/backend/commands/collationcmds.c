@@ -218,7 +218,12 @@ normalize_locale_name(char *new, const char *old)
 	return changed;
 }
 
-
+/*
+ * Import operating system collations.
+ *
+ * Permission checking for this function is managed through the normal
+ * GRANT system.
+ */
 Datum
 pg_import_system_collations(PG_FUNCTION_ARGS)
 {
@@ -236,11 +241,6 @@ pg_import_system_collations(PG_FUNCTION_ARGS)
 			   *lcl,
 			   *lce;
 #endif
-
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 (errmsg("must be superuser to import system collations"))));
 
 #if defined(HAVE_LOCALE_T) && !defined(WIN32)
 	locale_a_handle = OpenPipeStream("locale -a", "r");

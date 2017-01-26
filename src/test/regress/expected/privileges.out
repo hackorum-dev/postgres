@@ -582,6 +582,56 @@ SELECT testfunc1(5); -- ok
 
 DROP FUNCTION testfunc1(int); -- fail
 ERROR:  must be owner of function testfunc1
+-- try to use built-in functions that are superuser-only by default
+-- these should all fail with permissions errors
+SELECT pg_start_backup('regress', false, false);
+ERROR:  permission denied for function pg_start_backup
+SELECT pg_stop_backup();
+ERROR:  permission denied for function pg_stop_backup
+SELECT pg_stop_backup(false);
+ERROR:  permission denied for function pg_stop_backup
+SELECT pg_create_restore_point('regress');
+ERROR:  permission denied for function pg_create_restore_point
+SELECT pg_switch_xlog();
+ERROR:  permission denied for function pg_switch_xlog
+SELECT pg_xlog_replay_pause();
+ERROR:  permission denied for function pg_xlog_replay_pause
+SELECT pg_xlog_replay_resume();
+ERROR:  permission denied for function pg_xlog_replay_resume
+SELECT pg_rotate_logfile();
+ERROR:  permission denied for function pg_rotate_logfile
+SELECT pg_reload_conf();
+ERROR:  permission denied for function pg_reload_conf
+SELECT pg_import_system_collations(false, 'public'::regnamespace);
+ERROR:  permission denied for function pg_import_system_collations
+SELECT pg_stat_reset();
+ERROR:  permission denied for function pg_stat_reset
+SELECT pg_stat_reset_shared('regress');
+ERROR:  permission denied for function pg_stat_reset_shared
+SELECT pg_stat_reset_single_table_counters(0);
+ERROR:  permission denied for function pg_stat_reset_single_table_counters
+SELECT pg_stat_reset_single_function_counters(0);
+ERROR:  permission denied for function pg_stat_reset_single_function_counters
+SELECT pg_read_binary_file('regress');
+ERROR:  permission denied for function pg_read_binary_file
+SELECT pg_read_binary_file('regress', 0, 0);
+ERROR:  permission denied for function pg_read_binary_file
+SELECT pg_read_binary_file('regress', 0, 0, false);
+ERROR:  permission denied for function pg_read_binary_file
+SELECT pg_read_file('regress');
+ERROR:  permission denied for function pg_read_file
+SELECT pg_read_file('regress', 0, 0);
+ERROR:  permission denied for function pg_read_file
+SELECT pg_read_file('regress', 0, 0, false);
+ERROR:  permission denied for function pg_read_file
+SELECT pg_stat_file('regress');
+ERROR:  permission denied for function pg_stat_file
+SELECT pg_stat_file('regress', false);
+ERROR:  permission denied for function pg_stat_file
+SELECT pg_ls_dir('regress');
+ERROR:  permission denied for function pg_ls_dir
+SELECT pg_ls_dir('regress', false, false);
+ERROR:  permission denied for function pg_ls_dir
 \c -
 DROP FUNCTION testfunc1(int); -- ok
 -- restore to sanity

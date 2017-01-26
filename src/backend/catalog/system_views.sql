@@ -1080,8 +1080,20 @@ REVOKE EXECUTE ON FUNCTION pg_xlog_replay_pause() FROM public;
 REVOKE EXECUTE ON FUNCTION pg_xlog_replay_resume() FROM public;
 REVOKE EXECUTE ON FUNCTION pg_rotate_logfile() FROM public;
 REVOKE EXECUTE ON FUNCTION pg_reload_conf() FROM public;
+REVOKE EXECUTE ON FUNCTION pg_import_system_collations(boolean, regnamespace) FROM public;
 
 REVOKE EXECUTE ON FUNCTION pg_stat_reset() FROM public;
 REVOKE EXECUTE ON FUNCTION pg_stat_reset_shared(text) FROM public;
 REVOKE EXECUTE ON FUNCTION pg_stat_reset_single_table_counters(oid) FROM public;
 REVOKE EXECUTE ON FUNCTION pg_stat_reset_single_function_counters(oid) FROM public;
+
+REVOKE EXECUTE ON FUNCTION pg_read_binary_file(text) FROM public;
+REVOKE EXECUTE ON FUNCTION pg_read_binary_file(text, bigint, bigint) FROM public;
+REVOKE EXECUTE ON FUNCTION pg_read_binary_file(text, bigint, bigint, boolean) FROM public;
+REVOKE EXECUTE ON FUNCTION pg_read_file(text) FROM public;
+REVOKE EXECUTE ON FUNCTION pg_read_file(text, bigint, bigint) FROM public;
+REVOKE EXECUTE ON FUNCTION pg_read_file(text, bigint, bigint, boolean) FROM public;
+REVOKE EXECUTE ON FUNCTION pg_stat_file(text) FROM public;
+REVOKE EXECUTE ON FUNCTION pg_stat_file(text, boolean) FROM public;
+REVOKE EXECUTE ON FUNCTION pg_ls_dir(text) FROM public;
+REVOKE EXECUTE ON FUNCTION pg_ls_dir(text, boolean, boolean) FROM public;

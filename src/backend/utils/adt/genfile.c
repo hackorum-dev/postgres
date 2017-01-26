@@ -183,6 +183,9 @@ read_text_file(const char *filename, int64 seek_offset, int64 bytes_to_read,
 
 /*
  * Read a section of a file, returning it as text
+ *
+ * Permission checking for this function is managed through the normal
+ * GRANT system.
  */
 Datum
 pg_read_file(PG_FUNCTION_ARGS)
@@ -193,11 +196,6 @@ pg_read_file(PG_FUNCTION_ARGS)
 	bool		missing_ok = false;
 	char	   *filename;
 	text	   *result;
-
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 (errmsg("must be superuser to read files"))));
 
 	/* handle optional arguments */
 	if (PG_NARGS() >= 3)
@@ -224,6 +222,9 @@ pg_read_file(PG_FUNCTION_ARGS)
 
 /*
  * Read a section of a file, returning it as bytea
+ *
+ * Permission checking for this function is managed through the normal
+ * GRANT system.
  */
 Datum
 pg_read_binary_file(PG_FUNCTION_ARGS)
@@ -234,11 +235,6 @@ pg_read_binary_file(PG_FUNCTION_ARGS)
 	bool		missing_ok = false;
 	char	   *filename;
 	bytea	   *result;
-
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 (errmsg("must be superuser to read files"))));
 
 	/* handle optional arguments */
 	if (PG_NARGS() >= 3)
@@ -299,6 +295,9 @@ pg_read_binary_file_all(PG_FUNCTION_ARGS)
 
 /*
  * stat a file
+ *
+ * Permission checking for this function is managed through the normal
+ * GRANT system.
  */
 Datum
 pg_stat_file(PG_FUNCTION_ARGS)
@@ -311,11 +310,6 @@ pg_stat_file(PG_FUNCTION_ARGS)
 	HeapTuple	tuple;
 	TupleDesc	tupdesc;
 	bool		missing_ok = false;
-
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 (errmsg("must be superuser to get file information"))));
 
 	/* check the optional argument */
 	if (PG_NARGS() == 2)
@@ -389,6 +383,9 @@ pg_stat_file_1arg(PG_FUNCTION_ARGS)
 
 /*
  * List a directory (returns the filenames only)
+ *
+ * Permission checking for this function is managed through the normal
+ * GRANT system.
  */
 Datum
 pg_ls_dir(PG_FUNCTION_ARGS)
@@ -397,11 +394,6 @@ pg_ls_dir(PG_FUNCTION_ARGS)
 	struct dirent *de;
 	directory_fctx *fctx;
 	MemoryContext oldcontext;
-
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 (errmsg("must be superuser to get directory listings"))));
 
 	if (SRF_IS_FIRSTCALL())
 	{
