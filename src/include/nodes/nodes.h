@@ -560,7 +560,7 @@ extern PGDLLIMPORT Node *newNodeMacroHolder;
 
 /*
  * castNode(type, ptr) casts ptr to type and, if cassert is enabled, verifies
- * that the the c actually has the appropriate type (using it's nodeTag()).
+ * that the c actually has the appropriate type (using its nodeTag()).
  *
  * Use an inline function when assertions are enabled, to avoid multiple
  * evaluations of the ptr argument (which could e.g. be a function call).
