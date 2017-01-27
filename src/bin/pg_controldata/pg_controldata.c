@@ -222,6 +222,8 @@ main(int argc, char *argv[])
 	printf(_("Latest checkpoint's NextXID:          %u:%u\n"),
 		   ControlFile->checkPointCopy.nextXidEpoch,
 		   ControlFile->checkPointCopy.nextXid);
+	printf(_("Latest checkpoint's latestCompletedXID: %u\n"),
+		   ControlFile->checkPointCopy.latestCompletedXid);
 	printf(_("Latest checkpoint's NextOID:          %u\n"),
 		   ControlFile->checkPointCopy.nextOid);
 	printf(_("Latest checkpoint's NextMultiXactId:  %u\n"),

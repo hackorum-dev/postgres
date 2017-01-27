@@ -211,6 +211,11 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
         The precise stopping point is also influenced by
         <xref linkend="recovery-target-inclusive">.
        </para>
+       <para>
+        This parameter also checks if the checkpoint time of the backup being used is earlier than the specified recovery_target_time. 
+        In other words, the recovery will not proceed further if the checkpoint time of the backup is later than the specified recovery_target_time.
+       </para>
+
       </listitem>
      </varlistentry>
 
@@ -231,6 +236,11 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
         The precise stopping point is also influenced by
         <xref linkend="recovery-target-inclusive">.
        </para>
+       <para>
+        This parameter also checks if the latest completed xid of the backup is earlier than the specified recovery target xid.
+        In other words, the recovery will not proceed further if the latest completed xid of the backup is later than the specified target xid.
+       </para>
+
       </listitem>
      </varlistentry>
 
@@ -248,6 +258,11 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
         parameter is parsed using the system data type
         <link linkend="datatype-pg-lsn"><type>pg_lsn</></link>.
        </para>
+       <para>
+        This parameter also checks if the current checkpoint's redo position of the backup is earlier than the specified recovery target lsn.
+        In other words, the recovery will not proceed further if the latest checkpoint's redo position of the backup is later than the specified target lsn.
+       </para>
+
       </listitem>
      </varlistentry>
      </variablelist>

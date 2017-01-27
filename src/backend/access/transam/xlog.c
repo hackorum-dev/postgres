@@ -827,6 +827,7 @@ static MemoryContext walDebugCxt = NULL;
 #endif
 
 static void readRecoveryCommandFile(void);
+static void recoveryStartsHere(void);
 static void exitArchiveRecovery(TimeLineID endTLI, XLogRecPtr endOfLog);
 static bool recoveryStopsBefore(XLogReaderState *record);
 static bool recoveryStopsAfter(XLogReaderState *record);
@@ -5450,6 +5451,67 @@ getRecordTimestamp(XLogReaderState *record, TimestampTz *recordXtime)
 	return false;
 }
 
+/* When performing point-in-time-recovery, this function identifies if
+ * the specified recovery target (recovery_target_time, recovery_target_lsn and recovery_target_xid) is prior to that of the backup.
+ * Which means, recovery cannot proceed if the recovery target point is prior to backup start point.
+ */
+
+static void
+recoveryStartsHere(void)
+{
+	/*
+	 * Check if the recovery target xid is older than the latest completed xid
+	 * of the backup
+	 */
+
+	if (recoveryTarget == RECOVERY_TARGET_XID)
+	{
+		if (TransactionIdPrecedes(recoveryTargetXid,
+							 ControlFile->checkPointCopy.latestCompletedXid))
+		{
+			ereport(ERROR,
+					(errmsg("recovery_target_xid %u is older than the latest Completed Xid %u", recoveryTargetXid, ControlFile->checkPointCopy.latestCompletedXid),
+					 errhint("This means that the backup being used is much later than the recovery target position.\n"
+							 "You might need to use a backup taken prior to the recovery target point.")));
+		}
+	}
+
+	/*
+	 * Check if the recovery target lsn is prior to the latest checkpointi's
+	 * redo position of the backup
+	 */
+
+	if (recoveryTarget == RECOVERY_TARGET_LSN)
+	{
+		if (recoveryTargetLSN < ControlFile->checkPointCopy.redo)
+		{
+			ereport(ERROR,
+					(errmsg("recovery_target_lsn \"%X/%X\" is older than the backup start LSN \"%X/%X\"",
+							(uint32) (recoveryTargetLSN >> 32),
+							(uint32) recoveryTargetLSN, (uint32) (ControlFile->checkPointCopy.redo >> 32), (uint32) ControlFile->checkPointCopy.redo),
+					 errhint("This means that the backup being used is much later than the recovery target position.\n"
+							 "You might need to use a backup taken prior to the recovery target point.")));
+		}
+	}
+
+	/*
+	 * Check if the recovery target time is prior to the current timestamp of
+	 * the backup
+	 */
+
+	if (recoveryTarget == RECOVERY_TARGET_TIME)
+	{
+		if (recoveryTargetTime < ControlFile->checkPointCopy.time)
+		{
+			ereport(ERROR,
+					(errmsg("recovery_target_time %s is older than the backup start time %s", timestamptz_to_str(recoveryTargetTime),
+					   timestamptz_to_str(ControlFile->checkPointCopy.time)),
+					 errhint("This means that the backup being used is much later than the recovery target position.\n"
+							 "You might need to use a backup taken prior to the recovery target point.")));
+		}
+	}
+}
+
 /*
  * For point-in-time recovery, this function decides whether we want to
  * stop applying the XLOG before the current record.
@@ -6182,6 +6244,9 @@ StartupXLOG(void)
 			ereport(LOG,
 					(errmsg("starting archive recovery")));
 	}
+
+	/* Check if archive recovery can start at all */
+	recoveryStartsHere();
 
 	/*
 	 * Take ownership of the wakeup latch if we're going to sleep during
@@ -8532,6 +8597,7 @@ CreateCheckPoint(int flags)
 	checkPoint.nextXid = ShmemVariableCache->nextXid;
 	checkPoint.oldestXid = ShmemVariableCache->oldestXid;
 	checkPoint.oldestXidDB = ShmemVariableCache->oldestXidDB;
+	checkPoint.latestCompletedXid = ShmemVariableCache->latestCompletedXid;
 	LWLockRelease(XidGenLock);
 
 	LWLockAcquire(CommitTsLock, LW_SHARED);

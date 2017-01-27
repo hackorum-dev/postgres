@@ -21,7 +21,7 @@
 
 
 /* Version identifier for this pg_control format */
-#define PG_CONTROL_VERSION	960
+#define PG_CONTROL_VERSION	100
 
 /*
  * Body of CheckPoint XLOG records.  This is declared here because we keep
@@ -58,6 +58,7 @@ typedef struct CheckPoint
 	 * set to InvalidTransactionId.
 	 */
 	TransactionId oldestActiveXid;
+	TransactionId latestCompletedXid;
 } CheckPoint;
 
 /* XLOG info values for XLOG rmgr */
