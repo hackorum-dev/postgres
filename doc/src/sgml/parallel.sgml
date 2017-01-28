@@ -8,18 +8,28 @@
   </indexterm>
 
   <para>
-   <productname>PostgreSQL</> can devise query plans which can leverage
-   multiple CPUs in order to answer queries faster.  This feature is known
-   as parallel query.  Many queries cannot benefit from parallel query, either
+   In order to reduce the elapsed time of queries <productname>PostgreSQL</>
+   can create query plans which distribute the query execution across multiple
+   concurrent running processes. Each one of those processes uses its own
+   CPU and deals with a different part of the shared buffers. All other
+   components of <productname>PostgreSQL</> like disk access or
+   replication are not directly involved. This feature is known
+   as <firstterm>parallel query</firstterm>.
+  </para>
+
+  <para>
+   Many queries cannot benefit from <literal>parallel query</literal>, either
    due to limitations of the current implementation or because there is no
-   imaginable query plan which is any faster than the serial query plan.
-   However, for queries that can benefit, the speedup from parallel query
-   is often very significant.  Many queries can run more than twice as fast
-   when using parallel query, and some queries can run four times faster or
-   even more.  Queries that touch a large amount of data but return only a
-   few rows to the user will typically benefit most.  This chapter explains
-   some details of how parallel query works and in which situations it can be
-   used so that users who wish to make use of it can understand what to expect.
+   imaginable query plan which is any faster than the single process query
+   plan. However, for queries that can benefit, the speedup from parallel
+   query is often very significant. Many queries can run more than twice as
+   fast when using <literal>parallel query</literal>, and some queries can
+   run four times faster or even more. Queries that touch a large amount of
+   data but return only a few rows to the user will typically benefit most.
+   This chapter explains some details of how
+   <literal>parallel query</literal> works and in which situations it can
+   be used so that users who wish to make use of it can understand what to
+   expect.
   </para>
 
  <sect1 id="how-parallel-query-works">
@@ -27,8 +37,22 @@
 
    <para>
     When the optimizer determines that parallel query is the fastest execution
-    strategy for a particular query, it will create a query plan which includes
-    a <firstterm>Gather node</firstterm>.  Here is a simple example:
+    strategy for a particular query, it creates a query plan which includes
+    a <firstterm>Gather node</firstterm> with exactly one child node.
+    This child node contains the part of the query that will (possibly) be
+    executed within multiple, parallel running processes.
+   </para>
+
+   <para>
+    At runtime the main purpose of the <literal>Gather</literal> node is
+    the initialization of the intended number of additional
+    processes, their coordination, as well as receiving and merging of
+    their results. Additionally (as long as he waits for results)
+    he works on the query in the same way as its children.
+  </para>
+
+  <para>
+   Here is a simple example:
 
 <screen>
 EXPLAIN SELECT * FROM pgbench_accounts WHERE filler LIKE '%x%';
@@ -43,20 +67,16 @@ EXPLAIN SELECT * FROM pgbench_accounts WHERE filler LIKE '%x%';
    </para>
 
    <para>
-    In all cases, the <literal>Gather</literal> node will have exactly one
-    child plan, which is the portion of the plan that will be executed in
-    parallel.  If the <literal>Gather</> node is at the very top of the plan
-    tree, then the entire query will execute in parallel.  If it is somewhere
-    else in the plan tree, then only the portion of the plan below it will run
-    in parallel.  In the example above, the query accesses only one table, so
-    there is only one plan node other than the <literal>Gather</> node itself;
-    since that plan node is a child of the <literal>Gather</> node, it will
-    run in parallel.
+    If the <literal>Gather</> node is at the very top of the plan
+    tree, then the entire query will execute in parallel. If it is somewhere
+    else in the plan tree, then only the portion of the plan below it runs
+    in parallel.
    </para>
 
    <para>
-    <link linkend="using-explain">Using EXPLAIN</>, you can see the number of
-    workers chosen by the planner.  When the <literal>Gather</> node is reached
+    Using <link linkend="using-explain">EXPLAIN</>, you can see the intended
+    number of additional processes (=workers) chosen by the planner.
+    When the <literal>Gather</> node is reached
     during query execution, the process which is implementing the user's
     session will request a number of <link linkend="bgworker">background
     worker processes</link> equal to the number
@@ -66,10 +86,10 @@ EXPLAIN SELECT * FROM pgbench_accounts WHERE filler LIKE '%x%';
     <xref linkend="guc-max-parallel-workers">, so it is possible for a
     parallel query to run with fewer workers than planned, or even with
     no workers at all.  The optimal plan may depend on the number of workers
-    that are available, so this can result in poor query performance.  If this
-    occurrence is frequent, considering increasing
+    that are available, so this can result in poor query performance. If
+    this occurs frequently, consider increasing
     <varname>max_worker_processes</> and <varname>max_parallel_workers</>
-    so that more workers can be run simultaneously or alternatively reducing
+    so that more workers can run simultaneously or alternatively reduce
     <xref linkend="guc-max-parallel-workers-per-gather"> so that the planner
     requests fewer workers.
    </para>
@@ -77,9 +97,9 @@ EXPLAIN SELECT * FROM pgbench_accounts WHERE filler LIKE '%x%';
    <para>
     Every background worker process which is successfully started for a given
     parallel query will execute the portion of the plan below
-    the <literal>Gather</> node.  The leader will also execute that portion
-    of the plan, but it has an additional responsibility: it must also read
-    all of the tuples generated by the workers.  When the parallel portion of
+    the <literal>Gather</> (=leader) node. The leader will also execute that
+    portion of the plan, but its main responsibility is the receiving of
+    the tuples generated by the workers. When the parallel portion of
     the plan generates only a small number of tuples, the leader will often
     behave very much like an additional worker, speeding up query execution.
     Conversely, when the parallel portion of the plan generates a large number
