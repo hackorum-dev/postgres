@@ -434,7 +434,13 @@ _hash_metapinit(Relation rel, double num_tuples, ForkNumber forkNum)
 		buf = _hash_getnewbuf(rel, BUCKET_TO_BLKNO(metap, i), forkNum);
 		pg = BufferGetPage(buf);
 		pageopaque = (HashPageOpaque) PageGetSpecialPointer(pg);
-		pageopaque->hasho_prevblkno = InvalidBlockNumber;
+
+		/*
+		 * Set hasho_prevblkno with current hashm_maxbucket. This value will
+		 * be used to validate cached HashMetaPageData. See
+		 * _hash_getbucketbuf_from_hashkey().
+		 */
+		pageopaque->hasho_prevblkno = metap->hashm_maxbucket;
 		pageopaque->hasho_nextblkno = InvalidBlockNumber;
 		pageopaque->hasho_bucket = i;
 		pageopaque->hasho_flag = LH_BUCKET_PAGE;
@@ -845,6 +851,12 @@ _hash_splitbucket(Relation rel,
 	 */
 	oopaque->hasho_flag |= LH_BUCKET_BEING_SPLIT;
 
+	/*
+	 * Setting hasho_prevblkno of bucket page with latest maxbucket number to
+	 * indicate bucket has been split and need to reconstruct
+	 * HashMetaPageData. Below same is done for new bucket page.
+	 */
+	oopaque->hasho_prevblkno = maxbucket;
 	npage = BufferGetPage(nbuf);
 
 	/*
@@ -852,7 +864,7 @@ _hash_splitbucket(Relation rel,
 	 * split is in progress.
 	 */
 	nopaque = (HashPageOpaque) PageGetSpecialPointer(npage);
-	nopaque->hasho_prevblkno = InvalidBlockNumber;
+	nopaque->hasho_prevblkno = maxbucket;
 	nopaque->hasho_nextblkno = InvalidBlockNumber;
 	nopaque->hasho_bucket = nbucket;
 	nopaque->hasho_flag = LH_BUCKET_PAGE | LH_BUCKET_BEING_POPULATED;
@@ -1190,4 +1202,131 @@ _hash_finish_split(Relation rel, Buffer metabuf, Buffer obuf, Bucket obucket,
 	_hash_relbuf(rel, bucket_nbuf);
 	LockBuffer(obuf, BUFFER_LOCK_UNLOCK);
 	hash_destroy(tidhtab);
+}
+
+/*
+ *	_hash_getcachedmetap() -- Returns cached metapage data.
+ *
+ *	metabuf : If set with valid bufferid, caller must hold a pin, but no lock,
+ *	on the metapage.
+ *	force_refresh : If set, update the cache with latest metapage content.
+ *
+ *	This function will not release the pin on metabuf. The caller should do
+ *	same.
+ */
+HashMetaPage
+_hash_getcachedmetap(Relation rel, Buffer *metabuf, bool force_refresh)
+{
+	Page		page;
+
+	Assert(metabuf);
+	if (force_refresh || rel->rd_amcache == NULL)
+	{
+		if (rel->rd_amcache == NULL)
+			rel->rd_amcache = MemoryContextAlloc(rel->rd_indexcxt,
+												 sizeof(HashMetaPageData));
+
+		/* Read the metapage. */
+		if (BufferIsValid(*metabuf))
+			LockBuffer(*metabuf, BUFFER_LOCK_SHARE);
+		else
+			*metabuf = _hash_getbuf(rel, HASH_METAPAGE, HASH_READ,
+									LH_META_PAGE);
+
+		page = BufferGetPage(*metabuf);
+		memcpy(rel->rd_amcache, HashPageGetMeta(page),
+			   sizeof(HashMetaPageData));
+
+		/* Release metapage lock. Keep the pin. */
+		LockBuffer(*metabuf, BUFFER_LOCK_UNLOCK);
+	}
+
+	return (HashMetaPage) rel->rd_amcache;
+}
+
+/*
+ *	_hash_getbucketbuf_from_hashkey() -- Get the bucket's buffer for the given
+ *										 hashkey.
+ *
+ *	Bucket Pages do not move or get removed once they are allocated. This give
+ *	us an opportunity to use the previously saved metapage contents to reach
+ *	the target bucket buffer, instead of every time reading from the metapage
+ *	buffer. This saves one buffer access every time we want to reach the target
+ *	bucket buffer, which is very helpful savings in bufmgr traffic and
+ *	contention.
+ *
+ *	The access type parameter (HASH_READ or HASH_WRITE) indicates whether the
+ *	bucket buffer has to be locked for reading or writing.
+ *
+ *	The out parameter cachedmetap is set with metapage contents used for
+ *	hashkey to bucket buffer mapping. Some callers need this info to reach the
+ *	old bucket in case of bucket split, see _hash_doinsert().
+ */
+Buffer
+_hash_getbucketbuf_from_hashkey(Relation rel, uint32 hashkey, int access,
+								HashMetaPage *cachedmetap)
+{
+	HashMetaPage metap;
+	Buffer		buf;
+	Buffer		metabuf = InvalidBuffer;
+	Page		page;
+	Bucket		bucket;
+	BlockNumber blkno;
+	HashPageOpaque opaque;
+
+	/* We read from target bucket buffer, hence locking is must. */
+	Assert(access == HASH_READ || access == HASH_WRITE);
+
+	metap = _hash_getcachedmetap(rel, &metabuf, false);
+	Assert(metap != NULL);
+
+	/*
+	 * Loop until we get a lock on the correct target bucket.
+	 */
+	for (;;)
+	{
+		/*
+		 * Compute the target bucket number, and convert to block number.
+		 */
+		bucket = _hash_hashkey2bucket(hashkey,
+									  metap->hashm_maxbucket,
+									  metap->hashm_highmask,
+									  metap->hashm_lowmask);
+
+		blkno = BUCKET_TO_BLKNO(metap, bucket);
+
+		/* Fetch the primary bucket page for the bucket */
+		buf = _hash_getbuf(rel, blkno, access, LH_BUCKET_PAGE);
+		page = BufferGetPage(buf);
+		opaque = (HashPageOpaque) PageGetSpecialPointer(page);
+		Assert(opaque->hasho_bucket == bucket);
+
+		/*
+		 * Check if this bucket is split after we have cached the
+		 * HashMetaPageData by comparing their respective hashm_maxbucket. If
+		 * so we need to read the metapage and recompute the bucket number
+		 * again.
+		 */
+		if (opaque->hasho_prevblkno == InvalidBlockNumber ||
+			opaque->hasho_prevblkno <= metap->hashm_maxbucket)
+		{
+			/* Ok now we have the right bucket proceed to search in it. */
+			break;
+		}
+
+		/* First drop any locks held on bucket buffers. */
+		_hash_relbuf(rel, buf);
+
+		/* Update the cached meta page data. */
+		metap = _hash_getcachedmetap(rel, &metabuf, true);
+		Assert(metap != NULL);
+	}
+
+	if (BufferIsValid(metabuf))
+		_hash_dropbuf(rel, metabuf);
+
+	if (cachedmetap)
+		*cachedmetap = metap;
+
+	return buf;
 }

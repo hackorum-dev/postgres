@@ -188,17 +188,8 @@ track of available overflow pages.
 
 The reader algorithm is:
 
-	pin meta page and take buffer content lock in shared mode
-	loop:
-		compute bucket number for target hash key
-		release meta page buffer content lock
-		if (correct bucket page is already locked)
-			break
-		release any existing bucket page buffer content lock (if a concurrent
-         split happened)
-		take the buffer content lock on bucket page in shared mode
-		retake meta page buffer content lock in shared mode
-	release pin on metapage
+	given a hashkey get the target bucket page with the read lock, using
+	cached metapage; the usage of cached metapage is explained later.
 	if the target bucket is still being populated by a split:
 		release the buffer content lock on current bucket page
 		pin and acquire the buffer content lock on old bucket in shared mode
@@ -238,17 +229,8 @@ which this bucket is formed by split.
 
 The insertion algorithm is rather similar:
 
-	pin meta page and take buffer content lock in shared mode
-	loop:
-		compute bucket number for target hash key
-		release meta page buffer content lock
-		if (correct bucket page is already locked)
-			break
-		release any existing bucket page buffer content lock (if a concurrent
-         split happened)
-		take the buffer content lock on bucket page in exclusive mode
-		retake meta page buffer content lock in shared mode
-	release pin on metapage
+	given a hashkey get the target bucket page with the write lock, using
+	cached metapage; the usage of cached metapage is explained later.
 -- (so far same as reader, except for acquisition of buffer content lock in
 	exclusive mode on primary bucket page)
 	if the bucket-being-split flag is set for a bucket and pin count on it is
@@ -289,6 +271,20 @@ issue.)
 When an inserter cannot find space in any existing page of a bucket, it
 must obtain an overflow page and add that page to the bucket's chain.
 Details of that part of the algorithm appear later.
+
+The usage of cached metapage is explained as below.
+
+	if metapage cache is not set, read the meta page data; and set the cache;
+	hold meta page pin.
+	Loop:
+		compute bucket number for target hash key; take the buffer content
+		lock on bucket page in the read/write mode as requested by
+		reader/insert algorithm.
+		if (target bucket is split before metapage data was cached)
+			break;
+		release any existing bucket page buffer content lock; update the
+		metapage cache with latest metapage data.
+	release if any pin on metapage
 
 The page split algorithm is entered whenever an inserter observes that the
 index is overfull (has a higher-than-wanted ratio of tuples to buckets).

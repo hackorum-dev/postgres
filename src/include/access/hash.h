@@ -60,6 +60,13 @@ typedef uint32 Bucket;
 
 typedef struct HashPageOpaqueData
 {
+	/*
+	 * If this is an ovfl page this stores previous ovfl (or bucket) blkno.
+	 * Else if this is a bucket page we use this for a special purpose. We
+	 * store hashm_maxbucket value, whenever this page is initialized or
+	 * split. So this helps us to know whether the bucket has been split after
+	 * caching the HashMetaPageData. See _hash_getbucketbuf_from_hashkey().
+	 */
 	BlockNumber hasho_prevblkno;	/* previous ovfl (or bucket) blkno */
 	BlockNumber hasho_nextblkno;	/* next ovfl blkno */
 	Bucket		hasho_bucket;	/* bucket number this pg belongs to */
@@ -305,6 +312,10 @@ extern Buffer _hash_getbuf(Relation rel, BlockNumber blkno,
 			 int access, int flags);
 extern Buffer _hash_getbuf_with_condlock_cleanup(Relation rel,
 								   BlockNumber blkno, int flags);
+extern HashMetaPage _hash_getcachedmetap(Relation rel, Buffer *metabuf, bool force_refresh);
+extern Buffer _hash_getbucketbuf_from_hashkey(Relation rel, uint32 hashkey,
+								int access,
+								HashMetaPage *cachedmetap);
 extern Buffer _hash_getinitbuf(Relation rel, BlockNumber blkno);
 extern Buffer _hash_getnewbuf(Relation rel, BlockNumber blkno,
 				ForkNumber forkNum);
