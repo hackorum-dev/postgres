@@ -78,6 +78,7 @@ typedef struct
 } movedb_failure_params;
 
 /* non-export function prototypes */
+static void check_db_name(const char *dbname);
 static void createdb_failure_callback(int code, Datum arg);
 static void movedb(const char *dbname, const char *tblspcname);
 static void movedb_failure_callback(int code, Datum arg);
@@ -470,6 +471,9 @@ createdb(ParseState *pstate, const CreatedbStmt *stmt)
 		/* Note there is no additional permission check in this path */
 	}
 
+	/* do sanity checks on database name */
+	check_db_name(dbname);
+
 	/*
 	 * Check for db name conflict.  This is just to give a more friendly error
 	 * message than "unique index violation".  There's a race condition but
@@ -756,6 +760,22 @@ check_encoding_locale_matches(int encoding, const char *collate, const char *cty
 				   pg_encoding_to_char(collate_encoding))));
 }
 
+/*
+ * Perform sanity checks on the database name.
+ */
+static void
+check_db_name(const char *dbname)
+{
+	if (strchr(dbname, '\n') != NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("database name cannot include newline character")));
+	if (strchr(dbname, '\r') != NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("database name cannot include carriage return character")));
+}
+
 /* Error cleanup callback for createdb */
 static void
 createdb_failure_callback(int code, Datum arg)
@@ -975,6 +995,9 @@ RenameDatabase(const char *oldname, const char *newname)
 	int			notherbackends;
 	int			npreparedxacts;
 	ObjectAddress address;
+
+	/* check format of new name */
+	check_db_name(newname);
 
 	/*
 	 * Look up the target database's OID, and get exclusive lock on it. We

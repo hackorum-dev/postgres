@@ -260,6 +260,13 @@ CREATE DATABASE <replaceable class="PARAMETER">name</replaceable>
    connection <quote>slot</> remains for the database, it is possible that
    both will fail.  Also, the limit is not enforced against superusers.
   </para>
+
+  <para>
+    Database names cannot include newline or carriage return characters
+    as those could be at the origin of security breaches, particularly on
+    Windows where the command shell is unusable with arguments containing
+    such characters.
+   </para>
  </refsect1>
 
  <refsect1>

@@ -3,7 +3,7 @@ use warnings;
 
 use PostgresNode;
 use TestLib;
-use Test::More tests => 14;
+use Test::More tests => 13;
 
 # In a SQL_ASCII database, pgwin32_message_to_UTF16() needs to
 # interpret everything as UTF8.  We're going to use byte sequences
@@ -76,15 +76,6 @@ $node->command_ok(
 $node->command_ok(
 	[ 'pg_dumpall', '-r', '-l', 'dbname=template1' ],
 	'pg_dumpall -l accepts connection string');
-
-$node->run_log([ 'createdb', "foo\n\rbar" ]);
-
-# not sufficient to use -r here
-$node->command_fails(
-	[ 'pg_dumpall', '-f', $discard ],
-	'pg_dumpall with \n\r in database name');
-$node->run_log([ 'dropdb', "foo\n\rbar" ]);
-
 
 # make a table, so the parallel worker has something to dump
 $node->safe_psql($dbname1, 'CREATE TABLE t0()');

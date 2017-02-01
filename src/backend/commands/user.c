@@ -57,6 +57,21 @@ static void DelRoleMems(const char *rolename, Oid roleid,
 			bool admin_opt);
 
 
+/* Do sanity checks on role name */
+static void
+check_role_name(const char *rolname)
+{
+	if (strchr(rolname, '\n') != NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("role name cannot use newline character")));
+	if (strchr(rolname, '\r') != NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("role name cannot use carriage return character")));
+}
+
+
 /* Check if current user has createrole privileges */
 static bool
 have_createrole_privilege(void)
@@ -110,6 +125,9 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 	DefElem    *dadminmembers = NULL;
 	DefElem    *dvalidUntil = NULL;
 	DefElem    *dbypassRLS = NULL;
+
+	/* sanity check for role name */
+	check_role_name(stmt->role);
 
 	/* The defaults can vary depending on the original statement type */
 	switch (stmt->stmt_type)
@@ -1145,6 +1163,9 @@ RenameRole(const char *oldname, const char *newname)
 	Oid			roleid;
 	ObjectAddress address;
 	Form_pg_authid authform;
+
+	/* sanity check for role name */
+	check_role_name(newname);
 
 	rel = heap_open(AuthIdRelationId, RowExclusiveLock);
 	dsc = RelationGetDescr(rel);

@@ -3,7 +3,7 @@ use warnings;
 
 use PostgresNode;
 use TestLib;
-use Test::More tests => 17;
+use Test::More tests => 18;
 
 program_help_ok('createuser');
 program_version_ok('createuser');
@@ -32,3 +32,5 @@ qr/statement: CREATE ROLE regress_user3 SUPERUSER CREATEDB CREATEROLE INHERIT LO
 
 $node->command_fails([ 'createuser', 'regress_user1' ],
 	'fails if role already exists');
+$node->command_fails([ 'createuser', "foo\n\rbar" ],
+	'fails with \n\r in role name');

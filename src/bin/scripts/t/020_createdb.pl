@@ -3,7 +3,7 @@ use warnings;
 
 use PostgresNode;
 use TestLib;
-use Test::More tests => 13;
+use Test::More tests => 14;
 
 program_help_ok('createdb');
 program_version_ok('createdb');
@@ -24,3 +24,5 @@ $node->issues_sql_like(
 
 $node->command_fails([ 'createdb', 'foobar1' ],
 	'fails if database already exists');
+$node->command_fails([ 'createdb', "foo\n\rbar" ],
+	'fails with \n\r in database name');

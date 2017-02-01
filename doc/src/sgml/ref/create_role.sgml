@@ -398,6 +398,13 @@ CREATE ROLE <replaceable class="PARAMETER">name</replaceable> [ [ WITH ] <replac
    <command>\password</command> that can be used to safely change the
    password later.
   </para>
+
+  <para>
+   Role names cannot include newline or carriage return characters
+   as those could be at the origin of security breaches, particularly on
+   Windows where the command shell is unusable with arguments containing
+   such characters.
+  </para>
  </refsect1>
 
  <refsect1>
