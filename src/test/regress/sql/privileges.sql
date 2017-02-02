@@ -29,6 +29,7 @@ CREATE USER regress_user3;
 CREATE USER regress_user4;
 CREATE USER regress_user5;
 CREATE USER regress_user5;	-- duplicate
+CREATE USER regress_dbowner;
 
 CREATE GROUP regress_group1;
 CREATE GROUP regress_group2 WITH USER regress_user1, regress_user2;
@@ -38,6 +39,8 @@ ALTER GROUP regress_group1 ADD USER regress_user4;
 ALTER GROUP regress_group2 ADD USER regress_user2;	-- duplicate
 ALTER GROUP regress_group2 DROP USER regress_user2;
 GRANT regress_group2 TO regress_user4 WITH ADMIN OPTION;
+
+select 'ALTER DATABASE '||current_database()||' OWNER TO regress_dbowner'  \gexec
 
 -- test owner privileges
 
@@ -126,6 +129,21 @@ bar	true
 \.
 SELECT * FROM atest1; -- ok
 
+--dbowner
+SET SESSION AUTHORIZATION regress_dbowner;
+CREATE TABLE atest3 ( a int, b text );
+CREATE INDEX ON atest1 (a);
+INSERT INTO atest1 VALUES (11, 'one');
+SELECT * FROM atest1 WHERE a = 11;
+DELETE FROM atest1 WHERE a = 11;
+UPDATE atest1 SET b = 'blech' WHERE a = 11;
+INSERT INTO atest3 SELECT * FROM atest1 WHERE a <> 11;
+TRUNCATE atest1;
+INSERT INTO atest1 SELECT * FROM atest3;
+DROP TABLE atest3;
+BEGIN;
+LOCK atest1 IN ACCESS EXCLUSIVE MODE;
+COMMIT;
 
 -- groups
 

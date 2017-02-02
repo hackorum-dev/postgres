@@ -463,15 +463,17 @@ GRANT <replaceable class="PARAMETER">role_name</replaceable> [, ...] TO <replace
     all objects regardless of object privilege settings.  This
     is comparable to the rights of <literal>root</> in a Unix system.
     As with <literal>root</>, it's unwise to operate as a superuser
-    except when absolutely necessary.
+    except when absolutely necessary. Similarly, database owners can
+    access all objects regardless of object privilege settings, except
+    for objects that are owned by superusers.
    </para>
 
    <para>
-    If a superuser chooses to issue a <command>GRANT</> or <command>REVOKE</>
-    command, the command is performed as though it were issued by the
-    owner of the affected object.  In particular, privileges granted via
-    such a command will appear to have been granted by the object owner.
-    (For role membership, the membership appears to have been granted
+    If a superuser or database owner chooses to issue a <command>GRANT</> or
+    <command>REVOKE</> command, the command is performed as though it were
+    issued by the owner of the affected object.  In particular, privileges
+    granted via such a command will appear to have been granted by the object
+    owner.  (For role membership, the membership appears to have been granted
     by the containing role itself.)
    </para>
 

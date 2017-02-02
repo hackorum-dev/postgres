@@ -3676,11 +3676,22 @@ pg_class_aclmask(Oid table_oid, Oid roleid,
 		return mask;
 	}
 
+	ownerId = classForm->relowner;
+
+	/*
+	 * If we have the privs of the database owner AND the owner of the object is
+	 * not a superuser, then we bypass further permission-checking.
+	 */
+	if (is_databaseowner(roleid) &&
+		!superuser_arg(ownerId))
+	{
+		ReleaseSysCache(tuple);
+		return mask;
+	}
+
 	/*
 	 * Normal case: get the relation's ACL from pg_class
 	 */
-	ownerId = classForm->relowner;
-
 	aclDatum = SysCacheGetAttr(RELOID, tuple, Anum_pg_class_relacl,
 							   &isNull);
 	if (isNull)
@@ -3796,6 +3807,14 @@ pg_proc_aclmask(Oid proc_oid, Oid roleid,
 				 errmsg("function with OID %u does not exist", proc_oid)));
 
 	ownerId = ((Form_pg_proc) GETSTRUCT(tuple))->proowner;
+
+	/*
+	 * If we have the privs of the database owner AND the owner of the object is
+	 * not a superuser, then we bypass further permission-checking.
+	 */
+	if (is_databaseowner(roleid) &&
+		!superuser_arg(ownerId))
+		return mask;
 
 	aclDatum = SysCacheGetAttr(PROCOID, tuple, Anum_pg_proc_proacl,
 							   &isNull);
@@ -4272,6 +4291,14 @@ pg_type_aclmask(Oid type_oid, Oid roleid, AclMode mask, AclMaskHow how)
 	 */
 	ownerId = typeForm->typowner;
 
+	/*
+	 * If we have the privs of the database owner AND the owner of the object is
+	 * not a superuser, then we bypass further permission-checking.
+	 */
+	if (is_databaseowner(roleid) &&
+		!superuser_arg(ownerId))
+		return mask;
+
 	aclDatum = SysCacheGetAttr(TYPEOID, tuple,
 							   Anum_pg_type_typacl, &isNull);
 	if (isNull)
@@ -4565,6 +4592,14 @@ pg_class_ownercheck(Oid class_oid, Oid roleid)
 
 	ReleaseSysCache(tuple);
 
+	/*
+	 * If we have the privs of the database owner AND the owner of the object is
+	 * not a superuser, then we bypass further permission-checking.
+	 */
+	if (is_databaseowner(roleid) &&
+		!superuser_arg(ownerId))
+		return true;
+
 	return has_privs_of_role(roleid, ownerId);
 }
 
@@ -4590,6 +4625,14 @@ pg_type_ownercheck(Oid type_oid, Oid roleid)
 	ownerId = ((Form_pg_type) GETSTRUCT(tuple))->typowner;
 
 	ReleaseSysCache(tuple);
+
+	/*
+	 * If we have the privs of the database owner AND the owner of the object is
+	 * not a superuser, then we bypass further permission-checking.
+	 */
+	if (is_databaseowner(roleid) &&
+		!superuser_arg(ownerId))
+		return true;
 
 	return has_privs_of_role(roleid, ownerId);
 }
@@ -4642,6 +4685,14 @@ pg_proc_ownercheck(Oid proc_oid, Oid roleid)
 	ownerId = ((Form_pg_proc) GETSTRUCT(tuple))->proowner;
 
 	ReleaseSysCache(tuple);
+
+	/*
+	 * If we have the privs of the database owner AND the owner of the object is
+	 * not a superuser, then we bypass further permission-checking.
+	 */
+	if (is_databaseowner(roleid) &&
+		!superuser_arg(ownerId))
+		return true;
 
 	return has_privs_of_role(roleid, ownerId);
 }

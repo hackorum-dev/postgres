@@ -22,6 +22,7 @@
 
 #include "access/htup_details.h"
 #include "catalog/pg_authid.h"
+#include "catalog/pg_database.h"
 #include "utils/inval.h"
 #include "utils/syscache.h"
 #include "miscadmin.h"
@@ -38,6 +39,11 @@ static bool last_roleid_is_super = false;
 static bool roleid_callback_registered = false;
 
 static void RoleidCallback(Datum arg, int cacheid, uint32 hashvalue);
+
+static Oid dbowner_roleid = InvalidOid;
+static bool dbowner_callback_registered = false;
+
+static void DBOwnerCallback(Datum arg, int cacheid, uint32 hashvalue);
 
 
 /*
@@ -105,4 +111,47 @@ RoleidCallback(Datum arg, int cacheid, uint32 hashvalue)
 {
 	/* Invalidate our local cache in case role's superuserness changed */
 	last_roleid = InvalidOid;
+}
+
+/*
+ * The Postgres user running this command is the owner of current database
+ */
+bool
+is_databaseowner(Oid roleid)
+{
+	HeapTuple	rtup;
+
+	/* Quick out for cache hit */
+	if (OidIsValid(dbowner_roleid))
+		return (dbowner_roleid == roleid);
+
+	/* If first time through, set up callback for cache flushes */
+	if (!dbowner_callback_registered)
+	{
+		CacheRegisterSyscacheCallback(DATABASEOID,
+									  DBOwnerCallback,
+									  (Datum) 0);
+		dbowner_callback_registered = true;
+	}
+
+	/* OK, look up the information in pg_database */
+	rtup = SearchSysCache1(DATABASEOID, ObjectIdGetDatum(MyDatabaseId));
+	if (!HeapTupleIsValid(rtup))
+		elog(ERROR, "cache lookup failed for database %u", MyDatabaseId);
+
+	dbowner_roleid = ((Form_pg_database) GETSTRUCT(rtup))->datdba;
+	ReleaseSysCache(rtup);
+
+	return (dbowner_roleid == roleid);
+}
+
+/*
+ * DBOwnerCallback
+ *		Syscache inval callback function
+ */
+static void
+DBOwnerCallback(Datum arg, int cacheid, uint32 hashvalue)
+{
+	/* Invalidate our local cache in case database's owner changed */
+	dbowner_roleid = InvalidOid;
 }

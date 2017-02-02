@@ -327,6 +327,7 @@ extern void SwitchBackToLocalLatch(void);
 /* in utils/misc/superuser.c */
 extern bool superuser(void);	/* current user is superuser */
 extern bool superuser_arg(Oid roleid);	/* given user is superuser */
+extern bool is_databaseowner(Oid roleid); /* given user is database owner */
 
 
 /*****************************************************************************
