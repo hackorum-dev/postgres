@@ -181,7 +181,11 @@ CREATE VIEW pg_sequences AS
         S.seqincrement AS increment_by,
         S.seqcycle AS cycle,
         S.seqcache AS cache_size,
-        pg_sequence_last_value(C.oid) AS last_value
+        CASE
+            WHEN has_sequence_privilege(C.oid, 'SELECT,USAGE'::text)
+                THEN pg_sequence_last_value(C.oid)
+            ELSE NULL
+        END AS last_value
     FROM pg_sequence S JOIN pg_class C ON (C.oid = S.seqrelid)
          LEFT JOIN pg_namespace N ON (N.oid = C.relnamespace)
     WHERE NOT pg_is_other_temp_schema(N.oid)
