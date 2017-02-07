@@ -1486,7 +1486,7 @@ qr/CREATE CAST \(timestamp with time zone AS interval\) WITH FUNCTION pg_catalog
 					   FOR EACH ROW WHEN (NEW.col1 > 10)
 					   EXECUTE PROCEDURE dump_test.trigger_func();',
 		regexp => qr/^
-			\QCREATE TRIGGER test_trigger BEFORE INSERT ON test_table \E
+			\QCREATE OR REPLACE TRIGGER test_trigger BEFORE INSERT ON test_table \E
 			\QFOR EACH ROW WHEN ((new.col1 > 10)) \E
 			\QEXECUTE PROCEDURE trigger_func();\E
 			/xm,

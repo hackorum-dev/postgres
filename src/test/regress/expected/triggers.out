@@ -385,21 +385,21 @@ SELECT * FROM main_table ORDER BY a, b;
 (8 rows)
 
 SELECT pg_get_triggerdef(oid, true) FROM pg_trigger WHERE tgrelid = 'main_table'::regclass AND tgname = 'modified_a';
-                                                             pg_get_triggerdef                                                              
---------------------------------------------------------------------------------------------------------------------------------------------
- CREATE TRIGGER modified_a BEFORE UPDATE OF a ON main_table FOR EACH ROW WHEN (old.a <> new.a) EXECUTE PROCEDURE trigger_func('modified_a')
+                                                                   pg_get_triggerdef                                                                   
+-------------------------------------------------------------------------------------------------------------------------------------------------------
+ CREATE OR REPLACE TRIGGER modified_a BEFORE UPDATE OF a ON main_table FOR EACH ROW WHEN (old.a <> new.a) EXECUTE PROCEDURE trigger_func('modified_a')
 (1 row)
 
 SELECT pg_get_triggerdef(oid, false) FROM pg_trigger WHERE tgrelid = 'main_table'::regclass AND tgname = 'modified_a';
-                                                              pg_get_triggerdef                                                               
-----------------------------------------------------------------------------------------------------------------------------------------------
- CREATE TRIGGER modified_a BEFORE UPDATE OF a ON main_table FOR EACH ROW WHEN ((old.a <> new.a)) EXECUTE PROCEDURE trigger_func('modified_a')
+                                                                    pg_get_triggerdef                                                                    
+---------------------------------------------------------------------------------------------------------------------------------------------------------
+ CREATE OR REPLACE TRIGGER modified_a BEFORE UPDATE OF a ON main_table FOR EACH ROW WHEN ((old.a <> new.a)) EXECUTE PROCEDURE trigger_func('modified_a')
 (1 row)
 
 SELECT pg_get_triggerdef(oid, true) FROM pg_trigger WHERE tgrelid = 'main_table'::regclass AND tgname = 'modified_any';
-                                                                      pg_get_triggerdef                                                                       
---------------------------------------------------------------------------------------------------------------------------------------------------------------
- CREATE TRIGGER modified_any BEFORE UPDATE OF a ON main_table FOR EACH ROW WHEN (old.* IS DISTINCT FROM new.*) EXECUTE PROCEDURE trigger_func('modified_any')
+                                                                            pg_get_triggerdef                                                                            
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ CREATE OR REPLACE TRIGGER modified_any BEFORE UPDATE OF a ON main_table FOR EACH ROW WHEN (old.* IS DISTINCT FROM new.*) EXECUTE PROCEDURE trigger_func('modified_any')
 (1 row)
 
 DROP TRIGGER modified_a ON main_table;
@@ -421,9 +421,9 @@ FOR EACH STATEMENT EXECUTE PROCEDURE trigger_func('before_upd_a_stmt');
 CREATE TRIGGER after_upd_b_stmt_trig AFTER UPDATE OF b ON main_table
 FOR EACH STATEMENT EXECUTE PROCEDURE trigger_func('after_upd_b_stmt');
 SELECT pg_get_triggerdef(oid) FROM pg_trigger WHERE tgrelid = 'main_table'::regclass AND tgname = 'after_upd_a_b_row_trig';
-                                                             pg_get_triggerdef                                                             
--------------------------------------------------------------------------------------------------------------------------------------------
- CREATE TRIGGER after_upd_a_b_row_trig AFTER UPDATE OF a, b ON main_table FOR EACH ROW EXECUTE PROCEDURE trigger_func('after_upd_a_b_row')
+                                                                  pg_get_triggerdef                                                                   
+------------------------------------------------------------------------------------------------------------------------------------------------------
+ CREATE OR REPLACE TRIGGER after_upd_a_b_row_trig AFTER UPDATE OF a, b ON main_table FOR EACH ROW EXECUTE PROCEDURE trigger_func('after_upd_a_b_row')
 (1 row)
 
 UPDATE main_table SET a = 50;
@@ -1673,6 +1673,156 @@ select * from self_ref_trigger;
 drop table self_ref_trigger;
 drop function self_ref_trigger_ins_func();
 drop function self_ref_trigger_del_func();
+--
+-- test triggers with OR REPLACE clause
+--
+CREATE TABLE my_table1 (id integer, name text);
+CREATE TABLE my_table2 (id integer);
+CREATE FUNCTION my_proc1() RETURNS trigger AS $$
+begin
+	RETURN NULL;
+end;$$ LANGUAGE plpgsql;
+CREATE FUNCTION my_updateproc1() RETURNS trigger AS $$
+begin
+	        UPDATE my_table2 SET id=NEW.id WHERE id=OLD.id;
+		        RETURN NULL;
+end;$$ LANGUAGE plpgsql;
+CREATE FUNCTION my_deleteproc1() RETURNS trigger AS $$
+begin
+	        DELETE FROM my_table2 WHERE id=OLD.id;
+		        RETURN NULL;
+end;$$ LANGUAGE plpgsql;
+CREATE FUNCTION my_insertproc1() RETURNS trigger AS $$
+begin
+	        INSERT INTO my_table2 VALUES(NEW.id);
+		        RETURN NULL;
+end;$$ LANGUAGE plpgsql;
+INSERT INTO my_table1 VALUES(323, 'Alex');
+INSERT INTO my_table1 VALUES(23, 'Teddy');
+INSERT INTO my_table1 VALUES(38, 'Bob');
+INSERT INTO my_table2 VALUES(323);
+INSERT INTO my_table2 VALUES(23);
+INSERT INTO my_table2 VALUES(38);
+--With OR REPALCE clause, create a new trigger with the name my_regular_trigger.
+CREATE OR REPLACE TRIGGER my_regular_trigger AFTER DELETE ON my_table1
+FOR EACH ROW
+EXECUTE PROCEDURE my_deleteproc1();
+DELETE FROM my_table1 WHERE id=323;
+SELECT * FROM my_table1;
+ id | name  
+----+-------
+ 23 | Teddy
+ 38 | Bob
+(2 rows)
+
+SELECT * FROM my_table2;
+ id 
+----
+ 23
+ 38
+(2 rows)
+
+--With OR REPALCE clause, create a new constraint trigger with the name my_constraint_trigger.
+CREATE OR REPLACE CONSTRAINT TRIGGER my_constraint_trigger AFTER DELETE ON my_table1
+FOR EACH ROW
+EXECUTE PROCEDURE my_deleteproc1();
+DELETE FROM my_table1 WHERE id=23;
+SELECT * FROM my_table1;
+ id | name 
+----+------
+ 38 | Bob
+(1 row)
+
+SELECT * FROM my_table2;
+ id 
+----
+ 38
+(1 row)
+
+-- Replace my_regular_trigger definition with new definition.
+CREATE OR REPLACE TRIGGER my_regular_trigger AFTER INSERT ON my_table1
+FOR EACH ROW
+EXECUTE PROCEDURE my_insertproc1();
+INSERT INTO my_table1 VALUES(323, 'Alex');
+SELECT * FROM my_table1;
+ id  | name 
+-----+------
+  38 | Bob
+ 323 | Alex
+(2 rows)
+
+SELECT * FROM my_table2;
+ id  
+-----
+  38
+ 323
+(2 rows)
+
+-- Replace my_constraint_trigger definition with new definition.
+CREATE OR REPLACE CONSTRAINT TRIGGER my_constraint_trigger AFTER INSERT ON my_table1
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW
+EXECUTE PROCEDURE my_insertproc1();
+INSERT INTO my_table1 VALUES(23, 'Teddy');
+SELECT * FROM my_table1;
+ id  | name  
+-----+-------
+  38 | Bob
+ 323 | Alex
+  23 | Teddy
+(3 rows)
+
+SELECT * FROM my_table2;
+ id  
+-----
+  38
+ 323
+  23
+  23
+(4 rows)
+
+--Without OR REPALCE clause, Cannot create a new constraint trigger with same name of regular trigger already exisiting.
+CREATE CONSTRAINT TRIGGER my_regular_trigger AFTER DELETE ON my_table1
+FOR EACH ROW
+EXECUTE PROCEDURE my_proc1();
+ERROR:  trigger "my_regular_trigger" for relation "my_table1" already exists
+--With OR REPALCE clause, Cannot repalce a regular trigger with a constraint trigger.
+CREATE OR REPLACE CONSTRAINT TRIGGER my_regular_trigger AFTER DELETE ON my_table1
+FOR EACH ROW
+EXECUTE PROCEDURE my_proc1();
+ERROR:  Trigger "my_regular_trigger" for relation "my_table1" cannot be replaced with constraint trigger
+--Without OR REPALCE clause, Cannot create a new constraint trigger with same name of constraint trigger already exisiting.
+CREATE TRIGGER my_constraint_trigger AFTER DELETE ON my_table1
+FOR EACH ROW
+EXECUTE PROCEDURE my_proc1();
+ERROR:  trigger "my_constraint_trigger" for relation "my_table1" already exists
+--With OR REPALCE clause, Cannot replace a regular triiger with a constraint trigger.
+CREATE OR REPLACE TRIGGER my_constraint_trigger AFTER DELETE ON my_table1
+FOR EACH ROW
+EXECUTE PROCEDURE my_proc1();
+ERROR:  Constraint trigger "my_constraint_trigger" for relation "my_table1" cannot be replaced with non-constraint trigger
+--Without OR REPALCE clause, cannot replace my_regular_trigger definition with new definition.
+CREATE TRIGGER my_regular_trigger AFTER DELETE ON my_table1
+EXECUTE PROCEDURE my_proc1();
+ERROR:  trigger "my_regular_trigger" for relation "my_table1" already exists
+--Without OR REPALCE clause, cannot replace my_constraint_trigger definition with new definition.
+CREATE CONSTRAINT TRIGGER my_constraint_trigger AFTER DELETE ON my_table1
+FOR EACH ROW
+EXECUTE PROCEDURE my_proc1();
+ERROR:  trigger "my_constraint_trigger" for relation "my_table1" already exists
+-- Delete the dependency when replaces are executed.
+CREATE OR REPLACE TRIGGER my_trigger2 AFTER UPDATE OF NAME ON my_table1
+FOR EACH ROW
+EXECUTE PROCEDURE my_updateproc1();
+CREATE OR REPLACE TRIGGER my_trigger2 AFTER DELETE ON my_table1
+EXECUTE PROCEDURE my_proc1();
+ALTER TABLE my_table1 DROP COLUMN name;
+DROP FUNCTION my_updateproc1();
+DROP TABLE my_table1;
+DROP TABLE my_table2;
+DROP FUNCTION my_deleteproc1();
+DROP FUNCTION my_insertproc1();
+DROP FUNCTION my_proc1();
 --
 -- Verify behavior of before and after triggers with INSERT...ON CONFLICT
 -- DO UPDATE

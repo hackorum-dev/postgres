@@ -5118,48 +5118,50 @@ CreateAmStmt: CREATE ACCESS METHOD name TYPE_P INDEX HANDLER handler_name
  *****************************************************************************/
 
 CreateTrigStmt:
-			CREATE TRIGGER name TriggerActionTime TriggerEvents ON
+			CREATE opt_or_replace TRIGGER name TriggerActionTime TriggerEvents ON
 			qualified_name TriggerReferencing TriggerForSpec TriggerWhen
 			EXECUTE PROCEDURE func_name '(' TriggerFuncArgs ')'
 				{
 					CreateTrigStmt *n = makeNode(CreateTrigStmt);
-					n->trigname = $3;
-					n->relation = $7;
-					n->funcname = $13;
-					n->args = $15;
-					n->row = $9;
-					n->timing = $4;
-					n->events = intVal(linitial($5));
-					n->columns = (List *) lsecond($5);
-					n->whenClause = $10;
-					n->transitionRels = $8;
+					n->replace = $2;
+					n->trigname = $4;
+					n->relation = $8;
+					n->funcname = $14;
+					n->args = $16;
+					n->row = $10;
+					n->timing = $5;
+					n->events = intVal(linitial($6));
+					n->columns = (List *) lsecond($6);
+					n->whenClause = $11;
+					n->transitionRels = $9;
 					n->isconstraint  = FALSE;
 					n->deferrable	 = FALSE;
 					n->initdeferred  = FALSE;
 					n->constrrel = NULL;
 					$$ = (Node *)n;
 				}
-			| CREATE CONSTRAINT TRIGGER name AFTER TriggerEvents ON
+			| CREATE opt_or_replace CONSTRAINT TRIGGER name AFTER TriggerEvents ON
 			qualified_name OptConstrFromTable ConstraintAttributeSpec
 			FOR EACH ROW TriggerWhen
 			EXECUTE PROCEDURE func_name '(' TriggerFuncArgs ')'
 				{
 					CreateTrigStmt *n = makeNode(CreateTrigStmt);
-					n->trigname = $4;
-					n->relation = $8;
-					n->funcname = $17;
-					n->args = $19;
+					n->replace = $2;
+					n->trigname = $5;
+					n->relation = $9;
+					n->funcname = $18;
+					n->args = $20;
 					n->row = TRUE;
 					n->timing = TRIGGER_TYPE_AFTER;
-					n->events = intVal(linitial($6));
-					n->columns = (List *) lsecond($6);
-					n->whenClause = $14;
+					n->events = intVal(linitial($7));
+					n->columns = (List *) lsecond($7);
+					n->whenClause = $15;
 					n->transitionRels = NIL;
 					n->isconstraint  = TRUE;
-					processCASbits($10, @10, "TRIGGER",
+					processCASbits($11, @11, "TRIGGER",
 								   &n->deferrable, &n->initdeferred, NULL,
 								   NULL, yyscanner);
-					n->constrrel = $9;
+					n->constrrel = $10;
 					$$ = (Node *)n;
 				}
 		;

@@ -21,7 +21,7 @@ PostgreSQL documentation
 
  <refsynopsisdiv>
 <synopsis>
-CREATE [ CONSTRAINT ] TRIGGER <replaceable class="PARAMETER">name</replaceable> { BEFORE | AFTER | INSTEAD OF } { <replaceable class="PARAMETER">event</replaceable> [ OR ... ] }
+CREATE [ OR REPLACE ] [ CONSTRAINT ] TRIGGER <replaceable class="PARAMETER">name</replaceable> { BEFORE | AFTER | INSTEAD OF } { <replaceable class="PARAMETER">event</replaceable> [ OR ... ] }
     ON <replaceable class="PARAMETER">table_name</replaceable>
     [ FROM <replaceable class="parameter">referenced_table_name</replaceable> ]
     [ NOT DEFERRABLE | [ DEFERRABLE ] [ INITIALLY IMMEDIATE | INITIALLY DEFERRED ] ]
@@ -43,11 +43,12 @@ CREATE [ CONSTRAINT ] TRIGGER <replaceable class="PARAMETER">name</replaceable> 
   <title>Description</title>
 
   <para>
-   <command>CREATE TRIGGER</command> creates a new trigger.  The
+   <command>CREATE TRIGGER</command> creates a new trigger. The
    trigger will be associated with the specified table, view, or foreign table
    and will execute the specified
    function <replaceable class="parameter">function_name</replaceable> when
-   certain events occur.
+   certain events occur. <command>CREATE OR REPLACE TRIGGER</command> will
+   either create a new trigger, or replace an existing definition.
   </para>
 
   <para>
@@ -65,6 +66,17 @@ CREATE [ CONSTRAINT ] TRIGGER <replaceable class="PARAMETER">name</replaceable> 
    only). If the trigger fires after the event, all changes, including
    the effects of other triggers, are <quote>visible</quote>
    to the trigger.
+  </para>
+
+  <para>
+   To replace the current definition of an existing trigger,
+   use <command>CREATE OR REPLACE TRIGGER</command>.
+   It is not possible to change <replaceable class="parameter">name</replaceable>
+   or <replaceable class="parameter">table_name</replaceable> this way
+   (if you tried, you would actually be creating a new, distinct trigger).
+   Also, <command>CREATE OR REPLACE TRIGGER</command> will not let you
+   change the type (regular/constraint) of an existing trigger.
+   To do that, you must drop and recreate the trigger.
   </para>
 
   <para>

@@ -76,7 +76,7 @@ CreateConstraintEntry(const char *constraintName,
 					  bool is_internal)
 {
 	Relation	conDesc;
-	Oid			conOid;
+	Oid			conOid = InvalidOid;
 	HeapTuple	tup;
 	bool		nulls[Natts_pg_constraint];
 	Datum		values[Natts_pg_constraint];
@@ -224,9 +224,70 @@ CreateConstraintEntry(const char *constraintName,
 	else
 		nulls[Anum_pg_constraint_consrc - 1] = true;
 
-	tup = heap_form_tuple(RelationGetDescr(conDesc), values, nulls);
+	/*
+	 * Since 'OR REPLACE' is supported in CREATE TRIGGER command,there are
+	 * chances for replacing existing constraint table entry. So a new check
+	 * is needed to know whether new constraint entry should be created
+	 * or existing entry should be replaced.
+	 */
+	if (constraintType == CONSTRAINT_TRIGGER &&
+		ConstraintNameIsUsed(CONSTRAINT_RELATION,
+							 relId,
+							 constraintNamespace,
+							 constraintName))
+	{
+		SysScanDesc conscan;
+		ScanKeyData skey[2];
+		HeapTuple	oldtup;
 
-	conOid = CatalogTupleInsert(conDesc, tup);
+		ScanKeyInit(&skey[0],
+					Anum_pg_constraint_conname,
+					BTEqualStrategyNumber, F_NAMEEQ,
+					CStringGetDatum(constraintName));
+
+		ScanKeyInit(&skey[1],
+					Anum_pg_constraint_connamespace,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(constraintNamespace));
+
+		conscan = systable_beginscan(conDesc, ConstraintNameNspIndexId, true,
+									 NULL, 2, skey);
+
+		while (HeapTupleIsValid(oldtup = systable_getnext(conscan)))
+		{
+			Form_pg_constraint con = (Form_pg_constraint) GETSTRUCT(oldtup);
+
+			if (namestrcmp(&(con->conname), constraintName) == 0 &&
+				con->conrelid == relId)
+			{
+
+				bool		replaces[Natts_pg_constraint];
+				conOid = HeapTupleGetOid(oldtup);
+
+				memset(replaces, true, sizeof(replaces));
+				replaces[Anum_pg_constraint_conname - 1] = false;
+				replaces[Anum_pg_constraint_confrelid - 1] = false;
+
+				/* Modify the existing constraint entry */
+				tup = heap_modify_tuple(oldtup, RelationGetDescr(conDesc), values, nulls, replaces);
+				CatalogTupleUpdate(conDesc, &oldtup->t_self, tup);
+				heap_freetuple(tup);
+
+				/* Remove all old dependencies before registering new ones */
+				deleteDependencyRecordsFor(ConstraintRelationId, conOid, true);
+				break;
+			}
+		}
+
+		systable_endscan(conscan);
+
+	}
+	else
+	{
+		tup = heap_form_tuple(RelationGetDescr(conDesc), values, nulls);
+		conOid = CatalogTupleInsert(conDesc, tup);
+		heap_freetuple(tup);
+	}
 
 	conobject.classId = ConstraintRelationId;
 	conobject.objectId = conOid;

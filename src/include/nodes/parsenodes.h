@@ -2250,6 +2250,7 @@ typedef struct CreateTrigStmt
 	List	   *columns;		/* column names, or NIL for all columns */
 	Node	   *whenClause;		/* qual expression, or NULL if none */
 	bool		isconstraint;	/* This is a constraint trigger */
+	bool		replace;		/* T => replace if already exists */
 	/* explicitly named transition data */
 	List	   *transitionRels; /* TriggerTransition nodes, or NIL if none */
 	/* The remaining fields are only used for constraint triggers */

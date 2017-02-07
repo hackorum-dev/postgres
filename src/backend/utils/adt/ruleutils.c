@@ -853,7 +853,7 @@ pg_get_triggerdef_worker(Oid trigid, bool pretty)
 	initStringInfo(&buf);
 
 	tgname = NameStr(trigrec->tgname);
-	appendStringInfo(&buf, "CREATE %sTRIGGER %s ",
+	appendStringInfo(&buf, "CREATE OR REPLACE %sTRIGGER %s ",
 					 OidIsValid(trigrec->tgconstraint) ? "CONSTRAINT " : "",
 					 quote_identifier(tgname));
 

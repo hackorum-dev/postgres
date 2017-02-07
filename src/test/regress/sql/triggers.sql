@@ -1182,6 +1182,121 @@ select * from self_ref_trigger;
 drop table self_ref_trigger;
 drop function self_ref_trigger_ins_func();
 drop function self_ref_trigger_del_func();
+--
+-- test triggers with OR REPLACE clause
+--
+
+CREATE TABLE my_table1 (id integer, name text);
+CREATE TABLE my_table2 (id integer);
+CREATE FUNCTION my_proc1() RETURNS trigger AS $$
+begin
+	RETURN NULL;
+end;$$ LANGUAGE plpgsql;
+CREATE FUNCTION my_updateproc1() RETURNS trigger AS $$
+begin
+	        UPDATE my_table2 SET id=NEW.id WHERE id=OLD.id;
+		        RETURN NULL;
+end;$$ LANGUAGE plpgsql;
+CREATE FUNCTION my_deleteproc1() RETURNS trigger AS $$
+begin
+	        DELETE FROM my_table2 WHERE id=OLD.id;
+		        RETURN NULL;
+end;$$ LANGUAGE plpgsql;
+CREATE FUNCTION my_insertproc1() RETURNS trigger AS $$
+begin
+	        INSERT INTO my_table2 VALUES(NEW.id);
+		        RETURN NULL;
+end;$$ LANGUAGE plpgsql;
+INSERT INTO my_table1 VALUES(323, 'Alex');
+INSERT INTO my_table1 VALUES(23, 'Teddy');
+INSERT INTO my_table1 VALUES(38, 'Bob');
+INSERT INTO my_table2 VALUES(323);
+INSERT INTO my_table2 VALUES(23);
+INSERT INTO my_table2 VALUES(38);
+
+--With OR REPALCE clause, create a new trigger with the name my_regular_trigger.
+CREATE OR REPLACE TRIGGER my_regular_trigger AFTER DELETE ON my_table1
+FOR EACH ROW
+EXECUTE PROCEDURE my_deleteproc1();
+
+DELETE FROM my_table1 WHERE id=323;
+SELECT * FROM my_table1;
+SELECT * FROM my_table2;
+
+--With OR REPALCE clause, create a new constraint trigger with the name my_constraint_trigger.
+CREATE OR REPLACE CONSTRAINT TRIGGER my_constraint_trigger AFTER DELETE ON my_table1
+FOR EACH ROW
+EXECUTE PROCEDURE my_deleteproc1();
+
+DELETE FROM my_table1 WHERE id=23;
+SELECT * FROM my_table1;
+SELECT * FROM my_table2;
+
+-- Replace my_regular_trigger definition with new definition.
+CREATE OR REPLACE TRIGGER my_regular_trigger AFTER INSERT ON my_table1
+FOR EACH ROW
+EXECUTE PROCEDURE my_insertproc1();
+
+INSERT INTO my_table1 VALUES(323, 'Alex');
+SELECT * FROM my_table1;
+SELECT * FROM my_table2;
+
+-- Replace my_constraint_trigger definition with new definition.
+CREATE OR REPLACE CONSTRAINT TRIGGER my_constraint_trigger AFTER INSERT ON my_table1
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW
+EXECUTE PROCEDURE my_insertproc1();
+
+INSERT INTO my_table1 VALUES(23, 'Teddy');
+SELECT * FROM my_table1;
+SELECT * FROM my_table2;
+
+--Without OR REPALCE clause, Cannot create a new constraint trigger with same name of regular trigger already exisiting.
+CREATE CONSTRAINT TRIGGER my_regular_trigger AFTER DELETE ON my_table1
+FOR EACH ROW
+EXECUTE PROCEDURE my_proc1();
+
+--With OR REPALCE clause, Cannot repalce a regular trigger with a constraint trigger.
+CREATE OR REPLACE CONSTRAINT TRIGGER my_regular_trigger AFTER DELETE ON my_table1
+FOR EACH ROW
+EXECUTE PROCEDURE my_proc1();
+
+--Without OR REPALCE clause, Cannot create a new constraint trigger with same name of constraint trigger already exisiting.
+CREATE TRIGGER my_constraint_trigger AFTER DELETE ON my_table1
+FOR EACH ROW
+EXECUTE PROCEDURE my_proc1();
+
+--With OR REPALCE clause, Cannot replace a regular triiger with a constraint trigger.
+CREATE OR REPLACE TRIGGER my_constraint_trigger AFTER DELETE ON my_table1
+FOR EACH ROW
+EXECUTE PROCEDURE my_proc1();
+
+--Without OR REPALCE clause, cannot replace my_regular_trigger definition with new definition.
+CREATE TRIGGER my_regular_trigger AFTER DELETE ON my_table1
+EXECUTE PROCEDURE my_proc1();
+
+--Without OR REPALCE clause, cannot replace my_constraint_trigger definition with new definition.
+CREATE CONSTRAINT TRIGGER my_constraint_trigger AFTER DELETE ON my_table1
+FOR EACH ROW
+EXECUTE PROCEDURE my_proc1();
+
+-- Delete the dependency when replaces are executed.
+CREATE OR REPLACE TRIGGER my_trigger2 AFTER UPDATE OF NAME ON my_table1
+FOR EACH ROW
+EXECUTE PROCEDURE my_updateproc1();
+
+CREATE OR REPLACE TRIGGER my_trigger2 AFTER DELETE ON my_table1
+EXECUTE PROCEDURE my_proc1();
+
+ALTER TABLE my_table1 DROP COLUMN name;
+DROP FUNCTION my_updateproc1();
+
+DROP TABLE my_table1;
+DROP TABLE my_table2;
+DROP FUNCTION my_deleteproc1();
+DROP FUNCTION my_insertproc1();
+DROP FUNCTION my_proc1();
+
 
 --
 -- Verify behavior of before and after triggers with INSERT...ON CONFLICT
