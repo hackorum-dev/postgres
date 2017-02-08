@@ -241,6 +241,47 @@ typedef struct pgresAttDesc
 	int			atttypmod;		/* type-specific modifier info */
 } PGresAttDesc;
 
+/*
+ * Data for a single attribute of a single tuple
+ *
+ * We use char* for Attribute values.
+ *
+ * The value pointer always points to a null-terminated area; we add a
+ * null (zero) byte after whatever the backend sends us.  This is only
+ * particularly useful for text values ... with a binary value, the
+ * value might have embedded nulls, so the application can't use C string
+ * operators on it.  But we add a null anyway for consistency.
+ * Note that the value itself does not contain a length word.
+ *
+ * A NULL attribute is a special case in two ways: its len field is NULL_LEN
+ * and its value field points to null_field in the owning PGresult.  All the
+ * NULL attributes in a query result point to the same place (there's no need
+ * to store a null string separately for each one).
+ */
+
+#define PG_NULL_LEN		(-1)	/* pg_result len for NULL value */
+
+/* PGdataValue represents a data field value being passed to a row processor.
+ * It could be either text or binary data; text data is not zero-terminated.
+ * A SQL NULL is represented by len < 0; then value is still valid but there
+ * are no data bytes there.
+ */
+typedef struct pgDataValue
+{
+	int			len;			/* data length in bytes, or <0 if NULL */
+	const char *value;			/* data value, without zero-termination */
+} PGdataValue;
+
+/*
+ * When PQsetRowProcessor sets a PQrowProcessor, libpq will call the
+ * function for each row received from the back end.  It's the users
+ * responsibilty to COPY the data for each column to memory.  PQrowProcessor
+ * should return 1 in the event of an error and 0 for sucessfull processing.
+ */
+typedef int (*PQrowProcessor)(PGresult *res, const PGdataValue *cols,
+							  int col_count, void *data); 
+
+
 /* ----------------
  * Exported functions of libpq
  * ----------------
@@ -418,6 +459,8 @@ extern int PQsendQueryPrepared(PGconn *conn,
 					int resultFormat);
 extern int	PQsetSingleRowMode(PGconn *conn);
 extern PGresult *PQgetResult(PGconn *conn);
+extern int PQsetRowProcessor(PGconn *conn, PQrowProcessor rp, void *data); 
+extern int PQclearRowProcessor(PGconn *conn);
 
 /* Routines for managing an asynchronous query */
 extern int	PQisBusy(PGconn *conn);

@@ -1036,6 +1036,15 @@ pqRowProcessor(PGconn *conn, const char **errmsgp)
 	int			i;
 
 	/*
+	 * If we have a row processor set, just return the row processor.
+	 */
+	if (conn->row_processor_set)
+		return conn->row_processor(res, 
+								   columns, 
+								   nfields, 
+								   conn->row_processor_data); 
+
+	/*
 	 * In single-row mode, make a new PGresult that will hold just this one
 	 * row; the original conn->result is left unchanged so that it can be used
 	 * again as the template for future rows.
@@ -1391,6 +1400,11 @@ PQsendQueryStart(PGconn *conn)
 	/* reset single-row processing mode */
 	conn->singleRowMode = false;
 
+	/* Clean up the row processor */
+	conn->row_processor_set = false;
+	conn->row_processor = 0;
+	conn->row_processor_data = 0;
+
 	/* ready to send command message */
 	return true;
 }
@@ -1619,6 +1633,45 @@ PQsetSingleRowMode(PGconn *conn)
 
 	/* OK, set flag */
 	conn->singleRowMode = true;
+	return 1;
+}
+
+/*
+ * Sets a row processor, allowing the caller to bypass the standard
+ * pqRowProcessor with their own.
+ */
+int
+PQsetRowProcessor(PGconn *conn, PQrowProcessor rp, void *data)
+{
+	if (!conn)
+		return 0;
+
+	if (conn->asyncStatus != PGASYNC_BUSY)
+		return 0;
+
+	if (conn->result)
+		return 0;
+
+	/*
+	 * Setup the row processor
+	 */
+	conn->row_processor_set = true;
+	conn->row_processor = rp;
+	conn->row_processor_data = data;
+
+	return 1;
+}
+
+/*
+ * Clears the row processor
+ */
+int
+PQclearRowProcessor(PGconn *conn)
+{
+	conn->row_processor_set = false;
+	conn->row_processor = NULL;
+	conn->row_processor_data = NULL;
+
 	return 1;
 }
 
