@@ -1210,6 +1210,7 @@ _equalDefineStmt(const DefineStmt *a, const DefineStmt *b)
 	COMPARE_NODE_FIELD(defnames);
 	COMPARE_NODE_FIELD(args);
 	COMPARE_NODE_FIELD(definition);
+	COMPARE_SCALAR_FIELD(if_not_exists);
 
 	return true;
 }
