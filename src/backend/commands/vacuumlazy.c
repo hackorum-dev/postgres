@@ -204,8 +204,8 @@ lazy_vacuum_rel(Relation onerel, int options, VacuumParams *params,
 
 	Assert(params != NULL);
 
-	/* measure elapsed time iff autovacuum logging requires it */
-	if (IsAutoVacuumWorkerProcess() && params->log_min_duration >= 0)
+	/* measure elapsed time iff logging requires it */
+	if (params->log_min_duration >= 0)
 	{
 		pg_rusage_init(&ru0);
 		starttime = GetCurrentTimestamp();
@@ -342,7 +342,7 @@ lazy_vacuum_rel(Relation onerel, int options, VacuumParams *params,
 	pgstat_progress_end_command();
 
 	/* and log the action if appropriate */
-	if (IsAutoVacuumWorkerProcess() && params->log_min_duration >= 0)
+	if (params->log_min_duration >= 0)
 	{
 		TimestampTz endtime = GetCurrentTimestamp();
 
