@@ -515,6 +515,7 @@ apply_handle_insert(StringInfo s)
 
 	relid = logicalrep_read_insert(s, &newtup);
 	rel = logicalrep_rel_open(relid, RowExclusiveLock);
+	aclcheck_error(rel->insert_aclresult, ACL_KIND_CLASS, get_rel_name(rel->localreloid));
 
 	/* Initialize the executor state. */
 	estate = create_estate_for_relation(rel);
@@ -607,6 +608,7 @@ apply_handle_update(StringInfo s)
 	relid = logicalrep_read_update(s, &has_oldtup, &oldtup,
 								   &newtup);
 	rel = logicalrep_rel_open(relid, RowExclusiveLock);
+	aclcheck_error(rel->update_aclresult, ACL_KIND_CLASS, get_rel_name(rel->localreloid));
 
 	/* Check if we can do the update. */
 	check_relation_updatable(rel);
@@ -716,6 +718,7 @@ apply_handle_delete(StringInfo s)
 
 	relid = logicalrep_read_delete(s, &oldtup);
 	rel = logicalrep_rel_open(relid, RowExclusiveLock);
+	aclcheck_error(rel->delete_aclresult, ACL_KIND_CLASS, get_rel_name(rel->localreloid));
 
 	/* Check if we can do the delete. */
 	check_relation_updatable(rel);

@@ -322,7 +322,9 @@
 
   <para>
    The subscription apply process will run in the local database with the
-   privileges of a superuser.
+   privileges of the subscription owner.  The subscription owner, if it is not
+   a superuser, therefore needs to have appropriate privileges on the tables
+   the subscription is operating on.
   </para>
 
   <para>

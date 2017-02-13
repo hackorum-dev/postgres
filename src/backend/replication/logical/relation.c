@@ -19,6 +19,7 @@
 #include "access/heapam.h"
 #include "access/sysattr.h"
 #include "catalog/namespace.h"
+#include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "replication/logicalrelation.h"
 #include "replication/worker_internal.h"
@@ -78,6 +79,18 @@ logicalrep_relmap_invalidate_cb(Datum arg, Oid reloid)
 }
 
 /*
+ * Syscache invalidation callback for our relation map cache.
+ *
+ * Same as the relcache callback, except that we just invalidate all cache
+ * entries all the time.
+ */
+static void
+logicalrep_relmap_syscache_invalidate_cb(Datum arg, int cacheid, uint32 hashvalue)
+{
+	logicalrep_relmap_invalidate_cb(arg, InvalidOid);
+}
+
+/*
  * Initialize the relation map cache.
  */
 static void
@@ -112,6 +125,8 @@ logicalrep_relmap_init()
 
 	/* Watch for invalidation events. */
 	CacheRegisterRelcacheCallback(logicalrep_relmap_invalidate_cb,
+								  (Datum) 0);
+	CacheRegisterSyscacheCallback(AUTHOID, logicalrep_relmap_syscache_invalidate_cb,
 								  (Datum) 0);
 	CacheRegisterSyscacheCallback(TYPEOID, logicalrep_typmap_invalidate_cb,
 								  (Datum) 0);
@@ -275,6 +290,15 @@ logicalrep_rel_open(LogicalRepRelId remoteid, LOCKMODE lockmode)
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("logical replication target relation \"%s.%s\" is not a table",
 							remoterel->nspname, remoterel->relname)));
+
+		/*
+		 * Cache ACL results.  If they are changed while the worker is active,
+		 * the relcache and syscache invalidation will ensure that we get here
+		 * again to recompute this.
+		 */
+		entry->insert_aclresult = pg_class_aclcheck(relid, GetUserId(), ACL_INSERT);
+		entry->update_aclresult = pg_class_aclcheck(relid, GetUserId(), ACL_UPDATE);
+		entry->delete_aclresult = pg_class_aclcheck(relid, GetUserId(), ACL_DELETE);
 
 		/*
 		 * Build the mapping of local attribute numbers to remote attribute

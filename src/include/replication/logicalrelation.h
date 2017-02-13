@@ -25,6 +25,11 @@ typedef struct LogicalRepRelMapEntry
 										 * remote ones */
 	bool				updatable;		/* Can apply updates/deletes? */
 
+	/* Cache of ACL results */
+	AclResult			insert_aclresult;
+	AclResult			update_aclresult;
+	AclResult			delete_aclresult;
+
 	/* Sync state. */
 	char				state;
 	XLogRecPtr			statelsn;
