@@ -68,6 +68,7 @@ const char *pretty_diff_opts = "-w -C3";
 
 /* options settable from command line */
 _stringlist *dblist = NULL;
+_stringlist *templatelist = NULL;
 bool		debug = false;
 char	   *inputdir = ".";
 char	   *outputdir = ".";
@@ -1907,7 +1908,7 @@ drop_database_if_exists(const char *dbname)
 }
 
 static void
-create_database(const char *dbname)
+create_database(const char *dbname, const char *template)
 {
 	_stringlist *sl;
 
@@ -1917,10 +1918,12 @@ create_database(const char *dbname)
 	 */
 	header(_("creating database \"%s\""), dbname);
 	if (encoding)
-		psql_command("postgres", "CREATE DATABASE \"%s\" TEMPLATE=template0 ENCODING='%s'%s", dbname, encoding,
+		psql_command("postgres", "CREATE DATABASE \"%s\" TEMPLATE=\"%s\" ENCODING='%s'%s",
+					 dbname, template, encoding,
 					 (nolocale) ? " LC_COLLATE='C' LC_CTYPE='C'" : "");
 	else
-		psql_command("postgres", "CREATE DATABASE \"%s\" TEMPLATE=template0%s", dbname,
+		psql_command("postgres", "CREATE DATABASE \"%s\" TEMPLATE=\"%s\"%s",
+					 dbname, template,
 					 (nolocale) ? " LC_COLLATE='C' LC_CTYPE='C'" : "");
 	psql_command(dbname,
 				 "ALTER DATABASE \"%s\" SET lc_messages TO 'C';"
@@ -1995,6 +1998,7 @@ help(void)
 	printf(_("  --outputdir=DIR           place output files in DIR (default \".\")\n"));
 	printf(_("  --schedule=FILE           use test ordering schedule from FILE\n"));
 	printf(_("                            (can be used multiple times to concatenate)\n"));
+	printf(_("  --template=DB             use template DB (default \"template0\")\n"));
 	printf(_("  --temp-instance=DIR       create a temporary instance in DIR\n"));
 	printf(_("  --use-existing            use an existing installation\n"));
 	printf(_("\n"));
@@ -2041,10 +2045,12 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 		{"launcher", required_argument, NULL, 21},
 		{"load-extension", required_argument, NULL, 22},
 		{"config-auth", required_argument, NULL, 24},
+		{"template", required_argument, NULL, 25},
 		{NULL, 0, NULL, 0}
 	};
 
 	_stringlist *sl;
+	_stringlist *tl;
 	int			c;
 	int			i;
 	int			option_index;
@@ -2154,6 +2160,16 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 			case 24:
 				config_auth_datadir = pg_strdup(optarg);
 				break;
+			case 25:
+
+				/*
+				 * If a default template was specified, we need to remove it
+				 * before we add the specified one.
+				 */
+				free_stringlist(&templatelist);
+				split_to_stringlist(optarg, ",", &templatelist);
+				break;
+
 			default:
 				/* getopt_long already emitted a complaint */
 				fprintf(stderr, _("\nTry \"%s -h\" for more information.\n"),
@@ -2204,6 +2220,18 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 #if defined(HAVE_GETRLIMIT) && defined(RLIMIT_CORE)
 	unlimit_core_size();
 #endif
+
+	/* The length of template list should be same like db list */
+	if (templatelist != NULL)
+	{
+		for (sl = dblist, tl = templatelist; sl && tl; sl = sl->next, tl = tl->next);
+		if (sl || tl)
+		{
+			fprintf(stderr, _("%s: database and template list lengths do not match\n"),
+					progname);
+			exit(2);
+		}
+	}
 
 	if (temp_instance)
 	{
@@ -2454,8 +2482,17 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 	 */
 	if (!use_existing)
 	{
-		for (sl = dblist; sl; sl = sl->next)
-			create_database(sl->str);
+		if (templatelist != NULL)
+		{
+			for (sl = dblist, tl = templatelist; sl; sl = sl->next, tl = tl->next)
+				create_database(sl->str, tl->str);
+		}
+		else
+		{
+			for (sl = dblist; sl; sl = sl->next)
+				create_database(sl->str, "template0");
+		}
+
 		for (sl = extraroles; sl; sl = sl->next)
 			create_role(sl->str, dblist);
 	}
