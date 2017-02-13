@@ -3362,6 +3362,8 @@ string_to_privilege(const char *privname)
 		return ACL_CREATE_TEMP;
 	if (strcmp(privname, "connect") == 0)
 		return ACL_CONNECT;
+	if (strcmp(privname, "create subscription") == 0)
+		return ACL_CREATE_SUBSCRIPTION;
 	if (strcmp(privname, "rule") == 0)
 		return 0;				/* ignore old RULE privileges */
 	ereport(ERROR,
@@ -3399,6 +3401,8 @@ privilege_to_string(AclMode privilege)
 			return "TEMP";
 		case ACL_CONNECT:
 			return "CONNECT";
+		case ACL_CREATE_SUBSCRIPTION:
+			return "CREATE SUBSCRIPTION";
 		default:
 			elog(ERROR, "unrecognized privilege: %d", (int) privilege);
 	}

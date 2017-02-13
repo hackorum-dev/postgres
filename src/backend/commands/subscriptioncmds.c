@@ -26,6 +26,7 @@
 #include "catalog/pg_type.h"
 #include "catalog/pg_subscription.h"
 
+#include "commands/dbcommands.h"
 #include "commands/defrem.h"
 #include "commands/event_trigger.h"
 #include "commands/subscriptioncmds.h"
@@ -221,6 +222,7 @@ CreateSubscription(CreateSubscriptionStmt *stmt, bool isTopLevel)
 	char		originname[NAMEDATALEN];
 	bool		create_slot;
 	List	   *publications;
+	AclResult	aclresult;
 
 	/*
 	 * Parse and check options.
@@ -239,10 +241,11 @@ CreateSubscription(CreateSubscriptionStmt *stmt, bool isTopLevel)
 	if (create_slot)
 		PreventTransactionChain(isTopLevel, "CREATE SUBSCRIPTION ... CREATE SLOT");
 
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 (errmsg("must be superuser to create subscriptions"))));
+	/* must have CREATE SUBSCRIPTION privilege on database */
+	aclresult = pg_database_aclcheck(MyDatabaseId, GetUserId(), ACL_CREATE_SUBSCRIPTION);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult, ACL_KIND_DATABASE,
+					   get_database_name(MyDatabaseId));
 
 	rel = heap_open(SubscriptionRelationId, RowExclusiveLock);
 
@@ -609,17 +612,24 @@ AlterSubscriptionOwner_internal(Relation rel, HeapTuple tup, Oid newOwnerId)
 	if (form->subowner == newOwnerId)
 		return;
 
-	if (!pg_subscription_ownercheck(HeapTupleGetOid(tup), GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_SUBSCRIPTION,
-					   NameStr(form->subname));
+	if (!superuser())
+	{
+		AclResult	aclresult;
 
-	/* New owner must be a superuser */
-	if (!superuser_arg(newOwnerId))
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-		  errmsg("permission denied to change owner of subscription \"%s\"",
-				 NameStr(form->subname)),
-			 errhint("The owner of an subscription must be a superuser.")));
+		/* Must be owner */
+		if (!pg_subscription_ownercheck(HeapTupleGetOid(tup), GetUserId()))
+			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_SUBSCRIPTION,
+						   NameStr(form->subname));
+
+		/* Must be able to become new owner */
+		check_is_member_of_role(GetUserId(), newOwnerId);
+
+		/* New owner must have CREATE SUBSCRIPTION privilege on database */
+		aclresult = pg_database_aclcheck(MyDatabaseId, newOwnerId, ACL_CREATE_SUBSCRIPTION);
+		if (aclresult != ACLCHECK_OK)
+			aclcheck_error(aclresult, ACL_KIND_DATABASE,
+						   get_database_name(MyDatabaseId));
+	}
 
 	form->subowner = newOwnerId;
 	CatalogTupleUpdate(rel, &tup->t_self, tup);

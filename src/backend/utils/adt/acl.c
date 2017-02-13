@@ -316,6 +316,9 @@ aclparse(const char *s, AclItem *aip)
 			case ACL_CONNECT_CHR:
 				read = ACL_CONNECT;
 				break;
+			case ACL_CREATE_SUBSCRIPTION_CHR:
+				read = ACL_CREATE_SUBSCRIPTION;
+				break;
 			case 'R':			/* ignore old RULE privileges */
 				read = 0;
 				break;
@@ -1617,6 +1620,8 @@ convert_priv_string(text *priv_type_text)
 		return ACL_CREATE_TEMP;
 	if (pg_strcasecmp(priv_type, "CONNECT") == 0)
 		return ACL_CONNECT;
+	if (pg_strcasecmp(priv_type, "CREATE SUBSCRIPTION") == 0)
+		return ACL_CREATE_SUBSCRIPTION;
 	if (pg_strcasecmp(priv_type, "RULE") == 0)
 		return 0;				/* ignore old RULE privileges */
 
@@ -1713,6 +1718,8 @@ convert_aclright_to_string(int aclright)
 			return "TEMPORARY";
 		case ACL_CONNECT:
 			return "CONNECT";
+		case ACL_CREATE_SUBSCRIPTION:
+			return "CREATE SUBSCRIPTION";
 		default:
 			elog(ERROR, "unrecognized aclright: %d", aclright);
 			return NULL;
@@ -3048,6 +3055,8 @@ convert_database_priv_string(text *priv_type_text)
 		{"TEMP WITH GRANT OPTION", ACL_GRANT_OPTION_FOR(ACL_CREATE_TEMP)},
 		{"CONNECT", ACL_CONNECT},
 		{"CONNECT WITH GRANT OPTION", ACL_GRANT_OPTION_FOR(ACL_CONNECT)},
+		{"CREATE SUBSCRIPTION", ACL_CREATE_SUBSCRIPTION},
+		{"CREATE SUBSCRIPTION WITH GRANT OPTION", ACL_GRANT_OPTION_FOR(ACL_CREATE_SUBSCRIPTION)},
 		{NULL, 0}
 	};
 

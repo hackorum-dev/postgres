@@ -3,8 +3,9 @@
 --
 
 CREATE ROLE regress_subscription_user LOGIN SUPERUSER;
+CREATE ROLE regress_subscription_user2 LOGIN;
 CREATE ROLE regress_subscription_user_dummy LOGIN NOSUPERUSER;
-SET SESSION AUTHORIZATION 'regress_subscription_user';
+SET SESSION AUTHORIZATION regress_subscription_user;
 
 -- fail - no publications
 CREATE SUBSCRIPTION testsub CONNECTION 'foo';
@@ -64,6 +65,17 @@ COMMIT;
 BEGIN;
 DROP SUBSCRIPTION testsub NODROP SLOT;
 COMMIT;
+
+-- permissions
+set client_min_messages to error;
+SET SESSION AUTHORIZATION regress_subscription_user2;
+CREATE SUBSCRIPTION testsub CONNECTION 'dbname=doesnotexist' PUBLICATION testpub WITH (DISABLED, NOCREATE SLOT);  -- fail
+SET SESSION AUTHORIZATION regress_subscription_user;
+GRANT CREATE SUBSCRIPTION ON DATABASE regression TO regress_subscription_user2;
+SET SESSION AUTHORIZATION regress_subscription_user2;
+CREATE SUBSCRIPTION testsub2 CONNECTION 'dbname=doesnotexist' PUBLICATION testpub WITH (DISABLED, NOCREATE SLOT);  -- ok
+reset client_min_messages;
+DROP SUBSCRIPTION testsub2 NODROP SLOT;
 
 RESET SESSION AUTHORIZATION;
 DROP ROLE regress_subscription_user;

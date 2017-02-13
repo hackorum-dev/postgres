@@ -312,7 +312,8 @@
   </para>
 
   <para>
-   To create a subscription, the user must be a superuser.
+   To create a subscription, the user must have the <literal>CREATE
+   SUBSCRIPTION</literal> privilege in the database.
   </para>
 
   <para>

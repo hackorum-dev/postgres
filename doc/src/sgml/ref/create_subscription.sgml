@@ -136,6 +136,12 @@ CREATE SUBSCRIPTION <replaceable class="PARAMETER">subscription_name</replaceabl
   <title>Notes</title>
 
   <para>
+   To create a subscription, the invoking user must have the
+   <literal>CREATE SUBSCRIPTION</> privilege for the current database.  (Of
+   course, superusers bypass this check.)
+  </para>
+
+  <para>
    See <xref linkend="streaming-replication-authentication"> for details on
    how to configure access control between the subscription and the
    publication instance.

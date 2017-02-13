@@ -6682,6 +6682,12 @@ privilege:	SELECT opt_column_list
 				n->cols = $2;
 				$$ = n;
 			}
+		| CREATE ColId
+			{
+				AccessPriv *n = makeNode(AccessPriv);
+				n->priv_name = psprintf("create %s", $2);
+				$$ = n;
+			}
 		;
 
 

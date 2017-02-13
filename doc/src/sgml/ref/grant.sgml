@@ -38,7 +38,7 @@ GRANT { { USAGE | SELECT | UPDATE }
          | ALL SEQUENCES IN SCHEMA <replaceable class="PARAMETER">schema_name</replaceable> [, ...] }
     TO <replaceable class="PARAMETER">role_specification</replaceable> [, ...] [ WITH GRANT OPTION ]
 
-GRANT { { CREATE | CONNECT | TEMPORARY | TEMP } [, ...] | ALL [ PRIVILEGES ] }
+GRANT { { CREATE | CONNECT | TEMPORARY | TEMP | CREATE SUBSCRIPTION } [, ...] | ALL [ PRIVILEGES ] }
     ON DATABASE <replaceable>database_name</replaceable> [, ...]
     TO <replaceable class="PARAMETER">role_specification</replaceable> [, ...] [ WITH GRANT OPTION ]
 
@@ -300,6 +300,15 @@ GRANT <replaceable class="PARAMETER">role_name</replaceable> [, ...] TO <replace
     </varlistentry>
 
     <varlistentry>
+     <term>CREATE SUBSCRIPTION</term>
+     <listitem>
+      <para>
+       For databases, allows new subscriptions to be created within the database.
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
      <term>CONNECT</term>
      <listitem>
       <para>
@@ -542,6 +551,7 @@ rolename=xxxx -- privileges granted to a role
             X -- EXECUTE
             U -- USAGE
             C -- CREATE
+            S -- CREATE SUBSCRIPTION
             c -- CONNECT
             T -- TEMPORARY
       arwdDxt -- ALL PRIVILEGES (for tables, varies for other objects)

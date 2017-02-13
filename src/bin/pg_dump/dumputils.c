@@ -532,6 +532,8 @@ do { \
 		CONVERT_PRIV('C', "CREATE");
 		CONVERT_PRIV('c', "CONNECT");
 		CONVERT_PRIV('T', "TEMPORARY");
+		if (remoteVersion >= 100000)
+			CONVERT_PRIV('S', "CREATE SUBSCRIPTION");
 	}
 	else if (strcmp(type, "TABLESPACE") == 0)
 		CONVERT_PRIV('C', "CREATE");
