@@ -790,19 +790,19 @@ RegisterBackgroundWorker(BackgroundWorker *worker)
 	if (!process_shared_preload_libraries_in_progress && !internal)
 	{
 		if (!IsUnderPostmaster)
-			ereport(LOG,
+			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("background worker \"%s\": must be registered in shared_preload_libraries",
 							worker->bgw_name)));
 		return;
 	}
 
-	if (!SanityCheckBackgroundWorker(worker, LOG))
+	if (!SanityCheckBackgroundWorker(worker, ERROR))
 		return;
 
 	if (worker->bgw_notify_pid != 0)
 	{
-		ereport(LOG,
+		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("background worker \"%s\": only dynamic background workers can request notification",
 						worker->bgw_name)));
@@ -817,7 +817,7 @@ RegisterBackgroundWorker(BackgroundWorker *worker)
 	 */
 	if (++numworkers > max_worker_processes)
 	{
-		ereport(LOG,
+		ereport(ERROR,
 				(errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED),
 				 errmsg("too many background workers"),
 				 errdetail_plural("Up to %d background worker can be registered with the current settings.",
@@ -835,7 +835,7 @@ RegisterBackgroundWorker(BackgroundWorker *worker)
 	rw = malloc(sizeof(RegisteredBgWorker));
 	if (rw == NULL)
 	{
-		ereport(LOG,
+		ereport(ERROR,
 				(errcode(ERRCODE_OUT_OF_MEMORY),
 				 errmsg("out of memory")));
 		return;
