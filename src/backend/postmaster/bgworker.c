@@ -824,7 +824,8 @@ RegisterBackgroundWorker(BackgroundWorker *worker)
 								  "Up to %d background workers can be registered with the current settings.",
 								  max_worker_processes,
 								  max_worker_processes),
-				 errhint("Consider increasing the configuration parameter \"max_worker_processes\".")));
+				 errhint("Consider increasing the configuration parameter \"max_worker_processes\"."),
+				 errcontext("registration of background worker \"%s\"", worker->bgw_name)));
 		return;
 	}
 
