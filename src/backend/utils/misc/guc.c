@@ -67,6 +67,7 @@
 #include "replication/walreceiver.h"
 #include "replication/walsender.h"
 #include "storage/bufmgr.h"
+#include "storage/checksum.h"
 #include "storage/dsm_impl.h"
 #include "storage/standby.h"
 #include "storage/fd.h"
@@ -116,6 +117,7 @@ extern char *default_tablespace;
 extern char *temp_tablespaces;
 extern bool ignore_checksum_failure;
 extern bool synchronize_seqscans;
+extern ChecksumState	data_checksums;
 
 #ifdef TRACE_SYNCSCAN
 extern bool trace_syncscan;
@@ -190,6 +192,7 @@ static void assign_application_name(const char *newval, void *extra);
 static bool check_cluster_name(char **newval, void **extra, GucSource source);
 static const char *show_unix_socket_permissions(void);
 static const char *show_log_file_mode(void);
+static const char *show_data_checksum_mode(void);
 
 /* Private functions in guc-file.l that need to be called from guc.c */
 static ConfigVariable *ProcessConfigFileInternal(GucContext context,
@@ -417,6 +420,17 @@ static const struct config_enum_entry password_encryption_options[] = {
 	{"no", PASSWORD_TYPE_PLAINTEXT, true},
 	{"1", PASSWORD_TYPE_MD5, true},
 	{"0", PASSWORD_TYPE_PLAINTEXT, true},
+};
+
+/*
+ * Although only "on", "off", and "force" are documented, we
+ * accept all the likely variants of "on" and "off".
+ */
+static const struct config_enum_entry data_checksum_options[] = {
+	{"disabled", CHECKSUMS_DISABLED, false},
+	{"enabling", CHECKSUMS_ENABLING, false},
+	{"enforcing", CHECKSUMS_ENFORCING, false},
+	{"revalidating", CHECKSUMS_REVALIDATING, false},
 	{NULL, 0, false}
 };
 
@@ -515,7 +529,6 @@ static int	max_identifier_length;
 static int	block_size;
 static int	segment_size;
 static int	wal_block_size;
-static bool data_checksums;
 static int	wal_segment_size;
 static bool integer_datetimes;
 static bool assert_enabled;
@@ -1626,17 +1639,6 @@ static struct config_bool ConfigureNamesBool[] =
 			NULL,
 		},
 		&quote_all_identifiers,
-		false,
-		NULL, NULL, NULL
-	},
-
-	{
-		{"data_checksums", PGC_INTERNAL, PRESET_OPTIONS,
-			gettext_noop("Shows whether data checksums are turned on for this cluster."),
-			NULL,
-			GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
-		},
-		&data_checksums,
 		false,
 		NULL, NULL, NULL
 	},
@@ -3844,6 +3846,18 @@ static struct config_enum ConfigureNamesEnum[] =
 		&huge_pages,
 		HUGE_PAGES_TRY, huge_pages_options,
 		NULL, NULL, NULL
+	},
+
+	{
+		{"data_checksums", PGC_INTERNAL, PRESET_OPTIONS,
+			gettext_noop("Shows the status of data_checksums in this cluster."),
+			NULL,
+			GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
+
+		},
+		&data_checksums,
+		CHECKSUMS_DISABLED, data_checksum_options,
+		NULL, NULL, show_data_checksum_mode
 	},
 
 	{
@@ -10455,6 +10469,19 @@ show_log_file_mode(void)
 
 	snprintf(buf, sizeof(buf), "%04o", Log_file_mode);
 	return buf;
+}
+
+
+static const char *
+show_data_checksum_mode(void)
+{
+	static char *states[] = {"disabled", "enabling", "enabled", "revalidating", "invalid"};
+	int			state = DataChecksumsState();
+
+	if (state < CHECKSUMS_DISABLED || state > CHECKSUMS_REVALIDATING)
+		state = 4;				/* invalid */
+
+	return states[state];
 }
 
 #include "guc-file.c"

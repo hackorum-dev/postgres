@@ -21,3 +21,6 @@
  * that file from the exported Postgres headers.  (Compare our CRC code.)
  */
 #include "storage/checksum_impl.h"
+
+/* global variable to store global checksum state */
+ChecksumState			data_checksums = CHECKSUMS_DISABLED;

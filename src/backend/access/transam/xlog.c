@@ -23,6 +23,7 @@
 
 #include "access/clog.h"
 #include "access/commit_ts.h"
+#include "access/checksumxlog.h"
 #include "access/multixact.h"
 #include "access/rewriteheap.h"
 #include "access/subtrans.h"
@@ -915,6 +916,8 @@ static void WALInsertLockAcquire(void);
 static void WALInsertLockAcquireExclusive(void);
 static void WALInsertLockRelease(void);
 static void WALInsertLockUpdateInsertingAt(XLogRecPtr insertingAt);
+
+static void LogChecksumStateChange(ChecksumState state);
 
 /*
  * Insert an XLOG record represented by an already-constructed chain of data
@@ -4628,8 +4631,7 @@ ReadControlFile(void)
 #endif
 
 	/* Make the initdb settings visible as GUC variables, too */
-	SetConfigOption("data_checksums", DataChecksumsEnabled() ? "yes" : "no",
-					PGC_INTERNAL, PGC_S_OVERRIDE);
+	data_checksums = ControlFile->data_checksum_state;
 }
 
 void
@@ -4685,13 +4687,36 @@ GetSystemIdentifier(void)
 }
 
 /*
- * Are checksums enabled for data pages?
+ * Returns the checksum state
  */
-bool
-DataChecksumsEnabled(void)
+ChecksumState
+DataChecksumsState(void)
 {
 	Assert(ControlFile != NULL);
-	return (ControlFile->data_checksum_version > 0);
+	return ControlFile->data_checksum_state;
+}
+
+/*
+ * Are read checksums enabled for data pages?
+ */
+bool
+DataChecksumsEnabledReads(void)
+{
+	Assert(ControlFile != NULL);
+	return (ControlFile->data_checksum_version > 0 &&
+			ControlFile->data_checksum_state >= CHECKSUMS_ENFORCING);
+}
+
+/*
+ * Are write checksums enabled for data pages?
+ */
+
+bool
+DataChecksumsEnabledWrites(void)
+{
+	Assert(ControlFile != NULL);
+	return (ControlFile->data_checksum_version > 0 &&
+			(ControlFile->data_checksum_state != CHECKSUMS_DISABLED));
 }
 
 /*
@@ -5075,6 +5100,7 @@ BootStrapXLOG(void)
 	ControlFile->wal_log_hints = wal_log_hints;
 	ControlFile->track_commit_timestamp = track_commit_timestamp;
 	ControlFile->data_checksum_version = bootstrap_data_checksum_version;
+	ControlFile->data_checksum_state = bootstrap_data_checksum_version == 0 ? CHECKSUMS_DISABLED : CHECKSUMS_ENFORCING;
 
 	/* some additional ControlFile fields are set in WriteControlFile() */
 
@@ -12015,4 +12041,126 @@ void
 XLogRequestWalReceiverReply(void)
 {
 	doRequestWalReceiverReply = true;
+}
+
+/*
+ * Disable checksums in a cluster
+ * We might need a "DISABLING" state, but hopefully not
+ */
+Datum
+pg_disable_checksums(PG_FUNCTION_ARGS)
+{
+	bool		status = false;
+
+	if (!superuser())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 (errmsg("must be superuser to disable checksums"))));
+
+	LWLockAcquire(ControlFileLock, LW_EXCLUSIVE);
+
+	switch (ControlFile->data_checksum_state)
+	{
+		case CHECKSUMS_DISABLED:
+			ereport(NOTICE,
+					(errmsg("checksums already disabled; skipping")));
+			break;
+		case CHECKSUMS_ENABLING:
+		case CHECKSUMS_ENFORCING:
+		case CHECKSUMS_REVALIDATING:
+
+
+			ControlFile->data_checksum_state = CHECKSUMS_DISABLED;
+			/* ControlFile->data_checksum_version = 0; */
+			data_checksums = CHECKSUMS_DISABLED;
+			UpdateControlFile();
+			status = true;
+
+			ereport(NOTICE,
+					(errmsg("disabled checksums")));
+			break;
+
+	}
+	LWLockRelease(ControlFileLock);
+
+	LogChecksumStateChange(CHECKSUMS_DISABLED);
+
+	PG_RETURN_BOOL(status);
+}
+
+
+/*
+ * Log a change in the checksum state
+ */
+void LogChecksumStateChange(ChecksumState state)
+{
+	uint8 message;
+
+	Assert(state >= CHECKSUMS_DISABLED && state <= CHECKSUMS_REVALIDATING);
+	XLogBeginInsert();
+
+	switch (state) {
+		case CHECKSUMS_DISABLED:
+			message = XLOG_CHECKSUM_DISABLE;
+			break;
+		case CHECKSUMS_ENABLING:
+			message = XLOG_CHECKSUM_ENABLE;
+			break;
+		case CHECKSUMS_ENFORCING:
+			message = XLOG_CHECKSUM_ENFORCE;
+			break;
+		case CHECKSUMS_REVALIDATING:
+			message = XLOG_CHECKSUM_REVALIDATE;
+			break;
+	}
+
+	XLogInsert(RM_CHECKSUM_ID, message);
+}
+
+
+/*
+ * Replay the ChecksumState state change
+ *
+ * Essentially we just change the pg_control field, which means we need the
+ * lock and then change the field in question.
+ */
+
+void
+checksum_redo(XLogReaderState *record) {
+	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+	ChecksumState state, oldState;
+
+	LWLockAcquire(ControlFileLock, LW_EXCLUSIVE);
+
+	oldState = ControlFile->data_checksum_state;
+	elog(NOTICE, "checksum_redo: running redo on info %u", info);
+
+	/* TODO: some sanity-checking of the checksum states here? */
+
+	switch (info)
+	{
+		case XLOG_CHECKSUM_DISABLE:
+			state = CHECKSUMS_DISABLED;
+			break;
+		case XLOG_CHECKSUM_ENABLE:
+			state = CHECKSUMS_ENABLING;
+			break;
+		case XLOG_CHECKSUM_ENFORCE:
+			state = CHECKSUMS_ENFORCING;
+			break;
+		case XLOG_CHECKSUM_REVALIDATE:
+			state = CHECKSUMS_REVALIDATING;
+			break;
+		default:
+			LWLockRelease(ControlFileLock);
+			elog(PANIC, "checksum_redo: unknown op code %u", info);
+			break;
+	}
+
+	ControlFile->data_checksum_state = state;
+
+	data_checksums = state;
+
+	UpdateControlFile();
+	LWLockRelease(ControlFileLock);	
 }

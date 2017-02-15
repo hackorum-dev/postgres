@@ -67,6 +67,23 @@ dbState(DBState state)
 }
 
 static const char *
+checksumState(ChecksumState state)
+{
+	switch (state)
+	{
+		case CHECKSUMS_DISABLED:
+			return _("disabled");
+		case CHECKSUMS_ENABLING:
+			return _("enabling");
+		case CHECKSUMS_ENFORCING:
+			return _("enforcing");
+		case CHECKSUMS_REVALIDATING:
+			return _("revalidating");
+	}
+	return _("unrecognized status code");
+}
+
+static const char *
 wal_level_str(WalLevel wal_level)
 {
 	switch (wal_level)
@@ -301,5 +318,7 @@ main(int argc, char *argv[])
 		   (ControlFile->float8ByVal ? _("by value") : _("by reference")));
 	printf(_("Data page checksum version:           %u\n"),
 		   ControlFile->data_checksum_version);
+	printf(_("Data page checksum status:            %s\n"),
+		   checksumState(ControlFile->data_checksum_state));
 	return 0;
 }

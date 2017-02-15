@@ -18,10 +18,10 @@
 #include "access/xlogdefs.h"
 #include "pgtime.h"				/* for pg_time_t */
 #include "port/pg_crc32c.h"
-
+#include "storage/checksum.h"
 
 /* Version identifier for this pg_control format */
-#define PG_CONTROL_VERSION	960
+#define PG_CONTROL_VERSION	1000
 
 /*
  * Body of CheckPoint XLOG records.  This is declared here because we keep
@@ -224,6 +224,12 @@ typedef struct ControlFileData
 
 	/* Are data pages protected by checksums? Zero if no checksum version */
 	uint32		data_checksum_version;
+
+	/*
+	 * What state the cluster is in for the in-place upgrade of the checksum
+	 * setting
+	 */
+	ChecksumState data_checksum_state;
 
 	/* CRC of all above ... MUST BE LAST! */
 	pg_crc32c	crc;
