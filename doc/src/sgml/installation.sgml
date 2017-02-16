@@ -767,6 +767,20 @@ su - postgres
       </varlistentry>
 
       <varlistentry>
+       <term><option>--with-icu</option></term>
+       <listitem>
+        <para>
+         Build with support for
+         the <productname>ICU</productname><indexterm><primary>ICU</></>
+         library.  This requires the <productname>ICU4C</productname> package
+         as well
+         as <productname>pkg-config</productname><indexterm><primary>pkg-config</></>
+         to be installed.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
        <term><option>--with-openssl</option>
        <indexterm>
         <primary>OpenSSL</primary>

@@ -423,6 +423,7 @@ typedef enum NodeTag
 	T_CreateSubscriptionStmt,
 	T_AlterSubscriptionStmt,
 	T_DropSubscriptionStmt,
+	T_AlterCollationStmt,
 
 	/*
 	 * TAGS FOR PARSE TREE NODES (parsenodes.h)
