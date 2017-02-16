@@ -242,7 +242,7 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	if ((cursorOptions & CURSOR_OPT_PARALLEL_OK) != 0 &&
 		IsUnderPostmaster &&
 		dynamic_shared_memory_type != DSM_IMPL_NONE &&
-		parse->commandType == CMD_SELECT &&
+		parse->commandType != CMD_UTILITY &&
 		!parse->hasModifyingCTE &&
 		max_parallel_workers_per_gather > 0 &&
 		!IsParallelWorker() &&

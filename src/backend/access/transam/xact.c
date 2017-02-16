@@ -497,10 +497,10 @@ AssignTransactionId(TransactionState s)
 
 	/*
 	 * Workers synchronize transaction state at the beginning of each parallel
-	 * operation, so we can't account for new XIDs at this point.
+	 * operation, so we can't account for new XIDs in parallel worker.
 	 */
-	if (IsInParallelMode() || IsParallelWorker())
-		elog(ERROR, "cannot assign XIDs during a parallel operation");
+	if (IsParallelWorker())
+		elog(ERROR, "cannot assign XIDs in a parallel worker");
 
 	/*
 	 * Ensure parent(s) have XIDs, so that a child always has an XID later

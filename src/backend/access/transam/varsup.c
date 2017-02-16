@@ -15,6 +15,7 @@
 
 #include "access/clog.h"
 #include "access/commit_ts.h"
+#include "access/parallel.h"
 #include "access/subtrans.h"
 #include "access/transam.h"
 #include "access/xact.h"
@@ -51,10 +52,10 @@ GetNewTransactionId(bool isSubXact)
 
 	/*
 	 * Workers synchronize transaction state at the beginning of each parallel
-	 * operation, so we can't account for new XIDs after that point.
+	 * operation, so we can't account for new XIDs in a parallel worker.
 	 */
-	if (IsInParallelMode())
-		elog(ERROR, "cannot assign TransactionIds during a parallel operation");
+	if (IsParallelWorker())
+		elog(ERROR, "cannot assign TransactionIds in a parallel worker");
 
 	/*
 	 * During bootstrap initialization, we return the special bootstrap
