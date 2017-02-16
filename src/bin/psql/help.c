@@ -190,7 +190,8 @@ slashUsage(unsigned short int pager)
 	fprintf(output, "\n");
 
 	fprintf(output, _("Query Buffer\n"));
-	fprintf(output, _("  \\e [FILE] [LINE]       edit the query buffer (or file) with external editor\n"));
+	fprintf(output, _("  \\e [FILE] [LINE]       edit the query buffer (or file) with an external editor\n"));
+	fprintf(output, _("  QUERY \e              edit the current query with an external editor\n"));
 	fprintf(output, _("  \\ef [FUNCNAME [LINE]]  edit function definition with external editor\n"));
 	fprintf(output, _("  \\ev [VIEWNAME [LINE]]  edit view definition with external editor\n"));
 	fprintf(output, _("  \\p                     show the contents of the query buffer\n"));

@@ -1694,6 +1694,7 @@ testdb=&gt;
 
       <varlistentry>
         <term><literal>\e</literal> or <literal>\edit</> <literal> <optional> <replaceable class="parameter">filename</> </optional> <optional> <replaceable class="parameter">line_number</> </optional> </literal></term>
+        <term><literal><replaceable class="parameter">query</replaceable></literal> <literal>\e</literal> or <literal>\edit</> </literal></term>
 
         <listitem>
         <para>
@@ -1722,6 +1723,11 @@ testdb=&gt;
         Note that if a single all-digits argument is given,
         <application>psql</application> assumes it is a line number,
         not a file name.
+        </para>
+
+        <para>
+        If placed at the end of a query, with no trailing semicolon (;),
+        the current line will be placed into the editor.
         </para>
 
         <tip>
