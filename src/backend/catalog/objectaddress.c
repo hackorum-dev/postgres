@@ -488,7 +488,8 @@ static const ObjectPropertyType ObjectProperty[] =
  * do not have corresponding values in the output enum.  The user of this map
  * must be careful to test for invalid values being returned.
  *
- * To ease maintenance, this follows the order of getObjectTypeDescription.
+ * To ease maintenance, this follows the order of getObjectTypeDescription. If
+ * you add anything here please update test/regress/sql/object_address.sql.
  */
 static const struct object_type_map
 {
@@ -3634,6 +3635,7 @@ pg_identify_object_as_address(PG_FUNCTION_ARGS)
 	Oid			objid = PG_GETARG_OID(1);
 	int32		subobjid = PG_GETARG_INT32(2);
 	ObjectAddress address;
+	char	   *type;
 	char	   *identity;
 	List	   *names;
 	List	   *args;
@@ -3645,6 +3647,13 @@ pg_identify_object_as_address(PG_FUNCTION_ARGS)
 	address.classId = classid;
 	address.objectId = objid;
 	address.objectSubId = subobjid;
+
+	/* Verify pg_get_object_address() would be able to do something with this type */
+	type = getObjectTypeDescription(&address);
+	if (read_objtype_from_string(type) < 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("unsupported object type \"%s\"", type)));
 
 	/*
 	 * Construct a tuple descriptor for the result row.  This must match this
@@ -3661,7 +3670,7 @@ pg_identify_object_as_address(PG_FUNCTION_ARGS)
 	tupdesc = BlessTupleDesc(tupdesc);
 
 	/* object type */
-	values[0] = CStringGetTextDatum(getObjectTypeDescription(&address));
+	values[0] = CStringGetTextDatum(type);
 	nulls[0] = false;
 
 	/* object identity */

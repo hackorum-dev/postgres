@@ -52,11 +52,44 @@ DO $$
 DECLARE
 	objtype text;
 BEGIN
-	FOR objtype IN VALUES ('toast table'), ('index column'), ('sequence column'),
-		('toast table column'), ('view column'), ('materialized view column')
+	FOR objtype IN VALUES ('toast table'), ('composite type'), ('index column'),
+		('sequence column'), ('toast table column'), ('view column'),
+		('materialized view column'), ('composite type column')
 	LOOP
 		BEGIN
 			PERFORM pg_get_object_address(objtype, '{one}', '{}');
+		EXCEPTION WHEN invalid_parameter_value THEN
+			RAISE WARNING 'error for %: %', objtype, sqlerrm;
+		END;
+	END LOOP;
+END;
+$$;
+
+DO $$
+DECLARE
+	toastid oid;
+	classid oid;
+	objid oid;
+	objsubid int;
+	objtype text;
+BEGIN
+	SELECT INTO STRICT toastid
+			reltoastrelid
+		FROM pg_class
+		WHERE oid = 'addr_nsp.gentable'::regclass
+	;
+	FOR classid, objid, objsubid, objtype IN VALUES
+		(1259, toastid, 0, 'toast table'),
+		(1259, 'addr_nsp.gencomptype'::regclass, 0, 'composite type'),
+		(1259, 'addr_nsp.gentable_pkey'::regclass, 1, 'index column'),
+		(1259, 'addr_nsp.gentable_a_seq'::regclass, 1, 'sequence column'),
+		(1259, toastid, 1, 'toast table column'),
+		(1259, 'addr_nsp.genview'::regclass, 1, 'view column'),
+		(1259, 'addr_nsp.genmatview'::regclass, 1, 'materialized view column'),
+		(1259, 'addr_nsp.gencomptype'::regclass, 0, 'composite type column')
+	LOOP
+		BEGIN
+			PERFORM pg_identify_object_as_address(classid, objid, objsubid);
 		EXCEPTION WHEN invalid_parameter_value THEN
 			RAISE WARNING 'error for %: %', objtype, sqlerrm;
 		END;
