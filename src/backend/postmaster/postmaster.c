@@ -1232,6 +1232,9 @@ PostmasterMain(int argc, char *argv[])
 	 */
 	RemovePromoteSignalFiles();
 
+	/* Remove outdated file holding the current log filenames. */
+	unlink(LOG_METAINFO_DATAFILE);
+
 	/*
 	 * If enabled, start up syslogger collection subprocess
 	 */
