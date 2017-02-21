@@ -434,6 +434,7 @@ typedef struct EState
 
 	/* The per-query shared memory area to use for parallel execution. */
 	struct dsa_area   *es_query_dsa;
+	const char *es_sourceText; /* Query string for passing to workers */
 } EState;
 
 
