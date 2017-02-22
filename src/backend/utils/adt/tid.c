@@ -109,8 +109,8 @@ tidout(PG_FUNCTION_ARGS)
 	OffsetNumber offsetNumber;
 	char		buf[32];
 
-	blockNumber = BlockIdGetBlockNumber(&(itemPtr->ip_blkid));
-	offsetNumber = itemPtr->ip_posid;
+	blockNumber = ItemPointerGetBlockNumberNoCheck(itemPtr);
+	offsetNumber = ItemPointerGetOffsetNumberNoCheck(itemPtr);
 
 	/* Perhaps someday we should output this as a record. */
 	snprintf(buf, sizeof(buf), "(%u,%u)", blockNumber, offsetNumber);
@@ -146,14 +146,12 @@ Datum
 tidsend(PG_FUNCTION_ARGS)
 {
 	ItemPointer itemPtr = PG_GETARG_ITEMPOINTER(0);
-	BlockId		blockId;
 	BlockNumber blockNumber;
 	OffsetNumber offsetNumber;
 	StringInfoData buf;
 
-	blockId = &(itemPtr->ip_blkid);
-	blockNumber = BlockIdGetBlockNumber(blockId);
-	offsetNumber = itemPtr->ip_posid;
+	blockNumber = ItemPointerGetBlockNumberNoCheck(itemPtr);
+	offsetNumber = ItemPointerGetOffsetNumberNoCheck(itemPtr);
 
 	pq_begintypsend(&buf);
 	pq_sendint(&buf, blockNumber, sizeof(blockNumber));
