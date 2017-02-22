@@ -93,6 +93,7 @@ static List *addTargetToGroupList(ParseState *pstate, TargetEntry *tle,
 static WindowClause *findWindowClause(List *wclist, const char *name);
 static Node *transformFrameOffset(ParseState *pstate, int frameOptions,
 					 Node *clause);
+static Alias *makeSubqueryAlias(SelectStmt *subquery, int rti);
 
 
 /*
@@ -266,6 +267,22 @@ interpretOidsOption(List *defList, bool allowOids)
 	/* OIDS option was not specified, so use default. */
 	return default_with_oids;
 }
+
+static Alias
+*makeSubqueryAlias(SelectStmt *subquery, int rti)
+{
+	char aliasname[NAMEDATALEN];
+
+	if (subquery->valuesLists != NIL) {
+		/* subquery describes SELECT ... FROM (VALUES(...)) */
+		snprintf(aliasname, NAMEDATALEN - 1, "*VALUES_%d*", rti);
+	} else {
+		snprintf(aliasname, NAMEDATALEN - 1, "*SUBQUERY_%d*", rti);
+	}
+
+	return makeAlias(aliasname, NIL);
+}
+
 
 /*
  * Extract all not-in-common columns from column lists of a source table
@@ -441,14 +458,19 @@ transformRangeSubselect(ParseState *pstate, RangeSubselect *r)
 	RangeTblEntry *rte;
 
 	/*
-	 * We require user to supply an alias for a subselect, per SQL92. To relax
-	 * this, we'd have to be prepared to gin up a unique alias for an
-	 * unlabeled subselect.  (This is just elog, not ereport, because the
-	 * grammar should have enforced it already.  It'd probably be better to
-	 * report the error here, but we don't have a good error location here.)
+	 * SQL92 mandates an alias for a subselect. PostgreSQL isn't that
+	 * strict here, we allow omitting the subquery alias and instead
+	 * generate a unique alias for it. A subquery is named in the format
+	 * "*SUBQUERY_<RTI>*", if a value expression was specified it is
+	 * named in the format "*VALUES_<RTI>*". The <RTI> placeholder is
+	 * the range table index it gets after transformRangeSubselect(), though
+	 * we generate it on our own since it gets added to the range table
+	 * at the end of this function.
 	 */
+	Assert(IsA(r->subquery, SelectStmt));
 	if (r->alias == NULL)
-		elog(ERROR, "subquery in FROM must have an alias");
+		r->alias = makeSubqueryAlias((SelectStmt *)r->subquery,
+									 list_length(pstate->p_rtable) + 1);
 
 	/*
 	 * Set p_expr_kind to show this parse level is recursing to a subselect.
