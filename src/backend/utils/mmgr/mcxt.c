@@ -525,7 +525,7 @@ MemoryContextDeleteOnly(MemoryContext context)
 	Assert(context->firstchild == NULL);
 
 	/*
-	 * It's not entirely clear whether 'tis better to do this before or after
+	 * It's not entirely clear whether it's better to do this before or after
 	 * delinking the context; but an error in a callback will likely result in
 	 * leaking the whole context (if it's not a root context) if we do it
 	 * after, so let's do it before.
