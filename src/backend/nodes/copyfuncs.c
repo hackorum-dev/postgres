@@ -4345,7 +4345,7 @@ _copyDropSubscriptionStmt(const DropSubscriptionStmt *from)
 	DropSubscriptionStmt *newnode = makeNode(DropSubscriptionStmt);
 
 	COPY_STRING_FIELD(subname);
-	COPY_SCALAR_FIELD(drop_slot);
+	COPY_NODE_FIELD(options);
 	COPY_SCALAR_FIELD(missing_ok);
 
 	return newnode;

@@ -413,7 +413,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <fun_param_mode> arg_class
 %type <typnam>	func_return func_type
 
-%type <boolean>  opt_trusted opt_restart_seqs opt_drop_slot
+%type <boolean>  opt_trusted opt_restart_seqs
 %type <ival>	 OptTemp
 %type <ival>	 OptNoLog
 %type <oncommit> OnCommitOption
@@ -9165,42 +9165,26 @@ AlterSubscriptionStmt:
 
 /*****************************************************************************
  *
- * DROP SUBSCRIPTION [ IF EXISTS ] name
+ * DROP SUBSCRIPTION [ IF EXISTS ] name [ WITH (options) ]
  *
  *****************************************************************************/
 
-DropSubscriptionStmt: DROP SUBSCRIPTION name opt_drop_slot
+DropSubscriptionStmt: DROP SUBSCRIPTION name opt_definition
 				{
 					DropSubscriptionStmt *n = makeNode(DropSubscriptionStmt);
 					n->subname = $3;
-					n->drop_slot = $4;
+					n->options = $4;
 					n->missing_ok = false;
 					$$ = (Node *) n;
 				}
-				|  DROP SUBSCRIPTION IF_P EXISTS name opt_drop_slot
+				|  DROP SUBSCRIPTION IF_P EXISTS name opt_definition
 				{
 					DropSubscriptionStmt *n = makeNode(DropSubscriptionStmt);
 					n->subname = $5;
-					n->drop_slot = $6;
+					n->options = $6;
 					n->missing_ok = true;
 					$$ = (Node *) n;
 				}
-		;
-
-opt_drop_slot:
-			IDENT SLOT
-				{
-					if (strcmp($1, "drop") == 0)
-						$$ = TRUE;
-					else if (strcmp($1, "nodrop") == 0)
-						$$ = FALSE;
-					else
-						ereport(ERROR,
-								(errcode(ERRCODE_SYNTAX_ERROR),
-								 errmsg("unrecognized option \"%s\"", $1),
-										parser_errposition(@1)));
-				}
-			| /*EMPTY*/								{ $$ = TRUE; }
 		;
 
 /*****************************************************************************

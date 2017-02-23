@@ -41,7 +41,8 @@
 #include "utils/syscache.h"
 
 /*
- * Common option parsing function for CREATE and ALTER SUBSCRIPTION commands.
+ * Common option parsing function for CREATE, DROP and ALTER SUBSCRIPTION
+ * commands.
  *
  * Since not all options can be specified in both commands, this function
  * will report an error on options if the target output pointer is NULL to
@@ -50,10 +51,12 @@
 static void
 parse_subscription_options(List *options, char **conninfo,
 						   List **publications, bool *enabled_given,
-						   bool *enabled, bool *create_slot, char **slot_name)
+						   bool *enabled, bool *create_slot, bool *drop_slot,
+						   char **slot_name)
 {
 	ListCell   *lc;
 	bool		create_slot_given = false;
+	bool		drop_slot_given = false;
 
 	if (conninfo)
 		*conninfo = NULL;
@@ -66,6 +69,8 @@ parse_subscription_options(List *options, char **conninfo,
 	}
 	if (create_slot)
 		*create_slot = true;
+	if (drop_slot)
+		*drop_slot = true;
 	if (slot_name)
 		*slot_name = NULL;
 
@@ -131,6 +136,24 @@ parse_subscription_options(List *options, char **conninfo,
 
 			create_slot_given = true;
 			*create_slot = !defGetBoolean(defel);
+		}
+		else if (strcmp(defel->defname, "drop slot") == 0 && drop_slot)
+		{
+			if (drop_slot_given)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			drop_slot_given = true;
+			*drop_slot = defGetBoolean(defel);
+		}
+		else if (strcmp(defel->defname, "nodrop slot") == 0 && drop_slot)
+		{
+			if (drop_slot_given)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			drop_slot_given = true;
+			*drop_slot = !defGetBoolean(defel);
 		}
 		else if (strcmp(defel->defname, "slot name") == 0 && slot_name)
 		{
@@ -245,7 +268,7 @@ CreateSubscription(CreateSubscriptionStmt *stmt)
 	 */
 	parse_subscription_options(stmt->options, NULL, NULL,
 							   &enabled_given, &enabled,
-							   &create_slot, &slotname);
+							   &create_slot, NULL, &slotname);
 	if (slotname == NULL)
 		slotname = stmt->subname;
 
@@ -372,7 +395,7 @@ AlterSubscription(AlterSubscriptionStmt *stmt)
 	/* Parse options. */
 	parse_subscription_options(stmt->options, &conninfo, &publications,
 							   &enabled_given, &enabled,
-							   NULL, &slot_name);
+							   NULL, NULL, &slot_name);
 
 	/* Form a new tuple. */
 	memset(values, 0, sizeof(values));
@@ -440,6 +463,15 @@ DropSubscription(DropSubscriptionStmt *stmt)
 	RepOriginId	originid;
 	WalReceiverConn	   *wrconn = NULL;
 	StringInfoData		cmd;
+	bool		drop_slot;
+
+	/*
+	 * Parse and check options. Other than drop slot option
+	 * should not be specified here.
+	 */
+	parse_subscription_options(stmt->options, NULL, NULL,
+							   NULL, NULL, NULL, &drop_slot,
+							   NULL);
 
 	rel = heap_open(SubscriptionRelationId, RowExclusiveLock);
 
@@ -523,7 +555,7 @@ DropSubscription(DropSubscriptionStmt *stmt)
 		replorigin_drop(originid);
 
 	/* If the user asked to not drop the slot, we are done mow.*/
-	if (!stmt->drop_slot)
+	if (!drop_slot)
 	{
 		heap_close(rel, NoLock);
 		return;

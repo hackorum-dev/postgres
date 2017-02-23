@@ -2188,7 +2188,7 @@ _equalDropSubscriptionStmt(const DropSubscriptionStmt *a,
 						   const DropSubscriptionStmt *b)
 {
 	COMPARE_STRING_FIELD(subname);
-	COMPARE_SCALAR_FIELD(drop_slot);
+	COMPARE_NODE_FIELD(options);
 	COMPARE_SCALAR_FIELD(missing_ok);
 
 	return true;

@@ -464,7 +464,7 @@ SELECT (pg_identify_object(addr1.classid, addr1.objid, addr1.subobjid)).*,
 SET client_min_messages TO 'warning';
 DROP FOREIGN DATA WRAPPER addr_fdw CASCADE;
 DROP PUBLICATION addr_pub;
-DROP SUBSCRIPTION addr_sub NODROP SLOT;
+DROP SUBSCRIPTION addr_sub WITH (NODROP SLOT);
 DROP SCHEMA addr_nsp CASCADE;
 DROP OWNED BY regress_addr_user;
 DROP USER regress_addr_user;

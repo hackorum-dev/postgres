@@ -3296,7 +3296,7 @@ typedef struct DropSubscriptionStmt
 {
 	NodeTag		type;
 	char	   *subname;		/* Name of of the subscription */
-	bool		drop_slot;		/* Should we drop the slot on remote side? */
+	List	   *options;		/* List of DefElem nodes */
 	bool		missing_ok;		/* Skip error if missing? */
 } DropSubscriptionStmt;
 
