@@ -18,6 +18,7 @@
 
 #include "access/heapam.h"
 #include "access/htup_details.h"
+#include "access/xact.h"
 
 #include "catalog/indexing.h"
 #include "catalog/objectaccess.h"
@@ -227,7 +228,7 @@ publicationListToArray(List *publist)
  * Create new subscription.
  */
 ObjectAddress
-CreateSubscription(CreateSubscriptionStmt *stmt)
+CreateSubscription(CreateSubscriptionStmt *stmt, bool isTopLevel)
 {
 	Relation	rel;
 	ObjectAddress myself;
@@ -243,6 +244,24 @@ CreateSubscription(CreateSubscriptionStmt *stmt)
 	char		originname[NAMEDATALEN];
 	bool		create_slot;
 	List	   *publications;
+
+	/*
+	 * Parse and check options.
+	 * Connection and publication should not be specified here.
+	 */
+	parse_subscription_options(stmt->options, NULL, NULL,
+							   &enabled_given, &enabled,
+							   &create_slot, NULL, &slotname);
+
+	/*
+	 * Since creating replication slot is not transactional, it
+	 * leaves created replication slot even when the transaction
+	 * rollbacks, while there is no corresponding entry in
+	 * pg_subscription. So we cannot run CREATE SUBSCRIPTION inside
+	 * a user transaction block if creating replication slot.
+	 */
+	if (create_slot)
+		PreventTransactionChain(isTopLevel, "CREATE SUBSCRIPTION CREATE SLOT");
 
 	if (!superuser())
 		ereport(ERROR,
@@ -262,13 +281,6 @@ CreateSubscription(CreateSubscriptionStmt *stmt)
 						stmt->subname)));
 	}
 
-	/*
-	 * Parse and check options.
-	 * Connection and publication should not be specified here.
-	 */
-	parse_subscription_options(stmt->options, NULL, NULL,
-							   &enabled_given, &enabled,
-							   &create_slot, NULL, &slotname);
 	if (slotname == NULL)
 		slotname = stmt->subname;
 
@@ -447,7 +459,7 @@ AlterSubscription(AlterSubscriptionStmt *stmt)
  * Drop a subscription
  */
 void
-DropSubscription(DropSubscriptionStmt *stmt)
+DropSubscription(DropSubscriptionStmt *stmt, bool isTopLevel)
 {
 	Relation	rel;
 	ObjectAddress myself;
@@ -472,6 +484,23 @@ DropSubscription(DropSubscriptionStmt *stmt)
 	parse_subscription_options(stmt->options, NULL, NULL,
 							   NULL, NULL, NULL, &drop_slot,
 							   NULL);
+
+	/*
+	 * Parse and check options. Other than drop slot option
+	 * should not be specified here.
+	 */
+	parse_subscription_options(stmt->options, NULL, NULL,
+							   NULL, NULL, NULL, &drop_slot,
+							   NULL);
+
+	/*
+	 * Since dropping replication slot is not transactional, it drops
+	 * the replication slot even when the transaction rollbacks.
+	 * So we cannot run DROP SUBSCRIPTION inside a user transaction
+	 * block if dropping replication slot.
+	 */
+	if (drop_slot)
+		PreventTransactionChain(isTopLevel, "DROP SUBSCRIPTION DROP SLOT");
 
 	rel = heap_open(SubscriptionRelationId, RowExclusiveLock);
 

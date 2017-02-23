@@ -12,6 +12,11 @@ CREATE SUBSCRIPTION testsub CONNECTION 'foo';
 CREATE SUBSCRIPTION testsub PUBLICATION foo;
 
 set client_min_messages to error;
+-- fail - cannot CREATE SUBSCRIPTION CREATE SLOT inside transaction block
+BEGIN;
+CREATE SUBSCRIPTION testsub CONNECTION 'testconn' PUBLICATION testpub WITH (CREATE SLOT);
+COMMIT;
+
 CREATE SUBSCRIPTION testsub CONNECTION 'testconn' PUBLICATION testpub;
 CREATE SUBSCRIPTION testsub CONNECTION 'dbname=doesnotexist' PUBLICATION testpub WITH (DISABLED, NOCREATE SLOT);
 reset client_min_messages;
@@ -38,7 +43,14 @@ ALTER SUBSCRIPTION testsub DISABLE;
 
 COMMIT;
 
+-- fail - connot DROP SUBSCRIPTION DROP SLOT inside transaction block
+BEGIN;
+DROP SUBSCRIPTION testsub WITH (DROP SLOT);
+COMMIT;
+
+BEGIN;
 DROP SUBSCRIPTION testsub WITH (NODROP SLOT);
+COMMIT;
 
 RESET SESSION AUTHORIZATION;
 DROP ROLE regress_subscription_user;

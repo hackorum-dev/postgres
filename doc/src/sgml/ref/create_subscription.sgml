@@ -47,8 +47,10 @@ CREATE SUBSCRIPTION <replaceable class="PARAMETER">subscription_name</replaceabl
   </para>
 
   <para>
-   A logical replication worker will be started to replicate data for the new
-   subscription at the commit of the transaction where this command is run.
+   <command>CREATE SUBSCRIPTION</command> cannot be executed inside a
+   transaction block when <literal>CREATE SLOT</literal> is specified.
+   A logical replication worker will be started to replicate data for
+   the new subscription at the end of this command.
   </para>
 
   <para>
