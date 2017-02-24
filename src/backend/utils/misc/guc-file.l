@@ -190,13 +190,28 @@ ProcessConfigFileInternal(GucContext context, bool applySettings, int elevel)
 	}
 
 	/*
+	 * Read automatically generated configuration files.  Because these files
+	 * are in the data directory, we can't read them until the DataDir has
+	 * been set.
+	 *
+	 * First, parse any RECOVERY_AUTOCONF_FILENAME, if it has been generated
+	 * by pg_basebackup
+	 *
 	 * Parse the PG_AUTOCONF_FILENAME file, if present, after the main file to
-	 * replace any parameters set by ALTER SYSTEM command.  Because this file
-	 * is in the data directory, we can't read it until the DataDir has been
-	 * set.
+	 * replace any parameters set by ALTER SYSTEM command.
 	 */
 	if (DataDir)
 	{
+		if (!ParseConfigFile(RECOVERY_AUTOCONF_FILENAME, false,
+							 NULL, 0, 0, elevel,
+							 &head, &tail))
+		{
+			/* Syntax error(s) detected in the file, so bail out */
+			error = true;
+			ConfFileWithError = RECOVERY_AUTOCONF_FILENAME;
+			goto bail_out;
+		}
+
 		if (!ParseConfigFile(PG_AUTOCONF_FILENAME, false,
 							 NULL, 0, 0, elevel,
 							 &head, &tail))

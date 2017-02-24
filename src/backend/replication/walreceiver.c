@@ -70,9 +70,9 @@
 
 
 /* GUC variables */
-int			wal_receiver_status_interval;
-int			wal_receiver_timeout;
-bool		hot_standby_feedback;
+int wal_receiver_status_interval;
+int wal_receiver_timeout;
+bool hot_standby_feedback;
 
 /* libpqwalreceiver connection */
 static WalReceiverConn *wrconn = NULL;
@@ -425,9 +425,33 @@ WalReceiverMain(void)
 
 				if (got_SIGHUP)
 				{
+					char	*conninfo = pstrdup(PrimaryConnInfo);
+					char	*slotname = pstrdup(PrimarySlotName);
+
 					got_SIGHUP = false;
 					ProcessConfigFile(PGC_SIGHUP);
 					XLogWalRcvSendHSFeedback(true);
+
+					/*
+					 * If primary_conninfo has been changed while walreceiver is running,
+					 * shut down walreceiver so that a new walreceiver is started and
+					 * initiates replication with the new connection information.
+					 */
+					if (strcmp(conninfo, PrimaryConnInfo) != 0)
+						ereport(FATAL,
+								(errcode(ERRCODE_ADMIN_SHUTDOWN),
+								 errmsg("closing replication connection because primary_conninfo was changed")));
+
+					/*
+					 * And the same for primary_slot_name.
+					 */
+					if (strcmp(slotname, PrimarySlotName) != 0)
+						ereport(FATAL,
+								(errcode(ERRCODE_ADMIN_SHUTDOWN),
+								 errmsg("closing replication connection because primary_slot_name was changed")));
+
+					pfree(conninfo);
+					pfree(slotname);
 				}
 
 				/* See if we can read data immediately */

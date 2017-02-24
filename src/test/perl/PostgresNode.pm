@@ -413,6 +413,8 @@ sub init
 	print $conf "fsync = off\n";
 	print $conf "log_line_prefix = '%m [%p] %q%a '\n";
 	print $conf "log_statement = all\n";
+	print $conf "log_replication_commands = on\n";
+	print $conf "log_min_messages = DEBUG2\n";
 	print $conf "port = $port\n";
 
 	if ($params{allows_streaming})
@@ -589,8 +591,6 @@ of a backup previously created on that node with $node->backup.
 
 Does not start the node after initializing it.
 
-A recovery.conf is not created.
-
 pg_hba.conf is configured to allow replication connections. Pass the keyword
 parameter hba_permit_replication => 0 to disable this.
 
@@ -760,13 +760,16 @@ sub enable_streaming
 	my ($self, $root_node) = @_;
 	my $root_connstr = $root_node->connstr;
 	my $name         = $self->name;
+	my $pgdata  = $self->data_dir;
 
 	print "### Enabling streaming replication for node \"$name\"\n";
 	$self->append_conf(
-		'recovery.conf', qq(
+		'postgresql.conf', qq(
 primary_conninfo='$root_connstr application_name=$name'
-standby_mode=on
 ));
+	open my $standbysignal, ">>$pgdata/standby.signal";
+	print $standbysignal "\n# Allow replication (set up by PostgresNode.pm)\n";
+	close $standbysignal;
 }
 
 # Internal routine to enable archive recovery command on a standby node
@@ -775,6 +778,7 @@ sub enable_restoring
 	my ($self, $root_node) = @_;
 	my $path = $root_node->archive_dir;
 	my $name = $self->name;
+	my $pgdata  = $self->data_dir;
 
 	print "### Enabling WAL restore for node \"$name\"\n";
 
@@ -791,10 +795,12 @@ sub enable_restoring
 	  : qq{cp "$path/%f" "%p"};
 
 	$self->append_conf(
-		'recovery.conf', qq(
+		'postgresql.conf', qq(
 restore_command = '$copy_command'
-standby_mode = on
 ));
+	open my $standbysignal, ">>$pgdata/standby.signal";
+	print $standbysignal "\n# Allow replication (set up by PostgresNode.pm)\n";
+	close $standbysignal;
 }
 
 # Internal routine to enable archiving

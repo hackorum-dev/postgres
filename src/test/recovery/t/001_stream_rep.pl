@@ -68,12 +68,12 @@ my ($slotname_1, $slotname_2) = ('standby_1', 'standby_2');
 $node_master->append_conf('postgresql.conf', "max_replication_slots = 4\n");
 $node_master->restart;
 is($node_master->psql('postgres', qq[SELECT pg_create_physical_replication_slot('$slotname_1');]), 0, 'physical slot created on master');
-$node_standby_1->append_conf('recovery.conf', "primary_slot_name = $slotname_1\n");
+$node_standby_1->append_conf('postgresql.conf', "primary_slot_name = $slotname_1\n");
 $node_standby_1->append_conf('postgresql.conf', "wal_receiver_status_interval = 1\n");
 $node_standby_1->append_conf('postgresql.conf', "max_replication_slots = 4\n");
 $node_standby_1->restart;
 is($node_standby_1->psql('postgres', qq[SELECT pg_create_physical_replication_slot('$slotname_2');]), 0, 'physical slot created on intermediate replica');
-$node_standby_2->append_conf('recovery.conf', "primary_slot_name = $slotname_2\n");
+$node_standby_2->append_conf('postgresql.conf', "primary_slot_name = $slotname_2\n");
 $node_standby_2->append_conf('postgresql.conf', "wal_receiver_status_interval = 1\n");
 $node_standby_2->restart;
 

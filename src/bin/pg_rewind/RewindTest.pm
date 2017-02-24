@@ -136,7 +136,7 @@ sub create_standby
 	my $connstr_master = $node_master->connstr();
 
 	$node_standby->append_conf(
-		"recovery.conf", qq(
+		"postgresql.conf", qq(
 primary_conninfo='$connstr_master application_name=rewind_standby'
 standby_mode=on
 recovery_target_timeline='latest'
@@ -234,7 +234,7 @@ sub run_pg_rewind
 	# Plug-in rewound node to the now-promoted standby node
 	my $port_standby = $node_standby->port;
 	$node_master->append_conf(
-		'recovery.conf', qq(
+		'postgresql.conf', qq(
 primary_conninfo='port=$port_standby'
 standby_mode=on
 recovery_target_timeline='latest'

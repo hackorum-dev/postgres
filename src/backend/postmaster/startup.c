@@ -153,6 +153,7 @@ HandleStartupProcInterrupts(void)
 	{
 		got_SIGHUP = false;
 		ProcessConfigFile(PGC_SIGHUP);
+		validateRecoveryParameters();
 	}
 
 	/*

@@ -409,7 +409,7 @@ ExecuteRecoveryCommand(char *command, char *commandName, bool failOnSignal)
 
 		ereport((signaled && failOnSignal) ? FATAL : WARNING,
 		/*------
-		   translator: First %s represents a recovery.conf parameter name like
+		   translator: First %s represents a postgresql.conf parameter name like
 		  "recovery_end_command", the 2nd is the value of that parameter, the
 		  third an already translated error message. */
 				(errmsg("%s \"%s\": %s", commandName,
