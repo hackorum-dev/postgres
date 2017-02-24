@@ -25,7 +25,8 @@ extern bool autocommit,
 			force_indicator,
 			questionmarks,
 			regression_mode,
-			auto_prepare;
+			auto_prepare,
+			enable_parse_comment;
 extern int	braces_open,
 			ret_value,
 			struct_level,

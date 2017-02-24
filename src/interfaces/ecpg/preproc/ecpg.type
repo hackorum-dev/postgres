@@ -66,6 +66,7 @@
 %type <str> ecpg_sconst
 %type <str> ecpg_using
 %type <str> ecpg_xconst
+%type <str> ecpg_parse_comment
 %type <str> enum_definition
 %type <str> enum_type
 %type <str> execstring
@@ -143,3 +144,5 @@
 %type  <type>   var_type
 
 %type  <action> action
+
+%type <str> SQL_PARSE_COMMENT

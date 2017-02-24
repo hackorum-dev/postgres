@@ -117,6 +117,7 @@ static struct _if_value
  *  <xdolq> $foo$ quoted strings
  *  <xui> quoted identifier with Unicode escapes
  *  <xus> quoted string with Unicode escapes
+ *  <xpc> enable parser comments in SQL statement
  */
 
 %x xb
@@ -134,6 +135,7 @@ static struct _if_value
 %x xskip
 %x xui
 %x xus
+%x xpc
 
 /* Bit string
  */
@@ -382,6 +384,37 @@ cppline			{space}*#([^i][A-Za-z]*|{if}|{ifdef}|{ifndef}|{import})((\/\*[^*/]*\*+
 
 <SQL>{whitespace}	{ /* ignore */ }
 
+<xpc>{xcstart}	{
+					xcdepth++;
+					/* Put back any characters past slash-star; see above */
+					yyless(2);
+					addlit(yytext, yyleng);
+				}
+
+<xpc>{xcstop}	{
+					addlit(yytext, yyleng);
+					if (xcdepth <= 0)
+					{
+						BEGIN(state_before);
+						token_start = NULL;
+						base_yylval.str = mm_strdup(literalbuf);
+						return SQL_PARSE_COMMENT;
+					}
+					else
+					{
+						xcdepth--;
+					}
+				}
+
+<xpc>{xcinside}	{ 
+					addlit(yytext, yyleng);
+					}
+<xpc>{op_chars}	{
+					addlit(yytext, yyleng);
+				}
+
+<xpc><<EOF>>	{ mmfatal(PARSE_ERROR, "unterminated /* comment in SQL statement"); }
+
 <C>{xcstart}		{
 					token_start = yytext;
 					state_before = YYSTATE;
@@ -392,13 +425,26 @@ cppline			{space}*#([^i][A-Za-z]*|{if}|{ifdef}|{ifndef}|{import})((\/\*[^*/]*\*+
 					fputs("/*", yyout);
 				}
 <SQL>{xcstart}		{
-					token_start = yytext;
-					state_before = YYSTATE;
-					xcdepth = 0;
-					BEGIN(xcsql);
-					/* Put back any characters past slash-star; see above */
-					yyless(2);
-					fputs("/*", yyout);
+					if(enable_parse_comment == true)
+					{
+						token_start = yytext;
+						state_before = YYSTATE;
+						xcdepth = 0;
+						BEGIN(xpc);
+						yyless(3);
+						startlit();
+						addlit(yytext, yyleng);
+					}
+					else
+					{
+						token_start = yytext;
+						state_before = YYSTATE;
+						xcdepth = 0;
+						BEGIN(xcsql);
+						/* Put back any characters past slash-star; see above */
+						yyless(2);
+						fputs("/*", yyout);
+					}
 				}
 <xcc>{xcstart}	{ ECHO; }
 <xcsql>{xcstart}	{

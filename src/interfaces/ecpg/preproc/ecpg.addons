@@ -324,6 +324,15 @@ ECPG: DeclareCursorStmtDECLAREcursor_namecursor_optionsCURSORopt_holdFORSelectSt
 			/* We put this text into a comment, so we better remove [*][/]. */
 			c2[0] = '.';
 			c2[1] = '.';
+
+			if (enable_parse_comment == true) 
+			{
+				while ((c2 = strstr(c2, "*/")))
+				{
+					c2[0] = '.';
+					c2[1] = '.';
+				}
+			}
 		}
 		comment = cat_str(3, mm_strdup("/*"), c1, mm_strdup("*/"));
 

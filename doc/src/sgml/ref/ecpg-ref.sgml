@@ -95,6 +95,26 @@ PostgreSQL documentation
     </varlistentry>
 
     <varlistentry>
+     <term><option>--enable-parse-comment </option></term>
+     <listitem>
+      <para>
+        Enables the comment in SQL statements. If this option is not specified,
+        the comment will be removed as a result of the ecpg precompile and be
+        disabled. The SQL statements that can be specified in comment are
+        <command>INSERT</command>, <command>UPDATE</command>, and 
+        <command>DELETE</command>. The locations in which the comment can
+        be specified are immediately after one of the <command>SELECT</command>,
+        <command>INSERT</command>, <command>UPDATE</command>, <command>DELETE</command>,
+        or <literal>WITH</literal> keywords. A syntax error will occur if any other
+        location is specified. An example keeping the comment in SQL statement.
+<programlisting>
+EXEC SQL SELECT /* qid=3, at line 30 in yourApp.ecpg */ * INTO :C1, :C2 FROM T1 WHERE C1=1;
+</programlisting>
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
      <term><option>-i</option></term>
      <listitem>
       <para>

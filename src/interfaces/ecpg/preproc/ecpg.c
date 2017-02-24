@@ -18,7 +18,8 @@ bool		autocommit = false,
 			force_indicator = true,
 			questionmarks = false,
 			regression_mode = false,
-			auto_prepare = false;
+			auto_prepare = false,
+			enable_parse_comment = false;
 
 char	   *output_filename;
 
@@ -54,6 +55,7 @@ help(const char *progname)
 	 "                 \"no_indicator\", \"prepare\", \"questionmarks\"\n"));
 	printf(_("  --regression   run in regression testing mode\n"));
 	printf(_("  -t             turn on autocommit of transactions\n"));
+	printf(_("  --enable-parse-comment  enable a block comment /* ... /* in the SQL statement\n"));
 	printf(_("  -V, --version  output version information, then exit\n"));
 	printf(_("  -?, --help     show this help, then exit\n"));
 	printf(_("\nIf no output file is specified, the name is formed by adding .c to the\n"
@@ -112,11 +114,13 @@ add_preprocessor_define(char *define)
 }
 
 #define ECPG_GETOPT_LONG_REGRESSION		1
+#define ECPG_GETOPT_LONG_ENABLE_PARSE_COMMENT	2
 int
 main(int argc, char *const argv[])
 {
 	static struct option ecpg_options[] = {
 		{"regression", no_argument, NULL, ECPG_GETOPT_LONG_REGRESSION},
+		{"enable-parse-comment", no_argument, NULL, ECPG_GETOPT_LONG_ENABLE_PARSE_COMMENT},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -237,6 +241,9 @@ main(int argc, char *const argv[])
 				fprintf(stderr, _("%s: parser debug support (-d) not available\n"),
 						progname);
 #endif
+				break;
+			case ECPG_GETOPT_LONG_ENABLE_PARSE_COMMENT:
+				enable_parse_comment = true;
 				break;
 			default:
 				fprintf(stderr, _("Try \"%s --help\" for more information.\n"), argv[0]);

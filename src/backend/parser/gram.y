@@ -574,7 +574,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <list>		partbound_datum_list
 %type <partrange_datum>	PartitionRangeDatum
 %type <list>		range_datum_list
-
+%type <str>		parse_comment
 /*
  * Non-keyword token types.  These are hard-wired into the "flex" lexer.
  * They must be listed first so that their numeric codes do not depend on
@@ -588,6 +588,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %token <ival>	ICONST PARAM
 %token			TYPECAST DOT_DOT COLON_EQUALS EQUALS_GREATER
 %token			LESS_EQUALS GREATER_EQUALS NOT_EQUALS
+%token <str>    SQL_PARSE_COMMENT
 
 /*
  * If you want to make any keyword changes, update the keyword table in
@@ -10314,14 +10315,14 @@ DeallocateStmt: DEALLOCATE name
  *****************************************************************************/
 
 InsertStmt:
-			opt_with_clause INSERT INTO insert_target insert_rest
+			opt_with_clause INSERT parse_comment INTO insert_target insert_rest
 			opt_on_conflict returning_clause
 				{
-					$5->relation = $4;
-					$5->onConflictClause = $6;
-					$5->returningList = $7;
-					$5->withClause = $1;
-					$$ = (Node *) $5;
+					$6->relation = $5;
+					$6->onConflictClause = $7;
+					$6->returningList = $8;
+					$6->withClause = $1;
+					$$ = (Node *) $6;
 				}
 		;
 
@@ -10445,14 +10446,14 @@ returning_clause:
  *
  *****************************************************************************/
 
-DeleteStmt: opt_with_clause DELETE_P FROM relation_expr_opt_alias
+DeleteStmt: opt_with_clause DELETE_P parse_comment FROM relation_expr_opt_alias
 			using_clause where_or_current_clause returning_clause
 				{
 					DeleteStmt *n = makeNode(DeleteStmt);
-					n->relation = $4;
-					n->usingClause = $5;
-					n->whereClause = $6;
-					n->returningList = $7;
+					n->relation = $5;
+					n->usingClause = $6;
+					n->whereClause = $7;
+					n->returningList = $8;
 					n->withClause = $1;
 					$$ = (Node *)n;
 				}
@@ -10514,18 +10515,18 @@ opt_nowait_or_skip:
  *
  *****************************************************************************/
 
-UpdateStmt: opt_with_clause UPDATE relation_expr_opt_alias
+UpdateStmt: opt_with_clause UPDATE parse_comment relation_expr_opt_alias
 			SET set_clause_list
 			from_clause
 			where_or_current_clause
 			returning_clause
 				{
 					UpdateStmt *n = makeNode(UpdateStmt);
-					n->relation = $3;
-					n->targetList = $5;
-					n->fromClause = $6;
-					n->whereClause = $7;
-					n->returningList = $8;
+					n->relation = $4;
+					n->targetList = $6;
+					n->fromClause = $7;
+					n->whereClause = $8;
+					n->returningList = $9;
 					n->withClause = $1;
 					$$ = (Node *)n;
 				}
@@ -10767,33 +10768,33 @@ select_clause:
  * However, this is not checked by the grammar; parse analysis must check it.
  */
 simple_select:
-			SELECT opt_all_clause opt_target_list
+			SELECT parse_comment opt_all_clause opt_target_list
 			into_clause from_clause where_clause
 			group_clause having_clause window_clause
 				{
 					SelectStmt *n = makeNode(SelectStmt);
-					n->targetList = $3;
-					n->intoClause = $4;
-					n->fromClause = $5;
-					n->whereClause = $6;
-					n->groupClause = $7;
-					n->havingClause = $8;
-					n->windowClause = $9;
+					n->targetList = $4;
+					n->intoClause = $5;
+					n->fromClause = $6;
+					n->whereClause = $7;
+					n->groupClause = $8;
+					n->havingClause = $9;
+					n->windowClause = $10;
 					$$ = (Node *)n;
 				}
-			| SELECT distinct_clause target_list
+			| SELECT parse_comment distinct_clause target_list
 			into_clause from_clause where_clause
 			group_clause having_clause window_clause
 				{
 					SelectStmt *n = makeNode(SelectStmt);
-					n->distinctClause = $2;
-					n->targetList = $3;
-					n->intoClause = $4;
-					n->fromClause = $5;
-					n->whereClause = $6;
-					n->groupClause = $7;
-					n->havingClause = $8;
-					n->windowClause = $9;
+					n->distinctClause = $3;
+					n->targetList = $4;
+					n->intoClause = $5;
+					n->fromClause = $6;
+					n->whereClause = $7;
+					n->groupClause = $8;
+					n->havingClause = $9;
+					n->windowClause = $10;
 					$$ = (Node *)n;
 				}
 			| values_clause							{ $$ = $1; }
@@ -10841,24 +10842,24 @@ simple_select:
  * Recognizing WITH_LA here allows a CTE to be named TIME or ORDINALITY.
  */
 with_clause:
-		WITH cte_list
-			{
-				$$ = makeNode(WithClause);
-				$$->ctes = $2;
-				$$->recursive = false;
-				$$->location = @1;
-			}
-		| WITH_LA cte_list
-			{
-				$$ = makeNode(WithClause);
-				$$->ctes = $2;
-				$$->recursive = false;
-				$$->location = @1;
-			}
-		| WITH RECURSIVE cte_list
+		WITH parse_comment cte_list
 			{
 				$$ = makeNode(WithClause);
 				$$->ctes = $3;
+				$$->recursive = false;
+				$$->location = @1;
+			}
+		| WITH_LA parse_comment cte_list
+			{
+				$$ = makeNode(WithClause);
+				$$->ctes = $3;
+				$$->recursive = false;
+				$$->location = @1;
+			}
+		| WITH parse_comment RECURSIVE cte_list
+			{
+				$$ = makeNode(WithClause);
+				$$->ctes = $4;
 				$$->recursive = true;
 				$$->location = @1;
 			}
@@ -10882,6 +10883,11 @@ common_table_expr:  name opt_name_list AS '(' PreparableStmt ')'
 
 opt_with_clause:
 		with_clause								{ $$ = $1; }
+		| /*EMPTY*/								{ $$ = NULL; }
+		;
+
+parse_comment:
+		SQL_PARSE_COMMENT								{ $$ = NULL; }
 		| /*EMPTY*/								{ $$ = NULL; }
 		;
 

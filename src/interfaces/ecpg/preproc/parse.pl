@@ -38,7 +38,8 @@ my %replace_token = (
 	'FCONST' => 'ecpg_fconst',
 	'Sconst' => 'ecpg_sconst',
 	'IDENT'  => 'ecpg_ident',
-	'PARAM'  => 'ecpg_param',);
+	'PARAM'  => 'ecpg_param',
+	'SQL_PARSE_COMMENT'  => 'ecpg_parse_comment',);
 
 # or in the block
 my %replace_string = (

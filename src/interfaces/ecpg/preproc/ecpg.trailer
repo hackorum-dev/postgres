@@ -1766,6 +1766,8 @@ quoted_ident_stringvar: name
 			{ $$ = make3_str(mm_strdup("("), $1, mm_strdup(")")); }
 		;
 
+ecpg_parse_comment:	 SQL_PARSE_COMMENT		{ $$ = $1; } ;
+
 /*
  * C stuff
  */
