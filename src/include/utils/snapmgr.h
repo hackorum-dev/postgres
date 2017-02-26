@@ -106,8 +106,8 @@ extern void TeardownHistoricSnapshot(bool is_error);
 extern bool HistoricSnapshotActive(void);
 
 extern Size EstimateSnapshotSpace(Snapshot snapshot);
-extern void SerializeSnapshot(Snapshot snapshot, char *start_address);
-extern Snapshot RestoreSnapshot(char *start_address);
+extern void SerializeSnapshot(Snapshot snapshot, int64 *start_address);
+extern Snapshot RestoreSnapshot(int64 *start_address);
 extern void RestoreTransactionSnapshot(Snapshot snapshot, void *master_pgproc);
 
 #endif   /* SNAPMGR_H */

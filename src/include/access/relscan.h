@@ -38,7 +38,7 @@ typedef struct ParallelHeapScanDescData
 	slock_t		phs_mutex;		/* mutual exclusion for block number fields */
 	BlockNumber phs_startblock; /* starting block number */
 	BlockNumber phs_cblock;		/* current block number */
-	char		phs_snapshot_data[FLEXIBLE_ARRAY_MEMBER];
+	int64		phs_snapshot_data[FLEXIBLE_ARRAY_MEMBER];
 }	ParallelHeapScanDescData;
 
 typedef struct HeapScanDescData
@@ -138,7 +138,7 @@ typedef struct ParallelIndexScanDescData
 	Oid			ps_relid;
 	Oid			ps_indexid;
 	Size		ps_offset;		/* Offset in bytes of am specific structure */
-	char		ps_snapshot_data[FLEXIBLE_ARRAY_MEMBER];
+	int64		ps_snapshot_data[FLEXIBLE_ARRAY_MEMBER];
 } ParallelIndexScanDescData;
 
 /* Struct for heap-or-index scans of system tables */

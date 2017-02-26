@@ -2013,7 +2013,7 @@ EstimateSnapshotSpace(Snapshot snap)
  *		memory location at start_address.
  */
 void
-SerializeSnapshot(Snapshot snapshot, char *start_address)
+SerializeSnapshot(Snapshot snapshot, int64 *start_address)
 {
 	SerializedSnapshotData *serialized_snapshot;
 
@@ -2069,7 +2069,7 @@ SerializeSnapshot(Snapshot snapshot, char *start_address)
  * to 0.  The returned snapshot has the copied flag set.
  */
 Snapshot
-RestoreSnapshot(char *start_address)
+RestoreSnapshot(int64 *start_address)
 {
 	SerializedSnapshotData *serialized_snapshot;
 	Size		size;
