@@ -1577,7 +1577,7 @@ makeaclitem(PG_FUNCTION_ARGS)
 {
 	Oid			grantee = PG_GETARG_OID(0);
 	Oid			grantor = PG_GETARG_OID(1);
-	text	   *privtext = PG_GETARG_TEXT_P(2);
+	text	   *privtext = PG_GETARG_TEXT_PP(2);
 	bool		goption = PG_GETARG_BOOL(3);
 	AclItem    *result;
 	AclMode		priv;
@@ -1853,8 +1853,8 @@ Datum
 has_table_privilege_name_name(PG_FUNCTION_ARGS)
 {
 	Name		rolename = PG_GETARG_NAME(0);
-	text	   *tablename = PG_GETARG_TEXT_P(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *tablename = PG_GETARG_TEXT_PP(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	Oid			tableoid;
 	AclMode		mode;
@@ -1878,8 +1878,8 @@ has_table_privilege_name_name(PG_FUNCTION_ARGS)
 Datum
 has_table_privilege_name(PG_FUNCTION_ARGS)
 {
-	text	   *tablename = PG_GETARG_TEXT_P(0);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
+	text	   *tablename = PG_GETARG_TEXT_PP(0);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(1);
 	Oid			roleid;
 	Oid			tableoid;
 	AclMode		mode;
@@ -1904,7 +1904,7 @@ has_table_privilege_name_id(PG_FUNCTION_ARGS)
 {
 	Name		username = PG_GETARG_NAME(0);
 	Oid			tableoid = PG_GETARG_OID(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -1930,7 +1930,7 @@ Datum
 has_table_privilege_id(PG_FUNCTION_ARGS)
 {
 	Oid			tableoid = PG_GETARG_OID(0);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(1);
 	Oid			roleid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -1955,8 +1955,8 @@ Datum
 has_table_privilege_id_name(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
-	text	   *tablename = PG_GETARG_TEXT_P(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *tablename = PG_GETARG_TEXT_PP(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			tableoid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -1979,7 +1979,7 @@ has_table_privilege_id_id(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
 	Oid			tableoid = PG_GETARG_OID(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	AclMode		mode;
 	AclResult	aclresult;
 
@@ -2061,8 +2061,8 @@ Datum
 has_sequence_privilege_name_name(PG_FUNCTION_ARGS)
 {
 	Name		rolename = PG_GETARG_NAME(0);
-	text	   *sequencename = PG_GETARG_TEXT_P(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *sequencename = PG_GETARG_TEXT_PP(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	Oid			sequenceoid;
 	AclMode		mode;
@@ -2091,8 +2091,8 @@ has_sequence_privilege_name_name(PG_FUNCTION_ARGS)
 Datum
 has_sequence_privilege_name(PG_FUNCTION_ARGS)
 {
-	text	   *sequencename = PG_GETARG_TEXT_P(0);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
+	text	   *sequencename = PG_GETARG_TEXT_PP(0);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(1);
 	Oid			roleid;
 	Oid			sequenceoid;
 	AclMode		mode;
@@ -2122,7 +2122,7 @@ has_sequence_privilege_name_id(PG_FUNCTION_ARGS)
 {
 	Name		username = PG_GETARG_NAME(0);
 	Oid			sequenceoid = PG_GETARG_OID(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -2154,7 +2154,7 @@ Datum
 has_sequence_privilege_id(PG_FUNCTION_ARGS)
 {
 	Oid			sequenceoid = PG_GETARG_OID(0);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(1);
 	Oid			roleid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -2185,8 +2185,8 @@ Datum
 has_sequence_privilege_id_name(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
-	text	   *sequencename = PG_GETARG_TEXT_P(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *sequencename = PG_GETARG_TEXT_PP(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			sequenceoid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -2214,7 +2214,7 @@ has_sequence_privilege_id_id(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
 	Oid			sequenceoid = PG_GETARG_OID(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	AclMode		mode;
 	AclResult	aclresult;
 	char		relkind;
@@ -2272,8 +2272,8 @@ Datum
 has_any_column_privilege_name_name(PG_FUNCTION_ARGS)
 {
 	Name		rolename = PG_GETARG_NAME(0);
-	text	   *tablename = PG_GETARG_TEXT_P(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *tablename = PG_GETARG_TEXT_PP(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	Oid			tableoid;
 	AclMode		mode;
@@ -2301,8 +2301,8 @@ has_any_column_privilege_name_name(PG_FUNCTION_ARGS)
 Datum
 has_any_column_privilege_name(PG_FUNCTION_ARGS)
 {
-	text	   *tablename = PG_GETARG_TEXT_P(0);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
+	text	   *tablename = PG_GETARG_TEXT_PP(0);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(1);
 	Oid			roleid;
 	Oid			tableoid;
 	AclMode		mode;
@@ -2331,7 +2331,7 @@ has_any_column_privilege_name_id(PG_FUNCTION_ARGS)
 {
 	Name		username = PG_GETARG_NAME(0);
 	Oid			tableoid = PG_GETARG_OID(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -2361,7 +2361,7 @@ Datum
 has_any_column_privilege_id(PG_FUNCTION_ARGS)
 {
 	Oid			tableoid = PG_GETARG_OID(0);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(1);
 	Oid			roleid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -2390,8 +2390,8 @@ Datum
 has_any_column_privilege_id_name(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
-	text	   *tablename = PG_GETARG_TEXT_P(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *tablename = PG_GETARG_TEXT_PP(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			tableoid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -2418,7 +2418,7 @@ has_any_column_privilege_id_id(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
 	Oid			tableoid = PG_GETARG_OID(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	AclMode		mode;
 	AclResult	aclresult;
 
@@ -2512,9 +2512,9 @@ Datum
 has_column_privilege_name_name_name(PG_FUNCTION_ARGS)
 {
 	Name		rolename = PG_GETARG_NAME(0);
-	text	   *tablename = PG_GETARG_TEXT_P(1);
-	text	   *column = PG_GETARG_TEXT_P(2);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(3);
+	text	   *tablename = PG_GETARG_TEXT_PP(1);
+	text	   *column = PG_GETARG_TEXT_PP(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(3);
 	Oid			roleid;
 	Oid			tableoid;
 	AttrNumber	colattnum;
@@ -2541,9 +2541,9 @@ Datum
 has_column_privilege_name_name_attnum(PG_FUNCTION_ARGS)
 {
 	Name		rolename = PG_GETARG_NAME(0);
-	text	   *tablename = PG_GETARG_TEXT_P(1);
+	text	   *tablename = PG_GETARG_TEXT_PP(1);
 	AttrNumber	colattnum = PG_GETARG_INT16(2);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(3);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(3);
 	Oid			roleid;
 	Oid			tableoid;
 	AclMode		mode;
@@ -2569,8 +2569,8 @@ has_column_privilege_name_id_name(PG_FUNCTION_ARGS)
 {
 	Name		username = PG_GETARG_NAME(0);
 	Oid			tableoid = PG_GETARG_OID(1);
-	text	   *column = PG_GETARG_TEXT_P(2);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(3);
+	text	   *column = PG_GETARG_TEXT_PP(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(3);
 	Oid			roleid;
 	AttrNumber	colattnum;
 	AclMode		mode;
@@ -2597,7 +2597,7 @@ has_column_privilege_name_id_attnum(PG_FUNCTION_ARGS)
 	Name		username = PG_GETARG_NAME(0);
 	Oid			tableoid = PG_GETARG_OID(1);
 	AttrNumber	colattnum = PG_GETARG_INT16(2);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(3);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(3);
 	Oid			roleid;
 	AclMode		mode;
 	int			privresult;
@@ -2620,9 +2620,9 @@ Datum
 has_column_privilege_id_name_name(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
-	text	   *tablename = PG_GETARG_TEXT_P(1);
-	text	   *column = PG_GETARG_TEXT_P(2);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(3);
+	text	   *tablename = PG_GETARG_TEXT_PP(1);
+	text	   *column = PG_GETARG_TEXT_PP(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(3);
 	Oid			tableoid;
 	AttrNumber	colattnum;
 	AclMode		mode;
@@ -2647,9 +2647,9 @@ Datum
 has_column_privilege_id_name_attnum(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
-	text	   *tablename = PG_GETARG_TEXT_P(1);
+	text	   *tablename = PG_GETARG_TEXT_PP(1);
 	AttrNumber	colattnum = PG_GETARG_INT16(2);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(3);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(3);
 	Oid			tableoid;
 	AclMode		mode;
 	int			privresult;
@@ -2673,8 +2673,8 @@ has_column_privilege_id_id_name(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
 	Oid			tableoid = PG_GETARG_OID(1);
-	text	   *column = PG_GETARG_TEXT_P(2);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(3);
+	text	   *column = PG_GETARG_TEXT_PP(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(3);
 	AttrNumber	colattnum;
 	AclMode		mode;
 	int			privresult;
@@ -2699,7 +2699,7 @@ has_column_privilege_id_id_attnum(PG_FUNCTION_ARGS)
 	Oid			roleid = PG_GETARG_OID(0);
 	Oid			tableoid = PG_GETARG_OID(1);
 	AttrNumber	colattnum = PG_GETARG_INT16(2);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(3);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(3);
 	AclMode		mode;
 	int			privresult;
 
@@ -2720,9 +2720,9 @@ has_column_privilege_id_id_attnum(PG_FUNCTION_ARGS)
 Datum
 has_column_privilege_name_name(PG_FUNCTION_ARGS)
 {
-	text	   *tablename = PG_GETARG_TEXT_P(0);
-	text	   *column = PG_GETARG_TEXT_P(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *tablename = PG_GETARG_TEXT_PP(0);
+	text	   *column = PG_GETARG_TEXT_PP(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	Oid			tableoid;
 	AttrNumber	colattnum;
@@ -2749,9 +2749,9 @@ has_column_privilege_name_name(PG_FUNCTION_ARGS)
 Datum
 has_column_privilege_name_attnum(PG_FUNCTION_ARGS)
 {
-	text	   *tablename = PG_GETARG_TEXT_P(0);
+	text	   *tablename = PG_GETARG_TEXT_PP(0);
 	AttrNumber	colattnum = PG_GETARG_INT16(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	Oid			tableoid;
 	AclMode		mode;
@@ -2777,8 +2777,8 @@ Datum
 has_column_privilege_id_name(PG_FUNCTION_ARGS)
 {
 	Oid			tableoid = PG_GETARG_OID(0);
-	text	   *column = PG_GETARG_TEXT_P(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *column = PG_GETARG_TEXT_PP(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	AttrNumber	colattnum;
 	AclMode		mode;
@@ -2805,7 +2805,7 @@ has_column_privilege_id_attnum(PG_FUNCTION_ARGS)
 {
 	Oid			tableoid = PG_GETARG_OID(0);
 	AttrNumber	colattnum = PG_GETARG_INT16(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	AclMode		mode;
 	int			privresult;
@@ -2886,8 +2886,8 @@ Datum
 has_database_privilege_name_name(PG_FUNCTION_ARGS)
 {
 	Name		username = PG_GETARG_NAME(0);
-	text	   *databasename = PG_GETARG_TEXT_P(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *databasename = PG_GETARG_TEXT_PP(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	Oid			databaseoid;
 	AclMode		mode;
@@ -2911,8 +2911,8 @@ has_database_privilege_name_name(PG_FUNCTION_ARGS)
 Datum
 has_database_privilege_name(PG_FUNCTION_ARGS)
 {
-	text	   *databasename = PG_GETARG_TEXT_P(0);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
+	text	   *databasename = PG_GETARG_TEXT_PP(0);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(1);
 	Oid			roleid;
 	Oid			databaseoid;
 	AclMode		mode;
@@ -2937,7 +2937,7 @@ has_database_privilege_name_id(PG_FUNCTION_ARGS)
 {
 	Name		username = PG_GETARG_NAME(0);
 	Oid			databaseoid = PG_GETARG_OID(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -2963,7 +2963,7 @@ Datum
 has_database_privilege_id(PG_FUNCTION_ARGS)
 {
 	Oid			databaseoid = PG_GETARG_OID(0);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(1);
 	Oid			roleid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -2988,8 +2988,8 @@ Datum
 has_database_privilege_id_name(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
-	text	   *databasename = PG_GETARG_TEXT_P(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *databasename = PG_GETARG_TEXT_PP(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			databaseoid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -3012,7 +3012,7 @@ has_database_privilege_id_id(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
 	Oid			databaseoid = PG_GETARG_OID(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	AclMode		mode;
 	AclResult	aclresult;
 
@@ -3084,8 +3084,8 @@ Datum
 has_foreign_data_wrapper_privilege_name_name(PG_FUNCTION_ARGS)
 {
 	Name		username = PG_GETARG_NAME(0);
-	text	   *fdwname = PG_GETARG_TEXT_P(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *fdwname = PG_GETARG_TEXT_PP(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	Oid			fdwid;
 	AclMode		mode;
@@ -3109,8 +3109,8 @@ has_foreign_data_wrapper_privilege_name_name(PG_FUNCTION_ARGS)
 Datum
 has_foreign_data_wrapper_privilege_name(PG_FUNCTION_ARGS)
 {
-	text	   *fdwname = PG_GETARG_TEXT_P(0);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
+	text	   *fdwname = PG_GETARG_TEXT_PP(0);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(1);
 	Oid			roleid;
 	Oid			fdwid;
 	AclMode		mode;
@@ -3135,7 +3135,7 @@ has_foreign_data_wrapper_privilege_name_id(PG_FUNCTION_ARGS)
 {
 	Name		username = PG_GETARG_NAME(0);
 	Oid			fdwid = PG_GETARG_OID(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -3158,7 +3158,7 @@ Datum
 has_foreign_data_wrapper_privilege_id(PG_FUNCTION_ARGS)
 {
 	Oid			fdwid = PG_GETARG_OID(0);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(1);
 	Oid			roleid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -3180,8 +3180,8 @@ Datum
 has_foreign_data_wrapper_privilege_id_name(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
-	text	   *fdwname = PG_GETARG_TEXT_P(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *fdwname = PG_GETARG_TEXT_PP(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			fdwid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -3204,7 +3204,7 @@ has_foreign_data_wrapper_privilege_id_id(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
 	Oid			fdwid = PG_GETARG_OID(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	AclMode		mode;
 	AclResult	aclresult;
 
@@ -3266,8 +3266,8 @@ Datum
 has_function_privilege_name_name(PG_FUNCTION_ARGS)
 {
 	Name		username = PG_GETARG_NAME(0);
-	text	   *functionname = PG_GETARG_TEXT_P(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *functionname = PG_GETARG_TEXT_PP(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	Oid			functionoid;
 	AclMode		mode;
@@ -3291,8 +3291,8 @@ has_function_privilege_name_name(PG_FUNCTION_ARGS)
 Datum
 has_function_privilege_name(PG_FUNCTION_ARGS)
 {
-	text	   *functionname = PG_GETARG_TEXT_P(0);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
+	text	   *functionname = PG_GETARG_TEXT_PP(0);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(1);
 	Oid			roleid;
 	Oid			functionoid;
 	AclMode		mode;
@@ -3317,7 +3317,7 @@ has_function_privilege_name_id(PG_FUNCTION_ARGS)
 {
 	Name		username = PG_GETARG_NAME(0);
 	Oid			functionoid = PG_GETARG_OID(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -3343,7 +3343,7 @@ Datum
 has_function_privilege_id(PG_FUNCTION_ARGS)
 {
 	Oid			functionoid = PG_GETARG_OID(0);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(1);
 	Oid			roleid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -3368,8 +3368,8 @@ Datum
 has_function_privilege_id_name(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
-	text	   *functionname = PG_GETARG_TEXT_P(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *functionname = PG_GETARG_TEXT_PP(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			functionoid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -3392,7 +3392,7 @@ has_function_privilege_id_id(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
 	Oid			functionoid = PG_GETARG_OID(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	AclMode		mode;
 	AclResult	aclresult;
 
@@ -3466,8 +3466,8 @@ Datum
 has_language_privilege_name_name(PG_FUNCTION_ARGS)
 {
 	Name		username = PG_GETARG_NAME(0);
-	text	   *languagename = PG_GETARG_TEXT_P(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *languagename = PG_GETARG_TEXT_PP(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	Oid			languageoid;
 	AclMode		mode;
@@ -3491,8 +3491,8 @@ has_language_privilege_name_name(PG_FUNCTION_ARGS)
 Datum
 has_language_privilege_name(PG_FUNCTION_ARGS)
 {
-	text	   *languagename = PG_GETARG_TEXT_P(0);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
+	text	   *languagename = PG_GETARG_TEXT_PP(0);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(1);
 	Oid			roleid;
 	Oid			languageoid;
 	AclMode		mode;
@@ -3517,7 +3517,7 @@ has_language_privilege_name_id(PG_FUNCTION_ARGS)
 {
 	Name		username = PG_GETARG_NAME(0);
 	Oid			languageoid = PG_GETARG_OID(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -3543,7 +3543,7 @@ Datum
 has_language_privilege_id(PG_FUNCTION_ARGS)
 {
 	Oid			languageoid = PG_GETARG_OID(0);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(1);
 	Oid			roleid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -3568,8 +3568,8 @@ Datum
 has_language_privilege_id_name(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
-	text	   *languagename = PG_GETARG_TEXT_P(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *languagename = PG_GETARG_TEXT_PP(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			languageoid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -3592,7 +3592,7 @@ has_language_privilege_id_id(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
 	Oid			languageoid = PG_GETARG_OID(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	AclMode		mode;
 	AclResult	aclresult;
 
@@ -3657,8 +3657,8 @@ Datum
 has_schema_privilege_name_name(PG_FUNCTION_ARGS)
 {
 	Name		username = PG_GETARG_NAME(0);
-	text	   *schemaname = PG_GETARG_TEXT_P(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *schemaname = PG_GETARG_TEXT_PP(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	Oid			schemaoid;
 	AclMode		mode;
@@ -3682,8 +3682,8 @@ has_schema_privilege_name_name(PG_FUNCTION_ARGS)
 Datum
 has_schema_privilege_name(PG_FUNCTION_ARGS)
 {
-	text	   *schemaname = PG_GETARG_TEXT_P(0);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
+	text	   *schemaname = PG_GETARG_TEXT_PP(0);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(1);
 	Oid			roleid;
 	Oid			schemaoid;
 	AclMode		mode;
@@ -3708,7 +3708,7 @@ has_schema_privilege_name_id(PG_FUNCTION_ARGS)
 {
 	Name		username = PG_GETARG_NAME(0);
 	Oid			schemaoid = PG_GETARG_OID(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -3734,7 +3734,7 @@ Datum
 has_schema_privilege_id(PG_FUNCTION_ARGS)
 {
 	Oid			schemaoid = PG_GETARG_OID(0);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(1);
 	Oid			roleid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -3759,8 +3759,8 @@ Datum
 has_schema_privilege_id_name(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
-	text	   *schemaname = PG_GETARG_TEXT_P(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *schemaname = PG_GETARG_TEXT_PP(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			schemaoid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -3783,7 +3783,7 @@ has_schema_privilege_id_id(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
 	Oid			schemaoid = PG_GETARG_OID(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	AclMode		mode;
 	AclResult	aclresult;
 
@@ -3850,8 +3850,8 @@ Datum
 has_server_privilege_name_name(PG_FUNCTION_ARGS)
 {
 	Name		username = PG_GETARG_NAME(0);
-	text	   *servername = PG_GETARG_TEXT_P(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *servername = PG_GETARG_TEXT_PP(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	Oid			serverid;
 	AclMode		mode;
@@ -3875,8 +3875,8 @@ has_server_privilege_name_name(PG_FUNCTION_ARGS)
 Datum
 has_server_privilege_name(PG_FUNCTION_ARGS)
 {
-	text	   *servername = PG_GETARG_TEXT_P(0);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
+	text	   *servername = PG_GETARG_TEXT_PP(0);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(1);
 	Oid			roleid;
 	Oid			serverid;
 	AclMode		mode;
@@ -3901,7 +3901,7 @@ has_server_privilege_name_id(PG_FUNCTION_ARGS)
 {
 	Name		username = PG_GETARG_NAME(0);
 	Oid			serverid = PG_GETARG_OID(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -3924,7 +3924,7 @@ Datum
 has_server_privilege_id(PG_FUNCTION_ARGS)
 {
 	Oid			serverid = PG_GETARG_OID(0);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(1);
 	Oid			roleid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -3946,8 +3946,8 @@ Datum
 has_server_privilege_id_name(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
-	text	   *servername = PG_GETARG_TEXT_P(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *servername = PG_GETARG_TEXT_PP(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			serverid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -3970,7 +3970,7 @@ has_server_privilege_id_id(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
 	Oid			serverid = PG_GETARG_OID(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	AclMode		mode;
 	AclResult	aclresult;
 
@@ -4032,8 +4032,8 @@ Datum
 has_tablespace_privilege_name_name(PG_FUNCTION_ARGS)
 {
 	Name		username = PG_GETARG_NAME(0);
-	text	   *tablespacename = PG_GETARG_TEXT_P(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *tablespacename = PG_GETARG_TEXT_PP(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	Oid			tablespaceoid;
 	AclMode		mode;
@@ -4057,8 +4057,8 @@ has_tablespace_privilege_name_name(PG_FUNCTION_ARGS)
 Datum
 has_tablespace_privilege_name(PG_FUNCTION_ARGS)
 {
-	text	   *tablespacename = PG_GETARG_TEXT_P(0);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
+	text	   *tablespacename = PG_GETARG_TEXT_PP(0);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(1);
 	Oid			roleid;
 	Oid			tablespaceoid;
 	AclMode		mode;
@@ -4083,7 +4083,7 @@ has_tablespace_privilege_name_id(PG_FUNCTION_ARGS)
 {
 	Name		username = PG_GETARG_NAME(0);
 	Oid			tablespaceoid = PG_GETARG_OID(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -4106,7 +4106,7 @@ Datum
 has_tablespace_privilege_id(PG_FUNCTION_ARGS)
 {
 	Oid			tablespaceoid = PG_GETARG_OID(0);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(1);
 	Oid			roleid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -4128,8 +4128,8 @@ Datum
 has_tablespace_privilege_id_name(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
-	text	   *tablespacename = PG_GETARG_TEXT_P(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *tablespacename = PG_GETARG_TEXT_PP(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			tablespaceoid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -4152,7 +4152,7 @@ has_tablespace_privilege_id_id(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
 	Oid			tablespaceoid = PG_GETARG_OID(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	AclMode		mode;
 	AclResult	aclresult;
 
@@ -4213,8 +4213,8 @@ Datum
 has_type_privilege_name_name(PG_FUNCTION_ARGS)
 {
 	Name		username = PG_GETARG_NAME(0);
-	text	   *typename = PG_GETARG_TEXT_P(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *typename = PG_GETARG_TEXT_PP(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	Oid			typeoid;
 	AclMode		mode;
@@ -4238,8 +4238,8 @@ has_type_privilege_name_name(PG_FUNCTION_ARGS)
 Datum
 has_type_privilege_name(PG_FUNCTION_ARGS)
 {
-	text	   *typename = PG_GETARG_TEXT_P(0);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
+	text	   *typename = PG_GETARG_TEXT_PP(0);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(1);
 	Oid			roleid;
 	Oid			typeoid;
 	AclMode		mode;
@@ -4264,7 +4264,7 @@ has_type_privilege_name_id(PG_FUNCTION_ARGS)
 {
 	Name		username = PG_GETARG_NAME(0);
 	Oid			typeoid = PG_GETARG_OID(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -4290,7 +4290,7 @@ Datum
 has_type_privilege_id(PG_FUNCTION_ARGS)
 {
 	Oid			typeoid = PG_GETARG_OID(0);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(1);
 	Oid			roleid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -4315,8 +4315,8 @@ Datum
 has_type_privilege_id_name(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
-	text	   *typename = PG_GETARG_TEXT_P(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *typename = PG_GETARG_TEXT_PP(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			typeoid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -4339,7 +4339,7 @@ has_type_privilege_id_id(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
 	Oid			typeoid = PG_GETARG_OID(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	AclMode		mode;
 	AclResult	aclresult;
 
@@ -4414,7 +4414,7 @@ pg_has_role_name_name(PG_FUNCTION_ARGS)
 {
 	Name		username = PG_GETARG_NAME(0);
 	Name		rolename = PG_GETARG_NAME(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	Oid			roleoid;
 	AclMode		mode;
@@ -4439,7 +4439,7 @@ Datum
 pg_has_role_name(PG_FUNCTION_ARGS)
 {
 	Name		rolename = PG_GETARG_NAME(0);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(1);
 	Oid			roleid;
 	Oid			roleoid;
 	AclMode		mode;
@@ -4464,7 +4464,7 @@ pg_has_role_name_id(PG_FUNCTION_ARGS)
 {
 	Name		username = PG_GETARG_NAME(0);
 	Oid			roleoid = PG_GETARG_OID(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -4487,7 +4487,7 @@ Datum
 pg_has_role_id(PG_FUNCTION_ARGS)
 {
 	Oid			roleoid = PG_GETARG_OID(0);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(1);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(1);
 	Oid			roleid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -4510,7 +4510,7 @@ pg_has_role_id_name(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
 	Name		rolename = PG_GETARG_NAME(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	Oid			roleoid;
 	AclMode		mode;
 	AclResult	aclresult;
@@ -4533,7 +4533,7 @@ pg_has_role_id_id(PG_FUNCTION_ARGS)
 {
 	Oid			roleid = PG_GETARG_OID(0);
 	Oid			roleoid = PG_GETARG_OID(1);
-	text	   *priv_type_text = PG_GETARG_TEXT_P(2);
+	text	   *priv_type_text = PG_GETARG_TEXT_PP(2);
 	AclMode		mode;
 	AclResult	aclresult;
 

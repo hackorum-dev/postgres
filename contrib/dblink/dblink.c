@@ -1512,7 +1512,7 @@ dblink_get_pkey(PG_FUNCTION_ARGS)
 		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
 
 		/* open target relation */
-		rel = get_rel_from_relname(PG_GETARG_TEXT_P(0), AccessShareLock, ACL_SELECT);
+		rel = get_rel_from_relname(PG_GETARG_TEXT_PP(0), AccessShareLock, ACL_SELECT);
 
 		/* get the array of attnums */
 		results = get_pkey_attnames(rel, &numatts);
@@ -1613,7 +1613,7 @@ PG_FUNCTION_INFO_V1(dblink_build_sql_insert);
 Datum
 dblink_build_sql_insert(PG_FUNCTION_ARGS)
 {
-	text	   *relname_text = PG_GETARG_TEXT_P(0);
+	text	   *relname_text = PG_GETARG_TEXT_PP(0);
 	int2vector *pkattnums_arg = (int2vector *) PG_GETARG_POINTER(1);
 	int32		pknumatts_arg = PG_GETARG_INT32(2);
 	ArrayType  *src_pkattvals_arry = PG_GETARG_ARRAYTYPE_P(3);
@@ -1704,7 +1704,7 @@ PG_FUNCTION_INFO_V1(dblink_build_sql_delete);
 Datum
 dblink_build_sql_delete(PG_FUNCTION_ARGS)
 {
-	text	   *relname_text = PG_GETARG_TEXT_P(0);
+	text	   *relname_text = PG_GETARG_TEXT_PP(0);
 	int2vector *pkattnums_arg = (int2vector *) PG_GETARG_POINTER(1);
 	int32		pknumatts_arg = PG_GETARG_INT32(2);
 	ArrayType  *tgt_pkattvals_arry = PG_GETARG_ARRAYTYPE_P(3);
@@ -1781,7 +1781,7 @@ PG_FUNCTION_INFO_V1(dblink_build_sql_update);
 Datum
 dblink_build_sql_update(PG_FUNCTION_ARGS)
 {
-	text	   *relname_text = PG_GETARG_TEXT_P(0);
+	text	   *relname_text = PG_GETARG_TEXT_PP(0);
 	int2vector *pkattnums_arg = (int2vector *) PG_GETARG_POINTER(1);
 	int32		pknumatts_arg = PG_GETARG_INT32(2);
 	ArrayType  *src_pkattvals_arry = PG_GETARG_ARRAYTYPE_P(3);
@@ -2350,7 +2350,7 @@ quote_ident_cstr(char *rawstr)
 	char	   *result;
 
 	rawstr_text = cstring_to_text(rawstr);
-	result_text = DatumGetTextP(DirectFunctionCall1(quote_ident,
+	result_text = DatumGetTextPP(DirectFunctionCall1(quote_ident,
 											  PointerGetDatum(rawstr_text)));
 	result = text_to_cstring(result_text);
 
