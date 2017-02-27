@@ -42,6 +42,7 @@ static bool slot_exists_ok = false;
 static bool do_drop_slot = false;
 static bool synchronous = false;
 static char *replication_slot = NULL;
+static char *end_segment_cmd = NULL;
 
 
 static void usage(void);
@@ -83,6 +84,10 @@ usage(void)
 			 "                         time between status packets sent to server (default: %d)\n"), (standby_message_timeout / 1000));
 	printf(_("  -S, --slot=SLOTNAME    replication slot to use\n"));
 	printf(_("      --synchronous      flush transaction log immediately after writing\n"));
+	printf(_("      --end-segment-command\n"
+			 "                         custom command executed node a segment completes.\n"
+			 "                         %%f can be used as placeholder to define the\n"
+			 "                         name of the segment name.\n"));
 	printf(_("  -v, --verbose          output verbose messages\n"));
 	printf(_("  -V, --version          output version information, then exit\n"));
 	printf(_("  -Z, --compress=0-9     compress logs with given compression level\n"));
@@ -418,6 +423,7 @@ StreamLog(void)
 	stream.partial_suffix = ".partial";
 	stream.replication_slot = replication_slot;
 	stream.temp_slot = false;
+	stream.end_segment_cmd = end_segment_cmd;
 
 	ReceiveXlogStream(conn, &stream);
 
@@ -473,6 +479,7 @@ main(int argc, char **argv)
 		{"drop-slot", no_argument, NULL, 2},
 		{"if-not-exists", no_argument, NULL, 3},
 		{"synchronous", no_argument, NULL, 4},
+		{"end-segment-command", required_argument, NULL, 5},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -569,6 +576,9 @@ main(int argc, char **argv)
 				break;
 			case 4:
 				synchronous = true;
+				break;
+			case 5:
+				end_segment_cmd = pg_strdup(optarg);
 				break;
 			default:
 

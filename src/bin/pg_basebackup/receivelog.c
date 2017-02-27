@@ -54,6 +54,7 @@ static long CalculateCopyStreamSleeptime(TimestampTz now, int standby_message_ti
 
 static bool ReadEndOfStreamingResult(PGresult *res, XLogRecPtr *startpos,
 						 uint32 *timeline);
+static bool runEndSegmentCommand(StreamCtl *stream, XLogRecPtr blockpos);
 
 static bool
 mark_file_as_archived(StreamCtl *stream, const char *fname)
@@ -749,6 +750,79 @@ ReadEndOfStreamingResult(PGresult *res, XLogRecPtr *startpos, uint32 *timeline)
 }
 
 /*
+ * Run command provided by user once a segment is completed.  Returns true
+ * if the command succeeds, and false otherwise.
+ */
+static bool
+runEndSegmentCommand(StreamCtl *stream, XLogRecPtr blockpos)
+{
+	char		endSegmentCmd[MAXPGPATH];
+	char		xlogfname[MAXPGPATH];
+	char	   *dp, *endp, *sp;
+	XLogSegNo	segno;
+	int			rc;
+
+	Assert(stream->end_segment_cmd != NULL);
+
+	/*
+	 * Build the name of the segment just completed. This takes into
+	 * account compressed segments.
+	 */
+	XLByteToPrevSeg(blockpos, segno);
+	XLogFileName(xlogfname, stream->timeline, segno);
+	if (stream->walmethod->get_compression() > 0)
+	{
+		snprintf(xlogfname, MAXPGPATH, "%s.gz", xlogfname);
+	}
+
+	/* Construct the command to be executed */
+	dp = endSegmentCmd;
+	endp = endSegmentCmd + MAXPGPATH - 1;
+	*endp = '\0';
+
+	/*
+	 * Check presence of placeholders in the command provided and replace
+	 * them accordingly
+	 */
+	for (sp = stream->end_segment_cmd; *sp; sp++)
+	{
+		if (*sp == '%')
+		{
+			switch (sp[1])
+			{
+				case 'f':
+					/* %f: filename of just-completed segment file */
+					sp++;
+					StrNCpy(dp, xlogfname, endp - dp);
+					dp += strlen(dp);
+					break;
+				default:
+					/* otherwise treat the % as not special */
+					if (dp < endp)
+						*dp++ = *sp;
+					break;
+			}
+		}
+		else
+		{
+			if (dp < endp)
+				*dp++ = *sp;
+		}
+	}
+	*dp = '\0';
+
+	/* And now run the command */
+	rc = system(endSegmentCmd);
+	if (rc != 0)
+	{
+		fprintf(stderr, _("%s: failed to run end-of-segment command \"%s\"\n"),
+				progname, endSegmentCmd);
+		return false;
+	}
+	return true;
+}
+
+/*
  * The main loop of ReceiveXlogStream. Handles the COPY stream after
  * initiating streaming with the START_STREAMING command.
  *
@@ -1174,6 +1248,10 @@ ProcessXLogDataMsg(PGconn *conn, StreamCtl *stream, char *copybuf, int len,
 				still_sending = false;
 				return true;	/* ignore the rest of this XLogData packet */
 			}
+
+			/* Run custom end-of-segment command */
+			if (stream->end_segment_cmd != NULL)
+				runEndSegmentCommand(stream, *blockpos);
 		}
 	}
 	/* No more data left to write, receive next copy packet */

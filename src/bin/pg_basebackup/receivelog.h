@@ -46,6 +46,8 @@ typedef struct StreamCtl
 	char	   *partial_suffix; /* Suffix appended to partially received files */
 	char	   *replication_slot;		/* Replication slot to use, or NULL */
 	bool		temp_slot;		/* Create temporary replication slot */
+	char	   *end_segment_cmd;	/* Custom command run each time a segment
+									 * is completed */
 } StreamCtl;
 
 

@@ -93,6 +93,26 @@ PostgreSQL documentation
      </varlistentry>
 
      <varlistentry>
+      <term><option>--end-segment-command</option></term>
+      <listitem>
+       <para>
+        Command to execute once a WAL segment is completed. Any
+        <literal>%f</> in the string is replaced by the same of the WAL segment
+        that has just been completed. This is useful to perform extra actions
+        that need to be run once a segment has been completed without relying
+        on any external utilities, like copying the just-finished segment into
+        a secundary location, perform extra sanity checks on it or for example
+        perform cleanup actions on all the WAL segments already archived like
+        a cleanup of the oldest segments saved. Here is a simple example of
+        command:
+<programlisting>
+--end-segment-command="cp /mnt/server/archive/%f /mnt/server2/archive/"
+</programlisting>
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
       <term><option>--if-not-exists</option></term>
       <listitem>
        <para>

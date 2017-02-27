@@ -26,6 +26,7 @@ struct WalWriteMethod
 	int			(*close) (Walfile f, WalCloseMethod method);
 	bool		(*existsfile) (const char *pathname);
 	ssize_t		(*get_file_size) (const char *pathname);
+	int			(*get_compression) (void);
 
 	ssize_t		(*write) (Walfile f, const void *buf, size_t count);
 	off_t		(*get_current_pos) (Walfile f);

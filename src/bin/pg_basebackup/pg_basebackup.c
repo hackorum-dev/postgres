@@ -489,6 +489,7 @@ LogStreamerMain(logstreamer_param *param)
 	stream.partial_suffix = NULL;
 	stream.replication_slot = replication_slot;
 	stream.temp_slot = param->temp_slot;
+	stream.end_segment_cmd = NULL;
 	if (stream.temp_slot && !stream.replication_slot)
 		stream.replication_slot = psprintf("pg_basebackup_%d", (int) getpid());
 

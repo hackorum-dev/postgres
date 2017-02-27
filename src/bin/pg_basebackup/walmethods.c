@@ -310,6 +310,12 @@ dir_get_file_size(const char *pathname)
 	return statbuf.st_size;
 }
 
+static int
+dir_get_compression(void)
+{
+	return dir_data->compression;
+}
+
 static bool
 dir_existsfile(const char *pathname)
 {
@@ -351,6 +357,7 @@ CreateWalDirectoryMethod(const char *basedir, int compression, bool sync)
 	method->open_for_write = dir_open_for_write;
 	method->write = dir_write;
 	method->get_current_pos = dir_get_current_pos;
+	method->get_compression = dir_get_compression;
 	method->get_file_size = dir_get_file_size;
 	method->close = dir_close;
 	method->sync = dir_sync;
@@ -675,6 +682,12 @@ tar_get_file_size(const char *pathname)
 	return -1;
 }
 
+static int
+tar_get_compression(void)
+{
+	return tar_data->compression;
+}
+
 static off_t
 tar_get_current_pos(Walfile f)
 {
@@ -953,6 +966,7 @@ CreateWalTarMethod(const char *tarbase, int compression, bool sync)
 	method->open_for_write = tar_open_for_write;
 	method->write = tar_write;
 	method->get_current_pos = tar_get_current_pos;
+	method->get_compression = tar_get_compression;
 	method->get_file_size = tar_get_file_size;
 	method->close = tar_close;
 	method->sync = tar_sync;
