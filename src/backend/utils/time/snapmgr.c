@@ -806,11 +806,19 @@ UpdateActiveSnapshotCommandId(void)
 void
 PopActiveSnapshot(void)
 {
+	Assert(ActiveSnapshot->as_snap->active_count > 0);
+	PopActiveSnapshotIfAny();
+}
+
+void
+PopActiveSnapshotIfAny(void)
+{
 	ActiveSnapshotElt *newstack;
 
-	newstack = ActiveSnapshot->as_next;
+	if (ActiveSnapshot == NULL)
+		return;
 
-	Assert(ActiveSnapshot->as_snap->active_count > 0);
+	newstack = ActiveSnapshot->as_next;
 
 	ActiveSnapshot->as_snap->active_count--;
 
