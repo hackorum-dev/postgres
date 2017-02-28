@@ -770,9 +770,25 @@ DefineIndex(Oid relationId,
 	/* Now build the index */
 	index_build(rel, indexRelation, indexInfo, stmt->primary, false);
 
+	/*
+	 * At this point it is possible that the indexAM has popped its
+	 * snapshot and will be unable to run other commands, but we
+	 * accept that restriction because it means the snapshot is held
+	 * open for much less time.
+	 */
+	PopActiveSnapshotIfAny();
+
 	/* Close both the relations, but keep the locks */
 	heap_close(rel, NoLock);
 	index_close(indexRelation, NoLock);
+
+	/*
+	 * Now we need a snapshot so we can update our indexes. The snapshot
+	 * here is different from that used to build the index, but the only
+	 * thing we will do with it is update the pg_index row for the index
+	 * we have locked, so we're not in danger of mismatch.
+	 */
+	PushActiveSnapshot(GetTransactionSnapshot());
 
 	/*
 	 * Update the pg_index row to mark the index as ready for inserts. Once we

@@ -168,7 +168,17 @@ btbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 	reltuples = IndexBuildHeapScan(heap, index, indexInfo, true,
 								   btbuildCallback, (void *) &buildstate);
 
-	/* okay, all heap tuples are indexed */
+	/*
+	 * By this point, all heap tuples are indexed so we don't need the
+	 * snapshot to complete the index build.
+	 *
+	 * Ideally, we'd like to drop our snapshot as soon as possible, to
+	 * avoid holding xmin back and causing bloat. That is only possible
+	 * if we are running a concurrent index build because that command
+	 * is sufficiently restricted to allow this to happen safely.
+	 */
+	if (indexInfo->ii_Concurrent)
+		PopActiveSnapshot();
 	if (buildstate.spool2 && !buildstate.haveDead)
 	{
 		/* spool2 turns out to be unnecessary */
