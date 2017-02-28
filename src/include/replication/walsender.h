@@ -26,6 +26,7 @@ extern bool wake_wal_senders;
 extern int	max_wal_senders;
 extern int	wal_sender_timeout;
 extern bool log_replication_commands;
+extern bool async_walsender_delay;
 
 extern void InitWalSender(void);
 extern void exec_replication_command(const char *query_string);

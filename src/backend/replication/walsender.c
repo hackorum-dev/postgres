@@ -114,6 +114,8 @@ int			wal_sender_timeout = 60 * 1000;		/* maximum time to send one
 												 * WAL data message */
 bool		log_replication_commands = false;
 
+bool		async_walsender_delay = false;
+
 /*
  * State for WalSndWakeupRequest
  */
@@ -219,6 +221,7 @@ static long WalSndComputeSleeptime(TimestampTz now);
 static void WalSndPrepareWrite(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId xid, bool last_write);
 static void WalSndWriteData(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId xid, bool last_write);
 static XLogRecPtr WalSndWaitForWal(XLogRecPtr loc);
+static bool is_async_wait_sync(XLogRecPtr SendRqstPtr);
 
 static void XLogRead(char *buf, XLogRecPtr startptr, Size count);
 
@@ -2278,6 +2281,17 @@ XLogSendPhysical(void)
 		return;
 	}
 
+	/* If async_walsender_delay parameter is set, walsender for asynchronous 
+	 * replication waits until other walsender for synchronous repliation 
+	 * send WAL. */
+	if (async_walsender_delay)
+	{
+		if (is_async_wait_sync(SendRqstPtr))
+		{
+			return;
+		}
+	}
+
 	/*
 	 * Figure out how much to send in one message. If there's no more than
 	 * MAX_SEND_SIZE bytes to send, send everything. Otherwise send
@@ -2884,4 +2898,39 @@ WalSndKeepaliveIfNecessary(TimestampTz now)
 		if (pq_flush_if_writable() != 0)
 			WalSndShutdown();
 	}
+}
+
+/* 
+ * This function is called when async_walsender_delay is set. 
+ * walsender of asynchronous replication waits to send wal
+ * until other walsender of synchronous replication has sent. 
+ * */
+static bool
+is_async_wait_sync(XLogRecPtr SendRqstPtr)
+{
+
+	WalSnd	*mywalsnd = MyWalSnd;
+	int		priority;
+	int		i;
+
+	/* if this process is for sync, not wait */
+	priority = mywalsnd->sync_standby_priority;
+	if (priority != 0)
+	{
+		return false;
+	}
+
+	/* Check if other walsenders has flushed WAL. */
+	for (i = 0; i < max_wal_senders; i++)
+	{
+		WalSnd     *walsnd = &WalSndCtl->walsnds[i];
+
+		priority = walsnd->sync_standby_priority;
+		if (priority != 0 && SendRqstPtr > walsnd->flush)
+		{
+			return true;
+		}
+	}
+
+	return false;
 }

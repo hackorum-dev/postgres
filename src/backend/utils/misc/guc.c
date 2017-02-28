@@ -1657,6 +1657,16 @@ static struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 
+	{
+		{"async_walsender_delay", PGC_POSTMASTER, REPLICATION_SENDING,
+			gettext_noop("Delay the walsender for asynchronous replication"),
+			NULL,
+		},
+		&async_walsender_delay,
+		false,
+		NULL, NULL, NULL
+	},
+
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, false, NULL, NULL, NULL

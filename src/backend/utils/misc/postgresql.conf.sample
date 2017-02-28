@@ -271,6 +271,8 @@
 					# in milliseconds; 0 disables
 #wal_retrieve_retry_interval = 5s	# time to wait before retrying to
 					# retrieve WAL after a failed attempt
+#async_walsender_delay = off		# wait for sending WAL to async standby
+					# until sync standby get WAL
 
 
 #------------------------------------------------------------------------------
