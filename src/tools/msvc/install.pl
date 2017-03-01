@@ -12,9 +12,9 @@ use Install qw(Install);
 # it should contain lines like:
 # $ENV{PATH} = "c:/path/to/bison/bin;$ENV{PATH}";
 
-if (-e "src/tools/msvc/buildenv.pl")
+if (-e "./src/tools/msvc/buildenv.pl")
 {
-	do "src/tools/msvc/buildenv.pl";
+	do "./src/tools/msvc/buildenv.pl";
 }
 elsif (-e "./buildenv.pl")
 {

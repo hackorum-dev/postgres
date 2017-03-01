@@ -174,11 +174,9 @@ print "Generating $defname.DEF from directory $ARGV[0], platform $platform\n";
 
 my %def = ();
 
-while (<$ARGV[0]/*.obj>)  ## no critic (RequireGlobFunction);
+for my $objfile (glob("$ARGV[0]/*.obj"))
 {
-	my $objfile = $_;
-	my $symfile = $objfile;
-	$symfile =~ s/\.obj$/.sym/i;
+	(my $symfile = $objfile) =~ s/\.obj$/.sym/i;
 	dumpsyms($objfile, $symfile);
 	print ".";
 	extract_syms($symfile, \%def);
