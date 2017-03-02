@@ -231,8 +231,8 @@ get_type(enum ECPGttype type)
  */
 static void ECPGdump_a_simple(FILE *o, const char *name, enum ECPGttype type,
 				  char *varcharsize,
-				  char *arrsiz, const char *siz, const char *prefix, int);
-static void ECPGdump_a_struct(FILE *o, const char *name, const char *ind_name, char *arrsiz,
+				  char *arrsize, const char *siz, const char *prefix, int);
+static void ECPGdump_a_struct(FILE *o, const char *name, const char *ind_name, char *arrsize,
 				  struct ECPGtype * type, struct ECPGtype * ind_type, const char *prefix, const char *ind_prefix);
 
 void
@@ -569,7 +569,7 @@ ECPGdump_a_simple(FILE *o, const char *name, enum ECPGttype type,
 
 /* Penetrate a struct and dump the contents. */
 static void
-ECPGdump_a_struct(FILE *o, const char *name, const char *ind_name, char *arrsiz, struct ECPGtype * type, struct ECPGtype * ind_type, const char *prefix, const char *ind_prefix)
+ECPGdump_a_struct(FILE *o, const char *name, const char *ind_name, char *arrsize, struct ECPGtype * type, struct ECPGtype * ind_type, const char *prefix, const char *ind_prefix)
 {
 	/*
 	 * If offset is NULL, then this is the first recursive level. If not then
@@ -580,7 +580,7 @@ ECPGdump_a_struct(FILE *o, const char *name, const char *ind_name, char *arrsiz,
 	char	   *pbuf = (char *) mm_alloc(strlen(name) + ((prefix == NULL) ? 0 : strlen(prefix)) + 3);
 	char	   *ind_pbuf = (char *) mm_alloc(strlen(ind_name) + ((ind_prefix == NULL) ? 0 : strlen(ind_prefix)) + 3);
 
-	if (atoi(arrsiz) == 1)
+	if (atoi(arrsize) == 1)
 		sprintf(pbuf, "%s%s.", prefix ? prefix : "", name);
 	else
 		sprintf(pbuf, "%s%s->", prefix ? prefix : "", name);
@@ -591,7 +591,7 @@ ECPGdump_a_struct(FILE *o, const char *name, const char *ind_name, char *arrsiz,
 		ind_p = &struct_no_indicator;
 	else if (ind_type != NULL)
 	{
-		if (atoi(arrsiz) == 1)
+		if (atoi(arrsize) == 1)
 			sprintf(ind_pbuf, "%s%s.", ind_prefix ? ind_prefix : "", ind_name);
 		else
 			sprintf(ind_pbuf, "%s%s->", ind_prefix ? ind_prefix : "", ind_name);
@@ -606,7 +606,7 @@ ECPGdump_a_struct(FILE *o, const char *name, const char *ind_name, char *arrsiz,
 						(ind_p != NULL) ? ind_p->name : NULL,
 						(ind_p != NULL) ? ind_p->type : NULL,
 						-1,
-						prefix, ind_prefix, arrsiz, type->struct_sizeof,
+						prefix, ind_prefix, arrsize, type->struct_sizeof,
 						(ind_p != NULL) ? ind_type->struct_sizeof : NULL);
 		if (ind_p != NULL && ind_p != &struct_no_indicator)
 			ind_p = ind_p->next;

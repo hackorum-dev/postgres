@@ -3342,7 +3342,7 @@ pg_get_multixact_members(PG_FUNCTION_ARGS)
 	} mxact;
 	MultiXactId mxid = PG_GETARG_UINT32(0);
 	mxact	   *multi;
-	FuncCallContext *funccxt;
+	FuncCallContext *funcctx;
 
 	if (mxid < FirstMultiXactId)
 		ereport(ERROR,
@@ -3354,8 +3354,8 @@ pg_get_multixact_members(PG_FUNCTION_ARGS)
 		MemoryContext oldcxt;
 		TupleDesc	tupdesc;
 
-		funccxt = SRF_FIRSTCALL_INIT();
-		oldcxt = MemoryContextSwitchTo(funccxt->multi_call_memory_ctx);
+		funcctx = SRF_FIRSTCALL_INIT();
+		oldcxt = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
 
 		multi = palloc(sizeof(mxact));
 		/* no need to allow for old values here */
@@ -3369,14 +3369,14 @@ pg_get_multixact_members(PG_FUNCTION_ARGS)
 		TupleDescInitEntry(tupdesc, (AttrNumber) 2, "mode",
 						   TEXTOID, -1, 0);
 
-		funccxt->attinmeta = TupleDescGetAttInMetadata(tupdesc);
-		funccxt->user_fctx = multi;
+		funcctx->attinmeta = TupleDescGetAttInMetadata(tupdesc);
+		funcctx->user_fctx = multi;
 
 		MemoryContextSwitchTo(oldcxt);
 	}
 
-	funccxt = SRF_PERCALL_SETUP();
-	multi = (mxact *) funccxt->user_fctx;
+	funcctx = SRF_PERCALL_SETUP();
+	multi = (mxact *) funcctx->user_fctx;
 
 	while (multi->iter < multi->nmembers)
 	{
@@ -3386,16 +3386,16 @@ pg_get_multixact_members(PG_FUNCTION_ARGS)
 		values[0] = psprintf("%u", multi->members[multi->iter].xid);
 		values[1] = mxstatus_to_string(multi->members[multi->iter].status);
 
-		tuple = BuildTupleFromCStrings(funccxt->attinmeta, values);
+		tuple = BuildTupleFromCStrings(funcctx->attinmeta, values);
 
 		multi->iter++;
 		pfree(values[0]);
-		SRF_RETURN_NEXT(funccxt, HeapTupleGetDatum(tuple));
+		SRF_RETURN_NEXT(funcctx, HeapTupleGetDatum(tuple));
 	}
 
 	if (multi->nmembers > 0)
 		pfree(multi->members);
 	pfree(multi);
 
-	SRF_RETURN_DONE(funccxt);
+	SRF_RETURN_DONE(funcctx);
 }
