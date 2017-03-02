@@ -2853,8 +2853,8 @@ cost_agg(Path *path, PlannerInfo *root,
 	else if (aggstrategy == AGG_SORTED || aggstrategy == AGG_MIXED)
 	{
 		/* Here we are able to deliver output on-the-fly */
-		startup_cost = input_startup_cost;
-		total_cost = input_total_cost;
+		startup_cost = input_total_cost;
+		total_cost = startup_cost;
 		/* calcs phrased this way to match HASHED case, see note above */
 		total_cost += aggcosts->transCost.startup;
 		total_cost += aggcosts->transCost.per_tuple * input_tuples;
