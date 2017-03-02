@@ -2219,15 +2219,15 @@ drop type eitype cascade;
 -- SQLSTATE and SQLERRM test
 --
 
-create function excpt_test1() returns void as $$
+create function except_test1() returns void as $$
 begin
     raise notice '% %', sqlstate, sqlerrm;
 end; $$ language plpgsql;
 -- should fail: SQLSTATE and SQLERRM are only in defined EXCEPTION
 -- blocks
-select excpt_test1();
+select except_test1();
 
-create function excpt_test2() returns void as $$
+create function except_test2() returns void as $$
 begin
     begin
         begin
@@ -2236,9 +2236,9 @@ begin
     end;
 end; $$ language plpgsql;
 -- should fail
-select excpt_test2();
+select except_test2();
 
-create function excpt_test3() returns void as $$
+create function except_test3() returns void as $$
 begin
     begin
         raise exception 'user exception';
@@ -2257,19 +2257,19 @@ begin
 	    raise notice '% %', sqlstate, sqlerrm;
     end;
 end; $$ language plpgsql;
-select excpt_test3();
+select except_test3();
 
-create function excpt_test4() returns text as $$
+create function except_test4() returns text as $$
 begin
 	begin perform 1/0;
 	exception when others then return sqlerrm; end;
 end; $$ language plpgsql;
-select excpt_test4();
+select except_test4();
 
-drop function excpt_test1();
-drop function excpt_test2();
-drop function excpt_test3();
-drop function excpt_test4();
+drop function except_test1();
+drop function except_test2();
+drop function except_test3();
+drop function except_test4();
 
 -- parameters of raise stmt can be expressions
 create function raise_exprs() returns void as $$
