@@ -115,7 +115,9 @@ static char **LWLockTrancheArray = NULL;
 static int	LWLockTranchesAllocated = 0;
 
 #define T_NAME(lock) \
-	(LWLockTrancheArray[(lock)->tranche])
+	((lock)->tranche < LWTRANCHE_FIRST_USER_DEFINED ? \
+	LWLockTrancheArray[(lock)->tranche] : \
+	 NamedLWLockTrancheArray[(lock)->tranche - LWTRANCHE_FIRST_USER_DEFINED].trancheName)
 
 /*
  * This points to the main array of LWLocks in shared memory.  Backends inherit
