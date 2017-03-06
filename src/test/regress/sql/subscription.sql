@@ -66,8 +66,9 @@ ALTER SUBSCRIPTION testsub RENAME TO testsub_dummy;
 RESET ROLE;
 
 ALTER SUBSCRIPTION testsub RENAME TO testsub_foo;
+ALTER SUBSCRIPTION testsub_foo WITH (SYNCHRONOUS_COMMIT = true);
 
-\dRs
+\dRs+
 
 -- rename back to keep the rest simple
 ALTER SUBSCRIPTION testsub_foo RENAME TO testsub;

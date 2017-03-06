@@ -32,6 +32,7 @@ CREATE SUBSCRIPTION <replaceable class="PARAMETER">subscription_name</replaceabl
     | CREATE SLOT | NOCREATE SLOT
     | SLOT NAME = <replaceable class="PARAMETER">slot_name</replaceable>
     | COPY DATA | NOCOPY DATA
+    | SYNCHRONOUS_COMMIT = <replaceable class="PARAMETER">synchronous_commit</replaceable>
     | NOCONNECT
 </synopsis>
  </refsynopsisdiv>
@@ -148,7 +149,34 @@ CREATE SUBSCRIPTION <replaceable class="PARAMETER">subscription_name</replaceabl
    </varlistentry>
 
    <varlistentry>
-    <term><literal>NOCONNECT</literal></term>
+    <term><literal>SYNCHRONOUS_COMMIT = <replaceable class="PARAMETER">synchronous_commit</replaceable></literal></term>
+    <listitem>
+     <para>
+      The value of this parameter overrides the
+      <xref linkend="guc-synchronous-commit"> setting. The default value is
+      <literal>off</literal>.
+     </para>
+     <para>
+      It's safe to use <literal>off</literal> for logical replication because
+      in case of transaction loss on subscriber due to missing sync, the data
+      will be resent from publisher.
+     </para>
+     <para>
+      The logical replication worker will also report position of the writes
+      and flushes to the publisher so the publisher will wait on the actual
+      flush when doing synchronous logical replication. This however means
+      that setting the <literal>SYNCHRONOUS_COMMIT</literal> for subscriber
+      to <literal>off</literal> when the subscription is used for synchronous
+      replication may increase the latency for <command>COMMIT</command> on
+      the publisher. In this scenario it may be advantageous to set the
+      <literal>SYNCHRONOUS_COMMIT</literal> to <literal>local</literal> or
+      higher.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>NOCONNECT</term>
     <listitem>
      <para>
       Instructs <command>CREATE SUBSCRIPTION</command> to skip the initial
