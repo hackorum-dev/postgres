@@ -54,6 +54,13 @@ typedef struct HeapScanDescData
 	bool		rs_allow_strat; /* allow or disallow use of access strategy */
 	bool		rs_allow_sync;	/* allow or disallow use of syncscan */
 	bool		rs_temp_snap;	/* unregister snapshot at scan end? */
+	bool		rs_skip_all_visible;	/* skip all-visible pages ? */
+	double		rs_skipped_total;
+	int		rs_skipped_times;
+	double		rs_scanned_total;
+	BlockNumber	rs_next_unskippable_block;
+	BlockNumber	rs_all_visible_checked;
+	Buffer		rs_vmbuf;		/* visibility map buffer */
 
 	/* state set up at initscan time */
 	BlockNumber rs_nblocks;		/* total number of blocks in rel */

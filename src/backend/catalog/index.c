@@ -2806,6 +2806,9 @@ validate_index(Oid heapId, Oid indexId, Snapshot snapshot)
 	Oid			save_userid;
 	int			save_sec_context;
 	int			save_nestlevel;
+	PGRUsage    ru0;
+
+	pg_rusage_init(&ru0);
 
 	/* Open and lock the parent heap relation */
 	heapRelation = heap_open(heapId, ShareUpdateExclusiveLock);
@@ -2873,8 +2876,9 @@ validate_index(Oid heapId, Oid indexId, Snapshot snapshot)
 	tuplesort_end(state.tuplesort);
 
 	elog(DEBUG2,
-		 "validate_index found %.0f heap tuples, %.0f index tuples; inserted %.0f missing tuples",
-		 state.htups, state.itups, state.tups_inserted);
+		 "validate_index found %.0f heap tuples, %.0f index tuples; inserted %.0f missing tuples: %s",
+		 state.htups, state.itups, state.tups_inserted,
+		 pg_rusage_show(&ru0));
 
 	/* Roll back any GUC changes executed by index functions */
 	AtEOXact_GUC(false, save_nestlevel);
@@ -2994,16 +2998,26 @@ validate_index_heapscan(Relation heapRelation,
 
 	/*
 	 * Prepare for scan of the base relation.  We need just those tuples
-	 * satisfying the passed-in reference snapshot.  We must disable syncscan
-	 * here, because it's critical that we read from block zero forward to
-	 * match the sorted TIDs.
+	 * satisfying the passed-in reference snapshot. But we are only interested
+	 * is tuples which were either inserted or updated after we took reference
+	 * snapshot for the initial build. Such tuples can only exist in pages
+	 * which are not marked as "all-visible". So we can easily skip
+	 * "all-visible" pages. This can be a huge win for very large tables, which
+	 * do not fit in shared buffers or OS cache and are less freqeuntly
+	 * updated.
+	 *
+	 * Note that since VACUUM conflicts with CIC on lock, there is no way new
+	 * pages will be marked "all-visible" after CIC started. We don't care if
+	 * pages are cleared with "all-visible" flag after we scanned them during
+	 * the upcoming heap scan..
+	 *
+	 * We must disable syncscan here, because it's critical that we read from
+	 * block zero forward to match the sorted TIDs.
 	 */
-	scan = heap_beginscan_strat(heapRelation,	/* relation */
+	scan = heap_beginscan_skip_all_visible(heapRelation,	/* relation */
 								snapshot,		/* snapshot */
 								0,		/* number of keys */
-								NULL,	/* scan key */
-								true,	/* buffer access strategy OK */
-								false); /* syncscan not OK */
+								NULL);	/* scan key */
 
 	/*
 	 * Scan all tuples matching the snapshot.

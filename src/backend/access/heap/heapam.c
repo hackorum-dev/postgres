@@ -87,7 +87,8 @@ static HeapScanDesc heap_beginscan_internal(Relation relation,
 						bool allow_pagemode,
 						bool is_bitmapscan,
 						bool is_samplescan,
-						bool temp_snap);
+						bool temp_snap,
+						bool skip_all_visible);
 static BlockNumber heap_parallelscan_nextpage(HeapScanDesc scan);
 static HeapTuple heap_prepare_insert(Relation relation, HeapTuple tup,
 					TransactionId xid, CommandId cid, int options);
@@ -1033,6 +1034,52 @@ heapgettup_pagemode(HeapScanDesc scan,
 			return;
 		}
 
+		/*
+		 * Skip all-visible pages, if we are told.
+		 *
+		 * We skip pages only if we can skip a bunch of them. Otherwise OS's
+		 * prefetch for sequential scan will do a much better job. This is
+		 * similar to what we do in vacuumlazy.c
+		 */
+		if (scan->rs_skip_all_visible && scan->rs_next_unskippable_block < page)
+		{
+			scan->rs_next_unskippable_block = page;
+
+			Assert(!backward);
+			Assert(scan->rs_startblock == 0);
+
+			while (scan->rs_next_unskippable_block < scan->rs_nblocks)
+			{
+				scan->rs_all_visible_checked++;
+				if (VM_ALL_VISIBLE(scan->rs_rd, scan->rs_next_unskippable_block, &scan->rs_vmbuf))
+					scan->rs_next_unskippable_block++;
+				else
+					break;
+			}
+#define SKIP_PAGES_THRESHOLD 32
+			if (scan->rs_next_unskippable_block - page > SKIP_PAGES_THRESHOLD)
+			{
+				scan->rs_skipped_total += (scan->rs_next_unskippable_block - page);
+				scan->rs_skipped_times++;
+				page = scan->rs_next_unskippable_block;
+				scan->rs_numblocks -= (scan->rs_next_unskippable_block - page);
+			}
+
+			/*
+			 * If we reached the end, just return.
+			 */
+			if (page >= scan->rs_nblocks)
+			{
+				if (BufferIsValid(scan->rs_cbuf))
+					ReleaseBuffer(scan->rs_cbuf);
+				scan->rs_cbuf = InvalidBuffer;
+				scan->rs_cblock = InvalidBlockNumber;
+				tuple->t_data = NULL;
+				scan->rs_inited = false;
+				return;
+			}
+		}
+		scan->rs_scanned_total++;
 		heapgetpage(scan, page);
 
 		dp = BufferGetPage(scan->rs_cbuf);
@@ -1394,7 +1441,7 @@ heap_beginscan(Relation relation, Snapshot snapshot,
 			   int nkeys, ScanKey key)
 {
 	return heap_beginscan_internal(relation, snapshot, nkeys, key, NULL,
-								   true, true, true, false, false, false);
+								   true, true, true, false, false, false, false);
 }
 
 HeapScanDesc
@@ -1404,7 +1451,7 @@ heap_beginscan_catalog(Relation relation, int nkeys, ScanKey key)
 	Snapshot	snapshot = RegisterSnapshot(GetCatalogSnapshot(relid));
 
 	return heap_beginscan_internal(relation, snapshot, nkeys, key, NULL,
-								   true, true, true, false, false, true);
+								   true, true, true, false, false, true, false);
 }
 
 HeapScanDesc
@@ -1414,7 +1461,7 @@ heap_beginscan_strat(Relation relation, Snapshot snapshot,
 {
 	return heap_beginscan_internal(relation, snapshot, nkeys, key, NULL,
 								   allow_strat, allow_sync, true,
-								   false, false, false);
+								   false, false, false, false);
 }
 
 HeapScanDesc
@@ -1422,7 +1469,8 @@ heap_beginscan_bm(Relation relation, Snapshot snapshot,
 				  int nkeys, ScanKey key)
 {
 	return heap_beginscan_internal(relation, snapshot, nkeys, key, NULL,
-								   false, false, true, true, false, false);
+								   false, false, true, true, false, false,
+								   false);
 }
 
 HeapScanDesc
@@ -1432,7 +1480,16 @@ heap_beginscan_sampling(Relation relation, Snapshot snapshot,
 {
 	return heap_beginscan_internal(relation, snapshot, nkeys, key, NULL,
 								   allow_strat, allow_sync, allow_pagemode,
-								   false, true, false);
+								   false, true, false, false);
+}
+
+HeapScanDesc
+heap_beginscan_skip_all_visible(Relation relation, Snapshot snapshot,
+					 int nkeys, ScanKey key)
+{
+	return heap_beginscan_internal(relation, snapshot, nkeys, key, NULL,
+								   true, false, true,
+								   false, false, false, true);
 }
 
 static HeapScanDesc
@@ -1444,9 +1501,16 @@ heap_beginscan_internal(Relation relation, Snapshot snapshot,
 						bool allow_pagemode,
 						bool is_bitmapscan,
 						bool is_samplescan,
-						bool temp_snap)
+						bool temp_snap,
+						bool skip_all_visible)
 {
 	HeapScanDesc scan;
+
+	/*
+	 * No support for parallel or synchronous scans when skip_all_visible is
+	 * true.
+	 */
+	Assert(!skip_all_visible || (parallel_scan == NULL && !allow_sync));
 
 	/*
 	 * increment relation ref count while scanning relation
@@ -1472,6 +1536,12 @@ heap_beginscan_internal(Relation relation, Snapshot snapshot,
 	scan->rs_allow_sync = allow_sync;
 	scan->rs_temp_snap = temp_snap;
 	scan->rs_parallel = parallel_scan;
+	scan->rs_skip_all_visible = skip_all_visible;
+	scan->rs_next_unskippable_block = 0;
+	scan->rs_all_visible_checked = 0;
+	scan->rs_skipped_total = scan->rs_scanned_total = 0;
+	scan->rs_skipped_times = 0;
+	scan->rs_vmbuf = InvalidBuffer;
 
 	/*
 	 * we can use page-at-a-time mode if it's an MVCC-safe snapshot
@@ -1587,6 +1657,10 @@ heap_endscan(HeapScanDesc scan)
 	if (BufferIsValid(scan->rs_cbuf))
 		ReleaseBuffer(scan->rs_cbuf);
 
+	/* unpin visibility map buffer too */
+	if (BufferIsValid(scan->rs_vmbuf))
+		ReleaseBuffer(scan->rs_vmbuf);
+
 	/*
 	 * decrement relation reference count and free scan descriptor storage
 	 */
@@ -1601,6 +1675,13 @@ heap_endscan(HeapScanDesc scan)
 	if (scan->rs_temp_snap)
 		UnregisterSnapshot(scan->rs_snapshot);
 
+	if (scan->rs_skip_all_visible)
+	{
+		elog(LOG, "heap_endscan: scanned (%.0f), checked (%u), skipped (%.0f), avg skipped (%.0f)",
+			scan->rs_scanned_total, scan->rs_all_visible_checked,
+			scan->rs_skipped_total,
+			scan->rs_skipped_total / scan->rs_skipped_times);
+	}
 	pfree(scan);
 }
 
@@ -1658,7 +1739,7 @@ heap_beginscan_parallel(Relation relation, ParallelHeapScanDesc parallel_scan)
 	RegisterSnapshot(snapshot);
 
 	return heap_beginscan_internal(relation, snapshot, 0, NULL, parallel_scan,
-								   true, true, true, false, false, true);
+								   true, true, true, false, false, true, false);
 }
 
 /* ----------------

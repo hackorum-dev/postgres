@@ -118,6 +118,8 @@ extern HeapScanDesc heap_beginscan_bm(Relation relation, Snapshot snapshot,
 extern HeapScanDesc heap_beginscan_sampling(Relation relation,
 						Snapshot snapshot, int nkeys, ScanKey key,
 					 bool allow_strat, bool allow_sync, bool allow_pagemode);
+extern HeapScanDesc heap_beginscan_skip_all_visible(Relation relation,
+						Snapshot snapshot, int nkeys, ScanKey key);
 extern void heap_setscanlimits(HeapScanDesc scan, BlockNumber startBlk,
 				   BlockNumber endBlk);
 extern void heapgetpage(HeapScanDesc scan, BlockNumber page);
