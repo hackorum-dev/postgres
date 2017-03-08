@@ -1227,11 +1227,6 @@ setup_config(void)
 							  "@authcomment@",
 							  (strcmp(authmethodlocal, "trust") == 0 || strcmp(authmethodhost, "trust") == 0) ? AUTHTRUST_WARNING : "");
 
-	/* Replace username for replication */
-	conflines = replace_token(conflines,
-							  "@default_username@",
-							  username);
-
 	snprintf(path, sizeof(path), "%s/pg_hba.conf", pg_data);
 
 	writefile(path, conflines);
