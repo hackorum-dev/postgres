@@ -142,8 +142,10 @@ static bool sendTimeLineIsHistoric = false;
 static XLogRecPtr sendTimeLineValidUpto = InvalidXLogRecPtr;
 
 /*
- * How far have we sent WAL already? This is also advertised in
- * MyWalSnd->sentPtr.  (Actually, this is the next WAL location to send.)
+ * Position up to, but not including, which we have sent WAL already.
+ * The next request will start from this position.
+ *
+ * Also advertised in MyWalSnd->sentPtr.
  */
 static XLogRecPtr sentPtr = 0;
 
@@ -888,6 +890,8 @@ DropReplicationSlot(DropReplicationSlotCmd *cmd)
 /*
  * Load previously initiated logical slot and prepare for sending data (via
  * WalSndLoop).
+ *
+ * Handles START_REPLICATION ... LOGICAL ...
  */
 static void
 StartLogicalReplication(StartReplicationCmd *cmd)
@@ -927,20 +931,28 @@ StartLogicalReplication(StartReplicationCmd *cmd)
 	sendTimeLine = ThisTimeLineID;
 
 	/*
-	 * Initialize position to the last ack'ed one, then the xlog records begin
-	 * to be shipped from that position.
+	 * Let logical decoding decide where to start reading WAL and where to
+	 * start sending commits to the client, giving it the client-supplied start
+	 * point so it can skip over any unwanted commits the client has already
+	 * processed.
 	 */
 	logical_decoding_ctx = CreateDecodingContext(
 											   cmd->startpoint, cmd->options,
 												 logical_read_xlog_page,
 										WalSndPrepareWrite, WalSndWriteData);
 
-	/* Start reading WAL from the oldest required WAL. */
+	/*
+	 * Start reading WAL from the oldest required WAL.
+	 *
+	 * This is just a parameter to XLogSendLogical passed via a global.
+	 */
 	logical_startptr = MyReplicationSlot->data.restart_lsn;
 
 	/*
-	 * Report the location after which we'll send out further commits as the
-	 * current sentPtr.
+	 * Report the location we start processing WAL from as the "sent" location,
+	 * even though it will generally be well behind cmd->startpoint.
+	 *
+	 * See XLogSendLogical for rationale.
 	 */
 	sentPtr = MyReplicationSlot->data.restart_lsn;
 
@@ -2388,7 +2400,7 @@ XLogSendLogical(void)
 	WalSndCaughtUp = false;
 
 	record = XLogReadRecord(logical_decoding_ctx->reader, logical_startptr, &errm);
-	logical_startptr = InvalidXLogRecPtr;
+	logical_startptr = InvalidXLogRecPtr; /* no longer used */
 
 	/* xlog record was invalid */
 	if (errm != NULL)
@@ -2398,6 +2410,20 @@ XLogSendLogical(void)
 	{
 		LogicalDecodingProcessRecord(logical_decoding_ctx, logical_decoding_ctx->reader);
 
+		/*
+		 * Report the "sent" pointer as the LSN after the end of the most
+		 * recent xlog record we've processed in logical decoding. This is
+		 * somewhat misleading since we have "sent" the record to logical
+		 * decoding, but not yet to the output plugin or the client its self.
+		 *
+		 * Due to reorder buffer processing we can't really report any other
+		 * measure of progress in terms of an LSN, though. If we reported
+		 * the LSN of the last row change during reorder buffer commit
+		 * processing the LSNs would go backwards whenever we started
+		 * processing the next commit (if they were running concurrently),
+		 * and we'd have nothing to report when we weren't processing a
+		 * commit since we're just buffering.
+		 */
 		sentPtr = logical_decoding_ctx->reader->EndRecPtr;
 	}
 	else

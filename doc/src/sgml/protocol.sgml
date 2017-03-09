@@ -1925,11 +1925,13 @@ The commands accepted in walsender mode are:
     <term><literal>START_REPLICATION</literal> <literal>SLOT</literal> <replaceable class="parameter">slot_name</> <literal>LOGICAL</literal> <replaceable class="parameter">XXX/XXX</> [ ( <replaceable>option_name</replaceable> [ <replaceable>option_value</replaceable> ] [, ...] ) ]</term>
     <listitem>
      <para>
-      Instructs server to start streaming WAL for logical replication, starting
-      at WAL position <replaceable class="parameter">XXX/XXX</>. The server can
-      reply with an error, for example if the requested section of WAL has already
-      been recycled. On success, server responds with a CopyBothResponse
-      message, and then starts to stream WAL to the frontend.
+      Instructs server to start streaming WAL for <link
+      linkend="logicaldecoding">logical decoding</>, starting at the first
+      commit with starting WAL position equal to or greater than <replaceable
+      class="parameter">XXX/XXX</>. The server can reply with an error, for
+      example if the requested section of WAL has already been recycled. On
+      success, server responds with a <literal>CopyBothResponse</> message, and
+      then starts to stream WAL to the frontend.
      </para>
 
      <para>
@@ -1958,7 +1960,13 @@ The commands accepted in walsender mode are:
        <term><replaceable class="parameter">XXX/XXX</></term>
        <listitem>
         <para>
-         The WAL position to begin streaming at.
+         The WAL position to begin streaming commits at. Inclusive; a commit record
+         beginning at exactly XXX/XXX will be streamed to the client.
+        </para>
+        <para>
+         If the requested WAL position is less than the <literal>confirmed_flush_lsn</>
+         for <replaceable>SLOT</> it will be ignored and the confirmed flush position
+         will be used as the start point.
         </para>
        </listitem>
       </varlistentry>

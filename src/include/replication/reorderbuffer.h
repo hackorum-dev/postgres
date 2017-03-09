@@ -160,8 +160,8 @@ typedef struct ReorderBufferTXN
 	XLogRecPtr	first_lsn;
 
 	/* ----
-	 * LSN of the record that lead to this xact to be committed or
-	 * aborted. This can be a
+	 * LSN of the beginning of the record that lead to this xact to be
+	 * committed or aborted. This can be a
 	 * * plain commit record
 	 * * plain commit record, of a parent transaction
 	 * * prepared transaction commit

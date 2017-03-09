@@ -18815,9 +18815,11 @@ postgres=# SELECT * FROM pg_walfile_name_offset(pg_stop_backup());
         (<parameter>location</parameter> <type>pg_lsn</type>, <parameter>xid</parameter> <type>xid</type>, <parameter>data</parameter> <type>text</type>)
        </entry>
        <entry>
-        Returns changes in the slot <parameter>slot_name</parameter>, starting
-        from the point at which since changes have been consumed last.  If
-        <parameter>upto_lsn</> and <parameter>upto_nchanges</> are NULL,
+        Returns changes in the <link
+        linkend="logicaldecoding-replication-slots">logical slot</>
+        <parameter>slot_name</parameter>, starting from the point at which
+        since changes have been consumed last.  If <parameter>upto_lsn</> and
+        <parameter>upto_nchanges</> are NULL,
         logical decoding will continue until end of WAL.  If
         <parameter>upto_lsn</> is non-NULL, decoding will include only
         those transactions which commit prior to the specified LSN.  If

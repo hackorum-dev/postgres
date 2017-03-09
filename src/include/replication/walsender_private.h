@@ -34,7 +34,7 @@ typedef struct WalSnd
 {
 	pid_t		pid;			/* this walsender's process id, or 0 */
 	WalSndState state;			/* this walsender's state */
-	XLogRecPtr	sentPtr;		/* WAL has been sent up to this point */
+	XLogRecPtr	sentPtr;		/* WAL has been sent up to (but not including) this point */
 	bool		needreload;		/* does currently-open file need to be
 								 * reloaded? */
 

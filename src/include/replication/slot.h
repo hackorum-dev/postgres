@@ -64,14 +64,29 @@ typedef struct ReplicationSlotPersistentData
 	 */
 	TransactionId catalog_xmin;
 
-	/* oldest LSN that might be required by this replication slot */
+	/*
+	 * Oldest LSN that might be required by this replication slot.
+	 *
+	 * For logical decoding this points to the most recent xl_running_xacts
+	 * record prior to the xid allocation (BEGIN) of the oldest xact the client
+	 * has not yet confirmed replay of. WAL will be re-read from this LSN and
+	 * needed changes and invalidations will be assembled into reorder buffers.
+	 */
 	XLogRecPtr	restart_lsn;
 
 	/*
-	 * Oldest LSN that the client has acked receipt for.  This is used as the
-	 * start_lsn point in case the client doesn't specify one, and also as a
-	 * safety measure to jump forwards in case the client specifies a
-	 * start_lsn that's further in the past than this value.
+	 * The client has acked all records up to but not including confirmed_flush
+	 * as safely flushed to client storage.
+	 *
+	 * This is used as the point at which logical decoding begins sending
+	 * changes to the client if the client doesn't specify one. It also serves
+	 * as a safety measure to (silently) jump forwards in case the client
+	 * specifies a start_lsn that's further in the past than this value.
+	 *
+	 * Logical decoding may only invoke the output plugin for changes where the
+	 * start of the commit record is equal to or greater than to this LSN.
+	 * catalog_xmin may have been advanced so that needed catalogs for any
+	 * earlier commits have been vacuumed away.
 	 */
 	XLogRecPtr	confirmed_flush;
 

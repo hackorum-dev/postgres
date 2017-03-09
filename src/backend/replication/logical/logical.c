@@ -304,10 +304,13 @@ CreateInitDecodingContext(char *plugin,
  * used already.
  *
  * start_lsn
- *		The LSN at which to start decoding.  If InvalidXLogRecPtr, restart
- *		from the slot's confirmed_flush; otherwise, start from the specified
- *		location (but move it forwards to confirmed_flush if it's older than
- *		that, see below).
+ *		The LSN at which to start sending commits to the output plugin.  If
+ *		InvalidXLogRecPtr, restart from the slot's confirmed_flush; otherwise,
+ *		start from the specified location (but move it forwards to
+ *		confirmed_flush if it's older than that, see below).
+ *
+ *		start_lsn is inclusive, so a commit beginning exactly at start_lsn
+ *		will be sent to the client.
  *
  * output_plugin_options
  *		contains options passed to the output plugin.
@@ -319,6 +322,10 @@ CreateInitDecodingContext(char *plugin,
  * Needs to be called while in a memory context that's at least as long lived
  * as the decoding context because further memory contexts will be created
  * inside it.
+ *
+ * WAL reading and logical decoding always starts at restart_lsn and is not
+ * controlled by start_lsn. That argument only controls which decoded commits
+ * are sent to the client.
  *
  * Returns an initialized decoding context after calling the output plugin's
  * startup function.
@@ -389,7 +396,7 @@ CreateDecodingContext(XLogRecPtr start_lsn,
 	ereport(LOG,
 			(errmsg("starting logical decoding for slot \"%s\"",
 					NameStr(slot->data.name)),
-			 errdetail("streaming transactions committing after %X/%X, reading WAL from %X/%X",
+			 errdetail("streaming transactions committing at or after %X/%X, reading WAL from %X/%X",
 					   (uint32) (slot->data.confirmed_flush >> 32),
 					   (uint32) slot->data.confirmed_flush,
 					   (uint32) (slot->data.restart_lsn >> 32),
@@ -446,6 +453,7 @@ DecodingContextFindStartpoint(LogicalDecodingContext *ctx)
 		CHECK_FOR_INTERRUPTS();
 	}
 
+	/* Start output to client for commits after end of last record */
 	ctx->slot->data.confirmed_flush = ctx->reader->EndRecPtr;
 }
 
@@ -885,7 +893,8 @@ LogicalIncreaseRestartDecodingForSlot(XLogRecPtr current_lsn, XLogRecPtr restart
 }
 
 /*
- * Handle a consumer's confirmation having received all changes up to lsn.
+ * Handle a consumer's confirmation having received all changes up to (but not
+ * including) lsn.
  */
 void
 LogicalConfirmReceivedLocation(XLogRecPtr lsn)

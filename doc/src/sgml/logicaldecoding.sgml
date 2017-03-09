@@ -11,7 +11,8 @@
   </para>
 
   <para>
-   Changes are sent out in streams identified by logical replication slots.
+   Changes are sent out in streams identified by <link
+   linkend="logicaldecoding-replication-slots"> logical replication slots.</>
   </para>
 
   <para>
