@@ -942,14 +942,14 @@ StartLogicalReplication(StartReplicationCmd *cmd)
 	 * Report the location after which we'll send out further commits as the
 	 * current sentPtr.
 	 */
-	sentPtr = MyReplicationSlot->data.confirmed_flush;
+	sentPtr = MyReplicationSlot->data.restart_lsn;
 
 	/* Also update the sent position status in shared memory */
 	{
 		WalSnd	   *walsnd = MyWalSnd;
 
 		SpinLockAcquire(&walsnd->mutex);
-		walsnd->sentPtr = MyReplicationSlot->data.restart_lsn;
+		walsnd->sentPtr = sentPtr;
 		SpinLockRelease(&walsnd->mutex);
 	}
 
