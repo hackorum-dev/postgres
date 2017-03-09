@@ -778,8 +778,11 @@ LogicalIncreaseXminForSlot(XLogRecPtr current_lsn, TransactionId xmin)
 	 * If the client has already confirmed up to this lsn, we directly can
 	 * mark this as accepted. This can happen if we restart decoding in a
 	 * slot.
+	 *
+	 * confirmed_flush actually points to the first unconfirmed LSN, so we must
+	 * not remove resources exactly at confirmed_flush.
 	 */
-	else if (current_lsn <= slot->data.confirmed_flush)
+	else if (current_lsn < slot->data.confirmed_flush)
 	{
 		slot->candidate_catalog_xmin = xmin;
 		slot->candidate_xmin_lsn = current_lsn;
@@ -833,8 +836,12 @@ LogicalIncreaseRestartDecodingForSlot(XLogRecPtr current_lsn, XLogRecPtr restart
 	/*
 	 * We might have already flushed far enough to directly accept this lsn,
 	 * in this case there is no need to check for existing candidate LSNs
+	 *
+	 * The < is intentional, confirmed_flush points to the LSN immediately
+	 * after the point confirmed on-disk by the client so we mustn't remove
+	 * resources for commits exactly at confirmed_flush.
 	 */
-	else if (current_lsn <= slot->data.confirmed_flush)
+	else if (current_lsn < slot->data.confirmed_flush)
 	{
 		slot->candidate_restart_valid = current_lsn;
 		slot->candidate_restart_lsn = restart_lsn;
