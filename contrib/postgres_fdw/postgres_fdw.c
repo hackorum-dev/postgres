@@ -2427,6 +2427,17 @@ postgresExplainForeignScan(ForeignScanState *node, ExplainState *es)
 	if (es->verbose)
 	{
 		sql = strVal(list_nth(fdw_private, FdwScanPrivateSelectSql));
+
+		/* LIMIT clause is attached on execution time */
+		if (node->ss.ps.ps_numTuples > 0)
+		{
+			StringInfoData	buf;
+
+			initStringInfo(&buf);
+			appendStringInfo(&buf, "%s LIMIT %lu",
+							 sql, node->ss.ps.ps_numTuples);
+			sql = buf.data;
+		}
 		ExplainPropertyText("Remote SQL", sql, es);
 	}
 }
@@ -2492,12 +2503,25 @@ estimate_path_cost_size(PlannerInfo *root,
 						Cost *p_startup_cost, Cost *p_total_cost)
 {
 	PgFdwRelationInfo *fpinfo = (PgFdwRelationInfo *) foreignrel->fdw_private;
+	double		limit_tuples = -1.0;
 	double		rows;
 	double		retrieved_rows;
 	int			width;
 	Cost		startup_cost;
 	Cost		total_cost;
 	Cost		cpu_per_tuple;
+
+	/*
+	 * LIMIT clause can be pushed down only when this foreign-path does not
+	 * need to join any other base relations, and the supplied path-keys
+	 * strictly match with the final output order.
+	 * Elsewhere, pushdown of LIMIT clause makes incorrect results, thus,
+	 * estimated cost don't assume remote LIMIT execution.
+	 */
+	if (root->limit_tuples >= 0.0 &&
+		equal(root->query_pathkeys, pathkeys) &&
+		bms_equal(root->all_baserels, foreignrel->relids))
+		limit_tuples = root->limit_tuples;
 
 	/*
 	 * If the table or the server is configured to use remote estimates,
@@ -2552,6 +2576,12 @@ estimate_path_cost_size(PlannerInfo *root,
 		deparseSelectStmtForRel(&sql, root, foreignrel, fdw_scan_tlist,
 								remote_conds, pathkeys, &retrieved_attrs,
 								NULL);
+		/*
+		 * Attach LIMIT if this path is top-level and constant value is
+		 * specified.
+		 */
+		if (limit_tuples >= 0.0)
+			appendStringInfo(&sql, " LIMIT %.0f", limit_tuples);
 
 		/* Get the remote estimate */
 		conn = GetConnection(fpinfo->user, false);
@@ -2626,6 +2656,12 @@ estimate_path_cost_size(PlannerInfo *root,
 
 			/* Estimate of number of rows in cross product */
 			nrows = fpinfo_i->rows * fpinfo_o->rows;
+			if (limit_tuples >= 0.0)
+			{
+				nrows = Min(nrows, limit_tuples);
+				rows = Min(rows, limit_tuples);
+			}
+
 			/* Clamp retrieved rows estimate to at most size of cross product */
 			retrieved_rows = Min(retrieved_rows, nrows);
 
@@ -2723,6 +2759,10 @@ estimate_path_cost_size(PlannerInfo *root,
 			/*
 			 * Number of rows expected from foreign server will be same as
 			 * that of number of groups.
+			 *
+			 * MEMO: root->limit_tuples is not attached when query contains
+			 * grouping-clause or aggregate functions. So, we don't adjust
+			 * rows even if LIMIT <const> is supplied.
 			 */
 			rows = retrieved_rows = numGroups;
 
@@ -2753,8 +2793,16 @@ estimate_path_cost_size(PlannerInfo *root,
 		}
 		else
 		{
+			double		nrows = foreignrel->tuples;
+
+			if (limit_tuples >= 0.0)
+			{
+				nrows = Min(nrows, limit_tuples);
+				rows = Min(rows, limit_tuples);
+			}
+
 			/* Clamp retrieved rows estimates to at most foreignrel->tuples. */
-			retrieved_rows = Min(retrieved_rows, foreignrel->tuples);
+			retrieved_rows = Min(retrieved_rows, nrows);
 
 			/*
 			 * Cost as though this were a seqscan, which is pessimistic.  We
@@ -2767,7 +2815,7 @@ estimate_path_cost_size(PlannerInfo *root,
 
 			startup_cost += foreignrel->baserestrictcost.startup;
 			cpu_per_tuple = cpu_tuple_cost + foreignrel->baserestrictcost.per_tuple;
-			run_cost += cpu_per_tuple * foreignrel->tuples;
+			run_cost += cpu_per_tuple * nrows;
 		}
 
 		/*
@@ -2940,6 +2988,10 @@ create_cursor(ForeignScanState *node)
 	initStringInfo(&buf);
 	appendStringInfo(&buf, "DECLARE c%u CURSOR FOR\n%s",
 					 fsstate->cursor_number, fsstate->query);
+
+	/* Append LIMIT if numTuples were passed-down */
+	if (node->ss.ps.ps_numTuples > 0)
+		appendStringInfo(&buf, " LIMIT %lu", node->ss.ps.ps_numTuples);
 
 	/*
 	 * Notice that we pass NULL for paramTypes, thus forcing the remote server

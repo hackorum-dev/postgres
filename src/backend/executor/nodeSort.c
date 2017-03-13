@@ -66,6 +66,16 @@ ExecSort(SortState *node)
 
 		SO1_printf("ExecSort: %s\n",
 				   "sorting subplan");
+		/*
+		 * Check bounds according to the required number of tuples
+		 */
+		if (node->ss.ps.ps_numTuples == 0)
+			node->bounded = false;
+		else
+		{
+			node->bounded = true;
+			node->bound = node->ss.ps.ps_numTuples;
+		}
 
 		/*
 		 * Want to scan subplan in the forward direction while creating the

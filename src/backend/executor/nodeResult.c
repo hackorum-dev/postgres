@@ -47,6 +47,7 @@
 
 #include "executor/executor.h"
 #include "executor/nodeResult.h"
+#include "nodes/nodeFuncs.h"
 #include "utils/memutils.h"
 
 
@@ -71,6 +72,28 @@ ExecResult(ResultState *node)
 	ExprContext *econtext;
 
 	econtext = node->ps.ps_ExprContext;
+
+	/*
+	 * Pass down the number of required tuples by the upper node
+	 *
+	 * An extra consideration here is that if the Result is projecting a
+	 * targetlist that contains any SRFs, we can't assume that every input
+	 * tuple generates an output tuple, so a Sort underneath might need to
+	 * return more than N tuples to satisfy LIMIT N. So we cannot use
+	 * bounded sort.
+	 *
+	 * If Result supported qual checking, we'd have to punt on seeing a
+	 * qual, too.  Note that having a resconstantqual is not a
+	 * showstopper: if that fails we're not getting any rows at all.
+	 */
+	if (!node->rs_started)
+	{
+		if (outerPlanState(node) &&
+			!expression_returns_set((Node *) node->ps.plan->targetlist))
+			outerPlanState(node)->ps_numTuples = node->ps.ps_numTuples;
+
+		node->rs_started = true;
+	}
 
 	/*
 	 * check constant qualifications like (2 > 1), if not already done
@@ -191,6 +214,7 @@ ExecInitResult(Result *node, EState *estate, int eflags)
 	resstate->ps.plan = (Plan *) node;
 	resstate->ps.state = estate;
 
+	resstate->rs_started = false;
 	resstate->rs_done = false;
 	resstate->rs_checkqual = (node->resconstantqual == NULL) ? false : true;
 
@@ -265,6 +289,7 @@ ExecEndResult(ResultState *node)
 void
 ExecReScanResult(ResultState *node)
 {
+	node->rs_started = false;
 	node->rs_done = false;
 	node->rs_checkqual = (node->resconstantqual == NULL) ? false : true;
 

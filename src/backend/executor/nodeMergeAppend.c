@@ -174,10 +174,14 @@ ExecMergeAppend(MergeAppendState *node)
 		/*
 		 * First time through: pull the first tuple from each subplan, and set
 		 * up the heap.
+		 * Also, pass down the required number of tuples.
 		 */
 		for (i = 0; i < node->ms_nplans; i++)
 		{
-			node->ms_slots[i] = ExecProcNode(node->mergeplans[i]);
+			PlanState  *pstate = node->mergeplans[i];
+
+			pstate->ps_numTuples = node->ps.ps_numTuples;
+			node->ms_slots[i] = ExecProcNode(pstate);
 			if (!TupIsNull(node->ms_slots[i]))
 				binaryheap_add_unordered(node->ms_heap, Int32GetDatum(i));
 		}

@@ -1079,6 +1079,8 @@ typedef struct PlanState
 	TupleTableSlot *ps_ResultTupleSlot; /* slot for my result tuples */
 	ExprContext *ps_ExprContext;	/* node's expression-evaluation context */
 	ProjectionInfo *ps_ProjInfo;	/* info for doing tuple projection */
+	uint64		ps_numTuples;	/* number of tuples required by the upper
+								 * node if any. 0 means all the tuples */
 } PlanState;
 
 /* ----------------
@@ -1127,6 +1129,7 @@ typedef struct ResultState
 {
 	PlanState	ps;				/* its first field is NodeTag */
 	ExprState  *resconstantqual;
+	bool		rs_started;		/* have we started yet? */
 	bool		rs_done;		/* are we done? */
 	bool		rs_checkqual;	/* do we need to check the qual? */
 } ResultState;
