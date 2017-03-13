@@ -3107,7 +3107,8 @@ psql_completion(const char *text, int start, int end)
 			 TailMatches2("SET", MatchAny))
 		COMPLETE_WITH_LIST2("FROM CURRENT", "TO");
 	/* Suggest possible variable values */
-	else if (TailMatches3("SET", MatchAny, "TO|="))
+	else if (TailMatches3("SET", MatchAny, "TO|=") &&
+			 !TailMatches5("UPDATE", MatchAny, "SET", MatchAny, MatchAny))
 	{
 		/* special cased code for individual GUCs */
 		if (TailMatches2("DateStyle", "TO|="))
