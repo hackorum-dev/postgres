@@ -109,7 +109,7 @@ hash_xlog_insert(XLogReaderState *record)
 
 	if (XLogReadBufferForRedo(record, 0, &buffer) == BLK_NEEDS_REDO)
 	{
-		Size		datalen;
+		size_t		datalen;
 		char	   *datapos = XLogRecGetBlockData(record, 0, &datalen);
 
 		page = BufferGetPage(buffer);
@@ -161,7 +161,7 @@ hash_xlog_add_ovfl_page(XLogReaderState *record)
 	HashPageOpaque ovflopaque;
 	uint32	   *num_bucket;
 	char	   *data;
-	Size datalen PG_USED_FOR_ASSERTS_ONLY;
+	size_t datalen PG_USED_FOR_ASSERTS_ONLY;
 	bool		new_bmpage = false;
 
 	XLogRecGetBlockTag(record, 0, NULL, NULL, &rightblk);
@@ -293,7 +293,7 @@ hash_xlog_split_allocate_page(XLogReaderState *record)
 	Buffer		oldbuf;
 	Buffer		newbuf;
 	Buffer		metabuf;
-	Size datalen PG_USED_FOR_ASSERTS_ONLY;
+	size_t datalen PG_USED_FOR_ASSERTS_ONLY;
 	char	   *data;
 	XLogRedoAction action;
 
@@ -512,7 +512,7 @@ hash_xlog_move_page_contents(XLogReaderState *record)
 		Page		writepage;
 		char	   *begin;
 		char	   *data;
-		Size		datalen;
+		size_t		datalen;
 		uint16		ninserted = 0;
 
 		data = begin = XLogRecGetBlockData(record, 1, &datalen);
@@ -528,7 +528,7 @@ hash_xlog_move_page_contents(XLogReaderState *record)
 			while (data - begin < datalen)
 			{
 				IndexTuple	itup = (IndexTuple) data;
-				Size		itemsz;
+				size_t		itemsz;
 				OffsetNumber l;
 
 				itemsz = IndexTupleDSize(*itup);
@@ -559,7 +559,7 @@ hash_xlog_move_page_contents(XLogReaderState *record)
 	{
 		Page		page;
 		char	   *ptr;
-		Size		len;
+		size_t		len;
 
 		ptr = XLogRecGetBlockData(record, 2, &len);
 
@@ -640,7 +640,7 @@ hash_xlog_squeeze_page(XLogReaderState *record)
 		Page		writepage;
 		char	   *begin;
 		char	   *data;
-		Size		datalen;
+		size_t		datalen;
 		uint16		ninserted = 0;
 
 		data = begin = XLogRecGetBlockData(record, 1, &datalen);
@@ -656,7 +656,7 @@ hash_xlog_squeeze_page(XLogReaderState *record)
 			while (data - begin < datalen)
 			{
 				IndexTuple	itup = (IndexTuple) data;
-				Size		itemsz;
+				size_t		itemsz;
 				OffsetNumber l;
 
 				itemsz = IndexTupleDSize(*itup);
@@ -761,7 +761,7 @@ hash_xlog_squeeze_page(XLogReaderState *record)
 		uint32	   *freep = NULL;
 		char	   *data;
 		uint32	   *bitmap_page_bit;
-		Size		datalen;
+		size_t		datalen;
 
 		freep = HashPageGetBitmap(mappage);
 
@@ -787,7 +787,7 @@ hash_xlog_squeeze_page(XLogReaderState *record)
 			Page		page;
 			char	   *data;
 			uint32	   *firstfree_ovflpage;
-			Size		datalen;
+			size_t		datalen;
 
 			data = XLogRecGetBlockData(record, 6, &datalen);
 			firstfree_ovflpage = (uint32 *) data;
@@ -841,7 +841,7 @@ hash_xlog_delete(XLogReaderState *record)
 	if (action == BLK_NEEDS_REDO)
 	{
 		char	   *ptr;
-		Size		len;
+		size_t		len;
 
 		ptr = XLogRecGetBlockData(record, 1, &len);
 
@@ -945,7 +945,7 @@ hash_xlog_vacuum_get_latestRemovedXid(XLogReaderState *record)
 	TransactionId	latestRemovedXid = InvalidTransactionId;
 	int		i;
 	char *ptr;
-	Size len;
+	size_t len;
 
 	xlrec = (xl_hash_vacuum_one_page *) XLogRecGetData(record);
 
@@ -1108,7 +1108,7 @@ hash_xlog_vacuum_one_page(XLogReaderState *record)
 	if (action == BLK_NEEDS_REDO)
 	{
 		char *ptr;
-		Size len;
+		size_t len;
 
 		ptr = XLogRecGetBlockData(record, 0, &len);
 

@@ -12,7 +12,7 @@
 #ifndef BACKEND_RANDOM_H
 #define BACKEND_RANDOM_H
 
-extern Size BackendRandomShmemSize(void);
+extern size_t BackendRandomShmemSize(void);
 extern void BackendRandomShmemInit(void);
 extern bool pg_backend_random(char *dst, int len);
 

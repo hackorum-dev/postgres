@@ -64,9 +64,9 @@ typedef struct SlabContext
 {
 	MemoryContextData header;	/* Standard memory-context fields */
 	/* Allocation parameters for this context: */
-	Size		chunkSize;		/* chunk size */
-	Size		fullChunkSize;	/* chunk size including header and alignment */
-	Size		blockSize;		/* block size */
+	size_t		chunkSize;		/* chunk size */
+	size_t		fullChunkSize;	/* chunk size including header and alignment */
+	size_t		blockSize;		/* block size */
 	int			chunksPerBlock; /* number of chunks per block */
 	int			minFreeChunks;	/* min number of free chunks in any block */
 	int			nblocks;		/* number of blocks allocated */
@@ -117,13 +117,13 @@ typedef struct SlabChunk
 /*
  * These functions implement the MemoryContext API for Slab contexts.
  */
-static void *SlabAlloc(MemoryContext context, Size size);
+static void *SlabAlloc(MemoryContext context, size_t size);
 static void SlabFree(MemoryContext context, void *pointer);
-static void *SlabRealloc(MemoryContext context, void *pointer, Size size);
+static void *SlabRealloc(MemoryContext context, void *pointer, size_t size);
 static void SlabInit(MemoryContext context);
 static void SlabReset(MemoryContext context);
 static void SlabDelete(MemoryContext context);
-static Size SlabGetChunkSpace(MemoryContext context, void *pointer);
+static size_t SlabGetChunkSpace(MemoryContext context, void *pointer);
 static bool SlabIsEmpty(MemoryContext context);
 static void SlabStats(MemoryContext context, int level, bool print,
 		  MemoryContextCounters *totals);
@@ -182,12 +182,12 @@ static MemoryContextMethods SlabMethods = {
 MemoryContext
 SlabContextCreate(MemoryContext parent,
 				  const char *name,
-				  Size blockSize,
-				  Size chunkSize)
+				  size_t blockSize,
+				  size_t chunkSize)
 {
 	int			chunksPerBlock;
-	Size		fullChunkSize;
-	Size		freelistSize;
+	size_t		fullChunkSize;
+	size_t		freelistSize;
 	SlabContext *slab;
 
 	StaticAssertStmt(offsetof(SlabChunk, slab) +sizeof(MemoryContext) ==
@@ -315,7 +315,7 @@ SlabDelete(MemoryContext context)
  *		request could not be completed; memory is added to the slab.
  */
 static void *
-SlabAlloc(MemoryContext context, Size size)
+SlabAlloc(MemoryContext context, size_t size)
 {
 	SlabContext *slab = castNode(SlabContext, context);
 	SlabBlock  *block;
@@ -559,7 +559,7 @@ SlabFree(MemoryContext context, void *pointer)
  * realloc is usually used to enlarge the chunk.
  */
 static void *
-SlabRealloc(MemoryContext context, void *pointer, Size size)
+SlabRealloc(MemoryContext context, void *pointer, size_t size)
 {
 	SlabContext *slab = castNode(SlabContext, context);
 
@@ -578,7 +578,7 @@ SlabRealloc(MemoryContext context, void *pointer, Size size)
  *		Given a currently-allocated chunk, determine the total space
  *		it occupies (including all memory-allocation overhead).
  */
-static Size
+static size_t
 SlabGetChunkSpace(MemoryContext context, void *pointer)
 {
 	SlabContext *slab = castNode(SlabContext, context);
@@ -615,10 +615,10 @@ SlabStats(MemoryContext context, int level, bool print,
 		  MemoryContextCounters *totals)
 {
 	SlabContext *slab = castNode(SlabContext, context);
-	Size		nblocks = 0;
-	Size		freechunks = 0;
-	Size		totalspace = 0;
-	Size		freespace = 0;
+	size_t		nblocks = 0;
+	size_t		freechunks = 0;
+	size_t		totalspace = 0;
+	size_t		freespace = 0;
 	int			i;
 
 	Assert(slab);

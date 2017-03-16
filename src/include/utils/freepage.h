@@ -52,23 +52,23 @@ struct FreePageManager
 	RelptrFreePageSpanLeader btree_recycle;
 	unsigned	btree_depth;
 	unsigned	btree_recycle_count;
-	Size		singleton_first_page;
-	Size		singleton_npages;
-	Size		contiguous_pages;
+	size_t		singleton_first_page;
+	size_t		singleton_npages;
+	size_t		contiguous_pages;
 	bool		contiguous_pages_dirty;
 	RelptrFreePageSpanLeader freelist[FPM_NUM_FREELISTS];
 #ifdef FPM_EXTRA_ASSERTS
 	/* For debugging only, pages put minus pages gotten. */
-	Size		free_pages;
+	size_t		free_pages;
 #endif
 };
 
-/* Macros to convert between page numbers (expressed as Size) and pointers. */
+/* Macros to convert between page numbers (expressed as size_t) and pointers. */
 #define fpm_page_to_pointer(base, page) \
-	(AssertVariableIsOfTypeMacro(page, Size), \
+	(AssertVariableIsOfTypeMacro(page, size_t), \
 	 (base) + FPM_PAGE_SIZE * (page))
 #define fpm_pointer_to_page(base, ptr)		\
-	(((Size) (((char *) (ptr)) - (base))) / FPM_PAGE_SIZE)
+	(((size_t) (((char *) (ptr)) - (base))) / FPM_PAGE_SIZE)
 
 /* Macro to convert an allocation size to a number of pages. */
 #define fpm_size_to_pages(sz) \
@@ -76,7 +76,7 @@ struct FreePageManager
 
 /* Macros to check alignment of absolute and relative pointers. */
 #define fpm_pointer_is_page_aligned(base, ptr)		\
-	(((Size) (((char *) (ptr)) - (base))) % FPM_PAGE_SIZE == 0)
+	(((size_t) (((char *) (ptr)) - (base))) % FPM_PAGE_SIZE == 0)
 #define fpm_relptr_is_page_aligned(base, relptr)		\
 	((relptr).relptr_off % FPM_PAGE_SIZE == 0)
 
@@ -90,10 +90,10 @@ struct FreePageManager
 
 /* Functions to manipulate the free page map. */
 extern void FreePageManagerInitialize(FreePageManager *fpm, char *base);
-extern bool FreePageManagerGet(FreePageManager *fpm, Size npages,
-				   Size *first_page);
-extern void FreePageManagerPut(FreePageManager *fpm, Size first_page,
-				   Size npages);
+extern bool FreePageManagerGet(FreePageManager *fpm, size_t npages,
+				   size_t *first_page);
+extern void FreePageManagerPut(FreePageManager *fpm, size_t first_page,
+				   size_t npages);
 extern char *FreePageManagerDump(FreePageManager *fpm);
 
 #endif   /* FREEPAGE_H */

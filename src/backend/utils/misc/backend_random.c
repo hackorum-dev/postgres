@@ -37,7 +37,7 @@
 
 #ifdef HAVE_STRONG_RANDOM
 
-Size
+size_t
 BackendRandomShmemSize(void)
 {
 	return 0;
@@ -73,7 +73,7 @@ typedef struct
 
 static BackendRandomShmemStruct *BackendRandomShmem;
 
-Size
+size_t
 BackendRandomShmemSize(void)
 {
 	return sizeof(BackendRandomShmemStruct);

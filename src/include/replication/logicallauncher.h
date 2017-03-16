@@ -17,7 +17,7 @@ extern int max_logical_replication_workers;
 extern void ApplyLauncherRegister(void);
 extern void ApplyLauncherMain(Datum main_arg);
 
-extern Size ApplyLauncherShmemSize(void);
+extern size_t ApplyLauncherShmemSize(void);
 extern void ApplyLauncherShmemInit(void);
 
 extern void ApplyLauncherWakeup(void);

@@ -461,10 +461,10 @@ logicalrep_worker_sigterm(SIGNAL_ARGS)
  * ApplyLauncherShmemSize
  *		Compute space needed for replication launcher shared memory
  */
-Size
+size_t
 ApplyLauncherShmemSize(void)
 {
-	Size		size;
+	size_t		size;
 
 	/*
 	 * Need the fixed struct and the array of LogicalRepWorker.

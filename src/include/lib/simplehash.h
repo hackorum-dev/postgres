@@ -220,7 +220,7 @@ SH_COMPUTE_PARAMETERS(SH_TYPE *tb, uint32 newsize)
 
 	/*
 	 * Verify allocation of ->data is possible on platform, without
-	 * overflowing Size.
+	 * overflowing size_t.
 	 */
 	if ((((uint64) sizeof(SH_ELEMENT_TYPE)) * size) >= MaxAllocHugeSize)
 		elog(ERROR, "hash table too large");
@@ -293,14 +293,14 @@ SH_ENTRY_HASH(SH_TYPE *tb, SH_ELEMENT_TYPE * entry)
 }
 
 /* default memory allocator function */
-static inline void *SH_ALLOCATE(SH_TYPE *type, Size size);
+static inline void *SH_ALLOCATE(SH_TYPE *type, size_t size);
 static inline void SH_FREE(SH_TYPE *type, void *pointer);
 
 #ifndef SH_USE_NONDEFAULT_ALLOCATOR
 
 /* default memory allocator function */
 static inline void *
-SH_ALLOCATE(SH_TYPE *type, Size size)
+SH_ALLOCATE(SH_TYPE *type, size_t size)
 {
 	return MemoryContextAllocExtended(type->ctx, size,
 									  MCXT_ALLOC_HUGE | MCXT_ALLOC_ZERO);

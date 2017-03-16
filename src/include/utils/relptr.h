@@ -22,11 +22,11 @@
  * The idea here is that you declare a relative pointer as relptr(type)
  * and then use relptr_access to dereference it and relptr_store to change
  * it.  The use of a union here is a hack, because what's stored in the
- * relptr is always a Size, never an actual pointer.  But including a pointer
+ * relptr is always a size_t, never an actual pointer.  But including a pointer
  * in the union allows us to use stupid macro tricks to provide some measure
  * of type-safety.
  */
-#define relptr(type)	 union { type *relptr_type; Size relptr_off; }
+#define relptr(type)	 union { type *relptr_type; size_t relptr_off; }
 
 /*
  * pgindent gets confused by declarations that use "relptr(type)" directly,
