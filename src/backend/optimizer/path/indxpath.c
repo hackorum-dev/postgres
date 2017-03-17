@@ -37,7 +37,9 @@
 #include "utils/bytea.h"
 #include "utils/lsyscache.h"
 #include "utils/pg_locale.h"
+#include "utils/rangetypes.h"
 #include "utils/selfuncs.h"
+#include "utils/typcache.h"
 
 
 #define IsBooleanOpfamily(opfamily) \
@@ -187,6 +189,7 @@ static List *prefix_quals(Node *leftop, Oid opfamily, Oid collation,
 			 Const *prefix, Pattern_Prefix_Status pstatus);
 static List *network_prefix_quals(Node *leftop, Oid expr_op, Oid opfamily,
 					 Datum rightop);
+static List *range_elem_contained_quals(Node *leftop, Datum rightop);
 static Datum string_to_datum(const char *str, Oid datatype);
 static Const *string_to_const(const char *str, Oid datatype);
 
@@ -3293,6 +3296,9 @@ match_special_index_operator(Expr *clause, Oid opfamily, Oid idxcollation,
 		case OID_INET_SUBEQ_OP:
 			isIndexable = true;
 			break;
+		case OID_RANGE_ELEM_CONTAINED_OP:
+			isIndexable = true;
+			break;
 	}
 
 	if (prefix)
@@ -3618,6 +3624,13 @@ expand_indexqual_opclause(RestrictInfo *rinfo, Oid opfamily, Oid idxcollation)
 			if (!op_in_opfamily(expr_op, opfamily))
 			{
 				return network_prefix_quals(leftop, expr_op, opfamily,
+											patt->constvalue);
+			}
+			break;
+		case OID_RANGE_ELEM_CONTAINED_OP:
+			if (!op_in_opfamily(expr_op, opfamily))
+			{
+				return range_elem_contained_quals(leftop,
 											patt->constvalue);
 			}
 			break;
@@ -4099,6 +4112,110 @@ network_prefix_quals(Node *leftop, Oid expr_op, Oid opfamily, Datum rightop)
 						 InvalidOid, InvalidOid);
 	result = lappend(result, make_simple_restrictinfo(expr));
 
+	return result;
+}
+
+/*
+ * Given an element leftop and a range rightop, and an elem contained-by range
+ * operator, generate suitable indexqual condition(s).
+ */
+static List *
+range_elem_contained_quals(Node *leftop, Datum rightop)
+{
+	Oid				datatype;
+	Oid				opfamily;
+	Oid				opr1oid;
+	Oid				opr2oid;
+	List			*result = NIL;
+	Expr			*expr;
+	RangeType		*range;
+	TypeCacheEntry	*rangetypcache;
+	RangeBound		lbound;
+	RangeBound		ubound;
+	bool			empty;
+
+	switch (leftop->type)
+	{
+		case T_Var:
+			datatype = ((Var *)leftop)->vartype;
+			break;
+		default:
+			elog(ERROR, "unexpected NodeTag: %u", leftop->type);
+			return NIL;
+	}
+
+	opfamily = lookup_type_cache(datatype, TYPECACHE_BTREE_OPFAMILY)->btree_opf;
+
+	range = DatumGetRangeType(rightop);
+	rangetypcache = lookup_type_cache(RangeTypeGetOid(range), TYPECACHE_RANGE_INFO);
+	range_deserialize(rangetypcache, range, &lbound, &ubound, &empty);
+
+	if (empty)
+	{
+		return NIL;
+	}
+
+	if (!lbound.infinite)
+	{
+		if (lbound.inclusive)
+		{
+			opr1oid = get_opfamily_member(opfamily, datatype, datatype,
+										  BTGreaterEqualStrategyNumber);
+			if (opr1oid == InvalidOid)
+			{
+				elog(ERROR, "no >= operator for opfamily %u", opfamily);
+				return NIL;
+			}
+		} else {
+			opr1oid = get_opfamily_member(opfamily, datatype, datatype,
+										  BTGreaterStrategyNumber);
+			if (opr1oid == InvalidOid)
+			{
+				elog(ERROR, "no > operator for opfamily %u", opfamily);
+				return NIL;
+			}
+		}
+
+		expr = make_opclause(opr1oid, BOOLOID, false,
+				(Expr *) leftop,
+				(Expr *) makeConst(rangetypcache->rngelemtype->type_id, -1,
+					rangetypcache->rng_collation,
+					rangetypcache->rngelemtype->typlen, lbound.val,
+					false, rangetypcache->rngelemtype->typbyval),
+				InvalidOid, InvalidOid);
+		result = lappend(result, make_simple_restrictinfo(expr));
+	}
+
+	if (!ubound.infinite)
+	{
+		if (ubound.inclusive)
+		{
+			opr2oid = get_opfamily_member(opfamily, datatype, datatype,
+										  BTLessEqualStrategyNumber);
+			if (opr2oid == InvalidOid)
+			{
+				elog(ERROR, "no <= operator for opfamily %u", opfamily);
+				return NIL;
+			}
+		} else {
+			opr2oid = get_opfamily_member(opfamily, datatype, datatype,
+										  BTLessStrategyNumber);
+			if (opr1oid == InvalidOid)
+			{
+				elog(ERROR, "no < operator for opfamily %u", opfamily);
+				return NIL;
+			}
+		}
+
+		expr = make_opclause(opr2oid, BOOLOID, false,
+				(Expr *) leftop,
+				(Expr *) makeConst(rangetypcache->rngelemtype->type_id, -1,
+					rangetypcache->rng_collation,
+					rangetypcache->rngelemtype->typlen, ubound.val,
+					false, rangetypcache->rngelemtype->typbyval),
+				InvalidOid, InvalidOid);
+		result = lappend(result, make_simple_restrictinfo(expr));
+	}
 	return result;
 }
 
