@@ -130,7 +130,8 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 
 		if (strcmp(defel->defname, "password") == 0 ||
 			strcmp(defel->defname, "encryptedPassword") == 0 ||
-			strcmp(defel->defname, "unencryptedPassword") == 0)
+			strcmp(defel->defname, "unencryptedPassword") == 0 ||
+			strcmp(defel->defname, "methodPassword") == 0)
 		{
 			if (dpassword)
 				ereport(ERROR,
@@ -144,9 +145,45 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 					password_type = PASSWORD_TYPE_SCRAM;
 				else
 					password_type = PASSWORD_TYPE_MD5;
+				if (dpassword && dpassword->arg)
+					password = strVal(dpassword->arg);
 			}
 			else if (strcmp(defel->defname, "unencryptedPassword") == 0)
+			{
 				password_type = PASSWORD_TYPE_PLAINTEXT;
+				if (dpassword && dpassword->arg)
+					password = strVal(dpassword->arg);
+			}
+			else if (strcmp(defel->defname, "methodPassword") == 0)
+			{
+				/*
+				 * This is a list of two elements, the password is first and
+				 * then there is the method wanted by caller.
+				 */
+				if (dpassword && dpassword->arg)
+				{
+					char *method = strVal(lsecond((List *) dpassword->arg));
+
+					password = strVal(linitial((List *) dpassword->arg));
+
+					if (strcmp(method, "md5") == 0)
+						password_type = PASSWORD_TYPE_MD5;
+					else if (strcmp(method, "plain") == 0)
+						password_type = PASSWORD_TYPE_PLAINTEXT;
+					else if (strcmp(method, "scram") == 0)
+						password_type = PASSWORD_TYPE_SCRAM;
+					else
+						ereport(ERROR,
+							(errcode(ERRCODE_SYNTAX_ERROR),
+							 errmsg("unsupported password method %s", method)));
+				}
+			}
+			else
+			{
+				password_type = Password_encryption;
+				if (dpassword && dpassword->arg)
+					password = strVal(dpassword->arg);
+			}
 		}
 		else if (strcmp(defel->defname, "sysid") == 0)
 		{
@@ -266,8 +303,6 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 				 defel->defname);
 	}
 
-	if (dpassword && dpassword->arg)
-		password = strVal(dpassword->arg);
 	if (dissuper)
 		issuper = intVal(dissuper->arg) != 0;
 	if (dinherit)
@@ -539,6 +574,7 @@ AlterRole(AlterRoleStmt *stmt)
 
 		if (strcmp(defel->defname, "password") == 0 ||
 			strcmp(defel->defname, "encryptedPassword") == 0 ||
+			strcmp(defel->defname, "methodPassword") == 0 ||
 			strcmp(defel->defname, "unencryptedPassword") == 0)
 		{
 			if (dpassword)
@@ -552,9 +588,45 @@ AlterRole(AlterRoleStmt *stmt)
 					password_type = PASSWORD_TYPE_SCRAM;
 				else
 					password_type = PASSWORD_TYPE_MD5;
+				if (dpassword && dpassword->arg)
+					password = strVal(dpassword->arg);
 			}
 			else if (strcmp(defel->defname, "unencryptedPassword") == 0)
+			{
 				password_type = PASSWORD_TYPE_PLAINTEXT;
+				if (dpassword && dpassword->arg)
+					password = strVal(dpassword->arg);
+			}
+			else if (strcmp(defel->defname, "methodPassword") == 0)
+			{
+				/*
+				 * This is a list of two elements, the password is first and
+				 * then there is the method wanted by caller.
+				 */
+				if (dpassword && dpassword->arg)
+				{
+					char *method = strVal(lsecond((List *) dpassword->arg));
+
+					if (strcmp(method, "md5") == 0)
+						password_type = PASSWORD_TYPE_MD5;
+					else if (strcmp(method, "plain") == 0)
+						password_type = PASSWORD_TYPE_PLAINTEXT;
+					else if (strcmp(method, "scram") == 0)
+						password_type = PASSWORD_TYPE_SCRAM;
+					else
+						ereport(ERROR,
+							(errcode(ERRCODE_SYNTAX_ERROR),
+							 errmsg("unsupported password method %s", method)));
+
+					password = strVal(linitial((List *) dpassword->arg));
+				}
+			}
+			else
+			{
+				password_type = Password_encryption;
+				if (dpassword && dpassword->arg)
+					password = strVal(dpassword->arg);
+			}
 		}
 		else if (strcmp(defel->defname, "superuser") == 0)
 		{
@@ -642,8 +714,6 @@ AlterRole(AlterRoleStmt *stmt)
 				 defel->defname);
 	}
 
-	if (dpassword && dpassword->arg)
-		password = strVal(dpassword->arg);
 	if (dissuper)
 		issuper = intVal(dissuper->arg);
 	if (dinherit)

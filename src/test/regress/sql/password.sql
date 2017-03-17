@@ -54,6 +54,18 @@ SET password_encryption = 'scram';
 ALTER ROLE  regress_passwd5 ENCRYPTED PASSWORD 'foo'; -- create SCRAM verifier
 CREATE ROLE regress_passwd6 ENCRYPTED PASSWORD 'md53725413363ab045e20521bf36b8d8d7f'; -- encrypted with MD5, use as it is
 
+-- PASSWORD 'value' USING 'method'
+CREATE ROLE regress_passwd7 PASSWORD 'role_pwd7' USING 'plain';
+CREATE ROLE regress_passwd8 PASSWORD 'role_pwd8' USING 'md5';
+CREATE ROLE regress_passwd9 PASSWORD 'role_pwd9' USING 'scram';
+CREATE ROLE regress_passwd10 PASSWORD 'role_pwd10' USING 'novalue'; --error
+SELECT rolname, regexp_replace(rolpassword, '(scram-sha-256):([a-zA-Z0-9+/]+==):(\d+):(\w+):(\w+)', '\1:<salt>:\3:<storedkey>:<serverkey>') as rolpassword_masked
+    FROM pg_authid
+    WHERE rolname LIKE 'regress_passwd%'
+    ORDER BY rolname, rolpassword;
+ALTER ROLE regress_passwd7 PASSWORD 'role_pwd7' USING 'plain';
+ALTER ROLE regress_passwd8 PASSWORD 'role_pwd8' USING 'md5';
+ALTER ROLE regress_passwd9 PASSWORD 'role_pwd9' USING 'scram';
 SELECT rolname, regexp_replace(rolpassword, '(scram-sha-256):([a-zA-Z0-9+/]+==):(\d+):(\w+):(\w+)', '\1:<salt>:\3:<storedkey>:<serverkey>') as rolpassword_masked
     FROM pg_authid
     WHERE rolname LIKE 'regress_passwd%'
@@ -65,6 +77,9 @@ DROP ROLE regress_passwd3;
 DROP ROLE regress_passwd4;
 DROP ROLE regress_passwd5;
 DROP ROLE regress_passwd6;
+DROP ROLE regress_passwd7;
+DROP ROLE regress_passwd8;
+DROP ROLE regress_passwd9;
 
 -- all entries should have been removed
 SELECT rolname, rolpassword
