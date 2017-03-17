@@ -1790,8 +1790,8 @@ get_object_address_opf_member(ObjectType objtype,
 	ObjectAddress address;
 	ListCell   *cell;
 	List	   *copy;
-	TypeName   *typenames[2];
-	Oid			typeoids[2];
+	TypeName   *typenames[2] = { NULL, NULL };
+	Oid			typeoids[2] = { InvalidOid, InvalidOid };
 	int			membernum;
 	int			i;
 
@@ -1820,6 +1820,9 @@ get_object_address_opf_member(ObjectType objtype,
 		if (++i >= 2)
 			break;
 	}
+
+	Assert(typenames[0] != NULL && typenames[1] != NULL);
+	Assert(typeoids[0] != InvalidOid && typeoids[1] != InvalidOid);
 
 	switch (objtype)
 	{
