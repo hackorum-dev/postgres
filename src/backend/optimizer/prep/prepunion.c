@@ -45,6 +45,7 @@
 #include "optimizer/planner.h"
 #include "optimizer/prep.h"
 #include "optimizer/tlist.h"
+#include "optimizer/var.h"
 #include "parser/parse_coerce.h"
 #include "parser/parsetree.h"
 #include "utils/lsyscache.h"
@@ -107,7 +108,6 @@ static Bitmapset *translate_col_privs(const Bitmapset *parent_privs,
 					List *translated_vars);
 static Node *adjust_appendrel_attrs_mutator(Node *node,
 							   adjust_appendrel_attrs_context *context);
-static Relids adjust_relid_set(Relids relids, Index oldrelid, Index newrelid);
 static List *adjust_inherited_tlist(List *tlist,
 					   AppendRelInfo *context);
 
@@ -1973,23 +1973,6 @@ adjust_appendrel_attrs_mutator(Node *node,
 
 	return expression_tree_mutator(node, adjust_appendrel_attrs_mutator,
 								   (void *) context);
-}
-
-/*
- * Substitute newrelid for oldrelid in a Relid set
- */
-static Relids
-adjust_relid_set(Relids relids, Index oldrelid, Index newrelid)
-{
-	if (bms_is_member(oldrelid, relids))
-	{
-		/* Ensure we have a modifiable copy */
-		relids = bms_copy(relids);
-		/* Remove old, add new */
-		relids = bms_del_member(relids, oldrelid);
-		relids = bms_add_member(relids, newrelid);
-	}
-	return relids;
 }
 
 /*

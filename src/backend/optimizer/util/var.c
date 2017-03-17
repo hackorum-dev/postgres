@@ -840,3 +840,20 @@ alias_relid_set(PlannerInfo *root, Relids relids)
 	}
 	return result;
 }
+
+/*
+ * Substitute newrelid for oldrelid in a Relid set
+ */
+Relids
+adjust_relid_set(Relids relids, Index oldrelid, Index newrelid)
+{
+	if (bms_is_member(oldrelid, relids))
+	{
+		/* Ensure we have a modifiable copy */
+		relids = bms_copy(relids);
+		/* Remove old, add new */
+		relids = bms_del_member(relids, oldrelid);
+		relids = bms_add_member(relids, newrelid);
+	}
+	return relids;
+}

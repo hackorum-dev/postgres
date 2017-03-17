@@ -18,6 +18,7 @@
 #include "nodes/nodeFuncs.h"
 #include "nodes/plannodes.h"
 #include "optimizer/clauses.h"
+#include "optimizer/var.h"
 #include "parser/parse_coerce.h"
 #include "parser/parse_relation.h"
 #include "parser/parsetree.h"
@@ -49,7 +50,6 @@ static bool locate_windowfunc_walker(Node *node,
 						 locate_windowfunc_context *context);
 static bool checkExprHasSubLink_walker(Node *node, void *context);
 static Relids offset_relid_set(Relids relids, int offset);
-static Relids adjust_relid_set(Relids relids, int oldrelid, int newrelid);
 
 
 /*
@@ -652,23 +652,6 @@ ChangeVarNodes(Node *node, int rt_index, int new_index, int sublevels_up)
 	}
 	else
 		ChangeVarNodes_walker(node, &context);
-}
-
-/*
- * Substitute newrelid for oldrelid in a Relid set
- */
-static Relids
-adjust_relid_set(Relids relids, int oldrelid, int newrelid)
-{
-	if (bms_is_member(oldrelid, relids))
-	{
-		/* Ensure we have a modifiable copy */
-		relids = bms_copy(relids);
-		/* Remove old, add new */
-		relids = bms_del_member(relids, oldrelid);
-		relids = bms_add_member(relids, newrelid);
-	}
-	return relids;
 }
 
 /*
