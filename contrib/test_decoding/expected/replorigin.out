@@ -10,7 +10,7 @@ SELECT pg_replication_origin_create('test_decoding: regression_slot');
 
 -- ensure duplicate creations fail
 SELECT pg_replication_origin_create('test_decoding: regression_slot');
-ERROR:  duplicate key value violates unique constraint "pg_replication_origin_roname_index"
+ERROR:  duplicate key value violates unique index "pg_replication_origin_roname_index"
 DETAIL:  Key (roname)=(test_decoding: regression_slot) already exists.
 --ensure deletions work (once)
 SELECT pg_replication_origin_create('test_decoding: temp');

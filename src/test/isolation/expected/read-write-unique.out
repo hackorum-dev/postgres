@@ -25,5 +25,5 @@ i
 
 42             
 step w2: INSERT INTO test VALUES (42);
-ERROR:  duplicate key value violates unique constraint "test_pkey"
+ERROR:  duplicate key value violates unique index "test_pkey"
 step c2: COMMIT;

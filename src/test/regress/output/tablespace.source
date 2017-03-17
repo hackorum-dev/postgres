@@ -170,7 +170,7 @@ DROP TABLE testschema.test_default_tab;
 CREATE TABLE testschema.test_tab(id int) TABLESPACE regress_tblspace;
 INSERT INTO testschema.test_tab VALUES (1);
 SET default_tablespace TO regress_tblspace;
-ALTER TABLE testschema.test_tab ADD CONSTRAINT test_tab_unique UNIQUE (id);
+ALTER TABLE testschema.test_tab ADD CONSTRAINT test_tab_u(nique UNIQUE (id);
 SET default_tablespace TO '';
 ALTER TABLE testschema.test_tab ADD CONSTRAINT test_tab_pkey PRIMARY KEY (id);
 \d testschema.test_tab_unique
@@ -202,7 +202,7 @@ ALTER TABLE testschema.atable SET TABLESPACE regress_tblspace;
 ALTER INDEX testschema.anindex SET TABLESPACE regress_tblspace;
 INSERT INTO testschema.atable VALUES(3);	-- ok
 INSERT INTO testschema.atable VALUES(1);	-- fail (checks index)
-ERROR:  duplicate key value violates unique constraint "anindex"
+ERROR:  duplicate key value violates unique index "anindex"
 DETAIL:  Key (column1)=(1) already exists.
 SELECT COUNT(*) FROM testschema.atable;		-- checks heap
  count 

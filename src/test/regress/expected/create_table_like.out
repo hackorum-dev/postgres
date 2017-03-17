@@ -69,7 +69,7 @@ DROP TABLE inhg;
 CREATE TABLE inhg (x text, LIKE inhx INCLUDING INDEXES, y text); /* copies indexes */
 INSERT INTO inhg VALUES (5, 10);
 INSERT INTO inhg VALUES (20, 10); -- should fail
-ERROR:  duplicate key value violates unique constraint "inhg_pkey"
+ERROR:  duplicate key value violates unique index "inhg_pkey"
 DETAIL:  Key (xx)=(10) already exists.
 DROP TABLE inhg;
 /* Multiple primary keys creation should fail */
@@ -82,7 +82,7 @@ CREATE TABLE inhg (x text UNIQUE, LIKE inhz INCLUDING INDEXES);
 INSERT INTO inhg (xx, yy, x) VALUES ('test', 5, 10);
 INSERT INTO inhg (xx, yy, x) VALUES ('test', 10, 15);
 INSERT INTO inhg (xx, yy, x) VALUES ('foo', 10, 15); -- should fail
-ERROR:  duplicate key value violates unique constraint "inhg_x_key"
+ERROR:  duplicate key value violates unique index "inhg_x_key"
 DETAIL:  Key (x)=(15) already exists.
 DROP TABLE inhg;
 DROP TABLE inhz;

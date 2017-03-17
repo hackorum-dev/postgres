@@ -1,5 +1,5 @@
-doSQLprint: Error: duplicate key value violates unique constraint "test_pkey" on line 32
-INSERT: -239=duplicate key value violates unique constraint "test_pkey" on line 32
+doSQLprint: Error: duplicate key value violates unique index "test_pkey" on line 32
+INSERT: -239=duplicate key value violates unique index "test_pkey" on line 32
 doSQLprint: Error: more than one row returned by a subquery used as an expression on line 40
 SELECT: 0=
 0

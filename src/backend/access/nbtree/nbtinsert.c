@@ -426,7 +426,7 @@ _bt_check_unique(Relation rel, IndexTuple itup, Relation heapRel,
 
 						ereport(ERROR,
 								(errcode(ERRCODE_UNIQUE_VIOLATION),
-								 errmsg("duplicate key value violates unique constraint \"%s\"",
+								 errmsg("duplicate key value violates unique index \"%s\"",
 										RelationGetRelationName(rel)),
 							   key_desc ? errdetail("Key %s already exists.",
 													key_desc) : 0,

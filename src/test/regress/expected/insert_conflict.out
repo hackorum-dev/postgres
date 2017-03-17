@@ -360,7 +360,7 @@ insert into insertconflicttest values (26, 'Fig') on conflict (key) do update se
 -- fails, since UPDATE is to row with key value 26, and we're updating "fruit"
 -- to a value that happens to exist in another row ('peach'):
 insert into insertconflicttest values (26, 'Peach') on conflict (key) do update set fruit = excluded.fruit;
-ERROR:  duplicate key value violates unique constraint "fruit_index"
+ERROR:  duplicate key value violates unique index "fruit_index"
 DETAIL:  Key (fruit)=(Peach) already exists.
 -- succeeds, since "key" isn't repeated/referenced in UPDATE, and "fruit"
 -- arbitrates that statement updates existing "Fig" row:
@@ -733,7 +733,7 @@ create table twoconstraints (f1 int unique, f2 box,
                              exclude using gist(f2 with &&));
 insert into twoconstraints values(1, '((0,0),(1,1))');
 insert into twoconstraints values(1, '((2,2),(3,3))');  -- fail on f1
-ERROR:  duplicate key value violates unique constraint "twoconstraints_f1_key"
+ERROR:  duplicate key value violates unique index "twoconstraints_f1_key"
 DETAIL:  Key (f1)=(1) already exists.
 insert into twoconstraints values(2, '((0,0),(1,2))');  -- fail on f2
 ERROR:  conflicting key value violates exclusion constraint "twoconstraints_f2_excl"
