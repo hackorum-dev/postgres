@@ -447,7 +447,11 @@ INSERT INTO <replaceable class="PARAMETER">table_name</replaceable> [ AS <replac
        <para>
         Explicitly specifies an arbiter
         <emphasis>constraint</emphasis> by name, rather than inferring
-        a constraint or index.
+        a constraint or index. Note that <literal>CREATE UNIQUE INDEX</literal>
+        creates only a unique index, not a unique constraint.
+        <literal>ON CONFLICT ON CONSTRAINT</literal> for unique constraints
+        can be used only when such a constraint is defined explicity
+        using <literal>ALTER TABLE ... ADD UNIQUE CONSTRAINT</literal>.
        </para>
       </listitem>
      </varlistentry>
@@ -492,7 +496,11 @@ INSERT INTO <replaceable class="PARAMETER">table_name</replaceable> [ AS <replac
      correctly when the underlying index is replaced by another more
      or less equivalent index in an overlapping way, for example when
      using <literal>CREATE UNIQUE INDEX ...  CONCURRENTLY</literal>
-     before dropping the index being replaced.
+     before dropping the index being replaced (moreover,
+     <literal>CREATE UNIQUE INDEX</literal> defines only a unique
+     index, not a unique constraint, and <literal>ON CONFLICT ON
+     CONSTRAINT</literal> cannot be used unless the corresponding
+     unique constraint is defined explicitly).
     </para>
    </tip>
 
