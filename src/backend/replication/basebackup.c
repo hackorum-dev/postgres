@@ -233,10 +233,18 @@ perform_base_backup(basebackup_options *opt, DIR *tblspcdir)
 		else
 			statrelpath = pgstat_stat_directory;
 
-		/* Add a node for the base directory at the end */
+		/*
+		 * Add a node for the base directory. If WAL is included, the base
+		 * directory has to be last as the WAL files get appended to it. If WAL
+		 * is not included, send the base directory first, so that the
+		 * backup_label file is the first file to be sent.
+		 */
 		ti = palloc0(sizeof(tablespaceinfo));
 		ti->size = opt->progress ? sendDir(".", 1, true, tablespaces, true) : -1;
-		tablespaces = lappend(tablespaces, ti);
+		if (opt->includewal)
+			tablespaces = lappend(tablespaces, ti);
+		else
+			tablespaces = lcons(ti, tablespaces);
 
 		/* Send tablespace header */
 		SendBackupHeader(tablespaces);
