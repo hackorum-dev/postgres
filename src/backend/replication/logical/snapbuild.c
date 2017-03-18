@@ -27,7 +27,7 @@
  * removed. This is achieved by using the replication slot mechanism.
  *
  * As the percentage of transactions modifying the catalog normally is fairly
- * small in comparisons to ones only manipulating user data, we keep track of
+ * small in comparison to ones only manipulating user data, we keep track of
  * the committed catalog modifying ones inside [xmin, xmax) instead of keeping
  * track of all running transactions like it's done in a normal snapshot. Note
  * that we're generally only looking at transactions that have acquired an
@@ -42,7 +42,7 @@
  * catalog in a transaction. During normal operation this is achieved by using
  * CommandIds/cmin/cmax. The problem with that however is that for space
  * efficiency reasons only one value of that is stored
- * (c.f. combocid.c). Since ComboCids are only available in memory we log
+ * (cf. combocid.c). Since ComboCids are only available in memory we log
  * additional information which allows us to get the original (cmin, cmax)
  * pair during visibility checks. Check the reorderbuffer.c's comment above
  * ResolveCminCmaxDuringDecoding() for details.
@@ -92,7 +92,7 @@
  * Only transactions that commit after CONSISTENT state has been reached will
  * be replayed, even though they might have started while still in
  * FULL_SNAPSHOT. That ensures that we'll reach a point where no previous
- * changes has been exported, but all the following ones will be. That point
+ * changes have been exported, but all the following ones will be. That point
  * is a convenient point to initialize replication from, which is why we
  * export a snapshot at that point, which *can* be used to read normal data.
  *
@@ -134,7 +134,7 @@
 
 /*
  * This struct contains the current state of the snapshot building
- * machinery. Besides a forward declaration in the header, it is not exposed
+ * machinery. Except for a forward declaration in the header, it is not exposed
  * to the public, so we can easily change its contents.
  */
 struct SnapBuild
@@ -442,7 +442,7 @@ SnapBuildBuildSnapshot(SnapBuild *builder, TransactionId xid)
 
 	/*
 	 * We misuse the original meaning of SnapshotData's xip and subxip fields
-	 * to make the more fitting for our needs.
+	 * to make them more fitting for our needs.
 	 *
 	 * In the 'xip' array we store transactions that have to be treated as
 	 * committed. Since we will only ever look at tuples from transactions
@@ -645,7 +645,7 @@ SnapBuildClearExportedSnapshot(void)
 
 /*
  * Handle the effects of a single heap change, appropriate to the current state
- * of the snapshot builder and returns whether changes made at (xid, lsn) can
+ * of the snapshot builder and return whether changes made at (xid, lsn) can
  * be decoded.
  */
 bool
@@ -1143,7 +1143,7 @@ SnapBuildProcessRunningXacts(SnapBuild *builder, XLogRecPtr lsn, xl_running_xact
 	 */
 	builder->xmin = running->oldestRunningXid;
 
-	/* Remove transactions we don't need to keep track off anymore */
+	/* Remove transactions we don't need to keep track of anymore */
 	SnapBuildPurgeCommittedTxn(builder);
 
 	elog(DEBUG3, "xmin: %u, xmax: %u, oldestrunning: %u",
@@ -1250,7 +1250,7 @@ SnapBuildFindSnapshot(SnapBuild *builder, XLogRecPtr lsn, xl_running_xacts *runn
 	}
 
 	/*
-	 * a) No transaction were running, we can jump to consistent.
+	 * a) No transactions were running, we can jump to consistent.
 	 *
 	 * NB: We might have already started to incrementally assemble a snapshot,
 	 * so we need to be careful to deal with that.
@@ -1521,8 +1521,8 @@ SnapBuildSerialize(SnapBuild *builder, XLogRecPtr lsn)
 			(uint32) (lsn >> 32), (uint32) lsn, MyProcPid);
 
 	/*
-	 * Unlink temporary file if it already exists, needs to have been before a
-	 * crash/error since we won't enter this function twice from within a
+	 * Unlink temporary file if it already exists, must have been from before
+	 * a crash/error since we won't enter this function twice from within a
 	 * single decoding slot/backend and the temporary file contains the pid of
 	 * the current process.
 	 */
@@ -1624,8 +1624,8 @@ SnapBuildSerialize(SnapBuild *builder, XLogRecPtr lsn)
 	fsync_fname("pg_logical/snapshots", true);
 
 	/*
-	 * Now there's no way we can loose the dumped state anymore, remember this
-	 * as a serialization point.
+	 * Now that there's no way we can lose the dumped state anymore, remember
+	 * this as a serialization point.
 	 */
 	builder->last_serialized_snapshot = lsn;
 
