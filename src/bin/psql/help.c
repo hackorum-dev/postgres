@@ -167,7 +167,7 @@ slashUsage(unsigned short int pager)
 	 * Use "psql --help=commands | wc" to count correctly.  It's okay to count
 	 * the USE_READLINE line even in builds without that.
 	 */
-	output = PageOutput(113, pager ? &(pset.popt.topt) : NULL);
+	output = PageOutput(114, pager ? &(pset.popt.topt) : NULL);
 
 	fprintf(output, _("General\n"));
 	fprintf(output, _("  \\copyright             show PostgreSQL usage and distribution terms\n"));
@@ -175,6 +175,7 @@ slashUsage(unsigned short int pager)
 	fprintf(output, _("  \\g [FILE] or ;         execute query (and send results to file or |pipe)\n"));
 	fprintf(output, _("  \\gx [FILE]             as \\g, but forces expanded output mode\n"));
 	fprintf(output, _("  \\gexec                 execute query, then execute each value in its result\n"));
+	fprintf(output, _("  \\gloadfrom FILE [fmt]  execute query, use content of FILE as query parameter\n"));
 	fprintf(output, _("  \\gset [PREFIX]         execute query and store results in psql variables\n"));
 	fprintf(output, _("  \\q                     quit psql\n"));
 	fprintf(output, _("  \\crosstabview [COLUMNS] execute query and display results in crosstab\n"));

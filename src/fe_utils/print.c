@@ -3293,6 +3293,40 @@ printQuery(const PGresult *result, const printQueryOpt *opt,
 	if (cancel_pressed)
 		return;
 
+	/* direct print in binary format */
+	if (opt->topt.format == PRINT_BINARY)
+	{
+		/* check format */
+		for (c = 0; c < PQnfields(result); c++)
+			if (PQfformat(result, c) == 0)
+			{
+				fprintf(stderr, _("invalid data format (internal error)"));
+				exit(EXIT_FAILURE);
+			}
+
+		for (r = 0; r < PQntuples(result); r++)
+		{
+			for (c = 0; c < PQnfields(result); c ++)
+			{
+				if (!PQgetisnull(result, r, c))
+				{
+					int		size = PQgetlength(result, r, c);
+					char   *value = PQgetvalue(result, r, c);
+					bool	success;
+
+					success = fwrite(value, 1, size, fout) == size;
+					if (!success)
+					{
+						fprintf(stderr, _("write error (internal error): %s"),
+								strerror(errno));
+						exit(EXIT_FAILURE);
+					}
+				}
+			}
+		}
+		return;
+	}
+
 	printTableInit(&cont, &opt->topt, opt->title,
 				   PQnfields(result), PQntuples(result));
 

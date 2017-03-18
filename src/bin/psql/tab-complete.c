@@ -1410,8 +1410,9 @@ psql_completion(const char *text, int start, int end)
 		"\\dm", "\\dn", "\\do", "\\dO", "\\dp", "\\drds", "\\ds", "\\dS",
 		"\\dt", "\\dT", "\\dv", "\\du", "\\dx", "\\dy",
 		"\\e", "\\echo", "\\ef", "\\encoding", "\\errverbose", "\\ev",
-		"\\f", "\\g", "\\gexec", "\\gset", "\\gx", "\\h", "\\help", "\\H",
-		"\\i", "\\ir", "\\l", "\\lo_import", "\\lo_export", "\\lo_list",
+		"\\f", "\\g", "\\gexec", "\\gloadfrom", "\\gset", "\\gx",
+		"\\h", "\\help", "\\H", "\\i", "\\ir", "\\l",
+		"\\lo_import", "\\lo_export", "\\lo_list",
 		"\\lo_unlink", "\\o", "\\p", "\\password", "\\prompt", "\\pset", "\\q",
 		"\\qecho", "\\r", "\\s", "\\set", "\\setenv", "\\sf", "\\sv", "\\t",
 		"\\T", "\\timing", "\\unset", "\\x", "\\w", "\\watch", "\\z", "\\!",
@@ -3422,7 +3423,7 @@ psql_completion(const char *text, int start, int end)
 		{
 			static const char *const my_list[] =
 			{"unaligned", "aligned", "wrapped", "html", "asciidoc",
-			"latex", "latex-longtable", "troff-ms", NULL};
+			"latex", "latex-longtable", "troff-ms", "binary", NULL};
 
 			COMPLETE_WITH_LIST_CS(my_list);
 		}
@@ -3443,8 +3444,8 @@ psql_completion(const char *text, int start, int end)
 	}
 	else if (TailMatchesCS2("\\set", MatchAny))
 	{
-		if (TailMatchesCS1("AUTOCOMMIT|ON_ERROR_STOP|QUIET|"
-						   "SINGLELINE|SINGLESTEP"))
+		if (TailMatchesCS1("AUTOCOMMIT|BINARY_PARAM"
+						   "ON_ERROR_STOP|QUIET|SINGLELINE|SINGLESTEP"))
 			COMPLETE_WITH_LIST_CS2("on", "off");
 		else if (TailMatchesCS1("COMP_KEYWORD_CASE"))
 			COMPLETE_WITH_LIST_CS4("lower", "upper",
@@ -3469,7 +3470,7 @@ psql_completion(const char *text, int start, int end)
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_views, NULL);
 	else if (TailMatchesCS1("\\cd|\\e|\\edit|\\g|\\i|\\include|"
 							"\\ir|\\include_relative|\\o|\\out|"
-							"\\s|\\w|\\write|\\lo_import"))
+							"\\s|\\w|\\write|\\lo_import|\\gloadfrom"))
 	{
 		completion_charp = "\\";
 		matches = completion_matches(text, complete_from_files);

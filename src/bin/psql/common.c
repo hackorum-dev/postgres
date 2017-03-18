@@ -12,6 +12,7 @@
 #include <limits.h>
 #include <math.h>
 #include <signal.h>
+#include <sys/stat.h>
 #ifndef WIN32
 #include <unistd.h>				/* for write() */
 #else
@@ -32,6 +33,7 @@
 static bool ExecQueryUsingCursor(const char *query, double *elapsed_msec);
 static bool command_no_begin(const char *query);
 static bool is_select_command(const char *query);
+static bool read_file(char *fname, PQExpBuffer rawbuf);
 
 
 /*
@@ -1285,7 +1287,8 @@ SendQuery(const char *query)
 	}
 
 	if (pset.fetch_count <= 0 || pset.gexec_flag ||
-		pset.crosstab_flag || !is_select_command(query))
+		pset.crosstab_flag || !is_select_command(query) ||
+		pset.popt.topt.format == PRINT_BINARY || pset.gloadfrom)
 	{
 		/* Default fetch-it-all-and-print mode */
 		instr_time	before,
@@ -1294,7 +1297,56 @@ SendQuery(const char *query)
 		if (pset.timing)
 			INSTR_TIME_SET_CURRENT(before);
 
-		results = PQexec(pset.db, query);
+		/*
+		 * PQexecParams disallow multiple commands often
+		 * used by -c option. From compatibility reason the
+		 * PQexecParams is used only when it is necessary.
+		 */
+		if (pset.popt.topt.format == PRINT_BINARY || pset.gloadfrom)
+		{
+			if (pset.gloadfrom)
+			{
+				PQExpBufferData		rawbuf;
+
+				initPQExpBuffer(&rawbuf);
+
+				if (read_file(pset.gloadfrom, &rawbuf))
+				{
+					Oid paramTypes[1];
+					const char *paramValues[1];
+					int paramLengths[1];
+					int paramFormats[1];
+
+					paramTypes[0] = pset.gloadfrom_fmt;
+					paramFormats[0] = pset.gloadfrom_fmt != 0 ? 1 : 0;
+					paramValues[0] = rawbuf.data;
+					paramLengths[0] = rawbuf.len;
+
+					results = PQexecParams(pset.db, query,
+											  1,
+											  paramTypes,
+											  paramValues,
+											  paramLengths,
+											  paramFormats,
+											  pset.popt.topt.format == PRINT_BINARY);
+				}
+				else
+				{
+					OK = false;
+					results = NULL;
+				}
+
+				termPQExpBuffer(&rawbuf);
+			}
+			else
+			{
+				results = PQexecParams(pset.db, query,
+										  0, NULL, NULL, NULL, NULL,
+										  pset.popt.topt.format == PRINT_BINARY);
+			}
+		}
+		else
+			results = PQexec(pset.db, query);
 
 		/* these operations are included in the timing result: */
 		ResetCancelConn();
@@ -1416,6 +1468,13 @@ sendquery_cleanup:
 	{
 		free(pset.gfname);
 		pset.gfname = NULL;
+	}
+
+	/* reset \gloadfrom input-from-filename trgger */
+	if (pset.gloadfrom)
+	{
+		free(pset.gloadfrom);
+		pset.gloadfrom = NULL;
 	}
 
 	/* reset \gx's expanded-mode flag */
@@ -2151,4 +2210,54 @@ bool
 recognized_connection_string(const char *connstr)
 {
 	return uri_prefix_length(connstr) != 0 || strchr(connstr, '=') != NULL;
+}
+
+/*
+ * read file into buffer
+ */
+static bool
+read_file(char *fname, PQExpBuffer rawbuf)
+{
+	FILE	   *fd;
+	bool	   result = false;
+
+	fd = fopen(fname, PG_BINARY_R);
+	if (fd)
+	{
+		struct stat		fst;
+
+		if (fstat(fileno(fd), &fst) != -1)
+		{
+			if (S_ISREG(fst.st_mode))
+			{
+				if (fst.st_size <= ((int64) 1024) * 1024 * 1024)
+				{
+					size_t				size;
+					char				buf[512];
+
+					while ((size = fread(buf, 1, sizeof(buf), fd)) > 0)
+						appendBinaryPQExpBuffer(rawbuf, buf, size);
+
+					if (ferror(fd))
+						psql_error("%s: %s\n", fname, strerror(errno));
+					else if (PQExpBufferBroken(rawbuf))
+						psql_error("out of memory\n");
+					else
+						result = true;
+				}
+				else
+					psql_error("%s is too big (greather than 1GB)\n", fname);
+			}
+			else
+				psql_error("%s is not regular file\n", fname);
+		}
+		else
+			psql_error("%s: %s\n", fname, strerror(errno));
+
+		fclose(fd);
+	}
+	else
+		psql_error("%s: %s\n", fname, strerror(errno));
+
+	return result;
 }

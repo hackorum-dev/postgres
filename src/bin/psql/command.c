@@ -28,6 +28,7 @@
 #endif
 
 #include "catalog/pg_class.h"
+#include "catalog/pg_type.h"
 #include "portability/instr_time.h"
 
 #include "libpq-fe.h"
@@ -933,6 +934,50 @@ exec_command(const char *cmd,
 	else if (strcmp(cmd, "gexec") == 0)
 	{
 		pset.gexec_flag = true;
+		status = PSQL_CMD_SEND;
+	}
+
+	/*
+	 * \gloadfrom filename -- send query and use content of file as parameter
+	 */
+	else if (strcmp(cmd, "gloadfrom") == 0)
+	{
+		char	   *fmt = NULL;
+		char	   *fname = psql_scan_slash_option(scan_state,
+												   OT_FILEPIPE, NULL, false);
+
+		if (!fname)
+		{
+			psql_error("\\%s: missing required argument\n", cmd);
+			success = false;
+		}
+		else
+		{
+			/* try to get separate format arg */
+			fmt = psql_scan_slash_option(scan_state,
+										OT_NORMAL, NULL, true);
+
+			if (fmt)
+			{
+				if (strcmp(fmt, "text") == 0)
+					pset.gloadfrom_fmt = TEXTOID;
+				else if (strcmp(fmt, "bytea") == 0)
+					pset.gloadfrom_fmt = BYTEAOID;
+				else if (strcmp(fmt, "xml") == 0)
+					pset.gloadfrom_fmt = XMLOID;
+				else
+				{
+					psql_error("\\%s: only [text, bytea, xml] format can be specified\n", cmd);
+					success = false;
+				}
+			}
+			else
+				pset.gloadfrom_fmt = 0;		/* UNKNOWNOID */
+
+			expand_tilde(&fname);
+			pset.gloadfrom = pg_strdup(fname);
+		}
+		free(fname);
 		status = PSQL_CMD_SEND;
 	}
 
@@ -2518,6 +2563,9 @@ _align2string(enum printFormat in)
 		case PRINT_TROFF_MS:
 			return "troff-ms";
 			break;
+		case PRINT_BINARY:
+			return "binary";
+			break;
 	}
 	return "unknown";
 }
@@ -2589,9 +2637,11 @@ do_pset(const char *param, const char *value, printQueryOpt *popt, bool quiet)
 			popt->topt.format = PRINT_LATEX_LONGTABLE;
 		else if (pg_strncasecmp("troff-ms", value, vallen) == 0)
 			popt->topt.format = PRINT_TROFF_MS;
+		else if (pg_strncasecmp("binary", value, vallen) == 0)
+			popt->topt.format = PRINT_BINARY;
 		else
 		{
-			psql_error("\\pset: allowed formats are unaligned, aligned, wrapped, html, asciidoc, latex, latex-longtable, troff-ms\n");
+			psql_error("\\pset: allowed formats are unaligned, aligned, wrapped, html, asciidoc, latex, latex-longtable, troff-ms, binary\n");
 			return false;
 		}
 	}

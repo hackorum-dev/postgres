@@ -1,0 +1,31 @@
+-- export/import binary varlena objects
+create table test_bin_objects(id integer, doc bytea);
+insert into test_bin_objects values(1, E'\\xDE00ADBEEF');
+\pset format binary
+select doc from test_bin_objects where id = 1
+\g results/varlenatest.bin
+insert into test_bin_objects values(2, $1)
+\gloadfrom results/varlenatest.bin bytea
+\pset format aligned
+select id, doc, md5(doc) from test_bin_objects;
+ id |     doc      |               md5                
+----+--------------+----------------------------------
+  1 | \xde00adbeef | 70afdd78c75bfb6e76781d3785858b66
+  2 | \xde00adbeef | 70afdd78c75bfb6e76781d3785858b66
+(2 rows)
+
+truncate test_bin_objects;
+insert into test_bin_objects values(1, $1)
+\gloadfrom '@abs_srcdir@/data/logo.data'
+\pset format binary
+select doc from test_bin_objects where id = 1
+\g results/100x58_1.gif
+insert into test_bin_objects values(2, $1)
+\gloadfrom results/100x58_1.gif bytea
+\pset format aligned
+-- print when md5 is unexpected (result should be empty)
+select id, md5(doc) from test_bin_objects where md5(doc) <> '24da0c4de68bf19682344f8b060faeb5';
+ id | md5 
+----+-----
+(0 rows)
+

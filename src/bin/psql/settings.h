@@ -91,6 +91,9 @@ typedef struct _psqlSettings
 	printQueryOpt popt;
 
 	char	   *gfname;			/* one-shot file output argument for \g */
+	char	   *gloadfrom;		/* one-shot file input argument for \gloadfrom */
+	Oid		    gloadfrom_fmt;	/* one-shot data file format UNKNOWNOID,
+								 * TEXTOID, BYTEAOID or XMLOID */
 	bool		g_expanded;		/* one-shot expanded output requested via \gx */
 	char	   *gset_prefix;	/* one-shot prefix argument for \gset */
 	bool		gexec_flag;		/* one-shot flag to execute query's results */

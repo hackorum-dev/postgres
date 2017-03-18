@@ -124,6 +124,7 @@ test: alter_generic
 test: alter_operator
 test: misc
 test: psql
+test: psql_export_import
 test: async
 test: dbsize
 test: misc_functions

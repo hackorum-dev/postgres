@@ -1945,6 +1945,38 @@ CREATE INDEX
 
 
       <varlistentry>
+        <term><literal>\gloadfrom <replaceable class="parameter">filename</replaceable> <optional> <replaceable class="parameter">format</replaceable> </optional> </literal></term>
+
+        <listitem>
+        <para>
+         Sends the current query input buffer to the server. The current
+         query should to have one query parameter <literal>$1</literal>.
+         The content of <literal>filename</literal> file will be used as
+         the value of this parameter.
+        </para>
+
+        <para>
+         When <literal>format</literal> is not specified, then data are
+         passed in text format. When format is specified, then data are
+         passed in binary format. The available formats are:
+         <literal>text</literal>, <literal>bytea</literal>
+         or <literal>xml</literal> type. In the example the XML document is 
+         imported to table <structname>my_table</>:
+<programlisting>
+=&gt; <userinput>CREATE TABLE my_table(id serial, doc xml);</>
+=&gt; <userinput>INSERT INTO my_table(doc) VALUES($1) RETURNING id</>
+-&gt; <userinput>\gloadfrom ~/Documents/data.xml xml</>
+ id 
+----
+  1
+(1 row)
+</programlisting>
+        </para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
         <term><literal>\gset [ <replaceable class="parameter">prefix</replaceable> ]</literal></term>
 
         <listitem>
@@ -2366,8 +2398,8 @@ lo_import 152801
           <literal>aligned</literal>, <literal>wrapped</literal>,
           <literal>html</literal>, <literal>asciidoc</literal>,
           <literal>latex</literal> (uses <literal>tabular</literal>),
-          <literal>latex-longtable</literal>, or
-          <literal>troff-ms</literal>.
+          <literal>latex-longtable</literal>, <literal>troff-ms</literal> or
+          <literal>binary</literal>.
           Unique abbreviations are allowed.  (That would mean one letter
           is enough.)
           </para>
@@ -2404,6 +2436,12 @@ lo_import 152801
           also requires the <application>LaTeX</application>
           <literal>longtable</literal> and <literal>booktabs</> packages.
           </para>
+
+          <para>
+          The <literal>binary</> format is simply output values in
+          binary format.
+          </para>
+
           </listitem>
           </varlistentry>
 
