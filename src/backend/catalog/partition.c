@@ -1155,7 +1155,7 @@ get_qual_for_list(PartitionKey key, PartitionBoundSpec *spec)
 	ListCell   *cell,
 			   *prev,
 			   *next;
-	Node	   *keyCol;
+	Expr	   *keyCol;
 	Oid			operoid;
 	bool		need_relabel,
 				list_has_null = false;
@@ -1164,14 +1164,14 @@ get_qual_for_list(PartitionKey key, PartitionBoundSpec *spec)
 
 	/* Left operand is either a simple Var or arbitrary expression */
 	if (key->partattrs[0] != 0)
-		keyCol = (Node *) makeVar(1,
+		keyCol = (Expr *) makeVar(1,
 								  key->partattrs[0],
 								  key->parttypid[0],
 								  key->parttypmod[0],
 								  key->parttypcoll[0],
 								  0);
 	else
-		keyCol = (Node *) copyObject(linitial(key->partexprs));
+		keyCol = (Expr *) copyObject(linitial(key->partexprs));
 
 	/*
 	 * We must remove any NULL value in the list; we handle it separately
@@ -1201,7 +1201,7 @@ get_qual_for_list(PartitionKey key, PartitionBoundSpec *spec)
 		 * expressions
 		 */
 		nulltest1 = makeNode(NullTest);
-		nulltest1->arg = (Expr *) keyCol;
+		nulltest1->arg = keyCol;
 		nulltest1->nulltesttype = IS_NOT_NULL;
 		nulltest1->argisrow = false;
 		nulltest1->location = -1;
@@ -1212,7 +1212,7 @@ get_qual_for_list(PartitionKey key, PartitionBoundSpec *spec)
 		 * Gin up a col IS NULL test that will be OR'd with other expressions
 		 */
 		nulltest2 = makeNode(NullTest);
-		nulltest2->arg = (Expr *) keyCol;
+		nulltest2->arg = keyCol;
 		nulltest2->nulltesttype = IS_NULL;
 		nulltest2->argisrow = false;
 		nulltest2->location = -1;
@@ -1233,7 +1233,7 @@ get_qual_for_list(PartitionKey key, PartitionBoundSpec *spec)
 	operoid = get_partition_operator(key, 0, BTEqualStrategyNumber,
 									 &need_relabel);
 	if (need_relabel || key->partcollation[0] != key->parttypcoll[0])
-		keyCol = (Node *) makeRelabelType((Expr *) keyCol,
+		keyCol = (Expr *) makeRelabelType((Expr *) keyCol,
 										  key->partopcintype[0],
 										  -1,
 										  key->partcollation[0],
@@ -1287,7 +1287,7 @@ get_qual_for_range(PartitionKey key, PartitionBoundSpec *spec)
 	{
 		PartitionRangeDatum *ldatum = lfirst(cell1),
 				   *udatum = lfirst(cell2);
-		Node	   *keyCol;
+		Expr	   *keyCol;
 		Const	   *lower_val = NULL,
 				   *upper_val = NULL;
 		EState	   *estate;
@@ -1303,7 +1303,7 @@ get_qual_for_range(PartitionKey key, PartitionBoundSpec *spec)
 		/* Left operand */
 		if (key->partattrs[i] != 0)
 		{
-			keyCol = (Node *) makeVar(1,
+			keyCol = (Expr *) makeVar(1,
 									  key->partattrs[i],
 									  key->parttypid[i],
 									  key->parttypmod[i],
@@ -1312,7 +1312,7 @@ get_qual_for_range(PartitionKey key, PartitionBoundSpec *spec)
 		}
 		else
 		{
-			keyCol = (Node *) copyObject(lfirst(partexprs_item));
+			keyCol = copyObject(lfirst(partexprs_item));
 			partexprs_item = lnext(partexprs_item);
 		}
 
@@ -1325,7 +1325,7 @@ get_qual_for_range(PartitionKey key, PartitionBoundSpec *spec)
 		if (!IsA(keyCol, Var))
 		{
 			nulltest = makeNode(NullTest);
-			nulltest->arg = (Expr *) keyCol;
+			nulltest->arg = keyCol;
 			nulltest->nulltesttype = IS_NOT_NULL;
 			nulltest->argisrow = false;
 			nulltest->location = -1;
@@ -1380,7 +1380,7 @@ get_qual_for_range(PartitionKey key, PartitionBoundSpec *spec)
 					elog(ERROR, "invalid range bound specification");
 
 				if (need_relabel || key->partcollation[i] != key->parttypcoll[i])
-					keyCol = (Node *) makeRelabelType((Expr *) keyCol,
+					keyCol = (Expr *) makeRelabelType(keyCol,
 													  key->partopcintype[i],
 													  -1,
 													  key->partcollation[i],
@@ -1389,7 +1389,7 @@ get_qual_for_range(PartitionKey key, PartitionBoundSpec *spec)
 								 make_opclause(operoid,
 											   BOOLOID,
 											   false,
-											   (Expr *) keyCol,
+											   keyCol,
 											   (Expr *) lower_val,
 											   InvalidOid,
 											   key->partcollation[i]));
@@ -1411,7 +1411,7 @@ get_qual_for_range(PartitionKey key, PartitionBoundSpec *spec)
 											 &need_relabel);
 
 			if (need_relabel || key->partcollation[i] != key->parttypcoll[i])
-				keyCol = (Node *) makeRelabelType((Expr *) keyCol,
+				keyCol = (Expr *) makeRelabelType(keyCol,
 												  key->partopcintype[i],
 												  -1,
 												  key->partcollation[i],
@@ -1420,7 +1420,7 @@ get_qual_for_range(PartitionKey key, PartitionBoundSpec *spec)
 							 make_opclause(operoid,
 										   BOOLOID,
 										   false,
-										   (Expr *) keyCol,
+										   keyCol,
 										   (Expr *) lower_val,
 										   InvalidOid,
 										   key->partcollation[i]));
@@ -1433,7 +1433,7 @@ get_qual_for_range(PartitionKey key, PartitionBoundSpec *spec)
 											 &need_relabel);
 
 			if (need_relabel || key->partcollation[i] != key->parttypcoll[i])
-				keyCol = (Node *) makeRelabelType((Expr *) keyCol,
+				keyCol = (Expr *) makeRelabelType(keyCol,
 												  key->partopcintype[i],
 												  -1,
 												  key->partcollation[i],
@@ -1443,7 +1443,7 @@ get_qual_for_range(PartitionKey key, PartitionBoundSpec *spec)
 							 make_opclause(operoid,
 										   BOOLOID,
 										   false,
-										   (Expr *) keyCol,
+										   keyCol,
 										   (Expr *) upper_val,
 										   InvalidOid,
 										   key->partcollation[i]));
