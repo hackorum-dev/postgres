@@ -288,6 +288,18 @@ DecodeXactOp(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 			 */
 			ReorderBufferProcessXid(reorder, XLogRecGetXid(r), buf->origptr);
 			break;
+		case XLOG_XACT_CATALOG_XMIN_ADV:
+
+			/*
+			 * The global catalog_xmin has been advanced. By the time we see
+			 * this in logical decoding it no longer matters, since it's
+			 * guaranteed that all later records will be consistent with the
+			 * advanced catalog_xmin, so we ignore it here. If we were running
+			 * on a standby and it applied a catalog xmin advance past our
+			 * needed catalog_xmin we would've already been terminated with a
+			 * conflict with standby error.
+			 */
+			break;
 		default:
 			elog(ERROR, "unexpected RM_XACT_ID record type: %u", info);
 	}

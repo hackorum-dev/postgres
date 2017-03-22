@@ -51,6 +51,7 @@
 #include "storage/ipc.h"
 #include "storage/lwlock.h"
 #include "storage/proc.h"
+#include "storage/procarray.h"
 #include "storage/shmem.h"
 #include "storage/smgr.h"
 #include "storage/spin.h"
@@ -333,6 +334,14 @@ BackgroundWriterMain(void)
 				last_snapshot_lsn = LogStandbySnapshot();
 				last_snapshot_ts = now;
 			}
+
+			/*
+			 * We can also advance the threshold used for catalog tuple
+			 * cleanup, rate-limited so we don't write it too often. The delay
+			 * slightly increases catalog bloat but reduces the volume of
+			 * catalog_xmin advance records written.
+			 */
+			UpdateOldestCatalogXmin();
 		}
 
 		/*

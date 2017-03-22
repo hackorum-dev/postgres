@@ -137,7 +137,7 @@ typedef void (*SubXactCallback) (SubXactEvent event, SubTransactionId mySubid,
 #define XLOG_XACT_COMMIT_PREPARED	0x30
 #define XLOG_XACT_ABORT_PREPARED	0x40
 #define XLOG_XACT_ASSIGNMENT		0x50
-/* free opcode 0x60 */
+#define XLOG_XACT_CATALOG_XMIN_ADV	0x60
 /* free opcode 0x70 */
 
 /* mask for filtering opcodes out of xl_info */
@@ -186,6 +186,13 @@ typedef struct xl_xact_assignment
 } xl_xact_assignment;
 
 #define MinSizeOfXactAssignment offsetof(xl_xact_assignment, xsub)
+
+typedef struct xl_xact_catalog_xmin_advance
+{
+	TransactionId new_catalog_xmin;
+}	xl_xact_catalog_xmin_advance;
+
+#define SizeOfXactCatalogXminAdvance (offsetof(xl_xact_catalog_xmin_advance, new_catalog_xmin) + sizeof(TransactionId))
 
 /*
  * Commit and abort records can contain a lot of information. But a large
@@ -391,6 +398,9 @@ extern XLogRecPtr XactLogAbortRecord(TimestampTz abort_time,
 				   int nsubxacts, TransactionId *subxacts,
 				   int nrels, RelFileNode *rels,
 				   int xactflags, TransactionId twophase_xid);
+
+extern XLogRecPtr XactLogCatalogXminUpdate(TransactionId new_catalog_xmin);
+
 extern void xact_redo(XLogReaderState *record);
 
 /* xactdesc.c */

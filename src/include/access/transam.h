@@ -134,6 +134,10 @@ typedef struct VariableCacheData
 	 */
 	TransactionId latestCompletedXid;	/* newest XID that has committed or
 										 * aborted */
+	TransactionId oldestCatalogXmin;	/* oldestCatalogXmin guarantees that
+										 * no valid catalog tuples >= than it
+										 * are removed. That property is used
+										 * for logical decoding. */
 
 	/*
 	 * These fields are protected by CLogTruncationLock
@@ -179,6 +183,7 @@ extern TransactionId GetNewTransactionId(bool isSubXact);
 extern TransactionId ReadNewTransactionId(void);
 extern void SetTransactionIdLimit(TransactionId oldest_datfrozenxid,
 					  Oid oldest_datoid);
+extern void SetOldestCatalogXmin(TransactionId oldestCatalogXmin);
 extern void AdvanceOldestClogXid(TransactionId oldest_datfrozenxid);
 extern bool ForceTransactionIdLimitUpdate(void);
 extern Oid	GetNewObjectId(void);

@@ -1778,15 +1778,55 @@ PhysicalReplicationSlotNewXmin(TransactionId feedbackXmin, TransactionId feedbac
 		slot->data.xmin = feedbackXmin;
 		slot->effective_xmin = feedbackXmin;
 	}
+	/*
+	 * If the physical slot is relaying catalog_xmin for logical replication
+	 * slots on the replica it's safe to act on catalog_xmin advances
+	 * immediately too. The replica will only send a new catalog_xmin via
+	 * feedback when it advances its effective_catalog_xmin, so it's done the
+	 * delay-until-confirmed dance for us and knows it won't need the data
+	 * we're protecting from vacuum again.
+	 */
 	if (!TransactionIdIsNormal(slot->data.catalog_xmin) ||
 		!TransactionIdIsNormal(feedbackCatalogXmin) ||
 		TransactionIdPrecedes(slot->data.catalog_xmin, feedbackCatalogXmin))
 	{
+		/*
+		 * If the standby is setting a catalog_xmin for the first time we must
+		 * check that it's within our global xmin horizon so we don't lock in a
+		 * value we might've already removed tuples for. The standby might have
+		 * an outdated catalog_xmin locally if it's lagging and we can't blindly
+		 * trust it, since we'd then update oldestCatalogXmin with a value that's
+		 * not actually safe.
+		 */
+		if (TransactionIdIsValid(feedbackCatalogXmin) &&
+			!TransactionIdIsValid(slot->effective_catalog_xmin))
+		{
+			TransactionId lowerBound;
+
+			LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
+
+			lowerBound = GetOldestSafeDecodingTransactionId();
+			if (TransactionIdPrecedes(feedbackCatalogXmin, lowerBound))
+				feedbackCatalogXmin = lowerBound;
+
+			slot->effective_catalog_xmin = feedbackCatalogXmin;
+			slot->data.catalog_xmin = slot->effective_catalog_xmin;
+
+			SpinLockRelease(&slot->mutex);
+			ReplicationSlotsComputeRequiredXmin(true);
+
+			LWLockRelease(ProcArrayLock);
+		}
+		else
+		{
+			slot->data.catalog_xmin = feedbackCatalogXmin;
+			slot->effective_catalog_xmin = feedbackCatalogXmin;
+			SpinLockRelease(&slot->mutex);
+		}
 		changed = true;
-		slot->data.catalog_xmin = feedbackCatalogXmin;
-		slot->effective_catalog_xmin = feedbackCatalogXmin;
 	}
-	SpinLockRelease(&slot->mutex);
+	else
+		SpinLockRelease(&slot->mutex);
 
 	if (changed)
 	{

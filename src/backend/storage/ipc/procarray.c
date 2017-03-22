@@ -87,7 +87,12 @@ typedef struct ProcArrayStruct
 
 	/* oldest xmin of any replication slot */
 	TransactionId replication_slot_xmin;
-	/* oldest catalog xmin of any replication slot */
+
+	/*
+	 * Oldest catalog xmin of any replication slot
+	 *
+	 * See also ShmemVariableCache->oldestGlobalXmin
+	 */
 	TransactionId replication_slot_catalog_xmin;
 
 	/* indexes into allPgXact[], has PROCARRAY_MAXPROCS entries */
@@ -1306,6 +1311,9 @@ TransactionIdIsActive(TransactionId xid)
  * The return value is also adjusted with vacuum_defer_cleanup_age, so
  * increasing that setting on the fly is another easy way to make
  * GetOldestXmin() move backwards, with no consequences for data integrity.
+ *
+ * When changing GetOldestXmin, check to see whether RecentGlobalXmin
+ * computation in GetSnapshotData also needs changing.
  */
 TransactionId
 GetOldestXmin(Relation rel, int flags)
@@ -1441,6 +1449,89 @@ GetOldestXmin(Relation rel, int flags)
 		result = replication_slot_catalog_xmin;
 
 	return result;
+}
+
+/*
+ * Return true if ShmemVariableCache->oldestCatalogXmin needs to be updated
+ * to reflect an advance in procArray->replication_slot_catalog_xmin or
+ * it becoming newly set or unset.
+ *
+ */
+static bool
+CatalogXminNeedsUpdate(TransactionId vacuum_catalog_xmin, TransactionId slots_catalog_xmin)
+{
+	return (TransactionIdPrecedes(vacuum_catalog_xmin, slots_catalog_xmin)
+			|| (TransactionIdIsValid(vacuum_catalog_xmin) != TransactionIdIsValid(slots_catalog_xmin)));
+}
+
+/*
+ * If necessary, copy the current catalog_xmin needed by replication slots to
+ * the effective catalog_xmin used for dead tuple removal and write a WAL
+ * record recording the change.
+ *
+ * This allows standbys to know the oldest xid for which it is safe to create
+ * a historic snapshot for logical decoding. VACUUM or other cleanup may have
+ * removed catalog tuple versions needed to correctly decode transactions older
+ * than this threshold. Standbys can use this information to cancel conflicting
+ * decoding sessions and invalidate slots that need discarded information.
+ *
+ * (We can't use the transaction IDs in WAL records emitted by VACUUM etc for
+ * this, since they don't identify the relation as a catalog or not.  Nor can a
+ * standby look up the relcache to get the Relation for the affected
+ * relfilenode to check if it is a catalog. The standby would also have no way
+ * to know the oldest safe position at startup if it wasn't in the control
+ * file.)
+ */
+void
+UpdateOldestCatalogXmin(void)
+{
+	TransactionId vacuum_catalog_xmin;
+	TransactionId slots_catalog_xmin;
+
+	Assert(XLogInsertAllowed());
+
+	/*
+	 * It's most likely that replication_slot_catalog_xmin and
+	 * oldestCatalogXmin will be the same and no action is required, so do a
+	 * pre-check before doing expensive WAL writing and exclusive locking.
+	 */
+	LWLockAcquire(ProcArrayLock, LW_SHARED);
+	vacuum_catalog_xmin = ShmemVariableCache->oldestCatalogXmin;
+	slots_catalog_xmin = procArray->replication_slot_catalog_xmin;
+	LWLockRelease(ProcArrayLock);
+
+	if (CatalogXminNeedsUpdate(vacuum_catalog_xmin, slots_catalog_xmin))
+	{
+		/*
+		 * We must prevent a concurrent checkpoint, otherwise the catalog xmin
+		 * advance xlog record with the new value might be written before the
+		 * checkpoint but the checkpoint may still see the old
+		 * oldestCatalogXmin value.
+		 */
+		if (!LWLockConditionalAcquire(CheckpointLock, LW_SHARED))
+			/* Couldn't get checkpointer lock; will retry later */
+			return;
+
+		XactLogCatalogXminUpdate(slots_catalog_xmin);
+
+		/*
+		 * A concurrent updater could've changed the oldestCatalogXmin so we
+		 * need to re-check under ProcArrayLock before updating. The LWLock
+		 * provides a barrier.
+		 *
+		 * We must not re-read replication_slot_catalog_xmin even if it has
+		 * advanced, since we xlog'd the older value. If it advanced since, a
+		 * later run will xlog the new value and advance.
+		 */
+		LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
+		vacuum_catalog_xmin = *((volatile TransactionId *) &ShmemVariableCache->oldestCatalogXmin);
+		if (CatalogXminNeedsUpdate(vacuum_catalog_xmin, slots_catalog_xmin))
+			ShmemVariableCache->oldestCatalogXmin = slots_catalog_xmin;
+		LWLockRelease(ProcArrayLock);
+
+		LWLockRelease(CheckpointLock);
+	}
+
 }
 
 /*
@@ -1700,7 +1791,7 @@ GetSnapshotData(Snapshot snapshot)
 
 	/* fetch into volatile var while ProcArrayLock is held */
 	replication_slot_xmin = procArray->replication_slot_xmin;
-	replication_slot_catalog_xmin = procArray->replication_slot_catalog_xmin;
+	replication_slot_catalog_xmin = ShmemVariableCache->oldestCatalogXmin;
 
 	if (!TransactionIdIsValid(MyPgXact->xmin))
 		MyPgXact->xmin = TransactionXmin = xmin;
@@ -1711,6 +1802,9 @@ GetSnapshotData(Snapshot snapshot)
 	 * Update globalxmin to include actual process xids.  This is a slightly
 	 * different way of computing it than GetOldestXmin uses, but should give
 	 * the same result.
+	 *
+	 * If you change computation of RecentGlobalXmin here you may need to
+	 * change GetOldestXmin(...) as well.
 	 */
 	if (TransactionIdPrecedes(xmin, globalxmin))
 		globalxmin = xmin;
@@ -2041,12 +2135,16 @@ GetRunningTransactionData(void)
 	}
 
 	/*
-	 * It's important *not* to include the limits set by slots here because
+	 * It's important *not* to include the xmin set by slots here because
 	 * snapbuild.c uses oldestRunningXid to manage its xmin horizon. If those
 	 * were to be included here the initial value could never increase because
-	 * of a circular dependency where slots only increase their limits when
-	 * running xacts increases oldestRunningXid and running xacts only
+	 * of a circular dependency where slots only increase their xmin limits
+	 * when running xacts increases oldestRunningXid and running xacts only
 	 * increases if slots do.
+	 *
+	 * We can safely report the catalog_xmin limit for replication slots here
+	 * because it's only used to advance oldestCatalogXmin. Slots'
+	 * catalog_xmin advance does not depend on it so there's no circularity.
 	 */
 
 	CurrentRunningXacts->xcnt = count - subcount;
@@ -2171,6 +2269,13 @@ GetOldestSafeDecodingTransactionId(void)
 	 * If there's already a slot pegging the xmin horizon, we can start with
 	 * that value, it's guaranteed to be safe since it's computed by this
 	 * routine initially and has been enforced since.
+	 *
+	 * We don't use ShmemVariableCache->oldestCatalogXmin here because another
+	 * backend may have already logged its intention to advance it to a higher
+	 * value (still <= replication_slot_catalog_xmin) and just be waiting on
+	 * ProcArrayLock to actually apply the change. On a standby
+	 * replication_slot_catalog_xmin is what the walreceiver will be sending
+	 * in hot_standby_feedback, not oldestCatalogXmin.
 	 */
 	if (TransactionIdIsValid(procArray->replication_slot_catalog_xmin) &&
 		TransactionIdPrecedes(procArray->replication_slot_catalog_xmin,
@@ -2965,18 +3070,31 @@ ProcArraySetReplicationSlotXmin(TransactionId xmin, TransactionId catalog_xmin,
  *
  * Return the current slot xmin limits. That's useful to be able to remove
  * data that's older than those limits.
+ *
+ * For logical replication slots' catalog_xmins, we return both the effective
+ * catalog_xmin being used for tuple removal (retained catalog_xmin) and the
+ * catalog_xmin actually needed by replication slots (needed_catalog_xmin).
+ *
+ * retained_catalog_xmin should be older than needed_catalog_xmin but is not
+ * guaranteed to be if there are replication slots on a replica currently
+ * attempting to start up and reserve catalogs, outdated replicas sending
+ * feedback, etc.
  */
 void
 ProcArrayGetReplicationSlotXmin(TransactionId *xmin,
-								TransactionId *catalog_xmin)
+								TransactionId *retained_catalog_xmin,
+								TransactionId *needed_catalog_xmin)
 {
 	LWLockAcquire(ProcArrayLock, LW_SHARED);
 
 	if (xmin != NULL)
 		*xmin = procArray->replication_slot_xmin;
 
-	if (catalog_xmin != NULL)
-		*catalog_xmin = procArray->replication_slot_catalog_xmin;
+	if (retained_catalog_xmin != NULL)
+		*retained_catalog_xmin = ShmemVariableCache->oldestCatalogXmin;
+
+	if (needed_catalog_xmin != NULL)
+		*needed_catalog_xmin = procArray->replication_slot_catalog_xmin;
 
 	LWLockRelease(ProcArrayLock);
 }

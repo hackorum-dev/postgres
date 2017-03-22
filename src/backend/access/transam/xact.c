@@ -5652,6 +5652,42 @@ xact_redo(XLogReaderState *record)
 			ProcArrayApplyXidAssignment(xlrec->xtop,
 										xlrec->nsubxacts, xlrec->xsub);
 	}
+	else if (info == XLOG_XACT_CATALOG_XMIN_ADV)
+	{
+		xl_xact_catalog_xmin_advance *xlrec = (xl_xact_catalog_xmin_advance *) XLogRecGetData(record);
+
+		/*
+		 * Apply the new catalog_xmin limit immediately. New decoding sessions
+		 * will refuse to start if their slot is past it, and old ones will
+		 * notice when we signal them with a recovery conflict. There's no
+		 * effect on the catalogs themselves yet, so it's safe for backends
+		 * with older catalog_xmins to still exist.
+		 *
+		 * We don't have to take ProcArrayLock since only the startup process
+		 * is allowed to change oldestCatalogXmin when we're in recovery.
+		 *
+		 * Existing sessions are not notified and must check the safe xmin.
+		 */
+		SetOldestCatalogXmin(xlrec->new_catalog_xmin);
+
+	}
 	else
 		elog(PANIC, "xact_redo: unknown op code %u", info);
+}
+
+/*
+ * Record when we advance the catalog_xmin used for tuple removal
+ * so standbys find out before we remove catalog tuples they might
+ * need for logical decoding.
+ */
+XLogRecPtr
+XactLogCatalogXminUpdate(TransactionId new_catalog_xmin)
+{
+	xl_xact_catalog_xmin_advance xlrec;
+
+	xlrec.new_catalog_xmin = new_catalog_xmin;
+
+	XLogBeginInsert();
+	XLogRegisterData((char *) &xlrec, SizeOfXactCatalogXminAdvance);
+	return XLogInsert(RM_XACT_ID, XLOG_XACT_CATALOG_XMIN_ADV);
 }

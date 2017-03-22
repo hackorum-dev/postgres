@@ -7,23 +7,78 @@ use strict;
 use warnings;
 use PostgresNode;
 use TestLib;
-use Test::More tests => 16;
+use Test::More tests => 44;
 
 # Initialize master node
 my $node_master = get_new_node('master');
 $node_master->init(allows_streaming => 1);
-$node_master->append_conf(
-		'postgresql.conf', qq(
+$node_master->append_conf('postgresql.conf', qq(
 wal_level = logical
+hot_standby_feedback = on
+wal_receiver_status_interval = 1
+log_min_messages = debug1
 ));
 $node_master->start;
-my $backup_name = 'master_backup';
 
+# Set up some changes before we make base backups
 $node_master->safe_psql('postgres', qq[CREATE TABLE decoding_test(x integer, y text);]);
 
 $node_master->safe_psql('postgres', qq[SELECT pg_create_logical_replication_slot('test_slot', 'test_decoding');]);
 
 $node_master->safe_psql('postgres', qq[INSERT INTO decoding_test(x,y) SELECT s, s::text FROM generate_series(1,10) s;]);
+
+# Launch two streaming replicas, one with and one without
+# physical replication slots. We'll use these for tests
+# involving interaction of logical and physical standby.
+#
+# Both backups are created with pg_basebackup.
+#
+my $backup_name = 'master_backup';
+$node_master->backup($backup_name);
+
+$node_master->safe_psql('postgres', q[SELECT pg_create_physical_replication_slot('slot_replica');]);
+my $node_slot_replica = get_new_node('slot_replica');
+$node_slot_replica->init_from_backup($node_master, $backup_name, has_streaming => 1);
+$node_slot_replica->append_conf('recovery.conf', "primary_slot_name = 'slot_replica'");
+
+my $node_noslot_replica = get_new_node('noslot_replica');
+$node_noslot_replica->init_from_backup($node_master, $backup_name, has_streaming => 1);
+
+$node_slot_replica->start;
+$node_noslot_replica->start;
+
+sub restartpoint_standbys
+{
+	# Force restartpoints to update control files on replicas
+	$node_slot_replica->safe_psql('postgres', 'CHECKPOINT');
+	$node_noslot_replica->safe_psql('postgres', 'CHECKPOINT');
+}
+
+sub wait_standbys
+{
+	my $lsn = $node_master->lsn('insert');
+	$node_master->wait_for_catchup($node_noslot_replica, 'replay', $lsn);
+	$node_master->wait_for_catchup($node_slot_replica, 'replay', $lsn);
+}
+
+# pg_basebackup doesn't copy replication slots
+is($node_slot_replica->slot('test_slot')->{'slot_name'}, undef,
+	'logical slot test_slot on master not copied by pg_basebackup');
+
+# Make sure oldestCatalogXmin lands in the control file on master
+$node_master->safe_psql('postgres', 'VACUUM;');
+$node_master->safe_psql('postgres', 'CHECKPOINT;');
+
+my @nodes = ($node_master, $node_slot_replica, $node_noslot_replica);
+
+wait_standbys();
+restartpoint_standbys();
+foreach my $node (@nodes)
+{
+	# Master had an oldestCatalogXmin, so we must've inherited it via checkpoint
+	command_like(['pg_controldata', $node->data_dir], qr/^Latest checkpoint's oldestCatalogXmin:[^0][\d]*$/m,
+		"pg_controldata's oldestCatalogXmin is nonzero after start on " . $node->name);
+}
 
 # Basic decoding works
 my($result) = $node_master->safe_psql('postgres', qq[SELECT pg_logical_slot_get_changes('test_slot', NULL, NULL);]);
@@ -64,6 +119,9 @@ $stdout_recv = $node_master->pg_recvlogical_upto('postgres', 'test_slot', $endpo
 chomp($stdout_recv);
 is($stdout_recv, '', 'pg_recvlogical acknowledged changes, nothing pending on slot');
 
+# Create a second DB we'll use for testing dropping and accessing slots across
+# databases. This matters since logical slots are globally visible objects that
+# can only actually be used on one DB for most purposes.
 $node_master->safe_psql('postgres', 'CREATE DATABASE otherdb');
 
 is($node_master->psql('otherdb', "SELECT location FROM pg_logical_slot_peek_changes('test_slot', NULL, NULL) ORDER BY location DESC LIMIT 1;"), 3,
@@ -96,9 +154,29 @@ isnt($node_master->slot('test_slot')->{'catalog_xmin'}, '0',
 	'restored slot catalog_xmin is nonzero');
 is($node_master->psql('postgres', qq[SELECT pg_logical_slot_get_changes('test_slot', NULL, NULL);]), 3,
 	'reading from slot with wal_level < logical fails');
+wait_standbys();
+restartpoint_standbys();
+foreach my $node (@nodes)
+{
+	command_like(['pg_controldata', $node->data_dir], qr/^Latest checkpoint's oldestCatalogXmin:[^0][\d]*$/m,
+		"pg_controldata's oldestCatalogXmin is nonzero on " . $node->name);
+}
+
+# Dropping the slot must clear catalog_xmin
 is($node_master->psql('postgres', q[SELECT pg_drop_replication_slot('test_slot')]), 0,
 	'can drop logical slot while wal_level = replica');
 is($node_master->slot('test_slot')->{'catalog_xmin'}, '', 'slot was dropped');
+$node_master->safe_psql('postgres', 'VACUUM;');
+$node_master->safe_psql('postgres', 'CHECKPOINT;');
+wait_standbys();
+restartpoint_standbys();
+foreach my $node (@nodes)
+{
+	command_like(['pg_controldata', $node->data_dir], qr/^Latest checkpoint's oldestCatalogXmin:0$/m,
+		"pg_controldata's oldestCatalogXmin is zero after drop, vacuum and checkpoint on " . $node->name);
+}
 
-# done with the node
-$node_master->stop;
+foreach my $node (@nodes)
+{
+	$node->stop;
+}

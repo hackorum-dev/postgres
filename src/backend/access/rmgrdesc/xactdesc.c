@@ -297,6 +297,12 @@ xact_desc(StringInfo buf, XLogReaderState *record)
 		appendStringInfo(buf, "xtop %u: ", xlrec->xtop);
 		xact_desc_assignment(buf, xlrec);
 	}
+	else if (info == XLOG_XACT_CATALOG_XMIN_ADV)
+	{
+		xl_xact_catalog_xmin_advance *xlrec = (xl_xact_catalog_xmin_advance *) XLogRecGetData(record);
+
+		appendStringInfo(buf, "catalog_xmin %u", xlrec->new_catalog_xmin);
+	}
 }
 
 const char *
@@ -323,6 +329,9 @@ xact_identify(uint8 info)
 			break;
 		case XLOG_XACT_ASSIGNMENT:
 			id = "ASSIGNMENT";
+			break;
+		case XLOG_XACT_CATALOG_XMIN_ADV:
+			id = "CATALOG_XMIN";
 			break;
 	}
 
