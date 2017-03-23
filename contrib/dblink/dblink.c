@@ -679,7 +679,7 @@ dblink_record_internal(FunctionCallInfo fcinfo, bool is_async)
 	PG_TRY();
 	{
 		char	   *sql = NULL;
-		char	   *conname = NULL;
+		char	   *conname = text_to_cstring(PG_GETARG_TEXT_PP(0));
 		bool		fail = true;	/* default to backward compatible */
 
 		if (!is_async)
@@ -687,7 +687,7 @@ dblink_record_internal(FunctionCallInfo fcinfo, bool is_async)
 			if (PG_NARGS() == 3)
 			{
 				/* text,text,bool */
-				dblink_get_conn(text_to_cstring(PG_GETARG_TEXT_PP(0)), &conn, &conname, &freeconn);
+				dblink_get_conn(conname, &conn, &conname, &freeconn);
 				sql = text_to_cstring(PG_GETARG_TEXT_PP(1));
 				fail = PG_GETARG_BOOL(2);
 			}
@@ -702,7 +702,7 @@ dblink_record_internal(FunctionCallInfo fcinfo, bool is_async)
 				}
 				else
 				{
-					dblink_get_conn(text_to_cstring(PG_GETARG_TEXT_PP(0)), &conn, &conname, &freeconn);
+					dblink_get_conn(conname, &conn, &conname, &freeconn);
 					sql = text_to_cstring(PG_GETARG_TEXT_PP(1));
 				}
 			}
@@ -722,13 +722,13 @@ dblink_record_internal(FunctionCallInfo fcinfo, bool is_async)
 			if (PG_NARGS() == 2)
 			{
 				/* text,bool */
-				conn = dblink_get_named_conn(text_to_cstring(PG_GETARG_TEXT_PP(0)));
+				conn = dblink_get_named_conn(conname);
 				fail = PG_GETARG_BOOL(1);
 			}
 			else if (PG_NARGS() == 1)
 			{
 				/* text */
-				conn = dblink_get_named_conn(text_to_cstring(PG_GETARG_TEXT_PP(0)));
+				conn = dblink_get_named_conn(conname);
 			}
 			else
 				/* shouldn't happen */
@@ -1390,7 +1390,8 @@ dblink_exec(PG_FUNCTION_ARGS)
 		if (PG_NARGS() == 3)
 		{
 			/* must be text,text,bool */
-			dblink_get_conn(text_to_cstring(PG_GETARG_TEXT_PP(0)), &conn, &conname, &freeconn);
+			conname = text_to_cstring(PG_GETARG_TEXT_PP(0));
+			dblink_get_conn(conname, &conn, &conname, &freeconn);
 			sql = text_to_cstring(PG_GETARG_TEXT_PP(1));
 			fail = PG_GETARG_BOOL(2);
 		}
@@ -1405,7 +1406,8 @@ dblink_exec(PG_FUNCTION_ARGS)
 			}
 			else
 			{
-				dblink_get_conn(text_to_cstring(PG_GETARG_TEXT_PP(0)), &conn, &conname, &freeconn);
+				conname = text_to_cstring(PG_GETARG_TEXT_PP(0));
+				dblink_get_conn(conname, &conn, &conname, &freeconn);
 				sql = text_to_cstring(PG_GETARG_TEXT_PP(1));
 			}
 		}
