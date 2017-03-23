@@ -1283,6 +1283,23 @@ sub command_like
 
 =pod
 
+=item $node->command_fails_like(...) - TestLib::command_fails_like with our PGPORT
+
+See command_ok(...)
+
+=cut
+
+sub command_fails_like
+{
+	my $self = shift;
+
+	local $ENV{PGPORT} = $self->port;
+
+	TestLib::command_fails_like(@_);
+}
+
+=pod
+
 =item $node->issues_sql_like(cmd, expected_sql, test_name)
 
 Run a command on the node, then verify that $expected_sql appears in the
