@@ -289,13 +289,14 @@ sub program_options_handling_ok
 
 sub command_like
 {
-	my ($cmd, $expected_stdout, $test_name) = @_;
+	my ($cmd, $expected_stdout, $test_name, $expected_stderr) = @_;
 	my ($stdout, $stderr);
 	print("# Running: " . join(" ", @{$cmd}) . "\n");
 	my $result = IPC::Run::run $cmd, '>', \$stdout, '2>', \$stderr;
 	ok($result, "$test_name: exit code 0");
-	is($stderr, '', "$test_name: no stderr");
-	like($stdout, $expected_stdout, "$test_name: matches");
+	like($stderr, (defined $expected_stderr ? $expected_stderr : qr{}),
+					"$test_name: stderr matches");
+	like($stdout, $expected_stdout, "$test_name: stdout matches");
 }
 
 sub command_fails_like
