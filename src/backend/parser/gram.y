@@ -6225,12 +6225,28 @@ CommentStmt:
 					n->comment = $8;
 					$$ = (Node *) n;
 				}
+			| COMMENT ON PUBLICATION name IS comment_text
+				{
+					CommentStmt *n = makeNode(CommentStmt);
+					n->objtype = OBJECT_PUBLICATION;
+					n->object = (Node *) makeString($4);
+					n->comment = $6;
+					$$ = (Node *) n;
+				}
 			| COMMENT ON RULE name ON any_name IS comment_text
 				{
 					CommentStmt *n = makeNode(CommentStmt);
 					n->objtype = OBJECT_RULE;
 					n->object = (Node *) lappend($6, makeString($4));
 					n->comment = $8;
+					$$ = (Node *) n;
+				}
+			| COMMENT ON SUBSCRIPTION name IS comment_text
+				{
+					CommentStmt *n = makeNode(CommentStmt);
+					n->objtype = OBJECT_SUBSCRIPTION;
+					n->object = (Node *) makeString($4);
+					n->comment = $6;
 					$$ = (Node *) n;
 				}
 			| COMMENT ON TRANSFORM FOR Typename LANGUAGE name IS comment_text

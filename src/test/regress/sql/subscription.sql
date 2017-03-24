@@ -21,6 +21,10 @@ CREATE SUBSCRIPTION testsub CONNECTION 'testconn' PUBLICATION testpub;
 
 CREATE SUBSCRIPTION testsub CONNECTION 'dbname=doesnotexist' PUBLICATION testpub WITH (NOCONNECT);
 
+COMMENT ON SUBSCRIPTION testsub IS 'test subscription';
+SELECT obj_description(s.oid, 'pg_subscription') FROM pg_subscription s;
+
+
 \dRs+
 
 ALTER SUBSCRIPTION testsub SET PUBLICATION testpub2, testpub3 NOREFRESH;

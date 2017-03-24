@@ -24,6 +24,13 @@ ERROR:  invalid connection string syntax: missing "=" after "testconn" in connec
 
 CREATE SUBSCRIPTION testsub CONNECTION 'dbname=doesnotexist' PUBLICATION testpub WITH (NOCONNECT);
 WARNING:  tables were not subscribed, you will have to run ALTER SUBSCRIPTION ... REFRESH PUBLICATION to subscribe the tables
+COMMENT ON SUBSCRIPTION testsub IS 'test subscription';
+SELECT obj_description(s.oid, 'pg_subscription') FROM pg_subscription s;
+  obj_description  
+-------------------
+ test subscription
+(1 row)
+
 \dRs+
                                List of subscriptions
   Name   |           Owner           | Enabled | Publication |      Conninfo       
