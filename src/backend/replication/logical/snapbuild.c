@@ -506,7 +506,7 @@ SnapBuildBuildSnapshot(SnapBuild *builder, TransactionId xid)
  * for loading in different transaction.
  */
 Snapshot
-SnapBuildInitalSnapshot(SnapBuild *builder)
+SnapBuildInitialSnapshot(SnapBuild *builder)
 {
 	Snapshot	snap;
 	TransactionId xid;
@@ -604,7 +604,7 @@ SnapBuildExportSnapshot(SnapBuild *builder)
 	XactIsoLevel = XACT_REPEATABLE_READ;
 	XactReadOnly = true;
 
-	snap = SnapBuildInitalSnapshot(builder);
+	snap = SnapBuildInitialSnapshot(builder);
 
 	/*
 	 * now that we've built a plain snapshot, make it active and use the
