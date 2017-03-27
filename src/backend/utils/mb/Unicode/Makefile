@@ -70,6 +70,8 @@ WINTEXTS = CP866.TXT CP874.TXT CP936.TXT \
 GENERICTEXTS = $(ISO8859TEXTS) $(WINTEXTS) \
 	KOI8-R.TXT KOI8-U.TXT
 
+OBJS = map_dumper.o
+
 all: $(MAPS)
 
 $(GENERICMAPS): UCS_to_most.pl $(GENERICTEXTS)
@@ -107,6 +109,12 @@ euc_jis_2004_to_utf8.map utf8_to_euc_jis_2004.map: UCS_to_EUC_JIS_2004.pl euc-ji
 
 shift_jis_2004_to_utf8.map utf8_to_shift_jis_2004.map: UCS_to_SHIFT_JIS_2004.pl sjis-0213-2004-std.txt
 	$(PERL) $<
+
+mapdumps: map_dumper
+	./map_dumper
+
+clean:
+	rm -f *.dump $(OBJS) map_dumper.h
 
 distclean: clean
 	rm -f $(TEXTS)
@@ -147,3 +155,9 @@ $(filter-out CP8%,$(WINTEXTS)) CP932.TXT CP950.TXT:
 
 $(filter CP8%,$(WINTEXTS)):
 	$(DOWNLOAD) http://ftp.unicode.org/Public/MAPPINGS/VENDORS/MICSFT/PC/$(@F)
+
+map_dumper: map_dumper.c map_dumper.h
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) $(LDFLAGS_EX) map_dumper.c -o $@
+
+map_dumper.h: make_map_dumper.pl
+	$(PERL) make_map_dumper.pl
