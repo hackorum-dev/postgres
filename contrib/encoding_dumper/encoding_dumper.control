@@ -1,0 +1,5 @@
+# encoding dumper extension
+comment = 'dump encodings'
+default_version = '0.1'
+module_pathname = '$libdir/encoding_dumper'
+relocatable = true
