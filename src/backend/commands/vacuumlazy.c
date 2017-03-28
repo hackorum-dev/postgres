@@ -1404,6 +1404,7 @@ lazy_vacuum_heap(Relation onerel, LVRelStats *vacrelstats)
 		if (!ConditionalLockBufferForCleanup(buf))
 		{
 			ReleaseBuffer(buf);
+			vacrelstats->pinskipped_pages++;
 			++tupindex;
 			continue;
 		}
