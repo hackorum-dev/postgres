@@ -300,7 +300,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 				create_extension_opt_list alter_extension_opt_list
 %type <defelt>	createdb_opt_item copy_opt_item
 				transaction_mode_item
-				create_extension_opt_item alter_extension_opt_item
+				create_extension_opt_item
 
 %type <ival>	opt_lock lock_type cast_context
 %type <ival>	vacuum_option_list vacuum_option_elem
@@ -4251,17 +4251,13 @@ AlterExtensionStmt: ALTER EXTENSION name UPDATE alter_extension_opt_list
 		;
 
 alter_extension_opt_list:
-			alter_extension_opt_list alter_extension_opt_item
-				{ $$ = lappend($1, $2); }
-			| /* EMPTY */
-				{ $$ = NIL; }
-		;
-
-alter_extension_opt_item:
 			TO NonReservedWord_or_Sconst
 				{
-					$$ = makeDefElem("new_version", (Node *)makeString($2), @1);
+					$$ = list_make1(makeDefElem("new_version",
+									(Node *) makeString($2), @1));
 				}
+			| /* EMPTY */
+				{ $$ = NIL; }
 		;
 
 /*****************************************************************************

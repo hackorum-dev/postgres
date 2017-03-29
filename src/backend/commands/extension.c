@@ -2935,14 +2935,7 @@ ExecAlterExtensionStmt(ParseState *pstate, AlterExtensionStmt *stmt)
 		DefElem    *defel = (DefElem *) lfirst(lc);
 
 		if (strcmp(defel->defname, "new_version") == 0)
-		{
-			if (d_new_version)
-				ereport(ERROR,
-						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options"),
-						 parser_errposition(pstate, defel->location)));
 			d_new_version = defel;
-		}
 		else
 			elog(ERROR, "unrecognized option: %s", defel->defname);
 	}
