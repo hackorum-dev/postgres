@@ -374,7 +374,7 @@ describeFunctions(const char *functypes, const char *pattern, bool verbose, bool
 						  "        END ||\n"
 						  "        CASE\n"
 			 "          WHEN COALESCE(p.proargnames[s.i], '') = '' THEN ''\n"
-						  "          ELSE p.proargnames[s.i] || ' ' \n"
+						  "          ELSE p.proargnames[s.i] || ' '\n"
 						  "        END ||\n"
 			  "        pg_catalog.format_type(p.proallargtypes[s.i], NULL)\n"
 						  "      FROM\n"
@@ -897,7 +897,7 @@ permissionsList(const char *pattern)
 						  "    SELECT polname\n"
 						  "    || CASE WHEN polcmd != '*' THEN\n"
 						  "           E' (' || polcmd || E'):'\n"
-						  "       ELSE E':' \n"
+						  "       ELSE E':'\n"
 						  "       END\n"
 						  "    || CASE WHEN polqual IS NOT NULL THEN\n"
 						  "           E'\\n  (u): ' || pg_catalog.pg_get_expr(polqual, polrelid)\n"
@@ -931,7 +931,7 @@ permissionsList(const char *pattern)
 						  "       ELSE '' END\n"
 						  "    || CASE WHEN polcmd != '*' THEN\n"
 						  "           E' (' || polcmd || E'):'\n"
-						  "       ELSE E':' \n"
+						  "       ELSE E':'\n"
 						  "       END\n"
 						  "    || CASE WHEN polqual IS NOT NULL THEN\n"
 						  "           E'\\n  (u): ' || pg_catalog.pg_get_expr(polqual, polrelid)\n"
@@ -2238,7 +2238,7 @@ describeOneTableDetails(const char *schemaname,
 								  "CASE WHEN pol.polroles = '{0}' THEN NULL ELSE array_to_string(array(select rolname from pg_roles where oid = any (pol.polroles) order by 1),',') END,\n"
 						   "pg_catalog.pg_get_expr(pol.polqual, pol.polrelid),\n"
 					  "pg_catalog.pg_get_expr(pol.polwithcheck, pol.polrelid),\n"
-								  "CASE pol.polcmd \n"
+								  "CASE pol.polcmd\n"
 								  "WHEN 'r' THEN 'SELECT'\n"
 								  "WHEN 'a' THEN 'INSERT'\n"
 								  "WHEN 'w' THEN 'UPDATE'\n"
@@ -2253,7 +2253,7 @@ describeOneTableDetails(const char *schemaname,
 								  "CASE WHEN pol.polroles = '{0}' THEN NULL ELSE array_to_string(array(select rolname from pg_roles where oid = any (pol.polroles) order by 1),',') END,\n"
 						   "pg_catalog.pg_get_expr(pol.polqual, pol.polrelid),\n"
 					  "pg_catalog.pg_get_expr(pol.polwithcheck, pol.polrelid),\n"
-								  "CASE pol.polcmd \n"
+								  "CASE pol.polcmd\n"
 								  "WHEN 'r' THEN 'SELECT'\n"
 								  "WHEN 'a' THEN 'INSERT'\n"
 								  "WHEN 'w' THEN 'UPDATE'\n"
@@ -2327,7 +2327,7 @@ describeOneTableDetails(const char *schemaname,
 		{
 			printfPQExpBuffer(&buf,
 							  "SELECT oid, stanamespace::regnamespace AS nsp, staname, stakeys,\n"
-							  "  (SELECT pg_catalog.string_agg(pg_catalog.quote_ident(attname::text),', ') \n"
+							  "  (SELECT pg_catalog.string_agg(pg_catalog.quote_ident(attname::text),', ')\n"
 						   "    FROM ((SELECT pg_catalog.unnest(stakeys) AS attnum) s\n"
 			   "         JOIN pg_catalog.pg_attribute a ON (starelid = a.attrelid AND\n"
 							  "a.attnum = s.attnum AND not attisdropped))) AS columns,\n"
@@ -3949,11 +3949,11 @@ listTSParsers(const char *pattern, bool verbose)
 	initPQExpBuffer(&buf);
 
 	printfPQExpBuffer(&buf,
-					  "SELECT \n"
+					  "SELECT\n"
 					  "  n.nspname as \"%s\",\n"
 					  "  p.prsname as \"%s\",\n"
 			"  pg_catalog.obj_description(p.oid, 'pg_ts_parser') as \"%s\"\n"
-					  "FROM pg_catalog.pg_ts_parser p \n"
+					  "FROM pg_catalog.pg_ts_parser p\n"
 		   "LEFT JOIN pg_catalog.pg_namespace n ON n.oid = p.prsnamespace\n",
 					  gettext_noop("Schema"),
 					  gettext_noop("Name"),
@@ -3994,9 +3994,9 @@ listTSParsersVerbose(const char *pattern)
 	initPQExpBuffer(&buf);
 
 	printfPQExpBuffer(&buf,
-					  "SELECT p.oid, \n"
-					  "  n.nspname, \n"
-					  "  p.prsname \n"
+					  "SELECT p.oid,\n"
+					  "  n.nspname,\n"
+					  "  p.prsname\n"
 					  "FROM pg_catalog.pg_ts_parser p\n"
 			"LEFT JOIN pg_catalog.pg_namespace n ON n.oid = p.prsnamespace\n"
 		);
@@ -4061,34 +4061,34 @@ describeOneTSParser(const char *oid, const char *nspname, const char *prsname)
 	initPQExpBuffer(&buf);
 
 	printfPQExpBuffer(&buf,
-					  "SELECT '%s' AS \"%s\", \n"
-					  "   p.prsstart::pg_catalog.regproc AS \"%s\", \n"
-		  "   pg_catalog.obj_description(p.prsstart, 'pg_proc') as \"%s\" \n"
-					  " FROM pg_catalog.pg_ts_parser p \n"
-					  " WHERE p.oid = '%s' \n"
-					  "UNION ALL \n"
-					  "SELECT '%s', \n"
-					  "   p.prstoken::pg_catalog.regproc, \n"
-					"   pg_catalog.obj_description(p.prstoken, 'pg_proc') \n"
-					  " FROM pg_catalog.pg_ts_parser p \n"
-					  " WHERE p.oid = '%s' \n"
-					  "UNION ALL \n"
-					  "SELECT '%s', \n"
-					  "   p.prsend::pg_catalog.regproc, \n"
-					  "   pg_catalog.obj_description(p.prsend, 'pg_proc') \n"
-					  " FROM pg_catalog.pg_ts_parser p \n"
-					  " WHERE p.oid = '%s' \n"
-					  "UNION ALL \n"
-					  "SELECT '%s', \n"
-					  "   p.prsheadline::pg_catalog.regproc, \n"
-				 "   pg_catalog.obj_description(p.prsheadline, 'pg_proc') \n"
-					  " FROM pg_catalog.pg_ts_parser p \n"
-					  " WHERE p.oid = '%s' \n"
-					  "UNION ALL \n"
-					  "SELECT '%s', \n"
-					  "   p.prslextype::pg_catalog.regproc, \n"
-				  "   pg_catalog.obj_description(p.prslextype, 'pg_proc') \n"
-					  " FROM pg_catalog.pg_ts_parser p \n"
+					  "SELECT '%s' AS \"%s\",\n"
+					  "   p.prsstart::pg_catalog.regproc AS \"%s\",\n"
+		  "   pg_catalog.obj_description(p.prsstart, 'pg_proc') as \"%s\"\n"
+					  " FROM pg_catalog.pg_ts_parser p\n"
+					  " WHERE p.oid = '%s'\n"
+					  "UNION ALL\n"
+					  "SELECT '%s',\n"
+					  "   p.prstoken::pg_catalog.regproc,\n"
+					"   pg_catalog.obj_description(p.prstoken, 'pg_proc')\n"
+					  " FROM pg_catalog.pg_ts_parser p\n"
+					  " WHERE p.oid = '%s'\n"
+					  "UNION ALL\n"
+					  "SELECT '%s',\n"
+					  "   p.prsend::pg_catalog.regproc,\n"
+					  "   pg_catalog.obj_description(p.prsend, 'pg_proc')\n"
+					  " FROM pg_catalog.pg_ts_parser p\n"
+					  " WHERE p.oid = '%s'\n"
+					  "UNION ALL\n"
+					  "SELECT '%s',\n"
+					  "   p.prsheadline::pg_catalog.regproc,\n"
+				 "   pg_catalog.obj_description(p.prsheadline, 'pg_proc')\n"
+					  " FROM pg_catalog.pg_ts_parser p\n"
+					  " WHERE p.oid = '%s'\n"
+					  "UNION ALL\n"
+					  "SELECT '%s',\n"
+					  "   p.prslextype::pg_catalog.regproc,\n"
+				  "   pg_catalog.obj_description(p.prslextype, 'pg_proc')\n"
+					  " FROM pg_catalog.pg_ts_parser p\n"
 					  " WHERE p.oid = '%s';",
 					  gettext_noop("Start parse"),
 					  gettext_noop("Method"),
@@ -4128,9 +4128,9 @@ describeOneTSParser(const char *oid, const char *nspname, const char *prsname)
 	initPQExpBuffer(&buf);
 
 	printfPQExpBuffer(&buf,
-					  "SELECT t.alias as \"%s\", \n"
-					  "  t.description as \"%s\" \n"
-			  "FROM pg_catalog.ts_token_type( '%s'::pg_catalog.oid ) as t \n"
+					  "SELECT t.alias as \"%s\",\n"
+					  "  t.description as \"%s\"\n"
+			  "FROM pg_catalog.ts_token_type( '%s'::pg_catalog.oid ) as t\n"
 					  "ORDER BY 1;",
 					  gettext_noop("Token name"),
 					  gettext_noop("Description"),
@@ -4184,7 +4184,7 @@ listTSDictionaries(const char *pattern, bool verbose)
 	initPQExpBuffer(&buf);
 
 	printfPQExpBuffer(&buf,
-					  "SELECT \n"
+					  "SELECT\n"
 					  "  n.nspname as \"%s\",\n"
 					  "  d.dictname as \"%s\",\n",
 					  gettext_noop("Schema"),
@@ -4193,11 +4193,11 @@ listTSDictionaries(const char *pattern, bool verbose)
 	if (verbose)
 	{
 		appendPQExpBuffer(&buf,
-						  "  ( SELECT COALESCE(nt.nspname, '(null)')::pg_catalog.text || '.' || t.tmplname FROM \n"
-						  "    pg_catalog.pg_ts_template t \n"
-						  "			 LEFT JOIN pg_catalog.pg_namespace nt ON nt.oid = t.tmplnamespace \n"
-						  "			 WHERE d.dicttemplate = t.oid ) AS  \"%s\", \n"
-						  "  d.dictinitoption as \"%s\", \n",
+						  "  ( SELECT COALESCE(nt.nspname, '(null)')::pg_catalog.text || '.' || t.tmplname FROM\n"
+						  "    pg_catalog.pg_ts_template t\n"
+						  "			 LEFT JOIN pg_catalog.pg_namespace nt ON nt.oid = t.tmplnamespace\n"
+						  "			 WHERE d.dicttemplate = t.oid ) AS  \"%s\",\n"
+						  "  d.dictinitoption as \"%s\",\n",
 						  gettext_noop("Template"),
 						  gettext_noop("Init options"));
 	}
@@ -4256,7 +4256,7 @@ listTSTemplates(const char *pattern, bool verbose)
 
 	if (verbose)
 		printfPQExpBuffer(&buf,
-						  "SELECT \n"
+						  "SELECT\n"
 						  "  n.nspname AS \"%s\",\n"
 						  "  t.tmplname AS \"%s\",\n"
 						  "  t.tmplinit::pg_catalog.regproc AS \"%s\",\n"
@@ -4269,7 +4269,7 @@ listTSTemplates(const char *pattern, bool verbose)
 						  gettext_noop("Description"));
 	else
 		printfPQExpBuffer(&buf,
-						  "SELECT \n"
+						  "SELECT\n"
 						  "  n.nspname AS \"%s\",\n"
 						  "  t.tmplname AS \"%s\",\n"
 		 "  pg_catalog.obj_description(t.oid, 'pg_ts_template') AS \"%s\"\n",
@@ -4329,12 +4329,12 @@ listTSConfigs(const char *pattern, bool verbose)
 	initPQExpBuffer(&buf);
 
 	printfPQExpBuffer(&buf,
-					  "SELECT \n"
+					  "SELECT\n"
 					  "   n.nspname as \"%s\",\n"
 					  "   c.cfgname as \"%s\",\n"
 		   "   pg_catalog.obj_description(c.oid, 'pg_ts_config') as \"%s\"\n"
 					  "FROM pg_catalog.pg_ts_config c\n"
-		  "LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.cfgnamespace \n",
+		  "LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.cfgnamespace\n",
 					  gettext_noop("Schema"),
 					  gettext_noop("Name"),
 					  gettext_noop("Description")
@@ -4372,13 +4372,13 @@ listTSConfigsVerbose(const char *pattern)
 
 	printfPQExpBuffer(&buf,
 					  "SELECT c.oid, c.cfgname,\n"
-					  "   n.nspname, \n"
-					  "   p.prsname, \n"
-					  "   np.nspname as pnspname \n"
-					  "FROM pg_catalog.pg_ts_config c \n"
-	   "   LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.cfgnamespace, \n"
-					  " pg_catalog.pg_ts_parser p \n"
-	  "   LEFT JOIN pg_catalog.pg_namespace np ON np.oid = p.prsnamespace \n"
+					  "   n.nspname,\n"
+					  "   p.prsname,\n"
+					  "   np.nspname as pnspname\n"
+					  "FROM pg_catalog.pg_ts_config c\n"
+	   "   LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.cfgnamespace,\n"
+					  " pg_catalog.pg_ts_parser p\n"
+	  "   LEFT JOIN pg_catalog.pg_namespace np ON np.oid = p.prsnamespace\n"
 					  "WHERE  p.oid = c.cfgparser\n"
 		);
 
@@ -4447,20 +4447,20 @@ describeOneTSConfig(const char *oid, const char *nspname, const char *cfgname,
 	initPQExpBuffer(&buf);
 
 	printfPQExpBuffer(&buf,
-					  "SELECT \n"
-					  "  ( SELECT t.alias FROM \n"
-					  "    pg_catalog.ts_token_type(c.cfgparser) AS t \n"
-					  "    WHERE t.tokid = m.maptokentype ) AS \"%s\", \n"
-					  "  pg_catalog.btrim( \n"
-				  "    ARRAY( SELECT mm.mapdict::pg_catalog.regdictionary \n"
-					  "           FROM pg_catalog.pg_ts_config_map AS mm \n"
-					  "           WHERE mm.mapcfg = m.mapcfg AND mm.maptokentype = m.maptokentype \n"
-					  "           ORDER BY mapcfg, maptokentype, mapseqno \n"
-					  "    ) :: pg_catalog.text , \n"
-					  "  '{}') AS \"%s\" \n"
-	 "FROM pg_catalog.pg_ts_config AS c, pg_catalog.pg_ts_config_map AS m \n"
-					  "WHERE c.oid = '%s' AND m.mapcfg = c.oid \n"
-					  "GROUP BY m.mapcfg, m.maptokentype, c.cfgparser \n"
+					  "SELECT\n"
+					  "  ( SELECT t.alias FROM\n"
+					  "    pg_catalog.ts_token_type(c.cfgparser) AS t\n"
+					  "    WHERE t.tokid = m.maptokentype ) AS \"%s\",\n"
+					  "  pg_catalog.btrim(\n"
+				  "    ARRAY( SELECT mm.mapdict::pg_catalog.regdictionary\n"
+					  "           FROM pg_catalog.pg_ts_config_map AS mm\n"
+					  "           WHERE mm.mapcfg = m.mapcfg AND mm.maptokentype = m.maptokentype\n"
+					  "           ORDER BY mapcfg, maptokentype, mapseqno\n"
+					  "    ) :: pg_catalog.text ,\n"
+					  "  '{}') AS \"%s\"\n"
+	 "FROM pg_catalog.pg_ts_config AS c, pg_catalog.pg_ts_config_map AS m\n"
+					  "WHERE c.oid = '%s' AND m.mapcfg = c.oid\n"
+					  "GROUP BY m.mapcfg, m.maptokentype, c.cfgparser\n"
 					  "ORDER BY 1;",
 					  gettext_noop("Token"),
 					  gettext_noop("Dictionaries"),
