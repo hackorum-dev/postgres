@@ -920,10 +920,11 @@ CREATE VIEW pg_user_mappings AS
         ELSE
             A.rolname
         END AS usename,
-        CASE WHEN pg_has_role(S.srvowner, 'USAGE') OR has_server_privilege(S.oid, 'USAGE') THEN
-            U.umoptions
-        ELSE
-            NULL
+        CASE
+            WHEN U.umuser <> 0::oid AND A.rolname = "current_user"() OR U.umuser = 0::oid AND pg_has_role(S.srvowner::name, 'USAGE'::text) OR ( SELECT pg_authid.rolsuper
+               FROM pg_authid
+              WHERE pg_authid.rolname = "current_user"()) THEN U.umoptions
+            ELSE NULL::text[]
         END AS umoptions
     FROM pg_user_mapping U
         JOIN pg_foreign_server S ON (U.umserver = S.oid)
