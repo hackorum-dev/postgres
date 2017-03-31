@@ -188,47 +188,6 @@ invalidate_syncing_table_states(Datum arg, int cacheid, uint32 hashvalue)
 }
 
 /*
- * Handle table synchronization cooperation from the synchronization
- * worker.
- *
- * If the sync worker is in catch up mode and reached the predetermined
- * synchronization point in the WAL stream, mark the table as READY and
- * finish.  If it caught up too far, set to SYNCDONE and finish.  Things will
- * then proceed in the "sync in front" scenario.
- */
-static void
-process_syncing_tables_for_sync(XLogRecPtr current_lsn)
-{
-	Assert(IsTransactionState());
-
-	SpinLockAcquire(&MyLogicalRepWorker->relmutex);
-
-	if (MyLogicalRepWorker->relstate == SUBREL_STATE_CATCHUP &&
-		current_lsn >= MyLogicalRepWorker->relstate_lsn)
-	{
-		TimeLineID	tli;
-
-		MyLogicalRepWorker->relstate =
-			(current_lsn == MyLogicalRepWorker->relstate_lsn)
-			? SUBREL_STATE_READY
-			: SUBREL_STATE_SYNCDONE;
-		MyLogicalRepWorker->relstate_lsn = current_lsn;
-
-		SpinLockRelease(&MyLogicalRepWorker->relmutex);
-
-		SetSubscriptionRelState(MyLogicalRepWorker->subid,
-								MyLogicalRepWorker->relid,
-								MyLogicalRepWorker->relstate,
-								MyLogicalRepWorker->relstate_lsn);
-
-		walrcv_endstreaming(wrconn, &tli);
-		finish_sync_worker();
-	}
-	else
-		SpinLockRelease(&MyLogicalRepWorker->relmutex);
-}
-
-/*
  * Handle table synchronization cooperation from the apply worker.
  *
  * Walk over all subscription tables that are individually tracked by the
@@ -252,8 +211,8 @@ process_syncing_tables_for_sync(XLogRecPtr current_lsn)
  * If the synchronization position is reached, then the table can be marked as
  * READY and is no longer tracked.
  */
-static void
-process_syncing_tables_for_apply(XLogRecPtr current_lsn)
+void
+process_syncing_tables(XLogRecPtr current_lsn)
 {
 	static List *table_states = NIL;
 	ListCell   *lc;
@@ -403,18 +362,6 @@ process_syncing_tables_for_apply(XLogRecPtr current_lsn)
 			}
 		}
 	}
-}
-
-/*
- * Process state possible change(s) of tables that are being synchronized.
- */
-void
-process_syncing_tables(XLogRecPtr current_lsn)
-{
-	if (am_tablesync_worker())
-		process_syncing_tables_for_sync(current_lsn);
-	else
-		process_syncing_tables_for_apply(current_lsn);
 }
 
 /*
@@ -685,12 +632,12 @@ copy_table(Relation rel)
 }
 
 /*
- * Start syncing the table in the sync worker.
+ * Sync the table in the sync worker.
  *
- * The returned slot name is palloced in current memory context.
+ * After synced the table, exit.
  */
-char *
-LogicalRepSyncTableStart(XLogRecPtr *origin_startpos)
+void
+LogicalRepSyncTable(XLogRecPtr *origin_startpos)
 {
 	char		   *slotname;
 	char		   *err;
@@ -835,6 +782,4 @@ LogicalRepSyncTableStart(XLogRecPtr *origin_startpos)
 			elog(ERROR, "unknown relation state \"%c\"",
 				 MyLogicalRepWorker->relstate);
 	}
-
-	return slotname;
 }

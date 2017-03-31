@@ -70,8 +70,8 @@ extern void logicalrep_worker_wakeup_ptr(LogicalRepWorker *worker);
 extern int logicalrep_sync_worker_count(Oid subid);
 
 extern void logicalrep_worker_sigterm(SIGNAL_ARGS);
-extern char *LogicalRepSyncTableStart(XLogRecPtr *origin_startpos);
-void process_syncing_tables(XLogRecPtr current_lsn);
+extern void LogicalRepSyncTable(XLogRecPtr *origin_startpos);
+extern void process_syncing_tables(XLogRecPtr current_lsn);
 void invalidate_syncing_table_states(Datum arg, int cacheid,
 									 uint32 hashvalue);
 

@@ -1493,17 +1493,12 @@ ApplyWorkerMain(Datum main_arg)
 
 	if (am_tablesync_worker())
 	{
-		char *syncslotname;
-
-		/* This is table synchroniation worker, call initial sync. */
-		syncslotname = LogicalRepSyncTableStart(&origin_startpos);
-
-		/* The slot name needs to be allocated in permanent memory context. */
-		oldctx = MemoryContextSwitchTo(ApplyCacheContext);
-		myslotname = pstrdup(syncslotname);
-		MemoryContextSwitchTo(oldctx);
-
-		pfree(syncslotname);
+		/*
+		 * The table sync worker exits here after synced table and gave the
+		 * the control of the replication of the table to the main apply
+		 * process.
+		 */
+		LogicalRepSyncTable(&origin_startpos);
 	}
 	else
 	{
