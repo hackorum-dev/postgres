@@ -47,6 +47,7 @@ typedef struct Value
 		long		ival;		/* machine integer */
 		char	   *str;		/* string */
 	}			val;
+	int			location;		/* token location, or -1 if unknown */
 } Value;
 
 #define intVal(v)		(((Value *)(v))->val.ival)

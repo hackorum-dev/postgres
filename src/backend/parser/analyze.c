@@ -76,10 +76,18 @@ static Query *transformCreateTableAsStmt(ParseState *pstate,
 						   CreateTableAsStmt *stmt);
 static void transformLockingClause(ParseState *pstate, Query *qry,
 					   LockingClause *lc, bool pushedDown);
+static void makeUnionDatatype(List *ltargetlist, List *rtargetlist,
+		SetOperationStmt *op, List **targetlist, ParseState *parentParseState,
+		const char *context);
 #ifdef RAW_EXPRESSION_COVERAGE_TEST
 static bool test_raw_expression_coverage(Node *node, void *context);
 #endif
-
+static List *CommonColumns(List *ltargetlist, List *rtargetlist, bool filtered,
+								 ParseState *pstate, const char *context);
+static List *FilterColumnsByNames(List *common_columns, List *filter,
+								 ParseState *pstate, const char *context);
+static List *FilterColumnsByTL(List *targetlist, List *filter, bool check_uniq,
+								 ParseState *pstate, const char *context);
 
 /*
  * parse_analyze
@@ -1653,7 +1661,37 @@ transformSetOperationStmt(ParseState *pstate, SelectStmt *stmt)
 	qry->targetList = NIL;
 	targetvars = NIL;
 	targetnames = NIL;
-	left_tlist = list_head(leftmostQuery->targetList);
+
+	/*
+	 * for corresponding clause limits top-level query targetlist to those
+	 * corresponding column list only
+	 */
+	if (sostmt->correspondingColumns != NIL )
+	{
+		left_tlist = list_head(sostmt->correspondingColumns);
+		/*
+		 * In the case of corresponding without by clause property across
+		 * the statement may differ
+		 */
+		if (!sostmt->hasCorrespondingBy)
+		{
+			Node *correspodning_node;
+			correspodning_node = sostmt->larg;
+			while (correspodning_node && IsA(correspodning_node, SetOperationStmt))
+			{
+				SetOperationStmt *op = (SetOperationStmt *) correspodning_node;
+				op->correspondingColumns = sostmt->correspondingColumns;
+				op->colTypes = sostmt->colTypes;
+				op->colTypmods = sostmt->colTypmods;
+				op->colCollations = sostmt->colCollations;
+				op->groupClauses = sostmt->groupClauses;
+
+				correspodning_node = op->larg;
+			}
+		}
+	}
+	else
+		left_tlist = list_head(leftmostQuery->targetList);
 
 	forthree(lct, sostmt->colTypes,
 			 lcm, sostmt->colTypmods,
@@ -1913,8 +1951,6 @@ transformSetOperationTree(ParseState *pstate, SelectStmt *stmt,
 		SetOperationStmt *op = makeNode(SetOperationStmt);
 		List	   *ltargetlist;
 		List	   *rtargetlist;
-		ListCell   *ltl;
-		ListCell   *rtl;
 		const char *context;
 
 		context = (stmt->op == SETOP_UNION ? "UNION" :
@@ -1923,6 +1959,84 @@ transformSetOperationTree(ParseState *pstate, SelectStmt *stmt,
 
 		op->op = stmt->op;
 		op->all = stmt->all;
+
+		/*
+		 * If CORRESPONDING is specified, syntax and column name validities checked,
+		 * column filtering is done by a subquery later on.
+		 */
+		if (stmt->correspondingClause == NIL )
+		{
+			/* No CORRESPONDING clause, no operation needed for column filtering */
+			op->correspondingColumns = stmt->correspondingClause;
+			op->hasCorrespondingBy = false;
+		}
+		else
+		{
+			/*
+			 * CORRESPONDING clause, find matching column names from both tables.
+			 * If there are none then it is a syntax error.
+			 */
+			Query	   *largQuery;
+			Query	   *rargQuery;
+			List	   *matchingColumns;
+			List	   *rightCorrespondingColumns;
+
+			op->hasCorrespondingBy = linitial(stmt->correspondingClause) != NULL;
+
+			/* Analyze left query to resolve column names. */
+			largQuery = parse_sub_analyze((Node *) stmt->larg,
+										  pstate, NULL, false, false );
+
+			/* Analyze right query to resolve column names. */
+			rargQuery = parse_sub_analyze((Node *) stmt->rarg,
+										  pstate, NULL, false, false );
+
+			/* Find matching columns from both queries. */
+			matchingColumns = CommonColumns(largQuery->targetList,
+											rargQuery->targetList,
+											op->hasCorrespondingBy,
+											pstate,
+											context);
+
+			/*
+			 * If matchingColumns is empty, there is an error.
+			 * At least one column in the select lists must have the same name.
+			 */
+			if (matchingColumns == NIL)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("there is not any corresponding name"),
+	 errhint("%s queries with a CORRESPONDING clause must have at least one column with the same name",
+								 context),
+						 parser_errposition(pstate,
+									exprLocation((Node *)
+									linitial(largQuery->targetList)))));
+
+			/* Use column filter when it is known */
+			if (op->hasCorrespondingBy)
+				matchingColumns = FilterColumnsByNames(matchingColumns,
+													   stmt->correspondingClause,
+													   pstate,
+													   context);
+
+			op->correspondingColumns = matchingColumns;
+
+			/*
+			 * When we know matching columns, we can quickly create
+			 * corresponding target list for right target list. It is faster,
+			 * than using symmetry. Ensure unique columns when hasCorrespondingBy
+			 * is true - in this case, the uniq is not checked already.
+			 */
+			rightCorrespondingColumns = FilterColumnsByTL(rargQuery->targetList,
+														  matchingColumns,
+														  op->hasCorrespondingBy,
+														  pstate,
+														  context);
+
+			/* make union'd datatype of output column */
+			makeUnionDatatype(matchingColumns, rightCorrespondingColumns,
+								op, targetlist, pstate, context);
+		}
 
 		/*
 		 * Recursively transform the left child node.
@@ -1949,177 +2063,417 @@ transformSetOperationTree(ParseState *pstate, SelectStmt *stmt,
 											 false,
 											 &rtargetlist);
 
-		/*
-		 * Verify that the two children have the same number of non-junk
-		 * columns, and determine the types of the merged output columns.
-		 */
-		if (list_length(ltargetlist) != list_length(rtargetlist))
-			ereport(ERROR,
-					(errcode(ERRCODE_SYNTAX_ERROR),
-				 errmsg("each %s query must have the same number of columns",
-						context),
-					 parser_errposition(pstate,
-										exprLocation((Node *) rtargetlist))));
-
-		if (targetlist)
-			*targetlist = NIL;
-		op->colTypes = NIL;
-		op->colTypmods = NIL;
-		op->colCollations = NIL;
-		op->groupClauses = NIL;
-		forboth(ltl, ltargetlist, rtl, rtargetlist)
+		if (op->correspondingColumns == NIL )
 		{
-			TargetEntry *ltle = (TargetEntry *) lfirst(ltl);
-			TargetEntry *rtle = (TargetEntry *) lfirst(rtl);
-			Node	   *lcolnode = (Node *) ltle->expr;
-			Node	   *rcolnode = (Node *) rtle->expr;
-			Oid			lcoltype = exprType(lcolnode);
-			Oid			rcoltype = exprType(rcolnode);
-			int32		lcoltypmod = exprTypmod(lcolnode);
-			int32		rcoltypmod = exprTypmod(rcolnode);
-			Node	   *bestexpr;
-			int			bestlocation;
-			Oid			rescoltype;
-			int32		rescoltypmod;
-			Oid			rescolcoll;
-
-			/* select common type, same as CASE et al */
-			rescoltype = select_common_type(pstate,
-											list_make2(lcolnode, rcolnode),
-											context,
-											&bestexpr);
-			bestlocation = exprLocation(bestexpr);
-			/* if same type and same typmod, use typmod; else default */
-			if (lcoltype == rcoltype && lcoltypmod == rcoltypmod)
-				rescoltypmod = lcoltypmod;
-			else
-				rescoltypmod = -1;
-
+			makeUnionDatatype(ltargetlist, rtargetlist, op, targetlist, pstate,
+					context);
 			/*
-			 * Verify the coercions are actually possible.  If not, we'd fail
-			 * later anyway, but we want to fail now while we have sufficient
-			 * context to produce an error cursor position.
-			 *
-			 * For all non-UNKNOWN-type cases, we verify coercibility but we
-			 * don't modify the child's expression, for fear of changing the
-			 * child query's semantics.
-			 *
-			 * If a child expression is an UNKNOWN-type Const or Param, we
-			 * want to replace it with the coerced expression.  This can only
-			 * happen when the child is a leaf set-op node.  It's safe to
-			 * replace the expression because if the child query's semantics
-			 * depended on the type of this output column, it'd have already
-			 * coerced the UNKNOWN to something else.  We want to do this
-			 * because (a) we want to verify that a Const is valid for the
-			 * target type, or resolve the actual type of an UNKNOWN Param,
-			 * and (b) we want to avoid unnecessary discrepancies between the
-			 * output type of the child query and the resolved target type.
-			 * Such a discrepancy would disable optimization in the planner.
-			 *
-			 * If it's some other UNKNOWN-type node, eg a Var, we do nothing
-			 * (knowing that coerce_to_common_type would fail).  The planner
-			 * is sometimes able to fold an UNKNOWN Var to a constant before
-			 * it has to coerce the type, so failing now would just break
-			 * cases that might work.
+			 * Verify that the two children have the same number of non-junk
+			 * columns, and determine the types of the merged output columns.
 			 */
-			if (lcoltype != UNKNOWNOID)
-				lcolnode = coerce_to_common_type(pstate, lcolnode,
-												 rescoltype, context);
-			else if (IsA(lcolnode, Const) ||
-					 IsA(lcolnode, Param))
-			{
-				lcolnode = coerce_to_common_type(pstate, lcolnode,
-												 rescoltype, context);
-				ltle->expr = (Expr *) lcolnode;
-			}
-
-			if (rcoltype != UNKNOWNOID)
-				rcolnode = coerce_to_common_type(pstate, rcolnode,
-												 rescoltype, context);
-			else if (IsA(rcolnode, Const) ||
-					 IsA(rcolnode, Param))
-			{
-				rcolnode = coerce_to_common_type(pstate, rcolnode,
-												 rescoltype, context);
-				rtle->expr = (Expr *) rcolnode;
-			}
-
-			/*
-			 * Select common collation.  A common collation is required for
-			 * all set operators except UNION ALL; see SQL:2008 7.13 <query
-			 * expression> Syntax Rule 15c.  (If we fail to identify a common
-			 * collation for a UNION ALL column, the curCollations element
-			 * will be set to InvalidOid, which may result in a runtime error
-			 * if something at a higher query level wants to use the column's
-			 * collation.)
-			 */
-			rescolcoll = select_common_collation(pstate,
-											  list_make2(lcolnode, rcolnode),
-										 (op->op == SETOP_UNION && op->all));
-
-			/* emit results */
-			op->colTypes = lappend_oid(op->colTypes, rescoltype);
-			op->colTypmods = lappend_int(op->colTypmods, rescoltypmod);
-			op->colCollations = lappend_oid(op->colCollations, rescolcoll);
-
-			/*
-			 * For all cases except UNION ALL, identify the grouping operators
-			 * (and, if available, sorting operators) that will be used to
-			 * eliminate duplicates.
-			 */
-			if (op->op != SETOP_UNION || !op->all)
-			{
-				SortGroupClause *grpcl = makeNode(SortGroupClause);
-				Oid			sortop;
-				Oid			eqop;
-				bool		hashable;
-				ParseCallbackState pcbstate;
-
-				setup_parser_errposition_callback(&pcbstate, pstate,
-												  bestlocation);
-
-				/* determine the eqop and optional sortop */
-				get_sort_group_operators(rescoltype,
-										 false, true, false,
-										 &sortop, &eqop, NULL,
-										 &hashable);
-
-				cancel_parser_errposition_callback(&pcbstate);
-
-				/* we don't have a tlist yet, so can't assign sortgrouprefs */
-				grpcl->tleSortGroupRef = 0;
-				grpcl->eqop = eqop;
-				grpcl->sortop = sortop;
-				grpcl->nulls_first = false;		/* OK with or without sortop */
-				grpcl->hashable = hashable;
-
-				op->groupClauses = lappend(op->groupClauses, grpcl);
-			}
-
-			/*
-			 * Construct a dummy tlist entry to return.  We use a SetToDefault
-			 * node for the expression, since it carries exactly the fields
-			 * needed, but any other expression node type would do as well.
-			 */
-			if (targetlist)
-			{
-				SetToDefault *rescolnode = makeNode(SetToDefault);
-				TargetEntry *restle;
-
-				rescolnode->typeId = rescoltype;
-				rescolnode->typeMod = rescoltypmod;
-				rescolnode->collation = rescolcoll;
-				rescolnode->location = bestlocation;
-				restle = makeTargetEntry((Expr *) rescolnode,
-										 0,		/* no need to set resno */
-										 NULL,
-										 false);
-				*targetlist = lappend(*targetlist, restle);
-			}
+			if (list_length(ltargetlist) != list_length(rtargetlist))
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("each %s query must have the same number of columns", context),
+						 parser_errposition(pstate,
+											exprLocation((Node *) rtargetlist))));
 		}
 
 		return (Node *) op;
 	}
+}
+
+/*
+ * Processes targetlists of two queries for columns with same names to use
+ * with UNION/INTERSECT/EXCEPT CORRESPONDING. filtered is true, when
+ * CORRESPONDING BY is used. When it is false, we can check uniq names
+ * in rtargetlist here.
+ */
+static List *
+CommonColumns(List *ltargetlist, List *rtargetlist, bool filtered,
+			  ParseState *pstate, const char *context)
+{
+	List	   *common_columns = NIL;
+	ListCell   *ltlc;
+	ListCell   *rtlc;
+	int			resno = 1;
+
+	foreach(ltlc, ltargetlist)
+	{
+		TargetEntry *lte = (TargetEntry *) lfirst(ltlc);
+		bool		found = false;
+
+		Assert(lte->resname != NULL);
+
+		foreach(rtlc, rtargetlist)
+		{
+			ListCell   *lc;
+			TargetEntry *rte = (TargetEntry *) lfirst(rtlc);
+
+			Assert(rte->resname != NULL);
+
+			if (strcmp(lte->resname, rte->resname) == 0)
+			{
+				if (filtered)
+				{
+					/*
+					 * We found common column, but we don't know if it
+					 * is in CORRESPONDING BY list - so don't try do more
+					 * work here. The column list will be modified later,
+					 * so use shall copy here.
+					 */
+					common_columns = lappend(common_columns, lte);
+					break;
+				}
+
+				/* If same column name mentioned more than once it is syntax error . */
+				if (found)
+					ereport(ERROR,
+							(errcode(ERRCODE_SYNTAX_ERROR),
+							 errmsg("corresponding column \"%s\" is used more times", rte->resname),
+	 errhint("In %s queries with CORRESPONDING clause the corresponding column names must be unique.",
+									context),
+							 parser_errposition(pstate,
+												exprLocation((Node *) rte))));
+
+				found = true;
+
+				/* In this case, common_columns must be unique */
+				foreach(lc, common_columns)
+				{
+					TargetEntry *te = (TargetEntry *) lfirst(lc);
+
+					if (strcmp(te->resname, lte->resname) == 0)
+						ereport(ERROR,
+								(errcode(ERRCODE_SYNTAX_ERROR),
+								 errmsg("corresponding column \"%s\" is used more times", lte->resname),
+	 errhint("In %s queries with CORRESPONDING clause the corresponding column names must be unique.",
+										context),
+								 parser_errposition(pstate,
+													exprLocation((Node *) lte))));
+				}
+
+				/* When is not any other filter create final te */
+				common_columns = lappend(common_columns,
+										 makeTargetEntry(lte->expr,
+														 (AttrNumber) resno++,
+														 lte->resname,
+														 false));
+			}
+		}
+	}
+
+	return common_columns;
+}
+
+/*
+ * Returns filtered common columns list - filter is based on CORRESPONDING BY
+ * list Ensure CORRESPONDING BY list is unique. Result is in CORRESPONDING BY
+ * list order. Common columns list can hold duplicate columns.
+ */
+static List *
+FilterColumnsByNames(List *common_columns, List *filter,
+					 ParseState *pstate, const char *context)
+{
+	List	   *filtered_columns = NIL;
+	ListCell   *flc;
+	int			resno = 1;
+
+	Assert(common_columns != NIL);
+	Assert(filter != NIL);
+
+	foreach(flc, filter)
+	{
+		Value	   *strval = (Value *) lfirst(flc);
+		char	   *name = strVal(strval);
+		ListCell   *tlc;
+		bool		found = false;
+
+		foreach(tlc, common_columns)
+		{
+			TargetEntry   *tec = (TargetEntry *) lfirst(tlc);
+
+			if (strcmp(tec->resname, name) == 0)
+			{
+				ListCell   *lc;
+
+				/*
+				 * When "found" is true, then common_columns contains
+				 * duplicate columns. Raise exception then.
+				 */
+				if (found)
+					ereport(ERROR,
+							(errcode(ERRCODE_SYNTAX_ERROR),
+							 errmsg("corresponding column \"%s\" is used more times", name),
+	 errhint("In %s queries with CORRESPONDING BY clause the corresponding column names must be unique.",
+									context),
+							 parser_errposition(pstate,
+												exprLocation((Node *) tec))));
+
+				found = true;
+
+				/* result list should not to contains this name */
+				foreach(lc, filtered_columns)
+				{
+					TargetEntry   *te = (TargetEntry *) lfirst(lc);
+
+					/*
+					 * CORRESPONDING BY clause contains a column name that is
+					 * not in unique in this clause
+					 */
+					if (strcmp(te->resname, name) == 0)
+						ereport(ERROR,
+								(errcode(ERRCODE_SYNTAX_ERROR),
+								 errmsg("column name \"%s\" is not unique in CORRESPONDING BY clause", name),
+								 errhint("CORRESPONDING BY clause must contain unique column names only."),
+								 parser_errposition(pstate, strval->location)));
+				}
+
+				/* create te with correct resno */
+				filtered_columns = lappend(filtered_columns,
+										 makeTargetEntry(tec->expr,
+														 (AttrNumber) resno++,
+														 tec->resname,
+														 false));
+			}
+		}
+
+		/*
+		 * CORRESPONDING BY clause contains a column name that is not
+		 * in common columns.
+		 */
+		if (!found)
+			ereport(ERROR,
+					(errcode(ERRCODE_SYNTAX_ERROR),
+					 errmsg("column name \"%s\" can not be used in CORRESPONDING BY list", name),
+		 errhint("%s queries with a CORRESPONDING BY clause must contain column names from both tables.",
+									 context),
+					 parser_errposition(pstate, strval->location)));
+	}
+
+	return filtered_columns;
+}
+
+/*
+ * Prepare target list for right query of CORRESPONDING clause.
+ * When check_uniq is true, we should to check uniq names from
+ * filter in target list. When it is false, then uniquenes was
+ * checked in CommonColumns function and should not be checked
+ * here again.
+ */
+static List *
+FilterColumnsByTL(List *targetlist, List *filter, bool check_uniq,
+				  ParseState *pstate, const char *context)
+{
+	List	   *result = NIL;
+	ListCell   *lc;
+	int			resno = 1;
+
+	foreach(lc, filter)
+	{
+		TargetEntry *fte = (TargetEntry *) lfirst(lc);
+		ListCell	*tle;
+		bool		found = false;
+
+		foreach(tle, targetlist)
+		{
+			TargetEntry *te = (TargetEntry *) lfirst(tle);
+
+			if (strcmp(fte->resname, te->resname) == 0)
+			{
+				/* create te with correct resno */
+				result = lappend(result,
+								 makeTargetEntry(te->expr,
+												 (AttrNumber) resno++,
+												 te->resname,
+												 false));
+
+				if (!check_uniq)
+					break;
+
+				/*
+				 * When "found" is true, then targetlist contains
+				 * duplicate filtered columns. Raise exception then.
+				 */
+				if (found)
+					ereport(ERROR,
+							(errcode(ERRCODE_SYNTAX_ERROR),
+							 errmsg("corresponding column \"%s\" is used more times", te->resname),
+							 errhint("In %s queries with CORRESPONDING BY clause the corresponding column names must be unique.",
+									context),
+							 parser_errposition(pstate,
+												exprLocation((Node *) te))));
+
+				found = true;
+			}
+		}
+	}
+
+	return result;
+}
+
+/*
+ * process right and left target list to set up union'd datatype
+ */
+static void
+makeUnionDatatype(List *ltargetlist, List *rtargetlist, SetOperationStmt *op,
+		List **targetlist, ParseState *pstate, const char *context)
+{
+	ListCell   *ltl;
+	ListCell   *rtl;
+
+	if (targetlist)
+		*targetlist = NIL;
+
+	op->colTypes = NIL;
+	op->colTypmods = NIL;
+	op->colCollations = NIL;
+	op->groupClauses = NIL;
+
+	forboth(ltl, ltargetlist, rtl, rtargetlist)
+	{
+		TargetEntry	   *ltle = (TargetEntry *) lfirst(ltl);
+		TargetEntry	   *rtle = (TargetEntry *) lfirst(rtl);
+		Node		   *lcolnode = (Node *) ltle->expr;
+		Node		   *rcolnode = (Node *) rtle->expr;
+		Oid			lcoltype = exprType(lcolnode);
+		Oid			rcoltype = exprType(rcolnode);
+		int32		lcoltypmod = exprTypmod(lcolnode);
+		int32		rcoltypmod = exprTypmod(rcolnode);
+		Node	   *bestexpr;
+		int			bestlocation;
+		Oid			rescoltype;
+		int32		rescoltypmod;
+		Oid			rescolcoll;
+
+		/* select common type, same as CASE et al */
+		rescoltype = select_common_type(pstate, list_make2(lcolnode, rcolnode),
+				context, &bestexpr);
+		bestlocation = exprLocation(bestexpr);
+		/* if same type and same typmod, use typmod; else default */
+		if (lcoltype == rcoltype && lcoltypmod == rcoltypmod)
+			rescoltypmod = lcoltypmod;
+		else
+			rescoltypmod = -1;
+
+		/*
+		 * Verify the coercions are actually possible.  If not, we'd fail
+		 * later anyway, but we want to fail now while we have sufficient
+		 * context to produce an error cursor position.
+		 *
+		 * For all non-UNKNOWN-type cases, we verify coercibility but we
+		 * don't modify the child's expression, for fear of changing the
+		 * child query's semantics.
+		 *
+		 * If a child expression is an UNKNOWN-type Const or Param, we
+		 * want to replace it with the coerced expression.  This can only
+		 * happen when the child is a leaf set-op node.  It's safe to
+		 * replace the expression because if the child query's semantics
+		 * depended on the type of this output column, it'd have already
+		 * coerced the UNKNOWN to something else.  We want to do this
+		 * because (a) we want to verify that a Const is valid for the
+		 * target type, or resolve the actual type of an UNKNOWN Param,
+		 * and (b) we want to avoid unnecessary discrepancies between the
+		 * output type of the child query and the resolved target type.
+		 * Such a discrepancy would disable optimization in the planner.
+		 *
+		 * If it's some other UNKNOWN-type node, eg a Var, we do nothing
+		 * (knowing that coerce_to_common_type would fail).  The planner
+		 * is sometimes able to fold an UNKNOWN Var to a constant before
+		 * it has to coerce the type, so failing now would just break
+		 * cases that might work.
+		 */
+		if (lcoltype != UNKNOWNOID)
+			lcolnode = coerce_to_common_type(pstate, lcolnode, rescoltype,
+					context);
+		else if (IsA(lcolnode, Const) || IsA(lcolnode, Param))
+		{
+			lcolnode = coerce_to_common_type(pstate, lcolnode, rescoltype,
+					context);
+			ltle->expr = (Expr *) lcolnode;
+		}
+
+		if (rcoltype != UNKNOWNOID)
+			rcolnode = coerce_to_common_type(pstate, rcolnode, rescoltype,
+					context);
+		else if (IsA(rcolnode, Const) || IsA(rcolnode, Param))
+		{
+			rcolnode = coerce_to_common_type(pstate, rcolnode, rescoltype,
+					context);
+			rtle->expr = (Expr *) rcolnode;
+		}
+
+		/*
+		 * Select common collation.  A common collation is required for
+		 * all set operators except UNION ALL; see SQL:2008 7.13 <query
+		 * expression> Syntax Rule 15c.  (If we fail to identify a common
+		 * collation for a UNION ALL column, the curCollations element
+		 * will be set to InvalidOid, which may result in a runtime error
+		 * if something at a higher query level wants to use the column's
+		 * collation.)
+		 */
+		rescolcoll = select_common_collation(pstate,
+				list_make2(lcolnode, rcolnode),
+				(op->op == SETOP_UNION && op->all));
+
+		/* emit results */
+		op->colTypes = lappend_oid(op->colTypes, rescoltype);
+		op->colTypmods = lappend_int(op->colTypmods, rescoltypmod);
+		op->colCollations = lappend_oid(op->colCollations, rescolcoll);
+
+		/*
+		 * For all cases except UNION ALL, identify the grouping operators
+		 * (and, if available, sorting operators) that will be used to
+		 * eliminate duplicates.
+		 */
+		if (op->op != SETOP_UNION || !op->all)
+		{
+			SortGroupClause *grpcl = makeNode(SortGroupClause);
+			Oid			sortop;
+			Oid			eqop;
+			bool		hashable;
+			ParseCallbackState pcbstate;
+
+			setup_parser_errposition_callback(&pcbstate, pstate, bestlocation);
+
+			/* determine the eqop and optional sortop */
+			get_sort_group_operators(rescoltype, false, true, false, &sortop,
+					&eqop, NULL, &hashable);
+
+			cancel_parser_errposition_callback(&pcbstate);
+
+			/* we don't have a tlist yet, so can't assign sortgrouprefs */
+			grpcl->tleSortGroupRef = 0;
+			grpcl->eqop = eqop;
+			grpcl->sortop = sortop;
+			grpcl->nulls_first = false; /* OK with or without sortop */
+			grpcl->hashable = hashable;
+
+			op->groupClauses = lappend(op->groupClauses, grpcl);
+		}
+
+		/*
+		 * Construct a dummy tlist entry to return.  We use a SetToDefault
+		 * node for the expression, since it carries exactly the fields
+		 * needed, but any other expression node type would do as well.
+		 */
+		if (targetlist)
+		{
+			SetToDefault   *rescolnode = makeNode(SetToDefault);
+			TargetEntry	   *restle;
+
+			rescolnode->typeId = rescoltype;
+			rescolnode->typeMod = rescoltypmod;
+			rescolnode->collation = rescolcoll;
+			rescolnode->location = bestlocation;
+
+			/* no need to set resno */
+			restle = makeTargetEntry((Expr *) rescolnode, 0,
+			NULL, false );
+			*targetlist = lappend(*targetlist, restle);
+		}
+	}
+
 }
 
 /*

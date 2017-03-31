@@ -2345,6 +2345,23 @@ toyemp| SELECT emp.name,
     emp.location,
     (12 * emp.salary) AS annualsal
    FROM emp;
+view_corresponding_01| SELECT 1 AS a,
+    2 AS b
+UNION ALL CORRESPONDING
+ SELECT 3 AS a,
+    4 AS b;
+view_corresponding_02| SELECT 1 AS a,
+    2 AS b
+UNION ALL CORRESPONDING BY(a, b)
+ SELECT 3 AS a,
+    4 AS b,
+    5 AS c;
+view_corresponding_03| SELECT 1 AS b,
+    2 AS a
+UNION ALL CORRESPONDING BY(b, a)
+ SELECT 3 AS b,
+    4 AS a,
+    5 AS c;
 SELECT tablename, rulename, definition FROM pg_rules
 	ORDER BY tablename, rulename;
 pg_settings|pg_settings_n|CREATE RULE pg_settings_n AS

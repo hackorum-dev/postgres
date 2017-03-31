@@ -91,7 +91,8 @@ static List *generate_setop_tlist(List *colTypes, List *colCollations,
 					 Index varno,
 					 bool hack_constants,
 					 List *input_tlist,
-					 List *refnames_tlist);
+					 List *refnames_tlist,
+					 bool no_corresponding);
 static List *generate_append_tlist(List *colTypes, List *colCollations,
 					  bool flag,
 					  List *input_tlists,
@@ -110,6 +111,7 @@ static Node *adjust_appendrel_attrs_mutator(Node *node,
 static Relids adjust_relid_set(Relids relids, Index oldrelid, Index newrelid);
 static List *adjust_inherited_tlist(List *tlist,
 					   AppendRelInfo *context);
+static List *make_corresponding_target(List *corresponding_list, List *subroot_list);
 
 
 /*
@@ -187,6 +189,24 @@ plan_set_operations(PlannerInfo *root)
 									   leftmostQuery->targetList,
 									   &top_tlist);
 	}
+	/*
+	 * If corresponding column specified, we take column names from it.
+	 */
+	else if (topop->correspondingColumns != NIL )
+	{
+		/*
+		 * Recurse on setOperations tree to generate paths for set ops. The
+		 * final output path should have just the column types shown as the
+		 * output from the top-level node, plus possibly resjunk working
+		 * columns (we can rely on upper-level nodes to deal with that).
+		 */
+		path = recurse_set_operations((Node *) topop, root,
+									  topop->colTypes, topop->colCollations,
+									  true, -1,
+									  topop->correspondingColumns,
+									  &top_tlist,
+									  NULL);
+	}
 	else
 	{
 		/*
@@ -252,6 +272,8 @@ recurse_set_operations(Node *setOp, PlannerInfo *root,
 					   List **pTargetList,
 					   double *pNumGroups)
 {
+	SetOperationStmt *topop = (SetOperationStmt *) root->parse->setOperations;
+
 	if (IsA(setOp, RangeTblRef))
 	{
 		RangeTblRef *rtr = (RangeTblRef *) setOp;
@@ -316,23 +338,53 @@ recurse_set_operations(Node *setOp, PlannerInfo *root,
 		path = (Path *) create_subqueryscan_path(root, rel, subpath,
 												 NIL, NULL);
 
-		/*
-		 * Figure out the appropriate target list, and update the
-		 * SubqueryScanPath with the PathTarget form of that.
-		 */
-		tlist = generate_setop_tlist(colTypes, colCollations,
+		if (topop->correspondingColumns != NIL )
+		{
+			List	    *correspondingTarget;
+
+			/*
+			 * make target list that only contains corresponding column
+			 * from sub-queries list ito use it for projection
+			 */
+			correspondingTarget = make_corresponding_target(
+											  topop->correspondingColumns,
+											  subroot->processed_tlist);
+
+			/*
+			 * Figure out the appropriate target list, and update the
+			 * SubqueryScanPath with the PathTarget form of that.
+			 */
+			tlist = generate_setop_tlist(colTypes, colCollations, flag,
+											  rtr->rtindex, true,
+											  correspondingTarget,
+											  refnames_tlist, false);
+
+			path = apply_projection_to_path(root, rel, path,
+					create_pathtarget(root, tlist));
+
+			/* Return the fully-fledged tlist to caller, too */
+			*pTargetList = tlist;
+
+		}
+		else
+		{
+			/*
+			 * Figure out the appropriate target list, and update the
+			 * SubqueryScanPath with the PathTarget form of that.
+			 */
+			tlist = generate_setop_tlist(colTypes, colCollations,
 									 flag,
 									 rtr->rtindex,
 									 true,
 									 subroot->processed_tlist,
-									 refnames_tlist);
+									 refnames_tlist, true);
 
-		path = apply_projection_to_path(root, rel, path,
+			path = apply_projection_to_path(root, rel, path,
 										create_pathtarget(root, tlist));
 
-		/* Return the fully-fledged tlist to caller, too */
-		*pTargetList = tlist;
-
+			/* Return the fully-fledged tlist to caller, too */
+			*pTargetList = tlist;
+		}
 		/*
 		 * Estimate number of groups if caller wants it.  If the subquery used
 		 * grouping or aggregation, its output is probably mostly unique
@@ -392,7 +444,7 @@ recurse_set_operations(Node *setOp, PlannerInfo *root,
 												0,
 												false,
 												*pTargetList,
-												refnames_tlist);
+												refnames_tlist, true);
 			path = apply_projection_to_path(root,
 											path->parent,
 											path,
@@ -1004,7 +1056,8 @@ generate_setop_tlist(List *colTypes, List *colCollations,
 					 Index varno,
 					 bool hack_constants,
 					 List *input_tlist,
-					 List *refnames_tlist)
+					 List *refnames_tlist,
+					 bool no_corresponding)
 {
 	List	   *tlist = NIL;
 	int			resno = 1;
@@ -1026,8 +1079,8 @@ generate_setop_tlist(List *colTypes, List *colCollations,
 
 		rtlc = lnext(rtlc);
 
-		Assert(inputtle->resno == resno);
-		Assert(reftle->resno == resno);
+		Assert(!no_corresponding || inputtle->resno == resno);
+		Assert(!no_corresponding || reftle->resno == resno);
 		Assert(!inputtle->resjunk);
 		Assert(!reftle->resjunk);
 
@@ -2149,4 +2202,71 @@ adjust_appendrel_attrs_multilevel(PlannerInfo *root, Node *node,
 		Assert(parent_rel->reloptkind == RELOPT_BASEREL);
 	/* Now translate for this child */
 	return adjust_appendrel_attrs(root, node, appinfo);
+}
+
+/*
+ * generate target list from left target list with the order
+ * of right target list
+ */
+static List *
+make_corresponding_target(List *corresponding_list, List *subroot_list)
+{
+	Index internal = 0;
+	ListCell   *ltl;
+	ListCell   *rtl;
+	int			size;
+	int			i;
+	List *matchingColumns = NIL;
+	TargetEntry *simple_te_array;
+
+	size = list_length(corresponding_list) + 1;
+
+	/* Use array to find the order of corresponding columen */
+	simple_te_array = (TargetEntry *) palloc0(size * sizeof(TargetEntry));
+	foreach(ltl, corresponding_list)
+	{
+		foreach(rtl, subroot_list)
+		{
+			TargetEntry *ltle = (TargetEntry *) lfirst(ltl);
+			TargetEntry *rtle = (TargetEntry *) lfirst(rtl);
+
+			/* Names of the columns must be resolved before calling this method. */
+			Assert(ltle->resname != NULL);
+			Assert(rtle->resname != NULL);
+
+			/* If column names are the same, add it to array. */
+			if (strcmp(ltle->resname, rtle->resname) == 0)
+			{
+				simple_te_array[internal].xpr = rtle->xpr;
+				simple_te_array[internal].expr = rtle->expr;
+				simple_te_array[internal].resno = rtle->resno;
+				simple_te_array[internal].resname = rtle->resname;
+				simple_te_array[internal].ressortgroupref =
+						rtle->ressortgroupref;
+				simple_te_array[internal].resorigtbl = rtle->resorigtbl;
+				simple_te_array[internal].resorigcol = rtle->resorigcol;
+				simple_te_array[internal].resjunk = rtle->resjunk;
+				internal++;
+				continue;
+			}
+		}
+	}
+	/* traverse the array and make targetlist */
+	for (i = 0; i < internal; i++)
+	{
+		TargetEntry *tle = makeNode(TargetEntry);
+
+		tle->xpr = simple_te_array[i].xpr;
+		tle->expr = simple_te_array[i].expr;
+		tle->resno = simple_te_array[i].resno;
+		tle->resname = simple_te_array[i].resname;
+		tle->ressortgroupref = simple_te_array[i].ressortgroupref;
+		tle->resorigtbl = simple_te_array[i].resorigtbl;
+		tle->resorigcol = simple_te_array[i].resorigcol;
+		tle->resjunk = simple_te_array[i].resjunk;
+
+		matchingColumns = lappend(matchingColumns, tle);
+
+	}
+	return matchingColumns;
 }

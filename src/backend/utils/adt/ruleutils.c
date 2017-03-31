@@ -5442,6 +5442,30 @@ get_setop_query(Node *setOp, Query *query, deparse_context *context,
 		}
 		if (op->all)
 			appendStringInfoString(buf, "ALL ");
+		if (op->correspondingColumns != NIL )
+		{
+			if (op->hasCorrespondingBy)
+			{
+				const char *sep;
+				ListCell *l;
+				appendStringInfoString(buf, "CORRESPONDING BY(");
+				sep = "";
+
+				foreach(l, op->correspondingColumns)
+				{
+					TargetEntry *tle = (TargetEntry *) lfirst(l);
+
+					appendStringInfoString(buf, sep);
+					appendStringInfo(buf, "%s", tle->resname);
+					sep = ", ";
+				}
+				appendStringInfoChar(buf, ')');
+
+			}
+			else
+
+				appendStringInfoString(buf, "CORRESPONDING ");
+		}
 
 		/* Always parenthesize if RHS is another setop */
 		need_paren = IsA(op->rarg, SetOperationStmt);

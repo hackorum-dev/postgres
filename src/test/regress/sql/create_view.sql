@@ -551,3 +551,13 @@ select pg_get_viewdef('tt19v', true);
 set client_min_messages = warning;
 DROP SCHEMA temp_view_test CASCADE;
 DROP SCHEMA testviewschm2 CASCADE;
+
+-- views with corresponding clause
+create view view_corresponding_01 as select 1 as a, 2 as b union all corresponding select 3 as a, 4 as b;
+select * from view_corresponding_01;
+
+create view view_corresponding_02 as select 1 as a, 2 as b union all corresponding by (a,b) select 3 as a, 4 as b, 5 as c;
+select * from view_corresponding_02;
+
+create view view_corresponding_03 as select 1 as a, 2 as b union all corresponding by (b,a) select 3 as a, 4 as b, 5 as c;
+select * from view_corresponding_03;

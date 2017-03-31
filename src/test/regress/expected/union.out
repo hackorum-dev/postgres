@@ -59,6 +59,87 @@ SELECT 1.1 AS two UNION SELECT 2.2 ORDER BY 1;
  2.2
 (2 rows)
 
+SELECT 1 AS two UNION CORRESPONDING SELECT 2 two UNION CORRESPONDING SELECT 2 two;
+ two 
+-----
+   2
+   1
+(2 rows)
+
+SELECT 1 a, 2 b, 3 c UNION CORRESPONDING BY(a) SELECT 4 a, 5 b, 6 c;
+ a 
+---
+ 1
+ 4
+(2 rows)
+
+SELECT 1 a, 2 b, 3 c UNION CORRESPONDING BY(a, b) SELECT 4 a, 5 b, 6 c;
+ a | b 
+---+---
+ 1 | 2
+ 4 | 5
+(2 rows)
+
+SELECT 1 a, 2 b, 3 c UNION CORRESPONDING BY(b, c) SELECT 4 a, 5 b, 6 c;
+ b | c 
+---+---
+ 2 | 3
+ 5 | 6
+(2 rows)
+
+SELECT 1 a, 2 b, 3 c UNION CORRESPONDING BY (c,b) SELECT 4 a, 5 b, 6 c, 8 d;
+ c | b 
+---+---
+ 3 | 2
+ 6 | 5
+(2 rows)
+
+-- CORRESPONDING column ordering, left clause's column ordering must be preserved.
+SELECT 1 a, 2 b, 3 c UNION CORRESPONDING SELECT 4 a, 5 b, 6 c;
+ a | b | c 
+---+---+---
+ 1 | 2 | 3
+ 4 | 5 | 6
+(2 rows)
+
+SELECT 2 b, 1 a, 3 c UNION CORRESPONDING SELECT 4 a, 5 b, 6 c;
+ b | a | c 
+---+---+---
+ 2 | 1 | 3
+ 5 | 4 | 6
+(2 rows)
+
+-- CORRESPONDING BY column ordering, BY clause column ordering must be preserved.
+SELECT 1 a, 2 b, 3 c UNION CORRESPONDING BY(a, b, c) SELECT 4 a, 5 b, 6 c;
+ a | b | c 
+---+---+---
+ 1 | 2 | 3
+ 4 | 5 | 6
+(2 rows)
+
+SELECT 1 a, 2 b, 3 c UNION CORRESPONDING BY(b, c, a) SELECT 4 a, 5 b, 6 c;
+ b | c | a 
+---+---+---
+ 2 | 3 | 1
+ 5 | 6 | 4
+(2 rows)
+
+-- should to fail
+SELECT 10 a, 20 b UNION ALL CORRESPONDING SELECT 10 c, 20 d;
+ERROR:  there is not any corresponding name
+LINE 1: SELECT 10 a, 20 b UNION ALL CORRESPONDING SELECT 10 c, 20 d;
+               ^
+HINT:  UNION queries with a CORRESPONDING clause must have at least one column with the same name
+SELECT 10 a, 20 b UNION ALL CORRESPONDING BY (a,b) SELECT 10 c, 20 d;
+ERROR:  there is not any corresponding name
+LINE 1: SELECT 10 a, 20 b UNION ALL CORRESPONDING BY (a,b) SELECT 10...
+               ^
+HINT:  UNION queries with a CORRESPONDING clause must have at least one column with the same name
+SELECT 10 a, 20 b UNION ALL CORRESPONDING BY (x) SELECT 10 c, 20 d;
+ERROR:  there is not any corresponding name
+LINE 1: SELECT 10 a, 20 b UNION ALL CORRESPONDING BY (x) SELECT 10 c...
+               ^
+HINT:  UNION queries with a CORRESPONDING clause must have at least one column with the same name
 -- Mixed types
 SELECT 1.1 AS two UNION SELECT 2 ORDER BY 1;
  two 
@@ -124,6 +205,147 @@ SELECT 1.1 AS two UNION (SELECT 2 UNION ALL SELECT 2) ORDER BY 1;
    2
 (2 rows)
 
+-- other corresponding clause tests,
+SELECT 0 AS x1, 1 AS a, 0 AS x2, 2 AS b, 0 AS x3 UNION ALL CORRESPONDING SELECT 4 AS b, 0 AS x4, 3 AS a, 0 AS x6;
+ a | b 
+---+---
+ 1 | 2
+ 3 | 4
+(2 rows)
+
+-- when column is not in result, then the name should not be unique
+SELECT 0 AS x1, 1 AS a, 0 AS x2, 2 AS b, 0 AS x3, -1 AS x3 UNION ALL CORRESPONDING SELECT 4 AS b, 0 AS x4, 3 AS a, 0 AS x6;
+ a | b 
+---+---
+ 1 | 2
+ 3 | 4
+(2 rows)
+
+SELECT 0 AS x1, 1 AS a, 0 AS x2, 2 AS b, 0 AS x3 UNION ALL CORRESPONDING SELECT 4 AS b, 0 AS x4, 3 AS a, 0 AS x6, -1 AS x6;
+ a | b 
+---+---
+ 1 | 2
+ 3 | 4
+(2 rows)
+
+SELECT 0 AS x1, 1 AS a, 0 AS x2, 2 AS b, 0 AS x3, -1 AS x3 UNION ALL CORRESPONDING SELECT 4 AS b, 0 AS x4, 3 AS a, 0 AS x6, -1 AS x6;
+ a | b 
+---+---
+ 1 | 2
+ 3 | 4
+(2 rows)
+
+SELECT 0 AS x1, 1 AS a, 0 AS x2, 2 AS b, 0 AS x3, -1 AS x3 UNION ALL CORRESPONDING SELECT 4 AS b, 0 AS x4, 3 AS a, 0 AS x6, -1 AS x6 UNION ALL CORRESPONDING SELECT 0 AS x8, 6 AS b, 5 AS a;
+ a | b 
+---+---
+ 1 | 2
+ 3 | 4
+ 5 | 6
+(3 rows)
+
+SELECT 0 AS x1, 1 AS a, 0 AS x2, 2 AS b, 0 AS x3, -1 AS x3 UNION ALL CORRESPONDING BY(a,b) SELECT 4 AS b, 0 AS x4, 3 AS a, 0 AS x6, -1 AS x3;
+ a | b 
+---+---
+ 1 | 2
+ 3 | 4
+(2 rows)
+
+SELECT 0 AS x1, 1 AS a, 0 AS x2, 2 AS b, 0 AS x3, -1 AS x6 UNION ALL CORRESPONDING BY(a,b) SELECT 4 AS b, 0 AS x4, 3 AS a, 0 AS x6, -1 AS x6;
+ a | b 
+---+---
+ 1 | 2
+ 3 | 4
+(2 rows)
+
+SELECT 0 AS x1, 1 AS a, 0 AS x2, 2 AS b, 0 AS x3, -1 AS x3 UNION ALL CORRESPONDING BY(a,b) SELECT 4 AS b, 0 AS x4, 3 AS a, 0 AS x6, -1 AS x6 UNION ALL CORRESPONDING SELECT 0 AS x8, 6 AS b, 5 AS a;
+ a | b 
+---+---
+ 1 | 2
+ 3 | 4
+ 5 | 6
+(3 rows)
+
+SELECT 0 AS x1, 1 AS a, 0 AS x2, 2 AS b, 0 AS x3, -1 AS x3 UNION ALL CORRESPONDING BY(b) SELECT 4 AS b, 0 AS x4, 3 AS a, 0 AS x6, -1 AS x6 UNION ALL CORRESPONDING SELECT 0 AS x8, 6 AS b, -100 AS a;
+ b 
+---
+ 2
+ 4
+ 6
+(3 rows)
+
+SELECT 0 AS x1, 1 AS a, 0 AS x2, 2 AS b, 0 AS x3, -1 AS x3 UNION ALL CORRESPONDING SELECT 4 AS b, 0 AS x4, 3 AS a, 0 AS x6, -1 AS x6 UNION ALL CORRESPONDING SELECT 0 AS x8, 6 AS a, -100 AS x9;
+ a 
+---
+ 1
+ 3
+ 6
+(3 rows)
+
+SELECT 0 AS a, 1 AS b, 0 AS c UNION ALL CORRESPONDING SELECT 2 AS a, 3 AS b, 10 AS c, 20 AS d UNION ALL CORRESPONDING SELECT 11 AS c, 21 AS d;
+ c  
+----
+  0
+ 10
+ 11
+(3 rows)
+
+SELECT 0 AS a, 1 AS b  UNION ALL CORRESPONDING SELECT 2 AS a, 3 AS b, 10 AS c, 20 AS d UNION ALL CORRESPONDING SELECT 11 AS c, 21 AS d, 4 AS a;
+ a 
+---
+ 0
+ 2
+ 4
+(3 rows)
+
+SELECT 0 AS a, 1 AS b  UNION ALL CORRESPONDING SELECT 2 AS a, 3 AS b, 10 AS c, 20 AS d UNION ALL CORRESPONDING SELECT 11 AS c, 21 AS d, 5 AS b;
+ b 
+---
+ 1
+ 3
+ 5
+(3 rows)
+
+-- should fail
+SELECT 0 AS x1, 1 AS a, 0 AS x2, 2 AS b, 0 AS x3, -1 AS x3 UNION ALL CORRESPONDING SELECT 4 AS b, 0 AS x4, 3 AS a, 0 AS x6, -5 AS x3;
+ERROR:  corresponding column "x3" is used more times
+LINE 1: SELECT 0 AS x1, 1 AS a, 0 AS x2, 2 AS b, 0 AS x3, -1 AS x3 U...
+                                                          ^
+HINT:  In UNION queries with CORRESPONDING clause the corresponding column names must be unique.
+SELECT 0 AS x1, 1 AS a, 0 AS x2, 2 AS b, 0 AS x3 UNION ALL CORRESPONDING SELECT 4 AS b, 0 AS x4, 3 AS a, 0 AS x6, -5 AS x3, -10 AS x3;
+ERROR:  corresponding column "x3" is used more times
+LINE 1: ...ELECT 4 AS b, 0 AS x4, 3 AS a, 0 AS x6, -5 AS x3, -10 AS x3;
+                                                             ^
+HINT:  In UNION queries with CORRESPONDING clause the corresponding column names must be unique.
+SELECT 0 AS x1, 1 AS a, 0 AS x2, 2 AS b, 0 AS x3, -1 AS x3 UNION ALL CORRESPONDING BY(a,b,x3) SELECT 4 AS b, 0 AS x4, 3 AS a, 0 AS x6, -5 AS x3;
+ERROR:  corresponding column "x3" is used more times
+LINE 1: SELECT 0 AS x1, 1 AS a, 0 AS x2, 2 AS b, 0 AS x3, -1 AS x3 U...
+                                                          ^
+HINT:  In UNION queries with CORRESPONDING BY clause the corresponding column names must be unique.
+SELECT 0 AS x1, 1 AS a, 0 AS x2, 2 AS b, 0 AS x3 UNION ALL CORRESPONDING BY(a,b,x3) SELECT 4 AS b, 0 AS x4, 3 AS a, 0 AS x6, -5 AS x3, -10 AS x3;
+ERROR:  corresponding column "x3" is used more times
+LINE 1: ...ELECT 4 AS b, 0 AS x4, 3 AS a, 0 AS x6, -5 AS x3, -10 AS x3;
+                                                             ^
+HINT:  In UNION queries with CORRESPONDING BY clause the corresponding column names must be unique.
+SELECT 0 AS x1, 1 AS a, 0 AS x2, 2 AS b, 0 AS x3, -1 AS x6 UNION ALL CORRESPONDING BY(a,b,b) SELECT 4 AS b, 0 AS x4, 3 AS a, 0 AS x6, -1 AS x6;
+ERROR:  column name "b" is not unique in CORRESPONDING BY clause
+LINE 1: ... 0 AS x3, -1 AS x6 UNION ALL CORRESPONDING BY(a,b,b) SELECT ...
+                                                             ^
+HINT:  CORRESPONDING BY clause must contain unique column names only.
+SELECT 0 AS x1, 1 AS a, 0 AS x2, 2 AS b, 0 AS x3, -1 AS x3 UNION ALL CORRESPONDING BY(a,b) SELECT 4 AS b, 0 AS x4, 3 AS a, 0 AS x6, -1 AS x6 UNION ALL CORRESPONDING SELECT 0 AS x8, 6 AS bb, -100 AS aa;
+ERROR:  there is not any corresponding name
+LINE 1: SELECT 0 AS x1, 1 AS a, 0 AS x2, 2 AS b, 0 AS x3, -1 AS x3 U...
+                        ^
+HINT:  UNION queries with a CORRESPONDING clause must have at least one column with the same name
+SELECT 0 AS x1, 1 AS a, 0 AS x2, 2 AS b, 0 AS x3, -1 AS x3 UNION ALL CORRESPONDING SELECT 4 AS b, 0 AS x4, 3 AS a, 0 AS x6, -1 AS x6 UNION ALL CORRESPONDING SELECT 0 AS x8, 6 AS xxx, -100 AS x9;
+ERROR:  there is not any corresponding name
+LINE 1: SELECT 0 AS x1, 1 AS a, 0 AS x2, 2 AS b, 0 AS x3, -1 AS x3 U...
+                        ^
+HINT:  UNION queries with a CORRESPONDING clause must have at least one column with the same name
+SELECT 0 AS a, 1 AS b UNION ALL CORRESPONDING SELECT 2 AS a, 3 AS b, 10 AS c, 20 AS d UNION ALL CORRESPONDING SELECT 11 AS c, 21 AS d;
+ERROR:  there is not any corresponding name
+LINE 1: SELECT 0 AS a, 1 AS b UNION ALL CORRESPONDING SELECT 2 AS a,...
+               ^
+HINT:  UNION queries with a CORRESPONDING clause must have at least one column with the same name
 --
 -- Try testing from tables...
 --
@@ -258,6 +480,74 @@ ORDER BY 1;
  hi de ho neighbor
 (5 rows)
 
+SELECT f1 AS five FROM FLOAT8_TBL
+UNION CORRESPONDING
+SELECT f1 AS five FROM FLOAT8_TBL
+ORDER BY 1;
+         five          
+-----------------------
+ -1.2345678901234e+200
+               -1004.3
+                -34.84
+ -1.2345678901234e-200
+                     0
+(5 rows)
+
+SELECT f1 AS five FROM FLOAT8_TBL
+UNION CORRESPONDING BY(five)
+SELECT f1 AS five FROM FLOAT8_TBL
+ORDER BY 1;
+         five          
+-----------------------
+ -1.2345678901234e+200
+               -1004.3
+                -34.84
+ -1.2345678901234e-200
+                     0
+(5 rows)
+
+SELECT f1 AS ten FROM FLOAT8_TBL
+UNION ALL CORRESPONDING
+SELECT f1 AS ten FROM FLOAT8_TBL;
+          ten          
+-----------------------
+                     0
+                -34.84
+               -1004.3
+ -1.2345678901234e+200
+ -1.2345678901234e-200
+                     0
+                -34.84
+               -1004.3
+ -1.2345678901234e+200
+ -1.2345678901234e-200
+(10 rows)
+
+SELECT f1 AS five FROM FLOAT8_TBL
+  WHERE f1 BETWEEN -1e6 AND 1e6
+UNION CORRESPONDING
+SELECT f1 AS five FROM INT4_TBL
+  WHERE f1 BETWEEN 0 AND 1000000;
+         five          
+-----------------------
+               -1004.3
+                -34.84
+ -1.2345678901234e-200
+                     0
+                123456
+(5 rows)
+
+SELECT * FROM FLOAT8_TBL
+UNION corresponding SELECT * FROM FLOAT8_TBL;
+          f1           
+-----------------------
+                     0
+ -1.2345678901234e-200
+                -34.84
+ -1.2345678901234e+200
+               -1004.3
+(5 rows)
+
 --
 -- INTERSECT and EXCEPT
 --
@@ -320,6 +610,63 @@ SELECT q1 FROM int8_tbl EXCEPT ALL SELECT DISTINCT q2 FROM int8_tbl ORDER BY 1;
 
 SELECT q1 FROM int8_tbl EXCEPT ALL SELECT q1 FROM int8_tbl FOR NO KEY UPDATE;
 ERROR:  FOR NO KEY UPDATE is not allowed with UNION/INTERSECT/EXCEPT
+SELECT q2 FROM int8_tbl INTERSECT CORRESPONDING SELECT q1 AS q2 FROM int8_tbl;
+        q2        
+------------------
+              123
+ 4567890123456789
+(2 rows)
+
+SELECT q2 FROM int8_tbl INTERSECT ALL CORRESPONDING SELECT q1 AS q2 FROM int8_tbl;
+        q2        
+------------------
+              123
+ 4567890123456789
+ 4567890123456789
+(3 rows)
+
+SELECT q2 FROM int8_tbl EXCEPT CORRESPONDING SELECT q1 AS q2 FROM int8_tbl ORDER BY 1;
+        q2         
+-------------------
+ -4567890123456789
+               456
+(2 rows)
+
+SELECT q2 FROM int8_tbl EXCEPT ALL CORRESPONDING SELECT q1 AS q2 FROM int8_tbl ORDER BY 1;
+        q2         
+-------------------
+ -4567890123456789
+               456
+(2 rows)
+
+SELECT q2 FROM int8_tbl EXCEPT ALL CORRESPONDING SELECT DISTINCT q1 AS q2 FROM int8_tbl ORDER BY 1;
+        q2         
+-------------------
+ -4567890123456789
+               456
+  4567890123456789
+(3 rows)
+
+SELECT q1 FROM int8_tbl EXCEPT CORRESPONDING SELECT q2 AS q1 FROM int8_tbl;
+ q1 
+----
+(0 rows)
+
+SELECT q1 FROM int8_tbl EXCEPT ALL CORRESPONDING SELECT q2 AS q1 FROM int8_tbl;
+        q1        
+------------------
+              123
+ 4567890123456789
+(2 rows)
+
+SELECT q1 FROM int8_tbl EXCEPT ALL CORRESPONDING SELECT DISTINCT q2 AS q1 FROM int8_tbl;
+        q1        
+------------------
+              123
+ 4567890123456789
+ 4567890123456789
+(3 rows)
+
 --
 -- Mixed types
 --
@@ -330,6 +677,21 @@ SELECT f1 FROM float8_tbl INTERSECT SELECT f1 FROM int4_tbl ORDER BY 1;
 (1 row)
 
 SELECT f1 FROM float8_tbl EXCEPT SELECT f1 FROM int4_tbl ORDER BY 1;
+          f1           
+-----------------------
+ -1.2345678901234e+200
+               -1004.3
+                -34.84
+ -1.2345678901234e-200
+(4 rows)
+
+SELECT f1 FROM float8_tbl INTERSECT CORRESPONDING SELECT f1 FROM int4_tbl;
+ f1 
+----
+  0
+(1 row)
+
+SELECT f1 FROM float8_tbl EXCEPT CORRESPONDING SELECT f1 FROM int4_tbl ORDER BY 1;
           f1           
 -----------------------
  -1.2345678901234e+200
@@ -424,6 +786,24 @@ SELECT q1 FROM int8_tbl EXCEPT (((SELECT q2 FROM int8_tbl ORDER BY q2 LIMIT 1)))
  4567890123456789
 (2 rows)
 
+SELECT q1,q2 FROM int8_tbl EXCEPT CORRESPONDING SELECT q2,q1 FROM int8_tbl
+ORDER BY q2,q1;
+ q1 | q2 
+----+----
+(0 rows)
+
+SELECT q1,q2 FROM int8_tbl EXCEPT CORRESPONDING BY(q1) SELECT q2,q1 FROM int8_tbl
+ORDER BY q1;
+ q1 
+----
+(0 rows)
+
+SELECT q1,q2 FROM int8_tbl EXCEPT CORRESPONDING BY(q2) SELECT q2,q1 FROM int8_tbl
+ORDER BY q2;
+ q2 
+----
+(0 rows)
+
 --
 -- New syntaxes (7.1) permit new tests
 --
@@ -459,6 +839,22 @@ SELECT '3.4'::numeric UNION SELECT 'foo';
 ERROR:  invalid input syntax for type numeric: "foo"
 LINE 1: SELECT '3.4'::numeric UNION SELECT 'foo';
                                            ^
+SELECT '3.4'::numeric AS a UNION CORRESPONDING SELECT 'foo' AS a;
+ERROR:  invalid input syntax for type numeric: "foo"
+LINE 1: ...CT '3.4'::numeric AS a UNION CORRESPONDING SELECT 'foo' AS a...
+                                                             ^
+SELECT a.f1 FROM (SELECT 'test' AS f1 FROM varchar_tbl) a
+UNION CORRESPONDING
+SELECT b.f1 FROM (SELECT f1 FROM varchar_tbl) b
+ORDER BY 1;
+  f1  
+------
+ a
+ ab
+ abcd
+ test
+(4 rows)
+
 --
 -- Test that expression-index constraints can be pushed down through
 -- UNION or UNION ALL

@@ -1601,6 +1601,9 @@ SELECT DISTINCT ON (<replaceable>expression</replaceable> <optional>, <replaceab
    <primary>EXCEPT</primary>
   </indexterm>
   <indexterm zone="queries-union">
+   <primary>CORRESPONDING</primary>
+  </indexterm>
+  <indexterm zone="queries-union">
    <primary>set union</primary>
   </indexterm>
   <indexterm zone="queries-union">
@@ -1617,9 +1620,9 @@ SELECT DISTINCT ON (<replaceable>expression</replaceable> <optional>, <replaceab
    The results of two queries can be combined using the set operations
    union, intersection, and difference.  The syntax is
 <synopsis>
-<replaceable>query1</replaceable> UNION <optional>ALL</optional> <replaceable>query2</replaceable>
-<replaceable>query1</replaceable> INTERSECT <optional>ALL</optional> <replaceable>query2</replaceable>
-<replaceable>query1</replaceable> EXCEPT <optional>ALL</optional> <replaceable>query2</replaceable>
+<replaceable>query1</replaceable> UNION <optional>ALL</optional> <optional>CORRESPONDING</optional> <optional>BY</optional> <replaceable>query2</replaceable>
+<replaceable>query1</replaceable> INTERSECT <optional>ALL</optional> <optional>CORRESPONDING</optional> <optional>BY</optional> <replaceable>query2</replaceable>
+<replaceable>query1</replaceable> EXCEPT <optional>ALL</optional> <optional>CORRESPONDING</optional> <optional>BY</optional> <replaceable>query2</replaceable>
 </synopsis>
    <replaceable>query1</replaceable> and
    <replaceable>query2</replaceable> are queries that can use any of
@@ -1659,14 +1662,31 @@ SELECT DISTINCT ON (<replaceable>expression</replaceable> <optional>, <replaceab
   </para>
 
   <para>
-   In order to calculate the union, intersection, or difference of two
-   queries, the two queries must be <quote>union compatible</quote>,
-   which means that they return the same number of columns and
-   the corresponding columns have compatible data types, as
-   described in <xref linkend="typeconv-union-case">.
+   <literal>EXCEPT</> returns all rows that are in the result of
+   <replaceable>query1</replaceable> but not in the result of
+   <replaceable>query2</replaceable>.  (This is sometimes called the
+   <firstterm>difference</> between two queries.)  Again, duplicates
+   are eliminated unless <literal>EXCEPT ALL</> is used.
+  </para>
+
+  <para>
+   <literal>CORRESPONDING</> returns all columns that are in both 
+   <replaceable>query1</> and <replaceable>query2</> with the same name.
+  </para>
+
+  <para>
+   <literal>CORRESPONDING BY</> returns all columns in the column list 
+   that are also in both <replaceable>query1</> and 
+   <replaceable>query2</> with the same name. The names in column list
+   must be unique.
+  </para>
+
+  <para>
+   The names of columns in result when <literal>CORRESPONDING</> or
+   <literal>CORRESPONDING BY</> clause is used must be unique in
+   <replaceable>query1</replaceable> and <replaceable>query2</replaceable>.
   </para>
  </sect1>
-
 
  <sect1 id="queries-order">
   <title>Sorting Rows</title>

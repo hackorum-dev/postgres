@@ -3444,6 +3444,8 @@ raw_expression_tree_walker(Node *node,
 					return true;
 				if (walker(stmt->lockingClause, context))
 					return true;
+				if (walker(stmt->correspondingClause, context))
+					return true;
 				if (walker(stmt->withClause, context))
 					return true;
 				if (walker(stmt->larg, context))

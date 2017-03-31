@@ -26,6 +26,7 @@ makeInteger(long i)
 
 	v->type = T_Integer;
 	v->val.ival = i;
+	v->location = -1;
 	return v;
 }
 
@@ -41,6 +42,7 @@ makeFloat(char *numericStr)
 
 	v->type = T_Float;
 	v->val.str = numericStr;
+	v->location = -1;
 	return v;
 }
 
@@ -56,6 +58,7 @@ makeString(char *str)
 
 	v->type = T_String;
 	v->val.str = str;
+	v->location = -1;
 	return v;
 }
 
@@ -71,5 +74,6 @@ makeBitString(char *str)
 
 	v->type = T_BitString;
 	v->val.str = str;
+	v->location = -1;
 	return v;
 }

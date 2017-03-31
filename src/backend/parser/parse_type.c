@@ -735,7 +735,8 @@ typeStringToTypeName(const char *str)
 		stmt->limitCount != NULL ||
 		stmt->lockingClause != NIL ||
 		stmt->withClause != NULL ||
-		stmt->op != SETOP_NONE)
+		stmt->op != SETOP_NONE ||
+		stmt->correspondingClause != NULL)
 		goto fail;
 	if (list_length(stmt->targetList) != 1)
 		goto fail;
