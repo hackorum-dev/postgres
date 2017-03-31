@@ -1281,7 +1281,7 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
          <entry>Waiting for confirmation from remote server during synchronous replication.</entry>
         </row>
         <row>
-         <entry morerows="2"><literal>Timeout</></entry>
+         <entry morerows="3"><literal>Timeout</></entry>
          <entry><literal>BaseBackupThrottle</></entry>
          <entry>Waiting during base backup when throttling activity.</entry>
         </row>
@@ -1292,6 +1292,10 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
         <row>
          <entry><literal>RecoveryApplyDelay</></entry>
          <entry>Waiting to apply WAL at recovery because it is delayed.</entry>
+        </row>
+        <row>
+         <entry><literal>RecoveryConflict</></entry>
+         <entry>Waiting for conflict resolution of query running on standby.</entry>
         </row>
         <row>
          <entry morerows="65"><literal>IO</></entry>

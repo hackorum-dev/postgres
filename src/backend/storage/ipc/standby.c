@@ -148,8 +148,8 @@ GetStandbyLimitTime(void)
 	}
 }
 
-#define STANDBY_INITIAL_WAIT_US  1000
-static int	standbyWait_us = STANDBY_INITIAL_WAIT_US;
+#define STANDBY_INITIAL_WAIT_MS  1
+static int	standbyWait_ms = STANDBY_INITIAL_WAIT_MS;
 
 /*
  * Standby wait logic for ResolveRecoveryConflictWithVirtualXIDs.
@@ -160,8 +160,7 @@ static bool
 WaitExceedsMaxStandbyDelay(void)
 {
 	TimestampTz ltime;
-
-	CHECK_FOR_INTERRUPTS();
+	int			rc;
 
 	/* Are we past the limit time? */
 	ltime = GetStandbyLimitTime();
@@ -171,15 +170,25 @@ WaitExceedsMaxStandbyDelay(void)
 	/*
 	 * Sleep a bit (this is essential to avoid busy-waiting).
 	 */
-	pg_usleep(standbyWait_us);
+	rc = WaitLatch(MyLatch,
+				   WL_TIMEOUT | WL_POSTMASTER_DEATH,
+				   standbyWait_ms,
+				   WAIT_EVENT_RECOVERY_CONFLICT);
 
 	/*
-	 * Progressively increase the sleep times, but not to more than 1s, since
-	 * pg_usleep isn't interruptable on some platforms.
+	 * Progressively increase the sleep times, but not to more than 1s.
+	 * This process is expected to wake up reasonably fast after the
+	 * transactions this is waiting for are committed.
 	 */
-	standbyWait_us *= 2;
-	if (standbyWait_us > 1000000)
-		standbyWait_us = 1000000;
+	if (rc & WL_TIMEOUT)
+	{
+		standbyWait_ms *= 2;
+		if (standbyWait_ms > 1000)
+			standbyWait_ms = 1000;
+	}
+
+	/* An interrupt may have occurred while waiting */
+	HandleStartupProcInterrupts();
 
 	return false;
 }
@@ -206,8 +215,8 @@ ResolveRecoveryConflictWithVirtualXIDs(VirtualTransactionId *waitlist,
 
 	while (VirtualTransactionIdIsValid(*waitlist))
 	{
-		/* reset standbyWait_us for each xact we wait for */
-		standbyWait_us = STANDBY_INITIAL_WAIT_US;
+		/* reset standbyWait_ms for each xact we wait for */
+		standbyWait_ms = STANDBY_INITIAL_WAIT_MS;
 
 		/* wait until the virtual xid is gone */
 		while (!VirtualXactLock(*waitlist, false))
