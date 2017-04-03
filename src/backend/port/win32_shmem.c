@@ -17,11 +17,84 @@
 #include "storage/ipc.h"
 #include "storage/pg_shmem.h"
 
+#include <psapi.h>
+
 HANDLE		UsedShmemSegID = INVALID_HANDLE_VALUE;
 void	   *UsedShmemSegAddr = NULL;
 static Size UsedShmemSegSize = 0;
 
 static void pgwin32_SharedMemoryDelete(int status, Datum shmId);
+
+static void
+dumpdlls(HANDLE *proc)
+{
+	HMODULE dll[512];
+	DWORD size_used = 1;
+	int i;
+
+	if (!EnumProcessModules(proc, dll, sizeof(dll), &size_used))
+	{
+		elog(LOG, "EnumProcessModules failed: %lu", GetLastError());
+		return;
+	}
+	if (size_used == 0)
+		elog(LOG, "EnumProcessModules: no modules");
+
+	for (i = 0; i < size_used / sizeof(*dll); i++)
+	{
+		char name[MAXPGPATH];
+
+		if (!GetModuleFileNameEx(proc, dll[i], name, sizeof(name)))
+			sprintf(name, "GetModuleFileNameEx failed: %lu", GetLastError());
+		elog(LOG, "0x%p %s", dll[i], name);
+	}
+}
+
+static const char *
+mi_type(DWORD code)
+{
+	switch (code) {
+		case MEM_IMAGE: return "img";
+		case MEM_MAPPED: return "map";
+		case MEM_PRIVATE: return "prv";
+	}
+	return "???";
+}
+
+static const char *
+mi_state(DWORD code)
+{
+	switch (code) {
+		case MEM_COMMIT: return "commit";
+		case MEM_FREE: return "free  ";
+		case MEM_RESERVE: return "reserv";
+	}
+	return "???";
+}
+
+static void
+dumpmem(const char *reason, HANDLE *proc)
+{
+	char *addr = 0;
+	MEMORY_BASIC_INFORMATION mi;
+
+	elog(LOG, "%s memory map", reason);
+	do {
+		if (0 == VirtualQueryEx(proc, addr, &mi, sizeof(mi)))
+		{
+			if (GetLastError() == ERROR_INVALID_PARAMETER)
+				break;
+			elog(LOG, "VirtualQueryEx failed: %lu", GetLastError());
+			return;
+		}
+		elog(LOG, "0x%p+0x%p %s (alloc 0x%p) %s",
+			 mi.BaseAddress, (void *) mi.RegionSize,
+			 mi_type(mi.Type), mi.AllocationBase, mi_state(mi.State));
+		addr += mi.RegionSize;
+	} while (addr > 0);
+
+	dumpdlls(proc);
+}
 
 /*
  * Generate shared memory segment name. Expand the data directory, to generate
@@ -276,6 +349,8 @@ PGSharedMemoryReAttach(void)
 	Assert(UsedShmemSegAddr != NULL);
 	Assert(IsUnderPostmaster);
 
+	dumpmem("before reattach", GetCurrentProcess());
+
 	/*
 	 * Release memory region reservation that was made by the postmaster
 	 */
@@ -408,6 +483,7 @@ pgwin32_ReserveSharedMemoryRegion(HANDLE hChild)
 
 	address = VirtualAllocEx(hChild, UsedShmemSegAddr, UsedShmemSegSize,
 							 MEM_RESERVE, PAGE_READWRITE);
+	dumpmem("after reserve", hChild);
 	if (address == NULL)
 	{
 		/* Don't use FATAL since we're running in the postmaster */
