@@ -2762,6 +2762,57 @@ CancelVirtualTransaction(VirtualTransactionId vxid, ProcSignalReason sigmode)
 }
 
 /*
+ * Notify a logical decoding session that it conflicts with newly set
+ * catalog_xmin from the master. We're about to start replaying WAL
+ * that will make its historic snapshot potentially unsafe by removing
+ * system tuples it might need.
+ */
+void
+CancelLogicalDecodingSessionWithRecoveryConflict(pid_t session_pid)
+{
+	ProcArrayStruct *arrayP = procArray;
+	int			index;
+	BackendId	backend_id = InvalidBackendId;
+
+	/*
+	 * We have to scan ProcArray to find the process and set a pending recovery
+	 * conflict even though we know the pid. At least we can get the BackendId
+	 * and avoid a ProcSignal scan by SendProcSignal.
+	 *
+	 * The pid might've gone away, in which case we got the desired
+	 * outcome anyway.
+	 */
+	LWLockAcquire(ProcArrayLock, LW_SHARED);
+
+	for (index = 0; index < arrayP->numProcs; index++)
+	{
+		int			pgprocno = arrayP->pgprocnos[index];
+		volatile PGPROC *proc = &allProcs[pgprocno];
+
+		if (proc->pid == session_pid)
+		{
+			VirtualTransactionId procvxid;
+
+			GET_VXID_FROM_PGPROC(procvxid, *proc);
+
+			proc->recoveryConflictPending = true;
+			backend_id = procvxid.backendId;
+			break;
+		}
+	}
+
+	LWLockRelease(ProcArrayLock);
+
+	/*
+	 * Kill the pid if it's still here. If not, that's what we
+	 * wanted so ignore any errors.
+	 */
+	if (backend_id != InvalidBackendId)
+		(void) SendProcSignal(session_pid,
+			PROCSIG_RECOVERY_CONFLICT_CATALOG_XMIN, backend_id);
+}
+
+/*
  * MinimumActiveBackends --- count backends (other than myself) that are
  *		in active transactions.  Return true if the count exceeds the
  *		minimum threshold passed.  This is used as a heuristic to decide if

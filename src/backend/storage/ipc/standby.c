@@ -29,6 +29,7 @@
 #include "storage/procarray.h"
 #include "storage/sinvaladt.h"
 #include "storage/standby.h"
+#include "replication/slot.h"
 #include "utils/ps_status.h"
 #include "utils/timeout.h"
 #include "utils/timestamp.h"
@@ -152,11 +153,13 @@ GetStandbyLimitTime(void)
 static int	standbyWait_us = STANDBY_INITIAL_WAIT_US;
 
 /*
- * Standby wait logic for ResolveRecoveryConflictWithVirtualXIDs.
+ * Standby wait logic for ResolveRecoveryConflictWithVirtualXIDs and
+ * ResolveRecoveryConflictWithLogicalDecoding.
+ *
  * We wait here for a while then return. If we decide we can't wait any
  * more then we return true, if we can wait some more return false.
  */
-static bool
+bool
 WaitExceedsMaxStandbyDelay(void)
 {
 	TimestampTz ltime;

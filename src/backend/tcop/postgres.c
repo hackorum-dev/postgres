@@ -2276,6 +2276,9 @@ errdetail_recovery_conflict(void)
 		case PROCSIG_RECOVERY_CONFLICT_STARTUP_DEADLOCK:
 			errdetail("User transaction caused buffer deadlock with recovery.");
 			break;
+		case PROCSIG_RECOVERY_CONFLICT_CATALOG_XMIN:
+			errdetail("Logical replication slot requires catalog rows that will be removed.");
+			break;
 		case PROCSIG_RECOVERY_CONFLICT_DATABASE:
 			errdetail("User was connected to a database that must be dropped.");
 			break;
@@ -2698,8 +2701,12 @@ SigHupHandler(SIGNAL_ARGS)
 /*
  * RecoveryConflictInterrupt: out-of-line portion of recovery conflict
  * handling following receipt of SIGUSR1. Designed to be similar to die()
- * and StatementCancelHandler(). Called only by a normal user backend
- * that begins a transaction during recovery.
+ * and StatementCancelHandler().
+ *
+ * Called by normal user backends running during recovery. Also used by the
+ * walsender to handle recovery conflicts with logical decoding, and by
+ * background workers that call CHECK_FOR_INTERRUPTS() and respect recovery
+ * conflicts.
  */
 void
 RecoveryConflictInterrupt(ProcSignalReason reason)
@@ -2781,6 +2788,7 @@ RecoveryConflictInterrupt(ProcSignalReason reason)
 
 				/* Intentional drop through to session cancel */
 
+			case PROCSIG_RECOVERY_CONFLICT_CATALOG_XMIN:
 			case PROCSIG_RECOVERY_CONFLICT_DATABASE:
 				RecoveryConflictPending = true;
 				ProcDiePending = true;
@@ -2795,12 +2803,18 @@ RecoveryConflictInterrupt(ProcSignalReason reason)
 		Assert(RecoveryConflictPending && (QueryCancelPending || ProcDiePending));
 
 		/*
-		 * All conflicts apart from database cause dynamic errors where the
-		 * command or transaction can be retried at a later point with some
-		 * potential for success. No need to reset this, since non-retryable
-		 * conflict errors are currently FATAL.
+		 * All conflicts apart from database and catalog_xmin cause dynamic
+		 * errors where the command or transaction can be retried at a later
+		 * point with some potential for success. No need to reset this, since
+		 * non-retryable conflict errors are currently FATAL.
+		 *
+		 * catalog_xmin is non-retryable because once we advance the
+		 * catalog_xmin threshold we might replay wal that removes
+		 * needed catalog tuples. The slot can't (re)start decoding
+		 * because its catalog_xmin cannot be satisifed.
 		 */
-		if (reason == PROCSIG_RECOVERY_CONFLICT_DATABASE)
+		if (reason == PROCSIG_RECOVERY_CONFLICT_DATABASE ||
+			reason == PROCSIG_RECOVERY_CONFLICT_CATALOG_XMIN)
 			RecoveryConflictRetryable = false;
 	}
 
@@ -2855,11 +2869,20 @@ ProcessInterrupts(void)
 		}
 		else if (RecoveryConflictPending)
 		{
-			/* Currently there is only one non-retryable recovery conflict */
-			Assert(RecoveryConflictReason == PROCSIG_RECOVERY_CONFLICT_DATABASE);
+			int code;
+
+			Assert(RecoveryConflictReason == PROCSIG_RECOVERY_CONFLICT_DATABASE ||
+				   RecoveryConflictReason == PROCSIG_RECOVERY_CONFLICT_CATALOG_XMIN);
+
+			if (RecoveryConflictReason == PROCSIG_RECOVERY_CONFLICT_CATALOG_XMIN)
+				/* XXX more appropriate error code? */
+				code = ERRCODE_PROGRAM_LIMIT_EXCEEDED;
+			else
+				code = ERRCODE_DATABASE_DROPPED;
+
 			pgstat_report_recovery_conflict(RecoveryConflictReason);
 			ereport(FATAL,
-					(errcode(ERRCODE_DATABASE_DROPPED),
+					(errcode(code),
 			  errmsg("terminating connection due to conflict with recovery"),
 					 errdetail_recovery_conflict()));
 		}

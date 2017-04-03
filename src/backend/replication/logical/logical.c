@@ -29,6 +29,7 @@
 #include "postgres.h"
 
 #include "miscadmin.h"
+#include "pgstat.h"
 
 #include "access/xact.h"
 #include "access/xlog_internal.h"
@@ -38,11 +39,14 @@
 #include "replication/reorderbuffer.h"
 #include "replication/origin.h"
 #include "replication/snapbuild.h"
+#include "replication/walreceiver.h"
 
+#include "storage/ipc.h"
 #include "storage/proc.h"
 #include "storage/procarray.h"
 
 #include "utils/memutils.h"
+#include "utils/ps_status.h"
 
 /* data for errcontext callback */
 typedef struct LogicalErrorCallbackState
@@ -67,6 +71,8 @@ static void message_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
 				 const char *prefix, Size message_size, const char *message);
 
 static void LoadOutputPlugin(OutputPluginCallbacks *callbacks, char *plugin);
+
+static void EnsureActiveLogicalSlotValid(void);
 
 /*
  * Make sure the current settings & environment are capable of doing logical
@@ -279,6 +285,16 @@ CreateInitDecodingContext(char *plugin,
 	LWLockRelease(ProcArrayLock);
 
 	/*
+	 * If this is the first slot created on the master we won't have a
+	 * persistent record of the oldest safe xid for historic snapshots yet.
+	 * Force one to be recorded so that when we go to replay from this slot we
+	 * know it's safe.
+	 */
+	if (!RecoveryInProgress() &&
+		!TransactionIdIsValid(ShmemVariableCache->oldestCatalogXmin))
+		UpdateOldestCatalogXmin();
+
+	/*
 	 * tell the snapshot builder to only assemble snapshot once reaching the
 	 * running_xact's record with the respective xmin.
 	 */
@@ -375,6 +391,8 @@ CreateDecodingContext(XLogRecPtr start_lsn,
 
 		start_lsn = slot->data.confirmed_flush;
 	}
+
+	EnsureActiveLogicalSlotValid();
 
 	ctx = StartupDecodingContext(output_plugin_options,
 								 start_lsn, InvalidTransactionId,
@@ -962,4 +980,121 @@ LogicalConfirmReceivedLocation(XLogRecPtr lsn)
 		MyReplicationSlot->data.confirmed_flush = lsn;
 		SpinLockRelease(&MyReplicationSlot->mutex);
 	}
+}
+
+/*
+ * Test to see if the active logical slot is usable.
+ */
+static void
+EnsureActiveLogicalSlotValid(void)
+{
+	TransactionId shmem_catalog_xmin;
+
+	Assert(MyReplicationSlot != NULL);
+
+	/*
+	 * A logical slot can become unusable if we're doing logical decoding on a
+	 * standby or using a slot created before we were promoted from standby
+	 * to master. If the master advanced its global catalog_xmin past the
+	 * threshold we need it could've removed catalog tuple versions that
+	 * we'll require to start decoding at our restart_lsn.
+	 */
+
+	LWLockAcquire(ProcArrayLock, LW_SHARED);
+	shmem_catalog_xmin = ShmemVariableCache->oldestCatalogXmin;
+	LWLockRelease(ProcArrayLock);
+
+	if (!TransactionIdIsValid(shmem_catalog_xmin) ||
+		TransactionIdFollows(shmem_catalog_xmin, MyReplicationSlot->data.catalog_xmin))
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("replication slot '%s' requires catalogs removed by master",
+						NameStr(MyReplicationSlot->data.name)),
+				 errdetail("need catalog_xmin %u, have oldestCatalogXmin %u",
+						   MyReplicationSlot->data.catalog_xmin, shmem_catalog_xmin)));
+}
+
+/*
+ * Scan to see if any clients are using replication slots that are below a
+ * newly-applied new catalog_xmin theshold and signal them to terminate with a
+ * recovery conflict.
+ */
+void
+ResolveRecoveryConflictWithLogicalDecoding(TransactionId new_catalog_xmin)
+{
+	int i;
+
+	if (!InHotStandby)
+		/* nobody can be actively using logical slots */
+		return;
+
+	/* Already applied new limit, can't have replayed later one yet */
+	Assert(ShmemVariableCache->oldestCatalogXmin == new_catalog_xmin);
+
+	/*
+	 * Find the first conflicting active slot and signal its owning backend
+	 * to exit. We'll be called repeatedly by the recovery code until there
+	 * are no more conflicts.
+	 */
+	LWLockAcquire(ReplicationSlotControlLock, LW_SHARED);
+	for (i = 0; i < max_replication_slots; i++)
+	{
+		ReplicationSlot *slot;
+		pid_t active_pid;
+
+		slot = &ReplicationSlotCtl->replication_slots[i];
+
+		/*
+		 * Physical slots can have a catalog_xmin, but conflicts are the
+		 * problem of the leaf replica with the logical slot.
+		 */
+		if (!(slot->in_use && SlotIsLogical(slot)))
+			continue;
+
+		/*
+		 * We only care about the effective_catalog_xmin of active logical
+		 * slots. Anything else gets checked when a new decoding session tries
+		 * to start.
+		 */
+		 while (slot->in_use && slot->active_pid != 0 &&
+				TransactionIdIsValid(slot->effective_catalog_xmin) &&
+				(!TransactionIdIsValid(new_catalog_xmin) ||
+				 TransactionIdPrecedes(slot->effective_catalog_xmin, new_catalog_xmin)))
+		{
+			/*
+			 * We'll be sleeping, so release the control lock. New conflicting
+			 * backends cannot appear and if old ones go away that's what we
+			 * want, so release and re-acquire is OK here.
+			 */
+			active_pid = slot->active_pid;
+			LWLockRelease(ReplicationSlotControlLock);
+
+			if (WaitExceedsMaxStandbyDelay())
+			{
+				ereport(INFO,
+						(errmsg("terminating logical decoding session due to recovery conflict"),
+						 errdetail("Pid %u requires catalog_xmin %u for replication slot '%s' but the master has removed catalogs up to xid %u.",
+								   active_pid, slot->effective_catalog_xmin,
+								   NameStr(slot->data.name), new_catalog_xmin)));
+
+				/*
+				 * Signal the proc. If the slot is already released or even if
+				 * pid is re-used we don't care, backends are required to
+				 * tolerate spurious recovery signals.
+				 */
+				CancelLogicalDecodingSessionWithRecoveryConflict(active_pid);
+
+				/* Don't flood the system with signals */
+				pg_usleep(10000);
+			}
+
+			/*
+			 * We need to re-acquire the lock before re-checking the slot or
+			 * continuing the scan.
+			 */
+			LWLockAcquire(ReplicationSlotControlLock, LW_SHARED);
+		}
+
+	}
+	LWLockRelease(ReplicationSlotControlLock);
 }

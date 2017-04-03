@@ -34,10 +34,13 @@ extern void ResolveRecoveryConflictWithDatabase(Oid dbid);
 
 extern void ResolveRecoveryConflictWithLock(LOCKTAG locktag);
 extern void ResolveRecoveryConflictWithBufferPin(void);
+extern void ResolveRecoveryConflictWithLogicalDecoding(
+	TransactionId new_catalog_xmin);
 extern void CheckRecoveryConflictDeadlock(void);
 extern void StandbyDeadLockHandler(void);
 extern void StandbyTimeoutHandler(void);
 extern void StandbyLockTimeoutHandler(void);
+extern bool WaitExceedsMaxStandbyDelay(void);
 
 /*
  * Standby Rmgr (RM_STANDBY_ID)

@@ -5662,14 +5662,10 @@ xact_redo(XLogReaderState *record)
 		 * notice when we signal them with a recovery conflict. There's no
 		 * effect on the catalogs themselves yet, so it's safe for backends
 		 * with older catalog_xmins to still exist.
-		 *
-		 * We don't have to take ProcArrayLock since only the startup process
-		 * is allowed to change oldestCatalogXmin when we're in recovery.
-		 *
-		 * Existing sessions are not notified and must check the safe xmin.
 		 */
 		SetOldestCatalogXmin(xlrec->new_catalog_xmin);
 
+		ResolveRecoveryConflictWithLogicalDecoding(xlrec->new_catalog_xmin);
 	}
 	else
 		elog(PANIC, "xact_redo: unknown op code %u", info);

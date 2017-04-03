@@ -7273,7 +7273,7 @@ heap_tuple_needs_freeze(HeapTupleHeader tuple, TransactionId cutoff_xid,
  * ratchet forwards latestRemovedXid to the greatest one found.
  * This is used as the basis for generating Hot Standby conflicts, so
  * if a tuple was never visible then removing it should not conflict
- * with queries.
+ * with queries or logical decoding output plugin callbacks.
  */
 void
 HeapTupleHeaderAdvanceLatestRemovedXid(HeapTupleHeader tuple,

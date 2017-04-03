@@ -48,6 +48,7 @@
 #include "storage/fd.h"
 #include "storage/proc.h"
 #include "storage/procarray.h"
+#include "storage/standby.h"
 #include "utils/builtins.h"
 
 /*
@@ -931,7 +932,8 @@ ReplicationSlotReserveWal(void)
 		/*
 		 * For logical slots log a standby snapshot and start logical decoding
 		 * at exactly that position. That allows the slot to start up more
-		 * quickly.
+		 * quickly. We can't do that on a standby; there we must wait for the
+		 * bgwriter to get around to logging its periodic standby snapshot.
 		 *
 		 * That's not needed (or indeed helpful) for physical slots as they'll
 		 * start replay at the last logged checkpoint anyway. Instead return
