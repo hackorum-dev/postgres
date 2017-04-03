@@ -79,7 +79,9 @@ CHECK ( <replaceable class="PARAMETER">expression</replaceable> ) [ NO INHERIT ]
   <para>
    If <literal>PARTITION OF</literal> clause is specified then the table is
    created as a partition of <literal>parent_table</literal> with specified
-   bounds.
+   bounds.  Note that routing tuples to partitions that are foreign tables
+   is not supported.  So, if a tuple inserted (or copied) into the table
+   routes to one of the foreign partitions, an error will occur.
   </para>
 
   <para>
@@ -279,16 +281,19 @@ CHECK ( <replaceable class="PARAMETER">expression</replaceable> ) [ NO INHERIT ]
   <title>Notes</title>
 
    <para>
-    Constraints on foreign tables (such as <literal>CHECK</>
-    or <literal>NOT NULL</> clauses) are not enforced by the
-    core <productname>PostgreSQL</> system, and most foreign data wrappers
-    do not attempt to enforce them either; that is, the constraint is
+    Constraints (both user-defined constraints, such as <literal>CHECK</>
+    or <literal>NOT NULL</> clauses, and the partition constraint) are not
+    enforced by the core <productname>PostgreSQL</> system, and most foreign
+    data wrappers do not attempt to enforce them either; that is, they are
     simply assumed to hold true.  There would be little point in such
     enforcement since it would only apply to rows inserted or updated via
     the foreign table, and not to rows modified by other means, such as
     directly on the remote server.  Instead, a constraint attached to a
     foreign table should represent a constraint that is being enforced by
-    the remote server.
+    the remote server.  That becomes especially important if the table is
+    being used in a partition hierarchy, where it is recommended to add
+    a constraint matching the partition constraint expression on
+    the remote table.
    </para>
 
    <para>
