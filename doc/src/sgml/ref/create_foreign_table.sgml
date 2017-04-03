@@ -279,10 +279,10 @@ CHECK ( <replaceable class="PARAMETER">expression</replaceable> ) [ NO INHERIT ]
   <title>Notes</title>
 
    <para>
-    Constraints on foreign tables (such as <literal>CHECK</>
-    or <literal>NOT NULL</> clauses) are not enforced by the
-    core <productname>PostgreSQL</> system, and most foreign data wrappers
-    do not attempt to enforce them either; that is, the constraint is
+    Constraints (both the user-defined constraints such as <literal>CHECK</>
+    or <literal>NOT NULL</> clauses and the partition constraint) are not
+    enforced by the core <productname>PostgreSQL</> system, and most foreign
+    data wrappers do not attempt to enforce them either; that is, the they is
     simply assumed to hold true.  There would be little point in such
     enforcement since it would only apply to rows inserted or updated via
     the foreign table, and not to rows modified by other means, such as
