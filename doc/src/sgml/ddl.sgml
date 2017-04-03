@@ -3268,10 +3268,14 @@ ALTER TABLE measurement ATTACH PARTITION measurement_y2008m02
      <listitem>
       <para>
        Using the <literal>ON CONFLICT</literal> clause with partitioned tables
-       will cause an error, because unique or exclusion constraints can only be
-       created on individual partitions.  There is no support for enforcing
-       uniqueness (or an exclusion constraint) across an entire partitioning
-       hierarchy.
+       will cause an error if the conflict target is specified (see
+       <xref linkend="sql-insert"> for more details).  That means it's not
+       possible to specify <literal>DO UPDATE</literal> as the alternative
+       action, because it requires the conflict target to be specified.
+       On the other hand, specifying <literal>DO NOTHING</literal> as the
+       alternative action works fine.  Note that in the latter case, a unique
+       constraint (or an exclusion constraint) of the individual leaf
+       partitions is considered, not across the whole partitioning hierarchy.
       </para>
      </listitem>
 
