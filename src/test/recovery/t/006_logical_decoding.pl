@@ -7,7 +7,7 @@ use strict;
 use warnings;
 use PostgresNode;
 use TestLib;
-use Test::More tests => 44;
+use Test::More tests => 57;
 
 # Initialize master node
 my $node_master = get_new_node('master');
@@ -61,18 +61,22 @@ sub wait_standbys
 	$node_master->wait_for_catchup($node_slot_replica, 'replay', $lsn);
 }
 
+sub sync_up
+{
+	$node_master->safe_psql('postgres', 'CHECKPOINT;');
+	wait_standbys();
+	restartpoint_standbys();
+	# for hot_standby_feedback wal_sender_status_interval
+	sleep(1.5);
+}
+
 # pg_basebackup doesn't copy replication slots
 is($node_slot_replica->slot('test_slot')->{'slot_name'}, undef,
 	'logical slot test_slot on master not copied by pg_basebackup');
 
-# Make sure oldestCatalogXmin lands in the control file on master
-$node_master->safe_psql('postgres', 'VACUUM;');
-$node_master->safe_psql('postgres', 'CHECKPOINT;');
 
 my @nodes = ($node_master, $node_slot_replica, $node_noslot_replica);
-
-wait_standbys();
-restartpoint_standbys();
+sync_up();
 foreach my $node (@nodes)
 {
 	# Master had an oldestCatalogXmin, so we must've inherited it via checkpoint
@@ -154,26 +158,60 @@ isnt($node_master->slot('test_slot')->{'catalog_xmin'}, '0',
 	'restored slot catalog_xmin is nonzero');
 is($node_master->psql('postgres', qq[SELECT pg_logical_slot_get_changes('test_slot', NULL, NULL);]), 3,
 	'reading from slot with wal_level < logical fails');
-wait_standbys();
-restartpoint_standbys();
+sync_up();
 foreach my $node (@nodes)
 {
 	command_like(['pg_controldata', $node->data_dir], qr/^Latest checkpoint's oldestCatalogXmin:[^0][\d]*$/m,
 		"pg_controldata's oldestCatalogXmin is nonzero on " . $node->name);
 }
 
-# Dropping the slot must clear catalog_xmin
+# Drop the logical slot on the master; make sure feedback from standbys continues to peg
+# catalog_xmin.
 is($node_master->psql('postgres', q[SELECT pg_drop_replication_slot('test_slot')]), 0,
 	'can drop logical slot while wal_level = replica');
-is($node_master->slot('test_slot')->{'catalog_xmin'}, '', 'slot was dropped');
-$node_master->safe_psql('postgres', 'VACUUM;');
-$node_master->safe_psql('postgres', 'CHECKPOINT;');
-wait_standbys();
-restartpoint_standbys();
+is($node_master->slot('test_slot')->{'catalog_xmin'}, '', 'slot was dropped on master');
+# Do a dummy xact so we can make sure catalog_xmin will advance, and we can see that
+# catalog_xmin will advance along with it.
+my $xmin = $node_master->safe_psql('postgres', 'BEGIN; CREATE TABLE dummy_xact(blah integer); SELECT txid_current(); COMMIT;');
+
+# even though the logical slot on the upstream is dropped, master's
+# oldestCatalogXmin is held down by hot standby feedback from the replicas.
+# Since the replicas have no logical slots of their own, it should've advanced
+# to be the same as the physical slot xmin for the slot replica.
+sync_up();
+# There are no transactions on the replicas so their xmin and catalog_xmin
+# will both be nextXid.
+cmp_ok($node_master->slot('slot_replica')->{'xmin'}, "eq", $xmin + 1,
+	'xmin advanced to latest master xid on slot_replica on master');
+cmp_ok($node_master->slot('slot_replica')->{'catalog_xmin'}, "le", $xmin + 1,
+	'xmin == catalog_xmin on phys slot held down by standby catalog_xmin');
+# Control files will still contain the xid, since there won't have been another
+# checkpoint to advance the nextXid reported by feedback and write it to the
+# control file.
+foreach my $node (@nodes)
+{
+	command_like(['pg_controldata', $node->data_dir], qr/^Latest checkpoint's oldestCatalogXmin:$xmin$/m,
+		"pg_controldata's oldestCatalogXmin advanced after drop, vacuum and checkpoint on " . $node->name);
+}
+
+# if we turn hot_standby_feedback off on the replica that uses a slot, the
+# master should no longer have anything holding down its catalog_xmin. Even
+# though hot_standby_feedback is still enabled on the non-slot replica, it
+# cannot set the master's catalog_xmin because it has no destination slot,
+# it can only set xmin in its procarray entry.
+$node_slot_replica->safe_psql('postgres', q[ALTER SYSTEM SET hot_standby_feedback = off;]);
+# simplest way to force new hot standby feedback to be sent
+$node_slot_replica->restart;
+sleep(1);
+# hot standby feedback should've cleared minimums
+is($node_master->slot('slot_replica')->{'xmin'}, '', 'phys slot xmin null with hs_feedback off');
+is($node_master->slot('slot_replica')->{'catalog_xmin'}, '', 'phys slot catalog_xmin null with hs_feedback off');
+sync_up();
+# Everyone should now see the cleared catalog_xmin
 foreach my $node (@nodes)
 {
 	command_like(['pg_controldata', $node->data_dir], qr/^Latest checkpoint's oldestCatalogXmin:0$/m,
-		"pg_controldata's oldestCatalogXmin is zero after drop, vacuum and checkpoint on " . $node->name);
+		"pg_controldata's oldestCatalogXmin zero after turning off hs_feedback: " . $node->name);
 }
 
 foreach my $node (@nodes)

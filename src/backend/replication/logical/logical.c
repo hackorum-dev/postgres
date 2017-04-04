@@ -93,23 +93,40 @@ CheckLogicalDecodingRequirements(void)
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				 errmsg("logical decoding requires a database connection")));
 
-	/* ----
-	 * TODO: We got to change that someday soon...
-	 *
-	 * There's basically three things missing to allow this:
-	 * 1) We need to be able to correctly and quickly identify the timeline a
-	 *	  LSN belongs to
-	 * 2) We need to force hot_standby_feedback to be enabled at all times so
-	 *	  the primary cannot remove rows we need.
-	 * 3) support dropping replication slots referring to a database, in
-	 *	  dbase_redo. There can't be any active ones due to HS recovery
-	 *	  conflicts, so that should be relatively easy.
-	 * ----
-	 */
 	if (RecoveryInProgress())
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-			   errmsg("logical decoding cannot be used while in recovery")));
+	{
+		/*----
+		 * We really want to enforce that:
+		 * - we're connected to the primary via a replication slot
+		 * - hot_standby_feedback is enabled
+		 * - the user cannot turn hot_standby_feedback off while we have
+		 *   logical slots on the standby (it's PGC_SIGHUP)
+		 * - hot_standby_feedback has actually taken effect on the master
+		 *
+		 * ... but because the walreceiver doesn't use normal GUCs and may or
+		 * may not actually be running we can't reliably enforce those
+		 * conditions yet. We also have no way of knowing when hot standby
+		 * feedback has reached the master and locked in a catalog_xmin.
+		 *
+		 * So on standbys, slot creation or decoding from a slot may fail with
+		 * a recovery conflict. But we keep track of the master's true
+		 * catalog_xmin in WAL, so we'll never attempt to decode unsafely.
+		 *
+		 * Make a best effort sanity check anyway.
+		 *---
+		 */
+		if (!hot_standby_feedback)
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("logical decoding on standby requires hot_standby_feedback = on")));
+
+		LWLockAcquire(ProcArrayLock, LW_SHARED);
+		if (!TransactionIdIsValid(ShmemVariableCache->oldestCatalogXmin))
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("hot_standby_feedback has not yet taken effect")));
+		LWLockRelease(ProcArrayLock);
+	}
 }
 
 /*

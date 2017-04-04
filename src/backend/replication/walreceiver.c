@@ -1239,6 +1239,18 @@ XLogWalRcvSendHSFeedback(bool immed)
 		if (TransactionIdIsValid(slot_xmin) &&
 			TransactionIdPrecedes(slot_xmin, xmin))
 			xmin = slot_xmin;
+
+		/*
+		 * If there's no local catalog_xmin, report it as == xmin, so that
+		 * we lock in a catalog_xmin before we need to create any logical slots
+		 * on this standby. This won't add much catalog bloat until we create
+		 * local slots and catalog_xmin starts lagging behind xmin, but it will
+		 * cause the master to start logging
+		 * xl_xact_catalog_xmin_advance records we need for logical
+		 * decoding on standby.
+		 */
+		if (!TransactionIdIsValid(catalog_xmin) && XLogLogicalInfoActive())
+			catalog_xmin = xmin;
 	}
 	else
 	{
