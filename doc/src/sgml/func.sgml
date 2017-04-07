@@ -18778,6 +18778,7 @@ postgres=# SELECT * FROM pg_walfile_name_offset(pg_stop_backup());
     Snapshots are exported with the <function>pg_export_snapshot</> function,
     shown in <xref linkend="functions-snapshot-synchronization-table">, and
     imported with the <xref linkend="sql-set-transaction"> command.
+    This function cannot be used during recovery.
    </para>
 
    <table id="functions-snapshot-synchronization-table">
