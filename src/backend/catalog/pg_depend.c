@@ -606,12 +606,14 @@ getOwnedSequence(Oid relid, AttrNumber attnum)
 {
 	List	   *seqlist = getOwnedSequences(relid, attnum);
 
+	if (list_length(seqlist) == 1)
+		return linitial_oid(seqlist);
+
 	if (list_length(seqlist) > 1)
 		elog(ERROR, "more than one owned sequence found");
-	else if (list_length(seqlist) < 1)
-		elog(ERROR, "no owned sequence found");
-	else
-		return linitial_oid(seqlist);
+
+	elog(ERROR, "no owned sequence found");
+	return InvalidOid;			/* keep compiler quiet */
 }
 
 /*
