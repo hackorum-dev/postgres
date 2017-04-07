@@ -24,23 +24,39 @@
 #include "utils/selfuncs.h"
 #include "statistics/statistics.h"
 
+#define CACHESEL_LOBOUND		0x0001	/* has var > something selectivity */
+#define CACHESEL_HIBOUND		0x0002	/* has var < something selectivity */
+#define CACHESEL_NULLTEST		0x0004	/* has var IS NULL selectivity */
+#define CACHESEL_NOTNULLTEST	0x0008	/* has var IS NOT NULL selectivity */
+#define CACHESEL_OTHERSTRICT	0x0010	/* has another OpExpr selectivity */
 
 /*
- * Data structure for accumulating info about possible range-query
- * clause pairs in clauselist_selectivity.
+ * Data structure for caching selectivity for clauselist_selectivity.
  */
-typedef struct RangeQueryClause
+typedef struct CachedSelectivityClause
 {
-	struct RangeQueryClause *next;		/* next in linked list */
+	struct CachedSelectivityClause *next;		/* next in linked list */
 	Node	   *var;			/* The common variable of the clauses */
-	bool		have_lobound;	/* found a low-bound clause yet? */
-	bool		have_hibound;	/* found a high-bound clause yet? */
+	int			selmask;		/* Bitmask of which sel types are stored */
 	Selectivity lobound;		/* Selectivity of a var > something clause */
 	Selectivity hibound;		/* Selectivity of a var < something clause */
-} RangeQueryClause;
+	Selectivity nullsel;		/* Selectivity of a IS NULL test */
+	Selectivity notnullsel;		/* Selectivity of a IS NOT NULL test */
+	Selectivity otherstrictsel; /* Selectivity of any other strict clauses */
+} CachedSelectivityClause;
 
-static void addRangeClause(RangeQueryClause **rqlist, Node *clause,
-			   bool varonleft, bool isLTsel, Selectivity s2);
+
+static CachedSelectivityClause *findCachedSelectivityVar(
+						 CachedSelectivityClause **cslist, Node *expr);
+static void addCachedSelectivityNullTest(CachedSelectivityClause **cslist,
+							 Node *expr, Selectivity s2);
+static void addCachedSelectivityNotNullTest(CachedSelectivityClause **cslist,
+								Node *expr, Selectivity s2);
+static void addCachedSelectivityRangeVar(CachedSelectivityClause **cslist,
+				   Node *expr, bool varonleft, bool isLTsel, Selectivity s2);
+static void addCachedSelectivityOtherStrictClause(
+									  CachedSelectivityClause **cslist,
+									  Node *expr, Selectivity s2);
 static RelOptInfo *find_relation_from_clauses(PlannerInfo *root,
 											  List *clauses);
 
@@ -85,11 +101,22 @@ static RelOptInfo *find_relation_from_clauses(PlannerInfo *root,
  * hisel can be interpreted directly as a 0..1 value but we need to convert
  * losel to 1-losel before interpreting it as a value.  Then the available
  * range is 1-losel to hisel.  However, this calculation double-excludes
- * nulls, so really we need hisel + losel + null_frac - 1.)
+ * nulls, so really we need hisel + losel + null_frac - 1.).
  *
- * If either selectivity is exactly DEFAULT_INEQ_SEL, we forget this equation
- * and instead use DEFAULT_RANGE_INEQ_SEL.  The same applies if the equation
- * yields an impossible (negative) result.
+ * IS [NOT] NULL conditions are also handled in a special way. We attempt to
+ * cache all quals on a given expression and only apply the selectivity of an
+ * IS [NOT] NULL condition if no other qual on the same expression would
+ * have already accounted for nulls be filtered, for example;
+ *
+ * WHERE x = 1 AND x IS NOT NULL;
+ *
+ * the x = 1 will have already included filtering the NULL values during its
+ * selectivity estimate, if we went and applied the x IS NOT NULL selectivity
+ * again, then we'd end up underestimating the selectivity over both quals.
+ *
+ * For range pairs, if either selectivity is exactly DEFAULT_INEQ_SEL, we
+ * forget this equation and instead use DEFAULT_RANGE_INEQ_SEL.  The same
+ * applies if the equation yields an impossible (negative) result.
  *
  * A free side-effect is that we can recognize redundant inequalities such
  * as "x < 4 AND x < 5"; only the tighter constraint will be counted.
@@ -105,7 +132,7 @@ clauselist_selectivity(PlannerInfo *root,
 					   SpecialJoinInfo *sjinfo)
 {
 	Selectivity s1 = 1.0;
-	RangeQueryClause *rqlist = NULL;
+	CachedSelectivityClause *cslist = NULL;
 	ListCell   *l;
 	Bitmapset  *estimatedclauses = NULL;
 	int			listidx;
@@ -193,6 +220,20 @@ clauselist_selectivity(PlannerInfo *root,
 		else
 			rinfo = NULL;
 
+		if (IsA(clause, NullTest))
+		{
+			NullTestType nulltesttype = ((NullTest *) clause)->nulltesttype;
+
+			if (nulltesttype == IS_NULL)
+				addCachedSelectivityNullTest(&cslist,
+									(Node *) ((NullTest *) clause)->arg, s2);
+			else if (nulltesttype == IS_NOT_NULL)
+				addCachedSelectivityNotNullTest(&cslist,
+									(Node *) ((NullTest *) clause)->arg, s2);
+
+			continue;			/* drop to loop bottom */
+		}
+
 		/*
 		 * See if it looks like a restriction clause with a pseudoconstant on
 		 * one side.  (Anything more complicated than that might not behave in
@@ -204,26 +245,35 @@ clauselist_selectivity(PlannerInfo *root,
 			OpExpr	   *expr = (OpExpr *) clause;
 			bool		varonleft = true;
 			bool		ok;
+			Node	   *leftexpr = (Node *) linitial(expr->args);
+			Node	   *rightexpr = (Node *) lsecond(expr->args);
 
 			if (rinfo)
 			{
 				ok = (bms_membership(rinfo->clause_relids) == BMS_SINGLETON) &&
-					(is_pseudo_constant_clause_relids(lsecond(expr->args),
+					(is_pseudo_constant_clause_relids(rightexpr,
 													  rinfo->right_relids) ||
 					 (varonleft = false,
-					  is_pseudo_constant_clause_relids(linitial(expr->args),
+					  is_pseudo_constant_clause_relids(leftexpr,
 													   rinfo->left_relids)));
 			}
 			else
 			{
 				ok = (NumRelids(clause) == 1) &&
-					(is_pseudo_constant_clause(lsecond(expr->args)) ||
+					(is_pseudo_constant_clause(rightexpr) ||
 					 (varonleft = false,
-					  is_pseudo_constant_clause(linitial(expr->args))));
+					  is_pseudo_constant_clause(leftexpr)));
 			}
 
 			if (ok)
 			{
+				Node	   *var;
+
+				if (varonleft)
+					var = leftexpr;
+				else
+					var = rightexpr;
+
 				/*
 				 * If it's not a "<" or ">" operator, just merge the
 				 * selectivity in generically.  But if it's the right oprrest,
@@ -232,16 +282,25 @@ clauselist_selectivity(PlannerInfo *root,
 				switch (get_oprrest(expr->opno))
 				{
 					case F_SCALARLTSEL:
-						addRangeClause(&rqlist, clause,
-									   varonleft, true, s2);
+						addCachedSelectivityRangeVar(&cslist, var,
+													 varonleft, true, s2);
 						break;
 					case F_SCALARGTSEL:
-						addRangeClause(&rqlist, clause,
-									   varonleft, false, s2);
+						addCachedSelectivityRangeVar(&cslist, var,
+													 varonleft, false, s2);
 						break;
 					default:
-						/* Just merge the selectivity in generically */
-						s1 = s1 * s2;
+
+						/*
+						 * Cache all strict clauses in selectivity other.
+						 * Anything non-strict we'll just apply the
+						 * selectivity now, since we're currently unable to do
+						 * anything particularly smart with it.
+						 */
+						if (op_strict(expr->opno))
+							addCachedSelectivityOtherStrictClause(&cslist, var, s2);
+						else
+							s1 = s1 * s2;
 						break;
 				}
 				continue;		/* drop to loop bottom */
@@ -253,176 +312,259 @@ clauselist_selectivity(PlannerInfo *root,
 	}
 
 	/*
-	 * Now scan the rangequery pair list.
+	 * Now scan the cached selectivity list
 	 */
-	while (rqlist != NULL)
+	while (cslist != NULL)
 	{
-		RangeQueryClause *rqnext;
+		CachedSelectivityClause *csnext;
 
-		if (rqlist->have_lobound && rqlist->have_hibound)
+		if ((cslist->selmask & CACHESEL_NULLTEST))
 		{
-			/* Successfully matched a pair of range clauses */
-			Selectivity s2;
-
 			/*
-			 * Exact equality to the default value probably means the
-			 * selectivity function punted.  This is not airtight but should
-			 * be good enough.
+			 * if null test is not the only flag then there can be no matching
+			 * rows at all.
 			 */
-			if (rqlist->hibound == DEFAULT_INEQ_SEL ||
-				rqlist->lobound == DEFAULT_INEQ_SEL)
+			if (cslist->selmask != CACHESEL_NULLTEST)
 			{
-				s2 = DEFAULT_RANGE_INEQ_SEL;
+				s1 = 0;
+				break;			/* nothing more needs estimated */
 			}
 			else
-			{
-				s2 = rqlist->hibound + rqlist->lobound - 1.0;
-
-				/* Adjust for double-exclusion of NULLs */
-				s2 += nulltestsel(root, IS_NULL, rqlist->var,
-								  varRelid, jointype, sjinfo);
-
-				/*
-				 * A zero or slightly negative s2 should be converted into a
-				 * small positive value; we probably are dealing with a very
-				 * tight range and got a bogus result due to roundoff errors.
-				 * However, if s2 is very negative, then we probably have
-				 * default selectivity estimates on one or both sides of the
-				 * range that we failed to recognize above for some reason.
-				 */
-				if (s2 <= 0.0)
-				{
-					if (s2 < -0.01)
-					{
-						/*
-						 * No data available --- use a default estimate that
-						 * is small, but not real small.
-						 */
-						s2 = DEFAULT_RANGE_INEQ_SEL;
-					}
-					else
-					{
-						/*
-						 * It's just roundoff error; use a small positive
-						 * value
-						 */
-						s2 = 1.0e-10;
-					}
-				}
-			}
-			/* Merge in the selectivity of the pair of clauses */
-			s1 *= s2;
+				s1 *= cslist->nullsel;
 		}
+
+		/*
+		 * An IS NOT NULL test is a no-op if there's any other strict quals,
+		 * so if that's the case, then we'll only apply this, otherwise we'll
+		 * ignore it.
+		 */
+		else if (cslist->selmask == CACHESEL_NOTNULLTEST)
+			s1 *= cslist->notnullsel;
+
 		else
 		{
-			/* Only found one of a pair, merge it in generically */
-			if (rqlist->have_lobound)
-				s1 *= rqlist->lobound;
+			/* Check if both lobound and hibound were seen */
+			if ((cslist->selmask & (CACHESEL_LOBOUND | CACHESEL_HIBOUND)) ==
+				(CACHESEL_LOBOUND | CACHESEL_HIBOUND))
+			{
+				/* Successfully matched a pair of range clauses */
+				Selectivity s2;
+
+				/*
+				 * Exact equality to the default value probably means the
+				 * selectivity function punted.  This is not airtight but
+				 * should be good enough.
+				 */
+				if (cslist->hibound == DEFAULT_INEQ_SEL ||
+					cslist->lobound == DEFAULT_INEQ_SEL)
+				{
+					s2 = DEFAULT_RANGE_INEQ_SEL;
+				}
+				else
+				{
+					Selectivity nullsel;
+					Selectivity notnullsel;
+
+					s2 = cslist->hibound + cslist->lobound - 1.0;
+
+					nullsel = nulltestsel(root, IS_NULL, cslist->var, varRelid,
+										  jointype, sjinfo);
+					notnullsel = 1.0 - nullsel;
+
+					/* Adjust for double-exclusion of NULLs */
+					s2 += nullsel;
+
+					/*
+					 * A zero or slightly negative s2 should be converted into
+					 * a small positive value; we probably are dealing with a
+					 * very tight range and got a bogus result due to roundoff
+					 * errors. However, if s2 is very negative, then we
+					 * probably have default selectivity estimates on one or
+					 * both sides of the range that we failed to recognize
+					 * above for some reason.
+					 */
+					if (s2 <= 0.0)
+					{
+						if (s2 <= (-1.0e-4 * notnullsel - 1.0e-6))
+						{
+							/* Most likely contradictory clauses found */
+							s2 = Min(1.0e-10, notnullsel);
+						}
+						else
+						{
+							/* Could be a rounding error */
+							s2 = DEFAULT_RANGE_INEQ_SEL * notnullsel;
+						}
+					}
+				}
+				/* Merge in the selectivity of the pair of clauses */
+				s1 *= s2;
+			}
 			else
-				s1 *= rqlist->hibound;
+			{
+				/* Only found one of a range pair, merge it in generically */
+				if ((cslist->selmask & CACHESEL_LOBOUND))
+					s1 *= cslist->lobound;
+				else if ((cslist->selmask & CACHESEL_HIBOUND))
+					s1 *= cslist->hibound;
+			}
+
+			/* apply the selectivity for any other seen strict qual */
+			if ((cslist->selmask & CACHESEL_OTHERSTRICT))
+				s1 *= cslist->otherstrictsel;
 		}
+
 		/* release storage and advance */
-		rqnext = rqlist->next;
-		pfree(rqlist);
-		rqlist = rqnext;
+		csnext = cslist->next;
+		pfree(cslist);
+		cslist = csnext;
 	}
 
 	return s1;
 }
 
 /*
- * addRangeClause --- add a new range clause for clauselist_selectivity
- *
- * Here is where we try to match up pairs of range-query clauses
+ * findCachedSelectivityVar
+ *	Find existing seletivity var, or add this var to the list.
  */
-static void
-addRangeClause(RangeQueryClause **rqlist, Node *clause,
-			   bool varonleft, bool isLTsel, Selectivity s2)
+static CachedSelectivityClause *
+findCachedSelectivityVar(CachedSelectivityClause **cslist, Node *expr)
 {
-	RangeQueryClause *rqelem;
-	Node	   *var;
-	bool		is_lobound;
+	CachedSelectivityClause *cselem;
 
-	if (varonleft)
-	{
-		var = get_leftop((Expr *) clause);
-		is_lobound = !isLTsel;	/* x < something is high bound */
-	}
-	else
-	{
-		var = get_rightop((Expr *) clause);
-		is_lobound = isLTsel;	/* something < x is low bound */
-	}
-
-	for (rqelem = *rqlist; rqelem; rqelem = rqelem->next)
+	for (cselem = *cslist; cselem; cselem = cselem->next)
 	{
 		/*
 		 * We use full equal() here because the "var" might be a function of
 		 * one or more attributes of the same relation...
 		 */
-		if (!equal(var, rqelem->var))
-			continue;
-		/* Found the right group to put this clause in */
-		if (is_lobound)
-		{
-			if (!rqelem->have_lobound)
-			{
-				rqelem->have_lobound = true;
-				rqelem->lobound = s2;
-			}
-			else
-			{
+		if (equal(expr, cselem->var))
+			return cselem;
+	}
 
-				/*------
-				 * We have found two similar clauses, such as
-				 * x < y AND x < z.
-				 * Keep only the more restrictive one.
-				 *------
-				 */
-				if (rqelem->lobound > s2)
-					rqelem->lobound = s2;
-			}
+	/* not found -- add it */
+	cselem = (CachedSelectivityClause *) palloc(sizeof(CachedSelectivityClause));
+	cselem->var = expr;
+	cselem->selmask = 0;
+
+	cselem->next = *cslist;
+	*cslist = cselem;
+	return cselem;
+}
+
+
+/*
+ * addCachedSelectivityNullTest
+ *		Cache selectivity for an IS NULL test.
+ */
+static void
+addCachedSelectivityNullTest(CachedSelectivityClause **cslist, Node *expr,
+							 Selectivity s2)
+{
+	CachedSelectivityClause *cselem;
+
+	cselem = findCachedSelectivityVar(cslist, expr);
+
+	/* We can simply overwrite any previously cached selectivity here */
+	cselem->nullsel = s2;
+	cselem->selmask |= CACHESEL_NULLTEST;
+}
+
+/*
+ * addCachedSelectivityNotNullTest
+ *		Cache selectivity for an IS NOT NULL test.
+ */
+static void
+addCachedSelectivityNotNullTest(CachedSelectivityClause **cslist, Node *expr,
+								Selectivity s2)
+{
+	CachedSelectivityClause *cselem;
+
+	cselem = findCachedSelectivityVar(cslist, expr);
+
+	/* We can simply overwrite any previously cached selectivity here */
+	cselem->notnullsel = s2;
+	cselem->selmask |= CACHESEL_NOTNULLTEST;
+}
+
+/*
+ * addCachedSelectivityRangeVar
+ *		add a new range clause for clauselist_selectivity
+ *
+ * Here is where we try to match up pairs of range-query clauses
+ */
+static void
+addCachedSelectivityRangeVar(CachedSelectivityClause **cslist, Node *expr,
+							 bool varonleft, bool isLTsel, Selectivity s2)
+{
+	CachedSelectivityClause *cselem;
+	bool		is_lobound;
+
+	is_lobound = (varonleft != isLTsel);
+
+	cselem = findCachedSelectivityVar(cslist, expr);
+
+	if (is_lobound)
+	{
+		if (!(cselem->selmask & CACHESEL_LOBOUND))
+		{
+			cselem->selmask |= CACHESEL_LOBOUND;
+			cselem->lobound = s2;
 		}
 		else
 		{
-			if (!rqelem->have_hibound)
-			{
-				rqelem->have_hibound = true;
-				rqelem->hibound = s2;
-			}
-			else
-			{
-
-				/*------
-				 * We have found two similar clauses, such as
-				 * x > y AND x > z.
-				 * Keep only the more restrictive one.
-				 *------
-				 */
-				if (rqelem->hibound > s2)
-					rqelem->hibound = s2;
-			}
+			/*------
+			 * We have found two similar clauses, such as
+			 * x < y AND x < z.
+			 * Keep only the more restrictive one.
+			 *------
+			 */
+			if (cselem->lobound > s2)
+				cselem->lobound = s2;
 		}
-		return;
-	}
-
-	/* No matching var found, so make a new clause-pair data structure */
-	rqelem = (RangeQueryClause *) palloc(sizeof(RangeQueryClause));
-	rqelem->var = var;
-	if (is_lobound)
-	{
-		rqelem->have_lobound = true;
-		rqelem->have_hibound = false;
-		rqelem->lobound = s2;
 	}
 	else
 	{
-		rqelem->have_lobound = false;
-		rqelem->have_hibound = true;
-		rqelem->hibound = s2;
+		if (!(cselem->selmask & CACHESEL_HIBOUND))
+		{
+			cselem->selmask |= CACHESEL_HIBOUND;
+			cselem->hibound = s2;
+		}
+		else
+		{
+
+			/*------
+			 * We have found two similar clauses, such as
+			 * x > y AND x > z.
+			 * Keep only the more restrictive one.
+			 *------
+			 */
+			if (cselem->hibound > s2)
+				cselem->hibound = s2;
+		}
 	}
-	rqelem->next = *rqlist;
-	*rqlist = rqelem;
+}
+
+/*
+ * addCachedSelectivityOtherStrictClause
+ *		Cache the selectivity of other OpExpr type expressions which are
+ *		strict
+ */
+static void
+addCachedSelectivityOtherStrictClause(CachedSelectivityClause **cslist, Node *expr,
+									  Selectivity s2)
+{
+	CachedSelectivityClause *cselem;
+
+	cselem = findCachedSelectivityVar(cslist, expr);
+
+	if ((cselem->selmask & CACHESEL_OTHERSTRICT))
+		cselem->otherstrictsel = cselem->otherstrictsel * s2;
+	else
+	{
+		cselem->otherstrictsel = s2;
+		cselem->selmask |= CACHESEL_OTHERSTRICT;
+	}
 }
 
 /*
