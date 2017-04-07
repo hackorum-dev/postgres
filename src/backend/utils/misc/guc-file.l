@@ -304,6 +304,13 @@ ProcessConfigFileInternal(GucContext context, bool applySettings, int elevel)
 			}
 			/* Now mark it as present in file */
 			record->status |= GUC_IS_IN_FILE;
+
+			/* Warn the user about duplicate configuration parameter */
+			ereport(elevel,
+				(errcode(ERRCODE_DUPLICATE_OBJECT),
+				errmsg("duplicate configuration parameter \"%s\" overrides previous value in file \"%s\" line %u",
+						item->name,
+						item->filename, item->sourceline)));
 		}
 		else if (strchr(item->name, GUC_QUALIFIER_SEPARATOR) == NULL)
 		{
