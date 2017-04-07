@@ -292,7 +292,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <node>	alter_table_cmd alter_type_cmd opt_collate_clause
 	   replica_identity partition_cmd
 %type <list>	alter_table_cmds alter_type_cmds
-%type <list>    alter_identity_column_option_list
+%type <list>    alter_identity_column_options alter_identity_column_option_list
 %type <defelt>  alter_identity_column_option
 
 %type <dbehavior>	opt_drop_behavior
@@ -2132,30 +2132,26 @@ alter_table_cmd:
 					n->def = (Node *) makeString($6);
 					$$ = (Node *)n;
 				}
-			/* ALTER TABLE <name> ALTER [COLUMN] <colname> ADD GENERATED ... AS IDENTITY ... */
-			| ALTER opt_column ColId ADD_P GENERATED generated_when AS IDENTITY_P OptParenthesizedSeqOptList
-				{
-					AlterTableCmd *n = makeNode(AlterTableCmd);
-					Constraint *c = makeNode(Constraint);
-
-					c->contype = CONSTR_IDENTITY;
-					c->generated_when = $6;
-					c->options = $9;
-					c->location = @5;
-
-					n->subtype = AT_AddIdentity;
-					n->name = $3;
-					n->def = (Node *) c;
-
-					$$ = (Node *)n;
-				}
 			/* ALTER TABLE <name> ALTER [COLUMN] <colname> SET <sequence options>/RESET */
 			| ALTER opt_column ColId alter_identity_column_option_list
 				{
 					AlterTableCmd *n = makeNode(AlterTableCmd);
 					n->subtype = AT_SetIdentity;
 					n->name = $3;
+					n->missing_ok = false;
 					n->def = (Node *) $4;
+					$$ = (Node *)n;
+				}
+			/* ALTER TABLE <name> ALTER [COLUMN] <colname> SET GENERATED <when> [IF NOT EXISTS] SET <sequence options>/RESET */
+			| ALTER opt_column ColId SET GENERATED generated_when opt_if_not_exists alter_identity_column_options
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					List *generated = (List *)makeDefElem("generated", (Node *) makeInteger($6), @6);
+
+					n->subtype = AT_SetIdentity;
+					n->name = $3;
+					n->missing_ok = $7;
+					n->def = (Node *) lappend($8, generated);
 					$$ = (Node *)n;
 				}
 			/* ALTER TABLE <name> ALTER [COLUMN] <colname> DROP IDENTITY */
@@ -2613,6 +2609,11 @@ reloption_elem:
 				}
 		;
 
+alter_identity_column_options:
+			alter_identity_column_option_list		{ $$ = $1; }
+			| /* EMPTY */							{ $$ = NIL; }
+			;
+
 alter_identity_column_option_list:
 			alter_identity_column_option
 				{ $$ = list_make1($1); }
@@ -2639,10 +2640,6 @@ alter_identity_column_option:
 								 errmsg("sequence option \"%s\" not supported here", $2->defname),
 								 parser_errposition(@2)));
 					$$ = $2;
-				}
-			| SET GENERATED generated_when
-				{
-					$$ = makeDefElem("generated", (Node *) makeInteger($3), @1);
 				}
 		;
 

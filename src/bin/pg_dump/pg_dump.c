@@ -16246,6 +16246,7 @@ dumpSequence(Archive *fout, TableInfo *tbinfo)
 			   *seqtype;
 	bool		cycled;
 	bool		is_ascending;
+	char	   *opts_prefix = "";
 	PQExpBuffer query = createPQExpBuffer();
 	PQExpBuffer delqry = createPQExpBuffer();
 	PQExpBuffer labelq = createPQExpBuffer();
@@ -16376,14 +16377,15 @@ dumpSequence(Archive *fout, TableInfo *tbinfo)
 						  "ALTER TABLE %s ",
 						  fmtId(owning_tab->dobj.name));
 		appendPQExpBuffer(query,
-						  "ALTER COLUMN %s ADD GENERATED ",
+						  "ALTER COLUMN %s SET GENERATED ",
 						  fmtId(owning_tab->attnames[tbinfo->owning_col - 1]));
 		if (owning_tab->attidentity[tbinfo->owning_col - 1] == ATTRIBUTE_IDENTITY_ALWAYS)
 			appendPQExpBuffer(query, "ALWAYS");
 		else if (owning_tab->attidentity[tbinfo->owning_col - 1] == ATTRIBUTE_IDENTITY_BY_DEFAULT)
 			appendPQExpBuffer(query, "BY DEFAULT");
-		appendPQExpBuffer(query, " AS IDENTITY (\n    SEQUENCE NAME %s\n",
+		appendPQExpBuffer(query, " IF NOT EXISTS\n    SET SEQUENCE NAME %s\n",
 						  fmtId(tbinfo->dobj.name));
+		opts_prefix = "SET ";
 	}
 	else
 	{
@@ -16396,28 +16398,35 @@ dumpSequence(Archive *fout, TableInfo *tbinfo)
 	}
 
 	if (fout->remoteVersion >= 80400)
-		appendPQExpBuffer(query, "    START WITH %s\n", startv);
+		appendPQExpBuffer(query, "    %sSTART WITH %s\n", opts_prefix, startv);
 
-	appendPQExpBuffer(query, "    INCREMENT BY %s\n", incby);
+	appendPQExpBuffer(query, "    %sINCREMENT BY %s\n", opts_prefix, incby);
 
 	if (minv)
-		appendPQExpBuffer(query, "    MINVALUE %s\n", minv);
+		appendPQExpBuffer(query, "    %sMINVALUE %s\n", opts_prefix, minv);
 	else
-		appendPQExpBufferStr(query, "    NO MINVALUE\n");
+		appendPQExpBuffer(query, "    %sNO MINVALUE\n", opts_prefix);
 
 	if (maxv)
-		appendPQExpBuffer(query, "    MAXVALUE %s\n", maxv);
+		appendPQExpBuffer(query, "    %sMAXVALUE %s\n", opts_prefix, maxv);
 	else
-		appendPQExpBufferStr(query, "    NO MAXVALUE\n");
+		appendPQExpBuffer(query, "    %sNO MAXVALUE\n", opts_prefix);
 
-	appendPQExpBuffer(query,
-					  "    CACHE %s%s",
-					  cache, (cycled ? "\n    CYCLE" : ""));
-
-	if (tbinfo->is_identity_sequence)
-		appendPQExpBufferStr(query, "\n);\n");
+	if (!tbinfo->is_identity_sequence)
+		appendPQExpBuffer(query,
+						  "    CACHE %s%s",
+						  cache, (cycled ? "\n    CYCLE" : ""));
 	else
-		appendPQExpBufferStr(query, ";\n");
+	{
+		appendPQExpBuffer(query, "    %sCACHE %s\n", opts_prefix, cache);
+
+		if (cycled)
+			appendPQExpBuffer(query, "    %sCYCLE", opts_prefix);
+		else
+			appendPQExpBuffer(query, "    %sNO CYCLE", opts_prefix);
+	}
+
+	appendPQExpBufferStr(query, ";\n");
 
 	appendPQExpBuffer(labelq, "SEQUENCE %s", fmtId(tbinfo->dobj.name));
 

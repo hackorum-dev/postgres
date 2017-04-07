@@ -2783,43 +2783,22 @@ transformAlterTableStmt(Oid relid, AlterTableStmt *stmt,
 					break;
 				}
 
-			case AT_AddIdentity:
-				{
-					Constraint  *def = castNode(Constraint, cmd->def);
-					ColumnDef *newdef = makeNode(ColumnDef);
-					AttrNumber	attnum;
-
-					newdef->colname = cmd->name;
-					newdef->identity = def->generated_when;
-					cmd->def = (Node *) newdef;
-
-					attnum = get_attnum(relid, cmd->name);
-					/* if attribute not found, something will error about it later */
-					if (attnum != InvalidAttrNumber)
-						generateSerialExtraStmts(&cxt, newdef,
-												 get_atttype(relid, attnum),
-												 def->options, true,
-												 NULL, NULL);
-
-					newcmds = lappend(newcmds, cmd);
-					break;
-				}
-
 			case AT_SetIdentity:
 				{
 					/*
-					 * Create an ALTER SEQUENCE statement for the internal
-					 * sequence of the identity column.
+					 * Create an CREATE/ALTER SEQUENCE statement for the
+					 * internal sequence of the identity column.
 					 */
 					ListCell   *lc;
 					List	   *newseqopts = NIL;
 					List	   *newdef = NIL;
+					List	   *seqname = NIL;
 					List	   *seqlist;
 					AttrNumber	attnum;
 
 					/*
-					 * Split options into those handled by ALTER SEQUENCE and
-					 * those for ALTER TABLE proper.
+					 * Split options into those handled by CREATE/ALTER SEQUENCE
+					 * and those for ALTER TABLE proper.
 					 */
 					foreach(lc, castNode(List, cmd->def))
 					{
@@ -2827,6 +2806,8 @@ transformAlterTableStmt(Oid relid, AlterTableStmt *stmt,
 
 						if (strcmp(def->defname, "generated") == 0)
 							newdef = lappend(newdef, def);
+						else if (strcmp(def->defname, "sequence_name") == 0)
+							seqname = lappend(seqname, def);
 						else
 							newseqopts = lappend(newseqopts, def);
 					}
@@ -2835,25 +2816,66 @@ transformAlterTableStmt(Oid relid, AlterTableStmt *stmt,
 
 					if (attnum)
 					{
-						seqlist = getOwnedSequences(relid, attnum);
-						if (seqlist)
+						/*
+						 * cmd->missing_ok can be set to true iff "generated"
+						 * is present
+						 */
+						if (!get_attidentity(relid, attnum) && cmd->missing_ok)
 						{
-							AlterSeqStmt *seqstmt;
-							Oid			seq_relid;
+							/* CREATE SEQUENCE */
+							ColumnDef *newcoldef = makeNode(ColumnDef);
+							newcoldef->colname = cmd->name;
 
-							seqstmt = makeNode(AlterSeqStmt);
-							seq_relid = linitial_oid(seqlist);
-							seqstmt->sequence = makeRangeVar(get_namespace_name(get_rel_namespace(seq_relid)),
-															 get_rel_name(seq_relid), -1);
-							seqstmt->options = newseqopts;
-							seqstmt->for_identity = true;
-							seqstmt->missing_ok = false;
+							newseqopts = list_concat(newseqopts, seqname);
+							generateSerialExtraStmts(&cxt, newcoldef,
+													 get_atttype(relid, attnum),
+													 newseqopts, true,
+													 NULL, NULL);
+						}
+						else
+						{
+							/* ALTER SEQUENCE */
+							seqlist = getOwnedSequences(relid, attnum);
+							if (seqlist)
+							{
+								AlterSeqStmt *seqstmt;
+								Oid			seq_relid;
 
-							cxt.alist = lappend(cxt.alist, seqstmt);
+								seqstmt = makeNode(AlterSeqStmt);
+								seq_relid = linitial_oid(seqlist);
+								seqstmt->sequence = makeRangeVar(get_namespace_name(get_rel_namespace(seq_relid)),
+																 get_rel_name(seq_relid), -1);
+								seqstmt->options = newseqopts;
+								seqstmt->for_identity = true;
+								seqstmt->missing_ok = false;
+
+								cxt.alist = lappend(cxt.alist, seqstmt);
+
+								if (seqname)
+								{
+									/*
+									 * ALTER SEQUENCE ... RENAME TO ...
+									 * if the old name differs from the new one.
+									 */
+									char *new_seqname = NameListToString(defGetQualifiedName(linitial(seqname)));
+									if (strcmp(new_seqname, seqstmt->sequence->relname) != 0)
+									{
+										RenameStmt *n = makeNode(RenameStmt);
+										n->renameType = OBJECT_SEQUENCE;
+										n->relation = seqstmt->sequence;
+										n->subname = NULL;
+										n->newname = new_seqname;
+										n->missing_ok = false;
+
+										cxt.alist = lappend(cxt.alist, n);
+									}
+								}
+							}
 						}
 					}
-					/* If column was not found or was not an identity column, we
-					 * just let the ALTER TABLE command error out later. */
+					/* If column was not found or was not an identity column and
+					 * IF NOT EXISTS is not present, we just let the ALTER TABLE
+					 * command error out later. */
 
 					cmd->def = (Node *) newdef;
 					newcmds = lappend(newcmds, cmd);

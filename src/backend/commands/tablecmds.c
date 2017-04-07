@@ -361,10 +361,8 @@ static ObjectAddress ATExecSetNotNull(AlteredTableInfo *tab, Relation rel,
 				 const char *colName, LOCKMODE lockmode);
 static ObjectAddress ATExecColumnDefault(Relation rel, const char *colName,
 					Node *newDefault, LOCKMODE lockmode);
-static ObjectAddress ATExecAddIdentity(Relation rel, const char *colName,
-					Node *def, LOCKMODE lockmode);
 static ObjectAddress ATExecSetIdentity(Relation rel, const char *colName,
-					Node *def, LOCKMODE lockmode);
+					bool missing_ok, Node *def, LOCKMODE lockmode);
 static ObjectAddress ATExecDropIdentity(Relation rel, const char *colName, bool missing_ok, LOCKMODE lockmode);
 static void ATPrepSetStatistics(Relation rel, const char *colName,
 					Node *newValue, LOCKMODE lockmode);
@@ -3231,7 +3229,6 @@ AlterTableGetLockLevel(List *cmds)
 			case AT_DisableRowSecurity:
 			case AT_ForceRowSecurity:
 			case AT_NoForceRowSecurity:
-			case AT_AddIdentity:
 			case AT_DropIdentity:
 			case AT_SetIdentity:
 				cmd_lockmode = AccessExclusiveLock;
@@ -3463,10 +3460,6 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			ATSimpleRecursion(wqueue, rel, cmd, recurse, lockmode);
 			/* No command-specific prep needed */
 			pass = cmd->def ? AT_PASS_ADD_CONSTR : AT_PASS_DROP;
-			break;
-		case AT_AddIdentity:
-			ATSimplePermissions(rel, ATT_TABLE | ATT_VIEW | ATT_FOREIGN_TABLE);
-			pass = AT_PASS_ADD_CONSTR;
 			break;
 		case AT_DropIdentity:
 			ATSimplePermissions(rel, ATT_TABLE | ATT_VIEW | ATT_FOREIGN_TABLE);
@@ -3801,11 +3794,9 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab, Relation rel,
 		case AT_ColumnDefault:	/* ALTER COLUMN DEFAULT */
 			address = ATExecColumnDefault(rel, cmd->name, cmd->def, lockmode);
 			break;
-		case AT_AddIdentity:
-			address = ATExecAddIdentity(rel, cmd->name, cmd->def, lockmode);
-			break;
 		case AT_SetIdentity:
-			address = ATExecSetIdentity(rel, cmd->name, cmd->def, lockmode);
+			address = ATExecSetIdentity(rel, cmd->name, cmd->missing_ok,
+										cmd->def, lockmode);
 			break;
 		case AT_DropIdentity:
 			address = ATExecDropIdentity(rel, cmd->name, cmd->missing_ok, lockmode);
@@ -5853,84 +5844,13 @@ ATExecColumnDefault(Relation rel, const char *colName,
 }
 
 /*
- * ALTER TABLE ALTER COLUMN ADD IDENTITY
- *
- * Return the address of the affected column.
- */
-static ObjectAddress
-ATExecAddIdentity(Relation rel, const char *colName,
-				  Node *def, LOCKMODE lockmode)
-{
-	Relation	attrelation;
-	HeapTuple	tuple;
-	Form_pg_attribute attTup;
-	AttrNumber	attnum;
-	ObjectAddress address;
-	ColumnDef  *cdef = castNode(ColumnDef, def);
-
-	attrelation = heap_open(AttributeRelationId, RowExclusiveLock);
-
-	tuple = SearchSysCacheCopyAttName(RelationGetRelid(rel), colName);
-	if (!HeapTupleIsValid(tuple))
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_COLUMN),
-				 errmsg("column \"%s\" of relation \"%s\" does not exist",
-						colName, RelationGetRelationName(rel))));
-	attTup = (Form_pg_attribute) GETSTRUCT(tuple);
-	attnum = attTup->attnum;
-
-	/* Can't alter a system attribute */
-	if (attnum <= 0)
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("cannot alter system column \"%s\"",
-						colName)));
-
-	/*
-	 * Creating a column as identity implies NOT NULL, so adding the identity
-	 * to an existing column that is not NOT NULL would create a state that
-	 * cannot be reproduced without contortions.
-	 */
-	if (!attTup->attnotnull)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("column \"%s\" of relation \"%s\" must be declared NOT NULL before identity can be added",
-						colName, RelationGetRelationName(rel))));
-
-	if (attTup->attidentity)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("column \"%s\" of relation \"%s\" is already an identity column",
-						colName, RelationGetRelationName(rel))));
-
-	if (attTup->atthasdef)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("column \"%s\" of relation \"%s\" already has a default value",
-						colName, RelationGetRelationName(rel))));
-
-	attTup->attidentity = cdef->identity;
-	CatalogTupleUpdate(attrelation, &tuple->t_self, tuple);
-
-	InvokeObjectPostAlterHook(RelationRelationId,
-							  RelationGetRelid(rel),
-							  attTup->attnum);
-	ObjectAddressSubSet(address, RelationRelationId,
-						RelationGetRelid(rel), attnum);
-	heap_freetuple(tuple);
-
-	heap_close(attrelation, RowExclusiveLock);
-
-	return address;
-}
-
-/*
  * ALTER TABLE ALTER COLUMN SET { GENERATED or sequence options }
  *
  * Return the address of the affected column.
  */
 static ObjectAddress
-ATExecSetIdentity(Relation rel, const char *colName, Node *def, LOCKMODE lockmode)
+ATExecSetIdentity(Relation rel, const char *colName, bool missing_ok,
+				  Node *def, LOCKMODE lockmode)
 {
 	ListCell   *option;
 	DefElem	   *generatedEl = NULL;
@@ -5981,10 +5901,30 @@ ATExecSetIdentity(Relation rel, const char *colName, Node *def, LOCKMODE lockmod
 						colName)));
 
 	if (!attTup->attidentity)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("column \"%s\" of relation \"%s\" is not an identity column",
-						colName, RelationGetRelationName(rel))));
+	{
+		if(!missing_ok)
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("column \"%s\" of relation \"%s\" is not an identity column",
+							colName, RelationGetRelationName(rel))));
+
+		/*
+		 * Creating a column as identity implies NOT NULL, so adding the identity
+		 * to an existing column that is not NOT NULL would create a state that
+		 * cannot be reproduced without contortions.
+		 */
+		if (!attTup->attnotnull)
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("column \"%s\" of relation \"%s\" must be declared NOT NULL before identity can be added",
+							colName, RelationGetRelationName(rel))));
+
+		if (attTup->atthasdef)
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("column \"%s\" of relation \"%s\" already has a default value",
+							colName, RelationGetRelationName(rel))));
+	}
 
 	if (generatedEl)
 	{
