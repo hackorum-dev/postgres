@@ -75,7 +75,9 @@ LogicalRepCtxStruct *LogicalRepCtx;
 static void logicalrep_worker_onexit(int code, Datum arg);
 static void logicalrep_worker_detach(void);
 
-bool		got_SIGTERM = false;
+/* Flags set by signal handlers */
+volatile sig_atomic_t got_SIGHUP = false;
+volatile sig_atomic_t got_SIGTERM = false;
 static bool	on_commit_launcher_wakeup = false;
 
 Datum pg_stat_get_subscription(PG_FUNCTION_ARGS);
@@ -495,10 +497,26 @@ logicalrep_worker_onexit(int code, Datum arg)
 void
 logicalrep_worker_sigterm(SIGNAL_ARGS)
 {
+	int save_errno = errno;
+
 	got_SIGTERM = true;
 
 	/* Waken anything waiting on the process latch */
 	SetLatch(MyLatch);
+	errno = save_errno;
+}
+
+/* SIGHUP: set flag to exit at next convenient time */
+void
+logicalrep_worker_sighup(SIGNAL_ARGS)
+{
+	int save_errno = errno;
+
+	got_SIGHUP = true;
+
+	/* Waken anything waiting on the process latch */
+	SetLatch(MyLatch);
+	errno = save_errno;
 }
 
 /*
@@ -637,6 +655,7 @@ ApplyLauncherMain(Datum main_arg)
 			(errmsg("logical replication launcher started")));
 
 	/* Establish signal handlers. */
+	pqsignal(SIGHUP, logicalrep_worker_sighup);
 	pqsignal(SIGTERM, logicalrep_worker_sigterm);
 	BackgroundWorkerUnblockSignals();
 
@@ -727,6 +746,14 @@ ApplyLauncherMain(Datum main_arg)
 		/* emergency bailout if postmaster has died */
 		if (rc & WL_POSTMASTER_DEATH)
 			proc_exit(1);
+
+		/* Process signal */
+		if (got_SIGHUP)
+		{
+			/* Process config file */
+			ProcessConfigFile(PGC_SIGHUP);
+			got_SIGHUP = false;
+		}
 
 		ResetLatch(&MyProc->procLatch);
 	}
