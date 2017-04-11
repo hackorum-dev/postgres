@@ -470,10 +470,10 @@ ReplicationOriginShmemInit(void)
 	if (!found)
 	{
 		int			i;
+		
+                MemSet(replication_states_ctl, 0, ReplicationOriginShmemSize());
 
 		replication_states_ctl->tranche_id = LWTRANCHE_REPLICATION_ORIGIN;
-
-		MemSet(replication_states, 0, ReplicationOriginShmemSize());
 
 		for (i = 0; i < max_replication_slots; i++)
 			LWLockInitialize(&replication_states[i].lock,
