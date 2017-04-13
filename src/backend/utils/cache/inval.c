@@ -51,9 +51,9 @@
  *	PrepareToInvalidateCacheTuple() routine provides the knowledge of which
  *	catcaches may need invalidation for a given tuple.
  *
- *	Also, whenever we see an operation on a pg_class or pg_attribute tuple,
- *	we register a relcache flush operation for the relation described by that
- *	tuple.
+ *	Also, whenever we see an operation on a pg_class, pg_attribute, or
+ *	pg_index tuple, we register a relcache flush operation for the relation
+ *	described by that tuple.
  *
  *	We keep the relcache flush requests in lists separate from the catcache
  *	tuple flush requests.  This allows us to issue all the pending catcache
