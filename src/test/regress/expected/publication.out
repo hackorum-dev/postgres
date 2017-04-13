@@ -78,7 +78,6 @@ DETAIL:  Only tables can be added to publications.
 CREATE PUBLICATION testpub_fortbl FOR TABLE testpub_tbl1, pub_test.testpub_nopk;
 -- fail - already added
 ALTER PUBLICATION testpub_fortbl ADD TABLE testpub_tbl1;
-ERROR:  relation "testpub_tbl1" is already member of publication "testpub_fortbl"
 -- fail - already added
 CREATE PUBLICATION testpub_fortbl FOR TABLE testpub_tbl1;
 ERROR:  publication "testpub_fortbl" already exists

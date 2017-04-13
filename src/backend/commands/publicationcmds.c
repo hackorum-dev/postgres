@@ -52,7 +52,7 @@
 
 static List *OpenTableList(List *tables);
 static void CloseTableList(List *rels);
-static void PublicationAddTables(Oid pubid, List *rels, bool if_not_exists,
+static void PublicationAddTables(Oid pubid, List *rels,
 					 AlterPublicationStmt *stmt);
 static void PublicationDropTables(Oid pubid, List *rels, bool missing_ok);
 
@@ -232,7 +232,7 @@ CreatePublication(CreatePublicationStmt *stmt)
 		Assert(list_length(stmt->tables) > 0);
 
 		rels = OpenTableList(stmt->tables);
-		PublicationAddTables(puboid, rels, true, NULL);
+		PublicationAddTables(puboid, rels, NULL);
 		CloseTableList(rels);
 	}
 
@@ -357,7 +357,7 @@ AlterPublicationTables(AlterPublicationStmt *stmt, Relation rel,
 	rels = OpenTableList(stmt->tables);
 
 	if (stmt->tableAction == DEFELEM_ADD)
-		PublicationAddTables(pubid, rels, false, stmt);
+		PublicationAddTables(pubid, rels, stmt);
 	else if (stmt->tableAction == DEFELEM_DROP)
 		PublicationDropTables(pubid, rels, false);
 	else /* DEFELEM_SET */
@@ -399,7 +399,7 @@ AlterPublicationTables(AlterPublicationStmt *stmt, Relation rel,
 		 * Don't bother calculating the difference for adding, we'll catch
 		 * and skip existing ones when doing catalog update.
 		 */
-		PublicationAddTables(pubid, rels, true, stmt);
+		PublicationAddTables(pubid, rels, stmt);
 
 		CloseTableList(delrels);
 	}
@@ -595,7 +595,7 @@ CloseTableList(List *rels)
  * Add listed tables to the publication.
  */
 static void
-PublicationAddTables(Oid pubid, List *rels, bool if_not_exists,
+PublicationAddTables(Oid pubid, List *rels,
 					 AlterPublicationStmt *stmt)
 {
 	ListCell	   *lc;
@@ -612,8 +612,8 @@ PublicationAddTables(Oid pubid, List *rels, bool if_not_exists,
 			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
 						   RelationGetRelationName(rel));
 
-		obj = publication_add_relation(pubid, rel, if_not_exists);
-		if (stmt)
+		obj = publication_add_relation(pubid, rel);
+		if (obj.objectId != InvalidOid)
 		{
 			EventTriggerCollectSimpleCommand(obj, InvalidObjectAddress,
 											 (Node *) stmt);

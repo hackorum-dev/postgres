@@ -101,8 +101,7 @@ is_publishable_class(Oid relid, Form_pg_class reltuple)
  * Insert new publication / relation mapping.
  */
 ObjectAddress
-publication_add_relation(Oid pubid, Relation targetrel,
-						 bool if_not_exists)
+publication_add_relation(Oid pubid, Relation targetrel)
 {
 	Relation	rel;
 	HeapTuple	tup;
@@ -110,29 +109,20 @@ publication_add_relation(Oid pubid, Relation targetrel,
 	bool		nulls[Natts_pg_publication_rel];
 	Oid			relid = RelationGetRelid(targetrel);
 	Oid			prrelid;
-	Publication *pub = GetPublication(pubid);
 	ObjectAddress	myself,
 					referenced;
 
 	rel = heap_open(PublicationRelRelationId, RowExclusiveLock);
 
 	/*
-	 * Check for duplicates. Note that this does not really prevent
-	 * duplicates, it's here just to provide nicer error message in common
-	 * case. The real protection is the unique key on the catalog.
+	 * If target relation is already a part of the publication, nothing to
+	 * to do here.
 	 */
 	if (SearchSysCacheExists2(PUBLICATIONRELMAP, ObjectIdGetDatum(relid),
 							  ObjectIdGetDatum(pubid)))
 	{
 		heap_close(rel, RowExclusiveLock);
-
-		if (if_not_exists)
-			return InvalidObjectAddress;
-
-		ereport(ERROR,
-				(errcode(ERRCODE_DUPLICATE_OBJECT),
-				 errmsg("relation \"%s\" is already member of publication \"%s\"",
-						RelationGetRelationName(targetrel), pub->name)));
+		return InvalidObjectAddress;
 	}
 
 	check_publication_add_relation(targetrel);
