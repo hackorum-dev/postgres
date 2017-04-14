@@ -769,10 +769,11 @@ allow_immediate_pgstat_restart(void)
 /* ----------
  * pgstat_report_stat() -
  *
- *	Called from tcop/postgres.c to send the so far collected per-table
- *	and function usage statistics to the collector.  Note that this is
- *	called only when not within a transaction, so it is fair to use
- *	transaction stop time as an approximation of current time.
+ *	Must be called by processes that performs DML: tcop/postgres.c, logical
+ *	receiver processes, SPI worker, etc to send the so far collected per-table
+ *	and function usage statistics to the collector. Note that this is called
+ *	only when not within a transaction, so it is fair to use transaction stop
+ *	time as an approximation of current time.
  * ----------
  */
 void
