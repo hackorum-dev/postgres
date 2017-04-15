@@ -93,6 +93,8 @@
 
 #include "commands/copy.h"
 
+#include "parser/parse_relation.h"
+
 #include "replication/logicallauncher.h"
 #include "replication/logicalrelation.h"
 #include "replication/walreceiver.h"
@@ -648,6 +650,8 @@ copy_table(Relation rel)
 	StringInfoData		cmd;
 	CopyState	cstate;
 	List	   *attnamelist;
+	ParseState *pstate;
+	RangeTblEntry *rte;
 
 	/* Get the publisher relation info. */
 	fetch_remote_table_info(get_namespace_name(RelationGetNamespace(rel)),
@@ -674,9 +678,14 @@ copy_table(Relation rel)
 
 	copybuf = makeStringInfo();
 
-	/* Create CopyState for ingestion of the data from publisher. */
+	pstate = make_parsestate(NULL);
+	pstate->p_target_relation = rel;
+	rte = addRangeTableEntryForRelation(pstate, pstate->p_target_relation,
+										NULL, false, false);
+	pstate->p_target_rangetblentry = rte;
+
 	attnamelist = make_copy_attnamelist(relmapentry);
-	cstate = BeginCopyFrom(NULL, rel, NULL, false, copy_read_data, attnamelist, NIL);
+	cstate = BeginCopyFrom(pstate, rel, NULL, false, copy_read_data, attnamelist, NIL);
 
 	/* Do the copy */
 	(void) CopyFrom(cstate);
