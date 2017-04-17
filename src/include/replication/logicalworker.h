@@ -12,6 +12,8 @@
 #ifndef LOGICALWORKER_H
 #define LOGICALWORKER_H
 
+extern int apply_worker_timeout;
+
 extern void ApplyWorkerMain(Datum main_arg);
 
 #endif   /* LOGICALWORKER_H */

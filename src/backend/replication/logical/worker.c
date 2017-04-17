@@ -86,6 +86,9 @@
 
 #define NAPTIME_PER_CYCLE 1000	/* max sleep time between cycles (1s) */
 
+/* GUC variable */
+int	apply_worker_timeout;
+
 typedef struct FlushPosition
 {
 	dlist_node node;
@@ -1150,7 +1153,7 @@ LogicalRepApplyLoop(XLogRecPtr last_received)
 			/*
 			 * We didn't receive anything new. If we haven't heard
 			 * anything from the server for more than
-			 * wal_receiver_timeout / 2, ping the server. Also, if
+			 * apply_worker_timeout / 2, ping the server. Also, if
 			 * it's been longer than wal_receiver_status_interval
 			 * since the last update we sent, send a status update to
 			 * the master anyway, to report any progress in applying
@@ -1162,14 +1165,14 @@ LogicalRepApplyLoop(XLogRecPtr last_received)
 			 * Check if time since last receive from standby has
 			 * reached the configured limit.
 			 */
-			if (wal_receiver_timeout > 0)
+			if (apply_worker_timeout > 0)
 			{
 				TimestampTz now = GetCurrentTimestamp();
 				TimestampTz timeout;
 
 				timeout =
 					TimestampTzPlusMilliseconds(last_recv_timestamp,
-												wal_receiver_timeout);
+												apply_worker_timeout);
 
 				if (now >= timeout)
 					ereport(ERROR,
@@ -1182,7 +1185,7 @@ LogicalRepApplyLoop(XLogRecPtr last_received)
 				if (!ping_sent)
 				{
 					timeout = TimestampTzPlusMilliseconds(last_recv_timestamp,
-														  (wal_receiver_timeout / 2));
+														  (apply_worker_timeout / 2));
 					if (now >= timeout)
 					{
 						requestReply = true;

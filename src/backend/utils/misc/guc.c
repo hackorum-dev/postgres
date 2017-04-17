@@ -63,6 +63,7 @@
 #include "postmaster/syslogger.h"
 #include "postmaster/walwriter.h"
 #include "replication/logicallauncher.h"
+#include "replication/logicalworker.h"
 #include "replication/slot.h"
 #include "replication/syncrep.h"
 #include "replication/walreceiver.h"
@@ -1823,6 +1824,17 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_MS
 		},
 		&wal_receiver_timeout,
+		60 * 1000, 0, INT_MAX,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"apply_worker_timeout", PGC_SIGHUP, REPLICATION_SUBSCRIBERS,
+			gettext_noop("Sets the maximum wait time to receive data from the publisher."),
+			NULL,
+			GUC_UNIT_MS
+		},
+		&apply_worker_timeout,
 		60 * 1000, 0, INT_MAX,
 		NULL, NULL, NULL
 	},

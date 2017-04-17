@@ -3421,9 +3421,8 @@ ANY <replaceable class="parameter">num_sync</replaceable> ( <replaceable class="
      </para>
 
      <para>
-      Note that <varname>wal_receiver_timeout</varname> and
-      <varname>wal_retrieve_retry_interval</varname> configuration parameters
-      affect the logical replication workers as well.
+      Note that <varname>wal_retrieve_retry_interval</varname> configuration parameters
+      affects the logical replication workers as well.
      </para>
 
      <variablelist>
@@ -3474,7 +3473,31 @@ ANY <replaceable class="parameter">num_sync</replaceable> ( <replaceable class="
       </listitem>
      </varlistentry>
 
-     </variablelist>
+     <varlistentry id="guc-apply-worker-timeout" xreflabel="apply_worker_timeout">
+      <term><varname>apply_worker_timeout</varname> (<type>integer</type>)        
+      <indexterm>                                                                 
+       <primary><varname>apply_worker_timeout</> configuration parameter</primary>
+      </indexterm>                                                                
+      </term>                                                                     
+      <listitem>                                                                  
+       <para>                                                                     
+        Terminate replication connections that are inactive longer                
+        than the specified number of milliseconds. This is useful for             
+        the receiving subscriber to detect a publisher node crash or network      
+        outage.                                                                   
+       </para>
+       <para>
+        A value of zero disables the timeout mechanism.  This parameter           
+        can only be set in                                                        
+        the <filename>postgresql.conf</> file or on the server command line.
+       </para>
+       <para>
+        The default value is 60 seconds.                                          
+       </para>                                                                    
+      </listitem>                                                                 
+     </varlistentry>                                                              
+
+    </variablelist>
     </sect2>
 
    </sect1>
