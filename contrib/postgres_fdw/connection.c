@@ -74,6 +74,7 @@ static void pgfdw_subxact_callback(SubXactEvent event,
 					   SubTransactionId mySubid,
 					   SubTransactionId parentSubid,
 					   void *arg);
+static bool pgfdw_cancel_query(ConnCacheEntry *entry);
 
 
 /*
@@ -669,22 +670,16 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 					 * might not have yet completed.  Check to see if a
 					 * command is still being processed by the remote server,
 					 * and if so, request cancellation of the command.
+					 *
+					 * If the request can not be completed successfully, the
+					 * connection is broken. In that case do not try to send an
+					 * ABORT, since that may get blocked. This is bad, if we
+					 * are aborting the transaction because the user wanted to
+					 * cancel the query running in this backend.
 					 */
 					if (PQtransactionStatus(entry->conn) == PQTRANS_ACTIVE)
-					{
-						PGcancel   *cancel;
-						char		errbuf[256];
-
-						if ((cancel = PQgetCancel(entry->conn)))
-						{
-							if (!PQcancel(cancel, errbuf, sizeof(errbuf)))
-								ereport(WARNING,
-										(errcode(ERRCODE_CONNECTION_FAILURE),
-								  errmsg("could not send cancel request: %s",
-										 errbuf)));
-							PQfreeCancel(cancel);
-						}
-					}
+						if (!pgfdw_cancel_query(entry))
+							break;
 
 					/* If we're aborting, abort all remote transactions too */
 					res = PQexec(entry->conn, "ABORT TRANSACTION");
@@ -794,22 +789,16 @@ pgfdw_subxact_callback(SubXactEvent event, SubTransactionId mySubid,
 			 * yet completed.  Check to see if a command is still being
 			 * processed by the remote server, and if so, request cancellation
 			 * of the command.
+			 *
+			 * If the request can not be completed successfully, the connection
+			 * is broken. In that case do not try to send an ABORT, since that
+			 * may get blocked. This is bad, if we are aborting the transaction
+			 * because the user wanted to cancel the query running in this
+			 * backend.
 			 */
 			if (PQtransactionStatus(entry->conn) == PQTRANS_ACTIVE)
-			{
-				PGcancel   *cancel;
-				char		errbuf[256];
-
-				if ((cancel = PQgetCancel(entry->conn)))
-				{
-					if (!PQcancel(cancel, errbuf, sizeof(errbuf)))
-						ereport(WARNING,
-								(errcode(ERRCODE_CONNECTION_FAILURE),
-								 errmsg("could not send cancel request: %s",
-										errbuf)));
-					PQfreeCancel(cancel);
-				}
-			}
+				if (!pgfdw_cancel_query(entry))
+					continue;
 
 			/* Rollback all remote subtransactions during abort */
 			snprintf(sql, sizeof(sql),
@@ -825,4 +814,43 @@ pgfdw_subxact_callback(SubXactEvent event, SubTransactionId mySubid,
 		/* OK, we're outta that level of subtransaction */
 		entry->xact_depth--;
 	}
+}
+
+/*
+ * Cancel a running query on the given connection.
+ *
+ * Returns true if query was cancelled successfully, false otherwise. If the
+ * cancellation request fails, it also clears the connection since it will be
+ * broken.
+ */
+static bool
+pgfdw_cancel_query(ConnCacheEntry *entry)
+{
+	PGcancel   *cancel;
+	char		errbuf[256];
+
+	Assert(PQtransactionStatus(entry->conn) == PQTRANS_ACTIVE);
+
+	if ((cancel = PQgetCancel(entry->conn)))
+	{
+		if (PQcancel(cancel, errbuf, sizeof(errbuf)))
+		{
+			PQfreeCancel(cancel);
+			return true;
+		}
+	}
+
+	ereport(WARNING,
+			(errcode(ERRCODE_CONNECTION_FAILURE),
+			errmsg("discarding connection %p because of failed cancel request: %s",
+				   entry->conn, errbuf)));
+
+	/*
+	 * Clear the broken connection. Other fields in ConnCacheEntry will
+	 * be cleared when establishing the connection again in
+	 * GetConnection().
+	 */
+	PQfinish(entry->conn);
+	entry->conn = NULL;
+	return false;
 }
