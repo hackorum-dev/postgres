@@ -280,6 +280,7 @@
 #max_sync_workers_per_subscription = 2	# taken from max_logical_replication_workers
 #apply_worker_timeout = 60s		# time that apply worker waits for
 					# communication from publisher#
+#apply_worker_launch_interval = 5s	# time to wait before start apply worker
 
 
 #------------------------------------------------------------------------------
