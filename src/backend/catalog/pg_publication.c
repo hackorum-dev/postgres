@@ -50,6 +50,14 @@
 static void
 check_publication_add_relation(Relation targetrel)
 {
+	/* Handle partitioned tables explicitly */
+	if (RelationGetForm(targetrel)->relkind == RELKIND_PARTITIONED_TABLE)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("\"%s\" is a partitioned table",
+						RelationGetRelationName(targetrel)),
+				 errdetail("Adding partitioned tables to publications is not supported.")));
+
 	/* Must be table */
 	if (RelationGetForm(targetrel)->relkind != RELKIND_RELATION)
 		ereport(ERROR,

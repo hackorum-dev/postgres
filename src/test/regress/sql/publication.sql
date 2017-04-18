@@ -134,3 +134,8 @@ DROP SCHEMA pub_test CASCADE;
 RESET SESSION AUTHORIZATION;
 DROP ROLE regress_publication_user, regress_publication_user2;
 DROP ROLE regress_publication_user_dummy;
+
+-- cannot publish partitioned tables
+CREATE TABLE nopublish_parted (a int) PARTITION BY LIST (a);
+CREATE PUBLICATION nopublish_parted_pub FOR TABLE nopublish_parted;
+DROP TABLE nopublish_parted;

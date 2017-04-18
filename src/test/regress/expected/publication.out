@@ -228,3 +228,9 @@ NOTICE:  drop cascades to table pub_test.testpub_nopk
 RESET SESSION AUTHORIZATION;
 DROP ROLE regress_publication_user, regress_publication_user2;
 DROP ROLE regress_publication_user_dummy;
+-- cannot publish partitioned tables
+CREATE TABLE nopublish_parted (a int) PARTITION BY LIST (a);
+CREATE PUBLICATION nopublish_parted_pub FOR TABLE nopublish_parted;
+ERROR:  "nopublish_parted" is a partitioned table
+DETAIL:  Adding partitioned tables to publications is not supported.
+DROP TABLE nopublish_parted;
