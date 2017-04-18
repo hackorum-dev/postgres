@@ -4114,7 +4114,7 @@ listTables(const char *tabtypes, const char *pattern, bool verbose, bool showSys
 					  " WHEN " CppAsString2(RELKIND_RELATION) " THEN '%s'"
 					  " WHEN " CppAsString2(RELKIND_VIEW) " THEN '%s'"
 					  " WHEN " CppAsString2(RELKIND_MATVIEW) " THEN '%s'"
-					  " WHEN " CppAsString2(RELKIND_INDEX) " THEN '%s'"
+					  " WHEN " CppAsString2(RELKIND_INDEX) " THEN %s"
 					  " WHEN " CppAsString2(RELKIND_SEQUENCE) " THEN '%s'"
 					  " WHEN " CppAsString2(RELKIND_TOASTVALUE) " THEN '%s'"
 					  " WHEN " CppAsString2(RELKIND_FOREIGN_TABLE) " THEN '%s'"
@@ -4128,7 +4128,7 @@ listTables(const char *tabtypes, const char *pattern, bool verbose, bool showSys
 					  gettext_noop("table"),
 					  gettext_noop("view"),
 					  gettext_noop("materialized view"),
-					  gettext_noop("index"),
+					  gettext_noop("'index: '||(select amname from pg_am a where a.oid = c.relam)"),
 					  gettext_noop("sequence"),
 					  gettext_noop("TOAST table"),
 					  gettext_noop("foreign table"),
