@@ -1560,7 +1560,7 @@ dumpDatabaseConfig(PGconn *conn, const char *dbname)
 		appendStringLiteralConn(buf, dbname, conn);
 
 		if (server_version >= 90000)
-			appendPQExpBuffer(buf, ")");
+			appendPQExpBufferChar(buf, ')');
 
 		res = executeQuery(conn, buf->data);
 		if (PQntuples(res) == 1 &&

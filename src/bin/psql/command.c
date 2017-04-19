@@ -4668,7 +4668,7 @@ get_create_object_cmd(EditableObjectType obj_type, Oid oid,
 							psql_error("could not parse reloptions array\n");
 							result = false;
 						}
-						appendPQExpBufferStr(buf, ")");
+						appendPQExpBufferChar(buf, ')');
 					}
 
 					/* View definition from pg_get_viewdef (a SELECT query) */
@@ -4854,7 +4854,7 @@ minimal_error_message(PGresult *res)
 		appendPQExpBufferStr(msg, fld);
 	else
 		appendPQExpBufferStr(msg, "(not available)");
-	appendPQExpBufferStr(msg, "\n");
+	appendPQExpBufferChar(msg, '\n');
 
 	psql_error("%s", msg->data);
 

@@ -80,7 +80,7 @@
 
 /* Write a character-string (possibly NULL) field */
 #define WRITE_STRING_FIELD(fldname) \
-	(appendStringInfo(str, " :" CppAsString(fldname) " "), \
+	(appendStringInfoString(str, " :" CppAsString(fldname) " "), \
 	 outToken(str, node->fldname))
 
 /* Write a parse location field (actually same as INT case) */
@@ -89,12 +89,12 @@
 
 /* Write a Node field */
 #define WRITE_NODE_FIELD(fldname) \
-	(appendStringInfo(str, " :" CppAsString(fldname) " "), \
+	(appendStringInfoString(str, " :" CppAsString(fldname) " "), \
 	 outNode(str, node->fldname))
 
 /* Write a bitmapset field */
 #define WRITE_BITMAPSET_FIELD(fldname) \
-	(appendStringInfo(str, " :" CppAsString(fldname) " "), \
+	(appendStringInfoString(str, " :" CppAsString(fldname) " "), \
 	 outBitmapset(str, node->fldname))
 
 

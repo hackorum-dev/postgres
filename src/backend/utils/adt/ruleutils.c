@@ -1647,11 +1647,11 @@ pg_get_partkeydef_worker(Oid relid, int prettyFlags,
 	{
 		case PARTITION_STRATEGY_LIST:
 			if (!attrsOnly)
-				appendStringInfo(&buf, "LIST");
+				appendStringInfoString(&buf, "LIST");
 			break;
 		case PARTITION_STRATEGY_RANGE:
 			if (!attrsOnly)
-				appendStringInfo(&buf, "RANGE");
+				appendStringInfoString(&buf, "RANGE");
 			break;
 		default:
 			elog(ERROR, "unexpected partition strategy: %d",
@@ -1659,7 +1659,7 @@ pg_get_partkeydef_worker(Oid relid, int prettyFlags,
 	}
 
 	if (!attrsOnly)
-		appendStringInfo(&buf, " (");
+		appendStringInfoString(&buf, " (");
 	sep = "";
 	for (keyno = 0; keyno < form->partnatts; keyno++)
 	{
@@ -5575,10 +5575,10 @@ get_rule_sortgroupclause(Index ref, List *tlist, bool force_colno,
 								  ||IsA(expr, WindowFunc));
 
 		if (need_paren)
-			appendStringInfoString(context->buf, "(");
+			appendStringInfoChar(context->buf, '(');
 		get_rule_expr(expr, context, true);
 		if (need_paren)
-			appendStringInfoString(context->buf, ")");
+			appendStringInfoChar(context->buf, ')');
 	}
 
 	return expr;
@@ -5605,7 +5605,7 @@ get_rule_groupingset(GroupingSet *gset, List *targetlist,
 		case GROUPING_SET_SIMPLE:
 			{
 				if (!omit_parens || list_length(gset->content) != 1)
-					appendStringInfoString(buf, "(");
+					appendStringInfoChar(buf, '(');
 
 				foreach(l, gset->content)
 				{
@@ -5618,7 +5618,7 @@ get_rule_groupingset(GroupingSet *gset, List *targetlist,
 				}
 
 				if (!omit_parens || list_length(gset->content) != 1)
-					appendStringInfoString(buf, ")");
+					appendStringInfoChar(buf, ')');
 			}
 			return;
 
@@ -5641,7 +5641,7 @@ get_rule_groupingset(GroupingSet *gset, List *targetlist,
 		sep = ", ";
 	}
 
-	appendStringInfoString(buf, ")");
+	appendStringInfoChar(buf, ')');
 }
 
 /*
@@ -8626,7 +8626,7 @@ get_rule_expr(Node *node, deparse_context *context,
 							sep = ", ";
 						}
 
-						appendStringInfoString(buf, ")");
+						appendStringInfoChar(buf, ')');
 						break;
 
 					case PARTITION_STRATEGY_RANGE:
@@ -8654,7 +8654,7 @@ get_rule_expr(Node *node, deparse_context *context,
 							}
 							sep = ", ";
 						}
-						appendStringInfoString(buf, ")");
+						appendStringInfoChar(buf, ')');
 
 						appendStringInfoString(buf, " TO");
 						appendStringInfoString(buf, " (");
@@ -8674,7 +8674,7 @@ get_rule_expr(Node *node, deparse_context *context,
 							}
 							sep = ", ";
 						}
-						appendStringInfoString(buf, ")");
+						appendStringInfoChar(buf, ')');
 						break;
 
 					default:
