@@ -32,7 +32,7 @@ $node_publisher->safe_psql('postgres',
 
 my $appname = 'tap_sub';
 $node_subscriber->safe_psql('postgres',
-	"CREATE SUBSCRIPTION tap_sub CONNECTION '$publisher_connstr application_name=$appname' PUBLICATION tap_pub");
+	"CREATE SUBSCRIPTION tap_sub CONNECTION '$publisher_connstr application_name=$appname' PUBLICATION tap_pub WITH (synchronous_commit = local)");
 
 # Wait for subscriber to finish initialization
 my $caughtup_query =
@@ -58,7 +58,7 @@ $node_publisher->safe_psql('postgres',
 
 # recreate the subscription, it will try to do initial copy
 $node_subscriber->safe_psql('postgres',
-	"CREATE SUBSCRIPTION tap_sub CONNECTION '$publisher_connstr application_name=$appname' PUBLICATION tap_pub");
+	"CREATE SUBSCRIPTION tap_sub CONNECTION '$publisher_connstr application_name=$appname' PUBLICATION tap_pub WITH (synchronous_commit = local)");
 
 # but it will be stuck on data copy as it will fail on constraint
 my $started_query =
@@ -81,7 +81,7 @@ is($result, qq(20), 'initial data synced for second sub');
 
 # now check another subscription for the same node pair
 $node_subscriber->safe_psql('postgres',
-	"CREATE SUBSCRIPTION tap_sub2 CONNECTION '$publisher_connstr application_name=$appname' PUBLICATION tap_pub WITH (NOCOPY DATA)");
+	"CREATE SUBSCRIPTION tap_sub2 CONNECTION '$publisher_connstr application_name=$appname' PUBLICATION tap_pub WITH (NOCOPY DATA, synchronous_commit = local)");
 
 # wait for it to start
 $node_subscriber->poll_query_until('postgres', "SELECT pid IS NOT NULL FROM pg_stat_subscription WHERE subname = 'tap_sub2' AND relid IS NULL")
@@ -102,7 +102,7 @@ $node_subscriber->safe_psql('postgres',
 
 # recreate the subscription again
 $node_subscriber->safe_psql('postgres',
-	"CREATE SUBSCRIPTION tap_sub CONNECTION '$publisher_connstr application_name=$appname' PUBLICATION tap_pub");
+	"CREATE SUBSCRIPTION tap_sub CONNECTION '$publisher_connstr application_name=$appname' PUBLICATION tap_pub WITH (synchronous_commit = local)");
 
 # and wait for data sync to finish again
 $node_subscriber->poll_query_until('postgres', $synced_query)

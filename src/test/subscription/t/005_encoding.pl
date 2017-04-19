@@ -30,7 +30,7 @@ my $publisher_connstr = $node_publisher->connstr . ' dbname=postgres';
 my $appname = 'encoding_test';
 
 $node_publisher->safe_psql('postgres', "CREATE PUBLICATION mypub FOR ALL TABLES;");
-$node_subscriber->safe_psql('postgres', "CREATE SUBSCRIPTION mysub CONNECTION '$publisher_connstr application_name=$appname' PUBLICATION mypub;");
+$node_subscriber->safe_psql('postgres', "CREATE SUBSCRIPTION mysub CONNECTION '$publisher_connstr application_name=$appname' PUBLICATION mypub WITH (synchronous_commit = local);");
 
 wait_for_caught_up($node_publisher, $appname);
 
