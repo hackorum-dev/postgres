@@ -455,6 +455,7 @@ typedef struct FuncExpr
 	Oid			inputcollid;	/* OID of collation that function should use */
 	List	   *args;			/* arguments to the function */
 	int			location;		/* token location, or -1 if unknown */
+	bool		isVolatile;
 } FuncExpr;
 
 /*
@@ -500,6 +501,7 @@ typedef struct OpExpr
 	Oid			inputcollid;	/* OID of collation that operator should use */
 	List	   *args;			/* arguments to the operator (1 or 2) */
 	int			location;		/* token location, or -1 if unknown */
+	bool		isVolatile;
 } OpExpr;
 
 /*
