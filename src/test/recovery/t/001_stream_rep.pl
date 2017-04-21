@@ -3,7 +3,7 @@ use strict;
 use warnings;
 use PostgresNode;
 use TestLib;
-use Test::More tests => 28;
+use Test::More 0.82 tests => 28;
 
 # Initialize master node
 my $node_master = get_new_node('master');

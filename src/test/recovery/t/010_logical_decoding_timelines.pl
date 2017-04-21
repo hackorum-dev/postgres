@@ -23,7 +23,7 @@ use warnings;
 
 use PostgresNode;
 use TestLib;
-use Test::More tests => 13;
+use Test::More 0.82 tests => 13;
 use RecursiveCopy;
 use File::Copy;
 use IPC::Run ();

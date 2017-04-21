@@ -22,7 +22,7 @@ use PostgresNode;
 use TestLib;
 use File::Basename;
 use File::Copy;
-use Test::More;
+use Test::More 0.82;
 
 use Exporter 'import';
 our @EXPORT = qw(
