@@ -396,7 +396,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 				relation_expr_list dostmt_opt_list
 				transform_element_list transform_type_list
 				TriggerTransitions TriggerReferencing
-				publication_name_list
+				publication_name_list opt_addtional_criteria
 
 %type <list>	group_by_list
 %type <node>	group_by_item empty_grouping_set rollup_clause cube_clause
@@ -10632,13 +10632,16 @@ returning_clause:
  *****************************************************************************/
 
 DeleteStmt: opt_with_clause DELETE_P FROM relation_expr_opt_alias
-			using_clause where_or_current_clause returning_clause
+			using_clause where_or_current_clause opt_addtional_criteria returning_clause
 				{
 					DeleteStmt *n = makeNode(DeleteStmt);
 					n->relation = $4;
 					n->usingClause = $5;
 					n->whereClause = $6;
-					n->returningList = $7;
+					n->limitCount = list_nth($7, 1);
+					n->limitOffset = list_nth($7, 2);
+					n->sortClause =list_nth($7, 0);
+					n->returningList = $8;
 					n->withClause = $1;
 					$$ = (Node *)n;
 				}
@@ -10704,6 +10707,7 @@ UpdateStmt: opt_with_clause UPDATE relation_expr_opt_alias
 			SET set_clause_list
 			from_clause
 			where_or_current_clause
+			opt_addtional_criteria
 			returning_clause
 				{
 					UpdateStmt *n = makeNode(UpdateStmt);
@@ -10711,7 +10715,10 @@ UpdateStmt: opt_with_clause UPDATE relation_expr_opt_alias
 					n->targetList = $5;
 					n->fromClause = $6;
 					n->whereClause = $7;
-					n->returningList = $8;
+					n->limitCount = list_nth($8, 1);
+					n->limitOffset = list_nth($8, 2);
+					n->sortClause =list_nth($8, 0);
+					n->returningList = $9;
 					n->withClause = $1;
 					$$ = (Node *)n;
 				}
@@ -11251,6 +11258,13 @@ select_limit_value:
 
 select_offset_value:
 			a_expr									{ $$ = $1; }
+		;
+
+opt_addtional_criteria:
+			sort_clause limit_clause offset_clause                   { $$ = list_make3($1, $2, $3); }
+			| sort_clause  offset_clause                   { $$ = list_make3($1, NULL, $2); }
+			| sort_clause limit_clause                    { $$ = list_make3($1, $2, NULL); }
+			| /*EMPTY*/					{ $$ = list_make3(NULL, NULL, NULL); }
 		;
 
 /*

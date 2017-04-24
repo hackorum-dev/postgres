@@ -3403,6 +3403,12 @@ raw_expression_tree_walker(Node *node,
 					return true;
 				if (walker(stmt->whereClause, context))
 					return true;
+				if (walker(stmt->sortClause, context))
+					return true;
+				if (walker(stmt->limitOffset, context))
+					return true;
+				if (walker(stmt->limitCount, context))
+					return true;
 				if (walker(stmt->returningList, context))
 					return true;
 				if (walker(stmt->withClause, context))
@@ -3420,6 +3426,12 @@ raw_expression_tree_walker(Node *node,
 				if (walker(stmt->whereClause, context))
 					return true;
 				if (walker(stmt->fromClause, context))
+					return true;
+				if (walker(stmt->sortClause, context))
+					return true;
+				if (walker(stmt->limitOffset, context))
+					return true;
+				if (walker(stmt->limitCount, context))
 					return true;
 				if (walker(stmt->returningList, context))
 					return true;

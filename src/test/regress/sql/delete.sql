@@ -22,4 +22,17 @@ DELETE FROM delete_test WHERE a > 25;
 
 SELECT id, a, char_length(b) FROM delete_test;
 
+--
+-- Test ORDER BY with limit clause options
+--
+INSERT INTO delete_test (a, b) VALUES (1,'x'),(1,'xx'),(1,'xxx'),(1,'xxxx');
+
+DELETE FROM delete_test  WHERE a=1 ORDER BY id LIMIT 2 OFFSET 1;
+
+SELECT * FROM delete_test;
+
+DELETE FROM delete_test  WHERE a=1 ORDER BY id LIMIT 1;
+
+SELECT * FROM delete_test;
+
 DROP TABLE delete_test;

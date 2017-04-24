@@ -1023,6 +1023,9 @@ _equalDeleteStmt(const DeleteStmt *a, const DeleteStmt *b)
 	COMPARE_NODE_FIELD(relation);
 	COMPARE_NODE_FIELD(usingClause);
 	COMPARE_NODE_FIELD(whereClause);
+	COMPARE_NODE_FIELD(sortClause);
+	COMPARE_NODE_FIELD(limitOffset);
+	COMPARE_NODE_FIELD(limitCount);
 	COMPARE_NODE_FIELD(returningList);
 	COMPARE_NODE_FIELD(withClause);
 
@@ -1036,6 +1039,9 @@ _equalUpdateStmt(const UpdateStmt *a, const UpdateStmt *b)
 	COMPARE_NODE_FIELD(targetList);
 	COMPARE_NODE_FIELD(whereClause);
 	COMPARE_NODE_FIELD(fromClause);
+	COMPARE_NODE_FIELD(sortClause);
+	COMPARE_NODE_FIELD(limitOffset);
+	COMPARE_NODE_FIELD(limitCount);
 	COMPARE_NODE_FIELD(returningList);
 	COMPARE_NODE_FIELD(withClause);
 

@@ -196,6 +196,31 @@ INSERT INTO upsert_test VALUES (1, 'Bat') ON CONFLICT(a)
  1 | Foo, Correlated, Excluded
 (1 row)
 
+--
+-- Test ORDER BY with limit clause options
+--
+delete from update_test;
+INSERT INTO update_test (b, c) VALUES (1,'x'),(2,'xx'),(3,'xxx'),(4,'xxxx');
+UPDATE update_test SET c ='xxxxx'  WHERE a = 10 ORDER BY b LIMIT 2 OFFSET 1;
+SELECT * FROM update_test;
+ a  | b |   c   
+----+---+-------
+ 10 | 1 | x
+ 10 | 4 | xxxx
+ 10 | 2 | xxxxx
+ 10 | 3 | xxxxx
+(4 rows)
+
+UPDATE update_test SET c ='xxxxx'  WHERE a = 10 ORDER BY b LIMIT 1;
+SELECT * FROM update_test;
+ a  | b |   c   
+----+---+-------
+ 10 | 4 | xxxx
+ 10 | 2 | xxxxx
+ 10 | 3 | xxxxx
+ 10 | 1 | xxxxx
+(4 rows)
+
 DROP TABLE update_test;
 DROP TABLE upsert_test;
 -- update to a partition should check partition bound constraint for the new tuple

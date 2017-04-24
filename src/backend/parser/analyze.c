@@ -432,6 +432,19 @@ transformDeleteStmt(ParseState *pstate, DeleteStmt *stmt)
 	qual = transformWhereClause(pstate, stmt->whereClause,
 								EXPR_KIND_WHERE, "WHERE");
 
+	qry->sortClause = transformSortClause(pstate,
+										  stmt->sortClause,
+										  &qry->targetList,
+										  EXPR_KIND_ORDER_BY,
+										  false /* allow SQL92 rules */ );
+
+	/* transform LIMIT */
+	qry->limitOffset = transformLimitClause(pstate, stmt->limitOffset,
+											EXPR_KIND_OFFSET, "OFFSET");
+	qry->limitCount = transformLimitClause(pstate, stmt->limitCount,
+										   EXPR_KIND_LIMIT, "LIMIT");
+
+
 	qry->returningList = transformReturningList(pstate, stmt->returningList);
 
 	/* done building the range table and jointree */
@@ -2245,6 +2258,17 @@ transformUpdateStmt(ParseState *pstate, UpdateStmt *stmt)
 	 * transforming the target list to match the UPDATE target columns.
 	 */
 	qry->targetList = transformUpdateTargetList(pstate, stmt->targetList);
+
+	qry->sortClause = transformSortClause(pstate,
+										  stmt->sortClause,
+										  &qry->targetList,
+										  EXPR_KIND_ORDER_BY,
+										  false /* allow SQL92 rules */ );
+	/* transform LIMIT */
+	qry->limitOffset = transformLimitClause(pstate, stmt->limitOffset,
+											EXPR_KIND_OFFSET, "OFFSET");
+	qry->limitCount = transformLimitClause(pstate, stmt->limitCount,
+										   EXPR_KIND_LIMIT, "LIMIT");
 
 	qry->rtable = pstate->p_rtable;
 	qry->jointree = makeFromExpr(pstate->p_joinlist, qual);

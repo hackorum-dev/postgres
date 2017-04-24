@@ -104,6 +104,21 @@ INSERT INTO upsert_test VALUES (1, 'Bat') ON CONFLICT(a)
   DO UPDATE SET (b, a) = (SELECT b || ', Excluded', a from upsert_test i WHERE i.a = excluded.a)
   RETURNING *;
 
+--
+-- Test ORDER BY with limit clause options
+--
+delete from update_test;
+
+INSERT INTO update_test (b, c) VALUES (1,'x'),(2,'xx'),(3,'xxx'),(4,'xxxx');
+
+UPDATE update_test SET c ='xxxxx'  WHERE a = 10 ORDER BY b LIMIT 2 OFFSET 1;
+
+SELECT * FROM update_test;
+
+UPDATE update_test SET c ='xxxxx'  WHERE a = 10 ORDER BY b LIMIT 1;
+
+SELECT * FROM update_test;
+
 DROP TABLE update_test;
 DROP TABLE upsert_test;
 

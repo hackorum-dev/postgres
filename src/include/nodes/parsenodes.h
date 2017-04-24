@@ -1427,6 +1427,9 @@ typedef struct DeleteStmt
 	RangeVar   *relation;		/* relation to delete from */
 	List	   *usingClause;	/* optional using clause for more tables */
 	Node	   *whereClause;	/* qualifications */
+	List	   *sortClause;		/* sort clause (a list of SortBy's) */
+	Node	   *limitOffset;	/* # of result tuples to skip */
+	Node	   *limitCount;		/* # of result tuples to delete */
 	List	   *returningList;	/* list of expressions to return */
 	WithClause *withClause;		/* WITH clause */
 } DeleteStmt;
@@ -1442,6 +1445,9 @@ typedef struct UpdateStmt
 	List	   *targetList;		/* the target list (of ResTarget) */
 	Node	   *whereClause;	/* qualifications */
 	List	   *fromClause;		/* optional from clause for more tables */
+	List	   *sortClause;		/* sort clause (a list of SortBy's) */
+	Node	   *limitOffset;	/* # of result tuples to skip */
+	Node	   *limitCount;		/* # of result tuples to update */
 	List	   *returningList;	/* list of expressions to return */
 	WithClause *withClause;		/* WITH clause */
 } UpdateStmt;

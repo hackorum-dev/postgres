@@ -2996,6 +2996,9 @@ _copyDeleteStmt(const DeleteStmt *from)
 	COPY_NODE_FIELD(relation);
 	COPY_NODE_FIELD(usingClause);
 	COPY_NODE_FIELD(whereClause);
+	COPY_NODE_FIELD(sortClause);
+	COPY_NODE_FIELD(limitOffset);
+	COPY_NODE_FIELD(limitCount);
 	COPY_NODE_FIELD(returningList);
 	COPY_NODE_FIELD(withClause);
 
@@ -3011,6 +3014,9 @@ _copyUpdateStmt(const UpdateStmt *from)
 	COPY_NODE_FIELD(targetList);
 	COPY_NODE_FIELD(whereClause);
 	COPY_NODE_FIELD(fromClause);
+	COPY_NODE_FIELD(sortClause);
+	COPY_NODE_FIELD(limitOffset);
+	COPY_NODE_FIELD(limitCount);
 	COPY_NODE_FIELD(returningList);
 	COPY_NODE_FIELD(withClause);
 
