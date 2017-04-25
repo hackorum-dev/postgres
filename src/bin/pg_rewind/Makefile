@@ -52,3 +52,6 @@ check:
 
 installcheck:
 	$(prove_installcheck)
+
+check-clean:
+	$(prove_clean)
