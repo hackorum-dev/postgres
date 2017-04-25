@@ -5074,7 +5074,6 @@ get_actual_variable_range(PlannerInfo *root, VariableStatData *vardata,
 			HeapTuple	tup;
 			Datum		values[INDEX_MAX_KEYS];
 			bool		isnull[INDEX_MAX_KEYS];
-			SnapshotData SnapshotDirty;
 
 			estate = CreateExecutorState();
 			econtext = GetPerTupleExprContext(estate);
@@ -5097,7 +5096,6 @@ get_actual_variable_range(PlannerInfo *root, VariableStatData *vardata,
 			slot = MakeSingleTupleTableSlot(RelationGetDescr(heapRel));
 			econtext->ecxt_scantuple = slot;
 			get_typlenbyval(vardata->atttype, &typLen, &typByVal);
-			InitDirtySnapshot(SnapshotDirty);
 
 			/* set up an IS NOT NULL scan key so that we ignore nulls */
 			ScanKeyEntryInitialize(&scankeys[0],
@@ -5129,7 +5127,7 @@ get_actual_variable_range(PlannerInfo *root, VariableStatData *vardata,
 				 * extreme value has been deleted; that case motivates not
 				 * using SnapshotAny here.
 				 */
-				index_scan = index_beginscan(heapRel, indexRel, &SnapshotDirty,
+				index_scan = index_beginscan(heapRel, indexRel, SnapshotAny,
 											 1, 0);
 				index_rescan(index_scan, scankeys, 1, NULL, 0);
 
@@ -5161,7 +5159,7 @@ get_actual_variable_range(PlannerInfo *root, VariableStatData *vardata,
 			/* If max is requested, and we didn't find the index is empty */
 			if (max && have_data)
 			{
-				index_scan = index_beginscan(heapRel, indexRel, &SnapshotDirty,
+				index_scan = index_beginscan(heapRel, indexRel, SnapshotAny,
 											 1, 0);
 				index_rescan(index_scan, scankeys, 1, NULL, 0);
 
