@@ -589,16 +589,13 @@ SnapBuildExportSnapshot(SnapBuild *builder)
 	Snapshot	snap;
 	char	   *snapname;
 
-	if (IsTransactionOrTransactionBlock())
-		elog(ERROR, "cannot export a snapshot from within a transaction");
+	Assert(IsTransactionOrTransactionBlock());
 
 	if (SavedResourceOwnerDuringExport)
 		elog(ERROR, "can only export one snapshot at a time");
 
 	SavedResourceOwnerDuringExport = CurrentResourceOwner;
 	ExportInProgress = true;
-
-	StartTransactionCommand();
 
 	/* There doesn't seem to a nice API to set these */
 	XactIsoLevel = XACT_REPEATABLE_READ;

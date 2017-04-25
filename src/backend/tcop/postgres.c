@@ -173,7 +173,6 @@ static int	InteractiveBackend(StringInfo inBuf);
 static int	interactive_getc(void);
 static int	SocketBackend(StringInfo inBuf);
 static int	ReadCommand(StringInfo inBuf);
-static void forbidden_in_wal_sender(char firstchar);
 static List *pg_rewrite_query(Query *query);
 static bool check_log_statement(List *stmt_list);
 static int	errdetail_execute(List *raw_parsetree_list);
@@ -1015,6 +1014,14 @@ exec_simple_query(const char *query_string)
 		 */
 		if (analyze_requires_snapshot(parsetree))
 		{
+			if (am_walsender && !am_db_walsender)
+			{
+				/* FIXME: message */
+				ereport(ERROR,
+						(errcode(ERRCODE_PROTOCOL_VIOLATION),
+						 errmsg("non-replication statement not supported in pure replication connection")));
+			}
+
 			PushActiveSnapshot(GetTransactionSnapshot());
 			snapshot_set = true;
 		}
@@ -1325,6 +1332,14 @@ exec_parse_message(const char *query_string,	/* string to execute */
 		 */
 		if (analyze_requires_snapshot(raw_parse_tree))
 		{
+			if (am_walsender && !am_db_walsender)
+			{
+				/* FIXME: message */
+				ereport(ERROR,
+						(errcode(ERRCODE_PROTOCOL_VIOLATION),
+						 errmsg("non-replication statement not supported in pure replication connection")));
+			}
+
 			PushActiveSnapshot(GetTransactionSnapshot());
 			snapshot_set = true;
 		}
@@ -1610,6 +1625,14 @@ exec_bind_message(StringInfo input_message)
 		(psrc->raw_parse_tree &&
 		 analyze_requires_snapshot(psrc->raw_parse_tree)))
 	{
+		if (am_walsender && !am_db_walsender)
+		{
+			/* FIXME: message */
+			ereport(ERROR,
+					(errcode(ERRCODE_PROTOCOL_VIOLATION),
+					 errmsg("non-replication statement not supported in pure replication connection")));
+		}
+
 		PushActiveSnapshot(GetTransactionSnapshot());
 		snapshot_set = true;
 	}
@@ -4066,13 +4089,7 @@ PostgresMain(int argc, char *argv[],
 					query_string = pq_getmsgstring(&input_message);
 					pq_getmsgend(&input_message);
 
-					if (am_walsender)
-					{
-						if (!exec_replication_command(query_string))
-							exec_simple_query(query_string);
-					}
-					else
-						exec_simple_query(query_string);
+					exec_simple_query(query_string);
 
 					send_ready_for_query = true;
 				}
@@ -4084,8 +4101,6 @@ PostgresMain(int argc, char *argv[],
 					const char *query_string;
 					int			numParams;
 					Oid		   *paramTypes = NULL;
-
-					forbidden_in_wal_sender(firstchar);
 
 					/* Set statement_timestamp() */
 					SetCurrentStatementStartTimestamp();
@@ -4109,8 +4124,6 @@ PostgresMain(int argc, char *argv[],
 				break;
 
 			case 'B':			/* bind */
-				forbidden_in_wal_sender(firstchar);
-
 				/* Set statement_timestamp() */
 				SetCurrentStatementStartTimestamp();
 
@@ -4126,8 +4139,6 @@ PostgresMain(int argc, char *argv[],
 					const char *portal_name;
 					int			max_rows;
 
-					forbidden_in_wal_sender(firstchar);
-
 					/* Set statement_timestamp() */
 					SetCurrentStatementStartTimestamp();
 
@@ -4140,8 +4151,6 @@ PostgresMain(int argc, char *argv[],
 				break;
 
 			case 'F':			/* fastpath function call */
-				forbidden_in_wal_sender(firstchar);
-
 				/* Set statement_timestamp() */
 				SetCurrentStatementStartTimestamp();
 
@@ -4176,8 +4185,6 @@ PostgresMain(int argc, char *argv[],
 				{
 					int			close_type;
 					const char *close_target;
-
-					forbidden_in_wal_sender(firstchar);
 
 					close_type = pq_getmsgbyte(&input_message);
 					close_target = pq_getmsgstring(&input_message);
@@ -4220,8 +4227,6 @@ PostgresMain(int argc, char *argv[],
 				{
 					int			describe_type;
 					const char *describe_target;
-
-					forbidden_in_wal_sender(firstchar);
 
 					/* Set statement_timestamp() (needed for xact) */
 					SetCurrentStatementStartTimestamp();
@@ -4303,30 +4308,6 @@ PostgresMain(int argc, char *argv[],
 		}
 	}							/* end of input-reading loop */
 }
-
-/*
- * Throw an error if we're a WAL sender process.
- *
- * This is used to forbid anything else than simple query protocol messages
- * in a WAL sender process.  'firstchar' specifies what kind of a forbidden
- * message was received, and is used to construct the error message.
- */
-static void
-forbidden_in_wal_sender(char firstchar)
-{
-	if (am_walsender)
-	{
-		if (firstchar == 'F')
-			ereport(ERROR,
-					(errcode(ERRCODE_PROTOCOL_VIOLATION),
-					 errmsg("fastpath function calls not supported in a replication connection")));
-		else
-			ereport(ERROR,
-					(errcode(ERRCODE_PROTOCOL_VIOLATION),
-					 errmsg("extended query protocol not supported in a replication connection")));
-	}
-}
-
 
 /*
  * Obtain platform stack depth limit (in bytes)

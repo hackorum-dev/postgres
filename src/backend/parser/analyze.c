@@ -42,6 +42,7 @@
 #include "parser/parse_target.h"
 #include "parser/parsetree.h"
 #include "rewrite/rewriteManip.h"
+#include "replication/walsender.h"
 #include "utils/rel.h"
 
 
@@ -103,6 +104,15 @@ parse_analyze(RawStmt *parseTree, const char *sourceText,
 	Assert(sourceText != NULL); /* required as of 8.4 */
 
 	pstate->p_sourcetext = sourceText;
+
+	if (am_walsender && !am_db_walsender &&
+		analyze_requires_snapshot(parseTree))
+	{
+		/* FIXME: message */
+		ereport(ERROR,
+				(errcode(ERRCODE_PROTOCOL_VIOLATION),
+				 errmsg("non-replication statement not supported in pure replication connection")));
+	}
 
 	if (numParams > 0)
 		parse_fixed_parameters(pstate, paramTypes, numParams);

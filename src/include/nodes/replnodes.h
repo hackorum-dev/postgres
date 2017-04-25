@@ -17,6 +17,14 @@
 #include "access/xlogdefs.h"
 #include "nodes/pg_list.h"
 
+
+typedef struct ReplicationCmd
+{
+	NodeTag		type;
+
+	Node	   *replicationCmd;
+} ReplicationCmd;
+
 typedef enum ReplicationKind
 {
 	REPLICATION_KIND_PHYSICAL,

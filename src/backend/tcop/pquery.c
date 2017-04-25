@@ -1155,6 +1155,8 @@ PortalRunUtility(Portal portal, PlannedStmt *pstmt,
 		  IsA(utilityStmt, VariableSetStmt) ||
 		  IsA(utilityStmt, VariableShowStmt) ||
 		  IsA(utilityStmt, ConstraintsSetStmt) ||
+		  /* replication commands shouldn't run w/ snapshot  */
+		  IsA(utilityStmt, ReplicationCmd) ||
 	/* efficiency hacks from here down */
 		  IsA(utilityStmt, FetchStmt) ||
 		  IsA(utilityStmt, ListenStmt) ||

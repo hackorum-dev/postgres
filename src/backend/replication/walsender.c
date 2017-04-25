@@ -360,18 +360,7 @@ IdentifySystem(void)
 	snprintf(xpos, sizeof(xpos), "%X/%X", (uint32) (logptr >> 32), (uint32) logptr);
 
 	if (MyDatabaseId != InvalidOid)
-	{
-		MemoryContext cur = CurrentMemoryContext;
-
-		/* syscache access needs a transaction env. */
-		StartTransactionCommand();
-		/* make dbname live outside TX context */
-		MemoryContextSwitchTo(cur);
 		dbname = get_database_name(MyDatabaseId);
-		CommitTransactionCommand();
-		/* CommitTransactionCommand switches to TopMemoryContext */
-		MemoryContextSwitchTo(cur);
-	}
 
 	dest = CreateDestReceiver(DestRemoteSimple);
 	MemSet(nulls, false, sizeof(nulls));
@@ -870,6 +859,7 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 							  cmd->temporary ? RS_TEMPORARY : RS_EPHEMERAL);
 	}
 
+
 	if (cmd->kind == REPLICATION_KIND_LOGICAL)
 	{
 		LogicalDecodingContext *ctx;
@@ -908,6 +898,9 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 								"must not be called in a subtransaction")));
 		}
 
+		/* XXX: document */
+		CommitTransactionCommand();
+
 		ctx = CreateInitDecodingContext(cmd->plugin, NIL,
 										logical_read_xlog_page,
 										WalSndPrepareWrite, WalSndWriteData);
@@ -923,6 +916,9 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 
 		/* build initial snapshot, might take a while */
 		DecodingContextFindStartpoint(ctx);
+
+		/* match*/
+		StartTransactionCommand();
 
 		/*
 		 * Export or use the snapshot if we've been asked to do so.
@@ -940,7 +936,9 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 
 			snap = SnapBuildInitialSnapshot(ctx->snapshot_builder);
 			RestoreTransactionSnapshot(snap, MyProc);
+
 		}
+
 
 		/* don't need the decoding context anymore */
 		FreeDecodingContext(ctx);
@@ -1354,65 +1352,37 @@ WalSndWaitForWal(XLogRecPtr loc)
 	return RecentFlushPtr;
 }
 
-/*
- * Execute an incoming replication command.
- *
- * Returns true if the cmd_string was recognized as WalSender command, false
- * if not.
- */
 bool
-exec_replication_command(const char *cmd_string)
+exec_replication_command(ReplicationCmd *cmd, const char *query_string, bool is_toplevel)
 {
-	int			parse_rc;
-	Node	   *cmd_node;
-	MemoryContext cmd_context;
-	MemoryContext old_context;
-
-	/*
-	 * CREATE_REPLICATION_SLOT ... LOGICAL exports a snapshot until the next
-	 * command arrives. Clean up the old stuff if there's anything.
-	 */
-	SnapBuildClearExportedSnapshot();
-
-	CHECK_FOR_INTERRUPTS();
-
-	cmd_context = AllocSetContextCreate(CurrentMemoryContext,
-										"Replication command context",
-										ALLOCSET_DEFAULT_SIZES);
-	old_context = MemoryContextSwitchTo(cmd_context);
-
-	replication_scanner_init(cmd_string);
-	parse_rc = replication_yyparse();
-	if (parse_rc != 0)
+	if (!am_walsender)
+	{
 		ereport(ERROR,
-				(errcode(ERRCODE_SYNTAX_ERROR),
-				 (errmsg_internal("replication command parser returned %d",
-								  parse_rc))));
-
-	cmd_node = replication_parse_result;
+				(errcode(ERRCODE_PROTOCOL_VIOLATION),
+				 errmsg("replication protocol statement not supported in a normal connection")));
+	}
 
 	/*
 	 * Log replication command if log_replication_commands is enabled. Even
 	 * when it's disabled, log the command with DEBUG1 level for backward
-	 * compatibility. Note that SQL commands are not logged here, and will be
-	 * logged later if log_statement is enabled.
+	 * compatibility.
 	 */
-	if (cmd_node->type != T_SQLCmd)
-		ereport(log_replication_commands ? LOG : DEBUG1,
-				(errmsg("received replication command: %s", cmd_string)));
+	ereport(log_replication_commands ? LOG : DEBUG1,
+			(errmsg("received replication command: %s", query_string)));
 
 	/*
 	 * CREATE_REPLICATION_SLOT ... LOGICAL exports a snapshot. If it was
 	 * called outside of transaction the snapshot should be cleared here.
+	 *
+	 * FIXME: this is completely borked.
 	 */
 	if (!IsTransactionBlock())
 		SnapBuildClearExportedSnapshot();
 
 	/*
-	 * For aborted transactions, don't allow anything except pure SQL,
-	 * the exec_simple_query() will handle it correctly.
+	 * Nothing to do here in an aborted transaction.
 	 */
-	if (IsAbortedTransactionBlockState() && !IsA(cmd_node, SQLCmd))
+	if (IsAbortedTransactionBlockState())
 		ereport(ERROR,
 				(errcode(ERRCODE_IN_FAILED_SQL_TRANSACTION),
 				 errmsg("current transaction is aborted, "
@@ -1428,7 +1398,7 @@ exec_replication_command(const char *cmd_string)
 	initStringInfo(&reply_message);
 	initStringInfo(&tmpbuf);
 
-	switch (cmd_node->type)
+	switch (nodeTag(cmd->replicationCmd))
 	{
 		case T_IdentifySystemCmd:
 			IdentifySystem();
@@ -1436,63 +1406,45 @@ exec_replication_command(const char *cmd_string)
 
 		case T_BaseBackupCmd:
 			PreventTransactionChain(true, "BASE_BACKUP");
-			SendBaseBackup((BaseBackupCmd *) cmd_node);
+			CommitTransactionCommand();
+			SendBaseBackup((BaseBackupCmd *) cmd->replicationCmd);
+			StartTransactionCommand();
 			break;
 
 		case T_CreateReplicationSlotCmd:
-			CreateReplicationSlot((CreateReplicationSlotCmd *) cmd_node);
+			CreateReplicationSlot((CreateReplicationSlotCmd *) cmd->replicationCmd);
 			break;
 
 		case T_DropReplicationSlotCmd:
-			DropReplicationSlot((DropReplicationSlotCmd *) cmd_node);
+			DropReplicationSlot((DropReplicationSlotCmd *) cmd->replicationCmd);
 			break;
 
 		case T_StartReplicationCmd:
 			{
-				StartReplicationCmd *cmd = (StartReplicationCmd *) cmd_node;
+				StartReplicationCmd *scmd = (StartReplicationCmd *) cmd->replicationCmd;
 
 				PreventTransactionChain(true, "START_REPLICATION");
 
-				if (cmd->kind == REPLICATION_KIND_PHYSICAL)
-					StartReplication(cmd);
+				CommitTransactionCommand();
+
+				if (scmd->kind == REPLICATION_KIND_PHYSICAL)
+					StartReplication(scmd);
 				else
-					StartLogicalReplication(cmd);
+					StartLogicalReplication(scmd);
+
+				StartTransactionCommand();
 				break;
 			}
 
 		case T_TimeLineHistoryCmd:
 			PreventTransactionChain(true, "TIMELINE_HISTORY");
-			SendTimeLineHistory((TimeLineHistoryCmd *) cmd_node);
+			SendTimeLineHistory((TimeLineHistoryCmd *) cmd->replicationCmd);
 			break;
-
-		case T_VariableShowStmt:
-			{
-				DestReceiver *dest = CreateDestReceiver(DestRemoteSimple);
-				VariableShowStmt *n = (VariableShowStmt *) cmd_node;
-
-				GetPGVariable(n->name, dest);
-			}
-			break;
-
-		case T_SQLCmd:
-			if (MyDatabaseId == InvalidOid)
-				ereport(ERROR,
-						(errmsg("not connected to database")));
-
-			/* Tell the caller that this wasn't a WalSender command. */
-			return false;
 
 		default:
 			elog(ERROR, "unrecognized replication command node tag: %u",
-				 cmd_node->type);
+				 cmd->replicationCmd->type);
 	}
-
-	/* done */
-	MemoryContextSwitchTo(old_context);
-	MemoryContextDelete(cmd_context);
-
-	/* Send CommandComplete message */
-	EndCommand("SELECT", DestRemote);
 
 	return true;
 }

@@ -472,13 +472,13 @@ typedef enum NodeTag
 	/*
 	 * TAGS FOR REPLICATION GRAMMAR PARSE NODES (replnodes.h)
 	 */
+	T_ReplicationCmd, /* container for all other replication commands */
 	T_IdentifySystemCmd,
 	T_BaseBackupCmd,
 	T_CreateReplicationSlotCmd,
 	T_DropReplicationSlotCmd,
 	T_StartReplicationCmd,
 	T_TimeLineHistoryCmd,
-	T_SQLCmd,
 
 	/*
 	 * TAGS FOR RANDOM OTHER STUFF

@@ -583,7 +583,7 @@ ReceiveXlogStream(PGconn *conn, StreamCtl *stream)
 			return true;
 
 		/* Initiate the replication stream at specified location */
-		snprintf(query, sizeof(query), "START_REPLICATION %s%X/%X TIMELINE %u",
+		snprintf(query, sizeof(query), "START_REPLICATION %s'%X/%X' TIMELINE %u",
 				 slotcmd,
 				 (uint32) (stream->startpos >> 32), (uint32) stream->startpos,
 				 stream->timeline);

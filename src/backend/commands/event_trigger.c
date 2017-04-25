@@ -295,7 +295,13 @@ check_ddl_tag(const char *tag)
 		pg_strcasecmp(tag, "REVOKE") == 0 ||
 		pg_strcasecmp(tag, "DROP OWNED") == 0 ||
 		pg_strcasecmp(tag, "IMPORT FOREIGN SCHEMA") == 0 ||
-		pg_strcasecmp(tag, "SECURITY LABEL") == 0)
+		pg_strcasecmp(tag, "SECURITY LABEL") == 0 ||
+		pg_strcasecmp(tag, "IDENTIFY_SYSTEM") == 0 ||
+		pg_strcasecmp(tag, "BASE_BACKUP") == 0 ||
+		pg_strcasecmp(tag, "CREATE_REPLICATION_SLOT") == 0 ||
+		pg_strcasecmp(tag, "DROP_REPLICATION_SLOT") == 0 ||
+		pg_strcasecmp(tag, "START_REPLICATION") == 0 ||
+		pg_strcasecmp(tag, "TIMELINE_HISTORY") == 0)
 		return EVENT_TRIGGER_COMMAND_TAG_OK;
 
 	/*

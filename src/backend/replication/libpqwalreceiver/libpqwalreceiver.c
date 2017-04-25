@@ -352,7 +352,7 @@ libpqrcv_startstreaming(WalReceiverConn *conn,
 	if (options->logical)
 		appendStringInfo(&cmd, " LOGICAL");
 
-	appendStringInfo(&cmd, " %X/%X",
+	appendStringInfo(&cmd, " '%X/%X'",
 					 (uint32) (options->startpoint >> 32),
 					 (uint32) options->startpoint);
 

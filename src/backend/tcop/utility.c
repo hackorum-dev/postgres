@@ -57,10 +57,12 @@
 #include "commands/vacuum.h"
 #include "commands/view.h"
 #include "miscadmin.h"
+#include "nodes/replnodes.h"
 #include "parser/parse_utilcmd.h"
 #include "postmaster/bgwriter.h"
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rewriteRemove.h"
+#include "replication/walsender.h"
 #include "storage/fd.h"
 #include "tcop/pquery.h"
 #include "tcop/utility.h"
@@ -922,6 +924,11 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 					ExecSecLabelStmt(stmt);
 				break;
 			}
+
+		case T_ReplicationCmd:
+			exec_replication_command((ReplicationCmd *) parsetree, queryString, isTopLevel);
+			strcpy(completionTag, CreateCommandTag(parsetree));
+			break;
 
 		default:
 			/* All other statement types have event trigger support */
@@ -2843,6 +2850,40 @@ CreateCommandTag(Node *parsetree)
 			}
 			break;
 
+		case T_ReplicationCmd:
+			switch (nodeTag(((ReplicationCmd *) parsetree)->replicationCmd))
+			{
+				case T_IdentifySystemCmd:
+					tag = "IDENTIFY_SYSTEM";
+					break;
+
+				case T_BaseBackupCmd:
+					tag = "BASE_BACKUP";
+					break;
+
+				case T_CreateReplicationSlotCmd:
+					tag = "CREATE_REPLICATION_SLOT";
+					break;
+
+				case T_DropReplicationSlotCmd:
+					tag = "DROP_REPLICATION_SLOT";
+					break;
+
+				case T_StartReplicationCmd:
+					tag = "START_REPLICATION";
+					break;
+
+				case T_TimeLineHistoryCmd:
+					tag = "TIMELINE_HISTORY";
+					break;
+				default:
+					elog(WARNING, "unrecognized replication command: %d",
+						 (int) nodeTag(parsetree));
+					tag = "???";
+					break;
+			}
+			break;
+
 		default:
 			elog(WARNING, "unrecognized node type: %d",
 				 (int) nodeTag(parsetree));
@@ -3347,6 +3388,11 @@ GetCommandLogLevel(Node *parsetree)
 				}
 
 			}
+			break;
+
+		case T_ReplicationCmd:
+			/* FIXME: Invent new category? */
+			lev = LOGSTMT_DDL;
 			break;
 
 		default:

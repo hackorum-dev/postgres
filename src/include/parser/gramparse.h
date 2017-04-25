@@ -20,6 +20,7 @@
 #define GRAMPARSE_H
 
 #include "nodes/parsenodes.h"
+#include "access/xlogdefs.h"
 #include "parser/scanner.h"
 
 /*

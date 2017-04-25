@@ -48,6 +48,7 @@
 #include <ctype.h>
 #include <limits.h>
 
+#include "access/xlogdefs.h"
 #include "catalog/index.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_am.h"
@@ -56,9 +57,12 @@
 #include "commands/trigger.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
+#include "nodes/replnodes.h"
 #include "parser/gramparse.h"
 #include "parser/parser.h"
 #include "parser/parse_expr.h"
+#include "replication/walsender.h"
+#include "replication/walsender_private.h"
 #include "storage/lmgr.h"
 #include "utils/date.h"
 #include "utils/datetime.h"
@@ -241,6 +245,8 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	PartitionSpec		*partspec;
 	PartitionRangeDatum	*partrange_datum;
 	RoleSpec			*rolespec;
+	XLogRecPtr			recptr;
+	uint32				uintval;
 }
 
 %type <node>	stmt schema_stmt
@@ -584,6 +590,25 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <partrange_datum>	PartitionRangeDatum
 %type <list>		range_datum_list
 
+
+/* replication stuff */
+%type <node>	replication_command
+%type <node>	base_backup start_replication start_logical_replication
+				create_replication_slot drop_replication_slot identify_system
+				timeline_history
+%type <list>	base_backup_opt_list
+%type <defelt>	base_backup_opt
+%type <uintval>	opt_timeline
+%type <list>	plugin_options plugin_opt_list
+%type <defelt>	plugin_opt_elem
+%type <node>	plugin_opt_arg
+%type <str>		opt_slot
+%type <boolean>	opt_temporary
+%type <list>	create_slot_opt_list
+%type <defelt>	create_slot_opt
+%type <recptr>	recptr
+
+
 /*
  * Non-keyword token types.  These are hard-wired into the "flex" lexer.
  * They must be listed first so that their numeric codes do not depend on
@@ -610,7 +635,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	AGGREGATE ALL ALSO ALTER ALWAYS ANALYSE ANALYZE AND ANY ARRAY AS ASC
 	ASSERTION ASSIGNMENT ASYMMETRIC AT ATTACH ATTRIBUTE AUTHORIZATION
 
-	BACKWARD BEFORE BEGIN_P BETWEEN BIGINT BINARY BIT
+	BACKWARD BASE_BACKUP BEFORE BEGIN_P BETWEEN BIGINT BINARY BIT
 	BOOLEAN_P BOTH BY
 
 	CACHE CALLED CASCADE CASCADED CASE CAST CATALOG_P CHAIN CHAR_P
@@ -618,29 +643,29 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	CLUSTER COALESCE COLLATE COLLATION COLUMN COLUMNS COMMENT COMMENTS COMMIT
 	COMMITTED CONCURRENTLY CONFIGURATION CONFLICT CONNECTION CONSTRAINT
 	CONSTRAINTS CONTENT_P CONTINUE_P CONVERSION_P COPY COST CREATE
-	CROSS CSV CUBE CURRENT_P
+	CREATE_REPLICATION_SLOT CROSS CSV CUBE CURRENT_P
 	CURRENT_CATALOG CURRENT_DATE CURRENT_ROLE CURRENT_SCHEMA
 	CURRENT_TIME CURRENT_TIMESTAMP CURRENT_USER CURSOR CYCLE
 
 	DATA_P DATABASE DAY_P DEALLOCATE DEC DECIMAL_P DECLARE DEFAULT DEFAULTS
 	DEFERRABLE DEFERRED DEFINER DELETE_P DELIMITER DELIMITERS DEPENDS DESC
 	DETACH DICTIONARY DISABLE_P DISCARD DISTINCT DO DOCUMENT_P DOMAIN_P
-	DOUBLE_P DROP
+	DOUBLE_P DROP DROP_REPLICATION_SLOT
 
 	EACH ELSE ENABLE_P ENCODING ENCRYPTED END_P ENUM_P ESCAPE EVENT EXCEPT
-	EXCLUDE EXCLUDING EXCLUSIVE EXECUTE EXISTS EXPLAIN
+	EXCLUDE EXCLUDING EXCLUSIVE EXECUTE EXISTS EXPLAIN EXPORT_SNAPSHOT
 	EXTENSION EXTERNAL EXTRACT
 
-	FALSE_P FAMILY FETCH FILTER FIRST_P FLOAT_P FOLLOWING FOR
+	FALSE_P FAMILY FAST_P FETCH FILTER FIRST_P FLOAT_P FOLLOWING FOR
 	FORCE FOREIGN FORWARD FREEZE FROM FULL FUNCTION FUNCTIONS
 
 	GENERATED GLOBAL GRANT GRANTED GREATEST GROUP_P GROUPING
 
 	HANDLER HAVING HEADER_P HOLD HOUR_P
 
-	IDENTITY_P IF_P ILIKE IMMEDIATE IMMUTABLE IMPLICIT_P IMPORT_P IN_P
-	INCLUDING INCREMENT INDEX INDEXES INHERIT INHERITS INITIALLY INLINE_P
-	INNER_P INOUT INPUT_P INSENSITIVE INSERT INSTEAD INT_P INTEGER
+	IDENTITY_P IDENTIFY_SYSTEM IF_P ILIKE IMMEDIATE IMMUTABLE IMPLICIT_P
+	IMPORT_P IN_P INCLUDING INCREMENT INDEX INDEXES INHERIT INHERITS INITIALLY
+	INLINE_P INNER_P INOUT INPUT_P INSENSITIVE INSERT INSTEAD INT_P INTEGER
 	INTERSECT INTERVAL INTO INVOKER IS ISNULL ISOLATION
 
 	JOIN
@@ -649,45 +674,46 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 	LABEL LANGUAGE LARGE_P LAST_P LATERAL_P
 	LEADING LEAKPROOF LEAST LEFT LEVEL LIKE LIMIT LISTEN LOAD LOCAL
-	LOCALTIME LOCALTIMESTAMP LOCATION LOCK_P LOCKED LOGGED
+	LOCALTIME LOCALTIMESTAMP LOCATION LOCK_P LOCKED LOGGED LOGICAL_P
 
-	MAPPING MATCH MATERIALIZED MAXVALUE METHOD MINUTE_P MINVALUE MODE MONTH_P MOVE
+	MAPPING MATCH MATERIALIZED MAXVALUE MAX_RATE METHOD MINUTE_P MINVALUE MODE
+	MONTH_P MOVE
 
-	NAME_P NAMES NATIONAL NATURAL NCHAR NEW NEXT NO NONE
+	NAME_P NAMES NATIONAL NATURAL NCHAR NEW NEXT NO NOEXPORT_SNAPSHOT NONE
 	NOREFRESH NOT NOTHING NOTIFY NOTNULL NOWAIT NULL_P NULLIF
 	NULLS_P NUMERIC
 
 	OBJECT_P OF OFF OFFSET OIDS OLD ON ONLY OPERATOR OPTION OPTIONS OR
 	ORDER ORDINALITY OUT_P OUTER_P OVER OVERLAPS OVERLAY OVERRIDING OWNED OWNER
 
-	PARALLEL PARSER PARTIAL PARTITION PASSING PASSWORD PLACING PLANS POLICY
-	POSITION PRECEDING PRECISION PRESERVE PREPARE PREPARED PRIMARY
-	PRIOR PRIVILEGES PROCEDURAL PROCEDURE PROGRAM PUBLICATION
+	PARALLEL PARSER PARTIAL PARTITION PASSING PASSWORD PHYSICAL PLACING PLANS
+	POLICY POSITION PRECEDING PRECISION PRESERVE PREPARE PREPARED PRIMARY
+	PRIOR PRIVILEGES PROCEDURAL PROCEDURE PROGRAM PROGRESS PUBLICATION
 
 	QUOTE
 
 	RANGE READ REAL REASSIGN RECHECK RECURSIVE REF REFERENCES REFERENCING
 	REFRESH REINDEX RELATIVE_P RELEASE RENAME REPEATABLE REPLACE REPLICA
-	RESET RESTART RESTRICT RETURNING RETURNS REVOKE RIGHT ROLE ROLLBACK ROLLUP
-	ROW ROWS RULE
+	RESERVE_WAL RESET RESTART RESTRICT RETURNING RETURNS REVOKE RIGHT ROLE
+	ROLLBACK ROLLUP ROW ROWS RULE
 
 	SAVEPOINT SCHEMA SCHEMAS SCROLL SEARCH SECOND_P SECURITY SELECT SEQUENCE SEQUENCES
 	SERIALIZABLE SERVER SESSION SESSION_USER SET SETS SETOF SHARE SHOW
 	SIMILAR SIMPLE SKIP SLOT SMALLINT SNAPSHOT SOME SQL_P STABLE STANDALONE_P
-	START STATEMENT STATISTICS STDIN STDOUT STORAGE STRICT_P STRIP_P
-	SUBSCRIPTION SUBSTRING SYMMETRIC SYSID SYSTEM_P
+	START START_REPLICATION STATEMENT STATISTICS STDIN STDOUT STORAGE STRICT_P
+	STRIP_P SUBSCRIPTION SUBSTRING SYMMETRIC SYSID SYSTEM_P
 
-	TABLE TABLES TABLESAMPLE TABLESPACE TEMP TEMPLATE TEMPORARY TEXT_P THEN
-	TIME TIMESTAMP TO TRAILING TRANSACTION TRANSFORM TREAT TRIGGER TRIM TRUE_P
-	TRUNCATE TRUSTED TYPE_P TYPES_P
+	TABLE TABLES TABLESAMPLE TABLESPACE TABLESPACE_MAP_P TEMP TEMPLATE TEMPORARY
+	TEXT_P THEN TIME TIMELINE_P TIMELINE_HISTORY TIMESTAMP TO TRAILING TRANSACTION
+	TRANSFORM TREAT TRIGGER TRIM TRUE_P	TRUNCATE TRUSTED TYPE_P TYPES_P
 
 	UNBOUNDED UNCOMMITTED UNENCRYPTED UNION UNIQUE UNKNOWN UNLISTEN UNLOGGED
-	UNTIL UPDATE USER USING
+	UNTIL UPDATE USE_SNAPSHOT USER USING
 
 	VACUUM VALID VALIDATE VALIDATOR VALUE_P VALUES VARCHAR VARIADIC VARYING
 	VERBOSE VERSION_P VIEW VIEWS VOLATILE
 
-	WHEN WHERE WHITESPACE_P WINDOW WITH WITHIN WITHOUT WORK WRAPPER WRITE
+	WAL_P WHEN WHERE WHITESPACE_P WINDOW WITH WITHIN WITHOUT WORK WRAPPER WRITE
 
 	XML_P XMLATTRIBUTES XMLCONCAT XMLELEMENT XMLEXISTS XMLFOREST XMLNAMESPACES
 	XMLPARSE XMLPI XMLROOT XMLSERIALIZE XMLTABLE
@@ -942,6 +968,7 @@ stmt :
 			| VariableSetStmt
 			| VariableShowStmt
 			| ViewStmt
+			| replication_command
 			| /*EMPTY*/
 				{ $$ = NULL; }
 		;
@@ -14487,6 +14514,311 @@ AexprConst: Iconst
 				}
 		;
 
+/* replication protocol stuff */
+
+replication_command:
+			identify_system
+			{
+				ReplicationCmd *rcmd = makeNode(ReplicationCmd);
+				rcmd->replicationCmd = $1;
+				$$ = (Node *) rcmd;
+			}
+			| base_backup
+			{
+				ReplicationCmd *rcmd = makeNode(ReplicationCmd);
+				rcmd->replicationCmd = $1;
+				$$ = (Node *) rcmd;
+			}
+			| start_replication
+			{
+				ReplicationCmd *rcmd = makeNode(ReplicationCmd);
+				rcmd->replicationCmd = $1;
+				$$ = (Node *) rcmd;
+			}
+			| start_logical_replication
+			{
+				ReplicationCmd *rcmd = makeNode(ReplicationCmd);
+				rcmd->replicationCmd = $1;
+				$$ = (Node *) rcmd;
+			}
+			| create_replication_slot
+			{
+				ReplicationCmd *rcmd = makeNode(ReplicationCmd);
+				rcmd->replicationCmd = $1;
+				$$ = (Node *) rcmd;
+			}
+			| drop_replication_slot
+			{
+				ReplicationCmd *rcmd = makeNode(ReplicationCmd);
+				rcmd->replicationCmd = $1;
+				$$ = (Node *) rcmd;
+			}
+			| timeline_history
+			{
+				ReplicationCmd *rcmd = makeNode(ReplicationCmd);
+				rcmd->replicationCmd = $1;
+				$$ = (Node *) rcmd;
+			}
+;
+
+
+/*
+ * IDENTIFY_SYSTEM
+ */
+identify_system:
+			IDENTIFY_SYSTEM
+				{
+					$$ = (Node *) makeNode(IdentifySystemCmd);
+				}
+			;
+
+/*
+ * BASE_BACKUP [LABEL '<label>'] [PROGRESS] [FAST] [WAL] [NOWAIT]
+ * [MAX_RATE %d] [TABLESPACE_MAP]
+ */
+base_backup:
+			BASE_BACKUP base_backup_opt_list
+				{
+					BaseBackupCmd *cmd = makeNode(BaseBackupCmd);
+					cmd->options = $2;
+					$$ = (Node *) cmd;
+				}
+			;
+
+base_backup_opt_list:
+			base_backup_opt_list base_backup_opt
+				{ $$ = lappend($1, $2); }
+			| /* EMPTY */
+				{ $$ = NIL; }
+			;
+
+base_backup_opt:
+			LABEL SCONST
+				{
+				  $$ = makeDefElem("label",
+								   (Node *)makeString($2), -1);
+				}
+			| PROGRESS
+				{
+				  $$ = makeDefElem("progress",
+								   (Node *)makeInteger(TRUE), -1);
+				}
+			| FAST_P
+				{
+				  $$ = makeDefElem("fast",
+								   (Node *)makeInteger(TRUE), -1);
+				}
+			| WAL_P
+				{
+				  $$ = makeDefElem("wal",
+								   (Node *)makeInteger(TRUE), -1);
+				}
+			| NOWAIT
+				{
+				  $$ = makeDefElem("nowait",
+								   (Node *)makeInteger(TRUE), -1);
+				}
+			| MAX_RATE ICONST
+				{
+				  $$ = makeDefElem("max_rate",
+								   (Node *)makeInteger($2), -1);
+				}
+			| TABLESPACE_MAP_P
+				{
+				  $$ = makeDefElem("tablespace_map",
+								   (Node *)makeInteger(TRUE), -1);
+				}
+			;
+
+create_replication_slot:
+			/* CREATE_REPLICATION_SLOT slot TEMPORARY PHYSICAL RESERVE_WAL */
+			CREATE_REPLICATION_SLOT IDENT opt_temporary PHYSICAL create_slot_opt_list
+				{
+					CreateReplicationSlotCmd *cmd;
+					cmd = makeNode(CreateReplicationSlotCmd);
+					cmd->kind = REPLICATION_KIND_PHYSICAL;
+					cmd->slotname = $2;
+					cmd->temporary = $3;
+					cmd->options = $5;
+					$$ = (Node *) cmd;
+				}
+			/* CREATE_REPLICATION_SLOT slot TEMPORARY LOGICAL plugin */
+			| CREATE_REPLICATION_SLOT IDENT opt_temporary LOGICAL_P IDENT create_slot_opt_list
+				{
+					CreateReplicationSlotCmd *cmd;
+					cmd = makeNode(CreateReplicationSlotCmd);
+					cmd->kind = REPLICATION_KIND_LOGICAL;
+					cmd->slotname = $2;
+					cmd->temporary = $3;
+					cmd->plugin = $5;
+					cmd->options = $6;
+					$$ = (Node *) cmd;
+				}
+			;
+
+create_slot_opt_list:
+			create_slot_opt_list create_slot_opt
+				{ $$ = lappend($1, $2); }
+			| /* EMPTY */
+				{ $$ = NIL; }
+			;
+
+create_slot_opt:
+			EXPORT_SNAPSHOT
+				{
+				  $$ = makeDefElem("export_snapshot",
+								   (Node *)makeInteger(TRUE), -1);
+				}
+			| NOEXPORT_SNAPSHOT
+				{
+				  $$ = makeDefElem("export_snapshot",
+								   (Node *)makeInteger(FALSE), -1);
+				}
+			| USE_SNAPSHOT
+				{
+				  $$ = makeDefElem("use_snapshot",
+								   (Node *)makeInteger(TRUE), -1);
+				}
+			| RESERVE_WAL
+				{
+				  $$ = makeDefElem("reserve_wal",
+								   (Node *)makeInteger(TRUE), -1);
+				}
+			;
+
+/* DROP_REPLICATION_SLOT slot */
+drop_replication_slot:
+			DROP_REPLICATION_SLOT IDENT
+				{
+					DropReplicationSlotCmd *cmd;
+					cmd = makeNode(DropReplicationSlotCmd);
+					cmd->slotname = $2;
+					$$ = (Node *) cmd;
+				}
+			;
+
+recptr:
+			SCONST
+			   {
+					uint32	hi,
+							lo;
+					if (sscanf($1, "%X/%X", &hi, &lo) != 2)
+							ereport(ERROR,
+									(errcode(ERRCODE_SYNTAX_ERROR),
+									 errmsg("invalid frakbar"),
+									 parser_errposition(@1)));
+					$$ = ((uint64) hi) << 32 | lo;
+				}
+
+/*
+ * START_REPLICATION [SLOT slot] [PHYSICAL] %X/%X [TIMELINE %d]
+ */
+start_replication:
+			START_REPLICATION opt_slot opt_physical recptr opt_timeline
+				{
+					StartReplicationCmd *cmd;
+
+					cmd = makeNode(StartReplicationCmd);
+					cmd->kind = REPLICATION_KIND_PHYSICAL;
+					cmd->slotname = $2;
+					cmd->startpoint = $4;
+					cmd->timeline = $5;
+					$$ = (Node *) cmd;
+				}
+			;
+
+/* START_REPLICATION SLOT slot LOGICAL %X/%X options */
+start_logical_replication:
+			START_REPLICATION SLOT IDENT LOGICAL_P recptr plugin_options
+				{
+					StartReplicationCmd *cmd;
+					cmd = makeNode(StartReplicationCmd);
+					cmd->kind = REPLICATION_KIND_LOGICAL;
+					cmd->slotname = $3;
+					cmd->startpoint = $5;
+					cmd->options = $6;
+					$$ = (Node *) cmd;
+				}
+			;
+/*
+ * TIMELINE_HISTORY %d
+ */
+timeline_history:
+			TIMELINE_HISTORY ICONST
+				{
+					TimeLineHistoryCmd *cmd;
+
+					if ($2 <= 0)
+						ereport(ERROR,
+								(errcode(ERRCODE_SYNTAX_ERROR),
+								 (errmsg("invalid timeline %u", $2))));
+
+					cmd = makeNode(TimeLineHistoryCmd);
+					cmd->timeline = $2;
+
+					$$ = (Node *) cmd;
+				}
+			;
+
+opt_physical:
+			PHYSICAL
+			| /* EMPTY */
+			;
+
+opt_temporary:
+			TEMPORARY						{ $$ = true; }
+			| /* EMPTY */					{ $$ = false; }
+			;
+
+opt_slot:
+			SLOT IDENT
+				{ $$ = $2; }
+			| /* EMPTY */
+				{ $$ = NULL; }
+			;
+
+opt_timeline:
+			TIMELINE_P ICONST
+				{
+					if ($2 <= 0)
+						ereport(ERROR,
+								(errcode(ERRCODE_SYNTAX_ERROR),
+								 (errmsg("invalid timeline %u", $2))));
+					$$ = $2;
+				}
+				| /* EMPTY */			{ $$ = 0; }
+			;
+
+
+plugin_options:
+			'(' plugin_opt_list ')'			{ $$ = $2; }
+			| /* EMPTY */					{ $$ = NIL; }
+		;
+
+plugin_opt_list:
+			plugin_opt_elem
+				{
+					$$ = list_make1($1);
+				}
+			| plugin_opt_list ',' plugin_opt_elem
+				{
+					$$ = lappend($1, $3);
+				}
+		;
+
+plugin_opt_elem:
+			IDENT plugin_opt_arg
+				{
+					$$ = makeDefElem($1, $2, -1);
+				}
+		;
+
+plugin_opt_arg:
+			SCONST							{ $$ = (Node *) makeString($1); }
+			| /* EMPTY */					{ $$ = NULL; }
+		;
+
+
 Iconst:		ICONST									{ $$ = $1; };
 Sconst:		SCONST									{ $$ = $1; };
 
@@ -14646,6 +14978,7 @@ unreserved_keyword:
 			| ATTACH
 			| ATTRIBUTE
 			| BACKWARD
+			| BASE_BACKUP
 			| BEFORE
 			| BEGIN_P
 			| BY
@@ -14674,6 +15007,7 @@ unreserved_keyword:
 			| CONVERSION_P
 			| COPY
 			| COST
+			| CREATE_REPLICATION_SLOT
 			| CSV
 			| CUBE
 			| CURRENT_P
@@ -14699,6 +15033,7 @@ unreserved_keyword:
 			| DOMAIN_P
 			| DOUBLE_P
 			| DROP
+			| DROP_REPLICATION_SLOT
 			| EACH
 			| ENABLE_P
 			| ENCODING
@@ -14711,9 +15046,11 @@ unreserved_keyword:
 			| EXCLUSIVE
 			| EXECUTE
 			| EXPLAIN
+			| EXPORT_SNAPSHOT
 			| EXTENSION
 			| EXTERNAL
 			| FAMILY
+			| FAST_P
 			| FILTER
 			| FIRST_P
 			| FOLLOWING
@@ -14728,6 +15065,7 @@ unreserved_keyword:
 			| HEADER_P
 			| HOLD
 			| HOUR_P
+			| IDENTIFY_SYSTEM
 			| IDENTITY_P
 			| IF_P
 			| IMMEDIATE
@@ -14761,10 +15099,12 @@ unreserved_keyword:
 			| LOCK_P
 			| LOCKED
 			| LOGGED
+			| LOGICAL_P
 			| MAPPING
 			| MATCH
 			| MATERIALIZED
 			| MAXVALUE
+			| MAX_RATE
 			| METHOD
 			| MINUTE_P
 			| MINVALUE
@@ -14776,6 +15116,7 @@ unreserved_keyword:
 			| NEW
 			| NEXT
 			| NO
+			| NOEXPORT_SNAPSHOT
 			| NOREFRESH
 			| NOTHING
 			| NOTIFY
@@ -14800,6 +15141,7 @@ unreserved_keyword:
 			| PARTITION
 			| PASSING
 			| PASSWORD
+			| PHYSICAL
 			| PLANS
 			| POLICY
 			| PRECEDING
@@ -14811,6 +15153,7 @@ unreserved_keyword:
 			| PROCEDURAL
 			| PROCEDURE
 			| PROGRAM
+			| PROGRESS
 			| PUBLICATION
 			| QUOTE
 			| RANGE
@@ -14828,6 +15171,7 @@ unreserved_keyword:
 			| REPEATABLE
 			| REPLACE
 			| REPLICA
+			| RESERVE_WAL
 			| RESET
 			| RESTART
 			| RESTRICT
@@ -14862,6 +15206,7 @@ unreserved_keyword:
 			| STABLE
 			| STANDALONE_P
 			| START
+			| START_REPLICATION
 			| STATEMENT
 			| STATISTICS
 			| STDIN
@@ -14874,10 +15219,13 @@ unreserved_keyword:
 			| SYSTEM_P
 			| TABLES
 			| TABLESPACE
+			| TABLESPACE_MAP_P
 			| TEMP
 			| TEMPLATE
 			| TEMPORARY
 			| TEXT_P
+			| TIMELINE_P
+			| TIMELINE_HISTORY
 			| TRANSACTION
 			| TRANSFORM
 			| TRIGGER
@@ -14893,6 +15241,7 @@ unreserved_keyword:
 			| UNLOGGED
 			| UNTIL
 			| UPDATE
+			| USE_SNAPSHOT
 			| VACUUM
 			| VALID
 			| VALIDATE
@@ -14903,6 +15252,7 @@ unreserved_keyword:
 			| VIEW
 			| VIEWS
 			| VOLATILE
+			| WAL_P
 			| WHITESPACE_P
 			| WITHIN
 			| WITHOUT

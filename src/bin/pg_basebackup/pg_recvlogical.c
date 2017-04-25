@@ -240,7 +240,7 @@ StreamLogicalLog(void)
 				replication_slot);
 
 	/* Initiate the replication stream at specified location */
-	appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %X/%X",
+	appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL '%X/%X'",
 			 replication_slot, (uint32) (startpos >> 32), (uint32) startpos);
 
 	/* print options if there are any */

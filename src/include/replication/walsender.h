@@ -16,6 +16,9 @@
 
 #include "fmgr.h"
 
+#include "nodes/nodes.h"
+#include "nodes/replnodes.h"
+
 /*
  * What to do with a snapshot in create replication slot command.
  */
@@ -38,7 +41,7 @@ extern int	wal_sender_timeout;
 extern bool log_replication_commands;
 
 extern void InitWalSender(void);
-extern bool exec_replication_command(const char *query_string);
+extern bool exec_replication_command(ReplicationCmd *cmd, const char *query_string, bool isToplevel);
 extern void WalSndErrorCleanup(void);
 extern void WalSndSignals(void);
 extern Size WalSndShmemSize(void);
