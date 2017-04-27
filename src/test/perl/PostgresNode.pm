@@ -17,10 +17,6 @@ PostgresNode - class representing PostgreSQL server instance
   # Start the PostgreSQL server
   $node->start();
 
-  # Change a setting and restart
-  $node->append_conf('postgresql.conf', 'hot_standby = on');
-  $node->restart();
-
   # run a query with psql, like:
   #   echo 'SELECT 1' | psql -qAXt postgres -v ON_ERROR_STOP=1
   $psql_stdout = $node->safe_psql('postgres', 'SELECT 1');
