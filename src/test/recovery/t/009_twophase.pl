@@ -195,8 +195,6 @@ $node_master->psql(
 	PREPARE TRANSACTION 'xact_009_1';");
 $node_master->teardown_node;
 $node_slave->promote;
-$node_slave->poll_query_until('postgres', "SELECT NOT pg_is_in_recovery()")
-  or die "Timed out while waiting for promotion of standby";
 
 $psql_rc = $node_slave->psql('postgres', "COMMIT PREPARED 'xact_009_1'");
 is($psql_rc, '0', "Restore of prepared transaction on promoted slave");
@@ -227,8 +225,6 @@ $node_master->psql(
 $node_master->stop;
 $node_slave->restart;
 $node_slave->promote;
-$node_slave->poll_query_until('postgres', "SELECT NOT pg_is_in_recovery()")
-  or die "Timed out while waiting for promotion of standby";
 
 $node_slave->psql(
 	'postgres',
@@ -264,8 +260,6 @@ $node_master->stop;
 $node_slave->teardown_node;
 $node_slave->start;
 $node_slave->promote;
-$node_slave->poll_query_until('postgres', "SELECT NOT pg_is_in_recovery()")
-  or die "Timed out while waiting for promotion of standby";
 
 $node_slave->psql(
 	'postgres',
