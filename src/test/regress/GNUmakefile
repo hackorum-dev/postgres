@@ -127,13 +127,13 @@ tablespace-setup:
 REGRESS_OPTS = --dlpath=. $(EXTRA_REGRESS_OPTS)
 
 check: all tablespace-setup
-	$(pg_regress_check) $(REGRESS_OPTS) --schedule=$(srcdir)/parallel_schedule $(MAXCONNOPT) $(EXTRA_TESTS)
+	$(pg_regress_check) $(REGRESS_OPTS) --schedule=$(srcdir)/$(if $(SCHEDULE),$(SCHEDULE),parallel)_schedule $(MAXCONNOPT) $(EXTRA_TESTS)
 
 check-tests: all tablespace-setup
 	$(pg_regress_check) $(REGRESS_OPTS) $(MAXCONNOPT) $(TESTS) $(EXTRA_TESTS)
 
 installcheck: all tablespace-setup
-	$(pg_regress_installcheck) $(REGRESS_OPTS) --schedule=$(srcdir)/serial_schedule $(EXTRA_TESTS)
+	$(pg_regress_installcheck) $(REGRESS_OPTS) --schedule=$(srcdir)/$(if $(SCHEDULE),$(SCHEDULE),serial)_schedule $(EXTRA_TESTS)
 
 installcheck-parallel: all tablespace-setup
 	$(pg_regress_installcheck) $(REGRESS_OPTS) --schedule=$(srcdir)/parallel_schedule $(MAXCONNOPT) $(EXTRA_TESTS)
