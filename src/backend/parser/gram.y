@@ -652,8 +652,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	MAPPING MATCH MATERIALIZED MAXVALUE METHOD MINUTE_P MINVALUE MODE MONTH_P MOVE
 
 	NAME_P NAMES NATIONAL NATURAL NCHAR NEW NEXT NO NONE
-	NOREFRESH NOT NOTHING NOTIFY NOTNULL NOWAIT NULL_P NULLIF
-	NULLS_P NUMERIC
+	NOT NOTHING NOTIFY NOTNULL NOWAIT NULL_P NULLIF NULLS_P NUMERIC
 
 	OBJECT_P OF OFF OFFSET OIDS OLD ON ONLY OPERATOR OPTION OPTIONS OR
 	ORDER ORDINALITY OUT_P OUTER_P OVER OVERLAPS OVERLAY OVERRIDING OWNED OWNER
@@ -5685,7 +5684,6 @@ def_elem:	def_key '=' def_arg
 
 def_key:
 			ColLabel						{ $$ = $1; }
-			| ColLabel ColLabel				{ $$ = psprintf("%s %s", $1, $2); }
 		;
 
 /* Note: any simple identifier will be returned as a type name! */
@@ -9173,6 +9171,7 @@ publication_for_tables:
 				}
 		;
 
+
 /*****************************************************************************
  *
  * ALTER PUBLICATION name [ WITH ] options
@@ -9296,7 +9295,7 @@ AlterSubscriptionStmt:
 					n->options = $8;
 					$$ = (Node *)n;
 				}
-			| ALTER SUBSCRIPTION name SET PUBLICATION publication_name_list NOREFRESH
+			| ALTER SUBSCRIPTION name SET PUBLICATION publication_name_list SKIP REFRESH
 				{
 					AlterSubscriptionStmt *n =
 						makeNode(AlterSubscriptionStmt);
@@ -14758,7 +14757,6 @@ unreserved_keyword:
 			| NEW
 			| NEXT
 			| NO
-			| NOREFRESH
 			| NOTHING
 			| NOTIFY
 			| NOWAIT
