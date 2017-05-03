@@ -1279,9 +1279,8 @@ CompactCheckpointerRequestQueue(void)
 			continue;
 		CheckpointerShmem->requests[preserve_count++] = CheckpointerShmem->requests[n];
 	}
-	ereport(DEBUG1,
-			(errmsg("compacted fsync request queue from %d entries to %d entries",
-					CheckpointerShmem->num_requests, preserve_count)));
+	elog(DEBUG1, "compacted fsync request queue from %d entries to %d entries",
+		 CheckpointerShmem->num_requests, preserve_count);
 	CheckpointerShmem->num_requests = preserve_count;
 
 	/* Cleanup. */

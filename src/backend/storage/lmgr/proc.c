@@ -1308,8 +1308,8 @@ ProcSleep(LOCALLOCK *locallock, LockMethod lockMethodTable)
 
 				/* send the autovacuum worker Back to Old Kent Road */
 				ereport(DEBUG1,
-						(errmsg("sending cancel to blocking autovacuum PID %d",
-								pid),
+						(errmsg_internal("sending cancel to blocking autovacuum PID %d",
+										 pid),
 						 errdetail_log("%s", logbuf.data)));
 
 				if (kill(pid, SIGINT) < 0)

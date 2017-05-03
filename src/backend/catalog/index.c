@@ -2020,10 +2020,9 @@ index_build(Relation heapRelation,
 	Assert(PointerIsValid(indexRelation->rd_amroutine->ambuild));
 	Assert(PointerIsValid(indexRelation->rd_amroutine->ambuildempty));
 
-	ereport(DEBUG1,
-			(errmsg("building index \"%s\" on table \"%s\"",
+	elog(DEBUG1, "building index \"%s\" on table \"%s\"",
 					RelationGetRelationName(indexRelation),
-					RelationGetRelationName(heapRelation))));
+					RelationGetRelationName(heapRelation));
 
 	/*
 	 * Switch to the table owner's userid, so that any index functions are run

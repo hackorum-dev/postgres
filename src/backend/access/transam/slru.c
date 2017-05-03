@@ -1250,8 +1250,7 @@ SlruInternalDeleteSegment(SlruCtl ctl, char *filename)
 	char		path[MAXPGPATH];
 
 	snprintf(path, MAXPGPATH, "%s/%s", ctl->Dir, filename);
-	ereport(DEBUG2,
-			(errmsg("removing file \"%s\"", path)));
+	elog(DEBUG2, "removing file \"%s\"", path);
 	unlink(path);
 }
 
@@ -1306,8 +1305,7 @@ restart:
 		goto restart;
 
 	snprintf(path, MAXPGPATH, "%s/%04X", ctl->Dir, segno);
-	ereport(DEBUG2,
-			(errmsg("removing file \"%s\"", path)));
+	elog(DEBUG2, "removing file \"%s\"", path);
 	unlink(path);
 
 	LWLockRelease(shared->ControlLock);

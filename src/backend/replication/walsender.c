@@ -2153,8 +2153,8 @@ WalSndLoop(WalSndSendDataCallback send_data)
 			if (MyWalSnd->state == WALSNDSTATE_CATCHUP)
 			{
 				ereport(DEBUG1,
-						(errmsg("standby \"%s\" has now caught up with primary",
-								application_name)));
+						(errmsg_internal("standby \"%s\" has now caught up with primary",
+										 application_name)));
 				WalSndSetState(WALSNDSTATE_STREAMING);
 			}
 

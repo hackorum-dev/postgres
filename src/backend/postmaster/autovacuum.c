@@ -448,8 +448,7 @@ AutoVacLauncherMain(int argc, char *argv[])
 	/* Identify myself via ps */
 	init_ps_display("autovacuum launcher process", "", "", "");
 
-	ereport(DEBUG1,
-			(errmsg("autovacuum launcher started")));
+	elog(DEBUG1, "autovacuum launcher started");
 
 	if (PostAuthDelay)
 		pg_usleep(PostAuthDelay * 1000000L);
@@ -835,8 +834,7 @@ AutoVacLauncherMain(int argc, char *argv[])
 
 	/* Normal exit from the autovac launcher is here */
 shutdown:
-	ereport(DEBUG1,
-			(errmsg("autovacuum launcher shutting down")));
+	elog(DEBUG1, "autovacuum launcher shutting down");
 	AutoVacuumShmem->av_launcherpid = 0;
 
 	proc_exit(0);				/* done */
@@ -1703,8 +1701,7 @@ AutoVacWorkerMain(int argc, char *argv[])
 		InitPostgres(NULL, dbid, NULL, InvalidOid, dbname);
 		SetProcessingMode(NormalProcessing);
 		set_ps_display(dbname, false);
-		ereport(DEBUG1,
-				(errmsg("autovacuum: processing database \"%s\"", dbname)));
+		elog(DEBUG1, "autovacuum: processing database \"%s\"", dbname);
 
 		if (PostAuthDelay)
 			pg_usleep(PostAuthDelay * 1000000L);

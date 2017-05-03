@@ -389,9 +389,8 @@ BackgroundWorkerStateChange(void)
 		rw->rw_terminate = false;
 
 		/* Log it! */
-		ereport(DEBUG1,
-				(errmsg("registering background worker \"%s\"",
-						rw->rw_worker.bgw_name)));
+		elog(DEBUG1, "registering background worker \"%s\"",
+						rw->rw_worker.bgw_name);
 
 		slist_push_head(&BackgroundWorkerList, &rw->rw_lnode);
 	}
@@ -421,9 +420,8 @@ ForgetBackgroundWorker(slist_mutable_iter *cur)
 
 	slot->in_use = false;
 
-	ereport(DEBUG1,
-			(errmsg("unregistering background worker \"%s\"",
-					rw->rw_worker.bgw_name)));
+	elog(DEBUG1, "unregistering background worker \"%s\"",
+					rw->rw_worker.bgw_name);
 
 	slist_delete_current(cur);
 	free(rw);
@@ -852,8 +850,7 @@ RegisterBackgroundWorker(BackgroundWorker *worker)
 	static int	numworkers = 0;
 
 	if (!IsUnderPostmaster)
-		ereport(DEBUG1,
-				(errmsg("registering background worker \"%s\"", worker->bgw_name)));
+		elog(DEBUG1, "registering background worker \"%s\"", worker->bgw_name);
 
 	if (!process_shared_preload_libraries_in_progress &&
 		strcmp(worker->bgw_library_name, "postgres") != 0)

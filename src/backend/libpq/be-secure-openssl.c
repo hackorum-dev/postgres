@@ -578,7 +578,7 @@ aloop:
 	}
 
 	ereport(DEBUG2,
-			(errmsg("SSL connection from \"%s\"",
+			(errmsg_internal("SSL connection from \"%s\"",
 					port->peer_cn ? port->peer_cn : "(anonymous)")));
 
 	/* set up debugging/info callback */

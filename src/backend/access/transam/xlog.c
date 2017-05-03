@@ -2738,10 +2738,10 @@ UpdateMinRecoveryPoint(XLogRecPtr lsn, bool force)
 			minRecoveryPointTLI = newMinRecoveryPointTLI;
 
 			ereport(DEBUG2,
-					(errmsg("updated min recovery point to %X/%X on timeline %u",
-							(uint32) (minRecoveryPoint >> 32),
-							(uint32) minRecoveryPoint,
-							newMinRecoveryPointTLI)));
+					(errmsg_internal("updated min recovery point to %X/%X on timeline %u",
+									 (uint32) (minRecoveryPoint >> 32),
+									 (uint32) minRecoveryPoint,
+									 newMinRecoveryPointTLI)));
 		}
 	}
 	LWLockRelease(ControlFileLock);
@@ -3993,7 +3993,7 @@ RemoveXlogFile(const char *segname, XLogRecPtr PriorRedoPtr, XLogRecPtr endptr)
 							   true, recycleSegNo, true))
 	{
 		ereport(DEBUG2,
-				(errmsg("recycled write-ahead log file \"%s\"",
+				(errmsg_internal("recycled write-ahead log file \"%s\"",
 						segname)));
 		CheckpointStats.ckpt_segs_recycled++;
 		/* Needn't recheck that slot on future iterations */
@@ -4005,7 +4005,7 @@ RemoveXlogFile(const char *segname, XLogRecPtr PriorRedoPtr, XLogRecPtr endptr)
 		int			rc;
 
 		ereport(DEBUG2,
-				(errmsg("removing write-ahead log file \"%s\"",
+				(errmsg_internal("removing write-ahead log file \"%s\"",
 						segname)));
 
 #ifdef WIN32
@@ -6387,8 +6387,8 @@ StartupXLOG(void)
 			memcpy(&checkPoint, XLogRecGetData(xlogreader), sizeof(CheckPoint));
 			wasShutdown = ((record->xl_info & ~XLR_INFO_MASK) == XLOG_CHECKPOINT_SHUTDOWN);
 			ereport(DEBUG1,
-					(errmsg("checkpoint record is at %X/%X",
-							(uint32) (checkPointLoc >> 32), (uint32) checkPointLoc)));
+					(errmsg_internal("checkpoint record is at %X/%X",
+									 (uint32) (checkPointLoc >> 32), (uint32) checkPointLoc)));
 			InRecovery = true;	/* force recovery even if SHUTDOWNED */
 
 			/*
@@ -6515,8 +6515,8 @@ StartupXLOG(void)
 		if (record != NULL)
 		{
 			ereport(DEBUG1,
-					(errmsg("checkpoint record is at %X/%X",
-							(uint32) (checkPointLoc >> 32), (uint32) checkPointLoc)));
+					(errmsg_internal("checkpoint record is at %X/%X",
+									 (uint32) (checkPointLoc >> 32), (uint32) checkPointLoc)));
 		}
 		else if (StandbyMode)
 		{
@@ -6883,7 +6883,7 @@ StartupXLOG(void)
 			int			nxids;
 
 			ereport(DEBUG1,
-					(errmsg("initializing for hot standby")));
+					(errmsg_internal("initializing for hot standby")));
 
 			InitRecoveryTransactionEnvironment();
 
@@ -8646,7 +8646,7 @@ CreateCheckPoint(int flags)
 			LWLockRelease(CheckpointLock);
 			END_CRIT_SECTION();
 			ereport(DEBUG1,
-					(errmsg("checkpoint skipped due to an idle system")));
+					(errmsg_internal("checkpoint skipped due to an idle system")));
 			return;
 		}
 	}
@@ -9105,7 +9105,7 @@ CreateRestartPoint(int flags)
 	if (!RecoveryInProgress())
 	{
 		ereport(DEBUG2,
-				(errmsg("skipping restartpoint, recovery has already ended")));
+				(errmsg_internal("skipping restartpoint, recovery has already ended")));
 		LWLockRelease(CheckpointLock);
 		return false;
 	}
@@ -9128,7 +9128,7 @@ CreateRestartPoint(int flags)
 		lastCheckPoint.redo <= ControlFile->checkPointCopy.redo)
 	{
 		ereport(DEBUG2,
-				(errmsg("skipping restartpoint, already performed at %X/%X",
+				(errmsg_internal("skipping restartpoint, already performed at %X/%X",
 						(uint32) (lastCheckPoint.redo >> 32),
 						(uint32) lastCheckPoint.redo)));
 

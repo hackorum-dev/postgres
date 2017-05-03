@@ -396,8 +396,8 @@ SyncRepInitConfig(void)
 		MyWalSnd->sync_standby_priority = priority;
 		LWLockRelease(SyncRepLock);
 		ereport(DEBUG1,
-				(errmsg("standby \"%s\" now has synchronous standby priority %u",
-						application_name, priority)));
+				(errmsg_internal("standby \"%s\" now has synchronous standby priority %u",
+								 application_name, priority)));
 	}
 }
 

@@ -1279,8 +1279,8 @@ mdsync(void)
 					else
 						ereport(DEBUG1,
 								(errcode_for_file_access(),
-								 errmsg("could not fsync file \"%s\" but retrying: %m",
-										path)));
+								 errmsg_internal("could not fsync file \"%s\" but retrying: %m",
+												 path)));
 					pfree(path);
 
 					/*
@@ -1442,7 +1442,7 @@ register_dirty_segment(SMgrRelation reln, ForkNumber forknum, MdfdVec *seg)
 			return;				/* passed it off successfully */
 
 		ereport(DEBUG1,
-				(errmsg("could not forward fsync request because request queue is full")));
+				(errmsg_internal("could not forward fsync request because request queue is full")));
 
 		if (FileSync(seg->mdfd_vfd, WAIT_EVENT_DATA_FILE_SYNC) < 0)
 			ereport(ERROR,

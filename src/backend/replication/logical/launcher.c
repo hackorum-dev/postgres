@@ -794,8 +794,7 @@ ApplyLauncherMain(Datum main_arg)
 {
 	TimestampTz last_start_time = 0;
 
-	ereport(DEBUG1,
-			(errmsg("logical replication launcher started")));
+	elog(DEBUG1, "logical replication launcher started");
 
 	before_shmem_exit(logicalrep_launcher_onexit, (Datum) 0);
 

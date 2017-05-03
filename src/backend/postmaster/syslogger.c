@@ -498,8 +498,7 @@ SysLoggerMain(int argc, char *argv[])
 			 * seeing this message on the real stderr is annoying - so we make
 			 * it DEBUG1 to suppress in normal use.
 			 */
-			ereport(DEBUG1,
-					(errmsg("logger shutting down")));
+			elog(DEBUG1, "logger shutting down");
 
 			/*
 			 * Normal exit from the syslogger is here.  Note that we

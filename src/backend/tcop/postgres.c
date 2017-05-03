@@ -343,7 +343,7 @@ SocketBackend(StringInfo inBuf)
 			whereToSendOutput = DestNone;
 			ereport(DEBUG1,
 					(errcode(ERRCODE_CONNECTION_DOES_NOT_EXIST),
-					 errmsg("unexpected EOF on client connection")));
+					 errmsg_internal("unexpected EOF on client connection")));
 		}
 		return qtype;
 	}
@@ -379,7 +379,7 @@ SocketBackend(StringInfo inBuf)
 						whereToSendOutput = DestNone;
 						ereport(DEBUG1,
 								(errcode(ERRCODE_CONNECTION_DOES_NOT_EXIST),
-								 errmsg("unexpected EOF on client connection")));
+								 errmsg_internal("unexpected EOF on client connection")));
 					}
 					return EOF;
 				}
@@ -406,7 +406,7 @@ SocketBackend(StringInfo inBuf)
 						whereToSendOutput = DestNone;
 						ereport(DEBUG1,
 								(errcode(ERRCODE_CONNECTION_DOES_NOT_EXIST),
-								 errmsg("unexpected EOF on client connection")));
+								 errmsg_internal("unexpected EOF on client connection")));
 					}
 					return EOF;
 				}

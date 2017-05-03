@@ -2265,8 +2265,8 @@ SetMultiXactIdLimit(MultiXactId oldest_datminmxid, Oid oldest_datoid,
 
 	/* Log the info */
 	ereport(DEBUG1,
-			(errmsg("MultiXactId wrap limit is %u, limited by database with OID %u",
-					multiWrapLimit, oldest_datoid)));
+			(errmsg_internal("MultiXactId wrap limit is %u, limited by database with OID %u",
+							 multiWrapLimit, oldest_datoid)));
 
 	/*
 	 * Computing the actual limits is only possible once the data directory is
@@ -2599,7 +2599,7 @@ SetOffsetVacuumLimit(bool is_startup)
 
 		if (oldestOffsetKnown)
 			ereport(DEBUG1,
-					(errmsg("oldest MultiXactId member is at offset %u",
+					(errmsg_internal("oldest MultiXactId member is at offset %u",
 							oldestOffset)));
 		else
 			ereport(LOG,
@@ -2628,8 +2628,8 @@ SetOffsetVacuumLimit(bool is_startup)
 					(errmsg("MultiXact member wraparound protections are now enabled")));
 
 		ereport(DEBUG1,
-				(errmsg("MultiXact member stop limit is now %u based on MultiXact %u",
-						offsetStopLimit, oldestMultiXactId)));
+				(errmsg_internal("MultiXact member stop limit is now %u based on MultiXact %u",
+								 offsetStopLimit, oldestMultiXactId)));
 	}
 	else if (prevOldestOffsetKnown)
 	{

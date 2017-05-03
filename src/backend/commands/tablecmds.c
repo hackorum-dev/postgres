@@ -4436,11 +4436,11 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap, LOCKMODE lockmode)
 
 		if (newrel)
 			ereport(DEBUG1,
-					(errmsg("rewriting table \"%s\"",
+					(errmsg_internal("rewriting table \"%s\"",
 							RelationGetRelationName(oldrel))));
 		else
 			ereport(DEBUG1,
-					(errmsg("verifying table \"%s\"",
+					(errmsg_internal("verifying table \"%s\"",
 							RelationGetRelationName(oldrel))));
 
 		if (newrel)
@@ -8180,7 +8180,7 @@ validateForeignKeyConstraint(char *conname,
 	Snapshot	snapshot;
 
 	ereport(DEBUG1,
-			(errmsg("validating foreign key constraint \"%s\"", conname)));
+			(errmsg_internal("validating foreign key constraint \"%s\"", conname)));
 
 	/*
 	 * Build a trigger call structure; we'll need it either way.
