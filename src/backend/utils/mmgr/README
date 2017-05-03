@@ -265,6 +265,17 @@ from prepared statements simply reference the prepared statements' trees,
 and don't actually need any storage allocated in their private contexts.
 
 
+Logical replication worker contexts
+-----------------------------------
+
+ApplyContext --- permanent during whole lifetime of apply worker. It is
+possible to use TopMemoryContext here as well, but for simplicity of memory usage
+analysis we spin up different context.
+
+ApplyMessageContext --- short-lived context that is cleaned after each
+update/insert/delete is applied.
+
+
 Transient Contexts During Execution
 -----------------------------------
 
