@@ -71,6 +71,10 @@ typedef struct HeapScanDescData
 	/* NB: if rs_cbuf is not InvalidBuffer, we hold a pin on that buffer */
 	ParallelHeapScanDesc rs_parallel;	/* parallel scan information */
 
+	/* Used to allocate a range of blocks for a parallel worker to scan */
+	BlockNumber rs_batchcurrblock; /* current parallel block in batch */
+	BlockNumber rs_batchlastblock; /* final parallel block in batch */
+
 	/* these fields only used in page-at-a-time mode and for bitmap scans */
 	int			rs_cindex;		/* current tuple's index in vistuples */
 	int			rs_ntuples;		/* number of visible tuples on page */
