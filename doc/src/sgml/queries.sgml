@@ -2194,22 +2194,22 @@ SELECT n FROM t LIMIT 100;
    output anyway.
   </para>
 
+  <caution>
   <para>
-   A useful property of <literal>WITH</> queries is that they are evaluated
-   only once per execution of the parent query, even if they are referred to
-   more than once by the parent query or sibling <literal>WITH</> queries.
-   Thus, expensive calculations that are needed in multiple places can be
-   placed within a <literal>WITH</> query to avoid redundant work.  Another
-   possible application is to prevent unwanted multiple evaluations of
-   functions with side-effects.
-   However, the other side of this coin is that the optimizer is less able to
-   push restrictions from the parent query down into a <literal>WITH</> query
-   than an ordinary subquery.  The <literal>WITH</> query will generally be
-   evaluated as written, without suppression of rows that the parent query
-   might discard afterwards.  (But, as mentioned above, evaluation might stop
-   early if the reference(s) to the query demand only a limited number of
-   rows.)
+   Currently in <productname>PostgreSQL</productname>, <literal>WITH</> queries
+   are evaluated only once per execution of the parent query, even if they are
+   referred to more than once by the parent query or sibling <literal>WITH</>
+   queries.  While this behavior is likely desirable when the <literal>WITH</>
+   query contains a <quote>volatile</> function, in order to avoid multiple
+   evaluation problems, the behavior is often undesirable as the optimizer is
+   less able to push restrictions from the parent query down into the
+   <literal>WITH</> query than an ordinary subquery.  For this reason, the
+   single evaluation guarantee should not be relied upon as this may be
+   relaxed in a future version of <productname>PostgreSQL</productname> in
+   cases where multiple evaluations of the query are semantically equivalent
+   to a single evaluation.
   </para>
+  </caution>
 
   <para>
    The examples above only show <literal>WITH</> being used with
@@ -2306,10 +2306,7 @@ DELETE FROM parts
    <para>
     Data-modifying statements in <literal>WITH</> are executed exactly once,
     and always to completion, independently of whether the primary query
-    reads all (or indeed any) of their output.  Notice that this is different
-    from the rule for <command>SELECT</> in <literal>WITH</>: as stated in the
-    previous section, execution of a <command>SELECT</> is carried only as far
-    as the primary query demands its output.
+    reads all (or indeed any) of their output.
    </para>
 
    <para>
