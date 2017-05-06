@@ -92,17 +92,24 @@ Branch: REL9_5_STABLE [54270d7eb] 2017-04-27 15:29:43 -0700
 Branch: REL9_4_STABLE [b6ecf26cc] 2017-04-27 15:29:52 -0700
 -->
      <para>
-      Fix possibly-corrupt initial snapshot during logical decoding
-      (Petr Jelinek, Andres Freund)
+      Fix two bugs resulting in possibly-corrupt initial exported snapshot
+      during logical decoding (Petr Jelinek, Andres Freund)
      </para>
 
      <para>
       If a logical decoding replication slot was created while another slot
-      already exists, it was initialized with a potentially-corrupted
-      snapshot, allowing wrong data to be returned during decoding.
-      The time window during which this snapshot continued to be used
-      depended on how busy the server was; under low load it would be hard
-      to see any problem.
+      already exists, it would exported a potentially-corrupted snapshot,
+      allowing wrong data to be returned when such snapshot was imported to
+      another backend.
+     </para>
+
+     <para>
+      Logical decoding normally preserves all required historical catalog
+      tuples, it didn't guarantee that the non-catalog tuples also
+      were preserved for exported snapshot. This could have resulted in
+      concurrent VACUUM or HOT pruning to remove tuples needed by the
+      snapshot. The time window for this was very small and the problem
+      required server to be very busy during slot creation.
      </para>
     </listitem>
 
