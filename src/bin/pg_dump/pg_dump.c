@@ -1250,6 +1250,43 @@ expand_schema_name_patterns(Archive *fout,
 }
 
 /*
+ * Expand partitioned table and append the OIDs of its partitions to the list
+ * of tables to be dumped.
+ */
+static void
+expand_partitioned_table(Archive *fout, Oid parentId, SimpleOidList *oids)
+{
+
+	PGresult *partitions;
+	int	      partition;
+	PQExpBuffer query = createPQExpBuffer();
+
+	/* Get the OIDs of partitions of all levels */
+	appendPQExpBuffer(query, "WITH RECURSIVE partitions (partoid) AS ("
+							 "   SELECT inhrelid"
+							 "   FROM pg_inherits"
+							 "   WHERE inhparent = %u"
+							 "     UNION ALL"
+							 "   SELECT inhrelid"
+							 "   FROM pg_inherits, partitions"
+							 "   WHERE inhparent = partitions.partoid )"
+							 " SELECT partoid FROM partitions",
+							 parentId);
+
+	partitions = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+
+	for (partition = 0; partition < PQntuples(partitions); partition++)
+	{
+		Oid		partid = atooid(PQgetvalue(partitions, partition, 0));
+
+		simple_oid_list_append(oids, partid);
+	}
+
+	PQclear(partitions);
+	destroyPQExpBuffer(query);
+}
+
+/*
  * Find the OIDs of all tables matching the given list of patterns,
  * and append them to the given OID list.
  */
@@ -1276,7 +1313,7 @@ expand_table_name_patterns(Archive *fout,
 	for (cell = patterns->head; cell; cell = cell->next)
 	{
 		appendPQExpBuffer(query,
-						  "SELECT c.oid"
+						  "SELECT c.oid, c.relkind"
 						  "\nFROM pg_catalog.pg_class c"
 		"\n     LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace"
 					 "\nWHERE c.relkind in ('%c', '%c', '%c', '%c', '%c', '%c')\n",
@@ -1293,7 +1330,23 @@ expand_table_name_patterns(Archive *fout,
 
 		for (i = 0; i < PQntuples(res); i++)
 		{
-			simple_oid_list_append(oids, atooid(PQgetvalue(res, i, 0)));
+			Oid		relOid = atooid(PQgetvalue(res, i, 0));
+
+			simple_oid_list_append(oids, relOid);
+
+			/*
+			 * Starting in PostgreSQL 10, we have partitioned tables, whose
+			 * partitions we must include in the list of tables to be included
+			 * or excluded along with the partitioned table named using the
+			 * command-line option.
+			 */
+			if (fout->remoteVersion >= 100000)
+			{
+				char	relkind = *(PQgetvalue(res, i, 1));
+
+				if (relkind == RELKIND_PARTITIONED_TABLE)
+					expand_partitioned_table(fout, relOid, oids);
+			}
 		}
 
 		PQclear(res);

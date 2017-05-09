@@ -520,10 +520,11 @@ PostgreSQL documentation
         <replaceable class="parameter">table</replaceable>.
         For this purpose, <quote>table</> includes views, materialized views,
         sequences, and foreign tables.  Multiple tables
-        can be selected by writing multiple <option>-t</> switches.  Also, the
-        <replaceable class="parameter">table</replaceable> parameter is
-        interpreted as a pattern according to the same rules used by
-        <application>psql</>'s <literal>\d</> commands (see <xref
+        can be selected by writing multiple <option>-t</> switches.  If the
+        specified table is a partitioned table, its partitions are dumped
+        too.  Also, the <replaceable class="parameter">table</replaceable>
+        parameter is interpreted as a pattern according to the same rules used
+        by <application>psql</>'s <literal>\d</> commands (see <xref
         linkend="APP-PSQL-patterns" endterm="APP-PSQL-patterns-title">),
         so multiple tables can also be selected by writing wildcard characters
         in the pattern.  When using wildcards, be careful to quote the pattern
@@ -572,7 +573,8 @@ PostgreSQL documentation
         class="parameter">table</replaceable> pattern.  The pattern is
         interpreted according to the same rules as for <option>-t</>.
         <option>-T</> can be given more than once to exclude tables
-        matching any of several patterns.
+        matching any of several patterns.  If the specified table is a
+        partitioned table, its partitions are not dumped either.
        </para>
 
        <para>
