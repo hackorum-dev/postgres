@@ -103,7 +103,7 @@ bool		InitializingParallelWorker = false;
 static FixedParallelState *MyFixedParallelState;
 
 /* List of active parallel contexts. */
-static dlist_head pcxt_list = DLIST_STATIC_INIT(pcxt_list);
+dlist_head pcxt_list = DLIST_STATIC_INIT(pcxt_list);
 
 /*
  * List of internal parallel worker entry points.  We need this for
