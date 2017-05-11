@@ -130,7 +130,7 @@ static PQExpBuffer recoveryconfcontents = NULL;
 /* Function headers */
 static void usage(void);
 static void disconnect_and_exit(int code);
-static void verify_dir_is_empty_or_create(char *dirname, bool *created, bool *found);
+static void verify_and_create_dir(char *dirname, bool *created, bool *found, bool allow_nonempty);
 static void progress_report(int tablespacenum, const char *filename, bool force);
 
 static void ReceiveTarFile(PGconn *conn, PGresult *res, int rownum);
@@ -145,6 +145,8 @@ static bool reached_end_position(XLogRecPtr segendpos, uint32 timeline,
 static const char *get_tablespace_mapping(const char *dir);
 static void tablespace_list_append(const char *arg);
 
+#define verify_dir_is_empty_or_create(dirname, created, found) \
+	verify_and_create_dir(dirname, created, found, false)
 
 static void
 cleanup_directories_atexit(void)
@@ -646,7 +648,8 @@ StartLogStreamer(char *startpos, uint32 timeline, char *sysidentifier)
  * be give and the process ended.
  */
 static void
-verify_dir_is_empty_or_create(char *dirname, bool *created, bool *found)
+verify_and_create_dir(char *dirname, bool *created, bool *found,
+					 bool allow_nonempty)
 {
 	switch (pg_check_dir(dirname))
 	{
@@ -680,6 +683,9 @@ verify_dir_is_empty_or_create(char *dirname, bool *created, bool *found)
 			/*
 			 * Exists, not empty
 			 */
+			if (allow_nonempty)
+				return;
+
 			fprintf(stderr,
 					_("%s: directory \"%s\" exists but is not empty\n"),
 					progname, dirname);
@@ -1854,7 +1860,7 @@ BaseBackup(void)
 		{
 			char	   *path = (char *) get_tablespace_mapping(PQgetvalue(res, i, 1));
 
-			verify_dir_is_empty_or_create(path, &made_tablespace_dirs, &found_tablespace_dirs);
+			verify_and_create_dir(path, &made_tablespace_dirs, &found_tablespace_dirs, true);
 		}
 	}
 
