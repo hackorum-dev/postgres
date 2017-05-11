@@ -51,10 +51,11 @@ extern void _PG_init(void);
 static void
 check_password(const char *username,
 			   const char *shadow_pass,
-			   PasswordType password_type,
 			   Datum validuntil_time,
 			   bool validuntil_null)
 {
+	PasswordType password_type = get_password_type(shadow_pass);
+
 	if (password_type != PASSWORD_TYPE_PLAINTEXT)
 	{
 		/*

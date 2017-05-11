@@ -362,7 +362,6 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 	if (check_password_hook && password)
 		(*check_password_hook) (stmt->role,
 								password,
-								get_password_type(password),
 								validUntil_datum,
 								validUntil_null);
 
@@ -724,7 +723,6 @@ AlterRole(AlterRoleStmt *stmt)
 	if (check_password_hook && password)
 		(*check_password_hook) (rolename,
 								password,
-								get_password_type(password),
 								validUntil_datum,
 								validUntil_null);
 
