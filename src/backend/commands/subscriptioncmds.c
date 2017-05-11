@@ -33,6 +33,8 @@
 #include "commands/event_trigger.h"
 #include "commands/subscriptioncmds.h"
 
+#include "executor/executor.h"
+
 #include "nodes/makefuncs.h"
 
 #include "replication/logicallauncher.h"
@@ -443,6 +445,10 @@ CreateSubscription(CreateSubscriptionStmt *stmt, bool isTopLevel)
 
 				relid = RangeVarGetRelid(rv, AccessShareLock, false);
 
+				/* Check for supported relkind. */
+				CheckSubscriptionRelkind(get_rel_relkind(relid),
+										 rv->schemaname, rv->relname);
+
 				SetSubscriptionRelState(subid, relid, table_state,
 										InvalidXLogRecPtr);
 			}
@@ -555,6 +561,11 @@ AlterSubscription_refresh(Subscription *sub, bool copy_data)
 		Oid			relid;
 
 		relid = RangeVarGetRelid(rv, AccessShareLock, false);
+
+		/* Check for supported relkind. */
+		CheckSubscriptionRelkind(get_rel_relkind(relid),
+								 rv->schemaname, rv->relname);
+
 		pubrel_local_oids[off++] = relid;
 
 		if (!bsearch(&relid, subrel_local_oids,

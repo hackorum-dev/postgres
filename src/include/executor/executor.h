@@ -534,5 +534,7 @@ extern void ExecSimpleRelationDelete(EState *estate, EPQState *epqstate,
 						 TupleTableSlot *searchslot);
 extern void CheckCmdReplicaIdentity(Relation rel, CmdType cmd);
 
+extern void CheckSubscriptionRelkind(char relkind, const char *nspname,
+									 const char *relname);
 
 #endif   /* EXECUTOR_H  */
