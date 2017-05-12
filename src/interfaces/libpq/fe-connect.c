@@ -2439,6 +2439,16 @@ keep_going:						/* We will come back to here until there is
 						appendPQExpBuffer(&conn->errorMessage,
 										  libpq_gettext("received invalid response to SSL negotiation: %c\n"),
 										  SSLok);
+
+						/* If more addresses remain, keep trying. */
+						if (conn->addr_cur->ai_next != NULL ||
+							conn->whichhost + 1 < conn->nconnhost)
+						{
+							pqDropConnection(conn, true);
+							conn->addr_cur = conn->addr_cur->ai_next;
+							conn->status = CONNECTION_NEEDED;
+							goto keep_going;
+						}
 						goto error_return;
 					}
 				}
@@ -2516,6 +2526,16 @@ keep_going:						/* We will come back to here until there is
 									  "expected authentication request from "
 												"server, but received %c\n"),
 									  beresp);
+
+					/* If more addresses remain, keep trying. */
+					if (conn->addr_cur->ai_next != NULL ||
+						conn->whichhost + 1 < conn->nconnhost)
+					{
+						pqDropConnection(conn, true);
+						conn->addr_cur = conn->addr_cur->ai_next;
+						conn->status = CONNECTION_NEEDED;
+						goto keep_going;
+					}
 					goto error_return;
 				}
 
@@ -2666,6 +2686,16 @@ keep_going:						/* We will come back to here until there is
 					}
 #endif
 
+					/* If more addresses remain, keep trying. */
+					if (conn->addr_cur->ai_next != NULL ||
+						conn->whichhost + 1 < conn->nconnhost)
+					{
+						pqDropConnection(conn, true);
+						conn->addr_cur = conn->addr_cur->ai_next;
+						conn->status = CONNECTION_NEEDED;
+						goto keep_going;
+					}
+
 					goto error_return;
 				}
 
@@ -2814,6 +2844,17 @@ keep_going:						/* We will come back to here until there is
 						conn->errorMessage.data[conn->errorMessage.len - 1] != '\n')
 						appendPQExpBufferChar(&conn->errorMessage, '\n');
 					PQclear(res);
+
+					/* If more addresses remain, keep trying. */
+					if (conn->addr_cur->ai_next != NULL ||
+						conn->whichhost + 1 < conn->nconnhost)
+					{
+						pqDropConnection(conn, true);
+						conn->addr_cur = conn->addr_cur->ai_next;
+						conn->status = CONNECTION_NEEDED;
+						goto keep_going;
+					}
+
 					goto error_return;
 				}
 
