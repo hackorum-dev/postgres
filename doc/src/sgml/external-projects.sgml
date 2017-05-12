@@ -83,6 +83,13 @@
      </row>
 
      <row>
+      <entry>node-postgres</entry>
+      <entry>JavaScript</entry>
+      <entry>Node.js driver</entry>
+      <entry><ulink url="https://github.com/brianc/node-postgres"></ulink></entry>
+     </row>
+
+     <row>
       <entry>Npgsql</entry>
       <entry>.NET</entry>
       <entry>.NET data provider</entry>
@@ -94,6 +101,13 @@
       <entry>Tcl</entry>
       <entry></entry>
       <entry><ulink url="http://sourceforge.net/projects/pgtclng/"></ulink></entry>
+     </row>
+
+     <row>
+      <entry>pq</entry>
+      <entry>Go</entry>
+      <entry>Pure Go driver for Go's database/sql</entry>
+      <entry><ulink url="https://github.com/lib/pq"></ulink></entry>
      </row>
 
      <row>
