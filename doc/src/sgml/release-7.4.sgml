@@ -4506,7 +4506,7 @@ DROP SCHEMA information_schema CASCADE;
   <title>JDBC Changes</title>
 
   <itemizedlist>
-   <listitem><para>Allow <function>setNull</function> on updateable result sets</para></listitem>
+   <listitem><para>Allow <function>setNull</function> on updatable result sets</para></listitem>
    <listitem><para>Allow <function>executeBatch</function> on a prepared statement (Barry)</para></listitem>
    <listitem><para>Support SSL connections (Barry)</para></listitem>
    <listitem><para>Handle schema names in result sets (Paul Sorenson)</para></listitem>
