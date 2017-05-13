@@ -1111,7 +1111,7 @@ WHERE tablename = 'road';
     </para>
 
     <para>
-     The existance of functional dependencies directly affects the accuracy
+     The existence of functional dependencies directly affects the accuracy
      of estimates in certain queries.
      The reason is that conditions on the dependent columns do not
      restrict the result set, but the query planner (lacking functional
