@@ -70,7 +70,7 @@
 
      <row>
       <entry>JDBC</entry>
-      <entry>JDBC</entry>
+      <entry>Java</entry>
       <entry>Type 4 JDBC driver</entry>
       <entry><ulink url="http://jdbc.postgresql.org/"></ulink></entry>
      </row>
