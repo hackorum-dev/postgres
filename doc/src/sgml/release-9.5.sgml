@@ -6918,7 +6918,7 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 -->
       <para>
        Add <link linkend="app-pgrewind"><application>pg_rewind</></>,
-       which allows re-synchronizing a master server after failback
+       which allows re-synchronizing a master server after fallback
        (Heikki Linnakangas)
       </para>
      </listitem>
