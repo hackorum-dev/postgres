@@ -3460,7 +3460,7 @@ ANY <replaceable class="parameter">num_sync</replaceable> ( <replaceable class="
       <listitem>
        <para>
         Maximum number of synchronization workers per subscription. This
-        parameter controls the amount of paralelism of the initial data copy
+        parameter controls the amount of parallelism of the initial data copy
         during the subscription initialization or when new tables are added.
        </para>
        <para>
