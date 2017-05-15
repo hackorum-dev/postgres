@@ -167,7 +167,7 @@ ExecGather(GatherState *node)
 				node->nreaders = 0;
 				node->nextreader = 0;
 				node->reader =
-					palloc(pcxt->nworkers_launched * sizeof(TupleQueueReader *));
+					palloc(gather->num_workers * sizeof(TupleQueueReader *));
 
 				for (i = 0; i < pcxt->nworkers_launched; ++i)
 				{
@@ -345,6 +345,38 @@ gather_readnext(GatherState *gatherstate)
 		nvisited++;
 		if (nvisited >= gatherstate->nreaders)
 		{
+			/*
+			 * As we are going to wait for the workers to send tuples, this may be
+			 * possible because of not sufficient workers that are planned?
+			 * Does the gather have all the required parallel workers? If not try to get
+			 * some more workers (only when all the previously allocated workers are still
+			 * doing the job) before we wait, this will further increase the performance
+			 * of the query as planned.
+			 */
+			if ((gatherstate->pei->pcxt->nworkers_launched < gatherstate->pei->pcxt->nworkers) &&
+				(gatherstate->nreaders == gatherstate->nworkers_launched))
+			{
+				int			i;
+				MemoryContext oldContext;
+
+				/* Run TupleQueueReaders in per-tuple context */
+				oldContext = MemoryContextSwitchTo(gatherstate->ps.state->es_query_cxt);
+
+				LaunchParallelWorkers(gatherstate->pei->pcxt);
+				gatherstate->nworkers_launched = gatherstate->pei->pcxt->nworkers_launched;
+
+				for (i = gatherstate->nreaders; i < gatherstate->nworkers_launched; ++i)
+				{
+					shm_mq_set_handle(gatherstate->pei->tqueue[i],
+							gatherstate->pei->pcxt->worker[i].bgwhandle);
+					gatherstate->reader[gatherstate->nreaders++] =
+						CreateTupleQueueReader(gatherstate->pei->tqueue[i],
+								gatherstate->funnel_slot->tts_tupleDescriptor);
+				}
+
+				MemoryContextSwitchTo(oldContext);
+			}
+
 			/*
 			 * If (still) running plan locally, return NULL so caller can
 			 * generate another tuple from the local copy of the plan.

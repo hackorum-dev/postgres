@@ -456,7 +456,7 @@ LaunchParallelWorkers(ParallelContext *pcxt)
 	 * fails.  It wouldn't help much anyway, because registering the worker in
 	 * no way guarantees that it will start up and initialize successfully.
 	 */
-	for (i = 0; i < pcxt->nworkers; ++i)
+	for (i = pcxt->nworkers_launched; i < pcxt->nworkers; ++i)
 	{
 		memcpy(worker.bgw_extra, &i, sizeof(int));
 		if (!any_registrations_failed &&
@@ -480,8 +480,10 @@ LaunchParallelWorkers(ParallelContext *pcxt)
 			 */
 			any_registrations_failed = true;
 			pcxt->worker[i].bgwhandle = NULL;
+/*
 			pfree(pcxt->worker[i].error_mqh);
 			pcxt->worker[i].error_mqh = NULL;
+*/
 		}
 	}
 
