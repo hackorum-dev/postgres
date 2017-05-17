@@ -41,6 +41,21 @@ SET SESSION AUTHORIZATION 'regress_subscription_user';
 -- fail - invalid connection string
 ALTER SUBSCRIPTION testsub CONNECTION 'foobar';
 
+-- fail - invalid option combination
+CREATE SUBSCRIPTION testsub2 CONNECTION 'dbname=doesnotexist' PUBLICATION testpub WITH (connect = false, copy_data = true);
+CREATE SUBSCRIPTION testsub2 CONNECTION 'dbname=doesnotexist' PUBLICATION testpub WITH (connect = false, enabled = true);
+CREATE SUBSCRIPTION testsub2 CONNECTION 'dbname=doesnotexist' PUBLICATION testpub WITH (connect = false, create_slot = true);
+CREATE SUBSCRIPTION testsub2 CONNECTION 'dbname=doesnotexist' PUBLICATION testpub WITH (slot_name = NONE, enabled = true);
+CREATE SUBSCRIPTION testsub2 CONNECTION 'dbname=doesnotexist' PUBLICATION testpub WITH (slot_name = NONE, create_slot = true);
+
+-- ok - with slot_name = NONE
+CREATE SUBSCRIPTION nonesub CONNECTION 'dbname=doesnotexits' PUBLICATION testpub WITH (slot_name = NONE, connect = false);
+-- fail
+ALTER SUBSCRIPTION nonesub ENABLE;
+ALTER SUBSCRIPTION nonesub REFRESH PUBLICATION;
+
+DROP SUBSCRIPTION nonesub;
+
 \dRs+
 
 ALTER SUBSCRIPTION testsub SET PUBLICATION testpub2, testpub3 SKIP REFRESH;

@@ -145,9 +145,10 @@ CREATE SUBSCRIPTION <replaceable class="PARAMETER">subscription_name</replaceabl
           When <literal>slot_name</literal> is set to
           <literal>NONE</literal>, there will be no replication slot
           associated with the subscription.  This can be used if the
-          replication slot will be created later manually.  Such
-          subscriptions must also have both <literal>enabled</literal> and
-          <literal>create_slot</literal> set to <literal>false</literal>.
+          replication slot will be created later manually.  Setting this
+          to <literal>NONE</literal> will change default values of
+          <literal>enabled</literal> and <literal>create_slot</literal>
+          to <literal>false</literal>.          
          </para>
         </listitem>
        </varlistentry>

@@ -49,6 +49,26 @@ SET SESSION AUTHORIZATION 'regress_subscription_user';
 ALTER SUBSCRIPTION testsub CONNECTION 'foobar';
 ERROR:  invalid connection string syntax: missing "=" after "foobar" in connection info string
 
+-- fail - invalid option combination
+CREATE SUBSCRIPTION testsub2 CONNECTION 'dbname=doesnotexist' PUBLICATION testpub WITH (connect = false, copy_data = true);
+ERROR:  noconnect and copy data are mutually exclusive options
+CREATE SUBSCRIPTION testsub2 CONNECTION 'dbname=doesnotexist' PUBLICATION testpub WITH (connect = false, enabled = true);
+ERROR:  noconnect and enabled are mutually exclusive options
+CREATE SUBSCRIPTION testsub2 CONNECTION 'dbname=doesnotexist' PUBLICATION testpub WITH (connect = false, create_slot = true);
+ERROR:  noconnect and create slot are mutually exclusive options
+CREATE SUBSCRIPTION testsub2 CONNECTION 'dbname=doesnotexist' PUBLICATION testpub WITH (slot_name = NONE, enabled = true);
+ERROR:  slot_name = NONE and enabled are mutually exclusive options
+CREATE SUBSCRIPTION testsub2 CONNECTION 'dbname=doesnotexist' PUBLICATION testpub WITH (slot_name = NONE, create_slot = true);
+ERROR:  slot_name = NONE and create slot are mutually exclusive options
+-- ok - with slot_name = NONE
+CREATE SUBSCRIPTION nonesub CONNECTION 'dbname=doesnotexits' PUBLICATION testpub WITH (slot_name = NONE, connect = false);
+WARNING:  tables were not subscribed, you will have to run ALTER SUBSCRIPTION ... REFRESH PUBLICATION to subscribe the tables
+-- fail
+ALTER SUBSCRIPTION nonesub ENABLE;
+ERROR:  cannot enable subscription that does not have a slot name
+ALTER SUBSCRIPTION nonesub REFRESH PUBLICATION;
+ERROR:  ALTER SUBSCRIPTION ... REFRESH is not allowed for disabled subscriptions
+DROP SUBSCRIPTION nonesub;
 \dRs+
                                          List of subscriptions
   Name   |           Owner           | Enabled | Publication | Synchronous commit |      Conninfo       

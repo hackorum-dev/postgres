@@ -199,7 +199,7 @@ parse_subscription_options(List *options, bool *connect, bool *enabled_given,
 
 	/*
 	 * Do additional checking for disallowed combination when
-	 * slot_name = NONE was used.
+	 * slot_name = NONE was used, and do additional processing.
 	 */
 	if (slot_name && *slot_name_given && !*slot_name)
 	{
@@ -212,6 +212,12 @@ parse_subscription_options(List *options, bool *connect, bool *enabled_given,
 			ereport(ERROR,
 					(errcode(ERRCODE_SYNTAX_ERROR),
 					 errmsg("slot_name = NONE and create slot are mutually exclusive options")));
+
+		/* Change the defaults of other options. */
+		if (create_slot)
+			*create_slot = false;
+		if (enabled)
+			*enabled = false;
 	}
 }
 

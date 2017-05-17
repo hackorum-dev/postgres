@@ -3832,7 +3832,10 @@ dumpSubscription(Archive *fout, SubscriptionInfo *subinfo)
 	}
 
 	appendPQExpBuffer(query, " PUBLICATION %s WITH (connect = false, slot_name = ", publications->data);
-	appendStringLiteralAH(query, subinfo->subslotname, fout);
+	if (subinfo->subslotname[0] == '\0')
+		appendPQExpBufferStr(query, "NONE");
+	else
+		appendStringLiteralAH(query, subinfo->subslotname, fout);
 
 	if (strcmp(subinfo->subsynccommit, "off") != 0)
 		appendPQExpBuffer(query, ", synchronous_commit = %s", fmtId(subinfo->subsynccommit));
