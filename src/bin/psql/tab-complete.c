@@ -1562,6 +1562,24 @@ psql_completion(const char *text, int start, int end)
 	{
 		/* complete with nothing here as this refers to remote publications */
 	}
+	/* ALTER SUBSCRIPTION <name> SET PUBLICATION <name> */
+	else if (HeadMatches3("ALTER", "SUBSCRIPTION", MatchAny) &&
+			 TailMatches3("SET", "PUBLICATION", MatchAny))
+	{
+		COMPLETE_WITH_LIST2("REFRESH", "SKIP REFRESH");
+	}
+	/* ALTER SUBSCRIPTION <name> SET PUBLICATION <name> REFRESH */
+	else if (HeadMatches3("ALTER", "SUBSCRIPTION", MatchAny) &&
+			 TailMatches4("SET", "PUBLICATION", MatchAny, "REFRESH"))
+	{
+		COMPLETE_WITH_CONST("WITH (");
+	}
+	/* ALTER SUBSCRIPTION <name> SET PUBLICATION <name> REFRESH WITH ( */
+	else if (HeadMatches3("ALTER", "SUBSCRIPTION", MatchAny) &&
+			 TailMatches6("SET", "PUBLICATION", MatchAny, "REFRESH", "WITH", "("))
+	{
+		COMPLETE_WITH_CONST("copy_data");
+	}
 	/* ALTER SCHEMA <name> */
 	else if (Matches3("ALTER", "SCHEMA", MatchAny))
 		COMPLETE_WITH_LIST2("OWNER TO", "RENAME TO");
@@ -2387,6 +2405,10 @@ psql_completion(const char *text, int start, int end)
 	/* Complete "CREATE PUBLICATION <name> FOR TABLE <table>" */
 	else if (Matches4("CREATE", "PUBLICATION", MatchAny, "FOR TABLE"))
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_tables, NULL);
+	/* Complete "CREATE PUBLICATION <name> [...]" */
+	else if (HeadMatches3("CREATE", "PUBLICATION", MatchAny) &&
+			 (TailMatches3("FOR", "TABLE", MatchAny) || TailMatches3("FOR", "ALL", "TABLES")))
+		COMPLETE_WITH_CONST("WITH (");
 	/* Complete "CREATE PUBLICATION <name> [...] WITH" */
 	else if (HeadMatches2("CREATE", "PUBLICATION") && TailMatches2("WITH", "("))
 		COMPLETE_WITH_CONST("publish");
