@@ -37,6 +37,7 @@
 
 #include "replication/logicallauncher.h"
 #include "replication/origin.h"
+#include "replication/slot.h"
 #include "replication/walreceiver.h"
 #include "replication/walsender.h"
 #include "replication/worker_internal.h"
@@ -321,6 +322,9 @@ CreateSubscription(CreateSubscriptionStmt *stmt, bool isTopLevel)
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 (errmsg("must be superuser to create subscriptions"))));
+
+	if (slotname_given)
+		ReplicationSlotValidateName(slotname, ERROR);
 
 	rel = heap_open(SubscriptionRelationId, RowExclusiveLock);
 
@@ -635,6 +639,8 @@ AlterSubscription(AlterSubscriptionStmt *stmt)
 						ereport(ERROR,
 								(errcode(ERRCODE_SYNTAX_ERROR),
 								 errmsg("cannot set slot_name = NONE for enabled subscription")));
+
+					ReplicationSlotValidateName(slotname, ERROR);
 
 					if (slotname)
 						values[Anum_pg_subscription_subslotname - 1] =
