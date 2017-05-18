@@ -1516,10 +1516,10 @@ ApplyWorkerMain(Datum main_arg)
 								  (Datum) 0);
 
 	if (am_tablesync_worker())
-		elog(LOG, "logical replication sync for subscription %s, table %s started",
+		elog(LOG, "logical replication table synchronization worker for subscription \"%s\", table \"%s\" has started",
 			 MySubscription->name, get_rel_name(MyLogicalRepWorker->relid));
 	else
-		elog(LOG, "logical replication apply for subscription %s started",
+		elog(LOG, "logical replication apply worker for subscription \"%s\" has started",
 			 MySubscription->name);
 
 	CommitTransactionCommand();
