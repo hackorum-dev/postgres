@@ -2017,8 +2017,7 @@ match_eclasses_to_foreign_key_col(PlannerInfo *root,
 			EquivalenceMember *em = (EquivalenceMember *) lfirst(lc2);
 			Var		   *var;
 
-			if (em->em_is_child)
-				continue;		/* ignore children here */
+			Assert(!em->em_is_child);	/* no children yet */
 
 			/* EM must be a Var, possibly with RelabelType */
 			var = (Var *) em->em_expr;
