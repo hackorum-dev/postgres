@@ -143,8 +143,8 @@
      Replace "transaction log" with "write-ahead log"
      -->
      <para>
-      Rename<acronym>WAL</>-related functions and views to use <literal>lsn</>
-      instead of <literal>location</> (David Rowley)
+      Replace "transaction log" with "write-ahead log" in documentation and
+      error messages (Peter Eisentraut)
      </para>
     </listitem>
 
