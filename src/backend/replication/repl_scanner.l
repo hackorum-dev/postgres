@@ -80,29 +80,31 @@ identifier		{ident_start}{ident_cont}*
 
 %%
 
-BASE_BACKUP			{ return K_BASE_BACKUP; }
-FAST			{ return K_FAST; }
-IDENTIFY_SYSTEM		{ return K_IDENTIFY_SYSTEM; }
-SHOW		{ return K_SHOW; }
-LABEL			{ return K_LABEL; }
-NOWAIT			{ return K_NOWAIT; }
-PROGRESS			{ return K_PROGRESS; }
-MAX_RATE		{ return K_MAX_RATE; }
-WAL			{ return K_WAL; }
-TABLESPACE_MAP			{ return K_TABLESPACE_MAP; }
-TIMELINE			{ return K_TIMELINE; }
-START_REPLICATION	{ return K_START_REPLICATION; }
-CREATE_REPLICATION_SLOT		{ return K_CREATE_REPLICATION_SLOT; }
-DROP_REPLICATION_SLOT		{ return K_DROP_REPLICATION_SLOT; }
-TIMELINE_HISTORY	{ return K_TIMELINE_HISTORY; }
-PHYSICAL			{ return K_PHYSICAL; }
-RESERVE_WAL			{ return K_RESERVE_WAL; }
-LOGICAL				{ return K_LOGICAL; }
-SLOT				{ return K_SLOT; }
-TEMPORARY			{ return K_TEMPORARY; }
-EXPORT_SNAPSHOT		{ return K_EXPORT_SNAPSHOT; }
-NOEXPORT_SNAPSHOT	{ return K_NOEXPORT_SNAPSHOT; }
-USE_SNAPSHOT		{ return K_USE_SNAPSHOT; }
+	/* brute-force case insensitivity is safer than relying on flex -i */
+
+[Bb][Aa][Ss][Ee]_[Bb][Aa][Cc][Kk][Uu][Pp]	{ return K_BASE_BACKUP; }
+[Ff][Aa][Ss][Tt]	{ return K_FAST; }
+[Ii][Dd][Ee][Nn][Tt][Ii][Ff][Yy]_[Ss][Yy][Ss][Tt][Ee][Mm]	{ return K_IDENTIFY_SYSTEM; }
+[Ss][Hh][Oo][Ww]	{ return K_SHOW; }
+[Ll][Aa][Bb][Ee][Ll]	{ return K_LABEL; }
+[Nn][Oo][Ww][Aa][Ii][Tt]	{ return K_NOWAIT; }
+[Pp][Rr][Oo][Gg][Rr][Ee][Ss][Ss]	{ return K_PROGRESS; }
+[Mm][Aa][Xx]_[Rr][Aa][Tt][Ee]		{ return K_MAX_RATE; }
+[Ww][Aa][Ll]		{ return K_WAL; }
+[Tt][Aa][Bb][Ll][Ee][Ss][Pp][Aa][Cc][Ee]_[Mm][Aa][Pp]	{ return K_TABLESPACE_MAP; }
+[Tt][Ii][Mm][Ee][Ll][Ii][Nn][Ee]	{ return K_TIMELINE; }
+[Ss][Tt][Aa][Rr][Tt]_[Rr][Ee][Pp][Ll][Ii][Cc][Aa][Tt][Ii][Oo][Nn]	{ return K_START_REPLICATION; }
+[Cc][Rr][Ee][Aa][Tt][Ee]_[Rr][Ee][Pp][Ll][Ii][Cc][Aa][Tt][Ii][Oo][Nn]_[Ss][Ll][Oo][Tt]	{ return K_CREATE_REPLICATION_SLOT; }
+[Dd][Rr][Oo][Pp]_[Rr][Ee][Pp][Ll][Ii][Cc][Aa][Tt][Ii][Oo][Nn]_[Ss][Ll][Oo][Tt]	{ return K_DROP_REPLICATION_SLOT; }
+[Tt][Ii][Mm][Ee][Ll][Ii][Nn][Ee]_[Hh][Ii][Ss][Tt][Oo][Rr][Yy]	{ return K_TIMELINE_HISTORY; }
+[Pp][Hh][Yy][Ss][Ii][Cc][Aa][Ll]	{ return K_PHYSICAL; }
+[Rr][Ee][Ss][Ee][Rr][Vv][Ee]_[Ww][Aa][Ll]	{ return K_RESERVE_WAL; }
+[Ll][Oo][Gg][Ii][Cc][Aa][Ll]	{ return K_LOGICAL; }
+[Ss][Ll][Oo][Tt]	{ return K_SLOT; }
+[Tt][Ee][Mm][Pp][Oo][Rr][Aa][Rr][Yy]	{ return K_TEMPORARY; }
+[Ee][Xx][Pp][Oo][Rr][Tt]_[Ss][Nn][Aa][Pp][Ss][Hh][Oo][Tt]	{ return K_EXPORT_SNAPSHOT; }
+[Nn][Oo][Ee][Xx][Pp][Oo][Rr][Tt]_[Ss][Nn][Aa][Pp][Ss][Hh][Oo][Tt]	{ return K_NOEXPORT_SNAPSHOT; }
+[Uu][Ss][Ee]_[Ss][Nn][Aa][Pp][Ss][Hh][Oo][Tt]	{ return K_USE_SNAPSHOT; }
 
 ","				{ return ','; }
 ";"				{ return ';'; }
