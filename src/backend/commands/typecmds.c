@@ -404,10 +404,14 @@ DefineType(ParseState *pstate, List *names, List *parameters)
 			storage = 'p';
 		else if (pg_strcasecmp(a, "external") == 0)
 			storage = 'e';
+		else if (pg_strcasecmp(a, "extseekable") == 0)
+			storage = 'z';
 		else if (pg_strcasecmp(a, "extended") == 0)
 			storage = 'x';
 		else if (pg_strcasecmp(a, "main") == 0)
 			storage = 'm';
+		else if (pg_strcasecmp(a, "seekable") == 0)
+			storage = 's';
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),

@@ -1530,10 +1530,14 @@ storage_name(char c)
 			return "PLAIN";
 		case 'm':
 			return "MAIN";
+		case 's':
+			return "SEEKABLE";
 		case 'x':
 			return "EXTENDED";
 		case 'e':
 			return "EXTERNAL";
+		case 'z':
+			return "EXTSEEKABLE";
 		default:
 			return "???";
 	}
@@ -6277,10 +6281,14 @@ ATExecSetStorage(Relation rel, const char *colName, Node *newValue, LOCKMODE loc
 		newstorage = 'p';
 	else if (pg_strcasecmp(storagemode, "external") == 0)
 		newstorage = 'e';
+	else if (pg_strcasecmp(storagemode, "extseekable") == 0)
+		newstorage = 'z';
 	else if (pg_strcasecmp(storagemode, "extended") == 0)
 		newstorage = 'x';
 	else if (pg_strcasecmp(storagemode, "main") == 0)
 		newstorage = 'm';
+	else if (pg_strcasecmp(storagemode, "seekable") == 0)
+		newstorage = 's';
 	else
 	{
 		ereport(ERROR,

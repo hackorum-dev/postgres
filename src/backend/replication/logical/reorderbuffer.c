@@ -2868,6 +2868,15 @@ ReorderBufferToastReplace(ReorderBuffer *rb, ReorderBufferTXN *txn,
 			ctup = cchange->data.tp.newtuple;
 			chunk = DatumGetPointer(
 						  fastgetattr(&ctup->tuple, 3, toast_desc, &isnull));
+			if (VARATT_IS_COMPRESSED(chunk))
+			{
+				struct varlena *tmp = chunk;
+
+				/* indirect call to toast_decompress_datum */
+				chunk = heap_tuple_untoast_attr(tmp);
+				if (tmp != chunk)
+					pfree(tmp);
+			}
 
 			Assert(!isnull);
 			Assert(!VARATT_IS_EXTERNAL(chunk));

@@ -10295,10 +10295,14 @@ dumpBaseType(Archive *fout, TypeInfo *tyinfo)
 		appendPQExpBufferStr(q, ",\n    STORAGE = plain");
 	else if (strcmp(typstorage, "e") == 0)
 		appendPQExpBufferStr(q, ",\n    STORAGE = external");
+	else if (strcmp(typstorage, "z") == 0)
+		appendPQExpBufferStr(q, ",\n    STORAGE = extseekable");
 	else if (strcmp(typstorage, "x") == 0)
 		appendPQExpBufferStr(q, ",\n    STORAGE = extended");
 	else if (strcmp(typstorage, "m") == 0)
 		appendPQExpBufferStr(q, ",\n    STORAGE = main");
+	else if (strcmp(typstorage, "s") == 0)
+		appendPQExpBufferStr(q, ",\n    STORAGE = seekable");
 
 	if (strcmp(typbyval, "t") == 0)
 		appendPQExpBufferStr(q, ",\n    PASSEDBYVALUE");
@@ -15608,8 +15612,14 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 					case 'e':
 						storage = "EXTERNAL";
 						break;
+					case 'z':
+						storage = "EXTSEEKABLE";
+						break;
 					case 'm':
 						storage = "MAIN";
+						break;
+					case 's':
+						storage = "SEEKABLE";
 						break;
 					case 'x':
 						storage = "EXTENDED";
