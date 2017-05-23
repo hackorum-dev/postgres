@@ -4961,8 +4961,6 @@ sigusr1_handler(SIGNAL_ARGS)
 {
 	int			save_errno = errno;
 
-	PG_SETMASK(&BlockSig);
-
 	/* Process background worker state change. */
 	if (CheckPostmasterSignal(PMSIGNAL_BACKGROUND_WORKER_CHANGE))
 	{
@@ -5094,8 +5092,6 @@ sigusr1_handler(SIGNAL_ARGS)
 		/* Tell startup process to finish recovery */
 		signal_child(StartupPID, SIGUSR2);
 	}
-
-	PG_SETMASK(&UnBlockSig);
 
 	errno = save_errno;
 }
