@@ -323,6 +323,16 @@ get_lwlock_stats_entry(LWLock *lock)
 	}
 	return lwstats;
 }
+
+/* just shortcut to not declare lwlock_stats variable at the end of function */
+static void
+add_lwlock_stats_spin_stat(LWLock *lock, SpinDelayStatus *delayStatus)
+{
+	lwlock_stats *lwstats;
+
+	lwstats = get_lwlock_stats_entry(lock);
+	lwstats->spin_delay_count += delayStatus->delays;
+}
 #endif							/* LWLOCK_STATS */
 
 
@@ -806,13 +816,9 @@ static void
 LWLockWaitListLock(LWLock *lock)
 {
 	uint32		old_state;
-#ifdef LWLOCK_STATS
-	lwlock_stats *lwstats;
-	uint32		delays = 0;
+	SpinDelayStatus delayStatus;
 
-	lwstats = get_lwlock_stats_entry(lock);
-#endif
-
+	init_local_spin_delay(&delayStatus);
 	while (true)
 	{
 		/* always try once to acquire lock directly */
@@ -821,20 +827,10 @@ LWLockWaitListLock(LWLock *lock)
 			break;				/* got lock */
 
 		/* and then spin without atomic operations until lock is released */
+		while (old_state & LW_FLAG_LOCKED)
 		{
-			SpinDelayStatus delayStatus;
-
-			init_local_spin_delay(&delayStatus);
-
-			while (old_state & LW_FLAG_LOCKED)
-			{
-				perform_spin_delay(&delayStatus);
-				old_state = pg_atomic_read_u32(&lock->state);
-			}
-#ifdef LWLOCK_STATS
-			delays += delayStatus.delays;
-#endif
-			finish_spin_delay(&delayStatus);
+			perform_spin_delay(&delayStatus);
+			old_state = pg_atomic_read_u32(&lock->state);
 		}
 
 		/*
@@ -842,9 +838,10 @@ LWLockWaitListLock(LWLock *lock)
 		 * we're attempting to get it again.
 		 */
 	}
+	finish_spin_delay(&delayStatus);
 
 #ifdef LWLOCK_STATS
-	lwstats->spin_delay_count += delays;
+	add_lwlock_stats_spin_stat(lock, &delayStatus);
 #endif
 }
 

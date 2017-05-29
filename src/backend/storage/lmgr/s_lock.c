@@ -177,6 +177,11 @@ finish_spin_delay(SpinDelayStatus *status)
 	if (status->cur_delay == 0)
 	{
 		/* we never had to delay */
+		if (status->spins == 0)
+		{
+			/* but we didn't spin either, so ignore */
+			return;
+		}
 		if (spins_per_delay < MAX_SPINS_PER_DELAY)
 			spins_per_delay = Min(spins_per_delay + 100, MAX_SPINS_PER_DELAY);
 	}
