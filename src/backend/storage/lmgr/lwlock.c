@@ -176,7 +176,6 @@ typedef struct lwlock_stats
 	int			sh_acquire_count;
 	int			ex_acquire_count;
 	int			block_count;
-	int			dequeue_self_count;
 	int			spin_delay_count;
 }			lwlock_stats;
 
@@ -284,11 +283,11 @@ print_lwlock_stats(int code, Datum arg)
 	while ((lwstats = (lwlock_stats *) hash_seq_search(&scan)) != NULL)
 	{
 		fprintf(stderr,
-				"PID %d lwlock %s %p: shacq %u exacq %u blk %u spindelay %u dequeue self %u\n",
+				"PID %d lwlock %s %p: shacq %u exacq %u blk %u spindelay %u\n",
 				MyProcPid, LWLockTrancheArray[lwstats->key.tranche],
 				lwstats->key.instance, lwstats->sh_acquire_count,
 				lwstats->ex_acquire_count, lwstats->block_count,
-				lwstats->spin_delay_count, lwstats->dequeue_self_count);
+				lwstats->spin_delay_count);
 	}
 
 	LWLockRelease(&MainLWLockArray[0].lock);
@@ -318,7 +317,6 @@ get_lwlock_stats_entry(LWLock *lock)
 		lwstats->sh_acquire_count = 0;
 		lwstats->ex_acquire_count = 0;
 		lwstats->block_count = 0;
-		lwstats->dequeue_self_count = 0;
 		lwstats->spin_delay_count = 0;
 	}
 	return lwstats;
@@ -1060,33 +1058,6 @@ LWLockWakeup(LWLock *lock)
 }
 
 /*
- * Add ourselves to the end of the queue, acquiring waitlist lock.
- *
- * NB: Mode can be LW_WAIT_UNTIL_FREE here!
- */
-static void
-LWLockQueueSelf(LWLock *lock, LWLockMode mode)
-{
-	/*
-	 * If we don't have a PGPROC structure, there's no way to wait. This
-	 * should never occur, since MyProc should only be null during shared
-	 * memory initialization.
-	 */
-	if (MyProc == NULL)
-		elog(PANIC, "cannot wait without a PGPROC structure");
-
-	if (MyProc->lwWaiting)
-		elog(PANIC, "queueing for lock while waiting on another one");
-
-	LWLockWaitListLock(lock);
-
-	/* setting the flag is protected by the spinlock */
-	pg_atomic_fetch_or_u32(&lock->state, LW_FLAG_HAS_WAITERS);
-
-	LWLockQueueSelfLocked(lock, mode);
-}
-
-/*
  * Add ourselves to the end of the queue.
  * Lock should be held at this moment, and all neccessary flags are already
  * set. It will release wait list lock.
@@ -1112,100 +1083,6 @@ LWLockQueueSelfLocked(LWLock *lock, LWLockMode mode)
 	pg_atomic_fetch_add_u32(&lock->nwaiters, 1);
 #endif
 
-}
-
-/*
- * Remove ourselves from the waitlist.
- *
- * This is used if we queued ourselves because we thought we needed to sleep
- * but, after further checking, we discovered that we don't actually need to
- * do so.
- */
-static void
-LWLockDequeueSelf(LWLock *lock)
-{
-	bool		found = false;
-	proclist_mutable_iter iter;
-
-#ifdef LWLOCK_STATS
-	lwlock_stats *lwstats;
-
-	lwstats = get_lwlock_stats_entry(lock);
-
-	lwstats->dequeue_self_count++;
-#endif
-
-	LWLockWaitListLock(lock);
-
-	/*
-	 * Can't just remove ourselves from the list, but we need to iterate over
-	 * all entries as somebody else could have dequeued us.
-	 */
-	proclist_foreach_modify(iter, &lock->waiters, lwWaitLink)
-	{
-		if (iter.cur == MyProc->pgprocno)
-		{
-			found = true;
-			proclist_delete(&lock->waiters, iter.cur, lwWaitLink);
-			break;
-		}
-	}
-
-	if (proclist_is_empty(&lock->waiters) &&
-		(pg_atomic_read_u32(&lock->state) & LW_FLAG_HAS_WAITERS) != 0)
-	{
-		pg_atomic_fetch_and_u32(&lock->state, ~LW_FLAG_HAS_WAITERS);
-	}
-
-	/* XXX: combine with fetch_and above? */
-	LWLockWaitListUnlock(lock);
-
-	/* clear waiting state again, nice for debugging */
-	if (found)
-		MyProc->lwWaiting = false;
-	else
-	{
-		int			extraWaits = 0;
-
-		/*
-		 * Somebody else dequeued us and has or will wake us up. Deal with the
-		 * superfluous absorption of a wakeup.
-		 */
-
-		/*
-		 * Reset releaseOk if somebody woke us before we removed ourselves -
-		 * they'll have set it to false.
-		 */
-		pg_atomic_fetch_or_u32(&lock->state, LW_FLAG_RELEASE_OK);
-
-		/*
-		 * Now wait for the scheduled wakeup, otherwise our ->lwWaiting would
-		 * get reset at some inconvenient point later. Most of the time this
-		 * will immediately return.
-		 */
-		for (;;)
-		{
-			PGSemaphoreLock(MyProc->sem);
-			if (!MyProc->lwWaiting)
-				break;
-			extraWaits++;
-		}
-
-		/*
-		 * Fix the process wait semaphore's count for any absorbed wakeups.
-		 */
-		while (extraWaits-- > 0)
-			PGSemaphoreUnlock(MyProc->sem);
-	}
-
-#ifdef LOCK_DEBUG
-	{
-		/* not waiting anymore */
-		uint32		nwaiters PG_USED_FOR_ASSERTS_ONLY = pg_atomic_fetch_sub_u32(&lock->nwaiters, 1);
-
-		Assert(nwaiters < MAX_BACKENDS);
-	}
-#endif
 }
 
 /*
@@ -1533,43 +1410,90 @@ LWLockConflictsWithVar(LWLock *lock,
 {
 	bool		mustwait;
 	uint64		value;
+	uint32		state;
+	SpinDelayStatus delayStatus;
+
+	init_local_spin_delay(&delayStatus);
 
 	/*
-	 * Test first to see if it the slot is free right now.
+	 * We are trying to detect exclusive lock on state, or value change. If
+	 * neither happens, we put ourself into wait queue.
 	 *
-	 * XXX: the caller uses a spinlock before this, so we don't need a memory
-	 * barrier here as far as the current usage is concerned.  But that might
-	 * not be safe in general.
-	 */
-	mustwait = (pg_atomic_read_u32(&lock->state) & LW_VAL_EXCLUSIVE) != 0;
-
-	if (!mustwait)
-	{
-		*result = true;
-		return false;
-	}
-
-	*result = false;
-
-	/*
 	 * Read value using the lwlock's wait list lock, as we can't generally
 	 * rely on atomic 64 bit reads/stores.  TODO: On platforms with a way to
 	 * do atomic 64 bit reads/writes the spinlock should be optimized away.
 	 */
-	LWLockWaitListLock(lock);
+	while (true)
+	{
+		state = pg_atomic_read_u32(&lock->state);
+		mustwait = (state & LW_VAL_EXCLUSIVE) != 0;
+
+		if (!mustwait)
+		{
+			*result = true;
+			goto exit;
+		}
+
+		if ((state & LW_FLAG_LOCKED) == 0)
+		{
+			if (pg_atomic_compare_exchange_u32(&lock->state, &state,
+											   state | LW_FLAG_LOCKED))
+			{
+				state |= LW_FLAG_LOCKED;
+				break;
+			}
+		}
+		perform_spin_delay(&delayStatus);
+	}
+
+	/* Now we've locked wait queue, and someone holds EXCLUSIVE lock. */
 	value = *valptr;
-	LWLockWaitListUnlock(lock);
-
-	if (value != oldval)
+	mustwait = value == oldval;
+	if (!mustwait)
 	{
-		mustwait = false;
+		/* value changed, no need to block */
+		LWLockWaitListUnlock(lock);
 		*newval = value;
-	}
-	else
-	{
-		mustwait = true;
+		goto exit;
 	}
 
+	/*
+	 * If value didn't change, we have to set LW_FLAG_HAS_WAITERS and
+	 * LW_FLAG_RELEASE_OK flags and put ourself into wait queue. We could find
+	 * that the lock is not held anymore, in this case we should return
+	 * without blocking.
+	 *
+	 * Note: value could not change again cause we are holding WaitList lock.
+	 */
+	while (true)
+	{
+		uint32		desired_state;
+
+		desired_state = state | LW_FLAG_HAS_WAITERS | LW_FLAG_RELEASE_OK;
+		if (pg_atomic_compare_exchange_u32(&lock->state, &state,
+										   desired_state))
+		{
+			/*
+			 * we satisfy invariant: flags should be set while someone holds
+			 * the lock
+			 */
+			LWLockQueueSelfLocked(lock, LW_WAIT_UNTIL_FREE);
+			break;
+		}
+		if ((state & LW_VAL_EXCLUSIVE) == 0)
+		{
+			/* lock was released, no need to block anymore */
+			LWLockWaitListUnlock(lock);
+			*result = true;
+			mustwait = false;
+			break;
+		}
+	}
+exit:
+#ifdef LWLOCK_STATS
+	add_lwlock_stats_spin_stat(lock, &delayStatus);
+#endif
+	finish_spin_delay(&delayStatus);
 	return mustwait;
 }
 
@@ -1619,38 +1543,6 @@ LWLockWaitForVar(LWLock *lock, uint64 *valptr, uint64 oldval, uint64 *newval)
 
 		if (!mustwait)
 			break;				/* the lock was free or value didn't match */
-
-		/*
-		 * Add myself to wait queue. Note that this is racy, somebody else
-		 * could wakeup before we're finished queuing. NB: We're using nearly
-		 * the same twice-in-a-row lock acquisition protocol as
-		 * LWLockAcquire(). Check its comments for details. The only
-		 * difference is that we also have to check the variable's values when
-		 * checking the state of the lock.
-		 */
-		LWLockQueueSelf(lock, LW_WAIT_UNTIL_FREE);
-
-		/*
-		 * Set RELEASE_OK flag, to make sure we get woken up as soon as the
-		 * lock is released.
-		 */
-		pg_atomic_fetch_or_u32(&lock->state, LW_FLAG_RELEASE_OK);
-
-		/*
-		 * We're now guaranteed to be woken up if necessary. Recheck the lock
-		 * and variables state.
-		 */
-		mustwait = LWLockConflictsWithVar(lock, valptr, oldval, newval,
-										  &result);
-
-		/* Ok, no conflict after we queued ourselves. Undo queueing. */
-		if (!mustwait)
-		{
-			LOG_LWDEBUG("LWLockWaitForVar", lock, "free, undoing queue");
-
-			LWLockDequeueSelf(lock);
-			break;
-		}
 
 		/*
 		 * Wait until awakened.
