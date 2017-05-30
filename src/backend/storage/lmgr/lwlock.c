@@ -62,16 +62,15 @@
  * notice that we have to wait. Unfortunately by the time we have finished
  * queuing, the former locker very well might have already finished it's
  * work. That's problematic because we're now stuck waiting inside the OS.
-
- * To mitigate those races we use a two phased attempt at locking:
- *	 Phase 1: Try to do it atomically, if we succeed, nice
- *	 Phase 2: Add ourselves to the waitqueue of the lock
- *	 Phase 3: Try to grab the lock again, if we succeed, remove ourselves from
- *			  the queue
- *	 Phase 4: Sleep till wake-up, goto Phase 1
  *
- * This protects us against the problem from above as nobody can release too
- *	  quick, before we're queued, since after Phase 2 we're already queued.
+ * This race is avoided by taking a lock for the wait list using CAS with the
+ * old state value, so it would only succeed if lock is still held. Necessary
+ * flag is set using the same CAS.
+ *
+ * Inside LWLockConflictsWithVar the wait list lock is reused to protect the
+ * variable value. First the lock is acquired to check the variable value, then
+ * flags are set with a second CAS before queuing to the wait list in order to
+ * ensure that the lock was not released yet.
  * -------------------------------------------------------------------------
  */
 #include "postgres.h"
