@@ -1292,7 +1292,7 @@ TransactionIdIsActive(TransactionId xid)
  * anything older is definitely not considered as running by anyone anymore,
  * but the exact value calculated depends on a number of things. For example,
  * if rel = NULL and there are no transactions running in the current
- * database, GetOldestXmin() returns latestCompletedXid. If a transaction
+ * database, GetOldestXmin() returns latestCompletedXid + 1. If a transaction
  * begins after that, its xmin will include in-progress transactions in other
  * databases that started earlier, so another call will return a lower value.
  * Nonetheless it is safe to vacuum a table in the current database with the
