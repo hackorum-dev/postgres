@@ -821,6 +821,7 @@ LWLockAttemptLockOrQueueSelf(LWLock *lock, LWLockMode mode, LWLockMode waitmode)
 	bool		lock_free;
 	uint32		mask,
 				add;
+	int			skip_wait_list;
 
 	AssertArg(mode == LW_EXCLUSIVE || mode == LW_SHARED);
 
@@ -828,11 +829,13 @@ LWLockAttemptLockOrQueueSelf(LWLock *lock, LWLockMode mode, LWLockMode waitmode)
 	{
 		mask = LW_LOCK_MASK;
 		add = LW_VAL_EXCLUSIVE;
+		skip_wait_list = spins_per_delay / 8;
 	}
 	else
 	{
 		mask = LW_VAL_EXCLUSIVE;
 		add = LW_VAL_SHARED;
+		skip_wait_list = spins_per_delay / 4;
 	}
 
 	init_local_spin_delay(&delayStatus);
@@ -864,7 +867,7 @@ LWLockAttemptLockOrQueueSelf(LWLock *lock, LWLockMode mode, LWLockMode waitmode)
 				break;
 			}
 		}
-		else if ((old_state & LW_FLAG_LOCKED) == 0)
+		else if (delayStatus.spins > skip_wait_list && (old_state & LW_FLAG_LOCKED) == 0)
 		{
 			desired_state |= LW_FLAG_LOCKED | LW_FLAG_HAS_WAITERS;
 			if (pg_atomic_compare_exchange_u32(&lock->state,
@@ -1412,8 +1415,11 @@ LWLockConflictsWithVar(LWLock *lock,
 	uint64		value;
 	uint32		state;
 	SpinDelayStatus delayStatus;
+	int			skip_wait_list;
 
 	init_local_spin_delay(&delayStatus);
+
+	skip_wait_list = spins_per_delay / 4;
 
 	/*
 	 * We are trying to detect exclusive lock on state, or value change. If
@@ -1434,7 +1440,7 @@ LWLockConflictsWithVar(LWLock *lock,
 			goto exit;
 		}
 
-		if ((state & LW_FLAG_LOCKED) == 0)
+		if (delayStatus.spins > skip_wait_list && (state & LW_FLAG_LOCKED) == 0)
 		{
 			if (pg_atomic_compare_exchange_u32(&lock->state, &state,
 											   state | LW_FLAG_LOCKED))

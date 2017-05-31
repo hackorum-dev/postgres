@@ -988,6 +988,8 @@ extern int s_lock(volatile slock_t *lock, const char *file, int line, const char
 
 /* Support for dynamic adjustment of spins_per_delay */
 #define DEFAULT_SPINS_PER_DELAY  100
+/* Read in lwlock.c to adjust behavior */
+extern int spins_per_delay;
 
 extern void set_spins_per_delay(int shared_spins_per_delay);
 extern int	update_spins_per_delay(int shared_spins_per_delay);
