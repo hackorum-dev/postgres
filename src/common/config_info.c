@@ -39,7 +39,7 @@ get_configdata(const char *my_exec_path, size_t *configdata_len)
 	int			i = 0;
 
 	/* Adjust this to match the number of items filled below */
-	*configdata_len = 23;
+	*configdata_len = 24;
 	configdata = (ConfigData *) palloc(*configdata_len * sizeof(ConfigData));
 
 	configdata[i].name = pstrdup("BINDIR");
@@ -198,6 +198,10 @@ get_configdata(const char *my_exec_path, size_t *configdata_len)
 
 	configdata[i].name = pstrdup("VERSION");
 	configdata[i].setting = pstrdup("PostgreSQL " PG_VERSION);
+	i++;
+
+	configdata[i].name = pstrdup("VERSION_NUM");
+	configdata[i].setting = pstrdup(CppAsString2(PG_VERSION_NUM));
 	i++;
 
 	Assert(i == *configdata_len);
