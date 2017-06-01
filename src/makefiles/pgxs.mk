@@ -445,6 +445,7 @@ ifdef PGXS
 check:
 	@echo '"$(MAKE) check" is not supported.'
 	@echo 'Do "$(MAKE) install", then "$(MAKE) installcheck" instead.'
+	@false
 else
 check: submake $(REGRESS_PREP)
 ifdef REGRESS
