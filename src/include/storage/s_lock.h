@@ -1003,25 +1003,21 @@ typedef struct
 	int			spins;
 	int			delays;
 	int			cur_delay;
-	const char *file;
-	int			line;
-	const char *func;
 } SpinDelayStatus;
 
 static inline void
-init_spin_delay(SpinDelayStatus *status,
-				const char *file, int line, const char *func)
+init_spin_delay(SpinDelayStatus *status)
 {
 	status->spins = 0;
 	status->delays = 0;
 	status->cur_delay = 0;
-	status->file = file;
-	status->line = line;
-	status->func = func;
 }
 
-#define init_local_spin_delay(status) init_spin_delay(status, __FILE__, __LINE__, PG_FUNCNAME_MACRO)
-void perform_spin_delay(SpinDelayStatus *status);
+#define init_local_spin_delay(status) init_spin_delay(status)
+void perform_spin_delay_with_info(SpinDelayStatus *status,
+		const char *file, int line, const char *func);
+#define perform_spin_delay(status) \
+	perform_spin_delay_with_info(status, __FILE__, __LINE__, PG_FUNCNAME_MACRO)
 void finish_spin_delay(SpinDelayStatus *status);
 
 #endif	 /* S_LOCK_H */
