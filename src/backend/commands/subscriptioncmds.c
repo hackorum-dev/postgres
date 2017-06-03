@@ -941,10 +941,20 @@ DropSubscription(DropSubscriptionStmt *stmt, bool isTopLevel)
 		res = walrcv_exec(wrconn, cmd.data, 0, NULL);
 
 		if (res->status != WALRCV_OK_COMMAND)
-			ereport(ERROR,
-			(errmsg("could not drop the replication slot \"%s\" on publisher",
-					slotname),
-			 errdetail("The error was: %s", res->err)));
+		{
+			if (res->errcode == ERRCODE_UNDEFINED_OBJECT)
+				ereport(ERROR,
+				(errmsg("could not drop the replication slot \"%s\" on publisher",
+						slotname),
+				 errdetail("The error was: %s", res->err),
+				 errhint("Use ALTER SUBSCRIPTION ... SET (slot_name = NONE) "
+						 "to disassociate the subscription from the slot.")));
+			else
+				ereport(ERROR,
+				(errmsg("could not drop the replication slot \"%s\" on publisher",
+						slotname),
+				 errdetail("The error was: %s", res->err)));
+		}
 		else
 			ereport(NOTICE,
 					(errmsg("dropped replication slot \"%s\" on publisher",

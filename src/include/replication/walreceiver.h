@@ -186,6 +186,7 @@ typedef struct WalRcvExecResult
 {
 	WalRcvExecStatus status;
 	char	   *err;
+	int			errcode;
 	Tuplestorestate *tuplestore;
 	TupleDesc	tupledesc;
 } WalRcvExecResult;
