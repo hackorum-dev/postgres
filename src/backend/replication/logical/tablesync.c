@@ -800,7 +800,7 @@ LogicalRepSyncTableStart(XLogRecPtr *origin_startpos)
 						MySubscription->oid,
 						MyLogicalRepWorker->relid);
 
-	wrconn = walrcv_connect(MySubscription->conninfo, true, slotname, &err);
+	wrconn = walrcv_connect(MySubscription->conninfo, true, MySubscription->name, &err);
 	if (wrconn == NULL)
 		ereport(ERROR,
 				(errmsg("could not connect to the publisher: %s", err)));
