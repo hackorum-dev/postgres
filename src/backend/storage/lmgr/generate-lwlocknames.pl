@@ -56,7 +56,13 @@ while (<$lwlocknames>)
 
 printf $c "\n};\n";
 print $h "\n";
+# changing $numProc to 2, 4 or 8 should just work for 2, 4, or 8 "ProcArrayLock" parts
+my $numProc = 2;
+my $numProcNamed = 8;
 printf $h "#define NUM_INDIVIDUAL_LWLOCKS		%s\n", $lastlockidx + 1;
+printf $h "#define NUMBER_PROC_LOCKS                    %s\n", $numProc;
+printf $h "#define NUMBER_PROC_LOCKS_MASK               %s\n", $numProc-1;
+printf $h "#define OLD_NUM_INDIVIDUAL_LWLOCKS           %s\n", $lastlockidx -$numProcNamed + 1;
 
 close $h;
 close $c;

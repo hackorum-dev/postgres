@@ -407,17 +407,10 @@ ProcArrayEndTransaction(PGPROC *proc, TransactionId latestXid)
 		Assert(TransactionIdIsValid(allPgXact[proc->pgprocno].xid));
 
 		/*
-		 * If we can immediately acquire ProcArrayLock, we clear our own XID
-		 * and release the lock.  If not, use group XID clearing to improve
-		 * efficiency.
+		 * LWLockConditionalAcquire(ProcArrayLock, LW_EXCLUSIVE) will always
+		 * return not available -- so just go to  group XID clearing directly
 		 */
-		if (LWLockConditionalAcquire(ProcArrayLock, LW_EXCLUSIVE))
-		{
-			ProcArrayEndTransactionInternal(proc, pgxact, latestXid);
-			LWLockRelease(ProcArrayLock);
-		}
-		else
-			ProcArrayGroupClearXid(proc, latestXid);
+		ProcArrayGroupClearXid(proc, latestXid);
 	}
 	else
 	{

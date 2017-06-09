@@ -50,3 +50,12 @@ OldSnapshotTimeMapLock				42
 BackendRandomLock					43
 LogicalRepWorkerLock				44
 CLogTruncationLock					45
+# the ProcArray substitutes need to be in contiguous
+ProcArray0							46
+ProcArray1							47
+ProcArray2							48
+ProcArray3							49
+ProcArray4							50
+ProcArray5							51
+ProcArray6							52
+ProcArray7							53

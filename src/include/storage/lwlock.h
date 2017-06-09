@@ -158,6 +158,8 @@ extern void LWLockUpdateVar(LWLock *lock, uint64 *valptr, uint64 value);
 extern Size LWLockShmemSize(void);
 extern void CreateLWLocks(void);
 extern void InitLWLockAccess(void);
+extern bool doProcArrayLock(LWLock *lock, LWLockMode mode);
+extern void ProcArrayRelease(LWLock *lock);
 
 extern const char *GetLWLockIdentifier(uint32 classId, uint16 eventId);
 

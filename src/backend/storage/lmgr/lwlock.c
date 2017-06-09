@@ -1099,6 +1099,36 @@ LWLockDequeueSelf(LWLock *lock)
 #endif
 }
 
+ /*
+  * subroutine to acquire ProcArrayLock parts
+  */
+bool
+doProcArrayLock(LWLock *lock, LWLockMode mode)
+{
+	PGPROC	   *proc = MyProc;
+	LWLock	   *new_lock;
+	int			i;
+
+	if (mode == LW_SHARED)
+	{
+		new_lock = &MainLWLockArray[OLD_NUM_INDIVIDUAL_LWLOCKS + ((proc->pid) & NUMBER_PROC_LOCKS_MASK)].lock;
+		return LWLockAcquire(new_lock, mode);
+	}
+	else
+	{
+		/*
+		 * LW_EXCLUSIVE
+		 */
+		for (i = 0; i < NUMBER_PROC_LOCKS; i++)
+		{
+			new_lock = &MainLWLockArray[OLD_NUM_INDIVIDUAL_LWLOCKS + i].lock;
+			LWLockAcquire(new_lock, LW_EXCLUSIVE);
+		}
+		return false;
+	}
+}
+
+
 /*
  * LWLockAcquire - acquire a lightweight lock in the specified mode
  *
@@ -1113,6 +1143,7 @@ LWLockAcquire(LWLock *lock, LWLockMode mode)
 	PGPROC	   *proc = MyProc;
 	bool		result = true;
 	int			extraWaits = 0;
+	int			lp;
 #ifdef LWLOCK_STATS
 	lwlock_stats *lwstats;
 
@@ -1141,6 +1172,15 @@ LWLockAcquire(LWLock *lock, LWLockMode mode)
 	/* Ensure we will have room to remember the lock */
 	if (num_held_lwlocks >= MAX_SIMUL_LWLOCKS)
 		elog(ERROR, "too many LWLocks taken");
+
+	/*
+	 * If this request is for the ProcArrayLock, call subroutine to acquire
+	 * proper parts
+	 */
+	if (lock == ProcArrayLock)
+	{
+		return doProcArrayLock(lock, mode);
+	}
 
 	/*
 	 * Lock out cancel/die interrupts until we exit the code section protected
@@ -1293,6 +1333,14 @@ LWLockConditionalAcquire(LWLock *lock, LWLockMode mode)
 		elog(ERROR, "too many LWLocks taken");
 
 	/*
+	 * if request for ProcArrayLock, return false -- not available
+	 */
+	if (lock == ProcArrayLock)
+	{
+		return false;
+	}
+
+	/*
 	 * Lock out cancel/die interrupts until we exit the code section protected
 	 * by the LWLock.  This ensures that interrupts will not interfere with
 	 * manipulations of data structures in shared memory.
@@ -1347,6 +1395,15 @@ LWLockAcquireOrWait(LWLock *lock, LWLockMode mode)
 #endif
 
 	Assert(mode == LW_SHARED || mode == LW_EXCLUSIVE);
+
+	/*
+	 * do ProcArrayLock, but get the lock (always) and return true
+	 */
+	if (lock == ProcArrayLock)
+	{
+		LWLockAcquire(lock, mode);
+		return true;
+	}
 
 	PRINT_LWDEBUG("LWLockAcquireOrWait", lock, mode);
 
@@ -1533,6 +1590,11 @@ LWLockWaitForVar(LWLock *lock, uint64 *valptr, uint64 oldval, uint64 *newval)
 	PRINT_LWDEBUG("LWLockWaitForVar", lock, LW_WAIT_UNTIL_FREE);
 
 	/*
+	 * The ProcArrayLock should not be a parameter to this function
+	 */
+	Assert(lock != ProcArrayLock);
+
+	/*
 	 * Lock out cancel/die interrupts while we sleep on the lock.  There is no
 	 * cleanup mechanism to remove us from the wait queue if we got
 	 * interrupted.
@@ -1707,6 +1769,53 @@ LWLockUpdateVar(LWLock *lock, uint64 *valptr, uint64 val)
 	}
 }
 
+/*
+ * Subroutine to release proper part(s) of ProcArrayLock
+ * for LW_SHARED, release the single ProcArrayLock part
+ * for LW_EXCLUSIVE, release all the parts
+ */
+void
+ProcArrayRelease(LWLock *lock)
+{
+	int			i;
+	LWLockMode	mode;
+	LWLock	   *newLock;
+
+	/*
+	 * Search from the end -- expecting to find the lock on the end of the
+	 * locks held list
+	 */
+	for (i = num_held_lwlocks; --i >= 0;)
+	{
+		/*
+		 * rely on the fact that the PracArrayLock parts are contiguous in the
+		 * locks list use ProcArray7 so that regardless of the
+		 * NUMBER_PROC_LOCKS, the test will be valid
+		 */
+		if ((held_lwlocks[i].lock >= ProcArray0)
+			&& (held_lwlocks[i].lock <= ProcArray7))
+		{
+			mode = held_lwlocks[i].mode;
+			break;
+		}
+	}
+	Assert(i >= 0);
+	if (mode == LW_SHARED)
+	{
+		LWLockRelease(held_lwlocks[i].lock);
+		return;
+	}
+
+	/*
+	 * for LW_EXCLUSIVE, release the parts in reverse order of acquire
+	 */
+	for (i = (NUMBER_PROC_LOCKS - 1); i >= 0; i--)
+	{
+		newLock = (&MainLWLockArray[OLD_NUM_INDIVIDUAL_LWLOCKS + i].lock);
+		LWLockRelease(newLock);
+	}
+	return;
+}
 
 /*
  * LWLockRelease - release a previously acquired lock
@@ -1718,6 +1827,15 @@ LWLockRelease(LWLock *lock)
 	uint32		oldstate;
 	bool		check_waiters;
 	int			i;
+
+	/*
+	 * intercept a release for the ProcArrayLock
+	 */
+	if (lock == ProcArrayLock)
+	{
+		ProcArrayRelease(lock);
+		return;
+	}
 
 	/*
 	 * Remove lock from list of locks held.  Usually, but not always, it will
@@ -1817,7 +1935,19 @@ LWLockReleaseAll(void)
 	{
 		HOLD_INTERRUPTS();		/* match the upcoming RESUME_INTERRUPTS */
 
-		LWLockRelease(held_lwlocks[num_held_lwlocks - 1].lock);
+		/*
+		 * check for ProcArrayLock parts when any are found, call
+		 * LWLockRelease with the ProcArray_Lock
+		 */
+		if (((held_lwlocks[num_held_lwlocks - 1].lock) >= ProcArray0)
+			&& ((held_lwlocks[num_held_lwlocks - 1].lock) <= ProcArray7))
+		{
+			LWLockRelease(ProcArrayLock);
+		}
+		else
+		{
+			LWLockRelease(held_lwlocks[num_held_lwlocks - 1].lock);
+		}
 	}
 }
 
