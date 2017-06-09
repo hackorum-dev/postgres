@@ -689,7 +689,7 @@ fileIterateForeignScan(ForeignScanState *node)
 {
 	FileFdwExecutionState *festate = (FileFdwExecutionState *) node->fdw_state;
 	TupleTableSlot *slot = node->ss.ss_ScanTupleSlot;
-	bool		found;
+	int		found;
 	ErrorContextCallback errcallback;
 
 	/* Set up callback to identify error line number. */
@@ -1080,7 +1080,7 @@ file_acquire_sample_rows(Relation onerel, int elevel,
 	TupleDesc	tupDesc;
 	Datum	   *values;
 	bool	   *nulls;
-	bool		found;
+	int		    found;
 	char	   *filename;
 	bool		is_program;
 	List	   *options;

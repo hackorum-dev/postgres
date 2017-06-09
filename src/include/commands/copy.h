@@ -31,7 +31,7 @@ extern void ProcessCopyOptions(ParseState *pstate, CopyState cstate, bool is_fro
 extern CopyState BeginCopyFrom(ParseState *pstate, Relation rel, const char *filename,
 			  bool is_program, copy_data_source_cb data_source_cb, List *attnamelist, List *options);
 extern void EndCopyFrom(CopyState cstate);
-extern bool NextCopyFrom(CopyState cstate, ExprContext *econtext,
+extern int NextCopyFrom(CopyState cstate, ExprContext *econtext,
 			 Datum *values, bool *nulls, Oid *tupleOid);
 extern bool NextCopyFromRawFields(CopyState cstate,
 					  char ***fields, int *nfields);
