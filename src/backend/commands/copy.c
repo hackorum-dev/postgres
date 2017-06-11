@@ -3279,7 +3279,7 @@ NextCopyFrom(CopyState cstate, ExprContext *econtext,
             exec_state = NCF_SKIP;
 			ereport(error_level,
 					(errcode(ERRCODE_BAD_COPY_FILE_FORMAT),
-					 errmsg("extra data after last expected column")));
+					 errmsg("extra data after last expected column at line %d", cstate->cur_lineno)));
         }
 
 
@@ -3293,7 +3293,7 @@ NextCopyFrom(CopyState cstate, ExprContext *econtext,
                 exec_state = NCF_SKIP;
 				ereport(error_level,
 						(errcode(ERRCODE_BAD_COPY_FILE_FORMAT),
-						 errmsg("missing data for OID column")));
+						 errmsg("missing data for OID column at line %d", cstate->cur_lineno)));
             }
 
 			string = field_strings[fieldno++];
@@ -3303,7 +3303,7 @@ NextCopyFrom(CopyState cstate, ExprContext *econtext,
                 exec_state = NCF_SKIP;
 				ereport(error_level,
 						(errcode(ERRCODE_BAD_COPY_FILE_FORMAT),
-						 errmsg("null OID in COPY data")));
+						 errmsg("null OID in COPY data at line %d", cstate->cur_lineno)));
             }
 			else if (cstate->oids && tupleOid != NULL)
 			{
@@ -3316,7 +3316,7 @@ NextCopyFrom(CopyState cstate, ExprContext *econtext,
                     exec_state = NCF_SKIP;
 					ereport(error_level,
 							(errcode(ERRCODE_BAD_COPY_FILE_FORMAT),
-							 errmsg("invalid OID in COPY data")));
+							 errmsg("invalid OID in COPY data at line %d", cstate->cur_lineno)));
                 }
 
 				cstate->cur_attname = NULL;
@@ -3335,8 +3335,8 @@ NextCopyFrom(CopyState cstate, ExprContext *econtext,
                 exec_state = NCF_SKIP;
 				ereport(error_level,
 						(errcode(ERRCODE_BAD_COPY_FILE_FORMAT),
-						 errmsg("missing data for column \"%s\"",
-								NameStr(attr[m]->attname))));
+						 errmsg("missing data for column \"%s\" at line %d",
+								NameStr(attr[m]->attname), cstate->cur_lineno)));
             }
 
 			string = field_strings[fieldno++];
