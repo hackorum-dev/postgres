@@ -13676,39 +13676,46 @@ ATExecAttachPartition(List **wqueue, Relation rel, PartitionCmd *cmd)
 		 * however, if any of the partition keys is an expression, which is
 		 * handled below.
 		 */
-		part_constr = linitial(partConstraint);
-		part_constr = make_ands_implicit((Expr *) part_constr);
-
-		/*
-		 * part_constr contains an IS NOT NULL expression, if this is a list
-		 * partition that does not accept nulls (in fact, also if this is a
-		 * range partition and some partition key is an expression, but we
-		 * never skip validation in that case anyway; see below)
-		 */
-		foreach(lc, part_constr)
+		if (skip_validate)
 		{
-			Node	   *expr = lfirst(lc);
+			part_constr = linitial(partConstraint);
+			part_constr = make_ands_implicit((Expr *) part_constr);
 
-			if (IsA(expr, NullTest) &&
-				((NullTest *) expr)->nulltesttype == IS_NOT_NULL)
+			/*
+			 * part_constr contains an IS NOT NULL expression, if this is a
+			 * list partition that does not accept nulls (in fact, also if
+			 * this is a range partition and some partition key is an
+			 * expression, but we never skip validation in that case anyway;
+			 * see below)
+			 */
+			foreach(lc, part_constr)
 			{
-				partition_accepts_null = false;
-				break;
+				Node	   *expr = lfirst(lc);
+
+				if (IsA(expr, NullTest) &&
+					((NullTest *) expr)->nulltesttype == IS_NOT_NULL)
+				{
+					partition_accepts_null = false;
+					break;
+				}
 			}
-		}
 
-		partnatts = get_partition_natts(key);
-		for (i = 0; i < partnatts; i++)
-		{
-			AttrNumber	partattno;
+			partnatts = get_partition_natts(key);
+			for (i = 0; i < partnatts; i++)
+			{
+				AttrNumber	partattno;
 
-			partattno = get_partition_col_attnum(key, i);
+				partattno = get_partition_col_attnum(key, i);
 
-			/* If partition key is an expression, must not skip validation */
-			if (!partition_accepts_null &&
-				(partattno == 0 ||
-				 !bms_is_member(partattno, not_null_attrs)))
-				skip_validate = false;
+				/* If partition key is an expression, must not skip validation */
+				if (!partition_accepts_null &&
+					(partattno == 0 ||
+					 !bms_is_member(partattno, not_null_attrs)))
+				{
+					skip_validate = false;
+					break;
+				}
+			}
 		}
 	}
 
