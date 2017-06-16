@@ -2840,7 +2840,7 @@ ProcessInterrupts(void)
 		if (ClientAuthInProgress)
 			ereport(FATAL,
 					(errcode(ERRCODE_QUERY_CANCELED),
-					 errmsg("canceling authentication due to timeout")));
+					 errmsg("canceling authentication due to administrator command")));
 		else if (IsAutoVacuumWorkerProcess())
 			ereport(FATAL,
 					(errcode(ERRCODE_ADMIN_SHUTDOWN),
