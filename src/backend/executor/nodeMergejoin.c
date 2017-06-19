@@ -388,7 +388,7 @@ MJEvalInnerValues(MergeJoinState *mergestate, TupleTableSlot *innerslot)
  * for the current outer and inner tuples, respectively.
  */
 static int
-MJCompare(MergeJoinState *mergestate)
+MJCompare(MergeJoinState *mergestate, int* diffpos)
 {
 	int			result = 0;
 	bool		nulleqnull = false;
@@ -422,8 +422,12 @@ MJCompare(MergeJoinState *mergestate)
 									 &clause->ssup);
 
 		if (result != 0)
+		{
 			break;
+		}
 	}
+
+	*diffpos = i;
 
 	/*
 	 * If we had any NULL-vs-NULL inputs, we do not want to report that the
@@ -504,6 +508,21 @@ MJFillInner(MergeJoinState *node)
 		InstrCountFiltered2(node, 1);
 
 	return NULL;
+}
+
+/*
+ * In case of ASOF join we should find last matching tuple: inner tuple which timestamp is smaller or equal than timestapm of outer tuple.
+ * We Remember this tuple in mj_InnerTupleSlot and when find non-matching tuple, perform join with this marked tuple.
+ * mj_InnerTupleSlot will bbe restored by EXEC_MJ_JOINTUPLES using value saved in mj_NextInnerTupleSlot.
+ */
+static void
+MJAsofJoinTuple(MergeJoinState *node)
+{
+	node->mj_NextInnerTupleSlot = node->mj_InnerTupleSlot;
+	node->mj_InnerTupleSlot = node->mj_MarkedTupleSlot;
+	(void) MJEvalInnerValues(node, node->mj_InnerTupleSlot);
+	node->mj_MatchedAsof = false;
+	node->mj_JoinState = EXEC_MJ_JOINTUPLES;
 }
 
 
@@ -609,7 +628,7 @@ ExecMergeJoin(MergeJoinState *node)
 	ExprContext *econtext;
 	bool		doFillOuter;
 	bool		doFillInner;
-
+	int         diffpos;
 	/*
 	 * get information from node
 	 */
@@ -784,7 +803,11 @@ ExecMergeJoin(MergeJoinState *node)
 				econtext->ecxt_outertuple = outerTupleSlot;
 				innerTupleSlot = node->mj_InnerTupleSlot;
 				econtext->ecxt_innertuple = innerTupleSlot;
-
+				if (node->mj_NextInnerTupleSlot != NULL)
+				{
+					node->mj_InnerTupleSlot = node->mj_NextInnerTupleSlot;
+					node->mj_NextInnerTupleSlot = NULL;
+				}
 				qualResult = (joinqual == NULL ||
 							  ExecQual(joinqual, econtext));
 				MJ_DEBUG_QUAL(joinqual, qualResult);
@@ -884,15 +907,33 @@ ExecMergeJoin(MergeJoinState *node)
 						 * If they do not match then advance to next outer
 						 * tuple.
 						 */
-						compareResult = MJCompare(node);
+					    compareResult = MJCompare(node, &diffpos);
 						MJ_DEBUG_COMPARE(compareResult);
 
 						if (compareResult == 0)
-							node->mj_JoinState = EXEC_MJ_JOINTUPLES;
+						{
+							if (node->js.jointype == JOIN_ASOF)
+							{
+								node->mj_JoinState = EXEC_MJ_NEXTINNER;
+								node->mj_MatchedAsof = true;
+								MarkInnerTuple(node->mj_InnerTupleSlot, node);
+							}
+							else
+							{
+								node->mj_JoinState = EXEC_MJ_JOINTUPLES;
+							}
+						}
 						else
 						{
 							Assert(compareResult < 0);
-							node->mj_JoinState = EXEC_MJ_NEXTOUTER;
+							if (node->mj_MatchedAsof)
+							{
+								MJAsofJoinTuple(node);
+							}
+							else
+							{
+								node->mj_JoinState = EXEC_MJ_NEXTOUTER;
+							}
 						}
 						break;
 					case MJEVAL_NONMATCHABLE:
@@ -914,9 +955,16 @@ ExecMergeJoin(MergeJoinState *node)
 						 * because we are not transiting to a state where the
 						 * inner plan is assumed to be exhausted.)
 						 */
-						node->mj_InnerTupleSlot = NULL;
-						node->mj_JoinState = EXEC_MJ_NEXTOUTER;
-						break;
+					     if (node->mj_MatchedAsof)
+						 {
+							 MJAsofJoinTuple(node);
+						 }
+						 else
+						 {
+							 node->mj_InnerTupleSlot = NULL;
+							 node->mj_JoinState = EXEC_MJ_NEXTOUTER;
+						 }
+						 break;
 				}
 				break;
 
@@ -971,7 +1019,7 @@ ExecMergeJoin(MergeJoinState *node)
 				{
 					case MJEVAL_MATCHABLE:
 						/* Go test the new tuple against the marked tuple */
-						node->mj_JoinState = EXEC_MJ_TESTOUTER;
+					    node->mj_JoinState = EXEC_MJ_TESTOUTER;
 						break;
 					case MJEVAL_NONMATCHABLE:
 						/* Can't match, so fetch next outer tuple */
@@ -1041,7 +1089,7 @@ ExecMergeJoin(MergeJoinState *node)
 				innerTupleSlot = node->mj_MarkedTupleSlot;
 				(void) MJEvalInnerValues(node, innerTupleSlot);
 
-				compareResult = MJCompare(node);
+				compareResult = MJCompare(node, &diffpos);
 				MJ_DEBUG_COMPARE(compareResult);
 
 				if (compareResult == 0)
@@ -1129,7 +1177,14 @@ ExecMergeJoin(MergeJoinState *node)
 								 * Need to emit left-join tuples for remaining
 								 * outer tuples.
 								 */
-								node->mj_JoinState = EXEC_MJ_ENDINNER;
+								if (node->mj_MatchedAsof)
+								{
+									MJAsofJoinTuple(node);
+								}
+								else
+								{
+									node->mj_JoinState = EXEC_MJ_ENDINNER;
+								}
 								break;
 							}
 							/* Otherwise we're done. */
@@ -1175,23 +1230,63 @@ ExecMergeJoin(MergeJoinState *node)
 				 * satisfy the mergeclauses.  If they do, then we update the
 				 * marked tuple position and go join them.
 				 */
-				compareResult = MJCompare(node);
+				compareResult = MJCompare(node, &diffpos);
 				MJ_DEBUG_COMPARE(compareResult);
 
 				if (compareResult == 0)
 				{
-					if (!node->mj_SkipMarkRestore)
-						ExecMarkPos(innerPlan);
+					if (node->js.jointype == JOIN_ASOF)
+					{
+						MarkInnerTuple(node->mj_InnerTupleSlot, node);
+						node->mj_MatchedAsof = true;
+						node->mj_JoinState = EXEC_MJ_NEXTINNER;
+					}
+					else
+					{
+						if (!node->mj_SkipMarkRestore)
+							ExecMarkPos(innerPlan);
 
-					MarkInnerTuple(node->mj_InnerTupleSlot, node);
+						MarkInnerTuple(node->mj_InnerTupleSlot, node);
 
-					node->mj_JoinState = EXEC_MJ_JOINTUPLES;
+						node->mj_JoinState = EXEC_MJ_JOINTUPLES;
+					}
 				}
 				else if (compareResult < 0)
-					node->mj_JoinState = EXEC_MJ_SKIPOUTER_ADVANCE;
+				{
+					if (node->mj_MatchedAsof)
+					{
+						MJAsofJoinTuple(node);
+					}
+					else
+					{
+						node->mj_JoinState = EXEC_MJ_SKIPOUTER_ADVANCE;
+					}
+				}
 				else
+				{
 					/* compareResult > 0 */
-					node->mj_JoinState = EXEC_MJ_SKIPINNER_ADVANCE;
+					if (node->js.jointype == JOIN_ASOF)
+					{
+						if (diffpos == node->mj_NumClauses-1)
+						{
+							MarkInnerTuple(node->mj_InnerTupleSlot, node);
+							node->mj_MatchedAsof = true;
+							node->mj_JoinState = EXEC_MJ_SKIPINNER_ADVANCE;
+						}
+						else if (node->mj_MatchedAsof)
+						{
+							MJAsofJoinTuple(node);
+						}
+						else
+						{
+							node->mj_JoinState = EXEC_MJ_SKIPINNER_ADVANCE;
+						}
+					}
+					else
+					{
+						node->mj_JoinState = EXEC_MJ_SKIPINNER_ADVANCE;
+					}
+				}
 				break;
 
 				/*
@@ -1318,7 +1413,14 @@ ExecMergeJoin(MergeJoinState *node)
 							 * Need to emit left-join tuples for remaining
 							 * outer tuples.
 							 */
-							node->mj_JoinState = EXEC_MJ_ENDINNER;
+							if (node->mj_MatchedAsof)
+							{
+								MJAsofJoinTuple(node);
+							}
+							else
+							{
+								node->mj_JoinState = EXEC_MJ_ENDINNER;
+							}
 							break;
 						}
 						/* Otherwise we're done. */
@@ -1518,7 +1620,8 @@ ExecInitMergeJoin(MergeJoin *node, EState *estate, int eflags)
 	 * detect whether we need only consider the first matching inner tuple
 	 */
 	mergestate->js.single_match = (node->join.inner_unique ||
-								   node->join.jointype == JOIN_SEMI);
+								   node->join.jointype == JOIN_SEMI ||
+								   node->join.jointype == JOIN_ASOF);
 
 	/* set up null tuples for outer joins, if needed */
 	switch (node->join.jointype)
@@ -1530,6 +1633,7 @@ ExecInitMergeJoin(MergeJoin *node, EState *estate, int eflags)
 			break;
 		case JOIN_LEFT:
 		case JOIN_ANTI:
+		case JOIN_ASOF:
 			mergestate->mj_FillOuter = true;
 			mergestate->mj_FillInner = false;
 			mergestate->mj_NullInnerTupleSlot =

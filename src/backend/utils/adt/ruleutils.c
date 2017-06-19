@@ -9938,6 +9938,12 @@ get_from_clause_item(Node *jtnode, Query *query, deparse_context *context)
 									 PRETTYINDENT_STD,
 									 PRETTYINDENT_JOIN);
 				break;
+			case JOIN_ASOF:
+				appendContextKeyword(context, " ASOF JOIN ",
+									 -PRETTYINDENT_STD,
+									 PRETTYINDENT_STD,
+									 PRETTYINDENT_JOIN);
+				break;
 			case JOIN_FULL:
 				appendContextKeyword(context, " FULL JOIN ",
 									 -PRETTYINDENT_STD,

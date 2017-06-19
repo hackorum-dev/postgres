@@ -1324,6 +1324,9 @@ get_jointype_name(JoinType jointype)
 		case JOIN_FULL:
 			return "FULL";
 
+		case JOIN_ASOF:
+			return "ASOF";
+
 		default:
 			/* Shouldn't come here, but protect from buggy code. */
 			elog(ERROR, "unsupported join type %d", jointype);

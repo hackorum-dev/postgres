@@ -2449,6 +2449,7 @@ initial_cost_mergejoin(PlannerInfo *root, JoinCostWorkspace *workspace,
 			innerendsel = cache->leftendsel;
 		}
 		if (jointype == JOIN_LEFT ||
+			jointype == JOIN_ASOF ||
 			jointype == JOIN_ANTI)
 		{
 			outerstartsel = 0.0;
@@ -4254,6 +4255,7 @@ calc_joinrel_size_estimate(PlannerInfo *root,
 			nrows = outer_rows * inner_rows * fkselec * jselec;
 			/* pselec not used */
 			break;
+		case JOIN_ASOF:
 		case JOIN_LEFT:
 			nrows = outer_rows * inner_rows * fkselec * jselec;
 			if (nrows < outer_rows)

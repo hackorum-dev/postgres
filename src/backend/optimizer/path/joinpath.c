@@ -1266,6 +1266,7 @@ match_unsorted_outer(PlannerInfo *root,
 			break;
 		case JOIN_RIGHT:
 		case JOIN_FULL:
+		case JOIN_ASOF:
 			nestjoinOK = false;
 			useallclauses = true;
 			break;

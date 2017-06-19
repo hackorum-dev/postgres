@@ -782,6 +782,20 @@ populate_joinrel_with_paths(PlannerInfo *root, RelOptInfo *rel1,
 								 JOIN_INNER, sjinfo,
 								 restrictlist);
 			break;
+		case JOIN_ASOF:
+			if (is_dummy_rel(rel1) ||
+				restriction_is_constant_false(restrictlist, true))
+			{
+				mark_dummy_rel(joinrel);
+				break;
+			}
+			if (restriction_is_constant_false(restrictlist, false) &&
+				bms_is_subset(rel2->relids, sjinfo->syn_righthand))
+				mark_dummy_rel(rel2);
+			add_paths_to_joinrel(root, joinrel, rel1, rel2,
+								 JOIN_ASOF, sjinfo,
+								 restrictlist);
+			break;
 		case JOIN_LEFT:
 			if (is_dummy_rel(rel1) ||
 				restriction_is_constant_false(restrictlist, true))

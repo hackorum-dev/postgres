@@ -2218,6 +2218,7 @@ eqjoinsel(PG_FUNCTION_ARGS)
 	switch (sjinfo->jointype)
 	{
 		case JOIN_INNER:
+		case JOIN_ASOF:
 		case JOIN_LEFT:
 		case JOIN_FULL:
 			selec = eqjoinsel_inner(operator, &vardata1, &vardata2);

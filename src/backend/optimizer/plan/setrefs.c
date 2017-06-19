@@ -1679,6 +1679,7 @@ set_join_references(PlannerInfo *root, Join *join, int rtoffset)
 	 */
 	switch (join->jointype)
 	{
+		case JOIN_ASOF:
 		case JOIN_LEFT:
 		case JOIN_SEMI:
 		case JOIN_ANTI:

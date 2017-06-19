@@ -1606,9 +1606,11 @@ typedef struct MergeJoinState
 	bool		mj_FillInner;
 	bool		mj_MatchedOuter;
 	bool		mj_MatchedInner;
+	bool        mj_MatchedAsof;
 	TupleTableSlot *mj_OuterTupleSlot;
 	TupleTableSlot *mj_InnerTupleSlot;
 	TupleTableSlot *mj_MarkedTupleSlot;
+	TupleTableSlot *mj_NextInnerTupleSlot;
 	TupleTableSlot *mj_NullOuterTupleSlot;
 	TupleTableSlot *mj_NullInnerTupleSlot;
 	ExprContext *mj_OuterEContext;

@@ -4073,7 +4073,7 @@ foreign_join_ok(PlannerInfo *root, RelOptInfo *joinrel, JoinType jointype,
 	 * Constructing queries representing SEMI and ANTI joins is hard, hence
 	 * not considered right now.
 	 */
-	if (jointype != JOIN_INNER && jointype != JOIN_LEFT &&
+	if (jointype != JOIN_INNER && jointype != JOIN_LEFT && jointype != JOIN_ASOF && 
 		jointype != JOIN_RIGHT && jointype != JOIN_FULL)
 		return false;
 
@@ -4211,6 +4211,7 @@ foreign_join_ok(PlannerInfo *root, RelOptInfo *joinrel, JoinType jointype,
 			break;
 
 		case JOIN_LEFT:
+		case JOIN_ASOF:
 			fpinfo->joinclauses = list_concat(fpinfo->joinclauses,
 										  list_copy(fpinfo_i->remote_conds));
 			fpinfo->remote_conds = list_concat(fpinfo->remote_conds,

@@ -514,6 +514,9 @@ TABLE [ ONLY ] <replaceable class="parameter">table_name</replaceable> [ * ]
          <listitem>
           <para><literal>CROSS JOIN</literal></para>
          </listitem>
+         <listitem>
+          <para><literal>ASOF [ OUTER ] JOIN</literal></para>
+         </listitem>
         </itemizedlist>
 
         For the <literal>INNER</> and <literal>OUTER</> join types, a
@@ -523,7 +526,9 @@ TABLE [ ONLY ] <replaceable class="parameter">table_name</replaceable> [ * ]
         <literal>USING (<replaceable
         class="parameter">join_column</replaceable> [, ...])</literal>.
         See below for the meaning.  For <literal>CROSS JOIN</literal>,
-        none of these clauses can appear.
+        none of these clauses can appear. For <literal>ASOF</literal> join type, a
+        join condition must be <literal>USING (<replaceable
+        class="parameter">join_column</replaceable> [, ...])</literal>.
        </para>
 
        <para>
@@ -571,6 +576,32 @@ TABLE [ ONLY ] <replaceable class="parameter">table_name</replaceable> [ * ]
         on the right), plus one row for each unmatched right-hand row
         (extended with nulls on the left).
        </para>
+
+       <para><literal>ASOF OUTER JOIN</> is similar to <literal>LEFT OUTER JOIN</> but it accepts only
+        <literal>USING (<replaceable class="parameter">join_column_1</replaceable> [, ...], <replaceable class="parameter">join_column_N</replaceable>)</literal> clause
+        where last joined column <replaceable class="parameter">join_column_N</replaceable> is expected to be timestamp 
+        (but actually can have any comparable type) and outer tuple is matched with only one inner tuple with the same values of 1..N-1 
+        join columns and with largest value of <replaceable class="parameter">join_column_N</replaceable> which is smaller or equal than 
+        timesamp of the outer tuple. If there is no such inner tuple, then outer tuple is extended to the full width
+        of the joined table by inserting null values for the inner columns. Example below illustrates work of ASOF join:
+<programlisting>
+create table t(sym varchar,dt time,qty bigint);
+create index ti on t(sym,dt);
+create table q(sym varchar,dt time,px real);
+create index qi on q(sym,dt);
+insert into t values ('msft','10:01:01',100),('msft','10:01:01',101),('ibm','10:01:03',200),('ge','10:01:04',150);
+insert into q values ('ibm','10:01:00',100),('msft','10:01:00',99),('msft','10:01:01',101),('ibm','10:01:02',98); 
+select * from t asof join q using (sym,dt);
+ sym  |    dt    | qty | px  
+------+----------+-----+-----
+ ge   | 10:01:04 | 150 |    
+ ibm  | 10:01:03 | 200 |  98
+ msft | 10:01:01 | 101 | 101
+ msft | 10:01:01 | 100 | 101
+(4 rows)
+</programlisting>
+        </para>
+       
       </listitem>
      </varlistentry>
 

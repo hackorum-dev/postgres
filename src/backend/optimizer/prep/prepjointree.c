@@ -273,6 +273,7 @@ pull_up_sublinks_jointree_recurse(PlannerInfo *root, Node *jtnode,
 														 NULL, NULL);
 				break;
 			case JOIN_LEFT:
+			case JOIN_ASOF:
 				j->quals = pull_up_sublinks_qual_recurse(root, j->quals,
 														 &j->rarg,
 														 rightrelids,
@@ -805,6 +806,7 @@ pull_up_subqueries_recurse(PlannerInfo *root, Node *jtnode,
 			case JOIN_LEFT:
 			case JOIN_SEMI:
 			case JOIN_ANTI:
+			case JOIN_ASOF:
 				j->larg = pull_up_subqueries_recurse(root, j->larg,
 													 j,
 												   lowest_nulling_outer_join,
@@ -2626,6 +2628,7 @@ reduce_outer_joins_pass2(Node *jtnode,
 				break;
 			case JOIN_SEMI:
 			case JOIN_ANTI:
+			case JOIN_ASOF:
 
 				/*
 				 * These could only have been introduced by pull_up_sublinks,

@@ -890,6 +890,7 @@ deconstruct_recurse(PlannerInfo *root, Node *jtnode, bool below_outer_join,
 				/* and it doesn't force anything to null, either */
 				nullable_rels = NULL;
 				break;
+			case JOIN_ASOF:
 			case JOIN_LEFT:
 			case JOIN_ANTI:
 				leftjoinlist = deconstruct_recurse(root, j->larg,

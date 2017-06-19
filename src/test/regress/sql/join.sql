@@ -1878,3 +1878,31 @@ where exists (select 1 from j3
       and t1.unique1 < 1;
 
 drop table j3;
+
+create table t(sym varchar,dt time,qty bigint);
+create index ti on t(sym,dt);
+create table q(sym varchar,dt time,px real);
+create index qi on q(sym,dt);
+insert into t values ('msft','10:01:01',100),('msft','10:01:01',101),('ibm','10:01:03',200),('ge','10:01:04',150);
+insert into q values ('ibm','10:01:00',100),('msft','10:01:00',99),('msft','10:01:01',101),('ibm','10:01:02',98); 
+select * from t asof join q using (sym,dt);
+explain select * from t asof join q using (sym,dt);
+drop table t;
+drop table q;
+
+create table t(sym varchar,dt time,qty bigint);
+create table q(sym varchar,dt time,px real);
+insert into t values ('msft','10:01:01',100),('msft','10:01:01',101),('ibm','10:01:03',200),('ge','10:01:04',150),('ora','10:01:05',250);
+insert into q values ('ibm','10:01:00',100),('msft','10:01:00',99),('msft','10:01:01',101),('ibm','10:01:02',98),('ora','10:01:03',111); 
+select * from t asof join q using (sym,dt);
+explain select * from t asof join q using (sym,dt);
+drop table t;
+drop table q;
+
+create table t (tid serial primary key, dt time);
+insert into t (dt) values ('10:01'),('10:03'),('10:07'),('10:08');
+create table q (qid serial primary key, dt time);
+insert into q (dt) values ('10:02'),('10:04'),('10:06'),('10:08');
+select * from t asof outer join q using (dt);
+drop table t;
+drop table q;

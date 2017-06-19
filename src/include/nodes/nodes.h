@@ -697,7 +697,9 @@ typedef enum JoinType
 	 * by the executor (nor, indeed, by most of the planner).
 	 */
 	JOIN_UNIQUE_OUTER,			/* LHS path must be made unique */
-	JOIN_UNIQUE_INNER			/* RHS path must be made unique */
+	JOIN_UNIQUE_INNER,			/* RHS path must be made unique */
+
+	JOIN_ASOF                   /* ASOF join (http://code.kx.com/wiki/Reference/aj) */
 
 	/*
 	 * We might need additional join types someday.

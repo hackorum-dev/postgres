@@ -449,6 +449,7 @@ ExecInitHashJoin(HashJoin *node, EState *estate, int eflags)
 		case JOIN_SEMI:
 			break;
 		case JOIN_LEFT:
+		case JOIN_ASOF:
 		case JOIN_ANTI:
 			hjstate->hj_NullInnerTupleSlot =
 				ExecInitNullTupleSlot(estate,

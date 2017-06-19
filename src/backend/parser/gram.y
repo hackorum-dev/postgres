@@ -602,7 +602,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 /* ordinary key words in alphabetical order */
 %token <keyword> ABORT_P ABSOLUTE_P ACCESS ACTION ADD_P ADMIN AFTER
-	AGGREGATE ALL ALSO ALTER ALWAYS ANALYSE ANALYZE AND ANY ARRAY AS ASC
+	AGGREGATE ALL ALSO ALTER ALWAYS ANALYSE ANALYZE AND ANY ARRAY AS ASC ASOF_P
 	ASSERTION ASSIGNMENT ASYMMETRIC AT ATTACH ATTRIBUTE AUTHORIZATION
 
 	BACKWARD BEFORE BEGIN_P BETWEEN BIGINT BINARY BIT
@@ -763,7 +763,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
  * They wouldn't be given a precedence at all, were it not that we need
  * left-associativity among the JOIN rules themselves.
  */
-%left		JOIN CROSS LEFT FULL RIGHT INNER_P NATURAL
+%left		JOIN CROSS LEFT FULL RIGHT INNER_P ASOF_P NATURAL
 /* kluge to keep xml_whitespace_option from causing shift/reduce conflicts */
 %right		PRESERVE STRIP_P
 
@@ -11561,8 +11561,16 @@ joined_table:
 					n->rarg = $4;
 					if ($5 != NULL && IsA($5, List))
 						n->usingClause = (List *) $5; /* USING clause */
-					else
+					else { 
 						n->quals = $5; /* ON clause */
+						if (n->jointype == JOIN_ASOF) 
+						{
+							ereport(ERROR,
+									(errcode(ERRCODE_SYNTAX_ERROR),
+									 errmsg("ASOF join requires USING clause"),
+									 parser_errposition(@2)));
+						}
+					}
 					$$ = n;
 				}
 			| table_ref JOIN table_ref join_qual
@@ -11668,6 +11676,7 @@ join_type:	FULL join_outer							{ $$ = JOIN_FULL; }
 			| LEFT join_outer						{ $$ = JOIN_LEFT; }
 			| RIGHT join_outer						{ $$ = JOIN_RIGHT; }
 			| INNER_P								{ $$ = JOIN_INNER; }
+            | ASOF_P join_outer						{ $$ = JOIN_ASOF; }
 		;
 
 /* OUTER is just noise... */
@@ -14952,7 +14961,8 @@ col_name_keyword:
  * - thomas 2000-11-28
  */
 type_func_name_keyword:
-			  AUTHORIZATION
+              ASOF_P
+			| AUTHORIZATION
 			| BINARY
 			| COLLATION
 			| CONCURRENTLY
