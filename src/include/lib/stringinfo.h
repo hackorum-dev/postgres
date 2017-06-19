@@ -21,15 +21,17 @@
  * StringInfoData holds information about an extensible string.
  *		data	is the current buffer for the string (allocated with palloc).
  *		len		is the current string length.  There is guaranteed to be
- *				a terminating '\0' at data[len], although this is not very
- *				useful when the string holds binary data rather than text.
+ *				a terminating '\0' at data[len] unless the StringInfo was
+ *				constructed from a caller-supplied buffer.
  *		maxlen	is the allocated size in bytes of 'data', i.e. the maximum
  *				string size (including the terminating '\0' char) that we can
  *				currently store in 'data' without having to reallocate
- *				more space.  We must always have maxlen > len.
- *		cursor	is initialized to zero by makeStringInfo or initStringInfo,
- *				but is not otherwise touched by the stringinfo.c routines.
- *				Some routines use it to scan through a StringInfo.
+ *				more space.  We must always have maxlen > len unless the
+ *				StringInfo is constant, in which case maxlen is -1.
+ *		cursor	is initialized to zero by makeStringInfo, initStringInfo
+ *				and initConstantStringInfo, but is not otherwise touched by the
+ *				stringinfo.c routines.  Some routines use it to scan through a
+ *				StringInfo.
  *-------------------------
  */
 typedef struct StringInfoData
@@ -44,7 +46,7 @@ typedef StringInfoData *StringInfo;
 
 
 /*------------------------
- * There are two ways to create a StringInfo object initially:
+ * There are three ways to create a StringInfo object initially:
  *
  * StringInfo stringptr = makeStringInfo();
  *		Both the StringInfoData and the data buffer are palloc'd.
@@ -55,8 +57,21 @@ typedef StringInfoData *StringInfo;
  *		This is the easiest approach for a StringInfo object that will
  *		only live as long as the current routine.
  *
- * To destroy a StringInfo, pfree() the data buffer, and then pfree() the
- * StringInfoData if it was palloc'd.  There's no special support for this.
+ * char * buffer = ...;
+ * Size buffer_length = ....;
+ * StringInfoData string;
+ * initConstantStringInfo(&string, buffer, buffer_length);
+ * 		The data buffer is a constant that remains owned by the caller.
+ * 		Resetting this StringInfo or appending to it is not allowed.
+ * 		This form is mainly useful when the StringInfo is used as a
+ * 		cursor over pre-existing data.
+ *
+ * To destroy a non-constant StringInfo, pfree() the data buffer, and then
+ * pfree() the StringInfoData if it was palloc'd.  There's no special support
+ * for this.  It is usually sufficient to just let the buffer be cleaned up
+ * along with the rest of the memory context in which it was allocated.
+ *
+ * There is no need to destroy a constant StringInfo.
  *
  * NOTE: some routines build up a string using StringInfo, and then
  * release the StringInfoData but return the data string itself to their
@@ -77,6 +92,16 @@ extern StringInfo makeStringInfo(void);
  * to describe an empty string.
  */
 extern void initStringInfo(StringInfo str);
+
+/*------------------------
+ * initConstantStringInfo
+ * Initialize a StringInfoData struct (with previously undefined contents) to
+ * wrap the supplied buffer and length. The passed buffer remains owned by the
+ * caller. The resulting StringInfo is constant and cannot be appended to or
+ * resized, but provides a cursor over the buffer.
+ */
+extern void
+initConstantStringInfo(StringInfo str, const char *buf, Size length);
 
 /*------------------------
  * resetStringInfo
@@ -148,5 +173,12 @@ extern void appendBinaryStringInfo(StringInfo str,
  * Make sure a StringInfo's buffer can hold at least 'needed' more bytes.
  */
 extern void enlargeStringInfo(StringInfo str, int needed);
+
+/*------------------------
+ * stringInfoIsConstant
+ * Returns true if the StringInfo points to an externally allocated constant
+ * buffer per initConstantStringInfo(...)
+ */
+extern bool stringInfoIsConstant(StringInfo str);
 
 #endif   /* STRINGINFO_H */

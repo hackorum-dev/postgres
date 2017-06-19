@@ -52,6 +52,21 @@ initStringInfo(StringInfo str)
 	resetStringInfo(str);
 }
 
+void
+initConstantStringInfo(StringInfo str, const char *buf, Size length)
+{
+	str->data = buf;
+	str->len = length;
+	str->maxlen = -1;
+	str->cursor = 0;
+}
+
+bool
+stringInfoIsConstant(StringInfo str)
+{
+	return str->maxlen == -1;
+}
+
 /*
  * resetStringInfo
  *
@@ -61,6 +76,7 @@ initStringInfo(StringInfo str)
 void
 resetStringInfo(StringInfo str)
 {
+	Assert(!stringInfoIsConstant(str));
 	str->data[0] = '\0';
 	str->len = 0;
 	str->cursor = 0;
@@ -77,6 +93,7 @@ resetStringInfo(StringInfo str)
 void
 appendStringInfo(StringInfo str, const char *fmt,...)
 {
+	Assert(!stringInfoIsConstant(str));
 	for (;;)
 	{
 		va_list		args;
@@ -117,6 +134,7 @@ appendStringInfoVA(StringInfo str, const char *fmt, va_list args)
 	size_t		nprinted;
 
 	Assert(str != NULL);
+	Assert(!stringInfoIsConstant(str));
 
 	/*
 	 * If there's hardly any space, don't bother trying, just fail to make the
@@ -169,6 +187,7 @@ void
 appendStringInfoChar(StringInfo str, char ch)
 {
 	/* Make more room if needed */
+	Assert(!stringInfoIsConstant(str));
 	if (str->len + 1 >= str->maxlen)
 		enlargeStringInfo(str, 1);
 
@@ -186,6 +205,7 @@ appendStringInfoChar(StringInfo str, char ch)
 void
 appendStringInfoSpaces(StringInfo str, int count)
 {
+	Assert(!stringInfoIsConstant(str));
 	if (count > 0)
 	{
 		/* Make more room if needed */
@@ -208,6 +228,7 @@ void
 appendBinaryStringInfo(StringInfo str, const char *data, int datalen)
 {
 	Assert(str != NULL);
+	Assert(!stringInfoIsConstant(str));
 
 	/* Make more room if needed */
 	enlargeStringInfo(str, datalen);
@@ -245,6 +266,8 @@ void
 enlargeStringInfo(StringInfo str, int needed)
 {
 	int			newlen;
+
+	Assert(!stringInfoIsConstant(str));
 
 	/*
 	 * Guard against out-of-range "needed" values.  Without this, we can get
