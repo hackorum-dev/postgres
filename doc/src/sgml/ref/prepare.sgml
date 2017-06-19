@@ -200,7 +200,7 @@ PREPARE <replaceable class="parameter">name</replaceable> [ ( <replaceable class
  </refsect1>
 
  <refsect1 id="sql-prepare-examples">
-  <title id="sql-prepare-examples-title">Examples</title>
+  <title>Examples</title>
   <para>
    Create a prepared statement for an <command>INSERT</command>
    statement, and then execute it:

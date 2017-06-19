@@ -19,10 +19,6 @@ Intra-document Linking
 linkend=
 	controls the target of the link/xref, required
 
-endterm=
-	for <xref>, allows the text of the link/xref to be taken from a
-	different link target title
-
 
 External Linking
 ----------------

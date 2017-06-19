@@ -170,8 +170,8 @@ UPDATE [ ONLY ] <replaceable class="parameter">table_name</replaceable> [ * ] [ 
       A list of table expressions, allowing columns from other tables
       to appear in the <literal>WHERE</literal> condition and the update
       expressions. This is similar to the list of tables that can be
-      specified in the <xref linkend="sql-from"
-      endterm="sql-from-title"/> of a <command>SELECT</command>
+      specified in the <link linkend="sql-from"><literal>FROM</literal>
+      clause</link> of a <command>SELECT</command>
       statement.  Note that the target table must not appear in the
       <replaceable>from_list</replaceable>, unless you intend a self-join (in which
       case it must appear with an alias in the <replaceable>from_list</replaceable>).

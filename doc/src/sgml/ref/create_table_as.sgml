@@ -125,8 +125,7 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXI
     <listitem>
      <para>
       This clause specifies optional storage parameters for the new table;
-      see <xref linkend="sql-createtable-storage-parameters"
-      endterm="sql-createtable-storage-parameters-title"/> for more
+      see <xref linkend="sql-createtable-storage-parameters"/> for more
       information.  The <literal>WITH</literal> clause
       can also include <literal>OIDS=TRUE</literal> (or just <literal>OIDS</literal>)
       to specify that rows of the new table

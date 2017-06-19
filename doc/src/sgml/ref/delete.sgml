@@ -122,8 +122,8 @@ DELETE FROM [ ONLY ] <replaceable class="parameter">table_name</replaceable> [ *
      <para>
       A list of table expressions, allowing columns from other tables
       to appear in the <literal>WHERE</literal> condition.  This is similar
-      to the list of tables that can be specified in the <xref
-      linkend="sql-from" endterm="sql-from-title"/> of a
+      to the list of tables that can be specified in the <link
+      linkend="sql-from"><literal>FROM</literal> clause</link> of a
       <command>SELECT</command> statement; for example, an alias for
       the table name can be specified.  Do not repeat the target table
       in the <replaceable class="parameter">using_list</replaceable>,

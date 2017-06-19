@@ -614,8 +614,7 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="parameter">name</replaceable>
     <listitem>
      <para>
       This form changes one or more storage parameters for the table.  See
-      <xref linkend="sql-createtable-storage-parameters"
-      endterm="sql-createtable-storage-parameters-title"/>
+      <xref linkend="sql-createtable-storage-parameters"/>
       for details on the available parameters.  Note that the table contents
       will not be modified immediately by this command; depending on the
       parameter you might need to rewrite the table to get the desired effects.
