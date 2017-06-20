@@ -38,6 +38,12 @@ typedef uint64 SerCommitSeqNo;
 #define FirstNormalSerCommitSeqNo	((SerCommitSeqNo) 2)
 
 /*
+ * Hash table size in SERIALIZABLEXACT 
+ */
+#define SERIALIZABLEXACT_CONFLICT_HASHTAB_SIZE 200
+
+
+/*
  * The SERIALIZABLEXACT struct contains information needed for each
  * serializable database transaction to support SSI techniques.
  *
@@ -83,10 +89,10 @@ typedef struct SERIALIZABLEXACT
 		SerCommitSeqNo lastCommitBeforeSnapshot;		/* when not committed or
 														 * no conflict out */
 	}			SeqNo;
-	SHM_QUEUE	outConflicts;	/* list of write transactions whose data we
-								 * couldn't read. */
-	SHM_QUEUE	inConflicts;	/* list of read transactions which couldn't
-								 * see our write. */
+
+	HTAB*		outConflictsTab;	/* Table of write transactions whose data we couldn't read  */
+	HTAB*		inConflictsTab;		/* Table of read transactions which couldn't see our write. */
+
 	SHM_QUEUE	predicateLocks; /* list of associated PREDICATELOCK objects */
 	SHM_QUEUE	finishedLink;	/* list link in
 								 * FinishedSerializableTransactions */
@@ -95,7 +101,7 @@ typedef struct SERIALIZABLEXACT
 	 * for r/o transactions: list of concurrent r/w transactions that we could
 	 * potentially have conflicts with, and vice versa for r/w transactions
 	 */
-	SHM_QUEUE	possibleUnsafeConflicts;
+	HTAB*		possibleUnsafeConflictsTab;
 
 	TransactionId topXid;		/* top level xid for the transaction, if one
 								 * exists; else invalid */
@@ -204,18 +210,6 @@ typedef struct RWConflictData *RWConflict;
 
 #define RWConflictDataSize \
 		((Size)MAXALIGN(sizeof(RWConflictData)))
-
-typedef struct RWConflictPoolHeaderData
-{
-	SHM_QUEUE	availableList;
-	RWConflict	element;
-}	RWConflictPoolHeaderData;
-
-typedef struct RWConflictPoolHeaderData *RWConflictPoolHeader;
-
-#define RWConflictPoolHeaderDataSize \
-		((Size)MAXALIGN(sizeof(RWConflictPoolHeaderData)))
-
 
 /*
  * The SERIALIZABLEXIDTAG struct identifies an xid assigned to a serializable
