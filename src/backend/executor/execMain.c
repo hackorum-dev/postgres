@@ -160,6 +160,13 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	Assert(queryDesc->estate == NULL);
 
 	/*
+	 * Instrumentation about start time of the query
+	 * This is needed for progress of long SQL queries as reported by PROGRESS command.
+	 */
+	queryDesc->totaltime = InstrAlloc(1, INSTRUMENT_TIMER);
+	InstrInit(queryDesc->totaltime, INSTRUMENT_TIMER);
+
+	/*
 	 * If the transaction is read-only, we need to check if any writes are
 	 * planned to non-temporary tables.  EXPLAIN is considered read-only.
 	 *
@@ -366,6 +373,7 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 					direction,
 					dest,
 					execute_once);
+		queryDesc->query_completed = true;
 	}
 
 	/*

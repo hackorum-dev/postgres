@@ -22,6 +22,8 @@
 #include "libpq/pqcomm.h"
 #include "miscadmin.h"
 #include "storage/backendid.h"
+#include "executor/execdesc.h"
+#include "executor/progress.h"
 
 
 ProtocolVersion FrontendProtocol;
@@ -84,6 +86,13 @@ Oid			MyDatabaseTableSpace = InvalidOid;
 char	   *DatabasePath = NULL;
 
 pid_t		PostmasterPid = 0;
+
+/*
+ * Global QueryDesc pointer.
+ * This is needed from signal context to locate the QueryDesc we are in
+ */
+QueryDesc* MyQueryDesc;
+bool IsQueryDescValid = false;
 
 /*
  * IsPostmasterEnvironment is true in a postmaster process and any postmaster
