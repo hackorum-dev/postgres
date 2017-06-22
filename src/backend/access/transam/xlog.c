@@ -7269,6 +7269,7 @@ StartupXLOG(void)
 						/* drop into promote */
 
 					case RECOVERY_TARGET_ACTION_PROMOTE:
+						fast_promote = true;
 						break;
 				}
 			}
