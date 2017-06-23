@@ -24,12 +24,14 @@
 #include "parser/parsetree.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
+#include "utils/builtins.h"
 #include "utils/datum.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
+#include "utils/typcache.h"
 #include "utils/tqual.h"
 
 
@@ -245,9 +247,27 @@ tuple_equals_slot(TupleDesc desc, HeapTuple tup, TupleTableSlot *slot)
 			continue;
 
 		att = desc->attrs[attrnum];
+
+		/*
+		 * To compare for equality, first try datumIsEqual().  If that returns
+		 * false, try the equality operator.
+		 */
 		if (!datumIsEqual(values[attrnum], slot->tts_values[attrnum],
 						  att->attbyval, att->attlen))
-			return false;
+		{
+			TypeCacheEntry *typentry;
+
+			typentry = lookup_type_cache(att->atttypid, TYPECACHE_EQ_OPR_FINFO);
+			if (!OidIsValid(typentry->eq_opr_finfo.fn_oid))
+				ereport(ERROR,
+						(errcode(ERRCODE_UNDEFINED_FUNCTION),
+						 errmsg("could not identify an equality operator for type %s",
+								format_type_be(att->atttypid))));
+			if (!DatumGetBool(FunctionCall2(&typentry->eq_opr_finfo,
+											values[attrnum],
+											slot->tts_values[attrnum])))
+				return false;
+		}
 	}
 
 	return true;
