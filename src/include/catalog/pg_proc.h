@@ -3255,6 +3255,8 @@ DESCR("true if wal replay is paused");
 
 DATA(insert OID = 2621 ( pg_reload_conf			PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 16 "" _null_ _null_ _null_ _null_ _null_ pg_reload_conf _null_ _null_ _null_ ));
 DESCR("reload configuration files");
+DATA(insert OID = 3409 ( pg_reload_conf			PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 16 "23" _null_ _null_ _null_ _null_ _null_ pg_reload_conf_pid _null_ _null_ _null_ ));
+DESCR("reload configuration files");
 DATA(insert OID = 2622 ( pg_rotate_logfile		PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 16 "" _null_ _null_ _null_ _null_ _null_ pg_rotate_logfile _null_ _null_ _null_ ));
 DESCR("rotate log file");
 DATA(insert OID = 3800 ( pg_current_logfile				PGNSP PGUID 12 1 0 0 0 f f f f f f v s 0 0 25 "" _null_ _null_ _null_ _null_ _null_ pg_current_logfile _null_ _null_ _null_ ));

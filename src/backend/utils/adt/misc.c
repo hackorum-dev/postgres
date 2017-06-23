@@ -339,6 +339,36 @@ pg_reload_conf(PG_FUNCTION_ARGS)
 	PG_RETURN_BOOL(true);
 }
 
+/*
+ * Signal to reload the database configuration for a specified backend
+ *
+ * Permission checking for this function is managed through the normal
+ * GRANT system.
+ */
+Datum
+pg_reload_conf_pid(PG_FUNCTION_ARGS)
+{
+	int			pid = PG_GETARG_INT32(0);
+	int			r = pg_signal_backend(pid, SIGHUP);
+
+	if (r == SIGNAL_BACKEND_NOSUPERUSER)
+		ereport(WARNING,
+				(errmsg("must be a superuser to terminate superuser process")));
+
+	if (r == SIGNAL_BACKEND_NOPERMISSION)
+		ereport(WARNING,
+				 (errmsg("must be a member of the role whose process is being terminated or member of pg_signal_backend")));
+
+	if (r)
+	{
+		ereport(WARNING,
+				(errmsg("failed to send signal to backend: %d", pid)));
+		PG_RETURN_BOOL(false);
+	}
+
+	PG_RETURN_BOOL(true);
+}
+
 
 /*
  * Rotate log file
