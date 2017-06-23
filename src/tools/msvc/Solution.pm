@@ -22,7 +22,8 @@ sub _new
 		VisualStudioVersion        => undef,
 		MinimumVisualStudioVersion => undef,
 		vcver                      => undef,
-		platform                   => undef, };
+		platform                   => undef,
+		ICUVersion                 => undef, };
 	bless($self, $classname);
 
 	$self->DeterminePlatform();
@@ -74,6 +75,38 @@ sub DeterminePlatform
 	$? >> 8 == 0 or die "cl command not found";
 	$self->{platform} = ($output =~ /^\/favor:<.+AMD64/m) ? 'x64' : 'Win32';
 	print "Detected hardware platform: $self->{platform}\n";
+}
+
+sub DetermineICUVersion{
+
+	my $self = shift;
+	my $output;
+
+	# get the icu version.
+	if ($self->{platform} eq 'Win32')
+	{
+		$output = `$self->{options}->{icu}/bin/uconv -V 2>&1`;
+		$? >> 8 == 0 or die "uconv command not found";
+	}
+	else
+	{
+		$output = `$self->{options}->{icu}/bin64/uconv -V 2>&1`;
+		$? >> 8 == 0 or die "uconv command not found";
+	}
+
+	if ($output =~ /(\d+)\.(\d+)\.(\d+)\.(\d+)?$/m)
+	{
+		$self->{ICUVersion} = $1.$2;
+	}
+	elsif ($output =~ /(\d+)\.(\d+)\.(\d+)?$/m)
+	{
+		$self->{ICUVersion} = $1;
+	}
+	elsif ($output =~ /(\d+)\.(\d+)?$/m)
+	{
+		$self->{ICUVersion} = $1;
+	}
+	print "Detected icu version : $self->{ICUVersion}\n";
 }
 
 # Return 1 if $oldfile is newer than $newfile, or if $newfile doesn't exist.
@@ -222,7 +255,9 @@ s{PG_VERSION_STR "[^"]+"}{PG_VERSION_STR "PostgreSQL $self->{strver}$extraver, c
 		}
 		if ($self->{options}->{icu})
 		{
+			$self->DetermineICUVersion();
 			print $o "#define USE_ICU 1\n";
+			print $o "#define HAVE_UCOL_STRCOLLUTF8 1\n" if ($self->{ICUVersion} >= 50);
 		}
 		if (my $port = $self->{options}->{"--with-pgport"})
 		{
