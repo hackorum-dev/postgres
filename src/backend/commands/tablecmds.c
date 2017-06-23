@@ -13171,6 +13171,19 @@ transformPartitionSpec(Relation rel, PartitionSpec *partspec, char *strategy)
 		PartitionElem *pelem = castNode(PartitionElem, lfirst(l));
 		ListCell   *lc;
 
+		if (pelem->expr)
+		{
+			/* Copy, to avoid scribbling on the input */
+			pelem = copyObject(pelem);
+
+			/* Now do parse transformation of the expression */
+			pelem->expr = transformExpr(pstate, pelem->expr,
+										EXPR_KIND_PARTITION_EXPRESSION);
+
+			/* we have to fix its collations too */
+			assign_expr_collations(pstate, pelem->expr);
+		}
+
 		/* Check for PARTITION BY ... (foo, foo) */
 		foreach(lc, newspec->partParams)
 		{
@@ -13183,19 +13196,11 @@ transformPartitionSpec(Relation rel, PartitionSpec *partspec, char *strategy)
 						 errmsg("column \"%s\" appears more than once in partition key",
 								pelem->name),
 						 parser_errposition(pstate, pelem->location)));
-		}
-
-		if (pelem->expr)
-		{
-			/* Copy, to avoid scribbling on the input */
-			pelem = copyObject(pelem);
-
-			/* Now do parse transformation of the expression */
-			pelem->expr = transformExpr(pstate, pelem->expr,
-										EXPR_KIND_PARTITION_EXPRESSION);
-
-			/* we have to fix its collations too */
-			assign_expr_collations(pstate, pelem->expr);
+			else if (pelem->expr && pparam->expr && equal(pelem->expr, pparam->expr))
+				ereport(ERROR,
+						(errcode(ERRCODE_DUPLICATE_COLUMN),
+						 errmsg("same expression appears more than once in partition key"),
+						 parser_errposition(pstate, pelem->location)));
 		}
 
 		newspec->partParams = lappend(newspec->partParams, pelem);
