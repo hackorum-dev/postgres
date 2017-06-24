@@ -215,7 +215,7 @@ wait_for_relation_state_change(Oid relid, char expected_state)
  * Returns false if the apply worker has disappeared or the table state has been
  * reset.
  */
-static bool
+static void
 wait_for_worker_state_change(char expected_state)
 {
 	int			rc;
@@ -232,10 +232,13 @@ wait_for_worker_state_change(char expected_state)
 										InvalidOid, false);
 		LWLockRelease(LogicalRepWorkerLock);
 		if (!worker)
-			return false;
+			ereport(FATAL,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("terminating logical replication synchronization "
+							"worker due to subscription apply worker exit")));
 
 		if (MyLogicalRepWorker->relstate == expected_state)
-			return true;
+			return;
 
 		rc = WaitLatch(MyLatch,
 					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
@@ -247,8 +250,6 @@ wait_for_worker_state_change(char expected_state)
 
 		ResetLatch(MyLatch);
 	}
-
-	return false;
 }
 
 /*
@@ -285,11 +286,10 @@ process_syncing_tables_for_sync(XLogRecPtr current_lsn)
 
 		SpinLockRelease(&MyLogicalRepWorker->relmutex);
 
-		SetSubscriptionRelState(MyLogicalRepWorker->subid,
-								MyLogicalRepWorker->relid,
-								MyLogicalRepWorker->relstate,
-								MyLogicalRepWorker->relstate_lsn,
-								true);
+		UpdateSubscriptionRelState(MyLogicalRepWorker->subid,
+								   MyLogicalRepWorker->relid,
+								   MyLogicalRepWorker->relstate,
+								   MyLogicalRepWorker->relstate_lsn);
 
 		walrcv_endstreaming(wrconn, &tli);
 		finish_sync_worker();
@@ -332,6 +332,13 @@ process_syncing_tables_for_apply(XLogRecPtr current_lsn)
 	ListCell   *lc;
 	bool		started_tx = false;
 
+#define ensure_transaction() \
+	if (!started_tx) \
+	{\
+		StartTransactionCommand(); \
+		started_tx = true; \
+	}
+
 	Assert(!IsTransactionState());
 
 	/* We need up-to-date sync state info for subscription tables here. */
@@ -346,8 +353,7 @@ process_syncing_tables_for_apply(XLogRecPtr current_lsn)
 		list_free_deep(table_states);
 		table_states = NIL;
 
-		StartTransactionCommand();
-		started_tx = true;
+		ensure_transaction();
 
 		/* Fetch all non-ready tables. */
 		rstates = GetSubscriptionNotReadyRelations(MySubscription->oid);
@@ -409,14 +415,11 @@ process_syncing_tables_for_apply(XLogRecPtr current_lsn)
 			{
 				rstate->state = SUBREL_STATE_READY;
 				rstate->lsn = current_lsn;
-				if (!started_tx)
-				{
-					StartTransactionCommand();
-					started_tx = true;
-				}
-				SetSubscriptionRelState(MyLogicalRepWorker->subid,
-										rstate->relid, rstate->state,
-										rstate->lsn, true);
+
+				ensure_transaction();
+				UpdateSubscriptionRelState(MyLogicalRepWorker->subid,
+										   rstate->relid, rstate->state,
+										   rstate->lsn);
 			}
 		}
 		else
@@ -435,13 +438,26 @@ process_syncing_tables_for_apply(XLogRecPtr current_lsn)
 				SpinLockRelease(&syncworker->relmutex);
 			}
 			else
+			{
+				List	   *subworkers;
+				ListCell   *lc;
 
 				/*
 				 * If there is no sync worker for this table yet, count
 				 * running sync workers for this subscription, while we have
 				 * the lock, for later.
 				 */
-				nsyncworkers = logicalrep_sync_worker_count(MyLogicalRepWorker->subid);
+				subworkers =
+					logicalrep_sub_workers_find(MyLogicalRepWorker->subid,
+												false);
+				foreach (lc, subworkers)
+				{
+					LogicalRepWorker *w = (LogicalRepWorker *) lfirst(lc);
+					if (w->relid != InvalidOid)
+						nsyncworkers ++;
+				}
+				list_free(subworkers);
+			}
 			LWLockRelease(LogicalRepWorkerLock);
 
 			/*
@@ -467,11 +483,7 @@ process_syncing_tables_for_apply(XLogRecPtr current_lsn)
 				 * Enter busy loop and wait for synchronization worker to
 				 * reach expected state (or die trying).
 				 */
-				if (!started_tx)
-				{
-					StartTransactionCommand();
-					started_tx = true;
-				}
+				ensure_transaction();
 				wait_for_relation_state_change(rstate->relid,
 											   SUBREL_STATE_SYNCDONE);
 			}
@@ -493,10 +505,8 @@ process_syncing_tables_for_apply(XLogRecPtr current_lsn)
 					TimestampDifferenceExceeds(hentry->last_start_time, now,
 											   wal_retrieve_retry_interval))
 				{
-					logicalrep_worker_launch(MyLogicalRepWorker->dbid,
-											 MySubscription->oid,
-											 MySubscription->name,
-											 MyLogicalRepWorker->userid,
+					ensure_transaction();
+					logicalrep_worker_launch(MySubscription->oid,
 											 rstate->relid);
 					hentry->last_start_time = now;
 				}
@@ -798,6 +808,15 @@ LogicalRepSyncTableStart(XLogRecPtr *origin_startpos)
 	relstate = GetSubscriptionRelState(MyLogicalRepWorker->subid,
 									   MyLogicalRepWorker->relid,
 									   &relstate_lsn, true);
+	if (relstate == SUBREL_STATE_UNKNOWN)
+	{
+		ereport(LOG,
+				(errmsg("logical replication table synchronization worker for subscription \"%s\", "
+						"table \"%s\" will stop because the table is no longer subscribed",
+						MySubscription->name,
+						get_rel_name(MyLogicalRepWorker->relid))));
+		proc_exit(0);
+	}
 	CommitTransactionCommand();
 
 	SpinLockAcquire(&MyLogicalRepWorker->relmutex);
@@ -844,11 +863,10 @@ LogicalRepSyncTableStart(XLogRecPtr *origin_startpos)
 
 				/* Update the state and make it visible to others. */
 				StartTransactionCommand();
-				SetSubscriptionRelState(MyLogicalRepWorker->subid,
-										MyLogicalRepWorker->relid,
-										MyLogicalRepWorker->relstate,
-										MyLogicalRepWorker->relstate_lsn,
-										true);
+				UpdateSubscriptionRelState(MyLogicalRepWorker->subid,
+										   MyLogicalRepWorker->relid,
+										   MyLogicalRepWorker->relstate,
+										   MyLogicalRepWorker->relstate_lsn);
 				CommitTransactionCommand();
 				pgstat_report_stat(false);
 
@@ -933,11 +951,10 @@ LogicalRepSyncTableStart(XLogRecPtr *origin_startpos)
 					 * Update the new state in catalog.  No need to bother
 					 * with the shmem state as we are exiting for good.
 					 */
-					SetSubscriptionRelState(MyLogicalRepWorker->subid,
-											MyLogicalRepWorker->relid,
-											SUBREL_STATE_SYNCDONE,
-											*origin_startpos,
-											true);
+					UpdateSubscriptionRelState(MyLogicalRepWorker->subid,
+											   MyLogicalRepWorker->relid,
+											   SUBREL_STATE_SYNCDONE,
+											   *origin_startpos);
 					finish_sync_worker();
 				}
 				break;

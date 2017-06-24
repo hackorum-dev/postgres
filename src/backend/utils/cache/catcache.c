@@ -1052,10 +1052,12 @@ IndexScanOK(CatCache *cache, ScanKey cur_skey)
 		case AUTHNAME:
 		case AUTHOID:
 		case AUTHMEMMEMROLE:
+		case SUBSCRIPTIONOID:
+		case SUBSCRIPTIONNAME:
 
 			/*
-			 * Protect authentication lookups occurring before relcache has
-			 * collected entries for shared indexes.
+			 * Protect authentication and subscription lookups occurring
+			 * before relcache has collected entries for shared indexes.
 			 */
 			if (!criticalSharedRelcachesBuilt)
 				return false;
