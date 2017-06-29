@@ -68,6 +68,7 @@ static bool dosync = true;
 
 static int	binary_upgrade = 0;
 static int	column_inserts = 0;
+static int	createdb_only = 0;
 static int	disable_dollar_quoting = 0;
 static int	disable_triggers = 0;
 static int	if_exists = 0;
@@ -121,6 +122,7 @@ main(int argc, char *argv[])
 		{"attribute-inserts", no_argument, &column_inserts, 1},
 		{"binary-upgrade", no_argument, &binary_upgrade, 1},
 		{"column-inserts", no_argument, &column_inserts, 1},
+		{"createdb-only", no_argument, &createdb_only, 1},
 		{"disable-dollar-quoting", no_argument, &disable_dollar_quoting, 1},
 		{"disable-triggers", no_argument, &disable_triggers, 1},
 		{"if-exists", no_argument, &if_exists, 1},
@@ -504,13 +506,13 @@ main(int argc, char *argv[])
 		 */
 		if (output_clean)
 		{
-			if (!globals_only && !roles_only && !tablespaces_only)
+			if (!globals_only && !roles_only && !tablespaces_only && !createdb_only)
 				dropDBs(conn);
 
-			if (!roles_only && !no_tablespaces)
+			if (!roles_only && !no_tablespaces && !createdb_only)
 				dropTablespaces(conn);
 
-			if (!tablespaces_only)
+			if (!tablespaces_only && !createdb_only)
 				dropRoles(conn);
 		}
 
@@ -518,7 +520,7 @@ main(int argc, char *argv[])
 		 * Now create objects as requested.  Be careful that option logic here
 		 * is the same as for drops above.
 		 */
-		if (!tablespaces_only)
+		if (!tablespaces_only && !createdb_only)
 		{
 			/* Dump roles (users) */
 			dumpRoles(conn);
@@ -531,7 +533,7 @@ main(int argc, char *argv[])
 		}
 
 		/* Dump tablespaces */
-		if (!roles_only && !no_tablespaces)
+		if (!roles_only && !no_tablespaces && !createdb_only)
 			dumpTablespaces(conn);
 
 		/* Dump CREATE DATABASE commands */
@@ -539,14 +541,14 @@ main(int argc, char *argv[])
 			dumpCreateDB(conn);
 
 		/* Dump role/database settings */
-		if (!tablespaces_only && !roles_only)
+		if (!tablespaces_only && !roles_only && !createdb_only)
 		{
 			if (server_version >= 90000)
 				dumpDbRoleConfig(conn);
 		}
 	}
 
-	if (!globals_only && !roles_only && !tablespaces_only)
+	if (!globals_only && !roles_only && !tablespaces_only && !createdb_only)
 		dumpDatabases(conn);
 
 	PQfinish(conn);
@@ -594,6 +596,7 @@ help(void)
 	printf(_("  -x, --no-privileges          do not dump privileges (grant/revoke)\n"));
 	printf(_("  --binary-upgrade             for use by upgrade utilities only\n"));
 	printf(_("  --column-inserts             dump data as INSERT commands with column names\n"));
+	printf(_("  --createdb-only              CREATE and ACL databases commands\n"));
 	printf(_("  --disable-dollar-quoting     disable dollar quoting, use SQL standard quoting\n"));
 	printf(_("  --disable-triggers           disable triggers during data-only restore\n"));
 	printf(_("  --if-exists                  use IF EXISTS when dropping objects\n"));
