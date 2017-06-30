@@ -38,10 +38,9 @@ DROP SUBSCRIPTION [ IF EXISTS ] <replaceable class="parameter">name</replaceable
   </para>
 
   <para>
-   <command>DROP SUBSCRIPTION</command> cannot be executed inside a
-   transaction block if the subscription is associated with a replication
-   slot.  (You can use <command>ALTER SUBSCRIPTION</command> to unset the
-   slot.)
+   <command>DROP SUBSCRIPTION</command> cannot be executed if the subscription
+   is associated with a replication slot.  (You can use <command>ALTER
+   SUBSCRIPTION</command> to unset the slot.)
   </para>
  </refsect1>
 
