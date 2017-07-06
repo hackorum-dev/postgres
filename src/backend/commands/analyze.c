@@ -102,6 +102,9 @@ static int	compare_rows(const void *a, const void *b);
 static int	acquire_inherited_sample_rows(Relation onerel, int elevel,
 										  HeapTuple *rows, int targrows,
 										  double *totalrows, double *totaldeadrows);
+static HeapTuple construct_stats_tuple(VacAttrStats *stats,
+									   Oid attrrelid, bool inh,
+									   Relation statsrel, HeapTuple oldtup);
 static void update_attstats(Oid relid, bool inh,
 							int natts, VacAttrStats **vacattrstats);
 static Datum std_fetch_func(VacAttrStatsP stats, int rownum, bool *isNull);
@@ -276,6 +279,86 @@ analyze_rel(Oid relid, RangeVar *relation,
 	relation_close(onerel, NoLock);
 
 	pgstat_progress_end_command();
+}
+
+/*
+ * analyze_values() -- analyze one attribute in a values list then put the
+ * result into vardata.
+ */
+static List *valuesrows;
+
+static Datum
+values_attrFetchFunc(VacAttrStatsP stats, int rownum, bool *isNull)
+{
+	List *row = (List *) list_nth(valuesrows, rownum);
+	Const *con;
+
+	Assert(IsA(row, List));
+	Assert(stats->tupattnum <= list_length(row));
+	con = (Const *) list_nth(row, stats->tupattnum - 1);
+	Assert(IsA(con, Const));
+
+	return con->constvalue;
+}
+
+HeapTuple
+analyze_values(Var *var, List *values_lists)
+{
+	int i;
+	HeapTuple typetup;
+	HeapTuple result = NULL;
+	VacAttrStats *stats;
+	int rows;
+	bool ok;
+	MemoryContext analyze_cxt =
+		AllocSetContextCreate(CurrentMemoryContext, "Temp Analyze",
+							  ALLOCSET_DEFAULT_SIZES);
+
+	valuesrows = values_lists;
+	rows = list_length(valuesrows);
+	stats = (VacAttrStats *) palloc0(sizeof(VacAttrStats));
+	stats->attr = (Form_pg_attribute) palloc(ATTRIBUTE_FIXED_PART_SIZE);
+	stats->attr->attrelid = InvalidOid;
+	stats->attr->attstattarget = default_statistics_target;
+	stats->attrtypid = var->vartype;
+	stats->attrtypmod = var->vartypmod;
+	typetup = SearchSysCacheCopy1(TYPEOID, ObjectIdGetDatum(var->vartype));
+	if (!HeapTupleIsValid(typetup))
+		elog(ERROR, "cache lookup failed for type %u", var->vartype);
+	stats->attrtype = (Form_pg_type) GETSTRUCT(typetup);
+	stats->attrcollid = var->varcollid;
+	stats->anl_context = analyze_cxt;
+	stats->tupattnum = var->varattno;
+	stats->nodelay = true;		/* don't make a delay during analyze */
+
+	for (i = 0 ; i < STATISTIC_NUM_SLOTS ; i++)
+	{
+		stats->statypid[i] = stats->attrtypid;
+		stats->statyplen[i] = stats->attrtype->typlen;
+		stats->statypbyval[i] = stats->attrtype->typbyval;
+		stats->statypalign[i] = stats->attrtype->typalign;
+	}
+	if (OidIsValid(stats->attrtype->typanalyze))
+		ok = DatumGetBool(OidFunctionCall1(stats->attrtype->typanalyze,
+										   PointerGetDatum(stats)));
+	else
+		ok = std_typanalyze(stats);
+	if (ok && stats->compute_stats != NULL && stats->minrows > 0)
+	{
+		Relation sd;
+
+		stats->compute_stats(stats, values_attrFetchFunc, rows, rows);
+		sd = table_open(StatisticRelationId, AccessShareLock);
+		result = construct_stats_tuple(stats, InvalidOid, false, sd, NULL);
+		table_close(sd, AccessShareLock);
+	}
+
+	heap_freetuple(typetup);
+	pfree(stats->attr);
+	pfree(stats);
+	MemoryContextDelete(analyze_cxt);
+
+	return result;
 }
 
 /*
@@ -1421,6 +1504,112 @@ acquire_inherited_sample_rows(Relation onerel, int elevel,
 	return numrows;
 }
 
+/* construct_stats_tuple() -- construct a statistics tuple */
+static HeapTuple
+construct_stats_tuple(VacAttrStats *stats, Oid attrrelid, bool inh,
+					  Relation statsrel, HeapTuple oldtup)
+{
+	HeapTuple stup;
+	int			i,
+				k,
+				n;
+	Datum		values[Natts_pg_statistic];
+	bool		nulls[Natts_pg_statistic];
+	bool		replaces[Natts_pg_statistic];
+
+	/*
+	 * Construct a new pg_statistic tuple
+	 */
+	for (i = 0; i < Natts_pg_statistic; ++i)
+	{
+		nulls[i] = false;
+		replaces[i] = true;
+	}
+
+	values[Anum_pg_statistic_starelid - 1] = ObjectIdGetDatum(attrrelid);
+	values[Anum_pg_statistic_staattnum - 1] = Int16GetDatum(stats->attr->attnum);
+	values[Anum_pg_statistic_stainherit - 1] = BoolGetDatum(inh);
+	values[Anum_pg_statistic_stanullfrac - 1] = Float4GetDatum(stats->stanullfrac);
+	values[Anum_pg_statistic_stawidth - 1] = Int32GetDatum(stats->stawidth);
+	values[Anum_pg_statistic_stadistinct - 1] = Float4GetDatum(stats->stadistinct);
+	i = Anum_pg_statistic_stakind1 - 1;
+	for (k = 0; k < STATISTIC_NUM_SLOTS; k++)
+	{
+		values[i++] = Int16GetDatum(stats->stakind[k]); /* stakindN */
+	}
+	i = Anum_pg_statistic_staop1 - 1;
+	for (k = 0; k < STATISTIC_NUM_SLOTS; k++)
+	{
+		values[i++] = ObjectIdGetDatum(stats->staop[k]);	/* staopN */
+	}
+	i = Anum_pg_statistic_stacoll1 - 1;
+	for (k = 0; k < STATISTIC_NUM_SLOTS; k++)
+	{
+		values[i++] = ObjectIdGetDatum(stats->stacoll[k]);	/* stacollN */
+	}
+	i = Anum_pg_statistic_stanumbers1 - 1;
+	for (k = 0; k < STATISTIC_NUM_SLOTS; k++)
+	{
+		int			nnum = stats->numnumbers[k];
+
+		if (nnum > 0)
+		{
+			Datum	   *numdatums = (Datum *) palloc(nnum * sizeof(Datum));
+			ArrayType  *arry;
+
+			for (n = 0; n < nnum; n++)
+				numdatums[n] = Float4GetDatum(stats->stanumbers[k][n]);
+			/* XXX knows more than it should about type float4: */
+			arry = construct_array(numdatums, nnum,
+								   FLOAT4OID,
+								   sizeof(float4), true, TYPALIGN_INT);
+			values[i++] = PointerGetDatum(arry);	/* stanumbersN */
+		}
+		else
+		{
+			nulls[i] = true;
+			values[i++] = (Datum) 0;
+		}
+	}
+	i = Anum_pg_statistic_stavalues1 - 1;
+	for (k = 0; k < STATISTIC_NUM_SLOTS; k++)
+	{
+		if (stats->numvalues[k] > 0)
+		{
+			ArrayType  *arry;
+
+			arry = construct_array(stats->stavalues[k],
+								   stats->numvalues[k],
+								   stats->statypid[k],
+								   stats->statyplen[k],
+								   stats->statypbyval[k],
+								   stats->statypalign[k]);
+			values[i++] = PointerGetDatum(arry);	/* stavaluesN */
+		}
+		else
+		{
+			nulls[i] = true;
+			values[i++] = (Datum) 0;
+		}
+	}
+
+	if (HeapTupleIsValid(oldtup))
+	{
+		/* construct a modified tuple */
+		stup = heap_modify_tuple(oldtup,
+								 RelationGetDescr(statsrel),
+								 values,
+								 nulls,
+								 replaces);
+	}
+	else
+	{
+		/* construct a new tuple */
+		stup = heap_form_tuple(RelationGetDescr(statsrel), values, nulls);
+	}
+
+	return stup;
+}
 
 /*
  *	update_attstats() -- update attribute statistics for one relation
@@ -1460,92 +1649,10 @@ update_attstats(Oid relid, bool inh, int natts, VacAttrStats **vacattrstats)
 		VacAttrStats *stats = vacattrstats[attno];
 		HeapTuple	stup,
 					oldtup;
-		int			i,
-					k,
-					n;
-		Datum		values[Natts_pg_statistic];
-		bool		nulls[Natts_pg_statistic];
-		bool		replaces[Natts_pg_statistic];
 
 		/* Ignore attr if we weren't able to collect stats */
 		if (!stats->stats_valid)
 			continue;
-
-		/*
-		 * Construct a new pg_statistic tuple
-		 */
-		for (i = 0; i < Natts_pg_statistic; ++i)
-		{
-			nulls[i] = false;
-			replaces[i] = true;
-		}
-
-		values[Anum_pg_statistic_starelid - 1] = ObjectIdGetDatum(relid);
-		values[Anum_pg_statistic_staattnum - 1] = Int16GetDatum(stats->attr->attnum);
-		values[Anum_pg_statistic_stainherit - 1] = BoolGetDatum(inh);
-		values[Anum_pg_statistic_stanullfrac - 1] = Float4GetDatum(stats->stanullfrac);
-		values[Anum_pg_statistic_stawidth - 1] = Int32GetDatum(stats->stawidth);
-		values[Anum_pg_statistic_stadistinct - 1] = Float4GetDatum(stats->stadistinct);
-		i = Anum_pg_statistic_stakind1 - 1;
-		for (k = 0; k < STATISTIC_NUM_SLOTS; k++)
-		{
-			values[i++] = Int16GetDatum(stats->stakind[k]); /* stakindN */
-		}
-		i = Anum_pg_statistic_staop1 - 1;
-		for (k = 0; k < STATISTIC_NUM_SLOTS; k++)
-		{
-			values[i++] = ObjectIdGetDatum(stats->staop[k]);	/* staopN */
-		}
-		i = Anum_pg_statistic_stacoll1 - 1;
-		for (k = 0; k < STATISTIC_NUM_SLOTS; k++)
-		{
-			values[i++] = ObjectIdGetDatum(stats->stacoll[k]);	/* stacollN */
-		}
-		i = Anum_pg_statistic_stanumbers1 - 1;
-		for (k = 0; k < STATISTIC_NUM_SLOTS; k++)
-		{
-			int			nnum = stats->numnumbers[k];
-
-			if (nnum > 0)
-			{
-				Datum	   *numdatums = (Datum *) palloc(nnum * sizeof(Datum));
-				ArrayType  *arry;
-
-				for (n = 0; n < nnum; n++)
-					numdatums[n] = Float4GetDatum(stats->stanumbers[k][n]);
-				/* XXX knows more than it should about type float4: */
-				arry = construct_array(numdatums, nnum,
-									   FLOAT4OID,
-									   sizeof(float4), true, TYPALIGN_INT);
-				values[i++] = PointerGetDatum(arry);	/* stanumbersN */
-			}
-			else
-			{
-				nulls[i] = true;
-				values[i++] = (Datum) 0;
-			}
-		}
-		i = Anum_pg_statistic_stavalues1 - 1;
-		for (k = 0; k < STATISTIC_NUM_SLOTS; k++)
-		{
-			if (stats->numvalues[k] > 0)
-			{
-				ArrayType  *arry;
-
-				arry = construct_array(stats->stavalues[k],
-									   stats->numvalues[k],
-									   stats->statypid[k],
-									   stats->statyplen[k],
-									   stats->statypbyval[k],
-									   stats->statypalign[k]);
-				values[i++] = PointerGetDatum(arry);	/* stavaluesN */
-			}
-			else
-			{
-				nulls[i] = true;
-				values[i++] = (Datum) 0;
-			}
-		}
 
 		/* Is there already a pg_statistic tuple for this attribute? */
 		oldtup = SearchSysCache3(STATRELATTINH,
@@ -1553,21 +1660,18 @@ update_attstats(Oid relid, bool inh, int natts, VacAttrStats **vacattrstats)
 								 Int16GetDatum(stats->attr->attnum),
 								 BoolGetDatum(inh));
 
+		/* construct a statistics tuple */
+		stup = construct_stats_tuple(stats, relid, inh, sd, oldtup);
+
 		if (HeapTupleIsValid(oldtup))
 		{
 			/* Yes, replace it */
-			stup = heap_modify_tuple(oldtup,
-									 RelationGetDescr(sd),
-									 values,
-									 nulls,
-									 replaces);
 			ReleaseSysCache(oldtup);
 			CatalogTupleUpdate(sd, &stup->t_self, stup);
 		}
 		else
 		{
 			/* No, insert new tuple */
-			stup = heap_form_tuple(RelationGetDescr(sd), values, nulls);
 			CatalogTupleInsert(sd, stup);
 		}
 
@@ -1776,7 +1880,8 @@ compute_trivial_stats(VacAttrStatsP stats,
 		Datum		value;
 		bool		isnull;
 
-		vacuum_delay_point();
+		if (!stats->nodelay)
+			vacuum_delay_point();
 
 		value = fetchfunc(stats, i, &isnull);
 
@@ -1892,7 +1997,8 @@ compute_distinct_stats(VacAttrStatsP stats,
 		int			firstcount1,
 					j;
 
-		vacuum_delay_point();
+		if (!stats->nodelay)
+			vacuum_delay_point();
 
 		value = fetchfunc(stats, i, &isnull);
 
@@ -2239,7 +2345,8 @@ compute_scalar_stats(VacAttrStatsP stats,
 		Datum		value;
 		bool		isnull;
 
-		vacuum_delay_point();
+		if (!stats->nodelay)
+			vacuum_delay_point();
 
 		value = fetchfunc(stats, i, &isnull);
 

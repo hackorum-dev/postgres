@@ -1123,6 +1123,8 @@ typedef struct RangeTblEntry
 	Bitmapset  *updatedCols;	/* columns needing UPDATE permission */
 	Bitmapset  *extraUpdatedCols;	/* generated columns being updated */
 	List	   *securityQuals;	/* security barrier quals to apply, if any */
+	struct HeapTupleData **tmpstats;/*temporary statistics, indexed by attnum */
+	Bitmapset  *notmpstats;		/* negative cache of tmpstats */
 } RangeTblEntry;
 
 /*

@@ -126,6 +126,7 @@ typedef struct VacAttrStats
 	Form_pg_type attrtype;		/* copy of pg_type row for attrtypid */
 	Oid			attrcollid;		/* collation of data being analyzed */
 	MemoryContext anl_context;	/* where to save long-lived data */
+	bool		nodelay;		/* true to skip delays */
 
 	/*
 	 * These fields must be filled in by the typanalyze routine, unless it
@@ -283,6 +284,7 @@ extern Relation vacuum_open_relation(Oid relid, RangeVar *relation,
 extern void analyze_rel(Oid relid, RangeVar *relation,
 						VacuumParams *params, List *va_cols, bool in_outer_xact,
 						BufferAccessStrategy bstrategy);
+extern HeapTuple analyze_values(Var *var, List *values_list);
 extern bool std_typanalyze(VacAttrStats *stats);
 
 /* in utils/misc/sampling.c --- duplicate of declarations in utils/sampling.h */

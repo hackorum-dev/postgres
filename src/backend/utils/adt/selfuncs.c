@@ -5226,10 +5226,67 @@ examine_simple_variable(PlannerInfo *root, Var *var,
 			examine_simple_variable(rel->subroot, var, vardata);
 		}
 	}
+	else if (rte->rtekind == RTE_VALUES)
+	{
+		HeapTuple	statstup;
+		bool		all_const = true;
+		ListCell   *lc1, *lc2;
+
+		/* known that this attr doesn't have statistics */
+		if (bms_is_member(var->varattno, rte->notmpstats))
+			return;
+
+		if (!rte->tmpstats ||
+			!HeapTupleIsValid(rte->tmpstats[var->varattno]))
+		{
+			/* no stats for this var. calcuate stats if possible */
+
+			/* we allow only all-const values lists */
+			foreach (lc1, rte->values_lists)
+			{
+				foreach (lc2, (List *) lfirst(lc1))
+				{
+					if (!IsA(lfirst(lc2), Const))
+					{
+						all_const = false;
+						break;
+					}
+				}
+				if (!all_const)
+					break;
+			}
+			if (!all_const)
+			{
+				/* set negative info and return */
+				rte->notmpstats =
+					bms_add_member(rte->notmpstats, var->varattno);
+				return;
+			}
+		}
+
+		if (!rte->tmpstats)
+		{
+			int ncols = list_length(rte->coltypes);
+			rte->tmpstats =
+				(HeapTuple*) palloc0(sizeof(HeapTuple) * (ncols + 1));
+		}
+
+		if (!rte->tmpstats[var->varattno])
+			rte->tmpstats[var->varattno] =
+				analyze_values(var, rte->values_lists);
+
+		statstup = heap_copytuple(rte->tmpstats[var->varattno]);
+		if (HeapTupleIsValid(statstup))
+		{
+			vardata->statsTuple = statstup;
+			vardata->freefunc = heap_freetuple;
+			vardata->acl_ok = true;
+		}
+	}
 	else
 	{
 		/*
-		 * Otherwise, the Var comes from a FUNCTION, VALUES, or CTE RTE.  (We
+		 * Otherwise, the Var comes from a FUNCTION, or CTE RTE.  (We
 		 * won't see RTE_JOIN here because join alias Vars have already been
 		 * flattened.)	There's not much we can do with function outputs, but
 		 * maybe someday try to be smarter about VALUES and/or CTEs.
