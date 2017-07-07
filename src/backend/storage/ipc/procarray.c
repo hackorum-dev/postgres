@@ -238,6 +238,7 @@ CreateSharedProcArray(void)
 		procArray->numProcs = 0;
 		procArray->maxProcs = PROCARRAY_MAXPROCS;
 		procArray->replication_slot_xmin = InvalidTransactionId;
+		procArray->replication_slot_catalog_xmin = InvalidTransactionId;
 		procArray->maxKnownAssignedXids = TOTAL_MAX_CACHED_SUBXIDS;
 		procArray->numKnownAssignedXids = 0;
 		procArray->tailKnownAssignedXids = 0;
