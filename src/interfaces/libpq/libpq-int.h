@@ -488,6 +488,8 @@ struct pg_conn
 								 * connection */
 #endif
 
+	char	   *acc_auth;		/* Acceptable authentification methods */
+
 	/* Buffer for current error message */
 	PQExpBufferData errorMessage;		/* expansible string */
 

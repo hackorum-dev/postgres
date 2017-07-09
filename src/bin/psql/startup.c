@@ -75,6 +75,7 @@ struct adhoc_opts
 	bool		no_psqlrc;
 	bool		single_txn;
 	bool		list_dbs;
+	char	   *authtype;
 	SimpleActionList actions;
 };
 
@@ -213,7 +214,7 @@ main(int argc, char *argv[])
 	/* loop until we have a password if requested by backend */
 	do
 	{
-#define PARAMS_ARRAY_SIZE	8
+#define PARAMS_ARRAY_SIZE	9
 		const char **keywords = pg_malloc(PARAMS_ARRAY_SIZE * sizeof(*keywords));
 		const char **values = pg_malloc(PARAMS_ARRAY_SIZE * sizeof(*values));
 
@@ -232,8 +233,10 @@ main(int argc, char *argv[])
 		values[5] = pset.progname;
 		keywords[6] = "client_encoding";
 		values[6] = (pset.notty || getenv("PGCLIENTENCODING")) ? NULL : "auto";
-		keywords[7] = NULL;
-		values[7] = NULL;
+		keywords[7] = "acc_auth";
+		values[7] = options.authtype;
+		keywords[8] = NULL;
+		values[8] = NULL;
 
 		new_pass = false;
 		pset.db = PQconnectdbParams(keywords, values, true);
@@ -441,6 +444,7 @@ parse_psql_options(int argc, char *argv[], struct adhoc_opts * options)
 		{"single-line", no_argument, NULL, 'S'},
 		{"tuples-only", no_argument, NULL, 't'},
 		{"table-attr", required_argument, NULL, 'T'},
+		{"authtype", required_argument, NULL, 'u'},
 		{"username", required_argument, NULL, 'U'},
 		{"set", required_argument, NULL, 'v'},
 		{"variable", required_argument, NULL, 'v'},
@@ -458,7 +462,7 @@ parse_psql_options(int argc, char *argv[], struct adhoc_opts * options)
 
 	memset(options, 0, sizeof *options);
 
-	while ((c = getopt_long(argc, argv, "aAbc:d:eEf:F:h:HlL:no:p:P:qR:sStT:U:v:VwWxXz?01",
+	while ((c = getopt_long(argc, argv, "aAbc:d:eEf:F:h:HlL:no:p:P:qR:sStT:u:U:v:VwWxXz?01",
 							long_options, &optindex)) != -1)
 	{
 		switch (c)
@@ -565,6 +569,9 @@ parse_psql_options(int argc, char *argv[], struct adhoc_opts * options)
 				break;
 			case 'T':
 				pset.popt.topt.tableAttr = pg_strdup(optarg);
+				break;
+			case 'u':
+				options->authtype = pg_strdup(optarg);
 				break;
 			case 'U':
 				options->username = pg_strdup(optarg);

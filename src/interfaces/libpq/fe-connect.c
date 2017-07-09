@@ -304,6 +304,10 @@ static const internalPQconninfoOption PQconninfoOptions[] = {
 		"Target-Session-Attrs", "", 11, /* sizeof("read-write") = 11 */
 	offsetof(struct pg_conn, target_session_attrs)},
 
+	{"acc_auth", NULL, NULL, NULL,
+		"Acceptable authentification methods", "", 20,
+	offsetof(struct pg_conn, acc_auth)},
+
 	/* Terminating entry --- MUST BE LAST */
 	{NULL, NULL, NULL, NULL,
 	NULL, NULL, 0}
@@ -997,6 +1001,43 @@ connectOptions2(PGconn *conn)
 			/* If we got one, set pgpassfile_used */
 			if (conn->connhost[i].password != NULL)
 				conn->pgpassfile_used = true;
+		}
+	}
+
+	/* Validate acceptable authentification methods */
+	if (conn->acc_auth)
+	{
+		char * pvalue = conn->acc_auth;
+		char * comma = pvalue;
+		while ((comma = strchr(pvalue, ',')))
+		{
+			*comma = '\0';
+			if (strcmp(pvalue, "password") != 0
+				&& strcmp(pvalue, "md5") != 0
+				&& strcmp(pvalue, "scram") != 0
+				&& strcmp(pvalue, "gss") != 0
+				&& strcmp(pvalue, "sspi") != 0)
+			{
+				conn->status = CONNECTION_BAD;
+				printfPQExpBuffer(&conn->errorMessage,
+							libpq_gettext("invalid authtype value: \"%s\"\n"),
+							  pvalue);
+				return false;
+			}
+			*comma = ',';
+			pvalue = comma + 1;
+		}
+		if (strcmp(pvalue, "password") != 0
+			&& strcmp(pvalue, "md5") != 0
+			&& strcmp(pvalue, "scram") != 0
+			&& strcmp(pvalue, "gss") != 0
+			&& strcmp(pvalue, "sspi") != 0)
+		{
+			conn->status = CONNECTION_BAD;
+			printfPQExpBuffer(&conn->errorMessage,
+						libpq_gettext("invalid authtype value: \"%s\"\n"),
+						  pvalue);
+			return false;
 		}
 	}
 
@@ -1820,6 +1861,43 @@ restoreErrorMessage(PGconn *conn, PQExpBuffer savedMessage)
 	resetPQExpBuffer(&conn->errorMessage);
 	appendPQExpBufferStr(&conn->errorMessage, savedMessage->data);
 	termPQExpBuffer(savedMessage);
+}
+
+static bool
+isAllowableAuth(int areq, char* acc_auth)
+{
+	/* Allowable authentification scheme is not specified. */
+	if (acc_auth == 0)
+		return true;
+	switch (areq)
+	{
+		case AUTH_REQ_OK:
+			return true;
+		case AUTH_REQ_KRB4:
+			return false; // Since it is not supported anymore
+		case AUTH_REQ_KRB5:
+			return false; // Since it is not supported anymore
+		case AUTH_REQ_PASSWORD:
+			return strstr(acc_auth, "password") != NULL;
+		case AUTH_REQ_CRYPT:
+			return false; // Since it is not supported anymore
+		case AUTH_REQ_MD5:
+			return strstr(acc_auth, "md5") != NULL;
+		case AUTH_REQ_SCM_CREDS:
+			break;
+		case AUTH_REQ_GSS:
+			return strstr(acc_auth, "gss") != NULL;
+		case AUTH_REQ_GSS_CONT:
+			return strstr(acc_auth, "gss") != NULL
+				   || strstr(acc_auth, "sspi") != NULL;
+		case AUTH_REQ_SSPI:
+			return strstr(acc_auth, "sspi") != NULL;
+		case AUTH_REQ_SASL:
+		case AUTH_REQ_SASL_CONT:
+		case AUTH_REQ_SASL_FIN:
+			return strstr(acc_auth, "scram") != NULL;
+	}
+	return true;
 }
 
 /* ----------------
@@ -2680,6 +2758,13 @@ keep_going:						/* We will come back to here until there is
 				}
 				msgLength -= 4;
 
+				/* Check if authentification method is allowedable */
+				if (!isAllowableAuth(areq, conn->acc_auth))
+				{
+					appendPQExpBufferStr(&conn->errorMessage,
+											 libpq_gettext("Authentification scheme is not allowed\n"));
+					goto error_return;
+				}
 				/*
 				 * Ensure the password salt is in the input buffer, if it's an
 				 * MD5 request.  All the other authentication methods that
