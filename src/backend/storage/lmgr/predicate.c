@@ -3569,11 +3569,17 @@ ClearOldPredicateLocks(void)
 	SERIALIZABLEXACT *finishedSxact;
 	PREDICATELOCK *predlock;
 
-	/*
+    /* Clear at most 200 finishedSxact once*/
+	int releasedNum = 0;
+    SERIALIZABLEXACT* releasedSxact[200];
+
+    /*
 	 * Loop through finished transactions. They are in commit order, so we can
 	 * stop as soon as we find one that's still interesting.
 	 */
-	LWLockAcquire(SerializableFinishedListLock, LW_EXCLUSIVE);
+    if (!LWLockConditionalAcquire(SerializableFinishedListLock, LW_EXCLUSIVE)){
+        return;
+    }
 	finishedSxact = (SERIALIZABLEXACT *)
 		SHMQueueNext(FinishedSerializableTransactions,
 					 FinishedSerializableTransactions,
@@ -3595,10 +3601,8 @@ ClearOldPredicateLocks(void)
 			 * This transaction committed before any in-progress transaction
 			 * took its snapshot. It's no longer interesting.
 			 */
-			LWLockRelease(SerializableXactHashLock);
 			SHMQueueDelete(&(finishedSxact->finishedLink));
-			ReleaseOneSerializableXact(finishedSxact, false, false);
-			LWLockAcquire(SerializableXactHashLock, LW_SHARED);
+            releasedSxact[releasedNum++] = finishedSxact;
 		}
 		else if (finishedSxact->commitSeqNo > PredXact->HavePartialClearedThrough
 		   && finishedSxact->commitSeqNo <= PredXact->CanPartialClearThrough)
@@ -3614,8 +3618,8 @@ ClearOldPredicateLocks(void)
 			{
 				/* A read-only transaction can be removed entirely */
 				SHMQueueDelete(&(finishedSxact->finishedLink));
-				ReleaseOneSerializableXact(finishedSxact, false, false);
-			}
+                releasedSxact[releasedNum++] = finishedSxact;
+            }
 			else
 			{
 				/*
@@ -3635,6 +3639,11 @@ ClearOldPredicateLocks(void)
 			break;
 		}
 		finishedSxact = nextSxact;
+
+        if (releasedNum == 200){
+            printf("more than 200 released num\n");
+            break;
+        }
 	}
 	LWLockRelease(SerializableXactHashLock);
 
@@ -3698,7 +3707,14 @@ ClearOldPredicateLocks(void)
 	}
 
 	LWLockRelease(SerializablePredicateLockListLock);
-	LWLockRelease(SerializableFinishedListLock);
+	LWLockRelease(SerializableFinishedListLock);    
+
+    int i;
+    for(i=0; i<releasedNum; i++){
+        ReleaseOneSerializableXact(releasedSxact[i], false, false);
+    }
+
+
 }
 
 /*
@@ -3732,7 +3748,7 @@ ReleaseOneSerializableXact(SERIALIZABLEXACT *sxact, bool partial,
 	Assert(sxact != NULL);
 	Assert(SxactIsRolledBack(sxact) || SxactIsCommitted(sxact));
 	Assert(partial || !SxactIsOnFinishedList(sxact));
-	Assert(LWLockHeldByMe(SerializableFinishedListLock));
+//	Assert(LWLockHeldByMe(SerializableFinishedListLock));
 
 	/*
 	 * First release all the predicate locks held by this xact (or transfer
