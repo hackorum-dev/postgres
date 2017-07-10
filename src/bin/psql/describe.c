@@ -3321,27 +3321,60 @@ listTables(const char *tabtypes, const char *pattern, bool verbose, bool showSys
 	printfPQExpBuffer(&buf,
 					  "SELECT n.nspname as \"%s\",\n"
 					  "  c.relname as \"%s\",\n"
-					  "  CASE c.relkind"
-					  " WHEN " CppAsString2(RELKIND_RELATION) " THEN '%s'"
+					  "  CASE c.relkind",
+					  gettext_noop("Schema"),
+					  gettext_noop("Name"));
+
+	/*
+	 * Starting in PG 10, certain kinds of relations could be partitions, which
+	 * if so, we show Type accordingly.
+	 */
+	if (pset.sversion >= 100000)
+		appendPQExpBuffer(&buf,
+						  " WHEN " CppAsString2(RELKIND_RELATION) " THEN"
+						  "   CASE c.relispartition"
+						  "     WHEN 'true' THEN '%s' ELSE '%s'"
+						  "   END"
+
+						  " WHEN " CppAsString2(RELKIND_PARTITIONED_TABLE) " THEN"
+						  "   CASE c.relispartition"
+						  "     WHEN 'true' THEN '%s' ELSE '%s'"
+						  "   END"
+
+						  " WHEN " CppAsString2(RELKIND_FOREIGN_TABLE) " THEN"
+						  "   CASE c.relispartition"
+						  "     WHEN 'true' THEN '%s' ELSE '%s'"
+						  "   END",
+						  gettext_noop("partition"),
+						  gettext_noop("table"),
+
+						  gettext_noop("partition"),
+						  gettext_noop("partitioned table"),
+
+						  gettext_noop("foreign partition"),
+						  gettext_noop("foreign table"));
+	else
+		appendPQExpBuffer(&buf,
+						  " WHEN " CppAsString2(RELKIND_RELATION) " THEN '%s'"
+						  " WHEN " CppAsString2(RELKIND_PARTITIONED_TABLE) " THEN '%s'"
+						  " WHEN " CppAsString2(RELKIND_FOREIGN_TABLE) " THEN '%s'",
+						  gettext_noop("table"),
+						  gettext_noop("partitioned table"),
+						  gettext_noop("foreign table"));
+
+	appendPQExpBuffer(&buf,
 					  " WHEN " CppAsString2(RELKIND_VIEW) " THEN '%s'"
 					  " WHEN " CppAsString2(RELKIND_MATVIEW) " THEN '%s'"
 					  " WHEN " CppAsString2(RELKIND_INDEX) " THEN '%s'"
 					  " WHEN " CppAsString2(RELKIND_SEQUENCE) " THEN '%s'"
 					  " WHEN 's' THEN '%s'"
-					  " WHEN " CppAsString2(RELKIND_FOREIGN_TABLE) " THEN '%s'"
-					  " WHEN " CppAsString2(RELKIND_PARTITIONED_TABLE) " THEN '%s'"
 					  " END as \"%s\",\n"
 					  "  pg_catalog.pg_get_userbyid(c.relowner) as \"%s\"",
-					  gettext_noop("Schema"),
-					  gettext_noop("Name"),
-					  gettext_noop("table"),
 					  gettext_noop("view"),
 					  gettext_noop("materialized view"),
 					  gettext_noop("index"),
 					  gettext_noop("sequence"),
 					  gettext_noop("special"),
-					  gettext_noop("foreign table"),
-					  gettext_noop("table"),	/* partitioned table */
 					  gettext_noop("Type"),
 					  gettext_noop("Owner"));
 
