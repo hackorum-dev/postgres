@@ -421,14 +421,17 @@ static void
 set_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 				 Index rti, RangeTblEntry *rte)
 {
-	if (IS_DUMMY_REL(rel))
+	if (rte->inh)
+	{
+		/*
+		 * It's an "append relation", process accordingly. If the "append
+		 * relation" is dummy, mark its children dummy, if not done so already.
+		 */
+		set_append_rel_pathlist(root, rel, rti, rte);
+	}
+	else if (IS_DUMMY_REL(rel))
 	{
 		/* We already proved the relation empty, so nothing more to do */
-	}
-	else if (rte->inh)
-	{
-		/* It's an "append relation", process accordingly */
-		set_append_rel_pathlist(root, rel, rti, rte);
 	}
 	else
 	{
@@ -1242,8 +1245,11 @@ set_append_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 			childrel->consider_parallel = false;
 
 		/*
-		 * Compute the child's access paths.
+		 * Compute the child's access paths. A child is empty if its parent is
+		 * proven dummy.
 		 */
+		if (IS_DUMMY_REL(rel) && !IS_DUMMY_REL(childrel))
+			set_dummy_rel_pathlist(childrel);
 		set_rel_pathlist(root, childrel, childRTindex, childRTE);
 
 		/*
@@ -1256,6 +1262,12 @@ set_append_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 		 * Child is live, so add it to the live_childrels list for use below.
 		 */
 		live_childrels = lappend(live_childrels, childrel);
+	}
+
+	if (!live_childrels)
+	{
+		Assert(IS_DUMMY_REL(rel));
+		return;
 	}
 
 	/* Add paths to the "append" relation. */
