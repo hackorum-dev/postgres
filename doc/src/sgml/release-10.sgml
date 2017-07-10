@@ -1553,7 +1553,7 @@
       <para>
        Add table <link linkend="SQL-CREATETABLE-PARTITION">partitioning
        syntax</> that automatically creates partition constraints and
-       handles routing of tuple insertions and updates (Amit Langote)
+       handles routing of tuple insertions (Amit Langote)
       </para>
 
       <para>
