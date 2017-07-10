@@ -120,7 +120,7 @@ stop_streaming(XLogRecPtr xlogpos, uint32 timeline, bool segment_finished)
 	 * slightly before the end of the WAL that we received on the previous
 	 * timeline, but it's close enough for reporting purposes.
 	 */
-	if (prevtimeline != 0 && prevtimeline != timeline)
+	if (verbose && prevtimeline != 0 && prevtimeline != timeline)
 		fprintf(stderr, _("%s: switched to timeline %u at %X/%X\n"),
 				progname, timeline,
 				(uint32) (prevpos >> 32), (uint32) prevpos);
@@ -128,13 +128,7 @@ stop_streaming(XLogRecPtr xlogpos, uint32 timeline, bool segment_finished)
 	prevtimeline = timeline;
 	prevpos = xlogpos;
 
-	if (time_to_abort)
-	{
-		fprintf(stderr, _("%s: received interrupt signal, exiting\n"),
-				progname);
-		return true;
-	}
-	return false;
+	return time_to_abort;
 }
 
 
