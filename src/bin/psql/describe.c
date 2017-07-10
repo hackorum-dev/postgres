@@ -1284,7 +1284,8 @@ objectDescription(const char *pattern, bool showSystem)
  * verbose: if true, this is \d+
  */
 bool
-describeTableDetails(const char *pattern, bool verbose, bool showSystem)
+describeTableDetails(const char *pattern, bool verbose, bool showSystem,
+					 bool showPartitions)
 {
 	PQExpBufferData buf;
 	PGresult   *res;
@@ -1302,6 +1303,9 @@ describeTableDetails(const char *pattern, bool verbose, bool showSystem)
 	if (!showSystem && !pattern)
 		appendPQExpBufferStr(&buf, "WHERE n.nspname <> 'pg_catalog'\n"
 							 "      AND n.nspname <> 'information_schema'\n");
+
+	if (pset.sversion >= 100000 && !showPartitions && !pattern)
+		appendPQExpBufferStr(&buf, "      AND relispartition = false\n");
 
 	processSQLNamePattern(pset.db, &buf, pattern, !showSystem && !pattern, false,
 						  "n.nspname", "c.relname", NULL,
@@ -3294,7 +3298,8 @@ listDbRoleSettings(const char *pattern, const char *pattern2)
  * (any order of the above is fine)
  */
 bool
-listTables(const char *tabtypes, const char *pattern, bool verbose, bool showSystem)
+listTables(const char *tabtypes, const char *pattern, bool verbose, bool showSystem,
+		   bool showPartitions)
 {
 	bool		showTables = strchr(tabtypes, 't') != NULL;
 	bool		showIndexes = strchr(tabtypes, 'i') != NULL;
@@ -3443,6 +3448,9 @@ listTables(const char *tabtypes, const char *pattern, bool verbose, bool showSys
 	 * table/index.
 	 */
 	appendPQExpBufferStr(&buf, "      AND n.nspname !~ '^pg_toast'\n");
+
+	if (pset.sversion >= 100000 && !showPartitions)
+		appendPQExpBufferStr(&buf, "      AND relispartition = 'false'\n");
 
 	processSQLNamePattern(pset.db, &buf, pattern, true, false,
 						  "n.nspname", "c.relname", NULL,

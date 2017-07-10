@@ -703,7 +703,8 @@ exec_command_d(PsqlScanState scan_state, bool active_branch, const char *cmd)
 	{
 		char	   *pattern;
 		bool		show_verbose,
-					show_system;
+					show_system,
+					show_partitions;
 
 		/* We don't do SQLID reduction on the pattern yet */
 		pattern = psql_scan_slash_option(scan_state,
@@ -711,6 +712,7 @@ exec_command_d(PsqlScanState scan_state, bool active_branch, const char *cmd)
 
 		show_verbose = strchr(cmd, '+') ? true : false;
 		show_system = strchr(cmd, 'S') ? true : false;
+		show_partitions = strstr(cmd, "++") ? true : false;
 
 		switch (cmd[1])
 		{
@@ -718,10 +720,12 @@ exec_command_d(PsqlScanState scan_state, bool active_branch, const char *cmd)
 			case '+':
 			case 'S':
 				if (pattern)
-					success = describeTableDetails(pattern, show_verbose, show_system);
+					success = describeTableDetails(pattern, show_verbose, show_system,
+												   show_partitions);
 				else
 					/* standard listing of interesting things */
-					success = listTables("tvmsE", NULL, show_verbose, show_system);
+					success = listTables("tvmsE", NULL, show_verbose, show_system,
+										 show_partitions);
 				break;
 			case 'A':
 				success = describeAccessMethods(pattern, show_verbose);
@@ -795,7 +799,8 @@ exec_command_d(PsqlScanState scan_state, bool active_branch, const char *cmd)
 			case 'i':
 			case 's':
 			case 'E':
-				success = listTables(&cmd[1], pattern, show_verbose, show_system);
+				success = listTables(&cmd[1], pattern, show_verbose, show_system,
+									 show_partitions);
 				break;
 			case 'r':
 				if (cmd[2] == 'd' && cmd[3] == 's')
