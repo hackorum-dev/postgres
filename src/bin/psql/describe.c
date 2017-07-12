@@ -2863,7 +2863,20 @@ describeOneTableDetails(const char *schemaname,
 		else
 			tuples = PQntuples(result);
 
-		if (!verbose)
+		/*
+		 * For a partitioned table with no partitions, always print the number
+		 * of partitions as zero, even when verbose output is expected.
+		 * Otherwise, we will not print "Partitions" section for a partitioned
+		 * table without any partitions.
+		 */
+		if (tableinfo.relkind == RELKIND_PARTITIONED_TABLE && tuples == 0)
+		{
+
+			/* print the number of child tables, if any */
+			printfPQExpBuffer(&buf, _("Number of partitions: %d"), tuples);
+			printTableAddFooter(&cont, buf.data);
+		}
+		else if (!verbose)
 		{
 			const char *ct = (tableinfo.relkind != RELKIND_PARTITIONED_TABLE)
 									? _("child tables")
@@ -2921,6 +2934,7 @@ describeOneTableDetails(const char *schemaname,
 				printTableAddFooter(&cont, buf.data);
 			}
 		}
+
 		PQclear(result);
 
 		/* Table type */
