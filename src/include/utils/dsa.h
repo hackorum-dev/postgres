@@ -28,15 +28,11 @@ typedef struct dsa_area dsa_area;
  * the DSA pointer must encode both a segment identifier and an offset, but
  * that shouldn't be a significant limitation in practice.
  *
- * If this system doesn't support atomic operations on 64-bit values, then
- * we fall back to 32-bit dsa_pointer for lack of other options.
- *
  * For testing purposes, USE_SMALL_DSA_POINTER can be defined to force the use
  * of 32-bit dsa_pointer even on systems capable of supporting a 64-bit
  * dsa_pointer.
  */
-#if SIZEOF_SIZE_T == 4 || !defined(PG_HAVE_ATOMIC_U64_SUPPORT) || \
-	defined(USE_SMALL_DSA_POINTER)
+#if SIZEOF_SIZE_T == 4 || defined(USE_SMALL_DSA_POINTER)
 #define SIZEOF_DSA_POINTER 4
 #else
 #define SIZEOF_DSA_POINTER 8
