@@ -2838,7 +2838,9 @@ describeOneTableDetails(const char *schemaname,
 		/* print child tables (with additional info if partitions) */
 		if (pset.sversion >= 100000)
 			printfPQExpBuffer(&buf,
-							  "SELECT c.oid::pg_catalog.regclass, pg_get_expr(c.relpartbound, c.oid)"
+							  "SELECT c.oid::pg_catalog.regclass,"
+							  "       pg_get_expr(c.relpartbound, c.oid),"
+							  "       c.relkind"
 							  " FROM pg_catalog.pg_class c, pg_catalog.pg_inherits i"
 							  " WHERE c.oid=i.inhrelid AND"
 							  " i.inhparent = '%s' AND"
@@ -2863,21 +2865,25 @@ describeOneTableDetails(const char *schemaname,
 
 		if (!verbose)
 		{
+			const char *ct = (tableinfo.relkind != RELKIND_PARTITIONED_TABLE)
+									? _("child tables")
+									: _("partitions");
+
 			/* print the number of child tables, if any */
 			if (tuples > 0)
 			{
-				if (tableinfo.relkind != RELKIND_PARTITIONED_TABLE)
-					printfPQExpBuffer(&buf, _("Number of child tables: %d (Use \\d+ to list them.)"), tuples);
-				else
-					printfPQExpBuffer(&buf, _("Number of partitions: %d (Use \\d+ to list them.)"), tuples);
+				printfPQExpBuffer(&buf,
+							  _("Number of %s: %d (Use \\d+ to list them.)"),
+							  ct, tuples);
 				printTableAddFooter(&cont, buf.data);
 			}
 		}
 		else
 		{
 			/* display the list of child tables */
-			const char *ct = (tableinfo.relkind != RELKIND_PARTITIONED_TABLE) ?
-			_("Child tables") : _("Partitions");
+			const char *ct = (tableinfo.relkind != RELKIND_PARTITIONED_TABLE)
+									? _("Child tables")
+									: _("Partitions");
 			int			ctw = pg_wcswidth(ct, strlen(ct), pset.encoding);
 
 			for (i = 0; i < tuples; i++)
@@ -2893,12 +2899,21 @@ describeOneTableDetails(const char *schemaname,
 				}
 				else
 				{
-					if (i == 0)
-						printfPQExpBuffer(&buf, "%s: %s %s",
-										  ct, PQgetvalue(result, i, 0), PQgetvalue(result, i, 1));
+					char *partitioned_note;
+
+					if (*PQgetvalue(result, i, 2) == RELKIND_PARTITIONED_TABLE)
+						partitioned_note = " has partitions";
 					else
-						printfPQExpBuffer(&buf, "%*s  %s %s",
-										  ctw, "", PQgetvalue(result, i, 0), PQgetvalue(result, i, 1));
+						partitioned_note = "";
+
+					if (i == 0)
+						printfPQExpBuffer(&buf, "%s: %s %s%s",
+										  ct, PQgetvalue(result, i, 0), PQgetvalue(result, i, 1),
+										  partitioned_note);
+					else
+						printfPQExpBuffer(&buf, "%*s  %s %s%s",
+										  ctw, "", PQgetvalue(result, i, 0), PQgetvalue(result, i, 1),
+										  partitioned_note);
 				}
 				if (i < tuples - 1)
 					appendPQExpBufferChar(&buf, ',');
