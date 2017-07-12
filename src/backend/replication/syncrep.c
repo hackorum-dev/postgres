@@ -263,6 +263,8 @@ SyncRepWaitForLSN(XLogRecPtr lsn, bool commit)
 		set_ps_display_suffix(buffer);
 	}
 
+	usleep(5000);
+
 	/*
 	 * Wait for specified LSN to be confirmed.
 	 *
@@ -941,6 +943,8 @@ SyncRepWakeQueue(bool all, int mode)
 		 * syncRepState change.
 		 */
 		pg_write_barrier();
+
+		usleep(10000);
 
 		/*
 		 * Set state to complete; see SyncRepWaitForLSN() for discussion of
