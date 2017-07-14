@@ -219,8 +219,8 @@ slashUsage(unsigned short int pager)
 
 	fprintf(output, _("Informational\n"));
 	fprintf(output, _("  (options: S = show system objects, + = additional detail)\n"));
-	fprintf(output, _("  \\d[S+]                 list tables, views, and sequences\n"));
-	fprintf(output, _("  \\d[S+]  NAME           describe table, view, sequence, or index\n"));
+	fprintf(output, _("  \\d[S+]                 list tables, views, materialized views, sequences, and foreign tables\n"));
+	fprintf(output, _("  \\d[S+]  NAME           describe table, view, materialized view, sequence, index, or foreign table\n"));
 	fprintf(output, _("  \\da[S]  [PATTERN]      list aggregates\n"));
 	fprintf(output, _("  \\dA[+]  [PATTERN]      list access methods\n"));
 	fprintf(output, _("  \\db[+]  [PATTERN]      list tablespaces\n"));
