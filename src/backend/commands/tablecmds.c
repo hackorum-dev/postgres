@@ -5750,6 +5750,9 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab,
 			break;
 	}
 
+	/* Experiment for bug report 14691.  This doesn't do anything useful. */
+	CheckTableForSerializableConflictIn(rel);
+
 	/*
 	 * Report the subcommand to interested event triggers.
 	 */
