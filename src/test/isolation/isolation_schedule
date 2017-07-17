@@ -1,3 +1,4 @@
+test: add-column-concurrently
 test: read-only-anomaly
 test: read-only-anomaly-2
 test: read-only-anomaly-3
