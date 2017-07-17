@@ -1,0 +1,31 @@
+Parsed test spec with 3 sessions
+
+starting permutation: s1b s1a s1u s2b s2s s1c s2c
+step s1b: BEGIN ISOLATION LEVEL READ COMMITTED;
+step s1a: ALTER TABLE foo ADD COLUMN y integer;
+step s1u: UPDATE foo SET y = 0;
+step s2b: BEGIN ISOLATION LEVEL SERIALIZABLE READ ONLY DEFERRABLE;
+step s2s: TABLE foo; <waiting ...>
+step s1c: COMMIT;
+step s2s: <... completed>
+x              y              
+
+1                             
+2                             
+3                             
+step s2c: COMMIT;
+
+starting permutation: s3b s3a s3u s2b s2s s3c s2c
+step s3b: BEGIN ISOLATION LEVEL SERIALIZABLE;
+step s3a: ALTER TABLE foo ADD COLUMN y integer;
+step s3u: UPDATE foo SET y = 0;
+step s2b: BEGIN ISOLATION LEVEL SERIALIZABLE READ ONLY DEFERRABLE;
+step s2s: TABLE foo; <waiting ...>
+step s3c: COMMIT;
+step s2s: <... completed>
+x              y              
+
+1                             
+2                             
+3                             
+step s2c: COMMIT;
