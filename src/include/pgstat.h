@@ -33,6 +33,11 @@
 /* Default directory to store temporary statistics data in */
 #define PG_STAT_TMP_DIR		"pg_stat_tmp"
 
+/* How long to wait before calling pgstat_stat_report after
+ * the last DML is performed; in milliseconds.
+ */
+#define PGSTAT_REPORT_STAT_DELAY       500
+
 /* Values for track_functions GUC variable --- order is significant! */
 typedef enum TrackFunctionsLevel
 {

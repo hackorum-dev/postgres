@@ -3012,6 +3012,12 @@ ProcessInterrupts(void)
 
 	}
 
+	if (PgStatReportStatTimeoutPending)
+	{
+		pgstat_report_stat(false);
+		PgStatReportStatTimeoutPending = false;
+	}
+
 	if (ParallelMessagePending)
 		HandleParallelMessages();
 }
@@ -4009,6 +4015,14 @@ PostgresMain(int argc, char *argv[],
 			{
 				ProcessCompletedNotifies();
 				pgstat_report_stat(false);
+
+				/* Call pgstat_report_stat() after PGSTAT_REPORT_STAT_DELAY
+				 * again because if DMLs are performed with interval shorter
+				 * than PGSTAT_STAT_INTERVAL then some statistics could not be
+				 * sent until the backend is shutdown.
+				 */
+				enable_timeout_after(PGSTAT_REPORT_STAT_TIMEOUT,
+									 PGSTAT_REPORT_STAT_DELAY);
 
 				set_ps_display("idle", false);
 				pgstat_report_activity(STATE_IDLE, NULL);
