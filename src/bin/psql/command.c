@@ -109,7 +109,7 @@ static backslashResult exec_command_prompt(PsqlScanState scan_state, bool active
 static backslashResult exec_command_pset(PsqlScanState scan_state, bool active_branch);
 static backslashResult exec_command_quit(PsqlScanState scan_state, bool active_branch);
 static backslashResult exec_command_reset(PsqlScanState scan_state, bool active_branch,
-				   PQExpBuffer query_buf);
+				   PQExpBuffer query_buf, PQExpBuffer previous_buf);
 static backslashResult exec_command_s(PsqlScanState scan_state, bool active_branch);
 static backslashResult exec_command_set(PsqlScanState scan_state, bool active_branch);
 static backslashResult exec_command_setenv(PsqlScanState scan_state, bool active_branch,
@@ -369,7 +369,7 @@ exec_command(const char *cmd,
 	else if (strcmp(cmd, "q") == 0 || strcmp(cmd, "quit") == 0)
 		status = exec_command_quit(scan_state, active_branch);
 	else if (strcmp(cmd, "r") == 0 || strcmp(cmd, "reset") == 0)
-		status = exec_command_reset(scan_state, active_branch, query_buf);
+		status = exec_command_reset(scan_state, active_branch, query_buf, previous_buf);
 	else if (strcmp(cmd, "s") == 0)
 		status = exec_command_s(scan_state, active_branch);
 	else if (strcmp(cmd, "set") == 0)
@@ -2060,11 +2060,12 @@ exec_command_quit(PsqlScanState scan_state, bool active_branch)
  */
 static backslashResult
 exec_command_reset(PsqlScanState scan_state, bool active_branch,
-				   PQExpBuffer query_buf)
+				   PQExpBuffer query_buf, PQExpBuffer previous_buf)
 {
 	if (active_branch)
 	{
 		resetPQExpBuffer(query_buf);
+		resetPQExpBuffer(previous_buf);
 		psql_scan_reset(scan_state);
 		if (!pset.quiet)
 			puts(_("Query buffer reset (cleared)."));
