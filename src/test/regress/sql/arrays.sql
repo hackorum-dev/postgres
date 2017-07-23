@@ -379,6 +379,26 @@ SELECT pg_typeof(ARRAY[['a','bc'],['def','hijk']]::text[]::varchar[]) AS "charac
 SELECT CAST(ARRAY[[[[[['a','bb','ccc']]]]]] as text[]) as "{{{{{{a,bb,ccc}}}}}}";
 SELECT NULL::text[]::int[] AS "NULL";
 
+-- Optimizing for single-element arrays
+CREATE TEMP TABLE arr_single (i1 int, i2 int);
+CREATE INDEX arr_single_right ON arr_single (i1, i2);
+CREATE INDEX arr_single_wrong ON arr_single (i2);
+EXPLAIN (COSTS OFF)
+  SELECT * FROM arr_single WHERE i1 = ANY(ARRAY[23]) ORDER BY i2 LIMIT 1;
+DROP TABLE arr_single;
+-- scalar op any/all (array)
+SELECT 33 = ANY(ARRAY[23]);
+SELECT 33 = ALL(ARRAY[23]);
+SELECT 33 >= ALL(ARRAY[23]);
+SELECT 33 = ANY(ARRAY[NULL]::int[]);
+SELECT 33 >= ALL(ARRAY[NULL]::int[]);
+-- cross-datatype
+select 33.4 = ANY(ARRAY[23]);
+select 33.4 > ALL(ARRAY[23]);
+-- errors
+SELECT 33 * ANY(ARRAY[23]);
+--
+
 -- scalar op any/all (array)
 select 33 = any ('{1,2,3}');
 select 33 = any ('{1,2,33}');
