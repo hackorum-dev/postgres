@@ -856,6 +856,7 @@ make_scalar_array_op(ParseState *pstate, List *opname,
 	List	   *args;
 	Oid			rettype;
 	ScalarArrayOpExpr *result;
+	Node	   *riexpr;
 
 	ltypeId = exprType(ltree);
 	atypeId = exprType(rtree);
@@ -948,6 +949,23 @@ make_scalar_array_op(ParseState *pstate, List *opname,
 
 	/* perform the necessary typecasting of arguments */
 	make_fn_arguments(pstate, args, actual_arg_types, declared_arg_types);
+
+	/*
+	* If rtree is an array with only one item, we escape from using ANY and
+	* ARRAY and transform expr to more simple form. It allows to use index
+	* search by ltree column with sorted result.
+	*/
+	if (IsA(rtree, ArrayExpr) &&
+		list_length(((ArrayExpr *)rtree)->elements) == 1)
+	{
+		ReleaseSysCache(tup);
+		riexpr = (Node *)linitial(((ArrayExpr *)rtree)->elements);
+		return (Node *)make_op(pstate,
+							   opname,
+							   ltree,
+							   riexpr,
+							   location);
+	}
 
 	/* and build the expression node */
 	result = makeNode(ScalarArrayOpExpr);
