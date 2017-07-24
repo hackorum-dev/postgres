@@ -735,6 +735,9 @@ lazy_scan_heap(Relation onerel, int options, LVRelStats *vacrelstats,
 			/* Remove tuples from heap */
 			lazy_vacuum_heap(onerel, vacrelstats);
 
+			/* Vacuum the Free Space Map */
+			FreeSpaceMapVacuum(onerel);
+
 			/*
 			 * Forget the now-vacuumed tuples, and press on, but be careful
 			 * not to reset latestRemovedXid since we want that value to be
