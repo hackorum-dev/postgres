@@ -440,6 +440,10 @@ lookup_type_cache(Oid type_id, int flags)
 										 typentry->btree_opintype,
 										 typentry->btree_opintype,
 										 BTORDER_PROC);
+		if (!OidIsValid(cmp_proc))    /* should not happen */
+			elog(ERROR, "missing support function %d(%u,%u) in opfamily %u",
+				 BTORDER_PROC, typentry->btree_opintype,
+				 typentry->btree_opintype, typentry->btree_opf);
 
 		/* As above, make sure array_cmp or record_cmp will succeed */
 		if (cmp_proc == F_BTARRAYCMP &&
