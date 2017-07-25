@@ -2185,15 +2185,6 @@ final_cost_nestloop(PlannerInfo *root, NestPath *path,
 	else
 		path->path.rows = path->path.parent->rows;
 
-	/* For partial paths, scale row estimate. */
-	if (path->path.parallel_workers > 0)
-	{
-		double		parallel_divisor = get_parallel_divisor(&path->path);
-
-		path->path.rows =
-			clamp_row_est(path->path.rows / parallel_divisor);
-	}
-
 	/*
 	 * We could include disable_cost in the preliminary estimate, but that
 	 * would amount to optimizing for the case where the join method is
@@ -2319,6 +2310,19 @@ final_cost_nestloop(PlannerInfo *root, NestPath *path,
 
 		/* Compute number of tuples processed (not number emitted!) */
 		ntuples = outer_path_rows * inner_path_rows;
+	}
+
+	/* We cannot emit more rows than we process. */
+	if (path->path.rows > ntuples)
+		path->path.rows = clamp_row_est(ntuples);
+
+	/* For partial paths, scale row estimate. */
+	if (path->path.parallel_workers > 0)
+	{
+		double		parallel_divisor = get_parallel_divisor(&path->path);
+
+		path->path.rows =
+			clamp_row_est(path->path.rows / parallel_divisor);
 	}
 
 	/* CPU costs */
