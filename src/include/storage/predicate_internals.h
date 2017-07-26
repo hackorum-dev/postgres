@@ -83,8 +83,13 @@ typedef struct SERIALIZABLEXACT
 		SerCommitSeqNo lastCommitBeforeSnapshot;		/* when not committed or
 														 * no conflict out */
 	}			SeqNo;
+	int 		outConflictsNum;
+	SHM_QUEUE	outConflictsTopLink;
 	SHM_QUEUE	outConflicts;	/* list of write transactions whose data we
 								 * couldn't read. */
+
+	int 		inConflictsNum;
+	SHM_QUEUE	inConflictsTopLink;
 	SHM_QUEUE	inConflicts;	/* list of read transactions which couldn't
 								 * see our write. */
 	SHM_QUEUE	predicateLocks; /* list of associated PREDICATELOCK objects */
@@ -182,6 +187,15 @@ typedef struct PredXactListData *PredXactList;
 		((Size)MAXALIGN(sizeof(PredXactListData)))
 
 
+/* 
+ * 
+ */
+typedef struct SHM_SKIPLIST
+{
+	SHM_QUEUE topLink;
+	SHM_QUEUE belowLink;
+}SHM_SKIPLIST;
+
 /*
  * The following types are used to provide lists of rw-conflicts between
  * pairs of transactions.  Since exactly the same information is needed,
@@ -194,7 +208,9 @@ typedef struct PredXactListData *PredXactList;
  */
 typedef struct RWConflictData
 {
+	SHM_QUEUE	outTopLink;
 	SHM_QUEUE	outLink;		/* link for list of conflicts out from a sxact */
+	SHM_QUEUE	inTopLink;
 	SHM_QUEUE	inLink;			/* link for list of conflicts in to a sxact */
 	SERIALIZABLEXACT *sxactOut;
 	SERIALIZABLEXACT *sxactIn;
