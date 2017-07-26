@@ -3536,6 +3536,8 @@ psql_completion(const char *text, int start, int end)
 								"unicode_column_linestyle|"
 								"unicode_header_linestyle"))
 			COMPLETE_WITH_LIST_CS2("single", "double");
+		else if (TailMatchesCS1("pager"))
+			COMPLETE_WITH_LIST_CS3("on", "off", "always");
 	}
 	else if (TailMatchesCS1("\\unset"))
 		matches = complete_from_variables(text, "", "", true);
