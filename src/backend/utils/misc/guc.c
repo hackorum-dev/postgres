@@ -3802,7 +3802,8 @@ static struct config_enum ConfigureNamesEnum[] =
 		{"trace_recovery_messages", PGC_SIGHUP, DEVELOPER_OPTIONS,
 			gettext_noop("Enables logging of recovery-related debugging information."),
 			gettext_noop("Each level includes all the levels that follow it. The later"
-						 " the level, the fewer messages are sent.")
+						 " the level, the fewer messages are sent."),
+			GUC_NOT_IN_SAMPLE
 		},
 		&trace_recovery_messages,
 
