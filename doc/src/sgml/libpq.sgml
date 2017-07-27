@@ -1040,10 +1040,9 @@ postgresql://%2Fvar%2Flib%2Fpostgresql/dbname
       <term><literal>dbname</literal></term>
       <listitem>
       <para>
-       The database name.  Defaults to be the same as the user name.
-       In certain contexts, the value is checked for extended
-       formats; see <xref linkend="libpq-connstring"> for more details on
-       those.
+       The database name.  Defaults to be the same as the user name. Where
+       explicitly said, the value can be recognized as a connection string;
+       see <xref linkend="libpq-connstring"> for more details on those.
       </para>
       </listitem>
      </varlistentry>

@@ -100,9 +100,9 @@
 
    <para>
     A foreign server using the <filename>postgres_fdw</> foreign data wrapper
-    can have the same options that <application>libpq</> accepts in
-    connection strings, as described in <xref linkend="libpq-paramkeywords">,
-    except that these options are not allowed:
+    can have the same options that are recognized by <application>libpq</>, as
+    described in <xref linkend="libpq-paramkeywords">, except that these
+    options are not allowed:
 
     <itemizedlist spacing="compact">
      <listitem>
