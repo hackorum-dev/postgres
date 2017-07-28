@@ -3764,6 +3764,16 @@ _copyVacuumStmt(const VacuumStmt *from)
 	VacuumStmt *newnode = makeNode(VacuumStmt);
 
 	COPY_SCALAR_FIELD(options);
+	COPY_NODE_FIELD(relcols);
+
+	return newnode;
+}
+
+static VacRelCols *
+_copyVacRelCols(const VacRelCols *from)
+{
+	VacRelCols *newnode = makeNode(VacRelCols);
+
 	COPY_NODE_FIELD(relation);
 	COPY_NODE_FIELD(va_cols);
 
@@ -5526,6 +5536,9 @@ copyObjectImpl(const void *from)
 			break;
 		case T_PartitionCmd:
 			retval = _copyPartitionCmd(from);
+			break;
+		case T_VacRelCols:
+			retval = _copyVacRelCols(from);
 			break;
 
 			/*

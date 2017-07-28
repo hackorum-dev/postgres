@@ -10128,13 +10128,13 @@ VacuumStmt: VACUUM opt_full opt_freeze opt_verbose
 						n->options |= VACOPT_FREEZE;
 					if ($4)
 						n->options |= VACOPT_VERBOSE;
-					n->relation = NULL;
-					n->va_cols = NIL;
+					n->relcols = NIL;
 					$$ = (Node *)n;
 				}
 			| VACUUM opt_full opt_freeze opt_verbose qualified_name
 				{
 					VacuumStmt *n = makeNode(VacuumStmt);
+					VacRelCols *relcol = makeNode(VacRelCols);
 					n->options = VACOPT_VACUUM;
 					if ($2)
 						n->options |= VACOPT_FULL;
@@ -10142,8 +10142,9 @@ VacuumStmt: VACUUM opt_full opt_freeze opt_verbose
 						n->options |= VACOPT_FREEZE;
 					if ($4)
 						n->options |= VACOPT_VERBOSE;
-					n->relation = $5;
-					n->va_cols = NIL;
+					relcol->relation = $5;
+					relcol->va_cols = NIL;
+					n->relcols = list_make1(relcol);
 					$$ = (Node *)n;
 				}
 			| VACUUM opt_full opt_freeze opt_verbose AnalyzeStmt
@@ -10162,18 +10163,19 @@ VacuumStmt: VACUUM opt_full opt_freeze opt_verbose
 				{
 					VacuumStmt *n = makeNode(VacuumStmt);
 					n->options = VACOPT_VACUUM | $3;
-					n->relation = NULL;
-					n->va_cols = NIL;
+					n->relcols = NIL;
 					$$ = (Node *) n;
 				}
 			| VACUUM '(' vacuum_option_list ')' qualified_name opt_name_list
 				{
 					VacuumStmt *n = makeNode(VacuumStmt);
+					VacRelCols *relcol = makeNode(VacRelCols);
 					n->options = VACOPT_VACUUM | $3;
-					n->relation = $5;
-					n->va_cols = $6;
-					if (n->va_cols != NIL)	/* implies analyze */
+					relcol->relation = $5;
+					relcol->va_cols = $6;
+					if (relcol->va_cols != NIL)	/* implies analyze */
 						n->options |= VACOPT_ANALYZE;
+					n->relcols = list_make1(relcol);
 					$$ = (Node *) n;
 				}
 		;
@@ -10207,18 +10209,19 @@ AnalyzeStmt:
 					n->options = VACOPT_ANALYZE;
 					if ($2)
 						n->options |= VACOPT_VERBOSE;
-					n->relation = NULL;
-					n->va_cols = NIL;
+					n->relcols = NIL;
 					$$ = (Node *)n;
 				}
 			| analyze_keyword opt_verbose qualified_name opt_name_list
 				{
 					VacuumStmt *n = makeNode(VacuumStmt);
+					VacRelCols *relcol = makeNode(VacRelCols);
 					n->options = VACOPT_ANALYZE;
 					if ($2)
 						n->options |= VACOPT_VERBOSE;
-					n->relation = $3;
-					n->va_cols = $4;
+					relcol->relation = $3;
+					relcol->va_cols = $4;
+					n->relcols = list_make1(relcol);
 					$$ = (Node *)n;
 				}
 		;
