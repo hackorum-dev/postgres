@@ -573,9 +573,10 @@ AlterSubscription_refresh(Subscription *sub, bool copy_data)
 									copy_data ? SUBREL_STATE_INIT : SUBREL_STATE_READY,
 									InvalidXLogRecPtr, false);
 			ereport(NOTICE,
-					(errmsg("added subscription for table %s.%s",
+					(errmsg("table %s.%s is added to subscription %s",
 							quote_identifier(rv->schemaname),
-							quote_identifier(rv->relname))));
+							quote_identifier(rv->relname),
+							quote_identifier(sub->name))));
 		}
 	}
 
@@ -601,9 +602,10 @@ AlterSubscription_refresh(Subscription *sub, bool copy_data)
 
 			namespace = get_namespace_name(get_rel_namespace(relid));
 			ereport(NOTICE,
-					(errmsg("removed subscription for table %s.%s",
+					(errmsg("table %s.%s is removed from subscription %s",
 							quote_identifier(namespace),
-							quote_identifier(get_rel_name(relid)))));
+							quote_identifier(get_rel_name(relid)),
+							quote_identifier(sub->name))));
 		}
 	}
 }
