@@ -76,18 +76,25 @@ static const f_smgr smgrsw[] = {
 static const int NSmgr = lengthof(smgrsw);
 
 
+typedef struct SMgrRelationHashEntry
+{
+	/* rnode is the hashtable lookup key, so it must be first! */
+	RelFileNodeBackend smgr_rnode;  /* relation physical identifier */
+
+	SMgrRelation reln;
+} SMgrRelationHashEntry;
+
+
 /*
- * Each backend has a hashtable that stores all extant SMgrRelation objects.
- * In addition, "unowned" SMgrRelation objects are chained together in a list.
+ * Each backend has a hashtable that stores all extant SMgrRelation objects
+ * and a hashtable that stores "unowned" SMgrRelation objects.
  */
 static HTAB *SMgrRelationHash = NULL;
 
-static SMgrRelation first_unowned_reln = NULL;
+static HTAB *UnownedSMgrRelationHash = NULL;
 
 /* local function prototypes */
 static void smgrshutdown(int code, Datum arg);
-static void add_to_unowned_list(SMgrRelation reln);
-static void remove_from_unowned_list(SMgrRelation reln);
 
 
 /*
@@ -143,14 +150,19 @@ smgropen(RelFileNode rnode, BackendId backend)
 	if (SMgrRelationHash == NULL)
 	{
 		/* First time through: initialize the hash table */
-		HASHCTL		ctl;
+		HASHCTL		ctl, unownctl;
 
 		MemSet(&ctl, 0, sizeof(ctl));
 		ctl.keysize = sizeof(RelFileNodeBackend);
 		ctl.entrysize = sizeof(SMgrRelationData);
 		SMgrRelationHash = hash_create("smgr relation table", 400,
 									   &ctl, HASH_ELEM | HASH_BLOBS);
-		first_unowned_reln = NULL;
+
+		MemSet(&unownctl, 0, sizeof(unownctl));
+		unownctl.keysize = sizeof(RelFileNodeBackend);
+		unownctl.entrysize = sizeof(SMgrRelationHashEntry);
+		UnownedSMgrRelationHash = hash_create("unowned smgr relation table", 
+										400, &unownctl, HASH_ELEM | HASH_BLOBS);
 	}
 
 	/* Look up or create an entry */
@@ -164,6 +176,7 @@ smgropen(RelFileNode rnode, BackendId backend)
 	if (!found)
 	{
 		int			forknum;
+		SMgrRelationHashEntry *unownreln;
 
 		/* hash_search already filled in the lookup key */
 		reln->smgr_owner = NULL;
@@ -177,7 +190,13 @@ smgropen(RelFileNode rnode, BackendId backend)
 			reln->md_num_open_segs[forknum] = 0;
 
 		/* it has no owner yet */
-		add_to_unowned_list(reln);
+		unownreln = (SMgrRelationHashEntry *) hash_search(UnownedSMgrRelationHash,
+										  (void *) &(reln->smgr_rnode),
+										  HASH_ENTER, &found);
+
+		Assert(!found);
+		/* hash_search already filled in the lookup key */
+		unownreln->reln = reln;
 	}
 
 	return reln;
@@ -207,7 +226,10 @@ smgrsetowner(SMgrRelation *owner, SMgrRelation reln)
 	if (reln->smgr_owner)
 		*(reln->smgr_owner) = NULL;
 	else
-		remove_from_unowned_list(reln);
+		if (hash_search(UnownedSMgrRelationHash,
+					(void *) &(reln->smgr_rnode),
+					HASH_REMOVE, NULL) == NULL)
+			elog(ERROR, "Unowned SMgrRelation hashtable corrupted");
 
 	/* Now establish the ownership relationship. */
 	reln->smgr_owner = owner;
@@ -221,6 +243,9 @@ smgrsetowner(SMgrRelation *owner, SMgrRelation reln)
 void
 smgrclearowner(SMgrRelation *owner, SMgrRelation reln)
 {
+	bool         found;
+	SMgrRelationHashEntry *unownreln;
+
 	/* Do nothing if the SMgrRelation object is not owned by the owner */
 	if (reln->smgr_owner != owner)
 		return;
@@ -231,53 +256,12 @@ smgrclearowner(SMgrRelation *owner, SMgrRelation reln)
 	/* unset our reference to the owner */
 	reln->smgr_owner = NULL;
 
-	add_to_unowned_list(reln);
-}
-
-/*
- * add_to_unowned_list -- link an SMgrRelation onto the unowned list
- *
- * Check remove_from_unowned_list()'s comments for performance
- * considerations.
- */
-static void
-add_to_unowned_list(SMgrRelation reln)
-{
-	/* place it at head of the list (to make smgrsetowner cheap) */
-	reln->next_unowned_reln = first_unowned_reln;
-	first_unowned_reln = reln;
-}
-
-/*
- * remove_from_unowned_list -- unlink an SMgrRelation from the unowned list
- *
- * If the reln is not present in the list, nothing happens.  Typically this
- * would be caller error, but there seems no reason to throw an error.
- *
- * In the worst case this could be rather slow; but in all the cases that seem
- * likely to be performance-critical, the reln being sought will actually be
- * first in the list.  Furthermore, the number of unowned relns touched in any
- * one transaction shouldn't be all that high typically.  So it doesn't seem
- * worth expending the additional space and management logic needed for a
- * doubly-linked list.
- */
-static void
-remove_from_unowned_list(SMgrRelation reln)
-{
-	SMgrRelation *link;
-	SMgrRelation cur;
-
-	for (link = &first_unowned_reln, cur = *link;
-		 cur != NULL;
-		 link = &cur->next_unowned_reln, cur = *link)
-	{
-		if (cur == reln)
-		{
-			*link = cur->next_unowned_reln;
-			cur->next_unowned_reln = NULL;
-			break;
-		}
-	}
+	unownreln = (SMgrRelationHashEntry *) hash_search(UnownedSMgrRelationHash,
+									  (void *) &(reln->smgr_rnode),
+									  HASH_ENTER, &found);
+	Assert(!found);
+	/* hash_search already filled in the lookup key */
+	unownreln->reln = reln;
 }
 
 /*
@@ -304,7 +288,10 @@ smgrclose(SMgrRelation reln)
 	owner = reln->smgr_owner;
 
 	if (!owner)
-		remove_from_unowned_list(reln);
+		if (hash_search(UnownedSMgrRelationHash,
+					(void *) &(reln->smgr_rnode),
+					HASH_REMOVE, NULL) == NULL)
+			elog(ERROR, "Unowned SMgrRelation hashtable corrupted");
 
 	if (hash_search(SMgrRelationHash,
 					(void *) &(reln->smgr_rnode),
@@ -797,13 +784,17 @@ smgrpostckpt(void)
 void
 AtEOXact_SMgr(void)
 {
+	HASH_SEQ_STATUS status;
+	SMgrRelationHashEntry *unownreln;
+
+	if (UnownedSMgrRelationHash == NULL)
+		return;
+
 	/*
 	 * Zap all unowned SMgrRelations.  We rely on smgrclose() to remove each
-	 * one from the list.
+	 * one from the hash.
 	 */
-	while (first_unowned_reln != NULL)
-	{
-		Assert(first_unowned_reln->smgr_owner == NULL);
-		smgrclose(first_unowned_reln);
-	}
+	hash_seq_init(&status, UnownedSMgrRelationHash);
+	while ((unownreln = (SMgrRelationHashEntry *) hash_seq_search(&status)) != NULL)
+		smgrclose(unownreln->reln);
 }
