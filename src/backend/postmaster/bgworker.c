@@ -219,14 +219,18 @@ FindRegisteredWorkerBySlotNumber(int slotno)
 {
 	slist_iter	siter;
 
+	/* elog(DEBUG1, "looking for slot-%d registration", slotno); */
 	slist_foreach(siter, &BackgroundWorkerList)
 	{
 		RegisteredBgWorker *rw;
 
 		rw = slist_container(RegisteredBgWorker, rw_lnode, siter.cur);
+		elog(DEBUG1, "saw slot-%d registration, want %d",
+			 rw->rw_shmem_slot, slotno);
 		if (rw->rw_shmem_slot == slotno)
 			return rw;
 	}
+	/* elog(DEBUG1, "did not find slot-%d registration", slotno); */
 
 	return NULL;
 }
@@ -297,6 +301,7 @@ BackgroundWorkerStateChange(void)
 			}
 			continue;
 		}
+		elog(DEBUG1, "slot %d not yet registered", slotno);
 
 		/*
 		 * If the worker is marked for termination, we don't need to add it to
@@ -390,8 +395,8 @@ BackgroundWorkerStateChange(void)
 
 		/* Log it! */
 		ereport(DEBUG1,
-				(errmsg("registering background worker \"%s\"",
-						rw->rw_worker.bgw_name)));
+				(errmsg("registering background worker \"%s\" (slot %d)",
+						rw->rw_worker.bgw_name, rw->rw_shmem_slot)));
 
 		slist_push_head(&BackgroundWorkerList, &rw->rw_lnode);
 	}
@@ -422,8 +427,8 @@ ForgetBackgroundWorker(slist_mutable_iter *cur)
 	slot->in_use = false;
 
 	ereport(DEBUG1,
-			(errmsg("unregistering background worker \"%s\"",
-					rw->rw_worker.bgw_name)));
+			(errmsg("unregistering background worker \"%s\" (slot %d)",
+					rw->rw_worker.bgw_name, rw->rw_shmem_slot)));
 
 	slist_delete_current(cur);
 	free(rw);

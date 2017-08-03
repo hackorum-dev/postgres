@@ -985,6 +985,8 @@ ParallelWorkerMain(Datum main_arg)
 	error_queue_space = shm_toc_lookup(toc, PARALLEL_KEY_ERROR_QUEUE, false);
 	mq = (shm_mq *) (error_queue_space +
 					 ParallelWorkerNumber * PARALLEL_ERROR_QUEUE_SIZE);
+	write_stderr("PID %d claiming queue %d (%p)\n",
+				 MyProc->pid, ParallelWorkerNumber, mq);
 	shm_mq_set_sender(mq, MyProc);
 	mqh = shm_mq_attach(mq, seg, NULL);
 	pq_redirect_to_shm_mq(seg, mqh);

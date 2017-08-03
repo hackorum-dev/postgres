@@ -561,6 +561,34 @@ int			postmaster_alive_fds[2] = {-1, -1};
 HANDLE		PostmasterHandle;
 #endif
 
+static bool siglevel = false;
+static void sigforbid(const char *location)
+{
+	int save_errno;
+
+	PG_SETMASK(&BlockSig);
+
+	save_errno = errno;
+	elog(LOG, "forbid signals @ %s", location);
+	if (siglevel)
+		elog(WARNING, "signals already forbidden @ %s", location);
+	siglevel = true;
+	errno = save_errno;
+}
+static void sigpermit(const char *location)
+{
+	int save_errno;
+
+	save_errno = errno;
+	elog(LOG, "permit signals @ %s", location);
+	if (!siglevel)
+		elog(WARNING, "signals already permitted @ %s", location);
+	siglevel = false;
+	errno = save_errno;
+
+	PG_SETMASK(&UnBlockSig);
+}
+
 /*
  * Postmaster main entry point
  */
@@ -629,7 +657,7 @@ PostmasterMain(int argc, char *argv[])
 	 * postmaster/checkpointer.c.
 	 */
 	pqinitmask();
-	PG_SETMASK(&BlockSig);
+	sigforbid(__FUNCTION__);
 
 	pqsignal_no_restart(SIGHUP, SIGHUP_handler);	/* reread config file and
 													 * have children do same */
@@ -1686,12 +1714,12 @@ ServerLoop(void)
 
 		if (pmState == PM_WAIT_DEAD_END)
 		{
-			PG_SETMASK(&UnBlockSig);
+			sigpermit("PM_WAIT_DEAD_END");
 
 			pg_usleep(100000L); /* 100 msec seems reasonable */
 			selres = 0;
 
-			PG_SETMASK(&BlockSig);
+			sigforbid("PM_WAIT_DEAD_END");
 		}
 		else
 		{
@@ -1701,11 +1729,11 @@ ServerLoop(void)
 			/* Needs to run with blocked signals! */
 			DetermineSleepTime(&timeout);
 
-			PG_SETMASK(&UnBlockSig);
+			sigpermit("select");
 
 			selres = select(nSockets, &rmask, NULL, NULL, &timeout);
 
-			PG_SETMASK(&BlockSig);
+			sigforbid("select");
 		}
 
 		/* Now check the select() result */
@@ -2507,7 +2535,7 @@ SIGHUP_handler(SIGNAL_ARGS)
 {
 	int			save_errno = errno;
 
-	PG_SETMASK(&BlockSig);
+	sigforbid(__FUNCTION__);
 
 	if (Shutdown <= SmartShutdown)
 	{
@@ -2566,7 +2594,7 @@ SIGHUP_handler(SIGNAL_ARGS)
 #endif
 	}
 
-	PG_SETMASK(&UnBlockSig);
+	sigpermit(__FUNCTION__);
 
 	errno = save_errno;
 }
@@ -2580,7 +2608,7 @@ pmdie(SIGNAL_ARGS)
 {
 	int			save_errno = errno;
 
-	PG_SETMASK(&BlockSig);
+	sigforbid(__FUNCTION__);
 
 	ereport(DEBUG2,
 			(errmsg_internal("postmaster received signal %d",
@@ -2737,7 +2765,7 @@ pmdie(SIGNAL_ARGS)
 			break;
 	}
 
-	PG_SETMASK(&UnBlockSig);
+	sigpermit(__FUNCTION__);
 
 	errno = save_errno;
 }
@@ -2752,7 +2780,7 @@ reaper(SIGNAL_ARGS)
 	int			pid;			/* process id of dead child process */
 	int			exitstatus;		/* its exit status */
 
-	PG_SETMASK(&BlockSig);
+	sigforbid(__FUNCTION__);
 
 	ereport(DEBUG4,
 			(errmsg_internal("reaping dead processes")));
@@ -3051,7 +3079,7 @@ reaper(SIGNAL_ARGS)
 	PostmasterStateMachine();
 
 	/* Done with signal handler */
-	PG_SETMASK(&UnBlockSig);
+	sigpermit(__FUNCTION__);
 
 	errno = save_errno;
 }
@@ -4765,7 +4793,7 @@ SubPostmasterMain(int argc, char *argv[])
 
 	/* In EXEC_BACKEND case we will not have inherited these settings */
 	pqinitmask();
-	PG_SETMASK(&BlockSig);
+	sigforbid(__FUNCTION__);
 
 	/* Read in remaining GUC variables */
 	read_nondefault_variables();
@@ -4957,7 +4985,7 @@ sigusr1_handler(SIGNAL_ARGS)
 {
 	int			save_errno = errno;
 
-	PG_SETMASK(&BlockSig);
+	sigforbid(__FUNCTION__);
 
 	/* Process background worker state change. */
 	if (CheckPostmasterSignal(PMSIGNAL_BACKGROUND_WORKER_CHANGE))
@@ -5091,7 +5119,7 @@ sigusr1_handler(SIGNAL_ARGS)
 		signal_child(StartupPID, SIGUSR2);
 	}
 
-	PG_SETMASK(&UnBlockSig);
+	sigpermit(__FUNCTION__);
 
 	errno = save_errno;
 }
@@ -5511,13 +5539,13 @@ BackgroundWorkerInitializeConnectionByOid(Oid dboid, Oid useroid)
 void
 BackgroundWorkerBlockSignals(void)
 {
-	PG_SETMASK(&BlockSig);
+	sigforbid(__FUNCTION__);
 }
 
 void
 BackgroundWorkerUnblockSignals(void)
 {
-	PG_SETMASK(&UnBlockSig);
+	sigpermit(__FUNCTION__);
 }
 
 #ifdef EXEC_BACKEND

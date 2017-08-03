@@ -554,6 +554,7 @@ errfinish(int dummy,...)
 		 */
 		fflush(stdout);
 		fflush(stderr);
+		for(;;);
 		abort();
 	}
 

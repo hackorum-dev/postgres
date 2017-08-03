@@ -42,6 +42,8 @@ ExceptionalCondition(const char *conditionName,
 	/* Usually this shouldn't be needed, but make sure the msg went out */
 	fflush(stderr);
 
+	for(;;);
+
 #ifdef SLEEP_ON_ASSERT
 
 	/*
