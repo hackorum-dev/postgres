@@ -114,7 +114,6 @@ typedef struct LVRelStats
 	BlockNumber pinskipped_pages;	/* # of pages we skipped due to a pin */
 	BlockNumber frozenskipped_pages;	/* # of frozen pages we skipped */
 	BlockNumber tupcount_pages; /* pages whose tuples we counted */
-	double		scanned_tuples; /* counts only tuples on tupcount_pages */
 	double		old_rel_tuples; /* previous value of pg_class.reltuples */
 	double		new_rel_tuples; /* new estimated total # of tuples */
 	double		new_dead_tuples;	/* new estimated total # of dead tuples */
@@ -464,7 +463,7 @@ lazy_scan_heap(Relation onerel, int options, LVRelStats *vacrelstats,
 	char	   *relname;
 	BlockNumber empty_pages,
 				vacuumed_pages;
-	double		num_tuples,
+	double		scanned_tuples, /* counts only tuples on vacrelstats->tupcount_pages */
 				tups_vacuumed,
 				nkeep,
 				nunused;
@@ -492,7 +491,7 @@ lazy_scan_heap(Relation onerel, int options, LVRelStats *vacrelstats,
 					relname)));
 
 	empty_pages = vacuumed_pages = 0;
-	num_tuples = tups_vacuumed = nkeep = nunused = 0;
+	scanned_tuples = tups_vacuumed = nkeep = nunused = 0;
 
 	indstats = (IndexBulkDeleteResult **)
 		palloc0(nindexes * sizeof(IndexBulkDeleteResult *));
@@ -1077,7 +1076,7 @@ lazy_scan_heap(Relation onerel, int options, LVRelStats *vacrelstats,
 			{
 				bool		tuple_totally_frozen;
 
-				num_tuples += 1;
+				scanned_tuples += 1;
 				hastup = true;
 
 				/*
@@ -1259,7 +1258,6 @@ lazy_scan_heap(Relation onerel, int options, LVRelStats *vacrelstats,
 	pfree(frozen);
 
 	/* save stats for use later */
-	vacrelstats->scanned_tuples = num_tuples;
 	vacrelstats->tuples_deleted = tups_vacuumed;
 	vacrelstats->new_dead_tuples = nkeep;
 
@@ -1267,7 +1265,7 @@ lazy_scan_heap(Relation onerel, int options, LVRelStats *vacrelstats,
 	vacrelstats->new_rel_tuples = vac_estimate_reltuples(onerel, false,
 														 nblocks,
 														 vacrelstats->tupcount_pages,
-														 num_tuples);
+														 scanned_tuples);
 
 	/*
 	 * Release any remaining pin on visibility map page.
@@ -1356,7 +1354,7 @@ lazy_scan_heap(Relation onerel, int options, LVRelStats *vacrelstats,
 	ereport(elevel,
 			(errmsg("\"%s\": found %.0f removable, %.0f nonremovable row versions in %u out of %u pages",
 					RelationGetRelationName(onerel),
-					tups_vacuumed, num_tuples,
+					tups_vacuumed, scanned_tuples,
 					vacrelstats->scanned_pages, nblocks),
 			 errdetail_internal("%s", buf.data)));
 	pfree(buf.data);
