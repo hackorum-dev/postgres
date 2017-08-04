@@ -391,6 +391,7 @@ slot_modify_cstrings(TupleTableSlot *slot, LogicalRepRelMapEntry *rel,
 		Form_pg_attribute att = slot->tts_tupleDescriptor->attrs[i];
 		int			remoteattnum = rel->attrmap[i];
 
+
 		if (remoteattnum >= 0 && !replaces[remoteattnum])
 			continue;
 
@@ -402,7 +403,8 @@ slot_modify_cstrings(TupleTableSlot *slot, LogicalRepRelMapEntry *rel,
 			errarg.attnum = remoteattnum;
 
 			getTypeInputInfo(att->atttypid, &typinput, &typioparam);
-			slot->tts_values[i] = OidInputFunctionCall(typinput, values[i],
+			slot->tts_values[i] = OidInputFunctionCall(typinput,
+													   values[remoteattnum],
 													   typioparam,
 													   att->atttypmod);
 			slot->tts_isnull[i] = false;
