@@ -1066,10 +1066,7 @@ _hash_alloc_buckets(Relation rel, BlockNumber firstblock, uint32 nblocks)
  *
  * In addition, the caller must have created the new bucket's base page,
  * which is passed in buffer nbuf, pinned and write-locked.  The lock will be
- * released here and pin must be released by the caller.  (The API is set up
- * this way because we must do _hash_getnewbuf() before releasing the metapage
- * write lock.  So instead of passing the new bucket's start block number, we
- * pass an actual buffer.)
+ * released here and pin must be released by the caller.
  */
 static void
 _hash_splitbucket(Relation rel,
