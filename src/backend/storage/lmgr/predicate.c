@@ -202,6 +202,8 @@
 #include "utils/snapmgr.h"
 #include "utils/tqual.h"
 
+#define LIST_TRANSFORM_THRESHOLD 8
+
 /* Uncomment the next line to test the graceful degradation code. */
 /* #define TEST_OLDSERXID */
 
@@ -628,6 +630,135 @@ NextPredXact(SERIALIZABLEXACT *sxact)
 }
 
 /*------------------------------------------------------------------------*/
+/*
+ * These functions manage access to the skip list
+ */
+
+static inline bool 
+outConflictsSkipListFindElem(const SERIALIZABLEXACT* reader, const SERIALIZABLEXACT* writer,
+							 SHM_QUEUE** topLinkPreElem, SHM_QUEUE** belowLinkPreElem)
+{
+	unsigned long value, nextValue;
+	SHM_QUEUE *belowCurElem;
+	SHM_QUEUE *topCurElem;
+	RWConflict nextConflict;
+
+	value = (unsigned long)writer;
+	topCurElem = &reader->outConflictsTopLink;
+
+	nextConflict = (RWConflict)SHMQueueNext(&reader->outConflictsTopLink,
+										topCurElem,
+										offsetof(RWConflictData, outTopLink));
+	while (nextConflict)
+	{
+		nextValue = (unsigned long)nextConflict->sxactIn;
+		if (nextValue == value)
+		{
+			/* If the function is called by inserting an item, the element cann't exist 
+			 * So we don't have to set the topLinkPreElem and belowLinkPreElem
+			 */
+			return true;
+		}
+		if (nextValue > value)
+		{
+			topCurElem = nextConflict->outTopLink.prev;
+			break;
+		}
+		nextConflict = (RWConflict)SHMQueueNext(&reader->outConflictsTopLink,
+										&nextConflict->outTopLink,
+										offsetof(RWConflictData, outTopLink));
+	}
+
+	belowCurElem = (SHM_QUEUE*)((char*)(topCurElem) + sizeof(SHM_QUEUE));
+	nextConflict = (RWConflict)SHMQueueNext(&reader->outConflicts,
+										belowCurElem,
+										offsetof(RWConflictData, outLink));
+	while (nextConflict)
+	{
+		nextValue = (unsigned long)nextConflict->sxactIn;
+		if (nextValue == value)
+			return true;
+		if (nextValue > value)
+		{
+			belowCurElem = nextConflict->outLink.prev;
+			break;
+		}
+		nextConflict = (RWConflict)SHMQueueNext(&reader->outConflicts,
+											&nextConflict->outLink,
+											offsetof(RWConflictData, outLink));
+	}
+	if (topLinkPreElem)
+		*topLinkPreElem = topCurElem;
+	if (belowLinkPreElem)
+		*belowLinkPreElem = belowCurElem;
+	return false;
+}
+
+static inline void
+InsertOutConflictSkipList(SERIALIZABLEXACT* reader, RWConflict conflict)
+{
+	SHM_QUEUE *topLinkPreElem, *belowLinkPreElem;
+	bool find;
+
+	topLinkPreElem = belowLinkPreElem = NULL;
+	find = outConflictsSkipListFindElem(reader, conflict->sxactIn, 
+									&topLinkPreElem, &belowLinkPreElem);
+	Assert(!find);
+	Assert(topLinkPreElem);
+	Assert(belowLinkPreElem);
+
+	if (rand()%3 == 0)
+		SHMQueueInsertAfter(topLinkPreElem, &conflict->outTopLink);
+	SHMQueueInsertAfter(belowLinkPreElem, &conflict->outLink);
+
+}
+
+static inline void
+InitOutConflictSkipListFromLinkedList(SERIALIZABLEXACT* sxact)
+{
+	RWConflict curElem, prevElem;
+
+	Assert(sxact->conflictOutUseList);
+
+	curElem = (RWConflict)SHMQueueNext(&sxact->outConflicts, 
+										&sxact->outConflicts,
+										offsetof(RWConflictData, outLink));
+
+	SHMQueueInit(&sxact->outConflicts);
+	SHMQueueInit(&sxact->outConflictsTopLink);
+
+	while (curElem)
+	{
+		prevElem = curElem;
+		curElem = (RWConflict)SHMQueueNext(&sxact->outConflicts, 
+											&curElem->outLink,
+											offsetof(RWConflictData, outLink));
+		InsertOutConflictSkipList(sxact, prevElem);
+	}
+
+	sxact->conflictOutUseList = false;
+}
+
+static inline void
+InsertOutConflict(SERIALIZABLEXACT* reader, RWConflict conflict)
+{
+	RWConflict curElem;
+	reader->outConflictsNum++;
+
+	if (reader->conflictOutUseList)
+	{
+		SHMQueueInsertBefore(&reader->outConflicts, &conflict->outLink);
+		if (reader->conflictOutUseList && reader->outConflictsNum > LIST_TRANSFORM_THRESHOLD){
+			InitOutConflictSkipListFromLinkedList(reader);
+		}
+	}
+	else
+	{
+		InsertOutConflictSkipList(reader, conflict);
+	}
+}
+
+/*------------------------------------------------------------------------*/
 
 /*
  * These functions manage primitive access to the RWConflict pool and lists.
@@ -636,7 +767,10 @@ static bool
 RWConflictExists(const SERIALIZABLEXACT *reader, const SERIALIZABLEXACT *writer)
 {
 	RWConflict	conflict;
-
+	Size 		valueOffset;
+    bool result;
+    
+    result=  false;
 	Assert(reader != writer);
 
 	/* Check the ends of the purported conflict first. */
@@ -646,23 +780,31 @@ RWConflictExists(const SERIALIZABLEXACT *reader, const SERIALIZABLEXACT *writer)
 		|| SHMQueueEmpty(&writer->inConflicts))
 		return false;
 
-	/* A conflict is possible; walk the list to find out. */
-	conflict = (RWConflict)
-		SHMQueueNext(&reader->outConflicts,
-					 &reader->outConflicts,
-					 offsetof(RWConflictData, outLink));
-	while (conflict)
+	if (reader->conflictOutUseList || reader->outConflictsNum <= LIST_TRANSFORM_THRESHOLD)
+//	if (true)
 	{
-		if (conflict->sxactIn == writer)
-			return true;
 		conflict = (RWConflict)
 			SHMQueueNext(&reader->outConflicts,
-						 &conflict->outLink,
+						 &reader->outConflicts,
 						 offsetof(RWConflictData, outLink));
+		while (conflict)
+		{
+			if (conflict->sxactIn == writer){
+			//	return true;
+	            result = true;
+	            break;
+			}
+			conflict = (RWConflict)
+				SHMQueueNext(&reader->outConflicts,
+							 &conflict->outLink,
+							 offsetof(RWConflictData, outLink));
+		}
 	}
-
-	/* No conflict found. */
-	return false;
+	else
+	{
+		result = outConflictsSkipListFindElem(reader, writer, NULL, NULL);
+	}
+    return result;
 }
 
 static void
@@ -684,11 +826,17 @@ SetRWConflict(SERIALIZABLEXACT *reader, SERIALIZABLEXACT *writer)
 				 errhint("You might need to run fewer transactions at a time or increase max_connections.")));
 
 	SHMQueueDelete(&conflict->outLink);
+	SHMQueueInit(&conflict->outTopLink);
+	SHMQueueInit(&conflict->inTopLink);
 
 	conflict->sxactOut = reader;
 	conflict->sxactIn = writer;
-	SHMQueueInsertBefore(&reader->outConflicts, &conflict->outLink);
+
+	/* because we only need check out conflicts of reader; 
+	 * So it is not necessary to maintain the skip list of inConflicts
+	 */
 	SHMQueueInsertBefore(&writer->inConflicts, &conflict->inLink);
+	InsertOutConflict(reader, conflict);
 }
 
 static void
@@ -726,6 +874,10 @@ ReleaseRWConflict(RWConflict conflict)
 {
 	SHMQueueDelete(&conflict->inLink);
 	SHMQueueDelete(&conflict->outLink);
+	if (conflict->inTopLink.prev)
+		SHMQueueDelete(&conflict->inTopLink);
+	if (conflict->outTopLink.prev)
+		SHMQueueDelete(&conflict->outTopLink);
 	SHMQueueInsertBefore(&RWConflictPool->availableList, &conflict->outLink);
 }
 
@@ -1204,7 +1356,15 @@ InitPredicateLocks(void)
 		PredXact->OldCommittedSxact->prepareSeqNo = 0;
 		PredXact->OldCommittedSxact->commitSeqNo = 0;
 		PredXact->OldCommittedSxact->SeqNo.lastCommitBeforeSnapshot = 0;
+
+		PredXact->OldCommittedSxact->conflictOutUseList = true;
+		PredXact->OldCommittedSxact->conflictInUseList = true;
+		PredXact->OldCommittedSxact->outConflictsNum = 0;
+		PredXact->OldCommittedSxact->inConflictsNum = 0;
+		
+		SHMQueueInit(&PredXact->OldCommittedSxact->outConflictsTopLink);
 		SHMQueueInit(&PredXact->OldCommittedSxact->outConflicts);
+		SHMQueueInit(&PredXact->OldCommittedSxact->inConflictsTopLink);
 		SHMQueueInit(&PredXact->OldCommittedSxact->inConflicts);
 		SHMQueueInit(&PredXact->OldCommittedSxact->predicateLocks);
 		SHMQueueInit(&PredXact->OldCommittedSxact->finishedLink);
@@ -1796,8 +1956,16 @@ GetSerializableTransactionSnapshotInt(Snapshot snapshot,
 	sxact->SeqNo.lastCommitBeforeSnapshot = PredXact->LastSxactCommitSeqNo;
 	sxact->prepareSeqNo = InvalidSerCommitSeqNo;
 	sxact->commitSeqNo = InvalidSerCommitSeqNo;
+
+	sxact->conflictOutUseList = true;
+	sxact->conflictInUseList = true;
+	sxact->outConflictsNum = 0;
+	SHMQueueInit(&(sxact->outConflictsTopLink));
 	SHMQueueInit(&(sxact->outConflicts));
+	sxact->inConflictsNum = 0;
+	SHMQueueInit(&(sxact->inConflictsTopLink));
 	SHMQueueInit(&(sxact->inConflicts));
+
 	SHMQueueInit(&(sxact->possibleUnsafeConflicts));
 	sxact->topXid = GetTopTransactionIdIfAny();
 	sxact->finishedBefore = InvalidTransactionId;
@@ -3423,8 +3591,11 @@ ReleasePredicateLocks(bool isCommit)
 
 		if (!isCommit
 			|| SxactIsCommitted(conflict->sxactIn)
-			|| (conflict->sxactIn->SeqNo.lastCommitBeforeSnapshot >= PredXact->LastSxactCommitSeqNo))
+			|| (conflict->sxactIn->SeqNo.lastCommitBeforeSnapshot >= PredXact->LastSxactCommitSeqNo)){
+			MySerializableXact->outConflictsNum--;
+            conflict->sxactIn->inConflictsNum--;
 			ReleaseRWConflict(conflict);
+		}
 
 		conflict = nextConflict;
 	}
@@ -3446,8 +3617,11 @@ ReleasePredicateLocks(bool isCommit)
 
 		if (!isCommit
 			|| SxactIsCommitted(conflict->sxactOut)
-			|| SxactIsReadOnly(conflict->sxactOut))
+			|| SxactIsReadOnly(conflict->sxactOut)){
+			MySerializableXact->inConflictsNum--;
+            conflict->sxactOut->outConflictsNum--;
 			ReleaseRWConflict(conflict);
+		}
 
 		conflict = nextConflict;
 	}
@@ -3839,6 +4013,8 @@ ReleaseOneSerializableXact(SERIALIZABLEXACT *sxact, bool partial,
 			if (summarize)
 				conflict->sxactIn->flags |= SXACT_FLAG_SUMMARY_CONFLICT_IN;
 			ReleaseRWConflict(conflict);
+			sxact->outConflictsNum--;
+            conflict->sxactIn->inConflictsNum--;
 			conflict = nextConflict;
 		}
 	}
@@ -3857,6 +4033,8 @@ ReleaseOneSerializableXact(SERIALIZABLEXACT *sxact, bool partial,
 		if (summarize)
 			conflict->sxactOut->flags |= SXACT_FLAG_SUMMARY_CONFLICT_OUT;
 		ReleaseRWConflict(conflict);
+		sxact->inConflictsNum--;
+        conflict->sxactOut->outConflictsNum--;
 		conflict = nextConflict;
 	}
 
@@ -4209,6 +4387,7 @@ CheckTargetForConflictsIn(PREDICATELOCKTARGETTAG *targettag)
 			 * transaction may have flagged a conflict.
 			 */
 			if (!SxactIsDoomed(sxact)
+				&& !SxactIsDoomed(MySerializableXact)
 				&& (!SxactIsCommitted(sxact)
 					|| TransactionIdPrecedes(GetTransactionSnapshot()->xmin,
 											 sxact->finishedBefore))
@@ -4969,7 +5148,9 @@ predicatelock_twophase_recover(TransactionId xid, uint16 info,
 		 * we'll conservatively assume that it had both a conflict in and a
 		 * conflict out, and represent that with the summary conflict flags.
 		 */
+		SHMQueueInit(&(sxact->outConflictsTopLink));
 		SHMQueueInit(&(sxact->outConflicts));
+		SHMQueueInit(&(sxact->inConflictsTopLink));
 		SHMQueueInit(&(sxact->inConflicts));
 		sxact->flags |= SXACT_FLAG_SUMMARY_CONFLICT_IN;
 		sxact->flags |= SXACT_FLAG_SUMMARY_CONFLICT_OUT;
