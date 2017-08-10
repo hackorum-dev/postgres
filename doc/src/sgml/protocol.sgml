@@ -5991,6 +5991,16 @@ Commit
 </varlistentry>
 <varlistentry>
 <term>
+        Int8
+</term>
+<listitem>
+<para>
+                Flags for relation. Currently unused.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
         Int64
 </term>
 <listitem>
