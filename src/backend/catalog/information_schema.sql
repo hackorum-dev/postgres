@@ -573,7 +573,7 @@ CREATE VIEW column_privileges AS
                   pr_c.relowner
            FROM (SELECT oid, relname, relnamespace, relowner, (aclexplode(coalesce(relacl, acldefault('r', relowner)))).*
                  FROM pg_class
-                 WHERE relkind IN ('r', 'v', 'f', 'p')
+                 WHERE relkind IN ('r', 'v', 'f', 'p', 'm')
                 ) pr_c (oid, relname, relnamespace, relowner, grantor, grantee, prtype, grantable),
                 pg_attribute a
            WHERE a.attrelid = pr_c.oid
@@ -595,7 +595,7 @@ CREATE VIEW column_privileges AS
                 ) pr_a (attrelid, attname, grantor, grantee, prtype, grantable),
                 pg_class c
            WHERE pr_a.attrelid = c.oid
-                 AND relkind IN ('r', 'v', 'f', 'p')
+                 AND relkind IN ('r', 'v', 'f', 'p', 'm')
          ) x,
          pg_namespace nc,
          pg_authid u_grantor,
@@ -1868,7 +1868,7 @@ CREATE VIEW table_privileges AS
          ) AS grantee (oid, rolname)
 
     WHERE c.relnamespace = nc.oid
-          AND c.relkind IN ('r', 'v', 'p')
+          AND c.relkind IN ('r', 'v', 'f', 'p', 'm')
           AND c.grantee = grantee.oid
           AND c.grantor = u_grantor.oid
           AND c.prtype IN ('INSERT', 'SELECT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER')
