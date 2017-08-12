@@ -1131,7 +1131,7 @@ setup_connection(Archive *AH, const char *dumpencoding,
 			 AH->remoteVersion >= 90200 &&
 			 !dopt->no_synchronized_snapshots)
 	{
-		if (AH->isStandby)
+		if (AH->isStandby && AH->remoteVersion < 100000)
 			exit_horribly(NULL,
 						  "Synchronized snapshots are not supported on standby servers.\n"
 						  "Run with --no-synchronized-snapshots instead if you do not need\n"
