@@ -37,6 +37,11 @@
 #include "utils/syscache.h"
 
 
+#ifdef USE_ICU
+static char *get_icu_locale_comment(const char *localename);
+#endif
+
+
 typedef struct
 {
 	char	   *localename;		/* name of locale, as per "locale -a" */
@@ -56,11 +61,13 @@ DefineCollation(ParseState *pstate, List *names, List *parameters, bool if_not_e
 	AclResult	aclresult;
 	ListCell   *pl;
 	DefElem    *fromEl = NULL;
+	DefElem	   *autocommentEl = NULL;
 	DefElem    *localeEl = NULL;
 	DefElem    *lccollateEl = NULL;
 	DefElem    *lcctypeEl = NULL;
 	DefElem    *providerEl = NULL;
 	DefElem    *versionEl = NULL;
+	bool		autocomment = false;
 	char	   *collcollate = NULL;
 	char	   *collctype = NULL;
 	char	   *collproviderstr = NULL;
@@ -84,6 +91,8 @@ DefineCollation(ParseState *pstate, List *names, List *parameters, bool if_not_e
 
 		if (pg_strcasecmp(defel->defname, "from") == 0)
 			defelp = &fromEl;
+		else if (pg_strcasecmp(defel->defname, "auto_comment") == 0)
+			defelp = &autocommentEl;
 		else if (pg_strcasecmp(defel->defname, "locale") == 0)
 			defelp = &localeEl;
 		else if (pg_strcasecmp(defel->defname, "lc_collate") == 0)
@@ -142,6 +151,9 @@ DefineCollation(ParseState *pstate, List *names, List *parameters, bool if_not_e
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 					 errmsg("collation \"default\" cannot be copied")));
 	}
+
+	if (autocommentEl)
+		autocomment = defGetBoolean(autocommentEl);
 
 	if (localeEl)
 	{
@@ -223,6 +235,18 @@ DefineCollation(ParseState *pstate, List *names, List *parameters, bool if_not_e
 		(void) pg_newlocale_from_collation(newoid);
 
 	ObjectAddressSet(address, CollationRelationId, newoid);
+
+#ifdef USE_ICU
+	if (autocomment && collprovider == COLLPROVIDER_ICU)
+	{
+		char	   *icucomment;
+
+		icucomment = get_icu_locale_comment(collcollate);
+		if (icucomment)
+			CreateComments(newoid, CollationRelationId, 0,
+						   icucomment);
+	}
+#endif
 
 	return address;
 }
