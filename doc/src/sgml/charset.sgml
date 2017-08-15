@@ -709,6 +709,58 @@ SELECT a COLLATE "C" &lt; b COLLATE "POSIX" FROM test1;
     will draw an error along the lines of <quote>collation "de-x-icu" for
     encoding "WIN874" does not exist</>.
    </para>
+
+   <para>
+    ICU allows collations to be customized beyond the basic
+    language/country/type set that is preloaded by <command>initdb</command>.
+    Users are encouraged to define their own collation objects that make use
+    of these facilities to suit the sorting behavior to their requirements.
+    Here are some examples:
+    <variablelist>
+     <varlistentry>
+      <term><literal>CREATE COLLATION digitslast (provider = icu, locale = 'en-u-kr-latn-digit')</literal></term>
+      <listitem>
+       <para>
+        Sort digits after letters.  (The default is digits before letters.)
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>CREATE COLLATION upperfirst (provider = icu, locale = 'en-u-kf-upper')</literal></term>
+      <listitem>
+       <para>
+        Sort upper-case letters before lower-case letters.  (The default is
+        lower-case letters first.)
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>CREATE COLLATION special (provider = icu, locale = 'en-u-kf-upper-kr-latn-digit')</literal></term>
+      <listitem>
+       <para>
+        Combines both of the above options.
+       </para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist>
+
+    See <ulink url="http://unicode.org/reports/tr35/tr35-collation.html">Unicode
+    Technical Standard #35</ulink>
+    and <ulink url="https://tools.ietf.org/html/bcp47">BCP 47</ulink> for
+    details.
+   </para>
+
+   <para>
+    Note that while this system allows creating collations that <quote>ignore
+    case</quote> or <quote>ignore accents</quote> or similar (using
+    the <literal>ks</literal> key), PostgreSQL does not at the moment allow
+    such collations to act in a truly case- or accent-insensitive manner.  Any
+    strings that compare equal according to the collation but are not
+    byte-wise equal will be sorted according to their byte values.
+   </para>
    </sect4>
    </sect3>
 
