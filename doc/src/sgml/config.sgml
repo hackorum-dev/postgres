@@ -3172,6 +3172,12 @@ ANY <replaceable class="parameter">num_sync</replaceable> ( <replaceable class="
         as a synchronous standby.
        </para>
        <para>
+        Since the behavior of both the first syntax without
+        <literal>FIRST</literal> and the third syntax could be changed in a
+        future release, the use of <literal>FIRST</literal> and <literal>ANY</literal>
+        explicitly is recommended.
+       </para>
+       <para>
         The special entry <literal>*</> matches any standby name.
        </para>
        <para>
