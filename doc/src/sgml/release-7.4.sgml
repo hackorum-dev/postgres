@@ -4254,7 +4254,7 @@ DROP SCHEMA information_schema CASCADE;
      The Python language no longer supports a restricted execution
      environment, so the trusted version of PL/Python was removed. If
      this situation changes, a version of PL/Python that can be used
-     by non-superusers will be readded.
+     by non-superusers will be read.
     </para>
    </listitem>
 

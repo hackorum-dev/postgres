@@ -9677,7 +9677,7 @@ dumpExtension(Archive *fout, ExtensionInfo *extinfo)
 		/*
 		 * We unconditionally create the extension, so we must drop it if it
 		 * exists.  This could happen if the user deleted 'plpgsql' and then
-		 * readded it, causing its oid to be greater than g_last_builtin_oid.
+		 * read it, causing its oid to be greater than g_last_builtin_oid.
 		 * The g_last_builtin_oid test was kept to avoid repeatedly dropping
 		 * and recreating extensions like 'plpgsql'.
 		 */
