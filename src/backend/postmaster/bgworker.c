@@ -79,6 +79,7 @@ typedef struct BackgroundWorkerSlot
 	bool		in_use;
 	bool		terminate;
 	pid_t		pid;			/* InvalidPid = not started yet; 0 = dead */
+	Oid			roleid;			/* user responsible for it */
 	uint64		generation;		/* incremented when slot is recycled */
 	BackgroundWorker worker;
 } BackgroundWorkerSlot;
@@ -977,6 +978,32 @@ RegisterDynamicBackgroundWorker(BackgroundWorker *worker,
 	}
 
 	/*
+	 * Check number of used slots for user
+	 */
+	if (max_worker_processes_per_user >= 0)
+	{
+		int		count = 0;
+
+		for (slotno = 0; slotno < BackgroundWorkerData->total_slots; ++slotno)
+		{
+			BackgroundWorkerSlot *slot = &BackgroundWorkerData->slot[slotno];
+
+			if (slot->in_use && slot->roleid == GetUserId())
+				count++;
+		}
+
+		if (count > max_worker_processes_per_user)
+		{
+			ereport(LOG,
+					(errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED),
+					 errmsg("too many worker processes for role \"%s\"",
+							GetUserNameFromId(GetUserId(), false))));
+			LWLockRelease(BackgroundWorkerLock);
+			return false;
+		}
+	}
+
+	/*
 	 * Look for an unused slot.  If we find one, grab it.
 	 */
 	for (slotno = 0; slotno < BackgroundWorkerData->total_slots; ++slotno)
@@ -987,6 +1014,7 @@ RegisterDynamicBackgroundWorker(BackgroundWorker *worker,
 		{
 			memcpy(&slot->worker, worker, sizeof(BackgroundWorker));
 			slot->pid = InvalidPid; /* indicates not started yet */
+			slot->roleid = GetUserId();
 			slot->generation++;
 			slot->terminate = false;
 			generation = slot->generation;
