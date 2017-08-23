@@ -202,6 +202,23 @@ PostgreSQL documentation
   <title>Notes</title>
 
   <refsect2>
+   <title>Rewind with running server as source</title>
+
+   <para>
+    <application>pg_rewind</application> scans the control file of the
+    source server and looks for its timeline number to determine if a
+    rewind is necessary or not on the target. When
+    <option>--source-server</> is used, the end-of-recovery process done
+    by a promotion may not have immediately issued a checkpoint on the
+    source server which updates the on-disk control file with the new
+    timeline number. So, in order to ensure that the control file of
+    the source server is up-to-date, a checkpoint should be issued on
+    on the source server to make the checks validating a rewind consistent.
+   </para>
+
+  </refsect2>
+
+  <refsect2>
    <title>How it works</title>
 
    <para>
