@@ -1228,7 +1228,7 @@ operations on bytea columns (Joe)</para></listitem>
 <listitem><para>plpython used wrong value of <envar>atttypmod</envar> (Brad McLean)</para></listitem>
 <listitem><para>Fix improper quoting of boolean values in Python interface (D'Arcy)</para></listitem>
 <listitem><para>Added <function>addDataType()</function> method to PGConnection interface for JDBC</para></listitem>
-<listitem><para>Fixed various problems with updateable ResultSets for JDBC (Shawn Green)</para></listitem>
+<listitem><para>Fixed various problems with updatable ResultSets for JDBC (Shawn Green)</para></listitem>
 <listitem><para>Fixed various problems with DatabaseMetaData for JDBC (Kris Jurka, Peter Royal)</para></listitem>
 <listitem><para>Fixed problem with parsing table ACLs in JDBC</para></listitem>
 <listitem><para>Better error message for character set conversion problems in JDBC</para></listitem>
@@ -1874,7 +1874,7 @@ operations on bytea columns (Joe)</para></listitem>
 <listitem><para>Add JDBC 3 support (Barry)</para></listitem>
 <listitem><para>Allows JDBC to set loglevel by adding ?loglevel=X to the connection URL (Barry)</para></listitem>
 <listitem><para>Add Driver.info() message that prints out the version number (Barry)</para></listitem>
-<listitem><para>Add updateable result sets (Raghu Nidagal, Dave)</para></listitem>
+<listitem><para>Add updatable result sets (Raghu Nidagal, Dave)</para></listitem>
 <listitem><para>Add support for callable statements (Paul Bethe)</para></listitem>
 <listitem><para>Add query cancel capability</para></listitem>
 <listitem><para>Add refresh row (Dave)</para></listitem>
