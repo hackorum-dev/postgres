@@ -33,6 +33,7 @@
 #include "catalog/heap.h"
 #include "catalog/index.h"
 #include "catalog/namespace.h"
+#include "catalog/partition.h"
 #include "catalog/pg_am.h"
 #include "catalog/pg_collation.h"
 #include "catalog/pg_constraint.h"
@@ -3299,6 +3300,8 @@ transformPartitionBound(ParseState *pstate, Relation parent,
 	char		strategy = get_partition_strategy(key);
 	int			partnatts = get_partition_natts(key);
 	List	   *partexprs = get_partition_exprs(key);
+	PartitionDesc	pdesc;
+	pdesc = RelationGetPartitionDesc(parent);
 
 	/* Avoid scribbling on input */
 	result_spec = copyObject(spec);
@@ -3358,6 +3361,28 @@ transformPartitionBound(ParseState *pstate, Relation parent,
 			result_spec->listdatums = lappend(result_spec->listdatums,
 											  value);
 		}
+	}
+	else if (strategy == PARTITION_STRATEGY_HASH)
+	{
+		char	   *colname;
+
+		if (spec->strategy != PARTITION_STRATEGY_HASH)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+					 errmsg("invalid bound specification for a hash partition"),
+					 parser_errposition(pstate, exprLocation((Node *) spec))));
+
+		/* Get the only column's name in case we need to output an error */
+		if (key->partattrs[0] != 0)
+			colname = get_relid_attribute_name(RelationGetRelid(parent),
+											   key->partattrs[0]);
+		else
+			colname = deparse_expression((Node *) linitial(partexprs),
+										 deparse_context_for(RelationGetRelationName(parent),
+															 RelationGetRelid(parent)),
+									 false, false);
+
+		result_spec->hashnumber = pdesc->nparts;
 	}
 	else if (strategy == PARTITION_STRATEGY_RANGE)
 	{

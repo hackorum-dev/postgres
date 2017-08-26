@@ -1125,6 +1125,7 @@ relation_open(Oid relationId, LOCKMODE lockmode)
 	r = RelationIdGetRelation(relationId);
 
 	if (!RelationIsValid(r))
+
 		elog(ERROR, "could not open relation with OID %u", relationId);
 
 	/* Make note that we've accessed a temporary relation */

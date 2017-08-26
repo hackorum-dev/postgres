@@ -24,6 +24,7 @@
 
 #include "miscadmin.h"
 #include "nodes/extensible.h"
+#include "nodes/parsenodes.h"
 #include "nodes/plannodes.h"
 #include "nodes/relation.h"
 #include "utils/datum.h"
@@ -4448,6 +4449,7 @@ _copyPartitionBoundSpec(const PartitionBoundSpec *from)
 	COPY_NODE_FIELD(listdatums);
 	COPY_NODE_FIELD(lowerdatums);
 	COPY_NODE_FIELD(upperdatums);
+	COPY_SCALAR_FIELD(hashnumber);
 	COPY_LOCATION_FIELD(location);
 
 	return newnode;

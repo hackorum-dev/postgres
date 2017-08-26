@@ -3565,6 +3565,7 @@ _outPartitionBoundSpec(StringInfo str, const PartitionBoundSpec *node)
 	WRITE_NODE_FIELD(listdatums);
 	WRITE_NODE_FIELD(lowerdatums);
 	WRITE_NODE_FIELD(upperdatums);
+	WRITE_INT_FIELD(hashnumber);
 	WRITE_LOCATION_FIELD(location);
 }
 

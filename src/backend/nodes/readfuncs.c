@@ -2377,6 +2377,7 @@ _readPartitionBoundSpec(void)
 	READ_NODE_FIELD(listdatums);
 	READ_NODE_FIELD(lowerdatums);
 	READ_NODE_FIELD(upperdatums);
+	READ_INT_FIELD(hashnumber);
 	READ_LOCATION_FIELD(location);
 
 	READ_DONE();

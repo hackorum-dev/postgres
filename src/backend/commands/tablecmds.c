@@ -475,6 +475,11 @@ static ObjectAddress ATExecAttachPartition(List **wqueue, Relation rel,
 					  PartitionCmd *cmd);
 static ObjectAddress ATExecDetachPartition(Relation rel, RangeVar *name);
 
+static void ReInsertHashPartition(Relation rel, Oid parentId, Node *bound);
+
+static void InsertIntoTable(Oid relid, HeapTuple tuple, TupleDesc tupdesc);
+static TupleTableSlot *ExecInsertPartition(TupleTableSlot *slot, TupleTableSlot *planSlot, 
+							EState *estate, bool canSetTag);
 
 /* ----------------------------------------------------------------
  *		DefineRelation
@@ -765,6 +770,7 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	/* Process and store partition bound, if any. */
 	if (stmt->partbound)
 	{
+
 		PartitionBoundSpec *bound;
 		ParseState *pstate;
 		Oid			parentId = linitial_oid(inheritOids);
@@ -798,6 +804,9 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 
 		/* Update the pg_class entry. */
 		StorePartitionBound(rel, parent, bound);
+
+		/*judge if create new hash partition, if so, re_insert data into all partitions*/
+		ReInsertHashPartition(rel, parentId, (Node *)bound);
 
 		heap_close(parent, NoLock);
 
@@ -870,6 +879,210 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	relation_close(rel, NoLock);
 
 	return address;
+}
+
+/* 
+ * ReInsertHashPartition
+ * 		when create a new hash partition, re_insert data into all partitions
+ */
+static void 
+ReInsertHashPartition(Relation rel, Oid parentId, Node *bound)
+{
+	Relation			parent;
+	PartitionKey		key;
+	PartitionDesc		pdesc;
+	int				nparts;
+
+	parent = heap_open(parentId, ExclusiveLock);
+	key = RelationGetPartitionKey(parent);
+	pdesc = RelationGetPartitionDesc(parent);
+
+	nparts = pdesc->nparts + 1;
+
+	if (key->strategy == PARTITION_STRATEGY_HASH)
+	{
+		int i;
+		Oid	*children = pdesc->oids;
+
+		/*get data from every partition and re_insert*/
+		for (i = 0; i < pdesc->nparts; i++)
+		{
+			Oid child = children[i];
+			Relation hash_rel;
+			HeapScanDesc hash_scan;
+			HeapTuple 	hash_tup;
+			Snapshot	snapshot;
+			Datum 	val;
+			bool		isnull;
+			int   	index;
+			Oid 	insertRel;
+
+			hash_rel = heap_open(child, ExclusiveLock);
+			snapshot = RegisterSnapshot(GetLatestSnapshot());
+	  		hash_scan = heap_beginscan(hash_rel, snapshot, 0, NULL);
+			
+			/*only partition table has tuples then re_insert*/
+			while ((hash_tup = heap_getnext(hash_scan, ForwardScanDirection)) != NULL)
+			{
+				/*get the key's data of the tuple*/
+				val = fastgetattr(hash_tup, key->partattrs[0], hash_rel->rd_att, &isnull);
+				
+				/*get the partition's index of the key*/
+				index = DatumGetUInt32(OidFunctionCall1(lookup_type_cache(key->parttypid[0], TYPECACHE_HASH_PROC)->hash_proc, val)) % nparts;
+				
+				/*get partition's oid that match the key's data*/
+				insertRel = HashSerialGetPartition(parentId, index);
+
+				if (index == nparts - 1)
+				{
+					InsertIntoTable(RelationGetRelid(rel), hash_tup, parent->rd_att);
+					simple_heap_delete(hash_rel, &hash_tup->t_self);
+				}
+				else
+				{
+					InsertIntoTable(insertRel, hash_tup, parent->rd_att);
+					simple_heap_delete(hash_rel, &hash_tup->t_self);
+				}
+			}
+
+			heap_endscan(hash_scan);
+			UnregisterSnapshot(snapshot);
+			heap_close(hash_rel, ExclusiveLock);
+		}		
+	}
+
+	heap_close(parent, ExclusiveLock);	
+}
+
+/*
+ * InsertIntoTable
+ *		Find a table relation given it's name and insert the
+ *		tuple on it (updating the indexes and calling the triggers)
+ */
+static void 
+InsertIntoTable(Oid relid, HeapTuple tuple, TupleDesc tupdesc)
+{
+	ResultRelInfo	*resultRelInfo;
+	TupleTableSlot	*slot;
+	EState 		*estate = CreateExecutorState();
+	Relation 		relation;
+
+	/* Lookup the relation */
+	if (relid == InvalidOid)
+		elog(ERROR, "partition_insert_trigger: Invalid child table %s", get_rel_name(relid));
+	relation = RelationIdGetRelation(relid);
+	if (relation == NULL)
+		elog(ERROR, "partition_insert_trigger: Failed to locate relation for child table %s", get_rel_name(relid));
+
+	/*
+	 * We need a ResultRelInfo so we can use the regular executor's
+	 * index-entry-making machinery.
+	 */
+	resultRelInfo = makeNode(ResultRelInfo);
+	resultRelInfo->ri_RangeTableIndex = 1;		/* dummy */
+	resultRelInfo->ri_RelationDesc = relation;
+	resultRelInfo->ri_TrigDesc = CopyTriggerDesc(relation->trigdesc);
+	if (resultRelInfo->ri_TrigDesc)
+	{
+		resultRelInfo->ri_TrigFunctions = (FmgrInfo *)
+			palloc0(resultRelInfo->ri_TrigDesc->numtriggers * sizeof(FmgrInfo));
+		resultRelInfo->ri_TrigWhenExprs = (List **)
+			palloc0(resultRelInfo->ri_TrigDesc->numtriggers * sizeof(List *));
+	}
+	resultRelInfo->ri_TrigInstrument = NULL;
+	ExecOpenIndices(resultRelInfo, false);
+	estate->es_result_relations = resultRelInfo;
+	estate->es_num_result_relations = 1;
+	estate->es_result_relation_info = resultRelInfo;
+	/*added for GetModifiedColumns in ExecConstraints functions*/
+	estate->es_range_table = list_make1(relation);
+
+	/* Set up a tuple slot too */
+	slot = ExecInitExtraTupleSlot(estate);
+	ExecSetSlotDescriptor(slot, tupdesc);
+	/* Triggers might need a slot as well */
+	estate->es_trig_tuple_slot = ExecInitExtraTupleSlot(estate);
+
+	ExecStoreTuple(tuple, slot, InvalidBuffer, false);
+	ExecInsertPartition(slot, slot, estate, false);
+
+	/* Free resources */
+	ExecResetTupleTable(estate->es_tupleTable, false);
+	ExecCloseIndices(resultRelInfo);
+	FreeExecutorState(estate);
+	RelationClose(relation);
+}
+
+/*
+ * ExecInsertPartition:
+ *		For INSERT, we have to insert the tuple into the target relation
+ *		and insert appropriate tuples into the index relations.
+ */
+static TupleTableSlot *
+ExecInsertPartition(TupleTableSlot *slot, TupleTableSlot *planSlot, EState *estate, bool canSetTag)
+{
+	HeapTuple		tuple;
+	ResultRelInfo 	*resultRelInfo;
+	Relation		resultRelationDesc;
+	Oid			newId;
+	List	   		*recheckIndexes = NIL;
+
+	/*
+	 * get the heap tuple out of the tuple table slot, making sure we have a
+	 * writable copy
+	 */
+	tuple = ExecMaterializeSlot(slot);
+
+	/* get information on the (current) result relation*/
+	resultRelInfo = estate->es_result_relation_info;
+	resultRelationDesc = resultRelInfo->ri_RelationDesc;
+
+	if (resultRelationDesc->rd_rel->relhasoids)
+		HeapTupleSetOid(tuple, InvalidOid);
+
+	/* BEFORE ROW INSERT Triggers */
+	if (resultRelInfo->ri_TrigDesc &&
+			resultRelInfo->ri_TrigDesc->trig_insert_before_row)
+	{
+		slot = ExecBRInsertTriggers(estate, resultRelInfo, slot);
+		if (slot == NULL)
+			return NULL;
+		/* trigger might have changed tuple */
+		tuple = ExecMaterializeSlot(slot);
+	}
+
+	/* INSTEAD OF ROW INSERT Triggers */
+	if (resultRelInfo->ri_TrigDesc &&
+			resultRelInfo->ri_TrigDesc->trig_insert_instead_row)
+	{
+		slot = ExecIRInsertTriggers(estate, resultRelInfo, slot);
+		if (slot == NULL)
+			return NULL;
+		/* trigger might have changed tuple */
+		tuple = ExecMaterializeSlot(slot);
+		newId = InvalidOid;
+	}
+	else
+	{
+		/* Check the constraints of the tuple*/
+		if (resultRelationDesc->rd_att->constr)
+			ExecConstraints(resultRelInfo, slot, estate);
+		newId = heap_insert(resultRelationDesc, tuple,
+								estate->es_output_cid, 0, NULL);
+	}
+
+	if (canSetTag)
+	{
+		(estate->es_processed)++;
+		estate->es_lastoid = newId;
+		setLastTid(&(tuple->t_self));
+	}
+
+	/* AFTER ROW INSERT Triggers */
+	ExecARInsertTriggers(estate, resultRelInfo, tuple, recheckIndexes, NULL);
+	list_free(recheckIndexes);
+
+	return NULL;
 }
 
 /*
@@ -1164,6 +1377,15 @@ RangeVarCallbackForDropRelation(const RangeVar *rel, Oid relOid, Oid oldRelOid,
 		state->heapOid = IndexGetRelation(relOid, true);
 		if (OidIsValid(state->heapOid))
 			LockRelationOid(state->heapOid, heap_lockmode);
+	}
+
+	if (is_partition && relOid != oldRelOid)
+	{
+		if(is_hash_partition(relOid))
+			ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg("hash partition \"%s\" can not be dropped",
+						get_rel_name(relOid))));
 	}
 
 	/*
@@ -1745,6 +1967,7 @@ MergeAttributes(List *schema, List *supers, char relpersistence,
 		 * exclusive lock on the parent because its partition descriptor will
 		 * be changed by addition of the new partition.
 		 */
+
 		if (!is_partition)
 			relation = heap_openrv(parent, ShareUpdateExclusiveLock);
 		else
@@ -13146,18 +13369,29 @@ transformPartitionSpec(Relation rel, PartitionSpec *partspec, char *strategy)
 	ParseState *pstate;
 	RangeTblEntry *rte;
 	ListCell   *l;
-
+	
 	newspec = makeNode(PartitionSpec);
 
 	newspec->strategy = partspec->strategy;
 	newspec->partParams = NIL;
 	newspec->location = partspec->location;
-
+	
 	/* Parse partitioning strategy name */
 	if (pg_strcasecmp(partspec->strategy, "list") == 0)
 		*strategy = PARTITION_STRATEGY_LIST;
 	else if (pg_strcasecmp(partspec->strategy, "range") == 0)
 		*strategy = PARTITION_STRATEGY_RANGE;
+	else if (pg_strcasecmp(partspec->strategy, "hash") == 0)
+	{
+		if (list_length(partspec->partParams) == 1)
+		{
+			*strategy = PARTITION_STRATEGY_HASH;
+		}
+		else
+		{
+			elog(ERROR, "The hash partition does not support multiple key values.");
+		}
+	}
 	else
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
@@ -13433,6 +13667,13 @@ ATExecAttachPartition(List **wqueue, Relation rel, PartitionCmd *cmd)
 	bool		skip_validate = false;
 	ObjectAddress address;
 	const char *trigger_name;
+
+	/*hash partition do not support attach operation*/
+	if (rel->rd_partkey)
+		if (rel->rd_partkey->strategy == 'h')
+			ereport(ERROR,
+				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+				 errmsg("hash partition do not support attach operation")));
 
 	attachRel = heap_openrv(cmd->name, AccessExclusiveLock);
 
@@ -13770,6 +14011,13 @@ ATExecDetachPartition(Relation rel, RangeVar *name)
 				new_null[Natts_pg_class],
 				new_repl[Natts_pg_class];
 	ObjectAddress address;
+
+	/*hash partition do not support detach operation*/
+	if (rel->rd_partkey)
+		if (rel->rd_partkey->strategy == 'h')
+			ereport(ERROR,
+				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+				 errmsg("hash partition do not support detach operation")));
 
 	partRel = heap_openrv(name, AccessShareLock);
 

@@ -1919,6 +1919,7 @@ ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags)
 									   &partition_tupconv_maps,
 									   &partition_tuple_slot,
 									   &num_parted, &num_partitions);
+
 		mtstate->mt_partition_dispatch_info = partition_dispatch_info;
 		mtstate->mt_num_dispatch = num_parted;
 		mtstate->mt_partitions = partitions;

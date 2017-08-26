@@ -15340,11 +15340,32 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 				appendPQExpBufferStr(q, " (\n)");
 			}
 
-			if (tbinfo->ispartition && !dopt->binary_upgrade)
+			if(tbinfo->ispartition && !dopt->binary_upgrade)
 			{
-				appendPQExpBufferStr(q, "\n");
-				appendPQExpBufferStr(q, tbinfo->partbound);
+				PGresult   *res;
+				PQExpBuffer query = createPQExpBuffer();
+				char	*strategy;
+				char	*s = "h";
+
+				appendPQExpBuffer(query, " select partstrat"
+							" from pg_partitioned_table p"
+							" join pg_inherits i on i.inhparent = p.partrelid"
+							" where i.inhrelid = %d", tbinfo->dobj.catId.oid);
+
+				res = ExecuteSqlQueryForSingleRow(fout, query->data);
+				strategy = pg_strdup(PQgetvalue(res, 0, 0));
+
+				if(!(strcmp(strategy, s) == 0))
+				{
+					appendPQExpBufferStr(q, "\n");
+					appendPQExpBufferStr(q, tbinfo->partbound);
+				}
+
+				PQclear(res);
+				destroyPQExpBuffer(query);
 			}
+
+			
 
 			/* Emit the INHERITS clause, except if this is a partition. */
 			if (numParents > 0 &&

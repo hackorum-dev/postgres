@@ -1660,6 +1660,10 @@ pg_get_partkeydef_worker(Oid relid, int prettyFlags,
 			if (!attrsOnly)
 				appendStringInfo(&buf, "RANGE");
 			break;
+		case PARTITION_STRATEGY_HASH:
+			if (!attrsOnly)
+				appendStringInfo(&buf, "HASH");
+			break;
 		default:
 			elog(ERROR, "unexpected partition strategy: %d",
 				 (int) form->partstrat);
@@ -8664,6 +8668,13 @@ get_rule_expr(Node *node, deparse_context *context,
 						}
 
 						appendStringInfoString(buf, ")");
+						break;
+
+					case PARTITION_STRATEGY_HASH:
+						Assert(spec->hashnumber != -1);
+
+						appendStringInfoString(buf, "SERIAL NUMBER");
+						appendStringInfo(buf, " %d", spec->hashnumber);
 						break;
 
 					case PARTITION_STRATEGY_RANGE:

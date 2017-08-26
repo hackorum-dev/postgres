@@ -70,6 +70,10 @@ typedef struct PartitionDispatchData
 
 typedef struct PartitionDispatchData *PartitionDispatch;
 
+extern bool is_hash_partitioned(Oid relid);
+extern bool is_hash_partition(Oid relid);
+extern Oid HashSerialGetPartition(Oid parentOid, int index);
+
 extern void RelationBuildPartitionDesc(Relation relation);
 extern bool partition_bounds_equal(PartitionKey key,
 					   PartitionBoundInfo p1, PartitionBoundInfo p2);

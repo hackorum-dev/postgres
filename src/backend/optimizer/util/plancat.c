@@ -28,7 +28,8 @@
 #include "catalog/dependency.h"
 #include "catalog/heap.h"
 #include "catalog/partition.h"
-#include "catalog/pg_am.h"
+#include "catalog/pg_am.h" 
+#include "catalog/pg_partitioned_table.h"
 #include "catalog/pg_statistic_ext.h"
 #include "foreign/fdwapi.h"
 #include "miscadmin.h"
@@ -48,7 +49,7 @@
 #include "utils/syscache.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
-
+#include "utils/typcache.h"
 
 /* GUC parameter */
 int			constraint_exclusion = CONSTRAINT_EXCLUSION_PARTITION;
@@ -68,6 +69,10 @@ static List *get_relation_constraints(PlannerInfo *root,
 static List *build_index_tlist(PlannerInfo *root, IndexOptInfo *index,
 				  Relation heapRelation);
 static List *get_relation_statistics(RelOptInfo *rel, Relation relation);
+
+static int get_hash_part_attrs(Oid parentid);
+static char get_hash_part_strategy(Oid parentid);
+static int get_hash_part_number(Oid parentid);
 
 /*
  * get_relation_info -
@@ -1441,9 +1446,376 @@ relation_excluded_by_constraints(PlannerInfo *root,
 	if (predicate_refuted_by(safe_constraints, rel->baserestrictinfo, false))
 		return true;
 
+	/* hash partition constraint exclusion. */
+	if (NIL != root->append_rel_list)
+	{
+		Node		*parent = NULL;
+		parent = (Node*)linitial(root->append_rel_list);
+
+		if ((nodeTag(parent) == T_AppendRelInfo) 
+			&& get_hash_part_strategy(((AppendRelInfo*)parent)->parent_reloid) == PARTITION_STRATEGY_HASH 
+			&& (root->parse->jointree->quals != NULL))
+		{
+			int	cur_index = -1, in_index = -1, bool_index = -1;
+			Oid		poid;
+			Relation	relation;
+			PartitionKey	key;
+			RelabelType	*rt;
+
+			poid = ((AppendRelInfo*)parent)->parent_reloid;
+			relation = RelationIdGetRelation(poid);
+			key = RelationGetPartitionKey(relation);
+
+			heap_close(relation, NoLock);
+	
+			BoolExpr *boolexpr;
+			OpExpr 		*subopexpr;
+			Node		*leftSubOp, *rightSubOp;
+			Node		*constExprInSub, *varExprInSub;
+			Const 		*subc;
+			Var 		*subv;
+			int		subpartattr;
+			int			substrat;
+			TypeCacheEntry		*subtce;
+
+			OpExpr		*predicateExpr;
+			Node 		*predicate;
+			List		*list;
+			Node		*leftPredicateOp, *rightPredicateOp;
+			Node		*constExprInPredicate, *varExprInPredicate;
+			Const 		*c;
+			Var 		*v;
+			int		partattr;
+			int			strat;
+			TypeCacheEntry		*tce;
+
+			ScalarArrayOpExpr 	*arrayexpr;
+			Node			*arraynode;
+
+			predicate = rel->baserestrictinfo;
+
+			list = (List *)predicate;
+			
+			if (list_length(list) != 1)
+				return false;
+
+			predicate = linitial(list);
+			if (IsA(predicate, RestrictInfo))
+			{
+				RestrictInfo *info = (RestrictInfo*)predicate;
+				predicate = (Node*)info->clause;
+			}
+
+			switch (nodeTag(predicate))
+			{
+				/* AND, OR, NOT expressions */
+				case T_BoolExpr:
+					
+					boolexpr = (BoolExpr *) predicate;
+					bool 		subflag = true;
+
+					foreach (lc, boolexpr->args)
+					{
+						Expr	*arg = (Expr *) lfirst(lc);
+						OpExpr	*oparg = (OpExpr*)lfirst(lc);
+
+						leftSubOp = get_leftop((Expr*)arg);
+						rightSubOp = get_rightop((Expr*)arg);
+						int		*subidx;
+
+						/* check if one operand is a constant */
+						if (IsA(rightSubOp, Const))
+						{
+							varExprInSub = leftSubOp;
+							constExprInSub = rightSubOp;
+						}
+						else if (IsA(leftSubOp, Const))
+						{
+							constExprInSub = leftSubOp;
+							varExprInSub = rightSubOp;
+						}
+						else
+						{
+							return false;
+						}
+
+						subtce = lookup_type_cache(key->parttypid[0], TYPECACHE_BTREE_OPFAMILY);
+						substrat = get_op_opfamily_strategy(oparg->opno, subtce->btree_opf);
+
+						subpartattr = get_hash_part_attrs(poid);
+						subv = (Var*)varExprInSub;
+
+						switch (boolexpr->boolop)
+						{
+							case OR_EXPR:
+								if (subv->varattno == subpartattr && substrat == BTEqualStrategyNumber)
+								{
+									subc = (Const*)constExprInSub;
+									bool_index = DatumGetUInt32(OidFunctionCall1(
+											lookup_type_cache(key->parttypid[0], TYPECACHE_HASH_PROC)->hash_proc, 
+											subc->constvalue)) 
+											% list_length(root->append_rel_list);
+									
+									subidx = &bool_index;
+									if (subidx != NULL)
+									{
+										if (get_hash_part_number(rte->relid) == *subidx)
+										{
+											subflag = false;
+										}
+									
+									}
+								}
+								else
+								{
+									/* constraint exclusion in hash partition could not support <, > etc. */
+									return false;
+								}
+
+								break;	
+
+							case AND_EXPR:
+
+								break;
+
+							default:
+
+								break;
+						}
+					}
+
+					if (subflag)
+						return true;
+					else
+						return false;
+
+					break;
+
+				/* =, !=, <, > etc. */
+				case T_OpExpr:
+					predicateExpr = (OpExpr *)predicate;
+					leftPredicateOp = get_leftop((Expr*)predicate);
+					rightPredicateOp = get_rightop((Expr*)predicate);
+					
+					/* check if one operand is a constant */
+					if (IsA(rightPredicateOp, Const))
+					{
+						varExprInPredicate = leftPredicateOp;
+						constExprInPredicate = rightPredicateOp;
+					}
+					else if (IsA(leftPredicateOp, Const))
+					{
+						constExprInPredicate = leftPredicateOp;
+						varExprInPredicate = rightPredicateOp;
+					}
+					else
+					{
+						return false;
+					}
+
+					tce = lookup_type_cache(key->parttypid[0], TYPECACHE_BTREE_OPFAMILY);
+					strat = get_op_opfamily_strategy(predicateExpr->opno, tce->btree_opf);
+
+					partattr = get_hash_part_attrs(poid);
+					v = (Var*)varExprInPredicate;
+
+					/* If strat is "=", select one partiton */
+					if (v->varattno == partattr && strat == BTEqualStrategyNumber)
+					{
+						c = (Const*)constExprInPredicate;
+						cur_index = DatumGetUInt32(OidFunctionCall1(
+								lookup_type_cache(key->parttypid[0], TYPECACHE_HASH_PROC)->hash_proc, 
+								c->constvalue)) 
+								% list_length(root->append_rel_list);
+					}
+					else
+					{
+						/* constraint exclusion in hash partition could not support <, > etc. */
+						return false;
+					}
+			
+					if (get_hash_part_number(rte->relid) != cur_index && cur_index != -1) 
+					{
+						return true;
+					}
+
+					break;
+
+				/* IN expression */
+				case T_ScalarArrayOpExpr:
+					arrayexpr = (ScalarArrayOpExpr *)predicate;
+					arraynode = (Node *) lsecond(arrayexpr->args);
+					bool 		flag = true;
+
+					if (arraynode && IsA(arraynode, Const) &&
+						!((Const *) arraynode)->constisnull)
+					{
+						ArrayType  *arrayval;
+						int16		elemlen;
+						bool		elembyval;
+						char		elemalign;
+						int			num_elems;
+						Datum	   *elem_values;
+						bool	   *elem_nulls;
+						int			strategy = BTEqualStrategyNumber;
+						int		i;
+						int		*idx;
+						
+
+						/* Extract values from array */
+						arrayval = DatumGetArrayTypeP(((Const *) arraynode)->constvalue);
+						get_typlenbyvalalign(ARR_ELEMTYPE(arrayval),
+											 &elemlen, &elembyval, &elemalign);
+						deconstruct_array(arrayval,
+										  ARR_ELEMTYPE(arrayval),
+										  elemlen, elembyval, elemalign,
+										  &elem_values, &elem_nulls, &num_elems);
+
+						/* Construct OIDs list */
+						for (i = 0; i < num_elems; i++)
+						{
+							if (!elem_nulls[i])
+							{
+								/* Invoke base hash function for value type */
+								in_index = DatumGetUInt32(OidFunctionCall1(
+									lookup_type_cache(key->parttypid[0], TYPECACHE_HASH_PROC)->hash_proc, 
+									elem_values[i])) 
+									% list_length(root->append_rel_list);
+								idx = &in_index;
+	
+								if (idx != NULL)
+								{
+									if (get_hash_part_number(rte->relid) == *idx)
+									{
+										flag = false;
+									}
+									
+								}
+							}
+						}
+
+						/* Free resources */
+						pfree(elem_values);
+						pfree(elem_nulls);
+					}
+
+					if (flag)
+						return true;
+					else
+						return false;
+
+					break;
+
+				default:
+					elog(ERROR, "Unknown clause type.");
+			}
+
+		}
+
+		return false;
+	}
+
 	return false;
 }
 
+/*
+ * get_hash_part_attrs
+ *
+ */
+int
+get_hash_part_attrs(Oid parentid)
+{
+	Form_pg_partitioned_table	form;
+	HeapTuple		tuple;
+	int			result;
+
+	tuple = SearchSysCache1(PARTRELID, ObjectIdGetDatum(parentid));
+	
+	form = (Form_pg_partitioned_table)GETSTRUCT(tuple);
+	result = form->partattrs.values[0];
+
+	ReleaseSysCache(tuple);
+
+	return result;
+}
+
+/*
+ * get_hash_part_number
+ *
+ */
+int
+get_hash_part_number(Oid parentid)
+{
+	HeapTuple		tuple;
+	int		result;
+
+	tuple = SearchSysCache1(RELOID, ObjectIdGetDatum(parentid));
+
+	Datum		boundDatum;
+	bool		isnull;
+	PartitionBoundSpec 	   *bound;
+
+	boundDatum = SysCacheGetAttr(RELOID, tuple,
+		Anum_pg_class_relpartbound,
+		&isnull);
+
+	ReleaseSysCache(tuple);
+
+	if (boundDatum)
+	{
+		bound = (PartitionBoundSpec *)(stringToNode(TextDatumGetCString(boundDatum)));
+		return	bound->hashnumber;
+	}
+
+	return result;
+}
+
+/*
+ * get_hash_part_strategy
+ *
+ */
+char
+get_hash_part_strategy(Oid parentid)
+{
+	Form_pg_partitioned_table	form;
+	HeapTuple		tuple;
+	char			result;
+
+	tuple = SearchSysCache1(PARTRELID, ObjectIdGetDatum(parentid));
+	if (!HeapTupleIsValid(tuple))
+	{
+		tuple = SearchSysCache1(RELOID, ObjectIdGetDatum(parentid));
+
+		if (!HeapTupleIsValid(tuple))
+		{
+			return '0';
+		}
+		else
+		{
+			Datum		boundDatum;
+			bool		isnull;
+			PartitionBoundSpec 	   *bound;
+
+			boundDatum = SysCacheGetAttr(RELOID, tuple,
+				Anum_pg_class_relpartbound,
+				&isnull);
+
+			ReleaseSysCache(tuple);
+
+			if (boundDatum)
+			{
+				bound = (PartitionBoundSpec *)(stringToNode(TextDatumGetCString(boundDatum)));
+				return	bound->strategy;
+			}
+			return '0';
+		}
+	}
+	form = (Form_pg_partitioned_table)GETSTRUCT(tuple);
+	result = form->partstrat;
+	ReleaseSysCache(tuple);
+
+	return result;
+}
 
 /*
  * build_physical_tlist

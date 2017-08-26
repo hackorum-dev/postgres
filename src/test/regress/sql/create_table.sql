@@ -350,11 +350,6 @@ CREATE TABLE partitioned (
 ) PARTITION BY RANGE (const_func());
 DROP FUNCTION const_func();
 
--- only accept "list" and "range" as partitioning strategy
-CREATE TABLE partitioned (
-	a int
-) PARTITION BY HASH (a);
-
 -- specified column must be present in the table
 CREATE TABLE partitioned (
 	a int

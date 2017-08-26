@@ -3228,6 +3228,7 @@ ExecSetupPartitionTupleRouting(Relation rel,
 	/* Get the tuple-routing information and lock partitions */
 	*pd = RelationGetPartitionDispatchInfo(rel, RowExclusiveLock, num_parted,
 										   &leaf_parts);
+
 	*num_partitions = list_length(leaf_parts);
 	*partitions = (ResultRelInfo *) palloc(*num_partitions *
 										   sizeof(ResultRelInfo));
@@ -3317,6 +3318,7 @@ ExecFindPartition(ResultRelInfo *resultRelInfo, PartitionDispatch *pd,
 
 	result = get_partition_for_tuple(pd, slot, estate,
 									 &failed_at, &failed_slot);
+
 	if (result < 0)
 	{
 		Relation	failed_rel;

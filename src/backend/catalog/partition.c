@@ -48,6 +48,7 @@
 #include "utils/rel.h"
 #include "utils/ruleutils.h"
 #include "utils/syscache.h"
+#include "utils/typcache.h"
 
 /*
  * Information about bounds of a partitioned relation
@@ -89,6 +90,7 @@ typedef struct PartitionBoundInfoData
 								 * partitioned table) */
 	int			null_index;		/* Index of the null-accepting partition; -1
 								 * if there isn't one */
+	int			serial;
 } PartitionBoundInfoData;
 
 #define partition_bound_accepts_nulls(bi) ((bi)->null_index != -1)
@@ -113,6 +115,12 @@ typedef struct PartitionRangeBound
 	RangeDatumContent *content; /* what's contained in each datum? */
 	bool		lower;			/* this is the lower (vs upper) bound */
 } PartitionRangeBound;
+
+/* Internal representation of a hash partition bound */
+typedef struct PartitionHashBound
+{
+	int		serial;	/* hash partition serial number */
+} PartitionHashBound;
 
 static int32 qsort_partition_list_value_cmp(const void *a, const void *b,
 							   void *arg);
@@ -149,6 +157,49 @@ static int partition_bound_bsearch(PartitionKey key,
 						PartitionBoundInfo boundinfo,
 						void *probe, bool probe_is_bound, bool *is_equal);
 
+/* check if the relation is a hash partition */
+bool is_hash_partition(Oid relid)
+{
+        return is_hash_partitioned(get_partition_parent(relid));
+}
+
+/* check if the relation is hash partitioned */
+bool is_hash_partitioned(Oid relid)
+{
+	Relation 	rel;
+	bool 		res = false;
+
+	rel = heap_open(relid, NoLock);
+	if (rel->rd_partkey)
+		if (rel->rd_partkey->strategy == 'h')
+			res = true;
+
+	heap_close(rel, NoLock);
+
+	return res;
+}
+
+/* 
+ * HashSerialGetPartition
+ *			get hash partition oid according to its index
+*/
+Oid 
+HashSerialGetPartition(Oid parentOid, int index)
+{
+	Relation			parent;
+	PartitionDesc		pdesc;
+	Oid			   	child;
+
+	parent = heap_open(parentOid, AccessShareLock);
+	pdesc = RelationGetPartitionDesc(parent);
+	
+	child = pdesc->oids[index];
+
+	heap_close(parent, AccessShareLock);
+
+	return child;
+}
+
 /*
  * RelationBuildPartitionDesc
  *		Form rel's partition descriptor
@@ -178,6 +229,9 @@ RelationBuildPartitionDesc(Relation rel)
 
 	/* Range partitioning specific */
 	PartitionRangeBound **rbounds = NULL;
+
+	 /* Hash partitiNG specific */
+	PartitionHashBound  **hashserials = NULL; 
 
 	/*
 	 * The following could happen in situations where rel has a pg_class entry
@@ -309,6 +363,10 @@ RelationBuildPartitionDesc(Relation rel)
 
 			qsort_arg(all_values, ndatums, sizeof(PartitionListValue *),
 					  qsort_partition_list_value_cmp, (void *) key);
+		}
+		else if (key->strategy == PARTITION_STRATEGY_HASH)
+		{
+			
 		}
 		else if (key->strategy == PARTITION_STRATEGY_RANGE)
 		{
@@ -508,6 +566,15 @@ RelationBuildPartitionDesc(Relation rel)
 
 					/* All partition must now have a valid mapping */
 					Assert(next_index == nparts);
+					break;
+				}
+
+			case PARTITION_STRATEGY_HASH:
+				{					
+					for (i = 0; i < nparts; i++)
+					{
+						mapping[i] = next_index++;
+					}
 					break;
 				}
 
@@ -723,6 +790,13 @@ check_new_partition_bound(char *relname, Relation parent,
 				break;
 			}
 
+		case PARTITION_STRATEGY_HASH:
+			{
+				Assert(spec->strategy == PARTITION_STRATEGY_HASH);
+
+				break;
+			}
+
 		case PARTITION_STRATEGY_RANGE:
 			{
 				PartitionRangeBound *lower,
@@ -898,6 +972,11 @@ get_qual_from_partbound(Relation rel, Relation parent,
 			my_qual = get_qual_for_range(key, spec);
 			break;
 
+		case PARTITION_STRATEGY_HASH:
+			Assert(spec->strategy == PARTITION_STRATEGY_HASH);
+			my_qual = get_qual_for_range(key, spec);
+			break;
+
 		default:
 			elog(ERROR, "unexpected partition strategy: %d",
 				 (int) key->strategy);
@@ -1039,6 +1118,7 @@ RelationGetPartitionDispatchInfo(Relation rel, int lockmode,
 	/* Root partitioned table has no parent, so NULL for parent */
 	parted_rel_parents = list_make1(NULL);
 	APPEND_REL_PARTITION_OIDS(rel, all_parts, all_parents);
+
 	forboth(lc1, all_parts, lc2, all_parents)
 	{
 		Relation	partrel = heap_open(lfirst_oid(lc1), lockmode);
@@ -1909,7 +1989,7 @@ FormPartitionKeyDatum(PartitionDispatch pd,
 	if (partexpr_item != NULL)
 		elog(ERROR, "wrong number of partition key expressions");
 }
-
+	
 /*
  * get_partition_for_tuple
  *		Finds a leaf partition for tuple contained in *slot
@@ -1935,6 +2015,7 @@ get_partition_for_tuple(PartitionDispatch *pd,
 				result;
 	ExprContext *ecxt = GetPerTupleExprContext(estate);
 	TupleTableSlot *ecxt_scantuple_old = ecxt->ecxt_scantuple;
+	int		nparts;
 
 	/* start with the root partitioned table */
 	parent = pd[0];
@@ -2016,6 +2097,12 @@ get_partition_for_tuple(PartitionDispatch *pd,
 						cur_index = -1;
 					break;
 
+				case PARTITION_STRATEGY_HASH:
+					Assert(partdesc->nparts > 0);
+					nparts = partdesc->nparts;
+					cur_index = DatumGetUInt32(OidFunctionCall1(lookup_type_cache(key->parttypid[0], TYPECACHE_HASH_PROC)->hash_proc, values[0])) % nparts;
+
+					break;
 				case PARTITION_STRATEGY_RANGE:
 
 					/*
@@ -2251,6 +2338,13 @@ partition_bound_cmp(PartitionKey key, PartitionBoundInfo boundinfo,
 	switch (key->strategy)
 	{
 		case PARTITION_STRATEGY_LIST:
+			cmpval = DatumGetInt32(FunctionCall2Coll(&key->partsupfunc[0],
+													 key->partcollation[0],
+													 bound_datums[0],
+													 *(Datum *) probe));
+			break;
+
+		case PARTITION_STRATEGY_HASH:
 			cmpval = DatumGetInt32(FunctionCall2Coll(&key->partsupfunc[0],
 													 key->partcollation[0],
 													 bound_datums[0],

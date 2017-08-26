@@ -2675,6 +2675,17 @@ ForValues:
 
 					$$ = n;
 				}
+			/* a HASH partition */
+			|  /*EMPTY*/
+				{
+					PartitionBoundSpec *n = makeNode(PartitionBoundSpec);
+
+					n->strategy = PARTITION_STRATEGY_HASH;
+					//n->hashnumber = 1;
+					//n->location = @3;
+
+					$$ = n;
+				}
 		;
 
 partbound_datum:

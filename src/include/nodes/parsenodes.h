@@ -785,6 +785,7 @@ typedef struct PartitionSpec
 /* Internal codes for partitioning strategies */
 #define PARTITION_STRATEGY_LIST		'l'
 #define PARTITION_STRATEGY_RANGE	'r'
+#define PARTITION_STRATEGY_HASH		'h'
 
 /*
  * PartitionBoundSpec - a partition bound specification
@@ -804,6 +805,9 @@ typedef struct PartitionBoundSpec
 	/* Partitioning info for RANGE strategy: */
 	List	   *lowerdatums;	/* List of PartitionRangeDatums */
 	List	   *upperdatums;	/* List of PartitionRangeDatums */
+
+	/* Partitioning info for HASH strategy: */
+	int			hashnumber;		/* serial number */
 
 	int			location;		/* token location, or -1 if unknown */
 } PartitionBoundSpec;
