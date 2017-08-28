@@ -163,7 +163,10 @@ static void set_rel_width(PlannerInfo *root, RelOptInfo *rel);
 static double relation_byte_size(double tuples, int width);
 static double page_size(double tuples, int width);
 static double get_parallel_divisor(Path *path);
-
+static double ordered_page_read_cost(double pages_fetched,
+					   int baserel_pages,
+					   double spc_seq_page_cost,
+					   double spc_random_page_cost);
 
 /*
  * clamp_row_est
@@ -652,9 +655,26 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 
 		if (pages_fetched > 0)
 		{
-			min_IO_cost = spc_random_page_cost;
-			if (pages_fetched > 1)
-				min_IO_cost += (pages_fetched - 1) * spc_seq_page_cost;
+			if (index->indpred == NIL)
+			{
+				min_IO_cost = spc_random_page_cost;
+				if (pages_fetched > 1)
+					min_IO_cost += (pages_fetched - 1) * spc_seq_page_cost;
+			}
+			else
+			{
+				/*
+				 * For a partial index perfectly correlated with the table
+				 * ordering, consecutive pages fetched are not guarenteed to
+				 * be adjacent in the table. Instead use
+				 * ordered_page_read_cost to estimate the cost of reading
+				 * pages from the heap.
+				 */
+				min_IO_cost = ordered_page_read_cost(pages_fetched,
+													 baserel->pages,
+													 spc_seq_page_cost,
+													 spc_seq_page_cost);
+			}
 		}
 		else
 			min_IO_cost = 0;
@@ -934,13 +954,11 @@ cost_bitmap_heap_scan(Path *path, PlannerInfo *root, RelOptInfo *baserel,
 	Cost		indexTotalCost;
 	QualCost	qpqual_cost;
 	Cost		cpu_per_tuple;
-	Cost		cost_per_page;
 	Cost		cpu_run_cost;
 	double		tuples_fetched;
 	double		pages_fetched;
 	double		spc_seq_page_cost,
 				spc_random_page_cost;
-	double		T;
 
 	/* Should only be applied to base relations */
 	Assert(IsA(baserel, RelOptInfo));
@@ -961,28 +979,16 @@ cost_bitmap_heap_scan(Path *path, PlannerInfo *root, RelOptInfo *baserel,
 										 &tuples_fetched);
 
 	startup_cost += indexTotalCost;
-	T = (baserel->pages > 1) ? (double) baserel->pages : 1.0;
 
 	/* Fetch estimated page costs for tablespace containing table. */
 	get_tablespace_page_costs(baserel->reltablespace,
 							  &spc_random_page_cost,
 							  &spc_seq_page_cost);
 
-	/*
-	 * For small numbers of pages we should charge spc_random_page_cost
-	 * apiece, while if nearly all the table's pages are being read, it's more
-	 * appropriate to charge spc_seq_page_cost apiece.  The effect is
-	 * nonlinear, too. For lack of a better idea, interpolate like this to
-	 * determine the cost per page.
-	 */
-	if (pages_fetched >= 2.0)
-		cost_per_page = spc_random_page_cost -
-			(spc_random_page_cost - spc_seq_page_cost)
-			* sqrt(pages_fetched / T);
-	else
-		cost_per_page = spc_random_page_cost;
-
-	run_cost += pages_fetched * cost_per_page;
+	run_cost += ordered_page_read_cost(pages_fetched,
+									   baserel->pages,
+									   spc_seq_page_cost,
+									   spc_random_page_cost);
 
 	/*
 	 * Estimate CPU costs per tuple.
@@ -5182,4 +5188,35 @@ compute_bitmap_pages(PlannerInfo *root, RelOptInfo *baserel, Path *bitmapqual,
 		*tuple = tuples_fetched;
 
 	return pages_fetched;
+}
+
+
+/*
+ * Estimate the total cost of reading possibly nonconsecutive pages from the
+ * heap in order.
+ */
+static double
+ordered_page_read_cost(double pages_fetched, int baserel_pages,
+					   double spc_seq_page_cost, double spc_random_page_cost)
+{
+	double cost_per_page;
+	double T;
+
+	T = (baserel_pages > 1) ? (double) baserel_pages : 1.0;
+
+	/*
+	 * For small numbers of pages we should charge spc_random_page_cost
+	 * apiece, while if nearly all the table's pages are being read, it's more
+	 * appropriate to charge spc_seq_page_cost apiece.  The effect is
+	 * nonlinear, too. For lack of a better idea, interpolate like this to
+	 * determine the cost per page.
+	 */
+	if (pages_fetched >= 2.0)
+		cost_per_page = spc_random_page_cost -
+			(spc_random_page_cost - spc_seq_page_cost)
+			* sqrt(pages_fetched / T);
+	else
+		cost_per_page = spc_random_page_cost;
+
+	return pages_fetched * cost_per_page;
 }
