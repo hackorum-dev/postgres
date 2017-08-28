@@ -205,6 +205,9 @@ XLogResetInsertion(void)
 	begininsert_called = false;
 }
 
+/* Hook for plugins to get control in during page insertion into xlog */
+PGDLLIMPORT xlog_insert_buffer_hook_type xlog_insert_buffer_hook = NULL;
+
 /*
  * Register a reference to a buffer with the WAL record being constructed.
  * This must be called for every page that the WAL-logged operation modifies.
@@ -256,6 +259,10 @@ XLogRegisterBuffer(uint8 block_id, Buffer buffer, uint8 flags)
 #endif
 
 	regbuf->in_use = true;
+	if (xlog_insert_buffer_hook && regbuf->forkno == MAIN_FORKNUM)
+	{
+		xlog_insert_buffer_hook(regbuf->block, regbuf->rnode, false);
+	}
 }
 
 /*

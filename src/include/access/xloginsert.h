@@ -58,4 +58,10 @@ extern XLogRecPtr XLogSaveBufferForHint(Buffer buffer, bool buffer_std);
 
 extern void InitXLogInsert(void);
 
+/* Hook for plugins to get control in during page insertion into xlog */
+typedef void (*xlog_insert_buffer_hook_type) (BlockNumber block_number, RelFileNode rel, bool recovery);
+
+/* in xloginsert.c */
+extern PGDLLIMPORT xlog_insert_buffer_hook_type xlog_insert_buffer_hook;
+
 #endif							/* XLOGINSERT_H */
