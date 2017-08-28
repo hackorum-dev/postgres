@@ -2438,8 +2438,10 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 #else
 #define ULONGPID(x) (unsigned long) (x)
 #endif
-		printf(_("running on port %d with PID %lu\n"),
-			   port, ULONGPID(postmaster_pid));
+		printf(_("running with PID %lu; connect with:\n"),
+ 			   ULONGPID(postmaster_pid));
+		printf(gettext_noop("  psql \"host='%s' port=%d dbname='%s'\"\n"),
+			   hostname ? hostname : sockdir, port, dblist->str);
 	}
 	else
 	{
