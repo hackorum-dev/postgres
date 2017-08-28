@@ -904,6 +904,31 @@ pqAddTuple(PGresult *res, PGresAttValue *tup, const char **errmsgp)
 		int			newSize = (res->tupArrSize > 0) ? res->tupArrSize * 2 : 128;
 		PGresAttValue **newTuples;
 
+		/*
+		 * Do not let the array size grow higher than INT_MAX. If the new
+		 * size estimated is overflowing for the first time, enforce the
+		 * size to its maximum possible. If the maximum is already reached
+		 * when arriving at this point, just fail, there is nothing more to
+		 * do.
+		 */
+		if (res->tupArrSize == INT_MAX)
+		{
+			*errmsgp = libpq_gettext("already too many tuples for row addition");
+			return FALSE;
+		}
+		if (newSize < 0)
+			newSize = INT_MAX;
+
+		/*
+		 * This is more a safe-keeper particularly on 32-bit platforms where
+		 * things could overflow.
+		 */
+		if (newSize > SIZE_MAX / sizeof(PGresAttValue *))
+		{
+			*errmsgp = libpq_gettext("size overflow");
+			return FALSE;
+		}
+
 		if (res->tuples == NULL)
 			newTuples = (PGresAttValue **)
 				malloc(newSize * sizeof(PGresAttValue *));
