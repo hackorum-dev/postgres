@@ -2800,7 +2800,10 @@ dumpDatabase(Archive *fout)
 			 * Generates warning when loaded into a differently-named
 			 * database.
 			 */
-			appendPQExpBuffer(dbQry, "COMMENT ON DATABASE %s IS ", fmtId(datname));
+			if (fout->remoteVersion >= 100100)
+				appendPQExpBuffer(dbQry, "COMMENT ON DATABASE CURRENT_DATABASE IS ");
+			else
+				appendPQExpBuffer(dbQry, "COMMENT ON DATABASE %s IS ", fmtId(datname));
 			appendStringLiteralAH(dbQry, comment, fout);
 			appendPQExpBufferStr(dbQry, ";\n");
 
@@ -2829,7 +2832,10 @@ dumpDatabase(Archive *fout)
 		buildShSecLabelQuery(conn, "pg_database", dbCatId.oid, seclabelQry);
 		shres = ExecuteSqlQuery(fout, seclabelQry->data, PGRES_TUPLES_OK);
 		resetPQExpBuffer(seclabelQry);
-		emitShSecLabels(conn, shres, seclabelQry, "DATABASE", datname);
+		if (fout->remoteVersion >= 100100)
+			emitDatabaseSecLabels(conn, shres, seclabelQry, datname, true);
+		else
+			emitDatabaseSecLabels(conn, shres, seclabelQry, datname, false);
 		if (strlen(seclabelQry->data))
 			ArchiveEntry(fout, dbCatId, createDumpId(), datname, NULL, NULL,
 						 dba, false, "SECURITY LABEL", SECTION_NONE,
@@ -14640,9 +14646,19 @@ dumpSecLabel(Archive *fout, const char *target,
 		if (labels[i].objsubid != subid)
 			continue;
 
-		appendPQExpBuffer(query,
-						  "SECURITY LABEL FOR %s ON %s IS ",
-						  fmtId(labels[i].provider), target);
+		if (fout->remoteVersion >= 100100 && (strncmp(target, "DATABASE", 8) != 0))
+		{
+			appendPQExpBuffer(query,
+							  "SECURITY LABEL FOR %s ON DATABASE CURRENT_DATABASE IS ",
+							  fmtId(labels[i].provider));
+		}
+		else
+			appendPQExpBuffer(query,
+							  "SECURITY LABEL FOR %s ON %s IS ",
+							  fmtId(labels[i].provider), target);
+
+		printf("target = %s\n",target);
+
 		appendStringLiteralAH(query, labels[i].label, fout);
 		appendPQExpBufferStr(query, ";\n");
 	}
@@ -14708,6 +14724,8 @@ dumpTableSecLabel(Archive *fout, TableInfo *tbinfo, const char *reltypename)
 		{
 			appendPQExpBuffer(target, "%s %s", reltypename,
 							  fmtId(tbinfo->dobj.name));
+
+			printf("reltypename = %s\n",reltypename);
 		}
 		else
 		{
@@ -14726,6 +14744,9 @@ dumpTableSecLabel(Archive *fout, TableInfo *tbinfo, const char *reltypename)
 		resetPQExpBuffer(target);
 		appendPQExpBuffer(target, "%s %s", reltypename,
 						  fmtId(tbinfo->dobj.name));
+
+		printf("reltypename2 = %s\n",reltypename);
+
 		ArchiveEntry(fout, nilCatalogId, createDumpId(),
 					 target->data,
 					 tbinfo->dobj.namespace->dobj.name,
