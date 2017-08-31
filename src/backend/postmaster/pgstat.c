@@ -4213,7 +4213,7 @@ PgstatCollectorMain(int argc, char *argv[])
 	/*
 	 * Identify myself via ps
 	 */
-	init_ps_display("stats collector process", "", "", "");
+	init_ps_display("stats collector", "", "", "");
 
 	/*
 	 * Read in existing stats files or initialize the stats to zero.
