@@ -242,7 +242,7 @@ static void ri_ExtractValues(Relation rel, HeapTuple tup,
 static void ri_ReportViolation(const RI_ConstraintInfo *riinfo,
 				   Relation pk_rel, Relation fk_rel,
 				   HeapTuple violator, TupleDesc tupdesc,
-				   int queryno);
+				   int queryno) pg_attribute_noreturn();
 
 
 /* ----------
