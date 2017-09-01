@@ -3562,7 +3562,7 @@ XLogFileRead(XLogSegNo segno, int emode, TimeLineID tli,
 			set_ps_display(activitymsg, false);
 
 			restoredFromArchive = RestoreArchivedFile(path, xlogfname,
-													  "RECOVERYXLOG",
+													  "RECOVERYWAL",
 													  XLogSegSize,
 													  InRedo);
 			if (!restoredFromArchive)
@@ -5550,10 +5550,10 @@ exitArchiveRecovery(TimeLineID endTLI, XLogRecPtr endOfLog)
 	XLogArchiveCleanup(xlogfname);
 
 	/*
-	 * Since there might be a partial WAL segment named RECOVERYXLOG, get rid
+	 * Since there might be a partial WAL segment named RECOVERYWAL, get rid
 	 * of it.
 	 */
-	snprintf(recoveryPath, MAXPGPATH, XLOGDIR "/RECOVERYXLOG");
+	snprintf(recoveryPath, MAXPGPATH, XLOGDIR "/RECOVERYWAL");
 	unlink(recoveryPath);		/* ignore any error */
 
 	/* Get rid of any remaining recovered timeline-history file, too */
