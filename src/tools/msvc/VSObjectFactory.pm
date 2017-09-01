@@ -53,8 +53,13 @@ sub CreateSolution
 	{
 		return new VS2015Solution(@_);
 	}
+	elsif ($visualStudioVersion eq '14.10' || $visualStudioVersion eq '14.11')
+	{
+		return new VS2017Solution(@_);
+	}
 	else
 	{
+		croak $visualStudioVersion;
 		croak "The requested Visual Studio version is not supported.";
 	}
 }
@@ -91,6 +96,10 @@ sub CreateProject
 	elsif ($visualStudioVersion eq '14.00')
 	{
 		return new VC2015Project(@_);
+	}
+	elsif ($visualStudioVersion eq '14.10')
+	{
+		return new VC2017Project(@_);
 	}
 	else
 	{
