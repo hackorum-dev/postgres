@@ -95,6 +95,26 @@ process_source_file(const char *path, file_type_t type, size_t newsize,
 	if (strstr(path, "/" PG_TEMP_FILES_DIR "/") != NULL)
 		return;
 
+
+	/* Also skip configuration files (files ending in .conf)
+	 * 
+	 * If these are synchronized, then it is harder to properly set
+	 * up testing environments or cases where the configuration files
+	 * are in the data directory, since rewinding will clobber changes.
+	 */
+	if (pg_str_endswith(path, ".conf"))
+		return;
+
+	/* Finally skip logs.
+	 *
+	 * Clobbering logs causes loss of information as to historical problems
+	 * and should never be done.
+	 * 
+	 * We assume that logs end in either "serverlog" or ".log"
+	 */
+	if (pg_str_endswith(path, ".log") || pg_str_endswith(path, "serverlog"))
+		return;
+
 	/*
 	 * sanity check: a filename that looks like a data file better be a
 	 * regular file
