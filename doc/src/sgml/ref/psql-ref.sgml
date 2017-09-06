@@ -3700,6 +3700,20 @@ bar
         example <literal>90602</> or <literal>100001</>.
         These are set every time you connect to a database
         (including program start-up), but can be changed or unset.
+        Value will set correctly when connecting to any server running
+        <literal>7.0.3</> or later.
+        </para>
+        <para>
+        This may be used to conditionally execute sections of code,
+        for example
+<programlisting>
+testdb=&gt; <userinput>SELECT :SERVER_VERSION_NUM < 110000 AS prior_11 \gset</userinput>
+testdb=&gt; <userinput>\if :prior_11</userinput>
+testdb=&gt; <userinput>-- version 10 or earlier</userinput>
+testdb=&gt; <userinput>\else</userinput>
+testdb=&gt; <userinput>-- version 11 or more</userinput>
+testdb=&gt; <userinput>\endif</userinput>
+</programlisting>
         </para>
         </listitem>
       </varlistentry>
@@ -3776,6 +3790,9 @@ bar
         a short string (e.g., <literal>9.6.2</>, <literal>10.1</>,
         or <literal>11beta1</>), and a number (e.g., <literal>90602</>
         or <literal>100001</>).  They can be changed or unset.
+        Note that this value will differ from similarly named parameters
+        that represent the server's version when <application>psql</>
+        connects to an older server version.
         </para>
         </listitem>
       </varlistentry>
