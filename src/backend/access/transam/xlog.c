@@ -7904,8 +7904,10 @@ StartupXLOG(void)
 	 * Shutdown the recovery environment. This must occur after
 	 * RecoverPreparedTransactions(), see notes for lock_twophase_recover()
 	 */
-	if (standbyState != STANDBY_DISABLED)
+	if (standbyState != STANDBY_DISABLED) {
 		ShutdownRecoveryTransactionEnvironment();
+		SendHotStandbyExitSignal();
+	}
 
 	/* Shut down xlogreader */
 	if (readFile >= 0)
@@ -8112,6 +8114,11 @@ RecoveryInProgress(void)
 			 */
 			pg_memory_barrier();
 			InitXLOGAccess();
+
+			/* Update session read-only status. */
+			SetConfigOption("session_read_only",
+							DefaultXactReadOnly ? "on" : "off",
+							PGC_INTERNAL, PGC_S_OVERRIDE);
 		}
 
 		/*
