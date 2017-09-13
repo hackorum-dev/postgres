@@ -494,6 +494,7 @@ main(int argc, char **argv)
 	int			c;
 	int			option_index;
 	char	   *db_name;
+	char	   *strtol_endptr = NULL;
 	uint32		hi, lo;
 
 	progname = get_progname(argv[0]);
@@ -529,7 +530,7 @@ main(int argc, char **argv)
 				dbhost = pg_strdup(optarg);
 				break;
 			case 'p':
-				if (atoi(optarg) <= 0)
+				if ((strtol(optarg, &strtol_endptr, 10) <= 0) || (strtol_endptr != optarg + strlen(optarg)))
 				{
 					fprintf(stderr, _("%s: invalid port number \"%s\"\n"),
 							progname, optarg);
@@ -547,8 +548,8 @@ main(int argc, char **argv)
 				dbgetpassword = 1;
 				break;
 			case 's':
-				standby_message_timeout = atoi(optarg) * 1000;
-				if (standby_message_timeout < 0)
+				standby_message_timeout = strtol(optarg, &strtol_endptr, 10) * 1000;
+				if ((standby_message_timeout < 0) || (strtol_endptr != optarg + strlen(optarg)))
 				{
 					fprintf(stderr, _("%s: invalid status interval \"%s\"\n"),
 							progname, optarg);
@@ -575,8 +576,8 @@ main(int argc, char **argv)
 				verbose++;
 				break;
 			case 'Z':
-				compresslevel = atoi(optarg);
-				if (compresslevel < 0 || compresslevel > 9)
+				compresslevel = strtol(optarg, &strtol_endptr, 10);
+				if (compresslevel < 0 || compresslevel > 9 || strtol_endptr != optarg + strlen(optarg))
 				{
 					fprintf(stderr, _("%s: invalid compression level \"%s\"\n"),
 							progname, optarg);
