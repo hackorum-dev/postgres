@@ -1,3 +1,6 @@
+-- Load the extension to validate the tests
+LOAD 'passwordcheck';
+
 CREATE USER regress_user1;
 
 -- ok
