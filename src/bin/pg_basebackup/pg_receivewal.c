@@ -39,6 +39,7 @@ static int	standby_message_timeout = 10 * 1000;		/* 10 sec = default */
 static volatile bool time_to_abort = false;
 static bool do_create_slot = false;
 static bool slot_exists_ok = false;
+static bool slot_not_exists_ok = false;
 static bool do_drop_slot = false;
 static bool synchronous = false;
 static char *replication_slot = NULL;
@@ -77,6 +78,7 @@ usage(void)
 	printf(_("  %s [OPTION]...\n"), progname);
 	printf(_("\nOptions:\n"));
 	printf(_("  -D, --directory=DIR    receive write-ahead log files into this directory\n"));
+	printf(_("      --if-exists        do not error if slot does not exist when dropping a slot\n"));
 	printf(_("      --if-not-exists    do not error if slot already exists when creating a slot\n"));
 	printf(_("  -n, --no-loop          do not loop on connection lost\n"));
 	printf(_("  -s, --status-interval=SECS\n"
@@ -472,8 +474,9 @@ main(int argc, char **argv)
 /* action */
 		{"create-slot", no_argument, NULL, 1},
 		{"drop-slot", no_argument, NULL, 2},
-		{"if-not-exists", no_argument, NULL, 3},
-		{"synchronous", no_argument, NULL, 4},
+		{"if-exists", no_argument, NULL, 3},
+		{"if-not-exists", no_argument, NULL, 4},
+		{"synchronous", no_argument, NULL, 5},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -566,9 +569,12 @@ main(int argc, char **argv)
 				do_drop_slot = true;
 				break;
 			case 3:
-				slot_exists_ok = true;
+				slot_not_exists_ok = true;
 				break;
 			case 4:
+				slot_exists_ok = true;
+				break;
+			case 5:
 				synchronous = true;
 				break;
 			default:
@@ -598,6 +604,14 @@ main(int argc, char **argv)
 	if (do_drop_slot && do_create_slot)
 	{
 		fprintf(stderr, _("%s: cannot use --create-slot together with --drop-slot\n"), progname);
+		fprintf(stderr, _("Try \"%s --help\" for more information.\n"),
+				progname);
+		exit(1);
+	}
+
+	if (do_create_slot && slot_not_exists_ok)
+	{
+		fprintf(stderr, _("%s: cannot use --create-slot with --if-exists\n"), progname);
 		fprintf(stderr, _("Try \"%s --help\" for more information.\n"),
 				progname);
 		exit(1);
@@ -686,7 +700,7 @@ main(int argc, char **argv)
 					_("%s: dropping replication slot \"%s\"\n"),
 					progname, replication_slot);
 
-		if (!DropReplicationSlot(conn, replication_slot))
+		if (!DropReplicationSlot(conn, replication_slot, slot_not_exists_ok))
 			disconnect_and_exit(1);
 		disconnect_and_exit(0);
 	}
