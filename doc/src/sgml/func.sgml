@@ -18373,7 +18373,7 @@ SELECT set_config('log_statement_stats', 'off', false);
         <literal><function>pg_reload_conf()</function></literal>
         </entry>
        <entry><type>boolean</type></entry>
-       <entry>Cause server processes to reload their configuration files</entry>
+       <entry>Cause server processes to attempt reloading their configuration files</entry>
       </row>
       <row>
        <entry>
@@ -18420,7 +18420,10 @@ SELECT set_config('log_statement_stats', 'off', false);
    <para>
     <function>pg_reload_conf</> sends a <systemitem>SIGHUP</> signal
     to the server, causing configuration files
-    to be reloaded by all server processes.
+    to be reloaded by all server processes.  The return value only indicates
+    whether the signal was sent successfully to the postmaster.  It does not
+    say whether the reload was performed and propogated successfully by
+    the postmaster.
    </para>
 
    <para>
