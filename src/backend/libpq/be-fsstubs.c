@@ -101,7 +101,7 @@ be_lo_open(PG_FUNCTION_ARGS)
 	int			fd;
 
 #if FSDB
-	elog(DEBUG4, "lo_open(%u,%d)", lobjId, mode);
+	elog(DEBUG4, "be_lo_open(%u,%d)", lobjId, mode);
 #endif
 
 	CreateFSContext();
@@ -132,7 +132,7 @@ be_lo_close(PG_FUNCTION_ARGS)
 				 errmsg("invalid large-object descriptor: %d", fd)));
 
 #if FSDB
-	elog(DEBUG4, "lo_close(%d)", fd);
+	elog(DEBUG4, "be_lo_close(%d)", fd);
 #endif
 
 	inv_close(cookies[fd]);
