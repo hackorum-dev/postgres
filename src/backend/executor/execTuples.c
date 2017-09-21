@@ -919,18 +919,24 @@ ExecTypeFromTLInternal(List *targetList, bool hasoid, bool skipjunk)
 	foreach(l, targetList)
 	{
 		TargetEntry *tle = lfirst(l);
+		Oid			type;
+		int32		typmod;
+		Oid			collation;
 
 		if (skipjunk && tle->resjunk)
 			continue;
+		exprTypeInfo((Node *) tle->expr,
+					 &type, &typmod, &collation);
+
 		TupleDescInitEntry(typeInfo,
 						   cur_resno,
 						   tle->resname,
-						   exprType((Node *) tle->expr),
-						   exprTypmod((Node *) tle->expr),
+						   type,
+						   typmod,
 						   0);
 		TupleDescInitEntryCollation(typeInfo,
 									cur_resno,
-									exprCollation((Node *) tle->expr));
+									collation);
 		cur_resno++;
 	}
 

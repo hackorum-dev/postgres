@@ -35,69 +35,134 @@ static bool planstate_walk_members(List *plans, PlanState **planstates,
 
 
 /*
- *	exprType -
- *	  returns the Oid of the type of the expression's result.
+ *	exprTypeInfo -
+ *	  lookup an expression result's type, typmod, collation.
  */
-Oid
-exprType(const Node *expr)
+void
+exprTypeInfo(const Node *expr, Oid *type, int32 *typmod, Oid *collation)
 {
-	Oid			type;
+	/* initialize to defaults, overridden where appropriate */
+	*type = InvalidOid;
+	*typmod = -1;
+	*collation = InvalidOid;
 
 	if (!expr)
-		return InvalidOid;
+		return;
 
 	switch (nodeTag(expr))
 	{
 		case T_Var:
-			type = ((const Var *) expr)->vartype;
-			break;
+			{
+				const Var *var = (const Var *) expr;
+				*type = var->vartype;
+				*typmod = var->vartypmod;
+				*collation = var->varcollid;
+				break;
+			}
 		case T_Const:
-			type = ((const Const *) expr)->consttype;
-			break;
+			{
+				const Const *c = (const Const *) expr;
+				*type = c->consttype;
+				*typmod = c->consttypmod;
+				*collation = c->constcollid;
+				break;
+			}
 		case T_Param:
-			type = ((const Param *) expr)->paramtype;
-			break;
+			{
+				const Param *p = (const Param *) expr;
+				*type = p->paramtype;
+				*typmod = p->paramtypmod;
+				*collation = p->paramcollid;
+				break;
+			}
 		case T_Aggref:
-			type = ((const Aggref *) expr)->aggtype;
-			break;
+			{
+				const Aggref *a = (const Aggref *) expr;
+				*type = a->aggtype;
+				*collation = a->aggcollid;
+				break;
+			}
 		case T_GroupingFunc:
-			type = INT4OID;
+			*type = INT4OID;
 			break;
 		case T_WindowFunc:
-			type = ((const WindowFunc *) expr)->wintype;
-			break;
+			{
+				const WindowFunc *w = (const WindowFunc *) expr;
+				*type = w->wintype;
+				*collation = w->wincollid;
+				break;
+			}
 		case T_ArrayRef:
 			{
 				const ArrayRef *arrayref = (const ArrayRef *) expr;
 
 				/* slice and/or store operations yield the array type */
 				if (arrayref->reflowerindexpr || arrayref->refassgnexpr)
-					type = arrayref->refarraytype;
+					*type = arrayref->refarraytype;
 				else
-					type = arrayref->refelemtype;
+					*type = arrayref->refelemtype;
+
+				*typmod = arrayref->reftypmod;
+				*collation = arrayref->refcollid;
 			}
 			break;
 		case T_FuncExpr:
-			type = ((const FuncExpr *) expr)->funcresulttype;
-			break;
+			{
+				const FuncExpr *func = (const FuncExpr *) expr;
+				int32		coercedTypmod;
+
+				*type = func->funcresulttype;
+
+				/* Be smart about length-coercion functions... */
+				if (exprIsLengthCoercion(expr, &coercedTypmod))
+					*typmod = coercedTypmod;
+				else
+					*typmod = -1;
+				*collation = func->funccollid;
+				break;
+			}
 		case T_NamedArgExpr:
-			type = exprType((Node *) ((const NamedArgExpr *) expr)->arg);
-			break;
+			{
+				exprTypeInfo((Node *) ((const NamedArgExpr *) expr)->arg,
+							 type, typmod, collation);
+				break;
+			}
 		case T_OpExpr:
-			type = ((const OpExpr *) expr)->opresulttype;
-			break;
+			{
+				const OpExpr *op = (const OpExpr *) expr;
+				*type = op->opresulttype;
+				*collation = op->opcollid;
+				break;
+			}
 		case T_DistinctExpr:
-			type = ((const DistinctExpr *) expr)->opresulttype;
-			break;
+			{
+				const DistinctExpr *d = (const DistinctExpr *) expr;
+
+				*type = d->opresulttype;
+				*collation = d->opcollid;
+				break;
+			}
 		case T_NullIfExpr:
-			type = ((const NullIfExpr *) expr)->opresulttype;
-			break;
+			{
+				const NullIfExpr *nullif = (const NullIfExpr *) expr;
+
+				*type = nullif->opresulttype;
+				/*
+				 * Result is either first argument or NULL, so we can report
+				 * first argument's typmod if known.
+				 */
+				*typmod = exprTypmod(linitial(nullif->args));
+				*collation = nullif->opcollid;
+				break;
+			}
 		case T_ScalarArrayOpExpr:
-			type = BOOLOID;
+			/* result is always boolean */
+			*type = BOOLOID;
 			break;
 		case T_BoolExpr:
-			type = BOOLOID;
-			break;
+			/* result is always boolean */
+			*type = BOOLOID;
+			break;;
 		case T_SubLink:
 			{
 				const SubLink *sublink = (const SubLink *) expr;
@@ -113,29 +178,32 @@ exprType(const Node *expr)
 						elog(ERROR, "cannot get type for untransformed sublink");
 					tent = linitial_node(TargetEntry, qtree->targetList);
 					Assert(!tent->resjunk);
-					type = exprType((Node *) tent->expr);
+
+					exprTypeInfo((Node *) tent->expr, type, typmod, collation);
+
 					if (sublink->subLinkType == ARRAY_SUBLINK)
 					{
-						type = get_promoted_array_type(type);
-						if (!OidIsValid(type))
+						Oid promoted = get_promoted_array_type(*type);
+						if (!OidIsValid(promoted))
 							ereport(ERROR,
 									(errcode(ERRCODE_UNDEFINED_OBJECT),
 									 errmsg("could not find array type for data type %s",
-											format_type_be(exprType((Node *) tent->expr)))));
+											format_type_be(*type))));
+						*type = promoted;
 					}
 				}
 				else if (sublink->subLinkType == MULTIEXPR_SUBLINK)
 				{
 					/* MULTIEXPR is always considered to return RECORD */
-					type = RECORDOID;
+					*type = RECORDOID;
 				}
 				else
 				{
 					/* for all other sublink types, result is boolean */
-					type = BOOLOID;
+					*type = BOOLOID;
 				}
 			}
-			break;
+			break;;
 		case T_SubPlan:
 			{
 				const SubPlan *subplan = (const SubPlan *) expr;
@@ -144,26 +212,31 @@ exprType(const Node *expr)
 					subplan->subLinkType == ARRAY_SUBLINK)
 				{
 					/* get the type of the subselect's first target column */
-					type = subplan->firstColType;
+					*type = subplan->firstColType;
+					*typmod = subplan->firstColTypmod;
+					*collation = subplan->firstColCollation;
+
 					if (subplan->subLinkType == ARRAY_SUBLINK)
 					{
-						type = get_promoted_array_type(type);
-						if (!OidIsValid(type))
+						Oid promoted = get_promoted_array_type(*type);
+
+						if (!OidIsValid(promoted))
 							ereport(ERROR,
 									(errcode(ERRCODE_UNDEFINED_OBJECT),
 									 errmsg("could not find array type for data type %s",
-											format_type_be(subplan->firstColType))));
+											format_type_be(*type))));
+						*type = promoted;
 					}
 				}
 				else if (subplan->subLinkType == MULTIEXPR_SUBLINK)
 				{
 					/* MULTIEXPR is always considered to return RECORD */
-					type = RECORDOID;
+					*type = RECORDOID;
 				}
 				else
 				{
 					/* for all other subplan types, result is boolean */
-					type = BOOLOID;
+					*type = BOOLOID;
 				}
 			}
 			break;
@@ -172,98 +245,343 @@ exprType(const Node *expr)
 				const AlternativeSubPlan *asplan = (const AlternativeSubPlan *) expr;
 
 				/* subplans should all return the same thing */
-				type = exprType((Node *) linitial(asplan->subplans));
+				exprTypeInfo((Node *) linitial(asplan->subplans),
+							 type, typmod, collation);
+				break;
 			}
-			break;
 		case T_FieldSelect:
-			type = ((const FieldSelect *) expr)->resulttype;
-			break;
+			{
+				const FieldSelect *fs = (const FieldSelect *) expr;
+
+				*type = fs->resulttype;
+				*typmod = fs->resulttypmod;
+				*collation = fs->resultcollid;
+				break;
+			}
 		case T_FieldStore:
-			type = ((const FieldStore *) expr)->resulttype;
+			*type = ((const FieldStore *) expr)->resulttype;
 			break;
 		case T_RelabelType:
-			type = ((const RelabelType *) expr)->resulttype;
-			break;
+			{
+				const RelabelType *rt = (const RelabelType *) expr;
+				*type = rt->resulttype;
+				*typmod = rt->resulttypmod;
+				*collation = rt->resultcollid;
+				break;
+			}
 		case T_CoerceViaIO:
-			type = ((const CoerceViaIO *) expr)->resulttype;
-			break;
+			{
+				const CoerceViaIO *coerce = (const CoerceViaIO *) expr;
+				*type = coerce->resulttype;
+				*collation = coerce->resultcollid;
+				break;
+			}
 		case T_ArrayCoerceExpr:
-			type = ((const ArrayCoerceExpr *) expr)->resulttype;
-			break;
+			{
+				const ArrayCoerceExpr *acoerce = (const ArrayCoerceExpr *) expr;
+
+				*type = acoerce->resulttype;
+				*typmod = acoerce->resulttypmod;
+				*collation = acoerce->resultcollid;
+				break;
+			}
 		case T_ConvertRowtypeExpr:
-			type = ((const ConvertRowtypeExpr *) expr)->resulttype;
-			break;
+			{
+				const ConvertRowtypeExpr *c = (const ConvertRowtypeExpr *) expr;
+				*type = c->resulttype;
+				break;
+			}
 		case T_CollateExpr:
-			type = exprType((Node *) ((const CollateExpr *) expr)->arg);
-			break;
+			{
+				const CollateExpr *col = (const CollateExpr *) expr;
+				exprTypeInfo((Node *) col->arg, type, typmod, collation);
+				*collation = col->collOid;
+			}
+			break;;
 		case T_CaseExpr:
-			type = ((const CaseExpr *) expr)->casetype;
-			break;
+			{
+				const CaseExpr *cexpr = (const CaseExpr *) expr;
+				Oid			casetype = cexpr->casetype;
+				ListCell   *arg;
+
+				*type = cexpr->casetype;
+
+				/*
+				 * If all the alternatives agree on type/typmod, return that
+				 * typmod, else use -1
+				 */
+				if (!cexpr->defresult)
+					*typmod = -1;
+				else if (exprType((Node *) cexpr->defresult) != casetype)
+					*typmod = -1;
+				else
+				{
+					int32		deftypmod;
+
+					deftypmod = exprTypmod((Node *) cexpr->defresult);
+					if (*typmod >= 0)
+					{
+						foreach(arg, cexpr->args)
+						{
+							CaseWhen   *w = lfirst_node(CaseWhen, arg);
+
+							if (exprType((Node *) w->result) != casetype)
+								*typmod = -1;
+							if (exprTypmod((Node *) w->result) != deftypmod)
+								*typmod = -1;
+						}
+					}
+					*typmod = deftypmod;
+				}
+				*collation = cexpr->casecollid;
+				break;
+			}
 		case T_CaseTestExpr:
-			type = ((const CaseTestExpr *) expr)->typeId;
-			break;
+			{
+				const CaseTestExpr *casetest = (const CaseTestExpr *) expr;
+				*type = casetest->typeId;
+				*typmod = casetest->typeMod;
+				*collation = casetest->collation;
+				break;
+			}
+
 		case T_ArrayExpr:
-			type = ((const ArrayExpr *) expr)->array_typeid;
-			break;
+			{
+				const ArrayExpr *arrayexpr = (const ArrayExpr *) expr;
+				Oid			commontype;
+				ListCell   *elem;
+
+				*type = arrayexpr->array_typeid;
+
+				/*
+				 * If all the elements agree on type/typmod, return that
+				 * typmod, else use -1
+				 */
+				if (arrayexpr->elements != NIL)
+				{
+					Oid			elemtype;
+					int32		elemtypmod;
+					Oid			elemcollation;
+
+					exprTypeInfo((Node *) linitial(arrayexpr->elements),
+								 &elemtype, &elemtypmod, &elemcollation);
+
+					if (elemtypmod < 0)
+					{
+						if (arrayexpr->multidims)
+							commontype = arrayexpr->array_typeid;
+						else
+							commontype = arrayexpr->element_typeid;
+
+						*typmod = elemtypmod;
+
+						foreach(elem, arrayexpr->elements)
+						{
+							Node	   *e = (Node *) lfirst(elem);
+
+							exprTypeInfo(e, &elemtype, &elemtypmod,
+										 &elemcollation);
+
+							if (elemtype != commontype)
+							{
+								*typmod = -1;
+								break;
+							}
+							if (elemtypmod != *typmod)
+							{
+								*typmod = -1;
+								break;
+							}
+						}
+					}
+				}
+				*collation = arrayexpr->array_collid;
+				break;
+			}
 		case T_RowExpr:
-			type = ((const RowExpr *) expr)->row_typeid;
+			*type = ((const RowExpr *) expr)->row_typeid;
 			break;
 		case T_RowCompareExpr:
-			type = BOOLOID;
+			*type = BOOLOID;
 			break;
 		case T_CoalesceExpr:
-			type = ((const CoalesceExpr *) expr)->coalescetype;
-			break;
+			{
+				const CoalesceExpr *cexpr = (const CoalesceExpr *) expr;
+				Oid			elemtype;
+				int32		elemtypmod;
+				Oid			elemcollation;
+				ListCell   *arg;
+
+				*type = cexpr->coalescetype;
+				*collation = cexpr->coalescecollid;
+
+				/*
+				 * If all the alternatives agree on type/typmod, return that
+				 * typmod, else use -1
+				 */
+				exprTypeInfo((Node *) linitial(cexpr->args),
+							 &elemtype, &elemtypmod, &elemcollation);
+
+				/* no point in trying harder otherwise */
+				if (elemtype == *type && elemtypmod > 0)
+				{
+					*typmod = elemtypmod;
+
+					for_each_cell(arg, lnext(list_head(cexpr->args)))
+					{
+						Node	   *e = (Node *) lfirst(arg);
+
+						exprTypeInfo(e, &elemtype, &elemtypmod,
+									 &elemcollation);
+
+						if (elemtype != *type ||
+							elemtypmod != *typmod)
+						{
+							*typmod = -1;
+							break;
+						}
+					}
+				}
+				break;
+			}
 		case T_MinMaxExpr:
-			type = ((const MinMaxExpr *) expr)->minmaxtype;
-			break;
+			{
+				/*
+				 * If all the alternatives agree on type/typmod, return that
+				 * typmod, else use -1
+				 */
+				const MinMaxExpr *mexpr = (const MinMaxExpr *) expr;
+				Oid			elemtype;
+				int32		elemtypmod;
+				Oid			elemcollation;
+				ListCell   *arg;
+
+				*type = mexpr->minmaxtype;
+				*collation = mexpr->minmaxcollid;
+
+				exprTypeInfo((Node *) linitial(mexpr->args),
+							 &elemtype, &elemtypmod, &elemcollation);
+
+				/* no point in trying harder otherwise */
+				if (elemtype == *type && elemtypmod >= 0)
+				{
+					*typmod = elemtypmod;
+
+					for_each_cell(arg, lnext(list_head(mexpr->args)))
+					{
+						Node	   *e = (Node *) lfirst(arg);
+
+						exprTypeInfo((Node *) e,
+									 &elemtype, &elemtypmod, &elemcollation);
+
+						if (elemtype != *type ||
+							elemtypmod != *typmod)
+						{
+							*typmod = -1;
+							break;
+						}
+					}
+				}
+
+				break;
+			}
 		case T_SQLValueFunction:
-			type = ((const SQLValueFunction *) expr)->type;
-			break;
+			{
+				const SQLValueFunction *sv = (const SQLValueFunction *) expr;
+
+				*type = sv->type;
+				*typmod = sv->typmod;
+				break;
+			}
 		case T_XmlExpr:
-			if (((const XmlExpr *) expr)->op == IS_DOCUMENT)
-				type = BOOLOID;
-			else if (((const XmlExpr *) expr)->op == IS_XMLSERIALIZE)
-				type = TEXTOID;
-			else
-				type = XMLOID;
-			break;
+			{
+				const XmlExpr *xe = (const XmlExpr *) expr;
+
+				if (xe->op == IS_DOCUMENT)
+					*type = BOOLOID;
+				else if (xe->op == IS_XMLSERIALIZE)
+				{
+					*type = TEXTOID;
+					*collation = DEFAULT_COLLATION_OID;
+				}
+				else
+					*type = XMLOID;
+				break;
+			}
 		case T_NullTest:
-			type = BOOLOID;
+			*type = BOOLOID;
 			break;
 		case T_BooleanTest:
-			type = BOOLOID;
+			*type = BOOLOID;
 			break;
 		case T_CoerceToDomain:
-			type = ((const CoerceToDomain *) expr)->resulttype;
-			break;
+			{
+				const CoerceToDomain *cd = (const CoerceToDomain *) expr;
+
+				*type = cd->resulttype;
+				*typmod = cd->resulttypmod;
+				*collation = cd->resultcollid;
+				break;
+			}
 		case T_CoerceToDomainValue:
-			type = ((const CoerceToDomainValue *) expr)->typeId;
+			{
+				const CoerceToDomainValue *cdv = (const CoerceToDomainValue *) expr;
+
+				*type = cdv->typeId;
+				*typmod = cdv->typeMod;
+				*collation = cdv->collation;
+				break;
+			}
 			break;
 		case T_SetToDefault:
-			type = ((const SetToDefault *) expr)->typeId;
-			break;
+			{
+				const SetToDefault *sd = (const SetToDefault *) expr;
+
+				*type = sd->typeId;
+				*typmod = sd->typeMod;
+				*collation = sd->collation;
+				break;
+			}
 		case T_CurrentOfExpr:
-			type = BOOLOID;
+			*type = BOOLOID;
 			break;
 		case T_NextValueExpr:
-			type = ((const NextValueExpr *) expr)->typeId;
+			*type = ((const NextValueExpr *) expr)->typeId;
 			break;
 		case T_InferenceElem:
 			{
 				const InferenceElem *n = (const InferenceElem *) expr;
 
-				type = exprType((Node *) n->expr);
+				exprTypeInfo((Node *) n->expr, type, typmod, collation);
+				*typmod = -1; /* XXX? */
+				break;
 			}
-			break;
 		case T_PlaceHolderVar:
-			type = exprType((Node *) ((const PlaceHolderVar *) expr)->phexpr);
-			break;
+			{
+				const PlaceHolderVar *phv = (const PlaceHolderVar *) expr;
+				exprTypeInfo((Node *) phv->phexpr,
+							 type, typmod, collation);
+				break;
+			}
 		default:
 			elog(ERROR, "unrecognized node type: %d", (int) nodeTag(expr));
-			type = InvalidOid;	/* keep compiler quiet */
 			break;
 	}
+}
+
+/*
+ *	exprType -
+ *	  returns the Oid of the type of the expression's result.
+ */
+Oid
+exprType(const Node *expr)
+{
+	Oid			type;
+	int32		typmod;
+	Oid			collation;
+
+	exprTypeInfo(expr, &type, &typmod, &collation);
+
 	return type;
 }
 
@@ -275,227 +593,13 @@ exprType(const Node *expr)
 int32
 exprTypmod(const Node *expr)
 {
-	if (!expr)
-		return -1;
+	Oid			type;
+	int32		typmod;
+	Oid			collation;
 
-	switch (nodeTag(expr))
-	{
-		case T_Var:
-			return ((const Var *) expr)->vartypmod;
-		case T_Const:
-			return ((const Const *) expr)->consttypmod;
-		case T_Param:
-			return ((const Param *) expr)->paramtypmod;
-		case T_ArrayRef:
-			/* typmod is the same for array or element */
-			return ((const ArrayRef *) expr)->reftypmod;
-		case T_FuncExpr:
-			{
-				int32		coercedTypmod;
+	exprTypeInfo(expr, &type, &typmod, &collation);
 
-				/* Be smart about length-coercion functions... */
-				if (exprIsLengthCoercion(expr, &coercedTypmod))
-					return coercedTypmod;
-			}
-			break;
-		case T_NamedArgExpr:
-			return exprTypmod((Node *) ((const NamedArgExpr *) expr)->arg);
-		case T_NullIfExpr:
-			{
-				/*
-				 * Result is either first argument or NULL, so we can report
-				 * first argument's typmod if known.
-				 */
-				const NullIfExpr *nexpr = (const NullIfExpr *) expr;
-
-				return exprTypmod((Node *) linitial(nexpr->args));
-			}
-			break;
-		case T_SubLink:
-			{
-				const SubLink *sublink = (const SubLink *) expr;
-
-				if (sublink->subLinkType == EXPR_SUBLINK ||
-					sublink->subLinkType == ARRAY_SUBLINK)
-				{
-					/* get the typmod of the subselect's first target column */
-					Query	   *qtree = (Query *) sublink->subselect;
-					TargetEntry *tent;
-
-					if (!qtree || !IsA(qtree, Query))
-						elog(ERROR, "cannot get type for untransformed sublink");
-					tent = linitial_node(TargetEntry, qtree->targetList);
-					Assert(!tent->resjunk);
-					return exprTypmod((Node *) tent->expr);
-					/* note we don't need to care if it's an array */
-				}
-				/* otherwise, result is RECORD or BOOLEAN, typmod is -1 */
-			}
-			break;
-		case T_SubPlan:
-			{
-				const SubPlan *subplan = (const SubPlan *) expr;
-
-				if (subplan->subLinkType == EXPR_SUBLINK ||
-					subplan->subLinkType == ARRAY_SUBLINK)
-				{
-					/* get the typmod of the subselect's first target column */
-					/* note we don't need to care if it's an array */
-					return subplan->firstColTypmod;
-				}
-				/* otherwise, result is RECORD or BOOLEAN, typmod is -1 */
-			}
-			break;
-		case T_AlternativeSubPlan:
-			{
-				const AlternativeSubPlan *asplan = (const AlternativeSubPlan *) expr;
-
-				/* subplans should all return the same thing */
-				return exprTypmod((Node *) linitial(asplan->subplans));
-			}
-			break;
-		case T_FieldSelect:
-			return ((const FieldSelect *) expr)->resulttypmod;
-		case T_RelabelType:
-			return ((const RelabelType *) expr)->resulttypmod;
-		case T_ArrayCoerceExpr:
-			return ((const ArrayCoerceExpr *) expr)->resulttypmod;
-		case T_CollateExpr:
-			return exprTypmod((Node *) ((const CollateExpr *) expr)->arg);
-		case T_CaseExpr:
-			{
-				/*
-				 * If all the alternatives agree on type/typmod, return that
-				 * typmod, else use -1
-				 */
-				const CaseExpr *cexpr = (const CaseExpr *) expr;
-				Oid			casetype = cexpr->casetype;
-				int32		typmod;
-				ListCell   *arg;
-
-				if (!cexpr->defresult)
-					return -1;
-				if (exprType((Node *) cexpr->defresult) != casetype)
-					return -1;
-				typmod = exprTypmod((Node *) cexpr->defresult);
-				if (typmod < 0)
-					return -1;	/* no point in trying harder */
-				foreach(arg, cexpr->args)
-				{
-					CaseWhen   *w = lfirst_node(CaseWhen, arg);
-
-					if (exprType((Node *) w->result) != casetype)
-						return -1;
-					if (exprTypmod((Node *) w->result) != typmod)
-						return -1;
-				}
-				return typmod;
-			}
-			break;
-		case T_CaseTestExpr:
-			return ((const CaseTestExpr *) expr)->typeMod;
-		case T_ArrayExpr:
-			{
-				/*
-				 * If all the elements agree on type/typmod, return that
-				 * typmod, else use -1
-				 */
-				const ArrayExpr *arrayexpr = (const ArrayExpr *) expr;
-				Oid			commontype;
-				int32		typmod;
-				ListCell   *elem;
-
-				if (arrayexpr->elements == NIL)
-					return -1;
-				typmod = exprTypmod((Node *) linitial(arrayexpr->elements));
-				if (typmod < 0)
-					return -1;	/* no point in trying harder */
-				if (arrayexpr->multidims)
-					commontype = arrayexpr->array_typeid;
-				else
-					commontype = arrayexpr->element_typeid;
-				foreach(elem, arrayexpr->elements)
-				{
-					Node	   *e = (Node *) lfirst(elem);
-
-					if (exprType(e) != commontype)
-						return -1;
-					if (exprTypmod(e) != typmod)
-						return -1;
-				}
-				return typmod;
-			}
-			break;
-		case T_CoalesceExpr:
-			{
-				/*
-				 * If all the alternatives agree on type/typmod, return that
-				 * typmod, else use -1
-				 */
-				const CoalesceExpr *cexpr = (const CoalesceExpr *) expr;
-				Oid			coalescetype = cexpr->coalescetype;
-				int32		typmod;
-				ListCell   *arg;
-
-				if (exprType((Node *) linitial(cexpr->args)) != coalescetype)
-					return -1;
-				typmod = exprTypmod((Node *) linitial(cexpr->args));
-				if (typmod < 0)
-					return -1;	/* no point in trying harder */
-				for_each_cell(arg, lnext(list_head(cexpr->args)))
-				{
-					Node	   *e = (Node *) lfirst(arg);
-
-					if (exprType(e) != coalescetype)
-						return -1;
-					if (exprTypmod(e) != typmod)
-						return -1;
-				}
-				return typmod;
-			}
-			break;
-		case T_MinMaxExpr:
-			{
-				/*
-				 * If all the alternatives agree on type/typmod, return that
-				 * typmod, else use -1
-				 */
-				const MinMaxExpr *mexpr = (const MinMaxExpr *) expr;
-				Oid			minmaxtype = mexpr->minmaxtype;
-				int32		typmod;
-				ListCell   *arg;
-
-				if (exprType((Node *) linitial(mexpr->args)) != minmaxtype)
-					return -1;
-				typmod = exprTypmod((Node *) linitial(mexpr->args));
-				if (typmod < 0)
-					return -1;	/* no point in trying harder */
-				for_each_cell(arg, lnext(list_head(mexpr->args)))
-				{
-					Node	   *e = (Node *) lfirst(arg);
-
-					if (exprType(e) != minmaxtype)
-						return -1;
-					if (exprTypmod(e) != typmod)
-						return -1;
-				}
-				return typmod;
-			}
-			break;
-		case T_SQLValueFunction:
-			return ((const SQLValueFunction *) expr)->typmod;
-		case T_CoerceToDomain:
-			return ((const CoerceToDomain *) expr)->resulttypmod;
-		case T_CoerceToDomainValue:
-			return ((const CoerceToDomainValue *) expr)->typeMod;
-		case T_SetToDefault:
-			return ((const SetToDefault *) expr)->typeMod;
-		case T_PlaceHolderVar:
-			return exprTypmod((Node *) ((const PlaceHolderVar *) expr)->phexpr);
-		default:
-			break;
-	}
-	return -1;
+	return typmod;
 }
 
 /*
@@ -713,202 +817,19 @@ expression_returns_set_walker(Node *node, void *context)
  * "inputcollid" field, which is what the function should use as collation.
  * That is the resolved common collation of the node's inputs.  It is often
  * but not always the same as the result collation; in particular, if the
- * function produces a non-collatable result type from collatable inputs
- * or vice versa, the two are different.
+ * function produces a non-collatable result type from collatable inputs or
+ * vice versa, the two are different.
  */
 Oid
 exprCollation(const Node *expr)
 {
-	Oid			coll;
+	Oid			type;
+	int32		typmod;
+	Oid			collation;
 
-	if (!expr)
-		return InvalidOid;
+	exprTypeInfo(expr, &type, &typmod, &collation);
 
-	switch (nodeTag(expr))
-	{
-		case T_Var:
-			coll = ((const Var *) expr)->varcollid;
-			break;
-		case T_Const:
-			coll = ((const Const *) expr)->constcollid;
-			break;
-		case T_Param:
-			coll = ((const Param *) expr)->paramcollid;
-			break;
-		case T_Aggref:
-			coll = ((const Aggref *) expr)->aggcollid;
-			break;
-		case T_GroupingFunc:
-			coll = InvalidOid;
-			break;
-		case T_WindowFunc:
-			coll = ((const WindowFunc *) expr)->wincollid;
-			break;
-		case T_ArrayRef:
-			coll = ((const ArrayRef *) expr)->refcollid;
-			break;
-		case T_FuncExpr:
-			coll = ((const FuncExpr *) expr)->funccollid;
-			break;
-		case T_NamedArgExpr:
-			coll = exprCollation((Node *) ((const NamedArgExpr *) expr)->arg);
-			break;
-		case T_OpExpr:
-			coll = ((const OpExpr *) expr)->opcollid;
-			break;
-		case T_DistinctExpr:
-			coll = ((const DistinctExpr *) expr)->opcollid;
-			break;
-		case T_NullIfExpr:
-			coll = ((const NullIfExpr *) expr)->opcollid;
-			break;
-		case T_ScalarArrayOpExpr:
-			coll = InvalidOid;	/* result is always boolean */
-			break;
-		case T_BoolExpr:
-			coll = InvalidOid;	/* result is always boolean */
-			break;
-		case T_SubLink:
-			{
-				const SubLink *sublink = (const SubLink *) expr;
-
-				if (sublink->subLinkType == EXPR_SUBLINK ||
-					sublink->subLinkType == ARRAY_SUBLINK)
-				{
-					/* get the collation of subselect's first target column */
-					Query	   *qtree = (Query *) sublink->subselect;
-					TargetEntry *tent;
-
-					if (!qtree || !IsA(qtree, Query))
-						elog(ERROR, "cannot get collation for untransformed sublink");
-					tent = linitial_node(TargetEntry, qtree->targetList);
-					Assert(!tent->resjunk);
-					coll = exprCollation((Node *) tent->expr);
-					/* collation doesn't change if it's converted to array */
-				}
-				else
-				{
-					/* otherwise, result is RECORD or BOOLEAN */
-					coll = InvalidOid;
-				}
-			}
-			break;
-		case T_SubPlan:
-			{
-				const SubPlan *subplan = (const SubPlan *) expr;
-
-				if (subplan->subLinkType == EXPR_SUBLINK ||
-					subplan->subLinkType == ARRAY_SUBLINK)
-				{
-					/* get the collation of subselect's first target column */
-					coll = subplan->firstColCollation;
-					/* collation doesn't change if it's converted to array */
-				}
-				else
-				{
-					/* otherwise, result is RECORD or BOOLEAN */
-					coll = InvalidOid;
-				}
-			}
-			break;
-		case T_AlternativeSubPlan:
-			{
-				const AlternativeSubPlan *asplan = (const AlternativeSubPlan *) expr;
-
-				/* subplans should all return the same thing */
-				coll = exprCollation((Node *) linitial(asplan->subplans));
-			}
-			break;
-		case T_FieldSelect:
-			coll = ((const FieldSelect *) expr)->resultcollid;
-			break;
-		case T_FieldStore:
-			coll = InvalidOid;	/* result is always composite */
-			break;
-		case T_RelabelType:
-			coll = ((const RelabelType *) expr)->resultcollid;
-			break;
-		case T_CoerceViaIO:
-			coll = ((const CoerceViaIO *) expr)->resultcollid;
-			break;
-		case T_ArrayCoerceExpr:
-			coll = ((const ArrayCoerceExpr *) expr)->resultcollid;
-			break;
-		case T_ConvertRowtypeExpr:
-			coll = InvalidOid;	/* result is always composite */
-			break;
-		case T_CollateExpr:
-			coll = ((const CollateExpr *) expr)->collOid;
-			break;
-		case T_CaseExpr:
-			coll = ((const CaseExpr *) expr)->casecollid;
-			break;
-		case T_CaseTestExpr:
-			coll = ((const CaseTestExpr *) expr)->collation;
-			break;
-		case T_ArrayExpr:
-			coll = ((const ArrayExpr *) expr)->array_collid;
-			break;
-		case T_RowExpr:
-			coll = InvalidOid;	/* result is always composite */
-			break;
-		case T_RowCompareExpr:
-			coll = InvalidOid;	/* result is always boolean */
-			break;
-		case T_CoalesceExpr:
-			coll = ((const CoalesceExpr *) expr)->coalescecollid;
-			break;
-		case T_MinMaxExpr:
-			coll = ((const MinMaxExpr *) expr)->minmaxcollid;
-			break;
-		case T_SQLValueFunction:
-			coll = InvalidOid;	/* all cases return non-collatable types */
-			break;
-		case T_XmlExpr:
-
-			/*
-			 * XMLSERIALIZE returns text from non-collatable inputs, so its
-			 * collation is always default.  The other cases return boolean or
-			 * XML, which are non-collatable.
-			 */
-			if (((const XmlExpr *) expr)->op == IS_XMLSERIALIZE)
-				coll = DEFAULT_COLLATION_OID;
-			else
-				coll = InvalidOid;
-			break;
-		case T_NullTest:
-			coll = InvalidOid;	/* result is always boolean */
-			break;
-		case T_BooleanTest:
-			coll = InvalidOid;	/* result is always boolean */
-			break;
-		case T_CoerceToDomain:
-			coll = ((const CoerceToDomain *) expr)->resultcollid;
-			break;
-		case T_CoerceToDomainValue:
-			coll = ((const CoerceToDomainValue *) expr)->collation;
-			break;
-		case T_SetToDefault:
-			coll = ((const SetToDefault *) expr)->collation;
-			break;
-		case T_CurrentOfExpr:
-			coll = InvalidOid;	/* result is always boolean */
-			break;
-		case T_NextValueExpr:
-			coll = InvalidOid;	/* result is always an integer type */
-			break;
-		case T_InferenceElem:
-			coll = exprCollation((Node *) ((const InferenceElem *) expr)->expr);
-			break;
-		case T_PlaceHolderVar:
-			coll = exprCollation((Node *) ((const PlaceHolderVar *) expr)->phexpr);
-			break;
-		default:
-			elog(ERROR, "unrecognized node type: %d", (int) nodeTag(expr));
-			coll = InvalidOid;	/* keep compiler quiet */
-			break;
-	}
-	return coll;
+	return collation;
 }
 
 /*

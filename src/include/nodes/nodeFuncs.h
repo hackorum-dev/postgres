@@ -29,6 +29,7 @@
 typedef bool (*check_function_callback) (Oid func_id, void *context);
 
 
+extern void exprTypeInfo(const Node *expr, Oid *type, int32 *typemod, Oid *collation);
 extern Oid	exprType(const Node *expr);
 extern int32 exprTypmod(const Node *expr);
 extern bool exprIsLengthCoercion(const Node *expr, int32 *coercedTypmod);
