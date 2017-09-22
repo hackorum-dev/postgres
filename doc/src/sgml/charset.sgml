@@ -677,7 +677,7 @@ SELECT a COLLATE "C" &lt; b COLLATE "POSIX" FROM test1;
      </varlistentry>
 
      <varlistentry>
-      <term><literal>und-x-icu</literal> (for <quote>undefined</quote>)</term>
+      <term><literal>root-x-icu</literal></term>
       <listitem>
        <para>
         ICU <quote>root</quote> collation.  Use this to get a reasonable
@@ -711,7 +711,7 @@ SELECT a COLLATE "C" &lt; b COLLATE "POSIX" FROM test1;
      </varlistentry>
 
      <varlistentry>
-      <term><literal>CREATE COLLATION "und-u-co-emoji-x-icu" (provider = icu, locale = 'und-u-co-emoji')</literal></term>
+      <term><literal>CREATE COLLATION "root-u-co-emoji-x-icu" (provider = icu, locale = 'root-u-co-emoji')</literal></term>
       <listitem>
        <para>
         Root collation with Emoji collation type, per Unicode Technical Standard #51
@@ -723,7 +723,8 @@ SELECT a COLLATE "C" &lt; b COLLATE "POSIX" FROM test1;
       <term><literal>CREATE COLLATION digitslast (provider = icu, locale = 'en-u-kr-latn-digit')</literal></term>
       <listitem>
        <para>
-        Sort digits after Latin letters.  (The default is digits before letters.)
+        Sort digits after Latin letters.  (The default is digits
+        before letters.  Requires ICU version 54 or higher.)
        </para>
       </listitem>
      </varlistentry>
@@ -733,7 +734,7 @@ SELECT a COLLATE "C" &lt; b COLLATE "POSIX" FROM test1;
       <listitem>
        <para>
         Sort upper-case letters before lower-case letters.  (The default is
-        lower-case letters first.)
+        lower-case letters first.  Requires ICU version 54 or higher.)
        </para>
       </listitem>
      </varlistentry>
@@ -742,7 +743,7 @@ SELECT a COLLATE "C" &lt; b COLLATE "POSIX" FROM test1;
       <term><literal>CREATE COLLATION special (provider = icu, locale = 'en-u-kf-upper-kr-latn-digit')</literal></term>
       <listitem>
        <para>
-        Combines both of the above options.
+        Combines both of the above options.  (Requires ICU version 54 or higher.)
        </para>
       </listitem>
      </varlistentry>
@@ -753,7 +754,7 @@ SELECT a COLLATE "C" &lt; b COLLATE "POSIX" FROM test1;
        <para>
         Numeric ordering, sorts sequences of digits by their numeric value,
         for example: <literal>A-21</literal> &lt; <literal>A-123</literal>
-        (also known as natural sort).
+        (also known as natural sort).  (Requires ICU version 54 or higher.)
        </para>
       </listitem>
      </varlistentry>

@@ -343,20 +343,30 @@ CREATE SCHEMA test_schema;
 do $$
 BEGIN
   EXECUTE 'CREATE COLLATION test0 (provider = icu, locale = ' ||
-          quote_literal(current_setting('lc_collate')) || ');';
+          'en' || ');';
 END
 $$;
 CREATE COLLATION test0 FROM "C"; -- fail, duplicate name
+--  Fail, ICU locale string exceeds default NAMEDATALEN (and any reasonable
+--  custom build value):
+do $inline$
+BEGIN
+  EXECUTE $cc$CREATE COLLATION test1 (provider = icu, locale = '$cc$ ||
+          'en-x-' || repeat('har', 100) || $cc$');$cc$;
+END
+$inline$;
 do $$
 BEGIN
   EXECUTE 'CREATE COLLATION test1 (provider = icu, lc_collate = ' ||
-          quote_literal(current_setting('lc_collate')) ||
+          'en' ||
           ', lc_ctype = ' ||
-          quote_literal(current_setting('lc_ctype')) || ');';
+          'en' || ');';
 END
 $$;
-CREATE COLLATION test3 (provider = icu, lc_collate = 'en_US.utf8'); -- fail, need lc_ctype
-CREATE COLLATION testx (provider = icu, locale = 'nonsense'); /* never fails with ICU */  DROP COLLATION testx;
+CREATE COLLATION test3 (provider = icu, lc_collate = 'en_US.utf8'); -- fail, need lc_ctype (would fail anyway)
+CREATE COLLATION alien (provider = icu, locale = 'alien'); /* never fails, could be unknown language */  DROP COLLATION alien;
+CREATE COLLATION latin (provider = icu, locale = 'und-latn'); /* works even on ICU 4.2, sensible use of und placeholder */
+DROP COLLATION latin;
 
 CREATE COLLATION test4 FROM nonsense;
 CREATE COLLATION test5 FROM test0;
@@ -430,4 +440,4 @@ DROP SCHEMA collate_tests CASCADE;
 RESET search_path;
 
 -- leave a collation for pg_upgrade test
-CREATE COLLATION coll_icu_upgrade FROM "und-x-icu";
+CREATE COLLATION coll_icu_upgrade FROM "root-x-icu";

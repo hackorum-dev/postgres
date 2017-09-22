@@ -1367,18 +1367,34 @@ pg_newlocale_from_collation(Oid collid)
 #ifdef USE_ICU
 			UCollator  *collator;
 			UErrorCode	status;
+			const char *iculocalename;
+			char	   *localenameold = NULL;
 
 			if (strcmp(collcollate, collctype) != 0)
 				ereport(ERROR,
 						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 						 errmsg("collations with different collate and ctype values are not supported by ICU")));
 
+			/*
+			 * Versions of ICU prior to ICU 54 do not support locale names in
+			 * BCP 47 format within ucol_open().  Convert as needed.
+			 */
+#if U_ICU_VERSION_MAJOR_NUM >= 54
+			iculocalename = collcollate;
+#else
+			localenameold = icu_to_localename(collcollate);
+			iculocalename = localenameold;
+#endif
+
 			status = U_ZERO_ERROR;
-			collator = ucol_open(collcollate, &status);
+			collator = ucol_open(iculocalename, &status);
 			if (U_FAILURE(status))
 				ereport(ERROR,
-						(errmsg("could not open collator for locale \"%s\": %s",
-								collcollate, u_errorName(status))));
+						(errmsg("could not open collator for collcollate \"%s\" (locale \"%s\"): %s",
+								collcollate, iculocalename, u_errorName(status))));
+
+			if (localenameold)
+				pfree(localenameold);
 
 			/* We will leak this string if we get an error below :-( */
 			result.info.icu.locale = MemoryContextStrdup(TopMemoryContext,
@@ -1459,14 +1475,32 @@ get_collation_actual_version(char collprovider, const char *collcollate)
 		UCollator  *collator;
 		UErrorCode	status;
 		UVersionInfo versioninfo;
+		const char *iculocalename;
+		char	   *localenameold = NULL;
 		char		buf[U_MAX_VERSION_STRING_LENGTH];
 
+		/*
+		 * For ICU, we expect collcollate to be in BCP 47 format, per general
+		 * convention.  Versions of ICU prior to ICU 54 do not support locale
+		 * names in BCP 47 format within ucol_open(), though.  Convert as
+		 * needed.
+		 */
+#if U_ICU_VERSION_MAJOR_NUM >= 54
+		iculocalename = collcollate;
+#else
+
+		localenameold = icu_to_localename(collcollate);
+		iculocalename = localenameold;
+#endif
+
 		status = U_ZERO_ERROR;
-		collator = ucol_open(collcollate, &status);
+		collator = ucol_open(iculocalename, &status);
 		if (U_FAILURE(status))
 			ereport(ERROR,
-					(errmsg("could not open collator for locale \"%s\": %s",
-							collcollate, u_errorName(status))));
+					(errmsg("could not open collator for collcollate \"%s\" (locale \"%s\"): %s",
+							collcollate, iculocalename, u_errorName(status))));
+		if (localenameold)
+			pfree(localenameold);
 		ucol_getVersion(collator, versioninfo);
 		ucol_close(collator);
 
@@ -1588,6 +1622,140 @@ icu_from_uchar(char **result, const UChar *buff_uchar, int32_t len_uchar)
 	return len_result;
 }
 
+/*
+ * Get an ICU locale name for the specified ICU collcollate.  Since ICU
+ * collcollate is in BCP 47 format on every ICU version, per general
+ * convention, this is simply a wrapper on the ICU facility for converting to
+ * old style locale names from BCP 47 format.
+ *
+ * We export this just to be consistent.
+ *
+ * The result is a palloc'd string.
+ */
+char *
+icu_to_localename(const char *collcollate)
+{
+	UErrorCode	status;
+	char		buf[ULOC_FULLNAME_CAPACITY];
+
+	/*
+	 * We never actually need to use this on versions of ICU that are
+	 * documented as supporting the BCP 47 format natively (See ucol_open()
+	 * documentation).  While it would be harmless to do unneeded translations,
+	 * it still seems like a good idea to avoid working with the old locale
+	 * format where it is deprecated.  (This does mean that the old format is
+	 * actually accepted by CREATE COLLATION with later ICU versions, but that
+	 * doesn't seem worth fixing.)
+	 */
+	Assert(U_ICU_VERSION_MAJOR_NUM < 54);
+
+	/*
+	 * There may be some loss of information in very rare cases where
+	 * "grandfathered [BCP 47] tags have no modern [ISO 639-1, 639-2, 639-3]
+	 * replacement".  Most constructed language tags have a mapping available,
+	 * and no constructed language has its own CLDR collation file, so this is
+	 * considered to be acceptable.
+	 */
+	status = U_ZERO_ERROR;
+	uloc_forLanguageTag(collcollate, buf, sizeof(buf), NULL, &status);
+	if (U_FAILURE(status))
+		ereport(ERROR,
+				(errmsg("could not get ICU locale name for collation \"%s\": %s",
+						collcollate, u_errorName(status))));
+
+	return pstrdup(buf);
+}
+
+/*
+ * Get an ICU collcollate for the specified ICU locale name.  Since ICU
+ * collcollate is in BCP 47 format on every ICU version, per general
+ * convention, this is simply a wrapper on the ICU facility for converting old
+ * style locale names to BCP 47 format.
+ *
+ * The result is a palloc'd string.
+ */
+char *
+icu_from_localename(const char *localename)
+{
+	UErrorCode	status;
+	char		buf[ULOC_FULLNAME_CAPACITY];
+
+	status = U_ZERO_ERROR;
+	uloc_toLanguageTag(localename, buf, sizeof(buf), TRUE, &status);
+	if (U_FAILURE(status))
+		ereport(ERROR,
+				(errmsg("could not get BCP 47 language tag for ICU locale name \"%s\": %s",
+						localename, u_errorName(status))));
+
+	return pstrdup(buf);
+}
+
+/*
+ * Get a display name for an ICU collation.
+ *
+ * Note that we expect collcollate to be in BCP 47 format, per general
+ * convention.  As a consequence of the fact that ICU is an upstream consumer
+ * of the CLDR locale data, producing a display name that describes all aspects
+ * of collation behavior (e.g., maps "kf" to "colcasefirst=upper") doesn't
+ * necessarily indicate that that's the behavior you get, at least for
+ * collation attributes (variant collations, like "de@collation=phonebook",
+ * still work on all versions, though).  Some ICU versions (at least ICU 4.2)
+ * require that collation attributes be set using ucol_setAttribute(), which
+ * never happens.
+ *
+ * The result is a palloc'd string, or NULL if we can't get a display name
+ * because collcollate is entirely invalid (this can also happen during initdb,
+ * when an ICU incompatible database encoding is in use).  Display name is
+ * currently always in English.  This should be changed to localize display
+ * name at some point.
+ */
+char *
+icu_get_dname_from_collcollate(const char *collcollate)
+{
+	UErrorCode	status;
+	UChar		displayname[256];
+	int32_t		len_uchar;
+	const char *iculocalename;
+	char	   *localenameold = NULL;
+	char	   *result;
+
+	/* No point in even trying if database encoding unsupported */
+	if (!is_encoding_supported_by_icu(GetDatabaseEncoding()))
+		return NULL;
+
+	/*
+	 * Versions of ICU prior to ICU 54 do not support locale names in BCP 47
+	 * format within ucol_open().  We assume that the same problem exists for
+	 * uloc_getDisplayName().  Convert as needed.
+	 */
+#if U_ICU_VERSION_MAJOR_NUM >= 54
+	iculocalename = collcollate;
+#else
+	localenameold = icu_to_localename(collcollate);
+	iculocalename = localenameold;
+#endif
+	status = U_ZERO_ERROR;
+	len_uchar = uloc_getDisplayName(iculocalename, ULOC_ENGLISH,
+									displayname, lengthof(displayname),
+									&status);
+
+	if (localenameold)
+		pfree(localenameold);
+
+	if (U_FAILURE(status) || len_uchar <= 0)
+	{
+		ereport(DEBUG1,
+				(errmsg("could not get display name for collation \"%s\": %s",
+						collcollate, u_errorName(status))));
+
+		return NULL;
+	}
+
+	/* Return display name in the database encoding */
+	icu_from_uchar(&result, displayname, len_uchar);
+
+	return result;
+}
 #endif							/* USE_ICU */
 
 /*

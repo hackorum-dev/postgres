@@ -189,7 +189,30 @@ DefineCollation(ParseState *pstate, List *names, List *parameters, bool if_not_e
 	if (!fromEl)
 	{
 		if (collprovider == COLLPROVIDER_ICU)
+		{
+#ifdef USE_ICU
+			char *dname;
+
+			/* Create ICU display name to sanitize user locale string */
+			dname = icu_get_dname_from_collcollate(collcollate);
+
+			/* If no display name created, assume an invalid collcollate */
+			if (!dname)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_NAME),
+						 errmsg("invalid ICU locale string \"%s\"", collcollate)));
+			else
+				ereport(DEBUG1,
+						(errmsg("collation display name: \"%s\"", dname)));
+#endif
+			/* Do not permit truncation of ICU collation's collcollate */
+			if (strlen(collcollate) >= NAMEDATALEN)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("ICU locale string too long")));
+
 			collencoding = -1;
+		}
 		else
 		{
 			collencoding = GetDatabaseEncoding();
@@ -433,67 +456,6 @@ cmpaliases(const void *a, const void *b)
 #endif							/* READ_LOCALE_A_OUTPUT */
 
 
-#ifdef USE_ICU
-/*
- * Get the ICU language tag for a locale name.
- * The result is a palloc'd string.
- */
-static char *
-get_icu_language_tag(const char *localename)
-{
-	char		buf[ULOC_FULLNAME_CAPACITY];
-	UErrorCode	status;
-
-	status = U_ZERO_ERROR;
-	uloc_toLanguageTag(localename, buf, sizeof(buf), TRUE, &status);
-	if (U_FAILURE(status))
-		ereport(ERROR,
-				(errmsg("could not convert locale name \"%s\" to language tag: %s",
-						localename, u_errorName(status))));
-
-	return pstrdup(buf);
-}
-
-/*
- * Get a comment (specifically, the display name) for an ICU locale.
- * The result is a palloc'd string, or NULL if we can't get a comment
- * or find that it's not all ASCII.  (We can *not* accept non-ASCII
- * comments, because the contents of template0 must be encoding-agnostic.)
- */
-static char *
-get_icu_locale_comment(const char *localename)
-{
-	UErrorCode	status;
-	UChar		displayname[128];
-	int32		len_uchar;
-	int32		i;
-	char	   *result;
-
-	status = U_ZERO_ERROR;
-	len_uchar = uloc_getDisplayName(localename, "en",
-									displayname, lengthof(displayname),
-									&status);
-	if (U_FAILURE(status))
-		return NULL;			/* no good reason to raise an error */
-
-	/* Check for non-ASCII comment (can't use is_all_ascii for this) */
-	for (i = 0; i < len_uchar; i++)
-	{
-		if (displayname[i] > 127)
-			return NULL;
-	}
-
-	/* OK, transcribe */
-	result = palloc(len_uchar + 1);
-	for (i = 0; i < len_uchar; i++)
-		result[i] = displayname[i];
-	result[len_uchar] = '\0';
-
-	return result;
-}
-#endif							/* USE_ICU */
-
-
 /*
  * pg_import_system_collations: add known system collations to pg_collation
  */
@@ -687,28 +649,32 @@ pg_import_system_collations(PG_FUNCTION_ARGS)
 		 */
 		for (i = -1; i < uloc_countAvailable(); i++)
 		{
-			const char *name;
-			char	   *langtag;
+			const char *localename;
 			char	   *icucomment;
-			const char *collcollate;
+			char	   *collcollate;
 			Oid			collid;
 
 			if (i == -1)
-				name = "";		/* ICU root locale */
+				localename = "root";	/* ICU root locale */
 			else
-				name = uloc_getAvailable(i);
+				localename = uloc_getAvailable(i);
 
-			langtag = get_icu_language_tag(name);
-			collcollate = U_ICU_VERSION_MAJOR_NUM >= 54 ? langtag : name;
+			/* collcollate is canonicalized in BCP 47 language tag format */
+			collcollate = icu_from_localename(localename);
 
 			/*
 			 * Be paranoid about not allowing any non-ASCII strings into
 			 * pg_collation
 			 */
-			if (!is_all_ascii(langtag) || !is_all_ascii(collcollate))
+			if (!is_all_ascii(collcollate))
 				continue;
 
-			collid = CollationCreate(psprintf("%s-x-icu", langtag),
+			/*
+			 * Collation name is collcollate with private BCP 47 subtag *-x-icu
+			 * appended, to ensure that there will never be a name conflict
+			 * with another collation provider's collation.
+			 */
+			collid = CollationCreate(psprintf("%s-x-icu", collcollate),
 									 nspid, GetUserId(),
 									 COLLPROVIDER_ICU, -1,
 									 collcollate, collcollate,
@@ -720,8 +686,8 @@ pg_import_system_collations(PG_FUNCTION_ARGS)
 
 				CommandCounterIncrement();
 
-				icucomment = get_icu_locale_comment(name);
-				if (icucomment)
+				icucomment = icu_get_dname_from_collcollate(collcollate);
+				if (icucomment && is_all_ascii(icucomment))
 					CreateComments(collid, CollationRelationId, 0,
 								   icucomment);
 			}
