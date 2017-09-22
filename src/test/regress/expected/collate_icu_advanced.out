@@ -1,0 +1,257 @@
+SET client_encoding TO UTF8;
+CREATE TABLE names (name text);
+INSERT INTO names VALUES ('Göbel'), ('Goethe'), ('Goldmann'), ('Göthe'), ('Götz');
+CREATE COLLATION "de-u-co-phonebk-x-icu/1" (provider = icu, locale = 'de-u-co-phonebk');
+CREATE COLLATION "de-u-co-phonebk-x-icu/2" (provider = icu, locale = 'de@collation=phonebook');
+SELECT name FROM names ORDER BY name COLLATE "de-x-icu";
+   name   
+----------
+ Göbel
+ Goethe
+ Goldmann
+ Göthe
+ Götz
+(5 rows)
+
+SELECT name FROM names ORDER BY name COLLATE "de-u-co-phonebk-x-icu/1";
+   name   
+----------
+ Göbel
+ Goethe
+ Göthe
+ Götz
+ Goldmann
+(5 rows)
+
+SELECT name FROM names ORDER BY name COLLATE "de-u-co-phonebk-x-icu/2";
+   name   
+----------
+ Göbel
+ Goethe
+ Göthe
+ Götz
+ Goldmann
+(5 rows)
+
+CREATE COLLATION "und-u-co-emoji-x-icu/1" (provider = icu, locale = 'und-u-co-emoji');
+CREATE COLLATION "und-u-co-emoji-x-icu/2" (provider = icu, locale = '@collation=emoji');
+SELECT chr(x) FROM generate_series(x'1F634'::int, x'1F644'::int) AS _(x) ORDER BY chr(x) COLLATE "und-x-icu";
+ chr 
+-----
+ 😴
+ 😵
+ 😶
+ 😷
+ 😸
+ 😹
+ 😺
+ 😻
+ 😼
+ 😽
+ 😾
+ 😿
+ 🙀
+ 🙁
+ 🙂
+ 🙃
+ 🙄
+(17 rows)
+
+SELECT chr(x) FROM generate_series(x'1F634'::int, x'1F644'::int) AS _(x) ORDER BY chr(x) COLLATE "und-u-co-emoji-x-icu/1";
+ chr 
+-----
+ 🙂
+ 😶
+ 🙄
+ 😴
+ 🙃
+ 🙁
+ 😵
+ 😷
+ 😺
+ 😸
+ 😹
+ 😻
+ 😼
+ 😽
+ 🙀
+ 😿
+ 😾
+(17 rows)
+
+SELECT chr(x) FROM generate_series(x'1F634'::int, x'1F644'::int) AS _(x) ORDER BY chr(x) COLLATE "und-u-co-emoji-x-icu/2";
+ chr 
+-----
+ 🙂
+ 😶
+ 🙄
+ 😴
+ 🙃
+ 🙁
+ 😵
+ 😷
+ 😺
+ 😸
+ 😹
+ 😻
+ 😼
+ 😽
+ 🙀
+ 😿
+ 😾
+(17 rows)
+
+CREATE TABLE test1 (x text);
+INSERT INTO test1 VALUES ('1'), ('12'), ('123'), ('2'), ('21'), ('a'), ('b'), ('c'), ('A'), ('B'), ('C');
+CREATE COLLATION digitslast1 (provider = icu, locale = 'en-u-kr-latn-digit');
+CREATE COLLATION digitslast2 (provider = icu, locale = 'en@colReorder=latn-digit');
+SELECT * FROM test1 ORDER BY x COLLATE "und-x-icu";
+  x  
+-----
+ 1
+ 12
+ 123
+ 2
+ 21
+ a
+ A
+ b
+ B
+ c
+ C
+(11 rows)
+
+SELECT * FROM test1 ORDER BY x COLLATE digitslast1;
+  x  
+-----
+ a
+ A
+ b
+ B
+ c
+ C
+ 1
+ 12
+ 123
+ 2
+ 21
+(11 rows)
+
+SELECT * FROM test1 ORDER BY x COLLATE digitslast2;
+  x  
+-----
+ a
+ A
+ b
+ B
+ c
+ C
+ 1
+ 12
+ 123
+ 2
+ 21
+(11 rows)
+
+CREATE COLLATION upperfirst1 (provider = icu, locale = 'en-u-kf-upper');
+CREATE COLLATION upperfirst2 (provider = icu, locale = 'en@colCaseFirst=upper');
+SELECT * FROM test1 ORDER BY x COLLATE upperfirst1;
+  x  
+-----
+ 1
+ 12
+ 123
+ 2
+ 21
+ A
+ a
+ B
+ b
+ C
+ c
+(11 rows)
+
+SELECT * FROM test1 ORDER BY x COLLATE upperfirst2;
+  x  
+-----
+ 1
+ 12
+ 123
+ 2
+ 21
+ A
+ a
+ B
+ b
+ C
+ c
+(11 rows)
+
+CREATE COLLATION special1 (provider = icu, locale = 'en-u-kf-upper-kr-latn-digit');
+CREATE COLLATION special2 (provider = icu, locale = 'en@colCaseFirst=upper;colReorder=latn-digit');
+SELECT * FROM test1 ORDER BY x COLLATE special1;
+  x  
+-----
+ A
+ a
+ B
+ b
+ C
+ c
+ 1
+ 12
+ 123
+ 2
+ 21
+(11 rows)
+
+SELECT * FROM test1 ORDER BY x COLLATE special2;
+  x  
+-----
+ A
+ a
+ B
+ b
+ C
+ c
+ 1
+ 12
+ 123
+ 2
+ 21
+(11 rows)
+
+CREATE COLLATION numeric1 (provider = icu, locale = 'en-u-kn-true');
+CREATE COLLATION numeric2 (provider = icu, locale = 'en@colNumeric=yes');
+SELECT * FROM test1 ORDER BY x COLLATE numeric1;
+  x  
+-----
+ 1
+ 2
+ 12
+ 21
+ 123
+ a
+ A
+ b
+ B
+ c
+ C
+(11 rows)
+
+SELECT * FROM test1 ORDER BY x COLLATE numeric2;
+  x  
+-----
+ 1
+ 2
+ 12
+ 21
+ 123
+ a
+ A
+ b
+ B
+ c
+ C
+(11 rows)
+
