@@ -80,6 +80,8 @@ static void show_upper_qual(List *qual, const char *qlabel,
 				ExplainState *es);
 static void show_sort_keys(SortState *sortstate, List *ancestors,
 			   ExplainState *es);
+static void show_append_keys(AppendState *mstate, List *ancestors,
+					   ExplainState *es);
 static void show_merge_append_keys(MergeAppendState *mstate, List *ancestors,
 					   ExplainState *es);
 static void show_agg_keys(AggState *astate, List *ancestors,
@@ -1602,6 +1604,10 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			show_sort_keys(castNode(SortState, planstate), ancestors, es);
 			show_sort_info(castNode(SortState, planstate), es);
 			break;
+		case T_Append:
+			show_append_keys(castNode(AppendState, planstate),
+								   ancestors, es);
+			break;
 		case T_MergeAppend:
 			show_merge_append_keys(castNode(MergeAppendState, planstate),
 								   ancestors, es);
@@ -1744,7 +1750,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 							   ancestors, es);
 			break;
 		case T_MergeAppend:
-			ExplainMemberNodes(((MergeAppend *) plan)->mergeplans,
+			ExplainMemberNodes(((MergeAppend*) plan)->plan.appendplans,
 							   ((MergeAppendState *) planstate)->mergeplans,
 							   ancestors, es);
 			break;
@@ -1936,13 +1942,29 @@ show_sort_keys(SortState *sortstate, List *ancestors, ExplainState *es)
 }
 
 /*
+ * Likewise, for an Append node.
+ */
+static void
+show_append_keys(AppendState *mstate, List *ancestors,
+					   ExplainState *es)
+{
+	Append *plan = (Append *) mstate->ps.plan;
+
+	show_sort_group_keys((PlanState *) mstate, "Sort Key",
+						 plan->numCols, plan->sortColIdx,
+						 plan->sortOperators, plan->collations,
+						 plan->nullsFirst,
+						 ancestors, es);
+}
+
+/*
  * Likewise, for a MergeAppend node.
  */
 static void
 show_merge_append_keys(MergeAppendState *mstate, List *ancestors,
 					   ExplainState *es)
 {
-	MergeAppend *plan = (MergeAppend *) mstate->ps.plan;
+	Append *plan = (Append *) mstate->ps.plan;
 
 	show_sort_group_keys((PlanState *) mstate, "Sort Key",
 						 plan->numCols, plan->sortColIdx,

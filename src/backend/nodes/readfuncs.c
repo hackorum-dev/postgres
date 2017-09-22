@@ -1582,18 +1582,31 @@ _readModifyTable(void)
 	READ_DONE();
 }
 
+static void
+ReadCommonAppend(Append* local_node)
+{
+	READ_TEMP_LOCALS();
+
+	ReadCommonPlan(&local_node->plan);
+
+	READ_NODE_FIELD(partitioned_rels);
+	READ_NODE_FIELD(appendplans);
+	READ_INT_FIELD(numCols);
+	READ_ATTRNUMBER_ARRAY(sortColIdx, local_node->numCols);
+	READ_OID_ARRAY(sortOperators, local_node->numCols);
+	READ_OID_ARRAY(collations, local_node->numCols);
+	READ_BOOL_ARRAY(nullsFirst, local_node->numCols);
+}
+
 /*
  * _readAppend
  */
 static Append *
 _readAppend(void)
 {
-	READ_LOCALS(Append);
+	READ_LOCALS_NO_FIELDS(Append);
 
-	ReadCommonPlan(&local_node->plan);
-
-	READ_NODE_FIELD(partitioned_rels);
-	READ_NODE_FIELD(appendplans);
+	ReadCommonAppend(local_node);
 
 	READ_DONE();
 }
@@ -1604,17 +1617,9 @@ _readAppend(void)
 static MergeAppend *
 _readMergeAppend(void)
 {
-	READ_LOCALS(MergeAppend);
+	READ_LOCALS_NO_FIELDS(MergeAppend);
 
-	ReadCommonPlan(&local_node->plan);
-
-	READ_NODE_FIELD(partitioned_rels);
-	READ_NODE_FIELD(mergeplans);
-	READ_INT_FIELD(numCols);
-	READ_ATTRNUMBER_ARRAY(sortColIdx, local_node->numCols);
-	READ_OID_ARRAY(sortOperators, local_node->numCols);
-	READ_OID_ARRAY(collations, local_node->numCols);
-	READ_BOOL_ARRAY(nullsFirst, local_node->numCols);
+	ReadCommonAppend(&local_node->plan);
 
 	READ_DONE();
 }

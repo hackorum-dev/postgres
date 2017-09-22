@@ -932,12 +932,12 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 				 * targetlist or check quals.
 				 */
 				set_dummy_tlist_references(plan, rtoffset);
-				Assert(splan->plan.qual == NIL);
-				foreach(l, splan->partitioned_rels)
+				Assert(splan->plan.plan.qual == NIL);
+				foreach(l, splan->plan.partitioned_rels)
 				{
 					lfirst_int(l) += rtoffset;
 				}
-				foreach(l, splan->mergeplans)
+				foreach(l, splan->plan.appendplans)
 				{
 					lfirst(l) = set_plan_refs(root,
 											  (Plan *) lfirst(l),

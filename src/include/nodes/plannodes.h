@@ -248,6 +248,17 @@ typedef struct Append
 	/* RT indexes of non-leaf tables in a partition tree */
 	List	   *partitioned_rels;
 	List	   *appendplans;
+	/* remaining fields are just like the sort-key info in struct Sort */
+	/* FIXME: We should either
+	 * 	- define Append as sort + appendplans
+	 * 	- define Append "like" sort and define MergeAppend as Append, only with
+	 * 	a different tag
+	 */
+	int			numCols;		/* number of sort-key columns */
+	AttrNumber *sortColIdx;		/* their indexes in the target list */
+	Oid		   *sortOperators;	/* OIDs of operators to sort them by */
+	Oid		   *collations;		/* OIDs of collations */
+	bool	   *nullsFirst;		/* NULLS FIRST/LAST directions */
 } Append;
 
 /* ----------------
@@ -257,16 +268,7 @@ typedef struct Append
  */
 typedef struct MergeAppend
 {
-	Plan		plan;
-	/* RT indexes of non-leaf tables in a partition tree */
-	List	   *partitioned_rels;
-	List	   *mergeplans;
-	/* remaining fields are just like the sort-key info in struct Sort */
-	int			numCols;		/* number of sort-key columns */
-	AttrNumber *sortColIdx;		/* their indexes in the target list */
-	Oid		   *sortOperators;	/* OIDs of operators to sort them by */
-	Oid		   *collations;		/* OIDs of collations */
-	bool	   *nullsFirst;		/* NULLS FIRST/LAST directions */
+	Append 		plan;
 } MergeAppend;
 
 /* ----------------

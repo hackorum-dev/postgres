@@ -224,6 +224,19 @@ _copyModifyTable(const ModifyTable *from)
 	return newnode;
 }
 
+static void
+copyAppendFields(const Append *from, Append *newnode)
+{
+	CopyPlanFields((const Plan *) from, (Plan *) newnode);
+	COPY_NODE_FIELD(partitioned_rels);
+	COPY_NODE_FIELD(appendplans);
+	COPY_SCALAR_FIELD(numCols);
+	COPY_POINTER_FIELD(sortColIdx, from->numCols * sizeof(AttrNumber));
+	COPY_POINTER_FIELD(sortOperators, from->numCols * sizeof(Oid));
+	COPY_POINTER_FIELD(collations, from->numCols * sizeof(Oid));
+	COPY_POINTER_FIELD(nullsFirst, from->numCols * sizeof(bool));
+}
+
 /*
  * _copyAppend
  */
@@ -232,16 +245,7 @@ _copyAppend(const Append *from)
 {
 	Append	   *newnode = makeNode(Append);
 
-	/*
-	 * copy node superclass fields
-	 */
-	CopyPlanFields((const Plan *) from, (Plan *) newnode);
-
-	/*
-	 * copy remainder of node
-	 */
-	COPY_NODE_FIELD(partitioned_rels);
-	COPY_NODE_FIELD(appendplans);
+	copyAppendFields(from, newnode);
 
 	return newnode;
 }
@@ -254,21 +258,7 @@ _copyMergeAppend(const MergeAppend *from)
 {
 	MergeAppend *newnode = makeNode(MergeAppend);
 
-	/*
-	 * copy node superclass fields
-	 */
-	CopyPlanFields((const Plan *) from, (Plan *) newnode);
-
-	/*
-	 * copy remainder of node
-	 */
-	COPY_NODE_FIELD(partitioned_rels);
-	COPY_NODE_FIELD(mergeplans);
-	COPY_SCALAR_FIELD(numCols);
-	COPY_POINTER_FIELD(sortColIdx, from->numCols * sizeof(AttrNumber));
-	COPY_POINTER_FIELD(sortOperators, from->numCols * sizeof(Oid));
-	COPY_POINTER_FIELD(collations, from->numCols * sizeof(Oid));
-	COPY_POINTER_FIELD(nullsFirst, from->numCols * sizeof(bool));
+	copyAppendFields((const Append *)from, (Append *)newnode);
 
 	return newnode;
 }

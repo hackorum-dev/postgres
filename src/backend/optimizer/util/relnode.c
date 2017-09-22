@@ -151,6 +151,7 @@ build_simple_rel(PlannerInfo *root, int relid, RelOptInfo *parent)
 	rel->boundinfo = NULL;
 	rel->part_rels = NULL;
 	rel->partexprs = NULL;
+	rel->part_pathkeys = NIL;
 
 	/*
 	 * Pass top parent's relids down the inheritance hierarchy. If the parent

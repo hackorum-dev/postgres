@@ -386,27 +386,14 @@ _outModifyTable(StringInfo str, const ModifyTable *node)
 }
 
 static void
-_outAppend(StringInfo str, const Append *node)
+_outAppendInfo(StringInfo str, const Append *node)
 {
-	WRITE_NODE_TYPE("APPEND");
+	int i;
 
 	_outPlanInfo(str, (const Plan *) node);
 
 	WRITE_NODE_FIELD(partitioned_rels);
 	WRITE_NODE_FIELD(appendplans);
-}
-
-static void
-_outMergeAppend(StringInfo str, const MergeAppend *node)
-{
-	int			i;
-
-	WRITE_NODE_TYPE("MERGEAPPEND");
-
-	_outPlanInfo(str, (const Plan *) node);
-
-	WRITE_NODE_FIELD(partitioned_rels);
-	WRITE_NODE_FIELD(mergeplans);
 
 	WRITE_INT_FIELD(numCols);
 
@@ -425,6 +412,20 @@ _outMergeAppend(StringInfo str, const MergeAppend *node)
 	appendStringInfoString(str, " :nullsFirst");
 	for (i = 0; i < node->numCols; i++)
 		appendStringInfo(str, " %s", booltostr(node->nullsFirst[i]));
+}
+
+static void
+_outAppend(StringInfo str, const Append *node)
+{
+	WRITE_NODE_TYPE("APPEND");
+	_outAppendInfo(str, node);
+}
+
+static void
+_outMergeAppend(StringInfo str, const MergeAppend *node)
+{
+	WRITE_NODE_TYPE("MERGEAPPEND");
+	_outAppendInfo(str, (const Append *) &node->plan);
 }
 
 static void

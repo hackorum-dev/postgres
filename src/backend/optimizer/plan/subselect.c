@@ -2589,7 +2589,7 @@ finalize_plan(PlannerInfo *root, Plan *plan,
 			{
 				ListCell   *l;
 
-				foreach(l, ((MergeAppend *) plan)->mergeplans)
+				foreach(l, ((MergeAppend *) plan)->plan.appendplans)
 				{
 					context.paramids =
 						bms_add_members(context.paramids,

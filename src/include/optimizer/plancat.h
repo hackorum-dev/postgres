@@ -35,6 +35,8 @@ extern void estimate_rel_size(Relation rel, int32 *attr_widths,
 
 extern int32 get_relation_data_width(Oid relid, int32 *attr_widths);
 
+extern void generate_pathkeys_for_partitioned_tables(PlannerInfo *root);
+
 extern bool relation_excluded_by_constraints(PlannerInfo *root,
 								 RelOptInfo *rel, RangeTblEntry *rte);
 

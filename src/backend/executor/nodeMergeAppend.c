@@ -64,6 +64,7 @@ MergeAppendState *
 ExecInitMergeAppend(MergeAppend *node, EState *estate, int eflags)
 {
 	MergeAppendState *mergestate = makeNode(MergeAppendState);
+	Append			 *append = &node->plan;
 	PlanState **mergeplanstates;
 	int			nplans;
 	int			i;
@@ -76,12 +77,12 @@ ExecInitMergeAppend(MergeAppend *node, EState *estate, int eflags)
 	 * Lock the non-leaf tables in the partition tree controlled by this node.
 	 * It's a no-op for non-partitioned parent tables.
 	 */
-	ExecLockNonLeafAppendTables(node->partitioned_rels, estate);
+	ExecLockNonLeafAppendTables(append->partitioned_rels, estate);
 
 	/*
 	 * Set up empty vector of subplan states
 	 */
-	nplans = list_length(node->mergeplans);
+	nplans = list_length(append->appendplans);
 
 	mergeplanstates = (PlanState **) palloc0(nplans * sizeof(PlanState *));
 
@@ -116,7 +117,7 @@ ExecInitMergeAppend(MergeAppend *node, EState *estate, int eflags)
 	 * results into the array "mergeplans".
 	 */
 	i = 0;
-	foreach(lc, node->mergeplans)
+	foreach(lc, append->appendplans)
 	{
 		Plan	   *initNode = (Plan *) lfirst(lc);
 
@@ -133,17 +134,17 @@ ExecInitMergeAppend(MergeAppend *node, EState *estate, int eflags)
 	/*
 	 * initialize sort-key information
 	 */
-	mergestate->ms_nkeys = node->numCols;
-	mergestate->ms_sortkeys = palloc0(sizeof(SortSupportData) * node->numCols);
+	mergestate->ms_nkeys = append->numCols;
+	mergestate->ms_sortkeys = palloc0(sizeof(SortSupportData) * append->numCols);
 
-	for (i = 0; i < node->numCols; i++)
+	for (i = 0; i < append->numCols; i++)
 	{
 		SortSupport sortKey = mergestate->ms_sortkeys + i;
 
 		sortKey->ssup_cxt = CurrentMemoryContext;
-		sortKey->ssup_collation = node->collations[i];
-		sortKey->ssup_nulls_first = node->nullsFirst[i];
-		sortKey->ssup_attno = node->sortColIdx[i];
+		sortKey->ssup_collation = append->collations[i];
+		sortKey->ssup_nulls_first = append->nullsFirst[i];
+		sortKey->ssup_attno = append->sortColIdx[i];
 
 		/*
 		 * It isn't feasible to perform abbreviated key conversion, since
@@ -154,7 +155,7 @@ ExecInitMergeAppend(MergeAppend *node, EState *estate, int eflags)
 		 */
 		sortKey->abbreviate = false;
 
-		PrepareSortSupportFromOrderingOp(node->sortOperators[i], sortKey);
+		PrepareSortSupportFromOrderingOp(append->sortOperators[i], sortKey);
 	}
 
 	/*

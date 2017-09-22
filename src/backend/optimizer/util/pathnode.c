@@ -1200,11 +1200,21 @@ create_tidscan_path(PlannerInfo *root, RelOptInfo *rel, List *tidquals,
  * Note that we must handle subpaths = NIL, representing a dummy access path.
  */
 AppendPath *
-create_append_path(RelOptInfo *rel, List *subpaths, Relids required_outer,
-				   int parallel_workers, List *partitioned_rels)
+create_append_path(PlannerInfo *root, RelOptInfo *rel, List *subpaths,
+				   Relids required_outer, int parallel_workers,
+				   List *partitioned_rels, List *pathkeys)
 {
 	AppendPath *pathnode = makeNode(AppendPath);
 	ListCell   *l;
+	double		limit_tuples;
+	Cost		input_startup_cost;
+	Cost		input_total_cost;
+
+	/*
+	 * Just to make sure that nobody is trying to build a parallel sorted
+	 * append path
+	 */
+	Assert(parallel_workers > 0 ? pathkeys == NIL : true);
 
 	pathnode->path.pathtype = T_Append;
 	pathnode->path.parent = rel;
@@ -1214,7 +1224,7 @@ create_append_path(RelOptInfo *rel, List *subpaths, Relids required_outer,
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = rel->consider_parallel;
 	pathnode->path.parallel_workers = parallel_workers;
-	pathnode->path.pathkeys = NIL;	/* result is always considered unsorted */
+	pathnode->path.pathkeys = pathkeys;
 	pathnode->partitioned_rels = list_copy(partitioned_rels);
 	pathnode->subpaths = subpaths;
 
@@ -1229,15 +1239,49 @@ create_append_path(RelOptInfo *rel, List *subpaths, Relids required_outer,
 	pathnode->path.rows = 0;
 	pathnode->path.startup_cost = 0;
 	pathnode->path.total_cost = 0;
+
+	if (root && bms_equal(rel->relids, root->all_baserels))
+		pathnode->limit_tuples = root->limit_tuples;
+	else
+		pathnode->limit_tuples = -1.0;
+
+	limit_tuples = pathnode->limit_tuples;
+
 	foreach(l, subpaths)
 	{
 		Path	   *subpath = (Path *) lfirst(l);
+		input_startup_cost = subpath->startup_cost;
+		input_total_cost = subpath->total_cost;
+
+		if(pathkeys && !pathkeys_contained_in(pathkeys, subpath->pathkeys))
+		{
+			Path		sort_path;		/* dummy for result of cost_sort */
+
+			cost_sort(&sort_path,
+					root,
+					pathkeys,
+					subpath->total_cost,
+					subpath->rows,
+					subpath->pathtarget->width,
+					0.0,
+					work_mem,
+					limit_tuples);
+			input_startup_cost += sort_path.startup_cost;
+			input_total_cost = sort_path.total_cost;
+		}
 
 		pathnode->path.rows += subpath->rows;
 
 		if (l == list_head(subpaths))	/* first node? */
-			pathnode->path.startup_cost = subpath->startup_cost;
-		pathnode->path.total_cost += subpath->total_cost;
+			pathnode->path.startup_cost = input_startup_cost;
+		/*
+		 * Consider that the number of tuples to be fetched decreases
+		 * for every subsequent partition
+		 */
+		if(limit_tuples > 0)
+			limit_tuples = Max(1, limit_tuples - subpath->rows);
+
+		pathnode->path.total_cost += input_total_cost;
 		pathnode->path.parallel_safe = pathnode->path.parallel_safe &&
 			subpath->parallel_safe;
 

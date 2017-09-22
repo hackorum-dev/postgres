@@ -25,6 +25,7 @@
 #include "optimizer/pathnode.h"
 #include "optimizer/paths.h"
 #include "optimizer/placeholder.h"
+#include "optimizer/plancat.h"
 #include "optimizer/planmain.h"
 
 
@@ -175,6 +176,13 @@ query_planner(PlannerInfo *root, List *tlist,
 	 * other pathkeys fields in PlannerInfo.
 	 */
 	(*qp_callback) (root, qp_extra);
+
+	/*
+	 * We consider generating pathkeys for partitioned tables only if the
+	 * query has some ordering
+	 */
+	if (root->query_pathkeys != NIL)
+		generate_pathkeys_for_partitioned_tables(root);
 
 	/*
 	 * Examine any "placeholder" expressions generated during subquery pullup.

@@ -20,6 +20,7 @@
 
 #include "access/sysattr.h"
 #include "access/tsmapi.h"
+#include "catalog/partition.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_proc.h"
@@ -94,6 +95,8 @@ static void set_append_rel_size(PlannerInfo *root, RelOptInfo *rel,
 					Index rti, RangeTblEntry *rte);
 static void set_append_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 						Index rti, RangeTblEntry *rte);
+static void generate_sorted_append_paths(PlannerInfo *root,
+			RelOptInfo *parent_rel);
 static void generate_mergeappend_paths(PlannerInfo *root, RelOptInfo *rel,
 						   List *live_childrels,
 						   List *all_child_pathkeys,
@@ -1431,8 +1434,19 @@ add_paths_to_append_rel(PlannerInfo *root, RelOptInfo *rel,
 	 * if we have zero or one live subpath due to constraint exclusion.)
 	 */
 	if (subpaths_valid)
-		add_path(rel, (Path *) create_append_path(rel, subpaths, NULL, 0,
-												  partitioned_rels));
+		add_path(rel, (Path *) create_append_path(root, rel, subpaths, NULL, 0,
+												  partitioned_rels, NIL));
+
+	/*
+	 * If possible, build ordered append path matching the PathKeys derived
+	 * from the partition key.  A native order is possible if it's a ranged
+	 * partitioning and it doesn't have a default partition.
+	 */
+	if (rel->part_scheme &&
+		rel->part_scheme->strategy == PARTITION_STRATEGY_RANGE &&
+		get_default_partition_oid(rte->relid) == InvalidOid
+	)
+		generate_sorted_append_paths(root, rel);
 
 	/*
 	 * Consider an append of partial unordered, unparameterized partial paths.
@@ -1458,8 +1472,8 @@ add_paths_to_append_rel(PlannerInfo *root, RelOptInfo *rel,
 		Assert(parallel_workers > 0);
 
 		/* Generate a partial append path. */
-		appendpath = create_append_path(rel, partial_subpaths, NULL,
-										parallel_workers, partitioned_rels);
+		appendpath = create_append_path(root, rel, partial_subpaths, NULL,
+										parallel_workers, partitioned_rels, NIL);
 		add_partial_path(rel, (Path *) appendpath);
 	}
 
@@ -1512,8 +1526,112 @@ add_paths_to_append_rel(PlannerInfo *root, RelOptInfo *rel,
 
 		if (subpaths_valid)
 			add_path(rel, (Path *)
-					 create_append_path(rel, subpaths, required_outer, 0,
-										partitioned_rels));
+					 create_append_path(root, rel, subpaths, required_outer, 0,
+										partitioned_rels, NIL));
+	}
+}
+
+static void
+generate_sorted_append_paths(PlannerInfo *root, RelOptInfo *parent_rel)
+{
+	ListCell *lc;
+	int i;
+	List *partitions_asc = NIL;
+	List *partitions_desc = NIL;
+	RangeTblEntry * parent_rte = planner_rt_fetch(parent_rel->relid, root);
+
+	if (parent_rte->relkind != RELKIND_PARTITIONED_TABLE)
+		return;
+
+	for (i = 0; i < parent_rel->nparts; i++)
+	{
+		partitions_asc = lappend(partitions_asc, parent_rel->part_rels[i]);
+		partitions_desc = lcons(parent_rel->part_rels[i], partitions_desc);
+	}
+
+	foreach(lc, parent_rel->part_pathkeys)
+	{
+		List *pathkeys = (List *) lfirst(lc);
+		PathKey *first = (PathKey *) linitial(pathkeys);
+		List *ordered_partitions = first->pk_strategy == BTLessStrategyNumber ?
+			partitions_asc : partitions_desc;
+		List *startup_subpaths = NIL;
+		List *total_subpaths = NIL;
+		List *sequential_subpaths = NIL;
+		bool startup_neq_total = false;
+		ListCell *lc2;
+
+		if (compare_pathkeys(pathkeys, root->query_pathkeys) == PATHKEYS_DIFFERENT)
+			continue;
+
+		foreach (lc2, ordered_partitions)
+		{
+			RelOptInfo *childrel = lfirst(lc2);
+			Path *cheapest_startup,
+				 *cheapest_total,
+				 *sequential = NULL;
+
+			/* The partition may have been pruned */
+			if (!childrel)
+				continue;
+
+			//Assert(pathkeys_contained_in(pathkeys, root->query_pathkeys));
+
+			cheapest_startup = get_cheapest_path_for_pathkeys(childrel->pathlist,
+					root->query_pathkeys,
+					NULL,
+					STARTUP_COST,
+					false);
+			cheapest_total = get_cheapest_path_for_pathkeys(childrel->pathlist,
+					root->query_pathkeys,
+					NULL,
+					TOTAL_COST,
+					false);
+
+			/*
+			 * If we can't find any paths with the right order just use the
+			 * cheapest-total path; we'll have to sort it later.
+			 */
+			if (cheapest_startup == NULL || cheapest_total == NULL)
+			{
+				cheapest_startup = cheapest_total =
+					childrel->cheapest_total_path;
+				/* Assert we do have an unparameterized path for this child */
+				Assert(cheapest_total->param_info == NULL);
+			}
+			/*
+			 * Force a an unordered path, which could be cheaper in corner cases where
+			 * orderedpaths are too expensive.
+			 */
+			sequential = childrel->cheapest_total_path;
+
+			/*
+			 * Notice whether we actually have different paths for the
+			 * "cheapest" and "total" cases; frequently there will be no point
+			 * in two create_merge_append_path() calls.
+			 */
+			if (cheapest_startup != cheapest_total)
+				startup_neq_total = true;
+			startup_subpaths =
+				lappend(startup_subpaths, cheapest_startup);
+			total_subpaths =
+				lappend(total_subpaths, cheapest_total);
+			sequential_subpaths =
+				lappend(sequential_subpaths, sequential);
+
+		}
+		if (startup_subpaths)
+		{
+			add_path(parent_rel, (Path *) create_append_path(root, parent_rel, startup_subpaths,
+						NULL, 0, NIL, root->query_pathkeys));
+		}
+		if (startup_neq_total)
+			add_path(parent_rel, (Path *) create_append_path(root,
+					parent_rel, total_subpaths, NULL, 0, NIL, root->query_pathkeys));
+		if (sequential_subpaths){
+			add_path(parent_rel, (Path *) create_append_path(root,
+					parent_rel, sequential_subpaths, NULL, 0, NIL, root->query_pathkeys));
+		}
 	}
 }
 
@@ -1749,7 +1867,7 @@ set_dummy_rel_pathlist(RelOptInfo *rel)
 	rel->pathlist = NIL;
 	rel->partial_pathlist = NIL;
 
-	add_path(rel, (Path *) create_append_path(rel, NIL, NULL, 0, NIL));
+	add_path(rel, (Path *) create_append_path(NULL, rel, NIL, NULL, 0, NIL, NIL));
 
 	/*
 	 * We set the cheapest path immediately, to ensure that IS_DUMMY_REL()

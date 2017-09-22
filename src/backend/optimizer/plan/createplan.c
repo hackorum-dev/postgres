@@ -78,8 +78,8 @@ static List *get_gating_quals(PlannerInfo *root, List *quals);
 static Plan *create_gating_plan(PlannerInfo *root, Path *path, Plan *plan,
 				   List *gating_quals);
 static Plan *create_join_plan(PlannerInfo *root, JoinPath *best_path);
-static Plan *create_append_plan(PlannerInfo *root, AppendPath *best_path);
-static Plan *create_merge_append_plan(PlannerInfo *root, MergeAppendPath *best_path);
+static Plan *create_append_plan(NodeTag node_type, PlannerInfo *root, AppendPath *best_path);
+static Plan *wrap_sort(PlannerInfo *root, Append* parentplan, Path *subpath, List* pathkeys, double limit_tuples);
 static Result *create_result_plan(PlannerInfo *root, ResultPath *best_path);
 static ProjectSet *create_project_set_plan(PlannerInfo *root, ProjectSetPath *best_path);
 static Material *create_material_plan(PlannerInfo *root, MaterialPath *best_path,
@@ -203,7 +203,7 @@ static NamedTuplestoreScan *make_namedtuplestorescan(List *qptlist, List *qpqual
 						 Index scanrelid, char *enrname);
 static WorkTableScan *make_worktablescan(List *qptlist, List *qpqual,
 				   Index scanrelid, int wtParam);
-static Append *make_append(List *appendplans, List *tlist, List *partitioned_rels);
+static Append *make_append(NodeTag node_type, List *tlist, List *partitioned_rels);
 static RecursiveUnion *make_recursive_union(List *tlist,
 					 Plan *lefttree,
 					 Plan *righttree,
@@ -381,12 +381,9 @@ create_plan_recurse(PlannerInfo *root, Path *best_path, int flags)
 									(JoinPath *) best_path);
 			break;
 		case T_Append:
-			plan = create_append_plan(root,
-									  (AppendPath *) best_path);
-			break;
 		case T_MergeAppend:
-			plan = create_merge_append_plan(root,
-											(MergeAppendPath *) best_path);
+			plan = create_append_plan(best_path->pathtype, root,
+									  (AppendPath *) best_path);
 			break;
 		case T_Result:
 			if (IsA(best_path, ProjectionPath))
@@ -999,12 +996,16 @@ create_join_plan(PlannerInfo *root, JoinPath *best_path)
  *	  Returns a Plan node.
  */
 static Plan *
-create_append_plan(PlannerInfo *root, AppendPath *best_path)
+create_append_plan(NodeTag node_type, PlannerInfo *root, AppendPath *best_path)
 {
-	Append	   *plan;
+	Append	   *node;
+	Plan 	   *plan;
 	List	   *tlist = build_path_tlist(root, &best_path->path);
+	List	   *pathkeys = best_path->path.pathkeys;
 	List	   *subplans = NIL;
 	ListCell   *subpaths;
+
+	double limit_tuples = best_path->limit_tuples;
 
 	/*
 	 * The subpaths list could be empty, if every child was proven empty by
@@ -1017,9 +1018,6 @@ create_append_plan(PlannerInfo *root, AppendPath *best_path)
 	 */
 	if (best_path->subpaths == NIL)
 	{
-		/* Generate a Result plan with constant-FALSE gating qual */
-		Plan	   *plan;
-
 		plan = (Plan *) make_result(tlist,
 									(Node *) list_make1(makeBoolConst(false,
 																	  false)),
@@ -1030,62 +1028,11 @@ create_append_plan(PlannerInfo *root, AppendPath *best_path)
 		return plan;
 	}
 
-	/* Build the plan for each child */
-	foreach(subpaths, best_path->subpaths)
-	{
-		Path	   *subpath = (Path *) lfirst(subpaths);
-		Plan	   *subplan;
-
-		/* Must insist that all children return the same tlist */
-		subplan = create_plan_recurse(root, subpath, CP_EXACT_TLIST);
-
-		subplans = lappend(subplans, subplan);
-	}
-
-	/*
-	 * XXX ideally, if there's just one child, we'd not bother to generate an
-	 * Append node but just return the single child.  At the moment this does
-	 * not work because the varno of the child scan plan won't match the
-	 * parent-rel Vars it'll be asked to emit.
-	 */
-
-	plan = make_append(subplans, tlist, best_path->partitioned_rels);
-
-	copy_generic_path_info(&plan->plan, (Path *) best_path);
-
-	return (Plan *) plan;
-}
-
-/*
- * create_merge_append_plan
- *	  Create a MergeAppend plan for 'best_path' and (recursively) plans
- *	  for its subpaths.
- *
- *	  Returns a Plan node.
- */
-static Plan *
-create_merge_append_plan(PlannerInfo *root, MergeAppendPath *best_path)
-{
-	MergeAppend *node = makeNode(MergeAppend);
-	Plan	   *plan = &node->plan;
-	List	   *tlist = build_path_tlist(root, &best_path->path);
-	List	   *pathkeys = best_path->path.pathkeys;
-	List	   *subplans = NIL;
-	ListCell   *subpaths;
-
-	/*
-	 * We don't have the actual creation of the MergeAppend node split out
-	 * into a separate make_xxx function.  This is because we want to run
-	 * prepare_sort_from_pathkeys on it before we do so on the individual
-	 * child plans, to make cross-checking the sort info easier.
-	 */
+	node = make_append(node_type, tlist, best_path->partitioned_rels);
+	plan = &node->plan;
 	copy_generic_path_info(plan, (Path *) best_path);
 	plan->targetlist = tlist;
-	plan->qual = NIL;
-	plan->lefttree = NULL;
-	plan->righttree = NULL;
 
-	/* Compute sort column info, and adjust MergeAppend's tlist as needed */
 	(void) prepare_sort_from_pathkeys(plan, pathkeys,
 									  best_path->path.parent->relids,
 									  NULL,
@@ -1096,70 +1043,18 @@ create_merge_append_plan(PlannerInfo *root, MergeAppendPath *best_path)
 									  &node->collations,
 									  &node->nullsFirst);
 
-	/*
-	 * Now prepare the child plans.  We must apply prepare_sort_from_pathkeys
-	 * even to subplans that don't need an explicit sort, to make sure they
-	 * are returning the same sort key columns the MergeAppend expects.
-	 */
-	foreach(subpaths, best_path->subpaths)
+	/* Build the plan for each child */
+ 	foreach(subpaths, best_path->subpaths)
 	{
 		Path	   *subpath = (Path *) lfirst(subpaths);
-		Plan	   *subplan;
-		int			numsortkeys;
-		AttrNumber *sortColIdx;
-		Oid		   *sortOperators;
-		Oid		   *collations;
-		bool	   *nullsFirst;
 
-		/* Build the child plan */
-		/* Must insist that all children return the same tlist */
-		subplan = create_plan_recurse(root, subpath, CP_EXACT_TLIST);
-
-		/* Compute sort column info, and adjust subplan's tlist as needed */
-		subplan = prepare_sort_from_pathkeys(subplan, pathkeys,
-											 subpath->parent->relids,
-											 node->sortColIdx,
-											 false,
-											 &numsortkeys,
-											 &sortColIdx,
-											 &sortOperators,
-											 &collations,
-											 &nullsFirst);
-
-		/*
-		 * Check that we got the same sort key information.  We just Assert
-		 * that the sortops match, since those depend only on the pathkeys;
-		 * but it seems like a good idea to check the sort column numbers
-		 * explicitly, to ensure the tlists really do match up.
-		 */
-		Assert(numsortkeys == node->numCols);
-		if (memcmp(sortColIdx, node->sortColIdx,
-				   numsortkeys * sizeof(AttrNumber)) != 0)
-			elog(ERROR, "MergeAppend child's targetlist doesn't match MergeAppend");
-		Assert(memcmp(sortOperators, node->sortOperators,
-					  numsortkeys * sizeof(Oid)) == 0);
-		Assert(memcmp(collations, node->collations,
-					  numsortkeys * sizeof(Oid)) == 0);
-		Assert(memcmp(nullsFirst, node->nullsFirst,
-					  numsortkeys * sizeof(bool)) == 0);
-
-		/* Now, insert a Sort node if subplan isn't sufficiently ordered */
-		if (!pathkeys_contained_in(pathkeys, subpath->pathkeys))
-		{
-			Sort	   *sort = make_sort(subplan, numsortkeys,
-										 sortColIdx, sortOperators,
-										 collations, nullsFirst);
-
-			label_sort_with_costsize(root, sort, best_path->limit_tuples);
-			subplan = (Plan *) sort;
-		}
-
+		/* TODO: decrease limit tuples for each subpath */
+		Plan *subplan = plan = wrap_sort(root, node, subpath, pathkeys, limit_tuples);
+		if(limit_tuples > 0)
+			limit_tuples = Max(1, limit_tuples - subpath->rows);
 		subplans = lappend(subplans, subplan);
 	}
-
-	node->partitioned_rels = best_path->partitioned_rels;
-	node->mergeplans = subplans;
-
+	node->appendplans = subplans;
 	return (Plan *) node;
 }
 
@@ -1566,7 +1461,7 @@ create_projection_plan(PlannerInfo *root, ProjectionPath *best_path)
 	 * anyway.  Usually create_projection_path will have detected that and set
 	 * dummypp if we don't need a Result; but its decision can't be final,
 	 * because some createplan.c routines change the tlists of their nodes.
-	 * (An example is that create_merge_append_plan might add resjunk sort
+	 * (An example is that create_append_plan might add resjunk sort
 	 * columns to a MergeAppend.)  So we have to recheck here.  If we do
 	 * arrive at a different answer than create_projection_path did, we'll
 	 * have made slightly wrong cost estimates; but label the plan with the
@@ -5274,19 +5169,98 @@ make_foreignscan(List *qptlist,
 }
 
 static Append *
-make_append(List *appendplans, List *tlist, List *partitioned_rels)
+make_append(NodeTag node_type, List *tlist, List *partitioned_rels)
 {
-	Append	   *node = makeNode(Append);
-	Plan	   *plan = &node->plan;
+	Append	   *node;
+	Plan	   *plan;
 
-	plan->targetlist = tlist;
+	if (node_type != T_Append && node_type != T_MergeAppend)
+		elog(ERROR, "create_append_plan can only create Append or MergeAppend plans");
+
+	switch(node_type)
+	{
+		case T_Append:
+			node = makeNode(Append);
+			break;
+		case T_MergeAppend:
+			node = (Append *) makeNode(MergeAppend);
+			break;
+		default:
+			elog(ERROR, "create_append_plan can only create Append or MergeAppend plans");
+	}
+
+	plan = &node->plan;  	plan->targetlist = tlist;
 	plan->qual = NIL;
 	plan->lefttree = NULL;
 	plan->righttree = NULL;
 	node->partitioned_rels = partitioned_rels;
-	node->appendplans = appendplans;
+	node->appendplans = NIL;
+	node->numCols = 0;
+	node->sortColIdx = NULL;
+	node->sortOperators = NULL;
+	node->collations = NULL;
+	node->nullsFirst = NULL;
 
 	return node;
+}
+
+static Plan *
+wrap_sort(PlannerInfo *root, Append* parentplan, Path *subpath, List* pathkeys, double limit_tuples)
+{
+	int			numCols;
+	AttrNumber *sortColIdx;
+	Oid		   *sortOperators;
+	Oid		   *collations;
+	bool	   *nullsFirst;
+	Plan	   *subplan;
+
+	/* Build the child plan */
+	/* Must insist that all children return the same tlist */
+	subplan = create_plan_recurse(root, subpath, CP_EXACT_TLIST);
+
+	if (pathkeys != NIL)
+	{
+		/* Compute sort column info, and adjust subplan's tlist as needed */
+		subplan = prepare_sort_from_pathkeys(subplan, pathkeys,
+											 subpath->parent->relids,
+											 parentplan->sortColIdx,
+											 false,
+											 &numCols,
+											 &sortColIdx,
+											 &sortOperators,
+											 &collations,
+											 &nullsFirst);
+
+		/*
+		 * Check that we got the same sort key information.  We just Assert
+		 * that the sortops match, since those depend only on the pathkeys;
+		 * but it seems like a good idea to check the sort column numbers
+		 * explicitly, to ensure the tlists really do match up.
+		 */
+		Assert(numCols == parentplan->numCols);
+		if (memcmp(sortColIdx, parentplan->sortColIdx,
+					numCols * sizeof(AttrNumber)) != 0)
+			elog(ERROR, "MergeAppend child's targetlist doesn't match MergeAppend");
+		Assert(memcmp(sortOperators, parentplan->sortOperators,
+					numCols * sizeof(Oid)) == 0);
+		Assert(memcmp(collations, parentplan->collations,
+					numCols * sizeof(Oid)) == 0);
+		Assert(memcmp(nullsFirst, parentplan->nullsFirst,
+					numCols * sizeof(bool)) == 0);
+
+		/* Now, insert a Sort node if subplan isn't sufficiently ordered */
+		if (!pathkeys_contained_in(pathkeys, subpath->pathkeys))
+		{
+			Sort	   *sort = make_sort(subplan, numCols,
+										 sortColIdx, sortOperators,
+										 collations, nullsFirst);
+
+			label_sort_with_costsize(root, sort, limit_tuples);
+			subplan = (Plan *) sort;
+		}
+	}
+
+	return subplan;
 }
 
 static RecursiveUnion *

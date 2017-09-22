@@ -646,6 +646,8 @@ typedef struct RelOptInfo
 	struct RelOptInfo **part_rels;	/* Array of RelOptInfos of partitions,
 									 * stored in the same order of bounds */
 	List	  **partexprs;		/* Partition key expressions. */
+	List	   *part_pathkeys;	/* Pathkey representing the  partition key if a
+								   natural order exists*/
 } RelOptInfo;
 
 /*
@@ -1232,6 +1234,7 @@ typedef struct AppendPath
 	/* RT indexes of non-leaf tables in a partition tree */
 	List	   *partitioned_rels;
 	List	   *subpaths;		/* list of component Paths */
+	double		limit_tuples;	/* hard limit on output tuples, or -1 */
 } AppendPath;
 
 #define IS_DUMMY_PATH(p) \

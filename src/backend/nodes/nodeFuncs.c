@@ -3735,7 +3735,7 @@ planstate_tree_walker(PlanState *planstate,
 				return true;
 			break;
 		case T_MergeAppend:
-			if (planstate_walk_members(((MergeAppend *) plan)->mergeplans,
+			if (planstate_walk_members(((MergeAppend *) plan)->plan.appendplans,
 									   ((MergeAppendState *) planstate)->mergeplans,
 									   walker, context))
 				return true;
