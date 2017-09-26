@@ -78,6 +78,12 @@ typedef struct
 	(((con)->consttype == REGCLASSOID || (con)->consttype == OIDOID) && \
 	 !(con)->constisnull)
 
+/*
+ * Check if a Const node has composite type
+ */
+#define ISTABLETYPECONST(con) \
+	(get_typtype((con)->consttype) == TYPTYPE_COMPOSITE)
+
 #define fix_scan_list(root, lst, rtoffset) \
 	((List *) fix_scan_expr(root, (Node *) (lst), rtoffset))
 
@@ -1410,6 +1416,12 @@ fix_expr_common(PlannerInfo *root, Node *node)
 			root->glob->relationOids =
 				lappend_oid(root->glob->relationOids,
 							DatumGetObjectId(con->constvalue));
+
+		/* Check whether const has composite type */
+		if (ISTABLETYPECONST(con))
+			root->glob->relationOids =
+				lappend_oid(root->glob->relationOids,
+							get_typ_typrelid(con->consttype));
 	}
 	else if (IsA(node, GroupingFunc))
 	{
