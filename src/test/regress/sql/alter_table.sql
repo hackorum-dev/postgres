@@ -1965,6 +1965,16 @@ ALTER TABLE test_add_column
 	ADD COLUMN IF NOT EXISTS c3 integer, -- skipping because c3 already exists
 	ADD COLUMN c4 integer;
 \d test_add_column
+ALTER TABLE test_add_column
+	ADD COLUMN c5 serial;
+\d test_add_column
+\ds test_add_column*
+ALTER TABLE test_add_column
+	ADD COLUMN c5 serial; -- fail because c5 already exists
+ALTER TABLE test_add_column
+	ADD COLUMN IF NOT EXISTS c5 serial; -- skipping because c5 already exists
+\d test_add_column
+\ds test_add_column*
 DROP TABLE test_add_column;
 
 -- unsupported constraint types for partitioned tables

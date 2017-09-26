@@ -110,7 +110,7 @@ typedef struct
 
 
 static void transformColumnDefinition(CreateStmtContext *cxt,
-						  ColumnDef *column);
+						  ColumnDef *column, bool if_not_exists);
 static void transformTableConstraint(CreateStmtContext *cxt,
 						 Constraint *constraint);
 static void transformTableLikeClause(CreateStmtContext *cxt,
@@ -138,7 +138,8 @@ static void transformPartitionCmd(CreateStmtContext *cxt, PartitionCmd *cmd);
 static void validateInfiniteBounds(ParseState *pstate, List *blist);
 static Const *transformPartitionBoundValue(ParseState *pstate, A_Const *con,
 							 const char *colName, Oid colType, int32 colTypmod);
-
+static bool skip_serial_add_column_if_not_exists(Relation rel, const char *colname,
+							bool if_not_exists);
 
 /*
  * transformCreateStmt -
@@ -277,7 +278,7 @@ transformCreateStmt(CreateStmt *stmt, const char *queryString)
 		switch (nodeTag(element))
 		{
 			case T_ColumnDef:
-				transformColumnDefinition(&cxt, (ColumnDef *) element);
+				transformColumnDefinition(&cxt, (ColumnDef *) element, false);
 				break;
 
 			case T_Constraint:
@@ -500,7 +501,7 @@ generateSerialExtraStmts(CreateStmtContext *cxt, ColumnDef *column,
  *		Also used in ALTER TABLE ADD COLUMN
  */
 static void
-transformColumnDefinition(CreateStmtContext *cxt, ColumnDef *column)
+transformColumnDefinition(CreateStmtContext *cxt, ColumnDef *column, bool if_not_exists)
 {
 	bool		is_serial;
 	bool		saw_nullable;
@@ -557,8 +558,8 @@ transformColumnDefinition(CreateStmtContext *cxt, ColumnDef *column)
 	if (column->typeName)
 		transformColumnType(cxt, column);
 
-	/* Special actions for SERIAL pseudo-types */
-	if (is_serial)
+	/* Special actions for SERIAL pseudo-types, skip when IF NOT EXISTS is used */
+	if (is_serial && !skip_serial_add_column_if_not_exists(cxt->rel, column->colname, if_not_exists))
 	{
 		char	   *snamespace;
 		char	   *sname;
@@ -2714,7 +2715,7 @@ transformAlterTableStmt(Oid relid, AlterTableStmt *stmt,
 				{
 					ColumnDef  *def = castNode(ColumnDef, cmd->def);
 
-					transformColumnDefinition(&cxt, def);
+					transformColumnDefinition(&cxt, def, cmd->missing_ok);
 
 					/*
 					 * If the column has a non-null default, we can't skip
@@ -3559,4 +3560,30 @@ transformPartitionBoundValue(ParseState *pstate, A_Const *con,
 				 parser_errposition(pstate, con->location)));
 
 	return (Const *) value;
+}
+
+/*
+ * Skip SEQUENCE step when if_not_exists and column already exists
+ */
+static bool
+skip_serial_add_column_if_not_exists(Relation rel, const char *colname,
+									 bool if_not_exists)
+{
+	HeapTuple	attTuple;
+
+	if (!RelationIsValid(rel))
+		return false;
+
+	attTuple = SearchSysCache2(ATTNAME,
+							   ObjectIdGetDatum(RelationGetRelid(rel)),
+							   PointerGetDatum(colname));
+	if (!HeapTupleIsValid(attTuple))
+		return false;
+
+	ReleaseSysCache(attTuple);
+
+	if (if_not_exists)
+		return true;
+
+	return false;
 }

@@ -3121,6 +3121,48 @@ NOTICE:  column "c3" of relation "test_add_column" already exists, skipping
  c3     | integer |           |          | 
  c4     | integer |           |          | 
 
+ALTER TABLE test_add_column
+	ADD COLUMN c5 serial;
+\d test_add_column
+                            Table "public.test_add_column"
+ Column |  Type   | Collation | Nullable |                   Default                   
+--------+---------+-----------+----------+---------------------------------------------
+ c1     | integer |           |          | 
+ c2     | integer |           |          | 
+ c3     | integer |           |          | 
+ c4     | integer |           |          | 
+ c5     | integer |           | not null | nextval('test_add_column_c5_seq'::regclass)
+
+\ds test_add_column*
+                   List of relations
+ Schema |          Name          |   Type   |  Owner   
+--------+------------------------+----------+----------
+ public | test_add_column_c5_seq | sequence | fabrizio
+(1 row)
+
+ALTER TABLE test_add_column
+	ADD COLUMN c5 serial; -- fail because c5 already exists
+ERROR:  column "c5" of relation "test_add_column" already exists
+ALTER TABLE test_add_column
+	ADD COLUMN IF NOT EXISTS c5 serial; -- skipping because c5 already exists
+NOTICE:  column "c5" of relation "test_add_column" already exists, skipping
+\d test_add_column
+                            Table "public.test_add_column"
+ Column |  Type   | Collation | Nullable |                   Default                   
+--------+---------+-----------+----------+---------------------------------------------
+ c1     | integer |           |          | 
+ c2     | integer |           |          | 
+ c3     | integer |           |          | 
+ c4     | integer |           |          | 
+ c5     | integer |           | not null | nextval('test_add_column_c5_seq'::regclass)
+
+\ds test_add_column*
+                   List of relations
+ Schema |          Name          |   Type   |  Owner   
+--------+------------------------+----------+----------
+ public | test_add_column_c5_seq | sequence | fabrizio
+(1 row)
+
 DROP TABLE test_add_column;
 -- unsupported constraint types for partitioned tables
 CREATE TABLE partitioned (
