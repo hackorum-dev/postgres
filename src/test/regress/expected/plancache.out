@@ -220,6 +220,28 @@ execute p2;
        1
 (1 row)
 
+-- Check that invalidation deals with casting const value to temporary
+-- composite type reinitialized on each new transaction
+create function cache_query_with_composite_const() returns void as $$
+begin
+    create temp table tbl(id int) on commit drop;
+
+    -- Plan of the next query has to be rebuilt on each new call of function
+    -- due to casting first argument 'null' to recreated temprary table 'tbl'
+    perform json_populate_record(null::tbl, '{"id": 0}'::json);
+end$$ language plpgsql;
+select cache_query_with_composite_const();
+ cache_query_with_composite_const 
+----------------------------------
+ 
+(1 row)
+
+select cache_query_with_composite_const();
+ cache_query_with_composite_const 
+----------------------------------
+ 
+(1 row)
+
 -- Check DDL via SPI, immediately followed by SPI plan re-use
 -- (bug in original coding)
 create function cachebug() returns void as $$
