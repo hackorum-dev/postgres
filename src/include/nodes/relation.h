@@ -342,6 +342,10 @@ typedef struct PlannerInfo
  * partition bounds. Since partition key data types and the opclass declared
  * input data types are expected to be binary compatible (per ResolveOpClass),
  * both of those should have same byval and length properties.
+ *
+ * Since partitioning might be using a collation for a given partition key
+ * column that is not same as the collation implied by column's type, store
+ * the same separately.
  */
 typedef struct PartitionSchemeData
 {
@@ -349,7 +353,8 @@ typedef struct PartitionSchemeData
 	int16		partnatts;		/* number of partition attributes */
 	Oid		   *partopfamily;	/* OIDs of operator families */
 	Oid		   *partopcintype;	/* OIDs of opclass declared input data types */
-	Oid		   *parttypcoll;	/* OIDs of collations of partition keys. */
+	Oid		   *parttypcoll;	/* OIDs of partition key type collation. */
+	Oid		   *partcollation;	/* OIDs of partitioning collation */
 
 	/* Cached information about partition key data types. */
 	int16	   *parttyplen;

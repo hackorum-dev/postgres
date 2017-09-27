@@ -1897,6 +1897,7 @@ find_partition_scheme(PlannerInfo *root, Relation relation)
 	part_scheme->partopfamily = partkey->partopfamily;
 	part_scheme->partopcintype = partkey->partopcintype;
 	part_scheme->parttypcoll = partkey->parttypcoll;
+	part_scheme->partcollation = partkey->partcollation;
 	part_scheme->parttyplen = partkey->parttyplen;
 	part_scheme->parttypbyval = partkey->parttypbyval;
 
