@@ -67,7 +67,7 @@ static BufferAccessStrategy vac_strategy;
 
 
 /* non-export function prototypes */
-static List *get_rel_oids(Oid relid, const RangeVar *vacrel);
+static List *get_rel_oids(Oid *relid, const RangeVar *vacrel);
 static void vac_truncate_clog(TransactionId frozenXID,
 				  MultiXactId minMulti,
 				  TransactionId lastSaneFrozenXid,
@@ -129,8 +129,12 @@ ExecVacuum(VacuumStmt *vacstmt, bool isTopLevel)
  * options is a bitmask of VacuumOption flags, indicating what to do.
  *
  * relid, if not InvalidOid, indicate the relation to process; otherwise,
- * the RangeVar is used.  (The latter must always be passed, because it's
- * used for error messages.)
+ * the RangeVar is used.  The latter must be passed because it is used
+ * for error reporting, still it will not be used for relations vacuumed
+ * which have been dragged into the process due to inheritance, like
+ * child partitions.  Note that RangeVar is NULL if relid is InvalidOid,
+ * which happens in the case of manual VACUUM commands not specifying a
+ * list of relations.
  *
  * params contains a set of parameters that can be used to customize the
  * behavior.
@@ -229,7 +233,7 @@ vacuum(int options, RangeVar *relation, Oid relid, VacuumParams *params,
 	 * Build list of relations to process, unless caller gave us one. (If we
 	 * build one, we put it in vac_context for safekeeping.)
 	 */
-	relations = get_rel_oids(relid, relation);
+	relations = get_rel_oids(&relid, relation);
 
 	/*
 	 * Decide whether we need to start/commit our own transactions.
@@ -297,11 +301,48 @@ vacuum(int options, RangeVar *relation, Oid relid, VacuumParams *params,
 		 */
 		foreach(cur, relations)
 		{
-			Oid			relid = lfirst_oid(cur);
+			Oid			proc_relid = lfirst_oid(cur);
+			RangeVar   *rv;
+
+			/*
+			 * Determine which RangeVar to use for reporting should the
+			 * relation referenced by the OID listed here should be
+			 * missing.
+			 */
+			if (IsAutoVacuumWorkerProcess())
+			{
+				/*
+				 * Autovacuum workers work on a pre-relation basis, so there
+				 * is always a RangeVar to rely on
+				 */
+				Assert(relation != NULL);
+				rv = relation;
+			}
+			else if (relation)
+			{
+				/*
+				 * A manual command is being run with a relation specified.
+				 * Be careful that the relation being processed here may
+				 * be a partitioned table, in which case the RangeVar
+				 * specified by caller can only be used if the relation
+				 * processed here is the parent itself. Hence check if the
+				 * relation being processed is the original relation itself
+				 * and use its RangeVar if those are the same.
+				 */
+				rv = proc_relid == relid ? relation : NULL;
+			}
+			else
+			{
+				/*
+				 * This is the case of a manual command which does not specify
+				 * a relation to work on, so just use nothing.
+				 */
+				rv = NULL;
+			}
 
 			if (options & VACOPT_VACUUM)
 			{
-				if (!vacuum_rel(relid, relation, options, params))
+				if (!vacuum_rel(proc_relid, rv, options, params))
 					continue;
 			}
 
@@ -318,7 +359,7 @@ vacuum(int options, RangeVar *relation, Oid relid, VacuumParams *params,
 					PushActiveSnapshot(GetTransactionSnapshot());
 				}
 
-				analyze_rel(relid, relation, options, params,
+				analyze_rel(proc_relid, rv, options, params,
 							va_cols, in_outer_xact, vac_strategy);
 
 				if (use_own_xacts)
@@ -376,28 +417,35 @@ vacuum(int options, RangeVar *relation, Oid relid, VacuumParams *params,
  * Build a list of Oids for each relation to be processed
  *
  * The list is built in vac_context so that it will survive across our
- * per-relation transactions.
+ * per-relation transactions. If relid is defined as InvalidOid by the
+ * caller, then it gets filled with the OID of the parent relation
+ * used for the potential inheritance scanning for partitioned tables.
  */
 static List *
-get_rel_oids(Oid relid, const RangeVar *vacrel)
+get_rel_oids(Oid *relid, const RangeVar *vacrel)
 {
 	List	   *oid_list = NIL;
 	MemoryContext oldcontext;
 
 	/* OID supplied by VACUUM's caller? */
-	if (OidIsValid(relid))
+	if (OidIsValid(*relid))
 	{
+		/* normal course of events for an autovacuum worker */
+		Assert(IsAutoVacuumWorkerProcess());
 		oldcontext = MemoryContextSwitchTo(vac_context);
-		oid_list = lappend_oid(oid_list, relid);
+		oid_list = lappend_oid(oid_list, *relid);
 		MemoryContextSwitchTo(oldcontext);
 	}
 	else if (vacrel)
 	{
 		/* Process a specific relation */
-		Oid			relid;
+		Oid			parentoid;
 		HeapTuple	tuple;
 		Form_pg_class classForm;
 		bool		include_parts;
+
+		/* manual VACUUM running here */
+		Assert(!IsAutoVacuumWorkerProcess());
 
 		/*
 		 * Since we don't take a lock here, the relation might be gone, or the
@@ -408,15 +456,15 @@ get_rel_oids(Oid relid, const RangeVar *vacrel)
 		 * going to commit this transaction and begin a new one between now
 		 * and then.
 		 */
-		relid = RangeVarGetRelid(vacrel, NoLock, false);
+		parentoid = RangeVarGetRelid(vacrel, NoLock, false);
 
 		/*
 		 * To check whether the relation is a partitioned table, fetch its
 		 * syscache entry.
 		 */
-		tuple = SearchSysCache1(RELOID, ObjectIdGetDatum(relid));
+		tuple = SearchSysCache1(RELOID, ObjectIdGetDatum(parentoid));
 		if (!HeapTupleIsValid(tuple))
-			elog(ERROR, "cache lookup failed for relation %u", relid);
+			elog(ERROR, "cache lookup failed for relation %u", parentoid);
 		classForm = (Form_pg_class) GETSTRUCT(tuple);
 		include_parts = (classForm->relkind == RELKIND_PARTITIONED_TABLE);
 		ReleaseSysCache(tuple);
@@ -430,10 +478,12 @@ get_rel_oids(Oid relid, const RangeVar *vacrel)
 		oldcontext = MemoryContextSwitchTo(vac_context);
 		if (include_parts)
 			oid_list = list_concat(oid_list,
-								   find_all_inheritors(relid, NoLock, NULL));
+								   find_all_inheritors(parentoid, NoLock, NULL));
 		else
-			oid_list = lappend_oid(oid_list, relid);
+			oid_list = lappend_oid(oid_list, parentoid);
 		MemoryContextSwitchTo(oldcontext);
+
+		*relid = parentoid;
 	}
 	else
 	{
@@ -444,6 +494,9 @@ get_rel_oids(Oid relid, const RangeVar *vacrel)
 		Relation	pgclass;
 		HeapScanDesc scan;
 		HeapTuple	tuple;
+
+		/* manual vacuum running here */
+		Assert(!IsAutoVacuumWorkerProcess());
 
 		pgclass = heap_open(RelationRelationId, AccessShareLock);
 
