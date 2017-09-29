@@ -84,6 +84,7 @@
 #include "access/twophase_rmgr.h"
 #include "access/xact.h"
 #include "access/xlog.h"
+#include "access/xlog_internal.h"
 #include "access/xloginsert.h"
 #include "access/xlogutils.h"
 #include "access/xlogreader.h"
@@ -2407,4 +2408,107 @@ PrepareRedoRemove(TransactionId xid, bool giveWarning)
 	RemoveGXact(gxact);
 
 	return;
+}
+
+Datum
+pg_prepared_xact_status(PG_FUNCTION_ARGS)
+{
+    char const* gid = PG_GETARG_CSTRING(0);
+	XLogRecord *record;
+	XLogReaderState *xlogreader;
+	char	   *errormsg;
+	XLogRecPtr start_lsn;
+	XLogRecPtr lsn;
+	char const* xact_status = "unknown";
+	bool done = false;
+	TimeLineID timeline;
+	TransactionId xid = InvalidTransactionId;
+	XLogRecPtr wal_end = GetFlushRecPtr();
+
+	GetOldestRestartPoint(&start_lsn, &timeline);
+
+	xlogreader = XLogReaderAllocate(&read_local_xlog_page, NULL);
+	if (!xlogreader)
+		ereport(ERROR,
+				(errcode(ERRCODE_OUT_OF_MEMORY),
+				 errmsg("out of memory"),
+				 errdetail("Failed while allocating a WAL reading processor.")));
+	while (true)
+	{
+		lsn = start_lsn;
+		do
+		{
+			record = XLogReadRecord(xlogreader, lsn, &errormsg);
+			if (record == NULL)
+				break;
+			lsn = InvalidXLogRecPtr; /* continue after the record */
+			if (XLogRecGetRmid(xlogreader) == RM_XACT_ID)
+			{
+				uint32 info = XLogRecGetInfo(xlogreader);
+				switch (info & XLOG_XACT_OPMASK)
+				{
+				    case XLOG_XACT_PREPARE:
+					{
+						TwoPhaseFileHeader *hdr = (TwoPhaseFileHeader *)XLogRecGetData(xlogreader);
+						char* xact_gid = (char*)hdr + MAXALIGN(sizeof(TwoPhaseFileHeader));
+ 						if (strcmp(xact_gid, gid) == 0)
+						{
+							xid = hdr->xid;
+							xact_status = "prepared";
+						}
+						break;
+					}
+				    case XLOG_XACT_COMMIT_PREPARED:
+					{
+						xl_xact_commit *xlrec;
+						xl_xact_parsed_commit parsed;
+
+						xlrec = (xl_xact_commit *) XLogRecGetData(xlogreader);
+						ParseCommitRecord(info, xlrec, &parsed);
+						if (xid == parsed.twophase_xid)
+						{
+							Assert(TransactionIdIsValid(xid));
+							xact_status = "committed";
+							done = true;
+						}
+						break;
+					}
+				    case XLOG_XACT_ABORT_PREPARED:
+					{
+						xl_xact_abort *xlrec;
+						xl_xact_parsed_abort parsed;
+
+						xlrec = (xl_xact_abort *) XLogRecGetData(xlogreader);
+						ParseAbortRecord(info, xlrec, &parsed);
+						if (xid == parsed.twophase_xid)
+						{
+							Assert(TransactionIdIsValid(xid));
+							xact_status = "aborted";
+							done = true;
+						}
+						break;
+					}
+				    default:
+					    break;
+				}
+			}
+		} while (!done && xlogreader->EndRecPtr < wal_end);
+
+		if (done)
+			break;
+
+		lsn = start_lsn;
+		XLogSegNoOffsetToRecPtr(lsn/XLogSegSize, 0, start_lsn);
+		start_lsn = XLogFindNextRecord(xlogreader, start_lsn);
+		if (start_lsn == lsn)
+		{
+			if (lsn <= XLogSegSize)
+				break;
+			XLogSegNoOffsetToRecPtr(lsn/XLogSegSize-1, 0, start_lsn);
+			start_lsn = XLogFindNextRecord(xlogreader, start_lsn);
+		}
+	} 
+
+	XLogReaderFree(xlogreader);
+	PG_RETURN_CSTRING(xact_status);
 }

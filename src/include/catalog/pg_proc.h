@@ -3199,6 +3199,10 @@ DATA(insert OID = 3378 (  pg_isolation_test_session_is_blocked PGNSP PGUID 12 1 
 DESCR("isolationtester support function");
 DATA(insert OID = 1065 (  pg_prepared_xact PGNSP PGUID 12 1 1000 0 0 f f f f t t v s 0 0 2249 "" "{28,25,1184,26,26}" "{o,o,o,o,o}" "{transaction,gid,prepared,ownerid,dbid}" _null_ _null_ pg_prepared_xact _null_ _null_ _null_ ));
 DESCR("view two-phase transactions");
+
+DATA(insert OID = 6015  (  pg_prepared_xact_status	PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 2275 "2275" _null_ _null_ _null_ _null_ _null_ pg_prepared_xact_status _null_ _null_ _null_ ));
+DESCR("I/O");
+
 DATA(insert OID = 3819 (  pg_get_multixact_members PGNSP PGUID 12 1 1000 0 0 f f f f t t v s 1 0 2249 "28" "{28,28,25}" "{i,o,o}" "{multixid,xid,mode}" _null_ _null_ pg_get_multixact_members _null_ _null_ _null_ ));
 DESCR("view members of a multixactid");
 

@@ -851,7 +851,6 @@ ValidXLogPageHeader(XLogReaderState *state, XLogRecPtr recptr,
 	return true;
 }
 
-#ifdef FRONTEND
 /*
  * Functions that are currently not needed in the backend, but are better
  * implemented inside xlogreader.c because of the internal facilities available
@@ -975,8 +974,6 @@ out:
 
 	return found;
 }
-
-#endif							/* FRONTEND */
 
 
 /* ----------------------------------------
