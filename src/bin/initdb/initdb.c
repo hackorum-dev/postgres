@@ -863,12 +863,13 @@ set_null_conf(void)
  * attempt to reproduce what the postmaster will do when allocating a POSIX
  * segment in dsm_impl.c; if it doesn't work, we assume it won't work for
  * the postmaster either, and configure the cluster for System V shared
- * memory instead.
+ * memory instead. However, on Solaris-derived systems, System V shared
+ * memory is preferred.
  */
 static char *
 choose_dsm_implementation(void)
 {
-#ifdef HAVE_SHM_OPEN
+#if defined(HAVE_SHM_OPEN) && !defined(__sun)
 	int			ntries = 10;
 
 	while (ntries > 0)

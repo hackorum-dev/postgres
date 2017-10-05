@@ -56,15 +56,20 @@
  * false, we might need to add compile and/or run-time tests here and do this
  * only if the running kernel supports it.
  *
- * However, we must always disable this logic in the EXEC_BACKEND case, and
+ * There are two cases in which we disable this logic. On systems that support
+ * intimate shared memory (e.g. illumos and Solaris), we prefer the usage of
+ * System V shared memory in order to take advantage of the performance
+ * improvements that sharing page tables provides.
+ *
+ * In addition, we must always disable this logic in the EXEC_BACKEND case, and
  * fall back to the old method of allocating the entire segment using System V
  * shared memory, because there's no way to attach an anonymous mmap'd segment
  * to a process after exec().  Since EXEC_BACKEND is intended only for
  * developer use, this shouldn't be a big problem.  Because of this, we do
  * not worry about supporting anonymous shmem in the EXEC_BACKEND cases below.
  */
-#ifndef EXEC_BACKEND
-#define USE_ANONYMOUS_SHMEM
+#if !defined(EXEC_BACKEND) && !defined(SHMEM_TYPE_SYSV)
+#  define USE_ANONYMOUS_SHMEM
 #endif
 
 
@@ -577,17 +582,23 @@ PGSharedMemoryCreate(Size size, bool makePrivate, int port,
 	Assert(size > MAXALIGN(sizeof(PGShmemHeader)));
 
 #ifdef USE_ANONYMOUS_SHMEM
-	AnonymousShmem = CreateAnonymousSegment(&size);
-	AnonymousShmemSize = size;
+	if (shared_memory_type == SHMEM_TYPE_MMAP)
+	{
+		AnonymousShmem = CreateAnonymousSegment(&size);
+		AnonymousShmemSize = size;
 
-	/* Register on-exit routine to unmap the anonymous segment */
-	on_shmem_exit(AnonymousShmemDetach, (Datum) 0);
+		/* Register on-exit routine to unmap the anonymous segment */
+		on_shmem_exit(AnonymousShmemDetach, (Datum) 0);
 
-	/* Now we need only allocate a minimal-sized SysV shmem block. */
-	sysvsize = sizeof(PGShmemHeader);
-#else
-	sysvsize = size;
+		/* Now we need only allocate a minimal-sized SysV shmem block. */
+		sysvsize = sizeof(PGShmemHeader);
+	}
+	else
 #endif
+	{
+		Assert(shared_memory_type == SHMEM_TYPE_SYSV);
+		sysvsize = size;
+	}
 
 	/* Make sure PGSharedMemoryAttach doesn't fail without need */
 	UsedShmemSegAddr = NULL;
