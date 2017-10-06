@@ -432,6 +432,8 @@ typedef struct ViewOptions
  *		Returns the rel's name.
  *
  * Note that the name is only unique within the containing namespace.
+ *
+ * See also get_rel_name(...), and get_qualified_relation_name(...).
  */
 #define RelationGetRelationName(relation) \
 	(NameStr((relation)->rd_rel->relname))
@@ -439,6 +441,8 @@ typedef struct ViewOptions
 /*
  * RelationGetNamespace
  *		Returns the rel's namespace OID.
+ *
+ * See also get_namespace_name(...).
  */
 #define RelationGetNamespace(relation) \
 	((relation)->rd_rel->relnamespace)

@@ -967,6 +967,8 @@ to_regclass(PG_FUNCTION_ARGS)
 
 /*
  * regclassout		- converts class OID to "class_name"
+ *
+ * (See get_qualified_relation_name for a direct-callable version).
  */
 Datum
 regclassout(PG_FUNCTION_ARGS)

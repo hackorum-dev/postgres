@@ -1719,8 +1719,9 @@ get_relnatts(Oid relid)
  *
  * Returns a palloc'd copy of the string, or NULL if no such relation.
  *
- * NOTE: since relation name is not unique, be wary of code that uses this
- * for anything except preparing error messages.
+ * NOTE: since relation name is not unique, be wary of code that uses this for
+ * anything except preparing error messages. See get_qualified_relation_name
+ * for a safer option.
  */
 char *
 get_rel_name(Oid relid)

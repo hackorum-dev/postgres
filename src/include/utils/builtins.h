@@ -78,6 +78,8 @@ extern bool quote_all_identifiers;
 extern const char *quote_identifier(const char *ident);
 extern char *quote_qualified_identifier(const char *qualifier,
 						   const char *ident);
+extern char *get_qualified_relation_name(Oid relid, bool force_qualify,
+										 bool missing_ok);
 
 /* varchar.c */
 extern int	bpchartruelen(char *s, int len);

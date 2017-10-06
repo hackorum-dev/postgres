@@ -10491,6 +10491,9 @@ quote_qualified_identifier(const char *qualifier,
  *
  * This differs from the underlying get_rel_name() function in that it will
  * throw error instead of silently returning NULL if the OID is bad.
+ *
+ * The returned relation name is not guaranteed to be unique outside the
+ * schema, so it is frequently preferable to use get_qualified_relation_name.
  */
 static char *
 get_relation_name(Oid relid)
@@ -10503,6 +10506,56 @@ get_relation_name(Oid relid)
 }
 
 /*
+ * get_qualified_relation_name
+ *
+ * Get a relation name as a palloc'd string in the current memory context.
+ *
+ * If the relation is not on the current search path, or if force_qualify is
+ * true, the namespace for the relation is prepended.
+ *
+ * ERROR's on a missing relation unless missing_ok is set, in which case returns
+ * NULL.
+ *
+ * The quoting rules used are the same as those for regclass quoting: each
+ * component is quoted if necessary to prevent ambiguity.
+ */
+char *
+get_qualified_relation_name(Oid relid, bool force_qualify, bool missing_ok)
+{
+	HeapTuple   tp;
+	Form_pg_class reltup;
+	char       *relname;
+	char       *nspname = NULL;
+	char       *result;
+
+	tp = SearchSysCache1(RELOID, ObjectIdGetDatum(relid));
+	if (!HeapTupleIsValid(tp))
+	{
+		if (missing_ok)
+			return NULL;
+		else
+			elog(ERROR, "cache lookup failed for relation %u", relid);
+	}
+
+	reltup = (Form_pg_class) GETSTRUCT(tp);
+	relname = NameStr(reltup->relname);
+
+	if (force_qualify || !RelationIsVisible(relid))
+	{
+		nspname = get_namespace_name(reltup->relnamespace);
+		if (!nspname)
+			elog(ERROR, "cache lookup failed for namespace %u",
+					reltup->relnamespace);
+	}
+
+	result = quote_qualified_identifier(nspname, relname);
+
+	ReleaseSysCache(tp);
+
+	return result;
+}
+
+/*
  * generate_relation_name
  *		Compute the name to display for a relation specified by OID
  *
@@ -10511,6 +10564,11 @@ get_relation_name(Oid relid)
  * If namespaces isn't NIL, it must be a list of deparse_namespace nodes.
  * We will forcibly qualify the relation name if it equals any CTE name
  * visible in the namespace list.
+ *
+ * This doesn't use get_qualified_relation_name because it has
+ * to do CTE namespace clash checks to decide whether to force-qualify
+ * the name. For that it needs the namespace, and we don't want to do
+ * a second syscache lookup by calling get_qualified_relation_name.
  */
 static char *
 generate_relation_name(Oid relid, List *namespaces)
@@ -10575,28 +10633,7 @@ generate_relation_name(Oid relid, List *namespaces)
 static char *
 generate_qualified_relation_name(Oid relid)
 {
-	HeapTuple	tp;
-	Form_pg_class reltup;
-	char	   *relname;
-	char	   *nspname;
-	char	   *result;
-
-	tp = SearchSysCache1(RELOID, ObjectIdGetDatum(relid));
-	if (!HeapTupleIsValid(tp))
-		elog(ERROR, "cache lookup failed for relation %u", relid);
-	reltup = (Form_pg_class) GETSTRUCT(tp);
-	relname = NameStr(reltup->relname);
-
-	nspname = get_namespace_name(reltup->relnamespace);
-	if (!nspname)
-		elog(ERROR, "cache lookup failed for namespace %u",
-			 reltup->relnamespace);
-
-	result = quote_qualified_identifier(nspname, relname);
-
-	ReleaseSysCache(tp);
-
-	return result;
+	return get_qualified_relation_name(relid, true, false);
 }
 
 /*
