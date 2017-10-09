@@ -81,9 +81,10 @@ static void pull_up_union_leaf_queries(Node *setOp, PlannerInfo *root,
 						   int childRToffset);
 static void make_setop_translation_list(Query *query, Index newvarno,
 							List **translated_vars);
-static bool is_simple_subquery(Query *subquery, RangeTblEntry *rte,
-				   JoinExpr *lowest_outer_join,
-				   bool deletion_ok);
+static bool is_simple_subquery(PlannerInfo *root, Query *subquery,
+							   RangeTblEntry *rte,
+							   JoinExpr *lowest_outer_join,
+							   bool deletion_ok);
 static Node *pull_up_simple_values(PlannerInfo *root, Node *jtnode,
 					  RangeTblEntry *rte);
 static bool is_simple_values(PlannerInfo *root, RangeTblEntry *rte,
@@ -690,7 +691,7 @@ pull_up_subqueries_recurse(PlannerInfo *root, Node *jtnode,
 		 * unless is_safe_append_member says so.
 		 */
 		if (rte->rtekind == RTE_SUBQUERY &&
-			is_simple_subquery(rte->subquery, rte,
+			is_simple_subquery(root, rte->subquery, rte,
 							   lowest_outer_join, deletion_ok) &&
 			(containing_appendrel == NULL ||
 			 is_safe_append_member(rte->subquery)))
@@ -954,7 +955,7 @@ pull_up_simple_subquery(PlannerInfo *root, Node *jtnode, RangeTblEntry *rte,
 	 * easier just to keep this "if" looking the same as the one in
 	 * pull_up_subqueries_recurse.
 	 */
-	if (is_simple_subquery(subquery, rte,
+	if (is_simple_subquery(subroot, subquery, rte,
 						   lowest_outer_join, deletion_ok) &&
 		(containing_appendrel == NULL || is_safe_append_member(subquery)))
 	{
@@ -1404,7 +1405,7 @@ make_setop_translation_list(Query *query, Index newvarno,
  * deletion_ok is TRUE if it'd be okay to delete the subquery entirely.
  */
 static bool
-is_simple_subquery(Query *subquery, RangeTblEntry *rte,
+is_simple_subquery(PlannerInfo *root, Query *subquery, RangeTblEntry *rte,
 				   JoinExpr *lowest_outer_join,
 				   bool deletion_ok)
 {
@@ -1425,7 +1426,7 @@ is_simple_subquery(Query *subquery, RangeTblEntry *rte,
 
 	/*
 	 * Can't pull up a subquery involving grouping, aggregation, SRFs,
-	 * sorting, limiting, or WITH.  (XXX WITH could possibly be allowed later)
+	 * limiting, or WITH.  (XXX WITH could possibly be allowed later)
 	 *
 	 * We also don't pull up a subquery that has explicit FOR UPDATE/SHARE
 	 * clauses, because pullup would cause the locking to occur semantically
@@ -1439,12 +1440,22 @@ is_simple_subquery(Query *subquery, RangeTblEntry *rte,
 		subquery->groupClause ||
 		subquery->groupingSets ||
 		subquery->havingQual ||
-		subquery->sortClause ||
 		subquery->distinctClause ||
 		subquery->limitOffset ||
 		subquery->limitCount ||
 		subquery->hasForUpdate ||
 		subquery->cteList)
+		return false;
+
+	/*
+	 * We cannot pullup subqueries containing a Sort if it's the only entry in
+	 * the fromlist. However, we may be able to if there are some joins since
+	 * any join would break any guarantees about the ordering of the
+	 * resultset of any view or subquery. Additional joins may be subsequently
+	 * removed later in planning, but this does not matter.
+	 */
+	if (subquery->sortClause &&
+		list_length(root->parse->jointree->fromlist) == 1)
 		return false;
 
 	/*
