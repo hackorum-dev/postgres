@@ -3,7 +3,7 @@ use strict;
 use warnings;
 use PostgresNode;
 use TestLib;
-use Test::More tests => 4;
+use Test::More tests => 5;
 
 # Initialize publisher node
 my $node_publisher = get_new_node('publisher');
@@ -21,12 +21,18 @@ $node_publisher->safe_psql('postgres',
 $node_publisher->safe_psql('postgres',
 "CREATE TABLE tab_fk_ref (id int PRIMARY KEY, bid int REFERENCES tab_fk (bid));"
 );
+$node_publisher->safe_psql('postgres',
+"CREATE TABLE tab_upd_tst (k TEXT PRIMARY KEY, v TEXT);"
+);
 
 # Setup structure on subscriber
 $node_subscriber->safe_psql('postgres',
 	"CREATE TABLE tab_fk (bid int PRIMARY KEY);");
 $node_subscriber->safe_psql('postgres',
 "CREATE TABLE tab_fk_ref (id int PRIMARY KEY, bid int REFERENCES tab_fk (bid));"
+);
+$node_subscriber->safe_psql('postgres',
+"CREATE TABLE tab_upd_tst (k TEXT PRIMARY KEY, v TEXT);"
 );
 
 # Setup logical replication
@@ -111,6 +117,39 @@ $node_publisher->poll_query_until('postgres', $caughtup_query)
 $result = $node_subscriber->safe_psql('postgres',
 	"SELECT count(*), min(bid), max(bid) FROM tab_fk_ref;");
 is($result, qq(2|1|2), 'check replica trigger applied on subscriber');
+
+# Add replica trigger with specified list of affected columns
+$node_subscriber->safe_psql(
+	'postgres', qq{
+CREATE OR REPLACE FUNCTION upd_fn()
+RETURNS trigger AS \$\$
+BEGIN
+    INSERT INTO tab_upd_tst VALUES ('triggered', 'true');
+    RETURN NEW;
+END
+\$\$ LANGUAGE plpgsql;
+
+CREATE TRIGGER upd_trg
+BEFORE UPDATE OF k ON tab_upd_tst
+FOR EACH ROW EXECUTE PROCEDURE upd_fn();
+
+ALTER TABLE tab_upd_tst ENABLE REPLICA TRIGGER upd_trg;
+});
+
+# Insert data
+$node_publisher->safe_psql('postgres',
+	"INSERT INTO tab_upd_tst (k, v) VALUES ('k1', 'v1');");
+$node_publisher->safe_psql('postgres',
+	"UPDATE tab_upd_tst SET k = 'k2' WHERE k = 'k1';");
+
+$node_publisher->poll_query_until('postgres', $caughtup_query)
+  or die "Timed out while waiting for subscriber to catch up";
+
+# Trigger should be executed
+$result =
+  $node_subscriber->safe_psql('postgres', "SELECT k, v FROM tab_upd_tst ORDER BY k");
+is( $result, qq(k2|v1
+triggered|true), 'check replica trigger with specified list of affected columns applied on subscriber');
 
 $node_subscriber->stop('fast');
 $node_publisher->stop('fast');
