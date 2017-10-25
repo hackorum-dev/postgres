@@ -21,7 +21,7 @@ possible to support the amgettuple interface.  Instead, we only provide
 amgetbitmap support.  The amgetbitmap routine returns a lossy TIDBitmap
 comprising all pages in those page ranges that match the query
 qualifications.  The recheck step in the BitmapHeapScan node prunes tuples
-that are not visible according to the query qualifications.
+that are not visible according to the query predicates.
 
 An operator class must have the following entries:
 
