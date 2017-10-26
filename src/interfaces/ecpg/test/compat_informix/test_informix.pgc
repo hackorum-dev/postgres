@@ -21,7 +21,7 @@ int main(void)
 	$connect to REGRESSDB1;
 	if (sqlca.sqlcode != 0) exit(1);
 
-	$create table test(i int primary key, j int, c text);
+	$create table test(i float primary key, j int, c text);
 
 	/* this INSERT works */
 	rsetnull(CDECIMALTYPE, (char *)&j);
@@ -29,7 +29,7 @@ int main(void)
 	$commit;
 
 	/* this INSERT should fail because i is a unique column */
-	$insert into test (i, j, c) values (7, NUMBER, 'a');
+	$insert into test (i, j, c) values (7.1, NUMBER, 'a');
 	printf("INSERT: %ld=%s\n", sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc);
 	if (sqlca.sqlcode != 0) $rollback;
 
