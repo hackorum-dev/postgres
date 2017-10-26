@@ -175,6 +175,12 @@ get_type(enum ECPGttype type)
 			break;
 		case ECPGt_varchar:
 			return "ECPGt_varchar";
+		case ECPGt_utext:
+			/* FEP Feature - Unicode */
+			return ("ECPGt_utext");
+		case ECPGt_uvarchar:
+			/* FEP Feature - Unicode */
+			return ("ECPGt_uvarchar");
 		case ECPGt_NO_INDICATOR:	/* no indicator */
 			return "ECPGt_NO_INDICATOR";
 			break;
@@ -454,6 +460,50 @@ ECPGdump_a_simple(FILE *o, const char *name, enum ECPGttype type,
 				else
 					sprintf(offset, "sizeof(struct varchar)");
 				break;
+			case ECPGt_uvarchar:
+
+				/*
+				 * we have to use the pointer except for arrays with given
+				 * bounds
+				 */
+				if (((atoi(arrsize) > 0) ||
+					 (atoi(arrsize) == 0 && strcmp(arrsize, "0") != 0)) &&
+					size == NULL)
+					sprintf(variable, "(%s%s)", prefix ? prefix : "", name);
+				else
+					sprintf(variable, "&(%s%s)", prefix ? prefix : "", name);
+
+				/*
+				 * If we created a varchar structure automatically, counter is
+				 * greater than 0.
+				 */
+				if (counter)
+					sprintf(offset, "sizeof(struct uvarchar_%d)", counter);
+				else
+					sprintf(offset, "sizeof(struct uvarchar)");
+				break;
+			case ECPGt_utext:
+				{
+					char	   *sizeof_name = "utext";
+
+					/*
+					 * we have to use the pointer except for arrays with given
+					 * bounds, ecpglib will distinguish between * and []
+					 */
+					if ((atoi(varcharsize) > 1 ||
+						 (atoi(arrsize) > 0) ||
+						 (atoi(varcharsize) == 0 && strcmp(varcharsize, "0") != 0) ||
+						 (atoi(arrsize) == 0 && strcmp(arrsize, "0") != 0))
+						&& size == NULL)
+					{
+						sprintf(variable, "(%s%s)", prefix ? prefix : "", name);
+					}
+					else
+						sprintf(variable, "&(%s%s)", prefix ? prefix : "", name);
+
+					sprintf(offset, "(%s)*sizeof(%s)", strcmp(varcharsize, "0") == 0 ? "1" : varcharsize, sizeof_name);
+					break;
+				}
 			case ECPGt_char:
 			case ECPGt_unsigned_char:
 			case ECPGt_char_variable:

@@ -1,0 +1,435 @@
+SQL error: 
+
+test_var_1: simple select into utext var
+======print utext_var content======
+0x0000592A  0x00020BB7  0x00020731  0x00005E73  0x00006D0B  0x00020C53  0x00005927  0x0000897F  
+0x00006D0B  0x00005370  0x00005EA6  0x00006D0B  0x00005317  0x000051B0  0x00006D0B  0x00000000  
+0x00000000  0x00000000  0x00000000  0x00000000  
+======End utext_var content======
+utext_var_ind = 0
+======print utext_var content======
+0x00008DB3  0x00007403  0x00007BEE  0x00007403  0x00007FBD  0x00006BDB  0x00007403  0x00004E52  
+0x00004E53  0x00007403  0x00006A44  0x00006984  0x00007403  0x000068D2  0x00007403  0x000051B0  
+0x00007403  0x00000000  0x00000000  0x00000000  
+======End utext_var content======
+utext_var_ind = 0
+======print utext_var content======
+0x00004E16  0x0000754C  0x0000676F  0x00006BCF  0x00009694  0x000056DB  0x00005E74  0x00005C31  
+0x00004F1A  0x00004E3E  0x0000884C  0x00004E00  0x00006B21  0x00006BCF  0x00006B21  0x00020C96  
+0x00004E2A  0x00007403  0x0000961F  0x00000000  
+======End utext_var content======
+utext_var_ind = 0
+======print utext_var content======
+0x00004E9A  0x00006D32  0x00006B27  0x00006D32  0x0000975E  0x00006D32  0x00005927  0x00006D0B  
+0x00006D32  0x00005317  0x00007F8E  0x00006D32  0x00005357  0x00007F8E  0x00006D32  0x00005357  
+0x00006781  0x00006D32  0x00006CA1  0x00006709  
+======End utext_var content======
+utext_var_ind = 23
+
+test_var_2: simple select using utext var
+count=1 for '太𠮷𠜱平洋𠱓大西洋印度洋北冰洋'
+count=3 for '世界杯每隔四年就会举行一次每次𠲖个球队'
+
+test_var_3: simple update using utext var
+found 3 rows for Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋'
+
+test_var_4 : simple delete using utext var
+found 0 rows for Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋'
+found 0 rows for Item='世界杯每隔四年就会举行一次每次𠲖个球队'
+
+test_var_5 : simple insert using utext
+found 2 rows for Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋'
+found 2 rows for Item='世界杯每隔四年就会举行一次每次𠲖个球队'
+
+test_var_6 : prepared select into utext var
+======print utext_var content======
+0x0000592A  0x00020BB7  0x00020731  0x00005E73  0x00006D0B  0x00020C53  0x00005927  0x0000897F  
+0x00006D0B  0x00005370  0x00005EA6  0x00006D0B  0x00005317  0x000051B0  0x00006D0B  0x00000000  
+0x00000000  0x00000000  0x00000000  0x00000000  
+======End utext_var content======
+======print utext_var content======
+0x00004E16  0x0000754C  0x0000676F  0x00006BCF  0x00009694  0x000056DB  0x00005E74  0x00005C31  
+0x00004F1A  0x00004E3E  0x0000884C  0x00004E00  0x00006B21  0x00006BCF  0x00006B21  0x00020C96  
+0x00004E2A  0x00007403  0x0000961F  0x00000000  
+======End utext_var content======
+
+test_var_7 : prepared select using utext var
+count=3 for Item='世界杯每隔四年就会举行一次每次𠲖个球队'
+
+test_var_8 : prepared update using utext var
+found 3 rows for Item='世界杯每隔四年就会举行一次每次𠲖个球队'
+
+test_var_9 : prepared delete using utext var
+found 0 rows for Item='世界杯每隔四年就会举行一次每次𠲖个球队'
+
+test_var_10 : prepared insert using utext var
+found 2 rows for Item='世界杯每隔四年就会举行一次每次𠲖个球队'
+
+test_var_11 : Open cursor using utext var
+count=3 for Item='世界杯每隔四年就会举行一次每次𠲖个球队'
+
+test_var_12 : Fecth cursor into utext var
+======print utext_var content======
+0x0000592A  0x00020BB7  0x00020731  0x00005E73  0x00006D0B  0x00020C53  0x00005927  0x0000897F  
+0x00006D0B  0x00005370  0x00005EA6  0x00006D0B  0x00005317  0x000051B0  0x00006D0B  0x00000000  
+0x00000000  0x00000000  0x00000000  0x00000000  
+======End utext_var content======
+
+test_var_13 : simple insert utext var with L string inited
+======print utext_var_str content======
+0x00008DB3  0x00007403  0x00007BEE  0x00007403  0x00007FBD  0x00006BDB  0x00007403  
+======End utext_var_str content======
+======print utext_var content======
+0x00008DB3  0x00007403  0x00007BEE  0x00007403  0x00007FBD  0x00006BDB  0x00007403  0x00000000  
+0x00000000  0x00000000  0x00000000  0x00000000  0x00000000  0x00000000  0x00000000  0x00000000  
+0x00000000  0x00000000  0x00000000  0x00000000  
+======End utext_var content======
+utext_var_ind = 0
+
+test_var_14 : Open cursor using utext var directly in WHERE Clause
+count=3 for Item='世界杯每隔四年就会举行一次每次𠲖个球队'
+
+test_var_15 : Test utext_var working with NULL without indicator
+======print utext_var content======
+0x00000000  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  
+======End utext_var content======
+found 6 rows for Item being NULL
+
+test_var_16 : Test utext_var working with NULL with indicator
+======print utext_var content======
+0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  
+======End utext_var content======
+utext_var_ind = -1
+found 6 rows for Item being NULL
+
+test_array_1 : simple select into utext array 
+---->array[0]:
+0x0000592A  0x00020BB7  0x00020731  0x00005E73  0x00006D0B  0x00020C53  0x00005927  0x0000897F  
+0x00006D0B  0x00005370  0x00005EA6  0x00006D0B  0x00005317  0x000051B0  0x00006D0B  0x00000000  
+0x00000000  0x00000000  0x00000000  0x00000000  
+---->array[1]:
+0x00008DB3  0x00007403  0x00007BEE  0x00007403  0x00007FBD  0x00006BDB  0x00007403  0x00004E52  
+0x00004E53  0x00007403  0x00006A44  0x00006984  0x00007403  0x000068D2  0x00007403  0x000051B0  
+0x00007403  0x00000000  0x00000000  0x00000000  
+---->array[2]:
+0x00004E16  0x0000754C  0x0000676F  0x00006BCF  0x00009694  0x000056DB  0x00005E74  0x00005C31  
+0x00004F1A  0x00004E3E  0x0000884C  0x00004E00  0x00006B21  0x00006BCF  0x00006B21  0x00020C96  
+0x00004E2A  0x00007403  0x0000961F  0x00000000  
+---->array[3]:
+0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  
+
+---->array[0]:
+0x0000592A  0x00020BB7  0x00020731  0x00005E73  0x00006D0B  0x00020C53  0x00005927  0x0000897F  
+0x00006D0B  0x00005370  0x00005EA6  0x00006D0B  0x00005317  0x000051B0  0x00006D0B  0x00000000  
+0x00000000  0x00000000  0x00000000  0x00000000  
+---->array[1]:
+0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  
+---->array[2]:
+0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  
+---->array[3]:
+0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  
+
+
+test_array_2 : simple select using array
+count=1 for '太𠮷𠜱平洋𠱓大西洋印度洋北冰洋'
+count=3 for '世界杯每隔四年就会举行一次每次𠲖个球队'
+
+test_array_3 : simple update using utext array
+find 0 rows for Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋'
+find 2 rows for Item='世界杯每隔四年就会举行一次每次𠲖个球队'
+
+test_array_4 : simple delete using utext array
+found 0 rows for Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋'
+found 0 rows for Item='世界杯每隔四年就会举行一次每次𠲖个球队'
+
+test_array_5 : simple insert using utext array
+found 2 rows for Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋'
+found 2 rows for Item='世界杯每隔四年就会举行一次每次𠲖个球队'
+
+test_array_6 : prepared select SQL error: 
+into utext array
+---->array[0]:
+0x0000592A  0x00020BB7  0x00020731  0x00005E73  0x00006D0B  0x00020C53  0x00005927  0x0000897F  
+0x00006D0B  0x00005370  0x00005EA6  0x00006D0B  0x00005317  0x000051B0  0x00006D0B  0x00000000  
+0x00000000  0x00000000  0x00000000  0x00000000  
+---->array[1]:
+0x00008DB3  0x00007403  0x00007BEE  0x00007403  0x00007FBD  0x00006BDB  0x00007403  0x00004E52  
+0x00004E53  0x00007403  0x00006A44  0x00006984  0x00007403  0x000068D2  0x00007403  0x000051B0  
+0x00007403  0x00000000  0x00000000  0x00000000  
+---->array[2]:
+0x00004E16  0x0000754C  0x0000676F  0x00006BCF  0x00009694  0x000056DB  0x00005E74  0x00005C31  
+0x00004F1A  0x00004E3E  0x0000884C  0x00004E00  0x00006B21  0x00006BCF  0x00006B21  0x00020C96  
+0x00004E2A  0x00007403  0x0000961F  0x00000000  
+---->array[3]:
+0x00004E9A  0x00006D32  0x00006B27  0x00006D32  0x0000975E  0x00006D32  0x00005927  0x00006D0B  
+0x00006D32  0x00005317  0x00007F8E  0x00006D32  0x00005357  0x00007F8E  0x00006D32  0x00005357  
+0x00006781  0x00006D32  0x00006CA1  0x00006709  
+
+
+test_array_7 : prepared select using utext array
+count=1 for Item='世界杯每隔四年就会举行一次每次𠲖个球队'
+
+test_array_8 : prepared update using utext array
+found 3 rows for Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋'
+
+test_array_9 : prepared delete using utext array
+found 0 rows for Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋'
+
+test_array_10 : prepared insert using utext array
+found 3 rows for Item='世界杯每隔四年就会举行一次每次𠲖个球队'
+
+test_array_11 : Open cursor using utext array
+count=3 for Item='世界杯每隔四年就会举行一次每次𠲖个球队'
+
+test_array_12 : Fecth cursor into utext array
+---->array[0]:
+0x0000592A  0x00020BB7  0x00020731  0x00005E73  0x00006D0B  0x00020C53  0x00005927  0x0000897F  
+0x00006D0B  0x00005370  0x00005EA6  0x00006D0B  0x00005317  0x000051B0  0x00006D0B  0x00000000  
+0x00000000  0x00000000  0x00000000  0x00000000  
+---->array[1]:
+0x00008DB3  0x00007403  0x00007BEE  0x00007403  0x00007FBD  0x00006BDB  0x00007403  0x00004E52  
+0x00004E53  0x00007403  0x00006A44  0x00006984  0x00007403  0x000068D2  0x00007403  0x000051B0  
+0x00007403  0x00000000  0x00000000  0x00000000  
+---->array[2]:
+0x00004E16  0x0000754C  0x0000676F  0x00006BCF  0x00009694  0x000056DB  0x00005E74  0x00005C31  
+0x00004F1A  0x00004E3E  0x0000884C  0x00004E00  0x00006B21  0x00006BCF  0x00006B21  0x00020C96  
+0x00004E2A  0x00007403  0x0000961F  0x00000000  
+---->array[3]:
+0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  
+
+
+test_array_13 : Insert array with L string inited
+---->array[0]:
+0x0000592A  0x00020BB7  0x00020731  0x00005E73  0x00006D0B  0x00020C53  0x00005927  0x0000897F  
+0x00006D0B  0x00005370  0x00005EA6  0x00006D0B  0x00005317  0x000051B0  0x00006D0B  0x00000000  
+0x00000000  0x00000000  0x00000000  0x00000000  
+---->array[1]:
+0x00008DB3  0x00007403  0x00007BEE  0x00007403  0x00007FBD  0x00006BDB  0x00007403  0x00004E52  
+0x00004E53  0x00007403  0x00006A44  0x00006984  0x00007403  0x000068D2  0x00007403  0x000051B0  
+0x00007403  0x00000000  0x00000000  0x00000000  
+---->array[2]:
+0x00004E16  0x0000754C  0x0000676F  0x00006BCF  0x00009694  0x000056DB  0x00005E74  0x00005C31  
+0x00004F1A  0x00004E3E  0x0000884C  0x00004E00  0x00006B21  0x00000000  0x00000000  0x00000000  
+0x00000000  0x00000000  0x00000000  0x00000000  
+
+
+test_array_14 : Open cursor using utext array directly in WHERE Clause
+count=3 for Item='世界杯每隔四年就会举行一次每次𠲖个球队'
+
+test_array_15 : Test utext array working with NULL without using indicator
+---->array[0]:
+0x00000000  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  
+---->array[1]:
+0x00000000  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  
+---->array[2]:
+0x00000000  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  
+
+found 6 rows for Item being NULL
+
+test_array_16 : Test utext array working with NULL using indicator
+---->array[0]:
+0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  
+---->array[1]:
+0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  
+---->array[2]:
+0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  
+
+utext_var_ind = -1
+utext_var_ind = -1
+utext_var_ind = -1
+found 6 rows for Item being NULL
+
+test_pvar_1 : simple select into utext pointer
+======print utext_var content======
+0x0000592A  0x00020BB7  0x00020731  0x00005E73  0x00006D0B  0x00020C53  0x00005927  0x0000897F  
+0x00006D0B  0x00005370  0x00005EA6  0x00006D0B  0x00005317  0x000051B0  0x00006D0B  0x00000000  
+0x61616161  0x61616161  0x61616161  0x61616161  
+======End utext_var content======
+utext_var_ind = 0
+======print utext_var content======
+0x00008DB3  0x00007403  0x00007BEE  0x00007403  0x00007FBD  0x00006BDB  0x00007403  0x00004E52  
+0x00004E53  0x00007403  0x00006A44  0x00006984  0x00007403  0x000068D2  0x00007403  0x000051B0  
+0x00007403  0x00000000  0x61616161  0x61616161  
+======End utext_var content======
+utext_var_ind = 0
+======print utext_var content======
+0x00004E16  0x0000754C  0x0000676F  0x00006BCF  0x00009694  0x000056DB  0x00005E74  0x00005C31  
+0x00004F1A  0x00004E3E  0x0000884C  0x00004E00  0x00006B21  0x00006BCF  0x00006B21  0x00020C96  
+0x00004E2A  0x00007403  0x0000961F  0x00000000  
+======End utext_var content======
+utext_var_ind = 0
+======print utext_var content======
+0x00004E9A  0x00006D32  0x00006B27  0x00006D32  0x0000975E  0x00006D32  0x00005927  0x00006D0B  
+0x00006D32  0x00005317  0x00007F8E  0x00006D32  0x00005357  0x00007F8E  0x00006D32  0x00005357  
+0x00006781  0x00006D32  0x00006CA1  0x00006709  
+======End utext_var content======
+utext_var_ind = 0
+
+test_pvar_2 : simple select using utext pointer
+count=1 for '太𠮷𠜱平洋𠱓大西洋印度洋北冰洋'
+count=0 for '世界杯每隔四年就会举行一次每次𠲖个球队'
+
+test_pvar_3 : simple update using utext pointer
+found 3 rows for Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋'
+
+test_pvar_4 : simple delete using utext pointer
+found 0 rows for Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋'
+found 1 rows for Item='世界杯每隔四年就会举行一次每次𠲖个球队'
+
+test_pvar_5 : simple insert using utext pointer
+found 1 rows for Item='世界杯每隔四年就会举行一次每次𠲖个球队'
+
+test_pvar_6 : prepared select into utext pointer
+======print utext_var content======
+0x0000592A  0x00020BB7  0x00020731  0x00005E73  0x00006D0B  0x00020C53  0x00005927  0x0000897F  
+0x00006D0B  0x00005370  0x00005EA6  0x00006D0B  0x00005317  0x000051B0  0x00006D0B  0x00000000  
+0x61616161  0x61616161  0x61616161  0x61616161  
+======End utext_var content======
+======print utext_var content======
+0x00004E16  0x0000754C  0x0000676F  0x00006BCF  0x00009694  0x000056DB  0x00005E74  0x00005C31  
+0x00004F1A  0x00004E3E  0x0000884C  0x00004E00  0x00006B21  0x00006BCF  0x00006B21  0x00020C96  
+0x00004E2A  0x00007403  0x0000961F  0x00000000  
+======End utext_var content======
+
+test_pvar_7 : prepared select using utext pointer
+count=0 for Item='世界杯每隔四年就会举行一次每次𠲖个球队'
+
+test_pvar_8 : prepared update using utext pointer
+found 1 rows for Item='世界杯每隔四年就会举行一次每次𠲖个球队'
+
+test_pvar_9 : prepared delete using utext pointer
+found 1 rows for Item='世界杯每隔四年就会举行一次每次𠲖个球队'
+
+test_pvar_10 : prepared insert using utext pointer
+found 1 rows for Item='世界杯每隔四年就会举行一次每次𠲖个球队'
+
+test_pvar_11 : Open cursor using utext pointer
+count=0 for Item='世界杯每隔四年就会举行一次每次𠲖个球队'
+
+test_pvar_12 : Fecth cursor into utext pointer
+======print utext_var content======
+0x0000592A  0x00020BB7  0x00020731  0x00005E73  0x00006D0B  0x00020C53  0x00005927  0x0000897F  
+0x00006D0B  0x00005370  0x00005EA6  0x00006D0B  0x00005317  0x000051B0  0x00006D0B  0x00000000  
+0x61616161  0x61616161  0x61616161  0x61616161  
+======End utext_var content======
+
+test_pvar_13 : simple insert utext pointer with L string inited
+======print utext_var content======
+0x0000592A  0x00020BB7  0x00020731  0x00005E73  0x00006D0B  0x00020C53  0x00005927  0x0000897F  
+0x00006D0B  0x00005370  0x00005EA6  0x00006D0B  0x00005317  0x000051B0  0x00006D0B  0x00000000  
+0x00000000  0x00000000  0x00000000  0x00000000  
+======End utext_var content======
+utext_var_ind = 0
+
+test_pvar_14 : Open cursor using utext var directly in WHERE Clause
+count=0 for Item='世界杯每隔四年就会举行一次每次𠲖个球队'
+
+test_pvar_15 : Test utext pointer working with NULL without using indicator
+======print utext_var content======
+0x00000000  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  
+======End utext_var content======
+found 6 rows for Item being NULL
+
+test_pvar_16 : Test utext pointer working with NULL using indicator
+======print utext_var content======
+0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  0x61616161  
+0x61616161  0x61616161  0x61616161  0x61616161  
+======End utext_var content======
+utext_var_ind = -1
+found 6 rows for Item being NULL
+
+test_pvar_17 : Test utext uninitialized pointer getting and setting data
+======print utext_var_str content======
+0x0000592A  0x00020BB7  0x00020731  0x00005E73  0x00006D0B  0x00020C53  0x00005927  0x0000897F  
+0x00006D0B  0x00005370  0x00005EA6  0x00006D0B  0x00005317  0x000051B0  0x00006D0B  
+======End utext_var_str content======
+Find Item = 太𠮷𠜱平洋𠱓大西洋印度洋北冰洋 where Count=18
+
+test_pvar_18 : Test utext uninitialized pointer working with NULL without using indicator
+======print utext_var content======
+0x00000000  
+======End utext_var content======
+found 6 rows for Item being NULL
+
+test_pvar_19 : Test utext uninitialized pointer working with NULL using indicator
+======print utext_var content======
+0x00000000  
+======End utext_var content======
+utext_var_ind = -1
+found 6 rows for Item being NULL
+
+test_pp_var_1 : Test pointer to pointer utext_var without initialize
+======print utext_var_str content======
+0x0000592A  0x00020BB7  0x00020731  0x00005E73  0x00006D0B  0x00020C53  0x00005927  0x0000897F  
+0x00006D0B  0x00005370  0x00005EA6  0x00006D0B  0x00005317  0x000051B0  0x00006D0B  
+======End utext_var_str content======
+utext_var_ind = 0
+======print utext_var_str content======
+0x00008DB3  0x00007403  0x00007BEE  0x00007403  0x00007FBD  0x00006BDB  0x00007403  0x00004E52  
+0x00004E53  0x00007403  0x00006A44  0x00006984  0x00007403  0x000068D2  0x00007403  0x000051B0  
+0x00007403  
+======End utext_var_str content======
+utext_var_ind = 0
+======print utext_var_str content======
+0x00004E16  0x0000754C  0x0000676F  0x00006BCF  0x00009694  0x000056DB  0x00005E74  0x00005C31  
+0x00004F1A  0x00004E3E  0x0000884C  0x00004E00  0x00006B21  0x00006BCF  0x00006B21  0x00020C96  
+0x00004E2A  0x00007403  0x0000961F  
+======End utext_var_str content======
+utext_var_ind = 0
+足球篮球羽毛球乒乓球橄榄球棒球冰球
+
+test_pp_var_2 : Test uninitialized pointer to pointer utext_var working with NULL without indicator
+======print utext_var_str content======
+
+======End utext_var_str content======
+======print utext_var_str content======
+
+======End utext_var_str content======
+======print utext_var_str content======
+
+======End utext_var_str content======
+found 6 rows for Item being NULL
+
+test_pp_var_2 : Test uninitialized pointer to pointer utext_var working with NULL without indicator
+======print utext_var_str content======
+
+======End utext_var_str content======
+utext_var_ind = -1
+======print utext_var_str content======
+
+======End utext_var_str content======
+utext_var_ind = -1
+======print utext_var_str content======
+
+======End utext_var_str content======
+utext_var_ind = -1
+found 6 rows for Item being NULL

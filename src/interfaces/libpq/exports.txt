@@ -172,3 +172,8 @@ PQsslAttribute            169
 PQsetErrorContextVisibility 170
 PQresultVerboseErrorMessage 171
 PQencryptPasswordConn     172
+PQGetEncodingFromPGres    173
+PQGetEncodingFromPGconn   174
+PQGetEncodingName         175
+PQGenEncodingMaxLen       176
+

@@ -369,6 +369,21 @@ ECPGset_noind_null(enum ECPGttype type, void *ptr)
 		case ECPGt_timestamp:
 			memset((char *) ptr, 0xff, sizeof(timestamp));
 			break;
+		case ECPGt_utext:
+#if defined(WIN32)
+			memset(ptr, 0x00, 2);
+#else
+			memset(ptr, 0x00, 4);
+#endif
+			break;
+		case ECPGt_uvarchar:
+#if defined(WIN32)
+			memset(((struct ECPGgeneric_varchar *) ptr)->arr, 0x00, 2);
+#else
+			memset(((struct ECPGgeneric_varchar *) ptr)->arr, 0x00, 4);
+#endif
+			((struct ECPGgeneric_varchar *) ptr)->len = 0;
+			break;
 		default:
 			break;
 	}
@@ -441,6 +456,18 @@ ECPGis_noind_null(enum ECPGttype type, void *ptr)
 			break;
 		case ECPGt_timestamp:
 			return _check(ptr, sizeof(timestamp));
+			break;
+		case ECPGt_utext:
+#if defined(WIN32)
+			if (*((short int *) ptr) == 0)
+#else
+			if (*((int *) ptr) == 0)
+#endif
+				return true;
+			break;
+		case ECPGt_uvarchar:
+			if (((struct ECPGgeneric_varchar *) ptr)->len == 0)
+				return true;
 			break;
 		default:
 			break;

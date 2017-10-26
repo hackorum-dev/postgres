@@ -23,9 +23,17 @@ TESTS = array array.c \
         quote quote.c \
         show show.c \
         twophase twophase.c \
-        insupd insupd.c
+        insupd insupd.c \
+        utext utext.c \
+        uvarchar uvarchar.c
 
 all: $(TESTS)
 
 oldexec.c: oldexec.pgc $(ECPG_TEST_DEPENDENCIES)
 	$(ECPG) -r questionmarks -o $@ $<
+	
+utext.c: utext.pgc $(ECPG_TEST_DEPENDENCIES)
+	$(ECPG) --enable-utext -r no_indicator -o $@ $<
+	
+uvarchar.c: uvarchar.pgc $(ECPG_TEST_DEPENDENCIES)
+	$(ECPG) --enable-utext -r no_indicator -o $@ $<

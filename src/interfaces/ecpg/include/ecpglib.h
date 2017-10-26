@@ -11,11 +11,22 @@
 #include "ecpgtype.h"
 #include "sqlca.h"
 #include <string.h>
-
+#if defined(WIN32)
+#include <windows.h>
+#endif
 #ifdef ENABLE_NLS
 extern char *ecpg_gettext(const char *msgid) pg_attribute_format_arg(1);
 #else
 #define ecpg_gettext(x) (x)
+#endif
+
+#if defined ECPG_ENABLE_UTEXT
+#if defined(WIN32)
+typedef WCHAR utext;
+#else
+#include <wchar.h>
+typedef wchar_t utext;
+#endif
 #endif
 
 #ifndef __cplusplus

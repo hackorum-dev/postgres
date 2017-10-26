@@ -33,7 +33,10 @@
 #include "pgtypes_date.h"
 #include "pgtypes_timestamp.h"
 #include "pgtypes_interval.h"
+#include "convertutf.h"
 
+static int ecpg_do_utext_encoding(struct variable * var, int client_encoding,int lineno);
+static int ecpg_do_uvachar_encoding(struct variable * var, int client_encoding,int lineno);
 /*
  *	This function returns a newly malloced string that has ' and \
  *	escaped.
@@ -88,6 +91,11 @@ free_variable(struct variable *var)
 
 	while (var)
 	{
+		if (var->alloc_inf == 1)
+			ecpg_free(var->value);
+		if (var->ind_alloc_inf == 1)
+			ecpg_free(var->ind_value);
+
 		var_next = var->next;
 		ecpg_free(var);
 		var = var_next;
@@ -382,8 +390,82 @@ ecpg_store_result(const PGresult *results, int act_field,
 						len = var->offset * ntuples;
 					}
 					break;
+				case ECPGt_utext:
+				{
+					char 	*pval;
+					int		pval_len;
+					int		unicode_str_len;
+
+					char	*src_encoding;
+					char	*dest_encoding = get_utext_encoding();
+
+					/* Check the PGCLIENTENCODING */
+					src_encoding = PQGetEncodingName(PQGetEncodingFromPGres(results));
+					if(src_encoding == NULL)
+					{
+						ecpg_raise(stmt->lineno, ECPG_CLIENT_ENCODING_ERROR, ECPG_SQLSTATE_ECPG_INTERNAL_ERROR, NULL);
+						return false;
+					}
+
+					if (!var->varcharsize && !var->arrsize)
+					{
+						/* special mode for handling utext **foo=0 */
+						for (act_tuple = 0; act_tuple < ntuples; act_tuple++)
+						{
+							pval = (char *) PQgetvalue(results, act_tuple, act_field);
+							pval_len = PQgetlength(results, act_tuple, act_field);
+
+							unicode_str_len = get_converted_length(src_encoding,dest_encoding,pval,pval_len);
+							if(unicode_str_len == -1)
+							{
+								ecpg_raise(stmt->lineno, ECPG_ENCODING_ERROR, ECPG_SQLSTATE_ECPG_ENCODING_ERROR, NULL);
+								return false;
+							}
+
+							len += unicode_str_len + UNICODE_CH_LEN;
+						}
+						len += (ntuples + 1) * sizeof(char *);
+					}
+					else
+					{
+						var->varcharsize = 0;
+						/* check strlen for each tuple */
+						for (act_tuple = 0; act_tuple < ntuples; act_tuple++)
+						{
+							pval = (char *) PQgetvalue(results, act_tuple, act_field);
+							pval_len = PQgetlength(results, act_tuple, act_field);
+
+							unicode_str_len = get_converted_length(src_encoding,dest_encoding,pval,pval_len);
+							if(unicode_str_len == -1)
+							{
+								ecpg_raise(stmt->lineno, ECPG_ENCODING_ERROR, ECPG_SQLSTATE_ECPG_ENCODING_ERROR, NULL);
+								return false;
+							}
+
+							/* utf16_str_len indicates the utf16 string length by bytes */
+							unicode_str_len = unicode_str_len + UNICODE_CH_LEN;
+
+							if (unicode_str_len > var->varcharsize)
+								var->varcharsize = unicode_str_len;
+						}
+
+						/* Here offset is the utf16 length by bytes,
+						 * so no need using '*' as used in char
+						 */
+						var->offset = var->varcharsize;
+
+						/* varcharsize contains number of characters so divided by UNICODE_CH_LEN*/
+						var->varcharsize = var->varcharsize/UNICODE_CH_LEN;
+
+						len = var->offset * ntuples;
+					}
+				}
+					break;
 				case ECPGt_varchar:
 					len = ntuples * (var->varcharsize + sizeof(int));
+					break;
+				case ECPGt_uvarchar:
+					len = ntuples * (var->varcharsize*2 + sizeof(int));
 					break;
 				default:
 					len = var->offset * ntuples;
@@ -416,7 +498,7 @@ ecpg_store_result(const PGresult *results, int act_field,
 
 	/* fill the variable with the tuple(s) */
 	if (!var->varcharsize && !var->arrsize &&
-		(var->type == ECPGt_char || var->type == ECPGt_unsigned_char || var->type == ECPGt_string))
+		(var->type == ECPGt_char || var->type == ECPGt_unsigned_char || var->type == ECPGt_string || var->type == ECPGt_utext))
 	{
 		/* special mode for handling char**foo=0 */
 
@@ -437,7 +519,10 @@ ecpg_store_result(const PGresult *results, int act_field,
 			else
 			{
 				*current_string = current_data_location;
-				current_data_location += len;
+				if(var->type == ECPGt_utext)
+					current_data_location += (get_utext_length(current_data_location,0)+1)*UNICODE_CH_LEN;
+				else
+					current_data_location += len;
 				current_string++;
 			}
 		}
@@ -772,6 +857,7 @@ ecpg_store_input(const int lineno, const bool force_indicator, const struct vari
 			case ECPGt_char:
 			case ECPGt_unsigned_char:
 			case ECPGt_string:
+			case ECPGt_utext:
 				{
 					/* set slen to string length if type is char * */
 					int			slen = (var->varcharsize == 0) ? strlen((char *) var->value) : (unsigned int) var->varcharsize;
@@ -807,6 +893,7 @@ ecpg_store_input(const int lineno, const bool force_indicator, const struct vari
 				}
 				break;
 			case ECPGt_varchar:
+			case ECPGt_uvarchar:
 				{
 					struct ECPGgeneric_varchar *variable =
 					(struct ECPGgeneric_varchar *) (var->value);
@@ -1754,6 +1841,7 @@ ecpg_do_prologue(int lineno, const int compat, const int force_indicator,
 	enum ECPGttype type;
 	struct variable **list;
 	char	   *prepname;
+	int			outparam = 0;
 
 	*stmt_out = NULL;
 
@@ -1869,7 +1957,10 @@ ecpg_do_prologue(int lineno, const int compat, const int force_indicator,
 	while (type != ECPGt_EORT)
 	{
 		if (type == ECPGt_EOIT)
+		{
+			outparam = 1;
 			list = &(stmt->outlist);
+		}
 		else
 		{
 			struct variable *var,
@@ -1899,6 +1990,39 @@ ecpg_do_prologue(int lineno, const int compat, const int force_indicator,
 				var->value = *((char **) (var->pointer));
 			else
 				var->value = var->pointer;
+
+			if (var->type == ECPGt_utext)
+			{
+				if(outparam == 0 &&
+						ecpg_do_utext_encoding(var, PQGetEncodingFromPGconn(con->connection),lineno) == -1)
+				{
+					if ( NULL != var )
+					{
+						ecpg_free(var);
+						var = NULL;
+					}
+
+					ecpg_do_epilogue(stmt);
+
+					return false;
+				}
+			}
+			else if(var->type == ECPGt_uvarchar)
+			{
+				if(outparam == 0 &&
+						ecpg_do_uvachar_encoding(var, PQGetEncodingFromPGconn(con->connection),lineno) == -1)
+				{
+					if ( NULL != var )
+					{
+						ecpg_free(var);
+						var = NULL;
+					}
+
+					ecpg_do_epilogue(stmt);
+
+					return false;
+				}
+			}
 
 			/*
 			 * negative values are used to indicate an array without given
@@ -2049,3 +2173,217 @@ ECPGdo_descriptor(int line, const char *connection,
 				  ECPGt_descriptor, descriptor, 0L, 0L, 0L,
 				  ECPGt_NO_INDICATOR, NULL, 0L, 0L, 0L, ECPGt_EORT);
 }
+
+/*
+ *   Translate the var->value with type utext into a new value with ECPGCLIENT encoding
+ *   and save it into ptr.
+ *   The var->offset is changed to bytes unit.
+ *   Success: return 0;
+ *   Failure: return -1
+ */
+static int
+ecpg_do_utext_encoding(struct variable * var, int client_encoding,int lineno)
+{
+
+	int i;
+	int src_offset;
+	char *src_offset_start = NULL;
+	int dest_offset;
+	char *dest_offset_start = NULL;
+	char *dest;
+	int dest_length;
+	long varcharsize = 0;
+	int arrsize;
+	ConversionResult convert_ret;
+	int dest_character_len;
+
+	char *encoding = NULL;
+	char *utext_encoding = get_utext_encoding();
+
+	arrsize = var->arrsize;
+
+	/*
+	 * For utext type variable, the var->offset indicate the how many bytes
+	 * in one element in array.
+	 * utext is 2 bytes type in windows platform
+	 */
+	src_offset = var->offset;
+
+	if (utext_is_null(var->value))
+	{
+		/* Go to here means the content in the utext host varailbe is NULL,
+		 * so no need convert it */
+		var->varcharsize = 1;
+		return 0;
+	}
+
+	encoding = PQGetEncodingName(client_encoding);
+	if(encoding == NULL)
+	{
+		ecpg_raise(lineno, ECPG_CLIENT_ENCODING_ERROR, ECPG_SQLSTATE_ECPG_INTERNAL_ERROR, NULL);
+		return false;
+	}
+
+	/*
+	 * For the pointer variable varcharsize is zero so have to get the real
+	 * varcharsize from the get_utext_length.
+	 */
+	if(var->varcharsize == 0)
+	{
+		varcharsize = get_utext_length(var->value,0);
+		if (varcharsize == 0)
+		{
+			/* Go to here means the content in the pointer is NULL,
+			 * so no need convert it */
+			var->varcharsize = 1;
+			return 0;
+		}
+		else
+			src_offset = varcharsize * UNICODE_CH_LEN;
+	}
+	else
+		varcharsize = var->varcharsize;
+
+	dest_character_len = PQGenEncodingMaxLen(client_encoding);
+
+	dest_length = var->arrsize * varcharsize *dest_character_len;
+	dest_offset = varcharsize *dest_character_len;
+
+	dest = ecpg_alloc(dest_length, lineno);
+	if (!dest)
+		return -1;
+
+	memset(dest, 0, dest_length);
+
+	src_offset_start = var->value;
+	dest_offset_start = dest;
+
+	/* Convert the string offset by offset */
+	for(i=0; i<arrsize; i++)
+	{
+		convert_ret = convert_func(utext_encoding,
+									encoding,
+									src_offset_start,
+									src_offset,
+									dest_offset_start,
+									dest_offset,
+									NULL);
+
+		if(convert_ret == sourceIllegal)
+		{
+			ecpg_raise(lineno, ECPG_ENCODING_ERROR,
+					ECPG_SQLSTATE_ECPG_ENCODING_ERROR, NULL);
+
+			if ( NULL != dest )
+			{
+				ecpg_free(dest);
+				dest = NULL;
+			}
+			return -1;
+		}
+
+		src_offset_start += src_offset;
+		dest_offset_start += dest_offset;
+	}
+
+	var->offset = dest_offset;
+	var->varcharsize =  dest_offset;
+	var->value = dest;
+
+	return 0;
+}
+
+
+/*
+ *   Translate the var->value with type uvarchar into a new value with ECPGCLIENT encoding
+ *   and save it into ptr.
+ *   The var->offset is changed to bytes unit.
+ *   Success: return 0;
+ *   Failure: return -1
+ */
+static int
+ecpg_do_uvachar_encoding(struct variable * var, int client_encoding,int lineno)
+{
+
+	int i;
+	int src_offset;
+	char *src_offset_start = NULL;
+	int dest_offset;
+	char *dest_offset_start = NULL;
+	char *dest;
+	int dest_length;
+	int final_len = 0;
+	int arrsize;
+	ConversionResult convert_ret;
+	int dest_character_len;
+
+	char *encoding = NULL;
+	int num;
+	int num_bytes = 0;
+	char *utext_encoding = get_utext_encoding();
+
+	arrsize = var->arrsize;
+
+	dest_character_len = PQGenEncodingMaxLen(client_encoding);
+	dest_offset = (var->varcharsize *dest_character_len +sizeof(int));
+	dest_length = dest_offset *arrsize;
+
+	dest = ecpg_alloc(dest_length, lineno);
+	if (!dest)
+		return -1;
+
+	memset(dest, 0, dest_length);
+
+	src_offset = var->offset;
+	src_offset_start = var->value;
+	dest_offset_start = dest;
+
+	encoding = PQGetEncodingName(client_encoding);
+	if(encoding == NULL)
+	{
+		ecpg_raise(lineno, ECPG_CLIENT_ENCODING_ERROR, ECPG_SQLSTATE_ECPG_INTERNAL_ERROR, NULL);
+		return false;
+	}
+
+	/* Convert the string offset by offset */
+	for(i=0; i<arrsize; i++)
+	{
+		/* The num is the acctual number of character in one element */
+		num = *((int*)src_offset_start);
+
+		/* 2 means the 2 bytes occupied by every character */
+		num_bytes = num * UNICODE_CH_LEN;
+
+		convert_ret = convert_func(utext_encoding,
+									encoding,
+									src_offset_start+sizeof(int),
+									num_bytes,
+									dest_offset_start+sizeof(int),
+									dest_offset,
+									&final_len);
+
+		if(convert_ret == sourceIllegal)
+		{
+			ecpg_raise(lineno, ECPG_ENCODING_ERROR,
+					ECPG_SQLSTATE_ECPG_ENCODING_ERROR, NULL);
+
+			if ( NULL != dest )
+			{
+				ecpg_free(dest);
+				dest = NULL;
+			}
+			return -1;
+		}
+
+		*((int*)dest_offset_start)=final_len;
+		src_offset_start += src_offset;
+		dest_offset_start += dest_offset;
+	}
+
+	var->offset = dest_offset;
+	var->varcharsize = dest_offset;
+	var->value = dest;
+
+	return 0;
+}
+

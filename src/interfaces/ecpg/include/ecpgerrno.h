@@ -44,6 +44,8 @@
 #define ECPG_UNKNOWN_DESCRIPTOR_ITEM	-242
 #define ECPG_VAR_NOT_NUMERIC		-243
 #define ECPG_VAR_NOT_CHAR		-244
+#define ECPG_ENCODING_ERROR     -250
+#define ECPG_CLIENT_ENCODING_ERROR	-301
 
 /* finally the backend error messages, they start at 400 */
 #define ECPG_PGSQL			-400

@@ -334,6 +334,14 @@ typedef struct pg_enc2gettext
 
 extern const pg_enc2gettext pg_enc2gettext_tbl[];
 
+typedef struct pg_encmaxlen
+{
+	pg_enc		encoding;
+	int			len;
+} pg_encmaxlen;
+
+extern const pg_encmaxlen pg_encmaxlen_tbl[];
+
 /*
  * Encoding names for ICU
  */

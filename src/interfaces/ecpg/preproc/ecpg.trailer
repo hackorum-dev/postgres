@@ -186,7 +186,7 @@ user_name: RoleId
 				type = argsinsert->variable->type->u.element->type;
 
 			/* handle varchars */
-			if (type == ECPGt_varchar)
+			if (type == ECPGt_varchar || type == ECPGt_uvarchar)
 				$$ = make2_str(mm_strdup(argsinsert->variable->name), mm_strdup(".arr"));
 			else
 				$$ = mm_strdup(argsinsert->variable->name);
@@ -213,9 +213,11 @@ char_variable: cvariable
 					case ECPGt_char:
 					case ECPGt_unsigned_char:
 					case ECPGt_string:
+					case ECPGt_utext:
 						$$ = $1;
 						break;
 					case ECPGt_varchar:
+					case ECPGt_uvarchar:
 						$$ = make2_str($1, mm_strdup(".arr"));
 						break;
 					default:
@@ -550,6 +552,22 @@ var_type:	simple_type
 				$$.type_index = mm_strdup("-1");
 				$$.type_sizeof = NULL;
 			}
+			else if (strcmp($1, "uvarchar") == 0 && enable_utext)
+  			{
+				$$.type_enum = ECPGt_uvarchar;
+				$$.type_str = EMPTY;
+				$$.type_dimension = mm_strdup("-1");
+				$$.type_index = mm_strdup("-1");
+				$$.type_sizeof = NULL;
+			}
+			else if (strcmp($1, "utext") == 0 && enable_utext)
+			{
+				$$.type_enum = ECPGt_utext;
+				$$.type_str = EMPTY; 
+				$$.type_dimension = mm_strdup("-1");
+				$$.type_index = mm_strdup("-1");
+				$$.type_sizeof = NULL;
+			}
 			else if (strcmp($1, "float") == 0)
 			{
 				$$.type_enum = ECPGt_float;
@@ -627,7 +645,7 @@ var_type:	simple_type
 				/* this is for typedef'ed types */
 				struct typedefs *this = get_typedef($1);
 
-				$$.type_str = (this->type->type_enum == ECPGt_varchar) ? EMPTY : mm_strdup(this->name);
+				$$.type_str = (this->type->type_enum == ECPGt_varchar || this->type->type_enum == ECPGt_uvarchar) ? EMPTY : mm_strdup(this->name);
 				$$.type_enum = this->type->type_enum;
 				$$.type_dimension = this->type->type_dimension;
 				$$.type_index = this->type->type_index;
@@ -838,7 +856,7 @@ variable_list: variable
 			{ $$ = $1; }
 		| variable_list ',' variable
 		{
-			if (actual_type[struct_level].type_enum == ECPGt_varchar)
+			if (actual_type[struct_level].type_enum == ECPGt_varchar || actual_type[struct_level].type_enum == ECPGt_uvarchar)
 				$$ = cat_str(3, $1, mm_strdup(";"), $3);
 			else
 				$$ = cat_str(3, $1, mm_strdup(","), $3);
@@ -890,7 +908,52 @@ variable: opt_pointer ECPGColLabel opt_array_bounds opt_bit_field opt_initialize
 						$$ = cat_str(8, make2_str(mm_strdup(" struct varchar_"), vcn), mm_strdup(" { int len; char arr["), mm_strdup(length), mm_strdup("]; } "), mm_strdup($2), dim_str, $4, $5);
 					varchar_counter++;
 					break;
+				case ECPGt_uvarchar:
+					if (atoi(dimension) < 0)
+						type = ECPGmake_simple_type(actual_type[struct_level].type_enum, length, uvarchar_counter);
+					else
+						type = ECPGmake_array_type(ECPGmake_simple_type(actual_type[struct_level].type_enum, length, uvarchar_counter), dimension);
 
+					if (strcmp(dimension, "0") == 0 || abs(atoi(dimension)) == 1)
+						dim_str=mm_strdup("");
+					else
+						dim_str=cat_str(3, mm_strdup("["), mm_strdup(dimension), mm_strdup("]"));
+					/* cannot check for atoi <= 0 because a defined constant will yield 0 here as well */
+					if (atoi(length) < 0 || strcmp(length, "0") == 0)
+						mmerror(PARSE_ERROR, ET_ERROR, "pointers to uvarchar are not implemented");
+
+					/* make sure varchar struct name is unique by adding a unique counter to its definition */
+					vcn = (char *) mm_alloc(sizeof(int) * CHAR_BIT * 10 / 3);
+					sprintf(vcn, "%d", uvarchar_counter);
+					if (strcmp(dimension, "0") == 0)
+						$$ = cat_str(7, make2_str(mm_strdup(" struct uvarchar_"), vcn), mm_strdup(" { int len; utext arr["), mm_strdup(length), mm_strdup("]; } *"), mm_strdup($2), $4, $5);
+					else
+						$$ = cat_str(8, make2_str(mm_strdup(" struct uvarchar_"), vcn), mm_strdup(" { int len; utext arr["), mm_strdup(length), mm_strdup("]; } "), mm_strdup($2), dim_str, $4, $5);
+					uvarchar_counter++;
+					break;
+				case ECPGt_utext:
+					if (atoi(dimension) == -1)
+					{
+						int i = strlen($5);
+
+						if (atoi(length) == -1 && i > 0) /* char <var>[] = "string" */
+						{
+							/* if we have an initializer but no string size set, let's use the initializer's length */
+							free(length);
+							length = mm_alloc(i+sizeof("sizeof()"));
+							#if defined(WIN32)
+							sprintf(length, "sizeof(%s)/2", $5+2);
+							#else
+							sprintf(length, "sizeof(%s)/4", $5+2);
+							#endif
+						}
+						type = ECPGmake_simple_type(actual_type[struct_level].type_enum, length, 0);
+					}
+					else
+						type = ECPGmake_array_type(ECPGmake_simple_type(actual_type[struct_level].type_enum, length, 0), dimension);
+
+					$$ = cat_str(6, mm_strdup("utext"), $1, mm_strdup($2), $3.str, $4, $5);
+					break;
 				case ECPGt_char:
 				case ECPGt_unsigned_char:
 				case ECPGt_string:
@@ -1354,6 +1417,7 @@ ECPGVar: SQL_VAR
 						break;
 
 					case ECPGt_varchar:
+					case ECPGt_uvarchar:
 						if (atoi(dimension) == -1)
 							type = ECPGmake_simple_type($5.type_enum, length, 0);
 						else
@@ -1363,6 +1427,7 @@ ECPGVar: SQL_VAR
 					case ECPGt_char:
 					case ECPGt_unsigned_char:
 					case ECPGt_string:
+					case ECPGt_utext:
 						if (atoi(dimension) == -1)
 							type = ECPGmake_simple_type($5.type_enum, length, 0);
 						else
@@ -1504,6 +1569,8 @@ ECPGKeywords_vanames:  SQL_BREAK		{ $$ = mm_strdup("break"); }
 		| SQL_SQLPRINT				{ $$ = mm_strdup("sqlprint"); }
 		| SQL_SQLWARNING			{ $$ = mm_strdup("sqlwarning"); }
 		| SQL_STOP					{ $$ = mm_strdup("stop"); }
+		| UVARCHAR					{ $$ = mm_strdup("uvarchar"); }
+		| UTEXT						{ $$ = mm_strdup("utext"); }
 		;
 
 ECPGKeywords_rest:  SQL_CONNECT		{ $$ = mm_strdup("connect"); }
@@ -1854,6 +1921,8 @@ c_anything:  ecpg_ident				{ $$ = $1; }
 		| TO				{ $$ = mm_strdup("to"); }
 		| UNION				{ $$ = mm_strdup("union"); }
 		| VARCHAR			{ $$ = mm_strdup("varchar"); }
+		| UVARCHAR			{ $$ = mm_strdup("uvarchar"); }
+		| UTEXT				{ $$ = mm_strdup("utext"); }
 		| '['				{ $$ = mm_strdup("["); }
 		| ']'				{ $$ = mm_strdup("]"); }
 		| '='				{ $$ = mm_strdup("="); }

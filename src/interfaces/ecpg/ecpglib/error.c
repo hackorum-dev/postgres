@@ -40,6 +40,16 @@ ecpg_raise(int line, int code, const char *sqlstate, const char *str)
 					 ecpg_gettext("out of memory on line %d"), line);
 			break;
 
+		case ECPG_ENCODING_ERROR:
+            snprintf(sqlca->sqlerrm.sqlerrmc, sizeof(sqlca->sqlerrm.sqlerrmc),
+
+            /*
+             * translator: this string will be truncated at 149 characters
+             * expanded.
+             */
+                     ecpg_gettext("encoding conversion error on line %d"), line);
+            break;
+
 		case ECPG_UNSUPPORTED:
 			snprintf(sqlca->sqlerrm.sqlerrmc, sizeof(sqlca->sqlerrm.sqlerrmc),
 			/*------
@@ -200,6 +210,15 @@ ecpg_raise(int line, int code, const char *sqlstate, const char *str)
 					 ecpg_gettext("could not connect to database \"%s\" on line %d"), str, line);
 			break;
 
+		case ECPG_CLIENT_ENCODING_ERROR:
+			snprintf(sqlca->sqlerrm.sqlerrmc, sizeof(sqlca->sqlerrm.sqlerrmc),
+
+			/*
+			 * translator: this string will be truncated at 149 characters
+			 * expanded.
+			 */
+					 ecpg_gettext("Failed to get client encoding name on line %d"),line);
+			break;
 		default:
 			snprintf(sqlca->sqlerrm.sqlerrmc, sizeof(sqlca->sqlerrm.sqlerrmc),
 			/*------

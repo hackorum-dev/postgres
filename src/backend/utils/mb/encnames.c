@@ -402,6 +402,53 @@ const pg_enc2gettext pg_enc2gettext_tbl[] =
 	{0, NULL}
 };
 
+const pg_encmaxlen pg_encmaxlen_tbl[] =
+{
+	{PG_SQL_ASCII, 1},
+    {PG_EUC_JP, 1},
+    {PG_EUC_CN, 1},
+    {PG_EUC_KR, 1},
+    {PG_EUC_TW, 1},
+    {PG_EUC_JIS_2004, 1},
+	{PG_UTF8, 4},
+	{PG_MULE_INTERNAL, 1},
+	{PG_LATIN1, 1},
+	{PG_LATIN2, 1},
+	{PG_LATIN3, 1},
+	{PG_LATIN4, 1},
+	{PG_LATIN5, 1},
+	{PG_LATIN6, 1},
+	{PG_LATIN7, 1},
+	{PG_LATIN8, 1},
+	{PG_LATIN9, 1},
+	{PG_LATIN10, 1},
+    {PG_WIN1256, 1},
+    {PG_WIN1258, 1},
+    {PG_WIN866, 1},
+    {PG_WIN874, 1},
+    {PG_KOI8R, 1},
+    {PG_WIN1251, 1},
+    {PG_WIN1252, 1},
+	{PG_ISO_8859_5, 1},
+	{PG_ISO_8859_6, 1},
+	{PG_ISO_8859_7, 1},
+	{PG_ISO_8859_8, 1},
+	{PG_WIN1250, 1},
+	{PG_WIN1253, 1},
+	{PG_WIN1254, 1},
+	{PG_WIN1255, 1},
+	{PG_WIN1256, 1},
+	{PG_WIN1257, 1},
+	{PG_KOI8U, 1},
+	{PG_SJIS, 2},
+	{PG_BIG5, 2},
+	{PG_GBK, 2},
+	{PG_UHC, 2},
+	{PG_GB18030, 4},
+	{PG_JOHAB, 3},
+	{PG_SHIFT_JIS_2004, 2},
+	{0, 0}
+};
 
 #ifndef FRONTEND
 

@@ -246,6 +246,8 @@ less_equals		"<="
 greater_equals	">="
 less_greater	"<>"
 not_equals		"!="
+utext           [uU][tT][eE][xX][tT]
+uvarchar        [uU][vV][aA][rR][cC][hH][aA][rR]
 
 /*
  * "self" is the set of chars that should be returned as single-character
@@ -770,6 +772,10 @@ cppline			{space}*#([^i][A-Za-z]*|{if}|{ifdef}|{ifndef}|{import})((\/\*[^*/]*\*+
 						base_yylval.str = mm_strdup(yytext+1);
 						return CVARIABLE;
 					}
+<C>{utext}   {  return(UTEXT); }
+<C,C_SQL>{uvarchar}   {
+					return(UVARCHAR); 
+				}
 <SQL>{identifier}	{
 						const ScanKeyword  *keyword;
 

@@ -122,6 +122,8 @@ struct variable
 	long		ind_varcharsize;
 	long		ind_arrsize;
 	long		ind_offset;
+	int			alloc_inf;
+	int			ind_alloc_inf;
 	struct variable *next;
 };
 
@@ -219,5 +221,6 @@ void		ecpg_set_native_sqlda(int, struct sqlda_struct **, const PGresult *, int, 
 /* implementation-defined internal errors of ecpg */
 #define ECPG_SQLSTATE_ECPG_INTERNAL_ERROR	"YE000"
 #define ECPG_SQLSTATE_ECPG_OUT_OF_MEMORY	"YE001"
+#define ECPG_SQLSTATE_ECPG_ENCODING_ERROR   "YE002"
 
 #endif							/* _ECPG_LIB_EXTERN_H */

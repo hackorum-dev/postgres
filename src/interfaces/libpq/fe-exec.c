@@ -3813,3 +3813,54 @@ PQunescapeBytea(const unsigned char *strtext, size_t *retbuflen)
 	*retbuflen = buflen;
 	return tmpbuf;
 }
+
+/*
+ * New added interface for ECOBPG NCHAR features
+ * to get client_encoding in src/interface/ecpg/ecpglib/data.c
+ * src/interface/ecpg/ecpglib/execute.c.
+ */
+
+int
+PQGetEncodingFromPGconn(const PGconn *conn)
+{
+    return conn->client_encoding;
+}
+
+int
+PQGetEncodingFromPGres(const PGresult *results)
+{
+    return results->client_encoding;
+}
+
+int
+PQGetencUTF8(void)
+{
+    return PG_UTF8;
+}
+
+int
+PQGetencEUCJP(void)
+{
+    return PG_EUC_JP;
+}
+
+char *
+PQGetEncodingName(int client_encoding)
+{
+	int			i;
+
+	for (i = 0; pg_enc2gettext_tbl[i].name != NULL; i++)
+	{
+		if (pg_enc2gettext_tbl[i].encoding == client_encoding)
+			return pg_enc2gettext_tbl[i].name;
+	}
+
+	/* Should not go to here actually */
+	return NULL;
+}
+
+int
+PQGenEncodingMaxLen(int client_encoding)
+{
+	return pg_encmaxlen_tbl[client_encoding].len;
+}

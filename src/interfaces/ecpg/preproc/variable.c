@@ -535,7 +535,7 @@ adjust_array(enum ECPGttype type_enum, char **dimension, char **length, char *ty
 									  "multilevel pointers (more than 2 levels) are not supported; found %d levels", pointer_len),
 				pointer_len);
 
-	if (pointer_len > 1 && type_enum != ECPGt_char && type_enum != ECPGt_unsigned_char && type_enum != ECPGt_string)
+	if (pointer_len > 1 && type_enum != ECPGt_char && type_enum != ECPGt_unsigned_char && type_enum != ECPGt_string && type_enum != ECPGt_utext)
 		mmfatal(PARSE_ERROR, "pointer to pointer is not supported for this data type");
 
 	if (pointer_len > 1 && (atoi(*length) >= 0 || atoi(*dimension) >= 0))
@@ -560,6 +560,7 @@ adjust_array(enum ECPGttype type_enum, char **dimension, char **length, char *ty
 
 			break;
 		case ECPGt_varchar:
+		case ECPGt_uvarchar:
 			/* pointer has to get dimension 0 */
 			if (pointer_len)
 				*dimension = mm_strdup("0");
@@ -573,6 +574,7 @@ adjust_array(enum ECPGttype type_enum, char **dimension, char **length, char *ty
 
 			break;
 		case ECPGt_char:
+		case ECPGt_utext:
 		case ECPGt_unsigned_char:
 		case ECPGt_string:
 			/* char ** */

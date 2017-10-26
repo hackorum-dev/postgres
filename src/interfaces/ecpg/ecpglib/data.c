@@ -15,6 +15,7 @@
 #include "pgtypes_date.h"
 #include "pgtypes_timestamp.h"
 #include "pgtypes_interval.h"
+#include "convertutf.h"
 
 /* returns true if character c is a delimiter for the given array type */
 static bool
@@ -235,6 +236,8 @@ ecpg_get_data(const PGresult *results, int act_tuple, int act_field, int lineno,
 			case ECPGt_unsigned_char:
 			case ECPGt_varchar:
 			case ECPGt_string:
+			case ECPGt_utext:
+			case ECPGt_uvarchar:
 				break;
 
 			default:
@@ -506,7 +509,110 @@ ecpg_get_data(const PGresult *results, int act_tuple, int act_field, int lineno,
 						pval += size;
 					}
 					break;
+				case ECPGt_utext:
+					{
+						int		real_len = 0;
+						int		utext_len = 0;
+						char	*str = (char *) (var + offset * act_tuple);
+						char	*encoding = NULL;
+						int		pval_len = size;
+						int		to_len;
+						char	*dest_encoding = get_utext_encoding();
+						int		dest_character_size = UNICODE_CH_LEN;
 
+						ConversionResult convert_ret;
+
+						/* Here will be modified later by setting length according to encoding */
+						to_len = varcharsize>0?offset:size*dest_character_size;
+
+						/* Check the PGCLIENTENCODING */
+						encoding = PQGetEncodingName(PQGetEncodingFromPGres(results));
+						if(encoding == NULL)
+						{
+							ecpg_raise(lineno, ECPG_CLIENT_ENCODING_ERROR, ECPG_SQLSTATE_ECPG_INTERNAL_ERROR, NULL);
+							return false;
+						}
+
+						/*
+						 * If varcharsize is unknown and the offset is that of
+						 * char *, then this variable represents the array of
+						 * character pointers. So, use extra indirection.
+						 */
+						if (varcharsize == 0 && offset == sizeof(char *))
+							str = *(char **) str;
+
+						/*
+						 * Don't know the real size of the utext pointer,
+						 * so set the offset to be needed size.
+						 * For utext pointer to pointer host variable with
+						 * uninitialized the offset will be set zero as input
+						 * parameter.
+						 * For utext pointer host varaible the varcharsize is
+						 * zero and offset is not.
+						 */
+						if (varcharsize == 0 || offset == 0)
+						{
+							real_len = get_converted_length(encoding,dest_encoding,pval,pval_len);
+							to_len = offset = real_len;
+							memset(str,0,offset+dest_character_size);
+						}
+						else
+							memset(str,0,offset);
+
+						/* Start to convert encoding to UTF16 */
+						convert_ret = convert_func(encoding,dest_encoding, pval,pval_len,str,to_len,&real_len);
+						if (convert_ret == sourceIllegal || convert_ret == conversionUnsupported)
+						{
+							ecpg_raise(lineno, ECPG_ENCODING_ERROR, ECPG_SQLSTATE_ECPG_ENCODING_ERROR, NULL);
+							return false;
+						}
+						else if (convert_ret == targetExhausted)
+						{
+							real_len = get_converted_length(encoding,dest_encoding,pval,pval_len);
+							if(real_len == -1)
+							{
+								ecpg_raise(lineno, ECPG_ENCODING_ERROR, ECPG_SQLSTATE_ECPG_ENCODING_ERROR, NULL);
+								return false;
+							}
+						}
+
+						utext_len = real_len/dest_character_size;
+
+						/*
+						 * If the need bytes by UTF16 string is larger than the
+						 * length of host variable, set the ind variable
+						 */
+						if (varcharsize > 0 && varcharsize < utext_len)
+						{
+							/* truncation */
+							switch (ind_type)
+							{
+								case ECPGt_short:
+								case ECPGt_unsigned_short:
+									*((short *) (ind + ind_offset * act_tuple)) = utext_len;
+									break;
+								case ECPGt_int:
+								case ECPGt_unsigned_int:
+									*((int *) (ind + ind_offset * act_tuple)) = utext_len;
+									break;
+								case ECPGt_long:
+								case ECPGt_unsigned_long:
+									*((long *) (ind + ind_offset * act_tuple)) = utext_len;
+									break;
+#ifdef HAVE_LONG_LONG_INT
+								case ECPGt_long_long:
+								case ECPGt_unsigned_long_long:
+									*((long long int *) (ind + ind_offset * act_tuple)) = utext_len;
+									break;
+#endif   /* HAVE_LONG_LONG_INT */
+								default:
+									break;
+							}
+							sqlca->sqlwarn[0] = sqlca->sqlwarn[1] = 'W';
+						}
+						pval += size;
+					}
+					break;
 				case ECPGt_varchar:
 					{
 						struct ECPGgeneric_varchar *variable =
@@ -554,6 +660,87 @@ ecpg_get_data(const PGresult *results, int act_tuple, int act_field, int lineno,
 					}
 					break;
 
+				case ECPGt_uvarchar:
+					{
+						int		real_len = 0;
+						int		utext_len = 0;
+						int		to_len = 0;
+						int		pval_len = size;
+						char	*encoding = NULL;
+						ConversionResult convert_ret = conversionOK;
+						struct ECPGgeneric_varchar *variable =
+								(struct ECPGgeneric_varchar *) (var + offset * act_tuple);
+
+						char	   *str = (char *) (variable->arr);
+
+						char	*dest_encoding = get_utext_encoding();
+						int		dest_character_size = UNICODE_CH_LEN;
+
+						memset((char*)variable, 0, offset);
+
+						/* Check the PGCLIENTENCODING */
+						encoding = PQGetEncodingName(PQGetEncodingFromPGres(results));
+						if(encoding == NULL)
+						{
+							ecpg_raise(lineno, ECPG_CLIENT_ENCODING_ERROR, ECPG_SQLSTATE_ECPG_INTERNAL_ERROR, NULL);
+							return false;
+						}
+
+						to_len = offset-sizeof(int);
+
+						/* Start to convert encoding to UTF16 or UTF32 */
+                        convert_ret = convert_func(encoding,dest_encoding, pval,pval_len,str,to_len,&real_len);
+                        
+						if (convert_ret == sourceIllegal || convert_ret == conversionUnsupported)
+                        {
+                            ecpg_raise(lineno, ECPG_ENCODING_ERROR, ECPG_SQLSTATE_ECPG_ENCODING_ERROR, NULL);
+                            return false;
+                        }
+                        else if (convert_ret == targetExhausted)
+                        {
+                            real_len = get_converted_length(encoding,dest_encoding,pval,pval_len);
+                            if(real_len == -1)
+                            {
+                                ecpg_raise(lineno, ECPG_ENCODING_ERROR, ECPG_SQLSTATE_ECPG_ENCODING_ERROR, NULL);
+                                return false;
+                            }
+                        }
+
+						/* Get the actual length of UTF16 characters */
+						utext_len = real_len/dest_character_size;
+						variable->len = Min(utext_len,varcharsize);
+
+						if (utext_len > varcharsize)
+						{
+							/* truncation */
+							switch (ind_type)
+							{
+								case ECPGt_short:
+								case ECPGt_unsigned_short:
+									*((short *) (ind + ind_offset * act_tuple)) = utext_len;
+									break;
+								case ECPGt_int:
+								case ECPGt_unsigned_int:
+									*((int *) (ind + ind_offset * act_tuple)) = utext_len;
+									break;
+								case ECPGt_long:
+								case ECPGt_unsigned_long:
+									*((long *) (ind + ind_offset * act_tuple)) = utext_len;
+									break;
+#ifdef HAVE_LONG_LONG_INT
+								case ECPGt_long_long:
+								case ECPGt_unsigned_long_long:
+									*((long long int *) (ind + ind_offset * act_tuple)) = utext_len;
+									break;
+#endif   /* HAVE_LONG_LONG_INT */
+								default:
+									break;
+							}
+							sqlca->sqlwarn[0] = sqlca->sqlwarn[1] = 'W';
+						}
+						pval += size;
+					}
+				break;
 				case ECPGt_decimal:
 				case ECPGt_numeric:
 					for (endptr = pval; *endptr && *endptr != ',' && *endptr != '}'; endptr++);

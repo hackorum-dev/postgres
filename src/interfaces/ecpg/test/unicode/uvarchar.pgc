@@ -1,0 +1,877 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+EXEC SQL INCLUDE ../regression;
+
+#define test(msg) printf("\n%s\n",msg)
+#define VAR_SIZE  20
+#define ARRAY_SIZE 4
+
+/* Following is UTF8 and UTF16 characters mapping table */
+/*太𠮷𠜱平洋𠱓大西洋印度洋北冰洋
+0x592A,0x5E73,0x6D0B,0x5927,0x897F,0x6D0B,0x5370,0x5EA6,
+0x6D0B,0x5317,0x51B0,0x6D0B,0x548C,0x5357,0x51B0,0x6D0B,
+0x0000,0x0000,0x0000,0x0000*/
+
+/*足球篮球羽毛球乒乓球橄榄球棒球冰球
+0x8DB3,0x7403,0x7BEE,0x7403,0x7FBD,0x6BDB,0x7403,0x4E52,
+0x4E53,0x7403,0x6A44,0x6984,0x7403,0x68D2,0x7403,0x51B0,
+0x7403,0x0000,0x0000,0x0000
+*/
+
+/*世界杯每隔四年就会举行一次每次𠲖个球队
+0x4E16,0x754C,0x676F,0x6BCF,0x9694,0x56DB,0x5E74,0x5C31,
+0x4F1A,0x4E3E,0x884C,0x4E00,0x6B21,0x6BCF,0x6B21,0x0033,
+0x0032,0x4E2A,0x7403,0x961F
+*/
+
+/* 亚洲欧洲非洲大洋洲北美洲南美洲南极洲没有北极洲
+0x4E9A,0x6D32,0x6B27,0x6D32,0x975E,0x6D32,0x5927,0x6D0B,
+0x6D32,0x5317,0x7F8E,0x6D32,0x5357,0x7F8E,0x6D32,0x5357,
+0x6781,0x6D32,0x6CA1,0x6709,0x5317,0x6781,0x6D32
+*/
+
+EXEC SQL BEGIN DECLARE SECTION;
+	UVARCHAR    uvarchar_var[VAR_SIZE];
+	UVARCHAR    uvarchar_array[ARRAY_SIZE][VAR_SIZE];
+	
+	int		uvarchar_var_ind;  
+	
+	int		count;
+	int     count_array[4]={1,2,3,4};
+	int     total_tuples = 0;
+EXEC SQL END DECLARE SECTION;
+
+void print_uvarchar(void);
+void print_uvarchar_ind(int uvarchar_var_ind);
+void print_local_uvarchar(utext *utext_var, int var_len);
+void print_array(void);
+int test_init(void);
+void test_finish(void);
+void init_table_value(void);
+void init_var(void);
+
+void test_var_1(void);
+void test_var_2(void);
+void test_var_3(void);
+void test_var_4(void);
+void test_var_5(void);
+void test_var_6(void);
+void test_var_7(void);
+void test_var_8(void);
+void test_var_9(void);
+void test_var_10(void);
+void test_var_11(void);
+void test_var_12(void);
+void test_var_13(void);
+void test_var_14(void);
+void test_var_15(void);
+void test_var_16(void);
+void test_array_1(void);
+void test_array_2(void);
+void test_array_3(void);
+void test_array_4(void);
+void test_array_5(void);
+void test_array_6(void);
+void test_array_7(void);
+void test_array_8(void);
+void test_array_9(void);
+void test_array_10(void);
+void test_array_11(void);
+void test_array_12(void);
+void test_array_13(void);
+void test_array_14(void);
+void test_array_15(void);
+void test_array_16(void);
+
+void test_all(void);
+
+void print_uvarchar()
+{
+    int i;
+
+    printf ("---->uvarchar variable,len=%d:\n",uvarchar_var.len);
+	for(i=0; i<VAR_SIZE; i++)
+	{
+	    printf ("0x%04X  ", uvarchar_var.arr[i]);
+	    if(i>6 && (i+1)%8==0)
+	        printf("\n");
+	}
+	printf("\n");
+}
+
+void print_uvarchar_ind(int uvarchar_var_ind)
+{
+	printf("uvarchar_var_ind = %d\n",uvarchar_var_ind);
+}
+
+void print_local_uvarchar(utext *utext_var, int var_len)
+{
+    int i;
+
+    printf ("---->uvarchar variable,len=%d:\n",var_len);
+	for(i=0; i<20; i++)
+	{
+	    printf ("0x%04X  ", utext_var[i]);
+	    if(i>6 && (i+1)%8==0)
+	        printf("\n");
+	}
+	printf("\n");
+}
+
+void print_array()
+{
+    int i,j;
+
+	for(i=0; i<ARRAY_SIZE; i++)
+	{
+        printf ("---->uvarchar array[%d]:(len=%d)\n", i,uvarchar_array[i].len);
+        
+	    for(j=0; j<VAR_SIZE; j++)
+	    {
+	        printf ("0x%04X  ", uvarchar_array[i].arr[j]);
+	        if(j>6 && (j+1)%8==0)
+	            printf("\n");
+	    }
+	    printf("\n");
+	}
+
+	printf("\n");
+}
+
+int test_init()
+{
+	EXEC SQL CONNECT TO REGRESSDB1;
+
+	EXEC SQL SET AUTOCOMMIT TO ON;
+	EXEC SQL WHENEVER SQLWARNING SQLPRINT;
+	EXEC SQL WHENEVER SQLERROR SQLPRINT;
+
+	EXEC SQL SET client_encoding='UTF8';
+	
+    //initialization of test table
+	EXEC SQL CREATE TABLE tb1 (Item varchar, Count integer);
+	
+	init_table_value();
+	
+	return 0;
+}
+
+void test_finish()
+{
+	EXEC SQL DROP TABLE tb1;
+	EXEC SQL DISCONNECT ALL;
+}
+
+
+void init_table_value()
+{
+	EXEC SQL TRUNCATE tb1;
+	
+	EXEC SQL INSERT INTO tb1 VALUES ('太𠮷𠜱平洋𠱓大西洋印度洋北冰洋', 1);
+	EXEC SQL INSERT INTO tb1 VALUES ('足球篮球羽毛球乒乓球橄榄球棒球冰球', 2);
+    EXEC SQL INSERT INTO tb1 VALUES ('世界杯每隔四年就会举行一次每次𠲖个球队', 3);
+	EXEC SQL INSERT INTO tb1 VALUES ('亚洲欧洲非洲大洋洲北美洲南美洲南极洲没有北极洲', 4);
+    
+    EXEC SQL INSERT INTO tb1 (Count) VALUES(8);
+    EXEC SQL INSERT INTO tb1 (Count) VALUES(9);
+    EXEC SQL INSERT INTO tb1 (Count) VALUES(10);
+}
+
+void init_var()
+{
+    int i;
+    memset((void*)&uvarchar_var,'a',sizeof(uvarchar_var));
+    uvarchar_var.len = 0;
+    
+    memset((char*)uvarchar_array,'a',sizeof(uvarchar_array)*ARRAY_SIZE);
+    
+    for(i=0;i<ARRAY_SIZE;i++)
+    {
+        uvarchar_array[i].len = 0;
+    }
+
+    uvarchar_var_ind = 0;
+}
+
+//simple select into uvarchar
+void test_var_1()
+{
+    test("test_var_1 : simple select into uvarchar var");
+    init_var();
+    //print_uvarchar();
+    
+	EXEC SQL SELECT Item INTO :uvarchar_var:uvarchar_var_ind FROM tb1 WHERE Count=1; 
+	print_uvarchar();
+	print_uvarchar_ind(uvarchar_var_ind);
+	init_var();
+	
+
+	EXEC SQL SELECT Item INTO :uvarchar_var:uvarchar_var_ind FROM tb1 WHERE Count=2; 
+	print_uvarchar();
+	print_uvarchar_ind(uvarchar_var_ind);
+	init_var();
+	
+	EXEC SQL SELECT Item INTO :uvarchar_var:uvarchar_var_ind FROM tb1 WHERE Count=3; 
+	print_uvarchar();
+	print_uvarchar_ind(uvarchar_var_ind);
+	init_var();
+	
+	EXEC SQL SELECT Item INTO :uvarchar_var:uvarchar_var_ind FROM tb1 WHERE Count=4; 
+	print_uvarchar();
+	print_uvarchar_ind(uvarchar_var_ind);
+	init_var();
+}
+
+
+//simple select using uvarchar
+void test_var_2()
+{
+    test("test_var_2 : simple select using uvarchar var");
+    init_var();
+    
+    EXEC SQL SELECT Item INTO :uvarchar_var FROM tb1 WHERE Count=1;
+	EXEC SQL SELECT Count INTO :count FROM tb1 WHERE Item=:uvarchar_var;
+	printf ("count=%d for '太𠮷𠜱平洋𠱓大西洋印度洋北冰洋'\n", count);
+
+    EXEC SQL SELECT Item INTO :uvarchar_var FROM tb1 WHERE Count=3;
+	EXEC SQL SELECT Count INTO :count FROM tb1 WHERE Item=:uvarchar_var;
+	printf ("count=%d for '世界杯每隔四年就会举行一次每次𠲖个球队'\n", count);
+}
+
+//simple update using uvarchar
+void test_var_3()
+{
+    test("test_var_3 : simple update using uvarchar");
+    init_var();
+    
+    EXEC SQL SELECT Item INTO :uvarchar_var FROM tb1 WHERE Count=1;
+	EXEC SQL UPDATE tb1 SET Item=:uvarchar_var WHERE Count=2;
+	EXEC SQL UPDATE tb1 SET Item=:uvarchar_var WHERE Count=3;
+	EXEC SQL SELECT count(*) INTO :count FROM tb1 WHERE Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋';
+	printf ("found %d rows for Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋'\n", count);
+	
+	init_table_value();
+}
+
+//simple delete using uvarchar var
+void test_var_4()
+{
+    test("test_var_4 : simple delete using uvarchar var");
+    init_var();
+    
+    EXEC SQL SELECT Item INTO :uvarchar_var FROM tb1 WHERE Count=1;
+	EXEC SQL DELETE FROM tb1 WHERE Item=:uvarchar_var;
+	EXEC SQL SELECT count(*) INTO :count FROM tb1 WHERE Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋';
+	printf ("found %d rows for Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋'\n", count);
+	
+    EXEC SQL SELECT Item INTO :uvarchar_var FROM tb1 WHERE Count=3;
+	EXEC SQL DELETE FROM tb1 WHERE Item=:uvarchar_var;
+	EXEC SQL SELECT count(*) INTO :count FROM tb1 WHERE Item='世界杯每隔四年就会举行一次每次𠲖个球队';
+	printf ("found %d rows for Item='世界杯每隔四年就会举行一次每次𠲖个球队'\n", count);
+	
+	init_table_value();
+}
+
+//simple insert using uvarchar var
+void test_var_5()
+{
+    test("test_var_5 : simple insert using uvarchar");
+    init_var();
+    
+    EXEC SQL SELECT Item INTO :uvarchar_var FROM tb1 WHERE Count=1;
+    EXEC SQL INSERT INTO tb1 values (:uvarchar_var, 11);
+
+    init_var();
+    EXEC SQL SELECT Item INTO :uvarchar_var FROM tb1 WHERE Count=3;
+    EXEC SQL INSERT INTO tb1 values (:uvarchar_var, 13);
+
+
+	EXEC SQL SELECT count(*) INTO :count FROM tb1 WHERE Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋';
+	printf ("found %d rows for Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋'\n", count);
+	
+	EXEC SQL SELECT count(*) INTO :count FROM tb1 WHERE Item='世界杯每隔四年就会举行一次每次𠲖个球队';
+	printf ("found %d rows for Item='世界杯每隔四年就会举行一次每次𠲖个球队'\n", count);
+	
+	init_table_value();
+}
+
+//prepared select into uvarchar var
+void test_var_6()
+{
+    test("test_var_6 : prepared select into uvarchar var");
+    init_var();
+    
+	EXEC SQL PREPARE stmt FROM "SELECT Item FROM tb1 WHERE Count=?";
+	
+	EXEC SQL EXECUTE stmt INTO :uvarchar_var USING 1;
+	print_uvarchar();
+	
+	EXEC SQL EXECUTE stmt INTO :uvarchar_var USING 3;
+	print_uvarchar();
+
+	EXEC SQL DEALLOCATE PREPARE stmt; 
+}
+
+//prepared select using uvarchar var
+void test_var_7()
+{
+    test("test_var_7 : prepared select using uvarchar var");
+    init_var();
+    
+    EXEC SQL SELECT Item INTO :uvarchar_var FROM tb1 WHERE Count=3;
+    
+	EXEC SQL PREPARE stmt FROM "SELECT Count FROM tb1 WHERE Item=?";
+	EXEC SQL EXECUTE stmt INTO :count USING :uvarchar_var;
+	
+	printf ("count=%d for Item='世界杯每隔四年就会举行一次每次𠲖个球队'\n", count);
+	EXEC SQL DEALLOCATE PREPARE stmt;
+}
+
+//prepared update using uvarchar var
+void test_var_8()
+{
+    test("test_var_8 : prepared update using uvarchar var");
+    init_var();
+    
+    EXEC SQL SELECT Item INTO :uvarchar_var FROM tb1 WHERE Count=3;
+
+	EXEC SQL PREPARE stmt FROM "UPDATE tb1 SET Item=? WHERE Count=?";
+	EXEC SQL EXECUTE stmt USING :uvarchar_var, 1;
+	EXEC SQL EXECUTE stmt USING :uvarchar_var, 2;
+	EXEC SQL SELECT count(*) INTO :count FROM tb1 WHERE Item='世界杯每隔四年就会举行一次每次𠲖个球队';
+
+	printf ("found %d rows for Item='世界杯每隔四年就会举行一次每次𠲖个球队'\n", count);
+	EXEC SQL DEALLOCATE PREPARE stmt;
+	
+	init_table_value();
+}
+
+//prepared delete using uvarchar var
+void test_var_9()
+{
+    test("test_var_9 : prepared delete using uvarchar var");
+    init_var();
+    
+    EXEC SQL SELECT Item INTO :uvarchar_var FROM tb1 WHERE Count=3;
+
+	EXEC SQL PREPARE stmt FROM "DELETE FROM tb1 WHERE Item=?";
+	EXEC SQL EXECUTE stmt USING :uvarchar_var;
+	EXEC SQL SELECT count(*) INTO :count FROM tb1 WHERE Item='世界杯每隔四年就会举行一次每次𠲖个球队';
+
+	printf ("found %d rows for Item='世界杯每隔四年就会举行一次每次𠲖个球队'\n", count);
+	EXEC SQL DEALLOCATE PREPARE stmt;
+	
+	init_table_value();
+}
+
+//prepared insert using uvarchar var
+void test_var_10()
+{
+    test("test_var_10 : prepared insert using uvarchar var");
+    init_var();
+    
+    EXEC SQL SELECT Item INTO :uvarchar_var FROM tb1 WHERE Count=3;
+
+	EXEC SQL PREPARE stmt FROM "INSERT INTO tb1 values (?, 13)";
+	EXEC SQL EXECUTE stmt USING :uvarchar_var;
+	EXEC SQL SELECT count(*) INTO :count FROM tb1 WHERE Item='世界杯每隔四年就会举行一次每次𠲖个球队';
+	
+	printf ("found %d rows for Item='世界杯每隔四年就会举行一次每次𠲖个球队'\n", count);
+	EXEC SQL DEALLOCATE PREPARE stmt;
+	
+	init_table_value();
+}
+
+//Open cursor using uvarchar var
+void test_var_11()
+{
+    test("test_var_11 : Open cursor using uvarchar var");
+    init_var();
+ 
+ 	EXEC SQL SET AUTOCOMMIT TO OFF;   
+    EXEC SQL SELECT Item INTO :uvarchar_var FROM tb1 WHERE Count=3;
+    
+	EXEC SQL PREPARE stmt FROM "SELECT Count FROM tb1 WHERE Item=?";
+	EXEC SQL DECLARE cursor_var_11 CURSOR FOR stmt;
+	EXEC SQL OPEN cursor_var_11 USING :uvarchar_var;
+	EXEC SQL FETCH cursor_var_11 INTO :count;
+	printf ("count=%d for Item='世界杯每隔四年就会举行一次每次𠲖个球队'\n", count);
+	EXEC SQL CLOSE cursor_var_11;
+	EXEC SQL DEALLOCATE PREPARE stmt;
+	EXEC SQL SET AUTOCOMMIT TO ON;
+}
+
+//Fecth cursor into uvarchar var
+void test_var_12()
+{
+    test("test_var_12 : Fecth cursor into uvarchar var");
+    init_var();
+     
+    EXEC SQL SET AUTOCOMMIT TO OFF;
+	EXEC SQL PREPARE stmt FROM "SELECT Item FROM tb1 WHERE Count=1";
+	EXEC SQL DECLARE cursor_var_12 CURSOR FOR stmt;
+	EXEC SQL OPEN cursor_var_12;
+	EXEC SQL FETCH cursor_var_12 INTO :uvarchar_var;
+	EXEC SQL CLOSE cursor_var_12;
+	
+	print_uvarchar();
+		
+	EXEC SQL DEALLOCATE PREPARE stmt;
+	EXEC SQL SET AUTOCOMMIT TO ON;
+}
+
+//simple insert using uvarchar with L string inited
+void test_var_13()
+{
+EXEC SQL BEGIN DECLARE SECTION;
+	uvarchar	uvarchar_local_var[VAR_SIZE];
+EXEC SQL END DECLARE SECTION;
+
+    test("test_var_13 : simple insert using uvarchar with L string inited");
+    init_var();
+    
+    memset((char*)&uvarchar_local_var,0,sizeof(uvarchar_local_var));
+    
+    memcpy((char*)uvarchar_local_var.arr, L"太𠮷𠜱平洋𠱓大西洋印度洋北冰洋", sizeof(L"太𠮷𠜱平洋𠱓大西洋印度洋北冰洋"));
+    uvarchar_local_var.len = sizeof(L"太𠮷𠜱平洋𠱓大西洋印度洋北冰洋")/4;
+    
+    printf("uvarchar_local_var.len = %d\n",uvarchar_local_var.len);
+    
+    EXEC SQL INSERT INTO tb1 values (:uvarchar_local_var, 16);
+
+	EXEC SQL SELECT count(*) INTO :count FROM tb1 WHERE Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋';
+	printf ("found %d rows for Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋'\n", count);
+
+	EXEC SQL SELECT Item INTO :uvarchar_var:uvarchar_var_ind FROM tb1 WHERE Count=16; 
+	print_uvarchar();
+	print_uvarchar_ind(uvarchar_var_ind);
+    
+	init_table_value();
+}
+
+//Open cursor using utext var directly in WHERE Clause
+void test_var_14()
+{
+EXEC SQL BEGIN DECLARE SECTION;
+	uvarchar	uvarchar_local_var[20+1];
+EXEC SQL END DECLARE SECTION;
+    memset((char*)&uvarchar_local_var,0x00,sizeof(uvarchar_local_var));
+    
+    test("test_var_14 : Open cursor using utext var directly in WHERE Clause");
+    init_var();
+ 
+ 	EXEC SQL SET AUTOCOMMIT TO OFF;   
+    EXEC SQL SELECT Item INTO :uvarchar_local_var FROM tb1 WHERE Count=3;
+	EXEC SQL DECLARE cursor_var_14 CURSOR FOR SELECT Count FROM tb1 WHERE Item=:uvarchar_local_var;
+	EXEC SQL OPEN cursor_var_14;
+	EXEC SQL FETCH cursor_var_14 INTO :count;
+	printf ("count=%d for Item='世界杯每隔四年就会举行一次每次𠲖个球队'\n", count);
+    
+	EXEC SQL CLOSE cursor_var_14;
+
+	EXEC SQL SET AUTOCOMMIT TO ON;
+}
+
+//Test uvarchar_var working with NULL without indicator
+void test_var_15()
+{
+EXEC SQL BEGIN DECLARE SECTION;
+    uvarchar	uvarchar_local_var[20+1];
+EXEC SQL END DECLARE SECTION;
+    test("test_var_15 : Test uvarchar_var working with NULL without indicator");
+
+    memset((char*)&uvarchar_local_var,'a',sizeof(uvarchar_local_var));
+    uvarchar_local_var.len=10;
+    EXEC SQL SELECT Item INTO :uvarchar_local_var FROM tb1 WHERE Count=8;
+    print_local_uvarchar(uvarchar_local_var.arr,20);
+    
+    
+    memset((char*)&uvarchar_local_var,0x00,sizeof(uvarchar_local_var));
+    EXEC SQL INSERT INTO tb1 values (:uvarchar_local_var, 18);
+    EXEC SQL INSERT INTO tb1 values (:uvarchar_local_var, 19);
+    EXEC SQL INSERT INTO tb1 values (:uvarchar_local_var, 20);
+	EXEC SQL SELECT count(*) INTO :count FROM tb1 WHERE Item is NULL;
+	printf ("found %d rows for Item being NULL\n", count);
+    
+    init_table_value();
+}
+
+//uvarchar_var working with NULL with indicator
+void test_var_16()
+{
+EXEC SQL BEGIN DECLARE SECTION;
+    uvarchar	uvarchar_local_var[20+1];
+    int     uvarchar_var_ind=-1;
+EXEC SQL END DECLARE SECTION;
+    test("test_var_16 : Test uvarchar_var working with NULL with indicator");
+
+    memset((char*)&uvarchar_local_var,'a',sizeof(uvarchar_local_var));
+    uvarchar_local_var.len=0;
+    EXEC SQL SELECT Item INTO :uvarchar_local_var:uvarchar_var_ind FROM tb1 WHERE Count=8;
+    print_local_uvarchar(uvarchar_local_var.arr,20);
+    print_uvarchar_ind(uvarchar_var_ind);
+    
+    memset((char*)&uvarchar_local_var,0x00,sizeof(uvarchar_local_var));
+    EXEC SQL INSERT INTO tb1 values (:uvarchar_local_var:uvarchar_var_ind, 18);
+    EXEC SQL INSERT INTO tb1 values (:uvarchar_local_var:uvarchar_var_ind, 19);
+    EXEC SQL INSERT INTO tb1 values (:uvarchar_local_var:uvarchar_var_ind, 20);
+	EXEC SQL SELECT count(*) INTO :count FROM tb1 WHERE Item is NULL;
+	printf ("found %d rows for Item being NULL\n", count);
+    
+    init_table_value();
+}
+
+
+//simple select into uvarchar array
+void test_array_1()
+{
+    test("test_array_1 : simple select into uvarchar array");
+    init_var();
+    
+	EXEC SQL SELECT Item INTO :uvarchar_array FROM tb1 WHERE Count<=3;
+
+	print_array();
+	init_var();
+	
+	EXEC SQL SELECT Item INTO :uvarchar_array[0] FROM tb1 WHERE Count=1; 
+	print_array();
+	init_var();
+}
+
+
+//simple select using uvarchar array
+void test_array_2()
+{
+    test("test_array_2 : simple select using uvarchar array");
+	init_var();
+	    
+ 	EXEC SQL SELECT Item INTO :uvarchar_array FROM tb1 WHERE Count<=3; 
+
+	count = 0;
+	EXEC SQL SELECT Count INTO :count FROM tb1 WHERE Item=:uvarchar_array[0];
+	printf ("count=%d for '太𠮷𠜱平洋𠱓大西洋印度洋北冰洋'\n", count);
+
+	count = 0;
+	EXEC SQL SELECT Count INTO :count FROM tb1 WHERE Item=:uvarchar_array[2];
+	printf ("count=%d for '世界杯每隔四年就会举行一次每次𠲖个球队'\n", count);
+}
+
+//simple update using uvarchar array
+void test_array_3()
+{
+    test("test_array_3 : simple update using uvarchar array");
+    init_var();
+    
+    EXEC SQL SELECT Item INTO :uvarchar_array FROM tb1 WHERE Count<=3;
+	
+	EXEC SQL UPDATE tb1 SET Item=:uvarchar_array[2] WHERE Count=1;
+
+	count = 0;    
+	EXEC SQL SELECT count(*) INTO :count FROM tb1 WHERE Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋';
+	printf ("find %d rows for Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋'\n", count);
+	
+	count = 0;
+	EXEC SQL SELECT count(*) INTO :count FROM tb1 WHERE Item='世界杯每隔四年就会举行一次每次𠲖个球队';
+	printf ("find %d rows for Item='世界杯每隔四年就会举行一次每次𠲖个球队'\n", count);
+	
+	init_table_value();
+}
+
+//simple delete using uvarchar array
+void test_array_4()
+{
+    test("test_array_4 : simple delete using uvarchar array");
+    init_var();
+
+    EXEC SQL SELECT Item INTO :uvarchar_array FROM tb1 WHERE Count<=3;
+    
+    count = 100;
+	EXEC SQL DELETE FROM tb1 WHERE Item=:uvarchar_array[0];
+	EXEC SQL SELECT count(*) INTO :count FROM tb1 WHERE Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋';
+	printf ("found %d rows for Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋'\n", count);
+	
+	count = 100;
+	EXEC SQL DELETE FROM tb1 WHERE Item=:uvarchar_array[2];
+	EXEC SQL SELECT count(*) INTO :count FROM tb1 WHERE Item='世界杯每隔四年就会举行一次每次𠲖个球队';
+	printf ("found %d rows for Item='世界杯每隔四年就会举行一次每次𠲖个球队'\n", count);
+	
+	init_table_value();
+}
+
+//simple insert using uvarchar array
+void test_array_5()
+{
+    test("test_array_5 : simple insert using uvarchar array");
+    init_var();
+
+    EXEC SQL SELECT Item INTO :uvarchar_array FROM tb1 WHERE Count<=3;
+    
+    EXEC SQL INSERT INTO tb1 values (:uvarchar_array[0], 11);
+	EXEC SQL SELECT count(*) INTO :count FROM tb1 WHERE Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋';
+	printf ("found %d rows for Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋'\n", count);
+    
+    EXEC SQL INSERT INTO tb1 values (:uvarchar_array[2], 13);
+	EXEC SQL SELECT count(*) INTO :count FROM tb1 WHERE Item='世界杯每隔四年就会举行一次每次𠲖个球队';
+	printf ("found %d rows for Item='世界杯每隔四年就会举行一次每次𠲖个球队'\n", count);
+	
+	init_table_value();
+}
+
+//prepared select into uvarchar array
+void test_array_6()
+{
+    test("test_array_6 : prepared select into uvarchar array");
+    init_var();
+    
+	EXEC SQL PREPARE stmt FROM "SELECT Item FROM tb1 WHERE Count<=?";
+	
+	EXEC SQL EXECUTE stmt INTO :uvarchar_array USING 3;
+
+	print_array();	
+
+	EXEC SQL DEALLOCATE PREPARE stmt; 
+}
+
+//prepared select using uvarchar array
+void test_array_7()
+{
+    test("test_array_7 : prepared select using uvarchar array");
+    init_var();
+    EXEC SQL SELECT Item INTO :uvarchar_array FROM tb1 WHERE Count<=3;
+    
+    count = 0;
+	EXEC SQL PREPARE stmt FROM "SELECT Count FROM tb1 WHERE Item=?";
+	EXEC SQL EXECUTE stmt INTO :count USING :uvarchar_array[0];
+	
+	printf ("count=%d for Item='世界杯每隔四年就会举行一次每次𠲖个球队'\n", count);
+	EXEC SQL DEALLOCATE PREPARE stmt;
+}
+
+//prepared update using uvarchar array
+void test_array_8()
+{
+    test("test_array_8 : prepared update using uvarchar array");
+    init_var();
+    EXEC SQL SELECT Item INTO :uvarchar_array FROM tb1 WHERE Count<=3;
+
+	EXEC SQL PREPARE stmt FROM "UPDATE tb1 SET Item=? WHERE Count=?";
+	EXEC SQL EXECUTE stmt USING :uvarchar_array[0], 1;
+	EXEC SQL EXECUTE stmt USING :uvarchar_array[0], 2;
+	EXEC SQL SELECT count(*) INTO :count FROM tb1 WHERE Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋';
+
+	printf ("found %d rows for Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋'\n", count);
+	EXEC SQL DEALLOCATE PREPARE stmt;
+	
+	init_table_value();
+}
+
+//prepared delete using uvarchar array
+void test_array_9()
+{
+    test("test_array_9 : prepared delete using uvarchar array");
+    init_var();
+    EXEC SQL SELECT Item INTO :uvarchar_array FROM tb1 WHERE Count<=3;
+    
+    count = 0;
+	EXEC SQL PREPARE stmt FROM "DELETE FROM tb1 WHERE Item=?";
+	EXEC SQL EXECUTE stmt USING :uvarchar_array[0];
+	EXEC SQL SELECT count(*) INTO :count FROM tb1 WHERE Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋';
+
+	printf ("found %d rows for Item='太𠮷𠜱平洋𠱓大西洋印度洋北冰洋'\n", count);
+	EXEC SQL DEALLOCATE PREPARE stmt;
+	
+	init_table_value();
+}
+
+//prepared insert using uvarchar array
+void test_array_10()
+{
+    test("test_array_10 : prepared insert using uvarchar array");
+    init_var();
+    EXEC SQL SELECT Item INTO :uvarchar_array FROM tb1 WHERE Count<=3;
+
+	EXEC SQL PREPARE stmt FROM "INSERT INTO tb1 values (?, ?)";
+	EXEC SQL EXECUTE stmt USING :uvarchar_array[2], 13;
+	EXEC SQL EXECUTE stmt USING :uvarchar_array[2], 15;
+	EXEC SQL SELECT count(*) INTO :count FROM tb1 WHERE Item='世界杯每隔四年就会举行一次每次𠲖个球队';
+	
+	printf ("found %d rows for Item='世界杯每隔四年就会举行一次每次𠲖个球队'\n", count);
+	EXEC SQL DEALLOCATE PREPARE stmt;
+	
+	init_table_value();
+}
+
+//Open cursor using uvarchar array
+void test_array_11()
+{
+    test("test_array_11 : Open cursor using uvarchar array");
+    init_var();
+ 
+ 	EXEC SQL SET AUTOCOMMIT TO OFF;   
+    EXEC SQL SELECT Item INTO :uvarchar_array FROM tb1 WHERE Count<=3;
+    
+	EXEC SQL PREPARE stmt FROM "SELECT Count FROM tb1 WHERE Item=?";
+	EXEC SQL DECLARE cursor_array_11 CURSOR FOR stmt;
+	EXEC SQL OPEN cursor_array_11 USING :uvarchar_array[2];
+	EXEC SQL FETCH cursor_array_11 INTO :count;
+	printf ("count=%d for Item='世界杯每隔四年就会举行一次每次𠲖个球队'\n", count);
+	EXEC SQL CLOSE cursor_array_11;
+	EXEC SQL DEALLOCATE PREPARE stmt;
+	EXEC SQL SET AUTOCOMMIT TO ON;
+}
+
+//Fecth cursor into uvarchar array
+void test_array_12()
+{
+    test("test_array_12 : Fecth cursor into uvarchar array");
+    init_var();
+     
+    EXEC SQL SET AUTOCOMMIT TO OFF;
+	EXEC SQL PREPARE stmt FROM "SELECT Item FROM tb1 WHERE Count<=3";
+	EXEC SQL DECLARE cursor_array_12 CURSOR FOR stmt;
+	EXEC SQL OPEN cursor_array_12;
+	EXEC SQL FETCH cursor_array_12 INTO :uvarchar_array[0];
+	EXEC SQL FETCH cursor_array_12 INTO :uvarchar_array[1];
+	EXEC SQL FETCH cursor_array_12 INTO :uvarchar_array[2];
+	EXEC SQL CLOSE cursor_array_12;
+	
+	print_array();
+		
+	EXEC SQL DEALLOCATE PREPARE stmt;
+	EXEC SQL SET AUTOCOMMIT TO ON;
+}
+
+//Insert array with L string inited
+void test_array_13()
+{
+EXEC SQL BEGIN DECLARE SECTION;
+    uvarchar	uvarchar_array13[3][VAR_SIZE];
+EXEC SQL END DECLARE SECTION;
+    test("test_array_13 : Insert array with L string inited");
+    
+    memset((char*)&uvarchar_array13,0,sizeof(uvarchar_array13));
+    
+    memcpy((char*)uvarchar_array13[0].arr, L"太𠮷𠜱平洋𠱓大西洋印度洋北冰洋", sizeof(L"太𠮷𠜱平洋𠱓大西洋印度洋北冰洋"));
+    uvarchar_array13[0].len = sizeof(L"太𠮷𠜱平洋𠱓大西洋印度洋北冰洋")/4;
+    memcpy((char*)uvarchar_array13[1].arr, L"足球篮球羽毛球乒乓球橄榄球棒球冰球", sizeof(L"足球篮球羽毛球乒乓球橄榄球棒球冰球"));
+    uvarchar_array13[1].len = sizeof(L"足球篮球羽毛球乒乓球橄榄球棒球冰球")/4;
+    memcpy((char*)uvarchar_array13[2].arr, L"世界杯每隔四年就会举行一次每次𠲖个球队", sizeof(L"世界杯每隔四年就会举行一次每次𠲖个球队"));
+    uvarchar_array13[2].len = sizeof(L"世界杯每隔四年就会举行一次每次𠲖个球队")/4;
+   
+    EXEC SQL INSERT INTO tb1 values (:uvarchar_array13[0], 20);
+    EXEC SQL INSERT INTO tb1 values (:uvarchar_array13[1], 21);
+    EXEC SQL INSERT INTO tb1 values (:uvarchar_array13[2], 22);
+    
+    init_var();
+    EXEC SQL SELECT Item INTO :uvarchar_array FROM tb1 WHERE Count<=22 AND Count>=20;
+    print_array();
+    init_table_value();
+
+}
+
+//uvarchar array working with NULL without using indicator
+void test_array_15()
+{
+EXEC SQL BEGIN DECLARE SECTION;
+    uvarchar	uvarchar_local_array[3][20];
+EXEC SQL END DECLARE SECTION;
+    test("test_array_15 : Test uvarchar array working with NULL without using indicator");
+    memset(uvarchar_local_array,'a',sizeof(uvarchar_local_array));
+    
+	EXEC SQL SELECT Item INTO :uvarchar_local_array FROM tb1 WHERE Count>=8 and Count<=10;
+	
+	print_local_uvarchar(uvarchar_local_array[0].arr, 20);
+	print_local_uvarchar(uvarchar_local_array[1].arr, 20);
+	print_local_uvarchar(uvarchar_local_array[2].arr, 20);
+
+    
+    memset(uvarchar_local_array,0x00,sizeof(uvarchar_local_array));
+    EXEC SQL INSERT INTO tb1 values (:uvarchar_local_array[0], 18);
+    EXEC SQL INSERT INTO tb1 values (:uvarchar_local_array[1], 19);
+    EXEC SQL INSERT INTO tb1 values (:uvarchar_local_array[2], 20);
+	EXEC SQL SELECT count(*) INTO :count FROM tb1 WHERE Item is NULL;
+	printf ("found %d rows for Item being NULL\n", count);
+    
+    init_table_value();
+}
+
+//uvarchar array working with NULL using indicator
+void test_array_16()
+{
+EXEC SQL BEGIN DECLARE SECTION;
+    uvarchar	uvarchar_local_array[3][20];
+    int     uvarchar_array_ind[3];
+EXEC SQL END DECLARE SECTION;
+    test("test_array_16 : Test uvarchar array working with NULL using indicator");
+    memset(uvarchar_local_array,'a',sizeof(uvarchar_local_array));
+    
+	EXEC SQL SELECT Item INTO :uvarchar_local_array:uvarchar_array_ind FROM tb1 WHERE Count>=8 and Count<=10;
+	
+	
+	print_local_uvarchar(uvarchar_local_array[0].arr, 20);
+	print_local_uvarchar(uvarchar_local_array[1].arr, 20);
+	print_local_uvarchar(uvarchar_local_array[2].arr, 20);
+	
+	print_uvarchar_ind(uvarchar_array_ind[0]);
+	print_uvarchar_ind(uvarchar_array_ind[1]);
+	print_uvarchar_ind(uvarchar_array_ind[2]);
+	    
+    memset(uvarchar_local_array,0x00,sizeof(uvarchar_local_array));
+    uvarchar_array_ind[0]=-1;
+    EXEC SQL INSERT INTO tb1 values (:uvarchar_local_array[0]:uvarchar_array_ind[0], 18);
+    EXEC SQL INSERT INTO tb1 values (:uvarchar_local_array[1]:uvarchar_array_ind[0], 19);
+    EXEC SQL INSERT INTO tb1 values (:uvarchar_local_array[2]:uvarchar_array_ind[0], 20);
+	EXEC SQL SELECT count(*) INTO :count FROM tb1 WHERE Item is NULL;
+	printf ("found %d rows for Item being NULL\n", count);
+    
+    init_table_value();
+}
+
+void test_all()
+{
+	test_var_1();
+	test_var_2();
+	test_var_3();
+	test_var_4();
+	test_var_5();
+	test_var_6();
+	test_var_7();
+	test_var_8();
+	test_var_9();
+	test_var_10();
+	test_var_11();
+	test_var_12();
+    test_var_13();
+    test_var_14();
+    test_var_15();
+    test_var_16();
+	test_array_1();
+	test_array_2();
+	test_array_3();
+	test_array_4();
+	test_array_5();
+	test_array_6();
+	test_array_7();
+	test_array_8();
+	test_array_9();
+	test_array_10();
+	test_array_11();
+	test_array_12();
+    test_array_13();
+    test_array_15();
+    test_array_16();
+}
+
+int main() 
+{
+//	ECPGdebug(1, stderr);
+    if(test_init() !=0)
+        return -1;
+    
+    test_all();
+    test_finish();
+
+	return 0;
+}

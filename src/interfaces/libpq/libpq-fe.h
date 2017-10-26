@@ -535,7 +535,23 @@ extern size_t PQescapeString(char *to, const char *from, size_t length);
 extern unsigned char *PQescapeBytea(const unsigned char *from, size_t from_length,
 			  size_t *to_length);
 
+/*
+ * New added interface for ECOBPG NCHAR features
+ * to get client_encoding in src/interface/ecpg/ecpglib/data.c
+ * src/interface/ecpg/ecpglib/execute.c.
+ */
 
+extern int PQGetEncodingFromPGconn(const PGconn *conn);
+
+extern int PQGetEncodingFromPGres(const PGresult *results);
+
+extern char *PQGetEncodingName(int client_encoding);
+
+extern int PQGenEncodingMaxLen(int client_encoding);
+
+extern int PQGetencUTF8(void);
+
+extern int PQGetencEUCJP(void);
 
 /* === in fe-print.c === */
 

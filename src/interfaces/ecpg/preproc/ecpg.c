@@ -10,6 +10,7 @@
 #include "getopt_long.h"
 
 #include "extern.h"
+#include "mb/pg_wchar.h"
 
 int			ret_value = 0;
 bool		autocommit = false,
@@ -18,7 +19,8 @@ bool		autocommit = false,
 			force_indicator = true,
 			questionmarks = false,
 			regression_mode = false,
-			auto_prepare = false;
+			auto_prepare = false,
+			enable_utext = false;
 
 char	   *output_filename;
 
@@ -54,6 +56,7 @@ help(const char *progname)
 			 "                 \"no_indicator\", \"prepare\", \"questionmarks\"\n"));
 	printf(_("  --regression   run in regression testing mode\n"));
 	printf(_("  -t             turn on autocommit of transactions\n"));
+	printf(_("  --enable-utext enable unicode feature\n"));
 	printf(_("  -V, --version  output version information, then exit\n"));
 	printf(_("  -?, --help     show this help, then exit\n"));
 	printf(_("\nIf no output file is specified, the name is formed by adding .c to the\n"
@@ -112,11 +115,13 @@ add_preprocessor_define(char *define)
 }
 
 #define ECPG_GETOPT_LONG_REGRESSION		1
+#define ECPG_GETOPT_LONG_ENABLE_UTEXT 2
 int
 main(int argc, char *const argv[])
 {
 	static struct option ecpg_options[] = {
 		{"regression", no_argument, NULL, ECPG_GETOPT_LONG_REGRESSION},
+		{"enable-utext", no_argument, NULL, ECPG_GETOPT_LONG_ENABLE_UTEXT},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -237,6 +242,9 @@ main(int argc, char *const argv[])
 				fprintf(stderr, _("%s: parser debug support (-d) not available\n"),
 						progname);
 #endif
+			case ECPG_GETOPT_LONG_ENABLE_UTEXT:
+				enable_utext = true;
+				break;
 				break;
 			default:
 				fprintf(stderr, _("Try \"%s --help\" for more information.\n"), argv[0]);
@@ -434,7 +442,11 @@ main(int argc, char *const argv[])
 
 				if (header_mode == false)
 				{
-					fprintf(base_yyout, "/* These include files are added by the preprocessor */\n#include <ecpglib.h>\n#include <ecpgerrno.h>\n#include <sqlca.h>\n");
+					fprintf(base_yyout, "/* These include files are added by the preprocessor */\n");
+
+					if(enable_utext)
+						fprintf(base_yyout, "#define ECPG_ENABLE_UTEXT 1\n");
+					fprintf(base_yyout, "#include <ecpglib.h>\n#include <ecpgerrno.h>\n#include <sqlca.h>\n");
 
 					/* add some compatibility headers */
 					if (INFORMIX_MODE)

@@ -1,0 +1,246 @@
+#include <stdio.h>
+
+EXEC SQL INCLUDE ../regression;
+
+void print_utext(char *var_name, utext *utext_var, int var_size);
+void print_utext_array(char *var_name, utext *utext_var, int var_size, int index);
+void print_nchar(char *utext_var, int var_size);
+
+#define print_ret print_utext("employee",employee,40); \
+print_utext("address", address.arr, address.len)
+
+EXEC SQL BEGIN DECLARE SECTION;
+char char_ename[3][40] = {"test ok","测试 通过","太𠮷𠜱"};
+
+char employee_1[40]= "test ok";
+char employee_2[40]= "测试 通过";
+char employee_3[40]= "太𠮷𠜱";
+
+char char_addr[3][40] = {"1 sydney, NSW","澳大利亚悉尼1号","世界杯"};
+
+char address_1[40]="1 sydney, NSW";
+char address_2[40]="澳大利亚悉尼1号";
+char address_3[40]="世界杯";
+EXEC SQL END DECLARE SECTION;
+
+void print_utext(char *var_name, utext *utext_var, int var_size)
+{
+    int i;
+    printf("======print %s content======\n",var_name);
+    for(i=0; i<var_size; i++)
+    {
+      printf ("0x%04X  ", utext_var[i]);
+      if(i>6 && (i+1)%8==0)
+          printf("\n");
+    }
+    printf("\n");
+}
+
+void print_utext_array(char *var_name, utext *utext_var, int var_size, int index)
+{
+    int i;
+    printf("======print %s[%d] content======\n",var_name,index);
+    for(i=0; i<var_size; i++)
+    {
+      printf ("0x%04X  ", utext_var[i]);
+      if(i>6 && (i+1)%8==0)
+          printf("\n");
+    }
+    printf("\n");
+}
+
+void print_nchar(char *utext_var, int var_size)
+{
+    printf("nchar is : %s\n",utext_var);
+    int i;
+    printf("======print utext_var content======\n");
+    for(i=0; i<var_size; i++)
+    {
+        printf ("0x%04X  ", utext_var[i]);
+        if(i>6 && (i+1)%8==0)
+            printf("\n");
+    }
+    printf("\n======End utext_var content======\n");
+}
+
+void create_table()
+{
+    EXEC SQL CREATE TABLE IF NOT EXISTS emp (id int, ename CHAR(20), address nvarchar(50));
+    EXEC SQL TRUNCATE TABLE emp;
+    
+    EXEC SQL CREATE TABLE IF NOT EXISTS emp_bk (id int, ename CHAR(20), address nvarchar(50));
+    EXEC SQL TRUNCATE TABLE emp_bk;
+}
+
+void init_table()
+{
+    /* UTF8 is the database character set */
+    EXEC SQL INSERT INTO emp (id,ename,address) VALUES (1, 'test ok', '1 sydney, NSW') ;
+    EXEC SQL INSERT INTO emp (id,ename,address) VALUES (2, '测试 通过', '澳大利亚悉尼1号') ;
+    EXEC SQL INSERT INTO emp (id,ename,address) VALUES (3, '太𠮷𠜱', '世界杯') ;
+}
+
+/*
+ Test utext host variable
+*/
+void testcase1()
+{
+    EXEC SQL BEGIN DECLARE SECTION;
+    int total_tuples = 0;
+    int i = 0;
+    int id = 0;
+    int id2 = 0;
+    utext employee[41];        /* define Unicode host variable */
+    uvarchar address[101] ; /* define a variable length Unicode host variable */
+    EXEC SQL END DECLARE SECTION;
+
+    printf("\n**************Start testcase(%d)**************\n",1);
+    
+    memset(employee,'a',sizeof(employee));
+    memset((void*)&address,'a',sizeof(address));
+    address.len = 0;
+    
+    EXEC SQL TRUNCATE emp_bk;   
+    
+    for(i=1;i<=3;i++)
+    {
+        /* Database character set converted to Unicode */
+        EXEC SQL SELECT ename,address INTO :employee, :address FROM emp where id =:i;
+        print_ret;
+        /* Unicode converted to Database character */
+        EXEC SQL INSERT INTO emp_bk (id,ename,address) VALUES (:i,:employee, :address);    
+    }
+    
+    EXEC SQL SELECT count(*) into :total_tuples from emp_bk;
+    printf("total_tuples = %d in emp_bk\n",total_tuples);
+    
+    
+    for(i=3;i>0;i--)
+    {
+        EXEC SQL SELECT ename,address INTO :employee, :address FROM emp where id =:i;
+        EXEC SQL SELECT id into :id from emp_bk WHERE ename=:employee and address = :address;
+        EXEC SQL SELECT id into :id2 from emp_bk WHERE ename=:char_ename[i-1] and address=:char_addr[i-1];
+        printf("id[%d] = id2[%d] in emp_bk\n",id,id2);    
+    }
+}
+
+/*
+ Test utext array
+*/
+void testcase2()
+{
+    EXEC SQL BEGIN DECLARE SECTION;
+    int total_tuples = 0;
+    int i = 0;
+    int j = 0;
+    int id = 0;
+    int id2 = 0;
+    utext employee_array[3][41];        /* define Unicode host variable */
+    uvarchar address_array[3][101] ; /* define a variable length Unicode host variable */
+    EXEC SQL END DECLARE SECTION;
+
+    printf("\n**************Start testcase(%d)**************\n",2);
+
+    memset(employee_array,'a',sizeof(employee_array));
+    
+    for(i=0;i<3;i++)
+    {
+        memset((void*)&address_array[i],'a',sizeof(address_array[0]));
+        address_array[i].len=0;
+    }
+    
+    
+    EXEC SQL TRUNCATE emp_bk;   
+
+    /* Database character set converted to Unicode */
+    EXEC SQL SELECT ename,address INTO :employee_array, :address_array FROM emp;
+        
+    for(i=1;i<=3;i++)
+    {
+        print_utext_array("employee_array",employee_array[i-1],40,i-1);
+        print_utext_array("address_array",address_array[i-1].arr,address_array[i-1].len,i-1);
+        /* Unicode converted to Database character */
+        EXEC SQL INSERT INTO emp_bk (id,ename,address) VALUES (:i,:employee_array[i-1], :address_array[i-1]);    
+    }
+    
+    EXEC SQL SELECT count(*) into :total_tuples from emp_bk;
+    printf("total_tuples = %d in emp_bk\n",total_tuples);
+    
+    
+    EXEC SQL SELECT ename,address INTO :employee_array, :address_array FROM emp;
+    for(i=3;i>0;i--)
+    {
+        EXEC SQL SELECT id into :id from emp_bk WHERE ename=:employee_array[i-1] and address = :address_array[i-1];
+        EXEC SQL SELECT id into :id2 from emp_bk WHERE ename=:char_ename[i-1] and address=:char_addr[i-1];
+        printf("id[%d] = id2[%d] in emp_bk\n",id,id2);    
+    }
+}
+
+
+/*
+ Test utext pointer
+*/
+void testcase3()
+{
+    EXEC SQL BEGIN DECLARE SECTION;
+    int total_tuples = 0;
+    int i = 0;
+    int id = 0;
+    int id2 = 0;
+    utext *employee;        /* define Unicode host variable */
+    int employee_len = 82;
+    uvarchar address[101] ; /* define a variable length Unicode host variable */
+    EXEC SQL END DECLARE SECTION;
+
+    
+    printf("\n**************Start testcase(%d)**************\n",3);
+    
+    employee = malloc(employee_len);
+    
+    memset(employee,'a',employee_len);
+    memset((void*)&address,'a',sizeof(address));
+    address.len = 0;
+    
+    EXEC SQL TRUNCATE emp_bk;   
+    
+    for(i=1;i<=3;i++)
+    {
+        /* Database character set converted to Unicode */
+        EXEC SQL SELECT ename,address INTO :employee, :address FROM emp where id =:i;
+        print_ret;
+        /* Unicode converted to Database character */
+        EXEC SQL INSERT INTO emp_bk (id,ename,address) VALUES (:i,:employee, :address);    
+    }
+    
+    EXEC SQL SELECT count(*) into :total_tuples from emp_bk;
+    printf("total_tuples = %d in emp_bk\n",total_tuples);
+    
+    
+    for(i=3;i>0;i--)
+    {
+        EXEC SQL SELECT ename,address INTO :employee, :address FROM emp where id =:i;
+        EXEC SQL SELECT id into :id from emp_bk WHERE ename=:employee and address = :address;
+        EXEC SQL SELECT id into :id2 from emp_bk WHERE ename=:char_ename[i-1] and address=:char_addr[i-1];
+        printf("id[%d] = id2[%d] in emp_bk\n",id,id2);    
+    }
+}
+
+int main() {
+    EXEC SQL CONNECT TO REGRESSDB1;
+
+    EXEC SQL SET AUTOCOMMIT TO ON;
+    EXEC SQL WHENEVER SQLWARNING SQLPRINT;
+    EXEC SQL WHENEVER SQLERROR SQLPRINT;
+    create_table();
+    init_table();
+    
+    testcase1();
+    testcase2();
+    testcase3();
+
+    EXEC SQL DISCONNECT;
+    return 0;
+}
+
+
+

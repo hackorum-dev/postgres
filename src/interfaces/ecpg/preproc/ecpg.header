@@ -6,6 +6,7 @@
 
 #include "extern.h"
 #include "ecpg_config.h"
+#include "mb/pg_wchar.h"
 #include <unistd.h>
 
 /* Location tracking support --- simpler than bison's default */
@@ -46,6 +47,7 @@ static char	pacounter_buffer[sizeof(int) * CHAR_BIT * 10 / 3]; /* a rough guess 
 static struct this_type actual_type[STRUCT_DEPTH];
 static char *actual_startline[STRUCT_DEPTH];
 static int	varchar_counter = 1;
+static int	uvarchar_counter = 1;
 
 /* temporarily store struct members while creating the data structure */
 struct ECPGstruct_member *struct_member_list[STRUCT_DEPTH] = { NULL };
@@ -137,7 +139,7 @@ cat2_str(char *str1, char *str2)
 	char * res_str	= (char *)mm_alloc(strlen(str1) + strlen(str2) + 2);
 
 	strcpy(res_str, str1);
-	if (strlen(str1) != 0 && strlen(str2) != 0)
+	if (strlen(str1) != 0 && strlen(str2) != 0 && strcmp(str1,"L") != 0)
 		strcat(res_str, " ");
 	strcat(res_str, str2);
 	free(str1);
@@ -288,7 +290,9 @@ adjust_outofscope_cursor_vars(struct cursor *cur)
 			else if ((ptr->variable->type->type != ECPGt_varchar
 					  && ptr->variable->type->type != ECPGt_char
 					  && ptr->variable->type->type != ECPGt_unsigned_char
-					  && ptr->variable->type->type != ECPGt_string)
+					  && ptr->variable->type->type != ECPGt_string
+					  && ptr->variable->type->type != ECPGt_utext
+					  && ptr->variable->type->type != ECPGt_uvarchar)
 					 && atoi(ptr->variable->type->size) > 1)
 			{
 				newvar = new_variable(cat_str(4, mm_strdup("("),
@@ -304,7 +308,9 @@ adjust_outofscope_cursor_vars(struct cursor *cur)
 			else if ((ptr->variable->type->type == ECPGt_varchar
 					  || ptr->variable->type->type == ECPGt_char
 					  || ptr->variable->type->type == ECPGt_unsigned_char
-					  || ptr->variable->type->type == ECPGt_string)
+					  || ptr->variable->type->type == ECPGt_string
+					  || ptr->variable->type->type == ECPGt_utext
+					  || ptr->variable->type->type == ECPGt_uvarchar)
 					 && atoi(ptr->variable->type->size) > 1)
 			{
 				newvar = new_variable(cat_str(4, mm_strdup("("),
@@ -315,7 +321,7 @@ adjust_outofscope_cursor_vars(struct cursor *cur)
 														   ptr->variable->type->size,
 														   ptr->variable->type->counter),
 									  0);
-				if (ptr->variable->type->type == ECPGt_varchar)
+				if (ptr->variable->type->type == ECPGt_varchar || ptr->variable->type->type == ECPGt_uvarchar)
 					var_ptr = true;
 			}
 			else if (ptr->variable->type->type == ECPGt_struct
@@ -565,6 +571,8 @@ add_typedef(char *name, char *dimension, char *length, enum ECPGttype type_enum,
 			type_enum != ECPGt_char &&
 			type_enum != ECPGt_unsigned_char &&
 			type_enum != ECPGt_string &&
+			type_enum != ECPGt_utext &&
+			type_enum != ECPGt_uvarchar &&
 			atoi(this->type->type_index) >= 0)
 			mmerror(PARSE_ERROR, ET_ERROR, "multidimensional arrays for simple data types are not supported");
 
