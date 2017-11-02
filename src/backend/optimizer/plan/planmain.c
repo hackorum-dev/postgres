@@ -60,6 +60,7 @@ query_planner(PlannerInfo *root, List *tlist,
 	Index		rti;
 	double		total_pages;
 
+alist_test();
 	/*
 	 * If the query has an empty join tree, then it's something easy like
 	 * "SELECT 2+2;" or "INSERT ... VALUES()".  Fall through quickly.

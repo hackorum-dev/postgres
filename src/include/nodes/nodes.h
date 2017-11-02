@@ -293,6 +293,13 @@ typedef enum NodeTag
 	T_OidList,
 
 	/*
+	 * TAGS FOR ARRAYLIST NODES (arraylist.h)
+	 */
+	T_ArrayList,
+	T_IntArrayList,
+	T_OidArrayList,
+
+	/*
 	 * TAGS FOR EXTENSIBLE NODES (extensible.h)
 	 */
 	T_ExtensibleNode,
