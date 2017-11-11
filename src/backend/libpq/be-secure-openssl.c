@@ -999,9 +999,9 @@ ssl_passwd_cb(char *buf, int size, int rwflag, void *userdata)
 /*
  *	Certificate verification callback
  *
- *	This callback allows us to log intermediate problems during
- *	verification, but for now we'll see if the final error message
- *	contains enough information.
+ *	There are 50 ways to leave your lover, and 67 ways to fail
+ *	certificate verification. Log details of all failed certificate
+ *	verification results.
  *
  *	This callback also allows us to override the default acceptance
  *	criteria (e.g., accepting self-signed or expired certs), but
@@ -1010,6 +1010,28 @@ ssl_passwd_cb(char *buf, int size, int rwflag, void *userdata)
 static int
 verify_cb(int ok, X509_STORE_CTX *ctx)
 {
+	char *subject, *issuer;
+	X509 *cert;
+	int err, depth;
+
+	if (!ok)
+	{
+		cert = X509_STORE_CTX_get_current_cert(ctx);
+		err = X509_STORE_CTX_get_error(ctx);
+		depth = X509_STORE_CTX_get_error_depth(ctx);
+
+		subject = X509_NAME_oneline(X509_get_subject_name(cert), NULL, 0);
+		issuer = X509_NAME_oneline(X509_get_issuer_name(cert), NULL, 0);
+
+		ereport(COMMERROR,
+			(errcode(ERRCODE_PROTOCOL_VIOLATION),
+				errmsg("SSL certificate verification result: %s (depth %d, subject '%s', issuer '%s')",
+					X509_verify_cert_error_string(err), depth, subject, issuer)));
+
+		OPENSSL_free(subject);
+		OPENSSL_free(issuer);
+	}
+
 	return ok;
 }
 

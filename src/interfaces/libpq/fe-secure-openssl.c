@@ -82,6 +82,8 @@ static bool pq_init_crypto_lib = true;
 
 static bool ssl_lib_initialized = false;
 
+static int ssl_ex_data_index;
+
 #ifdef ENABLE_THREAD_SAFETY
 static long ssl_open_connections = 0;
 
@@ -182,6 +184,7 @@ rloop:
 	 */
 	SOCK_ERRNO_SET(0);
 	ERR_clear_error();
+	resetPQExpBuffer(&conn->errorMessage);
 	n = SSL_read(conn->ssl, ptr, len);
 	err = SSL_get_error(conn->ssl, n);
 
@@ -200,7 +203,7 @@ rloop:
 			if (n < 0)
 			{
 				/* Not supposed to happen, so we don't translate the msg */
-				printfPQExpBuffer(&conn->errorMessage,
+				appendPQExpBuffer(&conn->errorMessage,
 								  "SSL_read failed but did not provide error information\n");
 				/* assume the connection is broken */
 				result_errno = ECONNRESET;
@@ -224,20 +227,20 @@ rloop:
 				result_errno = SOCK_ERRNO;
 				if (result_errno == EPIPE ||
 					result_errno == ECONNRESET)
-					printfPQExpBuffer(&conn->errorMessage,
+					appendPQExpBuffer(&conn->errorMessage,
 									  libpq_gettext(
 													"server closed the connection unexpectedly\n"
 													"\tThis probably means the server terminated abnormally\n"
 													"\tbefore or while processing the request.\n"));
 				else
-					printfPQExpBuffer(&conn->errorMessage,
+					appendPQExpBuffer(&conn->errorMessage,
 									  libpq_gettext("SSL SYSCALL error: %s\n"),
 									  SOCK_STRERROR(result_errno,
 													sebuf, sizeof(sebuf)));
 			}
 			else
 			{
-				printfPQExpBuffer(&conn->errorMessage,
+				appendPQExpBuffer(&conn->errorMessage,
 								  libpq_gettext("SSL SYSCALL error: EOF detected\n"));
 				/* assume the connection is broken */
 				result_errno = ECONNRESET;
@@ -248,7 +251,7 @@ rloop:
 			{
 				char	   *errm = SSLerrmessage(ecode);
 
-				printfPQExpBuffer(&conn->errorMessage,
+				appendPQExpBuffer(&conn->errorMessage,
 								  libpq_gettext("SSL error: %s\n"), errm);
 				SSLerrfree(errm);
 				/* assume the connection is broken */
@@ -263,13 +266,13 @@ rloop:
 			 * a clean connection closure, so we should not report it as a
 			 * server crash.
 			 */
-			printfPQExpBuffer(&conn->errorMessage,
+			appendPQExpBuffer(&conn->errorMessage,
 							  libpq_gettext("SSL connection has been closed unexpectedly\n"));
 			result_errno = ECONNRESET;
 			n = -1;
 			break;
 		default:
-			printfPQExpBuffer(&conn->errorMessage,
+			appendPQExpBuffer(&conn->errorMessage,
 							  libpq_gettext("unrecognized SSL error code: %d\n"),
 							  err);
 			/* assume the connection is broken */
@@ -302,6 +305,7 @@ pgtls_write(PGconn *conn, const void *ptr, size_t len)
 
 	SOCK_ERRNO_SET(0);
 	ERR_clear_error();
+	resetPQExpBuffer(&conn->errorMessage);
 	n = SSL_write(conn->ssl, ptr, len);
 	err = SSL_get_error(conn->ssl, n);
 	ecode = (err != SSL_ERROR_NONE || n < 0) ? ERR_get_error() : 0;
@@ -311,7 +315,7 @@ pgtls_write(PGconn *conn, const void *ptr, size_t len)
 			if (n < 0)
 			{
 				/* Not supposed to happen, so we don't translate the msg */
-				printfPQExpBuffer(&conn->errorMessage,
+				appendPQExpBuffer(&conn->errorMessage,
 								  "SSL_write failed but did not provide error information\n");
 				/* assume the connection is broken */
 				result_errno = ECONNRESET;
@@ -333,20 +337,20 @@ pgtls_write(PGconn *conn, const void *ptr, size_t len)
 			{
 				result_errno = SOCK_ERRNO;
 				if (result_errno == EPIPE || result_errno == ECONNRESET)
-					printfPQExpBuffer(&conn->errorMessage,
+					appendPQExpBuffer(&conn->errorMessage,
 									  libpq_gettext(
 													"server closed the connection unexpectedly\n"
 													"\tThis probably means the server terminated abnormally\n"
 													"\tbefore or while processing the request.\n"));
 				else
-					printfPQExpBuffer(&conn->errorMessage,
+					appendPQExpBuffer(&conn->errorMessage,
 									  libpq_gettext("SSL SYSCALL error: %s\n"),
 									  SOCK_STRERROR(result_errno,
 													sebuf, sizeof(sebuf)));
 			}
 			else
 			{
-				printfPQExpBuffer(&conn->errorMessage,
+				appendPQExpBuffer(&conn->errorMessage,
 								  libpq_gettext("SSL SYSCALL error: EOF detected\n"));
 				/* assume the connection is broken */
 				result_errno = ECONNRESET;
@@ -357,7 +361,7 @@ pgtls_write(PGconn *conn, const void *ptr, size_t len)
 			{
 				char	   *errm = SSLerrmessage(ecode);
 
-				printfPQExpBuffer(&conn->errorMessage,
+				appendPQExpBuffer(&conn->errorMessage,
 								  libpq_gettext("SSL error: %s\n"), errm);
 				SSLerrfree(errm);
 				/* assume the connection is broken */
@@ -372,13 +376,13 @@ pgtls_write(PGconn *conn, const void *ptr, size_t len)
 			 * a clean connection closure, so we should not report it as a
 			 * server crash.
 			 */
-			printfPQExpBuffer(&conn->errorMessage,
+			appendPQExpBuffer(&conn->errorMessage,
 							  libpq_gettext("SSL connection has been closed unexpectedly\n"));
 			result_errno = ECONNRESET;
 			n = -1;
 			break;
 		default:
-			printfPQExpBuffer(&conn->errorMessage,
+			appendPQExpBuffer(&conn->errorMessage,
 							  libpq_gettext("unrecognized SSL error code: %d\n"),
 							  err);
 			/* assume the connection is broken */
@@ -400,9 +404,9 @@ pgtls_write(PGconn *conn, const void *ptr, size_t len)
 /*
  *	Certificate verification callback
  *
- *	This callback allows us to log intermediate problems during
- *	verification, but there doesn't seem to be a clean way to get
- *	our PGconn * structure.  So we can't log anything!
+ *	There are 50 ways to leave your lover, and 67 ways to fail
+ *	certificate verification. Return details of all failed certificate
+ *	verification results.
  *
  *	This callback also allows us to override the default acceptance
  *	criteria (e.g., accepting self-signed or expired certs), but
@@ -411,6 +415,32 @@ pgtls_write(PGconn *conn, const void *ptr, size_t len)
 static int
 verify_cb(int ok, X509_STORE_CTX *ctx)
 {
+	char *subject, *issuer;
+	X509 *cert;
+	SSL *ssl;
+	PGconn *conn;
+	int err, depth;
+
+	if (!ok)
+	{
+		cert = X509_STORE_CTX_get_current_cert(ctx);
+		err = X509_STORE_CTX_get_error(ctx);
+		depth = X509_STORE_CTX_get_error_depth(ctx);
+
+		subject = X509_NAME_oneline(X509_get_subject_name(cert), NULL, 0);
+		issuer = X509_NAME_oneline(X509_get_issuer_name(cert), NULL, 0);
+
+		ssl = X509_STORE_CTX_get_ex_data(ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
+		conn = SSL_get_ex_data(ssl, ssl_ex_data_index);
+
+		appendPQExpBuffer(&conn->errorMessage,
+			libpq_gettext("SSL certificate verification result: %s (depth %d, subject '%s', issuer '%s')\n"),
+				X509_verify_cert_error_string(err), depth, subject, issuer);
+
+		OPENSSL_free(subject);
+		OPENSSL_free(issuer);
+	}
+
 	return ok;
 }
 
@@ -490,7 +520,7 @@ verify_peer_name_matches_certificate_name(PGconn *conn, ASN1_STRING *name_entry,
 	/* Should not happen... */
 	if (name_entry == NULL)
 	{
-		printfPQExpBuffer(&conn->errorMessage,
+		appendPQExpBuffer(&conn->errorMessage,
 						  libpq_gettext("SSL certificate's name entry is missing\n"));
 		return -1;
 	}
@@ -510,7 +540,7 @@ verify_peer_name_matches_certificate_name(PGconn *conn, ASN1_STRING *name_entry,
 	name = malloc(len + 1);
 	if (name == NULL)
 	{
-		printfPQExpBuffer(&conn->errorMessage,
+		appendPQExpBuffer(&conn->errorMessage,
 						  libpq_gettext("out of memory\n"));
 		return -1;
 	}
@@ -524,7 +554,7 @@ verify_peer_name_matches_certificate_name(PGconn *conn, ASN1_STRING *name_entry,
 	if (len != strlen(name))
 	{
 		free(name);
-		printfPQExpBuffer(&conn->errorMessage,
+		appendPQExpBuffer(&conn->errorMessage,
 						  libpq_gettext("SSL certificate's name contains embedded null\n"));
 		return -1;
 	}
@@ -576,7 +606,7 @@ verify_peer_name_matches_certificate(PGconn *conn)
 	/* Check that we have a hostname to compare with. */
 	if (!(host && host[0] != '\0'))
 	{
-		printfPQExpBuffer(&conn->errorMessage,
+		appendPQExpBuffer(&conn->errorMessage,
 						  libpq_gettext("host name must be specified for a verified SSL connection\n"));
 		return false;
 	}
@@ -668,7 +698,7 @@ verify_peer_name_matches_certificate(PGconn *conn)
 		 */
 		if (names_examined > 1)
 		{
-			printfPQExpBuffer(&conn->errorMessage,
+			appendPQExpBuffer(&conn->errorMessage,
 							  libpq_ngettext("server certificate for \"%s\" (and %d other name) does not match host name \"%s\"\n",
 											 "server certificate for \"%s\" (and %d other names) does not match host name \"%s\"\n",
 											 names_examined - 1),
@@ -676,13 +706,13 @@ verify_peer_name_matches_certificate(PGconn *conn)
 		}
 		else if (names_examined == 1)
 		{
-			printfPQExpBuffer(&conn->errorMessage,
+			appendPQExpBuffer(&conn->errorMessage,
 							  libpq_gettext("server certificate for \"%s\" does not match host name \"%s\"\n"),
 							  first_name, host);
 		}
 		else
 		{
-			printfPQExpBuffer(&conn->errorMessage,
+			appendPQExpBuffer(&conn->errorMessage,
 							  libpq_gettext("could not get server's host name from server certificate\n"));
 		}
 	}
@@ -823,6 +853,8 @@ pgtls_init(PGconn *conn)
 			SSL_library_init();
 			SSL_load_error_strings();
 #endif
+			ssl_ex_data_index = SSL_get_ex_new_index(0,
+				"postgresql index", NULL, NULL, NULL);
 		}
 		ssl_lib_initialized = true;
 	}
@@ -899,6 +931,8 @@ initialize_SSL(PGconn *conn)
 	bool		have_rootcert;
 	EVP_PKEY   *pkey = NULL;
 
+	resetPQExpBuffer(&conn->errorMessage);
+
 	/*
 	 * We'll need the home directory if any of the relevant parameters are
 	 * defaulted.  If pqGetHomeDirectory fails, act as though none of the
@@ -924,7 +958,7 @@ initialize_SSL(PGconn *conn)
 	{
 		char	   *err = SSLerrmessage(ERR_get_error());
 
-		printfPQExpBuffer(&conn->errorMessage,
+		appendPQExpBuffer(&conn->errorMessage,
 						  libpq_gettext("could not create SSL context: %s\n"),
 						  err);
 		SSLerrfree(err);
@@ -961,7 +995,7 @@ initialize_SSL(PGconn *conn)
 		{
 			char	   *err = SSLerrmessage(ERR_get_error());
 
-			printfPQExpBuffer(&conn->errorMessage,
+			appendPQExpBuffer(&conn->errorMessage,
 							  libpq_gettext("could not read root certificate file \"%s\": %s\n"),
 							  fnbuf, err);
 			SSLerrfree(err);
@@ -989,7 +1023,7 @@ initialize_SSL(PGconn *conn)
 #else
 				char	   *err = SSLerrmessage(ERR_get_error());
 
-				printfPQExpBuffer(&conn->errorMessage,
+				appendPQExpBuffer(&conn->errorMessage,
 								  libpq_gettext("SSL library does not support CRL certificates (file \"%s\")\n"),
 								  fnbuf);
 				SSLerrfree(err);
@@ -1017,11 +1051,11 @@ initialize_SSL(PGconn *conn)
 			 * that it seems worth having a specialized error message for it.
 			 */
 			if (fnbuf[0] == '\0')
-				printfPQExpBuffer(&conn->errorMessage,
+				appendPQExpBuffer(&conn->errorMessage,
 								  libpq_gettext("could not get home directory to locate root certificate file\n"
 												"Either provide the file or change sslmode to disable server certificate verification.\n"));
 			else
-				printfPQExpBuffer(&conn->errorMessage,
+				appendPQExpBuffer(&conn->errorMessage,
 								  libpq_gettext("root certificate file \"%s\" does not exist\n"
 												"Either provide the file or change sslmode to disable server certificate verification.\n"), fnbuf);
 			SSL_CTX_free(SSL_context);
@@ -1052,7 +1086,7 @@ initialize_SSL(PGconn *conn)
 		 */
 		if (errno != ENOENT && errno != ENOTDIR)
 		{
-			printfPQExpBuffer(&conn->errorMessage,
+			appendPQExpBuffer(&conn->errorMessage,
 							  libpq_gettext("could not open certificate file \"%s\": %s\n"),
 							  fnbuf, pqStrerror(errno, sebuf, sizeof(sebuf)));
 			SSL_CTX_free(SSL_context);
@@ -1071,7 +1105,7 @@ initialize_SSL(PGconn *conn)
 		{
 			char	   *err = SSLerrmessage(ERR_get_error());
 
-			printfPQExpBuffer(&conn->errorMessage,
+			appendPQExpBuffer(&conn->errorMessage,
 							  libpq_gettext("could not read certificate file \"%s\": %s\n"),
 							  fnbuf, err);
 			SSLerrfree(err);
@@ -1096,7 +1130,7 @@ initialize_SSL(PGconn *conn)
 	{
 		char	   *err = SSLerrmessage(ERR_get_error());
 
-		printfPQExpBuffer(&conn->errorMessage,
+		appendPQExpBuffer(&conn->errorMessage,
 						  libpq_gettext("could not establish SSL connection: %s\n"),
 						  err);
 		SSLerrfree(err);
@@ -1134,7 +1168,7 @@ initialize_SSL(PGconn *conn)
 
 			if (engine_str == NULL)
 			{
-				printfPQExpBuffer(&conn->errorMessage,
+				appendPQExpBuffer(&conn->errorMessage,
 								  libpq_gettext("out of memory\n"));
 				return -1;
 			}
@@ -1150,7 +1184,7 @@ initialize_SSL(PGconn *conn)
 			{
 				char	   *err = SSLerrmessage(ERR_get_error());
 
-				printfPQExpBuffer(&conn->errorMessage,
+				appendPQExpBuffer(&conn->errorMessage,
 								  libpq_gettext("could not load SSL engine \"%s\": %s\n"),
 								  engine_str, err);
 				SSLerrfree(err);
@@ -1162,7 +1196,7 @@ initialize_SSL(PGconn *conn)
 			{
 				char	   *err = SSLerrmessage(ERR_get_error());
 
-				printfPQExpBuffer(&conn->errorMessage,
+				appendPQExpBuffer(&conn->errorMessage,
 								  libpq_gettext("could not initialize SSL engine \"%s\": %s\n"),
 								  engine_str, err);
 				SSLerrfree(err);
@@ -1178,7 +1212,7 @@ initialize_SSL(PGconn *conn)
 			{
 				char	   *err = SSLerrmessage(ERR_get_error());
 
-				printfPQExpBuffer(&conn->errorMessage,
+				appendPQExpBuffer(&conn->errorMessage,
 								  libpq_gettext("could not read private SSL key \"%s\" from engine \"%s\": %s\n"),
 								  engine_colon, engine_str, err);
 				SSLerrfree(err);
@@ -1192,7 +1226,7 @@ initialize_SSL(PGconn *conn)
 			{
 				char	   *err = SSLerrmessage(ERR_get_error());
 
-				printfPQExpBuffer(&conn->errorMessage,
+				appendPQExpBuffer(&conn->errorMessage,
 								  libpq_gettext("could not load private SSL key \"%s\" from engine \"%s\": %s\n"),
 								  engine_colon, engine_str, err);
 				SSLerrfree(err);
@@ -1229,7 +1263,7 @@ initialize_SSL(PGconn *conn)
 
 		if (stat(fnbuf, &buf) != 0)
 		{
-			printfPQExpBuffer(&conn->errorMessage,
+			appendPQExpBuffer(&conn->errorMessage,
 							  libpq_gettext("certificate present, but not private key file \"%s\"\n"),
 							  fnbuf);
 			return -1;
@@ -1237,7 +1271,7 @@ initialize_SSL(PGconn *conn)
 #ifndef WIN32
 		if (!S_ISREG(buf.st_mode) || buf.st_mode & (S_IRWXG | S_IRWXO))
 		{
-			printfPQExpBuffer(&conn->errorMessage,
+			appendPQExpBuffer(&conn->errorMessage,
 							  libpq_gettext("private key file \"%s\" has group or world access; permissions should be u=rw (0600) or less\n"),
 							  fnbuf);
 			return -1;
@@ -1248,7 +1282,7 @@ initialize_SSL(PGconn *conn)
 		{
 			char	   *err = SSLerrmessage(ERR_get_error());
 
-			printfPQExpBuffer(&conn->errorMessage,
+			appendPQExpBuffer(&conn->errorMessage,
 							  libpq_gettext("could not load private key file \"%s\": %s\n"),
 							  fnbuf, err);
 			SSLerrfree(err);
@@ -1262,7 +1296,7 @@ initialize_SSL(PGconn *conn)
 	{
 		char	   *err = SSLerrmessage(ERR_get_error());
 
-		printfPQExpBuffer(&conn->errorMessage,
+		appendPQExpBuffer(&conn->errorMessage,
 						  libpq_gettext("certificate does not match private key file \"%s\": %s\n"),
 						  fnbuf, err);
 		SSLerrfree(err);
@@ -1274,7 +1308,10 @@ initialize_SSL(PGconn *conn)
 	 * callback.
 	 */
 	if (have_rootcert)
+	{
 		SSL_set_verify(conn->ssl, SSL_VERIFY_PEER, verify_cb);
+		SSL_set_ex_data(conn->ssl, ssl_ex_data_index, conn);
+	}
 
 	/*
 	 * If the OpenSSL version used supports it (from 1.0.0 on) and the user
@@ -1299,6 +1336,7 @@ open_client_SSL(PGconn *conn)
 	int			r;
 
 	ERR_clear_error();
+	resetPQExpBuffer(&conn->errorMessage);
 	r = SSL_connect(conn->ssl);
 	if (r <= 0)
 	{
@@ -1319,11 +1357,11 @@ open_client_SSL(PGconn *conn)
 					char		sebuf[256];
 
 					if (r == -1)
-						printfPQExpBuffer(&conn->errorMessage,
+						appendPQExpBuffer(&conn->errorMessage,
 										  libpq_gettext("SSL SYSCALL error: %s\n"),
 										  SOCK_STRERROR(SOCK_ERRNO, sebuf, sizeof(sebuf)));
 					else
-						printfPQExpBuffer(&conn->errorMessage,
+						appendPQExpBuffer(&conn->errorMessage,
 										  libpq_gettext("SSL SYSCALL error: EOF detected\n"));
 					pgtls_close(conn);
 					return PGRES_POLLING_FAILED;
@@ -1332,7 +1370,7 @@ open_client_SSL(PGconn *conn)
 				{
 					char	   *err = SSLerrmessage(ecode);
 
-					printfPQExpBuffer(&conn->errorMessage,
+					appendPQExpBuffer(&conn->errorMessage,
 									  libpq_gettext("SSL error: %s\n"),
 									  err);
 					SSLerrfree(err);
@@ -1341,7 +1379,7 @@ open_client_SSL(PGconn *conn)
 				}
 
 			default:
-				printfPQExpBuffer(&conn->errorMessage,
+				appendPQExpBuffer(&conn->errorMessage,
 								  libpq_gettext("unrecognized SSL error code: %d\n"),
 								  err);
 				pgtls_close(conn);
@@ -1362,7 +1400,7 @@ open_client_SSL(PGconn *conn)
 
 		err = SSLerrmessage(ERR_get_error());
 
-		printfPQExpBuffer(&conn->errorMessage,
+		appendPQExpBuffer(&conn->errorMessage,
 						  libpq_gettext("certificate could not be obtained: %s\n"),
 						  err);
 		SSLerrfree(err);
