@@ -13,11 +13,14 @@
 #include "funcapi.h"
 #include "storage/buf_internals.h"
 #include "storage/bufmgr.h"
+#include "utils/builtins.h"
 
+#define NUM_BUFFERCACHE_PAGES_MIN_ELEM		8
+#define NUM_BUFFERCACHE_PAGES_ELEM		9
+#define NUM_BUFFERCACHE_PAGES_VERSION_1_4_ELEM	10
 
-#define NUM_BUFFERCACHE_PAGES_MIN_ELEM	8
-#define NUM_BUFFERCACHE_PAGES_ELEM	9
-
+#define NUM_TYPE_OF_STATE			10
+#define LENGTH_OF_STATE_NAME                    25
 PG_MODULE_MAGIC;
 
 /*
@@ -41,6 +44,8 @@ typedef struct
 	 * because of bufmgr.c's PrivateRefCount infrastructure.
 	 */
 	int32		pinning_backends;
+
+	uint32		buffer_state;
 } BufferCachePagesRec;
 
 
@@ -53,6 +58,11 @@ typedef struct
 	BufferCachePagesRec *record;
 } BufferCachePagesContext;
 
+struct BufferStateInfomation
+{
+    uint32	state_value;
+    const char	state_name[LENGTH_OF_STATE_NAME];
+};
 
 /*
  * Function returning data from the shared buffer cache - buffer number,
@@ -95,7 +105,7 @@ pg_buffercache_pages(PG_FUNCTION_ARGS)
 			elog(ERROR, "return type must be a row type");
 
 		if (expected_tupledesc->natts < NUM_BUFFERCACHE_PAGES_MIN_ELEM ||
-			expected_tupledesc->natts > NUM_BUFFERCACHE_PAGES_ELEM)
+			expected_tupledesc->natts > NUM_BUFFERCACHE_PAGES_VERSION_1_4_ELEM)
 			elog(ERROR, "incorrect number of output arguments");
 
 		/* Construct a tuple descriptor for the result rows. */
@@ -117,12 +127,15 @@ pg_buffercache_pages(PG_FUNCTION_ARGS)
 		TupleDescInitEntry(tupledesc, (AttrNumber) 8, "usage_count",
 						   INT2OID, -1, 0);
 
-		if (expected_tupledesc->natts == NUM_BUFFERCACHE_PAGES_ELEM)
+		if (expected_tupledesc->natts == NUM_BUFFERCACHE_PAGES_ELEM ||
+		    expected_tupledesc->natts == NUM_BUFFERCACHE_PAGES_VERSION_1_4_ELEM)
 			TupleDescInitEntry(tupledesc, (AttrNumber) 9, "pinning_backends",
 							   INT4OID, -1, 0);
 
+		if (expected_tupledesc->natts == NUM_BUFFERCACHE_PAGES_VERSION_1_4_ELEM)
+                            TupleDescInitEntry(tupledesc, (AttrNumber) 10, "buffer_state",
+							    INT8OID, -1, 0);
 		fctx->tupdesc = BlessTupleDesc(tupledesc);
-
 		/* Allocate NBuffers worth of BufferCachePagesRec records. */
 		fctx->record = (BufferCachePagesRec *)
 			MemoryContextAllocHuge(CurrentMemoryContext,
@@ -160,6 +173,7 @@ pg_buffercache_pages(PG_FUNCTION_ARGS)
 			fctx->record[i].blocknum = bufHdr->tag.blockNum;
 			fctx->record[i].usagecount = BUF_STATE_GET_USAGECOUNT(buf_state);
 			fctx->record[i].pinning_backends = BUF_STATE_GET_REFCOUNT(buf_state);
+			fctx->record[i].buffer_state = buf_state;
 
 			if (buf_state & BM_DIRTY)
 				fctx->record[i].isdirty = true;
@@ -180,12 +194,11 @@ pg_buffercache_pages(PG_FUNCTION_ARGS)
 
 	/* Get the saved state */
 	fctx = funcctx->user_fctx;
-
 	if (funcctx->call_cntr < funcctx->max_calls)
 	{
 		uint32		i = funcctx->call_cntr;
-		Datum		values[NUM_BUFFERCACHE_PAGES_ELEM];
-		bool		nulls[NUM_BUFFERCACHE_PAGES_ELEM];
+		Datum		values[NUM_BUFFERCACHE_PAGES_VERSION_1_4_ELEM];
+		bool		nulls[NUM_BUFFERCACHE_PAGES_VERSION_1_4_ELEM];
 
 		values[0] = Int32GetDatum(fctx->record[i].bufferid);
 		nulls[0] = false;
@@ -206,6 +219,7 @@ pg_buffercache_pages(PG_FUNCTION_ARGS)
 			nulls[7] = true;
 			/* unused for v1.0 callers, but the array is always long enough */
 			nulls[8] = true;
+			nulls[9] = true;
 		}
 		else
 		{
@@ -226,14 +240,61 @@ pg_buffercache_pages(PG_FUNCTION_ARGS)
 			/* unused for v1.0 callers, but the array is always long enough */
 			values[8] = Int32GetDatum(fctx->record[i].pinning_backends);
 			nulls[8] = false;
+			/* unused for v1.3 callers, but the array is always long enough */
+			values[9] = Int64GetDatum((int64)fctx->record[i].buffer_state);
+			nulls[9] = false;
 		}
-
 		/* Build and return the tuple. */
 		tuple = heap_form_tuple(fctx->tupdesc, values, nulls);
 		result = HeapTupleGetDatum(tuple);
-
 		SRF_RETURN_NEXT(funcctx, result);
 	}
 	else
 		SRF_RETURN_DONE(funcctx);
+}
+
+PG_FUNCTION_INFO_V1(pg_buffercache_state_print);
+
+static struct BufferStateInfomation state_list[NUM_TYPE_OF_STATE] =
+{
+    {(uint32)BM_LOCKED,		    "LOCKED"},
+    {(uint32)BM_DIRTY,		    "DIRTY"},
+    {(uint32)BM_VALID,		    "VALID"},
+    {(uint32)BM_TAG_VALID,	    "TAG_VALID"},
+    {(uint32)BM_IO_IN_PROGRESS,	    "IO_IN_PROGRESS"},
+    {(uint32)BM_IO_ERROR,	    "IO_ERROR"},
+    {(uint32)BM_JUST_DIRTIED,	    "JUST_DIRTIED"},
+    {(uint32)BM_PIN_COUNT_WAITER,   "PIN_COUNT_WAITER"},
+    {(uint32)BM_CHECKPOINT_NEEDED,  "CHECKPOINT_NEEDED"},
+    {(uint32)BM_PERMANENT,	    "PERMANENT"},
+};
+
+Datum
+pg_buffercache_state_print(PG_FUNCTION_ARGS)
+{
+    int64	    buffer_state = PG_GETARG_INT64(0);
+    ArrayType	    *string_array;
+    Datum	    *string_data;
+    int		    array_size = 0;
+    int		    list_num = 0;
+    
+    if( buffer_state == 0 )
+    {
+	string_array = construct_empty_array(TEXTOID);
+	PG_RETURN_POINTER(string_array);
+    }
+
+    string_data = (Datum *) palloc(sizeof(Datum) * NUM_TYPE_OF_STATE );
+
+    for( list_num = 0; list_num < NUM_TYPE_OF_STATE; list_num ++ )
+    {
+	if( buffer_state & state_list[list_num].state_value )
+	    string_data[array_size++] = 
+		CStringGetTextDatum(state_list[list_num].state_name);
+    }
+    
+    string_array = construct_array( string_data, array_size, TEXTOID, -1, false, 'i');
+	    
+    pfree(string_data);
+    PG_RETURN_POINTER(string_array);
 }

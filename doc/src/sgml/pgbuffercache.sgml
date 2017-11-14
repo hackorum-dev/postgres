@@ -114,6 +114,13 @@
       <entry>Number of backends pinning this buffer</entry>
      </row>
 
+     <row>
+      <entry><structfield>buffer_state</structfield></entry>
+      <entry><type>integer</type></entry>
+      <entry></entry>
+      <entry>Hex value of Buffer state</entry>
+     </row>
+
     </tbody>
    </tgroup>
   </table>
@@ -145,6 +152,27 @@
  </sect2>
 
  <sect2>
+  <title>General Functions</title>
+
+  <variablelist>
+   <varlistentry>
+    <term>
+     <function>pg_buffercache_state_print return text[]</function>
+     <indexterm>
+      <primary>pg_buffercache_state_print</primary>
+     </indexterm>
+    </term>
+    
+    <listitem>
+     <para>
+      <function>pg_buffercache_state_print</function> Outputs the value of 
+      the buffer status in hexadecimal to text[] in easy-readable.
+     </para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </sect2>
+ <sect2>
   <title>Sample Output</title>
 
 <screen>
@@ -173,6 +201,34 @@ regression=# SELECT c.relname, count(*) AS buffers
 </screen>
  </sect2>
 
+ <sect2>
+  <title> pg_buffercache_state_print Fuction Sample Output </title>
+<screen>
+regression=# SELECT pg_buffercache_state_print(2203320320);
+
+pg_buffercache_state_print
+------------------------------------
+{LOCKED,VALID,TAG_VALID,PERMANENT}
+(1 row)
+
+regression=# SELECT bufferid, relfilenode, buffer_state, state_text FROM pg_buffercache,
+             LATERAL pg_buffercache_state_print(buffer_state) M(state_text)
+             WHERE bufferid < 10;
+ 
+bufferid | relfilenode | buffer_state |                      state_text
+----------+-------------+--------------+-------------------------------------------------------
+       1 |        1262 |   2203320320 | {LOCKED,VALID,TAG_VALID,PERMANENT}
+       2 |        1260 |   2202533888 | {LOCKED,VALID,TAG_VALID,PERMANENT}
+       3 |        1259 |   2480144384 | {LOCKED,DIRTY,VALID,TAG_VALID,JUST_DIRTIED,PERMANENT}
+       4 |        1259 |   2203320320 | {LOCKED,VALID,TAG_VALID,PERMANENT}
+       5 |        1259 |   2203320320 | {LOCKED,VALID,TAG_VALID,PERMANENT}
+       6 |        1249 |   2203320320 | {LOCKED,VALID,TAG_VALID,PERMANENT}
+       7 |        1249 |   2203320320 | {LOCKED,VALID,TAG_VALID,PERMANENT}
+       8 |        1249 |   2203320320 | {LOCKED,VALID,TAG_VALID,PERMANENT}
+       9 |        1249 |   2203320320 | {LOCKED,VALID,TAG_VALID,PERMANENT}
+(9 rows)
+</screen>
+ </sect2>
  <sect2>
   <title>Authors</title>
 
