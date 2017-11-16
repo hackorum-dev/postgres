@@ -16,16 +16,18 @@ SELECT * FROM session_hook_log ORDER BY id;
 
 \c :prevdb regress_sess_hook_usr2
 SELECT * FROM session_hook_log ORDER BY id;
- id |       dbname       |        username        | hook_at 
-----+--------------------+------------------------+---------
-  1 | contrib_regression | regress_sess_hook_usr2 | START
+ id |   dbname   |        username        | hook_at 
+----+------------+------------------------+---------
+  1 | regression | regress_sess_hook_usr2 | START
 (1 row)
 
 \c :prevdb :prevusr
 SELECT * FROM session_hook_log ORDER BY id;
- id |       dbname       |        username        | hook_at 
-----+--------------------+------------------------+---------
-  1 | contrib_regression | regress_sess_hook_usr2 | START
-  2 | contrib_regression | regress_sess_hook_usr2 | END
+ id |   dbname   |        username        | hook_at 
+----+------------+------------------------+---------
+  1 | regression | regress_sess_hook_usr2 | START
+  2 | regression | regress_sess_hook_usr2 | END
 (2 rows)
 
+DROP ROLE regress_sess_hook_usr1;
+DROP ROLE regress_sess_hook_usr2;

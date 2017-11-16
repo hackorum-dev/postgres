@@ -72,7 +72,7 @@ register_session_hook(const char *hook_at)
 
 /* sample session start hook function */
 static void
-sample_session_start_hook()
+sample_session_start_hook(void)
 {
 	/* Hook just normal backends */
 	if (MyBackendId != InvalidBackendId)
@@ -86,7 +86,7 @@ sample_session_start_hook()
 
 /* sample session end hook function */
 static void
-sample_session_end_hook()
+sample_session_end_hook(void)
 {
 	/* Hook just normal backends */
 	if (MyBackendId != InvalidBackendId)

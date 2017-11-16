@@ -10,3 +10,5 @@ SELECT * FROM session_hook_log ORDER BY id;
 SELECT * FROM session_hook_log ORDER BY id;
 \c :prevdb :prevusr
 SELECT * FROM session_hook_log ORDER BY id;
+DROP ROLE regress_sess_hook_usr1;
+DROP ROLE regress_sess_hook_usr2;
