@@ -9,9 +9,11 @@ include $(top_builddir)/src/Makefile.global
 
 OBJS = pg_test_timing.o $(WIN32RES)
 
+STLIBS = $(stlib_pgport)
+
 all: pg_test_timing
 
-pg_test_timing: $(OBJS) | submake-libpgport
+pg_test_timing: $(OBJS) $(STLIBS) | submake-libpgport
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 install: all installdirs

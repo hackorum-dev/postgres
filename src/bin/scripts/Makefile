@@ -19,21 +19,23 @@ include $(top_builddir)/src/Makefile.global
 PROGRAMS = createdb createuser dropdb dropuser clusterdb vacuumdb reindexdb pg_isready
 
 override CPPFLAGS := -I$(libpq_srcdir) $(CPPFLAGS)
-override LDFLAGS := -L$(top_builddir)/src/fe_utils -lpgfeutils $(libpq_pgport) $(LDFLAGS)
+override LDFLAGS := $(libpgfeutils) $(libpq_pgport) $(LDFLAGS)
+
+STLIBS = $(stlib_pgfeutils) $(stlib_pgcommon) $(stlib_pgport)
 
 all: $(PROGRAMS)
 
 %: %.o $(WIN32RES)
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
-createdb: createdb.o common.o | submake-libpq submake-libpgport submake-libpgfeutils
-createuser: createuser.o common.o | submake-libpq submake-libpgport submake-libpgfeutils
-dropdb: dropdb.o common.o | submake-libpq submake-libpgport submake-libpgfeutils
-dropuser: dropuser.o common.o | submake-libpq submake-libpgport submake-libpgfeutils
-clusterdb: clusterdb.o common.o | submake-libpq submake-libpgport submake-libpgfeutils
-vacuumdb: vacuumdb.o common.o | submake-libpq submake-libpgport submake-libpgfeutils
-reindexdb: reindexdb.o common.o | submake-libpq submake-libpgport submake-libpgfeutils
-pg_isready: pg_isready.o common.o | submake-libpq submake-libpgport submake-libpgfeutils
+createdb: createdb.o common.o $(STLIBS) | submake-libpq submake-libpgport submake-libpgfeutils
+createuser: createuser.o common.o $(STLIBS) | submake-libpq submake-libpgport submake-libpgfeutils
+dropdb: dropdb.o common.o $(STLIBS) | submake-libpq submake-libpgport submake-libpgfeutils
+dropuser: dropuser.o common.o $(STLIBS) | submake-libpq submake-libpgport submake-libpgfeutils
+clusterdb: clusterdb.o common.o $(STLIBS) | submake-libpq submake-libpgport submake-libpgfeutils
+vacuumdb: vacuumdb.o common.o $(STLIBS) | submake-libpq submake-libpgport submake-libpgfeutils
+reindexdb: reindexdb.o common.o $(STLIBS) | submake-libpq submake-libpgport submake-libpgfeutils
+pg_isready: pg_isready.o common.o $(STLIBS) | submake-libpq submake-libpgport submake-libpgfeutils
 
 install: all installdirs
 	$(INSTALL_PROGRAM) createdb$(X)   '$(DESTDIR)$(bindir)'/createdb$(X)

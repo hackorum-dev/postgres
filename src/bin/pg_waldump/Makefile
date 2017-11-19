@@ -10,6 +10,8 @@ include $(top_builddir)/src/Makefile.global
 OBJS = pg_waldump.o compat.o xlogreader.o rmgrdesc.o \
 	$(RMGRDESCOBJS) $(WIN32RES)
 
+STLIBS = $(stlib_pgport)
+
 override CPPFLAGS := -DFRONTEND $(CPPFLAGS)
 
 RMGRDESCSOURCES = $(sort $(notdir $(wildcard $(top_srcdir)/src/backend/access/rmgrdesc/*desc.c)))
@@ -18,7 +20,7 @@ RMGRDESCOBJS = $(patsubst %.c,%.o,$(RMGRDESCSOURCES))
 
 all: pg_waldump
 
-pg_waldump: $(OBJS) | submake-libpgport
+pg_waldump: $(OBJS) $(STLIBS) | submake-libpgport
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 xlogreader.c: % : $(top_srcdir)/src/backend/access/transam/%

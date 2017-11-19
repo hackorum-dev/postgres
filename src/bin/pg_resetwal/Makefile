@@ -17,9 +17,11 @@ include $(top_builddir)/src/Makefile.global
 
 OBJS= pg_resetwal.o $(WIN32RES)
 
+STLIBS = $(stlib_pgport)
+
 all: pg_resetwal
 
-pg_resetwal: $(OBJS) | submake-libpgport
+pg_resetwal: $(OBJS) $(STLIBS) | submake-libpgport
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 install: all installdirs

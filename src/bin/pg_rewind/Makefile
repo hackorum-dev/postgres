@@ -22,11 +22,13 @@ OBJS	= pg_rewind.o parsexlog.o xlogreader.o datapagemap.o timeline.o \
 	fetch.o file_ops.o copy_fetch.o libpq_fetch.o filemap.o logging.o \
 	$(WIN32RES)
 
+STLIBS = $(stlib_pgcommon) $(stlib_pgport)
+
 EXTRA_CLEAN = xlogreader.c
 
 all: pg_rewind
 
-pg_rewind: $(OBJS) | submake-libpq submake-libpgport
+pg_rewind: $(OBJS) $(STLIBS) | submake-libpq submake-libpgport
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 xlogreader.c: % : $(top_srcdir)/src/backend/access/transam/%

@@ -17,9 +17,11 @@ override LDFLAGS := $(libpq_pgport) $(LDFLAGS)
 
 OBJS= findoidjoins.o
 
+STLIBS = $(stlib_pgport)
+
 all: findoidjoins
 
-findoidjoins: findoidjoins.o | submake-libpq submake-libpgport
+findoidjoins: findoidjoins.o $(STLIBS) | submake-libpq submake-libpgport
 	$(CC) $(CFLAGS) findoidjoins.o $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 clean distclean maintainer-clean:

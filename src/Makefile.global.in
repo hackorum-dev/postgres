@@ -471,6 +471,18 @@ endif
 #
 # Some variables needed to find some client interfaces
 
+# Static libraries for client executables. Client may use them to add dependency
+# between client executable and these libraries.
+stlib_pgcommon = $(top_builddir)/src/common/libpgcommon.a
+stlib_pgport = $(top_builddir)/src/port/libpgport.a
+stlib_pgfeutils = $(top_builddir)/src/fe_utils/libpgfeutils.a
+
+# This function is for generating LDFLAGS from static libraries
+expand_stlibs = $(patsubst %,-L%,$(dir $(1))) $(patsubst lib%.a,-l%,$(notdir $(1)))
+
+# This macro is for use by client executables linking to libpgfeutils.
+libpgfeutils = $(call expand_stlibs,$(stlib_pgfeutils))
+
 ifdef PGXS
 # some contribs assumes headers and libs are in the source tree...
 libpq_srcdir = $(includedir)
@@ -494,7 +506,7 @@ libpq = -L$(libpq_builddir) -lpq
 ifdef PGXS
 libpq_pgport = -L$(libdir) -lpgcommon -lpgport $(libpq)
 else
-libpq_pgport = -L$(top_builddir)/src/common -lpgcommon -L$(top_builddir)/src/port -lpgport $(libpq)
+libpq_pgport = $(call expand_stlibs,$(stlib_pgcommon) $(stlib_pgport)) $(libpq)
 endif
 
 # Cygwin seems to need ldap libraries to be mentioned here, too

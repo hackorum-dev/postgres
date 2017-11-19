@@ -26,9 +26,11 @@ endif
 
 OBJS=	pg_ctl.o $(WIN32RES)
 
+STLIBS = $(stlib_pgport)
+
 all: pg_ctl
 
-pg_ctl: $(OBJS) | submake-libpgport $(SUBMAKE_LIBPQ)
+pg_ctl: $(OBJS) $(STLIBS) | submake-libpgport $(SUBMAKE_LIBPQ)
 	$(CC) $(CFLAGS) $(OBJS) $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 install: all installdirs

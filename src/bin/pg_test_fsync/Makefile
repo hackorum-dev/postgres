@@ -9,9 +9,11 @@ include $(top_builddir)/src/Makefile.global
 
 OBJS = pg_test_fsync.o $(WIN32RES)
 
+STLIBS = $(stlib_pgport)
+
 all: pg_test_fsync
 
-pg_test_fsync: $(OBJS) | submake-libpgport
+pg_test_fsync: $(OBJS) $(STLIBS) | submake-libpgport
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 install: all installdirs

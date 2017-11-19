@@ -9,8 +9,10 @@ include $(top_builddir)/src/Makefile.global
 
 OBJS = pgbench.o exprparse.o $(WIN32RES)
 
+STLIBS = $(stlib_pgfeutils) $(stlib_pgcommon) $(stlib_pgport)
+
 override CPPFLAGS := -I. -I$(srcdir) -I$(libpq_srcdir) $(CPPFLAGS)
-override LDFLAGS := -L$(top_builddir)/src/fe_utils -lpgfeutils $(libpq_pgport) $(LDFLAGS)
+override LDFLAGS := $(libpgfeutils) $(libpq_pgport) $(LDFLAGS)
 
 ifneq ($(PORTNAME), win32)
 override CFLAGS += $(PTHREAD_CFLAGS)
@@ -20,7 +22,7 @@ LIBS += $(PTHREAD_LIBS)
 
 all: pgbench
 
-pgbench: $(OBJS) | submake-libpq submake-libpgport submake-libpgfeutils
+pgbench: $(OBJS) $(STLIBS) | submake-libpq submake-libpgport submake-libpgfeutils
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 # exprscan is compiled as part of exprparse

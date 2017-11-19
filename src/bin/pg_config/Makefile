@@ -17,9 +17,11 @@ include $(top_builddir)/src/Makefile.global
 
 OBJS=   pg_config.o $(WIN32RES)
 
+STLIBS = $(stlib_pgport)
+
 all: pg_config
 
-pg_config: $(OBJS) | submake-libpgport
+pg_config: $(OBJS) $(STLIBS) | submake-libpgport
 	$(CC) $(CFLAGS) $(OBJS) $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 install: all installdirs

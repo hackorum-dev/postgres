@@ -19,7 +19,7 @@ include $(top_builddir)/src/Makefile.global
 override CPPFLAGS := -DFRONTEND -I$(libpq_srcdir) -I$(top_srcdir)/src/timezone $(CPPFLAGS)
 
 # note: we need libpq only because fe_utils does
-override LDFLAGS := -L$(top_builddir)/src/fe_utils -lpgfeutils $(libpq_pgport) $(LDFLAGS)
+override LDFLAGS := $(libpgfeutils) $(libpq_pgport) $(LDFLAGS)
 
 # use system timezone data?
 ifneq (,$(with_system_tzdata))
@@ -28,9 +28,11 @@ endif
 
 OBJS=	initdb.o findtimezone.o localtime.o encnames.o $(WIN32RES)
 
+STLIBS = $(stlib_pgfeutils) $(stlib_pgcommon) $(stlib_pgport)
+
 all: initdb
 
-initdb: $(OBJS) | submake-libpq submake-libpgport submake-libpgfeutils
+initdb: $(OBJS) $(STLIBS) | submake-libpq submake-libpgport submake-libpgfeutils
 	$(CC) $(CFLAGS) $(OBJS) $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 # We used to pull in all of libpq to get encnames.c, but that

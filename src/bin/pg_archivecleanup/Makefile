@@ -9,9 +9,11 @@ include $(top_builddir)/src/Makefile.global
 
 OBJS	= pg_archivecleanup.o $(WIN32RES)
 
+STLIBS = $(stlib_pgport)
+
 all: pg_archivecleanup
 
-pg_archivecleanup: $(OBJS) | submake-libpgport
+pg_archivecleanup: $(OBJS) $(STLIBS) | submake-libpgport
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 install: all installdirs

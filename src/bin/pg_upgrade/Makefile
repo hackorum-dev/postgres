@@ -11,13 +11,15 @@ OBJS = check.o controldata.o dump.o exec.o file.o function.o info.o \
        option.o parallel.o pg_upgrade.o relfilenode.o server.o \
        tablespace.o util.o version.o $(WIN32RES)
 
+STLIBS = $(stlib_pgfeutils) $(stlib_pgcommon) $(stlib_pgport)
+
 override CPPFLAGS := -DDLSUFFIX=\"$(DLSUFFIX)\" -I$(srcdir) -I$(libpq_srcdir) $(CPPFLAGS)
-override LDFLAGS := -L$(top_builddir)/src/fe_utils -lpgfeutils $(libpq_pgport) $(LDFLAGS)
+override LDFLAGS := $(libpgfeutils) $(libpq_pgport) $(LDFLAGS)
 
 
 all: pg_upgrade
 
-pg_upgrade: $(OBJS) | submake-libpq submake-libpgport submake-libpgfeutils
+pg_upgrade: $(OBJS) $(STLIBS) | submake-libpq submake-libpgport submake-libpgfeutils
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 install: all installdirs
