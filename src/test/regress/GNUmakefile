@@ -36,7 +36,7 @@ EXTRADEFS = '-DHOST_TUPLE="$(host_tuple)"' \
 
 all: pg_regress$(X)
 
-pg_regress$(X): pg_regress.o pg_regress_main.o $(WIN32RES) | submake-libpgport
+pg_regress$(X): pg_regress.o pg_regress_main.o $(WIN32RES) $(stlib_pgport)
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@
 
 # dependencies ensure that path changes propagate
@@ -107,7 +107,7 @@ $(top_builddir)/contrib/spi/refint$(DLSUFFIX): | submake-contrib-spi ;
 
 $(top_builddir)/contrib/spi/autoinc$(DLSUFFIX): | submake-contrib-spi ;
 
-submake-contrib-spi: | submake-libpgport submake-generated-headers
+submake-contrib-spi: $(stlib_pgport) | submake-generated-headers
 	$(MAKE) -C $(top_builddir)/contrib/spi
 
 .PHONY: submake-contrib-spi

@@ -19,21 +19,21 @@ include $(top_builddir)/src/Makefile.global
 PROGRAMS = createdb createuser dropdb dropuser clusterdb vacuumdb reindexdb pg_isready
 
 override CPPFLAGS := -I$(libpq_srcdir) $(CPPFLAGS)
-override LDFLAGS := -L$(top_builddir)/src/fe_utils -lpgfeutils $(libpq_pgport) $(LDFLAGS)
+override LDFLAGS := $(libpgfeutils) $(libpq_pgport) $(LDFLAGS)
 
 all: $(PROGRAMS)
 
 %: %.o $(WIN32RES)
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
-createdb: createdb.o common.o | submake-libpq submake-libpgport submake-libpgfeutils
-createuser: createuser.o common.o | submake-libpq submake-libpgport submake-libpgfeutils
-dropdb: dropdb.o common.o | submake-libpq submake-libpgport submake-libpgfeutils
-dropuser: dropuser.o common.o | submake-libpq submake-libpgport submake-libpgfeutils
-clusterdb: clusterdb.o common.o | submake-libpq submake-libpgport submake-libpgfeutils
-vacuumdb: vacuumdb.o common.o | submake-libpq submake-libpgport submake-libpgfeutils
-reindexdb: reindexdb.o common.o | submake-libpq submake-libpgport submake-libpgfeutils
-pg_isready: pg_isready.o common.o | submake-libpq submake-libpgport submake-libpgfeutils
+createdb: createdb.o common.o $(stlib_pgport) $(stlib_pgfeutils) | submake-libpq
+createuser: createuser.o common.o $(stlib_pgport) $(stlib_pgfeutils) | submake-libpq
+dropdb: dropdb.o common.o $(stlib_pgport) $(stlib_pgfeutils) | submake-libpq
+dropuser: dropuser.o common.o $(stlib_pgport) $(stlib_pgfeutils) | submake-libpq
+clusterdb: clusterdb.o common.o $(stlib_pgport) $(stlib_pgfeutils) | submake-libpq
+vacuumdb: vacuumdb.o common.o $(stlib_pgport) $(stlib_pgfeutils) | submake-libpq
+reindexdb: reindexdb.o common.o $(stlib_pgport) $(stlib_pgfeutils) | submake-libpq
+pg_isready: pg_isready.o common.o $(stlib_pgport) $(stlib_pgfeutils) | submake-libpq
 
 install: all installdirs
 	$(INSTALL_PROGRAM) createdb$(X)   '$(DESTDIR)$(bindir)'/createdb$(X)

@@ -47,7 +47,7 @@ ifeq (,$(ZIC))
 ZIC= ./zic
 endif
 
-zic: $(ZICOBJS) | submake-libpgport
+zic: $(ZICOBJS) $(stlib_pgport)
 	$(CC) $(CFLAGS) $(ZICOBJS) $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 install: all installdirs

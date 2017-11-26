@@ -12,12 +12,12 @@ OBJS = check.o controldata.o dump.o exec.o file.o function.o info.o \
        tablespace.o util.o version.o $(WIN32RES)
 
 override CPPFLAGS := -DDLSUFFIX=\"$(DLSUFFIX)\" -I$(srcdir) -I$(libpq_srcdir) $(CPPFLAGS)
-override LDFLAGS := -L$(top_builddir)/src/fe_utils -lpgfeutils $(libpq_pgport) $(LDFLAGS)
+override LDFLAGS := $(libpgfeutils) $(libpq_pgport) $(LDFLAGS)
 
 
 all: pg_upgrade
 
-pg_upgrade: $(OBJS) | submake-libpq submake-libpgport submake-libpgfeutils
+pg_upgrade: $(OBJS) $(stlib_pgport) $(stlib_pgfeutils) | submake-libpq
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 install: all installdirs

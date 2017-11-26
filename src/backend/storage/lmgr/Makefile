@@ -21,7 +21,7 @@ ifdef TAS
 TASPATH = $(top_builddir)/src/backend/port/tas.o
 endif
 
-s_lock_test: s_lock.c $(top_builddir)/src/port/libpgport.a
+s_lock_test: s_lock.c $(stlib_pgport)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DS_LOCK_TEST=1 $(srcdir)/s_lock.c \
 		$(TASPATH) -L $(top_builddir)/src/port -lpgport -o s_lock_test
 

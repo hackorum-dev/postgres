@@ -11,7 +11,7 @@ OBJS = pg_test_fsync.o $(WIN32RES)
 
 all: pg_test_fsync
 
-pg_test_fsync: $(OBJS) | submake-libpgport
+pg_test_fsync: $(OBJS) $(stlib_pgport)
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 install: all installdirs

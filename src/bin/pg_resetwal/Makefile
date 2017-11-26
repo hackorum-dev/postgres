@@ -19,7 +19,7 @@ OBJS= pg_resetwal.o $(WIN32RES)
 
 all: pg_resetwal
 
-pg_resetwal: $(OBJS) | submake-libpgport
+pg_resetwal: $(OBJS) $(stlib_pgport)
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 install: all installdirs

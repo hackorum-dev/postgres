@@ -19,7 +19,7 @@ OBJS= pg_controldata.o $(WIN32RES)
 
 all: pg_controldata
 
-pg_controldata: $(OBJS) | submake-libpgport
+pg_controldata: $(OBJS) $(stlib_pgport)
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 install: all installdirs

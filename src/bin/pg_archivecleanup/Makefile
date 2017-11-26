@@ -11,7 +11,7 @@ OBJS	= pg_archivecleanup.o $(WIN32RES)
 
 all: pg_archivecleanup
 
-pg_archivecleanup: $(OBJS) | submake-libpgport
+pg_archivecleanup: $(OBJS) $(stlib_pgport)
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 install: all installdirs

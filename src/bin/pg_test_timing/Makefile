@@ -11,7 +11,7 @@ OBJS = pg_test_timing.o $(WIN32RES)
 
 all: pg_test_timing
 
-pg_test_timing: $(OBJS) | submake-libpgport
+pg_test_timing: $(OBJS) $(stlib_pgport)
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 install: all installdirs

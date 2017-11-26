@@ -500,6 +500,13 @@ ifeq ($(PORTNAME),cygwin)
 libpq_pgport += $(LDAP_LIBS_FE)
 endif
 
+# This macro is for use by client executables linking to libpgfeutils.
+ifdef PGXS
+libpgfeutils = -L$(libdir) -lpgfeutils
+else
+libpgfeutils = -L$(top_builddir)/src/fe_utils -lpgfeutils
+endif
+
 
 ##########################################################################
 #
@@ -521,6 +528,23 @@ submake-generated-headers:
 	$(MAKE) -C $(top_builddir)/src/backend generated-headers
 
 .PHONY: submake-libpq submake-libpgport submake-libpgfeutils submake-generated-headers
+
+
+##########################################################################
+#
+# Static libraries for client executables
+
+ifdef PGXS
+stlib_pgport = $(libdir)/libpgport.a $(libdir)/libpgcommon.a
+stlib_pgfeutils = $(libdir)/libpgfeutils.a
+else
+stlib_pgport = $(top_builddir)/src/port/libpgport.a $(top_builddir)/src/common/libpgcommon.a
+stlib_pgfeutils = $(top_builddir)/src/fe_utils/libpgfeutils.a
+
+# start submake for these static libraries
+$(stlib_pgport): | submake-libpgport
+$(stlib_pgfeutils): | submake-libpgfeutils
+endif
 
 
 ##########################################################################

@@ -33,7 +33,7 @@ endif
 
 all: ecpg
 
-ecpg: $(OBJS) | submake-libpgport
+ecpg: $(OBJS) $(stlib_pgport)
 	$(CC) $(CFLAGS) $(LDFLAGS) $(LDFLAGS_EX) $^ $(LIBS) $(PTHREAD_LIBS) -o $@$(X)
 
 ../ecpglib/typename.o: ../ecpglib/typename.c
