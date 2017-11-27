@@ -1964,7 +1964,8 @@ restoreTwoPhaseData(void)
 		}
 	}
 	LWLockRelease(TwoPhaseStateLock);
-	FreeDir(cldir);
+	if (cldir)
+		FreeDir(cldir);
 }
 
 /*
