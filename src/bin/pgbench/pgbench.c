@@ -47,6 +47,9 @@
 #ifdef HAVE_SYS_SELECT_H
 #include <sys/select.h>
 #endif
+#ifdef HAVE_POLL_H
+#include <poll.h>
+#endif
 
 #ifdef HAVE_SYS_RESOURCE_H
 #include <sys/resource.h>		/* for getrlimit */
@@ -54,6 +57,10 @@
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
+#endif
+
+#ifdef HAVE_PPOLL
+#define USE_PPOLL 1
 #endif
 
 #include "pgbench.h"
@@ -88,6 +95,27 @@ static int	pthread_join(pthread_t th, void **thread_return);
 #define MAXCLIENTS	(FD_SETSIZE - 10)
 #else
 #define MAXCLIENTS	1024
+#endif
+
+#ifdef USE_PPOLL
+#define SCKTWTMTHD "ppoll"
+#undef MAXCLIENTS
+#define POLL_EVENTS (POLLIN|POLLPRI|POLLRDHUP)
+#define POLL_FAIL (POLLERR|POLLHUP|POLLNVAL|POLLRDHUP)
+#define PFD_RESETEV(s) { do { if ((s)->pfdp) { (s)->pfdp->events = POLL_EVENTS; (s)->pfdp->revents = 0; } } while(0); }
+#define PFD_ZERO(s) { do { if ((s)->pfdp) { (s)->pfdp->fd = -1; (s)->pfdp->events = POLL_EVENTS; (s)->pfdp->revents = 0; } } while(0); }
+#define PFD_SETFD(s) { do { (s)->pfdp->fd = PQsocket((s)->con); } while(0); }
+#define PFD_STRUCT_POLLFD(p)	struct pollfd   (p);
+#define PFD_THREAD_FREE(t) { do { if ((t)->pfds) { pg_free((t)->pfds); (t)->pfds = NULL; } } while (0); }
+#define PFD_THREAD_INIT(t,s,n) { do { int _i; (t)->pfds = (struct pollfd *) pg_malloc0(sizeof(struct pollfd) * (n)); for (_i = 0; _i < (n); _i++) { (s)[_i].pfdp = &(t)->pfds[_i]; (s)[_i].pfdp->fd = -1; } } while (0); }
+#else
+#define SCKTWTMTHD "select"
+#define PFD_RESETEV(s)
+#define PFD_ZERO(s)
+#define PFD_SETFD(s)
+#define PFD_STRUCT_POLLFD(p)
+#define PFD_THREAD_FREE(t)
+#define PFD_THREAD_INIT(t,s,n)
 #endif
 
 #define DEFAULT_INIT_STEPS "dtgvp"	/* default -I setting */
@@ -328,6 +356,7 @@ typedef struct
 	/* per client collected stats */
 	int64		cnt;			/* client transaction count, for -t */
 	int			ecnt;			/* error count */
+	PFD_STRUCT_POLLFD(*pfdp)
 } CState;
 
 /*
@@ -348,6 +377,7 @@ typedef struct
 	instr_time	conn_time;
 	StatsData	stats;
 	int64		latency_late;	/* executed but late transactions */
+	PFD_STRUCT_POLLFD(*pfds)
 } TState;
 
 #define INVALID_THREAD		((pthread_t) 0)
@@ -465,6 +495,7 @@ static void pgbench_error(const char *fmt,...) pg_attribute_printf(1, 2);
 static void addScript(ParsedScript script);
 static void *threadRun(void *arg);
 static void setalarm(int seconds);
+static void finishCon(CState *st);
 
 
 /* callback functions for our flex lexer */
@@ -933,6 +964,7 @@ discard_response(CState *state)
 		if (res)
 			PQclear(res);
 	} while (res);
+	PFD_RESETEV(state);
 }
 
 /* qsort comparator for Variable array */
@@ -2157,6 +2189,10 @@ doCustom(TState *thread, CState *st, StatsData *agg)
 					if (INSTR_TIME_IS_ZERO(now))
 						INSTR_TIME_SET_CURRENT(now);
 					start = now;
+					if (debug)
+						fprintf(stderr, "client %d connecting ...\n",
+							st->id);
+
 					if ((st->con = doConnect()) == NULL)
 					{
 						fprintf(stderr, "client %d aborted while establishing connection\n",
@@ -2169,6 +2205,8 @@ doCustom(TState *thread, CState *st, StatsData *agg)
 
 					/* Reset session-local state */
 					memset(st->prepared, 0, sizeof(st->prepared));
+					PFD_ZERO(st);
+					PFD_SETFD(st);
 				}
 
 				/*
@@ -2434,8 +2472,7 @@ doCustom(TState *thread, CState *st, StatsData *agg)
 
 				if (is_connect)
 				{
-					PQfinish(st->con);
-					st->con = NULL;
+					finishCon(st);
 					INSTR_TIME_SET_ZERO(now);
 				}
 
@@ -2472,11 +2509,7 @@ doCustom(TState *thread, CState *st, StatsData *agg)
 				 */
 			case CSTATE_ABORTED:
 			case CSTATE_FINISHED:
-				if (st->con != NULL)
-				{
-					PQfinish(st->con);
-					st->con = NULL;
-				}
+				finishCon(st);
 				return;
 		}
 	}
@@ -2624,13 +2657,7 @@ disconnect_all(CState *state, int length)
 	int			i;
 
 	for (i = 0; i < length; i++)
-	{
-		if (state[i].con)
-		{
-			PQfinish(state[i].con);
-			state[i].con = NULL;
-		}
-	}
+		finishCon(&state[i]);
 }
 
 /*
@@ -3949,7 +3976,11 @@ main(int argc, char **argv)
 			case 'c':
 				benchmarking_option_set = true;
 				nclients = atoi(optarg);
+#ifdef USE_PPOLL
+				if (nclients <= 0)
+#else
 				if (nclients <= 0 || nclients > MAXCLIENTS)
+#endif
 				{
 					fprintf(stderr, "invalid number of clients: \"%s\"\n",
 							optarg);
@@ -4629,6 +4660,8 @@ threadRun(void *arg)
 	StatsData	last,
 				aggs;
 
+	PFD_THREAD_INIT(thread, state, nstate);
+
 	/*
 	 * Initialize throttling rate target for all of the thread's clients.  It
 	 * might be a little more accurate to reset thread->start_time here too.
@@ -4669,8 +4702,12 @@ threadRun(void *arg)
 		/* make connections to the database */
 		for (i = 0; i < nstate; i++)
 		{
+			if (debug)
+				fprintf(stderr, "client %d connecting\n",
+					state[i].id);
 			if ((state[i].con = doConnect()) == NULL)
 				goto done;
+			PFD_SETFD(&state[i]);
 		}
 	}
 
@@ -4687,13 +4724,15 @@ threadRun(void *arg)
 	/* loop till all clients have terminated */
 	while (remains > 0)
 	{
-		fd_set		input_mask;
 		int			maxsock;	/* max socket number to be waited for */
 		int64		min_usec;
 		int64		now_usec = 0;	/* set this only if needed */
 
+#ifndef USE_PPOLL
+		fd_set		input_mask;
 		/* identify which client sockets should be checked for input */
 		FD_ZERO(&input_mask);
+#endif
 		maxsock = -1;
 		min_usec = PG_INT64_MAX;
 		for (i = 0; i < nstate; i++)
@@ -4704,8 +4743,7 @@ threadRun(void *arg)
 			{
 				/* interrupt client that has not started a transaction */
 				st->state = CSTATE_FINISHED;
-				PQfinish(st->con);
-				st->con = NULL;
+				finishCon(st);
 				remains--;
 			}
 			else if (st->state == CSTATE_SLEEP || st->state == CSTATE_THROTTLE)
@@ -4743,7 +4781,11 @@ threadRun(void *arg)
 					goto done;
 				}
 
+#ifdef USE_PPOLL
+				PFD_RESETEV(st);
+#else
 				FD_SET(sock, &input_mask);
+#endif
 				if (maxsock < sock)
 					maxsock = sock;
 			}
@@ -4791,11 +4833,19 @@ threadRun(void *arg)
 			{
 				if (maxsock != -1)
 				{
+#ifdef USE_PPOLL
+					struct timespec timeout;
+
+					timeout.tv_sec = min_usec / 1000000;
+					timeout.tv_nsec = min_usec % 1000000000;
+					nsocks = ppoll(thread->pfds, nstate, &timeout, NULL);
+#else
 					struct timeval timeout;
 
 					timeout.tv_sec = min_usec / 1000000;
 					timeout.tv_usec = min_usec % 1000000;
 					nsocks = select(maxsock + 1, &input_mask, NULL, NULL, &timeout);
+#endif
 				}
 				else			/* nothing active, simple sleep */
 				{
@@ -4804,7 +4854,11 @@ threadRun(void *arg)
 			}
 			else				/* no explicit delay, select without timeout */
 			{
+#ifdef USE_PPOLL
+				nsocks = ppoll(thread->pfds, nstate, NULL, NULL);
+#else
 				nsocks = select(maxsock + 1, &input_mask, NULL, NULL, NULL);
+#endif
 			}
 
 			if (nsocks < 0)
@@ -4815,10 +4869,11 @@ threadRun(void *arg)
 					continue;
 				}
 				/* must be something wrong */
-				fprintf(stderr, "select() failed: %s\n", strerror(errno));
+				fprintf(stderr, "%s() failed: %s\n", SCKTWTMTHD, strerror(errno));
 				goto done;
 			}
 		}
+#ifndef USE_PPOLL
 		else
 		{
 			/* min_usec == 0, i.e. something needs to be executed */
@@ -4826,6 +4881,7 @@ threadRun(void *arg)
 			/* If we didn't call select(), don't try to read any data */
 			FD_ZERO(&input_mask);
 		}
+#endif
 
 		/* ok, advance the state machine of each connection */
 		for (i = 0; i < nstate; i++)
@@ -4837,14 +4893,30 @@ threadRun(void *arg)
 				/* don't call doCustom unless data is available */
 				int			sock = PQsocket(st->con);
 
+#ifdef USE_PPOLL
+				if (sock < 0 && st->pfdp->revents & POLL_FAIL)
+				{
+					fprintf(stderr,
+						"ppoll() fail - errno: %d, i: %d, events: %x, %s\n",
++						errno, i,
+						((st->pfdp)->revents & POLL_FAIL),
+						PQerrorMessage(st->con));
+					goto done;
+				}
+#else
 				if (sock < 0)
 				{
 					fprintf(stderr, "invalid socket: %s",
 							PQerrorMessage(st->con));
 					goto done;
 				}
+#endif
 
+#ifdef USE_PPOLL
+				if (!(st->pfdp)->revents)
+#else
 				if (!FD_ISSET(sock, &input_mask))
+#endif
 					continue;
 			}
 			else if (st->state == CSTATE_FINISHED ||
@@ -4858,7 +4930,10 @@ threadRun(void *arg)
 
 			/* If doCustom changed client to finished state, reduce remains */
 			if (st->state == CSTATE_FINISHED || st->state == CSTATE_ABORTED)
+			{
 				remains--;
+				PFD_ZERO(st);
+			}
 		}
 
 		/* progress report is made by thread 0 for all threads */
@@ -4982,7 +5057,19 @@ done:
 		fclose(thread->logfile);
 		thread->logfile = NULL;
 	}
+	PFD_THREAD_FREE(thread);
 	return NULL;
+}
+
+static void
+finishCon(CState *st)
+{
+	if (st->con)
+	{
+		PQfinish(st->con);
+		st->con = NULL;
+	}
+	PFD_ZERO(st);
 }
 
 /*
