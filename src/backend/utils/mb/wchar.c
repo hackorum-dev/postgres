@@ -1922,18 +1922,12 @@ pg_verify_mbstr_len(int encoding, const char *mbstr, int len, bool noError)
 		int			l;
 
 		/* fast path for ASCII-subset characters */
-		if (!IS_HIGHBIT_SET(*mbstr))
+		if ((*mbstr >= 0x00) && (*mbstr <= 0x7F))
 		{
-			if (*mbstr != '\0')
-			{
-				mb_len++;
-				mbstr++;
-				len--;
-				continue;
-			}
-			if (noError)
-				return -1;
-			report_invalid_encoding(encoding, mbstr, len);
+			mb_len++;
+			mbstr++;
+			len--;
+			continue;
 		}
 
 		l = (*mbverify) ((const unsigned char *) mbstr, len);
