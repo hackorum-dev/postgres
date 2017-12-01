@@ -319,6 +319,7 @@ typedef struct
 	bool		pinned;
 	/* The number of times that segments have been freed. */
 	Size		freed_segment_counter;
+	bool		is_snapshot;
 	/* The LWLock tranche ID. */
 	int			lwlock_tranche_id;
 	/* The general lock (protects everything except object pools). */
@@ -931,7 +932,8 @@ dsa_get_address(dsa_area *area, dsa_pointer dp)
 		return NULL;
 
 	/* Process any requests to detach from freed segments. */
-	check_for_freed_segments(area);
+	if (!area->control->is_snapshot)
+		check_for_freed_segments(area);
 
 	/* Break the dsa_pointer into its components. */
 	index = DSA_EXTRACT_SEGMENT_NUMBER(dp);
@@ -1232,6 +1234,7 @@ create_internal(void *place, size_t size,
 	control->high_segment_index = 0;
 	control->refcnt = 1;
 	control->freed_segment_counter = 0;
+	control->is_snapshot = false;
 	control->lwlock_tranche_id = tranche_id;
 
 	/*
@@ -2238,4 +2241,56 @@ check_for_freed_segments(dsa_area *area)
 		LWLockRelease(DSA_AREA_LOCK(area));
 		area->freed_segment_counter = freed_segment_counter;
 	}
+}
+
+/*
+ * Make a static local copy of this dsa area.
+ */
+dsa_area *
+dsa_take_snapshot(dsa_area *source_area)
+{
+	dsa_area   *area;
+	Size		size;
+	int i;
+	char 	   *mem;
+
+	/* allocate required size of memory */
+	size = sizeof(dsa_area);
+	size += sizeof(dsa_area_control);
+
+	LWLockAcquire(DSA_AREA_LOCK(source_area), LW_SHARED);
+	for (i = 0 ; i <= source_area->high_segment_index ; i++)
+		size += source_area->segment_maps[i].header->size;
+	mem = palloc(size);
+
+	area = (dsa_area *)mem;
+	mem += sizeof(dsa_area);
+	area->control = (dsa_area_control *)mem;
+	mem += sizeof(dsa_area_control);
+	memcpy(area->control, source_area->control, sizeof(dsa_area_control));
+	area->control->is_snapshot = true;
+	area->mapping_pinned = false;
+
+	/* Copy and connect the all segments */
+	for (i = 0 ; i <= source_area->high_segment_index ; i++)
+	{
+		dsa_segment_map *smap = &source_area->segment_maps[i];
+		dsa_segment_map *dmap = &area->segment_maps[i];
+
+		dmap->mapped_address = mem;
+		memcpy(dmap->mapped_address, smap->mapped_address, smap->header->size);
+		mem += smap->header->size;
+		dmap->header = (dsa_segment_header*) dmap->mapped_address;
+		dmap->header->magic = 0;
+		dmap->fpm = NULL;
+		dmap->pagemap = (dsa_pointer *)
+			(dmap->mapped_address + MAXALIGN(sizeof(dsa_area_control)) +
+			 MAXALIGN(sizeof(FreePageManager)));
+	}
+
+	area->high_segment_index = source_area->high_segment_index;
+	LWLockRelease(DSA_AREA_LOCK(source_area));
+
+	elog(LOG, "dsa_take_snapshot copied %lu bytes", size);
+	return area;
 }

@@ -70,6 +70,7 @@ extern dshash_table *dshash_attach(dsa_area *area,
 extern void dshash_detach(dshash_table *hash_table);
 extern dshash_table_handle dshash_get_hash_table_handle(dshash_table *hash_table);
 extern void dshash_destroy(dshash_table *hash_table);
+extern dshash_table *dshash_take_snapshot(dshash_table *org_table, dsa_area *new_area);
 
 /* Finding, creating, deleting entries. */
 extern void *dshash_find(dshash_table *hash_table,

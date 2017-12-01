@@ -121,5 +121,6 @@ extern void dsa_free(dsa_area *area, dsa_pointer dp);
 extern void *dsa_get_address(dsa_area *area, dsa_pointer dp);
 extern void dsa_trim(dsa_area *area);
 extern void dsa_dump(dsa_area *area);
+extern dsa_area *dsa_take_snapshot(dsa_area *source_area);
 
 #endif							/* DSA_H */

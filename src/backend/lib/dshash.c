@@ -112,6 +112,7 @@ struct dshash_table
 	size_t		size_log2;		/* log2(number of buckets) */
 	bool		find_locked;	/* Is any partition lock held by 'find'? */
 	bool		find_exclusively_locked;	/* ... exclusively? */
+	bool		is_snapshot;	/* Is this hash is a local snapshot?*/
 };
 
 /* Given a pointer to an item, find the entry (user data) it holds. */
@@ -228,6 +229,7 @@ dshash_create(dsa_area *area, const dshash_parameters *params, void *arg)
 
 	hash_table->find_locked = false;
 	hash_table->find_exclusively_locked = false;
+	hash_table->is_snapshot = false;
 
 	/*
 	 * Set up the initial array of buckets.  Our initial size is the same as
@@ -279,6 +281,7 @@ dshash_attach(dsa_area *area, const dshash_parameters *params,
 	hash_table->control = dsa_get_address(area, control);
 	hash_table->find_locked = false;
 	hash_table->find_exclusively_locked = false;
+	hash_table->is_snapshot = false;
 	Assert(hash_table->control->magic == DSHASH_MAGIC);
 
 	/*
@@ -321,6 +324,15 @@ dshash_destroy(dshash_table *hash_table)
 	size_t		i;
 
 	Assert(hash_table->control->magic == DSHASH_MAGIC);
+
+	/* this is a local copy */
+	if (hash_table->is_snapshot)
+	{
+		pfree(hash_table->area);
+		pfree(hash_table);
+		return;
+	}
+
 	ensure_valid_bucket_pointers(hash_table);
 
 	/* Free all the entries. */
@@ -352,6 +364,29 @@ dshash_destroy(dshash_table *hash_table)
 	dsa_free(hash_table->area, hash_table->control->handle);
 
 	pfree(hash_table);
+}
+
+/*
+ * take a local snapshot of a dshash table
+ */
+dshash_table *
+dshash_take_snapshot(dshash_table *org_table, dsa_area *new_area)
+{
+	dshash_table *new_table;
+
+	if (org_table->is_snapshot)
+		elog(ERROR, "cannot make local copy of local dshash");
+
+	new_table = palloc(sizeof(dshash_table));
+
+	new_table->area = new_area;
+	new_table->params = org_table->params;
+	new_table->control = dsa_get_address(new_table->area,
+										 org_table->control->handle);
+	/* mark this dshash as a local copy */
+	new_table->is_snapshot = true;
+
+	return new_table;
 }
 
 /*
@@ -392,14 +427,21 @@ dshash_find(dshash_table *hash_table, const void *key, bool exclusive)
 	partition = PARTITION_FOR_HASH(hash);
 
 	Assert(hash_table->control->magic == DSHASH_MAGIC);
-	Assert(!hash_table->find_locked);
 
-	LWLockAcquire(PARTITION_LOCK(hash_table, partition),
-				  exclusive ? LW_EXCLUSIVE : LW_SHARED);
+	if (!hash_table->is_snapshot)
+	{
+		Assert(!hash_table->find_locked);
+		LWLockAcquire(PARTITION_LOCK(hash_table, partition),
+					  exclusive ? LW_EXCLUSIVE : LW_SHARED);
+	}
 	ensure_valid_bucket_pointers(hash_table);
 
 	/* Search the active bucket. */
 	item = find_in_bucket(hash_table, key, BUCKET_FOR_HASH(hash_table, hash));
+
+	/* don't lock if this is a local copy */
+	if (hash_table->is_snapshot)
+		return item ? ENTRY_FROM_ITEM(item) : NULL;
 
 	if (!item)
 	{
@@ -435,6 +477,9 @@ dshash_find_or_insert(dshash_table *hash_table,
 	size_t		partition_index;
 	dshash_partition *partition;
 	dshash_table_item *item;
+
+	if (hash_table->is_snapshot)
+		elog(ERROR, "cannot insert into local dshash");
 
 	hash = hash_key(hash_table, key);
 	partition_index = PARTITION_FOR_HASH(hash);
@@ -505,6 +550,9 @@ dshash_delete_key(dshash_table *hash_table, const void *key)
 	size_t		partition;
 	bool		found;
 
+	if (hash_table->is_snapshot)
+		elog(ERROR, "cannot delete from a snapshot");
+
 	Assert(hash_table->control->magic == DSHASH_MAGIC);
 	Assert(!hash_table->find_locked);
 
@@ -545,6 +593,7 @@ dshash_delete_entry(dshash_table *hash_table, void *entry)
 	Assert(hash_table->control->magic == DSHASH_MAGIC);
 	Assert(hash_table->find_locked);
 	Assert(hash_table->find_exclusively_locked);
+	Assert(!hash_table->is_snapshot);
 	Assert(LWLockHeldByMeInMode(PARTITION_LOCK(hash_table, partition),
 								LW_EXCLUSIVE));
 
@@ -562,6 +611,9 @@ dshash_release_lock(dshash_table *hash_table, void *entry)
 {
 	dshash_table_item *item = ITEM_FROM_ENTRY(entry);
 	size_t		partition_index = PARTITION_FOR_HASH(item->hash);
+
+	if (hash_table->is_snapshot)
+		return;
 
 	Assert(hash_table->control->magic == DSHASH_MAGIC);
 	Assert(hash_table->find_locked);
@@ -605,10 +657,13 @@ dshash_dump(dshash_table *hash_table)
 	Assert(hash_table->control->magic == DSHASH_MAGIC);
 	Assert(!hash_table->find_locked);
 
-	for (i = 0; i < DSHASH_NUM_PARTITIONS; ++i)
+	if (!hash_table->is_snapshot)
 	{
-		Assert(!LWLockHeldByMe(PARTITION_LOCK(hash_table, i)));
-		LWLockAcquire(PARTITION_LOCK(hash_table, i), LW_SHARED);
+		for (i = 0; i < DSHASH_NUM_PARTITIONS; ++i)
+		{
+			Assert(!LWLockHeldByMe(PARTITION_LOCK(hash_table, i)));
+			LWLockAcquire(PARTITION_LOCK(hash_table, i), LW_SHARED);
+		}
 	}
 
 	ensure_valid_bucket_pointers(hash_table);
@@ -643,8 +698,11 @@ dshash_dump(dshash_table *hash_table)
 		}
 	}
 
-	for (i = 0; i < DSHASH_NUM_PARTITIONS; ++i)
-		LWLockRelease(PARTITION_LOCK(hash_table, i));
+	if (!hash_table->is_snapshot)
+	{
+		for (i = 0; i < DSHASH_NUM_PARTITIONS; ++i)
+			LWLockRelease(PARTITION_LOCK(hash_table, i));
+	}
 }
 
 /*
