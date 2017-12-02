@@ -579,7 +579,7 @@ ExecCheckRTPerms(List *rangeTable, bool ereport_on_violation)
 		{
 			Assert(rte->rtekind == RTE_RELATION);
 			if (ereport_on_violation)
-				aclcheck_error(ACLCHECK_NO_PRIV, ACL_KIND_CLASS,
+				aclcheck_error(ACLCHECK_NO_PRIV, OBJECT_RELATION,
 							   get_rel_name(rte->relid));
 			return false;
 		}
