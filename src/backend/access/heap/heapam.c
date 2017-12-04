@@ -2023,8 +2023,6 @@ heap_hot_search_buffer(ItemPointer tid, Relation relation, Buffer buffer,
 	if (all_dead)
 		*all_dead = first_call;
 
-	Assert(TransactionIdIsValid(RecentGlobalXmin));
-
 	Assert(ItemPointerGetBlockNumber(tid) == BufferGetBlockNumber(buffer));
 	offnum = ItemPointerGetOffsetNumber(tid);
 	at_chain_start = first_call;
@@ -2123,7 +2121,7 @@ heap_hot_search_buffer(ItemPointer tid, Relation relation, Buffer buffer,
 		 * planner's get_actual_variable_range() function to match.
 		 */
 		if (all_dead && *all_dead &&
-			!HeapTupleIsSurelyDead(heapTuple, RecentGlobalXmin))
+			!HeapTupleIsSurelyDead(heapTuple, GetRecentGlobalXmin()))
 			*all_dead = false;
 
 		/*
@@ -3784,9 +3782,8 @@ l2:
 				update_xact = InvalidTransactionId;
 
 			/*
-			 * There was no UPDATE in the MultiXact; or it aborted. No
-			 * TransactionIdIsInProgress() call needed here, since we called
-			 * MultiXactIdWait() above.
+			 * There was no UPDATE in the MultiXact; or it aborted. It cannot
+			 * be in-progress anymore, since we called MultiXactIdWait() above.
 			 */
 			if (!TransactionIdIsValid(update_xact) ||
 				TransactionIdDidAbort(update_xact))
@@ -5267,7 +5264,7 @@ heap_acquire_tuplock(Relation relation, ItemPointer tid, LockTupleMode mode,
  * either here, or within MultiXactIdExpand.
  *
  * There is a similar race condition possible when the old xmax was a regular
- * TransactionId.  We test TransactionIdIsInProgress again just to narrow the
+ * TransactionId.  We test TransactionIdGetStatus again just to narrow the
  * window, but it's still possible to end up creating an unnecessary
  * MultiXactId.  Fortunately this is harmless.
  */
@@ -5278,6 +5275,7 @@ compute_new_xmax_infomask(TransactionId xmax, uint16 old_infomask,
 						  TransactionId *result_xmax, uint16 *result_infomask,
 						  uint16 *result_infomask2)
 {
+	TransactionIdStatus xidstatus;
 	TransactionId new_xmax;
 	uint16		new_infomask,
 				new_infomask2;
@@ -5413,7 +5411,7 @@ l5:
 		new_xmax = MultiXactIdCreate(xmax, status, add_to_xmax, new_status);
 		GetMultiXactIdHintBits(new_xmax, &new_infomask, &new_infomask2);
 	}
-	else if (TransactionIdIsInProgress(xmax))
+	else if ((xidstatus = TransactionIdGetStatus(xmax)) == XID_INPROGRESS)
 	{
 		/*
 		 * If the XMAX is a valid, in-progress TransactionId, then we need to
@@ -5442,8 +5440,9 @@ l5:
 				/*
 				 * LOCK_ONLY can be present alone only when a page has been
 				 * upgraded by pg_upgrade.  But in that case,
-				 * TransactionIdIsInProgress() should have returned false.  We
-				 * assume it's no longer locked in this case.
+				 * TransactionIdGetStatus() should not have returned
+				 * XID_INPROGRESS.  We assume it's no longer locked in this
+				 * case.
 				 */
 				elog(WARNING, "LOCK_ONLY found for Xid in progress %u", xmax);
 				old_infomask |= HEAP_XMAX_INVALID;
@@ -5496,7 +5495,7 @@ l5:
 		GetMultiXactIdHintBits(new_xmax, &new_infomask, &new_infomask2);
 	}
 	else if (!HEAP_XMAX_IS_LOCKED_ONLY(old_infomask) &&
-			 TransactionIdDidCommit(xmax))
+			 xidstatus == XID_COMMITTED)
 	{
 		/*
 		 * It's a committed update, so we gotta preserve him as updater of the
@@ -5525,7 +5524,7 @@ l5:
 		/*
 		 * Can get here iff the locking/updating transaction was running when
 		 * the infomask was extracted from the tuple, but finished before
-		 * TransactionIdIsInProgress got to run.  Deal with it as if there was
+		 * TransactionIdGetStatus got to run.  Deal with it as if there was
 		 * no locker at all in the first place.
 		 */
 		old_infomask |= HEAP_XMAX_INVALID;
@@ -5558,15 +5557,11 @@ test_lockmode_for_conflict(MultiXactStatus status, TransactionId xid,
 						   LockTupleMode mode, bool *needwait)
 {
 	MultiXactStatus wantedstatus;
+	TransactionIdStatus xidstatus;
 
 	*needwait = false;
 	wantedstatus = get_mxact_status_for_lock(mode, false);
 
-	/*
-	 * Note: we *must* check TransactionIdIsInProgress before
-	 * TransactionIdDidAbort/Commit; see comment at top of tqual.c for an
-	 * explanation.
-	 */
 	if (TransactionIdIsCurrentTransactionId(xid))
 	{
 		/*
@@ -5576,7 +5571,9 @@ test_lockmode_for_conflict(MultiXactStatus status, TransactionId xid,
 		 */
 		return HeapTupleSelfUpdated;
 	}
-	else if (TransactionIdIsInProgress(xid))
+	xidstatus = TransactionIdGetStatus(xid);
+
+	if (xidstatus == XID_INPROGRESS)
 	{
 		/*
 		 * If the locking transaction is running, what we do depends on
@@ -5596,37 +5593,34 @@ test_lockmode_for_conflict(MultiXactStatus status, TransactionId xid,
 		 */
 		return HeapTupleMayBeUpdated;
 	}
-	else if (TransactionIdDidAbort(xid))
+	else if (xidstatus == XID_ABORTED)
 		return HeapTupleMayBeUpdated;
-	else if (TransactionIdDidCommit(xid))
-	{
-		/*
-		 * The other transaction committed.  If it was only a locker, then the
-		 * lock is completely gone now and we can return success; but if it
-		 * was an update, then what we do depends on whether the two lock
-		 * modes conflict.  If they conflict, then we must report error to
-		 * caller. But if they don't, we can fall through to allow the current
-		 * transaction to lock the tuple.
-		 *
-		 * Note: the reason we worry about ISUPDATE here is because as soon as
-		 * a transaction ends, all its locks are gone and meaningless, and
-		 * thus we can ignore them; whereas its updates persist.  In the
-		 * TransactionIdIsInProgress case, above, we don't need to check
-		 * because we know the lock is still "alive" and thus a conflict needs
-		 * always be checked.
-		 */
-		if (!ISUPDATE_from_mxstatus(status))
-			return HeapTupleMayBeUpdated;
 
-		if (DoLockModesConflict(LOCKMODE_from_mxstatus(status),
-								LOCKMODE_from_mxstatus(wantedstatus)))
-			/* bummer */
-			return HeapTupleUpdated;
+	/*
+	 * The other transaction committed.  If it was only a locker, then the
+	 * lock is completely gone now and we can return success; but if it
+	 * was an update, then what we do depends on whether the two lock
+	 * modes conflict.  If they conflict, then we must report error to
+	 * caller. But if they don't, we can fall through to allow the current
+	 * transaction to lock the tuple.
+	 *
+	 * Note: the reason we worry about ISUPDATE here is because as soon as
+	 * a transaction ends, all its locks are gone and meaningless, and
+	 * thus we can ignore them; whereas its updates persist.  In the
+	 * XID_INPROGRESS case, above, we don't need to check
+	 * because we know the lock is still "alive" and thus a conflict needs
+	 * always be checked.
+	 */
+	Assert(xidstatus == XID_COMMITTED);
 
+	if (!ISUPDATE_from_mxstatus(status))
 		return HeapTupleMayBeUpdated;
-	}
 
-	/* Not in progress, not aborted, not committed -- must have crashed */
+	if (DoLockModesConflict(LOCKMODE_from_mxstatus(status),
+							LOCKMODE_from_mxstatus(wantedstatus)))
+		/* bummer */
+		return HeapTupleUpdated;
+
 	return HeapTupleMayBeUpdated;
 }
 
@@ -6160,8 +6154,8 @@ heap_abort_speculative(Relation relation, HeapTuple tuple)
 	 * RecentGlobalXmin.  That's not pretty, but it doesn't seem worth
 	 * inventing a nicer API for this.
 	 */
-	Assert(TransactionIdIsValid(RecentGlobalXmin));
-	PageSetPrunable(page, RecentGlobalXmin);
+	Assert(TransactionIdIsValid(GetRecentGlobalXmin()));
+	PageSetPrunable(page, GetRecentGlobalXmin());
 
 	/* store transaction information of xact deleting the tuple */
 	tp.t_data->t_infomask &= ~(HEAP_XMAX_BITS | HEAP_MOVED);
@@ -6483,6 +6477,7 @@ FreezeMultiXactId(MultiXactId multi, uint16 t_infomask,
 		if (ISUPDATE_from_mxstatus(members[i].status))
 		{
 			TransactionId xid = members[i].xid;
+			TransactionIdStatus xidstatus;
 
 			/*
 			 * It's an update; should we keep it?  If the transaction is known
@@ -6495,13 +6490,13 @@ FreezeMultiXactId(MultiXactId multi, uint16 t_infomask,
 			 * TransactionIdIsInProgress before TransactionIdDidCommit,
 			 * because of race conditions explained in detail in tqual.c.
 			 */
-			if (TransactionIdIsCurrentTransactionId(xid) ||
-				TransactionIdIsInProgress(xid))
+			xidstatus = TransactionIdGetStatus(xid);
+			if (xidstatus == XID_INPROGRESS)
 			{
 				Assert(!TransactionIdIsValid(update_xid));
 				update_xid = xid;
 			}
-			else if (TransactionIdDidCommit(xid))
+			else if (xidstatus == XID_COMMITTED)
 			{
 				/*
 				 * The transaction committed, so we can tell caller to set
@@ -6539,8 +6534,7 @@ FreezeMultiXactId(MultiXactId multi, uint16 t_infomask,
 		else
 		{
 			/* We only keep lockers if they are still running */
-			if (TransactionIdIsCurrentTransactionId(members[i].xid) ||
-				TransactionIdIsInProgress(members[i].xid))
+			if (TransactionIdGetStatus(members[i].xid) == XID_INPROGRESS)
 			{
 				/* running locker cannot possibly be older than the cutoff */
 				Assert(!TransactionIdPrecedes(members[i].xid, cutoff_xid));
@@ -7014,6 +7008,7 @@ DoesMultiXactIdConflict(MultiXactId multi, uint16 infomask,
 		{
 			TransactionId memxid;
 			LOCKMODE	memlockmode;
+			TransactionIdStatus	xidstatus;
 
 			memlockmode = LOCKMODE_from_mxstatus(members[i].status);
 
@@ -7026,16 +7021,18 @@ DoesMultiXactIdConflict(MultiXactId multi, uint16 infomask,
 			if (TransactionIdIsCurrentTransactionId(memxid))
 				continue;
 
+			xidstatus = TransactionIdGetStatus(memxid);
+
 			if (ISUPDATE_from_mxstatus(members[i].status))
 			{
 				/* ignore aborted updaters */
-				if (TransactionIdDidAbort(memxid))
+				if (xidstatus == XID_ABORTED)
 					continue;
 			}
 			else
 			{
 				/* ignore lockers-only that are no longer in progress */
-				if (!TransactionIdIsInProgress(memxid))
+				if (xidstatus != XID_INPROGRESS)
 					continue;
 			}
 
@@ -7115,7 +7112,7 @@ Do_MultiXactIdWait(MultiXactId multi, MultiXactStatus status,
 			if (!DoLockModesConflict(LOCKMODE_from_mxstatus(memstatus),
 									 LOCKMODE_from_mxstatus(status)))
 			{
-				if (remaining && TransactionIdIsInProgress(memxid))
+				if (remaining && TransactionIdGetStatus(memxid) == XID_INPROGRESS)
 					remain++;
 				continue;
 			}

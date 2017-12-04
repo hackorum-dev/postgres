@@ -17,6 +17,7 @@
 
 #include "utils/snapshot.h"
 #include "access/xlogdefs.h"
+#include "access/transam.h"
 
 
 /* Static variables representing various special snapshot semantics */
@@ -78,7 +79,8 @@ extern HTSV_Result HeapTupleSatisfiesVacuum(HeapTuple htup,
 						 TransactionId OldestXmin, Buffer buffer);
 extern bool HeapTupleIsSurelyDead(HeapTuple htup,
 					  TransactionId OldestXmin);
-extern bool XidInMVCCSnapshot(TransactionId xid, Snapshot snapshot);
+extern bool XidVisibleInSnapshot(TransactionId xid, Snapshot snapshot,
+					  TransactionIdStatus *hintstatus);
 
 extern void HeapTupleSetHintBits(HeapTupleHeader tuple, Buffer buffer,
 					 uint16 infomask, TransactionId xid);

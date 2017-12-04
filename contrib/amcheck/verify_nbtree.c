@@ -25,6 +25,7 @@
 #include "commands/tablecmds.h"
 #include "miscadmin.h"
 #include "storage/lmgr.h"
+#include "storage/procarray.h"
 #include "utils/memutils.h"
 #include "utils/snapmgr.h"
 
@@ -284,7 +285,7 @@ bt_check_every_level(Relation rel, bool readonly)
 	 * RecentGlobalXmin assertion matches index_getnext_tid().  See note on
 	 * RecentGlobalXmin/B-Tree page deletion.
 	 */
-	Assert(TransactionIdIsValid(RecentGlobalXmin));
+	Assert(TransactionIdIsValid(GetRecentGlobalXmin()));
 
 	/*
 	 * Initialize state for entire verification operation

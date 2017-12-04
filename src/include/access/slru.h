@@ -105,6 +105,8 @@ typedef struct SlruSharedData
 } SlruSharedData;
 
 typedef SlruSharedData *SlruShared;
+typedef struct HTAB HTAB;
+typedef struct PageSlotEntry PageSlotEntry;
 
 /*
  * SlruCtlData is an unshared structure that points to the active information
@@ -113,6 +115,7 @@ typedef SlruSharedData *SlruShared;
 typedef struct SlruCtlData
 {
 	SlruShared	shared;
+	HTAB *pageToSlot;
 
 	/*
 	 * This flag tells whether to fsync writes (true for pg_xact and multixact
@@ -144,6 +147,8 @@ extern int	SimpleLruZeroPage(SlruCtl ctl, int pageno);
 extern int SimpleLruReadPage(SlruCtl ctl, int pageno, bool write_ok,
 				  TransactionId xid);
 extern int SimpleLruReadPage_ReadOnly(SlruCtl ctl, int pageno,
+						   TransactionId xid);
+extern int SimpleLruReadPage_ReadOnly_Locked(SlruCtl ctl, int pageno,
 						   TransactionId xid);
 extern void SimpleLruWritePage(SlruCtl ctl, int slotno);
 extern void SimpleLruFlush(SlruCtl ctl, bool allow_redirtied);

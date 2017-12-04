@@ -365,7 +365,7 @@ InitProcess(void)
 	MyProc->fpVXIDLock = false;
 	MyProc->fpLocalTransactionId = InvalidLocalTransactionId;
 	MyPgXact->xid = InvalidTransactionId;
-	MyPgXact->xmin = InvalidTransactionId;
+	MyPgXact->snapshotcsn = InvalidCommitSeqNo;
 	MyProc->pid = MyProcPid;
 	/* backendId, databaseId and roleId will be filled in later */
 	MyProc->backendId = InvalidBackendId;
@@ -412,9 +412,10 @@ InitProcess(void)
 	/* Initialize fields for group transaction status update. */
 	MyProc->clogGroupMember = false;
 	MyProc->clogGroupMemberXid = InvalidTransactionId;
-	MyProc->clogGroupMemberXidStatus = TRANSACTION_STATUS_IN_PROGRESS;
+	MyProc->clogGroupMemberXidStatus = CLOG_XID_STATUS_IN_PROGRESS;
 	MyProc->clogGroupMemberPage = -1;
 	MyProc->clogGroupMemberLsn = InvalidXLogRecPtr;
+	MyProc->clogGroupNSubxids = 0;
 	pg_atomic_init_u32(&MyProc->clogGroupNext, INVALID_PGPROCNO);
 
 	/*
@@ -548,7 +549,7 @@ InitAuxiliaryProcess(void)
 	MyProc->fpVXIDLock = false;
 	MyProc->fpLocalTransactionId = InvalidLocalTransactionId;
 	MyPgXact->xid = InvalidTransactionId;
-	MyPgXact->xmin = InvalidTransactionId;
+	MyPgXact->snapshotcsn = InvalidCommitSeqNo;
 	MyProc->backendId = InvalidBackendId;
 	MyProc->databaseId = InvalidOid;
 	MyProc->roleId = InvalidOid;
@@ -779,7 +780,7 @@ static void
 RemoveProcFromArray(int code, Datum arg)
 {
 	Assert(MyProc != NULL);
-	ProcArrayRemove(MyProc, InvalidTransactionId);
+	ProcArrayRemove(MyProc);
 }
 
 /*

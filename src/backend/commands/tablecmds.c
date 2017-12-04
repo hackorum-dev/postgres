@@ -87,6 +87,7 @@
 #include "storage/lmgr.h"
 #include "storage/lock.h"
 #include "storage/predicate.h"
+#include "storage/procarray.h"
 #include "storage/smgr.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
@@ -1474,7 +1475,7 @@ ExecuteTruncate(TruncateStmt *stmt)
 			 * deletion at commit.
 			 */
 			RelationSetNewRelfilenode(rel, rel->rd_rel->relpersistence,
-									  RecentXmin, minmulti);
+									  GetOldestActiveTransactionId(), minmulti);
 			if (rel->rd_rel->relpersistence == RELPERSISTENCE_UNLOGGED)
 				heap_create_init_fork(rel);
 
@@ -1488,7 +1489,7 @@ ExecuteTruncate(TruncateStmt *stmt)
 			{
 				rel = relation_open(toast_relid, AccessExclusiveLock);
 				RelationSetNewRelfilenode(rel, rel->rd_rel->relpersistence,
-										  RecentXmin, minmulti);
+										  GetOldestActiveTransactionId(), minmulti);
 				if (rel->rd_rel->relpersistence == RELPERSISTENCE_UNLOGGED)
 					heap_create_init_fork(rel);
 				heap_close(rel, NoLock);
@@ -4294,7 +4295,7 @@ ATRewriteTables(AlterTableStmt *parsetree, List **wqueue, LOCKMODE lockmode)
 			finish_heap_swap(tab->relid, OIDNewHeap,
 							 false, false, true,
 							 !OidIsValid(tab->newTableSpace),
-							 RecentXmin,
+							 GetOldestActiveTransactionId(),
 							 ReadNextMultiXactId(),
 							 persistence);
 		}

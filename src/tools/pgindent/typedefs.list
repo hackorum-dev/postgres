@@ -34,6 +34,9 @@ AfterTriggerEventList
 AfterTriggerShared
 AfterTriggerSharedData
 AfterTriggersData
+AfterTriggersQueryData
+AfterTriggersTableData
+AfterTriggersTransData
 Agg
 AggClauseCosts
 AggInfo
@@ -125,7 +128,6 @@ ArrayMetaState
 ArrayParseState
 ArrayRef
 ArrayRefState
-ArrayRemapInfo
 ArrayType
 AsyncQueueControl
 AsyncQueueEntry
@@ -143,7 +145,6 @@ AutoVacOpts
 AutoVacuumShmemStruct
 AutoVacuumWorkItem
 AutoVacuumWorkItemType
-AutovacWorkItems
 AuxProcType
 BF_ctx
 BF_key
@@ -635,6 +636,7 @@ FileFdwPlanState
 FileName
 FileNameMap
 FindSplitData
+FixedParallelExecutorState
 FixedParallelState
 FixedParamState
 FlagMode
@@ -1021,13 +1023,13 @@ InsertStmt
 Instrumentation
 Int128AggState
 Int8TransTypeData
+IntRBTreeNode
 InternalDefaultACL
 InternalGrant
 Interval
 IntoClause
 InvalidationChunk
 InvalidationListHeader
-InvertedWalkNextStep
 IpcMemoryId
 IpcMemoryKey
 IpcSemaphoreId
@@ -1571,6 +1573,7 @@ PartitionListValue
 PartitionRangeBound
 PartitionRangeDatum
 PartitionRangeDatumKind
+PartitionScheme
 PartitionSpec
 PartitionedChildRelInfo
 PasswordType
@@ -1781,7 +1784,6 @@ RangeBox
 RangeFunction
 RangeIOData
 RangeQueryClause
-RangeRemapInfo
 RangeSubselect
 RangeTableFunc
 RangeTableFuncCol
@@ -1794,6 +1796,7 @@ RangeVar
 RangeVarGetRelidCallback
 RawColumnDefault
 RawStmt
+ReInitializeDSMForeignScan_function
 ReScanForeignScan_function
 ReadBufPtrType
 ReadBufferMode
@@ -1805,8 +1808,6 @@ RecheckForeignScan_function
 RecordCacheEntry
 RecordCompareData
 RecordIOData
-RecordRemapInfo
-RecordTypmodMap
 RecoveryTargetAction
 RecoveryTargetType
 RectBox
@@ -2297,9 +2298,10 @@ TupleHashEntryData
 TupleHashIterator
 TupleHashTable
 TupleQueueReader
-TupleRemapClass
-TupleRemapInfo
 TupleTableSlot
+TuplesortInstrumentation
+TuplesortMethod
+TuplesortSpaceType
 Tuplesortstate
 Tuplestorestate
 TwoPhaseCallback
@@ -2329,7 +2331,6 @@ UChar
 UCharIterator
 UCollator
 UConverter
-UEnumeration
 UErrorCode
 UINT
 ULARGE_INTEGER
@@ -2612,7 +2613,9 @@ dsa_pointer
 dsa_segment_header
 dsa_segment_index
 dsa_segment_map
+dshash_compare_function
 dshash_hash
+dshash_hash_function
 dshash_parameters
 dshash_partition
 dshash_table
