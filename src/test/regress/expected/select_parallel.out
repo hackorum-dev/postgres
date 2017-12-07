@@ -44,6 +44,40 @@ select round(avg(aa)), sum(aa) from a_star a1;
     14 | 355
 (1 row)
 
+-- leader participation disabled.
+set parallel_leader_participation = off;
+-- Note : With no leader, subplans become non-partial, unless parallel_workers
+-- is set for each of them.
+alter table c_star set (parallel_workers = 3);
+alter table d_star set (parallel_workers = 3);
+alter table a_star set (parallel_workers = 3);
+alter table b_star set (parallel_workers = 3);
+alter table e_star set (parallel_workers = 3);
+alter table f_star set (parallel_workers = 3);
+explain (costs off)
+  select round(avg(aa)), sum(aa) from a_star;
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Finalize Aggregate
+   ->  Gather
+         Workers Planned: 3
+         ->  Partial Aggregate
+               ->  Parallel Append
+                     ->  Parallel Seq Scan on a_star
+                     ->  Parallel Seq Scan on b_star
+                     ->  Parallel Seq Scan on c_star
+                     ->  Parallel Seq Scan on d_star
+                     ->  Parallel Seq Scan on e_star
+                     ->  Parallel Seq Scan on f_star
+(11 rows)
+
+select round(avg(aa)), sum(aa) from a_star a1_1;
+ round | sum 
+-------+-----
+    14 | 355
+(1 row)
+
+reset parallel_leader_participation;
 -- Parallel Append with both partial and non-partial subplans
 alter table c_star set (parallel_workers = 0);
 alter table d_star set (parallel_workers = 0);
@@ -70,6 +104,32 @@ select round(avg(aa)), sum(aa) from a_star a2;
     14 | 355
 (1 row)
 
+-- leader participation disabled.
+set parallel_leader_participation = off;
+explain (costs off)
+  select round(avg(aa)), sum(aa) from a_star;
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Finalize Aggregate
+   ->  Gather
+         Workers Planned: 3
+         ->  Partial Aggregate
+               ->  Parallel Append
+                     ->  Seq Scan on d_star
+                     ->  Seq Scan on c_star
+                     ->  Parallel Seq Scan on a_star
+                     ->  Parallel Seq Scan on b_star
+                     ->  Parallel Seq Scan on e_star
+                     ->  Parallel Seq Scan on f_star
+(11 rows)
+
+select round(avg(aa)), sum(aa) from a_star a2_1;
+ round | sum 
+-------+-----
+    14 | 355
+(1 row)
+
+reset parallel_leader_participation;
 -- Parallel Append with only non-partial subplans
 alter table a_star set (parallel_workers = 0);
 alter table b_star set (parallel_workers = 0);
@@ -98,6 +158,32 @@ select round(avg(aa)), sum(aa) from a_star a3;
     14 | 355
 (1 row)
 
+-- leader participation disabled.
+set parallel_leader_participation = off;
+explain (costs off)
+  select round(avg(aa)), sum(aa) from a_star;
+                 QUERY PLAN                 
+--------------------------------------------
+ Finalize Aggregate
+   ->  Gather
+         Workers Planned: 3
+         ->  Partial Aggregate
+               ->  Parallel Append
+                     ->  Seq Scan on d_star
+                     ->  Seq Scan on f_star
+                     ->  Seq Scan on e_star
+                     ->  Seq Scan on b_star
+                     ->  Seq Scan on c_star
+                     ->  Seq Scan on a_star
+(11 rows)
+
+select round(avg(aa)), sum(aa) from a_star a3_1;
+ round | sum 
+-------+-----
+    14 | 355
+(1 row)
+
+reset parallel_leader_participation;
 -- Disable Parallel Append
 alter table a_star reset (parallel_workers);
 alter table b_star reset (parallel_workers);
@@ -129,6 +215,29 @@ select round(avg(aa)), sum(aa) from a_star a4;
     14 | 355
 (1 row)
 
+-- leader participation disabled.
+set parallel_leader_participation = off;
+explain (costs off)
+  select round(avg(aa)), sum(aa) from a_star;
+           QUERY PLAN           
+--------------------------------
+ Aggregate
+   ->  Append
+         ->  Seq Scan on a_star
+         ->  Seq Scan on b_star
+         ->  Seq Scan on c_star
+         ->  Seq Scan on d_star
+         ->  Seq Scan on e_star
+         ->  Seq Scan on f_star
+(8 rows)
+
+select round(avg(aa)), sum(aa) from a_star a4_1;
+ round | sum 
+-------+-----
+    14 | 355
+(1 row)
+
+reset parallel_leader_participation;
 reset enable_parallel_append;
 -- Parallel Append that runs serially
 create function sp_test_func() returns setof text as
