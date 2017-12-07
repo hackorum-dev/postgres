@@ -24,6 +24,20 @@ set max_parallel_workers_per_gather=4;
 explain (costs off)
   select round(avg(aa)), sum(aa) from a_star;
 select round(avg(aa)), sum(aa) from a_star a1;
+-- leader participation disabled.
+set parallel_leader_participation = off;
+-- Note : With no leader, subplans become non-partial, unless parallel_workers
+-- is set for each of them.
+alter table c_star set (parallel_workers = 3);
+alter table d_star set (parallel_workers = 3);
+alter table a_star set (parallel_workers = 3);
+alter table b_star set (parallel_workers = 3);
+alter table e_star set (parallel_workers = 3);
+alter table f_star set (parallel_workers = 3);
+explain (costs off)
+  select round(avg(aa)), sum(aa) from a_star;
+select round(avg(aa)), sum(aa) from a_star a1_1;
+reset parallel_leader_participation;
 
 -- Parallel Append with both partial and non-partial subplans
 alter table c_star set (parallel_workers = 0);
@@ -31,6 +45,13 @@ alter table d_star set (parallel_workers = 0);
 explain (costs off)
   select round(avg(aa)), sum(aa) from a_star;
 select round(avg(aa)), sum(aa) from a_star a2;
+-- leader participation disabled.
+set parallel_leader_participation = off;
+explain (costs off)
+  select round(avg(aa)), sum(aa) from a_star;
+select round(avg(aa)), sum(aa) from a_star a2_1;
+reset parallel_leader_participation;
+
 
 -- Parallel Append with only non-partial subplans
 alter table a_star set (parallel_workers = 0);
@@ -40,6 +61,12 @@ alter table f_star set (parallel_workers = 0);
 explain (costs off)
   select round(avg(aa)), sum(aa) from a_star;
 select round(avg(aa)), sum(aa) from a_star a3;
+-- leader participation disabled.
+set parallel_leader_participation = off;
+explain (costs off)
+  select round(avg(aa)), sum(aa) from a_star;
+select round(avg(aa)), sum(aa) from a_star a3_1;
+reset parallel_leader_participation;
 
 -- Disable Parallel Append
 alter table a_star reset (parallel_workers);
@@ -52,6 +79,12 @@ set enable_parallel_append to off;
 explain (costs off)
   select round(avg(aa)), sum(aa) from a_star;
 select round(avg(aa)), sum(aa) from a_star a4;
+-- leader participation disabled.
+set parallel_leader_participation = off;
+explain (costs off)
+  select round(avg(aa)), sum(aa) from a_star;
+select round(avg(aa)), sum(aa) from a_star a4_1;
+reset parallel_leader_participation;
 reset enable_parallel_append;
 
 -- Parallel Append that runs serially
