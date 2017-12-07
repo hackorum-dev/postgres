@@ -2499,6 +2499,8 @@ compute_scalar_stats(VacAttrStatsP stats,
 	bool		is_varwidth = (!stats->attrtype->typbyval &&
 							   stats->attrtype->typlen < 0);
 	double		corr_xysum;
+	double		corr_ysum;
+	double		corr_y2sum;
 	SortSupportData ssup;
 	ScalarItem *values;
 	int			values_cnt = 0;
@@ -2618,6 +2620,8 @@ compute_scalar_stats(VacAttrStatsP stats,
 		 * be ordered by tupno).
 		 */
 		corr_xysum = 0;
+		corr_ysum = 0;
+		corr_y2sum = 0;
 		ndistinct = 0;
 		nmultiple = 0;
 		dups_cnt = 0;
@@ -2625,7 +2629,9 @@ compute_scalar_stats(VacAttrStatsP stats,
 		{
 			int			tupno = values[i].tupno;
 
-			corr_xysum += ((double) i) * ((double) tupno);
+			corr_xysum += ((double) ndistinct) * ((double) tupno);
+			corr_ysum += ((double) ndistinct);
+			corr_y2sum += ((double) ndistinct) * ((double) ndistinct);
 			dups_cnt++;
 			if (tupnoLink[tupno] == tupno)
 			{
@@ -2949,11 +2955,11 @@ compute_scalar_stats(VacAttrStatsP stats,
 			MemoryContextSwitchTo(old_context);
 
 			/*----------
-			 * Since we know the x and y value sets are both
+			 * Since we know the x value sets are
 			 *		0, 1, ..., values_cnt-1
-			 * we have sum(x) = sum(y) =
+			 * we have sum(x) = 
 			 *		(values_cnt-1)*values_cnt / 2
-			 * and sum(x^2) = sum(y^2) =
+			 * and sum(x^2) = 
 			 *		(values_cnt-1)*values_cnt*(2*values_cnt-1) / 6.
 			 *----------
 			 */
@@ -2963,8 +2969,8 @@ compute_scalar_stats(VacAttrStatsP stats,
 				((double) values_cnt) * (double) (2 * values_cnt - 1) / 6.0;
 
 			/* And the correlation coefficient reduces to */
-			corrs[0] = (values_cnt * corr_xysum - corr_xsum * corr_xsum) /
-				(values_cnt * corr_x2sum - corr_xsum * corr_xsum);
+			corrs[0] = (values_cnt * corr_xysum - corr_xsum * corr_ysum) /
+				sqrt((values_cnt * corr_x2sum - corr_xsum) * (values_cnt * corr_y2sum - corr_ysum));
 
 			stats->stakind[slot_idx] = STATISTIC_KIND_CORRELATION;
 			stats->staop[slot_idx] = mystats->ltopr;
