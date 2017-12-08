@@ -59,6 +59,15 @@ typedef struct dshash_parameters
 struct dshash_table_item;
 typedef struct dshash_table_item dshash_table_item;
 
+struct dshash_seq_status
+{
+	dshash_table	   *hash_table;
+	int					curbucket;
+	int					nbuckets;
+	dshash_table_item  *curitem;
+};
+typedef struct dshash_seq_status dshash_seq_status;
+
 /* Creating, sharing and destroying from hash tables. */
 extern dshash_table *dshash_create(dsa_area *area,
 			  const dshash_parameters *params,
@@ -81,6 +90,11 @@ extern bool dshash_delete_key(dshash_table *hash_table, const void *key);
 extern void dshash_delete_entry(dshash_table *hash_table, void *entry);
 extern void dshash_release_lock(dshash_table *hash_table, void *entry);
 
+/* seq scan support */
+extern void dshash_seq_init(dshash_seq_status *status, dshash_table *hash_table);
+extern void *dshash_seq_next(dshash_seq_status *status);
+extern void dshash_seq_release(dshash_seq_status *status);
+extern int dshash_get_num_entries(dshash_table *hash_table);
 /* Convenience hash and compare functions wrapping memcmp and tag_hash. */
 extern int	dshash_memcmp(const void *a, const void *b, size_t size, void *arg);
 extern dshash_hash dshash_memhash(const void *v, size_t size, void *arg);

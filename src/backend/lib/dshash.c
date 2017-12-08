@@ -644,6 +644,69 @@ dshash_memhash(const void *v, size_t size, void *arg)
 	return tag_hash(v, size);
 }
 
+void
+dshash_seq_init(dshash_seq_status *status, dshash_table *hash_table)
+{
+	status->hash_table = hash_table;
+	status->curbucket = 0;
+	status->nbuckets = ((size_t) 1) << hash_table->control->size_log2;
+	status->curitem = NULL;
+
+	ensure_valid_bucket_pointers(hash_table);
+}
+
+void *
+dshash_seq_next(dshash_seq_status *status)
+{
+	dsa_pointer next_item_pointer;
+
+	if (status->curitem == NULL)
+	{
+		Assert (status->curbucket == 0);
+		next_item_pointer = status->hash_table->buckets[status->curbucket];
+	}
+	else
+		next_item_pointer = status->curitem->next;
+
+	while (!DsaPointerIsValid(next_item_pointer))
+	{
+		if (++status->curbucket >= status->nbuckets)
+		{
+			dshash_seq_release(status);
+			return NULL;
+		}
+		next_item_pointer = status->hash_table->buckets[status->curbucket];
+	}
+
+	status->curitem =
+		dsa_get_address(status->hash_table->area, next_item_pointer);
+	return ENTRY_FROM_ITEM(status->curitem);
+}
+
+int
+dshash_get_num_entries(dshash_table *hash_table)
+{
+	/* a shotcut implement. should be improved  */
+	dshash_seq_status s;
+	void *p;
+	int n = 0;
+
+	dshash_seq_init(&s, hash_table);
+	while ((p = dshash_seq_next(&s)) != NULL)
+	{
+		dshash_release_lock(hash_table, p);
+		n++;
+	}
+
+	return n;
+}
+
+void
+dshash_seq_release(dshash_seq_status *status)
+{
+	/* nothing to do so far..*/
+}
+
 /*
  * Print debugging information about the internal state of the hash table to
  * stderr.  The caller must hold no partition locks.
