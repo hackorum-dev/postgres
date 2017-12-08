@@ -710,7 +710,8 @@ typedef enum BackendType
 	B_STARTUP,
 	B_WAL_RECEIVER,
 	B_WAL_SENDER,
-	B_WAL_WRITER
+	B_WAL_WRITER,
+	B_STATS_COLLECTOR
 } BackendType;
 
 
@@ -1327,6 +1328,7 @@ extern void pgstat_send_bgwriter(void);
  * generate the pgstat* views.
  * ----------
  */
+extern void PgstatCollectorMain(void);
 extern PgStat_StatDBEntry *pgstat_fetch_stat_dbentry(Oid dbid);
 extern PgStat_StatTabEntry *pgstat_fetch_stat_tabentry(Oid relid);
 extern PgBackendStatus *pgstat_fetch_stat_beentry(int beid);

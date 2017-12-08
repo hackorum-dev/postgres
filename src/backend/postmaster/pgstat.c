@@ -267,6 +267,7 @@ static List *pending_write_requests = NIL;
 /* Signal handler flags */
 static volatile bool need_exit = false;
 static volatile bool got_SIGHUP = false;
+static volatile bool got_SIGTERM = false;
 
 /*
  * Total time charged to functions so far in the current backend.
@@ -284,8 +285,8 @@ static instr_time total_func_time;
 static pid_t pgstat_forkexec(void);
 #endif
 
-NON_EXEC_STATIC void PgstatCollectorMain(int argc, char *argv[]) pg_attribute_noreturn();
-static void pgstat_exit(SIGNAL_ARGS);
+static void pgstat_shutdown_handler(SIGNAL_ARGS);
+static void pgstat_quickdie_handler(SIGNAL_ARGS);
 static void pgstat_beshutdown_hook(int code, Datum arg);
 static void pgstat_sighup_handler(SIGNAL_ARGS);
 
@@ -770,11 +771,7 @@ pgstat_start(void)
 			/* Close the postmaster's sockets */
 			ClosePostmasterPorts(false);
 
-			/* Drop our connection to postmaster's shared memory, as well */
-			dsm_detach_all();
-			PGSharedMemoryDetach();
-
-			PgstatCollectorMain(0, NULL);
+			PgstatCollectorMain();
 			break;
 #endif
 
@@ -2870,6 +2867,9 @@ pgstat_bestart(void)
 			case WalReceiverProcess:
 				beentry->st_backendType = B_WAL_RECEIVER;
 				break;
+			case StatsCollectorProcess:
+				beentry->st_backendType = B_STATS_COLLECTOR;
+				break;
 			default:
 				elog(FATAL, "unrecognized process type: %d",
 					 (int) MyAuxProcType);
@@ -4077,6 +4077,9 @@ pgstat_get_backend_desc(BackendType backendType)
 		case B_WAL_WRITER:
 			backendDesc = "walwriter";
 			break;
+		case B_STATS_COLLECTOR:
+			backendDesc = "stats collector";
+			break;
 	}
 
 	return backendDesc;
@@ -4194,8 +4197,8 @@ pgstat_send_bgwriter(void)
  *	The argc/argv parameters are valid only in EXEC_BACKEND case.
  * ----------
  */
-NON_EXEC_STATIC void
-PgstatCollectorMain(int argc, char *argv[])
+void
+PgstatCollectorMain(void)
 {
 	int			len;
 	PgStat_Msg	msg;
@@ -4208,8 +4211,8 @@ PgstatCollectorMain(int argc, char *argv[])
 	 */
 	pqsignal(SIGHUP, pgstat_sighup_handler);
 	pqsignal(SIGINT, SIG_IGN);
-	pqsignal(SIGTERM, SIG_IGN);
-	pqsignal(SIGQUIT, pgstat_exit);
+	pqsignal(SIGTERM, pgstat_shutdown_handler);
+	pqsignal(SIGQUIT, pgstat_quickdie_handler);
 	pqsignal(SIGALRM, SIG_IGN);
 	pqsignal(SIGPIPE, SIG_IGN);
 	pqsignal(SIGUSR1, SIG_IGN);
@@ -4254,14 +4257,14 @@ PgstatCollectorMain(int argc, char *argv[])
 		/*
 		 * Quit if we get SIGQUIT from the postmaster.
 		 */
-		if (need_exit)
+		if (got_SIGTERM)
 			break;
 
 		/*
 		 * Inner loop iterates as long as we keep getting messages, or until
 		 * need_exit becomes set.
 		 */
-		while (!need_exit)
+		while (!got_SIGTERM)
 		{
 			/*
 			 * Reload configuration if we got SIGHUP from the postmaster.
@@ -4449,14 +4452,21 @@ PgstatCollectorMain(int argc, char *argv[])
 
 /* SIGQUIT signal handler for collector process */
 static void
-pgstat_exit(SIGNAL_ARGS)
+pgstat_quickdie_handler(SIGNAL_ARGS)
 {
-	int			save_errno = errno;
+	PG_SETMASK(&BlockSig);
 
-	need_exit = true;
-	SetLatch(MyLatch);
+	/*
+	 * We DO NOT want to run proc_exit() callbacks -- we're here because
+	 * shared memory may be corrupted, so we don't want to try to clean up our
+	 * transaction.  Just nail the windows shut and get out of town.  Now that
+	 * there's an atexit callback to prevent third-party code from breaking
+	 * things by calling exit() directly, we have to reset the callbacks
+	 * explicitly to make this work as intended.
+	 */
+	on_exit_reset();
 
-	errno = save_errno;
+	exit(2);
 }
 
 /* SIGHUP handler for collector process */
@@ -4466,6 +4476,18 @@ pgstat_sighup_handler(SIGNAL_ARGS)
 	int			save_errno = errno;
 
 	got_SIGHUP = true;
+	SetLatch(MyLatch);
+
+	errno = save_errno;
+}
+
+static void
+pgstat_shutdown_handler(SIGNAL_ARGS)
+{
+	int save_errno = errno;
+
+	got_SIGTERM = true;
+
 	SetLatch(MyLatch);
 
 	errno = save_errno;
