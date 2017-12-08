@@ -304,7 +304,7 @@ dshash_attach(dsa_area *area, const dshash_parameters *params,
 void
 dshash_detach(dshash_table *hash_table)
 {
-	Assert(!hash_table->find_locked);
+	Assert(!hash_table->find_locked || hash_table->is_snapshot);
 
 	/* The hash table may have been destroyed.  Just free local memory. */
 	pfree(hash_table);

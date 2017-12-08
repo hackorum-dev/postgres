@@ -518,6 +518,9 @@ RegisterLWLockTranches(void)
 						  "session_typmod_table");
 	LWLockRegisterTranche(LWTRANCHE_TBM, "tbm");
 	LWLockRegisterTranche(LWTRANCHE_PARALLEL_APPEND, "parallel_append");
+	LWLockRegisterTranche(LWTRANCHE_STATS_DSA, "stats table dsa");
+	LWLockRegisterTranche(LWTRANCHE_STATS_DB, "db stats");
+	LWLockRegisterTranche(LWTRANCHE_STATS_FUNC_TABLE, "table/func stats");
 
 	/* Register named tranches. */
 	for (i = 0; i < NamedLWLockTrancheRequests; i++)
