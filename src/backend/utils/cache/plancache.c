@@ -1251,11 +1251,11 @@ cached_plan_cost(CachedPlan *plan, bool include_planner)
 			 * Join planning effort actually scales much worse than linearly
 			 * in the number of relations --- but only until the join collapse
 			 * limits kick in.  Also, while inheritance child relations surely
-			 * add to planning effort, they don't make the join situation
-			 * worse.  So the actual shape of the planning cost curve versus
-			 * number of relations isn't all that obvious.  It will take
-			 * considerable work to arrive at a less crude estimate, and for
-			 * now it's not clear that's worth doing.
+			 * add to planning effort, they generally don't make the join
+			 * situation worse.  So the actual shape of the planning cost
+			 * curve versus number of relations isn't all that obvious.  It
+			 * will take considerable work to arrive at a less crude estimate,
+			 * and for now it's not clear that's worth doing.
 			 *
 			 * The other big difficulty here is that we don't have any very
 			 * good model of how planning cost compares to execution costs.
