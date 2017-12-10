@@ -3881,13 +3881,19 @@ lseg_inside_poly(Point *a, Point *b, POLYGON *poly, int start)
 
 			/* Y-cross */
 			res = touched_lseg_inside_poly(t.p, t.p + 1, &s, poly, i + 1);
+
+			break;
 		}
-		else if (on_ps_internal(t.p + 1, &s))
+
+		if (on_ps_internal(t.p + 1, &s))
 		{
 			/* Y-cross */
 			res = touched_lseg_inside_poly(t.p + 1, t.p, &s, poly, i + 1);
+
+			break;
 		}
-		else if ((interpt = lseg_interpt_internal(&t, &s)) != NULL)
+
+		if ((interpt = lseg_interpt_internal(&t, &s)) != NULL)
 		{
 			/*
 			 * segments are X-crossing, go to check each subsegment
@@ -3898,6 +3904,8 @@ lseg_inside_poly(Point *a, Point *b, POLYGON *poly, int start)
 			if (res)
 				res = lseg_inside_poly(t.p + 1, interpt, poly, i + 1);
 			pfree(interpt);
+
+			break;
 		}
 
 		s.p[0] = s.p[1];
