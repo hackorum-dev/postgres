@@ -374,6 +374,9 @@ select 33 = all ('{1,null,3}');
 select 33 = all ('{33,null,33}');
 -- nulls later in the bitmap
 SELECT -1 != ALL(ARRAY(SELECT NULLIF(g.i, 900) FROM generate_series(1,1000) g(i)));
+-- leftarg must always be scalar
+select '{1}'::int[] = any ('{{1}, {2}}');
+create table arr_tbl_check (a int[] check (a = any ('{{1}, {2}}')));
 
 -- test indexes on arrays
 create temp table arr_tbl (f1 int[] unique);

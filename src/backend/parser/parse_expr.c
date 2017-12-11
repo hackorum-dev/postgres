@@ -958,6 +958,12 @@ transformAExprOpAny(ParseState *pstate, A_Expr *a)
 								 a->location);
 
 	lexpr = transformExprRecurse(pstate, lexpr);
+	if (type_is_array(exprType(lexpr)))
+		ereport(ERROR,
+				(errcode(ERRCODE_DATATYPE_MISMATCH),
+				 errmsg("ANY/ALL leftarg must be be scalar, not array"),
+				 parser_errposition(pstate, exprLocation(lexpr))));
+
 	rexpr = transformExprRecurse(pstate, rexpr);
 
 	return (Node *) make_scalar_array_op(pstate,
@@ -981,6 +987,12 @@ transformAExprOpAll(ParseState *pstate, A_Expr *a)
 								 a->location);
 
 	lexpr = transformExprRecurse(pstate, lexpr);
+	if (type_is_array(exprType(lexpr)))
+		ereport(ERROR,
+				(errcode(ERRCODE_DATATYPE_MISMATCH),
+				 errmsg("ANY/ALL leftarg must be scalar, not array"),
+				 parser_errposition(pstate, exprLocation(lexpr))));
+
 	rexpr = transformExprRecurse(pstate, rexpr);
 
 	return (Node *) make_scalar_array_op(pstate,
