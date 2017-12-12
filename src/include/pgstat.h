@@ -422,6 +422,37 @@ typedef struct PgStat_MsgBgWriter
 	PgStat_Counter m_checkpoint_sync_time;
 } PgStat_MsgBgWriter;
 
+/*
+ * Walwrites statistics counters
+ */
+typedef struct PgStat_WalWritesCounts
+{
+	PgStat_Counter writes;		/* No of writes by background
+								 * processes/workers */
+	PgStat_Counter walwriter_writes;	/* No of writes by walwriter */
+	PgStat_Counter backend_writes;	/* No of writes by backends */
+	PgStat_Counter dirty_writes;	/* No of dirty writes by background
+									 * processes/workers when WAL buffers full */
+	PgStat_Counter backend_dirty_writes;	/* No of dirty writes by backends
+											 * when WAL buffers full */
+	PgStat_Counter write_blocks;	/* Total no of pages written by background
+									 * processes/workers */
+	PgStat_Counter walwriter_write_blocks;	/* Total no of pages written by
+											 * walwriter */
+	PgStat_Counter backend_write_blocks;	/* Total no of pages written by
+											 * backends */
+} PgStat_WalWritesCounts;
+
+/* ----------
+ * PgStat_MsgWalWrites			Sent by the walwriter after collecting all shared stats
+ * ----------
+ */
+typedef struct PgStat_MsgWalWrites
+{
+	PgStat_MsgHdr m_hdr;
+	PgStat_WalWritesCounts stats;
+} PgStat_MsgWalWrites;
+
 /* ----------
  * PgStat_MsgRecoveryConflict	Sent by the backend upon recovery conflict
  * ----------
@@ -694,6 +725,14 @@ typedef struct PgStat_GlobalStats
 	TimestampTz stat_reset_timestamp;
 } PgStat_GlobalStats;
 
+/*
+ * Walwrites statistics kept in the stats collector
+ */
+typedef struct PgStat_WalWritesStats
+{
+	PgStat_WalWritesCounts stats;
+	TimestampTz stat_reset_timestamp;	/* Last time when the stats reset */
+}			PgStat_WalWritesStats;
 
 /* ----------
  * Backend types
@@ -1126,6 +1165,11 @@ extern char *pgstat_stat_filename;
 extern PgStat_MsgBgWriter BgWriterStats;
 
 /*
+ * Wal writes statistics updated in XLogWrite function
+ */
+extern PgStat_WalWritesStats * WALWriteStats;
+
+/*
  * Updated by pgstat_count_buffer_*_time macros
  */
 extern PgStat_Counter pgStatBlockReadTime;
@@ -1142,6 +1186,9 @@ extern void pgstat_init(void);
 extern int	pgstat_start(void);
 extern void pgstat_reset_all(void);
 extern void allow_immediate_pgstat_restart(void);
+
+extern Size WALWritesShmemSize(void);
+extern void WALWritesShmemInit(void);
 
 #ifdef EXEC_BACKEND
 extern void PgstatCollectorMain(int argc, char *argv[]) pg_attribute_noreturn();

@@ -1882,3 +1882,39 @@ pg_stat_get_archiver(PG_FUNCTION_ARGS)
 	PG_RETURN_DATUM(HeapTupleGetDatum(
 									  heap_form_tuple(tupdesc, values, nulls)));
 }
+
+Datum
+pg_stat_get_walwrites(PG_FUNCTION_ARGS)
+{
+	TupleDesc	tupdesc;
+#define NUM_PG_STAT_WALWRITE_COLS 9
+	Datum		values[NUM_PG_STAT_WALWRITE_COLS];
+	bool		nulls[NUM_PG_STAT_WALWRITE_COLS];
+
+	/* Initialize values and NULL flags arrays */
+	MemSet(values, 0, sizeof(values));
+	MemSet(nulls, 0, sizeof(nulls));
+
+	/* Build a tuple descriptor for our result type */
+	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
+		elog(ERROR, "return type must be a row type");
+
+	LWLockAcquire(WALWriteLock, LW_EXCLUSIVE);
+
+	/* Get statistics about the archiver process */
+	/* Fill values and NULLs */
+	values[0] = Int64GetDatum(WALWriteStats->stats.writes);
+	values[1] = Int64GetDatum(WALWriteStats->stats.walwriter_writes);
+	values[2] = Int64GetDatum(WALWriteStats->stats.backend_writes);
+	values[3] = Int64GetDatum(WALWriteStats->stats.dirty_writes);
+	values[4] = Int64GetDatum(WALWriteStats->stats.backend_dirty_writes);
+	values[5] = Int64GetDatum(WALWriteStats->stats.write_blocks);
+	values[6] = Int64GetDatum(WALWriteStats->stats.walwriter_write_blocks);
+	values[7] = Int64GetDatum(WALWriteStats->stats.backend_write_blocks);
+	values[8] = TimestampTzGetDatum(WALWriteStats->stat_reset_timestamp);
+
+	LWLockRelease(WALWriteLock);
+	/* Returns the record as Datum */
+	PG_RETURN_DATUM(HeapTupleGetDatum(
+									  heap_form_tuple(tupdesc, values, nulls)));
+}

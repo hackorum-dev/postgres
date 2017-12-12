@@ -142,6 +142,15 @@ char	   *pgstat_stat_tmpname = NULL;
  */
 PgStat_MsgBgWriter BgWriterStats;
 
+/*
+ * WalWrites Local statistics counters.
+ * The statistics data gets populated in XLogWrite function.
+ * Stored directly in a stats message structure so it can be sent
+ * to stats collector process without needing to copy things around.
+ * We assume this inits to zeroes.
+ */
+PgStat_WalWritesStats *WALWriteStats;
+
 /* ----------
  * Local data
  * ----------
@@ -628,6 +637,29 @@ startup_failed:
 	 * on from postgresql.conf without a restart.
 	 */
 	SetConfigOption("track_counts", "off", PGC_INTERNAL, PGC_S_OVERRIDE);
+}
+
+/*
+ * Initialization of shared memory for WALWritesStats
+ */
+Size
+WALWritesShmemSize(void)
+{
+	return sizeof(PgStat_WalWritesStats);
+}
+
+void
+WALWritesShmemInit(void)
+{
+	bool		foundWALWrites;
+
+	WALWriteStats = (PgStat_WalWritesStats *)
+		ShmemInitStruct("WAL WriteStats", WALWritesShmemSize(), &foundWALWrites);
+
+	if (!foundWALWrites)
+	{
+		MemSet(WALWriteStats, 0, sizeof(PgStat_WalWritesStats));
+	}
 }
 
 /*
@@ -1336,11 +1368,25 @@ pgstat_reset_shared_counters(const char *target)
 		msg.m_resettarget = RESET_ARCHIVER;
 	else if (strcmp(target, "bgwriter") == 0)
 		msg.m_resettarget = RESET_BGWRITER;
+	else if (strcmp(target, "walwrites") == 0)
+	{
+		/*
+		 * Reset the wal writes statistics of the cluster. These statistics
+		 * are not reset by the stats collector because these are resides in a
+		 * shared memory, so it is not possible for the stats collector to
+		 * reset them. FIXME: This may need a sepearate function entirely to
+		 * reset the stats.
+		 */
+		LWLockAcquire(WALWriteLock, LW_EXCLUSIVE);
+		memset(WALWriteStats, 0, sizeof(PgStat_WalWritesStats));
+		WALWriteStats->stat_reset_timestamp = GetCurrentTimestamp();
+		LWLockRelease(WALWriteLock);
+	}
 	else
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("unrecognized reset target: \"%s\"", target),
-				 errhint("Target must be \"archiver\" or \"bgwriter\".")));
+				 errhint("Target must be \"archiver\" or \"bgwriter\" or \"walwrites\".")));
 
 	pgstat_setheader(&msg.m_hdr, PGSTAT_MTYPE_RESETSHAREDCOUNTER);
 	pgstat_send(&msg, sizeof(msg));

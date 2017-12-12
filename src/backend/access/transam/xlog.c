@@ -866,6 +866,7 @@ static XLogRecPtr XLogGetReplicationSlotMinimumLSN(void);
 
 static void AdvanceXLInsertBuffer(XLogRecPtr upto, bool opportunistic);
 static bool XLogCheckpointNeeded(XLogSegNo new_segno);
+static bool am_background_process(void);
 static void XLogWrite(XLogwrtRqst WriteRqst, bool flexible);
 static bool InstallXLogFileSegment(XLogSegNo *segno, char *tmppath,
 					   bool find_free, XLogSegNo max_segno,
@@ -2118,6 +2119,17 @@ AdvanceXLInsertBuffer(XLogRecPtr upto, bool opportunistic)
 					WriteRqst.Write = OldPageRqstPtr;
 					WriteRqst.Flush = 0;
 					XLogWrite(WriteRqst, false);
+					if (AmWalWriterProcess())
+					{
+						/*
+						 * Don't consider the writes of wal writer process as
+						 * dirty writes, so skipping.
+						 */
+					}
+					else if (am_background_process())
+						WALWriteStats->stats.dirty_writes++;
+					else
+						WALWriteStats->stats.backend_dirty_writes++;
 					LWLockRelease(WALWriteLock);
 					TRACE_POSTGRESQL_WAL_BUFFER_WRITE_DIRTY_DONE();
 				}
@@ -2322,6 +2334,33 @@ XLogCheckpointNeeded(XLogSegNo new_segno)
 }
 
 /*
+ * Check whether the current process is a background process/worker
+ * or not. This function checks for the background processes that
+ * does some WAL write activity only and other background processes
+ * are not considered. It considers all the background workers
+ * as WAL write activity workers.
+ *
+ * Returns false - when the current process is a normal backend
+ *		   true - when the current process a background process/worker
+ */
+static bool
+am_background_process()
+{
+	/* check whether current process is a background process/worker? */
+	if (!AmBackgroundWriterProcess() &&
+		!AmCheckpointerProcess() &&
+		!AmStartupProcess() &&
+		!IsBackgroundWorker &&
+		!am_walsender &&
+		!am_autovacuum_worker)
+	{
+		return false;
+	}
+
+	return true;
+}
+
+/*
  * Write and/or fsync the log at least as far as WriteRqst indicates.
  *
  * If flexible == true, we don't have to write as far as WriteRqst, but
@@ -2344,6 +2383,9 @@ XLogWrite(XLogwrtRqst WriteRqst, bool flexible)
 	int			npages;
 	int			startidx;
 	uint32		startoffset;
+	PgStat_Counter writes = 0;
+	PgStat_Counter write_blocks = 0;
+	bool		is_background_process = am_background_process();
 
 	/* We should always be inside a critical section here */
 	Assert(CritSectionCount > 0);
@@ -2487,6 +2529,10 @@ XLogWrite(XLogwrtRqst WriteRqst, bool flexible)
 				from += written;
 			} while (nleft > 0);
 
+			/* check whether writer is a normal backend or not? */
+			writes++;
+			write_blocks += npages;
+
 			/* Update state for write */
 			openLogOff += nbytes;
 			npages = 0;
@@ -2584,6 +2630,22 @@ XLogWrite(XLogwrtRqst WriteRqst, bool flexible)
 		WalSndWakeupRequest();
 
 		LogwrtResult.Flush = LogwrtResult.Write;
+	}
+
+	if (is_background_process)
+	{
+		WALWriteStats->stats.writes += writes;
+		WALWriteStats->stats.write_blocks += write_blocks;
+	}
+	else if (AmWalWriterProcess())
+	{
+		WALWriteStats->stats.walwriter_writes += writes;
+		WALWriteStats->stats.walwriter_write_blocks += write_blocks;
+	}
+	else
+	{
+		WALWriteStats->stats.backend_writes += writes;
+		WALWriteStats->stats.backend_write_blocks += write_blocks;
 	}
 
 	/*
