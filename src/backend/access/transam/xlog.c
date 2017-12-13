@@ -5187,9 +5187,19 @@ str_time(pg_time_t tnow)
 {
 	static char buf[128];
 
+	const struct pg_tm *t = pg_localtime(&tnow, log_timezone);
+	if (0 && t == NULL)
+	{
+		ereport(ERROR,
+				(ERRCODE_INVALID_DATETIME_FORMAT,
+				 errmsg("failed to convert to localtime")));
+		buf[0] = '\0';
+		return buf;
+	}
+
 	pg_strftime(buf, sizeof(buf),
 				"%Y-%m-%d %H:%M:%S %Z",
-				pg_localtime(&tnow, log_timezone));
+				t);
 
 	return buf;
 }
