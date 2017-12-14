@@ -696,7 +696,7 @@ ERROR:  permission denied for function testfunc1
 SELECT testagg1(x) FROM (VALUES (1), (2), (3)) _(x); -- fail
 ERROR:  permission denied for function testagg1
 CALL testproc1(6); -- fail
-ERROR:  permission denied for function testproc1
+ERROR:  permission denied for procedure testproc1
 SELECT col1 FROM atest2 WHERE col2 = true; -- fail
 ERROR:  permission denied for relation atest2
 SELECT testfunc4(true); -- ok
@@ -724,7 +724,7 @@ ERROR:  must be owner of function testfunc1
 DROP AGGREGATE testagg1(int); -- fail
 ERROR:  must be owner of function testagg1
 DROP PROCEDURE testproc1(int); -- fail
-ERROR:  must be owner of function testproc1
+ERROR:  must be owner of procedure testproc1
 \c -
 DROP FUNCTION testfunc1(int); -- ok
 -- restore to sanity

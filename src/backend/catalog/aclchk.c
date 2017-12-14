@@ -257,6 +257,7 @@ restrict_and_check_grant(bool is_grant, AclMode avail_goptions, bool all_privs,
 			whole_mask = ACL_ALL_RIGHTS_DATABASE;
 			break;
 		case ACL_KIND_PROC:
+		case ACL_KIND_PROCEDURE:
 			whole_mask = ACL_ALL_RIGHTS_FUNCTION;
 			break;
 		case ACL_KIND_LANGUAGE:
@@ -2565,7 +2566,8 @@ ExecGrant_Function(InternalGrant *istmt)
 		this_privileges =
 			restrict_and_check_grant(istmt->is_grant, avail_goptions,
 									 istmt->all_privs, istmt->privileges,
-									 funcId, grantorId, ACL_KIND_PROC,
+									 funcId, grantorId,
+									 (istmt->objtype == ACL_OBJECT_PROCEDURE) ? ACL_KIND_PROCEDURE : ACL_KIND_PROC,
 									 NameStr(pg_proc_tuple->proname),
 									 0, NULL);
 
@@ -3360,6 +3362,8 @@ static const char *const no_priv_msg[MAX_ACL_KIND] =
 	gettext_noop("permission denied for database %s"),
 	/* ACL_KIND_PROC */
 	gettext_noop("permission denied for function %s"),
+	/* ACL_KIND_PROCEDURE */
+	gettext_noop("permission denied for procedure %s"),
 	/* ACL_KIND_OPER */
 	gettext_noop("permission denied for operator %s"),
 	/* ACL_KIND_TYPE */
@@ -3412,6 +3416,8 @@ static const char *const not_owner_msg[MAX_ACL_KIND] =
 	gettext_noop("must be owner of database %s"),
 	/* ACL_KIND_PROC */
 	gettext_noop("must be owner of function %s"),
+	/* ACL_KIND_PROCEDURE */
+	gettext_noop("must be owner of procedure %s"),
 	/* ACL_KIND_OPER */
 	gettext_noop("must be owner of operator %s"),
 	/* ACL_KIND_TYPE */

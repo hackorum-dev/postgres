@@ -2261,7 +2261,7 @@ check_object_ownership(Oid roleid, ObjectType objtype, ObjectAddress address,
 		case OBJECT_PROCEDURE:
 		case OBJECT_ROUTINE:
 			if (!pg_proc_ownercheck(address.objectId, roleid))
-				aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
+				aclcheck_error(ACLCHECK_NOT_OWNER, objtype == OBJECT_PROCEDURE ? ACL_KIND_PROCEDURE : ACL_KIND_PROC,
 							   NameListToString((castNode(ObjectWithArgs, object))->objname));
 			break;
 		case OBJECT_OPERATOR:

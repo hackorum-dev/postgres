@@ -191,6 +191,7 @@ typedef enum AclObjectKind
 	ACL_KIND_SEQUENCE,			/* pg_sequence */
 	ACL_KIND_DATABASE,			/* pg_database */
 	ACL_KIND_PROC,				/* pg_proc */
+	ACL_KIND_PROCEDURE,			/* pg_proc procedure */
 	ACL_KIND_OPER,				/* pg_operator */
 	ACL_KIND_TYPE,				/* pg_type */
 	ACL_KIND_LANGUAGE,			/* pg_language */

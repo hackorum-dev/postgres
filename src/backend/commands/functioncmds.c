@@ -2270,7 +2270,7 @@ ExecuteCallStmt(ParseState *pstate, CallStmt *stmt)
 
 	aclresult = pg_proc_aclcheck(fexpr->funcid, GetUserId(), ACL_EXECUTE);
 	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_PROC, get_func_name(fexpr->funcid));
+		aclcheck_error(aclresult, ACL_KIND_PROCEDURE, get_func_name(fexpr->funcid));
 	InvokeFunctionExecuteHook(fexpr->funcid);
 
 	nargs = list_length(fexpr->args);
