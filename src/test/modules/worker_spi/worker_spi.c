@@ -311,14 +311,14 @@ _PG_init(void)
 	 * shared_preload_libraries, for worker_spi_launch().
 	 */
 	DefineCustomIntVariable("worker_spi.naptime",
-							"Duration between each check (in seconds).",
+							"Duration between each check.",
 							NULL,
 							&worker_spi_naptime,
 							10,
 							1,
 							INT_MAX,
 							PGC_SIGHUP,
-							0,
+							GUC_UNIT_S,
 							NULL,
 							NULL,
 							NULL);
