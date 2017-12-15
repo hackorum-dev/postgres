@@ -475,6 +475,8 @@ generateSerialExtraStmts(CreateStmtContext *cxt, ColumnDef *column,
 
 	cxt->blist = lappend(cxt->blist, seqstmt);
 
+	column->identitySequence = seqstmt->sequence;
+
 	/*
 	 * Build an ALTER SEQUENCE ... OWNED BY command to mark the sequence as
 	 * owned by this column, and add it to the list of things to be done after
