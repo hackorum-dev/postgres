@@ -321,6 +321,22 @@ pg_terminate_backend(PG_FUNCTION_ARGS)
 	PG_RETURN_BOOL(r == SIGNAL_BACKEND_SUCCESS);
 }
 
+Datum
+pg_diag_backend(PG_FUNCTION_ARGS)
+{
+	int pid = PG_GETARG_INT32(0);
+	int r;
+
+	if (!superuser())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("pg_diag_backend requires superuser privileges")));
+
+	r = SendProcSignal(pid, PROCSIG_DIAG_REQUEST, InvalidBackendId);
+
+	PG_RETURN_BOOL(r == 0);
+}
+
 /*
  * Signal to reload the database configuration
  *

@@ -18348,6 +18348,9 @@ SELECT set_config('log_statement_stats', 'off', false);
    <indexterm>
     <primary>pg_terminate_backend</primary>
    </indexterm>
+   <indexterm>
+    <primary>pg_diag_backend</primary>
+   </indexterm>
 
    <indexterm>
     <primary>signal</primary>
@@ -18405,6 +18408,16 @@ SELECT set_config('log_statement_stats', 'off', false);
         is a member of the role whose backend is being terminated or the
         calling role has been granted <literal>pg_signal_backend</literal>,
         however only superusers can terminate superuser backends.
+       </entry>
+      </row>
+      <row>
+       <entry>
+        <literal><function>pg_diag_backend(<parameter>pid</parameter> <type>int</type>)</function></literal>
+        </entry>
+       <entry><type>boolean</type></entry>
+       <entry>Ask a backend to report diagnostics including memory use details
+        to the server log. Restricted to superusers. The log entry begins
+        with <literal>diagnostic dump</literal> or the localized equivalent.
        </entry>
       </row>
      </tbody>

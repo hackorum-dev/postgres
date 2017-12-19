@@ -45,7 +45,6 @@
 
 #define AllocHugeSizeIsValid(size)	((Size) (size) <= MaxAllocHugeSize)
 
-
 /*
  * Standard top-level memory contexts.
  *
@@ -82,7 +81,8 @@ extern Size GetMemoryChunkSpace(void *pointer);
 extern MemoryContext MemoryContextGetParent(MemoryContext context);
 extern bool MemoryContextIsEmpty(MemoryContext context);
 extern void MemoryContextStats(MemoryContext context);
-extern void MemoryContextStatsDetail(MemoryContext context, int max_children);
+extern void MemoryContextStatsDetail(MemoryContext context, int max_children,
+	printf_wrapper outfunc, void *outfunc_extra);
 extern void MemoryContextAllowInCriticalSection(MemoryContext context,
 									bool allow);
 

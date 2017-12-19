@@ -29,6 +29,7 @@ ProtocolVersion FrontendProtocol;
 volatile bool InterruptPending = false;
 volatile bool QueryCancelPending = false;
 volatile bool ProcDiePending = false;
+volatile int DiagRequestPending = false;
 volatile bool ClientConnectionLost = false;
 volatile bool IdleInTransactionSessionTimeoutPending = false;
 volatile sig_atomic_t ConfigReloadPending = false;

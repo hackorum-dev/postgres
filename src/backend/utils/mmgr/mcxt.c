@@ -54,7 +54,11 @@ MemoryContext PortalContext = NULL;
 static void MemoryContextCallResetCallbacks(MemoryContext context);
 static void MemoryContextStatsInternal(MemoryContext context, int level,
 						   bool print, int max_children,
-						   MemoryContextCounters *totals);
+						   MemoryContextCounters *totals,
+						   printf_wrapper outfunc, void *outfunc_args);
+
+static void fprintf_stderr_wrapper(void *args, const char *fmt, ...)
+	pg_attribute_printf(2, 3);
 
 /*
  * You should not do memory allocations within a critical section, because
@@ -426,6 +430,24 @@ MemoryContextIsEmpty(MemoryContext context)
 }
 
 /*
+ * MemoryContextStats doesn't want to try to write to elog(...)
+ * as it could be called under severe memory pressure. So we
+ * write straight to stderr.
+ *
+ * This duplicates write_stderr(...) without the Windows
+ * event log support.
+ */
+static void
+fprintf_stderr_wrapper(void *args, const char *fmt, ...)
+{
+	va_list		ap;
+	va_start(ap, fmt);
+	vfprintf(stderr, fmt, ap);
+	va_end(ap);
+	fflush(stderr);
+}
+
+/*
  * MemoryContextStats
  *		Print statistics about the named context and all its descendants.
  *
@@ -437,7 +459,7 @@ void
 MemoryContextStats(MemoryContext context)
 {
 	/* A hard-wired limit on the number of children is usually good enough */
-	MemoryContextStatsDetail(context, 100);
+	MemoryContextStatsDetail(context, 100, fprintf_stderr_wrapper, NULL);
 }
 
 /*
@@ -446,15 +468,17 @@ MemoryContextStats(MemoryContext context)
  * Entry point for use if you want to vary the number of child contexts shown.
  */
 void
-MemoryContextStatsDetail(MemoryContext context, int max_children)
+MemoryContextStatsDetail(MemoryContext context, int max_children,
+	printf_wrapper outfunc, void *outfunc_extra)
 {
 	MemoryContextCounters grand_totals;
 
 	memset(&grand_totals, 0, sizeof(grand_totals));
 
-	MemoryContextStatsInternal(context, 0, true, max_children, &grand_totals);
+	MemoryContextStatsInternal(context, 0, true, max_children, &grand_totals,
+		outfunc, outfunc_extra);
 
-	fprintf(stderr,
+	outfunc(outfunc_extra,
 			"Grand total: %zu bytes in %zd blocks; %zu free (%zd chunks); %zu used\n",
 			grand_totals.totalspace, grand_totals.nblocks,
 			grand_totals.freespace, grand_totals.freechunks,
@@ -471,7 +495,8 @@ MemoryContextStatsDetail(MemoryContext context, int max_children)
 static void
 MemoryContextStatsInternal(MemoryContext context, int level,
 						   bool print, int max_children,
-						   MemoryContextCounters *totals)
+						   MemoryContextCounters *totals,
+						   printf_wrapper outfunc, void *outfunc_extra)
 {
 	MemoryContextCounters local_totals;
 	MemoryContext child;
@@ -480,7 +505,8 @@ MemoryContextStatsInternal(MemoryContext context, int level,
 	AssertArg(MemoryContextIsValid(context));
 
 	/* Examine the context itself */
-	context->methods->stats(context, level, print, totals);
+	context->methods->stats(context, level, print, totals,
+		outfunc, outfunc_extra);
 
 	/*
 	 * Examine children.  If there are more than max_children of them, we do
@@ -495,11 +521,13 @@ MemoryContextStatsInternal(MemoryContext context, int level,
 		if (ichild < max_children)
 			MemoryContextStatsInternal(child, level + 1,
 									   print, max_children,
-									   totals);
+									   totals,
+									   outfunc, outfunc_extra);
 		else
 			MemoryContextStatsInternal(child, level + 1,
 									   false, max_children,
-									   &local_totals);
+									   &local_totals,
+									   outfunc, outfunc_extra);
 	}
 
 	/* Deal with excess children */
@@ -510,8 +538,8 @@ MemoryContextStatsInternal(MemoryContext context, int level,
 			int			i;
 
 			for (i = 0; i <= level; i++)
-				fprintf(stderr, "  ");
-			fprintf(stderr,
+				outfunc(outfunc_extra, "  ");
+			outfunc(outfunc_extra,
 					"%d more child contexts containing %zu total in %zd blocks; %zu free (%zd chunks); %zu used\n",
 					ichild - max_children,
 					local_totals.totalspace,

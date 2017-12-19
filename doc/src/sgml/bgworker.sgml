@@ -185,7 +185,8 @@ typedef struct BackgroundWorker
    when the process is started or exits.  It should be 0 for workers registered
    at postmaster startup time, or when the backend registering the worker does
    not wish to wait for the worker to start up.  Otherwise, it should be
-   initialized to <literal>MyProcPid</literal>.
+   initialized to <literal>MyProcPid</literal>. Typically this sets the
+   receiving process's latch via its signal handler.
   </para>
 
   <para>Once running, the process can connect to a database by calling
@@ -208,7 +209,12 @@ typedef struct BackgroundWorker
    allow the process to customize its signal handlers, if necessary.
    Signals can be unblocked in the new process by calling
    <function>BackgroundWorkerUnblockSignals</function> and blocked by calling
-   <function>BackgroundWorkerBlockSignals</function>.
+   <function>BackgroundWorkerBlockSignals</function>. The default
+   <literal>SIGUSR1</literal> handler for background workers just
+   sets the process latch. Background workers may instead adopt
+   the <function>procsignal_sigusr1_handler</function> used by 
+   normal backends and call <function>CHECK_FOR_INTERRUPTS()</function>
+   in their main loops.
   </para>
 
   <para>

@@ -277,7 +277,8 @@ static void AllocSetDelete(MemoryContext context);
 static Size AllocSetGetChunkSpace(MemoryContext context, void *pointer);
 static bool AllocSetIsEmpty(MemoryContext context);
 static void AllocSetStats(MemoryContext context, int level, bool print,
-			  MemoryContextCounters *totals);
+			  MemoryContextCounters *totals, printf_wrapper outfunc,
+			  void *outfunc_extra);
 
 #ifdef MEMORY_CONTEXT_CHECKING
 static void AllocSetCheck(MemoryContext context);
@@ -1333,7 +1334,8 @@ AllocSetIsEmpty(MemoryContext context)
  */
 static void
 AllocSetStats(MemoryContext context, int level, bool print,
-			  MemoryContextCounters *totals)
+			  MemoryContextCounters *totals, printf_wrapper outfunc,
+			  void *outfunc_extra)
 {
 	AllocSet	set = (AllocSet) context;
 	Size		nblocks = 0;
@@ -1369,8 +1371,8 @@ AllocSetStats(MemoryContext context, int level, bool print,
 		int			i;
 
 		for (i = 0; i < level; i++)
-			fprintf(stderr, "  ");
-		fprintf(stderr,
+			outfunc(outfunc_extra, "  ");
+		outfunc(outfunc_extra,
 				"%s: %zu total in %zd blocks; %zu free (%zd chunks); %zu used\n",
 				set->header.name, totalspace, nblocks, freespace, freechunks,
 				totalspace - freespace);

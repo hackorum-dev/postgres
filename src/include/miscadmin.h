@@ -80,6 +80,7 @@
 extern PGDLLIMPORT volatile bool InterruptPending;
 extern PGDLLIMPORT volatile bool QueryCancelPending;
 extern PGDLLIMPORT volatile bool ProcDiePending;
+extern PGDLLIMPORT volatile int DiagRequestPending;
 extern PGDLLIMPORT volatile bool IdleInTransactionSessionTimeoutPending;
 extern PGDLLIMPORT volatile sig_atomic_t ConfigReloadPending;
 
@@ -274,6 +275,9 @@ extern void check_stack_depth(void);
 extern bool stack_is_too_deep(void);
 
 extern void PostgresSigHupHandler(SIGNAL_ARGS);
+
+enum ProcSignalReason;
+extern void HandleDiagRequestInterrupt(enum ProcSignalReason request);
 
 /* in tcop/utility.c */
 extern void PreventCommandIfReadOnly(const char *cmdname);

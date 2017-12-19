@@ -193,6 +193,9 @@ static void drop_unnamed_stmt(void);
 static void log_disconnections(int code, Datum arg);
 static void enable_statement_timeout(void);
 static void disable_statement_timeout(void);
+static void HandleDiagRequest(void);
+static void printwrapper_stringinfo(void *extra, const char *fmt, ...)
+	pg_attribute_printf(2, 3);
 
 
 /* ----------------------------------------------------------------
@@ -3047,8 +3050,71 @@ ProcessInterrupts(void)
 
 	if (ParallelMessagePending)
 		HandleParallelMessages();
+
+	if (DiagRequestPending)
+		HandleDiagRequest();
 }
 
+/*
+ * Accumulate writes into the buffer in diag_request_buf,
+ * for use with functions that expect a printf-like callback.
+ */
+static void
+printwrapper_stringinfo(void *extra, const char * fmt, ...)
+{
+	StringInfo out = extra;
+	for (;;)
+	{
+		va_list		args;
+		int			needed;
+		va_start(args, fmt);
+		needed = appendStringInfoVA(out, fmt, args);
+		va_end(args);
+		if (needed == 0)
+			break;
+		enlargeStringInfo(out, needed);
+	}
+}
+
+/*
+ * The interrupt-handler side of handling a diagnostic request
+ * interrupt. This just saves the request for handling during
+ * CHECK_FOR_INTERRUPTS(). Any prior request that isn't yet actioned is
+ * clobbered.
+ */
+void
+HandleDiagRequestInterrupt(ProcSignalReason request)
+{
+	DiagRequestPending = request;
+	InterruptPending = true;
+}
+
+/*
+ * Dump memory context information to the logs in response to a
+ * PROCSIG_DIAG_REQUEST sent via pg_diag_backend or similar.
+ *
+ * Usually invoked via procsignal_sigusr1_handler and
+ * CHECK_FOR_INTERRUPTS(), so this won't work by default
+ * for background workers and other nonstandard processes.
+ */
+static void
+HandleDiagRequest(void)
+{
+	ProcSignalReason DiagRequest = DiagRequestPending;
+	DiagRequestPending = 0;
+
+	/* So far we only have a generic diagnostics dump */
+	if (DiagRequest == PROCSIG_DIAG_REQUEST)
+	{
+		StringInfoData outbuf;
+		initStringInfo(&outbuf);
+		MemoryContextStatsDetail(TopMemoryContext, 100,
+			printwrapper_stringinfo, (void*)&outbuf);
+		elog(LOG, "diagnostic dump requested; memory context info: %s",
+			outbuf.data);
+		pfree(outbuf.data);
+	}
+}
 
 /*
  * IA64-specific code to fetch the AR.BSP register for stack depth checks.

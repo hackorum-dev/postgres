@@ -1,4 +1,16 @@
 --
+-- Misc admin functions
+--
+-- pg_diag_backend makes the backend log, so it can't really
+-- be tested within pg_regress except to ensure it doesn't
+-- upset the backend.
+SELECT pg_diag_backend(pg_backend_pid());
+ pg_diag_backend 
+-----------------
+ t
+(1 row)
+
+--
 -- num_nulls()
 --
 SELECT num_nonnulls(NULL);

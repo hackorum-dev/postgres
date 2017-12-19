@@ -27,7 +27,7 @@
  * Also, because of race conditions, it's important that all the signals be
  * defined so that no harm is done if a process mistakenly receives one.
  */
-typedef enum
+typedef enum ProcSignalReason
 {
 	PROCSIG_CATCHUP_INTERRUPT,	/* sinval catchup interrupt */
 	PROCSIG_NOTIFY_INTERRUPT,	/* listen/notify interrupt */
@@ -41,6 +41,9 @@ typedef enum
 	PROCSIG_RECOVERY_CONFLICT_SNAPSHOT,
 	PROCSIG_RECOVERY_CONFLICT_BUFFERPIN,
 	PROCSIG_RECOVERY_CONFLICT_STARTUP_DEADLOCK,
+
+	/* Signals used to ask the backend for diagnostic output */
+	PROCSIG_DIAG_REQUEST,		/* Dump memory context info etc */
 
 	NUM_PROCSIGNALS				/* Must be last! */
 } ProcSignalReason;

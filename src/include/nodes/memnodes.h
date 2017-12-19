@@ -35,6 +35,13 @@ typedef struct MemoryContextCounters
 } MemoryContextCounters;
 
 /*
+ * MemoryContextStats can't use elog(...) during OOM so we need
+ * to be able to route its output to different destinations.
+ */
+typedef void (*printf_wrapper)(void *extra, const char *fmt, ...)
+	pg_attribute_printf(2, 3);
+
+/*
  * MemoryContext
  *		A logical context in which memory allocations occur.
  *
@@ -62,7 +69,8 @@ typedef struct MemoryContextMethods
 	Size		(*get_chunk_space) (MemoryContext context, void *pointer);
 	bool		(*is_empty) (MemoryContext context);
 	void		(*stats) (MemoryContext context, int level, bool print,
-						  MemoryContextCounters *totals);
+						  MemoryContextCounters *totals,
+						  printf_wrapper outfunc, void *outfunc_extra);
 #ifdef MEMORY_CONTEXT_CHECKING
 	void		(*check) (MemoryContext context);
 #endif
