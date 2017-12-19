@@ -17,7 +17,10 @@
 #include "catalog/pg_type.h"
 #include "funcapi.h"
 #include "miscadmin.h"
+#include "pgstat.h"
 #include "storage/predicate_internals.h"
+#include "storage/proc.h"
+#include "storage/procarray.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
 
@@ -631,6 +634,12 @@ pg_isolation_test_session_is_blocked(PG_FUNCTION_ARGS)
 	 */
 	if (GetSafeSnapshotBlockingPids(blocked_pid, &dummy, 1) > 0)
 		PG_RETURN_BOOL(true);
+
+	{
+		PGPROC *proc = BackendPidGetProc(blocked_pid);
+		if (proc != NULL && proc->wait_event_info == PG_WAIT_BUFFER_PIN)
+			PG_RETURN_BOOL(true);
+	}
 
 	PG_RETURN_BOOL(false);
 }
