@@ -86,6 +86,7 @@ use Config;
 use Cwd;
 use Exporter 'import';
 use File::Basename;
+use File::Copy;
 use File::Path qw(rmtree);
 use File::Spec;
 use File::Temp ();
@@ -510,6 +511,19 @@ sub backup
 	print "# Backup finished\n";
 }
 
+sub backup_withtablespace
+{
+        my ($self, $backup_name, $old_tablespacedir, $new_tablespacedir) = @_;
+        my $backup_path = $self->backup_dir . '/' . $backup_name;
+        my $port        = $self->port;
+        my $name        = $self->name;
+
+        print "# Taking pg_basebackup $backup_name from node \"$name\"\n";
+        TestLib::system_or_bail('pg_basebackup', '-D', $backup_path, '-p', $port,
+                '--no-sync','-T',"$old_tablespacedir=$new_tablespacedir");
+        print "# Backup with tablespace option finished\n";
+}
+
 =item $node->backup_fs_hot(backup_name)
 
 Create a backup with a filesystem level copy in subdirectory B<backup_name> of
@@ -640,6 +654,65 @@ sub init_from_backup
 		qq(
 port = $port
 ));
+	$self->enable_streaming($root_node) if $params{has_streaming};
+	$self->enable_restoring($root_node) if $params{has_restoring};
+}
+
+=pod
+
+=item $node->convert_backup_to_standby(root_node, backup_name)
+
+Initialize a node from a backup, which may come from this node or a different
+node. root_node must be a PostgresNode reference, backup_name the string name
+of a backup previously created on that node with $node->backup.
+
+Does not start the node after initializing it.
+
+A recovery.conf is not created.
+
+Streaming replication can be enabled on this node by passing the keyword
+parameter has_streaming => 1. This is disabled by default.
+
+Restoring WAL segments from archives using restore_command can be enabled
+by passing the keyword parameter has_restoring => 1. This is disabled by
+default.
+
+The backup is moved, so backup directory no more exists. pg_hba.conf is
+unconditionally set to enable replication connections.
+
+=cut
+
+sub convert_backup_to_standby
+{
+        my ($self, $root_node, $backup_name, %params) = @_;
+        my $backup_path = $root_node->backup_dir . '/' . $backup_name;
+        my $port        = $self->port;
+        my $node_name   = $self->name;
+        my $root_name   = $root_node->name;
+
+        $params{has_streaming} = 0 unless defined $params{has_streaming};
+        $params{has_restoring} = 0 unless defined $params{has_restoring};
+
+        print
+"# Initializing node \"$node_name\" from backup \"$backup_name\" of node \"$root_name\"\n";
+        die "Backup \"$backup_name\" does not exist at $backup_path"
+          unless -d $backup_path;
+
+        mkdir $self->backup_dir;
+        mkdir $self->archive_dir;
+        my $data_path = $self->data_dir;
+
+        rmdir($data_path);
+		move("$backup_path", "$self->{_basedir}/pgdata");
+
+        chmod(0700, $data_path);
+
+        # Base configuration for this node
+         $self->append_conf(
+		'postgresql.conf',
+		qq(
+		port = $port
+		));
 	$self->enable_streaming($root_node) if $params{has_streaming};
 	$self->enable_restoring($root_node) if $params{has_restoring};
 }

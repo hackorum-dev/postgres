@@ -3,7 +3,7 @@ use strict;
 use warnings;
 use PostgresNode;
 use TestLib;
-use Test::More tests => 28;
+use Test::More tests => 29;
 
 # Initialize master node
 my $node_master = get_new_node('master');
@@ -303,3 +303,39 @@ $node_standby_2->start;
   get_slot_xmins($node_standby_1, $slotname_2, "xmin IS NULL");
 is($xmin, '',
 	'xmin of cascaded slot reset after startup with hs feedback reset');
+
+# Convert backup taken with tablespace mapping to standby
+my $master_tablespacedir = "$TestLib::tmp_check/master_securetblspcdir";
+mkdir $master_tablespacedir;
+my $standby_tablespacedir = "$TestLib::tmp_check/standby_securetblspcdir";
+mkdir $standby_tablespacedir;
+my $backup_with_tablespace='backup_with_tablespace';
+
+#Create tablespace with contents
+
+$node_master->safe_psql('postgres',
+        "CREATE TABLESPACE testtblspc location '$master_tablespacedir';");
+$node_master->safe_psql('postgres',
+        "CREATE TABLE test_table(id integer,name varchar(20)) TABLESPACE testtblspc;");
+$node_master->safe_psql('postgres',
+		"INSERT INTO test_table VALUES(generate_series(1,10),'some_name');");
+
+# Backup master with tablespace option
+$node_master->backup_withtablespace($backup_with_tablespace,$master_tablespacedir,$standby_tablespacedir);
+
+# Create streaming standby linking to master
+my $node_standby_3 = get_new_node('standby_3');
+
+$node_standby_3->convert_backup_to_standby($node_master, $backup_name,
+	has_streaming => 1);
+print "standby 3 setup success\n";
+# Start the standby
+$node_standby_3->start;
+
+print "standby 3 start success\n";
+
+# Test inserted values in standby.
+$result =
+  $node_standby_3->safe_psql('postgres', "SELECT count(*) FROM test_table");
+print "standby 3: $result\n";
+is($result, qq(10), 'check streamed content on standby 3');
