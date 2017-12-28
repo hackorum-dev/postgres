@@ -448,6 +448,21 @@ build_client_final_message(fe_scram_state *state)
 				goto oom_error;
 #endif
 		}
+		else if (strcmp(conn->scram_channel_binding,
+						SCRAM_CHANNEL_BINDING_TLS_ENDPOINT) == 0)
+		{
+			/* Fetch hash data of server's SSL certificate */
+#ifdef USE_SSL
+			cbind_data =
+				pgtls_get_peer_certificate_hash(state->conn,
+												&cbind_data_len);
+			if (cbind_data == NULL)
+			{
+				/* error message is already set on error */
+				return NULL;
+			}
+#endif
+		}
 		else
 		{
 			/* should not happen */
