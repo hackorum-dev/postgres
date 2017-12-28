@@ -64,3 +64,11 @@ test: async-notify
 test: vacuum-reltuples
 test: timeouts
 test: vacuum-concurrent-drop
+test: concurrent-database
+test: concurrent-role
+test: concurrent-domain
+test: concurrent-event-trigger
+test: concurrent-fdw
+test: concurrent-server
+test: concurrent-user-mapping
+test: concurrent-type
