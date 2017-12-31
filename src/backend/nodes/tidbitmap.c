@@ -13,7 +13,7 @@
  * fact that a particular page needs to be visited.
  *
  * The "lossy" storage uses one bit per disk page, so at the standard 8K
- * BLCKSZ, we can represent all pages in 64Gb of disk space in about 1Mb
+ * rel_blck_size, we can represent all pages in 64Gb of disk space in about 1Mb
  * of memory.  People pushing around tables of that size should have a
  * couple of Mb to spare, so we don't worry about providing a second level
  * of lossiness.  In theory we could fall back to page ranges at some
@@ -70,7 +70,9 @@
  * too different.  But we also want PAGES_PER_CHUNK to be a power of 2 to
  * avoid expensive integer remainder operations.  So, define it like this:
  */
-#define PAGES_PER_CHUNK  (BLCKSZ / 32)
+#define PAGES_PER_CHUNK  (rel_blck_size / 32)
+//#define BLCKSZ	8192
+//#define PAGES_PER_CHUNK  (BLCKSZ / 32)
 
 /* We use BITS_PER_BITMAPWORD and typedef bitmapword from nodes/bitmapset.h */
 
@@ -80,7 +82,7 @@
 /* number of active words for an exact page: */
 #define WORDS_PER_PAGE	((MAX_TUPLES_PER_PAGE - 1) / BITS_PER_BITMAPWORD + 1)
 /* number of active words for a lossy chunk: */
-#define WORDS_PER_CHUNK  ((PAGES_PER_CHUNK - 1) / BITS_PER_BITMAPWORD + 1)
+#define WORDS_PER_CHUNK	((PAGES_PER_CHUNK - 1) / BITS_PER_BITMAPWORD + 1)
 
 /*
  * The hashtable entries are represented by this data structure.  For
@@ -98,12 +100,18 @@
  */
 typedef struct PagetableEntry
 {
-	BlockNumber blockno;		/* page number (hashtable key) */
+	BlockNumber blockno;			/* page number (hashtable key) */
 	char		status;			/* hash entry status */
 	bool		ischunk;		/* T = lossy storage, F = exact */
 	bool		recheck;		/* should the tuples be rechecked? */
-	bitmapword	words[Max(WORDS_PER_PAGE, WORDS_PER_CHUNK)];
+	//bitmapword*	words;			/* MUST be last. See tbm_pte_zero() */
+	//bitmapword	words[Max(WORDS_PER_PAGE, WORDS_PER_CHUNK)];		/* MUST be last. See tbm_pte_zero() */
+	bitmapword	words[FLEXIBLE_ARRAY_MEMBER];		/* MUST be last. See tbm_pte_zero() */
 } PagetableEntry;
+
+#define NR_BITMAP_WORDS		Max(WORDS_PER_PAGE, WORDS_PER_CHUNK)
+#define SIZEOF_BITMAP_WORDS 	(sizeof(bitmapword) * NR_BITMAP_WORDS)
+#define SIZEOF_PAGETABLE_ENTRY	(offsetof(PagetableEntry, words) + SIZEOF_BITMAP_WORDS)
 
 /*
  * Holds array of pagetable entries.
@@ -157,7 +165,6 @@ struct TIDBitmap
 	int			nchunks;		/* number of lossy entries in pagetable */
 	TBMIteratingState iterating;	/* tbm_begin_iterate called? */
 	uint32		lossify_start;	/* offset to start lossifying hashtable at */
-	PagetableEntry entry1;		/* used when status == TBM_ONE_PAGE */
 	/* these are valid when iterating is true: */
 	PagetableEntry **spages;	/* sorted exact-page list, or NULL */
 	PagetableEntry **schunks;	/* sorted lossy-chunk list, or NULL */
@@ -166,7 +173,13 @@ struct TIDBitmap
 	dsa_pointer ptpages;		/* dsa_pointer to the page array */
 	dsa_pointer ptchunks;		/* dsa_pointer to the chunk array */
 	dsa_area   *dsa;			/* reference to per-query dsa area */
+
+	/* MUST BE LAST */
+	PagetableEntry entry1;		/* used when status == TBM_ONE_PAGE */
 };
+
+#define SIZEOF_TID_BITMAP	(offsetof(struct TIDBitmap, entry1) + SIZEOF_PAGETABLE_ENTRY)
+
 
 /*
  * When iterating over a bitmap in sorted order, a TBMIterator is used to
@@ -249,6 +262,8 @@ static int tbm_shared_comparator(const void *left, const void *right,
 #define SH_SCOPE static inline
 #define SH_DEFINE
 #define SH_DECLARE
+#define SH_SIZEOF_ELEMENT_TYPE	SIZEOF_PAGETABLE_ENTRY
+
 #include "lib/simplehash.h"
 
 
@@ -267,10 +282,17 @@ tbm_create(long maxbytes, dsa_area *dsa)
 	TIDBitmap  *tbm;
 
 	/* Create the TIDBitmap struct and zero all its fields */
-	tbm = makeNode(TIDBitmap);
+	tbm = makeNodeSize(TIDBitmap, SIZEOF_TID_BITMAP);
+	//printf("\ntbs_create: tbm = %p\n", tbm);
 
 	tbm->mcxt = CurrentMemoryContext;
 	tbm->status = TBM_EMPTY;
+
+	//tbm->entry1.words = palloc0(SIZEOF_BITMAP_WORD);
+	//printf("tbs_create: SIZEOF_BITMAP_WORD = %lu", SIZEOF_BITMAP_WORD);
+	//printf(",tbm->entry1.words = %p\n", tbm->entry1.words);
+	//printf(",&tbm->entry1 = %p\n", &tbm->entry1);
+	//fflush(stdout);
 
 	tbm->maxentries = (int) tbm_calculate_entries(maxbytes);
 	tbm->lossify_start = 0;
@@ -282,6 +304,37 @@ tbm_create(long maxbytes, dsa_area *dsa)
 
 	return tbm;
 }
+
+/*
+static void 
+tbm_pte_zero(PagetableEntry *page)
+{
+	Assert(page != NULL);
+	Assert(page->words != NULL);
+
+	MemSet(page, 0, offsetof(PagetableEntry, words));
+	MemSet(page->words, 0, SIZEOF_BITMAP_WORDS);
+}
+*/
+
+/*
+static void 
+tbm_pte_copy(PagetableEntry *src, PagetableEntry *dest)
+{
+	Assert(src!= NULL);
+	Assert(src->words != NULL);
+
+	Assert(dest!= NULL);
+	Assert(dest->words != NULL);
+
+	//printf("src = %p, dest = %p\n", src, dest);
+	//fflush(stdout);
+	//printf("src->words = %p, dest->words = %p\n", src->words, dest->words);
+
+	memcpy(dest, src, offsetof(PagetableEntry, words));
+        memcpy(dest->words, src->words, SIZEOF_BITMAP_WORD);
+}
+*/
 
 /*
  * Actually create the hashtable.  Since this is a moderately expensive
@@ -306,8 +359,15 @@ tbm_create_pagetable(TIDBitmap *tbm)
 								tbm->entry1.blockno,
 								&found);
 		Assert(!found);
+
+		/* Above code does not allocate memory for the local words pointer which is indirect */
+		//if (!found)
+		//	page->words = MemoryContextAllocZero(tbm->mcxt, SIZEOF_BITMAP_WORD);
+
 		oldstatus = page->status;
-		memcpy(page, &tbm->entry1, sizeof(PagetableEntry));
+		//tbm_pte_copy(page, &tbm->entry1);
+		//memcpy(page, &tbm->entry1, sizeof(PagetableEntry));
+		memcpy(page, &tbm->entry1, SIZEOF_PAGETABLE_ENTRY);
 		page->status = oldstatus;
 	}
 
@@ -326,6 +386,10 @@ tbm_free(TIDBitmap *tbm)
 		pfree(tbm->spages);
 	if (tbm->schunks)
 		pfree(tbm->schunks);
+
+	//if (tbm->entry1.words)
+	//	pfree(tbm->entry1.words);
+
 	pfree(tbm);
 }
 
@@ -379,6 +443,7 @@ tbm_add_tuples(TIDBitmap *tbm, const ItemPointer tids, int ntids,
 	BlockNumber currblk = InvalidBlockNumber;
 	PagetableEntry *page = NULL;	/* only valid when currblk is valid */
 	int			i;
+	//bitmapword test;
 
 	Assert(tbm->iterating == TBM_NOT_ITERATING);
 	for (i = 0; i < ntids; i++)
@@ -420,6 +485,16 @@ tbm_add_tuples(TIDBitmap *tbm, const ItemPointer tids, int ntids,
 			wordnum = WORDNUM(off - 1);
 			bitnum = BITNUM(off - 1);
 		}
+
+		//printf("tbm = %p, wordnum = %d, bitnum = %d, WORDS_PER_PAGE = %d, WORDS_PER_CHUNK = %d\n",
+		//	tbm, wordnum, bitnum, WORDS_PER_PAGE, WORDS_PER_CHUNK);
+		//printf("test mem read on words\n");
+		//for (i = 0; i < Max(WORDS_PER_PAGE, WORDS_PER_CHUNK); i++) {
+		//	printf("addr = %p\n", &page->words[i]);
+		//	fflush(stdout);
+		//	memcpy(&test, &page->words[i], sizeof(bitmapword));
+		//}
+
 		page->words[wordnum] |= ((bitmapword) 1 << bitnum);
 		page->recheck |= recheck;
 
@@ -571,7 +646,10 @@ tbm_intersect(TIDBitmap *a, const TIDBitmap *b)
 					a->nchunks--;
 				else
 					a->npages--;
+
 				a->nentries--;
+
+				//pfree(apage->words);
 				if (!pagetable_delete(a->pagetable, apage->blockno))
 					elog(ERROR, "hash table corrupted");
 			}
@@ -843,10 +921,13 @@ tbm_prepare_shared_iterate(TIDBitmap *tbm)
 			 * initialize it, and directly store its index (i.e. 0) in the
 			 * page array.
 			 */
-			tbm->dsapagetable = dsa_allocate(tbm->dsa, sizeof(PTEntryArray) +
-											 sizeof(PagetableEntry));
+			tbm->dsapagetable = dsa_allocate(tbm->dsa, sizeof(PTEntryArray) + SIZEOF_PAGETABLE_ENTRY);
+			//				 sizeof(PagetableEntry) + SIZEOF_BITMAP_WORD);
+			//tbm->dsapagetable = dsa_allocate(tbm->dsa, sizeof(PTEntryArray) + sizeof(PagetableEntry));
 			ptbase = dsa_get_address(tbm->dsa, tbm->dsapagetable);
-			memcpy(ptbase->ptentry, &tbm->entry1, sizeof(PagetableEntry));
+			//tbm_pte_copy(ptbase->ptentry, &tbm->entry1);
+			//memcpy(ptbase->ptentry, &tbm->entry1, sizeof(PagetableEntry));
+			memcpy(ptbase->ptentry, &tbm->entry1, SIZEOF_PAGETABLE_ENTRY);
 			ptpages->index[0] = 0;
 		}
 
@@ -1230,7 +1311,11 @@ tbm_get_pageentry(TIDBitmap *tbm, BlockNumber pageno)
 	{
 		char		oldstatus = page->status;
 
-		MemSet(page, 0, sizeof(PagetableEntry));
+		//page->words = MemoryContextAllocZero(tbm->mcxt, SIZEOF_BITMAP_WORD);
+		//tbm_pte_zero(page);
+		//MemSet(page, 0, sizeof(PagetableEntry));
+		MemSet(page, 0, SIZEOF_PAGETABLE_ENTRY);
+
 		page->status = oldstatus;
 		page->blockno = pageno;
 		/* must count it too */
@@ -1287,6 +1372,7 @@ tbm_mark_page_lossy(TIDBitmap *tbm, BlockNumber pageno)
 	int			bitno;
 	int			wordnum;
 	int			bitnum;
+	bitmapword*		bmw;
 
 	/* We force the bitmap into hashtable mode whenever it's lossy */
 	if (tbm->status != TBM_HASH)
@@ -1301,39 +1387,53 @@ tbm_mark_page_lossy(TIDBitmap *tbm, BlockNumber pageno)
 	 */
 	if (bitno != 0)
 	{
+		page = pagetable_lookup(tbm->pagetable, pageno);
+		if (page != NULL)
+			bmw = page->words;
+
 		if (pagetable_delete(tbm->pagetable, pageno))
 		{
 			/* It was present, so adjust counts */
 			tbm->nentries--;
 			tbm->npages--;		/* assume it must have been non-lossy */
+
+			if (bmw != NULL)
+				pfree(bmw);
 		}
 	}
 
 	/* Look up or create entry for chunk-header page */
 	page = pagetable_insert(tbm->pagetable, chunk_pageno, &found);
+	//if (!found)
+	//	page->words = MemoryContextAllocZero(tbm->mcxt, SIZEOF_BITMAP_WORD);
+
+	//tbm_pte_zero(page);
 
 	/* Initialize it if not present before */
 	if (!found)
 	{
-		char		oldstatus = page->status;
-
-		MemSet(page, 0, sizeof(PagetableEntry));
-		page->status = oldstatus;
-		page->blockno = chunk_pageno;
-		page->ischunk = true;
+		char 			oldstatus;
+               	//MemSet(page, 0, sizeof(PagetableEntry));
+		oldstatus = page->status;
+               	MemSet(page, 0, SIZEOF_PAGETABLE_ENTRY);
+        	page->status = oldstatus;
+        	page->blockno = chunk_pageno;
+        	page->ischunk = true;
 		/* must count it too */
 		tbm->nentries++;
 		tbm->nchunks++;
 	}
 	else if (!page->ischunk)
 	{
-		char		oldstatus = page->status;
+		char 			oldstatus;
+               	/* chunk header page was formerly non-lossy, make it lossy */
+               	//MemSet(page, 0, sizeof(PagetableEntry));
+		oldstatus = page->status;
+               	MemSet(page, 0, SIZEOF_PAGETABLE_ENTRY);
+        	page->status = oldstatus;
+        	page->blockno = chunk_pageno;
+        	page->ischunk = true;
 
-		/* chunk header page was formerly non-lossy, make it lossy */
-		MemSet(page, 0, sizeof(PagetableEntry));
-		page->status = oldstatus;
-		page->blockno = chunk_pageno;
-		page->ischunk = true;
 		/* we assume it had some tuple bit(s) set, so mark it lossy */
 		page->words[0] = ((bitmapword) 1 << 0);
 		/* adjust counts */
@@ -1552,8 +1652,10 @@ tbm_calculate_entries(double maxbytes)
 	 * for our purpose.  Also count an extra Pointer per entry for the arrays
 	 * created during iteration readout.
 	 */
+	//nbuckets = maxbytes /
+	//	(sizeof(PagetableEntry) + sizeof(Pointer) + sizeof(Pointer));
 	nbuckets = maxbytes /
-		(sizeof(PagetableEntry) + sizeof(Pointer) + sizeof(Pointer));
+		(SIZEOF_PAGETABLE_ENTRY + sizeof(Pointer) + sizeof(Pointer));
 	nbuckets = Min(nbuckets, INT_MAX - 1);	/* safety limit */
 	nbuckets = Max(nbuckets, 16);	/* sanity limit */
 

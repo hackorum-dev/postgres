@@ -112,21 +112,21 @@ typedef struct XLogRecordBlockHeader
  * contains only zero bytes.  If the length of "hole" > 0 then we have removed
  * such a "hole" from the stored data (and it's not counted in the
  * XLOG record's CRC, either).  Hence, the amount of block data actually
- * present is BLCKSZ - the length of "hole" bytes.
+ * present is rel_blck_size - the length of "hole" bytes.
  *
  * When wal_compression is enabled, a full page image which "hole" was
  * removed is additionally compressed using PGLZ compression algorithm.
  * This can reduce the WAL volume, but at some extra cost of CPU spent
  * on the compression during WAL logging. In this case, since the "hole"
  * length cannot be calculated by subtracting the number of page image bytes
- * from BLCKSZ, basically it needs to be stored as an extra information.
+ * from rel_blck_size, basically it needs to be stored as an extra information.
  * But when no "hole" exists, we can assume that the "hole" length is zero
  * and no such an extra information needs to be stored. Note that
  * the original version of page image is stored in WAL instead of the
  * compressed one if the number of bytes saved by compression is less than
  * the length of extra information. Hence, when a page image is successfully
  * compressed, the amount of block data actually present is less than
- * BLCKSZ - the length of "hole" bytes - the length of extra information.
+ * rel_blck_size - the length of "hole" bytes - the length of extra information.
  */
 typedef struct XLogRecordBlockImageHeader
 {

@@ -186,6 +186,7 @@ spgbeginscan(Relation rel, int keysz, int orderbysz)
 	scan = RelationGetIndexScan(rel, keysz, 0);
 
 	so = (SpGistScanOpaque) palloc0(sizeof(SpGistScanOpaqueData));
+	SP_GIST_SCAN_ALLOC(so); 
 	if (keysz > 0)
 		so->keyData = (ScanKey) palloc(sizeof(ScanKeyData) * keysz);
 	else

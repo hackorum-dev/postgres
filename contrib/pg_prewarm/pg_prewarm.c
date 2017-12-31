@@ -37,7 +37,7 @@ typedef enum
 	PREWARM_BUFFER
 } PrewarmType;
 
-static char blockbuffer[BLCKSZ];
+static char* blockbuffer;
 
 /*
  * pg_prewarm(regclass, mode text, fork text,
@@ -176,12 +176,14 @@ pg_prewarm(PG_FUNCTION_ARGS)
 		 * buffers.  This is more portable than prefetch mode (it works
 		 * everywhere) and is synchronous.
 		 */
+		blockbuffer = palloc(rel_blck_size);
 		for (block = first_block; block <= last_block; ++block)
 		{
 			CHECK_FOR_INTERRUPTS();
 			smgrread(rel->rd_smgr, forkNumber, block, blockbuffer);
 			++blocks_done;
 		}
+		pfree(blockbuffer);
 	}
 	else if (ptype == PREWARM_BUFFER)
 	{

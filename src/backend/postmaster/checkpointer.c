@@ -624,7 +624,7 @@ CheckArchiveTimeout(void)
 			 * If the returned pointer points exactly to a segment boundary,
 			 * assume nothing happened.
 			 */
-			if (XLogSegmentOffset(switchpoint, wal_segment_size) != 0)
+			if (XLogSegmentOffset(switchpoint, wal_file_size) != 0)
 				elog(DEBUG1, "write-ahead log switch forced (archive_timeout=%d)",
 					 XLogArchiveTimeout);
 		}
@@ -783,7 +783,7 @@ IsCheckpointOnSchedule(double progress)
 	else
 		recptr = GetInsertRecPtr();
 	elapsed_xlogs = (((double) (recptr - ckpt_start_recptr)) /
-					 wal_segment_size) / CheckPointSegments;
+					 wal_file_size) / CheckPointSegments;
 
 	if (progress < elapsed_xlogs)
 	{

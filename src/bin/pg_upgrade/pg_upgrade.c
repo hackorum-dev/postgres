@@ -39,6 +39,7 @@
 #include "pg_upgrade.h"
 #include "catalog/pg_class.h"
 #include "common/restricted_token.h"
+#include "storage/md.h"
 #include "fe_utils/string_utils.h"
 
 #ifdef HAVE_LANGINFO_H
@@ -56,6 +57,8 @@ static void cleanup(void);
 ClusterInfo old_cluster,
 			new_cluster;
 OSInfo		os_info;
+
+unsigned int rel_blck_size;
 
 char	   *output_files[] = {
 	SERVER_LOG_FILE,

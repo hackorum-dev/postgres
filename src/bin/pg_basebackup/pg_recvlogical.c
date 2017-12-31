@@ -62,6 +62,17 @@ static bool output_needs_fsync = false;
 static XLogRecPtr output_written_lsn = InvalidXLogRecPtr;
 static XLogRecPtr output_fsync_lsn = InvalidXLogRecPtr;
 
+/*
+ * Wal and relation file and block sizes
+ */
+unsigned int wal_blck_size;
+unsigned int wal_file_blck;
+unsigned long rel_file_size;
+unsigned int rel_blck_size;
+unsigned int rel_file_blck;
+unsigned long wal_file_size;
+
+
 static void usage(void);
 static void StreamLogicalLog(void);
 static void disconnect_and_exit(int code) pg_attribute_noreturn();

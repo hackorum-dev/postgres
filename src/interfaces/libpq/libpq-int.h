@@ -494,6 +494,11 @@ struct pg_conn
 
 	/* Buffer for receiving various parts of messages */
 	PQExpBufferData workBuffer; /* expansible string */
+
+	unsigned int rel_blck_size;
+	unsigned int rel_file_blck;
+	unsigned int wal_blck_size;
+	unsigned int wal_file_blck;
 };
 
 /* PGcancel stores all data necessary to cancel a connection. A copy of this

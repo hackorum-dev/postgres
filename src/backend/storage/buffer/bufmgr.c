@@ -54,7 +54,7 @@
 
 
 /* Note: these two macros only work on shared buffers, not local ones! */
-#define BufHdrGetBlock(bufHdr)	((Block) (BufferBlocks + ((Size) (bufHdr)->buf_id) * BLCKSZ))
+#define BufHdrGetBlock(bufHdr)	((Block) (BufferBlocks + ((Size) (bufHdr)->buf_id) * rel_blck_size))
 #define BufferGetLSN(bufHdr)	(PageGetLSN(BufHdrGetBlock(bufHdr)))
 
 /* Note: this macro only works on local buffers, not shared ones! */
@@ -860,7 +860,7 @@ ReadBuffer_common(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 	if (isExtend)
 	{
 		/* new buffers are zero-filled */
-		MemSet((char *) bufBlock, 0, BLCKSZ);
+		MemSet((char *) bufBlock, 0, rel_blck_size);
 		/* don't set checksum for all-zero page */
 		smgrextend(smgr, forkNum, blockNum, (char *) bufBlock, false);
 
@@ -878,7 +878,7 @@ ReadBuffer_common(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 		 * just wants us to allocate a buffer.
 		 */
 		if (mode == RBM_ZERO_AND_LOCK || mode == RBM_ZERO_AND_CLEANUP_LOCK)
-			MemSet((char *) bufBlock, 0, BLCKSZ);
+			MemSet((char *) bufBlock, 0, rel_blck_size);
 		else
 		{
 			instr_time	io_start,
@@ -907,7 +907,7 @@ ReadBuffer_common(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 							 errmsg("invalid page in block %u of relation %s; zeroing out page",
 									blockNum,
 									relpath(smgr->smgr_rnode, forkNum))));
-					MemSet((char *) bufBlock, 0, BLCKSZ);
+					MemSet((char *) bufBlock, 0, rel_blck_size);
 				}
 				else
 					ereport(ERROR,

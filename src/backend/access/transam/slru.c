@@ -158,7 +158,7 @@ SimpleLruShmemSize(int nslots, int nlsns)
 	if (nlsns > 0)
 		sz += MAXALIGN(nslots * nlsns * sizeof(XLogRecPtr));	/* group_lsn[] */
 
-	return BUFFERALIGN(sz) + BLCKSZ * nslots;
+	return BUFFERALIGN(sz) + rel_blck_size * nslots;
 }
 
 void
@@ -229,7 +229,7 @@ SimpleLruInit(SlruCtl ctl, const char *name, int nslots, int nlsns,
 			shared->page_status[slotno] = SLRU_PAGE_EMPTY;
 			shared->page_dirty[slotno] = false;
 			shared->page_lru_count[slotno] = 0;
-			ptr += BLCKSZ;
+			ptr += rel_blck_size;
 		}
 
 		/* Should fit to estimated shmem size */
@@ -279,7 +279,7 @@ SimpleLruZeroPage(SlruCtl ctl, int pageno)
 	SlruRecentlyUsed(shared, slotno);
 
 	/* Set the buffer to zeroes */
-	MemSet(shared->page_buffer[slotno], 0, BLCKSZ);
+	MemSet(shared->page_buffer[slotno], 0, rel_blck_size);
 
 	/* Set the LSNs for this new page to zero */
 	SimpleLruZeroLSNs(ctl, slotno);
@@ -591,7 +591,7 @@ SimpleLruDoesPhysicalPageExist(SlruCtl ctl, int pageno)
 {
 	int			segno = pageno / SLRU_PAGES_PER_SEGMENT;
 	int			rpageno = pageno % SLRU_PAGES_PER_SEGMENT;
-	int			offset = rpageno * BLCKSZ;
+	int			offset = rpageno * rel_blck_size;
 	char		path[MAXPGPATH];
 	int			fd;
 	bool		result;
@@ -619,7 +619,7 @@ SimpleLruDoesPhysicalPageExist(SlruCtl ctl, int pageno)
 		SlruReportIOError(ctl, pageno, 0);
 	}
 
-	result = endpos >= (off_t) (offset + BLCKSZ);
+	result = endpos >= (off_t) (offset + rel_blck_size);
 
 	CloseTransientFile(fd);
 	return result;
@@ -641,7 +641,7 @@ SlruPhysicalReadPage(SlruCtl ctl, int pageno, int slotno)
 	SlruShared	shared = ctl->shared;
 	int			segno = pageno / SLRU_PAGES_PER_SEGMENT;
 	int			rpageno = pageno % SLRU_PAGES_PER_SEGMENT;
-	int			offset = rpageno * BLCKSZ;
+	int			offset = rpageno * rel_blck_size;
 	char		path[MAXPGPATH];
 	int			fd;
 
@@ -667,7 +667,7 @@ SlruPhysicalReadPage(SlruCtl ctl, int pageno, int slotno)
 		ereport(LOG,
 				(errmsg("file \"%s\" doesn't exist, reading as zeroes",
 						path)));
-		MemSet(shared->page_buffer[slotno], 0, BLCKSZ);
+		MemSet(shared->page_buffer[slotno], 0, rel_blck_size);
 		return true;
 	}
 
@@ -681,7 +681,7 @@ SlruPhysicalReadPage(SlruCtl ctl, int pageno, int slotno)
 
 	errno = 0;
 	pgstat_report_wait_start(WAIT_EVENT_SLRU_READ);
-	if (read(fd, shared->page_buffer[slotno], BLCKSZ) != BLCKSZ)
+	if (read(fd, shared->page_buffer[slotno], rel_blck_size) != rel_blck_size)
 	{
 		pgstat_report_wait_end();
 		slru_errcause = SLRU_READ_FAILED;
@@ -721,7 +721,7 @@ SlruPhysicalWritePage(SlruCtl ctl, int pageno, int slotno, SlruFlush fdata)
 	SlruShared	shared = ctl->shared;
 	int			segno = pageno / SLRU_PAGES_PER_SEGMENT;
 	int			rpageno = pageno % SLRU_PAGES_PER_SEGMENT;
-	int			offset = rpageno * BLCKSZ;
+	int			offset = rpageno * rel_blck_size;
 	char		path[MAXPGPATH];
 	int			fd = -1;
 
@@ -842,7 +842,7 @@ SlruPhysicalWritePage(SlruCtl ctl, int pageno, int slotno, SlruFlush fdata)
 
 	errno = 0;
 	pgstat_report_wait_start(WAIT_EVENT_SLRU_WRITE);
-	if (write(fd, shared->page_buffer[slotno], BLCKSZ) != BLCKSZ)
+	if (write(fd, shared->page_buffer[slotno], rel_blck_size) != rel_blck_size)
 	{
 		pgstat_report_wait_end();
 		/* if write didn't set errno, assume problem is no disk space */
@@ -893,7 +893,7 @@ SlruReportIOError(SlruCtl ctl, int pageno, TransactionId xid)
 {
 	int			segno = pageno / SLRU_PAGES_PER_SEGMENT;
 	int			rpageno = pageno % SLRU_PAGES_PER_SEGMENT;
-	int			offset = rpageno * BLCKSZ;
+	int			offset = rpageno * rel_blck_size;
 	char		path[MAXPGPATH];
 
 	SlruFileName(ctl, path, segno);

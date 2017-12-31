@@ -45,6 +45,16 @@ static bool synchronous = false;
 static char *replication_slot = NULL;
 static XLogRecPtr endpos = InvalidXLogRecPtr;
 
+/*
+ * Wal and relation file and block sizes
+ */
+unsigned int wal_blck_size;
+unsigned int wal_file_blck;
+unsigned long rel_file_size;
+unsigned int rel_blck_size;
+unsigned int rel_file_blck;
+unsigned long wal_file_size;
+
 
 static void usage(void);
 static DIR *get_destination_dir(char *dest_folder);
@@ -244,7 +254,7 @@ FindStreamingStart(uint32 *tli)
 		/*
 		 * Looks like an xlog file. Parse its position.
 		 */
-		XLogFromFileName(dirent->d_name, &tli, &segno, WalSegSz);
+		XLogFromFileName(dirent->d_name, &tli, &segno, wal_file_size);
 
 		/*
 		 * Check that the segment has the right size, if it's supposed to be
@@ -269,7 +279,7 @@ FindStreamingStart(uint32 *tli)
 				disconnect_and_exit(1);
 			}
 
-			if (statbuf.st_size != WalSegSz)
+			if (statbuf.st_size != wal_file_size)
 			{
 				fprintf(stderr,
 						_("%s: segment file \"%s\" has incorrect size %d, skipping\n"),
@@ -310,7 +320,7 @@ FindStreamingStart(uint32 *tli)
 			bytes_out = (buf[3] << 24) | (buf[2] << 16) |
 				(buf[1] << 8) | buf[0];
 
-			if (bytes_out != WalSegSz)
+			if (bytes_out != wal_file_size)
 			{
 				fprintf(stderr,
 						_("%s: compressed segment file \"%s\" has incorrect uncompressed size %d, skipping\n"),
@@ -351,7 +361,7 @@ FindStreamingStart(uint32 *tli)
 		if (!high_ispartial)
 			high_segno++;
 
-		XLogSegNoOffsetToRecPtr(high_segno, 0, high_ptr, WalSegSz);
+		XLogSegNoOffsetToRecPtr(high_segno, 0, high_ptr, wal_file_size);
 
 		*tli = high_tli;
 		return high_ptr;
@@ -412,7 +422,7 @@ StreamLog(void)
 	/*
 	 * Always start streaming at the beginning of a segment
 	 */
-	stream.startpos -= XLogSegmentOffset(stream.startpos, WalSegSz);
+	stream.startpos -= XLogSegmentOffset(stream.startpos, wal_file_size);
 
 	/*
 	 * Start the replication
@@ -702,9 +712,9 @@ main(int argc, char **argv)
 	if (!RunIdentifySystem(conn, NULL, NULL, NULL, &db_name))
 		disconnect_and_exit(1);
 
-	/* determine remote server's xlog segment size */
-	if (!RetrieveWalSegSize(conn))
-		disconnect_and_exit(1);
+	/* determine wal and relation file and block sizes */
+        if (!FetchWalRelBlckFileSize(conn))
+                disconnect_and_exit(1);
 
 	/*
 	 * Check that there is a database associated with connection, none should

@@ -33,6 +33,7 @@
 #include "pg_getopt.h"
 
 #include "access/xlog_internal.h"
+#include "storage/md.h"
 
 const char *progname;
 
@@ -104,6 +105,8 @@ struct stat stat_buf;
 
 static bool SetWALFileNameForCleanup(void);
 static bool SetWALSegSize(void);
+
+unsigned int wal_blck_size = 0;
 
 
 /* =====================================================================
@@ -410,7 +413,7 @@ SetWALSegSize(void)
 	int			fd;
 
 	/* malloc this buffer to ensure sufficient alignment: */
-	char	   *buf = (char *) pg_malloc(XLOG_BLCKSZ);
+	char	   *buf = (char *) pg_malloc(wal_blck_size);
 
 	Assert(WalSegSz == -1);
 
@@ -423,7 +426,7 @@ SetWALSegSize(void)
 	}
 
 	errno = 0;
-	if (read(fd, buf, XLOG_BLCKSZ) == XLOG_BLCKSZ)
+	if (read(fd, buf, wal_blck_size) == wal_blck_size)
 	{
 		XLogLongPageHeader longhdr = (XLogLongPageHeader) buf;
 

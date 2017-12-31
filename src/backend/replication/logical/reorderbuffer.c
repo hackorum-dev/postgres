@@ -2038,15 +2038,15 @@ ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 		 * multiple segments tho
 		 */
 		if (fd == -1 ||
-			!XLByteInSeg(change->lsn, curOpenSegNo, wal_segment_size))
+			!XLByteInSeg(change->lsn, curOpenSegNo, wal_file_size))
 		{
 			XLogRecPtr	recptr;
 
 			if (fd != -1)
 				CloseTransientFile(fd);
 
-			XLByteToSeg(change->lsn, curOpenSegNo, wal_segment_size);
-			XLogSegNoOffsetToRecPtr(curOpenSegNo, 0, recptr, wal_segment_size);
+			XLByteToSeg(change->lsn, curOpenSegNo, wal_file_size);
+			XLogSegNoOffsetToRecPtr(curOpenSegNo, 0, recptr, wal_file_size);
 
 			/*
 			 * No need to care about TLIs here, only used during a single run,
@@ -2273,7 +2273,7 @@ ReorderBufferRestoreChanges(ReorderBuffer *rb, ReorderBufferTXN *txn,
 	txn->nentries_mem = 0;
 	Assert(dlist_is_empty(&txn->changes));
 
-	XLByteToSeg(txn->final_lsn, last_segno, wal_segment_size);
+	XLByteToSeg(txn->final_lsn, last_segno, wal_file_size);
 
 	while (restored < max_changes_in_memory && *segno <= last_segno)
 	{
@@ -2288,11 +2288,11 @@ ReorderBufferRestoreChanges(ReorderBuffer *rb, ReorderBufferTXN *txn,
 			/* first time in */
 			if (*segno == 0)
 			{
-				XLByteToSeg(txn->first_lsn, *segno, wal_segment_size);
+				XLByteToSeg(txn->first_lsn, *segno, wal_file_size);
 			}
 
 			Assert(*segno != 0 || dlist_is_empty(&txn->changes));
-			XLogSegNoOffsetToRecPtr(*segno, 0, recptr, wal_segment_size);
+			XLogSegNoOffsetToRecPtr(*segno, 0, recptr, wal_file_size);
 
 			/*
 			 * No need to care about TLIs here, only used during a single run,
@@ -2529,8 +2529,8 @@ ReorderBufferRestoreCleanup(ReorderBuffer *rb, ReorderBufferTXN *txn)
 	Assert(txn->first_lsn != InvalidXLogRecPtr);
 	Assert(txn->final_lsn != InvalidXLogRecPtr);
 
-	XLByteToSeg(txn->first_lsn, first, wal_segment_size);
-	XLByteToSeg(txn->final_lsn, last, wal_segment_size);
+	XLByteToSeg(txn->first_lsn, first, wal_file_size);
+	XLByteToSeg(txn->final_lsn, last, wal_file_size);
 
 	/* iterate over all possible filenames, and delete them */
 	for (cur = first; cur <= last; cur++)
@@ -2538,7 +2538,7 @@ ReorderBufferRestoreCleanup(ReorderBuffer *rb, ReorderBufferTXN *txn)
 		char		path[MAXPGPATH];
 		XLogRecPtr	recptr;
 
-		XLogSegNoOffsetToRecPtr(cur, 0, recptr, wal_segment_size);
+		XLogSegNoOffsetToRecPtr(cur, 0, recptr, wal_file_size);
 
 		sprintf(path, "pg_replslot/%s/xid-%u-lsn-%X-%X.snap",
 				NameStr(MyReplicationSlot->data.name), txn->xid,

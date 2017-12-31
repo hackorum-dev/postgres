@@ -512,7 +512,7 @@ SpGistInitPage(Page page, uint16 f)
 {
 	SpGistPageOpaque opaque;
 
-	PageInit(page, BLCKSZ, MAXALIGN(sizeof(SpGistPageOpaqueData)));
+	PageInit(page, rel_blck_size, MAXALIGN(sizeof(SpGistPageOpaqueData)));
 	opaque = SpGistPageGetOpaque(page);
 	memset(opaque, 0, sizeof(SpGistPageOpaqueData));
 	opaque->flags = f;
@@ -525,7 +525,7 @@ SpGistInitPage(Page page, uint16 f)
 void
 SpGistInitBuffer(Buffer b, uint16 f)
 {
-	Assert(BufferGetPageSize(b) == BLCKSZ);
+	Assert(BufferGetPageSize(b) == rel_blck_size);
 	SpGistInitPage(BufferGetPage(b), f);
 }
 

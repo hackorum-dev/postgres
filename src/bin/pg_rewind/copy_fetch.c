@@ -22,6 +22,7 @@
 #include "pg_rewind.h"
 
 #include "catalog/catalog.h"
+#include "storage/md.h"
 
 static void recurse_dir(const char *datadir, const char *path,
 			process_file_callback_t callback);
@@ -158,12 +159,11 @@ recurse_dir(const char *datadir, const char *parentpath,
 static void
 copy_file_range(const char *path, off_t begin, off_t end, bool trunc)
 {
-	char		buf[BLCKSZ];
+	char	buf[rel_blck_size];
 	char		srcpath[MAXPGPATH];
 	int			srcfd;
 
 	snprintf(srcpath, sizeof(srcpath), "%s/%s", datadir_source, path);
-
 	srcfd = open(srcpath, O_RDONLY | PG_BINARY, 0);
 	if (srcfd < 0)
 		pg_fatal("could not open source file \"%s\": %s\n",
@@ -178,6 +178,7 @@ copy_file_range(const char *path, off_t begin, off_t end, bool trunc)
 	{
 		int			readlen;
 		int			len;
+
 
 		if (end - begin > sizeof(buf))
 			len = sizeof(buf);
@@ -256,8 +257,8 @@ execute_pagemap(datapagemap_t *pagemap, const char *path)
 	iter = datapagemap_iterate(pagemap);
 	while (datapagemap_next(iter, &blkno))
 	{
-		offset = blkno * BLCKSZ;
-		copy_file_range(path, offset, offset + BLCKSZ, false);
+		offset = blkno * rel_blck_size;
+		copy_file_range(path, offset, offset + rel_blck_size, false);
 		/* Ok, this block has now been copied from new data dir to old */
 	}
 	pg_free(iter);

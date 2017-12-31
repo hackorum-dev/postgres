@@ -518,16 +518,16 @@ GetLocalBufferStorage(void)
 		/* But not more than what we need for all remaining local bufs */
 		num_bufs = Min(num_bufs, NLocBuffer - total_bufs_allocated);
 		/* And don't overflow MaxAllocSize, either */
-		num_bufs = Min(num_bufs, MaxAllocSize / BLCKSZ);
+		num_bufs = Min(num_bufs, MaxAllocSize / rel_blck_size);
 
 		cur_block = (char *) MemoryContextAlloc(LocalBufferContext,
-												num_bufs * BLCKSZ);
+												num_bufs * rel_blck_size);
 		next_buf_in_block = 0;
 		num_bufs_in_block = num_bufs;
 	}
 
 	/* Allocate next buffer in current memory block */
-	this_buf = cur_block + next_buf_in_block * BLCKSZ;
+	this_buf = cur_block + next_buf_in_block * rel_blck_size;
 	next_buf_in_block++;
 	total_bufs_allocated++;
 

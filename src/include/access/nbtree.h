@@ -325,10 +325,16 @@ typedef struct BTScanPosData
 	int			lastItem;		/* last valid index in items[] */
 	int			itemIndex;		/* current index in items[] */
 
-	BTScanPosItem items[MaxIndexTuplesPerPage]; /* MUST BE LAST */
+	BTScanPosItem		*items;	/* MUST BE LAST */
 } BTScanPosData;
 
 typedef BTScanPosData *BTScanPos;
+
+/*
+ * Memory management for items field of BTScanPosData
+ */
+#define SIZEOF_BT_SCAN_POST_ITEM	(sizeof(BTScanPosItem) * MaxIndexTuplesPerPage)
+
 
 #define BTScanPosIsPinned(scanpos) \
 ( \
@@ -395,7 +401,7 @@ typedef struct BTScanOpaqueData
 	/*
 	 * If we are doing an index-only scan, these are the tuple storage
 	 * workspaces for the currPos and markPos respectively.  Each is of size
-	 * BLCKSZ, so it can hold as much as a full page's worth of tuples.
+	 * rel_blck_size, so it can hold as much as a full page's worth of tuples.
 	 */
 	char	   *currTuples;		/* tuple storage for currPos */
 	char	   *markTuples;		/* tuple storage for markPos */

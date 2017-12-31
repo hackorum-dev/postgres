@@ -49,6 +49,8 @@
 #include "storage/proc.h"
 #include "storage/sinvaladt.h"
 #include "storage/smgr.h"
+#include "storage/freespace.h"
+#include "storage/fsm_internals.h"
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
 #include "utils/fmgroids.h"
@@ -61,6 +63,12 @@
 #include "utils/syscache.h"
 #include "utils/timeout.h"
 #include "utils/tqual.h"
+
+#define DEBUG_POSTINIT                   0
+
+#define debug_postinit(format, ...)      \
+       if (DEBUG_POSTINIT)               \
+               fprintf(stderr, "postinit --> " format, ##__VA_ARGS__);
 
 
 static HeapTuple GetDatabaseTuple(const char *dbname);
@@ -527,6 +535,7 @@ BaseInit(void)
 	/* Do local initialization of file, storage and buffer managers */
 	InitFileAccess();
 	smgrinit();
+	fsm_init();
 	InitBufferPoolAccess();
 }
 
@@ -571,6 +580,7 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	 *
 	 * Once I have done this, I am visible to other backends!
 	 */
+	debug_postinit("InitProcessPhase2\n");
 	InitProcessPhase2();
 
 	/*
@@ -581,12 +591,14 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	 */
 	MyBackendId = InvalidBackendId;
 
+	debug_postinit("SharedInvalBackendInit\n");
 	SharedInvalBackendInit(false);
 
 	if (MyBackendId > MaxBackends || MyBackendId <= 0)
 		elog(FATAL, "bad backend ID: %d", MyBackendId);
 
 	/* Now that we have a BackendId, we can participate in ProcSignal */
+	debug_postinit("ProcSignalInit\n");
 	ProcSignalInit(MyBackendId);
 
 	/*
@@ -605,6 +617,7 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	/*
 	 * bufmgr needs another initialization call too
 	 */
+	debug_postinit("InitBufferPoolBackend\n");
 	InitBufferPoolBackend();
 
 	/*
@@ -627,6 +640,7 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 		 * way, start up the XLOG machinery, and register to have it closed
 		 * down at exit.
 		 */
+		debug_postinit("StartupXLOG\n");
 		StartupXLOG();
 		on_shmem_exit(ShutdownXLOG, 0);
 	}
@@ -642,6 +656,7 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	InitPlanCache();
 
 	/* Initialize portal manager */
+	debug_postinit("EnablePortalManager\n");
 	EnablePortalManager();
 
 	/* Initialize stats collection --- must happen before first xact */
@@ -652,6 +667,7 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	 * Load relcache entries for the shared system catalogs.  This must create
 	 * at least entries for pg_database and catalogs used for authentication.
 	 */
+	debug_postinit("RelationCacheInitializePhase2\n");
 	RelationCacheInitializePhase2();
 
 	/*
@@ -707,6 +723,7 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	 */
 	if (bootstrap || IsAutoVacuumWorkerProcess())
 	{
+		debug_postinit("InitializeSessionUserIdStandalone\n");
 		InitializeSessionUserIdStandalone();
 		am_superuser = true;
 	}
@@ -832,6 +849,7 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	 */
 	if (bootstrap)
 	{
+		debug_postinit("Set MyDatabaseId and MyDatabaseTableSpace\n");
 		MyDatabaseId = TemplateDbOid;
 		MyDatabaseTableSpace = DEFAULTTABLESPACE_OID;
 	}
@@ -980,6 +998,7 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 		ValidatePgVersion(fullpath);
 	}
 
+	debug_postinit("SetDatabasePath\n");
 	SetDatabasePath(fullpath);
 
 	/*
@@ -988,6 +1007,7 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	 * Load relcache entries for the system catalogs.  This must create at
 	 * least the minimum set of "nailed-in" cache entries.
 	 */
+	debug_postinit("RelationCacheInitializePhase3\n");
 	RelationCacheInitializePhase3();
 
 	/* set up ACL framework (so CheckMyDatabase can check permissions) */
@@ -1023,12 +1043,15 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	 */
 
 	/* set default namespace search path */
+	debug_postinit("InitializeSearchPath\n");
 	InitializeSearchPath();
 
 	/* initialize client encoding */
+	debug_postinit("InitializeClientEncoding\n");
 	InitializeClientEncoding();
 
 	/* Initialize this backend's session state. */
+	debug_postinit("InitializeSession\n");
 	InitializeSession();
 
 	/* report this backend in the PgBackendStatus array */

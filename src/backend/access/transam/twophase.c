@@ -1299,7 +1299,7 @@ XlogReadTwoPhaseData(XLogRecPtr lsn, char **buf, int *len)
 	XLogReaderState *xlogreader;
 	char	   *errormsg;
 
-	xlogreader = XLogReaderAllocate(wal_segment_size, &read_local_xlog_page,
+	xlogreader = XLogReaderAllocate(wal_file_size, &read_local_xlog_page,
 									NULL);
 	if (!xlogreader)
 		ereport(ERROR,

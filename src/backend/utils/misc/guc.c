@@ -22,6 +22,7 @@
 #include <limits.h>
 #include <unistd.h>
 #include <sys/stat.h>
+
 #ifdef HAVE_SYSLOG
 #include <syslog.h>
 #endif
@@ -89,6 +90,7 @@
 #include "utils/tzparser.h"
 #include "utils/varlena.h"
 #include "utils/xml.h"
+#include "pg_control_def.h"
 
 #ifndef PG_KRB_SRVTAB
 #define PG_KRB_SRVTAB ""
@@ -696,6 +698,8 @@ const char *const config_type_names[] =
  */
 #define MAX_UNIT_LEN		3	/* length of longest recognized unit string */
 
+typedef int (*multiplier_func_f)(const char* unit, int base_unit);
+
 typedef struct
 {
 	char		unit[MAX_UNIT_LEN + 1]; /* unit, as a string, like "kB" or
@@ -704,44 +708,42 @@ typedef struct
 	int			multiplier;		/* If positive, multiply the value with this
 								 * for unit -> base_unit conversion.  If
 								 * negative, divide (with the absolute value) */
+	multiplier_func_f func;
 } unit_conversion;
-
-/* Ensure that the constants in the tables don't overflow or underflow */
-#if BLCKSZ < 1024 || BLCKSZ > (1024*1024)
-#error BLCKSZ must be between 1KB and 1MB
-#endif
-#if XLOG_BLCKSZ < 1024 || XLOG_BLCKSZ > (1024*1024)
-#error XLOG_BLCKSZ must be between 1KB and 1MB
-#endif
 
 static const char *memory_units_hint = gettext_noop("Valid units for this parameter are \"kB\", \"MB\", \"GB\", and \"TB\".");
 
+/*
+ * Forward declaratrion
+ */
+static int multiplier_mem_unit(const char* unit, int base_unit);
+
 static const unit_conversion memory_unit_conversion_table[] =
 {
-	{"GB", GUC_UNIT_BYTE, 1024 * 1024 * 1024},
-	{"MB", GUC_UNIT_BYTE, 1024 * 1024},
-	{"kB", GUC_UNIT_BYTE, 1024},
-	{"B", GUC_UNIT_BYTE, 1},
+	{"GB", GUC_UNIT_BYTE, 1024 * 1024 * 1024, NULL},
+	{"MB", GUC_UNIT_BYTE, 1024 * 1024, NULL},
+	{"kB", GUC_UNIT_BYTE, 1024, NULL},
+	{"B", GUC_UNIT_BYTE, 1, NULL},
 
-	{"TB", GUC_UNIT_KB, 1024 * 1024 * 1024},
-	{"GB", GUC_UNIT_KB, 1024 * 1024},
-	{"MB", GUC_UNIT_KB, 1024},
-	{"kB", GUC_UNIT_KB, 1},
+	{"TB", GUC_UNIT_KB, 1024 * 1024 * 1024, NULL},
+	{"GB", GUC_UNIT_KB, 1024 * 1024, NULL},
+	{"MB", GUC_UNIT_KB, 1024, NULL},
+	{"kB", GUC_UNIT_KB, 1, NULL},
 
-	{"TB", GUC_UNIT_MB, 1024 * 1024},
-	{"GB", GUC_UNIT_MB, 1024},
-	{"MB", GUC_UNIT_MB, 1},
-	{"kB", GUC_UNIT_MB, -1024},
+	{"TB", GUC_UNIT_MB, 1024 * 1024, NULL},
+	{"GB", GUC_UNIT_MB, 1024, NULL},
+	{"MB", GUC_UNIT_MB, 1, NULL},
+	{"kB", GUC_UNIT_MB, -1024, NULL},
 
-	{"TB", GUC_UNIT_BLOCKS, (1024 * 1024 * 1024) / (BLCKSZ / 1024)},
-	{"GB", GUC_UNIT_BLOCKS, (1024 * 1024) / (BLCKSZ / 1024)},
-	{"MB", GUC_UNIT_BLOCKS, 1024 / (BLCKSZ / 1024)},
-	{"kB", GUC_UNIT_BLOCKS, -(BLCKSZ / 1024)},
+	{"TB", GUC_UNIT_BLOCKS, 0, multiplier_mem_unit},
+	{"GB", GUC_UNIT_BLOCKS, 0, multiplier_mem_unit},
+	{"MB", GUC_UNIT_BLOCKS, 0, multiplier_mem_unit},
+	{"kB", GUC_UNIT_BLOCKS, 0, multiplier_mem_unit},
 
-	{"TB", GUC_UNIT_XBLOCKS, (1024 * 1024 * 1024) / (XLOG_BLCKSZ / 1024)},
-	{"GB", GUC_UNIT_XBLOCKS, (1024 * 1024) / (XLOG_BLCKSZ / 1024)},
-	{"MB", GUC_UNIT_XBLOCKS, 1024 / (XLOG_BLCKSZ / 1024)},
-	{"kB", GUC_UNIT_XBLOCKS, -(XLOG_BLCKSZ / 1024)},
+	{"TB", GUC_UNIT_XBLOCKS, 0, multiplier_mem_unit},
+	{"GB", GUC_UNIT_XBLOCKS, 0, multiplier_mem_unit},
+	{"MB", GUC_UNIT_XBLOCKS, 0, multiplier_mem_unit},
+	{"kB", GUC_UNIT_XBLOCKS, 0, multiplier_mem_unit},
 
 	{""}						/* end of table marker */
 };
@@ -750,23 +752,23 @@ static const char *time_units_hint = gettext_noop("Valid units for this paramete
 
 static const unit_conversion time_unit_conversion_table[] =
 {
-	{"d", GUC_UNIT_MS, 1000 * 60 * 60 * 24},
-	{"h", GUC_UNIT_MS, 1000 * 60 * 60},
-	{"min", GUC_UNIT_MS, 1000 * 60},
-	{"s", GUC_UNIT_MS, 1000},
-	{"ms", GUC_UNIT_MS, 1},
+	{"d", GUC_UNIT_MS, 1000 * 60 * 60 * 24, NULL},
+	{"h", GUC_UNIT_MS, 1000 * 60 * 60, NULL},
+	{"min", GUC_UNIT_MS, 1000 * 60, NULL},
+	{"s", GUC_UNIT_MS, 1000, NULL},
+	{"ms", GUC_UNIT_MS, 1, NULL},
 
-	{"d", GUC_UNIT_S, 60 * 60 * 24},
-	{"h", GUC_UNIT_S, 60 * 60},
-	{"min", GUC_UNIT_S, 60},
-	{"s", GUC_UNIT_S, 1},
-	{"ms", GUC_UNIT_S, -1000},
+	{"d", GUC_UNIT_S, 60 * 60 * 24, NULL},
+	{"h", GUC_UNIT_S, 60 * 60, NULL},
+	{"min", GUC_UNIT_S, 60, NULL},
+	{"s", GUC_UNIT_S, 1, NULL},
+	{"ms", GUC_UNIT_S, -1000, NULL},
 
-	{"d", GUC_UNIT_MIN, 60 * 24},
-	{"h", GUC_UNIT_MIN, 60},
-	{"min", GUC_UNIT_MIN, 1},
-	{"s", GUC_UNIT_MIN, -60},
-	{"ms", GUC_UNIT_MIN, -1000 * 60},
+	{"d", GUC_UNIT_MIN, 60 * 24, NULL},
+	{"h", GUC_UNIT_MIN, 60, NULL},
+	{"min", GUC_UNIT_MIN, 1, NULL},
+	{"s", GUC_UNIT_MIN, -60, NULL},
+	{"ms", GUC_UNIT_MIN, -1000 * 60, NULL},
 
 	{""}						/* end of table marker */
 };
@@ -2269,7 +2271,7 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_MB
 		},
 		&min_wal_size_mb,
-		DEFAULT_MIN_WAL_SEGS * (DEFAULT_XLOG_SEG_SIZE / (1024 * 1024)),
+		DEFAULT_MIN_WAL_SEGS * (WAL_FILE_SIZE_DEF / (1024 * 1024)),
 		2, MAX_KILOBYTES,
 		NULL, NULL, NULL
 	},
@@ -2281,7 +2283,7 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_MB
 		},
 		&max_wal_size_mb,
-		DEFAULT_MAX_WAL_SEGS * (DEFAULT_XLOG_SEG_SIZE / (1024 * 1024)),
+		DEFAULT_MAX_WAL_SEGS * (WAL_FILE_SIZE_DEF / (1024 * 1024)),
 		2, MAX_KILOBYTES,
 		NULL, assign_max_wal_size, NULL
 	},
@@ -2329,7 +2331,7 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_XBLOCKS
 		},
 		&XLOGbuffers,
-		-1, -1, (INT_MAX / XLOG_BLCKSZ),
+		-1, -1, (INT_MAX / WAL_BLCK_SIZE_DEF),
 		check_wal_buffers, NULL, NULL
 	},
 
@@ -2351,7 +2353,7 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_XBLOCKS
 		},
 		&WalWriterFlushAfter,
-		(1024 * 1024) / XLOG_BLCKSZ, 0, INT_MAX,
+		(1024 * 1024) / WAL_BLCK_SIZE_DEF, 0, INT_MAX,
 		NULL, NULL, NULL
 	},
 
@@ -2604,7 +2606,7 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
 		},
 		&block_size,
-		BLCKSZ, BLCKSZ, BLCKSZ,
+		REL_BLCK_SIZE_DEF, REL_BLCK_SIZE_MIN, REL_BLCK_SIZE_MAX,
 		NULL, NULL, NULL
 	},
 
@@ -2615,7 +2617,7 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_BLOCKS | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
 		},
 		&segment_size,
-		RELSEG_SIZE, RELSEG_SIZE, RELSEG_SIZE,
+		REL_FILE_BLCK_DEF, REL_FILE_BLCK_MIN, REL_FILE_BLCK_MAX,
 		NULL, NULL, NULL
 	},
 
@@ -2626,7 +2628,7 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
 		},
 		&wal_block_size,
-		XLOG_BLCKSZ, XLOG_BLCKSZ, XLOG_BLCKSZ,
+		WAL_BLCK_SIZE_DEF, WAL_BLCK_SIZE_MIN, WAL_BLCK_SIZE_MAX,
 		NULL, NULL, NULL
 	},
 
@@ -2649,7 +2651,7 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_BYTE | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
 		},
 		&wal_segment_size,
-		DEFAULT_XLOG_SEG_SIZE,
+		WAL_FILE_SIZE_DEF,
 		WalSegMinSize,
 		WalSegMaxSize,
 		NULL, NULL, NULL
@@ -2833,7 +2835,7 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_BLOCKS,
 		},
 		&min_parallel_table_scan_size,
-		(8 * 1024 * 1024) / BLCKSZ, 0, INT_MAX / 3,
+		(8 * 1024 * 1024) / REL_BLCK_SIZE_DEF, 0, INT_MAX / 3,
 		NULL, NULL, NULL
 	},
 
@@ -2844,7 +2846,7 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_BLOCKS,
 		},
 		&min_parallel_index_scan_size,
-		(512 * 1024) / BLCKSZ, 0, INT_MAX / 3,
+		(512 * 1024) / REL_BLCK_SIZE_DEF, 0, INT_MAX / 3,
 		NULL, NULL, NULL
 	},
 
@@ -5420,6 +5422,41 @@ ReportGUCOption(struct config_generic *record)
 	}
 }
 
+static int
+multiplier_mem_unit(
+	const char* unit, int base_unit)
+{
+	if (base_unit == GUC_UNIT_BLOCKS) {
+		if (strncmp("TB", unit, 2) == 0)
+			return (1024 * 1024 * 1024) / (rel_blck_size / 1024);
+
+		if (strncmp("GB", unit, 2) == 0)
+			return (1024 * 1024) / (rel_blck_size / 1024);
+
+		if (strncmp("MB", unit, 2) == 0)
+			return  1024 / (rel_blck_size / 1024);
+
+		if (strncmp("kB", unit, 2) == 0)
+			return -(rel_blck_size / 1024);
+	}
+
+	if (base_unit == GUC_UNIT_XBLOCKS) {
+		if (strncmp("TB", unit, 2) == 0)
+			return (1024 * 1024 * 1024) / (wal_blck_size / 1024);
+
+		if (strncmp("GB", unit, 2) == 0)
+			return (1024 * 1024) / (wal_blck_size / 1024);
+
+		if (strncmp("MB", unit, 2) == 0)
+			return  1024 / (wal_blck_size / 1024);
+
+                if (strncmp("kB", unit, 2) == 0)
+                        return -(wal_blck_size / 1024);
+        }
+
+	return 0;
+}
+
 /*
  * Convert a value from one of the human-friendly units ("kB", "min" etc.)
  * to the given base unit.  'value' and 'unit' are the input value and unit
@@ -5433,6 +5470,7 @@ convert_to_base_unit(int64 value, const char *unit,
 {
 	const unit_conversion *table;
 	int			i;
+	int	multiplier;
 
 	if (base_unit & GUC_UNIT_MEMORY)
 		table = memory_unit_conversion_table;
@@ -5444,13 +5482,20 @@ convert_to_base_unit(int64 value, const char *unit,
 		if (base_unit == table[i].base_unit &&
 			strcmp(unit, table[i].unit) == 0)
 		{
-			if (table[i].multiplier < 0)
-				*base_value = value / (-table[i].multiplier);
+			if (table[i].func != NULL)
+				multiplier = table[i].func(unit, base_unit);
+			else 
+				multiplier = table[i].multiplier;
+
+			if (multiplier < 0)
+				*base_value = value / (-multiplier);
 			else
-				*base_value = value * table[i].multiplier;
+				*base_value = value * multiplier;
+
 			return true;
 		}
 	}
+
 	return false;
 }
 
@@ -5466,6 +5511,7 @@ convert_from_base_unit(int64 base_value, int base_unit,
 {
 	const unit_conversion *table;
 	int			i;
+	int	multiplier;
 
 	*unit = NULL;
 
@@ -5483,15 +5529,20 @@ convert_from_base_unit(int64 base_value, int base_unit,
 			 * assume that the conversions for each base unit are ordered from
 			 * greatest unit to the smallest!
 			 */
-			if (table[i].multiplier < 0)
+			if (table[i].func != NULL)
+                                multiplier = table[i].func(table[i].unit, base_unit);
+                        else
+                                multiplier = table[i].multiplier;
+
+			if (multiplier < 0)
 			{
-				*value = base_value * (-table[i].multiplier);
+				*value = base_value * (-multiplier);
 				*unit = table[i].unit;
 				break;
 			}
-			else if (base_value % table[i].multiplier == 0)
+			else if (base_value % multiplier == 0)
 			{
-				*value = base_value / table[i].multiplier;
+				*value = base_value / multiplier;
 				*unit = table[i].unit;
 				break;
 			}
@@ -8130,11 +8181,11 @@ GetConfigOptionByNum(int varnum, const char **values, bool *noshow)
 				values[2] = "MB";
 				break;
 			case GUC_UNIT_BLOCKS:
-				snprintf(buffer, sizeof(buffer), "%dkB", BLCKSZ / 1024);
+				snprintf(buffer, sizeof(buffer), "%dkB", rel_blck_size / 1024);
 				values[2] = pstrdup(buffer);
 				break;
 			case GUC_UNIT_XBLOCKS:
-				snprintf(buffer, sizeof(buffer), "%dkB", XLOG_BLCKSZ / 1024);
+				snprintf(buffer, sizeof(buffer), "%dkB", wal_blck_size / 1024);
 				values[2] = pstrdup(buffer);
 				break;
 			case GUC_UNIT_MS:

@@ -268,7 +268,7 @@ begin_heap_rewrite(Relation old_heap, Relation new_heap, TransactionId oldest_xm
 
 	state->rs_old_rel = old_heap;
 	state->rs_new_rel = new_heap;
-	state->rs_buffer = (Page) palloc(BLCKSZ);
+	state->rs_buffer = (Page) palloc(rel_blck_size);
 	/* new_heap needn't be empty, just locked */
 	state->rs_blockno = RelationGetNumberOfBlocks(new_heap);
 	state->rs_buffer_valid = false;
@@ -708,7 +708,7 @@ raw_heap_insert(RewriteState state, HeapTuple tup)
 	if (!state->rs_buffer_valid)
 	{
 		/* Initialize a new empty page */
-		PageInit(page, BLCKSZ, 0);
+		PageInit(page, rel_blck_size, 0);
 		state->rs_buffer_valid = true;
 	}
 

@@ -48,10 +48,10 @@ typedef FSMPageData *FSMPage;
  * Number of non-leaf and leaf nodes, and nodes in total, on an FSM page.
  * These definitions are internal to fsmpage.c.
  */
-#define NodesPerPage (BLCKSZ - MAXALIGN(SizeOfPageHeaderData) - \
+#define NodesPerPage (rel_blck_size - MAXALIGN(SizeOfPageHeaderData) - \
 					  offsetof(FSMPageData, fp_nodes))
 
-#define NonLeafNodesPerPage (BLCKSZ / 2 - 1)
+#define NonLeafNodesPerPage (rel_blck_size / 2 - 1)
 #define LeafNodesPerPage (NodesPerPage - NonLeafNodesPerPage)
 
 /*
@@ -68,5 +68,6 @@ extern uint8 fsm_get_max_avail(Page page);
 extern bool fsm_set_avail(Page page, int slot, uint8 value);
 extern bool fsm_truncate_avail(Page page, int nslots);
 extern bool fsm_rebuild_page(Page page);
+extern void fsm_init(void);
 
 #endif							/* FSM_INTERNALS_H */

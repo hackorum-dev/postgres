@@ -10982,7 +10982,7 @@ copy_relation_data(SMgrRelation src, SMgrRelation dst,
 	 * can seriously hurt transfer speed to and from the kernel; not to
 	 * mention possibly making log_newpage's accesses to the page header fail.
 	 */
-	buf = (char *) palloc(BLCKSZ);
+	buf = (char *) palloc(rel_blck_size);
 	page = (Page) buf;
 
 	/*

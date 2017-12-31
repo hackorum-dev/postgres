@@ -147,7 +147,7 @@ gistbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 		fillfactor = GIST_DEFAULT_FILLFACTOR;
 	}
 	/* Calculate target amount of free space to leave on pages */
-	buildstate.freespace = BLCKSZ * (100 - fillfactor) / 100;
+	buildstate.freespace = rel_blck_size * (100 - fillfactor) / 100;
 
 	/*
 	 * We expect to be called exactly once for any index relation. If that's
@@ -274,7 +274,7 @@ gistInitBuffering(GISTBuildState *buildstate)
 	int			levelStep;
 
 	/* Calc space of index page which is available for index tuples */
-	pageFreeSpace = BLCKSZ - SizeOfPageHeaderData - sizeof(GISTPageOpaqueData)
+	pageFreeSpace = rel_blck_size - SizeOfPageHeaderData - sizeof(GISTPageOpaqueData)
 		- sizeof(ItemIdData)
 		- buildstate->freespace;
 
@@ -371,7 +371,7 @@ gistInitBuffering(GISTBuildState *buildstate)
 			break;
 
 		/* each node in the lowest level of a subtree has one page in memory */
-		if (maxlowestlevelpages > ((double) maintenance_work_mem * 1024) / BLCKSZ)
+		if (maxlowestlevelpages > ((double) maintenance_work_mem * 1024) / rel_blck_size)
 			break;
 
 		/* Good, we can handle this levelStep. See if we can go one higher. */
@@ -430,7 +430,7 @@ calculatePagesPerBuffer(GISTBuildState *buildstate, int levelStep)
 	Size		pageFreeSpace;
 
 	/* Calc space of index page which is available for index tuples */
-	pageFreeSpace = BLCKSZ - SizeOfPageHeaderData - sizeof(GISTPageOpaqueData)
+	pageFreeSpace = rel_blck_size - SizeOfPageHeaderData - sizeof(GISTPageOpaqueData)
 		- sizeof(ItemIdData)
 		- buildstate->freespace;
 

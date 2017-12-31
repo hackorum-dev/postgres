@@ -147,8 +147,8 @@ get_raw_page_internal(text *relname, ForkNumber forknum, BlockNumber blkno)
 						blkno, RelationGetRelationName(rel))));
 
 	/* Initialize buffer to copy to */
-	raw_page = (bytea *) palloc(BLCKSZ + VARHDRSZ);
-	SET_VARSIZE(raw_page, BLCKSZ + VARHDRSZ);
+	raw_page = (bytea *) palloc(rel_blck_size + VARHDRSZ);
+	SET_VARSIZE(raw_page, rel_blck_size + VARHDRSZ);
 	raw_page_data = VARDATA(raw_page);
 
 	/* Take a verbatim copy of the page */
@@ -156,7 +156,7 @@ get_raw_page_internal(text *relname, ForkNumber forknum, BlockNumber blkno)
 	buf = ReadBufferExtended(rel, forknum, blkno, RBM_NORMAL, NULL);
 	LockBuffer(buf, BUFFER_LOCK_SHARE);
 
-	memcpy(raw_page_data, BufferGetPage(buf), BLCKSZ);
+	memcpy(raw_page_data, BufferGetPage(buf), rel_blck_size);
 
 	LockBuffer(buf, BUFFER_LOCK_UNLOCK);
 	ReleaseBuffer(buf);
@@ -187,12 +187,12 @@ get_page_from_raw(bytea *raw_page)
 
 	raw_page_size = VARSIZE_ANY_EXHDR(raw_page);
 
-	if (raw_page_size != BLCKSZ)
+	if (raw_page_size != rel_blck_size)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("invalid page size"),
 				 errdetail("Expected %d bytes, got %d.",
-						   BLCKSZ, raw_page_size)));
+						   rel_blck_size, raw_page_size)));
 
 	page = palloc(raw_page_size);
 
@@ -308,7 +308,7 @@ page_checksum(PG_FUNCTION_ARGS)
 	/*
 	 * Check that the supplied page is of the right size.
 	 */
-	if (raw_page_size != BLCKSZ)
+	if (raw_page_size != rel_blck_size)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("incorrect size of input page (%d bytes)", raw_page_size)));

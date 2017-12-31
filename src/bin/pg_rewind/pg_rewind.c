@@ -27,6 +27,7 @@
 #include "common/restricted_token.h"
 #include "getopt_long.h"
 #include "storage/bufpage.h"
+#include "storage/md.h"
 
 static void usage(const char *progname);
 
@@ -44,7 +45,6 @@ static ControlFileData ControlFile_target;
 static ControlFileData ControlFile_source;
 
 const char *progname;
-int			WalSegSz;
 
 /* Configuration options */
 char	   *datadir_target = NULL;
@@ -58,6 +58,17 @@ bool		dry_run = false;
 /* Target history */
 TimeLineHistoryEntry *targetHistory;
 int			targetNentries;
+
+/*
+ * Wal and relation file and block sizes
+ */
+unsigned int wal_blck_size = 0;
+unsigned int wal_file_blck = 0;
+unsigned long rel_file_size = 0;
+unsigned int rel_blck_size = 0;
+unsigned int rel_file_blck = 0;
+unsigned long wal_file_size =0;
+
 
 static void
 usage(const char *progname)
@@ -573,8 +584,8 @@ createBackupLabel(XLogRecPtr startpoint, TimeLineID starttli, XLogRecPtr checkpo
 	char		buf[1000];
 	int			len;
 
-	XLByteToSeg(startpoint, startsegno, WalSegSz);
-	XLogFileName(xlogfilename, starttli, startsegno, WalSegSz);
+	XLByteToSeg(startpoint, startsegno, wal_file_size);
+	XLogFileName(xlogfilename, starttli, startsegno, wal_file_size);
 
 	/*
 	 * Construct backup label file
@@ -632,12 +643,18 @@ digestControlFile(ControlFileData *ControlFile, char *src, size_t size)
 
 	memcpy(ControlFile, src, sizeof(ControlFileData));
 
-	/* set and validate WalSegSz */
-	WalSegSz = ControlFile->xlog_seg_size;
+	/* set and validate wal_file_size */
+	rel_blck_size = ControlFile->blcksz;
+        rel_file_blck = ControlFile->relseg_size;
+        rel_file_size = rel_blck_size * rel_file_blck;
 
-	if (!IsValidWalSegSize(WalSegSz))
-		pg_fatal("WAL segment size must be a power of two between 1MB and 1GB, but the control file specifies %d bytes\n",
-				 WalSegSz);
+        wal_blck_size = ControlFile->xlog_blcksz;
+        wal_file_size = ControlFile->xlog_seg_size;
+        wal_file_blck = wal_file_size / wal_blck_size;
+
+	if (!IsValidWalSegSize(wal_file_size))
+		pg_fatal("WAL segment size must be a power of two between 1MB and 1GB, but the control file specifies %lu bytes\n",
+				 wal_file_size);
 
 	/* Additional checks on control file */
 	checkControlFile(ControlFile);

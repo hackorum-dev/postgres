@@ -94,7 +94,7 @@
 #include "utils/timestamp.h"
 
 /*
- * Maximum data payload in a WAL data message.  Must be >= XLOG_BLCKSZ.
+ * Maximum data payload in a WAL data message.  Must be >= wal_blck_size.
  *
  * We don't have a good idea of what a good value would be; there's some
  * overhead per message in both walsender and walreceiver, but on the other
@@ -102,7 +102,7 @@
  * because signals are checked only between messages.  128kB (with
  * default 8k blocks) seems like a reasonable guess for now.
  */
-#define MAX_SEND_SIZE (XLOG_BLCKSZ * 16)
+#define MAX_SEND_SIZE (wal_blck_size * 16)
 
 /* Array of WalSnds in shared memory */
 WalSndCtlData *WalSndCtl = NULL;
@@ -494,7 +494,7 @@ SendTimeLineHistory(TimeLineHistoryCmd *cmd)
 	bytesleft = histfilelen;
 	while (bytesleft > 0)
 	{
-		char		rbuf[BLCKSZ];
+		char		rbuf[rel_blck_size];
 		int			nread;
 
 		pgstat_report_wait_start(WAIT_EVENT_WALSENDER_TIMELINE_HISTORY_READ);
@@ -764,13 +764,13 @@ logical_read_xlog_page(XLogReaderState *state, XLogRecPtr targetPagePtr, int req
 	if (flushptr < targetPagePtr + reqLen)
 		return -1;
 
-	if (targetPagePtr + XLOG_BLCKSZ <= flushptr)
-		count = XLOG_BLCKSZ;	/* more than one block available */
+	if (targetPagePtr + wal_blck_size <= flushptr)
+		count = wal_blck_size;	/* more than one block available */
 	else
 		count = flushptr - targetPagePtr;	/* part of the page available */
 
 	/* now actually read the data, we know it's there */
-	XLogRead(cur_page, targetPagePtr, XLOG_BLCKSZ);
+	XLogRead(cur_page, targetPagePtr, wal_blck_size);
 
 	return count;
 }
@@ -2316,9 +2316,9 @@ retry:
 		int			segbytes;
 		int			readbytes;
 
-		startoff = XLogSegmentOffset(recptr, wal_segment_size);
+		startoff = XLogSegmentOffset(recptr, wal_file_size);
 
-		if (sendFile < 0 || !XLByteInSeg(recptr, sendSegNo, wal_segment_size))
+		if (sendFile < 0 || !XLByteInSeg(recptr, sendSegNo, wal_file_size))
 		{
 			char		path[MAXPGPATH];
 
@@ -2326,7 +2326,7 @@ retry:
 			if (sendFile >= 0)
 				close(sendFile);
 
-			XLByteToSeg(recptr, sendSegNo, wal_segment_size);
+			XLByteToSeg(recptr, sendSegNo, wal_file_size);
 
 			/*-------
 			 * When reading from a historic timeline, and there is a timeline
@@ -2359,12 +2359,12 @@ retry:
 			{
 				XLogSegNo	endSegNo;
 
-				XLByteToSeg(sendTimeLineValidUpto, endSegNo, wal_segment_size);
+				XLByteToSeg(sendTimeLineValidUpto, endSegNo, wal_file_size);
 				if (sendSegNo == endSegNo)
 					curFileTimeLine = sendTimeLineNextTLI;
 			}
 
-			XLogFilePath(path, curFileTimeLine, sendSegNo, wal_segment_size);
+			XLogFilePath(path, curFileTimeLine, sendSegNo, wal_file_size);
 
 			sendFile = BasicOpenFile(path, O_RDONLY | PG_BINARY);
 			if (sendFile < 0)
@@ -2401,8 +2401,8 @@ retry:
 		}
 
 		/* How many bytes are within this segment? */
-		if (nbytes > (wal_segment_size - startoff))
-			segbytes = wal_segment_size - startoff;
+		if (nbytes > (wal_file_size - startoff))
+			segbytes = wal_file_size - startoff;
 		else
 			segbytes = nbytes;
 
@@ -2433,7 +2433,7 @@ retry:
 	 * read() succeeds in that case, but the data we tried to read might
 	 * already have been overwritten with new WAL records.
 	 */
-	XLByteToSeg(startptr, segno, wal_segment_size);
+	XLByteToSeg(startptr, segno, wal_file_size);
 	CheckXLogRemoved(segno, ThisTimeLineID);
 
 	/*
@@ -2672,7 +2672,7 @@ XLogSendPhysical(void)
 	else
 	{
 		/* round down to page boundary. */
-		endptr -= (endptr % XLOG_BLCKSZ);
+		endptr -= (endptr % wal_blck_size);
 		WalSndCaughtUp = false;
 	}
 

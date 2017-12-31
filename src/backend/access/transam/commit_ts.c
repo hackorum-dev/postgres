@@ -38,7 +38,7 @@
 #include "utils/timestamp.h"
 
 /*
- * Defines for CommitTs page sizes.  A page is the same BLCKSZ as is used
+ * Defines for CommitTs page sizes.  A page is the same rel_blck_size as is used
  * everywhere else in Postgres.
  *
  * Note: because TransactionIds are 32 bits and wrap around at 0xFFFFFFFF,
@@ -64,7 +64,7 @@ typedef struct CommitTimestampEntry
 									sizeof(RepOriginId))
 
 #define COMMIT_TS_XACTS_PER_PAGE \
-	(BLCKSZ / SizeOfCommitTimestampEntry)
+	(rel_blck_size / SizeOfCommitTimestampEntry)
 
 #define TransactionIdToCTsPage(xid) \
 	((xid) / (TransactionId) COMMIT_TS_XACTS_PER_PAGE)

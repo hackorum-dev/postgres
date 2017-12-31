@@ -340,8 +340,8 @@ checkSplitConditions(Relation index, SpGistState *state,
 	if (SpGistBlockIsRoot(current->blkno))
 	{
 		/* return impossible values to force split */
-		*nToSplit = BLCKSZ;
-		return BLCKSZ;
+		*nToSplit = rel_blck_size;
+		return rel_blck_size;
 	}
 
 	i = current->offnum;

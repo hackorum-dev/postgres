@@ -51,7 +51,7 @@ _bt_initmetapage(Page page, BlockNumber rootbknum, uint32 level)
 	BTMetaPageData *metad;
 	BTPageOpaque metaopaque;
 
-	_bt_pageinit(page, BLCKSZ);
+	_bt_pageinit(page, rel_blck_size);
 
 	metad = BTPageGetMeta(page);
 	metad->btm_magic = BTREE_MAGIC;

@@ -616,7 +616,7 @@ entrySplitPage(GinBtree btree, Buffer origbuf,
 	Page		lpage = PageGetTempPageCopy(BufferGetPage(origbuf));
 	Page		rpage = PageGetTempPageCopy(BufferGetPage(origbuf));
 	Size		pageSize = PageGetPageSize(lpage);
-	char		tupstore[2 * BLCKSZ];
+	char		tupstore[2 * rel_blck_size];
 
 	entryPreparePage(btree, lpage, off, insertData, updateblkno);
 

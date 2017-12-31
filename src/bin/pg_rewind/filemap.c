@@ -21,6 +21,7 @@
 #include "common/string.h"
 #include "catalog/pg_tablespace.h"
 #include "storage/fd.h"
+#include "storage/md.h"
 
 filemap_t  *filemap = NULL;
 
@@ -353,8 +354,8 @@ process_block_change(ForkNumber forknum, RelFileNode rnode, BlockNumber blkno)
 
 	Assert(map->array);
 
-	segno = blkno / RELSEG_SIZE;
-	blkno_inseg = blkno % RELSEG_SIZE;
+	segno = blkno / rel_file_blck;
+	blkno_inseg = blkno % rel_file_blck;
 
 	path = datasegpath(rnode, forknum, segno);
 
@@ -378,7 +379,7 @@ process_block_change(ForkNumber forknum, RelFileNode rnode, BlockNumber blkno)
 			case FILE_ACTION_NONE:
 			case FILE_ACTION_TRUNCATE:
 				/* skip if we're truncating away the modified block anyway */
-				if ((blkno_inseg + 1) * BLCKSZ <= entry->newsize)
+				if ((blkno_inseg + 1) * rel_blck_size <= entry->newsize)
 					datapagemap_add(&entry->pagemap, blkno_inseg);
 				break;
 
@@ -388,7 +389,7 @@ process_block_change(ForkNumber forknum, RelFileNode rnode, BlockNumber blkno)
 				 * skip the modified block if it is part of the "tail" that
 				 * we're copying anyway.
 				 */
-				if ((blkno_inseg + 1) * BLCKSZ <= entry->oldsize)
+				if ((blkno_inseg + 1) * rel_blck_size <= entry->oldsize)
 					datapagemap_add(&entry->pagemap, blkno_inseg);
 				break;
 
@@ -510,7 +511,7 @@ calculate_totals(void)
 
 			iter = datapagemap_iterate(&entry->pagemap);
 			while (datapagemap_next(iter, &blk))
-				map->fetch_size += BLCKSZ;
+				map->fetch_size += rel_blck_size;
 
 			pg_free(iter);
 		}

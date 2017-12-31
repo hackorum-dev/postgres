@@ -150,7 +150,7 @@
  * than that, so changes in that data structure won't affect user-visible
  * restrictions.
  */
-#define NOTIFY_PAYLOAD_MAX_LENGTH	(BLCKSZ - NAMEDATALEN - 128)
+#define NOTIFY_PAYLOAD_MAX_LENGTH	(rel_blck_size - NAMEDATALEN - 128)
 
 /*
  * Struct representing an entry in the global notify queue
@@ -170,13 +170,15 @@ typedef struct AsyncQueueEntry
 	Oid			dboid;			/* sender's database OID */
 	TransactionId xid;			/* sender's XID */
 	int32		srcPid;			/* sender's PID */
-	char		data[NAMEDATALEN + NOTIFY_PAYLOAD_MAX_LENGTH];
+	char*		data;
 } AsyncQueueEntry;
+
 
 /* Currently, no field of AsyncQueueEntry requires more than int alignment */
 #define QUEUEALIGN(len)		INTALIGN(len)
 
 #define AsyncQueueEntryEmptySize	(offsetof(AsyncQueueEntry, data) + 2)
+#define SizeOfAsyncQueueEntryData	(sizeof(char) * (NAMEDATALEN + NOTIFY_PAYLOAD_MAX_LENGTH))
 
 /*
  * Struct describing a queue position, and assorted macros for working with it
@@ -266,7 +268,7 @@ static AsyncQueueControl *asyncQueueControl;
 static SlruCtlData AsyncCtlData;
 
 #define AsyncCtl					(&AsyncCtlData)
-#define QUEUE_PAGESIZE				BLCKSZ
+#define QUEUE_PAGESIZE				rel_blck_size
 #define QUEUE_FULL_WARN_INTERVAL	5000	/* warn at most once every 5s */
 
 /*
@@ -280,7 +282,7 @@ static SlruCtlData AsyncCtlData;
  *
  * The most data we can have in the queue at a time is QUEUE_MAX_PAGE/2
  * pages, because more than that would confuse slru.c into thinking there
- * was a wraparound condition.  With the default BLCKSZ this means there
+ * was a wraparound condition.  With the default rel_blck_size this means there
  * can be up to 8GB of queued-and-not-read data.
  *
  * Note: it's possible to redefine QUEUE_MAX_PAGE with a smaller multiple of
@@ -1328,6 +1330,8 @@ asyncQueueAddEntries(ListCell *nextNotify)
 	int			offset;
 	int			slotno;
 
+	qe.data = palloc(SizeOfAsyncQueueEntryData);
+
 	/* We hold both AsyncQueueLock and AsyncCtlLock during this operation */
 	LWLockAcquire(AsyncCtlLock, LW_EXCLUSIVE);
 
@@ -1347,6 +1351,7 @@ asyncQueueAddEntries(ListCell *nextNotify)
 	/* Fetch the current page */
 	pageno = QUEUE_POS_PAGE(queue_head);
 	slotno = SimpleLruReadPage(AsyncCtl, pageno, true, InvalidTransactionId);
+
 	/* Note we mark the page dirty before writing in it */
 	AsyncCtl->shared->page_dirty[slotno] = true;
 
@@ -1404,6 +1409,8 @@ asyncQueueAddEntries(ListCell *nextNotify)
 	QUEUE_HEAD = queue_head;
 
 	LWLockRelease(AsyncCtlLock);
+
+	pfree(qe.data);
 
 	return nextNotify;
 }

@@ -619,7 +619,7 @@ WalReceiverMain(void)
 			 * Create .done file forcibly to prevent the streamed segment from
 			 * being archived later.
 			 */
-			XLogFileName(xlogfname, recvFileTLI, recvSegNo, wal_segment_size);
+			XLogFileName(xlogfname, recvFileTLI, recvSegNo, wal_file_size);
 			if (XLogArchiveMode != ARCHIVE_MODE_ALWAYS)
 				XLogArchiveForceDone(xlogfname);
 			else
@@ -949,7 +949,7 @@ XLogWalRcvWrite(char *buf, Size nbytes, XLogRecPtr recptr)
 	{
 		int			segbytes;
 
-		if (recvFile < 0 || !XLByteInSeg(recptr, recvSegNo, wal_segment_size))
+		if (recvFile < 0 || !XLByteInSeg(recptr, recvSegNo, wal_file_size))
 		{
 			bool		use_existent;
 
@@ -978,7 +978,7 @@ XLogWalRcvWrite(char *buf, Size nbytes, XLogRecPtr recptr)
 				 * Create .done file forcibly to prevent the streamed segment
 				 * from being archived later.
 				 */
-				XLogFileName(xlogfname, recvFileTLI, recvSegNo, wal_segment_size);
+				XLogFileName(xlogfname, recvFileTLI, recvSegNo, wal_file_size);
 				if (XLogArchiveMode != ARCHIVE_MODE_ALWAYS)
 					XLogArchiveForceDone(xlogfname);
 				else
@@ -987,7 +987,7 @@ XLogWalRcvWrite(char *buf, Size nbytes, XLogRecPtr recptr)
 			recvFile = -1;
 
 			/* Create/use new log file */
-			XLByteToSeg(recptr, recvSegNo, wal_segment_size);
+			XLByteToSeg(recptr, recvSegNo, wal_file_size);
 			use_existent = true;
 			recvFile = XLogFileInit(recvSegNo, &use_existent, true);
 			recvFileTLI = ThisTimeLineID;
@@ -995,10 +995,10 @@ XLogWalRcvWrite(char *buf, Size nbytes, XLogRecPtr recptr)
 		}
 
 		/* Calculate the start offset of the received logs */
-		startoff = XLogSegmentOffset(recptr, wal_segment_size);
+		startoff = XLogSegmentOffset(recptr, wal_file_size);
 
-		if (startoff + nbytes > wal_segment_size)
-			segbytes = wal_segment_size - startoff;
+		if (startoff + nbytes > wal_file_size)
+			segbytes = wal_file_size - startoff;
 		else
 			segbytes = nbytes;
 

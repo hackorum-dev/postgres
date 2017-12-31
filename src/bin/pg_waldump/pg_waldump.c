@@ -20,6 +20,9 @@
 #include "access/xlogrecord.h"
 #include "access/xlog_internal.h"
 #include "access/transam.h"
+#include "catalog/pg_control.h"
+#include "storage/md.h"
+#include "common/controldata_utils.h"
 #include "common/fe_memutils.h"
 #include "getopt_long.h"
 #include "rmgrdesc.h"
@@ -27,7 +30,10 @@
 
 static const char *progname;
 
-static int	WalSegSz;
+unsigned int wal_blck_size;
+unsigned long wal_file_size;
+unsigned int rel_blck_size;
+
 
 typedef struct XLogDumpPrivate
 {
@@ -206,20 +212,21 @@ search_directory(const char *directory, const char *fname)
 		closedir(xldir);
 	}
 
-	/* set WalSegSz if file is successfully opened */
+	/* set wal_file_size if file is successfully opened */
 	if (fd >= 0)
 	{
-		char		buf[XLOG_BLCKSZ];
+		char		buf[wal_blck_size];
 
-		if (read(fd, buf, XLOG_BLCKSZ) == XLOG_BLCKSZ)
+		if (read(fd, buf, SizeOfXLogLongPHD) ==  SizeOfXLogLongPHD)
 		{
 			XLogLongPageHeader longhdr = (XLogLongPageHeader) buf;
 
-			WalSegSz = longhdr->xlp_seg_size;
+			wal_file_size = longhdr->xlp_seg_size;
+			wal_blck_size = longhdr->xlp_xlog_blcksz;
 
-			if (!IsValidWalSegSize(WalSegSz))
-				fatal_error("WAL segment size must be a power of two between 1MB and 1GB, but the WAL file \"%s\" header specifies %d bytes",
-							fname, WalSegSz);
+			if (!IsValidWalSegSize(wal_file_size))
+				fatal_error("WAL segment size must be a power of two between 1MB and 1GB, but the WAL file \"%s\" header specifies %lu bytes",
+							fname, wal_file_size);
 		}
 		else
 		{
@@ -237,7 +244,7 @@ search_directory(const char *directory, const char *fname)
 }
 
 /*
- * Identify the target directory and set WalSegSz.
+ * Identify the target directory and set wal_file_size.
  *
  * Try to find the file in several places:
  * if directory != NULL:
@@ -336,9 +343,9 @@ XLogDumpXLogRead(const char *directory, TimeLineID timeline_id,
 		int			segbytes;
 		int			readbytes;
 
-		startoff = XLogSegmentOffset(recptr, WalSegSz);
+		startoff = XLogSegmentOffset(recptr, wal_file_size);
 
-		if (sendFile < 0 || !XLByteInSeg(recptr, sendSegNo, WalSegSz))
+		if (sendFile < 0 || !XLByteInSeg(recptr, sendSegNo, wal_file_size))
 		{
 			char		fname[MAXFNAMELEN];
 			int			tries;
@@ -347,9 +354,9 @@ XLogDumpXLogRead(const char *directory, TimeLineID timeline_id,
 			if (sendFile >= 0)
 				close(sendFile);
 
-			XLByteToSeg(recptr, sendSegNo, WalSegSz);
+			XLByteToSeg(recptr, sendSegNo, wal_file_size);
 
-			XLogFileName(fname, timeline_id, sendSegNo, WalSegSz);
+			XLogFileName(fname, timeline_id, sendSegNo, wal_file_size);
 
 			/*
 			 * In follow mode there is a short period of time after the server
@@ -390,7 +397,7 @@ XLogDumpXLogRead(const char *directory, TimeLineID timeline_id,
 				int			err = errno;
 				char		fname[MAXPGPATH];
 
-				XLogFileName(fname, timeline_id, sendSegNo, WalSegSz);
+				XLogFileName(fname, timeline_id, sendSegNo, wal_file_size);
 
 				fatal_error("could not seek in log file %s to offset %u: %s",
 							fname, startoff, strerror(err));
@@ -399,8 +406,8 @@ XLogDumpXLogRead(const char *directory, TimeLineID timeline_id,
 		}
 
 		/* How many bytes are within this segment? */
-		if (nbytes > (WalSegSz - startoff))
-			segbytes = WalSegSz - startoff;
+		if (nbytes > (wal_file_size - startoff))
+			segbytes = wal_file_size - startoff;
 		else
 			segbytes = nbytes;
 
@@ -410,7 +417,7 @@ XLogDumpXLogRead(const char *directory, TimeLineID timeline_id,
 			int			err = errno;
 			char		fname[MAXPGPATH];
 
-			XLogFileName(fname, timeline_id, sendSegNo, WalSegSz);
+			XLogFileName(fname, timeline_id, sendSegNo, wal_file_size);
 
 			fatal_error("could not read from log file %s, offset %u, length %d: %s",
 						fname, sendOff, segbytes, strerror(err));
@@ -433,12 +440,12 @@ XLogDumpReadPage(XLogReaderState *state, XLogRecPtr targetPagePtr, int reqLen,
 				 XLogRecPtr targetPtr, char *readBuff, TimeLineID *curFileTLI)
 {
 	XLogDumpPrivate *private = state->private_data;
-	int			count = XLOG_BLCKSZ;
+	int			count = wal_blck_size;
 
 	if (private->endptr != InvalidXLogRecPtr)
 	{
-		if (targetPagePtr + XLOG_BLCKSZ <= private->endptr)
-			count = XLOG_BLCKSZ;
+		if (targetPagePtr + wal_blck_size <= private->endptr)
+			count = wal_blck_size;
 		else if (targetPagePtr + reqLen <= private->endptr)
 			count = private->endptr - targetPagePtr;
 		else
@@ -611,7 +618,7 @@ XLogDumpDisplayRecord(XLogDumpConfig *config, XLogReaderState *record)
 						   "" : " for WAL verification",
 						   record->blocks[block_id].hole_offset,
 						   record->blocks[block_id].hole_length,
-						   BLCKSZ -
+						   rel_blck_size -
 						   record->blocks[block_id].hole_length -
 						   record->blocks[block_id].bimg_len);
 				}
@@ -1034,11 +1041,11 @@ main(int argc, char **argv)
 		close(fd);
 
 		/* parse position from file */
-		XLogFromFileName(fname, &private.timeline, &segno, WalSegSz);
+		XLogFromFileName(fname, &private.timeline, &segno, wal_file_size);
 
 		if (XLogRecPtrIsInvalid(private.startptr))
-			XLogSegNoOffsetToRecPtr(segno, 0, private.startptr, WalSegSz);
-		else if (!XLByteInSeg(private.startptr, segno, WalSegSz))
+			XLogSegNoOffsetToRecPtr(segno, 0, private.startptr, wal_file_size);
+		else if (!XLByteInSeg(private.startptr, segno, wal_file_size))
 		{
 			fprintf(stderr,
 					_("%s: start WAL location %X/%X is not inside file \"%s\"\n"),
@@ -1051,7 +1058,7 @@ main(int argc, char **argv)
 
 		/* no second file specified, set end position */
 		if (!(optind + 1 < argc) && XLogRecPtrIsInvalid(private.endptr))
-			XLogSegNoOffsetToRecPtr(segno + 1, 0, private.endptr, WalSegSz);
+			XLogSegNoOffsetToRecPtr(segno + 1, 0, private.endptr, wal_file_size);
 
 		/* parse ENDSEG if passed */
 		if (optind + 1 < argc)
@@ -1067,7 +1074,7 @@ main(int argc, char **argv)
 			close(fd);
 
 			/* parse position from file */
-			XLogFromFileName(fname, &private.timeline, &endsegno, WalSegSz);
+			XLogFromFileName(fname, &private.timeline, &endsegno, wal_file_size);
 
 			if (endsegno < segno)
 				fatal_error("ENDSEG %s is before STARTSEG %s",
@@ -1075,15 +1082,15 @@ main(int argc, char **argv)
 
 			if (XLogRecPtrIsInvalid(private.endptr))
 				XLogSegNoOffsetToRecPtr(endsegno + 1, 0, private.endptr,
-										WalSegSz);
+										wal_file_size);
 
 			/* set segno to endsegno for check of --end */
 			segno = endsegno;
 		}
 
 
-		if (!XLByteInSeg(private.endptr, segno, WalSegSz) &&
-			private.endptr != (segno + 1) * WalSegSz)
+		if (!XLByteInSeg(private.endptr, segno, wal_file_size) &&
+			private.endptr != (segno + 1) * wal_file_size)
 		{
 			fprintf(stderr,
 					_("%s: end WAL location %X/%X is not inside file \"%s\"\n"),
@@ -1107,7 +1114,7 @@ main(int argc, char **argv)
 	/* done with argument parsing, do the actual work */
 
 	/* we have everything we need, start reading */
-	xlogreader_state = XLogReaderAllocate(WalSegSz, XLogDumpReadPage,
+	xlogreader_state = XLogReaderAllocate(wal_file_size, XLogDumpReadPage,
 										  &private);
 	if (!xlogreader_state)
 		fatal_error("out of memory");
@@ -1126,7 +1133,7 @@ main(int argc, char **argv)
 	 * a segment (e.g. we were used in file mode).
 	 */
 	if (first_record != private.startptr &&
-		XLogSegmentOffset(private.startptr, WalSegSz) != 0)
+		XLogSegmentOffset(private.startptr, wal_file_size) != 0)
 		printf(ngettext("first record is after %X/%X, at %X/%X, skipping over %u byte\n",
 						"first record is after %X/%X, at %X/%X, skipping over %u bytes\n",
 						(first_record - private.startptr)),

@@ -16,10 +16,9 @@
  */
 #define FRONTEND 1
 
-#include "postgres.h"
-
 #include <time.h>
 
+#include "postgres.h"
 #include "access/xlog.h"
 #include "access/xlog_internal.h"
 #include "catalog/pg_control.h"
@@ -290,15 +289,22 @@ main(int argc, char *argv[])
 		   ControlFile->track_commit_timestamp ? _("on") : _("off"));
 	printf(_("Maximum data alignment:               %u\n"),
 		   ControlFile->maxAlign);
+
 	/* we don't print floatFormat since can't say much useful about it */
-	printf(_("Database block size:                  %u\n"),
+	printf(_("Relation block size:                  %u\n"),
 		   ControlFile->blcksz);
-	printf(_("Blocks per segment of large relation: %u\n"),
+	printf(_("Relation blocks per file:          %u\n"),
 		   ControlFile->relseg_size);
+	printf(_("Relation file size:                   %u\n"),
+		   ControlFile->blcksz * ControlFile->relseg_size);
+
 	printf(_("WAL block size:                       %u\n"),
 		   ControlFile->xlog_blcksz);
-	printf(_("Bytes per WAL segment:                %u\n"),
+	printf(_("WAL blocks per file:                  %u\n"),
+		   ControlFile->xlog_seg_size / ControlFile->xlog_blcksz);
+	printf(_("WAL file size:                        %u\n"),
 		   ControlFile->xlog_seg_size);
+
 	printf(_("Maximum length of identifiers:        %u\n"),
 		   ControlFile->nameDataLen);
 	printf(_("Maximum columns in an index:          %u\n"),

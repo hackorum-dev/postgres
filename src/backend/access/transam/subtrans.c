@@ -33,10 +33,11 @@
 #include "access/transam.h"
 #include "pg_trace.h"
 #include "utils/snapmgr.h"
+#include "storage/md.h"
 
 
 /*
- * Defines for SubTrans page sizes.  A page is the same BLCKSZ as is used
+ * Defines for SubTrans page sizes.  A page is the same rel_blck_size as is used
  * everywhere else in Postgres.
  *
  * Note: because TransactionIds are 32 bits and wrap around at 0xFFFFFFFF,
@@ -49,7 +50,7 @@
  */
 
 /* We need four bytes per xact */
-#define SUBTRANS_XACTS_PER_PAGE (BLCKSZ / sizeof(TransactionId))
+#define SUBTRANS_XACTS_PER_PAGE (rel_blck_size / sizeof(TransactionId))
 
 #define TransactionIdToPage(xid) ((xid) / (TransactionId) SUBTRANS_XACTS_PER_PAGE)
 #define TransactionIdToEntry(xid) ((xid) % (TransactionId) SUBTRANS_XACTS_PER_PAGE)

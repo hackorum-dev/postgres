@@ -44,12 +44,12 @@
 #include "utils/resowner.h"
 
 /*
- * We break BufFiles into gigabyte-sized segments, regardless of RELSEG_SIZE.
+ * We break BufFiles into gigabyte-sized segments, regardless of rel_file_blck.
  * The reason is that we'd like large BufFiles to be spread across multiple
  * tablespaces when available.
  */
 #define MAX_PHYSICAL_FILESIZE	0x40000000
-#define BUFFILE_SEG_SIZE		(MAX_PHYSICAL_FILESIZE / BLCKSZ)
+#define BUFFILE_SEG_SIZE		(MAX_PHYSICAL_FILESIZE / rel_blck_size)
 
 /*
  * This data structure represents a buffered file that consists of one or
@@ -86,7 +86,7 @@ struct BufFile
 	off_t		curOffset;		/* offset part of current pos */
 	int			pos;			/* next read/write position in buffer */
 	int			nbytes;			/* total # of valid bytes in buffer */
-	char		buffer[BLCKSZ];
+	char*		buffer;
 };
 
 static BufFile *makeBufFile(File firstfile);
@@ -117,6 +117,7 @@ makeBufFile(File firstfile)
 	file->curOffset = 0L;
 	file->pos = 0;
 	file->nbytes = 0;
+	file->buffer = (char*) palloc(rel_blck_size);
 
 	return file;
 }
@@ -193,6 +194,7 @@ BufFileClose(BufFile *file)
 	/* release the buffer space */
 	pfree(file->files);
 	pfree(file->offsets);
+	pfree(file->buffer);
 	pfree(file);
 }
 
@@ -392,7 +394,7 @@ BufFileWrite(BufFile *file, void *ptr, size_t size)
 
 	while (size > 0)
 	{
-		if (file->pos >= BLCKSZ)
+		if (file->pos >= rel_blck_size)
 		{
 			/* Buffer full, dump it out */
 			if (file->dirty)
@@ -410,7 +412,7 @@ BufFileWrite(BufFile *file, void *ptr, size_t size)
 			}
 		}
 
-		nthistime = BLCKSZ - file->pos;
+		nthistime = rel_blck_size - file->pos;
 		if (nthistime > size)
 			nthistime = size;
 		Assert(nthistime > 0);
@@ -551,9 +553,9 @@ BufFileTell(BufFile *file, int *fileno, off_t *offset)
 /*
  * BufFileSeekBlock --- block-oriented seek
  *
- * Performs absolute seek to the start of the n'th BLCKSZ-sized block of
+ * Performs absolute seek to the start of the n'th rel_blck_size-sized block of
  * the file.  Note that users of this interface will fail if their files
- * exceed BLCKSZ * LONG_MAX bytes, but that is quite a lot; we don't work
+ * exceed rel_blck_size * LONG_MAX bytes, but that is quite a lot; we don't work
  * with tables bigger than that, either...
  *
  * Result is 0 if OK, EOF if not.  Logical position is not moved if an
@@ -564,7 +566,7 @@ BufFileSeekBlock(BufFile *file, long blknum)
 {
 	return BufFileSeek(file,
 					   (int) (blknum / BUFFILE_SEG_SIZE),
-					   (off_t) (blknum % BUFFILE_SEG_SIZE) * BLCKSZ,
+					   (off_t) (blknum % BUFFILE_SEG_SIZE) * rel_blck_size,
 					   SEEK_SET);
 }
 
@@ -579,7 +581,7 @@ BufFileTellBlock(BufFile *file)
 {
 	long		blknum;
 
-	blknum = (file->curOffset + file->pos) / BLCKSZ;
+	blknum = (file->curOffset + file->pos) / rel_blck_size;
 	blknum += file->curFile * BUFFILE_SEG_SIZE;
 	return blknum;
 }

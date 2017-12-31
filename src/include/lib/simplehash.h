@@ -222,7 +222,7 @@ SH_COMPUTE_PARAMETERS(SH_TYPE * tb, uint32 newsize)
 	 * Verify that allocation of ->data is possible on this platform, without
 	 * overflowing Size.
 	 */
-	if ((((uint64) sizeof(SH_ELEMENT_TYPE)) * size) >= MaxAllocHugeSize)
+	if ((((uint64) SH_SIZEOF_ELEMENT_TYPE) * size) >= MaxAllocHugeSize)
 		elog(ERROR, "hash table too large");
 
 	/* now set size */
@@ -339,7 +339,7 @@ SH_CREATE(MemoryContext ctx, uint32 nelements, void *private_data)
 
 	SH_COMPUTE_PARAMETERS(tb, size);
 
-	tb->data = SH_ALLOCATE(tb, sizeof(SH_ELEMENT_TYPE) * tb->size);
+	tb->data = SH_ALLOCATE(tb, SH_SIZEOF_ELEMENT_TYPE * tb->size);
 
 	return tb;
 }
@@ -376,7 +376,7 @@ SH_GROW(SH_TYPE * tb, uint32 newsize)
 	/* compute parameters for new table */
 	SH_COMPUTE_PARAMETERS(tb, newsize);
 
-	tb->data = SH_ALLOCATE(tb, sizeof(SH_ELEMENT_TYPE) * tb->size);
+	tb->data = SH_ALLOCATE(tb, SH_SIZEOF_ELEMENT_TYPE * tb->size);
 
 	newdata = tb->data;
 
@@ -451,7 +451,7 @@ SH_GROW(SH_TYPE * tb, uint32 newsize)
 			}
 
 			/* copy entry to new slot */
-			memcpy(newentry, oldentry, sizeof(SH_ELEMENT_TYPE));
+			memcpy(newentry, oldentry, SH_SIZEOF_ELEMENT_TYPE);
 		}
 
 		/* can't use SH_NEXT here, would use new size */
@@ -598,7 +598,7 @@ restart:
 				moveelem = SH_PREV(tb, moveelem, startelem);
 				moveentry = &data[moveelem];
 
-				memcpy(lastentry, moveentry, sizeof(SH_ELEMENT_TYPE));
+				memcpy(lastentry, moveentry, SH_SIZEOF_ELEMENT_TYPE);
 				lastentry = moveentry;
 			}
 
@@ -724,7 +724,7 @@ SH_DELETE(SH_TYPE * tb, SH_KEY_TYPE key)
 				}
 
 				/* shift */
-				memcpy(lastentry, curentry, sizeof(SH_ELEMENT_TYPE));
+				memcpy(lastentry, curentry, SH_SIZEOF_ELEMENT_TYPE);
 
 				lastentry = curentry;
 			}

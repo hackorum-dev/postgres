@@ -8,8 +8,9 @@
  */
 
 #include "postgres_fe.h"
-
 #include "pg_upgrade.h"
+
+#include "storage/md.h"
 
 #include <ctype.h>
 
@@ -556,8 +557,10 @@ check_control_data(ControlData *oldctrl,
 		pg_fatal("old and new pg_controldata alignments are invalid or do not match\n"
 				 "Likely one cluster is a 32-bit install, the other 64-bit\n");
 
-	if (oldctrl->blocksz == 0 || oldctrl->blocksz != newctrl->blocksz)
+	if (oldctrl->blocksz == 0 || oldctrl->blocksz != newctrl->blocksz) 
 		pg_fatal("old and new pg_controldata block sizes are invalid or do not match\n");
+
+	rel_blck_size = oldctrl->blocksz;
 
 	if (oldctrl->largesz == 0 || oldctrl->largesz != newctrl->largesz)
 		pg_fatal("old and new pg_controldata maximum relation segment sizes are invalid or do not match\n");

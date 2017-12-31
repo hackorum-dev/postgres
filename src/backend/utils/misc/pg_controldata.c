@@ -139,9 +139,9 @@ pg_control_checkpoint(PG_FUNCTION_ARGS)
 	 * Calculate name of the WAL file containing the latest checkpoint's REDO
 	 * start point.
 	 */
-	XLByteToSeg(ControlFile->checkPointCopy.redo, segno, wal_segment_size);
+	XLByteToSeg(ControlFile->checkPointCopy.redo, segno, wal_file_size);
 	XLogFileName(xlogfilename, ControlFile->checkPointCopy.ThisTimeLineID,
-				 segno, wal_segment_size);
+				 segno, wal_file_size);
 
 	/* Populate the values and null arrays */
 	values[0] = LSNGetDatum(ControlFile->checkPoint);

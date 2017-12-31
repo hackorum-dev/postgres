@@ -1,0 +1,56 @@
+TODO
+====
+
+Get rid of wal_segment_size (the only dynamic parameter)
+Add block and file size in control file data structure
+Use xlog instead of wal to have a consistent naming throughout the whole source code.
+
+Create macros for commonly used computations
+Gather common code together
+Move check_file_block_sizes() from initdb to src/common
+
+Dynamic value for LOBLKSIZE
+
+
+DONE
+====
+
+Added defs in initdb.c
+Added defs in pg_control_def.h
+
+Renaming
+
+BLCKSZ -> rel_blck_size (bytes)
+RELSEG_SIZE -> rel_file_size
+XLOG_BLCKSZ -> wal_blck_size -> xlog_blck_size
+XLOG_SEG_SIZE -> wal_file_size -> xlog_file_size -> xlog_file_blck
+blcksz -> rel_blck_size
+relseg_size -> rel_file_size
+xlog_blcksz -> wal_blck_size
+xlog_seg_size -> wal_file_size
+wal_segment_size -> wal_file_size
+
+
+JUSTIFICATION
+=============
+
+Various checks spread all around the source code
+
+src/backend/access/transam/xlog.c
+
+max_wal_size_mb = 1024 (MB)
+min_wal_size_mb = 80 (MB)
+
+Have a consistent naming throughout the whole source code
+wal -> xlog
+
+Various names used for the same parameter
+xlp_xlog_blcksz versus XLOG_BLCKSZ
+xlog versus wal
+blcksz versus BLCKSZ
+file sized in bytes of blocks depending on WAL or relation, control file or guc.c
+
+
+
+
+

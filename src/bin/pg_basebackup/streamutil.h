@@ -41,7 +41,11 @@ extern bool RunIdentifySystem(PGconn *conn, char **sysid,
 				  TimeLineID *starttli,
 				  XLogRecPtr *startpos,
 				  char **db_name);
-extern bool RetrieveWalSegSize(PGconn *conn);
+
+extern bool RetrieveServerParameterUnsignedInt(PGconn *conn,
+	const char* name, unsigned int* value);
+extern bool FetchWalRelBlckFileSize(PGconn* conn);
+
 extern TimestampTz feGetCurrentTimestamp(void);
 extern void feTimestampDifference(TimestampTz start_time, TimestampTz stop_time,
 					  long *secs, int *microsecs);

@@ -14,6 +14,7 @@
 
 #include "getopt_long.h"
 #include "access/xlogdefs.h"
+#include "pg_control_def.h"
 
 
 /*
@@ -22,7 +23,7 @@
  */
 #define FSYNC_FILENAME	"./pg_test_fsync.out"
 
-#define XLOG_BLCKSZ_K	(XLOG_BLCKSZ / 1024)
+#define block_size_K	(block_size / 1024)
 
 #define LABEL_FORMAT		"        %-30s"
 #define NA_FORMAT			"%21s\n"
@@ -64,7 +65,7 @@ static const char *progname;
 
 static int	secs_per_test = 5;
 static int	needs_unlink = 0;
-static char full_buf[DEFAULT_XLOG_SEG_SIZE],
+static char full_buf[WAL_FILE_SIZE_DEF],
 		   *buf,
 		   *filename = FSYNC_FILENAME;
 static struct timeval start_t,
@@ -73,13 +74,13 @@ static bool alarm_triggered = false;
 
 
 static void handle_args(int argc, char *argv[]);
-static void prepare_buf(void);
+static void prepare_buf(unsigned int block_size);
 static void test_open(void);
-static void test_non_sync(void);
-static void test_sync(int writes_per_op);
+static void test_non_sync(unsigned int block_size);
+static void test_sync(int writes_per_op, unsigned int block_size);
 static void test_open_syncs(void);
 static void test_open_sync(const char *msg, int writes_size);
-static void test_file_descriptor_sync(void);
+static void test_file_descriptor_sync(unsigned int block_size);
 
 #ifndef WIN32
 static void process_alarm(int sig);
@@ -98,6 +99,8 @@ static void die(const char *str);
 int
 main(int argc, char *argv[])
 {
+	unsigned int block_size;
+
 	set_pglocale_pgservice(argv[0], PG_TEXTDOMAIN("pg_test_fsync"));
 	progname = get_progname(argv[0]);
 
@@ -114,21 +117,21 @@ main(int argc, char *argv[])
 	pqsignal(SIGHUP, signal_cleanup);
 #endif
 
-	prepare_buf();
+	block_size = WAL_BLCK_SIZE_DEF;
+
+	prepare_buf(block_size);
 
 	test_open();
 
-	/* Test using 1 XLOG_BLCKSZ write */
-	test_sync(1);
+	/* Test using 1 block_size write */
+	test_sync(1, block_size);
 
-	/* Test using 2 XLOG_BLCKSZ writes */
-	test_sync(2);
+	/* Test using 2 block_size writes */
+	test_sync(2, block_size);
 
 	test_open_syncs();
-
-	test_file_descriptor_sync();
-
-	test_non_sync();
+	test_file_descriptor_sync(block_size);
+	test_non_sync(block_size);
 
 	unlink(filename);
 
@@ -204,15 +207,15 @@ handle_args(int argc, char *argv[])
 }
 
 static void
-prepare_buf(void)
+prepare_buf(unsigned int block_size)
 {
 	int			ops;
 
 	/* write random data into buffer */
-	for (ops = 0; ops < DEFAULT_XLOG_SEG_SIZE; ops++)
+	for (ops = 0; ops < WAL_FILE_SIZE_DEF; ops++)
 		full_buf[ops] = random();
 
-	buf = (char *) TYPEALIGN(XLOG_BLCKSZ, full_buf);
+	buf = (char *) TYPEALIGN(block_size, full_buf);
 }
 
 static void
@@ -226,8 +229,8 @@ test_open(void)
 	if ((tmpfile = open(filename, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR)) == -1)
 		die("could not open output file");
 	needs_unlink = 1;
-	if (write(tmpfile, full_buf, DEFAULT_XLOG_SEG_SIZE) !=
-		DEFAULT_XLOG_SEG_SIZE)
+	if (write(tmpfile, full_buf, WAL_FILE_SIZE_DEF) !=
+		WAL_FILE_SIZE_DEF)
 		die("write failed");
 
 	/* fsync now so that dirty buffers don't skew later tests */
@@ -238,7 +241,7 @@ test_open(void)
 }
 
 static void
-test_sync(int writes_per_op)
+test_sync(int writes_per_op, unsigned int block_size)
 {
 	int			tmpfile,
 				ops,
@@ -246,9 +249,9 @@ test_sync(int writes_per_op)
 	bool		fs_warning = false;
 
 	if (writes_per_op == 1)
-		printf(_("\nCompare file sync methods using one %dkB write:\n"), XLOG_BLCKSZ_K);
+		printf(_("\nCompare file sync methods using one %dkB write:\n"), block_size_K);
 	else
-		printf(_("\nCompare file sync methods using two %dkB writes:\n"), XLOG_BLCKSZ_K);
+		printf(_("\nCompare file sync methods using two %dkB writes:\n"), block_size_K);
 	printf(_("(in wal_sync_method preference order, except fdatasync is Linux's default)\n"));
 
 	/*
@@ -269,7 +272,7 @@ test_sync(int writes_per_op)
 		for (ops = 0; alarm_triggered == false; ops++)
 		{
 			for (writes = 0; writes < writes_per_op; writes++)
-				if (write(tmpfile, buf, XLOG_BLCKSZ) != XLOG_BLCKSZ)
+				if (write(tmpfile, buf, block_size) != block_size)
 					die("write failed");
 			if (lseek(tmpfile, 0, SEEK_SET) == -1)
 				die("seek failed");
@@ -294,7 +297,7 @@ test_sync(int writes_per_op)
 	for (ops = 0; alarm_triggered == false; ops++)
 	{
 		for (writes = 0; writes < writes_per_op; writes++)
-			if (write(tmpfile, buf, XLOG_BLCKSZ) != XLOG_BLCKSZ)
+			if (write(tmpfile, buf, block_size) != block_size)
 				die("write failed");
 		fdatasync(tmpfile);
 		if (lseek(tmpfile, 0, SEEK_SET) == -1)
@@ -318,7 +321,7 @@ test_sync(int writes_per_op)
 	for (ops = 0; alarm_triggered == false; ops++)
 	{
 		for (writes = 0; writes < writes_per_op; writes++)
-			if (write(tmpfile, buf, XLOG_BLCKSZ) != XLOG_BLCKSZ)
+			if (write(tmpfile, buf, block_size) != block_size)
 				die("write failed");
 		if (fsync(tmpfile) != 0)
 			die("fsync failed");
@@ -341,7 +344,7 @@ test_sync(int writes_per_op)
 	for (ops = 0; alarm_triggered == false; ops++)
 	{
 		for (writes = 0; writes < writes_per_op; writes++)
-			if (write(tmpfile, buf, XLOG_BLCKSZ) != XLOG_BLCKSZ)
+			if (write(tmpfile, buf, block_size) != block_size)
 				die("write failed");
 		if (pg_fsync_writethrough(tmpfile) != 0)
 			die("fsync failed");
@@ -372,7 +375,7 @@ test_sync(int writes_per_op)
 		for (ops = 0; alarm_triggered == false; ops++)
 		{
 			for (writes = 0; writes < writes_per_op; writes++)
-				if (write(tmpfile, buf, XLOG_BLCKSZ) != XLOG_BLCKSZ)
+				if (write(tmpfile, buf, block_size) != block_size)
 
 					/*
 					 * This can generate write failures if the filesystem has
@@ -451,7 +454,7 @@ test_open_sync(const char *msg, int writes_size)
 }
 
 static void
-test_file_descriptor_sync(void)
+test_file_descriptor_sync(unsigned int block_size)
 {
 	int			tmpfile,
 				ops;
@@ -478,7 +481,7 @@ test_file_descriptor_sync(void)
 	{
 		if ((tmpfile = open(filename, O_RDWR, 0)) == -1)
 			die("could not open output file");
-		if (write(tmpfile, buf, XLOG_BLCKSZ) != XLOG_BLCKSZ)
+		if (write(tmpfile, buf, block_size) != block_size)
 			die("write failed");
 		if (fsync(tmpfile) != 0)
 			die("fsync failed");
@@ -506,7 +509,7 @@ test_file_descriptor_sync(void)
 	{
 		if ((tmpfile = open(filename, O_RDWR, 0)) == -1)
 			die("could not open output file");
-		if (write(tmpfile, buf, XLOG_BLCKSZ) != XLOG_BLCKSZ)
+		if (write(tmpfile, buf, block_size) != block_size)
 			die("write failed");
 		close(tmpfile);
 		/* reopen file */
@@ -520,7 +523,7 @@ test_file_descriptor_sync(void)
 }
 
 static void
-test_non_sync(void)
+test_non_sync(unsigned int block_size)
 {
 	int			tmpfile,
 				ops;
@@ -528,7 +531,7 @@ test_non_sync(void)
 	/*
 	 * Test a simple write without fsync
 	 */
-	printf(_("\nNon-sync'ed %dkB writes:\n"), XLOG_BLCKSZ_K);
+	printf(_("\nNon-sync'ed %dkB writes:\n"), block_size_K);
 	printf(LABEL_FORMAT, "write");
 	fflush(stdout);
 
@@ -537,7 +540,7 @@ test_non_sync(void)
 	{
 		if ((tmpfile = open(filename, O_RDWR, 0)) == -1)
 			die("could not open output file");
-		if (write(tmpfile, buf, XLOG_BLCKSZ) != XLOG_BLCKSZ)
+		if (write(tmpfile, buf, block_size) != block_size)
 			die("write failed");
 		close(tmpfile);
 	}

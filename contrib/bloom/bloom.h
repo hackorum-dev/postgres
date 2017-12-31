@@ -100,21 +100,10 @@ typedef uint16 BloomSignatureWord;
 typedef struct BloomOptions
 {
 	int32		vl_len_;		/* varlena header (do not touch directly!) */
-	int			bloomLength;	/* length of signature in words (not bits!) */
-	int			bitSize[INDEX_MAX_KEYS];	/* # of bits generated for each
+	int		bloomLength;	/* length of signature in words (not bits!) */
+	int		bitSize[INDEX_MAX_KEYS];	/* # of bits generated for each
 											 * index key */
 } BloomOptions;
-
-/*
- * FreeBlockNumberArray - array of block numbers sized so that metadata fill
- * all space in metapage.
- */
-typedef BlockNumber FreeBlockNumberArray[
-										 MAXALIGN_DOWN(
-													   BLCKSZ - SizeOfPageHeaderData - MAXALIGN(sizeof(BloomPageOpaqueData))
-													   - MAXALIGN(sizeof(uint16) * 2 + sizeof(uint32) + sizeof(BloomOptions))
-													   ) / sizeof(BlockNumber)
-];
 
 /* Metadata of bloom index */
 typedef struct BloomMetaPageData
@@ -123,15 +112,20 @@ typedef struct BloomMetaPageData
 	uint16		nStart;
 	uint16		nEnd;
 	BloomOptions opts;
-	FreeBlockNumberArray notFullPage;
+	BlockNumber notFullPage[FLEXIBLE_ARRAY_MEMBER];
 } BloomMetaPageData;
 
 /* Magic number to distinguish bloom pages among anothers */
 #define BLOOM_MAGICK_NUMBER (0xDBAC0DED)
 
 /* Number of blocks numbers fit in BloomMetaPageData */
-#define BloomMetaBlockN		(sizeof(FreeBlockNumberArray) / sizeof(BlockNumber))
+#define BloomMetaBlockN									\
+	(MAXALIGN_DOWN(rel_blck_size - SizeOfPageHeaderData 				\
+		- MAXALIGN(sizeof(BloomPageOpaqueData))					\
+		- MAXALIGN(sizeof(uint16) * 2 + sizeof(uint32) + sizeof(BloomOptions)))	\
+                / sizeof(BlockNumber))
 
+#define SizeOfBloomMetaPageData	(offsetof(BloomMetaPageData, notFullPage) + sizeof(BlockNumber) * BloomMetaBlockN)
 #define BloomPageGetMeta(page)	((BloomMetaPageData *) PageGetContents(page))
 
 typedef struct BloomState
@@ -148,7 +142,7 @@ typedef struct BloomState
 } BloomState;
 
 #define BloomPageGetFreeSpace(state, page) \
-	(BLCKSZ - MAXALIGN(SizeOfPageHeaderData) \
+	(rel_blck_size - MAXALIGN(SizeOfPageHeaderData) \
 		- BloomPageGetMaxOffset(page) * (state)->sizeOfBloomTuple \
 		- MAXALIGN(sizeof(BloomPageOpaqueData)))
 

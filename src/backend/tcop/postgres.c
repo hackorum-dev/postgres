@@ -218,7 +218,7 @@ InteractiveBackend(StringInfo inBuf)
 	/*
 	 * display a prompt and obtain input from the user
 	 */
-	printf("backend> ");
+	printf("\nbackend> ");
 	fflush(stdout);
 
 	resetStringInfo(inBuf);

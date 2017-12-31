@@ -1464,7 +1464,7 @@ heap_beginscan_internal(Relation relation, Snapshot snapshot,
 	/*
 	 * allocate and initialize scan descriptor
 	 */
-	scan = (HeapScanDesc) palloc(sizeof(HeapScanDescData));
+	scan = (HeapScanDesc) palloc(SizeOfHeapScanDescData);
 
 	scan->rs_rd = relation;
 	scan->rs_snapshot = snapshot;
@@ -2704,7 +2704,7 @@ heap_multi_insert(Relation relation, HeapTuple *tuples, int ntuples,
 	 * beforehand.
 	 */
 	if (needwal)
-		scratch = palloc(BLCKSZ);
+		scratch = palloc(rel_blck_size);
 
 	/*
 	 * We're about to do the actual inserts -- but check for conflict first,
@@ -2857,7 +2857,7 @@ heap_multi_insert(Relation relation, HeapTuple *tuples, int ntuples,
 				scratchptr += datalen;
 			}
 			totaldatalen = scratchptr - tupledata;
-			Assert((scratchptr - scratch) < BLCKSZ);
+			Assert((scratchptr - scratch) < rel_blck_size);
 
 			if (need_tuple_data)
 				xlrec->flags |= XLH_INSERT_CONTAINS_NEW_TUPLE;
@@ -6035,8 +6035,7 @@ heap_finish_speculative(Relation relation, HeapTuple tuple)
 	htup = (HeapTupleHeader) PageGetItem(page, lp);
 
 	/* SpecTokenOffsetNumber should be distinguishable from any real offset */
-	StaticAssertStmt(MaxOffsetNumber < SpecTokenOffsetNumber,
-					 "invalid speculative token constant");
+	Assert(MaxOffsetNumber < SpecTokenOffsetNumber);
 
 	/* NO EREPORT(ERROR) from here till changes are logged */
 	START_CRIT_SECTION();
@@ -8121,7 +8120,7 @@ heap_xlog_visible(XLogReaderState *record)
 
 		/* initialize the page if it was read as zeros */
 		if (PageIsNew(vmpage))
-			PageInit(vmpage, BLCKSZ, 0);
+			PageInit(vmpage, rel_blck_size, 0);
 
 		/*
 		 * XLogReadBufferForRedoExtended locked the buffer. But
@@ -8415,7 +8414,7 @@ heap_xlog_insert(XLogReaderState *record)
 	 * don't bother to update the FSM in that case, it doesn't need to be
 	 * totally accurate anyway.
 	 */
-	if (action == BLK_NEEDS_REDO && freespace < BLCKSZ / 5)
+	if (action == BLK_NEEDS_REDO && freespace < rel_blck_size / 5)
 		XLogRecordPageWithFreeSpace(target_node, blkno, freespace);
 }
 
@@ -8554,7 +8553,7 @@ heap_xlog_multi_insert(XLogReaderState *record)
 	 * don't bother to update the FSM in that case, it doesn't need to be
 	 * totally accurate anyway.
 	 */
-	if (action == BLK_NEEDS_REDO && freespace < BLCKSZ / 5)
+	if (action == BLK_NEEDS_REDO && freespace < rel_blck_size / 5)
 		XLogRecordPageWithFreeSpace(rnode, blkno, freespace);
 }
 
@@ -8829,7 +8828,7 @@ heap_xlog_update(XLogReaderState *record, bool hot_update)
 	 * don't bother to update the FSM in that case, it doesn't need to be
 	 * totally accurate anyway.
 	 */
-	if (newaction == BLK_NEEDS_REDO && !hot_update && freespace < BLCKSZ / 5)
+	if (newaction == BLK_NEEDS_REDO && !hot_update && freespace < rel_blck_size / 5)
 		XLogRecordPageWithFreeSpace(rnode, newblk, freespace);
 }
 
