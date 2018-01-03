@@ -80,7 +80,7 @@ InitBufferPool(void)
 
 	BufferBlocks = (char *)
 		ShmemInitStruct("Buffer Blocks",
-						NBuffers * (Size) BLCKSZ, &foundBufs);
+						NBuffers * (Size) rel_blck_size, &foundBufs);
 
 	/* Align lwlocks to cacheline boundary */
 	BufferIOLWLockArray = (LWLockMinimallyPadded *)
@@ -168,7 +168,7 @@ BufferShmemSize(void)
 	size = add_size(size, PG_CACHE_LINE_SIZE);
 
 	/* size of data pages */
-	size = add_size(size, mul_size(NBuffers, BLCKSZ));
+	size = add_size(size, mul_size(NBuffers, rel_blck_size));
 
 	/* size of stuff controlled by freelist.c */
 	size = add_size(size, StrategyShmemSize());

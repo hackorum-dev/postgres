@@ -58,12 +58,12 @@ brin_page_type(PG_FUNCTION_ARGS)
 
 	raw_page_size = VARSIZE(raw_page) - VARHDRSZ;
 
-	if (raw_page_size != BLCKSZ)
+	if (raw_page_size != rel_blck_size)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("input page too small"),
 				 errdetail("Expected size %d, got %d",
-						   BLCKSZ, raw_page_size)));
+						   rel_blck_size, raw_page_size)));
 
 	switch (BrinPageType(page))
 	{
@@ -96,12 +96,12 @@ verify_brin_page(bytea *raw_page, uint16 type, const char *strtype)
 
 	raw_page_size = VARSIZE(raw_page) - VARHDRSZ;
 
-	if (raw_page_size != BLCKSZ)
+	if (raw_page_size != rel_blck_size)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("input page too small"),
 				 errdetail("Expected size %d, got %d",
-						   BLCKSZ, raw_page_size)));
+						   rel_blck_size, raw_page_size)));
 
 	page = VARDATA(raw_page);
 

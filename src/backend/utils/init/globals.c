@@ -22,6 +22,7 @@
 #include "libpq/pqcomm.h"
 #include "miscadmin.h"
 #include "storage/backendid.h"
+#include "pg_control_def.h"
 
 
 ProtocolVersion FrontendProtocol;
@@ -137,3 +138,22 @@ int			VacuumPageDirty = 0;
 
 int			VacuumCostBalance = 0;	/* working state for vacuum */
 bool		VacuumCostActive = false;
+
+/*
+ * Below values are extracted from control file.
+ * This avoid requiring a different binary for each possible value of relation and wal block size and file size.
+ */
+
+/*
+ * Relation parameters
+ */
+unsigned int rel_blck_size = REL_BLCK_SIZE_DEF;		/* in bytes, default 8KB */
+unsigned int rel_file_blck = REL_FILE_BLCK_DEF;		/* in blocks, default 131072 */
+unsigned long rel_file_size = REL_FILE_SIZE_DEF;	/* in bytes, max 4GB */
+
+/*
+ * WAL parameters
+ */
+unsigned int wal_blck_size = WAL_BLCK_SIZE_DEF;		/* in bytes, default 8KB */
+unsigned int wal_file_blck = WAL_FILE_BLCK_DEF;		/* in blocks, default 16MB */
+unsigned long wal_file_size = WAL_FILE_SIZE_DEF;	/* in bytes, max 4GB */

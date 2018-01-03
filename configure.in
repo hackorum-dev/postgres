@@ -17,7 +17,7 @@ dnl Read the Autoconf manual for details.
 dnl
 m4_pattern_forbid(^PGAC_)dnl to catch undefined macros
 
-AC_INIT([PostgreSQL], [11devel], [pgsql-bugs@postgresql.org])
+AC_INIT([PostgreSQL], [11devel-blksize], [pgsql-bugs@postgresql.org])
 
 m4_if(m4_defn([m4_PACKAGE_VERSION]), [2.69], [], [m4_fatal([Autoconf version 2.69 is required.
 Untested combinations of 'autoconf' and PostgreSQL versions are not
@@ -250,98 +250,6 @@ AC_SUBST(enable_dtrace)
 PGAC_ARG_BOOL(enable, tap-tests, no,
               [enable TAP tests (requires Perl and IPC::Run)])
 AC_SUBST(enable_tap_tests)
-
-#
-# Block size
-#
-AC_MSG_CHECKING([for block size])
-PGAC_ARG_REQ(with, blocksize, [BLOCKSIZE], [set table block size in kB [8]],
-             [blocksize=$withval],
-             [blocksize=8])
-case ${blocksize} in
-  1) BLCKSZ=1024;;
-  2) BLCKSZ=2048;;
-  4) BLCKSZ=4096;;
-  8) BLCKSZ=8192;;
- 16) BLCKSZ=16384;;
- 32) BLCKSZ=32768;;
-  *) AC_MSG_ERROR([Invalid block size. Allowed values are 1,2,4,8,16,32.])
-esac
-AC_MSG_RESULT([${blocksize}kB])
-
-AC_DEFINE_UNQUOTED([BLCKSZ], ${BLCKSZ}, [
- Size of a disk block --- this also limits the size of a tuple.  You
- can set it bigger if you need bigger tuples (although TOAST should
- reduce the need to have large tuples, since fields can be spread
- across multiple tuples).
-
- BLCKSZ must be a power of 2.  The maximum possible value of BLCKSZ
- is currently 2^15 (32768).  This is determined by the 15-bit widths
- of the lp_off and lp_len fields in ItemIdData (see
- include/storage/itemid.h).
-
- Changing BLCKSZ requires an initdb.
-])
-
-#
-# Relation segment size
-#
-AC_MSG_CHECKING([for segment size])
-PGAC_ARG_REQ(with, segsize, [SEGSIZE], [set table segment size in GB [1]],
-             [segsize=$withval],
-             [segsize=1])
-# this expression is set up to avoid unnecessary integer overflow
-# blocksize is already guaranteed to be a factor of 1024
-RELSEG_SIZE=`expr '(' 1024 / ${blocksize} ')' '*' ${segsize} '*' 1024`
-test $? -eq 0 || exit 1
-AC_MSG_RESULT([${segsize}GB])
-
-AC_DEFINE_UNQUOTED([RELSEG_SIZE], ${RELSEG_SIZE}, [
- RELSEG_SIZE is the maximum number of blocks allowed in one disk file.
- Thus, the maximum size of a single file is RELSEG_SIZE * BLCKSZ;
- relations bigger than that are divided into multiple files.
-
- RELSEG_SIZE * BLCKSZ must be less than your OS' limit on file size.
- This is often 2 GB or 4GB in a 32-bit operating system, unless you
- have large file support enabled.  By default, we make the limit 1 GB
- to avoid any possible integer-overflow problems within the OS.
- A limit smaller than necessary only means we divide a large
- relation into more chunks than necessary, so it seems best to err
- in the direction of a small limit.
-
- A power-of-2 value is recommended to save a few cycles in md.c,
- but is not absolutely required.
-
- Changing RELSEG_SIZE requires an initdb.
-])
-
-#
-# WAL block size
-#
-AC_MSG_CHECKING([for WAL block size])
-PGAC_ARG_REQ(with, wal-blocksize, [BLOCKSIZE], [set WAL block size in kB [8]],
-             [wal_blocksize=$withval],
-             [wal_blocksize=8])
-case ${wal_blocksize} in
-  1) XLOG_BLCKSZ=1024;;
-  2) XLOG_BLCKSZ=2048;;
-  4) XLOG_BLCKSZ=4096;;
-  8) XLOG_BLCKSZ=8192;;
- 16) XLOG_BLCKSZ=16384;;
- 32) XLOG_BLCKSZ=32768;;
- 64) XLOG_BLCKSZ=65536;;
-  *) AC_MSG_ERROR([Invalid WAL block size. Allowed values are 1,2,4,8,16,32,64.])
-esac
-AC_MSG_RESULT([${wal_blocksize}kB])
-
-AC_DEFINE_UNQUOTED([XLOG_BLCKSZ], ${XLOG_BLCKSZ}, [
- Size of a WAL file block.  This need have no particular relation to BLCKSZ.
- XLOG_BLCKSZ must be a power of 2, and if your system supports O_DIRECT I/O,
- XLOG_BLCKSZ must be a multiple of the alignment requirement for direct-I/O
- buffers, else direct I/O may fail.
-
- Changing XLOG_BLCKSZ requires an initdb.
-])
 
 #
 # C compiler

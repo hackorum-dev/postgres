@@ -142,7 +142,7 @@ copy_file(char *fromfile, char *tofile)
 	off_t		flush_offset;
 
 	/* Size of copy buffer (read and write requests) */
-#define COPY_BUF_SIZE (8 * BLCKSZ)
+#define COPY_BUF_SIZE (8 * rel_blck_size)
 
 	/*
 	 * Size of data flush requests.  It seems beneficial on most platforms to

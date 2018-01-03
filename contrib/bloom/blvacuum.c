@@ -37,7 +37,7 @@ blbulkdelete(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 	Relation	index = info->index;
 	BlockNumber blkno,
 				npages;
-	FreeBlockNumberArray notFullPage;
+	BlockNumber* notFullPage;
 	int			countPage = 0;
 	BloomState	state;
 	Buffer		buffer;
@@ -47,6 +47,8 @@ blbulkdelete(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 
 	if (stats == NULL)
 		stats = (IndexBulkDeleteResult *) palloc0(sizeof(IndexBulkDeleteResult));
+
+	notFullPage = (BlockNumber*) palloc(sizeof(BlockNumber) * BloomMetaBlockN);
 
 	initBloomState(&state, index);
 
@@ -156,6 +158,8 @@ blbulkdelete(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 
 	GenericXLogFinish(gxlogState);
 	UnlockReleaseBuffer(buffer);
+
+	pfree(notFullPage);
 
 	return stats;
 }

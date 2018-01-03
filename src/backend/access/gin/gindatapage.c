@@ -651,7 +651,7 @@ dataBeginPlaceToPageLeaf(GinBtree btree, Buffer buf, GinBtreeStack *stack,
 						break;
 					if (append)
 					{
-						if ((leaf->lsize - segsize) < (BLCKSZ * 3) / 4)
+						if ((leaf->lsize - segsize) < (rel_blck_size * 3) / 4)
 							break;
 					}
 
@@ -677,8 +677,8 @@ dataBeginPlaceToPageLeaf(GinBtree btree, Buffer buf, GinBtreeStack *stack,
 		/*
 		 * Now allocate a couple of temporary page images, and fill them.
 		 */
-		*newlpage = palloc(BLCKSZ);
-		*newrpage = palloc(BLCKSZ);
+		*newlpage = palloc(rel_blck_size);
+		*newrpage = palloc(rel_blck_size);
 
 		dataPlaceToPageLeafSplit(leaf, lbound, rbound,
 								 *newlpage, *newrpage);
@@ -883,7 +883,7 @@ computeLeafRecompressWALData(disassembledLeaf *leaf)
 
 	walbufbegin =
 		palloc(sizeof(ginxlogRecompressDataLeaf) +
-			   BLCKSZ +			/* max size needed to hold the segment data */
+			   rel_blck_size +			/* max size needed to hold the segment data */
 			   nmodified * 2	/* (segno + action) per action */
 		);
 	walbufend = walbufbegin;
@@ -1037,8 +1037,8 @@ dataPlaceToPageLeafSplit(disassembledLeaf *leaf,
 	leafSegmentInfo *seginfo;
 
 	/* Initialize temporary pages to hold the new left and right pages */
-	GinInitPage(lpage, GIN_DATA | GIN_LEAF | GIN_COMPRESSED, BLCKSZ);
-	GinInitPage(rpage, GIN_DATA | GIN_LEAF | GIN_COMPRESSED, BLCKSZ);
+	GinInitPage(lpage, GIN_DATA | GIN_LEAF | GIN_COMPRESSED, rel_blck_size);
+	GinInitPage(rpage, GIN_DATA | GIN_LEAF | GIN_COMPRESSED, rel_blck_size);
 
 	/*
 	 * Copy the segments that go to the left page.
@@ -1255,7 +1255,7 @@ dataSplitPageInternal(GinBtree btree, Buffer origbuf,
 	Page		lpage;
 	Page		rpage;
 	OffsetNumber separator;
-	PostingItem allitems[(BLCKSZ / sizeof(PostingItem)) + 1];
+	PostingItem allitems[(rel_blck_size / sizeof(PostingItem)) + 1];
 
 	lpage = PageGetTempPage(oldpage);
 	rpage = PageGetTempPage(oldpage);
@@ -1770,8 +1770,8 @@ createPostingTree(Relation index, ItemPointerData *items, uint32 nitems,
 	int			rootsize;
 
 	/* Construct the new root page in memory first. */
-	tmppage = (Page) palloc(BLCKSZ);
-	GinInitPage(tmppage, GIN_DATA | GIN_LEAF | GIN_COMPRESSED, BLCKSZ);
+	tmppage = (Page) palloc(rel_blck_size);
+	GinInitPage(tmppage, GIN_DATA | GIN_LEAF | GIN_COMPRESSED, rel_blck_size);
 	GinPageGetOpaque(tmppage)->rightlink = InvalidBlockNumber;
 
 	/*

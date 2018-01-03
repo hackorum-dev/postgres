@@ -98,7 +98,7 @@ GetBTPageStatistics(BlockNumber blkno, Buffer buffer, BTPageStat *stat)
 
 	stat->blkno = blkno;
 
-	stat->max_avail = BLCKSZ - (BLCKSZ - phdr->pd_special + SizeOfPageHeaderData);
+	stat->max_avail = rel_blck_size - (rel_blck_size - phdr->pd_special + SizeOfPageHeaderData);
 
 	stat->dead_items = stat->live_items = 0;
 
@@ -365,8 +365,8 @@ bt_page_items(PG_FUNCTION_ARGS)
 
 		uargs = palloc(sizeof(struct user_args));
 
-		uargs->page = palloc(BLCKSZ);
-		memcpy(uargs->page, BufferGetPage(buffer), BLCKSZ);
+		uargs->page = palloc(rel_blck_size);
+		memcpy(uargs->page, BufferGetPage(buffer), rel_blck_size);
 
 		UnlockReleaseBuffer(buffer);
 		relation_close(rel, AccessShareLock);

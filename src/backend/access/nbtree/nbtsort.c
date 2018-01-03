@@ -246,10 +246,10 @@ _bt_blnewpage(uint32 level)
 	Page		page;
 	BTPageOpaque opaque;
 
-	page = (Page) palloc(BLCKSZ);
+	page = (Page) palloc(rel_blck_size);
 
 	/* Zero the page and set up standard page header info */
-	_bt_pageinit(page, BLCKSZ);
+	_bt_pageinit(page, rel_blck_size);
 
 	/* Initialize BT opaque state */
 	opaque = (BTPageOpaque) PageGetSpecialPointer(page);
@@ -290,7 +290,7 @@ _bt_blwritepage(BTWriteState *wstate, Page page, BlockNumber blkno)
 	while (blkno > wstate->btws_pages_written)
 	{
 		if (!wstate->btws_zeropage)
-			wstate->btws_zeropage = (Page) palloc0(BLCKSZ);
+			wstate->btws_zeropage = (Page) palloc0(rel_blck_size);
 		/* don't set checksum for all-zero page */
 		smgrextend(wstate->index->rd_smgr, MAIN_FORKNUM,
 				   wstate->btws_pages_written++,
@@ -342,7 +342,7 @@ _bt_pagestate(BTWriteState *wstate, uint32 level)
 	state->btps_level = level;
 	/* set "full" threshold based on level.  See notes at head of file. */
 	if (level > 0)
-		state->btps_full = (BLCKSZ * (100 - BTREE_NONLEAF_FILLFACTOR) / 100);
+		state->btps_full = (rel_blck_size * (100 - BTREE_NONLEAF_FILLFACTOR) / 100);
 	else
 		state->btps_full = RelationGetTargetPageFreeSpace(wstate->index,
 														  BTREE_DEFAULT_FILLFACTOR);
@@ -664,7 +664,7 @@ _bt_uppershutdown(BTWriteState *wstate, BTPageState *state)
 	 * set to point to "P_NONE").  This changes the index to the "valid" state
 	 * by filling in a valid magic number in the metapage.
 	 */
-	metapage = (Page) palloc(BLCKSZ);
+	metapage = (Page) palloc(rel_blck_size);
 	_bt_initmetapage(metapage, rootblkno, rootlevel);
 	_bt_blwritepage(wstate, metapage, BTREE_METAPAGE);
 }

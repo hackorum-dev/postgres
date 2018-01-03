@@ -72,6 +72,15 @@
 #include "getopt_long.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
+#include "pg_control_def.h"
+
+
+#define DEBUG_INITDB                   0
+
+#define debug_initdb(format, ...)      \
+       if (DEBUG_INITDB)               \
+               fprintf(stderr, "initdb --> " format, ##__VA_ARGS__);
+
 
 
 /* Ideally this would be in a .h file, but it hardly seems worth the trouble */
@@ -142,8 +151,6 @@ static bool sync_only = false;
 static bool show_setting = false;
 static bool data_checksums = false;
 static char *xlog_dir = NULL;
-static char *str_wal_segment_size_mb = NULL;
-static int	wal_segment_size_mb;
 
 
 /* internal vars */
@@ -167,8 +174,23 @@ static bool found_existing_xlogdir = false;
 static char infoversion[100];
 static bool caught_signal = false;
 static bool output_failed = false;
-static int	output_errno = 0;
+static int output_errno = 0;
 static char *pgdata_native;
+
+/*
+ * Relation files
+ *
+ * This is imported from pg_control_def.h and shared with the backend.
+ */
+unsigned int rel_blck_size = REL_BLCK_SIZE_DEF;		/* in bytes, default 8KB */
+unsigned int rel_file_blck = REL_FILE_BLCK_DEF;		/* in blocks, default 131072 */
+unsigned long int rel_file_size = REL_FILE_SIZE_DEF;	/* in bytes, default 1GB */
+
+/* Wal files */
+unsigned int wal_blck_size = WAL_BLCK_SIZE_DEF;		/* in bytes, default 8KB */
+unsigned int wal_file_blck = WAL_FILE_BLCK_DEF;		/* in blocks, default 2048 */
+unsigned long wal_file_size = WAL_FILE_SIZE_DEF;	/* in bytes, default 16MB */
+
 
 /* defaults */
 static int	n_connections = 10;
@@ -197,6 +219,7 @@ static char *authwarning = NULL;
  */
 static const char *boot_options = "-F";
 static const char *backend_options = "--single -F -O -j -c search_path=pg_catalog -c exit_on_error=true";
+static const char *backend_options_debug = "--single -F -E -O -j -c search_path=pg_catalog -c exit_on_error=true";
 
 static const char *const subdirs[] = {
 	"global",
@@ -234,6 +257,7 @@ static char **replace_token(char **lines,
 #ifndef HAVE_UNIX_SOCKETS
 static char **filter_lines_with_token(char **lines, const char *token);
 #endif
+
 static char **readfile(const char *path);
 static void writefile(char *path, char **lines);
 static FILE *popen_check(const char *command, const char *mode);
@@ -242,6 +266,8 @@ static char *get_id(void);
 static int get_encoding_id(const char *encoding_name);
 static void set_input(char **dest, const char *filename);
 static void check_input(char *path);
+static bool ispowerof2(unsigned int value);
+static bool check_block_file_sizes(void);
 static void write_version_file(const char *extrapath);
 static void set_null_conf(void);
 static void test_config_settings(void);
@@ -281,6 +307,8 @@ void		create_data_directory(void);
 void		create_xlog_or_symlink(void);
 void		warn_on_mount_point(int error);
 void		initialize_data_directory(void);
+
+void gets_interactive(const char *prompt);
 
 /*
  * macros for running pipes to postgres
@@ -941,7 +969,17 @@ test_config_settings(void)
 		test_conns = trial_conns[i];
 		test_buffs = MIN_BUFS_FOR_CONNS(test_conns);
 
-		snprintf(cmd, sizeof(cmd),
+		if (debug == true) {
+			snprintf(cmd, sizeof(cmd),
+				 "\"%s\" --boot -x0 %s "
+				 "-c max_connections=%d "
+				 "-c shared_buffers=%d "
+				 "-c dynamic_shared_memory_type=none "
+				 "-d 5",
+				 backend_exec, boot_options,
+				 test_conns, test_buffs);
+		} else {
+			snprintf(cmd, sizeof(cmd),
 				 "\"%s\" --boot -x0 %s "
 				 "-c max_connections=%d "
 				 "-c shared_buffers=%d "
@@ -950,6 +988,8 @@ test_config_settings(void)
 				 backend_exec, boot_options,
 				 test_conns, test_buffs,
 				 DEVNULL, DEVNULL);
+		}
+
 		status = system(cmd);
 		if (status == 0)
 		{
@@ -968,8 +1008,8 @@ test_config_settings(void)
 
 	for (i = 0; i < bufslen; i++)
 	{
-		/* Use same amount of memory, independent of BLCKSZ */
-		test_buffs = (trial_bufs[i] * 8192) / BLCKSZ;
+		/* Use same amount of memory, independent of rel_blck_size */
+		test_buffs = (trial_bufs[i] * 8192) /rel_blck_size; 
 		if (test_buffs <= ok_buffers)
 		{
 			test_buffs = ok_buffers;
@@ -991,10 +1031,10 @@ test_config_settings(void)
 	}
 	n_buffers = test_buffs;
 
-	if ((n_buffers * (BLCKSZ / 1024)) % 1024 == 0)
-		printf("%dMB\n", (n_buffers * (BLCKSZ / 1024)) / 1024);
+	if ((n_buffers * (rel_blck_size / 1024)) % 1024 == 0)
+		printf("%dMB\n", (n_buffers * (rel_blck_size / 1024)) / 1024);
 	else
-		printf("%dkB\n", n_buffers * (BLCKSZ / 1024));
+		printf("%dkB\n", n_buffers * (rel_blck_size / 1024));
 
 	printf(_("selecting dynamic shared memory implementation ... "));
 	fflush(stdout);
@@ -1002,14 +1042,11 @@ test_config_settings(void)
 	printf("%s\n", dynamic_shared_memory_type);
 }
 
-/*
- * Calculate the default wal_size with a "pretty" unit.
- */
 static char *
 pretty_wal_size(int segment_count)
 {
-	int			sz = wal_segment_size_mb * segment_count;
-	char	   *result = pg_malloc(11);
+	int                     sz = (wal_file_size / MB) * segment_count;
+	char       *result = pg_malloc(11);
 
 	if ((sz % 1024) == 0)
 		snprintf(result, 11, "%dGB", sz / 1024);
@@ -1041,12 +1078,12 @@ setup_config(void)
 	snprintf(repltok, sizeof(repltok), "max_connections = %d", n_connections);
 	conflines = replace_token(conflines, "#max_connections = 100", repltok);
 
-	if ((n_buffers * (BLCKSZ / 1024)) % 1024 == 0)
+	if ((n_buffers * (rel_blck_size / 1024)) % 1024 == 0)
 		snprintf(repltok, sizeof(repltok), "shared_buffers = %dMB",
-				 (n_buffers * (BLCKSZ / 1024)) / 1024);
+				 (n_buffers * (rel_blck_size / 1024)) / 1024);
 	else
 		snprintf(repltok, sizeof(repltok), "shared_buffers = %dkB",
-				 n_buffers * (BLCKSZ / 1024));
+				 n_buffers * (rel_blck_size / 1024));
 	conflines = replace_token(conflines, "#shared_buffers = 32MB", repltok);
 
 #ifdef HAVE_UNIX_SOCKETS
@@ -1128,21 +1165,21 @@ setup_config(void)
 
 #if DEFAULT_BACKEND_FLUSH_AFTER > 0
 	snprintf(repltok, sizeof(repltok), "#backend_flush_after = %dkB",
-			 DEFAULT_BACKEND_FLUSH_AFTER * (BLCKSZ / 1024));
+			 DEFAULT_BACKEND_FLUSH_AFTER * (rel_blck_size / 1024));
 	conflines = replace_token(conflines, "#backend_flush_after = 0",
 							  repltok);
 #endif
 
 #if DEFAULT_BGWRITER_FLUSH_AFTER > 0
 	snprintf(repltok, sizeof(repltok), "#bgwriter_flush_after = %dkB",
-			 DEFAULT_BGWRITER_FLUSH_AFTER * (BLCKSZ / 1024));
+			 DEFAULT_BGWRITER_FLUSH_AFTER * (rel_blck_size / 1024));
 	conflines = replace_token(conflines, "#bgwriter_flush_after = 0",
 							  repltok);
 #endif
 
 #if DEFAULT_CHECKPOINT_FLUSH_AFTER > 0
 	snprintf(repltok, sizeof(repltok), "#checkpoint_flush_after = %dkB",
-			 DEFAULT_CHECKPOINT_FLUSH_AFTER * (BLCKSZ / 1024));
+			 DEFAULT_CHECKPOINT_FLUSH_AFTER * (rel_blck_size / 1024));
 	conflines = replace_token(conflines, "#checkpoint_flush_after = 0",
 							  repltok);
 #endif
@@ -1381,13 +1418,20 @@ bootstrap_template1(void)
 	unsetenv("PGCLIENTENCODING");
 
 	snprintf(cmd, sizeof(cmd),
-			 "\"%s\" --boot -x1 -X %u %s %s %s",
-			 backend_exec,
-			 wal_segment_size_mb * (1024 * 1024),
-			 data_checksums ? "-k" : "",
-			 boot_options,
-			 debug ? "-d 5" : "");
+			"\"%s\" --boot -x1 %s %s %s"
+			" -c block_size=%u -c segment_size=%u"
+			" -c wal_block_size=%u -c wal_segment_size=%u",
+			backend_exec,
+			data_checksums ? "-k" : "",
+			boot_options,
+			debug ? "-d 5" : "",
+			rel_blck_size,
+			rel_file_blck,
+			wal_blck_size,
+			wal_file_blck * wal_blck_size);
 
+	debug_initdb("starting postgres\n");
+	debug_initdb("cmd = %s\n", cmd);
 
 	PG_CMD_OPEN;
 
@@ -1768,7 +1812,7 @@ setup_privileges(FILE *cmdfd)
 		"        relacl IS NOT NULL"
 		"        AND relkind IN (" CppAsString2(RELKIND_RELATION) ", "
 		CppAsString2(RELKIND_VIEW) ", " CppAsString2(RELKIND_MATVIEW) ", "
-		CppAsString2(RELKIND_SEQUENCE) ");",
+		CppAsString2(RELKIND_SEQUENCE) ");\n\n",
 		"INSERT INTO pg_init_privs "
 		"  (objoid, classoid, objsubid, initprivs, privtype)"
 		"    SELECT"
@@ -1784,7 +1828,7 @@ setup_privileges(FILE *cmdfd)
 		"        pg_attribute.attacl IS NOT NULL"
 		"        AND pg_class.relkind IN (" CppAsString2(RELKIND_RELATION) ", "
 		CppAsString2(RELKIND_VIEW) ", " CppAsString2(RELKIND_MATVIEW) ", "
-		CppAsString2(RELKIND_SEQUENCE) ");",
+		CppAsString2(RELKIND_SEQUENCE) ");\n\n",
 		"INSERT INTO pg_init_privs "
 		"  (objoid, classoid, objsubid, initprivs, privtype)"
 		"    SELECT"
@@ -1796,7 +1840,7 @@ setup_privileges(FILE *cmdfd)
 		"    FROM"
 		"        pg_proc"
 		"    WHERE"
-		"        proacl IS NOT NULL;",
+		"        proacl IS NOT NULL;\n\n",
 		"INSERT INTO pg_init_privs "
 		"  (objoid, classoid, objsubid, initprivs, privtype)"
 		"    SELECT"
@@ -1808,7 +1852,7 @@ setup_privileges(FILE *cmdfd)
 		"    FROM"
 		"        pg_type"
 		"    WHERE"
-		"        typacl IS NOT NULL;",
+		"        typacl IS NOT NULL;\n\n",
 		"INSERT INTO pg_init_privs "
 		"  (objoid, classoid, objsubid, initprivs, privtype)"
 		"    SELECT"
@@ -1820,7 +1864,7 @@ setup_privileges(FILE *cmdfd)
 		"    FROM"
 		"        pg_language"
 		"    WHERE"
-		"        lanacl IS NOT NULL;",
+		"        lanacl IS NOT NULL;\n\n",
 		"INSERT INTO pg_init_privs "
 		"  (objoid, classoid, objsubid, initprivs, privtype)"
 		"    SELECT"
@@ -1833,7 +1877,7 @@ setup_privileges(FILE *cmdfd)
 		"    FROM"
 		"        pg_largeobject_metadata"
 		"    WHERE"
-		"        lomacl IS NOT NULL;",
+		"        lomacl IS NOT NULL;\n\n",
 		"INSERT INTO pg_init_privs "
 		"  (objoid, classoid, objsubid, initprivs, privtype)"
 		"    SELECT"
@@ -1845,7 +1889,7 @@ setup_privileges(FILE *cmdfd)
 		"    FROM"
 		"        pg_namespace"
 		"    WHERE"
-		"        nspacl IS NOT NULL;",
+		"        nspacl IS NOT NULL;\n\n",
 		"INSERT INTO pg_init_privs "
 		"  (objoid, classoid, objsubid, initprivs, privtype)"
 		"    SELECT"
@@ -1858,7 +1902,7 @@ setup_privileges(FILE *cmdfd)
 		"    FROM"
 		"        pg_foreign_data_wrapper"
 		"    WHERE"
-		"        fdwacl IS NOT NULL;",
+		"        fdwacl IS NOT NULL;\n\n",
 		"INSERT INTO pg_init_privs "
 		"  (objoid, classoid, objsubid, initprivs, privtype)"
 		"    SELECT"
@@ -1871,14 +1915,15 @@ setup_privileges(FILE *cmdfd)
 		"    FROM"
 		"        pg_foreign_server"
 		"    WHERE"
-		"        srvacl IS NOT NULL;",
+		"        srvacl IS NOT NULL;\n\n",
 		NULL
 	};
 
 	priv_lines = replace_token(privileges_setup, "$POSTGRES_SUPERUSERNAME",
 							   escape_quotes(username));
-	for (line = priv_lines; *line != NULL; line++)
+	for (line = priv_lines; *line != NULL; line++) {
 		PG_CMD_PUTS(*line);
+	}
 }
 
 /*
@@ -2323,7 +2368,14 @@ usage(const char *progname)
 	printf(_("  -U, --username=NAME       database superuser name\n"));
 	printf(_("  -W, --pwprompt            prompt for a password for the new superuser\n"));
 	printf(_("  -X, --waldir=WALDIR       location for the write-ahead log directory\n"));
-	printf(_("      --wal-segsize=SIZE    size of wal segment size\n"));
+	printf(_("      --rel_blck_size=REL_BLCK_SIZE\n"
+			"                            block size of relation files\n"));
+	printf(_("      --rel_file_blck=REL_FILE_BLCK\n"
+			"                            size of relation files in rel block size above\n"));
+	printf(_("      --wal_blck_size=WAL_BLCK_SIZE\n"
+			"                            block size of wal files\n"));
+	printf(_("      --wal_file_blck=WAL_BLCK_BLCK\n"
+			"                            size of wal files in wal block size above\n"));
 	printf(_("\nLess commonly used options:\n"));
 	printf(_("  -d, --debug               generate lots of debugging output\n"));
 	printf(_("  -k, --data-checksums      use data page checksums\n"));
@@ -2393,6 +2445,111 @@ check_need_password(const char *authmethodlocal, const char *authmethodhost)
 	}
 }
 
+static bool
+ispowerof2(unsigned int value)
+{
+	return value && !(value & (value - 1));
+}
+
+/*
+ * Below function should be shared with both server and client code (src/common code)
+ */
+static bool
+check_block_file_sizes(void)
+{
+	/*
+	 * Relation file checking
+	 */
+	if (rel_blck_size < REL_BLCK_SIZE_MIN
+		|| rel_blck_size > REL_BLCK_SIZE_MAX
+		|| !ispowerof2(rel_blck_size)) {
+		fprintf(stderr, _("rel_block_size must be:\n"
+			"1/ a power of 2\n"
+			"2/ above or equal %u bytes\n"
+			"3/ below or equal %u bytes (2^15)\n"
+			"This is determined by the 15-bit width of the lp_off/lp_len fields"
+			" in ItemIdData (see include/storage/itemid.h).\n"
+			"Default value is %u bytes"),
+			REL_BLCK_SIZE_MIN,
+			REL_BLCK_SIZE_MAX,
+			REL_BLCK_SIZE_DEF);
+		fprintf(stdout, _("rel_blck_size set to %u bytes\n"), rel_blck_size);
+		return 1;
+	} else {
+		fprintf(stderr, _("rel_block_size %u KB ok\n"), rel_blck_size >> 10);
+	}
+
+	rel_file_size = rel_file_blck * rel_blck_size;
+	if (rel_file_size < (unsigned long) REL_FILE_SIZE_MIN 
+		|| rel_file_size > (unsigned long) REL_FILE_SIZE_MAX
+		|| !ispowerof2(rel_file_blck)) {
+		fprintf(stderr, _("rel_file_size must be:\n"
+			"1/ a power of 2\n"
+			"2/ above or equal to %lu bytes\n"
+			"3/ below or equal to %lu bytes\n"
+			"Default is %lu bytes\n"),
+			(unsigned long) REL_FILE_SIZE_MIN,
+			(unsigned long) REL_FILE_SIZE_MAX,
+			(unsigned long) REL_FILE_SIZE_DEF);
+		fprintf(stdout, "rel_file_blck set to %u blocks or %lu bytes\n",
+			rel_file_blck, rel_file_size);
+		return 1;
+	} else {
+		fprintf(stderr, _("rel_file_size %lu MB or %u blocks ok\n"),
+			rel_file_size >> 20,
+			rel_file_blck);
+	}
+
+        /*
+         * Wal file checking
+         */
+	if (wal_blck_size < WAL_BLCK_SIZE_MIN
+		|| wal_blck_size > WAL_BLCK_SIZE_MAX
+		|| !ispowerof2(wal_blck_size)
+		|| (wal_blck_size != 1024
+			&& wal_blck_size != 2048
+			&& wal_blck_size != 4096
+			&& wal_blck_size != 8192
+			&& wal_blck_size != 16384
+			&& wal_blck_size != 32768
+			&& wal_blck_size != 65536)) {
+		fprintf(stderr, _("wal_block_size must be:\n"
+			"1/ a power of 2\n"
+			"2/ above or equal %u bytes size\n"
+			"3/ below or equal %u bytes size\n"
+			"4/ one of the following values: 1024, 2048, 4096, 8192, 16384, 32768, 65536\n"
+			"Default value is %lu bytes\n"),
+			WAL_BLCK_SIZE_MIN,
+			WAL_BLCK_SIZE_MAX,
+			(unsigned long)WAL_BLCK_SIZE_DEF);
+		fprintf(stdout, "wal_blck_size set to %u bytes\n", wal_blck_size);
+		return 1;
+	} else {
+		fprintf(stderr, _("wal_block_size %u KB ok\n"), wal_blck_size >> 10);
+	}
+
+	wal_file_size = wal_file_blck * wal_blck_size;
+	if (wal_file_size < (unsigned long) WAL_FILE_SIZE_MIN
+		|| wal_file_size > (unsigned long) WAL_FILE_SIZE_MAX
+		|| !ispowerof2(wal_file_blck)) {
+		fprintf(stderr, _("wal_block_size must be:"
+        		"1/ a power of 2\n"
+			"2/ above or equal %lu bytes size\n"
+			"3/ below or equal %lu bytes size (2^15)\n"
+			"Default value is %lu bytes\n"), 
+			(unsigned long) WAL_FILE_SIZE_MIN,
+			(unsigned long) WAL_FILE_SIZE_MAX,
+			(unsigned long) WAL_FILE_SIZE_DEF);
+		fprintf(stdout, "wal_file_blck set to %lu blocks\n", wal_file_size);
+		return 1;
+	} else {
+		fprintf(stderr, _("wal_file_size %lu MB or %u blocks ok\n"),
+			wal_file_size >> 20,
+			wal_file_blck);
+	}
+
+	return 0;
+}
 
 void
 setup_pgdata(void)
@@ -2939,10 +3096,18 @@ initialize_data_directory(void)
 	fputs(_("performing post-bootstrap initialization ... "), stdout);
 	fflush(stdout);
 
-	snprintf(cmd, sizeof(cmd),
-			 "\"%s\" %s template1 >%s",
-			 backend_exec, backend_options,
-			 DEVNULL);
+	if (debug) {
+		snprintf(cmd, sizeof(cmd), 
+			"\"%s\" %s template1",
+			backend_exec, backend_options_debug);
+	} else {
+		snprintf(cmd, sizeof(cmd), 
+			"\"%s\" %s template1 >%s",
+			backend_exec, backend_options,
+			DEVNULL);
+	}
+
+	debug_initdb("cmd = %s\n", cmd);
 
 	PG_CMD_OPEN;
 
@@ -2982,6 +3147,17 @@ initialize_data_directory(void)
 	check_ok();
 }
 
+void
+gets_interactive(const char *prompt)
+{
+#ifdef USE_READLINE
+	char* string;
+
+	string = readline((char*) prompt);
+	PG_CMD_PUTS(string);
+	free(string);
+#endif
+}
 
 int
 main(int argc, char *argv[])
@@ -3014,8 +3190,12 @@ main(int argc, char *argv[])
 		{"no-sync", no_argument, NULL, 'N'},
 		{"sync-only", no_argument, NULL, 'S'},
 		{"waldir", required_argument, NULL, 'X'},
-		{"wal-segsize", required_argument, NULL, 12},
 		{"data-checksums", no_argument, NULL, 'k'},
+		{"wal-segsize", required_argument, NULL, 12},
+		{"rel_blck_size", required_argument, NULL, 13},
+		{"rel_file_blck", required_argument, NULL, 14},
+		{"wal_blck_size", required_argument, NULL, 15},
+		{"wal_file_blck", required_argument, NULL, 16},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -3148,8 +3328,17 @@ main(int argc, char *argv[])
 			case 'X':
 				xlog_dir = pg_strdup(optarg);
 				break;
-			case 12:
-				str_wal_segment_size_mb = pg_strdup(optarg);
+			case 13:
+				rel_blck_size = atoi(pg_strdup(optarg));
+				break;
+			case 14:
+				rel_file_blck = atoi(pg_strdup(optarg));
+				break;
+			case 15:
+				wal_blck_size = atoi(pg_strdup(optarg));
+				break;
+			case 16:
+				wal_file_blck = atoi(pg_strdup(optarg));
 				break;
 			default:
 				/* getopt_long already emitted a complaint */
@@ -3158,7 +3347,6 @@ main(int argc, char *argv[])
 				exit(1);
 		}
 	}
-
 
 	/*
 	 * Non-option argument specifies data directory as long as it wasn't
@@ -3213,26 +3401,11 @@ main(int argc, char *argv[])
 
 	check_need_password(authmethodlocal, authmethodhost);
 
-	/* set wal segment size */
-	if (str_wal_segment_size_mb == NULL)
-		wal_segment_size_mb = (DEFAULT_XLOG_SEG_SIZE) / (1024 * 1024);
-	else
-	{
-		char	   *endptr;
-
-		/* check that the argument is a number */
-		wal_segment_size_mb = strtol(str_wal_segment_size_mb, &endptr, 10);
-
-		/* verify that wal segment size is valid */
-		if (*endptr != '\0' ||
-			!IsValidWalSegSize(wal_segment_size_mb * 1024 * 1024))
-		{
-			fprintf(stderr,
-					_("%s: --wal-segsize must be a power of two between 1 and 1024\n"),
-					progname);
-			exit(1);
-		}
-	}
+	/*
+	 * Check file and block size for relations and wal.
+	 */
+	if (check_block_file_sizes())
+		exit(1);
 
 	get_restricted_token(progname);
 

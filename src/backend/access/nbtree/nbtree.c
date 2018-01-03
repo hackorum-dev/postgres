@@ -284,7 +284,7 @@ btbuildempty(Relation index)
 	Page		metapage;
 
 	/* Construct metapage. */
-	metapage = (Page) palloc(BLCKSZ);
+	metapage = (Page) palloc(rel_blck_size);
 	_bt_initmetapage(metapage, P_NONE, 0);
 
 	/*
@@ -483,6 +483,9 @@ btbeginscan(Relation rel, int nkeys, int norderbys)
 
 	/* allocate private workspace */
 	so = (BTScanOpaque) palloc(sizeof(BTScanOpaqueData));
+	so->currPos.items = (BTScanPosItem*) palloc(SIZEOF_BT_SCAN_POST_ITEM);
+	so->markPos.items = (BTScanPosItem*) palloc(SIZEOF_BT_SCAN_POST_ITEM);
+
 	BTScanPosInvalidate(so->currPos);
 	BTScanPosInvalidate(so->markPos);
 	if (scan->numberOfKeys > 0)
@@ -554,8 +557,8 @@ btrescan(IndexScanDesc scan, ScanKey scankey, int nscankeys,
 	 */
 	if (scan->xs_want_itup && so->currTuples == NULL)
 	{
-		so->currTuples = (char *) palloc(BLCKSZ * 2);
-		so->markTuples = so->currTuples + BLCKSZ;
+		so->currTuples = (char *) palloc(rel_blck_size * 2);
+		so->markTuples = so->currTuples + rel_blck_size;
 	}
 
 	/*
@@ -605,6 +608,8 @@ btendscan(IndexScanDesc scan)
 	if (so->currTuples != NULL)
 		pfree(so->currTuples);
 	/* so->markTuples should not be pfree'd, see btrescan */
+	pfree(so->currPos.items);
+	pfree(so->markPos.items);
 	pfree(so);
 }
 
@@ -682,9 +687,10 @@ btrestrpos(IndexScanDesc scan)
 			/* bump pin on mark buffer for assignment to current buffer */
 			if (BTScanPosIsPinned(so->markPos))
 				IncrBufferRefCount(so->markPos.buf);
-			memcpy(&so->currPos, &so->markPos,
-				   offsetof(BTScanPosData, items[1]) +
-				   so->markPos.lastItem * sizeof(BTScanPosItem));
+
+			memcpy(&so->currPos, &so->markPos, offsetof(BTScanPosData, items));
+                	memcpy((&so->currPos)->items, (&so->markPos)->items, (so->markPos.lastItem + 1) * sizeof(BTScanPosItem));
+
 			if (so->currTuples)
 				memcpy(so->currTuples, so->markTuples,
 					   so->markPos.nextTupleOffset);

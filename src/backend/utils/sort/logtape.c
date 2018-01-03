@@ -28,7 +28,7 @@
  * larger size than the underlying OS may support.
  *
  * For simplicity, we allocate and release space in the underlying file
- * in BLCKSZ-size blocks.  Space allocation boils down to keeping track
+ * in rel_blck_size-size blocks.  Space allocation boils down to keeping track
  * of which blocks in the underlying file belong to which logical tape,
  * plus any blocks that are free (recycled and not yet reused).
  * The blocks in each logical tape form a chain, with a prev- and next-
@@ -76,11 +76,12 @@
 #include "postgres.h"
 
 #include "storage/buffile.h"
+#include "storage/md.h"
 #include "utils/logtape.h"
 #include "utils/memutils.h"
 
 /*
- * A TapeBlockTrailer is stored at the end of each BLCKSZ block.
+ * A TapeBlockTrailer is stored at the end of each rel_blck_size block.
  *
  * The first block of a tape has prev == -1.  The last block of a tape
  * stores the number of valid bytes on the block, inverted, in 'next'
@@ -94,7 +95,7 @@ typedef struct TapeBlockTrailer
 								 * bytes on last block (if < 0) */
 } TapeBlockTrailer;
 
-#define TapeBlockPayloadSize  (BLCKSZ - sizeof(TapeBlockTrailer))
+#define TapeBlockPayloadSize  (rel_blck_size - sizeof(TapeBlockTrailer))
 #define TapeBlockGetTrailer(buf) \
 	((TapeBlockTrailer *) ((char *) buf + TapeBlockPayloadSize))
 
@@ -155,7 +156,7 @@ struct LogicalTapeSet
 
 	/*
 	 * File size tracking.  nBlocksWritten is the size of the underlying file,
-	 * in BLCKSZ blocks.  nBlocksAllocated is the number of blocks allocated
+	 * in rel_blck_size blocks.  nBlocksAllocated is the number of blocks allocated
 	 * by ltsGetFreeBlock(), and it is always greater than or equal to
 	 * nBlocksWritten.  Blocks between nBlocksAllocated and nBlocksWritten are
 	 * blocks that have been allocated for a tape, but have not been written
@@ -216,7 +217,7 @@ ltsWriteBlock(LogicalTapeSet *lts, long blocknum, void *buffer)
 	 */
 	while (blocknum > lts->nBlocksWritten)
 	{
-		char		zerobuf[BLCKSZ];
+		char           zerobuf[rel_blck_size];
 
 		MemSet(zerobuf, 0, sizeof(zerobuf));
 
@@ -225,7 +226,7 @@ ltsWriteBlock(LogicalTapeSet *lts, long blocknum, void *buffer)
 
 	/* Write the requested block */
 	if (BufFileSeekBlock(lts->pfile, blocknum) != 0 ||
-		BufFileWrite(lts->pfile, buffer, BLCKSZ) != BLCKSZ)
+		BufFileWrite(lts->pfile, buffer, rel_blck_size) != rel_blck_size)
 		ereport(ERROR,
 				(errcode_for_file_access(),
 				 errmsg("could not write block %ld of temporary file: %m",
@@ -246,7 +247,7 @@ static void
 ltsReadBlock(LogicalTapeSet *lts, long blocknum, void *buffer)
 {
 	if (BufFileSeekBlock(lts->pfile, blocknum) != 0 ||
-		BufFileRead(lts->pfile, buffer, BLCKSZ) != BLCKSZ)
+		BufFileRead(lts->pfile, buffer, rel_blck_size) != rel_blck_size)
 		ereport(ERROR,
 				(errcode_for_file_access(),
 				 errmsg("could not read block %ld of temporary file: %m",
@@ -289,7 +290,7 @@ ltsReadFillBuffer(LogicalTapeSet *lts, LogicalTape *lt)
 			lt->nextBlockNumber = TapeBlockGetTrailer(thisbuf)->next;
 
 		/* Advance to next block, if we have buffer space left */
-	} while (lt->buffer_size - lt->nbytes > BLCKSZ);
+	} while (lt->buffer_size - lt->nbytes > rel_blck_size);
 
 	return (lt->nbytes > 0);
 }
@@ -474,8 +475,8 @@ LogicalTapeWrite(LogicalTapeSet *lts, int tapenum,
 	/* Allocate data buffer and first block on first write */
 	if (lt->buffer == NULL)
 	{
-		lt->buffer = (char *) palloc(BLCKSZ);
-		lt->buffer_size = BLCKSZ;
+		lt->buffer = (char *) palloc(rel_blck_size);
+		lt->buffer_size = rel_blck_size;
 	}
 	if (lt->curBlockNumber == -1)
 	{
@@ -488,7 +489,7 @@ LogicalTapeWrite(LogicalTapeSet *lts, int tapenum,
 		TapeBlockGetTrailer(lt->buffer)->prev = -1L;
 	}
 
-	Assert(lt->buffer_size == BLCKSZ);
+	Assert(lt->buffer_size == rel_blck_size);
 	while (size > 0)
 	{
 		if (lt->pos >= TapeBlockPayloadSize)
@@ -542,9 +543,9 @@ LogicalTapeWrite(LogicalTapeSet *lts, int tapenum,
  *
  * 'buffer_size' specifies how much memory to use for the read buffer.
  * Regardless of the argument, the actual amount of memory used is between
- * BLCKSZ and MaxAllocSize, and is a multiple of BLCKSZ.  The given value is
+ * rel_blck_size and MaxAllocSize, and is a multiple of rel_blck_size.  The given value is
  * rounded down and truncated to fit those constraints, if necessary.  If the
- * tape is frozen, the 'buffer_size' argument is ignored, and a small BLCKSZ
+ * tape is frozen, the 'buffer_size' argument is ignored, and a small rel_blck_size
  * byte buffer is used.
  */
 void
@@ -559,12 +560,12 @@ LogicalTapeRewindForRead(LogicalTapeSet *lts, int tapenum, size_t buffer_size)
 	 * Round and cap buffer_size if needed.
 	 */
 	if (lt->frozen)
-		buffer_size = BLCKSZ;
+		buffer_size = rel_blck_size;
 	else
 	{
 		/* need at least one block */
-		if (buffer_size < BLCKSZ)
-			buffer_size = BLCKSZ;
+		if (buffer_size < rel_blck_size)
+			buffer_size = rel_blck_size;
 
 		/*
 		 * palloc() larger than MaxAllocSize would fail (a multi-gigabyte
@@ -573,8 +574,8 @@ LogicalTapeRewindForRead(LogicalTapeSet *lts, int tapenum, size_t buffer_size)
 		if (buffer_size > MaxAllocSize)
 			buffer_size = MaxAllocSize;
 
-		/* round down to BLCKSZ boundary */
-		buffer_size -= buffer_size % BLCKSZ;
+		/* round down to rel_blck_size boundary */
+		buffer_size -= buffer_size % rel_blck_size;
 	}
 
 	if (lt->writing)
@@ -728,12 +729,12 @@ LogicalTapeFreeze(LogicalTapeSet *lts, int tapenum)
 	 * we're reading from multiple tapes.  But at the end of a sort, when a
 	 * tape is frozen, we only read from a single tape anyway.
 	 */
-	if (!lt->buffer || lt->buffer_size != BLCKSZ)
+	if (!lt->buffer || lt->buffer_size != rel_blck_size)
 	{
 		if (lt->buffer)
 			pfree(lt->buffer);
-		lt->buffer = palloc(BLCKSZ);
-		lt->buffer_size = BLCKSZ;
+		lt->buffer = palloc(rel_blck_size);
+		lt->buffer_size = rel_blck_size;
 	}
 
 	/* Read the first block, or reset if tape is empty */
@@ -773,7 +774,7 @@ LogicalTapeBackspace(LogicalTapeSet *lts, int tapenum, size_t size)
 	Assert(tapenum >= 0 && tapenum < lts->nTapes);
 	lt = &lts->tapes[tapenum];
 	Assert(lt->frozen);
-	Assert(lt->buffer_size == BLCKSZ);
+	Assert(lt->buffer_size == rel_blck_size);
 
 	/*
 	 * Easy case for seek within current block.
@@ -845,7 +846,7 @@ LogicalTapeSeek(LogicalTapeSet *lts, int tapenum,
 	lt = &lts->tapes[tapenum];
 	Assert(lt->frozen);
 	Assert(offset >= 0 && offset <= TapeBlockPayloadSize);
-	Assert(lt->buffer_size == BLCKSZ);
+	Assert(lt->buffer_size == rel_blck_size);
 
 	if (blocknum != lt->curBlockNumber)
 	{
@@ -876,7 +877,7 @@ LogicalTapeTell(LogicalTapeSet *lts, int tapenum,
 	lt = &lts->tapes[tapenum];
 
 	/* With a larger buffer, 'pos' wouldn't be the same as offset within page */
-	Assert(lt->buffer_size == BLCKSZ);
+	Assert(lt->buffer_size == rel_blck_size);
 
 	*blocknum = lt->curBlockNumber;
 	*offset = lt->pos;

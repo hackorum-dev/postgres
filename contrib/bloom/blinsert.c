@@ -33,10 +33,9 @@ PG_MODULE_MAGIC;
 typedef struct
 {
 	BloomState	blstate;		/* bloom index state */
-	MemoryContext tmpCtx;		/* temporary memory context reset after each
-								 * tuple */
-	char		data[BLCKSZ];	/* cached page */
+	MemoryContext tmpCtx;		/* temporary memory context reset after each tuple */
 	int64		count;			/* number of tuples in cached page */
+	char*		data;	/* cached page */
 } BloomBuildState;
 
 /*
@@ -51,7 +50,7 @@ flushCachedPage(Relation index, BloomBuildState *buildstate)
 
 	state = GenericXLogStart(index);
 	page = GenericXLogRegisterBuffer(state, buffer, GENERIC_XLOG_FULL_IMAGE);
-	memcpy(page, buildstate->data, BLCKSZ);
+	memcpy(page, buildstate->data, rel_blck_size);
 	GenericXLogFinish(state);
 	UnlockReleaseBuffer(buffer);
 }
@@ -62,7 +61,7 @@ flushCachedPage(Relation index, BloomBuildState *buildstate)
 static void
 initCachedPage(BloomBuildState *buildstate)
 {
-	memset(buildstate->data, 0, BLCKSZ);
+	memset(buildstate->data, 0, rel_blck_size);
 	BloomInitPage(buildstate->data, 0);
 	buildstate->count = 0;
 }
@@ -126,7 +125,9 @@ blbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 	BloomInitMetapage(index);
 
 	/* Initialize the bloom build state */
+	buildstate.data = palloc(rel_blck_size);
 	memset(&buildstate, 0, sizeof(buildstate));
+	memset(buildstate.data, 0, rel_blck_size);
 	initBloomState(&buildstate.blstate, index);
 	buildstate.tmpCtx = AllocSetContextCreate(CurrentMemoryContext,
 											  "Bloom build temporary context",
@@ -145,6 +146,7 @@ blbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 		flushCachedPage(index, &buildstate);
 
 	MemoryContextDelete(buildstate.tmpCtx);
+	pfree(buildstate.data);
 
 	result = (IndexBuildResult *) palloc(sizeof(IndexBuildResult));
 	result->heap_tuples = result->index_tuples = reltuples;
@@ -161,7 +163,7 @@ blbuildempty(Relation index)
 	Page		metapage;
 
 	/* Construct metapage. */
-	metapage = (Page) palloc(BLCKSZ);
+	metapage = (Page) palloc(rel_blck_size);
 	BloomFillMetapage(index, metapage);
 
 	/*

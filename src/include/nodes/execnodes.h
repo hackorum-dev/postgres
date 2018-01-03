@@ -600,6 +600,7 @@ typedef struct TupleHashEntryData
 #define SH_KEY_TYPE MinimalTuple
 #define SH_SCOPE extern
 #define SH_DECLARE
+#define SH_SIZEOF_ELEMENT_TYPE	sizeof(TupleHashEntryData)
 #include "lib/simplehash.h"
 
 typedef struct TupleHashTableData

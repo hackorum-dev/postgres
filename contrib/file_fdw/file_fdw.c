@@ -798,7 +798,7 @@ fileAnalyzeForeignTable(Relation relation,
 	 * Convert size to pages.  Must return at least 1 so that we can tell
 	 * later on that pg_class.relpages is not default.
 	 */
-	*totalpages = (stat_buf.st_size + (BLCKSZ - 1)) / BLCKSZ;
+	*totalpages = (stat_buf.st_size + (rel_blck_size - 1)) / rel_blck_size;
 	if (*totalpages < 1)
 		*totalpages = 1;
 
@@ -960,12 +960,12 @@ estimate_size(PlannerInfo *root, RelOptInfo *baserel,
 	 * back to the default if using a program as the input.
 	 */
 	if (fdw_private->is_program || stat(fdw_private->filename, &stat_buf) < 0)
-		stat_buf.st_size = 10 * BLCKSZ;
+		stat_buf.st_size = 10 * rel_blck_size;
 
 	/*
 	 * Convert size to pages for use in I/O cost estimate later.
 	 */
-	pages = (stat_buf.st_size + (BLCKSZ - 1)) / BLCKSZ;
+	pages = (stat_buf.st_size + (rel_blck_size - 1)) / rel_blck_size;
 	if (pages < 1)
 		pages = 1;
 	fdw_private->pages = pages;

@@ -55,6 +55,7 @@
 #include "common/restricted_token.h"
 #include "storage/large_object.h"
 #include "pg_getopt.h"
+#include "pg_control_def.h"
 
 
 static ControlFileData ControlFile; /* pg_control values */
@@ -70,7 +71,17 @@ static MultiXactId set_mxid = 0;
 static MultiXactOffset set_mxoff = (MultiXactOffset) -1;
 static uint32 minXlogTli = 0;
 static XLogSegNo minXlogSegNo = 0;
-static int	WalSegSz;
+
+/*
+ * Wal and relation file and block sizes
+ */
+unsigned int wal_blck_size = 0;
+unsigned int wal_file_blck = 0;
+unsigned long rel_file_size = 0;
+unsigned int rel_blck_size = 0;
+unsigned int rel_file_blck = 0;
+unsigned long wal_file_size = 0;
+
 
 static void CheckDataVersion(void);
 static bool ReadControlFile(void);
@@ -97,10 +108,30 @@ main(int argc, char *argv[])
 	char	   *DataDir = NULL;
 	char	   *log_fname = NULL;
 	int			fd;
+	int option_index;
 
-	set_pglocale_pgservice(argv[0], PG_TEXTDOMAIN("pg_resetwal"));
+	static struct option long_options[] = {
+		{"commit", required_argument, NULL, 'c'},
+		{"datadir", required_argument, NULL, 'D'},
+		{"xidepoch", required_argument, NULL, 'e'},
+		{"force", no_argument, NULL, 'f'},
+		{"walfile", required_argument, NULL, 'l'},
+		{"mxid", required_argument, NULL, 'm'},
+		{"noupdate", no_argument, NULL, 'n'},
+		{"nextoid", required_argument, NULL, 'o'},
+		{"mxactoffset", required_argument, NULL, 'O'},
+		{"version", no_argument, NULL, 'V'},
+		{"nextxid", required_argument, NULL, 'x'},
+		{"rel_blck_size", required_argument, NULL, 10},
+		{"rel_file_blck", required_argument, NULL, 11},
+		{"wal_blck_size", required_argument, NULL, 12},
+		{"wal_file_blck", required_argument, NULL, 13},
+		{"help", required_argument, NULL, '?'},
+		{NULL, 0, NULL, 0}
+	};
 
 	progname = get_progname(argv[0]);
+	set_pglocale_pgservice(argv[0], PG_TEXTDOMAIN("pg_resetwal"));
 
 	if (argc > 1)
 	{
@@ -117,7 +148,7 @@ main(int argc, char *argv[])
 	}
 
 
-	while ((c = getopt(argc, argv, "c:D:e:fl:m:no:O:x:")) != -1)
+	while ((c = getopt_long(argc, argv, "c:D:e:fl:m:no:O:x:", long_options, &option_index)) != -1)
 	{
 		switch (c)
 		{
@@ -275,6 +306,22 @@ main(int argc, char *argv[])
 				log_fname = pg_strdup(optarg);
 				break;
 
+			case 10:
+				rel_blck_size = atoi(pg_strdup(optarg));
+				break;
+
+			case 11:
+				rel_file_blck = atoi(pg_strdup(optarg));
+				break;
+
+			case 12:
+				wal_blck_size = atoi(pg_strdup(optarg));
+				break;
+
+			case 13:
+				wal_file_blck = atoi(pg_strdup(optarg));
+				break;
+
 			default:
 				fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
 				exit(1);
@@ -358,7 +405,7 @@ main(int argc, char *argv[])
 		GuessControlValues();
 
 	if (log_fname != NULL)
-		XLogFromFileName(log_fname, &minXlogTli, &minXlogSegNo, WalSegSz);
+		XLogFromFileName(log_fname, &minXlogTli, &minXlogSegNo, wal_file_size);
 
 	/*
 	 * Also look at existing segment files to set up newXlogSegNo
@@ -593,14 +640,21 @@ ReadControlFile(void)
 		}
 
 		memcpy(&ControlFile, buffer, sizeof(ControlFile));
-		WalSegSz = ControlFile.xlog_seg_size;
 
-		/* return false if WalSegSz is not valid */
-		if (!IsValidWalSegSize(WalSegSz))
+		rel_blck_size = ControlFile.blcksz;
+		rel_file_blck = ControlFile.relseg_size;
+		rel_file_size = rel_blck_size * rel_file_blck;
+
+		wal_blck_size = ControlFile.xlog_blcksz;
+		wal_file_size = ControlFile.xlog_seg_size;
+		wal_file_blck = wal_file_size / wal_blck_size;
+
+		/* return false if wal_file_size is not valid */
+		if (!IsValidWalSegSize(wal_file_size))
 		{
 			fprintf(stderr,
-					_("%s: pg_control specifies invalid WAL segment size (%d bytes); proceed with caution \n"),
-					progname, WalSegSz);
+					_("%s: pg_control specifies invalid WAL segment size (%lu bytes); proceed with caution \n"),
+					progname, wal_file_size);
 			guessed = true;
 		}
 
@@ -676,10 +730,27 @@ GuessControlValues(void)
 
 	ControlFile.maxAlign = MAXIMUM_ALIGNOF;
 	ControlFile.floatFormat = FLOATFORMAT_VALUE;
-	ControlFile.blcksz = BLCKSZ;
-	ControlFile.relseg_size = RELSEG_SIZE;
-	ControlFile.xlog_blcksz = XLOG_BLCKSZ;
-	ControlFile.xlog_seg_size = DEFAULT_XLOG_SEG_SIZE;
+
+	if (rel_blck_size != 0)
+		ControlFile.blcksz = rel_blck_size;
+	else
+		ControlFile.blcksz = REL_BLCK_SIZE_DEF;
+
+	if (rel_file_blck!= 0)
+		ControlFile.relseg_size = rel_file_blck;
+	else
+		ControlFile.relseg_size = REL_FILE_BLCK_DEF;
+
+	if (wal_blck_size != 0)
+		ControlFile.xlog_blcksz = wal_blck_size;
+	else
+		ControlFile.xlog_blcksz = WAL_BLCK_SIZE_DEF;
+
+	if (wal_file_blck != 0)
+		ControlFile.xlog_seg_size = wal_file_blck * ControlFile.xlog_blcksz;
+	else
+		ControlFile.xlog_seg_size = WAL_FILE_BLCK_DEF * ControlFile.xlog_blcksz;
+
 	ControlFile.nameDataLen = NAMEDATALEN;
 	ControlFile.indexMaxKeys = INDEX_MAX_KEYS;
 	ControlFile.toast_max_chunk_size = TOAST_MAX_CHUNK_SIZE;
@@ -793,7 +864,7 @@ PrintNewControlValues(void)
 	printf(_("\n\nValues to be changed:\n\n"));
 
 	XLogFileName(fname, ControlFile.checkPointCopy.ThisTimeLineID,
-				 newXlogSegNo, WalSegSz);
+				 newXlogSegNo, wal_file_size);
 	printf(_("First log segment after reset:        %s\n"), fname);
 
 	if (set_mxid != 0)
@@ -870,7 +941,7 @@ RewriteControlFile(void)
 	 * newXlogSegNo.
 	 */
 	XLogSegNoOffsetToRecPtr(newXlogSegNo, SizeOfXLogLongPHD,
-							ControlFile.checkPointCopy.redo, WalSegSz);
+							ControlFile.checkPointCopy.redo, wal_file_size);
 	ControlFile.checkPointCopy.time = (pg_time_t) time(NULL);
 
 	ControlFile.state = DB_SHUTDOWNED;
@@ -896,7 +967,7 @@ RewriteControlFile(void)
 	ControlFile.max_locks_per_xact = 64;
 
 	/* Now we can force the recorded xlog seg size to the right thing. */
-	ControlFile.xlog_seg_size = WalSegSz;
+	ControlFile.xlog_seg_size = wal_file_size;
 
 	/* Contents are protected with a CRC */
 	INIT_CRC32C(ControlFile.crc);
@@ -1033,7 +1104,7 @@ FindEndOfXLOG(void)
 	 * are in virgin territory.
 	 */
 	xlogbytepos = newXlogSegNo * ControlFile.xlog_seg_size;
-	newXlogSegNo = (xlogbytepos + WalSegSz - 1) / WalSegSz;
+	newXlogSegNo = (xlogbytepos + wal_file_size - 1) / wal_file_size;
 	newXlogSegNo++;
 }
 
@@ -1159,9 +1230,9 @@ WriteEmptyXLOG(void)
 	char	   *recptr;
 
 	/* Use malloc() to ensure buffer is MAXALIGNED */
-	buffer = (char *) pg_malloc(XLOG_BLCKSZ);
+	buffer = (char *) pg_malloc(wal_blck_size);
 	page = (XLogPageHeader) buffer;
-	memset(buffer, 0, XLOG_BLCKSZ);
+	memset(buffer, 0, wal_blck_size);
 
 	/* Set up the XLOG page header */
 	page->xlp_magic = XLOG_PAGE_MAGIC;
@@ -1170,8 +1241,8 @@ WriteEmptyXLOG(void)
 	page->xlp_pageaddr = ControlFile.checkPointCopy.redo - SizeOfXLogLongPHD;
 	longpage = (XLogLongPageHeader) page;
 	longpage->xlp_sysid = ControlFile.system_identifier;
-	longpage->xlp_seg_size = WalSegSz;
-	longpage->xlp_xlog_blcksz = XLOG_BLCKSZ;
+	longpage->xlp_seg_size = wal_file_size;
+	longpage->xlp_xlog_blcksz = wal_blck_size;
 
 	/* Insert the initial checkpoint record */
 	recptr = (char *) page + SizeOfXLogLongPHD;
@@ -1196,7 +1267,7 @@ WriteEmptyXLOG(void)
 
 	/* Write the first page */
 	XLogFilePath(path, ControlFile.checkPointCopy.ThisTimeLineID,
-				 newXlogSegNo, WalSegSz);
+				 newXlogSegNo, wal_file_size);
 
 	unlink(path);
 
@@ -1210,7 +1281,7 @@ WriteEmptyXLOG(void)
 	}
 
 	errno = 0;
-	if (write(fd, buffer, XLOG_BLCKSZ) != XLOG_BLCKSZ)
+	if (write(fd, buffer, wal_blck_size) != wal_blck_size)
 	{
 		/* if write didn't set errno, assume problem is no disk space */
 		if (errno == 0)
@@ -1221,11 +1292,11 @@ WriteEmptyXLOG(void)
 	}
 
 	/* Fill the rest of the file with zeroes */
-	memset(buffer, 0, XLOG_BLCKSZ);
-	for (nbytes = XLOG_BLCKSZ; nbytes < WalSegSz; nbytes += XLOG_BLCKSZ)
+	memset(buffer, 0, wal_blck_size);
+	for (nbytes = wal_blck_size; nbytes < wal_file_size; nbytes += wal_blck_size)
 	{
 		errno = 0;
-		if (write(fd, buffer, XLOG_BLCKSZ) != XLOG_BLCKSZ)
+		if (write(fd, buffer, wal_blck_size) != wal_blck_size)
 		{
 			if (errno == 0)
 				errno = ENOSPC;

@@ -298,7 +298,7 @@ static relopt_int intRelOpts[] =
 			RELOPT_KIND_HEAP,
 			ShareUpdateExclusiveLock
 		},
-		TOAST_TUPLE_TARGET, 128, TOAST_TUPLE_TARGET_MAIN
+		-1, 128, -1	// default and max values are set during initialization
 	},
 	{
 		{
@@ -468,6 +468,12 @@ initialize_reloptions(void)
 	{
 		Assert(DoLockModesConflict(intRelOpts[i].gen.lockmode,
 								   intRelOpts[i].gen.lockmode));
+
+		if (strcmp(intRelOpts[i].gen.name, "toast_tuple_target") == 0) {
+			intRelOpts[i].default_val = TOAST_TUPLE_TARGET;
+			intRelOpts[i].max = TOAST_TUPLE_TARGET_MAIN;
+		}
+
 		j++;
 	}
 	for (i = 0; realRelOpts[i].gen.name; i++)

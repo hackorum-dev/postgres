@@ -12,6 +12,7 @@
 #include "access/visibilitymap.h"
 #include "pg_upgrade.h"
 #include "storage/bufpage.h"
+#include "storage/md.h"
 #include "storage/checksum.h"
 #include "storage/checksum_impl.h"
 
@@ -49,7 +50,7 @@ copyFile(const char *src, const char *dst,
 				 schemaName, relName, dst, strerror(errno));
 
 	/* copy in fairly large chunks for best efficiency */
-#define COPY_BUF_SIZE (50 * BLCKSZ)
+#define COPY_BUF_SIZE (50 * rel_blck_size)
 
 	buffer = (char *) pg_malloc(COPY_BUF_SIZE);
 
@@ -140,7 +141,7 @@ rewriteVisibilityMap(const char *fromfile, const char *tofile,
 	struct stat statbuf;
 
 	/* Compute number of old-format bytes per new page */
-	rewriteVmBytesPerPage = (BLCKSZ - SizeOfPageHeaderData) / 2;
+	rewriteVmBytesPerPage = (rel_blck_size - SizeOfPageHeaderData) / 2;
 
 	if ((src_fd = open(fromfile, O_RDONLY | PG_BINARY, 0)) < 0)
 		pg_fatal("error while copying relation \"%s.%s\": could not open file \"%s\": %s\n",
@@ -162,8 +163,8 @@ rewriteVisibilityMap(const char *fromfile, const char *tofile,
 	 * Malloc the work buffers, rather than making them local arrays, to
 	 * ensure adequate alignment.
 	 */
-	buffer = (char *) pg_malloc(BLCKSZ);
-	new_vmbuf = (char *) pg_malloc(BLCKSZ);
+	buffer = (char *) pg_malloc(rel_blck_size);
+	new_vmbuf = (char *) pg_malloc(rel_blck_size);
 
 	/*
 	 * Turn each visibility map page into 2 pages one by one. Each new page
@@ -180,7 +181,7 @@ rewriteVisibilityMap(const char *fromfile, const char *tofile,
 		PageHeaderData pageheader;
 		bool		old_lastblk;
 
-		if ((bytesRead = read(src_fd, buffer, BLCKSZ)) != BLCKSZ)
+		if ((bytesRead = read(src_fd, buffer, rel_blck_size)) != rel_blck_size)
 		{
 			if (bytesRead < 0)
 				pg_fatal("error while copying relation \"%s.%s\": could not read file \"%s\": %s\n",
@@ -190,7 +191,7 @@ rewriteVisibilityMap(const char *fromfile, const char *tofile,
 						 schemaName, relName, fromfile);
 		}
 
-		totalBytesRead += BLCKSZ;
+		totalBytesRead += rel_blck_size;
 		old_lastblk = (totalBytesRead == src_filesize);
 
 		/* Save the page header data */
@@ -256,7 +257,7 @@ rewriteVisibilityMap(const char *fromfile, const char *tofile,
 					pg_checksum_page(new_vmbuf, new_blkno);
 
 			errno = 0;
-			if (write(dst_fd, new_vmbuf, BLCKSZ) != BLCKSZ)
+			if (write(dst_fd, new_vmbuf, rel_blck_size) != rel_blck_size)
 			{
 				/* if write didn't set errno, assume problem is no disk space */
 				if (errno == 0)

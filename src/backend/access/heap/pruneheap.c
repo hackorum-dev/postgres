@@ -36,12 +36,33 @@ typedef struct
 	int			ndead;
 	int			nunused;
 	/* arrays that accumulate indexes of items to be changed */
-	OffsetNumber redirected[MaxHeapTuplesPerPage * 2];
-	OffsetNumber nowdead[MaxHeapTuplesPerPage];
-	OffsetNumber nowunused[MaxHeapTuplesPerPage];
+	OffsetNumber* redirected;
+	OffsetNumber* nowdead;
+	OffsetNumber* nowunused;
 	/* marked[i] is true if item i is entered in one of the above arrays */
-	bool		marked[MaxHeapTuplesPerPage + 1];
+	bool*		marked;
 } PruneState;
+
+/*
+ * Memory management of PruneState fields.
+ */
+#define SIZEOF_REDIRECTED	(sizeof(OffsetNumber) * (MaxHeapTuplesPerPage * 2))
+#define SIZEOF_NOWDEAD		(sizeof(OffsetNumber) * (MaxHeapTuplesPerPage))
+#define SIZEOF_NOWUNUSED	(sizeof(OffsetNumber) * (MaxHeapTuplesPerPage))
+#define SIZEOF_MARKED		(sizeof(bool) * (MaxHeapTuplesPerPage + 1))
+
+#define PRUNE_STATE_ALLOC(p)				\
+	(p)->redirected = palloc(SIZEOF_REDIRECTED);	\
+	(p)->nowdead = palloc(SIZEOF_NOWDEAD);		\
+	(p)->nowunused = palloc(SIZEOF_NOWUNUSED);	\
+	(p)->marked = palloc(SIZEOF_MARKED)
+
+#define PRUNE_STATE_FREE(p)				\
+	pfree((p)->redirected);				\
+	pfree((p)->nowdead);				\
+	pfree((p)->nowunused);				\
+	pfree((p)->marked)
+
 
 /* Local functions */
 static int heap_prune_chain(Relation relation, Buffer buffer,
@@ -132,7 +153,7 @@ heap_page_prune_opt(Relation relation, Buffer buffer)
 	 */
 	minfree = RelationGetTargetPageFreeSpace(relation,
 											 HEAP_DEFAULT_FILLFACTOR);
-	minfree = Max(minfree, BLCKSZ / 10);
+	minfree = Max(minfree, rel_blck_size / 10);
 
 	if (PageIsFull(page) || PageGetHeapFreeSpace(page) < minfree)
 	{
@@ -188,6 +209,11 @@ heap_page_prune(Relation relation, Buffer buffer, TransactionId OldestXmin,
 	PruneState	prstate;
 
 	/*
+	 * Allocate memory for the PruneState structure fields
+	 */
+	PRUNE_STATE_ALLOC(&prstate);
+
+	/*
 	 * Our strategy is to scan the page and make lists of items to change,
 	 * then apply the changes within a critical section.  This keeps as much
 	 * logic as possible out of the critical section, and also ensures that
@@ -201,7 +227,7 @@ heap_page_prune(Relation relation, Buffer buffer, TransactionId OldestXmin,
 	prstate.new_prune_xid = InvalidTransactionId;
 	prstate.latestRemovedXid = *latestRemovedXid;
 	prstate.nredirected = prstate.ndead = prstate.nunused = 0;
-	memset(prstate.marked, 0, sizeof(prstate.marked));
+	memset(prstate.marked, 0, SIZEOF_MARKED);
 
 	/* Scan the page */
 	maxoff = PageGetMaxOffsetNumber(page);
@@ -319,6 +345,7 @@ heap_page_prune(Relation relation, Buffer buffer, TransactionId OldestXmin,
 	 * One possibility is to leave "fillfactor" worth of space in this page
 	 * and update FSM with the remaining space.
 	 */
+	PRUNE_STATE_FREE(&prstate);
 
 	return ndeleted;
 }

@@ -102,7 +102,7 @@
  * extra headers, so the whole page minus the standard page header is
  * used for the bitmap.
  */
-#define MAPSIZE (BLCKSZ - MAXALIGN(SizeOfPageHeaderData))
+#define MAPSIZE (rel_blck_size - MAXALIGN(SizeOfPageHeaderData))
 
 /* Number of heap blocks we can represent in one byte */
 #define HEAPBLOCKS_PER_BYTE (BITS_PER_BYTE / BITS_PER_HEAPBLOCK)
@@ -614,7 +614,7 @@ vm_readbuf(Relation rel, BlockNumber blkno, bool extend)
 	buf = ReadBufferExtended(rel, VISIBILITYMAP_FORKNUM, blkno,
 							 RBM_ZERO_ON_ERROR, NULL);
 	if (PageIsNew(BufferGetPage(buf)))
-		PageInit(BufferGetPage(buf), BLCKSZ, 0);
+		PageInit(BufferGetPage(buf), rel_blck_size, 0);
 	return buf;
 }
 
@@ -628,8 +628,8 @@ vm_extend(Relation rel, BlockNumber vm_nblocks)
 	BlockNumber vm_nblocks_now;
 	Page		pg;
 
-	pg = (Page) palloc(BLCKSZ);
-	PageInit(pg, BLCKSZ, 0);
+	pg = (Page) palloc(rel_blck_size);
+	PageInit(pg, rel_blck_size, 0);
 
 	/*
 	 * We use the relation extension lock to lock out other backends trying to

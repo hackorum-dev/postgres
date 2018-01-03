@@ -40,8 +40,8 @@
  * represents the range from 254 * FSM_CAT_STEP, inclusive, to
  * MaxFSMRequestSize, exclusive.
  *
- * MaxFSMRequestSize depends on the architecture and BLCKSZ, but assuming
- * default 8k BLCKSZ, and that MaxFSMRequestSize is 8164 bytes, the
+ * MaxFSMRequestSize depends on the architecture and rel_blck_size, but assuming
+ * default 8k rel_blck_size, and that MaxFSMRequestSize is 8164 bytes, the
  * categories look like this:
  *
  *
@@ -60,21 +60,20 @@
  * completely empty page, that would mean that we could never satisfy a
  * request of exactly MaxFSMRequestSize bytes.
  */
-#define FSM_CATEGORIES	256
-#define FSM_CAT_STEP	(BLCKSZ / FSM_CATEGORIES)
+#define FSM_CATEGORIES		256
+#define FSM_CAT_STEP		(rel_blck_size / FSM_CATEGORIES)
 #define MaxFSMRequestSize	MaxHeapTupleSize
 
 /*
  * Depth of the on-disk tree. We need to be able to address 2^32-1 blocks,
  * and 1626 is the smallest number that satisfies X^3 >= 2^32-1. Likewise,
  * 216 is the smallest number that satisfies X^4 >= 2^32-1. In practice,
- * this means that 4096 bytes is the smallest BLCKSZ that we can get away
+ * this means that 4096 bytes is the smallest rel_blck_size that we can get away
  * with a 3-level tree, and 512 is the smallest we support.
  */
-#define FSM_TREE_DEPTH	((SlotsPerFSMPage >= 1626) ? 3 : 4)
-
-#define FSM_ROOT_LEVEL	(FSM_TREE_DEPTH - 1)
-#define FSM_BOTTOM_LEVEL 0
+#define FSM_TREE_DEPTH		((SlotsPerFSMPage >= 1626) ? 3 : 4)
+#define FSM_ROOT_LEVEL		(FSM_TREE_DEPTH - 1)
+#define FSM_BOTTOM_LEVEL	0
 
 /*
  * The internal FSM routines work on a logical addressing scheme. Each
@@ -87,7 +86,7 @@ typedef struct
 } FSMAddress;
 
 /* Address of the root page. */
-static const FSMAddress FSM_ROOT_ADDRESS = {FSM_ROOT_LEVEL, 0};
+static FSMAddress FSM_ROOT_ADDRESS;
 
 /* functions to navigate the tree */
 static FSMAddress fsm_get_child(FSMAddress parent, uint16 slot);
@@ -255,7 +254,7 @@ XLogRecordPageWithFreeSpace(RelFileNode rnode, BlockNumber heapBlk,
 
 	page = BufferGetPage(buf);
 	if (PageIsNew(page))
-		PageInit(page, BLCKSZ, 0);
+		PageInit(page, rel_blck_size, 0);
 
 	if (fsm_set_avail(page, slot, new_cat))
 		MarkBufferDirtyHint(buf, false);
@@ -397,7 +396,7 @@ fsm_space_avail_to_cat(Size avail)
 {
 	int			cat;
 
-	Assert(avail < BLCKSZ);
+	Assert(avail < rel_blck_size);
 
 	if (avail >= MaxFSMRequestSize)
 		return 255;
@@ -596,7 +595,7 @@ fsm_readbuf(Relation rel, FSMAddress addr, bool extend)
 	 */
 	buf = ReadBufferExtended(rel, FSM_FORKNUM, blkno, RBM_ZERO_ON_ERROR, NULL);
 	if (PageIsNew(BufferGetPage(buf)))
-		PageInit(BufferGetPage(buf), BLCKSZ, 0);
+		PageInit(BufferGetPage(buf), rel_blck_size, 0);
 	return buf;
 }
 
@@ -611,8 +610,8 @@ fsm_extend(Relation rel, BlockNumber fsm_nblocks)
 	BlockNumber fsm_nblocks_now;
 	Page		pg;
 
-	pg = (Page) palloc(BLCKSZ);
-	PageInit(pg, BLCKSZ, 0);
+	pg = (Page) palloc(rel_blck_size);
+	PageInit(pg, rel_blck_size, 0);
 
 	/*
 	 * We use the relation extension lock to lock out other backends trying to
@@ -886,4 +885,11 @@ fsm_update_recursive(Relation rel, FSMAddress addr, uint8 new_cat)
 	parent = fsm_get_parent(addr, &parentslot);
 	fsm_set_and_search(rel, parent, parentslot, new_cat, 0);
 	fsm_update_recursive(rel, parent, new_cat);
+}
+
+void
+fsm_init(void)
+{
+	 FSM_ROOT_ADDRESS.level = FSM_ROOT_LEVEL;
+	 FSM_ROOT_ADDRESS.logpageno = 0;
 }

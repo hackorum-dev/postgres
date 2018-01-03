@@ -22,14 +22,15 @@
 #include "streamutil.h"
 
 #include "access/xlog_internal.h"
+#include "storage/md.h"
 #include "common/fe_memutils.h"
 #include "datatype/timestamp.h"
 #include "port/pg_bswap.h"
 #include "pqexpbuffer.h"
+#include "pg_control_def.h"
+
 
 #define ERRCODE_DUPLICATE_OBJECT  "42710"
-
-uint32		WalSegSz;
 
 /* SHOW command for replication connection was introduced in version 10 */
 #define MINIMUM_VERSION_FOR_SHOW_CMD 100000
@@ -235,73 +236,84 @@ GetConnection(void)
 }
 
 /*
- * From version 10, explicitly set wal segment size using SHOW wal_segment_size
+ * From version 10, explicitly set wal segment size using SHOW wal_file_size
  * since ControlFile is not accessible here.
  */
 bool
-RetrieveWalSegSize(PGconn *conn)
+RetrieveServerParameterUnsignedInt(PGconn *conn, const char* name, unsigned int* value)
 {
 	PGresult   *res;
-	char		xlog_unit[3];
-	int			xlog_val,
-				multiplier = 1;
+	PQExpBufferData buf;
 
 	/* check connection existence */
 	Assert(conn != NULL);
 
+	initPQExpBuffer(&buf);
+
 	/* for previous versions set the default xlog seg size */
 	if (PQserverVersion(conn) < MINIMUM_VERSION_FOR_SHOW_CMD)
 	{
-		WalSegSz = DEFAULT_XLOG_SEG_SIZE;
+		if (strcmp(name, "rel_blck_size") == 0)
+			rel_blck_size = REL_BLCK_SIZE_DEF;
+		else if (strcmp(name, "rel_file_blck") == 0)
+			rel_file_blck = REL_FILE_BLCK_DEF;
+		else if (strcmp(name, "wal_blck_size") == 0)
+			wal_blck_size = WAL_BLCK_SIZE_DEF;
+		else if (strcmp(name, "wal_file_blck") == 0)
+			wal_file_blck = WAL_FILE_BLCK_DEF;
+		else 
+			return false;
+
 		return true;
 	}
 
-	res = PQexec(conn, "SHOW wal_segment_size");
+	printfPQExpBuffer(&buf, "SHOW %s", name);
+	res = PQexec(conn, buf.data);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
 	{
 		fprintf(stderr, _("%s: could not send replication command \"%s\": %s\n"),
-				progname, "SHOW wal_segment_size", PQerrorMessage(conn));
+				progname, buf.data, PQerrorMessage(conn));
 
 		PQclear(res);
 		return false;
 	}
+
 	if (PQntuples(res) != 1 || PQnfields(res) < 1)
 	{
 		fprintf(stderr,
-				_("%s: could not fetch WAL segment size: got %d rows and %d fields, expected %d rows and %d or more fields\n"),
-				progname, PQntuples(res), PQnfields(res), 1, 1);
+				_("%s: could not fetch %s: got %d rows and %d fields, expected %d rows and %d or more fields\n"),
+				progname, name, PQntuples(res), PQnfields(res), 1, 1);
 
 		PQclear(res);
 		return false;
 	}
 
 	/* fetch xlog value and unit from the result */
-	if (sscanf(PQgetvalue(res, 0, 0), "%d%s", &xlog_val, xlog_unit) != 2)
+	if (sscanf(PQgetvalue(res, 0, 0), "%d", value) != 1)
 	{
-		fprintf(stderr, _("%s: WAL segment size could not be parsed\n"),
-				progname);
-		return false;
-	}
-
-	/* set the multiplier based on unit to convert xlog_val to bytes */
-	if (strcmp(xlog_unit, "MB") == 0)
-		multiplier = 1024 * 1024;
-	else if (strcmp(xlog_unit, "GB") == 0)
-		multiplier = 1024 * 1024 * 1024;
-
-	/* convert and set WalSegSz */
-	WalSegSz = xlog_val * multiplier;
-
-	if (!IsValidWalSegSize(WalSegSz))
-	{
-		fprintf(stderr,
-				_("%s: WAL segment size must be a power of two between 1MB and 1GB, but the remote server reported a value of %d bytes\n"),
-				progname, WalSegSz);
+		fprintf(stderr, _("%s: %s could not be parsed\n"),
+				progname, name);
 		return false;
 	}
 
 	PQclear(res);
 	return true;
+}
+
+bool
+FetchWalRelBlckFileSize(PGconn* conn)
+{
+        if (!RetrieveServerParameterUnsignedInt(conn, "rel_blck_size", &rel_blck_size)
+                || !RetrieveServerParameterUnsignedInt(conn, "rel_file_blck", &rel_file_blck)
+                || !RetrieveServerParameterUnsignedInt(conn, "wal_blck_size", &wal_blck_size)
+                || !RetrieveServerParameterUnsignedInt(conn, "wal_blck_size", &wal_file_blck)) {
+                return false;
+	} else {
+		rel_file_size = rel_blck_size * rel_file_blck;
+		wal_file_size = wal_blck_size * wal_file_blck;
+
+                return true;
+	}
 }
 
 /*

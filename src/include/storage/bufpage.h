@@ -18,6 +18,7 @@
 #include "storage/block.h"
 #include "storage/item.h"
 #include "storage/off.h"
+#include "storage/md.h"
 
 /*
  * A postgres disk page is an abstraction layered on top of a postgres
@@ -251,7 +252,7 @@ typedef PageHeaderData *PageHeader;
  * PageSizeIsValid
  *		True iff the page size is valid.
  */
-#define PageSizeIsValid(pageSize) ((pageSize) == BLCKSZ)
+#define PageSizeIsValid(pageSize) ((pageSize) == rel_blck_size)
 
 /*
  * PageGetPageSize
@@ -309,7 +310,7 @@ static inline bool
 PageValidateSpecialPointer(Page page)
 {
 	Assert(PageIsValid(page));
-	Assert(((PageHeader) (page))->pd_special <= BLCKSZ);
+	Assert(((PageHeader) (page))->pd_special <= rel_blck_size);
 	Assert(((PageHeader) (page))->pd_special >= SizeOfPageHeaderData);
 
 	return true;

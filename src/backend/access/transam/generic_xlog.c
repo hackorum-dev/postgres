@@ -45,7 +45,7 @@
  */
 #define FRAGMENT_HEADER_SIZE	(2 * sizeof(OffsetNumber))
 #define MATCH_THRESHOLD			FRAGMENT_HEADER_SIZE
-#define MAX_DELTA_SIZE			(BLCKSZ + 2 * FRAGMENT_HEADER_SIZE)
+#define MAX_DELTA_SIZE			(rel_blck_size + 2 * FRAGMENT_HEADER_SIZE)
 
 /* Struct of generic xlog data for single page */
 typedef struct
@@ -55,8 +55,11 @@ typedef struct
 	int			deltaLen;		/* space consumed in delta field */
 	char	   *image;			/* copy of page image for modification, do not
 								 * do it in-place to have aligned memory chunk */
-	char		delta[MAX_DELTA_SIZE];	/* delta between page images */
+	char*		delta;			/* delta between page images */
 } PageData;
+
+#define SIZEOF_DELTA	(sizeof(char) * MAX_DELTA_SIZE)
+
 
 /* State of generic xlog record construction */
 struct GenericXLogState
@@ -66,10 +69,12 @@ struct GenericXLogState
 	 * images addresses, because some code working with pages directly aligns
 	 * addresses, not offsets from beginning of page
 	 */
-	char		images[MAX_GENERIC_XLOG_PAGES * BLCKSZ];
+	char*		images;
 	PageData	pages[MAX_GENERIC_XLOG_PAGES];
 	bool		isLogged;
 };
+
+#define SIZEOF_IMAGES	(sizeof(char) * MAX_GENERIC_XLOG_PAGES * rel_blck_size)
 
 static void writeFragment(PageData *pageData, OffsetNumber offset,
 			  OffsetNumber len, const char *data);
@@ -241,8 +246,8 @@ computeDelta(PageData *pageData, Page curpage, Page targetpage)
 					   0, curLower);
 	/* ... and for upper part, ignoring what's between */
 	computeRegionDelta(pageData, curpage, targetpage,
-					   targetUpper, BLCKSZ,
-					   curUpper, BLCKSZ);
+					   targetUpper, rel_blck_size,
+					   curUpper, rel_blck_size);
 
 	/*
 	 * If xlog debug is enabled, then check produced delta.  Result of delta
@@ -251,13 +256,13 @@ computeDelta(PageData *pageData, Page curpage, Page targetpage)
 #ifdef WAL_DEBUG
 	if (XLOG_DEBUG)
 	{
-		char		tmp[BLCKSZ];
+		char		tmp[rel_blck_size];
 
-		memcpy(tmp, curpage, BLCKSZ);
+		memcpy(tmp, curpage, rel_blck_size);
 		applyPageRedo(tmp, pageData->delta, pageData->deltaLen);
 		if (memcmp(tmp, targetpage, targetLower) != 0 ||
 			memcmp(tmp + targetUpper, targetpage + targetUpper,
-				   BLCKSZ - targetUpper) != 0)
+				   rel_blck_size - targetUpper) != 0)
 			elog(ERROR, "result of generic xlog apply does not match");
 	}
 #endif
@@ -273,11 +278,16 @@ GenericXLogStart(Relation relation)
 	int			i;
 
 	state = (GenericXLogState *) palloc(sizeof(GenericXLogState));
+	state->images = (char*) palloc(SIZEOF_IMAGES);
+
+	for (i = 0; i < MAX_GENERIC_XLOG_PAGES; i++) 
+		state->pages[i].delta = (char*) palloc(SIZEOF_DELTA);
+
 	state->isLogged = RelationNeedsWAL(relation);
 
 	for (i = 0; i < MAX_GENERIC_XLOG_PAGES; i++)
 	{
-		state->pages[i].image = state->images + BLCKSZ * i;
+		state->pages[i].image = state->images + rel_blck_size * i;
 		state->pages[i].buffer = InvalidBuffer;
 	}
 
@@ -309,7 +319,7 @@ GenericXLogRegisterBuffer(GenericXLogState *state, Buffer buffer, int flags)
 			/* Empty slot, so use it (there cannot be a match later) */
 			page->buffer = buffer;
 			page->flags = flags;
-			memcpy(page->image, BufferGetPage(buffer), BLCKSZ);
+			memcpy(page->image, BufferGetPage(buffer), rel_blck_size);
 			return (Page) page->image;
 		}
 		else if (page->buffer == buffer)
@@ -371,7 +381,7 @@ GenericXLogFinish(GenericXLogState *state)
 					   pageHeader->pd_upper - pageHeader->pd_lower);
 				memcpy(page + pageHeader->pd_upper,
 					   pageData->image + pageHeader->pd_upper,
-					   BLCKSZ - pageHeader->pd_upper);
+					   rel_blck_size - pageHeader->pd_upper);
 
 				XLogRegisterBuffer(i, pageData->buffer,
 								   REGBUF_FORCE_IMAGE | REGBUF_STANDARD);
@@ -390,7 +400,7 @@ GenericXLogFinish(GenericXLogState *state)
 					   pageHeader->pd_upper - pageHeader->pd_lower);
 				memcpy(page + pageHeader->pd_upper,
 					   pageData->image + pageHeader->pd_upper,
-					   BLCKSZ - pageHeader->pd_upper);
+					   rel_blck_size - pageHeader->pd_upper);
 
 				XLogRegisterBuffer(i, pageData->buffer, REGBUF_STANDARD);
 				XLogRegisterBufData(i, pageData->delta, pageData->deltaLen);
@@ -424,7 +434,7 @@ GenericXLogFinish(GenericXLogState *state)
 				continue;
 			memcpy(BufferGetPage(pageData->buffer),
 				   pageData->image,
-				   BLCKSZ);
+				   rel_blck_size);
 			/* We don't worry about zeroing the "hole" in this case */
 			MarkBufferDirty(pageData->buffer);
 		}
@@ -433,7 +443,7 @@ GenericXLogFinish(GenericXLogState *state)
 		lsn = InvalidXLogRecPtr;
 	}
 
-	pfree(state);
+	GenericXLogAbort(state);
 
 	return lsn;
 }
@@ -446,6 +456,12 @@ GenericXLogFinish(GenericXLogState *state)
 void
 GenericXLogAbort(GenericXLogState *state)
 {
+	int i;
+
+	for (i = 0; i < MAX_GENERIC_XLOG_PAGES; i++)
+		pfree(state->pages[i].delta);
+
+	pfree(state->images);
 	pfree(state);
 }
 

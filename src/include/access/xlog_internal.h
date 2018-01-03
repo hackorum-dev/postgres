@@ -26,6 +26,7 @@
 #include "pgtime.h"
 #include "storage/block.h"
 #include "storage/relfilenode.h"
+#include "storage/md.h"
 
 
 /*
@@ -85,14 +86,15 @@ typedef XLogLongPageHeaderData *XLogLongPageHeader;
 #define XLogPageHeaderSize(hdr)		\
 	(((hdr)->xlp_info & XLP_LONG_HEADER) ? SizeOfXLogLongPHD : SizeOfXLogShortPHD)
 
-/* wal_segment_size can range from 1MB to 1GB */
+/* wal_file_size can range from 1MB to 1GB */
 #define WalSegMinSize 1024 * 1024
 #define WalSegMaxSize 1024 * 1024 * 1024
+
 /* default number of min and max wal segments */
 #define DEFAULT_MIN_WAL_SEGS 5
 #define DEFAULT_MAX_WAL_SEGS 64
 
-/* check that the given size is a valid wal_segment_size */
+/* check that the given size is a valid wal_file_size */
 #define IsPowerOf2(x) (x > 0 && ((x) & ((x)-1)) == 0)
 #define IsValidWalSegSize(size) \
 	 (IsPowerOf2(size) && \
@@ -135,7 +137,7 @@ typedef XLogLongPageHeaderData *XLogLongPageHeader;
 
 /* Check if an XLogRecPtr value is in a plausible range */
 #define XRecOffIsValid(xlrp) \
-		((xlrp) % XLOG_BLCKSZ >= SizeOfXLogShortPHD)
+		((xlrp) % wal_blck_size >= SizeOfXLogShortPHD)
 
 /*
  * The XLog directory and control file (relative to $PGDATA)

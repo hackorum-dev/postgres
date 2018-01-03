@@ -43,6 +43,7 @@ static int	TupleHashTableMatch(struct tuplehash_hash *tb, const MinimalTuple tup
 #define SH_STORE_HASH
 #define SH_GET_HASH(tb, a) a->hash
 #define SH_DEFINE
+#define SH_SIZEOF_ELEMENT_TYPE	sizeof(TupleHashEntryData)
 #include "lib/simplehash.h"
 
 

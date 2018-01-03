@@ -44,7 +44,7 @@ PageInit(Page page, Size pageSize, Size specialSize)
 
 	specialSize = MAXALIGN(specialSize);
 
-	Assert(pageSize == BLCKSZ);
+	Assert(pageSize == rel_blck_size);
 	Assert(pageSize > specialSize + SizeOfPageHeaderData);
 
 	/* Make sure all fields of page are zero, as well as unused space */
@@ -110,7 +110,7 @@ PageIsVerified(Page page, BlockNumber blkno)
 		if ((p->pd_flags & ~PD_VALID_FLAG_BITS) == 0 &&
 			p->pd_lower <= p->pd_upper &&
 			p->pd_upper <= p->pd_special &&
-			p->pd_special <= BLCKSZ &&
+			p->pd_special <= rel_blck_size &&
 			p->pd_special == MAXALIGN(p->pd_special))
 			header_sane = true;
 
@@ -119,16 +119,15 @@ PageIsVerified(Page page, BlockNumber blkno)
 	}
 
 	/*
-	 * Check all-zeroes case. Luckily BLCKSZ is guaranteed to always be a
+	 * Check all-zeroes case. Luckily rel_blck_size is guaranteed to always be a
 	 * multiple of size_t - and it's much faster to compare memory using the
 	 * native word size.
 	 */
-	StaticAssertStmt(BLCKSZ == (BLCKSZ / sizeof(size_t)) * sizeof(size_t),
-					 "BLCKSZ has to be a multiple of sizeof(size_t)");
+	Assert(rel_blck_size == (rel_blck_size / sizeof(size_t)) * sizeof(size_t));
 
 	all_zeroes = true;
 	pagebytes = (size_t *) page;
-	for (i = 0; i < (BLCKSZ / sizeof(size_t)); i++)
+	for (i = 0; i < (rel_blck_size / sizeof(size_t)); i++)
 	{
 		if (pagebytes[i] != 0)
 		{
@@ -207,7 +206,7 @@ PageAddItemExtended(Page page,
 	if (phdr->pd_lower < SizeOfPageHeaderData ||
 		phdr->pd_lower > phdr->pd_upper ||
 		phdr->pd_upper > phdr->pd_special ||
-		phdr->pd_special > BLCKSZ)
+		phdr->pd_special > rel_blck_size)
 		ereport(PANIC,
 				(errcode(ERRCODE_DATA_CORRUPTED),
 				 errmsg("corrupted page pointers: lower = %u, upper = %u, special = %u",
@@ -500,7 +499,7 @@ PageRepairFragmentation(Page page)
 	if (pd_lower < SizeOfPageHeaderData ||
 		pd_lower > pd_upper ||
 		pd_upper > pd_special ||
-		pd_special > BLCKSZ ||
+		pd_special > rel_blck_size ||
 		pd_special != MAXALIGN(pd_special))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
@@ -737,7 +736,7 @@ PageIndexTupleDelete(Page page, OffsetNumber offnum)
 	if (phdr->pd_lower < SizeOfPageHeaderData ||
 		phdr->pd_lower > phdr->pd_upper ||
 		phdr->pd_upper > phdr->pd_special ||
-		phdr->pd_special > BLCKSZ ||
+		phdr->pd_special > rel_blck_size ||
 		phdr->pd_special != MAXALIGN(phdr->pd_special))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
@@ -870,7 +869,7 @@ PageIndexMultiDelete(Page page, OffsetNumber *itemnos, int nitems)
 	if (pd_lower < SizeOfPageHeaderData ||
 		pd_lower > pd_upper ||
 		pd_upper > pd_special ||
-		pd_special > BLCKSZ ||
+		pd_special > rel_blck_size ||
 		pd_special != MAXALIGN(pd_special))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
@@ -966,7 +965,7 @@ PageIndexTupleDeleteNoCompact(Page page, OffsetNumber offnum)
 	if (phdr->pd_lower < SizeOfPageHeaderData ||
 		phdr->pd_lower > phdr->pd_upper ||
 		phdr->pd_upper > phdr->pd_special ||
-		phdr->pd_special > BLCKSZ ||
+		phdr->pd_special > rel_blck_size ||
 		phdr->pd_special != MAXALIGN(phdr->pd_special))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
@@ -1076,7 +1075,7 @@ PageIndexTupleOverwrite(Page page, OffsetNumber offnum,
 	if (phdr->pd_lower < SizeOfPageHeaderData ||
 		phdr->pd_lower > phdr->pd_upper ||
 		phdr->pd_upper > phdr->pd_special ||
-		phdr->pd_special > BLCKSZ ||
+		phdr->pd_special > rel_blck_size ||
 		phdr->pd_special != MAXALIGN(phdr->pd_special))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
@@ -1178,9 +1177,9 @@ PageSetChecksumCopy(Page page, BlockNumber blkno)
 	 * and second to avoid wasting space in processes that never call this.
 	 */
 	if (pageCopy == NULL)
-		pageCopy = MemoryContextAlloc(TopMemoryContext, BLCKSZ);
+		pageCopy = MemoryContextAlloc(TopMemoryContext, rel_blck_size);
 
-	memcpy(pageCopy, (char *) page, BLCKSZ);
+	memcpy(pageCopy, (char *) page, rel_blck_size);
 	((PageHeader) pageCopy)->pd_checksum = pg_checksum_page(pageCopy, blkno);
 	return pageCopy;
 }

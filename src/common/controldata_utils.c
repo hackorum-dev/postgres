@@ -28,6 +28,9 @@
 #include "common/controldata_utils.h"
 #include "port/pg_crc32c.h"
 
+static ControlFileData* __get_controlfile(const char* progname);
+
+
 /*
  * get_controlfile(char *DataDir, const char *progname, bool *crc_ok_p)
  *
@@ -101,4 +104,99 @@ get_controlfile(const char *DataDir, const char *progname, bool *crc_ok_p)
 #endif
 
 	return ControlFile;
+}
+
+ControlFileData*
+__get_controlfile(const char* progname)
+{
+	char* pg_data;
+	bool crc_ok_p;
+
+	crc_ok_p = false;
+
+	pg_data = getenv("PGDATA");
+	if (pg_data) {
+		canonicalize_path(pg_data);
+		return get_controlfile(pg_data, progname, &crc_ok_p);
+	} else {
+		printf(_("No PGDATA defined.\n"));
+		return NULL;
+	}
+}
+
+
+/*
+ * Relation block size in bytes
+ */
+unsigned int get_rel_blck_size(const char* progname)
+{
+	int blcksz;
+	ControlFileData* control_data;
+
+	blcksz = 0;
+
+        control_data =  __get_controlfile(progname);
+	if (control_data != NULL) {
+		blcksz = control_data->blcksz;
+		pfree(control_data);
+	}
+
+	return blcksz;
+}
+
+/*
+ * Relaation file size in blocks
+ */
+unsigned int get_rel_file_blck(const char* progname)
+{
+	int relseg_size;
+	ControlFileData* control_data;
+
+	relseg_size = 0;
+
+        control_data =  __get_controlfile(progname);
+	if (control_data != NULL) {
+		relseg_size = control_data->relseg_size;
+		pfree(control_data);
+	}
+
+        return relseg_size;
+}
+
+/*
+ * Wal file block size in bytes
+ */
+unsigned int get_wal_blck_size(const char* progname)
+{
+	int xlog_blcksz;
+	ControlFileData* control_data;
+
+	xlog_blcksz = 0;
+
+        control_data =  __get_controlfile(progname);
+	if (control_data != NULL) {
+		xlog_blcksz = control_data->xlog_blcksz;
+		pfree(control_data);
+	}
+
+        return xlog_blcksz;
+}
+
+/*
+ * Wal file size in blocks
+ */
+unsigned int get_wal_file_blck(const char* progname)
+{
+	int wal_file_blck;
+	ControlFileData* control_data;
+
+	wal_file_blck = 0;
+
+        control_data =  __get_controlfile(progname);
+	if (control_data != NULL) {
+		wal_file_blck = control_data->xlog_seg_size / control_data->xlog_blcksz;
+		pfree(control_data);
+	}
+
+        return wal_file_blck;
 }

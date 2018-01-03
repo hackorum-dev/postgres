@@ -130,7 +130,7 @@ extern PGDLLIMPORT int32 *LocalRefCount;
 	BufferIsLocal(buffer) ? \
 		LocalBufferBlockPointers[-(buffer) - 1] \
 	: \
-		(Block) (BufferBlocks + ((Size) ((buffer) - 1)) * BLCKSZ) \
+		(Block) (BufferBlocks + ((Size) ((buffer) - 1)) * rel_blck_size) \
 )
 
 /*
@@ -147,7 +147,7 @@ extern PGDLLIMPORT int32 *LocalRefCount;
 #define BufferGetPageSize(buffer) \
 ( \
 	AssertMacro(BufferIsValid(buffer)), \
-	(Size)BLCKSZ \
+	(Size)rel_blck_size \
 )
 
 /*

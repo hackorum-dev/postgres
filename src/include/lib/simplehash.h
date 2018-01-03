@@ -91,6 +91,9 @@
 #define SH_INITIAL_BUCKET SH_MAKE_NAME(initial_bucket)
 #define SH_ENTRY_HASH SH_MAKE_NAME(entry_hash)
 
+#define SH_GET_ENTRY(array, index)	(SH_ELEMENT_TYPE *)((char*) array + SH_SIZEOF_ELEMENT_TYPE * index)
+
+
 /* generate forward declarations necessary to use the hash table */
 #ifdef SH_DECLARE
 
@@ -222,7 +225,7 @@ SH_COMPUTE_PARAMETERS(SH_TYPE * tb, uint32 newsize)
 	 * Verify that allocation of ->data is possible on this platform, without
 	 * overflowing Size.
 	 */
-	if ((((uint64) sizeof(SH_ELEMENT_TYPE)) * size) >= MaxAllocHugeSize)
+	if ((((uint64) SH_SIZEOF_ELEMENT_TYPE) * size) >= MaxAllocHugeSize)
 		elog(ERROR, "hash table too large");
 
 	/* now set size */
@@ -339,7 +342,7 @@ SH_CREATE(MemoryContext ctx, uint32 nelements, void *private_data)
 
 	SH_COMPUTE_PARAMETERS(tb, size);
 
-	tb->data = SH_ALLOCATE(tb, sizeof(SH_ELEMENT_TYPE) * tb->size);
+	tb->data = SH_ALLOCATE(tb, SH_SIZEOF_ELEMENT_TYPE * tb->size);
 
 	return tb;
 }
@@ -376,7 +379,7 @@ SH_GROW(SH_TYPE * tb, uint32 newsize)
 	/* compute parameters for new table */
 	SH_COMPUTE_PARAMETERS(tb, newsize);
 
-	tb->data = SH_ALLOCATE(tb, sizeof(SH_ELEMENT_TYPE) * tb->size);
+	tb->data = SH_ALLOCATE(tb, SH_SIZEOF_ELEMENT_TYPE * tb->size);
 
 	newdata = tb->data;
 
@@ -389,7 +392,7 @@ SH_GROW(SH_TYPE * tb, uint32 newsize)
 	 * consuming and frequent, that's worthwhile to optimize.
 	 *
 	 * To be able to simply move entries over, we have to start not at the
-	 * first bucket (i.e olddata[0]), but find the first bucket that's either
+	 * first bucket (i.e SH_GET_ENTRY(olddata, 0)), but find the first bucket that's either
 	 * empty, or is occupied by an entry at its optimal position. Such a
 	 * bucket has to exist in any table with a load factor under 1, as not all
 	 * buckets are occupied, i.e. there always has to be an empty bucket.  By
@@ -400,7 +403,7 @@ SH_GROW(SH_TYPE * tb, uint32 newsize)
 	/* search for the first element in the hash that's not wrapped around */
 	for (i = 0; i < oldsize; i++)
 	{
-		SH_ELEMENT_TYPE *oldentry = &olddata[i];
+		SH_ELEMENT_TYPE *oldentry = SH_GET_ENTRY(olddata, i);
 		uint32		hash;
 		uint32		optimal;
 
@@ -424,7 +427,7 @@ SH_GROW(SH_TYPE * tb, uint32 newsize)
 	copyelem = startelem;
 	for (i = 0; i < oldsize; i++)
 	{
-		SH_ELEMENT_TYPE *oldentry = &olddata[copyelem];
+		SH_ELEMENT_TYPE *oldentry = SH_GET_ENTRY(olddata, copyelem);
 
 		if (oldentry->status == SH_STATUS_IN_USE)
 		{
@@ -440,7 +443,7 @@ SH_GROW(SH_TYPE * tb, uint32 newsize)
 			/* find empty element to put data into */
 			while (true)
 			{
-				newentry = &newdata[curelem];
+				newentry = SH_GET_ENTRY(newdata, curelem);
 
 				if (newentry->status == SH_STATUS_EMPTY)
 				{
@@ -451,7 +454,7 @@ SH_GROW(SH_TYPE * tb, uint32 newsize)
 			}
 
 			/* copy entry to new slot */
-			memcpy(newentry, oldentry, sizeof(SH_ELEMENT_TYPE));
+			memcpy(newentry, oldentry, SH_SIZEOF_ELEMENT_TYPE);
 		}
 
 		/* can't use SH_NEXT here, would use new size */
@@ -514,7 +517,7 @@ restart:
 		uint32		curdist;
 		uint32		curhash;
 		uint32		curoptimal;
-		SH_ELEMENT_TYPE *entry = &data[curelem];
+		SH_ELEMENT_TYPE *entry = SH_GET_ENTRY(data, curelem);
 
 		/* any empty bucket can directly be used */
 		if (entry->status == SH_STATUS_EMPTY)
@@ -561,7 +564,7 @@ restart:
 				SH_ELEMENT_TYPE *emptyentry;
 
 				emptyelem = SH_NEXT(tb, emptyelem, startelem);
-				emptyentry = &data[emptyelem];
+				emptyentry = SH_GET_ENTRY(data, emptyelem);
 
 				if (emptyentry->status == SH_STATUS_EMPTY)
 				{
@@ -596,9 +599,9 @@ restart:
 				SH_ELEMENT_TYPE *moveentry;
 
 				moveelem = SH_PREV(tb, moveelem, startelem);
-				moveentry = &data[moveelem];
+				moveentry = SH_GET_ENTRY(data, moveelem);
 
-				memcpy(lastentry, moveentry, sizeof(SH_ELEMENT_TYPE));
+				memcpy(lastentry, moveentry, SH_SIZEOF_ELEMENT_TYPE);
 				lastentry = moveentry;
 			}
 
@@ -643,7 +646,7 @@ SH_LOOKUP(SH_TYPE * tb, SH_KEY_TYPE key)
 
 	while (true)
 	{
-		SH_ELEMENT_TYPE *entry = &tb->data[curelem];
+		SH_ELEMENT_TYPE *entry = SH_GET_ENTRY(tb->data, curelem);
 
 		if (entry->status == SH_STATUS_EMPTY)
 		{
@@ -679,7 +682,7 @@ SH_DELETE(SH_TYPE * tb, SH_KEY_TYPE key)
 
 	while (true)
 	{
-		SH_ELEMENT_TYPE *entry = &tb->data[curelem];
+		SH_ELEMENT_TYPE *entry = SH_GET_ENTRY(tb->data, curelem);
 
 		if (entry->status == SH_STATUS_EMPTY)
 			return false;
@@ -705,7 +708,7 @@ SH_DELETE(SH_TYPE * tb, SH_KEY_TYPE key)
 				uint32		curoptimal;
 
 				curelem = SH_NEXT(tb, curelem, startelem);
-				curentry = &tb->data[curelem];
+				curentry = SH_GET_ENTRY(tb->data, curelem);
 
 				if (curentry->status != SH_STATUS_IN_USE)
 				{
@@ -724,7 +727,7 @@ SH_DELETE(SH_TYPE * tb, SH_KEY_TYPE key)
 				}
 
 				/* shift */
-				memcpy(lastentry, curentry, sizeof(SH_ELEMENT_TYPE));
+				memcpy(lastentry, curentry, SH_SIZEOF_ELEMENT_TYPE);
 
 				lastentry = curentry;
 			}
@@ -752,14 +755,21 @@ SH_START_ITERATE(SH_TYPE * tb, SH_ITERATOR * iter)
 	 * supported, we want to start/end at an element that cannot be affected
 	 * by elements being shifted.
 	 */
+	//fprintf(stderr, "startiter start --> tb->size = %lu\n", tb->size);
+	//fflush(stderr);
 	for (i = 0; i < tb->size; i++)
 	{
-		SH_ELEMENT_TYPE *entry = &tb->data[i];
+		SH_ELEMENT_TYPE *entry = SH_GET_ENTRY(tb->data, i);
 
 		if (entry->status != SH_STATUS_IN_USE)
 		{
 			startelem = i;
+			//fprintf(stderr, "startiter startelem = %ld\n", startelem);
+			//fflush(stderr);
 			break;
+		} else {
+			//fprintf(stderr, "startiter i = %d, entry->status = SH_STATUS_IN_USE\n", i);
+			//fflush(stderr);
 		}
 	}
 
@@ -771,6 +781,8 @@ SH_START_ITERATE(SH_TYPE * tb, SH_ITERATOR * iter)
 	 */
 	iter->cur = startelem;
 	iter->end = iter->cur;
+	//fprintf(stderr, "startiter end --> iter->cur = %d, iter->end = %d\n", iter->cur, iter->end);
+	//fflush(stderr);
 	iter->done = false;
 }
 
@@ -806,23 +818,36 @@ SH_START_ITERATE_AT(SH_TYPE * tb, SH_ITERATOR * iter, uint32 at)
 SH_SCOPE	SH_ELEMENT_TYPE *
 SH_ITERATE(SH_TYPE * tb, SH_ITERATOR * iter)
 {
+	//SH_ELEMENT_TYPE *myelem;
+
+	//fprintf(stderr, "iter start --> cur = %d, end = %d, done = %d\n", iter->cur, iter->end, iter->done);
+
+	//myelem = SH_GET_ENTRY(tb->data, 0);
+	//fprintf(stderr, "iter start ==> elem = %p, 0 -> %d\n", myelem, myelem->status);
+
+	//myelem = SH_GET_ENTRY(tb->data, 6);
+	//fprintf(stderr, "iter start ==> elem = %p, 6 -> %d\n", myelem, myelem->status);
+
 	while (!iter->done)
 	{
 		SH_ELEMENT_TYPE *elem;
 
-		elem = &tb->data[iter->cur];
+		elem = SH_GET_ENTRY(tb->data, iter->cur);
+		//fprintf(stderr, "iter loop --> cur = %d, end = %d, elem = %p, elem->status = %d, done = %d\n",
+		//		iter->cur, iter->end, elem, elem->status, iter->done);
 
 		/* next element in backward direction */
 		iter->cur = (iter->cur - 1) & tb->sizemask;
-
 		if ((iter->cur & tb->sizemask) == (iter->end & tb->sizemask))
 			iter->done = true;
 		if (elem->status == SH_STATUS_IN_USE)
 		{
+			//fprintf(stderr, "iter loop --> found element!!! elem = %p, elem->status = %d\n", elem, elem->status);
 			return elem;
 		}
 	}
 
+	//fprintf(stderr, "iter null --> cur = %d, end = %d, done = %d\n", iter->cur, iter->end, iter->done);
 	return NULL;
 }
 
@@ -851,7 +876,7 @@ SH_STAT(SH_TYPE * tb)
 		uint32		dist;
 		SH_ELEMENT_TYPE *elem;
 
-		elem = &tb->data[i];
+		elem = SH_GET_ENTRY(tb->data, i);
 
 		if (elem->status != SH_STATUS_IN_USE)
 			continue;

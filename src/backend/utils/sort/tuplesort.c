@@ -208,8 +208,8 @@ typedef enum
  */
 #define MINORDER		6		/* minimum merge order */
 #define MAXORDER		500		/* maximum merge order */
-#define TAPE_BUFFER_OVERHEAD		BLCKSZ
-#define MERGE_BUFFER_SIZE			(BLCKSZ * 32)
+#define TAPE_BUFFER_OVERHEAD		rel_blck_size
+#define MERGE_BUFFER_SIZE			(rel_blck_size * 32)
 
 typedef int (*SortTupleComparator) (const SortTuple *a, const SortTuple *b,
 									Tuplesortstate *state);
@@ -2953,7 +2953,7 @@ tuplesort_get_stats(Tuplesortstate *state,
 	if (state->tapeset)
 	{
 		stats->spaceType = SORT_SPACE_TYPE_DISK;
-		stats->spaceUsed = LogicalTapeSetBlocks(state->tapeset) * (BLCKSZ / 1024);
+		stats->spaceUsed = LogicalTapeSetBlocks(state->tapeset) * (rel_blck_size / 1024);
 	}
 	else
 	{

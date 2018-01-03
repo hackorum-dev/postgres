@@ -667,7 +667,7 @@ XLogRead(char *buf, int segsize, TimeLineID tli, XLogRecPtr startptr,
 	static TimeLineID sendTLI = 0;
 	static uint32 sendOff = 0;
 
-	Assert(segsize == wal_segment_size);
+	Assert(segsize == wal_file_size);
 
 	p = buf;
 	recptr = startptr;
@@ -771,7 +771,7 @@ XLogRead(char *buf, int segsize, TimeLineID tli, XLogRecPtr startptr,
  *
  * wantPage must be set to the start address of the page to read and
  * wantLength to the amount of the page that will be read, up to
- * XLOG_BLCKSZ. If the amount to be read isn't known, pass XLOG_BLCKSZ.
+ * wal_blck_size. If the amount to be read isn't known, pass wal_blck_size.
  *
  * We switch to an xlog segment from the new timeline eagerly when on a
  * historical timeline, as soon as we reach the start of the xlog segment
@@ -802,11 +802,11 @@ void
 XLogReadDetermineTimeline(XLogReaderState *state, XLogRecPtr wantPage, uint32 wantLength)
 {
 	const XLogRecPtr lastReadPage = state->readSegNo *
-		state->wal_segment_size + state->readOff;
+		state->wal_file_size + state->readOff;
 
-	Assert(wantPage != InvalidXLogRecPtr && wantPage % XLOG_BLCKSZ == 0);
-	Assert(wantLength <= XLOG_BLCKSZ);
-	Assert(state->readLen == 0 || state->readLen <= XLOG_BLCKSZ);
+	Assert(wantPage != InvalidXLogRecPtr && wantPage % wal_blck_size == 0);
+	Assert(wantLength <= wal_blck_size);
+	Assert(state->readLen == 0 || state->readLen <= wal_blck_size);
 
 	/*
 	 * If the desired page is currently read in and valid, we have nothing to
@@ -818,7 +818,7 @@ XLogReadDetermineTimeline(XLogReaderState *state, XLogRecPtr wantPage, uint32 wa
 	 */
 	if (lastReadPage == wantPage &&
 		state->readLen != 0 &&
-		lastReadPage + state->readLen >= wantPage + Min(wantLength, XLOG_BLCKSZ - 1))
+		lastReadPage + state->readLen >= wantPage + Min(wantLength, wal_blck_size - 1))
 		return;
 
 	/*
@@ -846,8 +846,8 @@ XLogReadDetermineTimeline(XLogReaderState *state, XLogRecPtr wantPage, uint32 wa
 	if (state->currTLIValidUntil != InvalidXLogRecPtr &&
 		state->currTLI != ThisTimeLineID &&
 		state->currTLI != 0 &&
-		((wantPage + wantLength) / state->wal_segment_size) <
-		(state->currTLIValidUntil / state->wal_segment_size))
+		((wantPage + wantLength) / state->wal_file_size) <
+		(state->currTLIValidUntil / state->wal_file_size))
 		return;
 
 	/*
@@ -869,11 +869,11 @@ XLogReadDetermineTimeline(XLogReaderState *state, XLogRecPtr wantPage, uint32 wa
 		 */
 		List	   *timelineHistory = readTimeLineHistory(ThisTimeLineID);
 
-		XLogRecPtr	endOfSegment = (((wantPage / state->wal_segment_size) + 1)
-									* state->wal_segment_size) - 1;
+		XLogRecPtr	endOfSegment = (((wantPage / state->wal_file_size) + 1)
+									* state->wal_file_size) - 1;
 
-		Assert(wantPage / state->wal_segment_size ==
-			   endOfSegment / state->wal_segment_size);
+		Assert(wantPage / state->wal_file_size ==
+			   endOfSegment / state->wal_file_size);
 
 		/*
 		 * Find the timeline of the last LSN on the segment containing
@@ -997,13 +997,13 @@ read_local_xlog_page(XLogReaderState *state, XLogRecPtr targetPagePtr,
 		}
 	}
 
-	if (targetPagePtr + XLOG_BLCKSZ <= read_upto)
+	if (targetPagePtr + wal_blck_size <= read_upto)
 	{
 		/*
 		 * more than one block available; read only that block, have caller
 		 * come back if they need more.
 		 */
-		count = XLOG_BLCKSZ;
+		count = wal_blck_size;
 	}
 	else if (targetPagePtr + reqLen > read_upto)
 	{
@@ -1021,8 +1021,8 @@ read_local_xlog_page(XLogReaderState *state, XLogRecPtr targetPagePtr,
 	 * as 'count', read the whole page anyway. It's guaranteed to be
 	 * zero-padded up to the page boundary if it's incomplete.
 	 */
-	XLogRead(cur_page, state->wal_segment_size, *pageTLI, targetPagePtr,
-			 XLOG_BLCKSZ);
+	XLogRead(cur_page, state->wal_file_size, *pageTLI, targetPagePtr,
+			 wal_blck_size);
 
 	/* number of valid bytes in the buffer */
 	return count;

@@ -313,7 +313,7 @@ static SlruCtlData OldSerXidSlruCtlData;
 
 #define OldSerXidSlruCtl			(&OldSerXidSlruCtlData)
 
-#define OLDSERXID_PAGESIZE			BLCKSZ
+#define OLDSERXID_PAGESIZE			rel_blck_size
 #define OLDSERXID_ENTRYSIZE			sizeof(SerCommitSeqNo)
 #define OLDSERXID_ENTRIESPERPAGE	(OLDSERXID_PAGESIZE / OLDSERXID_ENTRYSIZE)
 

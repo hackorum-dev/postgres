@@ -47,8 +47,14 @@
 #include "utils/relmapper.h"
 #include "utils/tqual.h"
 
-uint32		bootstrap_data_checksum_version = 0;	/* No checksum */
+#define DEBUG_BOOTSTRAP                   0
 
+#define debug_bootstrap(format, ...)      \
+       if (DEBUG_BOOTSTRAP)               \
+               fprintf(stderr, "bootstrap --> " format, ##__VA_ARGS__);
+
+
+uint32		bootstrap_data_checksum_version = 0;	/* No checksum */
 
 #define ALLOC(t, c) \
 	((t *) MemoryContextAllocZero(TopMemoryContext, (unsigned)(c) * sizeof(t)))
@@ -223,7 +229,7 @@ AuxiliaryProcessMain(int argc, char *argv[])
 	/* If no -x argument, we are a CheckerProcess */
 	MyAuxProcType = CheckerProcess;
 
-	while ((flag = getopt(argc, argv, "B:c:d:D:Fkr:x:X:-:")) != -1)
+	while ((flag = getopt(argc, argv, "B:c:d:D:Fkr:x:-:")) != -1)
 	{
 		switch (flag)
 		{
@@ -258,18 +264,6 @@ AuxiliaryProcessMain(int argc, char *argv[])
 			case 'x':
 				MyAuxProcType = atoi(optarg);
 				break;
-			case 'X':
-				{
-					int			WalSegSz = strtoul(optarg, NULL, 0);
-
-					if (!IsValidWalSegSize(WalSegSz))
-						ereport(ERROR,
-								(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-								 errmsg("-X requires a power of 2 value between 1MB and 1GB")));
-					SetConfigOption("wal_segment_size", optarg, PGC_INTERNAL,
-									PGC_S_OVERRIDE);
-				}
-				break;
 			case 'c':
 			case '-':
 				{
@@ -291,7 +285,16 @@ AuxiliaryProcessMain(int argc, char *argv[])
 											optarg)));
 					}
 
-					SetConfigOption(name, value, PGC_POSTMASTER, PGC_S_ARGV);
+					debug_bootstrap("config: name = %s, value = %s\n", name, value);
+					if (strcmp(name, "block_size") == 0
+						|| strcmp(name, "segment_size") == 0
+						|| strcmp(name, "wal_block_size") == 0
+						|| strcmp(name, "wal_segment_size") == 0) {
+						SetConfigOption(name, value, PGC_INTERNAL, PGC_S_OVERRIDE);
+					} else {
+						SetConfigOption(name, value, PGC_POSTMASTER, PGC_S_ARGV);
+					}
+
 					free(name);
 					if (value)
 						free(value);

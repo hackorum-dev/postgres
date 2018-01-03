@@ -193,7 +193,7 @@ pg_checksum_page(char *page, BlockNumber blkno)
 	 */
 	save_checksum = phdr->pd_checksum;
 	phdr->pd_checksum = 0;
-	checksum = pg_checksum_block(page, BLCKSZ);
+	checksum = pg_checksum_block(page, rel_blck_size);
 	phdr->pd_checksum = save_checksum;
 
 	/* Mix in the block number to detect transposed pages */

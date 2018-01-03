@@ -13,5 +13,9 @@
 #include "catalog/pg_control.h"
 
 extern ControlFileData *get_controlfile(const char *DataDir, const char *progname, bool *crc_ok_p);
+extern unsigned int get_rel_blck_size(const char* progname);
+extern unsigned int get_rel_file_blck(const char* progname);
+extern unsigned int get_wal_blck_size(const char* progname);
+extern unsigned int get_wal_file_blck(const char* progname);
 
 #endif							/* COMMON_CONTROLDATA_UTILS_H */

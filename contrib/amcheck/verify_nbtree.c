@@ -1173,7 +1173,7 @@ palloc_btree_page(BtreeCheckState *state, BlockNumber blocknum)
 	Page		page;
 	BTPageOpaque opaque;
 
-	page = palloc(BLCKSZ);
+	page = palloc(rel_blck_size);
 
 	/*
 	 * We copy the page into local storage to avoid holding pin on the buffer
@@ -1190,7 +1190,7 @@ palloc_btree_page(BtreeCheckState *state, BlockNumber blocknum)
 	_bt_checkpage(state->rel, buffer);
 
 	/* Only use copy of page in palloc()'d memory */
-	memcpy(page, BufferGetPage(buffer), BLCKSZ);
+	memcpy(page, BufferGetPage(buffer), rel_blck_size);
 	UnlockReleaseBuffer(buffer);
 
 	opaque = (BTPageOpaque) PageGetSpecialPointer(page);

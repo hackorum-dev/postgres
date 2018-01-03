@@ -130,6 +130,17 @@ static volatile LONG has_xlogendptr = 0;
 /* Contents of recovery.conf to be generated */
 static PQExpBuffer recoveryconfcontents = NULL;
 
+/*
+ * Wal and relation file and block sizes
+ */
+unsigned int wal_blck_size = 0;
+unsigned int wal_file_blck = 0;
+unsigned long rel_file_size = 0;
+unsigned int rel_blck_size = 0;
+unsigned int rel_file_blck = 0;
+unsigned long wal_file_size = 0;
+
+
 /* Function headers */
 static void usage(void);
 static void disconnect_and_exit(int code) pg_attribute_noreturn();
@@ -560,7 +571,7 @@ StartLogStreamer(char *startpos, uint32 timeline, char *sysidentifier)
 	}
 	param->startptr = ((uint64) hi) << 32 | lo;
 	/* Round off to even segment position */
-	param->startptr -= XLogSegmentOffset(param->startptr, WalSegSz);
+	param->startptr -= XLogSegmentOffset(param->startptr, wal_file_size);
 
 #ifndef WIN32
 	/* Create our background pipe */
@@ -2453,8 +2464,8 @@ main(int argc, char **argv)
 		exit(1);
 	}
 
-	/* determine remote server's xlog segment size */
-	if (!RetrieveWalSegSize(conn))
+	/* determine wal and relation file and block sizes */
+	if (!FetchWalRelBlckFileSize(conn))
 		disconnect_and_exit(1);
 
 	/* Create pg_wal symlink, if required */
@@ -2485,6 +2496,7 @@ main(int argc, char **argv)
 #endif
 		free(linkloc);
 	}
+
 
 	BaseBackup();
 

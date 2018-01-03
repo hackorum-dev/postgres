@@ -14,12 +14,6 @@
  */
 
 /*
- * This is default value for wal_segment_size to be used at initdb when run
- * without --walsegsize option. Must be a valid segment size.
- */
-#define DEFAULT_XLOG_SEG_SIZE	(16*1024*1024)
-
-/*
  * Maximum length for identifiers (e.g. table names, column names,
  * function names).  Names actually are limited to one less byte than this,
  * because the length must include a trailing zero byte.
@@ -33,7 +27,7 @@
  *
  * The minimum value is 8 (GIN indexes use 8-argument support functions).
  * The maximum possible value is around 600 (limited by index tuple size in
- * pg_proc's index; BLCKSZ larger than 8K would allow more).  Values larger
+ * pg_proc's index; rel_blck_size larger than 8K would allow more).  Values larger
  * than needed will waste memory and processing time, but do not directly
  * cost disk space.
  *

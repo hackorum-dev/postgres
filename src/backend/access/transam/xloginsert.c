@@ -33,7 +33,7 @@
 #include "pg_trace.h"
 
 /* Buffer size required to store a compressed version of backup block image */
-#define PGLZ_MAX_BLCKSZ PGLZ_MAX_OUTPUT(BLCKSZ)
+#define PGLZ_MAX_BLCKSZ		PGLZ_MAX_OUTPUT(rel_blck_size)
 
 /*
  * For each block reference registered with XLogRegisterBuffer, we fill in
@@ -57,13 +57,14 @@ typedef struct
 								 * backup block data in XLogRecordAssemble() */
 
 	/* buffer to store a compressed version of backup block image */
-	char		compressed_page[PGLZ_MAX_BLCKSZ];
+	char*		compressed_page;
 } registered_buffer;
 
 static registered_buffer *registered_buffers;
 static int	max_registered_buffers; /* allocated size */
-static int	max_registered_block_id = 0;	/* highest block_id + 1 currently
-											 * registered */
+static int	max_registered_block_id = 0;	/* highest block_id + 1 currently registered */
+
+#define SIZEOF_COMPRESSED_PAGE 		(sizeof(char) * PGLZ_MAX_BLCKSZ)
 
 /*
  * A chain of XLogRecDatas to hold the "main data" of a WAL record, registered
@@ -146,6 +147,7 @@ void
 XLogEnsureRecordSpace(int max_block_id, int ndatas)
 {
 	int			nbuffers;
+	int i;
 
 	/*
 	 * This must be called before entering a critical section, because
@@ -176,6 +178,14 @@ XLogEnsureRecordSpace(int max_block_id, int ndatas)
 		 */
 		MemSet(&registered_buffers[max_registered_buffers], 0,
 			   (nbuffers - max_registered_buffers) * sizeof(registered_buffer));
+
+		/*
+		 * Allocate memory for compressed_page
+		 */
+		for (i = max_registered_buffers; i < nbuffers; i++)
+			(&registered_buffers[i])->compressed_page = 
+				MemoryContextAllocZero(xloginsert_cxt, SIZEOF_COMPRESSED_PAGE);
+
 		max_registered_buffers = nbuffers;
 	}
 
@@ -352,7 +362,7 @@ XLogRegisterData(char *data, int len)
  * block_id, the data is appended.
  *
  * The maximum amount of data that can be registered per block is 65535
- * bytes. That should be plenty; if you need more than BLCKSZ bytes to
+ * bytes. That should be plenty; if you need more than rel_blck_size bytes to
  * reconstruct the changes to the page, you might as well just log a full
  * copy of it. (the "main data" that's not associated with a block is not
  * limited)
@@ -598,7 +608,7 @@ XLogRecordAssemble(RmgrId rmid, uint8 info,
 
 				if (lower >= SizeOfPageHeaderData &&
 					upper > lower &&
-					upper <= BLCKSZ)
+					upper <= rel_blck_size)
 				{
 					bimg.hole_offset = lower;
 					cbimg.hole_length = upper - lower;
@@ -662,12 +672,12 @@ XLogRecordAssemble(RmgrId rmid, uint8 info,
 			}
 			else
 			{
-				bimg.length = BLCKSZ - cbimg.hole_length;
+				bimg.length = rel_blck_size - cbimg.hole_length;
 
 				if (cbimg.hole_length == 0)
 				{
 					rdt_datas_last->data = page;
-					rdt_datas_last->len = BLCKSZ;
+					rdt_datas_last->len = rel_blck_size;
 				}
 				else
 				{
@@ -681,7 +691,7 @@ XLogRecordAssemble(RmgrId rmid, uint8 info,
 					rdt_datas_last->data =
 						page + (bimg.hole_offset + cbimg.hole_length);
 					rdt_datas_last->len =
-						BLCKSZ - (bimg.hole_offset + cbimg.hole_length);
+						rel_blck_size - (bimg.hole_offset + cbimg.hole_length);
 				}
 			}
 
@@ -805,11 +815,11 @@ static bool
 XLogCompressBackupBlock(char *page, uint16 hole_offset, uint16 hole_length,
 						char *dest, uint16 *dlen)
 {
-	int32		orig_len = BLCKSZ - hole_length;
+	int32		orig_len = rel_blck_size - hole_length;
 	int32		len;
 	int32		extra_bytes = 0;
 	char	   *source;
-	char		tmp[BLCKSZ];
+	char		tmp[rel_blck_size];
 
 	if (hole_length != 0)
 	{
@@ -818,7 +828,7 @@ XLogCompressBackupBlock(char *page, uint16 hole_offset, uint16 hole_length,
 		memcpy(source, page, hole_offset);
 		memcpy(source + hole_offset,
 			   page + (hole_offset + hole_length),
-			   BLCKSZ - (hole_length + hole_offset));
+			   rel_blck_size - (hole_length + hole_offset));
 
 		/*
 		 * Extra data needs to be stored in WAL record for the compressed
@@ -917,7 +927,7 @@ XLogSaveBufferForHint(Buffer buffer, bool buffer_std)
 	if (lsn <= RedoRecPtr)
 	{
 		int			flags;
-		char		copied_buffer[BLCKSZ];
+		char		copied_buffer[rel_blck_size];
 		char	   *origdata = (char *) BufferGetBlock(buffer);
 		RelFileNode rnode;
 		ForkNumber	forkno;
@@ -936,10 +946,10 @@ XLogSaveBufferForHint(Buffer buffer, bool buffer_std)
 			uint16		upper = ((PageHeader) page)->pd_upper;
 
 			memcpy(copied_buffer, origdata, lower);
-			memcpy(copied_buffer + upper, origdata + upper, BLCKSZ - upper);
+			memcpy(copied_buffer + upper, origdata + upper, rel_blck_size - upper);
 		}
 		else
-			memcpy(copied_buffer, origdata, BLCKSZ);
+			memcpy(copied_buffer, origdata, rel_blck_size);
 
 		XLogBeginInsert();
 
@@ -1027,6 +1037,8 @@ log_newpage_buffer(Buffer buffer, bool page_std)
 void
 InitXLogInsert(void)
 {
+	int i;
+
 	/* Initialize the working areas */
 	if (xloginsert_cxt == NULL)
 	{
@@ -1039,8 +1051,12 @@ InitXLogInsert(void)
 	{
 		registered_buffers = (registered_buffer *)
 			MemoryContextAllocZero(xloginsert_cxt,
-								   sizeof(registered_buffer) * (XLR_NORMAL_MAX_BLOCK_ID + 1));
+					   sizeof(registered_buffer) * (XLR_NORMAL_MAX_BLOCK_ID + 1));
 		max_registered_buffers = XLR_NORMAL_MAX_BLOCK_ID + 1;
+		for (i = 0; i < max_registered_buffers; i++)
+                        (&registered_buffers[i])->compressed_page =
+                                MemoryContextAllocZero(xloginsert_cxt, SIZEOF_COMPRESSED_PAGE);
+
 	}
 	if (rdatas == NULL)
 	{

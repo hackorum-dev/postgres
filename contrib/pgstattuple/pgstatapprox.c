@@ -93,7 +93,7 @@ statapprox_heap(Relation rel, output_type *stat)
 		if (VM_ALL_VISIBLE(rel, blkno, &vmbuffer))
 		{
 			freespace = GetRecordedFreeSpace(rel, blkno);
-			stat->tuple_len += BLCKSZ - freespace;
+			stat->tuple_len += rel_blck_size - freespace;
 			stat->free_space += freespace;
 			continue;
 		}
@@ -112,7 +112,7 @@ statapprox_heap(Relation rel, output_type *stat)
 		if (!PageIsNew(page))
 			stat->free_space += PageGetHeapFreeSpace(page);
 		else
-			stat->free_space += BLCKSZ - SizeOfPageHeaderData;
+			stat->free_space += rel_blck_size - SizeOfPageHeaderData;
 
 		if (PageIsNew(page) || PageIsEmpty(page))
 		{
@@ -182,7 +182,7 @@ statapprox_heap(Relation rel, output_type *stat)
 		UnlockReleaseBuffer(buf);
 	}
 
-	stat->table_len = (uint64) nblocks * BLCKSZ;
+	stat->table_len = (uint64) nblocks * rel_blck_size;
 
 	stat->tuple_count = vac_estimate_reltuples(rel, false, nblocks, scanned,
 											   stat->tuple_count + misc_count);

@@ -26,9 +26,13 @@
 
 #include "receivelog.h"
 #include "streamutil.h"
+#include "storage/md.h"
 
 /* Size of zlib buffer for .tar.gz */
 #define ZLIB_OUT_SIZE 4096
+
+extern unsigned int wal_blck_size;
+
 
 /*-------------------------------------------------------------------------
  * WalDirectoryMethod - write wal to a directory looking like pg_wal
@@ -118,10 +122,10 @@ dir_open_for_write(const char *pathname, const char *temp_suffix, size_t pad_to_
 		char	   *zerobuf;
 		int			bytes;
 
-		zerobuf = pg_malloc0(XLOG_BLCKSZ);
-		for (bytes = 0; bytes < pad_to_size; bytes += XLOG_BLCKSZ)
+		zerobuf = pg_malloc0(wal_blck_size);
+		for (bytes = 0; bytes < pad_to_size; bytes += wal_blck_size)
 		{
-			if (write(fd, zerobuf, XLOG_BLCKSZ) != XLOG_BLCKSZ)
+			if (write(fd, zerobuf, wal_blck_size) != wal_blck_size)
 			{
 				int			save_errno = errno;
 
@@ -499,12 +503,12 @@ tar_write(Walfile f, const void *buf, size_t count)
 static bool
 tar_write_padding_data(TarMethodFile *f, size_t bytes)
 {
-	char	   *zerobuf = pg_malloc0(XLOG_BLCKSZ);
+	char	   *zerobuf = pg_malloc0(wal_blck_size);
 	size_t		bytesleft = bytes;
 
 	while (bytesleft)
 	{
-		size_t		bytestowrite = bytesleft > XLOG_BLCKSZ ? XLOG_BLCKSZ : bytesleft;
+		size_t		bytestowrite = bytesleft > wal_blck_size ? wal_blck_size : bytesleft;
 
 		ssize_t		r = tar_write(f, zerobuf, bytestowrite);
 

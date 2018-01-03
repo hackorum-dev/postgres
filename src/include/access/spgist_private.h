@@ -157,9 +157,9 @@ typedef struct SpGistScanOpaqueData
 	TupleDesc	indexTupDesc;	/* if so, tuple descriptor for them */
 	int			nPtrs;			/* number of TIDs found on current page */
 	int			iPtr;			/* index for scanning through same */
-	ItemPointerData heapPtrs[MaxIndexTuplesPerPage];	/* TIDs from cur page */
-	bool		recheck[MaxIndexTuplesPerPage]; /* their recheck flags */
-	HeapTuple	reconTups[MaxIndexTuplesPerPage];	/* reconstructed tuples */
+	ItemPointerData* heapPtrs;	/* TIDs from cur page */
+	bool*		recheck;	/* their recheck flags */
+	HeapTuple*	reconTups;	/* reconstructed tuples */
 
 	/*
 	 * Note: using MaxIndexTuplesPerPage above is a bit hokey since
@@ -169,6 +169,20 @@ typedef struct SpGistScanOpaqueData
 } SpGistScanOpaqueData;
 
 typedef SpGistScanOpaqueData *SpGistScanOpaque;
+
+/*
+ * Memory management for fields of SpGistScanOpaqueData
+ */
+#define SP_GIST_SCAN_ALLOC(ptr)								\
+	(ptr)->heapPtrs = palloc0(sizeof(ItemPointerData) * MaxIndexTuplesPerPage); 	\
+	(ptr)->recheck = palloc0(sizeof(bool) * MaxIndexTuplesPerPage);			\
+	(ptr)->reconTups = palloc0(sizeof(HeapTuple) * MaxIndexTuplesPerPage)
+
+#define SP_GIST_SCAN_FREE(ptr)	\
+	pfree((ptr)->heapPtrs);	\
+	pfree((ptr)->recheck);	\
+	pfree((ptr)->reconTups)
+
 
 /*
  * This struct is what we actually keep in index->rd_amcache.  It includes
@@ -337,7 +351,7 @@ typedef SpGistDeadTupleData *SpGistDeadTuple;
 
 /* Page capacity after allowing for fixed header and special space */
 #define SPGIST_PAGE_CAPACITY  \
-	MAXALIGN_DOWN(BLCKSZ - \
+	MAXALIGN_DOWN(rel_blck_size - \
 				  SizeOfPageHeaderData - \
 				  MAXALIGN(sizeof(SpGistPageOpaqueData)))
 

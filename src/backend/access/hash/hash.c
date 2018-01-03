@@ -142,7 +142,7 @@ hashbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 	 * one page.  Also, "initial index size" accounting does not include the
 	 * metapage, nor the first bitmap page.
 	 */
-	sort_threshold = (maintenance_work_mem * 1024L) / BLCKSZ;
+	sort_threshold = (maintenance_work_mem * 1024L) / rel_blck_size;
 	if (index->rd_rel->relpersistence != RELPERSISTENCE_TEMP)
 		sort_threshold = Min(sort_threshold, NBuffers);
 	else
@@ -360,6 +360,8 @@ hashbeginscan(Relation rel, int nkeys, int norderbys)
 	scan = RelationGetIndexScan(rel, nkeys, norderbys);
 
 	so = (HashScanOpaque) palloc(sizeof(HashScanOpaqueData));
+	so->currPos.items = (HashScanPosItem*) palloc(SIZEOF_HASH_SCAN_POS_ITEM); 
+
 	HashScanPosInvalidate(so->currPos);
 	so->hashso_bucket_buf = InvalidBuffer;
 	so->hashso_split_bucket_buf = InvalidBuffer;
@@ -429,7 +431,10 @@ hashendscan(IndexScanDesc scan)
 
 	if (so->killedItems != NULL)
 		pfree(so->killedItems);
+
+	pfree(so->currPos.items);
 	pfree(so);
+
 	scan->opaque = NULL;
 }
 

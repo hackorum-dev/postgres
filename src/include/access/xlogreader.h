@@ -26,6 +26,7 @@
 #define XLOGREADER_H
 
 #include "access/xlogrecord.h"
+#include "storage/md.h"
 
 typedef struct XLogReaderState XLogReaderState;
 
@@ -76,14 +77,14 @@ struct XLogReaderState
 	/*
 	 * Segment size of the to-be-parsed data (mandatory).
 	 */
-	int			wal_segment_size;
+	int			wal_file_size;
 
 	/*
 	 * Data input callback (mandatory).
 	 *
 	 * This callback shall read at least reqLen valid bytes of the xlog page
 	 * starting at targetPagePtr, and store them in readBuf.  The callback
-	 * shall return the number of bytes read (never more than XLOG_BLCKSZ), or
+	 * shall return the number of bytes read (never more than wal_blck_size), or
 	 * -1 on failure.  The callback shall sleep, if necessary, to wait for the
 	 * requested bytes to become available.  The callback will not be invoked
 	 * again for the same page unless more than the returned number of bytes
@@ -146,7 +147,7 @@ struct XLogReaderState
 	 */
 
 	/*
-	 * Buffer for currently read page (XLOG_BLCKSZ bytes, valid up to at least
+	 * Buffer for currently read page (wal_blck_size bytes, valid up to at least
 	 * readLen bytes)
 	 */
 	char	   *readBuf;
@@ -194,7 +195,7 @@ struct XLogReaderState
 };
 
 /* Get a new XLogReader */
-extern XLogReaderState *XLogReaderAllocate(int wal_segment_size,
+extern XLogReaderState *XLogReaderAllocate(int wal_file_size,
 				   XLogPageReadCB pagereadfunc,
 				   void *private_data);
 

@@ -75,8 +75,13 @@ typedef struct HeapScanDescData
 	/* these fields only used in page-at-a-time mode and for bitmap scans */
 	int			rs_cindex;		/* current tuple's index in vistuples */
 	int			rs_ntuples;		/* number of visible tuples on page */
-	OffsetNumber rs_vistuples[MaxHeapTuplesPerPage];	/* their offsets */
+	OffsetNumber rs_vistuples[FLEXIBLE_ARRAY_MEMBER];	/* their offsets: size is MaxHeapTuplesPerPage offsets */
 }			HeapScanDescData;
+
+#define SizeOfHeapScanDescData				\
+	(offsetof(HeapScanDescData, rs_vistuples) + 	\
+	sizeof(OffsetNumber) * (MaxHeapTuplesPerPage))
+
 
 /*
  * We use the same IndexScanDescData structure for both amgettuple-based

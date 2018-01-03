@@ -999,7 +999,7 @@ static bool
 _hash_alloc_buckets(Relation rel, BlockNumber firstblock, uint32 nblocks)
 {
 	BlockNumber lastblock;
-	char		zerobuf[BLCKSZ];
+	char		zerobuf[rel_blck_size];
 	Page		page;
 	HashPageOpaque ovflopaque;
 
@@ -1019,7 +1019,7 @@ _hash_alloc_buckets(Relation rel, BlockNumber firstblock, uint32 nblocks)
 	 * _hash_freeovflpage for similar usage.  We take care to make the special
 	 * space valid for the benefit of tools such as pageinspect.
 	 */
-	_hash_pageinit(page, BLCKSZ);
+	_hash_pageinit(page, rel_blck_size);
 
 	ovflopaque = (HashPageOpaque) PageGetSpecialPointer(page);
 

@@ -135,7 +135,7 @@ typedef IndexAttributeBitMapData * IndexAttributeBitMap;
  */
 #define MinIndexTupleSize MAXALIGN(sizeof(IndexTupleData) + 1)
 #define MaxIndexTuplesPerPage	\
-	((int) ((BLCKSZ - SizeOfPageHeaderData) / \
+	((int) ((rel_blck_size - SizeOfPageHeaderData) / \
 			(MAXALIGN(sizeof(IndexTupleData) + 1) + sizeof(ItemIdData))))
 
 

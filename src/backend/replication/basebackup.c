@@ -361,10 +361,10 @@ perform_base_backup(basebackup_options *opt, DIR *tblspcdir)
 		 * shouldn't be such files, but if there are, there's little harm in
 		 * including them.
 		 */
-		XLByteToSeg(startptr, startsegno, wal_segment_size);
-		XLogFileName(firstoff, ThisTimeLineID, startsegno, wal_segment_size);
-		XLByteToPrevSeg(endptr, endsegno, wal_segment_size);
-		XLogFileName(lastoff, ThisTimeLineID, endsegno, wal_segment_size);
+		XLByteToSeg(startptr, startsegno, wal_file_size);
+		XLogFileName(firstoff, ThisTimeLineID, startsegno, wal_file_size);
+		XLByteToPrevSeg(endptr, endsegno, wal_file_size);
+		XLogFileName(lastoff, ThisTimeLineID, endsegno, wal_file_size);
 
 		dir = AllocateDir("pg_wal");
 		if (!dir)
@@ -419,13 +419,13 @@ perform_base_backup(basebackup_options *opt, DIR *tblspcdir)
 		 * Sanity check: the first and last segment should cover startptr and
 		 * endptr, with no gaps in between.
 		 */
-		XLogFromFileName(walFiles[0], &tli, &segno, wal_segment_size);
+		XLogFromFileName(walFiles[0], &tli, &segno, wal_file_size);
 		if (segno != startsegno)
 		{
 			char		startfname[MAXFNAMELEN];
 
 			XLogFileName(startfname, ThisTimeLineID, startsegno,
-						 wal_segment_size);
+						 wal_file_size);
 			ereport(ERROR,
 					(errmsg("could not find WAL file \"%s\"", startfname)));
 		}
@@ -434,13 +434,13 @@ perform_base_backup(basebackup_options *opt, DIR *tblspcdir)
 			XLogSegNo	currsegno = segno;
 			XLogSegNo	nextsegno = segno + 1;
 
-			XLogFromFileName(walFiles[i], &tli, &segno, wal_segment_size);
+			XLogFromFileName(walFiles[i], &tli, &segno, wal_file_size);
 			if (!(nextsegno == segno || currsegno == segno))
 			{
 				char		nextfname[MAXFNAMELEN];
 
 				XLogFileName(nextfname, ThisTimeLineID, nextsegno,
-							 wal_segment_size);
+							 wal_file_size);
 				ereport(ERROR,
 						(errmsg("could not find WAL file \"%s\"", nextfname)));
 			}
@@ -449,7 +449,7 @@ perform_base_backup(basebackup_options *opt, DIR *tblspcdir)
 		{
 			char		endfname[MAXFNAMELEN];
 
-			XLogFileName(endfname, ThisTimeLineID, endsegno, wal_segment_size);
+			XLogFileName(endfname, ThisTimeLineID, endsegno, wal_file_size);
 			ereport(ERROR,
 					(errmsg("could not find WAL file \"%s\"", endfname)));
 		}
@@ -463,7 +463,7 @@ perform_base_backup(basebackup_options *opt, DIR *tblspcdir)
 			pgoff_t		len = 0;
 
 			snprintf(pathbuf, MAXPGPATH, XLOGDIR "/%s", walFiles[i]);
-			XLogFromFileName(walFiles[i], &tli, &segno, wal_segment_size);
+			XLogFromFileName(walFiles[i], &tli, &segno, wal_file_size);
 
 			fp = AllocateFile(pathbuf, "rb");
 			if (fp == NULL)
@@ -485,7 +485,7 @@ perform_base_backup(basebackup_options *opt, DIR *tblspcdir)
 						(errcode_for_file_access(),
 						 errmsg("could not stat file \"%s\": %m",
 								pathbuf)));
-			if (statbuf.st_size != wal_segment_size)
+			if (statbuf.st_size != wal_file_size)
 			{
 				CheckXLogRemoved(segno, tli);
 				ereport(ERROR,
@@ -497,7 +497,7 @@ perform_base_backup(basebackup_options *opt, DIR *tblspcdir)
 			_tarWriteHeader(pathbuf, NULL, &statbuf, false);
 
 			while ((cnt = fread(buf, 1,
-								Min(sizeof(buf), wal_segment_size - len),
+								Min(sizeof(buf), wal_file_size - len),
 								fp)) > 0)
 			{
 				CheckXLogRemoved(segno, tli);
@@ -509,11 +509,11 @@ perform_base_backup(basebackup_options *opt, DIR *tblspcdir)
 				len += cnt;
 				throttle(cnt);
 
-				if (len == wal_segment_size)
+				if (len == wal_file_size)
 					break;
 			}
 
-			if (len != wal_segment_size)
+			if (len != wal_file_size)
 			{
 				CheckXLogRemoved(segno, tli);
 				ereport(ERROR,
@@ -521,7 +521,7 @@ perform_base_backup(basebackup_options *opt, DIR *tblspcdir)
 						 errmsg("unexpected WAL file size \"%s\"", walFiles[i])));
 			}
 
-			/* wal_segment_size is a multiple of 512, so no need for padding */
+			/* wal_file_size is a multiple of 512, so no need for padding */
 
 			FreeFile(fp);
 

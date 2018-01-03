@@ -554,7 +554,7 @@ do { \
 
 /*
  * MaxHeapTupleSize is the maximum allowed size of a heap tuple, including
- * header and MAXALIGN alignment padding.  Basically it's BLCKSZ minus the
+ * header and MAXALIGN alignment padding.  Basically it's rel_blck_size minus the
  * other stuff that has to be on a disk page.  Since heap pages use no
  * "special space", there's no deduction for that.
  *
@@ -563,7 +563,7 @@ do { \
  * ItemIds and tuples have different alignment requirements, don't assume that
  * you can, say, fit 2 tuples of size MaxHeapTupleSize/2 on the same page.
  */
-#define MaxHeapTupleSize  (BLCKSZ - MAXALIGN(SizeOfPageHeaderData + sizeof(ItemIdData)))
+#define MaxHeapTupleSize  (rel_blck_size - MAXALIGN(SizeOfPageHeaderData + sizeof(ItemIdData)))
 #define MinHeapTupleSize  MAXALIGN(SizeofHeapTupleHeader)
 
 /*
@@ -578,8 +578,13 @@ do { \
  * require increases in the size of work arrays.
  */
 #define MaxHeapTuplesPerPage	\
-	((int) ((BLCKSZ - SizeOfPageHeaderData) / \
+	((int) ((rel_blck_size - SizeOfPageHeaderData) / \
 			(MAXALIGN(SizeofHeapTupleHeader) + sizeof(ItemIdData))))
+/*
+#define MaxHeapTuplesPerPage	\
+	((int) ((8192 - SizeOfPageHeaderData) / \
+			(MAXALIGN(SizeofHeapTupleHeader) + sizeof(ItemIdData))))
+ */
 
 /*
  * MaxAttrSize is a somewhat arbitrary upper limit on the declared size of

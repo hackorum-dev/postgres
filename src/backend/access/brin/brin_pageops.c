@@ -28,7 +28,7 @@
  * a single item per page, unlike other index AMs.
  */
 #define BrinMaxItemSize \
-	MAXALIGN_DOWN(BLCKSZ - \
+	MAXALIGN_DOWN(rel_blck_size - \
 				  (MAXALIGN(SizeOfPageHeaderData + \
 							sizeof(ItemIdData)) + \
 				   MAXALIGN(sizeof(BrinSpecialSpace))))
@@ -470,7 +470,7 @@ brin_doinsert(Relation idxrel, BlockNumber pagesPerRange,
 void
 brin_page_init(Page page, uint16 type)
 {
-	PageInit(page, BLCKSZ, sizeof(BrinSpecialSpace));
+	PageInit(page, rel_blck_size, sizeof(BrinSpecialSpace));
 
 	BrinPageType(page) = type;
 }

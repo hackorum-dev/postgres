@@ -75,6 +75,7 @@ gistbeginscan(Relation r, int nkeys, int norderbys)
 
 	/* initialize opaque data */
 	so = (GISTScanOpaque) palloc0(sizeof(GISTScanOpaqueData));
+	so->pageData = (GISTSearchHeapItem*) palloc0(SIZEOF_GIST_SEARCH_HEAP_ITEM);
 	so->giststate = giststate;
 	giststate->tempCxt = createTempGistContext();
 	so->queue = NULL;

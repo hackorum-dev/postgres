@@ -24,6 +24,7 @@
 #include "libpq-fe.h"
 #include "catalog/catalog.h"
 #include "catalog/pg_type.h"
+#include "storage/md.h"
 #include "port/pg_bswap.h"
 
 static PGconn *conn = NULL;
@@ -33,7 +34,7 @@ static PGconn *conn = NULL;
  *
  * (This only applies to files that are copied in whole, or for truncated
  * files where we copy the tail. Relation files, where we know the individual
- * blocks that need to be fetched, are fetched in BLCKSZ chunks.)
+ * blocks that need to be fetched, are fetched in rel_blck_size chunks.)
  */
 #define CHUNKSIZE 1000000
 
@@ -510,9 +511,9 @@ execute_pagemap(datapagemap_t *pagemap, const char *path)
 	iter = datapagemap_iterate(pagemap);
 	while (datapagemap_next(iter, &blkno))
 	{
-		offset = blkno * BLCKSZ;
+		offset = blkno * rel_blck_size;
 
-		fetch_file_range(path, offset, offset + BLCKSZ);
+		fetch_file_range(path, offset, offset + rel_blck_size);
 	}
 	pg_free(iter);
 }
