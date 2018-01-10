@@ -86,7 +86,7 @@ IndexNext(IndexScanState *node)
 	IndexScanDesc scandesc;
 	HeapTuple	tuple;
 	TupleTableSlot *slot;
-
+	TimestampTz outerAsofTimestamp;
 	/*
 	 * extract necessary information from index scan node
 	 */
@@ -103,6 +103,9 @@ IndexNext(IndexScanState *node)
 	scandesc = node->iss_ScanDesc;
 	econtext = node->ss.ps.ps_ExprContext;
 	slot = node->ss.ss_ScanTupleSlot;
+
+	outerAsofTimestamp = estate->es_snapshot->asofTimestamp;
+	ExecAsofTimestamp(estate, &node->ss);
 
 	if (scandesc == NULL)
 	{
@@ -160,9 +163,17 @@ IndexNext(IndexScanState *node)
 				continue;
 			}
 		}
+		/*
+		 * Restore ASOF timestamp for the current snapshot
+		 */
+		estate->es_snapshot->asofTimestamp = outerAsofTimestamp;
 
 		return slot;
 	}
+	/*
+	 * Restore ASOF timestamp for the current snapshot
+	 */
+	estate->es_snapshot->asofTimestamp = outerAsofTimestamp;
 
 	/*
 	 * if we get here it means the index scan failed so we are at the end of
@@ -578,6 +589,8 @@ ExecIndexScan(PlanState *pstate)
 void
 ExecReScanIndexScan(IndexScanState *node)
 {
+	node->ss.asofTimestampSet = false;
+
 	/*
 	 * If we are doing runtime key calculations (ie, any of the index key
 	 * values weren't simple Consts), compute the new key values.  But first,
@@ -916,6 +929,18 @@ ExecInitIndexScan(IndexScan *node, EState *estate, int eflags)
 		ExecInitQual(node->indexqualorig, (PlanState *) indexstate);
 	indexstate->indexorderbyorig =
 		ExecInitExprList(node->indexorderbyorig, (PlanState *) indexstate);
+
+	/*
+	 * Initlialize AS OF expression of any
+	 */
+	if (node->scan.asofTimestamp)
+	{
+		indexstate->ss.asofExpr = ExecInitExpr((Expr *) node->scan.asofTimestamp,
+											&indexstate->ss.ps);
+		indexstate->ss.asofTimestampSet = false;
+	}
+	else
+		indexstate->ss.asofExpr = NULL;
 
 	/*
 	 * tuple table initialization
@@ -1672,12 +1697,24 @@ ExecIndexScanInitializeDSM(IndexScanState *node,
 {
 	EState	   *estate = node->ss.ps.state;
 	ParallelIndexScanDesc piscan;
+	TimestampTz outerAsofTimestamp = estate->es_snapshot->asofTimestamp;
+	Scan* scan = (Scan*)node->ss.ps.plan;
+
+	if (scan->asofTimestamp)
+	{
+		node->ss.asofExpr = ExecInitExpr((Expr *) scan->asofTimestamp,
+									  &node->ss.ps);
+		node->ss.asofTimestampSet = false;
+		ExecAsofTimestamp(estate, &node->ss);
+	}
 
 	piscan = shm_toc_allocate(pcxt->toc, node->iss_PscanLen);
 	index_parallelscan_initialize(node->ss.ss_currentRelation,
 								  node->iss_RelationDesc,
 								  estate->es_snapshot,
 								  piscan);
+	estate->es_snapshot->asofTimestamp = outerAsofTimestamp;
+
 	shm_toc_insert(pcxt->toc, node->ss.ps.plan->plan_node_id, piscan);
 	node->iss_ScanDesc =
 		index_beginscan_parallel(node->ss.ss_currentRelation,

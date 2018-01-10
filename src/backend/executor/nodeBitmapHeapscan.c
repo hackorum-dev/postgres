@@ -78,6 +78,7 @@ BitmapHeapNext(BitmapHeapScanState *node)
 	ExprContext *econtext;
 	HeapScanDesc scan;
 	TIDBitmap  *tbm;
+	EState	   *estate;
 	TBMIterator *tbmiterator = NULL;
 	TBMSharedIterator *shared_tbmiterator = NULL;
 	TBMIterateResult *tbmres;
@@ -85,11 +86,13 @@ BitmapHeapNext(BitmapHeapScanState *node)
 	TupleTableSlot *slot;
 	ParallelBitmapHeapState *pstate = node->pstate;
 	dsa_area   *dsa = node->ss.ps.state->es_query_dsa;
+	TimestampTz     outerAsofTimestamp = 0;
 
 	/*
 	 * extract necessary information from index scan node
 	 */
 	econtext = node->ss.ps.ps_ExprContext;
+	estate = node->ss.ps.state;
 	slot = node->ss.ss_ScanTupleSlot;
 	scan = node->ss.ss_currentScanDesc;
 	tbm = node->tbm;
@@ -98,6 +101,9 @@ BitmapHeapNext(BitmapHeapScanState *node)
 	else
 		shared_tbmiterator = node->shared_tbmiterator;
 	tbmres = node->tbmres;
+
+	outerAsofTimestamp = estate->es_snapshot->asofTimestamp;
+	ExecAsofTimestamp(estate, &node->ss);
 
 	/*
 	 * If we haven't yet performed the underlying index scan, do it, and begin
@@ -364,9 +370,19 @@ BitmapHeapNext(BitmapHeapScanState *node)
 			}
 		}
 
-		/* OK to return this tuple */
+		/*
+		 * Restore ASOF timestamp for the current snapshot
+		 */
+		estate->es_snapshot->asofTimestamp = outerAsofTimestamp;
+
+	    /* OK to return this tuple */
 		return slot;
 	}
+
+	/*
+	 * Restore ASOF timestamp for the current snapshot
+	 */
+	estate->es_snapshot->asofTimestamp = outerAsofTimestamp;
 
 	/*
 	 * if we get here it means we are at the end of the scan..
@@ -746,6 +762,8 @@ ExecReScanBitmapHeapScan(BitmapHeapScanState *node)
 {
 	PlanState  *outerPlan = outerPlanState(node);
 
+	node->ss.asofTimestampSet = false;
+
 	/* rescan to release any page pin */
 	heap_rescan(node->ss.ss_currentScanDesc, NULL);
 
@@ -902,7 +920,8 @@ ExecInitBitmapHeapScan(BitmapHeapScan *node, EState *estate, int eflags)
 	 * most cases it's probably not worth working harder than that.
 	 */
 	scanstate->can_skip_fetch = (node->scan.plan.qual == NIL &&
-								 node->scan.plan.targetlist == NIL);
+								 node->scan.plan.targetlist == NIL &&
+								 node->scan.asofTimestamp == NULL);
 
 	/*
 	 * Miscellaneous initialization
@@ -918,6 +937,18 @@ ExecInitBitmapHeapScan(BitmapHeapScan *node, EState *estate, int eflags)
 		ExecInitQual(node->scan.plan.qual, (PlanState *) scanstate);
 	scanstate->bitmapqualorig =
 		ExecInitQual(node->bitmapqualorig, (PlanState *) scanstate);
+
+	/*
+	 * Initlialize AS OF expression of any
+	 */
+	if (node->scan.asofTimestamp)
+	{
+		scanstate->ss.asofExpr = ExecInitExpr((Expr *) node->scan.asofTimestamp,
+										   &scanstate->ss.ps);
+		scanstate->ss.asofTimestampSet = false;
+	}
+	else
+		scanstate->ss.asofExpr = NULL;
 
 	/*
 	 * tuple table initialization
@@ -1052,10 +1083,20 @@ ExecBitmapHeapInitializeDSM(BitmapHeapScanState *node,
 	ParallelBitmapHeapState *pstate;
 	EState	   *estate = node->ss.ps.state;
 	dsa_area   *dsa = node->ss.ps.state->es_query_dsa;
+	TimestampTz     outerAsofTimestamp = estate->es_snapshot->asofTimestamp;
+	Scan* scan = (Scan*)node->ss.ps.plan;
 
 	/* If there's no DSA, there are no workers; initialize nothing. */
 	if (dsa == NULL)
 		return;
+
+	if (scan->asofTimestamp)
+	{
+		node->ss.asofExpr = ExecInitExpr((Expr *) scan->asofTimestamp,
+										 &node->ss.ps);
+		node->ss.asofTimestampSet = false;
+		ExecAsofTimestamp(estate, &node->ss);
+	}
 
 	pstate = shm_toc_allocate(pcxt->toc, node->pscan_len);
 
@@ -1070,6 +1111,8 @@ ExecBitmapHeapInitializeDSM(BitmapHeapScanState *node,
 
 	ConditionVariableInit(&pstate->cv);
 	SerializeSnapshot(estate->es_snapshot, pstate->phs_snapshot_data);
+
+	estate->es_snapshot->asofTimestamp = outerAsofTimestamp;
 
 	shm_toc_insert(pcxt->toc, node->ss.ps.plan->plan_node_id, pstate);
 	node->pstate = pstate;

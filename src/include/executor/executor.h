@@ -553,4 +553,6 @@ extern void CheckCmdReplicaIdentity(Relation rel, CmdType cmd);
 extern void CheckSubscriptionRelkind(char relkind, const char *nspname,
 						 const char *relname);
 
+extern void ExecAsofTimestamp(EState* estate, ScanState* ss);
+
 #endif							/* EXECUTOR_H  */

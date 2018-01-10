@@ -1,0 +1,43 @@
+-- This test requires postgres to be configured with track_commit_timestamp = on
+-- Please run it using make check EXTRA_REGRESS_OPTS="--schedule=asof_schedule --temp-config=postgresql.asof.config"
+alter system set time_travel_period = 10;
+select pg_reload_conf();
+create table foo(pk int primary key, val int);
+insert into foo values (1,10);
+insert into foo values (2,20);
+insert into foo values (3,30);
+select * from foo;
+select pg_sleep(1);
+update foo set val=val+1 where pk=1;
+select pg_sleep(1);
+update foo set val=val+1 where pk=2;
+select pg_sleep(1);
+update foo set val=val+1 where pk=3;
+select pg_sleep(1);
+update foo set val=val+1 where pk=1;
+select pg_sleep(1);
+update foo set val=val+1 where pk=2;
+select pg_sleep(1);
+update foo set val=val+1 where pk=3;
+select * from foo as of now() - interval '1 second';
+select * from foo as of now() - interval '1 second' where pk=3;
+select new_foo.val - old_foo.val from foo as old_foo as of now() - interval '1 second' join foo as new_foo on old_foo.pk=new_foo.pk where old_foo.pk=3;
+select * from foo as of now() - interval '2 seconds';
+select * from foo as of now() - interval '2 seconds' where pk=2;
+select * from foo as of now() - interval '3 seconds';
+select * from foo as of now() - interval '3 seconds' where pk=1;
+select * from foo as of now() - interval '4 seconds';
+select * from foo as of now() - interval '4 seconds' where pk=3;
+select * from foo as of now() - interval '5 seconds';
+select * from foo as of now() - interval '5 seconds' where pk=2;
+select * from foo as of now() - interval '6 seconds';
+select * from foo as of now() - interval '6 seconds' where pk=1;
+vacuum foo;
+select * from foo as of now() - interval '6 seconds';
+select pg_sleep(10);
+vacuum foo;
+select * from foo as of now() - interval '10 seconds';
+
+alter system set time_travel_period = 0;
+select pg_reload_conf();
+drop table foo;

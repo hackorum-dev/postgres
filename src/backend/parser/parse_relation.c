@@ -1206,6 +1206,7 @@ addRangeTableEntry(ParseState *pstate,
 
 	rte->rtekind = RTE_RELATION;
 	rte->alias = alias;
+	rte->asofTimestamp = relation->asofTimestamp;
 
 	/*
 	 * Get the rel's OID.  This access also ensures that we have an up-to-date

@@ -108,6 +108,9 @@ base_yylex(YYSTYPE *lvalp, YYLTYPE *llocp, core_yyscan_t yyscanner)
 	 */
 	switch (cur_token)
 	{
+		case AS:
+			cur_token_length = 2;
+			break;
 		case NOT:
 			cur_token_length = 3;
 			break;
@@ -155,6 +158,10 @@ base_yylex(YYSTYPE *lvalp, YYLTYPE *llocp, core_yyscan_t yyscanner)
 	/* Replace cur_token if needed, based on lookahead */
 	switch (cur_token)
 	{
+		case AS:
+		    if (next_token == OF)
+			    cur_token = AS_LA;
+		    break;
 		case NOT:
 			/* Replace NOT by NOT_LA if it's followed by BETWEEN, IN, etc */
 			switch (next_token)

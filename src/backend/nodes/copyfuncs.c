@@ -410,6 +410,7 @@ CopyScanFields(const Scan *from, Scan *newnode)
 	CopyPlanFields((const Plan *) from, (Plan *) newnode);
 
 	COPY_SCALAR_FIELD(scanrelid);
+	COPY_NODE_FIELD(asofTimestamp);
 }
 
 /*
@@ -1216,6 +1217,7 @@ _copyRangeVar(const RangeVar *from)
 	COPY_SCALAR_FIELD(relpersistence);
 	COPY_NODE_FIELD(alias);
 	COPY_LOCATION_FIELD(location);
+	COPY_NODE_FIELD(asofTimestamp);
 
 	return newnode;
 }
@@ -2326,6 +2328,7 @@ _copyRangeTblEntry(const RangeTblEntry *from)
 	COPY_BITMAPSET_FIELD(insertedCols);
 	COPY_BITMAPSET_FIELD(updatedCols);
 	COPY_NODE_FIELD(securityQuals);
+	COPY_NODE_FIELD(asofTimestamp);
 
 	return newnode;
 }

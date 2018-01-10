@@ -47,7 +47,8 @@
 
 /* GUC variables */
 extern PGDLLIMPORT int old_snapshot_threshold;
-
+extern PGDLLIMPORT int time_travel_period;
+extern PGDLLIMPORT bool check_asof_timestamp;
 
 extern Size SnapMgrShmemSize(void);
 extern void SnapMgrInit(void);

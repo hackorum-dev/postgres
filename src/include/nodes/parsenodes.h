@@ -1062,6 +1062,7 @@ typedef struct RangeTblEntry
 	Bitmapset  *insertedCols;	/* columns needing INSERT permission */
 	Bitmapset  *updatedCols;	/* columns needing UPDATE permission */
 	List	   *securityQuals;	/* security barrier quals to apply, if any */
+	Node       *asofTimestamp;  /* AS OF timestamp */
 } RangeTblEntry;
 
 /*

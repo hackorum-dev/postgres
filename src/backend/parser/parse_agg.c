@@ -439,6 +439,7 @@ check_agglevels_and_constraints(ParseState *pstate, Node *expr)
 			break;
 		case EXPR_KIND_LIMIT:
 		case EXPR_KIND_OFFSET:
+		case EXPR_KIND_ASOF:
 			errkind = true;
 			break;
 		case EXPR_KIND_RETURNING:
@@ -856,6 +857,7 @@ transformWindowFuncCall(ParseState *pstate, WindowFunc *wfunc,
 			break;
 		case EXPR_KIND_LIMIT:
 		case EXPR_KIND_OFFSET:
+		case EXPR_KIND_ASOF:
 			errkind = true;
 			break;
 		case EXPR_KIND_RETURNING:

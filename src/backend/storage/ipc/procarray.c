@@ -51,6 +51,7 @@
 #include "access/twophase.h"
 #include "access/xact.h"
 #include "access/xlog.h"
+#include "access/commit_ts.h"
 #include "catalog/catalog.h"
 #include "miscadmin.h"
 #include "pgstat.h"
@@ -90,6 +91,9 @@ typedef struct ProcArrayStruct
 	TransactionId replication_slot_xmin;
 	/* oldest catalog xmin of any replication slot */
 	TransactionId replication_slot_catalog_xmin;
+
+	TransactionId time_travel_xmin;
+	TimestampTz   time_travel_horizon;
 
 	/* indexes into allPgXact[], has PROCARRAY_MAXPROCS entries */
 	int			pgprocnos[FLEXIBLE_ARRAY_MEMBER];
@@ -1256,6 +1260,87 @@ TransactionIdIsActive(TransactionId xid)
 	return result;
 }
 
+/*
+ * Get minimal XID which belongs to time travel period.
+ * This function tries to adjust current time travel horizon.
+ * It is commit_ts SLRU to map xids to timestamps. As far as order of XIDs doesn't match with order of timestamps,
+ * this function may produce no quite correct results in case of presence of long living transaction.
+ * So time travel period specification is not exact and should consider maximal transaction duration.
+ *
+ * Passed time_travel_xmin&time_travel_horizon are taken from procarray under lock.
+ */
+static TransactionId
+GetTimeTravelXmin(TransactionId oldestXmin, TransactionId time_travel_xmin, TimestampTz time_travel_horizon)
+{
+	if (time_travel_period < 0)
+	{
+		/* Infinite history */
+		oldestXmin -= MaxTimeTravelPeriod;
+	}
+	else
+	{
+		/* Limited history: check time travel horizon */
+		TimestampTz new_horizon = GetCurrentTimestamp()	- (TimestampTz)time_travel_period*USECS_PER_SEC;
+		TransactionId old_xmin = time_travel_xmin;
+
+		if (time_travel_xmin != InvalidTransactionId)
+		{
+			/* We have already determined time travel horizon: check if it needs to be adjusted */
+			TimestampTz old_horizon = time_travel_horizon;
+			TransactionId xid = old_xmin;
+
+			while (timestamptz_cmp_internal(old_horizon, new_horizon) < 0)
+			{
+				/* Move horizon forward */
+				time_travel_xmin  = xid;
+				time_travel_horizon = old_horizon;
+				do {
+					TransactionIdAdvance(xid);
+					/* Stop if we reach oldest xmin */
+					if (TransactionIdFollowsOrEquals(xid, oldestXmin))
+						goto EndScan;
+				} while (!TransactionIdGetCommitTsData(xid, &old_horizon, NULL));
+			}
+		}
+		else
+		{
+			/* Find out time travel horizon */
+			TransactionId xid = oldestXmin;
+
+			do {
+				TransactionIdRetreat(xid);
+				/*
+				 * Lack of information about transaction timestamp in SLRU means that we reach unexisted or untracked transaction,
+				 * so we need to stop traversal in this case
+				 */
+				if (!TransactionIdGetCommitTsData(xid, &time_travel_horizon, NULL))
+					goto EndScan;
+				time_travel_xmin = xid;
+			} while (timestamptz_cmp_internal(time_travel_horizon, new_horizon) > 0);
+		}
+	  EndScan:
+		if (old_xmin != time_travel_xmin)
+		{
+			/* Horizon moved */
+			LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
+			/* Recheck under lock that xmin is advanced */
+			if (TransactionIdPrecedes(procArray->time_travel_xmin, time_travel_xmin))
+			{
+				procArray->time_travel_xmin = time_travel_xmin;
+				procArray->time_travel_horizon = time_travel_horizon;
+			}
+			LWLockRelease(ProcArrayLock);
+		}
+		/* Move oldest xmin in the past if it is required for time travel */
+		if (TransactionIdPrecedes(time_travel_xmin, oldestXmin))
+			oldestXmin = time_travel_xmin;
+	}
+
+	if (!TransactionIdIsNormal(oldestXmin))
+		oldestXmin = FirstNormalTransactionId;
+
+	return oldestXmin;
+}
 
 /*
  * GetOldestXmin -- returns oldest transaction that was running
@@ -1321,6 +1406,8 @@ GetOldestXmin(Relation rel, int flags)
 
 	volatile TransactionId replication_slot_xmin = InvalidTransactionId;
 	volatile TransactionId replication_slot_catalog_xmin = InvalidTransactionId;
+	volatile TransactionId time_travel_xmin;
+	TimestampTz time_travel_horizon;
 
 	/*
 	 * If we're not computing a relation specific limit, or if a shared
@@ -1383,6 +1470,9 @@ GetOldestXmin(Relation rel, int flags)
 	replication_slot_xmin = procArray->replication_slot_xmin;
 	replication_slot_catalog_xmin = procArray->replication_slot_catalog_xmin;
 
+	time_travel_xmin = procArray->time_travel_xmin;
+	time_travel_horizon = procArray->time_travel_horizon;
+
 	if (RecoveryInProgress())
 	{
 		/*
@@ -1422,6 +1512,9 @@ GetOldestXmin(Relation rel, int flags)
 		if (!TransactionIdIsNormal(result))
 			result = FirstNormalTransactionId;
 	}
+
+	if (time_travel_period != 0)
+		result = GetTimeTravelXmin(result, time_travel_xmin, time_travel_horizon);
 
 	/*
 	 * Check whether there are replication slots requiring an older xmin.
@@ -1468,6 +1561,7 @@ GetMaxSnapshotSubxidCount(void)
 {
 	return TOTAL_MAX_CACHED_SUBXIDS;
 }
+
 
 /*
  * GetSnapshotData -- returns information about running transactions.
@@ -1518,6 +1612,8 @@ GetSnapshotData(Snapshot snapshot)
 	bool		suboverflowed = false;
 	volatile TransactionId replication_slot_xmin = InvalidTransactionId;
 	volatile TransactionId replication_slot_catalog_xmin = InvalidTransactionId;
+	volatile TransactionId time_travel_xmin;
+	TimestampTz time_travel_horizon;
 
 	Assert(snapshot != NULL);
 
@@ -1707,6 +1803,9 @@ GetSnapshotData(Snapshot snapshot)
 	replication_slot_xmin = procArray->replication_slot_xmin;
 	replication_slot_catalog_xmin = procArray->replication_slot_catalog_xmin;
 
+	time_travel_xmin = procArray->time_travel_xmin;
+	time_travel_horizon = procArray->time_travel_horizon;
+
 	if (!TransactionIdIsValid(MyPgXact->xmin))
 		MyPgXact->xmin = TransactionXmin = xmin;
 
@@ -1729,6 +1828,9 @@ GetSnapshotData(Snapshot snapshot)
 	if (TransactionIdIsValid(replication_slot_xmin) &&
 		NormalTransactionIdPrecedes(replication_slot_xmin, RecentGlobalXmin))
 		RecentGlobalXmin = replication_slot_xmin;
+
+	if (time_travel_period != 0)
+		RecentGlobalXmin = GetTimeTravelXmin(RecentGlobalXmin, time_travel_xmin, time_travel_horizon);
 
 	/* Non-catalog tables can be vacuumed if older than this xid */
 	RecentGlobalDataXmin = RecentGlobalXmin;

@@ -69,6 +69,7 @@
 #include "access/transam.h"
 #include "access/xact.h"
 #include "access/xlog.h"
+#include "access/commit_ts.h"
 #include "storage/bufmgr.h"
 #include "storage/procarray.h"
 #include "utils/builtins.h"
@@ -1475,6 +1476,16 @@ bool
 XidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 {
 	uint32		i;
+
+	if (snapshot->asofTimestamp != 0)
+	{
+		TimestampTz ts;
+		if (TransactionIdGetCommitTsData(xid, &ts, NULL))
+		{
+			return timestamptz_cmp_internal(snapshot->asofTimestamp, ts) < 0;
+		}
+	}
+
 
 	/*
 	 * Make a quick range check to eliminate most XIDs without looking at the

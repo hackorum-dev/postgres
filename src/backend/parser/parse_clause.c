@@ -426,7 +426,11 @@ transformTableEntry(ParseState *pstate, RangeVar *r)
 
 	/* We need only build a range table entry */
 	rte = addRangeTableEntry(pstate, r, r->alias, r->inh, true);
-
+	if (r->asofTimestamp)
+	{
+		Node* asof = transformExpr(pstate, r->asofTimestamp, EXPR_KIND_ASOF);
+		rte->asofTimestamp = coerce_to_specific_type(pstate, asof, TIMESTAMPTZOID, "ASOF");
+	}
 	return rte;
 }
 

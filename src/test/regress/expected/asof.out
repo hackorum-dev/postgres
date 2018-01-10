@@ -1,0 +1,185 @@
+-- This test requires postgres to be configured with track_commit_timestamp = on
+-- Please run it using make check EXTRA_REGRESS_OPTS="--schedule=asof_schedule --temp-config=postgresql.asof.config"
+alter system set time_travel_period = 10;
+select pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+create table foo(pk int primary key, val int);
+insert into foo values (1,10);
+insert into foo values (2,20);
+insert into foo values (3,30);
+select * from foo;
+ pk | val 
+----+-----
+  1 |  10
+  2 |  20
+  3 |  30
+(3 rows)
+
+select pg_sleep(1);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+update foo set val=val+1 where pk=1;
+select pg_sleep(1);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+update foo set val=val+1 where pk=2;
+select pg_sleep(1);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+update foo set val=val+1 where pk=3;
+select pg_sleep(1);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+update foo set val=val+1 where pk=1;
+select pg_sleep(1);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+update foo set val=val+1 where pk=2;
+select pg_sleep(1);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+update foo set val=val+1 where pk=3;
+select * from foo as of now() - interval '1 second';
+ pk | val 
+----+-----
+  3 |  31
+  1 |  12
+  2 |  22
+(3 rows)
+
+select * from foo as of now() - interval '1 second' where pk=3;
+ pk | val 
+----+-----
+  3 |  31
+(1 row)
+
+select new_foo.val - old_foo.val from foo as old_foo as of now() - interval '1 second' join foo as new_foo on old_foo.pk=new_foo.pk where old_foo.pk=3;
+ ?column? 
+----------
+        1
+(1 row)
+
+select * from foo as of now() - interval '2 seconds';
+ pk | val 
+----+-----
+  2 |  21
+  3 |  31
+  1 |  12
+(3 rows)
+
+select * from foo as of now() - interval '2 seconds' where pk=2;
+ pk | val 
+----+-----
+  2 |  21
+(1 row)
+
+select * from foo as of now() - interval '3 seconds';
+ pk | val 
+----+-----
+  1 |  11
+  2 |  21
+  3 |  31
+(3 rows)
+
+select * from foo as of now() - interval '3 seconds' where pk=1;
+ pk | val 
+----+-----
+  1 |  11
+(1 row)
+
+select * from foo as of now() - interval '4 seconds';
+ pk | val 
+----+-----
+  3 |  30
+  1 |  11
+  2 |  21
+(3 rows)
+
+select * from foo as of now() - interval '4 seconds' where pk=3;
+ pk | val 
+----+-----
+  3 |  30
+(1 row)
+
+select * from foo as of now() - interval '5 seconds';
+ pk | val 
+----+-----
+  2 |  20
+  3 |  30
+  1 |  11
+(3 rows)
+
+select * from foo as of now() - interval '5 seconds' where pk=2;
+ pk | val 
+----+-----
+  2 |  20
+(1 row)
+
+select * from foo as of now() - interval '6 seconds';
+ pk | val 
+----+-----
+  1 |  10
+  2 |  20
+  3 |  30
+(3 rows)
+
+select * from foo as of now() - interval '6 seconds' where pk=1;
+ pk | val 
+----+-----
+  1 |  10
+(1 row)
+
+vacuum foo;
+select * from foo as of now() - interval '6 seconds';
+ pk | val 
+----+-----
+  1 |  10
+  2 |  20
+  3 |  30
+(3 rows)
+
+select pg_sleep(10);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+vacuum foo;
+select * from foo as of now() - interval '10 seconds';
+ pk | val 
+----+-----
+  1 |  12
+  2 |  22
+  3 |  32
+(3 rows)
+
+alter system set time_travel_period = 0;
+select pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+drop table foo;

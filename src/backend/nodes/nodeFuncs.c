@@ -2338,6 +2338,10 @@ range_table_walker(List *rtable,
 
 		if (walker(rte->securityQuals, context))
 			return true;
+
+		if (walker(rte->asofTimestamp, context))
+			return true;
+
 	}
 	return false;
 }
@@ -3161,6 +3165,7 @@ range_table_mutator(List *rtable,
 				break;
 		}
 		MUTATE(newrte->securityQuals, rte->securityQuals, List *);
+		MUTATE(newrte->asofTimestamp, rte->asofTimestamp, Node *);
 		newrt = lappend(newrt, newrte);
 	}
 	return newrt;

@@ -54,6 +54,7 @@ SeqNext(SeqScanState *node)
 	EState	   *estate;
 	ScanDirection direction;
 	TupleTableSlot *slot;
+	TimestampTz     outerAsofTimestamp;
 
 	/*
 	 * get information from the estate and scan state
@@ -62,6 +63,9 @@ SeqNext(SeqScanState *node)
 	estate = node->ss.ps.state;
 	direction = estate->es_direction;
 	slot = node->ss.ss_ScanTupleSlot;
+
+	outerAsofTimestamp = estate->es_snapshot->asofTimestamp;
+	ExecAsofTimestamp(estate, &node->ss);
 
 	if (scandesc == NULL)
 	{
@@ -79,6 +83,11 @@ SeqNext(SeqScanState *node)
 	 * get the next tuple from the table
 	 */
 	tuple = heap_getnext(scandesc, direction);
+
+	/*
+	 * Restore ASOF timestamp for the current snapshot
+	 */
+	estate->es_snapshot->asofTimestamp = outerAsofTimestamp;
 
 	/*
 	 * save the tuple and the buffer returned to us by the access methods in
@@ -196,6 +205,19 @@ ExecInitSeqScan(SeqScan *node, EState *estate, int eflags)
 		ExecInitQual(node->plan.qual, (PlanState *) scanstate);
 
 	/*
+	 * Initlialize AS OF expression of any
+	 */
+	if (node->asofTimestamp)
+	{
+		scanstate->ss.asofExpr = ExecInitExpr((Expr *) node->asofTimestamp,
+											&scanstate->ss.ps);
+		scanstate->ss.asofTimestampSet = false;
+	}
+	else
+		scanstate->ss.asofExpr = NULL;
+
+
+	/*
 	 * tuple table initialization
 	 */
 	ExecInitResultTupleSlot(estate, &scanstate->ss.ps);
@@ -273,6 +295,7 @@ ExecReScanSeqScan(SeqScanState *node)
 	HeapScanDesc scan;
 
 	scan = node->ss.ss_currentScanDesc;
+	node->ss.asofTimestampSet = false;
 
 	if (scan != NULL)
 		heap_rescan(scan,		/* scan desc */
@@ -316,11 +339,24 @@ ExecSeqScanInitializeDSM(SeqScanState *node,
 {
 	EState	   *estate = node->ss.ps.state;
 	ParallelHeapScanDesc pscan;
+	TimestampTz     outerAsofTimestamp = estate->es_snapshot->asofTimestamp;
+	Scan* scan = (Scan*)node->ss.ps.plan;
+
+	if (scan->asofTimestamp)
+	{
+		node->ss.asofExpr = ExecInitExpr((Expr *) scan->asofTimestamp,
+										 &node->ss.ps);
+		node->ss.asofTimestampSet = false;
+		ExecAsofTimestamp(estate, &node->ss);
+	}
 
 	pscan = shm_toc_allocate(pcxt->toc, node->pscan_len);
 	heap_parallelscan_initialize(pscan,
 								 node->ss.ss_currentRelation,
 								 estate->es_snapshot);
+
+	estate->es_snapshot->asofTimestamp = outerAsofTimestamp;
+
 	shm_toc_insert(pcxt->toc, node->ss.ps.plan->plan_node_id, pscan);
 	node->ss.ss_currentScanDesc =
 		heap_beginscan_parallel(node->ss.ss_currentRelation, pscan);
@@ -337,8 +373,13 @@ ExecSeqScanReInitializeDSM(SeqScanState *node,
 						   ParallelContext *pcxt)
 {
 	HeapScanDesc scan = node->ss.ss_currentScanDesc;
+	EState	   *estate = node->ss.ps.state;
+	TimestampTz  outerAsofTimestamp = estate->es_snapshot->asofTimestamp;
 
+	ExecAsofTimestamp(estate, &node->ss);
 	heap_parallelscan_reinitialize(scan->rs_parallel);
+
+	estate->es_snapshot->asofTimestamp = outerAsofTimestamp;
 }
 
 /* ----------------------------------------------------------------

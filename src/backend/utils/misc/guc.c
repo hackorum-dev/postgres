@@ -191,6 +191,7 @@ static void assign_application_name(const char *newval, void *extra);
 static bool check_cluster_name(char **newval, void **extra, GucSource source);
 static const char *show_unix_socket_permissions(void);
 static const char *show_log_file_mode(void);
+static void assign_time_travel_period_hook(int newval, void *extra);
 
 /* Private functions in guc-file.l that need to be called from guc.c */
 static ConfigVariable *ProcessConfigFileInternal(GucContext context,
@@ -1702,7 +1703,15 @@ static struct config_bool ConfigureNamesBool[] =
 		true,
 		NULL, NULL, NULL
 	},
-
+	{
+		{"check_asof_timestamp", PGC_USERSET, AUTOVACUUM,
+		    gettext_noop("Controls whether AS OF timestamp specified in query should be checked for belonging to time travel period"),
+			gettext_noop("There is no warranty that versions outside time travel period are not reclaimed. But Postgres performs cleanup very lazily, so there is large enough probability that version outside time travel interval is still alive. Also this check adds some extra runtime overhead, because it needs to get current system time.")
+		},
+		&check_asof_timestamp,
+		false,
+		NULL, NULL, NULL
+	},
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, false, NULL, NULL, NULL
@@ -1712,6 +1721,15 @@ static struct config_bool ConfigureNamesBool[] =
 
 static struct config_int ConfigureNamesInt[] =
 {
+	{
+		{"time_travel_period", PGC_SIGHUP, AUTOVACUUM,
+			gettext_noop("Specifies time travel period in seconds: 0 disables, -1 infinite"),
+			NULL
+		},
+		&time_travel_period,
+		0, -1, MaxTimeTravelPeriod,
+		NULL, assign_time_travel_period_hook, NULL
+	},
 	{
 		{"archive_timeout", PGC_SIGHUP, WAL_ARCHIVING,
 			gettext_noop("Forces a switch to the next WAL file if a "
@@ -10528,6 +10546,23 @@ show_log_file_mode(void)
 
 	snprintf(buf, sizeof(buf), "%04o", Log_file_mode);
 	return buf;
+}
+
+static void assign_time_travel_period_hook(int newval, void *extra)
+{
+	if (newval != 0)
+	{
+		track_commit_timestamp = true;
+		if (newval < 0)
+		{
+			autovacuum_start_daemon = false;
+			/* Do we actually need to adjust freeze horizon? 
+			vacuum_freeze_min_age = MaxTimeTravelPeriod;
+			autovacuum_freeze_max_age = MaxTimeTravelPeriod*2;
+			autovacuum_multixact_freeze_max_age = MaxTimeTravelPeriod*2;
+			*/
+		}
+	}
 }
 
 #include "guc-file.c"

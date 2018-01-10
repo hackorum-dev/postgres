@@ -168,10 +168,10 @@ static SeqScan *make_seqscan(List *qptlist, List *qpqual, Index scanrelid);
 static SampleScan *make_samplescan(List *qptlist, List *qpqual, Index scanrelid,
 				TableSampleClause *tsc);
 static IndexScan *make_indexscan(List *qptlist, List *qpqual, Index scanrelid,
-			   Oid indexid, List *indexqual, List *indexqualorig,
-			   List *indexorderby, List *indexorderbyorig,
-			   List *indexorderbyops,
-			   ScanDirection indexscandir);
+								 Oid indexid, List *indexqual, List *indexqualorig,
+								 List *indexorderby, List *indexorderbyorig,
+								 List *indexorderbyops,
+								 ScanDirection indexscandir);
 static IndexOnlyScan *make_indexonlyscan(List *qptlist, List *qpqual,
 				   Index scanrelid, Oid indexid,
 				   List *indexqual, List *indexorderby,
@@ -509,6 +509,7 @@ create_scan_plan(PlannerInfo *root, Path *best_path, int flags)
 	List	   *gating_clauses;
 	List	   *tlist;
 	Plan	   *plan;
+	RangeTblEntry *rte;
 
 	/*
 	 * Extract the relevant restriction clauses from the parent relation. The
@@ -707,6 +708,12 @@ create_scan_plan(PlannerInfo *root, Path *best_path, int flags)
 				 (int) best_path->pathtype);
 			plan = NULL;		/* keep compiler quiet */
 			break;
+	}
+
+	if (plan != NULL)
+	{
+		rte = planner_rt_fetch(rel->relid, root);
+		((Scan*)plan)->asofTimestamp = rte->asofTimestamp;
 	}
 
 	/*
@@ -2434,7 +2441,7 @@ create_seqscan_plan(PlannerInfo *root, Path *best_path,
 	Assert(scan_relid > 0);
 	Assert(best_path->parent->rtekind == RTE_RELATION);
 
-	/* Sort clauses into best execution order */
+    /* Sort clauses into best execution order */
 	scan_clauses = order_qual_clauses(root, scan_clauses);
 
 	/* Reduce RestrictInfo list to bare expressions; ignore pseudoconstants */
