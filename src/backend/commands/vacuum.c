@@ -766,10 +766,12 @@ vacuum_set_xid_limits(Relation rel,
  *
  *		If we scanned the whole relation then we should just use the count of
  *		live tuples seen; but if we did not, we should not trust the count
- *		unreservedly, especially not in VACUUM, which may have scanned a quite
- *		nonrandom subset of the table.  When we have only partial information,
- *		we take the old value of pg_class.reltuples as a measurement of the
- *		tuple density in the unscanned pages.
+ *		unreservedly, we have only partial information. VACUUM in particular
+ *		may have scanned a quite nonrandom subset of the table, so we take
+ *		the old value of pg_class.reltuples as a measurement of the tuple
+ *		density in the unscanned pages. However, ANALYZE promises that we
+ *		scanned a representative random sample of the table so we should use
+ *	 	the new density directly.
  *
  *		This routine is shared by VACUUM and ANALYZE.
  */
@@ -791,45 +793,39 @@ vac_estimate_reltuples(Relation relation, bool is_analyze,
 		return scanned_tuples;
 
 	/*
-	 * If scanned_pages is zero but total_pages isn't, keep the existing value
-	 * of reltuples.  (Note: callers should avoid updating the pg_class
-	 * statistics in this situation, since no new information has been
-	 * provided.)
+	 * If scanned_pages is zero, keep the existing value of reltuples.
+	 * (Note: callers should avoid updating the pg_class statistics in
+	 * this situation, since no new information has been provided.)
 	 */
 	if (scanned_pages == 0)
 		return old_rel_tuples;
 
 	/*
-	 * If old value of relpages is zero, old density is indeterminate; we
-	 * can't do much except scale up scanned_tuples to match total_pages.
+	 * For ANALYZE, the newly observed density in the pages scanned is
+	 * based on a representative sample of the whole table and can be
+	 * used as-is.
 	 */
-	if (old_rel_pages == 0)
-		return floor((scanned_tuples / scanned_pages) * total_pages + 0.5);
+	new_density = scanned_tuples / scanned_pages;
+	if (is_analyze)
+		return floor(new_density * total_pages + 0.5);
 
 	/*
-	 * Okay, we've covered the corner cases.  The normal calculation is to
-	 * convert the old measurement to a density (tuples per page), then update
-	 * the density using an exponential-moving-average approach, and finally
-	 * compute reltuples as updated_density * total_pages.
-	 *
-	 * For ANALYZE, the moving average multiplier is just the fraction of the
-	 * table's pages we scanned.  This is equivalent to assuming that the
-	 * tuple density in the unscanned pages didn't change.  Of course, it
-	 * probably did, if the new density measurement is different. But over
-	 * repeated cycles, the value of reltuples will converge towards the
-	 * correct value, if repeated measurements show the same new density.
-	 *
-	 * For VACUUM, the situation is a bit different: we have looked at a
-	 * nonrandom sample of pages, but we know for certain that the pages we
-	 * didn't look at are precisely the ones that haven't changed lately.
-	 * Thus, there is a reasonable argument for doing exactly the same thing
-	 * as for the ANALYZE case, that is use the old density measurement as the
-	 * value for the unscanned pages.
-	 *
-	 * This logic could probably use further refinement.
+	 * If old value of relpages is zero, old density is indeterminate; we
+	 * can't do much except use the new_density to scale up scanned_tuples
+	 * to match total_pages.
 	 */
+	if (old_rel_pages == 0)
+		return floor(new_density * total_pages + 0.5);
+
+	/*
+	 * For VACUUM, the situation is different: we have looked at a nonrandom
+	 * sample of pages, and we know that the pages we didn't look at are
+	 * the ones that haven't changed lately. Thus, we use the old density
+	 * measurement for the unscanned pages and combine it with the observed
+	 * new density scaled by the ratio of scanned to unscanned pages.
+	 */
+
 	old_density = old_rel_tuples / old_rel_pages;
-	new_density = scanned_tuples / scanned_pages;
 	multiplier = (double) scanned_pages / (double) total_pages;
 	updated_density = old_density + (new_density - old_density) * multiplier;
 	return floor(updated_density * total_pages + 0.5);
