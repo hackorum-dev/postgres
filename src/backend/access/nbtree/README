@@ -533,14 +533,15 @@ toast rows will also be visible. So as long as we follow a toast
 pointer from a visible (live) tuple the corresponding toast rows
 will also be visible, so we do not need to recheck MVCC on them.
 There is one minor exception, which is that the optimizer sometimes
-looks at the boundaries of value ranges using SnapshotDirty, which
-could result in returning a newer value for query statistics; this
-would affect the query plan in rare cases, but not the correctness.
-The risk window is small since the stats look at the min and max values
-in the index, so the scan retrieves a tid then immediately uses it
-to look in the heap. It is unlikely that the tid could have been
-deleted, vacuumed and re-inserted in the time taken to look in the heap
-via direct tid access. So we ignore that scan type as a problem.
+looks at the boundaries of value ranges using SnapshotNonVacuumable
+which uses HeapTupleSatisfiesVacuum(), which could result in returning
+a newer value for query statistics; this would affect the query plan
+in rare cases, but not the correctness. The risk window is small since
+the stats look at the min and max values in the index, so the scan
+retrieves a tid then immediately uses it to look in the heap. It is
+unlikely that the tid could have been deleted, vacuumed and re-inserted
+in the time taken to look in the heap via direct tid access. So we ignore
+that scan type as a problem.
 
 Other Things That Are Handy to Know
 -----------------------------------
