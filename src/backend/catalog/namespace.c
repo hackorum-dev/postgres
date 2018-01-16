@@ -585,7 +585,7 @@ RangeVarGetAndCheckCreationNamespace(RangeVar *relation,
 		if (lockmode != NoLock && OidIsValid(relid))
 		{
 			if (!pg_class_ownercheck(relid, GetUserId()))
-				aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_RELATION,
+				aclcheck_error(ACLCHECK_NOT_OWNER, relkind_get_objtype(get_rel_relkind(relid)),
 							   relation->relname);
 			if (relid != oldrelid)
 				LockRelationOid(relid, lockmode);

@@ -962,7 +962,7 @@ transformTableLikeClause(CreateStmtContext *cxt, TableLikeClause *table_like_cla
 		aclresult = pg_class_aclcheck(RelationGetRelid(relation), GetUserId(),
 									  ACL_SELECT);
 		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, OBJECT_RELATION,
+			aclcheck_error(aclresult, relkind_get_objtype(get_rel_relkind(RelationGetRelid(relation))),
 						   RelationGetRelationName(relation));
 	}
 

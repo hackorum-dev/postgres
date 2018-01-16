@@ -3428,9 +3428,6 @@ aclcheck_error(AclResult aclerr, ObjectType objtype,
 					case OBJECT_PUBLICATION:
 						msg = gettext_noop("permission denied for publication %s");
 						break;
-					case OBJECT_RELATION:
-						msg = gettext_noop("permission denied for relation %s");
-						break;
 					case OBJECT_ROUTINE:
 						msg = gettext_noop("permission denied for routine %s");
 						break;
@@ -3474,6 +3471,7 @@ aclcheck_error(AclResult aclerr, ObjectType objtype,
 					case OBJECT_DEFACL:
 					case OBJECT_DOMCONSTRAINT:
 					case OBJECT_PUBLICATION_REL:
+					case OBJECT_RELATION:
 					case OBJECT_ROLE:
 					case OBJECT_RULE:
 					case OBJECT_TABCONSTRAINT:
@@ -3563,9 +3561,6 @@ aclcheck_error(AclResult aclerr, ObjectType objtype,
 					case OBJECT_PUBLICATION:
 						msg = gettext_noop("must be owner of publication %s");
 						break;
-					case OBJECT_RELATION:
-						msg = gettext_noop("must be owner of relation %s");
-						break;
 					case OBJECT_ROUTINE:
 						msg = gettext_noop("must be owner of routine %s");
 						break;
@@ -3609,6 +3604,7 @@ aclcheck_error(AclResult aclerr, ObjectType objtype,
 					case OBJECT_DEFACL:
 					case OBJECT_DOMCONSTRAINT:
 					case OBJECT_PUBLICATION_REL:
+					case OBJECT_RELATION:
 					case OBJECT_ROLE:
 					case OBJECT_RULE:
 					case OBJECT_TABCONSTRAINT:

@@ -2504,7 +2504,7 @@ get_rel_from_relname(text *relname_text, LOCKMODE lockmode, AclMode aclmode)
 	aclresult = pg_class_aclcheck(RelationGetRelid(rel), GetUserId(),
 								  aclmode);
 	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, OBJECT_RELATION,
+		aclcheck_error(aclresult, relkind_get_objtype(get_rel_relkind(RelationGetRelid(rel))),
 					   RelationGetRelationName(rel));
 
 	return rel;

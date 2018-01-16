@@ -5097,3 +5097,28 @@ strlist_to_textarray(List *list)
 
 	return arr;
 }
+
+ObjectType
+relkind_get_objtype(char relkind)
+{
+	switch (relkind)
+	{
+		case RELKIND_RELATION:
+		case RELKIND_PARTITIONED_TABLE:
+			return OBJECT_TABLE;
+		case RELKIND_INDEX:
+			return OBJECT_INDEX;
+		case RELKIND_SEQUENCE:
+			return OBJECT_SEQUENCE;
+		case RELKIND_VIEW:
+			return OBJECT_VIEW;
+		case RELKIND_MATVIEW:
+			return OBJECT_MATVIEW;
+		case RELKIND_FOREIGN_TABLE:
+			return OBJECT_FOREIGN_TABLE;
+		/* other relkinds are not supported here because they don't map to OBJECT_* values */
+		default:
+			elog(ERROR, "unexpected relkind: %d", relkind);
+			return 0;
+	}
+}

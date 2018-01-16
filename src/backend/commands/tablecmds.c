@@ -1192,7 +1192,7 @@ RangeVarCallbackForDropRelation(const RangeVar *rel, Oid relOid, Oid oldRelOid,
 	/* Allow DROP to either table owner or schema owner */
 	if (!pg_class_ownercheck(relOid, GetUserId()) &&
 		!pg_namespace_ownercheck(classform->relnamespace, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_RELATION,
+		aclcheck_error(ACLCHECK_NOT_OWNER, relkind_get_objtype(get_rel_relkind(relOid)),
 					   rel->relname);
 
 	if (!allowSystemTableMods && IsSystemClass(relOid, classform))
@@ -1562,7 +1562,7 @@ truncate_check_rel(Relation rel)
 	aclresult = pg_class_aclcheck(RelationGetRelid(rel), GetUserId(),
 								  ACL_TRUNCATE);
 	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, OBJECT_RELATION,
+		aclcheck_error(aclresult, relkind_get_objtype(get_rel_relkind(RelationGetRelid(rel))),
 					   RelationGetRelationName(rel));
 
 	if (!allowSystemTableMods && IsSystemRelation(rel))
@@ -1848,7 +1848,7 @@ MergeAttributes(List *schema, List *supers, char relpersistence,
 		 * demand that creator of a child table own the parent.
 		 */
 		if (!pg_class_ownercheck(RelationGetRelid(relation), GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_RELATION,
+			aclcheck_error(ACLCHECK_NOT_OWNER, relkind_get_objtype(get_rel_relkind(RelationGetRelid(relation))),
 						   RelationGetRelationName(relation));
 
 		/*
@@ -2551,7 +2551,7 @@ renameatt_check(Oid myrelid, Form_pg_class classform, bool recursing)
 	 * permissions checking.  only the owner of a class can change its schema.
 	 */
 	if (!pg_class_ownercheck(myrelid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_RELATION,
+		aclcheck_error(ACLCHECK_NOT_OWNER, relkind_get_objtype(get_rel_relkind(myrelid)),
 					   NameStr(classform->relname));
 	if (!allowSystemTableMods && IsSystemClass(myrelid, classform))
 		ereport(ERROR,
@@ -4769,7 +4769,7 @@ ATSimplePermissions(Relation rel, int allowed_targets)
 
 	/* Permissions checks */
 	if (!pg_class_ownercheck(RelationGetRelid(rel), GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_RELATION,
+		aclcheck_error(ACLCHECK_NOT_OWNER, relkind_get_objtype(get_rel_relkind(RelationGetRelid(rel))),
 					   RelationGetRelationName(rel));
 
 	if (!allowSystemTableMods && IsSystemRelation(rel))
@@ -6212,7 +6212,7 @@ ATPrepSetStatistics(Relation rel, const char *colName, int16 colNum, Node *newVa
 
 	/* Permissions checks */
 	if (!pg_class_ownercheck(RelationGetRelid(rel), GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_RELATION,
+		aclcheck_error(ACLCHECK_NOT_OWNER, relkind_get_objtype(get_rel_relkind(RelationGetRelid(rel))),
 					   RelationGetRelationName(rel));
 }
 
@@ -8136,7 +8136,7 @@ checkFkeyPermissions(Relation rel, int16 *attnums, int natts)
 		aclresult = pg_attribute_aclcheck(RelationGetRelid(rel), attnums[i],
 										  roleid, ACL_REFERENCES);
 		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, OBJECT_RELATION,
+			aclcheck_error(aclresult, relkind_get_objtype(get_rel_relkind(RelationGetRelid(rel))),
 						   RelationGetRelationName(rel));
 	}
 }
@@ -10046,7 +10046,7 @@ ATExecChangeOwner(Oid relationOid, Oid newOwnerId, bool recursing, LOCKMODE lock
 
 				/* Otherwise, must be owner of the existing object */
 				if (!pg_class_ownercheck(relationOid, GetUserId()))
-					aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_RELATION,
+					aclcheck_error(ACLCHECK_NOT_OWNER, relkind_get_objtype(get_rel_relkind(relationOid)),
 								   RelationGetRelationName(target_rel));
 
 				/* Must be able to become new owner */
@@ -10856,7 +10856,7 @@ AlterTableMoveAll(AlterTableMoveAllStmt *stmt)
 		 * Caller must be considered an owner on the table to move it.
 		 */
 		if (!pg_class_ownercheck(relOid, GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_RELATION,
+			aclcheck_error(ACLCHECK_NOT_OWNER, relkind_get_objtype(get_rel_relkind(relOid)),
 						   NameStr(relForm->relname));
 
 		if (stmt->nowait &&
@@ -13101,7 +13101,7 @@ RangeVarCallbackOwnsTable(const RangeVar *relation,
 
 	/* Check permissions */
 	if (!pg_class_ownercheck(relId, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_RELATION, relation->relname);
+		aclcheck_error(ACLCHECK_NOT_OWNER, relkind_get_objtype(get_rel_relkind(relId)), relation->relname);
 }
 
 /*
@@ -13123,7 +13123,7 @@ RangeVarCallbackOwnsRelation(const RangeVar *relation,
 		elog(ERROR, "cache lookup failed for relation %u", relId);
 
 	if (!pg_class_ownercheck(relId, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_RELATION,
+		aclcheck_error(ACLCHECK_NOT_OWNER, relkind_get_objtype(get_rel_relkind(relId)),
 					   relation->relname);
 
 	if (!allowSystemTableMods &&
@@ -13159,7 +13159,7 @@ RangeVarCallbackForAlterRelation(const RangeVar *rv, Oid relid, Oid oldrelid,
 
 	/* Must own relation. */
 	if (!pg_class_ownercheck(relid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_RELATION, rv->relname);
+		aclcheck_error(ACLCHECK_NOT_OWNER, relkind_get_objtype(get_rel_relkind(relid)), rv->relname);
 
 	/* No system table modifications unless explicitly allowed. */
 	if (!allowSystemTableMods && IsSystemClass(relid, classform))
