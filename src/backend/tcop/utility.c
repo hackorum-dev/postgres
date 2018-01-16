@@ -529,7 +529,8 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 			break;
 
 		case T_DoStmt:
-			ExecuteDoStmt((DoStmt *) parsetree);
+			ExecuteDoStmt((DoStmt *) parsetree,
+						  (context != PROCESS_UTILITY_TOPLEVEL || IsTransactionBlock()));
 			break;
 
 		case T_CreateTableSpaceStmt:
@@ -658,7 +659,8 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 			break;
 
 		case T_CallStmt:
-			ExecuteCallStmt(pstate, castNode(CallStmt, parsetree));
+			ExecuteCallStmt(pstate, castNode(CallStmt, parsetree),
+							(context != PROCESS_UTILITY_TOPLEVEL || IsTransactionBlock()));
 			break;
 
 		case T_ClusterStmt:
