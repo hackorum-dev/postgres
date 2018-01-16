@@ -62,7 +62,7 @@ extern AttrNumber get_object_attnum_name(Oid class_id);
 extern AttrNumber get_object_attnum_namespace(Oid class_id);
 extern AttrNumber get_object_attnum_owner(Oid class_id);
 extern AttrNumber get_object_attnum_acl(Oid class_id);
-extern ObjectType get_object_type(Oid class_id);
+extern ObjectType get_object_type(Oid class_id, Oid object_id);
 extern bool get_object_namensp_unique(Oid class_id);
 
 extern HeapTuple get_catalog_object_by_oid(Relation catalog,

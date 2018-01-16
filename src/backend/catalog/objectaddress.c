@@ -338,7 +338,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		Anum_pg_class_relnamespace,
 		Anum_pg_class_relowner,
 		Anum_pg_class_relacl,
-		OBJECT_RELATION,
+		OBJECT_TABLE,
 		true
 	},
 	{
@@ -2540,11 +2540,19 @@ get_object_attnum_acl(Oid class_id)
 }
 
 ObjectType
-get_object_type(Oid class_id)
+get_object_type(Oid class_id, Oid object_id)
 {
 	const ObjectPropertyType *prop = get_object_property_data(class_id);
 
-	return prop->objtype;
+	if (prop->objtype == OBJECT_TABLE)
+		/*
+		 * If the property data says it's a table, dig a little deeper to get
+		 * the real relation kind, so that callers can produce more precise
+		 * error messages.
+		 */
+		return relkind_get_objtype(get_rel_relkind(object_id));
+	else
+		return prop->objtype;
 }
 
 bool
