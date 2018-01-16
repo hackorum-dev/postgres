@@ -5533,6 +5533,18 @@ DESCR("list of files in the WAL directory");
 DATA(insert OID = 5028 ( satisfies_hash_partition PGNSP PGUID 12 1 0 2276 0 f f f f f f i s 4 0 16 "26 23 23 2276" _null_ "{i,i,i,v}" _null_ _null_ _null_ satisfies_hash_partition _null_ _null_ _null_ ));
 DESCR("hash partition CHECK constraint");
 
+/* function to get the root partition parent */
+DATA(insert OID = 3281 (  pg_partition_root PGNSP PGUID 12 10 0 0 0 f f f f t f s s 1 0 2205 "2205" _null_ _null_ _null_ _null_ _null_ pg_partition_root _null_ _null_ _null_ ));
+DESCR("oid of the partition root parent");
+
+/* function to get the partition parent */
+DATA(insert OID = 3556 (  pg_partition_parent PGNSP PGUID 12 10 0 0 0 f f f f t f s s 1 0 2205 "2205" _null_ _null_ _null_ _null_ _null_ pg_partition_parent _null_ _null_ _null_ ));
+DESCR("oid of the partition immediate parent");
+
+/* function to get OIDs of all tables in a given partition tree */
+DATA(insert OID = 3696 ( pg_partition_tree_tables	PGNSP PGUID 12 1 1000 0 0 f f f f t t s s 1 0 2205 "2205" "{2205,2205}" "{i,o}" "{relid,relid}" _null_ _null_ pg_partition_tree_tables _null_ _null_ _null_ ));
+DESCR("get OIDs of tables in a partition tree");
+
 /*
  * Symbolic values for provolatile column: these indicate whether the result
  * of a function is dependent *only* on the values of its explicit arguments,

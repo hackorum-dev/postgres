@@ -32,6 +32,7 @@
 #include "catalog/pg_type.h"
 #include "commands/tablecmds.h"
 #include "executor/executor.h"
+#include "funcapi.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
@@ -181,6 +182,7 @@ static int partition_bound_bsearch(PartitionKey key,
 static int	get_partition_bound_num_indexes(PartitionBoundInfo b);
 static int	get_greatest_modulus(PartitionBoundInfo b);
 static uint64 compute_hash_value(PartitionKey key, Datum *values, bool *isnull);
+static Oid get_partition_parent_internal(Oid relid, bool recurse_to_root);
 
 /* SQL-callable function for use in hash partition CHECK constraints */
 PG_FUNCTION_INFO_V1(satisfies_hash_partition);
@@ -1362,7 +1364,7 @@ check_default_allows_bound(Relation parent, Relation default_rel,
 /*
  * get_partition_parent
  *
- * Returns inheritance parent of a partition by scanning pg_inherits
+ * Returns inheritance parent of a partition.
  *
  * Note: Because this function assumes that the relation whose OID is passed
  * as an argument will have precisely one parent, it should only be called
@@ -1370,6 +1372,37 @@ check_default_allows_bound(Relation parent, Relation default_rel,
  */
 Oid
 get_partition_parent(Oid relid)
+{
+	if (!get_rel_relispartition(relid))
+		return InvalidOid;
+
+	return get_partition_parent_internal(relid, false);
+}
+
+/*
+ * get_partition_root_parent
+ *
+ * Returns root inheritance ancestor of a partition.
+ */
+Oid
+get_partition_root_parent(Oid relid)
+{
+	if (!get_rel_relispartition(relid))
+		return InvalidOid;
+
+	return get_partition_parent_internal(relid, true);
+}
+
+/*
+ * get_partition_parent_internal
+ *
+ * Returns inheritance parent of a partition by scanning pg_inherits.
+ * If recurse_to_root, it will check if the parent itself is a partition and
+ * if so, it will recurse to find its parent and so on until root parent is
+ * found.
+ */
+static Oid
+get_partition_parent_internal(Oid relid, bool recurse_to_root)
 {
 	Form_pg_inherits form;
 	Relation	catalogRelation;
@@ -1401,6 +1434,9 @@ get_partition_parent(Oid relid)
 
 	systable_endscan(scan);
 	heap_close(catalogRelation, AccessShareLock);
+
+	if (recurse_to_root && get_rel_relispartition(result))
+		result = get_partition_parent_internal(result, recurse_to_root);
 
 	return result;
 }
@@ -3395,4 +3431,83 @@ satisfies_hash_partition(PG_FUNCTION_ARGS)
 	}
 
 	PG_RETURN_BOOL(rowHash % modulus == remainder);
+}
+
+/*
+ * SQL wrapper around get_partition_root_parent() in
+ * src/backend/catalog/partition.c.
+ */
+Datum
+pg_partition_root(PG_FUNCTION_ARGS)
+{
+	Oid		reloid = PG_GETARG_OID(0);
+	Oid		rootoid;
+
+	rootoid = get_partition_root_parent(reloid);
+	if (OidIsValid(rootoid))
+		PG_RETURN_OID(rootoid);
+	else
+		PG_RETURN_OID(reloid);
+}
+
+/*
+ * SQL wrapper around get_partition_parent() in
+ * src/backend/catalog/partition.c.
+ */
+Datum
+pg_partition_parent(PG_FUNCTION_ARGS)
+{
+	Oid		reloid = PG_GETARG_OID(0);
+	Oid		parentoid;
+
+	parentoid = get_partition_parent(reloid);
+	if (OidIsValid(parentoid))
+		PG_RETURN_OID(parentoid);
+	else
+		PG_RETURN_NULL();
+}
+
+/*
+ * Returns Oids of tables in a publication.
+ */
+Datum
+pg_partition_tree_tables(PG_FUNCTION_ARGS)
+{
+	FuncCallContext *funcctx;
+	Oid		reloid = PG_GETARG_OID(0);
+	List   *partoids;
+	ListCell  **lc;
+
+	/* stuff done only on the first call of the function */
+	if (SRF_IS_FIRSTCALL())
+	{
+		MemoryContext oldcontext;
+
+		/* create a function context for cross-call persistence */
+		funcctx = SRF_FIRSTCALL_INIT();
+
+		/* switch to memory context appropriate for multiple function calls */
+		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
+
+		partoids = find_all_inheritors(reloid, NoLock, NULL);
+		lc = (ListCell **) palloc(sizeof(ListCell *));
+		*lc = list_head(partoids);
+		funcctx->user_fctx = (void *) lc;
+
+		MemoryContextSwitchTo(oldcontext);
+	}
+
+	/* stuff done on every call of the function */
+	funcctx = SRF_PERCALL_SETUP();
+	lc = (ListCell **) funcctx->user_fctx;
+
+	while (*lc != NULL)
+	{
+		Oid		partoid = lfirst_oid(*lc);
+
+		*lc = lnext(*lc);
+		SRF_RETURN_NEXT(funcctx, ObjectIdGetDatum(partoid));
+	}
+
+	SRF_RETURN_DONE(funcctx);
 }

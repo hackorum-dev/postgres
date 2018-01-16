@@ -1836,6 +1836,28 @@ get_rel_relkind(Oid relid)
 }
 
 /*
+ * get_rel_relispartition
+ *
+ *		Returns the value of pg_class.relispartition for a given relation.
+ */
+char
+get_rel_relispartition(Oid relid)
+{
+	HeapTuple	tp;
+	Form_pg_class reltup;
+	bool	result;
+
+	tp = SearchSysCache1(RELOID, ObjectIdGetDatum(relid));
+	if (!HeapTupleIsValid(tp))
+		elog(ERROR, "cache lookup failed for relation %u", relid);
+	reltup = (Form_pg_class) GETSTRUCT(tp);
+	result = reltup->relispartition;
+	ReleaseSysCache(tp);
+
+	return result;
+}
+
+/*
  * get_rel_tablespace
  *
  *		Returns the pg_tablespace OID associated with a given relation.
