@@ -7002,7 +7002,7 @@ privilege_target:
 				{
 					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
 					n->targtype = ACL_TARGET_OBJECT;
-					n->objtype = OBJECT_RELATION;
+					n->objtype = OBJECT_TABLE;
 					n->objs = $1;
 					$$ = n;
 				}
@@ -7010,7 +7010,7 @@ privilege_target:
 				{
 					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
 					n->targtype = ACL_TARGET_OBJECT;
-					n->objtype = OBJECT_RELATION;
+					n->objtype = OBJECT_TABLE;
 					n->objs = $2;
 					$$ = n;
 				}
@@ -7122,7 +7122,7 @@ privilege_target:
 				{
 					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
 					n->targtype = ACL_TARGET_ALL_IN_SCHEMA;
-					n->objtype = OBJECT_RELATION;
+					n->objtype = OBJECT_TABLE;
 					n->objs = $5;
 					$$ = n;
 				}
@@ -7312,7 +7312,7 @@ DefACLAction:
 		;
 
 defacl_privilege_target:
-			TABLES			{ $$ = OBJECT_RELATION; }
+			TABLES			{ $$ = OBJECT_TABLE; }
 			| FUNCTIONS		{ $$ = OBJECT_FUNCTION; }
 			| ROUTINES		{ $$ = OBJECT_FUNCTION; }
 			| SEQUENCES		{ $$ = OBJECT_SEQUENCE; }

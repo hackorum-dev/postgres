@@ -760,7 +760,7 @@ acldefault(ObjectType objtype, Oid ownerId)
 			world_default = ACL_NO_RIGHTS;
 			owner_default = ACL_NO_RIGHTS;
 			break;
-		case OBJECT_RELATION:
+		case OBJECT_TABLE:
 			world_default = ACL_NO_RIGHTS;
 			owner_default = ACL_ALL_RIGHTS_RELATION;
 			break;
@@ -871,7 +871,7 @@ acldefault_sql(PG_FUNCTION_ARGS)
 			objtype = OBJECT_COLUMN;
 			break;
 		case 'r':
-			objtype = OBJECT_RELATION;
+			objtype = OBJECT_TABLE;
 			break;
 		case 's':
 			objtype = OBJECT_SEQUENCE;

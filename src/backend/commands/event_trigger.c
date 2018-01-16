@@ -1108,7 +1108,6 @@ EventTriggerSupportsObjectType(ObjectType obtype)
 		case OBJECT_PROCEDURE:
 		case OBJECT_PUBLICATION:
 		case OBJECT_PUBLICATION_REL:
-		case OBJECT_RELATION:
 		case OBJECT_ROUTINE:
 		case OBJECT_RULE:
 		case OBJECT_SCHEMA:
@@ -2195,7 +2194,7 @@ stringify_grantobjtype(ObjectType objtype)
 	{
 		case OBJECT_COLUMN:
 			return "COLUMN";
-		case OBJECT_RELATION:
+		case OBJECT_TABLE:
 			return "TABLE";
 		case OBJECT_SEQUENCE:
 			return "SEQUENCE";
@@ -2251,7 +2250,6 @@ stringify_grantobjtype(ObjectType objtype)
 		case OBJECT_STATISTIC_EXT:
 		case OBJECT_SUBSCRIPTION:
 		case OBJECT_TABCONSTRAINT:
-		case OBJECT_TABLE:
 		case OBJECT_TRANSFORM:
 		case OBJECT_TRIGGER:
 		case OBJECT_TSCONFIGURATION:
@@ -2278,7 +2276,7 @@ stringify_adefprivs_objtype(ObjectType objtype)
 	{
 		case OBJECT_COLUMN:
 			return "COLUMNS";
-		case OBJECT_RELATION:
+		case OBJECT_TABLE:
 			return "TABLES";
 		case OBJECT_SEQUENCE:
 			return "SEQUENCES";
@@ -2334,7 +2332,6 @@ stringify_adefprivs_objtype(ObjectType objtype)
 		case OBJECT_STATISTIC_EXT:
 		case OBJECT_SUBSCRIPTION:
 		case OBJECT_TABCONSTRAINT:
-		case OBJECT_TABLE:
 		case OBJECT_TRANSFORM:
 		case OBJECT_TRIGGER:
 		case OBJECT_TSCONFIGURATION:

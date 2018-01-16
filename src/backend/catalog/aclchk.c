@@ -247,7 +247,7 @@ restrict_and_check_grant(bool is_grant, AclMode avail_goptions, bool all_privs,
 		case OBJECT_COLUMN:
 			whole_mask = ACL_ALL_RIGHTS_COLUMN;
 			break;
-		case OBJECT_RELATION:
+		case OBJECT_TABLE:
 			whole_mask = ACL_ALL_RIGHTS_RELATION;
 			break;
 		case OBJECT_SEQUENCE:
@@ -445,7 +445,7 @@ ExecuteGrantStmt(GrantStmt *stmt)
 	 */
 	switch (stmt->objtype)
 	{
-		case OBJECT_RELATION:
+		case OBJECT_TABLE:
 			/*
 			 * Because this might be a sequence, we test both relation and
 			 * sequence bits, and later do a more limited test when we know
@@ -540,7 +540,7 @@ ExecuteGrantStmt(GrantStmt *stmt)
 			 */
 			if (privnode->cols)
 			{
-				if (stmt->objtype != OBJECT_RELATION)
+				if (stmt->objtype != OBJECT_TABLE)
 					ereport(ERROR,
 							(errcode(ERRCODE_INVALID_GRANT_OPERATION),
 							 errmsg("column privileges are only valid for relations")));
@@ -574,7 +574,7 @@ ExecGrantStmt_oids(InternalGrant *istmt)
 {
 	switch (istmt->objtype)
 	{
-		case OBJECT_RELATION:
+		case OBJECT_TABLE:
 		case OBJECT_SEQUENCE:
 			ExecGrant_Relation(istmt);
 			break;
@@ -643,7 +643,7 @@ objectNamesToOids(ObjectType objtype, List *objnames)
 
 	switch (objtype)
 	{
-		case OBJECT_RELATION:
+		case OBJECT_TABLE:
 		case OBJECT_SEQUENCE:
 			foreach(cell, objnames)
 			{
@@ -798,7 +798,7 @@ objectsInSchemaToOids(ObjectType objtype, List *nspnames)
 
 		switch (objtype)
 		{
-			case OBJECT_RELATION:
+			case OBJECT_TABLE:
 				objs = getRelationsInNamespace(namespaceId, RELKIND_RELATION);
 				objects = list_concat(objects, objs);
 				objs = getRelationsInNamespace(namespaceId, RELKIND_VIEW);
@@ -993,7 +993,7 @@ ExecAlterDefaultPrivilegesStmt(ParseState *pstate, AlterDefaultPrivilegesStmt *s
 	 */
 	switch (action->objtype)
 	{
-		case OBJECT_RELATION:
+		case OBJECT_TABLE:
 			all_privileges = ACL_ALL_RIGHTS_RELATION;
 			errormsg = gettext_noop("invalid privilege type %s for relation");
 			break;
@@ -1184,7 +1184,7 @@ SetDefaultACL(InternalDefaultACL *iacls)
 	 */
 	switch (iacls->objtype)
 	{
-		case OBJECT_RELATION:
+		case OBJECT_TABLE:
 			objtype = DEFACLOBJ_RELATION;
 			if (iacls->all_privs && this_privileges == ACL_NO_RIGHTS)
 				this_privileges = ACL_ALL_RIGHTS_RELATION;
@@ -1430,7 +1430,7 @@ RemoveRoleFromObjectACL(Oid roleid, Oid classid, Oid objid)
 		switch (pg_default_acl_tuple->defaclobjtype)
 		{
 			case DEFACLOBJ_RELATION:
-				iacls.objtype = OBJECT_RELATION;
+				iacls.objtype = OBJECT_TABLE;
 				break;
 			case DEFACLOBJ_SEQUENCE:
 				iacls.objtype = OBJECT_SEQUENCE;
@@ -1471,8 +1471,8 @@ RemoveRoleFromObjectACL(Oid roleid, Oid classid, Oid objid)
 		switch (classid)
 		{
 			case RelationRelationId:
-				/* it's OK to use RELATION for a sequence */
-				istmt.objtype = OBJECT_RELATION;
+				/* it's OK to use TABLE for a sequence */
+				istmt.objtype = OBJECT_TABLE;
 				break;
 			case DatabaseRelationId:
 				istmt.objtype = OBJECT_DATABASE;
@@ -1862,7 +1862,7 @@ ExecGrant_Relation(InternalGrant *istmt)
 		 * permissions.  The OR of table and sequence permissions were already
 		 * checked.
 		 */
-		if (istmt->objtype == OBJECT_RELATION)
+		if (istmt->objtype == OBJECT_TABLE)
 		{
 			if (pg_class_tuple->relkind == RELKIND_SEQUENCE)
 			{
@@ -1944,7 +1944,7 @@ ExecGrant_Relation(InternalGrant *istmt)
 					old_acl = acldefault(OBJECT_SEQUENCE, ownerId);
 					break;
 				default:
-					old_acl = acldefault(OBJECT_RELATION, ownerId);
+					old_acl = acldefault(OBJECT_TABLE, ownerId);
 					break;
 			}
 			/* There are no old member roles according to the catalogs */
@@ -1988,7 +1988,7 @@ ExecGrant_Relation(InternalGrant *istmt)
 					objtype = OBJECT_SEQUENCE;
 					break;
 				default:
-					objtype = OBJECT_RELATION;
+					objtype = OBJECT_TABLE;
 					break;
 			}
 
@@ -3471,7 +3471,6 @@ aclcheck_error(AclResult aclerr, ObjectType objtype,
 					case OBJECT_DEFACL:
 					case OBJECT_DOMCONSTRAINT:
 					case OBJECT_PUBLICATION_REL:
-					case OBJECT_RELATION:
 					case OBJECT_ROLE:
 					case OBJECT_RULE:
 					case OBJECT_TABCONSTRAINT:
@@ -3604,7 +3603,6 @@ aclcheck_error(AclResult aclerr, ObjectType objtype,
 					case OBJECT_DEFACL:
 					case OBJECT_DOMCONSTRAINT:
 					case OBJECT_PUBLICATION_REL:
-					case OBJECT_RELATION:
 					case OBJECT_ROLE:
 					case OBJECT_RULE:
 					case OBJECT_TABCONSTRAINT:
@@ -3681,7 +3679,7 @@ pg_aclmask(ObjectType objtype, Oid table_oid, AttrNumber attnum, Oid roleid,
 			return
 				pg_class_aclmask(table_oid, roleid, mask, how) |
 				pg_attribute_aclmask(table_oid, attnum, roleid, mask, how);
-		case OBJECT_RELATION:
+		case OBJECT_TABLE:
 		case OBJECT_SEQUENCE:
 			return pg_class_aclmask(table_oid, roleid, mask, how);
 		case OBJECT_DATABASE:
@@ -3895,7 +3893,7 @@ pg_class_aclmask(Oid table_oid, Oid roleid,
 				acl = acldefault(OBJECT_SEQUENCE, ownerId);
 				break;
 			default:
-				acl = acldefault(OBJECT_RELATION, ownerId);
+				acl = acldefault(OBJECT_TABLE, ownerId);
 				break;
 		}
 		aclDatum = (Datum) 0;
@@ -5467,7 +5465,7 @@ get_user_default_acl(ObjectType objtype, Oid ownerId, Oid nsp_oid)
 	/* Check if object type is supported in pg_default_acl */
 	switch (objtype)
 	{
-		case OBJECT_RELATION:
+		case OBJECT_TABLE:
 			defaclobjtype = DEFACLOBJ_RELATION;
 			break;
 
