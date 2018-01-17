@@ -1007,6 +1007,7 @@ ProcessUtilitySlow(ParseState *pstate,
 						{
 							Datum		toast_options;
 							static char *validnsps[] = HEAP_RELOPT_NAMESPACES;
+							bool		success;
 
 							/* Create the table itself */
 							address = DefineRelation((CreateStmt *) stmt,
@@ -1037,8 +1038,16 @@ ProcessUtilitySlow(ParseState *pstate,
 												   toast_options,
 												   true);
 
-							NewRelationCreateToastTable(address.objectId,
-														toast_options);
+							success = NewRelationCreateToastTable(address.objectId,
+															  toast_options);
+
+							if (!success && toast_options)
+								ereport(ERROR,
+								   (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+									errmsg("can't set TOAST relation options for a new table"),
+								errdetail("TOAST relation were not created"),
+									errhint("do not specify toast.* options, or add some variable length attributes to the table")
+									));
 						}
 						else if (IsA(stmt, CreateForeignTableStmt))
 						{

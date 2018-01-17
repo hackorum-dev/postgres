@@ -10557,6 +10557,19 @@ ATExecSetRelOptions(Relation rel, List *defList, AlterTableType operation,
 
 		heap_close(toastrel, NoLock);
 	}
+	else
+	{
+		newOptions = transformRelOptions((Datum) 0, defList, "toast",
+										 validnsps, false, false);
+		if (newOptions)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				errmsg("can't alter TOAST relation options for \"%s\" table",
+					   RelationGetRelationName(rel)),
+					 errdetail("TOAST relation does not exist"),
+					 errhint("do not specify toast.* options, or add some variable length attributes to the table")
+					 ));
+	}
 
 	heap_close(pgclass, RowExclusiveLock);
 }

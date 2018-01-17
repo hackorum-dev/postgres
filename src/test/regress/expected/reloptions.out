@@ -95,6 +95,15 @@ SELECT reloptions, relhasoids FROM pg_class WHERE oid = 'reloptions_test'::regcl
  {fillfactor=20} | t
 (1 row)
 
+-- CREATE AS use different brach of code, so test it separately
+DROP TABLE reloptions_test;
+CREATE TABLE reloptions_test WITH (fillfactor=75) AS (SELECT 1::INT);
+SELECT reloptions FROM pg_class WHERE oid = 'reloptions_test'::regclass;
+   reloptions    
+-----------------
+ {fillfactor=75}
+(1 row)
+
 -- Test toast.* options
 DROP TABLE reloptions_test;
 CREATE TABLE reloptions_test (s VARCHAR)
@@ -124,8 +133,53 @@ SELECT reloptions FROM pg_class WHERE oid = :toast_oid;
 -- Fail on non-existent options in toast namespace
 CREATE TABLE reloptions_test2 (i int) WITH (toast.not_existing_option = 42);
 ERROR:  unrecognized parameter "not_existing_option"
--- Mix TOAST & heap
+-- Fail on setting reloption to a table that does not have a TOAST relation
+CREATE TABLE reloptions_test2 (i int)
+	WITH (toast.autovacuum_vacuum_cost_delay=23);
+ERROR:  can't set TOAST relation options for a new table
+DETAIL:  TOAST relation were not created
+HINT:  do not specify toast.* options, or add some variable length attributes to the table
 DROP TABLE reloptions_test;
+CREATE TABLE reloptions_test(i INT);
+ALTER TABLE reloptions_test SET (toast.autovacuum_vacuum_cost_delay = 23);
+ERROR:  can't alter TOAST relation options for "reloptions_test" table
+DETAIL:  TOAST relation does not exist
+HINT:  do not specify toast.* options, or add some variable length attributes to the table
+ALTER TABLE reloptions_test RESET (toast.autovacuum_vacuum_cost_delay);
+ERROR:  can't alter TOAST relation options for "reloptions_test" table
+DETAIL:  TOAST relation does not exist
+HINT:  do not specify toast.* options, or add some variable length attributes to the table
+-- autovacuum_analyze_scale_factor and autovacuum_analyze_threshold should be
+-- accepted by heap but rejected by toast (special case)
+DROP TABLE reloptions_test;
+CREATE TABLE reloptions_test (s VARCHAR)
+	WITH (autovacuum_analyze_scale_factor=1, autovacuum_analyze_threshold=1);
+CREATE TABLE reloptions_test2 (s VARCHAR)
+	WITH (toast.autovacuum_analyze_scale_factor=1);
+ERROR:  unrecognized parameter "autovacuum_analyze_scale_factor"
+CREATE TABLE reloptions_test2 (s VARCHAR)
+	WITH (toast.autovacuum_analyze_threshold=1);
+ERROR:  unrecognized parameter "autovacuum_analyze_threshold"
+-- CREATE AS use different brach of code, so test it separately
+DROP TABLE reloptions_test;
+CREATE TABLE reloptions_test WITH (toast.autovacuum_vacuum_cost_delay = 25)
+	AS (SELECT 'some text value'::VARCHAR);
+SELECT reltoastrelid as toast_oid
+	FROM pg_class WHERE oid = 'reloptions_test'::regclass \gset
+SELECT reloptions FROM pg_class WHERE oid = :toast_oid;
+            reloptions             
+-----------------------------------
+ {autovacuum_vacuum_cost_delay=25}
+(1 row)
+
+-- Fail while setting toast.* options for table without TOAST relation using CREATE AS
+DROP TABLE reloptions_test;
+CREATE TABLE reloptions_test WITH (toast.autovacuum_vacuum_cost_delay = 25)
+	AS (SELECT 1::INT);
+ERROR:  can't set TOAST relation options for a new table
+DETAIL:  TOAST relation were not created
+HINT:  do not specify toast.* options, or add some variable length attributes to the table
+-- Mix TOAST & heap
 CREATE TABLE reloptions_test (s VARCHAR) WITH
 	(toast.autovacuum_vacuum_cost_delay = 23,
 	autovacuum_vacuum_cost_delay = 24, fillfactor = 40);

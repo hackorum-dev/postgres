@@ -57,6 +57,11 @@ DROP TABLE reloptions_test;
 CREATE TABLE reloptions_test(i INT) WITH (fillfactor=20, oids=true);
 SELECT reloptions, relhasoids FROM pg_class WHERE oid = 'reloptions_test'::regclass;
 
+-- CREATE AS use different brach of code, so test it separately
+DROP TABLE reloptions_test;
+CREATE TABLE reloptions_test WITH (fillfactor=75) AS (SELECT 1::INT);
+SELECT reloptions FROM pg_class WHERE oid = 'reloptions_test'::regclass;
+
 -- Test toast.* options
 DROP TABLE reloptions_test;
 
@@ -75,9 +80,40 @@ SELECT reloptions FROM pg_class WHERE oid = :toast_oid;
 -- Fail on non-existent options in toast namespace
 CREATE TABLE reloptions_test2 (i int) WITH (toast.not_existing_option = 42);
 
--- Mix TOAST & heap
+-- Fail on setting reloption to a table that does not have a TOAST relation
+CREATE TABLE reloptions_test2 (i int)
+	WITH (toast.autovacuum_vacuum_cost_delay=23);
 DROP TABLE reloptions_test;
 
+CREATE TABLE reloptions_test(i INT);
+ALTER TABLE reloptions_test SET (toast.autovacuum_vacuum_cost_delay = 23);
+ALTER TABLE reloptions_test RESET (toast.autovacuum_vacuum_cost_delay);
+
+-- autovacuum_analyze_scale_factor and autovacuum_analyze_threshold should be
+-- accepted by heap but rejected by toast (special case)
+DROP TABLE reloptions_test;
+CREATE TABLE reloptions_test (s VARCHAR)
+	WITH (autovacuum_analyze_scale_factor=1, autovacuum_analyze_threshold=1);
+
+CREATE TABLE reloptions_test2 (s VARCHAR)
+	WITH (toast.autovacuum_analyze_scale_factor=1);
+CREATE TABLE reloptions_test2 (s VARCHAR)
+	WITH (toast.autovacuum_analyze_threshold=1);
+
+-- CREATE AS use different brach of code, so test it separately
+DROP TABLE reloptions_test;
+CREATE TABLE reloptions_test WITH (toast.autovacuum_vacuum_cost_delay = 25)
+	AS (SELECT 'some text value'::VARCHAR);
+SELECT reltoastrelid as toast_oid
+	FROM pg_class WHERE oid = 'reloptions_test'::regclass \gset
+SELECT reloptions FROM pg_class WHERE oid = :toast_oid;
+
+-- Fail while setting toast.* options for table without TOAST relation using CREATE AS
+DROP TABLE reloptions_test;
+CREATE TABLE reloptions_test WITH (toast.autovacuum_vacuum_cost_delay = 25)
+	AS (SELECT 1::INT);
+
+-- Mix TOAST & heap
 CREATE TABLE reloptions_test (s VARCHAR) WITH
 	(toast.autovacuum_vacuum_cost_delay = 23,
 	autovacuum_vacuum_cost_delay = 24, fillfactor = 40);
