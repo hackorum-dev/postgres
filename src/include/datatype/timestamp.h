@@ -15,6 +15,8 @@
 #ifndef DATATYPE_TIMESTAMP_H
 #define DATATYPE_TIMESTAMP_H
 
+#include "pgtime.h"
+
 /*
  * Timestamp represents absolute time.
  *
