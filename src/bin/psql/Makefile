@@ -15,11 +15,15 @@ PGAPPICON=win32
 subdir = src/bin/psql
 top_builddir = ../../..
 include $(top_builddir)/src/Makefile.global
+include $(top_builddir)/src/interfaces/libpq/Makefile.libdefs
 
 REFDOCDIR= $(top_srcdir)/doc/src/sgml/ref
 
 override CPPFLAGS := -I. -I$(srcdir) -I$(libpq_srcdir) $(CPPFLAGS)
 override LDFLAGS := -L$(top_builddir)/src/fe_utils -lpgfeutils $(libpq_pgport) $(LDFLAGS)
+ifeq ($(PORTNAME),darwin)
+    override LDFLAGS := -headerpad_max_install_names $(LDFLAGS)
+endif
 
 OBJS=	command.o common.o conditional.o copy.o crosstabview.o \
 	describe.o help.o input.o large_obj.o mainloop.o \
@@ -47,6 +51,19 @@ distprep: sql_help.h psqlscanslash.c
 
 install: all installdirs
 	$(INSTALL_PROGRAM) psql$(X) '$(DESTDIR)$(bindir)/psql$(X)'
+    ifndef NO_TEMP_INSTALL
+        ifeq ($(PORTNAME),darwin)
+            # With Apple's SIP (aka rootless mode) enabled one cannot use
+            # DYLD_LIBRARY_PATH to point the temp install's psql to the temp
+            # install's libpq to ensure the matching library is used.
+            # Therefore modify the binary's embedded shared library
+            # install name to point to the temp install's libpq.
+			install_name_tool -change \
+               '$(libdir)/lib$(NAME).$(SO_MAJOR_VERSION)$(DLSUFFIX)' \
+               '$(DESTDIR)$(libdir)/lib$(NAME).$(SO_MAJOR_VERSION)$(DLSUFFIX)' \
+               '$(DESTDIR)$(bindir)/psql$(X)' 
+        endif
+    endif
 	$(INSTALL_DATA) $(srcdir)/psqlrc.sample '$(DESTDIR)$(datadir)/psqlrc.sample'
 
 installdirs:

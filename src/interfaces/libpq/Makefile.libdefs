@@ -1,0 +1,8 @@
+# shared library parameters
+NAME= pq
+SO_MAJOR_VERSION= 5
+SO_MINOR_VERSION= $(MAJORVERSION)
+ifeq ($(PORTNAME), darwin)
+    DLSUFFIX= .dylib
+endif
+
