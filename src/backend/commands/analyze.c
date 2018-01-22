@@ -2318,6 +2318,8 @@ compute_scalar_stats(VacAttrStatsP stats,
 	int			num_mcv = stats->attr->attstattarget;
 	int			num_bins = stats->attr->attstattarget;
 	StdAnalyzeData *mystats = (StdAnalyzeData *) stats->extra_data;
+	double		N,
+				n;
 
 	values = (ScalarItem *) palloc(samplerows * sizeof(ScalarItem));
 	tupnoLink = (int *) palloc(samplerows * sizeof(int));
@@ -2525,10 +2527,10 @@ compute_scalar_stats(VacAttrStatsP stats,
 			 */
 			int			f1 = ndistinct - nmultiple + toowide_cnt;
 			int			d = f1 + nmultiple;
-			double		n = samplerows - null_cnt;
-			double		N = totalrows * (1.0 - stats->stanullfrac);
 			double		stadistinct;
 
+			n = samplerows - null_cnt;
+			N = totalrows * (1.0 - stats->stanullfrac);
 			/* N == 0 shouldn't happen, but just in case ... */
 			if (N > 0)
 				stadistinct = (n * d) / ((n - f1) + f1 * n / N);
@@ -2558,9 +2560,44 @@ compute_scalar_stats(VacAttrStatsP stats,
 		 * we are able to generate a complete MCV list (all the values in the
 		 * sample will fit, and we think these are all the ones in the table),
 		 * then do so.  Otherwise, store only those values that are
-		 * significantly more common than the (estimated) average. We set the
-		 * threshold rather arbitrarily at 25% more than average, with at
-		 * least 2 instances in the sample.  Also, we won't suppress values
+		 * significantly more common than the (estimated) average.
+		 *
+		 * Note: For this POC patch, the implementation and comments
+		 * were copied from an email from Dean Rasheed, which contains further references:
+		 * https://www.postgresql.org/message-id/CAEZATCVu9zK0N%3Dnd9ufavabbM8YZiyWYJca0oiE8F31GAY%2B_XA%40mail.gmail.com
+		 *
+		 * We calculate the threshold from the table and sample sizes.
+
+		 * The initial rule of thumb is that the value should occur at
+		 * least 10 times in the sample.
+		 *
+		 * Suppose that N is the population size (total number of rows in the
+		 * table), and n is the sample size, and that some particular candidate
+		 * value appears x times in the sample. Then the "sample proportion" is
+		 * given by p = x/n.
+		 *
+		 * It is reasonable to treat p as having a normal distribution, which
+		 * then allows the margin of error to be analysed using standard
+		 * techniques. We calculate the standard error of the sample proportion:
+		 *
+		 * SE = sqrt(p*(1-p)/n) * sqrt((N-n)/(N-1))
+		 *
+		 * The second term is a finite population correction. There is a 95%
+		 * probability that the total population proportion lies in the range
+		 *
+		 * [ pmin = p-2*SE, pmax = p+2*SE ]
+		 *
+		 * If there are Nd distinct values in the table, so that the average
+		 * frequency of occurrence of any particular value is 1/Nd, then the test
+		 *
+		 * pmin > 1/Nd
+		 *
+		 * would imply that there is a 97.5% probably that the candidate value is
+		 * more common than the average (since the 5% of the distribution of p
+		 * outside the confidence interval is split evenly below pmin and above
+		 * pmax).
+		 *
+		 * Also, we won't suppress values
 		 * that have a frequency of at least 1/K where K is the intended
 		 * number of histogram bins; such values might otherwise cause us to
 		 * emit duplicate histogram bin boundaries.  (We might end up with
@@ -2587,28 +2624,36 @@ compute_scalar_stats(VacAttrStatsP stats,
 		else
 		{
 			double		ndistinct_table = stats->stadistinct;
-			double		avgcount,
-						mincount,
-						maxmincount;
+			double		avg_freq,
+						hist_width,
+						p,
+						pmin,
+						SE;
 
 			/* Re-extract estimate of # distinct nonnull values in table */
 			if (ndistinct_table < 0)
 				ndistinct_table = -ndistinct_table * totalrows;
-			/* estimate # occurrences in sample of a typical nonnull value */
-			avgcount = (double) nonnull_cnt / ndistinct_table;
-			/* set minimum threshold count to store a value */
-			mincount = avgcount * 1.25;
-			if (mincount < 2)
-				mincount = 2;
-			/* don't let threshold exceed 1/K, however */
-			maxmincount = (double) values_cnt / (double) num_bins;
-			if (mincount > maxmincount)
-				mincount = maxmincount;
+			/* Compute average frequency */
+			avg_freq = (double) 1 / (double) ndistinct_table;
+			/*
+			 * Compute 1/K. If a value has a higher frequency and is not
+			 * included in the MCV list, we might emit duplicate
+			 * histogram bin boundaries.
+			 */
+			hist_width = (double) 1 / (double) num_bins;
+
 			if (num_mcv > track_cnt)
 				num_mcv = track_cnt;
+			/* Test values for minimum threshold frequency */
 			for (i = 0; i < num_mcv; i++)
 			{
-				if (track[i].count < mincount)
+				p = (double) track[i].count / (double) n;
+				SE = sqrt( (double) p * (1 - p) * (N - n) / (double) (n * (N - 1)) );
+				pmin = p - 2 * SE;
+
+				if ((pmin < avg_freq && pmin < hist_width)
+				//~ if ((pmin < avg_freq )
+					 || track[i].count < 10)
 				{
 					num_mcv = i;
 					break;
