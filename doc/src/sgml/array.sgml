@@ -14,6 +14,12 @@
   or domain can be created.
  </para>
 
+ <note>
+  A multi-dimensional array is not the same as an array-of-arrays.  In
+  particular it is not useful to access a two-dimensional array with
+  a single dimension - you will be given null instead of an array
+  containing the elements of the specified row.
+ </note>
  <sect2 id="arrays-declaration">
   <title>Declaration of Array Types</title>
 
@@ -115,7 +121,7 @@ CREATE TABLE tictactoe (
 '{{1,2,3},{4,5,6},{7,8,9}}'
 </programlisting>
    This constant is a two-dimensional, 3-by-3 array consisting of
-   three subarrays of integers.
+   nine integers.
   </para>
 
   <para>
@@ -373,6 +379,25 @@ SELECT cardinality(schedule) FROM sal_emp WHERE name = 'Carol';
 -------------
            4
 (1 row)
+</programlisting>
+ </para>
+
+ <para>
+  <function>unnest</function>, and other iteration access of arrays, is performed
+  depth-first, for each lower dimension all higher dimension cells are returned
+  before the next lower bound index.  For a two-dimensional array this is termed
+  row-first.
+
+<programlisting>
+SELECT unnest(schedule) FROM sal_emp WHERE name = 'Bill';
+
+    unnest
+--------------
+ meeting
+ lunch
+ training
+ presentation
+(4 rows)
 </programlisting>
  </para>
  </sect2>
