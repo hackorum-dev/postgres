@@ -3359,7 +3359,7 @@ psql_completion(const char *text, int start, int end)
 		COMPLETE_WITH_CONST("TRANSACTION");
 
 /* TABLE, but not TABLE embedded in other commands */
-	else if (Matches1("TABLE"))
+	else if (Matches1("TABLE") || Matches2("TABLE", "ONLY"))
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_relations, NULL);
 
 /* TABLESAMPLE */
@@ -3455,11 +3455,11 @@ psql_completion(const char *text, int start, int end)
 
 /* ... FROM ... */
 /* TODO: also include SRF ? */
-	else if (TailMatches1("FROM") && !Matches3("COPY|\\copy", MatchAny, "FROM"))
+	else if ((TailMatches1("FROM") || TailMatches2("FROM", "ONLY")) && !Matches3("COPY|\\copy", MatchAny, "FROM"))
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_tsvmf, NULL);
 
 /* ... JOIN ... */
-	else if (TailMatches1("JOIN"))
+	else if (TailMatches1("JOIN") || TailMatches2("JOIN", "ONLY"))
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_tsvmf, NULL);
 
 /* Backslash commands */
