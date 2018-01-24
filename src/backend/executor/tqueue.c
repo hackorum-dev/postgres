@@ -191,7 +191,8 @@ TupleQueueReaderNext(TupleQueueReader *reader, bool nowait, bool *done)
 	}
 
 	/* In non-blocking mode, bail out if no message ready yet. */
-	if (result == SHM_MQ_WOULD_BLOCK)
+	if (result == SHM_MQ_WOULD_BLOCK ||
+		result == SHM_MQ_WOULD_BLOCK_NOT_YET_ATTACHED)
 		return NULL;
 	Assert(result == SHM_MQ_SUCCESS);
 

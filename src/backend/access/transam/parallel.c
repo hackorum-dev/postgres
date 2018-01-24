@@ -188,6 +188,13 @@ CreateParallelContext(const char *library_name, const char *function_name,
 	/* Restore previous memory context. */
 	MemoryContextSwitchTo(oldcontext);
 
+	/*
+	 * Cause the next CHECK_FOR_INTERRUPTS() to behave as if we've received
+	 * PROCSIG_PARALLEL_MESSAGE, as part of the protocol for detecting
+	 * failed forks.
+	 */
+	ParallelMessagePending = true;
+
 	return pcxt;
 }
 
@@ -874,7 +881,26 @@ HandleParallelMessages(void)
 
 				res = shm_mq_receive(pcxt->worker[i].error_mqh, &nbytes,
 									 &data, true);
-				if (res == SHM_MQ_WOULD_BLOCK)
+				if (res == SHM_MQ_WOULD_BLOCK_NOT_YET_ATTACHED)
+				{
+					/*
+					 * Until we've heard from every single worker, we'll
+					 * keep behaving as if we've received PROCSIG_PARALLEL_MESSAGE.
+					 * This means that every CHECK_FOR_INTERRUPTS() will cause
+					 * us to check for backends that never started up.
+					 * This is necessary because the postmaster isn't allowed
+					 * to set PROCSIG_PARALLEL_MESSAGE to tell us about fork
+					 * failure, but it will signal us causing any correctly
+					 * coded latch wait loop to return here so that we can
+					 * poll for workers that failed to fork.  In other words,
+					 * we'll take the extremely pessmistic view that every
+					 * latch-set might be such a failure, and keep checking
+					 * for it until we know it's definitely not the case.
+					 */
+					ParallelMessagePending = true;
+					break;
+				}
+				else if (res == SHM_MQ_WOULD_BLOCK)
 					break;
 				else if (res == SHM_MQ_SUCCESS)
 				{

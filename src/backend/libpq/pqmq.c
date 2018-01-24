@@ -165,7 +165,8 @@ mq_putmessage(char msgtype, const char *s, size_t len)
 						   PROCSIG_PARALLEL_MESSAGE,
 						   pq_mq_parallel_master_backend_id);
 
-		if (result != SHM_MQ_WOULD_BLOCK)
+		if (result != SHM_MQ_WOULD_BLOCK &&
+			result != SHM_MQ_WOULD_BLOCK_NOT_YET_ATTACHED)
 			break;
 
 		WaitLatch(MyLatch, WL_LATCH_SET, 0,
