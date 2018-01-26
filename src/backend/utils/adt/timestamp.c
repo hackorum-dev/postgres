@@ -156,12 +156,12 @@ timestamp_in(PG_FUNCTION_ARGS)
 	int			dtype;
 	int			nf;
 	int			dterr;
-	char	   *field[MAXDATEFIELDS];
-	int			ftype[MAXDATEFIELDS];
-	char		workbuf[MAXDATELEN + MAXDATEFIELDS];
+	char	   *field[DT_MAXDATEFIELDS];
+	int			ftype[DT_MAXDATEFIELDS];
+	char		workbuf[DT_MAXDATELEN + DT_MAXDATEFIELDS];
 
 	dterr = ParseDateTime(str, workbuf, sizeof(workbuf),
-						  field, ftype, MAXDATEFIELDS, &nf);
+						  field, ftype, DT_MAXDATEFIELDS, &nf);
 	if (dterr == 0)
 		dterr = DecodeDateTime(field, ftype, nf, &dtype, tm, &fsec, &tz);
 	if (dterr != 0)
@@ -218,7 +218,7 @@ timestamp_out(PG_FUNCTION_ARGS)
 	struct pg_tm tt,
 			   *tm = &tt;
 	fsec_t		fsec;
-	char		buf[MAXDATELEN + 1];
+	char		buf[DT_MAXDATELEN + 1];
 
 	if (TIMESTAMP_NOT_FINITE(timestamp))
 		EncodeSpecialTimestamp(timestamp, buf);
@@ -396,12 +396,12 @@ timestamptz_in(PG_FUNCTION_ARGS)
 	int			dtype;
 	int			nf;
 	int			dterr;
-	char	   *field[MAXDATEFIELDS];
-	int			ftype[MAXDATEFIELDS];
-	char		workbuf[MAXDATELEN + MAXDATEFIELDS];
+	char	   *field[DT_MAXDATEFIELDS];
+	int			ftype[DT_MAXDATEFIELDS];
+	char		workbuf[DT_MAXDATELEN + DT_MAXDATEFIELDS];
 
 	dterr = ParseDateTime(str, workbuf, sizeof(workbuf),
-						  field, ftype, MAXDATEFIELDS, &nf);
+						  field, ftype, DT_MAXDATEFIELDS, &nf);
 	if (dterr == 0)
 		dterr = DecodeDateTime(field, ftype, nf, &dtype, tm, &fsec, &tz);
 	if (dterr != 0)
@@ -508,12 +508,12 @@ parse_sane_timezone(struct pg_tm *tm, text *zone)
 											   false);
 		type = DecodeTimezoneAbbrev(0, lowzone, &val, &tzp);
 
-		if (type == TZ || type == DTZ)
+		if (type == DT_TZ || type == DT_DTZ)
 		{
 			/* fixed-offset abbreviation */
 			tz = -val;
 		}
-		else if (type == DYNTZ)
+		else if (type == DT_DYNTZ)
 		{
 			/* dynamic-offset abbreviation, resolve using specified time */
 			tz = DetermineTimeZoneAbbrevOffset(tm, tzname, tzp);
@@ -767,7 +767,7 @@ timestamptz_out(PG_FUNCTION_ARGS)
 			   *tm = &tt;
 	fsec_t		fsec;
 	const char *tzn;
-	char		buf[MAXDATELEN + 1];
+	char		buf[DT_MAXDATELEN + 1];
 
 	if (TIMESTAMP_NOT_FINITE(dt))
 		EncodeSpecialTimestamp(dt, buf);
@@ -889,8 +889,8 @@ interval_in(PG_FUNCTION_ARGS)
 	int			nf;
 	int			range;
 	int			dterr;
-	char	   *field[MAXDATEFIELDS];
-	int			ftype[MAXDATEFIELDS];
+	char	   *field[DT_MAXDATEFIELDS];
+	int			ftype[DT_MAXDATEFIELDS];
 	char		workbuf[256];
 
 	tm->tm_year = 0;
@@ -907,7 +907,7 @@ interval_in(PG_FUNCTION_ARGS)
 		range = INTERVAL_FULL_RANGE;
 
 	dterr = ParseDateTime(str, workbuf, sizeof(workbuf), field,
-						  ftype, MAXDATEFIELDS, &nf);
+						  ftype, DT_MAXDATEFIELDS, &nf);
 	if (dterr == 0)
 		dterr = DecodeInterval(field, ftype, nf, range,
 							   &dtype, tm, &fsec);
@@ -962,7 +962,7 @@ interval_out(PG_FUNCTION_ARGS)
 	struct pg_tm tt,
 			   *tm = &tt;
 	fsec_t		fsec;
-	char		buf[MAXDATELEN + 1];
+	char		buf[DT_MAXDATELEN + 1];
 
 	if (interval2tm(*span, tm, &fsec) != 0)
 		elog(ERROR, "could not convert interval to tm");
@@ -1046,19 +1046,19 @@ intervaltypmodin(PG_FUNCTION_ARGS)
 	{
 		switch (tl[0])
 		{
-			case INTERVAL_MASK(YEAR):
-			case INTERVAL_MASK(MONTH):
-			case INTERVAL_MASK(DAY):
-			case INTERVAL_MASK(HOUR):
-			case INTERVAL_MASK(MINUTE):
-			case INTERVAL_MASK(SECOND):
-			case INTERVAL_MASK(YEAR) | INTERVAL_MASK(MONTH):
-			case INTERVAL_MASK(DAY) | INTERVAL_MASK(HOUR):
-			case INTERVAL_MASK(DAY) | INTERVAL_MASK(HOUR) | INTERVAL_MASK(MINUTE):
-			case INTERVAL_MASK(DAY) | INTERVAL_MASK(HOUR) | INTERVAL_MASK(MINUTE) | INTERVAL_MASK(SECOND):
-			case INTERVAL_MASK(HOUR) | INTERVAL_MASK(MINUTE):
-			case INTERVAL_MASK(HOUR) | INTERVAL_MASK(MINUTE) | INTERVAL_MASK(SECOND):
-			case INTERVAL_MASK(MINUTE) | INTERVAL_MASK(SECOND):
+			case INTERVAL_MASK(DT_YEAR):
+			case INTERVAL_MASK(DT_MONTH):
+			case INTERVAL_MASK(DT_DAY):
+			case INTERVAL_MASK(DT_HOUR):
+			case INTERVAL_MASK(DT_MINUTE):
+			case INTERVAL_MASK(DT_SECOND):
+			case INTERVAL_MASK(DT_YEAR) | INTERVAL_MASK(DT_MONTH):
+			case INTERVAL_MASK(DT_DAY) | INTERVAL_MASK(DT_HOUR):
+			case INTERVAL_MASK(DT_DAY) | INTERVAL_MASK(DT_HOUR) | INTERVAL_MASK(DT_MINUTE):
+			case INTERVAL_MASK(DT_DAY) | INTERVAL_MASK(DT_HOUR) | INTERVAL_MASK(DT_MINUTE) | INTERVAL_MASK(DT_SECOND):
+			case INTERVAL_MASK(DT_HOUR) | INTERVAL_MASK(DT_MINUTE):
+			case INTERVAL_MASK(DT_HOUR) | INTERVAL_MASK(DT_MINUTE) | INTERVAL_MASK(DT_SECOND):
+			case INTERVAL_MASK(DT_MINUTE) | INTERVAL_MASK(DT_SECOND):
 			case INTERVAL_FULL_RANGE:
 				/* all OK */
 				break;
@@ -1125,43 +1125,43 @@ intervaltypmodout(PG_FUNCTION_ARGS)
 
 	switch (fields)
 	{
-		case INTERVAL_MASK(YEAR):
+		case INTERVAL_MASK(DT_YEAR):
 			fieldstr = " year";
 			break;
-		case INTERVAL_MASK(MONTH):
+		case INTERVAL_MASK(DT_MONTH):
 			fieldstr = " month";
 			break;
-		case INTERVAL_MASK(DAY):
+		case INTERVAL_MASK(DT_DAY):
 			fieldstr = " day";
 			break;
-		case INTERVAL_MASK(HOUR):
+		case INTERVAL_MASK(DT_HOUR):
 			fieldstr = " hour";
 			break;
-		case INTERVAL_MASK(MINUTE):
+		case INTERVAL_MASK(DT_MINUTE):
 			fieldstr = " minute";
 			break;
-		case INTERVAL_MASK(SECOND):
+		case INTERVAL_MASK(DT_SECOND):
 			fieldstr = " second";
 			break;
-		case INTERVAL_MASK(YEAR) | INTERVAL_MASK(MONTH):
+		case INTERVAL_MASK(DT_YEAR) | INTERVAL_MASK(DT_MONTH):
 			fieldstr = " year to month";
 			break;
-		case INTERVAL_MASK(DAY) | INTERVAL_MASK(HOUR):
+		case INTERVAL_MASK(DT_DAY) | INTERVAL_MASK(DT_HOUR):
 			fieldstr = " day to hour";
 			break;
-		case INTERVAL_MASK(DAY) | INTERVAL_MASK(HOUR) | INTERVAL_MASK(MINUTE):
+		case INTERVAL_MASK(DT_DAY) | INTERVAL_MASK(DT_HOUR) | INTERVAL_MASK(DT_MINUTE):
 			fieldstr = " day to minute";
 			break;
-		case INTERVAL_MASK(DAY) | INTERVAL_MASK(HOUR) | INTERVAL_MASK(MINUTE) | INTERVAL_MASK(SECOND):
+		case INTERVAL_MASK(DT_DAY) | INTERVAL_MASK(DT_HOUR) | INTERVAL_MASK(DT_MINUTE) | INTERVAL_MASK(DT_SECOND):
 			fieldstr = " day to second";
 			break;
-		case INTERVAL_MASK(HOUR) | INTERVAL_MASK(MINUTE):
+		case INTERVAL_MASK(DT_HOUR) | INTERVAL_MASK(DT_MINUTE):
 			fieldstr = " hour to minute";
 			break;
-		case INTERVAL_MASK(HOUR) | INTERVAL_MASK(MINUTE) | INTERVAL_MASK(SECOND):
+		case INTERVAL_MASK(DT_HOUR) | INTERVAL_MASK(DT_MINUTE) | INTERVAL_MASK(DT_SECOND):
 			fieldstr = " hour to second";
 			break;
-		case INTERVAL_MASK(MINUTE) | INTERVAL_MASK(SECOND):
+		case INTERVAL_MASK(DT_MINUTE) | INTERVAL_MASK(DT_SECOND):
 			fieldstr = " minute to second";
 			break;
 		case INTERVAL_FULL_RANGE:
@@ -1199,31 +1199,31 @@ intervaltypmodleastfield(int32 typmod)
 
 	switch (INTERVAL_RANGE(typmod))
 	{
-		case INTERVAL_MASK(YEAR):
+		case INTERVAL_MASK(DT_YEAR):
 			return 5;			/* YEAR */
-		case INTERVAL_MASK(MONTH):
+		case INTERVAL_MASK(DT_MONTH):
 			return 4;			/* MONTH */
-		case INTERVAL_MASK(DAY):
+		case INTERVAL_MASK(DT_DAY):
 			return 3;			/* DAY */
-		case INTERVAL_MASK(HOUR):
+		case INTERVAL_MASK(DT_HOUR):
 			return 2;			/* HOUR */
-		case INTERVAL_MASK(MINUTE):
+		case INTERVAL_MASK(DT_MINUTE):
 			return 1;			/* MINUTE */
-		case INTERVAL_MASK(SECOND):
+		case INTERVAL_MASK(DT_SECOND):
 			return 0;			/* SECOND */
-		case INTERVAL_MASK(YEAR) | INTERVAL_MASK(MONTH):
+		case INTERVAL_MASK(DT_YEAR) | INTERVAL_MASK(DT_MONTH):
 			return 4;			/* MONTH */
-		case INTERVAL_MASK(DAY) | INTERVAL_MASK(HOUR):
+		case INTERVAL_MASK(DT_DAY) | INTERVAL_MASK(DT_HOUR):
 			return 2;			/* HOUR */
-		case INTERVAL_MASK(DAY) | INTERVAL_MASK(HOUR) | INTERVAL_MASK(MINUTE):
+		case INTERVAL_MASK(DT_DAY) | INTERVAL_MASK(DT_HOUR) | INTERVAL_MASK(DT_MINUTE):
 			return 1;			/* MINUTE */
-		case INTERVAL_MASK(DAY) | INTERVAL_MASK(HOUR) | INTERVAL_MASK(MINUTE) | INTERVAL_MASK(SECOND):
+		case INTERVAL_MASK(DT_DAY) | INTERVAL_MASK(DT_HOUR) | INTERVAL_MASK(DT_MINUTE) | INTERVAL_MASK(DT_SECOND):
 			return 0;			/* SECOND */
-		case INTERVAL_MASK(HOUR) | INTERVAL_MASK(MINUTE):
+		case INTERVAL_MASK(DT_HOUR) | INTERVAL_MASK(DT_MINUTE):
 			return 1;			/* MINUTE */
-		case INTERVAL_MASK(HOUR) | INTERVAL_MASK(MINUTE) | INTERVAL_MASK(SECOND):
+		case INTERVAL_MASK(DT_HOUR) | INTERVAL_MASK(DT_MINUTE) | INTERVAL_MASK(DT_SECOND):
 			return 0;			/* SECOND */
-		case INTERVAL_MASK(MINUTE) | INTERVAL_MASK(SECOND):
+		case INTERVAL_MASK(DT_MINUTE) | INTERVAL_MASK(DT_SECOND):
 			return 0;			/* SECOND */
 		case INTERVAL_FULL_RANGE:
 			return 0;			/* SECOND */
@@ -1372,81 +1372,81 @@ AdjustIntervalForTypmod(Interval *interval, int32 typmod)
 		{
 			/* Do nothing... */
 		}
-		else if (range == INTERVAL_MASK(YEAR))
+		else if (range == INTERVAL_MASK(DT_YEAR))
 		{
 			interval->month = (interval->month / MONTHS_PER_YEAR) * MONTHS_PER_YEAR;
 			interval->day = 0;
 			interval->time = 0;
 		}
-		else if (range == INTERVAL_MASK(MONTH))
+		else if (range == INTERVAL_MASK(DT_MONTH))
 		{
 			interval->day = 0;
 			interval->time = 0;
 		}
 		/* YEAR TO MONTH */
-		else if (range == (INTERVAL_MASK(YEAR) | INTERVAL_MASK(MONTH)))
+		else if (range == (INTERVAL_MASK(DT_YEAR) | INTERVAL_MASK(DT_MONTH)))
 		{
 			interval->day = 0;
 			interval->time = 0;
 		}
-		else if (range == INTERVAL_MASK(DAY))
+		else if (range == INTERVAL_MASK(DT_DAY))
 		{
 			interval->time = 0;
 		}
-		else if (range == INTERVAL_MASK(HOUR))
+		else if (range == INTERVAL_MASK(DT_HOUR))
 		{
 			interval->time = (interval->time / USECS_PER_HOUR) *
 				USECS_PER_HOUR;
 		}
-		else if (range == INTERVAL_MASK(MINUTE))
+		else if (range == INTERVAL_MASK(DT_MINUTE))
 		{
 			interval->time = (interval->time / USECS_PER_MINUTE) *
 				USECS_PER_MINUTE;
 		}
-		else if (range == INTERVAL_MASK(SECOND))
+		else if (range == INTERVAL_MASK(DT_SECOND))
 		{
 			/* fractional-second rounding will be dealt with below */
 		}
 		/* DAY TO HOUR */
-		else if (range == (INTERVAL_MASK(DAY) |
-						   INTERVAL_MASK(HOUR)))
+		else if (range == (INTERVAL_MASK(DT_DAY) |
+						   INTERVAL_MASK(DT_HOUR)))
 		{
 			interval->time = (interval->time / USECS_PER_HOUR) *
 				USECS_PER_HOUR;
 		}
 		/* DAY TO MINUTE */
-		else if (range == (INTERVAL_MASK(DAY) |
-						   INTERVAL_MASK(HOUR) |
-						   INTERVAL_MASK(MINUTE)))
+		else if (range == (INTERVAL_MASK(DT_DAY) |
+						   INTERVAL_MASK(DT_HOUR) |
+						   INTERVAL_MASK(DT_MINUTE)))
 		{
 			interval->time = (interval->time / USECS_PER_MINUTE) *
 				USECS_PER_MINUTE;
 		}
 		/* DAY TO SECOND */
-		else if (range == (INTERVAL_MASK(DAY) |
-						   INTERVAL_MASK(HOUR) |
-						   INTERVAL_MASK(MINUTE) |
-						   INTERVAL_MASK(SECOND)))
+		else if (range == (INTERVAL_MASK(DT_DAY) |
+						   INTERVAL_MASK(DT_HOUR) |
+						   INTERVAL_MASK(DT_MINUTE) |
+						   INTERVAL_MASK(DT_SECOND)))
 		{
 			/* fractional-second rounding will be dealt with below */
 		}
 		/* HOUR TO MINUTE */
-		else if (range == (INTERVAL_MASK(HOUR) |
-						   INTERVAL_MASK(MINUTE)))
+		else if (range == (INTERVAL_MASK(DT_HOUR) |
+						   INTERVAL_MASK(DT_MINUTE)))
 		{
 			interval->time = (interval->time / USECS_PER_MINUTE) *
 				USECS_PER_MINUTE;
 		}
 		/* HOUR TO SECOND */
-		else if (range == (INTERVAL_MASK(HOUR) |
-						   INTERVAL_MASK(MINUTE) |
-						   INTERVAL_MASK(SECOND)))
+		else if (range == (INTERVAL_MASK(DT_HOUR) |
+						   INTERVAL_MASK(DT_MINUTE) |
+						   INTERVAL_MASK(DT_SECOND)))
 		{
 			/* fractional-second rounding will be dealt with below */
 		}
 		/* MINUTE TO SECOND */
-		else if (range == (INTERVAL_MASK(MINUTE) |
-						   INTERVAL_MASK(SECOND)))
+		else if (range == (INTERVAL_MASK(DT_MINUTE) |
+						   INTERVAL_MASK(DT_SECOND)))
 		{
 			/* fractional-second rounding will be dealt with below */
 		}
@@ -1523,9 +1523,9 @@ void
 EncodeSpecialTimestamp(Timestamp dt, char *str)
 {
 	if (TIMESTAMP_IS_NOBEGIN(dt))
-		strcpy(str, EARLY);
+		strcpy(str, DT_EARLY);
 	else if (TIMESTAMP_IS_NOEND(dt))
-		strcpy(str, LATE);
+		strcpy(str, DT_LATE);
 	else						/* shouldn't happen */
 		elog(ERROR, "invalid argument for EncodeSpecialTimestamp");
 }
@@ -1709,7 +1709,7 @@ timestamptz_to_time_t(TimestampTz t)
 const char *
 timestamptz_to_str(TimestampTz t)
 {
-	static char buf[MAXDATELEN + 1];
+	static char buf[DT_MAXDATELEN + 1];
 	int			tz;
 	struct pg_tm tt,
 			   *tm = &tt;
@@ -3689,7 +3689,7 @@ timestamp_trunc(PG_FUNCTION_ARGS)
 
 	type = DecodeUnits(0, lowunits, &val);
 
-	if (type == UNITS)
+	if (type == DT_UNITS)
 	{
 		if (timestamp2tm(timestamp, NULL, tm, &fsec, NULL, NULL) != 0)
 			ereport(ERROR,
@@ -3816,7 +3816,7 @@ timestamptz_trunc(PG_FUNCTION_ARGS)
 
 	type = DecodeUnits(0, lowunits, &val);
 
-	if (type == UNITS)
+	if (type == DT_UNITS)
 	{
 		if (timestamp2tm(timestamp, &tz, tm, &fsec, NULL, NULL) != 0)
 			ereport(ERROR,
@@ -3962,7 +3962,7 @@ interval_trunc(PG_FUNCTION_ARGS)
 
 	type = DecodeUnits(0, lowunits, &val);
 
-	if (type == UNITS)
+	if (type == DT_UNITS)
 	{
 		if (interval2tm(*interval, tm, &fsec) == 0)
 		{
@@ -4220,7 +4220,7 @@ static float8
 NonFiniteTimestampTzPart(int type, int unit, char *lowunits,
 						 bool isNegative, bool isTz)
 {
-	if ((type != UNITS) && (type != RESERV))
+	if ((type != DT_UNITS) && (type != DT_RESERV))
 	{
 		if (isTz)
 			ereport(ERROR,
@@ -4304,7 +4304,7 @@ timestamp_part(PG_FUNCTION_ARGS)
 											false);
 
 	type = DecodeUnits(0, lowunits, &val);
-	if (type == UNKNOWN_FIELD)
+	if (type == DT_UNKNOWN_FIELD)
 		type = DecodeSpecial(0, lowunits, &val);
 
 	if (TIMESTAMP_NOT_FINITE(timestamp))
@@ -4318,7 +4318,7 @@ timestamp_part(PG_FUNCTION_ARGS)
 			PG_RETURN_NULL();
 	}
 
-	if (type == UNITS)
+	if (type == DT_UNITS)
 	{
 		if (timestamp2tm(timestamp, NULL, tm, &fsec, NULL, NULL) != 0)
 			ereport(ERROR,
@@ -4448,7 +4448,7 @@ timestamp_part(PG_FUNCTION_ARGS)
 				result = 0;
 		}
 	}
-	else if (type == RESERV)
+	else if (type == DT_RESERV)
 	{
 		switch (val)
 		{
@@ -4505,7 +4505,7 @@ timestamptz_part(PG_FUNCTION_ARGS)
 											false);
 
 	type = DecodeUnits(0, lowunits, &val);
-	if (type == UNKNOWN_FIELD)
+	if (type == DT_UNKNOWN_FIELD)
 		type = DecodeSpecial(0, lowunits, &val);
 
 	if (TIMESTAMP_NOT_FINITE(timestamp))
@@ -4519,7 +4519,7 @@ timestamptz_part(PG_FUNCTION_ARGS)
 			PG_RETURN_NULL();
 	}
 
-	if (type == UNITS)
+	if (type == DT_UNITS)
 	{
 		if (timestamp2tm(timestamp, &tz, tm, &fsec, NULL, NULL) != 0)
 			ereport(ERROR,
@@ -4650,7 +4650,7 @@ timestamptz_part(PG_FUNCTION_ARGS)
 		}
 
 	}
-	else if (type == RESERV)
+	else if (type == DT_RESERV)
 	{
 		switch (val)
 		{
@@ -4706,10 +4706,10 @@ interval_part(PG_FUNCTION_ARGS)
 											false);
 
 	type = DecodeUnits(0, lowunits, &val);
-	if (type == UNKNOWN_FIELD)
+	if (type == DT_UNKNOWN_FIELD)
 		type = DecodeSpecial(0, lowunits, &val);
 
-	if (type == UNITS)
+	if (type == DT_UNITS)
 	{
 		if (interval2tm(*interval, tm, &fsec) == 0)
 		{
@@ -4781,7 +4781,7 @@ interval_part(PG_FUNCTION_ARGS)
 			result = 0;
 		}
 	}
-	else if (type == RESERV && val == DTK_EPOCH)
+	else if (type == DT_RESERV && val == DTK_EPOCH)
 	{
 		result = interval->time / 1000000.0;
 		result += ((double) DAYS_PER_YEAR * SECS_PER_DAY) * (interval->month / MONTHS_PER_YEAR);
@@ -4856,13 +4856,13 @@ timestamp_zone(PG_FUNCTION_ARGS)
 
 	type = DecodeTimezoneAbbrev(0, lowzone, &val, &tzp);
 
-	if (type == TZ || type == DTZ)
+	if (type == DT_TZ || type == DT_DTZ)
 	{
 		/* fixed-offset abbreviation */
 		tz = val;
 		result = dt2local(timestamp, tz);
 	}
-	else if (type == DYNTZ)
+	else if (type == DT_DYNTZ)
 	{
 		/* dynamic-offset abbreviation, resolve using specified time */
 		if (timestamp2tm(timestamp, NULL, &tm, &fsec, NULL, tzp) != 0)
@@ -5064,13 +5064,13 @@ timestamptz_zone(PG_FUNCTION_ARGS)
 
 	type = DecodeTimezoneAbbrev(0, lowzone, &val, &tzp);
 
-	if (type == TZ || type == DTZ)
+	if (type == DT_TZ || type == DT_DTZ)
 	{
 		/* fixed-offset abbreviation */
 		tz = -val;
 		result = dt2local(timestamp, tz);
 	}
-	else if (type == DYNTZ)
+	else if (type == DT_DYNTZ)
 	{
 		/* dynamic-offset abbreviation, resolve using specified time */
 		int			isdst;

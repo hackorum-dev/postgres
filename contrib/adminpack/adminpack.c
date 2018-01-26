@@ -334,11 +334,11 @@ pg_logdir_ls(PG_FUNCTION_ARGS)
 		char	   *values[2];
 		HeapTuple	tuple;
 		char		timestampbuf[32];
-		char	   *field[MAXDATEFIELDS];
-		char		lowstr[MAXDATELEN + 1];
+		char	   *field[DT_MAXDATEFIELDS];
+		char		lowstr[DT_MAXDATELEN + 1];
 		int			dtype;
 		int			nf,
-					ftype[MAXDATEFIELDS];
+					ftype[DT_MAXDATEFIELDS];
 		fsec_t		fsec;
 		int			tz = 0;
 		struct pg_tm date;
@@ -357,7 +357,7 @@ pg_logdir_ls(PG_FUNCTION_ARGS)
 		timestampbuf[17] = '\0';
 
 		/* parse and decode expected timestamp to verify it's OK format */
-		if (ParseDateTime(timestampbuf, lowstr, MAXDATELEN, field, ftype, MAXDATEFIELDS, &nf))
+		if (ParseDateTime(timestampbuf, lowstr, DT_MAXDATELEN, field, ftype, DT_MAXDATEFIELDS, &nf))
 			continue;
 
 		if (DecodeDateTime(field, ftype, nf, &dtype, &date, &fsec, &tz))

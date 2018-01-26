@@ -89,80 +89,80 @@ const char *const days[] = {"Sunday", "Monday", "Tuesday", "Wednesday",
  */
 static const datetkn datetktbl[] = {
 	/* token, type, value */
-	{EARLY, RESERV, DTK_EARLY}, /* "-infinity" reserved for "early time" */
-	{DA_D, ADBC, AD},			/* "ad" for years > 0 */
-	{"allballs", RESERV, DTK_ZULU}, /* 00:00:00 */
-	{"am", AMPM, AM},
-	{"apr", MONTH, 4},
-	{"april", MONTH, 4},
-	{"at", IGNORE_DTF, 0},		/* "at" (throwaway) */
-	{"aug", MONTH, 8},
-	{"august", MONTH, 8},
-	{DB_C, ADBC, BC},			/* "bc" for years <= 0 */
-	{DCURRENT, RESERV, DTK_CURRENT},	/* "current" is always now */
-	{"d", UNITS, DTK_DAY},		/* "day of month" for ISO input */
-	{"dec", MONTH, 12},
-	{"december", MONTH, 12},
-	{"dow", UNITS, DTK_DOW},	/* day of week */
-	{"doy", UNITS, DTK_DOY},	/* day of year */
-	{"dst", DTZMOD, SECS_PER_HOUR},
-	{EPOCH, RESERV, DTK_EPOCH}, /* "epoch" reserved for system epoch time */
-	{"feb", MONTH, 2},
-	{"february", MONTH, 2},
-	{"fri", DOW, 5},
-	{"friday", DOW, 5},
-	{"h", UNITS, DTK_HOUR},		/* "hour" */
-	{LATE, RESERV, DTK_LATE},	/* "infinity" reserved for "late time" */
-	{INVALID, RESERV, DTK_INVALID}, /* "invalid" reserved for bad time */
-	{"isodow", UNITS, DTK_ISODOW},	/* ISO day of week, Sunday == 7 */
-	{"isoyear", UNITS, DTK_ISOYEAR},	/* year in terms of the ISO week date */
-	{"j", UNITS, DTK_JULIAN},
-	{"jan", MONTH, 1},
-	{"january", MONTH, 1},
-	{"jd", UNITS, DTK_JULIAN},
-	{"jul", MONTH, 7},
-	{"julian", UNITS, DTK_JULIAN},
-	{"july", MONTH, 7},
-	{"jun", MONTH, 6},
-	{"june", MONTH, 6},
-	{"m", UNITS, DTK_MONTH},	/* "month" for ISO input */
-	{"mar", MONTH, 3},
-	{"march", MONTH, 3},
-	{"may", MONTH, 5},
-	{"mm", UNITS, DTK_MINUTE},	/* "minute" for ISO input */
-	{"mon", DOW, 1},
-	{"monday", DOW, 1},
-	{"nov", MONTH, 11},
-	{"november", MONTH, 11},
-	{NOW, RESERV, DTK_NOW},		/* current transaction time */
-	{"oct", MONTH, 10},
-	{"october", MONTH, 10},
-	{"on", IGNORE_DTF, 0},		/* "on" (throwaway) */
-	{"pm", AMPM, PM},
-	{"s", UNITS, DTK_SECOND},	/* "seconds" for ISO input */
-	{"sat", DOW, 6},
-	{"saturday", DOW, 6},
-	{"sep", MONTH, 9},
-	{"sept", MONTH, 9},
-	{"september", MONTH, 9},
-	{"sun", DOW, 0},
-	{"sunday", DOW, 0},
-	{"t", ISOTIME, DTK_TIME},	/* Filler for ISO time fields */
-	{"thu", DOW, 4},
-	{"thur", DOW, 4},
-	{"thurs", DOW, 4},
-	{"thursday", DOW, 4},
-	{TODAY, RESERV, DTK_TODAY}, /* midnight */
-	{TOMORROW, RESERV, DTK_TOMORROW},	/* tomorrow midnight */
-	{"tue", DOW, 2},
-	{"tues", DOW, 2},
-	{"tuesday", DOW, 2},
-	{"undefined", RESERV, DTK_INVALID}, /* pre-v6.1 invalid time */
-	{"wed", DOW, 3},
-	{"wednesday", DOW, 3},
-	{"weds", DOW, 3},
-	{"y", UNITS, DTK_YEAR},		/* "year" for ISO input */
-	{YESTERDAY, RESERV, DTK_YESTERDAY}	/* yesterday midnight */
+	{DT_EARLY, DT_RESERV, DTK_EARLY}, /* "-infinity" reserved for "early time" */
+	{DT_DA_D, DT_ADBC, DT_AD},			/* "ad" for years > 0 */
+	{"allballs", DT_RESERV, DTK_ZULU}, /* 00:00:00 */
+	{"am", DT_AMPM, DT_AM},
+	{"apr", DT_MONTH, 4},
+	{"april", DT_MONTH, 4},
+	{"at", DT_IGNORE_DTF, 0},		/* "at" (throwaway) */
+	{"aug", DT_MONTH, 8},
+	{"august", DT_MONTH, 8},
+	{DT_DB_C, DT_ADBC, DT_BC},			/* "bc" for years <= 0 */
+	{DT_DCURRENT, DT_RESERV, DTK_CURRENT},	/* "current" is always now */
+	{"d", DT_UNITS, DTK_DAY},		/* "day of month" for ISO input */
+	{"dec", DT_MONTH, 12},
+	{"december", DT_MONTH, 12},
+	{"dow", DT_UNITS, DTK_DOW},	/* day of week */
+	{"doy", DT_UNITS, DTK_DOY},	/* day of year */
+	{"dst", DT_ZMOD, SECS_PER_HOUR},
+	{DT_EPOCH, DT_RESERV, DTK_EPOCH}, /* "epoch" reserved for system epoch time */
+	{"feb", DT_MONTH, 2},
+	{"february", DT_MONTH, 2},
+	{"fri", DT_DOW, 5},
+	{"friday", DT_DOW, 5},
+	{"h", DT_UNITS, DTK_HOUR},		/* "hour" */
+	{DT_LATE, DT_RESERV, DTK_LATE},	/* "infinity" reserved for "late time" */
+	{DT_INVALID, DT_RESERV, DTK_INVALID}, /* "invalid" reserved for bad time */
+	{"isodow", DT_UNITS, DTK_ISODOW},	/* ISO day of week, Sunday == 7 */
+	{"isoyear", DT_UNITS, DTK_ISOYEAR},	/* year in terms of the ISO week date */
+	{"j", DT_UNITS, DTK_JULIAN},
+	{"jan", DT_MONTH, 1},
+	{"january", DT_MONTH, 1},
+	{"jd", DT_UNITS, DTK_JULIAN},
+	{"jul", DT_MONTH, 7},
+	{"julian", DT_UNITS, DTK_JULIAN},
+	{"july", DT_MONTH, 7},
+	{"jun", DT_MONTH, 6},
+	{"june", DT_MONTH, 6},
+	{"m", DT_UNITS, DTK_MONTH},	/* "month" for ISO input */
+	{"mar", DT_MONTH, 3},
+	{"march", DT_MONTH, 3},
+	{"may", DT_MONTH, 5},
+	{"mm", DT_UNITS, DTK_MINUTE},	/* "minute" for ISO input */
+	{"mon", DT_DOW, 1},
+	{"monday", DT_DOW, 1},
+	{"nov", DT_MONTH, 11},
+	{"november", DT_MONTH, 11},
+	{DT_NOW, DT_RESERV, DTK_NOW},		/* current transaction time */
+	{"oct", DT_MONTH, 10},
+	{"october", DT_MONTH, 10},
+	{"on", DT_IGNORE_DTF, 0},		/* "on" (throwaway) */
+	{"pm", DT_AMPM, DT_PM},
+	{"s", DT_UNITS, DTK_SECOND},	/* "seconds" for ISO input */
+	{"sat", DT_DOW, 6},
+	{"saturday", DT_DOW, 6},
+	{"sep", DT_MONTH, 9},
+	{"sept", DT_MONTH, 9},
+	{"september", DT_MONTH, 9},
+	{"sun", DT_DOW, 0},
+	{"sunday", DT_DOW, 0},
+	{"t", DT_ISOTIME, DTK_TIME},	/* Filler for ISO time fields */
+	{"thu", DT_DOW, 4},
+	{"thur", DT_DOW, 4},
+	{"thurs", DT_DOW, 4},
+	{"thursday", DT_DOW, 4},
+	{DT_TODAY, DT_RESERV, DTK_TODAY}, /* midnight */
+	{DT_TOMORROW, DT_RESERV, DTK_TOMORROW},	/* tomorrow midnight */
+	{"tue", DT_DOW, 2},
+	{"tues", DT_DOW, 2},
+	{"tuesday", DT_DOW, 2},
+	{"undefined", DT_RESERV, DTK_INVALID}, /* pre-v6.1 invalid time */
+	{"wed", DT_DOW, 3},
+	{"wednesday", DT_DOW, 3},
+	{"weds", DT_DOW, 3},
+	{"y", DT_UNITS, DTK_YEAR},		/* "year" for ISO input */
+	{DT_YESTERDAY, DT_RESERV, DTK_YESTERDAY}	/* yesterday midnight */
 };
 
 static int	szdatetktbl = sizeof datetktbl / sizeof datetktbl[0];
@@ -173,69 +173,69 @@ static int	szdatetktbl = sizeof datetktbl / sizeof datetktbl[0];
  */
 static const datetkn deltatktbl[] = {
 	/* token, type, value */
-	{"@", IGNORE_DTF, 0},		/* postgres relative prefix */
-	{DAGO, AGO, 0},				/* "ago" indicates negative time offset */
-	{"c", UNITS, DTK_CENTURY},	/* "century" relative */
-	{"cent", UNITS, DTK_CENTURY},	/* "century" relative */
-	{"centuries", UNITS, DTK_CENTURY},	/* "centuries" relative */
-	{DCENTURY, UNITS, DTK_CENTURY}, /* "century" relative */
-	{"d", UNITS, DTK_DAY},		/* "day" relative */
-	{DDAY, UNITS, DTK_DAY},		/* "day" relative */
-	{"days", UNITS, DTK_DAY},	/* "days" relative */
-	{"dec", UNITS, DTK_DECADE}, /* "decade" relative */
-	{DDECADE, UNITS, DTK_DECADE},	/* "decade" relative */
-	{"decades", UNITS, DTK_DECADE}, /* "decades" relative */
-	{"decs", UNITS, DTK_DECADE},	/* "decades" relative */
-	{"h", UNITS, DTK_HOUR},		/* "hour" relative */
-	{DHOUR, UNITS, DTK_HOUR},	/* "hour" relative */
-	{"hours", UNITS, DTK_HOUR}, /* "hours" relative */
-	{"hr", UNITS, DTK_HOUR},	/* "hour" relative */
-	{"hrs", UNITS, DTK_HOUR},	/* "hours" relative */
-	{INVALID, RESERV, DTK_INVALID}, /* reserved for invalid time */
-	{"m", UNITS, DTK_MINUTE},	/* "minute" relative */
-	{"microsecon", UNITS, DTK_MICROSEC},	/* "microsecond" relative */
-	{"mil", UNITS, DTK_MILLENNIUM}, /* "millennium" relative */
-	{"millennia", UNITS, DTK_MILLENNIUM},	/* "millennia" relative */
-	{DMILLENNIUM, UNITS, DTK_MILLENNIUM},	/* "millennium" relative */
-	{"millisecon", UNITS, DTK_MILLISEC},	/* relative */
-	{"mils", UNITS, DTK_MILLENNIUM},	/* "millennia" relative */
-	{"min", UNITS, DTK_MINUTE}, /* "minute" relative */
-	{"mins", UNITS, DTK_MINUTE},	/* "minutes" relative */
-	{DMINUTE, UNITS, DTK_MINUTE},	/* "minute" relative */
-	{"minutes", UNITS, DTK_MINUTE}, /* "minutes" relative */
-	{"mon", UNITS, DTK_MONTH},	/* "months" relative */
-	{"mons", UNITS, DTK_MONTH}, /* "months" relative */
-	{DMONTH, UNITS, DTK_MONTH}, /* "month" relative */
-	{"months", UNITS, DTK_MONTH},
-	{"ms", UNITS, DTK_MILLISEC},
-	{"msec", UNITS, DTK_MILLISEC},
-	{DMILLISEC, UNITS, DTK_MILLISEC},
-	{"mseconds", UNITS, DTK_MILLISEC},
-	{"msecs", UNITS, DTK_MILLISEC},
-	{"qtr", UNITS, DTK_QUARTER},	/* "quarter" relative */
-	{DQUARTER, UNITS, DTK_QUARTER}, /* "quarter" relative */
-	{"s", UNITS, DTK_SECOND},
-	{"sec", UNITS, DTK_SECOND},
-	{DSECOND, UNITS, DTK_SECOND},
-	{"seconds", UNITS, DTK_SECOND},
-	{"secs", UNITS, DTK_SECOND},
-	{DTIMEZONE, UNITS, DTK_TZ}, /* "timezone" time offset */
-	{"timezone_h", UNITS, DTK_TZ_HOUR}, /* timezone hour units */
-	{"timezone_m", UNITS, DTK_TZ_MINUTE},	/* timezone minutes units */
-	{"undefined", RESERV, DTK_INVALID}, /* pre-v6.1 invalid time */
-	{"us", UNITS, DTK_MICROSEC},	/* "microsecond" relative */
-	{"usec", UNITS, DTK_MICROSEC},	/* "microsecond" relative */
-	{DMICROSEC, UNITS, DTK_MICROSEC},	/* "microsecond" relative */
-	{"useconds", UNITS, DTK_MICROSEC},	/* "microseconds" relative */
-	{"usecs", UNITS, DTK_MICROSEC}, /* "microseconds" relative */
-	{"w", UNITS, DTK_WEEK},		/* "week" relative */
-	{DWEEK, UNITS, DTK_WEEK},	/* "week" relative */
-	{"weeks", UNITS, DTK_WEEK}, /* "weeks" relative */
-	{"y", UNITS, DTK_YEAR},		/* "year" relative */
-	{DYEAR, UNITS, DTK_YEAR},	/* "year" relative */
-	{"years", UNITS, DTK_YEAR}, /* "years" relative */
-	{"yr", UNITS, DTK_YEAR},	/* "year" relative */
-	{"yrs", UNITS, DTK_YEAR}	/* "years" relative */
+	{"@", DT_IGNORE_DTF, 0},		/* postgres relative prefix */
+	{DT_DAGO, DT_AGO, 0},				/* "ago" indicates negative time offset */
+	{"c", DT_UNITS, DTK_CENTURY},	/* "century" relative */
+	{"cent", DT_UNITS, DTK_CENTURY},	/* "century" relative */
+	{"centuries", DT_UNITS, DTK_CENTURY},	/* "centuries" relative */
+	{DT_DCENTURY, DT_UNITS, DTK_CENTURY}, /* "century" relative */
+	{"d", DT_UNITS, DTK_DAY},		/* "day" relative */
+	{DT_DDAY, DT_UNITS, DTK_DAY},		/* "day" relative */
+	{"days", DT_UNITS, DTK_DAY},	/* "days" relative */
+	{"dec", DT_UNITS, DTK_DECADE}, /* "decade" relative */
+	{DT_DDECADE, DT_UNITS, DTK_DECADE},	/* "decade" relative */
+	{"decades", DT_UNITS, DTK_DECADE}, /* "decades" relative */
+	{"decs", DT_UNITS, DTK_DECADE},	/* "decades" relative */
+	{"h", DT_UNITS, DTK_HOUR},		/* "hour" relative */
+	{DT_DHOUR, DT_UNITS, DTK_HOUR},	/* "hour" relative */
+	{"hours", DT_UNITS, DTK_HOUR}, /* "hours" relative */
+	{"hr", DT_UNITS, DTK_HOUR},	/* "hour" relative */
+	{"hrs", DT_UNITS, DTK_HOUR},	/* "hours" relative */
+	{DT_INVALID, DT_RESERV, DTK_INVALID}, /* reserved for invalid time */
+	{"m", DT_UNITS, DTK_MINUTE},	/* "minute" relative */
+	{"microsecon", DT_UNITS, DTK_MICROSEC},	/* "microsecond" relative */
+	{"mil", DT_UNITS, DTK_MILLENNIUM}, /* "millennium" relative */
+	{"millennia", DT_UNITS, DTK_MILLENNIUM},	/* "millennia" relative */
+	{DT_DMILLENNIUM, DT_UNITS, DTK_MILLENNIUM},	/* "millennium" relative */
+	{"millisecon", DT_UNITS, DTK_MILLISEC},	/* relative */
+	{"mils", DT_UNITS, DTK_MILLENNIUM},	/* "millennia" relative */
+	{"min", DT_UNITS, DTK_MINUTE}, /* "minute" relative */
+	{"mins", DT_UNITS, DTK_MINUTE},	/* "minutes" relative */
+	{DT_DMINUTE, DT_UNITS, DTK_MINUTE},	/* "minute" relative */
+	{"minutes", DT_UNITS, DTK_MINUTE}, /* "minutes" relative */
+	{"mon", DT_UNITS, DTK_MONTH},	/* "months" relative */
+	{"mons", DT_UNITS, DTK_MONTH}, /* "months" relative */
+	{DT_DMONTH, DT_UNITS, DTK_MONTH}, /* "month" relative */
+	{"months", DT_UNITS, DTK_MONTH},
+	{"ms", DT_UNITS, DTK_MILLISEC},
+	{"msec", DT_UNITS, DTK_MILLISEC},
+	{DT_DMILLISEC, DT_UNITS, DTK_MILLISEC},
+	{"mseconds", DT_UNITS, DTK_MILLISEC},
+	{"msecs", DT_UNITS, DTK_MILLISEC},
+	{"qtr", DT_UNITS, DTK_QUARTER},	/* "quarter" relative */
+	{DT_DQUARTER, DT_UNITS, DTK_QUARTER}, /* "quarter" relative */
+	{"s", DT_UNITS, DTK_SECOND},
+	{"sec", DT_UNITS, DTK_SECOND},
+	{DT_DSECOND, DT_UNITS, DTK_SECOND},
+	{"seconds", DT_UNITS, DTK_SECOND},
+	{"secs", DT_UNITS, DTK_SECOND},
+	{DT_DTIMEZONE, DT_UNITS, DTK_TZ}, /* "timezone" time offset */
+	{"timezone_h", DT_UNITS, DTK_TZ_HOUR}, /* timezone hour units */
+	{"timezone_m", DT_UNITS, DTK_TZ_MINUTE},	/* timezone minutes units */
+	{"undefined", DT_RESERV, DTK_INVALID}, /* pre-v6.1 invalid time */
+	{"us", DT_UNITS, DTK_MICROSEC},	/* "microsecond" relative */
+	{"usec", DT_UNITS, DTK_MICROSEC},	/* "microsecond" relative */
+	{DT_DMICROSEC, DT_UNITS, DTK_MICROSEC},	/* "microsecond" relative */
+	{"useconds", DT_UNITS, DTK_MICROSEC},	/* "microseconds" relative */
+	{"usecs", DT_UNITS, DTK_MICROSEC}, /* "microseconds" relative */
+	{"w", DT_UNITS, DTK_WEEK},		/* "week" relative */
+	{DT_DWEEK, DT_UNITS, DTK_WEEK},	/* "week" relative */
+	{"weeks", DT_UNITS, DTK_WEEK}, /* "weeks" relative */
+	{"y", DT_UNITS, DTK_YEAR},		/* "year" relative */
+	{DT_DYEAR, DT_UNITS, DTK_YEAR},	/* "year" relative */
+	{"years", DT_UNITS, DTK_YEAR}, /* "years" relative */
+	{"yr", DT_UNITS, DTK_YEAR},	/* "year" relative */
+	{"yrs", DT_UNITS, DTK_YEAR}	/* "years" relative */
 };
 
 static int	szdeltatktbl = sizeof deltatktbl / sizeof deltatktbl[0];
@@ -244,11 +244,11 @@ static TimeZoneAbbrevTable *zoneabbrevtbl = NULL;
 
 /* Caches of recent lookup results in the above tables */
 
-static const datetkn *datecache[MAXDATEFIELDS] = {NULL};
+static const datetkn *datecache[DT_MAXDATEFIELDS] = {NULL};
 
-static const datetkn *deltacache[MAXDATEFIELDS] = {NULL};
+static const datetkn *deltacache[DT_MAXDATEFIELDS] = {NULL};
 
-static const datetkn *abbrevcache[MAXDATEFIELDS] = {NULL};
+static const datetkn *abbrevcache[DT_MAXDATEFIELDS] = {NULL};
 
 
 /*
@@ -790,7 +790,7 @@ DecodeDateTime(char **field, int *ftype, int nf,
 	int			i;
 	int			val;
 	int			dterr;
-	int			mer = HR24;
+	int			mer = DT_HR24;
 	bool		haveTextMonth = false;
 	bool		isjulian = false;
 	bool		is2digits = false;
@@ -847,7 +847,7 @@ DecodeDateTime(char **field, int *ftype, int nf,
 					if (dterr)
 						return dterr;
 
-					tmask = DTK_DATE_M | DTK_TIME_M | DTK_M(TZ);
+					tmask = DTK_DATE_M | DTK_TIME_M | DTK_M(DT_TZ);
 					ptype = 0;
 					break;
 				}
@@ -863,8 +863,8 @@ DecodeDateTime(char **field, int *ftype, int nf,
 				 * we've historically accepted.
 				 */
 				else if (ptype != 0 ||
-						 ((fmask & (DTK_M(MONTH) | DTK_M(DAY))) ==
-						  (DTK_M(MONTH) | DTK_M(DAY))))
+						 ((fmask & (DTK_M(DT_MONTH) | DTK_M(DT_DAY))) ==
+						  (DTK_M(DT_MONTH) | DTK_M(DT_DAY))))
 				{
 					/* No time zone accepted? Then quit... */
 					if (tzp == NULL)
@@ -914,7 +914,7 @@ DecodeDateTime(char **field, int *ftype, int nf,
 						 * modify tmask after returning from
 						 * DecodeNumberField()
 						 */
-						tmask |= DTK_M(TZ);
+						tmask |= DTK_M(DT_TZ);
 					}
 					else
 					{
@@ -932,7 +932,7 @@ DecodeDateTime(char **field, int *ftype, int nf,
 											field[i])));
 						}
 						/* we'll apply the zone setting below */
-						tmask = DTK_M(TZ);
+						tmask = DTK_M(DT_TZ);
 					}
 				}
 				else
@@ -983,7 +983,7 @@ DecodeDateTime(char **field, int *ftype, int nf,
 					if (dterr)
 						return dterr;
 					*tzp = tz;
-					tmask = DTK_M(TZ);
+					tmask = DTK_M(DT_TZ);
 				}
 				break;
 
@@ -1025,7 +1025,7 @@ DecodeDateTime(char **field, int *ftype, int nf,
 					{
 						case DTK_YEAR:
 							tm->tm_year = val;
-							tmask = DTK_M(YEAR);
+							tmask = DTK_M(DT_YEAR);
 							break;
 
 						case DTK_MONTH:
@@ -1034,37 +1034,37 @@ DecodeDateTime(char **field, int *ftype, int nf,
 							 * already have a month and hour? then assume
 							 * minutes
 							 */
-							if ((fmask & DTK_M(MONTH)) != 0 &&
-								(fmask & DTK_M(HOUR)) != 0)
+							if ((fmask & DTK_M(DT_MONTH)) != 0 &&
+								(fmask & DTK_M(DT_HOUR)) != 0)
 							{
 								tm->tm_min = val;
-								tmask = DTK_M(MINUTE);
+								tmask = DTK_M(DT_MINUTE);
 							}
 							else
 							{
 								tm->tm_mon = val;
-								tmask = DTK_M(MONTH);
+								tmask = DTK_M(DT_MONTH);
 							}
 							break;
 
 						case DTK_DAY:
 							tm->tm_mday = val;
-							tmask = DTK_M(DAY);
+							tmask = DTK_M(DT_DAY);
 							break;
 
 						case DTK_HOUR:
 							tm->tm_hour = val;
-							tmask = DTK_M(HOUR);
+							tmask = DTK_M(DT_HOUR);
 							break;
 
 						case DTK_MINUTE:
 							tm->tm_min = val;
-							tmask = DTK_M(MINUTE);
+							tmask = DTK_M(DT_MINUTE);
 							break;
 
 						case DTK_SECOND:
 							tm->tm_sec = val;
-							tmask = DTK_M(SECOND);
+							tmask = DTK_M(DT_SECOND);
 							if (*cp == '.')
 							{
 								dterr = ParseFractionalSecond(cp, fsec);
@@ -1075,7 +1075,7 @@ DecodeDateTime(char **field, int *ftype, int nf,
 							break;
 
 						case DTK_TZ:
-							tmask = DTK_M(TZ);
+							tmask = DTK_M(DT_TZ);
 							dterr = DecodeTimezone(field[i], tzp);
 							if (dterr)
 								return dterr;
@@ -1192,15 +1192,15 @@ DecodeDateTime(char **field, int *ftype, int nf,
 			case DTK_SPECIAL:
 				/* timezone abbrevs take precedence over built-in tokens */
 				type = DecodeTimezoneAbbrev(i, field[i], &val, &valtz);
-				if (type == UNKNOWN_FIELD)
+				if (type == DT_UNKNOWN_FIELD)
 					type = DecodeSpecial(i, field[i], &val);
-				if (type == IGNORE_DTF)
+				if (type == DT_IGNORE_DTF)
 					continue;
 
 				tmask = DTK_M(type);
 				switch (type)
 				{
-					case RESERV:
+					case DT_RESERV:
 						switch (val)
 						{
 							case DTK_CURRENT:
@@ -1212,7 +1212,7 @@ DecodeDateTime(char **field, int *ftype, int nf,
 								break;
 
 							case DTK_NOW:
-								tmask = (DTK_DATE_M | DTK_TIME_M | DTK_M(TZ));
+								tmask = (DTK_DATE_M | DTK_TIME_M | DTK_M(DT_TZ));
 								*dtype = DTK_DATE;
 								GetCurrentTimeUsec(tm, fsec, tzp);
 								break;
@@ -1243,7 +1243,7 @@ DecodeDateTime(char **field, int *ftype, int nf,
 								break;
 
 							case DTK_ZULU:
-								tmask = (DTK_TIME_M | DTK_M(TZ));
+								tmask = (DTK_TIME_M | DTK_M(DT_TZ));
 								*dtype = DTK_DATE;
 								tm->tm_hour = 0;
 								tm->tm_min = 0;
@@ -1258,58 +1258,58 @@ DecodeDateTime(char **field, int *ftype, int nf,
 
 						break;
 
-					case MONTH:
+					case DT_MONTH:
 
 						/*
 						 * already have a (numeric) month? then see if we can
 						 * substitute...
 						 */
-						if ((fmask & DTK_M(MONTH)) && !haveTextMonth &&
-							!(fmask & DTK_M(DAY)) && tm->tm_mon >= 1 &&
+						if ((fmask & DTK_M(DT_MONTH)) && !haveTextMonth &&
+							!(fmask & DTK_M(DT_DAY)) && tm->tm_mon >= 1 &&
 							tm->tm_mon <= 31)
 						{
 							tm->tm_mday = tm->tm_mon;
-							tmask = DTK_M(DAY);
+							tmask = DTK_M(DT_DAY);
 						}
 						haveTextMonth = true;
 						tm->tm_mon = val;
 						break;
 
-					case DTZMOD:
+					case DT_ZMOD:
 
 						/*
 						 * daylight savings time modifier (solves "MET DST"
 						 * syntax)
 						 */
-						tmask |= DTK_M(DTZ);
+						tmask |= DTK_M(DT_DTZ);
 						tm->tm_isdst = 1;
 						if (tzp == NULL)
 							return DTERR_BAD_FORMAT;
 						*tzp -= val;
 						break;
 
-					case DTZ:
+					case DT_DTZ:
 
 						/*
 						 * set mask for TZ here _or_ check for DTZ later when
 						 * getting default timezone
 						 */
-						tmask |= DTK_M(TZ);
+						tmask |= DTK_M(DT_TZ);
 						tm->tm_isdst = 1;
 						if (tzp == NULL)
 							return DTERR_BAD_FORMAT;
 						*tzp = -val;
 						break;
 
-					case TZ:
+					case DT_TZ:
 						tm->tm_isdst = 0;
 						if (tzp == NULL)
 							return DTERR_BAD_FORMAT;
 						*tzp = -val;
 						break;
 
-					case DYNTZ:
-						tmask |= DTK_M(TZ);
+					case DT_DYNTZ:
+						tmask |= DTK_M(DT_TZ);
 						if (tzp == NULL)
 							return DTERR_BAD_FORMAT;
 						/* we'll determine the actual offset later */
@@ -1317,24 +1317,24 @@ DecodeDateTime(char **field, int *ftype, int nf,
 						abbrev = field[i];
 						break;
 
-					case AMPM:
+					case DT_AMPM:
 						mer = val;
 						break;
 
-					case ADBC:
-						bc = (val == BC);
+					case DT_ADBC:
+						bc = (val == DT_BC);
 						break;
 
-					case DOW:
+					case DT_DOW:
 						tm->tm_wday = val;
 						break;
 
-					case UNITS:
+					case DT_UNITS:
 						tmask = 0;
 						ptype = val;
 						break;
 
-					case ISOTIME:
+					case DT_ISOTIME:
 
 						/*
 						 * This is a filler field "t" indicating that the next
@@ -1361,7 +1361,7 @@ DecodeDateTime(char **field, int *ftype, int nf,
 						ptype = val;
 						break;
 
-					case UNKNOWN_FIELD:
+					case DT_UNKNOWN_FIELD:
 
 						/*
 						 * Before giving up and declaring error, check to see
@@ -1371,7 +1371,7 @@ DecodeDateTime(char **field, int *ftype, int nf,
 						if (!namedTz)
 							return DTERR_BAD_FORMAT;
 						/* we'll apply the zone setting below */
-						tmask = DTK_M(TZ);
+						tmask = DTK_M(DT_TZ);
 						break;
 
 					default:
@@ -1394,11 +1394,11 @@ DecodeDateTime(char **field, int *ftype, int nf,
 		return dterr;
 
 	/* handle AM/PM */
-	if (mer != HR24 && tm->tm_hour > HOURS_PER_DAY / 2)
+	if (mer != DT_HR24 && tm->tm_hour > HOURS_PER_DAY / 2)
 		return DTERR_FIELD_OVERFLOW;
-	if (mer == AM && tm->tm_hour == HOURS_PER_DAY / 2)
+	if (mer == DT_AM && tm->tm_hour == HOURS_PER_DAY / 2)
 		tm->tm_hour = 0;
-	else if (mer == PM && tm->tm_hour != HOURS_PER_DAY / 2)
+	else if (mer == DT_PM && tm->tm_hour != HOURS_PER_DAY / 2)
 		tm->tm_hour += HOURS_PER_DAY / 2;
 
 	/* do additional checking for full date specs... */
@@ -1418,7 +1418,7 @@ DecodeDateTime(char **field, int *ftype, int nf,
 		if (namedTz != NULL)
 		{
 			/* daylight savings time modifier disallowed with full TZ */
-			if (fmask & DTK_M(DTZMOD))
+			if (fmask & DTK_M(DT_ZMOD))
 				return DTERR_BAD_FORMAT;
 
 			*tzp = DetermineTimeZoneOffset(tm, namedTz);
@@ -1431,20 +1431,20 @@ DecodeDateTime(char **field, int *ftype, int nf,
 		if (abbrevTz != NULL)
 		{
 			/* daylight savings time modifier disallowed with dynamic TZ */
-			if (fmask & DTK_M(DTZMOD))
+			if (fmask & DTK_M(DT_ZMOD))
 				return DTERR_BAD_FORMAT;
 
 			*tzp = DetermineTimeZoneAbbrevOffset(tm, abbrev, abbrevTz);
 		}
 
 		/* timezone not specified? then use session timezone */
-		if (tzp != NULL && !(fmask & DTK_M(TZ)))
+		if (tzp != NULL && !(fmask & DTK_M(DT_TZ)))
 		{
 			/*
 			 * daylight savings time modifier but no standard timezone? then
 			 * error
 			 */
-			if (fmask & DTK_M(DTZMOD))
+			if (fmask & DTK_M(DT_ZMOD))
 				return DTERR_BAD_FORMAT;
 
 			*tzp = DetermineTimeZoneOffset(tm, session_timezone);
@@ -1754,7 +1754,7 @@ DecodeTimeOnly(char **field, int *ftype, int nf,
 	bool		isjulian = false;
 	bool		is2digits = false;
 	bool		bc = false;
-	int			mer = HR24;
+	int			mer = DT_HR24;
 	pg_tz	   *namedTz = NULL;
 	pg_tz	   *abbrevTz = NULL;
 	char	   *abbrev = NULL;
@@ -1831,7 +1831,7 @@ DecodeTimeOnly(char **field, int *ftype, int nf,
 							return dterr;
 						ftype[i] = dterr;
 
-						tmask |= DTK_M(TZ);
+						tmask |= DTK_M(DT_TZ);
 					}
 					else
 					{
@@ -1850,7 +1850,7 @@ DecodeTimeOnly(char **field, int *ftype, int nf,
 						}
 						/* we'll apply the zone setting below */
 						ftype[i] = DTK_TZ;
-						tmask = DTK_M(TZ);
+						tmask = DTK_M(DT_TZ);
 					}
 				}
 				break;
@@ -1874,7 +1874,7 @@ DecodeTimeOnly(char **field, int *ftype, int nf,
 					if (dterr)
 						return dterr;
 					*tzp = tz;
-					tmask = DTK_M(TZ);
+					tmask = DTK_M(DT_TZ);
 				}
 				break;
 
@@ -1929,7 +1929,7 @@ DecodeTimeOnly(char **field, int *ftype, int nf,
 					{
 						case DTK_YEAR:
 							tm->tm_year = val;
-							tmask = DTK_M(YEAR);
+							tmask = DTK_M(DT_YEAR);
 							break;
 
 						case DTK_MONTH:
@@ -1938,37 +1938,37 @@ DecodeTimeOnly(char **field, int *ftype, int nf,
 							 * already have a month and hour? then assume
 							 * minutes
 							 */
-							if ((fmask & DTK_M(MONTH)) != 0 &&
-								(fmask & DTK_M(HOUR)) != 0)
+							if ((fmask & DTK_M(DT_MONTH)) != 0 &&
+								(fmask & DTK_M(DT_HOUR)) != 0)
 							{
 								tm->tm_min = val;
-								tmask = DTK_M(MINUTE);
+								tmask = DTK_M(DT_MINUTE);
 							}
 							else
 							{
 								tm->tm_mon = val;
-								tmask = DTK_M(MONTH);
+								tmask = DTK_M(DT_MONTH);
 							}
 							break;
 
 						case DTK_DAY:
 							tm->tm_mday = val;
-							tmask = DTK_M(DAY);
+							tmask = DTK_M(DT_DAY);
 							break;
 
 						case DTK_HOUR:
 							tm->tm_hour = val;
-							tmask = DTK_M(HOUR);
+							tmask = DTK_M(DT_HOUR);
 							break;
 
 						case DTK_MINUTE:
 							tm->tm_min = val;
-							tmask = DTK_M(MINUTE);
+							tmask = DTK_M(DT_MINUTE);
 							break;
 
 						case DTK_SECOND:
 							tm->tm_sec = val;
-							tmask = DTK_M(SECOND);
+							tmask = DTK_M(DT_SECOND);
 							if (*cp == '.')
 							{
 								dterr = ParseFractionalSecond(cp, fsec);
@@ -1979,7 +1979,7 @@ DecodeTimeOnly(char **field, int *ftype, int nf,
 							break;
 
 						case DTK_TZ:
-							tmask = DTK_M(TZ);
+							tmask = DTK_M(DT_TZ);
 							dterr = DecodeTimezone(field[i], tzp);
 							if (dterr)
 								return dterr;
@@ -2100,15 +2100,15 @@ DecodeTimeOnly(char **field, int *ftype, int nf,
 			case DTK_SPECIAL:
 				/* timezone abbrevs take precedence over built-in tokens */
 				type = DecodeTimezoneAbbrev(i, field[i], &val, &valtz);
-				if (type == UNKNOWN_FIELD)
+				if (type == DT_UNKNOWN_FIELD)
 					type = DecodeSpecial(i, field[i], &val);
-				if (type == IGNORE_DTF)
+				if (type == DT_IGNORE_DTF)
 					continue;
 
 				tmask = DTK_M(type);
 				switch (type)
 				{
-					case RESERV:
+					case DT_RESERV:
 						switch (val)
 						{
 							case DTK_CURRENT:
@@ -2125,7 +2125,7 @@ DecodeTimeOnly(char **field, int *ftype, int nf,
 								break;
 
 							case DTK_ZULU:
-								tmask = (DTK_TIME_M | DTK_M(TZ));
+								tmask = (DTK_TIME_M | DTK_M(DT_TZ));
 								*dtype = DTK_TIME;
 								tm->tm_hour = 0;
 								tm->tm_min = 0;
@@ -2139,26 +2139,26 @@ DecodeTimeOnly(char **field, int *ftype, int nf,
 
 						break;
 
-					case DTZMOD:
+					case DT_ZMOD:
 
 						/*
 						 * daylight savings time modifier (solves "MET DST"
 						 * syntax)
 						 */
-						tmask |= DTK_M(DTZ);
+						tmask |= DTK_M(DT_DTZ);
 						tm->tm_isdst = 1;
 						if (tzp == NULL)
 							return DTERR_BAD_FORMAT;
 						*tzp -= val;
 						break;
 
-					case DTZ:
+					case DT_DTZ:
 
 						/*
 						 * set mask for TZ here _or_ check for DTZ later when
 						 * getting default timezone
 						 */
-						tmask |= DTK_M(TZ);
+						tmask |= DTK_M(DT_TZ);
 						tm->tm_isdst = 1;
 						if (tzp == NULL)
 							return DTERR_BAD_FORMAT;
@@ -2166,7 +2166,7 @@ DecodeTimeOnly(char **field, int *ftype, int nf,
 						ftype[i] = DTK_TZ;
 						break;
 
-					case TZ:
+					case DT_TZ:
 						tm->tm_isdst = 0;
 						if (tzp == NULL)
 							return DTERR_BAD_FORMAT;
@@ -2174,8 +2174,8 @@ DecodeTimeOnly(char **field, int *ftype, int nf,
 						ftype[i] = DTK_TZ;
 						break;
 
-					case DYNTZ:
-						tmask |= DTK_M(TZ);
+					case DT_DYNTZ:
+						tmask |= DTK_M(DT_TZ);
 						if (tzp == NULL)
 							return DTERR_BAD_FORMAT;
 						/* we'll determine the actual offset later */
@@ -2184,20 +2184,20 @@ DecodeTimeOnly(char **field, int *ftype, int nf,
 						ftype[i] = DTK_TZ;
 						break;
 
-					case AMPM:
+					case DT_AMPM:
 						mer = val;
 						break;
 
-					case ADBC:
-						bc = (val == BC);
+					case DT_ADBC:
+						bc = (val == DT_BC);
 						break;
 
-					case UNITS:
+					case DT_UNITS:
 						tmask = 0;
 						ptype = val;
 						break;
 
-					case ISOTIME:
+					case DT_ISOTIME:
 						tmask = 0;
 
 						/***
@@ -2215,7 +2215,7 @@ DecodeTimeOnly(char **field, int *ftype, int nf,
 						ptype = val;
 						break;
 
-					case UNKNOWN_FIELD:
+					case DT_UNKNOWN_FIELD:
 
 						/*
 						 * Before giving up and declaring error, check to see
@@ -2225,7 +2225,7 @@ DecodeTimeOnly(char **field, int *ftype, int nf,
 						if (!namedTz)
 							return DTERR_BAD_FORMAT;
 						/* we'll apply the zone setting below */
-						tmask = DTK_M(TZ);
+						tmask = DTK_M(DT_TZ);
 						break;
 
 					default:
@@ -2248,11 +2248,11 @@ DecodeTimeOnly(char **field, int *ftype, int nf,
 		return dterr;
 
 	/* handle AM/PM */
-	if (mer != HR24 && tm->tm_hour > HOURS_PER_DAY / 2)
+	if (mer != DT_HR24 && tm->tm_hour > HOURS_PER_DAY / 2)
 		return DTERR_FIELD_OVERFLOW;
-	if (mer == AM && tm->tm_hour == HOURS_PER_DAY / 2)
+	if (mer == DT_AM && tm->tm_hour == HOURS_PER_DAY / 2)
 		tm->tm_hour = 0;
-	else if (mer == PM && tm->tm_hour != HOURS_PER_DAY / 2)
+	else if (mer == DT_PM && tm->tm_hour != HOURS_PER_DAY / 2)
 		tm->tm_hour += HOURS_PER_DAY / 2;
 
 	/*
@@ -2279,7 +2279,7 @@ DecodeTimeOnly(char **field, int *ftype, int nf,
 		long int	gmtoff;
 
 		/* daylight savings time modifier disallowed with full TZ */
-		if (fmask & DTK_M(DTZMOD))
+		if (fmask & DTK_M(DT_ZMOD))
 			return DTERR_BAD_FORMAT;
 
 		/* if non-DST zone, we do not need to know the date */
@@ -2307,7 +2307,7 @@ DecodeTimeOnly(char **field, int *ftype, int nf,
 		/*
 		 * daylight savings time modifier but no standard timezone? then error
 		 */
-		if (fmask & DTK_M(DTZMOD))
+		if (fmask & DTK_M(DT_ZMOD))
 			return DTERR_BAD_FORMAT;
 
 		if ((fmask & DTK_DATE_M) == 0)
@@ -2326,7 +2326,7 @@ DecodeTimeOnly(char **field, int *ftype, int nf,
 	}
 
 	/* timezone not specified? then use session timezone */
-	if (tzp != NULL && !(fmask & DTK_M(TZ)))
+	if (tzp != NULL && !(fmask & DTK_M(DT_TZ)))
 	{
 		struct pg_tm tt,
 				   *tmp = &tt;
@@ -2334,7 +2334,7 @@ DecodeTimeOnly(char **field, int *ftype, int nf,
 		/*
 		 * daylight savings time modifier but no standard timezone? then error
 		 */
-		if (fmask & DTK_M(DTZMOD))
+		if (fmask & DTK_M(DT_ZMOD))
 			return DTERR_BAD_FORMAT;
 
 		if ((fmask & DTK_DATE_M) == 0)
@@ -2378,12 +2378,12 @@ DecodeDate(char *str, int fmask, int *tmask, bool *is2digits,
 	int			type,
 				val,
 				dmask = 0;
-	char	   *field[MAXDATEFIELDS];
+	char	   *field[DT_MAXDATEFIELDS];
 
 	*tmask = 0;
 
 	/* parse this string... */
-	while (*str != '\0' && nf < MAXDATEFIELDS)
+	while (*str != '\0' && nf < DT_MAXDATEFIELDS)
 	{
 		/* skip field separators */
 		while (*str != '\0' && !isalnum((unsigned char) *str))
@@ -2416,13 +2416,13 @@ DecodeDate(char *str, int fmask, int *tmask, bool *is2digits,
 		if (isalpha((unsigned char) *field[i]))
 		{
 			type = DecodeSpecial(i, field[i], &val);
-			if (type == IGNORE_DTF)
+			if (type == DT_IGNORE_DTF)
 				continue;
 
 			dmask = DTK_M(type);
 			switch (type)
 			{
-				case MONTH:
+				case DT_MONTH:
 					tm->tm_mon = val;
 					haveTextMonth = true;
 					break;
@@ -2463,7 +2463,7 @@ DecodeDate(char *str, int fmask, int *tmask, bool *is2digits,
 		*tmask |= dmask;
 	}
 
-	if ((fmask & ~(DTK_M(DOY) | DTK_M(TZ))) != DTK_DATE_M)
+	if ((fmask & ~(DTK_M(DT_DOY) | DTK_M(DT_TZ))) != DTK_DATE_M)
 		return DTERR_BAD_FORMAT;
 
 	/* validation of the field values must wait until ValidateDate() */
@@ -2479,7 +2479,7 @@ int
 ValidateDate(int fmask, bool isjulian, bool is2digits, bool bc,
 			 struct pg_tm *tm)
 {
-	if (fmask & DTK_M(YEAR))
+	if (fmask & DTK_M(DT_YEAR))
 	{
 		if (isjulian)
 		{
@@ -2512,21 +2512,21 @@ ValidateDate(int fmask, bool isjulian, bool is2digits, bool bc,
 	}
 
 	/* now that we have correct year, decode DOY */
-	if (fmask & DTK_M(DOY))
+	if (fmask & DTK_M(DT_DOY))
 	{
 		j2date(date2j(tm->tm_year, 1, 1) + tm->tm_yday - 1,
 			   &tm->tm_year, &tm->tm_mon, &tm->tm_mday);
 	}
 
 	/* check for valid month */
-	if (fmask & DTK_M(MONTH))
+	if (fmask & DTK_M(DT_MONTH))
 	{
 		if (tm->tm_mon < 1 || tm->tm_mon > MONTHS_PER_YEAR)
 			return DTERR_MD_FIELD_OVERFLOW;
 	}
 
 	/* minimal check for valid day */
-	if (fmask & DTK_M(DAY))
+	if (fmask & DTK_M(DT_DAY))
 	{
 		if (tm->tm_mday < 1 || tm->tm_mday > 31)
 			return DTERR_MD_FIELD_OVERFLOW;
@@ -2578,7 +2578,7 @@ DecodeTime(char *str, int fmask, int range,
 		tm->tm_sec = 0;
 		*fsec = 0;
 		/* If it's a MINUTE TO SECOND interval, take 2 fields as being mm:ss */
-		if (range == (INTERVAL_MASK(MINUTE) | INTERVAL_MASK(SECOND)))
+		if (range == (INTERVAL_MASK(DT_MINUTE) | INTERVAL_MASK(DT_SECOND)))
 		{
 			tm->tm_sec = tm->tm_min;
 			tm->tm_min = tm->tm_hour;
@@ -2672,10 +2672,10 @@ DecodeNumber(int flen, char *str, bool haveTextMonth, int fmask,
 		return DTERR_BAD_FORMAT;
 
 	/* Special case for day of year */
-	if (flen == 3 && (fmask & DTK_DATE_M) == DTK_M(YEAR) && val >= 1 &&
+	if (flen == 3 && (fmask & DTK_DATE_M) == DTK_M(DT_YEAR) && val >= 1 &&
 		val <= 366)
 	{
-		*tmask = (DTK_M(DOY) | DTK_M(MONTH) | DTK_M(DAY));
+		*tmask = (DTK_M(DT_DOY) | DTK_M(DT_MONTH) | DTK_M(DT_DAY));
 		tm->tm_yday = val;
 		/* tm_mon and tm_mday can't actually be set yet ... */
 		return 0;
@@ -2695,28 +2695,28 @@ DecodeNumber(int flen, char *str, bool haveTextMonth, int fmask,
 			 */
 			if (flen >= 3 || DateOrder == DATEORDER_YMD)
 			{
-				*tmask = DTK_M(YEAR);
+				*tmask = DTK_M(DT_YEAR);
 				tm->tm_year = val;
 			}
 			else if (DateOrder == DATEORDER_DMY)
 			{
-				*tmask = DTK_M(DAY);
+				*tmask = DTK_M(DT_DAY);
 				tm->tm_mday = val;
 			}
 			else
 			{
-				*tmask = DTK_M(MONTH);
+				*tmask = DTK_M(DT_MONTH);
 				tm->tm_mon = val;
 			}
 			break;
 
-		case (DTK_M(YEAR)):
+		case (DTK_M(DT_YEAR)):
 			/* Must be at second field of YY-MM-DD */
-			*tmask = DTK_M(MONTH);
+			*tmask = DTK_M(DT_MONTH);
 			tm->tm_mon = val;
 			break;
 
-		case (DTK_M(MONTH)):
+		case (DTK_M(DT_MONTH)):
 			if (haveTextMonth)
 			{
 				/*
@@ -2728,62 +2728,62 @@ DecodeNumber(int flen, char *str, bool haveTextMonth, int fmask,
 				 */
 				if (flen >= 3 || DateOrder == DATEORDER_YMD)
 				{
-					*tmask = DTK_M(YEAR);
+					*tmask = DTK_M(DT_YEAR);
 					tm->tm_year = val;
 				}
 				else
 				{
-					*tmask = DTK_M(DAY);
+					*tmask = DTK_M(DT_DAY);
 					tm->tm_mday = val;
 				}
 			}
 			else
 			{
 				/* Must be at second field of MM-DD-YY */
-				*tmask = DTK_M(DAY);
+				*tmask = DTK_M(DT_DAY);
 				tm->tm_mday = val;
 			}
 			break;
 
-		case (DTK_M(YEAR) | DTK_M(MONTH)):
+		case (DTK_M(DT_YEAR) | DTK_M(DT_MONTH)):
 			if (haveTextMonth)
 			{
 				/* Need to accept DD-MON-YYYY even in YMD mode */
 				if (flen >= 3 && *is2digits)
 				{
 					/* Guess that first numeric field is day was wrong */
-					*tmask = DTK_M(DAY);	/* YEAR is already set */
+					*tmask = DTK_M(DT_DAY);	/* YEAR is already set */
 					tm->tm_mday = tm->tm_year;
 					tm->tm_year = val;
 					*is2digits = false;
 				}
 				else
 				{
-					*tmask = DTK_M(DAY);
+					*tmask = DTK_M(DT_DAY);
 					tm->tm_mday = val;
 				}
 			}
 			else
 			{
 				/* Must be at third field of YY-MM-DD */
-				*tmask = DTK_M(DAY);
+				*tmask = DTK_M(DT_DAY);
 				tm->tm_mday = val;
 			}
 			break;
 
-		case (DTK_M(DAY)):
+		case (DTK_M(DT_DAY)):
 			/* Must be at second field of DD-MM-YY */
-			*tmask = DTK_M(MONTH);
+			*tmask = DTK_M(DT_MONTH);
 			tm->tm_mon = val;
 			break;
 
-		case (DTK_M(MONTH) | DTK_M(DAY)):
+		case (DTK_M(DT_MONTH) | DTK_M(DT_DAY)):
 			/* Must be at third field of DD-MM-YY or MM-DD-YY */
-			*tmask = DTK_M(YEAR);
+			*tmask = DTK_M(DT_YEAR);
 			tm->tm_year = val;
 			break;
 
-		case (DTK_M(YEAR) | DTK_M(MONTH) | DTK_M(DAY)):
+		case (DTK_M(DT_YEAR) | DTK_M(DT_MONTH) | DTK_M(DT_DAY)):
 			/* we have all the date, so it must be a time field */
 			dterr = DecodeNumberField(flen, str, fmask,
 									  tmask, tm,
@@ -2801,7 +2801,7 @@ DecodeNumber(int flen, char *str, bool haveTextMonth, int fmask,
 	 * When processing a year field, mark it for adjustment if it's only one
 	 * or two digits.
 	 */
-	if (*tmask == DTK_M(YEAR))
+	if (*tmask == DTK_M(DT_YEAR))
 		*is2digits = (flen <= 2);
 
 	return 0;
@@ -2989,7 +2989,7 @@ DecodeTimezoneAbbrev(int field, char *lowtoken,
 
 	tp = abbrevcache[field];
 	/* use strncmp so that we match truncated tokens */
-	if (tp == NULL || strncmp(lowtoken, tp->token, TOKMAXLEN) != 0)
+	if (tp == NULL || strncmp(lowtoken, tp->token, DT_TOKMAXLEN) != 0)
 	{
 		if (zoneabbrevtbl)
 			tp = datebsearch(lowtoken, zoneabbrevtbl->abbrevs,
@@ -2999,7 +2999,7 @@ DecodeTimezoneAbbrev(int field, char *lowtoken,
 	}
 	if (tp == NULL)
 	{
-		type = UNKNOWN_FIELD;
+		type = DT_UNKNOWN_FIELD;
 		*offset = 0;
 		*tz = NULL;
 	}
@@ -3007,7 +3007,7 @@ DecodeTimezoneAbbrev(int field, char *lowtoken,
 	{
 		abbrevcache[field] = tp;
 		type = tp->type;
-		if (type == DYNTZ)
+		if (type == DT_DYNTZ)
 		{
 			*offset = 0;
 			*tz = FetchDynamicTimeZone(zoneabbrevtbl, tp);
@@ -3043,13 +3043,13 @@ DecodeSpecial(int field, char *lowtoken, int *val)
 
 	tp = datecache[field];
 	/* use strncmp so that we match truncated tokens */
-	if (tp == NULL || strncmp(lowtoken, tp->token, TOKMAXLEN) != 0)
+	if (tp == NULL || strncmp(lowtoken, tp->token, DT_TOKMAXLEN) != 0)
 	{
 		tp = datebsearch(lowtoken, datetktbl, szdatetktbl);
 	}
 	if (tp == NULL)
 	{
-		type = UNKNOWN_FIELD;
+		type = DT_UNKNOWN_FIELD;
 		*val = 0;
 	}
 	else
@@ -3106,7 +3106,7 @@ DecodeInterval(char **field, int *ftype, int nf, int range,
 	double		fval;
 
 	*dtype = DTK_DELTA;
-	type = IGNORE_DTF;
+	type = DT_IGNORE_DTF;
 	ClearPgTm(tm, fsec);
 
 	/* read through list backwards to pick up units before values */
@@ -3166,34 +3166,34 @@ DecodeInterval(char **field, int *ftype, int nf, int range,
 
 			case DTK_DATE:
 			case DTK_NUMBER:
-				if (type == IGNORE_DTF)
+				if (type == DT_IGNORE_DTF)
 				{
 					/* use typmod to decide what rightmost field is */
 					switch (range)
 					{
-						case INTERVAL_MASK(YEAR):
+						case INTERVAL_MASK(DT_YEAR):
 							type = DTK_YEAR;
 							break;
-						case INTERVAL_MASK(MONTH):
-						case INTERVAL_MASK(YEAR) | INTERVAL_MASK(MONTH):
+						case INTERVAL_MASK(DT_MONTH):
+						case INTERVAL_MASK(DT_YEAR) | INTERVAL_MASK(DT_MONTH):
 							type = DTK_MONTH;
 							break;
-						case INTERVAL_MASK(DAY):
+						case INTERVAL_MASK(DT_DAY):
 							type = DTK_DAY;
 							break;
-						case INTERVAL_MASK(HOUR):
-						case INTERVAL_MASK(DAY) | INTERVAL_MASK(HOUR):
+						case INTERVAL_MASK(DT_HOUR):
+						case INTERVAL_MASK(DT_DAY) | INTERVAL_MASK(DT_HOUR):
 							type = DTK_HOUR;
 							break;
-						case INTERVAL_MASK(MINUTE):
-						case INTERVAL_MASK(HOUR) | INTERVAL_MASK(MINUTE):
-						case INTERVAL_MASK(DAY) | INTERVAL_MASK(HOUR) | INTERVAL_MASK(MINUTE):
+						case INTERVAL_MASK(DT_MINUTE):
+						case INTERVAL_MASK(DT_HOUR) | INTERVAL_MASK(DT_MINUTE):
+						case INTERVAL_MASK(DT_DAY) | INTERVAL_MASK(DT_HOUR) | INTERVAL_MASK(DT_MINUTE):
 							type = DTK_MINUTE;
 							break;
-						case INTERVAL_MASK(SECOND):
-						case INTERVAL_MASK(MINUTE) | INTERVAL_MASK(SECOND):
-						case INTERVAL_MASK(HOUR) | INTERVAL_MASK(MINUTE) | INTERVAL_MASK(SECOND):
-						case INTERVAL_MASK(DAY) | INTERVAL_MASK(HOUR) | INTERVAL_MASK(MINUTE) | INTERVAL_MASK(SECOND):
+						case INTERVAL_MASK(DT_SECOND):
+						case INTERVAL_MASK(DT_MINUTE) | INTERVAL_MASK(DT_SECOND):
+						case INTERVAL_MASK(DT_HOUR) | INTERVAL_MASK(DT_MINUTE) | INTERVAL_MASK(DT_SECOND):
+						case INTERVAL_MASK(DT_DAY) | INTERVAL_MASK(DT_HOUR) | INTERVAL_MASK(DT_MINUTE) | INTERVAL_MASK(DT_SECOND):
 							type = DTK_SECOND;
 							break;
 						default:
@@ -3247,7 +3247,7 @@ DecodeInterval(char **field, int *ftype, int nf, int range,
 				{
 					case DTK_MICROSEC:
 						*fsec += rint(val + fval);
-						tmask = DTK_M(MICROSECOND);
+						tmask = DTK_M(DT_MICROSECOND);
 						break;
 
 					case DTK_MILLISEC:
@@ -3255,7 +3255,7 @@ DecodeInterval(char **field, int *ftype, int nf, int range,
 						tm->tm_sec += val / 1000;
 						val -= (val / 1000) * 1000;
 						*fsec += rint((val + fval) * 1000);
-						tmask = DTK_M(MILLISECOND);
+						tmask = DTK_M(DT_MILLISECOND);
 						break;
 
 					case DTK_SECOND:
@@ -3267,7 +3267,7 @@ DecodeInterval(char **field, int *ftype, int nf, int range,
 						 * microsecond and millisecond input as well.
 						 */
 						if (fval == 0)
-							tmask = DTK_M(SECOND);
+							tmask = DTK_M(DT_SECOND);
 						else
 							tmask = DTK_ALL_SECS_M;
 						break;
@@ -3275,60 +3275,60 @@ DecodeInterval(char **field, int *ftype, int nf, int range,
 					case DTK_MINUTE:
 						tm->tm_min += val;
 						AdjustFractSeconds(fval, tm, fsec, SECS_PER_MINUTE);
-						tmask = DTK_M(MINUTE);
+						tmask = DTK_M(DT_MINUTE);
 						break;
 
 					case DTK_HOUR:
 						tm->tm_hour += val;
 						AdjustFractSeconds(fval, tm, fsec, SECS_PER_HOUR);
-						tmask = DTK_M(HOUR);
+						tmask = DTK_M(DT_HOUR);
 						type = DTK_DAY; /* set for next field */
 						break;
 
 					case DTK_DAY:
 						tm->tm_mday += val;
 						AdjustFractSeconds(fval, tm, fsec, SECS_PER_DAY);
-						tmask = DTK_M(DAY);
+						tmask = DTK_M(DT_DAY);
 						break;
 
 					case DTK_WEEK:
 						tm->tm_mday += val * 7;
 						AdjustFractDays(fval, tm, fsec, 7);
-						tmask = DTK_M(WEEK);
+						tmask = DTK_M(DT_WEEK);
 						break;
 
 					case DTK_MONTH:
 						tm->tm_mon += val;
 						AdjustFractDays(fval, tm, fsec, DAYS_PER_MONTH);
-						tmask = DTK_M(MONTH);
+						tmask = DTK_M(DT_MONTH);
 						break;
 
 					case DTK_YEAR:
 						tm->tm_year += val;
 						if (fval != 0)
 							tm->tm_mon += fval * MONTHS_PER_YEAR;
-						tmask = DTK_M(YEAR);
+						tmask = DTK_M(DT_YEAR);
 						break;
 
 					case DTK_DECADE:
 						tm->tm_year += val * 10;
 						if (fval != 0)
 							tm->tm_mon += fval * MONTHS_PER_YEAR * 10;
-						tmask = DTK_M(DECADE);
+						tmask = DTK_M(DT_DECADE);
 						break;
 
 					case DTK_CENTURY:
 						tm->tm_year += val * 100;
 						if (fval != 0)
 							tm->tm_mon += fval * MONTHS_PER_YEAR * 100;
-						tmask = DTK_M(CENTURY);
+						tmask = DTK_M(DT_CENTURY);
 						break;
 
 					case DTK_MILLENNIUM:
 						tm->tm_year += val * 1000;
 						if (fval != 0)
 							tm->tm_mon += fval * MONTHS_PER_YEAR * 1000;
-						tmask = DTK_M(MILLENNIUM);
+						tmask = DTK_M(DT_MILLENNIUM);
 						break;
 
 					default:
@@ -3339,22 +3339,22 @@ DecodeInterval(char **field, int *ftype, int nf, int range,
 			case DTK_STRING:
 			case DTK_SPECIAL:
 				type = DecodeUnits(i, field[i], &val);
-				if (type == IGNORE_DTF)
+				if (type == DT_IGNORE_DTF)
 					continue;
 
 				tmask = 0;		/* DTK_M(type); */
 				switch (type)
 				{
-					case UNITS:
+					case DT_UNITS:
 						type = val;
 						break;
 
-					case AGO:
+					case DT_AGO:
 						is_before = true;
 						type = val;
 						break;
 
-					case RESERV:
+					case DT_RESERV:
 						tmask = (DTK_DATE_M | DTK_TIME_M);
 						*dtype = val;
 						break;
@@ -3732,13 +3732,13 @@ DecodeUnits(int field, char *lowtoken, int *val)
 
 	tp = deltacache[field];
 	/* use strncmp so that we match truncated tokens */
-	if (tp == NULL || strncmp(lowtoken, tp->token, TOKMAXLEN) != 0)
+	if (tp == NULL || strncmp(lowtoken, tp->token, DT_TOKMAXLEN) != 0)
 	{
 		tp = datebsearch(lowtoken, deltatktbl, szdeltatktbl);
 	}
 	if (tp == NULL)
 	{
-		type = UNKNOWN_FIELD;
+		type = DT_UNKNOWN_FIELD;
 		*val = 0;
 	}
 	else
@@ -3823,7 +3823,7 @@ datebsearch(const char *key, const datetkn *base, int nel)
 			if (result == 0)
 			{
 				/* use strncmp so that we match truncated tokens */
-				result = strncmp(key, position->token, TOKMAXLEN);
+				result = strncmp(key, position->token, DT_TOKMAXLEN);
 				if (result == 0)
 					return position;
 			}
@@ -4437,12 +4437,12 @@ CheckDateTokenTable(const char *tablename, const datetkn *base, int nel)
 	for (i = 0; i < nel; i++)
 	{
 		/* check for token strings that don't fit */
-		if (strlen(base[i].token) > TOKMAXLEN)
+		if (strlen(base[i].token) > DT_TOKMAXLEN)
 		{
 			/* %.*s is safe since all our tokens are ASCII */
 			elog(LOG, "token too long in %s table: \"%.*s\"",
 				 tablename,
-				 TOKMAXLEN + 1, base[i].token);
+				 DT_TOKMAXLEN + 1, base[i].token);
 			ok = false;
 			break;				/* don't risk applying strcmp */
 		}
@@ -4559,7 +4559,7 @@ ConvertTimeZoneAbbrevs(struct tzEntry *abbrevs, int n)
 		datetkn    *dtoken = tbl->abbrevs + i;
 
 		/* use strlcpy to truncate name if necessary */
-		strlcpy(dtoken->token, abbr->abbrev, TOKMAXLEN + 1);
+		strlcpy(dtoken->token, abbr->abbrev, DT_TOKMAXLEN + 1);
 		if (abbr->zone != NULL)
 		{
 			/* Allocate a DynamicZoneAbbrev for this abbreviation */
@@ -4570,7 +4570,7 @@ ConvertTimeZoneAbbrevs(struct tzEntry *abbrevs, int n)
 			dtza->tz = NULL;
 			strcpy(dtza->zone, abbr->zone);
 
-			dtoken->type = DYNTZ;
+			dtoken->type = DT_DYNTZ;
 			/* value is offset from table start to DynamicZoneAbbrev */
 			dtoken->value = (int32) tbl_size;
 
@@ -4580,7 +4580,7 @@ ConvertTimeZoneAbbrevs(struct tzEntry *abbrevs, int n)
 		}
 		else
 		{
-			dtoken->type = abbr->is_dst ? DTZ : TZ;
+			dtoken->type = abbr->is_dst ? DT_DTZ : DT_TZ;
 			dtoken->value = abbr->offset;
 		}
 	}
@@ -4616,7 +4616,7 @@ FetchDynamicTimeZone(TimeZoneAbbrevTable *tbl, const datetkn *tp)
 	DynamicZoneAbbrev *dtza;
 
 	/* Just some sanity checks to prevent indexing off into nowhere */
-	Assert(tp->type == DYNTZ);
+	Assert(tp->type == DT_DYNTZ);
 	Assert(tp->value > 0 && tp->value < tbl->tblsize);
 
 	dtza = (DynamicZoneAbbrev *) ((char *) tbl + tp->value);
@@ -4656,7 +4656,7 @@ pg_timezone_abbrevs(PG_FUNCTION_ARGS)
 	Datum		values[3];
 	bool		nulls[3];
 	const datetkn *tp;
-	char		buffer[TOKMAXLEN + 1];
+	char		buffer[DT_TOKMAXLEN + 1];
 	int			gmtoffset;
 	bool		is_dst;
 	unsigned char *p;
@@ -4710,15 +4710,15 @@ pg_timezone_abbrevs(PG_FUNCTION_ARGS)
 
 	switch (tp->type)
 	{
-		case TZ:
+		case DT_TZ:
 			gmtoffset = tp->value;
 			is_dst = false;
 			break;
-		case DTZ:
+		case DT_DTZ:
 			gmtoffset = tp->value;
 			is_dst = true;
 			break;
-		case DYNTZ:
+		case DT_DYNTZ:
 			{
 				/* Determine the current meaning of the abbrev */
 				pg_tz	   *tzp;

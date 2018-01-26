@@ -2079,7 +2079,7 @@ map_sql_value_to_xml_value(Datum value, Oid type, bool xml_escape_strings)
 				{
 					DateADT		date;
 					struct pg_tm tm;
-					char		buf[MAXDATELEN + 1];
+					char		buf[DT_MAXDATELEN + 1];
 
 					date = DatumGetDateADT(value);
 					/* XSD doesn't support infinite values */
@@ -2100,7 +2100,7 @@ map_sql_value_to_xml_value(Datum value, Oid type, bool xml_escape_strings)
 					Timestamp	timestamp;
 					struct pg_tm tm;
 					fsec_t		fsec;
-					char		buf[MAXDATELEN + 1];
+					char		buf[DT_MAXDATELEN + 1];
 
 					timestamp = DatumGetTimestamp(value);
 
@@ -2127,7 +2127,7 @@ map_sql_value_to_xml_value(Datum value, Oid type, bool xml_escape_strings)
 					int			tz;
 					fsec_t		fsec;
 					const char *tzn = NULL;
-					char		buf[MAXDATELEN + 1];
+					char		buf[DT_MAXDATELEN + 1];
 
 					timestamp = DatumGetTimestamp(value);
 

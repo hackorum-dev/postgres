@@ -122,12 +122,12 @@ date_in(PG_FUNCTION_ARGS)
 	int			dtype;
 	int			nf;
 	int			dterr;
-	char	   *field[MAXDATEFIELDS];
-	int			ftype[MAXDATEFIELDS];
-	char		workbuf[MAXDATELEN + 1];
+	char	   *field[DT_MAXDATEFIELDS];
+	int			ftype[DT_MAXDATEFIELDS];
+	char		workbuf[DT_MAXDATELEN + 1];
 
 	dterr = ParseDateTime(str, workbuf, sizeof(workbuf),
-						  field, ftype, MAXDATEFIELDS, &nf);
+						  field, ftype, DT_MAXDATEFIELDS, &nf);
 	if (dterr == 0)
 		dterr = DecodeDateTime(field, ftype, nf, &dtype, tm, &fsec, &tzp);
 	if (dterr != 0)
@@ -190,7 +190,7 @@ date_out(PG_FUNCTION_ARGS)
 	char	   *result;
 	struct pg_tm tt,
 			   *tm = &tt;
-	char		buf[MAXDATELEN + 1];
+	char		buf[DT_MAXDATELEN + 1];
 
 	if (DATE_NOT_FINITE(date))
 		EncodeSpecialDate(date, buf);
@@ -297,9 +297,9 @@ void
 EncodeSpecialDate(DateADT dt, char *str)
 {
 	if (DATE_IS_NOBEGIN(dt))
-		strcpy(str, EARLY);
+		strcpy(str, DT_EARLY);
 	else if (DATE_IS_NOEND(dt))
-		strcpy(str, LATE);
+		strcpy(str, DT_LATE);
 	else						/* shouldn't happen */
 		elog(ERROR, "invalid argument for EncodeSpecialDate");
 }
@@ -1211,13 +1211,13 @@ time_in(PG_FUNCTION_ARGS)
 	int			tz;
 	int			nf;
 	int			dterr;
-	char		workbuf[MAXDATELEN + 1];
-	char	   *field[MAXDATEFIELDS];
+	char		workbuf[DT_MAXDATELEN + 1];
+	char	   *field[DT_MAXDATEFIELDS];
 	int			dtype;
-	int			ftype[MAXDATEFIELDS];
+	int			ftype[DT_MAXDATEFIELDS];
 
 	dterr = ParseDateTime(str, workbuf, sizeof(workbuf),
-						  field, ftype, MAXDATEFIELDS, &nf);
+						  field, ftype, DT_MAXDATEFIELDS, &nf);
 	if (dterr == 0)
 		dterr = DecodeTimeOnly(field, ftype, nf, &dtype, tm, &fsec, &tz);
 	if (dterr != 0)
@@ -1268,7 +1268,7 @@ time_out(PG_FUNCTION_ARGS)
 	struct pg_tm tt,
 			   *tm = &tt;
 	fsec_t		fsec;
-	char		buf[MAXDATELEN + 1];
+	char		buf[DT_MAXDATELEN + 1];
 
 	time2tm(time, tm, &fsec);
 	EncodeTimeOnly(tm, fsec, false, 0, DateStyle, buf);
@@ -1861,10 +1861,10 @@ time_part(PG_FUNCTION_ARGS)
 											false);
 
 	type = DecodeUnits(0, lowunits, &val);
-	if (type == UNKNOWN_FIELD)
+	if (type == DT_UNKNOWN_FIELD)
 		type = DecodeSpecial(0, lowunits, &val);
 
-	if (type == UNITS)
+	if (type == DT_UNITS)
 	{
 		fsec_t		fsec;
 		struct pg_tm tt,
@@ -1913,7 +1913,7 @@ time_part(PG_FUNCTION_ARGS)
 				result = 0;
 		}
 	}
-	else if (type == RESERV && val == DTK_EPOCH)
+	else if (type == DT_RESERV && val == DTK_EPOCH)
 	{
 		result = time / 1000000.0;
 	}
@@ -1963,13 +1963,13 @@ timetz_in(PG_FUNCTION_ARGS)
 	int			tz;
 	int			nf;
 	int			dterr;
-	char		workbuf[MAXDATELEN + 1];
-	char	   *field[MAXDATEFIELDS];
+	char		workbuf[DT_MAXDATELEN + 1];
+	char	   *field[DT_MAXDATEFIELDS];
 	int			dtype;
-	int			ftype[MAXDATEFIELDS];
+	int			ftype[DT_MAXDATEFIELDS];
 
 	dterr = ParseDateTime(str, workbuf, sizeof(workbuf),
-						  field, ftype, MAXDATEFIELDS, &nf);
+						  field, ftype, DT_MAXDATEFIELDS, &nf);
 	if (dterr == 0)
 		dterr = DecodeTimeOnly(field, ftype, nf, &dtype, tm, &fsec, &tz);
 	if (dterr != 0)
@@ -1991,7 +1991,7 @@ timetz_out(PG_FUNCTION_ARGS)
 			   *tm = &tt;
 	fsec_t		fsec;
 	int			tz;
-	char		buf[MAXDATELEN + 1];
+	char		buf[DT_MAXDATELEN + 1];
 
 	timetz2tm(time, tm, &fsec, &tz);
 	EncodeTimeOnly(tm, fsec, true, tz, DateStyle, buf);
@@ -2558,10 +2558,10 @@ timetz_part(PG_FUNCTION_ARGS)
 											false);
 
 	type = DecodeUnits(0, lowunits, &val);
-	if (type == UNKNOWN_FIELD)
+	if (type == DT_UNKNOWN_FIELD)
 		type = DecodeSpecial(0, lowunits, &val);
 
-	if (type == UNITS)
+	if (type == DT_UNITS)
 	{
 		double		dummy;
 		int			tz;
@@ -2623,7 +2623,7 @@ timetz_part(PG_FUNCTION_ARGS)
 				result = 0;
 		}
 	}
-	else if (type == RESERV && val == DTK_EPOCH)
+	else if (type == DT_RESERV && val == DTK_EPOCH)
 	{
 		result = time->time / 1000000.0 + time->zone;
 	}
@@ -2673,12 +2673,12 @@ timetz_zone(PG_FUNCTION_ARGS)
 
 	type = DecodeTimezoneAbbrev(0, lowzone, &val, &tzp);
 
-	if (type == TZ || type == DTZ)
+	if (type == DT_TZ || type == DT_DTZ)
 	{
 		/* fixed-offset abbreviation */
 		tz = -val;
 	}
-	else if (type == DYNTZ)
+	else if (type == DT_DYNTZ)
 	{
 		/* dynamic-offset abbreviation, resolve using current time */
 		pg_time_t	now = (pg_time_t) time(NULL);

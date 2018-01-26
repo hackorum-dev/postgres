@@ -56,10 +56,10 @@ validateTzEntry(tzEntry *tzentry)
 	 * Check restrictions imposed by datetkntbl storage format (see
 	 * datetime.c)
 	 */
-	if (strlen(tzentry->abbrev) > TOKMAXLEN)
+	if (strlen(tzentry->abbrev) > DT_TOKMAXLEN)
 	{
 		GUC_check_errmsg("time zone abbreviation \"%s\" is too long (maximum %d characters) in time zone file \"%s\", line %d",
-						 tzentry->abbrev, TOKMAXLEN,
+						 tzentry->abbrev, DT_TOKMAXLEN,
 						 tzentry->filename, tzentry->lineno);
 		return false;
 	}

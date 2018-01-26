@@ -1608,7 +1608,7 @@ zone_value:
 					if ($3 != NIL)
 					{
 						A_Const *n = (A_Const *) linitial($3);
-						if ((n->val.val.ival & ~(INTERVAL_MASK(HOUR) | INTERVAL_MASK(MINUTE))) != 0)
+						if ((n->val.val.ival & ~(INTERVAL_MASK(DT_HOUR) | INTERVAL_MASK(DT_MINUTE))) != 0)
 							ereport(ERROR,
 									(errcode(ERRCODE_SYNTAX_ERROR),
 									 errmsg("time zone interval must be HOUR or HOUR TO MINUTE"),
@@ -12772,58 +12772,58 @@ opt_timezone:
 
 opt_interval:
 			YEAR_P
-				{ $$ = list_make1(makeIntConst(INTERVAL_MASK(YEAR), @1)); }
+				{ $$ = list_make1(makeIntConst(INTERVAL_MASK(DT_YEAR), @1)); }
 			| MONTH_P
-				{ $$ = list_make1(makeIntConst(INTERVAL_MASK(MONTH), @1)); }
+				{ $$ = list_make1(makeIntConst(INTERVAL_MASK(DT_MONTH), @1)); }
 			| DAY_P
-				{ $$ = list_make1(makeIntConst(INTERVAL_MASK(DAY), @1)); }
+				{ $$ = list_make1(makeIntConst(INTERVAL_MASK(DT_DAY), @1)); }
 			| HOUR_P
-				{ $$ = list_make1(makeIntConst(INTERVAL_MASK(HOUR), @1)); }
+				{ $$ = list_make1(makeIntConst(INTERVAL_MASK(DT_HOUR), @1)); }
 			| MINUTE_P
-				{ $$ = list_make1(makeIntConst(INTERVAL_MASK(MINUTE), @1)); }
+				{ $$ = list_make1(makeIntConst(INTERVAL_MASK(DT_MINUTE), @1)); }
 			| interval_second
 				{ $$ = $1; }
 			| YEAR_P TO MONTH_P
 				{
-					$$ = list_make1(makeIntConst(INTERVAL_MASK(YEAR) |
-												 INTERVAL_MASK(MONTH), @1));
+					$$ = list_make1(makeIntConst(INTERVAL_MASK(DT_YEAR) |
+												 INTERVAL_MASK(DT_MONTH), @1));
 				}
 			| DAY_P TO HOUR_P
 				{
-					$$ = list_make1(makeIntConst(INTERVAL_MASK(DAY) |
-												 INTERVAL_MASK(HOUR), @1));
+					$$ = list_make1(makeIntConst(INTERVAL_MASK(DT_DAY) |
+												 INTERVAL_MASK(DT_HOUR), @1));
 				}
 			| DAY_P TO MINUTE_P
 				{
-					$$ = list_make1(makeIntConst(INTERVAL_MASK(DAY) |
-												 INTERVAL_MASK(HOUR) |
-												 INTERVAL_MASK(MINUTE), @1));
+					$$ = list_make1(makeIntConst(INTERVAL_MASK(DT_DAY) |
+												 INTERVAL_MASK(DT_HOUR) |
+												 INTERVAL_MASK(DT_MINUTE), @1));
 				}
 			| DAY_P TO interval_second
 				{
 					$$ = $3;
-					linitial($$) = makeIntConst(INTERVAL_MASK(DAY) |
-												INTERVAL_MASK(HOUR) |
-												INTERVAL_MASK(MINUTE) |
-												INTERVAL_MASK(SECOND), @1);
+					linitial($$) = makeIntConst(INTERVAL_MASK(DT_DAY) |
+												INTERVAL_MASK(DT_HOUR) |
+												INTERVAL_MASK(DT_MINUTE) |
+												INTERVAL_MASK(DT_SECOND), @1);
 				}
 			| HOUR_P TO MINUTE_P
 				{
-					$$ = list_make1(makeIntConst(INTERVAL_MASK(HOUR) |
-												 INTERVAL_MASK(MINUTE), @1));
+					$$ = list_make1(makeIntConst(INTERVAL_MASK(DT_HOUR) |
+												 INTERVAL_MASK(DT_MINUTE), @1));
 				}
 			| HOUR_P TO interval_second
 				{
 					$$ = $3;
-					linitial($$) = makeIntConst(INTERVAL_MASK(HOUR) |
-												INTERVAL_MASK(MINUTE) |
-												INTERVAL_MASK(SECOND), @1);
+					linitial($$) = makeIntConst(INTERVAL_MASK(DT_HOUR) |
+												INTERVAL_MASK(DT_MINUTE) |
+												INTERVAL_MASK(DT_SECOND), @1);
 				}
 			| MINUTE_P TO interval_second
 				{
 					$$ = $3;
-					linitial($$) = makeIntConst(INTERVAL_MASK(MINUTE) |
-												INTERVAL_MASK(SECOND), @1);
+					linitial($$) = makeIntConst(INTERVAL_MASK(DT_MINUTE) |
+												INTERVAL_MASK(DT_SECOND), @1);
 				}
 			| /*EMPTY*/
 				{ $$ = NIL; }
@@ -12832,11 +12832,11 @@ opt_interval:
 interval_second:
 			SECOND_P
 				{
-					$$ = list_make1(makeIntConst(INTERVAL_MASK(SECOND), @1));
+					$$ = list_make1(makeIntConst(INTERVAL_MASK(DT_SECOND), @1));
 				}
 			| SECOND_P '(' Iconst ')'
 				{
-					$$ = list_make2(makeIntConst(INTERVAL_MASK(SECOND), @1),
+					$$ = list_make2(makeIntConst(INTERVAL_MASK(DT_SECOND), @1),
 									makeIntConst($3, @3));
 				}
 		;

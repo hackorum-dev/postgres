@@ -3771,7 +3771,7 @@ do_to_timestamp(text *date_txt, text *fmt,
 			if (tmfc.bc && tm->tm_year > 0)
 				tm->tm_year = -(tm->tm_year - 1);
 		}
-		fmask |= DTK_M(YEAR);
+		fmask |= DTK_M(DT_YEAR);
 	}
 	else if (tmfc.cc)
 	{
@@ -3784,7 +3784,7 @@ do_to_timestamp(text *date_txt, text *fmt,
 		else
 			/* +1 because year == 599 is 600 BC */
 			tm->tm_year = tmfc.cc * 100 + 1;
-		fmask |= DTK_M(YEAR);
+		fmask |= DTK_M(DT_YEAR);
 	}
 
 	if (tmfc.j)
@@ -3816,12 +3816,12 @@ do_to_timestamp(text *date_txt, text *fmt,
 	if (tmfc.dd)
 	{
 		tm->tm_mday = tmfc.dd;
-		fmask |= DTK_M(DAY);
+		fmask |= DTK_M(DT_DAY);
 	}
 	if (tmfc.mm)
 	{
 		tm->tm_mon = tmfc.mm;
-		fmask |= DTK_M(MONTH);
+		fmask |= DTK_M(DT_MONTH);
 	}
 
 	if (tmfc.ddd && (tm->tm_mon <= 1 || tm->tm_mday <= 1))
@@ -3869,7 +3869,7 @@ do_to_timestamp(text *date_txt, text *fmt,
 			if (tm->tm_mday <= 1)
 				tm->tm_mday = tmfc.ddd - y[i - 1];
 
-			fmask |= DTK_M(MONTH) | DTK_M(DAY);
+			fmask |= DTK_M(DT_MONTH) | DTK_M(DT_DAY);
 		}
 	}
 

@@ -202,14 +202,14 @@ abstimein(PG_FUNCTION_ARGS)
 	struct pg_tm date,
 			   *tm = &date;
 	int			dterr;
-	char	   *field[MAXDATEFIELDS];
-	char		workbuf[MAXDATELEN + 1];
+	char	   *field[DT_MAXDATEFIELDS];
+	char		workbuf[DT_MAXDATELEN + 1];
 	int			dtype;
 	int			nf,
-				ftype[MAXDATEFIELDS];
+				ftype[DT_MAXDATEFIELDS];
 
 	dterr = ParseDateTime(str, workbuf, sizeof(workbuf),
-						  field, ftype, MAXDATEFIELDS, &nf);
+						  field, ftype, DT_MAXDATEFIELDS, &nf);
 	if (dterr == 0)
 		dterr = DecodeDateTime(field, ftype, nf, &dtype, tm, &fsec, &tz);
 	if (dterr != 0)
@@ -265,8 +265,8 @@ abstimeout(PG_FUNCTION_ARGS)
 	double		fsec = 0;
 	struct pg_tm tt,
 			   *tm = &tt;
-	char		buf[MAXDATELEN + 1];
-	char		zone[MAXDATELEN + 1],
+	char		buf[DT_MAXDATELEN + 1];
+	char		zone[DT_MAXDATELEN + 1],
 			   *tzn = zone;
 
 	switch (time)
@@ -276,13 +276,13 @@ abstimeout(PG_FUNCTION_ARGS)
 			 * 'invalid' for abstime for now, but dump it someday.
 			 */
 		case INVALID_ABSTIME:
-			strcpy(buf, INVALID);
+			strcpy(buf, DT_INVALID);
 			break;
 		case NOEND_ABSTIME:
-			strcpy(buf, LATE);
+			strcpy(buf, DT_LATE);
 			break;
 		case NOSTART_ABSTIME:
-			strcpy(buf, EARLY);
+			strcpy(buf, DT_EARLY);
 			break;
 		default:
 			abstime2tm(time, &tz, tm, &tzn);
@@ -471,7 +471,7 @@ abstime_timestamp(PG_FUNCTION_ARGS)
 	struct pg_tm tt,
 			   *tm = &tt;
 	int			tz;
-	char		zone[MAXDATELEN + 1],
+	char		zone[DT_MAXDATELEN + 1],
 			   *tzn = zone;
 
 	switch (abstime)
@@ -544,7 +544,7 @@ abstime_timestamptz(PG_FUNCTION_ARGS)
 	struct pg_tm tt,
 			   *tm = &tt;
 	int			tz;
-	char		zone[MAXDATELEN + 1],
+	char		zone[DT_MAXDATELEN + 1],
 			   *tzn = zone;
 
 	switch (abstime)
@@ -594,13 +594,13 @@ reltimein(PG_FUNCTION_ARGS)
 	fsec_t		fsec;
 	int			dtype;
 	int			dterr;
-	char	   *field[MAXDATEFIELDS];
+	char	   *field[DT_MAXDATEFIELDS];
 	int			nf,
-				ftype[MAXDATEFIELDS];
-	char		workbuf[MAXDATELEN + 1];
+				ftype[DT_MAXDATEFIELDS];
+	char		workbuf[DT_MAXDATELEN + 1];
 
 	dterr = ParseDateTime(str, workbuf, sizeof(workbuf),
-						  field, ftype, MAXDATEFIELDS, &nf);
+						  field, ftype, DT_MAXDATEFIELDS, &nf);
 	if (dterr == 0)
 		dterr = DecodeInterval(field, ftype, nf, INTERVAL_FULL_RANGE,
 							   &dtype, tm, &fsec);
@@ -644,7 +644,7 @@ reltimeout(PG_FUNCTION_ARGS)
 	char	   *result;
 	struct pg_tm tt,
 			   *tm = &tt;
-	char		buf[MAXDATELEN + 1];
+	char		buf[DT_MAXDATELEN + 1];
 
 	reltime2tm(time, tm);
 	EncodeInterval(tm, 0, IntervalStyle, buf);

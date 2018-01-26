@@ -49,9 +49,9 @@ timestamptz_to_time_t(TimestampTz t)
 const char *
 timestamptz_to_str(TimestampTz dt)
 {
-	static char buf[MAXDATELEN + 1];
-	char		ts[MAXDATELEN + 1];
-	char		zone[MAXDATELEN + 1];
+	static char buf[DT_MAXDATELEN + 1];
+	char		ts[DT_MAXDATELEN + 1];
+	char		zone[DT_MAXDATELEN + 1];
 	time_t		result = (time_t) timestamptz_to_time_t(dt);
 	struct tm  *ltime = localtime(&result);
 

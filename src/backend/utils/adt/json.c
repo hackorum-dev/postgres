@@ -1504,7 +1504,7 @@ datum_to_json(Datum val, bool is_null, StringInfo result,
 			break;
 		case JSONTYPE_DATE:
 			{
-				char		buf[MAXDATELEN + 1];
+				char		buf[DT_MAXDATELEN + 1];
 
 				JsonEncodeDateTime(buf, val, DATEOID);
 				appendStringInfo(result, "\"%s\"", buf);
@@ -1512,7 +1512,7 @@ datum_to_json(Datum val, bool is_null, StringInfo result,
 			break;
 		case JSONTYPE_TIMESTAMP:
 			{
-				char		buf[MAXDATELEN + 1];
+				char		buf[DT_MAXDATELEN + 1];
 
 				JsonEncodeDateTime(buf, val, TIMESTAMPOID);
 				appendStringInfo(result, "\"%s\"", buf);
@@ -1520,7 +1520,7 @@ datum_to_json(Datum val, bool is_null, StringInfo result,
 			break;
 		case JSONTYPE_TIMESTAMPTZ:
 			{
-				char		buf[MAXDATELEN + 1];
+				char		buf[DT_MAXDATELEN + 1];
 
 				JsonEncodeDateTime(buf, val, TIMESTAMPTZOID);
 				appendStringInfo(result, "\"%s\"", buf);
@@ -1556,7 +1556,7 @@ char *
 JsonEncodeDateTime(char *buf, Datum value, Oid typid)
 {
 	if (!buf)
-		buf = palloc(MAXDATELEN + 1);
+		buf = palloc(DT_MAXDATELEN + 1);
 
 	switch (typid)
 	{

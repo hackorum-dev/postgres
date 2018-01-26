@@ -33,34 +33,34 @@ struct tzEntry;
  * ----------------------------------------------------------------
  */
 
-#define DAGO			"ago"
-#define DCURRENT		"current"
-#define EPOCH			"epoch"
-#define INVALID			"invalid"
-#define EARLY			"-infinity"
-#define LATE			"infinity"
-#define NOW				"now"
-#define TODAY			"today"
-#define TOMORROW		"tomorrow"
-#define YESTERDAY		"yesterday"
-#define ZULU			"zulu"
+#define DT_DAGO				"ago"
+#define DT_DCURRENT			"current"
+#define DT_EPOCH			"epoch"
+#define DT_INVALID			"invalid"
+#define DT_EARLY			"-infinity"
+#define DT_LATE				"infinity"
+#define DT_NOW				"now"
+#define DT_TODAY			"today"
+#define DT_TOMORROW			"tomorrow"
+#define DT_YESTERDAY		"yesterday"
+#define DT_ZULU				"zulu"
 
-#define DMICROSEC		"usecond"
-#define DMILLISEC		"msecond"
-#define DSECOND			"second"
-#define DMINUTE			"minute"
-#define DHOUR			"hour"
-#define DDAY			"day"
-#define DWEEK			"week"
-#define DMONTH			"month"
-#define DQUARTER		"quarter"
-#define DYEAR			"year"
-#define DDECADE			"decade"
-#define DCENTURY		"century"
-#define DMILLENNIUM		"millennium"
-#define DA_D			"ad"
-#define DB_C			"bc"
-#define DTIMEZONE		"timezone"
+#define DT_DMICROSEC		"usecond"
+#define DT_DMILLISEC		"msecond"
+#define DT_DSECOND			"second"
+#define DT_DMINUTE			"minute"
+#define DT_DHOUR			"hour"
+#define DT_DDAY				"day"
+#define DT_DWEEK			"week"
+#define DT_DMONTH			"month"
+#define DT_DQUARTER			"quarter"
+#define DT_DYEAR			"year"
+#define DT_DDECADE			"decade"
+#define DT_DCENTURY			"century"
+#define DT_DMILLENNIUM		"millennium"
+#define DT_DA_D				"ad"
+#define DT_DB_C				"bc"
+#define DT_DTIMEZONE		"timezone"
 
 /*
  * Fundamental time field definitions for parsing.
@@ -69,12 +69,12 @@ struct tzEntry;
  *	Millennium: ad, bc
  */
 
-#define AM		0
-#define PM		1
-#define HR24	2
+#define DT_AM				0
+#define DT_PM				1
+#define DT_HR24				2
 
-#define AD		0
-#define BC		1
+#define DT_AD				0
+#define DT_BC				1
 
 /*
  * Field types for time decoding.
@@ -88,41 +88,41 @@ struct tzEntry;
  * are stored in typmods, you can't change them without initdb!
  */
 
-#define RESERV	0
-#define MONTH	1
-#define YEAR	2
-#define DAY		3
-#define JULIAN	4
-#define TZ		5				/* fixed-offset timezone abbreviation */
-#define DTZ		6				/* fixed-offset timezone abbrev, DST */
-#define DYNTZ	7				/* dynamic timezone abbreviation */
-#define IGNORE_DTF	8
-#define AMPM	9
-#define HOUR	10
-#define MINUTE	11
-#define SECOND	12
-#define MILLISECOND 13
-#define MICROSECOND 14
-#define DOY		15
-#define DOW		16
-#define UNITS	17
-#define ADBC	18
+#define DT_RESERV			0
+#define DT_MONTH			1
+#define DT_YEAR				2
+#define DT_DAY				3
+#define DT_JULIAN			4
+#define DT_TZ				5			/* fixed-offset timezone abbreviation */
+#define DT_DTZ				6			/* fixed-offset timezone abbrev, DST */
+#define DT_DYNTZ			7			/* dynamic timezone abbreviation */
+#define DT_IGNORE_DTF		8
+#define DT_AMPM				9
+#define DT_HOUR				10
+#define DT_MINUTE			11
+#define DT_SECOND			12
+#define DT_MILLISECOND		13
+#define DT_MICROSECOND		14
+#define DT_DOY				15
+#define DT_DOW				16
+#define DT_UNITS			17
+#define DT_ADBC				18
 /* these are only for relative dates */
-#define AGO		19
-#define ABS_BEFORE		20
-#define ABS_AFTER		21
+#define DT_AGO				19
+#define DT_ABS_BEFORE		20
+#define DT_ABS_AFTER		21
 /* generic fields to help with parsing */
-#define ISODATE 22
-#define ISOTIME 23
+#define DT_ISODATE			22
+#define DT_ISOTIME			23
 /* these are only for parsing intervals */
-#define WEEK		24
-#define DECADE		25
-#define CENTURY		26
-#define MILLENNIUM	27
+#define DT_WEEK				24
+#define DT_DECADE			25
+#define DT_CENTURY			26
+#define DT_MILLENNIUM		27
 /* hack for parsing two-word timezone specs "MET DST" etc */
-#define DTZMOD	28				/* "DST" as a separate word */
+#define DT_ZMOD				28			/* "DST" as a separate word */
 /* reserved for unrecognized string values */
-#define UNKNOWN_FIELD	31
+#define DT_UNKNOWN_FIELD	31
 
 /*
  * Token field definitions for time parsing and decoding.
@@ -139,60 +139,60 @@ struct tzEntry;
  * renumbering values in either of these apparently-independent lists :-(
  */
 
-#define DTK_NUMBER		0
-#define DTK_STRING		1
+#define DTK_NUMBER			0
+#define DTK_STRING			1
 
-#define DTK_DATE		2
-#define DTK_TIME		3
-#define DTK_TZ			4
-#define DTK_AGO			5
+#define DTK_DATE			2
+#define DTK_TIME			3
+#define DTK_TZ				4
+#define DTK_AGO				5
 
-#define DTK_SPECIAL		6
-#define DTK_INVALID		7
-#define DTK_CURRENT		8
-#define DTK_EARLY		9
-#define DTK_LATE		10
-#define DTK_EPOCH		11
-#define DTK_NOW			12
-#define DTK_YESTERDAY	13
-#define DTK_TODAY		14
-#define DTK_TOMORROW	15
-#define DTK_ZULU		16
+#define DTK_SPECIAL			6
+#define DTK_INVALID			7
+#define DTK_CURRENT			8
+#define DTK_EARLY			9
+#define DTK_LATE			10
+#define DTK_EPOCH			11
+#define DTK_NOW				12
+#define DTK_YESTERDAY		13
+#define DTK_TODAY			14
+#define DTK_TOMORROW		15
+#define DTK_ZULU			16
 
-#define DTK_DELTA		17
-#define DTK_SECOND		18
-#define DTK_MINUTE		19
-#define DTK_HOUR		20
-#define DTK_DAY			21
-#define DTK_WEEK		22
-#define DTK_MONTH		23
-#define DTK_QUARTER		24
-#define DTK_YEAR		25
-#define DTK_DECADE		26
-#define DTK_CENTURY		27
-#define DTK_MILLENNIUM	28
-#define DTK_MILLISEC	29
-#define DTK_MICROSEC	30
-#define DTK_JULIAN		31
+#define DTK_DELTA			17
+#define DTK_SECOND			18
+#define DTK_MINUTE			19
+#define DTK_HOUR			20
+#define DTK_DAY				21
+#define DTK_WEEK			22
+#define DTK_MONTH			23
+#define DTK_QUARTER			24
+#define DTK_YEAR			25
+#define DTK_DECADE			26
+#define DTK_CENTURY			27
+#define DTK_MILLENNIUM		28
+#define DTK_MILLISEC		29
+#define DTK_MICROSEC		30
+#define DTK_JULIAN			31
 
-#define DTK_DOW			32
-#define DTK_DOY			33
-#define DTK_TZ_HOUR		34
-#define DTK_TZ_MINUTE	35
-#define DTK_ISOYEAR		36
-#define DTK_ISODOW		37
+#define DTK_DOW				32
+#define DTK_DOY				33
+#define DTK_TZ_HOUR			34
+#define DTK_TZ_MINUTE		35
+#define DTK_ISOYEAR			36
+#define DTK_ISODOW			37
 
 
 /*
  * Bit mask definitions for time parsing.
  */
 
-#define DTK_M(t)		(0x01 << (t))
+#define DTK_M(t)			(0x01 << (t))
 
 /* Convenience: a second, plus any fractional component */
-#define DTK_ALL_SECS_M	(DTK_M(SECOND) | DTK_M(MILLISECOND) | DTK_M(MICROSECOND))
-#define DTK_DATE_M		(DTK_M(YEAR) | DTK_M(MONTH) | DTK_M(DAY))
-#define DTK_TIME_M		(DTK_M(HOUR) | DTK_M(MINUTE) | DTK_ALL_SECS_M)
+#define DTK_ALL_SECS_M		(DTK_M(DT_SECOND) | DTK_M(DT_MILLISECOND) | DTK_M(DT_MICROSECOND))
+#define DTK_DATE_M			(DTK_M(DT_YEAR) | DTK_M(DT_MONTH) | DTK_M(DT_DAY))
+#define DTK_TIME_M			(DTK_M(DT_HOUR) | DTK_M(DT_MINUTE) | DTK_ALL_SECS_M)
 
 /*
  * Working buffer size for input and output of interval, timestamp, etc.
@@ -200,16 +200,16 @@ struct tzEntry;
  * will overrun buffers, so this must suffice for all possible output.  As of
  * this writing, interval_out() needs the most space at ~90 bytes.
  */
-#define MAXDATELEN		128
+#define DT_MAXDATELEN		128
 /* maximum possible number of fields in a date string */
-#define MAXDATEFIELDS	25
+#define DT_MAXDATEFIELDS	25
 /* only this many chars are stored in datetktbl */
-#define TOKMAXLEN		10
+#define DT_TOKMAXLEN		10
 
 /* keep this struct small; it gets used a lot */
 typedef struct
 {
-	char		token[TOKMAXLEN + 1];	/* always NUL-terminated */
+	char		token[DT_TOKMAXLEN + 1];	/* always NUL-terminated */
 	char		type;			/* see field type codes above */
 	int32		value;			/* meaning depends on type */
 } datetkn;
