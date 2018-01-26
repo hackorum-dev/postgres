@@ -39,7 +39,6 @@ our @EXPORT = qw(
 sub run_test_psql
 {
 	my $connstr   = $_[0];
-	my $logstring = $_[1];
 
 	my $cmd = [
 		'psql', '-X', '-A', '-t', '-c', "SELECT \$\$connected with $connstr\$\$",
@@ -59,9 +58,7 @@ sub test_connect_ok
 	my $connstr = $_[1];
 	my $test_name = $_[2];
 
-	my $result =
-	  run_test_psql("$common_connstr $connstr", "(should succeed)");
-	ok($result, $test_name || $connstr);
+	ok(run_test_psql("$common_connstr $connstr"), $test_name);
 }
 
 sub test_connect_fails
@@ -70,8 +67,7 @@ sub test_connect_fails
 	my $connstr = $_[1];
 	my $test_name = $_[2];
 
-	my $result = run_test_psql("$common_connstr $connstr", "(should fail)");
-	ok(!$result, $test_name || "$connstr (should fail)");
+	ok(!run_test_psql("$common_connstr $connstr"), $test_name);
 }
 
 # Copy a set of files, taking into account wildcards
@@ -150,9 +146,6 @@ sub switch_server_cert
 	my $certfile = $_[1];
 	my $cafile   = $_[2] || "root+client_ca";
 	my $pgdata   = $node->data_dir;
-
-	note
-	  "reloading server with certfile \"$certfile\" and cafile \"$cafile\"";
 
 	open my $sslconf, '>', "$pgdata/sslconfig.conf";
 	print $sslconf "ssl=on\n";
