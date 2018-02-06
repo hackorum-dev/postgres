@@ -86,6 +86,7 @@
 #include "storage/buffile.h"
 #include "utils/builtins.h"
 #include "utils/logtape.h"
+#include "utils/memdebug.h"
 #include "utils/memutils.h"
 
 /*
@@ -874,6 +875,13 @@ LogicalTapeFreeze(LogicalTapeSet *lts, int tapenum, TapeShare *share)
 	 */
 	if (lt->dirty)
 	{
+		/*
+		 * Since garbage bytes at the tail of the buffer may remain
+		 * uninitialized in the case of worker tuplesorts with very little
+		 * input, mark the tail as defined
+		 */
+		VALGRIND_MAKE_MEM_DEFINED(lt->buffer + lt->nbytes,
+								  lt->buffer_size - lt->nbytes);
 		TapeBlockSetNBytes(lt->buffer, lt->nbytes);
 		ltsWriteBlock(lts, lt->curBlockNumber, (void *) lt->buffer);
 		lt->writing = false;
