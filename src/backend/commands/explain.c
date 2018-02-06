@@ -652,7 +652,8 @@ ExplainPrintTriggers(ExplainState *es, QueryDesc *queryDesc)
 	bool		show_relname;
 	int			numrels = queryDesc->estate->es_num_result_relations;
 	int			numrootrels = queryDesc->estate->es_num_root_result_relations;
-	List	   *leafrels = queryDesc->estate->es_leaf_result_relations;
+	List	   *leafrels =
+						queryDesc->estate->es_tuple_routing_result_relations;
 	List	   *targrels = queryDesc->estate->es_trig_target_relations;
 	int			nr;
 	ListCell   *l;
