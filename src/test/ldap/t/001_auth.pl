@@ -2,7 +2,7 @@ use strict;
 use warnings;
 use TestLib;
 use PostgresNode;
-use Test::More tests => 19;
+use Test::More tests => 20;
 
 my ($slapd, $ldap_bin_dir, $ldap_schema_dir);
 
@@ -32,6 +32,16 @@ elsif ($^O eq 'freebsd')
 
 $ENV{PATH} = "$ldap_bin_dir:$ENV{PATH}" if $ldap_bin_dir;
 
+sub url_encode {
+	my $string = shift;
+	$string =~ s/([^a-zA-Z0-9\-_.!~*'()])/sprintf("%%%02X", ord($1))/ge;
+	$string =~ tr/ /+/;
+	return $string;
+}
+
+# for Unix-domain socket
+my $tempdir_short = TestLib::tempdir_short;
+
 my $ldap_datadir = "${TestLib::tmp_check}/openldap-data";
 my $slapd_certs = "${TestLib::tmp_check}/slapd-certs";
 my $slapd_conf = "${TestLib::tmp_check}/slapd.conf";
@@ -41,7 +51,9 @@ my $ldap_conf = "${TestLib::tmp_check}/ldap.conf";
 my $ldap_server = 'localhost';
 my $ldap_port = int(rand() * 16384) + 49152;
 my $ldaps_port = $ldap_port + 1;
+my $ldapi_socket = "$tempdir_short/ldapi";
 my $ldap_url = "ldap://$ldap_server:$ldap_port";
+my $ldapi_url = "ldapi://" . url_encode($ldapi_socket);
 my $ldaps_url = "ldaps://$ldap_server:$ldaps_port";
 my $ldap_basedn = 'dc=example,dc=net';
 my $ldap_rootdn = 'cn=Manager,dc=example,dc=net';
@@ -86,7 +98,7 @@ system_or_bail "openssl", "req", "-new", "-nodes", "-keyout", "$slapd_certs/ca.k
 system_or_bail "openssl", "req", "-new", "-nodes", "-keyout", "$slapd_certs/server.key", "-out", "$slapd_certs/server.csr", "-subj", "/cn=server";
 system_or_bail "openssl", "x509", "-req", "-in", "$slapd_certs/server.csr", "-CA", "$slapd_certs/ca.crt", "-CAkey", "$slapd_certs/ca.key", "-CAcreateserial", "-out", "$slapd_certs/server.crt";
 
-system_or_bail $slapd, '-f', $slapd_conf, '-h', "$ldap_url $ldaps_url";
+system_or_bail $slapd, '-f', $slapd_conf, '-h', "$ldap_url $ldapi_url $ldaps_url";
 
 END
 {
@@ -161,6 +173,15 @@ test_access($node, 'test0', 2, 'search+bind with LDAP URL authentication fails i
 test_access($node, 'test1', 2, 'search+bind with LDAP URL authentication fails with wrong password');
 $ENV{"PGPASSWORD"} = 'secret1';
 test_access($node, 'test1', 0, 'search+bind with LDAP URL authentication succeeds');
+
+note "ldapi";
+
+unlink($node->data_dir . '/pg_hba.conf');
+$node->append_conf('pg_hba.conf', qq{local all all ldap ldapurl="$ldapi_url/$ldap_basedn?uid?sub"});
+$node->reload;
+
+$ENV{"PGPASSWORD"} = 'secret1';
+test_access($node, 'test1', 0, 'authentication using ldapi URL succeeds');
 
 note "search filters";
 

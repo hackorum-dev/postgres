@@ -1618,6 +1618,7 @@ omicron         bryanh                  guest1
          other LDAP options in a more compact and standard form.  The format is
 <synopsis>
 ldap[s]://<replaceable>host</replaceable>[:<replaceable>port</replaceable>]/<replaceable>basedn</replaceable>[?[<replaceable>attribute</replaceable>][?[<replaceable>scope</replaceable>][?[<replaceable>filter</replaceable>]]]]
+ldapi://<replaceable>path</replaceable>/<replaceable>basedn</replaceable>[?[<replaceable>attribute</replaceable>][?[<replaceable>scope</replaceable>][?[<replaceable>filter</replaceable>]]]]
 </synopsis>
          <replaceable>scope</replaceable> must be one
          of <literal>base</literal>, <literal>one</literal>, <literal>sub</literal>,
@@ -1638,6 +1639,15 @@ ldap[s]://<replaceable>host</replaceable>[:<replaceable>port</replaceable>]/<rep
          normal URL scheme <literal>ldap</literal> and specify the
          <literal>ldaptls</literal> option in addition to
          <literal>ldapurl</literal>.
+        </para>
+
+        <para>
+         The URL scheme <literal>ldapi</literal> makes the LDAP connection
+         over a Unix-domain socket.  The <replaceable>path</replaceable> must
+         be URL-encoded, for example
+         <literal>ldapi://%2Fusr%2Flocal%2Fvar%2Fldapi</literal>.  This
+         connection method can only specified as a URL, not via separate
+         options.
         </para>
 
         <para>
