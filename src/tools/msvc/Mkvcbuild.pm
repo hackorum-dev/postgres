@@ -526,8 +526,9 @@ sub mkvcbuild
 		# ActivePerl 5.16 provided perl516.lib; 5.18 provided libperl518.a
 		my @perl_libs =
 		  grep { /perl\d+\.lib$|libperl\d+\.a$/ } glob($perl_path);
-		if (@perl_libs == 1)
+		if (@perl_libs > 0)
 		{
+                        # With the new ActivePerl release 5.24.3 both the .a and the .lib are available. Use the .lib if both are found 
 			$plperl->AddLibrary($perl_libs[0]);
 		}
                 elsif (@perl_libs ==2)
