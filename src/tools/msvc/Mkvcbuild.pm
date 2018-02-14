@@ -530,10 +530,14 @@ sub mkvcbuild
 		{
 			$plperl->AddLibrary($perl_libs[0]);
 		}
+                elsif (@perl_libs ==2)
+                {
+                        # With the new ActivePerl release 5.24.3 both the .a and the .lib are available.  Use the .a
+                        $plperl->AddLibrary($perl_libs[1]);
+                }
 		else
 		{
-			die
-"could not identify perl library version matching pattern $perl_path\n";
+			die "could not identify perl library version matching pattern $perl_path\n";
 		}
 
 		# Add defines from Perl's ccflags; see PGAC_CHECK_PERL_EMBED_CCFLAGS
