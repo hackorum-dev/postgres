@@ -22,13 +22,15 @@
  */
 #include "postgres.h"
 
-#include "storage/pg_sema.h"
 #include "storage/shmem.h"
 #include "storage/spin.h"
 
 
 #ifndef HAVE_SPINLOCKS
+#define RequredShmemSize (SpinlockSemas() * sizeof(PGSemaphore))
 PGSemaphore *SpinlockSemaArray;
+#else
+#define RequiredShmemSize 0
 #endif
 
 /*
@@ -38,7 +40,7 @@ PGSemaphore *SpinlockSemaArray;
 Size
 SpinlockSemaSize(void)
 {
-	return SpinlockSemas() * sizeof(PGSemaphore);
+	return RequiredShmemSize;
 }
 
 #ifdef HAVE_SPINLOCKS
