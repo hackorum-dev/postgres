@@ -198,7 +198,7 @@ static void get_relation_column_alias_ids(Var *node, RelOptInfo *foreignrel,
  */
 void
 classifyConditions(PlannerInfo *root,
-				   RelOptInfo *baserel,
+				   RelOptInfo *foreignrel,
 				   List *input_conds,
 				   List **remote_conds,
 				   List **local_conds)
@@ -212,7 +212,7 @@ classifyConditions(PlannerInfo *root,
 	{
 		RestrictInfo *ri = lfirst_node(RestrictInfo, lc);
 
-		if (is_foreign_expr(root, baserel, ri->clause))
+		if (is_foreign_expr(root, foreignrel, ri->clause))
 			*remote_conds = lappend(*remote_conds, ri);
 		else
 			*local_conds = lappend(*local_conds, ri);
@@ -224,29 +224,29 @@ classifyConditions(PlannerInfo *root,
  */
 bool
 is_foreign_expr(PlannerInfo *root,
-				RelOptInfo *baserel,
+				RelOptInfo *foreignrel,
 				Expr *expr)
 {
 	foreign_glob_cxt glob_cxt;
 	foreign_loc_cxt loc_cxt;
-	PgFdwRelationInfo *fpinfo = (PgFdwRelationInfo *) (baserel->fdw_private);
+	PgFdwRelationInfo *fpinfo = (PgFdwRelationInfo *) (foreignrel->fdw_private);
 
 	/*
 	 * Check that the expression consists of nodes that are safe to execute
 	 * remotely.
 	 */
 	glob_cxt.root = root;
-	glob_cxt.foreignrel = baserel;
+	glob_cxt.foreignrel = foreignrel;
 
 	/*
 	 * For an upper relation, use relids from its underneath scan relation,
 	 * because the upperrel's own relids currently aren't set to anything
 	 * meaningful by the core code.  For other relation, use their own relids.
 	 */
-	if (IS_UPPER_REL(baserel))
+	if (IS_UPPER_REL(foreignrel))
 		glob_cxt.relids = fpinfo->outerrel->relids;
 	else
-		glob_cxt.relids = baserel->relids;
+		glob_cxt.relids = foreignrel->relids;
 	loc_cxt.collation = InvalidOid;
 	loc_cxt.state = FDW_COLLATE_NONE;
 	if (!foreign_expr_walker((Node *) expr, &glob_cxt, &loc_cxt))
@@ -301,7 +301,7 @@ foreign_expr_walker(Node *node,
 	if (node == NULL)
 		return true;
 
-	/* May need server info from baserel's fdw_private struct */
+	/* May need server info from foreignrel's fdw_private struct */
 	fpinfo = (PgFdwRelationInfo *) (glob_cxt->foreignrel->fdw_private);
 
 	/* Set up inner_cxt for possible recursion to child nodes */
@@ -2965,7 +2965,7 @@ appendGroupByClause(List *tlist, deparse_expr_cxt *context)
 }
 
 /*
- * Deparse ORDER BY clause according to the given pathkeys for given base
+ * Deparse ORDER BY clause according to the given pathkeys for given foreign
  * relation. From given pathkeys expressions belonging entirely to the given
  * base relation are obtained and deparsed.
  */
@@ -2975,7 +2975,7 @@ appendOrderByClause(List *pathkeys, deparse_expr_cxt *context)
 	ListCell   *lcell;
 	int			nestlevel;
 	char	   *delim = " ";
-	RelOptInfo *baserel = context->scanrel;
+	RelOptInfo *foreignrel = context->scanrel;
 	StringInfo	buf = context->buf;
 
 	/* Make sure any constants in the exprs are printed portably */
@@ -2987,7 +2987,7 @@ appendOrderByClause(List *pathkeys, deparse_expr_cxt *context)
 		PathKey    *pathkey = lfirst(lcell);
 		Expr	   *em_expr;
 
-		em_expr = find_em_expr_for_rel(pathkey->pk_eclass, baserel);
+		em_expr = find_em_expr_for_rel(pathkey->pk_eclass, foreignrel);
 		Assert(em_expr != NULL);
 
 		appendStringInfoString(buf, delim);
