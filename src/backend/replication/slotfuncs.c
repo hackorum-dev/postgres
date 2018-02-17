@@ -472,7 +472,10 @@ pg_replication_slot_advance(PG_FUNCTION_ARGS)
 	/* Acquire the slot so we "own" it */
 	ReplicationSlotAcquire(NameStr(*slotname), true);
 
-	startlsn = MyReplicationSlot->data.confirmed_flush;
+	if (OidIsValid(MyReplicationSlot->data.database))
+		startlsn = MyReplicationSlot->data.restart_lsn;
+	else
+		startlsn = MyReplicationSlot->data.confirmed_flush;
 	if (moveto < startlsn)
 	{
 		ReplicationSlotRelease();
