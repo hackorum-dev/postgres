@@ -35,6 +35,7 @@ typedef struct PROC_QUEUE
 
 /* GUC variables */
 extern int	max_locks_per_xact;
+extern bool xact_lock_chaining;
 
 #ifdef LOCK_DEBUG
 extern int	Trace_lock_oidmin;
@@ -295,6 +296,7 @@ typedef struct LOCK
 	int			nRequested;		/* total of requested[] array */
 	int			granted[MAX_LOCKMODES]; /* counts of granted locks */
 	int			nGranted;		/* total of granted[] array */
+	TransactionId lastWaitingXid;
 } LOCK;
 
 #define LOCK_LOCKMETHOD(lock) ((LOCKMETHODID) (lock).tag.locktag_lockmethodid)

@@ -53,6 +53,8 @@
 /* This configuration variable is used to set the lock table size */
 int			max_locks_per_xact; /* set by guc.c */
 
+bool        xact_lock_chaining;
+
 #define NLOCKENTS() \
 	mul_size(max_locks_per_xact, add_size(MaxBackends, max_prepared_xacts))
 
@@ -919,6 +921,7 @@ LockAcquireExtended(const LOCKTAG *locktag,
 		else
 			return LOCKACQUIRE_NOT_AVAIL;
 	}
+
 	locallock->proclock = proclock;
 	lock = proclock->tag.myLock;
 	locallock->lock = lock;
@@ -949,7 +952,10 @@ LockAcquireExtended(const LOCKTAG *locktag,
 		 * blocking, remove useless table entries and return NOT_AVAIL without
 		 * waiting.
 		 */
-		if (dontWait)
+		if (dontWait || (xact_lock_chaining
+				         && locktag->locktag_type == LOCKTAG_TRANSACTION
+						 && lockmode == ShareLock
+						 && TransactionIdIsValid(lock->lastWaitingXid)))
 		{
 			AbortStrongLockAcquire();
 			if (proclock->holdMask == 0)
@@ -973,12 +979,23 @@ LockAcquireExtended(const LOCKTAG *locktag,
 			LOCK_PRINT("LockAcquire: conditional lock failed", lock, lockmode);
 			Assert((lock->nRequested > 0) && (lock->requested[lockmode] >= 0));
 			Assert(lock->nGranted <= lock->nRequested);
+			if (!dontWait)
+			{
+				SET_LOCKTAG_TRANSACTION(*(LOCKTAG *)locktag, lock->lastWaitingXid);
+				lock->lastWaitingXid = GetCurrentTransactionIdIfAny();
+				LWLockRelease(partitionLock);
+				if (locallock->nLocks == 0)
+					RemoveLocalLock(locallock);
+				return LockAcquire(locktag,
+								   lockmode,
+								   sessionLock,
+								   dontWait);
+			}
 			LWLockRelease(partitionLock);
 			if (locallock->nLocks == 0)
 				RemoveLocalLock(locallock);
 			return LOCKACQUIRE_NOT_AVAIL;
 		}
-
 		/*
 		 * Set bitmask of locks this process already holds on this object.
 		 */
@@ -995,6 +1012,12 @@ LockAcquireExtended(const LOCKTAG *locktag,
 										 locktag->locktag_type,
 										 lockmode);
 
+		if (xact_lock_chaining
+			&& locktag->locktag_type == LOCKTAG_TRANSACTION
+			&& lockmode == ShareLock)
+		{
+			lock->lastWaitingXid = GetCurrentTransactionIdIfAny();
+		}
 		WaitOnLock(locallock, owner);
 
 		TRACE_POSTGRESQL_LOCK_WAIT_DONE(locktag->locktag_field1,
@@ -1098,6 +1121,7 @@ SetupLockInTable(LockMethod lockMethodTable, PGPROC *proc,
 		MemSet(lock->requested, 0, sizeof(int) * MAX_LOCKMODES);
 		MemSet(lock->granted, 0, sizeof(int) * MAX_LOCKMODES);
 		LOCK_PRINT("LockAcquire: new", lock, lockmode);
+		lock->lastWaitingXid = InvalidTransactionId;
 	}
 	else
 	{

@@ -804,7 +804,7 @@ static const unit_conversion time_unit_conversion_table[] =
 /******** option records follow ********/
 
 static struct config_bool ConfigureNamesBool[] =
-{
+{	
 	{
 		{"enable_seqscan", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables the planner's use of sequential-scan plans."),
@@ -1705,6 +1705,17 @@ static struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 
+	{
+		{"xact_lock_chaining", PGC_SIGHUP, LOCK_MANAGEMENT,
+			gettext_noop("Minimize lock contention by chaining xact locks"),
+			NULL
+		},
+		&xact_lock_chaining,
+		true,
+		NULL, NULL, NULL
+	},
+
+	
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, false, NULL, NULL, NULL
