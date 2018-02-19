@@ -128,7 +128,17 @@ SELECT nextval('sequence_test'::text);
 DISCARD SEQUENCES;
 SELECT currval('sequence_test'::regclass);
 
-DROP SEQUENCE sequence_test;
+-- get sequence value with NEXT VALUE FOR
+SELECT NEXT VALUE FOR sequence_test;
+CREATE VIEW seq_v(s) AS SELECT NEXT VALUE FOR sequence_test;
+SELECT s FROM seq_v;
+SELECT pg_get_viewdef('seq_v'::regclass);
+BEGIN;
+ALTER SEQUENCE sequence_test RENAME TO "bogus seq";
+SELECT pg_get_viewdef('seq_v'::regclass);
+ROLLBACK;
+
+DROP SEQUENCE sequence_test CASCADE;
 
 -- renaming sequences
 CREATE SEQUENCE foo_seq;

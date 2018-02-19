@@ -2022,6 +2022,8 @@ _copyNextValueExpr(const NextValueExpr *from)
 
 	COPY_SCALAR_FIELD(seqid);
 	COPY_SCALAR_FIELD(typeId);
+	COPY_NODE_FIELD(relation);
+	COPY_SCALAR_FIELD(checkperms);
 
 	return newnode;
 }

@@ -2104,6 +2104,7 @@ ExecInitExprRec(Expr *node, ExprState *state,
 				scratch.opcode = EEOP_NEXTVALUEEXPR;
 				scratch.d.nextvalueexpr.seqid = nve->seqid;
 				scratch.d.nextvalueexpr.seqtypid = nve->typeId;
+				scratch.d.nextvalueexpr.checkperms = nve->checkperms;
 
 				ExprEvalPushStep(state, &scratch);
 				break;

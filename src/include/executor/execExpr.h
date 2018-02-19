@@ -394,6 +394,7 @@ typedef struct ExprEvalStep
 		{
 			Oid			seqid;
 			Oid			seqtypid;
+			bool		checkperms;
 		}			nextvalueexpr;
 
 		/* for EEOP_ARRAYEXPR */

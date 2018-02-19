@@ -12095,6 +12095,16 @@ nextval('foo'::text)      <lineannotation><literal>foo</literal> is looked up at
         This function requires <literal>USAGE</literal>
         or <literal>UPDATE</literal> privilege on the sequence.
        </para>
+
+       <note>
+        <para>
+         PostgreSQL also offers the SQL standard compliant expression
+         <literal>NEXT VALUE FOR <replaceable>sequence_name</replaceable></literal>
+         which is the same as
+         <literal>nextval('<replaceable>sequence_name</replaceable>')</literal>.
+         See <xref linkend="sql-syntax-next-value-for"/> for details.
+        </para>
+       </note>
       </listitem>
      </varlistentry>
 

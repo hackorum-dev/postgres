@@ -237,7 +237,37 @@ SELECT nextval('sequence_test'::text);
 DISCARD SEQUENCES;
 SELECT currval('sequence_test'::regclass);
 ERROR:  currval of sequence "sequence_test" is not yet defined in this session
-DROP SEQUENCE sequence_test;
+-- get sequence value with NEXT VALUE FOR
+SELECT NEXT VALUE FOR sequence_test;
+ ?column? 
+----------
+      100
+(1 row)
+
+CREATE VIEW seq_v(s) AS SELECT NEXT VALUE FOR sequence_test;
+SELECT s FROM seq_v;
+  s  
+-----
+ 101
+(1 row)
+
+SELECT pg_get_viewdef('seq_v'::regclass);
+               pg_get_viewdef               
+--------------------------------------------
+  SELECT NEXT VALUE FOR sequence_test AS s;
+(1 row)
+
+BEGIN;
+ALTER SEQUENCE sequence_test RENAME TO "bogus seq";
+SELECT pg_get_viewdef('seq_v'::regclass);
+              pg_get_viewdef              
+------------------------------------------
+  SELECT NEXT VALUE FOR "bogus seq" AS s;
+(1 row)
+
+ROLLBACK;
+DROP SEQUENCE sequence_test CASCADE;
+NOTICE:  drop cascades to view seq_v
 -- renaming sequences
 CREATE SEQUENCE foo_seq;
 ALTER TABLE foo_seq RENAME TO foo_seq_new;

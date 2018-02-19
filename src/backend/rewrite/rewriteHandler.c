@@ -1119,6 +1119,8 @@ build_column_default(Relation rel, int attrno)
 
 		nve->seqid = getOwnedSequence(RelationGetRelid(rel), attrno);
 		nve->typeId = att_tup->atttypid;
+		/* no need to check permissions on the implicit sequence */
+		nve->checkperms = false;
 
 		return (Node *) nve;
 	}

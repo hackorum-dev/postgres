@@ -1629,6 +1629,8 @@ _outNextValueExpr(StringInfo str, const NextValueExpr *node)
 
 	WRITE_OID_FIELD(seqid);
 	WRITE_OID_FIELD(typeId);
+	WRITE_NODE_FIELD(relation);
+	WRITE_BOOL_FIELD(checkperms);
 }
 
 static void

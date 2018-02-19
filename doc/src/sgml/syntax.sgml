@@ -2379,6 +2379,24 @@ SELECT ROW(table.*) IS NULL FROM table;  -- detect all-null rows
 
   </sect2>
 
+  <sect2 id="sql-syntax-next-value-for">
+   <title><literal>NEXT VALUE FOR</literal></title>
+
+   <indexterm>
+    <primary>NEXT VALUE FOR</primary>
+   </indexterm>
+
+   <para>
+    This expression is used to obtain the next value for a sequence.
+<synopsis>
+<literal>NEXT VALUE FOR</literal> <replaceable>sequence_name</replaceable>
+</synopsis>
+
+    It is equivalent to calling the <function>nextval</function> function.
+   </para>
+
+  </sect2>
+
   <sect2 id="syntax-express-eval">
    <title>Expression Evaluation Rules</title>
 

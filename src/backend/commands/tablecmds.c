@@ -5496,6 +5496,8 @@ ATExecAddColumn(List **wqueue, AlteredTableInfo *tab, Relation rel,
 
 			nve->seqid = RangeVarGetRelid(colDef->identitySequence, NoLock, false);
 			nve->typeId = typeOid;
+			/* no need to check permissions on the implicit sequence */
+			nve->checkperms = false;
 
 			defval = (Expr *) nve;
 		}

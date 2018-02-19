@@ -737,6 +737,8 @@ _equalNextValueExpr(const NextValueExpr *a, const NextValueExpr *b)
 {
 	COMPARE_SCALAR_FIELD(seqid);
 	COMPARE_SCALAR_FIELD(typeId);
+	COMPARE_NODE_FIELD(relation);
+	COMPARE_SCALAR_FIELD(checkperms);
 
 	return true;
 }

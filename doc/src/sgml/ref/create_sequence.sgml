@@ -51,7 +51,8 @@ CREATE [ TEMPORARY | TEMP ] SEQUENCE [ IF NOT EXISTS ] <replaceable class="param
   </para>
 
   <para>
-   After a sequence is created, you use the functions
+   After a sequence is created, you use the expression
+   <literal>NEXT VALUE FOR</literal> or the functions
    <function>nextval</function>,
    <function>currval</function>, and
    <function>setval</function>

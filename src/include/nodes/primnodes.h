@@ -1289,8 +1289,8 @@ typedef struct CurrentOfExpr
 /*
  * NextValueExpr - get next value from sequence
  *
- * This has the same effect as calling the nextval() function, but it does not
- * check permissions on the sequence.  This is used for identity columns,
+ * This has the same effect as calling the nextval() function.
+ * It is used for NEXT VALUE FOR expressions and identity columns.
  * where the sequence is an implicit dependency without its own permissions.
  */
 typedef struct NextValueExpr
@@ -1298,6 +1298,9 @@ typedef struct NextValueExpr
 	Expr		xpr;
 	Oid			seqid;
 	Oid			typeId;
+	RangeVar   *relation;
+	bool		checkperms;		/* false for identity columns, since the
+								   sequence is an implicit dependency */
 } NextValueExpr;
 
 /*

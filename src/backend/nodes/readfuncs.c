@@ -1218,6 +1218,8 @@ _readNextValueExpr(void)
 
 	READ_OID_FIELD(seqid);
 	READ_OID_FIELD(typeId);
+	READ_NODE_FIELD(relation);
+	READ_BOOL_FIELD(checkperms);
 
 	READ_DONE();
 }

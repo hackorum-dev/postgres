@@ -8651,15 +8651,9 @@ get_rule_expr(Node *node, deparse_context *context,
 			{
 				NextValueExpr *nvexpr = (NextValueExpr *) node;
 
-				/*
-				 * This isn't exactly nextval(), but that seems close enough
-				 * for EXPLAIN's purposes.
-				 */
-				appendStringInfoString(buf, "nextval(");
-				simple_quote_literal(buf,
-									 generate_relation_name(nvexpr->seqid,
-															NIL));
-				appendStringInfoChar(buf, ')');
+				appendStringInfo(buf, "NEXT VALUE FOR %s",
+								 generate_relation_name(nvexpr->seqid,
+														NIL));
 			}
 			break;
 

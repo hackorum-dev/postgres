@@ -13422,6 +13422,12 @@ c_expr:		columnref								{ $$ = $1; }
 				{ $$ = $1; }
 			| func_expr
 				{ $$ = $1; }
+			| NEXT VALUE_P FOR qualified_name
+				{
+					NextValueExpr *n = makeNode(NextValueExpr);
+					n->relation = $4;
+					$$ = (Node *)n;
+				}
 			| select_with_parens			%prec UMINUS
 				{
 					SubLink *n = makeNode(SubLink);

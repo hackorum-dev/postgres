@@ -15,8 +15,12 @@
 
 #include "postgres.h"
 
+#include "access/htup_details.h"
+#include "catalog/pg_class.h"
+#include "catalog/pg_sequence.h"
 #include "catalog/pg_type.h"
 #include "commands/dbcommands.h"
+#include "commands/sequence.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
@@ -36,6 +40,7 @@
 #include "utils/builtins.h"
 #include "utils/date.h"
 #include "utils/lsyscache.h"
+#include "utils/syscache.h"
 #include "utils/timestamp.h"
 #include "utils/xml.h"
 
@@ -109,6 +114,7 @@ static Node *transformArrayExpr(ParseState *pstate, A_ArrayExpr *a,
 static Node *transformRowExpr(ParseState *pstate, RowExpr *r, bool allowDefault);
 static Node *transformCoalesceExpr(ParseState *pstate, CoalesceExpr *c);
 static Node *transformMinMaxExpr(ParseState *pstate, MinMaxExpr *m);
+static Node *transformNextValueExpr(ParseState *pstate, NextValueExpr *nv);
 static Node *transformSQLValueFunction(ParseState *pstate,
 						  SQLValueFunction *svf);
 static Node *transformXmlExpr(ParseState *pstate, XmlExpr *x);
@@ -301,6 +307,10 @@ transformExprRecurse(ParseState *pstate, Node *expr)
 
 		case T_MinMaxExpr:
 			result = transformMinMaxExpr(pstate, (MinMaxExpr *) expr);
+			break;
+
+		case T_NextValueExpr:
+			result = transformNextValueExpr(pstate, (NextValueExpr *) expr);
 			break;
 
 		case T_SQLValueFunction:
@@ -2286,6 +2296,39 @@ transformMinMaxExpr(ParseState *pstate, MinMaxExpr *m)
 	newm->args = newcoercedargs;
 	newm->location = m->location;
 	return (Node *) newm;
+}
+
+static Node *
+transformNextValueExpr(ParseState *pstate, NextValueExpr *nv)
+{
+	HeapTuple tuple;
+	Form_pg_sequence pg_seq_tuple;
+
+	nv->seqid = RangeVarGetRelid(nv->relation, AccessShareLock, false);
+	nv->checkperms = true;
+
+	if (get_rel_relkind(nv->seqid) != RELKIND_SEQUENCE)
+	{
+		if (nv->relation->schemaname)
+			ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				errmsg("\"%s\".\"%s\" is not a sequence", nv->relation->schemaname, nv->relation->relname)));
+		else
+			ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				errmsg("\"%s\" is not a sequence", nv->relation->relname)));
+	}
+
+	tuple = SearchSysCache1(SEQRELID, ObjectIdGetDatum(nv->seqid));
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for sequence %u", nv->seqid);
+
+	pg_seq_tuple = (Form_pg_sequence) GETSTRUCT(tuple);
+	nv->typeId = pg_seq_tuple->seqtypid;
+
+	ReleaseSysCache(tuple);
+
+	return (Node *) nv;
 }
 
 static Node *
