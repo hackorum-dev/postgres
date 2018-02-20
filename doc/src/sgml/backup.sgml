@@ -1466,7 +1466,7 @@ archive_command = 'test ! -f /var/lib/pgsql/backup_in_progress || (test ! -f /va
 
      <para>
       With this preparation, a backup can be taken using a script like the
-      following:
+      following, which uses the exclusive backup method:
 <programlisting>
 touch /var/lib/pgsql/backup_in_progress
 psql -c "select pg_start_backup('hot_backup');"
