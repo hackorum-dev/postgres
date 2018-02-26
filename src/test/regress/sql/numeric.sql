@@ -677,12 +677,12 @@ DROP TABLE ceil_floor_round;
 
 -- Check rounding, it should round ties away from zero.
 SELECT i as pow,
-	round((-2.5 * 10 ^ i)::numeric, -i),
-	round((-1.5 * 10 ^ i)::numeric, -i),
-	round((-0.5 * 10 ^ i)::numeric, -i),
-	round((0.5 * 10 ^ i)::numeric, -i),
-	round((1.5 * 10 ^ i)::numeric, -i),
-	round((2.5 * 10 ^ i)::numeric, -i)
+	round((-2.5 * 10::numeric ^ i), -i),
+	round((-1.5 * 10::numeric ^ i), -i),
+	round((-0.5 * 10::numeric ^ i), -i),
+	round((0.5 * 10::numeric ^ i), -i),
+	round((1.5 * 10::numeric ^ i), -i),
+	round((2.5 * 10::numeric ^ i), -i)
 FROM generate_series(-5,5) AS t(i);
 
 -- Testing for width_bucket(). For convenience, we test both the
