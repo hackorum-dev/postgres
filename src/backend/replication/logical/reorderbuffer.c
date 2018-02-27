@@ -1479,36 +1479,7 @@ ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 					break;
 
 				case REORDER_BUFFER_CHANGE_INTERNAL_SNAPSHOT:
-					/* get rid of the old */
-					TeardownHistoricSnapshot(false);
 
-					if (snapshot_now->copied)
-					{
-						ReorderBufferFreeSnap(rb, snapshot_now);
-						snapshot_now =
-							ReorderBufferCopySnap(rb, change->data.snapshot,
-												  txn, command_id);
-					}
-
-					/*
-					 * Restored from disk, need to be careful not to double
-					 * free. We could introduce refcounting for that, but for
-					 * now this seems infrequent enough not to care.
-					 */
-					else if (change->data.snapshot->copied)
-					{
-						snapshot_now =
-							ReorderBufferCopySnap(rb, change->data.snapshot,
-												  txn, command_id);
-					}
-					else
-					{
-						snapshot_now = change->data.snapshot;
-					}
-
-
-					/* and continue with the new one */
-					SetupHistoricSnapshot(snapshot_now, txn->tuplecid_hash);
 					break;
 
 				case REORDER_BUFFER_CHANGE_INTERNAL_COMMAND_ID:
@@ -1831,7 +1802,15 @@ ReorderBufferSetBaseSnapshot(ReorderBuffer *rb, TransactionId xid,
 	ReorderBufferTXN *txn;
 	bool		is_new;
 
-	txn = ReorderBufferTXNByXid(rb, xid, true, &is_new, lsn, true);
+	txn = ReorderBufferTXNByXid(rb, xid, false, NULL, InvalidXLogRecPtr, false);
+	/*
+	 * If xact still doesn't exist during the commit, it is empty and hadn't
+	 * had any subxacts (if it had ones, XLOG_XACT_ASSIGNMENT would be logged
+	 * and it would present in ReorderBuffer anyway).
+	 */
+	if (txn == NULL)
+		return;
+
 	Assert(txn->base_snapshot == NULL);
 	Assert(snap != NULL);
 

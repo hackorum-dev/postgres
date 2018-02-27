@@ -734,29 +734,6 @@ SnapBuildProcessChange(SnapBuild *builder, TransactionId xid, XLogRecPtr lsn)
 		TransactionIdPrecedes(xid, SnapBuildNextPhaseAt(builder)))
 		return false;
 
-	/*
-	 * If the reorderbuffer doesn't yet have a snapshot, add one now, it will
-	 * be needed to decode the change we're currently processing.
-	 */
-	if (!ReorderBufferXidHasBaseSnapshot(builder->reorder, xid))
-	{
-		/* only build a new snapshot if we don't have a prebuilt one */
-		if (builder->snapshot == NULL)
-		{
-			builder->snapshot = SnapBuildBuildSnapshot(builder);
-			/* increase refcount for the snapshot builder */
-			SnapBuildSnapIncRefcount(builder->snapshot);
-		}
-
-		/*
-		 * Increase refcount for the transaction we're handing the snapshot
-		 * out to.
-		 */
-		SnapBuildSnapIncRefcount(builder->snapshot);
-		ReorderBufferSetBaseSnapshot(builder->reorder, xid, lsn,
-									 builder->snapshot);
-	}
-
 	return true;
 }
 
@@ -965,6 +942,25 @@ SnapBuildCommitTxn(SnapBuild *builder, XLogRecPtr lsn, TransactionId xid,
 		}
 	}
 
+	/*
+	 * Snapbuilder's snapshot at the moment of COMMIT is the snapshot we will
+	 * use to decode the xact.
+	 */
+	if (builder->state >= SNAPBUILD_FULL_SNAPSHOT)
+	{
+		/* only build a new snapshot if we don't have a prebuilt one */
+		if (builder->snapshot == NULL)
+		{
+			builder->snapshot = SnapBuildBuildSnapshot(builder);
+			/* increase refcount for the snapshot builder */
+			SnapBuildSnapIncRefcount(builder->snapshot);
+		}
+
+		SnapBuildSnapIncRefcount(builder->snapshot);
+		ReorderBufferSetBaseSnapshot(builder->reorder, xid, lsn,
+									 builder->snapshot);
+	}
+
 	for (nxact = 0; nxact < nsubxacts; nxact++)
 	{
 		TransactionId subxid = subxacts[nxact];
@@ -1063,13 +1059,6 @@ SnapBuildCommitTxn(SnapBuild *builder, XLogRecPtr lsn, TransactionId xid,
 
 		builder->snapshot = SnapBuildBuildSnapshot(builder);
 
-		/* we might need to execute invalidations, add snapshot */
-		if (!ReorderBufferXidHasBaseSnapshot(builder->reorder, xid))
-		{
-			SnapBuildSnapIncRefcount(builder->snapshot);
-			ReorderBufferSetBaseSnapshot(builder->reorder, xid, lsn,
-										 builder->snapshot);
-		}
 
 		/* refcount of the snapshot builder for the new snapshot */
 		SnapBuildSnapIncRefcount(builder->snapshot);
