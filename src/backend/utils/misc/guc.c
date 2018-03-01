@@ -10527,7 +10527,7 @@ check_cluster_name(char **newval, void **extra, GucSource source)
 static const char *
 show_unix_socket_permissions(void)
 {
-	static char buf[8];
+	static char buf[12];
 
 	snprintf(buf, sizeof(buf), "%04o", Unix_socket_permissions);
 	return buf;
@@ -10536,7 +10536,7 @@ show_unix_socket_permissions(void)
 static const char *
 show_log_file_mode(void)
 {
-	static char buf[8];
+	static char buf[12];
 
 	snprintf(buf, sizeof(buf), "%04o", Log_file_mode);
 	return buf;
