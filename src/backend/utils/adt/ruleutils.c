@@ -433,7 +433,7 @@ static void get_coercion_expr(Node *arg, deparse_context *context,
 				  Oid resulttype, int32 resulttypmod,
 				  Node *parentNode);
 static void get_const_expr(Const *constval, deparse_context *context,
-			   int showtype);
+			   int showtype, bool partition);
 static void get_const_collation(Const *constval, deparse_context *context);
 static void simple_quote_literal(StringInfo buf, const char *val);
 static void get_sublink_expr(SubLink *sublink, deparse_context *context);
@@ -5672,7 +5672,7 @@ get_rule_sortgroupclause(Index ref, List *tlist, bool force_colno,
 		appendStringInfo(buf, "%d", tle->resno);
 	}
 	else if (expr && IsA(expr, Const))
-		get_const_expr((Const *) expr, context, 1);
+		get_const_expr((Const *) expr, context, 1, false);
 	else if (!expr || IsA(expr, Var))
 		get_rule_expr(expr, context, true);
 	else
@@ -7675,7 +7675,7 @@ get_rule_expr(Node *node, deparse_context *context,
 			break;
 
 		case T_Const:
-			get_const_expr((Const *) node, context, 0);
+			get_const_expr((Const *) node, context, 0, false);
 			break;
 
 		case T_Param:
@@ -8779,7 +8779,7 @@ get_rule_expr(Node *node, deparse_context *context,
 							Const	   *val = castNode(Const, lfirst(cell));
 
 							appendStringInfoString(buf, sep);
-							get_const_expr(val, context, -1);
+							get_const_expr(val, context, -1, true);
 							sep = ", ";
 						}
 
@@ -9285,7 +9285,7 @@ get_coercion_expr(Node *arg, deparse_context *context,
 		((Const *) arg)->consttypmod == -1)
 	{
 		/* Show the constant without normal ::typename decoration */
-		get_const_expr((Const *) arg, context, -1);
+		get_const_expr((Const *) arg, context, -1, false);
 	}
 	else
 	{
@@ -9312,10 +9312,15 @@ get_coercion_expr(Node *arg, deparse_context *context,
  * We mustn't do this when showtype is -1 (since that means the caller will
  * print "::typename", and we can't put a COLLATE clause in between).  It's
  * caller's responsibility that collation isn't missed in such cases.
+ *
+ * 'partition' can be set to true to have bool values returned as 't' or 'f'
+ * instead of true or false.  This is required due to an omission in the
+ * partitioning syntax which does not correctly handle bool literals.
  * ----------
  */
 static void
-get_const_expr(Const *constval, deparse_context *context, int showtype)
+get_const_expr(Const *constval, deparse_context *context, int showtype,
+			   bool partition)
 {
 	StringInfo	buf = context->buf;
 	Oid			typoutput;
@@ -9393,9 +9398,9 @@ get_const_expr(Const *constval, deparse_context *context, int showtype)
 
 		case BOOLOID:
 			if (strcmp(extval, "t") == 0)
-				appendStringInfoString(buf, "true");
+				appendStringInfoString(buf, partition ? "'t'" : "true");
 			else
-				appendStringInfoString(buf, "false");
+				appendStringInfoString(buf, partition ? "'f'" : "false");
 			break;
 
 		default:
@@ -11043,7 +11048,7 @@ get_range_partbound_string(List *bound_datums)
 		{
 			Const	   *val = castNode(Const, datum->value);
 
-			get_const_expr(val, &context, -1);
+			get_const_expr(val, &context, -1, true);
 		}
 		sep = ", ";
 	}
