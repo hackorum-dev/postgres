@@ -43,7 +43,7 @@
 # directly connected to.
 #
 # METHOD can be "trust", "reject", "md5", "password", "scram-sha-256",
-# "gss", "sspi", "ident", "peer", "pam", "ldap", "radius" or "cert".
+# "gss", "sspi", "ident", "peer", "pam", "ldap", "radius", "cert" or "redirect".
 # Note that "password" sends passwords in clear text; "md5" or
 # "scram-sha-256" are preferred since they send encrypted passwords.
 #

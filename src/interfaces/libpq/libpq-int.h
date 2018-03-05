@@ -349,7 +349,7 @@ struct pg_conn
 										 * retransmits */
 	char	   *keepalives_count;	/* maximum number of TCP keepalive
 									 * retransmits */
-	char	   *scram_channel_binding; /* SCRAM channel binding type */
+	char	   *scram_channel_binding;	/* SCRAM channel binding type */
 	char	   *sslmode;		/* SSL mode (require,prefer,allow,disable) */
 	char	   *sslcompression; /* SSL compression (0 or 1) */
 	char	   *sslkey;			/* client key filename */
@@ -495,6 +495,10 @@ struct pg_conn
 
 	/* Buffer for receiving various parts of messages */
 	PQExpBufferData workBuffer; /* expansible string */
+
+	char	   *redirect_limit; /* Specifies the maximum number of times to
+								 * attempt redirection. */
+	int			nRedirection;	/* Number of redirects attempted so far */
 };
 
 /* PGcancel stores all data necessary to cancel a connection. A copy of this
@@ -742,8 +746,8 @@ extern char *pgtls_get_peer_certificate_hash(PGconn *conn, size_t *len);
  *
  */
 extern int pgtls_verify_peer_name_matches_certificate_guts(PGconn *conn,
-														   int *names_examined,
-														   char **first_name);
+												int *names_examined,
+												char **first_name);
 
 /* === miscellaneous macros === */
 

@@ -129,6 +129,7 @@ static int ldapServiceLookup(const char *purl, PQconninfoOption *options,
 #else
 #define DefaultSSLMode	"disable"
 #endif
+#define DefaultRedirectionLimit "2"
 
 /* ----------
  * Definition of the conninfo parameters and their fallback resources.
@@ -266,7 +267,7 @@ static const internalPQconninfoOption PQconninfoOptions[] = {
 
 	{"scram_channel_binding", NULL, DefaultSCRAMChannelBinding, NULL,
 		"SCRAM-Channel-Binding", "D",
-		21,	/* sizeof("tls-server-end-point") == 21 */
+		21,						/* sizeof("tls-server-end-point") == 21 */
 	offsetof(struct pg_conn, scram_channel_binding)},
 
 	/*
@@ -329,6 +330,11 @@ static const internalPQconninfoOption PQconninfoOptions[] = {
 		DefaultTargetSessionAttrs, NULL,
 		"Target-Session-Attrs", "", 11, /* sizeof("read-write") = 11 */
 	offsetof(struct pg_conn, target_session_attrs)},
+
+	{"redirect_limit", "PGREDIRECTLIMIT",
+		DefaultRedirectionLimit, NULL,
+		"Redirection-Count", "", 10,	/* strlen(INT32_MAX) == 10 */
+	offsetof(struct pg_conn, redirect_limit)},
 
 	/* Terminating entry --- MUST BE LAST */
 	{NULL, NULL, NULL, NULL,
@@ -1805,11 +1811,11 @@ connectDBStart(PGconn *conn)
 #endif
 
 	/*
-	 * Set up to try to connect, with protocol 3.0 as the first attempt.
+	 * Set up to try to connect, with protocol 3.1 as the first attempt.
 	 */
 	conn->whichhost = 0;
 	conn->addr_cur = conn->connhost[0].addrlist;
-	conn->pversion = PG_PROTOCOL(3, 0);
+	conn->pversion = PG_PROTOCOL(3, 1);
 	conn->send_appname = true;
 	conn->status = CONNECTION_NEEDED;
 
@@ -2007,6 +2013,14 @@ PQconnectPoll(PGconn *conn)
 	int			optval;
 	PQExpBufferData savedMessage;
 
+	/* Variable declarations for redirection. */
+	int			originalMsgLen; /* Length in bytes of message sans msg type */
+	int			runningMsgLen;	/* Length in bytes of message sans metadata */
+	int			availableMsgLen;
+	char	   *altServer = NULL;
+	char	   *altPort = NULL;
+	bool		redirectionError = false;	/* Flag used to mark exceptions */
+
 	if (conn == NULL)
 		return PGRES_POLLING_FAILED;
 
@@ -2024,6 +2038,7 @@ PQconnectPoll(PGconn *conn)
 
 			/* These are reading states */
 		case CONNECTION_AWAITING_RESPONSE:
+		case CONNECTION_REDIRECTION:
 		case CONNECTION_AUTH_OK:
 			{
 				/* Load waiting data */
@@ -2655,6 +2670,25 @@ keep_going:						/* We will come back to here until there is
 					return PGRES_POLLING_READING;
 				}
 
+				if (beresp == 'M')
+				{
+					conn->status = CONNECTION_REDIRECTION;
+					goto keep_going;
+				}
+
+				/*
+				 * If server sends protocol negotiation message, default to
+				 * 3.0 protocol.
+				 */
+				if (beresp == 'v')
+				{
+					conn->pversion = PG_PROTOCOL(3, 0);
+					/* Must drop the old connection */
+					pqDropConnection(conn, true);
+					conn->status = CONNECTION_NEEDED;
+					goto keep_going;
+				}
+
 				/*
 				 * Validate message type: we expect only an authentication
 				 * request or an error here.  Anything else probably means
@@ -2722,19 +2756,28 @@ keep_going:						/* We will come back to here until there is
 					appendPQExpBufferChar(&conn->errorMessage, '\n');
 
 					/*
-					 * If we tried to open the connection in 3.0 protocol,
-					 * fall back to 2.0 protocol.
+					 * If we tried to open the connection in 3.1 protocol,
+					 * fall back to 3.0 protocol. If that fails as well, fall
+					 * back to 2.0 protocol.
 					 */
-					if (PG_PROTOCOL_MAJOR(conn->pversion) >= 3)
+					if (PG_PROTOCOL_MAJOR(conn->pversion) >= 3
+						&& PG_PROTOCOL_MINOR(conn->pversion) >= 1)
+					{
+						conn->pversion = PG_PROTOCOL(3, 0);
+					}
+					else if (PG_PROTOCOL_MAJOR(conn->pversion) >= 3)
 					{
 						conn->pversion = PG_PROTOCOL(2, 0);
-						/* Must drop the old connection */
-						pqDropConnection(conn, true);
-						conn->status = CONNECTION_NEEDED;
-						goto keep_going;
+					}
+					else
+					{
+						goto error_return;
 					}
 
-					goto error_return;
+					/* Must drop the old connection */
+					pqDropConnection(conn, true);
+					conn->status = CONNECTION_NEEDED;
+					goto keep_going;
 				}
 
 				/*
@@ -3097,6 +3140,146 @@ keep_going:						/* We will come back to here until there is
 				conn->status = CONNECTION_OK;
 				return PGRES_POLLING_OK;
 			}
+
+		case CONNECTION_REDIRECTION:
+			{
+				/*
+				 * Check if the number of redirect attempts exceeds the limit.
+				 */
+				if (++conn->nRedirection > atoi(conn->redirect_limit))
+				{
+					appendPQExpBuffer(&conn->errorMessage,
+									  libpq_gettext("Exceeded the maximum number of redirection attempts."));
+					goto error_return;
+				}
+
+				/* Mark 'M' consumed: a single byte for message type. */
+				conn->inCursor = conn->inStart + 1;
+
+				/* Obtain message length from packet. */
+				if (pqGetInt(&originalMsgLen, sizeof(int32), conn))
+					return PGRES_POLLING_READING;
+
+				/* Obtain the number of bytes in payload. */
+				runningMsgLen = originalMsgLen - sizeof(int32);
+
+				/*
+				 * Enlarge buffer if payload's size is greater than what is
+				 * available.
+				 */
+				availableMsgLen = conn->inEnd - conn->inCursor;
+				if (availableMsgLen < runningMsgLen)
+				{
+					if (pqCheckInBufferSpace(conn->inCursor + (size_t) runningMsgLen, conn))
+						return PGRES_POLLING_READING;
+				}
+
+				PQExpBuffer buf = createPQExpBuffer();
+
+				while (pqGets(buf, conn) != EOF)
+				{
+					if (!strcmp(buf->data, "server"))
+					{
+						if (pqGets(buf, conn) == EOF)
+						{
+							appendPQExpBuffer(&conn->errorMessage,
+											  libpq_gettext("failed to obtain server value from redirection packet"));
+
+							redirectionError = true;
+							break;
+						}
+						altServer = strdup(buf->data);
+					}
+					else if (!strcmp(buf->data, "port"))
+					{
+						if (pqGets(buf, conn) == EOF)
+						{
+							appendPQExpBuffer(&conn->errorMessage,
+											  libpq_gettext("failed to obtain port value from redirection packet"));
+
+							redirectionError = true;
+							break;
+						}
+						altPort = strdup(buf->data);
+					}
+					else
+					{
+						appendPQExpBuffer(&conn->errorMessage,
+										  libpq_gettext("unknown key in redirection server packet"));
+						redirectionError = true;
+					}
+
+					if (redirectionError)
+					{
+						/* Free buffer to prevent memory leak on error. */
+						destroyPQExpBuffer(buf);
+
+						/* Free strdup'd variables. */
+						if (altServer)
+							free(altServer);
+
+						if (altPort)
+							free(altPort);
+
+						goto error_return;
+					}
+
+					/*
+					 * Buffer length does not account for null-terminated
+					 * strings.
+					 */
+					runningMsgLen -= buf->len + 1;
+				}
+
+				/* Free buffer used for reading string params in packet. */
+				destroyPQExpBuffer(buf);
+
+				/* Check for extraneous data in packet. */
+				if (conn->inCursor != conn->inStart + 1 + originalMsgLen)
+				{
+					appendPQExpBuffer(&conn->errorMessage,
+									  libpq_gettext("Extraneous data in redirection packet from server\n"));
+
+					/* Free strdup'd variables. */
+					if (altServer)
+						free(altServer);
+
+					if (altPort)
+						free(altPort);
+
+					goto error_return;
+				}
+
+				/* Mark incoming data consumed */
+				conn->inStart = conn->inCursor;
+
+				/* Drop existing connection. */
+				pqDropConnection(conn, true);
+
+				/* Set connection parameters. */
+				if (conn->pghost)
+				{
+					free(conn->pghost);
+					conn->pghost = altServer;
+				}
+
+				if (conn->pgport)
+				{
+					free(conn->pgport);
+					conn->pgport = altPort;
+				}
+
+				/* connectDBStart() sets appropriate connection status. */
+				if (!connectOptions2(conn) || !connectDBStart(conn))
+				{
+					conn->status = CONNECTION_BAD;
+					appendPQExpBuffer(&conn->errorMessage,
+									  libpq_gettext("Failed to establish connection to redirected database\n"));
+				}
+
+				goto keep_going;
+			}
+
 		case CONNECTION_CHECK_WRITABLE:
 			{
 				const char *displayed_host;

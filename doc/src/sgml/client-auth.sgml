@@ -495,6 +495,18 @@ hostnossl  <replaceable>database</replaceable>  <replaceable>user</replaceable> 
        </varlistentry>
 
        <varlistentry>
+        <term><literal>redirect</literal></term>
+        <listitem>
+         <para>
+          Redirects the connection to the alternative server specified if it
+          matches the requested database user name and IP address. This is
+          only available for Protocol Version 3.1 and beyond.
+          See <xref linkend="auth-redirect"/> for details.
+         </para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
         <term><literal>ldap</literal></term>
         <listitem>
          <para>
@@ -624,7 +636,7 @@ hostnossl  <replaceable>database</replaceable>  <replaceable>user</replaceable> 
    non-null <structfield>error</structfield> fields indicate problems in the
    corresponding lines of the file.
   </para>
- 
+
   <tip>
    <para>
     To connect to a particular database, a user must not only pass the
@@ -1430,6 +1442,29 @@ omicron         bryanh                  guest1
     most flavors of <systemitem class="osname">BSD</systemitem> including
     <systemitem class="osname">macOS</systemitem>,
     and <systemitem class="osname">Solaris</systemitem>.
+   </para>
+
+  </sect2>
+
+  <sect2 id="auth-redirect">
+   <title>Redirect Authentication</title>
+
+   <indexterm>
+    <primary>redirect</primary>
+   </indexterm>
+
+   <para>
+    This authentication mechanism works by specifying an alternative server to redirect
+    client connections to. The alternative server endpoint is specified by a hostname and port, separated by a single comma.
+   </para>
+
+   <para>
+    An example entry with <productname>redirect</productname> would look like the following:
+    host    all             all             127.0.0.1/32            redirect  <hostname>,<port>
+   </para>
+
+   <para>
+   Support for redirection is only available from wire protocol v3.1 upwards.
    </para>
 
   </sect2>

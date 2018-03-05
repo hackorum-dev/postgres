@@ -65,8 +65,10 @@ typedef enum
 	CONNECTION_NEEDED,			/* Internal state: connect() needed */
 	CONNECTION_CHECK_WRITABLE,	/* Check if we could make a writable
 								 * connection. */
-	CONNECTION_CONSUME			/* Wait for any pending message and consume
+	CONNECTION_CONSUME,			/* Wait for any pending message and consume
 								 * them. */
+	CONNECTION_REDIRECTION		/* Redirecting the connection to the
+								 * alternative server specified in pg_hba.conf */
 } ConnStatusType;
 
 typedef enum

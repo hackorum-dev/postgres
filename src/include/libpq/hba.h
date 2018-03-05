@@ -38,8 +38,9 @@ typedef enum UserAuth
 	uaLDAP,
 	uaCert,
 	uaRADIUS,
-	uaPeer
-#define USER_AUTH_LAST uaPeer	/* Must be last value of this enum */
+	uaPeer,
+	uaRedirect
+#define USER_AUTH_LAST uaRedirect	/* Must be last value of this enum */
 } UserAuth;
 
 typedef enum IPCompareMethod
@@ -99,6 +100,8 @@ typedef struct HbaLine
 	char	   *radiusidentifiers_s;
 	List	   *radiusports;
 	char	   *radiusports_s;
+	char	   *alternativeservername;
+	char	   *alternativeserverport;
 } HbaLine;
 
 typedef struct IdentLine

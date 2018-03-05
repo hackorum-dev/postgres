@@ -4747,6 +4747,79 @@ GSSResponse (F)
 
 <varlistentry>
 <term>
+RedirectClient (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('M')
+</term>
+<listitem>
+<para>
+                Redirects client connection to alternative server.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                Length of message contents in bytes, including self.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+                Parameter name "server" to identify the redirect target host.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+                Specifies the target host name.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+                Parameter name "port" to identify the redirect target port.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+                Specifies the target host's port.
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
 NegotiateProtocolVersion (B)
 </term>
 <listitem>

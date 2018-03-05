@@ -134,7 +134,8 @@ static const char *const UserAuthName[] =
 	"ldap",
 	"cert",
 	"radius",
-	"peer"
+	"peer",
+	"redirect"
 };
 
 
@@ -1358,6 +1359,8 @@ parse_hba_line(TokenizedLine *tok_line, int elevel)
 #endif
 	else if (strcmp(token->string, "radius") == 0)
 		parsedline->auth_method = uaRADIUS;
+	else if (strcmp(token->string, "redirect") == 0)
+		parsedline->auth_method = uaRedirect;
 	else
 	{
 		ereport(elevel,
@@ -1382,6 +1385,49 @@ parse_hba_line(TokenizedLine *tok_line, int elevel)
 		*err_msg = psprintf("invalid authentication method \"%s\": not supported by this build",
 							token->string);
 		return NULL;
+	}
+
+	if (parsedline->auth_method == uaRedirect)
+	{
+		/* Get the alternative server name and port */
+		field = lnext(field);
+		if (!field)
+		{
+			ereport(elevel,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					 errmsg("end-of-line before alternative server name"),
+					 errcontext("line %d of configuration file \"%s\"",
+								line_num, HbaFileName)));
+			*err_msg = "end-of-line before alternative server name";
+			return NULL;
+		}
+		tokens = lfirst(field);
+		if (tokens->length > 2)
+		{
+			ereport(elevel,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					 errmsg("multiple values specified for alternative server"),
+					 errhint("Specify exactly one alternative server per line."),
+					 errcontext("line %d of configuration file \"%s\"",
+								line_num, HbaFileName)));
+			*err_msg = "multiple values specified for alternative server";
+			return NULL;
+		}
+
+		tokencell = list_head(tokens);
+		token = lfirst(tokencell);
+		parsedline->alternativeservername = pstrdup(token->string);
+
+		if (tokens->length == 2)
+		{
+			tokencell = lnext(tokencell);
+			token = lfirst(tokencell);
+			parsedline->alternativeserverport = pstrdup(token->string);
+		}
+		else
+		{
+			pg_itoa(DEF_PGPORT, parsedline->alternativeserverport);
+		}
 	}
 
 	/*
@@ -2099,6 +2145,21 @@ check_hba(hbaPort *port)
 
 		if (!check_role(port->user_name, roleid, hba->roles))
 			continue;
+
+		/*
+		 * Check the protocol version to see if the client supports
+		 * redirection
+		 */
+		if (hba->auth_method == uaRedirect &&
+			PG_PROTOCOL_MAJOR(port->proto) < PG_PROTOCOL_MAJOR(PG_PROTOCOL_LATEST) ||
+			(PG_PROTOCOL_MAJOR(port->proto) == PG_PROTOCOL_MAJOR(PG_PROTOCOL_LATEST) &&
+			 PG_PROTOCOL_MINOR(port->proto) < PG_PROTOCOL_MINOR(PG_PROTOCOL_LATEST)))
+			ereport(FATAL,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("Redirection is only supported by protocol version 3.1 and above. \
+							Try connecting to %s:%s directly",
+							hba->alternativeservername,
+							hba->alternativeserverport)));
 
 		/* Found a record that matched! */
 		port->hba = hba;

@@ -206,6 +206,12 @@ static int pg_SSPI_make_upn(char *accountname,
 static int	CheckRADIUSAuth(Port *port);
 static int	PerformRadiusTransaction(const char *server, const char *secret, const char *portstr, const char *identifier, const char *user_name, const char *passwd);
 
+/*----------------------------------------------------------------
+ * Connection Redirection
+ *----------------------------------------------------------------
+ */
+static int	SendAlternativeServerName(Port *port, char **logdetail);
+
 
 /*
  * Maximum accepted size of GSS and SSPI authentication tokens.
@@ -598,6 +604,9 @@ ClientAuthentication(Port *port)
 		case uaTrust:
 			status = STATUS_OK;
 			break;
+		case uaRedirect:
+			status = SendAlternativeServerName(port, &logdetail);
+			break;
 	}
 
 	if (ClientAuthentication_hook)
@@ -609,6 +618,28 @@ ClientAuthentication(Port *port)
 		auth_failed(port, status, logdetail);
 }
 
+/*
+ * Send alternative server information packet to the frontend.
+ */
+static int
+SendAlternativeServerName(Port *port, char **logdetail)
+{
+	StringInfoData buf;
+
+	CHECK_FOR_INTERRUPTS();
+
+	pq_beginmessage(&buf, 'M');
+	pq_sendstring(&buf, "server");
+	pq_sendstring(&buf, port->hba->alternativeservername);
+	pq_sendstring(&buf, "port");
+	pq_sendstring(&buf, port->hba->alternativeserverport);
+
+	pq_endmessage(&buf);
+	pq_flush();
+	proc_exit(0);
+
+	return STATUS_OK;
+}
 
 /*
  * Send an authentication request packet to the frontend.
