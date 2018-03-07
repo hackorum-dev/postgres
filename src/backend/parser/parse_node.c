@@ -164,14 +164,15 @@ cancel_parser_errposition_callback(ParseCallbackState *pcbstate)
  *
  * Note that this will be called for *any* error occurring while the
  * callback is installed.  We avoid inserting an irrelevant error location
- * if the error is a query cancel --- are there any other important cases?
+ * if the error is a query cancel and in the case of hide_stmt --- are there
+ * any other important cases?
  */
 static void
 pcb_error_callback(void *arg)
 {
 	ParseCallbackState *pcbstate = (ParseCallbackState *) arg;
 
-	if (geterrcode() != ERRCODE_QUERY_CANCELED)
+	if (geterrcode() != ERRCODE_QUERY_CANCELED && !gethidestmt())
 		(void) parser_errposition(pcbstate->pstate, pcbstate->location);
 }
 

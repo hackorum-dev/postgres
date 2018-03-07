@@ -1815,6 +1815,23 @@ getinternalerrposition(void)
 	return edata->internalpos;
 }
 
+/*
+ * gethidestmt --- return true if STATEMENT is hidden
+ *
+ * This is only intended for use in error callback subroutines, since there
+ * is no other place outside elog.c where the concept is meaningful.
+ */
+bool
+gethidestmt(void)
+{
+	ErrorData  *edata = &errordata[errordata_stack_depth];
+
+	/* we don't bother incrementing recursion_depth */
+	CHECK_STACK_DEPTH();
+
+	return edata->hide_stmt;
+}
+
 
 /*
  * Functions to allow construction of error message strings separately from
