@@ -43,19 +43,41 @@
  * a full page's worth of data.
  *-------------------------------------------------------------------------
  */
+
+#define MAX_ALIGN_MISMATCHES	255
+/* MAX_ALIGN_MISMATCHES is not supposed to be greater than PG_UINT8_MAX */
+#if MAX_ALIGN_MISMATCHES > PG_UINT8_MAX
+#error "MAX_ALIGN_MISMATCHES must be not greater than PG_UINT8_MAX"
+#endif
+
 #define FRAGMENT_HEADER_SIZE	(2 * sizeof(OffsetNumber))
+#define REGION_HEADER_SIZE		(sizeof(char) + sizeof(int))
+#define DIFF_DELTA_HEADER_SIZE	(sizeof(char) + 2 * sizeof(OffsetNumber))
+#define MISMATCH_HEADER_SIZE	(sizeof(char) + sizeof(uint8) + \
+								 sizeof(OffsetNumber))
 #define MATCH_THRESHOLD			FRAGMENT_HEADER_SIZE
-#define MAX_DELTA_SIZE			(BLCKSZ + 2 * FRAGMENT_HEADER_SIZE)
+#define MAX_DELTA_SIZE			(BLCKSZ + \
+								 2 * REGION_HEADER_SIZE + \
+								 2 * FRAGMENT_HEADER_SIZE + \
+								 2 * DIFF_DELTA_HEADER_SIZE + \
+								 MAX_ALIGN_MISMATCHES * MISMATCH_HEADER_SIZE \
+								 + sizeof(bool))
+
+#define writeToPtr(ptr, x)		memcpy(ptr, &(x), sizeof(x)), ptr += sizeof(x)
+#define readFromPtr(ptr, x)		memcpy(&(x), ptr, sizeof(x)), ptr += sizeof(x)
 
 /* Struct of generic xlog data for single page */
 typedef struct
 {
 	Buffer		buffer;			/* registered buffer */
 	int			flags;			/* flags for this buffer */
+
 	int			deltaLen;		/* space consumed in delta field */
 	char	   *image;			/* copy of page image for modification, do not
 								 * do it in-place to have aligned memory chunk */
 	char		delta[MAX_DELTA_SIZE];	/* delta between page images */
+
+	PageXLogCompressParams compressParams;	/* compress parameters */
 } PageData;
 
 /* State of generic xlog record construction */
@@ -71,14 +93,76 @@ struct GenericXLogState
 	bool		isLogged;
 };
 
+/* Describes for the region which type of delta is used in it */
+typedef enum
+{
+	DIFF_DELTA = 0,				/* diff delta with insert, remove and replace
+								 * operations */
+	BASE_DELTA = 1				/* base delta with update operations only */
+} DeltaType;
+
+/* Diff delta operations for transforming current page to target page */
+typedef enum
+{
+	DIFF_INSERT = 0,
+	DIFF_REMOVE = 1,
+	DIFF_REPLACE = 2
+} DiffDeltaOperations;
+
+/* Describes the kind of region of the page */
+typedef enum
+{
+	UPPER_REGION = 0,
+	LOWER_REGION = 1
+} RegionType;
+
 static void writeFragment(PageData *pageData, OffsetNumber offset,
 			  OffsetNumber len, const char *data);
 static void computeRegionDelta(PageData *pageData,
 				   const char *curpage, const char *targetpage,
 				   int targetStart, int targetEnd,
-				   int validStart, int validEnd);
+				   int validStart, int validEnd,
+				   uint8 maxMismatches);
 static void computeDelta(PageData *pageData, Page curpage, Page targetpage);
 static void applyPageRedo(Page page, const char *delta, Size deltaSize);
+
+static int alignRegions(const char *curRegion, const char *targetRegion,
+			 int curRegionLen, int targetRegionLen, uint8 maxMismatches);
+static int restoreCompactAlignment(const char *curRegion,
+						const char *targetRegion,
+						int curRegionLen,
+						int targetRegionLen,
+						int numMismatches);
+
+static bool computeRegionDiffDelta(PageData *pageData,
+					   const char *curpage, const char *targetpage,
+					   int targetStart, int targetEnd,
+					   int validStart, int validEnd,
+					   uint8 maxMismatches);
+static const char *applyPageDiffRedo(Page page, const char *delta, Size deltaSize);
+
+static void computeRegionBaseDelta(PageData *pageData,
+					   const char *curpage, const char *targetpage,
+					   int targetStart, int targetEnd,
+					   int validStart, int validEnd);
+static const char *applyPageBaseRedo(Page page, const char *delta, Size deltaSize);
+
+static bool pageDataContainsDiffDelta(PageData *pageData);
+static void downgradeDeltaToBaseFormat(PageData *pageData);
+
+/* Arrays for the alignment building and for the resulting alignments */
+static int	V[MAX_ALIGN_MISMATCHES + 1][2 * MAX_ALIGN_MISMATCHES + 1];
+static int	prevDiag[MAX_ALIGN_MISMATCHES + 1][2 * MAX_ALIGN_MISMATCHES + 1];
+static int	alignmentDiag[MAX_ALIGN_MISMATCHES + 1];
+static char curRegionAligned[MAX_ALIGN_MISMATCHES];
+static bool curRegionAlignedGap[MAX_ALIGN_MISMATCHES];
+static char targetRegionAligned[MAX_ALIGN_MISMATCHES];
+static bool targetRegionAlignedGap[MAX_ALIGN_MISMATCHES];
+static int	curRegionAlignedPos[MAX_ALIGN_MISMATCHES];
+static int	targetRegionAlignedPos[MAX_ALIGN_MISMATCHES];
+
+/* Array for diff delta application */
+static char localPage[BLCKSZ];
 
 
 /*
@@ -115,14 +199,82 @@ writeFragment(PageData *pageData, OffsetNumber offset, OffsetNumber length,
  * Bytes in curpage outside the range validStart to validEnd-1 should be
  * considered invalid, and always overwritten with target data.
  *
- * This function is a hot spot, so it's worth being as tense as possible
- * about the data-matching loops.
+ * If forceBaseDelta is true, fucntion just calls computeRegionBaseDelta.
+ * Otherwise this function tries to build diff delta first and, if it fails,
+ * uses the base delta. It also provides the header before the delta in which
+ * the type and the length of the delta are contained.
  */
 static void
 computeRegionDelta(PageData *pageData,
 				   const char *curpage, const char *targetpage,
 				   int targetStart, int targetEnd,
-				   int validStart, int validEnd)
+				   int validStart, int validEnd,
+				   uint8 maxMismatches)
+{
+	int			length;
+	char		header;
+	int			prevDeltaLen;
+	bool		diff = false;
+	char	   *ptr = pageData->delta + pageData->deltaLen;
+
+	/* Verify we have enough space */
+	Assert(pageData->deltaLen + sizeof(header) +
+		   sizeof(length) <= MAX_DELTA_SIZE);
+
+	pageData->deltaLen += sizeof(header) + sizeof(length);
+	prevDeltaLen = pageData->deltaLen;
+
+	/* Not sure what to do with too big maxMismathes. Now we just clip it. */
+	if (maxMismatches > MAX_ALIGN_MISMATCHES)
+		maxMismatches = MAX_ALIGN_MISMATCHES;
+
+	/* Try building diff delta only if necessary */
+	if (maxMismatches > 0)
+	{
+		diff = computeRegionDiffDelta(pageData,
+									  curpage, targetpage,
+									  targetStart, targetEnd,
+									  validStart, validEnd,
+									  maxMismatches);
+	}
+
+	/*
+	 * If we succeeded to make diff delta, just set the header. Otherwise,
+	 * make base delta.
+	 */
+	if (diff)
+	{
+		header = DIFF_DELTA;
+	}
+	else
+	{
+		header = BASE_DELTA;
+		computeRegionBaseDelta(pageData,
+							   curpage, targetpage,
+							   targetStart, targetEnd,
+							   validStart, validEnd);
+	}
+	length = pageData->deltaLen - prevDeltaLen;
+
+	writeToPtr(ptr, header);
+	writeToPtr(ptr, length);
+}
+
+/*
+ * Compute the XLOG fragments needed to transform a region of curpage into the
+ * corresponding region of targetpage, and append them to pageData's delta
+ * field. The region to transform runs from targetStart to targetEnd-1.
+ * Bytes in curpage outside the range validStart to validEnd-1 should be
+ * considered invalid, and always overwritten with target data.
+ *
+ * This function is a hot spot, so it's worth being as tense as possible
+ * about the data-matching loops.
+ */
+static void
+computeRegionBaseDelta(PageData *pageData,
+					   const char *curpage, const char *targetpage,
+					   int targetStart, int targetEnd,
+					   int validStart, int validEnd)
 {
 	int			i,
 				loopEnd,
@@ -222,27 +374,508 @@ computeRegionDelta(PageData *pageData,
 }
 
 /*
+ * Align curRegion and targetRegion and return the number of mismatches
+ * or -1 if the alignment with number of mismatching positions less than
+ * or equal to maxMismatches does not exist.
+ * The algorithm guarantees to find the alignment with the least possible
+ * number of mismathing positions or return that such least number is greater
+ * than maxMismatches.
+ *
+ * For a good introduction to the subject, read about the "Levenshtein
+ * distance" in Wikipedia.
+ *
+ * The basic algorithm is described in:
+ * "An O(ND) Difference Algorithm and its Variations", Eugene W. Myers,
+ * Algorithmica Vol. 1, 1986, pp. 251-266,
+ * <http://dx.doi.org/10.1007/BF01840446>,
+ * PDF: <http://mail.xmailserver.net/diff2.pdf>.
+ * See especially section 3, which describes the variation used below.
+ *
+ * This variation requires O(N + D ^ 2) memory and has time complexity O(ND).
+ * We choose it because it is faster than described in section 4.2 modification
+ * with O(N + D) memory requirement.
+ *
+ * The only modification we made to the original algorithm is the introduction
+ * of REPLACE operations, while in the original algorithm only INSERT and
+ * REMOVE are considered. This introduction doesn't affect time and memory
+ * complexity of the algorithm.
+ */
+static int
+alignRegions(const char *curRegion, const char *targetRegion,
+			 int curRegionLen, int targetRegionLen,
+			 uint8 maxMismatches)
+{
+	/* Number of mismatches */
+	int			m;
+
+	/* Difference between curRegion and targetRegion prefix lengths */
+	int			k;
+
+	/* Curbuf and targetRegion prefix lengths */
+	int			i,
+				j;
+
+	/* Number of mismathes in the answer */
+	int			numMismatches = -1;
+
+	/*
+	 * If lengths differ too much, there is no alignment with a small number
+	 * of mismatches.
+	 */
+	if (!(-maxMismatches < curRegionLen - targetRegionLen &&
+		  curRegionLen - targetRegionLen < maxMismatches))
+		return -1;
+
+	/*
+	 * V is an array to store the values of dynamic programming. The first
+	 * dimension corresponds to m, i. e. to the number of performed editing
+	 * operations, and the second one is for k + m, where k is the number of a
+	 * diagonal. A diagonal numbered k is such points (i, j) where i - j = k.
+	 * Here i means the length of curRegion prefix and j means the length of
+	 * targetRegion prefix. V[m][m + k] is the length of the longest prefix of
+	 * curRegion i which can be aligned with the prefix of length j of
+	 * targetRegion using m editing operations. In the loop below we
+	 * initialize V[0][0] and then compute V[m][m + k] based on, if defined,
+	 * V[m - 1][m + k - 1], V[m - 1][m + k], and V[m - 1][m + k + 1]. V[m][m +
+	 * k] is undefined if k < -m or k > m.
+	 */
+	V[0][0] = 0;
+
+	/* Find the longest path with the given number of mismatches */
+	for (m = 0; m <= maxMismatches; ++m)
+	{
+		/*
+		 * Find the largest prefix alignment with the given number of
+		 * mismatches and the given diagonal, i. e. difference between
+		 * curRegion and targetRegion prefix lengths.
+		 */
+		for (k = -m; k <= m; ++k)
+		{
+			/* Dynamic programming recurrent step */
+			if (m > 0)
+			{
+				i = -1;
+				if (k != -m && k != m &&
+					V[m - 1][m - 1 + k] + 1 > i)
+				{
+					i = V[m - 1][m - 1 + k] + 1;
+					prevDiag[m][m + k] = k;
+				}
+				if (k != -m && k != -m + 1 &&
+					V[m - 1][m - 1 + k - 1] + 1 > i)
+				{
+					i = V[m - 1][m - 1 + k - 1] + 1;
+					prevDiag[m][m + k] = k - 1;
+				}
+				if (k != m && k != m - 1 &&
+					V[m - 1][m - 1 + k + 1] > i)
+				{
+					i = V[m - 1][m - 1 + k + 1];
+					prevDiag[m][m + k] = k + 1;
+				}
+			}
+			else
+				i = 0;
+			j = i - k;
+
+			/* Boundary checks */
+			Assert(i >= 0);
+			Assert(j >= 0);
+
+			/* Increase the prefixes while the bytes are equal */
+			while (i < curRegionLen && j < targetRegionLen &&
+				   curRegion[i] == targetRegion[j])
+				i++, j++;
+
+			/*
+			 * Save the largest curRegion prefix that was aligned with given
+			 * number of mismatches and difference between curRegion and
+			 * targetRegion prefix lengths.
+			 */
+			V[m][m + k] = i;
+
+			/* If we find the alignment, save its length and break */
+			if (i == curRegionLen && j == targetRegionLen)
+			{
+				numMismatches = m;
+				break;
+			}
+		}
+		/* Break if we find an alignment */
+		if (numMismatches != -1)
+			break;
+	}
+	/* No alignment was found */
+	if (numMismatches == -1)
+		return -1;
+
+	/*
+	 * Restore the path k-s for each iteration of the main loop for the found
+	 * alignment.
+	 */
+	Assert(m >= 0);
+	while (m != 0)
+	{
+		Assert(-m <= k && k <= m);
+		alignmentDiag[m] = k;
+		k = prevDiag[m][m + k];
+		m--;
+	}
+	Assert(k == 0);
+	alignmentDiag[0] = 0;
+
+	return numMismatches;
+}
+
+/*
+ * Restore the mismathcing parts of the alignment based on V, alignmentDiag,
+ * and numMismacthes. Do some alignment assertions also.
+ *
+ * The compressed alignment is stored in curRegionAligned, targetRegionAligned,
+ * curRegionAlignedGap, targetRegionAlignedGap, curRegionAlignedPos, and
+ * targetRegionAlignedPos. The first two arrays contain the aligned data,
+ * the second two contain the map of align gaps in the first two arrays,
+ * and the last two arrays contain the positions of the aligned parts in
+ * the original arrays.
+ */
+int
+restoreCompactAlignment(const char *curRegion, const char *targetRegion,
+						int curRegionLen, int targetRegionLen,
+						int numMismatches)
+{
+	int			i,
+				j,
+				k,
+				m;
+
+	/* The length of the equal block */
+	int			curLen = 0;
+
+	/* Result alignment length */
+	int			resLen = 0;
+
+	/* Maximal possible result alignment length */
+	int			maxResLen = Min(curRegionLen, targetRegionLen) + numMismatches;
+
+	/* Keep compiler quiet */
+	if (curLen != 0)
+		curLen = maxResLen;
+
+	/* Check whether the first equal block is computed correctly */
+	curLen = V[0][0];
+	Assert(curLen >= 0);
+	Assert(resLen + curLen <= maxResLen);
+	Assert(memcmp(curRegion, targetRegion, curLen) == 0);
+
+	/* Restore the alignment */
+	for (m = 1; m <= numMismatches; ++m)
+	{
+		/* Initialize the variables for the block */
+		int			dk = alignmentDiag[m] - alignmentDiag[m - 1];
+		int			prevDiag = alignmentDiag[m - 1];
+
+		k = alignmentDiag[m];
+		i = V[m - 1][m - 1 + prevDiag];
+		j = i - prevDiag;
+		/* Check state consistency */
+		Assert(0 <= i && i <= curRegionLen);
+		Assert(0 <= j && j <= targetRegionLen);
+
+		/* Check the block operation correctness */
+		Assert(dk == -1 || i < curRegionLen);
+		Assert(dk == 1 || j < targetRegionLen);
+		Assert(-1 <= dk && dk <= 1);
+		Assert(resLen + 1 <= maxResLen);
+
+		/* Do the alignment operation of the block */
+		curRegionAlignedPos[resLen] = i;
+		targetRegionAlignedPos[resLen] = j;
+		if (dk == 1 || dk == 0)
+		{
+			curRegionAlignedGap[resLen] = false;
+			curRegionAligned[resLen] = curRegion[i++];
+		}
+		else
+			curRegionAlignedGap[resLen] = true;
+		if (dk == 0 || dk == -1)
+		{
+			targetRegionAlignedGap[resLen] = false;
+			targetRegionAligned[resLen] = targetRegion[j++];
+		}
+		else
+			targetRegionAlignedGap[resLen] = true;
+		resLen++;
+
+		/* Compute the size of the equal part of the block */
+		curLen = V[m][m + k] - i;
+
+		/* Check whether the equal part of the block is computed correctly */
+		Assert(curLen >= 0);
+		Assert(resLen + curLen <= maxResLen);
+		Assert(memcmp(&curRegion[i], &targetRegion[j], curLen) == 0);
+	}
+
+	return resLen;
+}
+
+/*
+ * Try to build a short alignment in order to produce a short diff delta.
+ * If fails, return false, otherwise return true and write the delta to
+ * pageData->delta.
+ */
+static bool
+computeRegionDiffDelta(PageData *pageData,
+					   const char *curpage, const char *targetpage,
+					   int targetStart, int targetEnd,
+					   int validStart, int validEnd,
+					   uint8 maxMismatches)
+{
+	char	   *ptr = pageData->delta + pageData->deltaLen;
+	int			i,
+				j;
+	char		type;
+	uint8		len;
+	OffsetNumber start;
+	OffsetNumber tmp;
+
+	int			numMismatches;
+	int			alignmentLength;
+
+	int			curRegionLen = validEnd - validStart;
+	int			targetRegionLen = targetEnd - targetStart;
+
+	numMismatches = alignRegions(&curpage[validStart],
+								 &targetpage[targetStart],
+								 curRegionLen,
+								 targetRegionLen,
+								 maxMismatches);
+	Assert(numMismatches <= maxMismatches);
+
+	/* If no proper alignment was found return false */
+	if (numMismatches < 0)
+		return false;
+
+	/* Restore the alignment in a compact form */
+	alignmentLength = restoreCompactAlignment(&curpage[validStart],
+											  &targetpage[targetStart],
+											  curRegionLen,
+											  targetRegionLen,
+											  numMismatches);
+
+	/*
+	 * Translate the alignment into the set of instructions for transformation
+	 * from curRegion into targetRegion, and write these instructions into
+	 * pageData->delta.
+	 */
+
+	/* Verify we have enough space */
+	Assert(pageData->deltaLen + sizeof(type) + 2 * sizeof(tmp) <= MAX_DELTA_SIZE);
+
+	/* Check whether the region is the upper or the lower part of the page */
+	Assert((validStart == 0 && targetStart == 0) ||
+		   (validEnd == BLCKSZ && targetEnd == BLCKSZ));
+
+	/* Write start and end indexes of the buffers */
+	if (validStart == 0 && targetStart == 0)
+	{
+		/* We are in the upper part, there is no need to store Starts */
+		type = UPPER_REGION;
+		writeToPtr(ptr, type);
+		tmp = validEnd;
+		writeToPtr(ptr, tmp);
+		tmp = targetEnd;
+		writeToPtr(ptr, tmp);
+	}
+	else
+	{
+		/* We are in the lower part, there is no need to store Ends */
+		type = LOWER_REGION;
+		writeToPtr(ptr, type);
+		tmp = validStart;
+		writeToPtr(ptr, tmp);
+		tmp = targetStart;
+		writeToPtr(ptr, tmp);
+	}
+
+	/* Transform the alignment into the set of instructions */
+	for (i = 0; i < alignmentLength; ++i)
+	{
+		/* Verify the alignment */
+		Assert(!curRegionAlignedGap[i] || !targetRegionAlignedGap[i]);
+		Assert(curRegionAligned[i] != targetRegionAligned[i] ||
+			   curRegionAlignedGap[i] || targetRegionAlignedGap[i]);
+
+		/* Determine the type of the instruction */
+		if (curRegionAlignedGap[i])
+			type = DIFF_INSERT;
+		else if (targetRegionAlignedGap[i])
+			type = DIFF_REMOVE;
+		else
+			type = DIFF_REPLACE;
+
+		/* Find the end of the block of the same instructions */
+		j = i + 1;
+		while (j < alignmentLength)
+		{
+			bool		sameBlock;
+
+			sameBlock = (
+						 (curRegionAlignedPos[j] <=
+						  curRegionAlignedPos[j - 1] + 1) &&
+						 (targetRegionAlignedPos[j] <=
+						  targetRegionAlignedPos[j - 1] + 1)
+				);
+
+			switch (type)
+			{
+				case DIFF_INSERT:
+					sameBlock &= (curRegionAlignedGap[j]);
+					break;
+				case DIFF_REMOVE:
+					sameBlock &= (targetRegionAlignedGap[j]);
+					break;
+				case DIFF_REPLACE:
+					sameBlock &= (!curRegionAlignedGap[j] &&
+								  !targetRegionAlignedGap[j] &&
+								  (curRegionAligned[j] !=
+								   targetRegionAligned[j]));
+					break;
+				default:
+					elog(ERROR, "unrecognized delta operation type: %d", type);
+					break;
+			}
+			if (sameBlock)
+				j++;
+			else
+				break;
+		}
+		len = j - i;
+
+		start = curRegionAlignedPos[i];
+		/* Verify we have enough space */
+		Assert(pageData->deltaLen + sizeof(type) +
+			   sizeof(len) + sizeof(start) <= MAX_DELTA_SIZE);
+		/* Write the header for instruction */
+		writeToPtr(ptr, type);
+		writeToPtr(ptr, len);
+		writeToPtr(ptr, start);
+
+		/* Write instruction data and go to the end of the block */
+		if (type != DIFF_REMOVE)
+		{
+			/* Verify we have enough space */
+			Assert(pageData->deltaLen + len <= MAX_DELTA_SIZE);
+			while (i < j)
+			{
+				char		c = targetRegionAligned[i++];
+
+				writeToPtr(ptr, c);
+			}
+		}
+		else
+			i = j;
+		i--;
+	}
+
+	pageData->deltaLen = ptr - pageData->delta;
+
+	return true;
+}
+
+/*
+ * Return whether pageData->delta contains diff deltas or not.
+ */
+static bool
+pageDataContainsDiffDelta(PageData *pageData)
+{
+	char	   *ptr = pageData->delta + sizeof(bool);
+	char	   *end = pageData->delta + pageData->deltaLen;
+	char		header;
+	int			length;
+
+	while (ptr < end)
+	{
+		readFromPtr(ptr, header);
+		readFromPtr(ptr, length);
+
+		if (header == DIFF_DELTA)
+			return true;
+		ptr += length;
+	}
+	return false;
+}
+
+/*
+ * Downgrade pageData->delta to base delta format.
+ *
+ * Only base diffs are allowed to perform the transformation.
+ */
+static void
+downgradeDeltaToBaseFormat(PageData *pageData)
+{
+	char	   *ptr = pageData->delta;
+	char	   *end = pageData->delta + pageData->deltaLen;
+	char	   *cur;
+	bool		containsDiffDelta;
+	char		header;
+	int			length;
+	int			newDeltaLength = 0;
+
+	/* Check whether containsDiffDelta is false */
+	readFromPtr(ptr, containsDiffDelta);
+	Assert(!containsDiffDelta);
+
+	cur = ptr;
+	while (ptr < end)
+	{
+		readFromPtr(ptr, header);
+		readFromPtr(ptr, length);
+
+		/* Check whether the region delta is base delta */
+		Assert(header == BASE_DELTA);
+		newDeltaLength += length;
+
+		memmove(cur, ptr, length);
+		cur += length;
+		ptr += length;
+	}
+	pageData->deltaLen = newDeltaLength;
+}
+
+/*
  * Compute the XLOG delta record needed to transform curpage into targetpage,
  * and store it in pageData's delta field.
  */
 static void
 computeDelta(PageData *pageData, Page curpage, Page targetpage)
 {
+	bool	   *containsDiffDelta = pageData->delta;
 	int			targetLower = ((PageHeader) targetpage)->pd_lower,
 				targetUpper = ((PageHeader) targetpage)->pd_upper,
 				curLower = ((PageHeader) curpage)->pd_lower,
 				curUpper = ((PageHeader) curpage)->pd_upper;
 
-	pageData->deltaLen = 0;
+	pageData->deltaLen = sizeof(bool);
 
 	/* Compute delta records for lower part of page ... */
 	computeRegionDelta(pageData, curpage, targetpage,
 					   0, targetLower,
-					   0, curLower);
+					   0, curLower,
+					   pageData->compressParams.lowerMaxMismatches);
 	/* ... and for upper part, ignoring what's between */
 	computeRegionDelta(pageData, curpage, targetpage,
 					   targetUpper, BLCKSZ,
-					   curUpper, BLCKSZ);
+					   curUpper, BLCKSZ,
+					   pageData->compressParams.upperMaxMismatches);
+
+	/*
+	 * Set first byte to true if at least one of the region deltas is diff
+	 * delta. Otherwise set first byte to false and downgrade all regions to
+	 * base format without extra headers.
+	 */
+	*containsDiffDelta = pageDataContainsDiffDelta(pageData);
+	if (!(*containsDiffDelta))
+		downgradeDeltaToBaseFormat(pageData);
 
 	/*
 	 * If xlog debug is enabled, then check produced delta.  Result of delta
@@ -291,11 +924,13 @@ GenericXLogStart(Relation relation)
  * is what the caller should modify.
  *
  * If the buffer is already registered, just return its existing entry.
- * (It's not very clear what to do with the flags in such a case, but
- * for now we stay with the original flags.)
+ * (It's not very clear what to do with the flags and parameters in such
+ * a case, but for now we stay with the original flags and parameters.)
  */
 Page
-GenericXLogRegisterBuffer(GenericXLogState *state, Buffer buffer, int flags)
+GenericXLogRegisterBufferEx(GenericXLogState *state,
+							Buffer buffer, int flags,
+							PageXLogCompressParams compressParams)
 {
 	int			block_id;
 
@@ -309,6 +944,7 @@ GenericXLogRegisterBuffer(GenericXLogState *state, Buffer buffer, int flags)
 			/* Empty slot, so use it (there cannot be a match later) */
 			page->buffer = buffer;
 			page->flags = flags;
+			page->compressParams = compressParams;
 			memcpy(page->image, BufferGetPage(buffer), BLCKSZ);
 			return (Page) page->image;
 		}
@@ -326,6 +962,22 @@ GenericXLogRegisterBuffer(GenericXLogState *state, Buffer buffer, int flags)
 		 MAX_GENERIC_XLOG_PAGES);
 	/* keep compiler quiet */
 	return NULL;
+}
+
+/*
+ * An alias for GenericXLogRegisterBufferEx with default parameters
+ * which are optimal for Bloom and RUM indexes.
+ * Left for backward compatibility.
+ */
+Page
+GenericXLogRegisterBuffer(GenericXLogState *state, Buffer buffer, int flags)
+{
+	PageXLogCompressParams defaultParameters;
+
+	defaultParameters.upperMaxMismatches = 0;
+	defaultParameters.lowerMaxMismatches = 24;
+	return GenericXLogRegisterBufferEx(state, buffer, flags,
+									   defaultParameters);
 }
 
 /*
@@ -451,9 +1103,55 @@ GenericXLogAbort(GenericXLogState *state)
 
 /*
  * Apply delta to given page image.
+ *
+ * Read blocks of instructions and apply them based on their type:
+ * BASE_DELTA or DIFF_DELTA.
  */
 static void
 applyPageRedo(Page page, const char *delta, Size deltaSize)
+{
+	const char *ptr = delta;
+	const char *end = delta + deltaSize;
+	char		header;
+	int			length;
+	bool		containsDiffDelta;
+
+	/* If page delta is base delta, apply it. */
+	readFromPtr(ptr, containsDiffDelta);
+	if (!containsDiffDelta)
+	{
+		applyPageBaseRedo(page, ptr, end - ptr);
+		return;
+	}
+
+	/* Otherwise apply each region delta. */
+	while (ptr < end)
+	{
+		readFromPtr(ptr, header);
+		readFromPtr(ptr, length);
+
+		switch (header)
+		{
+			case DIFF_DELTA:
+				ptr = applyPageDiffRedo(page, ptr, length);
+				break;
+			case BASE_DELTA:
+				ptr = applyPageBaseRedo(page, ptr, length);
+				break;
+			default:
+				elog(ERROR,
+					 "unrecognized delta type: %d",
+					 header);
+				break;
+		}
+	}
+}
+
+/*
+ * Apply base delta to given page image.
+ */
+static const char *
+applyPageBaseRedo(Page page, const char *delta, Size deltaSize)
 {
 	const char *ptr = delta;
 	const char *end = delta + deltaSize;
@@ -472,6 +1170,96 @@ applyPageRedo(Page page, const char *delta, Size deltaSize)
 
 		ptr += length;
 	}
+	return ptr;
+}
+
+/*
+ * Apply diff delta to given page image.
+ */
+static const char *
+applyPageDiffRedo(Page page, const char *delta, Size deltaSize)
+{
+	const char *ptr = delta;
+	const char *end = delta + deltaSize;
+	char		type;
+	uint8		len;
+	OffsetNumber targetStart,
+				targetEnd;
+	OffsetNumber validStart,
+				validEnd;
+	int			i,
+				j;
+	OffsetNumber start;
+
+	/* Read start and end indexes of the buffers */
+	validStart = 0;
+	validEnd = BLCKSZ;
+	targetStart = 0;
+	targetEnd = BLCKSZ;
+	readFromPtr(ptr, type);
+	switch (type)
+	{
+		case UPPER_REGION:
+			readFromPtr(ptr, validEnd);
+			readFromPtr(ptr, targetEnd);
+			break;
+		case LOWER_REGION:
+			readFromPtr(ptr, validStart);
+			readFromPtr(ptr, targetStart);
+			break;
+		default:
+			elog(ERROR,
+				 "unrecognized region type: %d",
+				 type);
+			break;
+	}
+
+	/* Read and apply the instructions */
+	i = 0, j = 0;
+	while (ptr < end)
+	{
+		/* Read the header of the current instruction */
+		readFromPtr(ptr, type);
+		readFromPtr(ptr, len);
+		readFromPtr(ptr, start);
+
+		/* Copy the data before current instruction to buffer */
+		memcpy(&localPage[j], page + validStart + i, start - i);
+		j += start - i;
+		i = start;
+
+		/* Apply the instruction */
+		switch (type)
+		{
+			case DIFF_INSERT:
+				memcpy(&localPage[j], ptr, len);
+				ptr += len;
+				j += len;
+				break;
+			case DIFF_REMOVE:
+				i += len;
+				break;
+			case DIFF_REPLACE:
+				memcpy(&localPage[j], ptr, len);
+				i += len;
+				j += len;
+				ptr += len;
+				break;
+			default:
+				elog(ERROR,
+					 "unrecognized delta instruction type: %d",
+					 type);
+				break;
+		}
+	}
+
+	/* Copy the data after the last instruction */
+	memcpy(&localPage[j], page + validStart + i, validEnd - validStart - i);
+	j += validEnd - validStart - i;
+	i = validEnd - validStart;
+
+	memcpy(page + targetStart, localPage, j);
+	return ptr;
 }
 
 /*

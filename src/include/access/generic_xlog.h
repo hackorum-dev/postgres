@@ -25,6 +25,17 @@
 /* Flag bits for GenericXLogRegisterBuffer */
 #define GENERIC_XLOG_FULL_IMAGE 0x0001	/* write full-page image */
 
+/* Struct of generic xlog compression parameters for a single page */
+typedef struct
+{
+	/*
+	 * maximal number of mismatches for diff delta for the upper part of the
+	 * page. Zero value disables diff delta for the part
+	 */
+	uint8		upperMaxMismatches;
+	uint8		lowerMaxMismatches; /* the same for the lower part */
+}			PageXLogCompressParams;
+
 /* state of generic xlog record construction */
 struct GenericXLogState;
 typedef struct GenericXLogState GenericXLogState;
@@ -33,6 +44,8 @@ typedef struct GenericXLogState GenericXLogState;
 extern GenericXLogState *GenericXLogStart(Relation relation);
 extern Page GenericXLogRegisterBuffer(GenericXLogState *state, Buffer buffer,
 						  int flags);
+extern Page GenericXLogRegisterBufferEx(GenericXLogState *state, Buffer buffer,
+							int flags, PageXLogCompressParams compressParams);
 extern XLogRecPtr GenericXLogFinish(GenericXLogState *state);
 extern void GenericXLogAbort(GenericXLogState *state);
 
