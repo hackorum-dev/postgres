@@ -51,6 +51,7 @@
 #include "storage/latch.h"
 #include "storage/pmsignal.h"
 #include "storage/shmem.h"
+#include "utils/memutils.h"
 
 /*
  * Select the fd readiness primitive to use. Normally the "most modern"
@@ -340,6 +341,15 @@ WaitLatch(volatile Latch *latch, int wakeEvents, long timeout,
 							 wait_event_info);
 }
 
+#define WAIT_EVENT_HASH_SIZE 113
+
+typedef struct WaitEventHashEntry
+{
+	WaitEventSet* set;
+	int wakeEvents;
+	pgsocket sock;
+} WaitEventHashEntry;
+
 /*
  * Like WaitLatch, but with an extra socket argument for WL_SOCKET_*
  * conditions.
@@ -359,28 +369,64 @@ WaitLatchOrSocket(volatile Latch *latch, int wakeEvents, pgsocket sock,
 	int			ret = 0;
 	int			rc;
 	WaitEvent	event;
-	WaitEventSet *set = CreateWaitEventSet(CurrentMemoryContext, 3);
+	WaitEventSet *set;
+	static WaitEventHashEntry wait_event_hash[WAIT_EVENT_HASH_SIZE];
+	size_t h = (wakeEvents | ((size_t)sock << 6)) % WAIT_EVENT_HASH_SIZE;
+	set = wait_event_hash[h].set;
+	if (set == NULL || wait_event_hash[h].wakeEvents != wakeEvents || wait_event_hash[h].sock != sock)
+	{
+		if (set)
+			FreeWaitEventSet(set);
+		set = CreateWaitEventSet(TopMemoryContext, 3);
+		wait_event_hash[h].set = set;
+		wait_event_hash[h].wakeEvents = wakeEvents;
+		wait_event_hash[h].sock = sock;
+
+		if (wakeEvents & WL_LATCH_SET)
+			AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET,
+							  (Latch *) latch, NULL);
+
+		if (wakeEvents & WL_POSTMASTER_DEATH && IsUnderPostmaster)
+			AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET,
+							  NULL, NULL);
+
+		if (wakeEvents & WL_SOCKET_MASK)
+		{
+			int			ev;
+
+			ev = wakeEvents & WL_SOCKET_MASK;
+			AddWaitEventToSet(set, ev, sock, NULL, NULL);
+		}
+	}
+#if defined(WAIT_USE_EPOLL)
+	/*
+	 * Socket descriptor can be closed and reused.
+	 * Closed descriptor is automatically excluded from epoll set,
+	 * but cached epoll set will not correctly work in this case.
+	 * So we will try to always add socket descriptor and ignore EEXIST error.
+	 */
+	else if (wakeEvents & WL_SOCKET_MASK)
+	{
+		struct epoll_event epoll_ev;
+		int rc;
+		epoll_ev.data.ptr = &set->events[set->nevents-1];
+		epoll_ev.events = EPOLLERR | EPOLLHUP;
+		if (wakeEvents & WL_SOCKET_READABLE)
+			epoll_ev.events |= EPOLLIN;
+		if (wakeEvents & WL_SOCKET_WRITEABLE)
+			epoll_ev.events |= EPOLLOUT;
+		rc = epoll_ctl(set->epoll_fd, EPOLL_CTL_ADD, sock, &epoll_ev);
+		if (rc < 0 && errno != EEXIST)
+			ereport(ERROR,
+					(errcode_for_socket_access(),
+					 errmsg("epoll_ctl() failed: %m")));
+	}
+#endif
 
 	if (wakeEvents & WL_TIMEOUT)
 		Assert(timeout >= 0);
 	else
 		timeout = -1;
-
-	if (wakeEvents & WL_LATCH_SET)
-		AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET,
-						  (Latch *) latch, NULL);
-
-	if (wakeEvents & WL_POSTMASTER_DEATH && IsUnderPostmaster)
-		AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET,
-						  NULL, NULL);
-
-	if (wakeEvents & WL_SOCKET_MASK)
-	{
-		int			ev;
-
-		ev = wakeEvents & WL_SOCKET_MASK;
-		AddWaitEventToSet(set, ev, sock, NULL, NULL);
-	}
 
 	rc = WaitEventSetWait(set, timeout, &event, 1, wait_event_info);
 
@@ -392,9 +438,6 @@ WaitLatchOrSocket(volatile Latch *latch, int wakeEvents, pgsocket sock,
 							   WL_POSTMASTER_DEATH |
 							   WL_SOCKET_MASK);
 	}
-
-	FreeWaitEventSet(set);
-
 	return ret;
 }
 
