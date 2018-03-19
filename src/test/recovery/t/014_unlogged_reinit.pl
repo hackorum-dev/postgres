@@ -44,8 +44,25 @@ is($node->safe_psql('postgres', "SELECT nextval('seq_unlogged')"),
 
 my $tablespaceDir = PostgreSQL::Test::Utils::tempdir;
 
+sub real_dir
+{
+    my $dir = "$_[0]";
+    return $dir unless -d $dir;
+    use Config;
+    return $dir unless $Config{osname} eq 'msys';
+    use Cwd;
+    my $here = cwd;
+    chdir $dir;
+    $dir = qx{sh -c "pwd -W"};
+    chomp $dir;
+    chdir $here;
+    return $dir;
+}
+
+my $realTSDir = real_dir($tablespaceDir);
+
 $node->safe_psql('postgres',
-	"CREATE TABLESPACE ts1 LOCATION '$tablespaceDir'");
+	"CREATE TABLESPACE ts1 LOCATION '$realTSDir'");
 $node->safe_psql('postgres',
 	'CREATE UNLOGGED TABLE ts1_unlogged (id int) TABLESPACE ts1');
 
