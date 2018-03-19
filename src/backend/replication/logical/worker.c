@@ -306,7 +306,7 @@ slot_store_error_callback(void *arg)
 			   rel->remoterel.nspname, rel->remoterel.relname,
 			   rel->remoterel.attnames[errarg->remote_attnum],
 			   remotetypname,
-			   format_type_be(localtypoid));
+			   format_type_be_qualified(localtypoid));
 }
 
 /*
