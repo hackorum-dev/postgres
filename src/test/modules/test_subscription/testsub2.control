@@ -1,0 +1,4 @@
+comment = 'extension testsub2 to test subscriptions'
+default_version = '1.0'
+module_pathname = '$libdir/testsub2'
+relocatable = true
