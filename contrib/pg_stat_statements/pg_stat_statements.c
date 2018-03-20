@@ -63,6 +63,7 @@
 
 #include "access/hash.h"
 #include "catalog/pg_authid.h"
+#include "commands/explain.h"
 #include "executor/instrument.h"
 #include "funcapi.h"
 #include "mb/pg_wchar.h"
@@ -78,6 +79,8 @@
 #include "tcop/utility.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
+#include "utils/timestamp.h"
+#include "utils/varlena.h"
 
 PG_MODULE_MAGIC;
 
@@ -119,7 +122,8 @@ typedef enum pgssVersion
 	PGSS_V1_0 = 0,
 	PGSS_V1_1,
 	PGSS_V1_2,
-	PGSS_V1_3
+	PGSS_V1_3,
+	PGSS_V1_6
 } pgssVersion;
 
 /*
@@ -165,6 +169,16 @@ typedef struct Counters
 	double		usage;			/* usage factor */
 } Counters;
 
+typedef struct pgssPlan
+{
+	Size	offset;
+	int		len;
+	double		time;	/* execution time in msec when the latest plan was updated */
+	TimestampTz timestamp;
+	int64 outliers;
+	int64 updates;
+} pgssPlan;
+
 /*
  * Statistics per statement
  *
@@ -178,6 +192,8 @@ typedef struct pgssEntry
 	Counters	counters;		/* the statistics for this query */
 	Size		query_offset;	/* query text offset in external file */
 	int			query_len;		/* # of valid bytes in query string, or -1 */
+	pgssPlan	good_plan;
+	pgssPlan	bad_plan;
 	int			encoding;		/* query text encoding */
 	slock_t		mutex;			/* protects the counters only */
 } pgssEntry;
@@ -265,11 +281,26 @@ static const struct config_enum_entry track_options[] =
 	{NULL, 0, false}
 };
 
+static const struct config_enum_entry format_options[] =
+{
+	{"text", EXPLAIN_FORMAT_TEXT, false},
+	{"xml", EXPLAIN_FORMAT_XML, false},
+	{"json", EXPLAIN_FORMAT_JSON, false},
+	{"yaml", EXPLAIN_FORMAT_YAML, false},
+	{NULL, 0, false}
+};
+
 static int	pgss_max;			/* max # statements to track */
 static int	pgss_track;			/* tracking level */
 static bool pgss_track_utility; /* whether to track utility commands */
 static bool pgss_save;			/* whether to save stats across shutdown */
-
+static bool pgss_good_plan_enable; 	/* whether to save good_plans */
+static bool pgss_bad_plan_enable; 	/* whether to save bad_plans */
+static bool pgss_good_plan_enable_temp; /* used to store state between plan_track_check and _assign */
+static bool pgss_bad_plan_enable_temp; 	/* used to store state between plan_track_check and _assign */
+static int	pgss_plan_format;   	/* id which sets the output format */
+static double pgss_plan_fence_factor; /* can be used to scale the fences for plan updates */
+static char *pgss_plan_track_str; /* String holding the arguments provided to the pgss_plan_track GUC */
 
 #define pgss_enabled() \
 	(pgss_track == PGSS_TRACK_ALL || \
@@ -291,7 +322,9 @@ void		_PG_fini(void);
 PG_FUNCTION_INFO_V1(pg_stat_statements_reset);
 PG_FUNCTION_INFO_V1(pg_stat_statements_1_2);
 PG_FUNCTION_INFO_V1(pg_stat_statements_1_3);
+PG_FUNCTION_INFO_V1(pg_stat_statements_1_6);
 PG_FUNCTION_INFO_V1(pg_stat_statements);
+PG_FUNCTION_INFO_V1(pg_stat_statements_plan_reset);
 
 static void pgss_shmem_startup(void);
 static void pgss_shmem_shutdown(int code, Datum arg);
@@ -309,12 +342,17 @@ static void pgss_ProcessUtility(PlannedStmt *pstmt, const char *queryString,
 static uint64 pgss_hash_string(const char *str, int len);
 static void pgss_store(const char *query, uint64 queryId,
 		   int query_location, int query_len,
+		   QueryDesc *queryDesc,
 		   double total_time, uint64 rows,
 		   const BufferUsage *bufusage,
 		   pgssJumbleState *jstate);
+Datum pg_stat_statements_plan_reset(PG_FUNCTION_ARGS);
 static void pg_stat_statements_internal(FunctionCallInfo fcinfo,
 							pgssVersion api_version,
 							bool showtext);
+static int fill_plan_times(Datum values[], bool nulls[], int i, pgssPlan *plan);
+static int fill_plan_str(Datum values[], bool nulls[], int i, pgssPlan *plan,
+							pgssEntry *entry, char *qbuffer, Size qbuffer_size);
 static Size pgss_memsize(void);
 static pgssEntry *entry_alloc(pgssHashKey *key, Size query_offset, int query_len,
 			int encoding, bool sticky);
@@ -338,7 +376,8 @@ static char *generate_normalized_query(pgssJumbleState *jstate, const char *quer
 static void fill_in_constant_lengths(pgssJumbleState *jstate, const char *query,
 						 int query_loc);
 static int	comp_location(const void *a, const void *b);
-
+static bool plan_track_check_hook(char **newvalue, void **extra, GucSource source);
+static void plan_track_assign_hook(const char *newvalue, void *extra);
 
 /*
  * Module load callback
@@ -407,6 +446,42 @@ _PG_init(void)
 							 NULL,
 							 NULL);
 
+	DefineCustomStringVariable("pg_stat_statements.plan_track",
+							   "Enable plan tracking",
+							   "Specify the types of plans that shall be tracked: all, none, good, or bad. Support for multiple individual types (curently only good and bad) is available.",
+							   &pgss_plan_track_str,
+							   "all",
+							   PGC_SUSET,
+							   GUC_LIST_INPUT,
+							   plan_track_check_hook,
+							   plan_track_assign_hook,
+							   NULL);
+
+	DefineCustomEnumVariable("pg_stat_statements.plan_format",
+							 "Sets the output format for the plans.",
+							 "Notice that the plan format can not be changed after a plan is saved. Valid values are text, json, xml and yaml.",
+							 &pgss_plan_format,
+							 EXPLAIN_FORMAT_TEXT,
+							 format_options,
+							 PGC_SUSET,
+							 0,
+							 NULL,
+							 NULL,
+							 NULL);
+
+	DefineCustomRealVariable("pg_stat_statements.plan_fence_factor",
+							 "Sets the factor that scales the fences that are used to determine whether a plan should be updated.",
+							 NULL,
+							 &pgss_plan_fence_factor,
+							 1.5,
+							 0.0,
+							 +INFINITY,
+							 PGC_SUSET,
+							 0,
+							 NULL,
+							 NULL,
+							 NULL);
+
 	EmitWarningsOnPlaceholders("pg_stat_statements");
 
 	/*
@@ -470,7 +545,11 @@ pgss_shmem_startup(void)
 	int32		pgver;
 	int32		i;
 	int			buffer_size;
+	int			good_plan_buffer_size;
+	int			bad_plan_buffer_size;
 	char	   *buffer = NULL;
+	char	   *good_plan_buffer = NULL;
+	char	   *bad_plan_buffer = NULL;
 
 	if (prev_shmem_startup_hook)
 		prev_shmem_startup_hook();
@@ -561,7 +640,11 @@ pgss_shmem_startup(void)
 	}
 
 	buffer_size = 2048;
+	good_plan_buffer_size = 2048;
+	bad_plan_buffer_size = 2048;
 	buffer = (char *) palloc(buffer_size);
+	good_plan_buffer = (char *) palloc(good_plan_buffer_size);
+	bad_plan_buffer = (char *) palloc(bad_plan_buffer_size);
 
 	if (fread(&header, sizeof(uint32), 1, file) != 1 ||
 		fread(&pgver, sizeof(uint32), 1, file) != 1 ||
@@ -595,8 +678,34 @@ pgss_shmem_startup(void)
 		if (fread(buffer, 1, temp.query_len + 1, file) != temp.query_len + 1)
 			goto read_error;
 
+		/* Resize good plan_buffer and read into it */
+		if (temp.good_plan.len >= good_plan_buffer_size)
+		{
+			good_plan_buffer_size =
+				Max(good_plan_buffer_size * 2, temp.good_plan.len + 1);
+			good_plan_buffer= repalloc(good_plan_buffer, good_plan_buffer_size);
+		}
+
+		if (fread(good_plan_buffer, 1, temp.good_plan.len + 1, file)
+				!= temp.good_plan.len + 1)
+			goto read_error;
+
+		/* Resize bad plan_buffer and read into it */
+		if (temp.bad_plan.len >= bad_plan_buffer_size)
+		{
+			bad_plan_buffer_size =
+				Max(bad_plan_buffer_size * 2, temp.bad_plan.len + 1);
+			bad_plan_buffer= repalloc(bad_plan_buffer, bad_plan_buffer_size);
+		}
+
+		if (fread(bad_plan_buffer, 1, temp.bad_plan.len + 1, file)
+				!= temp.bad_plan.len + 1)
+			goto read_error;
+
 		/* Should have a trailing null, but let's make sure */
 		buffer[temp.query_len] = '\0';
+		good_plan_buffer[temp.good_plan.len] = '\0';
+		bad_plan_buffer[temp.bad_plan.len] = '\0';
 
 		/* Skip loading "sticky" entries */
 		if (temp.counters.calls == 0)
@@ -608,6 +717,20 @@ pgss_shmem_startup(void)
 			goto write_error;
 		pgss->extent += temp.query_len + 1;
 
+		/* Store the good plan text*/
+		temp.good_plan.offset = pgss->extent;
+		if (fwrite(good_plan_buffer, 1, temp.good_plan.len + 1, qfile)
+				!= temp.good_plan.len + 1)
+			goto write_error;
+		pgss->extent += temp.good_plan.len + 1;
+
+		/* Store the bad plan text*/
+		temp.bad_plan.offset = pgss->extent;
+		if (fwrite(bad_plan_buffer, 1, temp.bad_plan.len + 1, qfile)
+				!= temp.bad_plan.len + 1)
+			goto write_error;
+		pgss->extent += temp.bad_plan.len + 1;
+
 		/* make the hashtable entry (discards old entries if too many) */
 		entry = entry_alloc(&temp.key, query_offset, temp.query_len,
 							temp.encoding,
@@ -615,9 +738,14 @@ pgss_shmem_startup(void)
 
 		/* copy in the actual stats */
 		entry->counters = temp.counters;
+				/* copy in the plans */
+		entry->good_plan = temp.good_plan;
+		entry->bad_plan = temp.bad_plan;
 	}
 
 	pfree(buffer);
+	pfree(good_plan_buffer);
+	pfree(bad_plan_buffer);
 	FreeFile(file);
 	FreeFile(qfile);
 
@@ -658,6 +786,10 @@ write_error:
 fail:
 	if (buffer)
 		pfree(buffer);
+	if (good_plan_buffer)
+		pfree(good_plan_buffer);
+	if (bad_plan_buffer)
+		pfree(bad_plan_buffer);
 	if (file)
 		FreeFile(file);
 	if (qfile)
@@ -723,14 +855,52 @@ pgss_shmem_shutdown(int code, Datum arg)
 	while ((entry = hash_seq_search(&hash_seq)) != NULL)
 	{
 		int			len = entry->query_len;
+		int			good_plan_len = entry->good_plan.len;
+		int			bad_plan_len = entry->bad_plan.len;
 		char	   *qstr = qtext_fetch(entry->query_offset, len,
 									   qbuffer, qbuffer_size);
+		char	   *good_plan_str;
+		char	   *bad_plan_str;
+		if (good_plan_len > 0)
+		{
+			/* A good plan is available */
+			good_plan_str = qtext_fetch(entry->good_plan.offset, good_plan_len,
+												qbuffer, qbuffer_size);
+		}
+		else
+		{
+			/*
+			 * There is no good plan available. This can be caused by a query
+			 * which has no plan (for example insert or delete queries) or
+			 * because good plans are disabled. In this case we have to store
+			 * an empty string instead of null.
+			 */
+			good_plan_str = "";
+		}
+		if (bad_plan_len > 0)
+		{
+			/* A bad plan is available */
+			bad_plan_str = qtext_fetch(entry->bad_plan.offset, bad_plan_len,
+												qbuffer, qbuffer_size);
+		}
+		else
+		{
+			/*
+			 * There is no bad plan available. This can be caused by a query
+			 * which has no plan (for example insert or delete queries) or
+			 * because bad plans are disabled. In this case we have to store
+			 * an empty string instead of null.
+			 */
+			bad_plan_str = "";
+		}
 
 		if (qstr == NULL)
 			continue;			/* Ignore any entries with bogus texts */
-
+		/* Write entries, queries and plans serialized to the dump file */
 		if (fwrite(entry, sizeof(pgssEntry), 1, file) != 1 ||
-			fwrite(qstr, 1, len + 1, file) != len + 1)
+			fwrite(qstr, 1, len + 1, file) != len + 1 ||
+			fwrite(good_plan_str, 1, good_plan_len + 1, file) != good_plan_len + 1 ||
+			fwrite(bad_plan_str, 1, bad_plan_len + 1, file) != bad_plan_len + 1)
 		{
 			/* note: we assume hash_seq_term won't change errno */
 			hash_seq_term(&hash_seq);
@@ -835,6 +1005,7 @@ pgss_post_parse_analyze(ParseState *pstate, Query *query)
 				   query->queryId,
 				   query->stmt_location,
 				   query->stmt_len,
+				   NULL,
 				   0,
 				   0,
 				   NULL,
@@ -942,6 +1113,7 @@ pgss_ExecutorEnd(QueryDesc *queryDesc)
 				   queryId,
 				   queryDesc->plannedstmt->stmt_location,
 				   queryDesc->plannedstmt->stmt_len,
+				   queryDesc,								/* queryDesc itself is needed to retrieve the plan */
 				   queryDesc->totaltime->total * 1000.0,	/* convert to msec */
 				   queryDesc->estate->es_processed,
 				   &queryDesc->totaltime->bufusage,
@@ -1053,6 +1225,7 @@ pgss_ProcessUtility(PlannedStmt *pstmt, const char *queryString,
 				   0,			/* signal that it's a utility stmt */
 				   pstmt->stmt_location,
 				   pstmt->stmt_len,
+				   NULL,
 				   INSTR_TIME_GET_MILLISEC(duration),
 				   rows,
 				   &bufusage,
@@ -1084,6 +1257,26 @@ pgss_hash_string(const char *str, int len)
 }
 
 /*
+ * Update a plan in the text file.
+ * We can re-use qtext_store to save the plan.
+ */
+static void
+update_plan(volatile pgssPlan* pgssPlan_ptr, const char* plan_str, int plan_len,
+			double total_time)
+{
+	if (plan_len > 0)
+	{
+		Size plan_offset;
+		qtext_store(plan_str, plan_len, &plan_offset, NULL);
+		pgssPlan_ptr->offset	= plan_offset;
+		pgssPlan_ptr->len		= plan_len;
+		pgssPlan_ptr->time		= total_time;
+		pgssPlan_ptr->timestamp = GetCurrentTimestamp();
+	}
+	return;
+}
+
+/*
  * Store some statistics for a statement.
  *
  * If queryId is 0 then this is a utility statement and we should compute
@@ -1096,6 +1289,7 @@ pgss_hash_string(const char *str, int len)
 static void
 pgss_store(const char *query, uint64 queryId,
 		   int query_location, int query_len,
+		   QueryDesc *queryDesc,
 		   double total_time, uint64 rows,
 		   const BufferUsage *bufusage,
 		   pgssJumbleState *jstate)
@@ -1133,6 +1327,7 @@ pgss_store(const char *query, uint64 queryId,
 		query_location = 0;
 		query_len = strlen(query);
 	}
+
 
 	/*
 	 * Discard leading and trailing whitespace, too.  Use scanner_isspace()
@@ -1231,8 +1426,135 @@ pgss_store(const char *query, uint64 queryId,
 		 * locking rules at the head of the file)
 		 */
 		volatile pgssEntry *e = (volatile pgssEntry *) entry;
+		bool	good_plan_needs_updating = false;
+		bool	bad_plan_needs_updating = false;
+		int		plan_len = 0;
+		char*	plan;
 
 		SpinLockAcquire(&e->mutex);
+
+		if (queryDesc && (pgss_good_plan_enable || pgss_bad_plan_enable))
+		{
+			/* Avoid division by zero errors. */
+			if (e->counters.calls > 0)
+			{
+				/*
+				 * The quantiles for a normal distributions can be estimated through
+				 * X = expected value + standard deviation * Z-score
+				 * For the 25% and 75% quantiles (=lower and upper quartile),
+				 * the z-scores -0.6754 and 0.6745 are used.
+				 */
+				double z_score = 0.6745;
+				/*
+				 * Since we're already making a bunch of statistical assumptions,
+				 * let's use the fact that the expected value can be approximated
+				 * by the mean of a dataset (see "law of large numbers").
+				 */
+
+				double std_dev = sqrt(e->counters.sum_var_time / e->counters.calls);
+				double exp_val = e->counters.mean_time;
+
+				double lower_quartile = exp_val - std_dev * z_score;
+				double upper_quartile = exp_val + std_dev * z_score;
+
+				double interquartile_dist = upper_quartile - lower_quartile;
+
+				/*
+				 * We calculate a set of inner and outer fences, similar to the
+				 * definition of whiskers in boxplots.
+				 * By default, pgss_plan_fence_factor is set to 1.5 .
+				 */
+				double lower_fence = lower_quartile - pgss_plan_fence_factor * interquartile_dist;
+				double upper_fence = upper_quartile + pgss_plan_fence_factor * interquartile_dist;
+
+				if (pgss_good_plan_enable)
+				{
+					/*
+					 * Only update bad_plan if execution time was slower than the lower fence.
+					 * The use of statistics to estimate wether the change in execution time
+					 * was big enough to warrant a plan update is debatable, however it is
+					 * probably the fastest way to identify changes in the planner
+					 * without actually comparing the plans step by step.
+					 */
+					if (total_time < lower_fence)
+					{
+						e->good_plan.outliers++;
+						/* Only update plan if execution time was slower than that of the old plan*/
+						if (total_time < e->good_plan.time)
+						{
+							good_plan_needs_updating = true;
+							e->good_plan.updates++;
+						}
+					}
+				}
+
+				if (pgss_bad_plan_enable)
+				{
+					/* Only update good_plan if execution time was faster than the upperer fence.*/
+					if (total_time > upper_fence)
+					{
+						e->bad_plan.outliers++;
+						if (total_time > e->bad_plan.time)
+						{
+							bad_plan_needs_updating = true;
+							e->bad_plan.updates++;
+						}
+					}
+				}
+			}
+
+			/*
+			 * Plans should be updated whenever no previous plan was stored.
+			 */
+			if (pgss_good_plan_enable && e->good_plan.time==0)
+				good_plan_needs_updating = true;
+			if (pgss_bad_plan_enable && e->bad_plan.time==0)
+				bad_plan_needs_updating = true;
+
+			if (good_plan_needs_updating || bad_plan_needs_updating)
+			{
+				/* *es is used to retrieve the plan associated with the statement*/
+				ExplainState *es = NewExplainState();
+
+				es->analyze = (queryDesc->instrument_options && false);
+				es->verbose = false;
+				es->buffers = (es->analyze && false);
+				es->timing = (es->analyze && true);
+				es->format = pgss_plan_format;
+
+				ExplainBeginOutput(es);
+				ExplainQueryText(es, queryDesc);
+				ExplainPrintPlan(es, queryDesc);
+				ExplainEndOutput(es);
+
+				/* Remove last line break */
+				if (es->str->len > 0 && es->str->data[es->str->len - 1] == '\n')
+					es->str->data[--es->str->len] = '\0';
+
+				/* Fix JSON to output an object */
+				if (pgss_plan_format == EXPLAIN_FORMAT_JSON)
+				{
+					es->str->data[0] = '{';
+					es->str->data[es->str->len - 1] = '}';
+				}
+
+				plan = es->str->data;
+				plan_len = strlen(plan);
+
+				if (good_plan_needs_updating)
+				{
+					update_plan(&e->good_plan, plan, plan_len, total_time);
+				}
+
+				if (bad_plan_needs_updating)
+				{
+					update_plan(&e->bad_plan, plan, plan_len, total_time);
+				}
+
+				pfree(es->str->data);
+				pfree(es);
+			}
+		}
 
 		/* "Unstick" entry if it was previously sticky */
 		if (e->counters.calls == 0)
@@ -1305,12 +1627,76 @@ pg_stat_statements_reset(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
+Datum
+pg_stat_statements_plan_reset(PG_FUNCTION_ARGS)
+{
+	pgssEntry   *entry;
+	pgssHashKey	key;
+
+	uint64 query_id = PG_GETARG_INT64(0);
+
+	bool good_plan_reset = false;
+	bool bad_plan_reset = false;
+
+	if (PG_NARGS() == 2)
+	{
+		char *plan_type_str = PG_GETARG_CSTRING(1);
+		if (pg_strcasecmp(plan_type_str, "good") == 0)
+			good_plan_reset = true;
+		else if (pg_strcasecmp(plan_type_str, "bad") == 0)
+			bad_plan_reset = true;
+		else
+			elog(LOG, "If a second argument is provided to pg_stat_statements_plan_reset, it must be of a valid plan type ('good' or 'bad').");
+	}
+	else
+	{
+		good_plan_reset = true;
+		bad_plan_reset = true;
+	}
+
+	if (!pgss || !pgss_hash)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("pg_stat_statements must be loaded via shared_preload_libraries")));
+
+	/* Set up key for hashtable search */
+	key.userid = GetUserId();
+	key.dbid = MyDatabaseId;
+	key.queryid = query_id;
+
+	/* Lookup the hash table entry with shared lock. */
+	LWLockAcquire(pgss->lock, LW_SHARED);
+
+	entry = (pgssEntry *) hash_search(pgss_hash, &key, HASH_FIND, NULL);
+
+	if (entry)
+	{
+		if (good_plan_reset)
+		{
+			entry->good_plan.offset = -1;
+			entry->good_plan.len = 0;
+			entry->good_plan.time = 0;
+			entry->good_plan.timestamp = 0;
+		}
+		if (bad_plan_reset)
+		{
+			entry->bad_plan.offset = -1;
+			entry->bad_plan.len = 0;
+			entry->bad_plan.time = 0;
+			entry->bad_plan.timestamp = 0;
+		}
+	}
+	LWLockRelease(pgss->lock);
+	PG_RETURN_VOID();
+}
+
 /* Number of output arguments (columns) for various API versions */
 #define PG_STAT_STATEMENTS_COLS_V1_0	14
 #define PG_STAT_STATEMENTS_COLS_V1_1	18
 #define PG_STAT_STATEMENTS_COLS_V1_2	19
 #define PG_STAT_STATEMENTS_COLS_V1_3	23
-#define PG_STAT_STATEMENTS_COLS			23	/* maximum of above */
+#define PG_STAT_STATEMENTS_COLS_V1_6	33
+#define PG_STAT_STATEMENTS_COLS			33	/* maximum of above */
 
 /*
  * Retrieve statement statistics.
@@ -1322,6 +1708,16 @@ pg_stat_statements_reset(PG_FUNCTION_ARGS)
  * expected API version is identified by embedding it in the C name of the
  * function.  Unfortunately we weren't bright enough to do that for 1.1.
  */
+Datum
+pg_stat_statements_1_6(PG_FUNCTION_ARGS)
+{
+ bool		showtext = PG_GETARG_BOOL(0);
+
+ pg_stat_statements_internal(fcinfo, PGSS_V1_6, showtext);
+
+ return (Datum) 0;
+}
+
 Datum
 pg_stat_statements_1_3(PG_FUNCTION_ARGS)
 {
@@ -1428,6 +1824,10 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 			if (api_version != PGSS_V1_3)
 				elog(ERROR, "incorrect number of output arguments");
 			break;
+		case PG_STAT_STATEMENTS_COLS_V1_6:
+			if (api_version != PGSS_V1_6)
+				elog(ERROR, "incorrect number of output arguments");
+			break;
 		default:
 			elog(ERROR, "incorrect number of output arguments");
 	}
@@ -1511,6 +1911,8 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 		bool		nulls[PG_STAT_STATEMENTS_COLS];
 		int			i = 0;
 		Counters	tmp;
+		pgssPlan 	tmp_good_plan;
+		pgssPlan 	tmp_bad_plan;
 		double		stddev;
 		int64		queryid = entry->key.queryid;
 
@@ -1550,6 +1952,18 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 					/* Just return a null if we fail to find the text */
 					nulls[i++] = true;
 				}
+
+				if (api_version >= PGSS_V1_6)
+				{
+					/*
+					 * This version requires to print out the good
+					 * and the bad plan if they are enabled.
+					 */
+					i = fill_plan_str(values, nulls, i, &entry->good_plan,
+										entry, qbuffer, qbuffer_size);
+					i = fill_plan_str(values, nulls, i, &entry->bad_plan,
+										entry, qbuffer, qbuffer_size);
+				}
 			}
 			else
 			{
@@ -1579,6 +1993,8 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 
 			SpinLockAcquire(&e->mutex);
 			tmp = e->counters;
+			tmp_good_plan = e->good_plan;
+			tmp_bad_plan = e->bad_plan;
 			SpinLockRelease(&e->mutex);
 		}
 
@@ -1606,6 +2022,14 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 				stddev = 0.0;
 			values[i++] = Float8GetDatumFast(stddev);
 		}
+
+		if (api_version >= PGSS_V1_6)
+		{
+			/* Set plan times and timestamps */
+			i = fill_plan_times(values, nulls, i, &tmp_good_plan);
+			i = fill_plan_times(values, nulls, i, &tmp_bad_plan);
+		}
+
 		values[i++] = Int64GetDatumFast(tmp.rows);
 		values[i++] = Int64GetDatumFast(tmp.shared_blks_hit);
 		values[i++] = Int64GetDatumFast(tmp.shared_blks_read);
@@ -1629,6 +2053,7 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 					 api_version == PGSS_V1_1 ? PG_STAT_STATEMENTS_COLS_V1_1 :
 					 api_version == PGSS_V1_2 ? PG_STAT_STATEMENTS_COLS_V1_2 :
 					 api_version == PGSS_V1_3 ? PG_STAT_STATEMENTS_COLS_V1_3 :
+					 api_version == PGSS_V1_6 ? PG_STAT_STATEMENTS_COLS_V1_6 :
 					 -1 /* fail if you forget to update this assert */ ));
 
 		tuplestore_putvalues(tupstore, tupdesc, values, nulls);
@@ -1642,6 +2067,54 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 
 	tuplestore_donestoring(tupstore);
 }
+
+/* Fill the plan time and timestamp into the values array. */
+static int
+fill_plan_times(Datum values[], bool nulls[], int i, pgssPlan *plan)
+{
+	values[i++] = Float8GetDatumFast(plan->time);
+	values[i++] = Int64GetDatumFast(plan->outliers);
+	values[i++] = Int64GetDatumFast(plan->updates);
+
+	/* if there is noting in the timestamp field, we are not interested in it */
+	if (plan->timestamp)
+		values[i++] = TimestampTzGetDatum(plan->timestamp);
+	else
+		nulls[i++] = true;
+	return i;
+}
+
+/* Fill the plan string into the values array. */
+static int
+fill_plan_str(Datum values[], bool nulls[], int i, pgssPlan *plan,
+				pgssEntry *entry, char *qbuffer, Size qbuffer_size)
+{
+	if (plan && plan->len > 0)
+	{
+		char *pstr = qtext_fetch(plan->offset, plan->len, qbuffer, qbuffer_size);
+		if (pstr)
+		{
+			char *enc;
+			enc = pg_any_to_server(pstr, plan->len, entry->encoding);
+			values[i++] = CStringGetTextDatum(enc);
+
+			if (enc != pstr)
+				pfree(enc);
+		}
+		else
+		{
+			/* failed to get the string of the plan */
+			nulls[i++] = true;
+		}
+	}
+	else
+	{
+		/* no plan available or plan_len not greater than 0 */
+		nulls[i++] = true;
+	}
+	return i;
+}
+
 
 /*
  * Estimate shared memory space needed.
@@ -1694,6 +2167,8 @@ entry_alloc(pgssHashKey *key, Size query_offset, int query_len, int encoding,
 
 		/* reset the statistics */
 		memset(&entry->counters, 0, sizeof(Counters));
+		memset(&entry->good_plan, 0, sizeof(pgssPlan));
+		memset(&entry->bad_plan, 0, sizeof(pgssPlan));
 		/* set the appropriate initial usage count */
 		entry->counters.usage = sticky ? pgss->cur_median_usage : USAGE_INIT;
 		/* re-initialize the mutex each time ... we assume no one using it */
@@ -2104,6 +2579,18 @@ gc_qtexts(void)
 									  qbuffer,
 									  qbuffer_size);
 
+		int			good_plan_len = entry->good_plan.len;
+		char	   *good_plan = qtext_fetch(entry->good_plan.offset,
+									   good_plan_len,
+									   qbuffer,
+									   qbuffer_size);
+
+		int			bad_plan_len = entry->bad_plan.len;
+		char	   *bad_plan = qtext_fetch(entry->bad_plan.offset,
+									   bad_plan_len,
+									   qbuffer,
+									   qbuffer_size);
+
 		if (qry == NULL)
 		{
 			/* Trouble ... drop the text */
@@ -2125,6 +2612,53 @@ gc_qtexts(void)
 
 		entry->query_offset = extent;
 		extent += query_len + 1;
+
+		if (good_plan == NULL || good_plan_len <= 0)
+		{
+			/* There was an error while loading the good_plan or there was simply never a
+			 * good_plan recorded, so we make sure that this entry knows this. */
+			entry->good_plan.offset = 0;
+			entry->good_plan.len = -1;
+		}
+		else
+		{
+			/* Save the good plan */
+			if (fwrite(good_plan, 1, good_plan_len + 1, qfile) != good_plan_len + 1)
+			{
+				ereport(LOG,
+						(errcode_for_file_access(),
+					  errmsg("could not write pg_stat_statement file \"%s\": %m",
+							 PGSS_TEXT_FILE)));
+				hash_seq_term(&hash_seq);
+				goto gc_fail;
+			}
+			entry->good_plan.offset = extent;
+			extent += good_plan_len + 1;
+		}
+
+		if (bad_plan == NULL || bad_plan_len <= 0)
+		{
+			/* There was an error while loading the bad_plan or there was simply never a
+			 * bad_plan recorded, so we make sure that this entry knows this. */
+			entry->bad_plan.offset = 0;
+			entry->bad_plan.len = -1;
+		}
+		else
+		{
+			/* Save the bad plan */
+			if (fwrite(bad_plan, 1, bad_plan_len + 1, qfile) != bad_plan_len + 1)
+			{
+				ereport(LOG,
+						(errcode_for_file_access(),
+					  errmsg("could not write pg_stat_statement file \"%s\": %m",
+							 PGSS_TEXT_FILE)));
+				hash_seq_term(&hash_seq);
+				goto gc_fail;
+			}
+			entry->bad_plan.offset = extent;
+			extent += bad_plan_len + 1;
+		}
+
 		nentries++;
 	}
 
@@ -3162,4 +3696,82 @@ comp_location(const void *a, const void *b)
 		return +1;
 	else
 		return 0;
+}
+
+/*
+ * Check the list of plans that shall be tracked and set the
+ * appropriate temporary bools.
+ */
+static bool
+plan_track_check_hook(char **newvalue, void **extra, GucSource source)
+{
+	char	   *rawstring;
+	List	   *elemlist;
+	ListCell   *l;
+
+	/* Set all temp bools to false */
+	pgss_good_plan_enable_temp = false;
+	pgss_bad_plan_enable_temp = false;
+
+	if (pg_strcasecmp(*newvalue, "all") == 0)
+	{
+		pgss_good_plan_enable_temp = true;
+		pgss_bad_plan_enable_temp = true;
+	}
+	else if (pg_strcasecmp(*newvalue, "none") == 0)
+		return true;
+	else
+	{
+		/* Need a modifiable copy of string */
+		rawstring = pstrdup(*newvalue);
+
+		/* Parse string into list of identifiers */
+		if (!SplitIdentifierString(rawstring, ',', &elemlist))
+		{
+			/* syntax error in list */
+			GUC_check_errdetail("List syntax is invalid.");
+			pfree(rawstring);
+			list_free(elemlist);
+			return false;
+		}
+
+		foreach(l, elemlist)
+		{
+			char	   *tok = (char *) lfirst(l);
+
+			if (pg_strcasecmp(tok, "good") == 0)
+				pgss_good_plan_enable_temp = true;
+			else if (pg_strcasecmp(tok, "bad") == 0)
+				pgss_bad_plan_enable_temp = true;
+			else if (pg_strcasecmp(tok, "all") == 0 || pg_strcasecmp(tok, "none") == 0)
+			{
+				GUC_check_errdetail("Key word \"%s\" cannot be combined with other key words.", tok);
+				pfree(rawstring);
+				list_free(elemlist);
+				return false;
+			}
+			else
+			{
+				GUC_check_errdetail("Unrecognized key word: \"%s\".", tok);
+				pfree(rawstring);
+				list_free(elemlist);
+				return false;
+			}
+		}
+		pfree(rawstring);
+		list_free(elemlist);
+	}
+
+	return true;
+}
+
+/*
+ * The bools enabling and disabling tracking of certain plans
+ * are set to the values previously set in the temporary variables.
+ */
+static void
+plan_track_assign_hook(const char *newvalue, void *extra)
+{
+	pgss_good_plan_enable = pgss_good_plan_enable_temp;
+	pgss_bad_plan_enable = pgss_bad_plan_enable_temp;
 }
