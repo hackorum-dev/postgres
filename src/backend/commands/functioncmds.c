@@ -55,6 +55,7 @@
 #include "executor/executor.h"
 #include "miscadmin.h"
 #include "optimizer/var.h"
+#include "optimizer/clauses.h"
 #include "parser/parse_coerce.h"
 #include "parser/parse_collate.h"
 #include "parser/parse_expr.h"
@@ -2254,6 +2255,9 @@ ExecuteCallStmt(CallStmt *stmt, ParamListInfo params, bool atomic, DestReceiver 
 		elog(ERROR, "cache lookup failed for function %u", fexpr->funcid);
 	if (!heap_attisnull(tp, Anum_pg_proc_proconfig))
 		callcontext->atomic = true;
+
+	fexpr->args = expand_function_arguments(fexpr->args, fexpr->funcresulttype, tp);
+
 	ReleaseSysCache(tp);
 
 	/* Initialize function call structure */
