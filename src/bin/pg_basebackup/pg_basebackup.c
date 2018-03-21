@@ -1087,7 +1087,7 @@ ReceiveTarFile(PGconn *conn, PGresult *res, int rownum)
 	res = PQgetResult(conn);
 	if (PQresultStatus(res) != PGRES_COPY_OUT)
 	{
-		fprintf(stderr, _("%s: could not get COPY data stream: %s"),
+		fprintf(stderr, _("%s: could not get COPY data stream: %s\n"),
 				progname, PQerrorMessage(conn));
 		disconnect_and_exit(1);
 	}
@@ -1168,7 +1168,7 @@ ReceiveTarFile(PGconn *conn, PGresult *res, int rownum)
 		}
 		else if (r == -2)
 		{
-			fprintf(stderr, _("%s: could not read COPY data: %s"),
+			fprintf(stderr, _("%s: could not read COPY data: %s\n"),
 					progname, PQerrorMessage(conn));
 			disconnect_and_exit(1);
 		}
@@ -1360,7 +1360,7 @@ ReceiveAndUnpackTarFile(PGconn *conn, PGresult *res, int rownum)
 	res = PQgetResult(conn);
 	if (PQresultStatus(res) != PGRES_COPY_OUT)
 	{
-		fprintf(stderr, _("%s: could not get COPY data stream: %s"),
+		fprintf(stderr, _("%s: could not get COPY data stream: %d\n"),
 				progname, PQerrorMessage(conn));
 		disconnect_and_exit(1);
 	}
@@ -1389,7 +1389,7 @@ ReceiveAndUnpackTarFile(PGconn *conn, PGresult *res, int rownum)
 		}
 		else if (r == -2)
 		{
-			fprintf(stderr, _("%s: could not read COPY data: %s"),
+			fprintf(stderr, _("%s: could not read COPY data: %s\n"),
 					progname, PQerrorMessage(conn));
 			disconnect_and_exit(1);
 		}
