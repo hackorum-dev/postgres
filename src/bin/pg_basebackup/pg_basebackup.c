@@ -589,26 +589,19 @@ StartLogStreamer(char *startpos, uint32 timeline, char *sysidentifier)
 	if (PQserverVersion(conn) < MINIMUM_VERSION_FOR_TEMP_SLOTS)
 		temp_replication_slot = false;
 
-	/*
-	 * Create replication slot if requested
-	 */
-	if (temp_replication_slot && !replication_slot)
-		replication_slot = psprintf("pg_basebackup_%d", (int) PQbackendPID(param->bgconn));
-	if (temp_replication_slot || create_slot)
+	/* Create temporary replication slot */
+	if (temp_replication_slot)
 	{
+		if (!replication_slot)
+			replication_slot = psprintf("pg_basebackup_%d", (int) PQbackendPID(param->bgconn));
+
 		if (!CreateReplicationSlot(param->bgconn, replication_slot, NULL,
 								   temp_replication_slot, true, true, false))
 			disconnect_and_exit(1);
 
 		if (verbose)
-		{
-			if (temp_replication_slot)
-				fprintf(stderr, _("%s: created temporary replication slot \"%s\"\n"),
-						progname, replication_slot);
-			else
-				fprintf(stderr, _("%s: created replication slot \"%s\"\n"),
-						progname, replication_slot);
-		}
+			fprintf(stderr, _("%s: created temporary replication slot \"%s\"\n"),
+					progname, replication_slot);
 	}
 
 	if (format == 'p')
@@ -1774,6 +1767,20 @@ BaseBackup(void)
 	}
 
 	/*
+	 * Create (permanent) replication slot, if requested
+	 */
+	if (!temp_replication_slot && create_slot)
+	{
+		if (!CreateReplicationSlot(conn, replication_slot, NULL,
+								   false, true, true, false))
+			disconnect_and_exit(1);
+
+		if (verbose)
+			fprintf(stderr, _("%s: created replication slot \"%s\"\n"),
+					progname, replication_slot);
+	}
+
+	/*
 	 * Build contents of recovery.conf if requested
 	 */
 	if (writerecoveryconf)
@@ -2366,7 +2373,13 @@ main(int argc, char **argv)
 		exit(1);
 	}
 
-	if (replication_slot && includewal != STREAM_WAL)
+	/*
+	 * If WAL is not streamed, replication slots are not needed for
+	 * pg_basebackup's operation. However, if writing recovery.conf is
+	 * requested as well, we allow specifying a replication slot so
+	 * recovery.conf can include it for convenience.
+	 */
+	if (replication_slot && includewal != STREAM_WAL && !writerecoveryconf)
 	{
 		fprintf(stderr,
 				_("%s: replication slots can only be used with WAL streaming\n"),
