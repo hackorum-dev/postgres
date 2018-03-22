@@ -108,11 +108,24 @@ ALTER ROUTINE ptest1a RENAME TO ptest1;
 
 DROP ROUTINE cp_testfunc1(int);
 
+-- named and default parameters
+CREATE OR REPLACE PROCEDURE ptest4(a int, b text, c int default 100)
+LANGUAGE SQL AS $$
+INSERT INTO cp_test VALUES(a, b);
+INSERT INTO cp_test VALUES(c, b);
+$$;
+
+CALL ptest4(10, 'Hello', 20);
+CALL ptest4(10, 'Hello');
+CALL ptest4(10, b => 'Hello');
+CALL ptest4(b => 'Hello', a => 10);
 
 -- cleanup
 
 DROP PROCEDURE ptest1;
 DROP PROCEDURE ptest2;
+DROP PROCEDURE ptest3;
+DROP PROCEDURE ptest4;
 
 DROP TABLE cp_test;
 

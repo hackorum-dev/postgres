@@ -2134,14 +2134,36 @@ exec_stmt_call(PLpgSQL_execstate *estate, PLpgSQL_stmt_call *stmt)
 				{
 					Param	   *param;
 
-					if (!IsA(n, Param))
-						ereport(ERROR,
-								(errcode(ERRCODE_SYNTAX_ERROR),
-								 errmsg("argument %d is an output argument but is not writable", i + 1)));
+					if (IsA(n,NamedArgExpr))
+					{
+						NamedArgExpr *nexpr = (NamedArgExpr *) n;
 
-					param = castNode(Param, n);
-					/* paramid is offset by 1 (see make_datum_param()) */
-					row->varnos[nfields++] = param->paramid - 1;
+						if (!IsA(nexpr->arg, Param))
+							ereport(ERROR,
+									(errcode(ERRCODE_SYNTAX_ERROR),
+									 errmsg("argument %d is an output argument but is not writable", i + 1)));
+
+						param = castNode(Param, nexpr->arg);
+
+						/* paramid is offset by 1 (see make_datum_param()) */
+						/* should be ensured so this target varno is not used yet */
+						row->varnos[nexpr->argnumber] = param->paramid - 1;
+
+						/* named arguments must be after possition arguments, so I can increase nfields */
+						nfields++;
+					}
+					else
+					{
+						if (!IsA(n, Param))
+							ereport(ERROR,
+									(errcode(ERRCODE_SYNTAX_ERROR),
+									 errmsg("argument %d is an output argument but is not writable", i + 1)));
+
+						param = castNode(Param, n);
+
+						/* paramid is offset by 1 (see make_datum_param()) */
+						row->varnos[nfields++] = param->paramid - 1;
+					}
 				}
 				i++;
 			}

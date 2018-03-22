@@ -167,3 +167,67 @@ DROP PROCEDURE test_proc3;
 DROP PROCEDURE test_proc4;
 
 DROP TABLE test1;
+
+-- named parameters and defaults
+CREATE PROCEDURE test_proc(a int, b int, c int DEFAULT -1)
+AS $$
+BEGIN
+  RAISE NOTICE 'a: %, b: %, c: %', a, b, c;
+END;
+$$ LANGUAGE plpgsql;
+
+CALL test_proc(10,20,30);
+CALL test_proc(10,20);
+CALL test_proc(c=>1, a=>3, b=>2);
+
+DROP PROCEDURE test_proc;
+
+CREATE PROCEDURE test_proc1(INOUT _a int, INOUT _b int)
+AS $$
+BEGIN
+  RAISE NOTICE 'test_proc1: a: %, b: %', _a, _b;
+  _a := _a * 10;
+  _b := _b + 10;
+END;
+$$ LANGUAGE plpgsql;
+
+CALL test_proc1(10,20);
+CALL test_proc1(_b=>20, _a=>10);
+
+DO $$
+DECLARE a int; b int;
+BEGIN
+  a := 10; b := 30;
+  CALL test_proc1(a, b);
+  RAISE NOTICE 'a: %, b: %', a, b;
+  a := 10; b := 30;
+  CALL test_proc1(_b=>b, _a=>a);
+  RAISE NOTICE 'a: %, b: %', a, b;
+END
+$$;
+
+DROP PROCEDURE test_proc1;
+
+CREATE PROCEDURE test_proc1(INOUT _a int, INOUT _b int, INOUT _c int)
+AS $$
+BEGIN
+  RAISE NOTICE 'test_proc1: a: %, b: %, c: %', _a, _b, _c;
+  _a := _a * 10;
+  _b := _b + 10;
+  _c := _c * -10;
+END;
+$$ LANGUAGE plpgsql;
+
+DO $$
+DECLARE a int; b int; c int;
+BEGIN
+  a := 10; b := 30; c := 50;
+  CALL test_proc1(a, b, c);
+  RAISE NOTICE 'a: %, b: %, c: %', a, b, c;
+  a := 10; b := 30; c := 50;
+  CALL test_proc1(a, _c=>c, _b=>b);
+  RAISE NOTICE 'a: %, b: %, c: %', a, b, c;
+END
+$$;
+
+DROP PROCEDURE test_proc1;
