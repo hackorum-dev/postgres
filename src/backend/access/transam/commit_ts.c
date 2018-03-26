@@ -416,29 +416,73 @@ pg_xact_commit_timestamp(PG_FUNCTION_ARGS)
 	PG_RETURN_TIMESTAMPTZ(ts);
 }
 
-
 Datum
-pg_last_committed_xact(PG_FUNCTION_ARGS)
+pg_xact_commit_timestamp_origin(PG_FUNCTION_ARGS)
 {
-	TransactionId xid;
+	TransactionId xid = PG_GETARG_UINT32(0);
 	TimestampTz ts;
-	Datum		values[2];
-	bool		nulls[2];
+	RepOriginId	origin;
+	bool		found;
 	TupleDesc	tupdesc;
-	HeapTuple	htup;
-
-	/* and construct a tuple with our data */
-	xid = GetLatestCommitTsData(&ts, NULL);
+	Datum		values[2];
+	bool		nulls[2] = {false, false};
+	HeapTuple	tup;
 
 	/*
 	 * Construct a tuple descriptor for the result row.  This must match this
 	 * function's pg_proc entry!
 	 */
 	tupdesc = CreateTemplateTupleDesc(2, false);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 1, "timestamp",
+					   TIMESTAMPTZOID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 2, "roident",
+					   OIDOID, -1, 0);
+	tupdesc = BlessTupleDesc(tupdesc);
+
+	found = TransactionIdGetCommitTsData(xid, &ts, &origin);
+
+	if (found)
+	{
+		values[0] = TimestampTzGetDatum(ts);
+		values[1] = ObjectIdGetDatum(origin);
+	}
+	else
+	{
+		values[0] = (Datum)0;
+		nulls[0] = true;
+		values[1] = (Datum)0;
+		nulls[1] = true;
+	}
+
+	tup = heap_form_tuple(tupdesc, values, nulls);
+	PG_RETURN_DATUM(HeapTupleGetDatum(tup));
+}
+
+Datum
+pg_last_committed_xact(PG_FUNCTION_ARGS)
+{
+	TransactionId xid;
+	TimestampTz ts;
+	Datum		values[3];
+	bool		nulls[3];
+	TupleDesc	tupdesc;
+	HeapTuple	htup;
+	RepOriginId	origin;
+
+	/* and construct a tuple with our data */
+	xid = GetLatestCommitTsData(&ts, &origin);
+
+	/*
+	 * Construct a tuple descriptor for the result row.  This must match this
+	 * function's pg_proc entry!
+	 */
+	tupdesc = CreateTemplateTupleDesc(3, false);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 1, "xid",
 					   XIDOID, -1, 0);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 2, "timestamp",
 					   TIMESTAMPTZOID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 3, "roident",
+					   OIDOID, -1, 0);
 	tupdesc = BlessTupleDesc(tupdesc);
 
 	if (!TransactionIdIsNormal(xid))
@@ -452,6 +496,9 @@ pg_last_committed_xact(PG_FUNCTION_ARGS)
 
 		values[1] = TimestampTzGetDatum(ts);
 		nulls[1] = false;
+
+		values[2] = ObjectIdGetDatum(origin);
+		nulls[2] = false;
 	}
 
 	htup = heap_form_tuple(tupdesc, values, nulls);

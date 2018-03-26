@@ -11,6 +11,33 @@ CREATE TABLE committs_test(id serial, ts timestamptz default now());
 INSERT INTO committs_test DEFAULT VALUES;
 INSERT INTO committs_test DEFAULT VALUES;
 INSERT INTO committs_test DEFAULT VALUES;
+SELECT pg_replication_origin_create('test_origin');
+ pg_replication_origin_create 
+------------------------------
+                            1
+(1 row)
+
+SELECT pg_replication_origin_session_setup('test_origin');
+ pg_replication_origin_session_setup 
+-------------------------------------
+ 
+(1 row)
+
+BEGIN;
+SELECT pg_replication_origin_xact_setup('1/1', '1990-01-01');
+ pg_replication_origin_xact_setup 
+----------------------------------
+ 
+(1 row)
+
+INSERT INTO committs_test DEFAULT VALUES;
+COMMIT;
+SELECT pg_replication_origin_session_reset();
+ pg_replication_origin_session_reset 
+-------------------------------------
+ 
+(1 row)
+
 SELECT id,
        pg_xact_commit_timestamp(xmin) >= ts,
        pg_xact_commit_timestamp(xmin) <= now(),
@@ -22,7 +49,19 @@ ORDER BY id;
   1 | t        | t        | t
   2 | t        | t        | t
   3 | t        | t        | t
-(3 rows)
+  4 | f        | t        | t
+(4 rows)
+
+SELECT roident = 0, roident = 1
+FROM committs_test, pg_xact_commit_timestamp_origin(xmin)
+ORDER BY id;
+ ?column? | ?column? 
+----------+----------
+ t        | f
+ t        | f
+ t        | f
+ f        | t
+(4 rows)
 
 DROP TABLE committs_test;
 SELECT pg_xact_commit_timestamp('0'::xid);
@@ -39,9 +78,9 @@ SELECT pg_xact_commit_timestamp('2'::xid);
  
 (1 row)
 
-SELECT x.xid::text::bigint > 0, x.timestamp > '-infinity'::timestamptz, x.timestamp <= now() FROM pg_last_committed_xact() x;
- ?column? | ?column? | ?column? 
-----------+----------+----------
- t        | t        | t
+SELECT x.xid::text::bigint > 0, x.timestamp > '-infinity'::timestamptz, x.timestamp <= now(), roident = 0 FROM pg_last_committed_xact() x;
+ ?column? | ?column? | ?column? | ?column? 
+----------+----------+----------+----------
+ t        | t        | t        | t
 (1 row)
 

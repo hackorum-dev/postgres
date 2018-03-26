@@ -17928,7 +17928,9 @@ SELECT collation for ('foo' COLLATE "de_DE");
     These functions mainly provide information about when the transactions
     were committed. They only provide useful data when
     <xref linkend="guc-track-commit-timestamp"/> configuration option is enabled
-    and only for transactions that were committed after it was enabled.
+    and only for transactions that were committed after it was enabled. The reported
+    replication origin information is maintained by the <link linkend="replication-origins">
+    replication origins</link> subsystem.
    </para>
 
    <table id="functions-commit-timestamp">
@@ -17950,11 +17952,20 @@ SELECT collation for ('foo' COLLATE "de_DE");
 
       <row>
        <entry>
+        <indexterm><primary>pg_xact_commit_timestamp_origin</primary></indexterm>
+        <literal><function>pg_xact_commit_timestamp_origin(<parameter>xid</parameter>)</function></literal>
+       </entry>
+       <entry><parameter>timestamp</parameter> <type>timestamptz</type>, <parameter>roident</parameter> <type>oid</type></entry>
+       <entry>get commit timestamp and replication origin of a transaction</entry>
+      </row>
+
+      <row>
+       <entry>
         <indexterm><primary>pg_last_committed_xact</primary></indexterm>
         <literal><function>pg_last_committed_xact()</function></literal>
        </entry>
-       <entry><parameter>xid</parameter> <type>xid</type>, <parameter>timestamp</parameter> <type>timestamp with time zone</type></entry>
-       <entry>get transaction ID and commit timestamp of latest committed transaction</entry>
+       <entry><parameter>xid</parameter> <type>xid</type>, <parameter>timestamp</parameter> <type>timestamp with time zone</type>, <parameter>roident</parameter> <type>oid</type></entry>
+       <entry>get transaction ID, commit timestamp and replication origin of latest committed transaction</entry>
       </row>
      </tbody>
     </tgroup>

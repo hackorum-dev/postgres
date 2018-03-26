@@ -11,11 +11,43 @@ CREATE TABLE committs_test(id serial, ts timestamptz default now());
 INSERT INTO committs_test DEFAULT VALUES;
 INSERT INTO committs_test DEFAULT VALUES;
 INSERT INTO committs_test DEFAULT VALUES;
+SELECT pg_replication_origin_create('test_origin');
+ pg_replication_origin_create 
+------------------------------
+                            1
+(1 row)
+
+SELECT pg_replication_origin_session_setup('test_origin');
+ pg_replication_origin_session_setup 
+-------------------------------------
+ 
+(1 row)
+
+BEGIN;
+SELECT pg_replication_origin_xact_setup('1/1', '1990-01-01');
+ pg_replication_origin_xact_setup 
+----------------------------------
+ 
+(1 row)
+
+INSERT INTO committs_test DEFAULT VALUES;
+COMMIT;
+SELECT pg_replication_origin_session_reset();
+ pg_replication_origin_session_reset 
+-------------------------------------
+ 
+(1 row)
+
 SELECT id,
        pg_xact_commit_timestamp(xmin) >= ts,
        pg_xact_commit_timestamp(xmin) <= now(),
        pg_xact_commit_timestamp(xmin) - ts < '60s' -- 60s should give a lot of reserve
 FROM committs_test
+ORDER BY id;
+ERROR:  could not get commit timestamp data
+HINT:  Make sure the configuration parameter "track_commit_timestamp" is set.
+SELECT roident = 0, roident = 1
+FROM committs_test, pg_xact_commit_timestamp_origin(xmin)
 ORDER BY id;
 ERROR:  could not get commit timestamp data
 HINT:  Make sure the configuration parameter "track_commit_timestamp" is set.
@@ -34,6 +66,6 @@ SELECT pg_xact_commit_timestamp('2'::xid);
  
 (1 row)
 
-SELECT x.xid::text::bigint > 0, x.timestamp > '-infinity'::timestamptz, x.timestamp <= now() FROM pg_last_committed_xact() x;
+SELECT x.xid::text::bigint > 0, x.timestamp > '-infinity'::timestamptz, x.timestamp <= now(), roident = 0 FROM pg_last_committed_xact() x;
 ERROR:  could not get commit timestamp data
 HINT:  Make sure the configuration parameter "track_commit_timestamp" is set.

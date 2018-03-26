@@ -3237,7 +3237,10 @@ DESCR("view members of a multixactid");
 DATA(insert OID = 3581 ( pg_xact_commit_timestamp PGNSP PGUID 12 1 0 0 0 f f f t f v s 1 0 1184 "28" _null_ _null_ _null_ _null_ _null_ pg_xact_commit_timestamp _null_ _null_ _null_ ));
 DESCR("get commit timestamp of a transaction");
 
-DATA(insert OID = 3583 ( pg_last_committed_xact PGNSP PGUID 12 1 0 0 0 f f f t f v s 0 0 2249 "" "{28,1184}" "{o,o}" "{xid,timestamp}" _null_ _null_ pg_last_committed_xact _null_ _null_ _null_ ));
+DATA(insert OID = 3423 ( pg_xact_commit_timestamp_origin PGNSP PGUID 12 1 0 0 0 f f f t f v s 1 0 2249 "28" "{28,1184,26}" "{i,o,o}" "{xid,timestamp,roident}" _null_ _null_ pg_xact_commit_timestamp_origin _null_ _null_ _null_ ));
+DESCR("get commit timestamp and replication origin of a transaction");
+
+DATA(insert OID = 3583 ( pg_last_committed_xact PGNSP PGUID 12 1 0 0 0 f f f t f v s 0 0 2249 "" "{28,1184,26}" "{o,o,o}" "{xid,timestamp,roident}" _null_ _null_ pg_last_committed_xact _null_ _null_ _null_ ));
 DESCR("get transaction Id and commit timestamp of latest transaction commit");
 
 DATA(insert OID = 3537 (  pg_describe_object		PGNSP PGUID 12 1 0 0 0 f f f t f s s 3 0 25 "26 26 23" _null_ _null_ _null_ _null_ _null_ pg_describe_object _null_ _null_ _null_ ));
