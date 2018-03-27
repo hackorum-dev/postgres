@@ -41,10 +41,16 @@ dintdict_init(PG_FUNCTION_ARGS)
 	foreach(l, dictoptions)
 	{
 		DefElem    *defel = (DefElem *) lfirst(l);
+		char	   *endptr;
 
 		if (strcmp(defel->defname, "maxlen") == 0)
 		{
-			d->maxlen = atoi(defGetString(defel));
+			errno = 0;
+			d->maxlen = strtol(defGetString(defel), &endptr, 10);
+			if (*endptr != '\0' || errno != 0)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("maxlen requires an integer value")));
 		}
 		else if (strcmp(defel->defname, "rejectlong") == 0)
 		{
