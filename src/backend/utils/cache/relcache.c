@@ -69,8 +69,10 @@
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/clauses.h"
+#include "optimizer/cost.h"
 #include "optimizer/prep.h"
 #include "optimizer/var.h"
+#include "pgstat.h"
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rowsecurity.h"
 #include "storage/lmgr.h"
@@ -2349,10 +2351,12 @@ RelationDestroyRelation(Relation relation, bool remember_tupdesc)
 	FreeTriggerDesc(relation->trigdesc);
 	list_free_deep(relation->rd_fkeylist);
 	list_free(relation->rd_indexlist);
-	bms_free(relation->rd_indexattr);
+	bms_free(relation->rd_nprjindexattr);
+	bms_free(relation->rd_prjindexattr);
 	bms_free(relation->rd_keyattr);
 	bms_free(relation->rd_pkattr);
 	bms_free(relation->rd_idattr);
+	bms_free(relation->rd_projidx);
 	if (relation->rd_pubactions)
 		pfree(relation->rd_pubactions);
 	if (relation->rd_options)
@@ -4599,12 +4603,12 @@ insert_ordered_oid(List *list, Oid datum)
  *
  * It is up to the caller to make sure the given list is correctly ordered.
  *
- * We deliberately do not change rd_indexattr here: even when operating
+ * We deliberately do not change rd_nprjindexattr here: even when operating
  * with a temporary partial index list, HOT-update decisions must be made
  * correctly with respect to the full index set.  It is up to the caller
- * to ensure that a correct rd_indexattr set has been cached before first
+ * to ensure that a correct rd_nprjindexattr set has been cached before first
  * calling RelationSetIndexList; else a subsequent inquiry might cause a
- * wrong rd_indexattr set to get computed and cached.  Likewise, we do not
+ * wrong rd_nprjindexattr set to get computed and cached.  Likewise, we do not
  * touch rd_keyattr, rd_pkattr or rd_idattr.
  */
 void
@@ -4834,6 +4838,64 @@ RelationGetIndexPredicate(Relation relation)
 	return result;
 }
 
+#define MAX_HOT_INDEX_EXPR_COST 1000
+
+/*
+ * Check if functional index is projection: index expression returns some subset of
+ * its argument values. During hot update check projection indexes are handled in special way:
+ * instead of checking if any of attributes used in indexed expression was updated,
+ * we should calculate and compare values of index expression for old and new tuple values.
+ *
+ * Decision made by this function is based on two sources:
+ * 1. Calculated cost of index expression: if it is higher than some threshold (1000) then
+ *    extra comparison of index expression values is expected to be too expensive.
+ * 2. "projection" index option explicitly set by user. This setting overrides 1) and 2)
+ */
+static bool IsProjectionFunctionalIndex(Relation index, IndexInfo* ii)
+{
+	bool is_projection = false;
+
+	if (ii->ii_Expressions)
+	{
+		HeapTuple       tuple;
+		Datum           reloptions;
+		bool            isnull;
+		QualCost index_expr_cost;
+
+		is_projection = true; /* by default functional index is considered as non-injective */
+
+		cost_qual_eval(&index_expr_cost, ii->ii_Expressions, NULL);
+		/*
+		 * If index expression is too expensive, then disable projection optimization, because
+		 * extra evaluation of index expression is expected to be more expensive than index update.
+		 * Current implementation of projection optimization has to calculate index expression twice
+		 * in case of hit (value of index expression is not changed) and three times if values are different.
+		 */
+		if (index_expr_cost.startup + index_expr_cost.per_tuple > MAX_HOT_INDEX_EXPR_COST)
+		{
+			is_projection = false;
+		}
+
+		tuple = SearchSysCache1(RELOID, ObjectIdGetDatum(RelationGetRelid(index)));
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for relation %u", RelationGetRelid(index));
+
+		reloptions = SysCacheGetAttr(RELOID, tuple,
+									 Anum_pg_class_reloptions, &isnull);
+		if (!isnull)
+		{
+			GenericIndexOpts *idxopts = (GenericIndexOpts *)index_generic_reloptions(reloptions, false);
+			if (idxopts != NULL)
+			{
+				is_projection = idxopts->recheck_on_update;
+				pfree(idxopts);
+			}
+		}
+		ReleaseSysCache(tuple);
+	}
+	return is_projection;
+}
+
 /*
  * RelationGetIndexAttrBitmap -- get a bitmap of index attribute numbers
  *
@@ -4861,24 +4923,29 @@ RelationGetIndexPredicate(Relation relation)
 Bitmapset *
 RelationGetIndexAttrBitmap(Relation relation, IndexAttrBitmapKind attrKind)
 {
-	Bitmapset  *indexattrs;		/* indexed columns */
+	Bitmapset  *indexattrs;		/* identifies columns used in non-projection indexes */
+	Bitmapset  *projindexattrs;	/* identifies columns used in projection indexes */
 	Bitmapset  *uindexattrs;	/* columns in unique indexes */
 	Bitmapset  *pkindexattrs;	/* columns in the primary index */
 	Bitmapset  *idindexattrs;	/* columns in the replica identity */
+	Bitmapset  *projindexes;	/* projection indexes */
 	List	   *indexoidlist;
 	List	   *newindexoidlist;
 	Oid			relpkindex;
 	Oid			relreplindex;
 	ListCell   *l;
 	MemoryContext oldcxt;
+	int         indexno;
 
 	/* Quick exit if we already computed the result. */
-	if (relation->rd_indexattr != NULL)
+	if (relation->rd_nprjindexattr != NULL)
 	{
 		switch (attrKind)
 		{
-			case INDEX_ATTR_BITMAP_ALL:
-				return bms_copy(relation->rd_indexattr);
+			case INDEX_ATTR_BITMAP_HOT:
+				return bms_copy(relation->rd_nprjindexattr);
+			case INDEX_ATTR_BITMAP_PROJ:
+				return bms_copy(relation->rd_prjindexattr);
 			case INDEX_ATTR_BITMAP_KEY:
 				return bms_copy(relation->rd_keyattr);
 			case INDEX_ATTR_BITMAP_PRIMARY_KEY:
@@ -4925,9 +4992,12 @@ restart:
 	 * won't be returned at all by RelationGetIndexList.
 	 */
 	indexattrs = NULL;
+	projindexattrs = NULL;
 	uindexattrs = NULL;
 	pkindexattrs = NULL;
 	idindexattrs = NULL;
+	projindexes = NULL;
+	indexno = 0;
 	foreach(l, indexoidlist)
 	{
 		Oid			indexOid = lfirst_oid(l);
@@ -4978,13 +5048,21 @@ restart:
 			}
 		}
 
-		/* Collect all attributes used in expressions, too */
-		pull_varattnos((Node *) indexInfo->ii_Expressions, 1, &indexattrs);
-
+		if (IsProjectionFunctionalIndex(indexDesc, indexInfo))
+		{
+			projindexes = bms_add_member(projindexes, indexno);
+			pull_varattnos((Node *) indexInfo->ii_Expressions, 1, &projindexattrs);
+		}
+		else
+		{
+			/* Collect all attributes used in expressions, too */
+			pull_varattnos((Node *) indexInfo->ii_Expressions, 1, &indexattrs);
+		}
 		/* Collect all attributes in the index predicate, too */
 		pull_varattnos((Node *) indexInfo->ii_Predicate, 1, &indexattrs);
 
 		index_close(indexDesc, AccessShareLock);
+		indexno += 1;
 	}
 
 	/*
@@ -5011,23 +5089,29 @@ restart:
 		bms_free(pkindexattrs);
 		bms_free(idindexattrs);
 		bms_free(indexattrs);
+		bms_free(projindexattrs);
+		bms_free(projindexes);
 
 		goto restart;
 	}
 
 	/* Don't leak the old values of these bitmaps, if any */
-	bms_free(relation->rd_indexattr);
-	relation->rd_indexattr = NULL;
+	bms_free(relation->rd_nprjindexattr);
+	relation->rd_nprjindexattr = NULL;
+	bms_free(relation->rd_prjindexattr);
+	relation->rd_prjindexattr = NULL;
 	bms_free(relation->rd_keyattr);
 	relation->rd_keyattr = NULL;
 	bms_free(relation->rd_pkattr);
 	relation->rd_pkattr = NULL;
 	bms_free(relation->rd_idattr);
 	relation->rd_idattr = NULL;
+	bms_free(relation->rd_projidx);
+	relation->rd_projidx = NULL;
 
 	/*
 	 * Now save copies of the bitmaps in the relcache entry.  We intentionally
-	 * set rd_indexattr last, because that's the one that signals validity of
+	 * set rd_nprjindexattr last, because that's the one that signals validity of
 	 * the values; if we run out of memory before making that copy, we won't
 	 * leave the relcache entry looking like the other ones are valid but
 	 * empty.
@@ -5036,14 +5120,18 @@ restart:
 	relation->rd_keyattr = bms_copy(uindexattrs);
 	relation->rd_pkattr = bms_copy(pkindexattrs);
 	relation->rd_idattr = bms_copy(idindexattrs);
-	relation->rd_indexattr = bms_copy(indexattrs);
+	relation->rd_nprjindexattr = bms_copy(indexattrs);
+	relation->rd_prjindexattr = bms_copy(projindexattrs);
+	relation->rd_projidx = bms_copy(projindexes);
 	MemoryContextSwitchTo(oldcxt);
 
 	/* We return our original working copy for caller to play with */
 	switch (attrKind)
 	{
-		case INDEX_ATTR_BITMAP_ALL:
+		case INDEX_ATTR_BITMAP_HOT:
 			return indexattrs;
+		case INDEX_ATTR_BITMAP_PROJ:
+			return projindexattrs;
 		case INDEX_ATTR_BITMAP_KEY:
 			return uindexattrs;
 		case INDEX_ATTR_BITMAP_PRIMARY_KEY:
@@ -5661,10 +5749,12 @@ load_relcache_init_file(bool shared)
 		rel->rd_oidindex = InvalidOid;
 		rel->rd_pkindex = InvalidOid;
 		rel->rd_replidindex = InvalidOid;
-		rel->rd_indexattr = NULL;
+		rel->rd_nprjindexattr = NULL;
+		rel->rd_prjindexattr = NULL;
 		rel->rd_keyattr = NULL;
 		rel->rd_pkattr = NULL;
 		rel->rd_idattr = NULL;
+		rel->rd_projidx = NULL;
 		rel->rd_pubactions = NULL;
 		rel->rd_statvalid = false;
 		rel->rd_statlist = NIL;
