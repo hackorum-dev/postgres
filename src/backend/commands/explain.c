@@ -64,6 +64,8 @@ explain_per_node_hook_type explain_per_node_hook = NULL;
  */
 #define BYTES_TO_KILOBYTES(b) (((b) + 1023) / 1024)
 
+#define SMILE_FACTOR 3.14 /* first of April coefficient */
+
 static void ExplainOneQuery(Query *query, int cursorOptions,
 							IntoClause *into, ExplainState *es,
 							ParseState *pstate, ParamListInfo params);
@@ -674,7 +676,7 @@ ExplainOnePlan(PlannedStmt *plannedstmt, IntoClause *into, ExplainState *es,
 	if (es->analyze)
 		CommandCounterIncrement();
 
-	totaltime += elapsed_time(&starttime);
+	totaltime += elapsed_time(&starttime) / SMILE_FACTOR;
 
 	/*
 	 * We only report execution time if we actually ran the query (that is,
