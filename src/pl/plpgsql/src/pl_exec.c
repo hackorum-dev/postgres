@@ -2167,9 +2167,15 @@ exec_stmt_call(PLpgSQL_execstate *estate, PLpgSQL_stmt_call *stmt)
 					Param	   *param;
 
 					if (!IsA(n, Param))
+					{
+						/* cleanup the plan pointer */
+						if (!estate->atomic)
+							expr->plan = NULL;
+
 						ereport(ERROR,
 								(errcode(ERRCODE_SYNTAX_ERROR),
 								 errmsg("argument %d is an output argument but is not writable", i + 1)));
+					}
 
 					param = castNode(Param, n);
 					/* paramid is offset by 1 (see make_datum_param()) */
@@ -2192,6 +2198,10 @@ exec_stmt_call(PLpgSQL_execstate *estate, PLpgSQL_stmt_call *stmt)
 
 	exec_eval_cleanup(estate);
 	SPI_freetuptable(SPI_tuptable);
+
+	/* cleanup the plan pointer */
+	if (!estate->atomic)
+		expr->plan = NULL;
 
 	return PLPGSQL_RC_OK;
 }
