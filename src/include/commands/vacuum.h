@@ -155,6 +155,25 @@ extern int	vacuum_multixact_freeze_min_age;
 extern int	vacuum_multixact_freeze_table_age;
 
 
+/*
+ * prototypes for Vacuum Tid Map code, in vacuumtidmap.c
+ */
+typedef struct VacuumTidMap VacuumTidMap;
+
+extern VacuumTidMap *CreateVacuumTidMap(int vac_work_mem);
+extern void VacuumTidMapReset(VacuumTidMap *dt);
+
+extern void VacuumTidMapRecordTid(VacuumTidMap *dt, ItemPointer itemptr);
+
+extern bool VacuumTidMapIsFull(VacuumTidMap *dt);
+extern bool VacuumTidMapIsEmpty(VacuumTidMap *dt);
+extern uint64 VacuumTidMapGetNumTuples(VacuumTidMap *dt);
+
+extern bool VacuumTidMapContainsTid(VacuumTidMap *dt, ItemPointer itemptr);
+extern void VacuumTidMapBeginIterate(VacuumTidMap *dt);
+extern bool VacuumTidMapNext(VacuumTidMap *dt,
+				 BlockNumber *blkno, int *ntuples, OffsetNumber **offsets);
+
 /* in commands/vacuum.c */
 extern void ExecVacuum(VacuumStmt *vacstmt, bool isTopLevel);
 extern void vacuum(int options, List *relations, VacuumParams *params,
