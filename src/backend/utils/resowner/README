@@ -61,12 +61,20 @@ ResourceOwner transfers lock ownership to the parent instead of actually
 releasing the lock, if isCommit is true.
 
 Currently, ResourceOwners contain direct support for recording ownership of
-buffer pins, lmgr locks, and catcache, relcache, plancache, tupdesc, and
-snapshot references.  Other objects can be associated with a ResourceOwner by
-recording the address of the owning ResourceOwner in such an object.  There is
-an API for other modules to get control during ResourceOwner release, so that
-they can scan their own data structures to find the objects that need to be
-deleted.
+several types of resource managed in the core, with the three operations
+ResourceOwnerEnlarge<Foo>Refs(), ResourceOwnerRemember<Foo>Ref(), and
+ResourceOwnerForget<Foo>Ref() for each type. The first ensures there is room
+for at least one more entry of the type, and is separate from Remember...
+so that out-of-memory can be detected before the resource is acquired.
+
+Other objects can be associated with a ResourceOwner by recording the address
+of the owning ResourceOwner in such an object.  There is an API for other
+modules to get control during ResourceOwner release, so that they can scan
+their own data structures to find the objects that need to be deleted.
+Such callbacks are registered globally, not to a specific ResourceOwner, and
+will be called during every ResourceOwnerRelease; to determine which owner is
+being released, they can refer to CurrentResourceOwner, which points to it
+while the callbacks are invoked.
 
 Whenever we are inside a transaction, the global variable
 CurrentResourceOwner shows which resource owner should be assigned
