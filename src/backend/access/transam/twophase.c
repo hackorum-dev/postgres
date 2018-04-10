@@ -1680,7 +1680,7 @@ RecreateTwoPhaseFile(TransactionId xid, void *content, int len)
 	if (pg_fsync(fd) != 0)
 	{
 		CloseTransientFile(fd);
-		ereport(ERROR,
+		ereport(PANIC,
 				(errcode_for_file_access(),
 				 errmsg("could not fsync two-phase state file: %m")));
 	}

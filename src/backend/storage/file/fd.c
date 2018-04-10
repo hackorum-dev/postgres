@@ -354,6 +354,12 @@ pg_fsync(int fd)
 /*
  * pg_fsync_no_writethrough --- same as fsync except does nothing if
  *	enableFsync is off
+ *
+ * WARNING: It is unsafe to retry fsync() calls without repeating the preceding
+ * writes.  fsync() clears the error flag on some platforms (including Linux,
+ * true up to at least 4.14) when it reports the error to the caller. A second
+ * call may return success even though writes are lost. Many callers test the
+ * return value and PANIC on failure so that redo repeats the writes.
  */
 int
 pg_fsync_no_writethrough(int fd)
