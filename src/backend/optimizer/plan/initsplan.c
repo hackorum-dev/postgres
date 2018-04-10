@@ -2018,6 +2018,20 @@ distribute_qual_to_rels(PlannerInfo *root, Node *clause,
 			initialize_mergeclause_eclasses(root, restrictinfo);
 		}
 	}
+	else if (restrictinfo->mergeopfamilies)
+	{
+		/* Not an equality clause, but maybe still mergejoinable? */
+		initialize_mergeclause_eclasses(root, restrictinfo);
+
+		if (maybe_outer_join
+			&& jointype == JOIN_FULL
+			&& restrictinfo->can_join)
+		{
+			root->full_join_clauses = lappend(root->full_join_clauses,
+							  restrictinfo);
+			return;
+		}
+	}
 
 	/* No EC special case applies, so push it into the clause lists */
 	distribute_restrictinfo_to_rels(root, restrictinfo);
@@ -2623,12 +2637,16 @@ check_mergejoinable(RestrictInfo *restrictinfo)
 	opno = ((OpExpr *) clause)->opno;
 	leftarg = linitial(((OpExpr *) clause)->args);
 
-	if (op_mergejoinable_equality(opno, exprType(leftarg)) &&
-		!contain_volatile_functions((Node *) clause))
+	if (!contain_volatile_functions((Node *) clause))
 	{
-		restrictinfo->mergeopfamilies = get_btree_equality_opfamilies(opno);
-		if (restrictinfo->mergeopfamilies != NIL)
-			restrictinfo->is_mj_equality = true;
+		if (op_mergejoinable_equality(opno, exprType(leftarg)))
+		{
+			restrictinfo->mergeopfamilies = get_btree_equality_opfamilies(opno);
+			if (restrictinfo->mergeopfamilies != NIL)
+				restrictinfo->is_mj_equality = true;
+		}
+		else
+			restrictinfo->mergeopfamilies = get_btree_inequality_opfamilies(opno);
 	}
 
 	/*
