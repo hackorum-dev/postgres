@@ -1699,11 +1699,6 @@ cube_coord_llur(PG_FUNCTION_ARGS)
 		 */
 		result = 0.0;
 	}
-
-	/* Inverse value if needed */
-	if (inverse)
-		result = -result;
-
 	PG_RETURN_FLOAT8(result);
 }
 
