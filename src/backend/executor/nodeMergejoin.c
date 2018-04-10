@@ -41,7 +41,7 @@
  *
  *		Therefore, rather than directly executing the merge join clauses,
  *		we evaluate the left and right key expressions separately and then
- *		compare the columns one at a time (see MJCompare).  The planner
+ *		compare the columns one at a time (see MJTestTuples).  The planner
  *		passes us enough information about the sort ordering of the inputs
  *		to allow us to determine how to make the comparison.  We may use the
  *		appropriate btree comparison function, since Postgres' only notion
@@ -172,31 +172,31 @@ typedef enum
  * to the opfamily and collation, with nulls at the indicated end of the range.
  * This allows us to obtain the needed comparison function from the opfamily.
  */
-static MergeJoinClause
+static void
 MJExamineQuals(List *mergeclauses,
 			   Oid *mergefamilies,
 			   Oid *mergecollations,
 			   int *mergestrategies,
 			   bool *mergenullsfirst,
-			   PlanState *parent)
+			   MergeJoinState *parent)
 {
-	MergeJoinClause clauses;
 	int			nClauses = list_length(mergeclauses);
 	int			iClause;
 	ListCell   *cl;
 
-	clauses = (MergeJoinClause) palloc0(nClauses * sizeof(MergeJoinClauseData));
+	parent->mj_Clauses = (MergeJoinClause)
+		palloc0(nClauses * sizeof(MergeJoinClauseData));
 
 	iClause = 0;
 	foreach(cl, mergeclauses)
 	{
 		OpExpr	   *qual = (OpExpr *) lfirst(cl);
-		MergeJoinClause clause = &clauses[iClause];
+		MergeJoinClause clause = &parent->mj_Clauses[iClause];
 		Oid			opfamily = mergefamilies[iClause];
 		Oid			collation = mergecollations[iClause];
-		StrategyNumber opstrategy = mergestrategies[iClause];
+		StrategyNumber sort_strategy = mergestrategies[iClause];
 		bool		nulls_first = mergenullsfirst[iClause];
-		int			op_strategy;
+		int			join_strategy;
 		Oid			op_lefttype;
 		Oid			op_righttype;
 		Oid			sortfunc;
@@ -207,26 +207,28 @@ MJExamineQuals(List *mergeclauses,
 		/*
 		 * Prepare the input expressions for execution.
 		 */
-		clause->lexpr = ExecInitExpr((Expr *) linitial(qual->args), parent);
-		clause->rexpr = ExecInitExpr((Expr *) lsecond(qual->args), parent);
+		clause->lexpr = ExecInitExpr((Expr *) linitial(qual->args),
+									 (PlanState *) parent);
+		clause->rexpr = ExecInitExpr((Expr *) lsecond(qual->args),
+									 (PlanState *) parent);
 
 		/* Set up sort support data */
 		clause->ssup.ssup_cxt = CurrentMemoryContext;
 		clause->ssup.ssup_collation = collation;
-		if (opstrategy == BTLessStrategyNumber)
+		if (sort_strategy == BTLessStrategyNumber)
 			clause->ssup.ssup_reverse = false;
-		else if (opstrategy == BTGreaterStrategyNumber)
+		else if (sort_strategy == BTGreaterStrategyNumber)
 			clause->ssup.ssup_reverse = true;
 		else					/* planner screwed up */
-			elog(ERROR, "unsupported mergejoin strategy %d", opstrategy);
+			elog(ERROR, "unsupported mergejoin strategy %d", sort_strategy);
 		clause->ssup.ssup_nulls_first = nulls_first;
 
 		/* Extract the operator's declared left/right datatypes */
 		get_op_opfamily_properties(qual->opno, opfamily, false,
-								   &op_strategy,
+								   &join_strategy,
 								   &op_lefttype,
 								   &op_righttype);
-		if (op_strategy != BTEqualStrategyNumber)	/* should not happen */
+		if (join_strategy != BTEqualStrategyNumber)	/* should not happen */
 			elog(ERROR, "cannot merge using non-equality operator %u",
 				 qual->opno);
 
@@ -265,8 +267,6 @@ MJExamineQuals(List *mergeclauses,
 
 		iClause++;
 	}
-
-	return clauses;
 }
 
 /*
@@ -378,20 +378,27 @@ MJEvalInnerValues(MergeJoinState *mergestate, TupleTableSlot *innerslot)
 	return result;
 }
 
+/* Tuple test result */
+typedef enum
+{
+	MJCR_NextInner,
+	MJCR_NextOuter,
+	MJCR_Join
+} MJTestResult;
+
 /*
- * MJCompare
+ * MJTestTuples
  *
- * Compare the mergejoinable values of the current two input tuples
- * and return 0 if they are equal (ie, the mergejoin equalities all
- * succeed), >0 if outer > inner, <0 if outer < inner.
+ * Decide whether to join current inner and outer tuples, or to advance
+ * either pointer.
  *
  * MJEvalOuterValues and MJEvalInnerValues must already have been called
  * for the current outer and inner tuples, respectively.
  */
-static int
-MJCompare(MergeJoinState *mergestate)
+static MJTestResult
+MJTestTuples(MergeJoinState *mergestate)
 {
-	int			result = 0;
+	MJTestResult result = MJCR_Join;
 	bool		nulleqnull = false;
 	ExprContext *econtext = mergestate->js.ps.ps_ExprContext;
 	int			i;
@@ -408,6 +415,7 @@ MJCompare(MergeJoinState *mergestate)
 	for (i = 0; i < mergestate->mj_NumClauses; i++)
 	{
 		MergeJoinClause clause = &mergestate->mj_Clauses[i];
+		int			sort_result;
 
 		/*
 		 * Special case for NULL-vs-NULL, else use standard comparison.
@@ -418,11 +426,14 @@ MJCompare(MergeJoinState *mergestate)
 			continue;
 		}
 
-		result = ApplySortComparator(clause->ldatum, clause->lisnull,
-									 clause->rdatum, clause->risnull,
-									 &clause->ssup);
+		sort_result = ApplySortComparator(clause->ldatum, clause->lisnull,
+										  clause->rdatum, clause->risnull,
+										  &clause->ssup);
 
-		if (result != 0)
+		result = sort_result == 0 ? MJCR_Join
+					: sort_result < 0 ? MJCR_NextOuter : MJCR_NextInner;
+
+		if (result != MJCR_Join)
 			break;
 	}
 
@@ -435,9 +446,9 @@ MJCompare(MergeJoinState *mergestate)
 	 * equality.  We have to check this as part of the mergequals, else the
 	 * rescan logic will do the wrong thing.
 	 */
-	if (result == 0 &&
+	if (result == MJCR_Join &&
 		(nulleqnull || mergestate->mj_ConstFalseJoin))
-		result = 1;
+		result = MJCR_NextInner;
 
 	MemoryContextSwitchTo(oldContext);
 
@@ -603,7 +614,7 @@ ExecMergeJoin(PlanState *pstate)
 	ExprState  *joinqual;
 	ExprState  *otherqual;
 	bool		qualResult;
-	int			compareResult;
+	MJTestResult testResult;
 	PlanState  *innerPlan;
 	TupleTableSlot *innerTupleSlot;
 	PlanState  *outerPlan;
@@ -888,14 +899,14 @@ ExecMergeJoin(PlanState *pstate)
 						 * If they do not match then advance to next outer
 						 * tuple.
 						 */
-						compareResult = MJCompare(node);
-						MJ_DEBUG_COMPARE(compareResult);
+						testResult = MJTestTuples(node);
+						MJ_DEBUG_COMPARE(testResult);
 
-						if (compareResult == 0)
+						if (testResult == MJCR_Join)
 							node->mj_JoinState = EXEC_MJ_JOINTUPLES;
 						else
 						{
-							Assert(compareResult < 0);
+							Assert(testResult == MJCR_NextOuter);
 							node->mj_JoinState = EXEC_MJ_NEXTOUTER;
 						}
 						break;
@@ -1045,10 +1056,10 @@ ExecMergeJoin(PlanState *pstate)
 				innerTupleSlot = node->mj_MarkedTupleSlot;
 				(void) MJEvalInnerValues(node, innerTupleSlot);
 
-				compareResult = MJCompare(node);
-				MJ_DEBUG_COMPARE(compareResult);
+				testResult = MJTestTuples(node);
+				MJ_DEBUG_COMPARE(testResult);
 
-				if (compareResult == 0)
+				if (testResult == MJCR_Join)
 				{
 					/*
 					 * the merge clause matched so now we restore the inner
@@ -1106,7 +1117,7 @@ ExecMergeJoin(PlanState *pstate)
 					 *	no more inners, no more matches are possible.
 					 * ----------------
 					 */
-					Assert(compareResult > 0);
+					Assert(testResult == MJCR_NextInner);
 					innerTupleSlot = node->mj_InnerTupleSlot;
 
 					/* reload comparison data for current inner */
@@ -1179,10 +1190,10 @@ ExecMergeJoin(PlanState *pstate)
 				 * satisfy the mergeclauses.  If they do, then we update the
 				 * marked tuple position and go join them.
 				 */
-				compareResult = MJCompare(node);
-				MJ_DEBUG_COMPARE(compareResult);
+				testResult = MJTestTuples(node);
+				MJ_DEBUG_COMPARE(testResult);
 
-				if (compareResult == 0)
+				if (testResult == MJCR_Join)
 				{
 					if (!node->mj_SkipMarkRestore)
 						ExecMarkPos(innerPlan);
@@ -1191,11 +1202,13 @@ ExecMergeJoin(PlanState *pstate)
 
 					node->mj_JoinState = EXEC_MJ_JOINTUPLES;
 				}
-				else if (compareResult < 0)
+				else if (testResult == MJCR_NextOuter)
 					node->mj_JoinState = EXEC_MJ_SKIPOUTER_ADVANCE;
 				else
-					/* compareResult > 0 */
+				{
+					Assert(testResult == MJCR_NextInner);
 					node->mj_JoinState = EXEC_MJ_SKIPINNER_ADVANCE;
+				}
 				break;
 
 				/*
@@ -1593,12 +1606,12 @@ ExecInitMergeJoin(MergeJoin *node, EState *estate, int eflags)
 	 * preprocess the merge clauses
 	 */
 	mergestate->mj_NumClauses = list_length(node->mergeclauses);
-	mergestate->mj_Clauses = MJExamineQuals(node->mergeclauses,
-											node->mergeFamilies,
-											node->mergeCollations,
-											node->mergeStrategies,
-											node->mergeNullsFirst,
-											(PlanState *) mergestate);
+	MJExamineQuals(node->mergeclauses,
+				   node->mergeFamilies,
+				   node->mergeCollations,
+				   node->mergeStrategies,
+				   node->mergeNullsFirst,
+				   mergestate);
 
 	/*
 	 * initialize join state

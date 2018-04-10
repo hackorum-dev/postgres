@@ -199,7 +199,7 @@ make_pathkey_from_sortinfo(PlannerInfo *root,
 	if (!OidIsValid(equality_op))	/* shouldn't happen */
 		elog(ERROR, "missing operator %d(%u,%u) in opfamily %u",
 			 BTEqualStrategyNumber, opcintype, opcintype, opfamily);
-	opfamilies = get_mergejoin_opfamilies(equality_op);
+	opfamilies = get_btree_equality_opfamilies(equality_op);
 	if (!opfamilies)			/* certainly should find some */
 		elog(ERROR, "could not find opfamilies for equality operator %u",
 			 equality_op);
