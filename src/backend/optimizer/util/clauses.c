@@ -322,6 +322,133 @@ and_clause(Node *clause)
 }
 
 /*
+ * Returns t iff its argument is an 'true' constant
+ */
+static bool
+is_true(Node *clause)
+{
+	return IsA(clause, Const) &&
+		!((Const *) clause)->constisnull &&
+		DatumGetBool(((Const *) clause)->constvalue);
+}
+
+/*
+ * Returns t iff its argument is an 'not' clause: (NOT { expr }).
+ */
+static bool
+is_not(Node *clause)
+{
+	return IsA(clause, BoolExpr) &&
+		((BoolExpr *) clause)->boolop == NOT_EXPR;
+}
+
+static bool is_negator(Node *c1, Node *c2);
+
+
+/*
+ * Returns t iff two expressions are the same or one of them is 'not' clause is it's argument is negator of other expression
+ */
+static bool
+is_equal(Node *c1, Node *c2)
+{
+	if (equal(c1, c2))
+		return true;
+
+	if ((is_not(c1) && is_negator(linitial(((BoolExpr*)c1)->args), c2)) ||
+		(is_not(c2) && is_negator(linitial(((BoolExpr*)c2)->args), c1)))
+		return true;
+
+	return false;
+}
+
+/*
+ * Returns t iff two expressions are negators of each other
+ */
+static bool
+is_negator(Node *c1, Node *c2)
+{
+	if ((is_not(c1) && is_equal(linitial(((BoolExpr*)c1)->args), c2)) ||
+		(is_not(c2) && is_equal(linitial(((BoolExpr*)c2)->args), c1)))
+		return true;
+
+	if (IsA(c1, NullTest) && IsA(c2, NullTest))
+		return (((NullTest*)c1)->nulltesttype == IS_NOT_NULL && ((NullTest*)c2)->nulltesttype == IS_NULL)
+			|| (((NullTest*)c2)->nulltesttype == IS_NOT_NULL && ((NullTest*)c1)->nulltesttype == IS_NULL);
+
+	return false;
+}
+
+/*
+ * Exclude from expression predicates with matches with one of conjuncts
+ */
+static Node*
+exclude_redundand_checks(Node* clause, List* conjuncts)
+{
+	if (IsA(clause, BoolExpr))
+	{
+		ListCell *c1, *c2;
+		BoolExpr* be = (BoolExpr*)clause;
+		List* new_args = NULL;
+		foreach (c1, be->args)
+		{
+			Node* p1 = (Node*)lfirst(c1);
+			foreach (c2, conjuncts)
+			{
+				Node* p2 = (Node*)lfirst(c2);
+				if (is_equal(p1, p2))
+				{
+					switch (be->boolop)
+					{
+					  case OR_EXPR:
+						return makeBoolConst(true, false); /* one of disjuncts is always true, so OR clause is redundant */
+					  case NOT_EXPR:
+						return makeBoolConst(false, false); /* conjunct inversion => false */
+					  case AND_EXPR:
+						goto nextArg; /* just skip this disjunct */
+					  default:
+						break;
+					}
+				}
+				if (is_negator(p1, p2))
+				{
+					switch (be->boolop)
+					{
+					  case AND_EXPR:
+						return makeBoolConst(false, false); /* one of conjuncts is always false, so  clause is redundant */
+					  case NOT_EXPR:
+						return makeBoolConst(true, false); /* inversion of conjunct's negator => true */
+					  case OR_EXPR:
+						goto nextArg; /* just skip this conjunct */
+					  default:
+						break;
+					}
+				}
+			}
+			new_args = lappend(new_args, exclude_redundand_checks(p1, conjuncts));
+		  nextArg:;
+		}
+		if (new_args == NULL)
+			/* empty arguments list corresponds to true for 'and' and to false for 'or' operators */
+			return makeBoolConst(be->boolop == AND_EXPR, false);
+
+		switch (be->boolop)
+		{
+		  case AND_EXPR:
+			return list_length(new_args) == 1
+				? (Expr *) linitial(new_args)
+				: make_andclause(new_args);
+		  case OR_EXPR:
+			return list_length(new_args) == 1
+				? (Expr *) linitial(new_args)
+				: make_orclause(new_args);
+		  default:
+			break;
+		}
+	}
+	return clause;
+}
+
+/*
  * make_andclause
  *
  * Creates an 'and' clause given a list of its subclauses.
@@ -334,6 +461,7 @@ make_andclause(List *andclauses)
 	expr->boolop = AND_EXPR;
 	expr->args = andclauses;
 	expr->location = -1;
+
 	return (Expr *) expr;
 }
 
@@ -3852,10 +3980,21 @@ simplify_and_arguments(List *args,
 					   bool *haveNull, bool *forceFalse)
 {
 	List	   *newargs = NIL;
-	List	   *unprocessed_args;
+	List	   *unprocessed_args = NULL;
+	List       *complex_args = NULL;
+	ListCell   *c;
 
-	/* See comments in simplify_or_arguments */
-	unprocessed_args = list_copy(args);
+	/* Copy list and place complex arguments to the tail to make it possible to simplify them using simple arguments */
+	foreach (c, args)
+	{
+		Node *expr = lfirst(c);
+		if (IsA(expr, BoolExpr) && ((BoolExpr*)expr)->boolop != AND_EXPR)
+			complex_args = lappend(complex_args, expr);
+		else
+			unprocessed_args = lappend(unprocessed_args, expr);
+	}
+	unprocessed_args = list_concat(unprocessed_args, complex_args);
+
 	while (unprocessed_args)
 	{
 		Node	   *arg = (Node *) linitial(unprocessed_args);
@@ -3921,9 +4060,11 @@ simplify_and_arguments(List *args,
 			/* otherwise, we can drop the constant-true input */
 			continue;
 		}
+		arg = exclude_redundand_checks(arg, newargs);
 
 		/* else emit the simplified arg into the result list */
-		newargs = lappend(newargs, arg);
+		if (!is_true(arg))
+			newargs = lappend(newargs, arg);
 	}
 
 	return newargs;

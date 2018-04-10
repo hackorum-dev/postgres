@@ -3206,7 +3206,7 @@ select * from tenk1 a join tenk1 b on
                                                       QUERY PLAN                                                      
 ----------------------------------------------------------------------------------------------------------------------
  Nested Loop
-   Join Filter: (((a.unique1 = 1) AND (b.unique1 = 2)) OR (((a.unique2 = 3) OR (a.unique2 = 7)) AND (b.hundred = 4)))
+   Join Filter: (((a.unique1 = 1) AND (b.unique1 = 2)) OR ((b.hundred = 4) AND ((a.unique2 = 3) OR (a.unique2 = 7))))
    ->  Bitmap Heap Scan on tenk1 b
          Recheck Cond: ((unique1 = 2) OR (hundred = 4))
          ->  BitmapOr
