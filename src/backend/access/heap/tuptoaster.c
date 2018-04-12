@@ -1882,10 +1882,10 @@ toast_fetch_datum(struct varlena *attr)
 	struct varlena *result;
 	struct varatt_external toast_pointer;
 	int32		ressize;
-	int32		residx,
-				nextidx;
+	int32		res_seq,
+				next_seq;
 	int32		numchunks;
-	Pointer		chunk;
+	Pointer		chunk_data;
 	bool		isnull;
 	char	   *chunkdata;
 	int32		chunksize;
@@ -1930,13 +1930,13 @@ toast_fetch_datum(struct varlena *attr)
 				ObjectIdGetDatum(toast_pointer.va_valueid));
 
 	/*
-	 * Read the chunks by index
+	 * Read the chunks by sequence number
 	 *
-	 * Note that because the index is actually on (valueid, chunkidx) we will
-	 * see the chunks in chunkidx order, even though we didn't explicitly ask
+	 * Note that because the index is actually on (chunk_id, chunk_seq) we will
+	 * see the chunks in chunk_seq order, even though we didn't explicitly ask
 	 * for it.
 	 */
-	nextidx = 0;
+	next_seq = 0;
 
 	init_toast_snapshot(&SnapshotToast);
 	toastscan = systable_beginscan_ordered(toastrel, toastidxs[validIndex],
@@ -1946,20 +1946,20 @@ toast_fetch_datum(struct varlena *attr)
 		/*
 		 * Have a chunk, extract the sequence number and the data
 		 */
-		residx = DatumGetInt32(fastgetattr(ttup, 2, toasttupDesc, &isnull));
+		res_seq = DatumGetInt32(fastgetattr(ttup, 2, toasttupDesc, &isnull));
 		Assert(!isnull);
-		chunk = DatumGetPointer(fastgetattr(ttup, 3, toasttupDesc, &isnull));
+		chunk_data = DatumGetPointer(fastgetattr(ttup, 3, toasttupDesc, &isnull));
 		Assert(!isnull);
-		if (!VARATT_IS_EXTENDED(chunk))
+		if (!VARATT_IS_EXTENDED(chunk_data))
 		{
-			chunksize = VARSIZE(chunk) - VARHDRSZ;
-			chunkdata = VARDATA(chunk);
+			chunksize = VARSIZE(chunk_data) - VARHDRSZ;
+			chunkdata = VARDATA(chunk_data);
 		}
-		else if (VARATT_IS_SHORT(chunk))
+		else if (VARATT_IS_SHORT(chunk_data))
 		{
 			/* could happen due to heap_form_tuple doing its thing */
-			chunksize = VARSIZE_SHORT(chunk) - VARHDRSZ_SHORT;
-			chunkdata = VARDATA_SHORT(chunk);
+			chunksize = VARSIZE_SHORT(chunk_data) - VARHDRSZ_SHORT;
+			chunkdata = VARDATA_SHORT(chunk_data);
 		}
 		else
 		{
@@ -1974,33 +1974,34 @@ toast_fetch_datum(struct varlena *attr)
 		/*
 		 * Some checks on the data we've found
 		 */
-		if (residx != nextidx)
-			elog(ERROR, "unexpected chunk number %d (expected %d) for toast value %u in %s",
-				 residx, nextidx,
+		if (res_seq != next_seq)
+			elog(ERROR, "unexpected chunk_seq %d (expected %d) for toast value %u in %s",
+				 res_seq, next_seq,
 				 toast_pointer.va_valueid,
 				 RelationGetRelationName(toastrel));
-		if (residx < numchunks - 1)
+
+		if (res_seq < numchunks - 1)
 		{
 			if (chunksize != TOAST_MAX_CHUNK_SIZE)
-				elog(ERROR, "unexpected chunk size %d (expected %d) in chunk %d of %d for toast value %u in %s",
+				elog(ERROR, "unexpected chunk size %d (expected %d) in chunk_seq %d of %d for toast value %u in %s",
 					 chunksize, (int) TOAST_MAX_CHUNK_SIZE,
-					 residx, numchunks,
+					 res_seq, numchunks,
 					 toast_pointer.va_valueid,
 					 RelationGetRelationName(toastrel));
 		}
-		else if (residx == numchunks - 1)
+		else if (res_seq == numchunks - 1)
 		{
-			if ((residx * TOAST_MAX_CHUNK_SIZE + chunksize) != ressize)
-				elog(ERROR, "unexpected chunk size %d (expected %d) in final chunk %d for toast value %u in %s",
+			if ((res_seq * TOAST_MAX_CHUNK_SIZE + chunksize) != ressize)
+				elog(ERROR, "unexpected chunk size %d (expected %d) in final chunk_seq %d for toast value %u in %s",
 					 chunksize,
-					 (int) (ressize - residx * TOAST_MAX_CHUNK_SIZE),
-					 residx,
+					 (int) (ressize - res_seq * TOAST_MAX_CHUNK_SIZE),
+					 res_seq,
 					 toast_pointer.va_valueid,
 					 RelationGetRelationName(toastrel));
 		}
 		else
-			elog(ERROR, "unexpected chunk number %d (out of range %d..%d) for toast value %u in %s",
-				 residx,
+			elog(ERROR, "unexpected chunk_seq number %d (out of range %d..%d) for toast value %u in %s",
+				 res_seq,
 				 0, numchunks - 1,
 				 toast_pointer.va_valueid,
 				 RelationGetRelationName(toastrel));
@@ -2008,19 +2009,19 @@ toast_fetch_datum(struct varlena *attr)
 		/*
 		 * Copy the data into proper place in our result
 		 */
-		memcpy(VARDATA(result) + residx * TOAST_MAX_CHUNK_SIZE,
+		memcpy(VARDATA(result) + res_seq * TOAST_MAX_CHUNK_SIZE,
 			   chunkdata,
 			   chunksize);
 
-		nextidx++;
+		next_seq++;
 	}
 
 	/*
 	 * Final checks that we successfully fetched the datum
 	 */
-	if (nextidx != numchunks)
-		elog(ERROR, "missing chunk number %d for toast value %u in %s",
-			 nextidx,
+	if (next_seq != numchunks)
+		elog(ERROR, "missing chunk_seq number %d for toast value %u in %s",
+			 next_seq,
 			 toast_pointer.va_valueid,
 			 RelationGetRelationName(toastrel));
 
