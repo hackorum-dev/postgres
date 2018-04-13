@@ -27,7 +27,6 @@
 #include "catalog/catalog.h"
 #include "catalog/dependency.h"
 #include "catalog/heap.h"
-#include "catalog/partition.h"
 #include "catalog/pg_am.h"
 #include "catalog/pg_statistic_ext.h"
 #include "foreign/fdwapi.h"
@@ -72,8 +71,9 @@ static List *build_index_tlist(PlannerInfo *root, IndexOptInfo *index,
 static List *get_relation_statistics(RelOptInfo *rel, Relation relation);
 static void set_relation_partition_info(PlannerInfo *root, RelOptInfo *rel,
 							Relation relation);
-static PartitionScheme find_partition_scheme(PlannerInfo *root, Relation rel);
-static void set_baserel_partition_key_exprs(Relation relation,
+static PartitionScheme find_partition_scheme(PlannerInfo *root, Relation rel,
+							PartitionKey partkey);
+static void set_baserel_partition_key_exprs(PartitionKey partkey,
 								RelOptInfo *rel);
 
 /*
@@ -1871,18 +1871,19 @@ static void
 set_relation_partition_info(PlannerInfo *root, RelOptInfo *rel,
 							Relation relation)
 {
-	PartitionDesc partdesc;
-	PartitionKey partkey;
+	PartitionKey partkey = RelationGetPartitionKey(relation);
+	int		nparts = RelationGetPartitionCount(relation);
+	PartitionBoundInfo boundinfo = RelationGetPartitionBounds(relation);
 
 	Assert(relation->rd_rel->relkind == RELKIND_PARTITIONED_TABLE);
+	Assert(partkey != NULL);
+	Assert(boundinfo != NULL || nparts == 0);
 
-	partdesc = RelationGetPartitionDesc(relation);
-	partkey = RelationGetPartitionKey(relation);
-	rel->part_scheme = find_partition_scheme(root, relation);
-	Assert(partdesc != NULL && rel->part_scheme != NULL);
-	rel->boundinfo = partition_bounds_copy(partdesc->boundinfo, partkey);
-	rel->nparts = partdesc->nparts;
-	set_baserel_partition_key_exprs(relation, rel);
+	rel->part_scheme = find_partition_scheme(root, relation, partkey);
+	Assert(rel->part_scheme != NULL);
+	rel->boundinfo = boundinfo;
+	rel->nparts = nparts;
+	set_baserel_partition_key_exprs(partkey, rel);
 	rel->partition_qual = RelationGetPartitionQual(relation);
 }
 
@@ -1892,9 +1893,9 @@ set_relation_partition_info(PlannerInfo *root, RelOptInfo *rel,
  * Find or create a PartitionScheme for this Relation.
  */
 static PartitionScheme
-find_partition_scheme(PlannerInfo *root, Relation relation)
+find_partition_scheme(PlannerInfo *root, Relation rel,
+					  PartitionKey partkey)
 {
-	PartitionKey partkey = RelationGetPartitionKey(relation);
 	ListCell   *lc;
 	int			partnatts,
 				i;
@@ -1935,10 +1936,7 @@ find_partition_scheme(PlannerInfo *root, Relation relation)
 
 		/*
 		 * If partopfamily and partopcintype matched, must have the same
-		 * partition comparison functions.  Note that we cannot reliably
-		 * Assert the equality of function structs themselves for they might
-		 * be different across PartitionKey's, so just Assert for the function
-		 * OIDs.
+		 * partition comparison functions.
 		 */
 #ifdef USE_ASSERT_CHECKING
 		for (i = 0; i < partkey->partnatts; i++)
@@ -1951,40 +1949,18 @@ find_partition_scheme(PlannerInfo *root, Relation relation)
 	}
 
 	/*
-	 * Did not find matching partition scheme. Create one copying relevant
-	 * information from the relcache. We need to copy the contents of the
-	 * array since the relcache entry may not survive after we have closed the
-	 * relation.
+	 * Did not find matching partition scheme. Create one usinng the
+	 * relevant information copied from the relcache.
 	 */
 	part_scheme = (PartitionScheme) palloc0(sizeof(PartitionSchemeData));
 	part_scheme->strategy = partkey->strategy;
 	part_scheme->partnatts = partkey->partnatts;
-
-	part_scheme->partopfamily = (Oid *) palloc(sizeof(Oid) * partnatts);
-	memcpy(part_scheme->partopfamily, partkey->partopfamily,
-		   sizeof(Oid) * partnatts);
-
-	part_scheme->partopcintype = (Oid *) palloc(sizeof(Oid) * partnatts);
-	memcpy(part_scheme->partopcintype, partkey->partopcintype,
-		   sizeof(Oid) * partnatts);
-
-	part_scheme->partcollation = (Oid *) palloc(sizeof(Oid) * partnatts);
-	memcpy(part_scheme->partcollation, partkey->partcollation,
-		   sizeof(Oid) * partnatts);
-
-	part_scheme->parttyplen = (int16 *) palloc(sizeof(int16) * partnatts);
-	memcpy(part_scheme->parttyplen, partkey->parttyplen,
-		   sizeof(int16) * partnatts);
-
-	part_scheme->parttypbyval = (bool *) palloc(sizeof(bool) * partnatts);
-	memcpy(part_scheme->parttypbyval, partkey->parttypbyval,
-		   sizeof(bool) * partnatts);
-
-	part_scheme->partsupfunc = (FmgrInfo *)
-		palloc(sizeof(FmgrInfo) * partnatts);
-	for (i = 0; i < partnatts; i++)
-		fmgr_info_copy(&part_scheme->partsupfunc[i], &partkey->partsupfunc[i],
-					   CurrentMemoryContext);
+	part_scheme->partopfamily = partkey->partopfamily;
+	part_scheme->partopcintype = partkey->partopcintype;
+	part_scheme->partcollation = partkey->partcollation;
+	part_scheme->parttyplen = partkey->parttyplen;
+	part_scheme->parttypbyval = partkey->parttypbyval;
+	part_scheme->partsupfunc = partkey->partsupfunc;
 
 	/* Add the partitioning scheme to PlannerInfo. */
 	root->part_schemes = lappend(root->part_schemes, part_scheme);
@@ -2000,10 +1976,9 @@ find_partition_scheme(PlannerInfo *root, Relation relation)
  * nodes.  All Var nodes are restamped with the relid of given relation.
  */
 static void
-set_baserel_partition_key_exprs(Relation relation,
+set_baserel_partition_key_exprs(PartitionKey partkey,
 								RelOptInfo *rel)
 {
-	PartitionKey partkey = RelationGetPartitionKey(relation);
 	int			partnatts;
 	int			cnt;
 	List	  **partexprs;

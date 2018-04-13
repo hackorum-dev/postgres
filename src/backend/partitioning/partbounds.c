@@ -307,9 +307,10 @@ void
 check_new_partition_bound(char *relname, Relation parent,
 						  PartitionBoundSpec *spec)
 {
-	PartitionKey key = RelationGetPartitionKey(parent);
-	PartitionDesc partdesc = RelationGetPartitionDesc(parent);
-	PartitionBoundInfo boundinfo = partdesc->boundinfo;
+	PartitionKey	key = RelationGetPartitionKey(parent);
+	int				nparts = RelationGetPartitionCount(parent);
+	Oid			   *partoids = RelationGetPartitionOids(parent);
+	PartitionBoundInfo boundinfo = RelationGetPartitionBounds(parent);
 	ParseState *pstate = make_parsestate(NULL);
 	int			with = -1;
 	bool		overlap = false;
@@ -329,7 +330,7 @@ check_new_partition_bound(char *relname, Relation parent,
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 				 errmsg("partition \"%s\" conflicts with existing default partition \"%s\"",
-						relname, get_rel_name(partdesc->oids[boundinfo->default_index])),
+						relname, get_rel_name(partoids[boundinfo->default_index])),
 				 parser_errposition(pstate, spec->location)));
 	}
 
@@ -340,7 +341,7 @@ check_new_partition_bound(char *relname, Relation parent,
 				Assert(spec->strategy == PARTITION_STRATEGY_HASH);
 				Assert(spec->remainder >= 0 && spec->remainder < spec->modulus);
 
-				if (partdesc->nparts > 0)
+				if (nparts > 0)
 				{
 					Datum	  **datums = boundinfo->datums;
 					int			ndatums = boundinfo->ndatums;
@@ -421,7 +422,7 @@ check_new_partition_bound(char *relname, Relation parent,
 			{
 				Assert(spec->strategy == PARTITION_STRATEGY_LIST);
 
-				if (partdesc->nparts > 0)
+				if (nparts > 0)
 				{
 					ListCell   *cell;
 
@@ -491,7 +492,7 @@ check_new_partition_bound(char *relname, Relation parent,
 							 parser_errposition(pstate, spec->location)));
 				}
 
-				if (partdesc->nparts > 0)
+				if (nparts > 0)
 				{
 					int			offset;
 					bool		equal;
@@ -583,7 +584,7 @@ check_new_partition_bound(char *relname, Relation parent,
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 				 errmsg("partition \"%s\" would overlap partition \"%s\"",
-						relname, get_rel_name(partdesc->oids[with])),
+						relname, get_rel_name(partoids[with])),
 				 parser_errposition(pstate, spec->location)));
 	}
 }
@@ -1431,8 +1432,7 @@ get_qual_for_list(Relation parent, PartitionBoundSpec *spec)
 	{
 		int			i;
 		int			ndatums = 0;
-		PartitionDesc pdesc = RelationGetPartitionDesc(parent);
-		PartitionBoundInfo boundinfo = pdesc->boundinfo;
+		PartitionBoundInfo boundinfo = RelationGetPartitionBounds(parent);
 
 		if (boundinfo)
 		{
@@ -1631,11 +1631,11 @@ get_qual_for_range(Relation parent, PartitionBoundSpec *spec,
 	if (spec->is_default)
 	{
 		List	   *or_expr_args = NIL;
-		PartitionDesc pdesc = RelationGetPartitionDesc(parent);
-		Oid		   *inhoids = pdesc->oids;
-		int			nparts = pdesc->nparts,
+		Oid		   *inhoids = RelationGetPartitionOids(parent);
+		int			nparts = RelationGetPartitionCount(parent),
 					i;
 
+		Assert(inhoids != NULL || nparts == 0);
 		for (i = 0; i < nparts; i++)
 		{
 			Oid			inhrelid = inhoids[i];
@@ -2156,11 +2156,17 @@ satisfies_hash_partition(PG_FUNCTION_ARGS)
 		parent = try_relation_open(parentId, AccessShareLock);
 		if (parent == NULL)
 			PG_RETURN_NULL();
-		key = RelationGetPartitionKey(parent);
 
 		/* Reject parent table that is not hash-partitioned. */
-		if (parent->rd_rel->relkind != RELKIND_PARTITIONED_TABLE ||
-			key->strategy != PARTITION_STRATEGY_HASH)
+		if (parent->rd_rel->relkind != RELKIND_PARTITIONED_TABLE)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("\"%s\" is not a hash partitioned table",
+							get_rel_name(parentId))));
+		key = RelationGetPartitionKey(parent);
+		Assert(key != NULL);
+
+		if (key->strategy != PARTITION_STRATEGY_HASH)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("\"%s\" is not a hash partitioned table",

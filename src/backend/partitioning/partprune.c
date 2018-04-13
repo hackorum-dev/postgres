@@ -54,7 +54,6 @@
 #include "optimizer/predtest.h"
 #include "optimizer/prep.h"
 #include "partitioning/partprune.h"
-#include "partitioning/partbounds.h"
 #include "rewrite/rewriteManip.h"
 #include "utils/lsyscache.h"
 
@@ -1962,8 +1961,8 @@ get_steps_using_prefix_recurse(GeneratePruningStepsContext *context,
  *
  * 'nvalues', the number of Datums in the 'values' array.
  *
- * 'partsupfunc' contains partition hashing functions that can produce correct
- * hash for the type of the values contained in 'values'.
+ * 'partsupfunc' contains partition hashing functions that can produce
+ * correct hash for the type of the values contained in 'values'.
  *
  * 'nullkeys' is the set of partition keys that are null.
  */
@@ -2000,7 +1999,8 @@ get_matching_hash_bounds(PartitionPruneContext *context,
 			isnull[i] = bms_is_member(i, nullkeys);
 
 		greatest_modulus = get_hash_partition_greatest_modulus(boundinfo);
-		rowHash = compute_hash_value(partnatts, partsupfunc, values, isnull);
+		rowHash = compute_hash_value(partnatts, partsupfunc, values,
+									 isnull);
 
 		if (partindices[rowHash % greatest_modulus] >= 0)
 			result->bound_offsets =
@@ -2029,8 +2029,8 @@ get_matching_hash_bounds(PartitionPruneContext *context,
  *
  * 'nvalues', if non-zero, should be exactly 1, because of list partitioning.
  *
- * 'partsupfunc' contains the list partitioning comparison function to be used
- * to perform partition_list_bsearch
+ * 'partsupfunc' contains the list partitioning comparison function to be
+ * used to perform partition_list_bsearch
  *
  * 'nullkeys' is the set of partition keys that are null.
  */
@@ -2102,8 +2102,8 @@ get_matching_list_bounds(PartitionPruneContext *context,
 		result->bound_offsets = bms_add_range(NULL, 0,
 											  boundinfo->ndatums - 1);
 
-		off = partition_list_bsearch(partsupfunc, partcollation, boundinfo,
-									 value, &is_equal);
+		off = partition_list_bsearch(partsupfunc, partcollation,
+									 boundinfo, value, &is_equal);
 		if (off >= 0 && is_equal)
 		{
 
@@ -2231,9 +2231,9 @@ get_matching_list_bounds(PartitionPruneContext *context,
  *
  * 'nvalues', number of Datums in 'values' array. Must be <= context->partnatts.
  *
- * 'partsupfunc' contains the range partitioning comparison functions to be
- * used to perform partition_range_datum_bsearch or partition_rbound_datum_cmp
- * using.
+ * 'partsupfunc' contains the range partitioning comparison functions to
+ * be used to perform partition_range_datum_bsearch or
+ * partition_rbound_datum_cmp using.
  *
  * 'nullkeys' is the set of partition keys that are null.
  */
@@ -2797,7 +2797,8 @@ perform_pruning_base_step(PartitionPruneContext *context,
 				cmpfn = lfirst_oid(lc2);
 				Assert(OidIsValid(cmpfn));
 				if (cmpfn != context->partsupfunc[keyno].fn_oid)
-					fmgr_info(cmpfn, &partsupfunc[keyno]);
+					fmgr_info_cxt(cmpfn, &partsupfunc[keyno],
+								  CurrentMemoryContext);
 				else
 					fmgr_info_copy(&partsupfunc[keyno],
 								   &context->partsupfunc[keyno],

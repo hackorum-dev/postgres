@@ -43,7 +43,6 @@
 #include "catalog/index.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
-#include "catalog/partition.h"
 #include "catalog/pg_am.h"
 #include "catalog/pg_amproc.h"
 #include "catalog/pg_attrdef.h"
@@ -287,9 +286,6 @@ static OpClassCacheEnt *LookupOpclassInfo(Oid operatorClassOid,
 				  StrategyNumber numSupport);
 static void RelationCacheInitFileRemoveInDir(const char *tblspcpath);
 static void unlink_initfile(const char *initfilename);
-static bool equalPartitionDescs(PartitionKey key, PartitionDesc partdesc1,
-					PartitionDesc partdesc2);
-
 
 /*
  *		ScanPgRelation
@@ -1002,60 +998,6 @@ equalRSDesc(RowSecurityDesc *rsdesc1, RowSecurityDesc *rsdesc2)
 }
 
 /*
- * equalPartitionDescs
- *		Compare two partition descriptors for logical equality
- */
-static bool
-equalPartitionDescs(PartitionKey key, PartitionDesc partdesc1,
-					PartitionDesc partdesc2)
-{
-	int			i;
-
-	if (partdesc1 != NULL)
-	{
-		if (partdesc2 == NULL)
-			return false;
-		if (partdesc1->nparts != partdesc2->nparts)
-			return false;
-
-		Assert(key != NULL || partdesc1->nparts == 0);
-
-		/*
-		 * Same oids? If the partitioning structure did not change, that is,
-		 * no partitions were added or removed to the relation, the oids array
-		 * should still match element-by-element.
-		 */
-		for (i = 0; i < partdesc1->nparts; i++)
-		{
-			if (partdesc1->oids[i] != partdesc2->oids[i])
-				return false;
-		}
-
-		/*
-		 * Now compare partition bound collections.  The logic to iterate over
-		 * the collections is private to partition.c.
-		 */
-		if (partdesc1->boundinfo != NULL)
-		{
-			if (partdesc2->boundinfo == NULL)
-				return false;
-
-			if (!partition_bounds_equal(key->partnatts, key->parttyplen,
-										key->parttypbyval,
-										partdesc1->boundinfo,
-										partdesc2->boundinfo))
-				return false;
-		}
-		else if (partdesc2->boundinfo != NULL)
-			return false;
-	}
-	else if (partdesc2 != NULL)
-		return false;
-
-	return true;
-}
-
-/*
  *		RelationBuildDesc
  *
  *		Build a relation descriptor.  The caller must hold at least
@@ -1183,7 +1125,10 @@ RelationBuildDesc(Oid targetRelId, bool insertIt)
 	relation->rd_fkeylist = NIL;
 	relation->rd_fkeyvalid = false;
 
-	/* if a partitioned table, initialize key and partition descriptor info */
+	/*
+	 * If we need to initialize partitioning info, do that in a dedicated
+	 * context that's attached to the cache context.
+	 */
 	if (relation->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
 	{
 		RelationBuildPartitionKey(relation);
@@ -1193,8 +1138,8 @@ RelationBuildDesc(Oid targetRelId, bool insertIt)
 	{
 		relation->rd_partkeycxt = NULL;
 		relation->rd_partkey = NULL;
-		relation->rd_partdesc = NULL;
 		relation->rd_pdcxt = NULL;
+		relation->rd_partdesc = NULL;
 	}
 
 	/*
@@ -2369,8 +2314,6 @@ RelationClearRelation(Relation relation, bool rebuild)
 		bool		keep_tupdesc;
 		bool		keep_rules;
 		bool		keep_policies;
-		bool		keep_partkey;
-		bool		keep_partdesc;
 
 		/* Build temporary entry, but don't link it into hashtable */
 		newrel = RelationBuildDesc(save_relid, false);
@@ -2401,10 +2344,6 @@ RelationClearRelation(Relation relation, bool rebuild)
 		keep_tupdesc = equalTupleDescs(relation->rd_att, newrel->rd_att);
 		keep_rules = equalRuleLocks(relation->rd_rules, newrel->rd_rules);
 		keep_policies = equalRSDesc(relation->rd_rsdesc, newrel->rd_rsdesc);
-		keep_partkey = (relation->rd_partkey != NULL);
-		keep_partdesc = equalPartitionDescs(relation->rd_partkey,
-											relation->rd_partdesc,
-											newrel->rd_partdesc);
 
 		/*
 		 * Perform swapping of the relcache entry contents.  Within this
@@ -2459,18 +2398,6 @@ RelationClearRelation(Relation relation, bool rebuild)
 		SWAPFIELD(Oid, rd_toastoid);
 		/* pgstat_info must be preserved */
 		SWAPFIELD(struct PgStat_TableStatus *, pgstat_info);
-		/* partition key must be preserved, if we have one */
-		if (keep_partkey)
-		{
-			SWAPFIELD(PartitionKey, rd_partkey);
-			SWAPFIELD(MemoryContext, rd_partkeycxt);
-		}
-		/* preserve old partdesc if no logical change */
-		if (keep_partdesc)
-		{
-			SWAPFIELD(PartitionDesc, rd_partdesc);
-			SWAPFIELD(MemoryContext, rd_pdcxt);
-		}
 
 #undef SWAPFIELD
 
@@ -3708,19 +3635,11 @@ RelationCacheInitializePhase3(void)
 		/*
 		 * Reload the partition key and descriptor for a partitioned table.
 		 */
-		if (relation->rd_rel->relkind == RELKIND_PARTITIONED_TABLE &&
-			relation->rd_partkey == NULL)
+		if (relation->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
 		{
 			RelationBuildPartitionKey(relation);
-			Assert(relation->rd_partkey != NULL);
-
-			restart = true;
-		}
-
-		if (relation->rd_rel->relkind == RELKIND_PARTITIONED_TABLE &&
-			relation->rd_partdesc == NULL)
-		{
 			RelationBuildPartitionDesc(relation);
+			Assert(relation->rd_partkey != NULL);
 			Assert(relation->rd_partdesc != NULL);
 
 			restart = true;

@@ -55,6 +55,7 @@
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/partcache.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
@@ -1087,7 +1088,8 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 	 */
 	if (partition_recurse)
 	{
-		PartitionDesc partdesc = RelationGetPartitionDesc(rel);
+		int			nparts = RelationGetPartitionCount(rel);
+		Oid		   *partoids = RelationGetPartitionOids(rel);
 		List	   *idxs = NIL;
 		List	   *childTbls = NIL;
 		ListCell   *l;
@@ -1119,7 +1121,8 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 		oldcxt = MemoryContextSwitchTo(perChildCxt);
 
 		/* Iterate to create the trigger on each existing partition */
-		for (i = 0; i < partdesc->nparts; i++)
+		Assert(partoids != NULL || nparts == 0);
+		for (i = 0; i < nparts; i++)
 		{
 			Oid			indexOnChild = InvalidOid;
 			ListCell   *l2;
@@ -1128,14 +1131,14 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 			Node	   *qual;
 			bool		found_whole_row;
 
-			childTbl = heap_open(partdesc->oids[i], ShareRowExclusiveLock);
+			childTbl = heap_open(partoids[i], ShareRowExclusiveLock);
 
 			/* Find which of the child indexes is the one on this partition */
 			if (OidIsValid(indexOid))
 			{
 				forboth(l, idxs, l2, childTbls)
 				{
-					if (lfirst_oid(l2) == partdesc->oids[i])
+					if (lfirst_oid(l2) == partoids[i])
 					{
 						indexOnChild = lfirst_oid(l);
 						break;
@@ -1144,7 +1147,7 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 				if (!OidIsValid(indexOnChild))
 					elog(ERROR, "failed to find index matching index \"%s\" in partition \"%s\"",
 						 get_rel_name(indexOid),
-						 get_rel_name(partdesc->oids[i]));
+						 get_rel_name(partoids[i]));
 			}
 
 			/*
@@ -1172,7 +1175,7 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 				elog(ERROR, "unexpected whole-row reference found in trigger WHEN clause");
 
 			CreateTrigger(childStmt, queryString,
-						  partdesc->oids[i], refRelOid,
+						  partoids[i], refRelOid,
 						  InvalidOid, indexOnChild,
 						  funcoid, trigoid, qual,
 						  isInternal, true);
@@ -1855,14 +1858,16 @@ EnableDisableTrigger(Relation rel, const char *tgname,
 			if (rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE &&
 				(TRIGGER_FOR_ROW(oldtrig->tgtype)))
 			{
-				PartitionDesc partdesc = RelationGetPartitionDesc(rel);
+				int		nparts = RelationGetPartitionCount(rel);
+				Oid	   *partoids = RelationGetPartitionOids(rel);
 				int			i;
 
-				for (i = 0; i < partdesc->nparts; i++)
+				Assert(partoids != NULL || nparts == 0);
+				for (i = 0; i < nparts; i++)
 				{
 					Relation	part;
 
-					part = relation_open(partdesc->oids[i], lockmode);
+					part = relation_open(partoids[i], lockmode);
 					EnableDisableTrigger(part, NameStr(oldtrig->tgname),
 										 fires_when, skip_system, lockmode);
 					heap_close(part, NoLock);	/* keep lock till commit */

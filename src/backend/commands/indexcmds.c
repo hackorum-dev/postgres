@@ -878,14 +878,11 @@ DefineIndex(Oid relationId,
 		 */
 		if (!stmt->relation || stmt->relation->inh)
 		{
-			PartitionDesc partdesc = RelationGetPartitionDesc(rel);
-			int			nparts = partdesc->nparts;
-			Oid		   *part_oids = palloc(sizeof(Oid) * nparts);
+			int			nparts = RelationGetPartitionCount(rel);
+			Oid		   *part_oids = RelationGetPartitionOids(rel);
 			bool		invalidate_parent = false;
 			TupleDesc	parentDesc;
 			Oid		   *opfamOids;
-
-			memcpy(part_oids, partdesc->oids, sizeof(Oid) * nparts);
 
 			parentDesc = CreateTupleDescCopy(RelationGetDescr(rel));
 			opfamOids = palloc(sizeof(Oid) * numberOfKeyAttributes);
@@ -902,6 +899,7 @@ DefineIndex(Oid relationId,
 			 * If none matches, build a new index by calling ourselves
 			 * recursively with the same options (except for the index name).
 			 */
+			Assert(part_oids != NULL || nparts == 0);
 			for (i = 0; i < nparts; i++)
 			{
 				Oid		childRelid = part_oids[i];

@@ -32,6 +32,7 @@
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
+#include "utils/partcache.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
@@ -625,12 +626,14 @@ CloneForeignKeyConstraints(Oid parentId, Oid relationId, List **cloned)
 
 	if (rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
 	{
-		PartitionDesc	partdesc = RelationGetPartitionDesc(rel);
+		int			nparts = RelationGetPartitionCount(rel);
+		Oid		   *partoids = RelationGetPartitionOids(rel);
 		int			i;
 
-		for (i = 0; i < partdesc->nparts; i++)
+		Assert(partoids != NULL || nparts == 0);
+		for (i = 0; i < nparts; i++)
 			CloneForeignKeyConstraints(RelationGetRelid(rel),
-									   partdesc->oids[i],
+									   partoids[i],
 									   cloned);
 	}
 

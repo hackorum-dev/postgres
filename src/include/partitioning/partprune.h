@@ -14,7 +14,7 @@
 #ifndef PARTPRUNE_H
 #define PARTPRUNE_H
 
-#include "nodes/execnodes.h"
+#include "partitioning/partbounds.h"
 #include "nodes/relation.h"
 
 

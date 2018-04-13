@@ -16,7 +16,7 @@
 #include "nodes/pg_list.h"
 #include "partitioning/partdefs.h"
 #include "utils/relcache.h"
-
+#include "utils/partcache.h"
 
 /*
  * PartitionBoundInfoData encapsulates a set of partition bounds. It is

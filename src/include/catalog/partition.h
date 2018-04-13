@@ -37,8 +37,6 @@ extern List *map_partition_varattnos(List *expr, int fromrel_varno,
 						bool *found_whole_row);
 extern bool has_partition_attrs(Relation rel, Bitmapset *attnums,
 					bool *used_in_expr);
-
-extern Oid	get_default_oid_from_partdesc(PartitionDesc partdesc);
 extern Oid	get_default_partition_oid(Oid parentId);
 extern void update_default_partition_oid(Oid parentId, Oid defaultPartId);
 extern List *get_proposed_default_constraint(List *new_part_constaints);

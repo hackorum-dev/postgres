@@ -49,6 +49,7 @@
 #include "parser/parse_coerce.h"
 #include "parser/parsetree.h"
 #include "utils/lsyscache.h"
+#include "utils/partcache.h"
 #include "utils/rel.h"
 #include "utils/selfuncs.h"
 
@@ -1584,7 +1585,7 @@ expand_inherited_rtentry(PlannerInfo *root, RangeTblEntry *rte, Index rti)
 	oldrelation = heap_open(parentOID, NoLock);
 
 	/* Scan the inheritance set and expand it */
-	if (RelationGetPartitionDesc(oldrelation) != NULL)
+	if (oldrelation->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
 	{
 		Assert(rte->relkind == RELKIND_PARTITIONED_TABLE);
 
@@ -1675,12 +1676,10 @@ expand_partitioned_rtentry(PlannerInfo *root, RangeTblEntry *parentrte,
 	RangeTblEntry *childrte;
 	Index		childRTindex;
 	bool		has_child = false;
-	PartitionDesc partdesc = RelationGetPartitionDesc(parentrel);
+	int			nparts = RelationGetPartitionCount(parentrel);
+	Oid		   *partoids = RelationGetPartitionOids(parentrel);
 
 	check_stack_depth();
-
-	/* A partitioned table should always have a partition descriptor. */
-	Assert(partdesc);
 
 	Assert(parentrte->inh);
 
@@ -1700,9 +1699,10 @@ expand_partitioned_rtentry(PlannerInfo *root, RangeTblEntry *parentrte,
 									top_parentrc, parentrel,
 									appinfos, &childrte, &childRTindex);
 
-	for (i = 0; i < partdesc->nparts; i++)
+	Assert(partoids != NULL || nparts == 0);
+	for (i = 0; i < nparts; i++)
 	{
-		Oid			childOID = partdesc->oids[i];
+		Oid			childOID = partoids[i];
 		Relation	childrel;
 
 		/* Open rel; we already have required locks */

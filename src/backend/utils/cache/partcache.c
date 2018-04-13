@@ -36,20 +36,19 @@
 #include "utils/rel.h"
 #include "utils/syscache.h"
 
-
-static List *generate_partition_qual(Relation rel);
 static int32 qsort_partition_hbound_cmp(const void *a, const void *b);
 static int32 qsort_partition_list_value_cmp(const void *a, const void *b,
 							   void *arg);
 static int32 qsort_partition_rbound_cmp(const void *a, const void *b,
 						   void *arg);
-
+static PartitionKey partition_key_copy(PartitionKey fromkey);
+static List *generate_partition_qual(Relation rel);
 
 /*
  * RelationBuildPartitionKey
  *		Build and attach to relcache partition key data of relation
  *
- * Partitioning key data is a complex structure; to avoid complicated logic to
+ * Partition key data is of complex structure; to avoid complicated logic to
  * free individual elements whenever the relcache entry is flushed, we give it
  * its own memory context, child of CacheMemoryContext, which can easily be
  * deleted on its own.  To avoid leaking memory in that context in case of an
@@ -165,6 +164,7 @@ RelationBuildPartitionKey(Relation relation)
 	key->parttypbyval = (bool *) palloc0(key->partnatts * sizeof(bool));
 	key->parttypalign = (char *) palloc0(key->partnatts * sizeof(char));
 	key->parttypcoll = (Oid *) palloc0(key->partnatts * sizeof(Oid));
+
 	MemoryContextSwitchTo(oldcxt);
 
 	/* determine support function number to search for */
@@ -206,6 +206,11 @@ RelationBuildPartitionKey(Relation relation)
 							procnum,
 							format_type_be(opclassform->opcintype))));
 
+		/*
+		 * Actually, we never use one of these FmgrInfo's without copying
+		 * first to the caller's memory context, so setting the memory context
+		 * here may seem pointless.
+		 */
 		fmgr_info_cxt(funcid, &key->partsupfunc[i], partkeycxt);
 
 		/* Collation */
@@ -791,6 +796,73 @@ RelationBuildPartitionDesc(Relation rel)
 }
 
 /*
+ * Functions to get a copy of partitioning infomation cached in RelationData.
+ */
+
+PartitionKey
+RelationGetPartitionKey(Relation relation)
+{
+	PartitionKey partkey = relation->rd_partkey;
+
+	return partkey ? partition_key_copy(partkey) : NULL;
+}
+
+int
+RelationGetPartitionCount(Relation relation)
+{
+	PartitionDesc partdesc = relation->rd_partdesc;
+
+	return partdesc->nparts;
+}
+
+Oid *
+RelationGetPartitionOids(Relation relation)
+{
+	PartitionDesc partdesc = relation->rd_partdesc;
+	Oid *result = NULL;
+
+	Assert(partdesc != NULL);
+	if (partdesc->nparts > 0)
+	{
+		result = palloc(partdesc->nparts * sizeof(Oid));
+		memcpy(result, partdesc->oids, partdesc->nparts * sizeof(Oid));
+	}
+
+	return result;
+}
+
+PartitionBoundInfo
+RelationGetPartitionBounds(Relation relation)
+{
+	PartitionDesc partdesc = relation->rd_partdesc;
+
+	return partdesc->boundinfo
+				? partition_bounds_copy(partdesc->boundinfo,
+										relation->rd_partkey)
+				: NULL;
+}
+
+/*
+ * RelationGetDefaultPartitionOid
+ *
+ * Return the OID of the default partition, if one exists; else InvalidOid.
+ */
+Oid
+RelationGetDefaultPartitionOid(Relation rel)
+{
+	PartitionBoundInfo boundinfo;
+
+	/* Shouldn't be here otherwise! */
+	Assert(rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE);
+	boundinfo = rel->rd_partdesc->boundinfo;
+
+	if (boundinfo && partition_bound_has_default(boundinfo))
+		return rel->rd_partdesc->oids[boundinfo->default_index];
+
+	return InvalidOid;
+}
+
+/*
  * RelationGetPartitionQual
  *
  * Returns a list of partition quals
@@ -836,6 +908,66 @@ get_partition_qual_relid(Oid relid)
 	heap_close(rel, NoLock);
 
 	return result;
+}
+
+/*
+ * partition_key_copy
+ *
+ * The copy is allocated in the current memory context.
+ */
+static PartitionKey
+partition_key_copy(PartitionKey fromkey)
+{
+	PartitionKey newkey;
+	int			n,
+				i;
+
+	Assert(fromkey != NULL);
+
+	newkey = (PartitionKey) palloc(sizeof(PartitionKeyData));
+
+	newkey->strategy = fromkey->strategy;
+	newkey->partnatts = n = fromkey->partnatts;
+
+	newkey->partattrs = (AttrNumber *) palloc(n * sizeof(AttrNumber));
+	memcpy(newkey->partattrs, fromkey->partattrs, n * sizeof(AttrNumber));
+
+	newkey->partexprs = copyObject(fromkey->partexprs);
+
+	newkey->partopfamily = (Oid *) palloc(n * sizeof(Oid));
+	memcpy(newkey->partopfamily, fromkey->partopfamily, n * sizeof(Oid));
+
+	newkey->partopcintype = (Oid *) palloc(n * sizeof(Oid));
+	memcpy(newkey->partopcintype, fromkey->partopcintype, n * sizeof(Oid));
+
+	newkey->partsupfunc = (FmgrInfo *) palloc(n * sizeof(FmgrInfo));
+	for (i = 0; i < fromkey->partnatts; i++)
+		fmgr_info_copy(&newkey->partsupfunc[i],
+					   &fromkey->partsupfunc[i],
+					   CurrentMemoryContext);
+
+	newkey->partcollation = (Oid *) palloc(n * sizeof(Oid));
+	memcpy(newkey->partcollation, fromkey->partcollation, n * sizeof(Oid));
+
+	newkey->parttypid = (Oid *) palloc(n * sizeof(Oid));
+	memcpy(newkey->parttypid, fromkey->parttypid, n * sizeof(Oid));
+
+	newkey->parttypmod = (int32 *) palloc(n * sizeof(int32));
+	memcpy(newkey->parttypmod, fromkey->parttypmod, n * sizeof(int32));
+
+	newkey->parttyplen = (int16 *) palloc(n * sizeof(int16));
+	memcpy(newkey->parttyplen, fromkey->parttyplen, n * sizeof(int16));
+
+	newkey->parttypbyval = (bool *) palloc(n * sizeof(bool));
+	memcpy(newkey->parttypbyval, fromkey->parttypbyval, n * sizeof(bool));
+
+	newkey->parttypalign = (char *) palloc(n * sizeof(bool));
+	memcpy(newkey->parttypalign, fromkey->parttypalign, n * sizeof(char));
+
+	newkey->parttypcoll = (Oid *) palloc(n * sizeof(Oid));
+	memcpy(newkey->parttypcoll, fromkey->parttypcoll, n * sizeof(Oid));
+
+	return newkey;
 }
 
 /*

@@ -829,8 +829,7 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 		 * the places such that lock parent, lock default partition and then
 		 * lock the partition so as to avoid a deadlock.
 		 */
-		defaultPartOid =
-			get_default_oid_from_partdesc(RelationGetPartitionDesc(parent));
+		defaultPartOid = RelationGetDefaultPartitionOid(parent);
 		if (OidIsValid(defaultPartOid))
 			defaultRel = heap_open(defaultPartOid, AccessExclusiveLock);
 
@@ -5864,18 +5863,14 @@ ATPrepDropNotNull(Relation rel, bool recurse, bool recursing)
 	 * If the parent is a partitioned table, like check constraints, we do not
 	 * support removing the NOT NULL while partitions exist.
 	 */
-	if (rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
-	{
-		PartitionDesc partdesc = RelationGetPartitionDesc(rel);
-
-		Assert(partdesc != NULL);
-		if (partdesc->nparts > 0 && !recurse && !recursing)
-			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
-					 errmsg("cannot remove constraint from only the partitioned table when partitions exist"),
-					 errhint("Do not specify the ONLY keyword.")));
-	}
+	if (rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE &&
+		RelationGetPartitionCount(rel) > 0 && !recurse && !recursing)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+				 errmsg("cannot remove constraint from only the partitioned table when partitions exist"),
+				 errhint("Do not specify the ONLY keyword.")));
 }
+
 static ObjectAddress
 ATExecDropNotNull(Relation rel, const char *colName, LOCKMODE lockmode)
 {
@@ -6009,16 +6004,12 @@ ATPrepSetNotNull(Relation rel, bool recurse, bool recursing)
 	 * constraints must be added to the child tables.  Complain if requested
 	 * otherwise and partitions exist.
 	 */
-	if (rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
-	{
-		PartitionDesc partdesc = RelationGetPartitionDesc(rel);
-
-		if (partdesc && partdesc->nparts > 0 && !recurse && !recursing)
-			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
-					 errmsg("cannot add constraint to only the partitioned table when partitions exist"),
-					 errhint("Do not specify the ONLY keyword.")));
-	}
+	if (rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE &&
+		RelationGetPartitionCount(rel) > 0 && !recurse && !recursing)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+				 errmsg("cannot add constraint to only the partitioned table when partitions exist"),
+				 errhint("Do not specify the ONLY keyword.")));
 }
 
 /*
@@ -7699,13 +7690,13 @@ ATAddForeignKeyConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	 */
 	if (recurse && rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
 	{
-		PartitionDesc partdesc;
+		int			nparts = RelationGetPartitionCount(rel);
+		Oid		   *partoids = RelationGetPartitionOids(rel);
 
-		partdesc = RelationGetPartitionDesc(rel);
-
-		for (i = 0; i < partdesc->nparts; i++)
+		Assert(partoids != NULL || nparts == 0);
+		for (i = 0; i < nparts; i++)
 		{
-			Oid			partitionId = partdesc->oids[i];
+			Oid			partitionId = partoids[i];
 			Relation	partition = heap_open(partitionId, lockmode);
 			AlteredTableInfo *childtab;
 			ObjectAddress childAddr;
@@ -13989,10 +13980,12 @@ QueuePartitionConstraintValidation(List **wqueue, Relation scanrel,
 	}
 	else if (scanrel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
 	{
-		PartitionDesc partdesc = RelationGetPartitionDesc(scanrel);
+		int			nparts = RelationGetPartitionCount(scanrel);
+		Oid		   *partoids = RelationGetPartitionOids(scanrel);
 		int			i;
 
-		for (i = 0; i < partdesc->nparts; i++)
+		Assert(partoids != NULL || nparts == 0);
+		for (i = 0; i < nparts; i++)
 		{
 			Relation	part_rel;
 			bool		found_whole_row;
@@ -14001,7 +13994,7 @@ QueuePartitionConstraintValidation(List **wqueue, Relation scanrel,
 			/*
 			 * This is the minimum lock we need to prevent deadlocks.
 			 */
-			part_rel = heap_open(partdesc->oids[i], AccessExclusiveLock);
+			part_rel = heap_open(partoids[i], AccessExclusiveLock);
 
 			/*
 			 * Adjust the constraint for scanrel so that it matches this
@@ -14051,8 +14044,7 @@ ATExecAttachPartition(List **wqueue, Relation rel, PartitionCmd *cmd)
 	 * We must lock the default partition if one exists, because attaching a
 	 * new partition will change its partition constraint.
 	 */
-	defaultPartOid =
-		get_default_oid_from_partdesc(RelationGetPartitionDesc(rel));
+	defaultPartOid = RelationGetDefaultPartitionOid(rel);
 	if (OidIsValid(defaultPartOid))
 		LockRelationOid(defaultPartOid, AccessExclusiveLock);
 
@@ -14628,8 +14620,7 @@ ATExecDetachPartition(Relation rel, RangeVar *name)
 	 * We must lock the default partition, because detaching this partition
 	 * will change its partition constraint.
 	 */
-	defaultPartOid =
-		get_default_oid_from_partdesc(RelationGetPartitionDesc(rel));
+	defaultPartOid = RelationGetDefaultPartitionOid(rel);
 	if (OidIsValid(defaultPartOid))
 		LockRelationOid(defaultPartOid, AccessExclusiveLock);
 
@@ -14830,8 +14821,9 @@ ATExecAttachPartitionIdx(List **wqueue, Relation parentIdx, RangeVar *name)
 		AttrNumber *attmap;
 		bool		found;
 		int			i;
-		PartitionDesc partDesc;
-		Oid			constraintOid,
+		int			nparts = RelationGetPartitionCount(parentTbl);
+		Oid		   *partoids = RelationGetPartitionOids(parentTbl),
+					constraintOid,
 					cldConstrId = InvalidOid;
 
 		/*
@@ -14849,11 +14841,11 @@ ATExecAttachPartitionIdx(List **wqueue, Relation parentIdx, RangeVar *name)
 							   RelationGetRelationName(partIdx))));
 
 		/* Make sure it indexes a partition of the other index's table */
-		partDesc = RelationGetPartitionDesc(parentTbl);
 		found = false;
-		for (i = 0; i < partDesc->nparts; i++)
+		Assert(partoids != NULL || nparts == 0);
+		for (i = 0; i < nparts; i++)
 		{
-			if (partDesc->oids[i] == state.partitionOid)
+			if (partoids[i] == state.partitionOid)
 			{
 				found = true;
 				break;
@@ -14984,6 +14976,7 @@ validatePartitionedIndex(Relation partedIdx, Relation partedTbl)
 	int				tuples = 0;
 	HeapTuple		inhTup;
 	bool			updated = false;
+	int				nparts = RelationGetPartitionCount(partedTbl);
 
 	Assert(partedIdx->rd_rel->relkind == RELKIND_PARTITIONED_INDEX);
 
@@ -15023,7 +15016,7 @@ validatePartitionedIndex(Relation partedIdx, Relation partedTbl)
 	 * If we found as many inherited indexes as the partitioned table has
 	 * partitions, we're good; update pg_index to set indisvalid.
 	 */
-	if (tuples == RelationGetPartitionDesc(partedTbl)->nparts)
+	if (tuples == nparts)
 	{
 		Relation	idxRel;
 		HeapTuple	newtup;

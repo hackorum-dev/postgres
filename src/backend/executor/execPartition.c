@@ -40,8 +40,8 @@ static void FormPartitionKeyDatum(PartitionDispatch pd,
 					  EState *estate,
 					  Datum *values,
 					  bool *isnull);
-static int get_partition_for_tuple(Relation relation, Datum *values,
-						bool *isnull);
+static int get_partition_for_tuple(PartitionDispatch pd, Datum *values,
+					  bool *isnull);
 static char *ExecBuildSlotPartitionKeyDescription(Relation rel,
 									 Datum *values,
 									 bool *isnull,
@@ -208,13 +208,11 @@ ExecFindPartition(ResultRelInfo *resultRelInfo, PartitionDispatch *pd,
 	parent = pd[0];
 	while (true)
 	{
-		PartitionDesc partdesc;
 		TupleTableSlot *myslot = parent->tupslot;
 		TupleConversionMap *map = parent->tupmap;
 		int			cur_index = -1;
 
 		rel = parent->reldesc;
-		partdesc = RelationGetPartitionDesc(rel);
 
 		/*
 		 * Convert the tuple to this parent's layout so that we can do certain
@@ -245,13 +243,13 @@ ExecFindPartition(ResultRelInfo *resultRelInfo, PartitionDispatch *pd,
 		 * Nothing for get_partition_for_tuple() to do if there are no
 		 * partitions to begin with.
 		 */
-		if (partdesc->nparts == 0)
+		if (parent->nparts == 0)
 		{
 			result = -1;
 			break;
 		}
 
-		cur_index = get_partition_for_tuple(rel, values, isnull);
+		cur_index = get_partition_for_tuple(parent, values, isnull);
 
 		/*
 		 * cur_index < 0 means we failed to find a partition of this parent.
@@ -881,8 +879,10 @@ get_partition_dispatch_recurse(Relation rel, Relation parent,
 							   List **pds, List **leaf_part_oids)
 {
 	TupleDesc	tupdesc = RelationGetDescr(rel);
-	PartitionDesc partdesc = RelationGetPartitionDesc(rel);
 	PartitionKey partkey = RelationGetPartitionKey(rel);
+	int			nparts = RelationGetPartitionCount(rel);
+	Oid		   *partoids = RelationGetPartitionOids(rel);
+	PartitionBoundInfo boundinfo = RelationGetPartitionBounds(rel);
 	PartitionDispatch pd;
 	int			i;
 
@@ -894,7 +894,8 @@ get_partition_dispatch_recurse(Relation rel, Relation parent,
 	pd->reldesc = rel;
 	pd->key = partkey;
 	pd->keystate = NIL;
-	pd->partdesc = partdesc;
+	pd->nparts = nparts;
+	pd->boundinfo = boundinfo;
 	if (parent != NULL)
 	{
 		/*
@@ -939,10 +940,10 @@ get_partition_dispatch_recurse(Relation rel, Relation parent,
 	 * the tree.  This value is used to continue the search in the next level
 	 * of the partition tree.
 	 */
-	pd->indexes = (int *) palloc(partdesc->nparts * sizeof(int));
-	for (i = 0; i < partdesc->nparts; i++)
+	pd->indexes = (int *) palloc(nparts * sizeof(int));
+	for (i = 0; i < nparts; i++)
 	{
-		Oid			partrelid = partdesc->oids[i];
+		Oid			partrelid = partoids[i];
 
 		if (get_rel_relkind(partrelid) != RELKIND_PARTITIONED_TABLE)
 		{
@@ -1034,23 +1035,22 @@ FormPartitionKeyDatum(PartitionDispatch pd,
  *		Finds partition of relation which accepts the partition key specified
  *		in values and isnull
  *
- * Return value is index of the partition (>= 0 and < partdesc->nparts) if one
- * found or -1 if none found.
+ * Return value is index of the partition (>= 0 and < nparts) if one found or
+ * -1 if none found.
  */
-int
-get_partition_for_tuple(Relation relation, Datum *values, bool *isnull)
+static int
+get_partition_for_tuple(PartitionDispatch pd, Datum *values, bool *isnull)
 {
 	int			bound_offset;
 	int			part_index = -1;
-	PartitionKey key = RelationGetPartitionKey(relation);
-	PartitionDesc partdesc = RelationGetPartitionDesc(relation);
+	PartitionKey key = pd->key;
+	PartitionBoundInfo boundinfo = pd->boundinfo;
 
 	/* Route as appropriate based on partitioning strategy. */
 	switch (key->strategy)
 	{
 		case PARTITION_STRATEGY_HASH:
 			{
-				PartitionBoundInfo boundinfo = partdesc->boundinfo;
 				int			greatest_modulus = get_hash_partition_greatest_modulus(boundinfo);
 				uint64		rowHash = compute_hash_value(key->partnatts,
 														 key->partsupfunc,
@@ -1063,8 +1063,8 @@ get_partition_for_tuple(Relation relation, Datum *values, bool *isnull)
 		case PARTITION_STRATEGY_LIST:
 			if (isnull[0])
 			{
-				if (partition_bound_accepts_nulls(partdesc->boundinfo))
-					part_index = partdesc->boundinfo->null_index;
+				if (partition_bound_accepts_nulls(boundinfo))
+					part_index = boundinfo->null_index;
 			}
 			else
 			{
@@ -1072,10 +1072,10 @@ get_partition_for_tuple(Relation relation, Datum *values, bool *isnull)
 
 				bound_offset = partition_list_bsearch(key->partsupfunc,
 													  key->partcollation,
-													  partdesc->boundinfo,
+													  boundinfo,
 													  values[0], &equal);
 				if (bound_offset >= 0 && equal)
-					part_index = partdesc->boundinfo->indexes[bound_offset];
+					part_index = boundinfo->indexes[bound_offset];
 			}
 			break;
 
@@ -1102,7 +1102,7 @@ get_partition_for_tuple(Relation relation, Datum *values, bool *isnull)
 				{
 					bound_offset = partition_range_datum_bsearch(key->partsupfunc,
 																 key->partcollation,
-																 partdesc->boundinfo,
+																 boundinfo,
 																 key->partnatts,
 																 values,
 																 &equal);
@@ -1113,7 +1113,7 @@ get_partition_for_tuple(Relation relation, Datum *values, bool *isnull)
 					 * bound of the partition we're looking for, if there
 					 * actually exists one.
 					 */
-					part_index = partdesc->boundinfo->indexes[bound_offset + 1];
+					part_index = boundinfo->indexes[bound_offset + 1];
 				}
 			}
 			break;
@@ -1128,7 +1128,7 @@ get_partition_for_tuple(Relation relation, Datum *values, bool *isnull)
 	 * the default partition, if there is one.
 	 */
 	if (part_index < 0)
-		part_index = partdesc->boundinfo->default_index;
+		part_index = boundinfo->default_index;
 
 	return part_index;
 }
@@ -1147,7 +1147,7 @@ ExecBuildSlotPartitionKeyDescription(Relation rel,
 									 int maxfieldlen)
 {
 	StringInfoData buf;
-	PartitionKey key = RelationGetPartitionKey(rel);
+	PartitionKey	key = RelationGetPartitionKey(rel);
 	int			partnatts = get_partition_natts(key);
 	int			i;
 	Oid			relid = RelationGetRelid(rel);
@@ -1395,9 +1395,10 @@ ExecSetupPartitionPruneState(PlanState *planstate, List *partitionpruneinfo)
 		PartitionPruneInfo *pinfo = (PartitionPruneInfo *) lfirst(lc);
 		PartitionPruningData *pprune = &prunedata[i];
 		PartitionPruneContext *context = &pprune->context;
-		PartitionDesc partdesc;
 		Relation	rel;
 		PartitionKey partkey;
+		int			nparts;
+		PartitionBoundInfo boundinfo;
 		int			partnatts;
 
 		pprune->present_parts = bms_copy(pinfo->present_parts);
@@ -1419,8 +1420,10 @@ ExecSetupPartitionPruneState(PlanState *planstate, List *partitionpruneinfo)
 		 */
 		rel = relation_open(pinfo->reloid, NoLock);
 
+		/* Copy data from relcache into current memory context. */
 		partkey = RelationGetPartitionKey(rel);
-		partdesc = RelationGetPartitionDesc(rel);
+		nparts = RelationGetPartitionCount(rel);
+		boundinfo = RelationGetPartitionBounds(rel);
 
 		context->strategy = partkey->strategy;
 		context->partnatts = partnatts = partkey->partnatts;
@@ -1428,8 +1431,8 @@ ExecSetupPartitionPruneState(PlanState *planstate, List *partitionpruneinfo)
 		context->partopcintype = partkey->partopcintype;
 		context->partcollation = partkey->partcollation;
 		context->partsupfunc = partkey->partsupfunc;
-		context->nparts = pinfo->nparts;
-		context->boundinfo = partition_bounds_copy(partdesc->boundinfo, partkey);
+		context->nparts = nparts;
+		context->boundinfo = boundinfo;
 		context->planstate = planstate;
 		context->safeparams = NULL; /* empty for now */
 
