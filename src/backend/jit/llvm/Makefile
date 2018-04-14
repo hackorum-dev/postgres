@@ -39,6 +39,8 @@ OBJS=$(WIN32RES)
 OBJS += llvmjit.o llvmjit_error.o llvmjit_inline.o llvmjit_wrap.o
 # Code generation
 OBJS += llvmjit_expr.o llvmjit_deform.o
+# Add LLVM library path to rpath
+rpathdir := $(LLVM_LIBPATH):$(rpathdir)
 
 all: all-shared-lib llvmjit_types.bc
 
