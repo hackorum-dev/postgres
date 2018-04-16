@@ -1129,17 +1129,36 @@ RelationBuildDesc(Oid targetRelId, bool insertIt)
 	 * If we need to initialize partitioning info, do that in a dedicated
 	 * context that's attached to the cache context.
 	 */
-	if (relation->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
+	if (relation->rd_rel->relkind == RELKIND_PARTITIONED_TABLE ||
+		relation->rd_rel->relispartition)
 	{
-		RelationBuildPartitionKey(relation);
-		RelationBuildPartitionDesc(relation);
+		relation->rd_partcxt = AllocSetContextCreate(CacheMemoryContext,
+													 "partition info",
+													 ALLOCSET_SMALL_SIZES);
+		MemoryContextCopyAndSetIdentifier(relation->rd_partcxt,
+										  RelationGetRelationName(relation));
+
+		/*
+		 * For a partitioned table, initialize partition key and partition
+		 * descriptor.
+		 */
+		if (relation->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
+		{
+			RelationBuildPartitionKey(relation);
+			RelationBuildPartitionDesc(relation);
+		}
+
+		/*
+		 * Partition constraint of a partition itself is built only when
+		 * needed.  See RelationGetPartitionQual().
+		 */
 	}
 	else
 	{
-		relation->rd_partkeycxt = NULL;
+		relation->rd_partcxt = NULL;
 		relation->rd_partkey = NULL;
-		relation->rd_pdcxt = NULL;
 		relation->rd_partdesc = NULL;
+		relation->rd_partcheck = NIL;
 	}
 
 	/*
@@ -2142,12 +2161,8 @@ RelationDestroyRelation(Relation relation, bool remember_tupdesc)
 		MemoryContextDelete(relation->rd_rulescxt);
 	if (relation->rd_rsdesc)
 		MemoryContextDelete(relation->rd_rsdesc->rscxt);
-	if (relation->rd_partkeycxt)
-		MemoryContextDelete(relation->rd_partkeycxt);
-	if (relation->rd_pdcxt)
-		MemoryContextDelete(relation->rd_pdcxt);
-	if (relation->rd_partcheck)
-		pfree(relation->rd_partcheck);
+	if (relation->rd_partcxt)
+		MemoryContextDelete(relation->rd_partcxt);
 	if (relation->rd_fdwroutine)
 		pfree(relation->rd_fdwroutine);
 	pfree(relation);
@@ -5492,9 +5507,8 @@ load_relcache_init_file(bool shared)
 		rel->rd_rulescxt = NULL;
 		rel->trigdesc = NULL;
 		rel->rd_rsdesc = NULL;
-		rel->rd_partkeycxt = NULL;
+		rel->rd_partcxt = NULL;
 		rel->rd_partkey = NULL;
-		rel->rd_pdcxt = NULL;
 		rel->rd_partdesc = NULL;
 		rel->rd_partcheck = NIL;
 		rel->rd_indexprs = NIL;

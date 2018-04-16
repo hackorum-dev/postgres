@@ -72,8 +72,7 @@ RelationBuildPartitionKey(Relation relation)
 	oidvector  *collation;
 	ListCell   *partexprs_item;
 	Datum		datum;
-	MemoryContext partkeycxt,
-				oldcxt;
+	MemoryContext oldcxt;
 	int16		procnum;
 
 	tuple = SearchSysCache1(PARTRELID,
@@ -86,13 +85,7 @@ RelationBuildPartitionKey(Relation relation)
 	if (!HeapTupleIsValid(tuple))
 		return;
 
-	partkeycxt = AllocSetContextCreate(CurTransactionContext,
-									   "partition key",
-									   ALLOCSET_SMALL_SIZES);
-	MemoryContextCopyAndSetIdentifier(partkeycxt,
-									  RelationGetRelationName(relation));
-
-	key = (PartitionKey) MemoryContextAllocZero(partkeycxt,
+	key = (PartitionKey) MemoryContextAllocZero(relation->rd_partcxt,
 												sizeof(PartitionKeyData));
 
 	/* Fixed-length attributes */
@@ -144,12 +137,12 @@ RelationBuildPartitionKey(Relation relation)
 		expr = eval_const_expressions(NULL, expr);
 		fix_opfuncids(expr);
 
-		oldcxt = MemoryContextSwitchTo(partkeycxt);
+		oldcxt = MemoryContextSwitchTo(relation->rd_partcxt);
 		key->partexprs = (List *) copyObject(expr);
 		MemoryContextSwitchTo(oldcxt);
 	}
 
-	oldcxt = MemoryContextSwitchTo(partkeycxt);
+	oldcxt = MemoryContextSwitchTo(relation->rd_partcxt);
 	key->partattrs = (AttrNumber *) palloc0(key->partnatts * sizeof(AttrNumber));
 	key->partopfamily = (Oid *) palloc0(key->partnatts * sizeof(Oid));
 	key->partopcintype = (Oid *) palloc0(key->partnatts * sizeof(Oid));
@@ -211,7 +204,7 @@ RelationBuildPartitionKey(Relation relation)
 		 * first to the caller's memory context, so setting the memory context
 		 * here may seem pointless.
 		 */
-		fmgr_info_cxt(funcid, &key->partsupfunc[i], partkeycxt);
+		fmgr_info_cxt(funcid, &key->partsupfunc[i], relation->rd_partcxt);
 
 		/* Collation */
 		key->partcollation[i] = collation->values[i];
@@ -245,13 +238,6 @@ RelationBuildPartitionKey(Relation relation)
 	}
 
 	ReleaseSysCache(tuple);
-
-	/*
-	 * Success --- reparent our context and make the relcache point to the
-	 * newly constructed key
-	 */
-	MemoryContextSetParent(partkeycxt, CacheMemoryContext);
-	relation->rd_partkeycxt = partkeycxt;
 	relation->rd_partkey = key;
 }
 
@@ -583,12 +569,7 @@ RelationBuildPartitionDesc(Relation rel)
 	}
 
 	/* Now build the actual relcache partition descriptor */
-	rel->rd_pdcxt = AllocSetContextCreate(CacheMemoryContext,
-										  "partition descriptor",
-										  ALLOCSET_DEFAULT_SIZES);
-	MemoryContextCopyAndSetIdentifier(rel->rd_pdcxt, RelationGetRelationName(rel));
-
-	oldcxt = MemoryContextSwitchTo(rel->rd_pdcxt);
+	oldcxt = MemoryContextSwitchTo(rel->rd_partcxt);
 
 	result = (PartitionDescData *) palloc0(sizeof(PartitionDescData));
 	result->nparts = nparts;
@@ -1043,7 +1024,7 @@ generate_partition_qual(Relation rel)
 		elog(ERROR, "unexpected whole-row reference found in partition key");
 
 	/* Save a copy in the relcache */
-	oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
+	oldcxt = MemoryContextSwitchTo(rel->rd_partcxt);
 	rel->rd_partcheck = copyObject(result);
 	MemoryContextSwitchTo(oldcxt);
 

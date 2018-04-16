@@ -95,9 +95,9 @@ typedef struct RelationData
 	List	   *rd_fkeylist;	/* list of ForeignKeyCacheInfo (see below) */
 	bool		rd_fkeyvalid;	/* true if list has been computed */
 
-	MemoryContext rd_partkeycxt;	/* private memory cxt for the below */
+	MemoryContext rd_partcxt;	/* private memory cxt for the values contained
+								 * in the fields related to partitioning */
 	struct PartitionKeyData *rd_partkey;	/* partition key, or NULL */
-	MemoryContext rd_pdcxt;		/* private context for partdesc */
 	struct PartitionDescData *rd_partdesc;	/* partitions, or NULL */
 	List	   *rd_partcheck;	/* partition CHECK quals */
 
