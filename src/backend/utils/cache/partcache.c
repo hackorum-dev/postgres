@@ -36,6 +36,12 @@
 #include "utils/rel.h"
 #include "utils/syscache.h"
 
+typedef struct PartitionBoundSortInfo
+{
+	FmgrInfo	   *partsupfunc;
+	PartitionKey	key;
+} PartitionBoundSortInfo;
+
 static int32 qsort_partition_hbound_cmp(const void *a, const void *b);
 static int32 qsort_partition_list_value_cmp(const void *a, const void *b,
 							   void *arg);
@@ -146,9 +152,15 @@ RelationBuildPartitionKey(Relation relation)
 	key->partattrs = (AttrNumber *) palloc0(key->partnatts * sizeof(AttrNumber));
 	key->partopfamily = (Oid *) palloc0(key->partnatts * sizeof(Oid));
 	key->partopcintype = (Oid *) palloc0(key->partnatts * sizeof(Oid));
-	key->partsupfunc = (FmgrInfo *) palloc0(key->partnatts * sizeof(FmgrInfo));
-
+	key->partsupfuncid = (Oid *) palloc0(key->partnatts * sizeof(Oid));
 	key->partcollation = (Oid *) palloc0(key->partnatts * sizeof(Oid));
+
+	/*
+	 * Also allocate space for partition support procedure FmgrInfo's, but
+	 * they won't be filled until someone calls partition_getprocinfo.
+	 */
+	relation->rd_partsupfunc = (FmgrInfo *)
+						palloc0(key->partnatts * sizeof(FmgrInfo));
 
 	/* Gather type and collation info as well */
 	key->parttypid = (Oid *) palloc0(key->partnatts * sizeof(Oid));
@@ -199,12 +211,7 @@ RelationBuildPartitionKey(Relation relation)
 							procnum,
 							format_type_be(opclassform->opcintype))));
 
-		/*
-		 * Actually, we never use one of these FmgrInfo's without copying
-		 * first to the caller's memory context, so setting the memory context
-		 * here may seem pointless.
-		 */
-		fmgr_info_cxt(funcid, &key->partsupfunc[i], relation->rd_partcxt);
+		key->partsupfuncid[i] = funcid;
 
 		/* Collation */
 		key->partcollation[i] = collation->values[i];
@@ -336,6 +343,20 @@ RelationBuildPartitionDesc(Relation rel)
 
 	if (nparts > 0)
 	{
+		FmgrInfo	partsupfunc[PARTITION_MAX_KEYS];
+		PartitionBoundSortInfo sortinfo;
+
+		/* Get partsupfunc FmgrInfo's. */
+		for (i = 0; i < key->partnatts; i++)
+		{
+			fmgr_info_copy(&partsupfunc[i],
+						   partition_getprocinfo(rel, key, i),
+						   CurrentMemoryContext);
+		}
+
+		sortinfo.partsupfunc = partsupfunc;
+		sortinfo.key = key;
+
 		oids = (Oid *) palloc(nparts * sizeof(Oid));
 		i = 0;
 		foreach(cell, partoids)
@@ -453,7 +474,7 @@ RelationBuildPartitionDesc(Relation rel)
 			}
 
 			qsort_arg(all_values, ndatums, sizeof(PartitionListValue *),
-					  qsort_partition_list_value_cmp, (void *) key);
+					  qsort_partition_list_value_cmp, (void *) &sortinfo);
 		}
 		else if (key->strategy == PARTITION_STRATEGY_RANGE)
 		{
@@ -506,7 +527,7 @@ RelationBuildPartitionDesc(Relation rel)
 			qsort_arg(all_bounds, ndatums,
 					  sizeof(PartitionRangeBound *),
 					  qsort_partition_rbound_cmp,
-					  (void *) key);
+					  (void *) &sortinfo);
 
 			/* Save distinct bounds from all_bounds into rbounds. */
 			rbounds = (PartitionRangeBound **)
@@ -538,7 +559,7 @@ RelationBuildPartitionDesc(Relation rel)
 					if (cur->kind[j] != PARTITION_RANGE_DATUM_VALUE)
 						break;
 
-					cmpval = FunctionCall2Coll(&key->partsupfunc[j],
+					cmpval = FunctionCall2Coll(&partsupfunc[j],
 											   key->partcollation[j],
 											   cur->datums[j],
 											   prev->datums[j]);
@@ -844,6 +865,40 @@ RelationGetDefaultPartitionOid(Relation rel)
 }
 
 /*
+ * partition_getprocinfo
+ *		Return fmgr lookup info of partition support procs from relcache
+ *
+ * If it's not been built yet by calling fmgr.c, do that and add it to
+ * relcache.
+ */
+FmgrInfo *
+partition_getprocinfo(Relation rel, PartitionKey key, int partattoff)
+{
+	FmgrInfo   *info;
+
+	info = rel->rd_partsupfunc;
+
+	Assert(info != NULL);
+
+	info += partattoff;
+
+	/* Initialize the lookup info if first time through */
+	if (info->fn_oid == InvalidOid)
+	{
+		RegProcedure *func = key->partsupfuncid;
+		RegProcedure procId;
+
+		Assert(func != NULL);
+
+		procId = func[partattoff];
+		Assert(RegProcedureIsValid(procId));
+		fmgr_info_cxt(procId, info, rel->rd_partcxt);
+	}
+
+	return info;
+}
+
+/*
  * RelationGetPartitionQual
  *
  * Returns a list of partition quals
@@ -900,8 +955,7 @@ static PartitionKey
 partition_key_copy(PartitionKey fromkey)
 {
 	PartitionKey newkey;
-	int			n,
-				i;
+	int			n;
 
 	Assert(fromkey != NULL);
 
@@ -921,11 +975,8 @@ partition_key_copy(PartitionKey fromkey)
 	newkey->partopcintype = (Oid *) palloc(n * sizeof(Oid));
 	memcpy(newkey->partopcintype, fromkey->partopcintype, n * sizeof(Oid));
 
-	newkey->partsupfunc = (FmgrInfo *) palloc(n * sizeof(FmgrInfo));
-	for (i = 0; i < fromkey->partnatts; i++)
-		fmgr_info_copy(&newkey->partsupfunc[i],
-					   &fromkey->partsupfunc[i],
-					   CurrentMemoryContext);
+	newkey->partsupfuncid = (Oid *) palloc(n * sizeof(Oid));
+	memcpy(newkey->partsupfuncid, fromkey->partsupfuncid, n * sizeof(Oid));
 
 	newkey->partcollation = (Oid *) palloc(n * sizeof(Oid));
 	memcpy(newkey->partcollation, fromkey->partcollation, n * sizeof(Oid));
@@ -1059,9 +1110,10 @@ qsort_partition_list_value_cmp(const void *a, const void *b, void *arg)
 {
 	Datum		val1 = (*(const PartitionListValue **) a)->value,
 				val2 = (*(const PartitionListValue **) b)->value;
-	PartitionKey key = (PartitionKey) arg;
+	PartitionBoundSortInfo *sortinfo = (PartitionBoundSortInfo *) arg;
+	PartitionKey key = sortinfo->key;
 
-	return DatumGetInt32(FunctionCall2Coll(&key->partsupfunc[0],
+	return DatumGetInt32(FunctionCall2Coll(&sortinfo->partsupfunc[0],
 										   key->partcollation[0],
 										   val1, val2));
 }
@@ -1072,9 +1124,10 @@ qsort_partition_rbound_cmp(const void *a, const void *b, void *arg)
 {
 	PartitionRangeBound *b1 = (*(PartitionRangeBound *const *) a);
 	PartitionRangeBound *b2 = (*(PartitionRangeBound *const *) b);
-	PartitionKey key = (PartitionKey) arg;
+	PartitionBoundSortInfo *sortinfo = (PartitionBoundSortInfo *) arg;
+	PartitionKey key = sortinfo->key;
 
-	return partition_rbound_cmp(key->partnatts, key->partsupfunc,
+	return partition_rbound_cmp(key->partnatts, sortinfo->partsupfunc,
 								key->partcollation, b1->datums, b1->kind,
 								b1->lower, b2);
 }

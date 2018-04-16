@@ -25,6 +25,7 @@
  *	reldesc		Relation descriptor of the table
  *	key			Partition key information of the table
  *	keystate	Execution state required for expressions in the partition key
+ *	partsupfunc		fmgr lookup info of partition support functions
  *	nparts		Number of partitions of the table
  *	boundinfo	PartitionBoundInfo of the table
  *	tupslot		A standalone TupleTableSlot initialized with this table's tuple
@@ -42,6 +43,7 @@ typedef struct PartitionDispatchData
 	Relation	reldesc;
 	PartitionKey key;
 	List	   *keystate;		/* list of ExprState */
+	FmgrInfo	partsupfunc[PARTITION_MAX_KEYS];
 	int			nparts;
 	PartitionBoundInfo boundinfo;
 	TupleTableSlot *tupslot;

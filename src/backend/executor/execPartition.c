@@ -894,6 +894,13 @@ get_partition_dispatch_recurse(Relation rel, Relation parent,
 	pd->reldesc = rel;
 	pd->key = partkey;
 	pd->keystate = NIL;
+	/* Get partsupfunc FmgrInfo's. */
+	for (i = 0; i < partkey->partnatts; i++)
+	{
+		fmgr_info_copy(&pd->partsupfunc[i],
+					   partition_getprocinfo(rel, partkey, i),
+					   CurrentMemoryContext);
+	}
 	pd->nparts = nparts;
 	pd->boundinfo = boundinfo;
 	if (parent != NULL)
@@ -1044,6 +1051,7 @@ get_partition_for_tuple(PartitionDispatch pd, Datum *values, bool *isnull)
 	int			bound_offset;
 	int			part_index = -1;
 	PartitionKey key = pd->key;
+	FmgrInfo   *partsupfunc = pd->partsupfunc;
 	PartitionBoundInfo boundinfo = pd->boundinfo;
 
 	/* Route as appropriate based on partitioning strategy. */
@@ -1053,7 +1061,7 @@ get_partition_for_tuple(PartitionDispatch pd, Datum *values, bool *isnull)
 			{
 				int			greatest_modulus = get_hash_partition_greatest_modulus(boundinfo);
 				uint64		rowHash = compute_hash_value(key->partnatts,
-														 key->partsupfunc,
+														 partsupfunc,
 														 values, isnull);
 
 				part_index = boundinfo->indexes[rowHash % greatest_modulus];
@@ -1070,7 +1078,7 @@ get_partition_for_tuple(PartitionDispatch pd, Datum *values, bool *isnull)
 			{
 				bool		equal = false;
 
-				bound_offset = partition_list_bsearch(key->partsupfunc,
+				bound_offset = partition_list_bsearch(partsupfunc,
 													  key->partcollation,
 													  boundinfo,
 													  values[0], &equal);
@@ -1100,7 +1108,7 @@ get_partition_for_tuple(PartitionDispatch pd, Datum *values, bool *isnull)
 
 				if (!range_partkey_has_null)
 				{
-					bound_offset = partition_range_datum_bsearch(key->partsupfunc,
+					bound_offset = partition_range_datum_bsearch(partsupfunc,
 																 key->partcollation,
 																 boundinfo,
 																 key->partnatts,
@@ -1400,6 +1408,7 @@ ExecSetupPartitionPruneState(PlanState *planstate, List *partitionpruneinfo)
 		int			nparts;
 		PartitionBoundInfo boundinfo;
 		int			partnatts;
+		int			j;
 
 		pprune->present_parts = bms_copy(pinfo->present_parts);
 		pprune->subnode_map = palloc(sizeof(int) * pinfo->nparts);
@@ -1420,7 +1429,6 @@ ExecSetupPartitionPruneState(PlanState *planstate, List *partitionpruneinfo)
 		 */
 		rel = relation_open(pinfo->reloid, NoLock);
 
-		/* Copy data from relcache into current memory context. */
 		partkey = RelationGetPartitionKey(rel);
 		nparts = RelationGetPartitionCount(rel);
 		boundinfo = RelationGetPartitionBounds(rel);
@@ -1430,7 +1438,13 @@ ExecSetupPartitionPruneState(PlanState *planstate, List *partitionpruneinfo)
 		context->partopfamily = partkey->partopfamily;
 		context->partopcintype = partkey->partopcintype;
 		context->partcollation = partkey->partcollation;
-		context->partsupfunc = partkey->partsupfunc;
+		/* Get partsupfunc FmgrInfo's. */
+		for (j = 0; j < partkey->partnatts; j++)
+		{
+			fmgr_info_copy(&context->partsupfunc[j],
+						   partition_getprocinfo(rel, partkey, j),
+						   CurrentMemoryContext);
+		}
 		context->nparts = nparts;
 		context->boundinfo = boundinfo;
 		context->planstate = planstate;

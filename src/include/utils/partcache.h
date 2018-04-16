@@ -32,7 +32,7 @@ typedef struct PartitionKeyData
 
 	Oid		   *partopfamily;	/* OIDs of operator families */
 	Oid		   *partopcintype;	/* OIDs of opclass declared input data types */
-	FmgrInfo   *partsupfunc;	/* lookup info for support funcs */
+	Oid		   *partsupfuncid;	/* partition support func OIDs */
 
 	/* Partitioning collation per attribute */
 	Oid		   *partcollation;
@@ -49,6 +49,8 @@ typedef struct PartitionKeyData
 extern void RelationBuildPartitionKey(Relation relation);
 extern void RelationBuildPartitionDesc(Relation rel);
 extern PartitionKey RelationGetPartitionKey(Relation relation);
+extern FmgrInfo *partition_getprocinfo(Relation rel, PartitionKey key,
+									   int partattoff);
 extern int RelationGetPartitionCount(Relation relation);
 extern Oid *RelationGetPartitionOids(Relation relation);
 extern PartitionBoundInfo RelationGetPartitionBounds(Relation relation);

@@ -1157,6 +1157,7 @@ RelationBuildDesc(Oid targetRelId, bool insertIt)
 	{
 		relation->rd_partcxt = NULL;
 		relation->rd_partkey = NULL;
+		relation->rd_partsupfunc = NULL;
 		relation->rd_partdesc = NULL;
 		relation->rd_partcheck = NIL;
 	}
@@ -5509,6 +5510,7 @@ load_relcache_init_file(bool shared)
 		rel->rd_rsdesc = NULL;
 		rel->rd_partcxt = NULL;
 		rel->rd_partkey = NULL;
+		rel->rd_partsupfunc = NULL;
 		rel->rd_partdesc = NULL;
 		rel->rd_partcheck = NIL;
 		rel->rd_indexprs = NIL;

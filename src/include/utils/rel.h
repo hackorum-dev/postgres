@@ -98,6 +98,8 @@ typedef struct RelationData
 	MemoryContext rd_partcxt;	/* private memory cxt for the values contained
 								 * in the fields related to partitioning */
 	struct PartitionKeyData *rd_partkey;	/* partition key, or NULL */
+	FmgrInfo   *rd_partsupfunc;	/* fmgr lookup info of partition support
+								 * functions */
 	struct PartitionDescData *rd_partdesc;	/* partitions, or NULL */
 	List	   *rd_partcheck;	/* partition CHECK quals */
 

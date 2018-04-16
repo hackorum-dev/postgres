@@ -436,7 +436,10 @@ prune_append_rel_partitions(RelOptInfo *rel)
 	context.partopfamily = rel->part_scheme->partopfamily;
 	context.partopcintype = rel->part_scheme->partopcintype;
 	context.partcollation = rel->part_scheme->partcollation;
-	context.partsupfunc = rel->part_scheme->partsupfunc;
+	for (i = 0; i < context.partnatts; i++)
+		fmgr_info_copy(&context.partsupfunc[i],
+					   &rel->part_scheme->partsupfunc[i],
+					   CurrentMemoryContext);
 	context.nparts = rel->nparts;
 	context.boundinfo = rel->boundinfo;
 
@@ -1412,7 +1415,8 @@ match_clause_to_partition_key(RelOptInfo *rel,
 		partclause->op_is_ne = false;
 		partclause->expr = expr;
 		/* We know that expr is of Boolean type. */
-		partclause->cmpfn = rel->part_scheme->partsupfunc[partkeyidx].fn_oid;
+		partclause->cmpfn =
+						rel->part_scheme->partsupfunc[partkeyidx].fn_oid;
 		partclause->op_strategy = InvalidStrategy;
 
 		*pc = partclause;

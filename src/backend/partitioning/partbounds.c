@@ -420,7 +420,14 @@ check_new_partition_bound(char *relname, Relation parent,
 
 		case PARTITION_STRATEGY_LIST:
 			{
+				FmgrInfo partsupfunc;
+
 				Assert(spec->strategy == PARTITION_STRATEGY_LIST);
+
+				/* Get partsupfunc FmgrInfo for the only key. */
+				fmgr_info_copy(&partsupfunc,
+							   partition_getprocinfo(parent, key, 0),
+							   CurrentMemoryContext);
 
 				if (nparts > 0)
 				{
@@ -441,8 +448,8 @@ check_new_partition_bound(char *relname, Relation parent,
 							int			offset;
 							bool		equal;
 
-							offset = partition_list_bsearch(&key->partsupfunc[0],
-															key->partcollation,
+							offset = partition_list_bsearch(&partsupfunc,
+														key->partcollation,
 															boundinfo,
 															val->constvalue,
 															&equal);
@@ -469,6 +476,16 @@ check_new_partition_bound(char *relname, Relation parent,
 			{
 				PartitionRangeBound *lower,
 						   *upper;
+				FmgrInfo partsupfunc[PARTITION_MAX_KEYS];
+				int		i;
+
+				/* Get partsupfunc FmgrInfo's. */
+				for (i = 0; i < key->partnatts; i++)
+				{
+					fmgr_info_copy(&partsupfunc[i],
+								   partition_getprocinfo(parent, key, i),
+								   CurrentMemoryContext);
+				}
 
 				Assert(spec->strategy == PARTITION_STRATEGY_RANGE);
 				lower = make_one_range_bound(key, -1, spec->lowerdatums, true);
@@ -478,7 +495,7 @@ check_new_partition_bound(char *relname, Relation parent,
 				 * First check if the resulting range would be empty with
 				 * specified lower and upper bounds
 				 */
-				if (partition_rbound_cmp(key->partnatts, key->partsupfunc,
+				if (partition_rbound_cmp(key->partnatts, partsupfunc,
 										 key->partcollation, lower->datums,
 										 lower->kind, true, upper) >= 0)
 				{
@@ -518,7 +535,7 @@ check_new_partition_bound(char *relname, Relation parent,
 					 * at the end.
 					 */
 					offset = partition_range_bsearch(key->partnatts,
-													 key->partsupfunc,
+													 partsupfunc,
 													 key->partcollation,
 													 boundinfo, lower,
 													 &equal);
@@ -543,7 +560,7 @@ check_new_partition_bound(char *relname, Relation parent,
 							is_lower = (boundinfo->indexes[offset + 1] == -1);
 
 							cmpval = partition_rbound_cmp(key->partnatts,
-														  key->partsupfunc,
+														  partsupfunc,
 														  key->partcollation,
 														  datums, kind,
 														  is_lower, upper);
@@ -2150,6 +2167,7 @@ satisfies_hash_partition(PG_FUNCTION_ARGS)
 	{
 		Relation	parent;
 		PartitionKey key;
+		FmgrInfo	partsupfunc[PARTITION_MAX_KEYS];
 		int			j;
 
 		/* Open parent relation and fetch partition keyinfo */
@@ -2171,6 +2189,14 @@ satisfies_hash_partition(PG_FUNCTION_ARGS)
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("\"%s\" is not a hash partitioned table",
 							get_rel_name(parentId))));
+
+		/* Get partsupfunc FmgrInfo's. */
+		for (j = 0; j < key->partnatts; j++)
+		{
+			fmgr_info_copy(&partsupfunc[j],
+						   partition_getprocinfo(parent, key, j),
+						   CurrentMemoryContext);
+		}
 
 		if (!get_fn_expr_variadic(fcinfo->flinfo))
 		{
@@ -2204,7 +2230,7 @@ satisfies_hash_partition(PG_FUNCTION_ARGS)
 									j + 1, format_type_be(key->parttypid[j]), format_type_be(argtype))));
 
 				fmgr_info_copy(&my_extra->partsupfunc[j],
-							   &key->partsupfunc[j],
+							   &partsupfunc[j],
 							   fcinfo->flinfo->fn_mcxt);
 			}
 
@@ -2238,7 +2264,7 @@ satisfies_hash_partition(PG_FUNCTION_ARGS)
 									format_type_be(my_extra->variadic_type))));
 
 			fmgr_info_copy(&my_extra->partsupfunc[0],
-						   &key->partsupfunc[0],
+						   &partsupfunc[0],
 						   fcinfo->flinfo->fn_mcxt);
 		}
 

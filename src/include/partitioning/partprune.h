@@ -31,7 +31,7 @@ typedef struct PartitionPruneContext
 	Oid		   *partopfamily;
 	Oid		   *partopcintype;
 	Oid		   *partcollation;
-	FmgrInfo   *partsupfunc;
+	FmgrInfo	partsupfunc[PARTITION_MAX_KEYS];
 
 	/* Number of partitions */
 	int			nparts;

@@ -1940,7 +1940,7 @@ find_partition_scheme(PlannerInfo *root, Relation rel,
 		 */
 #ifdef USE_ASSERT_CHECKING
 		for (i = 0; i < partkey->partnatts; i++)
-			Assert(partkey->partsupfunc[i].fn_oid ==
+			Assert(partkey->partsupfuncid[i] ==
 				   part_scheme->partsupfunc[i].fn_oid);
 #endif
 
@@ -1960,7 +1960,12 @@ find_partition_scheme(PlannerInfo *root, Relation rel,
 	part_scheme->partcollation = partkey->partcollation;
 	part_scheme->parttyplen = partkey->parttyplen;
 	part_scheme->parttypbyval = partkey->parttypbyval;
-	part_scheme->partsupfunc = partkey->partsupfunc;
+	part_scheme->partsupfunc = (FmgrInfo *)
+		palloc(sizeof(FmgrInfo) * partnatts);
+	for (i = 0; i < partnatts; i++)
+		fmgr_info_copy(&part_scheme->partsupfunc[i],
+					   partition_getprocinfo(rel, partkey, i),
+					   CurrentMemoryContext);
 
 	/* Add the partitioning scheme to PlannerInfo. */
 	root->part_schemes = lappend(root->part_schemes, part_scheme);
