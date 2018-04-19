@@ -40,6 +40,11 @@ SELECT 1.1 AS three UNION SELECT 2 UNION ALL SELECT 2 ORDER BY 1;
 
 SELECT 1.1 AS two UNION (SELECT 2 UNION ALL SELECT 2) ORDER BY 1;
 
+-- Check that unknown type is not resolved for only FROM under union
+SELECT * FROM (SELECT 1 AS A WHERE '1' = (SELECT '1' AS X)) t1
+UNION ALL
+SELECT * FROM (SELECT '1' AS A) t2;
+
 --
 -- Try testing from tables...
 --

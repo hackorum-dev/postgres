@@ -473,11 +473,12 @@ transformRangeSubselect(ParseState *pstate, RangeSubselect *r)
 	pstate->p_lateral_active = r->lateral;
 
 	/*
-	 * Analyze and transform the subquery.
+	 * Analyze and transform the subquery. Don't resolve unknowns if the
+	 * parent is told so.
 	 */
 	query = parse_sub_analyze(r->subquery, pstate, NULL,
 							  isLockedRefname(pstate, r->alias->aliasname),
-							  true);
+							  pstate->p_resolve_unknowns);
 
 	/* Restore state */
 	pstate->p_lateral_active = false;
