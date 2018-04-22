@@ -765,7 +765,7 @@ copy_heap_data(Oid OIDNewHeap, Oid OIDOldHeap, Oid OIDOldIndex, bool verbose,
 	HeapScanDesc heapScan;
 	bool		use_wal;
 	bool		is_system_catalog;
-	TransactionId OldestXmin;
+	TransactionId OldestXmin = InvalidTransactionId;
 	TransactionId FreezeXid;
 	MultiXactId MultiXactCutoff;
 	RewriteState rwstate;

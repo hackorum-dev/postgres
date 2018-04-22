@@ -75,7 +75,7 @@ static void vac_truncate_clog(TransactionId frozenXID,
 				  TransactionId lastSaneFrozenXid,
 				  MultiXactId lastSaneMinMulti);
 static bool vacuum_rel(Oid relid, RangeVar *relation, int options,
-		   VacuumParams *params);
+		   VacuumParams *params, TransactionId oldestXmin);
 
 /*
  * Primary entry point for manual VACUUM and ANALYZE commands
@@ -337,7 +337,8 @@ vacuum(int options, List *relations, VacuumParams *params,
 
 			if (options & VACOPT_VACUUM)
 			{
-				if (!vacuum_rel(vrel->oid, vrel->relation, options, params))
+				if (!vacuum_rel(vrel->oid, vrel->relation, options, params,
+								InvalidTransactionId))
 					continue;
 			}
 
@@ -618,8 +619,9 @@ vacuum_set_xid_limits(Relation rel,
 	 * working on a particular table at any time, and that each vacuum is
 	 * always an independent transaction.
 	 */
-	*oldestXmin =
-		TransactionIdLimitedForOldSnapshots(GetOldestXmin(rel, PROCARRAY_FLAGS_VACUUM), rel);
+	if (!TransactionIdIsValid(*oldestXmin))
+		*oldestXmin =
+			TransactionIdLimitedForOldSnapshots(GetOldestXmin(rel, PROCARRAY_FLAGS_VACUUM), rel);
 
 	Assert(TransactionIdIsNormal(*oldestXmin));
 
@@ -1298,7 +1300,8 @@ vac_truncate_clog(TransactionId frozenXID,
  *		At entry and exit, we are not inside a transaction.
  */
 static bool
-vacuum_rel(Oid relid, RangeVar *relation, int options, VacuumParams *params)
+vacuum_rel(Oid relid, RangeVar *relation, int options, VacuumParams *params,
+		   TransactionId oldestXmin)
 {
 	LOCKMODE	lmode;
 	Relation	onerel;
@@ -1530,6 +1533,19 @@ vacuum_rel(Oid relid, RangeVar *relation, int options, VacuumParams *params)
 		toast_relid = InvalidOid;
 
 	/*
+	 * Use same OldestXmin for heap and toast table, otherwise, the heap can
+	 * have RECENTLY_DEAD row that contains toast pointers whose toast rows
+	 * have already been vacuumed away.  This is because OldestXmin can move
+	 * backward on repeated calls. See GetOldestXmin.
+	 */
+	if (OidIsValid(toast_relid))
+	{
+		if (!TransactionIdIsValid(oldestXmin))
+			oldestXmin =
+				TransactionIdLimitedForOldSnapshots(GetOldestXmin(onerel, PROCARRAY_FLAGS_VACUUM), onerel);
+	}
+
+	/*
 	 * Switch to the table owner's userid, so that any index functions are run
 	 * as that user.  Also lock down security-restricted operations and
 	 * arrange to make GUC variable changes local to this command. (This is
@@ -1554,7 +1570,7 @@ vacuum_rel(Oid relid, RangeVar *relation, int options, VacuumParams *params)
 					(options & VACOPT_VERBOSE) != 0);
 	}
 	else
-		lazy_vacuum_rel(onerel, options, params, vac_strategy);
+		lazy_vacuum_rel(onerel, options, params, vac_strategy, oldestXmin);
 
 	/* Roll back any GUC changes executed by index functions */
 	AtEOXact_GUC(false, save_nestlevel);
@@ -1580,7 +1596,7 @@ vacuum_rel(Oid relid, RangeVar *relation, int options, VacuumParams *params)
 	 * totally unimportant for toast relations.
 	 */
 	if (toast_relid != InvalidOid)
-		vacuum_rel(toast_relid, NULL, options, params);
+		vacuum_rel(toast_relid, NULL, options, params, oldestXmin);
 
 	/*
 	 * Now release the session-level lock on the master table.

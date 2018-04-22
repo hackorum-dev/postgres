@@ -188,7 +188,8 @@ extern void vacuum_delay_point(void);
 
 /* in commands/vacuumlazy.c */
 extern void lazy_vacuum_rel(Relation onerel, int options,
-				VacuumParams *params, BufferAccessStrategy bstrategy);
+				VacuumParams *params, BufferAccessStrategy bstrategy,
+				TransactionId oldestXmin);
 
 /* in commands/analyze.c */
 extern void analyze_rel(Oid relid, RangeVar *relation, int options,

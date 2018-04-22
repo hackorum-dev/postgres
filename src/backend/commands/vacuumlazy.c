@@ -188,7 +188,7 @@ static bool heap_page_is_all_visible(Relation rel, Buffer buf,
  */
 void
 lazy_vacuum_rel(Relation onerel, int options, VacuumParams *params,
-				BufferAccessStrategy bstrategy)
+				BufferAccessStrategy bstrategy, TransactionId oldestXmin)
 {
 	LVRelStats *vacrelstats;
 	Relation   *Irel;
@@ -233,8 +233,9 @@ lazy_vacuum_rel(Relation onerel, int options, VacuumParams *params,
 						  params->freeze_table_age,
 						  params->multixact_freeze_min_age,
 						  params->multixact_freeze_table_age,
-						  &OldestXmin, &FreezeLimit, &xidFullScanLimit,
+						  &oldestXmin, &FreezeLimit, &xidFullScanLimit,
 						  &MultiXactCutoff, &mxactFullScanLimit);
+	OldestXmin = oldestXmin;
 
 	/*
 	 * We request an aggressive scan if the table's frozen Xid is now older
