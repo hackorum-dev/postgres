@@ -1489,8 +1489,7 @@ acquire_inherited_sample_rows(Relation onerel, int elevel,
 
 				/* We may need to convert from child's rowtype to parent's */
 				if (childrows > 0 &&
-					!equalTupleDescs(RelationGetDescr(childrel),
-									 RelationGetDescr(onerel)))
+					RelationGetRelid(childrel) != RelationGetRelid(onerel))
 				{
 					TupleConversionMap *map;
 
