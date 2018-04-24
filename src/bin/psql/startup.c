@@ -162,6 +162,8 @@ main(int argc, char *argv[])
 	pset.last_error_result = NULL;
 	pset.cur_cmd_source = stdin;
 	pset.cur_cmd_interactive = false;
+	pset.is_in_until = 0;
+	pset.has_affected_rows = false;
 
 	/* We rely on unmentioned fields of pset.popt to start out 0/false/NULL */
 	pset.popt.topt.format = PRINT_ALIGNED;
