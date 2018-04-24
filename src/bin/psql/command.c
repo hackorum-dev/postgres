@@ -479,6 +479,19 @@ exec_command(const char *cmd,
 		status = exec_command_shell_escape(scan_state, active_branch);
 	else if (strcmp(cmd, "?") == 0)
 		status = exec_command_slash_command_help(scan_state, active_branch);
+	else if (strcmp(cmd, "until-0") == 0) {
+		status = PSQL_CMD_SKIP_LINE;
+		pset.is_in_until = ftell(pset.cur_cmd_source);
+		pset.has_affected_rows = false;
+	} else if (strcmp(cmd, "end-until") == 0) {
+		status = PSQL_CMD_SKIP_LINE;
+		if (pset.has_affected_rows) {
+			fseek(pset.cur_cmd_source, pset.is_in_until, SEEK_SET);
+			pset.has_affected_rows = false;
+		} else {
+			pset.is_in_until = 0;
+		}
+	}
 	else
 		status = PSQL_CMD_UNKNOWN;
 
