@@ -438,6 +438,12 @@ MainLoop(FILE *source)
 				{
 					success = SendQuery(query_buf->data);
 					slashCmdStatus = success ? PSQL_CMD_SEND : PSQL_CMD_ERROR;
+					if (success && pset.is_in_until && !pset.has_affected_rows)
+					{
+						const char *row_count = GetVariable(pset.vars, "ROW_COUNT");
+						if (row_count != NULL && strcmp(row_count, "0") != 0)
+							pset.has_affected_rows = true;
+					}
 					pset.stmt_lineno = 1;
 
 					/* transfer query to previous_buf by pointer-swapping */
