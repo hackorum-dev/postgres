@@ -184,6 +184,9 @@ typedef struct _psqlSettings
 	PGVerbosity verbosity;		/* current error verbosity level */
 	bool		show_all_results;
 	PGContextVisibility show_context;	/* current context display level */
+	
+	long		is_in_until;
+	int			has_affected_rows;
 } PsqlSettings;
 
 extern PsqlSettings pset;
