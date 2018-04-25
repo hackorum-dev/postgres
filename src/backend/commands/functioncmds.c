@@ -624,10 +624,7 @@ update_proconfig_value(ArrayType *a, List *set_items)
 		{
 			char	   *valuestr = ExtractSetVariableArgs(sstmt);
 
-			if (valuestr)
-				a = GUCArrayAdd(a, sstmt->name, valuestr);
-			else				/* RESET */
-				a = GUCArrayDelete(a, sstmt->name);
+			a = GUCArrayAdd(a, sstmt->name, valuestr);
 		}
 	}
 

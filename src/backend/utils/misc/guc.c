@@ -9709,7 +9709,13 @@ ProcessGUCArray(ArrayType *array,
 			continue;
 		}
 
-		(void) set_config_option(name, value,
+		if (value && strcmp(value, "default") == 0)
+			(void) set_config_option(name, NULL,
+									 context, source,
+									 action, true, 0, false);
+
+		else
+			(void) set_config_option(name, value,
 								 context, source,
 								 action, true, 0, false);
 
@@ -9734,7 +9740,6 @@ GUCArrayAdd(ArrayType *array, const char *name, const char *value)
 	ArrayType  *a;
 
 	Assert(name);
-	Assert(value);
 
 	/* test if the option is valid and we're allowed to set it */
 	(void) validate_option_array_item(name, value, false);
@@ -9745,7 +9750,11 @@ GUCArrayAdd(ArrayType *array, const char *name, const char *value)
 		name = record->name;
 
 	/* build new item for array */
-	newval = psprintf("%s=%s", name, value);
+	if (value)
+		newval = psprintf("%s=%s", name, value);
+	else
+		newval = psprintf("%s=default", name);
+		
 	datum = CStringGetTextDatum(newval);
 
 	if (array)
