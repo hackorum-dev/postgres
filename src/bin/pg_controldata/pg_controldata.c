@@ -97,7 +97,6 @@ main(int argc, char *argv[])
 	time_t		time_tmp;
 	char		pgctime_str[128];
 	char		ckpttime_str[128];
-	char		sysident_str[32];
 	char		mock_auth_nonce_str[MOCK_AUTH_NONCE_LEN * 2 + 1];
 	const char *strftime_fmt = "%c";
 	const char *progname;
@@ -219,8 +218,6 @@ main(int argc, char *argv[])
 	 * keep platform-dependent format code out of the translatable message
 	 * string.
 	 */
-	snprintf(sysident_str, sizeof(sysident_str), UINT64_FORMAT,
-			 ControlFile->system_identifier);
 	for (i = 0; i < MOCK_AUTH_NONCE_LEN; i++)
 		snprintf(&mock_auth_nonce_str[i * 2], 3, "%02x",
 				 (unsigned char) ControlFile->mock_authentication_nonce[i]);
@@ -229,8 +226,8 @@ main(int argc, char *argv[])
 		   ControlFile->pg_control_version);
 	printf(_("Catalog version number:               %u\n"),
 		   ControlFile->catalog_version_no);
-	printf(_("Database system identifier:           %s\n"),
-		   sysident_str);
+	printf(_("Database system identifier:           %" PRIu64 "\n"),
+		   ControlFile->system_identifier);
 	printf(_("Database cluster state:               %s\n"),
 		   dbState(ControlFile->state));
 	printf(_("pg_control last modified:             %s\n"),

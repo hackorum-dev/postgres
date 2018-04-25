@@ -364,8 +364,11 @@ typedef unsigned long long int uint64;
 #endif
 
 /* snprintf format strings to use for 64-bit integers */
-#define INT64_FORMAT "%" INT64_MODIFIER "d"
-#define UINT64_FORMAT "%" INT64_MODIFIER "u"
+#define PRId64 INT64_MODIFIER "d"
+#define PRIu64 INT64_MODIFIER "u"
+
+#define INT64_FORMAT "%" PRId64
+#define UINT64_FORMAT "%" PRIu64
 
 /*
  * 128-bit signed and unsigned integers
