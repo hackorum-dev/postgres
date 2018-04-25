@@ -22,6 +22,7 @@
  * scan the hashtable and generate the correct output using those counts.
  * We can avoid making hashtable entries for any tuples appearing only in the
  * second input relation, since they cannot result in any output.
+ * (XXX: except that we do, if the hash table has been spilled)
  *
  * This node type is not used for UNION or UNION ALL, since those can be
  * implemented more cheaply (there's no need for the junk attribute to
@@ -82,6 +83,7 @@ static TupleTableSlot *setop_retrieve_direct(SetOpState *setopstate);
 static void setop_fill_hash_table(SetOpState *setopstate);
 static TupleTableSlot *setop_retrieve_hash_table(SetOpState *setopstate);
 
+static void setop_spill_entry(SetOpState *setopstate, TupleHashEntry entry, bool in_hashtab);
 
 /*
  * Initialize state for a new group of input values.
@@ -134,6 +136,13 @@ alloc_pergroup(SetOpState *setopstate)
 	return pergroup;
 }
 
+static void
+free_pergroup(SetOpState *setopstate, SetOpStatePerGroup pergroup)
+{
+	pergroup->next = setopstate->free_pergroups;
+	setopstate->free_pergroups = pergroup;
+}
+
 /*
  * Fetch the "flag" column from an input tuple.
  * This is an integer column with value 0 for left side, 1 for right side.
@@ -177,6 +186,7 @@ build_hash_table(SetOpState *setopstate)
 												setopstate->tableContext,
 												econtext->ecxt_per_tuple_memory,
 												false);
+	setopstate->hashtable->allowedMem = work_mem * 1024L;
 }
 
 /*
@@ -371,6 +381,188 @@ setop_retrieve_direct(SetOpState *setopstate)
 	return NULL;
 }
 
+static void
+BufFileWriteNoError(BufFile *file, void *ptr, size_t size)
+{
+	if (BufFileWrite(file, ptr, size) != size)
+		elog(ERROR, "io error"); /* XXX ereport */
+}
+
+/* Callback to dump the 'additional' data */
+static void
+setop_spill_entries(SetOpState *setopstate)
+{
+	if (setopstate->hashtable->usedMem < setopstate->hashtable->allowedMem)
+		return;
+
+	if (!setopstate->spillset)
+	{
+		setopstate->spillset = CreateHashSpillSet(setopstate->hashtable->allowedMem / 2);
+
+		setopstate->spillslot = MakeSingleTupleTableSlot(CreateTupleDescCopy(ExecGetResultType(outerPlanState(setopstate))));
+	}
+
+	while (setopstate->hashtable->usedMem > setopstate->hashtable->allowedMem &&
+		setopstate->hashtable->hashtab->members > 1)
+	{
+		TupleHashEntry entry;
+#if 0
+		elog(NOTICE, "spilling: used %ld allowed %ld tuples %d",
+			 setopstate->hashtable->usedMem, setopstate->hashtable->allowedMem,
+			setopstate->hashtable->hashtab->members);
+#endif
+		entry = SpillTupleHashTable(setopstate->hashtable);
+		if (!entry)
+			break;
+
+		setop_spill_entry(setopstate, entry, true);
+	}
+}
+
+static void
+setop_spill_entry(SetOpState *setopstate, TupleHashEntry entry, bool in_hashtab)
+{
+	BufFile	   *file;
+	MinimalTuple tup;
+
+	file = GetSpillFile(setopstate->spillset, entry->hash);
+
+	BufFileWriteNoError(file, &entry->hash, sizeof(uint32));
+	BufFileWriteNoError(file, &entry->firstTuple->t_len, sizeof(uint32));
+	BufFileWriteNoError(file, entry->firstTuple, entry->firstTuple->t_len);
+	BufFileWriteNoError(file, entry->additional, sizeof(SetOpStatePerGroupData));
+
+	if (in_hashtab)
+	{
+		/* Free the entry. */
+		setopstate->hashtable->usedMem -= sizeof(SetOpStatePerGroupData);
+		setopstate->hashtable->usedMem -= GetMemoryChunkSpace(entry->firstTuple);
+		free_pergroup(setopstate, entry->additional);
+		tup = entry->firstTuple;
+		tuplehash_delete_elem(setopstate->hashtable->hashtab, entry, entry->hash);
+		pfree(tup);
+
+		if (!setopstate->spilled)
+		{
+			setopstate->spilled = true;
+
+			elog(NOTICE, "spilling: used %ld allowed %ld tuples %d",
+				 setopstate->hashtable->usedMem, setopstate->hashtable->allowedMem,
+				 setopstate->hashtable->hashtab->members);
+		}
+	}
+}
+
+static void
+BufFileReadExact(BufFile *file, void *ptr, size_t size)
+{
+	if (BufFileRead(file, ptr, size) != size)
+		elog(ERROR, "error reading file");
+}
+
+/*
+ * Reload next batch into memory.
+ *
+ * May cause further spilling. Returns false if there were no more batches.
+ */
+static bool
+setop_reload_batch(SetOpState *setopstate)
+{
+	uint32		loaded_hash;
+	uint32		tuplen;
+	MinimalTuple loaded_firstTuple;
+	SetOpStatePerGroup pergroup;
+	SetOpStatePerGroupData loaded_pergroup;
+	int			readlen;
+	BufFile	   *file;
+	TupleHashEntry entry;
+	bool		isnew;
+	bool		respill;
+
+	Assert(setopstate->hashtable->hashtab->members == 0);
+	setopstate->spilled = false;
+
+	file = OpenNextSpillFile(setopstate->spillset, &respill);
+	if (!file)
+		return false;
+
+	setopstate->spilled = false;
+
+	for (;;)
+	{
+		readlen = BufFileRead(file, &loaded_hash, sizeof(uint32));
+		if (readlen == 0)
+		{
+			//elog(NOTICE, "reloaded batch %p with %d tuples", file, setopstate->hashtable->hashtab->members);
+			BufFileClose(file);
+			break;
+		}
+		if (readlen != sizeof(uint32))
+			elog(ERROR, "error reading file");
+		BufFileReadExact(file, &tuplen, sizeof(uint32));
+		loaded_firstTuple = palloc(tuplen);
+		BufFileReadExact(file, loaded_firstTuple, tuplen);
+		Assert(loaded_firstTuple->t_len == tuplen);
+		BufFileReadExact(file, &loaded_pergroup, sizeof(SetOpStatePerGroupData));
+
+		ExecStoreMinimalTuple(loaded_firstTuple, setopstate->spillslot, true);
+
+		if (setopstate->hashtable->usedMem < setopstate->hashtable->allowedMem ||
+			setopstate->hashtable->hashtab->members < 1)
+		{
+			entry = LookupTupleHashEntry(setopstate->hashtable, setopstate->spillslot,
+										 &isnew);
+
+			if (isnew)
+			{
+				entry->additional = alloc_pergroup(setopstate);
+				setopstate->hashtable->usedMem += sizeof(SetOpStatePerGroupData);
+				initialize_counts((SetOpStatePerGroup) entry->additional);
+				if (setopstate->spilled || respill)
+					entry->firstbatch = false;
+				else
+					entry->firstbatch = true;
+			}
+
+			pergroup = (SetOpStatePerGroup) entry->additional;
+			pergroup->data.numLeft += loaded_pergroup.data.numLeft;
+			pergroup->data.numRight += loaded_pergroup.data.numRight;
+		}
+		else
+		{
+			/*
+			 * We are already over the limit. Check if it happens to be in the
+			 * hash table, but if not, re-spill it immediately. This is
+			 * important, so that we process entries in LIFO order. Otherwise,
+			 * if there are enough entries with the same hash value to not fit
+			 * in memory at the time, we might loop and not make any progress.
+			 */
+			entry = LookupTupleHashEntry(setopstate->hashtable,
+										 setopstate->spillslot,
+										 NULL);
+			if (entry)
+			{
+				pergroup = (SetOpStatePerGroup) entry->additional;
+				pergroup->data.numLeft += loaded_pergroup.data.numLeft;
+				pergroup->data.numRight += loaded_pergroup.data.numRight;
+			}
+			else
+			{
+				TupleHashEntryData loaded_entry;
+
+				loaded_entry.hash = loaded_hash;
+				loaded_entry.firstTuple = loaded_firstTuple;
+				loaded_entry.additional = &loaded_pergroup;
+
+				setop_spill_entry(setopstate, &loaded_entry, false);
+			}
+		}
+		ExecClearTuple(setopstate->spillslot);
+	}
+
+	return true;
+}
+
 /*
  * ExecSetOp for hashed case: phase 1, read input and build hash table
  */
@@ -413,6 +605,9 @@ setop_fill_hash_table(SetOpState *setopstate)
 		/* Identify whether it's left or right input */
 		flag = fetch_tuple_flag(setopstate, outerslot);
 
+		/* If we're out of memory, spill some tuples from the hash table. */
+		setop_spill_entries(setopstate);
+
 		if (flag == firstFlag)
 		{
 			/* (still) in first input relation */
@@ -426,7 +621,12 @@ setop_fill_hash_table(SetOpState *setopstate)
 			if (isnew)
 			{
 				entry->additional = alloc_pergroup(setopstate);
+				setopstate->hashtable->usedMem += sizeof(SetOpStatePerGroupData);
 				initialize_counts((SetOpStatePerGroup) entry->additional);
+				if (setopstate->spilled)
+					entry->firstbatch = false;
+				else
+					entry->firstbatch = true;
 			}
 
 			/* Advance the counts */
@@ -438,12 +638,30 @@ setop_fill_hash_table(SetOpState *setopstate)
 			in_first_rel = false;
 
 			/* For tuples not seen previously, do not make hashtable entry */
+			/* If the hash table has already been spilled, we must make entries
+			 * for everything, because we might have spilled an entry for this
+			 * key already.
+			 */
+			isnew = false;
 			entry = LookupTupleHashEntry(setopstate->hashtable, outerslot,
-										 NULL);
+										 setopstate->spilled ? &isnew : NULL);
 
 			/* Advance the counts if entry is already present */
 			if (entry)
+			{
+				/* If new tuple group, initialize counts */
+				if (isnew)
+				{
+					entry->additional = alloc_pergroup(setopstate);
+					setopstate->hashtable->usedMem += sizeof(SetOpStatePerGroupData);
+					initialize_counts((SetOpStatePerGroup) entry->additional);
+					if (setopstate->spilled)
+						entry->firstbatch = false;
+					else
+						entry->firstbatch = true;
+				}
 				advance_counts((SetOpStatePerGroup) entry->additional, flag);
+			}
 		}
 
 		/* Must reset expression context after each hashtable lookup */
@@ -453,6 +671,8 @@ setop_fill_hash_table(SetOpState *setopstate)
 	setopstate->table_filled = true;
 	/* Initialize to walk the hash table */
 	ResetTupleHashIterator(setopstate->hashtable, &setopstate->hashiter);
+
+	elog(NOTICE, "table filled");
 }
 
 /*
@@ -474,17 +694,38 @@ setop_retrieve_hash_table(SetOpState *setopstate)
 	 */
 	while (!setopstate->setop_done)
 	{
+		MinimalTuple tuple;
+
 		CHECK_FOR_INTERRUPTS();
 
 		/*
 		 * Find the next entry in the hash table
 		 */
 		entry = ScanTupleHashTable(setopstate->hashtable, &setopstate->hashiter);
+
 		if (entry == NULL)
 		{
-			/* No more entries in hashtable, so done */
+			/* No more entries in hashtable. But do we have spill files to process?  */
+			if (setopstate->spillset)
+			{
+				if (setop_reload_batch(setopstate))
+				{
+					ResetTupleHashIterator(setopstate->hashtable, &setopstate->hashiter);
+					continue;
+				}
+			}
 			setopstate->setop_done = true;
 			return NULL;
+		}
+
+		if (!entry->firstbatch)
+		{
+			/*
+			 * re-spill this entry, because we might have spilled some earlier entries
+			 * with this key already.
+			 */
+			setop_spill_entry(setopstate, entry, true);
+			continue;
 		}
 
 		/*
@@ -493,12 +734,23 @@ setop_retrieve_hash_table(SetOpState *setopstate)
 		 */
 		set_output_count(setopstate, (SetOpStatePerGroup) entry->additional);
 
+		tuple = entry->firstTuple;
+
+		free_pergroup(setopstate, entry->additional);
+		setopstate->hashtable->usedMem -= sizeof(SetOpStatePerGroupData);
+		tuplehash_delete_elem(setopstate->hashtable->hashtab, entry, entry->hash);
+		setopstate->hashtable->usedMem -= GetMemoryChunkSpace(tuple);
+
 		if (setopstate->numOutput > 0)
 		{
 			setopstate->numOutput--;
-			return ExecStoreMinimalTuple(entry->firstTuple,
+			return ExecStoreMinimalTuple(tuple,
 										 resultTupleSlot,
-										 false);
+										 true);
+		}
+		else
+		{
+			pfree(tuple);
 		}
 	}
 
@@ -618,6 +870,9 @@ ExecEndSetOp(SetOpState *node)
 {
 	/* clean up tuple table */
 	ExecClearTuple(node->ps.ps_ResultTupleSlot);
+
+	if (node->spillset)
+		CloseHashSpillSet(node->spillset);
 
 	/* free subsidiary stuff including hashtable */
 	if (node->tableContext)

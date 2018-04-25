@@ -650,7 +650,8 @@ typedef struct TupleHashEntryData
 {
 	MinimalTuple firstTuple;	/* copy of first tuple in this group */
 	void	   *additional;		/* user data */
-	uint32		status;			/* hash status */
+	bool		firstbatch;
+	uint8		status;			/* hash status */
 	uint32		hash;			/* hash value (cached) */
 } TupleHashEntryData;
 
@@ -679,6 +680,13 @@ typedef struct TupleHashTableData
 	ExprState  *cur_eq_func;	/* comparator for for input vs. table */
 	uint32		hash_iv;		/* hash-function IV */
 	ExprContext *exprcontext;	/* expression context */
+
+	int64		usedMem;
+	int64		allowedMem;
+
+	/* batches */
+	tuplehash_iterator spill_iter;
+	bool		spill_iter_inited;
 }			TupleHashTableData;
 
 typedef tuplehash_iterator TupleHashIterator;
@@ -696,6 +704,9 @@ typedef tuplehash_iterator TupleHashIterator;
 	InitTupleHashIterator(htable, iter)
 #define ScanTupleHashTable(htable, iter) \
 	tuplehash_iterate(htable->hashtab, iter)
+
+/* Support for spilling hash tables */
+typedef struct HashSpillSet HashSpillSet; /* private to execHashSpill.c */
 
 
 /* ----------------------------------------------------------------
@@ -2167,6 +2178,11 @@ typedef struct SetOpState
 	TupleHashIterator hashiter; /* for iterating through hash table */
 
 	SetOpStatePerGroup free_pergroups; /* list of free per-group structs */
+
+	HashSpillSet *spillset;
+	bool		spilled;		/* has the current batch spilled? */
+	TupleTableSlot *spillslot;
+
 } SetOpState;
 
 /* ----------------

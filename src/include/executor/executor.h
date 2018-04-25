@@ -17,6 +17,7 @@
 #include "executor/execdesc.h"
 #include "nodes/parsenodes.h"
 #include "utils/memutils.h"
+#include "storage/buffile.h"
 
 
 /*
@@ -136,6 +137,16 @@ extern TupleHashEntry FindTupleHashEntry(TupleHashTable hashtable,
 				   TupleTableSlot *slot,
 				   ExprState *eqcomp,
 				   FmgrInfo *hashfunctions);
+extern TupleHashEntry SpillTupleHashTable(TupleHashTable hashtable);
+
+/*
+ * prototypes from functions in execHashSpill.c
+ */
+extern HashSpillSet *CreateHashSpillSet(int64 target_file_size);
+extern BufFile *GetSpillFile(HashSpillSet *sp, uint32 hash);
+extern BufFile *OpenNextSpillFile(HashSpillSet *sp, bool *respill);
+extern void CloseHashSpillSet(HashSpillSet *sp);
+
 
 /*
  * prototypes from functions in execJunk.c

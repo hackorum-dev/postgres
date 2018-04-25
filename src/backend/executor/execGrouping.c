@@ -180,6 +180,7 @@ BuildTupleHashTable(PlanState *parent,
 	hashtable->inputslot = NULL;
 	hashtable->in_hash_funcs = NULL;
 	hashtable->cur_eq_func = NULL;
+	hashtable->usedMem = sizeof(TupleHashTableData);
 
 	/*
 	 * If parallelism is in use, even if the master backend is performing the
@@ -195,6 +196,7 @@ BuildTupleHashTable(PlanState *parent,
 		hashtable->hash_iv = 0;
 
 	hashtable->hashtab = tuplehash_create(tablecxt, nbuckets, hashtable);
+	hashtable->usedMem += nbuckets * sizeof(TupleHashEntryData);
 
 	oldcontext = MemoryContextSwitchTo(hashtable->tablecxt);
 
@@ -266,6 +268,7 @@ LookupTupleHashEntry(TupleHashTable hashtable, TupleTableSlot *slot,
 			MemoryContextSwitchTo(hashtable->tablecxt);
 			/* Copy the first tuple into the table context */
 			entry->firstTuple = ExecCopySlotMinimalTuple(slot);
+			hashtable->usedMem += GetMemoryChunkSpace(entry->firstTuple);
 		}
 	}
 	else
@@ -308,6 +311,40 @@ FindTupleHashEntry(TupleHashTable hashtable, TupleTableSlot *slot,
 	key = NULL;					/* flag to reference inputslot */
 	entry = tuplehash_lookup(hashtable->hashtab, key);
 	MemoryContextSwitchTo(oldContext);
+
+	return entry;
+}
+
+/*
+ * Choose a victim tuple to remove from hash table, and return it.
+ *
+ * The caller should remove the entry from the hash table, pfree(firstTuple),
+ * and 'additional'.
+ */
+TupleHashEntryData *
+SpillTupleHashTable(TupleHashTable hashtable)
+{
+	TupleHashEntry entry;
+
+	if (hashtable->hashtab->members == 0)
+	{
+		/* hash table is empty. Nothing to spill */
+		return NULL;
+	}
+
+	if (!hashtable->spill_iter_inited)
+	{
+		tuplehash_start_iterate(hashtable->hashtab, &hashtable->spill_iter);
+		hashtable->spill_iter_inited = true;
+	}
+
+	entry = tuplehash_iterate(hashtable->hashtab, &hashtable->spill_iter);
+	if (!entry)
+	{
+		/* reached end, restart */
+		tuplehash_start_iterate(hashtable->hashtab, &hashtable->spill_iter);
+		entry = tuplehash_iterate(hashtable->hashtab, &hashtable->spill_iter);
+	}
 
 	return entry;
 }
