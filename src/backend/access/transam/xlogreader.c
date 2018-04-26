@@ -165,7 +165,8 @@ allocate_recordbuf(XLogReaderState *state, uint32 reclength)
 	if (state->readRecordBuf)
 		pfree(state->readRecordBuf);
 	state->readRecordBuf =
-		(char *) palloc_extended(newSize, MCXT_ALLOC_NO_OOM);
+		(char *) palloc_extended(newSize,
+								 MCXT_ALLOC_NO_OOM | MCXT_ALLOC_NO_PARAMERR);
 	if (state->readRecordBuf == NULL)
 	{
 		state->readRecordBufSize = 0;
@@ -601,10 +602,19 @@ err:
 
 /*
  * Invalidate the xlogreader's read state to force a re-read.
+ *
+ * read state might hold too large buffer on reading invalid record so release
+ * the buffer as well.
  */
 void
 XLogReaderInvalReadState(XLogReaderState *state)
 {
+	if (state->readRecordBuf != NULL)
+	{
+		pfree(state->readRecordBuf);
+		state->readRecordBuf = NULL;
+		state->readRecordBufSize = 0;
+	}
 	state->readSegNo = 0;
 	state->readOff = 0;
 	state->readLen = 0;

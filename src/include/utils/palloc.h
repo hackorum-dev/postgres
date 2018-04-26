@@ -63,7 +63,8 @@ extern PGDLLIMPORT MemoryContext CurrentMemoryContext;
  */
 #define MCXT_ALLOC_HUGE			0x01	/* allow huge allocation (> 1 GB) */
 #define MCXT_ALLOC_NO_OOM		0x02	/* no failure if out-of-memory */
-#define MCXT_ALLOC_ZERO			0x04	/* zero allocated memory */
+#define MCXT_ALLOC_NO_PARAMERR	0x04	/* no failure on parameter error */
+#define MCXT_ALLOC_ZERO			0x08	/* zero allocated memory */
 
 /*
  * Fundamental memory-allocation operations (more are in utils/memutils.h)

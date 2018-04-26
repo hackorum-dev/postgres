@@ -996,7 +996,12 @@ palloc_extended(Size size, int flags)
 
 	if (((flags & MCXT_ALLOC_HUGE) != 0 && !AllocHugeSizeIsValid(size)) ||
 		((flags & MCXT_ALLOC_HUGE) == 0 && !AllocSizeIsValid(size)))
+	{
+		if (flags & MCXT_ALLOC_NO_PARAMERR)
+			return NULL;
+
 		elog(ERROR, "invalid memory alloc request size %zu", size);
+	}
 
 	context->isReset = false;
 
