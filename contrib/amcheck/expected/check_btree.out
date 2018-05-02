@@ -2,7 +2,9 @@ CREATE TABLE bttest_a(id int8);
 CREATE TABLE bttest_b(id int8);
 CREATE TABLE bttest_multi(id int8, data int8);
 CREATE TABLE delete_test_table (a bigint, b bigint, c bigint, d bigint);
--- Stabalize tests
+CREATE TABLE bttest_partitioned (a int) PARTITION BY RANGE (a);
+CREATE INDEX bttest_partitioned_index ON bttest_partitioned (a);
+-- Stabilize tests
 ALTER TABLE bttest_a SET (autovacuum_enabled = false);
 ALTER TABLE bttest_b SET (autovacuum_enabled = false);
 ALTER TABLE bttest_multi SET (autovacuum_enabled = false);
@@ -48,6 +50,18 @@ SELECT bt_index_check('bttest_a');
 ERROR:  "bttest_a" is not an index
 SELECT bt_index_parent_check('bttest_a');
 ERROR:  "bttest_a" is not an index
+-- verify partitioned tables are rejected (error)
+SELECT bt_index_check('bttest_partitioned');
+ERROR:  "bttest_partitioned" is not an index
+SELECT bt_index_parent_check('bttest_partitioned');
+ERROR:  "bttest_partitioned" is not an index
+-- verify partitioned indexes are rejected (error)
+SELECT bt_index_check('bttest_partitioned_index');
+ERROR:  only B-Tree indexes are supported as targets for verification
+DETAIL:  Relation "bttest_partitioned_index" is not a B-Tree index.
+SELECT bt_index_parent_check('bttest_partitioned_index');
+ERROR:  only B-Tree indexes are supported as targets for verification
+DETAIL:  Relation "bttest_partitioned_index" is not a B-Tree index.
 -- verify non-existing indexes are rejected (error)
 SELECT bt_index_check(17);
 ERROR:  could not open relation with OID 17
@@ -145,5 +159,6 @@ DROP TABLE bttest_a;
 DROP TABLE bttest_b;
 DROP TABLE bttest_multi;
 DROP TABLE delete_test_table;
+DROP TABLE bttest_partitioned;
 DROP OWNED BY bttest_role; -- permissions
 DROP ROLE bttest_role;

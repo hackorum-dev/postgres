@@ -69,10 +69,15 @@ create index test_partitioned_index on test_partitioned(a);
 select pgstattuple('test_partitioned');
 select pgstattuple('test_partitioned_index');
 select pgstattuple_approx('test_partitioned');
+select pgstattuple_approx('test_partitioned_index');
 select pg_relpages('test_partitioned');
+select pg_relpages('test_partitioned_index');
 select pgstatindex('test_partitioned');
+select pgstatindex('test_partitioned_index');
 select pgstatginindex('test_partitioned');
+select pgstatginindex('test_partitioned_index');
 select pgstathashindex('test_partitioned');
+select pgstathashindex('test_partitioned_index');
 
 create view test_view as select 1;
 -- these should all fail

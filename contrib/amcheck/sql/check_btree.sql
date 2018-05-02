@@ -2,8 +2,10 @@ CREATE TABLE bttest_a(id int8);
 CREATE TABLE bttest_b(id int8);
 CREATE TABLE bttest_multi(id int8, data int8);
 CREATE TABLE delete_test_table (a bigint, b bigint, c bigint, d bigint);
+CREATE TABLE bttest_partitioned (a int) PARTITION BY RANGE (a);
+CREATE INDEX bttest_partitioned_index ON bttest_partitioned (a);
 
--- Stabalize tests
+-- Stabilize tests
 ALTER TABLE bttest_a SET (autovacuum_enabled = false);
 ALTER TABLE bttest_b SET (autovacuum_enabled = false);
 ALTER TABLE bttest_multi SET (autovacuum_enabled = false);
@@ -41,6 +43,14 @@ RESET ROLE;
 -- verify plain tables are rejected (error)
 SELECT bt_index_check('bttest_a');
 SELECT bt_index_parent_check('bttest_a');
+
+-- verify partitioned tables are rejected (error)
+SELECT bt_index_check('bttest_partitioned');
+SELECT bt_index_parent_check('bttest_partitioned');
+
+-- verify partitioned indexes are rejected (error)
+SELECT bt_index_check('bttest_partitioned_index');
+SELECT bt_index_parent_check('bttest_partitioned_index');
 
 -- verify non-existing indexes are rejected (error)
 SELECT bt_index_check(17);
@@ -93,5 +103,6 @@ DROP TABLE bttest_a;
 DROP TABLE bttest_b;
 DROP TABLE bttest_multi;
 DROP TABLE delete_test_table;
+DROP TABLE bttest_partitioned;
 DROP OWNED BY bttest_role; -- permissions
 DROP ROLE bttest_role;

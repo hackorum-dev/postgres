@@ -19,3 +19,13 @@ SELECT * FROM bt_page_items(get_raw_page('test1_a_idx', 1));
 SELECT * FROM bt_page_items(get_raw_page('test1_a_idx', 2));
 
 DROP TABLE test1;
+
+-- Partitioned indexes, all should fail
+CREATE TABLE test_partitioned (a int) PARTITION BY RANGE (a);
+CREATE INDEX test_partitioned_index ON test_partitioned (a);
+SELECT bt_metap('test_partitioned_index');
+SELECT bt_page_stats('test_partitioned_index', 0);
+SELECT bt_page_items('test_partitioned_index', 0);
+SELECT * FROM bt_page_items(get_raw_page('test_partitioned_index', 0));
+
+DROP TABLE test_partitioned;

@@ -58,3 +58,15 @@ data       | 01 00 00 00 00 00 00 01
 SELECT * FROM bt_page_items(get_raw_page('test1_a_idx', 2));
 ERROR:  block number 2 is out of range for relation "test1_a_idx"
 DROP TABLE test1;
+-- Partitioned indexes, all should fail
+CREATE TABLE test_partitioned (a int) PARTITION BY RANGE (a);
+CREATE INDEX test_partitioned_index ON test_partitioned (a);
+SELECT bt_metap('test_partitioned_index');
+ERROR:  relation "test_partitioned_index" is not a btree index
+SELECT bt_page_stats('test_partitioned_index', 0);
+ERROR:  relation "test_partitioned_index" is not a btree index
+SELECT bt_page_items('test_partitioned_index', 0);
+ERROR:  relation "test_partitioned_index" is not a btree index
+SELECT * FROM bt_page_items(get_raw_page('test_partitioned_index', 0));
+ERROR:  cannot get raw page from partitioned index "test_partitioned_index"
+DROP TABLE test_partitioned;

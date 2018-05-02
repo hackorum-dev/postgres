@@ -4,14 +4,20 @@ CREATE EXTENSION pg_visibility;
 -- check that using the module's functions with unsupported relations will fail
 --
 
--- partitioned tables (the parent ones) don't have visibility maps
+-- partitioned tables and indexes (the parent ones) don't have visibility maps
 create table test_partitioned (a int) partition by list (a);
+create index test_partitioned_index on test_partitioned (a);
 -- these should all fail
 select pg_visibility('test_partitioned', 0);
+select pg_visibility('test_partitioned_index', 0);
 select pg_visibility_map('test_partitioned');
+select pg_visibility_map('test_partitioned_index');
 select pg_visibility_map_summary('test_partitioned');
+select pg_visibility_map_summary('test_partitioned_index');
 select pg_check_frozen('test_partitioned');
+select pg_check_frozen('test_partitioned_index');
 select pg_truncate_visibility_map('test_partitioned');
+select pg_truncate_visibility_map('test_partitioned_index');
 
 create table test_partition partition of test_partitioned for values in (1);
 create index test_index on test_partition (a);

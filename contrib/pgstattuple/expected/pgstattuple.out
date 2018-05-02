@@ -160,14 +160,24 @@ select pgstattuple('test_partitioned_index');
 ERROR:  "test_partitioned_index" (partitioned index) is not supported
 select pgstattuple_approx('test_partitioned');
 ERROR:  "test_partitioned" is not a table or materialized view
+select pgstattuple_approx('test_partitioned_index');
+ERROR:  "test_partitioned_index" is not a table or materialized view
 select pg_relpages('test_partitioned');
 ERROR:  "test_partitioned" is not a table, index, materialized view, sequence, or TOAST table
+select pg_relpages('test_partitioned_index');
+ERROR:  "test_partitioned_index" is not a table, index, materialized view, sequence, or TOAST table
 select pgstatindex('test_partitioned');
 ERROR:  relation "test_partitioned" is not a btree index
+select pgstatindex('test_partitioned_index');
+ERROR:  relation "test_partitioned_index" is not a btree index
 select pgstatginindex('test_partitioned');
 ERROR:  relation "test_partitioned" is not a GIN index
+select pgstatginindex('test_partitioned_index');
+ERROR:  relation "test_partitioned_index" is not a GIN index
 select pgstathashindex('test_partitioned');
 ERROR:  "test_partitioned" is not an index
+select pgstathashindex('test_partitioned_index');
+ERROR:  relation "test_partitioned_index" is not a hash index
 create view test_view as select 1;
 -- these should all fail
 select pgstattuple('test_view');
