@@ -51,6 +51,8 @@
 #include "utils/memutils.h"
 
 
+#define NUM_PERGROUPS_PER_ALLOC 100
+
 /*
  * SetOpStatePerGroupData - per-group working state
  *
@@ -60,11 +62,19 @@
  * In SETOP_SORTED mode, we need only one of these structs, and it's kept in
  * the plan state node.  In SETOP_HASHED mode, the hash table contains one
  * of these for each tuple group.
+ *
+ * Unused per-group structs are kept in a linked list, in
+ * SetOpState.free_pergroups.  In that case, 'next' points to the next struct
+ * in the free-list.
  */
-typedef struct SetOpStatePerGroupData
+typedef union SetOpStatePerGroupData
 {
-	long		numLeft;		/* number of left-input dups in group */
-	long		numRight;		/* number of right-input dups in group */
+	struct
+	{
+		uint64		numLeft;		/* number of left-input dups in group */
+		uint64		numRight;		/* number of right-input dups in group */
+	} data;
+	SetOpStatePerGroup next;		/* next unused entry in the free list */
 }			SetOpStatePerGroupData;
 
 
@@ -79,7 +89,7 @@ static TupleTableSlot *setop_retrieve_hash_table(SetOpState *setopstate);
 static inline void
 initialize_counts(SetOpStatePerGroup pergroup)
 {
-	pergroup->numLeft = pergroup->numRight = 0;
+	pergroup->data.numLeft = pergroup->data.numRight = 0;
 }
 
 /*
@@ -89,9 +99,39 @@ static inline void
 advance_counts(SetOpStatePerGroup pergroup, int flag)
 {
 	if (flag)
-		pergroup->numRight++;
+		pergroup->data.numRight++;
 	else
-		pergroup->numLeft++;
+		pergroup->data.numLeft++;
+}
+
+/*
+ * Allocate a new per-group struct.
+ *
+ * To save on memory and palloc() call overhead, we allocate the per-group
+ * structs in batches.
+ */
+static SetOpStatePerGroup
+alloc_pergroup(SetOpState *setopstate)
+{
+	SetOpStatePerGroup pergroup;
+
+	if (!setopstate->free_pergroups)
+	{
+		int			i;
+
+		setopstate->free_pergroups =
+			MemoryContextAlloc(setopstate->hashtable->tablecxt,
+							   NUM_PERGROUPS_PER_ALLOC * sizeof(SetOpStatePerGroupData));
+
+		for (i = 0; i < NUM_PERGROUPS_PER_ALLOC - 1; i++)
+			setopstate->free_pergroups[i].next = &setopstate->free_pergroups[i + 1];
+		setopstate->free_pergroups[NUM_PERGROUPS_PER_ALLOC - 1].next = NULL;
+	}
+
+	pergroup = setopstate->free_pergroups;
+	setopstate->free_pergroups = pergroup->next;
+
+	return pergroup;
 }
 
 /*
@@ -152,26 +192,26 @@ set_output_count(SetOpState *setopstate, SetOpStatePerGroup pergroup)
 	switch (plannode->cmd)
 	{
 		case SETOPCMD_INTERSECT:
-			if (pergroup->numLeft > 0 && pergroup->numRight > 0)
+			if (pergroup->data.numLeft > 0 && pergroup->data.numRight > 0)
 				setopstate->numOutput = 1;
 			else
 				setopstate->numOutput = 0;
 			break;
 		case SETOPCMD_INTERSECT_ALL:
 			setopstate->numOutput =
-				(pergroup->numLeft < pergroup->numRight) ?
-				pergroup->numLeft : pergroup->numRight;
+				(pergroup->data.numLeft < pergroup->data.numRight) ?
+				pergroup->data.numLeft : pergroup->data.numRight;
 			break;
 		case SETOPCMD_EXCEPT:
-			if (pergroup->numLeft > 0 && pergroup->numRight == 0)
+			if (pergroup->data.numLeft > 0 && pergroup->data.numRight == 0)
 				setopstate->numOutput = 1;
 			else
 				setopstate->numOutput = 0;
 			break;
 		case SETOPCMD_EXCEPT_ALL:
 			setopstate->numOutput =
-				(pergroup->numLeft < pergroup->numRight) ?
-				0 : (pergroup->numLeft - pergroup->numRight);
+				(pergroup->data.numLeft < pergroup->data.numRight) ?
+				0 : (pergroup->data.numLeft - pergroup->data.numRight);
 			break;
 		default:
 			elog(ERROR, "unrecognized set op: %d", (int) plannode->cmd);
@@ -385,9 +425,7 @@ setop_fill_hash_table(SetOpState *setopstate)
 			/* If new tuple group, initialize counts */
 			if (isnew)
 			{
-				entry->additional = (SetOpStatePerGroup)
-					MemoryContextAlloc(setopstate->hashtable->tablecxt,
-									   sizeof(SetOpStatePerGroupData));
+				entry->additional = alloc_pergroup(setopstate);
 				initialize_counts((SetOpStatePerGroup) entry->additional);
 			}
 

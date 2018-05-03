@@ -2147,7 +2147,7 @@ typedef struct HashState
  * ----------------
  */
 /* this struct is private in nodeSetOp.c: */
-typedef struct SetOpStatePerGroupData *SetOpStatePerGroup;
+typedef union SetOpStatePerGroupData *SetOpStatePerGroup;
 
 typedef struct SetOpState
 {
@@ -2165,6 +2165,8 @@ typedef struct SetOpState
 	MemoryContext tableContext; /* memory context containing hash table */
 	bool		table_filled;	/* hash table filled yet? */
 	TupleHashIterator hashiter; /* for iterating through hash table */
+
+	SetOpStatePerGroup free_pergroups; /* list of free per-group structs */
 } SetOpState;
 
 /* ----------------
