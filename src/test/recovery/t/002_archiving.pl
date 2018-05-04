@@ -3,7 +3,7 @@ use strict;
 use warnings;
 use PostgresNode;
 use TestLib;
-use Test::More tests => 1;
+use Test::More tests => 3;
 use File::Copy;
 
 # Initialize master node, doing archives
@@ -49,3 +49,34 @@ $node_standby->poll_query_until('postgres', $caughtup_query)
 my $result =
   $node_standby->safe_psql('postgres', "SELECT count(*) FROM tab_int");
 is($result, qq(1000), 'check content from archives');
+
+note "test reload";
+$node_standby->stop;
+unlink($node_standby->data_dir . '/recovery.conf');
+$node_standby->append_conf('recovery.conf', 'standby_mode=on'); #no archive_recovery
+
+# Force archiving of WAL file to make it present on master
+$node_master->safe_psql('postgres', "SELECT pg_switch_wal()");
+
+$node_standby->start;
+
+# still no new data
+$result =
+  $node_standby->safe_psql('postgres', "SELECT count(*) FROM tab_int");
+is($result, qq(1000), 'check content from archives before reload');
+
+$node_standby->enable_restoring($node_master);
+$node_standby->reload;
+
+$current_lsn =
+  $node_master->safe_psql('postgres', "SELECT pg_current_wal_lsn();");
+# Wait until necessary replay has been done on standby
+$caughtup_query =
+  "SELECT '$current_lsn'::pg_lsn <= pg_last_wal_replay_lsn()";
+$node_standby->poll_query_until('postgres', $caughtup_query)
+  or die "Timed out while waiting for standby to catch up";
+
+# new data after reload are here
+$result =
+  $node_standby->safe_psql('postgres', "SELECT count(*) FROM tab_int");
+is($result, qq(2000), 'check content from archives before reload');

@@ -255,25 +255,38 @@ static bool restoredFromArchive = false;
 static char *replay_image_masked = NULL;
 static char *master_image_masked = NULL;
 
-/* options taken from recovery.conf for archive recovery */
-char	   *recoveryRestoreCommand = NULL;
-static char *recoveryEndCommand = NULL;
-static char *archiveCleanupCommand = NULL;
-static RecoveryTargetType recoveryTarget = RECOVERY_TARGET_UNSET;
-static bool recoveryTargetInclusive = true;
-static RecoveryTargetAction recoveryTargetAction = RECOVERY_TARGET_ACTION_PAUSE;
-static TransactionId recoveryTargetXid;
-static TimestampTz recoveryTargetTime;
-static char *recoveryTargetName;
-static XLogRecPtr recoveryTargetLSN;
-static int	recovery_min_apply_delay = 0;
-static TimestampTz recoveryDelayUntilTime;
+/* options taken from RECOVERY_COMMAND_FILE */
+typedef struct recoveryCommandData
+{
+	bool		confExists;		/* is RECOVERY_COMMAND_FILE present */
 
-/* options taken from recovery.conf for XLOG streaming */
-static bool StandbyModeRequested = false;
-static char *PrimaryConnInfo = NULL;
-static char *PrimarySlotName = NULL;
-static char *TriggerFile = NULL;
+	/* options for archive recovery */
+	char	   *recoveryRestoreCommand;
+	char	   *recoveryEndCommand;
+	char	   *archiveCleanupCommand;
+	RecoveryTargetType recoveryTarget;
+	bool		recoveryTargetInclusive;
+	RecoveryTargetAction recoveryTargetAction;
+	TransactionId recoveryTargetXid;
+	TimestampTz recoveryTargetTime;
+	char	   *recoveryTargetName;
+	XLogRecPtr	recoveryTargetLSN;
+	int			recoveryMinApplyDelay;
+
+	/* options for XLOG streaming */
+	bool		StandbyModeRequested;
+	char	   *PrimaryConnInfo;
+	char	   *PrimarySlotName;
+	char	   *TriggerFile;
+
+	/* recovery_target_timeline option handling */
+	bool		recoveryTargetTimelineGiven;
+	TimeLineID	recoveryTargetTimeline;
+}			recoveryCommandData;
+static recoveryCommandData * recoveryConfig = NULL;
+
+/* calculated timestamp to wait recoveryMinApplyDelay */
+static TimestampTz recoveryDelayUntilTime;
 
 /* are we currently in standby mode? */
 bool		StandbyMode = false;
@@ -846,7 +859,7 @@ static bool holdingAllLocks = false;
 static MemoryContext walDebugCxt = NULL;
 #endif
 
-static void readRecoveryCommandFile(void);
+static bool readRecoveryCommandFile(bool isReload, recoveryCommandData * conf);
 static void exitArchiveRecovery(TimeLineID endTLI, XLogRecPtr endOfLog);
 static bool recoveryStopsBefore(XLogReaderState *record);
 static bool recoveryStopsAfter(XLogReaderState *record);
@@ -4251,7 +4264,7 @@ ReadRecord(XLogReaderState *xlogreader, XLogRecPtr RecPtr, int emode,
 				ereport(DEBUG1,
 						(errmsg_internal("reached end of WAL in pg_wal, entering archive recovery")));
 				InArchiveRecovery = true;
-				if (StandbyModeRequested)
+				if (recoveryConfig->StandbyModeRequested)
 					StandbyMode = true;
 
 				/* initialize minRecoveryPoint to this record */
@@ -5215,80 +5228,138 @@ str_time(pg_time_t tnow)
 }
 
 /*
+ * Initialize default recoveryCommandData
+ */
+static recoveryCommandData *
+DefaultRecoveryCommandFile()
+{
+	recoveryCommandData *conf = palloc(sizeof(recoveryCommandData));
+
+	conf->confExists = false;
+	conf->recoveryRestoreCommand = NULL;
+	conf->recoveryEndCommand = NULL;
+	conf->archiveCleanupCommand = NULL;
+	conf->recoveryTargetAction = RECOVERY_TARGET_ACTION_PAUSE;
+	conf->recoveryTargetTimeline = 0;
+	conf->recoveryTargetTimelineGiven = false;
+	conf->recoveryTarget = RECOVERY_TARGET_UNSET;
+	conf->recoveryTargetInclusive = true;
+	conf->StandbyModeRequested = false;
+	conf->PrimaryConnInfo = NULL;
+	conf->PrimarySlotName = NULL;
+	conf->TriggerFile = NULL;
+	conf->recoveryMinApplyDelay = 0;
+	return conf;
+}
+
+static void
+FreeRecoveryCommandFile(recoveryCommandData * conf)
+{
+	if (conf->recoveryRestoreCommand)
+		pfree(conf->recoveryRestoreCommand);
+	if (conf->recoveryEndCommand)
+		pfree(conf->recoveryEndCommand);
+	if (conf->archiveCleanupCommand)
+		pfree(conf->archiveCleanupCommand);
+	if (conf->PrimaryConnInfo)
+		pfree(conf->PrimaryConnInfo);
+	if (conf->PrimarySlotName)
+		pfree(conf->PrimarySlotName);
+	if (conf->TriggerFile)
+		pfree(conf->TriggerFile);
+	pfree(conf);
+}
+
+/*
  * See if there is a recovery command file (recovery.conf), and if so
- * read in parameters for archive recovery and XLOG streaming.
+ * read it and populate given recoveryCommandData for further processing
  *
  * The file is parsed using the main configuration parser.
+ *
+ * When isReload is true errors will be reported without exit and
+ * function return false. Otherwise any error will abort startup process
  */
-static void
-readRecoveryCommandFile(void)
+static bool
+readRecoveryCommandFile(bool isReload, recoveryCommandData * conf)
 {
 	FILE	   *fd;
-	TimeLineID	rtli = 0;
-	bool		rtliGiven = false;
 	ConfigVariable *item,
 			   *head = NULL,
 			   *tail = NULL;
 	bool		recoveryTargetActionSet = false;
-
+	bool		parseConfigFpSuccess = false;
+	bool		configHasErrors = false;
+	int			fatalReportLevel = (isReload ? WARNING : FATAL);
+	int			errorReportLevel = (isReload ? LOG : ERROR);
 
 	fd = AllocateFile(RECOVERY_COMMAND_FILE, "r");
 	if (fd == NULL)
 	{
-		if (errno == ENOENT)
-			return;				/* not there, so no archive recovery */
-		ereport(FATAL,
+		if (errno == ENOENT && !isReload)
+			return true;		/* not there, so no archive recovery on
+								 * startup requested */
+		ereport(fatalReportLevel,
 				(errcode_for_file_access(),
 				 errmsg("could not open recovery command file \"%s\": %m",
 						RECOVERY_COMMAND_FILE)));
+		return false;
 	}
 
-	/*
-	 * Since we're asking ParseConfigFp() to report errors as FATAL, there's
-	 * no need to check the return value.
-	 */
-	(void) ParseConfigFp(fd, RECOVERY_COMMAND_FILE, 0, FATAL, &head, &tail);
+	conf->confExists = true;
+
+	parseConfigFpSuccess = ParseConfigFp(fd, RECOVERY_COMMAND_FILE, 0, fatalReportLevel, &head, &tail);
 
 	FreeFile(fd);
+
+	if (!parseConfigFpSuccess)
+	{
+		/* error in parsing was reported by ParseConfigFp */
+		FreeConfigVariables(head);
+		return false;
+	}
 
 	for (item = head; item; item = item->next)
 	{
 		if (strcmp(item->name, "restore_command") == 0)
 		{
-			recoveryRestoreCommand = pstrdup(item->value);
+			conf->recoveryRestoreCommand = pstrdup(item->value);
 			ereport(DEBUG2,
 					(errmsg_internal("restore_command = '%s'",
-									 recoveryRestoreCommand)));
+									 conf->recoveryRestoreCommand)));
 		}
 		else if (strcmp(item->name, "recovery_end_command") == 0)
 		{
-			recoveryEndCommand = pstrdup(item->value);
+			conf->recoveryEndCommand = pstrdup(item->value);
 			ereport(DEBUG2,
 					(errmsg_internal("recovery_end_command = '%s'",
-									 recoveryEndCommand)));
+									 conf->recoveryEndCommand)));
 		}
 		else if (strcmp(item->name, "archive_cleanup_command") == 0)
 		{
-			archiveCleanupCommand = pstrdup(item->value);
+			conf->archiveCleanupCommand = pstrdup(item->value);
 			ereport(DEBUG2,
 					(errmsg_internal("archive_cleanup_command = '%s'",
-									 archiveCleanupCommand)));
+									 conf->archiveCleanupCommand)));
 		}
 		else if (strcmp(item->name, "recovery_target_action") == 0)
 		{
 			if (strcmp(item->value, "pause") == 0)
-				recoveryTargetAction = RECOVERY_TARGET_ACTION_PAUSE;
+				conf->recoveryTargetAction = RECOVERY_TARGET_ACTION_PAUSE;
 			else if (strcmp(item->value, "promote") == 0)
-				recoveryTargetAction = RECOVERY_TARGET_ACTION_PROMOTE;
+				conf->recoveryTargetAction = RECOVERY_TARGET_ACTION_PROMOTE;
 			else if (strcmp(item->value, "shutdown") == 0)
-				recoveryTargetAction = RECOVERY_TARGET_ACTION_SHUTDOWN;
+				conf->recoveryTargetAction = RECOVERY_TARGET_ACTION_SHUTDOWN;
 			else
-				ereport(ERROR,
+			{
+				ereport(fatalReportLevel,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("invalid value for recovery parameter \"%s\": \"%s\"",
 								"recovery_target_action",
 								item->value),
 						 errhint("Valid values are \"pause\", \"promote\", and \"shutdown\".")));
+				configHasErrors = true;
+				continue;
+			}
 
 			ereport(DEBUG2,
 					(errmsg_internal("recovery_target_action = '%s'",
@@ -5298,22 +5369,23 @@ readRecoveryCommandFile(void)
 		}
 		else if (strcmp(item->name, "recovery_target_timeline") == 0)
 		{
-			rtliGiven = true;
+			conf->recoveryTargetTimelineGiven = true;
 			if (strcmp(item->value, "latest") == 0)
-				rtli = 0;
+				conf->recoveryTargetTimeline = 0;
 			else
 			{
 				errno = 0;
-				rtli = (TimeLineID) strtoul(item->value, NULL, 0);
+				conf->recoveryTargetTimeline = (TimeLineID) strtoul(item->value, NULL, 0);
 				if (errno == EINVAL || errno == ERANGE)
-					ereport(FATAL,
+					ereport(fatalReportLevel,
 							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 							 errmsg("recovery_target_timeline is not a valid number: \"%s\"",
 									item->value)));
 			}
-			if (rtli)
+			if (conf->recoveryTargetTimeline)
 				ereport(DEBUG2,
-						(errmsg_internal("recovery_target_timeline = %u", rtli)));
+						(errmsg_internal("recovery_target_timeline = %u",
+										 conf->recoveryTargetTimeline)));
 			else
 				ereport(DEBUG2,
 						(errmsg_internal("recovery_target_timeline = latest")));
@@ -5321,21 +5393,23 @@ readRecoveryCommandFile(void)
 		else if (strcmp(item->name, "recovery_target_xid") == 0)
 		{
 			errno = 0;
-			recoveryTargetXid = (TransactionId) strtoul(item->value, NULL, 0);
+			conf->recoveryTargetXid = (TransactionId) strtoul(item->value, NULL, 0);
 			if (errno == EINVAL || errno == ERANGE)
-				ereport(FATAL,
+			{
+				ereport(fatalReportLevel,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("recovery_target_xid is not a valid number: \"%s\"",
 								item->value)));
+				configHasErrors = true;
+				continue;
+			}
 			ereport(DEBUG2,
 					(errmsg_internal("recovery_target_xid = %u",
-									 recoveryTargetXid)));
-			recoveryTarget = RECOVERY_TARGET_XID;
+									 conf->recoveryTargetXid)));
+			conf->recoveryTarget = RECOVERY_TARGET_XID;
 		}
 		else if (strcmp(item->name, "recovery_target_time") == 0)
 		{
-			recoveryTarget = RECOVERY_TARGET_TIME;
-
 			if (strcmp(item->value, "epoch") == 0 ||
 				strcmp(item->value, "infinity") == 0 ||
 				strcmp(item->value, "-infinity") == 0 ||
@@ -5343,66 +5417,77 @@ readRecoveryCommandFile(void)
 				strcmp(item->value, "today") == 0 ||
 				strcmp(item->value, "tomorrow") == 0 ||
 				strcmp(item->value, "yesterday") == 0)
-				ereport(FATAL,
+			{
+				ereport(fatalReportLevel,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("recovery_target_time is not a valid timestamp: \"%s\"",
 								item->value)));
+				configHasErrors = true;
+				continue;
+			}
 
 			/*
 			 * Convert the time string given by the user to TimestampTz form.
 			 */
-			recoveryTargetTime =
+			conf->recoveryTargetTime =
 				DatumGetTimestampTz(DirectFunctionCall3(timestamptz_in,
 														CStringGetDatum(item->value),
 														ObjectIdGetDatum(InvalidOid),
 														Int32GetDatum(-1)));
+			conf->recoveryTarget = RECOVERY_TARGET_TIME;
 			ereport(DEBUG2,
 					(errmsg_internal("recovery_target_time = '%s'",
-									 timestamptz_to_str(recoveryTargetTime))));
+									 timestamptz_to_str(conf->recoveryTargetTime))));
 		}
 		else if (strcmp(item->name, "recovery_target_name") == 0)
 		{
-			recoveryTarget = RECOVERY_TARGET_NAME;
-
-			recoveryTargetName = pstrdup(item->value);
-			if (strlen(recoveryTargetName) >= MAXFNAMELEN)
-				ereport(FATAL,
+			if (strlen(item->value) >= MAXFNAMELEN)
+			{
+				ereport(fatalReportLevel,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("recovery_target_name is too long (maximum %d characters)",
 								MAXFNAMELEN - 1)));
+				configHasErrors = true;
+				continue;
+			}
 
+			conf->recoveryTarget = RECOVERY_TARGET_NAME;
+			conf->recoveryTargetName = pstrdup(item->value);
 			ereport(DEBUG2,
 					(errmsg_internal("recovery_target_name = '%s'",
-									 recoveryTargetName)));
+									 conf->recoveryTargetName)));
 		}
 		else if (strcmp(item->name, "recovery_target_lsn") == 0)
 		{
-			recoveryTarget = RECOVERY_TARGET_LSN;
+			conf->recoveryTarget = RECOVERY_TARGET_LSN;
 
 			/*
 			 * Convert the LSN string given by the user to XLogRecPtr form.
 			 */
-			recoveryTargetLSN =
+			conf->recoveryTargetLSN =
 				DatumGetLSN(DirectFunctionCall3(pg_lsn_in,
 												CStringGetDatum(item->value),
 												ObjectIdGetDatum(InvalidOid),
 												Int32GetDatum(-1)));
 			ereport(DEBUG2,
 					(errmsg_internal("recovery_target_lsn = '%X/%X'",
-									 (uint32) (recoveryTargetLSN >> 32),
-									 (uint32) recoveryTargetLSN)));
+									 (uint32) (conf->recoveryTargetLSN >> 32),
+									 (uint32) conf->recoveryTargetLSN)));
 		}
 		else if (strcmp(item->name, "recovery_target") == 0)
 		{
 			if (strcmp(item->value, "immediate") == 0)
-				recoveryTarget = RECOVERY_TARGET_IMMEDIATE;
+				conf->recoveryTarget = RECOVERY_TARGET_IMMEDIATE;
 			else
-				ereport(ERROR,
+			{
+				ereport(fatalReportLevel,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("invalid value for recovery parameter \"%s\": \"%s\"",
 								"recovery_target",
 								item->value),
 						 errhint("The only allowed value is \"immediate\".")));
+				configHasErrors = true;
+			}
 			ereport(DEBUG2,
 					(errmsg_internal("recovery_target = '%s'",
 									 item->value)));
@@ -5412,74 +5497,94 @@ readRecoveryCommandFile(void)
 			/*
 			 * does nothing if a recovery_target is not also set
 			 */
-			if (!parse_bool(item->value, &recoveryTargetInclusive))
-				ereport(ERROR,
+			if (!parse_bool(item->value, &conf->recoveryTargetInclusive))
+			{
+				ereport(fatalReportLevel,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("parameter \"%s\" requires a Boolean value",
 								"recovery_target_inclusive")));
+				configHasErrors = true;
+			}
 			ereport(DEBUG2,
 					(errmsg_internal("recovery_target_inclusive = %s",
 									 item->value)));
 		}
 		else if (strcmp(item->name, "standby_mode") == 0)
 		{
-			if (!parse_bool(item->value, &StandbyModeRequested))
-				ereport(ERROR,
+			if (!parse_bool(item->value, &conf->StandbyModeRequested))
+			{
+				ereport(fatalReportLevel,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("parameter \"%s\" requires a Boolean value",
 								"standby_mode")));
+				configHasErrors = true;
+			}
 			ereport(DEBUG2,
 					(errmsg_internal("standby_mode = '%s'", item->value)));
 		}
 		else if (strcmp(item->name, "primary_conninfo") == 0)
 		{
-			PrimaryConnInfo = pstrdup(item->value);
+			conf->PrimaryConnInfo = pstrdup(item->value);
 			ereport(DEBUG2,
 					(errmsg_internal("primary_conninfo = '%s'",
-									 PrimaryConnInfo)));
+									 conf->PrimaryConnInfo)));
 		}
 		else if (strcmp(item->name, "primary_slot_name") == 0)
 		{
-			ReplicationSlotValidateName(item->value, ERROR);
-			PrimarySlotName = pstrdup(item->value);
-			ereport(DEBUG2,
-					(errmsg_internal("primary_slot_name = '%s'",
-									 PrimarySlotName)));
+			if (ReplicationSlotValidateName(item->value, fatalReportLevel))
+			{
+				conf->PrimarySlotName = pstrdup(item->value);
+				ereport(DEBUG2,
+						(errmsg_internal("primary_slot_name = '%s'",
+										 conf->PrimarySlotName)));
+			}
+			else
+			{
+				configHasErrors = true;
+			}
 		}
 		else if (strcmp(item->name, "trigger_file") == 0)
 		{
-			TriggerFile = pstrdup(item->value);
+			conf->TriggerFile = pstrdup(item->value);
 			ereport(DEBUG2,
 					(errmsg_internal("trigger_file = '%s'",
-									 TriggerFile)));
+									 conf->TriggerFile)));
 		}
 		else if (strcmp(item->name, "recovery_min_apply_delay") == 0)
 		{
 			const char *hintmsg;
 
-			if (!parse_int(item->value, &recovery_min_apply_delay, GUC_UNIT_MS,
-						   &hintmsg))
-				ereport(ERROR,
+			if (!parse_int(item->value, &conf->recoveryMinApplyDelay,
+						   GUC_UNIT_MS, &hintmsg))
+			{
+				ereport(errorReportLevel,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("parameter \"%s\" requires a temporal value",
 								"recovery_min_apply_delay"),
 						 hintmsg ? errhint("%s", _(hintmsg)) : 0));
+				configHasErrors = true;
+			}
 			ereport(DEBUG2,
 					(errmsg_internal("recovery_min_apply_delay = '%s'", item->value)));
 		}
 		else
-			ereport(FATAL,
+		{
+			ereport(fatalReportLevel,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("unrecognized recovery parameter \"%s\"",
 							item->name)));
+			configHasErrors = true;
+		}
 	}
+
+	FreeConfigVariables(head);
 
 	/*
 	 * Check for compulsory parameters
 	 */
-	if (StandbyModeRequested)
+	if (conf->StandbyModeRequested)
 	{
-		if (PrimaryConnInfo == NULL && recoveryRestoreCommand == NULL)
+		if (conf->PrimaryConnInfo == NULL && conf->recoveryRestoreCommand == NULL)
 			ereport(WARNING,
 					(errmsg("recovery command file \"%s\" specified neither primary_conninfo nor restore_command",
 							RECOVERY_COMMAND_FILE),
@@ -5487,11 +5592,14 @@ readRecoveryCommandFile(void)
 	}
 	else
 	{
-		if (recoveryRestoreCommand == NULL)
-			ereport(FATAL,
+		if (conf->recoveryRestoreCommand == NULL)
+		{
+			ereport(fatalReportLevel,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("recovery command file \"%s\" must specify restore_command when standby mode is not enabled",
 							RECOVERY_COMMAND_FILE)));
+			configHasErrors = true;
+		}
 	}
 
 	/*
@@ -5499,51 +5607,225 @@ readRecoveryCommandFile(void)
 	 * behaviour in 9.5; prior to this we simply ignored a request to pause if
 	 * hot_standby = off, which was surprising behaviour.
 	 */
-	if (recoveryTargetAction == RECOVERY_TARGET_ACTION_PAUSE &&
+	if (conf->recoveryTargetAction == RECOVERY_TARGET_ACTION_PAUSE &&
 		recoveryTargetActionSet &&
 		!EnableHotStandby)
-		recoveryTargetAction = RECOVERY_TARGET_ACTION_SHUTDOWN;
+		conf->recoveryTargetAction = RECOVERY_TARGET_ACTION_SHUTDOWN;
 
 	/*
 	 * We don't support standby_mode in standalone backends; that requires
 	 * other processes such as the WAL receiver to be alive.
 	 */
-	if (StandbyModeRequested && !IsUnderPostmaster)
+	if (conf->StandbyModeRequested && !IsUnderPostmaster)
 		ereport(FATAL,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("standby mode is not supported by single-user servers")));
 
-	/* Enable fetching from archive recovery area */
-	ArchiveRecoveryRequested = true;
+	return !configHasErrors;
+}
+
+/*
+ * get restore_command for xlogarchive.c
+ */
+char *
+GetRecoveryRestoreCommand(void)
+{
+	return recoveryConfig->recoveryRestoreCommand;
+}
+
+#define RecoveryConfigStringIsChanged(old, new) !(\
+	((old) == NULL && (new) == NULL) || \
+	((new) != NULL && (old) != NULL && strcmp((new),(old)) == 0) )
+#define RecoveryConfigParamRequiredRestart(param) \
+	ereport(LOG, \
+			(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM), \
+			 errmsg("parameter \"%s\" cannot be changed without restarting the server", \
+					(param))));
+
+/*
+ * Set the parameters for archive recovery and XLOG streaming.
+ */
+void
+ProcessRecoveryCommandFile(bool isReload)
+{
+	recoveryCommandData *newConf = DefaultRecoveryCommandFile();
+	bool		isConfigValid;
+
+	isConfigValid = readRecoveryCommandFile(isReload, newConf);
+
+	if (!isConfigValid)
+	{
+		ereport(isReload ? LOG : FATAL,
+				(errcode(ERRCODE_CONFIG_FILE_ERROR),
+				 errmsg("configuration file \"%s\" contains errors",
+						RECOVERY_COMMAND_FILE)));
+		FreeRecoveryCommandFile(newConf);
+		return;
+	}
+
+	if (!isReload)
+	{
+		Assert(recoveryConfig == NULL);
+		recoveryConfig = newConf;
+
+		if (!newConf->confExists)
+		{
+			/* recovery command file not present, so no archive recovery */
+			return;
+		}
+
+		/* Enable fetching from archive recovery area */
+		ArchiveRecoveryRequested = true;
+
+		/*
+		 * If user specified recovery_target_timeline, validate it or compute
+		 * the "latest" value.  We can't do this until after we've gotten the
+		 * restore command and set InArchiveRecovery, because we need to fetch
+		 * timeline history files from the archive.
+		 */
+		if (newConf->recoveryTargetTimelineGiven)
+		{
+			if (newConf->recoveryTargetTimeline)
+			{
+				/* Timeline 1 does not have a history file, all else should */
+				if (newConf->recoveryTargetTimeline != 1 &&
+					!existsTimeLineHistory(newConf->recoveryTargetTimeline))
+					ereport(FATAL,
+							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+							 errmsg("recovery target timeline %u does not exist",
+									newConf->recoveryTargetTimeline)));
+				recoveryTargetTLI = newConf->recoveryTargetTimeline;
+				recoveryTargetIsLatest = false;
+			}
+			else
+			{
+				/* We start the "latest" search from pg_control's timeline */
+				recoveryTargetTLI = findNewestTimeLine(recoveryTargetTLI);
+				recoveryTargetIsLatest = true;
+			}
+		}
+		return;
+	}
 
 	/*
-	 * If user specified recovery_target_timeline, validate it or compute the
-	 * "latest" value.  We can't do this until after we've gotten the restore
-	 * command and set InArchiveRecovery, because we need to fetch timeline
-	 * history files from the archive.
+	 * readRecoveryCommandFile already report about missed recovery file
 	 */
-	if (rtliGiven)
+	if (newConf->confExists)
 	{
-		if (rtli)
+		MemoryContext oldcontext;
+		bool		requestWalRcvRestart = false;
+
+		Assert(AmStartupProcess());
+
+		/* we can need allocate new TopMemoryContext string */
+		oldcontext = MemoryContextSwitchTo(TopMemoryContext);
+
+		if (RecoveryConfigStringIsChanged(newConf->recoveryRestoreCommand,
+										  recoveryConfig->recoveryRestoreCommand))
 		{
-			/* Timeline 1 does not have a history file, all else should */
-			if (rtli != 1 && !existsTimeLineHistory(rtli))
-				ereport(FATAL,
-						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("recovery target timeline %u does not exist",
-								rtli)));
-			recoveryTargetTLI = rtli;
-			recoveryTargetIsLatest = false;
+			if (recoveryConfig->recoveryRestoreCommand != NULL)
+				pfree(recoveryConfig->recoveryRestoreCommand);
+			recoveryConfig->recoveryRestoreCommand = newConf->recoveryRestoreCommand ? pstrdup(newConf->recoveryRestoreCommand) : NULL;
+			ereport(LOG,
+					(errmsg("parameter \"%s\" changed to \"%s\"",
+							"restore_command", recoveryConfig->recoveryRestoreCommand)));
 		}
-		else
+		if (RecoveryConfigStringIsChanged(newConf->recoveryEndCommand,
+										  recoveryConfig->recoveryEndCommand))
+			RecoveryConfigParamRequiredRestart("recovery_end_command");
+		if (RecoveryConfigStringIsChanged(newConf->archiveCleanupCommand,
+										  recoveryConfig->archiveCleanupCommand))
+			RecoveryConfigParamRequiredRestart("archive_cleanup_command");
+		if (newConf->recoveryTargetAction != recoveryConfig->recoveryTargetAction)
+			RecoveryConfigParamRequiredRestart("recovery_target_action");
+		if (newConf->recoveryTargetTimeline != recoveryConfig->recoveryTargetTimeline ||
+			newConf->recoveryTargetTimelineGiven != recoveryConfig->recoveryTargetTimelineGiven)
+			RecoveryConfigParamRequiredRestart("recovery_target_timeline");
+		switch (recoveryConfig->recoveryTarget)
 		{
-			/* We start the "latest" search from pg_control's timeline */
-			recoveryTargetTLI = findNewestTimeLine(recoveryTargetTLI);
-			recoveryTargetIsLatest = true;
+			case RECOVERY_TARGET_UNSET:
+				if (newConf->recoveryTarget != RECOVERY_TARGET_UNSET)
+					ereport(LOG,
+							(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM),
+							 errmsg("cannot set recovery target without restarting the server")));
+				break;
+			case RECOVERY_TARGET_XID:
+				if (newConf->recoveryTarget != RECOVERY_TARGET_XID ||
+					recoveryConfig->recoveryTargetXid != newConf->recoveryTargetXid)
+					RecoveryConfigParamRequiredRestart("recovery_target_xid");
+				break;
+			case RECOVERY_TARGET_TIME:
+				if (newConf->recoveryTarget != RECOVERY_TARGET_TIME ||
+					recoveryConfig->recoveryTargetTime != newConf->recoveryTargetTime)
+					RecoveryConfigParamRequiredRestart("recovery_target_time");
+				break;
+			case RECOVERY_TARGET_NAME:
+				if (newConf->recoveryTarget != RECOVERY_TARGET_NAME ||
+					recoveryConfig->recoveryTargetName != newConf->recoveryTargetName)
+					RecoveryConfigParamRequiredRestart("recovery_target_name");
+				break;
+			case RECOVERY_TARGET_LSN:
+				if (newConf->recoveryTarget != RECOVERY_TARGET_LSN ||
+					recoveryConfig->recoveryTargetLSN != newConf->recoveryTargetLSN)
+					RecoveryConfigParamRequiredRestart("recovery_target_lsn");
+				break;
+			case RECOVERY_TARGET_IMMEDIATE:
+				if (newConf->recoveryTarget != RECOVERY_TARGET_IMMEDIATE)
+					RecoveryConfigParamRequiredRestart("recovery_target");
+				break;
+		}
+		if (recoveryConfig->recoveryTargetInclusive != newConf->recoveryTargetInclusive)
+			RecoveryConfigParamRequiredRestart("recovery_target_inclusive");
+		if (recoveryConfig->StandbyModeRequested != newConf->StandbyModeRequested)
+			RecoveryConfigParamRequiredRestart("standby_mode");
+		if (RecoveryConfigStringIsChanged(newConf->PrimaryConnInfo,
+										  recoveryConfig->PrimaryConnInfo))
+		{
+			if (recoveryConfig->PrimaryConnInfo != NULL)
+				pfree(recoveryConfig->PrimaryConnInfo);
+			recoveryConfig->PrimaryConnInfo = newConf->PrimaryConnInfo ? pstrdup(newConf->PrimaryConnInfo) : NULL;
+			/* conninfo may include plaintext password, so not log new value */
+			ereport(LOG,
+					(errmsg("parameter \"%s\" changed", "primary_conninfo")));
+			requestWalRcvRestart = true;
+		}
+		if (RecoveryConfigStringIsChanged(newConf->PrimarySlotName,
+										  recoveryConfig->PrimarySlotName))
+		{
+			if (recoveryConfig->PrimarySlotName != NULL)
+				pfree(recoveryConfig->PrimarySlotName);
+			recoveryConfig->PrimarySlotName = newConf->PrimarySlotName ? pstrdup(newConf->PrimarySlotName) : NULL;
+			ereport(LOG,
+					(errmsg("parameter \"%s\" changed to \"%s\"",
+							"primary_slot_name", recoveryConfig->PrimarySlotName)));
+			requestWalRcvRestart = true;
+		}
+		if (RecoveryConfigStringIsChanged(newConf->TriggerFile,
+										  recoveryConfig->TriggerFile))
+		{
+			if (recoveryConfig->TriggerFile != NULL)
+				pfree(recoveryConfig->TriggerFile);
+			recoveryConfig->TriggerFile = newConf->TriggerFile ? pstrdup(newConf->TriggerFile) : NULL;
+			ereport(LOG,
+					(errmsg("parameter \"%s\" changed to \"%s\"",
+							"trigger_file", recoveryConfig->TriggerFile)));
+		}
+		if (recoveryConfig->recoveryMinApplyDelay != newConf->recoveryMinApplyDelay)
+			RecoveryConfigParamRequiredRestart("recovery_min_apply_delay");
+
+		MemoryContextSwitchTo(oldcontext);
+
+		if (requestWalRcvRestart)
+		{
+			/*
+			 * walreceiver settings was changed, shutdown here and will be
+			 * started a bit later in WaitForWALToBecomeAvailable
+			 */
+			ShutdownWalRcv();
 		}
 	}
 
-	FreeConfigVariables(head);
+	FreeRecoveryCommandFile(newConf);
 }
 
 /*
@@ -5707,7 +5989,8 @@ recoveryStopsBefore(XLogReaderState *record)
 	TransactionId recordXid;
 
 	/* Check if we should stop as soon as reaching consistency */
-	if (recoveryTarget == RECOVERY_TARGET_IMMEDIATE && reachedConsistency)
+	if (recoveryConfig->recoveryTarget == RECOVERY_TARGET_IMMEDIATE &&
+		reachedConsistency)
 	{
 		ereport(LOG,
 				(errmsg("recovery stopping after reaching consistency")));
@@ -5721,9 +6004,9 @@ recoveryStopsBefore(XLogReaderState *record)
 	}
 
 	/* Check if target LSN has been reached */
-	if (recoveryTarget == RECOVERY_TARGET_LSN &&
-		!recoveryTargetInclusive &&
-		record->ReadRecPtr >= recoveryTargetLSN)
+	if (recoveryConfig->recoveryTarget == RECOVERY_TARGET_LSN &&
+		!recoveryConfig->recoveryTargetInclusive &&
+		record->ReadRecPtr >= recoveryConfig->recoveryTargetLSN)
 	{
 		recoveryStopAfter = false;
 		recoveryStopXid = InvalidTransactionId;
@@ -5778,7 +6061,8 @@ recoveryStopsBefore(XLogReaderState *record)
 	else
 		return false;
 
-	if (recoveryTarget == RECOVERY_TARGET_XID && !recoveryTargetInclusive)
+	if (recoveryConfig->recoveryTarget == RECOVERY_TARGET_XID &&
+		!recoveryConfig->recoveryTargetInclusive)
 	{
 		/*
 		 * There can be only one transaction end record with this exact
@@ -5789,10 +6073,10 @@ recoveryStopsBefore(XLogReaderState *record)
 		 * they complete. A higher numbered xid will complete before you about
 		 * 50% of the time...
 		 */
-		stopsHere = (recordXid == recoveryTargetXid);
+		stopsHere = (recordXid == recoveryConfig->recoveryTargetXid);
 	}
 
-	if (recoveryTarget == RECOVERY_TARGET_TIME &&
+	if (recoveryConfig->recoveryTarget == RECOVERY_TARGET_TIME &&
 		getRecordTimestamp(record, &recordXtime))
 	{
 		/*
@@ -5800,10 +6084,10 @@ recoveryStopsBefore(XLogReaderState *record)
 		 * we stop after the last one, if we are inclusive, or stop at the
 		 * first one if we are exclusive
 		 */
-		if (recoveryTargetInclusive)
-			stopsHere = (recordXtime > recoveryTargetTime);
+		if (recoveryConfig->recoveryTargetInclusive)
+			stopsHere = (recordXtime > recoveryConfig->recoveryTargetTime);
 		else
-			stopsHere = (recordXtime >= recoveryTargetTime);
+			stopsHere = (recordXtime >= recoveryConfig->recoveryTargetTime);
 	}
 
 	if (stopsHere)
@@ -5854,14 +6138,14 @@ recoveryStopsAfter(XLogReaderState *record)
 	 * There can be many restore points that share the same name; we stop at
 	 * the first one.
 	 */
-	if (recoveryTarget == RECOVERY_TARGET_NAME &&
+	if (recoveryConfig->recoveryTarget == RECOVERY_TARGET_NAME &&
 		rmid == RM_XLOG_ID && info == XLOG_RESTORE_POINT)
 	{
 		xl_restore_point *recordRestorePointData;
 
 		recordRestorePointData = (xl_restore_point *) XLogRecGetData(record);
 
-		if (strcmp(recordRestorePointData->rp_name, recoveryTargetName) == 0)
+		if (strcmp(recordRestorePointData->rp_name, recoveryConfig->recoveryTargetName) == 0)
 		{
 			recoveryStopAfter = true;
 			recoveryStopXid = InvalidTransactionId;
@@ -5878,9 +6162,9 @@ recoveryStopsAfter(XLogReaderState *record)
 	}
 
 	/* Check if the target LSN has been reached */
-	if (recoveryTarget == RECOVERY_TARGET_LSN &&
-		recoveryTargetInclusive &&
-		record->ReadRecPtr >= recoveryTargetLSN)
+	if (recoveryConfig->recoveryTarget == RECOVERY_TARGET_LSN &&
+		recoveryConfig->recoveryTargetInclusive &&
+		record->ReadRecPtr >= recoveryConfig->recoveryTargetLSN)
 	{
 		recoveryStopAfter = true;
 		recoveryStopXid = InvalidTransactionId;
@@ -5943,8 +6227,9 @@ recoveryStopsAfter(XLogReaderState *record)
 		 * they complete. A higher numbered xid will complete before you about
 		 * 50% of the time...
 		 */
-		if (recoveryTarget == RECOVERY_TARGET_XID && recoveryTargetInclusive &&
-			recordXid == recoveryTargetXid)
+		if (recoveryConfig->recoveryTarget == RECOVERY_TARGET_XID &&
+			recoveryConfig->recoveryTargetInclusive &&
+			recordXid == recoveryConfig->recoveryTargetXid)
 		{
 			recoveryStopAfter = true;
 			recoveryStopXid = recordXid;
@@ -5973,7 +6258,8 @@ recoveryStopsAfter(XLogReaderState *record)
 	}
 
 	/* Check if we should stop as soon as reaching consistency */
-	if (recoveryTarget == RECOVERY_TARGET_IMMEDIATE && reachedConsistency)
+	if (recoveryConfig->recoveryTarget == RECOVERY_TARGET_IMMEDIATE &&
+		reachedConsistency)
 	{
 		ereport(LOG,
 				(errmsg("recovery stopping after reaching consistency")));
@@ -6056,7 +6342,7 @@ recoveryApplyDelay(XLogReaderState *record)
 	int			microsecs;
 
 	/* nothing to do if no delay configured */
-	if (recovery_min_apply_delay <= 0)
+	if (recoveryConfig->recoveryMinApplyDelay <= 0)
 		return false;
 
 	/* no delay is applied on a database not yet consistent */
@@ -6084,7 +6370,7 @@ recoveryApplyDelay(XLogReaderState *record)
 		return false;
 
 	recoveryDelayUntilTime =
-		TimestampTzPlusMilliseconds(xtime, recovery_min_apply_delay);
+		TimestampTzPlusMilliseconds(xtime, recoveryConfig->recoveryMinApplyDelay);
 
 	/*
 	 * Exit without arming the latch if it's already past time to apply this
@@ -6377,39 +6663,39 @@ StartupXLOG(void)
 	 * Check for recovery control file, and if so set up state for offline
 	 * recovery
 	 */
-	readRecoveryCommandFile();
+	ProcessRecoveryCommandFile(false);
 
 	/*
 	 * Save archive_cleanup_command in shared memory so that other processes
 	 * can see it.
 	 */
 	strlcpy(XLogCtl->archiveCleanupCommand,
-			archiveCleanupCommand ? archiveCleanupCommand : "",
+			recoveryConfig->archiveCleanupCommand ? recoveryConfig->archiveCleanupCommand : "",
 			sizeof(XLogCtl->archiveCleanupCommand));
 
 	if (ArchiveRecoveryRequested)
 	{
-		if (StandbyModeRequested)
+		if (recoveryConfig->StandbyModeRequested)
 			ereport(LOG,
 					(errmsg("entering standby mode")));
-		else if (recoveryTarget == RECOVERY_TARGET_XID)
+		else if (recoveryConfig->recoveryTarget == RECOVERY_TARGET_XID)
 			ereport(LOG,
 					(errmsg("starting point-in-time recovery to XID %u",
-							recoveryTargetXid)));
-		else if (recoveryTarget == RECOVERY_TARGET_TIME)
+							recoveryConfig->recoveryTargetXid)));
+		else if (recoveryConfig->recoveryTarget == RECOVERY_TARGET_TIME)
 			ereport(LOG,
 					(errmsg("starting point-in-time recovery to %s",
-							timestamptz_to_str(recoveryTargetTime))));
-		else if (recoveryTarget == RECOVERY_TARGET_NAME)
+							timestamptz_to_str(recoveryConfig->recoveryTargetTime))));
+		else if (recoveryConfig->recoveryTarget == RECOVERY_TARGET_NAME)
 			ereport(LOG,
 					(errmsg("starting point-in-time recovery to \"%s\"",
-							recoveryTargetName)));
-		else if (recoveryTarget == RECOVERY_TARGET_LSN)
+							recoveryConfig->recoveryTargetName)));
+		else if (recoveryConfig->recoveryTarget == RECOVERY_TARGET_LSN)
 			ereport(LOG,
 					(errmsg("starting point-in-time recovery to WAL location (LSN) \"%X/%X\"",
-							(uint32) (recoveryTargetLSN >> 32),
-							(uint32) recoveryTargetLSN)));
-		else if (recoveryTarget == RECOVERY_TARGET_IMMEDIATE)
+							(uint32) (recoveryConfig->recoveryTargetLSN >> 32),
+							(uint32) recoveryConfig->recoveryTargetLSN)));
+		else if (recoveryConfig->recoveryTarget == RECOVERY_TARGET_IMMEDIATE)
 			ereport(LOG,
 					(errmsg("starting point-in-time recovery to earliest consistent point")));
 		else
@@ -6421,7 +6707,7 @@ StartupXLOG(void)
 	 * Take ownership of the wakeup latch if we're going to sleep during
 	 * recovery.
 	 */
-	if (StandbyModeRequested)
+	if (recoveryConfig->StandbyModeRequested)
 		OwnLatch(&XLogCtl->recoveryWakeupLatch);
 
 	/* Set up XLOG reader facility */
@@ -6452,7 +6738,7 @@ StartupXLOG(void)
 		 * archive recovery directly.
 		 */
 		InArchiveRecovery = true;
-		if (StandbyModeRequested)
+		if (recoveryConfig->StandbyModeRequested)
 			StandbyMode = true;
 
 		/*
@@ -6579,7 +6865,7 @@ StartupXLOG(void)
 			 ControlFile->state == DB_SHUTDOWNED))
 		{
 			InArchiveRecovery = true;
-			if (StandbyModeRequested)
+			if (recoveryConfig->StandbyModeRequested)
 				StandbyMode = true;
 		}
 
@@ -7318,7 +7604,7 @@ StartupXLOG(void)
 				 * this, Resource Managers may choose to do permanent
 				 * corrective actions at end of recovery.
 				 */
-				switch (recoveryTargetAction)
+				switch (recoveryConfig->recoveryTargetAction)
 				{
 					case RECOVERY_TARGET_ACTION_SHUTDOWN:
 
@@ -7387,7 +7673,7 @@ StartupXLOG(void)
 	 * We don't need the latch anymore. It's not strictly necessary to disown
 	 * it, but let's do it for the sake of tidiness.
 	 */
-	if (StandbyModeRequested)
+	if (recoveryConfig->StandbyModeRequested)
 		DisownLatch(&XLogCtl->recoveryWakeupLatch);
 
 	/*
@@ -7478,27 +7764,27 @@ StartupXLOG(void)
 		 * Create a comment for the history file to explain why and where
 		 * timeline changed.
 		 */
-		if (recoveryTarget == RECOVERY_TARGET_XID)
+		if (recoveryConfig->recoveryTarget == RECOVERY_TARGET_XID)
 			snprintf(reason, sizeof(reason),
 					 "%s transaction %u",
 					 recoveryStopAfter ? "after" : "before",
 					 recoveryStopXid);
-		else if (recoveryTarget == RECOVERY_TARGET_TIME)
+		else if (recoveryConfig->recoveryTarget == RECOVERY_TARGET_TIME)
 			snprintf(reason, sizeof(reason),
 					 "%s %s\n",
 					 recoveryStopAfter ? "after" : "before",
 					 timestamptz_to_str(recoveryStopTime));
-		else if (recoveryTarget == RECOVERY_TARGET_LSN)
+		else if (recoveryConfig->recoveryTarget == RECOVERY_TARGET_LSN)
 			snprintf(reason, sizeof(reason),
 					 "%s LSN %X/%X\n",
 					 recoveryStopAfter ? "after" : "before",
 					 (uint32) (recoveryStopLSN >> 32),
 					 (uint32) recoveryStopLSN);
-		else if (recoveryTarget == RECOVERY_TARGET_NAME)
+		else if (recoveryConfig->recoveryTarget == RECOVERY_TARGET_NAME)
 			snprintf(reason, sizeof(reason),
 					 "at restore point \"%s\"",
 					 recoveryStopName);
-		else if (recoveryTarget == RECOVERY_TARGET_IMMEDIATE)
+		else if (recoveryConfig->recoveryTarget == RECOVERY_TARGET_IMMEDIATE)
 			snprintf(reason, sizeof(reason), "reached consistency");
 		else
 			snprintf(reason, sizeof(reason), "no recovery target specified");
@@ -7642,8 +7928,8 @@ StartupXLOG(void)
 		/*
 		 * And finally, execute the recovery_end_command, if any.
 		 */
-		if (recoveryEndCommand)
-			ExecuteRecoveryCommand(recoveryEndCommand,
+		if (recoveryConfig->recoveryEndCommand)
+			ExecuteRecoveryCommand(recoveryConfig->recoveryEndCommand,
 								   "recovery_end_command",
 								   true);
 	}
@@ -11816,7 +12102,7 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 					 * that when we later jump backwards to start redo at
 					 * RedoStartLSN, we will have the logs streamed already.
 					 */
-					if (PrimaryConnInfo)
+					if (recoveryConfig->PrimaryConnInfo)
 					{
 						XLogRecPtr	ptr;
 						TimeLineID	tli;
@@ -11837,8 +12123,9 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 									 tli, curFileTLI);
 						}
 						curFileTLI = tli;
-						RequestXLogStreaming(tli, ptr, PrimaryConnInfo,
-											 PrimarySlotName);
+						RequestXLogStreaming(tli, ptr,
+											 recoveryConfig->PrimaryConnInfo,
+											 recoveryConfig->PrimarySlotName);
 						receivedUpto = 0;
 					}
 
@@ -12179,14 +12466,14 @@ CheckForStandbyTrigger(void)
 		return true;
 	}
 
-	if (TriggerFile == NULL)
+	if (recoveryConfig->TriggerFile == NULL)
 		return false;
 
-	if (stat(TriggerFile, &stat_buf) == 0)
+	if (stat(recoveryConfig->TriggerFile, &stat_buf) == 0)
 	{
 		ereport(LOG,
-				(errmsg("trigger file found: %s", TriggerFile)));
-		unlink(TriggerFile);
+				(errmsg("trigger file found: %s", recoveryConfig->TriggerFile)));
+		unlink(recoveryConfig->TriggerFile);
 		triggered = true;
 		fast_promote = true;
 		return true;
@@ -12195,7 +12482,7 @@ CheckForStandbyTrigger(void)
 		ereport(ERROR,
 				(errcode_for_file_access(),
 				 errmsg("could not stat trigger file \"%s\": %m",
-						TriggerFile)));
+						recoveryConfig->TriggerFile)));
 
 	return false;
 }

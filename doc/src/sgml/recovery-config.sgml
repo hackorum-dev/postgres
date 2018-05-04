@@ -14,7 +14,9 @@
     <filename>recovery.conf</filename><indexterm><primary>recovery.conf</primary></indexterm>
     file. They apply only for the duration of the
     recovery.  They must be reset for any subsequent recovery you wish to
-    perform.  They cannot be changed once recovery has begun.
+    perform. Excepts <varname>restore_command</varname>, <varname>primary_conninfo</varname>, 
+    <varname>primary_slot_name</varname> and <varname>trigger_file</varname> 
+    they cannot be changed once recovery has begun.
    </para>
 
    <para>
@@ -75,6 +77,10 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
         than <systemitem>SIGTERM</systemitem>, which is used as part of a
         database server shutdown) or an error by the shell (such as command
         not found), then recovery will abort and the server will not start up.
+       </para>
+       
+       <para>
+        Can be changed during recovery with configuration files reload.
        </para>
       </listitem>
      </varlistentry>
@@ -410,6 +416,11 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
          <para>
           This setting has no effect if <varname>standby_mode</varname> is <literal>off</literal>.
          </para>
+         <para>
+          Can be changed during recovery with configuration files reload.
+          <application>walreceiver</application> will be restart after 
+          <varname>primary_conninfo</varname> was changed.
+         </para>
         </listitem>
        </varlistentry>
        <varlistentry id="primary-slot-name" xreflabel="primary_slot_name">
@@ -427,6 +438,11 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
           This setting has no effect if <varname>primary_conninfo</varname> is not
           set.
          </para>
+         <para>
+          Can be changed during recovery with configuration files reload.
+          <application>walreceiver</application> will be restart after 
+          <varname>primary_slot_name</varname> was changed.
+         </para>
         </listitem>
        </varlistentry>
        <varlistentry id="trigger-file" xreflabel="trigger_file">
@@ -441,6 +457,9 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
           standby.  Even if this value is not set, you can still promote
           the standby using <command>pg_ctl promote</command>.
           This setting has no effect if <varname>standby_mode</varname> is <literal>off</literal>.
+         </para>
+         <para>
+          Can be changed during recovery with configuration files reload.
          </para>
         </listitem>
        </varlistentry>

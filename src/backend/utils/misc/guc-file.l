@@ -155,6 +155,14 @@ ProcessConfigFile(GucContext context)
 	 */
 	(void) ProcessConfigFileInternal(context, true, elevel);
 
+	/*
+	 * Startup process need check recovery.conf changes
+	 */
+	if (context == PGC_SIGHUP && AmStartupProcess())
+	{
+		ProcessRecoveryCommandFile(true);
+	}
+
 	/* Clean up */
 	MemoryContextSwitchTo(caller_cxt);
 	MemoryContextDelete(config_cxt);

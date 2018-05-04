@@ -64,6 +64,7 @@ RestoreArchivedFile(char *path, const char *xlogfname,
 	XLogSegNo	restartSegNo;
 	XLogRecPtr	restartRedoPtr;
 	TimeLineID	restartTli;
+	char	   *recoveryRestoreCommand = GetRecoveryRestoreCommand();
 
 	/* In standby mode, restore_command might not be supplied */
 	if (recoveryRestoreCommand == NULL)

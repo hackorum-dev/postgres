@@ -3,7 +3,7 @@ use strict;
 use warnings;
 use PostgresNode;
 use TestLib;
-use Test::More tests => 28;
+use Test::More tests => 29;
 
 # Initialize master node
 my $node_master = get_new_node('master');
@@ -144,7 +144,7 @@ $node_standby_2->append_conf('recovery.conf',
 	"primary_slot_name = $slotname_2");
 $node_standby_2->append_conf('postgresql.conf',
 	"wal_receiver_status_interval = 1");
-$node_standby_2->restart;
+$node_standby_2->reload; # can switch slot without restart
 
 # Fetch xmin columns from slot's pg_replication_slots row, after waiting for
 # given boolean condition to be true to ensure we've reached a quiescent state
@@ -303,3 +303,24 @@ $node_standby_2->start;
   get_slot_xmins($node_standby_1, $slotname_2, "xmin IS NULL");
 is($xmin, '',
 	'xmin of cascaded slot reset after startup with hs feedback reset');
+
+note "check continue streaming with missed recovery conf on reload";
+unlink($node_standby_2->data_dir . '/recovery.conf');
+$node_standby_2->reload;
+replay_check();
+
+note "check change primary_conninfo without restart";
+$node_standby_2->enable_streaming($node_master);
+$node_standby_2->reload;
+
+# be sure do not streaming from cascade
+$node_standby_1->stop;
+
+my $newval = $node_master->safe_psql('postgres',
+'INSERT INTO replayed(val) SELECT coalesce(max(val),0) + 1 AS newval FROM replayed RETURNING val'
+);
+$node_master->wait_for_catchup($node_standby_2, 'replay',
+	$node_master->lsn('insert'));
+my $is_replayed = $node_standby_2->safe_psql('postgres',
+	qq[SELECT 1 FROM replayed WHERE val = $newval]);
+is($is_replayed, qq(1), "standby_2 didn't replay master value $newval");

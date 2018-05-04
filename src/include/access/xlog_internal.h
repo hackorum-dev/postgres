@@ -313,7 +313,7 @@ extern void GetOldestRestartPoint(XLogRecPtr *oldrecptr, TimeLineID *oldtli);
 extern bool ArchiveRecoveryRequested;
 extern bool InArchiveRecovery;
 extern bool StandbyMode;
-extern char *recoveryRestoreCommand;
+extern char *GetRecoveryRestoreCommand(void);
 
 /*
  * Prototypes for functions in xlogarchive.c
