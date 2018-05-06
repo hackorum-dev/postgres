@@ -74,7 +74,7 @@
  * clock sweeps to find a free buffer, so in practice we don't want the
  * value to be very large.
  */
-#define BM_MAX_USAGE_COUNT	5
+#define BM_MAX_USAGE_COUNT	8
 
 /*
  * Buffer tag identifies which disk block the buffer contains.

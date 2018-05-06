@@ -180,7 +180,7 @@ LocalBufferAlloc(SMgrRelation smgr, ForkNumber forkNum, BlockNumber blockNum,
 
 			if (BUF_STATE_GET_USAGECOUNT(buf_state) > 0)
 			{
-				buf_state -= BUF_USAGECOUNT_ONE;
+				buf_state -= BUF_USAGECOUNT_ONE * (BUF_STATE_GET_USAGECOUNT(buf_state) + 1)/2;
 				pg_atomic_unlocked_write_u32(&bufHdr->state, buf_state);
 				trycounter = NLocBuffer;
 			}
