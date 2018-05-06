@@ -273,7 +273,7 @@ main(int argc, char **argv)
 /*	lobjOid = importFile(conn, in_filename); */
 	lobjOid = lo_import(conn, in_filename);
 	if (lobjOid == 0)
-		fprintf(stderr, "%s\n", PQerrorMessage(conn));
+		fprintf(stderr, "%s", PQerrorMessage(conn));
 	else
 	{
 		printf("\tas large object %u.\n", lobjOid);
@@ -287,14 +287,14 @@ main(int argc, char **argv)
 		printf("exporting large object to file \"%s\" ...\n", out_filename);
 /*		exportFile(conn, lobjOid, out_filename); */
 		if (lo_export(conn, lobjOid, out_filename) < 0)
-			fprintf(stderr, "%s\n", PQerrorMessage(conn));
+			fprintf(stderr, "%s", PQerrorMessage(conn));
 
 		printf("truncating to 3294968000 bytes\n");
 		my_truncate(conn, lobjOid, 3294968000U);
 
 		printf("exporting truncated large object to file \"%s\" ...\n", out_filename2);
 		if (lo_export(conn, lobjOid, out_filename2) < 0)
-			fprintf(stderr, "%s\n", PQerrorMessage(conn));
+			fprintf(stderr, "%s", PQerrorMessage(conn));
 	}
 
 	res = PQexec(conn, "end");
