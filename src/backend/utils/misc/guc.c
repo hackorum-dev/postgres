@@ -4203,9 +4203,10 @@ static void replace_auto_config_value(ConfigVariable **head_p, ConfigVariable **
 
 
 /*
- * Some infrastructure for checking malloc/strdup/realloc calls
+ * Some infrastructure for checking malloc/strdup/realloc calls with
+ * GUC parameters.
  */
-static void *
+void *
 guc_malloc(int elevel, size_t size)
 {
 	void	   *data;
@@ -4221,7 +4222,7 @@ guc_malloc(int elevel, size_t size)
 	return data;
 }
 
-static void *
+void *
 guc_realloc(int elevel, void *old, size_t size)
 {
 	void	   *data;
@@ -4237,7 +4238,7 @@ guc_realloc(int elevel, void *old, size_t size)
 	return data;
 }
 
-static char *
+char *
 guc_strdup(int elevel, const char *src)
 {
 	char	   *data;

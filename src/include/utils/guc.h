@@ -415,6 +415,10 @@ extern void GUC_check_errcode(int sqlerrcode);
 	pre_format_elog_string(errno, TEXTDOMAIN), \
 	GUC_check_errhint_string = format_elog_string
 
+/* Support for GUC allocation */
+extern void *guc_malloc(int elevel, size_t size);
+extern void *guc_realloc(int elevel, void *old, size_t size);
+extern char *guc_strdup(int elevel, const char *src);
 
 /*
  * The following functions are not in guc.c, but are declared here to avoid
