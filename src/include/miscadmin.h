@@ -93,6 +93,10 @@ extern PGDLLIMPORT volatile uint32 CritSectionCount;
 /* in tcop/postgres.c */
 extern void ProcessInterrupts(void);
 
+/* Hook get notified when QueryCancelPending or ProcDiePending is raised */
+typedef void (*cancel_pending_hook_type) (void);
+extern PGDLLIMPORT cancel_pending_hook_type cancel_pending_hook;
+
 #ifndef WIN32
 
 #define CHECK_FOR_INTERRUPTS() \

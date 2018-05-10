@@ -7,6 +7,7 @@
 #include "postgres.h"
 
 #include "lib/stringinfo.h"
+#include "miscadmin.h"
 
 #include "plpython.h"
 
@@ -120,6 +121,15 @@ PLy_elog_impl(int elevel, const char *fmt,...)
 
 	PG_TRY();
 	{
+		/*
+		 * If the error was a KeyboardException that we raised because
+		 * of query cancellation, then CHECK_FOR_INTERRUPTS() will throw
+		 * a better error message than we do here, with
+		 * "canceling statement due to user request" or similar message.
+		 * Give it a chance.
+		 */
+		CHECK_FOR_INTERRUPTS();
+
 		ereport(elevel,
 				(errcode(sqlerrcode ? sqlerrcode : ERRCODE_EXTERNAL_ROUTINE_EXCEPTION),
 				 errmsg_internal("%s", primary ? primary : "no exception data"),
