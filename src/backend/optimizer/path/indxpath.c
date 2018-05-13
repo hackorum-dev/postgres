@@ -1084,7 +1084,7 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 	/*
 	 * 5. If the index is ordered, a backwards scan might be interesting.
 	 */
-	if (index_is_ordered && pathkeys_possibly_useful)
+	if (index_is_ordered && pathkeys_possibly_useful && index->amcanbackward)
 	{
 		index_pathkeys = build_index_pathkeys(root, index,
 											  BackwardScanDirection);
