@@ -478,9 +478,10 @@ EOF
 	foreach my $bki (@bki_srcs, @bki_data)
 	{
 		next if $bki eq "";
-		if (IsNewer(
-				'src/backend/catalog/bki-stamp',
-				"src/include/catalog/$bki"))
+		if ( 1 #IsNewer(
+				#'src/backend/catalog/bki-stamp',
+				#"src/include/catalog/$bki")
+				)
 		{
 			$need_genbki = 1;
 			last;
