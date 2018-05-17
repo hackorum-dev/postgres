@@ -74,6 +74,8 @@ ProcedureCreate(const char *procedureName,
 				const char *prosrc,
 				const char *probin,
 				char prokind,
+				bool isAgg,
+				bool isWindowFunc,
 				bool security_definer,
 				bool isLeakProof,
 				bool isStrict,
@@ -334,6 +336,8 @@ ProcedureCreate(const char *procedureName,
 	values[Anum_pg_proc_provariadic - 1] = ObjectIdGetDatum(variadicType);
 	values[Anum_pg_proc_protransform - 1] = ObjectIdGetDatum(InvalidOid);
 	values[Anum_pg_proc_prokind - 1] = CharGetDatum(prokind);
+	values[Anum_pg_proc_proisagg - 1] = BoolGetDatum(isAgg);
+	values[Anum_pg_proc_proiswindow - 1] = BoolGetDatum(isWindowFunc);
 	values[Anum_pg_proc_prosecdef - 1] = BoolGetDatum(security_definer);
 	values[Anum_pg_proc_proleakproof - 1] = BoolGetDatum(isLeakProof);
 	values[Anum_pg_proc_proisstrict - 1] = BoolGetDatum(isStrict);
@@ -379,10 +383,11 @@ ProcedureCreate(const char *procedureName,
 	tupDesc = RelationGetDescr(rel);
 
 	/* Check for pre-existing definition */
-	oldtup = SearchSysCache3(PROCNAMEARGSNSP,
+	oldtup = SearchSysCache4(PROCNAMEARGSNSPKIND,
 							 PointerGetDatum(procedureName),
 							 PointerGetDatum(parameterTypes),
-							 ObjectIdGetDatum(procNamespace));
+							 ObjectIdGetDatum(procNamespace),
+							 CharGetDatum(prokind));
 
 	if (HeapTupleIsValid(oldtup))
 	{
@@ -399,21 +404,6 @@ ProcedureCreate(const char *procedureName,
 		if (!pg_proc_ownercheck(HeapTupleGetOid(oldtup), proowner))
 			aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_FUNCTION,
 						   procedureName);
-
-		/* Not okay to change routine kind */
-		if (oldproc->prokind != prokind)
-			ereport(ERROR,
-					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("cannot change routine kind"),
-					 (oldproc->prokind == PROKIND_AGGREGATE ?
-					  errdetail("\"%s\" is an aggregate function.", procedureName) :
-					  oldproc->prokind == PROKIND_FUNCTION ?
-					  errdetail("\"%s\" is a function.", procedureName) :
-					  oldproc->prokind == PROKIND_PROCEDURE ?
-					  errdetail("\"%s\" is a procedure.", procedureName) :
-					  oldproc->prokind == PROKIND_WINDOW ?
-					  errdetail("\"%s\" is a window function.", procedureName) :
-					  0)));
 
 		/*
 		 * Not okay to change the return type of the existing proc, since
@@ -458,7 +448,7 @@ ProcedureCreate(const char *procedureName,
 		 * names have not been changed, as this could break existing calls. We
 		 * allow adding names to formerly unnamed parameters, though.
 		 */
-		proargnames = SysCacheGetAttr(PROCNAMEARGSNSP, oldtup,
+		proargnames = SysCacheGetAttr(PROCNAMEARGSNSPKIND, oldtup,
 									  Anum_pg_proc_proargnames,
 									  &isnull);
 		if (!isnull)
@@ -470,7 +460,7 @@ ProcedureCreate(const char *procedureName,
 			int			n_new_arg_names;
 			int			j;
 
-			proargmodes = SysCacheGetAttr(PROCNAMEARGSNSP, oldtup,
+			proargmodes = SysCacheGetAttr(PROCNAMEARGSNSPKIND, oldtup,
 										  Anum_pg_proc_proargmodes,
 										  &isnull);
 			if (isnull)
@@ -519,7 +509,7 @@ ProcedureCreate(const char *procedureName,
 						 errhint("Use DROP FUNCTION %s first.",
 								 format_procedure(HeapTupleGetOid(oldtup)))));
 
-			proargdefaults = SysCacheGetAttr(PROCNAMEARGSNSP, oldtup,
+			proargdefaults = SysCacheGetAttr(PROCNAMEARGSNSPKIND, oldtup,
 											 Anum_pg_proc_proargdefaults,
 											 &isnull);
 			Assert(!isnull);
@@ -548,7 +538,35 @@ ProcedureCreate(const char *procedureName,
 			}
 		}
 
-		/*
+		/* Can't change aggregate or window-function status, either */
+		if (oldproc->proisagg != isAgg)
+		{
+			if (oldproc->proisagg)
+				ereport(ERROR,
+						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+						 errmsg("function \"%s\" is an aggregate function",
+								procedureName)));
+			else
+				ereport(ERROR,
+						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+						 errmsg("function \"%s\" is not an aggregate function",
+								procedureName)));
+		}
+		if (oldproc->proiswindow != isWindowFunc)
+		{
+			if (oldproc->proiswindow)
+				ereport(ERROR,
+						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+						 errmsg("function \"%s\" is a window function",
+								procedureName)));
+			else
+				ereport(ERROR,
+						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+						 errmsg("function \"%s\" is not a window function",
+								procedureName)));
+		}
+
+	   /*
 		 * Do not change existing ownership or permissions, either.  Note
 		 * dependency-update code below has to agree with this decision.
 		 */

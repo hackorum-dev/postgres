@@ -27,6 +27,7 @@
 #include "catalog/pg_amproc.h"
 #include "catalog/pg_collation.h"
 #include "catalog/pg_constraint.h"
+#include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
 #include "nodes/makefuncs.h"
@@ -972,7 +973,7 @@ transformRangeTableSample(ParseState *pstate, RangeTableSample *rts)
 	 */
 	funcargtypes[0] = INTERNALOID;
 
-	handlerOid = LookupFuncName(rts->method, 1, funcargtypes, true);
+	handlerOid = LookupFuncName(rts->method, PROKIND_FUNCTION, 1, funcargtypes, true);
 
 	/* we want error to complain about no-such-method, not no-such-function */
 	if (!OidIsValid(handlerOid))

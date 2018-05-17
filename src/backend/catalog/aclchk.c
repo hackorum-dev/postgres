@@ -835,8 +835,8 @@ objectsInSchemaToOids(ObjectType objtype, List *nspnames)
 						/* includes aggregates and window functions */
 						ScanKeyInit(&key[keycount++],
 									Anum_pg_proc_prokind,
-									BTEqualStrategyNumber, F_CHARNE,
-									CharGetDatum(PROKIND_PROCEDURE));
+									BTEqualStrategyNumber, F_CHAREQ,
+									CharGetDatum(PROKIND_FUNCTION));
 					else if (objtype == OBJECT_PROCEDURE)
 						ScanKeyInit(&key[keycount++],
 									Anum_pg_proc_prokind,

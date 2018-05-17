@@ -250,7 +250,7 @@ lookup_index_am_handler_func(List *handler_name, char amtype)
 				 errmsg("handler function is not specified")));
 
 	/* handlers have one argument of type internal */
-	handlerOid = LookupFuncName(handler_name, 1, funcargtypes, false);
+	handlerOid = LookupFuncName(handler_name, PROKIND_FUNCTION, 1, funcargtypes, false);
 
 	/* check that handler has the correct return type */
 	switch (amtype)

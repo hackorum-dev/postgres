@@ -241,13 +241,13 @@ prepare_sql_fn_parse_info(HeapTuple procedureTuple,
 		int			n_arg_names;
 		bool		isNull;
 
-		proargnames = SysCacheGetAttr(PROCNAMEARGSNSP, procedureTuple,
+		proargnames = SysCacheGetAttr(PROCNAMEARGSNSPKIND, procedureTuple,
 									  Anum_pg_proc_proargnames,
 									  &isNull);
 		if (isNull)
 			proargnames = PointerGetDatum(NULL);	/* just to be sure */
 
-		proargmodes = SysCacheGetAttr(PROCNAMEARGSNSP, procedureTuple,
+		proargmodes = SysCacheGetAttr(PROCNAMEARGSNSPKIND, procedureTuple,
 									  Anum_pg_proc_proargmodes,
 									  &isNull);
 		if (isNull)
@@ -390,7 +390,7 @@ sql_fn_post_column_ref(ParseState *pstate, ColumnRef *cref, Node *var)
 								  list_make1(param),
 								  pstate->p_last_srf,
 								  NULL,
-								  false,
+								  PROKIND_FUNCTION,
 								  cref->location);
 	}
 

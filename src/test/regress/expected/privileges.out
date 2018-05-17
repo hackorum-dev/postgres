@@ -656,7 +656,7 @@ CREATE PROCEDURE priv_testproc1(int) AS 'select $1;' LANGUAGE sql;
 REVOKE ALL ON FUNCTION priv_testfunc1(int), priv_testfunc2(int), priv_testagg1(int) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION priv_testfunc1(int), priv_testfunc2(int), priv_testagg1(int) TO regress_priv_user2;
 REVOKE ALL ON FUNCTION priv_testproc1(int) FROM PUBLIC; -- fail, not a function
-ERROR:  priv_testproc1(integer) is not a function
+ERROR:  function priv_testproc1(integer) does not exist
 REVOKE ALL ON PROCEDURE priv_testproc1(int) FROM PUBLIC;
 GRANT EXECUTE ON PROCEDURE priv_testproc1(int) TO regress_priv_user2;
 GRANT USAGE ON FUNCTION priv_testfunc1(int) TO regress_priv_user3; -- semantic error

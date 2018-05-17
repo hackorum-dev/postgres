@@ -1600,20 +1600,20 @@ func_parallel(Oid funcid)
 }
 
 /*
- * get_func_prokind
- *	   Given procedure id, return the routine kind.
+ * get_func_isagg
+ *	   Given procedure id, return the function's proisagg field.
  */
-char
-get_func_prokind(Oid funcid)
+bool
+get_func_isagg(Oid funcid)
 {
 	HeapTuple	tp;
-	char		result;
+	bool		result;
 
 	tp = SearchSysCache1(PROCOID, ObjectIdGetDatum(funcid));
 	if (!HeapTupleIsValid(tp))
 		elog(ERROR, "cache lookup failed for function %u", funcid);
 
-	result = ((Form_pg_proc) GETSTRUCT(tp))->prokind;
+	result = ((Form_pg_proc) GETSTRUCT(tp))->proisagg;
 	ReleaseSysCache(tp);
 	return result;
 }

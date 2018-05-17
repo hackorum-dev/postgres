@@ -332,11 +332,10 @@ WHERE
 UNION ALL
 SELECT
 	l.objoid, l.classoid, l.objsubid,
-	CASE pro.prokind
-            WHEN 'a' THEN 'aggregate'::text
-            WHEN 'f' THEN 'function'::text
-            WHEN 'p' THEN 'procedure'::text
-            WHEN 'w' THEN 'window'::text END AS objtype,
+	CASE WHEN pro.prokind = 'p' THEN 'procedure'::text
+             WHEN pro.proisagg THEN 'aggregate'::text
+             ELSE 'function'::text
+        END AS objtype,
 	pro.pronamespace AS objnamespace,
 	CASE WHEN pg_function_is_visible(pro.oid)
 	     THEN quote_ident(pro.proname)

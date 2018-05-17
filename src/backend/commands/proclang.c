@@ -106,7 +106,7 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 		 * return type.
 		 */
 		funcname = SystemFuncName(pltemplate->tmplhandler);
-		handlerOid = LookupFuncName(funcname, 0, funcargtypes, true);
+		handlerOid = LookupFuncName(funcname, PROKIND_FUNCTION, 0, funcargtypes, true);
 		if (OidIsValid(handlerOid))
 		{
 			funcrettype = get_func_rettype(handlerOid);
@@ -129,6 +129,8 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 									  pltemplate->tmplhandler,
 									  pltemplate->tmpllibrary,
 									  PROKIND_FUNCTION,
+									  false,	/* isAgg */
+									  false,	/* isWindowFunc */
 									  false,	/* security_definer */
 									  false,	/* isLeakProof */
 									  false,	/* isStrict */
@@ -154,7 +156,7 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 		{
 			funcname = SystemFuncName(pltemplate->tmplinline);
 			funcargtypes[0] = INTERNALOID;
-			inlineOid = LookupFuncName(funcname, 1, funcargtypes, true);
+			inlineOid = LookupFuncName(funcname, PROKIND_FUNCTION, 1, funcargtypes, true);
 			if (!OidIsValid(inlineOid))
 			{
 				tmpAddr = ProcedureCreate(pltemplate->tmplinline,
@@ -168,6 +170,8 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 										  pltemplate->tmplinline,
 										  pltemplate->tmpllibrary,
 										  PROKIND_FUNCTION,
+										  false,	/* isAgg */
+										  false,	/* isWindowFunc */
 										  false,	/* security_definer */
 										  false,	/* isLeakProof */
 										  true, /* isStrict */
@@ -196,7 +200,7 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 		{
 			funcname = SystemFuncName(pltemplate->tmplvalidator);
 			funcargtypes[0] = OIDOID;
-			valOid = LookupFuncName(funcname, 1, funcargtypes, true);
+			valOid = LookupFuncName(funcname, PROKIND_FUNCTION, 1, funcargtypes, true);
 			if (!OidIsValid(valOid))
 			{
 				tmpAddr = ProcedureCreate(pltemplate->tmplvalidator,
@@ -210,6 +214,8 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 										  pltemplate->tmplvalidator,
 										  pltemplate->tmpllibrary,
 										  PROKIND_FUNCTION,
+										  false,	/* isAgg */
+										  false,	/* isWindowFunc */
 										  false,	/* security_definer */
 										  false,	/* isLeakProof */
 										  true, /* isStrict */
@@ -261,7 +267,7 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 		 * Lookup the PL handler function and check that it is of the expected
 		 * return type
 		 */
-		handlerOid = LookupFuncName(stmt->plhandler, 0, funcargtypes, false);
+		handlerOid = LookupFuncName(stmt->plhandler, PROKIND_FUNCTION, 0, funcargtypes, false);
 		funcrettype = get_func_rettype(handlerOid);
 		if (funcrettype != LANGUAGE_HANDLEROID)
 		{
@@ -290,7 +296,7 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 		if (stmt->plinline)
 		{
 			funcargtypes[0] = INTERNALOID;
-			inlineOid = LookupFuncName(stmt->plinline, 1, funcargtypes, false);
+			inlineOid = LookupFuncName(stmt->plinline, PROKIND_FUNCTION, 1, funcargtypes, false);
 			/* return value is ignored, so we don't check the type */
 		}
 		else
@@ -300,7 +306,7 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 		if (stmt->plvalidator)
 		{
 			funcargtypes[0] = OIDOID;
-			valOid = LookupFuncName(stmt->plvalidator, 1, funcargtypes, false);
+			valOid = LookupFuncName(stmt->plvalidator, PROKIND_FUNCTION, 1, funcargtypes, false);
 			/* return value is ignored, so we don't check the type */
 		}
 		else

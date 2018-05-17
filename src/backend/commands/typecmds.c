@@ -1670,6 +1670,8 @@ makeRangeConstructors(const char *name, Oid namespace,
 								 prosrc[i], /* prosrc */
 								 NULL,	/* probin */
 								 PROKIND_FUNCTION,
+								 false,	/* isAgg */
+								 false,	/* isWindowFunc */
 								 false, /* security_definer */
 								 false, /* leakproof */
 								 false, /* isStrict */
@@ -1717,28 +1719,28 @@ findTypeInputFunction(List *procname, Oid typeOid)
 	 */
 	argList[0] = CSTRINGOID;
 
-	procOid = LookupFuncName(procname, 1, argList, true);
+	procOid = LookupFuncName(procname, PROKIND_FUNCTION, 1, argList, true);
 	if (OidIsValid(procOid))
 		return procOid;
 
 	argList[1] = OIDOID;
 	argList[2] = INT4OID;
 
-	procOid = LookupFuncName(procname, 3, argList, true);
+	procOid = LookupFuncName(procname, PROKIND_FUNCTION, 3, argList, true);
 	if (OidIsValid(procOid))
 		return procOid;
 
 	/* No luck, try it with OPAQUE */
 	argList[0] = OPAQUEOID;
 
-	procOid = LookupFuncName(procname, 1, argList, true);
+	procOid = LookupFuncName(procname, PROKIND_FUNCTION, 1, argList, true);
 
 	if (!OidIsValid(procOid))
 	{
 		argList[1] = OIDOID;
 		argList[2] = INT4OID;
 
-		procOid = LookupFuncName(procname, 3, argList, true);
+		procOid = LookupFuncName(procname, PROKIND_FUNCTION, 3, argList, true);
 	}
 
 	if (OidIsValid(procOid))
@@ -1783,14 +1785,14 @@ findTypeOutputFunction(List *procname, Oid typeOid)
 	 */
 	argList[0] = typeOid;
 
-	procOid = LookupFuncName(procname, 1, argList, true);
+	procOid = LookupFuncName(procname, PROKIND_FUNCTION, 1, argList, true);
 	if (OidIsValid(procOid))
 		return procOid;
 
 	/* No luck, try it with OPAQUE */
 	argList[0] = OPAQUEOID;
 
-	procOid = LookupFuncName(procname, 1, argList, true);
+	procOid = LookupFuncName(procname, PROKIND_FUNCTION, 1, argList, true);
 
 	if (OidIsValid(procOid))
 	{
@@ -1832,14 +1834,14 @@ findTypeReceiveFunction(List *procname, Oid typeOid)
 	 */
 	argList[0] = INTERNALOID;
 
-	procOid = LookupFuncName(procname, 1, argList, true);
+	procOid = LookupFuncName(procname, PROKIND_FUNCTION, 1, argList, true);
 	if (OidIsValid(procOid))
 		return procOid;
 
 	argList[1] = OIDOID;
 	argList[2] = INT4OID;
 
-	procOid = LookupFuncName(procname, 3, argList, true);
+	procOid = LookupFuncName(procname, PROKIND_FUNCTION, 3, argList, true);
 	if (OidIsValid(procOid))
 		return procOid;
 
@@ -1862,7 +1864,7 @@ findTypeSendFunction(List *procname, Oid typeOid)
 	 */
 	argList[0] = typeOid;
 
-	procOid = LookupFuncName(procname, 1, argList, true);
+	procOid = LookupFuncName(procname, PROKIND_FUNCTION, 1, argList, true);
 	if (OidIsValid(procOid))
 		return procOid;
 
@@ -1885,7 +1887,7 @@ findTypeTypmodinFunction(List *procname)
 	 */
 	argList[0] = CSTRINGARRAYOID;
 
-	procOid = LookupFuncName(procname, 1, argList, true);
+	procOid = LookupFuncName(procname, PROKIND_FUNCTION, 1, argList, true);
 	if (!OidIsValid(procOid))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_FUNCTION),
@@ -1912,7 +1914,7 @@ findTypeTypmodoutFunction(List *procname)
 	 */
 	argList[0] = INT4OID;
 
-	procOid = LookupFuncName(procname, 1, argList, true);
+	procOid = LookupFuncName(procname, PROKIND_FUNCTION, 1, argList, true);
 	if (!OidIsValid(procOid))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_FUNCTION),
@@ -1939,7 +1941,7 @@ findTypeAnalyzeFunction(List *procname, Oid typeOid)
 	 */
 	argList[0] = INTERNALOID;
 
-	procOid = LookupFuncName(procname, 1, argList, true);
+	procOid = LookupFuncName(procname, PROKIND_FUNCTION, 1, argList, true);
 	if (!OidIsValid(procOid))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_FUNCTION),
@@ -2015,7 +2017,7 @@ findRangeCanonicalFunction(List *procname, Oid typeOid)
 	 */
 	argList[0] = typeOid;
 
-	procOid = LookupFuncName(procname, 1, argList, true);
+	procOid = LookupFuncName(procname, PROKIND_FUNCTION, 1, argList, true);
 
 	if (!OidIsValid(procOid))
 		ereport(ERROR,
@@ -2057,7 +2059,7 @@ findRangeSubtypeDiffFunction(List *procname, Oid subtype)
 	argList[0] = subtype;
 	argList[1] = subtype;
 
-	procOid = LookupFuncName(procname, 2, argList, true);
+	procOid = LookupFuncName(procname, PROKIND_FUNCTION, 2, argList, true);
 
 	if (!OidIsValid(procOid))
 		ereport(ERROR,

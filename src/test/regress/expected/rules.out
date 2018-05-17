@@ -1521,12 +1521,10 @@ UNION ALL
  SELECT l.objoid,
     l.classoid,
     l.objsubid,
-        CASE pro.prokind
-            WHEN 'a'::"char" THEN 'aggregate'::text
-            WHEN 'f'::"char" THEN 'function'::text
-            WHEN 'p'::"char" THEN 'procedure'::text
-            WHEN 'w'::"char" THEN 'window'::text
-            ELSE NULL::text
+        CASE
+            WHEN (pro.prokind = 'p'::"char") THEN 'procedure'::text
+            WHEN pro.proisagg THEN 'aggregate'::text
+            ELSE 'function'::text
         END AS objtype,
     pro.pronamespace AS objnamespace,
     (((

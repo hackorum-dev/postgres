@@ -23,8 +23,7 @@ typedef enum
 {
 	FUNCDETAIL_NOTFOUND,		/* no matching function */
 	FUNCDETAIL_MULTIPLE,		/* too many matching functions */
-	FUNCDETAIL_NORMAL,			/* found a matching regular function */
-	FUNCDETAIL_PROCEDURE,		/* found a matching procedure */
+	FUNCDETAIL_NORMAL,			/* found a matching regular function or procedure */
 	FUNCDETAIL_AGGREGATE,		/* found a matching aggregate function */
 	FUNCDETAIL_WINDOWFUNC,		/* found a matching window function */
 	FUNCDETAIL_COERCION			/* it's a type coercion request */
@@ -32,10 +31,11 @@ typedef enum
 
 
 extern Node *ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
-				  Node *last_srf, FuncCall *fn, bool proc_call,
+				  Node *last_srf, FuncCall *fn, char prokind,
 				  int location);
 
 extern FuncDetailCode func_get_detail(List *funcname,
+				char prokind,
 				List *fargs, List *fargnames,
 				int nargs, Oid *argtypes,
 				bool expand_variadic, bool expand_defaults,
@@ -62,7 +62,7 @@ extern const char *funcname_signature_string(const char *funcname, int nargs,
 extern const char *func_signature_string(List *funcname, int nargs,
 					  List *argnames, const Oid *argtypes);
 
-extern Oid LookupFuncName(List *funcname, int nargs, const Oid *argtypes,
+extern Oid LookupFuncName(List *funcname, char prokind, int nargs, const Oid *argtypes,
 			   bool noError);
 extern Oid LookupFuncWithArgs(ObjectType objtype, ObjectWithArgs *func,
 				   bool noError);

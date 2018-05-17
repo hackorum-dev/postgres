@@ -4482,10 +4482,9 @@ inline_function(Oid funcid, Oid result_type, Oid result_collid,
 
 	/*
 	 * Forget it if the function is not SQL-language or has other showstopper
-	 * properties.  (The prokind and nargs checks are just paranoia.)
+	 * properties.  (The nargs check is just paranoia.)
 	 */
 	if (funcform->prolang != SQLlanguageId ||
-		funcform->prokind != PROKIND_FUNCTION ||
 		funcform->prosecdef ||
 		funcform->proretset ||
 		funcform->prorettype == RECORDOID ||

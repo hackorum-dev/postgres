@@ -1,13 +1,13 @@
 CALL nonexistent();  -- error
-ERROR:  function nonexistent() does not exist
+ERROR:  procedure nonexistent() does not exist
 LINE 1: CALL nonexistent();
              ^
-HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+HINT:  No procedure matches the given name and argument types. You might need to add explicit type casts.
 CALL random();  -- error
-ERROR:  random() is not a procedure
+ERROR:  procedure random() does not exist
 LINE 1: CALL random();
              ^
-HINT:  To call a function, use SELECT.
+HINT:  No procedure matches the given name and argument types. You might need to add explicit type casts.
 CREATE FUNCTION cp_testfunc1(a int) RETURNS int LANGUAGE SQL AS $$ SELECT a $$;
 CREATE TABLE cp_test (a int, b text);
 CREATE PROCEDURE ptest1(x text)
@@ -16,10 +16,10 @@ AS $$
 INSERT INTO cp_test VALUES (1, x);
 $$;
 SELECT ptest1('x');  -- error
-ERROR:  ptest1(unknown) is a procedure
+ERROR:  function ptest1(unknown) does not exist
 LINE 1: SELECT ptest1('x');
                ^
-HINT:  To call a procedure, use CALL.
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
 CALL ptest1('a');  -- ok
 CALL ptest1('xy' || 'zzy');  -- ok, constant-folded arg
 CALL ptest1(substring(random()::numeric(20,15)::text, 1, 1));  -- ok, volatile arg
@@ -118,14 +118,15 @@ SELECT * FROM cp_test;
 
 -- various error cases
 CALL version();  -- error: not a procedure
-ERROR:  version() is not a procedure
+ERROR:  procedure version() does not exist
 LINE 1: CALL version();
              ^
-HINT:  To call a function, use SELECT.
+HINT:  No procedure matches the given name and argument types. You might need to add explicit type casts.
 CALL sum(1);  -- error: not a procedure
-ERROR:  sum(integer) is not a procedure
+ERROR:  procedure sum(integer) does not exist
 LINE 1: CALL sum(1);
              ^
+HINT:  No procedure matches the given name and argument types. You might need to add explicit type casts.
 CREATE PROCEDURE ptestx() LANGUAGE SQL WINDOW AS $$ INSERT INTO cp_test VALUES (1, 'a') $$;
 ERROR:  invalid attribute in procedure definition
 LINE 1: CREATE PROCEDURE ptestx() LANGUAGE SQL WINDOW AS $$ INSERT I...
@@ -142,15 +143,15 @@ ERROR:  invalid attribute in procedure definition
 LINE 1: ALTER PROCEDURE ptest1(text) STRICT;
                                      ^
 ALTER FUNCTION ptest1(text) VOLATILE;  -- error: not a function
-ERROR:  ptest1(text) is not a function
+ERROR:  function ptest1(text) does not exist
 ALTER PROCEDURE cp_testfunc1(int) VOLATILE;  -- error: not a procedure
-ERROR:  cp_testfunc1(integer) is not a procedure
+ERROR:  procedure cp_testfunc1(integer) does not exist
 ALTER PROCEDURE nonexistent() VOLATILE;
 ERROR:  procedure nonexistent() does not exist
 DROP FUNCTION ptest1(text);  -- error: not a function
-ERROR:  ptest1(text) is not a function
+ERROR:  function ptest1(text) does not exist
 DROP PROCEDURE cp_testfunc1(int);  -- error: not a procedure
-ERROR:  cp_testfunc1(integer) is not a procedure
+ERROR:  procedure cp_testfunc1(integer) does not exist
 DROP PROCEDURE nonexistent();
 ERROR:  procedure nonexistent() does not exist
 -- privileges

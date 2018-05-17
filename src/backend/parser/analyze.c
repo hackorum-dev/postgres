@@ -25,6 +25,7 @@
 #include "postgres.h"
 
 #include "access/sysattr.h"
+#include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
@@ -2599,7 +2600,7 @@ transformCallStmt(ParseState *pstate, CallStmt *stmt)
 							 targs,
 							 pstate->p_last_srf,
 							 stmt->funccall,
-							 true,
+							 PROKIND_PROCEDURE,
 							 stmt->funccall->location);
 
 	stmt->funcexpr = castNode(FuncExpr, node);

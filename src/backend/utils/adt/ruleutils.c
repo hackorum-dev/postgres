@@ -2514,7 +2514,7 @@ pg_get_functiondef(PG_FUNCTION_ARGS)
 	proc = (Form_pg_proc) GETSTRUCT(proctup);
 	name = NameStr(proc->proname);
 
-	if (proc->prokind == PROKIND_AGGREGATE)
+	if (proc->proisagg)
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 				 errmsg("\"%s\" is an aggregate function", name)));
@@ -2546,7 +2546,7 @@ pg_get_functiondef(PG_FUNCTION_ARGS)
 	/* Emit some miscellaneous options on one line */
 	oldlen = buf.len;
 
-	if (proc->prokind == PROKIND_WINDOW)
+	if (proc->proiswindow)
 		appendStringInfoString(&buf, " WINDOW");
 	switch (proc->provolatile)
 	{
@@ -2854,7 +2854,7 @@ print_function_arguments(StringInfo buf, HeapTuple proctup,
 	}
 
 	/* Check for special treatment of ordered-set aggregates */
-	if (proc->prokind == PROKIND_AGGREGATE)
+	if (proc->proisagg)
 	{
 		HeapTuple	aggtup;
 		Form_pg_aggregate agg;
@@ -10785,6 +10785,7 @@ generate_function_name(Oid funcid, int nargs, List *argnames, Oid *argtypes,
 	 */
 	if (!force_qualify)
 		p_result = func_get_detail(list_make1(makeString(proname)),
+								   procform->prokind,
 								   NIL, argnames, nargs, argtypes,
 								   !use_variadic, true,
 								   &p_funcid, &p_rettype,

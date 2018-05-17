@@ -57,6 +57,12 @@ CATALOG(pg_proc,1255,ProcedureRelationId) BKI_BOOTSTRAP BKI_ROWTYPE_OID(81,Proce
 	/* see PROKIND_ categories below */
 	char		prokind BKI_DEFAULT(f);
 
+	/* is it an aggregate? */
+	bool		proisagg BKI_DEFAULT(f);
+
+	/* is it a window function? */
+	bool		proiswindow BKI_DEFAULT(f);
+
 	/* security definer */
 	bool		prosecdef BKI_DEFAULT(f);
 
@@ -136,9 +142,8 @@ typedef FormData_pg_proc *Form_pg_proc;
 /*
  * Symbolic values for prokind column
  */
+#define PROKIND_ANY '\0'
 #define PROKIND_FUNCTION 'f'
-#define PROKIND_AGGREGATE 'a'
-#define PROKIND_WINDOW 'w'
 #define PROKIND_PROCEDURE 'p'
 
 /*
@@ -187,6 +192,8 @@ extern ObjectAddress ProcedureCreate(const char *procedureName,
 				const char *prosrc,
 				const char *probin,
 				char prokind,
+				bool isAgg,
+				bool isWindowFunc,
 				bool security_definer,
 				bool isLeakProof,
 				bool isStrict,

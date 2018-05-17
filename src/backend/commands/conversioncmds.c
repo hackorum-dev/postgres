@@ -18,6 +18,7 @@
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_conversion.h"
+#include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "commands/alter.h"
 #include "commands/conversioncmds.h"
@@ -76,7 +77,7 @@ CreateConversionCommand(CreateConversionStmt *stmt)
 	 * Check the existence of the conversion function. Function name could be
 	 * a qualified name.
 	 */
-	funcoid = LookupFuncName(func_name, sizeof(funcargs) / sizeof(Oid),
+	funcoid = LookupFuncName(func_name, PROKIND_FUNCTION, sizeof(funcargs) / sizeof(Oid),
 							 funcargs, false);
 
 	/* Check it returns VOID, else it's probably the wrong function */

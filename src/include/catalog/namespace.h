@@ -80,6 +80,7 @@ extern Oid	TypenameGetTypid(const char *typname);
 extern bool TypeIsVisible(Oid typid);
 
 extern FuncCandidateList FuncnameGetCandidates(List *names,
+					  char prokind,
 					  int nargs, List *argnames,
 					  bool expand_variadic,
 					  bool expand_defaults,

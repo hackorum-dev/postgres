@@ -186,8 +186,10 @@ DROP FUNCTION functest_b_2;  -- error, ambiguous
 
 CREATE FUNCTION functest1(a int) RETURNS int LANGUAGE SQL AS 'SELECT $1';
 CREATE OR REPLACE FUNCTION functest1(a int) RETURNS int LANGUAGE SQL WINDOW AS 'SELECT $1';
-CREATE OR REPLACE PROCEDURE functest1(a int) LANGUAGE SQL AS 'SELECT $1';
+CREATE FUNCTION functest2(a int) RETURNS int LANGUAGE SQL WINDOW AS 'SELECT $1';
+CREATE OR REPLACE FUNCTION functest2(a int) RETURNS int LANGUAGE SQL AS 'SELECT $1';
 DROP FUNCTION functest1(a int);
+DROP FUNCTION functest2(a int);
 
 
 -- Check behavior of VOID-returning SQL functions

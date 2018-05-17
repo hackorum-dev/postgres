@@ -1099,7 +1099,9 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 						   languageValidator,
 						   prosrc_str,	/* converted to text later */
 						   probin_str,	/* converted to text later */
-						   stmt->is_procedure ? PROKIND_PROCEDURE : (isWindowFunc ? PROKIND_WINDOW : PROKIND_FUNCTION),
+						   stmt->is_procedure ? PROKIND_PROCEDURE : PROKIND_FUNCTION,
+						   false,	/* not an aggregate */
+						   isWindowFunc,
 						   security,
 						   isLeakProof,
 						   isStrict,
@@ -1127,7 +1129,7 @@ RemoveFunctionById(Oid funcOid)
 {
 	Relation	relation;
 	HeapTuple	tup;
-	char		prokind;
+	bool		isagg;
 
 	/*
 	 * Delete the pg_proc tuple.
@@ -1138,7 +1140,7 @@ RemoveFunctionById(Oid funcOid)
 	if (!HeapTupleIsValid(tup)) /* should not happen */
 		elog(ERROR, "cache lookup failed for function %u", funcOid);
 
-	prokind = ((Form_pg_proc) GETSTRUCT(tup))->prokind;
+	isagg = ((Form_pg_proc) GETSTRUCT(tup))->proisagg;
 
 	CatalogTupleDelete(relation, &tup->t_self);
 
@@ -1149,7 +1151,7 @@ RemoveFunctionById(Oid funcOid)
 	/*
 	 * If there's a pg_aggregate tuple, delete that too.
 	 */
-	if (prokind == PROKIND_AGGREGATE)
+	if (isagg)
 	{
 		relation = heap_open(AggregateRelationId, RowExclusiveLock);
 
@@ -1204,7 +1206,7 @@ AlterFunction(ParseState *pstate, AlterFunctionStmt *stmt)
 		aclcheck_error(ACLCHECK_NOT_OWNER, stmt->objtype,
 					   NameListToString(stmt->func->objname));
 
-	if (procForm->prokind == PROKIND_AGGREGATE)
+	if (procForm->proisagg)
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 				 errmsg("\"%s\" is an aggregate function",
@@ -1526,10 +1528,14 @@ CreateCast(CreateCastStmt *stmt)
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 					 errmsg("cast function must not be volatile")));
 #endif
-		if (procstruct->prokind != PROKIND_FUNCTION)
+		if (procstruct->proisagg)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
-					 errmsg("cast function must be a normal function")));
+					 errmsg("cast function must not be an aggregate function")));
+		if (procstruct->proiswindow)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+					 errmsg("cast function must not be a window function")));
 		if (procstruct->proretset)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
@@ -1774,10 +1780,14 @@ check_transform_function(Form_pg_proc procstruct)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 				 errmsg("transform function must not be volatile")));
-	if (procstruct->prokind != PROKIND_FUNCTION)
+	if (procstruct->proisagg)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
-				 errmsg("transform function must be a normal function")));
+				 errmsg("transform function must not be an aggregate function")));
+	if (procstruct->proiswindow)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+				 errmsg("transform function must not be a window function")));
 	if (procstruct->proretset)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
@@ -2056,14 +2066,15 @@ DropTransformById(Oid transformOid)
  * namespace?  If so, raise an appropriate error message.
  */
 void
-IsThereFunctionInNamespace(const char *proname, int pronargs,
+IsThereFunctionInNamespace(const char *proname, char prokind, int pronargs,
 						   oidvector *proargtypes, Oid nspOid)
 {
 	/* check for duplicate name (more friendly than unique-index failure) */
-	if (SearchSysCacheExists3(PROCNAMEARGSNSP,
+	if (SearchSysCacheExists4(PROCNAMEARGSNSPKIND,
 							  CStringGetDatum(proname),
 							  PointerGetDatum(proargtypes),
-							  ObjectIdGetDatum(nspOid)))
+							  ObjectIdGetDatum(nspOid),
+							  CharGetDatum(prokind)))
 		ereport(ERROR,
 				(errcode(ERRCODE_DUPLICATE_FUNCTION),
 				 errmsg("function %s already exists in schema \"%s\"",

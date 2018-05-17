@@ -94,7 +94,7 @@ regprocin(PG_FUNCTION_ARGS)
 	 * pg_proc entries in the current search path.
 	 */
 	names = stringToQualifiedNameList(pro_name_or_oid);
-	clist = FuncnameGetCandidates(names, -1, NIL, false, false, false);
+	clist = FuncnameGetCandidates(names, PROKIND_ANY, -1, NIL, false, false, false);
 
 	if (clist == NULL)
 		ereport(ERROR,
@@ -128,7 +128,7 @@ to_regproc(PG_FUNCTION_ARGS)
 	 * entries in the current search path.
 	 */
 	names = stringToQualifiedNameList(pro_name);
-	clist = FuncnameGetCandidates(names, -1, NIL, false, false, true);
+	clist = FuncnameGetCandidates(names, PROKIND_ANY, -1, NIL, false, false, true);
 
 	if (clist == NULL || clist->next != NULL)
 		PG_RETURN_NULL();
@@ -176,7 +176,7 @@ regprocout(PG_FUNCTION_ARGS)
 			 * qualify it.
 			 */
 			clist = FuncnameGetCandidates(list_make1(makeString(proname)),
-										  -1, NIL, false, false, false);
+										  PROKIND_ANY, -1, NIL, false, false, false);
 			if (clist != NULL && clist->next == NULL &&
 				clist->oid == proid)
 				nspname = NULL;
@@ -263,7 +263,7 @@ regprocedurein(PG_FUNCTION_ARGS)
 	 */
 	parseNameAndArgTypes(pro_name_or_oid, false, &names, &nargs, argtypes);
 
-	clist = FuncnameGetCandidates(names, nargs, NIL, false, false, false);
+	clist = FuncnameGetCandidates(names, PROKIND_ANY, nargs, NIL, false, false, false);
 
 	for (; clist; clist = clist->next)
 	{
@@ -302,7 +302,7 @@ to_regprocedure(PG_FUNCTION_ARGS)
 	 */
 	parseNameAndArgTypes(pro_name, false, &names, &nargs, argtypes);
 
-	clist = FuncnameGetCandidates(names, nargs, NIL, false, false, true);
+	clist = FuncnameGetCandidates(names, PROKIND_ANY, nargs, NIL, false, false, true);
 
 	for (; clist; clist = clist->next)
 	{

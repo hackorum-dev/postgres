@@ -617,7 +617,9 @@ AggregateCreate(const char *aggName,
 							 InvalidOid,	/* no validator */
 							 "aggregate_dummy", /* placeholder proc */
 							 NULL,	/* probin */
-							 PROKIND_AGGREGATE,
+							 PROKIND_FUNCTION,
+							 true,	/* isAgg */
+							 false,	/* isWindowFunc */
 							 false, /* security invoker (currently not
 									 * definable for agg) */
 							 false, /* isLeakProof */
@@ -806,7 +808,7 @@ lookup_agg_function(List *fnName,
 	 * function's return value.  it also returns the true argument types to
 	 * the function.
 	 */
-	fdresult = func_get_detail(fnName, NIL, NIL,
+	fdresult = func_get_detail(fnName, PROKIND_FUNCTION, NIL, NIL,
 							   nargs, input_types, false, false,
 							   &fnOid, rettype, &retset,
 							   &nvargs, &vatype,

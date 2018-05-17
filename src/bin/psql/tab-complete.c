@@ -389,39 +389,21 @@ do { \
  * Assembly instructions for schema queries
  */
 
-static const SchemaQuery Query_for_list_of_aggregates[] = {
-	{
-		/* min_server_version */
-		110000,
-		/* catname */
-		"pg_catalog.pg_proc p",
-		/* selcondition */
-		"p.prokind = 'a'",
-		/* viscondition */
-		"pg_catalog.pg_function_is_visible(p.oid)",
-		/* namespace */
-		"p.pronamespace",
-		/* result */
-		"pg_catalog.quote_ident(p.proname)",
-		/* qualresult */
-		NULL
-	},
-	{
-		/* min_server_version */
-		0,
-		/* catname */
-		"pg_catalog.pg_proc p",
-		/* selcondition */
-		"p.proisagg",
-		/* viscondition */
-		"pg_catalog.pg_function_is_visible(p.oid)",
-		/* namespace */
-		"p.pronamespace",
-		/* result */
-		"pg_catalog.quote_ident(p.proname)",
-		/* qualresult */
-		NULL
-	}
+static const SchemaQuery Query_for_list_of_aggregates = {
+	/* min_server_version */
+	0,
+	/* catname */
+	"pg_catalog.pg_proc p",
+	/* selcondition */
+	"p.proisagg",
+	/* viscondition */
+	"pg_catalog.pg_function_is_visible(p.oid)",
+	/* namespace */
+	"p.pronamespace",
+	/* result */
+	"pg_catalog.quote_ident(p.proname)",
+	/* qualresult */
+	NULL
 };
 
 static const SchemaQuery Query_for_list_of_datatypes = {
@@ -1191,7 +1173,7 @@ typedef struct
 
 static const pgsql_thing_t words_after_create[] = {
 	{"ACCESS METHOD", NULL, NULL, NULL, THING_NO_ALTER},
-	{"AGGREGATE", NULL, NULL, Query_for_list_of_aggregates},
+	{"AGGREGATE", NULL, NULL, &Query_for_list_of_aggregates},
 	{"CAST", NULL, NULL, NULL}, /* Casts have complex structures for names, so
 								 * skip it */
 	{"COLLATION", "SELECT pg_catalog.quote_ident(collname) FROM pg_catalog.pg_collation WHERE collencoding IN (-1, pg_catalog.pg_char_to_encoding(pg_catalog.getdatabaseencoding())) AND substring(pg_catalog.quote_ident(collname),1,%d)='%s'"},
@@ -3634,7 +3616,7 @@ psql_completion(const char *text, int start, int end)
 			COMPLETE_WITH_QUERY(Query_for_list_of_roles);
 	}
 	else if (TailMatchesCS1("\\da*"))
-		COMPLETE_WITH_VERSIONED_SCHEMA_QUERY(Query_for_list_of_aggregates, NULL);
+		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_aggregates, NULL);
 	else if (TailMatchesCS1("\\dA*"))
 		COMPLETE_WITH_QUERY(Query_for_list_of_access_methods);
 	else if (TailMatchesCS1("\\db*"))

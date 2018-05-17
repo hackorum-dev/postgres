@@ -40,6 +40,7 @@
 #include "catalog/indexing.h"
 #include "catalog/objectaccess.h"
 #include "catalog/pg_operator.h"
+#include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "commands/alter.h"
 #include "commands/defrem.h"
@@ -205,7 +206,7 @@ DefineOperator(List *names, List *parameters)
 		typeId[1] = typeId2;
 		nargs = 2;
 	}
-	functionOid = LookupFuncName(functionName, nargs, typeId, false);
+	functionOid = LookupFuncName(functionName, PROKIND_FUNCTION, nargs, typeId, false);
 
 	/*
 	 * We require EXECUTE rights for the function.  This isn't strictly
@@ -268,7 +269,7 @@ ValidateRestrictionEstimator(List *restrictionName)
 	typeId[2] = INTERNALOID;	/* args list */
 	typeId[3] = INT4OID;		/* varRelid */
 
-	restrictionOid = LookupFuncName(restrictionName, 4, typeId, false);
+	restrictionOid = LookupFuncName(restrictionName, PROKIND_FUNCTION, 4, typeId, false);
 
 	/* estimators must return float8 */
 	if (get_func_rettype(restrictionOid) != FLOAT8OID)
@@ -309,12 +310,12 @@ ValidateJoinEstimator(List *joinName)
 	 * arguments, but we still allow the old 4-argument form. Try the
 	 * preferred form first.
 	 */
-	joinOid = LookupFuncName(joinName, 5, typeId, true);
+	joinOid = LookupFuncName(joinName, PROKIND_FUNCTION, 5, typeId, true);
 	if (!OidIsValid(joinOid))
-		joinOid = LookupFuncName(joinName, 4, typeId, true);
+		joinOid = LookupFuncName(joinName, PROKIND_FUNCTION, 4, typeId, true);
 	/* If not found, reference the 5-argument signature in error msg */
 	if (!OidIsValid(joinOid))
-		joinOid = LookupFuncName(joinName, 5, typeId, false);
+		joinOid = LookupFuncName(joinName, PROKIND_FUNCTION, 5, typeId, false);
 
 	/* estimators must return float8 */
 	if (get_func_rettype(joinOid) != FLOAT8OID)

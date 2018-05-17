@@ -919,7 +919,7 @@ TypeIsVisible(Oid typid)
  * candidate is found for other reasons.
  */
 FuncCandidateList
-FuncnameGetCandidates(List *names, int nargs, List *argnames,
+FuncnameGetCandidates(List *names, char prokind, int nargs, List *argnames,
 					  bool expand_variadic, bool expand_defaults,
 					  bool missing_ok)
 {
@@ -952,7 +952,7 @@ FuncnameGetCandidates(List *names, int nargs, List *argnames,
 	}
 
 	/* Search syscache by name only */
-	catlist = SearchSysCacheList1(PROCNAMEARGSNSP, CStringGetDatum(funcname));
+	catlist = SearchSysCacheList1(PROCNAMEARGSNSPKIND, CStringGetDatum(funcname));
 
 	for (i = 0; i < catlist->n_members; i++)
 	{
@@ -966,6 +966,9 @@ FuncnameGetCandidates(List *names, int nargs, List *argnames,
 		Oid			va_elem_type;
 		int		   *argnumbers = NULL;
 		FuncCandidateList newResult;
+
+		if (prokind != PROKIND_ANY && procform->prokind != prokind)
+			continue;
 
 		if (OidIsValid(namespaceId))
 		{
@@ -1428,6 +1431,7 @@ FunctionIsVisible(Oid funcid)
 		visible = false;
 
 		clist = FuncnameGetCandidates(list_make1(makeString(proname)),
+									  procform->prokind,
 									  nargs, NIL, false, false, false);
 
 		for (; clist; clist = clist->next)

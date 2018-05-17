@@ -60,8 +60,8 @@ extern ObjectAddress CreateCast(CreateCastStmt *stmt);
 extern void DropCastById(Oid castOid);
 extern ObjectAddress CreateTransform(CreateTransformStmt *stmt);
 extern void DropTransformById(Oid transformOid);
-extern void IsThereFunctionInNamespace(const char *proname, int pronargs,
-						   oidvector *proargtypes, Oid nspOid);
+extern void IsThereFunctionInNamespace(const char *proname, char prokind, int pronargs,
+									   oidvector *proargtypes, Oid nspOid);
 extern void ExecuteDoStmt(DoStmt *stmt, bool atomic);
 extern void ExecuteCallStmt(CallStmt *stmt, ParamListInfo params, bool atomic, DestReceiver *dest);
 extern Oid	get_cast_oid(Oid sourcetypeid, Oid targettypeid, bool missing_ok);

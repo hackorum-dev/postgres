@@ -108,7 +108,7 @@ get_ts_parser_func(DefElem *defel, int attnum)
 			nargs = 0;			/* keep compiler quiet */
 	}
 
-	procOid = LookupFuncName(funcName, nargs, typeId, false);
+	procOid = LookupFuncName(funcName, PROKIND_FUNCTION, nargs, typeId, false);
 	if (get_func_rettype(procOid) != retTypeId)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
@@ -672,7 +672,7 @@ get_ts_template_func(DefElem *defel, int attnum)
 			nargs = 0;			/* keep compiler quiet */
 	}
 
-	procOid = LookupFuncName(funcName, nargs, typeId, false);
+	procOid = LookupFuncName(funcName, PROKIND_FUNCTION, nargs, typeId, false);
 	if (get_func_rettype(procOid) != retTypeId)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),

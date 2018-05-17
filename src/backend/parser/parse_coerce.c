@@ -834,7 +834,8 @@ build_coercion_expression(Node *node,
 		 */
 		/* Assert(targetTypeId == procstruct->prorettype); */
 		Assert(!procstruct->proretset);
-		Assert(procstruct->prokind == PROKIND_FUNCTION);
+		Assert(!procstruct->proisagg);
+		Assert(!procstruct->proiswindow);
 		nargs = procstruct->pronargs;
 		Assert(nargs >= 1 && nargs <= 3);
 		/* Assert(procstruct->proargtypes.values[0] == exprType(node)); */

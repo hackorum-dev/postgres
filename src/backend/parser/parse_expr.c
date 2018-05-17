@@ -15,6 +15,7 @@
 
 #include "postgres.h"
 
+#include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "commands/dbcommands.h"
 #include "miscadmin.h"
@@ -480,7 +481,7 @@ transformIndirection(ParseState *pstate, A_Indirection *ind)
 										  list_make1(result),
 										  last_srf,
 										  NULL,
-										  false,
+										  PROKIND_FUNCTION,
 										  location);
 			if (newresult == NULL)
 				unknown_attribute(pstate, result, strVal(n), location);
@@ -630,7 +631,7 @@ transformColumnRef(ParseState *pstate, ColumnRef *cref)
 											 list_make1(node),
 											 pstate->p_last_srf,
 											 NULL,
-											 false,
+											 PROKIND_FUNCTION,
 											 cref->location);
 				}
 				break;
@@ -678,7 +679,7 @@ transformColumnRef(ParseState *pstate, ColumnRef *cref)
 											 list_make1(node),
 											 pstate->p_last_srf,
 											 NULL,
-											 false,
+											 PROKIND_FUNCTION,
 											 cref->location);
 				}
 				break;
@@ -739,7 +740,7 @@ transformColumnRef(ParseState *pstate, ColumnRef *cref)
 											 list_make1(node),
 											 pstate->p_last_srf,
 											 NULL,
-											 false,
+											 PROKIND_FUNCTION,
 											 cref->location);
 				}
 				break;
@@ -1481,7 +1482,7 @@ transformFuncCall(ParseState *pstate, FuncCall *fn)
 							 targs,
 							 last_srf,
 							 fn,
-							 false,
+							 PROKIND_FUNCTION,
 							 fn->location);
 }
 

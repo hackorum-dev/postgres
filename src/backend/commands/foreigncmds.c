@@ -478,7 +478,7 @@ lookup_fdw_handler_func(DefElem *handler)
 		return InvalidOid;
 
 	/* handlers have no arguments */
-	handlerOid = LookupFuncName((List *) handler->arg, 0, funcargtypes, false);
+	handlerOid = LookupFuncName((List *) handler->arg, PROKIND_FUNCTION, 0, funcargtypes, false);
 
 	/* check that handler has correct return type */
 	if (get_func_rettype(handlerOid) != FDW_HANDLEROID)
@@ -505,7 +505,7 @@ lookup_fdw_validator_func(DefElem *validator)
 	funcargtypes[0] = TEXTARRAYOID;
 	funcargtypes[1] = OIDOID;
 
-	return LookupFuncName((List *) validator->arg, 2, funcargtypes, false);
+	return LookupFuncName((List *) validator->arg, PROKIND_FUNCTION, 2, funcargtypes, false);
 	/* validator's return value is ignored, so we don't check the type */
 }
 

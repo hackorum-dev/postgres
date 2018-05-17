@@ -278,12 +278,12 @@ HINT:  Specify the argument list to select the function unambiguously.
 -- CREATE OR REPLACE tests
 CREATE FUNCTION functest1(a int) RETURNS int LANGUAGE SQL AS 'SELECT $1';
 CREATE OR REPLACE FUNCTION functest1(a int) RETURNS int LANGUAGE SQL WINDOW AS 'SELECT $1';
-ERROR:  cannot change routine kind
-DETAIL:  "functest1" is a function.
-CREATE OR REPLACE PROCEDURE functest1(a int) LANGUAGE SQL AS 'SELECT $1';
-ERROR:  cannot change routine kind
-DETAIL:  "functest1" is a function.
+ERROR:  function "functest1" is not a window function
+CREATE FUNCTION functest2(a int) RETURNS int LANGUAGE SQL WINDOW AS 'SELECT $1';
+CREATE OR REPLACE FUNCTION functest2(a int) RETURNS int LANGUAGE SQL AS 'SELECT $1';
+ERROR:  function "functest2" is a window function
 DROP FUNCTION functest1(a int);
+DROP FUNCTION functest2(a int);
 -- Check behavior of VOID-returning SQL functions
 CREATE FUNCTION voidtest1(a int) RETURNS VOID LANGUAGE SQL AS
 $$ SELECT a + 1 $$;

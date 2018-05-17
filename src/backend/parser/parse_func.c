@@ -71,7 +71,7 @@ static Node *ParseComplexProjection(ParseState *pstate, const char *funcname,
  */
 Node *
 ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
-				  Node *last_srf, FuncCall *fn, bool proc_call, int location)
+				  Node *last_srf, FuncCall *fn, char prokind, int location)
 {
 	bool		is_column = (fn == NULL);
 	List	   *agg_order = (fn ? fn->agg_order : NIL);
@@ -244,7 +244,7 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 
 	setup_parser_errposition_callback(&pcbstate, pstate, location);
 
-	fdresult = func_get_detail(funcname, fargs, argnames, nargs,
+	fdresult = func_get_detail(funcname, prokind, fargs, argnames, nargs,
 							   actual_arg_types,
 							   !func_variadic, true,
 							   &funcid, &rettype, &retset,
@@ -263,7 +263,7 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 						   actual_arg_types[0], rettype, -1,
 						   COERCION_EXPLICIT, COERCE_EXPLICIT_CALL, location);
 	}
-	else if (fdresult == FUNCDETAIL_NORMAL || fdresult == FUNCDETAIL_PROCEDURE)
+	else if (fdresult == FUNCDETAIL_NORMAL)
 	{
 		/*
 		 * Normal function found; was there anything indicating it must be an
@@ -306,26 +306,6 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 					 errmsg("OVER specified, but %s is not a window function nor an aggregate function",
 							NameListToString(funcname)),
 					 parser_errposition(pstate, location)));
-
-		if (fdresult == FUNCDETAIL_NORMAL && proc_call)
-			ereport(ERROR,
-					(errcode(ERRCODE_UNDEFINED_FUNCTION),
-					 errmsg("%s is not a procedure",
-							func_signature_string(funcname, nargs,
-												  argnames,
-												  actual_arg_types)),
-					 errhint("To call a function, use SELECT."),
-					 parser_errposition(pstate, location)));
-
-		if (fdresult == FUNCDETAIL_PROCEDURE && !proc_call)
-			ereport(ERROR,
-					(errcode(ERRCODE_UNDEFINED_FUNCTION),
-					 errmsg("%s is a procedure",
-							func_signature_string(funcname, nargs,
-												  argnames,
-												  actual_arg_types)),
-					 errhint("To call a procedure, use CALL."),
-					 parser_errposition(pstate, location)));
 	}
 	else if (fdresult == FUNCDETAIL_AGGREGATE)
 	{
@@ -335,15 +315,6 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 		HeapTuple	tup;
 		Form_pg_aggregate classForm;
 		int			catDirectArgs;
-
-		if (proc_call)
-			ereport(ERROR,
-					(errcode(ERRCODE_UNDEFINED_FUNCTION),
-					 errmsg("%s is not a procedure",
-							func_signature_string(funcname, nargs,
-												  argnames,
-												  actual_arg_types)),
-					 parser_errposition(pstate, location)));
 
 		tup = SearchSysCache1(AGGFNOID, ObjectIdGetDatum(funcid));
 		if (!HeapTupleIsValid(tup)) /* should not happen */
@@ -546,6 +517,15 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 							 "after all regular arguments of the aggregate."),
 					 parser_errposition(pstate, location)));
 		}
+		else if (prokind == PROKIND_PROCEDURE)
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_FUNCTION),
+					 errmsg("procedure %s does not exist",
+							func_signature_string(funcname, nargs, argnames,
+												  actual_arg_types)),
+					 errhint("No procedure matches the given name and argument types. "
+							 "You might need to add explicit type casts."),
+					 parser_errposition(pstate, location)));
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_UNDEFINED_FUNCTION),
@@ -664,7 +644,7 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 		check_srf_call_placement(pstate, last_srf, location);
 
 	/* build the appropriate output structure */
-	if (fdresult == FUNCDETAIL_NORMAL || fdresult == FUNCDETAIL_PROCEDURE)
+	if (fdresult == FUNCDETAIL_NORMAL)
 	{
 		FuncExpr   *funcexpr = makeNode(FuncExpr);
 
@@ -1310,6 +1290,7 @@ func_select_candidate(int nargs,
  */
 FuncDetailCode
 func_get_detail(List *funcname,
+				char prokind,
 				List *fargs,
 				List *fargnames,
 				int nargs,
@@ -1341,7 +1322,7 @@ func_get_detail(List *funcname,
 		*argdefaults = NIL;
 
 	/* Get list of possible candidates from namespace search */
-	raw_candidates = FuncnameGetCandidates(funcname, nargs, fargnames,
+	raw_candidates = FuncnameGetCandidates(funcname, prokind, nargs, fargnames,
 										   expand_variadic, expand_defaults,
 										   false);
 
@@ -1615,26 +1596,12 @@ func_get_detail(List *funcname,
 			}
 		}
 
-		switch (pform->prokind)
-		{
-			case PROKIND_AGGREGATE:
-				result = FUNCDETAIL_AGGREGATE;
-				break;
-			case PROKIND_FUNCTION:
-				result = FUNCDETAIL_NORMAL;
-				break;
-			case PROKIND_PROCEDURE:
-				result = FUNCDETAIL_PROCEDURE;
-				break;
-			case PROKIND_WINDOW:
-				result = FUNCDETAIL_WINDOWFUNC;
-				break;
-			default:
-				elog(ERROR, "unrecognized prokind: %c", pform->prokind);
-				result = FUNCDETAIL_NORMAL; /* keep compiler quiet */
-				break;
-		}
-
+		if (pform->proisagg)
+			result = FUNCDETAIL_AGGREGATE;
+		else if (pform->proiswindow)
+			result = FUNCDETAIL_WINDOWFUNC;
+		else
+			result = FUNCDETAIL_NORMAL;
 		ReleaseSysCache(ftup);
 		return result;
 	}
@@ -1971,14 +1938,14 @@ func_signature_string(List *funcname, int nargs,
  * else raise an error.
  */
 Oid
-LookupFuncName(List *funcname, int nargs, const Oid *argtypes, bool noError)
+LookupFuncName(List *funcname, char prokind, int nargs, const Oid *argtypes, bool noError)
 {
 	FuncCandidateList clist;
 
 	/* Passing NULL for argtypes is no longer allowed */
 	Assert(argtypes);
 
-	clist = FuncnameGetCandidates(funcname, nargs, NIL, false, false, noError);
+	clist = FuncnameGetCandidates(funcname, prokind, nargs, NIL, false, false, noError);
 
 	/*
 	 * If no arguments were specified, the name must yield a unique candidate.
@@ -1990,11 +1957,20 @@ LookupFuncName(List *funcname, int nargs, const Oid *argtypes, bool noError)
 			if (clist->next)
 			{
 				if (!noError)
-					ereport(ERROR,
-							(errcode(ERRCODE_AMBIGUOUS_FUNCTION),
-							 errmsg("function name \"%s\" is not unique",
-									NameListToString(funcname)),
-							 errhint("Specify the argument list to select the function unambiguously.")));
+				{
+					if (prokind == PROKIND_PROCEDURE)
+						ereport(ERROR,
+								(errcode(ERRCODE_AMBIGUOUS_FUNCTION),
+								 errmsg("procedure name \"%s\" is not unique",
+										NameListToString(funcname)),
+								 errhint("Specify the argument list to select the procedure unambiguously.")));
+					else
+						ereport(ERROR,
+								(errcode(ERRCODE_AMBIGUOUS_FUNCTION),
+								 errmsg("function name \"%s\" is not unique",
+										NameListToString(funcname)),
+								 errhint("Specify the argument list to select the function unambiguously.")));
+				}
 			}
 			else
 				return clist->oid;
@@ -2002,10 +1978,18 @@ LookupFuncName(List *funcname, int nargs, const Oid *argtypes, bool noError)
 		else
 		{
 			if (!noError)
-				ereport(ERROR,
-						(errcode(ERRCODE_UNDEFINED_FUNCTION),
-						 errmsg("could not find a function named \"%s\"",
-								NameListToString(funcname))));
+			{
+				if (prokind == PROKIND_PROCEDURE)
+					ereport(ERROR,
+							(errcode(ERRCODE_UNDEFINED_FUNCTION),
+							 errmsg("could not find a procedure named \"%s\"",
+									NameListToString(funcname))));
+				else
+					ereport(ERROR,
+							(errcode(ERRCODE_UNDEFINED_FUNCTION),
+							 errmsg("could not find a function named \"%s\"",
+									NameListToString(funcname))));
+			}
 		}
 	}
 
@@ -2017,11 +2001,20 @@ LookupFuncName(List *funcname, int nargs, const Oid *argtypes, bool noError)
 	}
 
 	if (!noError)
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_FUNCTION),
-				 errmsg("function %s does not exist",
-						func_signature_string(funcname, nargs,
-											  NIL, argtypes))));
+	{
+		if (prokind == PROKIND_PROCEDURE)
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_FUNCTION),
+					 errmsg("procedure %s does not exist",
+							func_signature_string(funcname, nargs,
+												  NIL, argtypes))));
+		else
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_FUNCTION),
+					 errmsg("function %s does not exist",
+							func_signature_string(funcname, nargs,
+												  NIL, argtypes))));
+	}
 
 	return InvalidOid;
 }
@@ -2040,16 +2033,29 @@ LookupFuncName(List *funcname, int nargs, const Oid *argtypes, bool noError)
 Oid
 LookupFuncWithArgs(ObjectType objtype, ObjectWithArgs *func, bool noError)
 {
+	char		prokind;
 	Oid			argoids[FUNC_MAX_ARGS];
 	int			argcount;
 	int			i;
 	ListCell   *args_item;
 	Oid			oid;
 
-	Assert(objtype == OBJECT_AGGREGATE ||
-		   objtype == OBJECT_FUNCTION ||
-		   objtype == OBJECT_PROCEDURE ||
-		   objtype == OBJECT_ROUTINE);
+	switch (objtype)
+	{
+		case OBJECT_AGGREGATE:
+		case OBJECT_FUNCTION:
+			prokind = PROKIND_FUNCTION;
+			break;
+		case OBJECT_PROCEDURE:
+			prokind = PROKIND_PROCEDURE;
+			break;
+		case OBJECT_ROUTINE:
+			prokind = PROKIND_ANY;
+			break;
+		default:
+			elog(ERROR, "unexpected objtype: %d", (int) objtype);
+			prokind = 0;
+	}
 
 	argcount = list_length(func->objargs);
 	if (argcount > FUNC_MAX_ARGS)
@@ -2069,60 +2075,14 @@ LookupFuncWithArgs(ObjectType objtype, ObjectWithArgs *func, bool noError)
 		args_item = lnext(args_item);
 	}
 
+	oid = LookupFuncName(func->objname, prokind, func->args_unspecified ? -1 : argcount, argoids,
+						 objtype != OBJECT_AGGREGATE ? noError : true);
+
 	/*
-	 * When looking for a function or routine, we pass noError through to
-	 * LookupFuncName and let it make any error messages.  Otherwise, we make
-	 * our own errors for the aggregate and procedure cases.
+	 * Handle error checking for OBJECT_AGGREGATE here, since LookupFuncName()
+	 * doesn't distinguish aggregates.
 	 */
-	oid = LookupFuncName(func->objname, func->args_unspecified ? -1 : argcount, argoids,
-						 (objtype == OBJECT_FUNCTION || objtype == OBJECT_ROUTINE) ? noError : true);
-
-	if (objtype == OBJECT_FUNCTION)
-	{
-		/* Make sure it's a function, not a procedure */
-		if (oid && get_func_prokind(oid) == PROKIND_PROCEDURE)
-		{
-			if (noError)
-				return InvalidOid;
-			ereport(ERROR,
-					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("%s is not a function",
-							func_signature_string(func->objname, argcount,
-												  NIL, argoids))));
-		}
-	}
-	else if (objtype == OBJECT_PROCEDURE)
-	{
-		if (!OidIsValid(oid))
-		{
-			if (noError)
-				return InvalidOid;
-			else if (func->args_unspecified)
-				ereport(ERROR,
-						(errcode(ERRCODE_UNDEFINED_FUNCTION),
-						 errmsg("could not find a procedure named \"%s\"",
-								NameListToString(func->objname))));
-			else
-				ereport(ERROR,
-						(errcode(ERRCODE_UNDEFINED_FUNCTION),
-						 errmsg("procedure %s does not exist",
-								func_signature_string(func->objname, argcount,
-													  NIL, argoids))));
-		}
-
-		/* Make sure it's a procedure */
-		if (get_func_prokind(oid) != PROKIND_PROCEDURE)
-		{
-			if (noError)
-				return InvalidOid;
-			ereport(ERROR,
-					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("%s is not a procedure",
-							func_signature_string(func->objname, argcount,
-												  NIL, argoids))));
-		}
-	}
-	else if (objtype == OBJECT_AGGREGATE)
+	if (objtype == OBJECT_AGGREGATE)
 	{
 		if (!OidIsValid(oid))
 		{
@@ -2147,7 +2107,7 @@ LookupFuncWithArgs(ObjectType objtype, ObjectWithArgs *func, bool noError)
 		}
 
 		/* Make sure it's an aggregate */
-		if (get_func_prokind(oid) != PROKIND_AGGREGATE)
+		if (!get_func_isagg(oid))
 		{
 			if (noError)
 				return InvalidOid;
