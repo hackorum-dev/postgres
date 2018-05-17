@@ -2613,6 +2613,19 @@ ProcessStandbyReplyMessage(void)
 		WalSndKeepalive(false, InvalidXLogRecPtr);
 
 	/*
+	 * Once this stream catches up to WAL, writePtr cannot be smaller than
+	 * flushPtr. Otherwise we haven't reached the standby's starting LSN thus
+	 * this database cannot be a proper master of the standby. The state
+	 * causes infinite loop on shutdown.
+	 */
+	if (MyWalSnd->state >= WALSNDSTATE_CATCHUP &&
+		writePtr != InvalidXLogRecPtr && writePtr < flushPtr)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("Standby started from the future LSN for this server"),
+				 errhint("This means that the standby is not created from this database.")));
+
+	/*
 	 * Update shared state for this WalSender process based on reply data from
 	 * standby.
 	 */
