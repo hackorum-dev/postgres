@@ -4049,7 +4049,7 @@ EXEC SQL DESCRIBE prepared_statement INTO mysqlda;
      <step><simpara>Fetch rows from the cursor, and store them into an output SQLDA.</simpara></step>
      <step><simpara>Read values from the output SQLDA into the host variables (with conversion if necessary).</simpara></step>
      <step><simpara>Close the cursor.</simpara></step>
-     <step><simpara>Free the memory area allocated for the input SQLDA.</simpara></step>
+     <step><simpara>Free the memory area allocated for the input and output SQLDAs.</simpara></step>
     </procedure>
 
    <sect3 id="ecpg-sqlda-descriptors-sqlda">
@@ -4368,6 +4368,12 @@ switch (v.sqltype)
 }
 </programlisting>
     </para>
+    <para>
+     Finally after using output SQLDA, the allocated memory space must be freed explicity.
+<programlisting>
+free(sqlda1);
+</programlisting>
+    </para>
    </sect3>
 
    <sect3 id="ecpg-sqlda-input">
@@ -4448,8 +4454,7 @@ EXEC SQL OPEN cur1 USING DESCRIPTOR sqlda2;
 
     <para>
      Finally, after using input SQLDAs, the allocated memory space
-     must be freed explicitly, unlike SQLDAs used for receiving query
-     results.
+     must be freed explicitly.
 <programlisting>
 free(sqlda2);
 </programlisting>
@@ -4741,6 +4746,7 @@ main(void)
         }
     }
 
+    free(sqlda1);
     EXEC SQL CLOSE cur1;
     EXEC SQL COMMIT;
 
