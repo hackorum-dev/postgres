@@ -124,6 +124,8 @@ static SimpleStringList table_exclude_patterns = {NULL, NULL};
 static SimpleOidList table_exclude_oids = {NULL, NULL};
 static SimpleStringList tabledata_exclude_patterns = {NULL, NULL};
 static SimpleOidList tabledata_exclude_oids = {NULL, NULL};
+static SimpleStringList tabledata_where_patterns = {NULL, NULL};
+static SimpleOidList tabledata_where_oids = {NULL, NULL};
 
 
 char		g_opaque_type[10];	/* name for the opaque type */
@@ -153,7 +155,8 @@ static void expand_schema_name_patterns(Archive *fout,
 static void expand_table_name_patterns(Archive *fout,
 						   SimpleStringList *patterns,
 						   SimpleOidList *oids,
-						   bool strict_names);
+						   bool strict_names,
+						   bool match_data);
 static NamespaceInfo *findNamespace(Archive *fout, Oid nsoid);
 static void dumpTableData(Archive *fout, TableDataInfo *tdinfo);
 static void refreshMatViewData(Archive *fout, TableDataInfo *tdinfo);
@@ -369,6 +372,7 @@ main(int argc, char **argv)
 		{"snapshot", required_argument, NULL, 6},
 		{"strict-names", no_argument, &strict_names, 1},
 		{"use-set-session-authorization", no_argument, &dopt.use_setsessauth, 1},
+		{"where", required_argument, NULL, 8},
 		{"no-comments", no_argument, &dopt.no_comments, 1},
 		{"no-publications", no_argument, &dopt.no_publications, 1},
 		{"no-security-labels", no_argument, &dopt.no_security_labels, 1},
@@ -555,6 +559,10 @@ main(int argc, char **argv)
 
 			case 7:				/* no-sync */
 				dosync = false;
+				break;
+
+			case 8:				/* table(s) data WHERE clause */
+				simple_string_list_append(&tabledata_where_patterns, optarg);
 				break;
 
 			default:
@@ -752,17 +760,26 @@ main(int argc, char **argv)
 	{
 		expand_table_name_patterns(fout, &table_include_patterns,
 								   &table_include_oids,
-								   strict_names);
+								   strict_names, false);
 		if (table_include_oids.head == NULL)
 			exit_horribly(NULL, "no matching tables were found\n");
 	}
+	if (tabledata_where_patterns.head != NULL)
+	{
+		expand_table_name_patterns(fout, &tabledata_where_patterns,
+								   &tabledata_where_oids,
+								   true, 	/* Always use strict names for WHERE pattern */
+								   true);	/* Match extra data after ':' character in each argument */
+		if (tabledata_where_oids.head == NULL)
+			exit_horribly(NULL, "no matching tables were found for WHERE clause\n");
+	}
 	expand_table_name_patterns(fout, &table_exclude_patterns,
 							   &table_exclude_oids,
-							   false);
+							   false, false);
 
 	expand_table_name_patterns(fout, &tabledata_exclude_patterns,
 							   &tabledata_exclude_oids,
-							   false);
+							   false, false);
 
 	/* non-matching exclusion patterns aren't an error */
 
@@ -985,6 +1002,7 @@ help(const char *progname)
 	printf(_("  --use-set-session-authorization\n"
 			 "                               use SET SESSION AUTHORIZATION commands instead of\n"
 			 "                               ALTER OWNER commands to set ownership\n"));
+	printf(_("  --where=TABLE:WHERE_CLAUSE   only dump selected rows for the given table(s)\n"));
 
 	printf(_("\nConnection options:\n"));
 	printf(_("  -d, --dbname=DBNAME      database to dump\n"));
@@ -1277,15 +1295,19 @@ expand_schema_name_patterns(Archive *fout,
 /*
  * Find the OIDs of all tables matching the given list of patterns,
  * and append them to the given OID list.
+ * If match_data is set, then each pattern is first split on the ':' character,
+ * and the portion after the colon is appended to the SimpleOidList extra data.
  */
 static void
 expand_table_name_patterns(Archive *fout,
 						   SimpleStringList *patterns, SimpleOidList *oids,
-						   bool strict_names)
+						   bool strict_names, bool match_data)
 {
 	PQExpBuffer query;
 	PGresult   *res;
 	SimpleStringListCell *cell;
+	char *extra_data;
+	char *colon_char;
 	int			i;
 
 	if (patterns->head == NULL)
@@ -1300,6 +1322,17 @@ expand_table_name_patterns(Archive *fout,
 
 	for (cell = patterns->head; cell; cell = cell->next)
 	{
+		/* When match_data is set, split the pattern on the first unquoted ':' character,
+		 * and treat the second-half as extra data to append to the list.
+		 */
+		extra_data = NULL;
+		if (match_data) {
+			colon_char = (char*) findUnquotedChar(cell->val, ':');
+			if (colon_char) {
+				*colon_char = '\0';		/* overwrite the colon, terminating the string before it */
+				extra_data = colon_char+1;	/* use remaining portion of the string as extra data */
+			}
+		}
 		/*
 		 * Query must remain ABSOLUTELY devoid of unqualified names.  This
 		 * would be unnecessary given a pg_table_is_visible() variant taking a
@@ -1328,7 +1361,7 @@ expand_table_name_patterns(Archive *fout,
 
 		for (i = 0; i < PQntuples(res); i++)
 		{
-			simple_oid_list_append(oids, atooid(PQgetvalue(res, i, 0)));
+			simple_oid_list_append_data(oids, atooid(PQgetvalue(res, i, 0)), extra_data);
 		}
 
 		PQclear(res);
@@ -2228,6 +2261,7 @@ static void
 makeTableDataInfo(DumpOptions *dopt, TableInfo *tbinfo)
 {
 	TableDataInfo *tdinfo;
+	char *filter_clause;
 
 	/*
 	 * Nothing to do if we already decided to dump the table.  This will
@@ -2277,6 +2311,23 @@ makeTableDataInfo(DumpOptions *dopt, TableInfo *tbinfo)
 	tdinfo->dobj.namespace = tbinfo->dobj.namespace;
 	tdinfo->tdtable = tbinfo;
 	tdinfo->filtercond = NULL;	/* might get set later */
+
+	/*
+	 * --where=<table_name>:<filter_clause> may be provided for this table.
+	 * If provided, filter_clause will be something like "foo < 5", so wrap it in a WHERE clause.
+	 */
+	filter_clause = NULL;
+	if (simple_oid_list_find_data(&tabledata_where_oids,
+		tbinfo->dobj.catId.oid,
+		(void**) &filter_clause))
+	{
+		if (filter_clause) {
+			tdinfo->filtercond = psprintf("WHERE (%s)", filter_clause);
+		} else {
+			exit_horribly(NULL, "invalid pattern provided for --where\n");
+		}
+	}
+
 	addObjectDependency(&tdinfo->dobj, tbinfo->dobj.dumpId);
 
 	tbinfo->dataObj = tdinfo;
