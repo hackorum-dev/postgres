@@ -37,6 +37,7 @@
 #include "access/twophase_rmgr.h"
 #include "access/xact.h"
 #include "access/xlog.h"
+#include "catalog/pg_class.h"
 #include "miscadmin.h"
 #include "pg_trace.h"
 #include "pgstat.h"
@@ -47,6 +48,7 @@
 #include "storage/standby.h"
 #include "utils/memutils.h"
 #include "utils/ps_status.h"
+#include "utils/rel.h"
 #include "utils/resowner_private.h"
 
 
@@ -1041,13 +1043,25 @@ LockAcquireExtended(const LOCKTAG *locktag,
 	 */
 	if (log_lock)
 	{
-		/*
-		 * Decode the locktag back to the original values, to avoid sending
-		 * lots of empty bytes with every message.  See lock.h to check how a
-		 * locktag is defined for LOCKTAG_RELATION
-		 */
-		LogAccessExclusiveLock(locktag->locktag_field1,
-							   locktag->locktag_field2);
+		bool unlogged_rel = false;
+
+		if (locktag->locktag_type == LOCKTAG_RELATION)
+		{
+			Relation r = RelationIdGetRelation(locktag->locktag_field2);
+			unlogged_rel = r->rd_rel->relpersistence == RELPERSISTENCE_UNLOGGED;
+			RelationClose(r);
+		}
+
+		if (!unlogged_rel)
+		{
+			/*
+			 * Decode the locktag back to the original values, to avoid sending
+			 * lots of empty bytes with every message.  See lock.h to check how a
+			 * locktag is defined for LOCKTAG_RELATION
+			 */
+			LogAccessExclusiveLock(locktag->locktag_field1,
+								   locktag->locktag_field2);
+		}
 	}
 
 	return LOCKACQUIRE_OK;
