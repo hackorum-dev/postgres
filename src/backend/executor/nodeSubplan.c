@@ -10,6 +10,12 @@
  * direct correlation variables from the parent plan level), and "regular"
  * subplans, which are re-evaluated every time their result is required.
  *
+ * There are two ways a SubPlan node can return the result.  The first is
+ * that ExecSubPlan() runs the subquery, and returns its result like any
+ * other expression.  The second way is to return the result in executor
+ * Params.  In this method, the execution happens when ExecSetParamPlan() is
+ * called, and the subquery's results are set as the current values of
+ * executor Params, as indicated by SubPlan->setParam.
  *
  * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
