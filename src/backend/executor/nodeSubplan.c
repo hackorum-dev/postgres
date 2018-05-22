@@ -802,7 +802,6 @@ ExecInitSubPlan(SubPlan *subplan, PlanState *parent)
 	sstate->keyColIdx = NULL;
 	sstate->tab_eq_funcoids = NULL;
 	sstate->tab_hash_funcs = NULL;
-	sstate->tab_eq_funcs = NULL;
 	sstate->lhs_hash_funcs = NULL;
 	sstate->cur_eq_funcs = NULL;
 
@@ -900,7 +899,6 @@ ExecInitSubPlan(SubPlan *subplan, PlanState *parent)
 		lefttlist = righttlist = NIL;
 		sstate->tab_eq_funcoids = (Oid *) palloc(ncols * sizeof(Oid));
 		sstate->tab_hash_funcs = (FmgrInfo *) palloc(ncols * sizeof(FmgrInfo));
-		sstate->tab_eq_funcs = (FmgrInfo *) palloc(ncols * sizeof(FmgrInfo));
 		sstate->lhs_hash_funcs = (FmgrInfo *) palloc(ncols * sizeof(FmgrInfo));
 		sstate->cur_eq_funcs = (FmgrInfo *) palloc(ncols * sizeof(FmgrInfo));
 		i = 1;
@@ -909,7 +907,6 @@ ExecInitSubPlan(SubPlan *subplan, PlanState *parent)
 			OpExpr	   *opexpr = lfirst_node(OpExpr, l);
 			Expr	   *expr;
 			TargetEntry *tle;
-			Oid			rhs_eq_oper;
 			Oid			left_hashfn;
 			Oid			right_hashfn;
 
@@ -935,13 +932,6 @@ ExecInitSubPlan(SubPlan *subplan, PlanState *parent)
 			sstate->tab_eq_funcoids[i - 1] = opexpr->opfuncid;
 			fmgr_info(opexpr->opfuncid, &sstate->cur_eq_funcs[i - 1]);
 			fmgr_info_set_expr((Node *) opexpr, &sstate->cur_eq_funcs[i - 1]);
-
-			/* Look up the equality function for the RHS type */
-			if (!get_compatible_hash_operators(opexpr->opno,
-											   NULL, &rhs_eq_oper))
-				elog(ERROR, "could not find compatible hash operator for operator %u",
-					 opexpr->opno);
-			fmgr_info(get_opcode(rhs_eq_oper), &sstate->tab_eq_funcs[i - 1]);
 
 			/* Lookup the associated hash functions */
 			if (!get_op_hash_functions(opexpr->opno,
