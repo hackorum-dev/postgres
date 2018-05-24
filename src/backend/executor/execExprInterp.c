@@ -1455,7 +1455,7 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 		EEO_CASE(EEOP_DOMAIN_CHECK)
 		{
 			/* too complex for an inline implementation */
-			ExecEvalConstraintCheck(state, op);
+			ExecEvalConstraintCheck(state, op, econtext);
 
 			EEO_NEXT();
 		}
@@ -3508,10 +3508,24 @@ ExecEvalConstraintNotNull(ExprState *state, ExprEvalStep *op)
  * Evaluate a CHECK domain constraint.
  */
 void
-ExecEvalConstraintCheck(ExprState *state, ExprEvalStep *op)
+ExecEvalConstraintCheck(ExprState *state, ExprEvalStep *op,
+						ExprContext *econtext)
 {
-	if (!*op->d.domaincheck.checknull &&
-		!DatumGetBool(*op->d.domaincheck.checkvalue))
+	if (op->d.domaincheck.check_exprstate)
+	{
+		op->d.domaincheck.checkvalue = ExecEvalExpr(
+											op->d.domaincheck.check_exprstate,
+											econtext,
+											&op->d.domaincheck.checknull);
+	}
+	else
+	{
+		op->d.domaincheck.checkvalue = *(op->resvalue);
+		op->d.domaincheck.checknull = *(op->resnull);
+	}
+
+	if (!op->d.domaincheck.checknull &&
+		!DatumGetBool(op->d.domaincheck.checkvalue))
 		ereport(ERROR,
 				(errcode(ERRCODE_CHECK_VIOLATION),
 				 errmsg("value for domain %s violates check constraint \"%s\"",

@@ -509,10 +509,12 @@ typedef struct ExprEvalStep
 			/* name of constraint */
 			char	   *constraintname;
 			/* where the result of a CHECK constraint will be stored */
-			Datum	   *checkvalue;
-			bool	   *checknull;
+			Datum		checkvalue;
+			bool		checknull;
 			/* OID of domain type */
 			Oid			resulttype;
+			/* NULL for EEOP_DOMAIN_NOTNULL */
+			ExprState  *check_exprstate;
 		}			domaincheck;
 
 		/* for EEOP_CONVERT_ROWTYPE */
@@ -726,7 +728,8 @@ extern void ExecEvalConvertRowtype(ExprState *state, ExprEvalStep *op,
 					   ExprContext *econtext);
 extern void ExecEvalScalarArrayOp(ExprState *state, ExprEvalStep *op);
 extern void ExecEvalConstraintNotNull(ExprState *state, ExprEvalStep *op);
-extern void ExecEvalConstraintCheck(ExprState *state, ExprEvalStep *op);
+extern void ExecEvalConstraintCheck(ExprState *state, ExprEvalStep *op,
+						ExprContext *econtext);
 extern void ExecEvalXmlExpr(ExprState *state, ExprEvalStep *op);
 extern void ExecEvalGroupingFunc(ExprState *state, ExprEvalStep *op);
 extern void ExecEvalSubPlan(ExprState *state, ExprEvalStep *op,

@@ -2673,14 +2673,9 @@ ExecInitCoerceToDomain(ExprEvalStep *scratch, CoerceToDomain *ctest,
 	DomainConstraintRef *constraint_ref;
 	Datum	   *domainval = NULL;
 	bool	   *domainnull = NULL;
-	Datum	   *save_innermost_domainval;
-	bool	   *save_innermost_domainnull;
 	ListCell   *l;
 
 	scratch->d.domaincheck.resulttype = ctest->resulttype;
-	/* we'll allocate workspace only if needed */
-	scratch->d.domaincheck.checkvalue = NULL;
-	scratch->d.domaincheck.checknull = NULL;
 
 	/*
 	 * Evaluate argument - it's fine to directly store it into resv/resnull,
@@ -2721,6 +2716,8 @@ ExecInitCoerceToDomain(ExprEvalStep *scratch, CoerceToDomain *ctest,
 	foreach(l, constraint_ref->constraints)
 	{
 		DomainConstraintState *con = (DomainConstraintState *) lfirst(l);
+		Expr	   *check_expr = con->check_expr;
+		ExprState  *check_exprstate;
 
 		scratch->d.domaincheck.constraintname = con->name;
 
@@ -2728,18 +2725,10 @@ ExecInitCoerceToDomain(ExprEvalStep *scratch, CoerceToDomain *ctest,
 		{
 			case DOM_CONSTRAINT_NOTNULL:
 				scratch->opcode = EEOP_DOMAIN_NOTNULL;
+				scratch->d.domaincheck.check_exprstate = NULL;
 				ExprEvalPushStep(state, scratch);
 				break;
 			case DOM_CONSTRAINT_CHECK:
-				/* Allocate workspace for CHECK output if we didn't yet */
-				if (scratch->d.domaincheck.checkvalue == NULL)
-				{
-					scratch->d.domaincheck.checkvalue =
-						(Datum *) palloc(sizeof(Datum));
-					scratch->d.domaincheck.checknull =
-						(bool *) palloc(sizeof(bool));
-				}
-
 				/*
 				 * If first time through, determine where CoerceToDomainValue
 				 * nodes should read from.
@@ -2772,27 +2761,38 @@ ExecInitCoerceToDomain(ExprEvalStep *scratch, CoerceToDomain *ctest,
 					}
 				}
 
-				/*
-				 * Set up value to be returned by CoerceToDomainValue nodes.
-				 * We must save and restore innermost_domainval/null fields,
-				 * in case this node is itself within a check expression for
-				 * another domain.
-				 */
-				save_innermost_domainval = state->innermost_domainval;
-				save_innermost_domainnull = state->innermost_domainnull;
-				state->innermost_domainval = domainval;
-				state->innermost_domainnull = domainnull;
+				check_exprstate = makeNode(ExprState);
+				check_exprstate->expr = check_expr;
+				check_exprstate->parent = state->parent;
+				check_exprstate->ext_params = state->ext_params;
+
+				/* Set up value to be returned by CoerceToDomainValue nodes */
+				check_exprstate->innermost_domainval = domainval;
+				check_exprstate->innermost_domainnull = domainnull;
 
 				/* evaluate check expression value */
-				ExecInitExprRec(con->check_expr, state,
-								scratch->d.domaincheck.checkvalue,
-								scratch->d.domaincheck.checknull);
+				ExecInitExprRec(check_expr, check_exprstate,
+								&check_exprstate->resvalue,
+								&check_exprstate->resnull);
 
-				state->innermost_domainval = save_innermost_domainval;
-				state->innermost_domainnull = save_innermost_domainnull;
+				if (check_exprstate->steps_len == 1 &&
+					check_exprstate->steps[0].opcode == EEOP_DOMAIN_TESTVAL)
+				{
+					/* Trivial, so we need no check work at runtime */
+					check_exprstate = NULL;
+				}
+				else
+				{
+					/* Not trivial, so append a DONE step */
+					scratch->opcode = EEOP_DONE;
+					ExprEvalPushStep(check_exprstate, scratch);
+					/* and ready the subexpression */
+					ExecReadyExpr(check_exprstate);
+				}
 
 				/* now test result */
 				scratch->opcode = EEOP_DOMAIN_CHECK;
+				scratch->d.domaincheck.check_exprstate = check_exprstate;
 				ExprEvalPushStep(state, scratch);
 
 				break;
