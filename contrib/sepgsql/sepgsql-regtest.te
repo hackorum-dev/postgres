@@ -28,6 +28,7 @@ postgresql_schema_object(sepgsql_regtest_invisible_schema_t);
 #
 role sepgsql_regtest_superuser_r;
 userdom_base_user_template(sepgsql_regtest_superuser)
+domain_dyntrans_type(sepgsql_regtest_superuser_t)
 userdom_manage_home_role(sepgsql_regtest_superuser_r, sepgsql_regtest_superuser_t)
 userdom_exec_user_home_content_files(sepgsql_regtest_superuser_t)
 userdom_write_user_tmp_sockets(sepgsql_regtest_superuser_t)
@@ -48,6 +49,14 @@ optional_policy(`
 	')
 	allow sepgsql_regtest_superuser_t self : process { setcurrent };
 	allow sepgsql_regtest_superuser_t { self sepgsql_client_type } : process { dyntransition };
+')
+
+optional_policy(`
+	gen_require(`
+		type sepgsql_regtest_dba_t;
+	')
+
+	domain_dyntrans_type(sepgsql_regtest_dba_t)
 ')
 
 # Type transition rules
@@ -108,6 +117,8 @@ userdom_write_user_tmp_sockets(sepgsql_regtest_user_t)
 auth_read_passwd(sepgsql_regtest_user_t)
 
 optional_policy(`
+	domain_type(sepgsql_regtest_user_t)
+	domain_dyntrans_type(sepgsql_regtest_user_t)
 	postgresql_role(sepgsql_regtest_user_r, sepgsql_regtest_user_t)
 	postgresql_stream_connect(sepgsql_regtest_user_t)
 ')
@@ -162,12 +173,18 @@ optional_policy(`
 	gen_require(`
 		role unconfined_r;
 	')
+	domain_type(sepgsql_regtest_foo_t)
+	domain_type(sepgsql_regtest_var_t)
+	domain_dyntrans_type(sepgsql_regtest_foo_t)
+	domain_dyntrans_type(sepgsql_regtest_var_t)
 	postgresql_role(unconfined_r, sepgsql_regtest_foo_t)
 	postgresql_role(unconfined_r, sepgsql_regtest_var_t)
 	postgresql_table_object(sepgsql_regtest_foo_table_t)
 	postgresql_table_object(sepgsql_regtest_var_table_t)
 ')
 optional_policy(`
+	domain_type(sepgsql_regtest_pool_t)
+	domain_dyntrans_type(sepgsql_regtest_pool_t)
 	postgresql_stream_connect(sepgsql_regtest_pool_t)
 	postgresql_role(sepgsql_regtest_pool_r, sepgsql_regtest_pool_t)
 ')
@@ -189,7 +206,9 @@ allow { sepgsql_regtest_foo_t sepgsql_regtest_var_t } sepgsql_regtest_pool_t:pro
 role sepgsql_regtest_nosuch_r;
 userdom_base_user_template(sepgsql_regtest_nosuch)
 optional_policy(`
-    postgresql_role(sepgsql_regtest_nosuch_r, sepgsql_regtest_nosuch_t)
+	domain_type(sepgsql_regtest_nosuch_t)
+	domain_dyntrans_type(sepgsql_regtest_nosuch_t)
+	postgresql_role(sepgsql_regtest_nosuch_r, sepgsql_regtest_nosuch_t)
 ')
 
 #
