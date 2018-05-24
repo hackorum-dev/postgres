@@ -2110,8 +2110,6 @@ StoreAttrDefault(Relation rel, AttrNumber attnum,
 			missingval = ExecEvalExpr(exprState, econtext,
 									  &missingIsNull);
 
-			FreeExecutorState(estate);
-
 			defAttStruct = TupleDescAttr(rel->rd_att, attnum - 1);
 
 			if (missingIsNull)
@@ -2130,6 +2128,8 @@ StoreAttrDefault(Relation rel, AttrNumber attnum,
 															 defAttStruct->attbyval,
 															 defAttStruct->attalign));
 			}
+
+			FreeExecutorState(estate);
 
 			valuesAtt[Anum_pg_attribute_atthasmissing - 1] = !missingIsNull;
 			replacesAtt[Anum_pg_attribute_atthasmissing - 1] = true;
