@@ -66,6 +66,10 @@ exprType(const Node *expr)
 		case T_WindowFunc:
 			type = ((const WindowFunc *) expr)->wintype;
 			break;
+		case T_CachedExpr:
+			type =
+				exprType((const Node *) ((const CachedExpr *) expr)->subexpr);
+			break;
 		case T_ArrayRef:
 			{
 				const ArrayRef *arrayref = (const ArrayRef *) expr;
@@ -286,6 +290,9 @@ exprTypmod(const Node *expr)
 			return ((const Const *) expr)->consttypmod;
 		case T_Param:
 			return ((const Param *) expr)->paramtypmod;
+		case T_CachedExpr:
+			return
+				exprTypmod((const Node *) ((const CachedExpr *) expr)->subexpr);
 		case T_ArrayRef:
 			/* typmod is the same for array or element */
 			return ((const ArrayRef *) expr)->reftypmod;
@@ -573,6 +580,14 @@ exprIsLengthCoercion(const Node *expr, int32 *coercedTypmod)
 		return true;
 	}
 
+	if (expr && IsA(expr, CachedExpr))
+	{
+		const CachedExpr *cachedexpr = (const CachedExpr *) expr;
+
+		return exprIsLengthCoercion((const Node *) cachedexpr->subexpr,
+									coercedTypmod);
+	}
+
 	return false;
 }
 
@@ -699,6 +714,8 @@ expression_returns_set_walker(Node *node, void *context)
 		return false;
 	if (IsA(node, WindowFunc))
 		return false;
+	if (IsA(node, CachedExpr))
+		return false;
 
 	return expression_tree_walker(node, expression_returns_set_walker,
 								  context);
@@ -743,6 +760,10 @@ exprCollation(const Node *expr)
 			break;
 		case T_WindowFunc:
 			coll = ((const WindowFunc *) expr)->wincollid;
+			break;
+		case T_CachedExpr:
+			coll = exprCollation(
+				(const Node *) ((const CachedExpr *) expr)->subexpr);
 			break;
 		case T_ArrayRef:
 			coll = ((const ArrayRef *) expr)->refcollid;
@@ -933,6 +954,10 @@ exprInputCollation(const Node *expr)
 		case T_WindowFunc:
 			coll = ((const WindowFunc *) expr)->inputcollid;
 			break;
+		case T_CachedExpr:
+			coll = exprInputCollation(
+				(const Node *) ((const CachedExpr *) expr)->subexpr);
+			break;
 		case T_FuncExpr:
 			coll = ((const FuncExpr *) expr)->inputcollid;
 			break;
@@ -987,6 +1012,10 @@ exprSetCollation(Node *expr, Oid collation)
 			break;
 		case T_WindowFunc:
 			((WindowFunc *) expr)->wincollid = collation;
+			break;
+		case T_CachedExpr:
+			exprSetCollation((Node *) ((CachedExpr *) expr)->subexpr,
+							 collation);
 			break;
 		case T_ArrayRef:
 			((ArrayRef *) expr)->refcollid = collation;
@@ -1129,6 +1158,10 @@ exprSetInputCollation(Node *expr, Oid inputcollation)
 		case T_WindowFunc:
 			((WindowFunc *) expr)->inputcollid = inputcollation;
 			break;
+		case T_CachedExpr:
+			exprSetInputCollation((Node *) ((CachedExpr *) expr)->subexpr,
+								  inputcollation);
+			break;
 		case T_FuncExpr:
 			((FuncExpr *) expr)->inputcollid = inputcollation;
 			break;
@@ -1216,6 +1249,10 @@ exprLocation(const Node *expr)
 		case T_WindowFunc:
 			/* function name should always be the first thing */
 			loc = ((const WindowFunc *) expr)->location;
+			break;
+		case T_CachedExpr:
+			loc = exprLocation(
+				(const Node *) ((const CachedExpr *) expr)->subexpr);
 			break;
 		case T_ArrayRef:
 			/* just use array argument's location */
@@ -1590,6 +1627,9 @@ fix_opfuncids_walker(Node *node, void *context)
 {
 	if (node == NULL)
 		return false;
+	if (IsA(node, CachedExpr))
+		return fix_opfuncids_walker((Node *) ((CachedExpr *) node)->subexpr,
+									context);
 	if (IsA(node, OpExpr))
 		set_opfuncid((OpExpr *) node);
 	else if (IsA(node, DistinctExpr))
@@ -1669,6 +1709,9 @@ check_functions_in_node(Node *node, check_function_callback checker,
 					return true;
 			}
 			break;
+		case T_CachedExpr:
+			return check_functions_in_node(
+				(Node *) ((CachedExpr *) node)->subexpr, checker, context);
 		case T_FuncExpr:
 			{
 				FuncExpr   *expr = (FuncExpr *) node;
@@ -1907,6 +1950,18 @@ expression_tree_walker(Node *node,
 										   walker, context))
 					return true;
 				if (walker((Node *) expr->aggfilter, context))
+					return true;
+			}
+			break;
+		case T_CachedExpr:
+			{
+				/*
+				 * cachedexpr is processed by walker, so its subexpr is
+				 * processed too and we need to process sub-nodes of subexpr.
+				 */
+				if (expression_tree_walker(
+										(Node *) ((CachedExpr *) node)->subexpr,
+										walker, context))
 					return true;
 			}
 			break;
@@ -2536,6 +2591,25 @@ expression_tree_mutator(Node *node,
 				FLATCOPY(newnode, wfunc, WindowFunc);
 				MUTATE(newnode->args, wfunc->args, List *);
 				MUTATE(newnode->aggfilter, wfunc->aggfilter, Expr *);
+				return (Node *) newnode;
+			}
+			break;
+		case T_CachedExpr:
+			{
+				CachedExpr *expr = (CachedExpr *) node;
+				CachedExpr *newnode;
+
+				FLATCOPY(newnode, expr, CachedExpr);
+
+				/*
+				 * expr is already mutated, so its subexpr is already mutated
+				 * too and we need to mutate sub-nodes of subexpr.
+				 */
+				newnode->subexpr = (CacheableExpr *) expression_tree_mutator(
+														(Node *) expr->subexpr,
+														mutator,
+														context);
+
 				return (Node *) newnode;
 			}
 			break;
