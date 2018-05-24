@@ -729,6 +729,7 @@ ExecInitHashJoin(HashJoin *node, EState *estate, int eflags)
 	hoperators = NIL;
 	foreach(l, node->hashclauses)
 	{
+		/* this is not used for pseudoconstants */
 		OpExpr	   *hclause = lfirst_node(OpExpr, l);
 
 		lclauses = lappend(lclauses, ExecInitExpr(linitial(hclause->args),

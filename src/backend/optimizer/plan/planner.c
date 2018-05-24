@@ -276,6 +276,7 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	Plan	   *top_plan;
 	ListCell   *lp,
 			   *lr;
+	ListCell   *cell;
 
 	/*
 	 * Set up global state for this planner invocation.  This data is needed
@@ -506,6 +507,15 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 		lfirst(lp) = set_plan_references(subroot, subplan);
 	}
 
+	/* Add all non-internal cached expressions after all the PARAM_EXEC */
+	foreach(cell, glob->cachedExprs)
+	{
+		CachedExpr *cachedexpr = lfirst_node(CachedExpr, cell);
+
+		glob->paramExecTypes = lappend_oid(glob->paramExecTypes,
+										   exprType((const Node *) cachedexpr));
+	}
+
 	/* build the PlannedStmt result */
 	result = makeNode(PlannedStmt);
 
@@ -532,6 +542,7 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	result->utilityStmt = parse->utilityStmt;
 	result->stmt_location = parse->stmt_location;
 	result->stmt_len = parse->stmt_len;
+	result->cachedExprs = glob->cachedExprs;
 
 	result->jitFlags = PGJIT_NONE;
 	if (jit_enabled && jit_above_cost >= 0 &&
@@ -1074,6 +1085,12 @@ preprocess_expression(PlannerInfo *root, Node *expr, int kind)
 	 */
 	if (kind == EXPRKIND_QUAL)
 		expr = (Node *) make_ands_implicit((Expr *) expr);
+
+	/*
+	 * Store all non-internal cached expressions separatly for the executor's
+	 * purposes.
+	 */
+	set_non_internal_cachedexprs_walker(expr, &(root->glob->cachedExprs));
 
 	return expr;
 }
@@ -5897,6 +5914,13 @@ expression_planner(Expr *expr)
 	 * simplify constant subexprs
 	 */
 	result->expr = (Expr *) eval_const_expressions(NULL, (Node *) expr);
+
+	/*
+	 * Store all non-internal cached expressions separatly for the executor's
+	 * purposes.
+	 */
+	set_non_internal_cachedexprs_walker((Node *) result->expr,
+										&(result->cachedExprs));
 
 	/* Fill in opfuncid values if missing */
 	fix_opfuncids((Node *) result->expr);

@@ -2194,6 +2194,12 @@ exec_stmt_call(PLpgSQL_execstate *estate, PLpgSQL_stmt_call *stmt)
 
 				if (argmodes && argmodes[i] == PROARGMODE_INOUT)
 				{
+					/*
+					 * Do not worry about cached params because they are only
+					 * used in prepared statements, PL/pgSQL inline code blocks
+					 * cannot be used here and PL/pgSQL functions cannot be
+					 * inlined.
+					 */
 					if (IsA(n, Param))
 					{
 						Param	   *param = castNode(Param, n);
@@ -6064,6 +6070,7 @@ exec_eval_simple_expr(PLpgSQL_execstate *estate,
 			ExecInitExprWithParams(expr->expr_simple_expr,
 								   econtext->ecxt_param_list_info,
 								   expr->expr_simple_cachedexprs);
+
 		expr->expr_simple_in_use = false;
 		expr->expr_simple_lxid = curlxid;
 		MemoryContextSwitchTo(oldcontext);
@@ -7579,7 +7586,12 @@ get_cast_hashentry(PLpgSQL_execstate *estate,
 
 		/* Note: we don't bother labeling the expression tree with collation */
 
-		/* Detect whether we have a no-op (RelabelType) coercion */
+		/*
+		 * Detect whether we have a no-op (RelabelType) coercion.
+		 * Do not check for cached expressions because the parser does not use
+		 * them.
+		 */
+		Assert(!IsA(cast_expr, CachedExpr));
 		if (IsA(cast_expr, RelabelType) &&
 			((RelabelType *) cast_expr)->arg == (Expr *) placeholder)
 			cast_expr = NULL;
@@ -7801,7 +7813,13 @@ exec_save_simple_expr(PLpgSQL_expr *expr, CachedPlan *cplan)
 			/* If setrefs.c copied up a Const, no need to look further */
 			if (IsA(tle_expr, Const))
 				break;
-			/* Otherwise, it had better be a Param or an outer Var */
+			/*
+			 * Otherwise, it had better be a Param or an outer Var
+			 *
+			 * Do not worry about cached params because they are only used in
+			 * prepared statements, PL/pgSQL inline code blocks cannot be used
+			 * here and PL/pgSQL functions cannot be inlined.
+			 */
 			Assert(IsA(tle_expr, Param) ||(IsA(tle_expr, Var) &&
 										   ((Var *) tle_expr)->varno == OUTER_VAR));
 			/* Descend to the child node */
@@ -7867,6 +7885,7 @@ exec_check_rw_parameter(PLpgSQL_expr *expr, int target_dno)
 	/*
 	 * Top level of expression must be a simple FuncExpr or OpExpr.
 	 */
+	Assert(!IsA(expr->expr_simple_expr, CachedExpr));
 	if (IsA(expr->expr_simple_expr, FuncExpr))
 	{
 		FuncExpr   *fexpr = (FuncExpr *) expr->expr_simple_expr;
@@ -7901,9 +7920,19 @@ exec_check_rw_parameter(PLpgSQL_expr *expr, int target_dno)
 	{
 		Node	   *arg = (Node *) lfirst(lc);
 
-		/* A Param is OK, whether it's the target variable or not */
-		if (arg && IsA(arg, Param))
-			continue;
+		if (arg)
+		{
+			/*
+			 * Cached params are only used in prepared statements, PL/pgSQL
+			 * inline code blocks cannot be used here and PL/pgSQL functions
+			 * cannot be inlined.
+			 */
+			Assert(!IsACached(arg, Param));
+
+			/* A Param is OK, whether it's the target variable or not */
+			if (IsA(arg, Param))
+				continue;
+		}
 		/* Otherwise, argument expression must not reference target */
 		if (contains_target_param(arg, &target_dno))
 			return;
@@ -7921,6 +7950,13 @@ contains_target_param(Node *node, int *target_dno)
 {
 	if (node == NULL)
 		return false;
+
+	/*
+	 * Cached params are only used in prepared statements, PL/pgSQL inline code
+	 * blocks cannot be used here and PL/pgSQL functions cannot be inlined.
+	 */
+	Assert(!IsACached(node, Param));
+
 	if (IsA(node, Param))
 	{
 		Param	   *param = (Param *) node;

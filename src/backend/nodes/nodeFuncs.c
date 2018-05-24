@@ -598,30 +598,55 @@ exprIsLengthCoercion(const Node *expr, int32 *coercedTypmod)
  * This is primarily intended to be used during planning.  Therefore, it
  * strips any existing RelabelType nodes to maintain the planner's invariant
  * that there are not adjacent RelabelTypes.
+ *
+ * NOTE: if the expression contains cached expressions, it should be processed
+ * using set_non_internal_cachedexprs_walker to store all non-internal cached
+ * expressions separatly for the executor's purposes. Otherwise all the created
+ * cached expressions are considered internal and will not be cached by
+ * themselves.
  */
 Node *
 relabel_to_typmod(Node *expr, int32 typmod)
 {
 	Oid			type = exprType(expr);
 	Oid			coll = exprCollation(expr);
+	bool		cached = false;
+	Node	   *result;
 
-	/* Strip any existing RelabelType node(s) */
-	while (expr && IsA(expr, RelabelType))
-		expr = (Node *) ((RelabelType *) expr)->arg;
+	/* Strip any existing (and possibly cached) RelabelType node(s) */
+	while (expr && IsAIfCached(expr, RelabelType))
+	{
+		cached |= IsA(expr, CachedExpr);
+		expr = (Node *) castNodeIfCached(RelabelType, expr)->arg;
+	}
 
 	/* Apply new typmod, preserving the previous exposed type and collation */
-	return (Node *) makeRelabelType((Expr *) expr, type, typmod, coll,
-									COERCE_EXPLICIT_CAST);
+	result = (Node *) makeRelabelType((Expr *) expr, type, typmod, coll,
+									  COERCE_EXPLICIT_CAST);
+
+	/* Cache it if it was cached in the original node */
+	if (cached)
+		result = (Node *) makeCachedExpr((CacheableExpr *) result);
+
+	return result;
 }
 
 /*
  * strip_implicit_coercions: remove implicit coercions at top level of tree
  *
  * This doesn't modify or copy the input expression tree, just return a
- * pointer to a suitable place within it.
+ * pointer to a suitable place within it. But if necessary it creates a new
+ * CachedExpr node since the original node can be used elsewhere as an internal
+ * cached expression.
  *
  * Note: there isn't any useful thing we can do with a RowExpr here, so
  * just return it unchanged, even if it's marked as an implicit coercion.
+ *
+ * NOTE: if the expression contains cached expressions, it should be processed
+ * using set_non_internal_cachedexprs_walker to store all non-internal cached
+ * expressions separatly for the executor's purposes. Otherwise all the created
+ * cached expressions are considered internal and will not be cached by
+ * themselves.
  */
 Node *
 strip_implicit_coercions(Node *node)
@@ -669,6 +694,21 @@ strip_implicit_coercions(Node *node)
 
 		if (c->coercionformat == COERCE_IMPLICIT_CAST)
 			return strip_implicit_coercions((Node *) c->arg);
+	}
+	else if (IsA(node, CachedExpr))
+	{
+		Node	   *result = strip_implicit_coercions(
+			(Node *) ((CachedExpr *) node)->subexpr);
+
+		/*
+		 * If necessary, cache the result node. Create a new CachedExpr node
+		 * since the original node can be used elsewhere as an internal cached
+		 * expression.
+		 */
+		if (IsA(result, Const) || IsA(result, CachedExpr))
+			return result;
+		else
+			return (Node *) makeCachedExpr((CacheableExpr *) result);
 	}
 	return node;
 }

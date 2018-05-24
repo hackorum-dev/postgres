@@ -1230,6 +1230,10 @@ ExecIndexBuildScanKeys(PlanState *planstate, Relation index,
 		int			indnkeyatts;
 
 		indnkeyatts = IndexRelationGetNumberOfKeyAttributes(index);
+
+		/*
+		 * do not check for cached expressions because they do not contain vars
+		 */
 		if (IsA(clause, OpExpr))
 		{
 			/* indexkey op const or indexkey op expression */
@@ -1276,8 +1280,8 @@ ExecIndexBuildScanKeys(PlanState *planstate, Relation index,
 			 */
 			rightop = (Expr *) get_rightop(clause);
 
-			if (rightop && IsA(rightop, RelabelType))
-				rightop = ((RelabelType *) rightop)->arg;
+			if (rightop && IsAIfCached(rightop, RelabelType))
+				rightop = castNodeIfCached(RelabelType, rightop)->arg;
 
 			Assert(rightop != NULL);
 
@@ -1406,8 +1410,12 @@ ExecIndexBuildScanKeys(PlanState *planstate, Relation index,
 				rightop = (Expr *) lfirst(rargs_cell);
 				rargs_cell = lnext(rargs_cell);
 
-				if (rightop && IsA(rightop, RelabelType))
-					rightop = ((RelabelType *) rightop)->arg;
+				/*
+				 * Do not check for cached expressions because index expressions
+				 * can only contain immutable functions.
+				 */
+				if (rightop && IsAIfCached(rightop, RelabelType))
+					rightop = castNodeIfCached(RelabelType, rightop)->arg;
 
 				Assert(rightop != NULL);
 
@@ -1520,8 +1528,8 @@ ExecIndexBuildScanKeys(PlanState *planstate, Relation index,
 			 */
 			rightop = (Expr *) lsecond(saop->args);
 
-			if (rightop && IsA(rightop, RelabelType))
-				rightop = ((RelabelType *) rightop)->arg;
+			if (rightop && IsAIfCached(rightop, RelabelType))
+				rightop = castNodeIfCached(RelabelType, rightop)->arg;
 
 			Assert(rightop != NULL);
 

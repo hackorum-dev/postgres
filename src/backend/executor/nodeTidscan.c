@@ -74,7 +74,7 @@ TidExprListCreate(TidScanState *tidstate)
 		Expr	   *expr = (Expr *) lfirst(l);
 		TidExpr    *tidexpr = (TidExpr *) palloc0(sizeof(TidExpr));
 
-		if (is_opclause(expr))
+		if (is_opclause((Node *) expr, false))
 		{
 			Node	   *arg1;
 			Node	   *arg2;

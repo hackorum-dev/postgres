@@ -2432,6 +2432,11 @@ get_last_attnums_walker(Node *node, LastAttnumInfo *info)
 		return false;
 	if (IsA(node, GroupingFunc))
 		return false;
+
+	/* Don't examine cached expressions since they do not contain vars */
+	if (IsA(node, CachedExpr))
+		return false;
+
 	return expression_tree_walker(node, get_last_attnums_walker,
 								  (void *) info);
 }

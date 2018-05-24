@@ -201,6 +201,7 @@ MJExamineQuals(List *mergeclauses,
 		Oid			op_righttype;
 		Oid			sortfunc;
 
+		/* This is not used for pseudoconstants */
 		if (!IsA(qual, OpExpr))
 			elog(ERROR, "mergejoin clause is not an OpExpr");
 

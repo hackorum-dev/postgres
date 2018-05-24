@@ -9305,6 +9305,8 @@ ATColumnChangeRequiresRewrite(Node *expr, AttrNumber varattno)
 				return true;
 			expr = (Node *) d->arg;
 		}
+		else if (IsA(expr, CachedExpr))
+			expr = (Node *) ((CachedExpr *) expr)->subexpr;
 		else
 			return true;
 	}
