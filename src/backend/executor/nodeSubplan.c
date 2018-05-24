@@ -778,7 +778,7 @@ ExecInitSubPlan(SubPlan *subplan, PlanState *parent)
 	sstate->parent = parent;
 
 	/* Initialize subexpressions */
-	sstate->testexpr = ExecInitExpr((Expr *) subplan->testexpr, parent);
+	sstate->testexpr = ExecInitExpr((Expr *) subplan->testexpr, parent, NULL);
 	sstate->args = ExecInitExprList(subplan->args, parent);
 
 	/*

@@ -386,7 +386,7 @@ gen_partprune_steps(RelOptInfo *rel, List *clauses, bool *contradictory)
 	{
 		List	   *partqual = rel->partition_qual;
 
-		partqual = (List *) expression_planner((Expr *) partqual);
+		partqual = (List *) expression_planner((Expr *) partqual)->expr;
 
 		/* Fix Vars to have the desired varno */
 		if (rel->relid != 1)
@@ -689,7 +689,8 @@ gen_partprune_steps_internal(GeneratePruningStepsContext *context,
 						if (partconstr)
 						{
 							partconstr = (List *)
-								expression_planner((Expr *) partconstr);
+								expression_planner((Expr *) partconstr)->expr;
+
 							if (rel->relid != 1)
 								ChangeVarNodes((Node *) partconstr, 1,
 											   rel->relid, 0);

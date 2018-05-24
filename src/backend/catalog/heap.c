@@ -2102,7 +2102,7 @@ StoreAttrDefault(Relation rel, AttrNumber attnum,
 
 		if (add_column_mode)
 		{
-			expr2 = expression_planner(expr2);
+			expr2 = expression_planner(expr2)->expr;
 			estate = CreateExecutorState();
 			exprState = ExecPrepareExpr(expr2, estate);
 			econtext = GetPerTupleExprContext(estate);

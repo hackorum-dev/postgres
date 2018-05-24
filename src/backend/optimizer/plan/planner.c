@@ -5883,22 +5883,25 @@ adjust_paths_for_srfs(PlannerInfo *root, RelOptInfo *rel,
  * tree.  (It would actually be okay to apply fix_opfuncids to it, but since
  * we first do an expression_tree_mutator-based walk, what is returned will
  * be a new node tree.)
+ *
+ * Note: all cached expressions must be added to the corresponding EState or
+ * ExprState of this expression.
  */
-Expr *
+PlannedExpr *
 expression_planner(Expr *expr)
 {
-	Node	   *result;
+	PlannedExpr *result = makeNode(PlannedExpr);
 
 	/*
 	 * Convert named-argument function calls, insert default arguments and
 	 * simplify constant subexprs
 	 */
-	result = eval_const_expressions(NULL, (Node *) expr);
+	result->expr = (Expr *) eval_const_expressions(NULL, (Node *) expr);
 
 	/* Fill in opfuncid values if missing */
-	fix_opfuncids(result);
+	fix_opfuncids((Node *) result->expr);
 
-	return (Expr *) result;
+	return result;
 }
 
 

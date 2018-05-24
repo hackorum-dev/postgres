@@ -1749,7 +1749,7 @@ operator_predicate_proof(Expr *predicate, Node *clause,
 	fix_opfuncids((Node *) test_expr);
 
 	/* Prepare it for execution */
-	test_exprstate = ExecInitExpr(test_expr, NULL);
+	test_exprstate = ExecInitExpr(test_expr, NULL, NULL);
 
 	/* And execute it. */
 	test_result = ExecEvalExprSwitchContext(test_exprstate,

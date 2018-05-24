@@ -349,6 +349,15 @@ typedef struct ExprEvalStep
 		{
 			int			paramid;	/* numeric ID for parameter */
 			Oid			paramtype;	/* OID of parameter's datatype */
+
+			/*
+			 * Usually plans for all cached expressions are handled during query
+			 * planning and they are compiled separatly. But sometimes they are
+			 * used in dynamically loaded plans (for example, domain constraints
+			 * plans). In this case all information about them is stored in
+			 * ExprState, not in EState.
+			 */
+			bool		dynamically_planned;
 		}			param;
 
 		/* for EEOP_PARAM_CALLBACK */
@@ -747,5 +756,7 @@ extern void ExecEvalAggOrderedTransDatum(ExprState *state, ExprEvalStep *op,
 							 ExprContext *econtext);
 extern void ExecEvalAggOrderedTransTuple(ExprState *state, ExprEvalStep *op,
 							 ExprContext *econtext);
+extern void ExecEvalCachedExpr(ExprState *state, ExprEvalStep *op,
+				   ExprContext *econtext);
 
 #endif							/* EXEC_EXPR_H */

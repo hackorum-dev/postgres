@@ -2237,7 +2237,7 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 	 * in the targetlist are found during ExecAssignProjectionInfo, below.
 	 */
 	aggstate->ss.ps.qual =
-		ExecInitQual(node->plan.qual, (PlanState *) aggstate);
+		ExecInitQual(node->plan.qual, (PlanState *) aggstate, NULL);
 
 	/*
 	 * We should now have found all Aggrefs in the targetlist and quals.
