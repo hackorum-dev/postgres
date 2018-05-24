@@ -2828,6 +2828,13 @@ eval_const_expressions_mutator(Node *node,
 													  prm->isnull,
 													  typByVal);
 						}
+						/* Otherwise OK to cache parameter value? */
+						else if (!context->estimate &&
+								 (prm->pflags & PARAM_FLAG_PRECALCULATED))
+						{
+							return (Node *) makeCachedExpr(
+										(CacheableExpr *) copyObject(param));
+						}
 					}
 				}
 

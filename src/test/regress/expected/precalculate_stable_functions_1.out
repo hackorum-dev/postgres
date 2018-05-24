@@ -5759,6 +5759,78 @@ SELECT simple();
 (1 row)
 
 ROLLBACK;
+-- Prepared statements testing
+PREPARE test_x_imm2 (integer) AS SELECT x_imm2(x_imm2($1)) FROM x;
+EXPLAIN (COSTS OFF) EXECUTE test_x_imm2(2);
+NOTICE:  i2
+NOTICE:  i2
+  QUERY PLAN   
+---------------
+ Seq Scan on x
+(1 row)
+
+EXPLAIN (COSTS OFF) EXECUTE test_x_imm2(2);
+NOTICE:  i2
+NOTICE:  i2
+  QUERY PLAN   
+---------------
+ Seq Scan on x
+(1 row)
+
+EXPLAIN (COSTS OFF) EXECUTE test_x_imm2(2);
+NOTICE:  i2
+NOTICE:  i2
+  QUERY PLAN   
+---------------
+ Seq Scan on x
+(1 row)
+
+EXPLAIN (COSTS OFF) EXECUTE test_x_imm2(2);
+NOTICE:  i2
+NOTICE:  i2
+  QUERY PLAN   
+---------------
+ Seq Scan on x
+(1 row)
+
+EXPLAIN (COSTS OFF) EXECUTE test_x_imm2(2);
+NOTICE:  i2
+NOTICE:  i2
+  QUERY PLAN   
+---------------
+ Seq Scan on x
+(1 row)
+
+EXPLAIN (COSTS OFF) EXECUTE test_x_imm2(2);
+  QUERY PLAN   
+---------------
+ Seq Scan on x
+(1 row)
+
+EXPLAIN (COSTS OFF) EXECUTE test_x_imm2(2);
+  QUERY PLAN   
+---------------
+ Seq Scan on x
+(1 row)
+
+EXPLAIN (COSTS OFF) EXECUTE test_x_imm2(2);
+  QUERY PLAN   
+---------------
+ Seq Scan on x
+(1 row)
+
+EXPLAIN (COSTS OFF) EXECUTE test_x_imm2(2);
+  QUERY PLAN   
+---------------
+ Seq Scan on x
+(1 row)
+
+EXPLAIN (COSTS OFF) EXECUTE test_x_imm2(2);
+  QUERY PLAN   
+---------------
+ Seq Scan on x
+(1 row)
+
 -- Drop tables for testing
 DROP TABLE x;
 DROP FUNCTION x_vlt_wxyz, x_vlt_wxyz_child, x_vlt_wxyz_child2;

@@ -1920,6 +1920,20 @@ INSERT INTO x VALUES (5);
 SELECT simple();
 ROLLBACK;
 
+-- Prepared statements testing
+
+PREPARE test_x_imm2 (integer) AS SELECT x_imm2(x_imm2($1)) FROM x;
+EXPLAIN (COSTS OFF) EXECUTE test_x_imm2(2);
+EXPLAIN (COSTS OFF) EXECUTE test_x_imm2(2);
+EXPLAIN (COSTS OFF) EXECUTE test_x_imm2(2);
+EXPLAIN (COSTS OFF) EXECUTE test_x_imm2(2);
+EXPLAIN (COSTS OFF) EXECUTE test_x_imm2(2);
+EXPLAIN (COSTS OFF) EXECUTE test_x_imm2(2);
+EXPLAIN (COSTS OFF) EXECUTE test_x_imm2(2);
+EXPLAIN (COSTS OFF) EXECUTE test_x_imm2(2);
+EXPLAIN (COSTS OFF) EXECUTE test_x_imm2(2);
+EXPLAIN (COSTS OFF) EXECUTE test_x_imm2(2);
+
 -- Drop tables for testing
 
 DROP TABLE x;
