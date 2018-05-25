@@ -2477,7 +2477,7 @@ XLogWrite(XLogwrtRqst WriteRqst, bool flexible)
 					ereport(PANIC,
 							(errcode_for_file_access(),
 							 errmsg("could not seek in log file %s to offset %u: %m",
-									XLogFileNameP(ThisTimeLineID, openLogSegNo),
+									XLogFileNameEP(ThisTimeLineID, openLogSegNo),
 									startoffset)));
 				openLogOff = startoffset;
 			}
@@ -2500,7 +2500,7 @@ XLogWrite(XLogwrtRqst WriteRqst, bool flexible)
 							(errcode_for_file_access(),
 							 errmsg("could not write to log file %s "
 									"at offset %u, length %zu: %m",
-									XLogFileNameP(ThisTimeLineID, openLogSegNo),
+									XLogFileNameEP(ThisTimeLineID, openLogSegNo),
 									openLogOff, nbytes)));
 				}
 				nleft -= written;
@@ -3743,7 +3743,8 @@ XLogFileClose(void)
 		ereport(PANIC,
 				(errcode_for_file_access(),
 				 errmsg("could not close log file %s: %m",
-						XLogFileNameP(ThisTimeLineID, openLogSegNo))));
+						XLogFileNameEP(ThisTimeLineID, openLogSegNo))));
+
 	openLogFile = -1;
 }
 
@@ -10160,7 +10161,7 @@ issue_xlog_fsync(int fd, XLogSegNo segno)
 				ereport(PANIC,
 						(errcode_for_file_access(),
 						 errmsg("could not fsync log file %s: %m",
-								XLogFileNameP(ThisTimeLineID, segno))));
+								XLogFileNameEP(ThisTimeLineID, segno))));
 			break;
 #ifdef HAVE_FSYNC_WRITETHROUGH
 		case SYNC_METHOD_FSYNC_WRITETHROUGH:
@@ -10168,7 +10169,7 @@ issue_xlog_fsync(int fd, XLogSegNo segno)
 				ereport(PANIC,
 						(errcode_for_file_access(),
 						 errmsg("could not fsync write-through log file %s: %m",
-								XLogFileNameP(ThisTimeLineID, segno))));
+								XLogFileNameEP(ThisTimeLineID, segno))));
 			break;
 #endif
 #ifdef HAVE_FDATASYNC
@@ -10177,7 +10178,7 @@ issue_xlog_fsync(int fd, XLogSegNo segno)
 				ereport(PANIC,
 						(errcode_for_file_access(),
 						 errmsg("could not fdatasync log file %s: %m",
-								XLogFileNameP(ThisTimeLineID, segno))));
+								XLogFileNameEP(ThisTimeLineID, segno))));
 			break;
 #endif
 		case SYNC_METHOD_OPEN:
@@ -10197,6 +10198,21 @@ char *
 XLogFileNameP(TimeLineID tli, XLogSegNo segno)
 {
 	char	   *result = palloc(MAXFNAMELEN);
+
+	XLogFileName(result, tli, segno, wal_segment_size);
+	return result;
+}
+
+/*
+ * Do the same thing with XLogFileNameP but using ErrorContext.
+ *
+ * This is intended to be used in the parameters of ereport invoked in a
+ * critical section.
+ */
+char *
+XLogFileNameEP(TimeLineID tli, XLogSegNo segno)
+{
+	char	   *result = MemoryContextAlloc(ErrorContext, MAXFNAMELEN);
 
 	XLogFileName(result, tli, segno, wal_segment_size);
 	return result;

@@ -253,6 +253,7 @@ extern void SetRecoveryPause(bool recoveryPause);
 extern TimestampTz GetLatestXTime(void);
 extern TimestampTz GetCurrentChunkReplayStartTime(void);
 extern char *XLogFileNameP(TimeLineID tli, XLogSegNo segno);
+extern char *XLogFileNameEP(TimeLineID tli, XLogSegNo segno);
 
 extern void UpdateControlFile(void);
 extern uint64 GetSystemIdentifier(void);
