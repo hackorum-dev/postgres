@@ -154,6 +154,8 @@ static bool saved_timeval_set = false;
 static char formatted_start_time[FORMATTED_TS_LEN];
 static char formatted_log_time[FORMATTED_TS_LEN];
 
+/* Store memory context to restore after error reporting */
+MemoryContext	elog_oldcontext = NULL;
 
 /* Macro for checking errordata_stack_depth is reasonable */
 #define CHECK_STACK_DEPTH() \
@@ -396,8 +398,11 @@ errstart(int elevel, const char *filename, int lineno,
 	 * Any allocations for this error state level should go into ErrorContext
 	 */
 	edata->assoc_context = ErrorContext;
-
 	recursion_depth--;
+
+	/* Set memory context to ErrorContext if this is the toplevel */
+	if (recursion_depth == 0)
+		elog_oldcontext = MemoryContextSwitchTo(ErrorContext);
 	return true;
 }
 
@@ -414,18 +419,11 @@ errfinish(int dummy,...)
 {
 	ErrorData  *edata = &errordata[errordata_stack_depth];
 	int			elevel;
-	MemoryContext oldcontext;
 	ErrorContextCallback *econtext;
 
 	recursion_depth++;
 	CHECK_STACK_DEPTH();
 	elevel = edata->elevel;
-
-	/*
-	 * Do processing in ErrorContext, which we hope has enough reserved space
-	 * to report an error.
-	 */
-	oldcontext = MemoryContextSwitchTo(ErrorContext);
 
 	/*
 	 * Call any context callback functions.  Errors occurring in callback
@@ -509,8 +507,11 @@ errfinish(int dummy,...)
 	errordata_stack_depth--;
 
 	/* Exit error-handling context */
-	MemoryContextSwitchTo(oldcontext);
 	recursion_depth--;
+
+	/* Restore memory context if this is the top-level */
+	if (recursion_depth == 0 && elog_oldcontext)
+		MemoryContextSwitchTo(elog_oldcontext);
 
 	/*
 	 * Perform error recovery action as specified by elevel.
