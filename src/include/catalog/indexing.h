@@ -339,6 +339,11 @@ DECLARE_UNIQUE_INDEX(pg_replication_origin_roname_index, 6002, on pg_replication
 DECLARE_UNIQUE_INDEX(pg_partitioned_table_partrelid_index, 3351, on pg_partitioned_table using btree(partrelid oid_ops));
 #define PartitionedRelidIndexId			 3351
 
+DECLARE_UNIQUE_INDEX(pg_period_oid_index, 4101, on pg_period using btree(oid oid_ops));
+#define PeriodObjectIndexId			 4101
+DECLARE_UNIQUE_INDEX(pg_period_perrelid_pername_index, 3998, on pg_period using btree(perrelid oid_ops, pername name_ops));
+#define PeriodRelidNameIndexId			 3998
+
 DECLARE_UNIQUE_INDEX(pg_publication_oid_index, 6110, on pg_publication using btree(oid oid_ops));
 #define PublicationObjectIndexId 6110
 

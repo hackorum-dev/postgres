@@ -533,7 +533,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <keyword> unreserved_keyword type_func_name_keyword
 %type <keyword> col_name_keyword reserved_keyword
 
-%type <node>	TableConstraint TableLikeClause
+%type <node>	TableConstraint TableLikeClause TablePeriod
 %type <ival>	TableLikeOptionList TableLikeOption
 %type <list>	ColQualList
 %type <node>	ColConstraint ColConstraintElem ConstraintAttr
@@ -662,7 +662,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	ORDER ORDINALITY OTHERS OUT_P OUTER_P
 	OVER OVERLAPS OVERLAY OVERRIDING OWNED OWNER
 
-	PARALLEL PARSER PARTIAL PARTITION PASSING PASSWORD PLACING PLANS POLICY
+	PARALLEL PARSER PARTIAL PARTITION PASSING PASSWORD PERIOD PLACING PLANS POLICY
 	POSITION PRECEDING PRECISION PRESERVE PREPARE PREPARED PRIMARY
 	PRIOR PRIVILEGES PROCEDURAL PROCEDURE PROCEDURES PROGRAM PUBLICATION
 
@@ -2261,6 +2261,24 @@ alter_table_cmd:
 					n->def = (Node *) $4;
 					$$ = (Node *)n;
 				}
+			/* ALTER TABLE <name> ADD PERIOD FOR <name> (<name>, <name>) */
+			| ADD_P TablePeriod
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_AddPeriod;
+					n->def = $2;
+					$$ = (Node *)n;
+				}
+			/* ALTER TABLE <name> DROP PERIOD FOR <name> [RESTRICT|CASCADE] */
+			| DROP PERIOD FOR name opt_drop_behavior
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_DropPeriod;
+					n->name = $4;
+					n->behavior = $5;
+					n->missing_ok = false;
+					$$ = (Node *)n;
+				}
 			/* ALTER TABLE <name> ADD CONSTRAINT ... */
 			| ADD_P TableConstraint
 				{
@@ -3373,7 +3391,9 @@ TableElement:
 			columnDef							{ $$ = $1; }
 			| TableLikeClause					{ $$ = $1; }
 			| TableConstraint					{ $$ = $1; }
+			| TablePeriod						{ $$ = $1; }
 		;
+
 
 TypedTableElement:
 			columnOptions						{ $$ = $1; }
@@ -3650,6 +3670,19 @@ TableLikeOption:
 				| ALL				{ $$ = CREATE_TABLE_LIKE_ALL; }
 		;
 
+
+TablePeriod:
+			PERIOD FOR name '(' name ',' name ')' opt_definition
+				{
+					Period *n = makeNode(Period);
+					n->periodname = $3;
+					n->startcolname = $5;
+					n->endcolname = $7;
+					n->options = $9;
+					n->location = @1;
+					$$ = (Node *) n;
+				}
+		;
 
 /* ConstraintElem specifies constraint syntax which is not embedded into
  *	a column definition. ColConstraintElem specifies the embedded form.
@@ -6422,6 +6455,7 @@ opt_restart_seqs:
  *				 OPERATOR <op> (leftoperand_typ, rightoperand_typ) |
  *				 OPERATOR CLASS <name> USING <access-method> |
  *				 OPERATOR FAMILY <name> USING <access-method> |
+ *				 PERIOD <relname>.<periodname> |
  *				 RULE <rulename> ON <relname> |
  *				 TRIGGER <triggername> ON <relname> ]
  *			   IS { 'text' | NULL }
@@ -6604,6 +6638,7 @@ comment_type_any_name:
 			| TEXT_P SEARCH DICTIONARY			{ $$ = OBJECT_TSDICTIONARY; }
 			| TEXT_P SEARCH PARSER				{ $$ = OBJECT_TSPARSER; }
 			| TEXT_P SEARCH TEMPLATE			{ $$ = OBJECT_TSTEMPLATE; }
+			| PERIOD							{ $$ = OBJECT_PERIOD; }
 		;
 
 /* object types taking name */
@@ -15447,6 +15482,7 @@ reserved_keyword:
 			| ONLY
 			| OR
 			| ORDER
+			| PERIOD
 			| PLACING
 			| PRIMARY
 			| REFERENCES

@@ -42,6 +42,7 @@
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_opfamily.h"
 #include "catalog/pg_operator.h"
+#include "catalog/pg_period.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_policy.h"
 #include "catalog/pg_publication.h"
@@ -587,6 +588,10 @@ static const struct object_type_map
 	{
 		"domain constraint", OBJECT_DOMCONSTRAINT
 	},
+	/* OCLASS_PERIOD */
+	{
+		"period", OBJECT_PERIOD
+	},
 	/* OCLASS_CONVERSION */
 	{
 		"conversion", OBJECT_CONVERSION
@@ -844,6 +849,7 @@ get_object_address(ObjectType objtype, Node *object,
 			case OBJECT_TRIGGER:
 			case OBJECT_TABCONSTRAINT:
 			case OBJECT_POLICY:
+			case OBJECT_PERIOD:
 				address = get_object_address_relobject(objtype, castNode(List, object),
 													   &relation, missing_ok);
 				break;
@@ -1332,6 +1338,13 @@ get_object_address_relobject(ObjectType objtype, List *object,
 			address.classId = PolicyRelationId;
 			address.objectId = relation ?
 				get_relation_policy_oid(reloid, depname, missing_ok) :
+				InvalidOid;
+			address.objectSubId = 0;
+			break;
+		case OBJECT_PERIOD:
+			address.classId = PeriodRelationId;
+			address.objectId = relation ?
+				get_relation_period_oid(reloid, depname, missing_ok) :
 				InvalidOid;
 			address.objectSubId = 0;
 			break;
@@ -2129,6 +2142,7 @@ pg_get_object_address(PG_FUNCTION_ARGS)
 		case OBJECT_RULE:
 		case OBJECT_TRIGGER:
 		case OBJECT_TABCONSTRAINT:
+		case OBJECT_PERIOD:
 		case OBJECT_OPCLASS:
 		case OBJECT_OPFAMILY:
 			objnode = (Node *) name;
@@ -2243,6 +2257,7 @@ check_object_ownership(Oid roleid, ObjectType objtype, ObjectAddress address,
 		case OBJECT_TRIGGER:
 		case OBJECT_POLICY:
 		case OBJECT_TABCONSTRAINT:
+		case OBJECT_PERIOD:
 			if (!pg_class_ownercheck(RelationGetRelid(relation), roleid))
 				aclcheck_error(ACLCHECK_NOT_OWNER, objtype,
 							   RelationGetRelationName(relation));
@@ -2801,6 +2816,38 @@ getObjectDescription(const ObjectAddress *object)
 				}
 
 				ReleaseSysCache(conTup);
+				break;
+			}
+
+		case OCLASS_PERIOD:
+			{
+				HeapTuple	perTup;
+				Form_pg_period per;
+
+				perTup = SearchSysCache1(PERIODOID,
+										 ObjectIdGetDatum(object->objectId));
+				if (!HeapTupleIsValid(perTup))
+					elog(ERROR, "cache lookup failed for period %u",
+						 object->objectId);
+				per = (Form_pg_period) GETSTRUCT(perTup);
+
+				if (OidIsValid(per->perrelid))
+				{
+					StringInfoData rel;
+
+					initStringInfo(&rel);
+					getRelationDescription(&rel, per->perrelid);
+					appendStringInfo(&buffer, _("period %s on %s"),
+									 NameStr(per->pername), rel.data);
+					pfree(rel.data);
+				}
+				else
+				{
+					appendStringInfo(&buffer, _("period %s"),
+									 NameStr(per->pername));
+				}
+
+				ReleaseSysCache(perTup);
 				break;
 			}
 
@@ -3942,6 +3989,10 @@ getObjectTypeDescription(const ObjectAddress *object)
 			getConstraintTypeDescription(&buffer, object->objectId);
 			break;
 
+		case OCLASS_PERIOD:
+			appendStringInfoString(&buffer, "period");
+			break;
+
 		case OCLASS_CONVERSION:
 			appendStringInfoString(&buffer, "conversion");
 			break;
@@ -4352,6 +4403,28 @@ getObjectIdentityParts(const ObjectAddress *object,
 				}
 
 				ReleaseSysCache(conTup);
+				break;
+			}
+
+		case OCLASS_PERIOD:
+			{
+				HeapTuple	perTup;
+				Form_pg_period per;
+
+				perTup = SearchSysCache1(PERIODOID,
+										 ObjectIdGetDatum(object->objectId));
+				if (!HeapTupleIsValid(perTup))
+					elog(ERROR, "cache lookup failed for period %u",
+						 object->objectId);
+				per = (Form_pg_period) GETSTRUCT(perTup);
+
+				appendStringInfo(&buffer, "%s on ",
+								 quote_identifier(NameStr(per->pername)));
+				getRelationIdentity(&buffer, per->perrelid, objname);
+				if (objname)
+					*objname = lappend(*objname, pstrdup(NameStr(per->pername)));
+
+				ReleaseSysCache(perTup);
 				break;
 			}
 
