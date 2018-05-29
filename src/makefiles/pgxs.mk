@@ -299,7 +299,7 @@ endif
 # against installed postmaster
 ifndef NO_INSTALLCHECK
 installcheck: submake $(REGRESS_PREP)
-	$(pg_regress_installcheck) $(REGRESS_OPTS) $(REGRESS)
+	PGOPTIONS=$(PGOPTIONS) $(pg_regress_installcheck) $(REGRESS_OPTS) $(REGRESS)
 endif
 
 ifdef PGXS
@@ -308,7 +308,7 @@ check:
 	@echo 'Do "$(MAKE) install", then "$(MAKE) installcheck" instead.'
 else
 check: submake $(REGRESS_PREP)
-	$(pg_regress_check) $(REGRESS_OPTS) $(REGRESS)
+	PGOPTIONS=$(PGOPTIONS) $(pg_regress_check) $(REGRESS_OPTS) $(REGRESS)
 
 temp-install: EXTRA_INSTALL+=$(subdir)
 endif
