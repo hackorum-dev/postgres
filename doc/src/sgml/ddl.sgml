@@ -403,6 +403,17 @@ CREATE TABLE products (
     ensure that a column does not contain null values, the not-null
     constraint described in the next section can be used.
    </para>
+
+   <note>
+    <para>
+     Check constraint were not designed to enforce business rules across tables.
+     Avoid using check constraints with function accessing to other tables and
+     prefer triggers instead (please refer to <xref linkend="triggers"/> for
+     more information about triggers). PostgreSQL won't prevent you
+     from doing so, but be aware you might encounter difficulties to restore
+     dumps (generated with pg_dump or pg_dumpall) if you do.
+    </para>
+   </note>
   </sect2>
 
   <sect2>
