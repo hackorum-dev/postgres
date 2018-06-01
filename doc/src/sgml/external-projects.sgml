@@ -83,6 +83,13 @@
      </row>
 
      <row>
+      <entry>Pgfe</entry>
+      <entry>C++</entry>
+      <entry>An API inspired by libpq</entry>
+      <entry><ulink url="https://github.com/dmitigr/pgfe"></ulink></entry>
+     </row>
+
+     <row>
       <entry>node-postgres</entry>
       <entry>JavaScript</entry>
       <entry>Node.js driver</entry>
