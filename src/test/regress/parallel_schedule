@@ -79,7 +79,7 @@ ignore: random
 # ----------
 # Another group of parallel tests
 # ----------
-test: select_into select_distinct select_distinct_on select_implicit select_having subselect union case join aggregates transactions random portals arrays btree_index hash_index update namespace prepared_xacts delete
+test: select_into select_distinct select_distinct_on select_implicit select_having union case join aggregates transactions random portals arrays btree_index hash_index update namespace prepared_xacts delete
 
 # ----------
 # Another group of parallel tests
@@ -89,7 +89,7 @@ test: brin gin gist spgist privileges init_privs security_label collate matview 
 # ----------
 # Another group of parallel tests
 # ----------
-test: alter_generic alter_operator misc psql async dbsize misc_functions sysviews tsrf tidscan stats_ext
+test: alter_generic alter_operator misc psql async dbsize misc_functions sysviews tsrf tidscan stats_ext subselect subselect_pushdown
 
 # rules cannot run concurrently with any test that creates a view
 test: rules psql_crosstab amutils

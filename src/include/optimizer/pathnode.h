@@ -92,7 +92,7 @@ extern GatherMergePath *create_gather_merge_path(PlannerInfo *root,
 						 double *rows);
 extern SubqueryScanPath *create_subqueryscan_path(PlannerInfo *root,
 						 RelOptInfo *rel, Path *subpath,
-						 List *pathkeys, Relids required_outer);
+						 List *pathkeys, Relids required_outer, List *pushed_down_ec_joins);
 extern Path *create_functionscan_path(PlannerInfo *root, RelOptInfo *rel,
 						 List *pathkeys, Relids required_outer);
 extern Path *create_tablexprscan_path(PlannerInfo *root, RelOptInfo *rel,

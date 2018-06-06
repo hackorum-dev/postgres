@@ -1400,6 +1400,7 @@ typedef struct
 	List	   *targetlist;
 	ReplaceVarsNoMatchOption nomatch_option;
 	int			nomatch_varno;
+	int			min_sublevels_up;
 } ReplaceVarsFromTargetList_context;
 
 static Node *
@@ -1484,8 +1485,8 @@ ReplaceVarsFromTargetList_callback(Var *var,
 		Expr	   *newnode = copyObject(tle->expr);
 
 		/* Must adjust varlevelsup if tlist item is from higher query */
-		if (var->varlevelsup > 0)
-			IncrementVarSublevelsUp((Node *) newnode, var->varlevelsup, 0);
+		if (var->varlevelsup + rcon->min_sublevels_up > 0)
+			IncrementVarSublevelsUp((Node *) newnode, var->varlevelsup - rcon->min_sublevels_up, 0);
 
 		/*
 		 * Check to see if the tlist item contains a PARAM_MULTIEXPR Param,
@@ -1521,6 +1522,7 @@ ReplaceVarsFromTargetList(Node *node,
 	context.targetlist = targetlist;
 	context.nomatch_option = nomatch_option;
 	context.nomatch_varno = nomatch_varno;
+	context.min_sublevels_up = sublevels_up;
 
 	return replace_rte_variables(node, target_varno, sublevels_up,
 								 ReplaceVarsFromTargetList_callback,

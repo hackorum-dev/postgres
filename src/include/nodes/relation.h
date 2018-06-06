@@ -1237,6 +1237,7 @@ typedef struct SubqueryScanPath
 {
 	Path		path;
 	Path	   *subpath;		/* path representing subquery execution */
+	List	   *pushed_down_ec_joins; /* pushed-down quals derived from ECs */
 } SubqueryScanPath;
 
 /*

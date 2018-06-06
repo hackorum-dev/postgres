@@ -90,7 +90,6 @@ test: select_distinct
 test: select_distinct_on
 test: select_implicit
 test: select_having
-test: subselect
 test: union
 test: case
 test: join
@@ -135,6 +134,8 @@ test: sysviews
 test: tsrf
 test: tidscan
 test: stats_ext
+test: subselect
+test: subselect_pushdown
 test: rules
 test: psql_crosstab
 test: select_parallel
