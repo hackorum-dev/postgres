@@ -5037,6 +5037,7 @@ examine_simple_variable(PlannerInfo *root, Var *var,
 		Query	   *subquery = rte->subquery;
 		RelOptInfo *rel;
 		TargetEntry *ste;
+		PlannerInfo *subroot;
 
 		/*
 		 * Punt if it's a whole-row var rather than a plain column reference.
@@ -5065,10 +5066,24 @@ examine_simple_variable(PlannerInfo *root, Var *var,
 		 */
 		rel = find_base_rel(root, var->varno);
 
-		/* If the subquery hasn't been planned yet, we have to punt */
-		if (rel->subroot == NULL)
+		if (rel->chosen_plan)
+			subroot = rel->chosen_plan;
+		else if (rel->pathlist && IsA(linitial(rel->pathlist), SubqueryScanPath))
+		{
+			/*
+			 * Use the estimates from the first path. XXX: what if it's a parameterized
+			 * path?
+			 */
+			SubqueryScanPath *sqpath = (SubqueryScanPath *) linitial(rel->pathlist);
+
+			subroot = sqpath->subroot;
+		}
+		else
+		{
+			/* If the subquery hasn't been planned yet, we have to punt */
 			return;
-		Assert(IsA(rel->subroot, PlannerInfo));
+		}
+		Assert(IsA(subroot, PlannerInfo));
 
 		/*
 		 * Switch our attention to the subquery as mangled by the planner. It
@@ -5078,7 +5093,7 @@ examine_simple_variable(PlannerInfo *root, Var *var,
 		 * planning, Vars in the targetlist might have gotten replaced, and we
 		 * need to see the replacement expressions.
 		 */
-		subquery = rel->subroot->parse;
+		subquery = subroot->parse;
 		Assert(IsA(subquery, Query));
 
 		/* Get the subquery output expression referenced by the upper Var */
@@ -5130,7 +5145,7 @@ examine_simple_variable(PlannerInfo *root, Var *var,
 			 * if the underlying column is unique, the subquery may have
 			 * joined to other tables in a way that creates duplicates.
 			 */
-			examine_simple_variable(rel->subroot, var, vardata);
+			examine_simple_variable(subroot, var, vardata);
 		}
 	}
 	else

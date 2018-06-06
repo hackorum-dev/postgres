@@ -2418,11 +2418,11 @@ finalize_plan(PlannerInfo *root, Plan *plan,
 
 				/* We must run finalize_plan on the subquery */
 				rel = find_base_rel(root, sscan->scan.scanrelid);
-				subquery_params = rel->subroot->outer_params;
+				subquery_params = rel->chosen_plan->outer_params;
 				if (gather_param >= 0)
 					subquery_params = bms_add_member(bms_copy(subquery_params),
 													 gather_param);
-				finalize_plan(rel->subroot, sscan->subplan, gather_param,
+				finalize_plan(rel->chosen_plan, sscan->subplan, gather_param,
 							  subquery_params, NULL);
 
 				/* Now we can add its extParams to the parent's params */

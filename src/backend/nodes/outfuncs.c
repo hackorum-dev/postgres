@@ -2340,8 +2340,6 @@ _outRelOptInfo(StringInfo str, const RelOptInfo *node)
 	WRITE_UINT_FIELD(pages);
 	WRITE_FLOAT_FIELD(tuples, "%.0f");
 	WRITE_FLOAT_FIELD(allvisfrac, "%.6f");
-	WRITE_NODE_FIELD(subroot);
-	WRITE_NODE_FIELD(subplan_params);
 	WRITE_INT_FIELD(rel_parallel_workers);
 	WRITE_OID_FIELD(serverid);
 	WRITE_OID_FIELD(userid);

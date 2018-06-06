@@ -651,8 +651,7 @@ typedef struct RelOptInfo
 	BlockNumber pages;			/* size estimates derived from pg_class */
 	double		tuples;
 	double		allvisfrac;
-	PlannerInfo *subroot;		/* if subquery */
-	List	   *subplan_params; /* if subquery */
+	PlannerInfo *chosen_plan;
 	int			rel_parallel_workers;	/* wanted number of parallel workers */
 
 	/* Information about foreign tables and foreign joins */
@@ -1237,7 +1236,10 @@ typedef struct SubqueryScanPath
 {
 	Path		path;
 	Path	   *subpath;		/* path representing subquery execution */
-	List	   *pushed_down_ec_joins; /* pushed-down quals derived from ECs */
+	PlannerInfo *subroot;		/* */
+	List	   *subplan_params; /* */
+
+	List	   *pushed_down_clauses; /* pushed-down join quals */
 } SubqueryScanPath;
 
 /*

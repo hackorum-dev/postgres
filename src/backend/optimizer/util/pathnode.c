@@ -1868,8 +1868,12 @@ create_gather_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
  *	  returning the pathnode.
  */
 SubqueryScanPath *
-create_subqueryscan_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
-						 List *pathkeys, Relids required_outer, List *pushed_down_ec_joins)
+create_subqueryscan_path(PlannerInfo *root, RelOptInfo *rel,
+						 PlannerInfo *subroot,
+						 List *subplan_params,
+						 Path *subpath,
+						 List *pathkeys, Relids required_outer,
+						 List *pushed_down_clauses)
 {
 	SubqueryScanPath *pathnode = makeNode(SubqueryScanPath);
 
@@ -1884,7 +1888,9 @@ create_subqueryscan_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	pathnode->path.parallel_workers = subpath->parallel_workers;
 	pathnode->path.pathkeys = pathkeys;
 	pathnode->subpath = subpath;
-	pathnode->pushed_down_ec_joins = pushed_down_ec_joins;
+	pathnode->subplan_params = subplan_params;
+	pathnode->subroot = subroot;
+	pathnode->pushed_down_clauses = pushed_down_clauses;
 
 	cost_subqueryscan(pathnode, root, rel, pathnode->path.param_info);
 
@@ -3561,10 +3567,12 @@ reparameterize_path(PlannerInfo *root, Path *path,
 
 				return (Path *) create_subqueryscan_path(root,
 														 rel,
+														 spath->subroot,
+														 spath->subplan_params,
 														 spath->subpath,
 														 spath->path.pathkeys,
 														 required_outer,
-														 spath->pushed_down_ec_joins);
+														 spath->pushed_down_clauses);
 			}
 		case T_Append:
 			{

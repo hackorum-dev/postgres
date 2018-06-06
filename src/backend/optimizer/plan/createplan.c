@@ -3188,18 +3188,40 @@ create_subqueryscan_plan(PlannerInfo *root, SubqueryScanPath *best_path,
 	Plan	   *subplan;
 	ListCell   *l;
 	List	   *qpqual;
-	List	   *sq_quals = best_path->pushed_down_ec_joins;
+	List	   *sq_quals = best_path->pushed_down_clauses;
 
 	/* it should be a subquery base rel... */
 	Assert(scan_relid > 0);
 	Assert(rel->rtekind == RTE_SUBQUERY);
+	Assert(rel->chosen_plan == NULL);
 
 	/*
 	 * Recursively create Plan from Path for subquery.  Since we are entering
 	 * a different planner context (subroot), recurse to create_plan not
 	 * create_plan_recurse.
 	 */
-	subplan = create_plan(rel->subroot, best_path->subpath);
+	subplan = create_plan(best_path->subroot, best_path->subpath);
+
+	/*
+	 * If this path used join quals that were pushed down to the subquery,
+	 * we don't need to re-check those quals on the SubqueryScan node itself.
+	 */
+	if (best_path->pushed_down_clauses)
+	{
+		List	   *new_clauses = NIL;
+		ListCell   *l;
+
+		foreach(l, scan_clauses)
+		{
+			RestrictInfo *rinfo = lfirst_node(RestrictInfo, l);
+
+			if (list_member_ptr(best_path->pushed_down_clauses, rinfo))
+				continue;
+
+			new_clauses = lappend(new_clauses, rinfo);
+		}
+		scan_clauses = new_clauses;
+	}
 
 	/*
 	 * If we had pushed down any join clauses to the subquery, we don't need
@@ -3240,7 +3262,7 @@ create_subqueryscan_plan(PlannerInfo *root, SubqueryScanPath *best_path,
 		scan_clauses = (List *)
 			replace_nestloop_params(root, (Node *) scan_clauses);
 		process_subquery_nestloop_params(root,
-										 rel->subplan_params);
+										 best_path->subplan_params);
 	}
 
 	scan_plan = make_subqueryscan(tlist,
@@ -3249,6 +3271,8 @@ create_subqueryscan_plan(PlannerInfo *root, SubqueryScanPath *best_path,
 								  subplan);
 
 	copy_generic_path_info(&scan_plan->scan.plan, &best_path->path);
+
+	rel->chosen_plan = best_path->subroot;
 
 	return scan_plan;
 }

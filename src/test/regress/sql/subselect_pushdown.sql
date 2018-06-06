@@ -20,7 +20,7 @@ select * from smalltab,
 ) as subq(i, avg)
 where smalltab.i = subq.i and smalltab.i = 123;
 
--- Join quals are not currently pushed down
+-- Push down join quals.
 explain (costs off)
 select * from smalltab,
 (
@@ -30,8 +30,9 @@ select * from smalltab,
 ) as subq(i, avg)
 where smalltab.i = subq.i;
 
--- Except when the subquery is LATERAL, and already references the other relation.
--- Such join clauses can be pushed down.
+-- Subquery is LATERAL, and already references the other relation. The join
+-- qual is always pushed down in that case, as the plan is "parameterized"
+-- in respect to the other relation even if it was not pushed down.
 explain (costs off)
 select * from smalltab,
 lateral (

@@ -323,12 +323,12 @@ add_rtes_to_flat_rtable(PlannerInfo *root, bool recursing)
 				 * that some upper query level is treating this one as dummy,
 				 * and so we won't scan this level's plan tree at all.
 				 */
-				if (rel->subroot == NULL)
+				if (rel->chosen_plan == NULL)
 					flatten_unplanned_rtes(glob, rte);
 				else if (recursing ||
-						 IS_DUMMY_REL(fetch_upper_rel(rel->subroot,
+						 IS_DUMMY_REL(fetch_upper_rel(rel->chosen_plan,
 													  UPPERREL_FINAL, NULL)))
-					add_rtes_to_flat_rtable(rel->subroot, true);
+					add_rtes_to_flat_rtable(rel->chosen_plan, true);
 			}
 		}
 		rti++;
@@ -1070,7 +1070,7 @@ set_subqueryscan_references(PlannerInfo *root,
 	rel = find_base_rel(root, plan->scan.scanrelid);
 
 	/* Recursively process the subplan */
-	plan->subplan = set_plan_references(rel->subroot, plan->subplan);
+	plan->subplan = set_plan_references(rel->chosen_plan, plan->subplan);
 
 	if (trivial_subqueryscan(plan))
 	{

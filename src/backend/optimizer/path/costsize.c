@@ -4807,9 +4807,8 @@ get_foreign_key_join_selectivity(PlannerInfo *root,
  * We set the same fields as set_baserel_size_estimates.
  */
 void
-set_subquery_size_estimates(PlannerInfo *root, RelOptInfo *rel)
+set_subquery_size_estimates(PlannerInfo *root, RelOptInfo *rel, PlannerInfo *subroot)
 {
-	PlannerInfo *subroot = rel->subroot;
 	RelOptInfo *sub_final_rel;
 	ListCell   *lc;
 

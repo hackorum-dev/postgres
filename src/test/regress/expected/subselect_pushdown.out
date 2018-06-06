@@ -25,7 +25,7 @@ where smalltab.i = subq.i and smalltab.i = 123;
                Index Cond: (i = 123)
 (7 rows)
 
--- Join quals are not currently pushed down
+-- Push down join quals.
 explain (costs off)
 select * from smalltab,
 (
@@ -36,18 +36,17 @@ select * from smalltab,
 where smalltab.i = subq.i;
                    QUERY PLAN                    
 -------------------------------------------------
- Merge Join
-   Merge Cond: (smalltab.i = bigtab.i)
-   ->  Sort
-         Sort Key: smalltab.i
-         ->  Seq Scan on smalltab
+ Nested Loop
+   ->  Seq Scan on smalltab
    ->  GroupAggregate
          Group Key: bigtab.i
          ->  Index Scan using bigtab_i on bigtab
-(8 rows)
+               Index Cond: (smalltab.i = i)
+(6 rows)
 
--- Except when the subquery is LATERAL, and already references the other relation.
--- Such join clauses can be pushed down.
+-- Subquery is LATERAL, and already references the other relation. The join
+-- qual is always pushed down in that case, as the plan is "parameterized"
+-- in respect to the other relation even if it was not pushed down.
 explain (costs off)
 select * from smalltab,
 lateral (
