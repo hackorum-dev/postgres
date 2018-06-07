@@ -24,6 +24,7 @@
 #include "pg_trace.h"
 #include "tcop/pquery.h"
 #include "tcop/utility.h"
+#include "utils/builtins.h"
 #include "utils/memutils.h"
 #include "utils/snapmgr.h"
 
@@ -780,8 +781,15 @@ PortalRun(Portal portal, long count, bool isTopLevel, bool run_once,
 				if (completionTag && portal->commandTag)
 				{
 					if (strcmp(portal->commandTag, "SELECT") == 0)
+					{
+#if 0
 						snprintf(completionTag, COMPLETION_TAG_BUFSIZE,
 								 "SELECT " UINT64_FORMAT, nprocessed);
+#else
+						memcpy(completionTag, "SELECT ", sizeof("SELECT "));
+						pg_lltoa(nprocessed, completionTag + 7);
+#endif
+					}
 					else
 						strcpy(completionTag, portal->commandTag);
 				}
