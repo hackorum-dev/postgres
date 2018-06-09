@@ -92,6 +92,14 @@ sub mkvcbuild
 
 	$solution = CreateSolution($vsVersion, $config);
 
+	# Extract library-specific versions this build is linking to.
+	if ($solution->{options}->{openssl})
+	{
+		my $openssl_bin = "$solution->{options}->{openssl}/bin/openssl.exe";
+		printf("Version of OpenSSL used: ");
+		system("$openssl_bin version");
+	}
+
 	our @pgportfiles = qw(
 	  chklocale.c crypt.c fls.c fseeko.c getrusage.c inet_aton.c random.c
 	  srandom.c getaddrinfo.c gettimeofday.c inet_net_ntop.c kill.c open.c
