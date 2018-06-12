@@ -247,6 +247,8 @@ extern long deleteDependencyRecordsFor(Oid classId, Oid objectId,
 extern long deleteDependencyRecordsForClass(Oid classId, Oid objectId,
 								Oid refclassId, char deptype);
 
+extern long deleteDependencyRecordsForRefObject(Oid classId, Oid objectId, Oid refObjectId);
+
 extern long changeDependencyFor(Oid classId, Oid objectId,
 					Oid refClassId, Oid oldRefObjectId,
 					Oid newRefObjectId);

@@ -1047,6 +1047,39 @@ ConstraintSetParentConstraint(Oid childConstrId, Oid parentConstrId)
 	heap_close(constrRel, RowExclusiveLock);
 }
 
+bool
+relation_constraint_oid_exists(Oid relid, Oid conid)
+{
+	bool        exists = false;
+	Relation    pg_constraint;
+	HeapTuple   tuple;
+	SysScanDesc scan;
+	ScanKeyData key;
+
+	pg_constraint = heap_open(ConstraintRelationId, AccessShareLock);
+
+	ScanKeyInit(&key,
+			Anum_pg_constraint_conrelid,
+			BTEqualStrategyNumber,
+			F_OIDEQ,
+			ObjectIdGetDatum(relid));
+
+	scan = systable_beginscan(pg_constraint, ConstraintRelidIndexId, true,
+			NULL, 1, &key);
+
+	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
+	{
+		if (HeapTupleGetOid(tuple) == conid) {
+			exists = true;
+			break;
+		}
+	}
+
+	systable_endscan(scan);
+	heap_close(pg_constraint, AccessShareLock);
+
+	return exists;
+}
 
 /*
  * get_relation_constraint_oid

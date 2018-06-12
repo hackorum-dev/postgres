@@ -279,6 +279,48 @@ deleteDependencyRecordsForClass(Oid classId, Oid objectId,
 	return count;
 }
 
+/**
+ *
+ */
+long
+deleteDependencyRecordsForRefObject(Oid classId, Oid objectId, Oid refObjectId)
+{
+	long        count = 0;
+	ScanKeyData keys[2];
+	SysScanDesc scan;
+	Relation    rel;
+	HeapTuple   tuple;
+
+	rel = heap_open(DependRelationId, RowExclusiveLock);
+
+	/* Use index to filter class/object */
+	ScanKeyInit(&keys[0],
+			Anum_pg_depend_classid,
+			BTEqualStrategyNumber, F_OIDEQ,
+			ObjectIdGetDatum(classId));
+	ScanKeyInit(&keys[1],
+			Anum_pg_depend_objid,
+			BTEqualStrategyNumber, F_OIDEQ,
+			ObjectIdGetDatum(objectId));
+	scan = systable_beginscan(rel, DependDependerIndexId, true, NULL, 2, keys);
+
+	while(HeapTupleIsValid(tuple = systable_getnext(scan)))
+	{
+		Form_pg_depend depform = (Form_pg_depend) GETSTRUCT(tuple);
+
+		if (depform->refobjid == refObjectId) {
+			CatalogTupleDelete(rel, &tuple->t_self);
+			count++;
+		}
+	}
+
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+
+	return count;
+}
+
+
 /*
  * Adjust dependency record(s) to point to a different object of the same type
  *

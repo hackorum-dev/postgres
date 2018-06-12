@@ -338,6 +338,10 @@ static void validateCheckConstraint(Relation rel, HeapTuple constrtup);
 static void validateForeignKeyConstraint(char *conname,
 							 Relation rel, Relation pkrel,
 							 Oid pkindOid, Oid constraintOid);
+static void
+createForeignKeyCheckTriggers(Oid myRelOid, Oid refRelOid,
+							  Constraint *fkconstraint, Oid constraintOid,
+							  Oid indexOid);
 static void ATController(AlterTableStmt *parsetree,
 			 Relation rel, List *cmds, bool recurse, LOCKMODE lockmode);
 static void ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
@@ -410,7 +414,7 @@ static ObjectAddress ATAddCheckConstraint(List **wqueue,
 					 LOCKMODE lockmode);
 static ObjectAddress ATAddForeignKeyConstraint(List **wqueue, AlteredTableInfo *tab,
 						  Relation rel, Constraint *fkconstraint, Oid parentConstr,
-						  bool recurse, bool recursing,
+						  bool recurse, bool recursing, bool forChild,
 						  LOCKMODE lockmode);
 static void ATExecDropConstraint(Relation rel, const char *constrName,
 					 DropBehavior behavior,
@@ -969,6 +973,25 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 		CloneForeignKeyConstraints(parentId, relationId, NULL);
 
 		heap_close(parent, NoLock);
+	}
+
+	/*
+	 * If we INHERIT: replicate foreign key constraints from parent.
+	 */
+	if (stmt->partbound == NULL) {
+		ListCell *cell;
+		Relation parent;
+
+		foreach(cell, inheritOids) {
+			parent = heap_open(lfirst_oid(cell), RowExclusiveLock);
+
+			CloneForeignKeyConstraints(
+					RelationGetRelid(parent),
+					RelationGetRelid(rel),
+					NULL);
+
+			heap_close(parent, RowExclusiveLock);
+		}
 	}
 
 	/*
@@ -7120,7 +7143,7 @@ ATExecAddConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 
 			address = ATAddForeignKeyConstraint(wqueue, tab, rel,
 												newConstraint, InvalidOid,
-												recurse, false,
+												recurse, false, false,
 												lockmode);
 			break;
 
@@ -7277,7 +7300,7 @@ ATAddCheckConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 static ObjectAddress
 ATAddForeignKeyConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 						  Constraint *fkconstraint, Oid parentConstr,
-						  bool recurse, bool recursing, LOCKMODE lockmode)
+						  bool recurse, bool recursing, bool forChild, LOCKMODE lockmode)
 {
 	Relation	pkrel;
 	int16		pkattnum[INDEX_MAX_KEYS];
@@ -7296,6 +7319,7 @@ ATAddForeignKeyConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	bool		old_check_ok;
 	ObjectAddress address;
 	ListCell   *old_pfeqop_item = list_head(fkconstraint->old_conpfeqop);
+	List       *children;
 
 	/*
 	 * Grab ShareRowExclusiveLock on the pk table, so that someone doesn't
@@ -7719,12 +7743,50 @@ ATAddForeignKeyConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 			childAddr =
 				ATAddForeignKeyConstraint(wqueue, childtab, partition,
 										  fkconstraint, constrOid,
-										  recurse, true, lockmode);
+										  recurse, true, false, lockmode);
 
 			/* Record this constraint as dependent on the parent one */
 			recordDependencyOn(&childAddr, &address, DEPENDENCY_INTERNAL_AUTO);
 
 			heap_close(partition, NoLock);
+		}
+	}
+
+	/*
+	 * Apply the same foreign key constraint to each inherited table.
+	 */
+	children = find_all_inheritors(RelationGetRelid(rel), AccessShareLock, NULL);
+	if (recurse && !forChild && list_length(children)) {
+		ListCell *cell;
+		foreach(cell, children) {
+			Oid childId;
+			Relation child;
+			AlteredTableInfo *childtab;
+			ObjectAddress childAddr;
+
+			childId = lfirst_oid(cell);
+			if (childId == RelationGetRelid(rel))
+				continue;
+
+			child = heap_open(childId, lockmode);
+			ereport(NOTICE,
+				(errmsg("applying same constraint on child \"%s\"",
+					RelationGetRelationName(child))));
+
+			CheckTableNotInUse(child, "ALTER TABLE");
+
+			/* Find or create work queue entry for this table */
+			childtab = ATGetQueueEntry(wqueue, child);
+
+			childAddr =
+				ATAddForeignKeyConstraint(wqueue, childtab, child,
+										  fkconstraint, constrOid,
+										  recurse, false, true, lockmode);
+
+			/* Record this constraint as dependent on the parent one */
+			recordDependencyOn(&childAddr, &address, DEPENDENCY_INTERNAL_AUTO);
+
+			heap_close(child, NoLock);
 		}
 	}
 
@@ -11501,6 +11563,9 @@ CreateInheritance(Relation child_rel, Relation parent_rel)
 	ScanKeyData key;
 	HeapTuple	inheritsTuple;
 	int32		inhseqno;
+	List           *cloned;
+	ListCell       *cell;
+
 
 	/* Note: get RowExclusiveLock because we will write pg_inherits below. */
 	catalogRelation = heap_open(InheritsRelationId, RowExclusiveLock);
@@ -11543,6 +11608,26 @@ CreateInheritance(Relation child_rel, Relation parent_rel)
 
 	/* Match up the constraints and bump coninhcount as needed */
 	MergeConstraintsIntoExisting(child_rel, parent_rel);
+
+	/* Merge also foreign key and validate them */
+	CloneForeignKeyConstraints(
+			RelationGetRelid(parent_rel),
+			RelationGetRelid(child_rel),
+			&cloned);
+	foreach(cell, cloned)
+	{
+		ClonedConstraint *clonedcon = lfirst(cell);
+		Relation rel = heap_open(clonedcon->relid, RowShareLock);
+		Relation refrel = heap_open(clonedcon->refrelid, RowShareLock);
+		validateForeignKeyConstraint(
+				clonedcon->constraint->conname,
+				rel, refrel,
+				clonedcon->conindid,
+				clonedcon->conid);
+		heap_close(rel, RowShareLock);
+		heap_close(refrel, RowShareLock);
+	}
+
 
 	/*
 	 * OK, it looks valid.  Make the catalog entries that show inheritance.
@@ -11799,6 +11884,7 @@ MergeConstraintsIntoExisting(Relation child_rel, Relation parent_rel)
 		HeapTuple	child_tuple;
 		bool		found = false;
 
+
 		if (parent_con->contype != CONSTRAINT_CHECK)
 			continue;
 
@@ -11892,6 +11978,67 @@ MergeConstraintsIntoExisting(Relation child_rel, Relation parent_rel)
 }
 
 /*
+ * TODO
+ */
+static void
+removeInheritedConstraints(Relation rel, Relation parent_rel) {
+	Relation	pg_constraint;
+	ObjectAddress   conobj;
+	HeapTuple	tuple;
+	ScanKeyData     key;
+	SysScanDesc     scan;
+
+	pg_constraint = heap_open(ConstraintRelationId, RowShareLock);
+	ScanKeyInit(&key,
+			Anum_pg_constraint_conrelid, BTEqualStrategyNumber,
+			F_OIDEQ, ObjectIdGetDatum(RelationGetRelid(rel)));
+
+	scan = systable_beginscan(pg_constraint, ConstraintRelidIndexId, true,
+							  NULL, 1, &key);
+
+	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
+	{
+		Form_pg_constraint con = (Form_pg_constraint) GETSTRUCT(tuple);
+
+		/* We only want to drop foreign key inherited from (ex)parent table */
+		if (!con->coninhcount
+				|| !con->conparentid
+				|| !relation_constraint_oid_exists(
+					RelationGetRelid(parent_rel),
+					con->conparentid))
+			continue;
+
+		/*
+		 * XXX Result should always be 1, do we have to check it ?
+		 *
+		 *   I would say no. Indeed if the db is corrupted, it will resolve "itself"
+		 *   otherwise there is no way to remove inherited constraints.
+		 */
+		deleteDependencyRecordsForRefObject(
+			ConstraintRelationId, HeapTupleGetOid(tuple), con->conparentid);
+
+		/* Show previous changes for performDeletion procedure */
+		CommandCounterIncrement();
+
+		/* Perform the actual constraint deletion */
+		conobj.classId = ConstraintRelationId;
+		conobj.objectId = HeapTupleGetOid(tuple);
+		conobj.objectSubId = 0;
+
+		performDeletion(&conobj, DROP_RESTRICT, PERFORM_DELETION_INTERNAL);
+	}
+
+	/*
+	 * In case of deep inheritance (table inherits rel) the sub-constraints will
+	 * be deleted by recursive performDeletion procedure
+	 */
+
+	systable_endscan(scan);
+
+	heap_close(pg_constraint, RowShareLock);
+}
+
+/*
  * ALTER TABLE NO INHERIT
  *
  * Return value is the address of the relation that is no longer parent.
@@ -11924,6 +12071,8 @@ ATExecDropInherit(Relation rel, RangeVar *parent, LOCKMODE lockmode)
 
 	ObjectAddressSet(address, RelationRelationId,
 					 RelationGetRelid(parent_rel));
+
+	removeInheritedConstraints(rel, parent_rel);
 
 	/* keep our lock on the parent relation until commit */
 	heap_close(parent_rel, NoLock);
