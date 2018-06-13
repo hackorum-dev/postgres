@@ -33,6 +33,7 @@
 
 #include "access/parallel.h"
 #include "access/printtup.h"
+#include "access/transam.h"
 #include "access/xact.h"
 #include "catalog/pg_type.h"
 #include "commands/async.h"
@@ -2442,16 +2443,31 @@ check_log_statement(List *stmt_list)
 
 	if (log_statement == LOGSTMT_NONE)
 		return false;
-	if (log_statement == LOGSTMT_ALL)
+
+	/*
+	 * If we're supposed to log mod or ddl statements, we need to make sure we
+	 * have a TransactionId so it appears in log_line_prefix's %x wildcard.
+	 * If the user is logging all statements, we can fast-track out if we
+	 * already have a TransactionId, otherwise we need to loop through the
+	 * statements.
+	 */
+	if (log_statement == LOGSTMT_ALL && TransactionIdIsValid(GetTopTransactionIdIfAny()))
 		return true;
 
 	/* Else we have to inspect the statement(s) to see whether to log */
 	foreach(stmt_item, stmt_list)
 	{
 		Node	   *stmt = (Node *) lfirst(stmt_item);
+		LogStmtLevel level = GetCommandLogLevel(stmt);
 
-		if (GetCommandLogLevel(stmt) <= log_statement)
+		if (level <= log_statement)
+		{
+			/* Make sure we have a TransactionId for mod and ddl statements. */
+			if (level == LOGSTMT_DDL || level == LOGSTMT_MOD)
+				(void) GetTopTransactionId();
+
 			return true;
+		}
 	}
 
 	return false;
