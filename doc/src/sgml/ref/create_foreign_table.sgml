@@ -232,8 +232,9 @@ CHECK ( <replaceable class="parameter">expression</replaceable> ) [ NO INHERIT ]
      <para>
       The <literal>DEFAULT</literal> clause assigns a default data value for
       the column whose column definition it appears within.  The value
-      is any variable-free expression (subqueries and cross-references
-      to other columns in the current table are not allowed).  The
+      is any variable-free expression (subqueries, cross-references
+      to other columns in the current table, aggregate expressions,
+      window functions, and set-returning functions are not allowed).  The
       data type of the default expression must match the data type of the
       column.
      </para>
