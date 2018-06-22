@@ -1468,12 +1468,15 @@ restore_command = 'cp "/mnt/server/archivedir/%f" "%p"'
      <title>Standalone Hot Backups</title>
 
      <para>
-      It is possible to use <productname>PostgreSQL</productname>'s backup facilities to
-      produce standalone hot backups. These are backups that cannot be used
-      for point-in-time recovery, yet are typically much faster to backup and
-      restore than <application>pg_dump</application> dumps.  (They are also much larger
-      than <application>pg_dump</application> dumps, so in some cases the speed advantage
-      might be negated.)
+      It is possible to use <productname>PostgreSQL</productname>'s backup
+      facilities to produce standalone hot backups.  These are backups that
+      could be used for point-in-time recovery if combined with a WAL
+      archive able to recover up to the wanted recovery point.  These backups
+      are typically much faster to create and restore than
+      <application>pg_dump</application> for large deployments but can result
+      in larger backup sizes.  Note also that
+      <application>pg_dump</application> backups cannot be used for
+      point-in-time recovery.
      </para>
 
      <para>
