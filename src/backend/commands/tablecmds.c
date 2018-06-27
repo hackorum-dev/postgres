@@ -6430,6 +6430,12 @@ ATPrepSetStatistics(Relation rel, const char *colName, int16 colNum, Node *newVa
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot refer to non-index column by number")));
+	else if ((rel->rd_rel->relkind == RELKIND_INDEX ||
+			  rel->rd_rel->relkind == RELKIND_PARTITIONED_INDEX) &&
+			  colName)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("cannot refer to expression index column by name")));
 
 	/* Permissions checks */
 	if (!pg_class_ownercheck(RelationGetRelid(rel), GetUserId()))
