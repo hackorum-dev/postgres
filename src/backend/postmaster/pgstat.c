@@ -2870,6 +2870,9 @@ pgstat_bestart(void)
 			case WalReceiverProcess:
 				beentry->st_backendType = B_WAL_RECEIVER;
 				break;
+			case WalPrefetcherProcess:
+				beentry->st_backendType = B_WAL_PREFETCHER;
+				break;
 			default:
 				elog(FATAL, "unrecognized process type: %d",
 					 (int) MyAuxProcType);
@@ -3519,6 +3522,9 @@ pgstat_get_wait_activity(WaitEventActivity w)
 		case WAIT_EVENT_WAL_WRITER_MAIN:
 			event_name = "WalWriterMain";
 			break;
+		case WAIT_EVENT_WAL_PREFETCHER_MAIN:
+			event_name = "WalPrefetcherMain";
+			break;
 			/* no default case, so that compiler will warn */
 	}
 
@@ -4125,6 +4131,9 @@ pgstat_get_backend_desc(BackendType backendType)
 			break;
 		case B_WAL_RECEIVER:
 			backendDesc = "walreceiver";
+			break;
+		case B_WAL_PREFETCHER:
+			backendDesc = "walprefetcher";
 			break;
 		case B_WAL_SENDER:
 			backendDesc = "walsender";

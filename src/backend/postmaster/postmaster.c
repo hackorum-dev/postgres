@@ -254,7 +254,9 @@ static pid_t StartupPID = 0,
 			AutoVacPID = 0,
 			PgArchPID = 0,
 			PgStatPID = 0,
-			SysLoggerPID = 0;
+			SysLoggerPID = 0,
+			WalPrefetcherPID = 0
+;
 
 /* Startup process's status */
 typedef enum
@@ -361,6 +363,9 @@ static volatile bool avlauncher_needs_signal = false;
 
 /* received START_WALRECEIVER signal */
 static volatile sig_atomic_t WalReceiverRequested = false;
+
+/* received START_WALPREFETCHER signal */
+static volatile sig_atomic_t WalPrefetcherRequested = false;
 
 /* set when there's a worker that needs to be started up */
 static volatile bool StartWorkerNeeded = true;
@@ -549,6 +554,7 @@ static void ShmemBackendArrayRemove(Backend *bn);
 #define StartupDataBase()		StartChildProcess(StartupProcess)
 #define StartBackgroundWriter() StartChildProcess(BgWriterProcess)
 #define StartCheckpointer()		StartChildProcess(CheckpointerProcess)
+#define StartWalPrefetcher()	StartChildProcess(WalPrefetcherProcess)
 #define StartWalWriter()		StartChildProcess(WalWriterProcess)
 #define StartWalReceiver()		StartChildProcess(WalReceiverProcess)
 
@@ -1372,6 +1378,9 @@ PostmasterMain(int argc, char *argv[])
 	Assert(StartupPID != 0);
 	StartupStatus = STARTUP_RUNNING;
 	pmState = PM_STARTUP;
+
+	/* Start Wal prefetcher now because it may speed-up WAL redo */
+	WalPrefetcherPID = StartWalPrefetcher();
 
 	/* Some workers may be scheduled to start now */
 	maybe_start_bgworkers();
@@ -2535,6 +2544,8 @@ SIGHUP_handler(SIGNAL_ARGS)
 			signal_child(BgWriterPID, SIGHUP);
 		if (CheckpointerPID != 0)
 			signal_child(CheckpointerPID, SIGHUP);
+		if (WalPrefetcherPID != 0)
+			signal_child(WalPrefetcherPID, SIGHUP);
 		if (WalWriterPID != 0)
 			signal_child(WalWriterPID, SIGHUP);
 		if (WalReceiverPID != 0)
@@ -2685,6 +2696,8 @@ pmdie(SIGNAL_ARGS)
 				signal_child(BgWriterPID, SIGTERM);
 			if (WalReceiverPID != 0)
 				signal_child(WalReceiverPID, SIGTERM);
+			if (WalPrefetcherPID != 0)
+				signal_child(WalPrefetcherPID, SIGTERM);
 			if (pmState == PM_RECOVERY)
 			{
 				SignalSomeChildren(SIGTERM, BACKEND_TYPE_BGWORKER);
@@ -2864,6 +2877,8 @@ reaper(SIGNAL_ARGS)
 			 */
 			if (CheckpointerPID == 0)
 				CheckpointerPID = StartCheckpointer();
+			if (WalPrefetcherPID == 0)
+				WalPrefetcherPID = StartWalPrefetcher();
 			if (BgWriterPID == 0)
 				BgWriterPID = StartBackgroundWriter();
 			if (WalWriterPID == 0)
@@ -2963,6 +2978,20 @@ reaper(SIGNAL_ARGS)
 								 _("checkpointer process"));
 			}
 
+			continue;
+		}
+
+		/*
+		 * Was it the wal prefetcher?  Normal exit can be ignored; we'll start a
+		 * new one at the next iteration of the postmaster's main loop, if
+		 * necessary.  Any other exit condition is treated as a crash.
+		 */
+		if (pid == WalPrefetcherPID)
+		{
+			WalPrefetcherPID = 0;
+			if (!EXIT_STATUS_0(exitstatus))
+				HandleChildCrash(pid, exitstatus,
+								 _("WAL prefetcher process"));
 			continue;
 		}
 
@@ -3451,6 +3480,18 @@ HandleChildCrash(int pid, int exitstatus, const char *procname)
 		signal_child(WalWriterPID, (SendStop ? SIGSTOP : SIGQUIT));
 	}
 
+	/* Take care of the walprefetcherr too */
+	if (pid == WalPrefetcherPID)
+		WalPrefetcherPID = 0;
+	else if (WalPrefetcherPID != 0 && take_action)
+	{
+		ereport(DEBUG2,
+				(errmsg_internal("sending %s to process %d",
+								 (SendStop ? "SIGSTOP" : "SIGQUIT"),
+								 (int) WalPrefetcherPID)));
+		signal_child(WalPrefetcherPID, (SendStop ? SIGSTOP : SIGQUIT));
+	}
+
 	/* Take care of the walreceiver too */
 	if (pid == WalReceiverPID)
 		WalReceiverPID = 0;
@@ -3657,6 +3698,7 @@ PostmasterStateMachine(void)
 		if (CountChildren(BACKEND_TYPE_NORMAL | BACKEND_TYPE_WORKER) == 0 &&
 			StartupPID == 0 &&
 			WalReceiverPID == 0 &&
+			WalPrefetcherPID == 0 &&
 			BgWriterPID == 0 &&
 			(CheckpointerPID == 0 ||
 			 (!FatalError && Shutdown < ImmediateShutdown)) &&
@@ -3757,6 +3799,7 @@ PostmasterStateMachine(void)
 			Assert(WalReceiverPID == 0);
 			Assert(BgWriterPID == 0);
 			Assert(CheckpointerPID == 0);
+			Assert(WalPrefetcherPID == 0);
 			Assert(WalWriterPID == 0);
 			Assert(AutoVacPID == 0);
 			/* syslogger is not considered here */
@@ -3946,6 +3989,8 @@ TerminateChildren(int signal)
 		signal_child(WalWriterPID, signal);
 	if (WalReceiverPID != 0)
 		signal_child(WalReceiverPID, signal);
+	if (WalPrefetcherPID != 0)
+		signal_child(WalPrefetcherPID, signal);
 	if (AutoVacPID != 0)
 		signal_child(AutoVacPID, signal);
 	if (PgArchPID != 0)
@@ -5041,6 +5086,10 @@ sigusr1_handler(SIGNAL_ARGS)
 		Assert(BgWriterPID == 0);
 		BgWriterPID = StartBackgroundWriter();
 
+		/* WAL prefetcher is expected to be started earlier but if not, try to start it now */
+		if (WalPrefetcherPID == 0)
+			WalPrefetcherPID = StartWalPrefetcher();
+
 		/*
 		 * Start the archiver if we're responsible for (re-)archiving received
 		 * files.
@@ -5360,6 +5409,10 @@ StartChildProcess(AuxProcType type)
 			case WalReceiverProcess:
 				ereport(LOG,
 						(errmsg("could not fork WAL receiver process: %m")));
+				break;
+			case WalPrefetcherProcess:
+				ereport(LOG,
+						(errmsg("could not fork WAL prefetcher process: %m")));
 				break;
 			default:
 				ereport(LOG,
