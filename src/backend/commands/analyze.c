@@ -474,7 +474,7 @@ do_analyze_rel(Relation onerel, const VacuumParams *params,
 				thisdata->vacattrstats = (VacAttrStats **)
 					palloc(indexInfo->ii_NumIndexAttrs * sizeof(VacAttrStats *));
 				tcnt = 0;
-				for (i = 0; i < indexInfo->ii_NumIndexAttrs; i++)
+				for (i = 0; i < indexInfo->ii_NumIndexKeyAttrs; i++)
 				{
 					int			keycol = indexInfo->ii_IndexAttrNumbers[i];
 
