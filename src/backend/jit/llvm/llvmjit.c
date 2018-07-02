@@ -91,10 +91,12 @@ static const char *llvm_layout = NULL;
 
 
 static LLVMTargetMachineRef llvm_opt0_targetmachine;
+static LLVMTargetMachineRef llvm_opt1_targetmachine;
 static LLVMTargetMachineRef llvm_opt3_targetmachine;
 
 static LLVMTargetRef llvm_targetref;
 static LLVMOrcJITStackRef llvm_opt0_orc;
+static LLVMOrcJITStackRef llvm_opt1_orc;
 static LLVMOrcJITStackRef llvm_opt3_orc;
 
 
@@ -277,10 +279,16 @@ llvm_get_function(LLVMJitContext *context, const char *funcname)
 #if LLVM_VERSION_MAJOR < 5
 	if ((addr = LLVMOrcGetSymbolAddress(llvm_opt0_orc, funcname)))
 		return (void *) (uintptr_t) addr;
+	if ((addr = LLVMOrcGetSymbolAddress(llvm_opt1_orc, funcname)))
+		return (void *) (uintptr_t) addr;
 	if ((addr = LLVMOrcGetSymbolAddress(llvm_opt3_orc, funcname)))
 		return (void *) (uintptr_t) addr;
 #else
 	if (LLVMOrcGetSymbolAddress(llvm_opt0_orc, &addr, funcname))
+		elog(ERROR, "failed to look up symbol \"%s\"", funcname);
+	if (addr)
+		return (void *) (uintptr_t) addr;
+	if (LLVMOrcGetSymbolAddress(llvm_opt1_orc, &addr, funcname))
 		elog(ERROR, "failed to look up symbol \"%s\"", funcname);
 	if (addr)
 		return (void *) (uintptr_t) addr;
@@ -420,6 +428,8 @@ llvm_optimize_module(LLVMJitContext *context, LLVMModuleRef module)
 
 	if (context->base.flags & PGJIT_OPT3)
 		compile_optlevel = 3;
+	else if (context->base.flags & PGJIT_DEFORM)
+		compile_optlevel = 1;
 	else
 		compile_optlevel = 0;
 
@@ -491,6 +501,8 @@ llvm_compile_module(LLVMJitContext *context)
 
 	if (context->base.flags & PGJIT_OPT3)
 		compile_orc = llvm_opt3_orc;
+	else if (context->base.flags & PGJIT_DEFORM)
+		compile_orc = llvm_opt1_orc;
 	else
 		compile_orc = llvm_opt0_orc;
 
@@ -646,6 +658,11 @@ llvm_session_initialize(void)
 								LLVMCodeGenLevelNone,
 								LLVMRelocDefault,
 								LLVMCodeModelJITDefault);
+	llvm_opt1_targetmachine =
+		LLVMCreateTargetMachine(llvm_targetref, llvm_triple, cpu, features,
+								LLVMCodeGenLevelLess,
+								LLVMRelocDefault,
+								LLVMCodeModelJITDefault);
 	llvm_opt3_targetmachine =
 		LLVMCreateTargetMachine(llvm_targetref, llvm_triple, cpu, features,
 								LLVMCodeGenLevelAggressive,
@@ -661,12 +678,14 @@ llvm_session_initialize(void)
 	LLVMLoadLibraryPermanently(NULL);
 
 	llvm_opt0_orc = LLVMOrcCreateInstance(llvm_opt0_targetmachine);
+	llvm_opt1_orc = LLVMOrcCreateInstance(llvm_opt1_targetmachine);
 	llvm_opt3_orc = LLVMOrcCreateInstance(llvm_opt3_targetmachine);
 
 #if defined(HAVE_DECL_LLVMORCREGISTERGDB) && HAVE_DECL_LLVMORCREGISTERGDB
 	if (jit_debugging_support)
 	{
 		LLVMOrcRegisterGDB(llvm_opt0_orc);
+		LLVMOrcRegisterGDB(llvm_opt1_orc);
 		LLVMOrcRegisterGDB(llvm_opt3_orc);
 	}
 #endif
@@ -674,6 +693,7 @@ llvm_session_initialize(void)
 	if (jit_profiling_support)
 	{
 		LLVMOrcRegisterPerf(llvm_opt0_orc);
+		LLVMOrcRegisterPerf(llvm_opt1_orc);
 		LLVMOrcRegisterPerf(llvm_opt3_orc);
 	}
 #endif
@@ -698,6 +718,16 @@ llvm_shutdown(int code, Datum arg)
 #endif
 		LLVMOrcDisposeInstance(llvm_opt3_orc);
 		llvm_opt3_orc = NULL;
+	}
+
+	if (llvm_opt1_orc)
+	{
+#if defined(HAVE_DECL_LLVMORCREGISTERPERF) && HAVE_DECL_LLVMORCREGISTERPERF
+		if (jit_profiling_support)
+			LLVMOrcUnregisterPerf(llvm_opt1_orc);
+#endif
+		LLVMOrcDisposeInstance(llvm_opt1_orc);
+		llvm_opt1_orc = NULL;
 	}
 
 	if (llvm_opt0_orc)
