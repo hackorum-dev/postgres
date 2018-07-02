@@ -346,7 +346,9 @@
      <para>
       <function>pg_stat_statements_reset</function> discards all statistics
       gathered so far by <filename>pg_stat_statements</filename>.
-      By default, this function can only be executed by superusers.
+      By default, this function can only be executed by superusers and members
+      of the <literal>pg_read_all_stats</literal> role. Access may be granted
+      to others using <command>GRANT</command>.
      </para>
     </listitem>
    </varlistentry>
