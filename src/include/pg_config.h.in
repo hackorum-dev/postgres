@@ -225,6 +225,10 @@
 /* Define to 1 if your compiler understands __FUNCTION__. */
 #undef HAVE_FUNCNAME__FUNCTION
 
+/* Define to 1 if you have __atomic_compare_exchange_n(int128 *, int128 *,
+   int128). */
+#undef HAVE_GCC__ATOMIC_INT128_CAS
+
 /* Define to 1 if you have __atomic_compare_exchange_n(int *, int *, int). */
 #undef HAVE_GCC__ATOMIC_INT32_CAS
 
@@ -234,6 +238,10 @@
 
 /* Define to 1 if you have __sync_lock_test_and_set(char *) and friends. */
 #undef HAVE_GCC__SYNC_CHAR_TAS
+
+/* Define to 1 if you have __sync_val_compare_and_swap(int128 *, int128,
+   int128). */
+#undef HAVE_GCC__SYNC_INT128_CAS
 
 /* Define to 1 if you have __sync_val_compare_and_swap(int *, int, int). */
 #undef HAVE_GCC__SYNC_INT32_CAS

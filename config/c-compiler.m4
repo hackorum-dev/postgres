@@ -606,6 +606,21 @@ if test x"$pgac_cv_gcc_sync_int64_cas" = x"yes"; then
   AC_DEFINE(HAVE_GCC__SYNC_INT64_CAS, 1, [Define to 1 if you have __sync_val_compare_and_swap(int64 *, int64, int64).])
 fi])# PGAC_HAVE_GCC__SYNC_INT64_CAS
 
+# PGAC_HAVE_GCC__SYNC_INT128_CAS
+# -------------------------
+# Check if the C compiler understands __sync_compare_and_swap() for 128bit
+# types, and define HAVE_GCC__SYNC_INT128_CAS if so.
+AC_DEFUN([PGAC_HAVE_GCC__SYNC_INT128_CAS],
+[AC_CACHE_CHECK(for builtin __sync int128 atomic operations, pgac_cv_gcc_sync_int128_cas,
+[AC_LINK_IFELSE([AC_LANG_PROGRAM([],
+  [PG_INT128_TYPE lock = 0;
+   __sync_val_compare_and_swap(&lock, 0, (PG_INT128_TYPE) 37);])],
+  [pgac_cv_gcc_sync_int128_cas="yes"],
+  [pgac_cv_gcc_sync_int128_cas="no"])])
+if test x"$pgac_cv_gcc_sync_int128_cas" = x"yes"; then
+  AC_DEFINE(HAVE_GCC__SYNC_INT128_CAS, 1, [Define to 1 if you have __sync_val_compare_and_swap(int128 *, int128, int128).])
+fi])# PGAC_HAVE_GCC__SYNC_INT128_CAS
+
 # PGAC_HAVE_GCC__ATOMIC_INT32_CAS
 # -------------------------
 # Check if the C compiler understands __atomic_compare_exchange_n() for 32bit
@@ -637,6 +652,22 @@ AC_DEFUN([PGAC_HAVE_GCC__ATOMIC_INT64_CAS],
 if test x"$pgac_cv_gcc_atomic_int64_cas" = x"yes"; then
   AC_DEFINE(HAVE_GCC__ATOMIC_INT64_CAS, 1, [Define to 1 if you have __atomic_compare_exchange_n(int64 *, int64 *, int64).])
 fi])# PGAC_HAVE_GCC__ATOMIC_INT64_CAS
+
+# PGAC_HAVE_GCC__ATOMIC_INT128_CAS
+# -------------------------
+# Check if the C compiler understands __atomic_compare_exchange_n() for 128bit
+# types, and define HAVE_GCC__ATOMIC_INT128_CAS if so.
+AC_DEFUN([PGAC_HAVE_GCC__ATOMIC_INT128_CAS],
+[AC_CACHE_CHECK(for builtin __atomic int128 atomic operations, pgac_cv_gcc_atomic_int128_cas,
+[AC_LINK_IFELSE([AC_LANG_PROGRAM([],
+  [PG_INT128_TYPE val = 0;
+   PG_INT128_TYPE expect = 0;
+   __atomic_compare_exchange_n(&val, &expect, 37, 0, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED);])],
+  [pgac_cv_gcc_atomic_int128_cas="yes"],
+  [pgac_cv_gcc_atomic_int128_cas="no"])])
+if test x"$pgac_cv_gcc_atomic_int128_cas" = x"yes"; then
+  AC_DEFINE(HAVE_GCC__ATOMIC_INT128_CAS, 1, [Define to 1 if you have __atomic_compare_exchange_n(int128 *, int128 *, int128).])
+fi])# PGAC_HAVE_GCC__ATOMIC_INT128_CAS
 
 # PGAC_SSE42_CRC32_INTRINSICS
 # -----------------------

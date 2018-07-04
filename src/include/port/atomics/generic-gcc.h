@@ -102,6 +102,20 @@ typedef struct pg_atomic_uint64
 
 #endif /* defined(HAVE_GCC__ATOMIC_INT64_CAS) || defined(HAVE_GCC__SYNC_INT64_CAS) */
 
+/* generic gcc based atomic uint128 implementation */
+#if !defined(PG_HAVE_ATOMIC_U128_SUPPORT) \
+	&& !defined(PG_DISABLE_128_BIT_ATOMICS) \
+	&& (defined(HAVE_GCC__ATOMIC_INT128_CAS) || defined(HAVE_GCC__SYNC_INT128_CAS))
+
+#define PG_HAVE_ATOMIC_U128_SUPPORT
+
+typedef struct pg_atomic_uint128
+{
+	volatile uint128 value pg_attribute_aligned(8);
+} pg_atomic_uint128;
+
+#endif /* defined(HAVE_GCC__ATOMIC_INT128_CAS) || defined(HAVE_GCC__SYNC_INT128_CAS) */
+
 #ifdef PG_HAVE_ATOMIC_FLAG_SUPPORT
 
 #if defined(HAVE_GCC__SYNC_CHAR_TAS) || defined(HAVE_GCC__SYNC_INT32_TAS)
@@ -282,5 +296,37 @@ pg_atomic_fetch_or_u64_impl(volatile pg_atomic_uint64 *ptr, uint64 or_)
 #endif
 
 #endif /* !defined(PG_DISABLE_64_BIT_ATOMICS) */
+
+
+#if !defined(PG_DISABLE_128_BIT_ATOMICS)
+
+#if !defined(PG_HAVE_ATOMIC_COMPARE_EXCHANGE_U128) && defined(HAVE_GCC__ATOMIC_INT128_CAS)
+#define PG_HAVE_ATOMIC_COMPARE_EXCHANGE_U128
+static inline bool
+pg_atomic_compare_exchange_u128_impl(volatile pg_atomic_uint128 *ptr,
+									uint128 *expected, uint128 newval)
+{
+	return __atomic_compare_exchange_n(&ptr->value, expected, newval, false,
+									   __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+}
+#endif
+
+#if !defined(PG_HAVE_ATOMIC_COMPARE_EXCHANGE_U128) && defined(HAVE_GCC__SYNC_INT128_CAS)
+#define PG_HAVE_ATOMIC_COMPARE_EXCHANGE_U128
+static inline bool
+pg_atomic_compare_exchange_u128_impl(volatile pg_atomic_uint128 *ptr,
+									uint128 *expected, uint128 newval)
+{
+	bool	ret;
+	uint128	current;
+	current = __sync_val_compare_and_swap(&ptr->value, *expected, newval);
+	ret = current == *expected;
+	*expected = current;
+	return ret;
+}
+#endif
+
+#endif /* !defined(PG_DISABLE_128_BIT_ATOMICS) */
+
 
 #endif /* defined(HAVE_ATOMICS) */

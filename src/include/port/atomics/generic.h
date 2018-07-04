@@ -399,3 +399,94 @@ pg_atomic_sub_fetch_u64_impl(volatile pg_atomic_uint64 *ptr, int64 sub_)
 	return pg_atomic_fetch_sub_u64_impl(ptr, sub_) - sub_;
 }
 #endif
+
+#if !defined(PG_HAVE_ATOMIC_EXCHANGE_U128) && defined(PG_HAVE_ATOMIC_COMPARE_EXCHANGE_U128)
+#define PG_HAVE_ATOMIC_EXCHANGE_U128
+static inline uint128
+pg_atomic_exchange_u128_impl(volatile pg_atomic_uint128 *ptr, uint128 xchg_)
+{
+	uint128 old;
+	old = ptr->value;			/* ok if read is not atomic */
+	while (!pg_atomic_compare_exchange_u128_impl(ptr, &old, xchg_))
+		/* skip */;
+	return old;
+}
+#endif
+
+#ifndef PG_HAVE_ATOMIC_WRITE_U128
+#define PG_HAVE_ATOMIC_WRITE_U128
+
+#if defined(PG_HAVE_16BYTE_SINGLE_COPY_ATOMICITY) && \
+	!defined(PG_HAVE_ATOMIC_U128_SIMULATION)
+
+static inline void
+pg_atomic_write_u128_impl(volatile pg_atomic_uint128 *ptr, uint128 val)
+{
+	/*
+	 * On this platform aligned 128bit writes are guaranteed to be atomic,
+	 * except if using the fallback implementation, where can't guarantee the
+	 * required alignment.
+	 */
+	AssertPointerAlignment(ptr, 16);
+	ptr->value = val;
+}
+
+#else
+
+static inline void
+pg_atomic_write_u128_impl(volatile pg_atomic_uint128 *ptr, uint128 val)
+{
+	/*
+	 * 128 bit writes aren't safe on all platforms. In the generic
+	 * implementation implement them as an atomic exchange.
+	 */
+	pg_atomic_exchange_u128_impl(ptr, val);
+}
+
+#endif /* PG_HAVE_16BYTE_SINGLE_COPY_ATOMICITY && !PG_HAVE_ATOMIC_U128_SIMULATION */
+#endif /* PG_HAVE_ATOMIC_WRITE_U128 */
+
+#ifndef PG_HAVE_ATOMIC_READ_U128
+#define PG_HAVE_ATOMIC_READ_U128
+
+#if defined(PG_HAVE_16BYTE_SINGLE_COPY_ATOMICITY) && \
+	!defined(PG_HAVE_ATOMIC_U128_SIMULATION)
+
+static inline uint128
+pg_atomic_read_u128_impl(volatile pg_atomic_uint128 *ptr)
+{
+	/*
+	 * On this platform aligned 128-bit reads are guaranteed to be atomic.
+	 */
+	AssertPointerAlignment(ptr, 16);
+	return ptr->value;
+}
+
+#else
+
+static inline uint128
+pg_atomic_read_u128_impl(volatile pg_atomic_uint128 *ptr)
+{
+	uint128 old = 0;
+
+	/*
+	 * 128-bit reads aren't atomic on all platforms. In the generic
+	 * implementation implement them as a compare/exchange with 0. That'll
+	 * fail or succeed, but always return the old value. Possibly might store
+	 * a 0, but only if the previous value also was a 0 - i.e. harmless.
+	 */
+	pg_atomic_compare_exchange_u128_impl(ptr, &old, 0);
+
+	return old;
+}
+#endif /* PG_HAVE_16BYTE_SINGLE_COPY_ATOMICITY && !PG_HAVE_ATOMIC_U128_SIMULATION */
+#endif /* PG_HAVE_ATOMIC_READ_U64 */
+
+#ifndef PG_HAVE_ATOMIC_INIT_U128
+#define PG_HAVE_ATOMIC_INIT_U128
+static inline void
+pg_atomic_init_u128_impl(volatile pg_atomic_uint128 *ptr, uint128 val_)
+{
+	pg_atomic_write_u128_impl(ptr, val_);
+}
+#endif

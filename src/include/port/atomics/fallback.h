@@ -121,6 +121,24 @@ typedef struct pg_atomic_uint64
 
 #endif /* PG_HAVE_ATOMIC_U64_SUPPORT */
 
+#if !defined(PG_HAVE_ATOMIC_U128_SUPPORT)
+
+#define PG_HAVE_ATOMIC_U128_SIMULATION
+
+#define PG_HAVE_ATOMIC_U128_SUPPORT
+typedef struct pg_atomic_uint128
+{
+	/* Check pg_atomic_flag's definition above for an explanation */
+#if defined(__hppa) || defined(__hppa__)	/* HP PA-RISC, GCC and HP compilers */
+	int			sema[4];
+#else
+	int			sema;
+#endif
+	volatile uint128 value;
+} pg_atomic_uint128;
+
+#endif /* PG_HAVE_ATOMIC_U128_SUPPORT */
+
 #ifdef PG_HAVE_ATOMIC_FLAG_SIMULATION
 
 #define PG_HAVE_ATOMIC_INIT_FLAG
@@ -168,3 +186,15 @@ extern bool pg_atomic_compare_exchange_u64_impl(volatile pg_atomic_uint64 *ptr,
 extern uint64 pg_atomic_fetch_add_u64_impl(volatile pg_atomic_uint64 *ptr, int64 add_);
 
 #endif /* PG_HAVE_ATOMIC_U64_SIMULATION */
+
+
+#ifdef PG_HAVE_ATOMIC_U128_SIMULATION
+
+#define PG_HAVE_ATOMIC_INIT_U128
+extern void pg_atomic_init_u128_impl(volatile pg_atomic_uint128 *ptr, uint128 val_);
+
+#define PG_HAVE_ATOMIC_COMPARE_EXCHANGE_U128
+extern bool pg_atomic_compare_exchange_u128_impl(volatile pg_atomic_uint128 *ptr,
+												 uint128 *expected, uint128 newval);
+
+#endif /* PG_HAVE_ATOMIC_U128_SIMULATION */

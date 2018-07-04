@@ -522,6 +522,55 @@ pg_atomic_sub_fetch_u64(volatile pg_atomic_uint64 *ptr, int64 sub_)
 	return pg_atomic_sub_fetch_u64_impl(ptr, sub_);
 }
 
+/* ----
+ * The 128 bit operations have the same semantics as their 32bit counterparts
+ * if they are available. Check the corresponding 32bit function for
+ * documentation.
+ * ----
+ */
+static inline void
+pg_atomic_init_u128(volatile pg_atomic_uint128 *ptr, uint128 val)
+{
+	/*
+	 * Can't necessarily enforce alignment - and don't need it - when using
+	 * the spinlock based fallback implementation. Therefore only assert when
+	 * not using it.
+	 */
+#ifndef PG_HAVE_ATOMIC_U128_SIMULATION
+	AssertPointerAlignment(ptr, 16);
+#endif
+	pg_atomic_init_u128_impl(ptr, val);
+}
+
+static inline uint128
+pg_atomic_read_u128(volatile pg_atomic_uint128 *ptr)
+{
+#ifndef PG_HAVE_ATOMIC_U128_SIMULATION
+	AssertPointerAlignment(ptr, 16);
+#endif
+	return pg_atomic_read_u128_impl(ptr);
+}
+
+static inline void
+pg_atomic_write_u128(volatile pg_atomic_uint128 *ptr, uint128 val)
+{
+#ifndef PG_HAVE_ATOMIC_U128_SIMULATION
+	AssertPointerAlignment(ptr, 16);
+#endif
+	pg_atomic_write_u128_impl(ptr, val);
+}
+
+static inline bool
+pg_atomic_compare_exchange_u128(volatile pg_atomic_uint128 *ptr,
+								uint128 *expected, uint128 newval)
+{
+#ifndef PG_HAVE_ATOMIC_U128_SIMULATION
+	AssertPointerAlignment(ptr, 16);
+	AssertPointerAlignment(expected, 16);
+#endif
+	return pg_atomic_compare_exchange_u128_impl(ptr, expected, newval);
+}
+
 #undef INSIDE_ATOMICS_H
 
 #endif							/* ATOMICS_H */
