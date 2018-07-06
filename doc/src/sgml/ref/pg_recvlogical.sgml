@@ -100,7 +100,7 @@ PostgreSQL documentation
       <listitem>
        <para>
         Drop the replication slot with the name specified
-        by <option>--slot</option>, then exit.
+        by <option>--slot</option>, then exit.    
        </para>
 
        <para>
@@ -115,7 +115,11 @@ PostgreSQL documentation
        <para>
         Begin streaming changes from the logical replication slot specified
         by <option>--slot</option>, continuing until terminated by a
-        signal. If the server side change stream ends with a server shutdown
+        signal. Two signals are handled gracefully: SIGINT will close the 
+        connection and exit without an errorcode. SIGHUP will close the 
+        existing file and reopen it allowing you to rename the file and 
+        potentially store it or process it elsewhere.
+        If the server side change stream ends with a server shutdown
         or disconnect, retry in a loop unless
         <option>--no-loop</option> is specified.
        </para>
