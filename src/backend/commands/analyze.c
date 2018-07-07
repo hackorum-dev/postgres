@@ -2325,8 +2325,12 @@ compute_scalar_stats(VacAttrStatsP stats,
 
 	memset(&ssup, 0, sizeof(ssup));
 	ssup.ssup_cxt = CurrentMemoryContext;
-	/* We always use the default collation for statistics */
-	ssup.ssup_collation = DEFAULT_COLLATION_OID;
+	/* Try to use column collation for statistics */
+	if (stats->attr->attcollation == InvalidOid)
+		ssup.ssup_collation = DEFAULT_COLLATION_OID;
+	else
+		ssup.ssup_collation = stats->attr->attcollation;
+
 	ssup.ssup_nulls_first = false;
 
 	/*
