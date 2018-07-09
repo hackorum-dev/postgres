@@ -9950,7 +9950,7 @@ xlog_redo(XLogReaderState *record)
 	{
 		XLogRecPtr	startpoint;
 
-		memcpy(&startpoint, XLogRecGetData(record), sizeof(startpoint));
+		memcpy(&startpoint, &((xl_backup_end *)XLogRecGetData(record))->startpoint, sizeof(startpoint));
 
 		if (ControlFile->backupStartPoint == startpoint)
 		{
@@ -11069,11 +11069,14 @@ do_pg_stop_backup(char *labelfile, bool waitforarchive, TimeLineID *stoptli_p)
 	}
 	else
 	{
+		xl_backup_end	xlrec;
 		/*
 		 * Write the backup-end xlog record
 		 */
 		XLogBeginInsert();
-		XLogRegisterData((char *) (&startpoint), sizeof(startpoint));
+		xlrec.startpoint = startpoint;
+		xlrec.timestamp = GetCurrentTimestamp();
+		XLogRegisterData((char *) (&xlrec), sizeof(xl_backup_end));
 		stoppoint = XLogInsert(RM_XLOG_ID, XLOG_BACKUP_END);
 		stoptli = ThisTimeLineID;
 

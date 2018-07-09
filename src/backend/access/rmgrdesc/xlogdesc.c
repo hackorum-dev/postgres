@@ -87,7 +87,19 @@ xlog_desc(StringInfo buf, XLogReaderState *record)
 		XLogRecPtr	startpoint;
 
 		memcpy(&startpoint, rec, sizeof(XLogRecPtr));
-		appendStringInfo(buf, "%X/%X",
+		/* Check for the format of WAL-record with timestamp */
+		if (XLogRecGetDataLen(record) >= sizeof(xl_backup_end))
+		{
+			TimestampTz	timestamp;
+
+			memcpy(&timestamp, &((xl_backup_end *)rec)->timestamp, sizeof(TimestampTz));
+			appendStringInfo(buf, "%X/%X; timestamp: %s",
+						 (uint32) (startpoint >> 32), (uint32) startpoint,
+						 timestamptz_to_str(timestamp));
+		}
+		else
+			/* WAL-record not have a timestamp */
+			appendStringInfo(buf, "%X/%X; <no timestamp>",
 						 (uint32) (startpoint >> 32), (uint32) startpoint);
 	}
 	else if (info == XLOG_PARAMETER_CHANGE)
