@@ -160,7 +160,7 @@ extern void ExecVacuum(VacuumStmt *vacstmt, bool isTopLevel);
 extern void vacuum(int options, List *relations, VacuumParams *params,
 	   BufferAccessStrategy bstrategy, bool isTopLevel);
 extern void vac_open_indexes(Relation relation, LOCKMODE lockmode,
-				 int *nindexes, Relation **Irel);
+				 int *nindexes, Relation **Irel, Oid idx);
 extern void vac_close_indexes(int nindexes, Relation *Irel, LOCKMODE lockmode);
 extern double vac_estimate_reltuples(Relation relation,
 					   BlockNumber total_pages,

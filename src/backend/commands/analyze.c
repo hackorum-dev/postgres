@@ -84,7 +84,7 @@ static BufferAccessStrategy vac_strategy;
 static void do_analyze_rel(Relation onerel, int options,
 			   VacuumParams *params, List *va_cols,
 			   AcquireSampleRowsFunc acquirefunc, BlockNumber relpages,
-			   bool inh, bool in_outer_xact, int elevel);
+			   bool inh, bool in_outer_xact, int elevel, Oid indexid);
 static void compute_index_stats(Relation onerel, double totalrows,
 					AnlIndexData *indexdata, int nindexes,
 					HeapTuple *rows, int numrows,
@@ -121,6 +121,7 @@ analyze_rel(Oid relid, RangeVar *relation, int options,
 	AcquireSampleRowsFunc acquirefunc = NULL;
 	BlockNumber relpages = 0;
 	bool		rel_lock = true;
+	Oid			indexid = InvalidOid;
 
 	/* Select logging level */
 	if (options & VACOPT_VERBOSE)
@@ -253,6 +254,28 @@ analyze_rel(Oid relid, RangeVar *relation, int options,
 		/* Also get regular table's size */
 		relpages = RelationGetNumberOfBlocks(onerel);
 	}
+	else if (onerel->rd_rel->relkind == RELKIND_INDEX)
+	{
+		Relation rel;
+
+		indexid = relid;
+		relid = IndexGetRelation(indexid, true);
+
+		if (va_cols != NIL)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("ANALYZE option must be specified when a column list is provided")));
+
+		rel = try_relation_open(relid, ShareUpdateExclusiveLock);
+		relation_close(onerel, ShareUpdateExclusiveLock);
+
+		onerel = rel;
+
+		/* Regular table, so we'll use the regular row acquisition function */
+		acquirefunc = acquire_sample_rows;
+		/* Also get regular table's size */
+		relpages = RelationGetNumberOfBlocks(onerel);
+	}
 	else if (onerel->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
 	{
 		/*
@@ -308,14 +331,14 @@ analyze_rel(Oid relid, RangeVar *relation, int options,
 	 */
 	if (onerel->rd_rel->relkind != RELKIND_PARTITIONED_TABLE)
 		do_analyze_rel(onerel, options, params, va_cols, acquirefunc,
-					   relpages, false, in_outer_xact, elevel);
+					   relpages, false, in_outer_xact, elevel, indexid);
 
 	/*
 	 * If there are child tables, do recursive ANALYZE.
 	 */
 	if (onerel->rd_rel->relhassubclass)
 		do_analyze_rel(onerel, options, params, va_cols, acquirefunc, relpages,
-					   true, in_outer_xact, elevel);
+					   true, in_outer_xact, elevel, InvalidOid);
 
 	/*
 	 * Close source relation now, but keep lock so that no one deletes it
@@ -345,7 +368,7 @@ static void
 do_analyze_rel(Relation onerel, int options, VacuumParams *params,
 			   List *va_cols, AcquireSampleRowsFunc acquirefunc,
 			   BlockNumber relpages, bool inh, bool in_outer_xact,
-			   int elevel)
+			   int elevel, Oid indexid)
 {
 	int			attr_cnt,
 				tcnt,
@@ -445,7 +468,7 @@ do_analyze_rel(Relation onerel, int options, VacuumParams *params,
 		}
 		attr_cnt = tcnt;
 	}
-	else
+	else if (!OidIsValid(indexid))
 	{
 		attr_cnt = onerel->rd_att->natts;
 		vacattrstats = (VacAttrStats **)
@@ -459,6 +482,8 @@ do_analyze_rel(Relation onerel, int options, VacuumParams *params,
 		}
 		attr_cnt = tcnt;
 	}
+	else
+		attr_cnt = 0;
 
 	/*
 	 * Open all indexes of the relation, and see if there are any analyzable
@@ -468,7 +493,7 @@ do_analyze_rel(Relation onerel, int options, VacuumParams *params,
 	 * all.
 	 */
 	if (!inh)
-		vac_open_indexes(onerel, AccessShareLock, &nindexes, &Irel);
+		vac_open_indexes(onerel, AccessShareLock, &nindexes, &Irel, indexid);
 	else
 	{
 		Irel = NULL;
@@ -749,6 +774,7 @@ compute_index_stats(Relation onerel, double totalrows,
 	bool		isnull[INDEX_MAX_KEYS];
 	int			ind,
 				i;
+
 
 	ind_context = AllocSetContextCreate(anl_context,
 										"Analyze Index",
