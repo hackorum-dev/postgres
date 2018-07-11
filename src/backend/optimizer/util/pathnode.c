@@ -566,6 +566,8 @@ add_path(RelOptInfo *parent_rel, Path *new_path)
 																	old_path,
 																	1.0000000001) == COSTS_BETTER1)
 									remove_old = true;	/* new dominates old */
+								else if (old_path->pathtype == T_IndexScan && new_path->pathtype == T_IndexOnlyScan)
+									remove_old = true;	/* new dominates old */
 								else
 									accept_new = false; /* old equals or
 														 * dominates new */
