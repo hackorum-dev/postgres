@@ -1923,8 +1923,9 @@ EXCLUDE NO OTHERS
      </listitem>
      <listitem>
       <para>
-       In <literal>GROUPS</literal> mode,
-       the <replaceable>offset</replaceable> again must yield a non-null,
+       In <literal>GROUPS</literal> mode, these options require the
+       <literal>ORDER BY</literal> clause.
+       The <replaceable>offset</replaceable> again must yield a non-null,
        non-negative integer, and the option means that the frame starts or
        ends the specified number of <firstterm>peer groups</firstterm>
        before or after the current row's peer group, where a peer group is a
