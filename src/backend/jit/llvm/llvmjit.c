@@ -878,7 +878,7 @@ llvm_session_initialize(void)
 
 	opt0_tm =
 		LLVMCreateTargetMachine(llvm_targetref, llvm_triple, cpu, features,
-								LLVMCodeGenLevelNone,
+								LLVMCodeGenLevelDefault,
 								LLVMRelocDefault,
 								LLVMCodeModelJITDefault);
 	opt3_tm =
