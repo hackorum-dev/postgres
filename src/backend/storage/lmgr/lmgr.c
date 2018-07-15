@@ -100,8 +100,9 @@ SetLocktagRelationOid(LOCKTAG *tag, Oid relid)
  *
  * Lock a relation given only its OID.  This should generally be used
  * before attempting to open the relation's relcache entry.
+ * Return TRUE if we acquired a new lock, FALSE if already held.
  */
-void
+bool
 LockRelationOid(Oid relid, LOCKMODE lockmode)
 {
 	LOCKTAG		tag;
@@ -122,7 +123,11 @@ LockRelationOid(Oid relid, LOCKMODE lockmode)
 	 * CommandCounterIncrement, not here.)
 	 */
 	if (res != LOCKACQUIRE_ALREADY_HELD)
+	{
 		AcceptInvalidationMessages();
+		return true;
+	}
+	return false;
 }
 
 /*

@@ -817,6 +817,7 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 	TupleDesc	tupType;
 	ListCell   *l;
 	int			i;
+	bool		gotlock;
 
 	/*
 	 * Do permissions checks
@@ -852,7 +853,9 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 			Relation	resultRelation;
 
 			resultRelationOid = getrelid(resultRelationIndex, rangeTable);
-			resultRelation = heap_open(resultRelationOid, RowExclusiveLock);
+			gotlock = LockRelationOid(resultRelationOid, RowExclusiveLock);
+			Assert(!gotlock || IsParallelWorker());
+			resultRelation = heap_open(resultRelationOid, NoLock);
 
 			InitResultRelInfo(resultRelInfo,
 							  resultRelation,
@@ -892,7 +895,9 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 				Relation	resultRelDesc;
 
 				resultRelOid = getrelid(resultRelIndex, rangeTable);
-				resultRelDesc = heap_open(resultRelOid, RowExclusiveLock);
+				gotlock = LockRelationOid(resultRelOid, RowExclusiveLock);
+				Assert(!gotlock || IsParallelWorker());
+				resultRelDesc = heap_open(resultRelOid, NoLock);
 				InitResultRelInfo(resultRelInfo,
 								  resultRelDesc,
 								  lfirst_int(l),
@@ -912,8 +917,11 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 				/* We locked the roots above. */
 				if (!list_member_int(plannedstmt->rootResultRelations,
 									 resultRelIndex))
-					LockRelationOid(getrelid(resultRelIndex, rangeTable),
-									RowExclusiveLock);
+				{
+					gotlock = LockRelationOid(getrelid(resultRelIndex, rangeTable),
+											  RowExclusiveLock);
+					Assert(!gotlock || IsParallelWorker());
+				}
 			}
 		}
 	}
@@ -963,10 +971,14 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 			case ROW_MARK_NOKEYEXCLUSIVE:
 			case ROW_MARK_SHARE:
 			case ROW_MARK_KEYSHARE:
-				relation = heap_open(relid, RowShareLock);
+				gotlock = LockRelationOid(relid, RowShareLock);
+				Assert(!gotlock || IsParallelWorker());
+				relation = heap_open(relid, NoLock);
 				break;
 			case ROW_MARK_REFERENCE:
-				relation = heap_open(relid, AccessShareLock);
+				gotlock = LockRelationOid(relid, AccessShareLock);
+				Assert(!gotlock || IsParallelWorker());
+				relation = heap_open(relid, NoLock);
 				break;
 			case ROW_MARK_COPY:
 				/* no physical table access is required */

@@ -42,6 +42,7 @@
 
 #include "postgres.h"
 
+#include "access/parallel.h"
 #include "access/relscan.h"
 #include "access/transam.h"
 #include "executor/executor.h"
@@ -645,6 +646,7 @@ ExecOpenScanRelation(EState *estate, Index scanrelid, int eflags)
 	Relation	rel;
 	Oid			reloid;
 	LOCKMODE	lockmode;
+	bool		gotlock;
 
 	/*
 	 * Determine the lock type we need.  First, scan to see if target relation
@@ -659,13 +661,19 @@ ExecOpenScanRelation(EState *estate, Index scanrelid, int eflags)
 		/* Keep this check in sync with InitPlan! */
 		ExecRowMark *erm = ExecFindRowMark(estate, scanrelid, true);
 
-		if (erm != NULL && erm->relation != NULL)
+		/* HACK: assume things are OK for ROW_MARK_COPY case */
+		if (erm != NULL)
 			lockmode = NoLock;
 	}
 
 	/* Open the relation and acquire lock as needed */
 	reloid = getrelid(scanrelid, estate->es_range_table);
-	rel = heap_open(reloid, lockmode);
+	if (lockmode != NoLock)
+	{
+		gotlock = LockRelationOid(reloid, lockmode);
+		Assert(!gotlock || IsParallelWorker());
+	}
+	rel = heap_open(reloid, NoLock);
 
 	/*
 	 * Complain if we're attempting a scan of an unscannable relation, except
@@ -874,6 +882,7 @@ ExecLockNonLeafAppendTables(List *partitioned_rels, EState *estate)
 		Index		rti = lfirst_int(lc);
 		bool		is_result_rel = false;
 		Oid			relid = getrelid(rti, estate->es_range_table);
+		bool		gotlock;
 
 		/* If this is a result relation, already locked in InitPlan */
 		foreach(l, stmt->nonleafResultRelations)
@@ -903,9 +912,10 @@ ExecLockNonLeafAppendTables(List *partitioned_rels, EState *estate)
 			}
 
 			if (rc && RowMarkRequiresRowShareLock(rc->markType))
-				LockRelationOid(relid, RowShareLock);
+				gotlock = LockRelationOid(relid, RowShareLock);
 			else
-				LockRelationOid(relid, AccessShareLock);
+				gotlock = LockRelationOid(relid, AccessShareLock);
+			Assert(!gotlock || IsParallelWorker());
 		}
 	}
 }
