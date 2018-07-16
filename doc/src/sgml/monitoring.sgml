@@ -549,8 +549,9 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
    into the kernel's handling of I/O.
   </para>
 
-
-  <table id="pg-stat-activity-view" xreflabel="pg_stat_activity">
+  <sect3 id="pg-stat-activity-view" xreflabel="pg_stat_activity">
+   <title>pg_stat_activity</title>
+  <table id="pg-stat-activity-table">
    <title><structname>pg_stat_activity</structname> View</title>
 
    <tgroup cols="3">
@@ -731,7 +732,7 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
      <entry><structfield>wait_event</structfield></entry>
      <entry><type>text</type></entry>
      <entry>Wait event name if backend is currently waiting, otherwise NULL.
-     See <xref linkend="wait-event-table"/> for details.
+     See the set of wait events below for details.
      </entry>
     </row>
     <row>
@@ -831,13 +832,14 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
    </para>
   </note>
 
-  <table id="wait-event-table">
-   <title><structname>wait_event</structname> Description</title>
+  <sect4 id="wait-event-lwlock" xreflabel="wait-event-lwlock">
+  <title>LWLock wait events</title>
+  <table id="wait-event-lwlock-table">
+   <title>LWLock <structname>wait_event</structname> Description</title>
 
-    <tgroup cols="3">
+    <tgroup cols="2">
       <thead>
        <row>
-        <entry>Wait Event Type</entry>
         <entry>Wait Event Name</entry>
         <entry>Description</entry>
        </row>
@@ -845,7 +847,6 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
 
       <tbody>
        <row>
-        <entry morerows="64"><literal>LWLock</literal></entry>
         <entry><literal>ShmemIndexLock</literal></entry>
         <entry>Waiting to find or allocate space in shared memory.</entry>
        </row>
@@ -1126,8 +1127,26 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
          <entry>Waiting to allocate or exchange a chunk of memory or update
          counters during Parallel Hash plan execution.</entry>
         </row>
+      </tbody>
+     </tgroup>
+    </table>
+  </sect4>
+
+  <sect4 id="wait-event-lock" xreflabel="wait-event-lock">
+  <title>Lock wait events</title>
+  <table id="wait-event-lock-table">
+   <title>Lock <structname>wait_event</structname> Description</title>
+
+    <tgroup cols="2">
+      <thead>
+       <row>
+        <entry>Wait Event Name</entry>
+        <entry>Description</entry>
+       </row>
+      </thead>
+
+      <tbody>
         <row>
-         <entry morerows="9"><literal>Lock</literal></entry>
          <entry><literal>relation</literal></entry>
          <entry>Waiting to acquire a lock on a relation.</entry>
         </row>
@@ -1169,11 +1188,28 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
         </row>
         <row>
          <entry><literal>BufferPin</literal></entry>
-         <entry><literal>BufferPin</literal></entry>
          <entry>Waiting to acquire a pin on a buffer.</entry>
         </row>
+      </tbody>
+     </tgroup>
+    </table>
+  </sect4>
+
+  <sect4 id="wait-event-activity" xreflabel="wait-event-activity">
+  <title>Activity wait events</title>
+  <table id="wait-event-activity-table">
+   <title>Activity <structname>wait_event</structname> Description</title>
+
+    <tgroup cols="2">
+      <thead>
+       <row>
+        <entry>Wait Event Name</entry>
+        <entry>Description</entry>
+       </row>
+      </thead>
+
+      <tbody>
         <row>
-         <entry morerows="13"><literal>Activity</literal></entry>
          <entry><literal>ArchiverMain</literal></entry>
          <entry>Waiting in main loop of the archiver process.</entry>
         </row>
@@ -1229,8 +1265,26 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
          <entry><literal>WalWriterMain</literal></entry>
          <entry>Waiting in main loop of WAL writer process.</entry>
         </row>
+      </tbody>
+     </tgroup>
+    </table>
+  </sect4>
+
+  <sect4 id="wait-event-client" xreflabel="wait-event-client">
+  <title>Client wait events</title>
+  <table id="wait-event-client-table">
+   <title>Client <structname>wait_event</structname> Description</title>
+
+    <tgroup cols="2">
+      <thead>
+       <row>
+        <entry>Wait Event Name</entry>
+        <entry>Description</entry>
+       </row>
+      </thead>
+
+      <tbody>
         <row>
-         <entry morerows="7"><literal>Client</literal></entry>
          <entry><literal>ClientRead</literal></entry>
          <entry>Waiting to read data from the client.</entry>
         </row>
@@ -1264,11 +1318,28 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
         </row>
         <row>
          <entry><literal>Extension</literal></entry>
-         <entry><literal>Extension</literal></entry>
          <entry>Waiting in an extension.</entry>
         </row>
+      </tbody>
+     </tgroup>
+    </table>
+  </sect4>
+
+  <sect4 id="wait-event-ipc" xreflabel="wait-event-ipc">
+  <title>IPC wait events</title>
+  <table id="wait-event-ipc-table">
+   <title>IPC <structname>wait_event</structname> Description</title>
+
+    <tgroup cols="2">
+      <thead>
+       <row>
+        <entry>Wait Event Name</entry>
+        <entry>Description</entry>
+       </row>
+      </thead>
+
+      <tbody>
         <row>
-         <entry morerows="33"><literal>IPC</literal></entry>
          <entry><literal>BgWorkerShutdown</literal></entry>
          <entry>Waiting for background worker to shut down.</entry>
         </row>
@@ -1404,8 +1475,25 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
          <entry><literal>SyncRep</literal></entry>
          <entry>Waiting for confirmation from remote server during synchronous replication.</entry>
         </row>
+      </tbody>
+     </tgroup>
+    </table>
+  </sect4>
+
+  <sect4 id="wait-event-timeout" xreflabel="wait-event-timeout">
+  <title>Timeout wait events</title>
+  <table id="wait-event-timeout-table">
+   <title>Timeout <structname>wait_event</structname> Description</title>
+
+    <tgroup cols="2">
+      <thead>
+       <row>
+        <entry>Wait Event Name</entry>
+        <entry>Description</entry>
+       </row>
+      </thead>
+      <tbody>
         <row>
-         <entry morerows="2"><literal>Timeout</literal></entry>
          <entry><literal>BaseBackupThrottle</literal></entry>
          <entry>Waiting during base backup when throttling activity.</entry>
         </row>
@@ -1417,8 +1505,25 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
          <entry><literal>RecoveryApplyDelay</literal></entry>
          <entry>Waiting to apply WAL at recovery because it is delayed.</entry>
         </row>
+      </tbody>
+     </tgroup>
+    </table>
+  </sect4>
+
+  <sect4 id="wait-event-io" xreflabel="wait-event-io">
+  <title>IO wait events</title>
+  <table id="wait-event-io-table">
+   <title>IO <structname>wait_event</structname> Description</title>
+
+    <tgroup cols="2">
+      <thead>
+       <row>
+        <entry>Wait Event Name</entry>
+        <entry>Description</entry>
+       </row>
+      </thead>
+      <tbody>
         <row>
-         <entry morerows="66"><literal>IO</literal></entry>
          <entry><literal>BufFileRead</literal></entry>
          <entry>Waiting for a read from a buffered file.</entry>
         </row>
@@ -1713,8 +1818,12 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
 (2 rows)
 </programlisting>
    </para>
+   </sect4>
+  </sect3>
 
-  <table id="pg-stat-replication-view" xreflabel="pg_stat_replication">
+  <sect3 id="pg-stat-replication-view" xreflabel="pg_stat_replication">
+   <title>pg_stat_replication</title>
+  <table id="pg-stat-replication-table">
    <title><structname>pg_stat_replication</structname> View</title>
    <tgroup cols="3">
     <thead>
@@ -1961,8 +2070,11 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
     as missing data, zero or continue to display the last known value.
    </para>
   </note>
+  </sect3>
 
-  <table id="pg-stat-wal-receiver-view" xreflabel="pg_stat_wal_receiver">
+  <sect3 id="pg-stat-wal-receiver-view" xreflabel="pg_stat_wal_receiver">
+   <title>pg_stat_wal_receiver</title>
+  <table id="pg-stat-wal-receiver-table">
    <title><structname>pg_stat_wal_receiver</structname> View</title>
    <tgroup cols="3">
     <thead>
@@ -2071,8 +2183,11 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    one row, showing statistics about the WAL receiver from that receiver's
    connected server.
   </para>
+  </sect3>
 
-  <table id="pg-stat-subscription" xreflabel="pg_stat_subscription">
+  <sect3 id="pg-stat-subscription" xreflabel="pg_stat_subscription">
+   <title>pg_stat_subcription</title>
+  <table id="pg-stat-subscription-table">
    <title><structname>pg_stat_subscription</structname> View</title>
    <tgroup cols="3">
     <thead>
@@ -2144,8 +2259,11 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    not running), and additional rows for workers handling the initial data
    copy of the subscribed tables.
   </para>
+  </sect3>
 
-  <table id="pg-stat-ssl-view" xreflabel="pg_stat_ssl">
+  <sect3 id="pg-stat-ssl-view" xreflabel="pg_stat_ssl">
+   <title>pg_stat_ssl</title>
+  <table id="pg-stat-ssl-table">
    <title><structname>pg_stat_ssl</structname> View</title>
    <tgroup cols="3">
     <thead>
@@ -2213,9 +2331,11 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    <structfield>pid</structfield> column to get more details about the
    connection.
   </para>
+  </sect3>
 
-
-  <table id="pg-stat-archiver-view" xreflabel="pg_stat_archiver">
+  <sect3 id="pg-stat-archiver-view" xreflabel="pg_stat_archiver">
+   <title>pg_stat_archiver</title>
+  <table id="pg-stat-archiver-table">
    <title><structname>pg_stat_archiver</structname> View</title>
 
    <tgroup cols="3">
@@ -2271,8 +2391,11 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    The <structname>pg_stat_archiver</structname> view will always have a
    single row, containing data about the archiver process of the cluster.
   </para>
-
-  <table id="pg-stat-bgwriter-view" xreflabel="pg_stat_bgwriter">
+  </sect3>
+  
+  <sect3 id="pg-stat-bgwriter-view" xreflabel="pg_stat_bgwriter">
+   <title>pg_stat_bgwriter</title>
+  <table id="pg-stat-bgwriter-table">
    <title><structname>pg_stat_bgwriter</structname> View</title>
 
    <tgroup cols="3">
@@ -2358,8 +2481,11 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    The <structname>pg_stat_bgwriter</structname> view will always have a
    single row, containing global data for the cluster.
   </para>
+  </sect3>
 
-  <table id="pg-stat-database-view" xreflabel="pg_stat_database">
+  <sect3 id="pg-stat-database-view" xreflabel="pg_stat_database">
+   <title>pg_stat_database</title>
+  <table id="pg-stat-database-table">
    <title><structname>pg_stat_database</structname> View</title>
    <tgroup cols="3">
     <thead>
@@ -2495,8 +2621,11 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    The <structname>pg_stat_database</structname> view will contain one row
    for each database in the cluster, showing database-wide statistics.
   </para>
+  </sect3>
 
-  <table id="pg-stat-database-conflicts-view" xreflabel="pg_stat_database_conflicts">
+  <sect3 id="pg-stat-database-conflicts-view" xreflabel="pg_stat_database_conflicts">
+   <title>pg_stat_database_conflicts</title>
+  <table id="pg-stat-database-conflicts-table">
    <title><structname>pg_stat_database_conflicts</structname> View</title>
    <tgroup cols="3">
     <thead>
@@ -2559,8 +2688,11 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    This view will only contain information on standby servers, since
    conflicts do not occur on master servers.
   </para>
+  </sect3>
 
-  <table id="pg-stat-all-tables-view" xreflabel="pg_stat_all_tables">
+  <sect3 id="pg-stat-all-tables-view" xreflabel="pg_stat_all_tables">
+   <title>pg_stat_all_tables</title>
+  <table id="pg-stat-all-tables-table">
    <title><structname>pg_stat_all_tables</structname> View</title>
    <tgroup cols="3">
     <thead>
@@ -2702,8 +2834,11 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    contain the same information,
    but filtered to only show user and system tables respectively.
   </para>
+  </sect3>
 
-  <table id="pg-stat-all-indexes-view" xreflabel="pg_stat_all_indexes">
+  <sect3 id="pg-stat-all-indexes-view" xreflabel="pg_stat_all_indexes">
+   <title>pg_stat_all_indexes</title>
+  <table id="pg-stat-all-indexes-table">
    <title><structname>pg_stat_all_indexes</structname> View</title>
    <tgroup cols="3">
     <thead>
@@ -2798,8 +2933,11 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
     heap fetches are avoided by means of an index-only scan.
    </para>
   </note>
+  </sect3>
 
-  <table id="pg-statio-all-tables-view" xreflabel="pg_statio_all_tables">
+  <sect3 id="pg-statio-all-tables-view" xreflabel="pg_statio_all_tables">
+   <title>pg_statio_all_tables</title>
+  <table id="pg-statio-all-tables-table">
    <title><structname>pg_statio_all_tables</structname> View</title>
    <tgroup cols="3">
     <thead>
@@ -2879,8 +3017,11 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    contain the same information,
    but filtered to only show user and system tables respectively.
   </para>
+  </sect3>
 
-  <table id="pg-statio-all-indexes-view" xreflabel="pg_statio_all_indexes">
+  <sect3 id="pg-statio-all-indexes-view" xreflabel="pg_statio_all_indexes">
+   <title>pg_statio_all_indexes</title>
+  <table id="pg-statio-all-indexes-table">
    <title><structname>pg_statio_all_indexes</structname> View</title>
    <tgroup cols="3">
     <thead>
@@ -2940,8 +3081,11 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    contain the same information,
    but filtered to only show user and system indexes respectively.
   </para>
+  </sect3>
 
-  <table id="pg-statio-all-sequences-view" xreflabel="pg_statio_all_sequences">
+  <sect3 id="pg-statio-all-sequences-view" xreflabel="pg_statio_all_sequences">
+   <title>pg_statio_all_sequences</title>
+  <table id="pg-statio-all-sequences-table">
    <title><structname>pg_statio_all_sequences</structname> View</title>
    <tgroup cols="3">
     <thead>
@@ -2987,8 +3131,11 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    one row for each sequence in the current database,
    showing statistics about I/O on that specific sequence.
   </para>
+  </sect3>
 
-  <table id="pg-stat-user-functions-view" xreflabel="pg_stat_user_functions">
+  <sect3 id="pg-stat-user-functions-view" xreflabel="pg_stat_user_functions">
+   <title>pg_stat_user_functions</title>
+  <table id="pg-stat-user-functions-table">
    <title><structname>pg_stat_user_functions</structname> View</title>
    <tgroup cols="3">
     <thead>
@@ -3042,6 +3189,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    that function.  The <xref linkend="guc-track-functions"/> parameter
    controls exactly which functions are tracked.
   </para>
+  </sect3>
 
  </sect2>
 
@@ -3259,7 +3407,7 @@ SELECT pg_stat_get_backend_pid(s.backendid) AS pid,
        <entry><literal><function>pg_stat_get_backend_wait_event_type(integer)</function></literal></entry>
        <entry><type>text</type></entry>
         <entry>Wait event type name if backend is currently waiting, otherwise NULL.
-        See <xref linkend="wait-event-table"/> for details.
+        See <xref linkend="wait-event-lwlock-table"/> for details.
         </entry>
       </row>
 
@@ -3267,7 +3415,7 @@ SELECT pg_stat_get_backend_pid(s.backendid) AS pid,
       <entry><literal><function>pg_stat_get_backend_wait_event(integer)</function></literal></entry>
       <entry><type>text</type></entry>
        <entry>Wait event name if backend is currently waiting, otherwise NULL.
-       See <xref linkend="wait-event-table"/> for details.
+       See <xref linkend="wait-event-lwlock-table"/> for details.
        </entry>
      </row>
 
