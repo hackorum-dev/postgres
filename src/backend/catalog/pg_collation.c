@@ -70,6 +70,9 @@ CollationCreate(const char *collname, Oid collnamespace,
 	AssertArg(collcollate);
 	AssertArg(collctype);
 
+	/* open pg_collation; see below about the lock level */
+	rel = heap_open(CollationRelationId, ShareRowExclusiveLock);
+
 	/*
 	 * Make sure there is no existing collation of same name & encoding.
 	 *
@@ -83,9 +86,13 @@ CollationCreate(const char *collname, Oid collnamespace,
 							  ObjectIdGetDatum(collnamespace)))
 	{
 		if (quiet)
+		{
+			heap_close(rel, NoLock);
 			return InvalidOid;
+		}
 		else if (if_not_exists)
 		{
+			heap_close(rel, NoLock);
 			ereport(NOTICE,
 					(errcode(ERRCODE_DUPLICATE_OBJECT),
 					 collencoding == -1
@@ -104,9 +111,6 @@ CollationCreate(const char *collname, Oid collnamespace,
 					 : errmsg("collation \"%s\" for encoding \"%s\" already exists",
 							  collname, pg_encoding_to_char(collencoding))));
 	}
-
-	/* open pg_collation; see below about the lock level */
-	rel = heap_open(CollationRelationId, ShareRowExclusiveLock);
 
 	/*
 	 * Also forbid a specific-encoding collation shadowing an any-encoding
