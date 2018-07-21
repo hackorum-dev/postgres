@@ -138,7 +138,6 @@ usage(unsigned short int pager)
 		env = user;
 	fprintf(output, _("  -U, --username=USERNAME  database user name (default: \"%s\")\n"), env);
 	fprintf(output, _("  -w, --no-password        never prompt for password\n"));
-	fprintf(output, _("  -W, --password           force password prompt (should happen automatically)\n"));
 
 	fprintf(output, _("\nFor more information, type \"\\?\" (for internal commands) or \"\\help\" (for SQL\n"
 					  "commands) from within psql, or consult the psql section in the PostgreSQL\n"

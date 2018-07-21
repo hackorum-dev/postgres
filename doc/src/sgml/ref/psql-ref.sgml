@@ -503,31 +503,6 @@ EOF
      </listitem>
     </varlistentry>
 
-    <varlistentry>
-      <term><option>-W</option></term>
-      <term><option>--password</option></term>
-      <listitem>
-      <para>
-       Force <application>psql</application> to prompt for a
-       password before connecting to a database.
-      </para>
-
-      <para>
-       This option is never essential, since <application>psql</application>
-       will automatically prompt for a password if the server demands
-       password authentication.  However, <application>psql</application>
-       will waste a connection attempt finding out that the server wants a
-       password.  In some cases it is worth typing <option>-W</option> to avoid
-       the extra connection attempt.
-      </para>
-
-      <para>
-       Note that this option will remain set for the entire session,
-       and so it affects uses of the meta-command
-       <command>\connect</command> as well as the initial connection attempt.
-      </para>
-      </listitem>
-    </varlistentry>
 
     <varlistentry>
       <term><option>-x</option></term>

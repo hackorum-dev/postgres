@@ -464,7 +464,6 @@ parse_psql_options(int argc, char *argv[], struct adhoc_opts *options)
 		{"variable", required_argument, NULL, 'v'},
 		{"version", no_argument, NULL, 'V'},
 		{"no-password", no_argument, NULL, 'w'},
-		{"password", no_argument, NULL, 'W'},
 		{"expanded", no_argument, NULL, 'x'},
 		{"no-psqlrc", no_argument, NULL, 'X'},
 		{"help", optional_argument, NULL, 1},
@@ -476,7 +475,7 @@ parse_psql_options(int argc, char *argv[], struct adhoc_opts *options)
 
 	memset(options, 0, sizeof *options);
 
-	while ((c = getopt_long(argc, argv, "aAbc:d:eEf:F:h:HlL:no:p:P:qR:sStT:U:v:VwWxXz?01",
+	while ((c = getopt_long(argc, argv, "aAbc:d:eEf:F:h:HlL:no:p:P:qR:sStT:U:v:VwxXz?01",
 							long_options, &optindex)) != -1)
 	{
 		switch (c)
@@ -614,9 +613,6 @@ parse_psql_options(int argc, char *argv[], struct adhoc_opts *options)
 				exit(EXIT_SUCCESS);
 			case 'w':
 				pset.getPassword = TRI_NO;
-				break;
-			case 'W':
-				pset.getPassword = TRI_YES;
 				break;
 			case 'x':
 				pset.popt.topt.expanded = true;
