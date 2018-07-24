@@ -1697,6 +1697,13 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
 </para>
 
 <para>
+Where replication=database, simple queries may be executed. Other than access to decoded
+sets and physical files, there are no special rules for permissions on such queries.  This means
+programs can combine logical replication with other operations, but no parameterized queries
+may be used.
+</para>
+
+<para>
 Replication commands are logged in the server log when
 <xref linkend="guc-log-replication-commands"/> is enabled.
 </para>
