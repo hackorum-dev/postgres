@@ -13693,6 +13693,12 @@ ComputePartitionAttrs(Relation rel, List *partParams, AttrNumber *partattrs,
 			atttype = attform->atttypid;
 			attcollation = attform->attcollation;
 			ReleaseSysCache(atttuple);
+
+			/* Prevent using domains as a partition key. */
+			if (get_typtype(atttype) == TYPTYPE_DOMAIN)
+					ereport(ERROR,
+							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							 errmsg("cannot use domain type column as partition key")));
 		}
 		else
 		{
@@ -13702,6 +13708,12 @@ ComputePartitionAttrs(Relation rel, List *partParams, AttrNumber *partattrs,
 			Assert(expr != NULL);
 			atttype = exprType(expr);
 			attcollation = exprCollation(expr);
+
+			/* Prevent using domains as a partition key. */
+			if (get_typtype(atttype) == TYPTYPE_DOMAIN)
+					ereport(ERROR,
+							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							 errmsg("cannot use domain type expression as partition key")));
 
 			/*
 			 * Strip any top-level COLLATE clause.  This ensures that we treat
