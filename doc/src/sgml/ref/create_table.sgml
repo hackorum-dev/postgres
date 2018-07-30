@@ -830,9 +830,9 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
    </varlistentry>
 
    <varlistentry>
-    <term><literal>UNIQUE</literal> (column constraint)</term>
+    <term><literal>UNIQUE</literal> <replaceable class="parameter">index_parameters</replaceable> (column constraint)</term>
     <term><literal>UNIQUE ( <replaceable class="parameter">column_name</replaceable> [, ... ] )</literal>
-    <optional> INCLUDE ( <replaceable class="parameter">column_name</replaceable> [, ...]) </optional> (table constraint)</term>
+    <replaceable class="parameter">index_parameters</replaceable> (table constraint)</term>
 
     <listitem>
      <para>
@@ -863,22 +863,19 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
      </para>
 
      <para>
-      Adding a unique constraint will automatically create a unique btree
+      Adding a unique constraint will automatically create a unique B-tree
       index on the column or group of columns used in the constraint.
-      The optional clause <literal>INCLUDE</literal> adds to that index
-      one or more columns on which the uniqueness is not enforced.
-      Note that although the constraint is not enforced on the included columns,
-      it still depends on them.  Consequently, some operations on these columns
-      (e.g. <literal>DROP COLUMN</literal>) can cause cascaded constraint and
-      index deletion.
+      Optionally, you can adjust index properties using
+      <literal>INCLUDE</literal>, <literal>WITH</literal>, and
+      <literal>USING INDEX TABLESPACES</literal> clauses, as explained below.
      </para>
     </listitem>
    </varlistentry>
 
    <varlistentry>
-    <term><literal>PRIMARY KEY</literal> (column constraint)</term>
+    <term><literal>PRIMARY KEY</literal> <replaceable class="parameter">index_parameters</replaceable> (column constraint)</term>
     <term><literal>PRIMARY KEY ( <replaceable class="parameter">column_name</replaceable> [, ... ] )</literal>
-    <optional> INCLUDE ( <replaceable class="parameter">column_name</replaceable> [, ...]) </optional> (table constraint)</term>
+    <replaceable class="parameter">index_parameters</replaceable> (table constraint)</term>
     <listitem>
      <para>
       The <literal>PRIMARY KEY</literal> constraint specifies that a column or
@@ -910,13 +907,10 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
 
      <para>
       Adding a <literal>PRIMARY KEY</literal> constraint will automatically
-      create a unique btree index on the column or group of columns used in the
-      constraint.  The optional <literal>INCLUDE</literal> clause allows a list
-      of columns to be specified which will be included in the non-key portion
-      of the index.  Although uniqueness is not enforced on the included columns,
-      the constraint still depends on them. Consequently, some operations on the
-      included columns (e.g. <literal>DROP COLUMN</literal>) can cause cascaded
-      constraint and index deletion.
+      create a unique B-tree index on the column or group of columns used in
+      the constraint. Optionally, you can adjust index properties using
+      <literal>INCLUDE</literal>, <literal>WITH</literal>, and
+      <literal>USING INDEX TABLESPACES</literal> clauses, as explained below.
      </para>
     </listitem>
    </varlistentry>
@@ -951,6 +945,9 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
       can optionally specify an operator class and/or ordering options;
       these are described fully under
       <xref linkend="sql-createindex"/>.
+      You can also adjust index properties using <literal>INCLUDE</literal>,
+      <literal>WITH</literal>, and <literal>USING INDEX TABLESPACES</literal>
+      clauses, as explained below.
      </para>
 
      <para>
@@ -1132,6 +1129,27 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
       <literal>INITIALLY DEFERRED</literal>, it is checked only at the
       end of the transaction.  The constraint check time can be
       altered with the <xref linkend="sql-set-constraints"/> command.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>INCLUDE ( <replaceable class="parameter">column_name</replaceable> [, ... ] )</literal></term>
+    <listitem>
+     <para>
+      The optional <literal>INCLUDE</literal> clause adds non-key columns
+      to the index created for <literal>UNIQUE</literal>,
+      <literal>PRIMARY KEY</literal>, and <literal>EXCLUDE</literal>
+      constraints, without enforcing the constraint on these columns.
+      The contents of non-key columns can be returned by index-only scans,
+      so you can use this clause to expand the constraint-related index to
+      the columns that are likely to be queried.
+      Note that although the constraint is not enforced on the non-key columns,
+      it still depends on them. Consequently, some operations on these columns
+      (e.g. <literal>DROP COLUMN</literal>) can cause cascaded constraint and
+      index deletion.
+      For details on non-key columns, see the <literal>INCLUDE</literal>
+      description in <xref linkend="sql-createindex"/>.
      </para>
     </listitem>
    </varlistentry>
