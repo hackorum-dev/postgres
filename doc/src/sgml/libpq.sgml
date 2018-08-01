@@ -1099,6 +1099,16 @@ postgresql://%2Fvar%2Flib%2Fpostgresql/dbname
       </listitem>
      </varlistentry>
 
+     <varlistentry id="libpq-connect-passcommand" xreflabel="passcommand">
+      <term><literal>passcommand</literal></term>
+      <listitem>
+      <para>
+       Specifies the command to run to get the contents of store passwords
+       (see <xref linkend="libpq-pgpass"/>).
+      </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="libpq-connect-connect-timeout" xreflabel="connect_timeout">
       <term><literal>connect_timeout</literal></term>
       <listitem>
@@ -7234,6 +7244,16 @@ myEventProc(PGEventId evtId, void *evtInfo, void *passThrough)
     <listitem>
      <para>
       <indexterm>
+       <primary><envar>PGPASSCOMMAND</envar></primary>
+      </indexterm>
+      <envar>PGPASSCOMMAND</envar> behaves the same as the <xref
+      linkend="libpq-connect-passcommand"/> connection parameter.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      <indexterm>
        <primary><envar>PGSERVICE</envar></primary>
       </indexterm>
       <envar>PGSERVICE</envar> behaves the same as the <xref
@@ -7486,13 +7506,16 @@ myEventProc(PGEventId evtId, void *evtInfo, void *passThrough)
 
 
  <sect1 id="libpq-pgpass">
-  <title>The Password File</title>
+  <title>The Password File / Password Command</title>
 
   <indexterm zone="libpq-pgpass">
    <primary>password file</primary>
   </indexterm>
   <indexterm zone="libpq-pgpass">
    <primary>.pgpass</primary>
+  </indexterm>
+  <indexterm zone="libpq-pgpass">
+   <primary>password command</primary>
   </indexterm>
 
   <para>
@@ -7509,7 +7532,25 @@ myEventProc(PGEventId evtId, void *evtInfo, void *passThrough)
   </para>
 
   <para>
-   This file should contain lines of the following format:
+   The command which produces passwords to connect if the connection needs a
+   password (and no password has been specified otherwise).
+   Alternatively, a password command can be specifiedin the environment
+   variable <envar>PGPASSCOMMAND</envar>. It is not possible to specify the
+   command as a connect parameter since it could be executed by another user.
+
+   examples:
+   <programlisting>
+    PGPASSCOMMAND = "gpg -q -d pgpass.gpg"
+    PGPASSCOMMAND = "curl http://passwords/really-unsecure-pgpass"
+    PGPASSCOMMAND = "my-own-secure-pgpass-script"
+   </programlisting>
+
+   NOTE: if a <filename>.pgpass</filename> is present the command will not be
+   issued
+  </para>
+
+  <para>
+   This file/command-output should contain lines of the following format:
 <synopsis>
 <replaceable>hostname</replaceable>:<replaceable>port</replaceable>:<replaceable>database</replaceable>:<replaceable>username</replaceable>:<replaceable>password</replaceable>
 </synopsis>

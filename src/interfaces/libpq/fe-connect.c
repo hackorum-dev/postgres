@@ -204,6 +204,13 @@ static const internalPQconninfoOption PQconninfoOptions[] = {
 		"Database-Password-File", "", 64,
 	offsetof(struct pg_conn, pgpassfile)},
 
+  /* PGPASSCOMMAND may only be passed as an environment variable to
+	 since adding it to the connect_string could potentially allow the command
+	 to run with the priviliges of the database-server */
+	{"", "PGPASSCOMMAND", NULL, NULL,
+		"Database-Password-Command", "", 64,
+	offsetof(struct pg_conn, pgpasscommand)},
+
 	{"connect_timeout", "PGCONNECT_TIMEOUT", NULL, NULL,
 		"Connect-timeout", "", 10,	/* strlen(INT32_MAX) == 10 */
 	offsetof(struct pg_conn, connect_timeout)},
@@ -406,8 +413,8 @@ static int parseServiceFile(const char *serviceFile,
 				 PQExpBuffer errorMessage,
 				 bool *group_found);
 static char *pwdfMatchesString(char *buf, const char *token);
-static char *passwordFromFile(const char *hostname, const char *port, const char *dbname,
-				 const char *username, const char *pgpassfile);
+static char *passwordFromFileOrCommand(const char *hostname, const char *port, const char *dbname,
+				 const char *username, const char *pgpassfile, const char *pgpasscommand);
 static void pgpassfileWarning(PGconn *conn);
 static void default_threadlock(int acquire);
 
@@ -1087,7 +1094,25 @@ connectOptions2(PGconn *conn)
 			}
 		}
 
-		if (conn->pgpassfile != NULL && conn->pgpassfile[0] != '\0')
+		// if (conn->pgpasscommand == NULL)
+		// {
+		// 	char *tmp;
+		// 	if ((tmp = getenv("PGPASSCOMMAND")) != NULL)
+		// 	{
+		// 		conn->pgpasscommand = strdup(tmp);
+		// 		if (!conn->pgpasscommand)
+		// 		{
+		// 			conn->status = CONNECTION_BAD;
+		// 			if (errorMessage)
+		// 				printfPQExpBuffer(errorMessage,
+		// 									libpq_gettext("out of memory\n"));
+		// 			return false;
+		// 		}
+		// 	}
+		// }
+
+		if ( (conn->pgpassfile != NULL && conn->pgpassfile[0] != '\0')
+		||   (conn->pgpasscommand != NULL && conn->pgpasscommand[0] != '\0') )
 		{
 			int			i;
 
@@ -1106,11 +1131,12 @@ connectOptions2(PGconn *conn)
 					pwhost = conn->connhost[i].hostaddr;
 
 				conn->connhost[i].password =
-					passwordFromFile(pwhost,
+					passwordFromFileOrCommand(pwhost,
 									 conn->connhost[i].port,
 									 conn->dbName,
 									 conn->pguser,
-									 conn->pgpassfile);
+									 conn->pgpassfile,
+									 conn->pgpasscommand);
 				/* If we got one, set pgpassfile_used */
 				if (conn->connhost[i].password != NULL)
 					conn->pgpassfile_used = true;
@@ -1751,7 +1777,7 @@ connectDBStart(PGconn *conn)
 				if (ret || !ch->addrlist)
 					appendPQExpBuffer(&conn->errorMessage,
 									  libpq_gettext("could not parse network address \"%s\": %s\n"),
-									  ch->hostaddr, gai_strerror(ret));
+									  ch->host, gai_strerror(ret));
 				break;
 
 			case CHT_UNIX_SOCKET:
@@ -3468,6 +3494,8 @@ freePGconn(PGconn *conn)
 		free(conn->pgpass);
 	if (conn->pgpassfile)
 		free(conn->pgpassfile);
+	if (conn->pgpasscommand)
+		free(conn->pgpasscommand);
 	if (conn->keepalives)
 		free(conn->keepalives);
 	if (conn->keepalives_idle)
@@ -6376,11 +6404,12 @@ pwdfMatchesString(char *buf, const char *token)
 
 /* Get a password from the password file. Return value is malloc'd. */
 static char *
-passwordFromFile(const char *hostname, const char *port, const char *dbname,
-				 const char *username, const char *pgpassfile)
+passwordFromFileOrCommand(const char *hostname, const char *port, const char *dbname,
+				 const char *username, const char *pgpassfile, const char *pgpasscommand)
 {
 	FILE	   *fp;
 	struct stat stat_buf;
+	char has_pgpassfile=0;
 
 #define LINELEN NAMEDATALEN*5
 	char		buf[LINELEN];
@@ -6407,11 +6436,12 @@ passwordFromFile(const char *hostname, const char *port, const char *dbname,
 		port = DEF_PGPORT_STR;
 
 	/* If password file cannot be opened, ignore it. */
-	if (stat(pgpassfile, &stat_buf) != 0)
-		return NULL;
+	if (stat(pgpassfile, &stat_buf) == 0)
+		has_pgpassfile=1;
+
 
 #ifndef WIN32
-	if (!S_ISREG(stat_buf.st_mode))
+	if (has_pgpassfile && !S_ISREG(stat_buf.st_mode))
 	{
 		fprintf(stderr,
 				libpq_gettext("WARNING: password file \"%s\" is not a plain file\n"),
@@ -6420,7 +6450,7 @@ passwordFromFile(const char *hostname, const char *port, const char *dbname,
 	}
 
 	/* If password file is insecure, alert the user and ignore it. */
-	if (stat_buf.st_mode & (S_IRWXG | S_IRWXO))
+	if (has_pgpassfile && stat_buf.st_mode & (S_IRWXG | S_IRWXO))
 	{
 		fprintf(stderr,
 				libpq_gettext("WARNING: password file \"%s\" has group or world access; permissions should be u=rw (0600) or less\n"),
@@ -6434,8 +6464,19 @@ passwordFromFile(const char *hostname, const char *port, const char *dbname,
 	 * file.
 	 */
 #endif
+	if (has_pgpassfile)
+	{
+		fp = fopen(pgpassfile, "r");
+	}
+	else if (pgpasscommand != NULL && pgpasscommand[0] != '\0')
+	{
+		fp = popen(pgpasscommand, "r");
+	}
+	else
+	{
+		return NULL;
+	}
 
-	fp = fopen(pgpassfile, "r");
 	if (fp == NULL)
 		return NULL;
 
