@@ -124,6 +124,7 @@ static void UpdateIndexRelation(Oid indexoid, Oid heapoid,
 					bool immediate,
 					bool isvalid,
 					bool isready);
+static void ActivateIndexRelation(Oid indexoid);
 static void index_update_stats(Relation rel,
 				   bool hasindex,
 				   double reltuples);
@@ -666,7 +667,7 @@ UpdateIndexRelation(Oid indexoid,
 	values[Anum_pg_index_indisvalid - 1] = BoolGetDatum(isvalid);
 	values[Anum_pg_index_indcheckxmin - 1] = BoolGetDatum(false);
 	values[Anum_pg_index_indisready - 1] = BoolGetDatum(isready);
-	values[Anum_pg_index_indislive - 1] = BoolGetDatum(true);
+	values[Anum_pg_index_indislive - 1] = BoolGetDatum(false);
 	values[Anum_pg_index_indisreplident - 1] = BoolGetDatum(false);
 	values[Anum_pg_index_indkey - 1] = PointerGetDatum(indkey);
 	values[Anum_pg_index_indcollation - 1] = PointerGetDatum(indcollation);
@@ -691,6 +692,55 @@ UpdateIndexRelation(Oid indexoid,
 	 */
 	heap_close(pg_index, RowExclusiveLock);
 	heap_freetuple(tuple);
+}
+
+/* ----------------------------------------------------------------
+ *		ActivateIndexRelation
+ *
+ * Publish index by marking it "relislive"
+
+ *  UpdateIndexRelation builds an index relation with relislive = false so as
+ *  not to be used by the quieries used to build the index. This function
+ *  marks the index as "live" so that it can be used hereafter.
+ *  ----------------------------------------------------------------
+ */
+static void
+ActivateIndexRelation(Oid indexoid)
+{
+	Relation	indrel;
+	SysScanDesc	sdesc;
+	ScanKeyData	skey;
+	HeapTuple	tup;
+
+	ScanKeyInit(&skey,
+				Anum_pg_index_indexrelid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(indexoid));
+	indrel = heap_open(IndexRelationId, RowExclusiveLock);
+	sdesc = systable_beginscan(indrel, InvalidOid, true, NULL, 1, &skey);
+
+	/*
+	 * We must see one and only one entry for the key. But don't bother
+	 * checking that.
+	 */
+	while (HeapTupleIsValid(tup = systable_getnext(sdesc)))
+	{
+		Datum values[Natts_pg_index];
+		bool nulls[Natts_pg_index];
+		bool replaces[Natts_pg_index];
+
+		MemSet(values, 0, sizeof(values));
+		MemSet(nulls, 0, sizeof(nulls));
+		MemSet(replaces, 0, sizeof(replaces));
+		values[Anum_pg_index_indislive] = BoolGetDatum(true);
+		replaces[Anum_pg_index_indislive] = true;
+		tup = heap_modify_tuple(tup, RelationGetDescr(indrel),
+								values, nulls, replaces);
+		CatalogTupleUpdate(indrel, &tup->t_self, tup);
+		heap_freetuple(tup);
+	}
+	systable_endscan(sdesc);
+	heap_close(indrel, RowExclusiveLock);
 }
 
 
@@ -1187,6 +1237,9 @@ index_create(Relation heapRelation,
 		index_build(heapRelation, indexRelation, indexInfo, isprimary, false,
 					true);
 	}
+
+	/* let queries use this index */
+	ActivateIndexRelation(indexRelationId);
 
 	/*
 	 * Close the index; but we keep the lock that we acquired above until end
