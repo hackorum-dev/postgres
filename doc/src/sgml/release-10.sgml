@@ -332,7 +332,7 @@ Branch: REL9_4_STABLE [8c8c9f37c] 2018-07-04 14:58:26 -0700
 
      <para>
       Corrupted btree indexes could result in an infinite loop here, and
-      that previously wasn't interruptable without forcing a crash.
+      that previously wasn't interruptible without forcing a crash.
      </para>
     </listitem>
 
