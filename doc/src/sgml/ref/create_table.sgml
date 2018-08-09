@@ -928,12 +928,10 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
       The <literal>EXCLUDE</literal> clause defines an exclusion
       constraint, which guarantees that if
       any two rows are compared on the specified column(s) or
-      expression(s) using the specified operator(s), not all of these
-      comparisons will return <literal>TRUE</literal>.  If all of the
-      specified operators test for equality, this is equivalent to a
-      <literal>UNIQUE</literal> constraint, although an ordinary unique constraint
-      will be faster.  However, exclusion constraints can specify
-      constraints that are more general than simple equality.
+      expression(s) using the specified operator(s), at least one of the
+      comparisons will return <literal>FALSE<literal/>.
+      Exclusion constraints can (and should) be used to specify
+      expressions that do not involve simple equality.
       For example, you can specify a constraint that
       no two rows in the table contain overlapping circles
       (see <xref linkend="datatype-geometric"/>) by using the
@@ -967,6 +965,14 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
       The <replaceable class="parameter">predicate</replaceable> allows you to specify an
       exclusion constraint on a subset of the table; internally this creates a
       partial index. Note that parentheses are required around the predicate.
+     </para>
+
+     <para>
+      <productname>PostgreSQL</productname> does not consider an exclusion
+      constraint to be a valid unique constraint for purposes of determining the
+      validity of a foreign key constraint.  For this reason, in addition to performance,
+      an exclusion constraint defined using only equality operators should be defined
+      as a <literal>UNIQUE<literal/> constraint.
      </para>
     </listitem>
    </varlistentry>
