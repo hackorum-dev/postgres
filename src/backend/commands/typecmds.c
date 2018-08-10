@@ -49,6 +49,7 @@
 #include "catalog/pg_range.h"
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
+#include "commands/extension.h"
 #include "commands/tablecmds.h"
 #include "commands/typecmds.h"
 #include "executor/executor.h"
@@ -174,7 +175,8 @@ DefineType(ParseState *pstate, List *names, List *parameters)
 	 *
 	 * XXX re-enable NOT_USED code sections below if you remove this test.
 	 */
-	if (!superuser())
+	if (!superuser() &&
+            !(creating_extension && is_member_of_role(GetUserId(), DEFAULT_ROLE_CREATE_EXTENSION)))
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("must be superuser to create a base type")));

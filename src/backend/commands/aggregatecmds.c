@@ -26,10 +26,12 @@
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_aggregate.h"
+#include "catalog/pg_authid.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "commands/alter.h"
 #include "commands/defrem.h"
+#include "commands/extension.h"
 #include "miscadmin.h"
 #include "parser/parse_func.h"
 #include "parser/parse_type.h"
@@ -336,7 +338,9 @@ DefineAggregate(ParseState *pstate, List *name, List *args, bool oldstyle, List 
 	if (transTypeType == TYPTYPE_PSEUDO &&
 		!IsPolymorphicType(transTypeId))
 	{
-		if (transTypeId == INTERNALOID && superuser())
+		if (transTypeId == INTERNALOID &&
+                    (superuser() ||
+                     (creating_extension && is_member_of_role(GetUserId(), DEFAULT_ROLE_CREATE_EXTENSION))))
 			 /* okay */ ;
 		else
 			ereport(ERROR,

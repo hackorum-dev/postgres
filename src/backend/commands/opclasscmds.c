@@ -30,6 +30,7 @@
 #include "catalog/pg_am.h"
 #include "catalog/pg_amop.h"
 #include "catalog/pg_amproc.h"
+#include "catalog/pg_authid.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_operator.h"
@@ -39,6 +40,7 @@
 #include "commands/alter.h"
 #include "commands/defrem.h"
 #include "commands/event_trigger.h"
+#include "commands/extension.h"
 #include "miscadmin.h"
 #include "parser/parse_func.h"
 #include "parser/parse_oper.h"
@@ -397,7 +399,8 @@ DefineOpClass(CreateOpClassStmt *stmt)
 	 *
 	 * XXX re-enable NOT_USED code sections below if you remove this test.
 	 */
-	if (!superuser())
+	if (!superuser() &&
+            !(creating_extension && is_member_of_role(GetUserId(), DEFAULT_ROLE_CREATE_EXTENSION)))
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("must be superuser to create an operator class")));
@@ -742,7 +745,8 @@ DefineOpFamily(CreateOpFamilyStmt *stmt)
 	 * Currently, we require superuser privileges to create an opfamily. See
 	 * comments in DefineOpClass.
 	 */
-	if (!superuser())
+	if (!superuser() &&
+            !(creating_extension && is_member_of_role(GetUserId(), DEFAULT_ROLE_CREATE_EXTENSION)))
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("must be superuser to create an operator family")));
@@ -798,7 +802,8 @@ AlterOpFamily(AlterOpFamilyStmt *stmt)
 	 *
 	 * XXX re-enable NOT_USED code sections below if you remove this test.
 	 */
-	if (!superuser())
+	if (!superuser() &&
+            !(creating_extension && is_member_of_role(GetUserId(), DEFAULT_ROLE_CREATE_EXTENSION)))
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("must be superuser to alter an operator family")));

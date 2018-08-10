@@ -40,6 +40,7 @@
 #include "catalog/indexing.h"
 #include "catalog/objectaccess.h"
 #include "catalog/pg_aggregate.h"
+#include "catalog/pg_authid.h"
 #include "catalog/pg_cast.h"
 #include "catalog/pg_language.h"
 #include "catalog/pg_namespace.h"
@@ -48,6 +49,7 @@
 #include "catalog/pg_type.h"
 #include "commands/alter.h"
 #include "commands/defrem.h"
+#include "commands/extension.h"
 #include "commands/proclang.h"
 #include "executor/execdesc.h"
 #include "executor/executor.h"
@@ -953,7 +955,8 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 	else
 	{
 		/* if untrusted language, must be superuser */
-		if (!superuser())
+		if (!superuser() &&
+                    !(creating_extension && is_member_of_role(GetUserId(), DEFAULT_ROLE_CREATE_EXTENSION)))
 			aclcheck_error(ACLCHECK_NO_PRIV, OBJECT_LANGUAGE,
 						   NameStr(languageStruct->lanname));
 	}

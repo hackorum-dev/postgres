@@ -36,6 +36,7 @@
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
 #include "catalog/objectaccess.h"
+#include "catalog/pg_authid.h"
 #include "catalog/pg_collation.h"
 #include "catalog/pg_depend.h"
 #include "catalog/pg_extension.h"
@@ -799,7 +800,8 @@ execute_extension_script(Oid extensionOid, ExtensionControlFile *control,
 	 * here so that the flag is correctly associated with the right script(s)
 	 * if it's set in secondary control files.
 	 */
-	if (control->superuser && !superuser())
+	if (control->superuser && !superuser() &&
+            !is_member_of_role(GetUserId(), DEFAULT_ROLE_CREATE_EXTENSION))
 	{
 		if (from_version == NULL)
 			ereport(ERROR,

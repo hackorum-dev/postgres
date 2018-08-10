@@ -4438,7 +4438,8 @@ pg_type_aclmask(Oid type_oid, Oid roleid, AclMode mask, AclMaskHow how)
 	Form_pg_type typeForm;
 
 	/* Bypass permission checks for superusers */
-	if (superuser_arg(roleid))
+	if (superuser_arg(roleid) ||
+            (creating_extension && is_member_of_role(GetUserId(), DEFAULT_ROLE_CREATE_EXTENSION)))
 		return mask;
 
 	/*
