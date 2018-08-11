@@ -8009,7 +8009,8 @@ fi
     done
     for pgac_option in `$XML2_CONFIG --libs`; do
       case $pgac_option in
-        -L*) LDFLAGS="$LDFLAGS $pgac_option";;
+        -l*) LIBS="$LIBS $pgac_option";;
+        *) LDFLAGS="$LDFLAGS $pgac_option";;
       esac
     done
   fi
