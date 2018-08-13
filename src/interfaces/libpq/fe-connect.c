@@ -2116,6 +2116,31 @@ keep_going:						/* We will come back to here until there is
 			goto error_return;
 		}
 		conn->whichhost++;
+
+		/*
+		 * If we're given more than one target host, append identification
+		 * info to conn->errorMessage as we start to consider each one.  This
+		 * makes it easier to figure out which host error messages apply to,
+		 * in case we fail to connect to all of them.
+		 */
+		if (conn->nconnhost > 1)
+		{
+			pg_conn_host *ch = &conn->connhost[conn->whichhost];
+			const char *displayed_host;
+			const char *displayed_port;
+
+			if (ch->type == CHT_HOST_ADDRESS)
+				displayed_host = ch->hostaddr;
+			else
+				displayed_host = ch->host;
+			displayed_port = ch->port;
+			if (displayed_port == NULL || displayed_port[0] == '\0')
+				displayed_port = DEF_PGPORT_STR;
+			appendPQExpBuffer(&conn->errorMessage,
+							  libpq_gettext("server \"%s\" port %s: "),
+							  displayed_host, displayed_port);
+		}
+
 		conn->addr_cur = conn->connhost[conn->whichhost].addrlist;
 		/* If no addresses for this host, just try the next one */
 		if (conn->addr_cur == NULL)
@@ -3154,9 +3179,6 @@ keep_going:						/* We will come back to here until there is
 			}
 		case CONNECTION_CHECK_WRITABLE:
 			{
-				const char *displayed_host;
-				const char *displayed_port;
-
 				if (!PQconsumeInput(conn))
 					goto error_return;
 
@@ -3173,25 +3195,10 @@ keep_going:						/* We will come back to here until there is
 					if (strncmp(val, "on", 2) == 0)
 					{
 						/* Not writable; fail this connection. */
-						const char *displayed_host;
-						const char *displayed_port;
-
 						PQclear(res);
 
-						/* Append error report to conn->errorMessage. */
-						if (conn->connhost[conn->whichhost].type == CHT_HOST_ADDRESS)
-							displayed_host = conn->connhost[conn->whichhost].hostaddr;
-						else
-							displayed_host = conn->connhost[conn->whichhost].host;
-						displayed_port = conn->connhost[conn->whichhost].port;
-						if (displayed_port == NULL || displayed_port[0] == '\0')
-							displayed_port = DEF_PGPORT_STR;
-
-						appendPQExpBuffer(&conn->errorMessage,
-										  libpq_gettext("could not make a writable "
-														"connection to server "
-														"\"%s:%s\"\n"),
-										  displayed_host, displayed_port);
+						appendPQExpBufferStr(&conn->errorMessage,
+											 libpq_gettext("could not open a read-write session\n"));
 
 						/* Close connection politely. */
 						conn->status = CONNECTION_OK;
@@ -3217,24 +3224,16 @@ keep_going:						/* We will come back to here until there is
 				}
 
 				/*
-				 * Something went wrong with "SHOW transaction_read_only". We
-				 * should try next addresses.
+				 * Something went wrong with "SHOW transaction_read_only".  If
+				 * there was a server error, it'll already have been appended
+				 * to errorMessage, else say something generic.
 				 */
+				if (res == NULL || PQresultStatus(res) != PGRES_FATAL_ERROR)
+					appendPQExpBufferStr(&conn->errorMessage,
+										 libpq_gettext("\"SHOW transaction_read_only\" failed\n"));
+
 				if (res)
 					PQclear(res);
-
-				/* Append error report to conn->errorMessage. */
-				if (conn->connhost[conn->whichhost].type == CHT_HOST_ADDRESS)
-					displayed_host = conn->connhost[conn->whichhost].hostaddr;
-				else
-					displayed_host = conn->connhost[conn->whichhost].host;
-				displayed_port = conn->connhost[conn->whichhost].port;
-				if (displayed_port == NULL || displayed_port[0] == '\0')
-					displayed_port = DEF_PGPORT_STR;
-				appendPQExpBuffer(&conn->errorMessage,
-								  libpq_gettext("test \"SHOW transaction_read_only\" failed "
-												"on server \"%s:%s\"\n"),
-								  displayed_host, displayed_port);
 
 				/* Close connection politely. */
 				conn->status = CONNECTION_OK;
