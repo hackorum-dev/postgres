@@ -2149,6 +2149,9 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 			_SPI_current->lastoid = InvalidOid;
 			_SPI_current->tuptable = NULL;
 
+			/* inject assigned query_owner_nspid */
+			stmt->query_owner_nspid = plan->query_owner_nspid;
+
 			if (stmt->utilityStmt)
 			{
 				if (IsA(stmt->utilityStmt, CopyStmt))
@@ -2200,6 +2203,11 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 				else
 					snap = InvalidSnapshot;
 
+				/*
+				 * ToDo: better place to inject query owner nspid, but
+				 * we should to implement passing query owner nspid over
+				 * parallel workers.
+				 */
 				qdesc = CreateQueryDesc(stmt,
 										plansource->query_string,
 										snap, crosscheck_snapshot,
@@ -2697,6 +2705,8 @@ _SPI_make_plan_non_temp(SPIPlanPtr plan)
 	/* For safety, unlink the CachedPlanSources from the temporary plan */
 	plan->plancache_list = NIL;
 
+	newplan->query_owner_nspid = plan->query_owner_nspid;
+
 	return newplan;
 }
 
@@ -2767,7 +2777,19 @@ _SPI_save_plan(SPIPlanPtr plan)
 		SaveCachedPlan(plansource);
 	}
 
+	newplan->query_owner_nspid = plan->query_owner_nspid;
+
 	return newplan;
+}
+
+/*
+ * Assign query owner namespace to plan. The query owner nspid
+ * is used for implementation of schema private functions.
+ */
+void
+assign_query_owner_nspid(SPIPlanPtr plan, Oid query_owner_nspid)
+{
+	plan->query_owner_nspid = query_owner_nspid;
 }
 
 /*

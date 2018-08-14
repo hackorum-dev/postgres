@@ -664,7 +664,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 	PARALLEL PARSER PARTIAL PARTITION PASSING PASSWORD PLACING PLANS POLICY
 	POSITION PRECEDING PRECISION PRESERVE PREPARE PREPARED PRIMARY
-	PRIOR PRIVILEGES PROCEDURAL PROCEDURE PROCEDURES PROGRAM PUBLICATION
+	PRIOR PRIVATE PRIVILEGES PROCEDURAL PROCEDURE PROCEDURES PROGRAM PUBLICATION
 
 	QUOTE
 
@@ -7936,6 +7936,11 @@ common_func_opt_item:
 				{
 					$$ = makeDefElem("parallel", (Node *)makeString($2), @1);
 				}
+			| PRIVATE
+				{
+					/* This function can be called only from routines */
+					$$ = makeDefElem("scope", (Node *)makeString("private"), @1);
+				}
 		;
 
 createfunc_opt_item:
@@ -15181,6 +15186,7 @@ unreserved_keyword:
 			| PREPARED
 			| PRESERVE
 			| PRIOR
+			| PRIVATE
 			| PRIVILEGES
 			| PROCEDURAL
 			| PROCEDURE

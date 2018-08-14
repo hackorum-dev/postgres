@@ -134,6 +134,7 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 									  false,	/* isStrict */
 									  PROVOLATILE_VOLATILE,
 									  PROPARALLEL_UNSAFE,
+									  false,	/* isPrivate */
 									  buildoidvector(funcargtypes, 0),
 									  PointerGetDatum(NULL),
 									  PointerGetDatum(NULL),
@@ -173,6 +174,7 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 										  true, /* isStrict */
 										  PROVOLATILE_VOLATILE,
 										  PROPARALLEL_UNSAFE,
+										  false,	/* isPrivate */
 										  buildoidvector(funcargtypes, 1),
 										  PointerGetDatum(NULL),
 										  PointerGetDatum(NULL),
@@ -215,6 +217,7 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 										  true, /* isStrict */
 										  PROVOLATILE_VOLATILE,
 										  PROPARALLEL_UNSAFE,
+										  false,	/* isPrivate */
 										  buildoidvector(funcargtypes, 1),
 										  PointerGetDatum(NULL),
 										  PointerGetDatum(NULL),

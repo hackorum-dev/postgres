@@ -289,6 +289,8 @@ _equalFuncExpr(const FuncExpr *a, const FuncExpr *b)
 	COMPARE_SCALAR_FIELD(funccollid);
 	COMPARE_SCALAR_FIELD(inputcollid);
 	COMPARE_NODE_FIELD(args);
+	COMPARE_SCALAR_FIELD(funcprivate);
+	COMPARE_SCALAR_FIELD(funcnspid);
 	COMPARE_LOCATION_FIELD(location);
 
 	return true;

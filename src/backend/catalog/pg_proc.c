@@ -79,6 +79,7 @@ ProcedureCreate(const char *procedureName,
 				bool isStrict,
 				char volatility,
 				char parallel,
+				bool isPrivate,
 				oidvector *parameterTypes,
 				Datum allParameterTypes,
 				Datum parameterModes,
@@ -329,6 +330,7 @@ ProcedureCreate(const char *procedureName,
 	values[Anum_pg_proc_pronargdefaults - 1] = UInt16GetDatum(list_length(parameterDefaults));
 	values[Anum_pg_proc_prorettype - 1] = ObjectIdGetDatum(returnType);
 	values[Anum_pg_proc_proargtypes - 1] = PointerGetDatum(parameterTypes);
+	values[Anum_pg_proc_proisprivate - 1] = BoolGetDatum(isPrivate);
 	if (allParameterTypes != PointerGetDatum(NULL))
 		values[Anum_pg_proc_proallargtypes - 1] = allParameterTypes;
 	else

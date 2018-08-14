@@ -532,6 +532,8 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	result->stmt_location = parse->stmt_location;
 	result->stmt_len = parse->stmt_len;
 
+	result->query_owner_nspid = InvalidOid;
+
 	result->jitFlags = PGJIT_NONE;
 	if (jit_enabled && jit_above_cost >= 0 &&
 		top_plan->total_cost > jit_above_cost)

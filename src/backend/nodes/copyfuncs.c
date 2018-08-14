@@ -102,6 +102,7 @@ _copyPlannedStmt(const PlannedStmt *from)
 	COPY_NODE_FIELD(utilityStmt);
 	COPY_LOCATION_FIELD(stmt_location);
 	COPY_LOCATION_FIELD(stmt_len);
+	COPY_SCALAR_FIELD(query_owner_nspid);
 
 	return newnode;
 }
@@ -1524,6 +1525,8 @@ _copyFuncExpr(const FuncExpr *from)
 	COPY_SCALAR_FIELD(funccollid);
 	COPY_SCALAR_FIELD(inputcollid);
 	COPY_NODE_FIELD(args);
+	COPY_SCALAR_FIELD(funcprivate);
+	COPY_SCALAR_FIELD(funcnspid);
 	COPY_LOCATION_FIELD(location);
 
 	return newnode;

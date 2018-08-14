@@ -680,6 +680,8 @@ _readFuncExpr(void)
 	READ_OID_FIELD(funccollid);
 	READ_OID_FIELD(inputcollid);
 	READ_NODE_FIELD(args);
+	READ_BOOL_FIELD(funcprivate);
+	READ_OID_FIELD(funcnspid);
 	READ_LOCATION_FIELD(location);
 
 	READ_DONE();
@@ -1494,6 +1496,7 @@ _readPlannedStmt(void)
 	READ_NODE_FIELD(utilityStmt);
 	READ_LOCATION_FIELD(stmt_location);
 	READ_LOCATION_FIELD(stmt_len);
+	READ_OID_FIELD(query_owner_nspid);
 
 	READ_DONE();
 }

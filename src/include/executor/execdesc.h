@@ -42,6 +42,7 @@ typedef struct QueryDesc
 	ParamListInfo params;		/* param values being passed in */
 	QueryEnvironment *queryEnv; /* query environment passed in */
 	int			instrument_options; /* OR of InstrumentOption flags */
+	Oid			query_owner_nspid; /* the query is evaluated from object assigned to schema */
 
 	/* These fields are set by ExecutorStart */
 	TupleDesc	tupDesc;		/* descriptor for result tuples */

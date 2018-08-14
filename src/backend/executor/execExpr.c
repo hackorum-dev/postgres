@@ -153,7 +153,7 @@ ExecInitExpr(Expr *node, PlanState *parent)
  * and instead we may have a ParamListInfo describing PARAM_EXTERN Params.
  */
 ExprState *
-ExecInitExprWithParams(Expr *node, ParamListInfo ext_params)
+ExecInitExprWithParams(Expr *node, ParamListInfo ext_params, Oid query_owner_nspid)
 {
 	ExprState  *state;
 	ExprEvalStep scratch = {0};
@@ -167,6 +167,7 @@ ExecInitExprWithParams(Expr *node, ParamListInfo ext_params)
 	state->expr = node;
 	state->parent = NULL;
 	state->ext_params = ext_params;
+	state->query_owner_nspid = query_owner_nspid;
 
 	/* Insert EEOP_*_FETCHSOME steps as needed */
 	ExecInitExprSlots(state, (Node *) node);
@@ -878,6 +879,25 @@ ExecInitExprRec(Expr *node, ExprState *state,
 		case T_FuncExpr:
 			{
 				FuncExpr   *func = (FuncExpr *) node;
+
+				/* check scope of function */
+				if (func->funcprivate)
+				{
+					Oid		query_owner_nspid = state->query_owner_nspid;
+
+					if (OidIsValid(state->query_owner_nspid))
+						query_owner_nspid = state->query_owner_nspid;
+					else if (state->parent && state->parent->state)
+						query_owner_nspid =
+							  state->parent->state->es_query_owner_nspid;
+
+					if (!OidIsValid(query_owner_nspid))
+						elog(ERROR, "private function can be called only from routine");
+					if (query_owner_nspid != func->funcnspid)
+						elog(ERROR, "private function of \"%s\" used from function from \"%s\"",
+							 get_namespace_name(func->funcnspid),
+							 get_namespace_name(query_owner_nspid));
+				}
 
 				ExecInitFunc(&scratch, node,
 							 func->args, func->funcid, func->inputcollid,

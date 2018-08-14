@@ -824,6 +824,9 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 	estate->es_range_table = rangeTable;
 	estate->es_plannedstmt = plannedstmt;
 
+	/* ToDo: Better to store query_owner_nspid to QueryDesc */
+	estate->es_query_owner_nspid = plannedstmt->query_owner_nspid;
+
 	/*
 	 * initialize result relation stuff, and open/lock the result rels.
 	 *

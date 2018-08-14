@@ -928,6 +928,7 @@ typedef struct PLpgSQL_function
 {
 	char	   *fn_signature;
 	Oid			fn_oid;
+	Oid			fn_namespace;
 	TransactionId fn_xmin;
 	ItemPointerData fn_tid;
 	PLpgSQL_trigtype fn_is_trigger;

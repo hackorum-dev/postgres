@@ -214,6 +214,7 @@ add_vars_to_targetlist(PlannerInfo *root, List *vars,
 
 			if (bms_is_subset(where_needed, rel->relids))
 				continue;
+
 			Assert(attno >= rel->min_attr && attno <= rel->max_attr);
 			attno -= rel->min_attr;
 			if (rel->attr_needed[attno] == NULL)

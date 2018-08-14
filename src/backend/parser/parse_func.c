@@ -102,6 +102,8 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 	bool		retset;
 	int			nvargs;
 	Oid			vatype;
+	bool		funcprivate;
+	Oid			funcnspid;
 	FuncDetailCode fdresult;
 	char		aggkind = 0;
 	ParseCallbackState pcbstate;
@@ -259,7 +261,8 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 							   !func_variadic, true,
 							   &funcid, &rettype, &retset,
 							   &nvargs, &vatype,
-							   &declared_arg_types, &argdefaults);
+							   &declared_arg_types, &argdefaults,
+							   &funcprivate, &funcnspid);
 
 	cancel_parser_errposition_callback(&pcbstate);
 
@@ -739,6 +742,8 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 		funcexpr->funcformat = COERCE_EXPLICIT_CALL;
 		/* funccollid and inputcollid will be set by parse_collate.c */
 		funcexpr->args = fargs;
+		funcexpr->funcprivate = funcprivate;
+		funcexpr->funcnspid = funcnspid;
 		funcexpr->location = location;
 
 		retval = (Node *) funcexpr;
@@ -1386,7 +1391,9 @@ func_get_detail(List *funcname,
 				int *nvargs,	/* return value */
 				Oid *vatype,	/* return value */
 				Oid **true_typeids, /* return value */
-				List **argdefaults) /* optional return value */
+				List **argdefaults, /* optional return value */
+				bool *isprivate,  /* return value */
+				Oid *namespace)	/* return value */
 {
 	FuncCandidateList raw_candidates;
 	FuncCandidateList best_candidate;
@@ -1610,6 +1617,10 @@ func_get_detail(List *funcname,
 		*rettype = pform->prorettype;
 		*retset = pform->proretset;
 		*vatype = pform->provariadic;
+
+		*isprivate = pform->proisprivate;
+		*namespace = pform->pronamespace;
+
 		/* fetch default args if caller wants 'em */
 		if (argdefaults && best_candidate->ndargs > 0)
 		{

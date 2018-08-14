@@ -108,6 +108,8 @@ typedef struct ExprState
 
 	Datum	   *innermost_domainval;
 	bool	   *innermost_domainnull;
+
+	Oid			query_owner_nspid;
 } ExprState;
 
 
@@ -252,6 +254,9 @@ typedef struct ExprContext
 
 	/* Link to containing EState (NULL if a standalone ExprContext) */
 	struct EState *ecxt_estate;
+
+	/* Oid of namespace of object owning this query */
+	Oid			ecxt_query_owner_nspid;
 
 	/* Functions to call back when ExprContext is shut down or rescanned */
 	ExprContext_CB *ecxt_callbacks;
@@ -563,6 +568,8 @@ typedef struct EState
 
 	/* The per-query shared memory area to use for parallel execution. */
 	struct dsa_area *es_query_dsa;
+
+	Oid			es_query_owner_nspid;
 
 	/*
 	 * JIT information. es_jit_flags indicates whether JIT should be performed

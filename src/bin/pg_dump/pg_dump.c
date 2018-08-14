@@ -11532,6 +11532,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	char	   *procost;
 	char	   *prorows;
 	char	   *proparallel;
+	char	   *proisprivate;
 	char	   *lanname;
 	char	   *rettypename;
 	int			nallargs;
@@ -11553,6 +11554,26 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	asPart = createPQExpBuffer();
 
 	/* Fetch function-specific details */
+	if (fout->remoteVersion > 110000)
+	{
+		/*
+		 * proisprivate was added in 12
+		 */
+		appendPQExpBuffer(query,
+						  "SELECT proretset, prosrc, probin, "
+						  "pg_catalog.pg_get_function_arguments(oid) AS funcargs, "
+						  "pg_catalog.pg_get_function_identity_arguments(oid) AS funciargs, "
+						  "pg_catalog.pg_get_function_result(oid) AS funcresult, "
+						  "array_to_string(protrftypes, ' ') AS protrftypes, "
+						  "prokind, provolatile, proisstrict, prosecdef, "
+						  "proleakproof, proconfig, procost, prorows, "
+						  "proparallel, "
+						  "proisprivate, "
+						  "(SELECT lanname FROM pg_catalog.pg_language WHERE oid = prolang) AS lanname "
+						  "FROM pg_catalog.pg_proc "
+						  "WHERE oid = '%u'::pg_catalog.oid",
+						  finfo->dobj.catId.oid);
+	}
 	if (fout->remoteVersion >= 110000)
 	{
 		/*
@@ -11730,6 +11751,11 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 		proparallel = PQgetvalue(res, 0, PQfnumber(res, "proparallel"));
 	else
 		proparallel = NULL;
+
+	if (PQfnumber(res, "proisprivate") != -1)
+		proisprivate = PQgetvalue(res, 0, PQfnumber(res, "proisprivate"));
+	else
+		proisprivate = NULL;
 
 	lanname = PQgetvalue(res, 0, PQfnumber(res, "lanname"));
 
@@ -11914,6 +11940,8 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	if (proleakproof[0] == 't')
 		appendPQExpBufferStr(q, " LEAKPROOF");
 
+
+
 	/*
 	 * COST and ROWS are emitted only if present and not default, so as not to
 	 * break backwards-compatibility of the dump without need.  Keep this code
@@ -11948,6 +11976,9 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 			exit_horribly(NULL, "unrecognized proparallel value for function \"%s\"\n",
 						  finfo->dobj.name);
 	}
+
+	if (proisprivate && proisprivate[0] == 't')
+		appendPQExpBuffer(q, " PRIVATE");
 
 	for (i = 0; i < nconfigitems; i++)
 	{

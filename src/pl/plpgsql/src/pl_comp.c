@@ -367,6 +367,7 @@ do_compile(FunctionCallInfo fcinfo,
 		function->fn_is_trigger = PLPGSQL_NOT_TRIGGER;
 
 	function->fn_prokind = procStruct->prokind;
+	function->fn_namespace = procStruct->pronamespace;
 
 	/*
 	 * Initialize the compiler, particularly the namespace stack.  The

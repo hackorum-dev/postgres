@@ -159,6 +159,8 @@ CreateExecutorState(void)
 
 	estate->es_use_parallel_mode = false;
 
+	estate->es_query_owner_nspid = InvalidOid;
+
 	estate->es_jit_flags = 0;
 	estate->es_jit = NULL;
 

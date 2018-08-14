@@ -625,6 +625,7 @@ AggregateCreate(const char *aggName,
 							 PROVOLATILE_IMMUTABLE, /* volatility (not needed
 													 * for agg) */
 							 proparallel,
+							 false,				/* isPrivate, now false */
 							 parameterTypes,	/* paramTypes */
 							 allParameterTypes, /* allParamTypes */
 							 parameterModes,	/* parameterModes */
@@ -798,6 +799,8 @@ lookup_agg_function(List *fnName,
 	FuncDetailCode fdresult;
 	AclResult	aclresult;
 	int			i;
+	bool		is_private;
+	Oid			nspid;
 
 	/*
 	 * func_get_detail looks up the function in the catalogs, does
@@ -810,7 +813,8 @@ lookup_agg_function(List *fnName,
 							   nargs, input_types, false, false,
 							   &fnOid, rettype, &retset,
 							   &nvargs, &vatype,
-							   &true_oid_array, NULL);
+							   &true_oid_array, NULL,
+							   &is_private, &nspid);
 
 	/* only valid case is a normal function not returning a set */
 	if (fdresult != FUNCDETAIL_NORMAL || !OidIsValid(fnOid))

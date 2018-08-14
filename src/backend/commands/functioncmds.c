@@ -479,7 +479,8 @@ compute_common_attribute(ParseState *pstate,
 						 List **set_items,
 						 DefElem **cost_item,
 						 DefElem **rows_item,
-						 DefElem **parallel_item)
+						 DefElem **parallel_item,
+						 DefElem **scope_item)
 {
 	if (strcmp(defel->defname, "volatility") == 0)
 	{
@@ -545,6 +546,13 @@ compute_common_attribute(ParseState *pstate,
 			goto duplicate_error;
 
 		*parallel_item = defel;
+	}
+	else if (strcmp(defel->defname, "scope") == 0)
+	{
+		if (*scope_item)
+			goto duplicate_error;
+
+		*scope_item = defel;
 	}
 	else
 		return false;
@@ -655,7 +663,8 @@ compute_function_attributes(ParseState *pstate,
 							ArrayType **proconfig,
 							float4 *procost,
 							float4 *prorows,
-							char *parallel_p)
+							char *parallel_p,
+							bool *isPrivate)
 {
 	ListCell   *option;
 	DefElem    *as_item = NULL;
@@ -670,6 +679,7 @@ compute_function_attributes(ParseState *pstate,
 	DefElem    *cost_item = NULL;
 	DefElem    *rows_item = NULL;
 	DefElem    *parallel_item = NULL;
+	DefElem    *scope_item = NULL;
 
 	foreach(option, options)
 	{
@@ -726,7 +736,8 @@ compute_function_attributes(ParseState *pstate,
 										  &set_items,
 										  &cost_item,
 										  &rows_item,
-										  &parallel_item))
+										  &parallel_item,
+										  &scope_item))
 		{
 			/* recognized common option */
 			continue;
@@ -790,6 +801,11 @@ compute_function_attributes(ParseState *pstate,
 	}
 	if (parallel_item)
 		*parallel_p = interpret_func_parallel(parallel_item);
+	if (scope_item)
+	{
+		if (strcmp(strVal(scope_item->arg), "private") == 0)
+			*isPrivate = true;
+	}
 }
 
 
@@ -889,6 +905,7 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 				isStrict,
 				security,
 				isLeakProof;
+	bool		isPrivate;
 	char		volatility;
 	ArrayType  *proconfig;
 	float4		procost;
@@ -918,6 +935,7 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 	procost = -1;				/* indicates not set */
 	prorows = -1;				/* indicates not set */
 	parallel = PROPARALLEL_UNSAFE;
+	isPrivate = false;
 
 	/* Extract non-default attributes from stmt->options list */
 	compute_function_attributes(pstate,
@@ -926,7 +944,8 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 								&as_clause, &language, &transformDefElem,
 								&isWindowFunc, &volatility,
 								&isStrict, &security, &isLeakProof,
-								&proconfig, &procost, &prorows, &parallel);
+								&proconfig, &procost, &prorows, &parallel,
+								&isPrivate);
 
 	/* Look up the language and validate permissions */
 	languageTuple = SearchSysCache1(LANGNAME, PointerGetDatum(language));
@@ -1106,6 +1125,7 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 						   isStrict,
 						   volatility,
 						   parallel,
+						   isPrivate,
 						   parameterTypes,
 						   PointerGetDatum(allParameterTypes),
 						   PointerGetDatum(parameterModes),
@@ -1188,6 +1208,7 @@ AlterFunction(ParseState *pstate, AlterFunctionStmt *stmt)
 	DefElem    *cost_item = NULL;
 	DefElem    *rows_item = NULL;
 	DefElem    *parallel_item = NULL;
+	DefElem    *scope_item = NULL;
 	ObjectAddress address;
 
 	rel = heap_open(ProcedureRelationId, RowExclusiveLock);
@@ -1228,7 +1249,8 @@ AlterFunction(ParseState *pstate, AlterFunctionStmt *stmt)
 									 &set_items,
 									 &cost_item,
 									 &rows_item,
-									 &parallel_item) == false)
+									 &parallel_item,
+									 &scope_item) == false)
 			elog(ERROR, "option \"%s\" not recognized", defel->defname);
 	}
 

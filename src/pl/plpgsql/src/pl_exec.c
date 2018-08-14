@@ -3989,6 +3989,9 @@ exec_prepare_plan(PLpgSQL_execstate *estate,
 	if (plan == NULL)
 		elog(ERROR, "SPI_prepare_params failed for \"%s\": %s",
 			 expr->query, SPI_result_code_string(SPI_result));
+
+	assign_query_owner_nspid(plan, estate->func->fn_namespace);
+
 	if (keepplan)
 		SPI_keepplan(plan);
 	expr->plan = plan;
@@ -6060,6 +6063,9 @@ exec_eval_simple_expr(PLpgSQL_execstate *estate,
 
 	econtext->ecxt_param_list_info = setup_param_list(estate, expr);
 
+	/* Setup query owner nspid - used for check of usage of private functions */
+	econtext->ecxt_query_owner_nspid = estate->func->fn_namespace;
+
 	/*
 	 * Prepare the expression for execution, if it's not been done already in
 	 * the current transaction.  (This will be forced to happen if we called
@@ -6070,7 +6076,8 @@ exec_eval_simple_expr(PLpgSQL_execstate *estate,
 		oldcontext = MemoryContextSwitchTo(estate->simple_eval_estate->es_query_cxt);
 		expr->expr_simple_state =
 			ExecInitExprWithParams(expr->expr_simple_expr,
-								   econtext->ecxt_param_list_info);
+								   econtext->ecxt_param_list_info,
+								   estate->func->fn_namespace);
 		expr->expr_simple_in_use = false;
 		expr->expr_simple_lxid = curlxid;
 		MemoryContextSwitchTo(oldcontext);

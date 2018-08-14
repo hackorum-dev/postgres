@@ -287,6 +287,7 @@ _outPlannedStmt(StringInfo str, const PlannedStmt *node)
 	WRITE_NODE_FIELD(utilityStmt);
 	WRITE_LOCATION_FIELD(stmt_location);
 	WRITE_LOCATION_FIELD(stmt_len);
+	WRITE_OID_FIELD(query_owner_nspid);
 }
 
 /*
@@ -1278,6 +1279,8 @@ _outFuncExpr(StringInfo str, const FuncExpr *node)
 	WRITE_OID_FIELD(funccollid);
 	WRITE_OID_FIELD(inputcollid);
 	WRITE_NODE_FIELD(args);
+	WRITE_BOOL_FIELD(funcprivate);
+	WRITE_OID_FIELD(funcnspid);
 	WRITE_LOCATION_FIELD(location);
 }
 

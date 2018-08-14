@@ -2588,6 +2588,9 @@ pg_get_functiondef(PG_FUNCTION_ARGS)
 	if (proc->proleakproof)
 		appendStringInfoString(&buf, " LEAKPROOF");
 
+	if (proc->proisprivate)
+		appendStringInfoString(&buf, " PRIVATE");
+
 	/* This code for the default cost and rows should match functioncmds.c */
 	if (proc->prolang == INTERNALlanguageId ||
 		proc->prolang == ClanguageId)
@@ -10765,6 +10768,8 @@ generate_function_name(Oid funcid, int nargs, List *argnames, Oid *argtypes,
 	Oid			p_vatype;
 	Oid		   *p_true_typeids;
 	bool		force_qualify = false;
+	bool		p_isprivate;
+	Oid			p_nspid;
 
 	proctup = SearchSysCache1(PROCOID, ObjectIdGetDatum(funcid));
 	if (!HeapTupleIsValid(proctup))
@@ -10818,7 +10823,8 @@ generate_function_name(Oid funcid, int nargs, List *argnames, Oid *argtypes,
 								   !use_variadic, true,
 								   &p_funcid, &p_rettype,
 								   &p_retset, &p_nvargs, &p_vatype,
-								   &p_true_typeids, NULL);
+								   &p_true_typeids, NULL,
+								   &p_isprivate, &p_nspid);
 	else
 	{
 		p_result = FUNCDETAIL_NOTFOUND;

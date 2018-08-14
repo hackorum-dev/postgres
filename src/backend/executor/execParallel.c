@@ -1102,6 +1102,7 @@ ExecParallelGetQueryDesc(shm_toc *toc, DestReceiver *receiver,
 	PlannedStmt *pstmt;
 	ParamListInfo paramLI;
 	char	   *queryString;
+	Oid			query_owner_nspid;
 
 	/* Get the query string from shared memory */
 	queryString = shm_toc_lookup(toc, PARALLEL_KEY_QUERY_TEXT, false);

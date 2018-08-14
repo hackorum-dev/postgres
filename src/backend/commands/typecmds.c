@@ -1675,6 +1675,7 @@ makeRangeConstructors(const char *name, Oid namespace,
 								 false, /* isStrict */
 								 PROVOLATILE_IMMUTABLE, /* volatility */
 								 PROPARALLEL_SAFE,	/* parallel safety */
+								 false, /* isPrivate */
 								 constructorArgTypesVector, /* parameterTypes */
 								 PointerGetDatum(NULL), /* allParameterTypes */
 								 PointerGetDatum(NULL), /* parameterModes */

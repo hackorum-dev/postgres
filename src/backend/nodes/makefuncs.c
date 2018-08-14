@@ -526,6 +526,8 @@ makeFuncExpr(Oid funcid, Oid rettype, List *args,
 	funcexpr->funcresulttype = rettype;
 	funcexpr->funcretset = false;	/* only allowed case here */
 	funcexpr->funcvariadic = false; /* only allowed case here */
+	funcexpr->funcprivate = false;	/* only allowed case here */
+	funcexpr->funcnspid = InvalidOid;
 	funcexpr->funcformat = fformat;
 	funcexpr->funccollid = funccollid;
 	funcexpr->inputcollid = inputcollid;

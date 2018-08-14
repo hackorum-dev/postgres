@@ -129,6 +129,7 @@ static Expr *simplify_function(Oid funcid,
 				  Oid result_type, int32 result_typmod,
 				  Oid result_collid, Oid input_collid, List **args_p,
 				  bool funcvariadic, bool process_args, bool allow_non_const,
+				  bool funcprivate, Oid funcnspid,
 				  eval_const_expressions_context *context);
 static List *reorder_function_arguments(List *args, HeapTuple func_tuple);
 static List *add_function_defaults(List *args, HeapTuple func_tuple);
@@ -138,11 +139,13 @@ static void recheck_cast_function_args(List *args, Oid result_type,
 static Expr *evaluate_function(Oid funcid, Oid result_type, int32 result_typmod,
 				  Oid result_collid, Oid input_collid, List *args,
 				  bool funcvariadic,
+				  bool funcprivate, Oid funcnspid,
 				  HeapTuple func_tuple,
 				  eval_const_expressions_context *context);
 static Expr *inline_function(Oid funcid, Oid result_type, Oid result_collid,
 				Oid input_collid, List *args,
 				bool funcvariadic,
+				bool funcprivate, Oid funcnspid,
 				HeapTuple func_tuple,
 				eval_const_expressions_context *context);
 static Node *substitute_actual_parameters(Node *expr, int nargs, List *args,
@@ -2686,6 +2689,8 @@ eval_const_expressions_mutator(Node *node,
 										   expr->funcvariadic,
 										   true,
 										   true,
+										   expr->funcprivate,
+										   expr->funcnspid,
 										   context);
 				if (simple)		/* successfully simplified it */
 					return (Node *) simple;
@@ -2705,6 +2710,8 @@ eval_const_expressions_mutator(Node *node,
 				newexpr->funccollid = expr->funccollid;
 				newexpr->inputcollid = expr->inputcollid;
 				newexpr->args = args;
+				newexpr->funcprivate = expr->funcprivate;
+				newexpr->funcnspid = expr->funcnspid;
 				newexpr->location = expr->location;
 				return (Node *) newexpr;
 			}
@@ -2733,6 +2740,8 @@ eval_const_expressions_mutator(Node *node,
 										   false,
 										   true,
 										   true,
+										   false,
+										   InvalidOid,
 										   context);
 				if (simple)		/* successfully simplified it */
 					return (Node *) simple;
@@ -2837,6 +2846,8 @@ eval_const_expressions_mutator(Node *node,
 											   false,
 											   false,
 											   false,
+											   false,
+											   InvalidOid,
 											   context);
 					if (simple) /* successfully simplified it */
 					{
@@ -3059,6 +3070,8 @@ eval_const_expressions_mutator(Node *node,
 										   false,
 										   true,
 										   true,
+										   false,
+										   InvalidOid,
 										   context);
 				if (simple)		/* successfully simplified output fn */
 				{
@@ -3091,6 +3104,8 @@ eval_const_expressions_mutator(Node *node,
 											   false,
 											   false,
 											   true,
+											   false,
+											   InvalidOid,
 											   context);
 					if (simple) /* successfully simplified input fn */
 						return (Node *) simple;
@@ -4023,6 +4038,7 @@ static Expr *
 simplify_function(Oid funcid, Oid result_type, int32 result_typmod,
 				  Oid result_collid, Oid input_collid, List **args_p,
 				  bool funcvariadic, bool process_args, bool allow_non_const,
+				  bool funcprivate, Oid funcnspid,
 				  eval_const_expressions_context *context)
 {
 	List	   *args = *args_p;
@@ -4068,6 +4084,7 @@ simplify_function(Oid funcid, Oid result_type, int32 result_typmod,
 	newexpr = evaluate_function(funcid, result_type, result_typmod,
 								result_collid, input_collid,
 								args, funcvariadic,
+								funcprivate, funcnspid,
 								func_tuple, context);
 
 	if (!newexpr && allow_non_const && OidIsValid(func_form->protransform))
@@ -4088,6 +4105,8 @@ simplify_function(Oid funcid, Oid result_type, int32 result_typmod,
 		fexpr.funccollid = result_collid;
 		fexpr.inputcollid = input_collid;
 		fexpr.args = args;
+		fexpr.funcprivate = funcprivate;
+		fexpr.funcnspid = funcnspid;
 		fexpr.location = -1;
 
 		newexpr = (Expr *)
@@ -4098,6 +4117,7 @@ simplify_function(Oid funcid, Oid result_type, int32 result_typmod,
 	if (!newexpr && allow_non_const)
 		newexpr = inline_function(funcid, result_type, result_collid,
 								  input_collid, args, funcvariadic,
+								  funcprivate, funcnspid,
 								  func_tuple, context);
 
 	ReleaseSysCache(func_tuple);
@@ -4337,6 +4357,7 @@ static Expr *
 evaluate_function(Oid funcid, Oid result_type, int32 result_typmod,
 				  Oid result_collid, Oid input_collid, List *args,
 				  bool funcvariadic,
+				  bool funcprivate, Oid funcnspid,
 				  HeapTuple func_tuple,
 				  eval_const_expressions_context *context)
 {
@@ -4423,6 +4444,8 @@ evaluate_function(Oid funcid, Oid result_type, int32 result_typmod,
 	newexpr->funccollid = result_collid;	/* doesn't matter */
 	newexpr->inputcollid = input_collid;
 	newexpr->args = args;
+	newexpr->funcprivate = funcprivate;
+	newexpr->funcnspid = funcnspid;
 	newexpr->location = -1;
 
 	return evaluate_expr((Expr *) newexpr, result_type, result_typmod,
@@ -4464,6 +4487,7 @@ static Expr *
 inline_function(Oid funcid, Oid result_type, Oid result_collid,
 				Oid input_collid, List *args,
 				bool funcvariadic,
+				bool funcprivate, Oid funcnspid,
 				HeapTuple func_tuple,
 				eval_const_expressions_context *context)
 {
@@ -4556,6 +4580,8 @@ inline_function(Oid funcid, Oid result_type, Oid result_collid,
 	fexpr->funccollid = result_collid;	/* doesn't matter */
 	fexpr->inputcollid = input_collid;
 	fexpr->args = args;
+	fexpr->funcprivate = funcprivate;
+	fexpr->funcnspid = funcnspid;
 	fexpr->location = -1;
 
 	pinfo = prepare_sql_fn_parse_info(func_tuple,

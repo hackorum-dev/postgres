@@ -167,4 +167,6 @@ extern void SPICleanup(void);
 extern void AtEOXact_SPI(bool isCommit);
 extern void AtEOSubXact_SPI(bool isCommit, SubTransactionId mySubid);
 
+extern void assign_query_owner_nspid(SPIPlanPtr plan, Oid query_owner_nspid);
+
 #endif							/* SPI_H */
