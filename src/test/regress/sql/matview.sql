@@ -236,3 +236,20 @@ SELECT mvtest_func();
 SELECT * FROM mvtest1;
 SELECT * FROM mvtest2;
 ROLLBACK;
+
+-- make sure REFRESH MATERIALIZED VIEW errors return that the error occurred on
+-- a "materialized view"
+CREATE ROLE regress_user_mvtest1;
+CREATE ROLE regress_user_mvtest2;
+SET SESSION AUTHORIZATION regress_user_mvtest1;
+CREATE TABLE mvtest_a (x int);
+CREATE MATERIALIZED VIEW mvtest_mv_a AS SELECT * FROM mvtest_a;
+REFRESH MATERIALIZED VIEW mvtest_mv_a;
+SET SESSION AUTHORIZATION regress_user_mvtest2;
+REFRESH MATERIALIZED VIEW mvtest_mv_a;
+SET SESSION AUTHORIZATION regress_user_mvtest1;
+DROP MATERIALIZED VIEW mvtest_mv_a;
+DROP TABLE mvtest_a;
+RESET SESSION AUTHORIZATION;
+DROP ROLE regress_user_mvtest2;
+DROP ROLE regress_user_mvtest1;
