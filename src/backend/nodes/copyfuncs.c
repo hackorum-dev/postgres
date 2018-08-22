@@ -4738,6 +4738,7 @@ _copyValue(const Value *from)
 				 (int) from->type);
 			break;
 	}
+	COPY_LOCATION_FIELD(location);
 	return newnode;
 }
 

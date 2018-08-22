@@ -3798,7 +3798,9 @@ columnList:
 
 columnElem: ColId
 				{
-					$$ = (Node *) makeString($1);
+					Value *v = makeString($1);
+					v->location = @1;
+					$$ = (Node *) v;
 				}
 		;
 

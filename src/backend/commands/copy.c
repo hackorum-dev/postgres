@@ -328,7 +328,7 @@ static Datum CopyReadBinaryAttribute(CopyState cstate,
 static void CopyAttributeOutText(CopyState cstate, char *string);
 static void CopyAttributeOutCSV(CopyState cstate, char *string,
 					bool use_quote, bool single_attr);
-static List *CopyGetAttnums(TupleDesc tupDesc, Relation rel,
+static List *CopyGetAttnums(ParseState *pstate, TupleDesc tupDesc, Relation rel,
 			   List *attnamelist);
 static char *limit_printout_length(const char *str);
 
@@ -850,7 +850,7 @@ DoCopy(ParseState *pstate, const CopyStmt *stmt,
 		rte->requiredPerms = (is_from ? ACL_INSERT : ACL_SELECT);
 
 		tupDesc = RelationGetDescr(rel);
-		attnums = CopyGetAttnums(tupDesc, rel, stmt->attlist);
+		attnums = CopyGetAttnums(pstate, tupDesc, rel, stmt->attlist);
 		foreach(cur, attnums)
 		{
 			int			attno = lfirst_int(cur) -
@@ -1583,7 +1583,7 @@ BeginCopy(ParseState *pstate,
 	}
 
 	/* Generate or convert list of attributes to process */
-	cstate->attnumlist = CopyGetAttnums(tupDesc, cstate->rel, attnamelist);
+	cstate->attnumlist = CopyGetAttnums(pstate, tupDesc, cstate->rel, attnamelist);
 
 	num_phys_attrs = tupDesc->natts;
 
@@ -1601,7 +1601,7 @@ BeginCopy(ParseState *pstate,
 		List	   *attnums;
 		ListCell   *cur;
 
-		attnums = CopyGetAttnums(tupDesc, cstate->rel, cstate->force_quote);
+		attnums = CopyGetAttnums(pstate, tupDesc, cstate->rel, cstate->force_quote);
 
 		foreach(cur, attnums)
 		{
@@ -1624,7 +1624,7 @@ BeginCopy(ParseState *pstate,
 		List	   *attnums;
 		ListCell   *cur;
 
-		attnums = CopyGetAttnums(tupDesc, cstate->rel, cstate->force_notnull);
+		attnums = CopyGetAttnums(pstate, tupDesc, cstate->rel, cstate->force_notnull);
 
 		foreach(cur, attnums)
 		{
@@ -1647,7 +1647,7 @@ BeginCopy(ParseState *pstate,
 		List	   *attnums;
 		ListCell   *cur;
 
-		attnums = CopyGetAttnums(tupDesc, cstate->rel, cstate->force_null);
+		attnums = CopyGetAttnums(pstate, tupDesc, cstate->rel, cstate->force_null);
 
 		foreach(cur, attnums)
 		{
@@ -1671,7 +1671,7 @@ BeginCopy(ParseState *pstate,
 
 		cstate->convert_select_flags = (bool *) palloc0(num_phys_attrs * sizeof(bool));
 
-		attnums = CopyGetAttnums(tupDesc, cstate->rel, cstate->convert_select);
+		attnums = CopyGetAttnums(pstate, tupDesc, cstate->rel, cstate->convert_select);
 
 		foreach(cur, attnums)
 		{
@@ -4907,7 +4907,7 @@ CopyAttributeOutCSV(CopyState cstate, char *string,
  * rel can be NULL ... it's only used for error reports.
  */
 static List *
-CopyGetAttnums(TupleDesc tupDesc, Relation rel, List *attnamelist)
+CopyGetAttnums(ParseState *pstate, TupleDesc tupDesc, Relation rel, List *attnamelist)
 {
 	List	   *attnums = NIL;
 
@@ -4931,7 +4931,8 @@ CopyGetAttnums(TupleDesc tupDesc, Relation rel, List *attnamelist)
 
 		foreach(l, attnamelist)
 		{
-			char	   *name = strVal(lfirst(l));
+			Value	   *val = lfirst(l);
+			char	   *name = strVal(val);
 			int			attnum;
 			int			i;
 
@@ -4955,7 +4956,8 @@ CopyGetAttnums(TupleDesc tupDesc, Relation rel, List *attnamelist)
 					ereport(ERROR,
 							(errcode(ERRCODE_UNDEFINED_COLUMN),
 							 errmsg("column \"%s\" of relation \"%s\" does not exist",
-									name, RelationGetRelationName(rel))));
+									name, RelationGetRelationName(rel)),
+							 parser_errposition(pstate, val->location)));
 				else
 					ereport(ERROR,
 							(errcode(ERRCODE_UNDEFINED_COLUMN),

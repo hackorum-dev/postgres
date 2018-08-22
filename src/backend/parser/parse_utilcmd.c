@@ -2148,7 +2148,8 @@ transformIndexConstraint(Constraint *constraint, CreateStmtContext *cxt)
 	{
 		foreach(lc, constraint->keys)
 		{
-			char	   *key = strVal(lfirst(lc));
+			Value	   *val = lfirst(lc);
+			char	   *key = strVal(val);
 			bool		found = false;
 			ColumnDef  *column = NULL;
 			ListCell   *columns;
@@ -2236,7 +2237,7 @@ transformIndexConstraint(Constraint *constraint, CreateStmtContext *cxt)
 				ereport(ERROR,
 						(errcode(ERRCODE_UNDEFINED_COLUMN),
 						 errmsg("column \"%s\" named in key does not exist", key),
-						 parser_errposition(cxt->pstate, constraint->location)));
+						 parser_errposition(cxt->pstate, val->location)));
 
 			/* Check for PRIMARY KEY(foo, foo) */
 			foreach(columns, index->indexParams)
@@ -2275,7 +2276,8 @@ transformIndexConstraint(Constraint *constraint, CreateStmtContext *cxt)
 	/* Add included columns to index definition */
 	foreach(lc, constraint->including)
 	{
-		char	   *key = strVal(lfirst(lc));
+		Value	   *val = lfirst(lc);
+		char	   *key = strVal(val);
 		bool		found = false;
 		ColumnDef  *column = NULL;
 		ListCell   *columns;
@@ -2360,7 +2362,7 @@ transformIndexConstraint(Constraint *constraint, CreateStmtContext *cxt)
 			ereport(ERROR,
 					(errcode(ERRCODE_UNDEFINED_COLUMN),
 					 errmsg("column \"%s\" named in key does not exist", key),
-					 parser_errposition(cxt->pstate, constraint->location)));
+					 parser_errposition(cxt->pstate, val->location)));
 
 		/* OK, add it to the index definition */
 		iparam = makeNode(IndexElem);

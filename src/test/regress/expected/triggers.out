@@ -528,6 +528,14 @@ NOTICE:  dummy_update_func(before) called: action = UPDATE, old = (f), new = (t)
 NOTICE:  dummy_update_func(aftera) called: action = UPDATE, old = (f), new = (t)
 DROP TABLE some_t;
 -- bogus cases
+CREATE TRIGGER error_nonexistent_table BEFORE UPDATE ON nonexistent_table
+FOR EACH ROW EXECUTE PROCEDURE trigger_func('nonexistent_table');
+ERROR:  relation "nonexistent_table" does not exist
+CREATE TRIGGER error_nonexistent_columns BEFORE UPDATE OF nonexistent_columns ON main_table
+FOR EACH ROW EXECUTE PROCEDURE trigger_func('nonexistent_columns');
+ERROR:  column "nonexistent_columns" of relation "main_table" does not exist
+LINE 1: ...RIGGER error_nonexistent_columns BEFORE UPDATE OF nonexisten...
+                                                             ^
 CREATE TRIGGER error_upd_and_col BEFORE UPDATE OR UPDATE OF a ON main_table
 FOR EACH ROW EXECUTE PROCEDURE trigger_func('error_upd_and_col');
 ERROR:  duplicate trigger events specified at or near "ON"

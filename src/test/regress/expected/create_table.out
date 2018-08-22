@@ -220,6 +220,10 @@ CREATE TABLE tas_case WITH ("Fillfactor" = 10) AS SELECT 1 a;
 ERROR:  unrecognized parameter "Fillfactor"
 CREATE TABLE tas_case (a text) WITH ("Oids" = true);
 ERROR:  unrecognized parameter "Oids"
+CREATE TABLE error (a int, primary key (x));			-- error
+ERROR:  column "x" named in key does not exist
+LINE 1: CREATE TABLE error (a int, primary key (x));
+                                                ^
 CREATE UNLOGGED TABLE unlogged1 (a int primary key);			-- OK
 CREATE TEMPORARY TABLE unlogged2 (a int primary key);			-- OK
 SELECT relname, relkind, relpersistence FROM pg_class WHERE relname ~ '^unlogged\d' ORDER BY relname;

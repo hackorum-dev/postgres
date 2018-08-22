@@ -348,6 +348,10 @@ UPDATE some_t SET some_col = TRUE;
 DROP TABLE some_t;
 
 -- bogus cases
+CREATE TRIGGER error_nonexistent_table BEFORE UPDATE ON nonexistent_table
+FOR EACH ROW EXECUTE PROCEDURE trigger_func('nonexistent_table');
+CREATE TRIGGER error_nonexistent_columns BEFORE UPDATE OF nonexistent_columns ON main_table
+FOR EACH ROW EXECUTE PROCEDURE trigger_func('nonexistent_columns');
 CREATE TRIGGER error_upd_and_col BEFORE UPDATE OR UPDATE OF a ON main_table
 FOR EACH ROW EXECUTE PROCEDURE trigger_func('error_upd_and_col');
 CREATE TRIGGER error_upd_a_a BEFORE UPDATE OF a, a ON main_table

@@ -161,6 +161,7 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 			  Oid funcoid, Oid parentTriggerOid, Node *whenClause,
 			  bool isInternal, bool in_partition)
 {
+	ParseState *pstate;
 	int16		tgtype;
 	int			ncolumns;
 	int16	   *columns;
@@ -187,6 +188,10 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 	char	   *oldtablename = NULL;
 	char	   *newtablename = NULL;
 	bool		partition_recurse;
+
+	/* Set up a pstate to parse with */
+	pstate = make_parsestate(NULL);
+	pstate->p_sourcetext = queryString;
 
 	if (OidIsValid(relOid))
 		rel = heap_open(relOid, ShareRowExclusiveLock);
@@ -562,14 +567,9 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 	 */
 	if (!whenClause && stmt->whenClause)
 	{
-		ParseState *pstate;
 		RangeTblEntry *rte;
 		List	   *varList;
 		ListCell   *lc;
-
-		/* Set up a pstate to parse with */
-		pstate = make_parsestate(NULL);
-		pstate->p_sourcetext = queryString;
 
 		/*
 		 * Set up RTEs for OLD and NEW references.
@@ -648,8 +648,6 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 		whenRtable = pstate->p_rtable;
 
 		qual = nodeToString(whenClause);
-
-		free_parsestate(pstate);
 	}
 	else if (!whenClause)
 	{
@@ -892,7 +890,8 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 		columns = (int16 *) palloc(ncolumns * sizeof(int16));
 		foreach(cell, stmt->columns)
 		{
-			char	   *name = strVal(lfirst(cell));
+			Value	   *val = lfirst(cell);
+			char	   *name = strVal(val);
 			int16		attnum;
 			int			j;
 
@@ -902,7 +901,8 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 				ereport(ERROR,
 						(errcode(ERRCODE_UNDEFINED_COLUMN),
 						 errmsg("column \"%s\" of relation \"%s\" does not exist",
-								name, RelationGetRelationName(rel))));
+								name, RelationGetRelationName(rel)),
+						 parser_errposition(pstate, val->location)));
 
 			/* Check for duplicates */
 			for (j = i - 1; j >= 0; j--)
@@ -1190,6 +1190,8 @@ CreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 
 	/* Keep lock on target rel until end of xact */
 	heap_close(rel, NoLock);
+
+	free_parsestate(pstate);
 
 	return myself;
 }

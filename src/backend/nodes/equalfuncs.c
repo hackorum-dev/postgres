@@ -2975,6 +2975,8 @@ _equalValue(const Value *a, const Value *b)
 			break;
 	}
 
+	COMPARE_LOCATION_FIELD(location);
+
 	return true;
 }
 
