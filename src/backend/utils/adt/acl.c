@@ -106,6 +106,7 @@ static Acl *recursive_revoke(Acl *acl, Oid grantee, AclMode revoke_privs,
 static AclMode convert_any_priv_string(text *priv_type_text,
 									   const priv_map *privileges);
 
+static bool check_schema_usage_privilege(text *objectname, Oid roleid);
 static Oid	convert_table_name(text *tablename);
 static AclMode convert_table_priv_string(text *priv_type_text);
 static AclMode convert_sequence_priv_string(text *priv_type_text);
@@ -1927,6 +1928,10 @@ has_table_privilege_name_name(PG_FUNCTION_ARGS)
 	AclResult	aclresult;
 
 	roleid = get_role_oid_or_public(NameStr(*rolename));
+
+	if (!check_schema_usage_privilege(tablename, roleid))
+		PG_RETURN_BOOL(false);
+
 	tableoid = convert_table_name(tablename);
 	mode = convert_table_priv_string(priv_type_text);
 
@@ -1952,6 +1957,10 @@ has_table_privilege_name(PG_FUNCTION_ARGS)
 	AclResult	aclresult;
 
 	roleid = GetUserId();
+
+	if (!check_schema_usage_privilege(tablename, roleid))
+		PG_RETURN_BOOL(false);
+
 	tableoid = convert_table_name(tablename);
 	mode = convert_table_priv_string(priv_type_text);
 
@@ -2029,6 +2038,9 @@ has_table_privilege_id_name(PG_FUNCTION_ARGS)
 	AclMode		mode;
 	AclResult	aclresult;
 
+	if (!check_schema_usage_privilege(tablename, roleid))
+		PG_RETURN_BOOL(false);
+
 	tableoid = convert_table_name(tablename);
 	mode = convert_table_priv_string(priv_type_text);
 
@@ -2065,6 +2077,30 @@ has_table_privilege_id_id(PG_FUNCTION_ARGS)
 /*
  *		Support routines for has_table_privilege family.
  */
+
+/*
+ * Given a possibly-qualified object name as a string, checking a user's
+ * usage privilege to the object's namespace.  Return true if an unqualified
+ * name is specified because we don't have to consern its namespace.
+ */
+static bool
+check_schema_usage_privilege(text *objectname, Oid roleid)
+{
+	char	   *nspname = NULL;
+	char	   *objname = NULL;
+	Oid			schemaoid;
+
+	DeconstructQualifiedName(textToQualifiedNameList(objectname), &nspname, &objname);
+
+	if (!nspname)
+		return true;
+
+	schemaoid = get_namespace_oid(nspname, false);
+	if (pg_namespace_aclcheck(schemaoid, roleid, ACL_USAGE) == ACLCHECK_OK)
+		return true;
+	else
+		return false;
+}
 
 /*
  * Given a table name expressed as a string, look it up and return Oid
@@ -2138,6 +2174,10 @@ has_sequence_privilege_name_name(PG_FUNCTION_ARGS)
 	AclResult	aclresult;
 
 	roleid = get_role_oid_or_public(NameStr(*rolename));
+
+	if (!check_schema_usage_privilege(sequencename, roleid))
+		PG_RETURN_BOOL(false);
+
 	mode = convert_sequence_priv_string(priv_type_text);
 	sequenceoid = convert_table_name(sequencename);
 	if (get_rel_relkind(sequenceoid) != RELKIND_SEQUENCE)
@@ -2168,6 +2208,10 @@ has_sequence_privilege_name(PG_FUNCTION_ARGS)
 	AclResult	aclresult;
 
 	roleid = GetUserId();
+
+	if (!check_schema_usage_privilege(sequencename, roleid))
+		PG_RETURN_BOOL(false);
+
 	mode = convert_sequence_priv_string(priv_type_text);
 	sequenceoid = convert_table_name(sequencename);
 	if (get_rel_relkind(sequenceoid) != RELKIND_SEQUENCE)
@@ -2268,6 +2312,9 @@ has_sequence_privilege_id_name(PG_FUNCTION_ARGS)
 	AclMode		mode;
 	AclResult	aclresult;
 
+	if (!check_schema_usage_privilege(sequencename, roleid))
+		PG_RETURN_BOOL(false);
+
 	mode = convert_sequence_priv_string(priv_type_text);
 	sequenceoid = convert_table_name(sequencename);
 	if (get_rel_relkind(sequenceoid) != RELKIND_SEQUENCE)
@@ -2364,6 +2411,10 @@ has_any_column_privilege_name_name(PG_FUNCTION_ARGS)
 	AclResult	aclresult;
 
 	roleid = get_role_oid_or_public(NameStr(*rolename));
+
+	if (!check_schema_usage_privilege(tablename, roleid))
+		PG_RETURN_BOOL(false);
+
 	tableoid = convert_table_name(tablename);
 	mode = convert_column_priv_string(priv_type_text);
 
@@ -2393,6 +2444,10 @@ has_any_column_privilege_name(PG_FUNCTION_ARGS)
 	AclResult	aclresult;
 
 	roleid = GetUserId();
+
+	if (!check_schema_usage_privilege(tablename, roleid))
+		PG_RETURN_BOOL(false);
+
 	tableoid = convert_table_name(tablename);
 	mode = convert_column_priv_string(priv_type_text);
 
@@ -2487,6 +2542,9 @@ has_any_column_privilege_id_name(PG_FUNCTION_ARGS)
 	Oid			tableoid;
 	AclMode		mode;
 	AclResult	aclresult;
+
+	if (!check_schema_usage_privilege(tablename, roleid))
+		PG_RETURN_BOOL(false);
 
 	tableoid = convert_table_name(tablename);
 	mode = convert_column_priv_string(priv_type_text);
@@ -2610,6 +2668,10 @@ has_column_privilege_name_name_name(PG_FUNCTION_ARGS)
 	int			privresult;
 
 	roleid = get_role_oid_or_public(NameStr(*rolename));
+
+	if (!check_schema_usage_privilege(tablename, roleid))
+		PG_RETURN_BOOL(false);
+
 	tableoid = convert_table_name(tablename);
 	colattnum = convert_column_name(tableoid, column);
 	mode = convert_column_priv_string(priv_type_text);
@@ -2638,6 +2700,10 @@ has_column_privilege_name_name_attnum(PG_FUNCTION_ARGS)
 	int			privresult;
 
 	roleid = get_role_oid_or_public(NameStr(*rolename));
+
+	if (!check_schema_usage_privilege(tablename, roleid))
+		PG_RETURN_BOOL(false);
+
 	tableoid = convert_table_name(tablename);
 	mode = convert_column_priv_string(priv_type_text);
 
@@ -2716,6 +2782,9 @@ has_column_privilege_id_name_name(PG_FUNCTION_ARGS)
 	AclMode		mode;
 	int			privresult;
 
+	if (!check_schema_usage_privilege(tablename, roleid))
+		PG_RETURN_BOOL(false);
+
 	tableoid = convert_table_name(tablename);
 	colattnum = convert_column_name(tableoid, column);
 	mode = convert_column_priv_string(priv_type_text);
@@ -2741,6 +2810,9 @@ has_column_privilege_id_name_attnum(PG_FUNCTION_ARGS)
 	Oid			tableoid;
 	AclMode		mode;
 	int			privresult;
+
+	if (!check_schema_usage_privilege(tablename, roleid))
+		PG_RETURN_BOOL(false);
 
 	tableoid = convert_table_name(tablename);
 	mode = convert_column_priv_string(priv_type_text);
@@ -2818,6 +2890,10 @@ has_column_privilege_name_name(PG_FUNCTION_ARGS)
 	int			privresult;
 
 	roleid = GetUserId();
+
+	if (!check_schema_usage_privilege(tablename, roleid))
+		PG_RETURN_BOOL(false);
+
 	tableoid = convert_table_name(tablename);
 	colattnum = convert_column_name(tableoid, column);
 	mode = convert_column_priv_string(priv_type_text);
@@ -3426,6 +3502,10 @@ has_function_privilege_name_name(PG_FUNCTION_ARGS)
 	AclResult	aclresult;
 
 	roleid = get_role_oid_or_public(NameStr(*username));
+
+	if (!check_schema_usage_privilege(functionname, roleid))
+		PG_RETURN_BOOL(false);
+
 	functionoid = convert_function_name(functionname);
 	mode = convert_function_priv_string(priv_type_text);
 
@@ -3451,6 +3531,10 @@ has_function_privilege_name(PG_FUNCTION_ARGS)
 	AclResult	aclresult;
 
 	roleid = GetUserId();
+
+	if (!check_schema_usage_privilege(functionname, roleid))
+		PG_RETURN_BOOL(false);
+
 	functionoid = convert_function_name(functionname);
 	mode = convert_function_priv_string(priv_type_text);
 
@@ -3531,6 +3615,9 @@ has_function_privilege_id_name(PG_FUNCTION_ARGS)
 	Oid			functionoid;
 	AclMode		mode;
 	AclResult	aclresult;
+
+	if (!check_schema_usage_privilege(functionname, roleid))
+		PG_RETURN_BOOL(false);
 
 	functionoid = convert_function_name(functionname);
 	mode = convert_function_priv_string(priv_type_text);
@@ -4436,6 +4523,10 @@ has_type_privilege_name_name(PG_FUNCTION_ARGS)
 	AclResult	aclresult;
 
 	roleid = get_role_oid_or_public(NameStr(*username));
+
+	if (!check_schema_usage_privilege(typename, roleid))
+		PG_RETURN_BOOL(false);
+
 	typeoid = convert_type_name(typename);
 	mode = convert_type_priv_string(priv_type_text);
 
@@ -4461,6 +4552,10 @@ has_type_privilege_name(PG_FUNCTION_ARGS)
 	AclResult	aclresult;
 
 	roleid = GetUserId();
+
+	if (!check_schema_usage_privilege(typename, roleid))
+		PG_RETURN_BOOL(false);
+
 	typeoid = convert_type_name(typename);
 	mode = convert_type_priv_string(priv_type_text);
 
@@ -4541,6 +4636,9 @@ has_type_privilege_id_name(PG_FUNCTION_ARGS)
 	Oid			typeoid;
 	AclMode		mode;
 	AclResult	aclresult;
+
+	if (!check_schema_usage_privilege(typename, roleid))
+		PG_RETURN_BOOL(false);
 
 	typeoid = convert_type_name(typename);
 	mode = convert_type_priv_string(priv_type_text);
