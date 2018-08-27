@@ -1908,7 +1908,7 @@ CREATE VIEW table_privileges AS
          ) AS grantee (oid, rolname)
 
     WHERE c.relnamespace = nc.oid
-          AND c.relkind IN ('r', 'v', 'f', 'p')
+          AND c.relkind IN ('r', 'v', 'f', 'p', 'm')
           AND c.grantee = grantee.oid
           AND c.grantor = u_grantor.oid
           AND c.prtype IN ('INSERT', 'SELECT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER')
@@ -1955,6 +1955,7 @@ CREATE VIEW tables AS
                   WHEN c.relkind IN ('r', 'p') THEN 'BASE TABLE'
                   WHEN c.relkind = 'v' THEN 'VIEW'
                   WHEN c.relkind = 'f' THEN 'FOREIGN'
+                  WHEN c.relkind = 'm' THEN 'MATERIALIZED VIEW'
                   ELSE null END
              AS character_data) AS table_type,
 
@@ -1966,7 +1967,7 @@ CREATE VIEW tables AS
            CAST(t.typname AS sql_identifier) AS user_defined_type_name,
 
            CAST(CASE WHEN c.relkind IN ('r', 'p') OR
-                          (c.relkind IN ('v', 'f') AND
+                          (c.relkind IN ('v', 'f', 'm') AND
                            -- 1 << CMD_INSERT
                            pg_relation_is_updatable(c.oid, false) & 8 = 8)
                 THEN 'YES' ELSE 'NO' END AS yes_or_no) AS is_insertable_into,
@@ -1977,7 +1978,7 @@ CREATE VIEW tables AS
     FROM pg_namespace nc JOIN pg_class c ON (nc.oid = c.relnamespace)
            LEFT JOIN (pg_type t JOIN pg_namespace nt ON (t.typnamespace = nt.oid)) ON (c.reloftype = t.oid)
 
-    WHERE c.relkind IN ('r', 'v', 'f', 'p')
+    WHERE c.relkind IN ('r', 'v', 'f', 'p', 'm')
           AND (NOT pg_is_other_temp_schema(nc.oid))
           AND (pg_has_role(c.relowner, 'USAGE')
                OR has_table_privilege(c.oid, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
