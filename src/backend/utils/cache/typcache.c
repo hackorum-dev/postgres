@@ -3,11 +3,11 @@
  * typcache.c
  *	  POSTGRES type cache code
  *
- * The type cache exists to speed lookup of certain information about data
- * types that is not directly available from a type's pg_type row.  For
- * example, we use a type's default btree opclass, or the default hash
- * opclass if no btree opclass exists, to determine which operators should
- * be used for grouping and sorting the type (GROUP BY, ORDER BY ASC/DESC).
+ * The type cache exists to speedup lookups of certain data type information
+ * that is not directly available from a type's pg_type row.  For example, we
+ * use a type's default btree opclass, or the default hash opclass if no btree
+ * opclass exists, to determine which operators should be used for grouping
+ * and sorting the type (GROUP BY, ORDER BY ASC/DESC).
  *
  * Several seemingly-odd choices have been made to support use of the type
  * cache by generic array and record handling routines, such as array_eq(),
