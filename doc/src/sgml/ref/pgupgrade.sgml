@@ -661,7 +661,8 @@ psql --username=postgres --file=script.sql postgres
 
       <listitem>
        <para>
-        If you ran <command>pg_upgrade</command> <emphasis>without</emphasis>
+        If you ran <command>pg_upgrade</command>
+        <emphasis>without</emphasis>
         <option>--link</option> or did not start the new server, the
         old cluster was not modified except that, if linking
         started, a <literal>.old</literal> suffix was appended to
