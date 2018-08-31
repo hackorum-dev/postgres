@@ -2838,8 +2838,7 @@ type_is_collatable(Oid typid)
  * Currently this is only consulted for individual tables, not for inheritance
  * trees, so we don't need an "inh" parameter.
  *
- * Calling a hook at this point looks somewhat strange, but is required
- * because the optimizer calls this function without any other way for
+ * Calling a hook at this point looks somewhat strange, but is required * because the optimizer calls this function without any other way for
  * plug-ins to control the result.
  */
 int32
