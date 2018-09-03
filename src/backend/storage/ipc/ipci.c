@@ -27,6 +27,7 @@
 #include "postmaster/autovacuum.h"
 #include "postmaster/bgworker_internals.h"
 #include "postmaster/bgwriter.h"
+#include "postmaster/diskquota.h"
 #include "postmaster/postmaster.h"
 #include "replication/logicallauncher.h"
 #include "replication/slot.h"
@@ -140,6 +141,7 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 		size = add_size(size, ProcSignalShmemSize());
 		size = add_size(size, CheckpointerShmemSize());
 		size = add_size(size, AutoVacuumShmemSize());
+		size = add_size(size, DiskQuotaShmemSize());
 		size = add_size(size, ReplicationSlotsShmemSize());
 		size = add_size(size, ReplicationOriginShmemSize());
 		size = add_size(size, WalSndShmemSize());
@@ -256,6 +258,7 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 	ProcSignalShmemInit();
 	CheckpointerShmemInit();
 	AutoVacuumShmemInit();
+	DiskQuotaShmemInit();
 	ReplicationSlotsShmemInit();
 	ReplicationOriginShmemInit();
 	WalSndShmemInit();

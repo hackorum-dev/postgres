@@ -41,6 +41,7 @@
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "postmaster/autovacuum.h"
+#include "postmaster/diskquota.h"
 #include "replication/slot.h"
 #include "replication/syncrep.h"
 #include "storage/condition_variable.h"
@@ -352,7 +353,7 @@ InitProcess(void)
 	 * cleaning up.  (XXX autovac launcher currently doesn't participate in
 	 * this; it probably should.)
 	 */
-	if (IsUnderPostmaster && !IsAutoVacuumLauncherProcess())
+	if (IsUnderPostmaster && !IsAutoVacuumLauncherProcess() && !IsDiskQuotaLauncherProcess())
 		MarkPostmasterChildActive();
 
 	/*
@@ -897,13 +898,17 @@ ProcKill(int code, Datum arg)
 	 * This process is no longer present in shared memory in any meaningful
 	 * way, so tell the postmaster we've cleaned up acceptably well. (XXX
 	 * autovac launcher should be included here someday)
+	 * disk quota do the same as autovac process
 	 */
-	if (IsUnderPostmaster && !IsAutoVacuumLauncherProcess())
+	if (IsUnderPostmaster && !IsAutoVacuumLauncherProcess() && !IsDiskQuotaLauncherProcess())
 		MarkPostmasterChildInactive();
 
 	/* wake autovac launcher if needed -- see comments in FreeWorkerInfo */
 	if (AutovacuumLauncherPid != 0)
 		kill(AutovacuumLauncherPid, SIGUSR2);
+	/* disk quota do the same as autovac process */
+	if (DiskquotaLauncherPid != 0)
+		kill(DiskquotaLauncherPid, SIGUSR2);
 }
 
 /*

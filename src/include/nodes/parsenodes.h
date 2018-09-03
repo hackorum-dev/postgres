@@ -2207,6 +2207,38 @@ typedef struct AlterExtensionContentsStmt
 } AlterExtensionContentsStmt;
 
 /* ----------------------
+ *		Create/Alter/Drop Disk Quota Statements
+ * ----------------------
+ */
+
+
+typedef enum DiskQuotaDBObjectType
+{
+	DISK_QUOTA_TABLE = 0,		/* Quota in table level */
+	DISK_QUOTA_SCHEMA = 1,     /* Quota in schema level */
+	DISK_QUOTA_USER = 2	    /* Quota in user level */
+} DiskQuotaDBObjectType;
+
+typedef struct CreateDiskQuotaStmt
+{
+	NodeTag		type;
+	char	   *quotaname;		/* Disk Quota's name */
+	DiskQuotaDBObjectType       dbobjtype;			/* Type of Database object for disk quota */
+	RangeVar   *table;          /* The table relation if the DBObjectTyoe is DISK_QUOTA_TABLE*/
+	char       *objname;			/* Database object name */
+	List	   *options;			/* Disk quota options */
+} CreateDiskQuotaStmt;
+
+typedef struct DropDiskQuotaStmt
+{
+	NodeTag		type;
+	char	   *quotaname;		/* Disk Quota's name */
+	bool		missing_ok;
+} DropDiskQuotaStmt;
+
+
+
+/* ----------------------
  *		Create/Alter FOREIGN DATA WRAPPER Statements
  * ----------------------
  */
