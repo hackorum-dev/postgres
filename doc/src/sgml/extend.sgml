@@ -1284,6 +1284,15 @@ include $(PGXS)
      </varlistentry>
 
      <varlistentry>
+      <term><varname>TAP_TESTS</varname></term>
+      <listitem>
+       <para>
+        switch defining if TAP tests need to be run
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
       <term><varname>NO_INSTALLCHECK</varname></term>
       <listitem>
        <para>

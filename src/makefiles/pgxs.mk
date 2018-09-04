@@ -44,6 +44,7 @@
 #     listed in MODULES or MODULE_big
 #   REGRESS -- list of regression test cases (without suffix)
 #   REGRESS_OPTS -- additional switches to pass to pg_regress
+#   TAP_TESTS -- switch to enable TAP tests
 #   NO_INSTALLCHECK -- don't define an installcheck target, useful e.g. if
 #     tests require special configuration, or don't use pg_regress
 #   EXTRA_CLEAN -- extra files to remove in 'make clean'
@@ -305,6 +306,9 @@ ifeq ($(PORTNAME), win)
 	rm -f regress.def
 endif
 endif # REGRESS
+ifdef TAP_TESTS
+	rm -rf tmp_check/
+endif
 
 ifdef MODULE_big
 clean: clean-lib
@@ -339,6 +343,7 @@ $(test_files_build): $(abs_builddir)/%: $(srcdir)/%
 	$(MKDIR_P) $(dir $@)
 	ln -s $< $@
 endif # VPATH
+endif # REGRESS
 
 .PHONY: submake
 submake:
@@ -346,21 +351,32 @@ ifndef PGXS
 	$(MAKE) -C $(top_builddir)/src/test/regress pg_regress$(X)
 endif
 
-# against installed postmaster
+# Standard rules to run regression tests including multiple test suites.
+# Runs against an installed postmaster
 ifndef NO_INSTALLCHECK
 installcheck: submake $(REGRESS_PREP)
+ifdef REGRESS
 	$(pg_regress_installcheck) $(REGRESS_OPTS) $(REGRESS)
 endif
+ifdef TAP_TESTS
+	$(prove_installcheck)
+endif
+endif # NO_INSTALLCHECK
 
+# Runs independently of any installation
 ifdef PGXS
 check:
 	@echo '"$(MAKE) check" is not supported.'
 	@echo 'Do "$(MAKE) install", then "$(MAKE) installcheck" instead.'
 else
 check: submake $(REGRESS_PREP)
+ifdef REGRESS
 	$(pg_regress_check) $(REGRESS_OPTS) $(REGRESS)
 endif
-endif # REGRESS
+ifdef TAP_TESTS
+	$(prove_check)
+endif
+endif # PGXS
 
 ifndef NO_TEMP_INSTALL
 temp-install: EXTRA_INSTALL+=$(subdir)
