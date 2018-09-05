@@ -412,7 +412,34 @@ gistplacetopage(Relation rel, GISTSTATE *giststate,
 				IndexTuple	thistup = (IndexTuple) data;
 
 				if (PageAddItem(ptr->page, (Item) data, IndexTupleSize(thistup), i + FirstOffsetNumber, false, false) == InvalidOffsetNumber)
+				{
+					/*
+					 * Emit user error message for root split failure since
+					 * this is rather a user error than internal one. We could
+					 * this earlier before preparing new buffers, but we don't
+					 * bother prechecking for such a corner case.
+					 */
+					if (is_rootsplit && ptr == dist)
+					{
+						size_t	total_tupsize;
+
+						/* count size of all tuples to be inserted */
+						for (; i < ptr->block.num ; i++)
+							data += IndexTupleSize((IndexTuple) data);
+
+						/*  total_tupsize is including item id */
+						total_tupsize =
+							(char *)data - (char *) (ptr->list)
+							+ sizeof(ItemIdData) * ptr->block.num;
+						ereport(ERROR,
+								(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
+								 (errmsg("size of %d index rows (%zu bytes) exceeds maximum %zu of the root page for the index \"%s\"",
+										 ptr->block.num, total_tupsize,
+										 GiSTPageSize,
+										 RelationGetRelationName(rel)))));
+					}
 					elog(ERROR, "failed to add item to index page in \"%s\"", RelationGetRelationName(rel));
+				}
 
 				/*
 				 * If this is the first inserted/updated tuple, let the caller
