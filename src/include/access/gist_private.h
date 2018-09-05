@@ -240,8 +240,6 @@ typedef struct GistSplitVector
 typedef struct
 {
 	Relation	r;
-	Size		freespace;		/* free space to be left */
-
 	GISTInsertStack *stack;
 } GISTInsertState;
 
@@ -373,7 +371,7 @@ typedef struct GISTBuildBuffers
 typedef struct GiSTOptions
 {
 	int32		vl_len_;		/* varlena header (do not touch directly!) */
-	int			fillfactor;		/* page fill factor in percent (0..100) */
+	int			fillfactor;		/* page fill factor: JUST IGNORED  */
 	int			bufferingModeOffset;	/* use buffering build? */
 } GiSTOptions;
 
@@ -388,7 +386,6 @@ extern GISTSTATE *initGISTstate(Relation index);
 extern void freeGISTstate(GISTSTATE *giststate);
 extern void gistdoinsert(Relation r,
 			 IndexTuple itup,
-			 Size freespace,
 			 GISTSTATE *GISTstate);
 
 /* A List of these is returned from gistplacetopage() in *splitinfo */
@@ -398,7 +395,7 @@ typedef struct
 	IndexTuple	downlink;		/* downlink for this half. */
 } GISTPageSplitInfo;
 
-extern bool gistplacetopage(Relation rel, Size freespace, GISTSTATE *giststate,
+extern bool gistplacetopage(Relation rel, GISTSTATE *giststate,
 				Buffer buffer,
 				IndexTuple *itup, int ntup,
 				OffsetNumber oldoffnum, BlockNumber *newblkno,
@@ -432,15 +429,12 @@ extern bool gistvalidate(Oid opclassoid);
 #define GiSTPageSize   \
 	( BLCKSZ - SizeOfPageHeaderData - MAXALIGN(sizeof(GISTPageOpaqueData)) )
 
-#define GIST_MIN_FILLFACTOR			10
-#define GIST_DEFAULT_FILLFACTOR		90
-
 extern bytea *gistoptions(Datum reloptions, bool validate);
 extern bool gistproperty(Oid index_oid, int attno,
 			 IndexAMProperty prop, const char *propname,
 			 bool *res, bool *isnull);
 extern bool gistfitpage(IndexTuple *itvec, int len);
-extern bool gistnospace(Page page, IndexTuple *itvec, int len, OffsetNumber todelete, Size freespace);
+extern bool gistnospace(Page page, IndexTuple *itvec, int len, OffsetNumber todelete);
 extern void gistcheckpage(Relation rel, Buffer buf);
 extern Buffer gistNewBuffer(Relation r);
 extern void gistfillbuffer(Page page, IndexTuple *itup, int len,

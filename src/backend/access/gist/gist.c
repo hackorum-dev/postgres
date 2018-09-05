@@ -172,7 +172,7 @@ gistinsert(Relation r, Datum *values, bool *isnull,
 						 values, isnull, true /* size is currently bogus */ );
 	itup->t_tid = *ht_ctid;
 
-	gistdoinsert(r, itup, 0, giststate);
+	gistdoinsert(r, itup, giststate);
 
 	/* cleanup */
 	MemoryContextSwitchTo(oldCxt);
@@ -212,7 +212,7 @@ gistinsert(Relation r, Datum *values, bool *isnull,
  * Returns 'true' if the page was split, 'false' otherwise.
  */
 bool
-gistplacetopage(Relation rel, Size freespace, GISTSTATE *giststate,
+gistplacetopage(Relation rel, GISTSTATE *giststate,
 				Buffer buffer,
 				IndexTuple *itup, int ntup, OffsetNumber oldoffnum,
 				BlockNumber *newblkno,
@@ -251,7 +251,7 @@ gistplacetopage(Relation rel, Size freespace, GISTSTATE *giststate,
 	 * one-element todelete array; in the split case, it's handled implicitly
 	 * because the tuple vector passed to gistSplit won't include this tuple.
 	 */
-	is_split = gistnospace(page, itup, ntup, oldoffnum, freespace);
+	is_split = gistnospace(page, itup, ntup, oldoffnum);
 
 	/*
 	 * If leaf page is full, try at first to delete dead tuples. And then
@@ -260,7 +260,7 @@ gistplacetopage(Relation rel, Size freespace, GISTSTATE *giststate,
 	if (is_split && GistPageIsLeaf(page) && GistPageHasGarbage(page))
 	{
 		gistvacuumpage(rel, page, buffer);
-		is_split = gistnospace(page, itup, ntup, oldoffnum, freespace);
+		is_split = gistnospace(page, itup, ntup, oldoffnum);
 	}
 
 	if (is_split)
@@ -604,7 +604,7 @@ gistplacetopage(Relation rel, Size freespace, GISTSTATE *giststate,
  * so it does not bother releasing palloc'd allocations.
  */
 void
-gistdoinsert(Relation r, IndexTuple itup, Size freespace, GISTSTATE *giststate)
+gistdoinsert(Relation r, IndexTuple itup, GISTSTATE *giststate)
 {
 	ItemId		iid;
 	IndexTuple	idxtuple;
@@ -614,7 +614,6 @@ gistdoinsert(Relation r, IndexTuple itup, Size freespace, GISTSTATE *giststate)
 	bool		xlocked = false;
 
 	memset(&state, 0, sizeof(GISTInsertState));
-	state.freespace = freespace;
 	state.r = r;
 
 	/* Start from the root */
@@ -1226,7 +1225,7 @@ gistinserttuples(GISTInsertState *state, GISTInsertStack *stack,
 	CheckForSerializableConflictIn(state->r, NULL, stack->buffer);
 
 	/* Insert the tuple(s) to the page, splitting the page if necessary */
-	is_split = gistplacetopage(state->r, state->freespace, giststate,
+	is_split = gistplacetopage(state->r, giststate,
 							   stack->buffer,
 							   tuples, ntup,
 							   oldoffnum, NULL,

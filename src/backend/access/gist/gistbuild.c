@@ -61,8 +61,6 @@ typedef struct
 	int64		indtuples;		/* number of tuples indexed */
 	int64		indtuplesSize;	/* total size of all indexed tuples */
 
-	Size		freespace;		/* amount of free space to leave on pages */
-
 	/*
 	 * Extra data structures used during a buffering build. 'gfbb' contains
 	 * information related to managing the build buffers. 'parentMap' is a
@@ -119,7 +117,6 @@ gistbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 	Buffer		buffer;
 	Page		page;
 	MemoryContext oldcxt = CurrentMemoryContext;
-	int			fillfactor;
 
 	buildstate.indexrel = index;
 	if (index->rd_options)
@@ -134,8 +131,6 @@ gistbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 			buildstate.bufferingMode = GIST_BUFFERING_DISABLED;
 		else
 			buildstate.bufferingMode = GIST_BUFFERING_AUTO;
-
-		fillfactor = options->fillfactor;
 	}
 	else
 	{
@@ -144,10 +139,7 @@ gistbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 		 * to fit in cache.
 		 */
 		buildstate.bufferingMode = GIST_BUFFERING_AUTO;
-		fillfactor = GIST_DEFAULT_FILLFACTOR;
 	}
-	/* Calculate target amount of free space to leave on pages */
-	buildstate.freespace = BLCKSZ * (100 - fillfactor) / 100;
 
 	/*
 	 * We expect to be called exactly once for any index relation. If that's
@@ -275,8 +267,7 @@ gistInitBuffering(GISTBuildState *buildstate)
 
 	/* Calc space of index page which is available for index tuples */
 	pageFreeSpace = BLCKSZ - SizeOfPageHeaderData - sizeof(GISTPageOpaqueData)
-		- sizeof(ItemIdData)
-		- buildstate->freespace;
+		- sizeof(ItemIdData);
 
 	/*
 	 * Calculate average size of already inserted index tuples using gathered
@@ -431,8 +422,7 @@ calculatePagesPerBuffer(GISTBuildState *buildstate, int levelStep)
 
 	/* Calc space of index page which is available for index tuples */
 	pageFreeSpace = BLCKSZ - SizeOfPageHeaderData - sizeof(GISTPageOpaqueData)
-		- sizeof(ItemIdData)
-		- buildstate->freespace;
+		- sizeof(ItemIdData);
 
 	/*
 	 * Calculate average size of already inserted index tuples using gathered
@@ -483,8 +473,7 @@ gistBuildCallback(Relation index,
 		 * There's no buffers (yet). Since we already have the index relation
 		 * locked, we call gistdoinsert directly.
 		 */
-		gistdoinsert(index, itup, buildstate->freespace,
-					 buildstate->giststate);
+		gistdoinsert(index, itup, buildstate->giststate);
 	}
 
 	/* Update tuple count and total size. */
@@ -684,7 +673,6 @@ gistbufferinginserttuples(GISTBuildState *buildstate, Buffer buffer, int level,
 	BlockNumber placed_to_blk = InvalidBlockNumber;
 
 	is_split = gistplacetopage(buildstate->indexrel,
-							   buildstate->freespace,
 							   buildstate->giststate,
 							   buffer,
 							   itup, ntup, oldoffnum, &placed_to_blk,

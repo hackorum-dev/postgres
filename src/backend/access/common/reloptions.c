@@ -186,12 +186,12 @@ static relopt_int intRelOpts[] =
 	{
 		{
 			"fillfactor",
-			"Packs gist index pages only to this percentage",
+			"This is ignored but exists for historical reasons",
 			RELOPT_KIND_GIST,
 			ShareUpdateExclusiveLock	/* since it applies only to later
 										 * inserts */
 		},
-		GIST_DEFAULT_FILLFACTOR, GIST_MIN_FILLFACTOR, 100
+		0, 10, 100
 	},
 	{
 		{

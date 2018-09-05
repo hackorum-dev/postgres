@@ -54,9 +54,9 @@ gistfillbuffer(Page page, IndexTuple *itup, int len, OffsetNumber off)
  * Check space for itup vector on page
  */
 bool
-gistnospace(Page page, IndexTuple *itvec, int len, OffsetNumber todelete, Size freespace)
+gistnospace(Page page, IndexTuple *itvec, int len, OffsetNumber todelete)
 {
-	unsigned int size = freespace,
+	unsigned int size = 0,
 				deleted = 0;
 	int			i;
 
@@ -82,7 +82,6 @@ gistfitpage(IndexTuple *itvec, int len)
 	for (i = 0; i < len; i++)
 		size += IndexTupleSize(itvec[i]) + sizeof(ItemIdData);
 
-	/* TODO: Consider fillfactor */
 	return (size <= GiSTPageSize);
 }
 

@@ -390,7 +390,7 @@ CREATE [ UNIQUE ] INDEX [ CONCURRENTLY ] [ [ IF NOT EXISTS ] <replaceable class=
    </variablelist>
 
    <para>
-     The B-tree, hash, GiST and SP-GiST index methods all accept this parameter:
+     The B-tree, hash and SP-GiST index methods all accept this parameter:
    </para>
 
    <variablelist>
@@ -412,6 +412,12 @@ CREATE [ UNIQUE ] INDEX [ CONCURRENTLY ] [ [ IF NOT EXISTS ] <replaceable class=
       other index methods use fillfactor in different but roughly analogous
       ways; the default fillfactor varies between methods.
      </para>
+     <note>
+       <para>
+         GiST also accepts this parameter just for historical reasons but
+         ignores it.
+       </para>
+     </note>
     </listitem>
    </varlistentry>
    </variablelist>
