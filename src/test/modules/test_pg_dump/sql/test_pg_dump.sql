@@ -1,3 +1,13 @@
+--
+-- Set of regression tests to test that ALTER EXTENSION ADD/DROP
+-- handles correctly pg_init_privs.
+--
+
+-- Clean up in case a prior regression run failed
+SET client_min_messages TO 'warning';
+DROP ROLE IF EXISTS regress_dump_test_role;
+RESET client_min_messages;
+
 CREATE ROLE regress_dump_test_role;
 CREATE EXTENSION test_pg_dump;
 
@@ -105,3 +115,13 @@ ALTER EXTENSION test_pg_dump DROP SERVER s0;
 ALTER EXTENSION test_pg_dump DROP TABLE test_pg_dump_t1;
 ALTER EXTENSION test_pg_dump DROP TYPE test_pg_dump_e1;
 ALTER EXTENSION test_pg_dump DROP VIEW test_pg_dump_v1;
+
+-- Clean up
+DROP EXTENSION test_pg_dump;
+DROP SCHEMA test_pg_dump_s1;
+DROP MATERIALIZED VIEW test_pg_dump_mv1;
+DROP FOREIGN TABLE ft1;
+DROP SERVER s0;
+DROP TYPE test_pg_dump_e1;
+DROP FUNCTION test_pg_dump(integer);
+DROP ROLE regress_dump_test_role;
