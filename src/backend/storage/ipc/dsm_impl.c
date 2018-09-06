@@ -47,6 +47,7 @@
  */
 
 #include "postgres.h"
+#include "miscadmin.h"
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -330,10 +331,24 @@ dsm_impl_posix(dsm_op op, dsm_handle handle, Size request_size,
 			shm_unlink(name);
 		errno = save_errno;
 
+		/* If we received a query cancel or termination signal, we will have EINTR set here
+                 * It may not be safe to handle interrupts here of this sort so we just continue to the
+                 * next point where it is.
+  		 *
+		 * However, the safety of exceptions here are determined by the elevel passed in by the function
+		 * so if the elevel is ERROR we check for interrupts here if there is an EINTR errno raised by the resize
+		 * operation.  Otherwise we log the failure and move on to the next point where interrupts are
+		 * checked.  This allows for the caller to handle cleanup and move to a safe point first.
+                 */
+		if (errno == EINTR && elevel == ERROR)
+			CHECK_FOR_INTERRUPTS();
+
 		ereport(elevel,
 				(errcode_for_dynamic_shared_memory(),
 				 errmsg("could not resize shared memory segment \"%s\" to %zu bytes: %m",
 						name, request_size)));
+
+		/* This will throw appropriate errors for query cancel or termination */
 		return false;
 	}
 
@@ -419,11 +434,17 @@ dsm_impl_posix_resize(int fd, off_t size)
 #if defined(HAVE_POSIX_FALLOCATE) && defined(__linux__)
 	if (rc == 0)
 	{
-		/* We may get interrupted, if so just retry. */
+		/* We may get interrupted, if so just retry unless certain signals are sent
+                 *
+                 * In rare cases it is possible for a signal loop to perpetually pre-empt this call
+                 * So where the signal would cause the query to cancel or the process to terminate
+                 * we exit the loop and return the interrupted error to the caller who is now responsible
+                 * for that.
+                 */
 		do
 		{
 			rc = posix_fallocate(fd, 0, size);
-		} while (rc == EINTR);
+		} while (rc == EINTR && !(ProcDiePending || QueryCancelPending));
 
 		/*
 		 * The caller expects errno to be set, but posix_fallocate() doesn't
