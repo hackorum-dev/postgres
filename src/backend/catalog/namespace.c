@@ -3011,6 +3011,14 @@ QualifiedNameGetCreationNamespace(List *names, char **objname_p)
 					 errmsg("no schema has been selected to create in")));
 	}
 
+	Assert(OidIsValid(namespaceId));
+
+	/*
+	 * Lock the creation namespace to protect against concurrent namespace
+	 * drop.
+	 */
+	LockDatabaseObject(NamespaceRelationId, namespaceId, 0, AccessShareLock);
+
 	return namespaceId;
 }
 

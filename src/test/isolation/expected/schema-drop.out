@@ -1,0 +1,43 @@
+Parsed test spec with 2 sessions
+
+starting permutation: s1_begin s1_create_type s2_drop_schema s1_commit
+step s1_begin: BEGIN;
+step s1_create_type: CREATE TYPE testschema.testtype;
+step s2_drop_schema: DROP SCHEMA testschema CASCADE; <waiting ...>
+step s1_commit: COMMIT;
+step s2_drop_schema: <... completed>
+
+starting permutation: s1_begin s1_create_agg s2_drop_schema s1_commit
+step s1_begin: BEGIN;
+step s1_create_agg: CREATE AGGREGATE testschema.a1(int4) (SFUNC=int4pl, STYPE=int4);
+step s2_drop_schema: DROP SCHEMA testschema CASCADE; <waiting ...>
+step s1_commit: COMMIT;
+step s2_drop_schema: <... completed>
+
+starting permutation: s1_begin s1_create_func s2_drop_schema s1_commit
+step s1_begin: BEGIN;
+step s1_create_func: CREATE FUNCTION testschema.f1() RETURNS bool LANGUAGE SQL AS 'SELECT true';
+step s2_drop_schema: DROP SCHEMA testschema CASCADE; <waiting ...>
+step s1_commit: COMMIT;
+step s2_drop_schema: <... completed>
+
+starting permutation: s1_begin s1_create_op s2_drop_schema s1_commit
+step s1_begin: BEGIN;
+step s1_create_op: CREATE OPERATOR testschema.@+@ (LEFTARG=int4, RIGHTARG=int4, PROCEDURE=int4pl);
+step s2_drop_schema: DROP SCHEMA testschema CASCADE; <waiting ...>
+step s1_commit: COMMIT;
+step s2_drop_schema: <... completed>
+
+starting permutation: s1_begin s1_create_opfamily s2_drop_schema s1_commit
+step s1_begin: BEGIN;
+step s1_create_opfamily: CREATE OPERATOR FAMILY testschema.opfam1 USING btree;
+step s2_drop_schema: DROP SCHEMA testschema CASCADE; <waiting ...>
+step s1_commit: COMMIT;
+step s2_drop_schema: <... completed>
+
+starting permutation: s1_begin s1_create_opclass s2_drop_schema s1_commit
+step s1_begin: BEGIN;
+step s1_create_opclass: CREATE OPERATOR CLASS testschema.opclass1 FOR TYPE uuid USING hash AS STORAGE uuid;
+step s2_drop_schema: DROP SCHEMA testschema CASCADE; <waiting ...>
+step s1_commit: COMMIT;
+step s2_drop_schema: <... completed>
