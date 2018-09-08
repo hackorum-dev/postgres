@@ -28,6 +28,7 @@
 #include "utils/builtins.h"
 #include "utils/catcache.h"
 #include "utils/fmgroids.h"
+#include "utils/memutils.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
@@ -38,6 +39,7 @@ Oid			binary_upgrade_next_pg_enum_oid = InvalidOid;
 static void RenumberEnumType(Relation pg_enum, HeapTuple *existing, int nelems);
 static int	sort_order_cmp(const void *p1, const void *p2);
 
+static HTAB *enum_blacklist = NULL;
 
 /*
  * EnumValuesCreate
@@ -619,4 +621,57 @@ sort_order_cmp(const void *p1, const void *p2)
 		return 1;
 	else
 		return 0;
+}
+
+Size
+EstimateEnumBlacklistSpace(void)
+{
+	if (!enum_blacklist)
+		return sizeof(Oid);
+	return sizeof(Oid) + sizeof(Oid) * hash_get_num_entries(enum_blacklist);
+}
+
+void
+SerializeEnumBlacklist(void *space)
+{
+	Oid *serialized = (Oid *) space;
+	HASH_SEQ_STATUS status;
+	Oid *value;
+
+	if (!enum_blacklist)
+	{
+		*serialized = 0;
+		return;
+	}
+
+	*serialized = hash_get_num_entries(enum_blacklist);
+	hash_seq_init(&status, enum_blacklist);
+	while ((value = (Oid *) hash_seq_search(&status)))
+		*serialized++ = *value;
+}
+
+void
+RestoreEnumBlacklist(void *space)
+{
+	Oid *serialized = (Oid *) space;
+	HASHCTL     hash_ctl;
+	int			num_elements;
+
+	Assert(!enum_blacklist);
+
+	num_elements = *serialized++;
+	if (num_elements == 0)
+		return;
+
+	memset(&hash_ctl, 0, sizeof(hash_ctl));
+	hash_ctl.keysize = sizeof(Oid);
+	hash_ctl.entrysize = sizeof(Oid);
+	hash_ctl.hcxt = TopTransactionContext;
+	enum_blacklist = hash_create("Enum value blacklist",
+								 32,
+								 &hash_ctl,
+								 HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
+
+	while (num_elements-- > 0)
+		hash_search(enum_blacklist, serialized++, HASH_ENTER, NULL);
 }
