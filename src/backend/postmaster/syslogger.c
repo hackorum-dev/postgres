@@ -1229,7 +1229,7 @@ logfile_open(const char *filename, const char *mode, bool allow_errors)
 static void
 logfile_rotate(bool time_based_rotation, int size_rotation_for)
 {
-	char	   *filename;
+	char	   *filename = NULL;
 	char	   *csvfilename = NULL;
 	pg_time_t	fntime;
 	FILE	   *fh;
@@ -1245,7 +1245,9 @@ logfile_rotate(bool time_based_rotation, int size_rotation_for)
 		fntime = next_rotation_time;
 	else
 		fntime = time(NULL);
-	filename = logfile_getname(fntime, NULL);
+
+	if (Log_destination & LOG_DESTINATION_STDERR)
+		filename = logfile_getname(fntime, NULL);
 	if (Log_destination & LOG_DESTINATION_CSVLOG)
 		csvfilename = logfile_getname(fntime, ".csv");
 
@@ -1257,7 +1259,8 @@ logfile_rotate(bool time_based_rotation, int size_rotation_for)
 	 *
 	 * Note: last_file_name should never be NULL here, but if it is, append.
 	 */
-	if (time_based_rotation || (size_rotation_for & LOG_DESTINATION_STDERR))
+	if ((time_based_rotation && filename != NULL) ||
+		(size_rotation_for & LOG_DESTINATION_STDERR))
 	{
 		if (Log_truncate_on_rotation && time_based_rotation &&
 			last_file_name != NULL &&
