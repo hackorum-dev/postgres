@@ -632,6 +632,7 @@ StandbyAcquireAccessExclusiveLock(TransactionId xid, Oid dbOid, Oid relOid)
 	xl_standby_lock *newlock;
 	LOCKTAG		locktag;
 	bool		found;
+	ListCell   *lc;
 
 	/* Already processed? */
 	if (!TransactionIdIsValid(xid) ||
@@ -651,6 +652,20 @@ StandbyAcquireAccessExclusiveLock(TransactionId xid, Oid dbOid, Oid relOid)
 	{
 		entry->xid = xid;
 		entry->locks = NIL;
+	}
+
+	/*
+	 * multple lock for the same object can be given by XLOG_STANDBY_LOCK logs.
+	 * we need no more than one of them.
+	 */
+	foreach (lc, entry->locks)
+	{
+		xl_standby_lock *l = (xl_standby_lock *) lfirst(lc);
+
+		Assert(l->xid == xid);
+
+		if (l->dbOid == dbOid && l->relOid == relOid)
+			return;
 	}
 
 	newlock = palloc(sizeof(xl_standby_lock));
