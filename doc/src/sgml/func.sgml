@@ -6286,13 +6286,46 @@ SELECT regexp_match('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
        exceeds the number of separators in the template.
       </para>
       <para>
-       If <literal>FX</literal> is specified, separator in template string
-       matches to exactly one character in input string.  Notice we don't insist
-       input string character to be the same as template string separator.
+       If <literal>FX</literal> is specified, a separator in the template
+       string matches exactly one character in the input string.  The
+       input string character does not need to be the same as the template
+       string separator.
        For example, <literal>to_timestamp('2000/JUN', 'FXYYYY MON')</literal>
        works, but <literal>to_timestamp('2000/JUN', 'FXYYYY&nbsp;&nbsp;MON')</literal>
-       returns an error because a space second template string space consumed
-       letter <literal>J</literal> from the input string.
+       returns an error because the second space in the template string
+       consumes letter <literal>J</literal> of the input string.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+        Template strings of <function>to_timestamp</function> and
+        <function>to_date</function> functions can also contain arbitrary
+        letters/digits between patterns.  Such letters/digits can match
+        any characters in the input string.  For example,
+        <literal>to_timestamp('2000yJUN', 'YYYYxMON')</literal> works.
+      </para>
+      <para>
+        Letters/digits consume an input string character only if the number
+        of extra characters at the beginning of the input string or between
+        the identified date/time values is less than or equal to the number
+        of the corresponding characters in the template string. This ensures
+        that the template string does not consume any characters of date/time
+        values when used without the <literal>FX</literal> option, even if
+        a letter/digit separator in the input string appears after a space.
+        For example, <literal>to_timestamp('2000y JUN', 'YYYYxMON')</literal>
+        works, but <literal>to_timestamp('2000 yJUN', 'YYYYxMON')</literal>
+        returns an error.
+      </para>
+      <para>
+        Note that if the template string contains an arbitrary letter,
+        the pattern that precedes this letter becomes greedy and tries
+        to match as many characters as possible. For example,
+        <literal>to_timestamp('2000906901', 'YYYYxMMxDD')</literal>
+        fails because the <literal>YYYY</literal> pattern matches
+        the whole input string instead of the first four characters.
+        Patterns separated by digits are non-greedy, so
+        <literal>to_timestamp('2000906901', 'YYYY0MM0DD')</literal> works fine.
       </para>
      </listitem>
 
