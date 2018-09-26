@@ -1156,14 +1156,15 @@ array_out(PG_FUNCTION_ARGS)
 		if (needquote)
 			overall_length += 2;
 		/* and the comma */
-		overall_length += 1;
+		if (i != nitems - 1)
+			overall_length += 1;
 	}
 
 	/*
 	 * count total number of curly braces in output string
 	 */
 	for (i = j = 0, k = 1; i < ndim; i++)
-		k *= dims[i], j += k;
+		j += k, k *= dims[i];
 
 	dims_str[0] = '\0';
 
@@ -1181,7 +1182,9 @@ array_out(PG_FUNCTION_ARGS)
 		*ptr = '\0';
 	}
 
-	retval = (char *) palloc(strlen(dims_str) + overall_length + 2 * j);
+	overall_length += strlen(dims_str) + 2 * j;
+
+	retval = (char *) palloc(overall_length);
 	p = retval;
 
 #define APPENDSTR(str)	(strcpy(p, (str)), p += strlen(p))
@@ -1233,6 +1236,9 @@ array_out(PG_FUNCTION_ARGS)
 
 #undef APPENDSTR
 #undef APPENDCHAR
+
+	/* Assert that we calculated the string length accurately */
+	Assert(overall_length == (p - retval + 1));
 
 	pfree(values);
 	pfree(needquotes);
