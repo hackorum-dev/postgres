@@ -9946,6 +9946,7 @@ get_from_clause_item(Node *jtnode, Query *query, deparse_context *context)
 		deparse_columns *colinfo = deparse_columns_fetch(varno, dpns);
 		RangeTblFunction *rtfunc1 = NULL;
 		bool		printalias;
+		TupleDesc resultDesc;
 
 		if (rte->lateral)
 			appendStringInfoString(buf, "LATERAL ");
@@ -9962,8 +9963,15 @@ get_from_clause_item(Node *jtnode, Query *query, deparse_context *context)
 				break;
 			case RTE_SUBQUERY:
 				/* Subquery RTE */
+
+				/* Create a dummy tuple descriptor for the subquery. */
+				resultDesc = CreateTemplateTupleDesc(colinfo->num_cols, false);
+				int colno;
+				for (colno = 0; colno < colinfo->num_cols; colno++)
+					namestrcpy(&(resultDesc->attrs[colno].attname), colinfo->colnames[colno]);
+
 				appendStringInfoChar(buf, '(');
-				get_query_def(rte->subquery, buf, context->namespaces, NULL,
+				get_query_def(rte->subquery, buf, context->namespaces, resultDesc,
 							  context->prettyFlags, context->wrapColumn,
 							  context->indentLevel);
 				appendStringInfoChar(buf, ')');
