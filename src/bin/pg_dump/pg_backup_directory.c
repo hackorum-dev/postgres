@@ -205,7 +205,7 @@ InitArchiveFmt_Directory(ArchiveHandle *AH)
 
 		setFilePath(AH, fname, "toc.dat");
 
-		tocFH = cfopen_read(fname, PG_BINARY_R);
+		tocFH = cfopen_read(fname, PG_BINARY_R, NULL);
 		if (tocFH == NULL)
 			exit_horribly(modulename,
 						  "could not open input file \"%s\": %s\n",
@@ -333,7 +333,7 @@ _StartData(ArchiveHandle *AH, TocEntry *te)
 
 	setFilePath(AH, fname, tctx->filename);
 
-	ctx->dataFH = cfopen_write(fname, PG_BINARY_W, AH->compression);
+	ctx->dataFH = cfopen_write(fname, PG_BINARY_W, AH->compression, AH->public.dopt->pipeCommand);
 	if (ctx->dataFH == NULL)
 		exit_horribly(modulename, "could not open output file \"%s\": %s\n",
 					  fname, strerror(errno));
@@ -392,7 +392,7 @@ _PrintFileData(ArchiveHandle *AH, char *filename)
 	if (!filename)
 		return;
 
-	cfp = cfopen_read(filename, PG_BINARY_R);
+	cfp = cfopen_read(filename, PG_BINARY_R, AH->public.ropt->pipeCommand);
 
 	if (!cfp)
 		exit_horribly(modulename, "could not open input file \"%s\": %s\n",
@@ -446,7 +446,7 @@ _LoadBlobs(ArchiveHandle *AH)
 
 	setFilePath(AH, fname, "blobs.toc");
 
-	ctx->blobsTocFH = cfopen_read(fname, PG_BINARY_R);
+	ctx->blobsTocFH = cfopen_read(fname, PG_BINARY_R, NULL);
 
 	if (ctx->blobsTocFH == NULL)
 		exit_horribly(modulename, "could not open large object TOC file \"%s\" for input: %s\n",
@@ -579,7 +579,7 @@ _CloseArchive(ArchiveHandle *AH)
 		ctx->pstate = ParallelBackupStart(AH);
 
 		/* The TOC is always created uncompressed */
-		tocFH = cfopen_write(fname, PG_BINARY_W, 0);
+		tocFH = cfopen_write(fname, PG_BINARY_W, 0, NULL);
 		if (tocFH == NULL)
 			exit_horribly(modulename, "could not open output file \"%s\": %s\n",
 						  fname, strerror(errno));
@@ -644,7 +644,7 @@ _StartBlobs(ArchiveHandle *AH, TocEntry *te)
 	setFilePath(AH, fname, "blobs.toc");
 
 	/* The blob TOC file is never compressed */
-	ctx->blobsTocFH = cfopen_write(fname, "ab", 0);
+	ctx->blobsTocFH = cfopen_write(fname, "ab", 0, NULL);
 	if (ctx->blobsTocFH == NULL)
 		exit_horribly(modulename, "could not open output file \"%s\": %s\n",
 					  fname, strerror(errno));
@@ -663,7 +663,7 @@ _StartBlob(ArchiveHandle *AH, TocEntry *te, Oid oid)
 
 	snprintf(fname, MAXPGPATH, "%s/blob_%u.dat", ctx->directory, oid);
 
-	ctx->dataFH = cfopen_write(fname, PG_BINARY_W, AH->compression);
+	ctx->dataFH = cfopen_write(fname, PG_BINARY_W, AH->compression, AH->public.dopt->pipeCommand);
 
 	if (ctx->dataFH == NULL)
 		exit_horribly(modulename, "could not open output file \"%s\": %s\n",

@@ -378,6 +378,7 @@ main(int argc, char **argv)
 		{"no-subscriptions", no_argument, &dopt.no_subscriptions, 1},
 		{"no-sync", no_argument, NULL, 7},
 		{"on-conflict-do-nothing", no_argument, &dopt.do_nothing, 1},
+		{"pipe", required_argument, NULL, 8},
 
 		{NULL, 0, NULL, 0}
 	};
@@ -562,6 +563,10 @@ main(int argc, char **argv)
 				dosync = false;
 				break;
 
+			case 8:				/* pipe */
+				dopt.pipeCommand = pg_strdup(optarg);
+				break;
+
 			default:
 				fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
 				exit_nicely(1);
@@ -629,11 +634,15 @@ main(int argc, char **argv)
 	if (archiveFormat == archNull)
 		plainText = 1;
 
+	if (dopt.pipeCommand && compressLevel != -1) {
+		exit_horribly(NULL, "option --pipe and --compress cannot be used together\n");
+	}
+
 	/* Custom and directory formats are compressed by default, others not */
 	if (compressLevel == -1)
 	{
 #ifdef HAVE_LIBZ
-		if (archiveFormat == archCustom || archiveFormat == archDirectory)
+		if (!dopt.pipeCommand && !(archiveFormat == archCustom || archiveFormat == archDirectory))
 			compressLevel = Z_DEFAULT_COMPRESSION;
 		else
 #endif
@@ -669,6 +678,10 @@ main(int argc, char **argv)
 	/* Parallel backup only in the directory archive format so far */
 	if (archiveFormat != archDirectory && numWorkers > 1)
 		exit_horribly(NULL, "parallel backup only supported by the directory format\n");
+
+	/* Pipe only in the directory archive format so far */
+	if (archiveFormat != archDirectory && dopt.pipeCommand)
+		exit_horribly(NULL, "pipe only supported by the directory format\n");
 
 	/* Open the output file */
 	fout = CreateArchive(filename, archiveFormat, compressLevel, dosync,
@@ -998,6 +1011,8 @@ help(const char *progname)
 	printf(_("  --use-set-session-authorization\n"
 			 "                               use SET SESSION AUTHORIZATION commands instead of\n"
 			 "                               ALTER OWNER commands to set ownership\n"));
+	printf(_("  --pipe=COMMAND               Create files by piping data to the given command\n"
+			 "                               Only usable with the directory format\n"));
 
 	printf(_("\nConnection options:\n"));
 	printf(_("  -d, --dbname=DBNAME      database to dump\n"));

@@ -443,6 +443,9 @@ struct cfp
 static int	hasSuffix(const char *filename, const char *suffix);
 #endif
 
+static void
+expand_shell_command(char *buf, size_t bufsize, const char *cmd, const char *filepath);
+
 /* free() without changing errno; useful in several places below */
 static void
 free_keep_errno(void *p)
@@ -464,24 +467,26 @@ free_keep_errno(void *p)
  * On failure, return NULL with an error code in errno.
  */
 cfp *
-cfopen_read(const char *path, const char *mode)
+cfopen_read(const char *path, const char *mode, const char *pipecmd)
 {
 	cfp		   *fp;
 
+	if (pipecmd)
+		fp = cfopen(path, mode, 0, pipecmd);
 #ifdef HAVE_LIBZ
-	if (hasSuffix(path, ".gz"))
-		fp = cfopen(path, mode, 1);
+	else if (hasSuffix(path, ".gz"))
+		fp = cfopen(path, mode, 1, NULL);
 	else
 #endif
 	{
-		fp = cfopen(path, mode, 0);
+		fp = cfopen(path, mode, 0, NULL);
 #ifdef HAVE_LIBZ
 		if (fp == NULL)
 		{
 			char	   *fname;
 
 			fname = psprintf("%s.gz", path);
-			fp = cfopen(fname, mode, 1);
+			fp = cfopen(fname, mode, 1, NULL);
 			free_keep_errno(fname);
 		}
 #endif
@@ -501,19 +506,19 @@ cfopen_read(const char *path, const char *mode)
  * On failure, return NULL with an error code in errno.
  */
 cfp *
-cfopen_write(const char *path, const char *mode, int compression)
+cfopen_write(const char *path, const char *mode, int compression, const char *pipecmd)
 {
 	cfp		   *fp;
 
 	if (compression == 0)
-		fp = cfopen(path, mode, 0);
+		fp = cfopen(path, mode, 0, pipecmd);
 	else
 	{
 #ifdef HAVE_LIBZ
 		char	   *fname;
 
 		fname = psprintf("%s.gz", path);
-		fp = cfopen(fname, mode, compression);
+		fp = cfopen(fname, mode, compression, pipecmd);
 		free_keep_errno(fname);
 #else
 		exit_horribly(modulename, "not built with zlib support\n");
@@ -530,11 +535,32 @@ cfopen_write(const char *path, const char *mode, int compression)
  * On failure, return NULL with an error code in errno.
  */
 cfp *
-cfopen(const char *path, const char *mode, int compression)
+cfopen(const char *path, const char *mode, int compression, const char *pipecmd)
 {
 	cfp		   *fp = pg_malloc(sizeof(cfp));
 
-	if (compression != 0)
+	if (pipecmd)
+	{
+		char cmd[MAXPGPATH];
+		char pmode[2];
+
+		if ( !(mode[0] == 'r' || mode[0] == 'w') ) {
+			exit_horribly(modulename, "Pipe does not support mode %s", mode);
+		}
+		pmode[0] = mode[0];
+		pmode[1] = '\0';
+
+		expand_shell_command(cmd, MAXPGPATH, pipecmd, path);
+
+		fp->compressedfp = NULL;
+		fp->uncompressedfp = popen(cmd, pmode);
+		if (fp->uncompressedfp == NULL)
+		{
+			free_keep_errno(fp);
+			fp->uncompressedfp = NULL;
+		}
+	}
+	else if (compression != 0)
 	{
 #ifdef HAVE_LIBZ
 		if (compression != Z_DEFAULT_COMPRESSION)
@@ -731,5 +757,54 @@ hasSuffix(const char *filename, const char *suffix)
 				  suffix,
 				  suffixlen) == 0;
 }
-
 #endif
+
+/*
+ * Expand a shell command
+ *
+ * Replaces %p in cmd with the path in filepath and writes the result to buf.
+ */
+static void
+expand_shell_command(char *buf, size_t bufsize, const char *cmd, const char *filepath)
+{
+	char	   *dp;
+	char	   *endp;
+	const char *sp;
+
+	dp = buf;
+	endp = buf + bufsize - 1;
+	*endp = '\0';
+
+	for (sp = cmd; *sp; sp++)
+	{
+		if (*sp == '%')
+		{
+			switch (sp[1])
+			{
+				case 'p':
+					/* %p: absolute path of file */
+					sp++;
+					strlcpy(dp, filepath, endp - dp);
+					dp += strlen(dp);
+					break;
+				case '%':
+					/* convert %% to a single % */
+					sp++;
+					if (dp < endp)
+						*dp++ = *sp;
+					break;
+				default:
+					/* otherwise treat the % as not special */
+					if (dp < endp)
+						*dp++ = *sp;
+					break;
+			}
+		}
+		else
+		{
+			if (dp < endp)
+				*dp++ = *sp;
+		}
+	}
+	*dp = '\0';
+}

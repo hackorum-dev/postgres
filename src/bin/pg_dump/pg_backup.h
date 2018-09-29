@@ -87,6 +87,7 @@ typedef struct _restoreOptions
 	int			verbose;
 	int			aclsSkip;
 	const char *lockWaitTimeout;
+	const char *pipeCommand;
 	int			include_everything;
 
 	int			tocSummary;
@@ -141,6 +142,7 @@ typedef struct _dumpOptions
 	int			dumpSections;	/* bitmask of chosen sections */
 	bool		aclsSkip;
 	const char *lockWaitTimeout;
+	const char *pipeCommand;
 
 	/* flags for various command-line long options */
 	int			disable_dollar_quoting;

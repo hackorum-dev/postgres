@@ -124,6 +124,7 @@ main(int argc, char **argv)
 		{"no-publications", no_argument, &no_publications, 1},
 		{"no-security-labels", no_argument, &no_security_labels, 1},
 		{"no-subscriptions", no_argument, &no_subscriptions, 1},
+		{"pipe", required_argument, NULL, 4},
 
 		{NULL, 0, NULL, 0}
 	};
@@ -279,6 +280,10 @@ main(int argc, char **argv)
 
 			case 3:				/* section */
 				set_dump_section(optarg, &(opts->dumpSections));
+				break;
+
+			case 4:				/* pipe */
+				opts->pipeCommand = pg_strdup(optarg);
 				break;
 
 			default:
@@ -496,6 +501,8 @@ usage(const char *progname)
 	printf(_("  --use-set-session-authorization\n"
 			 "                               use SET SESSION AUTHORIZATION commands instead of\n"
 			 "                               ALTER OWNER commands to set ownership\n"));
+	printf(_("  --pipe=COMMAND               Read files using the output from the given command\n"
+			 "                               Only usable with the directory format\n"));
 
 	printf(_("\nConnection options:\n"));
 	printf(_("  -h, --host=HOSTNAME      database server host or socket directory\n"));
