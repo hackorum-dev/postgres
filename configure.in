@@ -67,6 +67,7 @@ dragonfly*) template=netbsd ;;
  linux*|gnu*|k*bsd*-gnu)
            template=linux ;;
    mingw*) template=win32 ;;
+    msys*) template=win32 ;;
   netbsd*) template=netbsd ;;
  openbsd*) template=openbsd ;;
  solaris*) template=solaris ;;

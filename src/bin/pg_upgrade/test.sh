@@ -30,11 +30,12 @@ standard_initdb() {
 	../../test/regress/pg_regress --config-auth "$PGDATA"
 }
 
-# Establish how the server will listen for connections
-testhost=`uname -s`
+# Establish how the server will listen for connections.
+# Fall back to uname if necessary
+testhost=${HOST_OS:-$(uname -s)}
 
 case $testhost in
-	MINGW*|MSYS*)
+	MINGW*)
 		LISTEN_ADDRESSES="localhost"
 		PGHOST=localhost
 		;;
