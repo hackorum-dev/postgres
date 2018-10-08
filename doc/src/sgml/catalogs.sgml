@@ -8365,6 +8365,50 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><type>text</type></entry>
       <entry>Comment string from the extension's control file</entry>
      </row>
+
+     <row>
+      <entry><structfield>directory</structfield></entry>
+      <entry><type>text</type></entry>
+      <entry>Directory containing the extension's SQL script file(s)</entry>
+     </row>
+
+     <row>
+      <entry><structfield>encoding</structfield></entry>
+      <entry><type>text</type></entry>
+      <entry>The Server converted encoding format that is mapped to many aliases</entry>
+     </row>
+
+     <row>
+      <entry><structfield>module_pathname</structfield></entry>
+      <entry><type>text</type></entry>
+      <entry>String to substitute for MODULE_PATHNAME in the script file(s)</entry>
+     </row>
+
+     <row>
+      <entry><structfield>requires</structfield></entry>
+      <entry><type>name[]</type></entry>
+      <entry>Names of prerequisite extensions,
+       or <literal>NULL</literal> if none</entry>
+     </row>
+
+     <row>
+      <entry><structfield>superuser</structfield></entry>
+      <entry><type>bool</type></entry>
+      <entry>True if only superusers are allowed to install this extension</entry>
+     </row>
+
+     <row>
+      <entry><structfield>relocatable</structfield></entry>
+      <entry><type>bool</type></entry>
+      <entry>True if extension can be relocated to another schema</entry>
+     </row>
+
+     <row>
+      <entry><structfield>schema</structfield></entry>
+      <entry><type>name</type></entry>
+      <entry>Name of the schema that the extension must be installed into,
+       or <literal>NULL</literal> if partially or fully relocatable</entry>
+     </row>
     </tbody>
    </tgroup>
   </table>

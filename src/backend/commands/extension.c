@@ -1929,8 +1929,8 @@ pg_available_extensions(PG_FUNCTION_ARGS)
 		{
 			ExtensionControlFile *control;
 			char	   *extname;
-			Datum		values[3];
-			bool		nulls[3];
+			Datum		values[10];
+			bool		nulls[10];
 
 			if (!is_extension_control_filename(de->d_name))
 				continue;
@@ -1961,6 +1961,36 @@ pg_available_extensions(PG_FUNCTION_ARGS)
 				nulls[2] = true;
 			else
 				values[2] = CStringGetTextDatum(control->comment);
+			/* directory */
+			if (control->directory == NULL)
+				nulls[3] = true;
+			else
+				values[3] = CStringGetTextDatum(control->directory);
+			/* encoding */
+			if (control->encoding < 0)
+				nulls[4] = true;
+			else
+				values[4] = CStringGetTextDatum(pg_encoding_to_char(control->encoding));
+			/* module_pathname */
+			if (control->module_pathname == NULL)
+				nulls[5] = true;
+			else
+				values[5] = CStringGetTextDatum(control->module_pathname);
+			/* requires */
+			if (control->requires == NULL)
+				nulls[6] = true;
+			else
+				values[6] = convert_requires_to_datum(control->requires);
+			/* superuser */
+			values[7] = BoolGetDatum(control->superuser);
+			/* relocatable */
+			values[8] = BoolGetDatum(control->relocatable);
+			/* schema */
+			if (control->schema == NULL)
+				nulls[9] = true;
+			else
+				values[9] = DirectFunctionCall1(namein,
+												CStringGetDatum(control->schema));
 
 			tuplestore_putvalues(tupstore, tupdesc, values, nulls);
 		}

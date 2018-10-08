@@ -1310,8 +1310,15 @@ pg_available_extension_versions| SELECT e.name,
 pg_available_extensions| SELECT e.name,
     e.default_version,
     x.extversion AS installed_version,
-    e.comment
-   FROM (pg_available_extensions() e(name, default_version, comment)
+    e.comment,
+    e.directory,
+    e.encoding,
+    e.module_pathname,
+    e.requires,
+    e.superuser,
+    e.relocatable,
+    e.schema
+   FROM (pg_available_extensions() e(name, default_version, comment, directory, encoding, module_pathname, requires, superuser, relocatable, schema)
      LEFT JOIN pg_extension x ON ((e.name = x.extname)));
 pg_config| SELECT pg_config.name,
     pg_config.setting
