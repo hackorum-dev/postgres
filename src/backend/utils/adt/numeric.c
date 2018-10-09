@@ -3765,15 +3765,17 @@ numeric_exp(PG_FUNCTION_ARGS)
 	/* convert input to float8, ignoring overflow */
 	val = numericvar_to_double_no_overflow(&arg);
 
+	/* initial overflow test with fuzz factor */
+	if (Abs(val) > NUMERIC_MAX_RESULT_SCALE * 3.01)
+		ereport(ERROR,
+				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
+				errmsg("value overflows numeric format")));
+
 	/*
 	 * log10(result) = num * log10(e), so this is approximately the decimal
 	 * weight of the result:
 	 */
-	val *= 0.434294481903252;
-
-	/* limit to something that won't cause integer overflow */
-	val = Max(val, -NUMERIC_MAX_RESULT_SCALE);
-	val = Min(val, NUMERIC_MAX_RESULT_SCALE);
+	val *= 0.434294481903252;       /* approximate decimal result weight */
 
 	rscale = NUMERIC_MIN_SIG_DIGITS - (int) val;
 	rscale = Max(rscale, arg.dscale);
