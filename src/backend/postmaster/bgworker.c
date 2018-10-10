@@ -662,20 +662,6 @@ bgworker_quickdie(SIGNAL_ARGS)
 }
 
 /*
- * Standard SIGTERM handler for background workers
- */
-static void
-bgworker_die(SIGNAL_ARGS)
-{
-	PG_SETMASK(&BlockSig);
-
-	ereport(FATAL,
-			(errcode(ERRCODE_ADMIN_SHUTDOWN),
-			 errmsg("terminating background worker \"%s\" due to administrator command",
-					MyBgworkerEntry->bgw_type)));
-}
-
-/*
  * Standard SIGUSR1 handler for unconnected workers
  *
  * Here, we want to make sure an unconnected worker will at least heed
@@ -751,7 +737,7 @@ StartBackgroundWorker(void)
 		pqsignal(SIGUSR1, bgworker_sigusr1_handler);
 		pqsignal(SIGFPE, SIG_IGN);
 	}
-	pqsignal(SIGTERM, bgworker_die);
+	pqsignal(SIGTERM, die);		/* die at next CFI */
 	pqsignal(SIGHUP, SIG_IGN);
 
 	pqsignal(SIGQUIT, bgworker_quickdie);
