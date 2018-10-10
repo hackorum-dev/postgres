@@ -34,6 +34,7 @@ extern CommandDest whereToSendOutput;
 extern PGDLLIMPORT const char *debug_query_string;
 extern int	max_stack_depth;
 extern int	PostAuthDelay;
+extern void (*proc_die_hook)(void);
 
 /* GUC-configurable parameters */
 
@@ -65,6 +66,7 @@ extern List *pg_plan_queries(List *querytrees, int cursorOptions,
 extern bool check_max_stack_depth(int *newval, void **extra, GucSource source);
 extern void assign_max_stack_depth(int newval, void *extra);
 
+extern void proc_die_quietly(void);
 extern void die(SIGNAL_ARGS);
 extern void quickdie(SIGNAL_ARGS) pg_attribute_noreturn();
 extern void StatementCancelHandler(SIGNAL_ARGS);

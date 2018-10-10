@@ -100,6 +100,9 @@ int			max_stack_depth = 100;
 /* wait N seconds to allow attach from a debugger */
 int			PostAuthDelay = 0;
 
+/* Hook for custom proc die handler. */
+void		(*proc_die_hook)(void);
+
 
 
 /* ----------------
@@ -2989,10 +2992,17 @@ ProcessInterrupts(void)
 					 errmsg("terminating connection due to conflict with recovery"),
 					 errdetail_recovery_conflict()));
 		}
-		else
-			ereport(FATAL,
-					(errcode(ERRCODE_ADMIN_SHUTDOWN),
-					 errmsg("terminating connection due to administrator command")));
+		else if (proc_die_hook)
+		{
+			/*
+			 * Custom proc die callback, which is expected to call proc_exit()
+			 * or ereport(FATAL, ...).
+			 */
+			(*proc_die_hook)();
+		}
+		ereport(FATAL,
+				(errcode(ERRCODE_ADMIN_SHUTDOWN),
+				 errmsg("terminating connection due to administrator command")));
 	}
 	if (ClientConnectionLost)
 	{
@@ -3123,6 +3133,17 @@ ProcessInterrupts(void)
 
 	if (ParallelMessagePending)
 		HandleParallelMessages();
+}
+
+/*
+ * A function installable as proc_die_hook, for backends such as bgworkers
+ * that wish to exit from ProcessInterrupts() quietly after SIGTERM is
+ * received by the standard die() handler.
+ */
+void
+proc_die_quietly(void)
+{
+	proc_exit(0);
 }
 
 
