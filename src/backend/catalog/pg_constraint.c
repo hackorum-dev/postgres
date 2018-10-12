@@ -490,6 +490,8 @@ clone_fk_constraints(Relation pg_constraint, Relation parentRel,
 		ArrayType  *arr;
 		Datum		datum;
 		bool		isnull;
+		char	   *conname;
+		char	   *colname;
 
 		tuple = SearchSysCache1(CONSTROID, parentConstrOid);
 		if (!tuple)
@@ -677,8 +679,17 @@ clone_fk_constraints(Relation pg_constraint, Relation parentRel,
 			continue;
 		}
 
+		colname = get_attname(RelationGetRelid(partRel),
+									mapped_conkey[0],
+									false);
+		conname = ChooseConstraintName(RelationGetRelationName(partRel),
+									   colname,
+									   "fkey",
+									   RelationGetNamespace(partRel),
+									   NIL);
+
 		constrOid =
-			CreateConstraintEntry(NameStr(constrForm->conname),
+			CreateConstraintEntry(conname,
 								  constrForm->connamespace,
 								  CONSTRAINT_FOREIGN,
 								  constrForm->condeferrable,
@@ -741,6 +752,8 @@ clone_fk_constraints(Relation pg_constraint, Relation parentRel,
 		}
 
 		ReleaseSysCache(tuple);
+		pfree(colname);
+		pfree(conname);
 	}
 
 	pfree(attmap);
