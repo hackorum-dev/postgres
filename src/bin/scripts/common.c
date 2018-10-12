@@ -73,7 +73,7 @@ connectDatabase(const char *dbname, const char *pghost,
 	PGconn	   *conn;
 	bool		new_pass;
 	static bool have_password = false;
-	static char password[100];
+	static char password[PROMPT_MAX_PASSWORD_LENGTH];
 
 	if (!allow_password_reuse)
 		have_password = false;

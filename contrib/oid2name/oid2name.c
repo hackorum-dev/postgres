@@ -285,7 +285,7 @@ sql_conn(struct options *my_opts)
 {
 	PGconn	   *conn;
 	bool		have_password = false;
-	char		password[100];
+	char		password[PROMPT_MAX_PASSWORD_LENGTH];
 	bool		new_pass;
 	PGresult   *res;
 

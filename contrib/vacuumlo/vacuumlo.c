@@ -70,7 +70,7 @@ vacuumlo(const char *database, const struct _param *param)
 	bool		new_pass;
 	bool		success = true;
 	static bool have_password = false;
-	static char password[100];
+	static char password[PROMPT_MAX_PASSWORD_LENGTH];
 
 	/* Note: password can be carried over from a previous call */
 	if (param->pg_prompt == TRI_YES && !have_password)

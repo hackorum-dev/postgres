@@ -1790,8 +1790,8 @@ exec_command_password(PsqlScanState scan_state, bool active_branch)
 	{
 		char	   *opt0 = psql_scan_slash_option(scan_state,
 												  OT_SQLID, NULL, true);
-		char		pw1[100];
-		char		pw2[100];
+		char		pw1[PROMPT_MAX_PASSWORD_LENGTH];
+		char		pw2[PROMPT_MAX_PASSWORD_LENGTH];
 
 		simple_prompt("Enter new password: ", pw1, sizeof(pw1), false);
 		simple_prompt("Enter it again: ", pw2, sizeof(pw2), false);
@@ -2808,7 +2808,7 @@ copy_previous_query(PQExpBuffer query_buf, PQExpBuffer previous_buf)
 static char *
 prompt_for_password(const char *username)
 {
-	char		buf[100];
+	char		buf[PROMPT_MAX_PASSWORD_LENGTH];
 
 	if (username == NULL || username[0] == '\0')
 		simple_prompt("Password: ", buf, sizeof(buf), false);

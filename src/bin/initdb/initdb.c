@@ -1528,8 +1528,8 @@ setup_auth(FILE *cmdfd)
 static void
 get_su_pwd(void)
 {
-	char		pwd1[100];
-	char		pwd2[100];
+	char		pwd1[PROMPT_MAX_PASSWORD_LENGTH];
+	char		pwd2[PROMPT_MAX_PASSWORD_LENGTH];
 
 	if (pwprompt)
 	{

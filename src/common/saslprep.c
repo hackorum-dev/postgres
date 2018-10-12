@@ -39,7 +39,7 @@
  * Limit on how large password's we will try to process.  A password
  * larger than this will be treated the same as out-of-memory.
  */
-#define MAX_PASSWORD_LENGTH		1024
+#define SASLPREP_MAX_PASSWORD_LENGTH	1024
 
 /*
  * In backend, we will use palloc/pfree.  In frontend, use malloc, and
@@ -1085,7 +1085,7 @@ pg_saslprep(const char *input, char **output)
 	*output = NULL;
 
 	/* Check that the password isn't stupendously long */
-	if (strlen(input) > MAX_PASSWORD_LENGTH)
+	if (strlen(input) > SASLPREP_MAX_PASSWORD_LENGTH)
 	{
 #ifndef FRONTEND
 		ereport(ERROR,

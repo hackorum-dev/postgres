@@ -100,7 +100,7 @@ main(int argc, char *argv[])
 	struct adhoc_opts options;
 	int			successResult;
 	bool		have_password = false;
-	char		password[100];
+	char		password[PROMPT_MAX_PASSWORD_LENGTH];
 	bool		new_pass;
 
 	set_pglocale_pgservice(argv[0], PG_TEXTDOMAIN("psql"));

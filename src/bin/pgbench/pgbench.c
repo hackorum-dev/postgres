@@ -1179,7 +1179,7 @@ doConnect(void)
 	PGconn	   *conn;
 	bool		new_pass;
 	static bool have_password = false;
-	static char password[100];
+	static char password[PROMPT_MAX_PASSWORD_LENGTH];
 
 	/*
 	 * Start the connection.  Loop until we have a password if requested by

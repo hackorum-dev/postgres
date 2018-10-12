@@ -1536,7 +1536,7 @@ connectDatabase(const char *dbname, const char *connection_string,
 	const char **values = NULL;
 	PQconninfoOption *conn_opts = NULL;
 	static bool have_password = false;
-	static char password[100];
+	static char password[PROMPT_MAX_PASSWORD_LENGTH];
 
 	if (prompt_password == TRI_YES && !have_password)
 	{

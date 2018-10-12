@@ -126,7 +126,7 @@ _connectDB(ArchiveHandle *AH, const char *reqdb, const char *requser)
 	const char *newdb;
 	const char *newuser;
 	char	   *password;
-	char		passbuf[100];
+	char		passbuf[PROMPT_MAX_PASSWORD_LENGTH];
 	bool		new_pass;
 
 	if (!reqdb)
@@ -246,7 +246,7 @@ ConnectDatabase(Archive *AHX,
 {
 	ArchiveHandle *AH = (ArchiveHandle *) AHX;
 	char	   *password;
-	char		passbuf[100];
+	char		passbuf[PROMPT_MAX_PASSWORD_LENGTH];
 	bool		new_pass;
 
 	if (AH->connection)

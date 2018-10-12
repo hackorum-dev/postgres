@@ -66,7 +66,7 @@ main(int argc, char *argv[])
 	bool		pwprompt = false;
 	char	   *newpassword = NULL;
 	char		newuser_buf[128];
-	char		newpassword_buf[100];
+	char		newpassword_buf[PROMPT_MAX_PASSWORD_LENGTH];
 
 	/* Tri-valued variables.  */
 	enum trivalue createdb = TRI_DEFAULT,
@@ -201,7 +201,7 @@ main(int argc, char *argv[])
 
 	if (pwprompt)
 	{
-		char		pw2[100];
+		char		pw2[PROMPT_MAX_PASSWORD_LENGTH];
 
 		simple_prompt("Enter password for new role: ",
 					  newpassword_buf, sizeof(newpassword_buf), false);

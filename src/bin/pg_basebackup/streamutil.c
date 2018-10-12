@@ -51,7 +51,7 @@ char	   *dbport = NULL;
 char	   *dbname = NULL;
 int			dbgetpassword = 0;	/* 0=auto, -1=never, 1=always */
 static bool have_password = false;
-static char password[100];
+static char password[PROMPT_MAX_PASSWORD_LENGTH];
 PGconn	   *conn = NULL;
 
 /*
