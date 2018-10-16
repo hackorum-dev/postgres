@@ -2521,21 +2521,15 @@ chmod og-rwx server.key
    </para>
 
    <para>
-    To create a server certificate whose identity can be validated
-    by clients, first create a certificate signing request
-    (<acronym>CSR</acronym>) and a public/private key file:
+    To create a server certificate whose identity can be validated by
+    clients, create a root certificate authority (using the
+    default <productname>OpenSSL</productname> configuration file location
+    on <productname>Linux</productname>):
 <programlisting>
-openssl req -new -nodes -text -out root.csr \
-  -keyout root.key -subj "/CN=<replaceable>root.yourdomain.com</replaceable>"
+openssl req -new -x509 -nodes -text -days 3650 \
+  -config /etc/ssl/openssl.cnf -extensions v3_ca \
+  -out root.crt -keyout root.key -subj "/CN=<replaceable>root.yourdomain.com</replaceable>"
 chmod og-rwx root.key
-</programlisting>
-    Then, sign the request with the key to create a root certificate
-    authority (using the default <productname>OpenSSL</productname>
-    configuration file location on <productname>Linux</productname>):
-<programlisting>
-openssl x509 -req -in root.csr -text -days 3650 \
-  -extfile /etc/ssl/openssl.cnf -extensions v3_ca \
-  -signkey root.key -out root.crt
 </programlisting>
     Finally, create a server certificate signed by the new root certificate
     authority:
