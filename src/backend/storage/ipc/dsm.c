@@ -180,8 +180,7 @@ ResourceOwnerForgetDSM(ResourceOwner owner, dsm_segment *seg)
 /*
  * Start up the dynamic shared memory system.
  *
- * This is called just once during each cluster lifetime, at postmaster
- * startup time.
+ * This is called at postmaster startup time, and again during crash restarts.
  */
 void
 dsm_postmaster_startup(PGShmemHeader *shim)
@@ -380,15 +379,17 @@ dsm_postmaster_shutdown(int code, Datum arg)
 	 * control segment while it was dying.  In that case, we warn and ignore
 	 * the contents of the control segment.  This may end up leaving behind
 	 * stray shared memory segments, but there's not much we can do about that
-	 * if the metadata is gone.
+	 * if the metadata is gone.  We'll still attempt to destroy the segment
+	 * itself.
 	 */
-	nitems = dsm_control->nitems;
 	if (!dsm_control_segment_sane(dsm_control, dsm_control_mapped_size))
 	{
 		ereport(LOG,
 				(errmsg("dynamic shared memory control segment is corrupt")));
-		return;
+		nitems = 0;
 	}
+	else
+		nitems = dsm_control->nitems;
 
 	/* Remove any remaining segments. */
 	for (i = 0; i < nitems; ++i)
@@ -420,6 +421,16 @@ dsm_postmaster_shutdown(int code, Datum arg)
 	dsm_impl_op(DSM_OP_DESTROY, dsm_control_handle, 0,
 				&dsm_control_impl_private, &dsm_control_address,
 				&dsm_control_mapped_size, LOG);
+
+	/*
+	 * In the unlikely event that we failed to unmap the segment, we'll just
+	 * forget that we have it mapped so that we can proceed without an
+	 * assertion failure, in case of crash restart.
+	 */
+	dsm_control_address = NULL;
+	dsm_control_mapped_size = 0;
+	dsm_control_impl_private = NULL;
+
 	dsm_control = dsm_control_address;
 	shim->dsm_control = 0;
 }
