@@ -8908,15 +8908,6 @@ CreateCheckPoint(int flags)
 	SpinLockRelease(&XLogCtl->info_lck);
 
 	/*
-	 * If enabled, log checkpoint start.  We postpone this until now so as not
-	 * to log anything if we decided to skip the checkpoint.
-	 */
-	if (log_checkpoints)
-		LogCheckpointStart(flags, false);
-
-	TRACE_POSTGRESQL_CHECKPOINT_START(flags);
-
-	/*
 	 * Get the other info we need for the checkpoint record.
 	 *
 	 * We don't need to save oldestClogXid in the checkpoint, it only matters
@@ -8961,6 +8952,15 @@ CreateCheckPoint(int flags)
 	 * panic. Accordingly, exit critical section while doing it.
 	 */
 	END_CRIT_SECTION();
+
+	/*
+	 * If enabled, log checkpoint start.  We postpone this until now so as not
+	 * to log anything if we decided to skip the checkpoint.
+	 */
+	if (log_checkpoints)
+		LogCheckpointStart(flags, false);
+
+	TRACE_POSTGRESQL_CHECKPOINT_START(flags);
 
 	/*
 	 * In some cases there are groups of actions that must all occur on one
