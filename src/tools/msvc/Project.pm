@@ -132,7 +132,7 @@ sub AddLibrary
 {
 	my ($self, $lib, $dbgsuffix) = @_;
 
-	if ($lib =~ m/\s/)
+	if ($lib =~ m/\s/ && !$lib =~/^\&quot;.*\&quot;$/)
 	{
 		$lib = '&quot;' . $lib . "&quot;";
 	}

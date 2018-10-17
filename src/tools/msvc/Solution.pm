@@ -596,10 +596,22 @@ sub AddProject
 	}
 	if ($self->{options}->{gss})
 	{
-		$proj->AddIncludeDir($self->{options}->{gss} . '\inc\krb5');
-		$proj->AddLibrary($self->{options}->{gss} . '\lib\i386\krb5_32.lib');
-		$proj->AddLibrary($self->{options}->{gss} . '\lib\i386\comerr32.lib');
-		$proj->AddLibrary($self->{options}->{gss} . '\lib\i386\gssapi32.lib');
+		if ( -d $self->{options}->{gss}.'\include') {
+			$proj->AddIncludeDir($self->{options}->{gss} . '\include');
+		} else {
+			$proj->AddIncludeDir($self->{options}->{gss} . '\inc\krb5');
+		}
+		my ($gss_libdir,$suffix);
+		if ($self->{platform} eq 'Win32') {
+			$gss_libdir =  $self->{options}->{gss}.'\lib\i386';
+			$suffix='32';
+		} else {
+			$gss_libdir =  $self->{options}->{gss}.'\lib\amd64';
+			$suffix='64';
+		}
+		$proj->AddLibrary("$gss_libdir\\krb5_$suffix.lib");
+		$proj->AddLibrary("$gss_libdir\\comerr$suffix.lib");
+		$proj->AddLibrary("$gss_libdir\\gssapi$suffix.lib");
 	}
 	if ($self->{options}->{iconv})
 	{
