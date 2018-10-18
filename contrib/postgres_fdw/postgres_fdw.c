@@ -3832,16 +3832,10 @@ create_cursor(ForeignScanState *node)
 	 */
 	if (numParams > 0)
 	{
-		MemoryContext oldcontext;
-
-		oldcontext = MemoryContextSwitchTo(econtext->ecxt_per_tuple_memory);
-
 		process_query_params(econtext,
 							 fsstate->param_flinfo,
 							 fsstate->param_exprs,
 							 values);
-
-		MemoryContextSwitchTo(oldcontext);
 	}
 
 	/* Construct the DECLARE CURSOR command */
