@@ -94,8 +94,8 @@
 
     <para>
      The <structname>FdwRoutine</structname> struct type is declared in
-     <filename>src/include/foreign/fdwapi.h</filename>, which see for additional
-     details.
+     <filename>src/include/foreign/fdwapi.h</filename>, which contains
+     additional details on the struct members.
     </para>
 
    <sect2 id="fdw-callbacks-scan">
