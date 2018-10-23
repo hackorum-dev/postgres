@@ -5593,17 +5593,17 @@ local0.*    /var/log/postgresql
             </row>
             <row>
              <entry><literal>%t</literal></entry>
-             <entry>Time stamp without milliseconds</entry>
+             <entry>Time stamp without microseconds</entry>
              <entry>no</entry>
             </row>
             <row>
              <entry><literal>%m</literal></entry>
-             <entry>Time stamp with milliseconds</entry>
+             <entry>Time stamp with microseconds</entry>
              <entry>no</entry>
             </row>
             <row>
              <entry><literal>%n</literal></entry>
-             <entry>Time stamp with milliseconds (as a Unix epoch)</entry>
+             <entry>Time stamp with microseconds (as a Unix epoch)</entry>
              <entry>no</entry>
             </row>
             <row>

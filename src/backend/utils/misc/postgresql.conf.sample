@@ -470,9 +470,9 @@
 					#   %r = remote host and port
 					#   %h = remote host
 					#   %p = process ID
-					#   %t = timestamp without milliseconds
-					#   %m = timestamp with milliseconds
-					#   %n = timestamp with milliseconds (as a Unix epoch)
+					#   %t = timestamp without microseconds
+					#   %m = timestamp with microseconds
+					#   %n = timestamp with microseconds (as a Unix epoch)
 					#   %i = command tag
 					#   %e = SQL state
 					#   %c = session ID

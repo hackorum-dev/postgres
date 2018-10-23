@@ -2222,7 +2222,7 @@ static void
 setup_formatted_log_time(void)
 {
 	pg_time_t	stamp_time;
-	char		msbuf[13];
+	char		msbuf[16];
 
 	if (!saved_timeval_set)
 	{
@@ -2238,13 +2238,13 @@ setup_formatted_log_time(void)
 	 * nonempty or CSV mode can be selected.
 	 */
 	pg_strftime(formatted_log_time, FORMATTED_TS_LEN,
-	/* leave room for milliseconds... */
-				"%Y-%m-%d %H:%M:%S     %Z",
+	/* leave room for microseconds... */
+				"%Y-%m-%d %H:%M:%S        %Z",
 				pg_localtime(&stamp_time, log_timezone));
 
-	/* 'paste' milliseconds into place... */
-	sprintf(msbuf, ".%03d", (int) (saved_timeval.tv_usec / 1000));
-	memcpy(formatted_log_time + 19, msbuf, 4);
+	/* 'paste' microseconds into place... */
+	sprintf(msbuf, ".%06d", saved_timeval.tv_usec);
+	memcpy(formatted_log_time + 19, msbuf, 7);
 }
 
 /*
@@ -2665,7 +2665,7 @@ write_csvlog(ErrorData *edata)
 	initStringInfo(&buf);
 
 	/*
-	 * timestamp with milliseconds
+	 * timestamp with microseconds
 	 *
 	 * Check if the timestamp is already calculated for the syslog message,
 	 * and use it if so.  Otherwise, get the current timestamp.  This is done
