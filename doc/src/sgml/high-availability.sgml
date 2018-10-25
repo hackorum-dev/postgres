@@ -1536,7 +1536,12 @@ postgres=# WAIT FOR LSN '0/306EE20';
     must be recreated,
     either on the former primary system when it comes up, or on a third,
     possibly new, system. The <xref linkend="app-pgrewind"/> utility can be
-    used to speed up this process on large clusters.
+    used to speed up this process on large clusters. At the same time,
+    if before failover, the old master was cleanly shut down, and
+    all WAL data including so-called shutdown checkpoint was received
+    by the replica before it was promoted, the old master can be started
+    as a new replica attaching to the new master without rebuilding or using
+    pg_rewind. In this case, only configuration of recovery.conf is needed.
     Once complete, the primary and standby can be
     considered to have switched roles. Some people choose to use a third
     server to provide backup for the new primary until the new standby
