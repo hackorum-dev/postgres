@@ -1440,6 +1440,24 @@ get_func_nargs(Oid funcid)
 	ReleaseSysCache(tp);
 	return result;
 }
+/*
+ * get_func_orderkeyarg
+ *	Given procedure id, return the 0-based order key arg number.
+ */
+int16
+get_func_orderkeyarg(Oid funcid)
+{
+	HeapTuple	tp;
+	int16		result;
+
+	tp = SearchSysCache1(PROCOID, ObjectIdGetDatum(funcid));
+	if (!HeapTupleIsValid(tp))
+		elog(ERROR, "cache lookup failed for function %u", funcid);
+
+	result = ((Form_pg_proc) GETSTRUCT(tp))->proorderkeyarg;
+	ReleaseSysCache(tp);
+	return result;
+}
 
 /*
  * get_func_signature

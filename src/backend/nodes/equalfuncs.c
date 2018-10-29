@@ -824,6 +824,7 @@ _equalPathKey(const PathKey *a, const PathKey *b)
 	COMPARE_SCALAR_FIELD(pk_opfamily);
 	COMPARE_SCALAR_FIELD(pk_strategy);
 	COMPARE_SCALAR_FIELD(pk_nulls_first);
+	COMPARE_NODE_FIELD(pk_superkey);
 
 	return true;
 }

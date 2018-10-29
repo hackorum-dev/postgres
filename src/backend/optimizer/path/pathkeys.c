@@ -25,10 +25,18 @@
 #include "optimizer/pathnode.h"
 #include "optimizer/paths.h"
 #include "optimizer/tlist.h"
+#include "parser/parse_oper.h" /* XXX shouldn't be included here */
 #include "utils/lsyscache.h"
 
 
 static bool pathkey_is_redundant(PathKey *new_pathkey, List *pathkeys);
+static PathKey *make_pathkey_from_sortop(PlannerInfo *root,
+						 Expr *expr,
+						 Relids nullable_relids,
+						 Oid ordering_op,
+						 bool nulls_first,
+						 Index sortref,
+						 bool create_it);
 static bool right_merge_direction(PlannerInfo *root, PathKey *pathkey);
 
 
@@ -147,6 +155,54 @@ pathkey_is_redundant(PathKey *new_pathkey, List *pathkeys)
 }
 
 /*
+ * extract_orderkey_expr
+ *		Analyze 'expr' and attempt to determine if the expr has a suitable
+ *		order key. If it has return it, else return NULL.
+ *
+ * Note: We require that all non-orderkey parameters are Consts.
+ */
+static Expr *
+extract_orderkey_expr(const Expr *expr)
+{
+	if (IsA(expr, FuncExpr))
+	{
+		FuncExpr   *func = (FuncExpr *)expr;
+		int16		orderkeyarg = get_func_orderkeyarg(func->funcid);
+
+		if (orderkeyarg >= 0)
+		{
+			ListCell   *lc;
+			int16		argnum;
+			Expr	   *orderkeyexpr;
+
+			Assert(orderkeyarg < list_length(func->args));
+
+			/*
+			 * Process each argument checking to ensure all arguments apart
+			 * from the order key arg are Const.  Along the way we can
+			 * collect the actual order key arg to save from having to do a
+			 * list_nth on the arg list afterwards.
+			 */
+			argnum = 0;
+			foreach(lc, func->args)
+			{
+				Expr   *argexpr = lfirst(lc);
+
+				if (argnum == orderkeyarg)
+					orderkeyexpr = argexpr;
+				else if (!IsA(argexpr, Const))
+					return NULL;
+				argnum++;
+			}
+			
+			return orderkeyexpr;
+		}
+	}
+
+	return NULL;
+}
+
+/*
  * make_pathkey_from_sortinfo
  *	  Given an expression and sort-order information, create a PathKey.
  *	  The result is always a "canonical" PathKey, but it might be redundant.
@@ -179,10 +235,12 @@ make_pathkey_from_sortinfo(PlannerInfo *root,
 						   Relids rel,
 						   bool create_it)
 {
+	PathKey	   *pathkey;
 	int16		strategy;
 	Oid			equality_op;
 	List	   *opfamilies;
 	EquivalenceClass *eclass;
+	Expr	   *orderkeyexpr;
 
 	strategy = reverse_sort ? BTGreaterStrategyNumber : BTLessStrategyNumber;
 
@@ -214,8 +272,39 @@ make_pathkey_from_sortinfo(PlannerInfo *root,
 		return NULL;
 
 	/* And finally we can find or create a PathKey node */
-	return make_canonical_pathkey(root, eclass, opfamily,
-								  strategy, nulls_first);
+	pathkey = make_canonical_pathkey(root, eclass, opfamily,
+									 strategy, nulls_first);
+
+	/* Determine if 'expr' contains any orderkeys */
+	orderkeyexpr = extract_orderkey_expr(expr);
+
+	if (orderkeyexpr != NULL)
+	{
+		Oid			sortop;
+		Oid			eqop;
+		bool		hashable;
+
+		if (pathkey->pk_strategy == BTLessStrategyNumber)
+			get_sort_group_operators(exprType((Node *) orderkeyexpr), /* XXX this is not the right function to call */
+									 true, true, false,
+									 &sortop, &eqop, NULL,
+									 &hashable);
+		else
+			get_sort_group_operators(exprType((Node *) orderkeyexpr),
+									 false, true, true,
+									 NULL, &eqop, &sortop,
+									 &hashable);
+
+		pathkey->pk_superkey = make_pathkey_from_sortop(root,
+														orderkeyexpr,
+														nullable_relids,
+														sortop,
+														nulls_first,
+														sortref,
+														create_it);
+	}
+
+	return pathkey;
 }
 
 /*
@@ -311,20 +400,107 @@ compare_pathkeys(List *keys1, List *keys2)
 /*
  * pathkeys_contained_in
  *	  Common special case of compare_pathkeys: we just want to know
- *	  if keys2 are at least as well sorted as keys1.
+ *	  if keys2 are at least as well sorted as keys1. keys1 can exploit any
+ *	  super keys to determine if the order matches.
  */
 bool
 pathkeys_contained_in(List *keys1, List *keys2)
 {
-	switch (compare_pathkeys(keys1, keys2))
+	ListCell   *key1,
+			   *key2;
+
+	/*
+	 * Fall out quickly if we are passed two identical lists.  This mostly
+	 * catches the case where both are NIL, but that's common enough to
+	 * warrant the test.
+	 */
+	if (keys1 == keys2)
+		return true;
+
+	key1 = list_head(keys1);
+
+	foreach(key2, keys2)
 	{
-		case PATHKEYS_EQUAL:
-		case PATHKEYS_BETTER2:
-			return true;
-		default:
-			break;
+		PathKey    *pathkey1;
+		PathKey    *pathkey2 = (PathKey *) lfirst(key2);
+		bool		first = true;
+
+		for (;;)
+		{
+			if (key1 == NULL)
+				goto out;
+
+			pathkey1 = (PathKey *) lfirst(key1);
+
+			if (pathkey1 != pathkey2)
+			{
+				bool		found = false;
+
+				/*
+				 * No match on the main key... see if any super keys exist
+				 * which do match.
+				 */
+
+				pathkey1 = pathkey1->pk_superkey;
+				while (pathkey1 != NULL)
+				{
+					if (pathkey1 == pathkey2)
+					{
+						found = true;
+						break;
+					}
+					pathkey1 = pathkey1->pk_superkey;
+				}
+
+				if (found)
+				{
+					/*
+					 * When we find a matching super key we must try to match
+					 * the next pathkey1 to the same pathkey2. There may be
+					 * multiple pathkey1s relying on this pathkey2.  If we
+					 * don't find a subsequent match then we can just try to
+					 * match to the next pathkey2.
+					 */
+					key1 = lnext(key1);
+					first = false;
+					continue;
+				}
+				else if (first)
+				{
+					/*
+					 * Lack of match is only a problem when its the first
+					 * attempt to match fails
+					 */
+					return false;
+				}
+				else
+				{
+					/*
+					 * Not found, but we've already matched to this key1, so
+					 * skip to next key2.
+					 */
+					break;
+				}
+			}
+			else
+			{
+				key1 = lnext(key1);
+				/* main key matched, just skip to next key2. */
+				break;
+			}
+		}
 	}
-	return false;
+
+out:
+	/*
+	 * If we reached the end of only one list, the other is longer and
+	 * therefore not a subset.
+	 */
+	if (key1 != NULL)
+		return false;	/* key1 is longer */
+	if (key2 != NULL)
+		return true;	/* key2 is longer */
+	return true;
 }
 
 /*

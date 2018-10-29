@@ -326,6 +326,7 @@ ProcedureCreate(const char *procedureName,
 	values[Anum_pg_proc_provolatile - 1] = CharGetDatum(volatility);
 	values[Anum_pg_proc_proparallel - 1] = CharGetDatum(parallel);
 	values[Anum_pg_proc_pronargs - 1] = UInt16GetDatum(parameterCount);
+	values[Anum_pg_proc_proorderkeyarg - 1] = Int16GetDatum(-1);
 	values[Anum_pg_proc_pronargdefaults - 1] = UInt16GetDatum(list_length(parameterDefaults));
 	values[Anum_pg_proc_prorettype - 1] = ObjectIdGetDatum(returnType);
 	values[Anum_pg_proc_proargtypes - 1] = PointerGetDatum(parameterTypes);

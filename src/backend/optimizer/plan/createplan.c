@@ -5734,6 +5734,7 @@ prepare_sort_from_pathkeys(Plan *lefttree, List *pathkeys,
 			 * WindowFunc in a sort expression, treat it as a variable.
 			 */
 			Expr	   *sortexpr = NULL;
+			Oid			em_datatype = InvalidOid;
 
 			foreach(j, ec->ec_members)
 			{
@@ -5758,6 +5759,7 @@ prepare_sort_from_pathkeys(Plan *lefttree, List *pathkeys,
 					continue;
 
 				sortexpr = em->em_expr;
+				em_datatype = em->em_datatype;
 				exprvars = pull_var_clause((Node *) sortexpr,
 										   PVC_INCLUDE_AGGREGATES |
 										   PVC_INCLUDE_WINDOWFUNCS |
@@ -5775,7 +5777,21 @@ prepare_sort_from_pathkeys(Plan *lefttree, List *pathkeys,
 				}
 			}
 			if (!j)
-				elog(ERROR, "could not find pathkey item to sort");
+			{
+				/*
+				 * Hard error if we were unable to find an EquivalenceMember
+				 * in order to determine the data type of the sort key
+				 */
+				if (sortexpr == NULL)
+					elog(ERROR, "could not find pathkey item to sort");
+
+				/*
+				 * Otherwise just use the datatype from the EquivalenceMember
+				 * and we'll add a new target list item for the sortexpr
+				 * below.
+				 */
+				pk_datatype = em_datatype;
+			}
 
 			/*
 			 * Do we need to insert a Result node?

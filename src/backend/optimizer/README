@@ -553,6 +553,7 @@ the result.  Each PathKey contains these fields:
 	* a btree opfamily OID (must match one of those in the EC)
 	* a sort direction (ascending or descending)
 	* a nulls-first-or-last flag
+	* an optional link to a "super" pathkey.
 
 The EquivalenceClass represents the value being sorted on.  Since the
 various members of an EquivalenceClass are known equal according to the
@@ -667,6 +668,16 @@ if a path was sorted by {a.x} below an outer join, we'll re-sort if that
 sort ordering was important; and so using the same PathKey for both sort
 orderings doesn't create any real problem.
 
+Pathkeys may also contain an optional "super key". The super key is a link
+to another pathkey to which this pathkey's order is derived from.  For
+example a pathkey with the expression "date_trunc('hour', timestamp)"
+could contain a super key containing the expression "timestamp".  This is
+because this particular function truncates away precision, meaning any
+Path which is ordered by "timestamp" is also ordered by
+date_trunc('hour', timestamp).  When checking if a set of path keys is
+contained in another set we make use of any super keys to increase the
+likelihood of a match.  For this to hold true the first parameter of the
+function must be constant.
 
 Order of processing for EquivalenceClasses and PathKeys
 -------------------------------------------------------

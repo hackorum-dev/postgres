@@ -2216,7 +2216,7 @@ _copyPathKey(const PathKey *from)
 	COPY_SCALAR_FIELD(pk_opfamily);
 	COPY_SCALAR_FIELD(pk_strategy);
 	COPY_SCALAR_FIELD(pk_nulls_first);
-
+	COPY_NODE_FIELD(pk_superkey);
 	return newnode;
 }
 

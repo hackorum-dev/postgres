@@ -977,6 +977,10 @@ typedef struct EquivalenceMember
  * equivalent and closely-related orderings. (See optimizer/README for more
  * information.)
  *
+ * PathKeys may also have a "super key". If present describes that the order
+ * described by the key can be satisfied by a path which is ordered by its
+ * 'pk_superkey'.  A super key may in turn have its own super key defined.
+ *
  * Note: pk_strategy is either BTLessStrategyNumber (for ASC) or
  * BTGreaterStrategyNumber (for DESC).  We assume that all ordering-capable
  * index types will use btree-compatible strategy numbers.
@@ -989,6 +993,8 @@ typedef struct PathKey
 	Oid			pk_opfamily;	/* btree opfamily defining the ordering */
 	int			pk_strategy;	/* sort direction (ASC or DESC) */
 	bool		pk_nulls_first; /* do NULLs come before normal values? */
+	struct PathKey *pk_superkey;	/* Link to path key which induces this
+									 * pathkey. */
 } PathKey;
 
 

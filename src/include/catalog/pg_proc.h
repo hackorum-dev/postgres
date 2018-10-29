@@ -79,6 +79,12 @@ CATALOG(pg_proc,1255,ProcedureRelationId) BKI_BOOTSTRAP BKI_ROWTYPE_OID(81,Proce
 	/* Note: need not be given in pg_proc.dat; genbki.pl will compute it */
 	int16		pronargs;
 
+	/*
+	 * 0-based argument number of the argument that  defines the sort order
+	 * of the return value, or -1 when the function does not support this.
+	 */
+	int16		proorderkeyarg BKI_DEFAULT(-1);
+
 	/* number of arguments with defaults */
 	int16		pronargdefaults BKI_DEFAULT(0);
 

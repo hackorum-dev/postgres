@@ -753,3 +753,18 @@ create unique index on covidxpart4 (a);
 alter table covidxpart attach partition covidxpart4 for values in (4);
 insert into covidxpart values (4, 1);
 insert into covidxpart values (4, 1);
+
+-- Test super path keys
+create table tstbl (ts timestamp, a int);
+create index on tstbl (ts, a);
+set enable_sort = 0;
+
+explain (costs off) select date_trunc('year', ts), a, count(*) from tstbl group by 1,2 order by 1,2;
+
+-- Ensure the we don't use the index to provide pre-sorted input for a
+-- GroupAggregate when the order key expr function has non-constant
+-- non-orderkey arguments.
+explain (costs off) select date_trunc(case random() > 0.5 when true then 'year' else 'month' end, ts), a, count(*) from tstbl group by 1,2 order by 1,2;
+
+-- Test a more complex case where the superkey can be matched to multiple pathkeys
+explain (costs off) select date_trunc('year', ts), date_trunc('month', ts), a, count(*) from tstbl group by 1,2,3 order by 1,2,3;

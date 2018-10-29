@@ -2490,6 +2490,7 @@ _outPathKey(StringInfo str, const PathKey *node)
 	WRITE_OID_FIELD(pk_opfamily);
 	WRITE_INT_FIELD(pk_strategy);
 	WRITE_BOOL_FIELD(pk_nulls_first);
+	WRITE_NODE_FIELD(pk_superkey);
 }
 
 static void

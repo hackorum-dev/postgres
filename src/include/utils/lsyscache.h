@@ -111,6 +111,7 @@ extern char *get_func_name(Oid funcid);
 extern Oid	get_func_namespace(Oid funcid);
 extern Oid	get_func_rettype(Oid funcid);
 extern int	get_func_nargs(Oid funcid);
+extern int16 get_func_orderkeyarg(Oid funcid);
 extern Oid	get_func_signature(Oid funcid, Oid **argtypes, int *nargs);
 extern Oid	get_func_variadictype(Oid funcid);
 extern bool get_func_retset(Oid funcid);
