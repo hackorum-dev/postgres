@@ -464,6 +464,7 @@ typedef enum QueryMode
 
 static QueryMode querymode = QUERY_SIMPLE;
 static const char *QUERYMODE[] = {"simple", "extended", "prepared"};
+bool	query_mode_already_set = false;
 
 typedef struct
 {
@@ -5149,6 +5150,12 @@ main(int argc, char **argv)
 				}
 				break;
 			case 'M':
+				if (query_mode_already_set)
+				{
+					fprintf(stderr, "query mode (-M) already set\n");
+					exit(1);
+				}
+				query_mode_already_set = true;
 				benchmarking_option_set = true;
 				for (querymode = 0; querymode < NUM_QUERYMODE; querymode++)
 					if (strcmp(optarg, QUERYMODE[querymode]) == 0)
