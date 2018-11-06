@@ -1089,6 +1089,210 @@ btvacuumscan(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 		*oldestBtpoXact = vstate.oldestBtpoXact;
 }
 
+static void
+_bt_sequential_layout(OffsetNumber* order, int* next, OffsetNumber low, OffsetNumber high)
+{
+	while (high > low)
+	{
+		order[*next] = low;
+		(*next)++;
+		low++;
+	}
+}
+
+static void
+_bt_metabtree_recursion(OffsetNumber* order, int* next, OffsetNumber low, OffsetNumber high)
+{
+	if (high > low)
+	{
+		OffsetNumber low1, high1, mid_low, mid_high;
+
+		OffsetNumber mid = low + ((high - low) / 2);
+		low1 = mid + 1;
+		high1 = mid;
+		mid_low = low + ((high1 - low) / 2);
+		mid_high = low1 + ((high - low1) / 2);
+		/* mid is already packed! */
+
+		if (mid_low != mid)
+		{
+			order[*next] = mid_low;
+			(*next)++;
+		}
+		if (mid_high != mid && mid_high != high)
+		{
+			order[*next] = mid_high;
+			(*next)++;
+		}
+
+		_bt_metabtree_recursion(order, next, low, high1);
+		_bt_metabtree_recursion(order, next, low1, high);
+
+		/* left here for reference
+		if (result >= cmpval)
+			low = mid + 1;
+		else
+			high = mid;*/
+	}
+}
+
+static void
+_bt_metabtree_layout(OffsetNumber* order, int* next, OffsetNumber low, OffsetNumber high)
+{
+	if (high > low)
+	{
+		OffsetNumber mid = low + ((high - low) / 2);
+
+		order[*next] = mid;
+		(*next)++;
+
+		_bt_metabtree_recursion(order, next, low, high);
+
+		/* left here for reference
+		if (result >= cmpval)
+			low = mid + 1;
+		else
+			high = mid;*/
+	}
+}
+
+static void
+_bt_eyzinger_recursion(OffsetNumber* order, int* next, OffsetNumber low, OffsetNumber high)
+{
+	if (high > low)
+	{
+		OffsetNumber mid = low + ((high - low) / 2);
+
+		order[*next] = mid;
+		(*next)++;
+
+		_bt_eyzinger_recursion(order, next, low, mid);
+		_bt_eyzinger_recursion(order, next, mid + 1, high);
+
+		/* left here for reference
+		if (result >= cmpval)
+			low = mid + 1;
+		else
+			high = mid;*/
+	}
+}
+
+static void
+_bt_veb_recursion(OffsetNumber* order, int* next, OffsetNumber low, OffsetNumber high)
+{
+	if (high > low)
+	{
+		OffsetNumber low1, high1, mid_low, mid_high;
+
+		OffsetNumber mid = low + ((high - low) / 2);
+		low1 = mid + 1;
+		high1 = mid;
+		mid_low = low + ((high1 - low) / 2);
+		mid_high = low1 + ((high - low1) / 2);
+
+		order[*next] = mid;
+		(*next)++;
+		if (mid_low != mid)
+		{
+			order[*next] = mid_low;
+			(*next)++;
+		}
+		if (mid_high != high)
+		{
+			order[*next] = mid_high;
+			(*next)++;
+		}
+
+		/* We have low <= mid < high, so mid points at a real slot */		
+
+		_bt_veb_recursion(order, next, low, mid_low);
+		_bt_veb_recursion(order, next, mid_low + 1, mid);
+		_bt_veb_recursion(order, next, mid + 1, mid_high);
+		_bt_veb_recursion(order, next, mid_high + 1, high);
+
+		/* left here for reference
+		if (result >= cmpval)
+			low = mid + 1;
+		else
+			high = mid;*/
+	}
+}
+
+static bool
+_bt_check_layout(Page	page, OffsetNumber* order)
+{
+	char busy[MaxOffsetNumber];
+	OffsetNumber maxoff = PageGetMaxOffsetNumber(page);
+	for (int i = 0; i <= maxoff; i++)
+	{
+		busy[i] = 0;
+	}
+
+	for (int i = 0; i < maxoff; i++)
+	{
+		OffsetNumber current = order[i];
+		if (current > maxoff || current == InvalidOffsetNumber)
+		{
+			elog(ERROR,"Page layout is broken: incorrect offset number %u at %i", current, i);
+		}
+		if (busy[current])
+		{
+			elog(ERROR,"Page layout is broken: offset number %u is used more than once at %i", current, i);
+		}
+		busy[current] = 1;
+	}
+	for (int i = FirstOffsetNumber; i <= maxoff; i++)
+	{	
+		if (!busy[i])
+		{
+			elog(ERROR,"Page layout is broken: offset number %u is not used", i);
+		}
+	}
+	return true;
+}
+
+#define USE_EYZINGER_ORDER
+static bool
+_bt_prepare_layout(Page	page, OffsetNumber* order)
+{
+	BTPageOpaque opaque;
+	OffsetNumber low,
+				high;
+	int			next = 0;
+
+	opaque = (BTPageOpaque) PageGetSpecialPointer(page);
+
+	low = P_FIRSTDATAKEY(opaque);
+	high = PageGetMaxOffsetNumber(page);
+
+	/* check if there is something to defrag*/
+	if (high < low)
+		return false;
+
+	high++;						/* establish the loop invariant for high */
+
+#ifdef USE_BT_ORDER
+	_bt_metabtree_layout(order, &next, low, high);
+#elif defined(USE_VEB_ORDER)
+	_bt_veb_recursion(order, &next, low, high);
+#elif defined(USE_EYZINGER_ORDER)
+	_bt_eyzinger_recursion(order, &next, low, high);
+#elif defined(USE_SEQ_ORDER)
+	_bt_sequential_layout(order, &next, low, high);
+#endif
+
+	if (!P_RIGHTMOST(opaque))
+	{
+		order[next] = P_HIKEY;
+		next++;
+	}
+
+	Assert(next == PageGetMaxOffsetNumber(page));
+	Assert(_bt_check_layout(page, order));
+
+	return true;
+}
+
 /*
  * btvacuumpage --- VACUUM one page
  *
@@ -1113,6 +1317,8 @@ btvacuumpage(BTVacState *vstate, BlockNumber blkno, BlockNumber orig_blkno)
 	Buffer		buf;
 	Page		page;
 	BTPageOpaque opaque = NULL;
+
+	OffsetNumber order[MaxOffsetNumber];
 
 restart:
 	delete_now = false;
@@ -1350,7 +1556,13 @@ restart:
 		/* pagedel released buffer, so we shouldn't */
 	}
 	else
+	{
+#if defined(USE_BT_ORDER) || defined(USE_VEB_ORDER) || defined(USE_EYZINGER_ORDER) || defined(USE_SEQ_ORDER)
+		_bt_prepare_layout(page, order);
+		PageMakeSpecialFragmentation(page, order);
+#endif
 		_bt_relbuf(rel, buf);
+	}
 
 	/*
 	 * This is really tail recursion, but if the compiler is too stupid to

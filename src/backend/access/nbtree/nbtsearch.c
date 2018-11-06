@@ -399,6 +399,25 @@ _bt_binsrch(Relation rel,
 	{
 		OffsetNumber mid = low + ((high - low) / 2);
 
+#define USE_EYZINGER_ORDER
+#define USE_PREFETCH
+
+#ifdef USE_PREFETCH
+#ifdef USE_BT_ORDER
+		/* in this case we only need one prefetch */
+		OffsetNumber x = mid + 1 + ((high - mid + 1) / 2);
+		if (x < high)
+			__builtin_prefetch (PageGetItem(page, PageGetItemId(page, x)), 0, 2);
+#else
+		OffsetNumber x = mid + 1 + ((high - mid + 1) / 2);
+		if (x < high)
+			__builtin_prefetch (PageGetItem(page, PageGetItemId(page, x)), 0, 2);
+		x = low + ((mid - low) / 2);
+		if (x > low)
+			__builtin_prefetch (PageGetItem(page, PageGetItemId(page, x)), 0, 2);
+#endif
+#endif
+
 		/* We have low <= mid < high, so mid points at a real slot */
 
 		result = _bt_compare(rel, keysz, scankey, page, mid);
