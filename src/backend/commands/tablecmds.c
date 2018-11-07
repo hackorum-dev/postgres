@@ -3100,6 +3100,10 @@ MergeAttributes(List *columns, const List *supers, char relpersistence,
 
 				if (strcmp(coldef->colname, restdef->colname) == 0)
 				{
+					Oid			defTypeId;
+					int32		deftypmod;
+					Oid			newCollId;
+
 					found = true;
 
 					/*
@@ -3157,6 +3161,23 @@ MergeAttributes(List *columns, const List *supers, char relpersistence,
 						coldef->raw_default = restdef->raw_default;
 						coldef->cooked_default = NULL;
 					}
+
+					/*
+					 * Collation must be same, so error out if a different one
+					 * specified for the partition.
+					 */
+					typenameTypeIdAndMod(NULL, coldef->typeName,
+										 &defTypeId, &deftypmod);
+					newCollId = GetColumnDefCollation(NULL, restdef,
+													  defTypeId);
+					if (newCollId != coldef->collOid)
+						ereport(ERROR,
+								(errcode(ERRCODE_COLLATION_MISMATCH),
+								 errmsg("column \"%s\" has a collation conflict",
+										coldef->colname),
+								 errdetail("\"%s\" versus \"%s\"",
+										   get_collation_name(newCollId),
+										   get_collation_name(coldef->collOid))));
 				}
 			}
 
