@@ -860,9 +860,13 @@ create table parted_collate_must_match (a text collate "C", b text collate "C")
 -- on the partition key
 create table parted_collate_must_match1 partition of parted_collate_must_match
   (a collate "POSIX") for values from ('a') to ('m');
+ERROR:  column "a" has a collation conflict
+DETAIL:  "POSIX" versus "C"
 -- on another column
 create table parted_collate_must_match2 partition of parted_collate_must_match
   (b collate "POSIX") for values from ('m') to ('z');
+ERROR:  column "b" has a collation conflict
+DETAIL:  "POSIX" versus "C"
 drop table parted_collate_must_match;
 -- check that non-matching collations for partition bound
 -- expressions are coerced to the right collation
