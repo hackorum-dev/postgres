@@ -4131,12 +4131,13 @@ OptNoLog:	UNLOGGED					{ $$ = RELPERSISTENCE_UNLOGGED; }
  *****************************************************************************/
 
 RefreshMatViewStmt:
-			REFRESH MATERIALIZED VIEW opt_concurrently qualified_name opt_with_data
+			REFRESH MATERIALIZED VIEW opt_concurrently qualified_name opt_with_data where_clause
 				{
 					RefreshMatViewStmt *n = makeNode(RefreshMatViewStmt);
 					n->concurrent = $4;
 					n->relation = $5;
 					n->skipData = !($6);
+					n->whereClause = $7;
 					$$ = (Node *) n;
 				}
 		;

@@ -3898,6 +3898,7 @@ _copyRefreshMatViewStmt(const RefreshMatViewStmt *from)
 	COPY_SCALAR_FIELD(concurrent);
 	COPY_SCALAR_FIELD(skipData);
 	COPY_NODE_FIELD(relation);
+	COPY_NODE_FIELD(whereClause);
 
 	return newnode;
 }

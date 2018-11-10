@@ -3227,6 +3227,7 @@ typedef struct RefreshMatViewStmt
 	NodeTag		type;
 	bool		concurrent;		/* allow concurrent access? */
 	bool		skipData;		/* true for WITH NO DATA */
+	Node	   *whereClause;	/* WHERE qualification */
 	RangeVar   *relation;		/* relation to insert into */
 } RefreshMatViewStmt;
 

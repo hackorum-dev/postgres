@@ -1710,6 +1710,7 @@ _equalRefreshMatViewStmt(const RefreshMatViewStmt *a, const RefreshMatViewStmt *
 	COMPARE_SCALAR_FIELD(concurrent);
 	COMPARE_SCALAR_FIELD(skipData);
 	COMPARE_NODE_FIELD(relation);
+	COMPARE_NODE_FIELD(whereClause);
 
 	return true;
 }
