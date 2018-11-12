@@ -21,4 +21,7 @@ select locktype, virtualxid, virtualtransaction, mode, granted
 from pg_locks where virtualxid = '1/1';
 
 -- suicide is painless
-select pg_cancel_backend(pg_backend_pid());
+select case
+	when pg_cancel_backend(pg_backend_pid())
+	then pg_sleep(60)
+end;
