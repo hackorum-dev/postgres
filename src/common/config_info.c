@@ -27,7 +27,7 @@
  * get_configdata(const char *my_exec_path, size_t *configdata_len)
  *
  * Get configure-time constants. The caller is responsible
- * for pfreeing the result.
+ * for pfreeing the result [free_configdata]
  */
 ConfigData *
 get_configdata(const char *my_exec_path, size_t *configdata_len)
@@ -198,4 +198,17 @@ get_configdata(const char *my_exec_path, size_t *configdata_len)
 	Assert(i == *configdata_len);
 
 	return configdata;
+}
+
+
+void
+free_configdata(ConfigData *configdata, size_t configdata_len)
+{
+	int i;
+	for (i = 0; i < configdata_len; i++)
+	{
+		pfree(configdata[i].name);
+		pfree(configdata[i].setting);
+	}
+	pfree(configdata);
 }

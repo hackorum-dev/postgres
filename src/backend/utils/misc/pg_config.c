@@ -44,6 +44,7 @@ pg_config(PG_FUNCTION_ARGS)
 
 		tuplestore_putvalues(rsinfo->setResult, rsinfo->setDesc, values, nulls);
 	}
+	free_configdata(configdata, configdata_len);
 
 	return (Datum) 0;
 }
