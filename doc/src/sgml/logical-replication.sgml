@@ -2448,8 +2448,16 @@ CONTEXT:  processing remote data for replication origin "pg_16395" during "INSER
      key or replica identity defined for it.
     </para>
    </listitem>
-  </itemizedlist>
- </sect1>
+
+   <listitem>
+    <para>
+     Changing the origin node for a <literal>PUBLICATION</literal> is not yet
+     possible. This makes logical replication less useful in high availablity
+     and disaster recovery scenarios.
+    </para>
+   </listitem>
+</itemizedlist>
+</sect1>
 
  <sect1 id="logical-replication-architecture">
   <title>Architecture</title>
