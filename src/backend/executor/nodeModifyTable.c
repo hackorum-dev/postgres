@@ -477,6 +477,7 @@ ExecInsert(ModifyTableState *mtstate,
 								estate->es_output_cid,
 								HEAP_INSERT_SPECULATIVE,
 								NULL);
+			ItemPointerCopy(&tuple->t_self, &slot->tts_tid);
 
 			/* insert index entries for tuple */
 			recheckIndexes = ExecInsertIndexTuples(slot, &(tuple->t_self),
@@ -522,6 +523,7 @@ ExecInsert(ModifyTableState *mtstate,
 			newId = heap_insert(resultRelationDesc, tuple,
 								estate->es_output_cid,
 								0, NULL);
+			ItemPointerCopy(&tuple->t_self, &slot->tts_tid);
 
 			/* insert index entries for tuple */
 			if (resultRelInfo->ri_NumIndices > 0)
@@ -1204,6 +1206,8 @@ lreplace:;
 							 estate->es_crosscheck_snapshot,
 							 true /* wait for commit */ ,
 							 &hufd, &lockmode);
+		ItemPointerCopy(&tuple->t_self, &slot->tts_tid);
+
 		switch (result)
 		{
 			case HeapTupleSelfUpdated:

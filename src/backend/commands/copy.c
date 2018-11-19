@@ -2953,9 +2953,11 @@ CopyFrom(CopyState cstate)
 						tuple->t_tableOid = RelationGetRelid(resultRelInfo->ri_RelationDesc);
 					}
 					else
+					{
 						heap_insert(resultRelInfo->ri_RelationDesc, tuple,
 									mycid, hi_options, bistate);
-
+						ItemPointerCopy(&tuple->t_self, &slot->tts_tid);
+					}
 					/* And create index entries for it */
 					if (resultRelInfo->ri_NumIndices > 0)
 						recheckIndexes = ExecInsertIndexTuples(slot,

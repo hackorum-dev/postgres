@@ -602,6 +602,7 @@ intorel_receive(TupleTableSlot *slot, DestReceiver *self)
 				myState->output_cid,
 				myState->hi_options,
 				myState->bistate);
+	ItemPointerCopy(&tuple->t_self, &slot->tts_tid);
 
 	/* We know this is a newly created relation, so there are no indexes */
 

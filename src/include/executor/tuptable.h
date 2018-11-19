@@ -125,6 +125,7 @@ typedef struct TupleTableSlot
 #define FIELDNO_TUPLETABLESLOT_ISNULL 6
 	bool	   *tts_isnull;		/* current per-attribute isnull flags */
 	MemoryContext tts_mcxt;		/* slot itself is in this context */
+	ItemPointerData tts_tid;	/* tid of the underlying tuple */
 } TupleTableSlot;
 
 /* routines for a TupleTableSlot implementation */
