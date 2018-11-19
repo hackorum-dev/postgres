@@ -407,10 +407,8 @@ ExecSimpleRelationInsert(EState *estate, TupleTableSlot *slot)
 	if (resultRelInfo->ri_TrigDesc &&
 		resultRelInfo->ri_TrigDesc->trig_insert_before_row)
 	{
-		slot = ExecBRInsertTriggers(estate, resultRelInfo, slot);
-
-		if (slot == NULL)		/* "do nothing" */
-			skip_tuple = true;
+		if (!ExecBRInsertTriggers(estate, resultRelInfo, slot))
+			skip_tuple = true;		/* "do nothing" */
 	}
 
 	if (!skip_tuple)
@@ -435,7 +433,7 @@ ExecSimpleRelationInsert(EState *estate, TupleTableSlot *slot)
 												   NIL);
 
 		/* AFTER ROW INSERT Triggers */
-		ExecARInsertTriggers(estate, resultRelInfo, tuple,
+		ExecARInsertTriggers(estate, resultRelInfo, slot,
 							 recheckIndexes, NULL);
 
 		/*
@@ -478,11 +476,10 @@ ExecSimpleRelationUpdate(EState *estate, EPQState *epqstate,
 	if (resultRelInfo->ri_TrigDesc &&
 		resultRelInfo->ri_TrigDesc->trig_update_before_row)
 	{
-		slot = ExecBRUpdateTriggers(estate, epqstate, resultRelInfo,
-									&hsearchslot->tuple->t_self, NULL, slot);
+		if (!ExecBRUpdateTriggers(estate, epqstate, resultRelInfo,
+								  &hsearchslot->tuple->t_self, NULL, slot))
 
-		if (slot == NULL)		/* "do nothing" */
-			skip_tuple = true;
+			skip_tuple = true;		/* "do nothing" */
 	}
 
 	if (!skip_tuple)
@@ -510,7 +507,7 @@ ExecSimpleRelationUpdate(EState *estate, EPQState *epqstate,
 
 		/* AFTER ROW UPDATE Triggers */
 		ExecARUpdateTriggers(estate, resultRelInfo,
-							 &hsearchslot->tuple->t_self, NULL, tuple,
+							 &hsearchslot->tuple->t_self, NULL, slot,
 							 recheckIndexes, NULL);
 
 		list_free(recheckIndexes);

@@ -977,7 +977,7 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 	 * Initialize the executor's tuple table to empty.
 	 */
 	estate->es_tupleTable = NIL;
-	estate->es_trig_tuple_slot = NULL;
+	estate->es_trig_return_slot = NULL;
 	estate->es_trig_oldtup_slot = NULL;
 	estate->es_trig_newtup_slot = NULL;
 

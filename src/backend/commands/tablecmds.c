@@ -8578,6 +8578,7 @@ validateForeignKeyConstraint(char *conname,
 {
 	HeapScanDesc scan;
 	HeapTuple	tuple;
+	TupleTableSlot *slot;
 	Trigger		trig;
 	Snapshot	snapshot;
 
@@ -8613,11 +8614,14 @@ validateForeignKeyConstraint(char *conname,
 	 */
 	snapshot = RegisterSnapshot(GetLatestSnapshot());
 	scan = heap_beginscan(rel, snapshot, 0, NULL);
+	slot = MakeSingleTupleTableSlot(RelationGetDescr(rel), &TTSOpsBufferHeapTuple);
 
 	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
 	{
 		FunctionCallInfoData fcinfo;
 		TriggerData trigdata;
+
+		ExecStoreBufferHeapTuple(tuple, slot, scan->rs_cbuf);
 
 		/*
 		 * Make a call to the trigger function
@@ -8633,10 +8637,9 @@ validateForeignKeyConstraint(char *conname,
 		trigdata.tg_event = TRIGGER_EVENT_INSERT | TRIGGER_EVENT_ROW;
 		trigdata.tg_relation = rel;
 		trigdata.tg_trigtuple = tuple;
+		trigdata.tg_trigslot = slot;
 		trigdata.tg_newtuple = NULL;
 		trigdata.tg_trigger = &trig;
-		trigdata.tg_trigtuplebuf = scan->rs_cbuf;
-		trigdata.tg_newtuplebuf = InvalidBuffer;
 
 		fcinfo.context = (Node *) &trigdata;
 
@@ -8645,6 +8648,7 @@ validateForeignKeyConstraint(char *conname,
 
 	heap_endscan(scan);
 	UnregisterSnapshot(snapshot);
+	ExecDropSingleTupleTableSlot(slot);
 }
 
 static void

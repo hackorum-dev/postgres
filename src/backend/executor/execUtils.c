@@ -130,7 +130,7 @@ CreateExecutorState(void)
 	estate->es_tuple_routing_result_relations = NIL;
 
 	estate->es_trig_target_relations = NIL;
-	estate->es_trig_tuple_slot = NULL;
+	estate->es_trig_return_slot = NULL;
 	estate->es_trig_oldtup_slot = NULL;
 	estate->es_trig_newtup_slot = NULL;
 
@@ -420,6 +420,74 @@ MakePerTupleExprContext(EState *estate)
 	return estate->es_per_tuple_exprcontext;
 }
 
+static TupleTableSlot *
+ExecTriggerGetSlot(EState *estate, Relation rel, TupleTableSlot *slot)
+{
+	TupleDesc reldesc = RelationGetDescr(rel);
+	MemoryContext oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
+
+	if (slot != NULL)
+	{
+		/*
+		 * Foreign tables need a non-buffer tuple slot, whereas local tables
+		 * need buffer tuple slots. For any other combinations, need to
+		 * re-create a matching tuple slot type.
+		 */
+		if (!(TTS_IS_BUFFERTUPLE(slot) &&
+			  rel->rd_rel->relkind != RELKIND_FOREIGN_TABLE)
+			&&
+			!(!TTS_IS_BUFFERTUPLE(slot) &&
+			  rel->rd_rel->relkind == RELKIND_FOREIGN_TABLE))
+		{
+			/* tuple slot type does not match. */
+			ExecDropSingleTupleTableSlot(slot);
+			slot = NULL;
+		}
+	}
+
+	if (slot == NULL)
+	{
+		/* For foreign tables, there are no buffer tuples */
+		slot =
+			ExecInitExtraTupleSlot(estate, NULL,
+								   rel->rd_rel->relkind == RELKIND_FOREIGN_TABLE ?
+								   &TTSOpsHeapTuple : &TTSOpsBufferHeapTuple);
+	}
+
+	if (slot->tts_tupleDescriptor != reldesc)
+		ExecSetSlotDescriptor(slot, reldesc);
+
+	MemoryContextSwitchTo(oldcontext);
+
+	return slot;
+}
+
+TupleTableSlot *
+ExecTriggerGetOldSlot(EState *estate, Relation rel)
+{
+	estate->es_trig_oldtup_slot =
+		ExecTriggerGetSlot(estate, rel, estate->es_trig_oldtup_slot);
+
+	return estate->es_trig_oldtup_slot;
+}
+
+TupleTableSlot *
+ExecTriggerGetNewSlot(EState *estate, Relation rel)
+{
+	estate->es_trig_newtup_slot =
+		ExecTriggerGetSlot(estate, rel, estate->es_trig_newtup_slot);
+
+	return estate->es_trig_newtup_slot;
+}
+
+TupleTableSlot *
+ExecTriggerGetReturnSlot(EState *estate, Relation rel)
+{
+	estate->es_trig_return_slot =
+		ExecTriggerGetSlot(estate, rel, estate->es_trig_return_slot);
+
+	return estate->es_trig_return_slot;
+}
 
 /* ----------------------------------------------------------------
  *				 miscellaneous node-init support functions

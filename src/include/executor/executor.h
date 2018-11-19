@@ -493,6 +493,10 @@ extern void ReScanExprContext(ExprContext *econtext);
 
 extern ExprContext *MakePerTupleExprContext(EState *estate);
 
+extern TupleTableSlot *ExecTriggerGetOldSlot(EState *estate, Relation rel);
+extern TupleTableSlot *ExecTriggerGetNewSlot(EState *estate, Relation rel);
+extern TupleTableSlot *ExecTriggerGetReturnSlot(EState *estate, Relation rel);
+
 /* Get an EState's per-output-tuple exprcontext, making it if first use */
 #define GetPerTupleExprContext(estate) \
 	((estate)->es_per_tuple_exprcontext ? \

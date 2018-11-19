@@ -2490,9 +2490,6 @@ CopyFrom(CopyState cstate)
 	/* Set up a tuple slot too */
 	myslot = ExecInitExtraTupleSlot(estate, tupDesc,
 									&TTSOpsHeapTuple);
-	/* Triggers might need a slot as well */
-	estate->es_trig_tuple_slot = ExecInitExtraTupleSlot(estate, NULL,
-														&TTSOpsHeapTuple);
 
 	/*
 	 * Set up a ModifyTableState so we can let FDW(s) init themselves for
@@ -2862,12 +2859,15 @@ CopyFrom(CopyState cstate)
 		/* BEFORE ROW INSERT Triggers */
 		if (has_before_insert_row_trig)
 		{
-			slot = ExecBRInsertTriggers(estate, resultRelInfo, slot);
-
-			if (slot == NULL)	/* "do nothing" */
-				skip_tuple = true;
+			if (!ExecBRInsertTriggers(estate, resultRelInfo, slot))
+				skip_tuple = true;	/* "do nothing" */
 			else				/* trigger might have changed tuple */
-				tuple = ExecFetchSlotHeapTuple(slot, true, NULL);
+			{
+				/* Similar to above, get a tuple copy in per-tuple context */
+				oldcontext = MemoryContextSwitchTo(GetPerTupleMemoryContext(estate));
+				tuple = ExecCopySlotHeapTuple(slot);
+				MemoryContextSwitchTo(oldcontext);
+			}
 		}
 
 		if (!skip_tuple)
@@ -2968,7 +2968,7 @@ CopyFrom(CopyState cstate)
 															   NIL);
 
 					/* AFTER ROW INSERT Triggers */
-					ExecARInsertTriggers(estate, resultRelInfo, tuple,
+					ExecARInsertTriggers(estate, resultRelInfo, slot,
 										 recheckIndexes, cstate->transition_capture);
 
 					list_free(recheckIndexes);
@@ -3106,7 +3106,7 @@ CopyFromInsertBatch(CopyState cstate, EState *estate, CommandId mycid,
 				ExecInsertIndexTuples(myslot, &(bufferedTuples[i]->t_self),
 									  estate, false, NULL, NIL);
 			ExecARInsertTriggers(estate, resultRelInfo,
-								 bufferedTuples[i],
+								 myslot,
 								 recheckIndexes, cstate->transition_capture);
 			list_free(recheckIndexes);
 		}
@@ -3123,8 +3123,9 @@ CopyFromInsertBatch(CopyState cstate, EState *estate, CommandId mycid,
 		for (i = 0; i < nBufferedTuples; i++)
 		{
 			cstate->cur_lineno = firstBufferedLineNo + i;
+			ExecStoreHeapTuple(bufferedTuples[i], myslot, false);
 			ExecARInsertTriggers(estate, resultRelInfo,
-								 bufferedTuples[i],
+								 myslot,
 								 NIL, cstate->transition_capture);
 		}
 	}

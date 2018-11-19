@@ -525,7 +525,7 @@ typedef struct EState
 
 	/* Stuff used for firing triggers: */
 	List	   *es_trig_target_relations;	/* trigger-only ResultRelInfos */
-	TupleTableSlot *es_trig_tuple_slot; /* for trigger output tuples */
+	TupleTableSlot *es_trig_return_slot;	/* for trigger output tuples */
 	TupleTableSlot *es_trig_oldtup_slot;	/* for TriggerEnabled */
 	TupleTableSlot *es_trig_newtup_slot;	/* for TriggerEnabled */
 

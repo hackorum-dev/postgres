@@ -308,10 +308,8 @@ ExecInsert(ModifyTableState *mtstate,
 	if (resultRelInfo->ri_TrigDesc &&
 		resultRelInfo->ri_TrigDesc->trig_insert_before_row)
 	{
-		slot = ExecBRInsertTriggers(estate, resultRelInfo, slot);
-
-		if (slot == NULL)		/* "do nothing" */
-			return NULL;
+		if (!ExecBRInsertTriggers(estate, resultRelInfo, slot))
+			return NULL;		/* "do nothing" */
 
 		/* trigger might have changed tuple */
 		tuple = ExecFetchSlotHeapTuple(slot, true, NULL);
@@ -321,10 +319,8 @@ ExecInsert(ModifyTableState *mtstate,
 	if (resultRelInfo->ri_TrigDesc &&
 		resultRelInfo->ri_TrigDesc->trig_insert_instead_row)
 	{
-		slot = ExecIRInsertTriggers(estate, resultRelInfo, slot);
-
-		if (slot == NULL)		/* "do nothing" */
-			return NULL;
+		if (!ExecIRInsertTriggers(estate, resultRelInfo, slot))
+			return NULL;		/* "do nothing" */
 
 		/* trigger might have changed tuple */
 		tuple = ExecFetchSlotHeapTuple(slot, true, NULL);
@@ -552,7 +548,7 @@ ExecInsert(ModifyTableState *mtstate,
 	{
 		ExecARUpdateTriggers(estate, resultRelInfo, NULL,
 							 NULL,
-							 tuple,
+							 slot,
 							 NULL,
 							 mtstate->mt_transition_capture);
 
@@ -564,7 +560,7 @@ ExecInsert(ModifyTableState *mtstate,
 	}
 
 	/* AFTER ROW INSERT Triggers */
-	ExecARInsertTriggers(estate, resultRelInfo, tuple, recheckIndexes,
+	ExecARInsertTriggers(estate, resultRelInfo, slot, recheckIndexes,
 						 ar_insert_trig_tcs);
 
 	list_free(recheckIndexes);
@@ -678,10 +674,7 @@ ExecDelete(ModifyTableState *mtstate,
 		 * although the FDW can return some other slot if it wants.  Set up
 		 * the slot's tupdesc so the FDW doesn't need to do that for itself.
 		 */
-		slot = estate->es_trig_tuple_slot;
-		if (slot->tts_tupleDescriptor != RelationGetDescr(resultRelationDesc))
-			ExecSetSlotDescriptor(slot, RelationGetDescr(resultRelationDesc));
-
+		slot = ExecTriggerGetReturnSlot(estate, resultRelationDesc);
 		slot = resultRelInfo->ri_FdwRoutine->ExecForeignDelete(estate,
 															   resultRelInfo,
 															   slot,
@@ -857,7 +850,7 @@ ldelete:;
 		 */
 		TupleTableSlot *rslot;
 		HeapTupleData deltuple;
-		Buffer		delbuffer;
+		Buffer		delbuffer = InvalidBuffer;
 
 		if (resultRelInfo->ri_FdwRoutine)
 		{
@@ -867,11 +860,10 @@ ldelete:;
 		}
 		else
 		{
-			slot = estate->es_trig_tuple_slot;
+			slot = ExecTriggerGetReturnSlot(estate, resultRelationDesc);
 			if (oldtuple != NULL)
 			{
-				deltuple = *oldtuple;
-				delbuffer = InvalidBuffer;
+				ExecForceStoreHeapTuple(oldtuple, slot);
 			}
 			else
 			{
@@ -879,11 +871,8 @@ ldelete:;
 				if (!heap_fetch(resultRelationDesc, SnapshotAny,
 								&deltuple, &delbuffer, false, NULL))
 					elog(ERROR, "failed to fetch deleted tuple for DELETE RETURNING");
+				ExecStoreBufferHeapTuple(&deltuple, slot, delbuffer);
 			}
-
-			if (slot->tts_tupleDescriptor != RelationGetDescr(resultRelationDesc))
-				ExecSetSlotDescriptor(slot, RelationGetDescr(resultRelationDesc));
-			ExecStoreHeapTuple(&deltuple, slot, false);
 		}
 
 		rslot = ExecProcessReturning(resultRelInfo, slot, planSlot);
@@ -966,11 +955,9 @@ ExecUpdate(ModifyTableState *mtstate,
 	if (resultRelInfo->ri_TrigDesc &&
 		resultRelInfo->ri_TrigDesc->trig_update_before_row)
 	{
-		slot = ExecBRUpdateTriggers(estate, epqstate, resultRelInfo,
-									tupleid, oldtuple, slot);
-
-		if (slot == NULL)		/* "do nothing" */
-			return NULL;
+		if (!ExecBRUpdateTriggers(estate, epqstate, resultRelInfo,
+								  tupleid, oldtuple, slot))
+			return NULL;		/* "do nothing" */
 
 		/* trigger might have changed tuple */
 		tuple = ExecFetchSlotHeapTuple(slot, true, NULL);
@@ -980,11 +967,9 @@ ExecUpdate(ModifyTableState *mtstate,
 	if (resultRelInfo->ri_TrigDesc &&
 		resultRelInfo->ri_TrigDesc->trig_update_instead_row)
 	{
-		slot = ExecIRUpdateTriggers(estate, resultRelInfo,
-									oldtuple, slot);
-
-		if (slot == NULL)		/* "do nothing" */
-			return NULL;
+		if (!ExecIRUpdateTriggers(estate, resultRelInfo,
+								  oldtuple, slot))
+			return NULL;		/* "do nothing" */
 
 		/* trigger might have changed tuple */
 		tuple = ExecFetchSlotHeapTuple(slot, true, NULL);
@@ -1309,7 +1294,7 @@ lreplace:;
 		(estate->es_processed)++;
 
 	/* AFTER ROW UPDATE Triggers */
-	ExecARUpdateTriggers(estate, resultRelInfo, tupleid, oldtuple, tuple,
+	ExecARUpdateTriggers(estate, resultRelInfo, tupleid, oldtuple, slot,
 						 recheckIndexes,
 						 mtstate->operation == CMD_INSERT ?
 						 mtstate->mt_oc_transition_capture :
@@ -2566,15 +2551,6 @@ ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags)
 		}
 	}
 
-	/*
-	 * Set up a tuple table slot for use for trigger output tuples. In a plan
-	 * containing multiple ModifyTable nodes, all can share one such slot, so
-	 * we keep it in the estate. The tuple being inserted doesn't come from a
-	 * buffer.
-	 */
-	if (estate->es_trig_tuple_slot == NULL)
-		estate->es_trig_tuple_slot = ExecInitExtraTupleSlot(estate, NULL,
-															&TTSOpsHeapTuple);
 
 	/*
 	 * Lastly, if this is not the primary (canSetTag) ModifyTable node, add it
