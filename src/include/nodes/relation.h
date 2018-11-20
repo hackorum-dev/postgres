@@ -863,7 +863,7 @@ typedef struct StatisticExtInfo
 } StatisticExtInfo;
 
 /*
- * EquivalenceClasses
+ * EquivalenceClass
  *
  * Whenever we can determine that a mergejoinable equality clause A = B is
  * not delayed by any outer join, we create an EquivalenceClass containing
@@ -880,7 +880,7 @@ typedef struct StatisticExtInfo
  * that all or none of the input datatypes are collatable, so that a single
  * collation value is sufficient.)
  *
- * We also use EquivalenceClasses as the base structure for PathKeys, letting
+ * We also use EquivalenceClass as the base structure for PathKey, letting
  * us represent knowledge about different sort orderings being equivalent.
  * Since every PathKey must reference an EquivalenceClass, we will end up
  * with single-member EquivalenceClasses whenever a sort key expression has
