@@ -143,6 +143,12 @@ SELECT * FROM FKTABLE;
         |        |      8
 (5 rows)
 
+-- Check update with part of key null
+UPDATE FKTABLE SET ftest1 = NULL WHERE ftest1 = 1;
+ERROR:  insert or update on table "fktable" violates foreign key constraint "constrname"
+DETAIL:  MATCH FULL does not allow mixing of null and nonnull key values.
+-- Check update with old and new key values equal
+UPDATE FKTABLE SET ftest1 = 1 WHERE ftest1 = 1;
 -- Try altering the column type where foreign keys are involved
 ALTER TABLE PKTABLE ALTER COLUMN ptest1 TYPE bigint;
 ALTER TABLE FKTABLE ALTER COLUMN ftest1 TYPE bigint;
@@ -158,11 +164,11 @@ SELECT * FROM PKTABLE;
 SELECT * FROM FKTABLE;
  ftest1 | ftest2 | ftest3 
 --------+--------+--------
-      1 |      3 |      5
       3 |      6 |     12
         |        |      0
         |        |      4
         |        |      8
+      1 |      3 |      5
 (5 rows)
 
 DROP TABLE PKTABLE CASCADE;

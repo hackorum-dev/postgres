@@ -97,6 +97,12 @@ UPDATE PKTABLE SET ptest1=1 WHERE ptest1=2;
 -- Check FKTABLE for update of matched row
 SELECT * FROM FKTABLE;
 
+-- Check update with part of key null
+UPDATE FKTABLE SET ftest1 = NULL WHERE ftest1 = 1;
+
+-- Check update with old and new key values equal
+UPDATE FKTABLE SET ftest1 = 1 WHERE ftest1 = 1;
+
 -- Try altering the column type where foreign keys are involved
 ALTER TABLE PKTABLE ALTER COLUMN ptest1 TYPE bigint;
 ALTER TABLE FKTABLE ALTER COLUMN ftest1 TYPE bigint;
