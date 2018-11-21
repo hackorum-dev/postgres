@@ -45,8 +45,8 @@ For new features, add links to the documentation sections.
  <title>Release Notes</title>
 
   <para>
-   The release notes contain the significant changes in each
-   <productname>PostgreSQL</productname> release, with major features and migration
+   The release notes contain the significant changes in recent
+   <productname>PostgreSQL</productname> releases, with major features and migration
    issues listed at the top.  The release notes do not contain changes
    that affect only a few users or changes that are internal and therefore not
    user-visible.  For example, the optimizer is improved in almost every
@@ -69,6 +69,11 @@ For new features, add links to the documentation sections.
    that item.  Of course all changes involve community discussion and patch
    review, so each item is truly a community effort.
   </para>
+  
+  <para>
+   For release notes of older versions, please refer the documentation
+   of corresponding releases.
+  </para>
 
 <!--
   To add a new major-release series, add an entry here and in filelist.sgml.
@@ -82,16 +87,5 @@ For new features, add links to the documentation sections.
 &release-9.6;
 &release-9.5;
 &release-9.4;
-&release-9.3;
-&release-9.2;
-&release-9.1;
-&release-9.0;
-&release-8.4;
-&release-8.3;
-&release-8.2;
-&release-8.1;
-&release-8.0;
-&release-7.4;
-&release-old;
 
 </appendix>
