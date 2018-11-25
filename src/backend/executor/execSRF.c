@@ -677,12 +677,8 @@ init_sexpr(Oid foid, Oid input_collation, Expr *node,
 		   SetExprState *sexpr, PlanState *parent,
 		   MemoryContext sexprCxt, bool allowSRF, bool needDescForSRF)
 {
-	AclResult	aclresult;
-
 	/* Check permission to call function */
-	aclresult = pg_proc_aclcheck(foid, GetUserId(), ACL_EXECUTE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, OBJECT_FUNCTION, get_func_name(foid));
+	pg_proc_execcheck(foid);
 	InvokeFunctionExecuteHook(foid);
 
 	/*

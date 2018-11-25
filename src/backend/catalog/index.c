@@ -2241,8 +2241,6 @@ index_build(Relation heapRelation,
 			bool parallel)
 {
 	IndexBuildResult *stats;
-	Oid			save_userid;
-	int			save_sec_context;
 	int			save_nestlevel;
 
 	/*
@@ -2284,9 +2282,7 @@ index_build(Relation heapRelation,
 	 * as that user.  Also lock down security-restricted operations and
 	 * arrange to make GUC variable changes local to this command.
 	 */
-	GetUserIdAndSecContext(&save_userid, &save_sec_context);
-	SetUserIdAndSecContext(heapRelation->rd_rel->relowner,
-						   save_sec_context | SECURITY_RESTRICTED_OPERATION);
+	PushTransientUser(heapRelation->rd_rel->relowner, true, false);
 	save_nestlevel = NewGUCNestLevel();
 
 	/*
@@ -2390,11 +2386,9 @@ index_build(Relation heapRelation,
 	if (indexInfo->ii_ExclusionOps != NULL)
 		IndexCheckExclusion(heapRelation, indexRelation, indexInfo);
 
-	/* Roll back any GUC changes executed by index functions */
+	/* Roll back GUC changes by index functions; revert user ID */
 	AtEOXact_GUC(false, save_nestlevel);
-
-	/* Restore userid and security context */
-	SetUserIdAndSecContext(save_userid, save_sec_context);
+	PopTransientUser();
 }
 
 
@@ -3127,8 +3121,6 @@ validate_index(Oid heapId, Oid indexId, Snapshot snapshot)
 	IndexInfo  *indexInfo;
 	IndexVacuumInfo ivinfo;
 	v_i_state	state;
-	Oid			save_userid;
-	int			save_sec_context;
 	int			save_nestlevel;
 
 	/* Open and lock the parent heap relation */
@@ -3151,9 +3143,7 @@ validate_index(Oid heapId, Oid indexId, Snapshot snapshot)
 	 * as that user.  Also lock down security-restricted operations and
 	 * arrange to make GUC variable changes local to this command.
 	 */
-	GetUserIdAndSecContext(&save_userid, &save_sec_context);
-	SetUserIdAndSecContext(heapRelation->rd_rel->relowner,
-						   save_sec_context | SECURITY_RESTRICTED_OPERATION);
+	PushTransientUser(heapRelation->rd_rel->relowner, true, false);
 	save_nestlevel = NewGUCNestLevel();
 
 	/*
@@ -3200,11 +3190,9 @@ validate_index(Oid heapId, Oid indexId, Snapshot snapshot)
 		 "validate_index found %.0f heap tuples, %.0f index tuples; inserted %.0f missing tuples",
 		 state.htups, state.itups, state.tups_inserted);
 
-	/* Roll back any GUC changes executed by index functions */
+	/* Roll back GUC changes by index functions; revert user ID */
 	AtEOXact_GUC(false, save_nestlevel);
-
-	/* Restore userid and security context */
-	SetUserIdAndSecContext(save_userid, save_sec_context);
+	PopTransientUser();
 
 	/* Close rels, but keep locks */
 	index_close(indexRelation, NoLock);

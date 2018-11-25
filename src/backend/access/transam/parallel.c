@@ -70,9 +70,10 @@
 #define PARALLEL_KEY_TRANSACTION_STATE		UINT64CONST(0xFFFFFFFFFFFF0008)
 #define PARALLEL_KEY_ENTRYPOINT				UINT64CONST(0xFFFFFFFFFFFF0009)
 #define PARALLEL_KEY_SESSION_DSM			UINT64CONST(0xFFFFFFFFFFFF000A)
-#define PARALLEL_KEY_REINDEX_STATE			UINT64CONST(0xFFFFFFFFFFFF000B)
-#define PARALLEL_KEY_RELMAPPER_STATE		UINT64CONST(0xFFFFFFFFFFFF000C)
-#define PARALLEL_KEY_ENUMBLACKLIST			UINT64CONST(0xFFFFFFFFFFFF000D)
+#define PARALLEL_KEY_USER					UINT64CONST(0xFFFFFFFFFFFF000B)
+#define PARALLEL_KEY_REINDEX_STATE			UINT64CONST(0xFFFFFFFFFFFF000C)
+#define PARALLEL_KEY_RELMAPPER_STATE		UINT64CONST(0xFFFFFFFFFFFF000D)
+#define PARALLEL_KEY_ENUMBLACKLIST			UINT64CONST(0xFFFFFFFFFFFF000E)
 
 /* Fixed-size parallel state. */
 typedef struct FixedParallelState
@@ -80,11 +81,9 @@ typedef struct FixedParallelState
 	/* Fixed-size state that workers must restore. */
 	Oid			database_id;
 	Oid			authenticated_user_id;
-	Oid			current_user_id;
 	Oid			outer_user_id;
 	Oid			temp_namespace_id;
 	Oid			temp_toast_namespace_id;
-	int			sec_context;
 	bool		is_superuser;
 	PGPROC	   *parallel_master_pgproc;
 	pid_t		parallel_master_pid;
@@ -210,6 +209,7 @@ InitializeParallelDSM(ParallelContext *pcxt)
 	Size		tsnaplen = 0;
 	Size		asnaplen = 0;
 	Size		tstatelen = 0;
+	Size		userlen = 0;
 	Size		reindexlen = 0;
 	Size		relmapperlen = 0;
 	Size		enumblacklistlen = 0;
@@ -262,6 +262,8 @@ InitializeParallelDSM(ParallelContext *pcxt)
 		tstatelen = EstimateTransactionStateSpace();
 		shm_toc_estimate_chunk(&pcxt->estimator, tstatelen);
 		shm_toc_estimate_chunk(&pcxt->estimator, sizeof(dsm_handle));
+		userlen = EstimateTransientUserStackSpace();
+		shm_toc_estimate_chunk(&pcxt->estimator, userlen);
 		reindexlen = EstimateReindexStateSpace();
 		shm_toc_estimate_chunk(&pcxt->estimator, reindexlen);
 		relmapperlen = EstimateRelationMapSpace();
@@ -319,7 +321,6 @@ InitializeParallelDSM(ParallelContext *pcxt)
 	fps->authenticated_user_id = GetAuthenticatedUserId();
 	fps->outer_user_id = GetCurrentRoleId();
 	fps->is_superuser = session_auth_is_superuser;
-	GetUserIdAndSecContext(&fps->current_user_id, &fps->sec_context);
 	GetTempNamespaceState(&fps->temp_namespace_id,
 						  &fps->temp_toast_namespace_id);
 	fps->parallel_master_pgproc = MyProc;
@@ -340,6 +341,7 @@ InitializeParallelDSM(ParallelContext *pcxt)
 		char	   *tsnapspace;
 		char	   *asnapspace;
 		char	   *tstatespace;
+		char	   *userspace;
 		char	   *reindexspace;
 		char	   *relmapperspace;
 		char	   *error_queue_space;
@@ -383,6 +385,11 @@ InitializeParallelDSM(ParallelContext *pcxt)
 		tstatespace = shm_toc_allocate(pcxt->toc, tstatelen);
 		SerializeTransactionState(tstatelen, tstatespace);
 		shm_toc_insert(pcxt->toc, PARALLEL_KEY_TRANSACTION_STATE, tstatespace);
+
+		/* Serialize transient user stack. */
+		userspace = shm_toc_allocate(pcxt->toc, userlen);
+		SerializeTransientUserStack(userlen, userspace);
+		shm_toc_insert(pcxt->toc, PARALLEL_KEY_USER, userspace);
 
 		/* Serialize reindex state. */
 		reindexspace = shm_toc_allocate(pcxt->toc, reindexlen);
@@ -1228,6 +1235,7 @@ ParallelWorkerMain(Datum main_arg)
 	char	   *tsnapspace;
 	char	   *asnapspace;
 	char	   *tstatespace;
+	char	   *userspace;
 	char	   *reindexspace;
 	char	   *relmapperspace;
 	char	   *enumblacklistspace;
@@ -1402,8 +1410,9 @@ ParallelWorkerMain(Datum main_arg)
 	 */
 	SetCurrentRoleId(fps->outer_user_id, fps->is_superuser);
 
-	/* Restore user ID and security context. */
-	SetUserIdAndSecContext(fps->current_user_id, fps->sec_context);
+	/* Restore transient user stack. */
+	userspace = shm_toc_lookup(toc, PARALLEL_KEY_USER, false);
+	RestoreTransientUserStack(userspace);
 
 	/* Restore temp-namespace state to ensure search path matches leader's. */
 	SetTempNamespaceState(fps->temp_namespace_id,

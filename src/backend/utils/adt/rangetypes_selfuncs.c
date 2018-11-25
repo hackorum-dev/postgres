@@ -23,6 +23,7 @@
 #include "catalog/pg_operator.h"
 #include "catalog/pg_statistic.h"
 #include "catalog/pg_type.h"
+#include "utils/acl.h"
 #include "utils/float.h"
 #include "utils/fmgrprotos.h"
 #include "utils/lsyscache.h"
@@ -695,6 +696,8 @@ get_position(TypeCacheEntry *typcache, RangeBound *value, RangeBound *hist1,
 		if (!has_subdiff)
 			return 0.5;
 
+		pg_proc_trustcheck(typcache->rng_subdiff_finfo.fn_oid);
+
 		/* Calculate relative position using subdiff function. */
 		bin_width = DatumGetFloat8(FunctionCall2Coll(
 													 &typcache->rng_subdiff_finfo,
@@ -806,11 +809,14 @@ get_distance(TypeCacheEntry *typcache, RangeBound *bound1, RangeBound *bound2)
 		 * value of 1.0 if no subdiff is available.
 		 */
 		if (has_subdiff)
+		{
+			pg_proc_trustcheck(typcache->rng_subdiff_finfo.fn_oid);
 			return
 				DatumGetFloat8(FunctionCall2Coll(&typcache->rng_subdiff_finfo,
 												 typcache->rng_collation,
 												 bound2->val,
 												 bound1->val));
+		}
 		else
 			return 1.0;
 	}

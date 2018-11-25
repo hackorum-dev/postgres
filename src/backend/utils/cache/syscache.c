@@ -28,6 +28,7 @@
 #include "catalog/pg_amop.h"
 #include "catalog/pg_amproc.h"
 #include "catalog/pg_auth_members.h"
+#include "catalog/pg_auth_trust.h"
 #include "catalog/pg_authid.h"
 #include "catalog/pg_cast.h"
 #include "catalog/pg_collation.h"
@@ -230,6 +231,17 @@ static const struct cachedesc cacheinfo[] = {
 			0
 		},
 		8
+	},
+	{AuthTrustRelationId,		/* AUTHTRUSTGRANTORTRUSTEE */
+		AuthTrustGrantorTrusteeIndexId,
+		2,
+		{
+			Anum_pg_auth_trust_grantor,
+			Anum_pg_auth_trust_trustee,
+			0,
+			0
+		},
+		32
 	},
 	{AuthIdRelationId,			/* AUTHNAME */
 		AuthIdRolnameIndexId,

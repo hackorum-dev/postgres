@@ -891,6 +891,7 @@ ExecInitExprRec(Expr *node, ExprState *state,
 			{
 				OpExpr	   *op = (OpExpr *) node;
 
+				pg_oper_trustcheck_extended(op->opno, false);
 				ExecInitFunc(&scratch, node,
 							 op->args, op->opfuncid, op->inputcollid,
 							 state);
@@ -902,6 +903,7 @@ ExecInitExprRec(Expr *node, ExprState *state,
 			{
 				DistinctExpr *op = (DistinctExpr *) node;
 
+				pg_oper_trustcheck_extended(op->opno, false);
 				ExecInitFunc(&scratch, node,
 							 op->args, op->opfuncid, op->inputcollid,
 							 state);
@@ -924,6 +926,7 @@ ExecInitExprRec(Expr *node, ExprState *state,
 			{
 				NullIfExpr *op = (NullIfExpr *) node;
 
+				pg_oper_trustcheck_extended(op->opno, false);
 				ExecInitFunc(&scratch, node,
 							 op->args, op->opfuncid, op->inputcollid,
 							 state);
@@ -949,19 +952,14 @@ ExecInitExprRec(Expr *node, ExprState *state,
 				Expr	   *arrayarg;
 				FmgrInfo   *finfo;
 				FunctionCallInfo fcinfo;
-				AclResult	aclresult;
 
 				Assert(list_length(opexpr->args) == 2);
 				scalararg = (Expr *) linitial(opexpr->args);
 				arrayarg = (Expr *) lsecond(opexpr->args);
 
 				/* Check permission to call function */
-				aclresult = pg_proc_aclcheck(opexpr->opfuncid,
-											 GetUserId(),
-											 ACL_EXECUTE);
-				if (aclresult != ACLCHECK_OK)
-					aclcheck_error(aclresult, OBJECT_FUNCTION,
-								   get_func_name(opexpr->opfuncid));
+				pg_oper_trustcheck_extended(opexpr->opno, false);
+				pg_proc_execcheck(opexpr->opfuncid);
 				InvokeFunctionExecuteHook(opexpr->opfuncid);
 
 				/* Set up the primary fmgr lookup information */
@@ -2159,16 +2157,13 @@ ExecInitFunc(ExprEvalStep *scratch, Expr *node, List *args, Oid funcid,
 			 Oid inputcollid, ExprState *state)
 {
 	int			nargs = list_length(args);
-	AclResult	aclresult;
 	FmgrInfo   *flinfo;
 	FunctionCallInfo fcinfo;
 	int			argno;
 	ListCell   *lc;
 
 	/* Check permission to call function */
-	aclresult = pg_proc_aclcheck(funcid, GetUserId(), ACL_EXECUTE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, OBJECT_FUNCTION, get_func_name(funcid));
+	pg_proc_execcheck(funcid);
 	InvokeFunctionExecuteHook(funcid);
 
 	/*
@@ -3378,13 +3373,9 @@ ExecBuildGroupingEqual(TupleDesc ldesc, TupleDesc rdesc,
 		Oid			foid = eqfunctions[natt];
 		FmgrInfo   *finfo;
 		FunctionCallInfo fcinfo;
-		AclResult	aclresult;
 
 		/* Check permission to call function */
-		aclresult = pg_proc_aclcheck(foid, GetUserId(), ACL_EXECUTE);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, OBJECT_FUNCTION, get_func_name(foid));
-
+		pg_proc_execcheck(foid);
 		InvokeFunctionExecuteHook(foid);
 
 		/* Set up the primary fmgr lookup information */

@@ -183,8 +183,7 @@ typedef struct TransactionStateData
 	TransactionId *childXids;	/* subcommitted child XIDs, in XID order */
 	int			nChildXids;		/* # of subcommitted child XIDs */
 	int			maxChildXids;	/* allocated size of childXids[] */
-	Oid			prevUser;		/* previous CurrentUserId setting */
-	int			prevSecContext; /* previous SecurityRestrictionContext */
+	TransientUser prevUser;		/* cookie for previous user state */
 	bool		prevXactReadOnly;	/* entry-time xact r/o state */
 	bool		startedInRecovery;	/* did we start in recovery? */
 	bool		didLogXid;		/* has xid been included in WAL record? */
@@ -1836,10 +1835,9 @@ StartTransaction(void)
 	 * Once the current user ID and the security context flags are fetched,
 	 * both will be properly reset even if transaction startup fails.
 	 */
-	GetUserIdAndSecContext(&s->prevUser, &s->prevSecContext);
-
-	/* SecurityRestrictionContext should never be set outside a transaction */
-	Assert(s->prevSecContext == 0);
+	s->prevUser = GetTransientUser();
+	Assert(!InLocalUserIdChange());
+	Assert(!InSecurityRestrictedOperation());
 
 	/*
 	 * Make sure we've reset xact state variables
@@ -2538,14 +2536,13 @@ AbortTransaction(void)
 	/*
 	 * Reset user ID which might have been changed transiently.  We need this
 	 * to clean up in case control escaped out of a SECURITY DEFINER function
-	 * or other local change of CurrentUserId; therefore, the prior value of
-	 * SecurityRestrictionContext also needs to be restored.
+	 * or other local change of user ID.
 	 *
 	 * (Note: it is not necessary to restore session authorization or role
 	 * settings here because those can only be changed via GUC, and GUC will
 	 * take care of rolling them back if need be.)
 	 */
-	SetUserIdAndSecContext(s->prevUser, s->prevSecContext);
+	RestoreTransientUser(s->prevUser);
 
 	/* If in parallel mode, clean up workers and exit parallel mode. */
 	if (IsInParallelMode())
@@ -4755,7 +4752,7 @@ AbortSubTransaction(void)
 	 * Reset user ID which might have been changed transiently.  (See notes in
 	 * AbortTransaction.)
 	 */
-	SetUserIdAndSecContext(s->prevUser, s->prevSecContext);
+	RestoreTransientUser(s->prevUser);
 
 	/* Exit from parallel mode, if necessary. */
 	if (IsInParallelMode())
@@ -4904,7 +4901,7 @@ PushTransaction(void)
 	s->savepointLevel = p->savepointLevel;
 	s->state = TRANS_DEFAULT;
 	s->blockState = TBLOCK_SUBBEGIN;
-	GetUserIdAndSecContext(&s->prevUser, &s->prevSecContext);
+	s->prevUser = GetTransientUser();
 	s->prevXactReadOnly = XactReadOnly;
 	s->parallelModeLevel = 0;
 

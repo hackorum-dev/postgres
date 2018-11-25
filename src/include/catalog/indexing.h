@@ -102,6 +102,11 @@ DECLARE_UNIQUE_INDEX(pg_auth_members_role_member_index, 2694, on pg_auth_members
 DECLARE_UNIQUE_INDEX(pg_auth_members_member_role_index, 2695, on pg_auth_members using btree(member oid_ops, roleid oid_ops));
 #define AuthMemMemRoleIndexId	2695
 
+DECLARE_UNIQUE_INDEX(pg_auth_trust_grantor_trustee_index, 2233, on pg_auth_trust using btree(grantor oid_ops, trustee oid_ops));
+#define AuthTrustGrantorTrusteeIndexId	2233
+DECLARE_UNIQUE_INDEX(pg_auth_trust_trustee_grantor_index, 2234, on pg_auth_trust using btree(trustee oid_ops, grantor oid_ops));
+#define AuthTrustTrusteeGrantorIndexId	2234
+
 DECLARE_UNIQUE_INDEX(pg_cast_oid_index, 2660, on pg_cast using btree(oid oid_ops));
 #define CastOidIndexId	2660
 DECLARE_UNIQUE_INDEX(pg_cast_source_target_index, 2661, on pg_cast using btree(castsource oid_ops, casttarget oid_ops));

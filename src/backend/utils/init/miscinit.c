@@ -234,35 +234,47 @@ ChangeToDataDir(void)
  * changed by SET SESSION AUTHORIZATION (if AuthenticatedUserIsSuperuser).
  * This is the ID reported by the SESSION_USER SQL function.
  *
- * OuterUserId is the current user ID in effect at the "outer level" (outside
- * any transaction or function).  This is initially the same as SessionUserId,
- * but can be changed by SET ROLE to any role that SessionUserId is a
- * member of.  (XXX rename to something like CurrentRoleId?)
+ * OuterUser is the current user in effect at the "outer level" (outside any
+ * transaction or function).  This initially has SessionUserId, but SET ROLE
+ * can change that to any role that SessionUserId is a member of.  (XXX rename
+ * to something like CurrentRole?)
  *
- * CurrentUserId is the current effective user ID; this is the one to use
- * for all normal permissions-checking purposes.  At outer level this will
- * be the same as OuterUserId, but it changes during calls to SECURITY
- * DEFINER functions, as well as locally in some specialized commands.
+ * CurrentUser is the effective user; this is the one to use for all normal
+ * permissions-checking purposes.  At outer level this will be the same as
+ * OuterUser, but it changes during calls to SECURITY DEFINER functions, as
+ * well as locally in some specialized commands.
  *
- * SecurityRestrictionContext holds flags indicating reason(s) for changing
- * CurrentUserId.  In some cases we need to lock down operations that are
- * not directly controlled by privilege settings, and this provides a
- * convenient way to do it.
+ *
+ * Operations that change only CurrentUser do so by adding entries to the
+ * TransientUserStack.  OuterUser points to the bottom of that stack, and
+ * CurrentUser points to the top.  The stack also records transitions into
+ * security-restricted and "FORCE ROW LEVEL SECURITY"-ignoring operations.
  * ----------------------------------------------------------------
  */
 static Oid	AuthenticatedUserId = InvalidOid;
 static Oid	SessionUserId = InvalidOid;
-static Oid	OuterUserId = InvalidOid;
-static Oid	CurrentUserId = InvalidOid;
 
 /* We also have to remember the superuser state of some of these levels */
 static bool AuthenticatedUserIsSuperuser = false;
 static bool SessionUserIsSuperuser = false;
 
-static int	SecurityRestrictionContext = 0;
-
 /* We also remember if a SET ROLE is currently active */
 static bool SetRoleIsActive = false;
+
+/* The stack of transient user ID changes. */
+struct TransientUserEntry
+{
+	Oid			userid;
+	unsigned	security_restriction_depth;
+	bool		noforce_rls;
+	struct TransientUserStack *prev;
+};
+static struct TransientUserEntry *TransientUserStack;
+static int	TransientUserStack_cur;
+static int	TransientUserStack_max;
+
+#define OuterUser (&TransientUserStack[0])
+#define CurrentUser (&TransientUserStack[TransientUserStack_cur])
 
 /*
  * Initialize the basic environment for a postmaster child
@@ -373,14 +385,12 @@ SwitchBackToLocalLatch(void)
 
 /*
  * GetUserId - get the current effective user ID.
- *
- * Note: there's no SetUserId() anymore; use SetUserIdAndSecContext().
  */
 Oid
 GetUserId(void)
 {
-	AssertState(OidIsValid(CurrentUserId));
-	return CurrentUserId;
+	AssertState(OidIsValid(CurrentUser->userid));
+	return CurrentUser->userid;
 }
 
 
@@ -390,20 +400,17 @@ GetUserId(void)
 Oid
 GetOuterUserId(void)
 {
-	AssertState(OidIsValid(OuterUserId));
-	return OuterUserId;
+	AssertState(OidIsValid(OuterUser->userid));
+	return OuterUser->userid;
 }
 
 
 static void
 SetOuterUserId(Oid userid)
 {
-	AssertState(SecurityRestrictionContext == 0);
+	AssertState(CurrentUser == OuterUser);
 	AssertArg(OidIsValid(userid));
-	OuterUserId = userid;
-
-	/* We force the effective user ID to match, too */
-	CurrentUserId = userid;
+	OuterUser->userid = userid;
 }
 
 
@@ -421,15 +428,14 @@ GetSessionUserId(void)
 static void
 SetSessionUserId(Oid userid, bool is_superuser)
 {
-	AssertState(SecurityRestrictionContext == 0);
+	AssertState(CurrentUser == OuterUser);
 	AssertArg(OidIsValid(userid));
 	SessionUserId = userid;
 	SessionUserIsSuperuser = is_superuser;
 	SetRoleIsActive = false;
 
 	/* We force the effective user IDs to match, too */
-	OuterUserId = userid;
-	CurrentUserId = userid;
+	OuterUser->userid = userid;
 }
 
 /*
@@ -444,74 +450,206 @@ GetAuthenticatedUserId(void)
 
 
 /*
- * GetUserIdAndSecContext/SetUserIdAndSecContext - get/set the current user ID
- * and the SecurityRestrictionContext flags.
+ * PushTransientUser/PopTransientUser - perform a temporary user ID change
  *
- * Currently there are three valid bits in SecurityRestrictionContext:
+ * (Sub)transaction abort will undo this change; otherwise, callers are
+ * responsible for pairing a pop with each push.  SET ROLE and SET SESSION
+ * AUTHORIZATION are forbidden until the last pop.
  *
- * SECURITY_LOCAL_USERID_CHANGE indicates that we are inside an operation
- * that is temporarily changing CurrentUserId via these functions.  This is
- * needed to indicate that the actual value of CurrentUserId is not in sync
- * with guc.c's internal state, so SET ROLE has to be disallowed.
+ * Specifying security_restricted=true signals the start of an operation that
+ * does not wish to trust called user-defined functions at all.  This prevents
+ * not only SET ROLE, but various other changes of session state that normally
+ * is unprotected but might possibly be used to subvert the calling session
+ * later.  An example is replacing an existing prepared statement with new
+ * code, which will then be executed with the outer session's permissions when
+ * the prepared statement is next used.  Since these restrictions are fairly
+ * draconian, we apply them only in contexts where the called functions are
+ * really supposed to be side-effect-free anyway, such as
+ * VACUUM/ANALYZE/REINDEX.  GUC changes are still permitted; the caller had
+ * better push a GUC nesting level, too.
  *
- * SECURITY_RESTRICTED_OPERATION indicates that we are inside an operation
- * that does not wish to trust called user-defined functions at all.  This
- * bit prevents not only SET ROLE, but various other changes of session state
- * that normally is unprotected but might possibly be used to subvert the
- * calling session later.  An example is replacing an existing prepared
- * statement with new code, which will then be executed with the outer
- * session's permissions when the prepared statement is next used.  Since
- * these restrictions are fairly draconian, we apply them only in contexts
- * where the called functions are really supposed to be side-effect-free
- * anyway, such as VACUUM/ANALYZE/REINDEX.
- *
- * SECURITY_NOFORCE_RLS indicates that we are inside an operation which should
- * ignore the FORCE ROW LEVEL SECURITY per-table indication.  This is used to
- * ensure that FORCE RLS does not mistakenly break referential integrity
- * checks.  Note that this is intentionally only checked when running as the
- * owner of the table (which should always be the case for referential
- * integrity checks).
- *
- * Unlike GetUserId, GetUserIdAndSecContext does *not* Assert that the current
- * value of CurrentUserId is valid; nor does SetUserIdAndSecContext require
- * the new value to be valid.  In fact, these routines had better not
- * ever throw any kind of error.  This is because they are used by
- * StartTransaction and AbortTransaction to save/restore the settings,
- * and during the first transaction within a backend, the value to be saved
- * and perhaps restored is indeed invalid.  We have to be able to get
- * through AbortTransaction without asserting in case InitPostgres fails.
+ * Specifying noforce_rls=true indicates that we are inside an operation which
+ * should ignore the FORCE ROW LEVEL SECURITY per-table indication.  This is
+ * used to ensure that FORCE RLS does not mistakenly break referential
+ * integrity checks.  Note that this is intentionally only checked when
+ * running as the owner of the table (which should always be the case for
+ * referential integrity checks).
  */
 void
-GetUserIdAndSecContext(Oid *userid, int *sec_context)
+PushTransientUser(Oid userid,
+				  bool security_restricted, bool noforce_rls)
 {
-	*userid = CurrentUserId;
-	*sec_context = SecurityRestrictionContext;
+	struct TransientUserEntry *prev;
+
+	if (TransientUserStack_cur + 1 == TransientUserStack_max)
+	{
+		int			new_max = 2 * TransientUserStack_max;
+
+		TransientUserStack = repalloc(TransientUserStack,
+									  new_max * sizeof(*TransientUserStack));
+		TransientUserStack_max = new_max;
+	}
+
+	prev = CurrentUser;
+	TransientUserStack_cur++;
+	CurrentUser->userid = userid;
+	CurrentUser->security_restriction_depth = prev->security_restriction_depth;
+	if (security_restricted)
+		CurrentUser->security_restriction_depth++;
+	CurrentUser->noforce_rls = prev->noforce_rls || noforce_rls;
 }
 
 void
-SetUserIdAndSecContext(Oid userid, int sec_context)
+PopTransientUser(void)
 {
-	CurrentUserId = userid;
-	SecurityRestrictionContext = sec_context;
+	Assert(CurrentUser > OuterUser);
+	TransientUserStack_cur--;
 }
 
 
 /*
- * InLocalUserIdChange - are we inside a local change of CurrentUserId?
+ * GetTransientUser/RestoreTransientUser
+ *
+ * xact.c uses these functions to clean up transient user ID changes at
+ * (sub)transaction abort; they probably have no other use.  The TransientUser
+ * value should be considered opaque outside of this file; it is the stack
+ * offset of CurrentUser.
+ *
+ * Note that AtEOXact_GUC() takes responsibility for reverting changes to the
+ * session and outer user IDs.
  */
-bool
-InLocalUserIdChange(void)
+TransientUser
+GetTransientUser(void)
 {
-	return (SecurityRestrictionContext & SECURITY_LOCAL_USERID_CHANGE) != 0;
+	return TransientUserStack_cur;
 }
 
-/*
- * InSecurityRestrictedOperation - are we inside a security-restricted command?
- */
-bool
-InSecurityRestrictedOperation(void)
+void
+RestoreTransientUser(TransientUser u)
 {
-	return (SecurityRestrictionContext & SECURITY_RESTRICTED_OPERATION) != 0;
+	Assert(u >= 0 && u <= TransientUserStack_cur);
+	TransientUserStack_cur = u;
+}
+
+
+Size
+EstimateTransientUserStackSpace(void)
+{
+	return mul_size(1 + 1 + TransientUserStack_cur,
+					sizeof(*TransientUserStack));
+}
+
+void
+SerializeTransientUserStack(Size maxsize, char *start_address)
+{
+	struct TransientUserEntry *state =
+		(struct TransientUserEntry *) start_address;
+
+	Assert(maxsize >= EstimateTransientUserStackSpace());
+
+	/* First entry stores the offset and capacity. */
+	state[0].userid = TransientUserStack_cur;
+	state[0].security_restriction_depth = TransientUserStack_max;
+	state[0].noforce_rls = false;
+
+	memcpy(state + 1, TransientUserStack,
+		   (TransientUserStack_cur + 1) * sizeof(*TransientUserStack));
+}
+
+void
+RestoreTransientUserStack(char *start_address)
+{
+	struct TransientUserEntry *state =
+		(struct TransientUserEntry *) start_address;
+	int			new_cur, new_max;
+
+	Assert(TransientUserStack_cur == 0);
+
+	new_cur = state[0].userid;
+	new_max = state[0].security_restriction_depth;
+	TransientUserStack = repalloc(TransientUserStack,
+								  new_max * sizeof(*TransientUserStack));
+	TransientUserStack_max = new_max;
+
+	TransientUserStack_cur = new_cur;
+	memcpy(TransientUserStack, state + 1,
+		   (TransientUserStack_cur + 1) * sizeof(*TransientUserStack));
+}
+
+
+/*
+ * GetSecurityApplicableRoles - list roles that can veto code execution
+ *
+ * Of course, the current user is always concerned with the code that runs;
+ * such code uses its privileges.  Less obviously, roles that will be restored
+ * after popping a transient user change also have an interest.  Code that
+ * runs now can change GUCs, create temporary tables, and mutate the session
+ * in other ways; in doing so, it may entice code running in those higher
+ * stack frames to misbehave.  However, when a transient user change is done
+ * with the security_restricted flag, that change establishes a security
+ * partition; essential session-mutating actions are either forbidden therein
+ * or (GUCs) reverted on exit.  Therefore, roles on the stack outside the
+ * current security restriction depth need not be concerned with the code
+ * permitted to run.  Recognizing this exception is important; it allows, for
+ * example, superusers to run ANALYZE on user tables despite not trusting the
+ * functions used in index expressions on those tables.
+ *
+ * The session user and authenticated user are not considered directly;
+ * immediately after SET ROLE, only the new outer user qualifies.  SET ROLE is
+ * even less of a security partition than a SECURITY DEFINER call.  Not only
+ * can the new role mutate the session, it can issue RESET ROLE to regain the
+ * original credentials.  Issuing SET ROLE does not cap the potential damage
+ * from subsequently running arbitrary code, making it more a tool for users
+ * to run specifically-chosen commands with a different effective user ID.  In
+ * that light, it is marginally more useful to adopt the target role's trust
+ * relationships, suspending existing ones.  Similar arguments apply to SET
+ * SESSION AUTHORIZATION.
+ *
+ * The prepared list is sorted, free from duplicates, and palloc'd.
+ */
+void
+GetSecurityApplicableRoles(Oid **roles, int *nroles)
+{
+	struct TransientUserEntry *entry;
+	unsigned	depth = CurrentUser->security_restriction_depth;
+
+	/* Allocate worst-case space. */
+	*roles = palloc((TransientUserStack_cur + 1) * sizeof(**roles));
+
+	/*
+	 * Deduplicate and insertion-sort.  Typical stacks will be short, and
+	 * typical unique lists even shorter.
+	 */
+	*nroles = 0;
+	for (entry = CurrentUser; entry >= OuterUser; --entry)
+	{
+		int			i;
+
+		if (entry->security_restriction_depth != depth)
+			break;				/* cross into a different partition */
+
+		for (i = 0; i < *nroles; i++)
+		{
+			if (entry->userid == (*roles)[i])
+				goto next_stack_entry;
+			else if (entry->userid < (*roles)[i])
+			{
+				int			j;
+
+				for (j = *nroles; j > i; j--)
+					(*roles)[j] = (*roles)[j - 1];
+
+				break;
+			}
+		}
+
+		(*roles)[i] = entry->userid;
+		(*nroles)++;
+
+next_stack_entry:;
+	}
+
+	Assert(*nroles > 0);
 }
 
 /*
@@ -520,37 +658,26 @@ InSecurityRestrictedOperation(void)
 bool
 InNoForceRLSOperation(void)
 {
-	return (SecurityRestrictionContext & SECURITY_NOFORCE_RLS) != 0;
+	return CurrentUser->noforce_rls;;
 }
 
 
 /*
- * These are obsolete versions of Get/SetUserIdAndSecContext that are
- * only provided for bug-compatibility with some rather dubious code in
- * pljava.  We allow the userid to be set, but only when not inside a
- * security restriction context.
+ * InLocalUserIdChange - are we inside a local change of CurrentUser?
  */
-void
-GetUserIdAndContext(Oid *userid, bool *sec_def_context)
+bool
+InLocalUserIdChange(void)
 {
-	*userid = CurrentUserId;
-	*sec_def_context = InLocalUserIdChange();
+	return CurrentUser != OuterUser;
 }
 
-void
-SetUserIdAndContext(Oid userid, bool sec_def_context)
+/*
+ * InSecurityRestrictedOperation - are we inside a security-restricted command?
+ */
+bool
+InSecurityRestrictedOperation(void)
 {
-	/* We throw the same error SET ROLE would. */
-	if (InSecurityRestrictedOperation())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("cannot set parameter \"%s\" within security-restricted operation",
-						"role")));
-	CurrentUserId = userid;
-	if (sec_def_context)
-		SecurityRestrictionContext |= SECURITY_LOCAL_USERID_CHANGE;
-	else
-		SecurityRestrictionContext &= ~SECURITY_LOCAL_USERID_CHANGE;
+	return CurrentUser->security_restriction_depth > 0;
 }
 
 
@@ -570,6 +697,23 @@ has_rolreplication(Oid roleid)
 		ReleaseSysCache(utup);
 	}
 	return result;
+}
+
+/*
+ * InitUserStack - call once, before any other user ID state function
+ */
+void
+InitUserStack(void)
+{
+	TransientUserStack_max = 8;
+	TransientUserStack =
+		MemoryContextAlloc(TopMemoryContext,
+						   TransientUserStack_max * sizeof(*OuterUser));
+
+	TransientUserStack_cur = 0;
+	OuterUser->userid = InvalidOid;
+	OuterUser->security_restriction_depth = 0;
+	OuterUser->noforce_rls = false;
 }
 
 /*
@@ -622,7 +766,7 @@ InitializeSessionUserId(const char *rolename, Oid roleid)
 	AuthenticatedUserId = roleid;
 	AuthenticatedUserIsSuperuser = rform->rolsuper;
 
-	/* This sets OuterUserId/CurrentUserId too */
+	/* This updates OuterUser/CurrentUser too */
 	SetSessionUserId(roleid, AuthenticatedUserIsSuperuser);
 
 	/* Also mark our PGPROC entry with the authenticated user id */
@@ -739,7 +883,7 @@ Oid
 GetCurrentRoleId(void)
 {
 	if (SetRoleIsActive)
-		return OuterUserId;
+		return OuterUser->userid;
 	else
 		return InvalidOid;
 }

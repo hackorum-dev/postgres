@@ -93,6 +93,8 @@
  * doesn't prevent the actual rebuild because we don't use RELATION_CHECKS
  * when calling the index AM's ambuild routine, and there is no reason for
  * ambuild to call its subsidiary routines through this file.
+ *
+ * We use neither access nor trust checks.
  * ----------------------------------------------------------------
  */
 #define RELATION_CHECKS \

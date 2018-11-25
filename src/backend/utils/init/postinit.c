@@ -703,6 +703,12 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	 */
 	before_shmem_exit(ShutdownPostgres, 0);
 
+	/*
+	 * Make the user stack physically-available, another prerequisite for
+	 * starting a transaction.  No valid user OIDs on record yet.
+	 */
+	InitUserStack();
+
 	/* The autovacuum launcher is done here */
 	if (IsAutoVacuumLauncherProcess())
 	{

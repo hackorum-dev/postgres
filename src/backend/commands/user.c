@@ -22,6 +22,7 @@
 #include "catalog/indexing.h"
 #include "catalog/objectaccess.h"
 #include "catalog/pg_auth_members.h"
+#include "catalog/pg_auth_trust.h"
 #include "catalog/pg_authid.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_db_role_setting.h"
@@ -55,6 +56,12 @@ static void AddRoleMems(const char *rolename, Oid roleid,
 static void DelRoleMems(const char *rolename, Oid roleid,
 			List *memberSpecs, List *memberIds,
 			bool admin_opt);
+static void StoreRoleTrust(const RoleSpec *role, Oid roleid,
+			   List *addSpecs, List *delSpecs);
+static void AddRoleTrust(const RoleSpec *role, Oid roleid,
+			 List *memberNames, List *memberIds);
+static void DelRoleTrust(const RoleSpec *role, Oid roleid,
+			 List *memberNames, List *memberIds);
 
 
 /* Check if current user has createrole privileges */
@@ -77,6 +84,7 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 	Datum		new_record[Natts_pg_authid];
 	bool		new_record_nulls[Natts_pg_authid];
 	Oid			roleid;
+	RoleSpec   *spec;
 	ListCell   *item;
 	ListCell   *option;
 	char	   *password = NULL;	/* user password */
@@ -94,6 +102,8 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 	char	   *validUntil = NULL;	/* time the login is valid until */
 	Datum		validUntil_datum;	/* same, as timestamptz Datum */
 	bool		validUntil_null;
+	List	   *trust = NIL;
+	List	   *notrust = NIL;
 	DefElem    *dpassword = NULL;
 	DefElem    *dissuper = NULL;
 	DefElem    *dinherit = NULL;
@@ -106,6 +116,8 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 	DefElem    *drolemembers = NULL;
 	DefElem    *dadminmembers = NULL;
 	DefElem    *dvalidUntil = NULL;
+	DefElem    *dtrust = NULL;
+	DefElem    *dnotrust = NULL;
 	DefElem    *dbypassRLS = NULL;
 
 	/* The defaults can vary depending on the original statement type */
@@ -239,6 +251,26 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 						 parser_errposition(pstate, defel->location)));
 			dvalidUntil = defel;
 		}
+		else if (strcmp(defel->defname, "trust") == 0)
+		{
+			if (dtrust)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			dtrust = defel;
+		}
+		else if (strcmp(defel->defname, "notrust") == 0)
+		{
+			/*
+			 * XXX This will only ever issue warnings about the absence of
+			 * entries to remove; should we forbid it entirely?
+			 */
+			if (dnotrust)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			dnotrust = defel;
+		}
 		else if (strcmp(defel->defname, "bypassrls") == 0)
 		{
 			if (dbypassRLS)
@@ -283,6 +315,10 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 		adminmembers = (List *) dadminmembers->arg;
 	if (dvalidUntil)
 		validUntil = strVal(dvalidUntil->arg);
+	if (dtrust)
+		trust = (List *) dtrust->arg;
+	if (dnotrust)
+		notrust = (List *) dnotrust->arg;
 	if (dbypassRLS)
 		bypassrls = intVal(dbypassRLS->arg) != 0;
 
@@ -452,12 +488,16 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 	 */
 	CatalogTupleInsert(pg_authid_rel, tuple);
 
-	/*
-	 * Advance command counter so we can see new record; else tests in
-	 * AddRoleMems may fail.
-	 */
-	if (addroleto || adminmembers || rolemembers)
+	/* Next steps may examine the pg_authid row. */
+	if (trust || notrust || addroleto || adminmembers || rolemembers)
 		CommandCounterIncrement();
+
+	/* pg_auth_trust */
+	spec = makeNode(RoleSpec);
+	spec->roletype = ROLESPEC_CSTRING;
+	spec->rolename = stmt->role;
+	spec->location = -1;
+	StoreRoleTrust(spec, roleid, trust, notrust);
 
 	/*
 	 * Add the new role to the specified existing roles.
@@ -483,10 +523,10 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 	 * option, rolemembers don't.
 	 */
 	AddRoleMems(stmt->role, roleid,
-				adminmembers, roleSpecsToIds(adminmembers),
+				adminmembers, roleSpecsToIds(adminmembers, false),
 				GetUserId(), true);
 	AddRoleMems(stmt->role, roleid,
-				rolemembers, roleSpecsToIds(rolemembers),
+				rolemembers, roleSpecsToIds(rolemembers, false),
 				GetUserId(), false);
 
 	/* Post creation hook for new role */
@@ -533,6 +573,8 @@ AlterRole(AlterRoleStmt *stmt)
 	char	   *validUntil = NULL;	/* time the login is valid until */
 	Datum		validUntil_datum;	/* same, as timestamptz Datum */
 	bool		validUntil_null;
+	List	   *trust = NIL;
+	List	   *notrust = NIL;
 	int			bypassrls = -1;
 	DefElem    *dpassword = NULL;
 	DefElem    *dissuper = NULL;
@@ -544,6 +586,8 @@ AlterRole(AlterRoleStmt *stmt)
 	DefElem    *dconnlimit = NULL;
 	DefElem    *drolemembers = NULL;
 	DefElem    *dvalidUntil = NULL;
+	DefElem    *dtrust = NULL;
+	DefElem    *dnotrust = NULL;
 	DefElem    *dbypassRLS = NULL;
 	Oid			roleid;
 
@@ -636,6 +680,22 @@ AlterRole(AlterRoleStmt *stmt)
 						 errmsg("conflicting or redundant options")));
 			dvalidUntil = defel;
 		}
+		else if (strcmp(defel->defname, "trust") == 0)
+		{
+			if (dtrust)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			dtrust = defel;
+		}
+		else if (strcmp(defel->defname, "notrust") == 0)
+		{
+			if (dnotrust)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			dnotrust = defel;
+		}
 		else if (strcmp(defel->defname, "bypassrls") == 0)
 		{
 			if (dbypassRLS)
@@ -647,6 +707,13 @@ AlterRole(AlterRoleStmt *stmt)
 		else
 			elog(ERROR, "option \"%s\" not recognized",
 				 defel->defname);
+
+		if (stmt->role->roletype == ROLESPEC_PUBLIC &&
+			strcmp(defel->defname, "trust") != 0 &&
+			strcmp(defel->defname, "notrust") != 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_SYNTAX_ERROR),
+					 errmsg("only [NO] TRUST allowed for PUBLIC")));
 	}
 
 	if (dpassword && dpassword->arg)
@@ -675,8 +742,22 @@ AlterRole(AlterRoleStmt *stmt)
 		rolemembers = (List *) drolemembers->arg;
 	if (dvalidUntil)
 		validUntil = strVal(dvalidUntil->arg);
+	if (dtrust)
+		trust = (List *) dtrust->arg;
+	if (dnotrust)
+		notrust = (List *) dnotrust->arg;
 	if (dbypassRLS)
 		bypassrls = intVal(dbypassRLS->arg);
+
+	/*
+	 * If changing PUBLIC, modify pg_auth_trust and we're done.  Since there's
+	 * no pg_authid row, don't fire OAT_POST_ALTER.
+	 */
+	if (stmt->role->roletype == ROLESPEC_PUBLIC)
+	{
+		StoreRoleTrust(stmt->role, InvalidOid, trust, notrust);
+		return 0;
+	}
 
 	/*
 	 * Scan the pg_authid relation to be certain the user exists.
@@ -690,8 +771,15 @@ AlterRole(AlterRoleStmt *stmt)
 	roleid = authform->oid;
 
 	/*
-	 * To mess with a superuser you gotta be superuser; else you need
-	 * createrole, or just want to change your own password
+	 * Lock the role; among other things, this prevents a concurrent session
+	 * from dropping it while we add then-orphaned pg_auth_trust roles.
+	 */
+	shdepLockAndCheckObject(AuthIdRelationId, roleid);
+
+	/*
+	 * To mess with a superuser or replication user, you gotta be superuser.
+	 * StoreRoleTrust() applies its own permissions checks.  Any role may
+	 * change its own password.  For other settings, you need createrole.
 	 */
 	if (authform->rolsuper || issuper >= 0)
 	{
@@ -724,8 +812,8 @@ AlterRole(AlterRoleStmt *stmt)
 			  !dconnlimit &&
 			  !rolemembers &&
 			  !validUntil &&
-			  dpassword &&
-			  roleid == GetUserId()))
+			  ((dpassword && roleid == GetUserId()) ||
+			   trust || notrust)))
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("permission denied")));
@@ -866,16 +954,19 @@ AlterRole(AlterRoleStmt *stmt)
 	 * Advance command counter so we can see new record; else tests in
 	 * AddRoleMems may fail.
 	 */
-	if (rolemembers)
+	if (trust || notrust || rolemembers)
 		CommandCounterIncrement();
+
+	/* pg_auth_trust */
+	StoreRoleTrust(stmt->role, roleid, trust, notrust);
 
 	if (stmt->action == +1)		/* add members to role */
 		AddRoleMems(rolename, roleid,
-					rolemembers, roleSpecsToIds(rolemembers),
+					rolemembers, roleSpecsToIds(rolemembers, false),
 					GetUserId(), false);
 	else if (stmt->action == -1)	/* drop members from role */
 		DelRoleMems(rolename, roleid,
-					rolemembers, roleSpecsToIds(rolemembers),
+					rolemembers, roleSpecsToIds(rolemembers, false),
 					false);
 
 	/*
@@ -971,11 +1062,30 @@ AlterRoleSet(AlterRoleSetStmt *stmt)
 /*
  * DROP ROLE
  */
+static void
+DeleteRoleCatalogRows(Relation rel, Oid index, AttrNumber att, Oid key)
+{
+	ScanKeyData scankey;
+	SysScanDesc sscan;
+	HeapTuple	tuple;
+
+	ScanKeyInit(&scankey, att, BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(key));
+
+	sscan = systable_beginscan(rel, index, true, NULL, 1, &scankey);
+
+	while (HeapTupleIsValid(tuple = systable_getnext(sscan)))
+		CatalogTupleDelete(rel, &tuple->t_self);
+
+	systable_endscan(sscan);
+}
+
 void
 DropRole(DropRoleStmt *stmt)
 {
 	Relation	pg_authid_rel,
-				pg_auth_members_rel;
+				pg_auth_members_rel,
+				pg_auth_trust_rel;
 	ListCell   *item;
 
 	if (!have_createrole_privilege())
@@ -989,18 +1099,16 @@ DropRole(DropRoleStmt *stmt)
 	 */
 	pg_authid_rel = heap_open(AuthIdRelationId, RowExclusiveLock);
 	pg_auth_members_rel = heap_open(AuthMemRelationId, RowExclusiveLock);
+	pg_auth_trust_rel = heap_open(AuthTrustRelationId, RowExclusiveLock);
 
 	foreach(item, stmt->roles)
 	{
 		RoleSpec   *rolspec = lfirst(item);
 		char	   *role;
-		HeapTuple	tuple,
-					tmp_tuple;
+		HeapTuple	tuple;
 		Form_pg_authid roleform;
-		ScanKeyData scankey;
 		char	   *detail;
 		char	   *detail_log;
-		SysScanDesc sscan;
 		Oid			roleid;
 
 		if (rolspec->roletype != ROLESPEC_CSTRING)
@@ -1086,35 +1194,26 @@ DropRole(DropRoleStmt *stmt)
 		 *
 		 * XXX what about grantor entries?	Maybe we should do one heap scan.
 		 */
-		ScanKeyInit(&scankey,
-					Anum_pg_auth_members_roleid,
-					BTEqualStrategyNumber, F_OIDEQ,
-					ObjectIdGetDatum(roleid));
+		DeleteRoleCatalogRows(pg_auth_members_rel,
+							  AuthMemRoleMemIndexId,
+							  Anum_pg_auth_members_roleid,
+							  roleid);
+		DeleteRoleCatalogRows(pg_auth_members_rel,
+							  AuthMemMemRoleIndexId,
+							  Anum_pg_auth_members_member,
+							  roleid);
 
-		sscan = systable_beginscan(pg_auth_members_rel, AuthMemRoleMemIndexId,
-								   true, NULL, 1, &scankey);
-
-		while (HeapTupleIsValid(tmp_tuple = systable_getnext(sscan)))
-		{
-			CatalogTupleDelete(pg_auth_members_rel, &tmp_tuple->t_self);
-		}
-
-		systable_endscan(sscan);
-
-		ScanKeyInit(&scankey,
-					Anum_pg_auth_members_member,
-					BTEqualStrategyNumber, F_OIDEQ,
-					ObjectIdGetDatum(roleid));
-
-		sscan = systable_beginscan(pg_auth_members_rel, AuthMemMemRoleIndexId,
-								   true, NULL, 1, &scankey);
-
-		while (HeapTupleIsValid(tmp_tuple = systable_getnext(sscan)))
-		{
-			CatalogTupleDelete(pg_auth_members_rel, &tmp_tuple->t_self);
-		}
-
-		systable_endscan(sscan);
+		/*
+		 * Remove role from pg_auth_trust table (as grantor and trustee).
+		 */
+		DeleteRoleCatalogRows(pg_auth_trust_rel,
+							  AuthTrustGrantorTrusteeIndexId,
+							  Anum_pg_auth_trust_grantor,
+							  roleid);
+		DeleteRoleCatalogRows(pg_auth_trust_rel,
+							  AuthTrustTrusteeGrantorIndexId,
+							  Anum_pg_auth_trust_trustee,
+							  roleid);
 
 		/*
 		 * Remove any comments or security labels on this role.
@@ -1142,6 +1241,7 @@ DropRole(DropRoleStmt *stmt)
 	/*
 	 * Now we can clean up; but keep locks until commit.
 	 */
+	heap_close(pg_auth_trust_rel, NoLock);
 	heap_close(pg_auth_members_rel, NoLock);
 	heap_close(pg_authid_rel, NoLock);
 }
@@ -1293,7 +1393,7 @@ GrantRole(GrantRoleStmt *stmt)
 	else
 		grantor = GetUserId();
 
-	grantee_ids = roleSpecsToIds(stmt->grantee_roles);
+	grantee_ids = roleSpecsToIds(stmt->grantee_roles, false);
 
 	/* AccessShareLock is enough since we aren't modifying pg_authid */
 	pg_authid_rel = heap_open(AuthIdRelationId, AccessShareLock);
@@ -1342,7 +1442,7 @@ GrantRole(GrantRoleStmt *stmt)
 void
 DropOwnedObjects(DropOwnedStmt *stmt)
 {
-	List	   *role_ids = roleSpecsToIds(stmt->roles);
+	List	   *role_ids = roleSpecsToIds(stmt->roles, false);
 	ListCell   *cell;
 
 	/* Check privileges */
@@ -1368,7 +1468,7 @@ DropOwnedObjects(DropOwnedStmt *stmt)
 void
 ReassignOwnedObjects(ReassignOwnedStmt *stmt)
 {
-	List	   *role_ids = roleSpecsToIds(stmt->roles);
+	List	   *role_ids = roleSpecsToIds(stmt->roles, false);
 	ListCell   *cell;
 	Oid			newrole;
 
@@ -1399,11 +1499,11 @@ ReassignOwnedObjects(ReassignOwnedStmt *stmt)
  * roleSpecsToIds
  *
  * Given a list of RoleSpecs, generate a list of role OIDs in the same order.
- *
- * ROLESPEC_PUBLIC is not allowed.
+ * If public_ok, ROLESPEC_PUBLIC translates to InvalidOid; otherwise, the
+ * presence of ROLESPEC_PUBLIC is an error.
  */
 List *
-roleSpecsToIds(List *memberNames)
+roleSpecsToIds(List *memberNames, bool public_ok)
 {
 	List	   *result = NIL;
 	ListCell   *l;
@@ -1413,7 +1513,10 @@ roleSpecsToIds(List *memberNames)
 		RoleSpec   *rolespec = lfirst_node(RoleSpec, l);
 		Oid			roleid;
 
-		roleid = get_rolespec_oid(rolespec, false);
+		if (public_ok && rolespec->roletype == ROLESPEC_PUBLIC)
+			roleid = InvalidOid;
+		else
+			roleid = get_rolespec_oid(rolespec, false);
 		result = lappend_oid(result, roleid);
 	}
 	return result;
@@ -1672,4 +1775,182 @@ DelRoleMems(const char *rolename, Oid roleid,
 	 * Close pg_authmem, but keep lock till commit.
 	 */
 	heap_close(pg_authmem_rel, NoLock);
+}
+
+
+/*
+ * StoreRoleTrust -- apply [NO] TRUST clauses
+ *
+ * role: RoleSpec of role to add to (used only for error messages)
+ * roleid: OID of role to add to (InvalidOid means PUBLIC)
+ * addSpecs: list of RoleSpec of roles to add
+ * delSpecs: list of RoleSpec of roles to remove
+ */
+static void
+StoreRoleTrust(const RoleSpec *role, Oid roleid,
+			   List *addSpecs, List *delSpecs)
+{
+	List	   *addIds,
+			   *delIds;
+
+	if (!addSpecs && !delSpecs)
+		return;					/* nothing to do */
+
+	/* Reject request to both add and remove the same role. */
+	addIds = roleSpecsToIds(addSpecs, true);
+	delIds = roleSpecsToIds(delSpecs, true);
+	if (list_intersection_oid(addIds, delIds) != NIL)
+		ereport(ERROR,
+				(errcode(ERRCODE_SYNTAX_ERROR),
+				 errmsg("conflicting or redundant options")));
+
+	/*
+	 * Check permissions: must have createrole or admin option on the role to
+	 * be changed.	Must be superuser if the target is PUBLIC or a superuser.
+	 */
+	if (superuser_arg(roleid))
+	{
+		if (!superuser())
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("must be superuser to alter superusers")));
+	}
+	else if (role->roletype == ROLESPEC_PUBLIC)
+	{
+		Assert(roleid == InvalidOid);
+		if (!superuser())
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("must be superuser to alter trust of PUBLIC")));
+	}
+	else
+	{
+		if (!have_createrole_privilege() &&
+			!is_admin_of_role(GetUserId(), roleid))
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("must have admin option on role \"%s\"",
+							get_rolespec_name(role))));
+	}
+
+	if (addSpecs)
+		AddRoleTrust(role, roleid, addSpecs, addIds);
+	if (delSpecs)
+		DelRoleTrust(role, roleid, delSpecs, delIds);
+}
+
+/*
+ * AddRoleTrust -- Record a role as trusting some other roles
+ *
+ * role: RoleSpec of role to add to (used only for error messages)
+ * roleid: OID of role to add to (InvalidOid means PUBLIC)
+ * memberSpecs: list of RoleSpec of roles to add (used only for error messages)
+ * memberIds: OIDs of roles to add (InvalidOid means PUBLIC)
+ */
+static void
+AddRoleTrust(const RoleSpec *role, Oid roleid,
+			 List *memberSpecs, List *memberIds)
+{
+	Relation	pg_auth_trust_rel;
+	TupleDesc	pg_auth_trust_dsc;
+	ListCell   *specitem;
+	ListCell   *iditem;
+
+	Assert(list_length(memberSpecs) == list_length(memberIds));
+
+	pg_auth_trust_rel = heap_open(AuthTrustRelationId, RowExclusiveLock);
+	pg_auth_trust_dsc = RelationGetDescr(pg_auth_trust_rel);
+
+	forboth(specitem, memberSpecs, iditem, memberIds)
+	{
+		RoleSpec   *memberRole = lfirst(specitem);
+		Oid			memberid = lfirst_oid(iditem);
+		HeapTuple	tuple;
+		Datum		new_record[Natts_pg_auth_trust];
+		bool		new_record_nulls[Natts_pg_auth_trust];
+
+		/* Unlike role membership, loops in role trust are fine. */
+
+		/*
+		 * Lock prevents a dangling pg_auth_trust row when someone is dropping
+		 * the target member concurrently.
+		 */
+		if (OidIsValid(memberid))
+			shdepLockAndCheckObject(AuthIdRelationId, memberid);
+
+		/* Warn if entry for this role/member already exists. */
+		if (SearchSysCacheExists2(AUTHTRUSTGRANTORTRUSTEE,
+								  ObjectIdGetDatum(roleid),
+								  ObjectIdGetDatum(memberid)))
+		{
+			ereport(NOTICE,
+					(errmsg("role \"%s\" already trusts role \"%s\"",
+							get_rolespec_name(role),
+							get_rolespec_name(memberRole))));
+			continue;
+		}
+
+		/* Insert a tuple */
+		new_record[Anum_pg_auth_trust_grantor - 1] = ObjectIdGetDatum(roleid);
+		new_record[Anum_pg_auth_trust_trustee - 1] = ObjectIdGetDatum(memberid);
+		MemSet(new_record_nulls, false, sizeof(new_record_nulls));
+
+		tuple = heap_form_tuple(pg_auth_trust_dsc,
+								new_record, new_record_nulls);
+		CatalogTupleInsert(pg_auth_trust_rel, tuple);
+
+		/* CCI after each change, in case there are duplicates in list */
+		CommandCounterIncrement();
+	}
+
+	heap_close(pg_auth_trust_rel, NoLock);
+}
+
+/*
+ * DelRoleTrust -- Remove members from a role's trusted list
+ *
+ * role: RoleSpec of role to del from (used only for error messages)
+ * roleid: OID of role to del from
+ * memberSpecs: list of RoleSpec of roles to del (used only for error messages)
+ * memberIds: OIDs of roles to del
+ */
+static void
+DelRoleTrust(const RoleSpec *role, Oid roleid,
+			 List *memberSpecs, List *memberIds)
+{
+	Relation	pg_auth_trust_rel;
+	ListCell   *specitem;
+	ListCell   *iditem;
+
+	Assert(list_length(memberSpecs) == list_length(memberIds));
+
+	pg_auth_trust_rel = heap_open(AuthTrustRelationId, RowExclusiveLock);
+
+	forboth(specitem, memberSpecs, iditem, memberIds)
+	{
+		RoleSpec   *memberRole = lfirst(specitem);
+		Oid			memberid = lfirst_oid(iditem);
+		HeapTuple	tuple;
+
+		/* Warn if no corresponding entry exists. */
+		tuple = SearchSysCache2(AUTHTRUSTGRANTORTRUSTEE,
+								ObjectIdGetDatum(roleid),
+								ObjectIdGetDatum(memberid));
+		if (!HeapTupleIsValid(tuple))
+		{
+			ereport(WARNING,
+					(errmsg("role \"%s\" does not trust role \"%s\"",
+							get_rolespec_name(role),
+							get_rolespec_name(memberRole))));
+			continue;
+		}
+
+		CatalogTupleDelete(pg_auth_trust_rel, &tuple->t_self);
+		ReleaseSysCache(tuple);
+
+		/* CCI after each change, in case there are duplicates in list */
+		CommandCounterIncrement();
+	}
+
+	heap_close(pg_auth_trust_rel, NoLock);
 }

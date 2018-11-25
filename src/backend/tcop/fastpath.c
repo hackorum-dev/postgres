@@ -319,10 +319,12 @@ HandleFunctionRequest(StringInfo msgBuf)
 					   get_namespace_name(fip->namespace));
 	InvokeNamespaceSearchHook(fip->namespace, true);
 
-	aclresult = pg_proc_aclcheck(fid, GetUserId(), ACL_EXECUTE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, OBJECT_FUNCTION,
-					   get_func_name(fid));
+	/*
+	 * A trust check is arguably superfluous,, seeing the user specified the
+	 * function by OID.  Doesn't seem worth a special case in the trust rules,
+	 * though.
+	 */
+	pg_proc_execcheck(fid);
 	InvokeFunctionExecuteHook(fid);
 
 	/*

@@ -2404,7 +2404,6 @@ ExecInitWindowAgg(WindowAgg *node, EState *estate, int eflags)
 		WindowFuncExprState *wfuncstate = (WindowFuncExprState *) lfirst(l);
 		WindowFunc *wfunc = wfuncstate->wfunc;
 		WindowStatePerFunc perfuncstate;
-		AclResult	aclresult;
 		int			i;
 
 		if (wfunc->winref != node->winref)	/* planner screwed up? */
@@ -2432,11 +2431,7 @@ ExecInitWindowAgg(WindowAgg *node, EState *estate, int eflags)
 		wfuncstate->wfuncno = wfuncno;
 
 		/* Check permission to call window function */
-		aclresult = pg_proc_aclcheck(wfunc->winfnoid, GetUserId(),
-									 ACL_EXECUTE);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, OBJECT_FUNCTION,
-						   get_func_name(wfunc->winfnoid));
+		pg_proc_execcheck(wfunc->winfnoid);
 		InvokeFunctionExecuteHook(wfunc->winfnoid);
 
 		/* Fill in the perfuncstate data */
@@ -2715,6 +2710,7 @@ initialize_peragg(WindowAggState *winstate, WindowFunc *wfunc,
 		if (aclresult != ACLCHECK_OK)
 			aclcheck_error(aclresult, OBJECT_FUNCTION,
 						   get_func_name(transfn_oid));
+		pg_proc_trustcheck(transfn_oid);
 		InvokeFunctionExecuteHook(transfn_oid);
 
 		if (OidIsValid(invtransfn_oid))
@@ -2724,6 +2720,7 @@ initialize_peragg(WindowAggState *winstate, WindowFunc *wfunc,
 			if (aclresult != ACLCHECK_OK)
 				aclcheck_error(aclresult, OBJECT_FUNCTION,
 							   get_func_name(invtransfn_oid));
+			pg_proc_trustcheck(invtransfn_oid);
 			InvokeFunctionExecuteHook(invtransfn_oid);
 		}
 
@@ -2734,6 +2731,7 @@ initialize_peragg(WindowAggState *winstate, WindowFunc *wfunc,
 			if (aclresult != ACLCHECK_OK)
 				aclcheck_error(aclresult, OBJECT_FUNCTION,
 							   get_func_name(finalfn_oid));
+			pg_proc_trustcheck(finalfn_oid);
 			InvokeFunctionExecuteHook(finalfn_oid);
 		}
 	}

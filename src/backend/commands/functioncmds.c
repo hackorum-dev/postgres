@@ -2238,6 +2238,7 @@ ExecuteCallStmt(CallStmt *stmt, ParamListInfo params, bool atomic, DestReceiver 
 	aclresult = pg_proc_aclcheck(fexpr->funcid, GetUserId(), ACL_EXECUTE);
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, OBJECT_PROCEDURE, get_func_name(fexpr->funcid));
+	pg_proc_trustcheck(fexpr->funcid);
 
 	/* Prep the context object we'll pass to the procedure */
 	callcontext = makeNode(CallContext);

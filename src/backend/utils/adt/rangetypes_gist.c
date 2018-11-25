@@ -16,6 +16,7 @@
 
 #include "access/gist.h"
 #include "access/stratnum.h"
+#include "utils/acl.h"
 #include "utils/float.h"
 #include "utils/fmgrprotos.h"
 #include "utils/datum.h"
@@ -1522,6 +1523,7 @@ call_subtype_diff(TypeCacheEntry *typcache, Datum val1, Datum val2)
 {
 	float8		value;
 
+	pg_proc_trustcheck(typcache->rng_subdiff_finfo.fn_oid);
 	value = DatumGetFloat8(FunctionCall2Coll(&typcache->rng_subdiff_finfo,
 											 typcache->rng_collation,
 											 val1, val2));

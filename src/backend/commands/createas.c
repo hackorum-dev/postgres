@@ -229,8 +229,6 @@ ExecCreateTableAs(CreateTableAsStmt *stmt, const char *queryString,
 	IntoClause *into = stmt->into;
 	bool		is_matview = (into->viewQuery != NULL);
 	DestReceiver *dest;
-	Oid			save_userid = InvalidOid;
-	int			save_sec_context = 0;
 	int			save_nestlevel = 0;
 	ObjectAddress address;
 	List	   *rewritten;
@@ -286,9 +284,7 @@ ExecCreateTableAs(CreateTableAsStmt *stmt, const char *queryString,
 	 */
 	if (is_matview)
 	{
-		GetUserIdAndSecContext(&save_userid, &save_sec_context);
-		SetUserIdAndSecContext(save_userid,
-							   save_sec_context | SECURITY_RESTRICTED_OPERATION);
+		PushTransientUser(GetUserId(), true, false);
 		save_nestlevel = NewGUCNestLevel();
 	}
 
@@ -370,11 +366,9 @@ ExecCreateTableAs(CreateTableAsStmt *stmt, const char *queryString,
 
 	if (is_matview)
 	{
-		/* Roll back any GUC changes */
+		/* Roll back GUC changes by index functions; revert user ID */
 		AtEOXact_GUC(false, save_nestlevel);
-
-		/* Restore userid and security context */
-		SetUserIdAndSecContext(save_userid, save_sec_context);
+		PopTransientUser();
 	}
 
 	return address;

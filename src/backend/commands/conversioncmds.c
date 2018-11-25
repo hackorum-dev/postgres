@@ -96,7 +96,8 @@ CreateConversionCommand(CreateConversionStmt *stmt)
 	 * Check that the conversion function is suitable for the requested source
 	 * and target encodings. We do that by calling the function with an empty
 	 * string; the conversion function should throw an error if it can't
-	 * perform the requested conversion.
+	 * perform the requested conversion.  Only superusers can define these
+	 * functions, so skip the trust check.
 	 */
 	OidFunctionCall5(funcoid,
 					 Int32GetDatum(from_encoding),

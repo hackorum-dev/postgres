@@ -311,8 +311,6 @@ do_analyze_rel(Relation onerel, int options, VacuumParams *params,
 	PGRUsage	ru0;
 	TimestampTz starttime = 0;
 	MemoryContext caller_context;
-	Oid			save_userid;
-	int			save_sec_context;
 	int			save_nestlevel;
 
 	if (inh)
@@ -340,9 +338,7 @@ do_analyze_rel(Relation onerel, int options, VacuumParams *params,
 	 * as that user.  Also lock down security-restricted operations and
 	 * arrange to make GUC variable changes local to this command.
 	 */
-	GetUserIdAndSecContext(&save_userid, &save_sec_context);
-	SetUserIdAndSecContext(onerel->rd_rel->relowner,
-						   save_sec_context | SECURITY_RESTRICTED_OPERATION);
+	PushTransientUser(onerel->rd_rel->relowner, true, false);
 	save_nestlevel = NewGUCNestLevel();
 
 	/* measure elapsed time iff autovacuum logging requires it */
@@ -669,11 +665,9 @@ do_analyze_rel(Relation onerel, int options, VacuumParams *params,
 							pg_rusage_show(&ru0))));
 	}
 
-	/* Roll back any GUC changes executed by index functions */
+	/* Roll back GUC changes by index functions; revert user ID */
 	AtEOXact_GUC(false, save_nestlevel);
-
-	/* Restore userid and security context */
-	SetUserIdAndSecContext(save_userid, save_sec_context);
+	PopTransientUser();
 
 	/* Restore current context and release memory */
 	MemoryContextSwitchTo(caller_context);
@@ -1993,7 +1987,10 @@ compute_distinct_stats(VacAttrStatsP stats,
 		firstcount1 = track_cnt;
 		for (j = 0; j < track_cnt; j++)
 		{
-			/* We always use the default collation for statistics */
+			/*
+			 * We always use the default collation for statistics.  This is
+			 * always an operator class member, so no trust check.
+			 */
 			if (DatumGetBool(FunctionCall2Coll(&f_cmpeq,
 											   DEFAULT_COLLATION_OID,
 											   value, track[j].value)))

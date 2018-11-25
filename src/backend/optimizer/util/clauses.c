@@ -2767,7 +2767,12 @@ eval_const_expressions_mutator(Node *node,
 										   true,
 										   true,
 										   context);
-				if (simple)		/* successfully simplified it */
+
+				/*
+				 * If we don't trust the operator owner, forget the
+				 * simplification and expect an error later.
+				 */
+				if (simple && pg_oper_trustcheck_extended(expr->opno, true))
 					return (Node *) simple;
 
 				/*
@@ -4164,6 +4169,18 @@ simplify_function(Oid funcid, Oid result_type, int32 result_typmod,
 		*args_p = args;
 	}
 
+	/*
+	 * Don't try to simplify an untrusted function; evaluate_function() would
+	 * throw an error, and we'd rather fail later.  inline_function() must not
+	 * be attempted, because we could no longer check trust.  XXX Should we
+	 * likewise preview the ACL check?
+	 */
+	if (!pg_proc_trustcheck_extended(funcid, true))
+	{
+		ReleaseSysCache(func_tuple);
+		return NULL;
+	}
+
 	/* Now attempt simplification of the function call proper. */
 
 	newexpr = evaluate_function(funcid, result_type, result_typmod,
@@ -4191,6 +4208,12 @@ simplify_function(Oid funcid, Oid result_type, int32 result_typmod,
 		fexpr.args = args;
 		fexpr.location = -1;
 
+		/*
+		 * Only superusers can associate a transform function, so skip
+		 * security checks.  If the original function has security relevance,
+		 * its transform function must either perform required checks or
+		 * return a node tree that still elicits the right runtime checks.
+		 */
 		newexpr = (Expr *)
 			DatumGetPointer(OidFunctionCall1(func_form->protransform,
 											 PointerGetDatum(&fexpr)));
@@ -4607,6 +4630,7 @@ inline_function(Oid funcid, Oid result_type, Oid result_collid,
 	/* Check permission to call function (fail later, if not) */
 	if (pg_proc_aclcheck(funcid, GetUserId(), ACL_EXECUTE) != ACLCHECK_OK)
 		return NULL;
+	/* simplify_function() already checked trust. */
 
 	/* Check whether a plugin wants to hook function entry/exit */
 	if (FmgrHookIsNeeded(funcid))
@@ -5104,7 +5128,8 @@ inline_set_returning_function(PlannerInfo *root, RangeTblEntry *rte)
 		return NULL;
 
 	/* Check permission to call function (fail later, if not) */
-	if (pg_proc_aclcheck(func_oid, GetUserId(), ACL_EXECUTE) != ACLCHECK_OK)
+	if (pg_proc_aclcheck(func_oid, GetUserId(), ACL_EXECUTE) != ACLCHECK_OK ||
+		!pg_proc_trustcheck_extended(func_oid, true))
 		return NULL;
 
 	/* Check whether a plugin wants to hook function entry/exit */

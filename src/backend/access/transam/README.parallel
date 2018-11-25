@@ -116,11 +116,10 @@ worker.  This includes:
   - The active snapshot, which might be different from the transaction
     snapshot.
 
-  - The currently active user ID and security context.  Note that this is
-    the fourth user ID we restore: the initial step of binding to the correct
-    database also involves restoring the authenticated user ID.  When GUC
-    values are restored, this incidentally sets SessionUserId and OuterUserId
-    to the correct values.  This final step restores CurrentUserId.
+  - The TransientUserStack.  Note that we restored three user IDs already: the
+    initial step of binding to the correct database also involves restoring
+    the authenticated user ID.  When GUC values are restored, this
+    incidentally sets SessionUserId and OuterUser to the correct values.
 
   - State related to pending REINDEX operations, which prevents access to
     an index that is currently being rebuilt.

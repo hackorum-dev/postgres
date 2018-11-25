@@ -3484,6 +3484,68 @@ listDbRoleSettings(const char *pattern, const char *pattern2)
 	return true;
 }
 
+/*
+ * \drt
+ */
+bool
+listRoleTrustSettings(const char *pattern)
+{
+	PQExpBufferData buf;
+	PGresult   *res;
+	printQueryOpt myopt = pset.popt;
+
+	initPQExpBuffer(&buf);
+
+	if (pset.sversion >= 90300)
+	{
+		printfPQExpBuffer(&buf, "WITH roles AS\n"
+						  "(SELECT oid, rolname FROM pg_roles "
+						  "UNION ALL VALUES (0, 'public'))\n"
+						  "SELECT "
+						  "gr.rolname AS \"%s\", tr.rolname AS \"%s\"\n"
+						  "FROM pg_auth_trust\n"
+						  "LEFT JOIN roles gr ON gr.oid = grantor\n"
+						  "LEFT JOIN roles tr ON tr.oid = trustee\n",
+						  gettext_noop("Granting Role"),
+						  gettext_noop("Trusted Role"));
+		processSQLNamePattern(pset.db, &buf, pattern, false, false,
+							  NULL, "gr.rolname", NULL, NULL);
+		appendPQExpBufferStr(&buf, "ORDER BY 1, 2;");
+	}
+	else
+	{
+		fprintf(pset.queryFout,
+				_("No role trust support in this server version.\n"));
+		return false;
+	}
+
+	res = PSQLexec(buf.data);
+	if (!res)
+		return false;
+
+	if (PQntuples(res) == 0 && !pset.quiet)
+	{
+		if (pattern)
+			fprintf(pset.queryFout,
+					_("No matching role trust relationships found.\n"));
+		else
+			fprintf(pset.queryFout,
+					_("No role trust relationships found.\n"));
+	}
+	else
+	{
+		myopt.nullPrint = NULL;
+		myopt.title = _("List of role trust relationships");
+		myopt.translate_header = true;
+
+		printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
+	}
+
+	PQclear(res);
+	resetPQExpBuffer(&buf);
+	return true;
+}
+
 
 /*
  * listTables()

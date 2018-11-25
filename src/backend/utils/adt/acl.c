@@ -5310,6 +5310,10 @@ get_rolespec_name(const RoleSpec *role)
 	Form_pg_authid authForm;
 	char	   *rolename;
 
+	if (role->roletype == ROLESPEC_PUBLIC)
+		return pstrdup("public");
+	Assert(role->roletype == ROLESPEC_CSTRING);
+
 	tp = get_rolespec_tuple(role);
 	authForm = (Form_pg_authid) GETSTRUCT(tp);
 	rolename = pstrdup(NameStr(authForm->rolname));

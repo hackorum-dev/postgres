@@ -12,7 +12,9 @@ SELECT * FROM toyemp WHERE name = 'sharon';
 --
 -- Test for Leaky view scenario
 --
-CREATE ROLE regress_alice;
+DO $$BEGIN
+	EXECUTE 'CREATE ROLE regress_alice TRUST ' || quote_ident(current_user);
+END$$;
 
 CREATE FUNCTION f_leak (text)
        RETURNS bool LANGUAGE 'plpgsql' COST 0.0000001

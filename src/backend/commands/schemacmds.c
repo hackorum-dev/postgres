@@ -56,13 +56,12 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString,
 	OverrideSearchPath *overridePath;
 	List	   *parsetree_list;
 	ListCell   *parsetree_item;
+	Oid			issuer_uid;
 	Oid			owner_uid;
-	Oid			saved_uid;
-	int			save_sec_context;
 	AclResult	aclresult;
 	ObjectAddress address;
 
-	GetUserIdAndSecContext(&saved_uid, &save_sec_context);
+	issuer_uid = GetUserId();
 
 	/*
 	 * Who is supposed to own the new schema?
@@ -70,7 +69,7 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString,
 	if (stmt->authrole)
 		owner_uid = get_rolespec_oid(stmt->authrole, false);
 	else
-		owner_uid = saved_uid;
+		owner_uid = issuer_uid;
 
 	/* fill schema name with the user name if not specified */
 	if (!schemaName)
@@ -92,12 +91,12 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString,
 	 * The latter provision guards against "giveaway" attacks.  Note that a
 	 * superuser will always have both of these privileges a fortiori.
 	 */
-	aclresult = pg_database_aclcheck(MyDatabaseId, saved_uid, ACL_CREATE);
+	aclresult = pg_database_aclcheck(MyDatabaseId, issuer_uid, ACL_CREATE);
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, OBJECT_DATABASE,
 					   get_database_name(MyDatabaseId));
 
-	check_is_member_of_role(saved_uid, owner_uid);
+	check_is_member_of_role(issuer_uid, owner_uid);
 
 	/* Additional check to protect reserved schema names */
 	if (!allowSystemTableMods && IsReservedName(schemaName))
@@ -131,9 +130,8 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString,
 	 * (The setting will be restored at the end of this routine, or in case of
 	 * error, transaction abort will clean things up.)
 	 */
-	if (saved_uid != owner_uid)
-		SetUserIdAndSecContext(owner_uid,
-							   save_sec_context | SECURITY_LOCAL_USERID_CHANGE);
+	if (issuer_uid != owner_uid)
+		PushTransientUser(owner_uid, false, false);
 
 	/* Create the schema's namespace */
 	namespaceId = NamespaceCreate(schemaName, owner_uid, false);
@@ -205,8 +203,8 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString,
 	/* Reset search path to normal state */
 	PopOverrideSearchPath();
 
-	/* Reset current user and security context */
-	SetUserIdAndSecContext(saved_uid, save_sec_context);
+	if (issuer_uid != owner_uid)
+		PopTransientUser();
 
 	return namespaceId;
 }

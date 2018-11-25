@@ -262,7 +262,12 @@ extern AclResult pg_attribute_aclcheck_all(Oid table_oid, Oid roleid,
 						  AclMode mode, AclMaskHow how);
 extern AclResult pg_class_aclcheck(Oid table_oid, Oid roleid, AclMode mode);
 extern AclResult pg_database_aclcheck(Oid db_oid, Oid roleid, AclMode mode);
+extern bool pg_oper_trustcheck_extended(Oid oper_oid, bool errorOK);
 extern AclResult pg_proc_aclcheck(Oid proc_oid, Oid roleid, AclMode mode);
+extern bool pg_proc_trustcheck_extended(Oid proc_oid, bool errorOK);
+#define pg_proc_trustcheck(proc_oid) \
+	pg_proc_trustcheck_extended((proc_oid), false)
+extern void pg_proc_execcheck(Oid proc_oid);
 extern AclResult pg_language_aclcheck(Oid lang_oid, Oid roleid, AclMode mode);
 extern AclResult pg_largeobject_aclcheck_snapshot(Oid lang_oid, Oid roleid,
 								 AclMode mode, Snapshot snapshot);

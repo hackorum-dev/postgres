@@ -64,8 +64,7 @@ static void transientrel_destroy(DestReceiver *self);
 static uint64 refresh_matview_datafill(DestReceiver *dest, Query *query,
 						 const char *queryString);
 static char *make_temptable_name_n(char *tempname, int n);
-static void refresh_by_match_merge(Oid matviewOid, Oid tempOid, Oid relowner,
-					   int save_sec_context);
+static void refresh_by_match_merge(Oid matviewOid, Oid tempOid, Oid relowner);
 static void refresh_by_heap_swap(Oid matviewOid, Oid OIDNewHeap, char relpersistence);
 static bool is_usable_unique_index(Relation indexRel);
 static void OpenMatViewIncrementalMaintenance(void);
@@ -148,8 +147,6 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 	bool		concurrent;
 	LOCKMODE	lockmode;
 	char		relpersistence;
-	Oid			save_userid;
-	int			save_sec_context;
 	int			save_nestlevel;
 	ObjectAddress address;
 
@@ -273,9 +270,7 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 	 * Don't lock it down too tight to create a temporary table just yet.  We
 	 * will switch modes when we are about to execute user code.
 	 */
-	GetUserIdAndSecContext(&save_userid, &save_sec_context);
-	SetUserIdAndSecContext(relowner,
-						   save_sec_context | SECURITY_LOCAL_USERID_CHANGE);
+	PushTransientUser(relowner, false, false);
 	save_nestlevel = NewGUCNestLevel();
 
 	/* Concurrent refresh builds new data in temp tablespace, and does diff. */
@@ -303,8 +298,7 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 	/*
 	 * Now lock down security-restricted operations.
 	 */
-	SetUserIdAndSecContext(relowner,
-						   save_sec_context | SECURITY_RESTRICTED_OPERATION);
+	PushTransientUser(relowner, true, false);
 
 	/* Generate the data, if wanted. */
 	if (!stmt->skipData)
@@ -317,8 +311,7 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 
 		PG_TRY();
 		{
-			refresh_by_match_merge(matviewOid, OIDNewHeap, relowner,
-								   save_sec_context);
+			refresh_by_match_merge(matviewOid, OIDNewHeap, relowner);
 		}
 		PG_CATCH();
 		{
@@ -345,11 +338,10 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 
 	heap_close(matviewRel, NoLock);
 
-	/* Roll back any GUC changes */
+	/* Roll back GUC changes by index functions; revert user ID */
 	AtEOXact_GUC(false, save_nestlevel);
-
-	/* Restore userid and security context */
-	SetUserIdAndSecContext(save_userid, save_sec_context);
+	PopTransientUser();
+	PopTransientUser();
 
 	ObjectAddressSet(address, RelationRelationId, matviewOid);
 
@@ -577,8 +569,7 @@ make_temptable_name_n(char *tempname, int n)
  * this command.
  */
 static void
-refresh_by_match_merge(Oid matviewOid, Oid tempOid, Oid relowner,
-					   int save_sec_context)
+refresh_by_match_merge(Oid matviewOid, Oid tempOid, Oid relowner)
 {
 	StringInfoData querybuf;
 	Relation	matviewRel;
@@ -648,8 +639,7 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid, Oid relowner,
 						   SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1))));
 	}
 
-	SetUserIdAndSecContext(relowner,
-						   save_sec_context | SECURITY_LOCAL_USERID_CHANGE);
+	PopTransientUser();			/* exit security-restricted operation */
 
 	/* Start building the query for creating the diff table. */
 	resetStringInfo(&querybuf);
@@ -787,8 +777,8 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid, Oid relowner,
 	if (SPI_exec(querybuf.data, 0) != SPI_OK_UTILITY)
 		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
 
-	SetUserIdAndSecContext(relowner,
-						   save_sec_context | SECURITY_RESTRICTED_OPERATION);
+	/* reenter security-restricted operation */
+	PushTransientUser(relowner, true, false);
 
 	/*
 	 * We have no further use for data from the "full-data" temp table, but we

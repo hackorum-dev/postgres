@@ -24,10 +24,10 @@ RESET client_min_messages;
 -- test proper begins here
 
 CREATE USER regress_priv_user1;
-CREATE USER regress_priv_user2;
-CREATE USER regress_priv_user3;
-CREATE USER regress_priv_user4;
-CREATE USER regress_priv_user5;
+CREATE USER regress_priv_user2 TRUST regress_priv_user1;
+CREATE USER regress_priv_user3 TRUST regress_priv_user1;
+CREATE USER regress_priv_user4 TRUST regress_priv_user1;
+CREATE USER regress_priv_user5 TRUST regress_priv_user1;
 CREATE USER regress_priv_user5;	-- duplicate
 
 CREATE GROUP regress_priv_group1;
@@ -1128,6 +1128,84 @@ revoke select on dep_priv_test from regress_priv_user4 cascade;
 \dp dep_priv_test
 set session role regress_priv_user1;
 drop table dep_priv_test;
+
+
+-- Function Trust
+
+-- Think of regress_priv_user3 as the lead malefactor, regress_priv_user2 as
+-- the accomplice, and regress_priv_user1 as the innocent party.
+
+RESET ROLE;
+
+-- Change PUBLIC's function trust in a transaction we never COMMIT.  Other
+-- sessions will not see the change, and a failed "make installcheck" will not
+-- leave a durable change.
+BEGIN;
+
+-- Suppress WARNING when the installcheck cluster is already so-configured.
+SET client_min_messages TO 'error';
+ALTER USER public NO TRUST public;
+RESET client_min_messages;
+
+-- Prepare objects.
+CREATE FUNCTION regress_priv_user3_f() RETURNS int SECURITY DEFINER IMMUTABLE
+	LANGUAGE plpgsql AS $$
+BEGIN
+	RAISE NOTICE 'malefactor has control';
+	RETURN 1;
+END
+$$;
+ALTER FUNCTION regress_priv_user3_f() OWNER TO regress_priv_user3;
+CREATE FUNCTION regress_priv_user2_f() RETURNS int SECURITY DEFINER IMMUTABLE
+	LANGUAGE sql AS 'SELECT regress_priv_user3_f()';
+ALTER FUNCTION regress_priv_user2_f() OWNER TO regress_priv_user2;
+CREATE TABLE trojan (c int);
+INSERT INTO trojan SELECT 1 FROM generate_series(1, 20);
+INSERT INTO trojan SELECT 2 FROM generate_series(1, 60);
+ALTER TABLE trojan OWNER TO regress_priv_user1;
+
+-- One SECURITY DEFINER level.
+SET SESSION AUTHORIZATION regress_priv_user2;
+ALTER USER regress_priv_user2 TRUST regress_priv_user3;
+SAVEPOINT q;
+ALTER USER regress_priv_user1 TRUST regress_priv_user3;	-- fails: no admin option
+ROLLBACK TO q;
+SELECT regress_priv_user2_f();			-- works
+
+-- Two SECURITY DEFINER levels; bottom level lacks trust.
+SET SESSION AUTHORIZATION regress_priv_user1;
+ALTER USER regress_priv_user1 TRUST regress_priv_user2;
+SAVEPOINT q;
+SELECT regress_priv_user2_f();			-- fails
+ROLLBACK TO q;
+ALTER USER regress_priv_user1 TRUST regress_priv_user3;
+SELECT regress_priv_user2_f();			-- now works
+
+-- Two SECURITY DEFINER levels; top level lacks trust.
+SAVEPOINT q;
+SET SESSION AUTHORIZATION regress_priv_user2;
+ALTER USER regress_priv_user2 NO TRUST regress_priv_user3;
+SET SESSION AUTHORIZATION regress_priv_user1;
+SELECT regress_priv_user2_f();			-- now fails again
+ROLLBACK TO q;						-- revert TRUST change
+
+-- Laxness allowed by use of a security-restricted context.
+RESET SESSION AUTHORIZATION;
+ALTER ROLE regress_priv_user4 SUPERUSER;
+SET ROLE regress_priv_user4;
+CREATE INDEX ON trojan (c) WHERE regress_priv_user2_f() > 0;
+SAVEPOINT q;
+INSERT INTO trojan VALUES (1);		-- fails
+ROLLBACK TO q;
+ANALYZE trojan;
+ALTER USER regress_priv_user1 NO TRUST regress_priv_user3;
+SAVEPOINT q;
+ANALYZE trojan;						-- fails: owner ceased trusting function
+ROLLBACK TO q;
+RESET ROLE;
+ALTER ROLE regress_priv_user4 NOSUPERUSER;
+
+ROLLBACK;
 
 
 -- clean up

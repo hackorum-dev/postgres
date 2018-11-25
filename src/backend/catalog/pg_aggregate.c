@@ -772,7 +772,9 @@ AggregateCreate(const char *aggName,
 
 /*
  * lookup_agg_function
- * common code for finding aggregate support functions
+ * Subroutine of AggregateCreate for finding a support function, validating
+ * it, and performing an ACL check.  Skip the trust check, because CREATE
+ * AGGREGATE won't execute the function.
  *
  * fnName: possibly-schema-qualified function name
  * nargs, input_types: expected function argument types

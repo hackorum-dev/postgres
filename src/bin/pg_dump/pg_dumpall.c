@@ -556,6 +556,8 @@ main(int argc, char *argv[])
 				dumpRoleMembership(conn);
 			else
 				dumpGroups(conn);
+
+			/* FIXME pg_auth_trust */
 		}
 
 		/* Dump tablespaces */

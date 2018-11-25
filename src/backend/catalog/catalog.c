@@ -29,6 +29,7 @@
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_auth_members.h"
+#include "catalog/pg_auth_trust.h"
 #include "catalog/pg_authid.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_namespace.h"
@@ -226,6 +227,7 @@ IsSharedRelation(Oid relationId)
 	/* These are the shared catalogs (look for BKI_SHARED_RELATION) */
 	if (relationId == AuthIdRelationId ||
 		relationId == AuthMemRelationId ||
+		relationId == AuthTrustRelationId ||
 		relationId == DatabaseRelationId ||
 		relationId == PLTemplateRelationId ||
 		relationId == SharedDescriptionRelationId ||
@@ -241,6 +243,8 @@ IsSharedRelation(Oid relationId)
 		relationId == AuthIdOidIndexId ||
 		relationId == AuthMemRoleMemIndexId ||
 		relationId == AuthMemMemRoleIndexId ||
+		relationId == AuthTrustGrantorTrusteeIndexId ||
+		relationId == AuthTrustTrusteeGrantorIndexId ||
 		relationId == DatabaseNameIndexId ||
 		relationId == DatabaseOidIndexId ||
 		relationId == PLTemplateNameIndexId ||

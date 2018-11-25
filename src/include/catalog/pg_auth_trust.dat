@@ -1,0 +1,18 @@
+#----------------------------------------------------------------------
+#
+# pg_auth_trust.dat
+#    Initial contents of the pg_auth_trust system catalog.
+#
+# Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+# Portions Copyright (c) 1994, Regents of the University of California
+#
+# src/include/catalog/pg_auth_trust.dat
+#
+#----------------------------------------------------------------------
+
+[
+# For backward compatibility, PUBLIC trusts PUBLIC.
+{ grantor => 0, trustee => 0 },
+# Redundant with that, PUBLIC trusts BOOTSTRAP_SUPERUSERID.
+{ grantor => 0, trustee => 10 },
+]

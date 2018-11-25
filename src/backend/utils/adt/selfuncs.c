@@ -92,7 +92,14 @@
  * should ignore the actual operator collation and use DEFAULT_COLLATION_OID.
  * We expect that the error induced by doing this is usually not large enough
  * to justify complicating matters.
- *----------
+ *
+ * Only superusers can define selectivity functions, so there's no need for a
+ * trust check before calling one.  Since unprivileged users can attach core
+ * selectivity functions to any operator, selectivity functions that call the
+ * associated operator do perform a trust check on the operator's underlying
+ * function.  They do not check trust on the operator itself; the executor
+ * will check, and any misguidance here would merely deceive the planner.
+ * ----------
  */
 
 #include "postgres.h"
@@ -363,6 +370,7 @@ var_eq_const(VariableStatData *vardata, Oid operator,
 		{
 			FmgrInfo	eqproc;
 
+			pg_proc_trustcheck(opfuncoid);
 			fmgr_info(opfuncoid, &eqproc);
 
 			for (i = 0; i < sslot.nvalues; i++)
@@ -573,6 +581,7 @@ scalarineqsel(PlannerInfo *root, Oid operator, bool isgt, bool iseq,
 			  VariableStatData *vardata, Datum constval, Oid consttype)
 {
 	Form_pg_statistic stats;
+	Oid			opcode;
 	FmgrInfo	opproc;
 	double		mcv_selec,
 				hist_selec,
@@ -586,7 +595,9 @@ scalarineqsel(PlannerInfo *root, Oid operator, bool isgt, bool iseq,
 	}
 	stats = (Form_pg_statistic) GETSTRUCT(vardata->statsTuple);
 
-	fmgr_info(get_opcode(operator), &opproc);
+	opcode = get_opcode(operator);
+	pg_proc_trustcheck(opcode);
+	fmgr_info(opcode, &opproc);
 
 	/*
 	 * If we have most-common-values info, add up the fractions of the MCV
@@ -664,6 +675,7 @@ mcv_selectivity(VariableStatData *vardata, FmgrInfo *opproc,
 	{
 		for (i = 0; i < sslot.nvalues; i++)
 		{
+			/* Caller is responsible for trust check. */
 			if (varonleft ?
 				DatumGetBool(FunctionCall2Coll(opproc,
 											   DEFAULT_COLLATION_OID,
@@ -742,6 +754,7 @@ histogram_selectivity(VariableStatData *vardata, FmgrInfo *opproc,
 
 			for (i = n_skip; i < sslot.nvalues - n_skip; i++)
 			{
+				/* Caller is responsible for trust check. */
 				if (varonleft ?
 					DatumGetBool(FunctionCall2Coll(opproc,
 												   DEFAULT_COLLATION_OID,
@@ -872,6 +885,7 @@ ineq_histogram_selectivity(PlannerInfo *root,
 														 NULL,
 														 &sslot.values[probe]);
 
+				/* Caller is responsible for trust check. */
 				ltcmp = DatumGetBool(FunctionCall2Coll(opproc,
 													   DEFAULT_COLLATION_OID,
 													   sslot.values[probe],
@@ -1387,12 +1401,15 @@ patternsel(PG_FUNCTION_ARGS, Pattern_Type ptype, bool negate)
 		 */
 		Selectivity selec;
 		int			hist_size;
+		Oid			opcode;
 		FmgrInfo	opproc;
 		double		mcv_selec,
 					sumcommon;
 
 		/* Try to use the histogram entries to get selectivity */
-		fmgr_info(get_opcode(operator), &opproc);
+		opcode = get_opcode(operator);
+		pg_proc_trustcheck(opcode);
+		fmgr_info(opcode, &opproc);
 
 		selec = histogram_selectivity(&vardata, &opproc, constval, true,
 									  10, 1, &hist_size);
@@ -2478,6 +2495,7 @@ eqjoinsel_inner(Oid opfuncoid,
 		int			i,
 					nmatches;
 
+		pg_proc_trustcheck(opfuncoid);
 		fmgr_info(opfuncoid, &eqproc);
 		hasmatch1 = (bool *) palloc0(sslot1->nvalues * sizeof(bool));
 		hasmatch2 = (bool *) palloc0(sslot2->nvalues * sizeof(bool));
@@ -2691,6 +2709,7 @@ eqjoinsel_semi(Oid opfuncoid,
 		 */
 		clamped_nvalues2 = Min(sslot2->nvalues, nd2);
 
+		pg_proc_trustcheck(opfuncoid);
 		fmgr_info(opfuncoid, &eqproc);
 		hasmatch1 = (bool *) palloc0(sslot1->nvalues * sizeof(bool));
 		hasmatch2 = (bool *) palloc0(clamped_nvalues2 * sizeof(bool));
@@ -5396,6 +5415,8 @@ get_variable_range(PlannerInfo *root, VariableStatData *vardata, Oid sortop,
 		bool		tmax_is_mcv = false;
 		FmgrInfo	opproc;
 
+		/* Could skip the trust check: currently always an opclass member. */
+		pg_proc_trustcheck(opfuncoid);
 		fmgr_info(opfuncoid, &opproc);
 
 		for (i = 0; i < sslot.nvalues; i++)
@@ -6021,6 +6042,7 @@ prefix_selectivity(PlannerInfo *root, VariableStatData *vardata,
 								 BTGreaterEqualStrategyNumber);
 	if (cmpopr == InvalidOid)
 		elog(ERROR, "no >= operator for opfamily %u", opfamily);
+	/* Skip trust check since it's obviously an opclass member. */
 	fmgr_info(get_opcode(cmpopr), &opproc);
 
 	prefixsel = ineq_histogram_selectivity(root, vardata,
@@ -6427,6 +6449,7 @@ make_greater_string(const Const *str_const, FmgrInfo *ltproc, Oid collation)
 			else
 				workstr_const = string_to_const(workstr, datatype);
 
+			/* opclass function; no trust check */
 			if (DatumGetBool(FunctionCall2Coll(ltproc,
 											   collation,
 											   cmpstr,

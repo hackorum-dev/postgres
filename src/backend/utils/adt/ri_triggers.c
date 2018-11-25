@@ -2385,8 +2385,6 @@ ri_PlanCheck(const char *querystr, int nargs, Oid *argtypes,
 {
 	SPIPlanPtr	qplan;
 	Relation	query_rel;
-	Oid			save_userid;
-	int			save_sec_context;
 
 	/*
 	 * Use the query type code to determine whether the query is run against
@@ -2398,10 +2396,7 @@ ri_PlanCheck(const char *querystr, int nargs, Oid *argtypes,
 		query_rel = fk_rel;
 
 	/* Switch to proper UID to perform check as */
-	GetUserIdAndSecContext(&save_userid, &save_sec_context);
-	SetUserIdAndSecContext(RelationGetForm(query_rel)->relowner,
-						   save_sec_context | SECURITY_LOCAL_USERID_CHANGE |
-						   SECURITY_NOFORCE_RLS);
+	PushTransientUser(RelationGetForm(query_rel)->relowner, false, true);
 
 	/* Create the plan */
 	qplan = SPI_prepare(querystr, nargs, argtypes);
@@ -2409,8 +2404,7 @@ ri_PlanCheck(const char *querystr, int nargs, Oid *argtypes,
 	if (qplan == NULL)
 		elog(ERROR, "SPI_prepare returned %s for %s", SPI_result_code_string(SPI_result), querystr);
 
-	/* Restore UID and security context */
-	SetUserIdAndSecContext(save_userid, save_sec_context);
+	PopTransientUser();
 
 	/* Save the plan if requested */
 	if (cache_plan)
@@ -2439,8 +2433,6 @@ ri_PerformCheck(const RI_ConstraintInfo *riinfo,
 	Snapshot	crosscheck_snapshot;
 	int			limit;
 	int			spi_result;
-	Oid			save_userid;
-	int			save_sec_context;
 	Datum		vals[RI_MAX_NUMKEYS * 2];
 	char		nulls[RI_MAX_NUMKEYS * 2];
 
@@ -2519,10 +2511,7 @@ ri_PerformCheck(const RI_ConstraintInfo *riinfo,
 	limit = (expect_OK == SPI_OK_SELECT) ? 1 : 0;
 
 	/* Switch to proper UID to perform check as */
-	GetUserIdAndSecContext(&save_userid, &save_sec_context);
-	SetUserIdAndSecContext(RelationGetForm(query_rel)->relowner,
-						   save_sec_context | SECURITY_LOCAL_USERID_CHANGE |
-						   SECURITY_NOFORCE_RLS);
+	PushTransientUser(RelationGetForm(query_rel)->relowner, false, true);
 
 	/* Finally we can run the query. */
 	spi_result = SPI_execute_snapshot(qplan,
@@ -2530,8 +2519,7 @@ ri_PerformCheck(const RI_ConstraintInfo *riinfo,
 									  test_snapshot, crosscheck_snapshot,
 									  false, false, limit);
 
-	/* Restore UID and security context */
-	SetUserIdAndSecContext(save_userid, save_sec_context);
+	PopTransientUser();
 
 	/* Check result */
 	if (spi_result < 0)
@@ -2964,6 +2952,12 @@ ri_AttributesEqual(Oid eq_opr, Oid typeid,
 	/* Do we need to cast the values? */
 	if (OidIsValid(entry->cast_func_finfo.fn_oid))
 	{
+		/*
+		 * Superusers govern operator classes, but creating a cast is not so
+		 * restricted.  Protect against trojan cast functions.
+		 */
+		pg_proc_trustcheck(entry->cast_func_finfo.fn_oid);
+
 		oldvalue = FunctionCall3(&entry->cast_func_finfo,
 								 oldvalue,
 								 Int32GetDatum(-1), /* typmod */

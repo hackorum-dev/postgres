@@ -20,9 +20,11 @@
 
 /*
  * ScanKeyEntryInitialize
- *		Initializes a scan key entry given all the field values.
- *		The target procedure is specified by OID (but can be invalid
- *		if SK_SEARCHNULL or SK_SEARCHNOTNULL is set).
+ *		Initializes a scan key entry given all the field values.  The target
+ *		procedure is specified by OID (but can be invalid if SK_SEARCHNULL or
+ *		SK_SEARCHNOTNULL is set).  No access or trust check is done, so the
+ *		procedure had better be innocuous.  This is normally used for operator
+ *		class members, which are subject to superuser approval.
  *
  * Note: CurrentMemoryContext at call should be as long-lived as the ScanKey
  * itself, because that's what will be used for any subsidiary info attached
@@ -62,7 +64,8 @@ ScanKeyEntryInitialize(ScanKey entry,
  *
  * This is the recommended version for hardwired lookups in system catalogs.
  * It cannot handle NULL arguments, unary operators, or nondefault operators,
- * but we need none of those features for most hardwired lookups.
+ * but we need none of those features for most hardwired lookups.  Like other
+ * versions, it performs no security checks.
  *
  * We set collation to DEFAULT_COLLATION_OID always.  This is appropriate
  * for textual columns in system catalogs, and it will be ignored for

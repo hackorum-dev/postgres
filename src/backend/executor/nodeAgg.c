@@ -2569,6 +2569,7 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 		if (aclresult != ACLCHECK_OK)
 			aclcheck_error(aclresult, OBJECT_AGGREGATE,
 						   get_func_name(aggref->aggfnoid));
+		pg_proc_trustcheck(aggref->aggfnoid);
 		InvokeFunctionExecuteHook(aggref->aggfnoid);
 
 		/* planner recorded transition state type in the Aggref itself */
@@ -2641,7 +2642,10 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 			}
 		}
 
-		/* Check that aggregate owner has permission to call component fns */
+		/*
+		 * Check that aggregate owner has permission to call component
+		 * functions and that the necessary trust relationships exist.
+		 */
 		{
 			HeapTuple	procTuple;
 			Oid			aggOwner;
@@ -2659,6 +2663,7 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 			if (aclresult != ACLCHECK_OK)
 				aclcheck_error(aclresult, OBJECT_FUNCTION,
 							   get_func_name(transfn_oid));
+			pg_proc_trustcheck(transfn_oid);
 			InvokeFunctionExecuteHook(transfn_oid);
 			if (OidIsValid(finalfn_oid))
 			{
@@ -2667,6 +2672,7 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 				if (aclresult != ACLCHECK_OK)
 					aclcheck_error(aclresult, OBJECT_FUNCTION,
 								   get_func_name(finalfn_oid));
+				pg_proc_trustcheck(finalfn_oid);
 				InvokeFunctionExecuteHook(finalfn_oid);
 			}
 			if (OidIsValid(serialfn_oid))
@@ -2676,6 +2682,7 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 				if (aclresult != ACLCHECK_OK)
 					aclcheck_error(aclresult, OBJECT_FUNCTION,
 								   get_func_name(serialfn_oid));
+				pg_proc_trustcheck(serialfn_oid);
 				InvokeFunctionExecuteHook(serialfn_oid);
 			}
 			if (OidIsValid(deserialfn_oid))
@@ -2685,6 +2692,7 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 				if (aclresult != ACLCHECK_OK)
 					aclcheck_error(aclresult, OBJECT_FUNCTION,
 								   get_func_name(deserialfn_oid));
+				pg_proc_trustcheck(deserialfn_oid);
 				InvokeFunctionExecuteHook(deserialfn_oid);
 			}
 		}

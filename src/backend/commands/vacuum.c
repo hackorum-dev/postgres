@@ -1527,8 +1527,6 @@ vacuum_rel(Oid relid, RangeVar *relation, int options, VacuumParams *params)
 	Relation	onerel;
 	LockRelId	onerelid;
 	Oid			toast_relid;
-	Oid			save_userid;
-	int			save_sec_context;
 	int			save_nestlevel;
 
 	Assert(params != NULL);
@@ -1688,9 +1686,7 @@ vacuum_rel(Oid relid, RangeVar *relation, int options, VacuumParams *params)
 	 * arrange to make GUC variable changes local to this command. (This is
 	 * unnecessary, but harmless, for lazy VACUUM.)
 	 */
-	GetUserIdAndSecContext(&save_userid, &save_sec_context);
-	SetUserIdAndSecContext(onerel->rd_rel->relowner,
-						   save_sec_context | SECURITY_RESTRICTED_OPERATION);
+	PushTransientUser(onerel->rd_rel->relowner, true, false);
 	save_nestlevel = NewGUCNestLevel();
 
 	/*
@@ -1713,11 +1709,9 @@ vacuum_rel(Oid relid, RangeVar *relation, int options, VacuumParams *params)
 	else
 		lazy_vacuum_rel(onerel, options, params, vac_strategy);
 
-	/* Roll back any GUC changes executed by index functions */
+	/* Roll back GUC changes by index functions; revert user ID */
 	AtEOXact_GUC(false, save_nestlevel);
-
-	/* Restore userid and security context */
-	SetUserIdAndSecContext(save_userid, save_sec_context);
+	PopTransientUser();
 
 	/* all done with this class, but hold lock until commit */
 	if (onerel)

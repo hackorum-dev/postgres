@@ -682,7 +682,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	TABLE TABLES TABLESAMPLE TABLESPACE TEMP TEMPLATE TEMPORARY TEXT_P THEN
 	TIES TIME TIMESTAMP TO TRAILING TRANSACTION TRANSFORM
 	TREAT TRIGGER TRIM TRUE_P
-	TRUNCATE TRUSTED TYPE_P TYPES_P
+	TRUNCATE TRUST TRUSTED TYPE_P TYPES_P
 
 	UNBOUNDED UNCOMMITTED UNENCRYPTED UNION UNIQUE UNKNOWN UNLISTEN UNLOGGED
 	UNTIL UPDATE USER USING
@@ -1037,6 +1037,14 @@ AlterOptRoleElem:
 			| VALID UNTIL Sconst
 				{
 					$$ = makeDefElem("validUntil", (Node *)makeString($3), @1);
+				}
+			| TRUST role_list
+				{
+					$$ = makeDefElem("trust", (Node *)$2, @1);
+				}
+			| NO TRUST role_list
+				{
+					$$ = makeDefElem("notrust", (Node *)$3, @1);
 				}
 		/*	Supported but not documented for roles, for use by ALTER GROUP. */
 			| USER role_list
@@ -15225,6 +15233,7 @@ unreserved_keyword:
 			| TRANSFORM
 			| TRIGGER
 			| TRUNCATE
+			| TRUST
 			| TRUSTED
 			| TYPE_P
 			| TYPES_P

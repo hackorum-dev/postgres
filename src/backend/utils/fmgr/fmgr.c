@@ -662,8 +662,6 @@ fmgr_security_definer(PG_FUNCTION_ARGS)
 	Datum		result;
 	struct fmgr_security_definer_cache *volatile fcache;
 	FmgrInfo   *save_flinfo;
-	Oid			save_userid;
-	int			save_sec_context;
 	volatile int save_nestlevel;
 	PgStat_FunctionCallUsage fcusage;
 
@@ -708,16 +706,13 @@ fmgr_security_definer(PG_FUNCTION_ARGS)
 	else
 		fcache = fcinfo->flinfo->fn_extra;
 
-	/* GetUserIdAndSecContext is cheap enough that no harm in a wasted call */
-	GetUserIdAndSecContext(&save_userid, &save_sec_context);
 	if (fcache->proconfig)		/* Need a new GUC nesting level */
 		save_nestlevel = NewGUCNestLevel();
 	else
 		save_nestlevel = 0;		/* keep compiler quiet */
 
 	if (OidIsValid(fcache->userid))
-		SetUserIdAndSecContext(fcache->userid,
-							   save_sec_context | SECURITY_LOCAL_USERID_CHANGE);
+		PushTransientUser(fcache->userid, false, false);
 
 	if (fcache->proconfig)
 	{
@@ -770,7 +765,7 @@ fmgr_security_definer(PG_FUNCTION_ARGS)
 	if (fcache->proconfig)
 		AtEOXact_GUC(true, save_nestlevel);
 	if (OidIsValid(fcache->userid))
-		SetUserIdAndSecContext(save_userid, save_sec_context);
+		PopTransientUser();
 	if (fmgr_hook)
 		(*fmgr_hook) (FHET_END, &fcache->flinfo, &fcache->arg);
 
@@ -2223,9 +2218,7 @@ CheckFunctionValidatorAccess(Oid validatorOid, Oid functionOid)
 	 * execute it, there should be no possible side-effect of
 	 * compiling/validation that execution can't have.
 	 */
-	aclresult = pg_proc_aclcheck(functionOid, GetUserId(), ACL_EXECUTE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, OBJECT_FUNCTION, NameStr(procStruct->proname));
+	pg_proc_execcheck(functionOid);
 
 	ReleaseSysCache(procTup);
 	ReleaseSysCache(langTup);

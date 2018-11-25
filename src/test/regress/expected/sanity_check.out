@@ -108,6 +108,7 @@ pg_amproc|t
 pg_attrdef|t
 pg_attribute|t
 pg_auth_members|t
+pg_auth_trust|t
 pg_authid|t
 pg_cast|t
 pg_class|t

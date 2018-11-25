@@ -26,6 +26,7 @@
 
 #include "catalog/pg_operator.h"
 #include "commands/vacuum.h"
+#include "utils/acl.h"
 #include "utils/float.h"
 #include "utils/fmgrprotos.h"
 #include "utils/lsyscache.h"
@@ -165,6 +166,7 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 				 * For an ordinary range, use subdiff function between upper
 				 * and lower bound values.
 				 */
+				pg_proc_trustcheck(typcache->rng_subdiff_finfo.fn_oid);
 				length = DatumGetFloat8(FunctionCall2Coll(
 														  &typcache->rng_subdiff_finfo,
 														  typcache->rng_collation,

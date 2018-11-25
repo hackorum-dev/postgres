@@ -34,6 +34,7 @@
 #include "lib/stringinfo.h"
 #include "libpq/pqformat.h"
 #include "miscadmin.h"
+#include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/date.h"
 #include "utils/int8.h"
@@ -1799,8 +1800,11 @@ make_range(TypeCacheEntry *typcache, RangeBound *lower, RangeBound *upper,
 	/* no need to call canonical on empty ranges ... */
 	if (OidIsValid(typcache->rng_canonical_finfo.fn_oid) &&
 		!RangeIsEmpty(range))
+	{
+		pg_proc_trustcheck(typcache->rng_canonical_finfo.fn_oid);
 		range = DatumGetRangeTypeP(FunctionCall1(&typcache->rng_canonical_finfo,
 												 RangeTypePGetDatum(range)));
+	}
 
 	return range;
 }

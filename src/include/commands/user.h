@@ -32,6 +32,6 @@ extern void GrantRole(GrantRoleStmt *stmt);
 extern ObjectAddress RenameRole(const char *oldname, const char *newname);
 extern void DropOwnedObjects(DropOwnedStmt *stmt);
 extern void ReassignOwnedObjects(ReassignOwnedStmt *stmt);
-extern List *roleSpecsToIds(List *memberNames);
+extern List *roleSpecsToIds(List *memberNames, bool public_ok);
 
 #endif							/* USER_H */

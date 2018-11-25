@@ -2379,10 +2379,13 @@ ExecCallTriggerFunc(TriggerData *trigdata,
 
 	/*
 	 * We cache fmgr lookup info, to avoid making the lookup again on each
-	 * call.
+	 * call.  This is also a convenient moment to check function trust.
 	 */
 	if (finfo->fn_oid == InvalidOid)
+	{
+		pg_proc_trustcheck(trigdata->tg_trigger->tgfoid);
 		fmgr_info(trigdata->tg_trigger->tgfoid, finfo);
+	}
 
 	Assert(finfo->fn_oid == trigdata->tg_trigger->tgfoid);
 

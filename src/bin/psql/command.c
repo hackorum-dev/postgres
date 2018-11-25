@@ -806,6 +806,8 @@ exec_command_d(PsqlScanState scan_state, bool active_branch, const char *cmd)
 					if (pattern2)
 						free(pattern2);
 				}
+				else if (cmd[2] == 't')
+					success = listRoleTrustSettings(pattern);
 				else
 					status = PSQL_CMD_UNKNOWN;
 				break;

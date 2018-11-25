@@ -295,11 +295,6 @@ extern int	trace_recovery(int trace_level);
  *			POSTGRES directory path definitions.                             *
  *****************************************************************************/
 
-/* flags to be OR'd to form sec_context */
-#define SECURITY_LOCAL_USERID_CHANGE	0x0001
-#define SECURITY_RESTRICTED_OPERATION	0x0002
-#define SECURITY_NOFORCE_RLS			0x0004
-
 extern char *DatabasePath;
 
 /* now in utils/init/miscinit.c */
@@ -308,23 +303,32 @@ extern void InitStandaloneProcess(const char *argv0);
 
 extern void SetDatabasePath(const char *path);
 
+/* opaque cookie */
+typedef unsigned TransientUser;
+
 extern char *GetUserNameFromId(Oid roleid, bool noerr);
 extern Oid	GetUserId(void);
 extern Oid	GetOuterUserId(void);
 extern Oid	GetSessionUserId(void);
+extern void PushTransientUser(Oid userid,
+				  bool security_restricted, bool noforce_rls);
+extern void PopTransientUser(void);
+extern TransientUser GetTransientUser(void);
+extern void RestoreTransientUser(TransientUser u);
+extern Size EstimateTransientUserStackSpace(void);
+extern void SerializeTransientUserStack(Size maxsize, char *start_address);
+extern void RestoreTransientUserStack(char *start_address);
 extern Oid	GetAuthenticatedUserId(void);
-extern void GetUserIdAndSecContext(Oid *userid, int *sec_context);
-extern void SetUserIdAndSecContext(Oid userid, int sec_context);
 extern bool InLocalUserIdChange(void);
 extern bool InSecurityRestrictedOperation(void);
 extern bool InNoForceRLSOperation(void);
-extern void GetUserIdAndContext(Oid *userid, bool *sec_def_context);
-extern void SetUserIdAndContext(Oid userid, bool sec_def_context);
+extern void InitUserStack(void);
 extern void InitializeSessionUserId(const char *rolename, Oid useroid);
 extern void InitializeSessionUserIdStandalone(void);
 extern void SetSessionAuthorization(Oid userid, bool is_superuser);
 extern Oid	GetCurrentRoleId(void);
 extern void SetCurrentRoleId(Oid roleid, bool is_superuser);
+extern void GetSecurityApplicableRoles(Oid **roles, int *nroles);
 
 extern void checkDataDir(void);
 extern void SetDataDir(const char *dir);

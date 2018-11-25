@@ -200,9 +200,9 @@ LINE 1: ALTER ROLE ALL WITH REPLICATION;
 ALTER ROLE SESSION_ROLE WITH NOREPLICATION; -- error
 ERROR:  role "session_role" does not exist
 ALTER ROLE PUBLIC WITH NOREPLICATION; -- error
-ERROR:  role "public" does not exist
+ERROR:  only [NO] TRUST allowed for PUBLIC
 ALTER ROLE "public" WITH NOREPLICATION; -- error
-ERROR:  role "public" does not exist
+ERROR:  only [NO] TRUST allowed for PUBLIC
 ALTER ROLE NONE WITH NOREPLICATION; -- error
 ERROR:  role name "none" is reserved
 LINE 1: ALTER ROLE NONE WITH NOREPLICATION;
@@ -316,9 +316,9 @@ LINE 1: ALTER USER ALL WITH REPLICATION;
 ALTER USER SESSION_ROLE WITH NOREPLICATION; -- error
 ERROR:  role "session_role" does not exist
 ALTER USER PUBLIC WITH NOREPLICATION; -- error
-ERROR:  role "public" does not exist
+ERROR:  only [NO] TRUST allowed for PUBLIC
 ALTER USER "public" WITH NOREPLICATION; -- error
-ERROR:  role "public" does not exist
+ERROR:  only [NO] TRUST allowed for PUBLIC
 ALTER USER NONE WITH NOREPLICATION; -- error
 ERROR:  role name "none" is reserved
 LINE 1: ALTER USER NONE WITH NOREPLICATION;

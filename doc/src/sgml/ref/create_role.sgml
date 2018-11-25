@@ -43,6 +43,7 @@ CREATE ROLE <replaceable class="parameter">name</replaceable> [ [ WITH ] <replac
     | SYSID <replaceable class="parameter">uid</replaceable>
 </synopsis>
  </refsynopsisdiv>
+ <!-- FIXME document TRUST here, trust concepts, and pg_auth_trust catalog -->
 
  <refsect1>
   <title>Description</title>

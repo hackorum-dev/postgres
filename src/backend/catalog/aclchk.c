@@ -4649,7 +4649,8 @@ pg_database_aclcheck(Oid db_oid, Oid roleid, AclMode mode)
 }
 
 /*
- * Exported routine for checking a user's access privileges to a function
+ * Exported routine for checking a user's access privileges to a function.
+ * See also pg_proc_execcheck().
  */
 AclResult
 pg_proc_aclcheck(Oid proc_oid, Oid roleid, AclMode mode)
@@ -4658,6 +4659,213 @@ pg_proc_aclcheck(Oid proc_oid, Oid roleid, AclMode mode)
 		return ACLCHECK_OK;
 	else
 		return ACLCHECK_NO_PRIV;
+}
+
+/*
+ * Perform a "trust check", a kind of mirror image of an ACL check, against a
+ * particular object owner.  ALTER ROLE TRUST creates a trust relationship,
+ * analogous to an ACL created by GRANT, from one user to another.  If Alice
+ * has granted trust to Bob, trust checks with Alice as the current user and
+ * Bob as the object owner will pass.  A trust relationship can name PUBLIC as
+ * one of the roles, and this serves as a wildcard.
+ *
+ * This mechanism arose as a response to the difficulty of avoiding accidental
+ * calls to functions controlled by potentially-hostile users.  One could not
+ * write to a table or select from a view without implicitly permitting the
+ * table or view owner to cause arbitrary code to run as oneself.  Hostile
+ * users can use function overloading and the search path to capture function
+ * calls.  For example, you may write length(varcharcol) expecting to call
+ * length(text), but a hostile user's public.length(varchar) function would be
+ * chosen.  The successful attacker can effectively hijack your database role.
+ * By establishing a conservative set of trust relationships, accidental calls
+ * to functions of untrusted users will end harmlessly with an error.
+ *
+ * Trust checks apply to functions (pg_proc_trustcheck_extended()) and
+ * operators (pg_oper_trustcheck_extended()).  The value of checking functions
+ * is clear enough; they can run arbitrary commands.  Operators are less
+ * threatening; trust is still checked for the underlying function, so
+ * tricking a user into calling an untrusted operator does not allow arbitrary
+ * code execution.  However, an attacker could silently compromise query
+ * results by creating an =(text,text) operator that actually calls textne().
+ *
+ * The choice to add operators and no other object type to the remit of trust
+ * checks is a judgement call rather than recognition of a bright line; one
+ * could argue for applying trust checks to objects like types, text search
+ * configurations, and even tables.  In each case, an attacker who can lure a
+ * user into referencing the substitute object can falsify the user's query
+ * results.  The decision arises from practical concerns:
+ *	1. The syntax for unambiguously-qualifying an operator is cumbersome.
+ *	2. Only functions and operators are subject to overloading; overloading
+ *	   makes it easier to reference the wrong object accidentally.
+ *	3. A typical query references more operators than any other object type,
+ *	   so simplifying the need for diligence brings a high relative payoff.
+ *	4. Types, probably the next most credible candidate, are difficult to
+ *	   inject unnoticed without also injecting an associated function.
+ *
+ * When SECURITY DEFINER functions and similar constructs are on the stack, we
+ * check users in addition to the current user for trust.  See comments at
+ * GetSecurityApplicableRoles().  We actually could check only the current
+ * user for operators, but it's not worth complicating the policy.
+ *
+ * Returns the first applicable call stack user not accepting this owner or
+ * InvalidOid if this owner is approved.
+ *
+ * XXX This can be called in performance-sensitive contexts; consider adding a
+ * cache of 1-4 owners that have passed the trust check, invalidating that
+ * cache when the list of applicable roles changes.
+ */
+static Oid
+owner_trustcheck(Oid owner)
+{
+	Oid		   *roles;
+	int			nroles;
+	int			i;
+	Oid			ret = InvalidOid;
+
+	if (
+	/* Does PUBLIC trust owner?  Common for BOOTSTRAP_SUPERUSERID. */
+		SearchSysCacheExists2(AUTHTRUSTGRANTORTRUSTEE,
+							  ObjectIdGetDatum(InvalidOid),
+							  ObjectIdGetDatum(owner)) ||
+	/* Does PUBLIC trust PUBLIC?  Not recommended but true by default. */
+		SearchSysCacheExists2(AUTHTRUSTGRANTORTRUSTEE,
+							  ObjectIdGetDatum(InvalidOid),
+							  ObjectIdGetDatum(InvalidOid)))
+	{
+		return InvalidOid;
+	}
+
+	/* Find all roles having a stake in code that runs at this moment. */
+	GetSecurityApplicableRoles(&roles, &nroles);
+
+	for (i = 0; i < nroles; ++i)
+	{
+		if (
+		/* A role implicitly trusts itself. */
+			roles[i] != owner &&
+		/* Does caller trust owner? */
+			!SearchSysCacheExists2(AUTHTRUSTGRANTORTRUSTEE,
+								   ObjectIdGetDatum(roles[i]),
+								   ObjectIdGetDatum(owner)) &&
+		/* Does caller trust PUBLIC?  Not recommended, so check last. */
+			!SearchSysCacheExists2(AUTHTRUSTGRANTORTRUSTEE,
+								   ObjectIdGetDatum(roles[i]),
+								   ObjectIdGetDatum(InvalidOid)))
+		{
+			ret = roles[i];
+			break;
+		}
+	}
+
+	pfree(roles);
+	return ret;
+}
+
+/*
+ * Exported routine for checking trust relationships of an operator's owner.
+ * See comments at owner_trustcheck() for the semantics of trust.
+ *
+ * Operator trust can be a bit looser than function trust, because the
+ * consequence of skipping a check can include wrong query results but not
+ * arbitrary code execution.  So, for example, one may skip checks before
+ * evaluating an operator in the planner so long as the executor will do them.
+ */
+bool
+pg_oper_trustcheck_extended(Oid oper_oid, bool errorOK)
+{
+	HeapTuple	tuple;
+	Oid			owner;
+	Oid			vetoer;
+
+	tuple = SearchSysCache1(OPEROID, ObjectIdGetDatum(oper_oid));
+	if (!HeapTupleIsValid(tuple))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_FUNCTION),
+				 errmsg("operator with OID %u does not exist", oper_oid)));
+	owner = ((Form_pg_operator) GETSTRUCT(tuple))->oprowner;
+	ReleaseSysCache(tuple);
+
+	vetoer = owner_trustcheck(owner);
+	if (!OidIsValid(vetoer))
+		return true;
+	else if (errorOK)
+		return false;
+
+	ereport(ERROR,
+			(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+			 errmsg("user %s does not trust operator %s",
+					GetUserNameFromId(vetoer, false),
+					get_opname(oper_oid))));
+}
+
+/*
+ * Exported routine for checking trust relationships of a function's owner.
+ * See comments at owner_trustcheck() for the semantics of trust and at
+ * pg_proc_execcheck() regarding when to use each of these variants.
+ */
+bool
+pg_proc_trustcheck_extended(Oid proc_oid, bool errorOK)
+{
+	HeapTuple	tuple;
+	Oid			owner;
+	Oid			vetoer;
+
+	tuple = SearchSysCache1(PROCOID, ObjectIdGetDatum(proc_oid));
+	if (!HeapTupleIsValid(tuple))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_FUNCTION),
+				 errmsg("function with OID %u does not exist", proc_oid)));
+	owner = ((Form_pg_proc) GETSTRUCT(tuple))->proowner;
+	ReleaseSysCache(tuple);
+
+	vetoer = owner_trustcheck(owner);
+	if (!OidIsValid(vetoer))
+		return true;
+	else if (errorOK)
+		return false;
+
+	ereport(ERROR,
+			(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+			 errmsg("user %s does not trust function %s",
+					GetUserNameFromId(vetoer, false),
+					get_func_name(proc_oid))));
+}
+
+/*
+ * Exported routine to make standard permissions checks applicable to running
+ * a function.  Verifies that the current role has permission to execute the
+ * function and that the function owner has the necessary trust relationships.
+ *
+ * DDL that binds a function to another object without executing the function,
+ * such as CREATE TRIGGER, should not perform a trust check; instead, call
+ * pg_proc_aclcheck() directly.  This allows a superuser to restore a database
+ * dump without trusting all trigger function owners.  On the flip side,
+ * objects like triggers and range types that check ACLs at creation time and
+ * skip them at runtime must still check trust at runtime; use
+ * pg_proc_trustcheck() directly.
+ *
+ * Functions named when creating a base type (input, output, receive, send,
+ * typmod_in, typmod_out, analyze) require no trust checks or ACL checks; only
+ * superusers can create new base types, and the creator is expected to use
+ * functions free from security considerations that would entail either check.
+ * Likewise for the functions associated with index access methods, operator
+ * families, languages, foreign data wrappers, text search templates, and text
+ * search parsers.  Selectivity functions also need no trust check, because
+ * only a superuser can define one by virtue of the arguments of type
+ * internal.  However, all of these exempt functions are responsible for
+ * performing trust checks on _functions they execute_ that are not themselves
+ * exempt; this affects selectivity functions especially.
+ */
+void
+pg_proc_execcheck(Oid proc_oid)
+{
+	AclResult	aclresult;
+
+	aclresult = pg_proc_aclcheck(proc_oid, GetUserId(), ACL_EXECUTE);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult, OBJECT_FUNCTION, get_func_name(proc_oid));
+
+	pg_proc_trustcheck(proc_oid);
 }
 
 /*

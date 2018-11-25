@@ -599,13 +599,16 @@ ltreeparentsel(PG_FUNCTION_ARGS)
 	{
 		/* Variable is being compared to a known non-null constant */
 		Datum		constval = ((Const *) other)->constvalue;
+		Oid			contcode;
 		FmgrInfo	contproc;
 		double		mcvsum;
 		double		mcvsel;
 		double		nullfrac;
 		int			hist_size;
 
-		fmgr_info(get_opcode(operator), &contproc);
+		contcode = get_opcode(operator);
+		pg_proc_trustcheck(contcode);
+		fmgr_info(contcode, &contproc);
 
 		/*
 		 * Is the constant "<@" to any of the column's most common values?
