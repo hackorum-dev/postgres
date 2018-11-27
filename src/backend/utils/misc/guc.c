@@ -11065,14 +11065,11 @@ check_recovery_target(char **newval, void **extra, GucSource source)
 static void
 assign_recovery_target(const char *newval, void *extra)
 {
+	if (recoveryTarget)
+		elog(ERROR, "can not specify multiple recovery targets");
+
 	if (newval && strcmp(newval, "") != 0)
 		recoveryTarget = RECOVERY_TARGET_IMMEDIATE;
-	else
-		/*
-		 * Reset recoveryTarget to RECOVERY_TARGET_UNSET to proper handle user
-		 * setting multiple recovery_target with blank value on last.
-		 */
-		recoveryTarget = RECOVERY_TARGET_UNSET;
 }
 
 static bool
@@ -11098,13 +11095,14 @@ check_recovery_target_xid(char **newval, void **extra, GucSource source)
 static void
 assign_recovery_target_xid(const char *newval, void *extra)
 {
+	if (recoveryTarget)
+		elog(ERROR, "can not specify multiple recovery targets");
+
 	if (newval && strcmp(newval, "") != 0)
 	{
 		recoveryTarget = RECOVERY_TARGET_XID;
 		recoveryTargetXid = *((TransactionId *) extra);
 	}
-	else
-		recoveryTarget = RECOVERY_TARGET_UNSET;
 }
 
 static bool
@@ -11161,13 +11159,14 @@ check_recovery_target_time(char **newval, void **extra, GucSource source)
 static void
 assign_recovery_target_time(const char *newval, void *extra)
 {
+	if (recoveryTarget)
+		elog(ERROR, "can not specify multiple recovery targets");
+
 	if (newval && strcmp(newval, "") != 0)
 	{
 		recoveryTarget = RECOVERY_TARGET_TIME;
 		recoveryTargetTime = *((TimestampTz *) extra);
 	}
-	else
-		recoveryTarget = RECOVERY_TARGET_UNSET;
 }
 
 static bool
@@ -11186,13 +11185,14 @@ check_recovery_target_name(char **newval, void **extra, GucSource source)
 static void
 assign_recovery_target_name(const char *newval, void *extra)
 {
+	if (recoveryTarget)
+		elog(ERROR, "can not specify multiple recovery targets");
+
 	if (newval && strcmp(newval, "") != 0)
 	{
 		recoveryTarget = RECOVERY_TARGET_NAME;
 		recoveryTargetName = (char *) newval;
 	}
-	else
-		recoveryTarget = RECOVERY_TARGET_UNSET;
 }
 
 static bool
@@ -11240,13 +11240,14 @@ check_recovery_target_lsn(char **newval, void **extra, GucSource source)
 static void
 assign_recovery_target_lsn(const char *newval, void *extra)
 {
+	if (recoveryTarget)
+		elog(ERROR, "can not specify multiple recovery targets");
+
 	if (newval && strcmp(newval, "") != 0)
 	{
 		recoveryTarget = RECOVERY_TARGET_LSN;
 		recoveryTargetLSN = *((XLogRecPtr *) extra);
 	}
-	else
-		recoveryTarget = RECOVERY_TARGET_UNSET;
 }
 
 static bool
