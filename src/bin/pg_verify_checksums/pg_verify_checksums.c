@@ -21,6 +21,7 @@
 #include "storage/bufpage.h"
 #include "storage/checksum.h"
 #include "storage/checksum_impl.h"
+#include "storage/fd.h"
 
 
 static int64 files = 0;
@@ -189,8 +190,21 @@ scan_directory(const char *basedir, const char *subdir)
 		char		fn[MAXPGPATH];
 		struct stat st;
 
-		if (!isRelFileName(de->d_name))
+		if (strcmp(de->d_name, ".") == 0 ||
+			strcmp(de->d_name, "..") == 0)
 			continue;
+
+		/* Skip temporary files */
+		if (strncmp(de->d_name,
+					PG_TEMP_FILE_PREFIX,
+					strlen(PG_TEMP_FILE_PREFIX)) == 0)
+			continue;
+
+		/* Skip temporary folders */
+		if (strncmp(de->d_name,
+					PG_TEMP_FILES_DIR,
+					strlen(PG_TEMP_FILES_DIR)) == 0)
+			return;
 
 		snprintf(fn, sizeof(fn), "%s/%s", path, de->d_name);
 		if (lstat(fn, &st) < 0)
@@ -205,6 +219,13 @@ scan_directory(const char *basedir, const char *subdir)
 			char	   *forkpath,
 					   *segmentpath;
 			BlockNumber segmentno = 0;
+
+			/*
+			 * Only normal relation files can be analyzed.  Note that this
+			 * skips temporary relations.
+			 */
+			if (!isRelFileName(de->d_name))
+				continue;
 
 			/*
 			 * Cut off at the segment boundary (".") to get the segment number
