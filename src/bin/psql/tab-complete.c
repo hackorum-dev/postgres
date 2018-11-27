@@ -60,6 +60,67 @@ extern char *filename_completion_function();
 #define completion_matches rl_completion_matches
 #endif
 
+/*
+ * By enabling TABCOMPLETION_DEBUG, every completion attempt is logged in
+ * session log file if any.
+ */
+#ifdef TABCOMPLETION_DEBUG
+
+#undef completion_matches
+#define completion_matches(text, func) \
+	completion_debug(__LINE__, (text), (func), \
+					 previous_words, previous_words_count)
+
+#define DEBUG_NCONTEXT 3
+
+static char **
+completion_debug(int line, const char *text, rl_compentry_func_t *func,
+				 char **previous_words, int previous_words_count)
+{
+#ifdef HAVE_RL_COMPLETION_MATCHES
+	char **list = rl_completion_matches(text, func);
+#else
+	char **list = completion_matches(text, func);
+#endif
+
+	if (pset.logfile)
+	{
+		/* Emit completion log */
+
+		/* Enclose empty list with brackets since it is an intermediate state
+		 * which is immediately followed by a non-empty list.
+		 */
+		fprintf(pset.logfile, "%s:%d: %s(", __FILE__, line, list ? "" : "[");
+
+		/* input context */
+		if (previous_words_count > 0)
+		{
+			int nwords = DEBUG_NCONTEXT;
+
+			/* ellipse more than DEBUG_NCONTEXT words back */
+			if (previous_words_count > nwords)
+				fprintf(pset.logfile, "...");
+			else
+				nwords = previous_words_count;
+
+			for (int i = 0 ; i < nwords ; ++i)
+				fprintf(pset.logfile, "%s ", previous_words[nwords - i - 1]);
+		}
+
+		fprintf(pset.logfile, "[%s]) -> (", text);
+
+		/* completion result */
+		for (int i = 0; list && list[i]; ++i)
+			fprintf(pset.logfile, "%s\"%s\"", i ? ", " : "", list[i]);			
+		fprintf(pset.logfile, ")%s\n", list ? "": "]");
+
+		fflush(pset.logfile);
+	}
+
+	return list;
+}
+#endif	/* TABCOMPLETION_DEBUG */
+
 /* word break characters */
 #define WORD_BREAKS		"\t\n@$><=;|&{() "
 
@@ -1012,7 +1073,8 @@ static void append_variable_names(char ***varnames, int *nvars,
 					  int *maxvars, const char *varname,
 					  const char *prefix, const char *suffix);
 static char **complete_from_variables(const char *text,
-						const char *prefix, const char *suffix, bool need_value);
+					  const char *prefix, const char *suffix, bool need_value,
+					  char ** previous_words, int previous_words_count);
 static char *complete_from_files(const char *text, int state);
 
 static char *pg_strdup_keyword_case(const char *s, const char *ref);
@@ -1385,11 +1447,14 @@ psql_completion(const char *text, int start, int end)
 	else if (text[0] == ':' && text[1] != ':')
 	{
 		if (text[1] == '\'')
-			matches = complete_from_variables(text, ":'", "'", true);
+			matches = complete_from_variables(text, ":'", "'", true,
+ 						previous_words, previous_words_count);
 		else if (text[1] == '"')
-			matches = complete_from_variables(text, ":\"", "\"", true);
+			matches = complete_from_variables(text, ":\"", "\"", true,
+ 						previous_words, previous_words_count);
 		else
-			matches = complete_from_variables(text, ":", "", true);
+			matches = complete_from_variables(text, ":", "", true,
+ 						previous_words, previous_words_count);
 	}
 
 	/* If no previous word, suggest one of the basic sql commands */
@@ -3548,9 +3613,11 @@ psql_completion(const char *text, int start, int end)
 			COMPLETE_WITH_CS("single", "double");
 	}
 	else if (TailMatchesCS("\\unset"))
-		matches = complete_from_variables(text, "", "", true);
+		matches = complete_from_variables(text, "", "", true,
+ 						previous_words, previous_words_count);
 	else if (TailMatchesCS("\\set"))
-		matches = complete_from_variables(text, "", "", false);
+		matches = complete_from_variables(text, "", "", false,
+ 						previous_words, previous_words_count);
 	else if (TailMatchesCS("\\set", MatchAny))
 	{
 		if (TailMatchesCS("AUTOCOMMIT|ON_ERROR_STOP|QUIET|"
@@ -4102,7 +4169,8 @@ append_variable_names(char ***varnames, int *nvars,
  */
 static char **
 complete_from_variables(const char *text, const char *prefix, const char *suffix,
-						bool need_value)
+						bool need_value,
+						char ** previous_words, int previous_words_count)
 {
 	char	  **matches;
 	char	  **varnames;
