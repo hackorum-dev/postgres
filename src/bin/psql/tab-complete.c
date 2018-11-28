@@ -56,17 +56,6 @@
 extern char *filename_completion_function();
 #endif
 
-#ifdef HAVE_RL_COMPLETION_MATCHES
-#define completion_matches rl_completion_matches
-#endif
-
-/*
- * By enabling TABCOMPLETION_DEBUG, every completion attempt is logged in
- * session log file if any.
- */
-#ifdef TABCOMPLETION_DEBUG
-
-#undef completion_matches
 #define completion_matches(text, func) \
 	completion_debug(__LINE__, (text), (func), \
 					 previous_words, previous_words_count)
@@ -83,7 +72,7 @@ completion_debug(int line, const char *text, rl_compentry_func_t *func,
 	char **list = completion_matches(text, func);
 #endif
 
-	if (pset.logfile)
+	if (pset.debug && pset.logfile)
 	{
 		/* Emit completion log */
 
@@ -119,7 +108,6 @@ completion_debug(int line, const char *text, rl_compentry_func_t *func,
 
 	return list;
 }
-#endif	/* TABCOMPLETION_DEBUG */
 
 /* word break characters */
 #define WORD_BREAKS		"\t\n@$><=;|&{() "
