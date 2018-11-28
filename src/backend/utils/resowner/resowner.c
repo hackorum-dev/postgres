@@ -536,16 +536,6 @@ ResourceOwnerReleaseInternal(ResourceOwner owner,
 			RelationClose(res);
 		}
 
-		/* Ditto for dynamic shared memory segments */
-		while (ResourceArrayGetAny(&(owner->dsmarr), &foundres))
-		{
-			dsm_segment *res = (dsm_segment *) DatumGetPointer(foundres);
-
-			if (isCommit)
-				PrintDSMLeakWarning(res);
-			dsm_detach(res);
-		}
-
 		/* Ditto for JIT contexts */
 		while (ResourceArrayGetAny(&(owner->jitarr), &foundres))
 		{
@@ -668,6 +658,28 @@ ResourceOwnerReleaseInternal(ResourceOwner owner,
 			if (isCommit)
 				PrintFileLeakWarning(res);
 			FileClose(res);
+		}
+
+		/*
+		 * Ditto for dynamic shared memory segments.
+		 *
+		 * Besides releasing shared memory, dsm_detach() also runs arbitrary
+		 * registered callbacks.  We do this after closing temporary files,
+		 * because SharedFileSetOnDetach tries to unlink shared temporary
+		 * directories when the last backend detaches.  On Windows, that fails
+		 * if file handles still exist for files inside that directory.
+		 *
+		 * More generally, doing this last prevents extension writers from
+		 * developing DSM detach hooks that depend on other resources and thus
+		 * on the exact release order.
+		 */
+		while (ResourceArrayGetAny(&(owner->dsmarr), &foundres))
+		{
+			dsm_segment *res = (dsm_segment *) DatumGetPointer(foundres);
+
+			if (isCommit)
+				PrintDSMLeakWarning(res);
+			dsm_detach(res);
 		}
 	}
 
