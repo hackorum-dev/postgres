@@ -3150,7 +3150,9 @@ ProcessInterrupts(void)
 		if (IdleInTransactionSessionTimeout > 0)
 			ereport(FATAL,
 					(errcode(ERRCODE_IDLE_IN_TRANSACTION_SESSION_TIMEOUT),
-					 errmsg("terminating connection due to idle-in-transaction timeout")));
+					 errmsg("terminating connection due to idle-in-transaction timeout"),
+					 errhint("In a moment you should be able to reconnect to the"
+							 " database and restart your transaction.")));
 		else
 			IdleInTransactionSessionTimeoutPending = false;
 
