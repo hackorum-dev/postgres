@@ -258,6 +258,23 @@ static bool TransactionIdInRecentPast(TransactionId xid, uint32 epoch);
 
 static void XLogRead(char *buf, XLogRecPtr startptr, Size count);
 
+/*
+ * Return true until either the client or server side have requested that we wind
+ * up COPY BOTH mode by sending a CopyDone.
+ *
+ * If we receive a CopyDone from the client we should avoid sending any further
+ * CopyData messages and return to command mode as promptly as possible.
+ *
+ * While in the middle of sending data to a client we notice a client-initated
+ * CopyDone when WalSndWriteData() calls ProcessRepliesIfAny() and it
+ * sets streamingDoneSending.
+ */
+static
+bool IsStreamingActive(void)
+{
+	return !streamingDoneReceiving && !streamingDoneSending;
+}
+
 
 /* Initialize walsender process before entering the main command loop */
 void
@@ -940,7 +957,7 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 		ctx = CreateInitDecodingContext(cmd->plugin, NIL, need_full_snapshot,
 										logical_read_xlog_page,
 										WalSndPrepareWrite, WalSndWriteData,
-										WalSndUpdateProgress);
+										WalSndUpdateProgress, IsStreamingActive);
 
 		/*
 		 * Signal that we don't need the timeout mechanism. We're just
@@ -1091,7 +1108,8 @@ StartLogicalReplication(StartReplicationCmd *cmd)
 		CreateDecodingContext(cmd->startpoint, cmd->options, false,
 							  logical_read_xlog_page,
 							  WalSndPrepareWrite, WalSndWriteData,
-							  WalSndUpdateProgress);
+							  WalSndUpdateProgress,
+							  IsStreamingActive);
 
 
 	WalSndSetState(WALSNDSTATE_CATCHUP);
@@ -1194,17 +1212,6 @@ WalSndWriteData(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId xid,
 
 	CHECK_FOR_INTERRUPTS();
 
-	/* Try to flush pending output to the client */
-	if (pq_flush_if_writable() != 0)
-		WalSndShutdown();
-
-	/* Try taking fast path unless we get too close to walsender timeout. */
-	if (now < TimestampTzPlusMilliseconds(last_reply_timestamp,
-										  wal_sender_timeout / 2) &&
-		!pq_is_send_pending())
-	{
-		return;
-	}
 
 	/* If we have pending write here, go to slow path */
 	for (;;)
@@ -1358,7 +1365,14 @@ WalSndWaitForWal(XLogRecPtr loc)
 			break;
 
 		/*
-		 * We only send regular messages to the client for full decoded
+		 * If we have received CopyDone from the client, sent CopyDone
+		 * ourselves, it's time to exit streaming.
+		 */
+		if (!IsStreamingActive()) {
+			break;
+		}
+
+		/* We only send regular messages to the client for full decoded
 		 * transactions, but a synchronous replication and walsender shutdown
 		 * possibly are waiting for a later location. So we send pings
 		 * containing the flush location every now and then.
