@@ -1593,10 +1593,17 @@ AcquireExecutorLocks(List *stmt_list, bool acquire)
 				continue;
 
 			/*
-			 * Acquire the appropriate type of lock on each relation OID. Note
-			 * that we don't actually try to open the rel, and hence will not
-			 * fail if it's been dropped entirely --- we'll just transiently
-			 * acquire a non-conflicting lock.
+			 * delaylock relations will be locked only when they are going
+			 * to be accessed for the first time.
+			 */
+			if (rte->delaylock)
+				continue;
+
+			/*
+			 * Otherwise, acquire the appropriate type of lock on the
+			 * relation's OID.  Note that we don't actually try to open the
+			 * rel, and hence will not fail if it's been dropped entirely ---
+			 * we'll just transiently acquire a non-conflicting lock.
 			 */
 			if (acquire)
 				LockRelationOid(rte->relid, rte->rellockmode);
