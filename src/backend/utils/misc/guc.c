@@ -295,6 +295,12 @@ static const struct config_enum_entry isolation_level_options[] = {
 	{NULL, 0}
 };
 
+static const struct config_enum_entry rollback_scope_options[] = {
+	{"transaction", XACT_ROLLBACK_SCOPE_XACT, false},
+	{"statement", XACT_ROLLBACK_SCOPE_STMT, false},
+	{NULL, 0}
+};
+
 static const struct config_enum_entry session_replication_role_options[] = {
 	{"origin", SESSION_REPLICATION_ROLE_ORIGIN, false},
 	{"replica", SESSION_REPLICATION_ROLE_REPLICA, false},
@@ -4151,6 +4157,17 @@ static struct config_enum ConfigureNamesEnum[] =
 	},
 
 	{
+		{"transaction_rollback_scope", PGC_USERSET, CLIENT_CONN_STATEMENT,
+			gettext_noop("Sets the scope of rollback when the current transaction aborts."),
+			NULL,
+			GUC_NO_RESET_ALL | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
+		},
+		&XactRollbackScope,
+		XACT_ROLLBACK_SCOPE_XACT, rollback_scope_options,
+		check_XactRollbackScope, NULL, NULL
+	},
+
+	{
 		{"IntervalStyle", PGC_USERSET, CLIENT_CONN_LOCALE,
 			gettext_noop("Sets the display format for interval values."),
 			NULL,
@@ -7852,6 +7869,9 @@ ExecSetVariableStmt(VariableSetStmt *stmt, bool isTopLevel)
 									  list_make1(item->arg), stmt->is_local);
 					else if (strcmp(item->defname, "transaction_read_only") == 0)
 						SetPGVariable("transaction_read_only",
+									  list_make1(item->arg), stmt->is_local);
+					else if (strcmp(item->defname, "transaction_rollback_scope") == 0)
+						SetPGVariable("transaction_rollback_scope",
 									  list_make1(item->arg), stmt->is_local);
 					else if (strcmp(item->defname, "transaction_deferrable") == 0)
 						SetPGVariable("transaction_deferrable",

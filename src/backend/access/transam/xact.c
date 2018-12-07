@@ -73,6 +73,8 @@
 int			DefaultXactIsoLevel = XACT_READ_COMMITTED;
 int			XactIsoLevel;
 
+int			XactRollbackScope = XACT_ROLLBACK_SCOPE_XACT;
+
 bool		DefaultXactReadOnly = false;
 bool		XactReadOnly;
 
@@ -176,6 +178,7 @@ typedef struct TransactionStateData
 	int			savepointLevel; /* savepoint level */
 	TransState	state;			/* low-level state */
 	TBlockState blockState;		/* high-level state */
+	XactRollbackScopeValues rollbackScope;	/* automatic abort behavior */
 	int			nestingLevel;	/* transaction nesting depth */
 	int			gucNestLevel;	/* GUC context nesting depth */
 	MemoryContext curTransactionContext;	/* my xact-lifetime context */
@@ -202,6 +205,7 @@ typedef TransactionStateData *TransactionState;
 static TransactionStateData TopTransactionStateData = {
 	.state = TRANS_DEFAULT,
 	.blockState = TBLOCK_DEFAULT,
+	.rollbackScope = XACT_ROLLBACK_SCOPE_XACT,
 };
 
 /*
@@ -1820,6 +1824,8 @@ StartTransaction(void)
 	 */
 	s->state = TRANS_START;
 	s->transactionId = InvalidTransactionId;	/* until assigned */
+	/* fixed later in CommitTransactionCommand: */
+	s->rollbackScope = XACT_ROLLBACK_SCOPE_XACT;
 
 	/*
 	 * initialize current transaction state fields
@@ -2705,6 +2711,7 @@ StartTransactionCommand(void)
 			 */
 		case TBLOCK_DEFAULT:
 			StartTransaction();
+			s = CurrentTransactionState;
 			s->blockState = TBLOCK_STARTED;
 			break;
 
@@ -2717,7 +2724,23 @@ StartTransactionCommand(void)
 			 */
 		case TBLOCK_INPROGRESS:
 		case TBLOCK_IMPLICIT_INPROGRESS:
+			break;
+
+			/*
+			 * Same as above in transaction rollback scope; but in statement
+			 * rollback scope, release the previous subtransaction and create
+			 * a new one.
+			 */
 		case TBLOCK_SUBINPROGRESS:
+			if (s->rollbackScope == XACT_ROLLBACK_SCOPE_STMT)
+			{
+				CommitSubTransaction();		/* what if there's an intervening subxact? */
+				PushTransaction();
+				s = CurrentTransactionState;
+				s->name = MemoryContextStrdup(TopTransactionContext, "pg internal");
+				StartSubTransaction();
+				s->blockState = TBLOCK_SUBINPROGRESS;
+			}
 			break;
 
 			/*
@@ -2792,13 +2815,25 @@ CommitTransactionCommand(void)
 			break;
 
 			/*
-			 * We are completing a "BEGIN TRANSACTION" command, so we change
-			 * to the "transaction block in progress" state and return.  (We
-			 * assume the BEGIN did nothing to the database, so we need no
-			 * CommandCounterIncrement.)
+			 * While completing a BEGIN transaction command, we mind the
+			 * prevailing transaction rollback scope.  In the normal case of
+			 * rolling back the entire transaction, just change to the
+			 * "transaction block in progress" state and return.  (We assume
+			 * the BEGIN did nothing to the database, so we need no
+			 * CommandCounterIncrement.)  If the rollback scope is statement,
+			 * however, here we start a subtransaction to serve it.
 			 */
 		case TBLOCK_BEGIN:
+			s->rollbackScope = XactRollbackScope;
 			s->blockState = TBLOCK_INPROGRESS;
+			if (s->rollbackScope == XACT_ROLLBACK_SCOPE_STMT)
+			{
+				PushTransaction();
+				s = CurrentTransactionState;	/* changed by push */
+				s->name = MemoryContextStrdup(TopTransactionContext, "pg internal");
+				StartSubTransaction();
+				s->blockState = TBLOCK_SUBINPROGRESS;
+			}
 			break;
 
 			/*
@@ -2985,6 +3020,7 @@ CommitTransactionCommand(void)
 				savepointLevel = s->savepointLevel;
 
 				CleanupSubTransaction();
+				s = CurrentTransactionState;
 
 				DefineSavepoint(NULL);
 				s = CurrentTransactionState;	/* changed by push */
@@ -3063,6 +3099,7 @@ AbortCurrentTransaction(void)
 			 */
 		case TBLOCK_INPROGRESS:
 		case TBLOCK_PARALLEL_INPROGRESS:
+			Assert(s->rollbackScope != XACT_ROLLBACK_SCOPE_STMT);
 			AbortTransaction();
 			s->blockState = TBLOCK_ABORT;
 			/* CleanupTransaction happens when we exit TBLOCK_ABORT_END */
@@ -3120,13 +3157,32 @@ AbortCurrentTransaction(void)
 			break;
 
 			/*
-			 * We got an error inside a subtransaction.  Abort just the
-			 * subtransaction, and go to the persistent SUBABORT state until
-			 * we get ROLLBACK.
+			 * We got an error inside a subtransaction.  In transaction-
+			 * rollback-scope mode, abort just the subtransaction, and go to
+			 * the persistent SUBABORT state until we get ROLLBACK; in
+			 * statement rollback-scope mode, abort and cleanup the current
+			 * subtransaction and automatically start a new one.
 			 */
 		case TBLOCK_SUBINPROGRESS:
 			AbortSubTransaction();
-			s->blockState = TBLOCK_SUBABORT;
+
+			if (s->rollbackScope == XACT_ROLLBACK_SCOPE_STMT)
+			{
+				char   *name = s->name;
+
+				s->name = NULL;
+				CleanupSubTransaction();
+
+				PushTransaction();
+				s = CurrentTransactionState;	/* changed by push */
+				s->name = name;
+
+				AssertState(s->blockState == TBLOCK_SUBBEGIN);
+				StartSubTransaction();
+				s->blockState = TBLOCK_SUBINPROGRESS;
+			}
+			else
+				s->blockState = TBLOCK_SUBABORT;
 			break;
 
 			/*
@@ -3863,9 +3919,8 @@ DefineSavepoint(const char *name)
 
 	switch (s->blockState)
 	{
-		case TBLOCK_INPROGRESS:
-		case TBLOCK_SUBINPROGRESS:
 			/* Normal subtransaction start */
+		case TBLOCK_INPROGRESS:
 			PushTransaction();
 			s = CurrentTransactionState;	/* changed by push */
 
@@ -3875,6 +3930,50 @@ DefineSavepoint(const char *name)
 			 */
 			if (name)
 				s->name = MemoryContextStrdup(TopTransactionContext, name);
+			break;
+
+			/*
+			 * As above, with a subtransaction already in progress.
+			 *
+			 * In transaction-scope rollback, we want the user-defined
+			 * savepoint to appear *before* the automatic subtransaction.
+			 * Close the one we opened above, then open and start the user
+			 * invoked one, then start a new automatic savepoint, which is
+			 * the one that CommitTransactionCommand will act upon.
+			 *
+			 * In normal mode, act just like the INPROGRESS case.
+			 */
+		case TBLOCK_SUBINPROGRESS:
+			if (s->rollbackScope == XACT_ROLLBACK_SCOPE_STMT)
+			{
+				CommitSubTransaction();
+				PushTransaction();
+				s = CurrentTransactionState;	/* changed by push */
+				if (name)
+					s->name = MemoryContextStrdup(TopTransactionContext, name);
+				StartSubTransaction();
+				s->blockState = TBLOCK_SUBINPROGRESS;
+
+				/* same as StartTransactionCommand for SUBINPROGRESS */
+				PushTransaction();
+				s = CurrentTransactionState;
+				s->name = MemoryContextStrdup(TopTransactionContext, "pg internal");
+				StartSubTransaction();
+				s->blockState = TBLOCK_SUBINPROGRESS;
+
+			}
+			else
+			{
+				PushTransaction();
+				s = CurrentTransactionState;	/* changed by push */
+
+				/*
+				 * Savepoint names, like the TransactionState block itself, live
+				 * in TopTransactionContext.
+				 */
+				if (name)
+					s->name = MemoryContextStrdup(TopTransactionContext, name);
+			}
 			break;
 
 			/*
@@ -4547,6 +4646,7 @@ StartSubTransaction(void)
 			 TransStateAsString(s->state));
 
 	s->state = TRANS_START;
+	s->rollbackScope = s->parent->rollbackScope;
 
 	/*
 	 * Initialize subsystems for new subtransaction
