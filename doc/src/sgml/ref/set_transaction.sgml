@@ -134,13 +134,10 @@ SET SESSION CHARACTERISTICS AS TRANSACTION <replaceable class="parameter">transa
    The rollback scope of a transaction determines the range of operations
    which roll back when an SQL statement fails.  The default value is
    <literal>TRANSACTION</literal>, which causes the entire transaction or
-   current subtransaction to be rolled back.  This is the only mode that can
-   be selected with <command>SET TRANSACTION</command>.  The other possible
-   mode, <literal>STATEMENT</literal>, can only be specified during connection
-   establishment, <literal>ALTER USER</literal> or <literal>ALTER DATABASE</literal>;
-   in that mode, only the failed <acronym>SQL</acronym> statement is
-   rolled back, and the transaction is automatically put back in normal
-   mode.
+   current subtransaction to be rolled back.  The other possible mode is
+   <literal>STATEMENT</literal>, in which only the failed
+   <acronym>SQL</acronym> statement is rolled back, and the transaction
+   is automatically put back in normal mode.
   </para>
 
   <para>

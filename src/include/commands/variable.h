@@ -23,7 +23,6 @@ extern void assign_log_timezone(const char *newval, void *extra);
 extern const char *show_log_timezone(void);
 extern bool check_transaction_read_only(bool *newval, void **extra, GucSource source);
 extern bool check_XactIsoLevel(int *newval, void **extra, GucSource source);
-extern bool check_XactRollbackScope(int *newval, void **extra, GucSource source);
 extern bool check_transaction_deferrable(bool *newval, void **extra, GucSource source);
 extern bool check_random_seed(double *newval, void **extra, GucSource source);
 extern void assign_random_seed(double newval, void *extra);
@@ -35,5 +34,8 @@ extern void assign_session_authorization(const char *newval, void *extra);
 extern bool check_role(char **newval, void **extra, GucSource source);
 extern void assign_role(const char *newval, void *extra);
 extern const char *show_role(void);
+
+/* in xact.c */
+extern void assign_XactRollbackScope(int newval, void *extra);
 
 #endif							/* VARIABLE_H */

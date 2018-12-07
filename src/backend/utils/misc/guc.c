@@ -4164,7 +4164,7 @@ static struct config_enum ConfigureNamesEnum[] =
 		},
 		&XactRollbackScope,
 		XACT_ROLLBACK_SCOPE_XACT, rollback_scope_options,
-		check_XactRollbackScope, NULL, NULL
+		NULL, assign_XactRollbackScope, NULL
 	},
 
 	{

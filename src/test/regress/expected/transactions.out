@@ -725,10 +725,180 @@ SELECT * FROM xact_rscope;
  12
 (4 rows)
 
+-- test changing rollback scope to 'transaction' partway through
+TRUNCATE TABLE xact_rscope;
+BEGIN;
+SHOW transaction_rollback_scope;
+ transaction_rollback_scope 
+----------------------------
+ statement
+(1 row)
+
+INSERT INTO xact_rscope VALUES (1);
+INSERT INTO xact_rscope VALUES (2/0);
+ERROR:  division by zero
+SET LOCAL transaction_rollback_scope TO 'transaction';
+INSERT INTO xact_rscope VALUES (3);
+COMMIT;
+SELECT * FROM xact_rscope;
+ a 
+---
+ 1
+ 3
+(2 rows)
+
+TRUNCATE TABLE xact_rscope;
+BEGIN;
+INSERT INTO xact_rscope VALUES (1);
+INSERT INTO xact_rscope VALUES (2/0);
+ERROR:  division by zero
+SET LOCAL transaction_rollback_scope TO 'transaction';
+INSERT INTO xact_rscope VALUES (3);
+INSERT INTO xact_rscope VALUES (4/0);
+ERROR:  division by zero
+COMMIT;
+SELECT * FROM xact_rscope;
+ a 
+---
+(0 rows)
+
+TRUNCATE TABLE xact_rscope;
+BEGIN;
+INSERT INTO xact_rscope VALUES (1);
+SAVEPOINT foo;
+INSERT INTO xact_rscope VALUES (2/0);
+ERROR:  division by zero
+SET LOCAL transaction_rollback_scope TO 'transaction';
+INSERT INTO xact_rscope VALUES (4/0);
+ERROR:  division by zero
+ROLLBACK TO foo;
+INSERT INTO xact_rscope VALUES (5);
+COMMIT;
+SELECT * FROM xact_rscope;
+ a 
+---
+ 1
+ 5
+(2 rows)
+
+TRUNCATE TABLE xact_rscope;
+BEGIN;
+INSERT INTO xact_rscope VALUES (1);
+SAVEPOINT foo;
+INSERT INTO xact_rscope VALUES (2/0);
+ERROR:  division by zero
+SET LOCAL transaction_rollback_scope TO 'transaction';
+INSERT INTO xact_rscope VALUES (4);
+RELEASE SAVEPOINT foo;
+INSERT INTO xact_rscope VALUES (5);
+COMMIT;
+SELECT * FROM xact_rscope;
+ a 
+---
+ 1
+ 4
+ 5
+(3 rows)
+
 -- clean up
 \c - :current_user
 DROP OWNED BY regress_transactions_user;
 DROP USER regress_transactions_user;
+-- We allow the GUC to be changed mid-session too
+CREATE TABLE xact_rscope (a int);
+SHOW transaction_rollback_scope;
+ transaction_rollback_scope 
+----------------------------
+ transaction
+(1 row)
+
+BEGIN TRANSACTION ROLLBACK SCOPE STATEMENT;
+SHOW transaction_rollback_scope;
+ transaction_rollback_scope 
+----------------------------
+ statement
+(1 row)
+
+INSERT INTO xact_rscope VALUES (1);
+INSERT INTO xact_rscope VALUES (2/0);
+ERROR:  division by zero
+INSERT INTO xact_rscope VALUES (3), (4/0);
+ERROR:  division by zero
+INSERT INTO xact_rscope VALUES (5);
+COMMIT;
+SELECT * FROM xact_rscope;
+ a 
+---
+ 1
+ 5
+(2 rows)
+
+TRUNCATE TABLE xact_rscope;
+SET transaction_rollback_scope TO 'statement';
+BEGIN;
+INSERT INTO xact_rscope VALUES (5);
+INSERT INTO xact_rscope VALUES (6/0);
+ERROR:  division by zero
+COMMIT;
+SELECT * FROM xact_rscope;
+ a 
+---
+ 5
+(1 row)
+
+RESET transaction_rollback_scope;
+TRUNCATE TABLE xact_rscope;
+BEGIN;
+SHOW transaction_rollback_scope;
+ transaction_rollback_scope 
+----------------------------
+ transaction
+(1 row)
+
+INSERT INTO xact_rscope VALUES (1);
+SET LOCAL transaction_rollback_scope TO 'statement';
+INSERT INTO xact_rscope VALUES (2/0);
+ERROR:  division by zero
+INSERT INTO xact_rscope VALUES (3);
+COMMIT;
+SELECT * FROM xact_rscope;
+ a 
+---
+ 1
+ 3
+(2 rows)
+
+SHOW transaction_rollback_scope;
+ transaction_rollback_scope 
+----------------------------
+ transaction
+(1 row)
+
+TRUNCATE TABLE xact_rscope;
+BEGIN ROLLBACK SCOPE STATEMENT;
+INSERT INTO xact_rscope VALUES (1);
+SAVEPOINT foo;
+INSERT INTO xact_rscope VALUES (2/0);
+ERROR:  division by zero
+INSERT INTO xact_rscope VALUES (3);
+RELEASE SAVEPOINT foo;
+INSERT INTO xact_rscope VALUES (4);
+SAVEPOINT bar;
+INSERT INTO xact_rscope VALUES (5);
+INSERT INTO xact_rscope VALUES (6/0);
+ERROR:  division by zero
+ROLLBACK TO bar;
+INSERT INTO xact_rscope VALUES (7);
+COMMIT;
+SELECT * FROM xact_rscope;
+ a 
+---
+ 1
+ 3
+ 4
+ 7
+(4 rows)
+
 -- Test assorted behaviors around the implicit transaction block created
 -- when multiple SQL commands are sent in a single Query message.  These
 -- tests rely on the fact that psql will not break SQL commands apart at a

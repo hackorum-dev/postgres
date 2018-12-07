@@ -555,37 +555,6 @@ check_XactIsoLevel(int *newval, void **extra, GucSource source)
 }
 
 /*
- * SET TRANSACTION ROLLBACK SCOPE
- */
-bool
-check_XactRollbackScope(int *newval, void **extra, GucSource source)
-{
-	/* idempotent changes are okay */
-	if (*newval == XactRollbackScope)
-		return true;
-
-	/*
-	 * if in statement mode, allow downgrade to transaction mode (no going
-	 * back from this one!)
-	 */
-	if ((*newval == XACT_ROLLBACK_SCOPE_XACT) &&
-		(XactRollbackScope == XACT_ROLLBACK_SCOPE_STMT))
-		return true;
-
-	/*
-	 * We want to reject the variable unless it comes from ALTER
-	 * USER/DATABASE or connection establishment.  We don't want to
-	 * accept it in postgresql.conf or in manual SET.
-	 */
-	if (source < PGC_S_SESSION && source > PGC_S_GLOBAL)
-		return true;
-
-	GUC_check_errmsg("the transaction rollback scope cannot be changed at this level");
-	GUC_check_errhint("You may set it in PGOPTIONS or via ALTER USER/DATABASE SET.");
-	return false;
-}
-
-/*
  * SET TRANSACTION [NOT] DEFERRABLE
  */
 

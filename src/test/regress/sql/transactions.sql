@@ -459,10 +459,105 @@ INSERT INTO xact_rscope VALUES (12);
 COMMIT;
 SELECT * FROM xact_rscope;
 
+-- test changing rollback scope to 'transaction' partway through
+TRUNCATE TABLE xact_rscope;
+BEGIN;
+SHOW transaction_rollback_scope;
+INSERT INTO xact_rscope VALUES (1);
+INSERT INTO xact_rscope VALUES (2/0);
+SET LOCAL transaction_rollback_scope TO 'transaction';
+INSERT INTO xact_rscope VALUES (3);
+COMMIT;
+SELECT * FROM xact_rscope;
+
+TRUNCATE TABLE xact_rscope;
+BEGIN;
+INSERT INTO xact_rscope VALUES (1);
+INSERT INTO xact_rscope VALUES (2/0);
+SET LOCAL transaction_rollback_scope TO 'transaction';
+INSERT INTO xact_rscope VALUES (3);
+INSERT INTO xact_rscope VALUES (4/0);
+COMMIT;
+SELECT * FROM xact_rscope;
+
+TRUNCATE TABLE xact_rscope;
+BEGIN;
+INSERT INTO xact_rscope VALUES (1);
+SAVEPOINT foo;
+INSERT INTO xact_rscope VALUES (2/0);
+SET LOCAL transaction_rollback_scope TO 'transaction';
+INSERT INTO xact_rscope VALUES (4/0);
+ROLLBACK TO foo;
+INSERT INTO xact_rscope VALUES (5);
+COMMIT;
+SELECT * FROM xact_rscope;
+
+
+TRUNCATE TABLE xact_rscope;
+BEGIN;
+INSERT INTO xact_rscope VALUES (1);
+SAVEPOINT foo;
+INSERT INTO xact_rscope VALUES (2/0);
+SET LOCAL transaction_rollback_scope TO 'transaction';
+INSERT INTO xact_rscope VALUES (4);
+RELEASE SAVEPOINT foo;
+INSERT INTO xact_rscope VALUES (5);
+COMMIT;
+SELECT * FROM xact_rscope;
+
 -- clean up
 \c - :current_user
 DROP OWNED BY regress_transactions_user;
 DROP USER regress_transactions_user;
+
+-- We allow the GUC to be changed mid-session too
+CREATE TABLE xact_rscope (a int);
+SHOW transaction_rollback_scope;
+BEGIN TRANSACTION ROLLBACK SCOPE STATEMENT;
+SHOW transaction_rollback_scope;
+INSERT INTO xact_rscope VALUES (1);
+INSERT INTO xact_rscope VALUES (2/0);
+INSERT INTO xact_rscope VALUES (3), (4/0);
+INSERT INTO xact_rscope VALUES (5);
+COMMIT;
+SELECT * FROM xact_rscope;
+
+TRUNCATE TABLE xact_rscope;
+SET transaction_rollback_scope TO 'statement';
+BEGIN;
+INSERT INTO xact_rscope VALUES (5);
+INSERT INTO xact_rscope VALUES (6/0);
+COMMIT;
+SELECT * FROM xact_rscope;
+RESET transaction_rollback_scope;
+
+TRUNCATE TABLE xact_rscope;
+BEGIN;
+SHOW transaction_rollback_scope;
+INSERT INTO xact_rscope VALUES (1);
+SET LOCAL transaction_rollback_scope TO 'statement';
+INSERT INTO xact_rscope VALUES (2/0);
+INSERT INTO xact_rscope VALUES (3);
+COMMIT;
+SELECT * FROM xact_rscope;
+SHOW transaction_rollback_scope;
+
+TRUNCATE TABLE xact_rscope;
+BEGIN ROLLBACK SCOPE STATEMENT;
+INSERT INTO xact_rscope VALUES (1);
+SAVEPOINT foo;
+INSERT INTO xact_rscope VALUES (2/0);
+INSERT INTO xact_rscope VALUES (3);
+RELEASE SAVEPOINT foo;
+INSERT INTO xact_rscope VALUES (4);
+SAVEPOINT bar;
+INSERT INTO xact_rscope VALUES (5);
+INSERT INTO xact_rscope VALUES (6/0);
+ROLLBACK TO bar;
+INSERT INTO xact_rscope VALUES (7);
+COMMIT;
+SELECT * FROM xact_rscope;
+
 
 
 -- Test assorted behaviors around the implicit transaction block created
