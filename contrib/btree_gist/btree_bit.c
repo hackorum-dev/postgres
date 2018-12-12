@@ -24,7 +24,7 @@ PG_FUNCTION_INFO_V1(gbt_bit_same);
 /* define for comparison */
 
 static bool
-gbt_bitgt(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
+gbt_bitgt(const void *a, const void *b, fmLocalePtr collation, FmgrInfo *flinfo)
 {
 	return DatumGetBool(DirectFunctionCall2(bitgt,
 											PointerGetDatum(a),
@@ -32,7 +32,7 @@ gbt_bitgt(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
 }
 
 static bool
-gbt_bitge(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
+gbt_bitge(const void *a, const void *b, fmLocalePtr collation, FmgrInfo *flinfo)
 {
 	return DatumGetBool(DirectFunctionCall2(bitge,
 											PointerGetDatum(a),
@@ -40,7 +40,7 @@ gbt_bitge(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
 }
 
 static bool
-gbt_biteq(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
+gbt_biteq(const void *a, const void *b, fmLocalePtr collation, FmgrInfo *flinfo)
 {
 	return DatumGetBool(DirectFunctionCall2(biteq,
 											PointerGetDatum(a),
@@ -48,7 +48,7 @@ gbt_biteq(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
 }
 
 static bool
-gbt_bitle(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
+gbt_bitle(const void *a, const void *b, fmLocalePtr collation, FmgrInfo *flinfo)
 {
 	return DatumGetBool(DirectFunctionCall2(bitle,
 											PointerGetDatum(a),
@@ -56,7 +56,7 @@ gbt_bitle(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
 }
 
 static bool
-gbt_bitlt(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
+gbt_bitlt(const void *a, const void *b, fmLocalePtr collation, FmgrInfo *flinfo)
 {
 	return DatumGetBool(DirectFunctionCall2(bitlt,
 											PointerGetDatum(a),
@@ -64,7 +64,7 @@ gbt_bitlt(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
 }
 
 static int32
-gbt_bitcmp(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
+gbt_bitcmp(const void *a, const void *b, fmLocalePtr collation, FmgrInfo *flinfo)
 {
 	return DatumGetInt32(DirectFunctionCall2(byteacmp,
 											 PointerGetDatum(a),

@@ -24,6 +24,7 @@
 #include "miscadmin.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
+#include "utils/pg_locale.h"
 #include "utils/typcache.h"
 
 
@@ -960,7 +961,7 @@ record_cmp(FunctionCallInfo fcinfo)
 
 			/* Compare the pair of elements */
 			InitFunctionCallInfoData(locfcinfo, &typentry->cmp_proc_finfo, 2,
-									 collation, NULL, NULL);
+									 pg_newlocale_from_collation(collation), NULL, NULL);
 			locfcinfo.arg[0] = values1[i1];
 			locfcinfo.arg[1] = values2[i2];
 			locfcinfo.argnull[0] = false;
@@ -1194,7 +1195,7 @@ record_eq(PG_FUNCTION_ARGS)
 
 			/* Compare the pair of elements */
 			InitFunctionCallInfoData(locfcinfo, &typentry->eq_opr_finfo, 2,
-									 collation, NULL, NULL);
+									 pg_newlocale_from_collation(collation), NULL, NULL);
 			locfcinfo.arg[0] = values1[i1];
 			locfcinfo.arg[1] = values2[i2];
 			locfcinfo.argnull[0] = false;

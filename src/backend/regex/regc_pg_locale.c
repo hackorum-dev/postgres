@@ -74,7 +74,6 @@ typedef enum
 
 static PG_Locale_Strategy pg_regex_strategy;
 static pg_locale_t pg_regex_locale;
-static Oid	pg_regex_collation;
 
 /*
  * Hard-wired character properties for C locale
@@ -229,61 +228,48 @@ static const unsigned char pg_char_properties[128] = {
  * to store the results in static variables.
  */
 void
-pg_set_regex_collation(Oid collation)
+pg_set_regex_collation(pg_locale_t collation)
 {
-	if (lc_ctype_is_c(collation))
+	if (!collation)
+	{
+		/*
+		 * This typically means that the parser could not resolve a
+		 * conflict of implicit collations, so report it that way.
+		 */
+		ereport(ERROR,
+				(errcode(ERRCODE_INDETERMINATE_COLLATION),
+				 errmsg("could not determine which collation to use for regular expression"),
+				 errhint("Use the COLLATE clause to set the collation explicitly.")));
+	}
+
+	pg_regex_locale = collation;
+
+	if (collation->ctype_is_c)
 	{
 		/* C/POSIX collations use this path regardless of database encoding */
 		pg_regex_strategy = PG_REGEX_LOCALE_C;
-		pg_regex_locale = 0;
-		pg_regex_collation = C_COLLATION_OID;
 	}
 	else
 	{
-		if (collation == DEFAULT_COLLATION_OID)
-			pg_regex_locale = 0;
-		else if (OidIsValid(collation))
-		{
-			/*
-			 * NB: pg_newlocale_from_collation will fail if not HAVE_LOCALE_T;
-			 * the case of pg_regex_locale != 0 but not HAVE_LOCALE_T does not
-			 * have to be considered below.
-			 */
-			pg_regex_locale = pg_newlocale_from_collation(collation);
-		}
-		else
-		{
-			/*
-			 * This typically means that the parser could not resolve a
-			 * conflict of implicit collations, so report it that way.
-			 */
-			ereport(ERROR,
-					(errcode(ERRCODE_INDETERMINATE_COLLATION),
-					 errmsg("could not determine which collation to use for regular expression"),
-					 errhint("Use the COLLATE clause to set the collation explicitly.")));
-		}
-
 #ifdef USE_ICU
-		if (pg_regex_locale && pg_regex_locale->provider == COLLPROVIDER_ICU)
+		if (pg_regex_locale->provider == COLLPROVIDER_ICU)
 			pg_regex_strategy = PG_REGEX_LOCALE_ICU;
 		else
 #endif
 		if (GetDatabaseEncoding() == PG_UTF8)
 		{
-			if (pg_regex_locale)
+			if (pg_regex_locale->provider == COLLPROVIDER_LIBC)
 				pg_regex_strategy = PG_REGEX_LOCALE_WIDE_L;
 			else
 				pg_regex_strategy = PG_REGEX_LOCALE_WIDE;
 		}
 		else
 		{
-			if (pg_regex_locale)
+			if (pg_regex_locale->provider == COLLPROVIDER_LIBC)
 				pg_regex_strategy = PG_REGEX_LOCALE_1BYTE_L;
 			else
 				pg_regex_strategy = PG_REGEX_LOCALE_1BYTE;
 		}
-
-		pg_regex_collation = collation;
 	}
 }
 
@@ -718,7 +704,7 @@ typedef int (*pg_wc_probefunc) (pg_wchar c);
 typedef struct pg_ctype_cache
 {
 	pg_wc_probefunc probefunc;	/* pg_wc_isalpha or a sibling */
-	Oid			collation;		/* collation this entry is for */
+	Oid			collid;			/* collation this entry is for */
 	struct cvec cv;				/* cache entry contents */
 	struct pg_ctype_cache *next;	/* chain link */
 } pg_ctype_cache;
@@ -787,7 +773,7 @@ pg_ctype_get_cache(pg_wc_probefunc probefunc, int cclasscode)
 	for (pcc = pg_ctype_cache_list; pcc != NULL; pcc = pcc->next)
 	{
 		if (pcc->probefunc == probefunc &&
-			pcc->collation == pg_regex_collation)
+			pcc->collid == pg_regex_locale->collid)
 			return &pcc->cv;
 	}
 
@@ -798,7 +784,7 @@ pg_ctype_get_cache(pg_wc_probefunc probefunc, int cclasscode)
 	if (pcc == NULL)
 		return NULL;
 	pcc->probefunc = probefunc;
-	pcc->collation = pg_regex_collation;
+	pcc->collid = pg_regex_locale->collid;
 	pcc->cv.nchrs = 0;
 	pcc->cv.chrspace = 128;
 	pcc->cv.chrs = (chr *) malloc(pcc->cv.chrspace * sizeof(chr));

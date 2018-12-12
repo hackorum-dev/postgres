@@ -23,7 +23,7 @@ PG_FUNCTION_INFO_V1(gbt_text_same);
 /* define for comparison */
 
 static bool
-gbt_textgt(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
+gbt_textgt(const void *a, const void *b, fmLocalePtr collation, FmgrInfo *flinfo)
 {
 	return DatumGetBool(DirectFunctionCall2Coll(text_gt,
 												collation,
@@ -32,7 +32,7 @@ gbt_textgt(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
 }
 
 static bool
-gbt_textge(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
+gbt_textge(const void *a, const void *b, fmLocalePtr collation, FmgrInfo *flinfo)
 {
 	return DatumGetBool(DirectFunctionCall2Coll(text_ge,
 												collation,
@@ -41,7 +41,7 @@ gbt_textge(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
 }
 
 static bool
-gbt_texteq(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
+gbt_texteq(const void *a, const void *b, fmLocalePtr collation, FmgrInfo *flinfo)
 {
 	return DatumGetBool(DirectFunctionCall2Coll(texteq,
 												collation,
@@ -50,7 +50,7 @@ gbt_texteq(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
 }
 
 static bool
-gbt_textle(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
+gbt_textle(const void *a, const void *b, fmLocalePtr collation, FmgrInfo *flinfo)
 {
 	return DatumGetBool(DirectFunctionCall2Coll(text_le,
 												collation,
@@ -59,7 +59,7 @@ gbt_textle(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
 }
 
 static bool
-gbt_textlt(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
+gbt_textlt(const void *a, const void *b, fmLocalePtr collation, FmgrInfo *flinfo)
 {
 	return DatumGetBool(DirectFunctionCall2Coll(text_lt,
 												collation,
@@ -68,7 +68,7 @@ gbt_textlt(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
 }
 
 static int32
-gbt_textcmp(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
+gbt_textcmp(const void *a, const void *b, fmLocalePtr collation, FmgrInfo *flinfo)
 {
 	return DatumGetInt32(DirectFunctionCall2Coll(bttextcmp,
 												 collation,

@@ -59,7 +59,7 @@ extern int	oid_cmp(const void *p1, const void *p2);
 
 /* regexp.c */
 extern char *regexp_fixed_prefix(text *text_re, bool case_insensitive,
-					Oid collation, bool *exact);
+					fmLocalePtr collation, bool *exact);
 
 /* ruleutils.c */
 extern bool quote_all_identifiers;

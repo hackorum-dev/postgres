@@ -375,7 +375,6 @@ typedef struct PartitionSchemeData
 	int16		partnatts;		/* number of partition attributes */
 	Oid		   *partopfamily;	/* OIDs of operator families */
 	Oid		   *partopcintype;	/* OIDs of opclass declared input data types */
-	Oid		   *partcollation;	/* OIDs of partitioning collations */
 
 	/* Cached information about partition key data types. */
 	int16	   *parttyplen;
@@ -383,6 +382,7 @@ typedef struct PartitionSchemeData
 
 	/* Cached information about partition comparison functions. */
 	FmgrInfo   *partsupfunc;
+	fmLocalePtr *partcollation;	/* partitioning collations */
 }			PartitionSchemeData;
 
 typedef struct PartitionSchemeData *PartitionScheme;

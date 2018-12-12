@@ -46,6 +46,7 @@
 #include "utils/builtins.h"
 #include "utils/datum.h"
 #include "utils/lsyscache.h"
+#include "utils/pg_locale.h"
 #include "utils/typcache.h"
 
 
@@ -970,7 +971,7 @@ ExecInitExprRec(Expr *node, ExprState *state,
 				fmgr_info(opexpr->opfuncid, finfo);
 				fmgr_info_set_expr((Node *) node, finfo);
 				InitFunctionCallInfoData(*fcinfo, finfo, 2,
-										 opexpr->inputcollid, NULL, NULL);
+										 pg_newlocale_from_collation(opexpr->inputcollid), NULL, NULL);
 
 				/* Evaluate scalar directly into left function argument */
 				ExecInitExprRec(scalararg, state,
@@ -1739,7 +1740,7 @@ ExecInitExprRec(Expr *node, ExprState *state,
 					fmgr_info(proc, finfo);
 					fmgr_info_set_expr((Node *) node, finfo);
 					InitFunctionCallInfoData(*fcinfo, finfo, 2,
-											 inputcollid, NULL, NULL);
+											 pg_newlocale_from_collation(inputcollid), NULL, NULL);
 
 					/*
 					 * If we enforced permissions checks on index support
@@ -1882,7 +1883,7 @@ ExecInitExprRec(Expr *node, ExprState *state,
 				fmgr_info(typentry->cmp_proc, finfo);
 				fmgr_info_set_expr((Node *) node, finfo);
 				InitFunctionCallInfoData(*fcinfo, finfo, 2,
-										 minmaxexpr->inputcollid, NULL, NULL);
+										 pg_newlocale_from_collation(minmaxexpr->inputcollid), NULL, NULL);
 
 				scratch.opcode = EEOP_MINMAX;
 				/* allocate space to store arguments */
@@ -2197,7 +2198,7 @@ ExecInitFunc(ExprEvalStep *scratch, Expr *node, List *args, Oid funcid,
 
 	/* Initialize function call parameter structure too */
 	InitFunctionCallInfoData(*fcinfo, flinfo,
-							 nargs, inputcollid, NULL, NULL);
+							 nargs, pg_newlocale_from_collation(inputcollid), NULL, NULL);
 
 	/* Keep extra copies of this info to save an indirection at runtime */
 	scratch->d.func.fn_addr = flinfo->fn_addr;

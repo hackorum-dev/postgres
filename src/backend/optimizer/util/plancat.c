@@ -46,6 +46,7 @@
 #include "storage/bufmgr.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
+#include "utils/pg_locale.h"
 #include "utils/partcache.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
@@ -1753,7 +1754,7 @@ restriction_selectivity(PlannerInfo *root,
 		return (Selectivity) 0.5;
 
 	result = DatumGetFloat8(OidFunctionCall4Coll(oprrest,
-												 inputcollid,
+												 pg_newlocale_from_collation(inputcollid),
 												 PointerGetDatum(root),
 												 ObjectIdGetDatum(operatorid),
 												 PointerGetDatum(args),
@@ -1791,7 +1792,7 @@ join_selectivity(PlannerInfo *root,
 		return (Selectivity) 0.5;
 
 	result = DatumGetFloat8(OidFunctionCall5Coll(oprjoin,
-												 inputcollid,
+												 pg_newlocale_from_collation(inputcollid),
 												 PointerGetDatum(root),
 												 ObjectIdGetDatum(operatorid),
 												 PointerGetDatum(args),
@@ -1948,7 +1949,7 @@ find_partition_scheme(PlannerInfo *root, Relation relation)
 			memcmp(partkey->partopcintype, part_scheme->partopcintype,
 				   sizeof(Oid) * partnatts) != 0 ||
 			memcmp(partkey->partcollation, part_scheme->partcollation,
-				   sizeof(Oid) * partnatts) != 0)
+				   sizeof(pg_locale_t) * partnatts) != 0)
 			continue;
 
 		/*
@@ -1995,9 +1996,9 @@ find_partition_scheme(PlannerInfo *root, Relation relation)
 	memcpy(part_scheme->partopcintype, partkey->partopcintype,
 		   sizeof(Oid) * partnatts);
 
-	part_scheme->partcollation = (Oid *) palloc(sizeof(Oid) * partnatts);
+	part_scheme->partcollation = (pg_locale_t *) palloc(sizeof(pg_locale_t) * partnatts);
 	memcpy(part_scheme->partcollation, partkey->partcollation,
-		   sizeof(Oid) * partnatts);
+		   sizeof(pg_locale_t) * partnatts);
 
 	part_scheme->parttyplen = (int16 *) palloc(sizeof(int16) * partnatts);
 	memcpy(part_scheme->parttyplen, partkey->parttyplen,
@@ -2059,7 +2060,7 @@ set_baserel_partition_key_exprs(Relation relation,
 			partexpr = (Expr *) makeVar(varno, attno,
 										partkey->parttypid[cnt],
 										partkey->parttypmod[cnt],
-										partkey->parttypcoll[cnt], 0);
+										partkey->parttypcollid[cnt], 0);
 		}
 		else
 		{

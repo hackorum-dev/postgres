@@ -43,6 +43,7 @@
 #include "executor/nodeMergeAppend.h"
 #include "lib/binaryheap.h"
 #include "miscadmin.h"
+#include "utils/pg_locale.h"
 
 /*
  * We have one slot for each item in the heap array.  We use SlotNumber
@@ -202,7 +203,7 @@ ExecInitMergeAppend(MergeAppend *node, EState *estate, int eflags)
 		SortSupport sortKey = mergestate->ms_sortkeys + i;
 
 		sortKey->ssup_cxt = CurrentMemoryContext;
-		sortKey->ssup_collation = node->collations[i];
+		sortKey->ssup_collation = pg_newlocale_from_collation(node->collations[i]);
 		sortKey->ssup_nulls_first = node->nullsFirst[i];
 		sortKey->ssup_attno = node->sortColIdx[i];
 

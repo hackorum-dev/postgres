@@ -33,6 +33,7 @@
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/partcache.h"
+#include "utils/pg_locale.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
 
@@ -150,7 +151,7 @@ RelationBuildPartitionKey(Relation relation)
 	key->partopcintype = (Oid *) palloc0(key->partnatts * sizeof(Oid));
 	key->partsupfunc = (FmgrInfo *) palloc0(key->partnatts * sizeof(FmgrInfo));
 
-	key->partcollation = (Oid *) palloc0(key->partnatts * sizeof(Oid));
+	key->partcollation = (fmLocalePtr *) palloc0(key->partnatts * sizeof(fmLocalePtr));
 
 	/* Gather type and collation info as well */
 	key->parttypid = (Oid *) palloc0(key->partnatts * sizeof(Oid));
@@ -158,7 +159,7 @@ RelationBuildPartitionKey(Relation relation)
 	key->parttyplen = (int16 *) palloc0(key->partnatts * sizeof(int16));
 	key->parttypbyval = (bool *) palloc0(key->partnatts * sizeof(bool));
 	key->parttypalign = (char *) palloc0(key->partnatts * sizeof(char));
-	key->parttypcoll = (Oid *) palloc0(key->partnatts * sizeof(Oid));
+	key->parttypcollid = (Oid *) palloc0(key->partnatts * sizeof(Oid));
 	MemoryContextSwitchTo(oldcxt);
 
 	/* determine support function number to search for */
@@ -203,7 +204,7 @@ RelationBuildPartitionKey(Relation relation)
 		fmgr_info_cxt(funcid, &key->partsupfunc[i], partkeycxt);
 
 		/* Collation */
-		key->partcollation[i] = collation->values[i];
+		key->partcollation[i] = pg_newlocale_from_collation(collation->values[i]);
 
 		/* Collect type information */
 		if (attno != 0)
@@ -212,7 +213,7 @@ RelationBuildPartitionKey(Relation relation)
 
 			key->parttypid[i] = att->atttypid;
 			key->parttypmod[i] = att->atttypmod;
-			key->parttypcoll[i] = att->attcollation;
+			key->parttypcollid[i] = att->attcollation;
 		}
 		else
 		{
@@ -221,7 +222,7 @@ RelationBuildPartitionKey(Relation relation)
 
 			key->parttypid[i] = exprType(lfirst(partexprs_item));
 			key->parttypmod[i] = exprTypmod(lfirst(partexprs_item));
-			key->parttypcoll[i] = exprCollation(lfirst(partexprs_item));
+			key->parttypcollid[i] = exprCollation(lfirst(partexprs_item));
 
 			partexprs_item = lnext(partexprs_item);
 		}

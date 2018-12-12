@@ -892,7 +892,7 @@ index_recheck_constraint(Relation index, Oid *constr_procs,
 			return false;
 
 		if (!DatumGetBool(OidFunctionCall2Coll(constr_procs[i],
-											   index->rd_indcollation[i],
+											   index_getcollinfo(index, i + 1),
 											   existing_values[i],
 											   new_values[i])))
 			return false;

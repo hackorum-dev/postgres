@@ -102,7 +102,7 @@ typedef struct cached_re_str
 	char	   *cre_pat;		/* original RE (not null terminated!) */
 	int			cre_pat_len;	/* length of original RE, in bytes */
 	int			cre_flags;		/* compile flags: extended,icase etc */
-	Oid			cre_collation;	/* collation to use */
+	fmLocalePtr	cre_collation;	/* collation to use */
 	regex_t		cre_re;			/* the compiled regular expression */
 } cached_re_str;
 
@@ -113,7 +113,7 @@ static cached_re_str re_array[MAX_CACHED_RES];	/* cached re's */
 /* Local functions */
 static regexp_matches_ctx *setup_regexp_matches(text *orig_str, text *pattern,
 					 pg_re_flags *flags,
-					 Oid collation,
+					 fmLocalePtr collation,
 					 bool use_subpatterns,
 					 bool ignore_degenerate,
 					 bool fetching_unmatched);
@@ -134,7 +134,7 @@ static Datum build_regexp_split_result(regexp_matches_ctx *splitctx);
  * an array of pg_wchar, which is what Spencer's regex package wants.
  */
 static regex_t *
-RE_compile_and_cache(text *text_re, int cflags, Oid collation)
+RE_compile_and_cache(text *text_re, int cflags, fmLocalePtr collation)
 {
 	int			text_re_len = VARSIZE_ANY_EXHDR(text_re);
 	char	   *text_re_val = VARDATA_ANY(text_re);
@@ -341,7 +341,7 @@ RE_execute(regex_t *re, char *dat, int dat_len,
  */
 static bool
 RE_compile_and_execute(text *text_re, char *dat, int dat_len,
-					   int cflags, Oid collation,
+					   int cflags, fmLocalePtr collation,
 					   int nmatch, regmatch_t *pmatch)
 {
 	regex_t    *re;
@@ -966,7 +966,7 @@ regexp_matches_no_flags(PG_FUNCTION_ARGS)
  */
 static regexp_matches_ctx *
 setup_regexp_matches(text *orig_str, text *pattern, pg_re_flags *re_flags,
-					 Oid collation,
+					 fmLocalePtr collation,
 					 bool use_subpatterns,
 					 bool ignore_degenerate,
 					 bool fetching_unmatched)
@@ -1377,7 +1377,7 @@ build_regexp_split_result(regexp_matches_ctx *splitctx)
  * If it is an exact match, not just a prefix, *exact is returned as true.
  */
 char *
-regexp_fixed_prefix(text *text_re, bool case_insensitive, Oid collation,
+regexp_fixed_prefix(text *text_re, bool case_insensitive, fmLocalePtr collation,
 					bool *exact)
 {
 	char	   *result;

@@ -69,7 +69,6 @@ brin_minmax_add_value(PG_FUNCTION_ARGS)
 	BrinValues *column = (BrinValues *) PG_GETARG_POINTER(1);
 	Datum		newval = PG_GETARG_DATUM(2);
 	bool		isnull = PG_GETARG_DATUM(3);
-	Oid			colloid = PG_GET_COLLATION();
 	FmgrInfo   *cmpFn;
 	Datum		compar;
 	bool		updated = false;
@@ -111,7 +110,7 @@ brin_minmax_add_value(PG_FUNCTION_ARGS)
 	 */
 	cmpFn = minmax_get_strategy_procinfo(bdesc, attno, attr->atttypid,
 										 BTLessStrategyNumber);
-	compar = FunctionCall2Coll(cmpFn, colloid, newval, column->bv_values[0]);
+	compar = FunctionCall2Coll(cmpFn, PG_GET_COLLATION(), newval, column->bv_values[0]);
 	if (DatumGetBool(compar))
 	{
 		if (!attr->attbyval)
@@ -125,7 +124,7 @@ brin_minmax_add_value(PG_FUNCTION_ARGS)
 	 */
 	cmpFn = minmax_get_strategy_procinfo(bdesc, attno, attr->atttypid,
 										 BTGreaterStrategyNumber);
-	compar = FunctionCall2Coll(cmpFn, colloid, newval, column->bv_values[1]);
+	compar = FunctionCall2Coll(cmpFn, PG_GET_COLLATION(), newval, column->bv_values[1]);
 	if (DatumGetBool(compar))
 	{
 		if (!attr->attbyval)
@@ -148,8 +147,7 @@ brin_minmax_consistent(PG_FUNCTION_ARGS)
 	BrinDesc   *bdesc = (BrinDesc *) PG_GETARG_POINTER(0);
 	BrinValues *column = (BrinValues *) PG_GETARG_POINTER(1);
 	ScanKey		key = (ScanKey) PG_GETARG_POINTER(2);
-	Oid			colloid = PG_GET_COLLATION(),
-				subtype;
+	Oid			subtype;
 	AttrNumber	attno;
 	Datum		value;
 	Datum		matches;
@@ -194,7 +192,7 @@ brin_minmax_consistent(PG_FUNCTION_ARGS)
 		case BTLessEqualStrategyNumber:
 			finfo = minmax_get_strategy_procinfo(bdesc, attno, subtype,
 												 key->sk_strategy);
-			matches = FunctionCall2Coll(finfo, colloid, column->bv_values[0],
+			matches = FunctionCall2Coll(finfo, PG_GET_COLLATION(), column->bv_values[0],
 										value);
 			break;
 		case BTEqualStrategyNumber:
@@ -206,21 +204,21 @@ brin_minmax_consistent(PG_FUNCTION_ARGS)
 			 */
 			finfo = minmax_get_strategy_procinfo(bdesc, attno, subtype,
 												 BTLessEqualStrategyNumber);
-			matches = FunctionCall2Coll(finfo, colloid, column->bv_values[0],
+			matches = FunctionCall2Coll(finfo, PG_GET_COLLATION(), column->bv_values[0],
 										value);
 			if (!DatumGetBool(matches))
 				break;
 			/* max() >= scankey */
 			finfo = minmax_get_strategy_procinfo(bdesc, attno, subtype,
 												 BTGreaterEqualStrategyNumber);
-			matches = FunctionCall2Coll(finfo, colloid, column->bv_values[1],
+			matches = FunctionCall2Coll(finfo, PG_GET_COLLATION(), column->bv_values[1],
 										value);
 			break;
 		case BTGreaterEqualStrategyNumber:
 		case BTGreaterStrategyNumber:
 			finfo = minmax_get_strategy_procinfo(bdesc, attno, subtype,
 												 key->sk_strategy);
-			matches = FunctionCall2Coll(finfo, colloid, column->bv_values[1],
+			matches = FunctionCall2Coll(finfo, PG_GET_COLLATION(), column->bv_values[1],
 										value);
 			break;
 		default:
@@ -243,7 +241,6 @@ brin_minmax_union(PG_FUNCTION_ARGS)
 	BrinDesc   *bdesc = (BrinDesc *) PG_GETARG_POINTER(0);
 	BrinValues *col_a = (BrinValues *) PG_GETARG_POINTER(1);
 	BrinValues *col_b = (BrinValues *) PG_GETARG_POINTER(2);
-	Oid			colloid = PG_GET_COLLATION();
 	AttrNumber	attno;
 	Form_pg_attribute attr;
 	FmgrInfo   *finfo;
@@ -281,7 +278,7 @@ brin_minmax_union(PG_FUNCTION_ARGS)
 	/* Adjust minimum, if B's min is less than A's min */
 	finfo = minmax_get_strategy_procinfo(bdesc, attno, attr->atttypid,
 										 BTLessStrategyNumber);
-	needsadj = FunctionCall2Coll(finfo, colloid, col_b->bv_values[0],
+	needsadj = FunctionCall2Coll(finfo, PG_GET_COLLATION(), col_b->bv_values[0],
 								 col_a->bv_values[0]);
 	if (needsadj)
 	{
@@ -294,7 +291,7 @@ brin_minmax_union(PG_FUNCTION_ARGS)
 	/* Adjust maximum, if B's max is greater than A's max */
 	finfo = minmax_get_strategy_procinfo(bdesc, attno, attr->atttypid,
 										 BTGreaterStrategyNumber);
-	needsadj = FunctionCall2Coll(finfo, colloid, col_b->bv_values[1],
+	needsadj = FunctionCall2Coll(finfo, PG_GET_COLLATION(), col_b->bv_values[1],
 								 col_a->bv_values[1]);
 	if (needsadj)
 	{

@@ -21,6 +21,7 @@
 #include "pgstat.h"
 #include "storage/predicate.h"
 #include "utils/lsyscache.h"
+#include "utils/pg_locale.h"
 #include "utils/rel.h"
 #include "utils/tqual.h"
 
@@ -955,7 +956,7 @@ _bt_first(IndexScanDesc scan, ScanDirection dir)
 									   cur->sk_attno,
 									   InvalidStrategy,
 									   cur->sk_subtype,
-									   cur->sk_collation,
+									   cur->sk_collation ? cur->sk_collation->collid : InvalidOid,
 									   cmp_proc,
 									   cur->sk_argument);
 			}

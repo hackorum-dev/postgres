@@ -52,7 +52,7 @@ typedef struct PartitionPruneContext
 	int			partnatts;
 	int			nparts;
 	PartitionBoundInfo boundinfo;
-	Oid		   *partcollation;
+	fmLocalePtr *partcollation;
 	FmgrInfo   *partsupfunc;
 	FmgrInfo   *stepcmpfuncs;
 	MemoryContext ppccontext;

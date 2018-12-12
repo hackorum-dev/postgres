@@ -9,6 +9,7 @@
 
 #include "catalog/pg_collation.h"
 #include "utils/formatting.h"
+#include "utils/pg_locale.h"
 #include "ltree.h"
 
 PG_FUNCTION_INFO_V1(ltq_regex);
@@ -90,8 +91,8 @@ bool
 int
 ltree_strncasecmp(const char *a, const char *b, size_t s)
 {
-	char	   *al = str_tolower(a, s, DEFAULT_COLLATION_OID);
-	char	   *bl = str_tolower(b, s, DEFAULT_COLLATION_OID);
+	char	   *al = str_tolower(a, s, pg_newlocale_from_collation(DEFAULT_COLLATION_OID));
+	char	   *bl = str_tolower(b, s, pg_newlocale_from_collation(DEFAULT_COLLATION_OID));
 	int			res;
 
 	res = strncmp(al, bl, s);

@@ -16,6 +16,7 @@
 
 #include "access/skey.h"
 #include "catalog/pg_collation.h"
+#include "utils/pg_locale.h"
 
 
 /*
@@ -42,7 +43,7 @@ ScanKeyEntryInitialize(ScanKey entry,
 	entry->sk_attno = attributeNumber;
 	entry->sk_strategy = strategy;
 	entry->sk_subtype = subtype;
-	entry->sk_collation = collation;
+	entry->sk_collation = pg_newlocale_from_collation(collation);
 	entry->sk_argument = argument;
 	if (RegProcedureIsValid(procedure))
 	{
@@ -83,7 +84,7 @@ ScanKeyInit(ScanKey entry,
 	entry->sk_attno = attributeNumber;
 	entry->sk_strategy = strategy;
 	entry->sk_subtype = InvalidOid;
-	entry->sk_collation = DEFAULT_COLLATION_OID;
+	entry->sk_collation = pg_newlocale_from_collation(DEFAULT_COLLATION_OID);
 	entry->sk_argument = argument;
 	fmgr_info(procedure, &entry->sk_func);
 }
@@ -103,7 +104,7 @@ ScanKeyEntryInitializeWithInfo(ScanKey entry,
 							   AttrNumber attributeNumber,
 							   StrategyNumber strategy,
 							   Oid subtype,
-							   Oid collation,
+							   fmLocalePtr collation,
 							   FmgrInfo *finfo,
 							   Datum argument)
 {

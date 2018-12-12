@@ -98,6 +98,7 @@
 #include "miscadmin.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/pg_locale.h"
 
 
 /*
@@ -212,7 +213,7 @@ MJExamineQuals(List *mergeclauses,
 
 		/* Set up sort support data */
 		clause->ssup.ssup_cxt = CurrentMemoryContext;
-		clause->ssup.ssup_collation = collation;
+		clause->ssup.ssup_collation = pg_newlocale_from_collation(collation);
 		if (opstrategy == BTLessStrategyNumber)
 			clause->ssup.ssup_reverse = false;
 		else if (opstrategy == BTGreaterStrategyNumber)

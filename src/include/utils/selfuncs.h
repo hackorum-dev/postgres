@@ -179,11 +179,11 @@ extern double histogram_selectivity(VariableStatData *vardata, FmgrInfo *opproc,
 
 extern Pattern_Prefix_Status pattern_fixed_prefix(Const *patt,
 					 Pattern_Type ptype,
-					 Oid collation,
+					 fmLocalePtr collation,
 					 Const **prefix,
 					 Selectivity *rest_selec);
 extern Const *make_greater_string(const Const *str_const, FmgrInfo *ltproc,
-					Oid collation);
+					fmLocalePtr collation);
 
 extern Selectivity boolvarsel(PlannerInfo *root, Node *arg, int varRelid);
 extern Selectivity booltestsel(PlannerInfo *root, BoolTestType booltesttype,

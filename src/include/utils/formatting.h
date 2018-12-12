@@ -20,9 +20,9 @@
 #include "fmgr.h"
 
 
-extern char *str_tolower(const char *buff, size_t nbytes, Oid collid);
-extern char *str_toupper(const char *buff, size_t nbytes, Oid collid);
-extern char *str_initcap(const char *buff, size_t nbytes, Oid collid);
+extern char *str_tolower(const char *buff, size_t nbytes, fmLocalePtr collation);
+extern char *str_toupper(const char *buff, size_t nbytes, fmLocalePtr collation);
+extern char *str_initcap(const char *buff, size_t nbytes, fmLocalePtr collation);
 
 extern char *asc_tolower(const char *buff, size_t nbytes);
 extern char *asc_toupper(const char *buff, size_t nbytes);

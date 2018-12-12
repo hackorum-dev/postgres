@@ -140,7 +140,6 @@ brin_inclusion_add_value(PG_FUNCTION_ARGS)
 	BrinValues *column = (BrinValues *) PG_GETARG_POINTER(1);
 	Datum		newval = PG_GETARG_DATUM(2);
 	bool		isnull = PG_GETARG_BOOL(3);
-	Oid			colloid = PG_GET_COLLATION();
 	FmgrInfo   *finfo;
 	Datum		result;
 	bool		new = false;
@@ -190,7 +189,7 @@ brin_inclusion_add_value(PG_FUNCTION_ARGS)
 	 * "contains empty" flag in the element (unless already set).
 	 */
 	finfo = inclusion_get_procinfo(bdesc, attno, PROCNUM_EMPTY);
-	if (finfo != NULL && DatumGetBool(FunctionCall1Coll(finfo, colloid, newval)))
+	if (finfo != NULL && DatumGetBool(FunctionCall1Coll(finfo, PG_GET_COLLATION(), newval)))
 	{
 		if (!DatumGetBool(column->bv_values[INCLUSION_CONTAINS_EMPTY]))
 		{
@@ -207,7 +206,7 @@ brin_inclusion_add_value(PG_FUNCTION_ARGS)
 	/* Check if the new value is already contained. */
 	finfo = inclusion_get_procinfo(bdesc, attno, PROCNUM_CONTAINS);
 	if (finfo != NULL &&
-		DatumGetBool(FunctionCall2Coll(finfo, colloid,
+		DatumGetBool(FunctionCall2Coll(finfo, PG_GET_COLLATION(),
 									   column->bv_values[INCLUSION_UNION],
 									   newval)))
 		PG_RETURN_BOOL(false);
@@ -222,7 +221,7 @@ brin_inclusion_add_value(PG_FUNCTION_ARGS)
 	 */
 	finfo = inclusion_get_procinfo(bdesc, attno, PROCNUM_MERGEABLE);
 	if (finfo != NULL &&
-		!DatumGetBool(FunctionCall2Coll(finfo, colloid,
+		!DatumGetBool(FunctionCall2Coll(finfo, PG_GET_COLLATION(),
 										column->bv_values[INCLUSION_UNION],
 										newval)))
 	{
@@ -233,7 +232,7 @@ brin_inclusion_add_value(PG_FUNCTION_ARGS)
 	/* Finally, merge the new value to the existing union. */
 	finfo = inclusion_get_procinfo(bdesc, attno, PROCNUM_MERGE);
 	Assert(finfo != NULL);
-	result = FunctionCall2Coll(finfo, colloid,
+	result = FunctionCall2Coll(finfo, PG_GET_COLLATION(),
 							   column->bv_values[INCLUSION_UNION], newval);
 	if (!attr->attbyval)
 		pfree(DatumGetPointer(column->bv_values[INCLUSION_UNION]));
@@ -253,8 +252,7 @@ brin_inclusion_consistent(PG_FUNCTION_ARGS)
 	BrinDesc   *bdesc = (BrinDesc *) PG_GETARG_POINTER(0);
 	BrinValues *column = (BrinValues *) PG_GETARG_POINTER(1);
 	ScanKey		key = (ScanKey) PG_GETARG_POINTER(2);
-	Oid			colloid = PG_GET_COLLATION(),
-				subtype;
+	Oid			subtype;
 	Datum		unionval;
 	AttrNumber	attno;
 	Datum		query;
@@ -317,49 +315,49 @@ brin_inclusion_consistent(PG_FUNCTION_ARGS)
 		case RTLeftStrategyNumber:
 			finfo = inclusion_get_strategy_procinfo(bdesc, attno, subtype,
 													RTOverRightStrategyNumber);
-			result = FunctionCall2Coll(finfo, colloid, unionval, query);
+			result = FunctionCall2Coll(finfo, PG_GET_COLLATION(), unionval, query);
 			PG_RETURN_BOOL(!DatumGetBool(result));
 
 		case RTOverLeftStrategyNumber:
 			finfo = inclusion_get_strategy_procinfo(bdesc, attno, subtype,
 													RTRightStrategyNumber);
-			result = FunctionCall2Coll(finfo, colloid, unionval, query);
+			result = FunctionCall2Coll(finfo, PG_GET_COLLATION(), unionval, query);
 			PG_RETURN_BOOL(!DatumGetBool(result));
 
 		case RTOverRightStrategyNumber:
 			finfo = inclusion_get_strategy_procinfo(bdesc, attno, subtype,
 													RTLeftStrategyNumber);
-			result = FunctionCall2Coll(finfo, colloid, unionval, query);
+			result = FunctionCall2Coll(finfo, PG_GET_COLLATION(), unionval, query);
 			PG_RETURN_BOOL(!DatumGetBool(result));
 
 		case RTRightStrategyNumber:
 			finfo = inclusion_get_strategy_procinfo(bdesc, attno, subtype,
 													RTOverLeftStrategyNumber);
-			result = FunctionCall2Coll(finfo, colloid, unionval, query);
+			result = FunctionCall2Coll(finfo, PG_GET_COLLATION(), unionval, query);
 			PG_RETURN_BOOL(!DatumGetBool(result));
 
 		case RTBelowStrategyNumber:
 			finfo = inclusion_get_strategy_procinfo(bdesc, attno, subtype,
 													RTOverAboveStrategyNumber);
-			result = FunctionCall2Coll(finfo, colloid, unionval, query);
+			result = FunctionCall2Coll(finfo, PG_GET_COLLATION(), unionval, query);
 			PG_RETURN_BOOL(!DatumGetBool(result));
 
 		case RTOverBelowStrategyNumber:
 			finfo = inclusion_get_strategy_procinfo(bdesc, attno, subtype,
 													RTAboveStrategyNumber);
-			result = FunctionCall2Coll(finfo, colloid, unionval, query);
+			result = FunctionCall2Coll(finfo, PG_GET_COLLATION(), unionval, query);
 			PG_RETURN_BOOL(!DatumGetBool(result));
 
 		case RTOverAboveStrategyNumber:
 			finfo = inclusion_get_strategy_procinfo(bdesc, attno, subtype,
 													RTBelowStrategyNumber);
-			result = FunctionCall2Coll(finfo, colloid, unionval, query);
+			result = FunctionCall2Coll(finfo, PG_GET_COLLATION(), unionval, query);
 			PG_RETURN_BOOL(!DatumGetBool(result));
 
 		case RTAboveStrategyNumber:
 			finfo = inclusion_get_strategy_procinfo(bdesc, attno, subtype,
 													RTOverBelowStrategyNumber);
-			result = FunctionCall2Coll(finfo, colloid, unionval, query);
+			result = FunctionCall2Coll(finfo, PG_GET_COLLATION(), unionval, query);
 			PG_RETURN_BOOL(!DatumGetBool(result));
 
 			/*
@@ -378,7 +376,7 @@ brin_inclusion_consistent(PG_FUNCTION_ARGS)
 		case RTSubEqualStrategyNumber:
 			finfo = inclusion_get_strategy_procinfo(bdesc, attno, subtype,
 													key->sk_strategy);
-			result = FunctionCall2Coll(finfo, colloid, unionval, query);
+			result = FunctionCall2Coll(finfo, PG_GET_COLLATION(), unionval, query);
 			PG_RETURN_DATUM(result);
 
 			/*
@@ -398,7 +396,7 @@ brin_inclusion_consistent(PG_FUNCTION_ARGS)
 		case RTSuperEqualStrategyNumber:
 			finfo = inclusion_get_strategy_procinfo(bdesc, attno, subtype,
 													RTOverlapStrategyNumber);
-			result = FunctionCall2Coll(finfo, colloid, unionval, query);
+			result = FunctionCall2Coll(finfo, PG_GET_COLLATION(), unionval, query);
 			if (DatumGetBool(result))
 				PG_RETURN_BOOL(true);
 
@@ -417,13 +415,13 @@ brin_inclusion_consistent(PG_FUNCTION_ARGS)
 		case RTAdjacentStrategyNumber:
 			finfo = inclusion_get_strategy_procinfo(bdesc, attno, subtype,
 													RTOverlapStrategyNumber);
-			result = FunctionCall2Coll(finfo, colloid, unionval, query);
+			result = FunctionCall2Coll(finfo, PG_GET_COLLATION(), unionval, query);
 			if (DatumGetBool(result))
 				PG_RETURN_BOOL(true);
 
 			finfo = inclusion_get_strategy_procinfo(bdesc, attno, subtype,
 													RTAdjacentStrategyNumber);
-			result = FunctionCall2Coll(finfo, colloid, unionval, query);
+			result = FunctionCall2Coll(finfo, PG_GET_COLLATION(), unionval, query);
 			PG_RETURN_DATUM(result);
 
 			/*
@@ -452,7 +450,7 @@ brin_inclusion_consistent(PG_FUNCTION_ARGS)
 		case RTLessEqualStrategyNumber:
 			finfo = inclusion_get_strategy_procinfo(bdesc, attno, subtype,
 													RTRightStrategyNumber);
-			result = FunctionCall2Coll(finfo, colloid, unionval, query);
+			result = FunctionCall2Coll(finfo, PG_GET_COLLATION(), unionval, query);
 			if (!DatumGetBool(result))
 				PG_RETURN_BOOL(true);
 
@@ -462,7 +460,7 @@ brin_inclusion_consistent(PG_FUNCTION_ARGS)
 		case RTEqualStrategyNumber:
 			finfo = inclusion_get_strategy_procinfo(bdesc, attno, subtype,
 													RTContainsStrategyNumber);
-			result = FunctionCall2Coll(finfo, colloid, unionval, query);
+			result = FunctionCall2Coll(finfo, PG_GET_COLLATION(), unionval, query);
 			if (DatumGetBool(result))
 				PG_RETURN_BOOL(true);
 
@@ -471,7 +469,7 @@ brin_inclusion_consistent(PG_FUNCTION_ARGS)
 		case RTGreaterEqualStrategyNumber:
 			finfo = inclusion_get_strategy_procinfo(bdesc, attno, subtype,
 													RTLeftStrategyNumber);
-			result = FunctionCall2Coll(finfo, colloid, unionval, query);
+			result = FunctionCall2Coll(finfo, PG_GET_COLLATION(), unionval, query);
 			if (!DatumGetBool(result))
 				PG_RETURN_BOOL(true);
 
@@ -481,7 +479,7 @@ brin_inclusion_consistent(PG_FUNCTION_ARGS)
 			/* no need to check for empty elements */
 			finfo = inclusion_get_strategy_procinfo(bdesc, attno, subtype,
 													RTLeftStrategyNumber);
-			result = FunctionCall2Coll(finfo, colloid, unionval, query);
+			result = FunctionCall2Coll(finfo, PG_GET_COLLATION(), unionval, query);
 			PG_RETURN_BOOL(!DatumGetBool(result));
 
 		default:
@@ -503,7 +501,6 @@ brin_inclusion_union(PG_FUNCTION_ARGS)
 	BrinDesc   *bdesc = (BrinDesc *) PG_GETARG_POINTER(0);
 	BrinValues *col_a = (BrinValues *) PG_GETARG_POINTER(1);
 	BrinValues *col_b = (BrinValues *) PG_GETARG_POINTER(2);
-	Oid			colloid = PG_GET_COLLATION();
 	AttrNumber	attno;
 	Form_pg_attribute attr;
 	FmgrInfo   *finfo;
@@ -560,7 +557,7 @@ brin_inclusion_union(PG_FUNCTION_ARGS)
 	/* Check if A and B are mergeable; if not, mark A unmergeable. */
 	finfo = inclusion_get_procinfo(bdesc, attno, PROCNUM_MERGEABLE);
 	if (finfo != NULL &&
-		!DatumGetBool(FunctionCall2Coll(finfo, colloid,
+		!DatumGetBool(FunctionCall2Coll(finfo, PG_GET_COLLATION(),
 										col_a->bv_values[INCLUSION_UNION],
 										col_b->bv_values[INCLUSION_UNION])))
 	{
@@ -571,7 +568,7 @@ brin_inclusion_union(PG_FUNCTION_ARGS)
 	/* Finally, merge B to A. */
 	finfo = inclusion_get_procinfo(bdesc, attno, PROCNUM_MERGE);
 	Assert(finfo != NULL);
-	result = FunctionCall2Coll(finfo, colloid,
+	result = FunctionCall2Coll(finfo, PG_GET_COLLATION(),
 							   col_a->bv_values[INCLUSION_UNION],
 							   col_b->bv_values[INCLUSION_UNION]);
 	if (!attr->attbyval)

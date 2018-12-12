@@ -23,7 +23,7 @@ PG_FUNCTION_INFO_V1(gbt_bytea_same);
 /* define for comparison */
 
 static bool
-gbt_byteagt(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
+gbt_byteagt(const void *a, const void *b, fmLocalePtr collation, FmgrInfo *flinfo)
 {
 	return DatumGetBool(DirectFunctionCall2(byteagt,
 											PointerGetDatum(a),
@@ -31,7 +31,7 @@ gbt_byteagt(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
 }
 
 static bool
-gbt_byteage(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
+gbt_byteage(const void *a, const void *b, fmLocalePtr collation, FmgrInfo *flinfo)
 {
 	return DatumGetBool(DirectFunctionCall2(byteage,
 											PointerGetDatum(a),
@@ -39,7 +39,7 @@ gbt_byteage(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
 }
 
 static bool
-gbt_byteaeq(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
+gbt_byteaeq(const void *a, const void *b, fmLocalePtr collation, FmgrInfo *flinfo)
 {
 	return DatumGetBool(DirectFunctionCall2(byteaeq,
 											PointerGetDatum(a),
@@ -47,7 +47,7 @@ gbt_byteaeq(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
 }
 
 static bool
-gbt_byteale(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
+gbt_byteale(const void *a, const void *b, fmLocalePtr collation, FmgrInfo *flinfo)
 {
 	return DatumGetBool(DirectFunctionCall2(byteale,
 											PointerGetDatum(a),
@@ -55,7 +55,7 @@ gbt_byteale(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
 }
 
 static bool
-gbt_bytealt(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
+gbt_bytealt(const void *a, const void *b, fmLocalePtr collation, FmgrInfo *flinfo)
 {
 	return DatumGetBool(DirectFunctionCall2(bytealt,
 											PointerGetDatum(a),
@@ -63,7 +63,7 @@ gbt_bytealt(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
 }
 
 static int32
-gbt_byteacmp(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
+gbt_byteacmp(const void *a, const void *b, fmLocalePtr collation, FmgrInfo *flinfo)
 {
 	return DatumGetInt32(DirectFunctionCall2(byteacmp,
 											 PointerGetDatum(a),

@@ -171,7 +171,7 @@ typedef struct SpGistScanOpaqueData
 	int			numberOfOrderBys;	/* number of ordering operators */
 	ScanKey		orderByData;	/* array of ordering op descriptors */
 	Oid		   *orderByTypes;	/* array of ordering op return types */
-	Oid			indexCollation; /* collation of index column */
+	fmLocalePtr	indexCollation; /* collation of index column */
 
 	/* Opclass defined functions: */
 	FmgrInfo	innerConsistentFn;

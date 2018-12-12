@@ -234,6 +234,7 @@
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/pg_locale.h"
 #include "utils/syscache.h"
 #include "utils/tuplesort.h"
 #include "utils/datum.h"
@@ -2889,7 +2890,7 @@ build_pertrans_for_aggref(AggStatePerTrans pertrans,
 	/* Begin filling in the pertrans data */
 	pertrans->aggref = aggref;
 	pertrans->aggshared = false;
-	pertrans->aggCollation = aggref->inputcollid;
+	pertrans->aggCollation = pg_newlocale_from_collation(aggref->inputcollid);
 	pertrans->transfn_oid = aggtransfn;
 	pertrans->serialfn_oid = aggserialfn;
 	pertrans->deserialfn_oid = aggdeserialfn;

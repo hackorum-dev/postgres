@@ -7,6 +7,7 @@
 #include "access/gist.h"
 #include "access/itup.h"
 #include "access/stratnum.h"
+#include "fmgr.h"
 #include "storage/bufpage.h"
 
 /*
@@ -133,7 +134,7 @@ extern TRGM *generate_wildcard_trgm(const char *str, int slen);
 extern float4 cnt_sml(TRGM *trg1, TRGM *trg2, bool inexact);
 extern bool trgm_contained_by(TRGM *trg1, TRGM *trg2);
 extern bool *trgm_presence_map(TRGM *query, TRGM *key);
-extern TRGM *createTrgmNFA(text *text_re, Oid collation,
+extern TRGM *createTrgmNFA(text *text_re, fmLocalePtr collation,
 			  TrgmPackedGraph **graph, MemoryContext rcontext);
 extern bool trigramsMatchGraph(TrgmPackedGraph *graph, bool *check);
 

@@ -119,9 +119,6 @@ static char lc_time_envbuf[LC_ENV_BUFSIZE];
 typedef struct
 {
 	Oid			collid;			/* hash key: pg_collation OID */
-	bool		collate_is_c;	/* is collation's LC_COLLATE C? */
-	bool		ctype_is_c;		/* is collation's LC_CTYPE C? */
-	bool		flags_valid;	/* true if above flags are valid */
 	pg_locale_t locale;			/* locale_t struct, or 0 if not valid */
 } collation_cache_entry;
 
@@ -1060,13 +1057,12 @@ check_strxfrm_bug(void)
  */
 
 static collation_cache_entry *
-lookup_collation_cache(Oid collation, bool set_flags)
+lookup_collation_cache(Oid collation)
 {
 	collation_cache_entry *cache_entry;
 	bool		found;
 
 	Assert(OidIsValid(collation));
-	Assert(collation != DEFAULT_COLLATION_OID);
 
 	if (collation_cache == NULL)
 	{
@@ -1087,138 +1083,10 @@ lookup_collation_cache(Oid collation, bool set_flags)
 		 * Make sure cache entry is marked invalid, in case we fail before
 		 * setting things.
 		 */
-		cache_entry->flags_valid = false;
 		cache_entry->locale = 0;
 	}
 
-	if (set_flags && !cache_entry->flags_valid)
-	{
-		/* Attempt to set the flags */
-		HeapTuple	tp;
-		Form_pg_collation collform;
-		const char *collcollate;
-		const char *collctype;
-
-		tp = SearchSysCache1(COLLOID, ObjectIdGetDatum(collation));
-		if (!HeapTupleIsValid(tp))
-			elog(ERROR, "cache lookup failed for collation %u", collation);
-		collform = (Form_pg_collation) GETSTRUCT(tp);
-
-		collcollate = NameStr(collform->collcollate);
-		collctype = NameStr(collform->collctype);
-
-		cache_entry->collate_is_c = ((strcmp(collcollate, "C") == 0) ||
-									 (strcmp(collcollate, "POSIX") == 0));
-		cache_entry->ctype_is_c = ((strcmp(collctype, "C") == 0) ||
-								   (strcmp(collctype, "POSIX") == 0));
-
-		cache_entry->flags_valid = true;
-
-		ReleaseSysCache(tp);
-	}
-
 	return cache_entry;
-}
-
-
-/*
- * Detect whether collation's LC_COLLATE property is C
- */
-bool
-lc_collate_is_c(Oid collation)
-{
-	/*
-	 * If we're asked about "collation 0", return false, so that the code will
-	 * go into the non-C path and report that the collation is bogus.
-	 */
-	if (!OidIsValid(collation))
-		return false;
-
-	/*
-	 * If we're asked about the default collation, we have to inquire of the C
-	 * library.  Cache the result so we only have to compute it once.
-	 */
-	if (collation == DEFAULT_COLLATION_OID)
-	{
-		static int	result = -1;
-		char	   *localeptr;
-
-		if (result >= 0)
-			return (bool) result;
-		localeptr = setlocale(LC_COLLATE, NULL);
-		if (!localeptr)
-			elog(ERROR, "invalid LC_COLLATE setting");
-
-		if (strcmp(localeptr, "C") == 0)
-			result = true;
-		else if (strcmp(localeptr, "POSIX") == 0)
-			result = true;
-		else
-			result = false;
-		return (bool) result;
-	}
-
-	/*
-	 * If we're asked about the built-in C/POSIX collations, we know that.
-	 */
-	if (collation == C_COLLATION_OID ||
-		collation == POSIX_COLLATION_OID)
-		return true;
-
-	/*
-	 * Otherwise, we have to consult pg_collation, but we cache that.
-	 */
-	return (lookup_collation_cache(collation, true))->collate_is_c;
-}
-
-/*
- * Detect whether collation's LC_CTYPE property is C
- */
-bool
-lc_ctype_is_c(Oid collation)
-{
-	/*
-	 * If we're asked about "collation 0", return false, so that the code will
-	 * go into the non-C path and report that the collation is bogus.
-	 */
-	if (!OidIsValid(collation))
-		return false;
-
-	/*
-	 * If we're asked about the default collation, we have to inquire of the C
-	 * library.  Cache the result so we only have to compute it once.
-	 */
-	if (collation == DEFAULT_COLLATION_OID)
-	{
-		static int	result = -1;
-		char	   *localeptr;
-
-		if (result >= 0)
-			return (bool) result;
-		localeptr = setlocale(LC_CTYPE, NULL);
-		if (!localeptr)
-			elog(ERROR, "invalid LC_CTYPE setting");
-
-		if (strcmp(localeptr, "C") == 0)
-			result = true;
-		else if (strcmp(localeptr, "POSIX") == 0)
-			result = true;
-		else
-			result = false;
-		return (bool) result;
-	}
-
-	/*
-	 * If we're asked about the built-in C/POSIX collations, we know that.
-	 */
-	if (collation == C_COLLATION_OID ||
-		collation == POSIX_COLLATION_OID)
-		return true;
-
-	/*
-	 * Otherwise, we have to consult pg_collation, but we cache that.
-	 */
-	return (lookup_collation_cache(collation, true))->ctype_is_c;
 }
 
 
@@ -1259,14 +1127,6 @@ report_newlocale_failure(const char *localename)
  * Create a locale_t from a collation OID.  Results are cached for the
  * lifetime of the backend.  Thus, do not free the result with freelocale().
  *
- * As a special optimization, the default/database collation returns 0.
- * Callers should then revert to the non-locale_t-enabled code path.
- * In fact, they shouldn't call this function at all when they are dealing
- * with the default locale.  That can save quite a bit in hotspots.
- * Also, callers should avoid calling this before going down a C/POSIX
- * fastpath, because such a fastpath should work even on platforms without
- * locale_t support in the C library.
- *
  * For simplicity, we always generate COLLATE + CTYPE even though we
  * might only need one of them.  Since this is called only once per session,
  * it shouldn't cost much.
@@ -1276,14 +1136,46 @@ pg_newlocale_from_collation(Oid collid)
 {
 	collation_cache_entry *cache_entry;
 
-	/* Callers must pass a valid OID */
-	Assert(OidIsValid(collid));
+	if (!OidIsValid(collid))
+		return 0;
 
-	/* Return 0 for "default" collation, just in case caller forgets */
+	/*
+	 * For efficiency, cache and return information about the default
+	 * collation separately.  (Also, for bootstrapping, we need to be able to
+	 * deal with this without catalog access.)
+	 */
 	if (collid == DEFAULT_COLLATION_OID)
-		return (pg_locale_t) 0;
+	{
+		static struct pg_locale_struct result = {
+			.collid = DEFAULT_COLLATION_OID,
+			.provider = COLLPROVIDER_DEFAULT,
+		};
+		static bool result_valid = false;
 
-	cache_entry = lookup_collation_cache(collid, false);
+		if (!result_valid)
+		{
+			char	   *localeptr;
+
+			localeptr = setlocale(LC_COLLATE, NULL);
+			if (!localeptr)
+				elog(ERROR, "invalid LC_COLLATE setting");
+
+			result.collate_is_c = ((strcmp(localeptr, "C") == 0) ||
+								   (strcmp(localeptr, "POSIX") == 0));
+
+			localeptr = setlocale(LC_CTYPE, NULL);
+			if (!localeptr)
+				elog(ERROR, "invalid LC_CTYPE setting");
+
+			result.ctype_is_c = ((strcmp(localeptr, "C") == 0) ||
+								 (strcmp(localeptr, "POSIX") == 0));
+
+			result_valid = true;
+		}
+		return &result;
+	}
+
+	cache_entry = lookup_collation_cache(collid);
 
 	if (cache_entry->locale == 0)
 	{
@@ -1297,6 +1189,10 @@ pg_newlocale_from_collation(Oid collid)
 		Datum		collversion;
 		bool		isnull;
 
+		/* We'll fill in the result struct locally before allocating memory */
+		memset(&result, 0, sizeof(result));
+		result.collid = collid;
+
 		tp = SearchSysCache1(COLLOID, ObjectIdGetDatum(collid));
 		if (!HeapTupleIsValid(tp))
 			elog(ERROR, "cache lookup failed for collation %u", collid);
@@ -1305,8 +1201,6 @@ pg_newlocale_from_collation(Oid collid)
 		collcollate = NameStr(collform->collcollate);
 		collctype = NameStr(collform->collctype);
 
-		/* We'll fill in the result struct locally before allocating memory */
-		memset(&result, 0, sizeof(result));
 		result.provider = collform->collprovider;
 
 		if (collform->collprovider == COLLPROVIDER_LIBC)
@@ -1355,6 +1249,20 @@ pg_newlocale_from_collation(Oid collid)
 			}
 
 			result.info.lt = loc;
+
+			if (collid == C_COLLATION_OID ||
+				collid == POSIX_COLLATION_OID)
+			{
+				result.collate_is_c = true;
+				result.ctype_is_c = true;
+			}
+			else
+			{
+				result.collate_is_c = ((strcmp(collcollate, "C") == 0) ||
+									   (strcmp(collcollate, "POSIX") == 0));
+				result.ctype_is_c = ((strcmp(collctype, "C") == 0) ||
+									 (strcmp(collctype, "POSIX") == 0));
+			}
 #else							/* not HAVE_LOCALE_T */
 			/* platform that doesn't support locale_t */
 			ereport(ERROR,
@@ -1607,7 +1515,7 @@ wchar2char(char *to, const wchar_t *from, size_t tolen, pg_locale_t locale)
 {
 	size_t		result;
 
-	Assert(!locale || locale->provider == COLLPROVIDER_LIBC);
+	Assert(locale->provider == COLLPROVIDER_DEFAULT || locale->provider == COLLPROVIDER_LIBC);
 
 	if (tolen == 0)
 		return 0;
@@ -1635,7 +1543,7 @@ wchar2char(char *to, const wchar_t *from, size_t tolen, pg_locale_t locale)
 	}
 	else
 #endif							/* WIN32 */
-	if (locale == (pg_locale_t) 0)
+	if (locale->provider == COLLPROVIDER_DEFAULT)
 	{
 		/* Use wcstombs directly for the default locale */
 		result = wcstombs(to, from, tolen);
@@ -1679,7 +1587,7 @@ char2wchar(wchar_t *to, size_t tolen, const char *from, size_t fromlen,
 {
 	size_t		result;
 
-	Assert(!locale || locale->provider == COLLPROVIDER_LIBC);
+	Assert(locale->provider == COLLPROVIDER_DEFAULT || locale->provider == COLLPROVIDER_LIBC);
 
 	if (tolen == 0)
 		return 0;
@@ -1712,7 +1620,7 @@ char2wchar(wchar_t *to, size_t tolen, const char *from, size_t fromlen,
 		/* mbstowcs requires ending '\0' */
 		char	   *str = pnstrdup(from, fromlen);
 
-		if (locale == (pg_locale_t) 0)
+		if (locale->provider == COLLPROVIDER_DEFAULT)
 		{
 			/* Use mbstowcs directly for the default locale */
 			result = mbstowcs(to, str, tolen);

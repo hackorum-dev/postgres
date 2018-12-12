@@ -31,6 +31,7 @@
 #include "utils/hashutils.h"
 #include "utils/lsyscache.h"
 #include "utils/partcache.h"
+#include "utils/pg_locale.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 #include "utils/ruleutils.h"
@@ -81,11 +82,11 @@ static PartitionRangeBound *make_one_partition_rbound(PartitionKey key, int inde
 static int32 partition_hbound_cmp(int modulus1, int remainder1, int modulus2,
 					 int remainder2);
 static int32 partition_rbound_cmp(int partnatts, FmgrInfo *partsupfunc,
-					 Oid *partcollation, Datum *datums1,
+					 fmLocalePtr *partcollation, Datum *datums1,
 					 PartitionRangeDatumKind *kind1, bool lower1,
 					 PartitionRangeBound *b2);
 static int partition_range_bsearch(int partnatts, FmgrInfo *partsupfunc,
-						Oid *partcollation,
+						fmLocalePtr *partcollation,
 						PartitionBoundInfo boundinfo,
 						PartitionRangeBound *probe, bool *is_equal);
 static int	get_partition_bound_num_indexes(PartitionBoundInfo b);
@@ -1381,7 +1382,7 @@ make_one_partition_rbound(PartitionKey key, int index, List *datums, bool lower)
  */
 static int32
 partition_rbound_cmp(int partnatts, FmgrInfo *partsupfunc,
-					 Oid *partcollation,
+					 fmLocalePtr *partcollation,
 					 Datum *datums1, PartitionRangeDatumKind *kind1,
 					 bool lower1, PartitionRangeBound *b2)
 {
@@ -1444,7 +1445,7 @@ partition_rbound_cmp(int partnatts, FmgrInfo *partsupfunc,
  *
  */
 int32
-partition_rbound_datum_cmp(FmgrInfo *partsupfunc, Oid *partcollation,
+partition_rbound_datum_cmp(FmgrInfo *partsupfunc, fmLocalePtr *partcollation,
 						   Datum *rb_datums, PartitionRangeDatumKind *rb_kind,
 						   Datum *tuple_datums, int n_tuple_datums)
 {
@@ -1495,7 +1496,7 @@ partition_hbound_cmp(int modulus1, int remainder1, int modulus2, int remainder2)
  * to the input value.
  */
 int
-partition_list_bsearch(FmgrInfo *partsupfunc, Oid *partcollation,
+partition_list_bsearch(FmgrInfo *partsupfunc, fmLocalePtr *partcollation,
 					   PartitionBoundInfo boundinfo,
 					   Datum value, bool *is_equal)
 {
@@ -1539,7 +1540,7 @@ partition_list_bsearch(FmgrInfo *partsupfunc, Oid *partcollation,
  */
 static int
 partition_range_bsearch(int partnatts, FmgrInfo *partsupfunc,
-						Oid *partcollation,
+						fmLocalePtr *partcollation,
 						PartitionBoundInfo boundinfo,
 						PartitionRangeBound *probe, bool *is_equal)
 {
@@ -1584,7 +1585,7 @@ partition_range_bsearch(int partnatts, FmgrInfo *partsupfunc,
  * to the input tuple.
  */
 int
-partition_range_datum_bsearch(FmgrInfo *partsupfunc, Oid *partcollation,
+partition_range_datum_bsearch(FmgrInfo *partsupfunc, fmLocalePtr *partcollation,
 							  PartitionBoundInfo boundinfo,
 							  int nvalues, Datum *values, bool *is_equal)
 {
@@ -1801,11 +1802,14 @@ make_partition_op_expr(PartitionKey key, int keynum,
 					   uint16 strategy, Expr *arg1, Expr *arg2)
 {
 	Oid			operoid;
+	Oid			partcollid;
 	bool		need_relabel = false;
 	Expr	   *result = NULL;
 
 	/* Get the correct btree operator for this partitioning column */
 	operoid = get_partition_operator(key, keynum, strategy, &need_relabel);
+
+	partcollid = key->partcollation[keynum] ? key->partcollation[keynum]->collid : InvalidOid;
 
 	/*
 	 * Chosen operator may be such that the non-Const operand needs to be
@@ -1814,11 +1818,11 @@ make_partition_op_expr(PartitionKey key, int keynum,
 	 */
 	if (!IsA(arg1, Const) &&
 		(need_relabel ||
-		 key->partcollation[keynum] != key->parttypcoll[keynum]))
+		 partcollid != key->parttypcollid[keynum]))
 		arg1 = (Expr *) makeRelabelType(arg1,
 										key->partopcintype[keynum],
 										-1,
-										key->partcollation[keynum],
+										partcollid,
 										COERCE_EXPLICIT_CAST);
 
 	/* Generate the actual expression */
@@ -1842,7 +1846,7 @@ make_partition_op_expr(PartitionKey key, int keynum,
 					arrexpr = makeNode(ArrayExpr);
 					arrexpr->array_typeid =
 						get_array_type(key->parttypid[keynum]);
-					arrexpr->array_collid = key->parttypcoll[keynum];
+					arrexpr->array_collid = key->parttypcollid[keynum];
 					arrexpr->element_typeid = key->parttypid[keynum];
 					arrexpr->elements = elems;
 					arrexpr->multidims = false;
@@ -1853,7 +1857,7 @@ make_partition_op_expr(PartitionKey key, int keynum,
 					saopexpr->opno = operoid;
 					saopexpr->opfuncid = get_opcode(operoid);
 					saopexpr->useOr = true;
-					saopexpr->inputcollid = key->partcollation[keynum];
+					saopexpr->inputcollid = partcollid;
 					saopexpr->args = list_make2(arg1, arrexpr);
 					saopexpr->location = -1;
 
@@ -1874,7 +1878,7 @@ make_partition_op_expr(PartitionKey key, int keynum,
 											   false,
 											   arg1, elem,
 											   InvalidOid,
-											   key->partcollation[keynum]);
+											   partcollid);
 						elemops = lappend(elemops, elemop);
 					}
 
@@ -1889,7 +1893,7 @@ make_partition_op_expr(PartitionKey key, int keynum,
 								   false,
 								   arg1, arg2,
 								   InvalidOid,
-								   key->partcollation[keynum]);
+								   partcollid);
 			break;
 
 		default:
@@ -1961,7 +1965,7 @@ get_qual_for_hash(Relation parent, PartitionBoundSpec *spec)
 									  key->partattrs[i],
 									  key->parttypid[i],
 									  key->parttypmod[i],
-									  key->parttypcoll[i],
+									  key->parttypcollid[i],
 									  0);
 		}
 		else
@@ -2016,7 +2020,7 @@ get_qual_for_list(Relation parent, PartitionBoundSpec *spec)
 								  key->partattrs[0],
 								  key->parttypid[0],
 								  key->parttypmod[0],
-								  key->parttypcoll[0],
+								  key->parttypcollid[0],
 								  0);
 	else
 		keyCol = (Expr *) copyObject(linitial(key->partexprs));
@@ -2059,7 +2063,7 @@ get_qual_for_list(Relation parent, PartitionBoundSpec *spec)
 			 */
 			val = makeConst(key->parttypid[0],
 							key->parttypmod[0],
-							key->parttypcoll[0],
+							key->parttypcollid[0],
 							key->parttyplen[0],
 							datumCopy(*boundinfo->datums[i],
 									  key->parttypbyval[0],
@@ -2581,7 +2585,7 @@ get_range_key_properties(PartitionKey key, int keynum,
 								   key->partattrs[keynum],
 								   key->parttypid[keynum],
 								   key->parttypmod[keynum],
-								   key->parttypcoll[keynum],
+								   key->parttypcollid[keynum],
 								   0);
 	}
 	else
@@ -2629,7 +2633,7 @@ get_range_nulltest(PartitionKey key)
 									  key->partattrs[i],
 									  key->parttypid[i],
 									  key->parttypmod[i],
-									  key->parttypcoll[i],
+									  key->parttypcollid[i],
 									  0);
 		}
 		else

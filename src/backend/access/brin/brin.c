@@ -32,6 +32,7 @@
 #include "utils/builtins.h"
 #include "utils/index_selfuncs.h"
 #include "utils/memutils.h"
+#include "utils/pg_locale.h"
 #include "utils/rel.h"
 
 
@@ -243,12 +244,14 @@ brininsert(Relation idxRel, Datum *values, bool *nulls,
 			Datum		result;
 			BrinValues *bval;
 			FmgrInfo   *addValue;
+			fmLocalePtr collation;
 
 			bval = &dtup->bt_columns[keyno];
 			addValue = index_getprocinfo(idxRel, keyno + 1,
 										 BRIN_PROCNUM_ADDVALUE);
+			collation = index_getcollinfo(idxRel, keyno + 1);
 			result = FunctionCall4Coll(addValue,
-									   idxRel->rd_indcollation[keyno],
+									   collation,
 									   PointerGetDatum(bdesc),
 									   PointerGetDatum(bval),
 									   values[keyno],
@@ -483,7 +486,8 @@ bringetbitmap(IndexScanDesc scan, TIDBitmap *tbm)
 					 * this index ...
 					 */
 					Assert((key->sk_flags & SK_ISNULL) ||
-						   (key->sk_collation ==
+						   !key->sk_collation ||
+						   (key->sk_collation->collid ==
 							TupleDescAttr(bdesc->bd_tupdesc,
 										  keyattno - 1)->attcollation));
 
@@ -644,7 +648,7 @@ brinbuildCallback(Relation index,
 		 * Update dtuple state, if and as necessary.
 		 */
 		FunctionCall4Coll(addValue,
-						  attr->attcollation,
+						  pg_newlocale_from_collation(attr->attcollation),
 						  PointerGetDatum(state->bs_bdesc),
 						  PointerGetDatum(col),
 						  values[i], isnull[i]);
@@ -1444,7 +1448,7 @@ union_tuples(BrinDesc *bdesc, BrinMemTuple *a, BrinTuple *b)
 		unionFn = index_getprocinfo(bdesc->bd_index, keyno + 1,
 									BRIN_PROCNUM_UNION);
 		FunctionCall3Coll(unionFn,
-						  bdesc->bd_index->rd_indcollation[keyno],
+						  index_getcollinfo(bdesc->bd_index, keyno + 1),
 						  PointerGetDatum(bdesc),
 						  PointerGetDatum(col_a),
 						  PointerGetDatum(col_b));

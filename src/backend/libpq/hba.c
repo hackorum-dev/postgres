@@ -42,6 +42,7 @@
 #include "utils/varlena.h"
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
+#include "utils/pg_locale.h"
 #include "utils/memutils.h"
 
 #ifdef USE_LDAP
@@ -2652,6 +2653,13 @@ parse_ident_line(TokenizedLine *tok_line)
 	List	   *tokens;
 	HbaToken   *token;
 	IdentLine  *parsedline;
+	/* We can't do catalog access yet, so fake what we need of a C locale. */
+	struct pg_locale_struct c_coll = {
+		.collid = C_COLLATION_OID,
+		.provider = COLLPROVIDER_LIBC,
+		.collate_is_c = true,
+		.ctype_is_c = true,
+	};
 
 	Assert(tok_line->fields != NIL);
 	field = list_head(tok_line->fields);
@@ -2695,7 +2703,7 @@ parse_ident_line(TokenizedLine *tok_line)
 		wlen = pg_mb2wchar_with_len(parsedline->ident_user + 1,
 									wstr, strlen(parsedline->ident_user + 1));
 
-		r = pg_regcomp(&parsedline->re, wstr, wlen, REG_ADVANCED, C_COLLATION_OID);
+		r = pg_regcomp(&parsedline->re, wstr, wlen, REG_ADVANCED, &c_coll);
 		if (r)
 		{
 			char		errstr[100];

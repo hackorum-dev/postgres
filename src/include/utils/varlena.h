@@ -16,8 +16,8 @@
 #include "nodes/pg_list.h"
 #include "utils/sortsupport.h"
 
-extern int	varstr_cmp(const char *arg1, int len1, const char *arg2, int len2, Oid collid);
-extern void varstr_sortsupport(SortSupport ssup, Oid collid, bool bpchar);
+extern int	varstr_cmp(const char *arg1, int len1, const char *arg2, int len2, fmLocalePtr collation);
+extern void varstr_sortsupport(SortSupport ssup, fmLocalePtr collation, bool bpchar);
 extern int varstr_levenshtein(const char *source, int slen,
 				   const char *target, int tlen,
 				   int ins_c, int del_c, int sub_c,

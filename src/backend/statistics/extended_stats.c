@@ -30,6 +30,7 @@
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/pg_locale.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
 
@@ -372,7 +373,7 @@ multi_sort_add_dimension(MultiSortSupport mss, int sortdim, Oid oper)
 	SortSupport ssup = &mss->ssup[sortdim];
 
 	ssup->ssup_cxt = CurrentMemoryContext;
-	ssup->ssup_collation = DEFAULT_COLLATION_OID;
+	ssup->ssup_collation = pg_newlocale_from_collation(DEFAULT_COLLATION_OID);
 	ssup->ssup_nulls_first = false;
 	ssup->ssup_cxt = CurrentMemoryContext;
 

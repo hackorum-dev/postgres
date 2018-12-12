@@ -27,7 +27,7 @@ PG_FUNCTION_INFO_V1(gbt_numeric_same);
 /* define for comparison */
 
 static bool
-gbt_numeric_gt(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
+gbt_numeric_gt(const void *a, const void *b, fmLocalePtr collation, FmgrInfo *flinfo)
 {
 	return DatumGetBool(DirectFunctionCall2(numeric_gt,
 											PointerGetDatum(a),
@@ -35,7 +35,7 @@ gbt_numeric_gt(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
 }
 
 static bool
-gbt_numeric_ge(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
+gbt_numeric_ge(const void *a, const void *b, fmLocalePtr collation, FmgrInfo *flinfo)
 {
 	return DatumGetBool(DirectFunctionCall2(numeric_ge,
 											PointerGetDatum(a),
@@ -43,7 +43,7 @@ gbt_numeric_ge(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
 }
 
 static bool
-gbt_numeric_eq(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
+gbt_numeric_eq(const void *a, const void *b, fmLocalePtr collation, FmgrInfo *flinfo)
 {
 	return DatumGetBool(DirectFunctionCall2(numeric_eq,
 											PointerGetDatum(a),
@@ -51,7 +51,7 @@ gbt_numeric_eq(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
 }
 
 static bool
-gbt_numeric_le(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
+gbt_numeric_le(const void *a, const void *b, fmLocalePtr collation, FmgrInfo *flinfo)
 {
 	return DatumGetBool(DirectFunctionCall2(numeric_le,
 											PointerGetDatum(a),
@@ -59,7 +59,7 @@ gbt_numeric_le(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
 }
 
 static bool
-gbt_numeric_lt(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
+gbt_numeric_lt(const void *a, const void *b, fmLocalePtr collation, FmgrInfo *flinfo)
 {
 	return DatumGetBool(DirectFunctionCall2(numeric_lt,
 											PointerGetDatum(a),
@@ -67,7 +67,7 @@ gbt_numeric_lt(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
 }
 
 static int32
-gbt_numeric_cmp(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
+gbt_numeric_cmp(const void *a, const void *b, fmLocalePtr collation, FmgrInfo *flinfo)
 {
 	return DatumGetInt32(DirectFunctionCall2(numeric_cmp,
 											 PointerGetDatum(a),

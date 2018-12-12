@@ -86,7 +86,7 @@ typedef struct AggStatePerTransData
 	FmgrInfo	deserialfn;
 
 	/* Input collation derived for aggregate */
-	Oid			aggCollation;
+	fmLocalePtr	aggCollation;
 
 	/* number of sorting columns */
 	int			numSortCols;

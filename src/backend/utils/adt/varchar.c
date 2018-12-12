@@ -22,6 +22,7 @@
 #include "nodes/nodeFuncs.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
+#include "utils/pg_locale.h"
 #include "utils/varlena.h"
 #include "mb/pg_wchar.h"
 
@@ -870,13 +871,12 @@ Datum
 bpchar_sortsupport(PG_FUNCTION_ARGS)
 {
 	SortSupport ssup = (SortSupport) PG_GETARG_POINTER(0);
-	Oid			collid = ssup->ssup_collation;
 	MemoryContext oldcontext;
 
 	oldcontext = MemoryContextSwitchTo(ssup->ssup_cxt);
 
 	/* Use generic string SortSupport */
-	varstr_sortsupport(ssup, collid, true);
+	varstr_sortsupport(ssup, ssup->ssup_collation, true);
 
 	MemoryContextSwitchTo(oldcontext);
 
@@ -1085,7 +1085,7 @@ btbpchar_pattern_sortsupport(PG_FUNCTION_ARGS)
 	oldcontext = MemoryContextSwitchTo(ssup->ssup_cxt);
 
 	/* Use generic string SortSupport, forcing "C" collation */
-	varstr_sortsupport(ssup, C_COLLATION_OID, true);
+	varstr_sortsupport(ssup, pg_newlocale_from_collation(C_COLLATION_OID), true);
 
 	MemoryContextSwitchTo(oldcontext);
 

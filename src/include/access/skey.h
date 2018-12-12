@@ -67,7 +67,7 @@ typedef struct ScanKeyData
 	AttrNumber	sk_attno;		/* table or index column number */
 	StrategyNumber sk_strategy; /* operator strategy number */
 	Oid			sk_subtype;		/* strategy subtype */
-	Oid			sk_collation;	/* collation to use, if needed */
+	fmLocalePtr	sk_collation;	/* collation to use, if needed */
 	FmgrInfo	sk_func;		/* lookup info for function to call */
 	Datum		sk_argument;	/* data to compare */
 } ScanKeyData;
@@ -144,7 +144,7 @@ extern void ScanKeyEntryInitializeWithInfo(ScanKey entry,
 							   AttrNumber attributeNumber,
 							   StrategyNumber strategy,
 							   Oid subtype,
-							   Oid collation,
+							   fmLocalePtr collation,
 							   FmgrInfo *finfo,
 							   Datum argument);
 

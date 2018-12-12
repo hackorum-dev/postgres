@@ -1432,6 +1432,8 @@ RelationInitIndexAccessInfo(Relation relation)
 
 	relation->rd_indcollation = (Oid *)
 		MemoryContextAllocZero(indexcxt, indnkeyatts * sizeof(Oid));
+	relation->rd_indcollinfo = (fmLocalePtr *)
+		MemoryContextAllocZero(indexcxt, indnkeyatts * sizeof(fmLocalePtr));
 
 	relation->rd_indoption = (int16 *)
 		MemoryContextAllocZero(indexcxt, indnkeyatts * sizeof(int16));
@@ -5542,6 +5544,10 @@ load_relcache_init_file(bool shared)
 
 			rel->rd_indcollation = indcollation;
 
+			/* set up zeroed collation-info vector */
+			rel->rd_indcollinfo = (fmLocalePtr *)
+				MemoryContextAllocZero(indexcxt, relform->relnatts * sizeof(fmLocalePtr));
+
 			/* finally, read the vector of indoption values */
 			if (fread(&len, 1, sizeof(len), fp) != sizeof(len))
 				goto read_failed;
@@ -5573,6 +5579,7 @@ load_relcache_init_file(bool shared)
 			Assert(rel->rd_supportinfo == NULL);
 			Assert(rel->rd_indoption == NULL);
 			Assert(rel->rd_indcollation == NULL);
+			Assert(rel->rd_indcollinfo == NULL);
 		}
 
 		/*

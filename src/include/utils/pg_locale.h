@@ -61,9 +61,6 @@ extern bool check_locale(int category, const char *locale, char **canonname);
 extern char *pg_perm_setlocale(int category, const char *locale);
 extern void check_strxfrm_bug(void);
 
-extern bool lc_collate_is_c(Oid collation);
-extern bool lc_ctype_is_c(Oid collation);
-
 /*
  * Return the POSIX lconv struct (contains number/money formatting
  * information) with locale information for all categories.
@@ -81,6 +78,7 @@ extern void cache_locale_time(void);
  */
 struct pg_locale_struct
 {
+	Oid			collid;
 	char		provider;
 	union
 	{
@@ -96,6 +94,8 @@ struct pg_locale_struct
 #endif
 		int			dummy;		/* in case we have neither LOCALE_T nor ICU */
 	}			info;
+	bool		collate_is_c;
+	bool		ctype_is_c;
 };
 
 typedef struct pg_locale_struct *pg_locale_t;

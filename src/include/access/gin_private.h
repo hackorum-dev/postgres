@@ -79,7 +79,7 @@ typedef struct GinState
 	/* canPartialMatch[i] is true if comparePartialFn[i] is valid */
 	bool		canPartialMatch[INDEX_MAX_KEYS];
 	/* Collations to pass to the support functions */
-	Oid			supportCollation[INDEX_MAX_KEYS];
+	fmLocalePtr	supportCollation[INDEX_MAX_KEYS];
 } GinState;
 
 
@@ -285,7 +285,7 @@ typedef struct GinScanKeyData
 	GinTernaryValue (*triConsistentFn) (GinScanKey key);
 	FmgrInfo   *consistentFmgrInfo;
 	FmgrInfo   *triConsistentFmgrInfo;
-	Oid			collation;
+	fmLocalePtr	collation;
 
 	/* other data needed for calling consistentFn */
 	Datum		query;

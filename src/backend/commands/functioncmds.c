@@ -68,6 +68,7 @@
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/pg_locale.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
 #include "utils/typcache.h"
@@ -2298,7 +2299,7 @@ ExecuteCallStmt(CallStmt *stmt, ParamListInfo params, bool atomic, DestReceiver 
 	InvokeFunctionExecuteHook(fexpr->funcid);
 	fmgr_info(fexpr->funcid, &flinfo);
 	fmgr_info_set_expr((Node *) fexpr, &flinfo);
-	InitFunctionCallInfoData(fcinfo, &flinfo, nargs, fexpr->inputcollid, (Node *) callcontext, NULL);
+	InitFunctionCallInfoData(fcinfo, &flinfo, nargs, pg_newlocale_from_collation(fexpr->inputcollid), (Node *) callcontext, NULL);
 
 	/*
 	 * Evaluate procedure arguments inside a suitable execution context.  Note

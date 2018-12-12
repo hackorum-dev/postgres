@@ -93,7 +93,7 @@ typedef struct GISTSTATE
 	FmgrInfo	fetchFn[INDEX_MAX_KEYS];
 
 	/* Collations to pass to the support functions */
-	Oid			supportCollation[INDEX_MAX_KEYS];
+	fmLocalePtr	supportCollation[INDEX_MAX_KEYS];
 } GISTSTATE;
 
 

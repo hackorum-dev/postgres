@@ -24,6 +24,7 @@
 #include "utils/builtins.h"
 #include "utils/index_selfuncs.h"
 #include "utils/memutils.h"
+#include "utils/pg_locale.h"
 #include "utils/rel.h"
 
 
@@ -1521,9 +1522,9 @@ initGISTstate(Relation index)
 		 * any cases where a GiST storage type has a nondefault collation.)
 		 */
 		if (OidIsValid(index->rd_indcollation[i]))
-			giststate->supportCollation[i] = index->rd_indcollation[i];
+			giststate->supportCollation[i] = index_getcollinfo(index, i + 1);
 		else
-			giststate->supportCollation[i] = DEFAULT_COLLATION_OID;
+			giststate->supportCollation[i] = pg_newlocale_from_collation(DEFAULT_COLLATION_OID);
 	}
 
 	MemoryContextSwitchTo(oldCxt);

@@ -18,6 +18,7 @@
 #include "access/reloptions.h"
 #include "access/relscan.h"
 #include "utils/lsyscache.h"
+#include "utils/pg_locale.h"
 #include "utils/rel.h"
 #include "storage/buf_internals.h"
 
@@ -88,7 +89,7 @@ _hash_datum2hashkey(Relation rel, Datum key)
 	procinfo = index_getprocinfo(rel, 1, HASHSTANDARD_PROC);
 	collation = rel->rd_indcollation[0];
 
-	return DatumGetUInt32(FunctionCall1Coll(procinfo, collation, key));
+	return DatumGetUInt32(FunctionCall1Coll(procinfo, pg_newlocale_from_collation(collation), key));
 }
 
 /*
@@ -115,7 +116,7 @@ _hash_datum2hashkey_type(Relation rel, Datum key, Oid keytype)
 			 RelationGetRelationName(rel));
 	collation = rel->rd_indcollation[0];
 
-	return DatumGetUInt32(OidFunctionCall1Coll(hash_proc, collation, key));
+	return DatumGetUInt32(OidFunctionCall1Coll(hash_proc, pg_newlocale_from_collation(collation), key));
 }
 
 /*

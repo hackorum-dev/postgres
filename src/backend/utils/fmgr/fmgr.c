@@ -790,7 +790,7 @@ fmgr_security_definer(PG_FUNCTION_ARGS)
  * look at FmgrInfo, since there won't be any.
  */
 Datum
-DirectFunctionCall1Coll(PGFunction func, Oid collation, Datum arg1)
+DirectFunctionCall1Coll(PGFunction func, fmLocalePtr collation, Datum arg1)
 {
 	FunctionCallInfoData fcinfo;
 	Datum		result;
@@ -810,7 +810,7 @@ DirectFunctionCall1Coll(PGFunction func, Oid collation, Datum arg1)
 }
 
 Datum
-DirectFunctionCall2Coll(PGFunction func, Oid collation, Datum arg1, Datum arg2)
+DirectFunctionCall2Coll(PGFunction func, fmLocalePtr collation, Datum arg1, Datum arg2)
 {
 	FunctionCallInfoData fcinfo;
 	Datum		result;
@@ -832,7 +832,7 @@ DirectFunctionCall2Coll(PGFunction func, Oid collation, Datum arg1, Datum arg2)
 }
 
 Datum
-DirectFunctionCall3Coll(PGFunction func, Oid collation, Datum arg1, Datum arg2,
+DirectFunctionCall3Coll(PGFunction func, fmLocalePtr collation, Datum arg1, Datum arg2,
 						Datum arg3)
 {
 	FunctionCallInfoData fcinfo;
@@ -857,7 +857,7 @@ DirectFunctionCall3Coll(PGFunction func, Oid collation, Datum arg1, Datum arg2,
 }
 
 Datum
-DirectFunctionCall4Coll(PGFunction func, Oid collation, Datum arg1, Datum arg2,
+DirectFunctionCall4Coll(PGFunction func, fmLocalePtr collation, Datum arg1, Datum arg2,
 						Datum arg3, Datum arg4)
 {
 	FunctionCallInfoData fcinfo;
@@ -884,7 +884,7 @@ DirectFunctionCall4Coll(PGFunction func, Oid collation, Datum arg1, Datum arg2,
 }
 
 Datum
-DirectFunctionCall5Coll(PGFunction func, Oid collation, Datum arg1, Datum arg2,
+DirectFunctionCall5Coll(PGFunction func, fmLocalePtr collation, Datum arg1, Datum arg2,
 						Datum arg3, Datum arg4, Datum arg5)
 {
 	FunctionCallInfoData fcinfo;
@@ -913,7 +913,7 @@ DirectFunctionCall5Coll(PGFunction func, Oid collation, Datum arg1, Datum arg2,
 }
 
 Datum
-DirectFunctionCall6Coll(PGFunction func, Oid collation, Datum arg1, Datum arg2,
+DirectFunctionCall6Coll(PGFunction func, fmLocalePtr collation, Datum arg1, Datum arg2,
 						Datum arg3, Datum arg4, Datum arg5,
 						Datum arg6)
 {
@@ -945,7 +945,7 @@ DirectFunctionCall6Coll(PGFunction func, Oid collation, Datum arg1, Datum arg2,
 }
 
 Datum
-DirectFunctionCall7Coll(PGFunction func, Oid collation, Datum arg1, Datum arg2,
+DirectFunctionCall7Coll(PGFunction func, fmLocalePtr collation, Datum arg1, Datum arg2,
 						Datum arg3, Datum arg4, Datum arg5,
 						Datum arg6, Datum arg7)
 {
@@ -979,7 +979,7 @@ DirectFunctionCall7Coll(PGFunction func, Oid collation, Datum arg1, Datum arg2,
 }
 
 Datum
-DirectFunctionCall8Coll(PGFunction func, Oid collation, Datum arg1, Datum arg2,
+DirectFunctionCall8Coll(PGFunction func, fmLocalePtr collation, Datum arg1, Datum arg2,
 						Datum arg3, Datum arg4, Datum arg5,
 						Datum arg6, Datum arg7, Datum arg8)
 {
@@ -1015,7 +1015,7 @@ DirectFunctionCall8Coll(PGFunction func, Oid collation, Datum arg1, Datum arg2,
 }
 
 Datum
-DirectFunctionCall9Coll(PGFunction func, Oid collation, Datum arg1, Datum arg2,
+DirectFunctionCall9Coll(PGFunction func, fmLocalePtr collation, Datum arg1, Datum arg2,
 						Datum arg3, Datum arg4, Datum arg5,
 						Datum arg6, Datum arg7, Datum arg8,
 						Datum arg9)
@@ -1063,7 +1063,7 @@ DirectFunctionCall9Coll(PGFunction func, Oid collation, Datum arg1, Datum arg2,
  */
 
 Datum
-CallerFInfoFunctionCall1(PGFunction func, FmgrInfo *flinfo, Oid collation, Datum arg1)
+CallerFInfoFunctionCall1(PGFunction func, FmgrInfo *flinfo, fmLocalePtr collation, Datum arg1)
 {
 	FunctionCallInfoData fcinfo;
 	Datum		result;
@@ -1083,7 +1083,7 @@ CallerFInfoFunctionCall1(PGFunction func, FmgrInfo *flinfo, Oid collation, Datum
 }
 
 Datum
-CallerFInfoFunctionCall2(PGFunction func, FmgrInfo *flinfo, Oid collation, Datum arg1, Datum arg2)
+CallerFInfoFunctionCall2(PGFunction func, FmgrInfo *flinfo, fmLocalePtr collation, Datum arg1, Datum arg2)
 {
 	FunctionCallInfoData fcinfo;
 	Datum		result;
@@ -1110,7 +1110,7 @@ CallerFInfoFunctionCall2(PGFunction func, FmgrInfo *flinfo, Oid collation, Datum
  * are allowed to be NULL.
  */
 Datum
-FunctionCall1Coll(FmgrInfo *flinfo, Oid collation, Datum arg1)
+FunctionCall1Coll(FmgrInfo *flinfo, fmLocalePtr collation, Datum arg1)
 {
 	FunctionCallInfoData fcinfo;
 	Datum		result;
@@ -1130,7 +1130,7 @@ FunctionCall1Coll(FmgrInfo *flinfo, Oid collation, Datum arg1)
 }
 
 Datum
-FunctionCall2Coll(FmgrInfo *flinfo, Oid collation, Datum arg1, Datum arg2)
+FunctionCall2Coll(FmgrInfo *flinfo, fmLocalePtr collation, Datum arg1, Datum arg2)
 {
 	FunctionCallInfoData fcinfo;
 	Datum		result;
@@ -1152,7 +1152,7 @@ FunctionCall2Coll(FmgrInfo *flinfo, Oid collation, Datum arg1, Datum arg2)
 }
 
 Datum
-FunctionCall3Coll(FmgrInfo *flinfo, Oid collation, Datum arg1, Datum arg2,
+FunctionCall3Coll(FmgrInfo *flinfo, fmLocalePtr collation, Datum arg1, Datum arg2,
 				  Datum arg3)
 {
 	FunctionCallInfoData fcinfo;
@@ -1177,7 +1177,7 @@ FunctionCall3Coll(FmgrInfo *flinfo, Oid collation, Datum arg1, Datum arg2,
 }
 
 Datum
-FunctionCall4Coll(FmgrInfo *flinfo, Oid collation, Datum arg1, Datum arg2,
+FunctionCall4Coll(FmgrInfo *flinfo, fmLocalePtr collation, Datum arg1, Datum arg2,
 				  Datum arg3, Datum arg4)
 {
 	FunctionCallInfoData fcinfo;
@@ -1204,7 +1204,7 @@ FunctionCall4Coll(FmgrInfo *flinfo, Oid collation, Datum arg1, Datum arg2,
 }
 
 Datum
-FunctionCall5Coll(FmgrInfo *flinfo, Oid collation, Datum arg1, Datum arg2,
+FunctionCall5Coll(FmgrInfo *flinfo, fmLocalePtr collation, Datum arg1, Datum arg2,
 				  Datum arg3, Datum arg4, Datum arg5)
 {
 	FunctionCallInfoData fcinfo;
@@ -1233,7 +1233,7 @@ FunctionCall5Coll(FmgrInfo *flinfo, Oid collation, Datum arg1, Datum arg2,
 }
 
 Datum
-FunctionCall6Coll(FmgrInfo *flinfo, Oid collation, Datum arg1, Datum arg2,
+FunctionCall6Coll(FmgrInfo *flinfo, fmLocalePtr collation, Datum arg1, Datum arg2,
 				  Datum arg3, Datum arg4, Datum arg5,
 				  Datum arg6)
 {
@@ -1265,7 +1265,7 @@ FunctionCall6Coll(FmgrInfo *flinfo, Oid collation, Datum arg1, Datum arg2,
 }
 
 Datum
-FunctionCall7Coll(FmgrInfo *flinfo, Oid collation, Datum arg1, Datum arg2,
+FunctionCall7Coll(FmgrInfo *flinfo, fmLocalePtr collation, Datum arg1, Datum arg2,
 				  Datum arg3, Datum arg4, Datum arg5,
 				  Datum arg6, Datum arg7)
 {
@@ -1299,7 +1299,7 @@ FunctionCall7Coll(FmgrInfo *flinfo, Oid collation, Datum arg1, Datum arg2,
 }
 
 Datum
-FunctionCall8Coll(FmgrInfo *flinfo, Oid collation, Datum arg1, Datum arg2,
+FunctionCall8Coll(FmgrInfo *flinfo, fmLocalePtr collation, Datum arg1, Datum arg2,
 				  Datum arg3, Datum arg4, Datum arg5,
 				  Datum arg6, Datum arg7, Datum arg8)
 {
@@ -1335,7 +1335,7 @@ FunctionCall8Coll(FmgrInfo *flinfo, Oid collation, Datum arg1, Datum arg2,
 }
 
 Datum
-FunctionCall9Coll(FmgrInfo *flinfo, Oid collation, Datum arg1, Datum arg2,
+FunctionCall9Coll(FmgrInfo *flinfo, fmLocalePtr collation, Datum arg1, Datum arg2,
 				  Datum arg3, Datum arg4, Datum arg5,
 				  Datum arg6, Datum arg7, Datum arg8,
 				  Datum arg9)
@@ -1382,7 +1382,7 @@ FunctionCall9Coll(FmgrInfo *flinfo, Oid collation, Datum arg1, Datum arg2,
  * do the fmgr_info() once and then use FunctionCallN().
  */
 Datum
-OidFunctionCall0Coll(Oid functionId, Oid collation)
+OidFunctionCall0Coll(Oid functionId, fmLocalePtr collation)
 {
 	FmgrInfo	flinfo;
 	FunctionCallInfoData fcinfo;
@@ -1402,7 +1402,7 @@ OidFunctionCall0Coll(Oid functionId, Oid collation)
 }
 
 Datum
-OidFunctionCall1Coll(Oid functionId, Oid collation, Datum arg1)
+OidFunctionCall1Coll(Oid functionId, fmLocalePtr collation, Datum arg1)
 {
 	FmgrInfo	flinfo;
 	FunctionCallInfoData fcinfo;
@@ -1425,7 +1425,7 @@ OidFunctionCall1Coll(Oid functionId, Oid collation, Datum arg1)
 }
 
 Datum
-OidFunctionCall2Coll(Oid functionId, Oid collation, Datum arg1, Datum arg2)
+OidFunctionCall2Coll(Oid functionId, fmLocalePtr collation, Datum arg1, Datum arg2)
 {
 	FmgrInfo	flinfo;
 	FunctionCallInfoData fcinfo;
@@ -1450,7 +1450,7 @@ OidFunctionCall2Coll(Oid functionId, Oid collation, Datum arg1, Datum arg2)
 }
 
 Datum
-OidFunctionCall3Coll(Oid functionId, Oid collation, Datum arg1, Datum arg2,
+OidFunctionCall3Coll(Oid functionId, fmLocalePtr collation, Datum arg1, Datum arg2,
 					 Datum arg3)
 {
 	FmgrInfo	flinfo;
@@ -1478,7 +1478,7 @@ OidFunctionCall3Coll(Oid functionId, Oid collation, Datum arg1, Datum arg2,
 }
 
 Datum
-OidFunctionCall4Coll(Oid functionId, Oid collation, Datum arg1, Datum arg2,
+OidFunctionCall4Coll(Oid functionId, fmLocalePtr collation, Datum arg1, Datum arg2,
 					 Datum arg3, Datum arg4)
 {
 	FmgrInfo	flinfo;
@@ -1508,7 +1508,7 @@ OidFunctionCall4Coll(Oid functionId, Oid collation, Datum arg1, Datum arg2,
 }
 
 Datum
-OidFunctionCall5Coll(Oid functionId, Oid collation, Datum arg1, Datum arg2,
+OidFunctionCall5Coll(Oid functionId, fmLocalePtr collation, Datum arg1, Datum arg2,
 					 Datum arg3, Datum arg4, Datum arg5)
 {
 	FmgrInfo	flinfo;
@@ -1540,7 +1540,7 @@ OidFunctionCall5Coll(Oid functionId, Oid collation, Datum arg1, Datum arg2,
 }
 
 Datum
-OidFunctionCall6Coll(Oid functionId, Oid collation, Datum arg1, Datum arg2,
+OidFunctionCall6Coll(Oid functionId, fmLocalePtr collation, Datum arg1, Datum arg2,
 					 Datum arg3, Datum arg4, Datum arg5,
 					 Datum arg6)
 {
@@ -1575,7 +1575,7 @@ OidFunctionCall6Coll(Oid functionId, Oid collation, Datum arg1, Datum arg2,
 }
 
 Datum
-OidFunctionCall7Coll(Oid functionId, Oid collation, Datum arg1, Datum arg2,
+OidFunctionCall7Coll(Oid functionId, fmLocalePtr collation, Datum arg1, Datum arg2,
 					 Datum arg3, Datum arg4, Datum arg5,
 					 Datum arg6, Datum arg7)
 {
@@ -1612,7 +1612,7 @@ OidFunctionCall7Coll(Oid functionId, Oid collation, Datum arg1, Datum arg2,
 }
 
 Datum
-OidFunctionCall8Coll(Oid functionId, Oid collation, Datum arg1, Datum arg2,
+OidFunctionCall8Coll(Oid functionId, fmLocalePtr collation, Datum arg1, Datum arg2,
 					 Datum arg3, Datum arg4, Datum arg5,
 					 Datum arg6, Datum arg7, Datum arg8)
 {
@@ -1651,7 +1651,7 @@ OidFunctionCall8Coll(Oid functionId, Oid collation, Datum arg1, Datum arg2,
 }
 
 Datum
-OidFunctionCall9Coll(Oid functionId, Oid collation, Datum arg1, Datum arg2,
+OidFunctionCall9Coll(Oid functionId, fmLocalePtr collation, Datum arg1, Datum arg2,
 					 Datum arg3, Datum arg4, Datum arg5,
 					 Datum arg6, Datum arg7, Datum arg8,
 					 Datum arg9)

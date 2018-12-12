@@ -55,6 +55,7 @@
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/pg_locale.h"
 #include "utils/pg_rusage.h"
 #include "utils/sampling.h"
 #include "utils/sortsupport.h"
@@ -1914,6 +1915,7 @@ compute_distinct_stats(VacAttrStatsP stats,
 	bool		is_varwidth = (!stats->attrtype->typbyval &&
 							   stats->attrtype->typlen < 0);
 	FmgrInfo	f_cmpeq;
+	pg_locale_t	collation;
 	typedef struct
 	{
 		Datum		value;
@@ -1935,6 +1937,8 @@ compute_distinct_stats(VacAttrStatsP stats,
 	track_cnt = 0;
 
 	fmgr_info(mystats->eqfunc, &f_cmpeq);
+	/* We always use the default collation for statistics */
+	collation = pg_newlocale_from_collation(DEFAULT_COLLATION_OID);
 
 	for (i = 0; i < samplerows; i++)
 	{
@@ -1993,9 +1997,8 @@ compute_distinct_stats(VacAttrStatsP stats,
 		firstcount1 = track_cnt;
 		for (j = 0; j < track_cnt; j++)
 		{
-			/* We always use the default collation for statistics */
 			if (DatumGetBool(FunctionCall2Coll(&f_cmpeq,
-											   DEFAULT_COLLATION_OID,
+											   collation,
 											   value, track[j].value)))
 			{
 				match = true;
@@ -2274,7 +2277,7 @@ compute_scalar_stats(VacAttrStatsP stats,
 	memset(&ssup, 0, sizeof(ssup));
 	ssup.ssup_cxt = CurrentMemoryContext;
 	/* We always use the default collation for statistics */
-	ssup.ssup_collation = DEFAULT_COLLATION_OID;
+	ssup.ssup_collation = pg_newlocale_from_collation(DEFAULT_COLLATION_OID);
 	ssup.ssup_nulls_first = false;
 
 	/*

@@ -827,7 +827,7 @@ doPickSplit(Relation index, SpGistState *state,
 		 */
 		procinfo = index_getprocinfo(index, 1, SPGIST_PICKSPLIT_PROC);
 		FunctionCall2Coll(procinfo,
-						  index->rd_indcollation[0],
+						  index_getcollinfo(index, 1),
 						  PointerGetDatum(&in),
 						  PointerGetDatum(&out));
 
@@ -1923,7 +1923,7 @@ spgdoinsert(Relation index, SpGistState *state,
 
 			compressProcinfo = index_getprocinfo(index, 1, SPGIST_COMPRESS_PROC);
 			leafDatum = FunctionCall1Coll(compressProcinfo,
-										  index->rd_indcollation[0],
+										  index_getcollinfo(index, 1),
 										  datum);
 		}
 		else
@@ -2125,7 +2125,7 @@ spgdoinsert(Relation index, SpGistState *state,
 			{
 				/* use user-defined choose method */
 				FunctionCall2Coll(procinfo,
-								  index->rd_indcollation[0],
+								  index_getcollinfo(index, 1),
 								  PointerGetDatum(&in),
 								  PointerGetDatum(&out));
 			}

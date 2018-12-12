@@ -7,6 +7,7 @@
 #include "catalog/pg_collation.h"
 #include "utils/builtins.h"
 #include "utils/formatting.h"
+#include "utils/pg_locale.h"
 #include "utils/varlena.h"
 
 PG_MODULE_MAGIC;
@@ -17,8 +18,8 @@ PG_MODULE_MAGIC;
  *		====================
  */
 
-static int32 citextcmp(text *left, text *right, Oid collid);
-static int32 internal_citext_pattern_cmp(text *left, text *right, Oid collid);
+static int32 citextcmp(text *left, text *right, fmLocalePtr collation);
+static int32 internal_citext_pattern_cmp(text *left, text *right, fmLocalePtr collation);
 
 /*
  *		=================
@@ -32,7 +33,7 @@ static int32 internal_citext_pattern_cmp(text *left, text *right, Oid collid);
  * Returns int32 negative, zero, or positive.
  */
 static int32
-citextcmp(text *left, text *right, Oid collid)
+citextcmp(text *left, text *right, fmLocalePtr collation)
 {
 	char	   *lcstr,
 			   *rcstr;
@@ -46,12 +47,12 @@ citextcmp(text *left, text *right, Oid collid)
 	 * collation-dependent equality and hashing functions.
 	 */
 
-	lcstr = str_tolower(VARDATA_ANY(left), VARSIZE_ANY_EXHDR(left), DEFAULT_COLLATION_OID);
-	rcstr = str_tolower(VARDATA_ANY(right), VARSIZE_ANY_EXHDR(right), DEFAULT_COLLATION_OID);
+	lcstr = str_tolower(VARDATA_ANY(left), VARSIZE_ANY_EXHDR(left), pg_newlocale_from_collation(DEFAULT_COLLATION_OID));
+	rcstr = str_tolower(VARDATA_ANY(right), VARSIZE_ANY_EXHDR(right), pg_newlocale_from_collation(DEFAULT_COLLATION_OID));
 
 	result = varstr_cmp(lcstr, strlen(lcstr),
 						rcstr, strlen(rcstr),
-						collid);
+						collation);
 
 	pfree(lcstr);
 	pfree(rcstr);
@@ -65,7 +66,7 @@ citextcmp(text *left, text *right, Oid collid)
  * Returns int32 negative, zero, or positive.
  */
 static int32
-internal_citext_pattern_cmp(text *left, text *right, Oid collid)
+internal_citext_pattern_cmp(text *left, text *right, fmLocalePtr collation)
 {
 	char	   *lcstr,
 			   *rcstr;
@@ -73,8 +74,8 @@ internal_citext_pattern_cmp(text *left, text *right, Oid collid)
 				rlen;
 	int32		result;
 
-	lcstr = str_tolower(VARDATA_ANY(left), VARSIZE_ANY_EXHDR(left), DEFAULT_COLLATION_OID);
-	rcstr = str_tolower(VARDATA_ANY(right), VARSIZE_ANY_EXHDR(right), DEFAULT_COLLATION_OID);
+	lcstr = str_tolower(VARDATA_ANY(left), VARSIZE_ANY_EXHDR(left), pg_newlocale_from_collation(DEFAULT_COLLATION_OID));
+	rcstr = str_tolower(VARDATA_ANY(right), VARSIZE_ANY_EXHDR(right), pg_newlocale_from_collation(DEFAULT_COLLATION_OID));
 
 	llen = strlen(lcstr);
 	rlen = strlen(rcstr);
@@ -143,7 +144,7 @@ citext_hash(PG_FUNCTION_ARGS)
 	char	   *str;
 	Datum		result;
 
-	str = str_tolower(VARDATA_ANY(txt), VARSIZE_ANY_EXHDR(txt), DEFAULT_COLLATION_OID);
+	str = str_tolower(VARDATA_ANY(txt), VARSIZE_ANY_EXHDR(txt), pg_newlocale_from_collation(DEFAULT_COLLATION_OID));
 	result = hash_any((unsigned char *) str, strlen(str));
 	pfree(str);
 
@@ -163,7 +164,7 @@ citext_hash_extended(PG_FUNCTION_ARGS)
 	char	   *str;
 	Datum		result;
 
-	str = str_tolower(VARDATA_ANY(txt), VARSIZE_ANY_EXHDR(txt), DEFAULT_COLLATION_OID);
+	str = str_tolower(VARDATA_ANY(txt), VARSIZE_ANY_EXHDR(txt), pg_newlocale_from_collation(DEFAULT_COLLATION_OID));
 	result = hash_any_extended((unsigned char *) str, strlen(str), seed);
 	pfree(str);
 
@@ -192,8 +193,8 @@ citext_eq(PG_FUNCTION_ARGS)
 
 	/* We can't compare lengths in advance of downcasing ... */
 
-	lcstr = str_tolower(VARDATA_ANY(left), VARSIZE_ANY_EXHDR(left), DEFAULT_COLLATION_OID);
-	rcstr = str_tolower(VARDATA_ANY(right), VARSIZE_ANY_EXHDR(right), DEFAULT_COLLATION_OID);
+	lcstr = str_tolower(VARDATA_ANY(left), VARSIZE_ANY_EXHDR(left), pg_newlocale_from_collation(DEFAULT_COLLATION_OID));
+	rcstr = str_tolower(VARDATA_ANY(right), VARSIZE_ANY_EXHDR(right), pg_newlocale_from_collation(DEFAULT_COLLATION_OID));
 
 	/*
 	 * Since we only care about equality or not-equality, we can avoid all the
@@ -222,8 +223,8 @@ citext_ne(PG_FUNCTION_ARGS)
 
 	/* We can't compare lengths in advance of downcasing ... */
 
-	lcstr = str_tolower(VARDATA_ANY(left), VARSIZE_ANY_EXHDR(left), DEFAULT_COLLATION_OID);
-	rcstr = str_tolower(VARDATA_ANY(right), VARSIZE_ANY_EXHDR(right), DEFAULT_COLLATION_OID);
+	lcstr = str_tolower(VARDATA_ANY(left), VARSIZE_ANY_EXHDR(left), pg_newlocale_from_collation(DEFAULT_COLLATION_OID));
+	rcstr = str_tolower(VARDATA_ANY(right), VARSIZE_ANY_EXHDR(right), pg_newlocale_from_collation(DEFAULT_COLLATION_OID));
 
 	/*
 	 * Since we only care about equality or not-equality, we can avoid all the

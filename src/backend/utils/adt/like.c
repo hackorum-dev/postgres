@@ -32,21 +32,21 @@
 
 
 static int SB_MatchText(char *t, int tlen, char *p, int plen,
-			 pg_locale_t locale, bool locale_is_c);
+			 pg_locale_t locale);
 static text *SB_do_like_escape(text *, text *);
 
 static int MB_MatchText(char *t, int tlen, char *p, int plen,
-			 pg_locale_t locale, bool locale_is_c);
+			 pg_locale_t locale);
 static text *MB_do_like_escape(text *, text *);
 
 static int UTF8_MatchText(char *t, int tlen, char *p, int plen,
-			   pg_locale_t locale, bool locale_is_c);
+			   pg_locale_t locale);
 
 static int SB_IMatchText(char *t, int tlen, char *p, int plen,
-			  pg_locale_t locale, bool locale_is_c);
+			  pg_locale_t locale);
 
 static int	GenericMatchText(char *s, int slen, char *p, int plen);
-static int	Generic_Text_IC_like(text *str, text *pat, Oid collation);
+static int	Generic_Text_IC_like(text *str, text *pat, pg_locale_t collation);
 
 /*--------------------
  * Support routine for MatchText. Compares given multibyte streams
@@ -90,12 +90,12 @@ wchareq(char *p1, char *p2)
  * fold-on-the-fly processing, however.
  */
 static char
-SB_lower_char(unsigned char c, pg_locale_t locale, bool locale_is_c)
+SB_lower_char(unsigned char c, pg_locale_t locale)
 {
-	if (locale_is_c)
+	if (locale->ctype_is_c)
 		return pg_ascii_tolower(c);
 #ifdef HAVE_LOCALE_T
-	else if (locale)
+	else if (locale->provider == COLLPROVIDER_LIBC)
 		return tolower_l(c, locale->info.lt);
 #endif
 	else
@@ -132,7 +132,7 @@ SB_lower_char(unsigned char c, pg_locale_t locale, bool locale_is_c)
 #include "like_match.c"
 
 /* setup to compile like_match.c for single byte case insensitive matches */
-#define MATCH_LOWER(t) SB_lower_char((unsigned char) (t), locale, locale_is_c)
+#define MATCH_LOWER(t) SB_lower_char((unsigned char) (t), locale)
 #define NextChar(p, plen) NextByte((p), (plen))
 #define MatchText SB_IMatchText
 
@@ -151,39 +151,31 @@ static inline int
 GenericMatchText(char *s, int slen, char *p, int plen)
 {
 	if (pg_database_encoding_max_length() == 1)
-		return SB_MatchText(s, slen, p, plen, 0, true);
+		return SB_MatchText(s, slen, p, plen, 0);
 	else if (GetDatabaseEncoding() == PG_UTF8)
-		return UTF8_MatchText(s, slen, p, plen, 0, true);
+		return UTF8_MatchText(s, slen, p, plen, 0);
 	else
-		return MB_MatchText(s, slen, p, plen, 0, true);
+		return MB_MatchText(s, slen, p, plen, 0);
 }
 
 static inline int
-Generic_Text_IC_like(text *str, text *pat, Oid collation)
+Generic_Text_IC_like(text *str, text *pat, pg_locale_t collation)
 {
 	char	   *s,
 			   *p;
 	int			slen,
 				plen;
-	pg_locale_t locale = 0;
-	bool		locale_is_c = false;
 
-	if (lc_ctype_is_c(collation))
-		locale_is_c = true;
-	else if (collation != DEFAULT_COLLATION_OID)
+	if (!collation)
 	{
-		if (!OidIsValid(collation))
-		{
-			/*
-			 * This typically means that the parser could not resolve a
-			 * conflict of implicit collations, so report it that way.
-			 */
-			ereport(ERROR,
-					(errcode(ERRCODE_INDETERMINATE_COLLATION),
-					 errmsg("could not determine which collation to use for ILIKE"),
-					 errhint("Use the COLLATE clause to set the collation explicitly.")));
-		}
-		locale = pg_newlocale_from_collation(collation);
+		/*
+		 * This typically means that the parser could not resolve a
+		 * conflict of implicit collations, so report it that way.
+		 */
+		ereport(ERROR,
+				(errcode(ERRCODE_INDETERMINATE_COLLATION),
+				 errmsg("could not determine which collation to use for ILIKE"),
+				 errhint("Use the COLLATE clause to set the collation explicitly.")));
 	}
 
 	/*
@@ -194,7 +186,7 @@ Generic_Text_IC_like(text *str, text *pat, Oid collation)
 	 * way.
 	 */
 
-	if (pg_database_encoding_max_length() > 1 || (locale && locale->provider == COLLPROVIDER_ICU))
+	if (pg_database_encoding_max_length() > 1 || (collation->provider == COLLPROVIDER_ICU))
 	{
 		/* lower's result is never packed, so OK to use old macros here */
 		pat = DatumGetTextPP(DirectFunctionCall1Coll(lower, collation,
@@ -206,9 +198,9 @@ Generic_Text_IC_like(text *str, text *pat, Oid collation)
 		s = VARDATA_ANY(str);
 		slen = VARSIZE_ANY_EXHDR(str);
 		if (GetDatabaseEncoding() == PG_UTF8)
-			return UTF8_MatchText(s, slen, p, plen, 0, true);
+			return UTF8_MatchText(s, slen, p, plen, 0);
 		else
-			return MB_MatchText(s, slen, p, plen, 0, true);
+			return MB_MatchText(s, slen, p, plen, 0);
 	}
 	else
 	{
@@ -216,7 +208,7 @@ Generic_Text_IC_like(text *str, text *pat, Oid collation)
 		plen = VARSIZE_ANY_EXHDR(pat);
 		s = VARDATA_ANY(str);
 		slen = VARSIZE_ANY_EXHDR(str);
-		return SB_IMatchText(s, slen, p, plen, locale, locale_is_c);
+		return SB_IMatchText(s, slen, p, plen, collation);
 	}
 }
 
@@ -324,7 +316,7 @@ bytealike(PG_FUNCTION_ARGS)
 	p = VARDATA_ANY(pat);
 	plen = VARSIZE_ANY_EXHDR(pat);
 
-	result = (SB_MatchText(s, slen, p, plen, 0, true) == LIKE_TRUE);
+	result = (SB_MatchText(s, slen, p, plen, 0) == LIKE_TRUE);
 
 	PG_RETURN_BOOL(result);
 }
@@ -345,7 +337,7 @@ byteanlike(PG_FUNCTION_ARGS)
 	p = VARDATA_ANY(pat);
 	plen = VARSIZE_ANY_EXHDR(pat);
 
-	result = (SB_MatchText(s, slen, p, plen, 0, true) != LIKE_TRUE);
+	result = (SB_MatchText(s, slen, p, plen, 0) != LIKE_TRUE);
 
 	PG_RETURN_BOOL(result);
 }

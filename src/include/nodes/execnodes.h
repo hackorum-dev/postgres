@@ -2062,7 +2062,7 @@ typedef struct WindowAggState
 	/* these fields are used with RANGE offset PRECEDING/FOLLOWING: */
 	FmgrInfo	startInRangeFunc;	/* in_range function for startOffset */
 	FmgrInfo	endInRangeFunc; /* in_range function for endOffset */
-	Oid			inRangeColl;	/* collation for in_range tests */
+	fmLocalePtr	inRangeColl;	/* collation for in_range tests */
 	bool		inRangeAsc;		/* use ASC sort order for in_range tests? */
 	bool		inRangeNullsFirst;	/* nulls sort first for in_range tests? */
 

@@ -36,6 +36,7 @@
  * Add your own defines, if needed, here.
  */
 #include "mb/pg_wchar.h"
+#include "utils/pg_locale.h"
 
 /*
  * interface types etc.
@@ -73,7 +74,7 @@ typedef struct
 #define  REG_USHORTEST		 020000
 	int			re_csize;		/* sizeof(character) */
 	char	   *re_endp;		/* backward compatibility kludge */
-	Oid			re_collation;	/* Collation that defines LC_CTYPE behavior */
+	pg_locale_t	re_collation;	/* Collation that defines LC_CTYPE behavior */
 	/* the rest is opaque pointers to hidden innards */
 	char	   *re_guts;		/* `char *' is more portable than `void *' */
 	char	   *re_fns;
@@ -167,7 +168,7 @@ typedef struct
 /*
  * the prototypes for exported functions
  */
-extern int	pg_regcomp(regex_t *, const pg_wchar *, size_t, int, Oid);
+extern int	pg_regcomp(regex_t *, const pg_wchar *, size_t, int, pg_locale_t);
 extern int	pg_regexec(regex_t *, const pg_wchar *, size_t, size_t, rm_detail_t *, size_t, regmatch_t[], int);
 extern int	pg_regprefix(regex_t *, pg_wchar **, size_t *);
 extern void pg_regfree(regex_t *);

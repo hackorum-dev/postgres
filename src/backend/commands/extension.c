@@ -58,6 +58,7 @@
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/pg_locale.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 #include "utils/tqual.h"
@@ -882,7 +883,7 @@ execute_extension_script(Oid extensionOid, ExtensionControlFile *control,
 		 * psql, which has been found to be necessary due to old habits.
 		 */
 		t_sql = DirectFunctionCall4Coll(textregexreplace,
-										C_COLLATION_OID,
+										pg_newlocale_from_collation(C_COLLATION_OID),
 										t_sql,
 										CStringGetTextDatum("^\\\\echo.*$"),
 										CStringGetTextDatum(""),

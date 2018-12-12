@@ -109,6 +109,7 @@
 #include "utils/logtape.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/pg_locale.h"
 #include "utils/pg_rusage.h"
 #include "utils/rel.h"
 #include "utils/sortsupport.h"
@@ -853,7 +854,7 @@ tuplesort_begin_heap(TupleDesc tupDesc,
 		AssertArg(sortOperators[i] != 0);
 
 		sortKey->ssup_cxt = CurrentMemoryContext;
-		sortKey->ssup_collation = sortCollations[i];
+		sortKey->ssup_collation = pg_newlocale_from_collation(sortCollations[i]);
 		sortKey->ssup_nulls_first = nullsFirstFlags[i];
 		sortKey->ssup_attno = attNums[i];
 		/* Convey if abbreviation optimization is applicable in principle */
@@ -1141,7 +1142,7 @@ tuplesort_begin_datum(Oid datumType, Oid sortOperator, Oid sortCollation,
 	state->sortKeys = (SortSupport) palloc0(sizeof(SortSupportData));
 
 	state->sortKeys->ssup_cxt = CurrentMemoryContext;
-	state->sortKeys->ssup_collation = sortCollation;
+	state->sortKeys->ssup_collation = pg_newlocale_from_collation(sortCollation);
 	state->sortKeys->ssup_nulls_first = nullsFirstFlag;
 
 	/*

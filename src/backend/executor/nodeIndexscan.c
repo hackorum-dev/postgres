@@ -42,6 +42,7 @@
 #include "utils/datum.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/pg_locale.h"
 #include "utils/rel.h"
 
 /*
@@ -1060,7 +1061,7 @@ ExecInitIndexScan(IndexScan *node, EState *estate, int eflags)
 
 			/* Initialize sort support */
 			orderbysort->ssup_cxt = CurrentMemoryContext;
-			orderbysort->ssup_collation = orderbyColl;
+			orderbysort->ssup_collation = pg_newlocale_from_collation(orderbyColl);
 			/* See cmp_orderbyvals() comments on NULLS LAST */
 			orderbysort->ssup_nulls_first = false;
 			/* ssup_attno is unused here and elsewhere */

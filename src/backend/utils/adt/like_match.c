@@ -77,7 +77,7 @@
 
 static int
 MatchText(char *t, int tlen, char *p, int plen,
-		  pg_locale_t locale, bool locale_is_c)
+		  pg_locale_t locale)
 {
 	/* Fast path for match-everything pattern */
 	if (plen == 1 && *p == '%')
@@ -175,7 +175,7 @@ MatchText(char *t, int tlen, char *p, int plen,
 				if (GETCHAR(*t) == firstpat)
 				{
 					int			matched = MatchText(t, tlen, p, plen,
-													locale, locale_is_c);
+													locale);
 
 					if (matched != LIKE_FALSE)
 						return matched; /* TRUE or ABORT */

@@ -3409,7 +3409,7 @@ match_special_index_operator(Expr *clause, Oid opfamily, Oid idxcollation,
 	bool		isIndexable = false;
 	Node	   *rightop;
 	Oid			expr_op;
-	Oid			expr_coll;
+	pg_locale_t	expr_coll;
 	Const	   *patt;
 	Const	   *prefix = NULL;
 	Pattern_Prefix_Status pstatus = Pattern_Prefix_None;
@@ -3425,7 +3425,7 @@ match_special_index_operator(Expr *clause, Oid opfamily, Oid idxcollation,
 	/* we know these will succeed */
 	rightop = get_rightop(clause);
 	expr_op = ((OpExpr *) clause)->opno;
-	expr_coll = ((OpExpr *) clause)->inputcollid;
+	expr_coll = pg_newlocale_from_collation(((OpExpr *) clause)->inputcollid);
 
 	/* again, required for all current special ops: */
 	if (!IsA(rightop, Const) ||
@@ -3523,7 +3523,7 @@ match_special_index_operator(Expr *clause, Oid opfamily, Oid idxcollation,
 				(opfamily == TEXT_SPGIST_FAM_OID) ||
 				(opfamily == TEXT_BTREE_FAM_OID &&
 				 (pstatus == Pattern_Prefix_Exact ||
-				  lc_collate_is_c(idxcollation)));
+				  pg_newlocale_from_collation(idxcollation)->collate_is_c));
 			break;
 
 		case OID_BPCHAR_LIKE_OP:
@@ -3534,7 +3534,7 @@ match_special_index_operator(Expr *clause, Oid opfamily, Oid idxcollation,
 				(opfamily == BPCHAR_PATTERN_BTREE_FAM_OID) ||
 				(opfamily == BPCHAR_BTREE_FAM_OID &&
 				 (pstatus == Pattern_Prefix_Exact ||
-				  lc_collate_is_c(idxcollation)));
+				  pg_newlocale_from_collation(idxcollation)->collate_is_c));
 			break;
 
 		case OID_NAME_LIKE_OP:
@@ -3743,7 +3743,7 @@ expand_indexqual_opclause(RestrictInfo *rinfo, Oid opfamily, Oid idxcollation)
 	Node	   *leftop = get_leftop(clause);
 	Node	   *rightop = get_rightop(clause);
 	Oid			expr_op = ((OpExpr *) clause)->opno;
-	Oid			expr_coll = ((OpExpr *) clause)->inputcollid;
+	pg_locale_t	expr_coll = pg_newlocale_from_collation(((OpExpr *) clause)->inputcollid);
 	Const	   *patt = (Const *) rightop;
 	Const	   *prefix = NULL;
 	Pattern_Prefix_Status pstatus;
@@ -4201,7 +4201,7 @@ prefix_quals(Node *leftop, Oid opfamily, Oid collation,
 	if (oproid == InvalidOid)
 		elog(ERROR, "no < operator for opfamily %u", opfamily);
 	fmgr_info(get_opcode(oproid), &ltproc);
-	greaterstr = make_greater_string(prefix_const, &ltproc, collation);
+	greaterstr = make_greater_string(prefix_const, &ltproc, pg_newlocale_from_collation(collation));
 	if (greaterstr)
 	{
 		expr = make_opclause(oproid, BOOLOID, false,

@@ -94,15 +94,15 @@ extern void check_default_partition_contents(Relation parent,
 								 PartitionBoundSpec *new_spec);
 
 extern int32 partition_rbound_datum_cmp(FmgrInfo *partsupfunc,
-						   Oid *partcollation,
+						   fmLocalePtr *partcollation,
 						   Datum *rb_datums, PartitionRangeDatumKind *rb_kind,
 						   Datum *tuple_datums, int n_tuple_datums);
 extern int partition_list_bsearch(FmgrInfo *partsupfunc,
-					   Oid *partcollation,
+					   fmLocalePtr *partcollation,
 					   PartitionBoundInfo boundinfo,
 					   Datum value, bool *is_equal);
 extern int partition_range_datum_bsearch(FmgrInfo *partsupfunc,
-							  Oid *partcollation,
+							  fmLocalePtr *partcollation,
 							  PartitionBoundInfo boundinfo,
 							  int nvalues, Datum *values, bool *is_equal);
 extern int partition_hash_bsearch(PartitionBoundInfo boundinfo,

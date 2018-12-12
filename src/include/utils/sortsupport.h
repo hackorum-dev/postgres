@@ -64,7 +64,7 @@ typedef struct SortSupportData
 	 * and should not be changed later.
 	 */
 	MemoryContext ssup_cxt;		/* Context containing sort info */
-	Oid			ssup_collation; /* Collation to use, or InvalidOid */
+	fmLocalePtr	ssup_collation; /* Collation to use, or 0 */
 
 	/*
 	 * Additional sorting parameters; but unlike ssup_collation, these can be

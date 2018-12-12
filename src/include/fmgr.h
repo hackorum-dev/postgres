@@ -22,6 +22,9 @@
 typedef struct Node *fmNodePtr;
 typedef struct Aggref *fmAggrefPtr;
 
+/* Likewise, avoid including pg_locale.h here */
+typedef struct pg_locale_struct *fmLocalePtr;
+
 /* Likewise, avoid including execnodes.h here */
 typedef void (*fmExprContextCallbackFunction) (Datum arg);
 
@@ -79,7 +82,7 @@ typedef struct FunctionCallInfoData
 	FmgrInfo   *flinfo;			/* ptr to lookup info used for this call */
 	fmNodePtr	context;		/* pass info about context of call */
 	fmNodePtr	resultinfo;		/* pass or return extra info about result */
-	Oid			fncollation;	/* collation for function to use */
+	fmLocalePtr	fncollation;	/* collation for function to use */
 #define FIELDNO_FUNCTIONCALLINFODATA_ISNULL 4
 	bool		isnull;			/* function must set true if result is NULL */
 	short		nargs;			/* # arguments actually passed */
@@ -466,32 +469,32 @@ extern int no_such_variable
  * directly-computed parameter list.  Note that neither arguments nor result
  * are allowed to be NULL.
  */
-extern Datum DirectFunctionCall1Coll(PGFunction func, Oid collation,
+extern Datum DirectFunctionCall1Coll(PGFunction func, fmLocalePtr collation,
 						Datum arg1);
-extern Datum DirectFunctionCall2Coll(PGFunction func, Oid collation,
+extern Datum DirectFunctionCall2Coll(PGFunction func, fmLocalePtr collation,
 						Datum arg1, Datum arg2);
-extern Datum DirectFunctionCall3Coll(PGFunction func, Oid collation,
+extern Datum DirectFunctionCall3Coll(PGFunction func, fmLocalePtr collation,
 						Datum arg1, Datum arg2,
 						Datum arg3);
-extern Datum DirectFunctionCall4Coll(PGFunction func, Oid collation,
+extern Datum DirectFunctionCall4Coll(PGFunction func, fmLocalePtr collation,
 						Datum arg1, Datum arg2,
 						Datum arg3, Datum arg4);
-extern Datum DirectFunctionCall5Coll(PGFunction func, Oid collation,
+extern Datum DirectFunctionCall5Coll(PGFunction func, fmLocalePtr collation,
 						Datum arg1, Datum arg2,
 						Datum arg3, Datum arg4, Datum arg5);
-extern Datum DirectFunctionCall6Coll(PGFunction func, Oid collation,
+extern Datum DirectFunctionCall6Coll(PGFunction func, fmLocalePtr collation,
 						Datum arg1, Datum arg2,
 						Datum arg3, Datum arg4, Datum arg5,
 						Datum arg6);
-extern Datum DirectFunctionCall7Coll(PGFunction func, Oid collation,
+extern Datum DirectFunctionCall7Coll(PGFunction func, fmLocalePtr collation,
 						Datum arg1, Datum arg2,
 						Datum arg3, Datum arg4, Datum arg5,
 						Datum arg6, Datum arg7);
-extern Datum DirectFunctionCall8Coll(PGFunction func, Oid collation,
+extern Datum DirectFunctionCall8Coll(PGFunction func, fmLocalePtr collation,
 						Datum arg1, Datum arg2,
 						Datum arg3, Datum arg4, Datum arg5,
 						Datum arg6, Datum arg7, Datum arg8);
-extern Datum DirectFunctionCall9Coll(PGFunction func, Oid collation,
+extern Datum DirectFunctionCall9Coll(PGFunction func, fmLocalePtr collation,
 						Datum arg1, Datum arg2,
 						Datum arg3, Datum arg4, Datum arg5,
 						Datum arg6, Datum arg7, Datum arg8,
@@ -506,40 +509,40 @@ extern Datum DirectFunctionCall9Coll(PGFunction func, Oid collation,
  * used fn_extra, unless its use is known to be compatible with the callee's.
  */
 extern Datum CallerFInfoFunctionCall1(PGFunction func, FmgrInfo *flinfo,
-						 Oid collation, Datum arg1);
+						 fmLocalePtr collation, Datum arg1);
 extern Datum CallerFInfoFunctionCall2(PGFunction func, FmgrInfo *flinfo,
-						 Oid collation, Datum arg1, Datum arg2);
+						 fmLocalePtr collation, Datum arg1, Datum arg2);
 
 /* These are for invocation of a previously-looked-up function with a
  * directly-computed parameter list.  Note that neither arguments nor result
  * are allowed to be NULL.
  */
-extern Datum FunctionCall1Coll(FmgrInfo *flinfo, Oid collation,
+extern Datum FunctionCall1Coll(FmgrInfo *flinfo, fmLocalePtr collation,
 				  Datum arg1);
-extern Datum FunctionCall2Coll(FmgrInfo *flinfo, Oid collation,
+extern Datum FunctionCall2Coll(FmgrInfo *flinfo, fmLocalePtr collation,
 				  Datum arg1, Datum arg2);
-extern Datum FunctionCall3Coll(FmgrInfo *flinfo, Oid collation,
+extern Datum FunctionCall3Coll(FmgrInfo *flinfo, fmLocalePtr collation,
 				  Datum arg1, Datum arg2,
 				  Datum arg3);
-extern Datum FunctionCall4Coll(FmgrInfo *flinfo, Oid collation,
+extern Datum FunctionCall4Coll(FmgrInfo *flinfo, fmLocalePtr collation,
 				  Datum arg1, Datum arg2,
 				  Datum arg3, Datum arg4);
-extern Datum FunctionCall5Coll(FmgrInfo *flinfo, Oid collation,
+extern Datum FunctionCall5Coll(FmgrInfo *flinfo, fmLocalePtr collation,
 				  Datum arg1, Datum arg2,
 				  Datum arg3, Datum arg4, Datum arg5);
-extern Datum FunctionCall6Coll(FmgrInfo *flinfo, Oid collation,
+extern Datum FunctionCall6Coll(FmgrInfo *flinfo, fmLocalePtr collation,
 				  Datum arg1, Datum arg2,
 				  Datum arg3, Datum arg4, Datum arg5,
 				  Datum arg6);
-extern Datum FunctionCall7Coll(FmgrInfo *flinfo, Oid collation,
+extern Datum FunctionCall7Coll(FmgrInfo *flinfo, fmLocalePtr collation,
 				  Datum arg1, Datum arg2,
 				  Datum arg3, Datum arg4, Datum arg5,
 				  Datum arg6, Datum arg7);
-extern Datum FunctionCall8Coll(FmgrInfo *flinfo, Oid collation,
+extern Datum FunctionCall8Coll(FmgrInfo *flinfo, fmLocalePtr collation,
 				  Datum arg1, Datum arg2,
 				  Datum arg3, Datum arg4, Datum arg5,
 				  Datum arg6, Datum arg7, Datum arg8);
-extern Datum FunctionCall9Coll(FmgrInfo *flinfo, Oid collation,
+extern Datum FunctionCall9Coll(FmgrInfo *flinfo, fmLocalePtr collation,
 				  Datum arg1, Datum arg2,
 				  Datum arg3, Datum arg4, Datum arg5,
 				  Datum arg6, Datum arg7, Datum arg8,
@@ -551,98 +554,98 @@ extern Datum FunctionCall9Coll(FmgrInfo *flinfo, Oid collation,
  * FunctionCallN().  If the same function is to be invoked repeatedly, do the
  * fmgr_info() once and then use FunctionCallN().
  */
-extern Datum OidFunctionCall0Coll(Oid functionId, Oid collation);
-extern Datum OidFunctionCall1Coll(Oid functionId, Oid collation,
+extern Datum OidFunctionCall0Coll(Oid functionId, fmLocalePtr collation);
+extern Datum OidFunctionCall1Coll(Oid functionId, fmLocalePtr collation,
 					 Datum arg1);
-extern Datum OidFunctionCall2Coll(Oid functionId, Oid collation,
+extern Datum OidFunctionCall2Coll(Oid functionId, fmLocalePtr collation,
 					 Datum arg1, Datum arg2);
-extern Datum OidFunctionCall3Coll(Oid functionId, Oid collation,
+extern Datum OidFunctionCall3Coll(Oid functionId, fmLocalePtr collation,
 					 Datum arg1, Datum arg2,
 					 Datum arg3);
-extern Datum OidFunctionCall4Coll(Oid functionId, Oid collation,
+extern Datum OidFunctionCall4Coll(Oid functionId, fmLocalePtr collation,
 					 Datum arg1, Datum arg2,
 					 Datum arg3, Datum arg4);
-extern Datum OidFunctionCall5Coll(Oid functionId, Oid collation,
+extern Datum OidFunctionCall5Coll(Oid functionId, fmLocalePtr collation,
 					 Datum arg1, Datum arg2,
 					 Datum arg3, Datum arg4, Datum arg5);
-extern Datum OidFunctionCall6Coll(Oid functionId, Oid collation,
+extern Datum OidFunctionCall6Coll(Oid functionId, fmLocalePtr collation,
 					 Datum arg1, Datum arg2,
 					 Datum arg3, Datum arg4, Datum arg5,
 					 Datum arg6);
-extern Datum OidFunctionCall7Coll(Oid functionId, Oid collation,
+extern Datum OidFunctionCall7Coll(Oid functionId, fmLocalePtr collation,
 					 Datum arg1, Datum arg2,
 					 Datum arg3, Datum arg4, Datum arg5,
 					 Datum arg6, Datum arg7);
-extern Datum OidFunctionCall8Coll(Oid functionId, Oid collation,
+extern Datum OidFunctionCall8Coll(Oid functionId, fmLocalePtr collation,
 					 Datum arg1, Datum arg2,
 					 Datum arg3, Datum arg4, Datum arg5,
 					 Datum arg6, Datum arg7, Datum arg8);
-extern Datum OidFunctionCall9Coll(Oid functionId, Oid collation,
+extern Datum OidFunctionCall9Coll(Oid functionId, fmLocalePtr collation,
 					 Datum arg1, Datum arg2,
 					 Datum arg3, Datum arg4, Datum arg5,
 					 Datum arg6, Datum arg7, Datum arg8,
 					 Datum arg9);
 
 /* These macros allow the collation argument to be omitted (with a default of
- * InvalidOid, ie, no collation).  They exist mostly for backwards
+ * no collation).  They exist mostly for backwards
  * compatibility of source code.
  */
 #define DirectFunctionCall1(func, arg1) \
-	DirectFunctionCall1Coll(func, InvalidOid, arg1)
+	DirectFunctionCall1Coll(func, 0, arg1)
 #define DirectFunctionCall2(func, arg1, arg2) \
-	DirectFunctionCall2Coll(func, InvalidOid, arg1, arg2)
+	DirectFunctionCall2Coll(func, 0, arg1, arg2)
 #define DirectFunctionCall3(func, arg1, arg2, arg3) \
-	DirectFunctionCall3Coll(func, InvalidOid, arg1, arg2, arg3)
+	DirectFunctionCall3Coll(func, 0, arg1, arg2, arg3)
 #define DirectFunctionCall4(func, arg1, arg2, arg3, arg4) \
-	DirectFunctionCall4Coll(func, InvalidOid, arg1, arg2, arg3, arg4)
+	DirectFunctionCall4Coll(func, 0, arg1, arg2, arg3, arg4)
 #define DirectFunctionCall5(func, arg1, arg2, arg3, arg4, arg5) \
-	DirectFunctionCall5Coll(func, InvalidOid, arg1, arg2, arg3, arg4, arg5)
+	DirectFunctionCall5Coll(func, 0, arg1, arg2, arg3, arg4, arg5)
 #define DirectFunctionCall6(func, arg1, arg2, arg3, arg4, arg5, arg6) \
-	DirectFunctionCall6Coll(func, InvalidOid, arg1, arg2, arg3, arg4, arg5, arg6)
+	DirectFunctionCall6Coll(func, 0, arg1, arg2, arg3, arg4, arg5, arg6)
 #define DirectFunctionCall7(func, arg1, arg2, arg3, arg4, arg5, arg6, arg7) \
-	DirectFunctionCall7Coll(func, InvalidOid, arg1, arg2, arg3, arg4, arg5, arg6, arg7)
+	DirectFunctionCall7Coll(func, 0, arg1, arg2, arg3, arg4, arg5, arg6, arg7)
 #define DirectFunctionCall8(func, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8) \
-	DirectFunctionCall8Coll(func, InvalidOid, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8)
+	DirectFunctionCall8Coll(func, 0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8)
 #define DirectFunctionCall9(func, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9) \
-	DirectFunctionCall9Coll(func, InvalidOid, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
+	DirectFunctionCall9Coll(func, 0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
 #define FunctionCall1(flinfo, arg1) \
-	FunctionCall1Coll(flinfo, InvalidOid, arg1)
+	FunctionCall1Coll(flinfo, 0, arg1)
 #define FunctionCall2(flinfo, arg1, arg2) \
-	FunctionCall2Coll(flinfo, InvalidOid, arg1, arg2)
+	FunctionCall2Coll(flinfo, 0, arg1, arg2)
 #define FunctionCall3(flinfo, arg1, arg2, arg3) \
-	FunctionCall3Coll(flinfo, InvalidOid, arg1, arg2, arg3)
+	FunctionCall3Coll(flinfo, 0, arg1, arg2, arg3)
 #define FunctionCall4(flinfo, arg1, arg2, arg3, arg4) \
-	FunctionCall4Coll(flinfo, InvalidOid, arg1, arg2, arg3, arg4)
+	FunctionCall4Coll(flinfo, 0, arg1, arg2, arg3, arg4)
 #define FunctionCall5(flinfo, arg1, arg2, arg3, arg4, arg5) \
-	FunctionCall5Coll(flinfo, InvalidOid, arg1, arg2, arg3, arg4, arg5)
+	FunctionCall5Coll(flinfo, 0, arg1, arg2, arg3, arg4, arg5)
 #define FunctionCall6(flinfo, arg1, arg2, arg3, arg4, arg5, arg6) \
-	FunctionCall6Coll(flinfo, InvalidOid, arg1, arg2, arg3, arg4, arg5, arg6)
+	FunctionCall6Coll(flinfo, 0, arg1, arg2, arg3, arg4, arg5, arg6)
 #define FunctionCall7(flinfo, arg1, arg2, arg3, arg4, arg5, arg6, arg7) \
-	FunctionCall7Coll(flinfo, InvalidOid, arg1, arg2, arg3, arg4, arg5, arg6, arg7)
+	FunctionCall7Coll(flinfo, 0, arg1, arg2, arg3, arg4, arg5, arg6, arg7)
 #define FunctionCall8(flinfo, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8) \
-	FunctionCall8Coll(flinfo, InvalidOid, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8)
+	FunctionCall8Coll(flinfo, 0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8)
 #define FunctionCall9(flinfo, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9) \
-	FunctionCall9Coll(flinfo, InvalidOid, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
+	FunctionCall9Coll(flinfo, 0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
 #define OidFunctionCall0(functionId) \
-	OidFunctionCall0Coll(functionId, InvalidOid)
+	OidFunctionCall0Coll(functionId, 0)
 #define OidFunctionCall1(functionId, arg1) \
-	OidFunctionCall1Coll(functionId, InvalidOid, arg1)
+	OidFunctionCall1Coll(functionId, 0, arg1)
 #define OidFunctionCall2(functionId, arg1, arg2) \
-	OidFunctionCall2Coll(functionId, InvalidOid, arg1, arg2)
+	OidFunctionCall2Coll(functionId, 0, arg1, arg2)
 #define OidFunctionCall3(functionId, arg1, arg2, arg3) \
-	OidFunctionCall3Coll(functionId, InvalidOid, arg1, arg2, arg3)
+	OidFunctionCall3Coll(functionId, 0, arg1, arg2, arg3)
 #define OidFunctionCall4(functionId, arg1, arg2, arg3, arg4) \
-	OidFunctionCall4Coll(functionId, InvalidOid, arg1, arg2, arg3, arg4)
+	OidFunctionCall4Coll(functionId, 0, arg1, arg2, arg3, arg4)
 #define OidFunctionCall5(functionId, arg1, arg2, arg3, arg4, arg5) \
-	OidFunctionCall5Coll(functionId, InvalidOid, arg1, arg2, arg3, arg4, arg5)
+	OidFunctionCall5Coll(functionId, 0, arg1, arg2, arg3, arg4, arg5)
 #define OidFunctionCall6(functionId, arg1, arg2, arg3, arg4, arg5, arg6) \
-	OidFunctionCall6Coll(functionId, InvalidOid, arg1, arg2, arg3, arg4, arg5, arg6)
+	OidFunctionCall6Coll(functionId, 0, arg1, arg2, arg3, arg4, arg5, arg6)
 #define OidFunctionCall7(functionId, arg1, arg2, arg3, arg4, arg5, arg6, arg7) \
-	OidFunctionCall7Coll(functionId, InvalidOid, arg1, arg2, arg3, arg4, arg5, arg6, arg7)
+	OidFunctionCall7Coll(functionId, 0, arg1, arg2, arg3, arg4, arg5, arg6, arg7)
 #define OidFunctionCall8(functionId, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8) \
-	OidFunctionCall8Coll(functionId, InvalidOid, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8)
+	OidFunctionCall8Coll(functionId, 0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8)
 #define OidFunctionCall9(functionId, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9) \
-	OidFunctionCall9Coll(functionId, InvalidOid, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
+	OidFunctionCall9Coll(functionId, 0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
 
 
 /* Special cases for convenient invocation of datatype I/O functions. */

@@ -144,16 +144,16 @@ static ArrayType *array_fill_internal(ArrayType *dims, ArrayType *lbs,
 static ArrayType *array_replace_internal(ArrayType *array,
 					   Datum search, bool search_isnull,
 					   Datum replace, bool replace_isnull,
-					   bool remove, Oid collation,
+					   bool remove, fmLocalePtr collation,
 					   FunctionCallInfo fcinfo);
 static int	width_bucket_array_float8(Datum operand, ArrayType *thresholds);
 static int width_bucket_array_fixed(Datum operand,
 						 ArrayType *thresholds,
-						 Oid collation,
+						 fmLocalePtr collation,
 						 TypeCacheEntry *typentry);
 static int width_bucket_array_variable(Datum operand,
 							ArrayType *thresholds,
-							Oid collation,
+							fmLocalePtr collation,
 							TypeCacheEntry *typentry);
 
 
@@ -3573,7 +3573,7 @@ array_eq(PG_FUNCTION_ARGS)
 {
 	AnyArrayType *array1 = PG_GETARG_ANY_ARRAY_P(0);
 	AnyArrayType *array2 = PG_GETARG_ANY_ARRAY_P(1);
-	Oid			collation = PG_GET_COLLATION();
+	fmLocalePtr	collation = PG_GET_COLLATION();
 	int			ndims1 = AARR_NDIM(array1);
 	int			ndims2 = AARR_NDIM(array2);
 	int		   *dims1 = AARR_DIMS(array1);
@@ -3744,7 +3744,7 @@ array_cmp(FunctionCallInfo fcinfo)
 {
 	AnyArrayType *array1 = PG_GETARG_ANY_ARRAY_P(0);
 	AnyArrayType *array2 = PG_GETARG_ANY_ARRAY_P(1);
-	Oid			collation = PG_GET_COLLATION();
+	fmLocalePtr	collation = PG_GET_COLLATION();
 	int			ndims1 = AARR_NDIM(array1);
 	int			ndims2 = AARR_NDIM(array2);
 	int		   *dims1 = AARR_DIMS(array1);
@@ -4097,7 +4097,7 @@ hash_array_extended(PG_FUNCTION_ARGS)
  * When matchall is false, return true if any members of array1 are in array2.
  */
 static bool
-array_contain_compare(AnyArrayType *array1, AnyArrayType *array2, Oid collation,
+array_contain_compare(AnyArrayType *array1, AnyArrayType *array2, fmLocalePtr collation,
 					  bool matchall, void **fn_extra)
 {
 	bool		result = matchall;
@@ -4244,7 +4244,7 @@ arrayoverlap(PG_FUNCTION_ARGS)
 {
 	AnyArrayType *array1 = PG_GETARG_ANY_ARRAY_P(0);
 	AnyArrayType *array2 = PG_GETARG_ANY_ARRAY_P(1);
-	Oid			collation = PG_GET_COLLATION();
+	fmLocalePtr	collation = PG_GET_COLLATION();
 	bool		result;
 
 	result = array_contain_compare(array1, array2, collation, false,
@@ -4262,7 +4262,7 @@ arraycontains(PG_FUNCTION_ARGS)
 {
 	AnyArrayType *array1 = PG_GETARG_ANY_ARRAY_P(0);
 	AnyArrayType *array2 = PG_GETARG_ANY_ARRAY_P(1);
-	Oid			collation = PG_GET_COLLATION();
+	fmLocalePtr	collation = PG_GET_COLLATION();
 	bool		result;
 
 	result = array_contain_compare(array2, array1, collation, true,
@@ -4280,7 +4280,7 @@ arraycontained(PG_FUNCTION_ARGS)
 {
 	AnyArrayType *array1 = PG_GETARG_ANY_ARRAY_P(0);
 	AnyArrayType *array2 = PG_GETARG_ANY_ARRAY_P(1);
-	Oid			collation = PG_GET_COLLATION();
+	fmLocalePtr	collation = PG_GET_COLLATION();
 	bool		result;
 
 	result = array_contain_compare(array1, array2, collation, true,
@@ -6039,7 +6039,7 @@ static ArrayType *
 array_replace_internal(ArrayType *array,
 					   Datum search, bool search_isnull,
 					   Datum replace, bool replace_isnull,
-					   bool remove, Oid collation,
+					   bool remove, fmLocalePtr collation,
 					   FunctionCallInfo fcinfo)
 {
 	ArrayType  *result;
@@ -6349,7 +6349,7 @@ width_bucket_array(PG_FUNCTION_ARGS)
 {
 	Datum		operand = PG_GETARG_DATUM(0);
 	ArrayType  *thresholds = PG_GETARG_ARRAYTYPE_P(1);
-	Oid			collation = PG_GET_COLLATION();
+	fmLocalePtr	collation = PG_GET_COLLATION();
 	Oid			element_type = ARR_ELEMTYPE(thresholds);
 	int			result;
 
@@ -6454,7 +6454,7 @@ width_bucket_array_float8(Datum operand, ArrayType *thresholds)
 static int
 width_bucket_array_fixed(Datum operand,
 						 ArrayType *thresholds,
-						 Oid collation,
+						 fmLocalePtr collation,
 						 TypeCacheEntry *typentry)
 {
 	char	   *thresholds_data;
@@ -6507,7 +6507,7 @@ width_bucket_array_fixed(Datum operand,
 static int
 width_bucket_array_variable(Datum operand,
 							ArrayType *thresholds,
-							Oid collation,
+							fmLocalePtr collation,
 							TypeCacheEntry *typentry)
 {
 	char	   *thresholds_data;

@@ -20,6 +20,7 @@
 #include "catalog/pg_type.h"
 #include "utils/builtins.h"
 #include "utils/jsonb.h"
+#include "utils/pg_locale.h"
 #include "utils/varlena.h"
 
 typedef struct PathHashStack
@@ -55,7 +56,7 @@ gin_compare_jsonb(PG_FUNCTION_ARGS)
 	len2 = VARSIZE_ANY_EXHDR(arg2);
 
 	/* Compare text as bttextcmp does, but always using C collation */
-	result = varstr_cmp(a1p, len1, a2p, len2, C_COLLATION_OID);
+	result = varstr_cmp(a1p, len1, a2p, len2, pg_newlocale_from_collation(C_COLLATION_OID));
 
 	PG_FREE_IF_COPY(arg1, 0);
 	PG_FREE_IF_COPY(arg2, 1);

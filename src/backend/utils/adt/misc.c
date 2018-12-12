@@ -37,6 +37,7 @@
 #include "utils/ruleutils.h"
 #include "tcop/tcopprot.h"
 #include "utils/builtins.h"
+#include "utils/pg_locale.h"
 #include "utils/timestamp.h"
 
 
@@ -476,7 +477,7 @@ Datum
 pg_collation_for(PG_FUNCTION_ARGS)
 {
 	Oid			typeid;
-	Oid			collid;
+	pg_locale_t	collation;
 
 	typeid = get_fn_expr_argtype(fcinfo->flinfo, 0);
 	if (!typeid)
@@ -487,10 +488,10 @@ pg_collation_for(PG_FUNCTION_ARGS)
 				 errmsg("collations are not supported by type %s",
 						format_type_be(typeid))));
 
-	collid = PG_GET_COLLATION();
-	if (!collid)
+	collation = PG_GET_COLLATION();
+	if (!collation)
 		PG_RETURN_NULL();
-	PG_RETURN_TEXT_P(cstring_to_text(generate_collation_name(collid)));
+	PG_RETURN_TEXT_P(cstring_to_text(generate_collation_name(collation->collid)));
 }
 
 

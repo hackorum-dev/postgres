@@ -21,6 +21,7 @@
 #include "utils/builtins.h"
 #include "utils/datum.h"
 #include "utils/lsyscache.h"
+#include "utils/pg_locale.h"
 #include "utils/typcache.h"
 
 
@@ -712,7 +713,7 @@ element_hash(const void *key, Size keysize)
 	Datum		d = *((const Datum *) key);
 	Datum		h;
 
-	h = FunctionCall1Coll(array_extra_data->hash, DEFAULT_COLLATION_OID, d);
+	h = FunctionCall1Coll(array_extra_data->hash, pg_newlocale_from_collation(DEFAULT_COLLATION_OID), d);
 	return DatumGetUInt32(h);
 }
 
@@ -741,7 +742,7 @@ element_compare(const void *key1, const void *key2)
 	Datum		d2 = *((const Datum *) key2);
 	Datum		c;
 
-	c = FunctionCall2Coll(array_extra_data->cmp, DEFAULT_COLLATION_OID, d1, d2);
+	c = FunctionCall2Coll(array_extra_data->cmp, pg_newlocale_from_collation(DEFAULT_COLLATION_OID), d1, d2);
 	return DatumGetInt32(c);
 }
 

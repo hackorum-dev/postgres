@@ -729,7 +729,7 @@ NIAddAffix(IspellDict *Conf, const char *flag, char flagflags, const char *mask,
 
 		err = pg_regcomp(&(Affix->reg.regex), wmask, wmasklen,
 						 REG_ADVANCED | REG_NOSUB,
-						 DEFAULT_COLLATION_OID);
+						 pg_newlocale_from_collation(DEFAULT_COLLATION_OID));
 		if (err)
 		{
 			char		errstr[100];

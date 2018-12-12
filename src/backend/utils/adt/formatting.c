@@ -976,7 +976,7 @@ static void parse_format(FormatNode *node, const char *str, const KeyWord *kw,
 			 const KeySuffix *suf, const int *index, int ver, NUMDesc *Num);
 
 static void DCH_to_char(FormatNode *node, bool is_interval,
-			TmToChar *in, char *out, Oid collid);
+			TmToChar *in, char *out, pg_locale_t collation);
 static void DCH_from_char(FormatNode *node, char *in, TmFromChar *out);
 
 #ifdef DEBUG_TO_FROM_CHAR
@@ -1005,7 +1005,7 @@ static void NUM_numpart_from_char(NUMProc *Np, int id, int input_len);
 static void NUM_numpart_to_char(NUMProc *Np, int id);
 static char *NUM_processor(FormatNode *node, NUMDesc *Num, char *inout,
 			  char *number, int input_len, int to_char_out_pre_spaces,
-			  int sign, bool is_to_char, Oid collid);
+			  int sign, bool is_to_char, pg_locale_t collation);
 static DCHCacheEntry *DCH_cache_getnew(const char *str);
 static DCHCacheEntry *DCH_cache_search(const char *str);
 static DCHCacheEntry *DCH_cache_fetch(const char *str);
@@ -1540,40 +1540,34 @@ u_strToTitle_default_BI(UChar *dest, int32_t destCapacity,
  * to this function.  The result is a palloc'd, null-terminated string.
  */
 char *
-str_tolower(const char *buff, size_t nbytes, Oid collid)
+str_tolower(const char *buff, size_t nbytes, pg_locale_t collation)
 {
 	char	   *result;
 
 	if (!buff)
 		return NULL;
 
+	if (!collation)
+	{
+		/*
+		 * This typically means that the parser could not resolve a
+		 * conflict of implicit collations, so report it that way.
+		 */
+		ereport(ERROR,
+				(errcode(ERRCODE_INDETERMINATE_COLLATION),
+				 errmsg("could not determine which collation to use for lower() function"),
+				 errhint("Use the COLLATE clause to set the collation explicitly.")));
+	}
+
 	/* C/POSIX collations use this path regardless of database encoding */
-	if (lc_ctype_is_c(collid))
+	if (collation->ctype_is_c)
 	{
 		result = asc_tolower(buff, nbytes);
 	}
 	else
 	{
-		pg_locale_t mylocale = 0;
-
-		if (collid != DEFAULT_COLLATION_OID)
-		{
-			if (!OidIsValid(collid))
-			{
-				/*
-				 * This typically means that the parser could not resolve a
-				 * conflict of implicit collations, so report it that way.
-				 */
-				ereport(ERROR,
-						(errcode(ERRCODE_INDETERMINATE_COLLATION),
-						 errmsg("could not determine which collation to use for lower() function"),
-						 errhint("Use the COLLATE clause to set the collation explicitly.")));
-			}
-			mylocale = pg_newlocale_from_collation(collid);
-		}
-
 #ifdef USE_ICU
-		if (mylocale && mylocale->provider == COLLPROVIDER_ICU)
+		if (collation->provider == COLLPROVIDER_ICU)
 		{
 			int32_t		len_uchar;
 			int32_t		len_conv;
@@ -1581,7 +1575,7 @@ str_tolower(const char *buff, size_t nbytes, Oid collid)
 			UChar	   *buff_conv;
 
 			len_uchar = icu_to_uchar(&buff_uchar, buff, nbytes);
-			len_conv = icu_convert_case(u_strToLower, mylocale,
+			len_conv = icu_convert_case(u_strToLower, collation,
 										&buff_conv, buff_uchar, len_uchar);
 			icu_from_uchar(&result, buff_conv, len_conv);
 			pfree(buff_uchar);
@@ -1604,13 +1598,13 @@ str_tolower(const char *buff, size_t nbytes, Oid collid)
 				/* Output workspace cannot have more codes than input bytes */
 				workspace = (wchar_t *) palloc((nbytes + 1) * sizeof(wchar_t));
 
-				char2wchar(workspace, nbytes + 1, buff, nbytes, mylocale);
+				char2wchar(workspace, nbytes + 1, buff, nbytes, collation);
 
 				for (curr_char = 0; workspace[curr_char] != 0; curr_char++)
 				{
 #ifdef HAVE_LOCALE_T
-					if (mylocale)
-						workspace[curr_char] = towlower_l(workspace[curr_char], mylocale->info.lt);
+					if (collation->provider == COLLPROVIDER_LIBC)
+						workspace[curr_char] = towlower_l(workspace[curr_char], collation->info.lt);
 					else
 #endif
 						workspace[curr_char] = towlower(workspace[curr_char]);
@@ -1623,7 +1617,7 @@ str_tolower(const char *buff, size_t nbytes, Oid collid)
 				result_size = curr_char * pg_database_encoding_max_length() + 1;
 				result = palloc(result_size);
 
-				wchar2char(result, workspace, result_size, mylocale);
+				wchar2char(result, workspace, result_size, collation);
 				pfree(workspace);
 			}
 			else
@@ -1642,8 +1636,8 @@ str_tolower(const char *buff, size_t nbytes, Oid collid)
 				for (p = result; *p; p++)
 				{
 #ifdef HAVE_LOCALE_T
-					if (mylocale)
-						*p = tolower_l((unsigned char) *p, mylocale->info.lt);
+					if (collation->provider == COLLPROVIDER_LIBC)
+						*p = tolower_l((unsigned char) *p, collation->info.lt);
 					else
 #endif
 						*p = pg_tolower((unsigned char) *p);
@@ -1662,40 +1656,34 @@ str_tolower(const char *buff, size_t nbytes, Oid collid)
  * to this function.  The result is a palloc'd, null-terminated string.
  */
 char *
-str_toupper(const char *buff, size_t nbytes, Oid collid)
+str_toupper(const char *buff, size_t nbytes, pg_locale_t collation)
 {
 	char	   *result;
 
 	if (!buff)
 		return NULL;
 
+	if (!collation)
+	{
+		/*
+		 * This typically means that the parser could not resolve a
+		 * conflict of implicit collations, so report it that way.
+		 */
+		ereport(ERROR,
+				(errcode(ERRCODE_INDETERMINATE_COLLATION),
+				 errmsg("could not determine which collation to use for upper() function"),
+				 errhint("Use the COLLATE clause to set the collation explicitly.")));
+	}
+
 	/* C/POSIX collations use this path regardless of database encoding */
-	if (lc_ctype_is_c(collid))
+	if (collation->ctype_is_c)
 	{
 		result = asc_toupper(buff, nbytes);
 	}
 	else
 	{
-		pg_locale_t mylocale = 0;
-
-		if (collid != DEFAULT_COLLATION_OID)
-		{
-			if (!OidIsValid(collid))
-			{
-				/*
-				 * This typically means that the parser could not resolve a
-				 * conflict of implicit collations, so report it that way.
-				 */
-				ereport(ERROR,
-						(errcode(ERRCODE_INDETERMINATE_COLLATION),
-						 errmsg("could not determine which collation to use for upper() function"),
-						 errhint("Use the COLLATE clause to set the collation explicitly.")));
-			}
-			mylocale = pg_newlocale_from_collation(collid);
-		}
-
 #ifdef USE_ICU
-		if (mylocale && mylocale->provider == COLLPROVIDER_ICU)
+		if (collation->provider == COLLPROVIDER_ICU)
 		{
 			int32_t		len_uchar,
 						len_conv;
@@ -1703,7 +1691,7 @@ str_toupper(const char *buff, size_t nbytes, Oid collid)
 			UChar	   *buff_conv;
 
 			len_uchar = icu_to_uchar(&buff_uchar, buff, nbytes);
-			len_conv = icu_convert_case(u_strToUpper, mylocale,
+			len_conv = icu_convert_case(u_strToUpper, collation,
 										&buff_conv, buff_uchar, len_uchar);
 			icu_from_uchar(&result, buff_conv, len_conv);
 			pfree(buff_uchar);
@@ -1726,13 +1714,13 @@ str_toupper(const char *buff, size_t nbytes, Oid collid)
 				/* Output workspace cannot have more codes than input bytes */
 				workspace = (wchar_t *) palloc((nbytes + 1) * sizeof(wchar_t));
 
-				char2wchar(workspace, nbytes + 1, buff, nbytes, mylocale);
+				char2wchar(workspace, nbytes + 1, buff, nbytes, collation);
 
 				for (curr_char = 0; workspace[curr_char] != 0; curr_char++)
 				{
 #ifdef HAVE_LOCALE_T
-					if (mylocale)
-						workspace[curr_char] = towupper_l(workspace[curr_char], mylocale->info.lt);
+					if (collation->provider == COLLPROVIDER_LIBC)
+						workspace[curr_char] = towupper_l(workspace[curr_char], collation->info.lt);
 					else
 #endif
 						workspace[curr_char] = towupper(workspace[curr_char]);
@@ -1745,7 +1733,7 @@ str_toupper(const char *buff, size_t nbytes, Oid collid)
 				result_size = curr_char * pg_database_encoding_max_length() + 1;
 				result = palloc(result_size);
 
-				wchar2char(result, workspace, result_size, mylocale);
+				wchar2char(result, workspace, result_size, collation);
 				pfree(workspace);
 			}
 			else
@@ -1764,8 +1752,8 @@ str_toupper(const char *buff, size_t nbytes, Oid collid)
 				for (p = result; *p; p++)
 				{
 #ifdef HAVE_LOCALE_T
-					if (mylocale)
-						*p = toupper_l((unsigned char) *p, mylocale->info.lt);
+					if (collation->provider == COLLPROVIDER_LIBC)
+						*p = toupper_l((unsigned char) *p, collation->info.lt);
 					else
 #endif
 						*p = pg_toupper((unsigned char) *p);
@@ -1784,7 +1772,7 @@ str_toupper(const char *buff, size_t nbytes, Oid collid)
  * to this function.  The result is a palloc'd, null-terminated string.
  */
 char *
-str_initcap(const char *buff, size_t nbytes, Oid collid)
+str_initcap(const char *buff, size_t nbytes, pg_locale_t collation)
 {
 	char	   *result;
 	int			wasalnum = false;
@@ -1792,33 +1780,27 @@ str_initcap(const char *buff, size_t nbytes, Oid collid)
 	if (!buff)
 		return NULL;
 
+	if (!collation)
+	{
+		/*
+		 * This typically means that the parser could not resolve a
+		 * conflict of implicit collations, so report it that way.
+		 */
+		ereport(ERROR,
+				(errcode(ERRCODE_INDETERMINATE_COLLATION),
+				 errmsg("could not determine which collation to use for initcap() function"),
+				 errhint("Use the COLLATE clause to set the collation explicitly.")));
+	}
+
 	/* C/POSIX collations use this path regardless of database encoding */
-	if (lc_ctype_is_c(collid))
+	if (collation->ctype_is_c)
 	{
 		result = asc_initcap(buff, nbytes);
 	}
 	else
 	{
-		pg_locale_t mylocale = 0;
-
-		if (collid != DEFAULT_COLLATION_OID)
-		{
-			if (!OidIsValid(collid))
-			{
-				/*
-				 * This typically means that the parser could not resolve a
-				 * conflict of implicit collations, so report it that way.
-				 */
-				ereport(ERROR,
-						(errcode(ERRCODE_INDETERMINATE_COLLATION),
-						 errmsg("could not determine which collation to use for initcap() function"),
-						 errhint("Use the COLLATE clause to set the collation explicitly.")));
-			}
-			mylocale = pg_newlocale_from_collation(collid);
-		}
-
 #ifdef USE_ICU
-		if (mylocale && mylocale->provider == COLLPROVIDER_ICU)
+		if (collation->provider == COLLPROVIDER_ICU)
 		{
 			int32_t		len_uchar,
 						len_conv;
@@ -1826,7 +1808,7 @@ str_initcap(const char *buff, size_t nbytes, Oid collid)
 			UChar	   *buff_conv;
 
 			len_uchar = icu_to_uchar(&buff_uchar, buff, nbytes);
-			len_conv = icu_convert_case(u_strToTitle_default_BI, mylocale,
+			len_conv = icu_convert_case(u_strToTitle_default_BI, collation,
 										&buff_conv, buff_uchar, len_uchar);
 			icu_from_uchar(&result, buff_conv, len_conv);
 			pfree(buff_uchar);
@@ -1849,18 +1831,18 @@ str_initcap(const char *buff, size_t nbytes, Oid collid)
 				/* Output workspace cannot have more codes than input bytes */
 				workspace = (wchar_t *) palloc((nbytes + 1) * sizeof(wchar_t));
 
-				char2wchar(workspace, nbytes + 1, buff, nbytes, mylocale);
+				char2wchar(workspace, nbytes + 1, buff, nbytes, collation);
 
 				for (curr_char = 0; workspace[curr_char] != 0; curr_char++)
 				{
 #ifdef HAVE_LOCALE_T
-					if (mylocale)
+					if (collation->provider == COLLPROVIDER_LIBC)
 					{
 						if (wasalnum)
-							workspace[curr_char] = towlower_l(workspace[curr_char], mylocale->info.lt);
+							workspace[curr_char] = towlower_l(workspace[curr_char], collation->info.lt);
 						else
-							workspace[curr_char] = towupper_l(workspace[curr_char], mylocale->info.lt);
-						wasalnum = iswalnum_l(workspace[curr_char], mylocale->info.lt);
+							workspace[curr_char] = towupper_l(workspace[curr_char], collation->info.lt);
+						wasalnum = iswalnum_l(workspace[curr_char], collation->info.lt);
 					}
 					else
 #endif
@@ -1880,7 +1862,7 @@ str_initcap(const char *buff, size_t nbytes, Oid collid)
 				result_size = curr_char * pg_database_encoding_max_length() + 1;
 				result = palloc(result_size);
 
-				wchar2char(result, workspace, result_size, mylocale);
+				wchar2char(result, workspace, result_size, collation);
 				pfree(workspace);
 			}
 			else
@@ -1899,13 +1881,13 @@ str_initcap(const char *buff, size_t nbytes, Oid collid)
 				for (p = result; *p; p++)
 				{
 #ifdef HAVE_LOCALE_T
-					if (mylocale)
+					if (collation->provider == COLLPROVIDER_LIBC)
 					{
 						if (wasalnum)
-							*p = tolower_l((unsigned char) *p, mylocale->info.lt);
+							*p = tolower_l((unsigned char) *p, collation->info.lt);
 						else
-							*p = toupper_l((unsigned char) *p, mylocale->info.lt);
-						wasalnum = isalnum_l((unsigned char) *p, mylocale->info.lt);
+							*p = toupper_l((unsigned char) *p, collation->info.lt);
+						wasalnum = isalnum_l((unsigned char) *p, collation->info.lt);
 					}
 					else
 #endif
@@ -2008,21 +1990,21 @@ asc_initcap(const char *buff, size_t nbytes)
 /* convenience routines for when the input is null-terminated */
 
 static char *
-str_tolower_z(const char *buff, Oid collid)
+str_tolower_z(const char *buff, pg_locale_t collation)
 {
-	return str_tolower(buff, strlen(buff), collid);
+	return str_tolower(buff, strlen(buff), collation);
 }
 
 static char *
-str_toupper_z(const char *buff, Oid collid)
+str_toupper_z(const char *buff, pg_locale_t collation)
 {
-	return str_toupper(buff, strlen(buff), collid);
+	return str_toupper(buff, strlen(buff), collation);
 }
 
 static char *
-str_initcap_z(const char *buff, Oid collid)
+str_initcap_z(const char *buff, pg_locale_t collation)
 {
-	return str_initcap(buff, strlen(buff), collid);
+	return str_initcap(buff, strlen(buff), collation);
 }
 
 static char *
@@ -2433,7 +2415,7 @@ from_char_seq_search(int *dest, char **src, const char *const *array, int type, 
  * ----------
  */
 static void
-DCH_to_char(FormatNode *node, bool is_interval, TmToChar *in, char *out, Oid collid)
+DCH_to_char(FormatNode *node, bool is_interval, TmToChar *in, char *out, pg_locale_t collation)
 {
 	FormatNode *n;
 	char	   *s;
@@ -2611,7 +2593,7 @@ DCH_to_char(FormatNode *node, bool is_interval, TmToChar *in, char *out, Oid col
 					break;
 				if (S_TM(n->suffix))
 				{
-					char	   *str = str_toupper_z(localized_full_months[tm->tm_mon - 1], collid);
+					char	   *str = str_toupper_z(localized_full_months[tm->tm_mon - 1], collation);
 
 					if (strlen(str) <= (n->key->len + TM_SUFFIX_LEN) * DCH_MAX_ITEM_SIZ)
 						strcpy(s, str);
@@ -2631,7 +2613,7 @@ DCH_to_char(FormatNode *node, bool is_interval, TmToChar *in, char *out, Oid col
 					break;
 				if (S_TM(n->suffix))
 				{
-					char	   *str = str_initcap_z(localized_full_months[tm->tm_mon - 1], collid);
+					char	   *str = str_initcap_z(localized_full_months[tm->tm_mon - 1], collation);
 
 					if (strlen(str) <= (n->key->len + TM_SUFFIX_LEN) * DCH_MAX_ITEM_SIZ)
 						strcpy(s, str);
@@ -2651,7 +2633,7 @@ DCH_to_char(FormatNode *node, bool is_interval, TmToChar *in, char *out, Oid col
 					break;
 				if (S_TM(n->suffix))
 				{
-					char	   *str = str_tolower_z(localized_full_months[tm->tm_mon - 1], collid);
+					char	   *str = str_tolower_z(localized_full_months[tm->tm_mon - 1], collation);
 
 					if (strlen(str) <= (n->key->len + TM_SUFFIX_LEN) * DCH_MAX_ITEM_SIZ)
 						strcpy(s, str);
@@ -2671,7 +2653,7 @@ DCH_to_char(FormatNode *node, bool is_interval, TmToChar *in, char *out, Oid col
 					break;
 				if (S_TM(n->suffix))
 				{
-					char	   *str = str_toupper_z(localized_abbrev_months[tm->tm_mon - 1], collid);
+					char	   *str = str_toupper_z(localized_abbrev_months[tm->tm_mon - 1], collation);
 
 					if (strlen(str) <= (n->key->len + TM_SUFFIX_LEN) * DCH_MAX_ITEM_SIZ)
 						strcpy(s, str);
@@ -2690,7 +2672,7 @@ DCH_to_char(FormatNode *node, bool is_interval, TmToChar *in, char *out, Oid col
 					break;
 				if (S_TM(n->suffix))
 				{
-					char	   *str = str_initcap_z(localized_abbrev_months[tm->tm_mon - 1], collid);
+					char	   *str = str_initcap_z(localized_abbrev_months[tm->tm_mon - 1], collation);
 
 					if (strlen(str) <= (n->key->len + TM_SUFFIX_LEN) * DCH_MAX_ITEM_SIZ)
 						strcpy(s, str);
@@ -2709,7 +2691,7 @@ DCH_to_char(FormatNode *node, bool is_interval, TmToChar *in, char *out, Oid col
 					break;
 				if (S_TM(n->suffix))
 				{
-					char	   *str = str_tolower_z(localized_abbrev_months[tm->tm_mon - 1], collid);
+					char	   *str = str_tolower_z(localized_abbrev_months[tm->tm_mon - 1], collation);
 
 					if (strlen(str) <= (n->key->len + TM_SUFFIX_LEN) * DCH_MAX_ITEM_SIZ)
 						strcpy(s, str);
@@ -2733,7 +2715,7 @@ DCH_to_char(FormatNode *node, bool is_interval, TmToChar *in, char *out, Oid col
 				INVALID_FOR_INTERVAL;
 				if (S_TM(n->suffix))
 				{
-					char	   *str = str_toupper_z(localized_full_days[tm->tm_wday], collid);
+					char	   *str = str_toupper_z(localized_full_days[tm->tm_wday], collation);
 
 					if (strlen(str) <= (n->key->len + TM_SUFFIX_LEN) * DCH_MAX_ITEM_SIZ)
 						strcpy(s, str);
@@ -2751,7 +2733,7 @@ DCH_to_char(FormatNode *node, bool is_interval, TmToChar *in, char *out, Oid col
 				INVALID_FOR_INTERVAL;
 				if (S_TM(n->suffix))
 				{
-					char	   *str = str_initcap_z(localized_full_days[tm->tm_wday], collid);
+					char	   *str = str_initcap_z(localized_full_days[tm->tm_wday], collation);
 
 					if (strlen(str) <= (n->key->len + TM_SUFFIX_LEN) * DCH_MAX_ITEM_SIZ)
 						strcpy(s, str);
@@ -2769,7 +2751,7 @@ DCH_to_char(FormatNode *node, bool is_interval, TmToChar *in, char *out, Oid col
 				INVALID_FOR_INTERVAL;
 				if (S_TM(n->suffix))
 				{
-					char	   *str = str_tolower_z(localized_full_days[tm->tm_wday], collid);
+					char	   *str = str_tolower_z(localized_full_days[tm->tm_wday], collation);
 
 					if (strlen(str) <= (n->key->len + TM_SUFFIX_LEN) * DCH_MAX_ITEM_SIZ)
 						strcpy(s, str);
@@ -2787,7 +2769,7 @@ DCH_to_char(FormatNode *node, bool is_interval, TmToChar *in, char *out, Oid col
 				INVALID_FOR_INTERVAL;
 				if (S_TM(n->suffix))
 				{
-					char	   *str = str_toupper_z(localized_abbrev_days[tm->tm_wday], collid);
+					char	   *str = str_toupper_z(localized_abbrev_days[tm->tm_wday], collation);
 
 					if (strlen(str) <= (n->key->len + TM_SUFFIX_LEN) * DCH_MAX_ITEM_SIZ)
 						strcpy(s, str);
@@ -2804,7 +2786,7 @@ DCH_to_char(FormatNode *node, bool is_interval, TmToChar *in, char *out, Oid col
 				INVALID_FOR_INTERVAL;
 				if (S_TM(n->suffix))
 				{
-					char	   *str = str_initcap_z(localized_abbrev_days[tm->tm_wday], collid);
+					char	   *str = str_initcap_z(localized_abbrev_days[tm->tm_wday], collation);
 
 					if (strlen(str) <= (n->key->len + TM_SUFFIX_LEN) * DCH_MAX_ITEM_SIZ)
 						strcpy(s, str);
@@ -2821,7 +2803,7 @@ DCH_to_char(FormatNode *node, bool is_interval, TmToChar *in, char *out, Oid col
 				INVALID_FOR_INTERVAL;
 				if (S_TM(n->suffix))
 				{
-					char	   *str = str_tolower_z(localized_abbrev_days[tm->tm_wday], collid);
+					char	   *str = str_tolower_z(localized_abbrev_days[tm->tm_wday], collation);
 
 					if (strlen(str) <= (n->key->len + TM_SUFFIX_LEN) * DCH_MAX_ITEM_SIZ)
 						strcpy(s, str);
@@ -3503,7 +3485,7 @@ DCH_cache_fetch(const char *str)
  * for formatting.
  */
 static text *
-datetime_to_char_body(TmToChar *tmtc, text *fmt, bool is_interval, Oid collid)
+datetime_to_char_body(TmToChar *tmtc, text *fmt, bool is_interval, pg_locale_t collation)
 {
 	FormatNode *format;
 	char	   *fmt_str,
@@ -3549,7 +3531,7 @@ datetime_to_char_body(TmToChar *tmtc, text *fmt, bool is_interval, Oid collid)
 	}
 
 	/* The real work is here */
-	DCH_to_char(format, is_interval, tmtc, result, collid);
+	DCH_to_char(format, is_interval, tmtc, result, collation);
 
 	if (!incache)
 		pfree(format);
@@ -4830,7 +4812,7 @@ NUM_eat_non_data_chars(NUMProc *Np, int n, int input_len)
 static char *
 NUM_processor(FormatNode *node, NUMDesc *Num, char *inout,
 			  char *number, int input_len, int to_char_out_pre_spaces,
-			  int sign, bool is_to_char, Oid collid)
+			  int sign, bool is_to_char, pg_locale_t collation)
 {
 	FormatNode *n;
 	NUMProc		_Np,

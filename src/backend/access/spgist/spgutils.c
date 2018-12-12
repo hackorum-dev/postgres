@@ -129,7 +129,7 @@ spgGetCache(Relation index)
 
 		procinfo = index_getprocinfo(index, 1, SPGIST_CONFIG_PROC);
 		FunctionCall2Coll(procinfo,
-						  index->rd_indcollation[0],
+						  index_getcollinfo(index, 1),
 						  PointerGetDatum(&in),
 						  PointerGetDatum(&cache->config));
 

@@ -19,6 +19,7 @@
 #include "utils/builtins.h"
 #include "utils/jsonb.h"
 #include "utils/memutils.h"
+#include "utils/pg_locale.h"
 #include "utils/varlena.h"
 
 /*
@@ -1341,7 +1342,7 @@ compareJsonbScalarValue(JsonbValue *aScalar, JsonbValue *bScalar)
 								  aScalar->val.string.len,
 								  bScalar->val.string.val,
 								  bScalar->val.string.len,
-								  DEFAULT_COLLATION_OID);
+								  pg_newlocale_from_collation(DEFAULT_COLLATION_OID));
 			case jbvNumeric:
 				return DatumGetInt32(DirectFunctionCall2(numeric_cmp,
 														 PointerGetDatum(aScalar->val.numeric),

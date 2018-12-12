@@ -480,7 +480,7 @@ typedef struct
 static TRGM *createTrgmNFAInternal(regex_t *regex, TrgmPackedGraph **graph,
 					  MemoryContext rcontext);
 static void RE_compile(regex_t *regex, text *text_re,
-		   int cflags, Oid collation);
+		   int cflags, fmLocalePtr collation);
 static void getColorInfo(regex_t *regex, TrgmNFA *trgmNFA);
 static bool convertPgWchar(pg_wchar c, trgm_mb_char *result);
 static void transformGraph(TrgmNFA *trgmNFA);
@@ -520,7 +520,7 @@ static void printTrgmPackedGraph(TrgmPackedGraph *packedGraph, TRGM *trigrams);
  * context).
  */
 TRGM *
-createTrgmNFA(text *text_re, Oid collation,
+createTrgmNFA(text *text_re, fmLocalePtr collation,
 			  TrgmPackedGraph **graph, MemoryContext rcontext)
 {
 	TRGM	   *trg;
@@ -731,7 +731,7 @@ trigramsMatchGraph(TrgmPackedGraph *graph, bool *check)
  * NB: pg_regfree must be applied to regex if this completes successfully.
  */
 static void
-RE_compile(regex_t *regex, text *text_re, int cflags, Oid collation)
+RE_compile(regex_t *regex, text *text_re, int cflags, fmLocalePtr collation)
 {
 	int			text_re_len = VARSIZE_ANY_EXHDR(text_re);
 	char	   *text_re_val = VARDATA_ANY(text_re);

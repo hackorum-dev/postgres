@@ -49,6 +49,7 @@
 #include "utils/datum.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/pg_locale.h"
 #include "utils/regproc.h"
 #include "utils/syscache.h"
 #include "windowapi.h"
@@ -83,7 +84,7 @@ typedef struct WindowStatePerFuncData
 
 	FmgrInfo	flinfo;			/* fmgr lookup data for window function */
 
-	Oid			winCollation;	/* collation derived for window function */
+	fmLocalePtr	winCollation;	/* collation derived for window function */
 
 	/*
 	 * We need the len and byval info for the result of each function in order
@@ -2448,7 +2449,7 @@ ExecInitWindowAgg(WindowAgg *node, EState *estate, int eflags)
 					  econtext->ecxt_per_query_memory);
 		fmgr_info_set_expr((Node *) wfunc, &perfuncstate->flinfo);
 
-		perfuncstate->winCollation = wfunc->inputcollid;
+		perfuncstate->winCollation = pg_newlocale_from_collation(wfunc->inputcollid);
 
 		get_typlenbyval(wfunc->wintype,
 						&perfuncstate->resulttypeLen,
@@ -2511,7 +2512,7 @@ ExecInitWindowAgg(WindowAgg *node, EState *estate, int eflags)
 		fmgr_info(node->startInRangeFunc, &winstate->startInRangeFunc);
 	if (OidIsValid(node->endInRangeFunc))
 		fmgr_info(node->endInRangeFunc, &winstate->endInRangeFunc);
-	winstate->inRangeColl = node->inRangeColl;
+	winstate->inRangeColl = pg_newlocale_from_collation(node->inRangeColl);
 	winstate->inRangeAsc = node->inRangeAsc;
 	winstate->inRangeNullsFirst = node->inRangeNullsFirst;
 

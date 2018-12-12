@@ -329,7 +329,7 @@ spgbeginscan(Relation rel, int keysz, int orderbysz)
 				   index_getprocinfo(rel, 1, SPGIST_LEAF_CONSISTENT_PROC),
 				   CurrentMemoryContext);
 
-	so->indexCollation = rel->rd_indcollation[0];
+	so->indexCollation = index_getcollinfo(rel, 1);
 
 	scan->opaque = so;
 

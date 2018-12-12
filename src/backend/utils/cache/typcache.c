@@ -66,6 +66,7 @@
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/pg_locale.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
@@ -836,7 +837,7 @@ load_rangetype_info(TypeCacheEntry *typentry)
 	pg_range = (Form_pg_range) GETSTRUCT(tup);
 
 	subtypeOid = pg_range->rngsubtype;
-	typentry->rng_collation = pg_range->rngcollation;
+	typentry->rng_collation = pg_newlocale_from_collation(pg_range->rngcollation);
 	opclassOid = pg_range->rngsubopc;
 	canonicalOid = pg_range->rngcanonical;
 	subdiffOid = pg_range->rngsubdiff;

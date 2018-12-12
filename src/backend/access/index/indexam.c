@@ -79,6 +79,7 @@
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
 #include "storage/predicate.h"
+#include "utils/pg_locale.h"
 #include "utils/snapmgr.h"
 #include "utils/tqual.h"
 
@@ -897,6 +898,27 @@ index_getprocinfo(Relation irel,
 	}
 
 	return locinfo;
+}
+
+/*
+ * Get index collation lookup info from relcache.
+ */
+pg_locale_t
+index_getcollinfo(Relation irel,
+				  AttrNumber attnum)
+{
+	Assert(irel->rd_indcollinfo != NULL);
+
+	if (irel->rd_indcollation[attnum - 1] == InvalidOid)
+		return NULL;
+
+	/* Initialize the lookup info if first time through */
+	if (!irel->rd_indcollinfo[attnum - 1])
+	{
+		irel->rd_indcollinfo[attnum - 1] = pg_newlocale_from_collation(irel->rd_indcollation[attnum - 1]);
+	}
+
+	return irel->rd_indcollinfo[attnum - 1];
 }
 
 /* ----------------

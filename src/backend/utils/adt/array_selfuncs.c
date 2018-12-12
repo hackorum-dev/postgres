@@ -24,6 +24,7 @@
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
+#include "utils/pg_locale.h"
 #include "utils/selfuncs.h"
 #include "utils/typcache.h"
 
@@ -1171,7 +1172,7 @@ element_compare(const void *key1, const void *key2, void *arg)
 	FmgrInfo   *cmpfunc = (FmgrInfo *) arg;
 	Datum		c;
 
-	c = FunctionCall2Coll(cmpfunc, DEFAULT_COLLATION_OID, d1, d2);
+	c = FunctionCall2Coll(cmpfunc, pg_newlocale_from_collation(DEFAULT_COLLATION_OID), d1, d2);
 	return DatumGetInt32(c);
 }
 

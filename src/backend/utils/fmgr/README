@@ -64,7 +64,7 @@ typedef struct
     FmgrInfo   *flinfo;         /* ptr to lookup info used for this call */
     Node       *context;        /* pass info about context of call */
     Node       *resultinfo;     /* pass or return extra info about result */
-    Oid         fncollation;    /* collation for function to use */
+    pg_locale_t fncollation;    /* collation for function to use */
     bool        isnull;         /* function must set true if result is NULL */
     short       nargs;          /* # arguments actually passed */
     Datum       arg[FUNC_MAX_ARGS];  /* Arguments passed to function */
@@ -92,7 +92,7 @@ function that returns a set, as discussed below.)  Like the context field,
 resultinfo is a hook for expansion; fmgr itself doesn't constrain the use
 of the field.
 
-fncollation is the input collation derived by the parser, or InvalidOid
+fncollation is the input collation derived by the parser, or NULL
 when there are no inputs of collatable types or they don't share a common
 collation.  This is effectively a hidden additional argument, which
 collation-sensitive functions can use to determine their behavior.

@@ -370,12 +370,12 @@ var_eq_const(VariableStatData *vardata, Oid operator,
 				/* be careful to apply operator right way 'round */
 				if (varonleft)
 					match = DatumGetBool(FunctionCall2Coll(&eqproc,
-														   DEFAULT_COLLATION_OID,
+														   pg_newlocale_from_collation(DEFAULT_COLLATION_OID),
 														   sslot.values[i],
 														   constval));
 				else
 					match = DatumGetBool(FunctionCall2Coll(&eqproc,
-														   DEFAULT_COLLATION_OID,
+														   pg_newlocale_from_collation(DEFAULT_COLLATION_OID),
 														   constval,
 														   sslot.values[i]));
 				if (match)
@@ -666,11 +666,11 @@ mcv_selectivity(VariableStatData *vardata, FmgrInfo *opproc,
 		{
 			if (varonleft ?
 				DatumGetBool(FunctionCall2Coll(opproc,
-											   DEFAULT_COLLATION_OID,
+											   pg_newlocale_from_collation(DEFAULT_COLLATION_OID),
 											   sslot.values[i],
 											   constval)) :
 				DatumGetBool(FunctionCall2Coll(opproc,
-											   DEFAULT_COLLATION_OID,
+											   pg_newlocale_from_collation(DEFAULT_COLLATION_OID),
 											   constval,
 											   sslot.values[i])))
 				mcv_selec += sslot.numbers[i];
@@ -744,11 +744,11 @@ histogram_selectivity(VariableStatData *vardata, FmgrInfo *opproc,
 			{
 				if (varonleft ?
 					DatumGetBool(FunctionCall2Coll(opproc,
-												   DEFAULT_COLLATION_OID,
+												   pg_newlocale_from_collation(DEFAULT_COLLATION_OID),
 												   sslot.values[i],
 												   constval)) :
 					DatumGetBool(FunctionCall2Coll(opproc,
-												   DEFAULT_COLLATION_OID,
+												   pg_newlocale_from_collation(DEFAULT_COLLATION_OID),
 												   constval,
 												   sslot.values[i])))
 					nmatch++;
@@ -873,7 +873,7 @@ ineq_histogram_selectivity(PlannerInfo *root,
 														 &sslot.values[probe]);
 
 				ltcmp = DatumGetBool(FunctionCall2Coll(opproc,
-													   DEFAULT_COLLATION_OID,
+													   pg_newlocale_from_collation(DEFAULT_COLLATION_OID),
 													   sslot.values[probe],
 													   constval));
 				if (isgt)
@@ -1203,7 +1203,7 @@ patternsel(PG_FUNCTION_ARGS, Pattern_Type ptype, bool negate)
 	Oid			operator = PG_GETARG_OID(1);
 	List	   *args = (List *) PG_GETARG_POINTER(2);
 	int			varRelid = PG_GETARG_INT32(3);
-	Oid			collation = PG_GET_COLLATION();
+	pg_locale_t	collation = PG_GET_COLLATION();
 	VariableStatData vardata;
 	Node	   *other;
 	bool		varonleft;
@@ -1883,6 +1883,7 @@ scalararraysel(PlannerInfo *root,
 	TypeCacheEntry *typentry;
 	RegProcedure oprsel;
 	FmgrInfo	oprselproc;
+	pg_locale_t	collation;
 	Selectivity s1;
 	Selectivity s1disjoint;
 
@@ -1944,6 +1945,8 @@ scalararraysel(PlannerInfo *root,
 	if (!oprsel)
 		return (Selectivity) 0.5;
 	fmgr_info(oprsel, &oprselproc);
+
+	collation = pg_newlocale_from_collation(clause->inputcollid);
 
 	/*
 	 * In the array-containment check above, we must only believe that an
@@ -2024,7 +2027,7 @@ scalararraysel(PlannerInfo *root,
 										elmbyval));
 			if (is_join_clause)
 				s2 = DatumGetFloat8(FunctionCall5Coll(&oprselproc,
-													  clause->inputcollid,
+													  collation,
 													  PointerGetDatum(root),
 													  ObjectIdGetDatum(operator),
 													  PointerGetDatum(args),
@@ -2032,7 +2035,7 @@ scalararraysel(PlannerInfo *root,
 													  PointerGetDatum(sjinfo)));
 			else
 				s2 = DatumGetFloat8(FunctionCall4Coll(&oprselproc,
-													  clause->inputcollid,
+													  collation,
 													  PointerGetDatum(root),
 													  ObjectIdGetDatum(operator),
 													  PointerGetDatum(args),
@@ -2091,7 +2094,7 @@ scalararraysel(PlannerInfo *root,
 			args = list_make2(leftop, elem);
 			if (is_join_clause)
 				s2 = DatumGetFloat8(FunctionCall5Coll(&oprselproc,
-													  clause->inputcollid,
+													  collation,
 													  PointerGetDatum(root),
 													  ObjectIdGetDatum(operator),
 													  PointerGetDatum(args),
@@ -2099,7 +2102,7 @@ scalararraysel(PlannerInfo *root,
 													  PointerGetDatum(sjinfo)));
 			else
 				s2 = DatumGetFloat8(FunctionCall4Coll(&oprselproc,
-													  clause->inputcollid,
+													  collation,
 													  PointerGetDatum(root),
 													  ObjectIdGetDatum(operator),
 													  PointerGetDatum(args),
@@ -2143,7 +2146,7 @@ scalararraysel(PlannerInfo *root,
 		args = list_make2(leftop, dummyexpr);
 		if (is_join_clause)
 			s2 = DatumGetFloat8(FunctionCall5Coll(&oprselproc,
-												  clause->inputcollid,
+												  collation,
 												  PointerGetDatum(root),
 												  ObjectIdGetDatum(operator),
 												  PointerGetDatum(args),
@@ -2151,7 +2154,7 @@ scalararraysel(PlannerInfo *root,
 												  PointerGetDatum(sjinfo)));
 		else
 			s2 = DatumGetFloat8(FunctionCall4Coll(&oprselproc,
-												  clause->inputcollid,
+												  collation,
 												  PointerGetDatum(root),
 												  ObjectIdGetDatum(operator),
 												  PointerGetDatum(args),
@@ -2499,7 +2502,7 @@ eqjoinsel_inner(Oid opfuncoid,
 				if (hasmatch2[j])
 					continue;
 				if (DatumGetBool(FunctionCall2Coll(&eqproc,
-												   DEFAULT_COLLATION_OID,
+												   pg_newlocale_from_collation(DEFAULT_COLLATION_OID),
 												   sslot1->values[i],
 												   sslot2->values[j])))
 				{
@@ -2711,7 +2714,7 @@ eqjoinsel_semi(Oid opfuncoid,
 				if (hasmatch2[j])
 					continue;
 				if (DatumGetBool(FunctionCall2Coll(&eqproc,
-												   DEFAULT_COLLATION_OID,
+												   pg_newlocale_from_collation(DEFAULT_COLLATION_OID),
 												   sslot1->values[i],
 												   sslot2->values[j])))
 				{
@@ -4432,7 +4435,7 @@ convert_string_datum(Datum value, Oid typid, bool *failure)
 			return NULL;
 	}
 
-	if (!lc_collate_is_c(DEFAULT_COLLATION_OID))
+	if (!pg_newlocale_from_collation(DEFAULT_COLLATION_OID)->collate_is_c)
 	{
 		char	   *xfrmstr;
 		size_t		xfrmlen;
@@ -5407,14 +5410,14 @@ get_variable_range(PlannerInfo *root, VariableStatData *vardata, Oid sortop,
 				continue;
 			}
 			if (DatumGetBool(FunctionCall2Coll(&opproc,
-											   DEFAULT_COLLATION_OID,
+											   pg_newlocale_from_collation(DEFAULT_COLLATION_OID),
 											   sslot.values[i], tmin)))
 			{
 				tmin = sslot.values[i];
 				tmin_is_mcv = true;
 			}
 			if (DatumGetBool(FunctionCall2Coll(&opproc,
-											   DEFAULT_COLLATION_OID,
+											   pg_newlocale_from_collation(DEFAULT_COLLATION_OID),
 											   tmax, sslot.values[i])))
 			{
 				tmax = sslot.values[i];
@@ -5737,16 +5740,16 @@ find_join_input_rel(PlannerInfo *root, Relids relids)
  */
 static int
 pattern_char_isalpha(char c, bool is_multibyte,
-					 pg_locale_t locale, bool locale_is_c)
+					 pg_locale_t locale)
 {
-	if (locale_is_c)
+	if (locale->ctype_is_c)
 		return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
 	else if (is_multibyte && IS_HIGHBIT_SET(c))
 		return true;
-	else if (locale && locale->provider == COLLPROVIDER_ICU)
+	else if (locale->provider == COLLPROVIDER_ICU)
 		return IS_HIGHBIT_SET(c) ? true : false;
 #ifdef HAVE_LOCALE_T
-	else if (locale && locale->provider == COLLPROVIDER_LIBC)
+	else if (locale->provider == COLLPROVIDER_LIBC)
 		return isalpha_l((unsigned char) c, locale->info.lt);
 #endif
 	else
@@ -5767,7 +5770,7 @@ pattern_char_isalpha(char c, bool is_multibyte,
  */
 
 static Pattern_Prefix_Status
-like_fixed_prefix(Const *patt_const, bool case_insensitive, Oid collation,
+like_fixed_prefix(Const *patt_const, bool case_insensitive, pg_locale_t collation,
 				  Const **prefix_const, Selectivity *rest_selec)
 {
 	char	   *match;
@@ -5777,8 +5780,6 @@ like_fixed_prefix(Const *patt_const, bool case_insensitive, Oid collation,
 	int			pos,
 				match_pos;
 	bool		is_multibyte = (pg_database_encoding_max_length() > 1);
-	pg_locale_t locale = 0;
-	bool		locale_is_c = false;
 
 	/* the right-hand const is type text or bytea */
 	Assert(typeid == BYTEAOID || typeid == TEXTOID);
@@ -5790,23 +5791,16 @@ like_fixed_prefix(Const *patt_const, bool case_insensitive, Oid collation,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("case insensitive matching not supported on type bytea")));
 
-		/* If case-insensitive, we need locale info */
-		if (lc_ctype_is_c(collation))
-			locale_is_c = true;
-		else if (collation != DEFAULT_COLLATION_OID)
+		if (!collation)
 		{
-			if (!OidIsValid(collation))
-			{
-				/*
-				 * This typically means that the parser could not resolve a
-				 * conflict of implicit collations, so report it that way.
-				 */
-				ereport(ERROR,
-						(errcode(ERRCODE_INDETERMINATE_COLLATION),
-						 errmsg("could not determine which collation to use for ILIKE"),
-						 errhint("Use the COLLATE clause to set the collation explicitly.")));
-			}
-			locale = pg_newlocale_from_collation(collation);
+			/*
+			 * This typically means that the parser could not resolve a
+			 * conflict of implicit collations, so report it that way.
+			 */
+			ereport(ERROR,
+					(errcode(ERRCODE_INDETERMINATE_COLLATION),
+					 errmsg("could not determine which collation to use for ILIKE"),
+					 errhint("Use the COLLATE clause to set the collation explicitly.")));
 		}
 	}
 
@@ -5844,7 +5838,7 @@ like_fixed_prefix(Const *patt_const, bool case_insensitive, Oid collation,
 
 		/* Stop if case-varying character (it's sort of a wildcard) */
 		if (case_insensitive &&
-			pattern_char_isalpha(patt[pos], is_multibyte, locale, locale_is_c))
+			pattern_char_isalpha(patt[pos], is_multibyte, collation))
 			break;
 
 		match[match_pos++] = patt[pos];
@@ -5875,7 +5869,7 @@ like_fixed_prefix(Const *patt_const, bool case_insensitive, Oid collation,
 }
 
 static Pattern_Prefix_Status
-regex_fixed_prefix(Const *patt_const, bool case_insensitive, Oid collation,
+regex_fixed_prefix(Const *patt_const, bool case_insensitive, pg_locale_t collation,
 				   Const **prefix_const, Selectivity *rest_selec)
 {
 	Oid			typeid = patt_const->consttype;
@@ -5943,7 +5937,7 @@ regex_fixed_prefix(Const *patt_const, bool case_insensitive, Oid collation,
 }
 
 Pattern_Prefix_Status
-pattern_fixed_prefix(Const *patt, Pattern_Type ptype, Oid collation,
+pattern_fixed_prefix(Const *patt, Pattern_Type ptype, pg_locale_t collation,
 					 Const **prefix, Selectivity *rest_selec)
 {
 	Pattern_Prefix_Status result;
@@ -6045,7 +6039,7 @@ prefix_selectivity(PlannerInfo *root, VariableStatData *vardata,
 		elog(ERROR, "no < operator for opfamily %u", opfamily);
 	fmgr_info(get_opcode(cmpopr), &opproc);
 	greaterstrcon = make_greater_string(prefixcon, &opproc,
-										DEFAULT_COLLATION_OID);
+										pg_newlocale_from_collation(DEFAULT_COLLATION_OID));
 	if (greaterstrcon)
 	{
 		Selectivity topsel;
@@ -6323,7 +6317,7 @@ byte_increment(unsigned char *ptr, int len)
  * not 256^K, which is what an exhaustive search would approach).
  */
 Const *
-make_greater_string(const Const *str_const, FmgrInfo *ltproc, Oid collation)
+make_greater_string(const Const *str_const, FmgrInfo *ltproc, pg_locale_t collation)
 {
 	Oid			datatype = str_const->consttype;
 	char	   *workstr;
@@ -6359,13 +6353,13 @@ make_greater_string(const Const *str_const, FmgrInfo *ltproc, Oid collation)
 	{
 		workstr = TextDatumGetCString(str_const->constvalue);
 		len = strlen(workstr);
-		if (lc_collate_is_c(collation) || len == 0)
+		if (collation->collate_is_c || len == 0)
 			cmpstr = str_const->constvalue;
 		else
 		{
 			/* If first time through, determine the suffix to use */
 			static char suffixchar = 0;
-			static Oid	suffixcollation = 0;
+			static pg_locale_t suffixcollation = 0;
 
 			if (!suffixchar || suffixcollation != collation)
 			{
@@ -7475,7 +7469,7 @@ gincost_pattern(IndexOptInfo *index, int indexcol,
 		collation = DEFAULT_COLLATION_OID;
 
 	OidFunctionCall7Coll(extractProcOid,
-						 collation,
+						 pg_newlocale_from_collation(collation),
 						 query,
 						 PointerGetDatum(&nentries),
 						 UInt16GetDatum(strategy_op),

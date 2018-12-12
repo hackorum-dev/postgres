@@ -54,6 +54,7 @@
 #include "partitioning/partbounds.h"
 #include "rewrite/rewriteManip.h"
 #include "utils/lsyscache.h"
+#include "utils/pg_locale.h"
 
 
 /*
@@ -1496,7 +1497,7 @@ gen_prune_steps_from_opexps(PartitionScheme part_scheme,
  * See also IndexCollMatchesExprColl.
  */
 #define PartCollMatchesExprColl(partcoll, exprcoll) \
-	((partcoll) == InvalidOid || (partcoll) == (exprcoll))
+	((partcoll) == 0 || (partcoll)->collid == (exprcoll))
 
 /*
  * match_clause_to_partition_key
@@ -1537,8 +1538,8 @@ match_clause_to_partition_key(RelOptInfo *rel,
 							  List **clause_steps)
 {
 	PartitionScheme part_scheme = rel->part_scheme;
-	Oid			partopfamily = part_scheme->partopfamily[partkeyidx],
-				partcoll = part_scheme->partcollation[partkeyidx];
+	Oid			partopfamily = part_scheme->partopfamily[partkeyidx];
+	pg_locale_t	partcoll = part_scheme->partcollation[partkeyidx];
 	Expr	   *expr;
 
 	/*
@@ -2228,7 +2229,7 @@ get_matching_list_bounds(PartitionPruneContext *context,
 				maxoff;
 	bool		is_equal;
 	bool		inclusive = false;
-	Oid		   *partcollation = context->partcollation;
+	pg_locale_t *partcollation = context->partcollation;
 
 	Assert(context->strategy == PARTITION_STRATEGY_LIST);
 	Assert(context->partnatts == 1);
@@ -2429,7 +2430,7 @@ get_matching_range_bounds(PartitionPruneContext *context,
 {
 	PruneStepResult *result = (PruneStepResult *) palloc0(sizeof(PruneStepResult));
 	PartitionBoundInfo boundinfo = context->boundinfo;
-	Oid		   *partcollation = context->partcollation;
+	pg_locale_t *partcollation = context->partcollation;
 	int			partnatts = context->partnatts;
 	int		   *partindices = boundinfo->indexes;
 	int			off,

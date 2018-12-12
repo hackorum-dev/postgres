@@ -26,6 +26,7 @@
 #include "storage/predicate.h"
 #include "utils/builtins.h"
 #include "utils/index_selfuncs.h"
+#include "utils/pg_locale.h"
 #include "utils/typcache.h"
 
 
@@ -204,9 +205,9 @@ initGinState(GinState *state, Relation index)
 		 * type has a nondefault collation.)
 		 */
 		if (OidIsValid(index->rd_indcollation[i]))
-			state->supportCollation[i] = index->rd_indcollation[i];
+			state->supportCollation[i] = index_getcollinfo(index, i + 1);
 		else
-			state->supportCollation[i] = DEFAULT_COLLATION_OID;
+			state->supportCollation[i] = pg_newlocale_from_collation(DEFAULT_COLLATION_OID);
 	}
 }
 
@@ -440,7 +441,7 @@ typedef struct
 typedef struct
 {
 	FmgrInfo   *cmpDatumFunc;
-	Oid			collation;
+	fmLocalePtr	collation;
 	bool		haveDups;
 } cmpEntriesArg;
 

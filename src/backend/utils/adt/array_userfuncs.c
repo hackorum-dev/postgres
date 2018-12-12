@@ -633,7 +633,7 @@ static Datum
 array_position_common(FunctionCallInfo fcinfo)
 {
 	ArrayType  *array;
-	Oid			collation = PG_GET_COLLATION();
+	fmLocalePtr	collation = PG_GET_COLLATION();
 	Oid			element_type;
 	Datum		searched_element,
 				value;
@@ -784,7 +784,7 @@ Datum
 array_positions(PG_FUNCTION_ARGS)
 {
 	ArrayType  *array;
-	Oid			collation = PG_GET_COLLATION();
+	fmLocalePtr	collation = PG_GET_COLLATION();
 	Oid			element_type;
 	Datum		searched_element,
 				value;

@@ -315,7 +315,7 @@ pg_regcomp(regex_t *re,
 		   const chr *string,
 		   size_t len,
 		   int flags,
-		   Oid collation)
+		   pg_locale_t collation)
 {
 	struct vars var;
 	struct vars *v = &var;

@@ -35,7 +35,7 @@ typedef struct PartitionKeyData
 	FmgrInfo   *partsupfunc;	/* lookup info for support funcs */
 
 	/* Partitioning collation per attribute */
-	Oid		   *partcollation;
+	fmLocalePtr	*partcollation;
 
 	/* Type information per attribute */
 	Oid		   *parttypid;
@@ -43,7 +43,7 @@ typedef struct PartitionKeyData
 	int16	   *parttyplen;
 	bool	   *parttypbyval;
 	char	   *parttypalign;
-	Oid		   *parttypcoll;
+	Oid		   *parttypcollid;
 }			PartitionKeyData;
 
 extern void RelationBuildPartitionKey(Relation relation);

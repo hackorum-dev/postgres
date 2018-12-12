@@ -28,6 +28,7 @@
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/pg_locale.h"
 #include "utils/regproc.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
@@ -350,7 +351,8 @@ do_compile(FunctionCallInfo fcinfo,
 	function->fn_oid = fcinfo->flinfo->fn_oid;
 	function->fn_xmin = HeapTupleHeaderGetRawXmin(procTup->t_data);
 	function->fn_tid = procTup->t_self;
-	function->fn_input_collation = fcinfo->fncollation;
+	if (fcinfo->fncollation)
+		function->fn_input_collation = fcinfo->fncollation->collid;
 	function->fn_cxt = func_cxt;
 	function->out_param_varno = -1; /* set up for no OUT param */
 	function->resolve_option = plpgsql_variable_conflict;
@@ -2350,7 +2352,8 @@ compute_function_hashkey(FunctionCallInfo fcinfo,
 	}
 
 	/* get input collation, if known */
-	hashkey->inputCollation = fcinfo->fncollation;
+	if (fcinfo->fncollation)
+		hashkey->inputCollation = fcinfo->fncollation->collid;
 
 	if (procStruct->pronargs > 0)
 	{

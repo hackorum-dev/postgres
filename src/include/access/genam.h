@@ -174,6 +174,7 @@ extern RegProcedure index_getprocid(Relation irel, AttrNumber attnum,
 				uint16 procnum);
 extern FmgrInfo *index_getprocinfo(Relation irel, AttrNumber attnum,
 				  uint16 procnum);
+extern fmLocalePtr index_getcollinfo(Relation irel, AttrNumber attnum);
 extern void index_store_float8_orderby_distances(IndexScanDesc scan,
 									 Oid *orderByTypes, double *distances,
 									 bool recheckOrderBy);

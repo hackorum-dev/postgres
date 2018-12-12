@@ -30,6 +30,7 @@
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/pg_locale.h"
 #include "utils/typcache.h"
 
 
@@ -706,7 +707,7 @@ init_sexpr(Oid foid, Oid input_collation, Expr *node,
 	/* Initialize the function call parameter struct as well */
 	InitFunctionCallInfoData(sexpr->fcinfo_data, &(sexpr->func),
 							 list_length(sexpr->args),
-							 input_collation, NULL, NULL);
+							 pg_newlocale_from_collation(input_collation), NULL, NULL);
 
 	/* If function returns set, check if that's allowed by caller */
 	if (sexpr->func.fn_retset && !allowSRF)

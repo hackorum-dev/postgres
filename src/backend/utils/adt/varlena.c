@@ -68,7 +68,6 @@ typedef struct
 	int			last_len2;		/* Length of last buf2 string/strxfrm() blob */
 	int			last_returned;	/* Last comparison result (cache) */
 	bool		cache_blob;		/* Does buf2 contain strxfrm() blob, etc? */
-	bool		collate_c;
 	bool		bpchar;			/* Sorting bpchar, not varchar/text/bytea? */
 	hyperLogLogState abbr_card; /* Abbreviated key cardinality state */
 	hyperLogLogState full_card; /* Full key cardinality state */
@@ -108,7 +107,7 @@ static int	text_position(text *t1, text *t2);
 static void text_position_setup(text *t1, text *t2, TextPositionState *state);
 static int	text_position_next(int start_pos, TextPositionState *state);
 static void text_position_cleanup(TextPositionState *state);
-static int	text_cmp(text *arg1, text *arg2, Oid collid);
+static int	text_cmp(text *arg1, text *arg2, pg_locale_t locale);
 static bytea *bytea_catenate(bytea *t1, bytea *t2);
 static bytea *bytea_substring(Datum str,
 				int S,
@@ -1378,9 +1377,21 @@ text_position_cleanup(TextPositionState *state)
  * whether arg1 is less than, equal to, or greater than arg2.
  */
 int
-varstr_cmp(const char *arg1, int len1, const char *arg2, int len2, Oid collid)
+varstr_cmp(const char *arg1, int len1, const char *arg2, int len2, pg_locale_t collation)
 {
 	int			result;
+
+	if (!collation)
+	{
+		/*
+		 * This typically means that the parser could not resolve a
+		 * conflict of implicit collations, so report it that way.
+		 */
+		ereport(ERROR,
+				(errcode(ERRCODE_INDETERMINATE_COLLATION),
+				 errmsg("could not determine which collation to use for string comparison"),
+				 errhint("Use the COLLATE clause to set the collation explicitly.")));
+	}
 
 	/*
 	 * Unfortunately, there is no strncoll(), so in the non-C locale case we
@@ -1388,7 +1399,7 @@ varstr_cmp(const char *arg1, int len1, const char *arg2, int len2, Oid collid)
 	 * slower, so we optimize the case where LC_COLLATE is C.  We also try to
 	 * optimize relatively-short strings by avoiding palloc/pfree overhead.
 	 */
-	if (lc_collate_is_c(collid))
+	if (collation->collate_is_c)
 	{
 		result = memcmp(arg1, arg2, Min(len1, len2));
 		if ((result == 0) && (len1 != len2))
@@ -1400,23 +1411,6 @@ varstr_cmp(const char *arg1, int len1, const char *arg2, int len2, Oid collid)
 		char		a2buf[TEXTBUFLEN];
 		char	   *a1p,
 				   *a2p;
-		pg_locale_t mylocale = 0;
-
-		if (collid != DEFAULT_COLLATION_OID)
-		{
-			if (!OidIsValid(collid))
-			{
-				/*
-				 * This typically means that the parser could not resolve a
-				 * conflict of implicit collations, so report it that way.
-				 */
-				ereport(ERROR,
-						(errcode(ERRCODE_INDETERMINATE_COLLATION),
-						 errmsg("could not determine which collation to use for string comparison"),
-						 errhint("Use the COLLATE clause to set the collation explicitly.")));
-			}
-			mylocale = pg_newlocale_from_collation(collid);
-		}
 
 		/*
 		 * memcmp() can't tell us which of two unequal strings sorts first,
@@ -1433,7 +1427,8 @@ varstr_cmp(const char *arg1, int len1, const char *arg2, int len2, Oid collid)
 #ifdef WIN32
 		/* Win32 does not have UTF-8, so we need to map to UTF-16 */
 		if (GetDatabaseEncoding() == PG_UTF8
-			&& (!mylocale || mylocale->provider == COLLPROVIDER_LIBC))
+			&& (collation->provider == COLLPROVIDER_DEFAULT ||
+				collation->provider == COLLPROVIDER_LIBC))
 		{
 			int			a1len;
 			int			a2len;
@@ -1489,8 +1484,8 @@ varstr_cmp(const char *arg1, int len1, const char *arg2, int len2, Oid collid)
 
 			errno = 0;
 #ifdef HAVE_LOCALE_T
-			if (mylocale)
-				result = wcscoll_l((LPWSTR) a1p, (LPWSTR) a2p, mylocale->info.lt);
+			if (collation->provider == COLLPROVIDER_LIBC)
+				result = wcscoll_l((LPWSTR) a1p, (LPWSTR) a2p, collation->info.lt);
 			else
 #endif
 				result = wcscoll((LPWSTR) a1p, (LPWSTR) a2p);
@@ -1535,57 +1530,54 @@ varstr_cmp(const char *arg1, int len1, const char *arg2, int len2, Oid collid)
 		memcpy(a2p, arg2, len2);
 		a2p[len2] = '\0';
 
-		if (mylocale)
+		if (collation->provider == COLLPROVIDER_ICU)
 		{
-			if (mylocale->provider == COLLPROVIDER_ICU)
-			{
 #ifdef USE_ICU
 #ifdef HAVE_UCOL_STRCOLLUTF8
-				if (GetDatabaseEncoding() == PG_UTF8)
-				{
-					UErrorCode	status;
+			if (GetDatabaseEncoding() == PG_UTF8)
+			{
+				UErrorCode	status;
 
-					status = U_ZERO_ERROR;
-					result = ucol_strcollUTF8(mylocale->info.icu.ucol,
-											  arg1, len1,
-											  arg2, len2,
-											  &status);
-					if (U_FAILURE(status))
-						ereport(ERROR,
-								(errmsg("collation failed: %s", u_errorName(status))));
-				}
-				else
-#endif
-				{
-					int32_t		ulen1,
-								ulen2;
-					UChar	   *uchar1,
-							   *uchar2;
-
-					ulen1 = icu_to_uchar(&uchar1, arg1, len1);
-					ulen2 = icu_to_uchar(&uchar2, arg2, len2);
-
-					result = ucol_strcoll(mylocale->info.icu.ucol,
-										  uchar1, ulen1,
-										  uchar2, ulen2);
-
-					pfree(uchar1);
-					pfree(uchar2);
-				}
-#else							/* not USE_ICU */
-				/* shouldn't happen */
-				elog(ERROR, "unsupported collprovider: %c", mylocale->provider);
-#endif							/* not USE_ICU */
+				status = U_ZERO_ERROR;
+				result = ucol_strcollUTF8(collation->info.icu.ucol,
+										  arg1, len1,
+										  arg2, len2,
+										  &status);
+				if (U_FAILURE(status))
+					ereport(ERROR,
+							(errmsg("collation failed: %s", u_errorName(status))));
 			}
 			else
-			{
-#ifdef HAVE_LOCALE_T
-				result = strcoll_l(a1p, a2p, mylocale->info.lt);
-#else
-				/* shouldn't happen */
-				elog(ERROR, "unsupported collprovider: %c", mylocale->provider);
 #endif
+			{
+				int32_t		ulen1,
+							ulen2;
+				UChar	   *uchar1,
+						   *uchar2;
+
+				ulen1 = icu_to_uchar(&uchar1, arg1, len1);
+				ulen2 = icu_to_uchar(&uchar2, arg2, len2);
+
+				result = ucol_strcoll(collation->info.icu.ucol,
+									  uchar1, ulen1,
+									  uchar2, ulen2);
+
+				pfree(uchar1);
+				pfree(uchar2);
 			}
+#else							/* not USE_ICU */
+			/* shouldn't happen */
+			elog(ERROR, "unsupported collprovider: %c", collation->provider);
+#endif							/* not USE_ICU */
+		}
+		else if (collation->provider == COLLPROVIDER_LIBC)
+		{
+#ifdef HAVE_LOCALE_T
+			result = strcoll_l(a1p, a2p, collation->info.lt);
+#else
+			/* shouldn't happen */
+			elog(ERROR, "unsupported collprovider: %c", collation->provider);
+#endif
 		}
 		else
 			result = strcoll(a1p, a2p);
@@ -1613,7 +1605,7 @@ varstr_cmp(const char *arg1, int len1, const char *arg2, int len2, Oid collid)
  * Returns -1, 0 or 1
  */
 static int
-text_cmp(text *arg1, text *arg2, Oid collid)
+text_cmp(text *arg1, text *arg2, pg_locale_t collation)
 {
 	char	   *a1p,
 			   *a2p;
@@ -1626,7 +1618,7 @@ text_cmp(text *arg1, text *arg2, Oid collid)
 	len1 = VARSIZE_ANY_EXHDR(arg1);
 	len2 = VARSIZE_ANY_EXHDR(arg2);
 
-	return varstr_cmp(a1p, len1, a2p, len2, collid);
+	return varstr_cmp(a1p, len1, a2p, len2, collation);
 }
 
 /*
@@ -1808,13 +1800,12 @@ Datum
 bttextsortsupport(PG_FUNCTION_ARGS)
 {
 	SortSupport ssup = (SortSupport) PG_GETARG_POINTER(0);
-	Oid			collid = ssup->ssup_collation;
 	MemoryContext oldcontext;
 
 	oldcontext = MemoryContextSwitchTo(ssup->ssup_cxt);
 
 	/* Use generic string SortSupport */
-	varstr_sortsupport(ssup, collid, false);
+	varstr_sortsupport(ssup, ssup->ssup_collation, false);
 
 	MemoryContextSwitchTo(oldcontext);
 
@@ -1832,12 +1823,22 @@ bttextsortsupport(PG_FUNCTION_ARGS)
  * this will not work with any other collation, though.
  */
 void
-varstr_sortsupport(SortSupport ssup, Oid collid, bool bpchar)
+varstr_sortsupport(SortSupport ssup, pg_locale_t collation, bool bpchar)
 {
 	bool		abbreviate = ssup->abbreviate;
-	bool		collate_c = false;
 	VarStringSortSupport *sss;
-	pg_locale_t locale = 0;
+
+	if (!collation)
+	{
+		/*
+		 * This typically means that the parser could not resolve a
+		 * conflict of implicit collations, so report it that way.
+		 */
+		ereport(ERROR,
+				(errcode(ERRCODE_INDETERMINATE_COLLATION),
+				 errmsg("could not determine which collation to use for string comparison"),
+				 errhint("Use the COLLATE clause to set the collation explicitly.")));
+	}
 
 	/*
 	 * If possible, set ssup->comparator to a function which can be used to
@@ -1851,37 +1852,18 @@ varstr_sortsupport(SortSupport ssup, Oid collid, bool bpchar)
 	 * make things quite a bit faster with varstrfastcmp_c or bpcharfastcmp_c,
 	 * both of which use memcmp() rather than strcoll().
 	 */
-	if (lc_collate_is_c(collid))
+	if (collation->collate_is_c)
 	{
 		if (!bpchar)
 			ssup->comparator = varstrfastcmp_c;
 		else
 			ssup->comparator = bpcharfastcmp_c;
-
-		collate_c = true;
 	}
 	else
 	{
 		/*
-		 * We need a collation-sensitive comparison.  To make things faster,
-		 * we'll figure out the collation based on the locale id and cache the
-		 * result.
+		 * We need a collation-sensitive comparison.
 		 */
-		if (collid != DEFAULT_COLLATION_OID)
-		{
-			if (!OidIsValid(collid))
-			{
-				/*
-				 * This typically means that the parser could not resolve a
-				 * conflict of implicit collations, so report it that way.
-				 */
-				ereport(ERROR,
-						(errcode(ERRCODE_INDETERMINATE_COLLATION),
-						 errmsg("could not determine which collation to use for string comparison"),
-						 errhint("Use the COLLATE clause to set the collation explicitly.")));
-			}
-			locale = pg_newlocale_from_collation(collid);
-		}
 
 		/*
 		 * There is a further exception on Windows.  When the database
@@ -1893,7 +1875,7 @@ varstr_sortsupport(SortSupport ssup, Oid collid, bool bpchar)
 		 */
 #ifdef WIN32
 		if (GetDatabaseEncoding() == PG_UTF8 &&
-			!(locale && locale->provider == COLLPROVIDER_ICU))
+			collation->provider != COLLPROVIDER_ICU)
 			return;
 #endif
 
@@ -1922,7 +1904,7 @@ varstr_sortsupport(SortSupport ssup, Oid collid, bool bpchar)
 	 * platforms.
 	 */
 #ifndef TRUST_STRXFRM
-	if (!collate_c && !(locale && locale->provider == COLLPROVIDER_ICU))
+	if (!(collation->collate_is_c || collation->provider == COLLPROVIDER_ICU))
 		abbreviate = false;
 #endif
 
@@ -1933,7 +1915,7 @@ varstr_sortsupport(SortSupport ssup, Oid collid, bool bpchar)
 	 * scratch space (and to detect requirement for BpChar semantics from
 	 * caller), and the abbreviation case requires additional state.
 	 */
-	if (abbreviate || !collate_c)
+	if (abbreviate || !collation->collate_is_c)
 	{
 		sss = palloc(sizeof(VarStringSortSupport));
 		sss->buf1 = palloc(TEXTBUFLEN);
@@ -1945,7 +1927,7 @@ varstr_sortsupport(SortSupport ssup, Oid collid, bool bpchar)
 		sss->last_len2 = -1;
 		/* Initialize */
 		sss->last_returned = 0;
-		sss->locale = locale;
+		sss->locale = collation;
 
 		/*
 		 * To avoid somehow confusing a strxfrm() blob and an original string,
@@ -1962,7 +1944,6 @@ varstr_sortsupport(SortSupport ssup, Oid collid, bool bpchar)
 		 * Arbitrarily initialize cache_blob to true.
 		 */
 		sss->cache_blob = true;
-		sss->collate_c = collate_c;
 		sss->bpchar = bpchar;
 		ssup->ssup_extra = sss;
 
@@ -2156,57 +2137,54 @@ varstrfastcmp_locale(Datum x, Datum y, SortSupport ssup)
 		goto done;
 	}
 
-	if (sss->locale)
+	if (sss->locale->provider == COLLPROVIDER_ICU)
 	{
-		if (sss->locale->provider == COLLPROVIDER_ICU)
-		{
 #ifdef USE_ICU
 #ifdef HAVE_UCOL_STRCOLLUTF8
-			if (GetDatabaseEncoding() == PG_UTF8)
-			{
-				UErrorCode	status;
+		if (GetDatabaseEncoding() == PG_UTF8)
+		{
+			UErrorCode	status;
 
-				status = U_ZERO_ERROR;
-				result = ucol_strcollUTF8(sss->locale->info.icu.ucol,
-										  a1p, len1,
-										  a2p, len2,
-										  &status);
-				if (U_FAILURE(status))
-					ereport(ERROR,
-							(errmsg("collation failed: %s", u_errorName(status))));
-			}
-			else
-#endif
-			{
-				int32_t		ulen1,
-							ulen2;
-				UChar	   *uchar1,
-						   *uchar2;
-
-				ulen1 = icu_to_uchar(&uchar1, a1p, len1);
-				ulen2 = icu_to_uchar(&uchar2, a2p, len2);
-
-				result = ucol_strcoll(sss->locale->info.icu.ucol,
-									  uchar1, ulen1,
-									  uchar2, ulen2);
-
-				pfree(uchar1);
-				pfree(uchar2);
-			}
-#else							/* not USE_ICU */
-			/* shouldn't happen */
-			elog(ERROR, "unsupported collprovider: %c", sss->locale->provider);
-#endif							/* not USE_ICU */
+			status = U_ZERO_ERROR;
+			result = ucol_strcollUTF8(sss->locale->info.icu.ucol,
+									  a1p, len1,
+									  a2p, len2,
+									  &status);
+			if (U_FAILURE(status))
+				ereport(ERROR,
+						(errmsg("collation failed: %s", u_errorName(status))));
 		}
 		else
-		{
-#ifdef HAVE_LOCALE_T
-			result = strcoll_l(sss->buf1, sss->buf2, sss->locale->info.lt);
-#else
-			/* shouldn't happen */
-			elog(ERROR, "unsupported collprovider: %c", sss->locale->provider);
 #endif
+		{
+			int32_t		ulen1,
+						ulen2;
+			UChar	   *uchar1,
+					   *uchar2;
+
+			ulen1 = icu_to_uchar(&uchar1, a1p, len1);
+			ulen2 = icu_to_uchar(&uchar2, a2p, len2);
+
+			result = ucol_strcoll(sss->locale->info.icu.ucol,
+								  uchar1, ulen1,
+								  uchar2, ulen2);
+
+			pfree(uchar1);
+			pfree(uchar2);
 		}
+#else							/* not USE_ICU */
+		/* shouldn't happen */
+		elog(ERROR, "unsupported collprovider: %c", sss->locale->provider);
+#endif							/* not USE_ICU */
+	}
+	else if (sss->locale->provider == COLLPROVIDER_LIBC)
+	{
+#ifdef HAVE_LOCALE_T
+		result = strcoll_l(sss->buf1, sss->buf2, sss->locale->info.lt);
+#else
+		/* shouldn't happen */
+		elog(ERROR, "unsupported collprovider: %c", sss->locale->provider);
+#endif
 	}
 	else
 		result = strcoll(sss->buf1, sss->buf2);
@@ -2309,7 +2287,7 @@ varstr_abbrev_convert(Datum original, SortSupport ssup)
 	 * -- then an authoritative tie-breaker will happen, and do the right
 	 * thing: explicitly consider string length.
 	 */
-	if (sss->collate_c)
+	if (sss->locale->collate_is_c)
 		memcpy(pres, authoritative_data, Min(len, sizeof(Datum)));
 	else
 	{
@@ -2758,7 +2736,7 @@ bttext_pattern_sortsupport(PG_FUNCTION_ARGS)
 	oldcontext = MemoryContextSwitchTo(ssup->ssup_cxt);
 
 	/* Use generic string SortSupport, forcing "C" collation */
-	varstr_sortsupport(ssup, C_COLLATION_OID, false);
+	varstr_sortsupport(ssup, pg_newlocale_from_collation(C_COLLATION_OID), false);
 
 	MemoryContextSwitchTo(oldcontext);
 
@@ -3798,7 +3776,7 @@ bytea_sortsupport(PG_FUNCTION_ARGS)
 	oldcontext = MemoryContextSwitchTo(ssup->ssup_cxt);
 
 	/* Use generic string SortSupport, forcing "C" collation */
-	varstr_sortsupport(ssup, C_COLLATION_OID, false);
+	varstr_sortsupport(ssup, pg_newlocale_from_collation(C_COLLATION_OID), false);
 
 	MemoryContextSwitchTo(oldcontext);
 

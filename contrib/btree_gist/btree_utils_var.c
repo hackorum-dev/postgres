@@ -24,7 +24,7 @@ typedef struct
 typedef struct
 {
 	const gbtree_vinfo *tinfo;
-	Oid			collation;
+	fmLocalePtr	collation;
 	FmgrInfo   *flinfo;
 } gbt_vsrt_arg;
 
@@ -232,7 +232,7 @@ gbt_var_node_truncate(const GBT_VARKEY *node, int32 cpf_length, const gbtree_vin
 
 
 void
-gbt_var_bin_union(Datum *u, GBT_VARKEY *e, Oid collation,
+gbt_var_bin_union(Datum *u, GBT_VARKEY *e, fmLocalePtr collation,
 				  const gbtree_vinfo *tinfo, FmgrInfo *flinfo)
 {
 	GBT_VARKEY_R eo = gbt_var_key_readable(e);
@@ -321,7 +321,7 @@ gbt_var_fetch(PG_FUNCTION_ARGS)
 
 
 GBT_VARKEY *
-gbt_var_union(const GistEntryVector *entryvec, int32 *size, Oid collation,
+gbt_var_union(const GistEntryVector *entryvec, int32 *size, fmLocalePtr collation,
 			  const gbtree_vinfo *tinfo, FmgrInfo *flinfo)
 {
 	int			i = 0,
@@ -360,7 +360,7 @@ gbt_var_union(const GistEntryVector *entryvec, int32 *size, Oid collation,
 
 
 bool
-gbt_var_same(Datum d1, Datum d2, Oid collation,
+gbt_var_same(Datum d1, Datum d2, fmLocalePtr collation,
 			 const gbtree_vinfo *tinfo, FmgrInfo *flinfo)
 {
 	GBT_VARKEY *t1 = (GBT_VARKEY *) DatumGetPointer(d1);
@@ -378,7 +378,7 @@ gbt_var_same(Datum d1, Datum d2, Oid collation,
 
 float *
 gbt_var_penalty(float *res, const GISTENTRY *o, const GISTENTRY *n,
-				Oid collation, const gbtree_vinfo *tinfo, FmgrInfo *flinfo)
+				fmLocalePtr collation, const gbtree_vinfo *tinfo, FmgrInfo *flinfo)
 {
 	GBT_VARKEY *orge = (GBT_VARKEY *) DatumGetPointer(o->key);
 	GBT_VARKEY *newe = (GBT_VARKEY *) DatumGetPointer(n->key);
@@ -458,7 +458,7 @@ gbt_vsrt_cmp(const void *a, const void *b, void *arg)
 
 GIST_SPLITVEC *
 gbt_var_picksplit(const GistEntryVector *entryvec, GIST_SPLITVEC *v,
-				  Oid collation, const gbtree_vinfo *tinfo, FmgrInfo *flinfo)
+				  fmLocalePtr collation, const gbtree_vinfo *tinfo, FmgrInfo *flinfo)
 {
 	OffsetNumber i,
 				maxoff = entryvec->n - 1;
@@ -556,7 +556,7 @@ bool
 gbt_var_consistent(GBT_VARKEY_R *key,
 				   const void *query,
 				   StrategyNumber strategy,
-				   Oid collation,
+				   fmLocalePtr collation,
 				   bool is_leaf,
 				   const gbtree_vinfo *tinfo,
 				   FmgrInfo *flinfo)

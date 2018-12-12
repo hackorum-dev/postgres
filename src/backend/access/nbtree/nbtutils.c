@@ -24,13 +24,14 @@
 #include "utils/array.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/pg_locale.h"
 #include "utils/rel.h"
 
 
 typedef struct BTSortArrayContext
 {
 	FmgrInfo	flinfo;
-	Oid			collation;
+	fmLocalePtr	collation;
 	bool		reverse;
 } BTSortArrayContext;
 
@@ -103,7 +104,7 @@ _bt_mkscankey(Relation rel, IndexTuple itup)
 									   (AttrNumber) (i + 1),
 									   InvalidStrategy,
 									   InvalidOid,
-									   rel->rd_indcollation[i],
+									   index_getcollinfo(rel, i + 1),
 									   procinfo,
 									   arg);
 	}
@@ -151,7 +152,7 @@ _bt_mkscankey_nodata(Relation rel)
 									   (AttrNumber) (i + 1),
 									   InvalidStrategy,
 									   InvalidOid,
-									   rel->rd_indcollation[i],
+									   index_getcollinfo(rel, i + 1),
 									   procinfo,
 									   (Datum) 0);
 	}
@@ -1246,7 +1247,7 @@ _bt_fix_scankey_strategy(ScanKey skey, int16 *indoption)
 		{
 			skey->sk_strategy = BTEqualStrategyNumber;
 			skey->sk_subtype = InvalidOid;
-			skey->sk_collation = InvalidOid;
+			skey->sk_collation = 0;
 		}
 		else if (skey->sk_flags & SK_SEARCHNOTNULL)
 		{
@@ -1255,7 +1256,7 @@ _bt_fix_scankey_strategy(ScanKey skey, int16 *indoption)
 			else
 				skey->sk_strategy = BTLessStrategyNumber;
 			skey->sk_subtype = InvalidOid;
-			skey->sk_collation = InvalidOid;
+			skey->sk_collation = 0;
 		}
 		else
 		{
