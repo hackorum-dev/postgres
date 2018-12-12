@@ -2082,8 +2082,8 @@ check_outerjoin_delay(PlannerInfo *root,
 	bool		outerjoin_delayed;
 	bool		found_some;
 
-	/* fast path if no special joins */
-	if (root->join_info_list == NIL)
+	/* fast path if no special joins, or empty relids */
+	if (root->join_info_list == NIL || bms_is_empty(*relids_p))
 	{
 		*nullable_relids_p = NULL;
 		return false;
