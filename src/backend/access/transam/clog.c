@@ -479,6 +479,8 @@ TransactionGroupUpdateXidStatus(TransactionId xid, XidStatus status,
 	{
 		int			extraWaits = 0;
 
+		LWLockCleanUsageCount(CLogControlLock);
+
 		/* Sleep until the leader updates our XID status. */
 		pgstat_report_wait_start(WAIT_EVENT_CLOG_GROUP_UPDATE);
 		for (;;)

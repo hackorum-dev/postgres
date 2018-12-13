@@ -689,6 +689,8 @@
 					# (max_pred_locks_per_transaction
 					#  / -max_pred_locks_per_relation) - 1
 #max_pred_locks_per_page = 2            # min 0
+#lwlock_shared_limit = 0			# number of shared locks before switching
+									# to "fair mode", 0 disables
 
 
 #------------------------------------------------------------------------------

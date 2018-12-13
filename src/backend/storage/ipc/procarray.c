@@ -515,6 +515,8 @@ ProcArrayGroupClearXid(PGPROC *proc, TransactionId latestXid)
 	{
 		int			extraWaits = 0;
 
+		LWLockCleanUsageCount(ProcArrayLock);
+
 		/* Sleep until the leader clears our XID. */
 		pgstat_report_wait_start(WAIT_EVENT_PROCARRAY_GROUP_UPDATE);
 		for (;;)

@@ -32,6 +32,8 @@ struct PGPROC;
 typedef struct LWLock
 {
 	uint16		tranche;		/* tranche ID */
+	uint16		usagecount;		/* counter for number of sequential shared
+								 * locks taken */
 	pg_atomic_uint32 state;		/* state of exclusive/nonexclusive lockers */
 	proclist_head waiters;		/* list of waiting PGPROCs */
 #ifdef LOCK_DEBUG
@@ -99,6 +101,7 @@ typedef struct NamedLWLockTranche
 
 extern PGDLLIMPORT NamedLWLockTranche *NamedLWLockTrancheArray;
 extern PGDLLIMPORT int NamedLWLockTrancheRequests;
+extern PGDLLIMPORT int lwlock_shared_limit;
 
 /* Names for fixed lwlocks */
 #include "storage/lwlocknames.h"
@@ -160,6 +163,13 @@ extern void CreateLWLocks(void);
 extern void InitLWLockAccess(void);
 
 extern const char *GetLWLockIdentifier(uint32 classId, uint16 eventId);
+
+/* Reset usage count if shared lock limit is set */
+#define LWLockCleanUsageCount(lock) \
+	do { \
+		if (lwlock_shared_limit > 0) \
+			((lock)->usagecount = 0); \
+	} while (0)
 
 /*
  * Extensions (or core code) can obtain an LWLocks by calling

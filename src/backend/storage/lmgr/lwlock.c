@@ -92,14 +92,14 @@
 #include "utils/hsearch.h"
 #endif
 
-
 /* We use the ShmemLock spinlock to protect LWLockCounter */
 extern slock_t *ShmemLock;
 
 #define LW_FLAG_HAS_WAITERS			((uint32) 1 << 30)
 #define LW_FLAG_RELEASE_OK			((uint32) 1 << 29)
 #define LW_FLAG_LOCKED				((uint32) 1 << 28)
-
+#define LW_FLAG_USAGE_COUNT_LOCK	((uint32) 1 << 26)
+#define LW_FLAG_FAIR_MODE			((uint32) 1 << 25)
 #define LW_VAL_EXCLUSIVE			((uint32) 1 << 24)
 #define LW_VAL_SHARED				1
 
@@ -137,6 +137,7 @@ typedef struct LWLockHandle
 {
 	LWLock	   *lock;
 	LWLockMode	mode;
+	bool		countLock;
 } LWLockHandle;
 
 static int	num_held_lwlocks = 0;
@@ -162,6 +163,8 @@ static void RegisterLWLockTranches(void);
 
 static inline void LWLockReportWaitStart(LWLock *lock);
 static inline void LWLockReportWaitEnd(void);
+
+int			lwlock_shared_limit;
 
 #ifdef LWLOCK_STATS
 typedef struct lwlock_stats_key
@@ -681,6 +684,7 @@ LWLockInitialize(LWLock *lock, int tranche_id)
 	pg_atomic_init_u32(&lock->nwaiters, 0);
 #endif
 	lock->tranche = tranche_id;
+	lock->usagecount = 0;
 	proclist_init(&lock->waiters);
 }
 
@@ -736,7 +740,7 @@ GetLWLockIdentifier(uint32 classId, uint16 eventId)
  * Returns true if the lock isn't free and we need to wait.
  */
 static bool
-LWLockAttemptLock(LWLock *lock, LWLockMode mode)
+LWLockAttemptLock(LWLock *lock, LWLockMode mode, bool wakeup, bool *countLock)
 {
 	uint32		old_state;
 
@@ -752,7 +756,8 @@ LWLockAttemptLock(LWLock *lock, LWLockMode mode)
 	while (true)
 	{
 		uint32		desired_state;
-		bool		lock_free;
+		bool		lock_free,
+					count_lock = false;
 
 		desired_state = old_state;
 
@@ -760,13 +765,34 @@ LWLockAttemptLock(LWLock *lock, LWLockMode mode)
 		{
 			lock_free = (old_state & LW_LOCK_MASK) == 0;
 			if (lock_free)
+			{
 				desired_state += LW_VAL_EXCLUSIVE;
+				desired_state &= ~LW_FLAG_FAIR_MODE;
+				Assert((old_state & LW_FLAG_USAGE_COUNT_LOCK) == 0);
+			}
 		}
 		else
 		{
-			lock_free = (old_state & LW_VAL_EXCLUSIVE) == 0;
+			if (wakeup || lwlock_shared_limit == 0)
+				lock_free = (old_state & LW_VAL_EXCLUSIVE) == 0;
+			else
+				lock_free = ((old_state & LW_VAL_EXCLUSIVE) == 0) &&
+							((old_state & (LW_FLAG_HAS_WAITERS | LW_FLAG_FAIR_MODE)) !=
+										  (LW_FLAG_HAS_WAITERS | LW_FLAG_FAIR_MODE));
 			if (lock_free)
+			{
 				desired_state += LW_VAL_SHARED;
+
+				/*
+				 * If shared locks limit is set, consider getting count lock.
+				 */
+				if (lwlock_shared_limit > 0 &&
+					(old_state & (LW_FLAG_FAIR_MODE | LW_FLAG_USAGE_COUNT_LOCK)) == 0)
+				{
+					desired_state += LW_FLAG_USAGE_COUNT_LOCK;
+					count_lock = true;
+				}
+			}
 		}
 
 		/*
@@ -789,6 +815,16 @@ LWLockAttemptLock(LWLock *lock, LWLockMode mode)
 				if (mode == LW_EXCLUSIVE)
 					lock->owner = MyProc;
 #endif
+				if (mode == LW_SHARED)
+					*countLock = count_lock;
+				/* Exclusive lock resets usage count */
+				else if (mode == LW_EXCLUSIVE && lwlock_shared_limit > 0)
+					lock->usagecount = 0;
+
+				/* Count lock is acquired, so increase usage count */
+				if (count_lock)
+					lock->usagecount++;
+
 				return false;
 			}
 			else
@@ -978,9 +1014,11 @@ LWLockWakeup(LWLock *lock)
  *
  * NB: Mode can be LW_WAIT_UNTIL_FREE here!
  */
-static void
+static bool
 LWLockQueueSelf(LWLock *lock, LWLockMode mode)
 {
+	bool	first;
+
 	/*
 	 * If we don't have a PGPROC structure, there's no way to wait. This
 	 * should never occur, since MyProc should only be null during shared
@@ -1002,9 +1040,15 @@ LWLockQueueSelf(LWLock *lock, LWLockMode mode)
 
 	/* LW_WAIT_UNTIL_FREE waiters are always at the front of the queue */
 	if (mode == LW_WAIT_UNTIL_FREE)
+	{
+		first = true;
 		proclist_push_head(&lock->waiters, MyProc->pgprocno, lwWaitLink);
+	}
 	else
+	{
+		first = proclist_is_empty(&lock->waiters);
 		proclist_push_tail(&lock->waiters, MyProc->pgprocno, lwWaitLink);
+	}
 
 	/* Can release the mutex now */
 	LWLockWaitListUnlock(lock);
@@ -1013,6 +1057,7 @@ LWLockQueueSelf(LWLock *lock, LWLockMode mode)
 	pg_atomic_fetch_add_u32(&lock->nwaiters, 1);
 #endif
 
+	return first;
 }
 
 /*
@@ -1122,6 +1167,7 @@ LWLockAcquire(LWLock *lock, LWLockMode mode)
 {
 	PGPROC	   *proc = MyProc;
 	bool		result = true;
+	bool		countLock = false;
 	int			extraWaits = 0;
 #ifdef LWLOCK_STATS
 	lwlock_stats *lwstats;
@@ -1177,13 +1223,13 @@ LWLockAcquire(LWLock *lock, LWLockMode mode)
 	 */
 	for (;;)
 	{
-		bool		mustwait;
+		bool		mustwait, first;
 
 		/*
 		 * Try to grab the lock the first time, we're not in the waitqueue
 		 * yet/anymore.
 		 */
-		mustwait = LWLockAttemptLock(lock, mode);
+		mustwait = LWLockAttemptLock(lock, mode, !result, &countLock);
 
 		if (!mustwait)
 		{
@@ -1203,10 +1249,10 @@ LWLockAcquire(LWLock *lock, LWLockMode mode)
 		 */
 
 		/* add to the queue */
-		LWLockQueueSelf(lock, mode);
+		first = LWLockQueueSelf(lock, mode);
 
 		/* we're now guaranteed to be woken up if necessary */
-		mustwait = LWLockAttemptLock(lock, mode);
+		mustwait = LWLockAttemptLock(lock, mode, (!result) || first, &countLock);
 
 		/* ok, grabbed the lock the second time round, need to undo queueing */
 		if (!mustwait)
@@ -1234,6 +1280,8 @@ LWLockAcquire(LWLock *lock, LWLockMode mode)
 #ifdef LWLOCK_STATS
 		lwstats->block_count++;
 #endif
+
+		LWLockCleanUsageCount(lock);
 
 		LWLockReportWaitStart(lock);
 		TRACE_POSTGRESQL_LWLOCK_WAIT_START(T_NAME(lock), mode);
@@ -1271,6 +1319,7 @@ LWLockAcquire(LWLock *lock, LWLockMode mode)
 
 	/* Add lock to list of locks held by this backend */
 	held_lwlocks[num_held_lwlocks].lock = lock;
+	held_lwlocks[num_held_lwlocks].countLock = countLock;
 	held_lwlocks[num_held_lwlocks++].mode = mode;
 
 	/*
@@ -1292,7 +1341,7 @@ LWLockAcquire(LWLock *lock, LWLockMode mode)
 bool
 LWLockConditionalAcquire(LWLock *lock, LWLockMode mode)
 {
-	bool		mustwait;
+	bool		mustwait, countLock = false;
 
 	AssertArg(mode == LW_SHARED || mode == LW_EXCLUSIVE);
 
@@ -1310,7 +1359,7 @@ LWLockConditionalAcquire(LWLock *lock, LWLockMode mode)
 	HOLD_INTERRUPTS();
 
 	/* Check for the lock */
-	mustwait = LWLockAttemptLock(lock, mode);
+	mustwait = LWLockAttemptLock(lock, mode, false, &countLock);
 
 	if (mustwait)
 	{
@@ -1324,6 +1373,7 @@ LWLockConditionalAcquire(LWLock *lock, LWLockMode mode)
 	{
 		/* Add lock to list of locks held by this backend */
 		held_lwlocks[num_held_lwlocks].lock = lock;
+		held_lwlocks[num_held_lwlocks].countLock = countLock;
 		held_lwlocks[num_held_lwlocks++].mode = mode;
 		TRACE_POSTGRESQL_LWLOCK_CONDACQUIRE(T_NAME(lock), mode);
 	}
@@ -1348,7 +1398,8 @@ bool
 LWLockAcquireOrWait(LWLock *lock, LWLockMode mode)
 {
 	PGPROC	   *proc = MyProc;
-	bool		mustwait;
+	bool		mustwait,
+				countLock = false;
 	int			extraWaits = 0;
 #ifdef LWLOCK_STATS
 	lwlock_stats *lwstats;
@@ -1375,13 +1426,13 @@ LWLockAcquireOrWait(LWLock *lock, LWLockMode mode)
 	 * NB: We're using nearly the same twice-in-a-row lock acquisition
 	 * protocol as LWLockAcquire(). Check its comments for details.
 	 */
-	mustwait = LWLockAttemptLock(lock, mode);
+	mustwait = LWLockAttemptLock(lock, mode, true, &countLock);
 
 	if (mustwait)
 	{
 		LWLockQueueSelf(lock, LW_WAIT_UNTIL_FREE);
 
-		mustwait = LWLockAttemptLock(lock, mode);
+		mustwait = LWLockAttemptLock(lock, mode, true, &countLock);
 
 		if (mustwait)
 		{
@@ -1395,6 +1446,8 @@ LWLockAcquireOrWait(LWLock *lock, LWLockMode mode)
 #ifdef LWLOCK_STATS
 			lwstats->block_count++;
 #endif
+
+			LWLockCleanUsageCount(lock);
 
 			LWLockReportWaitStart(lock);
 			TRACE_POSTGRESQL_LWLOCK_WAIT_START(T_NAME(lock), mode);
@@ -1452,6 +1505,7 @@ LWLockAcquireOrWait(LWLock *lock, LWLockMode mode)
 		LOG_LWDEBUG("LWLockAcquireOrWait", lock, "succeeded");
 		/* Add lock to list of locks held by this backend */
 		held_lwlocks[num_held_lwlocks].lock = lock;
+		held_lwlocks[num_held_lwlocks].countLock = countLock;
 		held_lwlocks[num_held_lwlocks++].mode = mode;
 		TRACE_POSTGRESQL_LWLOCK_ACQUIRE_OR_WAIT(T_NAME(lock), mode);
 	}
@@ -1611,6 +1665,7 @@ LWLockWaitForVar(LWLock *lock, uint64 *valptr, uint64 oldval, uint64 *newval)
 #ifdef LWLOCK_STATS
 		lwstats->block_count++;
 #endif
+		LWLockCleanUsageCount(lock);
 
 		LWLockReportWaitStart(lock);
 		TRACE_POSTGRESQL_LWLOCK_WAIT_START(T_NAME(lock), LW_EXCLUSIVE);
@@ -1725,8 +1780,11 @@ void
 LWLockRelease(LWLock *lock)
 {
 	LWLockMode	mode;
-	uint32		oldstate;
-	bool		check_waiters;
+	uint32		oldstate,
+				sub;
+	bool		check_waiters,
+				countLock,
+				fairMode PG_USED_FOR_ASSERTS_ONLY = false;
 	int			i;
 
 	/*
@@ -1735,7 +1793,10 @@ LWLockRelease(LWLock *lock)
 	 */
 	for (i = num_held_lwlocks; --i >= 0;)
 		if (lock == held_lwlocks[i].lock)
+		{
+			countLock = held_lwlocks[i].countLock;
 			break;
+		}
 
 	if (i < 0)
 		elog(ERROR, "lock %s is not held", T_NAME(lock));
@@ -1753,9 +1814,28 @@ LWLockRelease(LWLock *lock)
 	 * others, even if we still have to wakeup other waiters.
 	 */
 	if (mode == LW_EXCLUSIVE)
-		oldstate = pg_atomic_sub_fetch_u32(&lock->state, LW_VAL_EXCLUSIVE);
+		sub = LW_VAL_EXCLUSIVE;
 	else
-		oldstate = pg_atomic_sub_fetch_u32(&lock->state, LW_VAL_SHARED);
+		sub = LW_VAL_SHARED;
+
+	if (countLock)
+	{
+		sub += LW_FLAG_USAGE_COUNT_LOCK;
+		/* If count lock is held, consider switching to "fair mode" */
+		if (lwlock_shared_limit > 0 && lock->usagecount >= lwlock_shared_limit)
+		{
+			sub -= LW_FLAG_FAIR_MODE;
+			fairMode = true;
+		}
+	}
+
+	oldstate = pg_atomic_fetch_sub_u32(&lock->state, sub);
+
+	/* If we were first shared locker, LW_FLAG_FAIR shouldn't be set */
+	Assert(!countLock || (oldstate & LW_FLAG_USAGE_COUNT_LOCK));
+	Assert(!fairMode || (oldstate & LW_FLAG_FAIR_MODE) == 0);
+
+	oldstate -= sub;
 
 	/* nobody else can have that kind of lock */
 	Assert(!(oldstate & LW_VAL_EXCLUSIVE));

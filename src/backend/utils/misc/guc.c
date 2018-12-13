@@ -47,6 +47,7 @@
 #include "libpq/auth.h"
 #include "libpq/libpq.h"
 #include "libpq/pqformat.h"
+#include "storage/lwlock.h"
 #include "miscadmin.h"
 #include "optimizer/cost.h"
 #include "optimizer/geqo.h"
@@ -3117,6 +3118,16 @@ static struct config_int ConfigureNamesInt[] =
 		},
 		&gin_pending_list_limit,
 		4096, 64, MAX_KILOBYTES,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"lwlock_shared_limit", PGC_SIGHUP, LOCK_MANAGEMENT,
+			gettext_noop("Number of sequential shared LWLocks held before switching to fair mode."),
+			gettext_noop("The default is 0 (never switch to fair mode).")
+		},
+		&lwlock_shared_limit,
+		0, 0, INT16_MAX / 2,
 		NULL, NULL, NULL
 	},
 
