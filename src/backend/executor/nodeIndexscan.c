@@ -920,7 +920,7 @@ ExecInitIndexScan(IndexScan *node, EState *estate, int eflags)
 {
 	IndexScanState *indexstate;
 	Relation	currentRelation;
-	bool		relistarget;
+	bool		indexlocked;
 
 	/*
 	 * create state structure
@@ -986,13 +986,14 @@ ExecInitIndexScan(IndexScan *node, EState *estate, int eflags)
 	/*
 	 * Open the index relation.
 	 *
-	 * If the parent table is one of the target relations of the query, then
-	 * InitPlan already opened and write-locked the index, so we can avoid
-	 * taking another lock here.  Otherwise we need a normal reader's lock.
+	 * For non-DELETE statement when the parent table is one of the target
+	 * relations of the query, ExecInitModifyTable will already have obtained
+	 * a lock on the index, otherwise we must obtain a read lock here.
 	 */
-	relistarget = ExecRelationIsTargetRelation(estate, node->scan.scanrelid);
+	indexlocked = estate->es_plannedstmt->commandType != CMD_DELETE &&
+				  ExecRelationIsTargetRelation(estate, node->scan.scanrelid);
 	indexstate->iss_RelationDesc = index_open(node->indexid,
-											  relistarget ? NoLock : AccessShareLock);
+											  indexlocked ? NoLock : AccessShareLock);
 
 	/*
 	 * Initialize index-specific scan state
