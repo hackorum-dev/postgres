@@ -353,6 +353,7 @@ struct pg_conn
 									 * retransmits */
 	char	   *sslmode;		/* SSL mode (require,prefer,allow,disable) */
 	char	   *sslcompression; /* SSL compression (0 or 1) */
+	char	   *sslsni;			/* SSL SNI extension (0 or 1) */
 	char	   *sslkey;			/* client key filename */
 	char	   *sslcert;		/* client certificate filename */
 	char	   *sslrootcert;	/* root certificate filename */

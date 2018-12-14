@@ -781,6 +781,7 @@ initialize_SSL(PGconn *conn)
 	char		homedir[MAXPGPATH];
 	char		fnbuf[MAXPGPATH];
 	char		sebuf[PG_STRERROR_R_BUFLEN];
+	char	   *host;
 	bool		have_homedir;
 	bool		have_cert;
 	bool		have_rootcert;
@@ -1182,6 +1183,11 @@ initialize_SSL(PGconn *conn)
 		SSL_clear_options(conn->ssl, SSL_OP_NO_COMPRESSION);
 #endif
 #endif
+
+	host = conn->connhost[conn->whichhost].host;
+
+	if (conn->sslsni && conn->sslsni[0] == '1' && host)
+		SSL_set_tlsext_host_name(conn->ssl, host);
 
 	return 0;
 }

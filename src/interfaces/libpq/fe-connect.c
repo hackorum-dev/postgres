@@ -278,6 +278,10 @@ static const internalPQconninfoOption PQconninfoOptions[] = {
 		"SSL-Compression", "", 1,
 	offsetof(struct pg_conn, sslcompression)},
 
+	{"sslsni", "PGSSLSNI", "0", NULL,
+		"SSL-SNI", "", 1,
+	offsetof(struct pg_conn, sslsni)},
+
 	{"sslcert", "PGSSLCERT", NULL, NULL,
 		"SSL-Client-Cert", "", 64,
 	offsetof(struct pg_conn, sslcert)},
@@ -3690,6 +3694,8 @@ freePGconn(PGconn *conn)
 		free(conn->sslcrl);
 	if (conn->sslcompression)
 		free(conn->sslcompression);
+	if (conn->sslsni)
+		free(conn->sslsni);
 	if (conn->requirepeer)
 		free(conn->requirepeer);
 	if (conn->connip)

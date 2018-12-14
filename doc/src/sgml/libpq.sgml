@@ -1460,6 +1460,23 @@ postgresql://%2Fvar%2Flib%2Fpostgresql/dbname
       </listitem>
      </varlistentry>
 
+     <varlistentry id="libpq-connect-sslsni" xreflabel="sslsni">
+      <term><literal>sslsni</literal></term>
+      <listitem>
+       <para>
+        If set to 1, the host name is sent to the server using SSL's
+        <acronym>SNI</acronym> (Server Name Indication) extension.  If set
+        to 0, no <acronym>SNI</acronym> extension will be sent.  The default is
+        0.  This parameter is ignored if a connection without SSL is made.
+       </para>
+
+       <para>
+        The PostgreSQL server ignores the <acronym>SNI</acronym> extension,
+        but it can be used by SSL-aware proxy software.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="libpq-connect-sslcert" xreflabel="sslcert">
       <term><literal>sslcert</literal></term>
       <listitem>
@@ -7370,6 +7387,16 @@ myEventProc(PGEventId evtId, void *evtInfo, void *passThrough)
       </indexterm>
       <envar>PGSSLCOMPRESSION</envar> behaves the same as the <xref
       linkend="libpq-connect-sslcompression"/> connection parameter.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      <indexterm>
+       <primary><envar>PGSSLSNI</envar></primary>
+      </indexterm>
+      <envar>PGSSLSNI</envar> behaves the same as the <xref
+      linkend="libpq-connect-sslsni"/> connection parameter.
      </para>
     </listitem>
 
