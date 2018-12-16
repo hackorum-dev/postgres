@@ -810,6 +810,8 @@ ReorderBufferAssignChild(ReorderBuffer *rb, TransactionId xid,
 	/* Possibly transfer the subtxn's snapshot to its top-level txn. */
 	ReorderBufferTransferSnapToParent(txn, subtxn);
 
+	txn->nentries_mem += subtxn->nentries_mem;
+
 	/* Verify LSN-ordering invariant */
 	AssertTXNLsnOrder(rb);
 }
@@ -2311,7 +2313,6 @@ ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 		spilled++;
 	}
 
-	Assert(spilled == txn->nentries_mem);
 	Assert(dlist_is_empty(&txn->changes));
 	txn->nentries_mem = 0;
 	txn->serialized = true;
