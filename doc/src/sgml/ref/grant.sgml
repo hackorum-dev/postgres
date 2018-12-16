@@ -242,7 +242,7 @@ GRANT <replaceable class="parameter">role_name</replaceable> [, ...] TO <replace
    There is also an option to grant privileges on all objects of the same
    type within one or more schemas.  This functionality is currently supported
    only for tables, sequences, functions, and procedures.  <literal>ALL
-   TABLES</literal> also affects views and foreign tables, just like the
+   TABLES</literal> also affects views, materialized views and foreign tables, just like the
    specific-object <command>GRANT</command> command.  <literal>ALL
    FUNCTIONS</literal> also affects aggregate and window functions, but not
    procedures, again just like the specific-object <command>GRANT</command>
