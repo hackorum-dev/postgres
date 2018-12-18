@@ -147,6 +147,10 @@ psql &lt;&lt;EOF
 SELECT * FROM foo;
 EOF
 </programlisting>
+
+		Every <option>-c</option> command is equivalent to a line in a
+		script. All the commands are executed ignoring command errors and psql
+		returns the exit status 0 unless ON_ERROR_STOP is set.
       </para>
       </listitem>
     </varlistentry>
