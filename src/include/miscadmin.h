@@ -26,6 +26,7 @@
 #include <signal.h>
 
 #include "pgtime.h"				/* for pg_time_t */
+#include "utils/palloc.h"
 
 
 #define InvalidPid				(-1)
@@ -150,6 +151,9 @@ extern PGDLLIMPORT bool IsUnderPostmaster;
 extern PGDLLIMPORT bool IsBackgroundWorker;
 extern PGDLLIMPORT bool IsBinaryUpgrade;
 
+extern PGDLLIMPORT bool RestartPoolerOnReload;
+extern PGDLLIMPORT char* DedicatedDatabases;
+
 extern PGDLLIMPORT bool ExitOnAnyError;
 
 extern PGDLLIMPORT char *DataDir;
@@ -161,7 +165,19 @@ extern PGDLLIMPORT int MaxConnections;
 extern PGDLLIMPORT int max_worker_processes;
 extern PGDLLIMPORT int max_parallel_workers;
 
+enum SessionSchedulePolicy
+{
+	SESSION_SCHED_ROUND_ROBIN,
+	SESSION_SCHED_RANDOM,
+	SESSION_SCHED_LOAD_BALANCING
+};
+
+extern PGDLLIMPORT int MaxSessions;
+extern PGDLLIMPORT int SessionPoolSize;
+extern PGDLLIMPORT int SessionSchedule;
+
 extern PGDLLIMPORT int MyProcPid;
+extern PGDLLIMPORT uint32 MySessionId;
 extern PGDLLIMPORT pg_time_t MyStartTime;
 extern PGDLLIMPORT struct Port *MyProcPort;
 extern PGDLLIMPORT struct Latch *MyLatch;
@@ -335,6 +351,9 @@ extern void SwitchBackToLocalLatch(void);
 extern bool superuser(void);	/* current user is superuser */
 extern bool superuser_arg(Oid roleid);	/* given user is superuser */
 
+/* in utils/init/postinit.c */
+void process_settings(Oid databaseid, Oid roleid);
+
 
 /*****************************************************************************
  *	  pmod.h --																 *
@@ -425,6 +444,7 @@ extern void InitializeMaxBackends(void);
 extern void InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 			 Oid useroid, char *out_dbname, bool override_allow_connections);
 extern void BaseInit(void);
+extern void PerformAuthentication(struct Port *port);
 
 /* in utils/init/miscinit.c */
 extern bool IgnoreSystemIndexes;
@@ -444,6 +464,9 @@ extern void process_shared_preload_libraries(void);
 extern void process_session_preload_libraries(void);
 extern void pg_bindtextdomain(const char *domain);
 extern bool has_rolreplication(Oid roleid);
+
+void *GetLocalUserIdStateCopy(MemoryContext mcxt);
+void SetCurrentUserIdState(void *userId);
 
 /* in access/transam/xlog.c */
 extern bool BackupInProgress(void);

@@ -76,6 +76,7 @@
 #include <sys/param.h>
 #include <netdb.h>
 #include <limits.h>
+#include <pthread.h>
 
 #ifdef HAVE_SYS_SELECT_H
 #include <sys/select.h>
@@ -114,6 +115,7 @@
 #include "postmaster/pgarch.h"
 #include "postmaster/postmaster.h"
 #include "postmaster/syslogger.h"
+#include "postmaster/connpool.h"
 #include "replication/logicallauncher.h"
 #include "replication/walsender.h"
 #include "storage/fd.h"
@@ -121,6 +123,7 @@
 #include "storage/pg_shmem.h"
 #include "storage/pmsignal.h"
 #include "storage/proc.h"
+#include "storage/procarray.h"
 #include "tcop/tcopprot.h"
 #include "utils/builtins.h"
 #include "utils/datetime.h"
@@ -150,6 +153,11 @@
 #define BACKEND_TYPE_WORKER		(BACKEND_TYPE_AUTOVAC | BACKEND_TYPE_BGWORKER)
 
 /*
+ * Load average for not backend which is not yet started (used in session schedule for connectoin pooling)
+ */
+#define INIT_BACKEND_LOAD_AVERAGE 10
+
+/*
  * List of active backends (or child processes anyway; we don't actually
  * know whether a given child has become a backend or is still in the
  * authorization phase).  This is used mainly to keep track of how many
@@ -170,6 +178,7 @@ typedef struct bkend
 	pid_t		pid;			/* process id of backend */
 	int32		cancel_key;		/* cancel key for cancels for this backend */
 	int			child_slot;		/* PMChildSlot for this backend, if any */
+	pgsocket    session_send_sock;  /* Write end of socket pipe to this backend used to send session socket descriptor to the backend process */
 
 	/*
 	 * Flavor of backend or auxiliary process.  Note that BACKEND_TYPE_WALSND
@@ -178,8 +187,13 @@ typedef struct bkend
 	 */
 	int			bkend_type;
 	bool		dead_end;		/* is it going to send an error and quit? */
-	bool		bgworker_notify;	/* gets bgworker start/stop notifications */
+	bool		bgworker_notify;/* gets bgworker start/stop notifications */
 	dlist_node	elem;			/* list link in BackendList */
+	int         session_pool_id;/* identifier of backends session pool */
+	int         worker_id;      /* identifier of worker within session pool */
+	void	   *pool;			/* pool of backends */
+	PGPROC     *proc;           /* PGPROC entry for this backend */
+	uint64      n_sessions;     /* number of session scheduled to this backend */
 } Backend;
 
 static dlist_head BackendList = DLIST_STATIC_INIT(BackendList);
@@ -190,7 +204,27 @@ static Backend *ShmemBackendArray;
 
 BackgroundWorker *MyBgworkerEntry = NULL;
 
+struct DatabasePoolKey {
+	char database[NAMEDATALEN];
+	char username[NAMEDATALEN];
+};
 
+typedef struct DatabasePool
+{
+	struct DatabasePoolKey key;
+
+	Backend	  **workers;	/* pool backends */
+	int			n_workers;	/* number of launched worker backends
+							   in this pool so far */
+	int			rr_index;	/* index of current backends used to implement
+							 * round-robin distribution of sessions through
+							 * backends */
+} DatabasePool;
+
+static struct
+{
+	HTAB			   *pools;
+} PostmasterSessionPool;
 
 /* The socket number we are listening for connections on */
 int			PostPortNumber;
@@ -214,7 +248,7 @@ int			ReservedBackends;
 
 /* The socket(s) we're listening to. */
 #define MAXLISTEN	64
-static pgsocket ListenSocket[MAXLISTEN];
+static pgsocket ListenSocket[MAXLISTEN + MAX_CONNPOOL_WORKERS];
 
 /*
  * Set by the -o option
@@ -393,15 +427,19 @@ static void unlink_external_pid_file(int status, Datum arg);
 static void getInstallationPaths(const char *argv0);
 static void checkControlFile(void);
 static Port *ConnCreate(int serverFd);
+static Port *PoolConnCreate(pgsocket poolFd, int workerId);
 static void ConnFree(Port *port);
+static void ConnDispatch(Port *port);
 static void reset_shared(int port);
 static void SIGHUP_handler(SIGNAL_ARGS);
+static CAC_state canAcceptConnections(void);
 static void pmdie(SIGNAL_ARGS);
 static void reaper(SIGNAL_ARGS);
 static void sigusr1_handler(SIGNAL_ARGS);
 static void startup_die(SIGNAL_ARGS);
 static void dummy_handler(SIGNAL_ARGS);
 static void StartupPacketTimeoutHandler(void);
+static int BackendStartup(DatabasePool *pool, Port *port);
 static void CleanupBackend(int pid, int exitstatus);
 static bool CleanupBackgroundWorker(int pid, int exitstatus);
 static void HandleChildCrash(int pid, int exitstatus, const char *procname);
@@ -412,13 +450,11 @@ static void BackendInitialize(Port *port);
 static void BackendRun(Port *port) pg_attribute_noreturn();
 static void ExitPostmaster(int status) pg_attribute_noreturn();
 static int	ServerLoop(void);
-static int	BackendStartup(Port *port);
-static int	ProcessStartupPacket(Port *port, bool SSLdone);
 static void SendNegotiateProtocolVersion(List *unrecognized_protocol_options);
 static void processCancelRequest(Port *port, void *pkt);
 static int	initMasks(fd_set *rmask);
+static void report_postmaster_failure_to_client(Port *port, char const* errmsg);
 static void report_fork_failure_to_client(Port *port, int errnum);
-static CAC_state canAcceptConnections(void);
 static bool RandomCancelKey(int32 *cancel_key);
 static void signal_child(pid_t pid, int signal);
 static bool SignalSomeChildren(int signal, int targets);
@@ -486,6 +522,7 @@ typedef struct
 {
 	Port		port;
 	InheritableSocket portsocket;
+	InheritableSocket sessionsocket;
 	char		DataDir[MAXPGPATH];
 	pgsocket	ListenSocket[MAXLISTEN];
 	int32		MyCancelKey;
@@ -986,6 +1023,11 @@ PostmasterMain(int argc, char *argv[])
 	 * background worker slots.
 	 */
 	ApplyLauncherRegister();
+
+	/*
+	 * Register connnection pool workers
+	 */
+	RegisterConnPoolWorkers();
 
 	/*
 	 * process any libraries that should be preloaded at postmaster start
@@ -1613,6 +1655,177 @@ DetermineSleepTime(struct timeval *timeout)
 	}
 }
 
+static bool
+IsDedicatedDatabase(char const* dbname)
+{
+	List       *namelist;
+	ListCell   *l;
+	char       *databases;
+	bool       found = false;
+
+    /* Need a modifiable copy of namespace_search_path string */
+	databases = pstrdup(DedicatedDatabases);
+
+	if (!SplitIdentifierString(databases, ',', &namelist)) {
+		elog(ERROR, "invalid list syntax");
+	}
+	foreach(l, namelist)
+	{
+		char *curname = (char *) lfirst(l);
+		if (strcmp(curname, dbname) == 0)
+		{
+			found = true;
+			break;
+		}
+	}
+	list_free(namelist);
+	pfree(databases);
+
+	return found;
+}
+
+/*
+ * Find free worker and send socket
+ */
+static void
+SendPortToConnectionPool(Port *port)
+{
+	int		i;
+	bool	sent;
+
+	/* By default is not dedicated */
+	IsDedicatedBackend = false;
+
+	sent = false;
+
+again:
+	for (i = 0; i < NumConnPoolWorkers; i++)
+	{
+		ConnPoolWorker	*worker = &ConnPoolWorkers[i];
+		if (worker->pid == 0)
+			continue;
+
+		if (worker->state == CPW_PROCESSED)
+		{
+			Port *conn = PoolConnCreate(worker->pipes[0], i);
+			if (conn)
+				ConnDispatch(conn);
+		}
+		if (worker->state == CPW_FREE)
+		{
+			worker->port = port;
+			worker->state = CPW_NEW_SOCKET;
+			worker->cac_state = canAcceptConnections();
+
+			if (pg_send_sock(worker->pipes[0], port->sock, worker->pid) < 0)
+			{
+				elog(LOG, "could not send socket to connection pool: %m");
+				ExitPostmaster(1);
+			}
+			SetLatch(worker->latch);
+			sent = true;
+			break;
+		}
+	}
+
+	if (!sent)
+	{
+		pg_usleep(1000L);
+		goto again;
+	}
+}
+
+static void
+ConnDispatch(Port *port)
+{
+	bool			found;
+	DatabasePool   *pool;
+	struct DatabasePoolKey	key;
+
+	Assert(port->sock != PGINVALID_SOCKET);
+	if (IsDedicatedDatabase(port->database_name))
+	{
+		IsDedicatedBackend = true;
+		BackendStartup(NULL, port);
+		goto cleanup;
+	}
+
+#ifdef USE_SSL
+	if (port->ssl_in_use)
+	{
+		/*
+		 * We don't (yet) support SSL connections with connection pool,
+		 * since we need to move whole SSL context to already working
+		 * backend. This task needs more investigation.
+		 */
+		elog(ERROR, "connection pool does not support SSL connections");
+		goto cleanup;
+	}
+#endif
+	MemSet(key.database, 0, NAMEDATALEN);
+	MemSet(key.username, 0, NAMEDATALEN);
+
+	strlcpy(key.database, port->database_name, NAMEDATALEN);
+	strlcpy(key.username, port->user_name, NAMEDATALEN);
+
+	pool = hash_search(PostmasterSessionPool.pools, &key, HASH_ENTER, &found);
+	if (!found)
+	{
+		pool->key = key;
+		pool->workers = NULL;
+		pool->n_workers = 0;
+		pool->rr_index = 0;
+	}
+
+	BackendStartup(pool, port);
+
+cleanup:
+	/*
+	 * We no longer need the open socket or port structure
+	 * in this process
+	 */
+	StreamClose(port->sock);
+	ConnFree(port);
+}
+
+/*
+ * Init wait event set for connection pool workers,
+ * and hash table for backends in pool.
+ */
+static int
+InitConnPoolState(fd_set *rmask, int numSockets)
+{
+	int			i;
+	HASHCTL		ctl;
+
+	/*
+	 * create hashtable that indexes the relcache
+	 */
+	MemSet(&ctl, 0, sizeof(ctl));
+	ctl.keysize = sizeof(struct DatabasePoolKey);
+	ctl.entrysize = sizeof(DatabasePool);
+	ctl.hcxt = PostmasterContext;
+	PostmasterSessionPool.pools = hash_create("Pool by database and user", 100,
+								  &ctl, HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
+
+	for (i = 0; i < NumConnPoolWorkers; i++)
+	{
+		ConnPoolWorker	*worker = &ConnPoolWorkers[i];
+		worker->port = NULL;
+
+		/*
+		 * we use same pselect(3) call for connection pool workers and
+		 * clients
+		 */
+		ListenSocket[MAXLISTEN + i] = worker->pipes[0];
+		FD_SET(worker->pipes[0], rmask);
+		if (worker->pipes[0] > numSockets)
+			numSockets = worker->pipes[0];
+	}
+
+	return numSockets + 1;
+}
+
 /*
  * Main idle loop of postmaster
  *
@@ -1629,6 +1842,9 @@ ServerLoop(void)
 	last_lockfile_recheck_time = last_touch_time = time(NULL);
 
 	nSockets = initMasks(&readmask);
+
+	if (SessionPoolSize > 0)
+		nSockets = InitConnPoolState(&readmask, nSockets);
 
 	for (;;)
 	{
@@ -1690,27 +1906,43 @@ ServerLoop(void)
 		 */
 		if (selres > 0)
 		{
+			Port	   *port;
 			int			i;
 
+			/* Check for client connections */
 			for (i = 0; i < MAXLISTEN; i++)
 			{
 				if (ListenSocket[i] == PGINVALID_SOCKET)
 					break;
 				if (FD_ISSET(ListenSocket[i], &rmask))
 				{
-					Port	   *port;
-
 					port = ConnCreate(ListenSocket[i]);
 					if (port)
 					{
-						BackendStartup(port);
+						if (SessionPoolSize == 0)
+						{
+							IsDedicatedBackend = true;
+							BackendStartup(NULL, port);
+							StreamClose(port->sock);
+							ConnFree(port);
+						}
+						else
+							SendPortToConnectionPool(port);
+					}
+				}
+			}
 
-						/*
-						 * We no longer need the open socket or port structure
-						 * in this process
-						 */
-						StreamClose(port->sock);
-						ConnFree(port);
+			/* Check for some data from connections pool */
+			if (SessionPoolSize > 0)
+			{
+				for (i = 0; i < NumConnPoolWorkers; i++)
+				{
+					if (FD_ISSET(ListenSocket[MAXLISTEN + i], &rmask))
+					{
+						port = PoolConnCreate(ListenSocket[MAXLISTEN + i], i);
+						if (port)
+							ConnDispatch(port);
+
 					}
 				}
 			}
@@ -1893,13 +2125,15 @@ initMasks(fd_set *rmask)
  * send anything to the client, which would typically be appropriate
  * if we detect a communications failure.)
  */
-static int
-ProcessStartupPacket(Port *port, bool SSLdone)
+int
+ProcessStartupPacket(Port *port, bool SSLdone, MemoryContext memctx,
+						int errlevel)
 {
 	int32		len;
 	void	   *buf;
 	ProtocolVersion proto;
-	MemoryContext oldcontext;
+	MemoryContext oldcontext = MemoryContextSwitchTo(memctx);
+	int			result;
 
 	pq_startmsgread();
 	if (pq_getbytes((char *) &len, 4) == EOF)
@@ -1992,7 +2226,7 @@ retry1:
 #endif
 		/* regular startup packet, cancel, etc packet should follow... */
 		/* but not another SSL negotiation request */
-		return ProcessStartupPacket(port, true);
+		return ProcessStartupPacket(port, true, memctx, errlevel);
 	}
 
 	/* Could add additional special packet types here */
@@ -2006,13 +2240,16 @@ retry1:
 	/* Check that the major protocol version is in range. */
 	if (PG_PROTOCOL_MAJOR(proto) < PG_PROTOCOL_MAJOR(PG_PROTOCOL_EARLIEST) ||
 		PG_PROTOCOL_MAJOR(proto) > PG_PROTOCOL_MAJOR(PG_PROTOCOL_LATEST))
-		ereport(FATAL,
+	{
+		ereport(errlevel,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("unsupported frontend protocol %u.%u: server supports %u.0 to %u.%u",
 						PG_PROTOCOL_MAJOR(proto), PG_PROTOCOL_MINOR(proto),
 						PG_PROTOCOL_MAJOR(PG_PROTOCOL_EARLIEST),
 						PG_PROTOCOL_MAJOR(PG_PROTOCOL_LATEST),
 						PG_PROTOCOL_MINOR(PG_PROTOCOL_LATEST))));
+		return STATUS_ERROR;
+	}
 
 	/*
 	 * Now fetch parameters out of startup packet and save them into the Port
@@ -2022,7 +2259,7 @@ retry1:
 	 * not worry about leaking this storage on failure, since we aren't in the
 	 * postmaster process anymore.
 	 */
-	oldcontext = MemoryContextSwitchTo(TopMemoryContext);
+	oldcontext = MemoryContextSwitchTo(memctx);
 
 	if (PG_PROTOCOL_MAJOR(proto) >= 3)
 	{
@@ -2070,12 +2307,15 @@ retry1:
 					am_db_walsender = true;
 				}
 				else if (!parse_bool(valptr, &am_walsender))
-					ereport(FATAL,
+				{
+					ereport(errlevel,
 							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 							 errmsg("invalid value for parameter \"%s\": \"%s\"",
 									"replication",
 									valptr),
 							 errhint("Valid values are: \"false\", 0, \"true\", 1, \"database\".")));
+					return STATUS_ERROR;
+				}
 			}
 			else if (strncmp(nameptr, "_pq_.", 5) == 0)
 			{
@@ -2103,9 +2343,12 @@ retry1:
 		 * given packet length, complain.
 		 */
 		if (offset != len - 1)
-			ereport(FATAL,
+		{
+			ereport(errlevel,
 					(errcode(ERRCODE_PROTOCOL_VIOLATION),
 					 errmsg("invalid startup packet layout: expected terminator as last byte")));
+			return STATUS_ERROR;
+		}
 
 		/*
 		 * If the client requested a newer protocol version or if the client
@@ -2141,9 +2384,12 @@ retry1:
 
 	/* Check a user name was given. */
 	if (port->user_name == NULL || port->user_name[0] == '\0')
-		ereport(FATAL,
+	{
+		ereport(errlevel,
 				(errcode(ERRCODE_INVALID_AUTHORIZATION_SPECIFICATION),
 				 errmsg("no PostgreSQL user name specified in startup packet")));
+		return STATUS_ERROR;
+	}
 
 	/* The database defaults to the user name. */
 	if (port->database_name == NULL || port->database_name[0] == '\0')
@@ -2197,27 +2443,32 @@ retry1:
 	 * now instead of wasting cycles on an authentication exchange. (This also
 	 * allows a pg_ping utility to be written.)
 	 */
+	result = STATUS_OK;
 	switch (port->canAcceptConnections)
 	{
 		case CAC_STARTUP:
-			ereport(FATAL,
+			ereport(errlevel,
 					(errcode(ERRCODE_CANNOT_CONNECT_NOW),
 					 errmsg("the database system is starting up")));
+			result = STATUS_ERROR;
 			break;
 		case CAC_SHUTDOWN:
-			ereport(FATAL,
+			ereport(errlevel,
 					(errcode(ERRCODE_CANNOT_CONNECT_NOW),
 					 errmsg("the database system is shutting down")));
+			result = STATUS_ERROR;
 			break;
 		case CAC_RECOVERY:
-			ereport(FATAL,
+			ereport(errlevel,
 					(errcode(ERRCODE_CANNOT_CONNECT_NOW),
 					 errmsg("the database system is in recovery mode")));
+			result = STATUS_ERROR;
 			break;
 		case CAC_TOOMANY:
-			ereport(FATAL,
+			ereport(errlevel,
 					(errcode(ERRCODE_TOO_MANY_CONNECTIONS),
 					 errmsg("sorry, too many clients already")));
+			result = STATUS_ERROR;
 			break;
 		case CAC_WAITBACKUP:
 			/* OK for now, will check in InitPostgres */
@@ -2226,7 +2477,7 @@ retry1:
 			break;
 	}
 
-	return STATUS_OK;
+	return result;
 }
 
 /*
@@ -2322,7 +2573,7 @@ processCancelRequest(Port *port, void *pkt)
 /*
  * canAcceptConnections --- check to see if database state allows connections.
  */
-static CAC_state
+CAC_state
 canAcceptConnections(void)
 {
 	CAC_state	result = CAC_OK;
@@ -2398,7 +2649,7 @@ ConnCreate(int serverFd)
 		ConnFree(port);
 		return NULL;
 	}
-
+	SessionPoolSock = PGINVALID_SOCKET;
 	/*
 	 * Allocate GSSAPI specific state struct
 	 */
@@ -2418,6 +2669,69 @@ ConnCreate(int serverFd)
 	return port;
 }
 
+#define CONN_BUF_SIZE 8192
+
+static Port *
+PoolConnCreate(pgsocket poolFd, int workerId)
+{
+	char				recv_buf[CONN_BUF_SIZE];
+	int					recv_len = 0,
+						i,
+						rc,
+						offs,
+						len;
+	StringInfoData		buf;
+	ConnPoolWorker	   *worker = &ConnPoolWorkers[workerId];
+	Port			   *port = worker->port;
+
+	if (worker->state != CPW_PROCESSED)
+		return NULL;
+
+	/* In any case we should free the worker */
+	worker->port = NULL;
+	worker->state = CPW_FREE;
+
+	/* get size of data */
+	while ((rc = read(poolFd, &recv_len, sizeof recv_len)) < 0 && errno == EINTR);
+
+	if (rc != (int) sizeof(recv_len))
+		goto io_error;
+
+	/* get the data */
+	for (offs = 0; offs < recv_len; offs += rc)
+	{
+		while ((rc = read(poolFd, recv_buf + offs, CONN_BUF_SIZE - offs)) < 0 && errno == EINTR);
+		if (rc <= 0)
+			goto io_error;
+	}
+
+	buf.cursor = 0;
+	buf.data = recv_buf;
+	buf.len = recv_len;
+
+	port->proto = pq_getmsgint(&buf, 4);
+	port->database_name = MemoryContextStrdup(TopMemoryContext, pq_getmsgstring(&buf));
+	port->user_name = MemoryContextStrdup(TopMemoryContext, pq_getmsgstring(&buf));
+	port->guc_options = NIL;
+
+	/* GUC */
+	len = pq_getmsgint(&buf, 4);
+	for (i = 0; i < len; i++)
+	{
+		char	*val = MemoryContextStrdup(TopMemoryContext, pq_getmsgstring(&buf));
+		port->guc_options = lappend(port->guc_options, val);
+	}
+
+	if (pq_getmsgint(&buf, 4) > 0)
+		port->cmdline_options = MemoryContextStrdup(TopMemoryContext, pq_getmsgstring(&buf));
+
+	return port;
+
+io_error:
+	StreamClose(port->sock);
+	ConnFree(port);
+	return NULL;
+}
 
 /*
  * ConnFree -- free a local connection data structure
@@ -2430,6 +2744,12 @@ ConnFree(Port *conn)
 #endif
 	if (conn->gss)
 		free(conn->gss);
+	if (conn->database_name)
+		pfree(conn->database_name);
+	if (conn->user_name)
+		pfree(conn->user_name);
+	if (conn->cmdline_options)
+		pfree(conn->cmdline_options);
 	free(conn);
 }
 
@@ -3185,6 +3505,44 @@ CleanupBackgroundWorker(int pid,
 }
 
 /*
+ * Unlink backend from backend's list and free memory.
+ */
+static void
+UnlinkPooledBackend(Backend *bp)
+{
+	DatabasePool	*pool = bp->pool;
+
+	if (!pool ||
+		bp->bkend_type != BACKEND_TYPE_NORMAL ||
+		bp->session_send_sock == PGINVALID_SOCKET)
+		return;
+
+	Assert(pool->n_workers > bp->worker_id &&
+		   pool->workers[bp->worker_id] == bp);
+
+	if (--pool->n_workers != 0)
+	{
+		pool->workers[bp->worker_id] = pool->workers[pool->n_workers];
+		pool->workers[bp->worker_id]->worker_id = bp->worker_id;
+		pool->rr_index %= pool->n_workers;
+	}
+
+	closesocket(bp->session_send_sock);
+	bp->session_send_sock = PGINVALID_SOCKET;
+
+	elog(DEBUG2, "Cleanup backend %d", bp->pid);
+}
+
+static void
+DeleteBackend(Backend *bp)
+{
+	UnlinkPooledBackend(bp);
+
+	dlist_delete(&bp->elem);
+	free(bp);
+}
+
+/*
  * CleanupBackend -- cleanup after terminated backend.
  *
  * Remove all local state associated with backend.
@@ -3261,8 +3619,7 @@ CleanupBackend(int pid,
 				 */
 				BackgroundWorkerStopNotifications(bp->pid);
 			}
-			dlist_delete(iter.cur);
-			free(bp);
+			DeleteBackend(bp);
 			break;
 		}
 	}
@@ -3364,8 +3721,7 @@ HandleChildCrash(int pid, int exitstatus, const char *procname)
 				ShmemBackendArrayRemove(bp);
 #endif
 			}
-			dlist_delete(iter.cur);
-			free(bp);
+			DeleteBackend(bp);
 			/* Keep looping so we can signal remaining backends */
 		}
 		else
@@ -3955,6 +4311,118 @@ TerminateChildren(int signal)
 }
 
 /*
+ * Try to report error to client.
+ * Since we do not care to risk blocking the postmaster on
+ * this connection, we set the connection to non-blocking and try only once.
+ *
+ * This is grungy special-purpose code; we cannot use backend libpq since
+ * it's not up and running.
+ */
+static void
+report_postmaster_failure_to_client(Port *port, char const* errmsg)
+{
+	int rc;
+
+	/* Set port to non-blocking.  Don't do send() if this fails */
+	if (!pg_set_noblock(port->sock))
+		return;
+
+	/* We'll retry after EINTR, but ignore all other failures */
+	do
+	{
+		rc = send(port->sock, errmsg, strlen(errmsg) + 1, 0);
+	} while (rc < 0 && errno == EINTR);
+
+	elog(DEBUG1, "Send postmaster failure to client: %d", rc);
+}
+
+typedef struct
+{
+	Backend* worker;
+	double   load_average;
+} WorkerState;
+
+static int
+compareWorkerLoadAverage(void const* p, void const* q)
+{
+	WorkerState* ws1 = (WorkerState*)p;
+	WorkerState* ws2 = (WorkerState*)q;
+	return ws1->load_average < ws2->load_average ? -1 : ws1->load_average == ws2->load_average ? 0 : 1;
+}
+
+static int
+ScheduleSession(DatabasePool *pool, Port *port)
+{
+	int i, j;
+	int n_workers = pool->n_workers;
+	WorkerState ws[MAX_CONNPOOL_WORKERS];
+
+	for (i = 0; i < n_workers; i++)
+	{
+		Backend *worker;
+		switch (SessionSchedule)
+		{
+		  case SESSION_SCHED_RANDOM:
+			worker = pool->workers[random() % n_workers];
+			break;
+		  case SESSION_SCHED_ROUND_ROBIN:
+			worker = pool->workers[pool->rr_index];
+			pool->rr_index = (pool->rr_index + 1) % n_workers; /* round-robin */
+			break;
+		  case SESSION_SCHED_LOAD_BALANCING:
+			if (i == 0)
+			{
+				for (j = 0; j < n_workers; j++)
+				{
+					worker = pool->workers[j];
+					if (!worker->proc)
+						worker->proc = BackendPidGetProc(worker->pid);
+					ws[j].worker = worker;
+					ws[j].load_average = (worker->proc && worker->proc->nSessionSchedules > 0)
+						? (double)worker->proc->nReadySessions / worker->proc->nSessionSchedules
+						: INIT_BACKEND_LOAD_AVERAGE;
+				}
+				qsort(ws, n_workers, sizeof(WorkerState), compareWorkerLoadAverage);
+			}
+			worker = ws[i].worker;
+			break;
+		  default:
+			Assert(false);
+		}
+		if (!worker->proc)
+			worker->proc = BackendPidGetProc(worker->pid);
+
+		if (worker->proc && worker->n_sessions - worker->proc->nFinishedSessions >= MaxSessions)
+		{
+			elog(LOG, "Worker %d reaches max session limit %d", worker->pid, MaxSessions);
+			continue;
+	    }
+		/* Send connection socket to the worker backend */
+		if (pg_send_sock(worker->session_send_sock, port->sock, worker->pid) < 0)
+		{
+			elog(LOG, "Failed to send session socket %d: %m",
+				 worker->session_send_sock);
+			UnlinkPooledBackend(worker);
+			n_workers -= 1;
+			i = -1; /* restart loop from very beginning */
+			continue;
+		}
+		worker->n_sessions += 1;
+		elog(DEBUG2, "Start new session for socket %d at backend %d",
+			 port->sock, worker->pid);
+
+		/* TODO: serialize the port and send it through socket */
+		return STATUS_OK;
+	}
+	ereport(LOG,
+			(errcode(ERRCODE_TOO_MANY_CONNECTIONS),
+			 errmsg("sorry, too many open sessions for connection pool %s/%s",
+					pool->key.database, pool->key.username)));
+	report_postmaster_failure_to_client(port, "ESorry, too many open sessions\n");
+	return STATUS_ERROR;
+}
+
+/*
  * BackendStartup -- start backend process
  *
  * returns: STATUS_ERROR if the fork failed, STATUS_OK otherwise.
@@ -3962,16 +4430,24 @@ TerminateChildren(int signal)
  * Note: if you change this code, also consider StartAutovacuumWorker.
  */
 static int
-BackendStartup(Port *port)
+BackendStartup(DatabasePool *pool, Port *port)
 {
 	Backend    *bn;				/* for backend cleanup */
 	pid_t		pid;
+	pgsocket    session_pipe[2];
+
+	/*
+	 * In case of session pooling instead of spawning new backend open
+	 * new session at one of the existed backends.
+	 */
+	if (pool && pool->n_workers >= SessionPoolSize)
+		return ScheduleSession(pool, port);
 
 	/*
 	 * Create backend data structure.  Better before the fork() so we can
 	 * handle failure cleanly.
 	 */
-	bn = (Backend *) malloc(sizeof(Backend));
+	bn = (Backend *) calloc(1, sizeof(Backend));
 	if (!bn)
 	{
 		ereport(LOG,
@@ -3979,6 +4455,7 @@ BackendStartup(Port *port)
 				 errmsg("out of memory")));
 		return STATUS_ERROR;
 	}
+	bn->n_sessions = 1;
 
 	/*
 	 * Compute the cancel key that will be assigned to this backend. The
@@ -4012,12 +4489,30 @@ BackendStartup(Port *port)
 	/* Hasn't asked to be notified about any bgworkers yet */
 	bn->bgworker_notify = false;
 
+	/* Create socket pair for sending session sockets to the backend */
+	if (!IsDedicatedBackend)
+	{
+		if (socketpair(AF_UNIX, SOCK_STREAM, 0, session_pipe) < 0)
+			ereport(FATAL,
+					(errcode_for_file_access(),
+					 errmsg_internal("could not create socket pair for launching sessions: %m")));
+#ifdef WIN32
+		SessionPoolSock = session_pipe[0];
+#endif
+	}
 #ifdef EXEC_BACKEND
 	pid = backend_forkexec(port);
 #else							/* !EXEC_BACKEND */
 	pid = fork_process();
 	if (pid == 0)				/* child */
 	{
+		whereToSendOutput = DestNone;
+
+		if (!IsDedicatedBackend)
+		{
+			SessionPoolSock = session_pipe[0]; /* Use this socket for receiving client session socket descriptor */
+			close(session_pipe[1]); /* Close unused end of the pipe */
+		}
 		free(bn);
 
 		/* Detangle from postmaster */
@@ -4026,11 +4521,14 @@ BackendStartup(Port *port)
 		/* Close the postmaster's sockets */
 		ClosePostmasterPorts(false);
 
-		/* Perform additional initialization and collect startup packet */
+		/* Perform additional initialization */
 		BackendInitialize(port);
 
 		/* And run the backend */
 		BackendRun(port);
+
+		/* Unreachable */
+		Assert(false);
 	}
 #endif							/* EXEC_BACKEND */
 
@@ -4041,6 +4539,7 @@ BackendStartup(Port *port)
 
 		if (!bn->dead_end)
 			(void) ReleasePostmasterChildSlot(bn->child_slot);
+
 		free(bn);
 		errno = save_errno;
 		ereport(LOG,
@@ -4059,9 +4558,27 @@ BackendStartup(Port *port)
 	 * of backends.
 	 */
 	bn->pid = pid;
+	bn->session_send_sock = PGINVALID_SOCKET;
 	bn->bkend_type = BACKEND_TYPE_NORMAL;	/* Can change later to WALSND */
+	bn->pool = pool;
 	dlist_push_head(&BackendList, &bn->elem);
 
+	if (!IsDedicatedBackend)
+	{
+		/* Use this socket for sending client session socket descriptor */
+		bn->session_send_sock = session_pipe[1];
+
+		/* Close unused end of the pipe */
+		closesocket(session_pipe[0]);
+
+		if (pool->workers == NULL)
+			pool->workers = (Backend **) calloc(sizeof(Backend *), SessionPoolSize);
+
+		bn->worker_id = pool->n_workers++;
+		pool->workers[bn->worker_id] = bn;
+
+		elog(DEBUG1, "Start %d-th worker with pid %d", pool->n_workers, pid);
+	}
 #ifdef EXEC_BACKEND
 	if (!bn->dead_end)
 		ShmemBackendArrayAdd(bn);
@@ -4082,22 +4599,13 @@ static void
 report_fork_failure_to_client(Port *port, int errnum)
 {
 	char		buffer[1000];
-	int			rc;
 
 	/* Format the error message packet (always V2 protocol) */
 	snprintf(buffer, sizeof(buffer), "E%s%s\n",
 			 _("could not fork new process for connection: "),
 			 strerror(errnum));
 
-	/* Set port to non-blocking.  Don't do send() if this fails */
-	if (!pg_set_noblock(port->sock))
-		return;
-
-	/* We'll retry after EINTR, but ignore all other failures */
-	do
-	{
-		rc = send(port->sock, buffer, strlen(buffer) + 1, 0);
-	} while (rc < 0 && errno == EINTR);
+	report_postmaster_failure_to_client(port, buffer);
 }
 
 
@@ -4122,6 +4630,7 @@ BackendInitialize(Port *port)
 
 	/* Save port etc. for ps status */
 	MyProcPort = port;
+	FrontendProtocol = port->proto;
 
 	/*
 	 * PreAuthDelay is a debugging aid for investigating problems in the
@@ -4148,7 +4657,10 @@ BackendInitialize(Port *port)
 	 * Initialize libpq and enable reporting of ereport errors to the client.
 	 * Must do this now because authentication uses libpq to send messages.
 	 */
-	pq_init();					/* initialize libpq to talk to client */
+	port->pqcomm_state = pq_init(TopMemoryContext);   /* initialize libpq to talk to client */
+	port->pqcomm_waitset = pq_create_backend_event_set(TopMemoryContext, port, false);
+	pq_set_current_state(port->pqcomm_state, port, port->pqcomm_waitset);
+
 	whereToSendOutput = DestRemote; /* now safe to ereport to client */
 
 	/*
@@ -4227,35 +4739,46 @@ BackendInitialize(Port *port)
 		port->remote_hostname = strdup(remote_host);
 
 	/*
-	 * Ready to begin client interaction.  We will give up and exit(1) after a
-	 * time delay, so that a broken client can't hog a connection
-	 * indefinitely.  PreAuthDelay and any DNS interactions above don't count
-	 * against the time limit.
-	 *
-	 * Note: AuthenticationTimeout is applied here while waiting for the
-	 * startup packet, and then again in InitPostgres for the duration of any
-	 * authentication operations.  So a hostile client could tie up the
-	 * process for nearly twice AuthenticationTimeout before we kick him off.
-	 *
-	 * Note: because PostgresMain will call InitializeTimeouts again, the
-	 * registration of STARTUP_PACKET_TIMEOUT will be lost.  This is okay
-	 * since we never use it again after this function.
+	 * Read startup backend only if we don't use session pool
 	 */
-	RegisterTimeout(STARTUP_PACKET_TIMEOUT, StartupPacketTimeoutHandler);
-	enable_timeout_after(STARTUP_PACKET_TIMEOUT, AuthenticationTimeout * 1000);
+	if (IsDedicatedBackend && !port->proto)
+	{
+		/*
+		 * Ready to begin client interaction.  We will give up and exit(1) after a
+		 * time delay, so that a broken client can't hog a connection
+		 * indefinitely.  PreAuthDelay and any DNS interactions above don't count
+		 * against the time limit.
+		 *
+		 * Note: AuthenticationTimeout is applied here while waiting for the
+		 * startup packet, and then again in InitPostgres for the duration of any
+		 * authentication operations.  So a hostile client could tie up the
+		 * process for nearly twice AuthenticationTimeout before we kick him off.
+		 *
+		 * Note: because PostgresMain will call InitializeTimeouts again, the
+		 * registration of STARTUP_PACKET_TIMEOUT will be lost.  This is okay
+		 * since we never use it again after this function.
+		 */
+		RegisterTimeout(STARTUP_PACKET_TIMEOUT, StartupPacketTimeoutHandler);
+		enable_timeout_after(STARTUP_PACKET_TIMEOUT, AuthenticationTimeout * 1000);
 
-	/*
-	 * Receive the startup packet (which might turn out to be a cancel request
-	 * packet).
-	 */
-	status = ProcessStartupPacket(port, false);
+		/*
+		 * Receive the startup packet (which might turn out to be a cancel request
+		 * packet).
+		 */
+		status = ProcessStartupPacket(port, false, TopMemoryContext, FATAL);
 
-	/*
-	 * Stop here if it was bad or a cancel packet.  ProcessStartupPacket
-	 * already did any appropriate error reporting.
-	 */
-	if (status != STATUS_OK)
-		proc_exit(0);
+		/*
+		 * Stop here if it was bad or a cancel packet.  ProcessStartupPacket
+		 * already did any appropriate error reporting.
+		 */
+		if (status != STATUS_OK)
+			proc_exit(0);
+
+		/*
+		 * Disable the timeout
+		 */
+		disable_timeout(STARTUP_PACKET_TIMEOUT, false);
+	}
 
 	/*
 	 * Now that we have the user and database name, we can set the process
@@ -4277,9 +4800,8 @@ BackendInitialize(Port *port)
 						update_process_title ? "authentication" : "");
 
 	/*
-	 * Disable the timeout, and prevent SIGTERM/SIGQUIT again.
+	 * Prevent SIGTERM/SIGQUIT again.
 	 */
-	disable_timeout(STARTUP_PACKET_TIMEOUT, false);
 	PG_SETMASK(&BlockSig);
 }
 
@@ -5990,6 +6512,9 @@ save_backend_variables(BackendParameters *param, Port *port,
 	if (!write_inheritable_socket(&param->portsocket, port->sock, childPid))
 		return false;
 
+	if (!write_inheritable_socket(&param->sessionsocket, SessionPoolSock, childPid))
+		return false;
+
 	strlcpy(param->DataDir, DataDir, MAXPGPATH);
 
 	memcpy(&param->ListenSocket, &ListenSocket, sizeof(ListenSocket));
@@ -6222,6 +6747,7 @@ restore_backend_variables(BackendParameters *param, Port *port)
 {
 	memcpy(port, &param->port, sizeof(Port));
 	read_inheritable_socket(&port->sock, &param->portsocket);
+	read_inheritable_socket(&SessionPoolSock, &param->sessionsocket);
 
 	SetDataDir(param->DataDir);
 

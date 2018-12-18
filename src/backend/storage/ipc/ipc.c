@@ -304,6 +304,13 @@ atexit_callback(void)
 void
 on_proc_exit(pg_on_exit_callback function, Datum arg)
 {
+	int i = on_proc_exit_index;
+
+	while (--i >= 0)
+	{
+		if (on_proc_exit_list[i].function == function && on_proc_exit_list[i].arg == arg)
+			return;
+	}
 	if (on_proc_exit_index >= MAX_ON_EXITS)
 		ereport(FATAL,
 				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
@@ -407,6 +414,15 @@ cancel_before_shmem_exit(pg_on_exit_callback function, Datum arg)
  */
 void
 on_exit_reset(void)
+{
+	before_shmem_exit_index = 0;
+	on_shmem_exit_index = 0;
+	on_proc_exit_index = 0;
+	reset_on_dsm_detach();
+}
+
+void
+on_shmem_exit_reset(void)
 {
 	before_shmem_exit_index = 0;
 	on_shmem_exit_index = 0;

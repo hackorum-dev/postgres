@@ -367,6 +367,9 @@ InitProcess(void)
 	MyPgXact->xid = InvalidTransactionId;
 	MyPgXact->xmin = InvalidTransactionId;
 	MyProc->pid = MyProcPid;
+	MyProc->nReadySessions = 0;
+	MyProc->nSessionSchedules = 0;
+	MyProc->nFinishedSessions = 0;
 	/* backendId, databaseId and roleId will be filled in later */
 	MyProc->backendId = InvalidBackendId;
 	MyProc->databaseId = InvalidOid;
@@ -594,6 +597,15 @@ InitAuxiliaryProcess(void)
 	 * Arrange to clean up at process exit.
 	 */
 	on_shmem_exit(AuxiliaryProcKill, Int32GetDatum(proctype));
+}
+
+/*
+ * Generate unique session ID.
+ */
+uint32
+CreateSessionId(void)
+{
+	return ++SessionPool->sessionCount;
 }
 
 /*
