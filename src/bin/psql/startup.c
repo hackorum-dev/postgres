@@ -347,7 +347,7 @@ main(int argc, char *argv[])
 					puts(cell->val);
 
 				successResult = SendQuery(cell->val)
-					? EXIT_SUCCESS : EXIT_FAILURE;
+					? EXIT_SUCCESS : EXIT_USER;
 			}
 			else if (cell->action == ACT_SINGLE_SLASH)
 			{
@@ -368,7 +368,7 @@ main(int argc, char *argv[])
 												cond_stack,
 												NULL,
 												NULL) != PSQL_CMD_ERROR
-					? EXIT_SUCCESS : EXIT_FAILURE;
+					? EXIT_SUCCESS : EXIT_USER;
 
 				psql_scan_destroy(scan_state);
 				conditional_stack_destroy(cond_stack);
@@ -383,7 +383,11 @@ main(int argc, char *argv[])
 				Assert(false);
 			}
 
-			if (successResult != EXIT_SUCCESS && pset.on_error_stop)
+			/* EXIT_USER shuld be forgotten if ON_ERROR_STOP is not set */
+			if (successResult == EXIT_USER && !pset.on_error_stop)
+				successResult = EXIT_SUCCESS;
+
+			if (successResult != EXIT_SUCCESS)
 				break;
 		}
 
