@@ -23,6 +23,7 @@
 #include "access/hash.h"
 #include "access/xact.h"
 #include "catalog/pg_type.h"
+#include "common/int.h"
 #include "common/int128.h"
 #include "funcapi.h"
 #include "libpq/pqformat.h"
@@ -3028,19 +3029,9 @@ interval_um(PG_FUNCTION_ARGS)
 
 	result = (Interval *) palloc(sizeof(Interval));
 
-	result->time = -interval->time;
-	/* overflow check copied from int4um */
-	if (interval->time != 0 && SAMESIGN(result->time, interval->time))
-		ereport(ERROR,
-				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
-				 errmsg("interval out of range")));
-	result->day = -interval->day;
-	if (interval->day != 0 && SAMESIGN(result->day, interval->day))
-		ereport(ERROR,
-				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
-				 errmsg("interval out of range")));
-	result->month = -interval->month;
-	if (interval->month != 0 && SAMESIGN(result->month, interval->month))
+	if (pg_sub_s32_overflow(0, interval->month, &result->month) ||
+		pg_sub_s32_overflow(0, interval->day, &result->day) ||
+		pg_sub_s64_overflow(0, interval->time, &result->time))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
 				 errmsg("interval out of range")));
@@ -3088,23 +3079,13 @@ interval_pl(PG_FUNCTION_ARGS)
 	result = (Interval *) palloc(sizeof(Interval));
 
 	result->month = span1->month + span2->month;
-	/* overflow check copied from int4pl */
-	if (SAMESIGN(span1->month, span2->month) &&
-		!SAMESIGN(result->month, span1->month))
-		ereport(ERROR,
-				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
-				 errmsg("interval out of range")));
 
-	result->day = span1->day + span2->day;
-	if (SAMESIGN(span1->day, span2->day) &&
-		!SAMESIGN(result->day, span1->day))
-		ereport(ERROR,
-				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
-				 errmsg("interval out of range")));
+	StaticAssertExpr(sizeof(result->time) == sizeof(int64),
+					 "adjust me");
 
-	result->time = span1->time + span2->time;
-	if (SAMESIGN(span1->time, span2->time) &&
-		!SAMESIGN(result->time, span1->time))
+	if (pg_add_s32_overflow(span1->month, span2->month, &result->month) ||
+		pg_add_s32_overflow(span1->day, span2->day, &result->day) ||
+		pg_add_s64_overflow(span1->time, span2->time, &result->time))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
 				 errmsg("interval out of range")));
@@ -3121,24 +3102,10 @@ interval_mi(PG_FUNCTION_ARGS)
 
 	result = (Interval *) palloc(sizeof(Interval));
 
-	result->month = span1->month - span2->month;
-	/* overflow check copied from int4mi */
-	if (!SAMESIGN(span1->month, span2->month) &&
-		!SAMESIGN(result->month, span1->month))
-		ereport(ERROR,
-				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
-				 errmsg("interval out of range")));
 
-	result->day = span1->day - span2->day;
-	if (!SAMESIGN(span1->day, span2->day) &&
-		!SAMESIGN(result->day, span1->day))
-		ereport(ERROR,
-				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
-				 errmsg("interval out of range")));
-
-	result->time = span1->time - span2->time;
-	if (!SAMESIGN(span1->time, span2->time) &&
-		!SAMESIGN(result->time, span1->time))
+	if (pg_sub_s32_overflow(span1->month, span2->month, &result->month) ||
+		pg_sub_s32_overflow(span1->day, span2->day, &result->day) ||
+		pg_sub_s64_overflow(span1->time, span2->time, &result->time))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
 				 errmsg("interval out of range")));
