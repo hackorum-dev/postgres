@@ -18,6 +18,7 @@
 #include "access/tuptoaster.h"
 #include "access/xact.h"
 #include "catalog/binary_upgrade.h"
+#include "catalog/catalog.h"
 #include "catalog/dependency.h"
 #include "catalog/heap.h"
 #include "catalog/index.h"
@@ -103,8 +104,9 @@ BootstrapToastTable(char *relName, Oid toastOid, Oid toastIndexOid)
 		rel->rd_rel->relkind != RELKIND_MATVIEW)
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("\"%s\" is not a table or materialized view",
-						relName)));
+				 errmsg("cannot create toast table for \"%s\"", relName),
+				 errdetail_unsuitable_relkind(rel->rd_rel->relkind,
+											  RelationGetRelationName(rel))));
 
 	/* create_toast_table does all the work */
 	if (!create_toast_table(rel, toastOid, toastIndexOid, (Datum) 0,

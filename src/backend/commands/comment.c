@@ -18,6 +18,7 @@
 #include "access/htup_details.h"
 #include "access/relation.h"
 #include "access/table.h"
+#include "catalog/catalog.h"
 #include "catalog/indexing.h"
 #include "catalog/objectaddress.h"
 #include "catalog/pg_description.h"
@@ -98,8 +99,10 @@ CommentObject(CommentStmt *stmt)
 				relation->rd_rel->relkind != RELKIND_PARTITIONED_TABLE)
 				ereport(ERROR,
 						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-						 errmsg("\"%s\" is not a table, view, materialized view, composite type, or foreign table",
-								RelationGetRelationName(relation))));
+						 errmsg("cannot add comment on \"%s\"",
+								RelationGetRelationName(relation)),
+						 errdetail_unsuitable_relkind(relation->rd_rel->relkind,
+													  RelationGetRelationName(relation))));
 			break;
 		default:
 			break;

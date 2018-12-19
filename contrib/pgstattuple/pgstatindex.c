@@ -33,6 +33,7 @@
 #include "access/nbtree.h"
 #include "access/relation.h"
 #include "access/table.h"
+#include "catalog/catalog.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_am.h"
 #include "funcapi.h"
@@ -758,13 +759,11 @@ GetHashPageStats(Page page, HashIndexStat *stats)
 static void
 check_relation_relkind(Relation rel)
 {
-	if (rel->rd_rel->relkind != RELKIND_RELATION &&
-		rel->rd_rel->relkind != RELKIND_INDEX &&
-		rel->rd_rel->relkind != RELKIND_MATVIEW &&
-		rel->rd_rel->relkind != RELKIND_SEQUENCE &&
-		rel->rd_rel->relkind != RELKIND_TOASTVALUE)
+	if (!RELKIND_HAS_STORAGE(rel->rd_rel->relkind))
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("\"%s\" is not a table, index, materialized view, sequence, or TOAST table",
-						RelationGetRelationName(rel))));
+				 errmsg("cannot compute relpages of \"%s\"",
+						RelationGetRelationName(rel)),
+				 errdetail_unsuitable_relkind(rel->rd_rel->relkind,
+											  RelationGetRelationName(rel))));
 }

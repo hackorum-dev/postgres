@@ -528,3 +528,48 @@ pg_nextoid(PG_FUNCTION_ARGS)
 
 	return newoid;
 }
+
+/*
+ * Add an errdetail to the current error message indicating what the relkind of
+ * the relation is.  This is useful when an operation is being attempted on a
+ * relation that cannot accept it.
+ */
+int
+errdetail_unsuitable_relkind(char relkind, const char *relname)
+{
+	switch (relkind)
+	{
+		case RELKIND_RELATION:
+			errdetail("\"%s\" is a plain table.", relname);
+			break;
+		case RELKIND_INDEX:
+			errdetail("\"%s\" is an index.", relname);
+			break;
+		case RELKIND_SEQUENCE:
+			errdetail("\"%s\" is a sequence.", relname);
+			break;
+		case RELKIND_TOASTVALUE:
+			errdetail("\"%s\" is a TOAST table.", relname);
+			break;
+		case RELKIND_VIEW:
+			errdetail("\"%s\" is a view.", relname);
+			break;
+		case RELKIND_MATVIEW:
+			errdetail("\"%s\" is a materialized view.", relname);
+			break;
+		case RELKIND_COMPOSITE_TYPE:
+			errdetail("\"%s\" is a composite type.", relname);
+			break;
+		case RELKIND_FOREIGN_TABLE:
+			errdetail("\"%s\" is a foreign table.", relname);
+			break;
+		case RELKIND_PARTITIONED_TABLE:
+			errdetail("\"%s\" is a partitioned table.", relname);
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+			errdetail("\"%s\" is a partitioned index.", relname);
+			break;
+	}
+
+	return 0;
+}

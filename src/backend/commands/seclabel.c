@@ -114,8 +114,10 @@ ExecSecLabelStmt(SecLabelStmt *stmt)
 				relation->rd_rel->relkind != RELKIND_PARTITIONED_TABLE)
 				ereport(ERROR,
 						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-						 errmsg("\"%s\" is not a table, view, materialized view, composite type, or foreign table",
-								RelationGetRelationName(relation))));
+						 errmsg("cannot set security label on \"%s\"",
+								RelationGetRelationName(relation)),
+						 errdetail_unsuitable_relkind(relation->rd_rel->relkind,
+													  RelationGetRelationName(relation))));
 			break;
 		default:
 			break;

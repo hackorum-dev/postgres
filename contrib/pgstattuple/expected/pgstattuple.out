@@ -161,7 +161,8 @@ ERROR:  "test_partitioned_index" (partitioned index) is not supported
 select pgstattuple_approx('test_partitioned');
 ERROR:  "test_partitioned" is not a table or materialized view
 select pg_relpages('test_partitioned');
-ERROR:  "test_partitioned" is not a table, index, materialized view, sequence, or TOAST table
+ERROR:  cannot compute relpages of "test_partitioned"
+DETAIL:  "test_partitioned" is a partitioned table.
 select pgstatindex('test_partitioned');
 ERROR:  relation "test_partitioned" is not a btree index
 select pgstatginindex('test_partitioned');
@@ -175,7 +176,8 @@ ERROR:  "test_view" (view) is not supported
 select pgstattuple_approx('test_view');
 ERROR:  "test_view" is not a table or materialized view
 select pg_relpages('test_view');
-ERROR:  "test_view" is not a table, index, materialized view, sequence, or TOAST table
+ERROR:  cannot compute relpages of "test_view"
+DETAIL:  "test_view" is a view.
 select pgstatindex('test_view');
 ERROR:  relation "test_view" is not a btree index
 select pgstatginindex('test_view');
@@ -191,7 +193,8 @@ ERROR:  "test_foreign_table" (foreign table) is not supported
 select pgstattuple_approx('test_foreign_table');
 ERROR:  "test_foreign_table" is not a table or materialized view
 select pg_relpages('test_foreign_table');
-ERROR:  "test_foreign_table" is not a table, index, materialized view, sequence, or TOAST table
+ERROR:  cannot compute relpages of "test_foreign_table"
+DETAIL:  "test_foreign_table" is a foreign table.
 select pgstatindex('test_foreign_table');
 ERROR:  relation "test_foreign_table" is not a btree index
 select pgstatginindex('test_foreign_table');

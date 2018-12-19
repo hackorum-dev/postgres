@@ -38,4 +38,6 @@ extern Oid GetNewOidWithIndex(Relation relation, Oid indexId,
 extern Oid GetNewRelFileNode(Oid reltablespace, Relation pg_class,
 				  char relpersistence);
 
+extern int errdetail_unsuitable_relkind(char relkind, const char *relname);
+
 #endif							/* CATALOG_H */

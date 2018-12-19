@@ -13,6 +13,7 @@
 #include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/visibilitymap.h"
+#include "catalog/catalog.h"
 #include "catalog/pg_type.h"
 #include "catalog/storage_xlog.h"
 #include "funcapi.h"
@@ -776,6 +777,8 @@ check_relation_relkind(Relation rel)
 		rel->rd_rel->relkind != RELKIND_TOASTVALUE)
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("\"%s\" is not a table, materialized view, or TOAST table",
-						RelationGetRelationName(rel))));
+				 errmsg("cannot examine visibility information for \"%s\"",
+						RelationGetRelationName(rel)),
+				 errdetail_unsuitable_relkind(rel->rd_rel->relkind,
+											  RelationGetRelationName(rel))));
 }
