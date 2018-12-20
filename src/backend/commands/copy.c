@@ -121,6 +121,8 @@ typedef struct CopyStateData
 	int			file_encoding;	/* file or remote side's character encoding */
 	bool		need_transcoding;	/* file encoding diff from server? */
 	bool		encoding_embeds_ascii;	/* ASCII can be non-first byte? */
+	int		start_postion;	/* copying star line */
+	int		end_postion;	/* copying end line */
 
 	/* parameters from the COPY command */
 	Relation	rel;			/* relation to copy to or from */
@@ -347,6 +349,7 @@ static void CopySendInt32(CopyState cstate, int32 val);
 static bool CopyGetInt32(CopyState cstate, int32 *val);
 static void CopySendInt16(CopyState cstate, int16 val);
 static bool CopyGetInt16(CopyState cstate, int16 *val);
+static void skipLines(CopyState cstate);
 
 
 /*
@@ -1223,6 +1226,34 @@ ProcessCopyOptions(ParseState *pstate,
 								defel->defname),
 						 parser_errposition(pstate, defel->location)));
 		}
+		else if (strcmp(defel->defname, "start") == 0)
+		{
+			if (cstate->start_postion)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
+			cstate->start_postion = defGetInt64(defel);
+			if (cstate->start_postion < 0)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("invalid START line number"),
+						 parser_errposition(pstate, defel->location)));
+		}
+		else if (strcmp(defel->defname, "end") == 0)
+		{
+			if (cstate->end_postion)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
+			cstate->end_postion = defGetInt64(defel);
+			if (cstate->end_postion < 0)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("invalid END line number"),
+						 parser_errposition(pstate, defel->location)));
+		}
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_SYNTAX_ERROR),
@@ -1373,6 +1404,13 @@ ProcessCopyOptions(ParseState *pstate,
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("CSV quote character must not appear in the NULL specification")));
+
+	if (cstate->end_postion != 0 &&
+		cstate->start_postion > cstate->end_postion)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("START line number can not be greater then END line number")));
+
 }
 
 /*
@@ -2317,6 +2355,7 @@ CopyFrom(CopyState cstate)
 	uint64		lastPartitionSampleLineNo = 0;
 	uint64		nPartitionChanges = 0;
 	double		avgTuplesPerPartChange = 0;
+	uint64		end_line = 1;
 
 	Assert(cstate->rel);
 
@@ -2619,6 +2658,20 @@ CopyFrom(CopyState cstate)
 	has_instead_insert_row_trig = (resultRelInfo->ri_TrigDesc &&
 								   resultRelInfo->ri_TrigDesc->trig_insert_instead_row);
 
+	if (cstate->start_postion)
+	{
+		end_line = cstate->start_postion;
+		skipLines(cstate);
+	}
+
+	/* throw the header line away means start copying at second line */
+	if (cstate->start_postion == 0 && cstate->header_line)
+	{
+		cstate->start_postion = 2;
+		end_line = cstate->start_postion;
+		skipLines(cstate);
+	}
+
 	/*
 	 * Check BEFORE STATEMENT insertion triggers. It's debatable whether we
 	 * should do this for COPY, since it's not really an "INSERT" statement as
@@ -2643,6 +2696,9 @@ CopyFrom(CopyState cstate)
 	{
 		TupleTableSlot *slot;
 		bool		skip_tuple;
+
+		if (cstate->end_postion !=0 && cstate->end_postion < end_line++)
+			break;
 
 		CHECK_FOR_INTERRUPTS();
 
@@ -3394,14 +3450,6 @@ NextCopyFromRawFields(CopyState cstate, char ***fields, int *nfields)
 	/* only available for text or csv input */
 	Assert(!cstate->binary);
 
-	/* on input just throw the header line away */
-	if (cstate->cur_lineno == 0 && cstate->header_line)
-	{
-		cstate->cur_lineno++;
-		if (CopyReadLine(cstate))
-			return false;		/* done */
-	}
-
 	cstate->cur_lineno++;
 
 	/* Actually read the line into memory here */
@@ -4084,6 +4132,22 @@ not_end_of_copy:
 	REFILL_LINEBUF;
 
 	return result;
+}
+
+/*
+ * go to starting postion.
+ */
+static void
+skipLines(CopyState cstate)
+{
+	for (int i=1; i < cstate->start_postion; i++)
+	{
+		if (CopyReadLineText(cstate))
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("START line can not be greater than the number of record in the file")));
+
+	}
 }
 
 /*
