@@ -1806,7 +1806,7 @@ omicron         bryanh                  guest1
       <listitem>
        <para>
         Names or IP addresses of LDAP servers to connect to. Multiple
-        servers may be specified, separated by spaces.
+        servers may be specified, each <literal>ldapserver=servername</literal> separated by whitespace.
        </para>
       </listitem>
      </varlistentry>
