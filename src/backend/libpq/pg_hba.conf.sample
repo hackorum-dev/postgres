@@ -22,9 +22,10 @@
 # plain TCP/IP socket.
 #
 # DATABASE can be "all", "sameuser", "samerole", "replication", a
-# database name, or a comma-separated list thereof. The "all"
-# keyword does not match "replication". Access to replication
-# must be enabled in a separate record (see example below).
+# database name, or a comma-separated list thereof. The "all" keyword
+# matches all databases. The "replication" keyword matches a physical
+# replication connection request and it must be enabled in a separate
+# record (see example below).
 #
 # USER can be "all", a user name, a group name prefixed with "+", or a
 # comma-separated list thereof.  In both the DATABASE and USER fields
