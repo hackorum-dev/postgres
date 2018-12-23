@@ -258,7 +258,7 @@ static void AtEOSubXact_cleanup(Relation relation, bool isCommit,
 					SubTransactionId mySubid, SubTransactionId parentSubid);
 static bool load_relcache_init_file(bool shared);
 static void write_relcache_init_file(bool shared);
-static void write_item(const void *data, Size len, FILE *fp);
+static void write_item(const void *data, Size len, FILE *fp, int *write_error);
 
 static void formrdesc(const char *relationName, Oid relationReltype,
 		  bool isshared, int natts, const FormData_pg_attribute *attrs);
@@ -5720,6 +5720,7 @@ write_relcache_init_file(bool shared)
 	HASH_SEQ_STATUS status;
 	RelIdCacheEnt *idhentry;
 	int			i;
+	int			write_error=0;
 
 	/*
 	 * If we have already received any relcache inval events, there's no
@@ -5771,7 +5772,14 @@ write_relcache_init_file(bool shared)
 	 */
 	magic = RELCACHE_INIT_FILEMAGIC;
 	if (fwrite(&magic, 1, sizeof(magic), fp) != sizeof(magic))
-		elog(FATAL, "could not write init file");
+	{
+		ereport(WARNING,
+				(errcode_for_file_access(),
+				 errmsg("could not write relation-cache initialization file \"%s\": %m",
+						tempfilename),
+				 errdetail("Continuing anyway, but there's something wrong.")));
+		return;
+	}
 
 	/*
 	 * Write all the appropriate reldescs (in no particular order).
@@ -5805,22 +5813,22 @@ write_relcache_init_file(bool shared)
 		}
 
 		/* first write the relcache entry proper */
-		write_item(rel, sizeof(RelationData), fp);
+		write_item(rel, sizeof(RelationData), fp, &write_error);
 
 		/* next write the relation tuple form */
-		write_item(relform, CLASS_TUPLE_SIZE, fp);
+		write_item(relform, CLASS_TUPLE_SIZE, fp, &write_error);
 
 		/* next, do all the attribute tuple form data entries */
 		for (i = 0; i < relform->relnatts; i++)
 		{
 			write_item(TupleDescAttr(rel->rd_att, i),
-					   ATTRIBUTE_FIXED_PART_SIZE, fp);
+					   ATTRIBUTE_FIXED_PART_SIZE, fp, &write_error);
 		}
 
 		/* next, do the access method specific field */
 		write_item(rel->rd_options,
 				   (rel->rd_options ? VARSIZE(rel->rd_options) : 0),
-				   fp);
+				   fp, &write_error);
 
 		/*
 		 * If it's an index, there's more to do. Note we explicitly ignore
@@ -5832,37 +5840,45 @@ write_relcache_init_file(bool shared)
 			/* we assume this was created by heap_copytuple! */
 			write_item(rel->rd_indextuple,
 					   HEAPTUPLESIZE + rel->rd_indextuple->t_len,
-					   fp);
+					   fp, &write_error);
 
 			/* next, write the vector of opfamily OIDs */
 			write_item(rel->rd_opfamily,
 					   relform->relnatts * sizeof(Oid),
-					   fp);
+					   fp, &write_error);
 
 			/* next, write the vector of opcintype OIDs */
 			write_item(rel->rd_opcintype,
 					   relform->relnatts * sizeof(Oid),
-					   fp);
+					   fp, &write_error);
 
 			/* next, write the vector of support procedure OIDs */
 			write_item(rel->rd_support,
 					   relform->relnatts * (rel->rd_amroutine->amsupport * sizeof(RegProcedure)),
-					   fp);
+					   fp, &write_error);
 
 			/* next, write the vector of collation OIDs */
 			write_item(rel->rd_indcollation,
 					   relform->relnatts * sizeof(Oid),
-					   fp);
+					   fp, &write_error);
 
 			/* finally, write the vector of indoption values */
 			write_item(rel->rd_indoption,
 					   relform->relnatts * sizeof(int16),
-					   fp);
+					   fp, &write_error);
 		}
 	}
 
-	if (FreeFile(fp))
-		elog(FATAL, "could not write init file");
+	if (FreeFile(fp) || write_error)
+	{
+		ereport(WARNING,
+				(errcode_for_file_access(),
+				 errmsg("could not write relation-cache initialization file \"%s\": %m",
+						tempfilename),
+				 errdetail("Continuing anyway, but there's something wrong.")));
+		unlink(tempfilename);
+		return;
+	}
 
 	/*
 	 * Now we have to check whether the data we've so painstakingly
@@ -5909,12 +5925,12 @@ write_relcache_init_file(bool shared)
 
 /* write a chunk of data preceded by its length */
 static void
-write_item(const void *data, Size len, FILE *fp)
+write_item(const void *data, Size len, FILE *fp, int* write_error)
 {
 	if (fwrite(&len, 1, sizeof(len), fp) != sizeof(len))
-		elog(FATAL, "could not write init file");
+		*write_error=1;
 	if (fwrite(data, 1, len, fp) != len)
-		elog(FATAL, "could not write init file");
+		*write_error=1;
 }
 
 /*
