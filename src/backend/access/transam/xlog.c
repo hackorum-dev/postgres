@@ -5307,6 +5307,7 @@ static void
 readRecoverySignalFile(void)
 {
 	struct stat stat_buf;
+	int			fd;
 
 	if (IsBootstrapProcessingMode())
 		return;
@@ -5333,30 +5334,20 @@ readRecoverySignalFile(void)
 	 * If present, standby signal file takes precedence. If neither is present
 	 * then we won't enter archive recovery.
 	 */
-	if (stat(STANDBY_SIGNAL_FILE, &stat_buf) == 0)
+	if ((fd = BasicOpenFilePerm(STANDBY_SIGNAL_FILE,
+								O_RDWR | PG_BINARY | get_sync_bit(sync_method),
+								S_IRUSR | S_IWUSR)) >= 0)
 	{
-		int			fd;
-
-		fd = BasicOpenFilePerm(STANDBY_SIGNAL_FILE, O_RDWR | PG_BINARY | get_sync_bit(sync_method),
-							   S_IRUSR | S_IWUSR);
-		if (fd >= 0)
-		{
-			(void) pg_fsync(fd);
-			close(fd);
-		}
+		(void) pg_fsync(fd);
+		close(fd);
 		standby_signal_file_found = true;
 	}
-	else if (stat(RECOVERY_SIGNAL_FILE, &stat_buf) == 0)
+	else if ((fd = BasicOpenFilePerm(RECOVERY_SIGNAL_FILE,
+								O_RDWR | PG_BINARY | get_sync_bit(sync_method),
+								S_IRUSR | S_IWUSR)) >= 0)
 	{
-		int			fd;
-
-		fd = BasicOpenFilePerm(RECOVERY_SIGNAL_FILE, O_RDWR | PG_BINARY | get_sync_bit(sync_method),
-							   S_IRUSR | S_IWUSR);
-		if (fd >= 0)
-		{
-			(void) pg_fsync(fd);
-			close(fd);
-		}
+		(void) pg_fsync(fd);
+		close(fd);
 		recovery_signal_file_found = true;
 	}
 
