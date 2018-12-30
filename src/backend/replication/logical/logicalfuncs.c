@@ -45,6 +45,7 @@
 #include "replication/logical.h"
 #include "replication/logicalfuncs.h"
 #include "replication/message.h"
+#include "replication/snapbuild.h"
 
 #include "storage/fd.h"
 
@@ -331,7 +332,16 @@ pg_logical_slot_get_changes_guts(FunctionCallInfo fcinfo, bool confirm, bool bin
 		 */
 		if (ctx->reader->EndRecPtr != InvalidXLogRecPtr && confirm)
 		{
+			XLogRecPtr		snapshot_lsn;
+			TransactionId	xmin;
+
 			LogicalConfirmReceivedLocation(ctx->reader->EndRecPtr);
+
+			xmin = ReorderBufferGetOldestXmin(ctx->reorder);
+			snapshot_lsn = SnapBuildGetSnapshotLsn(ctx->snapshot_builder);
+			LogicalIncreaseXminForSlot(snapshot_lsn, xmin);
+			LogicalIncreaseRestartDecodingForSlot(snapshot_lsn,
+												  snapshot_lsn);
 
 			/*
 			 * If only the confirmed_flush_lsn has changed the slot won't get

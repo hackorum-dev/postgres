@@ -687,6 +687,12 @@ SnapBuildGetOrBuildSnapshot(SnapBuild *builder, TransactionId xid)
 	return builder->snapshot;
 }
 
+XLogRecPtr
+SnapBuildGetSnapshotLsn(SnapBuild *builder)
+{
+	return builder->last_serialized_snapshot;
+}
+
 /*
  * Reset a previously SnapBuildExportSnapshot()'ed snapshot if there is
  * any. Aborts the previously started transaction and resets the resource

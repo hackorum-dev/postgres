@@ -21,6 +21,7 @@
 #include "replication/slot.h"
 #include "replication/logical.h"
 #include "replication/logicalfuncs.h"
+#include "replication/snapbuild.h"
 #include "utils/builtins.h"
 #include "utils/inval.h"
 #include "utils/pg_lsn.h"
@@ -428,7 +429,16 @@ pg_logical_replication_slot_advance(XLogRecPtr moveto)
 
 		if (ctx->reader->EndRecPtr != InvalidXLogRecPtr)
 		{
+			XLogRecPtr		snapshot_lsn;
+			TransactionId	xmin;
+
 			LogicalConfirmReceivedLocation(moveto);
+
+			xmin = ReorderBufferGetOldestXmin(ctx->reorder);
+			snapshot_lsn = SnapBuildGetSnapshotLsn(ctx->snapshot_builder);
+			LogicalIncreaseXminForSlot(snapshot_lsn, xmin);
+			LogicalIncreaseRestartDecodingForSlot(snapshot_lsn,
+												  snapshot_lsn);
 
 			/*
 			 * If only the confirmed_flush LSN has changed the slot won't get
