@@ -26,7 +26,11 @@
 #include "utils/builtins.h"
 #include "utils/guc.h"
 #include "utils/pg_lsn.h"
+#include "utils/varlena.h"
 
+char	*synchronize_slot_names_string;
+NameData *synchronize_slot_names;
+int numsynchronize_slot_names;
 
 /*
  * Wait for remote slot to pass localy reserved position.
@@ -215,12 +219,26 @@ synchronize_slots(void)
 				(errmsg("could not connect to the primary server: %s", err)));
 
 	resetStringInfo(&s);
-	/* TODO filter slot names? */
 	appendStringInfo(&s,
 					 "SELECT slot_name, plugin, confirmed_flush_lsn"
 					 "  FROM pg_catalog.pg_replication_slots"
 					 " WHERE database = %s",
 					 quote_literal_cstr(database));
+	if (numsynchronize_slot_names > 0)
+	{
+		int				i;
+
+		appendStringInfoString(&s, " AND slot_name IN (");
+		for (i = 0; i < numsynchronize_slot_names; i++)
+		{
+			if (i > 0)
+				appendStringInfoChar(&s, ',');
+			appendStringInfo(&s, "%s",
+					quote_literal_cstr(NameStr(synchronize_slot_names[i])));
+		}
+		appendStringInfoChar(&s, ')');
+	}
+
 	res = walrcv_exec(wrconn, s.data, 3, slotRow);
 	pfree(s.data);
 
@@ -300,6 +318,9 @@ ReplSlotSyncMain(Datum main_arg)
 		if (!RecoveryInProgress())
 			return;
 
+		if (numsynchronize_slot_names == 0)
+			return;
+
 		synchronize_slots();
 
 		rc = WaitLatch(MyLatch,
@@ -313,4 +334,85 @@ ReplSlotSyncMain(Datum main_arg)
 		if (rc & WL_POSTMASTER_DEATH)
 			proc_exit(1);
 	}
+}
+
+/*
+ * Routines for handling the GUC variable(s)
+ */
+
+typedef struct
+{
+	int			numslots;
+	NameData	slots[FLEXIBLE_ARRAY_MEMBER];
+} synchronize_slot_names_extra;
+
+bool
+check_synchronize_slot_names(char **newval, void **extra, GucSource source)
+{
+	char	   *rawname;
+	List	   *namelist;
+	ListCell   *lc;
+	synchronize_slot_names_extra *myextra;
+	NameData   *slots;
+	int			numslots;
+
+	/* Need a modifiable copy of string */
+	rawname = pstrdup(*newval);
+
+	/* Parse string into list of identifiers */
+	if (!SplitIdentifierString(rawname, ',', &namelist))
+	{
+		/* syntax error in name list */
+		GUC_check_errdetail("List syntax is invalid.");
+		pfree(rawname);
+		list_free(namelist);
+		return false;
+	}
+
+	/* temporary workspace until we are done verifying the list */
+	slots = (NameData *) palloc(list_length(namelist) * sizeof(NameData));
+	numslots = 0;
+	foreach(lc, namelist)
+	{
+		char	   *curname = (char *) lfirst(lc);
+
+		/* Special handling for "*" which means all. */
+		if (strcmp(curname, "*") == 0)
+		{
+			numslots = -1;
+			break;
+		}
+
+		/* For any other value, validate slot name. */
+		ReplicationSlotValidateName(curname, ERROR);
+
+		/* And add it to our array. */
+		namestrcpy(&slots[numslots++], curname);
+	}
+
+	/* Now prepare an "extra" struct for assign_temp_tablespaces */
+	myextra = malloc(offsetof(synchronize_slot_names_extra, slots) +
+					 numslots > 0 ? numslots * sizeof(NameData) : 0);
+	if (!myextra)
+		return false;
+	myextra->numslots = numslots;
+	if (numslots > 0)
+		memcpy(myextra->slots, slots, numslots * sizeof(NameData));
+	*extra = (void *) myextra;
+
+	pfree(slots);
+	pfree(rawname);
+	list_free(namelist);
+
+	return true;
+}
+
+void
+assign_synchronize_slot_names(const char *newval, void *extra)
+{
+	synchronize_slot_names_extra *myextra =
+		(synchronize_slot_names_extra *) extra;
+
+	synchronize_slot_names = myextra->slots;
+	numsynchronize_slot_names = myextra->numslots;
 }

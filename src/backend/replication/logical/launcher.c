@@ -1005,7 +1005,8 @@ ApplyLauncherStartSlotSync(TimestampTz *last_start_time, long *wait_time)
 									ALLOCSET_DEFAULT_SIZES);
 	oldctx = MemoryContextSwitchTo(tmpctx);
 
-	slots = walrcv_list_slots(wrconn);
+	slots = walrcv_list_slots(wrconn, numsynchronize_slot_names,
+							  synchronize_slot_names);
 
 	now = GetCurrentTimestamp();
 

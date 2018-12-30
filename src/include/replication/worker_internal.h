@@ -68,6 +68,10 @@ extern LogicalRepWorker *MyLogicalRepWorker;
 
 extern bool in_remote_transaction;
 
+/* Translated Gucs we share with launcher and worker. */
+extern NameData *synchronize_slot_names;
+extern int numsynchronize_slot_names;
+
 extern void logicalrep_worker_attach(int slot);
 extern LogicalRepWorker *logicalrep_worker_find(Oid dbid, Oid subid, Oid relid,
 					   bool only_running);

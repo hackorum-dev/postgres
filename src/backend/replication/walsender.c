@@ -426,16 +426,41 @@ IdentifySystem(void)
 	end_tup_output(tstate);
 }
 
+static int
+pg_qsort_namecmp(const void *a, const void *b)
+{
+	return strncmp(NameStr(*(Name)a), NameStr(*(Name)b), NAMEDATALEN);
+}
 /*
  * Handle the LIST_SLOTS command.
  */
 static void
-ListSlots(void)
+ListSlots(ListSlotsCmd *cmd)
 {
 	DestReceiver *dest;
 	TupOutputState *tstate;
 	TupleDesc	tupdesc;
 	int			slotno;
+	NameData   *slot_names;
+	int			numslot_names;
+
+	numslot_names = list_length(cmd->slot_names);
+	if (numslot_names)
+	{
+		ListCell *lc;
+		int		  i = 0;
+
+		slot_names = palloc(numslot_names * sizeof(NameData));
+		foreach (lc, cmd->slot_names)
+		{
+			char *slot_name = lfirst(lc);
+
+			ReplicationSlotValidateName(slot_name, ERROR);
+			namestrcpy(&slot_names[i++], slot_name);
+		}
+
+		qsort(slot_names, numslot_names, sizeof(NameData), pg_qsort_namecmp);
+	}
 
 	dest = CreateDestReceiver(DestRemoteSimple);
 
@@ -500,6 +525,11 @@ ListSlots(void)
 		persistency = slot->data.persistency;
 
 		SpinLockRelease(&slot->mutex);
+
+		if (numslot_names &&
+			!bsearch((void *) &slot_name, (void *) slot_names,
+					 numslot_names, sizeof(NameData), pg_qsort_namecmp))
+			continue;
 
 		memset(nulls, 0, sizeof(nulls));
 
@@ -1712,7 +1742,10 @@ exec_replication_command(const char *cmd_string)
 			break;
 
 		case T_ListSlotsCmd:
-			ListSlots();
+			{
+				ListSlotsCmd *cmd = (ListSlotsCmd *) cmd_node;
+				ListSlots(cmd);
+			}
 			break;
 
 		case T_SQLCmd:

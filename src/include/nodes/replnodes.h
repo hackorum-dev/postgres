@@ -40,6 +40,7 @@ typedef struct IdentifySystemCmd
 typedef struct ListSlotsCmd
 {
 	NodeTag		type;
+	List	   *slot_names;
 } ListSlotsCmd;
 
 /* ----------------------

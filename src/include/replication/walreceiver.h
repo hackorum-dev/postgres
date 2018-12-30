@@ -219,7 +219,7 @@ typedef void (*walrcv_get_senderinfo_fn) (WalReceiverConn *conn,
 typedef char *(*walrcv_identify_system_fn) (WalReceiverConn *conn,
 											TimeLineID *primary_tli,
 											int *server_version);
-typedef List *(*walrcv_list_slots_fn) (WalReceiverConn *conn);
+typedef List *(*walrcv_list_slots_fn) (WalReceiverConn *conn, int nslots, NameData *slots);
 typedef void (*walrcv_readtimelinehistoryfile_fn) (WalReceiverConn *conn,
 												   TimeLineID tli,
 												   char **filename,
@@ -272,8 +272,8 @@ extern PGDLLIMPORT WalReceiverFunctionsType *WalReceiverFunctions;
 	WalReceiverFunctions->walrcv_get_senderinfo(conn, sender_host, sender_port)
 #define walrcv_identify_system(conn, primary_tli, server_version) \
 	WalReceiverFunctions->walrcv_identify_system(conn, primary_tli, server_version)
-#define walrcv_list_slots(conn) \
-	WalReceiverFunctions->walrcv_list_slots(conn)
+#define walrcv_list_slots(conn, nslots, slots) \
+	WalReceiverFunctions->walrcv_list_slots(conn, nslots, slots)
 #define walrcv_readtimelinehistoryfile(conn, tli, filename, content, size) \
 	WalReceiverFunctions->walrcv_readtimelinehistoryfile(conn, tli, filename, content, size)
 #define walrcv_startstreaming(conn, options) \

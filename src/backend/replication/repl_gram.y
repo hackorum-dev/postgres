@@ -103,6 +103,7 @@ static SQLCmd *make_sqlcmd(void);
 %type <boolval>	opt_temporary
 %type <list>	create_slot_opt_list
 %type <defelt>	create_slot_opt
+%type <list>	slot_name_list slot_name_list_opt
 
 %%
 
@@ -138,13 +139,31 @@ identify_system:
 					$$ = (Node *) makeNode(IdentifySystemCmd);
 				}
 			;
+
+slot_name_list:
+			IDENT
+				{
+					$$ = list_make1($1);
+				}
+			| slot_name_list ',' IDENT
+				{
+					$$ = lappend($1, $3);
+				}
+
+slot_name_list_opt:
+			slot_name_list			{ $$ = $1; }
+			| /* EMPTY */			{ $$ = NIL; }
+		;
+
 /*
  * LIST_SLOTS
  */
 list_slots:
-			K_LIST_SLOTS
+			K_LIST_SLOTS slot_name_list_opt
 				{
-					$$ = (Node *) makeNode(ListSlotsCmd);
+					ListSlotsCmd *cmd = makeNode(ListSlotsCmd);
+					cmd->slot_names = $2;
+					$$ = (Node *) cmd;
 				}
 			;
 

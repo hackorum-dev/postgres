@@ -59,7 +59,8 @@ static void libpqrcv_get_senderinfo(WalReceiverConn *conn,
 static char *libpqrcv_identify_system(WalReceiverConn *conn,
 						 TimeLineID *primary_tli,
 						 int *server_version);
-static List *libpqrcv_list_slots(WalReceiverConn *conn);
+static List *libpqrcv_list_slots(WalReceiverConn *conn, int nslot_names,
+					NameData *slot_names);
 static void libpqrcv_readtimelinehistoryfile(WalReceiverConn *conn,
 								 TimeLineID tli, char **filename,
 								 char **content, int *len);
@@ -355,15 +356,34 @@ libpqrcv_identify_system(WalReceiverConn *conn, TimeLineID *primary_tli,
  * Get list of slots from primary.
  */
 static List *
-libpqrcv_list_slots(WalReceiverConn *conn)
+libpqrcv_list_slots(WalReceiverConn *conn, int nslot_names,
+					NameData *slot_names)
 {
 	PGresult   *res;
 	int			i;
-	List	   *slots = NIL;
+	List	   *slotlist = NIL;
 	int			ntuples;
+	StringInfoData	s;
 	WalRecvReplicationSlotData *slot_data;
 
-	res = libpqrcv_PQexec(conn->streamConn, "LIST_SLOTS");
+	initStringInfo(&s);
+	appendStringInfoString(&s, "LIST_SLOTS");
+	if (nslot_names > 0)
+	{
+		int				i;
+
+		appendStringInfoChar(&s, ' ');
+		for (i = 0; i < nslot_names; i++)
+		{
+			if (i > 0)
+				appendStringInfoChar(&s, ',');
+			appendStringInfo(&s, "%s",
+							 quote_identifier(NameStr(slot_names[i])));
+		}
+	}
+
+	res = libpqrcv_PQexec(conn->streamConn, s.data);
+	pfree(s.data);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
 	{
 		PQclear(res);
@@ -414,12 +434,12 @@ libpqrcv_list_slots(WalReceiverConn *conn)
 			slot_data->confirmed_flush = pg_strtouint64(PQgetvalue(res, i, 9),
 														NULL, 10);
 
-		slots = lappend(slots, slot_data);
+		slotlist = lappend(slotlist, slot_data);
 	}
 
 	PQclear(res);
 
-	return slots;
+	return slotlist;
 }
 
 /*
