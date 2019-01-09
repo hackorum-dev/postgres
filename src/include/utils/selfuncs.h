@@ -33,8 +33,12 @@
 /* default selectivity estimate for equalities such as "A = b" */
 #define DEFAULT_EQ_SEL	0.005
 
-/* default selectivity estimate for inequalities such as "A < b" */
-#define DEFAULT_INEQ_SEL  0.3333333333333333
+/*
+ * default selectivity estimate for inequalities such as "A < b"
+ * The last two digits prevent it from making a false match with 1/3 computed
+ * from histogram and/or MCV.
+ */
+#define DEFAULT_INEQ_SEL  0.33333333333333342
 
 /* default selectivity estimate for range inequalities "A > b AND A < c" */
 #define DEFAULT_RANGE_INEQ_SEL	0.005
