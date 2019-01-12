@@ -12,13 +12,7 @@
  *
  *-------------------------------------------------------------------------
  */
-/*
- * INTERFACE ROUTINES
- *		MultiExecBitmapIndexScan	scans a relation using index.
- *		ExecInitBitmapIndexScan		creates and initializes state info.
- *		ExecReScanBitmapIndexScan	prepares to rescan the plan.
- *		ExecEndBitmapIndexScan		releases all storage.
- */
+
 #include "postgres.h"
 
 #include "executor/execdebug.h"
@@ -43,6 +37,8 @@ ExecBitmapIndexScan(PlanState *pstate)
 
 /* ----------------------------------------------------------------
  *		MultiExecBitmapIndexScan(node)
+ *
+ *		Scans a relation using index.
  * ----------------------------------------------------------------
  */
 Node *
@@ -169,6 +165,8 @@ ExecReScanBitmapIndexScan(BitmapIndexScanState *node)
 
 /* ----------------------------------------------------------------
  *		ExecEndBitmapIndexScan
+ *
+ *		Releases all storage.
  * ----------------------------------------------------------------
  */
 void

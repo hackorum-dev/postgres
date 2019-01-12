@@ -12,21 +12,7 @@
  *
  *-------------------------------------------------------------------------
  */
-/*
- * INTERFACE ROUTINES
- *		ExecIndexScan			scans a relation using an index
- *		IndexNext				retrieve next tuple using index
- *		IndexNextWithReorder	same, but recheck ORDER BY expressions
- *		ExecInitIndexScan		creates and initializes state info.
- *		ExecReScanIndexScan		rescans the indexed relation.
- *		ExecEndIndexScan		releases all storage.
- *		ExecIndexMarkPos		marks scan position.
- *		ExecIndexRestrPos		restores scan position.
- *		ExecIndexScanEstimate	estimates DSM space needed for parallel index scan
- *		ExecIndexScanInitializeDSM initialize DSM for parallel indexscan
- *		ExecIndexScanReInitializeDSM reinitialize DSM for fresh scan
- *		ExecIndexScanInitializeWorker attach to DSM info in parallel worker
- */
+
 #include "postgres.h"
 
 #include "access/nbtree.h"
@@ -537,6 +523,8 @@ reorderqueue_pop(IndexScanState *node)
 
 /* ----------------------------------------------------------------
  *		ExecIndexScan(node)
+ *
+ *		Scans a relation using an index.
  * ----------------------------------------------------------------
  */
 static TupleTableSlot *
@@ -798,6 +786,8 @@ ExecIndexAdvanceArrayKeys(IndexArrayKeyInfo *arrayKeys, int numArrayKeys)
 
 /* ----------------------------------------------------------------
  *		ExecEndIndexScan
+ *
+ *		Releases all storage.
  * ----------------------------------------------------------------
  */
 void
@@ -842,6 +832,8 @@ ExecEndIndexScan(IndexScanState *node)
 /* ----------------------------------------------------------------
  *		ExecIndexMarkPos
  *
+ * Marks scan position.
+ *
  * Note: we assume that no caller attempts to set a mark before having read
  * at least one tuple.  Otherwise, iss_ScanDesc might still be NULL.
  * ----------------------------------------------------------------
@@ -879,6 +871,8 @@ ExecIndexMarkPos(IndexScanState *node)
 
 /* ----------------------------------------------------------------
  *		ExecIndexRestrPos
+ *
+ *		Restores scan position.
  * ----------------------------------------------------------------
  */
 void

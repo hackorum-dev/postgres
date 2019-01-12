@@ -10,29 +10,22 @@
  * IDENTIFICATION
  *	  src/backend/executor/nodeModifyTable.c
  *
+ * NOTES
+ *	  Each ModifyTable node contains a list of one or more subplans,
+ *	  much like an Append node.  There is one subplan per result relation.
+ *	  The key reason for this is that in an inherited UPDATE command, each
+ *	  result relation could have a different schema (more or different
+ *	  columns) requiring a different plan tree to produce it.  In an
+ *	  inherited DELETE, all the subplans should produce the same output
+ *	  rowtype, but we might still find that different plans are appropriate
+ *	  for different child relations.
+ *
+ *	  If the query specifies RETURNING, then the ModifyTable returns a
+ *	  RETURNING tuple after completing each row insert, update, or delete.
+ *	  It must be called again to continue the operation.  Without RETURNING,
+ *	  we just loop within the node until all the work is done, then
+ *	  return NULL.  This avoids useless call/return overhead.
  *-------------------------------------------------------------------------
- */
-/* INTERFACE ROUTINES
- *		ExecInitModifyTable - initialize the ModifyTable node
- *		ExecModifyTable		- retrieve the next tuple from the node
- *		ExecEndModifyTable	- shut down the ModifyTable node
- *		ExecReScanModifyTable - rescan the ModifyTable node
- *
- *	 NOTES
- *		Each ModifyTable node contains a list of one or more subplans,
- *		much like an Append node.  There is one subplan per result relation.
- *		The key reason for this is that in an inherited UPDATE command, each
- *		result relation could have a different schema (more or different
- *		columns) requiring a different plan tree to produce it.  In an
- *		inherited DELETE, all the subplans should produce the same output
- *		rowtype, but we might still find that different plans are appropriate
- *		for different child relations.
- *
- *		If the query specifies RETURNING, then the ModifyTable returns a
- *		RETURNING tuple after completing each row insert, update, or delete.
- *		It must be called again to continue the operation.  Without RETURNING,
- *		we just loop within the node until all the work is done, then
- *		return NULL.  This avoids useless call/return overhead.
  */
 
 #include "postgres.h"
@@ -2088,6 +2081,8 @@ ExecModifyTable(PlanState *pstate)
 
 /* ----------------------------------------------------------------
  *		ExecInitModifyTable
+ *
+ *		Initialize the ModifyTable node.
  * ----------------------------------------------------------------
  */
 ModifyTableState *
@@ -2628,6 +2623,12 @@ ExecEndModifyTable(ModifyTableState *node)
 		ExecEndNode(node->mt_plans[i]);
 }
 
+/* ----------------------------------------------------------------
+ *		ExecReScanModifyTable
+ *
+ *		Rescan the ModifyTable node.
+ * ----------------------------------------------------------------
+ */
 void
 ExecReScanModifyTable(ModifyTableState *node)
 {

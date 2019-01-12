@@ -18,17 +18,10 @@
  * IDENTIFICATION
  *	  src/backend/executor/nodeUnique.c
  *
- *-------------------------------------------------------------------------
- */
-/*
- * INTERFACE ROUTINES
- *		ExecUnique		- generate a unique'd temporary relation
- *		ExecInitUnique	- initialize node and subnodes
- *		ExecEndUnique	- shutdown node and subnodes
- *
  * NOTES
- *		Assumes tuples returned from subplan arrive in
- *		sorted order.
+ *	  Assumes tuples returned from subplan arrive in
+ *	  sorted order.
+ *-------------------------------------------------------------------------
  */
 
 #include "postgres.h"
@@ -41,6 +34,8 @@
 
 /* ----------------------------------------------------------------
  *		ExecUnique
+ *
+ *      Generate a unique'd temporary relation.
  * ----------------------------------------------------------------
  */
 static TupleTableSlot *			/* return: a tuple or NULL */

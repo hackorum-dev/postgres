@@ -12,19 +12,7 @@
  *
  *-------------------------------------------------------------------------
  */
-/*
- * INTERFACE ROUTINES
- *		ExecSeqScan				sequentially scans a relation.
- *		ExecSeqNext				retrieve next tuple in sequential order.
- *		ExecInitSeqScan			creates and initializes a seqscan node.
- *		ExecEndSeqScan			releases any storage allocated.
- *		ExecReScanSeqScan		rescans the relation
- *
- *		ExecSeqScanEstimate		estimates DSM space needed for parallel scan
- *		ExecSeqScanInitializeDSM initialize DSM for parallel scan
- *		ExecSeqScanReInitializeDSM reinitialize DSM for fresh parallel scan
- *		ExecSeqScanInitializeWorker attach to DSM info in parallel worker
- */
+
 #include "postgres.h"
 
 #include "access/relscan.h"

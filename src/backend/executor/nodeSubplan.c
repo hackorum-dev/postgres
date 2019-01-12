@@ -19,11 +19,7 @@
  *
  *-------------------------------------------------------------------------
  */
-/*
- *	 INTERFACE ROUTINES
- *		ExecSubPlan  - process a subselect
- *		ExecInitSubPlan - initialize a subselect
- */
+
 #include "postgres.h"
 
 #include <limits.h>

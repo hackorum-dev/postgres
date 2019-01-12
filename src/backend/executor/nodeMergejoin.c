@@ -10,86 +10,80 @@
  * IDENTIFICATION
  *	  src/backend/executor/nodeMergejoin.c
  *
- *-------------------------------------------------------------------------
- */
-/*
- * INTERFACE ROUTINES
- *		ExecMergeJoin			mergejoin outer and inner relations.
- *		ExecInitMergeJoin		creates and initializes run time states
- *		ExecEndMergeJoin		cleans up the node.
- *
  * NOTES
  *
- *		Merge-join is done by joining the inner and outer tuples satisfying
- *		join clauses of the form ((= outerKey innerKey) ...).
- *		The join clause list is provided by the query planner and may contain
- *		more than one (= outerKey innerKey) clause (for composite sort key).
+ *	  Merge-join is done by joining the inner and outer tuples satisfying
+ *	  join clauses of the form ((= outerKey innerKey) ...).
+ *	  The join clause list is provided by the query planner and may contain
+ *	  more than one (= outerKey innerKey) clause (for composite sort key).
  *
- *		However, the query executor needs to know whether an outer
- *		tuple is "greater/smaller" than an inner tuple so that it can
- *		"synchronize" the two relations. For example, consider the following
- *		relations:
+ *	  However, the query executor needs to know whether an outer
+ *	  tuple is "greater/smaller" than an inner tuple so that it can
+ *	  "synchronize" the two relations. For example, consider the following
+ *	  relations:
  *
- *				outer: (0 ^1 1 2 5 5 5 6 6 7)	current tuple: 1
- *				inner: (1 ^3 5 5 5 5 6)			current tuple: 3
+ *			outer: (0 ^1 1 2 5 5 5 6 6 7)	current tuple: 1
+ *			inner: (1 ^3 5 5 5 5 6)			current tuple: 3
  *
- *		To continue the merge-join, the executor needs to scan both inner
- *		and outer relations till the matching tuples 5. It needs to know
- *		that currently inner tuple 3 is "greater" than outer tuple 1 and
- *		therefore it should scan the outer relation first to find a
- *		matching tuple and so on.
+ *	  To continue the merge-join, the executor needs to scan both inner
+ *	  and outer relations till the matching tuples 5. It needs to know
+ *	  that currently inner tuple 3 is "greater" than outer tuple 1 and
+ *	  therefore it should scan the outer relation first to find a
+ *	  matching tuple and so on.
  *
- *		Therefore, rather than directly executing the merge join clauses,
- *		we evaluate the left and right key expressions separately and then
- *		compare the columns one at a time (see MJCompare).  The planner
- *		passes us enough information about the sort ordering of the inputs
- *		to allow us to determine how to make the comparison.  We may use the
- *		appropriate btree comparison function, since Postgres' only notion
- *		of ordering is specified by btree opfamilies.
- *
- *
- *		Consider the above relations and suppose that the executor has
- *		just joined the first outer "5" with the last inner "5". The
- *		next step is of course to join the second outer "5" with all
- *		the inner "5's". This requires repositioning the inner "cursor"
- *		to point at the first inner "5". This is done by "marking" the
- *		first inner 5 so we can restore the "cursor" to it before joining
- *		with the second outer 5. The access method interface provides
- *		routines to mark and restore to a tuple.
+ *	  Therefore, rather than directly executing the merge join clauses,
+ *	  we evaluate the left and right key expressions separately and then
+ *	  compare the columns one at a time (see MJCompare).  The planner
+ *	  passes us enough information about the sort ordering of the inputs
+ *	  to allow us to determine how to make the comparison.  We may use the
+ *	  appropriate btree comparison function, since Postgres' only notion
+ *	  of ordering is specified by btree opfamilies.
  *
  *
- *		Essential operation of the merge join algorithm is as follows:
+ *	  Consider the above relations and suppose that the executor has
+ *	  just joined the first outer "5" with the last inner "5". The
+ *	  next step is of course to join the second outer "5" with all
+ *	  the inner "5's". This requires repositioning the inner "cursor"
+ *	  to point at the first inner "5". This is done by "marking" the
+ *	  first inner 5 so we can restore the "cursor" to it before joining
+ *	  with the second outer 5. The access method interface provides
+ *	  routines to mark and restore to a tuple.
  *
- *		Join {
- *			get initial outer and inner tuples				INITIALIZE
+ *
+ *	  Essential operation of the merge join algorithm is as follows:
+ *
+ *	  Join {
+ *		get initial outer and inner tuples				INITIALIZE
+ *		do forever {
+ *			while (outer != inner) {					SKIP_TEST
+ *				if (outer < inner)
+ *					advance outer						SKIPOUTER_ADVANCE
+ *				else
+ *					advance inner						SKIPINNER_ADVANCE
+ *			}
+ *			mark inner position							SKIP_TEST
  *			do forever {
- *				while (outer != inner) {					SKIP_TEST
- *					if (outer < inner)
- *						advance outer						SKIPOUTER_ADVANCE
- *					else
- *						advance inner						SKIPINNER_ADVANCE
+ *				while (outer == inner) {
+ *					join tuples							JOINTUPLES
+ *					advance inner position				NEXTINNER
  *				}
- *				mark inner position							SKIP_TEST
- *				do forever {
- *					while (outer == inner) {
- *						join tuples							JOINTUPLES
- *						advance inner position				NEXTINNER
- *					}
- *					advance outer position					NEXTOUTER
- *					if (outer == mark)						TESTOUTER
- *						restore inner position to mark		TESTOUTER
- *					else
- *						break	// return to top of outer loop
- *				}
+ *				advance outer position					NEXTOUTER
+ *				if (outer == mark)						TESTOUTER
+ *					restore inner position to mark		TESTOUTER
+ *				else
+ *					break	// return to top of outer loop
  *			}
  *		}
+ *	  }
  *
- *		The merge join operation is coded in the fashion
- *		of a state machine.  At each state, we do something and then
- *		proceed to another state.  This state is stored in the node's
- *		execution state information and is preserved across calls to
- *		ExecMergeJoin. -cim 10/31/89
+ *	  The merge join operation is coded in the fashion
+ *	  of a state machine.  At each state, we do something and then
+ *	  proceed to another state.  This state is stored in the node's
+ *	  execution state information and is preserved across calls to
+ *	  ExecMergeJoin. -cim 10/31/89
+ *-------------------------------------------------------------------------
  */
+
 #include "postgres.h"
 
 #include "access/nbtree.h"
@@ -594,6 +588,8 @@ ExecMergeTupleDump(MergeJoinState *mergestate)
 
 /* ----------------------------------------------------------------
  *		ExecMergeJoin
+ *
+ *		Mergejoin outer and inner relations.
  * ----------------------------------------------------------------
  */
 static TupleTableSlot *
@@ -1430,6 +1426,8 @@ ExecMergeJoin(PlanState *pstate)
 
 /* ----------------------------------------------------------------
  *		ExecInitMergeJoin
+ *
+ *		Creates and initializes run time states.
  * ----------------------------------------------------------------
  */
 MergeJoinState *

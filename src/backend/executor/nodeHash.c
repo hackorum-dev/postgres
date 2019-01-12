@@ -14,12 +14,6 @@
  *
  *-------------------------------------------------------------------------
  */
-/*
- * INTERFACE ROUTINES
- *		MultiExecHash	- generate an in-memory hash table of the relation
- *		ExecInitHash	- initialize node and subnodes
- *		ExecEndHash		- shutdown node and subnodes
- */
 
 #include "postgres.h"
 

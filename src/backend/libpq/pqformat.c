@@ -9,7 +9,9 @@
  * Note in particular the distinction between "raw data" and "text"; raw data
  * is message protocol characters and binary values that are not subject to
  * character set conversion, while text is converted by character encoding
- * rules.
+ * rules. It is possible to append data to the StringInfo buffer using the
+ * regular StringInfo routines, but this is discouraged since required
+ * character set conversion may not occur.
  *
  * Incoming messages are similarly read into a StringInfo buffer, via
  * pq_getmessage, and then parsed and converted from that using the routines
@@ -27,46 +29,6 @@
  *	src/backend/libpq/pqformat.c
  *
  *-------------------------------------------------------------------------
- */
-/*
- * INTERFACE ROUTINES
- * Message assembly and output:
- *		pq_beginmessage - initialize StringInfo buffer
- *		pq_sendbyte		- append a raw byte to a StringInfo buffer
- *		pq_sendint		- append a binary integer to a StringInfo buffer
- *		pq_sendint64	- append a binary 8-byte int to a StringInfo buffer
- *		pq_sendfloat4	- append a float4 to a StringInfo buffer
- *		pq_sendfloat8	- append a float8 to a StringInfo buffer
- *		pq_sendbytes	- append raw data to a StringInfo buffer
- *		pq_sendcountedtext - append a counted text string (with character set conversion)
- *		pq_sendtext		- append a text string (with conversion)
- *		pq_sendstring	- append a null-terminated text string (with conversion)
- *		pq_send_ascii_string - append a null-terminated text string (without conversion)
- *		pq_endmessage	- send the completed message to the frontend
- * Note: it is also possible to append data to the StringInfo buffer using
- * the regular StringInfo routines, but this is discouraged since required
- * character set conversion may not occur.
- *
- * typsend support (construct a bytea value containing external binary data):
- *		pq_begintypsend - initialize StringInfo buffer
- *		pq_endtypsend	- return the completed string as a "bytea*"
- *
- * Special-case message output:
- *		pq_puttextmessage - generate a character set-converted message in one step
- *		pq_putemptymessage - convenience routine for message with empty body
- *
- * Message parsing after input:
- *		pq_getmsgbyte	- get a raw byte from a message buffer
- *		pq_getmsgint	- get a binary integer from a message buffer
- *		pq_getmsgint64	- get a binary 8-byte int from a message buffer
- *		pq_getmsgfloat4 - get a float4 from a message buffer
- *		pq_getmsgfloat8 - get a float8 from a message buffer
- *		pq_getmsgbytes	- get raw data from a message buffer
- *		pq_copymsgbytes - copy raw data from a message buffer
- *		pq_getmsgtext	- get a counted text string (with conversion)
- *		pq_getmsgstring - get a null-terminated text string (with conversion)
- *		pq_getmsgrawstring - get a null-terminated text string - NO conversion
- *		pq_getmsgend	- verify message fully consumed
  */
 
 #include "postgres.h"

@@ -12,12 +12,6 @@
  *
  *-------------------------------------------------------------------------
  */
-/*
- * INTERFACE ROUTINES
- *		ExecLockRows		- fetch locked rows
- *		ExecInitLockRows	- initialize node and subnodes..
- *		ExecEndLockRows		- shutdown node and subnodes
- */
 
 #include "postgres.h"
 
@@ -34,6 +28,8 @@
 
 /* ----------------------------------------------------------------
  *		ExecLockRows
+ *
+ *		Fetch locked rows.
  * ----------------------------------------------------------------
  */
 static TupleTableSlot *			/* return: a tuple or NULL */

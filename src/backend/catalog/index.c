@@ -10,13 +10,6 @@
  * IDENTIFICATION
  *	  src/backend/catalog/index.c
  *
- *
- * INTERFACE ROUTINES
- *		index_create()			- Create a cataloged index relation
- *		index_drop()			- Removes index relation from catalogs
- *		BuildIndexInfo()		- Prepare to insert index tuples
- *		FormIndexDatum()		- Construct datum vector for one index tuple
- *
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
@@ -674,6 +667,7 @@ UpdateIndexRelation(Oid indexoid,
 
 /*
  * index_create
+ *		Create a cataloged index relation
  *
  * heapRelation: table to build index on (suitably locked by caller)
  * indexRelationName: what it say
@@ -1439,7 +1433,8 @@ index_constraint_create(Relation heapRelation,
 }
 
 /*
- *		index_drop
+ * index_drop
+ *		Removes index relation from catalogs
  *
  * NOTE: this routine should now only be called through performDeletion(),
  * else associated dependencies won't be cleaned up.

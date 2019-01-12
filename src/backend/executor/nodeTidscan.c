@@ -12,14 +12,7 @@
  *
  *-------------------------------------------------------------------------
  */
-/*
- * INTERFACE ROUTINES
- *
- *		ExecTidScan			scans a relation using tids
- *		ExecInitTidScan		creates and initializes state info.
- *		ExecReScanTidScan	rescans the tid relation.
- *		ExecEndTidScan		releases all storage.
- */
+
 #include "postgres.h"
 
 #include "access/sysattr.h"
@@ -455,6 +448,8 @@ ExecTidScan(PlanState *pstate)
 
 /* ----------------------------------------------------------------
  *		ExecReScanTidScan(node)
+ *
+ *      Rescans the tid relation.
  * ----------------------------------------------------------------
  */
 void

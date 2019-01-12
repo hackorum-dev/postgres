@@ -12,13 +12,7 @@
  *
  *-------------------------------------------------------------------------
  */
-/*
- * INTERFACE ROUTINES
- *		ExecMaterial			- materialize the result of a subplan
- *		ExecInitMaterial		- initialize node and subnodes
- *		ExecEndMaterial			- shutdown node and subnodes
- *
- */
+
 #include "postgres.h"
 
 #include "executor/executor.h"
@@ -158,6 +152,8 @@ ExecMaterial(PlanState *pstate)
 
 /* ----------------------------------------------------------------
  *		ExecInitMaterial
+ *
+ *		Initialize node and subnodes.
  * ----------------------------------------------------------------
  */
 MaterialState *
@@ -234,6 +230,8 @@ ExecInitMaterial(Material *node, EState *estate, int eflags)
 
 /* ----------------------------------------------------------------
  *		ExecEndMaterial
+ *
+ *		Shutdown node and subnodes.
  * ----------------------------------------------------------------
  */
 void

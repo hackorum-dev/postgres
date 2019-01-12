@@ -10,15 +10,6 @@
  * IDENTIFICATION
  *	  src/backend/access/heap/visibilitymap.c
  *
- * INTERFACE ROUTINES
- *		visibilitymap_clear  - clear bits for one page in the visibility map
- *		visibilitymap_pin	 - pin a map page for setting a bit
- *		visibilitymap_pin_ok - check whether correct map page is already pinned
- *		visibilitymap_set	 - set a bit in a previously pinned page
- *		visibilitymap_get_status - get status of bits
- *		visibilitymap_count  - count number of bits set in visibility map
- *		visibilitymap_truncate	- truncate the visibility map
- *
  * NOTES
  *
  * The visibility map is a bitmap with two bits (all-visible and all-frozen)

@@ -10,20 +10,12 @@
  * IDENTIFICATION
  *	  src/backend/utils/cache/relcache.c
  *
+ * NOTES
+ *	  The following code contains many undocumented hacks.  Please be
+ *	  careful....
  *-------------------------------------------------------------------------
  */
-/*
- * INTERFACE ROUTINES
- *		RelationCacheInitialize			- initialize relcache (to empty)
- *		RelationCacheInitializePhase2	- initialize shared-catalog entries
- *		RelationCacheInitializePhase3	- finish initializing relcache
- *		RelationIdGetRelation			- get a reldesc by relation id
- *		RelationClose					- close an open relation
- *
- * NOTES
- *		The following code contains many undocumented hacks.  Please be
- *		careful....
- */
+
 #include "postgres.h"
 
 #include <sys/file.h>
@@ -3439,6 +3431,11 @@ RelationSetNewRelfilenode(Relation relation, char persistence,
 
 #define INITRELCACHESIZE		400
 
+/*
+ *		RelationCacheInitialize
+ *
+ *		Initialize relcache (to empty).
+ */
 void
 RelationCacheInitialize(void)
 {

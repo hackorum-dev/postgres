@@ -10,20 +10,11 @@
  * IDENTIFICATION
  *	  src/backend/tcop/dest.c
  *
+ * NOTES
+ *	  These routines do the appropriate work before and after tuples are
+ *	  returned by a query to keep the backend and the "destination" portals
+ *	  synchronized.
  *-------------------------------------------------------------------------
- */
-/*
- *	 INTERFACE ROUTINES
- *		BeginCommand - initialize the destination at start of command
- *		CreateDestReceiver - create tuple receiver object for destination
- *		EndCommand - clean up the destination at end of command
- *		NullCommand - tell dest that an empty query string was recognized
- *		ReadyForQuery - tell dest that we are ready for a new query
- *
- *	 NOTES
- *		These routines do the appropriate work before and after
- *		tuples are returned by a query to keep the backend and the
- *		"destination" portals synchronized.
  */
 
 #include "postgres.h"

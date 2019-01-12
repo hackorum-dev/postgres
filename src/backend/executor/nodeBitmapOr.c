@@ -10,20 +10,13 @@
  * IDENTIFICATION
  *	  src/backend/executor/nodeBitmapOr.c
  *
+ * NOTES
+ *	  BitmapOr nodes don't make use of their left and right
+ *	  subtrees, rather they maintain a list of subplans,
+ *	  much like Append nodes.  The logic is much simpler than
+ *	  Append, however, since we needn't cope with forward/backward
+ *	  execution.
  *-------------------------------------------------------------------------
- */
-/* INTERFACE ROUTINES
- *		ExecInitBitmapOr	- initialize the BitmapOr node
- *		MultiExecBitmapOr	- retrieve the result bitmap from the node
- *		ExecEndBitmapOr		- shut down the BitmapOr node
- *		ExecReScanBitmapOr	- rescan the BitmapOr node
- *
- *	 NOTES
- *		BitmapOr nodes don't make use of their left and right
- *		subtrees, rather they maintain a list of subplans,
- *		much like Append nodes.  The logic is much simpler than
- *		Append, however, since we needn't cope with forward/backward
- *		execution.
  */
 
 #include "postgres.h"
@@ -105,6 +98,8 @@ ExecInitBitmapOr(BitmapOr *node, EState *estate, int eflags)
 
 /* ----------------------------------------------------------------
  *	   MultiExecBitmapOr
+ *
+ *     Retrieve the result bitmap from the node.
  * ----------------------------------------------------------------
  */
 Node *
@@ -215,6 +210,12 @@ ExecEndBitmapOr(BitmapOrState *node)
 	}
 }
 
+/* ----------------------------------------------------------------
+ *		ExecReScanBitmapOr
+ *
+ *		Rescan the BitmapOr node.
+ * ----------------------------------------------------------------
+ */
 void
 ExecReScanBitmapOr(BitmapOrState *node)
 {

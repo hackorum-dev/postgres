@@ -12,14 +12,7 @@
  *
  *-------------------------------------------------------------------------
  */
-/*
- * INTERFACE ROUTINES
- *		ExecFunctionScan		scans a function.
- *		ExecFunctionNext		retrieve next tuple in sequential order.
- *		ExecInitFunctionScan	creates and initializes a functionscan node.
- *		ExecEndFunctionScan		releases any storage allocated.
- *		ExecReScanFunctionScan	rescans the function
- */
+
 #include "postgres.h"
 
 #include "catalog/pg_type.h"
@@ -274,6 +267,8 @@ ExecFunctionScan(PlanState *pstate)
 
 /* ----------------------------------------------------------------
  *		ExecInitFunctionScan
+ *
+ *		Creates and initializes a functionscan node.
  * ----------------------------------------------------------------
  */
 FunctionScanState *

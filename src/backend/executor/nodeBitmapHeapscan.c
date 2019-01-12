@@ -25,14 +25,7 @@
  *
  *-------------------------------------------------------------------------
  */
-/*
- * INTERFACE ROUTINES
- *		ExecBitmapHeapScan			scans a relation using bitmap info
- *		ExecBitmapHeapNext			workhorse for above
- *		ExecInitBitmapHeapScan		creates and initializes state info.
- *		ExecReScanBitmapHeapScan	prepares to rescan the plan.
- *		ExecEndBitmapHeapScan		releases all storage.
- */
+
 #include "postgres.h"
 
 #include <math.h>
@@ -67,7 +60,7 @@ static bool BitmapShouldInitializeSharedState(
 
 
 /* ----------------------------------------------------------------
- *		BitmapHeapNext
+ *		BitmapHeapNext - workhorse for ExecBitmapHeapScan
  *
  *		Retrieve next tuple from the BitmapHeapScan node's currentRelation
  * ----------------------------------------------------------------
@@ -732,7 +725,7 @@ ExecBitmapHeapScan(PlanState *pstate)
 }
 
 /* ----------------------------------------------------------------
- *		ExecReScanBitmapHeapScan(node)
+ *		ExecReScanBitmapHeapScan(node) - prepares to rescan the plan.
  * ----------------------------------------------------------------
  */
 void
@@ -779,7 +772,7 @@ ExecReScanBitmapHeapScan(BitmapHeapScanState *node)
 }
 
 /* ----------------------------------------------------------------
- *		ExecEndBitmapHeapScan
+ *		ExecEndBitmapHeapScan - releases all storage.
  * ----------------------------------------------------------------
  */
 void

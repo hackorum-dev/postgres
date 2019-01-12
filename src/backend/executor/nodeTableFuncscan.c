@@ -12,14 +12,7 @@
  *
  *-------------------------------------------------------------------------
  */
-/*
- * INTERFACE ROUTINES
- *		ExecTableFuncscan		scans a function.
- *		ExecFunctionNext		retrieve next tuple in sequential order.
- *		ExecInitTableFuncscan	creates and initializes a TableFuncscan node.
- *		ExecEndTableFuncscan		releases any storage allocated.
- *		ExecReScanTableFuncscan rescans the function
- */
+
 #include "postgres.h"
 
 #include "nodes/execnodes.h"
@@ -105,6 +98,8 @@ ExecTableFuncScan(PlanState *pstate)
 
 /* ----------------------------------------------------------------
  *		ExecInitTableFuncscan
+ *
+ *      Creates and initializes a TableFuncscan node.
  * ----------------------------------------------------------------
  */
 TableFuncScanState *
@@ -237,7 +232,7 @@ ExecEndTableFuncScan(TableFuncScanState *node)
 /* ----------------------------------------------------------------
  *		ExecReScanTableFuncscan
  *
- *		Rescans the relation.
+ *		Rescans the function.
  * ----------------------------------------------------------------
  */
 void

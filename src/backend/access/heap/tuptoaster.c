@@ -11,17 +11,6 @@
  *	  src/backend/access/heap/tuptoaster.c
  *
  *
- * INTERFACE ROUTINES
- *		toast_insert_or_update -
- *			Try to make a given tuple fit into one page by compressing
- *			or moving off attributes
- *
- *		toast_delete -
- *			Reclaim toast storage when a tuple is deleted
- *
- *		heap_tuple_untoast_attr -
- *			Fetch back a given value from the "secondary" relation
- *
  *-------------------------------------------------------------------------
  */
 

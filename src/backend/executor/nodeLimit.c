@@ -12,12 +12,6 @@
  *
  *-------------------------------------------------------------------------
  */
-/*
- * INTERFACE ROUTINES
- *		ExecLimit		- extract a limited range of tuples
- *		ExecInitLimit	- initialize node and subnodes..
- *		ExecEndLimit	- shutdown node and subnodes
- */
 
 #include "postgres.h"
 

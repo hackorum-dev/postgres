@@ -13,14 +13,7 @@
  *
  *-------------------------------------------------------------------------
  */
-/*
- * INTERFACE ROUTINES
- *		ExecValuesScan			scans a values list.
- *		ExecValuesNext			retrieve next tuple in sequential order.
- *		ExecInitValuesScan		creates and initializes a valuesscan node.
- *		ExecEndValuesScan		releases any storage allocated.
- *		ExecReScanValuesScan	rescans the values list
- */
+
 #include "postgres.h"
 
 #include "executor/executor.h"
@@ -217,7 +210,7 @@ ExecValuesScan(PlanState *pstate)
 }
 
 /* ----------------------------------------------------------------
- *		ExecInitValuesScan
+ *		ExecInitValuesScan - creates and initializes a valuesscan node.
  * ----------------------------------------------------------------
  */
 ValuesScanState *
@@ -320,7 +313,7 @@ ExecEndValuesScan(ValuesScanState *node)
 /* ----------------------------------------------------------------
  *		ExecReScanValuesScan
  *
- *		Rescans the relation.
+ *		Rescans the value list.
  * ----------------------------------------------------------------
  */
 void

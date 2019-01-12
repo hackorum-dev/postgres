@@ -10,20 +10,13 @@
  * IDENTIFICATION
  *	  src/backend/executor/nodeBitmapAnd.c
  *
+ * NOTES
+ *	  BitmapAnd nodes don't make use of their left and right
+ *	  subtrees, rather they maintain a list of subplans,
+ *	  much like Append nodes.  The logic is much simpler than
+ *	  Append, however, since we needn't cope with forward/backward
+ *	  execution.
  *-------------------------------------------------------------------------
- */
-/* INTERFACE ROUTINES
- *		ExecInitBitmapAnd	- initialize the BitmapAnd node
- *		MultiExecBitmapAnd	- retrieve the result bitmap from the node
- *		ExecEndBitmapAnd	- shut down the BitmapAnd node
- *		ExecReScanBitmapAnd - rescan the BitmapAnd node
- *
- *	 NOTES
- *		BitmapAnd nodes don't make use of their left and right
- *		subtrees, rather they maintain a list of subplans,
- *		much like Append nodes.  The logic is much simpler than
- *		Append, however, since we needn't cope with forward/backward
- *		execution.
  */
 
 #include "postgres.h"
@@ -104,6 +97,8 @@ ExecInitBitmapAnd(BitmapAnd *node, EState *estate, int eflags)
 
 /* ----------------------------------------------------------------
  *	   MultiExecBitmapAnd
+ *
+ *	   Retrieve the result bitmap from the node.
  * ----------------------------------------------------------------
  */
 Node *
@@ -197,6 +192,12 @@ ExecEndBitmapAnd(BitmapAndState *node)
 	}
 }
 
+/* ----------------------------------------------------------------
+ *		ExecReScanBitmapAnd
+ *
+ *		Rescan the BitmapAnd node.
+ * ----------------------------------------------------------------
+ */
 void
 ExecReScanBitmapAnd(BitmapAndState *node)
 {

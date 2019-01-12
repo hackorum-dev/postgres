@@ -10,37 +10,11 @@
  * IDENTIFICATION
  *	  src/backend/executor/execUtils.c
  *
+ * NOTES
+ *	  This file has traditionally been the place to stick misc.
+ *	  executor support stuff that doesn't really go anyplace else.
+ *
  *-------------------------------------------------------------------------
- */
-/*
- * INTERFACE ROUTINES
- *		CreateExecutorState		Create/delete executor working state
- *		FreeExecutorState
- *		CreateExprContext
- *		CreateStandaloneExprContext
- *		FreeExprContext
- *		ReScanExprContext
- *
- *		ExecAssignExprContext	Common code for plan node init routines.
- *		etc
- *
- *		ExecOpenScanRelation	Common code for scan node init routines.
- *
- *		ExecInitRangeTable		Set up executor's range-table-related data.
- *
- *		ExecGetRangeTableRelation		Fetch Relation for a rangetable entry.
- *
- *		executor_errposition	Report syntactic position of an error.
- *
- *		RegisterExprContextCallback    Register function shutdown callback
- *		UnregisterExprContextCallback  Deregister function shutdown callback
- *
- *		GetAttributeByName		Runtime extraction of columns from tuples.
- *		GetAttributeByNum
- *
- *	 NOTES
- *		This file has traditionally been the place to stick misc.
- *		executor support stuff that doesn't really go anyplace else.
  */
 
 #include "postgres.h"

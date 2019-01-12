@@ -11,24 +11,6 @@
  *	  src/backend/access/heap/heapam.c
  *
  *
- * INTERFACE ROUTINES
- *		relation_open	- open any relation by relation OID
- *		relation_openrv - open any relation specified by a RangeVar
- *		relation_close	- close any relation
- *		heap_open		- open a heap relation by relation OID
- *		heap_openrv		- open a heap relation specified by a RangeVar
- *		heap_close		- (now just a macro for relation_close)
- *		heap_beginscan	- begin relation scan
- *		heap_rescan		- restart a relation scan
- *		heap_endscan	- end relation scan
- *		heap_getnext	- retrieve next tuple in scan
- *		heap_fetch		- retrieve tuple with given tid
- *		heap_insert		- insert tuple into a relation
- *		heap_multi_insert - insert multiple tuples into a relation
- *		heap_delete		- delete a tuple from a relation
- *		heap_update		- replace a tuple in a relation with another tuple
- *		heap_sync		- sync heap, for when no WAL has been written
- *
  * NOTES
  *	  This file contains the heap_ routines which implement
  *	  the POSTGRES heap access method used for all POSTGRES

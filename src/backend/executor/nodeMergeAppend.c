@@ -10,30 +10,23 @@
  * IDENTIFICATION
  *	  src/backend/executor/nodeMergeAppend.c
  *
+ * NOTES
+ *	  A MergeAppend node contains a list of one or more subplans.
+ *	  These are each expected to deliver tuples that are sorted according
+ *	  to a common sort key.  The MergeAppend node merges these streams
+ *	  to produce output sorted the same way.
+ *
+ *	  MergeAppend nodes don't make use of their left and right
+ *	  subtrees, rather they maintain a list of subplans so
+ *	  a typical MergeAppend node looks like this in the plan tree:
+ *
+ *			   ...
+ *			   /
+ *			MergeAppend---+------+------+--- nil
+ *			/	\		  |		 |		|
+ *		  nil	nil		 ...    ...    ...
+ *							 subplans
  *-------------------------------------------------------------------------
- */
-/* INTERFACE ROUTINES
- *		ExecInitMergeAppend		- initialize the MergeAppend node
- *		ExecMergeAppend			- retrieve the next tuple from the node
- *		ExecEndMergeAppend		- shut down the MergeAppend node
- *		ExecReScanMergeAppend	- rescan the MergeAppend node
- *
- *	 NOTES
- *		A MergeAppend node contains a list of one or more subplans.
- *		These are each expected to deliver tuples that are sorted according
- *		to a common sort key.  The MergeAppend node merges these streams
- *		to produce output sorted the same way.
- *
- *		MergeAppend nodes don't make use of their left and right
- *		subtrees, rather they maintain a list of subplans so
- *		a typical MergeAppend node looks like this in the plan tree:
- *
- *				   ...
- *				   /
- *				MergeAppend---+------+------+--- nil
- *				/	\		  |		 |		|
- *			  nil	nil		 ...    ...    ...
- *								 subplans
  */
 
 #include "postgres.h"
@@ -372,6 +365,12 @@ ExecEndMergeAppend(MergeAppendState *node)
 		ExecEndNode(mergeplans[i]);
 }
 
+/* ----------------------------------------------------------------
+ *		ExecReScanMergeAppend
+ *
+ *		Rescan the MergeAppend node.
+ * ----------------------------------------------------------------
+ */
 void
 ExecReScanMergeAppend(MergeAppendState *node)
 {

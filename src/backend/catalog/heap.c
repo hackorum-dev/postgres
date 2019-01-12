@@ -11,11 +11,6 @@
  *	  src/backend/catalog/heap.c
  *
  *
- * INTERFACE ROUTINES
- *		heap_create()			- Create an uncataloged heap relation
- *		heap_create_with_catalog() - Create a cataloged relation
- *		heap_drop_with_catalog() - Removes named relation from catalogs
- *
  * NOTES
  *	  this code taken from access/heap/create.c, which contains
  *	  the old heap_create_with_catalog, amcreate, and amdestroy.

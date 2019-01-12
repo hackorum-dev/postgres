@@ -12,14 +12,6 @@
  *-------------------------------------------------------------------------
  */
 
-/*
- * INTERFACE ROUTINES
- *	   frontend (client) routines:
- *		pg_fe_sendauth			send authentication information
- *		pg_fe_getauthname		get user's name according to the client side
- *								of the authentication system
- */
-
 #include "postgres_fe.h"
 
 #ifdef WIN32

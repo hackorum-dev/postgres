@@ -10,30 +10,6 @@
  * IDENTIFICATION
  *	  src/backend/access/index/indexam.c
  *
- * INTERFACE ROUTINES
- *		index_open		- open an index relation by relation OID
- *		index_close		- close an index relation
- *		index_beginscan - start a scan of an index with amgettuple
- *		index_beginscan_bitmap - start a scan of an index with amgetbitmap
- *		index_rescan	- restart a scan of an index
- *		index_endscan	- end a scan
- *		index_insert	- insert an index tuple into a relation
- *		index_markpos	- mark a scan position
- *		index_restrpos	- restore a scan position
- *		index_parallelscan_estimate - estimate shared memory for parallel scan
- *		index_parallelscan_initialize - initialize parallel scan
- *		index_parallelrescan  - (re)start a parallel scan of an index
- *		index_beginscan_parallel - join parallel index scan
- *		index_getnext_tid	- get the next TID from a scan
- *		index_fetch_heap		- get the scan's next heap tuple
- *		index_getnext	- get the next heap tuple from a scan
- *		index_getbitmap - get all tuples from a scan
- *		index_bulk_delete	- bulk deletion of index tuples
- *		index_vacuum_cleanup	- post-deletion cleanup of an index
- *		index_can_return	- does index support index-only scans?
- *		index_getprocid - get a support procedure OID
- *		index_getprocinfo - get a support procedure's lookup info
- *
  * NOTES
  *		This file contains the index_ routines which used
  *		to be a scattered collection of stuff in access/genam.

@@ -10,24 +10,16 @@
  * IDENTIFICATION
  *	  src/backend/executor/nodeAppend.c
  *
- *-------------------------------------------------------------------------
- */
-/* INTERFACE ROUTINES
- *		ExecInitAppend	- initialize the append node
- *		ExecAppend		- retrieve the next tuple from the node
- *		ExecEndAppend	- shut down the append node
- *		ExecReScanAppend - rescan the append node
+ * NOTES
+ *	  Each append node contains a list of one or more subplans which
+ *	  must be iteratively processed (forwards or backwards).
+ *	  Tuples are retrieved by executing the 'whichplan'th subplan
+ *	  until the subplan stops returning tuples, at which point that
+ *	  plan is shut down and the next started up.
  *
- *	 NOTES
- *		Each append node contains a list of one or more subplans which
- *		must be iteratively processed (forwards or backwards).
- *		Tuples are retrieved by executing the 'whichplan'th subplan
- *		until the subplan stops returning tuples, at which point that
- *		plan is shut down and the next started up.
- *
- *		Append nodes don't make use of their left and right
- *		subtrees, rather they maintain a list of subplans so
- *		a typical append node looks like this in the plan tree:
+ *	  Append nodes don't make use of their left and right
+ *	  subtrees, rather they maintain a list of subplans so
+ *	  a typical append node looks like this in the plan tree:
  *
  *				   ...
  *				   /
@@ -36,16 +28,16 @@
  *			  nil	nil		 ...    ...    ...
  *								 subplans
  *
- *		Append nodes are currently used for unions, and to support
- *		inheritance queries, where several relations need to be scanned.
- *		For example, in our standard person/student/employee/student-emp
- *		example, where student and employee inherit from person
- *		and student-emp inherits from student and employee, the
- *		query:
+ *	  Append nodes are currently used for unions, and to support
+ *	  inheritance queries, where several relations need to be scanned.
+ *	  For example, in our standard person/student/employee/student-emp
+ *	  example, where student and employee inherit from person
+ *	  and student-emp inherits from student and employee, the
+ *	  query:
  *
- *				select name from person
+ *			select name from person
  *
- *		generates the plan:
+ *	  generates the plan:
  *
  *				  |
  *				Append -------+-------+--------+--------+
@@ -53,6 +45,7 @@
  *			  nil	nil		 Scan	 Scan	  Scan	   Scan
  *							  |		  |		   |		|
  *							person employee student student-emp
+ *-------------------------------------------------------------------------
  */
 
 #include "postgres.h"
@@ -335,6 +328,12 @@ ExecEndAppend(AppendState *node)
 		ExecEndNode(appendplans[i]);
 }
 
+/* ----------------------------------------------------------------
+ *		ExecReScanAppend
+ *
+ *		Rescan the append node.
+ * ----------------------------------------------------------------
+ */
 void
 ExecReScanAppend(AppendState *node)
 {

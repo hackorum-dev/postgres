@@ -35,37 +35,6 @@
  *-------------------------------------------------------------------------
  */
 
-/*------------------------
- * INTERFACE ROUTINES
- *
- * setup/teardown:
- *		StreamServerPort	- Open postmaster's server port
- *		StreamConnection	- Create new connection with client
- *		StreamClose			- Close a client/backend connection
- *		TouchSocketFiles	- Protect socket files against /tmp cleaners
- *		pq_init			- initialize libpq at backend startup
- *		pq_comm_reset	- reset libpq during error recovery
- *		pq_close		- shutdown libpq at backend exit
- *
- * low-level I/O:
- *		pq_getbytes		- get a known number of bytes from connection
- *		pq_getstring	- get a null terminated string from connection
- *		pq_getmessage	- get a message with length word from connection
- *		pq_getbyte		- get next byte from connection
- *		pq_peekbyte		- peek at next byte from connection
- *		pq_putbytes		- send bytes to connection (not flushed until pq_flush)
- *		pq_flush		- flush pending output
- *		pq_flush_if_writable - flush pending output if writable without blocking
- *		pq_getbyte_if_available - get a byte if available without blocking
- *
- * message-level I/O (and old-style-COPY-OUT cruft):
- *		pq_putmessage	- send a normal message (suppressed in COPY OUT mode)
- *		pq_putmessage_noblock - buffer a normal message (suppressed in COPY OUT)
- *		pq_startcopyout - inform libpq that a COPY OUT transfer is beginning
- *		pq_endcopyout	- end a COPY OUT transfer
- *
- *------------------------
- */
 #include "postgres.h"
 
 #include <signal.h>

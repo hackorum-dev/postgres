@@ -3,35 +3,17 @@
  * execMain.c
  *	  top level executor interface routines
  *
- * INTERFACE ROUTINES
- *	ExecutorStart()
- *	ExecutorRun()
- *	ExecutorFinish()
- *	ExecutorEnd()
- *
- *	These four procedures are the external interface to the executor.
- *	In each case, the query descriptor is required as an argument.
- *
- *	ExecutorStart must be called at the beginning of execution of any
- *	query plan and ExecutorEnd must always be called at the end of
- *	execution of a plan (unless it is aborted due to error).
- *
- *	ExecutorRun accepts direction and count arguments that specify whether
- *	the plan is to be executed forwards, backwards, and for how many tuples.
- *	In some cases ExecutorRun may be called multiple times to process all
- *	the tuples for a plan.  It is also acceptable to stop short of executing
- *	the whole plan (but only if it is a SELECT).
- *
- *	ExecutorFinish must be called after the final ExecutorRun call and
- *	before ExecutorEnd.  This can be omitted only in case of EXPLAIN,
- *	which should also omit ExecutorRun.
- *
  * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
  *	  src/backend/executor/execMain.c
+ *
+ * NOTES
+ *	  This file contains the external interface routines to the executor. See
+ *	  the comments above ExecutorStart(), ExecutorRun(), ExecutorFinish(),
+ *	  ExecutorEnd() for description of the interface.
  *
  *-------------------------------------------------------------------------
  */

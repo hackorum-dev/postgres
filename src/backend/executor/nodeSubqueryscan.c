@@ -16,15 +16,7 @@
  *
  *-------------------------------------------------------------------------
  */
-/*
- * INTERFACE ROUTINES
- *		ExecSubqueryScan			scans a subquery.
- *		ExecSubqueryNext			retrieve next tuple in sequential order.
- *		ExecInitSubqueryScan		creates and initializes a subqueryscan node.
- *		ExecEndSubqueryScan			releases any storage allocated.
- *		ExecReScanSubqueryScan		rescans the relation
- *
- */
+
 #include "postgres.h"
 
 #include "executor/execdebug.h"
@@ -91,6 +83,8 @@ ExecSubqueryScan(PlanState *pstate)
 
 /* ----------------------------------------------------------------
  *		ExecInitSubqueryScan
+ *
+ *		Creates and initializes a subqueryscan node.
  * ----------------------------------------------------------------
  */
 SubqueryScanState *

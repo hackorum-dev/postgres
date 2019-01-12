@@ -12,12 +12,6 @@
  *
  *-------------------------------------------------------------------------
  */
-/*
- *	 INTERFACE ROUTINES
- *		ExecNestLoop	 - process a nestloop join of two plans
- *		ExecInitNestLoop - initialize the join
- *		ExecEndNestLoop  - shut down the join
- */
 
 #include "postgres.h"
 
@@ -257,6 +251,8 @@ ExecNestLoop(PlanState *pstate)
 
 /* ----------------------------------------------------------------
  *		ExecInitNestLoop
+ *
+ *		Initialize the join.
  * ----------------------------------------------------------------
  */
 NestLoopState *

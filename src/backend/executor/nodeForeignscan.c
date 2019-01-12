@@ -12,14 +12,7 @@
  *
  *-------------------------------------------------------------------------
  */
-/*
- * INTERFACE ROUTINES
- *
- *		ExecForeignScan			scans a foreign table.
- *		ExecInitForeignScan		creates and initializes state info.
- *		ExecReScanForeignScan	rescans the foreign relation.
- *		ExecEndForeignScan		releases any resources allocated.
- */
+
 #include "postgres.h"
 
 #include "executor/executor.h"
@@ -126,6 +119,8 @@ ExecForeignScan(PlanState *pstate)
 
 /* ----------------------------------------------------------------
  *		ExecInitForeignScan
+ *
+ *		Creates and initializes state info.
  * ----------------------------------------------------------------
  */
 ForeignScanState *

@@ -31,10 +31,6 @@
  * scan position.  The whole mechanism is only applied for tables exceeding
  * a threshold size (but that is not the concern of this module).
  *
- * INTERFACE ROUTINES
- *		ss_get_location		- return current scan location of a relation
- *		ss_report_location	- update current scan location
- *
  *
  * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
