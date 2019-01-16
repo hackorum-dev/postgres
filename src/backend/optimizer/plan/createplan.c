@@ -121,7 +121,7 @@ static BitmapHeapScan *create_bitmap_scan_plan(PlannerInfo *root,
 						BitmapHeapPath *best_path,
 						List *tlist, List *scan_clauses);
 static Plan *create_bitmap_subplan(PlannerInfo *root, Path *bitmapqual,
-					  List **qual, List **indexqual, List **indexECs);
+					  List **qual, List **indexqual, List **indexParents);
 static void bitmap_subplan_mark_shared(Plan *plan);
 static TidScan *create_tidscan_plan(PlannerInfo *root, TidPath *best_path,
 					List *tlist, List *scan_clauses);
@@ -2755,7 +2755,7 @@ create_bitmap_scan_plan(PlannerInfo *root,
 	Plan	   *bitmapqualplan;
 	List	   *bitmapqualorig;
 	List	   *indexquals;
-	List	   *indexECs;
+	List	   *indexParents;
 	List	   *qpqual;
 	ListCell   *l;
 	BitmapHeapScan *scan_plan;
@@ -2767,7 +2767,7 @@ create_bitmap_scan_plan(PlannerInfo *root,
 	/* Process the bitmapqual tree into a Plan tree and qual lists */
 	bitmapqualplan = create_bitmap_subplan(root, best_path->bitmapqual,
 										   &bitmapqualorig, &indexquals,
-										   &indexECs);
+										   &indexParents);
 
 	if (best_path->path.parallel_aware)
 		bitmap_subplan_mark_shared(bitmapqualplan);
@@ -2808,7 +2808,7 @@ create_bitmap_scan_plan(PlannerInfo *root,
 			continue;			/* we may drop pseudoconstants here */
 		if (list_member(indexquals, clause))
 			continue;			/* simple duplicate */
-		if (rinfo->parent_ec && list_member_ptr(indexECs, rinfo->parent_ec))
+		if (rinfo->rinfo_parent && list_member_ptr(indexParents, rinfo->rinfo_parent))
 			continue;			/* derived from same EquivalenceClass */
 		if (!contain_mutable_functions(clause) &&
 			predicate_implied_by(list_make1(clause), indexquals, false))
@@ -2867,17 +2867,17 @@ create_bitmap_scan_plan(PlannerInfo *root,
  * predicates, because we have to recheck predicates as well as index
  * conditions if the bitmap scan becomes lossy.
  *
- * In addition, we return a list of EquivalenceClass pointers for all the
- * top-level indexquals that were possibly-redundantly derived from ECs.
- * This allows removal of scan_clauses that are redundant with such quals.
- * (We do not attempt to detect such redundancies for quals that are within
- * OR subtrees.  This could be done in a less hacky way if we returned the
- * indexquals in RestrictInfo form, but that would be slower and still pretty
- * messy, since we'd have to build new RestrictInfos in many cases.)
+ * In addition, we return a list of parent pointers for all the
+ * top-level indexquals that were possibly-redundantly derived from ECs or
+ * other clauses. This allows removal of scan_clauses that are redundant with
+ * such quals. (We do not attempt to detect such redundancies for quals that
+ * are within OR subtrees. This could be done in a less hacky way if we returned
+ * the indexquals in RestrictInfo form, but that would be slower and still
+ * pretty messy, since we'd have to build new RestrictInfos in many cases.)
  */
 static Plan *
 create_bitmap_subplan(PlannerInfo *root, Path *bitmapqual,
-					  List **qual, List **indexqual, List **indexECs)
+					  List **qual, List **indexqual, List **indexParents)
 {
 	Plan	   *plan;
 
@@ -2887,7 +2887,7 @@ create_bitmap_subplan(PlannerInfo *root, Path *bitmapqual,
 		List	   *subplans = NIL;
 		List	   *subquals = NIL;
 		List	   *subindexquals = NIL;
-		List	   *subindexECs = NIL;
+		List	   *subindexParents = NIL;
 		ListCell   *l;
 
 		/*
@@ -2902,16 +2902,16 @@ create_bitmap_subplan(PlannerInfo *root, Path *bitmapqual,
 			Plan	   *subplan;
 			List	   *subqual;
 			List	   *subindexqual;
-			List	   *subindexEC;
+			List	   *subindexParent;
 
 			subplan = create_bitmap_subplan(root, (Path *) lfirst(l),
 											&subqual, &subindexqual,
-											&subindexEC);
+											&subindexParent);
 			subplans = lappend(subplans, subplan);
 			subquals = list_concat_unique(subquals, subqual);
 			subindexquals = list_concat_unique(subindexquals, subindexqual);
-			/* Duplicates in indexECs aren't worth getting rid of */
-			subindexECs = list_concat(subindexECs, subindexEC);
+			/* Duplicates in indexParents aren't worth getting rid of */
+			subindexParents = list_concat(subindexParents, subindexParent);
 		}
 		plan = (Plan *) make_bitmap_and(subplans);
 		plan->startup_cost = apath->path.startup_cost;
@@ -2923,7 +2923,7 @@ create_bitmap_subplan(PlannerInfo *root, Path *bitmapqual,
 		plan->parallel_safe = apath->path.parallel_safe;
 		*qual = subquals;
 		*indexqual = subindexquals;
-		*indexECs = subindexECs;
+		*indexParents = subindexParents;
 	}
 	else if (IsA(bitmapqual, BitmapOrPath))
 	{
@@ -3004,13 +3004,13 @@ create_bitmap_subplan(PlannerInfo *root, Path *bitmapqual,
 			*indexqual = subindexquals;
 		else
 			*indexqual = list_make1(make_orclause(subindexquals));
-		*indexECs = NIL;
+		*indexParents = NIL;
 	}
 	else if (IsA(bitmapqual, IndexPath))
 	{
 		IndexPath  *ipath = (IndexPath *) bitmapqual;
 		IndexScan  *iscan;
-		List	   *subindexECs;
+		List	   *subindexParents;
 		ListCell   *l;
 
 		/* Use the regular indexscan plan build machinery... */
@@ -3049,15 +3049,15 @@ create_bitmap_subplan(PlannerInfo *root, Path *bitmapqual,
 				*indexqual = lappend(*indexqual, pred);
 			}
 		}
-		subindexECs = NIL;
+		subindexParents = NIL;
 		foreach(l, ipath->indexquals)
 		{
 			RestrictInfo *rinfo = (RestrictInfo *) lfirst(l);
 
-			if (rinfo->parent_ec)
-				subindexECs = lappend(subindexECs, rinfo->parent_ec);
+			if (rinfo->rinfo_parent)
+				subindexParents = lappend(subindexParents, rinfo->rinfo_parent);
 		}
-		*indexECs = subindexECs;
+		*indexParents = subindexParents;
 	}
 	else
 	{

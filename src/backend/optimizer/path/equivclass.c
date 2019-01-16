@@ -1054,7 +1054,7 @@ generate_base_implied_equalities_broken(PlannerInfo *root,
  * methods.  We do not worry here about selecting clauses that are optimal
  * for use in a parameterized indexscan.  indxpath.c makes its own selections
  * of clauses to use, and if the ones we pick here are redundant with those,
- * the extras will be eliminated at createplan time, using the parent_ec
+ * the extras will be eliminated at createplan time, using the rinfo_parent
  * markers that we provide (see is_redundant_derived_clause()).
  *
  * Because the same join clauses are likely to be needed multiple times as
@@ -1264,7 +1264,7 @@ generate_join_implied_equalities_normal(PlannerInfo *root,
 		}
 
 		/*
-		 * Create clause, setting parent_ec to mark it as redundant with other
+		 * Create clause, setting parent EC to mark it as redundant with other
 		 * joinclauses
 		 */
 		rinfo = create_join_clause(root, ec, best_eq_op,
@@ -1310,7 +1310,7 @@ generate_join_implied_equalities_normal(PlannerInfo *root,
 					ec->ec_broken = true;
 					return NIL;
 				}
-				/* do NOT set parent_ec, this qual is not redundant! */
+				/* do NOT set parent EC, this qual is not redundant! */
 				rinfo = create_join_clause(root, ec, eq_op,
 										   prev_em, cur_em,
 										   NULL);
@@ -1438,7 +1438,7 @@ create_join_clause(PlannerInfo *root,
 		rinfo = (RestrictInfo *) lfirst(lc);
 		if (rinfo->left_em == leftem &&
 			rinfo->right_em == rightem &&
-			rinfo->parent_ec == parent_ec &&
+			rinfo->rinfo_parent == (Node *) parent_ec &&
 			opno == ((OpExpr *) rinfo->clause)->opno)
 			return rinfo;
 	}
@@ -1448,7 +1448,7 @@ create_join_clause(PlannerInfo *root,
 		rinfo = (RestrictInfo *) lfirst(lc);
 		if (rinfo->left_em == leftem &&
 			rinfo->right_em == rightem &&
-			rinfo->parent_ec == parent_ec &&
+			rinfo->rinfo_parent == (Node *) parent_ec &&
 			opno == ((OpExpr *) rinfo->clause)->opno)
 			return rinfo;
 	}
@@ -1470,7 +1470,7 @@ create_join_clause(PlannerInfo *root,
 										ec->ec_min_security);
 
 	/* Mark the clause as redundant, or not */
-	rinfo->parent_ec = parent_ec;
+	rinfo->rinfo_parent = (Node *) parent_ec;
 
 	/*
 	 * We know the correct values for left_ec/right_ec, ie this particular EC,
@@ -2310,7 +2310,7 @@ generate_implied_equalities_for_column(PlannerInfo *root,
 			if (!OidIsValid(eq_op))
 				continue;
 
-			/* set parent_ec to mark as redundant with other joinclauses */
+			/* set parent EC to mark as redundant with other joinclauses */
 			rinfo = create_join_clause(root, cur_ec, eq_op,
 									   cur_em, other_em,
 									   cur_ec);
@@ -2487,25 +2487,25 @@ eclass_useful_for_merging(PlannerInfo *root,
 
 /*
  * is_redundant_derived_clause
- *		Test whether rinfo is derived from same EC as any clause in clauselist;
- *		if so, it can be presumed to represent a condition that's redundant
- *		with that member of the list.
+ *		Test whether rinfo is derived from same parent as any clause in
+ *		clauselist;	if so, it can be presumed to represent a condition
+ *		that's redundant with that member of the list.
  */
 bool
 is_redundant_derived_clause(RestrictInfo *rinfo, List *clauselist)
 {
-	EquivalenceClass *parent_ec = rinfo->parent_ec;
+	Node *rinfo_parent = rinfo->rinfo_parent;
 	ListCell   *lc;
 
-	/* Fail if it's not a potentially-redundant clause from some EC */
-	if (parent_ec == NULL)
+	/* Fail if it's not a potentially-redundant clause */
+	if (rinfo_parent == NULL)
 		return false;
 
 	foreach(lc, clauselist)
 	{
 		RestrictInfo *otherrinfo = (RestrictInfo *) lfirst(lc);
 
-		if (otherrinfo->parent_ec == parent_ec)
+		if (otherrinfo->rinfo_parent == rinfo_parent)
 			return true;
 	}
 

@@ -2243,7 +2243,7 @@ _copyRestrictInfo(const RestrictInfo *from)
 	COPY_BITMAPSET_FIELD(right_relids);
 	COPY_NODE_FIELD(orclause);
 	/* EquivalenceClasses are never copied, so shallow-copy the pointers */
-	COPY_SCALAR_FIELD(parent_ec);
+	COPY_SCALAR_FIELD(rinfo_parent);
 	COPY_SCALAR_FIELD(eval_cost);
 	COPY_SCALAR_FIELD(norm_selec);
 	COPY_SCALAR_FIELD(outer_selec);

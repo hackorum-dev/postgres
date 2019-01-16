@@ -4673,7 +4673,7 @@ get_foreign_key_join_selectivity(PlannerInfo *root,
 			/* Drop this clause if it matches any column of the FK */
 			for (i = 0; i < fkinfo->nkeys; i++)
 			{
-				if (rinfo->parent_ec)
+				if (rinfo->rinfo_parent)
 				{
 					/*
 					 * EC-derived clauses can only match by EC.  It is okay to
@@ -4683,12 +4683,12 @@ get_foreign_key_join_selectivity(PlannerInfo *root,
 					 * have generated one equating the FK's Vars.  So for
 					 * purposes of estimation, we can act as though it did so.
 					 *
-					 * Note: checking parent_ec is a bit of a cheat because
-					 * there are EC-derived clauses that don't have parent_ec
+					 * Note: checking parent EC is a bit of a cheat because
+					 * there are EC-derived clauses that don't have parent EC
 					 * set; but such clauses must compare expressions that
 					 * aren't just Vars, so they cannot match the FK anyway.
 					 */
-					if (fkinfo->eclass[i] == rinfo->parent_ec)
+					if ((Node *) fkinfo->eclass[i] == rinfo->rinfo_parent)
 					{
 						remove_it = true;
 						break;

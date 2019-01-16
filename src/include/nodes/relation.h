@@ -1875,9 +1875,13 @@ typedef struct LimitPath
  *
  * When join clauses are generated from EquivalenceClasses, there may be
  * several equally valid ways to enforce join equivalence, of which we need
- * apply only one.  We mark clauses of this kind by setting parent_ec to
+ * apply only one.  We mark clauses of this kind by setting rinfo_parent to
  * point to the generating EquivalenceClass.  Multiple clauses with the same
- * parent_ec in the same join are redundant.
+ * rinfo_parent in the same join are redundant.
+ *
+ * Another case when two clauses are marked as redundant is when we expand
+ * a clause to make it usable in index scans. The expanded clause may have
+ * the original clause as the parent (see expand_indexqual_conditions).
  */
 
 typedef struct RestrictInfo
@@ -1918,7 +1922,7 @@ typedef struct RestrictInfo
 	Expr	   *orclause;		/* modified clause with RestrictInfos */
 
 	/* This field is NULL unless clause is potentially redundant: */
-	EquivalenceClass *parent_ec;	/* generating EquivalenceClass */
+	Node *rinfo_parent;			/* generating EquivalenceClass or RestrictInfo */
 
 	/* cache space for cost and selectivity */
 	QualCost	eval_cost;		/* eval cost of clause; -1 if not yet set */

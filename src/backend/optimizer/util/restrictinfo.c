@@ -179,7 +179,7 @@ make_restrictinfo_internal(Expr *clause,
 	 * that happens only if it appears in the right context (top level of a
 	 * joinclause list).
 	 */
-	restrictinfo->parent_ec = NULL;
+	restrictinfo->rinfo_parent = NULL;
 
 	restrictinfo->eval_cost.startup = -1;
 	restrictinfo->norm_selec = -1;

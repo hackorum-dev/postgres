@@ -559,9 +559,10 @@ consider_index_join_outer_rels(PlannerInfo *root, RelOptInfo *rel,
 			 * parameterization; so skip if any clause derived from the same
 			 * eclass would already have been included when using oldrelids.
 			 */
-			if (rinfo->parent_ec &&
-				eclass_already_used(rinfo->parent_ec, oldrelids,
-									indexjoinclauses))
+			if (rinfo->rinfo_parent
+				&& IsA(rinfo->rinfo_parent, EquivalenceClass)
+				&& eclass_already_used((EquivalenceClass *) rinfo->rinfo_parent,
+									   oldrelids, indexjoinclauses))
 				continue;
 
 			/*
@@ -691,7 +692,7 @@ eclass_already_used(EquivalenceClass *parent_ec, Relids oldrelids,
 	{
 		RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
 
-		if (rinfo->parent_ec == parent_ec &&
+		if (rinfo->rinfo_parent == (Node *) parent_ec &&
 			bms_is_subset(rinfo->clause_relids, oldrelids))
 			return true;
 	}
@@ -3608,8 +3609,17 @@ expand_indexqual_conditions(IndexOptInfo *index,
 												   index);
 			if (boolqual)
 			{
-				indexquals = lappend(indexquals,
-									 make_simple_restrictinfo(boolqual));
+				RestrictInfo *newRinfo = make_simple_restrictinfo(boolqual);
+				/*
+				 * Mark the expanded and the original rinfo as redundant
+				 * by setting the same rinfo_parent for them. If the original
+				 * is itself derived from an EC, use that EC.
+				 */
+				if (!rinfo->rinfo_parent)
+					rinfo->rinfo_parent = (Node *) newRinfo;
+				newRinfo->rinfo_parent = rinfo->rinfo_parent;
+
+				indexquals = lappend(indexquals, newRinfo);
 				indexqualcols = lappend_int(indexqualcols, indexcol);
 				continue;
 			}
