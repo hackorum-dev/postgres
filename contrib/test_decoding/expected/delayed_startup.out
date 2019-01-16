@@ -9,13 +9,13 @@ step s2init: <... completed>
 ?column?       
 
 init           
-step s2start: SELECT data FROM pg_logical_slot_get_changes('isolation_slot', NULL, NULL, 'include-xids', 'false');
+step s2start: SELECT data FROM pg_logical_slot_get_changes('isolation_slot', NULL, NULL, 'include-xids', 'false', 'skip-empty-xacts', '1');
 data           
 
 step s1b: BEGIN ISOLATION LEVEL SERIALIZABLE;
 step s1w: INSERT INTO do_write DEFAULT VALUES;
 step s1c: COMMIT;
-step s2start: SELECT data FROM pg_logical_slot_get_changes('isolation_slot', NULL, NULL, 'include-xids', 'false');
+step s2start: SELECT data FROM pg_logical_slot_get_changes('isolation_slot', NULL, NULL, 'include-xids', 'false', 'skip-empty-xacts', '1');
 data           
 
 BEGIN          
@@ -23,11 +23,11 @@ table public.do_write: INSERT: id[integer]:2
 COMMIT         
 step s1b: BEGIN ISOLATION LEVEL SERIALIZABLE;
 step s1w: INSERT INTO do_write DEFAULT VALUES;
-step s2start: SELECT data FROM pg_logical_slot_get_changes('isolation_slot', NULL, NULL, 'include-xids', 'false');
+step s2start: SELECT data FROM pg_logical_slot_get_changes('isolation_slot', NULL, NULL, 'include-xids', 'false', 'skip-empty-xacts', '1');
 data           
 
 step s1c: COMMIT;
-step s2start: SELECT data FROM pg_logical_slot_get_changes('isolation_slot', NULL, NULL, 'include-xids', 'false');
+step s2start: SELECT data FROM pg_logical_slot_get_changes('isolation_slot', NULL, NULL, 'include-xids', 'false', 'skip-empty-xacts', '1');
 data           
 
 BEGIN          
