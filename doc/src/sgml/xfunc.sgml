@@ -1875,6 +1875,14 @@ PG_MODULE_MAGIC;
     (Presently, unloads are disabled and will never occur, but this may
     change in the future.)
    </para>
+   <para>
+     The dynamic loader loads a file as its symbols are hidden from external
+     modules by default. A file is loaded exporting the symbols by writhing
+     this in one of the module source files.
+<programlisting>
+PG_MODULE_EXPORT_SYMBOL;
+</programlisting>
+   </para>
 
   </sect2>
 

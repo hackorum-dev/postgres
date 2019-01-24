@@ -456,6 +456,14 @@ PG_MAGIC_FUNCTION_NAME(void) \
 } \
 extern int no_such_variable
 
+#define PG_MODULE_EXPORT_SYMBOL_NAME Pg_module_exrpot_symbols
+#define PG_MODULE_EXPORT_SYMBOL_NAME_STRING "Pg_module_exrpot_symbols"
+
+#define PG_MODULE_EXPORT_SYMBOL	\
+extern PGDLLEXPORT void PG_MODULE_EXPORT_SYMBOL_NAME(void); \
+extern PGDLLEXPORT void PG_MODULE_EXPORT_SYMBOL_NAME(void){}
+
+
 
 /*-------------------------------------------------------------------------
  *		Support routines and macros for callers of fmgr-compatible functions

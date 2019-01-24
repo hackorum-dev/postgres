@@ -42,6 +42,7 @@
 extern void _PG_init(void);
 
 PG_MODULE_MAGIC;
+PG_MODULE_EXPORT_SYMBOL;
 
 PG_FUNCTION_INFO_V1(plpython_validator);
 PG_FUNCTION_INFO_V1(plpython_call_handler);

@@ -236,7 +236,7 @@ internal_load_library(const char *libname)
 #endif
 		file_scanner->next = NULL;
 
-		file_scanner->handle = dlopen(file_scanner->filename, RTLD_NOW | RTLD_GLOBAL);
+		file_scanner->handle = dlopen(file_scanner->filename, RTLD_NOW | RTLD_LOCAL);
 		if (file_scanner->handle == NULL)
 		{
 			load_error = dlerror();
@@ -279,6 +279,17 @@ internal_load_library(const char *libname)
 					(errmsg("incompatible library \"%s\": missing magic block",
 							libname),
 					 errhint("Extension libraries are required to use the PG_MODULE_MAGIC macro.")));
+		}
+
+		/* Check if the module wants to export symbols */
+		if (dlsym(file_scanner->handle, PG_MODULE_EXPORT_SYMBOL_NAME_STRING))
+		{
+			elog(DEBUG3,
+				 "loaded dynamic-link library \"%s\" with RTLD_GLOBAL", libname);
+			/* want to export, reload it the way */
+			dlclose(file_scanner->handle);
+			file_scanner->handle = dlopen(file_scanner->filename,
+										  RTLD_NOW | RTLD_GLOBAL);
 		}
 
 		/*
