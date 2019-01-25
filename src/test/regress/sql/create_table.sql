@@ -440,7 +440,8 @@ CREATE TABLE part_1 PARTITION OF list_parted FOR VALUES IN ('1');
 CREATE TABLE part_2 PARTITION OF list_parted FOR VALUES IN (2);
 CREATE TABLE part_3 PARTITION OF list_parted FOR VALUES IN ((2+1));
 CREATE TABLE part_null PARTITION OF list_parted FOR VALUES IN (null);
-\d+ list_parted
+\d part_1
+\d part_3
 
 -- forbidden expressions for partition bound
 CREATE TABLE part_bogus_expr_fail PARTITION OF list_parted FOR VALUES IN (somename);
