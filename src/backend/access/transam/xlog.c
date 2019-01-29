@@ -771,13 +771,11 @@ static const char *xlogSourceNames[] = {"any", "archive", "pg_wal", "stream"};
 
 /*
  * openLogFile is -1 or a kernel FD for an open log file segment.
- * When it's open, openLogOff is the current seek offset in the file.
  * openLogSegNo identifies the segment.  These variables are only
  * used to write the XLOG, and so will normally refer to the active segment.
  */
 static int	openLogFile = -1;
 static XLogSegNo openLogSegNo = 0;
-static uint32 openLogOff = 0;
 
 /*
  * These variables are used similarly to the ones above, but for reading
@@ -2447,7 +2445,6 @@ XLogWrite(XLogwrtRqst WriteRqst, bool flexible)
 			/* create/use new log file */
 			use_existent = true;
 			openLogFile = XLogFileInit(openLogSegNo, &use_existent, true);
-			openLogOff = 0;
 		}
 
 		/* Make sure we have the current logfile open */
@@ -2456,7 +2453,6 @@ XLogWrite(XLogwrtRqst WriteRqst, bool flexible)
 			XLByteToPrevSeg(LogwrtResult.Write, openLogSegNo,
 							wal_segment_size);
 			openLogFile = XLogFileOpen(openLogSegNo);
-			openLogOff = 0;
 		}
 
 		/* Add current page to the set of pending pages-to-dump */
@@ -2508,7 +2504,7 @@ XLogWrite(XLogwrtRqst WriteRqst, bool flexible)
 							 errmsg("could not write to log file %s "
 									"at offset %u, length %zu: %m",
 									XLogFileNameP(ThisTimeLineID, openLogSegNo),
-									openLogOff, nbytes)));
+									startoffset, nbytes)));
 				}
 				nleft -= written;
 				from += written;
@@ -2516,7 +2512,6 @@ XLogWrite(XLogwrtRqst WriteRqst, bool flexible)
 			} while (nleft > 0);
 
 			/* Update state for write */
-			openLogOff += nbytes;
 			npages = 0;
 
 			/*
@@ -2602,7 +2597,6 @@ XLogWrite(XLogwrtRqst WriteRqst, bool flexible)
 				XLByteToPrevSeg(LogwrtResult.Write, openLogSegNo,
 								wal_segment_size);
 				openLogFile = XLogFileOpen(openLogSegNo);
-				openLogOff = 0;
 			}
 
 			issue_xlog_fsync(openLogFile, openLogSegNo);
