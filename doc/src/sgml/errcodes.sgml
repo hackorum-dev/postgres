@@ -77,11 +77,8 @@
    </row>
   </thead>
 
-  <tbody>
+  &errcodes-table;
 
-    &errcodes-table;
-
-  </tbody>
  </tgroup>
 </table>
 

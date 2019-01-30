@@ -310,10 +310,495 @@
    </sect2>
   </sect1>
 
-  &xfunc;
+ <sect1 id="xfunc">
+  <title>User-defined Functions</title>
+
+  <indexterm zone="xfunc">
+   <primary>function</primary>
+   <secondary>user-defined</secondary>
+  </indexterm>
+
+  <para>
+   <productname>PostgreSQL</productname> provides four kinds of
+   functions:
+
+   <itemizedlist>
+    <listitem>
+     <para>
+      query language functions (functions written in
+      <acronym>SQL</acronym>) (<xref linkend="xfunc-sql"/>)
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      procedural language functions (functions written in, for
+      example, <application>PL/pgSQL</application> or <application>PL/Tcl</application>)
+      (<xref linkend="xfunc-pl"/>)
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      internal functions (<xref linkend="xfunc-internal"/>)
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      C-language functions (<xref linkend="xfunc-c"/>)
+     </para>
+    </listitem>
+   </itemizedlist>
+  </para>
+
+  <para>
+   Every kind
+   of  function  can take base types, composite types, or
+   combinations of these as arguments (parameters). In addition,
+   every kind of function can return a base type or
+   a composite type.  Functions can also be defined to return
+   sets of base or composite values.
+  </para>
+
+  <para>
+   Many kinds of functions can take or return certain pseudo-types
+   (such as polymorphic types), but the available facilities vary.
+   Consult the description of each kind of function for more details.
+  </para>
+
+  <para>
+   It's easiest to define <acronym>SQL</acronym>
+   functions, so we'll start by discussing those.
+   Most of the concepts presented for <acronym>SQL</acronym> functions
+   will carry over to the other types of functions.
+  </para>
+
+  <para>
+   Throughout this chapter, it can be useful to look at the reference
+   page of the <xref linkend="sql-createfunction"/> command to
+   understand the examples better.  Some examples from this chapter
+   can be found in <filename>funcs.sql</filename> and
+   <filename>funcs.c</filename> in the <filename>src/tutorial</filename>
+   directory in the <productname>PostgreSQL</productname> source
+   distribution.
+  </para>
+  </sect1>
+
+  <sect1 id="xproc">
+   <title>User-defined Procedures</title>
+
+  <indexterm zone="xproc">
+   <primary>procedure</primary>
+   <secondary>user-defined</secondary>
+  </indexterm>
+
+   <para>
+    A procedure is a database object similar to a function.  The difference is
+    that a procedure does not return a value, so there is no return type
+    declaration.  While a function is called as part of a query or DML
+    command, a procedure is called explicitly using
+    the <xref linkend="sql-call"/> statement.
+   </para>
+
+   <para>
+    The explanations on how to define user-defined functions in the rest of
+    this chapter apply to procedures as well, except that
+    the <xref linkend="sql-createprocedure"/> command is used instead, there is
+    no return type, and some other features such as strictness don't apply.
+   </para>
+
+   <para>
+    Collectively, functions and procedures are also known
+    as <firstterm>routines</firstterm><indexterm><primary>routine</primary></indexterm>.
+    There are commands such as <xref linkend="sql-alterroutine"/>
+    and <xref linkend="sql-droproutine"/> that can operate on functions and
+    procedures without having to know which kind it is.  Note, however, that
+    there is no <literal>CREATE ROUTINE</literal> command.
+   </para>
+  </sect1>
+
+  &xfunc-sql;
+
+  <sect1 id="xfunc-overload">
+   <title>Function Overloading</title>
+
+   <indexterm zone="xfunc-overload">
+    <primary>overloading</primary>
+    <secondary>functions</secondary>
+   </indexterm>
+
+   <para>
+    More than one function can be defined with the same SQL name, so long
+    as the arguments they take are different.  In other words,
+    function names can be <firstterm>overloaded</firstterm>.  Whether or not
+    you use it, this capability entails security precautions when calling
+    functions in databases where some users mistrust other users; see
+    <xref linkend="typeconv-func"/>.  When a query is executed, the server
+    will determine which function to call from the data types and the number
+    of the provided arguments.  Overloading can also be used to simulate
+    functions with a variable number of arguments, up to a finite maximum
+    number.
+   </para>
+
+   <para>
+    When creating a family of overloaded functions, one should be
+    careful not to create ambiguities.  For instance, given the
+    functions:
+<programlisting>
+CREATE FUNCTION test(int, real) RETURNS ...
+CREATE FUNCTION test(smallint, double precision) RETURNS ...
+</programlisting>
+    it is not immediately clear which function would be called with
+    some trivial input like <literal>test(1, 1.5)</literal>.  The
+    currently implemented resolution rules are described in
+    <xref linkend="typeconv"/>, but it is unwise to design a system that subtly
+    relies on this behavior.
+   </para>
+
+   <para>
+    A function that takes a single argument of a composite type should
+    generally not have the same name as any attribute (field) of that type.
+    Recall that <literal><replaceable>attribute</replaceable>(<replaceable>table</replaceable>)</literal>
+    is considered equivalent
+    to <literal><replaceable>table</replaceable>.<replaceable>attribute</replaceable></literal>.
+    In the case that there is an
+    ambiguity between a function on a composite type and an attribute of
+    the composite type, the attribute will always be used.  It is possible
+    to override that choice by schema-qualifying the function name
+    (that is, <literal><replaceable>schema</replaceable>.<replaceable>func</replaceable>(<replaceable>table</replaceable>)
+    </literal>) but it's better to
+    avoid the problem by not choosing conflicting names.
+   </para>
+
+   <para>
+    Another possible conflict is between variadic and non-variadic functions.
+    For instance, it is possible to create both <literal>foo(numeric)</literal> and
+    <literal>foo(VARIADIC numeric[])</literal>.  In this case it is unclear which one
+    should be matched to a call providing a single numeric argument, such as
+    <literal>foo(10.1)</literal>.  The rule is that the function appearing
+    earlier in the search path is used, or if the two functions are in the
+    same schema, the non-variadic one is preferred.
+   </para>
+
+   <para>
+    When overloading C-language functions, there is an additional
+    constraint: The C name of each function in the family of
+    overloaded functions must be different from the C names of all
+    other functions, either internal or dynamically loaded.  If this
+    rule is violated, the behavior is not portable.  You might get a
+    run-time linker error, or one of the functions will get called
+    (usually the internal one).  The alternative form of the
+    <literal>AS</literal> clause for the SQL <command>CREATE
+    FUNCTION</command> command decouples the SQL function name from
+    the function name in the C source code.  For instance:
+<programlisting>
+CREATE FUNCTION test(int) RETURNS int
+    AS '<replaceable>filename</replaceable>', 'test_1arg'
+    LANGUAGE C;
+CREATE FUNCTION test(int, int) RETURNS int
+    AS '<replaceable>filename</replaceable>', 'test_2arg'
+    LANGUAGE C;
+</programlisting>
+    The names of the C functions here reflect one of many possible conventions.
+   </para>
+  </sect1>
+
+  <sect1 id="xfunc-volatility">
+   <title>Function Volatility Categories</title>
+
+   <indexterm zone="xfunc-volatility">
+    <primary>volatility</primary>
+    <secondary>functions</secondary>
+   </indexterm>
+   <indexterm zone="xfunc-volatility">
+    <primary>VOLATILE</primary>
+   </indexterm>
+   <indexterm zone="xfunc-volatility">
+    <primary>STABLE</primary>
+   </indexterm>
+   <indexterm zone="xfunc-volatility">
+    <primary>IMMUTABLE</primary>
+   </indexterm>
+
+   <para>
+    Every function has a <firstterm>volatility</firstterm> classification, with
+    the possibilities being <literal>VOLATILE</literal>, <literal>STABLE</literal>, or
+    <literal>IMMUTABLE</literal>.  <literal>VOLATILE</literal> is the default if the
+    <xref linkend="sql-createfunction"/>
+    command does not specify a category.  The volatility category is a
+    promise to the optimizer about the behavior of the function:
+
+   <itemizedlist>
+    <listitem>
+     <para>
+      A <literal>VOLATILE</literal> function can do anything, including modifying
+      the database.  It can return different results on successive calls with
+      the same arguments.  The optimizer makes no assumptions about the
+      behavior of such functions.  A query using a volatile function will
+      re-evaluate the function at every row where its value is needed.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      A <literal>STABLE</literal> function cannot modify the database and is
+      guaranteed to return the same results given the same arguments
+      for all rows within a single statement. This category allows the
+      optimizer to optimize multiple calls of the function to a single
+      call. In particular, it is safe to use an expression containing
+      such a function in an index scan condition. (Since an index scan
+      will evaluate the comparison value only once, not once at each
+      row, it is not valid to use a <literal>VOLATILE</literal> function in an
+      index scan condition.)
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      An <literal>IMMUTABLE</literal> function cannot modify the database and is
+      guaranteed to return the same results given the same arguments forever.
+      This category allows the optimizer to pre-evaluate the function when
+      a query calls it with constant arguments.  For example, a query like
+      <literal>SELECT ... WHERE x = 2 + 2</literal> can be simplified on sight to
+      <literal>SELECT ... WHERE x = 4</literal>, because the function underlying
+      the integer addition operator is marked <literal>IMMUTABLE</literal>.
+     </para>
+    </listitem>
+   </itemizedlist>
+   </para>
+
+   <para>
+    For best optimization results, you should label your functions with the
+    strictest volatility category that is valid for them.
+   </para>
+
+   <para>
+    Any function with side-effects <emphasis>must</emphasis> be labeled
+    <literal>VOLATILE</literal>, so that calls to it cannot be optimized away.
+    Even a function with no side-effects needs to be labeled
+    <literal>VOLATILE</literal> if its value can change within a single query;
+    some examples are <literal>random()</literal>, <literal>currval()</literal>,
+    <literal>timeofday()</literal>.
+   </para>
+
+   <para>
+    Another important example is that the <function>current_timestamp</function>
+    family of functions qualify as <literal>STABLE</literal>, since their values do
+    not change within a transaction.
+   </para>
+
+   <para>
+    There is relatively little difference between <literal>STABLE</literal> and
+    <literal>IMMUTABLE</literal> categories when considering simple interactive
+    queries that are planned and immediately executed: it doesn't matter
+    a lot whether a function is executed once during planning or once during
+    query execution startup.  But there is a big difference if the plan is
+    saved and reused later.  Labeling a function <literal>IMMUTABLE</literal> when
+    it really isn't might allow it to be prematurely folded to a constant during
+    planning, resulting in a stale value being re-used during subsequent uses
+    of the plan.  This is a hazard when using prepared statements or when
+    using function languages that cache plans (such as
+    <application>PL/pgSQL</application>).
+   </para>
+
+   <para>
+    For functions written in SQL or in any of the standard procedural
+    languages, there is a second important property determined by the
+    volatility category, namely the visibility of any data changes that have
+    been made by the SQL command that is calling the function.  A
+    <literal>VOLATILE</literal> function will see such changes, a <literal>STABLE</literal>
+    or <literal>IMMUTABLE</literal> function will not.  This behavior is implemented
+    using the snapshotting behavior of MVCC (see <xref linkend="mvcc"/>):
+    <literal>STABLE</literal> and <literal>IMMUTABLE</literal> functions use a snapshot
+    established as of the start of the calling query, whereas
+    <literal>VOLATILE</literal> functions obtain a fresh snapshot at the start of
+    each query they execute.
+   </para>
+
+   <note>
+    <para>
+     Functions written in C can manage snapshots however they want, but it's
+     usually a good idea to make C functions work this way too.
+    </para>
+   </note>
+
+   <para>
+    Because of this snapshotting behavior,
+    a function containing only <command>SELECT</command> commands can safely be
+    marked <literal>STABLE</literal>, even if it selects from tables that might be
+    undergoing modifications by concurrent queries.
+    <productname>PostgreSQL</productname> will execute all commands of a
+    <literal>STABLE</literal> function using the snapshot established for the
+    calling query, and so it will see a fixed view of the database throughout
+    that query.
+   </para>
+
+   <para>
+    The same snapshotting behavior is used for <command>SELECT</command> commands
+    within <literal>IMMUTABLE</literal> functions.  It is generally unwise to select
+    from database tables within an <literal>IMMUTABLE</literal> function at all,
+    since the immutability will be broken if the table contents ever change.
+    However, <productname>PostgreSQL</productname> does not enforce that you
+    do not do that.
+   </para>
+
+   <para>
+    A common error is to label a function <literal>IMMUTABLE</literal> when its
+    results depend on a configuration parameter.  For example, a function
+    that manipulates timestamps might well have results that depend on the
+    <xref linkend="guc-timezone"/> setting.  For safety, such functions should
+    be labeled <literal>STABLE</literal> instead.
+   </para>
+
+   <note>
+    <para>
+     <productname>PostgreSQL</productname> requires that <literal>STABLE</literal>
+     and <literal>IMMUTABLE</literal> functions contain no SQL commands other
+     than <command>SELECT</command> to prevent data modification.
+     (This is not a completely bulletproof test, since such functions could
+     still call <literal>VOLATILE</literal> functions that modify the database.
+     If you do that, you will find that the <literal>STABLE</literal> or
+     <literal>IMMUTABLE</literal> function does not notice the database changes
+     applied by the called function, since they are hidden from its snapshot.)
+    </para>
+   </note>
+  </sect1>
+
+  <sect1 id="xfunc-pl">
+   <title>Procedural Language Functions</title>
+
+   <para>
+    <productname>PostgreSQL</productname> allows user-defined functions
+    to be written in other languages besides SQL and C.  These other
+    languages are generically called <firstterm>procedural
+    languages</firstterm> (<acronym>PL</acronym>s).
+    Procedural languages aren't built into the
+    <productname>PostgreSQL</productname> server; they are offered
+    by loadable modules.
+    See <xref linkend="xplang"/> and following chapters for more
+    information.
+   </para>
+  </sect1>
+
+  <sect1 id="xfunc-internal">
+   <title>Internal Functions</title>
+
+   <indexterm zone="xfunc-internal"><primary>function</primary><secondary>internal</secondary></indexterm>
+
+   <para>
+    Internal functions are functions written in C that have been statically
+    linked into the <productname>PostgreSQL</productname> server.
+    The <quote>body</quote> of the function definition
+    specifies the C-language name of the function, which need not be the
+    same as the name being declared for SQL use.
+    (For reasons of backward compatibility, an empty body
+    is accepted as meaning that the C-language function name is the
+    same as the SQL name.)
+   </para>
+
+   <para>
+    Normally, all internal functions present in the
+    server are declared during the initialization of the database cluster
+    (see <xref linkend="creating-cluster"/>),
+    but a user could use <command>CREATE FUNCTION</command>
+    to create additional alias names for an internal function.
+    Internal functions are declared in <command>CREATE FUNCTION</command>
+    with language name <literal>internal</literal>.  For instance, to
+    create an alias for the <function>sqrt</function> function:
+<programlisting>
+CREATE FUNCTION square_root(double precision) RETURNS double precision
+    AS 'dsqrt'
+    LANGUAGE internal
+    STRICT;
+</programlisting>
+    (Most internal functions expect to be declared <quote>strict</quote>.)
+   </para>
+
+   <note>
+    <para>
+     Not all <quote>predefined</quote> functions are
+     <quote>internal</quote> in the above sense.  Some predefined
+     functions are written in SQL.
+    </para>
+   </note>
+  </sect1>
+
+  &xfunc;  <!-- xfunc-c part -->
   &xaggr;
   &xtypes;
-  &xoper;
+
+ <sect1 id="xoper">
+  <title>User-defined Operators</title>
+
+  <indexterm zone="xoper">
+   <primary>operator</primary>
+   <secondary>user-defined</secondary>
+  </indexterm>
+
+  <para>
+   Every operator is <quote>syntactic sugar</quote> for a call to an
+   underlying function that does the real work; so you must
+   first create the underlying function before you can create
+   the operator.  However, an operator is <emphasis>not merely</emphasis>
+   syntactic sugar, because it carries additional information
+   that helps the query planner optimize queries that use the
+   operator.  The next section will be devoted to explaining
+   that additional information.
+  </para>
+
+  <para>
+   <productname>PostgreSQL</productname> supports left unary, right
+   unary, and binary operators.  Operators can be
+   overloaded;<indexterm><primary>overloading</primary><secondary>operators</secondary></indexterm>
+   that is, the same operator name can be used for different operators
+   that have different numbers and types of operands.  When a query is
+   executed, the system determines the operator to call from the
+   number and types of the provided operands.
+  </para>
+
+  <para>
+   Here is an example of creating an operator for adding two complex
+   numbers.  We assume we've already created the definition of type
+   <type>complex</type> (see <xref linkend="xtypes"/>).  First we need a
+   function that does the work, then we can define the operator:
+
+<programlisting>
+CREATE FUNCTION complex_add(complex, complex)
+    RETURNS complex
+    AS '<replaceable>filename</replaceable>', 'complex_add'
+    LANGUAGE C IMMUTABLE STRICT;
+
+CREATE OPERATOR + (
+    leftarg = complex,
+    rightarg = complex,
+    function = complex_add,
+    commutator = +
+);
+</programlisting>
+  </para>
+
+  <para>
+   Now we could execute a query like this:
+
+<screen>
+SELECT (a + b) AS c FROM test_complex;
+
+        c
+-----------------
+ (5.2,6.05)
+ (133.42,144.95)
+</screen>
+  </para>
+
+  <para>
+   We've shown how to create a binary operator here.  To create unary
+   operators, just omit one of <literal>leftarg</literal> (for left unary) or
+   <literal>rightarg</literal> (for right unary).  The <literal>function</literal>
+   clause and the argument clauses are the only required items in
+   <command>CREATE OPERATOR</command>.  The <literal>commutator</literal>
+   clause shown in the example is an optional hint to the query
+   optimizer.  Further details about <literal>commutator</literal> and other
+   optimizer hints appear in the next section.
+  </para>
+ </sect1>
+
+  &xoper;   <!-- xoper-optimization part -->
   &xindex;
 
 

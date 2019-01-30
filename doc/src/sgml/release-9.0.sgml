@@ -1,7 +1,9 @@
 <!-- doc/src/sgml/release-9.0.sgml -->
 <!-- See header comment in release.sgml about typical markup -->
 
- <sect1 id="release-9-0-23">
+<section>
+ <title>Release 9.0</title>
+ <section id="release-9-0-23">
   <title>Release 9.0.23</title>
 
   <formalpara>
@@ -21,7 +23,7 @@
    release branch soon.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.0.23</title>
 
    <para>
@@ -33,9 +35,9 @@
     see <xref linkend="release-9-0-18"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -495,10 +497,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-0-22">
+ <section id="release-9-0-22">
   <title>Release 9.0.22</title>
 
   <formalpara>
@@ -518,7 +520,7 @@
    Users are encouraged to update to a newer release branch soon.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.0.22</title>
 
    <para>
@@ -530,9 +532,9 @@
     see <xref linkend="release-9-0-18"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -569,10 +571,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-0-21">
+ <section id="release-9-0-21">
   <title>Release 9.0.21</title>
 
   <formalpara>
@@ -592,7 +594,7 @@
    Users are encouraged to update to a newer release branch soon.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.0.21</title>
 
    <para>
@@ -604,9 +606,9 @@
     see <xref linkend="release-9-0-18"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -663,10 +665,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-0-20">
+ <section id="release-9-0-20">
   <title>Release 9.0.20</title>
 
   <formalpara>
@@ -686,7 +688,7 @@
    Users are encouraged to update to a newer release branch soon.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.0.20</title>
 
    <para>
@@ -698,9 +700,9 @@
     see <xref linkend="release-9-0-18"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1107,10 +1109,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-0-19">
+ <section id="release-9-0-19">
   <title>Release 9.0.19</title>
 
   <formalpara>
@@ -1124,7 +1126,7 @@
    <xref linkend="release-9-0"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.0.19</title>
 
    <para>
@@ -1136,9 +1138,9 @@
     see <xref linkend="release-9-0-18"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1833,10 +1835,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-0-18">
+ <section id="release-9-0-18">
   <title>Release 9.0.18</title>
 
   <formalpara>
@@ -1850,7 +1852,7 @@
    <xref linkend="release-9-0"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.0.18</title>
 
    <para>
@@ -1868,9 +1870,9 @@
     see <xref linkend="release-9-0-15"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -2179,10 +2181,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-0-17">
+ <section id="release-9-0-17">
   <title>Release 9.0.17</title>
 
   <formalpara>
@@ -2196,7 +2198,7 @@
    <xref linkend="release-9-0"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.0.17</title>
 
    <para>
@@ -2208,9 +2210,9 @@
     see <xref linkend="release-9-0-15"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -2332,10 +2334,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-0-16">
+ <section id="release-9-0-16">
   <title>Release 9.0.16</title>
 
   <formalpara>
@@ -2349,7 +2351,7 @@
    <xref linkend="release-9-0"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.0.16</title>
 
    <para>
@@ -2361,9 +2363,9 @@
     see <xref linkend="release-9-0-15"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -2833,10 +2835,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-0-15">
+ <section id="release-9-0-15">
   <title>Release 9.0.15</title>
 
   <formalpara>
@@ -2850,7 +2852,7 @@
    <xref linkend="release-9-0"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.0.15</title>
 
    <para>
@@ -2868,9 +2870,9 @@
     see <xref linkend="release-9-0-13"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -3071,10 +3073,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-0-14">
+ <section id="release-9-0-14">
   <title>Release 9.0.14</title>
 
   <formalpara>
@@ -3088,7 +3090,7 @@
    <xref linkend="release-9-0"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.0.14</title>
 
    <para>
@@ -3100,9 +3102,9 @@
     see <xref linkend="release-9-0-13"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -3337,10 +3339,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-0-13">
+ <section id="release-9-0-13">
   <title>Release 9.0.13</title>
 
   <formalpara>
@@ -3354,7 +3356,7 @@
    <xref linkend="release-9-0"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.0.13</title>
 
    <para>
@@ -3373,9 +3375,9 @@
     see <xref linkend="release-9-0-6"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -3634,10 +3636,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-0-12">
+ <section id="release-9-0-12">
   <title>Release 9.0.12</title>
 
   <formalpara>
@@ -3651,7 +3653,7 @@
    <xref linkend="release-9-0"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.0.12</title>
 
    <para>
@@ -3663,9 +3665,9 @@
     see <xref linkend="release-9-0-6"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -3896,10 +3898,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-0-11">
+ <section id="release-9-0-11">
   <title>Release 9.0.11</title>
 
   <formalpara>
@@ -3913,7 +3915,7 @@
    <xref linkend="release-9-0"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.0.11</title>
 
    <para>
@@ -3925,9 +3927,9 @@
     see <xref linkend="release-9-0-6"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -4274,10 +4276,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-0-10">
+ <section id="release-9-0-10">
   <title>Release 9.0.10</title>
 
   <formalpara>
@@ -4291,7 +4293,7 @@
    <xref linkend="release-9-0"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.0.10</title>
 
    <para>
@@ -4303,9 +4305,9 @@
     see <xref linkend="release-9-0-6"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -4416,10 +4418,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-0-9">
+ <section id="release-9-0-9">
   <title>Release 9.0.9</title>
 
   <formalpara>
@@ -4433,7 +4435,7 @@
    <xref linkend="release-9-0"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.0.9</title>
 
    <para>
@@ -4445,9 +4447,9 @@
     see <xref linkend="release-9-0-6"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -4722,10 +4724,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-0-8">
+ <section id="release-9-0-8">
   <title>Release 9.0.8</title>
 
   <formalpara>
@@ -4739,7 +4741,7 @@
    <xref linkend="release-9-0"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.0.8</title>
 
    <para>
@@ -4751,9 +4753,9 @@
     see <xref linkend="release-9-0-6"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -5042,10 +5044,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-0-7">
+ <section id="release-9-0-7">
   <title>Release 9.0.7</title>
 
   <formalpara>
@@ -5059,7 +5061,7 @@
    <xref linkend="release-9-0"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.0.7</title>
 
    <para>
@@ -5071,9 +5073,9 @@
     see <xref linkend="release-9-0-6"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -5558,10 +5560,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-0-6">
+ <section id="release-9-0-6">
   <title>Release 9.0.6</title>
 
   <formalpara>
@@ -5575,7 +5577,7 @@
    <xref linkend="release-9-0"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.0.6</title>
 
    <para>
@@ -5594,9 +5596,9 @@
     see <xref linkend="release-9-0-4"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -5942,10 +5944,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-0-5">
+ <section id="release-9-0-5">
   <title>Release 9.0.5</title>
 
   <formalpara>
@@ -5959,7 +5961,7 @@
    <xref linkend="release-9-0"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.0.5</title>
 
    <para>
@@ -5971,9 +5973,9 @@
     see <xref linkend="release-9-0-4"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -6592,10 +6594,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-0-4">
+ <section id="release-9-0-4">
   <title>Release 9.0.4</title>
 
   <formalpara>
@@ -6609,7 +6611,7 @@
    <xref linkend="release-9-0"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.0.4</title>
 
    <para>
@@ -6627,9 +6629,9 @@
     http://wiki.postgresql.org/wiki/20110408pg_upgrade_fix</ulink>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -6933,10 +6935,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-0-3">
+ <section id="release-9-0-3">
   <title>Release 9.0.3</title>
 
   <formalpara>
@@ -6950,16 +6952,16 @@
    <xref linkend="release-9-0"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.0.3</title>
 
    <para>
     A dump/restore is not required for those running 9.0.X.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -7109,10 +7111,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-0-2">
+ <section id="release-9-0-2">
   <title>Release 9.0.2</title>
 
   <formalpara>
@@ -7126,16 +7128,16 @@
    <xref linkend="release-9-0"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.0.2</title>
 
    <para>
     A dump/restore is not required for those running 9.0.X.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -7556,10 +7558,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-0-1">
+ <section id="release-9-0-1">
   <title>Release 9.0.1</title>
 
   <formalpara>
@@ -7573,16 +7575,16 @@
    <xref linkend="release-9-0"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.0.1</title>
 
    <para>
     A dump/restore is not required for those running 9.0.X.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -7698,10 +7700,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-0">
+ <section id="release-9-0">
   <title>Release 9.0</title>
 
   <formalpara>
@@ -7709,7 +7711,7 @@
    <para>2010-09-20</para>
   </formalpara>
 
-  <sect2>
+  <section>
    <title>Overview</title>
 
    <para>
@@ -7872,9 +7874,9 @@
     The above items are explained in more detail in the sections below.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
 
   <title>Migration to Version 9.0</title>
 
@@ -7894,7 +7896,7 @@
    Observe the following incompatibilities:
   </para>
 
-  <sect3>
+  <section>
    <title>Server Settings</title>
 
    <itemizedlist>
@@ -7935,9 +7937,9 @@
 
    </itemizedlist>
 
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Queries</title>
 
    <itemizedlist>
@@ -7958,9 +7960,9 @@
 
    </itemizedlist>
 
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Data Types</title>
 
    <itemizedlist>
@@ -8035,9 +8037,9 @@
 
   </itemizedlist>
 
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Object Renaming</title>
 
    <itemizedlist>
@@ -8080,9 +8082,9 @@
 
    </itemizedlist>
 
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>PL/pgSQL</title>
 
    <itemizedlist>
@@ -8172,9 +8174,9 @@
     </listitem>
    </itemizedlist>
 
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Other Incompatibilities</title>
 
    <itemizedlist>
@@ -8206,10 +8208,10 @@
     </listitem>
 
    </itemizedlist>
-  </sect3>
- </sect2>
+  </section>
+ </section>
 
- <sect2>
+ <section>
   <title>Changes</title>
    <para>
     Version 9.0 has an unprecedented number of new major features,
@@ -8217,10 +8219,10 @@
     new functions, and other changes.
    </para>
 
-  <sect3>
+  <section>
    <title>Server</title>
 
-   <sect4>
+   <section>
     <title>Continuous Archiving and Streaming Replication</title>
 
     <para>
@@ -8276,9 +8278,9 @@
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-   <sect4>
+   <section>
     <title>Performance</title>
 
     <itemizedlist>
@@ -8322,9 +8324,9 @@
 
      </itemizedlist>
 
-   </sect4>
+   </section>
 
-   <sect4>
+   <section>
     <title>Optimizer</title>
 
     <itemizedlist>
@@ -8370,9 +8372,9 @@
       </para>
      </listitem>
     </itemizedlist>
-   </sect4>
+   </section>
 
-   <sect4>
+   <section>
     <title><link linkend="geqo">GEQO</link></title>
 
     <itemizedlist>
@@ -8405,9 +8407,9 @@
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-   <sect4>
+   <section>
     <title>Optimizer Statistics</title>
 
     <itemizedlist>
@@ -8465,9 +8467,9 @@
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-   <sect4>
+   <section>
     <title>Authentication</title>
 
     <itemizedlist>
@@ -8518,9 +8520,9 @@
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-   <sect4>
+   <section>
     <title>Monitoring</title>
 
     <itemizedlist>
@@ -8567,9 +8569,9 @@
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-   <sect4>
+   <section>
     <title>Statistics Counters</title>
 
     <itemizedlist>
@@ -8595,9 +8597,9 @@
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-   <sect4>
+   <section>
     <title>Server Settings</title>
 
     <itemizedlist>
@@ -8696,11 +8698,11 @@
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Queries</title>
 
    <itemizedlist>
@@ -8760,7 +8762,7 @@
 
    </itemizedlist>
 
-   <sect4>
+   <section>
     <title>Unicode Strings</title>
 
     <itemizedlist>
@@ -8784,11 +8786,11 @@
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Object Manipulation</title>
 
    <itemizedlist>
@@ -8831,7 +8833,7 @@
 
    </itemizedlist>
 
-   <sect4>
+   <section>
     <title><command>ALTER TABLE</command></title>
 
     <itemizedlist>
@@ -8867,9 +8869,9 @@
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-   <sect4>
+   <section>
     <title><link linkend="sql-createtable"><command>CREATE TABLE</command></link></title>
 
     <itemizedlist>
@@ -8905,9 +8907,9 @@
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-   <sect4>
+   <section>
     <title>Constraints</title>
 
     <itemizedlist>
@@ -8965,9 +8967,9 @@
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-   <sect4>
+   <section>
     <title>Object Permissions</title>
 
     <itemizedlist>
@@ -9017,11 +9019,11 @@
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Utility Operations</title>
 
    <itemizedlist>
@@ -9067,7 +9069,7 @@
 
    </itemizedlist>
 
-   <sect4>
+   <section>
     <title><link linkend="sql-copy"><command>COPY</command></link></title>
 
     <itemizedlist>
@@ -9098,9 +9100,9 @@
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-   <sect4>
+   <section>
     <title><link linkend="sql-explain"><command>EXPLAIN</command></link></title>
 
     <itemizedlist>
@@ -9153,9 +9155,9 @@
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-   <sect4>
+   <section>
     <title><link linkend="sql-vacuum"><command>VACUUM</command></link></title>
 
     <itemizedlist>
@@ -9190,9 +9192,9 @@
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-   <sect4>
+   <section>
     <title>Indexes</title>
 
     <itemizedlist>
@@ -9256,11 +9258,11 @@
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Data Types</title>
 
    <itemizedlist>
@@ -9313,7 +9315,7 @@
 
    </itemizedlist>
 
-   <sect4>
+   <section>
     <title><link linkend="textsearch">Full Text Search</link></title>
 
     <itemizedlist>
@@ -9351,11 +9353,11 @@
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Functions</title>
 
    <itemizedlist>
@@ -9442,7 +9444,7 @@
 
    </itemizedlist>
 
-   <sect4>
+   <section>
     <title>Aggregates</title>
 
     <itemizedlist>
@@ -9493,9 +9495,9 @@
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-   <sect4>
+   <section>
     <title>Bit Strings</title>
 
     <itemizedlist>
@@ -9521,9 +9523,9 @@
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-   <sect4>
+   <section>
     <title>Object Information Functions</title>
 
     <itemizedlist>
@@ -9571,9 +9573,9 @@
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-   <sect4>
+   <section>
     <title>Function and Trigger Creation</title>
 
     <itemizedlist>
@@ -9623,11 +9625,11 @@
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Server-Side Languages</title>
 
    <itemizedlist>
@@ -9648,7 +9650,7 @@
 
     </itemizedlist>
 
-    <sect4>
+    <section>
     <title><link linkend="plpgsql">PL/pgSQL</link> Server-Side
     Language</title>
 
@@ -9772,9 +9774,9 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-   <sect4>
+   <section>
     <title><link linkend="plperl">PL/Perl</link> Server-Side Language</title>
 
     <itemizedlist>
@@ -9859,9 +9861,9 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-   <sect4>
+   <section>
     <title><link linkend="plpython">PL/Python</link> Server-Side Language</title>
 
     <itemizedlist>
@@ -9925,11 +9927,11 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Client Applications</title>
 
    <itemizedlist>
@@ -9944,7 +9946,7 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
 
    </itemizedlist>
 
-   <sect4>
+   <section>
     <title><link linkend="app-psql"><application>psql</application></link></title>
 
     <itemizedlist>
@@ -10008,7 +10010,7 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
 
     </itemizedlist>
 
-    <sect5>
+    <section>
     <title><application>psql</application> Display</title>
 
      <itemizedlist>
@@ -10035,9 +10037,9 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
 
      </itemizedlist>
 
-    </sect5>
+    </section>
 
-    <sect5>
+    <section>
      <title><application>psql</application> <link
      linkend="app-psql-meta-commands"><command>\d</command></link>
      Commands</title>
@@ -10080,10 +10082,10 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
 
      </itemizedlist>
 
-    </sect5>
-   </sect4>
+    </section>
+   </section>
 
-   <sect4>
+   <section>
     <title><link linkend="app-pgdump"><application>pg_dump</application></link></title>
 
     <itemizedlist>
@@ -10154,9 +10156,9 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-   <sect4>
+   <section>
     <title><link
     linkend="app-pg-ctl"><application>pg_ctl</application></link></title>
 
@@ -10185,14 +10187,14 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title><application>Development Tools</application></title>
 
-   <sect4>
+   <section>
     <title><link linkend="libpq"><application>libpq</application></link></title>
 
     <itemizedlist>
@@ -10285,9 +10287,9 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-   <sect4>
+   <section>
     <title><link linkend="ecpg"><application>ecpg</application></link></title>
 
     <itemizedlist>
@@ -10357,7 +10359,7 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
 
      </itemizedlist>
 
-     <sect5>
+     <section>
       <title><application>ecpg</application> Cursors</title>
 
       <itemizedlist>
@@ -10391,13 +10393,13 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
 
      </itemizedlist>
 
-    </sect5>
+    </section>
 
-   </sect4>
+   </section>
 
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Build Options</title>
 
    <itemizedlist>
@@ -10433,7 +10435,7 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
 
    </itemizedlist>
 
-   <sect4>
+   <section>
     <title>Makefiles</title>
 
     <itemizedlist>
@@ -10471,9 +10473,9 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-   <sect4>
+   <section>
     <title>Windows</title>
 
     <itemizedlist>
@@ -10501,11 +10503,11 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Source Code</title>
 
    <itemizedlist>
@@ -10699,7 +10701,7 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
 
    </itemizedlist>
 
-   <sect4>
+   <section>
     <title>New Build Requirements</title>
 
      <para>
@@ -10732,9 +10734,9 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-   <sect4>
+   <section>
     <title>Portability</title>
 
     <itemizedlist>
@@ -10786,9 +10788,9 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-   <sect4>
+   <section>
     <title>Server Programming</title>
 
     <itemizedlist>
@@ -10856,9 +10858,9 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-   <sect4>
+   <section>
     <title>Server Hooks</title>
 
     <itemizedlist>
@@ -10879,9 +10881,9 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-   <sect4>
+   <section>
     <title>Binary Upgrade Support</title>
 
     <itemizedlist>
@@ -10930,11 +10932,11 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Contrib</title>
 
    <itemizedlist>
@@ -11086,6 +11088,7 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
 
    </itemizedlist>
 
-  </sect3>
- </sect2>
-</sect1>
+  </section>
+ </section>
+</section>
+</section>

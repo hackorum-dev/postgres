@@ -65,6 +65,7 @@
 <!ENTITY event-trigger SYSTEM "event-trigger.sgml">
 <!ENTITY xaggr      SYSTEM "xaggr.sgml">
 <!ENTITY xfunc      SYSTEM "xfunc.sgml">
+<!ENTITY xfunc-sql  SYSTEM "xfunc-sql.sgml">
 <!ENTITY xindex     SYSTEM "xindex.sgml">
 <!ENTITY xplang     SYSTEM "xplang.sgml">
 <!ENTITY xoper      SYSTEM "xoper.sgml">
@@ -104,6 +105,7 @@
 
 <!-- contrib information -->
 <!ENTITY contrib         SYSTEM "contrib.sgml">
+<!ENTITY contrib-prog    SYSTEM "contrib-prog.sgml">
 <!ENTITY adminpack       SYSTEM "adminpack.sgml">
 <!ENTITY amcheck         SYSTEM "amcheck.sgml">
 <!ENTITY auth-delay      SYSTEM "auth-delay.sgml">

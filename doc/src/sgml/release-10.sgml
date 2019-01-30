@@ -1,7 +1,9 @@
 <!-- doc/src/sgml/release-10.sgml -->
 <!-- See header comment in release.sgml about typical markup -->
 
- <sect1 id="release-10-6">
+<section>
+ <title>Release 10</title>
+ <section id="release-10-6">
   <title>Release 10.6</title>
 
   <formalpara>
@@ -15,7 +17,7 @@
    <xref linkend="release-10"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 10.6</title>
 
    <para>
@@ -31,9 +33,9 @@
     Also, if you are upgrading from a version earlier than 10.4,
     see <xref linkend="release-10-4"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1338,10 +1340,10 @@ Branch: REL9_3_STABLE [08aad3c81] 2018-09-30 16:24:56 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-10-5">
+ <section id="release-10-5">
   <title>Release 10.5</title>
 
   <formalpara>
@@ -1355,7 +1357,7 @@ Branch: REL9_3_STABLE [08aad3c81] 2018-09-30 16:24:56 -0400
    <xref linkend="release-10"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 10.5</title>
 
    <para>
@@ -1366,9 +1368,9 @@ Branch: REL9_3_STABLE [08aad3c81] 2018-09-30 16:24:56 -0400
     However, if you are upgrading from a version earlier than 10.4,
     see <xref linkend="release-10-4"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -2407,10 +2409,10 @@ Branch: REL9_3_STABLE [3f36e4fc5] 2018-05-09 13:56:06 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-10-4">
+ <section id="release-10-4">
   <title>Release 10.4</title>
 
   <formalpara>
@@ -2424,7 +2426,7 @@ Branch: REL9_3_STABLE [3f36e4fc5] 2018-05-09 13:56:06 -0400
    <xref linkend="release-10"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 10.4</title>
 
    <para>
@@ -2446,9 +2448,9 @@ Branch: REL9_3_STABLE [3f36e4fc5] 2018-05-09 13:56:06 -0400
     Also, if you are upgrading from a version earlier than 10.3,
     see <xref linkend="release-10-3"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -3523,10 +3525,10 @@ Branch: REL9_3_STABLE [adcd0c2be] 2018-04-29 15:50:50 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-10-3">
+ <section id="release-10-3">
   <title>Release 10.3</title>
 
   <formalpara>
@@ -3540,7 +3542,7 @@ Branch: REL9_3_STABLE [adcd0c2be] 2018-04-29 15:50:50 -0400
    <xref linkend="release-10"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 10.3</title>
 
    <para>
@@ -3567,9 +3569,9 @@ Branch: REL9_3_STABLE [adcd0c2be] 2018-04-29 15:50:50 -0400
     Also, if you are upgrading from a version earlier than 10.2,
     see <xref linkend="release-10-2"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -3850,10 +3852,10 @@ Branch: REL9_6_STABLE [83fce670e] 2018-02-22 12:58:43 -0800
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-10-2">
+ <section id="release-10-2">
   <title>Release 10.2</title>
 
   <formalpara>
@@ -3867,7 +3869,7 @@ Branch: REL9_6_STABLE [83fce670e] 2018-02-22 12:58:43 -0800
    <xref linkend="release-10"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 10.2</title>
 
    <para>
@@ -3884,9 +3886,9 @@ Branch: REL9_6_STABLE [83fce670e] 2018-02-22 12:58:43 -0800
     Also, if you are upgrading from a version earlier than 10.1,
     see <xref linkend="release-10-1"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -5062,10 +5064,10 @@ Branch: REL9_3_STABLE [e5e2cc6f8] 2018-01-27 16:43:00 -0500
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-10-1">
+ <section id="release-10-1">
   <title>Release 10.1</title>
 
   <formalpara>
@@ -5079,7 +5081,7 @@ Branch: REL9_3_STABLE [e5e2cc6f8] 2018-01-27 16:43:00 -0500
    <xref linkend="release-10"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 10.1</title>
 
    <para>
@@ -5089,9 +5091,9 @@ Branch: REL9_3_STABLE [e5e2cc6f8] 2018-01-27 16:43:00 -0500
    <para>
     However, if you use BRIN indexes, see the fourth changelog entry below.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -5804,10 +5806,10 @@ Branch: REL_10_STABLE [5159626af] 2017-11-03 14:14:16 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-10">
+ <section id="release-10">
   <title>Release 10</title>
 
   <formalpara>
@@ -5815,7 +5817,7 @@ Branch: REL_10_STABLE [5159626af] 2017-11-03 14:14:16 -0400
    <para>2017-10-05</para>
   </formalpara>
 
-  <sect2>
+  <section>
    <title>Overview</title>
 
    <para>
@@ -5838,9 +5840,9 @@ Branch: REL_10_STABLE [5159626af] 2017-11-03 14:14:16 -0400
     The above items are explained in more detail in the sections below.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
 
   <title>Migration to Version 10</title>
 
@@ -6374,9 +6376,9 @@ Branch: REL_10_STABLE [5159626af] 2017-11-03 14:14:16 -0400
 
    </itemizedlist>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -6385,10 +6387,10 @@ Branch: REL_10_STABLE [5159626af] 2017-11-03 14:14:16 -0400
     release.
    </para>
 
-   <sect3>
+   <section>
     <title>Server</title>
 
-    <sect4>
+    <section>
      <title>Parallel Queries</title>
 
      <itemizedlist>
@@ -6494,9 +6496,9 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Indexes</title>
 
      <itemizedlist>
@@ -6610,9 +6612,9 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
 
      <title>Locking</title>
 
@@ -6654,9 +6656,9 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
     </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Optimizer</title>
 
      <itemizedlist>
@@ -6701,9 +6703,9 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>General Performance</title>
 
      <itemizedlist>
@@ -6787,9 +6789,9 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Monitoring</title>
 
      <itemizedlist>
@@ -6840,7 +6842,7 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
      </itemizedlist>
 
-     <sect5>
+     <section>
       <title>Logging</title>
 
       <itemizedlist>
@@ -6938,9 +6940,9 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
       </itemizedlist>
 
-     </sect5>
+     </section>
 
-     <sect5>
+     <section>
       <title><link linkend="pg-stat-activity-view"><structname>pg_stat_activity</structname></link></title>
 
       <itemizedlist>
@@ -7007,10 +7009,10 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
       </itemizedlist>
 
-     </sect5>
-    </sect4>
+     </section>
+    </section>
 
-    <sect4>
+    <section>
      <title><acronym>Authentication</acronym></title>
 
      <itemizedlist>
@@ -7080,9 +7082,9 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Server Configuration</title>
 
      <itemizedlist>
@@ -7123,9 +7125,9 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
     </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Reliability</title>
 
      <itemizedlist>
@@ -7146,7 +7148,7 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
      </itemizedlist>
 
-     <sect5>
+     <section>
       <title><link linkend="wal">Write-Ahead Log</link> (<acronym>WAL</acronym>)</title>
 
       <itemizedlist>
@@ -7195,13 +7197,13 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
       </itemizedlist>
 
-     </sect5>
+     </section>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Replication and Recovery</title>
 
     <itemizedlist>
@@ -7367,9 +7369,9 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Queries</title>
 
     <itemizedlist>
@@ -7404,9 +7406,9 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Utility Commands</title>
 
     <itemizedlist>
@@ -7595,9 +7597,9 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Data Types</title>
 
     <itemizedlist>
@@ -7715,9 +7717,9 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Functions</title>
 
     <itemizedlist>
@@ -7839,9 +7841,9 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Server-Side Languages</title>
 
     <itemizedlist>
@@ -7878,7 +7880,7 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
     </itemizedlist>
 
-    <sect4>
+    <section>
      <title><link linkend="pltcl">PL/Tcl</link></title>
 
      <itemizedlist>
@@ -7920,10 +7922,10 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
      </itemizedlist>
 
-    </sect4>
-   </sect3>
+    </section>
+   </section>
 
-   <sect3>
+   <section>
     <title>Client Interfaces</title>
 
     <itemizedlist>
@@ -8015,12 +8017,12 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Client Applications</title>
 
-    <sect4>
+    <section>
      <title><xref linkend="app-psql"/></title>
 
      <itemizedlist>
@@ -8159,9 +8161,9 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><xref linkend="pgbench"/></title>
 
      <itemizedlist>
@@ -8203,11 +8205,11 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Server Applications</title>
 
     <itemizedlist>
@@ -8257,7 +8259,7 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
     </itemizedlist>
 
-    <sect4>
+    <section>
      <title><link linkend="app-pgdump"><application>pg_dump</application></link>,
      <link linkend="app-pg-dumpall"><application>pg_dumpall</application></link>,
      <link linkend="app-pgrestore"><application>pg_restore</application></link></title>
@@ -8336,9 +8338,9 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
 
     <title><xref linkend="app-pgbasebackup"/></title>
 
@@ -8410,9 +8412,9 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><application><xref linkend="app-pg-ctl"/></application></title>
 
      <itemizedlist>
@@ -8501,10 +8503,10 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
      </itemizedlist>
 
-    </sect4>
-   </sect3>
+    </section>
+   </section>
 
-   <sect3>
+   <section>
     <title>Source Code</title>
 
     <itemizedlist>
@@ -8781,9 +8783,9 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Additional Modules</title>
 
     <itemizedlist>
@@ -8986,11 +8988,11 @@ This was disabled in the PG 9.6 branch so there is no commit here.
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-  </sect2>
+  </section>
 
-  <sect2 id="release-10-acknowledgements">
+  <section id="release-10-acknowledgements">
    <title>Acknowledgments</title>
 
    <para>
@@ -9325,6 +9327,7 @@ This was disabled in the PG 9.6 branch so there is no commit here.
     <member>Zhen Ming Yang</member>
     <member>Zhou Digoal</member>
    </simplelist>
-  </sect2>
+  </section>
 
- </sect1>
+ </section>
+</section>

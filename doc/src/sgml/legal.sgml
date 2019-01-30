@@ -1,5 +1,10 @@
 <!-- doc/src/sgml/legal.sgml -->
 
+<bookinfo>
+ <corpauthor>The PostgreSQL Global Development Group</corpauthor>
+ <productname>PostgreSQL</productname>
+ <productnumber>&version;</productnumber>
+
 <date>2019</date>
 
 <copyright>
@@ -46,3 +51,5 @@
  </para>
 
 </legalnotice>
+</bookinfo>
+

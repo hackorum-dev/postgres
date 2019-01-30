@@ -1,7 +1,9 @@
 <!-- doc/src/sgml/release-8.4.sgml -->
 <!-- See header comment in release.sgml about typical markup -->
 
- <sect1 id="release-8-4-22">
+<section>
+ <title>Release 8.4</title>
+ <section id="release-8-4-22">
   <title>Release 8.4.22</title>
 
   <formalpara>
@@ -21,7 +23,7 @@
    release branch soon.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.4.22</title>
 
    <para>
@@ -39,9 +41,9 @@
     see <xref linkend="release-8-4-19"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -317,10 +319,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-4-21">
+ <section id="release-8-4-21">
   <title>Release 8.4.21</title>
 
   <formalpara>
@@ -340,7 +342,7 @@
    Users are encouraged to update to a newer release branch soon.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.4.21</title>
 
    <para>
@@ -352,9 +354,9 @@
     see <xref linkend="release-8-4-19"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -436,10 +438,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-4-20">
+ <section id="release-8-4-20">
   <title>Release 8.4.20</title>
 
   <formalpara>
@@ -459,7 +461,7 @@
    Users are encouraged to update to a newer release branch soon.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.4.20</title>
 
    <para>
@@ -471,9 +473,9 @@
     see <xref linkend="release-8-4-19"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -895,10 +897,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-4-19">
+ <section id="release-8-4-19">
   <title>Release 8.4.19</title>
 
   <formalpara>
@@ -912,7 +914,7 @@
    <xref linkend="release-8-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.4.19</title>
 
    <para>
@@ -930,9 +932,9 @@
     see <xref linkend="release-8-4-17"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1096,10 +1098,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-4-18">
+ <section id="release-8-4-18">
   <title>Release 8.4.18</title>
 
   <formalpara>
@@ -1113,7 +1115,7 @@
    <xref linkend="release-8-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.4.18</title>
 
    <para>
@@ -1125,9 +1127,9 @@
     see <xref linkend="release-8-4-17"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1296,10 +1298,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-4-17">
+ <section id="release-8-4-17">
   <title>Release 8.4.17</title>
 
   <formalpara>
@@ -1313,7 +1315,7 @@
    <xref linkend="release-8-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.4.17</title>
 
    <para>
@@ -1332,9 +1334,9 @@
     see <xref linkend="release-8-4-10"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1525,10 +1527,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-4-16">
+ <section id="release-8-4-16">
   <title>Release 8.4.16</title>
 
   <formalpara>
@@ -1542,7 +1544,7 @@
    <xref linkend="release-8-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.4.16</title>
 
    <para>
@@ -1554,9 +1556,9 @@
     see <xref linkend="release-8-4-10"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1735,10 +1737,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-4-15">
+ <section id="release-8-4-15">
   <title>Release 8.4.15</title>
 
   <formalpara>
@@ -1752,7 +1754,7 @@
    <xref linkend="release-8-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.4.15</title>
 
    <para>
@@ -1764,9 +1766,9 @@
     see <xref linkend="release-8-4-10"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -2037,10 +2039,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-4-14">
+ <section id="release-8-4-14">
   <title>Release 8.4.14</title>
 
   <formalpara>
@@ -2054,7 +2056,7 @@
    <xref linkend="release-8-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.4.14</title>
 
    <para>
@@ -2066,9 +2068,9 @@
     see <xref linkend="release-8-4-10"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -2153,10 +2155,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-4-13">
+ <section id="release-8-4-13">
   <title>Release 8.4.13</title>
 
   <formalpara>
@@ -2170,7 +2172,7 @@
    <xref linkend="release-8-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.4.13</title>
 
    <para>
@@ -2182,9 +2184,9 @@
     see <xref linkend="release-8-4-10"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -2387,10 +2389,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-4-12">
+ <section id="release-8-4-12">
   <title>Release 8.4.12</title>
 
   <formalpara>
@@ -2404,7 +2406,7 @@
    <xref linkend="release-8-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.4.12</title>
 
    <para>
@@ -2416,9 +2418,9 @@
     see <xref linkend="release-8-4-10"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -2672,10 +2674,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-4-11">
+ <section id="release-8-4-11">
   <title>Release 8.4.11</title>
 
   <formalpara>
@@ -2689,7 +2691,7 @@
    <xref linkend="release-8-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.4.11</title>
 
    <para>
@@ -2701,9 +2703,9 @@
     see <xref linkend="release-8-4-10"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -3034,10 +3036,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-4-10">
+ <section id="release-8-4-10">
   <title>Release 8.4.10</title>
 
   <formalpara>
@@ -3051,7 +3053,7 @@
    <xref linkend="release-8-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.4.10</title>
 
    <para>
@@ -3070,9 +3072,9 @@
     see <xref linkend="release-8-4-8"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -3349,10 +3351,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-4-9">
+ <section id="release-8-4-9">
   <title>Release 8.4.9</title>
 
   <formalpara>
@@ -3366,7 +3368,7 @@
    <xref linkend="release-8-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.4.9</title>
 
    <para>
@@ -3378,9 +3380,9 @@
     see <xref linkend="release-8-4-8"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -3874,10 +3876,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-4-8">
+ <section id="release-8-4-8">
   <title>Release 8.4.8</title>
 
   <formalpara>
@@ -3891,7 +3893,7 @@
    <xref linkend="release-8-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.4.8</title>
 
    <para>
@@ -3914,9 +3916,9 @@
     see <xref linkend="release-8-4-2"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -4119,10 +4121,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-4-7">
+ <section id="release-8-4-7">
   <title>Release 8.4.7</title>
 
   <formalpara>
@@ -4136,7 +4138,7 @@
    <xref linkend="release-8-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.4.7</title>
 
    <para>
@@ -4145,9 +4147,9 @@
     see <xref linkend="release-8-4-2"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -4251,10 +4253,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-4-6">
+ <section id="release-8-4-6">
   <title>Release 8.4.6</title>
 
   <formalpara>
@@ -4268,7 +4270,7 @@
    <xref linkend="release-8-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.4.6</title>
 
    <para>
@@ -4277,9 +4279,9 @@
     see <xref linkend="release-8-4-2"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -4562,10 +4564,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-4-5">
+ <section id="release-8-4-5">
   <title>Release 8.4.5</title>
 
   <formalpara>
@@ -4579,7 +4581,7 @@
    <xref linkend="release-8-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.4.5</title>
 
    <para>
@@ -4588,9 +4590,9 @@
     see <xref linkend="release-8-4-2"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -5084,10 +5086,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-4-4">
+ <section id="release-8-4-4">
   <title>Release 8.4.4</title>
 
   <formalpara>
@@ -5101,7 +5103,7 @@
    <xref linkend="release-8-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.4.4</title>
 
    <para>
@@ -5110,9 +5112,9 @@
     see <xref linkend="release-8-4-2"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -5375,10 +5377,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-4-3">
+ <section id="release-8-4-3">
   <title>Release 8.4.3</title>
 
   <formalpara>
@@ -5392,7 +5394,7 @@
    <xref linkend="release-8-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.4.3</title>
 
    <para>
@@ -5401,9 +5403,9 @@
     see <xref linkend="release-8-4-2"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -5842,10 +5844,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-4-2">
+ <section id="release-8-4-2">
   <title>Release 8.4.2</title>
 
   <formalpara>
@@ -5859,7 +5861,7 @@
    <xref linkend="release-8-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.4.2</title>
 
    <para>
@@ -5869,9 +5871,9 @@
     to repair possible damage.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -6373,10 +6375,10 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-4-1">
+ <section id="release-8-4-1">
   <title>Release 8.4.1</title>
 
   <formalpara>
@@ -6390,16 +6392,16 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
    <xref linkend="release-8-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.4.1</title>
 
    <para>
     A dump/restore is not required for those running 8.4.X.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -6672,10 +6674,10 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-4">
+ <section id="release-8-4">
   <title>Release 8.4</title>
 
   <formalpara>
@@ -6683,7 +6685,7 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
    <para>2009-07-01</para>
   </formalpara>
 
-  <sect2>
+  <section>
    <title>Overview</title>
 
    <para>
@@ -6800,9 +6802,9 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
     The above items are explained in more detail in the sections below.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.4</title>
 
    <para>
@@ -6815,7 +6817,7 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
     Observe the following incompatibilities:
    </para>
 
-   <sect3>
+   <section>
     <title>General</title>
     <itemizedlist>
 
@@ -6844,9 +6846,9 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Server Settings</title>
     <itemizedlist>
 
@@ -6929,9 +6931,9 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Queries</title>
 
     <itemizedlist>
@@ -7015,10 +7017,10 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
 
-   <sect3>
+   <section>
     <title>Functions and Operators</title>
 
     <itemizedlist>
@@ -7122,7 +7124,7 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
     </itemizedlist>
 
-    <sect4>
+    <section>
      <title>Temporal Functions and Operators</title>
 
      <itemizedlist>
@@ -7185,13 +7187,13 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -7200,7 +7202,7 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
     release.
    </para>
 
-   <sect3>
+   <section>
     <title>Performance</title>
     <itemizedlist>
 
@@ -7356,12 +7358,12 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Server</title>
 
-    <sect4>
+    <section>
      <title>Settings</title>
 
      <itemizedlist>
@@ -7391,9 +7393,9 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Authentication and security</title>
      <itemizedlist>
 
@@ -7446,9 +7448,9 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
       </listitem>
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4 id="release-8-4-pg-hba-conf">
+    <section id="release-8-4-pg-hba-conf">
      <title><filename>pg_hba.conf</filename></title>
      <itemizedlist>
 
@@ -7566,9 +7568,9 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Continuous Archiving</title>
      <itemizedlist>
 
@@ -7629,9 +7631,9 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Monitoring</title>
      <itemizedlist>
 
@@ -7722,11 +7724,11 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Queries</title>
     <itemizedlist>
 
@@ -7865,7 +7867,7 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
     </itemizedlist>
 
-    <sect4>
+    <section>
      <title><command>TRUNCATE</command></title>
      <itemizedlist>
 
@@ -7902,9 +7904,9 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><command>EXPLAIN</command></title>
      <itemizedlist>
 
@@ -7942,9 +7944,9 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><literal>LIMIT</literal>/<literal>OFFSET</literal></title>
      <itemizedlist>
 
@@ -7969,11 +7971,11 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Object Manipulation</title>
     <itemizedlist>
 
@@ -8064,7 +8066,7 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
     </itemizedlist>
 
-    <sect4>
+    <section>
      <title><command>ALTER</command></title>
      <itemizedlist>
 
@@ -8145,9 +8147,9 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Database Manipulation</title>
      <itemizedlist>
 
@@ -8195,11 +8197,11 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Utility Operations</title>
 
     <itemizedlist>
@@ -8220,7 +8222,7 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
     </itemizedlist>
 
-    <sect4>
+    <section>
      <title>Indexes</title>
      <itemizedlist>
 
@@ -8268,9 +8270,9 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Full Text Indexes</title>
      <itemizedlist>
 
@@ -8314,9 +8316,9 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><command>VACUUM</command></title>
      <itemizedlist>
 
@@ -8387,11 +8389,11 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Data Types</title>
     <itemizedlist>
 
@@ -8442,7 +8444,7 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
     </itemizedlist>
 
-    <sect4>
+    <section>
      <title>Temporal Data Types</title>
      <itemizedlist>
 
@@ -8535,9 +8537,9 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Arrays</title>
      <itemizedlist>
 
@@ -8615,9 +8617,9 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Wide-Value Storage (<acronym>TOAST</acronym>)</title>
      <itemizedlist>
 
@@ -8646,11 +8648,11 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Functions</title>
     <itemizedlist>
 
@@ -8707,7 +8709,7 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
     </itemizedlist>
 
-    <sect4>
+    <section>
      <title>Object Information Functions</title>
      <itemizedlist>
 
@@ -8857,9 +8859,9 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Function Creation</title>
      <itemizedlist>
 
@@ -8898,9 +8900,9 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>PL/pgSQL Server-Side Language</title>
      <itemizedlist>
 
@@ -9026,11 +9028,11 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Client Applications</title>
 
     <itemizedlist>
@@ -9065,7 +9067,7 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
     </itemizedlist>
 
-    <sect4>
+    <section>
      <title><application>psql</application></title>
      <itemizedlist>
 
@@ -9164,9 +9166,9 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><application>psql</application> \d* commands</title>
 
      <itemizedlist>
@@ -9260,9 +9262,9 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><application>pg_dump</application></title>
      <itemizedlist>
 
@@ -9358,14 +9360,14 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Programming Tools</title>
 
-    <sect4>
+    <section>
      <title><application>libpq</application></title>
      <itemizedlist>
 
@@ -9431,9 +9433,9 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
       </listitem>
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><application>libpq</application> <acronym>SSL</acronym> (Secure Sockets Layer)
       support</title>
      <itemizedlist>
@@ -9498,9 +9500,9 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><application>ecpg</application></title>
      <itemizedlist>
 
@@ -9524,9 +9526,9 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Server Programming Interface (<acronym>SPI</acronym>)</title>
      <itemizedlist>
 
@@ -9563,11 +9565,11 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Build Options</title>
     <itemizedlist>
 
@@ -9698,9 +9700,9 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Source Code</title>
     <itemizedlist>
 
@@ -9903,9 +9905,9 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Contrib</title>
 
     <itemizedlist>
@@ -10075,6 +10077,7 @@ WITH w AS (SELECT * FROM foo) SELECT * FROM w, bar ... FOR UPDATE
 
     </itemizedlist>
 
-   </sect3>
-  </sect2>
- </sect1>
+   </section>
+  </section>
+ </section>
+</section>

@@ -1,7 +1,9 @@
 <!-- doc/src/sgml/release-9.1.sgml -->
 <!-- See header comment in release.sgml about typical markup -->
 
- <sect1 id="release-9-1-24">
+<section>
+ <title>Release 9.1</title>
+ <section id="release-9-1-24">
   <title>Release 9.1.24</title>
 
   <formalpara>
@@ -21,7 +23,7 @@
    release branch soon.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.1.24</title>
 
    <para>
@@ -33,9 +35,9 @@
     see <xref linkend="release-9-1-16"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -208,10 +210,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-1-23">
+ <section id="release-9-1-23">
   <title>Release 9.1.23</title>
 
   <formalpara>
@@ -231,7 +233,7 @@
    Users are encouraged to update to a newer release branch soon.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.1.23</title>
 
    <para>
@@ -243,9 +245,9 @@
     see <xref linkend="release-9-1-16"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -550,10 +552,10 @@ Branch: REL9_1_STABLE [354b3a3ac] 2016-06-19 14:01:17 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-1-22">
+ <section id="release-9-1-22">
   <title>Release 9.1.22</title>
 
   <formalpara>
@@ -573,7 +575,7 @@ Branch: REL9_1_STABLE [354b3a3ac] 2016-06-19 14:01:17 -0400
    Users are encouraged to update to a newer release branch soon.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.1.22</title>
 
    <para>
@@ -585,9 +587,9 @@ Branch: REL9_1_STABLE [354b3a3ac] 2016-06-19 14:01:17 -0400
     see <xref linkend="release-9-1-16"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -715,10 +717,10 @@ Branch: REL9_1_STABLE [354b3a3ac] 2016-06-19 14:01:17 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-1-21">
+ <section id="release-9-1-21">
   <title>Release 9.1.21</title>
 
   <formalpara>
@@ -732,7 +734,7 @@ Branch: REL9_1_STABLE [354b3a3ac] 2016-06-19 14:01:17 -0400
    <xref linkend="release-9-1"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.1.21</title>
 
    <para>
@@ -744,9 +746,9 @@ Branch: REL9_1_STABLE [354b3a3ac] 2016-06-19 14:01:17 -0400
     see <xref linkend="release-9-1-16"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -921,10 +923,10 @@ Branch: REL9_1_STABLE [354b3a3ac] 2016-06-19 14:01:17 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-1-20">
+ <section id="release-9-1-20">
   <title>Release 9.1.20</title>
 
   <formalpara>
@@ -938,7 +940,7 @@ Branch: REL9_1_STABLE [354b3a3ac] 2016-06-19 14:01:17 -0400
    <xref linkend="release-9-1"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.1.20</title>
 
    <para>
@@ -950,9 +952,9 @@ Branch: REL9_1_STABLE [354b3a3ac] 2016-06-19 14:01:17 -0400
     see <xref linkend="release-9-1-16"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1434,10 +1436,10 @@ Branch: REL9_1_STABLE [354b3a3ac] 2016-06-19 14:01:17 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-1-19">
+ <section id="release-9-1-19">
   <title>Release 9.1.19</title>
 
   <formalpara>
@@ -1451,7 +1453,7 @@ Branch: REL9_1_STABLE [354b3a3ac] 2016-06-19 14:01:17 -0400
    <xref linkend="release-9-1"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.1.19</title>
 
    <para>
@@ -1463,9 +1465,9 @@ Branch: REL9_1_STABLE [354b3a3ac] 2016-06-19 14:01:17 -0400
     see <xref linkend="release-9-1-16"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1995,10 +1997,10 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-1-18">
+ <section id="release-9-1-18">
   <title>Release 9.1.18</title>
 
   <formalpara>
@@ -2012,7 +2014,7 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
    <xref linkend="release-9-1"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.1.18</title>
 
    <para>
@@ -2024,9 +2026,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
     see <xref linkend="release-9-1-16"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -2063,10 +2065,10 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-1-17">
+ <section id="release-9-1-17">
   <title>Release 9.1.17</title>
 
   <formalpara>
@@ -2080,7 +2082,7 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
    <xref linkend="release-9-1"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.1.17</title>
 
    <para>
@@ -2092,9 +2094,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
     see <xref linkend="release-9-1-16"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -2151,10 +2153,10 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-1-16">
+ <section id="release-9-1-16">
   <title>Release 9.1.16</title>
 
   <formalpara>
@@ -2168,7 +2170,7 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
    <xref linkend="release-9-1"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.1.16</title>
 
    <para>
@@ -2186,9 +2188,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
     see <xref linkend="release-9-1-14"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -2677,10 +2679,10 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-1-15">
+ <section id="release-9-1-15">
   <title>Release 9.1.15</title>
 
   <formalpara>
@@ -2694,7 +2696,7 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
    <xref linkend="release-9-1"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.1.15</title>
 
    <para>
@@ -2706,9 +2708,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
     see <xref linkend="release-9-1-14"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -3487,10 +3489,10 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-1-14">
+ <section id="release-9-1-14">
   <title>Release 9.1.14</title>
 
   <formalpara>
@@ -3504,7 +3506,7 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
    <xref linkend="release-9-1"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.1.14</title>
 
    <para>
@@ -3522,9 +3524,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
     see <xref linkend="release-9-1-11"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -3870,10 +3872,10 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-1-13">
+ <section id="release-9-1-13">
   <title>Release 9.1.13</title>
 
   <formalpara>
@@ -3887,7 +3889,7 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
    <xref linkend="release-9-1"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.1.13</title>
 
    <para>
@@ -3899,9 +3901,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
     see <xref linkend="release-9-1-11"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -4037,10 +4039,10 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-1-12">
+ <section id="release-9-1-12">
   <title>Release 9.1.12</title>
 
   <formalpara>
@@ -4054,7 +4056,7 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
    <xref linkend="release-9-1"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.1.12</title>
 
    <para>
@@ -4066,9 +4068,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
     see <xref linkend="release-9-1-11"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -4587,10 +4589,10 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-1-11">
+ <section id="release-9-1-11">
   <title>Release 9.1.11</title>
 
   <formalpara>
@@ -4604,7 +4606,7 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
    <xref linkend="release-9-1"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.1.11</title>
 
    <para>
@@ -4622,9 +4624,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
     see <xref linkend="release-9-1-9"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -4844,10 +4846,10 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-1-10">
+ <section id="release-9-1-10">
   <title>Release 9.1.10</title>
 
   <formalpara>
@@ -4861,7 +4863,7 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
    <xref linkend="release-9-1"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.1.10</title>
 
    <para>
@@ -4873,9 +4875,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
     see <xref linkend="release-9-1-9"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -5179,10 +5181,10 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-1-9">
+ <section id="release-9-1-9">
   <title>Release 9.1.9</title>
 
   <formalpara>
@@ -5196,7 +5198,7 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
    <xref linkend="release-9-1"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.1.9</title>
 
    <para>
@@ -5215,9 +5217,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
     see <xref linkend="release-9-1-6"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -5513,10 +5515,10 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-1-8">
+ <section id="release-9-1-8">
   <title>Release 9.1.8</title>
 
   <formalpara>
@@ -5530,7 +5532,7 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
    <xref linkend="release-9-1"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.1.8</title>
 
    <para>
@@ -5542,9 +5544,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
     see <xref linkend="release-9-1-6"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -5835,10 +5837,10 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-1-7">
+ <section id="release-9-1-7">
   <title>Release 9.1.7</title>
 
   <formalpara>
@@ -5852,7 +5854,7 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
    <xref linkend="release-9-1"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.1.7</title>
 
    <para>
@@ -5864,9 +5866,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
     see <xref linkend="release-9-1-6"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -6298,10 +6300,10 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-1-6">
+ <section id="release-9-1-6">
   <title>Release 9.1.6</title>
 
   <formalpara>
@@ -6315,7 +6317,7 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
    <xref linkend="release-9-1"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.1.6</title>
 
    <para>
@@ -6333,9 +6335,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
     see <xref linkend="release-9-1-4"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -6550,10 +6552,10 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-1-5">
+ <section id="release-9-1-5">
   <title>Release 9.1.5</title>
 
   <formalpara>
@@ -6567,7 +6569,7 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
    <xref linkend="release-9-1"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.1.5</title>
 
    <para>
@@ -6579,9 +6581,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
     see <xref linkend="release-9-1-4"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -6937,10 +6939,10 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-1-4">
+ <section id="release-9-1-4">
   <title>Release 9.1.4</title>
 
   <formalpara>
@@ -6954,7 +6956,7 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
    <xref linkend="release-9-1"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.1.4</title>
 
    <para>
@@ -6978,9 +6980,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
     see <xref linkend="release-9-1-2"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -7427,10 +7429,10 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-1-3">
+ <section id="release-9-1-3">
   <title>Release 9.1.3</title>
 
   <formalpara>
@@ -7444,7 +7446,7 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
    <xref linkend="release-9-1"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.1.3</title>
 
    <para>
@@ -7456,9 +7458,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
     see <xref linkend="release-9-1-2"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -8064,10 +8066,10 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-1-2">
+ <section id="release-9-1-2">
   <title>Release 9.1.2</title>
 
   <formalpara>
@@ -8081,7 +8083,7 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
    <xref linkend="release-9-1"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.1.2</title>
 
    <para>
@@ -8107,9 +8109,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
     as explained in the second changelog item.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -8711,10 +8713,10 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-1-1">
+ <section id="release-9-1-1">
   <title>Release 9.1.1</title>
 
   <formalpara>
@@ -8728,16 +8730,16 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
    <xref linkend="release-9-1"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.1.1</title>
 
    <para>
     A dump/restore is not required for those running 9.1.X.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -8779,10 +8781,10 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-1">
+ <section id="release-9-1">
   <title>Release 9.1</title>
 
   <formalpara>
@@ -8790,7 +8792,7 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
    <para>2011-09-12</para>
   </formalpara>
 
-  <sect2>
+  <section>
    <title>Overview</title>
 
    <para>
@@ -8886,9 +8888,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
     The above items are explained in more detail in the sections below.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
 
   <title>Migration to Version 9.1</title>
 
@@ -8904,7 +8906,7 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
     with previous releases.  Observe the following incompatibilities:
    </para>
 
-   <sect3>
+   <section>
     <title>Strings</title>
 
     <itemizedlist>
@@ -8940,9 +8942,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Casting</title>
 
     <itemizedlist>
@@ -8983,9 +8985,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Arrays</title>
 
     <itemizedlist>
@@ -9018,9 +9020,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Object Modification</title>
 
     <itemizedlist>
@@ -9047,9 +9049,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Server Settings</title>
 
     <itemizedlist>
@@ -9081,9 +9083,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title><link linkend="plpgsql">PL/pgSQL</link> Server-Side Language</title>
 
     <itemizedlist>
@@ -9144,9 +9146,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Contrib</title>
 
     <itemizedlist>
@@ -9170,9 +9172,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Other Incompatibilities</title>
 
     <itemizedlist>
@@ -9206,10 +9208,10 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
     </itemizedlist>
 
-   </sect3>
-  </sect2>
+   </section>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -9218,10 +9220,10 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
     release.
    </para>
 
-   <sect3>
+   <section>
     <title>Server</title>
 
-    <sect4>
+    <section>
      <title>Performance</title>
 
      <itemizedlist>
@@ -9302,9 +9304,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Optimizer</title>
 
      <itemizedlist>
@@ -9336,9 +9338,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Authentication</title>
 
      <itemizedlist>
@@ -9429,9 +9431,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Monitoring</title>
 
      <itemizedlist>
@@ -9472,9 +9474,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Statistical Views</title>
 
      <itemizedlist>
@@ -9535,9 +9537,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Server Settings</title>
 
      <itemizedlist>
@@ -9572,14 +9574,14 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
       </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Replication and Recovery</title>
 
-   <sect4>
+   <section>
     <title>Streaming Replication and Continuous Archiving</title>
 
     <itemizedlist>
@@ -9657,9 +9659,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
     </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Replication Monitoring</title>
 
      <itemizedlist>
@@ -9692,9 +9694,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Hot Standby</title>
 
      <itemizedlist>
@@ -9766,9 +9768,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Recovery Control</title>
 
      <itemizedlist>
@@ -9855,11 +9857,11 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Queries</title>
 
      <itemizedlist>
@@ -9945,7 +9947,7 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
      </itemizedlist>
 
-    <sect4>
+    <section>
      <title>Strings</title>
 
      <itemizedlist>
@@ -9967,11 +9969,11 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Object Manipulation</title>
 
      <itemizedlist>
@@ -10028,7 +10030,7 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
      </itemizedlist>
 
-    <sect4>
+    <section>
      <title><command>ALTER</command> Object</title>
 
      <itemizedlist>
@@ -10075,9 +10077,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><link linkend="sql-createtable"><command>CREATE/ALTER TABLE</command></link></title>
 
      <itemizedlist>
@@ -10152,9 +10154,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Object Permissions</title>
 
      <itemizedlist>
@@ -10172,11 +10174,11 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Utility Operations</title>
 
     <itemizedlist>
@@ -10209,7 +10211,7 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
     </itemizedlist>
 
-    <sect4>
+    <section>
      <title><link linkend="sql-copy"><command>COPY</command></link></title>
 
      <itemizedlist>
@@ -10240,9 +10242,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><link linkend="sql-explain"><command>EXPLAIN</command></link></title>
 
       <itemizedlist>
@@ -10256,9 +10258,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><link linkend="sql-vacuum"><command>VACUUM</command></link></title>
 
      <itemizedlist>
@@ -10290,9 +10292,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><link linkend="sql-cluster"><command>CLUSTER</command></link></title>
 
      <itemizedlist>
@@ -10306,9 +10308,9 @@ Branch: REL9_0_STABLE [9d6af7367] 2015-08-15 11:02:34 -0400
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Indexes</title>
 
      <itemizedlist>
@@ -10369,11 +10371,11 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Data Types</title>
 
     <itemizedlist>
@@ -10439,7 +10441,7 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
     </itemizedlist>
 
-    <sect4>
+    <section>
      <title>Casting</title>
 
      <itemizedlist>
@@ -10472,9 +10474,9 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><link linkend="functions-xml"><acronym>XML</acronym></link></title>
 
      <itemizedlist>
@@ -10512,11 +10514,11 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Functions</title>
 
      <itemizedlist>
@@ -10581,7 +10583,7 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
      </itemizedlist>
 
-    <sect4>
+    <section>
      <title>Object Information Functions</title>
 
      <itemizedlist>
@@ -10658,9 +10660,9 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Function and Trigger Creation</title>
 
      <itemizedlist>
@@ -10678,14 +10680,14 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Server-Side Languages</title>
 
-    <sect4>
+    <section>
      <title><link linkend="plpgsql">PL/pgSQL</link> Server-Side Language</title>
 
      <itemizedlist>
@@ -10719,9 +10721,9 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
     </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><link linkend="plperl">PL/Perl</link> Server-Side Language</title>
 
      <itemizedlist>
@@ -10762,9 +10764,9 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><link linkend="plpython">PL/Python</link> Server-Side Language</title>
 
      <itemizedlist>
@@ -10848,11 +10850,11 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Client Applications</title>
 
     <itemizedlist>
@@ -10867,7 +10869,7 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
     </itemizedlist>
 
-    <sect4>
+    <section>
      <title><link linkend="app-psql"><application>psql</application></link></title>
 
      <itemizedlist>
@@ -10959,9 +10961,9 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><link linkend="app-pgdump"><application>pg_dump</application></link></title>
 
      <itemizedlist>
@@ -10990,9 +10992,9 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><link linkend="app-pg-ctl"><application>pg_ctl</application></link></title>
 
      <itemizedlist>
@@ -11033,14 +11035,14 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title><application>Development Tools</application></title>
 
-    <sect4>
+    <section>
      <title><link linkend="libpq"><application>libpq</application></link></title>
 
      <itemizedlist>
@@ -11105,9 +11107,9 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><link linkend="ecpg"><application>ECPG</application></link></title>
 
      <itemizedlist>
@@ -11128,11 +11130,11 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
       </listitem>
 
      </itemizedlist>
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Build Options</title>
 
      <itemizedlist>
@@ -11151,7 +11153,7 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
      </itemizedlist>
 
-    <sect4>
+    <section>
      <title>Makefiles</title>
 
      <itemizedlist>
@@ -11208,9 +11210,9 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Windows</title>
 
      <itemizedlist>
@@ -11248,11 +11250,11 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Source Code</title>
 
      <itemizedlist>
@@ -11352,7 +11354,7 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
      </itemizedlist>
 
-    <sect4>
+    <section>
      <title>Server Hooks</title>
 
      <itemizedlist>
@@ -11379,11 +11381,11 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Contrib</title>
 
     <itemizedlist>
@@ -11514,7 +11516,7 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
     </itemizedlist>
 
-    <sect4>
+    <section>
      <title>Security</title>
 
      <itemizedlist>
@@ -11559,9 +11561,9 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Performance</title>
 
      <itemizedlist>
@@ -11609,9 +11611,9 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Fsync Testing</title>
 
      <itemizedlist>
@@ -11647,11 +11649,11 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Documentation</title>
 
     <itemizedlist>
@@ -11754,7 +11756,8 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
+</section>

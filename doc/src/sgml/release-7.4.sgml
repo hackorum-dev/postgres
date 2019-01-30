@@ -1,7 +1,9 @@
 <!-- doc/src/sgml/release-7.4.sgml -->
 <!-- See header comment in release.sgml about typical markup -->
 
- <sect1 id="release-7-4-30">
+<section>
+ <title>Release 7.4</title>
+ <section id="release-7-4-30">
   <title>Release 7.4.30</title>
 
   <formalpara>
@@ -21,7 +23,7 @@
    release branch soon.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.30</title>
 
    <para>
@@ -30,9 +32,9 @@
     see <xref linkend="release-7-4-26"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -132,10 +134,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-29">
+ <section id="release-7-4-29">
   <title>Release 7.4.29</title>
 
   <formalpara>
@@ -155,7 +157,7 @@
    Users are encouraged to update to a newer release branch soon.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.29</title>
 
    <para>
@@ -164,9 +166,9 @@
     see <xref linkend="release-7-4-26"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -276,10 +278,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-28">
+ <section id="release-7-4-28">
   <title>Release 7.4.28</title>
 
   <formalpara>
@@ -299,7 +301,7 @@
    Users are encouraged to update to a newer release branch soon.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.28</title>
 
    <para>
@@ -308,9 +310,9 @@
     see <xref linkend="release-7-4-26"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -395,10 +397,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-27">
+ <section id="release-7-4-27">
   <title>Release 7.4.27</title>
 
   <formalpara>
@@ -412,7 +414,7 @@
    <xref linkend="release-7-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.27</title>
 
    <para>
@@ -421,9 +423,9 @@
     see <xref linkend="release-7-4-26"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -515,10 +517,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-26">
+ <section id="release-7-4-26">
   <title>Release 7.4.26</title>
 
   <formalpara>
@@ -532,7 +534,7 @@
    <xref linkend="release-7-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.26</title>
 
    <para>
@@ -543,9 +545,9 @@
     see <xref linkend="release-7-4-11"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -645,10 +647,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-25">
+ <section id="release-7-4-25">
   <title>Release 7.4.25</title>
 
   <formalpara>
@@ -662,7 +664,7 @@
    <xref linkend="release-7-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.25</title>
 
    <para>
@@ -671,9 +673,9 @@
     see <xref linkend="release-7-4-11"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -725,10 +727,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-24">
+ <section id="release-7-4-24">
   <title>Release 7.4.24</title>
 
   <formalpara>
@@ -742,7 +744,7 @@
    <xref linkend="release-7-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.24</title>
 
    <para>
@@ -751,9 +753,9 @@
     see <xref linkend="release-7-4-11"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -811,10 +813,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-23">
+ <section id="release-7-4-23">
   <title>Release 7.4.23</title>
 
   <formalpara>
@@ -828,7 +830,7 @@
    <xref linkend="release-7-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.23</title>
 
    <para>
@@ -837,9 +839,9 @@
     see <xref linkend="release-7-4-11"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -895,10 +897,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-22">
+ <section id="release-7-4-22">
   <title>Release 7.4.22</title>
 
   <formalpara>
@@ -912,7 +914,7 @@
    <xref linkend="release-7-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.22</title>
 
    <para>
@@ -921,9 +923,9 @@
     see <xref linkend="release-7-4-11"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -971,10 +973,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-21">
+ <section id="release-7-4-21">
   <title>Release 7.4.21</title>
 
   <formalpara>
@@ -988,7 +990,7 @@
    <xref linkend="release-7-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.21</title>
 
    <para>
@@ -997,9 +999,9 @@
     see <xref linkend="release-7-4-11"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1025,10 +1027,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-20">
+ <section id="release-7-4-20">
   <title>Release 7.4.20</title>
 
   <formalpara>
@@ -1042,7 +1044,7 @@
    <xref linkend="release-7-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.20</title>
 
    <para>
@@ -1051,9 +1053,9 @@
     see <xref linkend="release-7-4-11"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1170,10 +1172,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-19">
+ <section id="release-7-4-19">
   <title>Release 7.4.19</title>
 
   <formalpara>
@@ -1188,7 +1190,7 @@
    <xref linkend="release-7-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.19</title>
 
    <para>
@@ -1197,9 +1199,9 @@
     see <xref linkend="release-7-4-11"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1324,10 +1326,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-18">
+ <section id="release-7-4-18">
   <title>Release 7.4.18</title>
 
   <formalpara>
@@ -1341,7 +1343,7 @@
    <xref linkend="release-7-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.18</title>
 
    <para>
@@ -1350,9 +1352,9 @@
     see <xref linkend="release-7-4-11"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1400,10 +1402,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-17">
+ <section id="release-7-4-17">
   <title>Release 7.4.17</title>
 
   <formalpara>
@@ -1418,7 +1420,7 @@
    <xref linkend="release-7-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.17</title>
 
    <para>
@@ -1427,9 +1429,9 @@
     see <xref linkend="release-7-4-11"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1471,10 +1473,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-16">
+ <section id="release-7-4-16">
   <title>Release 7.4.16</title>
 
   <formalpara>
@@ -1489,7 +1491,7 @@
    <xref linkend="release-7-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.16</title>
 
    <para>
@@ -1498,9 +1500,9 @@
     see <xref linkend="release-7-4-11"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1542,10 +1544,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-15">
+ <section id="release-7-4-15">
   <title>Release 7.4.15</title>
 
   <formalpara>
@@ -1559,7 +1561,7 @@
    <xref linkend="release-7-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.15</title>
 
    <para>
@@ -1568,9 +1570,9 @@
     see <xref linkend="release-7-4-11"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1631,10 +1633,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-14">
+ <section id="release-7-4-14">
   <title>Release 7.4.14</title>
 
   <formalpara>
@@ -1648,7 +1650,7 @@
    <xref linkend="release-7-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.14</title>
 
    <para>
@@ -1657,9 +1659,9 @@
     see <xref linkend="release-7-4-11"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -1678,10 +1680,10 @@ ANYARRAY</para></listitem>
 </para> </listitem>
 </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-13">
+ <section id="release-7-4-13">
   <title>Release 7.4.13</title>
 
   <formalpara>
@@ -1696,7 +1698,7 @@ ANYARRAY</para></listitem>
    <xref linkend="release-7-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.13</title>
 
    <para>
@@ -1716,9 +1718,9 @@ ANYARRAY</para></listitem>
     <function>PQescapeStringConn()</function>) to perform string escaping,
     rather than relying on <foreignphrase>ad hoc</foreignphrase> code to do it.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -1785,10 +1787,10 @@ Fuhr)</para></listitem>
 <listitem><para>Fix various minor memory leaks</para></listitem>
 </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-12">
+ <section id="release-7-4-12">
   <title>Release 7.4.12</title>
 
   <formalpara>
@@ -1802,7 +1804,7 @@ Fuhr)</para></listitem>
    <xref linkend="release-7-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.12</title>
 
    <para>
@@ -1810,9 +1812,9 @@ Fuhr)</para></listitem>
     if you are upgrading from a version earlier than 7.4.11,
     see <xref linkend="release-7-4-11"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -1848,10 +1850,10 @@ and <function>isinf</function> during configure (Tom)</para></listitem>
 
 </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-11">
+ <section id="release-7-4-11">
   <title>Release 7.4.11</title>
 
   <formalpara>
@@ -1865,7 +1867,7 @@ and <function>isinf</function> during configure (Tom)</para></listitem>
    <xref linkend="release-7-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.11</title>
 
    <para>
@@ -1876,9 +1878,9 @@ and <function>isinf</function> during configure (Tom)</para></listitem>
     columns after updating, if you are affected by the locale or
     <application>plperl</application> issues described below.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -1915,10 +1917,10 @@ what's actually returned by the query (Joe)</para></listitem>
 
 </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-10">
+ <section id="release-7-4-10">
   <title>Release 7.4.10</title>
 
   <formalpara>
@@ -1932,7 +1934,7 @@ what's actually returned by the query (Joe)</para></listitem>
    <xref linkend="release-7-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.10</title>
 
    <para>
@@ -1940,9 +1942,9 @@ what's actually returned by the query (Joe)</para></listitem>
     if you are upgrading from a version earlier than 7.4.8,
     see <xref linkend="release-7-4-8"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -1968,10 +1970,10 @@ only supported with merge-joinable join conditions</quote>.</para></listitem>
 table has been dropped</para></listitem>
 </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-9">
+ <section id="release-7-4-9">
   <title>Release 7.4.9</title>
 
   <formalpara>
@@ -1985,7 +1987,7 @@ table has been dropped</para></listitem>
    <xref linkend="release-7-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.9</title>
 
    <para>
@@ -1993,9 +1995,9 @@ table has been dropped</para></listitem>
     if you are upgrading from a version earlier than 7.4.8,
     see <xref linkend="release-7-4-8"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -2037,10 +2039,10 @@ the variable is of pass-by-reference type</para></listitem>
 code</para></listitem>
 </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-8">
+ <section id="release-7-4-8">
   <title>Release 7.4.8</title>
 
   <formalpara>
@@ -2055,7 +2057,7 @@ code</para></listitem>
    <xref linkend="release-7-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.8</title>
 
    <para>
@@ -2148,9 +2150,9 @@ VACUUM FREEZE;
 UPDATE pg_database SET datallowconn = false WHERE datname = 'template0';
 </programlisting>
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -2221,10 +2223,10 @@ holder of the lock released it within a very narrow window.
 <command>ALTER TABLE SET WITHOUT OIDS</command></para></listitem>
 </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-7">
+ <section id="release-7-4-7">
   <title>Release 7.4.7</title>
 
   <formalpara>
@@ -2239,15 +2241,15 @@ holder of the lock released it within a very narrow window.
    <xref linkend="release-7-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.7</title>
 
    <para>
     A dump/restore is not required for those running 7.4.X.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -2281,10 +2283,10 @@ datestyles</para></listitem>
 GMT</para></listitem>
 </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-6">
+ <section id="release-7-4-6">
   <title>Release 7.4.6</title>
 
   <formalpara>
@@ -2299,15 +2301,15 @@ GMT</para></listitem>
   </para>
 
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.6</title>
 
    <para>
     A dump/restore is not required for those running 7.4.X.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -2353,10 +2355,10 @@ This could arise in cases such as CLUSTER after ALTER TABLE DROP COLUMN.
 ECPG prepare statement</para></listitem>
 </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-5">
+ <section id="release-7-4-5">
   <title>Release 7.4.5</title>
 
   <formalpara>
@@ -2371,15 +2373,15 @@ ECPG prepare statement</para></listitem>
   </para>
 
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.5</title>
 
    <para>
     A dump/restore is not required for those running 7.4.X.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -2391,10 +2393,10 @@ still worth a re-release.  The bug does not exist in pre-7.4 releases.
 </para></listitem>
 </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-4">
+ <section id="release-7-4-4">
   <title>Release 7.4.4</title>
 
   <formalpara>
@@ -2409,15 +2411,15 @@ still worth a re-release.  The bug does not exist in pre-7.4 releases.
   </para>
 
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.4</title>
 
    <para>
     A dump/restore is not required for those running 7.4.X.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -2443,10 +2445,10 @@ aggregate plan</para></listitem>
 <listitem><para>Translation updates (various contributors)</para></listitem>
 </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-3">
+ <section id="release-7-4-3">
   <title>Release 7.4.3</title>
 
   <formalpara>
@@ -2461,15 +2463,15 @@ aggregate plan</para></listitem>
   </para>
 
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.3</title>
 
    <para>
     A dump/restore is not required for those running 7.4.X.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -2501,10 +2503,10 @@ names from outer query levels.
 <listitem><para>Numerous translation updates (various contributors)</para></listitem>
 </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-2">
+ <section id="release-7-4-2">
   <title>Release 7.4.2</title>
 
   <formalpara>
@@ -2519,7 +2521,7 @@ names from outer query levels.
   </para>
 
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.2</title>
 
    <para>
@@ -2603,9 +2605,9 @@ VACUUM FREEZE;
 UPDATE pg_database SET datallowconn = false WHERE datname = 'template0';
 </programlisting>
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <para>
@@ -2644,10 +2646,10 @@ inconveniences associated with the <literal>i/I</literal> problem.</para></listi
 <listitem><para>Various JDBC fixes</para></listitem>
 </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-4-1">
+ <section id="release-7-4-1">
   <title>Release 7.4.1</title>
 
   <formalpara>
@@ -2662,7 +2664,7 @@ inconveniences associated with the <literal>i/I</literal> problem.</para></listi
   </para>
 
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.4.1</title>
 
    <para>
@@ -2685,9 +2687,9 @@ DROP SCHEMA information_schema CASCADE;
     Substitute your installation path in the second command.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -2758,10 +2760,10 @@ DROP SCHEMA information_schema CASCADE;
 <listitem><para>Fix local ident authentication on FreeBSD (Tom)</para></listitem>
 </itemizedlist>
 
- </sect2>
-</sect1>
+ </section>
+</section>
 
-<sect1 id="release-7-4">
+<section id="release-7-4">
  <title>Release 7.4</title>
 
  <formalpara>
@@ -2769,7 +2771,7 @@ DROP SCHEMA information_schema CASCADE;
   <para>2003-11-17</para>
  </formalpara>
 
- <sect2>
+ <section>
   <title>Overview</title>
 
   <para>
@@ -3040,9 +3042,9 @@ DROP SCHEMA information_schema CASCADE;
    </varlistentry>
 
   </variablelist>
- </sect2>
+ </section>
 
- <sect2>
+ <section>
   <title>Migration to Version 7.4</title>
 
   <para>
@@ -3194,9 +3196,9 @@ DROP SCHEMA information_schema CASCADE;
    </listitem>
 
   </itemizedlist>
- </sect2>
+ </section>
 
- <sect2>
+ <section>
   <title>Changes</title>
 
   <para>
@@ -3204,7 +3206,7 @@ DROP SCHEMA information_schema CASCADE;
    release 7.4 and the previous major release.
   </para>
 
- <sect3>
+ <section>
   <title>Server Operation Changes</title>
 
   <itemizedlist>
@@ -3301,9 +3303,9 @@ DROP SCHEMA information_schema CASCADE;
    <listitem><para>Remove autocommit server setting; move to client applications (Tom)</para></listitem>
    <listitem><para>New error message wording, error codes, and three levels of error detail (Tom, Joe, Peter)</para></listitem>
   </itemizedlist>
- </sect3>
+ </section>
 
- <sect3>
+ <section>
   <title>Performance Improvements</title>
 
   <itemizedlist>
@@ -3483,9 +3485,9 @@ DROP SCHEMA information_schema CASCADE;
     </para>
    </listitem>
   </itemizedlist>
- </sect3>
+ </section>
 
- <sect3>
+ <section>
   <title>Server Configuration Changes</title>
 
   <itemizedlist>
@@ -3641,9 +3643,9 @@ DROP SCHEMA information_schema CASCADE;
     </para>
    </listitem>
   </itemizedlist>
- </sect3>
+ </section>
 
- <sect3>
+ <section>
   <title>Query Changes</title>
 
   <itemizedlist>
@@ -3703,9 +3705,9 @@ DROP SCHEMA information_schema CASCADE;
     <para>Implement <literal>CREATE TABLE AS EXECUTE</literal> (Neil, Peter)</para>
    </listitem>
   </itemizedlist>
- </sect3>
+ </section>
 
- <sect3>
+ <section>
   <title>Object Manipulation Changes</title>
 
   <itemizedlist>
@@ -3801,9 +3803,9 @@ DROP SCHEMA information_schema CASCADE;
     </para>
    </listitem>
   </itemizedlist>
- </sect3>
+ </section>
 
- <sect3>
+ <section>
   <title>Utility Command Changes</title>
 
   <itemizedlist>
@@ -3981,9 +3983,9 @@ DROP SCHEMA information_schema CASCADE;
     </para>
    </listitem>
   </itemizedlist>
- </sect3>
+ </section>
 
- <sect3>
+ <section>
   <title>Data Type and Function Changes</title>
 
   <itemizedlist>
@@ -4220,9 +4222,9 @@ DROP SCHEMA information_schema CASCADE;
     </para>
    </listitem>
   </itemizedlist>
- </sect3>
+ </section>
 
- <sect3>
+ <section>
   <title>Server-Side Language Changes</title>
 
   <itemizedlist>
@@ -4294,9 +4296,9 @@ DROP SCHEMA information_schema CASCADE;
     </para>
    </listitem>
   </itemizedlist>
- </sect3>
+ </section>
 
- <sect3>
+ <section>
   <title>psql Changes</title>
 
   <itemizedlist>
@@ -4353,9 +4355,9 @@ DROP SCHEMA information_schema CASCADE;
    <listitem><para>New prompt escape sequence <literal>%x</literal> to show transaction status (Tom)</para></listitem>
    <listitem><para>Long options for <application>psql</application> are now available on all platforms</para></listitem>
   </itemizedlist>
- </sect3>
+ </section>
 
- <sect3>
+ <section>
   <title>pg_dump Changes</title>
 
   <itemizedlist>
@@ -4407,9 +4409,9 @@ DROP SCHEMA information_schema CASCADE;
     </para>
    </listitem>
   </itemizedlist>
- </sect3>
+ </section>
 
- <sect3>
+ <section>
   <title>libpq Changes</title>
 
   <itemizedlist>
@@ -4500,9 +4502,9 @@ DROP SCHEMA information_schema CASCADE;
      </para>
     </listitem>
   </itemizedlist>
- </sect3>
+ </section>
 
- <sect3>
+ <section>
   <title>JDBC Changes</title>
 
   <itemizedlist>
@@ -4512,9 +4514,9 @@ DROP SCHEMA information_schema CASCADE;
    <listitem><para>Handle schema names in result sets (Paul Sorenson)</para></listitem>
    <listitem><para>Add refcursor support (Nic Ferrier)</para></listitem>
   </itemizedlist>
- </sect3>
+ </section>
 
- <sect3>
+ <section>
   <title>Miscellaneous Interface Changes</title>
 
   <itemizedlist>
@@ -4549,9 +4551,9 @@ DROP SCHEMA information_schema CASCADE;
     <para>Moved Python client PyGreSQL to <ulink url="http://www.pygresql.org"></ulink> (Marc)</para>
    </listitem>
   </itemizedlist>
- </sect3>
+ </section>
 
- <sect3>
+ <section>
   <title>Source Code Changes</title>
 
   <itemizedlist>
@@ -4588,9 +4590,9 @@ DROP SCHEMA information_schema CASCADE;
     </para>
    </listitem>
   </itemizedlist>
- </sect3>
+ </section>
 
- <sect3>
+ <section>
   <title>Contrib Changes</title>
 
   <itemizedlist>
@@ -4617,6 +4619,7 @@ DROP SCHEMA information_schema CASCADE;
    <listitem><para>Fix dbase <option>-s</option> option and improve non-ASCII handling (Thomas Behr, M&aacute;rcio Smiderle)</para></listitem>
    <listitem><para>Remove array module because features now included by default (Joe)</para></listitem>
   </itemizedlist>
- </sect3>
- </sect2>
-</sect1>
+ </section>
+ </section>
+</section>
+</section>

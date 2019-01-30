@@ -1,7 +1,9 @@
 <!-- doc/src/sgml/release-8.3.sgml -->
 <!-- See header comment in release.sgml about typical markup -->
 
- <sect1 id="release-8-3-23">
+<section>
+ <title>Release 8.3</title>
+ <section id="release-8-3-23">
   <title>Release 8.3.23</title>
 
   <formalpara>
@@ -21,7 +23,7 @@
    release branch soon.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.3.23</title>
 
    <para>
@@ -33,9 +35,9 @@
     see <xref linkend="release-8-3-17"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -167,10 +169,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-3-22">
+ <section id="release-8-3-22">
   <title>Release 8.3.22</title>
 
   <formalpara>
@@ -190,7 +192,7 @@
    Users are encouraged to update to a newer release branch soon.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.3.22</title>
 
    <para>
@@ -202,9 +204,9 @@
     see <xref linkend="release-8-3-17"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -463,10 +465,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-3-21">
+ <section id="release-8-3-21">
   <title>Release 8.3.21</title>
 
   <formalpara>
@@ -486,7 +488,7 @@
    Users are encouraged to update to a newer release branch soon.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.3.21</title>
 
    <para>
@@ -498,9 +500,9 @@
     see <xref linkend="release-8-3-17"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -573,10 +575,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-3-20">
+ <section id="release-8-3-20">
   <title>Release 8.3.20</title>
 
   <formalpara>
@@ -596,7 +598,7 @@
    Users are encouraged to update to a newer release branch soon.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.3.20</title>
 
    <para>
@@ -608,9 +610,9 @@
     see <xref linkend="release-8-3-17"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -796,10 +798,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-3-19">
+ <section id="release-8-3-19">
   <title>Release 8.3.19</title>
 
   <formalpara>
@@ -813,7 +815,7 @@
    <xref linkend="release-8-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.3.19</title>
 
    <para>
@@ -825,9 +827,9 @@
     see <xref linkend="release-8-3-17"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1025,10 +1027,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-3-18">
+ <section id="release-8-3-18">
   <title>Release 8.3.18</title>
 
   <formalpara>
@@ -1042,7 +1044,7 @@
    <xref linkend="release-8-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.3.18</title>
 
    <para>
@@ -1054,9 +1056,9 @@
     see <xref linkend="release-8-3-17"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1313,10 +1315,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-3-17">
+ <section id="release-8-3-17">
   <title>Release 8.3.17</title>
 
   <formalpara>
@@ -1330,7 +1332,7 @@
    <xref linkend="release-8-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.3.17</title>
 
    <para>
@@ -1349,9 +1351,9 @@
     see <xref linkend="release-8-3-8"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1580,10 +1582,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-3-16">
+ <section id="release-8-3-16">
   <title>Release 8.3.16</title>
 
   <formalpara>
@@ -1597,7 +1599,7 @@
    <xref linkend="release-8-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.3.16</title>
 
    <para>
@@ -1606,9 +1608,9 @@
     see <xref linkend="release-8-3-8"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1951,10 +1953,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-3-15">
+ <section id="release-8-3-15">
   <title>Release 8.3.15</title>
 
   <formalpara>
@@ -1968,7 +1970,7 @@
    <xref linkend="release-8-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.3.15</title>
 
    <para>
@@ -1977,9 +1979,9 @@
     see <xref linkend="release-8-3-8"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -2114,10 +2116,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-3-14">
+ <section id="release-8-3-14">
   <title>Release 8.3.14</title>
 
   <formalpara>
@@ -2131,7 +2133,7 @@
    <xref linkend="release-8-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.3.14</title>
 
    <para>
@@ -2140,9 +2142,9 @@
     see <xref linkend="release-8-3-8"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -2246,10 +2248,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-3-13">
+ <section id="release-8-3-13">
   <title>Release 8.3.13</title>
 
   <formalpara>
@@ -2263,7 +2265,7 @@
    <xref linkend="release-8-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.3.13</title>
 
    <para>
@@ -2272,9 +2274,9 @@
     see <xref linkend="release-8-3-8"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -2524,10 +2526,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-3-12">
+ <section id="release-8-3-12">
   <title>Release 8.3.12</title>
 
   <formalpara>
@@ -2541,7 +2543,7 @@
    <xref linkend="release-8-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.3.12</title>
 
    <para>
@@ -2550,9 +2552,9 @@
     see <xref linkend="release-8-3-8"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -2887,10 +2889,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-3-11">
+ <section id="release-8-3-11">
   <title>Release 8.3.11</title>
 
   <formalpara>
@@ -2904,7 +2906,7 @@
    <xref linkend="release-8-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.3.11</title>
 
    <para>
@@ -2913,9 +2915,9 @@
     see <xref linkend="release-8-3-8"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -3116,10 +3118,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-3-10">
+ <section id="release-8-3-10">
   <title>Release 8.3.10</title>
 
   <formalpara>
@@ -3133,7 +3135,7 @@
    <xref linkend="release-8-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.3.10</title>
 
    <para>
@@ -3142,9 +3144,9 @@
     see <xref linkend="release-8-3-8"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -3443,10 +3445,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-3-9">
+ <section id="release-8-3-9">
   <title>Release 8.3.9</title>
 
   <formalpara>
@@ -3460,7 +3462,7 @@
    <xref linkend="release-8-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.3.9</title>
 
    <para>
@@ -3469,9 +3471,9 @@
     see <xref linkend="release-8-3-8"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -3776,10 +3778,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-3-8">
+ <section id="release-8-3-8">
   <title>Release 8.3.8</title>
 
   <formalpara>
@@ -3793,7 +3795,7 @@
    <xref linkend="release-8-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.3.8</title>
 
    <para>
@@ -3804,9 +3806,9 @@
     see <xref linkend="release-8-3-5"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -4066,10 +4068,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-3-7">
+ <section id="release-8-3-7">
   <title>Release 8.3.7</title>
 
   <formalpara>
@@ -4083,7 +4085,7 @@
    <xref linkend="release-8-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.3.7</title>
 
    <para>
@@ -4092,9 +4094,9 @@
     see <xref linkend="release-8-3-5"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -4289,10 +4291,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-3-6">
+ <section id="release-8-3-6">
   <title>Release 8.3.6</title>
 
   <formalpara>
@@ -4306,7 +4308,7 @@
    <xref linkend="release-8-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.3.6</title>
 
    <para>
@@ -4315,9 +4317,9 @@
     see <xref linkend="release-8-3-5"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -4583,10 +4585,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-3-5">
+ <section id="release-8-3-5">
   <title>Release 8.3.5</title>
 
   <formalpara>
@@ -4600,7 +4602,7 @@
    <xref linkend="release-8-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.3.5</title>
 
    <para>
@@ -4611,9 +4613,9 @@
     indexes after the upgrade.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -4838,10 +4840,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-3-4">
+ <section id="release-8-3-4">
   <title>Release 8.3.4</title>
 
   <formalpara>
@@ -4855,7 +4857,7 @@
    <xref linkend="release-8-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.3.4</title>
 
    <para>
@@ -4864,9 +4866,9 @@
     see <xref linkend="release-8-3-1"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -5192,10 +5194,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-3-3">
+ <section id="release-8-3-3">
   <title>Release 8.3.3</title>
 
   <formalpara>
@@ -5209,7 +5211,7 @@
    <xref linkend="release-8-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.3.3</title>
 
    <para>
@@ -5218,9 +5220,9 @@
     see <xref linkend="release-8-3-1"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -5259,10 +5261,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-3-2">
+ <section id="release-8-3-2">
   <title>Release 8.3.2</title>
 
   <formalpara>
@@ -5276,7 +5278,7 @@
    <xref linkend="release-8-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.3.2</title>
 
    <para>
@@ -5285,9 +5287,9 @@
     see <xref linkend="release-8-3-1"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -5624,10 +5626,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-3-1">
+ <section id="release-8-3-1">
   <title>Release 8.3.1</title>
 
   <formalpara>
@@ -5641,7 +5643,7 @@
    <xref linkend="release-8-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.3.1</title>
 
    <para>
@@ -5651,9 +5653,9 @@
     issue described below.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -5937,10 +5939,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-8-3">
+ <section id="release-8-3">
   <title>Release 8.3</title>
 
   <formalpara>
@@ -5948,7 +5950,7 @@
    <para>2008-02-04</para>
   </formalpara>
 
-  <sect2>
+  <section>
    <title>Overview</title>
 
    <para>
@@ -6126,9 +6128,9 @@
     The above items are explained in more detail in the sections below.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Migration to Version 8.3</title>
 
    <para>
@@ -6141,7 +6143,7 @@
     Observe the following incompatibilities:
    </para>
 
-   <sect3>
+   <section>
     <title>General</title>
     <itemizedlist>
 
@@ -6368,9 +6370,9 @@ current_date &lt; 2017-11-17
 
     </itemizedlist>
 
-    </sect3>
+    </section>
 
-    <sect3>
+    <section>
      <title>Configuration Parameters</title>
 
     <itemizedlist>
@@ -6433,10 +6435,10 @@ current_date &lt; 2017-11-17
 
     </itemizedlist>
 
-    </sect3>
+    </section>
 
 
-    <sect3>
+    <section>
      <title>Character Encodings</title>
 
     <itemizedlist>
@@ -6549,11 +6551,11 @@ current_date &lt; 2017-11-17
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -6562,7 +6564,7 @@ current_date &lt; 2017-11-17
     the previous major release.
    </para>
 
-   <sect3>
+   <section>
     <title>Performance</title>
     <itemizedlist>
 
@@ -6766,9 +6768,9 @@ current_date &lt; 2017-11-17
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Server</title>
     <itemizedlist>
 
@@ -6909,9 +6911,9 @@ current_date &lt; 2017-11-17
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Monitoring</title>
     <itemizedlist>
 
@@ -7062,9 +7064,9 @@ current_date &lt; 2017-11-17
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Authentication</title>
     <itemizedlist>
 
@@ -7107,9 +7109,9 @@ current_date &lt; 2017-11-17
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Write-Ahead Log (<acronym>WAL</acronym>) and Continuous Archiving</title>
     <itemizedlist>
 
@@ -7155,9 +7157,9 @@ current_date &lt; 2017-11-17
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Queries</title>
     <itemizedlist>
 
@@ -7289,9 +7291,9 @@ current_date &lt; 2017-11-17
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Object Manipulation</title>
     <itemizedlist>
 
@@ -7404,9 +7406,9 @@ current_date &lt; 2017-11-17
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Utility Commands</title>
     <itemizedlist>
 
@@ -7506,9 +7508,9 @@ current_date &lt; 2017-11-17
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Data Types</title>
     <itemizedlist>
 
@@ -7583,9 +7585,9 @@ current_date &lt; 2017-11-17
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Functions</title>
     <itemizedlist>
 
@@ -7721,9 +7723,9 @@ current_date &lt; 2017-11-17
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>PL/pgSQL Server-Side Language</title>
     <itemizedlist>
 
@@ -7807,9 +7809,9 @@ current_date &lt; 2017-11-17
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Other Server-Side Languages</title>
     <itemizedlist>
 
@@ -7864,9 +7866,9 @@ current_date &lt; 2017-11-17
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title><link linkend="app-psql"><application>psql</application></link></title>
     <itemizedlist>
 
@@ -7953,9 +7955,9 @@ current_date &lt; 2017-11-17
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title><link linkend="app-pgdump"><application>pg_dump</application></link></title>
     <itemizedlist>
 
@@ -8008,9 +8010,9 @@ current_date &lt; 2017-11-17
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Other Client Applications</title>
     <itemizedlist>
 
@@ -8073,9 +8075,9 @@ current_date &lt; 2017-11-17
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title><link linkend="libpq"><application>libpq</application></link></title>
     <itemizedlist>
 
@@ -8144,9 +8146,9 @@ current_date &lt; 2017-11-17
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title><link linkend="ecpg"><application>ecpg</application></link></title>
     <itemizedlist>
 
@@ -8180,9 +8182,9 @@ current_date &lt; 2017-11-17
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title><application>Windows</application> Port</title>
     <itemizedlist>
 
@@ -8223,9 +8225,9 @@ current_date &lt; 2017-11-17
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Server Programming Interface (<acronym>SPI</acronym>)</title>
     <itemizedlist>
 
@@ -8266,9 +8268,9 @@ current_date &lt; 2017-11-17
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Build Options</title>
     <itemizedlist>
 
@@ -8309,9 +8311,9 @@ current_date &lt; 2017-11-17
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Source Code</title>
     <itemizedlist>
 
@@ -8424,9 +8426,9 @@ current_date &lt; 2017-11-17
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Contrib</title>
     <itemizedlist>
 
@@ -8544,6 +8546,7 @@ current_date &lt; 2017-11-17
 
     </itemizedlist>
 
-   </sect3>
-  </sect2>
- </sect1>
+   </section>
+  </section>
+ </section>
+</section>

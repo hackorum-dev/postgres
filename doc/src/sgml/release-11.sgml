@@ -1,7 +1,9 @@
 <!-- doc/src/sgml/release-11.sgml -->
 <!-- See header comment in release.sgml about typical markup -->
 
- <sect1 id="release-11-1">
+<section>
+ <title>Release 11</title>
+ <section id="release-11-1">
   <title>Release 11.1</title>
 
   <formalpara>
@@ -15,7 +17,7 @@
    <xref linkend="release-11"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 11.1</title>
 
    <para>
@@ -26,9 +28,9 @@
     However, if you use the <filename>pg_stat_statements</filename> extension,
     see the changelog entry below about that.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -495,10 +497,10 @@ Branch: REL9_3_STABLE [84261eb10] 2018-10-19 17:02:26 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-11">
+ <section id="release-11">
   <title>Release 11</title>
 
   <formalpara>
@@ -506,7 +508,7 @@ Branch: REL9_3_STABLE [84261eb10] 2018-10-19 17:02:26 -0400
    <para>2018-10-18</para>
   </formalpara>
 
-  <sect2>
+  <section>
    <title>Overview</title>
 
    <para>
@@ -626,9 +628,9 @@ Branch: REL9_3_STABLE [84261eb10] 2018-10-19 17:02:26 -0400
     The above items are explained in more detail in the sections below.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
 
   <title>Migration to Version 11</title>
 
@@ -1052,9 +1054,9 @@ Branch: REL9_3_STABLE [84261eb10] 2018-10-19 17:02:26 -0400
 
    </itemizedlist>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -1063,10 +1065,10 @@ Branch: REL9_3_STABLE [84261eb10] 2018-10-19 17:02:26 -0400
     release.
    </para>
 
-   <sect3>
+   <section>
     <title>Server</title>
 
-    <sect4>
+    <section>
      <title>Partitioning</title>
 
      <itemizedlist>
@@ -1280,9 +1282,9 @@ Branch: REL9_3_STABLE [84261eb10] 2018-10-19 17:02:26 -0400
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Parallel Queries</title>
 
      <itemizedlist>
@@ -1420,9 +1422,9 @@ same commits as above
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Indexes</title>
 
      <itemizedlist>
@@ -1490,7 +1492,7 @@ same commits as above
 
      </itemizedlist>
 
-     <sect5>
+     <section>
       <title><link linkend="spgist">SP-Gist</link></title>
 
       <itemizedlist>
@@ -1537,11 +1539,11 @@ same commits as above
 
       </itemizedlist>
 
-     </sect5>
+     </section>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Optimizer</title>
 
      <itemizedlist>
@@ -1627,9 +1629,9 @@ same commits as above
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>General Performance</title>
 
      <itemizedlist>
@@ -1766,9 +1768,9 @@ same commits as above
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Monitoring</title>
 
      <itemizedlist>
@@ -1820,7 +1822,7 @@ same commits as above
 
      </itemizedlist>
 
-     <sect5>
+     <section>
       <title><link linkend="infoschema-tables">Information Schema</link></title>
 
       <itemizedlist>
@@ -1850,10 +1852,10 @@ same commits as above
 
       </itemizedlist>
 
-     </sect5>
-    </sect4>
+     </section>
+    </section>
 
-    <sect4>
+    <section>
      <title><acronym>Authentication</acronym></title>
 
      <itemizedlist>
@@ -1909,9 +1911,9 @@ same commits as above
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Permissions</title>
 
      <itemizedlist>
@@ -2017,9 +2019,9 @@ same commits as above
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Server Configuration</title>
 
      <itemizedlist>
@@ -2084,9 +2086,9 @@ same commits as above
 
     </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><link linkend="wal">Write-Ahead Log</link> (<acronym>WAL</acronym>)</title>
 
      <itemizedlist>
@@ -2136,11 +2138,11 @@ same commits as above
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Base Backup and Streaming Replication</title>
 
     <itemizedlist>
@@ -2245,9 +2247,9 @@ same commits as above
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Utility Commands</title>
 
     <itemizedlist>
@@ -2351,9 +2353,9 @@ same commits as above
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Data Types</title>
 
     <itemizedlist>
@@ -2406,9 +2408,9 @@ same commits as above
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Functions</title>
 
     <itemizedlist>
@@ -2512,9 +2514,9 @@ same commits as above
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Server-Side Languages</title>
 
     <itemizedlist>
@@ -2630,9 +2632,9 @@ same commits as above
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Client Interfaces</title>
 
     <itemizedlist>
@@ -2688,12 +2690,12 @@ same commits as above
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Client Applications</title>
 
-    <sect4>
+    <section>
      <title><xref linkend="app-psql"/></title>
 
      <itemizedlist>
@@ -2863,9 +2865,9 @@ same commits as above
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><link linkend="pgbench"><application>pgbench</application></link></title>
 
      <itemizedlist>
@@ -2976,11 +2978,11 @@ same commits as above
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Server Applications</title>
 
     <itemizedlist>
@@ -3131,7 +3133,7 @@ same commits as above
 
      </itemizedlist>
 
-    <sect4>
+    <section>
      <title><link linkend="app-pgdump"><application>pg_dump</application></link>,
      <link linkend="app-pg-dumpall"><application>pg_dumpall</application></link>,
      <link linkend="app-pgrestore"><application>pg_restore</application></link></title>
@@ -3194,11 +3196,11 @@ same commits as above
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Source Code</title>
 
     <itemizedlist>
@@ -3436,9 +3438,9 @@ same commits as above
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Additional Modules</title>
 
     <itemizedlist>
@@ -3629,11 +3631,11 @@ same commits as above
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-  </sect2>
+  </section>
 
-  <sect2 id="release-11-acknowledgements">
+  <section id="release-11-acknowledgements">
    <title>Acknowledgments</title>
 
    <para>
@@ -3957,6 +3959,7 @@ same commits as above
     <member>Yves Goergen</member>
     <member>Zhou Digoal</member>
    </simplelist>
-  </sect2>
+  </section>
 
- </sect1>
+ </section>
+</section>

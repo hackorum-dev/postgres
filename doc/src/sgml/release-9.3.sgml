@@ -1,7 +1,9 @@
 <!-- doc/src/sgml/release-9.3.sgml -->
 <!-- See header comment in release.sgml about typical markup -->
 
- <sect1 id="release-9-3-25">
+<section>
+ <title>Release 9.3</title>
+ <section id="release-9-3-25">
   <title>Release 9.3.25</title>
 
   <formalpara>
@@ -21,7 +23,7 @@
    release branch soon.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.3.25</title>
 
    <para>
@@ -32,9 +34,9 @@
     However, if you are upgrading from a version earlier than 9.3.23,
     see <xref linkend="release-9-3-23"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -464,10 +466,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-3-24">
+ <section id="release-9-3-24">
   <title>Release 9.3.24</title>
 
   <formalpara>
@@ -487,7 +489,7 @@
    Users are encouraged to update to a newer release branch soon.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.3.24</title>
 
    <para>
@@ -498,9 +500,9 @@
     However, if you are upgrading from a version earlier than 9.3.23,
     see <xref linkend="release-9-3-23"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -781,10 +783,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-3-23">
+ <section id="release-9-3-23">
   <title>Release 9.3.23</title>
 
   <formalpara>
@@ -798,7 +800,7 @@
    <xref linkend="release-9-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.3.23</title>
 
    <para>
@@ -815,9 +817,9 @@
     Also, if you are upgrading from a version earlier than 9.3.22,
     see <xref linkend="release-9-3-22"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1150,10 +1152,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-3-22">
+ <section id="release-9-3-22">
   <title>Release 9.3.22</title>
 
   <formalpara>
@@ -1167,7 +1169,7 @@
    <xref linkend="release-9-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.3.22</title>
 
    <para>
@@ -1194,9 +1196,9 @@
     Also, if you are upgrading from a version earlier than 9.3.18,
     see <xref linkend="release-9-3-18"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1336,10 +1338,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-3-21">
+ <section id="release-9-3-21">
   <title>Release 9.3.21</title>
 
   <formalpara>
@@ -1353,7 +1355,7 @@
    <xref linkend="release-9-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.3.21</title>
 
    <para>
@@ -1364,9 +1366,9 @@
     However, if you are upgrading from a version earlier than 9.3.18,
     see <xref linkend="release-9-3-18"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1658,10 +1660,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-3-20">
+ <section id="release-9-3-20">
   <title>Release 9.3.20</title>
 
   <formalpara>
@@ -1675,7 +1677,7 @@
    <xref linkend="release-9-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.3.20</title>
 
    <para>
@@ -1687,9 +1689,9 @@
     see <xref linkend="release-9-3-18"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1892,10 +1894,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-3-19">
+ <section id="release-9-3-19">
   <title>Release 9.3.19</title>
 
   <formalpara>
@@ -1909,7 +1911,7 @@
    <xref linkend="release-9-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.3.19</title>
 
    <para>
@@ -1921,9 +1923,9 @@
     see <xref linkend="release-9-3-18"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -2063,10 +2065,10 @@ CREATE OR REPLACE VIEW table_privileges AS
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-3-18">
+ <section id="release-9-3-18">
   <title>Release 9.3.18</title>
 
   <formalpara>
@@ -2080,7 +2082,7 @@ CREATE OR REPLACE VIEW table_privileges AS
    <xref linkend="release-9-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.3.18</title>
 
    <para>
@@ -2097,9 +2099,9 @@ CREATE OR REPLACE VIEW table_privileges AS
     see <xref linkend="release-9-3-16"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -2622,10 +2624,10 @@ UPDATE pg_database SET datallowconn = false WHERE datname = 'template0';
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-3-17">
+ <section id="release-9-3-17">
   <title>Release 9.3.17</title>
 
   <formalpara>
@@ -2639,7 +2641,7 @@ UPDATE pg_database SET datallowconn = false WHERE datname = 'template0';
    <xref linkend="release-9-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.3.17</title>
 
    <para>
@@ -2656,9 +2658,9 @@ UPDATE pg_database SET datallowconn = false WHERE datname = 'template0';
     see <xref linkend="release-9-3-16"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -3041,10 +3043,10 @@ UPDATE pg_database SET datallowconn = false WHERE datname = 'template0';
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-3-16">
+ <section id="release-9-3-16">
   <title>Release 9.3.16</title>
 
   <formalpara>
@@ -3058,7 +3060,7 @@ UPDATE pg_database SET datallowconn = false WHERE datname = 'template0';
    <xref linkend="release-9-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.3.16</title>
 
    <para>
@@ -3076,9 +3078,9 @@ UPDATE pg_database SET datallowconn = false WHERE datname = 'template0';
     see <xref linkend="release-9-3-15"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -3489,10 +3491,10 @@ UPDATE pg_database SET datallowconn = false WHERE datname = 'template0';
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-3-15">
+ <section id="release-9-3-15">
   <title>Release 9.3.15</title>
 
   <formalpara>
@@ -3506,7 +3508,7 @@ UPDATE pg_database SET datallowconn = false WHERE datname = 'template0';
    <xref linkend="release-9-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.3.15</title>
 
    <para>
@@ -3524,9 +3526,9 @@ UPDATE pg_database SET datallowconn = false WHERE datname = 'template0';
     see <xref linkend="release-9-3-9"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -3818,10 +3820,10 @@ UPDATE pg_database SET datallowconn = false WHERE datname = 'template0';
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-3-14">
+ <section id="release-9-3-14">
   <title>Release 9.3.14</title>
 
   <formalpara>
@@ -3835,7 +3837,7 @@ UPDATE pg_database SET datallowconn = false WHERE datname = 'template0';
    <xref linkend="release-9-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.3.14</title>
 
    <para>
@@ -3847,9 +3849,9 @@ UPDATE pg_database SET datallowconn = false WHERE datname = 'template0';
     see <xref linkend="release-9-3-9"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -4308,10 +4310,10 @@ UPDATE pg_database SET datallowconn = false WHERE datname = 'template0';
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-3-13">
+ <section id="release-9-3-13">
   <title>Release 9.3.13</title>
 
   <formalpara>
@@ -4325,7 +4327,7 @@ UPDATE pg_database SET datallowconn = false WHERE datname = 'template0';
    <xref linkend="release-9-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.3.13</title>
 
    <para>
@@ -4337,9 +4339,9 @@ UPDATE pg_database SET datallowconn = false WHERE datname = 'template0';
     see <xref linkend="release-9-3-9"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -4538,10 +4540,10 @@ Branch: REL9_2_STABLE [37f30b251] 2016-04-18 13:19:52 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-3-12">
+ <section id="release-9-3-12">
   <title>Release 9.3.12</title>
 
   <formalpara>
@@ -4555,7 +4557,7 @@ Branch: REL9_2_STABLE [37f30b251] 2016-04-18 13:19:52 -0400
    <xref linkend="release-9-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.3.12</title>
 
    <para>
@@ -4567,9 +4569,9 @@ Branch: REL9_2_STABLE [37f30b251] 2016-04-18 13:19:52 -0400
     see <xref linkend="release-9-3-9"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -4757,10 +4759,10 @@ Branch: REL9_2_STABLE [37f30b251] 2016-04-18 13:19:52 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-3-11">
+ <section id="release-9-3-11">
   <title>Release 9.3.11</title>
 
   <formalpara>
@@ -4774,7 +4776,7 @@ Branch: REL9_2_STABLE [37f30b251] 2016-04-18 13:19:52 -0400
    <xref linkend="release-9-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.3.11</title>
 
    <para>
@@ -4786,9 +4788,9 @@ Branch: REL9_2_STABLE [37f30b251] 2016-04-18 13:19:52 -0400
     see <xref linkend="release-9-3-9"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -5380,10 +5382,10 @@ Branch: REL9_2_STABLE [37f30b251] 2016-04-18 13:19:52 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-3-10">
+ <section id="release-9-3-10">
   <title>Release 9.3.10</title>
 
   <formalpara>
@@ -5397,7 +5399,7 @@ Branch: REL9_2_STABLE [37f30b251] 2016-04-18 13:19:52 -0400
    <xref linkend="release-9-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.3.10</title>
 
    <para>
@@ -5409,9 +5411,9 @@ Branch: REL9_2_STABLE [37f30b251] 2016-04-18 13:19:52 -0400
     see <xref linkend="release-9-3-9"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -6009,10 +6011,10 @@ Branch: REL9_2_STABLE [37f30b251] 2016-04-18 13:19:52 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-3-9">
+ <section id="release-9-3-9">
   <title>Release 9.3.9</title>
 
   <formalpara>
@@ -6026,7 +6028,7 @@ Branch: REL9_2_STABLE [37f30b251] 2016-04-18 13:19:52 -0400
    <xref linkend="release-9-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.3.9</title>
 
    <para>
@@ -6044,9 +6046,9 @@ Branch: REL9_2_STABLE [37f30b251] 2016-04-18 13:19:52 -0400
     see <xref linkend="release-9-3-7"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -6158,10 +6160,10 @@ Branch: REL9_2_STABLE [37f30b251] 2016-04-18 13:19:52 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-3-8">
+ <section id="release-9-3-8">
   <title>Release 9.3.8</title>
 
   <formalpara>
@@ -6175,7 +6177,7 @@ Branch: REL9_2_STABLE [37f30b251] 2016-04-18 13:19:52 -0400
    <xref linkend="release-9-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.3.8</title>
 
    <para>
@@ -6187,9 +6189,9 @@ Branch: REL9_2_STABLE [37f30b251] 2016-04-18 13:19:52 -0400
     see <xref linkend="release-9-3-7"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -6266,10 +6268,10 @@ Branch: REL9_0_STABLE [4dddf8552] 2015-05-21 20:41:55 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-3-7">
+ <section id="release-9-3-7">
   <title>Release 9.3.7</title>
 
   <formalpara>
@@ -6283,7 +6285,7 @@ Branch: REL9_0_STABLE [4dddf8552] 2015-05-21 20:41:55 -0400
    <xref linkend="release-9-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.3.7</title>
 
    <para>
@@ -6301,9 +6303,9 @@ Branch: REL9_0_STABLE [4dddf8552] 2015-05-21 20:41:55 -0400
     see <xref linkend="release-9-3-6"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -6856,10 +6858,10 @@ Branch: REL9_0_STABLE [4dddf8552] 2015-05-21 20:41:55 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-3-6">
+ <section id="release-9-3-6">
   <title>Release 9.3.6</title>
 
   <formalpara>
@@ -6873,7 +6875,7 @@ Branch: REL9_0_STABLE [4dddf8552] 2015-05-21 20:41:55 -0400
    <xref linkend="release-9-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.3.6</title>
 
    <para>
@@ -6894,9 +6896,9 @@ Branch: REL9_0_STABLE [4dddf8552] 2015-05-21 20:41:55 -0400
     see <xref linkend="release-9-3-5"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -8741,10 +8743,10 @@ Branch: REL9_0_STABLE [b6391f587] 2014-10-04 14:18:43 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-3-5">
+ <section id="release-9-3-5">
   <title>Release 9.3.5</title>
 
   <formalpara>
@@ -8758,7 +8760,7 @@ Branch: REL9_0_STABLE [b6391f587] 2014-10-04 14:18:43 -0400
    <xref linkend="release-9-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.3.5</title>
 
    <para>
@@ -8778,9 +8780,9 @@ Branch: REL9_0_STABLE [b6391f587] 2014-10-04 14:18:43 -0400
     see <xref linkend="release-9-3-4"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -9861,10 +9863,10 @@ Branch: REL8_4_STABLE [c51da696b] 2014-07-19 15:01:45 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-3-4">
+ <section id="release-9-3-4">
   <title>Release 9.3.4</title>
 
   <formalpara>
@@ -9878,7 +9880,7 @@ Branch: REL8_4_STABLE [c51da696b] 2014-07-19 15:01:45 -0400
    <xref linkend="release-9-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.3.4</title>
 
    <para>
@@ -9897,9 +9899,9 @@ Branch: REL8_4_STABLE [c51da696b] 2014-07-19 15:01:45 -0400
     see <xref linkend="release-9-3-3"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -10323,10 +10325,10 @@ Branch: REL8_4_STABLE [6e6c2c2e1] 2014-03-15 13:36:57 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-3-3">
+ <section id="release-9-3-3">
   <title>Release 9.3.3</title>
 
   <formalpara>
@@ -10340,7 +10342,7 @@ Branch: REL8_4_STABLE [6e6c2c2e1] 2014-03-15 13:36:57 -0400
    <xref linkend="release-9-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.3.3</title>
 
    <para>
@@ -10369,9 +10371,9 @@ Branch: REL8_4_STABLE [6e6c2c2e1] 2014-03-15 13:36:57 -0400
     see <xref linkend="release-9-3-2"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -11785,10 +11787,10 @@ Branch: REL8_4_STABLE [c0c2d62ac] 2014-02-14 21:59:56 -0500
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-3-2">
+ <section id="release-9-3-2">
   <title>Release 9.3.2</title>
 
   <formalpara>
@@ -11802,7 +11804,7 @@ Branch: REL8_4_STABLE [c0c2d62ac] 2014-02-14 21:59:56 -0500
    <xref linkend="release-9-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.3.2</title>
 
    <para>
@@ -11820,9 +11822,9 @@ Branch: REL8_4_STABLE [c0c2d62ac] 2014-02-14 21:59:56 -0500
     see <xref linkend="release-9-3-1"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -12264,10 +12266,10 @@ SELECT ... FROM tab1 x CROSS JOIN (tab2 x CROSS JOIN tab3 y) z
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-3-1">
+ <section id="release-9-3-1">
   <title>Release 9.3.1</title>
 
   <formalpara>
@@ -12281,7 +12283,7 @@ SELECT ... FROM tab1 x CROSS JOIN (tab2 x CROSS JOIN tab3 y) z
    <xref linkend="release-9-3"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.3.1</title>
 
    <para>
@@ -12293,9 +12295,9 @@ SELECT ... FROM tab1 x CROSS JOIN (tab2 x CROSS JOIN tab3 y) z
     first changelog entry.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -12367,10 +12369,10 @@ ALTER EXTENSION hstore UPDATE;
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-3">
+ <section id="release-9-3">
   <title>Release 9.3</title>
 
   <formalpara>
@@ -12378,7 +12380,7 @@ ALTER EXTENSION hstore UPDATE;
    <para>2013-09-09</para>
   </formalpara>
 
-  <sect2>
+  <section>
    <title>Overview</title>
 
    <para>
@@ -12468,9 +12470,9 @@ ALTER EXTENSION hstore UPDATE;
     The above items are explained in more detail in the sections below.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
 
   <title>Migration to Version 9.3</title>
 
@@ -12486,7 +12488,7 @@ ALTER EXTENSION hstore UPDATE;
     with previous releases.  Observe the following incompatibilities:
    </para>
 
-   <sect3>
+   <section>
     <title>Server Settings</title>
 
      <itemizedlist>
@@ -12526,9 +12528,9 @@ ALTER EXTENSION hstore UPDATE;
 
      </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Other</title>
 
      <itemizedlist>
@@ -12646,11 +12648,11 @@ ALTER EXTENSION hstore UPDATE;
 
      </itemizedlist>
 
-   </sect3>
+   </section>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -12659,10 +12661,10 @@ ALTER EXTENSION hstore UPDATE;
     release.
    </para>
 
-   <sect3>
+   <section>
     <title>Server</title>
 
-    <sect4>
+    <section>
      <title>Locking</title>
 
      <itemizedlist>
@@ -12696,9 +12698,9 @@ ALTER EXTENSION hstore UPDATE;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Indexes</title>
 
      <itemizedlist>
@@ -12733,9 +12735,9 @@ ALTER EXTENSION hstore UPDATE;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Optimizer</title>
 
      <itemizedlist>
@@ -12778,9 +12780,9 @@ ALTER EXTENSION hstore UPDATE;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>General Performance</title>
 
      <itemizedlist>
@@ -12867,9 +12869,9 @@ ALTER EXTENSION hstore UPDATE;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Monitoring</title>
 
      <itemizedlist>
@@ -12926,9 +12928,9 @@ ALTER EXTENSION hstore UPDATE;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Authentication</title>
 
      <itemizedlist>
@@ -12983,9 +12985,9 @@ ALTER EXTENSION hstore UPDATE;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Server Settings</title>
 
      <itemizedlist>
@@ -13055,11 +13057,11 @@ ALTER EXTENSION hstore UPDATE;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Replication and Recovery</title>
 
      <itemizedlist>
@@ -13188,9 +13190,9 @@ ALTER EXTENSION hstore UPDATE;
 
      </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Queries</title>
 
      <itemizedlist>
@@ -13228,9 +13230,9 @@ ALTER EXTENSION hstore UPDATE;
 
      </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Object Manipulation</title>
 
      <itemizedlist>
@@ -13320,7 +13322,7 @@ ALTER EXTENSION hstore UPDATE;
 
      </itemizedlist>
 
-    <sect4>
+    <section>
      <title><command>ALTER</command></title>
 
      <itemizedlist>
@@ -13360,9 +13362,9 @@ ALTER EXTENSION hstore UPDATE;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><link linkend="rules-views"><command>VIEWs</command></link></title>
 
      <itemizedlist>
@@ -13428,11 +13430,11 @@ ALTER EXTENSION hstore UPDATE;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Data Types</title>
 
     <itemizedlist>
@@ -13460,7 +13462,7 @@ ALTER EXTENSION hstore UPDATE;
 
     </itemizedlist>
 
-   <sect4>
+   <section>
     <title><link linkend="datatype-json"><type>JSON</type></link></title>
 
     <itemizedlist>
@@ -13490,12 +13492,12 @@ ALTER EXTENSION hstore UPDATE;
 
     </itemizedlist>
 
-   </sect4>
+   </section>
 
-   </sect3>
+   </section>
 
 
-   <sect3>
+   <section>
     <title>Functions</title>
 
      <itemizedlist>
@@ -13589,12 +13591,12 @@ ALTER EXTENSION hstore UPDATE;
 
      </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Server-Side Languages</title>
 
-    <sect4>
+    <section>
      <title><link linkend="plpgsql">PL/pgSQL</link> Server-Side Language</title>
 
      <itemizedlist>
@@ -13647,9 +13649,9 @@ ALTER EXTENSION hstore UPDATE;
 
     </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><link linkend="plpython">PL/Python</link> Server-Side Language</title>
 
      <itemizedlist>
@@ -13681,11 +13683,11 @@ ALTER EXTENSION hstore UPDATE;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Server Programming Interface (<link linkend="spi">SPI</link>)</title>
 
      <itemizedlist>
@@ -13718,9 +13720,9 @@ ALTER EXTENSION hstore UPDATE;
 
      </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Client Applications</title>
 
     <itemizedlist>
@@ -13772,7 +13774,7 @@ ALTER EXTENSION hstore UPDATE;
 
     </itemizedlist>
 
-    <sect4>
+    <section>
      <title><link linkend="app-psql"><application>psql</application></link></title>
 
      <itemizedlist>
@@ -13817,7 +13819,7 @@ ALTER EXTENSION hstore UPDATE;
 
      </itemizedlist>
 
-    <sect5>
+    <section>
      <title><link linkend="app-psql-meta-commands">Backslash Commands</link></title>
 
      <itemizedlist>
@@ -13883,9 +13885,9 @@ ALTER EXTENSION hstore UPDATE;
 
      </itemizedlist>
 
-    </sect5>
+    </section>
 
-    <sect5>
+    <section>
      <title>Output</title>
 
      <itemizedlist>
@@ -13924,11 +13926,11 @@ ALTER EXTENSION hstore UPDATE;
 
      </itemizedlist>
 
-    </sect5>
+    </section>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><link linkend="app-pgdump"><application>pg_dump</application></link></title>
 
      <itemizedlist>
@@ -13967,9 +13969,9 @@ ALTER EXTENSION hstore UPDATE;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><link linkend="app-initdb"><application>initdb</application></link></title>
 
      <itemizedlist>
@@ -14006,11 +14008,11 @@ ALTER EXTENSION hstore UPDATE;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Source Code</title>
 
      <itemizedlist>
@@ -14272,9 +14274,9 @@ ALTER EXTENSION hstore UPDATE;
 
      </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Additional Modules</title>
 
     <itemizedlist>
@@ -14369,7 +14371,7 @@ ALTER EXTENSION hstore UPDATE;
 
     </itemizedlist>
 
-    <sect4>
+    <section>
      <title><link linkend="pgupgrade"><application>pg_upgrade</application></link></title>
 
      <itemizedlist>
@@ -14430,9 +14432,9 @@ ALTER EXTENSION hstore UPDATE;
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><link linkend="pgbench"><application>pgbench</application></link></title>
 
      <itemizedlist>
@@ -14497,11 +14499,11 @@ ALTER EXTENSION hstore UPDATE;
 
     </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Documentation</title>
 
     <itemizedlist>
@@ -14545,7 +14547,8 @@ ALTER EXTENSION hstore UPDATE;
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
+</section>

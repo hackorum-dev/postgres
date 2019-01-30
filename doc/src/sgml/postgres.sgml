@@ -16,13 +16,7 @@
 <book id="postgres">
  <title>PostgreSQL &version; Documentation</title>
 
- <bookinfo>
-  <corpauthor>The PostgreSQL Global Development Group</corpauthor>
-  <productname>PostgreSQL</productname>
-  <productnumber>&version;</productnumber>
-  &legal;
- </bookinfo>
-
+ &legal;
  &intro;
 
  <part id="tutorial">
@@ -272,6 +266,7 @@
   &features;
   &release;
   &contrib;
+  &contrib-prog;
   &external-projects;
   &sourcerepo;
   &docguide;

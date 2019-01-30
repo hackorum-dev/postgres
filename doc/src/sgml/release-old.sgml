@@ -1,7 +1,9 @@
 <!-- doc/src/sgml/release-old.sgml -->
 <!-- See header comment in release.sgml about typical markup -->
 
- <sect1 id="release-7-3-21">
+<section>
+ <title>Release 7.3 and older</title>
+ <section id="release-7-3-21">
   <title>Release 7.3.21</title>
 
   <formalpara>
@@ -20,7 +22,7 @@
    release branch soon.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.3.21</title>
 
    <para>
@@ -29,9 +31,9 @@
     see <xref linkend="release-7-3-13"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -110,10 +112,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-3-20">
+ <section id="release-7-3-20">
   <title>Release 7.3.20</title>
 
   <formalpara>
@@ -125,7 +127,7 @@
    This release contains fixes from 7.3.19.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.3.20</title>
 
    <para>
@@ -134,9 +136,9 @@
     see <xref linkend="release-7-3-13"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -171,10 +173,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-3-19">
+ <section id="release-7-3-19">
   <title>Release 7.3.19</title>
 
   <formalpara>
@@ -187,7 +189,7 @@
    including a security fix.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.3.19</title>
 
    <para>
@@ -196,9 +198,9 @@
     see <xref linkend="release-7-3-13"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -227,10 +229,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-3-18">
+ <section id="release-7-3-18">
   <title>Release 7.3.18</title>
 
   <formalpara>
@@ -243,7 +245,7 @@
    a security fix.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.3.18</title>
 
    <para>
@@ -252,9 +254,9 @@
     see <xref linkend="release-7-3-13"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -289,10 +291,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-3-17">
+ <section id="release-7-3-17">
   <title>Release 7.3.17</title>
 
   <formalpara>
@@ -304,7 +306,7 @@
    This release contains a variety of fixes from 7.3.16.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.3.17</title>
 
    <para>
@@ -313,9 +315,9 @@
     see <xref linkend="release-7-3-13"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -345,10 +347,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-3-16">
+ <section id="release-7-3-16">
   <title>Release 7.3.16</title>
 
   <formalpara>
@@ -360,7 +362,7 @@
    This release contains a variety of fixes from 7.3.15.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.3.16</title>
 
    <para>
@@ -369,9 +371,9 @@
     see <xref linkend="release-7-3-13"/>.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -387,10 +389,10 @@
 </para> </listitem>
 </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-3-15">
+ <section id="release-7-3-15">
   <title>Release 7.3.15</title>
 
   <formalpara>
@@ -403,7 +405,7 @@
    including patches for extremely serious security issues.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.3.15</title>
 
    <para>
@@ -423,9 +425,9 @@
     <function>PQescapeStringConn()</function>) to perform string escaping,
     rather than relying on <foreignphrase>ad hoc</foreignphrase> code to do it.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -479,10 +481,10 @@ Fuhr)</para></listitem>
 <listitem><para>Fix various minor memory leaks</para></listitem>
 </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-3-14">
+ <section id="release-7-3-14">
   <title>Release 7.3.14</title>
 
   <formalpara>
@@ -494,7 +496,7 @@ Fuhr)</para></listitem>
    This release contains a variety of fixes from 7.3.13.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.3.14</title>
 
    <para>
@@ -502,9 +504,9 @@ Fuhr)</para></listitem>
     if you are upgrading from a version earlier than 7.3.13,
     see <xref linkend="release-7-3-13"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -536,10 +538,10 @@ and <function>isinf</function> during configure (Tom)</para></listitem>
 
 </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-3-13">
+ <section id="release-7-3-13">
   <title>Release 7.3.13</title>
 
   <formalpara>
@@ -551,7 +553,7 @@ and <function>isinf</function> during configure (Tom)</para></listitem>
    This release contains a variety of fixes from 7.3.12.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.3.13</title>
 
    <para>
@@ -562,9 +564,9 @@ and <function>isinf</function> during configure (Tom)</para></listitem>
     columns after updating, if you are affected by the locale or
     <application>plperl</application> issues described below.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -598,10 +600,10 @@ what's actually returned by the query (Joe)</para></listitem>
 
 </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-3-12">
+ <section id="release-7-3-12">
   <title>Release 7.3.12</title>
 
   <formalpara>
@@ -613,7 +615,7 @@ what's actually returned by the query (Joe)</para></listitem>
    This release contains a variety of fixes from 7.3.11.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.3.12</title>
 
    <para>
@@ -621,9 +623,9 @@ what's actually returned by the query (Joe)</para></listitem>
     if you are upgrading from a version earlier than 7.3.10,
     see <xref linkend="release-7-3-10"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -645,10 +647,10 @@ table has been dropped</para></listitem>
 
 </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-3-11">
+ <section id="release-7-3-11">
   <title>Release 7.3.11</title>
 
   <formalpara>
@@ -660,7 +662,7 @@ table has been dropped</para></listitem>
    This release contains a variety of fixes from 7.3.10.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.3.11</title>
 
    <para>
@@ -668,9 +670,9 @@ table has been dropped</para></listitem>
     if you are upgrading from a version earlier than 7.3.10,
     see <xref linkend="release-7-3-10"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -696,10 +698,10 @@ enabled</para></listitem>
 the variable is of pass-by-reference type</para></listitem>
 </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-3-10">
+ <section id="release-7-3-10">
   <title>Release 7.3.10</title>
 
   <formalpara>
@@ -712,7 +714,7 @@ the variable is of pass-by-reference type</para></listitem>
    security-related issues.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.3.10</title>
 
    <para>
@@ -773,9 +775,9 @@ VACUUM FREEZE;
 UPDATE pg_database SET datallowconn = false WHERE datname = 'template0';
 </programlisting>
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -822,10 +824,10 @@ month-related formats</para></listitem>
 <type>RECORD</type></para></listitem>
 </itemizedlist>
 
- </sect2>
-</sect1>
+ </section>
+</section>
 
- <sect1 id="release-7-3-9">
+ <section id="release-7-3-9">
   <title>Release 7.3.9</title>
 
   <formalpara>
@@ -838,15 +840,15 @@ month-related formats</para></listitem>
    security-related issues.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.3.9</title>
 
    <para>
     A dump/restore is not required for those running 7.3.X.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -878,10 +880,10 @@ in case of nested merge joins could give outright wrong answers.
 datestyles</para></listitem>
 </itemizedlist>
 
- </sect2>
-</sect1>
+ </section>
+</section>
 
- <sect1 id="release-7-3-8">
+ <section id="release-7-3-8">
   <title>Release 7.3.8</title>
 
   <formalpara>
@@ -894,15 +896,15 @@ datestyles</para></listitem>
   </para>
 
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.3.8</title>
 
    <para>
     A dump/restore is not required for those running 7.3.X.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -928,10 +930,10 @@ concern since there is no reason for non-developers to use this script anyway.
 </para></listitem>
 </itemizedlist>
 
- </sect2>
-</sect1>
+ </section>
+</section>
 
- <sect1 id="release-7-3-7">
+ <section id="release-7-3-7">
   <title>Release 7.3.7</title>
 
   <formalpara>
@@ -944,15 +946,15 @@ concern since there is no reason for non-developers to use this script anyway.
   </para>
 
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.3.7</title>
 
    <para>
     A dump/restore is not required for those running 7.3.X.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -968,10 +970,10 @@ since <productname>PostgreSQL</productname> 7.1.
 <listitem><para>Properly schema-qualify function names when pg_dump'ing a CAST</para></listitem>
 </itemizedlist>
 
- </sect2>
-</sect1>
+ </section>
+</section>
 
- <sect1 id="release-7-3-6">
+ <section id="release-7-3-6">
   <title>Release 7.3.6</title>
 
   <formalpara>
@@ -984,7 +986,7 @@ since <productname>PostgreSQL</productname> 7.1.
   </para>
 
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.3.6</title>
 
    <para>
@@ -992,9 +994,9 @@ since <productname>PostgreSQL</productname> 7.1.
     running 7.3.*.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -1033,10 +1035,10 @@ in multibyte cases (Korea PostgreSQL Users' Group)</para></listitem>
 operations on bytea columns (Joe)</para></listitem>
 </itemizedlist>
 
- </sect2>
-</sect1>
+ </section>
+</section>
 
- <sect1 id="release-7-3-5">
+ <section id="release-7-3-5">
   <title>Release 7.3.5</title>
 
   <formalpara>
@@ -1049,16 +1051,16 @@ operations on bytea columns (Joe)</para></listitem>
   </para>
 
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.3.5</title>
 
    <para>
     A dump/restore is <emphasis>not</emphasis> required for those
     running 7.3.*.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -1084,10 +1086,10 @@ operations on bytea columns (Joe)</para></listitem>
 <listitem><para>Fix corner case for btree search in parallel with first root page split</para></listitem>
 </itemizedlist>
 
- </sect2>
-</sect1>
+ </section>
+</section>
 
- <sect1 id="release-7-3-4">
+ <section id="release-7-3-4">
   <title>Release 7.3.4</title>
 
   <formalpara>
@@ -1100,16 +1102,16 @@ operations on bytea columns (Joe)</para></listitem>
   </para>
 
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.3.4</title>
 
    <para>
     A dump/restore is <emphasis>not</emphasis> required for those
     running 7.3.*.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -1123,11 +1125,11 @@ operations on bytea columns (Joe)</para></listitem>
 <listitem><para>Work around buggy strxfrm() present in some Solaris releases (Tom)</para></listitem>
 <listitem><para>Properly escape jdbc setObject() strings to improve security (Barry)</para></listitem>
 </itemizedlist>
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
 
-<sect1 id="release-7-3-3">
+<section id="release-7-3-3">
  <title>Release 7.3.3</title>
 
  <formalpara>
@@ -1139,16 +1141,16 @@ operations on bytea columns (Joe)</para></listitem>
   This release contains a variety of fixes for version 7.3.2.
  </para>
 
- <sect2>
+ <section>
   <title>Migration to Version 7.3.3</title>
 
   <para>
    A dump/restore is <emphasis>not</emphasis> required for those
    running version 7.3.*.
   </para>
- </sect2>
+ </section>
 
- <sect2>
+ <section>
   <title>Changes</title>
 
 <itemizedlist>
@@ -1233,11 +1235,11 @@ operations on bytea columns (Joe)</para></listitem>
 <listitem><para>Fixed problem with parsing table ACLs in JDBC</para></listitem>
 <listitem><para>Better error message for character set conversion problems in JDBC</para></listitem>
 </itemizedlist>
- </sect2>
-</sect1>
+ </section>
+</section>
 
 
-<sect1 id="release-7-3-2">
+<section id="release-7-3-2">
  <title>Release 7.3.2</title>
 
  <formalpara>
@@ -1250,16 +1252,16 @@ operations on bytea columns (Joe)</para></listitem>
  </para>
 
 
- <sect2>
+ <section>
   <title>Migration to Version 7.3.2</title>
 
   <para>
    A dump/restore is <emphasis>not</emphasis> required for those
    running version 7.3.*.
   </para>
- </sect2>
+ </section>
 
- <sect2>
+ <section>
   <title>Changes</title>
 
 <itemizedlist>
@@ -1294,11 +1296,11 @@ operations on bytea columns (Joe)</para></listitem>
 <listitem><para>Add casts between types lo and oid in contrib/lo</para></listitem>
 <listitem><para>fastpath code now checks for privilege to call function</para></listitem>
 </itemizedlist>
- </sect2>
-</sect1>
+ </section>
+</section>
 
 
-<sect1 id="release-7-3-1">
+<section id="release-7-3-1">
  <title>Release 7.3.1</title>
 
  <formalpara>
@@ -1311,7 +1313,7 @@ operations on bytea columns (Joe)</para></listitem>
  </para>
 
 
- <sect2>
+ <section>
   <title>Migration to Version 7.3.1</title>
 
   <para>
@@ -1321,9 +1323,9 @@ operations on bytea columns (Joe)</para></listitem>
    has a new major version number for this release, which might require
    recompilation of client code in certain cases.
   </para>
- </sect2>
+ </section>
 
- <sect2>
+ <section>
   <title>Changes</title>
 
 <itemizedlist>
@@ -1344,11 +1346,11 @@ operations on bytea columns (Joe)</para></listitem>
 <listitem><para>SSL fixes (Nathan Mueller)</para></listitem>
 <listitem><para>Prevent composite column creation via ALTER TABLE (Tom)</para></listitem>
 </itemizedlist>
- </sect2>
-</sect1>
+ </section>
+</section>
 
 
-<sect1 id="release-7-3">
+<section id="release-7-3">
  <title>Release 7.3</title>
 
  <formalpara>
@@ -1356,7 +1358,7 @@ operations on bytea columns (Joe)</para></listitem>
   <para>2002-11-27</para>
  </formalpara>
 
- <sect2>
+ <section>
   <title>Overview</title>
 
   <para>
@@ -1478,9 +1480,9 @@ operations on bytea columns (Joe)</para></listitem>
    </varlistentry>
 
   </variablelist>
- </sect2>
+ </section>
 
- <sect2>
+ <section>
   <title>Migration to Version 7.3</title>
 
   <para>
@@ -1586,12 +1588,12 @@ operations on bytea columns (Joe)</para></listitem>
    </listitem>
 
   </itemizedlist>
- </sect2>
+ </section>
 
- <sect2>
+ <section>
   <title>Changes</title>
 
-  <sect3>
+  <section>
    <title>Server Operation</title>
 <itemizedlist>
 <listitem><para>Add pg_locks view to show locks (Neil)</para></listitem>
@@ -1599,9 +1601,9 @@ operations on bytea columns (Joe)</para></listitem>
 <listitem><para>Remove support for version 0 FE/BE protocol (<productname>PostgreSQL</productname> 6.2 and earlier) (Tom)</para></listitem>
 <listitem><para>Reserve the last few backend slots for superusers, add parameter superuser_reserved_connections to control this (Nigel J. Andrews)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Performance</title>
 <itemizedlist>
 <listitem><para>Improve startup by calling localtime() only once (Tom)</para></listitem>
@@ -1623,9 +1625,9 @@ operations on bytea columns (Joe)</para></listitem>
 <listitem><para>Improve free space map performance on large tables (Stephen Marshall, Tom)</para></listitem>
 <listitem><para>Improved WAL write concurrency (Tom)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Privileges</title>
 <itemizedlist>
 <listitem><para>Add privileges on functions and procedural languages (Peter)</para></listitem>
@@ -1634,9 +1636,9 @@ operations on bytea columns (Joe)</para></listitem>
 <listitem><para>Add SET SESSION AUTHORIZATION DEFAULT and RESET SESSION AUTHORIZATION (Tom)</para></listitem>
 <listitem><para>Allow functions to be executed with the privilege of the function owner (Peter)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Server Configuration</title>
 <itemizedlist>
 <listitem><para>Server log messages now tagged with LOG, not DEBUG (Bruce)</para></listitem>
@@ -1656,9 +1658,9 @@ operations on bytea columns (Joe)</para></listitem>
 <listitem><para>Rename show_query_stats to show_statement_stats (Bruce)</para></listitem>
 <listitem><para>Add param log_min_error_statement to print commands to logs on error (Gavin)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Queries</title>
 <itemizedlist>
 <listitem><para>Make cursors insensitive, meaning their contents do not change (Tom)</para></listitem>
@@ -1680,9 +1682,9 @@ operations on bytea columns (Joe)</para></listitem>
 <listitem><para>Allow FOR UPDATE to appear after LIMIT/OFFSET (Bruce)</para></listitem>
 <listitem><para>Add variable autocommit (Tom, David Van Wie)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Object Manipulation</title>
 <itemizedlist>
 <listitem><para>Make equals signs optional in CREATE DATABASE (Gavin Sherry)</para></listitem>
@@ -1717,9 +1719,9 @@ operations on bytea columns (Joe)</para></listitem>
 <listitem><para>Add /contrib/adddepend to handle pre-7.3 object dependencies (Rod)</para></listitem>
 <listitem><para>Allow better casting when inserting/updating values (Tom)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Utility Commands</title>
 <itemizedlist>
 <listitem><para>Have COPY TO output embedded carriage returns and newlines as \r and \n (Tom)</para></listitem>
@@ -1757,9 +1759,9 @@ operations on bytea columns (Joe)</para></listitem>
 <listitem><para>Fix rare index corruption when a page split affects bulk delete (Tom)</para></listitem>
 <listitem><para>Fix ALTER TABLE ... ADD COLUMN for inheritance (Alvaro Herrera)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Data Types and Functions</title>
 <itemizedlist>
 <listitem><para>Fix factorial(0) to return 1 (Bruce)</para></listitem>
@@ -1803,9 +1805,9 @@ operations on bytea columns (Joe)</para></listitem>
 <listitem><para>Fix to_char(1,'FM999.99') to return a period (Karel)</para></listitem>
 <listitem><para>Fix trigger/type/language functions returning OPAQUE to return proper type (Tom)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Internationalization</title>
 <itemizedlist>
 <listitem><para>Add additional encodings: Korean (JOHAB), Thai (WIN874), Vietnamese (TCVN), Arabic (WIN1256), Simplified Chinese (GBK), Korean (UHC) (Eiji Tokuya)</para></listitem>
@@ -1821,9 +1823,9 @@ operations on bytea columns (Joe)</para></listitem>
 <listitem><para>pg_dumpall, pg_controldata, and pg_resetxlog now national-language aware (Peter)</para></listitem>
 <listitem><para>New and updated translations</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Server-side Languages</title>
 <itemizedlist>
 <listitem><para>Allow recursive SQL function (Peter)</para></listitem>
@@ -1834,9 +1836,9 @@ operations on bytea columns (Joe)</para></listitem>
 <listitem><para>Make PL/pgSQL schema-aware (Joe)</para></listitem>
 <listitem><para>Remove some memory leaks (Nigel J. Andrews, Tom)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>psql</title>
 <itemizedlist>
 <listitem><para>Don't lowercase psql \connect database name for 7.2.0 compatibility (Tom)</para></listitem>
@@ -1851,9 +1853,9 @@ operations on bytea columns (Joe)</para></listitem>
 <listitem><para>Have psql reports its version number on startup (Tom)</para></listitem>
 <listitem><para>Allow \copy to specify column names (Tom)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>libpq</title>
 <itemizedlist>
 <listitem><para>Add ~/.pgpass to store host/user password combinations (Alvaro Herrera)</para></listitem>
@@ -1865,9 +1867,9 @@ operations on bytea columns (Joe)</para></listitem>
 <listitem><para>Fix for SSL with non-blocking connections (Jack Bates)</para></listitem>
 <listitem><para>Add libpq connection timeout parameter (Denis A Ustimenko)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>JDBC</title>
 <itemizedlist>
 <listitem><para>Allow JDBC to compile with JDK 1.4 (Dave)</para></listitem>
@@ -1881,9 +1883,9 @@ operations on bytea columns (Joe)</para></listitem>
 <listitem><para>Fix MD5 encryption handling for multibyte servers (Jun Kawai)</para></listitem>
 <listitem><para>Add support for prepared statements (Barry)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Miscellaneous Interfaces</title>
 <itemizedlist>
 <listitem><para>Fixed ECPG bug concerning octal numbers in single quotes (Michael)</para></listitem>
@@ -1897,9 +1899,9 @@ operations on bytea columns (Joe)</para></listitem>
 <listitem><para>Remove src/bin/pgaccess from main tree, now at http://www.pgaccess.org (Bruce)</para></listitem>
 <listitem><para>Add pg_on_connection_loss command to libpgtcl (Gerhard Hintermayer, Tom)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Source Code</title>
 <itemizedlist>
 <listitem><para>Fix for parallel make (Peter)</para></listitem>
@@ -1952,9 +1954,9 @@ operations on bytea columns (Joe)</para></listitem>
 <listitem><para>Remove parameter wal_files because WAL files are now recycled (Bruce)</para></listitem>
 <listitem><para>Add version numbers to heap pages (Tom)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Contrib</title>
 <itemizedlist>
 <listitem><para>Allow inet arrays in /contrib/array (Neil)</para></listitem>
@@ -1979,12 +1981,12 @@ operations on bytea columns (Joe)</para></listitem>
 <listitem><para>Fixes to /contrib/cube (Bruno Wolff)</para></listitem>
 <listitem><para>Improve /contrib/fulltextindex (Christopher)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
- </sect2>
-</sect1>
+ </section>
+</section>
 
- <sect1 id="release-7-2-8">
+ <section id="release-7-2-8">
   <title>Release 7.2.8</title>
 
   <formalpara>
@@ -1997,15 +1999,15 @@ operations on bytea columns (Joe)</para></listitem>
    security-related issue.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.2.8</title>
 
    <para>
     A dump/restore is not required for those running 7.2.X.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -2032,10 +2034,10 @@ month-related formats</para></listitem>
 (Marko Kreen)</para></listitem>
 </itemizedlist>
 
- </sect2>
-</sect1>
+ </section>
+</section>
 
- <sect1 id="release-7-2-7">
+ <section id="release-7-2-7">
   <title>Release 7.2.7</title>
 
   <formalpara>
@@ -2048,15 +2050,15 @@ month-related formats</para></listitem>
    security-related issues.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.2.7</title>
 
    <para>
     A dump/restore is not required for those running 7.2.X.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -2080,10 +2082,10 @@ in case of nested merge joins could give outright wrong answers.
 datestyles</para></listitem>
 </itemizedlist>
 
- </sect2>
-</sect1>
+ </section>
+</section>
 
- <sect1 id="release-7-2-6">
+ <section id="release-7-2-6">
   <title>Release 7.2.6</title>
 
   <formalpara>
@@ -2096,15 +2098,15 @@ datestyles</para></listitem>
   </para>
 
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.2.6</title>
 
    <para>
     A dump/restore is not required for those running 7.2.X.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -2131,10 +2133,10 @@ concern since there is no reason for non-developers to use this script anyway.
 <listitem><para>Update to newer versions of Bison</para></listitem>
 </itemizedlist>
 
- </sect2>
-</sect1>
+ </section>
+</section>
 
- <sect1 id="release-7-2-5">
+ <section id="release-7-2-5">
   <title>Release 7.2.5</title>
 
   <formalpara>
@@ -2147,15 +2149,15 @@ concern since there is no reason for non-developers to use this script anyway.
   </para>
 
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.2.5</title>
 
    <para>
     A dump/restore is not required for those running 7.2.X.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
 <itemizedlist>
@@ -2174,10 +2176,10 @@ since <productname>PostgreSQL</productname> 7.1.
 <listitem><para>Repair memory leaks in pg_dump</para></listitem>
 <listitem><para>Avoid conflict with system definition of <function>isblank()</function> function or macro</para></listitem>
 </itemizedlist>
- </sect2>
-</sect1>
+ </section>
+</section>
 
-<sect1 id="release-7-2-4">
+<section id="release-7-2-4">
  <title>Release 7.2.4</title>
 
  <formalpara>
@@ -2190,16 +2192,16 @@ since <productname>PostgreSQL</productname> 7.1.
   including fixes to prevent possible data loss.
  </para>
 
- <sect2>
+ <section>
   <title>Migration to Version 7.2.4</title>
 
   <para>
    A dump/restore is <emphasis>not</emphasis> required for those
    running version 7.2.*.
   </para>
- </sect2>
+ </section>
 
- <sect2>
+ <section>
   <title>Changes</title>
 
 <itemizedlist>
@@ -2212,11 +2214,11 @@ since <productname>PostgreSQL</productname> 7.1.
 <listitem><para>Fix integer overflows in circle_poly(), path_encode(), path_add()  (Neil)</para></listitem>
 <listitem><para>Repair long-standing logic errors in lseg_eq(), lseg_ne(), lseg_center()</para></listitem>
 </itemizedlist>
- </sect2>
-</sect1>
+ </section>
+</section>
 
 
-<sect1 id="release-7-2-3">
+<section id="release-7-2-3">
  <title>Release 7.2.3</title>
 
  <formalpara>
@@ -2229,16 +2231,16 @@ since <productname>PostgreSQL</productname> 7.1.
   including fixes to prevent possible data loss.
  </para>
 
- <sect2>
+ <section>
   <title>Migration to Version 7.2.3</title>
 
   <para>
    A dump/restore is <emphasis>not</emphasis> required for those
    running version 7.2.*.
   </para>
- </sect2>
+ </section>
 
- <sect2>
+ <section>
   <title>Changes</title>
 
 <itemizedlist>
@@ -2249,11 +2251,11 @@ since <productname>PostgreSQL</productname> 7.1.
 <listitem><para>Prevent spinlock hangs on SMP PPC machines (Tomoyuki Niijima)</para></listitem>
 <listitem><para>Fix <application>pg_dump</application> to properly dump FULL JOIN USING (Tom)</para></listitem>
 </itemizedlist>
- </sect2>
-</sect1>
+ </section>
+</section>
 
 
-<sect1 id="release-7-2-2">
+<section id="release-7-2-2">
  <title>Release 7.2.2</title>
 
  <formalpara>
@@ -2265,16 +2267,16 @@ since <productname>PostgreSQL</productname> 7.1.
   This release contains a variety of fixes for version 7.2.1.
  </para>
 
- <sect2>
+ <section>
   <title>Migration to Version 7.2.2</title>
 
   <para>
    A dump/restore is <emphasis>not</emphasis> required for those
    running version 7.2.*.
   </para>
- </sect2>
+ </section>
 
- <sect2>
+ <section>
   <title>Changes</title>
 
 <itemizedlist>
@@ -2292,11 +2294,11 @@ since <productname>PostgreSQL</productname> 7.1.
 <listitem><para>Fix for crash with long DATA strings (Thomas, Neil)</para></listitem>
 <listitem><para>Fix for repeat(), lpad(), rpad() and long strings (Neil)</para></listitem>
 </itemizedlist>
- </sect2>
-</sect1>
+ </section>
+</section>
 
 
-<sect1 id="release-7-2-1">
+<section id="release-7-2-1">
  <title>Release 7.2.1</title>
 
  <formalpara>
@@ -2308,16 +2310,16 @@ since <productname>PostgreSQL</productname> 7.1.
   This release contains a variety of fixes for version 7.2.
  </para>
 
- <sect2>
+ <section>
   <title>Migration to Version 7.2.1</title>
 
   <para>
    A dump/restore is <emphasis>not</emphasis> required for those
    running version 7.2.
   </para>
- </sect2>
+ </section>
 
- <sect2>
+ <section>
   <title>Changes</title>
 
 <itemizedlist>
@@ -2338,11 +2340,11 @@ since <productname>PostgreSQL</productname> 7.1.
 <listitem><para>Fix for array subscripts handling (Tom)</para></listitem>
 <listitem><para>Allow EXECUTE of "CREATE TABLE AS ... SELECT" in PL/pgSQL (Tom)</para></listitem>
 </itemizedlist>
- </sect2>
-</sect1>
+ </section>
+</section>
 
 
-<sect1 id="release-7-2">
+<section id="release-7-2">
  <title>Release 7.2</title>
 
  <formalpara>
@@ -2350,7 +2352,7 @@ since <productname>PostgreSQL</productname> 7.1.
   <para>2002-02-04</para>
  </formalpara>
 
- <sect2>
+ <section>
   <title>Overview</title>
 
   <para>
@@ -2437,9 +2439,9 @@ since <productname>PostgreSQL</productname> 7.1.
    </varlistentry>
 
   </variablelist>
- </sect2>
+ </section>
 
- <sect2>
+ <section>
   <title>Migration to Version 7.2</title>
 
   <para>
@@ -2508,12 +2510,12 @@ since <productname>PostgreSQL</productname> 7.1.
    separate LIMIT and OFFSET clauses, e.g. <literal>LIMIT 10 OFFSET
    20</literal>.
   </para>
- </sect2>
+ </section>
 
- <sect2>
+ <section>
   <title>Changes</title>
 
-  <sect3>
+  <section>
    <title>Server Operation</title>
 <itemizedlist>
 <listitem><para>Create temporary files in a separate directory (Bruce)</para></listitem>
@@ -2537,9 +2539,9 @@ since <productname>PostgreSQL</productname> 7.1.
 <listitem><para>Superuser ID now fixed at 1 (Peter E)</para></listitem>
 <listitem><para>New pg_ctl "reload" option (Tom)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Performance</title>
 <itemizedlist>
 <listitem><para>Optimizer improvements (Tom)</para></listitem>
@@ -2553,9 +2555,9 @@ since <productname>PostgreSQL</productname> 7.1.
 <listitem><para>R-tree performance improvements (Kenneth Been)</para></listitem>
 <listitem><para>B-tree splits more efficient (Tom)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Privileges</title>
 <itemizedlist>
 <listitem><para>Change UPDATE, DELETE privileges to be distinct (Peter E)</para></listitem>
@@ -2567,9 +2569,9 @@ since <productname>PostgreSQL</productname> 7.1.
 <listitem><para>Fix bug in privilege modifications on newly created tables (Tom)</para></listitem>
 <listitem><para>Disallow access to pg_statistic for non-superuser, add user-accessible views (Tom)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Client Authentication</title>
 <itemizedlist>
 <listitem><para>Fork postmaster before doing authentication to prevent hangs (Peter E)</para></listitem>
@@ -2579,9 +2581,9 @@ since <productname>PostgreSQL</productname> 7.1.
 <listitem><para>PAM authentication (Dominic J. Eidson)</para></listitem>
 <listitem><para>Load pg_hba.conf and pg_ident.conf only on startup and SIGHUP (Bruce)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Server Configuration</title>
 <itemizedlist>
 <listitem><para>Interpretation of some time zone abbreviations as Australian rather than North American now settable at run time (Bruce)</para></listitem>
@@ -2591,9 +2593,9 @@ since <productname>PostgreSQL</productname> 7.1.
 <listitem><para>New parameter to set client authentication timeout (Tom)</para></listitem>
 <listitem><para>New parameter to set maximum number of open files (Tom)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Queries</title>
 <itemizedlist>
 <listitem><para>Statements added by INSERT rules now execute after the INSERT (Jan)</para></listitem>
@@ -2606,9 +2608,9 @@ since <productname>PostgreSQL</productname> 7.1.
 <listitem><para>Fix for LIMIT, DISTINCT ON pushed into subqueries (Tom)</para></listitem>
 <listitem><para>Fix nested EXCEPT/INTERSECT (Tom)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Schema Manipulation</title>
 <itemizedlist>
 <listitem><para>Fix SERIAL in temporary tables (Bruce)</para></listitem>
@@ -2629,9 +2631,9 @@ since <productname>PostgreSQL</productname> 7.1.
 <listitem><para>Allow GiST indexes to handle NULLs and multikey indexes (Oleg Bartunov, Teodor Sigaev, Tom)</para></listitem>
 <listitem><para>Enable partial indexes (Martijn van Oosterhout)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Utility Commands</title>
 <itemizedlist>
 <listitem><para>Add RESET ALL, SHOW ALL (Marko Kreen)</para></listitem>
@@ -2645,9 +2647,9 @@ since <productname>PostgreSQL</productname> 7.1.
 <listitem><para>Fix privilege checks for CREATE INDEX (Tom)</para></listitem>
 <listitem><para>Disallow inappropriate use of CREATE/DROP INDEX/TRIGGER/VIEW (Tom)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Data Types and Functions</title>
 <itemizedlist>
 <listitem><para>SUM(), AVG(), COUNT() now uses int8 internally for speed (Tom)</para></listitem>
@@ -2688,9 +2690,9 @@ since <productname>PostgreSQL</productname> 7.1.
 <listitem><para>Some datatype() function calls now evaluated differently</para></listitem>
 <listitem><para>Add support for Julian and ISO time specifications (Thomas)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Internationalization</title>
 <itemizedlist>
 <listitem><para>National language support in psql, <application>pg_dump</application>, libpq, and server (Peter E)</para></listitem>
@@ -2702,9 +2704,9 @@ since <productname>PostgreSQL</productname> 7.1.
 <listitem><para>Make mic2ascii() non-ASCII aware (Tatsuo)</para></listitem>
 <listitem><para>Reject invalid multibyte character sequences (Tatsuo)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title><application>PL/pgSQL</application></title>
 <itemizedlist>
 <listitem><para>Now uses portals for SELECT loops, allowing huge result sets (Jan)</para></listitem>
@@ -2719,32 +2721,32 @@ since <productname>PostgreSQL</productname> 7.1.
 <listitem><para>Memory leak fix (Jan, Tom)</para></listitem>
 <listitem><para>Make trailing semicolon optional (Tom)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>PL/Perl</title>
 <itemizedlist>
 <listitem><para>New untrusted PL/Perl (Alex Pilosov)</para></listitem>
 <listitem><para>PL/Perl is now built on some platforms even if libperl is not shared (Peter E)</para></listitem>
 </itemizedlist>
-   </sect3>
+   </section>
 
-  <sect3>
+  <section>
    <title>PL/Tcl</title>
 <itemizedlist>
 <listitem><para>Now reports errorInfo (Vsevolod Lobko)</para></listitem>
 <listitem><para>Add spi_lastoid function (bob@redivi.com)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>PL/Python</title>
 <itemizedlist>
 <listitem><para>...is new (Andrew Bosma)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title><application>psql</application></title>
 <itemizedlist>
 <listitem><para>\d displays indexes in unique, primary groupings (Christopher Kings-Lynne)</para></listitem>
@@ -2753,17 +2755,17 @@ since <productname>PostgreSQL</productname> 7.1.
 <listitem><para>Force new password prompt when changing user and database (Tatsuo, Tom)</para></listitem>
 <listitem><para>Format the correct number of columns for Unicode (Patrice)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title><application>libpq</application></title>
 <itemizedlist>
 <listitem><para>New function PQescapeString() to escape quotes in command strings (Florian Weimer)</para></listitem>
 <listitem><para>New function PQescapeBytea() escapes binary strings for use as SQL string literals</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>JDBC</title>
 <itemizedlist>
 <listitem><para>Return OID of INSERT (Ken K)</para></listitem>
@@ -2799,9 +2801,9 @@ since <productname>PostgreSQL</productname> 7.1.
 <listitem><para>MD5 password encryption support (Jeremy Wohl)</para></listitem>
 <listitem><para>Fix to actually use type cache (Ned Wolpert)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>ODBC</title>
 <itemizedlist>
 <listitem><para>Remove query size limit (Hiroshi)</para></listitem>
@@ -2815,9 +2817,9 @@ since <productname>PostgreSQL</productname> 7.1.
 <listitem><para>MD5 password encryption support (Bruce)</para></listitem>
 <listitem><para>Add more compatibility functions to odbc.sql (Peter E)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title><application>ECPG</application></title>
 <itemizedlist>
 <listitem><para>EXECUTE ... INTO implemented (Christof Petig)</para></listitem>
@@ -2831,9 +2833,9 @@ since <productname>PostgreSQL</productname> 7.1.
 <listitem><para>All function names with external linkage are now prefixed by ECPG</para></listitem>
 <listitem><para>Fixes for arrays of structures (Michael)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Misc. Interfaces</title>
 <itemizedlist>
 <listitem><para>Python fix fetchone() (Gerhard Haring)</para></listitem>
@@ -2842,9 +2844,9 @@ since <productname>PostgreSQL</productname> 7.1.
 <listitem><para>Prevent output of default index op class in <application>pg_dump</application> (Tom)</para></listitem>
 <listitem><para>Fix libpgeasy memory leak (Bruce)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Build and Install</title>
 <itemizedlist>
 <listitem><para>Configure, dynamic loader, and shared library fixes (Peter E)</para></listitem>
@@ -2860,9 +2862,9 @@ since <productname>PostgreSQL</productname> 7.1.
 <listitem><para>Rename config.h to pg_config.h (Peter E)</para></listitem>
 <listitem><para>Reorganize installation layout of header files (Peter E)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Source Code</title>
 <itemizedlist>
 <listitem><para>Remove SEP_CHAR (Bruce)</para></listitem>
@@ -2877,9 +2879,9 @@ since <productname>PostgreSQL</productname> 7.1.
 <listitem><para>Add 'volatile' usage in spinlock structures</para></listitem>
 <listitem><para>Improve signal handling logic (Tom)</para></listitem>
 </itemizedlist>
-  </sect3>
+  </section>
 
-  <sect3>
+  <section>
    <title>Contrib</title>
 <itemizedlist>
 <listitem><para>New contrib/rtree_gist (Oleg Bartunov, Teodor Sigaev)</para></listitem>
@@ -2893,12 +2895,12 @@ since <productname>PostgreSQL</productname> 7.1.
 <listitem><para>New pg_upgrade utility (Bruce)</para></listitem>
 <listitem><para>Add new pg_resetxlog options (Bruce, Tom)</para></listitem>
 </itemizedlist>
-  </sect3>
- </sect2>
-</sect1>
+  </section>
+ </section>
+</section>
 
 
- <sect1 id="release-7-1-3">
+ <section id="release-7-1-3">
   <title>Release 7.1.3</title>
 
   <formalpara>
@@ -2906,16 +2908,16 @@ since <productname>PostgreSQL</productname> 7.1.
   <para>2001-08-15</para>
   </formalpara>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.1.3</title>
 
    <para>
     A dump/restore is <emphasis>not</emphasis> required for those running
     7.1.X.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -2932,11 +2934,11 @@ Disable COPY TO/FROM a view (Tom)
 Cygwin build (Jason Tishler)
 </programlisting>
    </para>
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
 
- <sect1 id="release-7-1-2">
+ <section id="release-7-1-2">
   <title>Release 7.1.2</title>
 
   <formalpara>
@@ -2949,16 +2951,16 @@ Cygwin build (Jason Tishler)
   </para>
 
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.1.2</title>
 
    <para>
     A dump/restore is <emphasis>not</emphasis> required for those running
     7.1.X.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -2970,11 +2972,11 @@ Optimizer fixes
 pg_dump cleanups
 </programlisting>
    </para>
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
 
- <sect1 id="release-7-1-1">
+ <section id="release-7-1-1">
   <title>Release 7.1.1</title>
 
   <formalpara>
@@ -2987,16 +2989,16 @@ pg_dump cleanups
   </para>
 
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.1.1</title>
 
    <para>
     A dump/restore is <emphasis>not</emphasis> required for those running
     7.1.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -3017,11 +3019,11 @@ EXTRACT can now take string argument (Thomas)
 Python fixes (Darcy)
 </programlisting>
    </para>
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
 
- <sect1 id="release-7-1">
+ <section id="release-7-1">
   <title>Release 7.1</title>
 
   <formalpara>
@@ -3114,16 +3116,16 @@ Subqueries in FROM are now supported.
 
   </variablelist>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.1</title>
 
    <para>
        A dump/restore using pg_dump is required for those wishing to migrate
        data from any previous release.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -3315,11 +3317,11 @@ New contrib/pg_control utility (Oliver)
 New FreeBSD tools ipc_check, start-scripts/freebsd
 </programlisting>
    </para>
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
 
- <sect1 id="release-7-0-3">
+ <section id="release-7-0-3">
   <title>Release 7.0.3</title>
 
   <formalpara>
@@ -3332,16 +3334,16 @@ New FreeBSD tools ipc_check, start-scripts/freebsd
   </para>
 
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.0.3</title>
 
    <para>
     A dump/restore is <emphasis>not</emphasis> required for those running
     7.0.*.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -3387,11 +3389,11 @@ Fix for inserting/copying longer multibyte strings into char() data
 Fix for crash of backend, on abort (Tom)
 </programlisting>
    </para>
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
 
- <sect1 id="release-7-0-2">
+ <section id="release-7-0-2">
   <title>Release 7.0.2</title>
 
   <formalpara>
@@ -3404,16 +3406,16 @@ Fix for crash of backend, on abort (Tom)
   </para>
 
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.0.2</title>
 
    <para>
     A dump/restore is <emphasis>not</emphasis> required for those running
     7.*.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -3421,11 +3423,11 @@ Fix for crash of backend, on abort (Tom)
 Added documentation to tarball.
 </programlisting>
    </para>
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
 
- <sect1 id="release-7-0-1">
+ <section id="release-7-0-1">
   <title>Release 7.0.1</title>
 
   <formalpara>
@@ -3437,16 +3439,16 @@ Added documentation to tarball.
    This is a cleanup release for 7.0.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.0.1</title>
 
    <para>
     A dump/restore is <emphasis>not</emphasis> required for those running
     7.0.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -3477,10 +3479,10 @@ JDBC ResultSet.getTimestamp() fix (Gregory Krasnow &amp; Floyd Marinescu)
 ecpg changes (Michael)
 </programlisting>
    </para>
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-7-0">
+ <section id="release-7-0">
   <title>Release 7.0</title>
 
   <formalpara>
@@ -3557,7 +3559,7 @@ ecpg changes (Michael)
    </varlistentry>
   </variablelist>
 
-  <sect2>
+  <section>
    <title>Migration to Version 7.0</title>
 
    <para>
@@ -3620,9 +3622,9 @@ ecpg changes (Michael)
      </para>
     </listitem>
    </itemizedlist>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -3946,10 +3948,10 @@ Fixes for Alpha compiles
 New multibyte encodings
 </programlisting>
    </para>
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-6-5-3">
+ <section id="release-6-5-3">
   <title>Release 6.5.3</title>
 
   <formalpara>
@@ -3963,15 +3965,15 @@ New multibyte encodings
   </para>
 
 
-  <sect2>
+  <section>
    <title>Migration to Version 6.5.3</title>
 
    <para>
     A dump/restore is <emphasis>not</emphasis> required for those running
     6.5.*.
    </para>
-  </sect2>
-  <sect2>
+  </section>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -3981,11 +3983,11 @@ NT-specific patch
 Fix dumping rules on inherited tables
 </programlisting>
    </para>
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
 
- <sect1 id="release-6-5-2">
+ <section id="release-6-5-2">
   <title>Release 6.5.2</title>
 
   <formalpara>
@@ -3999,16 +4001,16 @@ Fix dumping rules on inherited tables
   </para>
 
 
-  <sect2>
+  <section>
    <title>Migration to Version 6.5.2</title>
 
    <para>
     A dump/restore is <emphasis>not</emphasis> required for those running
     6.5.*.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -4039,10 +4041,10 @@ Repair incorrect cleanup of heap memory allocation during transaction abort(Tom)
 Updated version of pgaccess 0.98
 </programlisting>
    </para>
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-6-5-1">
+ <section id="release-6-5-1">
   <title>Release 6.5.1</title>
 
   <formalpara>
@@ -4055,16 +4057,16 @@ Updated version of pgaccess 0.98
    problems reported by 6.5 users.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 6.5.1</title>
 
    <para>
     A dump/restore is <emphasis>not</emphasis> required for those running
     6.5.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -4094,10 +4096,10 @@ Fix some compiler warnings (Tomoaki Nishiyama)
 Add Win1250 (Czech) support (Pavel Behal)
 </programlisting>
    </para>
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-6-5">
+ <section id="release-6-5">
   <title>Release 6.5</title>
 
   <formalpara>
@@ -4254,7 +4256,7 @@ Add Win1250 (Czech) support (Pavel Behal)
    </variablelist>
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 6.5</title>
 
    <para>
@@ -4274,7 +4276,7 @@ Add Win1250 (Czech) support (Pavel Behal)
      behavior you need.</emphasis>
    </para>
 
-   <sect3>
+   <section>
     <title>Multiversion Concurrency Control</title>
 
     <para>
@@ -4322,10 +4324,10 @@ Add Win1250 (Czech) support (Pavel Behal)
      (uncommitted) data (regardless of isolation level) and true referential
      integrity will be implemented.
     </para>
-   </sect3>
-   </sect2>
+   </section>
+   </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -4493,11 +4495,11 @@ Improve file handling to be more uniform, prevent file descriptor leak(Tom)
 New install commands for plpgsql(Jan)
 </programlisting>
    </para>
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
 
-<sect1 id="release-6-4-2">
+<section id="release-6-4-2">
 <title>Release 6.4.2</title>
 
   <formalpara>
@@ -4511,15 +4513,15 @@ bug fix.
 </para>
 
 
-<sect2>
+<section>
 <title>Migration to Version 6.4.2</title>
 
 <para>
 A dump/restore is <emphasis>not</emphasis> required for those running
 6.4.*.
 </para>
-</sect2>
-<sect2>
+</section>
+<section>
 <title>Changes</title>
 
 <para>
@@ -4527,12 +4529,12 @@ A dump/restore is <emphasis>not</emphasis> required for those running
 Fix for datetime constant problem on some platforms(Thomas)
 </programlisting>
 </para>
-</sect2>
-</sect1>
+</section>
+</section>
 
 
 
-<sect1 id="release-6-4-1">
+<section id="release-6-4-1">
 <title>Release 6.4.1</title>
 
   <formalpara>
@@ -4546,15 +4548,15 @@ problems reported by 6.4 users.
 </para>
 
 
-<sect2>
+<section>
 <title>Migration to Version 6.4.1</title>
 
 <para>
 A dump/restore is <emphasis>not</emphasis> required for those running
 6.4.
 </para>
-</sect2>
-<sect2>
+</section>
+<section>
 <title>Changes</title>
 
 <para>
@@ -4591,12 +4593,12 @@ Compilation of libpq for Windows fixes(Magnus)
 Upgrade to PyGreSQL 2.2(D'Arcy)
 </programlisting>
 </para>
-</sect2>
-</sect1>
+</section>
+</section>
 
 
 
-<sect1 id="release-6-4">
+<section id="release-6-4">
 <title>Release 6.4</title>
 
   <formalpara>
@@ -4680,7 +4682,7 @@ been.
 </itemizedlist>
 </para>
 
-<sect2>
+<section>
 <title>Migration to Version 6.4</title>
 
 <para>
@@ -4689,9 +4691,9 @@ or <application>pg_dumpall</application>
 is required for those wishing to migrate data from any
 previous release of <productname>PostgreSQL</productname>.
 </para>
-</sect2>
+</section>
 
-  <sect2>
+  <section>
 <title>Changes</title>
 
    <para>
@@ -4890,10 +4892,10 @@ configure uses supplied install-sh if no install script found(Tom)
 new Makefile.shlib for shared library configuration(Tom)
 </programlisting>
 </para>
-</sect2>
-</sect1>
+</section>
+</section>
 
-<sect1 id="release-6-3-2">
+<section id="release-6-3-2">
 <title>Release 6.3.2</title>
 
   <formalpara>
@@ -4935,7 +4937,7 @@ For upgrades from pre-6.3 installations,
 refer to the installation and migration instructions for version 6.3.
 </para>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -4960,10 +4962,10 @@ Makefile dependency cleanup(Jeroen van Vianen)
 ASSERT fixes(Bruce)
 </programlisting>
    </para>
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-6-3-1">
+ <section id="release-6-3-1">
   <title>Release 6.3.1</title>
 
   <formalpara>
@@ -5012,7 +5014,7 @@ For upgrades from pre-6.3 installations,
 refer to the installation and migration instructions for version 6.3.
 </para>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -5046,10 +5048,10 @@ Solaris compile fix(Albert Chin-A-Young)
 Better identify tcl and tk libs and includes(Bruce)
 </programlisting>
    </para>
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-6-3">
+ <section id="release-6-3">
   <title>Release 6.3</title>
 
   <formalpara>
@@ -5176,7 +5178,7 @@ Better identify tcl and tk libs and includes(Bruce)
    are no longer needed.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 6.3</title>
 
    <para>
@@ -5185,9 +5187,9 @@ Better identify tcl and tk libs and includes(Bruce)
     is required for those wishing to migrate data from any
     previous release of <productname>PostgreSQL</productname>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -5358,10 +5360,10 @@ Expand a few function names formerly truncated to 16 characters(Thomas)
 Remove un-needed malloc() calls and replace with palloc()(Bruce)
 </programlisting>
 </para>
-</sect2>
-</sect1>
+</section>
+</section>
 
-<sect1 id="release-6-2-1">
+<section id="release-6-2-1">
 <title>Release 6.2.1</title>
 
   <formalpara>
@@ -5396,7 +5398,7 @@ For upgrades from pre-6.2 systems, a full dump/reload is required.
 Refer to the 6.2 release notes for instructions.
 </para>
 
-<sect2>
+<section>
 <title>Migration from version 6.2 to version 6.2.1</title>
 
 <para>
@@ -5420,9 +5422,9 @@ update pg_aggregate set aggfinalfn = 'cash_div_flt8'
 <para>
 This will need to be done to every existing database, including template1.
 </para>
-</sect2>
+</section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -5440,10 +5442,10 @@ Documented new libpq function to return affected rows, PQcmdTuples(Bruce)
 Trigger function for inserting user names for INSERT/UPDATE(Brook Milligan)
 </programlisting>
    </para>
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
-<sect1 id="release-6-2">
+<section id="release-6-2">
 <title>Release 6.2</title>
 
   <formalpara>
@@ -5456,7 +5458,7 @@ A dump/restore is required for those wishing to migrate data from
 previous releases of <productname>PostgreSQL</productname>.
 </para>
 
-<sect2>
+<section>
 <title>Migration from version 6.1 to version 6.2</title>
 
 <para>
@@ -5467,18 +5469,18 @@ restore of the database in 6.2.
 Note that the <command>pg_dump</command> and <command>pg_dumpall</command> utility from 6.2 should be used
 to dump the 6.1 database.
 </para>
-</sect2>
+</section>
 
-<sect2>
+<section>
 <title>Migration from version 1.<replaceable>x</replaceable> to version 6.2</title>
 
 <para>
 Those migrating from earlier 1.* releases should first upgrade to 1.09
 because the COPY output format was improved from the 1.02 release.
 </para>
-</sect2>
+</section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -5593,10 +5595,10 @@ Files moved to /src/tools directory(Bruce)
 SPI and Trigger programming guides (Vadim &amp; D'Arcy)
 </programlisting>
 </para>
-</sect2>
-</sect1>
+</section>
+</section>
 
-<sect1 id="release-6-1-1">
+<section id="release-6-1-1">
 <title>Release 6.1.1</title>
 
   <formalpara>
@@ -5604,7 +5606,7 @@ SPI and Trigger programming guides (Vadim &amp; D'Arcy)
   <para>1997-07-22</para>
   </formalpara>
 
-<sect2>
+<section>
 <title>Migration from version 6.1 to version 6.1.1</title>
 
 <para>
@@ -5612,9 +5614,9 @@ This is a minor bug-fix release. A dump/reload is not required from version 6.1,
 but is required from any release prior to 6.1.
 Refer to the release notes for 6.1 for more details.
 </para>
-</sect2>
+</section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -5638,10 +5640,10 @@ allow underscores in usernames(Bruce)
 pg_dumpall now returns proper status, portability fix(Bruce)
 </programlisting>
    </para>
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
-<sect1 id="release-6-1">
+<section id="release-6-1">
 <title>Release 6.1</title>
 
   <formalpara>
@@ -5696,7 +5698,7 @@ optimizer which uses <firstterm>genetic</firstterm>
  machine (Linux/<application>gcc</application>/i686).
 </para>
 
-<sect2>
+<section>
 <title>Migration to Version 6.1</title>
 
 <para>
@@ -5707,9 +5709,9 @@ restore of the database in 6.1.
 Those migrating from earlier 1.* releases should first upgrade to 1.09
 because the COPY output format was improved from the 1.02 release.
 </para>
-</sect2>
+</section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -5810,10 +5812,10 @@ warn about buggy flex(Bruce)
 DG/UX, Ultrix, IRIX, AIX portability fixes
 </programlisting>
 </para>
-</sect2>
-</sect1>
+</section>
+</section>
 
-<sect1 id="release-6-0">
+<section id="release-6-0">
 <title>Release 6.0</title>
 
   <formalpara>
@@ -5826,25 +5828,25 @@ A dump/restore is required for those wishing to migrate data from
 previous releases of <productname>PostgreSQL</productname>.
 </para>
 
-<sect2>
+<section>
 <title>Migration from version 1.09 to version 6.0</title>
 
 <para>
 This migration requires a complete dump of the 1.09 database and a
 restore of the database in 6.0.
 </para>
-</sect2>
+</section>
 
-<sect2>
+<section>
 <title>Migration from pre-1.09 to version 6.0</title>
 
 <para>
 Those migrating from earlier 1.* releases should first upgrade to 1.09
 because the COPY output format was improved from the 1.02 release.
 </para>
-</sect2>
+</section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -5954,10 +5956,10 @@ Restructured port-specific file locations(Bryan, Marc)
 Unused/uninitialized variables corrected
 </programlisting>
 </para>
-</sect2>
-</sect1>
+</section>
+</section>
 
-<sect1 id="release-1-09">
+<section id="release-1-09">
 <title>Release 1.09</title>
 
   <formalpara>
@@ -5970,9 +5972,9 @@ Sorry, we didn't keep track of changes from 1.02 to 1.09.  Some of
 the changes listed in 6.0 were actually included in the 1.02.1 to 1.09
 releases.
 </para>
-</sect1>
+</section>
 
-<sect1 id="release-1-02">
+<section id="release-1-02">
 <title>Release 1.02</title>
 
   <formalpara>
@@ -5980,7 +5982,7 @@ releases.
   <para>1996-08-01</para>
   </formalpara>
 
-<sect2>
+<section>
 <title>Migration from version 1.02 to version 1.02.1</title>
 
 <para>
@@ -6026,9 +6028,9 @@ not a cause for concern.
 </para>
 </step>
 </procedure>
-</sect2>
+</section>
 
-<sect2>
+<section>
 <title>Dump/Reload Procedure</title>
 
 <para>
@@ -6056,9 +6058,9 @@ create operator ~* (leftarg = varchar, rightarg = text, procedure = texticregexe
 create operator !~* (leftarg = varchar, rightarg = text, procedure = texticregexne);
 </programlisting>
 </para>
-</sect2>
+</section>
 
-<sect2>
+<section>
 <title>Changes</title>
 
 <para>
@@ -6118,10 +6120,10 @@ Contributors (apologies to any missed)
  * Paul "Shag" Walmsley &lt;ccshag@cclabs.missouri.edu&gt;
  * "Alistair G. Crooks" &lt;azcb0@sde.uts.amdahl.com&gt;
 -->
-</sect2>
-</sect1>
+</section>
+</section>
 
-<sect1 id="release-1-01">
+<section id="release-1-01">
 <title>Release 1.01</title>
 
    <formalpara>
@@ -6130,7 +6132,7 @@ Contributors (apologies to any missed)
    </formalpara>
 
 
-<sect2>
+<section>
 <title>Migration from version 1.0 to version 1.01</title>
 
 <para>
@@ -6269,9 +6271,9 @@ create operator !~* (leftarg = text, rightarg = text, procedure = texticregexne)
 </para>
 </step>
 </procedure>
-</sect2>
+</section>
 
-<sect2>
+<section>
 <title>Changes</title>
 
 <para>
@@ -6310,10 +6312,10 @@ Bug fixes:
  * applied public patches 1-14
 </programlisting>
 </para>
-</sect2>
-</sect1>
+</section>
+</section>
 
-<sect1 id="release-1-0">
+<section id="release-1-0">
 <title>Release 1.0</title>
 
    <formalpara>
@@ -6321,7 +6323,7 @@ Bug fixes:
    <para>1995-09-05</para>
    </formalpara>
 
-<sect2>
+<section>
 <title>Changes</title>
 
 <para>
@@ -6367,10 +6369,10 @@ Bug fixes:
    work when you try to use them
 </programlisting>
 </para>
-</sect2>
-</sect1>
+</section>
+</section>
 
-<sect1 id="release-0-03">
+<section id="release-0-03">
 <title><productname>Postgres95</productname> Release 0.03</title>
 
    <formalpara>
@@ -6378,7 +6380,7 @@ Bug fixes:
    <para>1995-07-21</para>
    </formalpara>
 
-<sect2>
+<section>
 <title>Changes</title>
 <para>
 <programlisting>
@@ -6489,10 +6491,10 @@ New documentation:
  * the user manual has been revised and libpq documentation added.
 </programlisting>
 </para>
-</sect2>
-</sect1>
+</section>
+</section>
 
-<sect1 id="release-0-02">
+<section id="release-0-02">
 <title><productname>Postgres95</productname> Release 0.02</title>
 
    <formalpara>
@@ -6500,7 +6502,7 @@ New documentation:
    <para>1995-05-25</para>
    </formalpara>
 
-<sect2>
+<section>
 <title>Changes</title>
 
 <para>
@@ -6540,10 +6542,10 @@ The following bugs have been fixed in postgres95-beta-0.02:
  * wrong result using more than 1 aggregate in a SELECT
 </programlisting>
 </para>
-</sect2>
-</sect1>
+</section>
+</section>
 
-<sect1 id="release-0-01">
+<section id="release-0-01">
 <title><productname>Postgres95</productname> Release 0.01</title>
 
    <formalpara>
@@ -6554,4 +6556,5 @@ The following bugs have been fixed in postgres95-beta-0.02:
 <para>
 Initial release.
 </para>
-</sect1>
+</section>
+</section>

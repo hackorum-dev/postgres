@@ -1,7 +1,9 @@
 <!-- doc/src/sgml/release-9.4.sgml -->
 <!-- See header comment in release.sgml about typical markup -->
 
- <sect1 id="release-9-4-20">
+<section>
+ <title>Release 9.4</title>
+ <section id="release-9-4-20">
   <title>Release 9.4.20</title>
 
   <formalpara>
@@ -15,7 +17,7 @@
    <xref linkend="release-9-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.4.20</title>
 
    <para>
@@ -26,9 +28,9 @@
     However, if you are upgrading from a version earlier than 9.4.18,
     see <xref linkend="release-9-4-18"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -514,10 +516,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-4-19">
+ <section id="release-9-4-19">
   <title>Release 9.4.19</title>
 
   <formalpara>
@@ -531,7 +533,7 @@
    <xref linkend="release-9-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.4.19</title>
 
    <para>
@@ -542,9 +544,9 @@
     However, if you are upgrading from a version earlier than 9.4.18,
     see <xref linkend="release-9-4-18"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -882,10 +884,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-4-18">
+ <section id="release-9-4-18">
   <title>Release 9.4.18</title>
 
   <formalpara>
@@ -899,7 +901,7 @@
    <xref linkend="release-9-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.4.18</title>
 
    <para>
@@ -916,9 +918,9 @@
     Also, if you are upgrading from a version earlier than 9.4.17,
     see <xref linkend="release-9-4-17"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1295,10 +1297,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-4-17">
+ <section id="release-9-4-17">
   <title>Release 9.4.17</title>
 
   <formalpara>
@@ -1312,7 +1314,7 @@
    <xref linkend="release-9-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.4.17</title>
 
    <para>
@@ -1339,9 +1341,9 @@
     Also, if you are upgrading from a version earlier than 9.4.13,
     see <xref linkend="release-9-4-13"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1481,10 +1483,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-4-16">
+ <section id="release-9-4-16">
   <title>Release 9.4.16</title>
 
   <formalpara>
@@ -1498,7 +1500,7 @@
    <xref linkend="release-9-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.4.16</title>
 
    <para>
@@ -1509,9 +1511,9 @@
     However, if you are upgrading from a version earlier than 9.4.13,
     see <xref linkend="release-9-4-13"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1844,10 +1846,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-4-15">
+ <section id="release-9-4-15">
   <title>Release 9.4.15</title>
 
   <formalpara>
@@ -1861,7 +1863,7 @@
    <xref linkend="release-9-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.4.15</title>
 
    <para>
@@ -1872,9 +1874,9 @@
     However, if you are upgrading from a version earlier than 9.4.13,
     see <xref linkend="release-9-4-13"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -2122,10 +2124,10 @@
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-4-14">
+ <section id="release-9-4-14">
   <title>Release 9.4.14</title>
 
   <formalpara>
@@ -2139,7 +2141,7 @@
    <xref linkend="release-9-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.4.14</title>
 
    <para>
@@ -2150,9 +2152,9 @@
     However, if you are upgrading from a version earlier than 9.4.13,
     see <xref linkend="release-9-4-13"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -2309,10 +2311,10 @@ CREATE OR REPLACE VIEW table_privileges AS
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-4-13">
+ <section id="release-9-4-13">
   <title>Release 9.4.13</title>
 
   <formalpara>
@@ -2326,7 +2328,7 @@ CREATE OR REPLACE VIEW table_privileges AS
    <xref linkend="release-9-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.4.13</title>
 
    <para>
@@ -2342,9 +2344,9 @@ CREATE OR REPLACE VIEW table_privileges AS
     Also, if you are upgrading from a version earlier than 9.4.12,
     see <xref linkend="release-9-4-12"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -2982,10 +2984,10 @@ Branch: REL9_4_STABLE [23a2b818f] 2017-08-05 14:56:40 -0700
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-4-12">
+ <section id="release-9-4-12">
   <title>Release 9.4.12</title>
 
   <formalpara>
@@ -2999,7 +3001,7 @@ Branch: REL9_4_STABLE [23a2b818f] 2017-08-05 14:56:40 -0700
    <xref linkend="release-9-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.4.12</title>
 
    <para>
@@ -3020,9 +3022,9 @@ Branch: REL9_4_STABLE [23a2b818f] 2017-08-05 14:56:40 -0700
     Also, if you are upgrading from a version earlier than 9.4.11,
     see <xref linkend="release-9-4-11"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -3490,10 +3492,10 @@ Branch: REL9_2_STABLE [fb50c38e9] 2017-04-17 13:52:42 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-4-11">
+ <section id="release-9-4-11">
   <title>Release 9.4.11</title>
 
   <formalpara>
@@ -3507,7 +3509,7 @@ Branch: REL9_2_STABLE [fb50c38e9] 2017-04-17 13:52:42 -0400
    <xref linkend="release-9-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.4.11</title>
 
    <para>
@@ -3524,9 +3526,9 @@ Branch: REL9_2_STABLE [fb50c38e9] 2017-04-17 13:52:42 -0400
     Also, if you are upgrading from a version earlier than 9.4.10,
     see <xref linkend="release-9-4-10"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -4023,10 +4025,10 @@ Branch: REL9_2_STABLE [fb50c38e9] 2017-04-17 13:52:42 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-4-10">
+ <section id="release-9-4-10">
   <title>Release 9.4.10</title>
 
   <formalpara>
@@ -4040,7 +4042,7 @@ Branch: REL9_2_STABLE [fb50c38e9] 2017-04-17 13:52:42 -0400
    <xref linkend="release-9-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.4.10</title>
 
    <para>
@@ -4057,9 +4059,9 @@ Branch: REL9_2_STABLE [fb50c38e9] 2017-04-17 13:52:42 -0400
     Also, if you are upgrading from a version earlier than 9.4.6,
     see <xref linkend="release-9-4-6"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -4489,10 +4491,10 @@ Branch: REL9_4_STABLE [10ad15f48] 2016-09-01 11:45:16 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-4-9">
+ <section id="release-9-4-9">
   <title>Release 9.4.9</title>
 
   <formalpara>
@@ -4506,7 +4508,7 @@ Branch: REL9_4_STABLE [10ad15f48] 2016-09-01 11:45:16 -0400
    <xref linkend="release-9-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.4.9</title>
 
    <para>
@@ -4517,9 +4519,9 @@ Branch: REL9_4_STABLE [10ad15f48] 2016-09-01 11:45:16 -0400
     However, if you are upgrading from a version earlier than 9.4.6,
     see <xref linkend="release-9-4-6"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -5011,10 +5013,10 @@ Branch: REL9_1_STABLE [de887cc8a] 2016-05-25 19:39:49 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-4-8">
+ <section id="release-9-4-8">
   <title>Release 9.4.8</title>
 
   <formalpara>
@@ -5028,7 +5030,7 @@ Branch: REL9_1_STABLE [de887cc8a] 2016-05-25 19:39:49 -0400
    <xref linkend="release-9-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.4.8</title>
 
    <para>
@@ -5039,9 +5041,9 @@ Branch: REL9_1_STABLE [de887cc8a] 2016-05-25 19:39:49 -0400
     However, if you are upgrading from a version earlier than 9.4.6,
     see <xref linkend="release-9-4-6"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -5274,10 +5276,10 @@ Branch: REL9_1_STABLE [de887cc8a] 2016-05-25 19:39:49 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-4-7">
+ <section id="release-9-4-7">
   <title>Release 9.4.7</title>
 
   <formalpara>
@@ -5291,7 +5293,7 @@ Branch: REL9_1_STABLE [de887cc8a] 2016-05-25 19:39:49 -0400
    <xref linkend="release-9-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.4.7</title>
 
    <para>
@@ -5302,9 +5304,9 @@ Branch: REL9_1_STABLE [de887cc8a] 2016-05-25 19:39:49 -0400
     However, if you are upgrading from a version earlier than 9.4.6,
     see <xref linkend="release-9-4-6"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -5545,10 +5547,10 @@ Branch: REL9_1_STABLE [de887cc8a] 2016-05-25 19:39:49 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-4-6">
+ <section id="release-9-4-6">
   <title>Release 9.4.6</title>
 
   <formalpara>
@@ -5562,7 +5564,7 @@ Branch: REL9_1_STABLE [de887cc8a] 2016-05-25 19:39:49 -0400
    <xref linkend="release-9-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.4.6</title>
 
    <para>
@@ -5579,9 +5581,9 @@ Branch: REL9_1_STABLE [de887cc8a] 2016-05-25 19:39:49 -0400
     Also, if you are upgrading from a version earlier than 9.4.4,
     see <xref linkend="release-9-4-4"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -6642,10 +6644,10 @@ Branch: REL9_1_STABLE [386dcd539] 2015-12-11 19:08:40 -0500
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-4-5">
+ <section id="release-9-4-5">
   <title>Release 9.4.5</title>
 
   <formalpara>
@@ -6659,7 +6661,7 @@ Branch: REL9_1_STABLE [386dcd539] 2015-12-11 19:08:40 -0500
    <xref linkend="release-9-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.4.5</title>
 
    <para>
@@ -6670,9 +6672,9 @@ Branch: REL9_1_STABLE [386dcd539] 2015-12-11 19:08:40 -0500
     However, if you are upgrading from a version earlier than 9.4.4,
     see <xref linkend="release-9-4-4"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -8165,10 +8167,10 @@ Branch: REL9_0_STABLE [47ac95f37] 2015-10-02 19:16:37 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-4-4">
+ <section id="release-9-4-4">
   <title>Release 9.4.4</title>
 
   <formalpara>
@@ -8182,7 +8184,7 @@ Branch: REL9_0_STABLE [47ac95f37] 2015-10-02 19:16:37 -0400
    <xref linkend="release-9-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.4.4</title>
 
    <para>
@@ -8199,9 +8201,9 @@ Branch: REL9_0_STABLE [47ac95f37] 2015-10-02 19:16:37 -0400
     Also, if you are upgrading from a version earlier than 9.4.2,
     see <xref linkend="release-9-4-2"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -8346,10 +8348,10 @@ Branch: REL9_3_STABLE [d3fdec6ae] 2015-06-03 11:58:47 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-4-3">
+ <section id="release-9-4-3">
   <title>Release 9.4.3</title>
 
   <formalpara>
@@ -8363,7 +8365,7 @@ Branch: REL9_3_STABLE [d3fdec6ae] 2015-06-03 11:58:47 -0400
    <xref linkend="release-9-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.4.3</title>
 
    <para>
@@ -8374,9 +8376,9 @@ Branch: REL9_3_STABLE [d3fdec6ae] 2015-06-03 11:58:47 -0400
     However, if you are upgrading from a version earlier than 9.4.2,
     see <xref linkend="release-9-4-2"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -8489,10 +8491,10 @@ Branch: REL9_0_STABLE [b06649b7f] 2015-05-26 22:15:00 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-4-2">
+ <section id="release-9-4-2">
   <title>Release 9.4.2</title>
 
   <formalpara>
@@ -8506,7 +8508,7 @@ Branch: REL9_0_STABLE [b06649b7f] 2015-05-26 22:15:00 -0400
    <xref linkend="release-9-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.4.2</title>
 
    <para>
@@ -8523,9 +8525,9 @@ Branch: REL9_0_STABLE [b06649b7f] 2015-05-26 22:15:00 -0400
     Also, if you are upgrading from a version earlier than 9.4.1,
     see <xref linkend="release-9-4-1"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -9770,10 +9772,10 @@ Branch: REL9_0_STABLE [3c3749a3b] 2015-05-15 19:36:20 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-4-1">
+ <section id="release-9-4-1">
   <title>Release 9.4.1</title>
 
   <formalpara>
@@ -9787,7 +9789,7 @@ Branch: REL9_0_STABLE [3c3749a3b] 2015-05-15 19:36:20 -0400
    <xref linkend="release-9-4"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.4.1</title>
 
    <para>
@@ -9803,9 +9805,9 @@ Branch: REL9_0_STABLE [3c3749a3b] 2015-05-15 19:36:20 -0400
     alias <quote>Norwegian_Norway</quote>.  For details see
     <ulink url="http://wiki.postgresql.org/wiki/Changes_To_Norwegian_Locale"></ulink>
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -10583,10 +10585,10 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-4">
+ <section id="release-9-4">
   <title>Release 9.4</title>
 
   <formalpara>
@@ -10594,7 +10596,7 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
    <para>2014-12-18</para>
   </formalpara>
 
-  <sect2>
+  <section>
    <title>Overview</title>
 
    <para>
@@ -10654,9 +10656,9 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
     The above items are explained in more detail in the sections below.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
 
   <title>Migration to Version 9.4</title>
 
@@ -10985,9 +10987,9 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
    </itemizedlist>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -10996,7 +10998,7 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
     release.
    </para>
 
-   <sect3>
+   <section>
     <title>Server</title>
 
      <itemizedlist>
@@ -11059,7 +11061,7 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
      </itemizedlist>
 
-    <sect4>
+    <section>
      <title>Indexes</title>
 
      <itemizedlist>
@@ -11116,9 +11118,9 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>General Performance</title>
 
      <itemizedlist>
@@ -11236,9 +11238,9 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Monitoring</title>
 
      <itemizedlist>
@@ -11276,9 +11278,9 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><acronym>SSL</acronym></title>
 
      <itemizedlist>
@@ -11337,9 +11339,9 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Server Settings</title>
 
      <itemizedlist>
@@ -11485,11 +11487,11 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Replication and Recovery</title>
 
      <itemizedlist>
@@ -11585,7 +11587,7 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
      </itemizedlist>
 
-     <sect4>
+     <section>
       <title><link linkend="logicaldecoding">Logical Decoding</link></title>
 
       <para>
@@ -11648,11 +11650,11 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
       </itemizedlist>
 
-     </sect4>
+     </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Queries</title>
 
      <itemizedlist>
@@ -11701,9 +11703,9 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
      </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Utility Commands</title>
 
      <itemizedlist>
@@ -11750,7 +11752,7 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
      </itemizedlist>
 
-     <sect4>
+     <section>
       <title><xref linkend="sql-explain"/></title>
 
       <itemizedlist>
@@ -11778,9 +11780,9 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
       </itemizedlist>
 
-     </sect4>
+     </section>
 
-     <sect4>
+     <section>
       <title>Views</title>
 
       <itemizedlist>
@@ -11838,11 +11840,11 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
       </itemizedlist>
 
-     </sect4>
+     </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Object Manipulation</title>
 
      <itemizedlist>
@@ -11933,9 +11935,9 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
      </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Data Types</title>
 
     <itemizedlist>
@@ -12011,7 +12013,7 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
     </itemizedlist>
 
-    <sect4>
+    <section>
      <title><link linkend="datatype-json"><acronym>JSON</acronym></link></title>
 
      <itemizedlist>
@@ -12059,11 +12061,11 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Functions</title>
 
      <itemizedlist>
@@ -12170,7 +12172,7 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
      </itemizedlist>
 
-    <sect4>
+    <section>
      <title>System Information Functions</title>
 
      <itemizedlist>
@@ -12224,9 +12226,9 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Aggregates</title>
 
      <itemizedlist>
@@ -12281,11 +12283,11 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Server-Side Languages</title>
 
     <itemizedlist>
@@ -12312,7 +12314,7 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
     </itemizedlist>
 
-    <sect4>
+    <section>
      <title><link linkend="plpgsql">PL/pgSQL</link> Server-Side Language</title>
 
      <itemizedlist>
@@ -12350,11 +12352,11 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
     </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title><link linkend="libpq"><application>libpq</application></link></title>
      <itemizedlist>
 
@@ -12380,9 +12382,9 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
      </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Client Applications</title>
 
     <itemizedlist>
@@ -12465,7 +12467,7 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
     </itemizedlist>
 
-    <sect4>
+    <section>
      <title><xref linkend="app-psql"/></title>
 
      <itemizedlist>
@@ -12487,7 +12489,7 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
      </itemizedlist>
 
-     <sect5>
+     <section>
       <title><link linkend="app-psql-meta-commands">Backslash Commands</link></title>
 
       <itemizedlist>
@@ -12593,11 +12595,11 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
       </itemizedlist>
 
-     </sect5>
+     </section>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><xref linkend="app-pgdump"/></title>
 
      <itemizedlist>
@@ -12632,9 +12634,9 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><xref linkend="app-pgbasebackup"/></title>
 
      <itemizedlist>
@@ -12672,11 +12674,11 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Source Code</title>
 
      <itemizedlist>
@@ -12917,9 +12919,9 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
      </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Additional Modules</title>
 
     <itemizedlist>
@@ -13050,7 +13052,7 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
     </itemizedlist>
 
-    <sect4>
+    <section>
      <title><xref linkend="pgbench"/></title>
 
      <itemizedlist>
@@ -13089,9 +13091,9 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><xref linkend="pgstatstatements"/></title>
 
      <itemizedlist>
@@ -13150,9 +13152,10 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
+</section>

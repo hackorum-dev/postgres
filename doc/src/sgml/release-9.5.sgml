@@ -1,7 +1,9 @@
 <!-- doc/src/sgml/release-9.5.sgml -->
 <!-- See header comment in release.sgml about typical markup -->
 
- <sect1 id="release-9-5-15">
+<section>
+ <title>Release 9.5</title>
+ <section id="release-9-5-15">
   <title>Release 9.5.15</title>
 
   <formalpara>
@@ -15,7 +17,7 @@
    <xref linkend="release-9-5"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.5.15</title>
 
    <para>
@@ -26,9 +28,9 @@
     However, if you are upgrading from a version earlier than 9.5.13,
     see <xref linkend="release-9-5-13"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -638,10 +640,10 @@ Branch: REL9_3_STABLE [01187f32c] 2018-10-12 14:49:33 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-5-14">
+ <section id="release-9-5-14">
   <title>Release 9.5.14</title>
 
   <formalpara>
@@ -655,7 +657,7 @@ Branch: REL9_3_STABLE [01187f32c] 2018-10-12 14:49:33 -0400
    <xref linkend="release-9-5"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.5.14</title>
 
    <para>
@@ -666,9 +668,9 @@ Branch: REL9_3_STABLE [01187f32c] 2018-10-12 14:49:33 -0400
     However, if you are upgrading from a version earlier than 9.5.13,
     see <xref linkend="release-9-5-13"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1060,10 +1062,10 @@ Branch: REL9_3_STABLE [01187f32c] 2018-10-12 14:49:33 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-5-13">
+ <section id="release-9-5-13">
   <title>Release 9.5.13</title>
 
   <formalpara>
@@ -1077,7 +1079,7 @@ Branch: REL9_3_STABLE [01187f32c] 2018-10-12 14:49:33 -0400
    <xref linkend="release-9-5"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.5.13</title>
 
    <para>
@@ -1094,9 +1096,9 @@ Branch: REL9_3_STABLE [01187f32c] 2018-10-12 14:49:33 -0400
     Also, if you are upgrading from a version earlier than 9.5.12,
     see <xref linkend="release-9-5-12"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1532,10 +1534,10 @@ Branch: REL9_5_STABLE [3c0e07a46] 2018-05-01 12:02:41 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-5-12">
+ <section id="release-9-5-12">
   <title>Release 9.5.12</title>
 
   <formalpara>
@@ -1549,7 +1551,7 @@ Branch: REL9_5_STABLE [3c0e07a46] 2018-05-01 12:02:41 -0400
    <xref linkend="release-9-5"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.5.12</title>
 
    <para>
@@ -1576,9 +1578,9 @@ Branch: REL9_5_STABLE [3c0e07a46] 2018-05-01 12:02:41 -0400
     Also, if you are upgrading from a version earlier than 9.5.10,
     see <xref linkend="release-9-5-10"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -1718,10 +1720,10 @@ Branch: REL9_5_STABLE [3c0e07a46] 2018-05-01 12:02:41 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-5-11">
+ <section id="release-9-5-11">
   <title>Release 9.5.11</title>
 
   <formalpara>
@@ -1735,7 +1737,7 @@ Branch: REL9_5_STABLE [3c0e07a46] 2018-05-01 12:02:41 -0400
    <xref linkend="release-9-5"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.5.11</title>
 
    <para>
@@ -1746,9 +1748,9 @@ Branch: REL9_5_STABLE [3c0e07a46] 2018-05-01 12:02:41 -0400
     However, if you are upgrading from a version earlier than 9.5.10,
     see <xref linkend="release-9-5-10"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -2133,10 +2135,10 @@ Branch: REL9_5_STABLE [3c0e07a46] 2018-05-01 12:02:41 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-5-10">
+ <section id="release-9-5-10">
   <title>Release 9.5.10</title>
 
   <formalpara>
@@ -2150,7 +2152,7 @@ Branch: REL9_5_STABLE [3c0e07a46] 2018-05-01 12:02:41 -0400
    <xref linkend="release-9-5"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.5.10</title>
 
    <para>
@@ -2165,9 +2167,9 @@ Branch: REL9_5_STABLE [3c0e07a46] 2018-05-01 12:02:41 -0400
     Also, if you are upgrading from a version earlier than 9.5.8,
     see <xref linkend="release-9-5-8"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -2494,10 +2496,10 @@ Branch: REL9_5_STABLE [3c0e07a46] 2018-05-01 12:02:41 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-5-9">
+ <section id="release-9-5-9">
   <title>Release 9.5.9</title>
 
   <formalpara>
@@ -2511,7 +2513,7 @@ Branch: REL9_5_STABLE [3c0e07a46] 2018-05-01 12:02:41 -0400
    <xref linkend="release-9-5"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.5.9</title>
 
    <para>
@@ -2522,9 +2524,9 @@ Branch: REL9_5_STABLE [3c0e07a46] 2018-05-01 12:02:41 -0400
     However, if you are upgrading from a version earlier than 9.5.8,
     see <xref linkend="release-9-5-8"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -2671,10 +2673,10 @@ CREATE OR REPLACE VIEW table_privileges AS
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-5-8">
+ <section id="release-9-5-8">
   <title>Release 9.5.8</title>
 
   <formalpara>
@@ -2688,7 +2690,7 @@ CREATE OR REPLACE VIEW table_privileges AS
    <xref linkend="release-9-5"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.5.8</title>
 
    <para>
@@ -2704,9 +2706,9 @@ CREATE OR REPLACE VIEW table_privileges AS
     Also, if you are upgrading from a version earlier than 9.5.7,
     see <xref linkend="release-9-5-7"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -3378,10 +3380,10 @@ Branch: REL9_2_STABLE [1188b9b2c] 2017-08-02 15:07:21 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-5-7">
+ <section id="release-9-5-7">
   <title>Release 9.5.7</title>
 
   <formalpara>
@@ -3395,7 +3397,7 @@ Branch: REL9_2_STABLE [1188b9b2c] 2017-08-02 15:07:21 -0400
    <xref linkend="release-9-5"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.5.7</title>
 
    <para>
@@ -3416,9 +3418,9 @@ Branch: REL9_2_STABLE [1188b9b2c] 2017-08-02 15:07:21 -0400
     Also, if you are upgrading from a version earlier than 9.5.6,
     see <xref linkend="release-9-5-6"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -3947,10 +3949,10 @@ Branch: REL9_3_STABLE [3aa16b117] 2017-05-06 22:17:35 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-5-6">
+ <section id="release-9-5-6">
   <title>Release 9.5.6</title>
 
   <formalpara>
@@ -3964,7 +3966,7 @@ Branch: REL9_3_STABLE [3aa16b117] 2017-05-06 22:17:35 -0400
    <xref linkend="release-9-5"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.5.6</title>
 
    <para>
@@ -3981,9 +3983,9 @@ Branch: REL9_3_STABLE [3aa16b117] 2017-05-06 22:17:35 -0400
     Also, if you are upgrading from a version earlier than 9.5.5,
     see <xref linkend="release-9-5-5"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -4609,10 +4611,10 @@ Branch: REL9_2_STABLE [60314e28e] 2016-12-13 19:08:09 -0600
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-5-5">
+ <section id="release-9-5-5">
   <title>Release 9.5.5</title>
 
   <formalpara>
@@ -4626,7 +4628,7 @@ Branch: REL9_2_STABLE [60314e28e] 2016-12-13 19:08:09 -0600
    <xref linkend="release-9-5"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.5.5</title>
 
    <para>
@@ -4643,9 +4645,9 @@ Branch: REL9_2_STABLE [60314e28e] 2016-12-13 19:08:09 -0600
     Also, if you are upgrading from a version earlier than 9.5.2,
     see <xref linkend="release-9-5-2"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -5433,10 +5435,10 @@ Branch: REL9_1_STABLE [380dad29d] 2016-09-02 17:29:32 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-5-4">
+ <section id="release-9-5-4">
   <title>Release 9.5.4</title>
 
   <formalpara>
@@ -5450,7 +5452,7 @@ Branch: REL9_1_STABLE [380dad29d] 2016-09-02 17:29:32 -0400
    <xref linkend="release-9-5"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.5.4</title>
 
    <para>
@@ -5461,9 +5463,9 @@ Branch: REL9_1_STABLE [380dad29d] 2016-09-02 17:29:32 -0400
     However, if you are upgrading from a version earlier than 9.5.2,
     see <xref linkend="release-9-5-2"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -6506,10 +6508,10 @@ Branch: REL9_1_STABLE [a44388ffe] 2016-08-05 12:59:02 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-5-3">
+ <section id="release-9-5-3">
   <title>Release 9.5.3</title>
 
   <formalpara>
@@ -6523,7 +6525,7 @@ Branch: REL9_1_STABLE [a44388ffe] 2016-08-05 12:59:02 -0400
    <xref linkend="release-9-5"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.5.3</title>
 
    <para>
@@ -6534,9 +6536,9 @@ Branch: REL9_1_STABLE [a44388ffe] 2016-08-05 12:59:02 -0400
     However, if you are upgrading from a version earlier than 9.5.2,
     see <xref linkend="release-9-5-2"/>.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -7007,10 +7009,10 @@ Branch: REL9_1_STABLE [bfc39da64] 2016-05-05 20:09:32 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-5-2">
+ <section id="release-9-5-2">
   <title>Release 9.5.2</title>
 
   <formalpara>
@@ -7024,7 +7026,7 @@ Branch: REL9_1_STABLE [bfc39da64] 2016-05-05 20:09:32 -0400
    <xref linkend="release-9-5"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.5.2</title>
 
    <para>
@@ -7035,9 +7037,9 @@ Branch: REL9_1_STABLE [bfc39da64] 2016-05-05 20:09:32 -0400
     However, you may need to <command>REINDEX</command> some indexes after applying
     the update, as per the first changelog entry below.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -7718,10 +7720,10 @@ Branch: REL9_1_STABLE [e5fd35cc5] 2016-03-25 19:03:54 -0400
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-5-1">
+ <section id="release-9-5-1">
   <title>Release 9.5.1</title>
 
   <formalpara>
@@ -7735,15 +7737,15 @@ Branch: REL9_1_STABLE [e5fd35cc5] 2016-03-25 19:03:54 -0400
    <xref linkend="release-9-5"/>.
   </para>
 
-  <sect2>
+  <section>
    <title>Migration to Version 9.5.1</title>
 
    <para>
     A dump/restore is not required for those running 9.5.X.
    </para>
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <itemizedlist>
@@ -8166,10 +8168,10 @@ Branch: REL9_1_STABLE [6887d72d0] 2016-02-05 10:59:39 -0500
 
    </itemizedlist>
 
-  </sect2>
- </sect1>
+  </section>
+ </section>
 
- <sect1 id="release-9-5">
+ <section id="release-9-5">
   <title>Release 9.5</title>
 
   <formalpara>
@@ -8177,7 +8179,7 @@ Branch: REL9_1_STABLE [6887d72d0] 2016-02-05 10:59:39 -0500
    <para>2016-01-07</para>
   </formalpara>
 
-  <sect2>
+  <section>
    <title>Overview</title>
 
    <para>
@@ -8244,9 +8246,9 @@ Branch: REL9_1_STABLE [6887d72d0] 2016-02-05 10:59:39 -0500
     The above items are explained in more detail in the sections below.
    </para>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
 
   <title>Migration to Version 9.5</title>
 
@@ -8469,9 +8471,9 @@ max_wal_size = (3 * checkpoint_segments) * 16MB
 
    </itemizedlist>
 
-  </sect2>
+  </section>
 
-  <sect2>
+  <section>
    <title>Changes</title>
 
    <para>
@@ -8480,10 +8482,10 @@ max_wal_size = (3 * checkpoint_segments) * 16MB
     release.
    </para>
 
-   <sect3>
+   <section>
     <title>Server</title>
 
-    <sect4>
+    <section>
      <title>Indexes</title>
 
      <itemizedlist>
@@ -8570,9 +8572,9 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>General Performance</title>
 
      <itemizedlist>
@@ -8766,9 +8768,9 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Monitoring</title>
 
      <itemizedlist>
@@ -8814,9 +8816,9 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><acronym>SSL</acronym></title>
 
      <itemizedlist>
@@ -8888,9 +8890,9 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Server Settings</title>
 
      <itemizedlist>
@@ -9049,11 +9051,11 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Replication and Recovery</title>
 
      <itemizedlist>
@@ -9207,9 +9209,9 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
      </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Queries</title>
 
      <itemizedlist>
@@ -9307,9 +9309,9 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
      </itemizedlist>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Utility Commands</title>
 
      <itemizedlist>
@@ -9352,7 +9354,7 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
        </itemizedlist>
 
-       <sect4>
+       <section>
         <title><xref linkend="sql-reindex"/></title>
 
         <itemizedlist>
@@ -9400,10 +9402,10 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
       </itemizedlist>
 
-     </sect4>
-   </sect3>
+     </section>
+   </section>
 
-   <sect3>
+   <section>
     <title>Object Manipulation</title>
 
      <itemizedlist>
@@ -9560,7 +9562,7 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
      </itemizedlist>
 
-     <sect4>
+     <section>
       <title><link linkend="ddl-foreign-data">Foreign Tables</link></title>
 
       <itemizedlist>
@@ -9628,9 +9630,9 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
      </itemizedlist>
 
-     </sect4>
+     </section>
 
-     <sect4>
+     <section>
       <title><link linkend="event-triggers">Event Triggers</link></title>
 
       <itemizedlist>
@@ -9695,11 +9697,11 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
       </itemizedlist>
 
-     </sect4>
+     </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Data Types</title>
 
     <itemizedlist>
@@ -9776,7 +9778,7 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
     </itemizedlist>
 
-    <sect4>
+    <section>
      <title><link linkend="datatype-json"><acronym>JSON</acronym></link></title>
 
      <itemizedlist>
@@ -9869,11 +9871,11 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Functions</title>
 
      <itemizedlist>
@@ -9992,7 +9994,7 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
      </itemizedlist>
 
-    <sect4>
+    <section>
      <title>System Information Functions and Views</title>
 
      <itemizedlist>
@@ -10061,9 +10063,9 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
       </listitem>
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title>Aggregates</title>
 
      <itemizedlist>
@@ -10093,11 +10095,11 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Server-Side Languages</title>
 
     <itemizedlist>
@@ -10152,7 +10154,7 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
      </itemizedlist>
 
-     <sect4>
+     <section>
       <title><link linkend="plpgsql">PL/pgSQL</link> Server-Side Language</title>
 
       <itemizedlist>
@@ -10192,11 +10194,11 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
     </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Client Applications</title>
 
     <itemizedlist>
@@ -10323,7 +10325,7 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
     </itemizedlist>
 
-     <sect4>
+     <section>
       <title><xref linkend="app-psql"/></title>
 
       <itemizedlist>
@@ -10443,7 +10445,7 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
       </itemizedlist>
 
-     <sect5>
+     <section>
       <title><link linkend="app-psql-meta-commands">Backslash Commands</link></title>
 
       <itemizedlist>
@@ -10535,11 +10537,11 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
       </itemizedlist>
 
-     </sect5>
+     </section>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><xref linkend="app-pgdump"/></title>
 
      <itemizedlist>
@@ -10605,9 +10607,9 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><xref linkend="app-pg-ctl"/></title>
 
      <itemizedlist>
@@ -10656,9 +10658,9 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><xref linkend="pgupgrade"/></title>
 
      <itemizedlist>
@@ -10711,9 +10713,9 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-    <sect4>
+    <section>
      <title><xref linkend="pgbench"/></title>
 
      <itemizedlist>
@@ -10784,11 +10786,11 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Source Code</title>
 
      <itemizedlist>
@@ -10963,7 +10965,7 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
      </itemizedlist>
 
-    <sect4>
+    <section>
      <title>MS Windows</title>
 
      <itemizedlist>
@@ -11054,11 +11056,11 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
      </itemizedlist>
 
-    </sect4>
+    </section>
 
-   </sect3>
+   </section>
 
-   <sect3>
+   <section>
     <title>Additional Modules</title>
 
     <itemizedlist>
@@ -11184,8 +11186,9 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 
     </itemizedlist>
 
-   </sect3>
+   </section>
 
-  </sect2>
+  </section>
 
- </sect1>
+ </section>
+</section>
