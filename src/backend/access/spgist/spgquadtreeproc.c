@@ -144,6 +144,44 @@ spg_quad_inner_consistent_box_helper(ScanKey sk, Point *centroid)
 	return r;
 }
 
+static int
+spg_quad_inner_consistent_circle_helper(ScanKey sk, Point *centroid)
+{
+	/*
+	 * Evaluate distances between the query center point and the quadrants.
+	 * The distance between a set and a point is the minimal possible distance
+	 * between any set point and the point. There are three possible cases: the
+	 * point belongs to the quandrand, the point projection is on the quadrant
+	 * edge, the point projections is on the quadrant vertex.
+	 */
+	CIRCLE *circleQuery = DatumGetCircleP(sk->sk_argument);
+	int r = 0;
+
+	const Point cp = {
+		.x = float8_mi(centroid->x, circleQuery->center.x),
+		.y = float8_mi(centroid->y, circleQuery->center.y)
+	};
+
+	const float8 x_p0 = (0. > cp.x ? 0. : cp.x);
+	const float8 y_p0 = (0. > cp.y ? 0. : cp.y);
+	const float8 x_n0 = (0. < cp.x ? 0. : cp.x);
+	const float8 y_n0 = (0. < cp.y ? 0. : cp.y);
+
+	const float8 d[4] = {
+		HYPOT(x_p0, y_p0),
+		HYPOT(x_p0, y_n0),
+		HYPOT(x_n0, y_n0),
+		HYPOT(x_n0, y_p0)
+	};
+
+	for (int i = 0; i < 4; i++) {
+		if (d[i] <= circleQuery->radius)
+			r |= (1 << (i + 1));
+	}
+
+	return r;
+}
+
 Datum
 spg_quad_choose(PG_FUNCTION_ARGS)
 {
@@ -359,7 +397,18 @@ spg_quad_inner_consistent(PG_FUNCTION_ARGS)
 					which &= (1 << 1) | (1 << 4);
 				break;
 			case RTContainedByStrategyNumber:
-				which &= spg_quad_inner_consistent_box_helper(sk, centroid);
+
+				switch (sk->sk_subtype) {
+				case BOXOID:
+					which &= spg_quad_inner_consistent_box_helper(sk, centroid);
+					break;
+				case CIRCLEOID:
+					which &= spg_quad_inner_consistent_circle_helper(sk, centroid);
+					break;
+				default:
+					elog(ERROR, "unrecognized right type OID: %d", sk->sk_subtype);
+					break;
+				}
 				break;
 			default:
 				elog(ERROR, "unrecognized strategy number: %d", sk->sk_strategy);
@@ -448,12 +497,22 @@ spg_quad_leaf_consistent(PG_FUNCTION_ARGS)
 				break;
 			case RTContainedByStrategyNumber:
 
-				/*
-				 * For this operator, the query is a box not a point.  We
-				 * cheat to the extent of assuming that DatumGetPointP won't
-				 * do anything that would be bad for a pointer-to-box.
-				 */
-				res = SPTEST(box_contain_pt, query, datum);
+				switch (sk->sk_subtype) {
+				case BOXOID:
+					/*
+					 * For this operator, the query is a box not a point.  We
+					 * cheat to the extent of assuming that DatumGetPointP won't
+					 * do anything that would be bad for a pointer-to-box.
+					 */
+					res = SPTEST(box_contain_pt, query, datum);
+					break;
+				case CIRCLEOID:
+					res = SPTEST(circle_contain_pt, query, datum);
+					break;
+				default:
+					elog(ERROR, "unrecognized right type OID: %d", sk->sk_subtype);
+					break;
+				}
 				break;
 			default:
 				elog(ERROR, "unrecognized strategy number: %d", sk->sk_strategy);
