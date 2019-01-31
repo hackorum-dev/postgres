@@ -7246,11 +7246,24 @@ StartupXLOG(void)
 			 * end of main redo apply loop
 			 */
 
-			if (reachedStopPoint)
+			/*
+			 * If recovery target is specified, specified action is expected
+			 * to be taken regardless whether the target is reached or not .
+			 */
+			if (recoveryTarget != RECOVERY_TARGET_UNSET)
 			{
+				/*
+				 * At this point we don't consider the case where we are
+				 * before consistent point even if not reached stop point.
+				 */
 				if (!reachedConsistency)
 					ereport(FATAL,
 							(errmsg("requested recovery stop point is before consistent recovery point")));
+
+				if (!reachedStopPoint)
+					ereport(WARNING,
+							(errmsg ("not yet reached specfied recovery target, take specified action anyway"),
+							 errdetail("This means a wrong target or missing WAL files.")));
 
 				/*
 				 * This is the last point where we can restart recovery with a
