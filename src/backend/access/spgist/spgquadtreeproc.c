@@ -113,6 +113,37 @@ getQuadrantArea(BOX *bbox, Point *centroid, int quadrant)
 	return result;
 }
 
+static int
+spg_quad_inner_consistent_box_helper(ScanKey sk, Point *centroid)
+{
+	/*
+	 * For this operator, the query is a box not a point.  We
+	 * cheat to the extent of assuming that DatumGetPointP won't
+	 * do anything that would be bad for a pointer-to-box.
+	 */
+	BOX *boxQuery = DatumGetBoxP(sk->sk_argument);
+	Point p;
+	int r = 0;
+
+	if (DatumGetBool(DirectFunctionCall2(box_contain_pt, PointerGetDatum(boxQuery), PointerGetDatum(centroid))))
+	{
+		/* centroid is in box, so all quadrants are OK */
+		return (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4);
+	}
+
+	/* identify quadrant(s) containing all corners of box */
+	p = boxQuery->low;
+	r |= 1 << getQuadrant(centroid, &p);
+	p.y = boxQuery->high.y;
+	r |= 1 << getQuadrant(centroid, &p);
+	p = boxQuery->high;
+	r |= 1 << getQuadrant(centroid, &p);
+	p.x = boxQuery->low.x;
+	r |= 1 << getQuadrant(centroid, &p);
+
+	return r;
+}
+
 Datum
 spg_quad_choose(PG_FUNCTION_ARGS)
 {
@@ -303,7 +334,6 @@ spg_quad_inner_consistent(PG_FUNCTION_ARGS)
 	{
 		const ScanKey sk = in->scankeys + i;
 		Point	   *query = DatumGetPointP(sk->sk_argument);
-		BOX		   *boxQuery;
 
 		switch (sk->sk_strategy)
 		{
@@ -329,37 +359,7 @@ spg_quad_inner_consistent(PG_FUNCTION_ARGS)
 					which &= (1 << 1) | (1 << 4);
 				break;
 			case RTContainedByStrategyNumber:
-
-				/*
-				 * For this operator, the query is a box not a point.  We
-				 * cheat to the extent of assuming that DatumGetPointP won't
-				 * do anything that would be bad for a pointer-to-box.
-				 */
-				boxQuery = DatumGetBoxP(sk->sk_argument);
-
-				if (DatumGetBool(DirectFunctionCall2(box_contain_pt,
-													 PointerGetDatum(boxQuery),
-													 PointerGetDatum(centroid))))
-				{
-					/* centroid is in box, so all quadrants are OK */
-				}
-				else
-				{
-					/* identify quadrant(s) containing all corners of box */
-					Point		p;
-					int			r = 0;
-
-					p = boxQuery->low;
-					r |= 1 << getQuadrant(centroid, &p);
-					p.y = boxQuery->high.y;
-					r |= 1 << getQuadrant(centroid, &p);
-					p = boxQuery->high;
-					r |= 1 << getQuadrant(centroid, &p);
-					p.x = boxQuery->low.x;
-					r |= 1 << getQuadrant(centroid, &p);
-
-					which &= r;
-				}
+				which &= spg_quad_inner_consistent_box_helper(sk, centroid);
 				break;
 			default:
 				elog(ERROR, "unrecognized strategy number: %d", sk->sk_strategy);
