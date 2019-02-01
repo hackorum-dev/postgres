@@ -373,6 +373,8 @@ InitProcess(void)
 	MyProc->fpLocalTransactionId = InvalidLocalTransactionId;
 	MyPgXact->xid = InvalidTransactionId;
 	MyPgXact->xmin = InvalidTransactionId;
+	/* set this before pid to get rid of wrong pair with pid */
+	MyProc->starttimestamp = MyStartTimestamp;
 	MyProc->pid = MyProcPid;
 	/* backendId, databaseId and roleId will be filled in later */
 	MyProc->backendId = InvalidBackendId;
