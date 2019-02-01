@@ -681,6 +681,11 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 			AlterSystemSetConfigFile((AlterSystemStmt *) parsetree);
 			break;
 
+		case T_AlterSessionStmt:
+			PreventInTransactionBlock(isTopLevel, "ALTER SESSION");
+			AlterSessionSetRemoteConfig(pstate, (AlterSessionStmt *) parsetree);
+			break;
+
 		case T_VariableSetStmt:
 			ExecSetVariableStmt((VariableSetStmt *) parsetree, isTopLevel);
 			break;
@@ -2605,6 +2610,10 @@ CreateCommandTag(Node *parsetree)
 			tag = "ALTER SYSTEM";
 			break;
 
+		case T_AlterSessionStmt:
+			tag = "ALTER SESSION";
+			break;
+
 		case T_VariableSetStmt:
 			switch (((VariableSetStmt *) parsetree)->kind)
 			{
@@ -3232,6 +3241,10 @@ GetCommandLogLevel(Node *parsetree)
 			break;
 
 		case T_AlterSystemStmt:
+			lev = LOGSTMT_DDL;
+			break;
+
+		case T_AlterSessionStmt:
 			lev = LOGSTMT_DDL;
 			break;
 

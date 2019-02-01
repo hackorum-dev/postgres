@@ -1,0 +1,160 @@
+<!--
+doc/src/sgml/ref/alter_session.sgml
+PostgreSQL documentation
+-->
+
+<refentry id="sql-altersession">
+ <indexterm zone="sql-altersystem">
+  <primary>ALTER SESSION</primary>
+ </indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER SESSION</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>SQL - Language Statements</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER SESSION</refname>
+  <refpurpose>change a server configuration parameter of a remote session</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>
+ALTER SESSION WITH (pid <replaceable class="parameter">session_pid</replaceable>) SET <replaceable class="parameter">configuration_parameter</replaceable> { TO | = } { <replaceable class="parameter">value</replaceable> | '<replaceable class="parameter">value</replaceable>' | DEFAULT } [ [ WITH ] RELOAD ]
+
+ALTER SESSION WITH (pid <replaceable class="parameter">session_pid</replaceable>) RESET <replaceable class="parameter">configuration_parameter</replaceable> [ [ WITH ] RELOAD ]
+ALTER SESSION WITH (pid <replaceable class="parameter">session_pid</replaceable>) RESET ALL [ [ WITH ] RELOAD ]
+</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Description</title>
+
+  <para>
+   <command>ALTER SESSION</command> is used for changing server configuration
+   parameters on the specified session. 
+   <command>ALTER SESSION</command> writes the given parameter setting to the
+   file <filename>pg_session_conf/postgresql.<replaceable>beid</replaceable>.conf</filename>
+   file, which is read in addition to <filename>postgresql.conf</filename>
+   and <filename>postgresql.auto.conf</filename>.  Setting a parameter
+   to <literal>DEFAULT</literal>, or using the
+   <command>RESET</command> variant, removes that configuration entry from the
+   session config file. Use <literal>RESET ALL</literal> to remove the
+   parameter file. The session config file lasts until the end of the session.
+  </para>
+
+  <para>
+   Values set with <command>ALTER SESSION</command> will be effective after
+   the next server configuration reload.  A server configuration reload can be
+   commanded by calling the SQL
+   function <function>pg_reload_conf()</function>, running <literal>pg_ctl
+   reload</literal>, sending a <systemitem>SIGHUP</systemitem> signal to the
+   main server process, or specifying <literal>WITH RELOAD</literal>
+   in <command>ALTER SESSION</command>. As <command>ALTER SYSTEM</command>
+   does, <command>ALTER SESSION</command> doesn't override settings changed
+   in-session.
+  </para>
+
+  <para>
+   Only superusers and users who are granted the session user or
+   pg_signal_backend can use <command>ALTER SESSION</command>.  Also, since
+   this command acts directly on the file system and cannot be rolled back, it
+   is not allowed inside a transaction block or function.
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>Parameters</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">session_pid</replaceable></term>
+    <listitem>
+     <para>
+      Process ID of the target session.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">configuration_parameter</replaceable></term>
+    <listitem>
+     <para>
+      Name of a settable configuration parameter.  Available parameters are
+      documented in <xref linkend="runtime-config"/>.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">value</replaceable></term>
+    <listitem>
+     <para>
+      New value of the parameter.  Values can be specified as string
+      constants, identifiers, numbers, or comma-separated lists of
+      these, as appropriate for the particular parameter.
+      <literal>DEFAULT</literal> can be written to specify removing the
+      parameter and its value
+      from <filename>pg_session_conf/postgresql.<replaceable>beid</replaceable>.conf</filename>.
+     </para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Notes</title>
+
+  <para>
+   This command can't be used to set <xref linkend="guc-data-directory"/>,
+   parameters that are not allowed in <filename>postgresql.conf</filename>
+   (e.g., <link linkend="runtime-config-preset">preset options</link>), nor
+   parameters that cannot be changed on-session. Only superuser can perform
+   <literal>RESET ALL</literal>.
+  </para>
+
+  <para>
+   See <xref linkend="config-setting"/> for other ways to set the parameters.
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>Examples</title>
+
+  <para>
+   Set the <literal>wal_level</literal>:
+<programlisting>
+ALTER SESSION WITH (pid 27162) SET track_functions = pl IMMEDIATE;
+</programlisting>
+  </para>
+
+  <para>
+   Undo that, restoring whatever setting was effective
+   in <filename>postgresql.conf</filename>
+   and <filename>postgresql.auto.conf</filename>:
+<programlisting>
+ALTER SESSION WITH (pid 27162) RESET track_functions IMMEDIATE;
+</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Compatibility</title>
+
+  <para>
+   The <command>ALTER SESSION</command> statement is a
+   <productname>PostgreSQL</productname> extension.
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>See Also</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-altersystem"/></member>
+   <member><xref linkend="sql-set"/></member>
+   <member><xref linkend="sql-show"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

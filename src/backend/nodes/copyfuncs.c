@@ -3923,6 +3923,17 @@ _copyAlterSystemStmt(const AlterSystemStmt *from)
 	return newnode;
 }
 
+static AlterSessionStmt *
+_copyAlterSessionStmt(const AlterSessionStmt *from)
+{
+	AlterSessionStmt *newnode = makeNode(AlterSessionStmt);
+
+	COPY_NODE_FIELD(sessionopt);
+	COPY_NODE_FIELD(setstmt);
+	COPY_SCALAR_FIELD(immediate);
+	return newnode;
+}
+
 static CreateSeqStmt *
 _copyCreateSeqStmt(const CreateSeqStmt *from)
 {
@@ -5340,6 +5351,9 @@ copyObjectImpl(const void *from)
 			break;
 		case T_AlterSystemStmt:
 			retval = _copyAlterSystemStmt(from);
+			break;
+		case T_AlterSessionStmt:
+			retval = _copyAlterSessionStmt(from);
 			break;
 		case T_CreateSeqStmt:
 			retval = _copyCreateSeqStmt(from);

@@ -474,7 +474,7 @@ CREATE VIEW pg_settings AS
 CREATE RULE pg_settings_u AS
     ON UPDATE TO pg_settings
     WHERE new.name = old.name DO
-    SELECT set_config(old.name, new.setting, 'f');
+    SELECT set_config(old.name, new.setting, 'f', 'f');
 
 CREATE RULE pg_settings_n AS
     ON UPDATE TO pg_settings
@@ -1034,6 +1034,11 @@ CREATE OR REPLACE FUNCTION
   pg_promote(wait boolean DEFAULT true, wait_seconds integer DEFAULT 60)
   RETURNS boolean STRICT VOLATILE LANGUAGE INTERNAL AS 'pg_promote'
   PARALLEL SAFE;
+
+CREATE OR REPLACE FUNCTION set_config (
+		setting_name text, new_value text, is_local boolean, is_nonxact boolean DEFAULT false)
+		RETURNS text STRICT VOLATILE LANGUAGE internal AS 'set_config_by_name'
+		PARALLEL UNSAFE;
 
 -- legacy definition for compatibility with 9.3
 CREATE OR REPLACE FUNCTION

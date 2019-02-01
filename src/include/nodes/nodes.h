@@ -407,6 +407,7 @@ typedef enum NodeTag
 	T_RefreshMatViewStmt,
 	T_ReplicaIdentityStmt,
 	T_AlterSystemStmt,
+	T_AlterSessionStmt,
 	T_CreatePolicyStmt,
 	T_AlterPolicyStmt,
 	T_CreateTransformStmt,

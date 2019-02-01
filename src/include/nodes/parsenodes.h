@@ -3122,6 +3122,18 @@ typedef struct AlterSystemStmt
 } AlterSystemStmt;
 
 /* ----------------------
+ *		Alter Session Statement
+ * ----------------------
+ */
+typedef struct AlterSessionStmt
+{
+	NodeTag		type;
+	DefElem	   *sessionopt;		/* session property */
+	VariableSetStmt *setstmt;	/* SET subcommand */
+	bool		immediate;		/* reload immediately */
+} AlterSessionStmt;
+
+/* ----------------------
  *		Cluster Statement (support pbrown's cluster index implementation)
  * ----------------------
  */

@@ -14,6 +14,7 @@
 #define GUC_H
 
 #include "nodes/parsenodes.h"
+#include "parser/parse_node.h"
 #include "tcop/dest.h"
 #include "utils/array.h"
 
@@ -117,7 +118,8 @@ typedef enum
 	PGC_S_OVERRIDE,				/* special case to forcibly set default */
 	PGC_S_INTERACTIVE,			/* dividing line for error reporting */
 	PGC_S_TEST,					/* test per-database or per-user setting */
-	PGC_S_SESSION				/* SET command */
+	PGC_S_SESSION,				/* SET command */
+	PGC_S_REMOTE				/* remote setting */
 } GucSource;
 
 /*
@@ -193,7 +195,8 @@ typedef enum
 	/* Types of set_config_option actions */
 	GUC_ACTION_SET,				/* regular SET command */
 	GUC_ACTION_LOCAL,			/* SET LOCAL command */
-	GUC_ACTION_SAVE				/* function SET option, or temp assignment */
+	GUC_ACTION_SAVE,			/* function SET option, or temp assignment */
+	GUC_ACTION_NONXACT			/* transactional setting */
 } GucAction;
 
 #define GUC_QUALIFIER_SEPARATOR '.'
@@ -269,6 +272,8 @@ extern int	tcp_keepalives_idle;
 extern int	tcp_keepalives_interval;
 extern int	tcp_keepalives_count;
 
+extern volatile bool RemoteGucChangePending;
+
 #ifdef TRACE_SORT
 extern bool trace_sort;
 #endif
@@ -276,6 +281,11 @@ extern bool trace_sort;
 /*
  * Functions exported by guc.c
  */
+extern Size GucShmemSize(void);
+extern void GucShmemInit(void);
+extern Datum set_backend_setting(PG_FUNCTION_ARGS);
+extern void HandleRemoteGucSetInterrupt(void);
+extern void HandleGucRemoteChanges(void);
 extern void SetConfigOption(const char *name, const char *value,
 				GucContext context, GucSource source);
 
@@ -353,7 +363,7 @@ extern int	GetConfigOptionFlags(const char *name, bool missing_ok);
 extern void ProcessConfigFile(GucContext context);
 extern void InitializeGUCOptions(void);
 extern bool SelectConfigFiles(const char *userDoption, const char *progname);
-extern void ResetAllOptions(void);
+extern void ResetAllOptions(GucSource src);
 extern void AtStart_GUC(void);
 extern int	NewGUCNestLevel(void);
 extern void AtEOXact_GUC(bool isCommit, int nestLevel);
@@ -367,6 +377,8 @@ extern int set_config_option(const char *name, const char *value,
 				  GucAction action, bool changeVal, int elevel,
 				  bool is_reload);
 extern void AlterSystemSetConfigFile(AlterSystemStmt *setstmt);
+extern void AlterSessionSetRemoteConfig(ParseState *pstate,
+										AlterSessionStmt *setstmt);
 extern char *GetConfigOptionByName(const char *name, const char **varname,
 					  bool missing_ok);
 extern void GetConfigOptionByNum(int varnum, const char **values, bool *noshow);
@@ -394,6 +406,9 @@ extern void read_nondefault_variables(void);
 extern Size EstimateGUCStateSpace(void);
 extern void SerializeGUCState(Size maxsize, char *start_address);
 extern void RestoreGUCState(void *gucstate);
+
+/* Remote GUC setting */
+extern void HandleGucRemoteChanges(void);
 
 /* Support for messages reported from GUC check hooks */
 

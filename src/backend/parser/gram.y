@@ -248,8 +248,9 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 		AlterDatabaseStmt AlterDatabaseSetStmt AlterDomainStmt AlterEnumStmt
 		AlterFdwStmt AlterForeignServerStmt AlterGroupStmt
 		AlterObjectDependsStmt AlterObjectSchemaStmt AlterOwnerStmt
-		AlterOperatorStmt AlterSeqStmt AlterSystemStmt AlterTableStmt
-		AlterTblSpcStmt AlterExtensionStmt AlterExtensionContentsStmt AlterForeignTableStmt
+		AlterOperatorStmt AlterSeqStmt AlterSystemStmt AlterSessionStmt
+		AlterTableStmt AlterTblSpcStmt AlterExtensionStmt
+		AlterExtensionContentsStmt AlterForeignTableStmt
 		AlterCompositeTypeStmt AlterUserMappingStmt
 		AlterRoleStmt AlterRoleSetStmt AlterPolicyStmt
 		AlterDefaultPrivilegesStmt DefACLAction
@@ -303,6 +304,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <defelt>	createdb_opt_item copy_opt_item
 				transaction_mode_item
 				create_extension_opt_item alter_extension_opt_item
+				altersess_option_item
 
 %type <ival>	opt_lock lock_type cast_context
 %type <ival>	vacuum_option_list vacuum_option_elem
@@ -668,7 +670,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	QUOTE
 
 	RANGE READ REAL REASSIGN RECHECK RECURSIVE REF REFERENCES REFERENCING
-	REFRESH REINDEX RELATIVE_P RELEASE RENAME REPEATABLE REPLACE REPLICA
+	REFRESH REINDEX RELATIVE_P RELEASE RELOAD RENAME REPEATABLE REPLACE REPLICA
 	RESET RESTART RESTRICT RETURNING RETURNS REVOKE RIGHT ROLE ROLLBACK ROLLUP
 	ROUTINE ROUTINES ROW ROWS RULE
 
@@ -839,6 +841,7 @@ stmt :
 			| AlterPolicyStmt
 			| AlterSeqStmt
 			| AlterSystemStmt
+			| AlterSessionStmt
 			| AlterTableStmt
 			| AlterTblSpcStmt
 			| AlterCompositeTypeStmt
@@ -10168,6 +10171,41 @@ AlterSystemStmt:
 				}
 		;
 
+
+/*****************************************************************************
+ *
+ *		ALTER SESSION
+ *
+ * This is used to change configuration parameters persistently.
+ *****************************************************************************/
+
+AlterSessionStmt:
+			ALTER SESSION WITH '(' altersess_option_item ')' SET generic_set
+				{
+					AlterSessionStmt *n = makeNode(AlterSessionStmt);
+					n->sessionopt = $5;
+					n->setstmt = $8;
+					$$ = (Node *)n;
+				}
+			| ALTER SESSION WITH '(' altersess_option_item ')' RESET generic_reset
+				{
+					AlterSessionStmt *n = makeNode(AlterSessionStmt);
+					n->sessionopt = $5;
+					n->setstmt = $8;
+					$$ = (Node *)n;
+				}
+		;
+
+altersess_option_item:
+		ColLabel Iconst
+			{
+				$$ = makeDefElem($1, (Node *)makeInteger($2), @1);
+			}
+		| ColLabel Sconst
+			{
+				$$ = makeDefElem($1, (Node *)makeString($2), @1);
+			}
+	;
 
 /*****************************************************************************
  *

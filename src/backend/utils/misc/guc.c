@@ -36,6 +36,7 @@
 #include "catalog/namespace.h"
 #include "catalog/pg_authid.h"
 #include "commands/async.h"
+#include "commands/defrem.h"
 #include "commands/prepare.h"
 #include "commands/user.h"
 #include "commands/vacuum.h"
@@ -70,12 +71,14 @@
 #include "replication/walreceiver.h"
 #include "replication/walsender.h"
 #include "storage/bufmgr.h"
+#include "storage/condition_variable.h"
 #include "storage/dsm_impl.h"
 #include "storage/standby.h"
 #include "storage/fd.h"
 #include "storage/large_object.h"
 #include "storage/pg_shmem.h"
 #include "storage/proc.h"
+#include "storage/procarray.h"
 #include "storage/predicate.h"
 #include "tcop/tcopprot.h"
 #include "tsearch/ts_cache.h"
@@ -211,11 +214,40 @@ static bool check_recovery_target_lsn(char **newval, void **extra, GucSource sou
 static void assign_recovery_target_lsn(const char *newval, void *extra);
 static bool check_primary_slot_name(char **newval, void **extra, GucSource source);
 static bool check_default_with_oids(bool *newval, void **extra, GucSource source);
-
+static bool set_backend_config_internal(int target_pid, uint64 target_ts, char *name, char *value);
 /* Private functions in guc-file.l that need to be called from guc.c */
 static ConfigVariable *ProcessConfigFileInternal(GucContext context,
 						  bool applySettings, int elevel);
 
+
+#define GUC_REMOTE_MAX_VALUE_LEN  1024		/* an arbitrary value */
+
+typedef struct GucPendingSetting
+{
+	char		name[NAMEDATALEN];
+	GucContext	context;
+	bool		reset;
+	bool		reset_all;
+	char	   *value;
+	int			source_pid;
+} GucPendingSetting;
+
+typedef struct
+{
+	bool		busy;
+	slock_t		mutex;
+	ConditionVariable	busy_cv;
+	int			target_pid;
+	uint64		target_start_timestamp;
+	char		value[GUC_REMOTE_MAX_VALUE_LEN];
+	GucPendingSetting setting;
+	volatile Latch *sender_latch;
+} GucRemoteSetting;
+
+static MemoryContext RemoteConfigMemoryContext = NULL;
+static GucRemoteSetting *remote_setting = NULL;
+static HTAB *pending_setting = NULL;
+volatile bool RemoteGucChangePending = false;
 
 /*
  * Options for enum values defined in this module.
@@ -605,7 +637,8 @@ const char *const GucSource_Names[] =
 	 /* PGC_S_OVERRIDE */ "override",
 	 /* PGC_S_INTERACTIVE */ "interactive",
 	 /* PGC_S_TEST */ "test",
-	 /* PGC_S_SESSION */ "session"
+	 /* PGC_S_SESSION */ "session",
+	 /* PGC_S_REMOTE */ "remote session"
 };
 
 /*
@@ -4452,10 +4485,8 @@ static const char *const map_old_guc_names[] = {
  * Actual lookup of variables is done through this single, sorted array.
  */
 static struct config_generic **guc_variables;
-
 /* Current number of variables contained in the vector */
 static int	num_guc_variables;
-
 /* Vector capacity */
 static int	size_guc_variables;
 
@@ -5380,7 +5411,7 @@ SelectConfigFiles(const char *userDoption, const char *progname)
  * Reset all options to their saved default values (implements RESET ALL)
  */
 void
-ResetAllOptions(void)
+ResetAllOptions(GucSource src)
 {
 	int			i;
 
@@ -5396,7 +5427,8 @@ ResetAllOptions(void)
 		if (gconf->flags & GUC_NO_RESET_ALL)
 			continue;
 		/* No need to reset if wasn't SET */
-		if (gconf->source <= PGC_S_OVERRIDE)
+		Assert(PGC_S_OVERRIDE < src);
+		if (gconf->source != src)
 			continue;
 
 		/* Save old value to support transaction abort */
@@ -5490,6 +5522,22 @@ push_old_value(struct config_generic *gconf, GucAction action)
 
 	/* Do we already have a stack entry of the current nest level? */
 	stack = gconf->stack;
+
+	/* NONXACT action make existing stack useles */
+	if (action == GUC_ACTION_NONXACT)
+	{
+		while (stack)
+		{
+			GucStack *prev = stack->prev;
+
+			discard_stack_value(gconf, &stack->prior);
+			discard_stack_value(gconf, &stack->masked);
+			pfree(stack);
+			stack = prev;
+		}
+		stack = gconf->stack = NULL;
+	}
+
 	if (stack && stack->nest_level >= GUCNestLevel)
 	{
 		/* Yes, so adjust its state if necessary */
@@ -5497,27 +5545,62 @@ push_old_value(struct config_generic *gconf, GucAction action)
 		switch (action)
 		{
 			case GUC_ACTION_SET:
-				/* SET overrides any prior action at same nest level */
-				if (stack->state == GUC_SET_LOCAL)
+				if (stack->state == GUC_NONXACT)
 				{
-					/* must discard old masked value */
-					discard_stack_value(gconf, &stack->masked);
+					/* NONXACT rollbacks to the current value */
+					stack->scontext = gconf->scontext;
+					set_stack_value(gconf, &stack->prior);
+					stack->state = GUC_NONXACT_SET;
 				}
-				stack->state = GUC_SET;
+				else 
+				{
+					/* SET overrides other prior actions at same nest level */
+					if (stack->state == GUC_SET_LOCAL)
+					{
+						/* must discard old masked value */
+						discard_stack_value(gconf, &stack->masked);
+					}
+					stack->state = GUC_SET;
+				}
+
 				break;
+
 			case GUC_ACTION_LOCAL:
 				if (stack->state == GUC_SET)
 				{
-					/* SET followed by SET LOCAL, remember SET's value */
+					/* SET followed by SET LOCAL, remember it's value */
 					stack->masked_scontext = gconf->scontext;
 					set_stack_value(gconf, &stack->masked);
 					stack->state = GUC_SET_LOCAL;
+				}
+				else if (stack->state == GUC_NONXACT)
+				{
+					/*
+					 * NONXACT followed by SET LOCAL, both prior and masked
+					 * are set to the current value
+					 */
+					stack->scontext = gconf->scontext;
+					set_stack_value(gconf, &stack->prior);
+					stack->masked_scontext = stack->scontext;
+					stack->masked = stack->prior;
+					stack->state = GUC_NONXACT_LOCAL;
+				}
+				else if (stack->state == GUC_NONXACT_SET)
+				{
+					/* NONXACT_SET followed by SET LOCAL, set masked */
+					stack->masked_scontext = gconf->scontext;
+					set_stack_value(gconf, &stack->masked);
+					stack->state = GUC_NONXACT_LOCAL;
 				}
 				/* in all other cases, no change to stack entry */
 				break;
 			case GUC_ACTION_SAVE:
 				/* Could only have a prior SAVE of same variable */
 				Assert(stack->state == GUC_SAVE);
+				break;
+
+			case GUC_ACTION_NONXACT:
+				Assert(false);
 				break;
 		}
 		Assert(guc_dirty);		/* must be set already */
@@ -5534,6 +5617,7 @@ push_old_value(struct config_generic *gconf, GucAction action)
 
 	stack->prev = gconf->stack;
 	stack->nest_level = GUCNestLevel;
+		
 	switch (action)
 	{
 		case GUC_ACTION_SET:
@@ -5545,10 +5629,15 @@ push_old_value(struct config_generic *gconf, GucAction action)
 		case GUC_ACTION_SAVE:
 			stack->state = GUC_SAVE;
 			break;
+		case GUC_ACTION_NONXACT:
+			stack->state = GUC_NONXACT;
+			break;
 	}
 	stack->source = gconf->source;
 	stack->scontext = gconf->scontext;
-	set_stack_value(gconf, &stack->prior);
+
+	if (action != GUC_ACTION_NONXACT)
+		set_stack_value(gconf, &stack->prior);
 
 	gconf->stack = stack;
 
@@ -5643,22 +5732,31 @@ AtEOXact_GUC(bool isCommit, int nestLevel)
 			 * stack entries to avoid leaking memory.  If we do set one of
 			 * those flags, unused fields will be cleaned up after restoring.
 			 */
-			if (!isCommit)		/* if abort, always restore prior value */
-				restorePrior = true;
+			if (!isCommit)
+			{
+				/* GUC_NONXACT does't rollback */
+				if (stack->state != GUC_NONXACT)
+					restorePrior = true;
+			}
 			else if (stack->state == GUC_SAVE)
 				restorePrior = true;
 			else if (stack->nest_level == 1)
 			{
 				/* transaction commit */
-				if (stack->state == GUC_SET_LOCAL)
+				if (stack->state == GUC_SET_LOCAL ||
+					stack->state == GUC_NONXACT_LOCAL)
 					restoreMasked = true;
-				else if (stack->state == GUC_SET)
+				else if (stack->state == GUC_SET ||
+						 stack->state == GUC_NONXACT_SET)
 				{
 					/* we keep the current active value */
 					discard_stack_value(gconf, &stack->prior);
 				}
-				else			/* must be GUC_LOCAL */
+				else if (stack->state != GUC_NONXACT)
+				{
+					/* must be GUC_LOCAL */
 					restorePrior = true;
+				}
 			}
 			else if (prev == NULL ||
 					 prev->nest_level < stack->nest_level - 1)
@@ -5680,11 +5778,27 @@ AtEOXact_GUC(bool isCommit, int nestLevel)
 						break;
 
 					case GUC_SET:
-						/* next level always becomes SET */
-						discard_stack_value(gconf, &stack->prior);
-						if (prev->state == GUC_SET_LOCAL)
+						if (prev->state == GUC_SET ||
+							prev->state == GUC_NONXACT_SET)
+						{
+							discard_stack_value(gconf, &stack->prior);
+						}
+						else if (prev->state == GUC_NONXACT)
+						{
+							prev->scontext = stack->scontext;
+							prev->prior = stack->prior;
+							prev->state = GUC_NONXACT_SET;
+						}
+						else if (prev->state == GUC_SET_LOCAL ||
+								 prev->state == GUC_NONXACT_LOCAL)
+						{
+							discard_stack_value(gconf, &stack->prior);
 							discard_stack_value(gconf, &prev->masked);
-						prev->state = GUC_SET;
+							if (prev->state == GUC_SET_LOCAL)
+								prev->state = GUC_SET;
+							else
+								prev->state = GUC_NONXACT_SET;
+						}
 						break;
 
 					case GUC_LOCAL:
@@ -5695,6 +5809,16 @@ AtEOXact_GUC(bool isCommit, int nestLevel)
 							prev->masked = stack->prior;
 							prev->state = GUC_SET_LOCAL;
 						}
+						else if (prev->state == GUC_NONXACT)
+						{
+							prev->prior = stack->masked;
+							prev->scontext = stack->masked_scontext;
+							prev->masked = stack->masked;
+							prev->masked_scontext = stack->masked_scontext;
+							discard_stack_value(gconf, &stack->prior);
+							discard_stack_value(gconf, &stack->masked);
+							prev->state = GUC_NONXACT_SET;
+						}
 						else
 						{
 							/* else just forget this stack level */
@@ -5703,15 +5827,32 @@ AtEOXact_GUC(bool isCommit, int nestLevel)
 						break;
 
 					case GUC_SET_LOCAL:
-						/* prior state at this level no longer wanted */
-						discard_stack_value(gconf, &stack->prior);
-						/* copy down the masked state */
-						prev->masked_scontext = stack->masked_scontext;
-						if (prev->state == GUC_SET_LOCAL)
-							discard_stack_value(gconf, &prev->masked);
-						prev->masked = stack->masked;
-						prev->state = GUC_SET_LOCAL;
+						if (prev->state == GUC_NONXACT)
+						{
+							prev->prior = stack->prior;
+							prev->masked = stack->prior;
+							discard_stack_value(gconf, &stack->prior);
+							discard_stack_value(gconf, &stack->masked);
+							prev->state = GUC_NONXACT_SET;
+						}
+						else if (prev->state != GUC_NONXACT_SET)
+						{
+							/* prior state at this level no longer wanted */
+							discard_stack_value(gconf, &stack->prior);
+							/* copy down the masked state */
+							prev->masked_scontext = stack->masked_scontext;
+							if (prev->state == GUC_SET_LOCAL)
+								discard_stack_value(gconf, &prev->masked);
+							prev->masked = stack->masked;
+							prev->state = GUC_SET_LOCAL;
+						}
 						break;
+					case GUC_NONXACT:
+					case GUC_NONXACT_SET:
+					case GUC_NONXACT_LOCAL:
+						Assert(false);
+						break;
+						
 				}
 			}
 
@@ -6451,6 +6592,8 @@ set_config_option(const char *name, const char *value,
 				 source == PGC_S_USER ||
 				 source == PGC_S_DATABASE_USER)
 			elevel = WARNING;
+		else if (source == PGC_S_REMOTE)
+			elevel = NOTICE;
 		else
 			elevel = ERROR;
 	}
@@ -6654,8 +6797,9 @@ set_config_option(const char *name, const char *value,
 	 * trying to find out if the value is potentially good, not actually use
 	 * it. Also keep going if makeDefault is true, since we may want to set
 	 * the reset/stacked values even if we can't set the variable itself.
+	 * Interructive sources are mutually overwritable.
 	 */
-	if (record->source > source)
+	if (record->source > source && source < PGC_S_INTERACTIVE)
 	{
 		if (changeVal && !makeDefault)
 		{
@@ -7598,6 +7742,110 @@ replace_auto_config_value(ConfigVariable **head_p, ConfigVariable **tail_p,
 	*tail_p = item;
 }
 
+/*
+  Check and process the given set statment of ALTER SYSTEM and ALTER SESSION.
+ */
+static void
+AlterConfigProcessSetCommand(VariableSetStmt *setstmt,
+							 bool is_session, bool is_superuser,
+							 char **name, char **value, bool *resetall)
+{
+	*name = setstmt->name;
+
+	switch (setstmt->kind)
+	{
+		case VAR_SET_VALUE:
+			*value = ExtractSetVariableArgs(setstmt);
+			break;
+
+		case VAR_SET_DEFAULT:
+		case VAR_RESET:
+			*value = NULL;
+			break;
+
+		case VAR_RESET_ALL:
+			*value = NULL;
+			*resetall = true;
+			break;
+
+		default:
+			elog(ERROR, "unrecognized set type: %d",
+				 setstmt->kind);
+			break;
+	}
+
+	/*
+	 * Unless it's RESET_ALL, validate the target variable and value
+	 */
+	if (!*resetall)
+	{
+		struct config_generic *record;
+
+		record = find_option(*name, false, ERROR);
+		if (record == NULL)
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_OBJECT),
+					 errmsg("unrecognized configuration parameter \"%s\"",
+							*name)));
+
+		/*
+		 * Don't allow parameters that can't be set in configuration files to
+		 * be set in PG_AUTOCONF_FILENAME file.
+		 */
+
+		/* PG_SUSET is changebale but only by superusers  */
+		if (is_session && !is_superuser && record->context == PGC_SUSET)
+				ereport(ERROR,
+						(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+						 errmsg("permission denied to set parameter \"%s\"",
+								*name)));
+
+		/* ALTER SESSION allows only parameters changeabe on-session */
+		if ((is_session &&
+			 (record->context != PGC_USERSET &&
+			  record->context != PGC_SUSET)) ||
+			record->context == PGC_INTERNAL ||
+			(record->flags & GUC_DISALLOW_IN_FILE) ||
+			(record->flags & GUC_DISALLOW_IN_AUTO_FILE))
+			ereport(ERROR,
+					(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM),
+					 errmsg("parameter \"%s\" cannot be changed",
+							*name)));
+
+		/*
+		 * If a value is specified, verify that it's sane.
+		 */
+		if (*value)
+		{
+			union config_var_val newval;
+			void	   *newextra = NULL;
+
+			/* Check that it's acceptable for the indicated parameter */
+			if (!parse_and_validate_value(record, *name, *value,
+										  PGC_S_FILE, ERROR,
+										  &newval, &newextra))
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("invalid value for parameter \"%s\": \"%s\"",
+								*name, *value)));
+
+			if (record->vartype == PGC_STRING && newval.stringval != NULL)
+				free(newval.stringval);
+			if (newextra)
+				free(newextra);
+
+			/*
+			 * We must also reject values containing newlines, because the
+			 * grammar for config files doesn't support embedded newlines in
+			 * string literals.
+			 */
+			if (strchr(*value, '\n'))
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("parameter value for SET must not contain a newline")));
+		}
+	}
+}
 
 /*
  * Execute ALTER SYSTEM statement.
@@ -7631,89 +7879,8 @@ AlterSystemSetConfigFile(AlterSystemStmt *altersysstmt)
 	/*
 	 * Extract statement arguments
 	 */
-	name = altersysstmt->setstmt->name;
-
-	switch (altersysstmt->setstmt->kind)
-	{
-		case VAR_SET_VALUE:
-			value = ExtractSetVariableArgs(altersysstmt->setstmt);
-			break;
-
-		case VAR_SET_DEFAULT:
-		case VAR_RESET:
-			value = NULL;
-			break;
-
-		case VAR_RESET_ALL:
-			value = NULL;
-			resetall = true;
-			break;
-
-		default:
-			elog(ERROR, "unrecognized alter system stmt type: %d",
-				 altersysstmt->setstmt->kind);
-			break;
-	}
-
-	/*
-	 * Unless it's RESET_ALL, validate the target variable and value
-	 */
-	if (!resetall)
-	{
-		struct config_generic *record;
-
-		record = find_option(name, false, ERROR);
-		if (record == NULL)
-			ereport(ERROR,
-					(errcode(ERRCODE_UNDEFINED_OBJECT),
-					 errmsg("unrecognized configuration parameter \"%s\"",
-							name)));
-
-		/*
-		 * Don't allow parameters that can't be set in configuration files to
-		 * be set in PG_AUTOCONF_FILENAME file.
-		 */
-		if ((record->context == PGC_INTERNAL) ||
-			(record->flags & GUC_DISALLOW_IN_FILE) ||
-			(record->flags & GUC_DISALLOW_IN_AUTO_FILE))
-			ereport(ERROR,
-					(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM),
-					 errmsg("parameter \"%s\" cannot be changed",
-							name)));
-
-		/*
-		 * If a value is specified, verify that it's sane.
-		 */
-		if (value)
-		{
-			union config_var_val newval;
-			void	   *newextra = NULL;
-
-			/* Check that it's acceptable for the indicated parameter */
-			if (!parse_and_validate_value(record, name, value,
-										  PGC_S_FILE, ERROR,
-										  &newval, &newextra))
-				ereport(ERROR,
-						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("invalid value for parameter \"%s\": \"%s\"",
-								name, value)));
-
-			if (record->vartype == PGC_STRING && newval.stringval != NULL)
-				free(newval.stringval);
-			if (newextra)
-				free(newextra);
-
-			/*
-			 * We must also reject values containing newlines, because the
-			 * grammar for config files doesn't support embedded newlines in
-			 * string literals.
-			 */
-			if (strchr(value, '\n'))
-				ereport(ERROR,
-						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("parameter value for ALTER SYSTEM must not contain a newline")));
-		}
-	}
+	AlterConfigProcessSetCommand(altersysstmt->setstmt, false, false,
+								 &name, &value, &resetall);
 
 	/*
 	 * PG_AUTOCONF_FILENAME and its corresponding temporary file are always in
@@ -7820,6 +7987,53 @@ AlterSystemSetConfigFile(AlterSystemStmt *altersysstmt)
 	FreeConfigVariables(head);
 
 	LWLockRelease(AutoFileLock);
+}
+
+void
+AlterSessionSetRemoteConfig(ParseState *pstate, AlterSessionStmt *altersesstmt)
+{
+	int		target_pid;
+	char   *name;
+	char   *value;
+	bool	resetall = false;
+	DefElem	   *def;
+	uint64	target_ts = 0;
+
+	def = altersesstmt->sessionopt;
+
+	/* ignoring namespace */
+	if (strcmp(def->defname, "pid") == 0)
+		target_pid = defGetInt32(def);
+	else if (strcmp(def->defname, "id") == 0)
+	{
+		/* Heavily WIP!! */
+		char *id = pstrdup(defGetString(def));
+		unsigned long	 start;
+		int 	n;
+
+		n = sscanf(id, "%lx.%x", &start, &target_pid);
+		if (n != 2)
+			ereport(ERROR,
+					(errmsg ("malformed session id"),
+					 parser_errposition(pstate, def->location)));
+		target_ts = time_t_to_timestamptz(start);
+	}
+	else
+		ereport(ERROR,
+				(errmsg ("only pid or id is allowed here"),
+				 parser_errposition(pstate, def->location)));
+
+	
+	/*
+	 * Extract statement arguments
+	 */
+	AlterConfigProcessSetCommand(altersesstmt->setstmt, false, false,
+								 &name, &value, &resetall);
+
+	if (resetall)
+		name = NULL;
+
+	set_backend_config_internal(target_pid, target_ts, name, value);
 }
 
 /*
@@ -7938,7 +8152,7 @@ ExecSetVariableStmt(VariableSetStmt *stmt, bool isTopLevel)
 									 action, true, 0, false);
 			break;
 		case VAR_RESET_ALL:
-			ResetAllOptions();
+			ResetAllOptions(PGC_S_SESSION);
 			break;
 	}
 }
@@ -7992,7 +8206,8 @@ set_config_by_name(PG_FUNCTION_ARGS)
 	char	   *name;
 	char	   *value;
 	char	   *new_value;
-	bool		is_local;
+	int			set_action = GUC_ACTION_SET;
+
 
 	if (PG_ARGISNULL(0))
 		ereport(ERROR,
@@ -8012,18 +8227,27 @@ set_config_by_name(PG_FUNCTION_ARGS)
 	 * Get the desired state of is_local. Default to false if provided value
 	 * is NULL
 	 */
-	if (PG_ARGISNULL(2))
-		is_local = false;
-	else
-		is_local = PG_GETARG_BOOL(2);
+	if (!PG_ARGISNULL(2) && PG_GETARG_BOOL(2))
+		set_action = GUC_ACTION_LOCAL;
+
+	/*
+	 * Get the desired state of is_nonxact. Default to false if provided value
+	 * is NULL
+	 */
+	if (!PG_ARGISNULL(3) && PG_GETARG_BOOL(3))
+	{
+		if (set_action == GUC_ACTION_LOCAL)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("Only one of is_local and is_nonxact can be true")));
+		set_action = GUC_ACTION_NONXACT;
+	}
 
 	/* Note SET DEFAULT (argstring == NULL) is equivalent to RESET */
 	(void) set_config_option(name,
 							 value,
 							 (superuser() ? PGC_SUSET : PGC_USERSET),
-							 PGC_S_SESSION,
-							 is_local ? GUC_ACTION_LOCAL : GUC_ACTION_SET,
-							 true, 0, false);
+							 PGC_S_SESSION, set_action, true, 0, false);
 
 	/* get the new current value */
 	new_value = GetConfigOptionByName(name, NULL, false);
@@ -8031,7 +8255,6 @@ set_config_by_name(PG_FUNCTION_ARGS)
 	/* Convert return string to text */
 	PG_RETURN_TEXT_P(cstring_to_text(new_value));
 }
-
 
 /*
  * Common code for DefineCustomXXXVariable subroutines: allocate the
@@ -8231,6 +8454,13 @@ reapply_stacked_values(struct config_generic *variable,
 										 WARNING, false);
 				break;
 
+			case GUC_NONXACT:
+				(void) set_config_option(name, curvalue,
+										 curscontext, cursource,
+										 GUC_ACTION_NONXACT, true,
+										 WARNING, false);
+				break;
+
 			case GUC_LOCAL:
 				(void) set_config_option(name, curvalue,
 										 curscontext, cursource,
@@ -8250,6 +8480,33 @@ reapply_stacked_values(struct config_generic *variable,
 										 GUC_ACTION_LOCAL, true,
 										 WARNING, false);
 				break;
+
+			case GUC_NONXACT_SET:
+				/* first, apply the masked value as SET */
+				(void) set_config_option(name, stack->masked.val.stringval,
+										 stack->masked_scontext, PGC_S_SESSION,
+										 GUC_ACTION_NONXACT, true,
+										 WARNING, false);
+				/* then apply the current value as LOCAL */
+				(void) set_config_option(name, curvalue,
+										 curscontext, cursource,
+										 GUC_ACTION_SET, true,
+										 WARNING, false);
+				break;
+
+			case GUC_NONXACT_LOCAL:
+				/* first, apply the masked value as SET */
+				(void) set_config_option(name, stack->masked.val.stringval,
+										 stack->masked_scontext, PGC_S_SESSION,
+										 GUC_ACTION_NONXACT, true,
+										 WARNING, false);
+				/* then apply the current value as LOCAL */
+				(void) set_config_option(name, curvalue,
+										 curscontext, cursource,
+										 GUC_ACTION_LOCAL, true,
+										 WARNING, false);
+				break;
+
 		}
 
 		/* If we successfully made a stack entry, adjust its nest level */
@@ -10226,6 +10483,370 @@ GUCArrayReset(ArrayType *array)
 	}
 
 	return newarray;
+}
+
+Size
+GucShmemSize(void)
+{
+	Size size;
+
+	size = sizeof(GucRemoteSetting);
+
+	return size;
+}
+
+void
+GucShmemInit(void)
+{
+	Size	size;
+	bool	found;
+
+	size = sizeof(GucRemoteSetting);
+	remote_setting = (GucRemoteSetting *)
+		ShmemInitStruct("GUC remote setting", size, &found);
+
+	if (!found)
+	{
+		MemSet(remote_setting, 0, size);
+		SpinLockInit(&remote_setting->mutex);
+		ConditionVariableInit(&remote_setting->busy_cv);
+	}
+}
+
+/*
+ * set_backend_config: SQL callable function to set GUC variable of remote
+ * session.
+ */
+Datum
+set_backend_config(PG_FUNCTION_ARGS)
+{
+	int		target_pid	= PG_GETARG_INT32(0);
+	char   *name;
+	char   *value = NULL;
+
+	if (PG_ARGISNULL(0) || PG_ARGISNULL(1))
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("invalid argument")));
+	name = text_to_cstring(PG_GETARG_TEXT_P(1));
+
+	if (!PG_ARGISNULL(2))
+		value = text_to_cstring(PG_GETARG_TEXT_P(2));
+
+	PG_RETURN_BOOL(set_backend_config_internal(target_pid, 0, name, value));
+}
+
+static bool
+set_backend_config_internal(int target_pid,	uint64 target_ts, char *name, char *value)
+{
+	PGPROC *target_proc;
+	PGPROC *proc;
+	uint64	target_timestamp;
+	bool	resetall = (name == NULL);
+	struct config_generic *record;
+
+	if (!resetall)
+	{
+		if (strlen(name) >= NAMEDATALEN)
+			ereport(ERROR,
+					(errcode(ERRCODE_NAME_TOO_LONG),
+					 errmsg("name of GUC variable is too long")));
+		if (value && strlen(value) >= GUC_REMOTE_MAX_VALUE_LEN)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("value is too long"),
+					 errdetail("Maximum acceptable length of value is %d",
+							   GUC_REMOTE_MAX_VALUE_LEN - 1)));
+	}
+
+	target_proc = BackendPidGetProc(target_pid);
+
+	/* target pid is coorect ? */
+	if (!target_proc)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("PID %d is not a PostgreSQL server process",
+						target_pid)));
+
+	/* XXXXX */
+	if (target_ts > 0 &&
+		target_proc->starttimestamp / 1000000 != target_ts / 1000000)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("not a PostgreSQL server process")));
+
+	/* save timestamp for later consistency check */
+	target_timestamp = target_proc->starttimestamp;
+
+	/* The same condition to pg_signal_backend() */
+	if ((superuser_arg(target_proc->roleId) && !superuser()) ||
+		(!has_privs_of_role(GetUserId(), target_proc->roleId) &&
+		 !has_privs_of_role(GetUserId(), DEFAULT_ROLE_SIGNAL_BACKENDID)))
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("insufficient privileges for the session")));
+
+	Assert (target_proc->backendId != InvalidBackendId);
+
+	if (!resetall)
+	{
+		record = find_option(name, false, ERROR);
+		if (record == NULL)
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_OBJECT),
+					 errmsg("unrecognized configuration parameter \"%s\"",
+							name)));
+
+		/* PG_SUSET is changebale but only by superusers  */
+		if (!superuser() && record->context == PGC_SUSET)
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("permission denied to set parameter \"%s\"",
+							name)));
+
+		if ((record->context != PGC_USERSET && record->context != PGC_SUSET) ||
+			record->context == PGC_INTERNAL ||
+			(record->flags & GUC_DISALLOW_IN_FILE) ||
+			(record->flags & GUC_DISALLOW_IN_AUTO_FILE))
+			ereport(ERROR,
+					(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM),
+					 errmsg("parameter \"%s\" cannot be changed",
+							name)));
+
+		/*
+		 * If a value is specified, verify that it's sane.
+		 */
+		if (value)
+		{
+		union config_var_val newval;
+		void	   *newextra = NULL;
+
+		/* Check that it's acceptable for the indicated parameter */
+		if (!parse_and_validate_value(record, name, value,
+									  PGC_S_FILE, ERROR,
+									  &newval, &newextra))
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("invalid value for parameter \"%s\": \"%s\"",
+							name, value)));
+
+		if (record->vartype == PGC_STRING && newval.stringval != NULL)
+			free(newval.stringval);
+		if (newextra)
+			free(newextra);
+
+		/*
+		 * We must also reject values containing newlines, because the
+		 * grammar for config files doesn't support embedded newlines in
+		 * string literals.
+		 */
+		if (strchr(value, '\n'))
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("parameter value for SET must not contain a newline")));
+		}
+	}
+
+	/* Wait for another user to finish its work if any */
+	SpinLockAcquire(&remote_setting->mutex);
+	while (remote_setting->busy)
+	{
+		SpinLockRelease(&remote_setting->mutex);
+		ConditionVariableSleep(&remote_setting->busy_cv, WAIT_EVENT_REMOTE_GUC);
+		SpinLockAcquire(&remote_setting->mutex);
+	}
+
+	/* my turn, send a request */
+	Assert(!remote_setting->busy);
+
+	remote_setting->busy = true;
+	SpinLockRelease(&remote_setting->mutex);
+	remote_setting->target_pid = target_pid;
+	remote_setting->setting.source_pid = MyProcPid;
+	remote_setting->setting.context = superuser() ? PGC_SUSET : PGC_USERSET;
+
+	if (!resetall)
+	{
+		strncpy(remote_setting->setting.name, name, NAMEDATALEN);
+		remote_setting->setting.name[NAMEDATALEN - 1] = 0;
+		if (value)
+		{
+			strncpy(remote_setting->value, value, GUC_REMOTE_MAX_VALUE_LEN);
+			remote_setting->value[GUC_REMOTE_MAX_VALUE_LEN - 1] = 0;
+			remote_setting->setting.value = NULL;
+		}
+		remote_setting->setting.reset = (value == NULL);
+		remote_setting->setting.reset_all = false;
+	}
+	else
+	{
+		remote_setting->setting.reset_all = true;
+	}
+	remote_setting->sender_latch = MyLatch;
+
+	/* Check for the target is there yet */
+	proc = BackendPidGetProc(target_pid);
+	if (proc != target_proc ||
+		proc->pid != target_pid || proc->starttimestamp != target_timestamp)
+	{
+		/* let anybody work on the area */
+		SpinLockAcquire(&remote_setting->mutex);
+		remote_setting->busy = false;
+		SpinLockRelease(&remote_setting->mutex);
+		ConditionVariableBroadcast(&remote_setting->busy_cv);
+		
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("target session has gone")));
+	}
+	
+	
+	if (SendProcSignal(target_pid, PROCSIG_REMOTE_GUC, InvalidBackendId) < 0)
+	{
+		/* let anybody work on the area */
+		SpinLockAcquire(&remote_setting->mutex);
+		remote_setting->busy = false;
+		SpinLockRelease(&remote_setting->mutex);
+		ConditionVariableBroadcast(&remote_setting->busy_cv);
+		
+		ereport(ERROR,
+				(errmsg("could not signal backend with PID %d: %m", target_pid)));
+	}
+
+	return true;
+}
+
+
+void
+HandleRemoteGucSetInterrupt(void)
+{
+	Assert(remote_setting->busy);
+
+	/* check if any request is being sent to me */
+	if (remote_setting->target_pid == MyProcPid)
+	{
+		GucPendingSetting  *setting;
+		GucPendingSetting  *r = &remote_setting->setting;
+		bool				found;
+
+		if (r->reset_all)
+		{
+			if (pending_setting)
+			{
+				MemoryContextReset(CacheMemoryContext);
+				pending_setting = NULL;
+			}
+			ResetAllOptions(PGC_S_REMOTE);
+			goto finish;
+		}
+
+		if (!RemoteConfigMemoryContext)
+			RemoteConfigMemoryContext =
+				AllocSetContextCreate(CacheMemoryContext,
+									  "Remote GUC setting context",
+									  ALLOCSET_DEFAULT_SIZES);
+
+		if (!pending_setting)
+		{
+			HASHCTL hashctl;
+
+			MemSet(&hashctl, 0, sizeof(hashctl));
+			hashctl.keysize = NAMEDATALEN;
+			hashctl.entrysize = sizeof(GucPendingSetting);
+			hashctl.hcxt = RemoteConfigMemoryContext;
+			pending_setting = hash_create("Pending remote GUC Changes",
+										  8, &hashctl,
+										  HASH_ELEM | HASH_CONTEXT);
+		}
+
+		/* Just overwrite existing entry */
+		setting = hash_search(pending_setting, r->name, HASH_ENTER, &found);
+		setting->context	= r->context;
+		setting->reset		= r->reset;
+		setting->reset_all	= r->reset_all;
+		setting->source_pid	= r->source_pid;
+
+		if (!found)
+			setting->value = NULL;
+
+		/* free existing value if new value is given or to reset */
+		if (setting->value &&
+			(r->reset ||
+			 strcmp(setting->value, remote_setting->value) != 0))
+		{
+			pfree(setting->value);
+			setting->value = NULL;
+		}
+
+		/* non-null value means no use copying the value */
+		if (!r->reset && setting->value == NULL)
+			setting->value = MemoryContextStrdup(RemoteConfigMemoryContext,
+												 remote_setting->value);
+	}
+
+finish:
+	InterruptPending = true;
+	RemoteGucChangePending = true;
+
+	/* release the communication area */
+	SpinLockAcquire(&remote_setting->mutex);
+	remote_setting->busy = false;
+	SpinLockRelease(&remote_setting->mutex);
+	ConditionVariableBroadcast(&remote_setting->busy_cv);
+}
+
+void
+HandleGucRemoteChanges(void)
+{
+	HASH_SEQ_STATUS		seq;
+	GucPendingSetting  *entry;
+
+	RemoteGucChangePending = false;
+
+	/* reset all discards the hash, must return in the case */
+	if (!pending_setting)
+		return;
+
+	hash_seq_init(&seq, pending_setting);
+
+	while ((entry = hash_seq_search(&seq)))
+	{
+		int scres;
+		char *preval;
+		const char *valtmp = GetConfigOption(entry->name, true, false);
+
+		if (!valtmp)
+			valtmp = "";
+
+		preval = pstrdup(valtmp);
+
+		scres = set_config_option(entry->name, entry->value, entry->context,
+								  PGC_S_REMOTE, GUC_ACTION_NONXACT,
+								  true, WARNING, false);
+		if (scres > 0)
+		{
+			if (preval)
+			{
+				const char *postval = GetConfigOption(entry->name, true, false);
+				if (!postval)
+					postval = "";
+				if (strcmp(preval, postval) != 0)
+					ereport(NOTICE,
+							(errmsg("GUC variable \"%s\" is changed to \"%s\" by request from backend with PID %d",
+									entry->name, postval, entry->source_pid)));
+			}
+		}
+		else if (scres == 0)
+			ereport(LOG,
+					(errmsg("GUC variable \"%s\" could not be changed by request from backend with PID %d",
+							entry->name, entry->source_pid)));
+
+		if (preval)
+			pfree(preval);
+	}
+
+	MemoryContextReset(RemoteConfigMemoryContext);
+	pending_setting = NULL;
 }
 
 /*

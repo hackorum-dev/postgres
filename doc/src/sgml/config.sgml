@@ -175,6 +175,14 @@ shared_buffers = 128MB
      read whenever <filename>postgresql.conf</filename> is, and its settings take
      effect in the same way.  Settings in <filename>postgresql.auto.conf</filename>
      override those in <filename>postgresql.conf</filename>.
+
+    </para>
+    <para>
+     Furthermore a directory <filename>pg_session_conf</filename> in the
+     PostgreSQL data directory contains per-session configuration files. Every
+     file holds settings provided through the
+     <xref linkend="sql-altersession"/> command. This is read by reloading
+     after the two above files and removed at the session-end.
     </para>
 
     <para>
@@ -195,8 +203,8 @@ shared_buffers = 128MB
       The already-mentioned <xref linkend="sql-altersystem"/> command
       provides a SQL-accessible means of changing global defaults; it is
       functionally equivalent to editing <filename>postgresql.conf</filename>.
-      In addition, there are two commands that allow setting of defaults
-      on a per-database or per-role basis:
+      In addition, there are three commands that allow setting of defaults
+      on a per-database, per-role or per-session basis:
      </para>
 
      <itemizedlist>
@@ -213,6 +221,13 @@ shared_buffers = 128MB
        per-database settings to be overridden with user-specific values.
       </para>
      </listitem>
+
+     <listitem>
+      <para>
+       The <xref linkend="sql-altersession"/> command allows other sessions to
+        override session-local settings with user-specific values.
+      </para>
+     </listitem>
     </itemizedlist>
 
      <para>
@@ -222,6 +237,13 @@ shared_buffers = 128MB
       command line, and constitute defaults for the rest of the session.
       Note that some settings cannot be changed after server start, and
       so cannot be set with these commands (or the ones listed below).
+    </para>
+     <para>
+      Values set with <command>ALTER SESSION</command> are applied only when
+      reloading.  They override values obtained from the configuration files
+      or server command line, and constitute defaults for the rest of the
+      session.  Note that it can change only settings that are changeable
+      on-session.
     </para>
 
      <para>

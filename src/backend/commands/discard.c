@@ -68,7 +68,7 @@ DiscardAll(bool isTopLevel)
 	/* Closing portals might run user-defined code, so do that first. */
 	PortalHashTableDeleteAll();
 	SetPGVariable("session_authorization", NIL, false);
-	ResetAllOptions();
+	ResetAllOptions(PGC_S_SESSION);
 	DropAllPreparedStatements();
 	Async_UnlistenAll();
 	LockReleaseAll(USER_LOCKMETHOD, true);

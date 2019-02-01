@@ -4228,6 +4228,10 @@ PostgresMain(int argc, char *argv[],
 			ProcessConfigFile(PGC_SIGHUP);
 		}
 
+		if (RemoteGucChangePending)
+			HandleGucRemoteChanges();
+
+
 		/*
 		 * (7) process the command.  But ignore it if we're skipping till
 		 * Sync.
