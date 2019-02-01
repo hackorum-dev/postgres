@@ -1755,6 +1755,8 @@ composite_to_json(Datum composite, StringInfo result, bool use_line_feeds)
 	int			i;
 	bool		needsep = false;
 	const char *sep;
+	Datum		values[MaxHeapAttributeNumber];
+	bool		nulls[MaxHeapAttributeNumber];
 
 	sep = use_line_feeds ? ",\n " : ",";
 
@@ -1772,10 +1774,10 @@ composite_to_json(Datum composite, StringInfo result, bool use_line_feeds)
 
 	appendStringInfoChar(result, '{');
 
+	heap_deform_tuple(tuple, tupdesc, values, nulls);
+
 	for (i = 0; i < tupdesc->natts; i++)
 	{
-		Datum		val;
-		bool		isnull;
 		char	   *attname;
 		JsonTypeCategory tcategory;
 		Oid			outfuncoid;
@@ -1792,9 +1794,7 @@ composite_to_json(Datum composite, StringInfo result, bool use_line_feeds)
 		escape_json(result, attname);
 		appendStringInfoChar(result, ':');
 
-		val = heap_getattr(tuple, i + 1, tupdesc, &isnull);
-
-		if (isnull)
+		if (nulls[i])
 		{
 			tcategory = JSONTYPE_NULL;
 			outfuncoid = InvalidOid;
@@ -1802,7 +1802,8 @@ composite_to_json(Datum composite, StringInfo result, bool use_line_feeds)
 		else
 			json_categorize_type(att->atttypid, &tcategory, &outfuncoid);
 
-		datum_to_json(val, isnull, result, tcategory, outfuncoid, false);
+		datum_to_json(values[i], nulls[i], result, tcategory, outfuncoid,
+					  false);
 	}
 
 	appendStringInfoChar(result, '}');
