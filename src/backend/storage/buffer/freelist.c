@@ -47,6 +47,35 @@ typedef struct
 	 */
 
 	/*
+	 * Index of 5/8-position buffer
+	 */
+	int separatingBufferLogical;
+	/*
+	 * Index of 7/8-position buffer
+	 */
+	int leaderOfDeathZoneBufferLogical;
+	/*
+	 * Index of 0/8-position buffer
+	 */
+	int firstBufferLogical;
+	/*
+	 * Index of last buffer
+	 */
+	int lastBufferLogical;
+	
+	/*
+	 * NOTE: there is invariant that id_of_next of
+	 * lastBufferLogical == -1 == NO_LOGICAL_NEIGHBOUT. 
+	 * The same sutiatin with id_of_prev of firstBufferLogical 
+	 */
+
+	/*
+	 * Index of current buffer for "clock sweep" algorithm at the last 1/8.
+	 * There is real index becasuse of in ClockSweepTickAtTheEnd() we check.
+	 */ 
+	pg_atomic_uint32 curVictim;
+
+	/*
 	 * Statistics.  These counters should be wide enough that they can't
 	 * overflow during a single bgwriter cycle.
 	 */
@@ -103,69 +132,248 @@ static BufferDesc *GetBufferFromRing(BufferAccessStrategy strategy,
 static void AddBufferToRing(BufferAccessStrategy strategy,
 				BufferDesc *buf);
 
-/*
- * ClockSweepTick - Helper routine for StrategyGetBuffer()
- *
- * Move the clock hand one buffer ahead of its current position and return the
- * id of the buffer now under the hand.
- */
+/* Push curVictim and returns it */
 static inline uint32
-ClockSweepTick(void)
+ClockSweepTickAtTheEnd(void)
 {
-	uint32		victim;
+	uint32		oldVictim;
+	uint32		newVictim;
+	bool success = false;
+	
+	while (!success) { 
+		oldVictim = pg_atomic_read_u32(&StrategyControl->curVictim);
+		newVictim = GetBufferDescriptor(oldVictim)->id_of_next;
+		if (newVictim == NO_LOGICAL_NEIGHBOUR) {
+			newVictim = StrategyControl->leaderOfDeathZoneBufferLogical;
+		}
+		success = pg_atomic_compare_exchange_u32(&StrategyControl->curVictim, &oldVictim, newVictim);
+	}
+	return newVictim;
+}
+
+/* 
+ * Changes logical indeces. So buf->buf_id will equals 
+ * StrategyControl->firstBufferLogical. But not for the second
+ * buffers (see below).
+ *
+ * During the work we hold StrategyControl->buffer_strategy_lock.
+ */
+void
+RemoveBufferOnStart(BufferDesc* buf) {
+	BufferDesc* buf_next;
+	BufferDesc* buf_prev;
+	BufferDesc* currentMaster;
+	BufferDesc* currentLeaderOfDeathZone;
+	BufferDesc* currentSeparatingBuffer;
+	
+	SpinLockAcquire(&StrategyControl->buffer_strategy_lock);
+	
+	/* 
+	 * buf->id_of_prev == NO_LOGICAL_NEIGHBOUR 
+	 * this is case when we have found the first buffer yet
+	 *
+	 * buf->id_of_prev == StrategyControl->firstBufferLogical
+	 * helps us to avoid extra code for this case (the end does not justify the means)
+	 */
+	if (
+		buf->id_of_prev == NO_LOGICAL_NEIGHBOUR 
+		|| buf->id_of_prev == StrategyControl->firstBufferLogical
+	)
+	{
+		SpinLockRelease(&StrategyControl->buffer_strategy_lock);
+		return;
+	}
+	
+	/* 
+	 * Initialization of all the necessary variables
+	 */
+	currentLeaderOfDeathZone = GetBufferDescriptor(StrategyControl->leaderOfDeathZoneBufferLogical);
+	currentSeparatingBuffer = GetBufferDescriptor(StrategyControl->separatingBufferLogical);
+	currentMaster = GetBufferDescriptor(StrategyControl->firstBufferLogical);
+	
+	/*
+	 * We must consider this case to avoid segfault.
+	 */
+	if (buf->id_of_next >= 0)
+		buf_next = GetBufferDescriptor(buf->id_of_next);
+	else
+		buf_next = NULL;
+	buf_prev = GetBufferDescriptor(buf->id_of_prev);
+
+	/* 
+	 * It seems that it is useless. But this commit is the most stable.
+	 * Just in case we will not touch.
+	 */
+	if (currentMaster == buf || currentMaster == buf_prev) 
+	{
+		SpinLockRelease(&StrategyControl->buffer_strategy_lock);
+		return;
+	}
+	
+	/*
+	 * update links at neighbors
+	 */
+	if (buf_next != NULL)
+	{
+		buf_prev->id_of_next = buf->id_of_next;
+		buf_next->id_of_prev = buf->id_of_prev;
+	}
+	else
+	{
+		buf_prev->id_of_next = NO_LOGICAL_NEIGHBOUR;
+		StrategyControl->lastBufferLogical = buf_prev->buf_id;
+	}
+	
+	/* 
+	 * update other links
+	 */
+	buf->id_of_prev = NO_LOGICAL_NEIGHBOUR;
+	buf->id_of_next = StrategyControl->firstBufferLogical;
+	currentMaster->id_of_prev = buf->buf_id;
+
+	/* 
+	 * update firstBufferLogical
+	 */
+	StrategyControl->firstBufferLogical = buf->buf_id;
 
 	/*
-	 * Atomically move hand ahead one buffer - if there's several processes
-	 * doing this, this can lead to buffers being returned slightly out of
-	 * apparent order.
+	 * update boolean field 'inLiveZone' and leaderOfDeathZoneBufferLogical
+	 * if it is necessary, that is buf was situated in the last 1/8 of 
+	 * logical buffer.
 	 */
-	victim =
-		pg_atomic_fetch_add_u32(&StrategyControl->nextVictimBuffer, 1);
-
-	if (victim >= NBuffers)
-	{
-		uint32		originalVictim = victim;
-
-		/* always wrap what we look up in BufferDescriptors */
-		victim = victim % NBuffers;
-
-		/*
-		 * If we're the one that just caused a wraparound, force
-		 * completePasses to be incremented while holding the spinlock. We
-		 * need the spinlock so StrategySyncStart() can return a consistent
-		 * value consisting of nextVictimBuffer and completePasses.
-		 */
-		if (victim == 0)
+	if (!buf->inLiveZone) {
+		buf->inLiveZone = true;
+		buf->beforeMid = true;
+		
+		if (currentLeaderOfDeathZone == buf)
 		{
-			uint32		expected;
-			uint32		wrapped;
-			bool		success = false;
-
-			expected = originalVictim + 1;
-
-			while (!success)
-			{
-				/*
-				 * Acquire the spinlock while increasing completePasses. That
-				 * allows other readers to read nextVictimBuffer and
-				 * completePasses in a consistent manner which is required for
-				 * StrategySyncStart().  In theory delaying the increment
-				 * could lead to an overflow of nextVictimBuffers, but that's
-				 * highly unlikely and wouldn't be particularly harmful.
-				 */
-				SpinLockAcquire(&StrategyControl->buffer_strategy_lock);
-
-				wrapped = expected % NBuffers;
-
-				success = pg_atomic_compare_exchange_u32(&StrategyControl->nextVictimBuffer,
-														 &expected, wrapped);
-				if (success)
-					StrategyControl->completePasses++;
-				SpinLockRelease(&StrategyControl->buffer_strategy_lock);
-			}
+			StrategyControl->leaderOfDeathZoneBufferLogical = buf_prev->buf_id;
+			buf_prev->inLiveZone = false;
+		}
+		else
+		{
+			StrategyControl->leaderOfDeathZoneBufferLogical = currentLeaderOfDeathZone->id_of_prev;
+			GetBufferDescriptor(StrategyControl->leaderOfDeathZoneBufferLogical)->inLiveZone = false;
 		}
 	}
-	return victim;
+
+	/*
+	 * Similarly with position 5/8.
+	 * Note that (!buf->inLiveZone) excepts (!buf->beforeMid)
+	 */
+	if (!buf->beforeMid) {
+		buf->beforeMid = true;
+		
+		if (currentSeparatingBuffer == buf) 
+		{
+			StrategyControl->separatingBufferLogical = buf_prev->buf_id;
+			buf_prev->beforeMid = false;
+		}
+		else
+		{
+			StrategyControl->separatingBufferLogical = currentSeparatingBuffer->id_of_prev;
+			GetBufferDescriptor(StrategyControl->separatingBufferLogical)->beforeMid = false;
+		}
+	}
+	
+	SpinLockRelease(&StrategyControl->buffer_strategy_lock);
+}
+
+/* 
+ * All the code is similar to RemoveBufferOnStart.
+ *
+ * P.S. it is copypaste and should be merged to one function.
+ * P.P.S. we will lose some performance after the merger.
+ * 
+ * TODO
+ */
+void
+RemoveBufferOnSeparatingPosition(BufferDesc* buf) {
+	BufferDesc* buf_next;
+	BufferDesc* buf_prev;
+	BufferDesc* currentMaster;
+	BufferDesc* master_prev;
+	BufferDesc* currentLeaderOfDeathZone;
+	
+	SpinLockAcquire(&StrategyControl->buffer_strategy_lock);
+	
+	if (	
+		buf->buf_id == StrategyControl->separatingBufferLogical
+		|| buf->id_of_prev == StrategyControl->separatingBufferLogical
+		|| buf->beforeMid
+	) 
+	{
+		SpinLockRelease(&StrategyControl->buffer_strategy_lock);
+		return;
+	}
+	
+	/*
+	 * Init 
+	 */
+	currentLeaderOfDeathZone = GetBufferDescriptor(StrategyControl->leaderOfDeathZoneBufferLogical);
+	currentMaster = GetBufferDescriptor(StrategyControl->separatingBufferLogical);
+	
+	if (buf->id_of_next >= 0) 
+		buf_next = GetBufferDescriptor(buf->id_of_next);
+	else
+		buf_next = NULL;
+		
+	buf_prev = GetBufferDescriptor(buf->id_of_prev);
+	
+	master_prev = GetBufferDescriptor(currentMaster->id_of_prev);
+
+	/*
+	 * More efficiently to skip bump if we want to bump only
+	 * on one position. Moreover, code is clearer in this way.
+	 */
+	if (currentMaster == buf_prev) 
+	{
+		SpinLockRelease(&StrategyControl->buffer_strategy_lock);
+		return;
+	}
+	
+	/*
+	 * We just do it here because of all the next operations do not
+	 * touch currentLeaderOfDeathZone.
+	 */
+	if (currentLeaderOfDeathZone == buf) {
+		buf->inLiveZone = true;
+		buf_prev->inLiveZone = false;
+		
+		StrategyControl->leaderOfDeathZoneBufferLogical = currentLeaderOfDeathZone->id_of_prev;
+	}
+	
+	if (buf->id_of_next >= 0) 
+	{
+		buf_next->id_of_prev = buf_prev->buf_id;
+		buf_prev->id_of_next = buf_next->buf_id;	
+	}
+	else 
+	{
+		buf_prev->id_of_next = NO_LOGICAL_NEIGHBOUR;
+		
+		StrategyControl->lastBufferLogical = buf_prev->buf_id;
+	}
+	
+	buf->id_of_next = StrategyControl->separatingBufferLogical;
+	buf->id_of_prev = master_prev->buf_id;
+	
+	currentMaster->id_of_prev = buf->buf_id;
+	master_prev->id_of_next = buf->buf_id;
+	
+	StrategyControl->separatingBufferLogical = buf->buf_id;
+	
+	/*
+	 * Now we consider only case when buf != currentLeaderOfDeathZone
+	 * (see that case (by the way excepting current case) earlier).
+	 */
+	if (!buf->inLiveZone) 
+	{
+		GetBufferDescriptor(currentLeaderOfDeathZone->id_of_prev)->inLiveZone = false;
+		StrategyControl->leaderOfDeathZoneBufferLogical = currentLeaderOfDeathZone->id_of_prev;
+	}
+	
+	SpinLockRelease(&StrategyControl->buffer_strategy_lock);
 }
 
 /*
@@ -204,7 +412,9 @@ StrategyGetBuffer(BufferAccessStrategy strategy, uint32 *buf_state)
 	int			bgwprocno;
 	int			trycounter;
 	uint32		local_buf_state;	/* to avoid repeated (de-)referencing */
-
+	int victimCandidate;
+	BufferDesc *tempBuf;
+	
 	/*
 	 * If given a strategy object, see whether it can select a buffer. We
 	 * assume strategy objects don't need buffer_strategy_lock.
@@ -284,7 +494,9 @@ StrategyGetBuffer(BufferAccessStrategy strategy, uint32 *buf_state)
 			/* Unconditionally remove buffer from freelist */
 			StrategyControl->firstFreeBuffer = buf->freeNext;
 			buf->freeNext = FREENEXT_NOT_IN_LIST;
-
+		
+			StrategyControl->lastBufferLogical = buf->buf_id;
+		
 			/*
 			 * Release the lock so someone else can access the freelist while
 			 * we check out this buffer.
@@ -305,6 +517,13 @@ StrategyGetBuffer(BufferAccessStrategy strategy, uint32 *buf_state)
 				if (strategy != NULL)
 					AddBufferToRing(strategy, buf);
 				*buf_state = local_buf_state;
+				
+				/* 
+				 * There is a reason here too to make a bump buffer, 
+				 * but we did not have time to test it. 
+				 * TODO
+				 */
+				
 				return buf;
 			}
 			UnlockBufHdr(buf, local_buf_state);
@@ -312,11 +531,14 @@ StrategyGetBuffer(BufferAccessStrategy strategy, uint32 *buf_state)
 		}
 	}
 
-	/* Nothing on the freelist, so run the "clock sweep" algorithm */
+	/* Nothing on the freelist, so run the "LRU5/8" algorithm */
 	trycounter = NBuffers;
+	SpinLockAcquire(&StrategyControl->buffer_strategy_lock);
+	victimCandidate = StrategyControl->lastBufferLogical;
+	SpinLockRelease(&StrategyControl->buffer_strategy_lock);
 	for (;;)
-	{
-		buf = GetBufferDescriptor(ClockSweepTick());
+	{		
+		buf = GetBufferDescriptor(victimCandidate);
 
 		/*
 		 * If the buffer is pinned or has a nonzero usage_count, we cannot use
@@ -326,11 +548,19 @@ StrategyGetBuffer(BufferAccessStrategy strategy, uint32 *buf_state)
 
 		if (BUF_STATE_GET_REFCOUNT(local_buf_state) == 0)
 		{
+		/*
+		 * usage_count is useless after replacements "clock sweep", 
+		 * TODO
+		 */
 			if (BUF_STATE_GET_USAGECOUNT(local_buf_state) != 0)
 			{
 				local_buf_state -= BUF_USAGECOUNT_ONE;
 
 				trycounter = NBuffers;
+				
+				SpinLockAcquire(&StrategyControl->buffer_strategy_lock);
+				victimCandidate = StrategyControl->lastBufferLogical;
+				SpinLockRelease(&StrategyControl->buffer_strategy_lock);
 			}
 			else
 			{
@@ -338,20 +568,38 @@ StrategyGetBuffer(BufferAccessStrategy strategy, uint32 *buf_state)
 				if (strategy != NULL)
 					AddBufferToRing(strategy, buf);
 				*buf_state = local_buf_state;
+				
+				RemoveBufferOnSeparatingPosition(buf);
+
 				return buf;
 			}
 		}
-		else if (--trycounter == 0)
+		else 
 		{
+			
+			if (--trycounter == 0)
+			{
+				/*
+				 * We've scanned all the buffers without making any state changes,
+				 * so all the buffers are pinned (or were when we looked at them).
+				 * We could hope that someone will free one eventually, but it's
+				 * probably better to fail than to risk getting stuck in an
+				 * infinite loop.
+				 */
+				UnlockBufHdr(buf, local_buf_state);
+				
+				elog(ERROR, "no unpinned buffers available");
+			}
 			/*
-			 * We've scanned all the buffers without making any state changes,
-			 * so all the buffers are pinned (or were when we looked at them).
-			 * We could hope that someone will free one eventually, but it's
-			 * probably better to fail than to risk getting stuck in an
-			 * infinite loop.
-			 */
-			UnlockBufHdr(buf, local_buf_state);
-			elog(ERROR, "no unpinned buffers available");
+			 * In a good scenario, lock is not needed here: we use atomic variables
+			 * TODO
+			 * And "% NBuffers" is useless to: it seems that there is no bug in 
+			 * ClockSweepTickAtTheEnd(), it returns valid buf_id always
+			 * TODO
+			 */ 
+			SpinLockAcquire(&StrategyControl->buffer_strategy_lock);
+			victimCandidate = ClockSweepTickAtTheEnd() % NBuffers;
+			SpinLockRelease(&StrategyControl->buffer_strategy_lock);
 		}
 		UnlockBufHdr(buf, local_buf_state);
 	}
@@ -512,9 +760,22 @@ StrategyInitialize(bool init)
 		StrategyControl->firstFreeBuffer = 0;
 		StrategyControl->lastFreeBuffer = NBuffers - 1;
 
+		/*
+		 * Initially first/lastBufferLogical coincide with the physical ones.
+		 */
+		StrategyControl->firstBufferLogical = 0;
+		StrategyControl->lastBufferLogical = NBuffers - 1;
+		
+		/*
+		 * Initialization of separating buffers.
+		 */
+		StrategyControl->separatingBufferLogical = NBuffers * 5 / 8;
+		StrategyControl->leaderOfDeathZoneBufferLogical = NBuffers * 7 / 8;
+
 		/* Initialize the clock sweep pointer */
 		pg_atomic_init_u32(&StrategyControl->nextVictimBuffer, 0);
-
+		pg_atomic_init_u32(&StrategyControl->curVictim, StrategyControl->leaderOfDeathZoneBufferLogical);
+		
 		/* Clear statistics */
 		StrategyControl->completePasses = 0;
 		pg_atomic_init_u32(&StrategyControl->numBufferAllocs, 0);
