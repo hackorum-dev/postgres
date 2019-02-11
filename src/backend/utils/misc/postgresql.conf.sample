@@ -214,6 +214,10 @@
 #commit_delay = 0			# range 0-100000, in microseconds
 #commit_siblings = 5			# range 1-1000
 
+#wal_insert_delay_enabled = off
+#wal_insert_delay = 100ms
+#wal_insert_delay_size = 1MB
+
 # - Checkpoints -
 
 #checkpoint_timeout = 5min		# range 30s-1d

@@ -100,6 +100,9 @@ int			wal_level = WAL_LEVEL_MINIMAL;
 int			CommitDelay = 0;	/* precommit delay in microseconds */
 int			CommitSiblings = 5; /* # concurrent xacts needed to sleep */
 int			wal_retrieve_retry_interval = 5000;
+bool		wal_insert_delay_enabled = false;
+int			wal_insert_delay;
+int			wal_insert_delay_size;
 
 #ifdef WAL_DEBUG
 bool		XLOG_DEBUG = false;
@@ -1219,6 +1222,22 @@ XLogInsertRecord(XLogRecData *rdata,
 		MemoryContextSwitchTo(oldCxt);
 	}
 #endif
+
+	/*
+	 * Delay if requested
+	 */
+	if (wal_insert_delay_enabled)
+	{
+		static int64 wal_insert_balance = 0;
+
+		wal_insert_balance += (EndPos - StartPos);
+
+		while (wal_insert_balance > wal_insert_delay_size)
+		{
+			pg_usleep(wal_insert_delay * 1000L);
+			wal_insert_balance -= wal_insert_delay_size;
+		}
+	}
 
 	/*
 	 * Update our global variables

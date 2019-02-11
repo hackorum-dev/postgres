@@ -1177,6 +1177,16 @@ static struct config_bool ConfigureNamesBool[] =
 	},
 
 	{
+		{"wal_insert_delay_enabled", PGC_USERSET, WAL_SETTINGS,
+			gettext_noop("Sleeps after inserting a certain amount of WAL."),
+			NULL
+		},
+		&wal_insert_delay_enabled,
+		false,
+		NULL, NULL, NULL
+	},
+
+	{
 		{"log_checkpoints", PGC_SIGHUP, LOGGING_WHAT,
 			gettext_noop("Logs each checkpoint."),
 			NULL
@@ -2076,6 +2086,28 @@ static struct config_int ConfigureNamesInt[] =
 		},
 		&wal_receiver_timeout,
 		60 * 1000, 0, INT_MAX,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"wal_insert_delay", PGC_USERSET, WAL_SETTINGS,
+			gettext_noop("Sets the sleep time after inserting a certain amount of WAL."),
+			NULL,
+			GUC_UNIT_MS
+		},
+		&wal_insert_delay,
+		100, 0, INT_MAX,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"wal_insert_delay_size", PGC_USERSET, WAL_SETTINGS,
+			gettext_noop("Sets the amount of WAL after which to sleep."),
+			NULL,
+			GUC_UNIT_BYTE
+		},
+		&wal_insert_delay_size,
+		1024 * 1024, 0, INT_MAX,
 		NULL, NULL, NULL
 	},
 

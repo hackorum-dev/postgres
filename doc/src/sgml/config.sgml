@@ -2829,6 +2829,58 @@ include_dir 'conf.d'
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-wal-insert-delay-enabled" xreflabel="wal_insert_delay_enabled">
+      <term><varname>wal_insert_delay_enabled</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>wal_insert_delay_enabled</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        When this setting is turned on, a session sleeps a time of <xref
+        linkend="guc-wal-insert-delay"/> after WAL data of size at least <xref
+        linkend="guc-wal-insert-delay-size"/> has been generated.  The default
+        is off.
+       </para>
+
+       <para>
+        The purpose of this setting is to slow down maintenance operations, in
+        particular to avoid that maintenance operations cause replication lag
+        by writing WAL too quickly.  It is not sensible to enable this setting
+        globally.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-wal-insert-delay" xreflabel="wal_insert_delay">
+      <term><varname>wal_insert_delay</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>wal_insert_delay</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Sets the length of the sleep described under <xref
+        linkend="guc-wal-insert-delay-enabled"/>.  The default is 100
+        milliseconds (but the overall feature is off by default).
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-wal-insert-delay-size" xreflabel="wal_insert_delay_size">
+      <term><varname>wal_insert_delay_size</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>wal_insert_delay_size</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Sets the size of WAL inserted to trigger the sleep described under
+        <xref linkend="guc-wal-insert-delay-enabled"/>.  The default is 1 MB
+        (but the overall feature is off by default).
+       </para>
+      </listitem>
+     </varlistentry>
      </variablelist>
      </sect2>
      <sect2 id="runtime-config-wal-checkpoints">
