@@ -311,11 +311,12 @@ set up for recursive handling of subqueries
  simplify constant expressions
  process sublinks
  convert Vars of outer query levels into Params
---grouping_planner()
+--setop_planner
+  handle UNION/INTERSECT/EXCEPT
+or
+--scan_join_planner
   preprocess target list for non-SELECT queries
-  handle UNION/INTERSECT/EXCEPT, GROUP BY, HAVING, aggregates,
-	ORDER BY, DISTINCT, LIMIT
---query_planner()
+---query_planner()
    make list of base relations used in query
    split up the qual into restrictions (a=1) and joins (b=c)
    find qual clauses that enable merge and hash joins
@@ -335,7 +336,8 @@ set up for recursive handling of subqueries
       each newly constructed joinrel, then apply set_cheapest() to extract
       the cheapest path for it.
       Loop back if this wasn't the top join level.
-  Back at grouping_planner:
+--grouping_planner()
+  handle GROUP BY, HAVING, aggregates, ORDER BY, DISTINCT, LIMIT
   do grouping (GROUP BY) and aggregation
   do window functions
   make unique (DISTINCT)

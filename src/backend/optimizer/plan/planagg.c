@@ -63,7 +63,7 @@ static Oid	fetch_agg_sort_op(Oid aggfnoid);
  * are potentially optimizable, then create a MinMaxAggPath and add it to
  * the (UPPERREL_GROUP_AGG, NULL) upperrel.
  *
- * This should be called by grouping_planner() just before it's ready to call
+ * This should be called by scan_join_planner() just before it's ready to call
  * query_planner(), because we generate indexscan paths by cloning the
  * planner's state and invoking query_planner() on a modified version of
  * the query parsetree.  Thus, all preprocessing needed before query_planner()

@@ -126,12 +126,31 @@ typedef struct
 								 * clauses per Window */
 } WindowClauseSortData;
 
+/*
+ * Temporary structure to record the information needed for top-level
+ * processing in grouping_planner.
+ */
+typedef struct
+{
+	int64		offset_est;
+	int64		count_est;
+	AggClauseCosts		agg_costs;
+	WindowFuncLists	   *wflists;
+	List			   *activeWindows;
+	grouping_sets_data *gset_data;
+	PathTarget		   *final_target;
+} GroupingPlannerData;
+
 /* Local functions */
 static Node *preprocess_expression(PlannerInfo *root, Node *expr, int kind);
 static void preprocess_qual_conditions(PlannerInfo *root, Node *jtnode);
 static void inheritance_planner(PlannerInfo *root);
-static void grouping_planner(PlannerInfo *root, bool inheritance_update,
-				 double tuple_fraction);
+static RelOptInfo *setop_planner(PlannerInfo *root, PathTarget **final_target);
+static RelOptInfo *scan_join_planner(PlannerInfo *root,
+				  GroupingPlannerData *gpdata, PathTarget **final_target);
+static void grouping_planner(PlannerInfo *root, RelOptInfo *pre_grouping_rel,
+				 GroupingPlannerData *gpdata, PathTarget *final_target,
+				 bool inheritance_update);
 static grouping_sets_data *preprocess_grouping_sets(PlannerInfo *root);
 static List *remap_to_groupclause_idx(List *groupClause, List *gsets,
 						 int *tleref_to_colnum_map);
@@ -584,13 +603,19 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
  * parent_root is the immediate parent Query's info (NULL at the top level).
  * hasRecursion is true if this is a recursive WITH query.
  * tuple_fraction is the fraction of tuples we expect will be retrieved.
- * tuple_fraction is interpreted as explained for grouping_planner, below.
+ * tuple_fraction is interpreted as follows:
+ *	  0: expect all tuples to be retrieved (normal case)
+ *	  0 < tuple_fraction < 1: expect the given fraction of tuples available
+ *		from the plan to be retrieved
+ *	  tuple_fraction >= 1: tuple_fraction is the absolute number of tuples
+ *		expected to be retrieved (ie, a LIMIT specification)
  *
- * Basically, this routine does the stuff that should only be done once
- * per Query object.  It then calls grouping_planner.  At one time,
- * grouping_planner could be invoked recursively on the same Query object;
- * that's not currently true, but we keep the separation between the two
- * routines anyway, in case we need it again someday.
+ * Basically, this routine does the stuff that should only be done once per
+ * Query object.  It then calls scan_join_planner (or setop_planner), followed
+ * by grouping_planner.  At one time, grouping_planner could be invoked
+ * recursively on the same Query object; that's not currently true, but we
+ * keep the separation between the two routines anyway, in case we need it
+ * again someday.
  *
  * subquery_planner will be called recursively to handle sub-Query nodes
  * found within the query's expressions and rangetable.
@@ -614,6 +639,8 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 	bool		hasResultRTEs;
 	RelOptInfo *final_rel;
 	ListCell   *l;
+	int64		offset_est = 0;
+	int64		count_est = 0;
 
 	/* Create a PlannerInfo data structure for this subquery */
 	root = makeNode(PlannerInfo);
@@ -989,15 +1016,52 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 	if (hasResultRTEs)
 		remove_useless_result_rtes(root);
 
+	/* Tweak tuple_fraction if have LIMIT/OFFSET */
+	if (parse->limitCount || parse->limitOffset)
+	{
+		tuple_fraction = preprocess_limit(root, tuple_fraction,
+										  &offset_est, &count_est);
+
+		/*
+		 * If we have a known LIMIT, and don't have an unknown OFFSET, we can
+		 * estimate the effects of using a bounded sort.
+		 */
+		if (count_est > 0 && offset_est >= 0)
+			root->limit_tuples = (double) count_est + (double) offset_est;
+	}
+
+	/* Make tuple_fraction accessible to lower-level routines */
+	root->tuple_fraction = tuple_fraction;
+
 	/*
 	 * Do the main planning.  If we have an inherited target relation, that
-	 * needs special processing, else go straight to grouping_planner.
+	 * needs special processing.
 	 */
 	if (parse->resultRelation &&
 		rt_fetch(parse->resultRelation, parse->rtable)->inh)
+	{
 		inheritance_planner(root);
+	}
 	else
-		grouping_planner(root, false, tuple_fraction);
+	{
+		GroupingPlannerData gpdata;
+		PathTarget *final_target;
+		RelOptInfo *pre_grouping_rel;
+
+		memset(&gpdata, 0, sizeof(gpdata));
+
+		if (parse->setOperations)
+			pre_grouping_rel = setop_planner(root, &final_target);
+		else
+			pre_grouping_rel = scan_join_planner(root, &gpdata, &final_target);
+
+		/* Pass updated values of count and offset to grouping_planner. */
+		gpdata.offset_est = offset_est;
+		gpdata.count_est = count_est;
+
+		grouping_planner(root, pre_grouping_rel, &gpdata, final_target,
+						 false);
+	}
 
 	/*
 	 * Capture the set of outer-level param IDs we have access to, for use in
@@ -1307,6 +1371,9 @@ inheritance_planner(PlannerInfo *root)
 		RangeTblEntry *child_rte;
 		RelOptInfo *sub_final_rel;
 		Path	   *subpath;
+		RelOptInfo *pre_grouping_rel;
+		GroupingPlannerData gpdata;
+		PathTarget *final_target;
 
 		/* append_rel_list contains all append rels; ignore others */
 		if (!bms_is_member(appinfo->parent_relid, parent_relids))
@@ -1505,7 +1572,10 @@ inheritance_planner(PlannerInfo *root)
 		Assert(subroot->placeholder_list == NIL);
 
 		/* Generate Path(s) for accessing this result relation */
-		grouping_planner(subroot, true, 0.0 /* retrieve all tuples */ );
+		memset(&gpdata, 0, sizeof(gpdata));
+		pre_grouping_rel = scan_join_planner(subroot, &gpdata, &final_target);
+		grouping_planner(subroot, pre_grouping_rel, &gpdata, final_target,
+						 true);
 
 		/*
 		 * Select cheapest path in case there's more than one.  We always run
@@ -1644,25 +1714,253 @@ inheritance_planner(PlannerInfo *root)
 									 assign_special_exec_param(root)));
 }
 
+/*
+ * setop_planner
+ *		Construct Paths for set operations
+ */
+static RelOptInfo *
+setop_planner(PlannerInfo *root, PathTarget **final_target)
+{
+	Query	   *parse = root->parse;
+	RelOptInfo *current_rel;
+	List	   *tlist;
+
+	Assert(parse->setOperations);
+
+	/*
+	 * If there's a top-level ORDER BY, assume we have to fetch all the
+	 * tuples.  This might be too simplistic given all the hackery below
+	 * to possibly avoid the sort; but the odds of accurate estimates here
+	 * are pretty low anyway.  XXX try to get rid of this in favor of
+	 * letting plan_set_operations generate both fast-start and
+	 * cheapest-total paths.
+	 */
+	if (parse->sortClause)
+		root->tuple_fraction = 0.0;
+
+	/*
+	 * Construct Paths for set operations.  The results will not need any
+	 * work except perhaps a top-level sort and/or LIMIT.  Note that any
+	 * special work for recursive unions is the responsibility of
+	 * plan_set_operations.
+	 */
+	current_rel = plan_set_operations(root);
+
+	/*
+	 * We should not need to call preprocess_targetlist, since we must be
+	 * in a SELECT query node.  Instead, use the targetlist returned by
+	 * plan_set_operations (since this tells whether it returned any
+	 * resjunk columns!), and transfer any sort key information from the
+	 * original tlist.
+	 */
+	Assert(parse->commandType == CMD_SELECT);
+
+	tlist = root->processed_tlist;	/* from plan_set_operations */
+
+	/* for safety, copy processed_tlist instead of modifying in-place */
+	tlist = postprocess_setop_tlist(copyObject(tlist), parse->targetList);
+
+	/* Save aside the final decorated tlist */
+	root->processed_tlist = tlist;
+
+	/* Also extract the PathTarget form of the setop result tlist */
+	*final_target = current_rel->cheapest_total_path->pathtarget;
+
+	/* The setop result tlist couldn't contain any SRFs */
+	Assert(!parse->hasTargetSRFs);
+
+	/*
+	 * Can't handle FOR [KEY] UPDATE/SHARE here (parser should have
+	 * checked already, but let's make sure).
+	 */
+	if (parse->rowMarks)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+		/*------
+		  translator: %s is a SQL row locking clause such as FOR UPDATE */
+				 errmsg("%s is not allowed with UNION/INTERSECT/EXCEPT",
+						LCS_asString(linitial_node(RowMarkClause,
+												   parse->rowMarks)->strength))));
+
+	/*
+	 * Calculate pathkeys that represent result ordering requirements
+	 */
+	Assert(parse->distinctClause == NIL);
+	root->sort_pathkeys = make_pathkeys_for_sortclauses(root,
+														parse->sortClause,
+														tlist);
+	return current_rel;
+}
+
+/*
+ * scan_join_planner
+ *		selects paths for scanning and joining the relations spcified in the
+ *		query
+ *
+ * The paths themselves are created by query_planner().  Here, we collect the
+ * information about grouping and aggregates contained in the query that must
+ * be available before query_planner can be invoked and return it in gpdata
+ * to the caller which must pass it to grouping_planner() for further
+ * processing.
+ *
+ * Also, this computes the final targetlist of the query (adding to it missing
+ * attributes for INSERT/UPDATE, junk attributes, etc.) that the individual
+ * top-level Path(s) must produce and also the PathTarget representation
+ * thereof that's returned in *final_target to the caller, which must pass it
+ * to grouping_planner where it is actually enforced by adding a projection
+ * path on top if needed.
+ */
+static RelOptInfo *
+scan_join_planner(PlannerInfo *root,
+				  GroupingPlannerData *gpdata,
+				  PathTarget **final_target)
+{
+	Query	   *parse = root->parse;
+	List	   *tlist;
+	RelOptInfo *scanjoin_rel;
+	standard_qp_extra qp_extra;
+
+	/* A recursive query should always have setOperations */
+	Assert(!root->hasRecursion);
+
+	/* Preprocess grouping sets and GROUP BY clause, if any */
+	if (parse->groupingSets)
+	{
+		gpdata->gset_data = preprocess_grouping_sets(root);
+	}
+	else
+	{
+		/* Preprocess regular GROUP BY clause, if any */
+		if (parse->groupClause)
+			parse->groupClause = preprocess_groupclause(root, NIL);
+	}
+
+	/* Preprocess targetlist */
+	tlist = preprocess_targetlist(root);
+
+	/*
+	 * We are now done hacking up the query's targetlist.  Most of the
+	 * remaining planning work will be done with the PathTarget
+	 * representation of tlists, but save aside the full representation so
+	 * that we can transfer its decoration (resnames etc) to the topmost
+	 * tlist of the finished Plan.
+	 */
+	root->processed_tlist = tlist;
+
+	/*
+	 * Collect statistics about aggregates for estimating costs, and mark
+	 * all the aggregates with resolved aggtranstypes.  We must do this
+	 * before slicing and dicing the tlist into various pathtargets, else
+	 * some copies of the Aggref nodes might escape being marked with the
+	 * correct transtypes.
+	 *
+	 * Note: currently, we do not detect duplicate aggregates here.  This
+	 * may result in somewhat-overestimated cost, which is fine for our
+	 * purposes since all Paths will get charged the same.  But at some
+	 * point we might wish to do that detection in the planner, rather
+	 * than during executor startup.
+	 */
+	MemSet(&gpdata->agg_costs, 0, sizeof(AggClauseCosts));
+	if (parse->hasAggs)
+	{
+		get_agg_clause_costs(root, (Node *) tlist, AGGSPLIT_SIMPLE,
+							 &gpdata->agg_costs);
+		get_agg_clause_costs(root, parse->havingQual, AGGSPLIT_SIMPLE,
+							 &gpdata->agg_costs);
+	}
+
+	/*
+	 * Locate any window functions in the tlist.  (We don't need to look
+	 * anywhere else, since expressions used in ORDER BY will be in there
+	 * too.)  Note that they could all have been eliminated by constant
+	 * folding, in which case we don't need to do any more work.
+	 */
+	if (parse->hasWindowFuncs)
+	{
+		gpdata->wflists = find_window_functions((Node *) tlist,
+										list_length(parse->windowClause));
+		if (gpdata->wflists->numWindowFuncs > 0)
+			gpdata->activeWindows =
+							select_active_windows(root, gpdata->wflists);
+		else
+			parse->hasWindowFuncs = false;
+	}
+
+	/*
+	 * Preprocess MIN/MAX aggregates, if any.  Note: be careful about
+	 * adding logic between here and the query_planner() call.  Anything
+	 * that is needed in MIN/MAX-optimizable cases will have to be
+	 * duplicated in planagg.c.
+	 */
+	if (parse->hasAggs)
+		preprocess_minmax_aggregates(root, tlist);
+
+	/*
+	 * Figure out whether there's a hard limit on the number of rows that
+	 * query_planner's result subplan needs to return.  Even if we know a
+	 * hard limit overall, it doesn't apply if the query has any
+	 * grouping/aggregation operations, or SRFs in the tlist.
+	 */
+	if (parse->groupClause ||
+		parse->groupingSets ||
+		parse->distinctClause ||
+		parse->hasAggs ||
+		parse->hasWindowFuncs ||
+		parse->hasTargetSRFs ||
+		root->hasHavingQual)
+		root->limit_tuples = -1.0;
+
+	/* Set up data needed by standard_qp_callback */
+	qp_extra.tlist = tlist;
+	qp_extra.activeWindows = gpdata->activeWindows;
+	qp_extra.groupClause = (gpdata->gset_data
+							? (gpdata->gset_data->rollups
+								? linitial_node(RollupData,
+									gpdata->gset_data->rollups)->groupClause
+								: NIL)
+							: parse->groupClause);
+
+	/*
+	 * Generate the best unsorted and presorted paths for the scan/join
+	 * portion of this Query, ie the processing represented by the
+	 * FROM/WHERE clauses.  (Note there may not be any presorted paths.)
+	 * We also generate (in standard_qp_callback) pathkey representations
+	 * of the query's sort clause, distinct clause, etc.
+	 */
+	scanjoin_rel = query_planner(root, tlist, standard_qp_callback,
+								 &qp_extra);
+
+	/*
+	 * Convert the query's result tlist into PathTarget format.
+	 *
+	 * Note: it's desirable to not do this till after query_planner(),
+	 * because the target width estimates can use per-Var width numbers
+	 * that were obtained within query_planner().
+	 */
+	*final_target = create_pathtarget(root, tlist);
+
+	return scanjoin_rel;
+}
+
 /*--------------------
  * grouping_planner
  *	  Perform planning steps related to grouping, aggregation, etc.
  *
  * This function adds all required top-level processing to the scan/join
- * Path(s) produced by query_planner.
+ * Path(s) produced by scan_join_planner.
+ *
+ * pre_grouping_rel is the RelOptInfo of the query's top-level of joining.
+ *
+ * gpdata contains the information collected by scan_join_planner about
+ * the grouping, aggregates contained in the query.
+ *
+ * final_target is the PathTarget representation of the query's final
+ * target list.
  *
  * If inheritance_update is true, we're being called from inheritance_planner
  * and should not include a ModifyTable step in the resulting Path(s).
  * (inheritance_planner will create a single ModifyTable node covering all the
  * target tables.)
- *
- * tuple_fraction is the fraction of tuples we expect will be retrieved.
- * tuple_fraction is interpreted as follows:
- *	  0: expect all tuples to be retrieved (normal case)
- *	  0 < tuple_fraction < 1: expect the given fraction of tuples available
- *		from the plan to be retrieved
- *	  tuple_fraction >= 1: tuple_fraction is the absolute number of tuples
- *		expected to be retrieved (ie, a LIMIT specification)
  *
  * Returns nothing; the useful output is in the Paths we attach to the
  * (UPPERREL_FINAL, NULL) upperrel in *root.  In addition,
@@ -1673,422 +1971,223 @@ inheritance_planner(PlannerInfo *root)
  *--------------------
  */
 static void
-grouping_planner(PlannerInfo *root, bool inheritance_update,
-				 double tuple_fraction)
+grouping_planner(PlannerInfo *root, RelOptInfo *pre_grouping_rel,
+				 GroupingPlannerData *gpdata,
+				 PathTarget *final_target,
+				 bool inheritance_update)
 {
 	Query	   *parse = root->parse;
-	List	   *tlist;
+	List	   *tlist = root->processed_tlist;
+	double		limit_tuples = root->limit_tuples;
+	bool		have_postponed_srfs = false;
 	int64		offset_est = 0;
 	int64		count_est = 0;
-	double		limit_tuples = -1.0;
-	bool		have_postponed_srfs = false;
-	PathTarget *final_target;
+	AggClauseCosts *agg_costs = NULL;
+	WindowFuncLists *wflists = NULL;
+	List	   *activeWindows = NIL;
+	grouping_sets_data *gset_data = NULL;
 	List	   *final_targets;
 	List	   *final_targets_contain_srfs;
 	bool		final_target_parallel_safe;
-	RelOptInfo *current_rel;
+	PathTarget *sort_input_target;
+	List	   *sort_input_targets;
+	List	   *sort_input_targets_contain_srfs;
+	bool		sort_input_target_parallel_safe;
+	PathTarget *grouping_target;
+	List	   *grouping_targets;
+	List	   *grouping_targets_contain_srfs;
+	bool		grouping_target_parallel_safe;
+	PathTarget *scanjoin_target;
+	List	   *scanjoin_targets;
+	List	   *scanjoin_targets_contain_srfs;
+	bool		scanjoin_target_parallel_safe;
+	bool		scanjoin_target_same_exprs;
+	bool		have_grouping;
+	RelOptInfo *current_rel = pre_grouping_rel;
 	RelOptInfo *final_rel;
 	ListCell   *lc;
 
-	/* Tweak caller-supplied tuple_fraction if have LIMIT/OFFSET */
-	if (parse->limitCount || parse->limitOffset)
+	/* Information that scan_join_planner gathered for us. */
+	if (gpdata)
 	{
-		tuple_fraction = preprocess_limit(root, tuple_fraction,
-										  &offset_est, &count_est);
-
-		/*
-		 * If we have a known LIMIT, and don't have an unknown OFFSET, we can
-		 * estimate the effects of using a bounded sort.
-		 */
-		if (count_est > 0 && offset_est >= 0)
-			limit_tuples = (double) count_est + (double) offset_est;
+		offset_est = gpdata->offset_est;
+		count_est = gpdata->count_est;
+		agg_costs = &gpdata->agg_costs;
+		wflists = gpdata->wflists;
+		activeWindows = gpdata->activeWindows;
+		gset_data = gpdata->gset_data;
 	}
 
-	/* Make tuple_fraction accessible to lower-level routines */
-	root->tuple_fraction = tuple_fraction;
+	Assert(final_target != NULL);
+	final_target_parallel_safe =
+					is_parallel_safe(root, (Node *) final_target->exprs);
 
-	if (parse->setOperations)
+	/*
+	 * If ORDER BY was given, consider whether we should use a post-sort
+	 * projection, and compute the adjusted target for preceding steps if
+	 * so.
+	 */
+	if (parse->sortClause)
 	{
-		/*
-		 * If there's a top-level ORDER BY, assume we have to fetch all the
-		 * tuples.  This might be too simplistic given all the hackery below
-		 * to possibly avoid the sort; but the odds of accurate estimates here
-		 * are pretty low anyway.  XXX try to get rid of this in favor of
-		 * letting plan_set_operations generate both fast-start and
-		 * cheapest-total paths.
-		 */
-		if (parse->sortClause)
-			root->tuple_fraction = 0.0;
-
-		/*
-		 * Construct Paths for set operations.  The results will not need any
-		 * work except perhaps a top-level sort and/or LIMIT.  Note that any
-		 * special work for recursive unions is the responsibility of
-		 * plan_set_operations.
-		 */
-		current_rel = plan_set_operations(root);
-
-		/*
-		 * We should not need to call preprocess_targetlist, since we must be
-		 * in a SELECT query node.  Instead, use the targetlist returned by
-		 * plan_set_operations (since this tells whether it returned any
-		 * resjunk columns!), and transfer any sort key information from the
-		 * original tlist.
-		 */
-		Assert(parse->commandType == CMD_SELECT);
-
-		tlist = root->processed_tlist;	/* from plan_set_operations */
-
-		/* for safety, copy processed_tlist instead of modifying in-place */
-		tlist = postprocess_setop_tlist(copyObject(tlist), parse->targetList);
-
-		/* Save aside the final decorated tlist */
-		root->processed_tlist = tlist;
-
-		/* Also extract the PathTarget form of the setop result tlist */
-		final_target = current_rel->cheapest_total_path->pathtarget;
-
-		/* And check whether it's parallel safe */
-		final_target_parallel_safe =
-			is_parallel_safe(root, (Node *) final_target->exprs);
-
-		/* The setop result tlist couldn't contain any SRFs */
-		Assert(!parse->hasTargetSRFs);
-		final_targets = final_targets_contain_srfs = NIL;
-
-		/*
-		 * Can't handle FOR [KEY] UPDATE/SHARE here (parser should have
-		 * checked already, but let's make sure).
-		 */
-		if (parse->rowMarks)
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-			/*------
-			  translator: %s is a SQL row locking clause such as FOR UPDATE */
-					 errmsg("%s is not allowed with UNION/INTERSECT/EXCEPT",
-							LCS_asString(linitial_node(RowMarkClause,
-													   parse->rowMarks)->strength))));
-
-		/*
-		 * Calculate pathkeys that represent result ordering requirements
-		 */
-		Assert(parse->distinctClause == NIL);
-		root->sort_pathkeys = make_pathkeys_for_sortclauses(root,
-															parse->sortClause,
-															tlist);
+		sort_input_target = make_sort_input_target(root,
+												   final_target,
+												   &have_postponed_srfs);
+		sort_input_target_parallel_safe =
+			is_parallel_safe(root, (Node *) sort_input_target->exprs);
 	}
 	else
 	{
-		/* No set operations, do regular planning */
-		PathTarget *sort_input_target;
-		List	   *sort_input_targets;
-		List	   *sort_input_targets_contain_srfs;
-		bool		sort_input_target_parallel_safe;
-		PathTarget *grouping_target;
-		List	   *grouping_targets;
-		List	   *grouping_targets_contain_srfs;
-		bool		grouping_target_parallel_safe;
-		PathTarget *scanjoin_target;
-		List	   *scanjoin_targets;
-		List	   *scanjoin_targets_contain_srfs;
-		bool		scanjoin_target_parallel_safe;
-		bool		scanjoin_target_same_exprs;
-		bool		have_grouping;
-		AggClauseCosts agg_costs;
-		WindowFuncLists *wflists = NULL;
-		List	   *activeWindows = NIL;
-		grouping_sets_data *gset_data = NULL;
-		standard_qp_extra qp_extra;
+		sort_input_target = final_target;
+		sort_input_target_parallel_safe = final_target_parallel_safe;
+	}
 
-		/* A recursive query should always have setOperations */
-		Assert(!root->hasRecursion);
+	/*
+	 * If we have window functions to deal with, the output from any
+	 * grouping step needs to be what the window functions want;
+	 * otherwise, it should be sort_input_target.
+	 */
+	if (activeWindows)
+	{
+		grouping_target = make_window_input_target(root,
+												   final_target,
+												   activeWindows);
+		grouping_target_parallel_safe =
+			is_parallel_safe(root, (Node *) grouping_target->exprs);
+	}
+	else
+	{
+		grouping_target = sort_input_target;
+		grouping_target_parallel_safe = sort_input_target_parallel_safe;
+	}
 
-		/* Preprocess grouping sets and GROUP BY clause, if any */
-		if (parse->groupingSets)
-		{
-			gset_data = preprocess_grouping_sets(root);
-		}
-		else
-		{
-			/* Preprocess regular GROUP BY clause, if any */
-			if (parse->groupClause)
-				parse->groupClause = preprocess_groupclause(root, NIL);
-		}
+	/*
+	 * If we have grouping or aggregation to do, the topmost scan/join
+	 * plan node must emit what the grouping step wants; otherwise, it
+	 * should emit grouping_target.
+	 */
+	have_grouping = (parse->groupClause || parse->groupingSets ||
+					 parse->hasAggs || root->hasHavingQual);
+	if (have_grouping)
+	{
+		scanjoin_target = make_group_input_target(root, final_target);
+		scanjoin_target_parallel_safe =
+			is_parallel_safe(root, (Node *) grouping_target->exprs);
+	}
+	else
+	{
+		scanjoin_target = grouping_target;
+		scanjoin_target_parallel_safe = grouping_target_parallel_safe;
+	}
 
-		/* Preprocess targetlist */
-		tlist = preprocess_targetlist(root);
+	/*
+	 * If there are any SRFs in the targetlist, we must separate each of
+	 * these PathTargets into SRF-computing and SRF-free targets.  Replace
+	 * each of the named targets with a SRF-free version, and remember the
+	 * list of additional projection steps we need to add afterwards.
+	 */
+	if (parse->hasTargetSRFs)
+	{
+		/* final_target doesn't recompute any SRFs in sort_input_target */
+		split_pathtarget_at_srfs(root, final_target, sort_input_target,
+								 &final_targets,
+								 &final_targets_contain_srfs);
+		final_target = linitial_node(PathTarget, final_targets);
+		Assert(!linitial_int(final_targets_contain_srfs));
+		/* likewise for sort_input_target vs. grouping_target */
+		split_pathtarget_at_srfs(root, sort_input_target, grouping_target,
+								 &sort_input_targets,
+								 &sort_input_targets_contain_srfs);
+		sort_input_target = linitial_node(PathTarget, sort_input_targets);
+		Assert(!linitial_int(sort_input_targets_contain_srfs));
+		/* likewise for grouping_target vs. scanjoin_target */
+		split_pathtarget_at_srfs(root, grouping_target, scanjoin_target,
+								 &grouping_targets,
+								 &grouping_targets_contain_srfs);
+		grouping_target = linitial_node(PathTarget, grouping_targets);
+		Assert(!linitial_int(grouping_targets_contain_srfs));
+		/* scanjoin_target will not have any SRFs precomputed for it */
+		split_pathtarget_at_srfs(root, scanjoin_target, NULL,
+								 &scanjoin_targets,
+								 &scanjoin_targets_contain_srfs);
+		scanjoin_target = linitial_node(PathTarget, scanjoin_targets);
+		Assert(!linitial_int(scanjoin_targets_contain_srfs));
+	}
+	else
+	{
+		/* initialize lists; for most of these, dummy values are OK */
+		final_targets = final_targets_contain_srfs = NIL;
+		sort_input_targets = sort_input_targets_contain_srfs = NIL;
+		grouping_targets = grouping_targets_contain_srfs = NIL;
+		scanjoin_targets = list_make1(scanjoin_target);
+		scanjoin_targets_contain_srfs = NIL;
+	}
 
-		/*
-		 * We are now done hacking up the query's targetlist.  Most of the
-		 * remaining planning work will be done with the PathTarget
-		 * representation of tlists, but save aside the full representation so
-		 * that we can transfer its decoration (resnames etc) to the topmost
-		 * tlist of the finished Plan.
-		 */
-		root->processed_tlist = tlist;
+	/* Apply scan/join target. */
+	scanjoin_target_same_exprs = list_length(scanjoin_targets) == 1
+		&& equal(scanjoin_target->exprs, current_rel->reltarget->exprs);
+	apply_scanjoin_target_to_paths(root, current_rel, scanjoin_targets,
+								   scanjoin_targets_contain_srfs,
+								   scanjoin_target_parallel_safe,
+								   scanjoin_target_same_exprs);
 
-		/*
-		 * Collect statistics about aggregates for estimating costs, and mark
-		 * all the aggregates with resolved aggtranstypes.  We must do this
-		 * before slicing and dicing the tlist into various pathtargets, else
-		 * some copies of the Aggref nodes might escape being marked with the
-		 * correct transtypes.
-		 *
-		 * Note: currently, we do not detect duplicate aggregates here.  This
-		 * may result in somewhat-overestimated cost, which is fine for our
-		 * purposes since all Paths will get charged the same.  But at some
-		 * point we might wish to do that detection in the planner, rather
-		 * than during executor startup.
-		 */
-		MemSet(&agg_costs, 0, sizeof(AggClauseCosts));
-		if (parse->hasAggs)
-		{
-			get_agg_clause_costs(root, (Node *) tlist, AGGSPLIT_SIMPLE,
-								 &agg_costs);
-			get_agg_clause_costs(root, parse->havingQual, AGGSPLIT_SIMPLE,
-								 &agg_costs);
-		}
+	/*
+	 * Save the various upper-rel PathTargets we just computed into
+	 * root->upper_targets[].  The core code doesn't use this, but it
+	 * provides a convenient place for extensions to get at the info.  For
+	 * consistency, we save all the intermediate targets, even though some
+	 * of the corresponding upperrels might not be needed for this query.
+	 */
+	root->upper_targets[UPPERREL_FINAL] = final_target;
+	root->upper_targets[UPPERREL_WINDOW] = sort_input_target;
+	root->upper_targets[UPPERREL_GROUP_AGG] = grouping_target;
 
-		/*
-		 * Locate any window functions in the tlist.  (We don't need to look
-		 * anywhere else, since expressions used in ORDER BY will be in there
-		 * too.)  Note that they could all have been eliminated by constant
-		 * folding, in which case we don't need to do any more work.
-		 */
-		if (parse->hasWindowFuncs)
-		{
-			wflists = find_window_functions((Node *) tlist,
-											list_length(parse->windowClause));
-			if (wflists->numWindowFuncs > 0)
-				activeWindows = select_active_windows(root, wflists);
-			else
-				parse->hasWindowFuncs = false;
-		}
-
-		/*
-		 * Preprocess MIN/MAX aggregates, if any.  Note: be careful about
-		 * adding logic between here and the query_planner() call.  Anything
-		 * that is needed in MIN/MAX-optimizable cases will have to be
-		 * duplicated in planagg.c.
-		 */
-		if (parse->hasAggs)
-			preprocess_minmax_aggregates(root, tlist);
-
-		/*
-		 * Figure out whether there's a hard limit on the number of rows that
-		 * query_planner's result subplan needs to return.  Even if we know a
-		 * hard limit overall, it doesn't apply if the query has any
-		 * grouping/aggregation operations, or SRFs in the tlist.
-		 */
-		if (parse->groupClause ||
-			parse->groupingSets ||
-			parse->distinctClause ||
-			parse->hasAggs ||
-			parse->hasWindowFuncs ||
-			parse->hasTargetSRFs ||
-			root->hasHavingQual)
-			root->limit_tuples = -1.0;
-		else
-			root->limit_tuples = limit_tuples;
-
-		/* Set up data needed by standard_qp_callback */
-		qp_extra.tlist = tlist;
-		qp_extra.activeWindows = activeWindows;
-		qp_extra.groupClause = (gset_data
-								? (gset_data->rollups ? linitial_node(RollupData, gset_data->rollups)->groupClause : NIL)
-								: parse->groupClause);
-
-		/*
-		 * Generate the best unsorted and presorted paths for the scan/join
-		 * portion of this Query, ie the processing represented by the
-		 * FROM/WHERE clauses.  (Note there may not be any presorted paths.)
-		 * We also generate (in standard_qp_callback) pathkey representations
-		 * of the query's sort clause, distinct clause, etc.
-		 */
-		current_rel = query_planner(root, tlist,
-									standard_qp_callback, &qp_extra);
-
-		/*
-		 * Convert the query's result tlist into PathTarget format.
-		 *
-		 * Note: it's desirable to not do this till after query_planner(),
-		 * because the target width estimates can use per-Var width numbers
-		 * that were obtained within query_planner().
-		 */
-		final_target = create_pathtarget(root, tlist);
-		final_target_parallel_safe =
-			is_parallel_safe(root, (Node *) final_target->exprs);
-
-		/*
-		 * If ORDER BY was given, consider whether we should use a post-sort
-		 * projection, and compute the adjusted target for preceding steps if
-		 * so.
-		 */
-		if (parse->sortClause)
-		{
-			sort_input_target = make_sort_input_target(root,
-													   final_target,
-													   &have_postponed_srfs);
-			sort_input_target_parallel_safe =
-				is_parallel_safe(root, (Node *) sort_input_target->exprs);
-		}
-		else
-		{
-			sort_input_target = final_target;
-			sort_input_target_parallel_safe = final_target_parallel_safe;
-		}
-
-		/*
-		 * If we have window functions to deal with, the output from any
-		 * grouping step needs to be what the window functions want;
-		 * otherwise, it should be sort_input_target.
-		 */
-		if (activeWindows)
-		{
-			grouping_target = make_window_input_target(root,
-													   final_target,
-													   activeWindows);
-			grouping_target_parallel_safe =
-				is_parallel_safe(root, (Node *) grouping_target->exprs);
-		}
-		else
-		{
-			grouping_target = sort_input_target;
-			grouping_target_parallel_safe = sort_input_target_parallel_safe;
-		}
-
-		/*
-		 * If we have grouping or aggregation to do, the topmost scan/join
-		 * plan node must emit what the grouping step wants; otherwise, it
-		 * should emit grouping_target.
-		 */
-		have_grouping = (parse->groupClause || parse->groupingSets ||
-						 parse->hasAggs || root->hasHavingQual);
-		if (have_grouping)
-		{
-			scanjoin_target = make_group_input_target(root, final_target);
-			scanjoin_target_parallel_safe =
-				is_parallel_safe(root, (Node *) grouping_target->exprs);
-		}
-		else
-		{
-			scanjoin_target = grouping_target;
-			scanjoin_target_parallel_safe = grouping_target_parallel_safe;
-		}
-
-		/*
-		 * If there are any SRFs in the targetlist, we must separate each of
-		 * these PathTargets into SRF-computing and SRF-free targets.  Replace
-		 * each of the named targets with a SRF-free version, and remember the
-		 * list of additional projection steps we need to add afterwards.
-		 */
+	/*
+	 * If we have grouping and/or aggregation, consider ways to implement
+	 * that.  We build a new upperrel representing the output of this
+	 * phase.
+	 */
+	if (have_grouping)
+	{
+		current_rel = create_grouping_paths(root,
+											current_rel,
+											grouping_target,
+											grouping_target_parallel_safe,
+											agg_costs,
+											gset_data);
+		/* Fix things up if grouping_target contains SRFs */
 		if (parse->hasTargetSRFs)
-		{
-			/* final_target doesn't recompute any SRFs in sort_input_target */
-			split_pathtarget_at_srfs(root, final_target, sort_input_target,
-									 &final_targets,
-									 &final_targets_contain_srfs);
-			final_target = linitial_node(PathTarget, final_targets);
-			Assert(!linitial_int(final_targets_contain_srfs));
-			/* likewise for sort_input_target vs. grouping_target */
-			split_pathtarget_at_srfs(root, sort_input_target, grouping_target,
-									 &sort_input_targets,
-									 &sort_input_targets_contain_srfs);
-			sort_input_target = linitial_node(PathTarget, sort_input_targets);
-			Assert(!linitial_int(sort_input_targets_contain_srfs));
-			/* likewise for grouping_target vs. scanjoin_target */
-			split_pathtarget_at_srfs(root, grouping_target, scanjoin_target,
-									 &grouping_targets,
-									 &grouping_targets_contain_srfs);
-			grouping_target = linitial_node(PathTarget, grouping_targets);
-			Assert(!linitial_int(grouping_targets_contain_srfs));
-			/* scanjoin_target will not have any SRFs precomputed for it */
-			split_pathtarget_at_srfs(root, scanjoin_target, NULL,
-									 &scanjoin_targets,
-									 &scanjoin_targets_contain_srfs);
-			scanjoin_target = linitial_node(PathTarget, scanjoin_targets);
-			Assert(!linitial_int(scanjoin_targets_contain_srfs));
-		}
-		else
-		{
-			/* initialize lists; for most of these, dummy values are OK */
-			final_targets = final_targets_contain_srfs = NIL;
-			sort_input_targets = sort_input_targets_contain_srfs = NIL;
-			grouping_targets = grouping_targets_contain_srfs = NIL;
-			scanjoin_targets = list_make1(scanjoin_target);
-			scanjoin_targets_contain_srfs = NIL;
-		}
+			adjust_paths_for_srfs(root, current_rel,
+								  grouping_targets,
+								  grouping_targets_contain_srfs);
+	}
 
-		/* Apply scan/join target. */
-		scanjoin_target_same_exprs = list_length(scanjoin_targets) == 1
-			&& equal(scanjoin_target->exprs, current_rel->reltarget->exprs);
-		apply_scanjoin_target_to_paths(root, current_rel, scanjoin_targets,
-									   scanjoin_targets_contain_srfs,
-									   scanjoin_target_parallel_safe,
-									   scanjoin_target_same_exprs);
+	/*
+	 * If we have window functions, consider ways to implement those.  We
+	 * build a new upperrel representing the output of this phase.
+	 */
+	if (activeWindows)
+	{
+		current_rel = create_window_paths(root,
+										  current_rel,
+										  grouping_target,
+										  sort_input_target,
+										  sort_input_target_parallel_safe,
+										  tlist,
+										  wflists,
+										  activeWindows);
+		/* Fix things up if sort_input_target contains SRFs */
+		if (parse->hasTargetSRFs)
+			adjust_paths_for_srfs(root, current_rel,
+								  sort_input_targets,
+								  sort_input_targets_contain_srfs);
+	}
 
-		/*
-		 * Save the various upper-rel PathTargets we just computed into
-		 * root->upper_targets[].  The core code doesn't use this, but it
-		 * provides a convenient place for extensions to get at the info.  For
-		 * consistency, we save all the intermediate targets, even though some
-		 * of the corresponding upperrels might not be needed for this query.
-		 */
-		root->upper_targets[UPPERREL_FINAL] = final_target;
-		root->upper_targets[UPPERREL_WINDOW] = sort_input_target;
-		root->upper_targets[UPPERREL_GROUP_AGG] = grouping_target;
-
-		/*
-		 * If we have grouping and/or aggregation, consider ways to implement
-		 * that.  We build a new upperrel representing the output of this
-		 * phase.
-		 */
-		if (have_grouping)
-		{
-			current_rel = create_grouping_paths(root,
-												current_rel,
-												grouping_target,
-												grouping_target_parallel_safe,
-												&agg_costs,
-												gset_data);
-			/* Fix things up if grouping_target contains SRFs */
-			if (parse->hasTargetSRFs)
-				adjust_paths_for_srfs(root, current_rel,
-									  grouping_targets,
-									  grouping_targets_contain_srfs);
-		}
-
-		/*
-		 * If we have window functions, consider ways to implement those.  We
-		 * build a new upperrel representing the output of this phase.
-		 */
-		if (activeWindows)
-		{
-			current_rel = create_window_paths(root,
-											  current_rel,
-											  grouping_target,
-											  sort_input_target,
-											  sort_input_target_parallel_safe,
-											  tlist,
-											  wflists,
-											  activeWindows);
-			/* Fix things up if sort_input_target contains SRFs */
-			if (parse->hasTargetSRFs)
-				adjust_paths_for_srfs(root, current_rel,
-									  sort_input_targets,
-									  sort_input_targets_contain_srfs);
-		}
-
-		/*
-		 * If there is a DISTINCT clause, consider ways to implement that. We
-		 * build a new upperrel representing the output of this phase.
-		 */
-		if (parse->distinctClause)
-		{
-			current_rel = create_distinct_paths(root,
-												current_rel);
-		}
-	}							/* end of if (setOperations) */
+	/*
+	 * If there is a DISTINCT clause, consider ways to implement that. We
+	 * build a new upperrel representing the output of this phase.
+	 */
+	if (parse->distinctClause)
+		current_rel = create_distinct_paths(root, current_rel);
 
 	/*
 	 * If ORDER BY was given, consider ways to implement that, and generate a
@@ -5009,7 +5108,7 @@ create_ordered_paths(PlannerInfo *root,
  * 'final_target' is the query's final target list (in PathTarget form)
  *
  * The result is the PathTarget to be computed by the Paths returned from
- * query_planner().
+ * scan_join_planner().
  */
 static PathTarget *
 make_group_input_target(PlannerInfo *root, PathTarget *final_target)

@@ -305,7 +305,7 @@ struct PlannerInfo
 	struct PathTarget *upper_targets[UPPERREL_FINAL + 1];
 
 	/*
-	 * grouping_planner passes back its final processed targetlist here, for
+	 * scan_join_planner passes back its final processed targetlist here, for
 	 * use in relabeling the topmost tlist of the finished Plan.
 	 */
 	List	   *processed_tlist;

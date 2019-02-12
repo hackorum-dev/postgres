@@ -93,7 +93,7 @@ static List *generate_setop_grouplist(SetOperationStmt *op, List *targetlist);
  *
  * This routine only deals with the setOperations tree of the given query.
  * Any top-level ORDER BY requested in root->parse->sortClause will be handled
- * when we return to grouping_planner; likewise for LIMIT.
+ * later when grouping_planner is called; likewise for LIMIT.
  *
  * What we return is an "upperrel" RelOptInfo containing at least one Path
  * that implements the set-operation tree.  In addition, root->processed_tlist

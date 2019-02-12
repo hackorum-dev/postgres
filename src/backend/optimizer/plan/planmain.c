@@ -38,8 +38,8 @@
  *
  * Since query_planner does not handle the toplevel processing (grouping,
  * sorting, etc) it cannot select the best path by itself.  Instead, it
- * returns the RelOptInfo for the top level of joining, and the caller
- * (grouping_planner) can choose among the surviving paths for the rel.
+ * returns the RelOptInfo for the top level of joining, and grouping_planner
+ * can choose among the surviving paths for the rel.
  *
  * root describes the query to plan
  * tlist is the target list the query should produce
