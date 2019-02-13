@@ -3173,6 +3173,10 @@ replace_text(PG_FUNCTION_ARGS)
 
 	initStringInfo(&str);
 
+	/* allocate a varlena header at the start of the stringinfo */
+	enlargeStringInfo(&str, VARHDRSZ);
+	str.len += VARHDRSZ;
+
 	do
 	{
 		CHECK_FOR_INTERRUPTS();
@@ -3197,8 +3201,8 @@ replace_text(PG_FUNCTION_ARGS)
 
 	text_position_cleanup(&state);
 
-	ret_text = cstring_to_text_with_len(str.data, str.len);
-	pfree(str.data);
+	ret_text = (text*) str.data;
+	SET_VARSIZE(ret_text, str.len); /* VARHDRSZ is already included in str.len */
 
 	PG_RETURN_TEXT_P(ret_text);
 }
