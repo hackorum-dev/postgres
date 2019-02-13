@@ -349,15 +349,25 @@ InitProcess(void)
 		/*
 		 * If we reach here, all the PGPROCs are in use.  This is one of the
 		 * possible places to detect "too many backends", so give the standard
-		 * error message.  XXX do we need to give a different failure message
-		 * in the autovacuum case?
+		 * error message.
 		 */
 		SpinLockRelease(ProcStructLock);
-		if (am_walsender)
+		if (IsAnyAutoVacuumProcess())
+			ereport(FATAL,
+					(errcode(ERRCODE_TOO_MANY_CONNECTIONS),
+					 errmsg("number of requested autovacuum workers exceeds autovacuum_max_workers (currently %d)",
+							autovacuum_max_workers)));
+		else if (IsBackgroundWorker)
+			ereport(FATAL,
+					(errcode(ERRCODE_TOO_MANY_CONNECTIONS),
+					 errmsg("number of requested worker processes exceeds max_worker_processes (currently %d)",
+							max_worker_processes)));
+		else if (am_walsender)
 			ereport(FATAL,
 					(errcode(ERRCODE_TOO_MANY_CONNECTIONS),
 					 errmsg("number of requested standby connections exceeds max_wal_senders (currently %d)",
 							max_wal_senders)));
+
 		ereport(FATAL,
 				(errcode(ERRCODE_TOO_MANY_CONNECTIONS),
 				 errmsg("sorry, too many clients already")));
