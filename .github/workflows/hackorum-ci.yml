@@ -1,0 +1,13 @@
+name: hackorum patch CI
+on: push
+jobs:
+  ci:
+    uses: hackorum-dev/postgres-ci/.github/workflows/patch-ci.yml@main
+    permissions:
+      contents: write
+      packages: write
+    with:
+      pg_major: 12
+      topic_id: 40116
+      message_index: 1
+      base_sha: 13b89f96d07ad3da67b57f66c134c3609bd3e98f
