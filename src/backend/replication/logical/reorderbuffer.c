@@ -1318,29 +1318,36 @@ ReorderBufferBuildTupleCidHash(ReorderBuffer *rb, ReorderBufferTXN *txn)
 						(void *) &key,
 						HASH_ENTER | HASH_FIND,
 						&found);
-		if (!found)
-		{
-			ent->cmin = change->data.tuplecid.cmin;
-			ent->cmax = change->data.tuplecid.cmax;
-			ent->combocid = change->data.tuplecid.combocid;
-		}
-		else
+		if (found)
 		{
 			/*
-			 * Maybe we already saw this tuple before in this transaction,
-			 * but if so it must have the same cmin.
+			 * Tuple with such key (relnode, tid) might be inserted in aborted
+			 * subxact, space reclaimed and then filled with another tuple
+			 * from our xact or another; then we might update it again. It
+			 * means cmin can become valid/invalid at any moment, but valid
+			 * values are always monotonic.
 			 */
-			Assert(ent->cmin == change->data.tuplecid.cmin);
+			Assert((ent->cmin == InvalidCommandId) ||
+				   (change->data.tuplecid.cmin == InvalidCommandId) ||
+				   (change->data.tuplecid.cmin >= ent->cmin));
 
 			/*
-			 * cmax may be initially invalid, but once set it can only grow,
-			 * and never become invalid again.
+			 * Practically the same for cmax; to see invalid cmax after
+			 * valid, we need to insert new tuple in place of one reclaimed
+			 * from our aborted subxact.
 			 */
 			Assert((ent->cmax == InvalidCommandId) ||
-				   ((change->data.tuplecid.cmax != InvalidCommandId) &&
-					(change->data.tuplecid.cmax > ent->cmax)));
-			ent->cmax = change->data.tuplecid.cmax;
+				   (change->data.tuplecid.cmax == InvalidCommandId) ||
+				   (change->data.tuplecid.cmax > ent->cmax));
 		}
+
+		/*
+		 * The 'right' (potentially belonging to committed xact) cmin and cmax
+		 * are always the latest.
+		 */
+		ent->cmin = change->data.tuplecid.cmin;
+		ent->cmax = change->data.tuplecid.cmax;
+		ent->combocid = change->data.tuplecid.combocid;
 	}
 }
 
