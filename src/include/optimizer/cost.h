@@ -38,6 +38,17 @@ typedef enum
 	CONSTRAINT_EXCLUSION_PARTITION	/* apply c_e to otherrels only */
 }			ConstraintExclusionType;
 
+typedef struct CostInfo
+{
+	Cost		per_page_cost;
+	Cost		per_row_cost;
+	Cost		per_tuple_cost;
+	Cost		startup_cost;
+	double		npages;
+	double		ntuples;
+	double		parallel_divisor;
+} CostInfo;
+
 
 /*
  * prototypes for costsize.c
@@ -199,4 +210,14 @@ extern PathTarget *set_pathtarget_cost_width(PlannerInfo *root, PathTarget *targ
 extern double compute_bitmap_pages(PlannerInfo *root, RelOptInfo *baserel,
 					 Path *bitmapqual, int loop_count, Cost *cost, double *tuple);
 
+
+extern CostInfo *cost_info_seqscan(Path *path, PlannerInfo *root,
+			 RelOptInfo *baserel, ParamPathInfo *param_info);
+
+extern double total_cost_seqscan(CostInfo *cost_info, double nrows);
+
+/* The actual total cost calculated based on the instument.
+ * Currently, only the number of rows is used to show a proof of concept.
+ */
+extern double actual_total_cost(Plan *plan, double nrows);
 #endif							/* COST_H */

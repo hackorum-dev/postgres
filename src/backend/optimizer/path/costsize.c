@@ -201,6 +201,89 @@ clamp_row_est(double nrows)
 
 
 /*
+ * Fill the cost info structure. Later we use this structure to compute the
+ * cost estimation.
+ */
+CostInfo *
+cost_info_seqscan(Path *path, PlannerInfo *root,
+			 RelOptInfo *baserel, ParamPathInfo *param_info)
+{
+	Cost		per_page_cost;
+	Cost		per_row_cost;
+	Cost		per_tuple_cost;
+	Cost		startup_cost = 0.0;
+	double		npages;
+	double		ntuples;
+	double		parallel_divisor;
+	QualCost	qpqual_cost;
+	CostInfo	*cost_info;
+
+
+	if (!enable_seqscan)
+		startup_cost += disable_cost;
+
+	/* fetch estimated page cost for tablespace containing table */
+	get_tablespace_page_costs(baserel->reltablespace,
+							  NULL,
+							  &per_page_cost);
+
+	npages = baserel->pages;
+
+	/* CPU costs */
+	get_restriction_qual_cost(root, baserel, param_info, &qpqual_cost);
+
+	startup_cost = qpqual_cost.startup;
+	per_tuple_cost = cpu_tuple_cost + qpqual_cost.per_tuple;
+	ntuples = baserel->tuples;
+	/* tlist eval costs are paid per output row, not per tuple scanned */
+	startup_cost += path->pathtarget->cost.startup;
+	per_row_cost = path->pathtarget->cost.per_tuple;
+	parallel_divisor = 1.0;
+
+	/* Adjust costing for parallelism, if used. */
+	if (path->parallel_workers > 0)
+	{
+		parallel_divisor = get_parallel_divisor(path);
+	}
+
+	cost_info = palloc(sizeof(CostInfo));
+	cost_info->per_page_cost = per_page_cost;
+	cost_info->per_row_cost = per_row_cost;
+	cost_info->per_tuple_cost = per_tuple_cost;
+	cost_info->startup_cost = startup_cost;
+	cost_info->npages = npages;
+	cost_info->ntuples = ntuples;
+	cost_info->parallel_divisor= parallel_divisor;
+
+	return cost_info;
+}
+
+
+/*
+ * Calculate the total cost of a SeqScan
+ */
+double
+total_cost_seqscan(CostInfo *cost_info, double nrows)
+{
+	Cost disk_run_cost;
+	Cost cpu_run_cost;
+
+	/*
+	 * disk costs
+	 */
+	disk_run_cost = cost_info->per_page_cost * cost_info->npages;
+
+	cpu_run_cost = cost_info->per_tuple_cost * cost_info->ntuples + \
+					cost_info->per_row_cost * nrows;
+
+	/* The CPU cost is divided among all the workers. */
+	cpu_run_cost /= cost_info->parallel_divisor;
+
+	return cost_info->startup_cost + cpu_run_cost + disk_run_cost;
+}
+
+
+/*
  * cost_seqscan
  *	  Determines and returns the cost of scanning a relation sequentially.
  *
@@ -211,12 +294,8 @@ void
 cost_seqscan(Path *path, PlannerInfo *root,
 			 RelOptInfo *baserel, ParamPathInfo *param_info)
 {
-	Cost		startup_cost = 0;
-	Cost		cpu_run_cost;
-	Cost		disk_run_cost;
-	double		spc_seq_page_cost;
-	QualCost	qpqual_cost;
-	Cost		cpu_per_tuple;
+	double		nrows;
+	CostInfo	*cost_info;
 
 	/* Should only be applied to base relations */
 	Assert(baserel->relid > 0);
@@ -224,41 +303,15 @@ cost_seqscan(Path *path, PlannerInfo *root,
 
 	/* Mark the path with the correct row estimate */
 	if (param_info)
-		path->rows = param_info->ppi_rows;
+		nrows = param_info->ppi_rows;
 	else
-		path->rows = baserel->rows;
+		nrows = baserel->rows;
 
-	if (!enable_seqscan)
-		startup_cost += disable_cost;
-
-	/* fetch estimated page cost for tablespace containing table */
-	get_tablespace_page_costs(baserel->reltablespace,
-							  NULL,
-							  &spc_seq_page_cost);
-
-	/*
-	 * disk costs
-	 */
-	disk_run_cost = spc_seq_page_cost * baserel->pages;
-
-	/* CPU costs */
-	get_restriction_qual_cost(root, baserel, param_info, &qpqual_cost);
-
-	startup_cost += qpqual_cost.startup;
-	cpu_per_tuple = cpu_tuple_cost + qpqual_cost.per_tuple;
-	cpu_run_cost = cpu_per_tuple * baserel->tuples;
-	/* tlist eval costs are paid per output row, not per tuple scanned */
-	startup_cost += path->pathtarget->cost.startup;
-	cpu_run_cost += path->pathtarget->cost.per_tuple * path->rows;
+	cost_info = cost_info_seqscan(path, root, baserel, param_info);
 
 	/* Adjust costing for parallelism, if used. */
 	if (path->parallel_workers > 0)
 	{
-		double		parallel_divisor = get_parallel_divisor(path);
-
-		/* The CPU cost is divided among all the workers. */
-		cpu_run_cost /= parallel_divisor;
-
 		/*
 		 * It may be possible to amortize some of the I/O cost, but probably
 		 * not very much, because most operating systems already do aggressive
@@ -270,11 +323,13 @@ cost_seqscan(Path *path, PlannerInfo *root,
 		 * In the case of a parallel plan, the row count needs to represent
 		 * the number of tuples processed per worker.
 		 */
-		path->rows = clamp_row_est(path->rows / parallel_divisor);
+		path->rows = clamp_row_est(path->rows / cost_info->parallel_divisor);
 	}
 
-	path->startup_cost = startup_cost;
-	path->total_cost = startup_cost + cpu_run_cost + disk_run_cost;
+	path->startup_cost = cost_info->startup_cost;
+	path->total_cost = total_cost_seqscan(cost_info, nrows);
+
+	pfree(cost_info);
 }
 
 /*
@@ -5550,4 +5605,20 @@ compute_bitmap_pages(PlannerInfo *root, RelOptInfo *baserel, Path *bitmapqual,
 		*tuple = tuples_fetched;
 
 	return pages_fetched;
+}
+
+/*
+ * Get the actual total cost by using the actual number of rows
+ */
+double
+actual_total_cost(Plan *plan, double nrows)
+{
+	switch (nodeTag(plan))
+	{
+		case T_SeqScan:
+			return total_cost_seqscan(plan->cost_info, nrows);
+		default:
+			break;
+	}
+	return -1.0;
 }

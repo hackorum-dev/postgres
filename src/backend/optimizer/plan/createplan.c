@@ -349,6 +349,8 @@ create_plan(PlannerInfo *root, Path *best_path)
 	 * re-used later
 	 */
 	root->plan_params = NIL;
+	plan->cost_info = cost_info_seqscan(best_path, root,
+						best_path->parent, best_path->param_info);
 
 	return plan;
 }

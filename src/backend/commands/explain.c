@@ -24,6 +24,7 @@
 #include "nodes/extensible.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
+#include "optimizer/cost.h"
 #include "parser/parsetree.h"
 #include "rewrite/rewriteHandler.h"
 #include "storage/bufmgr.h"
@@ -1441,7 +1442,8 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		{
 			if (es->timing)
 				appendStringInfo(es->str,
-								 " (actual time=%.3f..%.3f rows=%.0f loops=%.0f)",
+								 " (actual cost=%.2f..%.2f time=%.3f..%.3f rows=%.0f loops=%.0f)",
+								 plan->cost_info->startup_cost, actual_total_cost(plan, rows),
 								 startup_ms, total_ms, rows, nloops);
 			else
 				appendStringInfo(es->str,

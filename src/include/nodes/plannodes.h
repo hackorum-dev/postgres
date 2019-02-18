@@ -127,6 +127,8 @@ typedef struct Plan
 	double		plan_rows;		/* number of rows plan is expected to emit */
 	int			plan_width;		/* average row width in bytes */
 
+	struct CostInfo *cost_info;
+
 	/*
 	 * information needed for parallel query
 	 */
