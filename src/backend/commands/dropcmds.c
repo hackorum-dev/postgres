@@ -98,6 +98,23 @@ RemoveObjects(DropStmt *stmt)
 						 errhint("Use DROP AGGREGATE to drop aggregate functions.")));
 		}
 
+		/*
+		 * Don't allow dropping of temp namespaces, since there can still be
+		 * references to the oids all over.
+		 * We have to look at the name of the schema, since the checks for isTempNamespace()
+		 * only checks if it's *our* temp one,gi
+		 */
+		if (stmt->removeType == OBJECT_SCHEMA)
+		{
+			char *name = get_namespace_name(address.objectId);
+			if (name && (strncmp(name, "pg_temp_", 8) == 0 || strncmp(name, "pg_toast_temp_", 14) == 0))
+				ereport(ERROR,
+						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+						 errmsg("cannot drop temporary schema \"%s\"",
+								get_namespace_name(address.objectId)),
+						 errhint("temporary schemas are dropped automatically when the session ends.")));
+		}
+
 		/* Check permissions. */
 		namespaceId = get_object_namespace(&address);
 		if (!OidIsValid(namespaceId) ||
