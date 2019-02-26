@@ -820,6 +820,22 @@ llvm_compile_module(LLVMJitContext *context)
 }
 
 /*
+ * Handle any ABI issues.
+ *
+ * Add more entries here for other archs as needed.
+ */
+static void
+llvm_load_abi(void)
+{
+#if (defined(__arm__) || defined(__arm)) && \
+    !(defined(__aarch64__) || defined(__aarch64))
+#define ABISYM(s) { extern void s(void); LLVMAddSymbol(#s, &s); }
+#include "abi_funcs_arm.h"
+#undef ABISYM
+#endif
+}
+
+/*
  * Per session initialization.
  */
 static void
@@ -891,6 +907,9 @@ llvm_session_initialize(void)
 	cpu = NULL;
 	LLVMDisposeMessage(features);
 	features = NULL;
+
+	/* force load any ABI symbols needed by the platform */
+	llvm_load_abi();
 
 	/* force symbols in main binary to be loaded */
 	LLVMLoadLibraryPermanently(NULL);
