@@ -808,8 +808,6 @@ AtAbort_Portals(void)
 		 * cursor from a previous transaction, but it could also be that the
 		 * cursor was auto-held in this transaction, so it wants to live on.
 		 */
-		if (portal->autoHeld)
-			continue;
 
 		/*
 		 * If it was created in the current transaction, we can't do normal
@@ -879,7 +877,7 @@ AtCleanup_Portals(void)
 		 * Do nothing to cursors held over from a previous transaction or
 		 * auto-held ones.
 		 */
-		if (portal->createSubid == InvalidSubTransactionId || portal->autoHeld)
+		if (portal->createSubid == InvalidSubTransactionId)
 		{
 			Assert(portal->status != PORTAL_ACTIVE);
 			Assert(portal->resowner == NULL);
