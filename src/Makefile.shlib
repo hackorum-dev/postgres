@@ -359,7 +359,7 @@ ifeq ($(PORTNAME), cygwin)
 # Cygwin case
 
 $(shlib): $(OBJS) | $(SHLIB_PREREQS)
-	$(CC) $(CFLAGS)  -shared -o $@ -Wl,--out-implib=$(stlib) $(OBJS) $(LDFLAGS) $(LDFLAGS_SL) $(SHLIB_LINK) $(LIBS) $(LDAP_LIBS_BE)
+	$(CC) $(CFLAGS)  -shared -o $@ -Wl,--out-implib=$(stlib) $(OBJS) $(LDFLAGS) $(LDFLAGS_SL) $(SHLIB_LINK) $(LIBS) $(LDAP_LIBS)
 
 # see notes in src/backend/parser/Makefile  about use of this type of rule
 $(stlib): $(shlib)

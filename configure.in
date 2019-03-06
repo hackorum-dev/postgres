@@ -1238,26 +1238,23 @@ if test "$with_ldap" = yes ; then
     AC_CHECK_LIB(ldap, ldap_bind, [],
 		 [AC_MSG_ERROR([library 'ldap' is required for LDAP])],
 		 [$EXTRA_LDAP_LIBS])
-    LDAP_LIBS_BE="-lldap $EXTRA_LDAP_LIBS"
     if test "$enable_thread_safety" = yes; then
       # on some platforms ldap_r fails to link without PTHREAD_LIBS
       AC_CHECK_LIB(ldap_r, ldap_simple_bind, [],
 		   [AC_MSG_ERROR([library 'ldap_r' is required for LDAP])],
 		   [$PTHREAD_CFLAGS $PTHREAD_LIBS $EXTRA_LDAP_LIBS])
-      LDAP_LIBS_FE="-lldap_r $EXTRA_LDAP_LIBS"
+      LDAP_LIBS="-lldap_r $EXTRA_LDAP_LIBS"
     else
-      LDAP_LIBS_FE="-lldap $EXTRA_LDAP_LIBS"
+      LDAP_LIBS="-lldap $EXTRA_LDAP_LIBS"
     fi
     AC_CHECK_FUNCS([ldap_initialize])
   else
     AC_CHECK_LIB(wldap32, ldap_bind, [], [AC_MSG_ERROR([library 'wldap32' is required for LDAP])])
-    LDAP_LIBS_FE="-lwldap32"
-    LDAP_LIBS_BE="-lwldap32"
+    LDAP_LIBS="-lwldap32"
   fi
   LIBS="$_LIBS"
 fi
-AC_SUBST(LDAP_LIBS_FE)
-AC_SUBST(LDAP_LIBS_BE)
+AC_SUBST(LDAP_LIBS)
 
 # for contrib/sepgsql
 if test "$with_selinux" = yes; then
@@ -1423,7 +1420,6 @@ if test "$with_ldap" = yes ; then
   if test "$PORTNAME" != "win32"; then
      AC_CHECK_HEADERS(ldap.h, [],
                       [AC_MSG_ERROR([header file <ldap.h> is required for LDAP])])
-     PGAC_LDAP_SAFE
   else
      AC_CHECK_HEADERS(winldap.h, [],
                       [AC_MSG_ERROR([header file <winldap.h> is required for LDAP])],

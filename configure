@@ -652,8 +652,7 @@ CFLAGS_SSE42
 have_win32_dbghelp
 LIBOBJS
 UUID_LIBS
-LDAP_LIBS_BE
-LDAP_LIBS_FE
+LDAP_LIBS
 PTHREAD_CFLAGS
 PTHREAD_LIBS
 PTHREAD_CC
@@ -12375,7 +12374,6 @@ else
   as_fn_error $? "library 'ldap' is required for LDAP" "$LINENO" 5
 fi
 
-    LDAP_LIBS_BE="-lldap $EXTRA_LDAP_LIBS"
     if test "$enable_thread_safety" = yes; then
       # on some platforms ldap_r fails to link without PTHREAD_LIBS
       { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ldap_simple_bind in -lldap_r" >&5
@@ -12425,9 +12423,9 @@ else
   as_fn_error $? "library 'ldap_r' is required for LDAP" "$LINENO" 5
 fi
 
-      LDAP_LIBS_FE="-lldap_r $EXTRA_LDAP_LIBS"
+      LDAP_LIBS="-lldap_r $EXTRA_LDAP_LIBS"
     else
-      LDAP_LIBS_FE="-lldap $EXTRA_LDAP_LIBS"
+      LDAP_LIBS="-lldap $EXTRA_LDAP_LIBS"
     fi
     for ac_func in ldap_initialize
 do :
@@ -12488,12 +12486,10 @@ else
   as_fn_error $? "library 'wldap32' is required for LDAP" "$LINENO" 5
 fi
 
-    LDAP_LIBS_FE="-lwldap32"
-    LDAP_LIBS_BE="-lwldap32"
+    LDAP_LIBS="-lwldap32"
   fi
   LIBS="$_LIBS"
 fi
-
 
 
 # for contrib/sepgsql
@@ -13168,47 +13164,6 @@ fi
 
 done
 
-     { $as_echo "$as_me:${as_lineno-$LINENO}: checking for compatible LDAP implementation" >&5
-$as_echo_n "checking for compatible LDAP implementation... " >&6; }
-if ${pgac_cv_ldap_safe+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-#include <ldap.h>
-#if !defined(LDAP_VENDOR_VERSION) || \
-     (defined(LDAP_API_FEATURE_X_OPENLDAP) && \
-      LDAP_VENDOR_VERSION >= 20424 && LDAP_VENDOR_VERSION <= 20431)
-choke me
-#endif
-int
-main ()
-{
-
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_compile "$LINENO"; then :
-  pgac_cv_ldap_safe=yes
-else
-  pgac_cv_ldap_safe=no
-fi
-rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
-fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $pgac_cv_ldap_safe" >&5
-$as_echo "$pgac_cv_ldap_safe" >&6; }
-
-if test "$pgac_cv_ldap_safe" != yes; then
-  { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING:
-*** With OpenLDAP versions 2.4.24 through 2.4.31, inclusive, each backend
-*** process that loads libpq (via WAL receiver, dblink, or postgres_fdw) and
-*** also uses LDAP will crash on exit." >&5
-$as_echo "$as_me: WARNING:
-*** With OpenLDAP versions 2.4.24 through 2.4.31, inclusive, each backend
-*** process that loads libpq (via WAL receiver, dblink, or postgres_fdw) and
-*** also uses LDAP will crash on exit." >&2;}
-fi
   else
      for ac_header in winldap.h
 do :

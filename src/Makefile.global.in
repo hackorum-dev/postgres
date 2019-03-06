@@ -284,8 +284,7 @@ AR = @AR@
 DLLTOOL = @DLLTOOL@
 DLLWRAP = @DLLWRAP@
 LIBS = @LIBS@
-LDAP_LIBS_FE = @LDAP_LIBS_FE@
-LDAP_LIBS_BE = @LDAP_LIBS_BE@
+LDAP_LIBS = @LDAP_LIBS@
 UUID_LIBS = @UUID_LIBS@
 UUID_EXTRA_OBJS = @UUID_EXTRA_OBJS@
 LLVM_LIBS=@LLVM_LIBS@
@@ -570,7 +569,7 @@ endif
 
 # Cygwin seems to need ldap libraries to be mentioned here, too
 ifeq ($(PORTNAME),cygwin)
-libpq_pgport += $(LDAP_LIBS_FE)
+libpq_pgport += $(LDAP_LIBS)
 endif
 
 
