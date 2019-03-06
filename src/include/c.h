@@ -1257,6 +1257,17 @@ extern unsigned long long strtoull(const char *str, char **endptr, int base);
 #define NON_EXEC_STATIC static
 #endif
 
+/* macOS has a function to report if the process is multithreaded */
+#ifdef HAVE_PTHREAD_IS_THREADED_NP
+#define pg_is_threaded() pthread_is_threaded_np()
+#define HAVE_PG_IS_THREADED 1
+#endif
+/* several BSDs have a global variable instead */
+#ifdef HAVE_DECL___ISTHREADED
+#define pg_is_threaded() __isthreaded
+#define HAVE_PG_IS_THREADED 1
+#endif
+
 /* /port compatibility functions */
 #include "port.h"
 

@@ -1696,6 +1696,7 @@ if test "$pgac_cv_var_PS_STRINGS" = yes ; then
   AC_DEFINE([HAVE_PS_STRINGS], 1, [Define to 1 if the PS_STRINGS thing exists.])
 fi
 
+AC_CHECK_DECLS(__isthreaded, [], [], [#include <stdio.h>])
 
 dnl Cannot use AC_CHECK_FUNC because isinf may be a macro
 AC_CACHE_CHECK([for isinf], ac_cv_func_isinf,

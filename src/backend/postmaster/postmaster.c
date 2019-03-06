@@ -1333,7 +1333,7 @@ PostmasterMain(int argc, char *argv[])
 		 */
 	}
 
-#ifdef HAVE_PTHREAD_IS_THREADED_NP
+#ifdef HAVE_PG_IS_THREADED
 
 	/*
 	 * On macOS, libintl replaces setlocale() with a version that calls
@@ -1344,7 +1344,7 @@ PostmasterMain(int argc, char *argv[])
 	 * behavior in a multithreaded program.  A multithreaded postmaster is the
 	 * normal case on Windows, which offers neither fork() nor sigprocmask().
 	 */
-	if (pthread_is_threaded_np() != 0)
+	if (pg_is_threaded() != 0)
 		ereport(FATAL,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				 errmsg("postmaster became multithreaded during startup"),
@@ -1779,13 +1779,13 @@ ServerLoop(void)
 		if (StartWorkerNeeded || HaveCrashedWorker)
 			maybe_start_bgworkers();
 
-#ifdef HAVE_PTHREAD_IS_THREADED_NP
+#ifdef HAVE_PG_IS_THREADED
 
 		/*
 		 * With assertions enabled, check regularly for appearance of
 		 * additional threads.  All builds check at start and exit.
 		 */
-		Assert(pthread_is_threaded_np() == 0);
+		Assert(pg_is_threaded() == 0);
 #endif
 
 		/*
@@ -4996,7 +4996,7 @@ SubPostmasterMain(int argc, char *argv[])
 static void
 ExitPostmaster(int status)
 {
-#ifdef HAVE_PTHREAD_IS_THREADED_NP
+#ifdef HAVE_PG_IS_THREADED
 
 	/*
 	 * There is no known cause for a postmaster to become multithreaded after
@@ -5004,7 +5004,7 @@ ExitPostmaster(int status)
 	 * This message uses LOG level, because an unclean shutdown at this point
 	 * would usually not look much different from a clean shutdown.
 	 */
-	if (pthread_is_threaded_np() != 0)
+	if (pg_is_threaded() != 0)
 		ereport(LOG,
 				(errcode(ERRCODE_INTERNAL_ERROR),
 				 errmsg_internal("postmaster became multithreaded"),

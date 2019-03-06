@@ -15758,6 +15758,18 @@ $as_echo "#define HAVE_PS_STRINGS 1" >>confdefs.h
 
 fi
 
+ac_fn_c_check_decl "$LINENO" "__isthreaded" "ac_cv_have_decl___isthreaded" "#include <stdio.h>
+"
+if test "x$ac_cv_have_decl___isthreaded" = xyes; then :
+  ac_have_decl=1
+else
+  ac_have_decl=0
+fi
+
+cat >>confdefs.h <<_ACEOF
+#define HAVE_DECL___ISTHREADED $ac_have_decl
+_ACEOF
+
 
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking for isinf" >&5
 $as_echo_n "checking for isinf... " >&6; }

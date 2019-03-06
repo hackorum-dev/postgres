@@ -192,6 +192,10 @@
    don't. */
 #undef HAVE_DECL_STRTOULL
 
+/* Define to 1 if you have the declaration of `__isthreaded', and to 0 if you
+   don't. */
+#undef HAVE_DECL___ISTHREADED
+
 /* Define to 1 if you have the `dlopen' function. */
 #undef HAVE_DLOPEN
 
