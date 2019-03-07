@@ -30,11 +30,13 @@
 #include "access/multixact.h"
 #include "access/transam.h"
 #include "access/xact.h"
+#include "catalog/dependency.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_inherits.h"
 #include "catalog/pg_namespace.h"
 #include "commands/cluster.h"
+#include "commands/dbcommands.h"
 #include "commands/vacuum.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
@@ -47,6 +49,7 @@
 #include "utils/acl.h"
 #include "utils/fmgroids.h"
 #include "utils/guc.h"
+#include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
@@ -1638,7 +1641,33 @@ vacuum_rel(Oid relid, RangeVar *relation, int options, VacuumParams *params)
 	 */
 	if (RELATION_IS_OTHER_TEMP(onerel))
 	{
-		relation_close(onerel, lmode);
+		/*
+		 * But in single-user mode this is an orphan temp table. We should drop
+		 * it to resolve possible wraparound.
+		 */
+		if (!IsUnderPostmaster && MyAuxProcType == NotAnAuxProcess)
+		{
+			ObjectAddress object;
+
+			ereport(LOG,
+					(errmsg("dropping orphan temp table \"%s.%s.%s\"",
+							get_database_name(MyDatabaseId),
+							get_namespace_name(onerel->rd_rel->relnamespace),
+							NameStr(onerel->rd_rel->relname))));
+
+			relation_close(onerel, lmode);
+
+			object.classId = RelationRelationId;
+			object.objectId = relid;
+			object.objectSubId = 0;
+			performDeletion(&object, DROP_CASCADE,
+							PERFORM_DELETION_INTERNAL |
+							PERFORM_DELETION_QUIETLY |
+							PERFORM_DELETION_SKIP_EXTENSIONS);
+		}
+		else
+			relation_close(onerel, lmode);
+
 		PopActiveSnapshot();
 		CommitTransactionCommand();
 		return false;

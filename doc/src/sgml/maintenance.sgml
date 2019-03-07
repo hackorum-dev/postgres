@@ -705,6 +705,35 @@ HINT:  Stop the postmaster and vacuum that database in single-user mode.
      nominally disabled.
     </para>
    </sect3>
+
+   <sect3 id="temporary-tables-and-wraparound">
+    <title>Temporary Tables and Wraparound</title>
+
+    <para>
+     In long sessions, having multiple temporary tables that are not properly
+     cleaned up can cause wraparound.  To avoid this issue, you can manually
+     remove temporary tables that are no longer required.
+    </para>
+    <para>
+     If the wraparound has already occurred and the server has stopped accepting
+     commands, you can do the following:
+     <orderedlist>
+      <listitem>
+       <para>
+        Stop the server and launch it in the
+        <link linkend="app-postgres-single-user">single-user mode</link>.
+       </para>
+      </listitem>
+      <listitem>
+       <para>
+        Run the <command>VACUUM</command> command to remove orphaned temporary
+        tables.
+       </para>
+      </listitem>
+     </orderedlist>
+     Once this operation completes, you can restart the server as usual.
+    </para>
+   </sect3>
   </sect2>
 
   <sect2 id="autovacuum">
