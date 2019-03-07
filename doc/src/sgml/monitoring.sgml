@@ -861,7 +861,7 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
 
       <tbody>
        <row>
-        <entry morerows="63"><literal>LWLock</literal></entry>
+        <entry morerows="67"><literal>LWLock</literal></entry>
         <entry><literal>ShmemIndexLock</literal></entry>
         <entry>Waiting to find or allocate space in shared memory.</entry>
        </row>
@@ -1140,43 +1140,26 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
          counters during Parallel Hash plan execution.</entry>
         </row>
         <row>
+         <entry><literal>session_dsa</literal></entry>
+         <entry>Waiting for per-session dynamic shared memory allocation
+         lock.</entry>
+        </row>
+        <row>
+         <entry><literal>session_record_table</literal></entry>
+         <entry>Waiting to access a shared record type cache by
+         structure.</entry>
+        </row>
+        <row>
+         <entry><literal>session_typmod_table</literal></entry>
+         <entry>Waiting to access a shared record type cache by
+         typmod.</entry>
+        </row>
+        <row>
+         <entry><literal>shared_tuplestore</literal></entry>
+         <entry>Waiting to access a shared tuplestore.</entry>
+        </row>
+        <row>
          <entry morerows="9"><literal>Lock</literal></entry>
-         <entry><literal>relation</literal></entry>
-         <entry>Waiting to acquire a lock on a relation.</entry>
-        </row>
-        <row>
-         <entry><literal>extend</literal></entry>
-         <entry>Waiting to extend a relation.</entry>
-        </row>
-        <row>
-         <entry><literal>page</literal></entry>
-         <entry>Waiting to acquire a lock on page of a relation.</entry>
-        </row>
-        <row>
-         <entry><literal>tuple</literal></entry>
-         <entry>Waiting to acquire a lock on a tuple.</entry>
-        </row>
-        <row>
-         <entry><literal>transactionid</literal></entry>
-         <entry>Waiting for a transaction to finish.</entry>
-        </row>
-        <row>
-         <entry><literal>virtualxid</literal></entry>
-         <entry>Waiting to acquire a virtual xid lock.</entry>
-        </row>
-        <row>
-         <entry><literal>speculative token</literal></entry>
-         <entry>Waiting to acquire a speculative insertion lock.</entry>
-        </row>
-        <row>
-         <entry><literal>object</literal></entry>
-         <entry>Waiting to acquire a lock on a non-relation database object.</entry>
-        </row>
-        <row>
-         <entry><literal>userlock</literal></entry>
-         <entry>Waiting to acquire a user lock.</entry>
-        </row>
-        <row>
          <entry><literal>advisory</literal></entry>
          <entry>Waiting to acquire an advisory user lock.</entry>
         </row>
@@ -1184,6 +1167,42 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
          <entry><literal>BufferPin</literal></entry>
          <entry><literal>BufferPin</literal></entry>
          <entry>Waiting to acquire a pin on a buffer.</entry>
+        </row>
+        <row>
+         <entry><literal>extend</literal></entry>
+         <entry>Waiting to extend a relation.</entry>
+        </row>
+        <row>
+         <entry><literal>object</literal></entry>
+         <entry>Waiting to acquire a lock on a non-relation database object.</entry>
+        </row>
+        <row>
+         <entry><literal>page</literal></entry>
+         <entry>Waiting to acquire a lock on page of a relation.</entry>
+        </row>
+        <row>
+         <entry><literal>relation</literal></entry>
+         <entry>Waiting to acquire a lock on a relation.</entry>
+        </row>
+        <row>
+         <entry><literal>speculative token</literal></entry>
+         <entry>Waiting to acquire a speculative insertion lock.</entry>
+        </row>
+        <row>
+         <entry><literal>transactionid</literal></entry>
+         <entry>Waiting for a transaction to finish.</entry>
+        </row>
+        <row>
+         <entry><literal>tuple</literal></entry>
+         <entry>Waiting to acquire a lock on a tuple.</entry>
+        </row>
+        <row>
+         <entry><literal>userlock</literal></entry>
+         <entry>Waiting to acquire a user lock.</entry>
+        </row>
+        <row>
+         <entry><literal>virtualxid</literal></entry>
+         <entry>Waiting to acquire a virtual xid lock.</entry>
         </row>
         <row>
          <entry morerows="13"><literal>Activity</literal></entry>

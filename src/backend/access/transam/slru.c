@@ -161,6 +161,12 @@ SimpleLruShmemSize(int nslots, int nlsns)
 	return BUFFERALIGN(sz) + BLCKSZ * nslots;
 }
 
+/*
+ * Initialize new SLRU tranche in shared memory
+ *
+ * Note that the tranche name is registered as a wait event, hence the
+ * related documentation for pg_stat_activity should be kept in sync.
+ */
 void
 SimpleLruInit(SlruCtl ctl, const char *name, int nslots, int nlsns,
 			  LWLock *ctllock, const char *subdir, int tranche_id)

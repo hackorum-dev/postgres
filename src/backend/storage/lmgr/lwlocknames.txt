@@ -2,7 +2,8 @@
 # these are defined here.  If you add a lock, add it to the end to avoid
 # renumbering the existing locks; if you remove a lock, consider leaving a gap
 # in the numbering sequence for the benefit of DTrace and other external
-# debugging scripts.
+# debugging scripts.  Each lock has an associated wait event, hence the
+# documentation for pg_stat_activity should be kept in sync with this data.
 
 # 0 is available; was formerly BufFreelistLock
 ShmemIndexLock						1

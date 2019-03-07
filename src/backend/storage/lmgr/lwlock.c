@@ -597,6 +597,9 @@ LWLockNewTrancheId(void)
  * routine will save a pointer to the tranche name passed as an argument,
  * so the name should be allocated in a backend-lifetime context
  * (TopMemoryContext, static variable, or similar).
+ *
+ * Note that the tranche name is registered as a wait event, hence the related
+ * documentation for pg_stat_activity should be kept in sync.
  */
 void
 LWLockRegisterTranche(int tranche_id, const char *tranche_name)
