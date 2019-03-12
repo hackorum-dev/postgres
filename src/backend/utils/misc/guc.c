@@ -6017,16 +6017,19 @@ convert_to_base_unit(double value, const char *unit,
 /*
  * Convert an integer value in some base unit to a human-friendly unit.
  *
- * The output unit is chosen so that it's the greatest unit that can represent
- * the value without loss.  For example, if the base unit is GUC_UNIT_KB, 1024
- * is converted to 1 MB, but 1025 is represented as 1025 kB.
+ * The output unit is chosen so that it's the shortest representation that can
+ * represent the value without loss.  For example, if the base unit is
+ * GUC_UNIT_KB, 1024 is converted to 1 MB, but 1025 is represented as 1025 kB.
+ * Also 104858 is converted to '0.1 GB', which is shorter than other
+ * representations.
  */
 static void
 convert_int_from_base_unit(int64 base_value, int base_unit,
-						   int64 *value, const char **unit)
+						   double *value, const char **unit, int *digits)
 {
 	const unit_conversion *table;
 	int			i;
+	int			len = 0;
 
 	*unit = NULL;
 
@@ -6039,17 +6042,49 @@ convert_int_from_base_unit(int64 base_value, int base_unit,
 	{
 		if (base_unit == table[i].base_unit)
 		{
+			const double frac_digits = 2;
+			double rval;
+
 			/*
-			 * Accept the first conversion that divides the value evenly.  We
-			 * assume that the conversions for each base unit are ordered from
-			 * greatest unit to the smallest!
+			 * Round off the representation at the digit where it is exactly
+			 * the same with base_value.
 			 */
-			if (table[i].multiplier <= 1.0 ||
-				base_value % (int64) table[i].multiplier == 0)
+			rval = (double)base_value / table[i].multiplier;
+			rval = rint(rval * pow(10, frac_digits)) *
+				pow(10, -frac_digits);
+
+			/* Try the unit if it is exact representation */
+			if ((int64)rint(rval * table[i].multiplier) == base_value)
 			{
-				*value = (int64) rint(base_value / table[i].multiplier);
-				*unit = table[i].unit;
-				break;
+				int nfrac = 0;
+				int newlen = 1;
+
+				/* Count fraction digits */
+				for (nfrac = 0 ; nfrac < frac_digits ; nfrac++)
+				{
+					double p = pow(10, nfrac);
+					if (rval * p - floor(rval * p) < 0.1)
+						break;
+				}
+
+				/*  Caclculate width of the representation */
+				if (rval >= 1.0)
+					newlen += floor(log10(rval));
+				newlen += nfrac;
+				if (nfrac > 0)
+					newlen++; /* for decimal point */
+
+				if (len == 0 || newlen < len)
+				{
+					*digits = nfrac;
+					*value = rval;
+					*unit = table[i].unit;
+					len = newlen;
+				}
+
+				/* We found the integer representation, exit. */
+				if (nfrac == 0)
+					break;
 			}
 		}
 	}
@@ -9371,18 +9406,19 @@ _ShowOption(struct config_generic *record, bool use_units)
 					 * Use int64 arithmetic to avoid overflows in units
 					 * conversion.
 					 */
-					int64		result = *conf->variable;
+					double		result = *conf->variable;
 					const char *unit;
+					int			digits = 0;
 
 					if (use_units && result > 0 && (record->flags & GUC_UNIT))
-						convert_int_from_base_unit(result,
+						convert_int_from_base_unit(*conf->variable,
 												   record->flags & GUC_UNIT,
-												   &result, &unit);
+												   &result, &unit, &digits);
 					else
 						unit = "";
 
-					snprintf(buffer, sizeof(buffer), INT64_FORMAT "%s",
-							 result, unit);
+					snprintf(buffer, sizeof(buffer), "%.*f %s",
+							 digits, result, unit);
 					val = buffer;
 				}
 			}
