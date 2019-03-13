@@ -51,7 +51,7 @@ pg_TZDIR(void)
 		return tzdir;
 
 	get_share_path(my_exec_path, tzdir);
-	strlcpy(tzdir + strlen(tzdir), "/timezone", MAXPGPATH - strlen(tzdir));
+	strlcat(tzdir, "/timezone", sizeof(tzdir));
 
 	done_tzdir = true;
 	return tzdir;
@@ -81,8 +81,7 @@ pg_open_tzfile(const char *name, char *canonname)
 	int			orignamelen;
 
 	/* Initialize fullname with base name of tzdata directory */
-	strlcpy(fullname, pg_TZDIR(), sizeof(fullname));
-	orignamelen = fullnamelen = strlen(fullname);
+	orignamelen = fullnamelen = strlcpy(fullname, pg_TZDIR(), sizeof(fullname));
 
 	if (fullnamelen + 1 + strlen(name) >= MAXPGPATH)
 		return -1;				/* not gonna fit */

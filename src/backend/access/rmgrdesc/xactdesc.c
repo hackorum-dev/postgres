@@ -104,8 +104,7 @@ ParseCommitRecord(uint8 info, xl_xact_commit *xlrec, xl_xact_parsed_commit *pars
 
 		if (parsed->xinfo & XACT_XINFO_HAS_GID)
 		{
-			strlcpy(parsed->twophase_gid, data, sizeof(parsed->twophase_gid));
-			data += strlen(data) + 1;
+			data += strlcpy(parsed->twophase_gid, data, sizeof(parsed->twophase_gid)) + 1;
 		}
 	}
 
@@ -188,8 +187,7 @@ ParseAbortRecord(uint8 info, xl_xact_abort *xlrec, xl_xact_parsed_abort *parsed)
 
 		if (parsed->xinfo & XACT_XINFO_HAS_GID)
 		{
-			strlcpy(parsed->twophase_gid, data, sizeof(parsed->twophase_gid));
-			data += strlen(data) + 1;
+			data += strlcpy(parsed->twophase_gid, data, sizeof(parsed->twophase_gid)) + 1;
 		}
 	}
 

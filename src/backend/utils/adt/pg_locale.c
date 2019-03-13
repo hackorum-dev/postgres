@@ -741,8 +741,7 @@ strftime_win32(char *dst, size_t dstlen,
 
 		if (convstr != dst)
 		{
-			strlcpy(dst, convstr, dstlen);
-			len = strlen(dst);
+			len = strlcpy(dst, convstr, dstlen);
 			pfree(convstr);
 		}
 	}

@@ -346,9 +346,9 @@ set_ps_display(const char *activity, bool force)
 #endif
 
 	/* Update ps_buffer to contain both fixed part and activity */
-	strlcpy(ps_buffer + ps_buffer_fixed_size, activity,
-			ps_buffer_size - ps_buffer_fixed_size);
-	ps_buffer_cur_len = strlen(ps_buffer);
+	ps_buffer_cur_len = ps_buffer_fixed_size +
+		strlcpy(ps_buffer + ps_buffer_fixed_size, activity,
+				ps_buffer_size - ps_buffer_fixed_size);
 
 	/* Transmit new setting to kernel, if necessary */
 

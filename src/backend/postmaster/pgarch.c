@@ -588,8 +588,7 @@ pgarch_archiveXlog(char *xlog)
 				case 'f':
 					/* %f: filename of source file */
 					sp++;
-					strlcpy(dp, xlog, endp - dp);
-					dp += strlen(dp);
+					dp += strlcpy(dp, xlog, endp - dp);
 					break;
 				case '%':
 					/* convert %% to a single % */
