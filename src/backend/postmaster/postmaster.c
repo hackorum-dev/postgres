@@ -412,10 +412,10 @@ static void report_fork_failure_to_client(Port *port, int errnum);
 static CAC_state canAcceptConnections(void);
 static bool RandomCancelKey(int32 *cancel_key);
 static void signal_child(pid_t pid, int signal);
-static bool SignalSomeChildren(int signal, int targets);
+static bool SignalSomeChildren(int signal, int include_type_mask, int exclude_bgw_mask);
 static void TerminateChildren(int signal);
 
-#define SignalChildren(sig)			   SignalSomeChildren(sig, BACKEND_TYPE_ALL)
+#define SignalChildren(sig)			   SignalSomeChildren(sig, BACKEND_TYPE_ALL, 0)
 
 static int	CountChildren(int target);
 static bool assign_backendlist_entry(RegisteredBgWorker *rw);
@@ -2689,10 +2689,12 @@ pmdie(SIGNAL_ARGS)
 			if (pmState == PM_RUN || pmState == PM_RECOVERY ||
 				pmState == PM_HOT_STANDBY || pmState == PM_STARTUP)
 			{
-				/* autovac workers are told to shut down immediately */
-				/* and bgworkers too; does this need tweaking? */
-				SignalSomeChildren(SIGTERM,
-								   BACKEND_TYPE_AUTOVAC | BACKEND_TYPE_BGWORKER);
+				/*
+				 * Shut down all bgws except parallel workers: graceful
+				 * termination of existing sessions needs them.
+				 * Autovac workers are also told to shut down immediately.
+				 */
+				SignalSomeChildren(SIGTERM, BACKEND_TYPE_WORKER, BGWORKER_CLASS_PARALLEL);
 				/* and the autovac launcher too */
 				if (AutoVacPID != 0)
 					signal_child(AutoVacPID, SIGTERM);
@@ -2752,7 +2754,7 @@ pmdie(SIGNAL_ARGS)
 				signal_child(WalReceiverPID, SIGTERM);
 			if (pmState == PM_STARTUP || pmState == PM_RECOVERY)
 			{
-				SignalSomeChildren(SIGTERM, BACKEND_TYPE_BGWORKER);
+				SignalSomeChildren(SIGTERM, BACKEND_TYPE_BGWORKER, 0);
 
 				/*
 				 * Only startup, bgwriter, walreceiver, possibly bgworkers,
@@ -2773,7 +2775,7 @@ pmdie(SIGNAL_ARGS)
 				/* shut down all backends and workers */
 				SignalSomeChildren(SIGTERM,
 								   BACKEND_TYPE_NORMAL | BACKEND_TYPE_AUTOVAC |
-								   BACKEND_TYPE_BGWORKER);
+								   BACKEND_TYPE_BGWORKER, 0);
 				/* and the autovac launcher too */
 				if (AutoVacPID != 0)
 					signal_child(AutoVacPID, SIGTERM);
@@ -3939,26 +3941,52 @@ signal_child(pid_t pid, int signal)
 
 /*
  * Send a signal to the targeted children (but NOT special children;
- * dead_end children are never signaled, either).
+ * dead_end children are never signaled, either). If BACKEND_TYPE_BGWORKER
+ * is in include_type_mask, bgworkers are additionaly filtered out by
+ * exclude_bgw_mask.
  */
 static bool
-SignalSomeChildren(int signal, int target)
+SignalSomeChildren(int signal, int include_type_mask, int exclude_bgw_mask)
 {
 	dlist_iter	iter;
+	slist_iter	siter;
 	bool		signaled = false;
+
+	/*
+	 * Handle bgws by walking over BackgroundWorkerList because we have
+	 * to check out bgw class.
+	 */
+	if ((include_type_mask & BACKEND_TYPE_BGWORKER) != 0)
+	{
+		slist_foreach(siter, &BackgroundWorkerList)
+		{
+			RegisteredBgWorker *rw;
+
+			rw = slist_container(RegisteredBgWorker, rw_lnode, siter.cur);
+			if (rw->rw_pid > 0 &&
+				((rw->rw_worker.bgw_flags & exclude_bgw_mask) == 0))
+			{
+				ereport(DEBUG4,
+						(errmsg_internal("sending signal %d to process %d",
+										 signal, (int) rw->rw_pid)));
+				signal_child(rw->rw_pid, signal);
+				signaled = true;
+			}
+		}
+	}
 
 	dlist_foreach(iter, &BackendList)
 	{
 		Backend    *bp = dlist_container(Backend, elem, iter.cur);
 
-		if (bp->dead_end)
+		if (bp->dead_end || bp->bkend_type == BACKEND_TYPE_BGWORKER)
 			continue;
 
 		/*
 		 * Since target == BACKEND_TYPE_ALL is the most common case, we test
 		 * it first and avoid touching shared memory for every child.
 		 */
-		if (target != BACKEND_TYPE_ALL)
+		if (include_type_mask != BACKEND_TYPE_ALL)
 		{
 			/*
 			 * Assign bkend_type for any recently announced WAL Sender
@@ -3968,7 +3996,7 @@ SignalSomeChildren(int signal, int target)
 				IsPostmasterChildWalSender(bp->child_slot))
 				bp->bkend_type = BACKEND_TYPE_WALSND;
 
-			if (!(target & bp->bkend_type))
+			if (!(include_type_mask & bp->bkend_type))
 				continue;
 		}
 
@@ -5735,18 +5763,30 @@ do_start_bgworker(RegisteredBgWorker *rw)
  * specified start_time?
  */
 static bool
-bgworker_should_start_now(BgWorkerStartTime start_time)
+bgworker_should_start_now(RegisteredBgWorker *rw)
 {
+	BgWorkerStartTime start_time = rw->rw_worker.bgw_start_time;
+
 	switch (pmState)
 	{
 		case PM_NO_CHILDREN:
 		case PM_WAIT_DEAD_END:
 		case PM_SHUTDOWN_2:
 		case PM_SHUTDOWN:
+			return false;
+
 		case PM_WAIT_BACKENDS:
 		case PM_WAIT_READONLY:
 		case PM_WAIT_BACKUP:
-			break;
+			/*
+			 * Allow new parallel workers in SmartShutdown while backends
+			 * are still there.
+			 */
+			if (((rw->rw_worker.bgw_flags & BGWORKER_CLASS_PARALLEL) == 0) ||
+				Shutdown != SmartShutdown ||
+				FatalError)
+				return false;
+			/* fall through */
 
 		case PM_RUN:
 			if (start_time == BgWorkerStart_RecoveryFinished)
@@ -5906,7 +5946,7 @@ maybe_start_bgworkers(void)
 			}
 		}
 
-		if (bgworker_should_start_now(rw->rw_worker.bgw_start_time))
+		if (bgworker_should_start_now(rw))
 		{
 			/* reset crash time before trying to start worker */
 			rw->rw_crashed_at = 0;
