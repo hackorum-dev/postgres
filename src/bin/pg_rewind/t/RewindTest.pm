@@ -200,6 +200,7 @@ sub promote_standby
 sub run_pg_rewind
 {
 	my $test_mode       = shift;
+	my $data_only       = shift;
 	my $master_pgdata   = $node_master->data_dir;
 	my $standby_pgdata  = $node_standby->data_dir;
 	my $standby_connstr = $node_standby->connstr('postgres');
@@ -232,7 +233,8 @@ sub run_pg_rewind
 				"--debug",
 				"--source-pgdata=$standby_pgdata",
 				"--target-pgdata=$master_pgdata",
-				"--no-sync"
+				"--no-sync",
+				($data_only ? '--data-only' : ())
 			],
 			'pg_rewind local');
 	}
@@ -245,7 +247,8 @@ sub run_pg_rewind
 				'pg_rewind',       "--debug",
 				"--source-server", $standby_connstr,
 				"--target-pgdata=$master_pgdata",
-				"--no-sync"
+				"--no-sync",
+				($data_only ? '--data-only' : ())
 			],
 			'pg_rewind remote');
 	}
