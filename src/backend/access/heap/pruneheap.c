@@ -20,6 +20,7 @@
 #include "access/htup_details.h"
 #include "access/xlog.h"
 #include "catalog/catalog.h"
+#include "commands/cluster.h"
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "storage/bufmgr.h"
@@ -82,6 +83,9 @@ heap_page_prune_opt(Relation relation, Buffer buffer)
 	 * anyway, so this is no particular loss.
 	 */
 	if (RecoveryInProgress())
+		return;
+
+	if (is_inside_rebuild_relation())
 		return;
 
 	/*
