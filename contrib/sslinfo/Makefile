@@ -9,6 +9,9 @@ EXTENSION = sslinfo
 DATA = sslinfo--1.2.sql sslinfo--1.1--1.2.sql sslinfo--1.0--1.1.sql
 PGFILEDESC = "sslinfo - information about client SSL certificate"
 
+REGRESS = sslinfo
+REGRESS_OPT = --temp-config=$(top_srcdir)/contrib/sslinfo/sslinfo.conf
+
 ifdef USE_PGXS
 PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
