@@ -77,8 +77,9 @@ sub generate_hash_function
 	$case_fold = $options{case_fold} || 0;
 
 	# Try different hash function parameters until we find a set that works
-	# for these keys.  The multipliers are chosen to be primes that are cheap
-	# to calculate via shift-and-add, so don't change them without care.
+	# for these keys.  The multipliers are chosen to be Mersenne numbers
+	# that are cheap to calculate via shift-and-add, so don't change them
+	# without care.
 	# (Commonly, random seeds are tried, but we want reproducible results
 	# from this program so we don't do that.)
 	my $hash_mult1 = 31;
@@ -87,7 +88,7 @@ sub generate_hash_function
 	my $hash_seed2;
 	my @subresult;
   FIND_PARAMS:
-	foreach (127, 257, 521, 1033, 2053)
+	foreach (16383, 32767, 65535, 131071, 1048575, 134217727)
 	{
 		$hash_mult2 = $_;    # "foreach $hash_mult2" doesn't work
 		for ($hash_seed1 = 0; $hash_seed1 < 10; $hash_seed1++)
@@ -101,7 +102,6 @@ sub generate_hash_function
 			}
 		}
 	}
-
 	# Choke if we couldn't find a workable set of parameters.
 	die "failed to generate perfect hash" if !@subresult;
 
@@ -136,12 +136,47 @@ sub generate_hash_function
 	  if (defined $options{fixed_key_length});
 	$f .= sprintf "\tuint32\t\ta = %d;\n",   $hash_seed1;
 	$f .= sprintf "\tuint32\t\tb = %d;\n\n", $hash_seed2;
-	$f .= sprintf "\twhile (keylen--)\n\t{\n";
-	$f .= sprintf "\t\tunsigned char c = *k++";
-	$f .= sprintf " | 0x20" if $case_fold;    # see comment below
-	$f .= sprintf ";\n\n";
-	$f .= sprintf "\t\ta = a * %d + c;\n", $hash_mult1;
-	$f .= sprintf "\t\tb = b * %d + c;\n", $hash_mult2;
+
+	$f .= sprintf "\tfor (;keylen >= 4; keylen -= 4, k += 4)\n\t{\n";
+	$f .= sprintf "\t\tuint32 c4;\n";
+	$f .= sprintf "\t\tmemcpy(&c4, k, 4);\n";
+	$f .= sprintf "#ifdef WORDS_BIGENDIAN\n";
+	$f .= sprintf "\t\tc4 = pg_bswap32(c4);\n";
+	$f .= sprintf "#endif\n";
+	$f .= sprintf "\t\tc4 |= 0x20202020;\n" if $case_fold;
+	$f .= sprintf "\n";
+	$f .= sprintf "\t\ta = a * %d ^ c4;\n", $hash_mult1;
+	$f .= sprintf "\t\tb = b * %d ^ c4;\n", $hash_mult2;
+	$f .= sprintf "\t}\n";
+	$f .= sprintf "\tuint16 c2;\n";
+	$f .= sprintf "\tunsigned char c1;\n";
+	$f .= sprintf "\tswitch (keylen)\n\t{\n";
+	$f .= sprintf "\t\tcase 3:\n";
+	my $c2 = '';
+	$c2 .= sprintf "\t\t\tmemcpy(&c2, k, 2);\n";
+	$c2 .= sprintf "#ifdef WORDS_BIGENDIAN\n";
+	$c2 .= sprintf "\t\t\tc2 = pg_bswap16(c2);\n";
+	$c2 .= sprintf "#endif\n";
+	$c2 .= sprintf "\t\t\tc2 |= 0x2020;\n" if $case_fold;
+	$c2 .= sprintf "\t\t\ta = a * %d ^ c2;\n", $hash_mult1;
+	$c2 .= sprintf "\t\t\tb = b * %d ^ c2;\n", $hash_mult2;
+	$f .= $c2;
+	$f .= sprintf "\t\t\tk+=2;\n";
+	my $c1 = '';
+	$c1 .= sprintf "\t\t\tmemcpy(&c1, k, 1);\n";
+	$c1 .= sprintf "\t\t\tc1 |= 0x20;\n" if $case_fold;
+	$c1 .= sprintf "\t\t\ta = a * %d ^ c1;\n", $hash_mult1;
+	$c1 .= sprintf "\t\t\tb = b * %d ^ c1;\n", $hash_mult2;
+	$f .= $c1;
+	$f .= sprintf "\t\t\tbreak;\n";
+	$f .= sprintf "\n";
+	$f .= sprintf "\t\tcase 2:\n";
+	$f .= $c2;
+	$f .= sprintf "\t\t\tbreak;\n";
+	$f .= sprintf "\n";
+	$f .= sprintf "\t\tcase 1:\n";
+	$f .= $c1;
+	$f .= sprintf "\t\t\tbreak;\n";
 	$f .= sprintf "\t}\n";
 	$f .= sprintf "\treturn h[a %% %d] + h[b %% %d];\n", $nhash, $nhash;
 	$f .= sprintf "}\n";
@@ -162,13 +197,30 @@ sub _calc_hash
 {
 	my ($key, $mult, $seed) = @_;
 
-	my $result = $seed;
-	for my $c (split //, $key)
-	{
-		my $cn = ord($c);
-		$cn |= 0x20 if $case_fold;
-		$result = ($result * $mult + $cn) % 4294967296;
+  my $result = $seed;
+	my $i = 0;
+	my $keylen = length($key);
+
+	for (; $keylen >= 4; $keylen -= 4, $i += 4) {
+		my $cn = unpack("L*", substr($key,$i,4));
+		$cn |= 0x20202020 if $case_fold;
+		$result = ($result * $mult ^ $cn) % 4294967296;
 	}
+
+	if ($keylen>=2) {
+		my $cn = unpack("S*", substr($key,$i,2));
+		$cn |= 0x2020 if $case_fold;
+		$result = ($result * $mult ^ $cn) % 4294967296;
+    $keylen-=2;
+    $i+=2;
+	}
+
+	if ($keylen==1) {
+		my $cn = ord(substr($key,$i,1));
+		$cn |= 0x20 if $case_fold;
+		$result = ($result * $mult ^ $cn) % 4294967296;
+	}
+
 	return $result;
 }
 
