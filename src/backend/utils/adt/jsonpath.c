@@ -496,9 +496,14 @@ printJsonPathItem(StringInfo buf, JsonPathItem *v, bool inKey,
 			escape_json(buf, jspGetString(v, NULL));
 			break;
 		case jpiVariable:
-			appendStringInfoChar(buf, '$');
-			escape_json(buf, jspGetString(v, NULL));
-			break;
+			{
+				int32		len;
+				char	   *name = jspGetString(v, &len);
+
+				appendStringInfoChar(buf, '$');
+				appendBinaryStringInfo(buf, name, len);
+				break;
+			}
 		case jpiNumeric:
 			appendStringInfoString(buf,
 								   DatumGetCString(DirectFunctionCall1(numeric_out,

@@ -348,8 +348,10 @@ makeItemVariable(JsonPathString *s)
 	JsonPathParseItem  *v;
 
 	v = makeItemType(jpiVariable);
-	v->value.string.val = s->val;
-	v->value.string.len = s->len;
+
+	/* skip leading '$' */
+	v->value.string.val = &s->val[1];
+	v->value.string.len = s->len - 1;
 
 	return v;
 }
