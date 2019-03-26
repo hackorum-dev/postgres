@@ -3630,7 +3630,8 @@ LogChildExit(int lev, const char *procname, int pid, int exitstatus)
 		  "server process" */
 				(errmsg("%s (PID %d) was terminated by exception 0x%X",
 						procname, pid, WTERMSIG(exitstatus)),
-				 errhint("See C include file \"ntstatus.h\" for a description of the hexadecimal value."),
+				 errhint("See \"%s\" for a description of the hexadecimal value.",
+						 "https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-erref/596a1078-e883-4972-9bbc-49e60bebca55"),
 				 activity ? errdetail("Failed process was running: %s", activity) : 0));
 #else
 		ereport(lev,

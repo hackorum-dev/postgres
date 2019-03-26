@@ -647,7 +647,8 @@ pgarch_archiveXlog(char *xlog)
 			ereport(lev,
 					(errmsg("archive command was terminated by exception 0x%X",
 							WTERMSIG(rc)),
-					 errhint("See C include file \"ntstatus.h\" for a description of the hexadecimal value."),
+					 errhint("See \"%s\" for a description of the hexadecimal value.",
+							 "https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-erref/596a1078-e883-4972-9bbc-49e60bebca55"),
 					 errdetail("The failed archive command was: %s",
 							   xlogarchcmd)));
 #else
