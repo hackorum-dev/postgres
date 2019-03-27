@@ -28,8 +28,10 @@ include $(top_builddir)/src/Makefile.global
 
 all: html man
 
-distprep: html distprep-man
+distprep: distprep-images html distprep-man
 
+distprep-images:
+	$(MKDIR_P) images
 
 ifndef DBTOEPUB
 DBTOEPUB = $(missing) dbtoepub
