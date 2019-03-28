@@ -215,9 +215,9 @@ VACUUM [ FULL ] [ FREEZE ] [ VERBOSE ] [ ANALYZE ] [ <replaceable class="paramet
       the operating system. This is normally the desired behavior
       and is the default unless the <literal>vacuum_truncate</literal>
       option has been set to false for the table to be vacuumed.
-      Setting this option to false may be useful to avoid
-      <literal>ACCESS EXCLUSIVE</literal> lock on the table that
-      the truncation requires. This option is ignored if the
+      Setting this option to false may be useful to avoid an
+      <literal>ACCESS EXCLUSIVE</literal> lock on the table as needed for
+      truncation. This option is ignored if the
       <literal>FULL</literal> option is used.
      </para>
     </listitem>

@@ -3364,11 +3364,11 @@ if (!ptr)
   </indexterm>
 
    <para>
-    By default, a function is just a <quote>black box</quote> that the
-    database system knows very little about the behavior of.  However,
-    that means that queries using the function may be executed much less
+    By default, a function is a <quote>black box</quote> that the
+    database system knows very little about, which
+    means queries calling the function may be executed less
     efficiently than they could be.  It is possible to supply additional
-    knowledge that helps the planner optimize function calls.
+    information that helps the planner optimize function calls.
    </para>
 
    <para>
@@ -3381,7 +3381,7 @@ if (!ptr)
     The parallel safety property (<literal>PARALLEL
     UNSAFE</literal>, <literal>PARALLEL RESTRICTED</literal>, or
     <literal>PARALLEL SAFE</literal>) must also be specified if you hope
-    to use the function in parallelized queries.
+    queries calling the function to be run using the parallel infrastructure.
     It can also be useful to specify the function's estimated execution
     cost, and/or the number of rows a set-returning function is estimated
     to return.  However, the declarative way of specifying those two
@@ -3393,7 +3393,7 @@ if (!ptr)
     It is also possible to attach a <firstterm>planner support
     function</firstterm> to a SQL-callable function (called
     its <firstterm>target function</firstterm>), and thereby provide
-    knowledge about the target function that is too complex to be
+    information about the target function that is too complex to be
     represented declaratively.  Planner support functions have to be
     written in C (although their target functions might not be), so this is
     an advanced feature that relatively few people will use.

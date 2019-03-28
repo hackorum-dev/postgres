@@ -106,15 +106,14 @@ PostgreSQL documentation
    </para>
 
    <para>
-    <application>pg_rewind</application> will fail immediately if it finds
-    files it cannot write directly to.  This can happen for example when
-    the source and the target server use the same file mapping for read-only
-    SSL keys and certificates.  If such files are present on the target server
+    <application>pg_rewind</application> will fail immediately if it experiences
+    a write error.  This can happen for example when
+    the source and target server use the same file mapping for read-only
+    SSL keys and certificates.  If such files are present on the target server,
     it is recommended to remove them before running
-    <application>pg_rewind</application>.  After doing the rewind, some of
+    <application>pg_rewind</application>.  After performing the rewind, some of
     those files may have been copied from the source, in which case it may
-    be necessary to remove the data copied and restore back the set of links
-    used before the rewind.
+    be necessary to remove them and restore the files removed beforehand.
    </para>
   </warning>
  </refsect1>

@@ -271,13 +271,13 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
   <para>
    Some of the information in the dynamic statistics views shown in <xref
    linkend="monitoring-stats-dynamic-views-table"/> is security restricted.
-   Ordinary users can only see all the information about their own sessions
-   (sessions belonging to a role that they are a member of).  In rows about
+   Ordinary users can only see all information about their own sessions
+   (sessions belonging to a role of which they are a member).  In rows for
    other sessions, many columns will be null.  Note, however, that the
    existence of a session and its general properties such as its sessions user
    and database are visible to all users.  Superusers and members of the
    built-in role <literal>pg_read_all_stats</literal> (see also <xref
-   linkend="default-roles"/>) can see all the information about all sessions.
+   linkend="default-roles"/>) can see all information about all sessions.
   </para>
 
   <table id="monitoring-stats-dynamic-views-table">
@@ -667,7 +667,7 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
      <entry><type>timestamp with time zone</type></entry>
      <entry>Time when this process' current transaction was started, or null
       if no transaction is active. If the current
-      query is the first of its transaction, this column is equal to the
+      query is the first of its transaction, this is equal to the
       <structfield>query_start</structfield> column.
      </entry>
     </row>
@@ -3603,16 +3603,16 @@ SELECT pg_stat_get_backend_pid(s.backendid) AS pid,
       <entry><structfield>partitions_total</structfield></entry>
       <entry><type>bigint</type></entry>
       <entry>
-       When creating an index on a partitioned table, this column is set to
-       the total number of partitions on which the index is to be created.
+       When creating an index on a partitioned table, this is
+       the total number of partitions to be processed.
       </entry>
      </row>
      <row>
       <entry><structfield>partitions_done</structfield></entry>
       <entry><type>bigint</type></entry>
       <entry>
-       When creating an index on a partitioned table, this column is set to
-       the number of partitions on which the index has been completed.
+       When creating an index on a partitioned table, this is
+       the number of partitions for which the process is complete.
       </entry>
      </row>
     </tbody>
@@ -3650,11 +3650,10 @@ SELECT pg_stat_get_backend_pid(s.backendid) AS pid,
      <row>
       <entry><literal>building index</literal></entry>
       <entry>
-       The index is being built by the access method-specific code.  In this phase,
-       access methods that support progress reporting fill in their own progress data,
-       and the subphase is indicated in this column.  Typically,
+       The index is being built by code specific to the access method, and if
+       it supports progress reporting, this indicates the method's subphase.
        <structname>blocks_total</structname> and <structname>blocks_done</structname>
-       will contain progress data, as well as potentially
+       will contain progress data, as may
        <structname>tuples_total</structname> and <structname>tuples_done</structname>.
       </entry>
      </row>
@@ -3739,15 +3738,15 @@ SELECT pg_stat_get_backend_pid(s.backendid) AS pid,
   <title>VACUUM Progress Reporting</title>
 
   <para>
-   Whenever <command>VACUUM</command> is running, the
-   <structname>pg_stat_progress_vacuum</structname> view will contain
-   one row for each backend (including autovacuum worker processes) that is
-   currently vacuuming.  The tables below describe the information
+   The <structname>pg_stat_progress_vacuum</structname> view will contain one
+   row for each backend that is running <command>VACUUM</command>, including
+   autovacuum worker processes.
+   The tables below describe the information
    that will be reported and provide information about how to interpret it.
    Progress for <command>VACUUM FULL</command> commands is reported via
-   <structname>pg_stat_progress_cluster</structname>
-   because both <command>VACUUM FULL</command> and <command>CLUSTER</command>
-   rewrite the table, while regular <command>VACUUM</command> only modifies it
+   <structname>pg_stat_progress_cluster</structname>,
+   because <command>VACUUM FULL</command> rewrites the table, like <command>CLUSTER</command>,
+   while regular <command>VACUUM</command> only modifies it
    in place. See <xref linkend='cluster-progress-reporting'/>.
   </para>
 
@@ -3931,9 +3930,9 @@ SELECT pg_stat_get_backend_pid(s.backendid) AS pid,
   <title>CLUSTER Progress Reporting</title>
 
   <para>
-   Whenever <command>CLUSTER</command> or <command>VACUUM FULL</command> is
-   running, the <structname>pg_stat_progress_cluster</structname> view will
-   contain a row for each backend that is currently running either command.
+   The <structname>pg_stat_progress_cluster</structname> view will contain a
+   row for each backend that is running either
+   <command>CLUSTER</command> or <command>VACUUM FULL</command>.
    The tables below describe the information that will be reported and
    provide information about how to interpret it.
   </para>

@@ -1515,7 +1515,7 @@ SELECT 1/0;
     the server will only accept encrypted packets from the client which are less
     than 16kB; <function>gss_wrap_size_limit()</function> should be used by the
     client to determine the size of the unencrypted message which will fit
-    within this limit and larger messages should be broken up into multiple
+    within this limit; larger messages should be broken up into multiple
     <function>gss_wrap()</function> calls.  Typical segments are 8kB of
     unencrypted data, resulting in encrypted packets of slightly larger than 8kB
     but well within the 16kB maximum.  The server can be expected to not send
@@ -1531,8 +1531,8 @@ SELECT 1/0;
     support to <productname>PostgreSQL</productname>.  In this case the
     connection must be closed, but the frontend might choose to open a fresh
     connection and proceed without requesting <acronym>GSSAPI</acronym>
-    encryption.  Given the length limits specified above, the ErrorMessage can
-    not be confused with a proper response from the server with an appropriate
+    encryption.  Given the length limits specified above, the ErrorMessage
+    cannot be confused with a proper response from the server with an appropriate
     length.
    </para>
 

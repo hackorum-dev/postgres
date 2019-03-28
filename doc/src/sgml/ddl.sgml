@@ -3868,12 +3868,12 @@ CREATE INDEX ON measurement (logdate);
 
     <para>
       Normally the set of partitions established when initially defining the
-      table are not intended to remain static.  It is common to want to
-      remove old partitions of data and periodically add new partitions for
+      table are not intended to remain static.  It is common to
+      remove partitions of old data and add partitions for
       new data. One of the most important advantages of partitioning is
-      precisely that it allows this otherwise painful task to be executed
+      allowing this otherwise painful task to be executed
       nearly instantaneously by manipulating the partition structure, rather
-      than physically moving large amounts of data around.
+      than physically moving around large amounts of data.
     </para>
 
     <para>
@@ -3951,10 +3951,10 @@ ALTER TABLE measurement ATTACH PARTITION measurement_y2008m02
     </para>
 
     <para>
-     As explained above, it is possible to create indexes on partitioned tables
-     and they are applied automatically to the entire hierarchy.  This is very
-     convenient, as not only the existing partitions will become indexed, but
-     also any partitions that are created in the future will.  One limitation is
+     As explained above, it is possible to create indexes on partitioned tables;
+     such indexes are propagated automatically to the entire hierarchy, and
+     any partitions created in the future will be indexed, in addition to the
+     existing partitions.  One limitation is
      that it's not possible to use the <literal>CONCURRENTLY</literal>
      qualifier when creating such a partitioned index.  To overcome long lock
      times, it is possible to use <command>CREATE INDEX ON ONLY</command>

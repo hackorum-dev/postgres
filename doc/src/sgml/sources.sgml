@@ -103,7 +103,7 @@ less -x4
     message text.  In addition there are optional elements, the most
     common of which is an error identifier code that follows the SQL spec's
     SQLSTATE conventions.
-    <function>ereport</function> itself is just a shell function, that exists
+    <function>ereport</function> itself is just a shell function that exists
     mainly for the syntactic convenience of making message generation
     look like a function call in the C source code.  The only parameter
     accepted directly by <function>ereport</function> is the severity level.
@@ -886,10 +886,10 @@ BETTER: unrecognized node type: 42
     <para>
      For example <literal>_StaticAssert()</literal> and
      <literal>__builtin_constant_p</literal> are currently used, even though
-     they are from newer revisions of the C standard and a
-     <productname>GCC</productname> extension respectively. If not available
-     we respectively fall back to using a C99 compatible replacement that
-     performs the same checks, but emits rather cryptic messages and do not
+     they are from a newer revision of the C standard and a
+     <productname>GCC</productname> extension, respectively. If not available, in the first case, 
+     we fall back to using a C99 compatible replacement that
+     performs the same checks, but emits rather cryptic messages; in the second case, we do not
      use <literal>__builtin_constant_p</literal>.
     </para>
    </simplesect>
@@ -948,7 +948,7 @@ MemoryContextSwitchTo(MemoryContext context)
      Barring special arrangements code in signal handlers may only
      call async-signal safe functions (as defined in POSIX) and access
      variables of type <literal>volatile sig_atomic_t</literal>. A few
-     functions in <command>postgres</command> are also deemed signal safe, importantly
+     functions in <command>postgres</command> are also deemed signal safe; specifically,
      <function>SetLatch()</function>.
     </para>
     <para>
@@ -969,9 +969,9 @@ handle_sighup(SIGNAL_ARGS)
 }
 </programlisting>
      <varname>errno</varname> is saved and restored because
-     <function>SetLatch()</function> might change it. If that were not done
-     interrupted code that's currently inspecting <varname>errno</varname> might see the wrong
-     value.
+     <function>SetLatch()</function> might change it. If that were not done,
+     code interrupted by a signal might see the wrong value of
+     <varname>errno</varname>.
     </para>
    </simplesect>
 

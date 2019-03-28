@@ -2632,8 +2632,8 @@ openssl x509 -req -in server.csr -text -days 365 \
    using <acronym>GSSAPI</acronym> to encrypt client/server communications for
    increased security.  Support requires that a <acronym>GSSAPI</acronym>
    implementation (such as MIT krb5) is installed on both client and server
-   systems, and that support in <productname>PostgreSQL</productname> is
-   enabled at build time (see <xref linkend="installation"/>).
+   systems, and that <productname>PostgreSQL</productname> was built with
+   <acronym>GSSAPI</acronym> support (see <xref linkend="installation"/>).
   </para>
 
   <sect2 id="gssapi-setup">

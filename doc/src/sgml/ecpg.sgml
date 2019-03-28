@@ -979,7 +979,7 @@ EXEC SQL END DECLARE SECTION;
 
     <para>
      The other way is using the <type>VARCHAR</type> type, which is a
-     special type provided by ECPG.  The definition on an array of
+     special type provided by ECPG.  The definition of an array of
      type <type>VARCHAR</type> is converted into a
      named <type>struct</type> for every variable. A declaration like:
 <programlisting>
@@ -989,7 +989,7 @@ VARCHAR var[180];
 <programlisting>
 struct varchar_var { int len; char arr[180]; } var;
 </programlisting>
-     The member <structfield>arr</structfield> hosts the string
+     The member <structfield>arr</structfield> stores the string
      including a terminating zero byte.  Thus, to store a string in
      a <type>VARCHAR</type> host variable, the host variable has to be
      declared with the length including the zero byte terminator.  The
@@ -1209,8 +1209,8 @@ EXEC SQL END DECLARE SECTION;
      <title id="ecpg-type-bytea">bytea</title>
 
      <para>
-      The handling of the <type>bytea</type> type is also similar to
-      the <type>VARCHAR</type>. The definition on an array of type
+      The handling of the <type>bytea</type> type is similar to
+      the <type>VARCHAR</type>. The definition of an array of type
       <type>bytea</type> is converted into a named struct for every
       variable. A declaration like:
 <programlisting>
@@ -1220,9 +1220,8 @@ bytea var[180];
 <programlisting>
 struct bytea_var { int len; char arr[180]; } var;
 </programlisting>
-      The member <structfield>arr</structfield> hosts binary format
-      data. It also can handle even <literal>'\0'</literal> as part of
-      data unlike <type>VARCHAR</type>.
+      The member <structfield>arr</structfield> stores binary format
+      data, which can include zero bytes, unlike <type>VARCHAR</type>.
       The data is converted from/to hex format and sent/received by
       ecpglib.
      </para>
@@ -7571,8 +7570,7 @@ PREPARE <replaceable class="parameter">name</replaceable> FROM <replaceable clas
       <listitem>
        <para>
         A literal C string or a host variable containing a preparable
-        statement, one of the SELECT, INSERT, UPDATE, or
-        DELETE.
+        statement (SELECT, INSERT, UPDATE, or DELETE).
        </para>
       </listitem>
      </varlistentry>

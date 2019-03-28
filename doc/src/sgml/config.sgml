@@ -3433,7 +3433,7 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
         current when the base backup was taken.  The
         value <literal>latest</literal> recovers
         to the latest timeline found in the archive, which is useful in
-        a standby server.  <literal>latest</literal> is the default.
+        a standby server.  The default is <literal>latest</literal>.
        </para>
 
        <para>
@@ -4195,8 +4195,9 @@ ANY <replaceable class="parameter">num_sync</replaceable> ( <replaceable class="
         This parameter is intended for use with streaming replication deployments;
         however, if the parameter is specified it will be honored in all cases.
 
-        <varname>hot_standby_feedback</varname> will be delayed by use of this feature
-        which could lead to bloat on the master; use both together with care.
+        <varname>hot_standby_feedback</varname> will be delayed by use of this feature.
+        Combinining these settings could lead to bloat on the master, so should
+        be done only with care.
 
         <warning>
          <para>
@@ -5305,9 +5306,10 @@ SELECT * FROM parent WHERE key = 2400;
       <listitem>
        <para>
         Prepared statements (either explicitly prepared or implicitly
-        generated, for example in PL/pgSQL) can be executed using custom or
-        generic plans.  A custom plan is replanned for a new parameter value,
-        a generic plan is reused for repeated executions of the prepared
+        generated, for example in PL/pgSQL) can be executed using a custom or
+        generic plan.  If executed with a custom plan, the prepared statement
+        is replanned for its specific parameter values; if executed with a
+        generic plan, the same plan is reused for repeated executions of the prepared
         statement.  The choice between them is normally made automatically.
         This setting overrides the default behavior and forces either a custom
         or a generic plan.  This can be used to work around performance

@@ -3060,7 +3060,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
        simplifies <command>ATTACH/DETACH PARTITION</command> operations:
        the partition dependencies need only be added or removed.
        Example: a child partitioned index is made partition-dependent
-       on both the partition table it is on and the parent partitioned
+       on both the table partition and the parent partitioned
        index, so that it goes away if either of those is dropped, but
        not otherwise.  The dependency on the parent index is primary,
        so that if the user tries to drop the child partitioned index,
@@ -3123,7 +3123,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
    Note that it's quite possible for two objects to be linked by more than
    one <structname>pg_depend</structname> entry.  For example, a child
    partitioned index would have both a partition-type dependency on its
-   associated partition table, and an auto dependency on each column of
+   associated table partition, and an auto dependency on each column of
    that table that it indexes.  This sort of situation expresses the union
    of multiple dependency semantics.  A dependent object can be dropped
    without <literal>CASCADE</literal> if any of its dependencies satisfies
