@@ -127,6 +127,7 @@
 #include "parser/parse_clause.h"
 #include "parser/parsetree.h"
 #include "statistics/statistics.h"
+#include "utils/attoptcache.h"
 #include "utils/builtins.h"
 #include "utils/date.h"
 #include "utils/datum.h"
@@ -4448,9 +4449,15 @@ examine_variable(PlannerInfo *root, Node *node, int varRelid,
 		vardata->atttype = var->vartype;
 		vardata->atttypmod = var->vartypmod;
 		vardata->isunique = has_unique_index(vardata->rel, var->varattno);
-
 		/* Try to locate some stats */
 		examine_simple_variable(root, var, vardata);
+		/* Extract n_dictint attribute option if any */
+		{
+			RangeTblEntry *rte = root->simple_rte_array[var->varno];
+			AttributeOpts *aopt = get_attribute_options(rte->relid, var->varattno);
+			if (aopt != NULL)
+				vardata->n_distinct = aopt->n_distinct;
+		}
 
 		return;
 	}
@@ -4915,6 +4922,9 @@ get_variable_numdistinct(VariableStatData *vardata, bool *isdefault)
 	 */
 	if (stadistinct > 0.0)
 		return clamp_row_est(stadistinct);
+
+	if (vardata->n_distinct != 0)
+		return vardata->n_distinct;
 
 	/*
 	 * Otherwise we need to get the relation size; punt if not available.
