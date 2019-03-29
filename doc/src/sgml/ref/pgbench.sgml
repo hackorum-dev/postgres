@@ -942,7 +942,7 @@ pgbench <optional> <replaceable>options</replaceable> </optional> <replaceable>d
 
       <row>
        <entry> <literal>random_seed</literal> </entry>
-       <entry>random generator seed (unless overwritten with <option>-D</option>)</entry>
+       <entry>random generator seed (unless overridden with <option>-D</option>)</entry>
       </row>
 
       <row>

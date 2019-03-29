@@ -478,7 +478,7 @@ EOF
       leave off the equal sign. To set a variable with an empty value,
       use the equal sign but leave off the value. These assignments are
       done during command line processing, so variables that reflect
-      connection state will get overwritten later.
+      connection state will be overridden later.
       </para>
       </listitem>
     </varlistentry>
