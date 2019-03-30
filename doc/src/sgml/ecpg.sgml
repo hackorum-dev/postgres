@@ -1030,7 +1030,7 @@ struct varchar_var { int len; char arr[180]; } var;
      the pgtypes library.  The pgtypes library, described in detail
      in <xref linkend="ecpg-pgtypes"/> contains basic functions to deal
      with those types, such that you do not need to send a query to
-     the SQL server just for adding an interval to a time stamp for
+     the SQL server just for adding an interval to a timestamp for
      example.
     </para>
 
@@ -3622,7 +3622,7 @@ void PGTYPESdecimal_free(decimal *var);
       <term><literal>PGTYPESInvalidTimestamp</literal></term>
       <listitem>
        <para>
-        A value of type timestamp representing an invalid time stamp. This is
+        A value of type timestamp representing an invalid timestamp. This is
         returned by the function <function>PGTYPEStimestamp_from_asc</function> on
         parse error.
         Note that due to the internal representation of the <type>timestamp</type> data type,

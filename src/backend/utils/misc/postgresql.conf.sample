@@ -259,7 +259,7 @@
 				# (change requires restart)
 #recovery_target_name = ''	# the named restore point to which recovery will proceed
 				# (change requires restart)
-#recovery_target_time = ''	# the time stamp up to which recovery will proceed
+#recovery_target_time = ''	# the timestamp up to which recovery will proceed
 				# (change requires restart)
 #recovery_target_xid = ''	# the transaction ID up to which recovery will proceed
 				# (change requires restart)

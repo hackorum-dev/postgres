@@ -3534,7 +3534,7 @@ static struct config_string ConfigureNamesString[] =
 	},
 	{
 		{"recovery_target_time", PGC_POSTMASTER, WAL_RECOVERY_TARGET,
-			gettext_noop("Sets the time stamp up to which recovery will proceed."),
+			gettext_noop("Sets the timestamp up to which recovery will proceed."),
 			NULL
 		},
 		&recovery_target_time_string,
@@ -3916,7 +3916,7 @@ static struct config_string ConfigureNamesString[] =
 
 	{
 		{"TimeZone", PGC_USERSET, CLIENT_CONN_LOCALE,
-			gettext_noop("Sets the time zone for displaying and interpreting time stamps."),
+			gettext_noop("Sets the time zone for displaying and interpreting timestamps."),
 			NULL,
 			GUC_REPORT
 		},

@@ -2031,7 +2031,7 @@ MINUTE TO SECOND
     </indexterm>
 
      <para>
-      Valid input for the time stamp types consists of the concatenation
+      Valid input for the timestamp types consists of the concatenation
       of a date and a time, followed by an optional time zone,
       followed by an optional <literal>AD</literal> or <literal>BC</literal>.
       (Alternatively, <literal>AD</literal>/<literal>BC</literal> can appear
@@ -2159,12 +2159,12 @@ January 8 04:05:06 1999 PST
          <row>
           <entry><literal>infinity</literal></entry>
           <entry><type>date</type>, <type>timestamp</type></entry>
-          <entry>later than all other time stamps</entry>
+          <entry>later than all other timestamps</entry>
          </row>
          <row>
           <entry><literal>-infinity</literal></entry>
           <entry><type>date</type>, <type>timestamp</type></entry>
-          <entry>earlier than all other time stamps</entry>
+          <entry>earlier than all other timestamps</entry>
          </row>
          <row>
           <entry><literal>now</literal></entry>

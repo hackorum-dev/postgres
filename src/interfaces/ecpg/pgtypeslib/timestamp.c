@@ -850,7 +850,7 @@ PGTYPEStimestamp_defmt_asc(const char *str, const char *fmt, timestamp * d)
 }
 
 /*
-* add an interval to a time stamp
+* add an interval to a timestamp
 *
 *	*tout = tin + span
 *
@@ -909,7 +909,7 @@ PGTYPEStimestamp_add_interval(timestamp * tin, interval * span, timestamp * tout
 
 
 /*
-* subtract an interval from a time stamp
+* subtract an interval from a timestamp
 *
 *	*tout = tin - span
 *

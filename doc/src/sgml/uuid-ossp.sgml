@@ -41,7 +41,7 @@
       <entry>
        <para>
         This function generates a version 1 UUID.  This involves the MAC
-        address of the computer and a time stamp.  Note that UUIDs of this
+        address of the computer and a timestamp.  Note that UUIDs of this
         kind reveal the identity of the computer that created the identifier
         and the time at which it did so, which might make it unsuitable for
         certain security-sensitive applications.

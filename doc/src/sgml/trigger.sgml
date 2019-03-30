@@ -335,7 +335,7 @@
     requirements to call the same function.  As an example, there
     could be a generalized trigger function that takes as its
     arguments two column names and puts the current user in one and
-    the current time stamp in the other.  Properly written, this
+    the current timestamp in the other.  Properly written, this
     trigger function would be independent of the specific table it is
     triggering on.  So the same function could be used for
     <command>INSERT</command> events on any table with suitable

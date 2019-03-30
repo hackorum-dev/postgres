@@ -48,7 +48,7 @@ typedef struct CheckPoint
 	Oid			oldestXidDB;	/* database with minimum datfrozenxid */
 	MultiXactId oldestMulti;	/* cluster-wide minimum datminmxid */
 	Oid			oldestMultiDB;	/* database with minimum datminmxid */
-	pg_time_t	time;			/* time stamp of checkpoint */
+	pg_time_t	time;			/* timestamp of checkpoint */
 	TransactionId oldestCommitTsXid;	/* oldest Xid with valid commit
 										 * timestamp */
 	TransactionId newestCommitTsXid;	/* newest Xid with valid commit
@@ -125,7 +125,7 @@ typedef struct ControlFileData
 	 * System status data
 	 */
 	DBState		state;			/* see enum above */
-	pg_time_t	time;			/* time stamp of last pg_control update */
+	pg_time_t	time;			/* timestamp of last pg_control update */
 	XLogRecPtr	checkPoint;		/* last check point record ptr */
 
 	CheckPoint	checkPointCopy; /* copy of last check point record */

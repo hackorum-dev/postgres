@@ -1661,9 +1661,9 @@ END;
    <replaceable>script_no</replaceable> identifies which script file was used (useful when
    multiple scripts were specified with <option>-f</option> or <option>-b</option>),
    and <replaceable>time_epoch</replaceable>/<replaceable>time_us</replaceable> are a
-   Unix-epoch time stamp and an offset
+   Unix-epoch timestamp and an offset
    in microseconds (suitable for creating an ISO 8601
-   time stamp with fractional seconds) showing when
+   timestamp with fractional seconds) showing when
    the transaction completed.
    The <replaceable>schedule_lag</replaceable> field is the difference between the
    transaction's scheduled start time, and the time it actually started, in
@@ -1719,7 +1719,7 @@ END;
 
    where
    <replaceable>interval_start</replaceable> is the start of the interval (as a Unix
-   epoch time stamp),
+   epoch timestamp),
    <replaceable>num_transactions</replaceable> is the number of transactions
    within the interval,
    <replaceable>sum_latency</replaceable> is the sum of the transaction

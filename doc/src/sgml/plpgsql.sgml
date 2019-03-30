@@ -4855,7 +4855,7 @@ $$ LANGUAGE plpgsql;
      <application>PL/pgSQL</application> interpreter casts this
      string to the <type>timestamp</type> type by calling the
      <function>text_out</function> and <function>timestamp_in</function>
-     functions for the conversion.  So, the computed time stamp is updated
+     functions for the conversion.  So, the computed timestamp is updated
      on each execution as the programmer expects.  Even though this
      happens to work as expected, it's not terribly efficient, so
      use of the <literal>now()</literal> function would still be a better idea.

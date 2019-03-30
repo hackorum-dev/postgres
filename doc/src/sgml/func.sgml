@@ -5984,7 +5984,7 @@ SELECT regexp_match('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
          <literal><function>to_char(<type>timestamp</type>, <type>text</type>)</function></literal>
         </entry>
         <entry><type>text</type></entry>
-        <entry>convert time stamp to string</entry>
+        <entry>convert timestamp to string</entry>
         <entry><literal>to_char(current_timestamp, 'HH12:MI:SS')</literal></entry>
        </row>
        <row>
@@ -6042,7 +6042,7 @@ SELECT regexp_match('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
          <literal><function>to_timestamp(<type>text</type>, <type>text</type>)</function></literal>
         </entry>
         <entry><type>timestamp with time zone</type></entry>
-        <entry>convert string to time stamp</entry>
+        <entry>convert string to timestamp</entry>
         <entry><literal>to_timestamp('05&nbsp;Dec&nbsp;2000', 'DD&nbsp;Mon&nbsp;YYYY')</literal></entry>
        </row>
       </tbody>
@@ -7377,7 +7377,7 @@ SELECT regexp_match('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
        <row>
         <entry><literal><function>isfinite(<type>timestamp</type>)</function></literal></entry>
         <entry><type>boolean</type></entry>
-        <entry>Test for finite time stamp (not +/-infinity)</entry>
+        <entry>Test for finite timestamp (not +/-infinity)</entry>
         <entry><literal>isfinite(timestamp '2001-02-16 21:28:30')</literal></entry>
         <entry><literal>true</literal></entry>
        </row>
@@ -7667,8 +7667,8 @@ SELECT regexp_match('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
 </synopsis>
     This expression yields true when two time periods (defined by their
     endpoints) overlap, false when they do not overlap.  The endpoints
-    can be specified as pairs of dates, times, or time stamps; or as
-    a date, time, or time stamp followed by an interval.  When a pair
+    can be specified as pairs of dates, times, or timestamps; or as
+    a date, time, or timestamp followed by an interval.  When a pair
     of values is provided, either the start or the end can be written
     first; <literal>OVERLAPS</literal> automatically takes the earlier value
     of the pair as the start.  Each time period is considered to
@@ -7901,7 +7901,7 @@ SELECT EXTRACT(EPOCH FROM INTERVAL '5 days 3 hours');
 </screen>
 
        <para>
-        You can convert an epoch value back to a time stamp
+        You can convert an epoch value back to a timestamp
         with <function>to_timestamp</function>:
        </para>
 <screen>
@@ -8308,7 +8308,7 @@ SELECT date_trunc('hour', INTERVAL '3 days 02:47:33');
    <para>
     The <literal>AT TIME ZONE</literal> converts time
     stamp <emphasis>without time zone</emphasis> to/from
-    time stamp <emphasis>with time zone</emphasis>, and
+    timestamp <emphasis>with time zone</emphasis>, and
     <emphasis>time</emphasis> values to different time zones. <xref
     linkend="functions-datetime-zoneconvert-table"/> shows its variants.
    </para>
@@ -8330,7 +8330,7 @@ SELECT date_trunc('hour', INTERVAL '3 days 02:47:33');
          <literal><type>timestamp without time zone</type> AT TIME ZONE <replaceable>zone</replaceable></literal>
         </entry>
         <entry><type>timestamp with time zone</type></entry>
-        <entry>Treat given time stamp <emphasis>without time zone</emphasis> as located in the specified time zone</entry>
+        <entry>Treat given timestamp <emphasis>without time zone</emphasis> as located in the specified time zone</entry>
        </row>
 
        <row>
@@ -8338,7 +8338,7 @@ SELECT date_trunc('hour', INTERVAL '3 days 02:47:33');
          <literal><type>timestamp with time zone</type> AT TIME ZONE <replaceable>zone</replaceable></literal>
         </entry>
         <entry><type>timestamp without time zone</type></entry>
-        <entry>Convert given time stamp <emphasis>with time zone</emphasis> to the new time
+        <entry>Convert given timestamp <emphasis>with time zone</emphasis> to the new time
         zone, with no time zone designation</entry>
        </row>
 
@@ -8375,7 +8375,7 @@ SELECT TIMESTAMP '2001-02-16 20:38:40-05' AT TIME ZONE 'Asia/Tokyo' AT TIME ZONE
 </screen>
     The first example adds a time zone to a value that lacks it, and
     displays the value using the current <varname>TimeZone</varname>
-    setting.  The second example shifts the time stamp with time zone value
+    setting.  The second example shifts the timestamp with time zone value
     to the specified time zone, and returns the value without a time zone.
     This allows storage and display of values different from the current
     <varname>TimeZone</varname> setting.  The third example converts
@@ -8468,7 +8468,7 @@ SELECT LOCALTIMESTAMP;
     the intent is to allow a single transaction to have a consistent
     notion of the <quote>current</quote> time, so that multiple
     modifications within the same transaction bear the same
-    time stamp.
+    timestamp.
    </para>
 
    <note>
@@ -20218,7 +20218,7 @@ postgres=# SELECT * FROM pg_walfile_name_offset(pg_stop_backup());
         <literal><function>pg_last_xact_replay_timestamp()</function></literal>
         </entry>
        <entry><type>timestamp with time zone</type></entry>
-       <entry>Get time stamp of last transaction replayed during recovery.
+       <entry>Get timestamp of last transaction replayed during recovery.
         This is the time at which the commit or abort WAL record for that
         transaction was generated on the primary.
         If no transactions have been replayed during recovery, this function
@@ -21678,9 +21678,9 @@ SELECT convert_from(pg_read_binary_file('file_in_utf8.txt'), 'UTF8');
    </indexterm>
    <para>
     <function>pg_stat_file</function> returns a record containing the file
-    size, last accessed time stamp, last modified time stamp,
-    last file status change time stamp (Unix platforms only),
-    file creation time stamp (Windows only), and a <type>boolean</type>
+    size, last accessed timestamp, last modified timestamp,
+    last file status change timestamp (Unix platforms only),
+    file creation timestamp (Windows only), and a <type>boolean</type>
     indicating if it is a directory.  Typical usages include:
 <programlisting>
 SELECT * FROM pg_stat_file('filename');
