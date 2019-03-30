@@ -375,7 +375,7 @@ table1.column1 OP table2.column2
      Another example is that on machines that meet the <acronym>IEEE</acronym>
      floating-point standard, negative zero and positive zero are different
      values (different bit patterns) but they are defined to compare equal.
-     If a float value might contain negative zero then extra steps are needed
+     If a float value might contain negative zero, then extra steps are needed
      to ensure it generates the same hash value as positive zero.
     </para>
 

@@ -403,7 +403,7 @@
     8000&mdash;9999.  This minimizes the risk of OID collisions with other
     patches being developed concurrently.  To keep the 8000&mdash;9999
     range free for development purposes, after a patch has been committed
-    to the master git repository its OIDs should be renumbered into
+    to the master git repository, its OIDs should be renumbered into
     available space below that range.  Typically, this will be done
     near the end of each development cycle, moving all OIDs consumed by
     patches committed in that cycle at the same time.  The script

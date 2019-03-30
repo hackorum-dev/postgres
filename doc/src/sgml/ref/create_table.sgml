@@ -1189,7 +1189,7 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
       This clause specifies optional storage parameters for a table or index;
       see <xref linkend="sql-createtable-storage-parameters"
       endterm="sql-createtable-storage-parameters-title"/> for more
-      information.  For backward-compatibility the <literal>WITH</literal>
+      information.  For backward-compatibility, the <literal>WITH</literal>
       clause for a table can also include <literal>OIDS=FALSE</literal> to
       specify that rows of the new table should not contain OIDs (object
       identifiers), <literal>OIDS=TRUE</literal> is not supported anymore.

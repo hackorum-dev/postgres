@@ -326,7 +326,7 @@
    before returning a success indication to the client.  The client is
    therefore guaranteed that a transaction reported to be committed will
    be preserved, even in the event of a server crash immediately after.
-   However, for short transactions this delay is a major component of the
+   However, for short transactions, this delay is a major component of the
    total transaction time.  Selecting asynchronous commit mode means that
    the server returns success as soon as the transaction is logically
    completed, before the <acronym>WAL</acronym> records it generated have

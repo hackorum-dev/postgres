@@ -1449,7 +1449,7 @@ SELECT 1/0;
     <literal>S</literal>, perform an <acronym>SSL</acronym> startup handshake
     (not described here, part of the <acronym>SSL</acronym>
     specification) with the server.  If this is successful, continue
-    with sending the usual StartupMessage.  In this case the
+    with sending the usual StartupMessage.  In this case, the
     StartupMessage and all subsequent data will be
     <acronym>SSL</acronym>-encrypted.  To continue after
     <literal>N</literal>, send the usual StartupMessage and proceed without
@@ -1462,7 +1462,7 @@ SELECT 1/0;
     the server predates the addition of <acronym>SSL</acronym> support
     to <productname>PostgreSQL</productname>.  (Such servers are now very ancient,
     and likely do not exist in the wild anymore.)
-    In this case the connection must
+    In this case, the connection must
     be closed, but the frontend might choose to open a fresh connection
     and proceed without requesting <acronym>SSL</acronym>.
    </para>
@@ -1528,7 +1528,7 @@ SELECT 1/0;
     The frontend should also be prepared to handle an ErrorMessage
     response to GSSENCRequest from the server.  This would only occur if
     the server predates the addition of <acronym>GSSAPI</acronym> encryption
-    support to <productname>PostgreSQL</productname>.  In this case the
+    support to <productname>PostgreSQL</productname>.  In this case, the
     connection must be closed, but the frontend might choose to open a fresh
     connection and proceed without requesting <acronym>GSSAPI</acronym>
     encryption.  Given the length limits specified above, the ErrorMessage

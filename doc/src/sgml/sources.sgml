@@ -100,7 +100,7 @@ less -x4
    <para>
     There are two required elements for every message: a severity level
     (ranging from <literal>DEBUG</literal> to <literal>PANIC</literal>) and a primary
-    message text.  In addition there are optional elements, the most
+    message text.  In addition, there are optional elements, the most
     common of which is an error identifier code that follows the SQL spec's
     SQLSTATE conventions.
     <function>ereport</function> itself is just a shell function that exists
@@ -473,7 +473,7 @@ Hint:       the addendum
 
    <para>
     Rationale: Messages are not necessarily displayed on terminal-type
-    displays.  In GUI displays or browsers these formatting instructions are
+    displays.  In GUI displays or browsers, these formatting instructions are
     at best ignored.
    </para>
 
@@ -884,7 +884,7 @@ BETTER: unrecognized node type: 42
      features can be used, if a fallback is provided.
     </para>
     <para>
-     For example <literal>_StaticAssert()</literal> and
+     For example, <literal>_StaticAssert()</literal> and
      <literal>__builtin_constant_p</literal> are currently used, even though
      they are from a newer revision of the C standard and a
      <productname>GCC</productname> extension, respectively. If not available, in the first case, 
@@ -897,14 +897,14 @@ BETTER: unrecognized node type: 42
    <simplesect>
     <title>Function-Like Macros and Inline Functions</title>
     <para>
-     Both, macros with arguments and <literal>static inline</literal>
-     functions, may be used. The latter are preferable if there are
+     Both macros with arguments and <literal>static inline</literal>
+     functions may be used. The latter are preferable if there are
      multiple-evaluation hazards when written as a macro, as e.g. the
      case with
 <programlisting>
 #define Max(x, y)       ((x) > (y) ? (x) : (y))
 </programlisting>
-     or when the macro would be very long. In other cases it's only
+     or when the macro would be very long. In other cases, it's only
      possible to use macros, or at least easier.  For example because
      expressions of various types need to be passed to the macro.
     </para>
@@ -936,16 +936,16 @@ MemoryContextSwitchTo(MemoryContext context)
    <simplesect>
     <title>Writing Signal Handlers</title>
     <para>
-     To be suitable to run inside a signal handler code has to be
+     To be suitable to run inside a signal handler, code has to be
      written very carefully. The fundamental problem is that, unless
      blocked, a signal handler can interrupt code at any time. If code
-     inside the signal handler uses the same state as code outside
-     chaos may ensue. As an example consider what happens if a signal
+     inside the signal handler uses the same state as code outside,
+     chaos may ensue. As an example, consider what happens if a signal
      handler tries to acquire a lock that's already held in the
      interrupted code.
     </para>
     <para>
-     Barring special arrangements code in signal handlers may only
+     Barring special arrangements, code in signal handlers may only
      call async-signal safe functions (as defined in POSIX) and access
      variables of type <literal>volatile sig_atomic_t</literal>. A few
      functions in <command>postgres</command> are also deemed signal safe; specifically,

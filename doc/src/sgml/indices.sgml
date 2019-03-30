@@ -1081,7 +1081,7 @@ SELECT x FROM tab WHERE x = 'key' AND z &lt; 42;
    scan.  Even in the successful case, this approach trades visibility map
    accesses for heap accesses; but since the visibility map is four orders
    of magnitude smaller than the heap it describes, far less physical I/O is
-   needed to access it.  In most situations the visibility map remains
+   needed to access it.  In most situations, the visibility map remains
    cached in memory all the time.
   </para>
 

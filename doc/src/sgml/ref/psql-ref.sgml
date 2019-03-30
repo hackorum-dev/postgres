@@ -1056,7 +1056,7 @@ testdb=&gt;
         These operations are not as efficient as the <acronym>SQL</acronym>
         <command>COPY</command> command with a file or program data source or
         destination, because all data must pass through the client/server
-        connection.  For large amounts of data the <acronym>SQL</acronym>
+        connection.  For large amounts of data, the <acronym>SQL</acronym>
         command might be preferable.
         </para>
         </tip>

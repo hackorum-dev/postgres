@@ -1024,7 +1024,7 @@ SELECT pg_start_backup('label', true);
      consider during this backup.
     </para>
     <para>
-     As noted above, if the server crashes during the backup it may not be
+     As noted above, if the server crashes during the backup, it may not be
      possible to restart until the <literal>backup_label</literal> file has
      been manually deleted from the <envar>PGDATA</envar> directory.  Note
      that it is very important to never remove the

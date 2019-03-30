@@ -3458,7 +3458,7 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
         reached. The default is <literal>pause</literal>, which means recovery will
         be paused. <literal>promote</literal> means the recovery process will finish
         and the server will start to accept connections.
-        Finally <literal>shutdown</literal> will stop the server after reaching the
+        Finally, <literal>shutdown</literal> will stop the server after reaching the
         recovery target.
        </para>
        <para>
@@ -4188,7 +4188,7 @@ ANY <replaceable class="parameter">num_sync</replaceable> ( <replaceable class="
        </para>
        <para>
         The delay occurs once the database in recovery has reached a consistent
-        state, until the standby is promoted or triggered. After that the standby
+        state, until the standby is promoted or triggered. After that, the standby
         will end recovery without further waiting.
        </para>
        <para>

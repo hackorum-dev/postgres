@@ -746,7 +746,7 @@ psql --username=postgres --file=script.sql postgres
    <application>pg_upgrade</application> launches short-lived postmasters in
    the old and new data directories.  Temporary Unix socket files for
    communication with these postmasters are, by default, made in the current
-   working directory.  In some situations the path name for the current
+   working directory.  In some situations, the path name for the current
    directory might be too long to be a valid socket name.  In that case you
    can use the <option>-s</option> option to put the socket files in some
    directory with a shorter path name.  For security, be sure that that

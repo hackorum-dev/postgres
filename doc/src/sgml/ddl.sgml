@@ -3867,7 +3867,7 @@ CREATE INDEX ON measurement (logdate);
     <title>Partition Maintenance</title>
 
     <para>
-      Normally the set of partitions established when initially defining the
+      Normally, the set of partitions established when initially defining the
       table are not intended to remain static.  It is common to
       remove partitions of old data and add partitions for
       new data. One of the most important advantages of partitioning is
