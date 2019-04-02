@@ -439,6 +439,11 @@ statext_mcv_load(Oid mvoid)
 	return result;
 }
 
+static void
+AssertIsAligned(const void *base, const void *ptr)
+{
+	Assert(((char *) ptr - (char *) base) == MAXALIGN((char *) ptr - (char *) base));
+}
 
 /*
  * statext_mcv_serialize
@@ -672,15 +677,22 @@ statext_mcv_serialize(MCVList * mcvlist, VacAttrStats **stats)
 	/* the header may not be exactly aligned, so make sure it is */
 	ptr = raw + MAXALIGN(ptr - raw);
 
+	AssertIsAligned(raw, ptr);
+
 	/* store information about the attributes */
 	memcpy(ptr, info, sizeof(DimensionInfo) * ndims);
 	ptr += MAXALIGN(sizeof(DimensionInfo) * ndims);
+
+	AssertIsAligned(raw, ptr);
 
 	/* Copy the deduplicated values for all attributes to the output. */
 	for (dim = 0; dim < ndims; dim++)
 	{
 		/* remember the starting point for Asserts later */
 		char	   *start PG_USED_FOR_ASSERTS_ONLY = ptr;
+
+		/* proper alignment before earch dimension */
+		AssertIsAligned(raw, ptr);
 
 		for (i = 0; i < info[dim].nvalues; i++)
 		{
@@ -714,12 +726,18 @@ statext_mcv_serialize(MCVList * mcvlist, VacAttrStats **stats)
 			{
 				int			len = VARSIZE_ANY(value);
 
+				/* proper alignment before varlena values */
+				AssertIsAligned(raw, ptr);
+
 				memcpy(ptr, DatumGetPointer(value), len);
 				ptr += MAXALIGN(len);
 			}
 			else if (info[dim].typlen == -2)	/* cstring */
 			{
 				Size		len = strlen(DatumGetCString(value)) + 1;	/* terminator */
+
+				/* proper alignment before cstring values */
+				AssertIsAligned(raw, ptr);
 
 				memcpy(ptr, DatumGetCString(value), len);
 				ptr += MAXALIGN(len);
@@ -772,6 +790,9 @@ statext_mcv_serialize(MCVList * mcvlist, VacAttrStats **stats)
 		memcpy(ITEM_NULLS(item, ndims), mcvitem->isnull, sizeof(bool) * ndims);
 		memcpy(ITEM_FREQUENCY(item, ndims), &mcvitem->frequency, sizeof(double));
 		memcpy(ITEM_BASE_FREQUENCY(item, ndims), &mcvitem->base_frequency, sizeof(double));
+
+		/* each serialized item is aligned */
+		AssertIsAligned(raw, ptr);
 
 		/* copy the serialized item into the array */
 		memcpy(ptr, item, itemsize);
@@ -887,17 +908,12 @@ statext_mcv_deserialize(bytea *data)
 	ndims = mcvlist->ndimensions;
 
 	/*
-	 * Check amount of data including DimensionInfo for all dimensions and
-	 * also the serialized items (including uint16 indexes). Also, walk
-	 * through the dimension information and add it to the sum.
-	 */
-	expected_size = SizeOfMCVList(ndims, nitems);
-
-	/*
 	 * Check that we have at least the dimension and info records, along with
 	 * the items. We don't know the size of the serialized values yet. We need
 	 * to do this check first, before accessing the dimension info.
 	 */
+	expected_size = SizeOfMCVList(ndims, nitems);
+
 	if (VARSIZE_ANY(data) < expected_size)
 		elog(ERROR, "invalid MCV size %zd (expected %zu)",
 			 VARSIZE_ANY(data), expected_size);
@@ -908,6 +924,9 @@ statext_mcv_deserialize(bytea *data)
 
 	/* ensure alignment of the pointer (after the header fields) */
 	ptr = raw + MAXALIGN(ptr - raw);
+
+	/* proper alignment before serialized dimension info */
+	AssertIsAligned(raw, ptr);
 
 	/* Now it's safe to access the dimension info. */
 	info = (DimensionInfo *) ptr;
@@ -982,6 +1001,11 @@ statext_mcv_deserialize(bytea *data)
 
 	dataptr = isnullptr + (nitems * MAXALIGN(sizeof(bool) * ndims));
 
+	/* proper alignment of pointers used to allocate MCV parts */
+	AssertIsAligned((char *) mcvlist, valuesptr);
+	AssertIsAligned((char *) mcvlist, isnullptr);
+	AssertIsAligned((char *) mcvlist, dataptr);
+
 	/*
 	 * Build mapping (index => value) for translating the serialized data into
 	 * the in-memory representation.
@@ -990,6 +1014,9 @@ statext_mcv_deserialize(bytea *data)
 	{
 		/* remember start position in the input array */
 		char	   *start PG_USED_FOR_ASSERTS_ONLY = ptr;
+
+		/* proper alignment before serialized values in input buffer */
+		AssertIsAligned(raw, ptr);
 
 		if (info[dim].typbyval)
 		{
@@ -1029,7 +1056,13 @@ statext_mcv_deserialize(bytea *data)
 				/* varlena */
 				for (i = 0; i < info[dim].nvalues; i++)
 				{
-					Size		len = VARSIZE_ANY(ptr);
+					Size		len;
+
+					/* proper alignment before serialized varlena value */
+					AssertIsAligned(raw, ptr);
+					AssertIsAligned((char *) mcvlist, dataptr);
+
+					len = VARSIZE_ANY(ptr);
 
 					memcpy(dataptr, ptr, len);
 					ptr += MAXALIGN(len);
@@ -1044,7 +1077,13 @@ statext_mcv_deserialize(bytea *data)
 				/* cstring */
 				for (i = 0; i < info[dim].nvalues; i++)
 				{
-					Size		len = (strlen(ptr) + 1);	/* don't forget the \0 */
+					Size		len;
+
+					/* proper alignment before serialized cstring value */
+					AssertIsAligned(raw, ptr);
+					AssertIsAligned((char *) mcvlist, dataptr);
+
+					len = (strlen(ptr) + 1);	/* don't forget the \0 */
 
 					memcpy(dataptr, ptr, len);
 					ptr += MAXALIGN(len);
@@ -1069,7 +1108,10 @@ statext_mcv_deserialize(bytea *data)
 		ptr = raw + MAXALIGN(ptr - raw);
 	}
 
-	/* we should have also filled the MCV list exactly */
+	/*
+	 * We should have also filled the MCV list exactly (data is allocated
+	 * at the very end of the allocated buffer).
+	 */
 	Assert(dataptr == ((char *) mcvlist + mcvlen));
 
 	/* deserialize the MCV items and translate the indexes to Datums */
@@ -1084,6 +1126,12 @@ statext_mcv_deserialize(bytea *data)
 		item->isnull = (bool *) isnullptr;
 		isnullptr += MAXALIGN(sizeof(bool) * ndims);
 
+		/* proper alignment of serialized MCV items */
+		AssertIsAligned(raw, ptr);
+
+		/* proper alignment of deserialized values/isnull arrays */
+		AssertIsAligned((char *) mcvlist, valuesptr);
+		AssertIsAligned((char *) mcvlist, isnullptr);
 
 		/* just point to the right place */
 		indexes = ITEM_INDEXES(ptr);
