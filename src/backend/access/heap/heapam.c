@@ -2053,6 +2053,9 @@ static HeapTuple
 heap_prepare_insert(Relation relation, HeapTuple tup, TransactionId xid,
 					CommandId cid, int options)
 {
+	int		toast_tuple_threshold;
+	int		compress_tuple_threshold;
+
 	/*
 	 * Parallel operations are required to be strictly read-only in a parallel
 	 * worker.  Parallel inserts are not safe even in the leader in the
@@ -2078,8 +2081,24 @@ heap_prepare_insert(Relation relation, HeapTuple tup, TransactionId xid,
 	tup->t_tableOid = RelationGetRelid(relation);
 
 	/*
+	 * Compute the compressibility threshold, which is the minimum between
+	 * toast_tuple_target and compress_tuple_target for a relation.
+	 */
+	toast_tuple_threshold = RelationGetToastTupleTarget(relation,
+								TOAST_TUPLE_TARGET);
+	compress_tuple_threshold = RelationGetCompressTupleTarget(relation,
+								COMPRESS_TUPLE_TARGET);
+	compress_tuple_threshold = Min(compress_tuple_threshold,
+								   toast_tuple_threshold);
+
+	/*
 	 * If the new tuple is too big for storage or contains already toasted
 	 * out-of-line attributes from some other relation, invoke the toaster.
+	 *
+	 * The toaster is invoked only if the tuple length is greater than the
+	 * compression limit.  Note that compress_tuple_threshold must be less
+	 * than or equal to toast_tuple_threshold, so it's enough to only test
+	 * for compress_tuple_threshold.
 	 */
 	if (relation->rd_rel->relkind != RELKIND_RELATION &&
 		relation->rd_rel->relkind != RELKIND_MATVIEW)
@@ -2088,7 +2107,8 @@ heap_prepare_insert(Relation relation, HeapTuple tup, TransactionId xid,
 		Assert(!HeapTupleHasExternal(tup));
 		return tup;
 	}
-	else if (HeapTupleHasExternal(tup) || tup->t_len > TOAST_TUPLE_THRESHOLD)
+	else if (HeapTupleHasExternal(tup) ||
+			 tup->t_len > compress_tuple_threshold)
 		return toast_insert_or_update(relation, tup, NULL, options);
 	else
 		return tup;
@@ -3390,9 +3410,30 @@ l2:
 		need_toast = false;
 	}
 	else
+	{
+		int			toast_tuple_threshold;
+		int			compress_tuple_threshold;
+
+		/*
+		 * Compute the compressibility threshold, which is the minimum between
+		 * toast_tuple_target and compress_tuple_target for a relation.
+		 */
+		toast_tuple_threshold = RelationGetToastTupleTarget(relation,
+									TOAST_TUPLE_TARGET);
+		compress_tuple_threshold = RelationGetCompressTupleTarget(relation,
+									COMPRESS_TUPLE_TARGET);
+		compress_tuple_threshold = Min(compress_tuple_threshold,
+									   toast_tuple_threshold);
+
+		/*
+		 * compress_tuple_threshold must be less than or equal to
+		 * toast_tuple_threshold, so it is enough to only test
+		 * compress_tuple_threshold here.
+		 */
 		need_toast = (HeapTupleHasExternal(&oldtup) ||
 					  HeapTupleHasExternal(newtup) ||
-					  newtup->t_len > TOAST_TUPLE_THRESHOLD);
+					  newtup->t_len > compress_tuple_threshold);
+	}
 
 	pagefree = PageGetHeapFreeSpace(page);
 
