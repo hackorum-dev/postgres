@@ -7,7 +7,7 @@
  * If requested, transaction commits wait until their commit LSN are
  * acknowledged by the synchronous standbys.
  *
- * This module contains the code for waiting and release of backends.
+ * This module contains the code for waiting and releasing of backends.
  * All code in this module executes on the primary. The core streaming
  * replication transport remains within WALreceiver/WALsender modules.
  *
@@ -903,7 +903,7 @@ SyncRepGetStandbyPriority(void)
 }
 
 /*
- * Walk the specified queue from head.  Set the state of any backends that
+ * Wake the specified queue from head.  Set the state of any backends that
  * need to be woken, remove them from the queue, and then wake them.
  * Pass all = true to wake whole queue; otherwise, just wake up to
  * the walsender's LSN.
