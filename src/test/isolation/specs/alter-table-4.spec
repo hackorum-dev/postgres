@@ -24,11 +24,12 @@ step "s1dropc1"	{ DROP TABLE c1; }
 step "s1c"	{ COMMIT; }
 
 session "s2"
-step "s2sel"	{ SELECT SUM(a) FROM p; }
+step "s2prep"	{ PREPARE summa as SELECT SUM(a) FROM p; }
+step "s2sel"	{ EXECUTE summa; }
 
 # NO INHERIT will not be visible to concurrent select,
 # since we identify children before locking them
-permutation "s1b" "s1delc1" "s2sel" "s1c" "s2sel"
+permutation "s1b" "s1delc1" "s2prep" "s2sel" "s1c" "s2sel"
 # adding inheritance likewise is not seen if s1 commits after s2 locks p
 permutation "s1b" "s1delc1" "s1addc2" "s2sel" "s1c" "s2sel"
 # but we do cope with DROP on a child table
