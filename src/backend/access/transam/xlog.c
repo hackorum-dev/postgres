@@ -5367,7 +5367,7 @@ validateRecoveryParameters(void)
 			strcmp(recoveryRestoreCommand, "") == 0)
 			ereport(FATAL,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					 errmsg("must specify restore_command when standby mode is not enabled")));
+					 errmsg("must specify restore_command to start in targeted recovery mode")));
 	}
 
 	/*
