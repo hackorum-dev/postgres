@@ -3868,7 +3868,7 @@ CREATE INDEX ON measurement (logdate);
 
     <para>
       Normally, the set of partitions established when initially defining the
-      table are not intended to remain static.  It is common to
+      table is not intended to remain static.  It is common to
       remove partitions of old data and add partitions for
       new data. One of the most important advantages of partitioning is
       allowing this otherwise painful task to be executed

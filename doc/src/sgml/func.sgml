@@ -10295,7 +10295,7 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
    <title>Producing XML Content</title>
 
    <para>
-    A set of functions and function-like expressions are available for
+    A set of functions and function-like expressions is available for
     producing XML content from SQL data.  As such, they are
     particularly suitable for formatting query results into XML
     documents for processing in client applications.
