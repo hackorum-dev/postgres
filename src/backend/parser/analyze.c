@@ -2773,11 +2773,16 @@ transformLockingClause(ParseState *pstate, Query *qry, LockingClause *lc,
 	{
 		/* all regular tables used in query */
 		i = 0;
+
 		foreach(rt, qry->rtable)
 		{
 			RangeTblEntry *rte = (RangeTblEntry *) lfirst(rt);
 
 			++i;
+
+			if (pstate->p_contain_old_new_rte && i <= PRS2_NEW_VARNO)
+				continue;
+
 			switch (rte->rtekind)
 			{
 				case RTE_RELATION:

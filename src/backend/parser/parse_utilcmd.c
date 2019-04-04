@@ -2778,6 +2778,8 @@ transformRuleStmt(RuleStmt *stmt, const char *queryString,
 			addRTEtoQuery(sub_pstate, oldrte, false, true, false);
 			addRTEtoQuery(sub_pstate, newrte, false, true, false);
 
+			sub_pstate->p_contain_old_new_rte = true;
+
 			/* Transform the rule action statement */
 			top_subqry = transformStmt(sub_pstate,
 									   (Node *) copyObject(action));
