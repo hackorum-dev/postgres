@@ -850,8 +850,11 @@ get_attgenerated(Oid relid, AttrNumber attnum)
 		return result;
 	}
 	else
+	{
 		elog(ERROR, "cache lookup failed for attribute %d of relation %u",
 			 attnum, relid);
+		return '\0';			/* keep compiler quiet */
+	}
 }
 
 /*
