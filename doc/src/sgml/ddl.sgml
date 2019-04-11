@@ -3583,6 +3583,26 @@ VALUES ('Albany', NULL, NULL, 'NY');
      offer flexibility but do not have some of the performance benefits
      of built-in declarative partitioning.
     </para>
+
+    <note>
+     <para>
+      When using table inheritance, partition hierarchies with more than a few
+      hundred partitions are not recommended.  Larger partition hierarchies may
+      incur long planning time, and, in the case of <command>UPDATE</command>
+      and <command>DELETE</command>, excessive memory usage.  When inheritance
+      is used, see also the limitations described in
+      <xref linkend="ddl-partitioning-constraint-exclusion"/>.
+     </para>
+
+     <para>
+      When using declarative partitioning, the overhead of query planning
+      is directly related to the number of unpruned partitions.  Planning is
+      generally fast with small numbers of unpruned partitions, even in
+      partition hierarchies containing many thousands of partitions.  However,
+      long planning time will be incurred by large partition hierarchies if
+      partition pruning is not possible during the planning phase.
+     </para>
+    </note>
    </sect2>
 
   <sect2 id="ddl-partitioning-declarative">
