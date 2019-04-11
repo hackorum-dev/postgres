@@ -3451,8 +3451,9 @@ VALUES ('Albany', NULL, NULL, 'NY');
     </listitem>
    </itemizedlist>
 
-   These deficiencies will probably be fixed in some future release,
-   but in the meantime considerable care is needed in deciding whether
+   Some functionality not implemented for inheritance hierarchies is
+   implemented for declarative partitioning.
+   Considerable care is needed in deciding whether partitioning with legacy
    inheritance is useful for your application.
   </para>
 
