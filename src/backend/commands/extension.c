@@ -786,13 +786,14 @@ static void
 execute_extension_script(Oid extensionOid, ExtensionControlFile *control,
 						 const char *from_version,
 						 const char *version,
+						 List *requiredExtensions,
 						 List *requiredSchemas,
 						 const char *schemaName, Oid schemaOid)
 {
 	char	   *filename;
 	int			save_nestlevel;
 	StringInfoData pathbuf;
-	ListCell   *lc;
+	ListCell   *lc, *le;
 
 	/*
 	 * Enforce superuser-ness if appropriate.  We postpone this check until
@@ -904,6 +905,19 @@ execute_extension_script(Oid extensionOid, ExtensionControlFile *control,
 										t_sql,
 										CStringGetTextDatum("@extschema@"),
 										CStringGetTextDatum(qSchemaName));
+		}
+
+		/*
+		 * For each dependency, substitute the dependency's schema for
+		 * @DEPNAME_schema@.  This is fishy for a relocatable dependency, but
+		 * we accept that risk.
+		 */
+		forboth (le, requiredExtensions, lc, requiredSchemas)
+		{
+			t_sql = DirectFunctionCall3(replace_text,
+										t_sql,
+										CStringGetTextDatum(psprintf("@%s_schema@", get_extension_name(lfirst_oid(le)))),
+										CStringGetTextDatum(get_namespace_name(lfirst_oid(lc))));
 		}
 
 		/*
@@ -1528,6 +1542,7 @@ CreateExtensionInternal(char *extensionName,
 	 */
 	execute_extension_script(extensionOid, control,
 							 oldVersionName, versionName,
+							 requiredExtensions,
 							 requiredSchemas,
 							 schemaName, schemaOid);
 
@@ -3147,6 +3162,7 @@ ApplyExtensionUpdates(Oid extensionOid,
 		 */
 		execute_extension_script(extensionOid, control,
 								 oldVersionName, versionName,
+								 requiredExtensions,
 								 requiredSchemas,
 								 schemaName, schemaOid);
 
