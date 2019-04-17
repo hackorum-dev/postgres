@@ -41,6 +41,7 @@
 #include "miscadmin.h"
 #include "optimizer/optimizer.h"
 #include "nodes/makefuncs.h"
+#include "nodes/nodeFuncs.h"
 #include "parser/parse_coerce.h"
 #include "parser/parse_collate.h"
 #include "parser/parse_expr.h"
@@ -900,6 +901,13 @@ DoCopy(ParseState *pstate, const CopyStmt *stmt,
 		rte = addRangeTableEntryForRelation(pstate, rel, lockmode,
 											NULL, false, false);
 		rte->requiredPerms = (is_from ? ACL_INSERT : ACL_SELECT);
+
+		if (is_from && !table_support_multi_insert(rel))
+			ereport(ERROR,
+						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						 errmsg("Table access method doesn't support the operation"),
+						 parser_errposition(pstate,
+											exprLocation((Node *) stmt))));
 
 		if (stmt->whereClause)
 		{
