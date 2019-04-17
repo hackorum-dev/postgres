@@ -62,6 +62,7 @@ handle_args(int argc, char *argv[])
 		}
 	}
 
+	bool has_options = false;
 	while ((option = getopt_long(argc, argv, "d:",
 								 long_options, &optindex)) != -1)
 	{
@@ -69,6 +70,7 @@ handle_args(int argc, char *argv[])
 		{
 			case 'd':
 				test_duration = atoi(optarg);
+				has_options = true;
 				break;
 
 			default:
@@ -84,6 +86,15 @@ handle_args(int argc, char *argv[])
 		fprintf(stderr,
 				_("%s: too many command-line arguments (first is \"%s\")\n"),
 				progname, argv[optind]);
+		fprintf(stderr, _("Try \"%s --help\" for more information.\n"),
+				progname);
+		exit(1);
+	}
+
+	if (!has_options && argc > 1)
+	{
+		fprintf(stderr, _("%s: illegal option --\n"),
+				progname);
 		fprintf(stderr, _("Try \"%s --help\" for more information.\n"),
 				progname);
 		exit(1);
