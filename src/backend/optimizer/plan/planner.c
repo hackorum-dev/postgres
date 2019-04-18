@@ -1728,6 +1728,7 @@ inheritance_planner(PlannerInfo *root)
 		subpaths = list_make1(dummy_path);
 		subroots = list_make1(root);
 		resultRelations = list_make1_int(parse->resultRelation);
+		nominalRelation = parse->resultRelation;
 		if (parse->withCheckOptions)
 			withCheckOptionLists = list_make1(parse->withCheckOptions);
 		if (parse->returningList)
