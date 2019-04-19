@@ -7310,6 +7310,7 @@ is_projection_capable_path(Path *path)
 		case T_ModifyTable:
 		case T_MergeAppend:
 		case T_RecursiveUnion:
+		case T_CustomScan:
 			return false;
 		case T_CustomScan:
 			if (castNode(CustomPath, path)->flags & CUSTOMPATH_SUPPORT_PROJECTION)
