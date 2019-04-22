@@ -1920,7 +1920,7 @@ lazy_truncate_heap(Relation onerel, LVRelStats *vacrelstats)
 		lock_retry = 0;
 		while (true)
 		{
-			if (ConditionalLockRelation(onerel, AccessExclusiveLock))
+			if (ConditionalLockRelation(onerel, ExclusiveLock))
 				break;
 
 			/*
@@ -1961,7 +1961,7 @@ lazy_truncate_heap(Relation onerel, LVRelStats *vacrelstats)
 			 * numbers alone amounts to assuming that the new pages have the
 			 * same tuple density as existing ones, which is less unlikely.
 			 */
-			UnlockRelation(onerel, AccessExclusiveLock);
+			UnlockRelation(onerel, ExclusiveLock);
 			return;
 		}
 
@@ -1976,7 +1976,7 @@ lazy_truncate_heap(Relation onerel, LVRelStats *vacrelstats)
 		if (new_rel_pages >= old_rel_pages)
 		{
 			/* can't do anything after all */
-			UnlockRelation(onerel, AccessExclusiveLock);
+			UnlockRelation(onerel, ExclusiveLock);
 			return;
 		}
 
@@ -1992,7 +1992,7 @@ lazy_truncate_heap(Relation onerel, LVRelStats *vacrelstats)
 		 * that should happen as part of standard invalidation processing once
 		 * they acquire lock on the relation.
 		 */
-		UnlockRelation(onerel, AccessExclusiveLock);
+		UnlockRelation(onerel, ExclusiveLock);
 
 		/*
 		 * Update statistics.  Here, it *is* correct to adjust rel_pages

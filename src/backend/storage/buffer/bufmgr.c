@@ -1108,7 +1108,8 @@ BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 			 * happens to be trying to split the page the first one got from
 			 * StrategyGetBuffer.)
 			 */
-			if (LWLockConditionalAcquire(BufferDescriptorGetContentLock(buf),
+			if (!(oldFlags & BM_DIRTY_BARRIER) &&
+				LWLockConditionalAcquire(BufferDescriptorGetContentLock(buf),
 										 LW_SHARED))
 			{
 				/*
@@ -1305,6 +1306,7 @@ BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 	 * just like permanent relations.
 	 */
 	buf->tag = newTag;
+	Assert((buf_state & BM_DIRTY_BARRIER) == 0);
 	buf_state &= ~(BM_VALID | BM_DIRTY | BM_JUST_DIRTIED |
 				   BM_CHECKPOINT_NEEDED | BM_IO_ERROR | BM_PERMANENT |
 				   BUF_USAGECOUNT_MASK);
@@ -1483,6 +1485,7 @@ MarkBufferDirty(Buffer buffer)
 		buf_state = old_buf_state;
 
 		Assert(BUF_STATE_GET_REFCOUNT(buf_state) > 0);
+		Assert((buf_state & BM_DIRTY_BARRIER) == 0);
 		buf_state |= BM_DIRTY | BM_JUST_DIRTIED;
 
 		if (pg_atomic_compare_exchange_u32(&bufHdr->state, &old_buf_state,
@@ -2371,6 +2374,29 @@ SyncOneBuffer(int buf_id, bool skip_recently_used, WritebackContext *wb_context)
 	 */
 	buf_state = LockBufHdr(bufHdr);
 
+	if (buf_state & BM_DIRTY_BARRIER)
+	{
+		if (skip_recently_used)
+		{
+			UnlockBufHdr(bufHdr, buf_state);
+			return result;
+		}
+		else
+		{
+			/*
+			 * Can't sync buffer if it's BM_DIRTY_BARRIER.  So, wait till this
+			 * flag is cleared.
+			 */
+			while (buf_state & BM_DIRTY_BARRIER)
+			{
+				UnlockBufHdr(bufHdr, buf_state);
+				pg_usleep(10000L);
+				buf_state = LockBufHdr(bufHdr);
+			}
+		}
+	}
+
+
 	if (BUF_STATE_GET_REFCOUNT(buf_state) == 0 &&
 		BUF_STATE_GET_USAGECOUNT(buf_state) == 0)
 	{
@@ -2859,6 +2885,204 @@ BufferGetLSNAtomic(Buffer buffer)
 	return lsn;
 }
 
+/*
+ * Set BM_DIRTY_BARRIER flag to the buffer.
+ */
+static bool
+SetBufferDirtyBarrier(BufferDesc *buf, uint32 buf_state)
+{
+	bool	result = false;
+
+	while (buf_state & BM_IO_IN_PROGRESS)
+	{
+		UnlockBufHdr(buf, buf_state);
+		WaitIO(buf);
+		buf_state = LockBufHdr(buf);
+	}
+
+	if (buf_state & BM_DIRTY)
+	{
+		buf_state |= BM_DIRTY_BARRIER;
+		result = true;
+	}
+
+	UnlockBufHdr(buf, buf_state);
+
+	return result;
+}
+
+/*
+ * Clear BM_DIRTY_BARRIER flag and also optionally BM_DIRTY and
+ * BM_JUST_DIRTIED flags.
+ */
+static void
+UnsetBufferDirtyBarrier(BufferDesc *buf, bool clean_dirty)
+{
+	uint32		buf_state;
+
+	buf_state = LockBufHdr(buf);
+	buf_state &= ~BM_DIRTY_BARRIER;
+	if (clean_dirty)
+		buf_state &= ~(BM_DIRTY | BM_JUST_DIRTIED);
+	UnlockBufHdr(buf, buf_state);
+}
+
+typedef struct
+{
+	int				   *buf_ids;
+	int					count;
+	int					nallocated;
+	RelFileNodeBackend	rnode;
+	ForkNumber			forkNum;
+	BlockNumber			firstDelBlock;
+} BuffersTrucateState;
+
+
+volatile BuffersTrucateState truncate_state = {NULL, 0, 0};
+
+static void
+init_truncate_state(void)
+{
+	truncate_state.count = 0;
+	truncate_state.nallocated = 16;
+	truncate_state.buf_ids = (int *) palloc(sizeof(int) *
+											truncate_state.nallocated);
+}
+
+static void
+extend_truncate_state_if_needed(void)
+{
+	int *tmp;
+
+	if (truncate_state.count + 1 <= truncate_state.nallocated)
+		return;
+
+	truncate_state.nallocated *= 2;
+	tmp = (int *) palloc(sizeof(int) *
+						 truncate_state.nallocated);
+	memcpy(tmp, truncate_state.buf_ids, truncate_state.count * sizeof(int));
+	truncate_state.buf_ids = tmp;
+}
+
+static void
+free_truncate_state(void)
+{
+	if (truncate_state.buf_ids)
+		pfree(truncate_state.buf_ids);
+	truncate_state.buf_ids = NULL;
+	truncate_state.count = 0;
+	truncate_state.nallocated = 0;
+}
+
+/*
+ * Prepare for truncation of relfilenode buffers.  Sets BM_DIRTY_BARRIER to
+ * every dirty buffer to be truncated.  Requires ExclusiveLock on relation,
+ * so no more buffers should be dirtied.  Therefore, after execution of this
+ * function no more past truncation point buffers will be written out.
+ */
+void
+RelFileNodeBuffersTruncatePrepare(RelFileNodeBackend rnode,
+								  ForkNumber forkNum,
+								  BlockNumber firstDelBlock)
+{
+	int					i;
+	WritebackContext	wb_context;
+	bool				barriers_overflow = false;
+
+	/* If it's a local relation, it's localbuf.c's problem. */
+	if (RelFileNodeBackendIsTemp(rnode))
+	{
+		if (rnode.backend == MyBackendId)
+			DropRelFileNodeLocalBuffers(rnode.node, forkNum, firstDelBlock);
+		return;
+	}
+
+	init_truncate_state();
+	truncate_state.rnode = rnode;
+	truncate_state.forkNum = forkNum;
+	truncate_state.firstDelBlock = firstDelBlock;
+	WritebackContextInit(&wb_context, &checkpoint_flush_after);
+
+	/* Look for past truncation point buffers */
+	for (i = 0; i < NBuffers; i++)
+	{
+		BufferDesc *bufHdr = GetBufferDescriptor(i);
+		uint32		buf_state;
+
+		if (!RelFileNodeEquals(bufHdr->tag.rnode, rnode.node))
+			continue;
+
+		buf_state = LockBufHdr(bufHdr);
+		if (RelFileNodeEquals(bufHdr->tag.rnode, rnode.node) &&
+			bufHdr->tag.forkNum == forkNum &&
+			bufHdr->tag.blockNum >= firstDelBlock)
+		{
+			extend_truncate_state_if_needed();
+
+			/*
+			 * Mark dirty buffers as BM_DIRTY_BARRIER.  IncDirtyBarriers()
+			 * ensures that there is not more than NBuffers/2 of barriered
+			 * buffers.  If we exceed the limite, then just write out dirty
+			 * buffers (unlikely to happen).
+			 */
+			if (!barriers_overflow)
+			{
+				START_CRIT_SECTION();
+				if (SetBufferDirtyBarrier(bufHdr, buf_state))
+				{
+					if (IncDirtyBarriers())
+					{
+						truncate_state.buf_ids[truncate_state.count++] = i;
+					}
+					else
+					{
+						UnsetBufferDirtyBarrier(bufHdr, false);
+						barriers_overflow = true;
+					}
+				}
+				END_CRIT_SECTION();
+			}
+
+			if (barriers_overflow)
+			{
+				UnlockBufHdr(bufHdr, buf_state);
+				SyncOneBuffer(i, false, &wb_context);
+			}
+		}
+		else
+		{
+			UnlockBufHdr(bufHdr, buf_state);
+		}
+	}
+
+	IssuePendingWritebacks(&wb_context);
+}
+
+/*
+ * Finish truncation of node buffers.  When commit == true, all the buffers
+ * past truncation point are removed.  When commit == false, just removes
+ * BM_DIRTY_BARRIER flag.
+ */
+void
+RelFileNodeBuffersTruncateFinish(bool commit)
+{
+	int		i;
+
+	START_CRIT_SECTION();
+	for (i = 0; i < truncate_state.count; i++)
+	{
+		BufferDesc *buf = GetBufferDescriptor(truncate_state.buf_ids[i]);
+		UnsetBufferDirtyBarrier(buf, commit);
+	}
+	SubDirtyBarriers(truncate_state.count);
+	if (commit)
+		DropRelFileNodeBuffers(truncate_state.rnode,
+							   truncate_state.forkNum,
+							   truncate_state.firstDelBlock);
+	free_truncate_state();
+	END_CRIT_SECTION();
+}
+
 /* ---------------------------------------------------------------------
  *		DropRelFileNodeBuffers
  *
@@ -3173,6 +3397,8 @@ FlushRelationBuffers(Relation rel)
 				ErrorContextCallback errcallback;
 				Page		localpage;
 
+				Assert((buf_state & BM_DIRTY_BARRIER) == 0);
+
 				localpage = (char *) LocalBufHdrGetBlock(bufHdr);
 
 				/* Setup error traceback support for ereport() */
@@ -3273,6 +3499,7 @@ FlushDatabaseBuffers(Oid dbid)
 		ReservePrivateRefCountEntry();
 
 		buf_state = LockBufHdr(bufHdr);
+		Assert((buf_state & BM_DIRTY_BARRIER) == 0);
 		if (bufHdr->tag.rnode.dbNode == dbid &&
 			(buf_state & (BM_VALID | BM_DIRTY)) == (BM_VALID | BM_DIRTY))
 		{
@@ -3894,6 +4121,8 @@ StartBufferIO(BufferDesc *buf, bool forInput)
 
 		buf_state = LockBufHdr(buf);
 
+		Assert((buf_state & BM_DIRTY_BARRIER) == 0);
+
 		if (!(buf_state & BM_IO_IN_PROGRESS))
 			break;
 
@@ -3953,6 +4182,7 @@ TerminateBufferIO(BufferDesc *buf, bool clear_dirty, uint32 set_flag_bits)
 
 	buf_state = LockBufHdr(buf);
 
+	Assert((buf_state & BM_DIRTY_BARRIER) == 0);
 	Assert(buf_state & BM_IO_IN_PROGRESS);
 
 	buf_state &= ~(BM_IO_IN_PROGRESS | BM_IO_ERROR);
@@ -3994,6 +4224,7 @@ AbortBufferIO(void)
 		LWLockAcquire(BufferDescriptorGetIOLock(buf), LW_EXCLUSIVE);
 
 		buf_state = LockBufHdr(buf);
+		Assert((buf_state & BM_DIRTY_BARRIER) == 0);
 		Assert(buf_state & BM_IO_IN_PROGRESS);
 		if (IsForInput)
 		{

@@ -58,6 +58,8 @@ typedef struct
 	 * StrategyNotifyBgWriter.
 	 */
 	int			bgwprocno;
+
+	pg_atomic_uint32 numDirtyBarriers;
 } BufferStrategyControl;
 
 /* Pointers to shared state */
@@ -300,7 +302,8 @@ StrategyGetBuffer(BufferAccessStrategy strategy, uint32 *buf_state)
 			 */
 			local_buf_state = LockBufHdr(buf);
 			if (BUF_STATE_GET_REFCOUNT(local_buf_state) == 0
-				&& BUF_STATE_GET_USAGECOUNT(local_buf_state) == 0)
+				&& BUF_STATE_GET_USAGECOUNT(local_buf_state) == 0
+				&& (local_buf_state & BM_DIRTY_BARRIER) == 0)
 			{
 				if (strategy != NULL)
 					AddBufferToRing(strategy, buf);
@@ -324,7 +327,8 @@ StrategyGetBuffer(BufferAccessStrategy strategy, uint32 *buf_state)
 		 */
 		local_buf_state = LockBufHdr(buf);
 
-		if (BUF_STATE_GET_REFCOUNT(local_buf_state) == 0)
+		if (BUF_STATE_GET_REFCOUNT(local_buf_state) == 0 &&
+			(local_buf_state & BM_DIRTY_BARRIER) == 0)
 		{
 			if (BUF_STATE_GET_USAGECOUNT(local_buf_state) != 0)
 			{
@@ -519,6 +523,8 @@ StrategyInitialize(bool init)
 		StrategyControl->completePasses = 0;
 		pg_atomic_init_u32(&StrategyControl->numBufferAllocs, 0);
 
+		pg_atomic_init_u32(&StrategyControl->numDirtyBarriers, 0);
+
 		/* No pending notification */
 		StrategyControl->bgwprocno = -1;
 	}
@@ -643,7 +649,8 @@ GetBufferFromRing(BufferAccessStrategy strategy, uint32 *buf_state)
 	buf = GetBufferDescriptor(bufnum - 1);
 	local_buf_state = LockBufHdr(buf);
 	if (BUF_STATE_GET_REFCOUNT(local_buf_state) == 0
-		&& BUF_STATE_GET_USAGECOUNT(local_buf_state) <= 1)
+		&& BUF_STATE_GET_USAGECOUNT(local_buf_state) <= 1
+		&& (local_buf_state & BM_DIRTY_BARRIER) == 0)
 	{
 		strategy->current_was_in_ring = true;
 		*buf_state = local_buf_state;
@@ -701,4 +708,31 @@ StrategyRejectBuffer(BufferAccessStrategy strategy, BufferDesc *buf)
 	strategy->buffers[strategy->current] = InvalidBuffer;
 
 	return true;
+}
+
+bool
+IncDirtyBarriers(void)
+{
+	uint32 num;
+
+	num = pg_atomic_read_u32(&StrategyControl->numDirtyBarriers);
+
+	do
+	{
+		if (num >= NBuffers / 2)
+			return false;
+
+		if (pg_atomic_compare_exchange_u32(&StrategyControl->numDirtyBarriers,
+										   &num,
+										   num + 1))
+			return true;
+
+	}
+	while (true);
+}
+
+void
+SubDirtyBarriers(uint32 sub)
+{
+	(void) pg_atomic_fetch_sub_u32(&StrategyControl->numDirtyBarriers, sub);
 }

@@ -190,8 +190,13 @@ extern BlockNumber RelationGetNumberOfBlocksInFork(Relation relation,
 extern void FlushOneBuffer(Buffer buffer);
 extern void FlushRelationBuffers(Relation rel);
 extern void FlushDatabaseBuffers(Oid dbid);
-extern void DropRelFileNodeBuffers(RelFileNodeBackend rnode,
-					   ForkNumber forkNum, BlockNumber firstDelBlock);
+
+extern void RelFileNodeBuffersTruncatePrepare(RelFileNodeBackend rnode,
+											  ForkNumber forkNum,
+											  BlockNumber firstDelBlock);
+extern void RelFileNodeBuffersTruncateFinish(bool commit);
+extern void DropRelFileNodeBuffers(RelFileNodeBackend rnode, ForkNumber forkNum,
+					   BlockNumber firstDelBlock);
 extern void DropRelFileNodesAllBuffers(RelFileNodeBackend *rnodes, int nnodes);
 extern void DropDatabaseBuffers(Oid dbid);
 
@@ -230,6 +235,8 @@ extern void TestForOldSnapshot_impl(Snapshot snapshot, Relation relation);
 /* in freelist.c */
 extern BufferAccessStrategy GetAccessStrategy(BufferAccessStrategyType btype);
 extern void FreeAccessStrategy(BufferAccessStrategy strategy);
+extern bool IncDirtyBarriers(void);
+extern void SubDirtyBarriers(uint32 sub);
 
 
 /* inline functions */

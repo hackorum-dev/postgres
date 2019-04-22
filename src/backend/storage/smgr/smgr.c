@@ -645,28 +645,38 @@ smgrnblocks(SMgrRelation reln, ForkNumber forknum)
 void
 smgrtruncate(SMgrRelation reln, ForkNumber forknum, BlockNumber nblocks)
 {
-	/*
-	 * Get rid of any buffers for the about-to-be-deleted blocks. bufmgr will
-	 * just drop them without bothering to write the contents.
-	 */
-	DropRelFileNodeBuffers(reln->smgr_rnode, forknum, nblocks);
+	PG_TRY();
+	{
+		/*
+		 * Get rid of any buffers for the about-to-be-deleted blocks. bufmgr will
+		 * just drop them without bothering to write the contents.
+		 */
+		RelFileNodeBuffersTruncatePrepare(reln->smgr_rnode, forknum, nblocks);
 
-	/*
-	 * Send a shared-inval message to force other backends to close any smgr
-	 * references they may have for this rel.  This is useful because they
-	 * might have open file pointers to segments that got removed, and/or
-	 * smgr_targblock variables pointing past the new rel end.  (The inval
-	 * message will come back to our backend, too, causing a
-	 * probably-unnecessary local smgr flush.  But we don't expect that this
-	 * is a performance-critical path.)  As in the unlink code, we want to be
-	 * sure the message is sent before we start changing things on-disk.
-	 */
-	CacheInvalidateSmgr(reln->smgr_rnode);
+		/*
+		 * Send a shared-inval message to force other backends to close any smgr
+		 * references they may have for this rel.  This is useful because they
+		 * might have open file pointers to segments that got removed, and/or
+		 * smgr_targblock variables pointing past the new rel end.  (The inval
+		 * message will come back to our backend, too, causing a
+		 * probably-unnecessary local smgr flush.  But we don't expect that this
+		 * is a performance-critical path.)  As in the unlink code, we want to be
+		 * sure the message is sent before we start changing things on-disk.
+		 */
+		CacheInvalidateSmgr(reln->smgr_rnode);
 
-	/*
-	 * Do the truncation.
-	 */
-	smgrsw[reln->smgr_which].smgr_truncate(reln, forknum, nblocks);
+		/*
+		 * Do the truncation.
+		 */
+		smgrsw[reln->smgr_which].smgr_truncate(reln, forknum, nblocks);
+	}
+	PG_CATCH();
+	{
+		RelFileNodeBuffersTruncateFinish(false);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	RelFileNodeBuffersTruncateFinish(true);
 }
 
 /*
