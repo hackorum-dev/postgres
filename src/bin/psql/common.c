@@ -1405,7 +1405,8 @@ SendQuery(const char *query)
 		results = NULL;			/* PQclear(NULL) does nothing */
 	}
 	else if (pset.fetch_count <= 0 || pset.gexec_flag ||
-			 pset.crosstab_flag || !is_select_command(query))
+			 pset.crosstab_flag || pset.num_semicolons > 0 ||
+			 !is_select_command(query))
 	{
 		/* Default fetch-it-all-and-print mode */
 		instr_time	before,

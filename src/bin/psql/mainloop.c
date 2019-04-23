@@ -426,6 +426,7 @@ MainLoop(FILE *source)
 				/* execute query unless we're in an inactive \if branch */
 				if (conditional_active(cond_stack))
 				{
+					pset.num_semicolons = psql_scan_get_escaped_semicolons(scan_state);
 					success = SendQuery(query_buf->data);
 					slashCmdStatus = success ? PSQL_CMD_SEND : PSQL_CMD_ERROR;
 					pset.stmt_lineno = 1;
@@ -502,6 +503,7 @@ MainLoop(FILE *source)
 					/* should not see this in inactive branch */
 					Assert(conditional_active(cond_stack));
 
+					pset.num_semicolons = psql_scan_get_escaped_semicolons(scan_state);
 					success = SendQuery(query_buf->data);
 
 					/* transfer query to previous_buf by pointer-swapping */

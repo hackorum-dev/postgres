@@ -110,6 +110,8 @@ typedef struct _psqlSettings
 	char	   *inputfile;		/* file being currently processed, if any */
 	uint64		lineno;			/* also for error reporting */
 	uint64		stmt_lineno;	/* line number inside the current statement */
+	int			num_semicolons;	/* number of query separators (\;) found
+								   inside the current statement */
 
 	bool		timing;			/* enable timing of all queries */
 
