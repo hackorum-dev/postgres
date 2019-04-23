@@ -526,7 +526,7 @@ NET STOP postgresql-&majorversion;
     </para>
    </step>
 
-   <step>
+   <step id="pgupgrade-step-prepare-standby-server-upgrades">
     <title>Prepare for standby server upgrades</title>
 
     <para>
@@ -539,6 +539,20 @@ NET STOP postgresql-&majorversion;
      <literal>minimal</literal> in the <filename>postgresql.conf</filename> file on the
      new primary cluster.
     </para>
+
+    <caution>
+    <para>
+     If you use Log-Shipping standby servers (without streaming), the last
+     file in which shutdown checkpoint record is written won't be archived.
+     To make the standby servers caught up you need to copy the last WAL
+     file from primary to the standby servers and wait till it is applied.
+     After that standby servers can issue restartpoint at the same location
+     as in the stopped master. As alternative before <xref
+     linkend="pgupgrade-step-prepare-standby-server-upgrades"/> you can
+     switch from Log-Shipping
+     to Streaming Replication.
+    </para>
+    </caution>
    </step>
 
    <step>
