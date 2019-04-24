@@ -1916,6 +1916,14 @@ BeginCopyTo(ParseState *pstate,
 			oumask = umask(S_IWGRP | S_IWOTH);
 			PG_TRY();
 			{
+				struct stat	fst;
+
+				if (stat(cstate->filename, &fst) == 0 && !S_ISREG(fst.st_mode))
+					ereport(ERROR,
+							(ERRCODE_DUPLICATE_FILE,
+							errmsg("file \"%s\" exists but is not a regular file",
+							cstate->filename)));
+
 				cstate->copy_file = AllocateFile(cstate->filename, PG_BINARY_W);
 			}
 			PG_CATCH();

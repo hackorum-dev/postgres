@@ -23,6 +23,7 @@
 #include <sys/param.h>
 #include <sys/time.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -4780,8 +4781,15 @@ pgstat_write_statsfiles(bool permanent, bool allDbs)
 	const char *tmpfile = permanent ? PGSTAT_STAT_PERMANENT_TMPFILE : pgstat_stat_tmpname;
 	const char *statfile = permanent ? PGSTAT_STAT_PERMANENT_FILENAME : pgstat_stat_filename;
 	int			rc;
+	struct stat	fst;
 
 	elog(DEBUG2, "writing stats file \"%s\"", statfile);
+
+	if (stat(tmpfile, &fst) == 0 && !S_ISREG(fst.st_mode))
+		ereport(ERROR,
+				(ERRCODE_DUPLICATE_FILE,
+				errmsg("file \"%s\" exists but is not a regular file",
+				tmpfile)));
 
 	/*
 	 * Open the statistics temp file to write out the current values.
@@ -4934,11 +4942,18 @@ pgstat_write_db_statsfile(PgStat_StatDBEntry *dbentry, bool permanent)
 	int			rc;
 	char		tmpfile[MAXPGPATH];
 	char		statfile[MAXPGPATH];
+	struct stat	fst;
 
 	get_dbstat_filename(permanent, true, dbid, tmpfile, MAXPGPATH);
 	get_dbstat_filename(permanent, false, dbid, statfile, MAXPGPATH);
 
 	elog(DEBUG2, "writing stats file \"%s\"", statfile);
+
+	if (stat(tmpfile, &fst) == 0 && !S_ISREG(fst.st_mode))
+		ereport(ERROR,
+				(ERRCODE_DUPLICATE_FILE,
+				errmsg("file \"%s\" exists but is not a regular file",
+				tmpfile)));
 
 	/*
 	 * Open the statistics temp file to write out the current values.
