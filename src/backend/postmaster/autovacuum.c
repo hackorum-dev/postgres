@@ -102,6 +102,7 @@
 #include "utils/ps_status.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
+#include "utils/spccache.h"
 #include "utils/syscache.h"
 #include "utils/timeout.h"
 #include "utils/timestamp.h"
@@ -2718,21 +2719,29 @@ static AutoVacOpts *
 extract_autovac_opts(HeapTuple tup, TupleDesc pg_class_desc)
 {
 	bytea	   *relopts;
-	AutoVacOpts *av;
+	AutoVacOpts *av, *retav;
 
 	Assert(((Form_pg_class) GETSTRUCT(tup))->relkind == RELKIND_RELATION ||
 		   ((Form_pg_class) GETSTRUCT(tup))->relkind == RELKIND_MATVIEW ||
 		   ((Form_pg_class) GETSTRUCT(tup))->relkind == RELKIND_TOASTVALUE);
 
 	relopts = extractRelOptions(tup, pg_class_desc, NULL);
-	if (relopts == NULL)
+	av = (relopts != NULL) ? &(((StdRdOptions *)relopts)->autovacuum): NULL;
+	/* Fetch per-tablespace autovacuum options if any */
+	if (av == NULL)
+	{
+		Oid spcid = ((Form_pg_class) GETSTRUCT(tup))->reltablespace;
+		av = get_tablespace_autovacuum_options(spcid);
+	}
+	if (av == NULL)
 		return NULL;
 
-	av = palloc(sizeof(AutoVacOpts));
-	memcpy(av, &(((StdRdOptions *) relopts)->autovacuum), sizeof(AutoVacOpts));
-	pfree(relopts);
+	retav = palloc(sizeof(AutoVacOpts));
+	memcpy(retav, av, sizeof(AutoVacOpts));
+	if (relopts != NULL)
+		pfree(relopts);
 
-	return av;
+	return retav;
 }
 
 /*

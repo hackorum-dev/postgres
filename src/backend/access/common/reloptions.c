@@ -111,7 +111,7 @@ static relopt_bool boolRelOpts[] =
 		{
 			"autovacuum_enabled",
 			"Enables autovacuum in this relation",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST | RELOPT_KIND_TABLESPACE,
 			ShareUpdateExclusiveLock
 		},
 		true
@@ -221,7 +221,7 @@ static relopt_int intRelOpts[] =
 		{
 			"autovacuum_vacuum_threshold",
 			"Minimum number of tuple updates or deletes prior to vacuum",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST | RELOPT_KIND_TABLESPACE,
 			ShareUpdateExclusiveLock
 		},
 		-1, 0, INT_MAX
@@ -230,7 +230,7 @@ static relopt_int intRelOpts[] =
 		{
 			"autovacuum_analyze_threshold",
 			"Minimum number of tuple inserts, updates or deletes prior to analyze",
-			RELOPT_KIND_HEAP,
+			RELOPT_KIND_HEAP | RELOPT_KIND_TABLESPACE | RELOPT_KIND_TABLESPACE,
 			ShareUpdateExclusiveLock
 		},
 		-1, 0, INT_MAX
@@ -239,7 +239,7 @@ static relopt_int intRelOpts[] =
 		{
 			"autovacuum_vacuum_cost_limit",
 			"Vacuum cost amount available before napping, for autovacuum",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST | RELOPT_KIND_TABLESPACE,
 			ShareUpdateExclusiveLock
 		},
 		-1, 1, 10000
@@ -248,7 +248,7 @@ static relopt_int intRelOpts[] =
 		{
 			"autovacuum_freeze_min_age",
 			"Minimum age at which VACUUM should freeze a table row, for autovacuum",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST | RELOPT_KIND_TABLESPACE,
 			ShareUpdateExclusiveLock
 		},
 		-1, 0, 1000000000
@@ -257,7 +257,7 @@ static relopt_int intRelOpts[] =
 		{
 			"autovacuum_multixact_freeze_min_age",
 			"Minimum multixact age at which VACUUM should freeze a row multixact's, for autovacuum",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST  | RELOPT_KIND_TABLESPACE,
 			ShareUpdateExclusiveLock
 		},
 		-1, 0, 1000000000
@@ -266,7 +266,7 @@ static relopt_int intRelOpts[] =
 		{
 			"autovacuum_freeze_max_age",
 			"Age at which to autovacuum a table to prevent transaction ID wraparound",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST | RELOPT_KIND_TABLESPACE,
 			ShareUpdateExclusiveLock
 		},
 		-1, 100000, 2000000000
@@ -275,7 +275,7 @@ static relopt_int intRelOpts[] =
 		{
 			"autovacuum_multixact_freeze_max_age",
 			"Multixact age at which to autovacuum a table to prevent multixact wraparound",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST | RELOPT_KIND_TABLESPACE,
 			ShareUpdateExclusiveLock
 		},
 		-1, 10000, 2000000000
@@ -284,7 +284,7 @@ static relopt_int intRelOpts[] =
 		{
 			"autovacuum_freeze_table_age",
 			"Age at which VACUUM should perform a full table sweep to freeze row versions",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST | RELOPT_KIND_TABLESPACE,
 			ShareUpdateExclusiveLock
 		}, -1, 0, 2000000000
 	},
@@ -292,7 +292,7 @@ static relopt_int intRelOpts[] =
 		{
 			"autovacuum_multixact_freeze_table_age",
 			"Age of multixact at which VACUUM should perform a full table sweep to freeze row versions",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST | RELOPT_KIND_TABLESPACE,
 			ShareUpdateExclusiveLock
 		}, -1, 0, 2000000000
 	},
@@ -300,7 +300,7 @@ static relopt_int intRelOpts[] =
 		{
 			"log_autovacuum_min_duration",
 			"Sets the minimum execution time above which autovacuum actions will be logged",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST | RELOPT_KIND_TABLESPACE,
 			ShareUpdateExclusiveLock
 		},
 		-1, -1, INT_MAX
@@ -364,7 +364,7 @@ static relopt_real realRelOpts[] =
 		{
 			"autovacuum_vacuum_cost_delay",
 			"Vacuum cost delay in milliseconds, for autovacuum",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST | RELOPT_KIND_TABLESPACE,
 			ShareUpdateExclusiveLock
 		},
 		-1, 0.0, 100.0
@@ -373,7 +373,7 @@ static relopt_real realRelOpts[] =
 		{
 			"autovacuum_vacuum_scale_factor",
 			"Number of tuple updates or deletes prior to vacuum as a fraction of reltuples",
-			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST,
+			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST | RELOPT_KIND_TABLESPACE,
 			ShareUpdateExclusiveLock
 		},
 		-1, 0.0, 100.0
@@ -382,7 +382,7 @@ static relopt_real realRelOpts[] =
 		{
 			"autovacuum_analyze_scale_factor",
 			"Number of tuple inserts, updates or deletes prior to analyze as a fraction of reltuples",
-			RELOPT_KIND_HEAP,
+			RELOPT_KIND_HEAP | RELOPT_KIND_TABLESPACE,
 			ShareUpdateExclusiveLock
 		},
 		-1, 0.0, 100.0
@@ -766,9 +766,9 @@ add_string_reloption(bits32 kinds, const char *name, const char *desc, const cha
  * that are in the passed namespace.  The output values do not include the
  * namespace.
  *
- * This is used for three cases: CREATE TABLE/INDEX, ALTER TABLE SET, and
- * ALTER TABLE RESET.  In the ALTER cases, oldOptions is the existing
- * reloptions value (possibly NULL), and we replace or remove entries
+ * This is used for four cases: CREATE TABLE/INDEX, CREATE TABLEPSACE, ALTER
+ * TABLE SET, and ALTER TABLE RESET.  In the ALTER cases, oldOptions is the
+ * existing reloptions value (possibly NULL), and we replace or remove entries
  * as needed.
  *
  * If acceptOidsOff is true, then we allow oids = false, but throw error when
@@ -1562,7 +1562,35 @@ tablespace_reloptions(Datum reloptions, bool validate)
 	static const relopt_parse_elt tab[] = {
 		{"random_page_cost", RELOPT_TYPE_REAL, offsetof(TableSpaceOpts, random_page_cost)},
 		{"seq_page_cost", RELOPT_TYPE_REAL, offsetof(TableSpaceOpts, seq_page_cost)},
-		{"effective_io_concurrency", RELOPT_TYPE_INT, offsetof(TableSpaceOpts, effective_io_concurrency)}
+		{"effective_io_concurrency", RELOPT_TYPE_INT, offsetof(TableSpaceOpts, effective_io_concurrency)},
+		{"autovacuum_enabled", RELOPT_TYPE_BOOL,
+		offsetof(TableSpaceOpts, autovacuum) + offsetof(AutoVacOpts, enabled)},
+		{"autovacuum_vacuum_threshold", RELOPT_TYPE_INT,
+		offsetof(TableSpaceOpts, autovacuum) + offsetof(AutoVacOpts, vacuum_threshold)},
+		{"autovacuum_analyze_threshold", RELOPT_TYPE_INT,
+		offsetof(TableSpaceOpts, autovacuum) + offsetof(AutoVacOpts, analyze_threshold)},
+		{"autovacuum_vacuum_cost_delay", RELOPT_TYPE_INT,
+		offsetof(TableSpaceOpts, autovacuum) + offsetof(AutoVacOpts, vacuum_cost_delay)},
+		{"autovacuum_vacuum_cost_limit", RELOPT_TYPE_INT,
+		offsetof(TableSpaceOpts, autovacuum) + offsetof(AutoVacOpts, vacuum_cost_limit)},
+		{"autovacuum_freeze_min_age", RELOPT_TYPE_INT,
+		offsetof(TableSpaceOpts, autovacuum) + offsetof(AutoVacOpts, freeze_min_age)},
+		{"autovacuum_freeze_max_age", RELOPT_TYPE_INT,
+		offsetof(TableSpaceOpts, autovacuum) + offsetof(AutoVacOpts, freeze_max_age)},
+		{"autovacuum_freeze_table_age", RELOPT_TYPE_INT,
+		offsetof(TableSpaceOpts, autovacuum) + offsetof(AutoVacOpts, freeze_table_age)},
+		{"autovacuum_multixact_freeze_min_age", RELOPT_TYPE_INT,
+		offsetof(TableSpaceOpts, autovacuum) + offsetof(AutoVacOpts, multixact_freeze_min_age)},
+		{"autovacuum_multixact_freeze_max_age", RELOPT_TYPE_INT,
+		offsetof(TableSpaceOpts, autovacuum) + offsetof(AutoVacOpts, multixact_freeze_max_age)},
+		{"autovacuum_multixact_freeze_table_age", RELOPT_TYPE_INT,
+		offsetof(TableSpaceOpts, autovacuum) + offsetof(AutoVacOpts, multixact_freeze_table_age)},
+		{"log_autovacuum_min_duration", RELOPT_TYPE_INT,
+		offsetof(TableSpaceOpts, autovacuum) + offsetof(AutoVacOpts, log_min_duration)},
+		{"autovacuum_vacuum_scale_factor", RELOPT_TYPE_REAL,
+		offsetof(TableSpaceOpts, autovacuum) + offsetof(AutoVacOpts, vacuum_scale_factor)},
+		{"autovacuum_analyze_scale_factor", RELOPT_TYPE_REAL,
+		offsetof(TableSpaceOpts, autovacuum) + offsetof(AutoVacOpts, analyze_scale_factor)},
 	};
 
 	options = parseRelOptions(reloptions, validate, RELOPT_KIND_TABLESPACE,
