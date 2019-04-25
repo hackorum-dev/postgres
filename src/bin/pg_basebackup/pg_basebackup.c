@@ -270,26 +270,6 @@ tablespace_list_append(const char *arg)
 	}
 
 	/*
-	 * This check isn't absolutely necessary.  But all tablespaces are created
-	 * with absolute directories, so specifying a non-absolute path here would
-	 * just never match, possibly confusing users.  It's also good to be
-	 * consistent with the new_dir check.
-	 */
-	if (!is_absolute_path(cell->old_dir))
-	{
-		pg_log_error("old directory is not an absolute path in tablespace mapping: %s",
-					 cell->old_dir);
-		exit(1);
-	}
-
-	if (!is_absolute_path(cell->new_dir))
-	{
-		pg_log_error("new directory is not an absolute path in tablespace mapping: %s",
-					 cell->new_dir);
-		exit(1);
-	}
-
-	/*
 	 * Comparisons done with these values should involve similarly
 	 * canonicalized path values.  This is particularly sensitive on Windows
 	 * where path values may not necessarily use Unix slashes.
@@ -1399,9 +1379,15 @@ ReceiveAndUnpackTarFile(PGconn *conn, PGresult *res, int rownum)
 	if (basetablespace)
 		strlcpy(current_path, basedir, sizeof(current_path));
 	else
-		strlcpy(current_path,
-				get_tablespace_mapping(PQgetvalue(res, rownum, 1)),
-				sizeof(current_path));
+	{
+		const char *path = get_tablespace_mapping(PQgetvalue(res, rownum, 1));
+
+		/* Relative tablespace locations need to be prefixed by basedir. */
+		if (is_absolute_path(path))
+			strlcpy(current_path, path, sizeof(current_path));
+		else
+			join_path_components(currennt_path, basedir, path);
+	}
 
 	/*
 	 * Get the COPY data
@@ -1525,15 +1511,35 @@ ReceiveAndUnpackTarFile(PGconn *conn, PGresult *res, int rownum)
 					 * are, you can call it an undocumented feature that you
 					 * can map them too.)
 					 */
+					bool free_path = false;
+
 					filename[strlen(filename) - 1] = '\0';	/* Remove trailing slash */
 
 					mapped_tblspc_path = get_tablespace_mapping(&copybuf[157]);
+					if (!is_absolute_path(mapped_tblspc_path))
+					{
+						/*
+						 * Convert relative tablespace location based on data
+						 * directory into path link target based on pg_tblspc
+						 * directory. This must be in sync with
+						 * create_tablespace_directories().
+						 */
+						char *p = malloc(3 + strlen(mapped_tblspc_path) + 1);
+
+						strcpy(p, "../");
+						strcat(p, mapped_tblspc_path);
+						mapped_tblspc_path = p;
+						free_path = true;
+					}
 					if (symlink(mapped_tblspc_path, filename) != 0)
 					{
 						pg_log_error("could not create symbolic link from \"%s\" to \"%s\": %m",
 									 filename, mapped_tblspc_path);
 						exit(1);
 					}
+
+					if (free_path)
+						free(unconstify(char *, mapped_tblspc_path));
 				}
 				else
 				{
@@ -1957,8 +1963,25 @@ BaseBackup(void)
 		if (format == 'p' && !PQgetisnull(res, i, 1))
 		{
 			char	   *path = unconstify(char *, get_tablespace_mapping(PQgetvalue(res, i, 1)));
+			bool		freeit = false;
+
+			if (!is_absolute_path(path))
+			{
+				/*
+				 * Relative tablespace locations need to be converted
+				 * attaching basedir.
+				 */
+				char *p = malloc(strlen(basedir) + 1 + strlen(path) + 1);
+
+				join_path_components(p, basedir, path);
+				path = p;
+				freeit = true;
+			}
 
 			verify_dir_is_empty_or_create(path, &made_tablespace_dirs, &found_tablespace_dirs);
+
+			if (freeit)
+				free(path);
 		}
 	}
 
@@ -2163,6 +2186,39 @@ BaseBackup(void)
 		pg_log_info("base backup completed");
 }
 
+/* Sanity check of tablespace mappings */
+static void
+check_tablespace_mappings(void)
+{
+	TablespaceListCell *cell;
+	char *absbasedir = make_absolute_path(basedir);
+
+	for (cell = tablespace_dirs.head ; cell ; cell = cell->next)
+	{
+		char pathbuf[MAXPGPATH];
+		char *path = cell->new_dir;
+
+		/*
+		 * absbasedir doesn't have trailing '/'. new_dir is already
+		 * canonicalized.
+		 */
+		if (!is_absolute_path(cell->new_dir))
+		{
+			/* but concatenated path needs re-canonicalization */
+			snprintf(pathbuf, MAXPGPATH, "%s/%s", absbasedir, cell->new_dir);
+			canonicalize_path(pathbuf);
+			path = pathbuf;
+		}
+
+		if (path_is_prefix_of_path(absbasedir, path))
+		{
+			pg_log_error("new_dir \"%s\" of mapping for \"%s\" is inside target data directory \"%s\"", cell->new_dir, cell->old_dir, absbasedir);
+			exit(1);
+		}
+	}
+
+	free(absbasedir);
+}
 
 int
 main(int argc, char **argv)
@@ -2477,6 +2533,9 @@ main(int argc, char **argv)
 			exit(1);
 		}
 	}
+
+	/* Sanity check of tablespace mapping */
+	check_tablespace_mappings();
 
 #ifndef HAVE_LIBZ
 	if (compresslevel != 0)

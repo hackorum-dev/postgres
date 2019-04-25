@@ -247,19 +247,17 @@ join_path_components(char *ret_path,
  *		o  remove trailing quote on Win32
  *		o  remove trailing slash
  *		o  remove duplicate adjacent separators
- *		o  remove trailing '.'
- *		o  process trailing '..' ourselves
+ *		o  process '.' and '..' ourselves
  */
 void
 canonicalize_path(char *path)
 {
-	char	   *p,
-			   *to_p;
-	char	   *spath;
-	bool		was_sep = false;
-	int			pending_strips;
+	char	*src;
+	char	*dst;
+	int 	totallen PG_USED_FOR_ASSERTS_ONLY;
 
 #ifdef WIN32
+	char	*p;
 
 	/*
 	 * The Windows command processor will accept suitably quoted paths with
@@ -277,91 +275,143 @@ canonicalize_path(char *path)
 	 */
 	if (p > path && *(p - 1) == '"')
 		*(p - 1) = '/';
+
+	/* Skip drive component or UNC header */
+	path = skip_drive(path);
+#endif
+
+#ifdef USE_ASSERT_CHECKING
+	totallen = strlen(path);
 #endif
 
 	/*
-	 * Removing the trailing slash on a path means we never get ugly double
-	 * trailing slashes. Also, Win32 can't stat() a directory with a trailing
-	 * slash. Don't remove a leading slash, though.
-	 */
-	trim_trailing_separator(path);
-
-	/*
-	 * Remove duplicate adjacent separators
-	 */
-	p = path;
-#ifdef WIN32
-	/* Don't remove leading double-slash on Win32 */
-	if (*p)
-		p++;
-#endif
-	to_p = p;
-	for (; *p; p++, to_p++)
-	{
-		/* Handle many adjacent slashes, like "/a///b" */
-		while (*p == '/' && was_sep)
-			p++;
-		if (to_p != p)
-			*to_p = *p;
-		was_sep = (*p == '/');
-	}
-	*to_p = '\0';
-
-	/*
-	 * Remove any trailing uses of "." and process ".." ourselves
+	 * Process any uses of "." and ".." ourselves
 	 *
 	 * Note that "/../.." should reduce to just "/", while "../.." has to be
-	 * kept as-is.  In the latter case we put back mistakenly trimmed ".."
-	 * components below.  Also note that we want a Windows drive spec to be
-	 * visible to trim_directory(), but it's not part of the logic that's
-	 * looking at the name components; hence distinction between path and
-	 * spath.
+	 * kept as-is.
 	 */
-	spath = skip_drive(path);
-	pending_strips = 0;
-	for (;;)
-	{
-		int			len = strlen(spath);
+	src = dst = path;
 
-		if (len >= 2 && strcmp(spath + len - 2, "/.") == 0)
-			trim_directory(path);
-		else if (strcmp(spath, ".") == 0)
+	while (*src)
+	{
+		char *p;
+		int elen;
+
+		Assert(dst >= path && src >= path &&
+			   dst - path <= totallen && src - path <= totallen);
+
+		/* copy separator, removing duplicate adjacent separators */
+		if (IS_DIR_SEP(*src))
 		{
-			/* Want to leave "." alone, but "./.." has to become ".." */
-			if (pending_strips > 0)
-				*spath = '\0';
-			break;
+			if (dst > path && IS_DIR_SEP(dst[-1]))
+			{
+				/* skip duplicates */
+				src++;
+				continue;
+			}
+			*dst++ = *src++;
+			continue;
 		}
-		else if ((len >= 3 && strcmp(spath + len - 3, "/..") == 0) ||
-				 strcmp(spath, "..") == 0)
+
+		/* locate the next element */
+		for (p = src ; *p && !IS_DIR_SEP(*p) ; p++);
+		elen = p - src;
+
+		Assert (elen != 0);
+
+		/* process "." */
+		if (elen == 1 && src[0] == '.')
 		{
-			trim_directory(path);
-			pending_strips++;
+			/* just skip the element and succeeding separators */
+			for (src += elen ; IS_DIR_SEP(*src) ; src++);
+
+			/* If the path was exactly ".", don't skip it */
+			if (*src || src != path + 1)
+				continue;
+
+			src = path;
 		}
-		else if (pending_strips > 0 && *spath != '\0')
+		/* process ".." not at the beginning of a relative path */
+		else if (elen == 2 && src[0] == '.' && src[1] == '.' && dst != path)
 		{
-			/* trim a regular directory name canceled by ".." */
-			trim_directory(path);
-			pending_strips--;
-			/* foo/.. should become ".", not empty */
-			if (*spath == '\0')
-				strcpy(spath, ".");
+			/*
+			 * Found ".." and there's something up-step, step back.
+			 * But only when we have the upper element to back up to.
+			 * Also don't annihilate two successive ".."s.
+			 */
+			if (dst == path + 1)
+			{
+				/*
+				 * dst is absolute root. skip the ".." and trailing separator
+				 * if any
+				 */
+				src += elen;
+				if (IS_DIR_SEP(*src))
+					src++;
+				continue;
+			}
+			else
+			{
+				/* Find the previous element. dst[-1] == '/' here.  */
+				char *pelm;
+
+				for (pelm = dst - 1 ;
+					 pelm > path && !IS_DIR_SEP(pelm[-1]) ;
+					 pelm--);
+
+				if (dst - pelm == 2 && *pelm == '.')
+				{
+					/*
+					 * Convert "./.." into ".." then process this ".."
+					 * again.
+					 */
+					dst = pelm;
+					continue;
+				}
+				else if (dst - pelm > 3 || strncmp(pelm, "..", 2) != 0)
+				{
+					/* The previous element is not a relative movement */
+					if (pelm == path)
+					{
+						/*
+						 * The relative path is being translated as
+						 * nothing. Insert "./" instead.
+						 */
+						memcpy(path, "./", 2);
+						dst = path + 2;
+						src += elen;
+						if (IS_DIR_SEP(*src))
+							src++;
+					}
+					else
+					{
+						/* annihilate involving the previous element */
+						dst = pelm;
+						src += elen;
+						if (IS_DIR_SEP(*src))
+							src++;
+					}
+					continue;
+				}
+			}
 		}
-		else
-			break;
+		else if ((dst == path + 2 && *path == '.') ||
+				 (dst > path + 2 && IS_DIR_SEP(dst[-3]) && dst[-2] == '.'))
+		{
+			/* the previous element is removable ".", eliminate it */
+			dst -= 2;
+		}
+
+		/* copy it, then move */
+		memcpy(dst, src, elen);
+		dst += elen;
+		src += elen;
 	}
 
-	if (pending_strips > 0)
-	{
-		/*
-		 * We could only get here if path is now totally empty (other than a
-		 * possible drive specifier on Windows). We have to put back one or
-		 * more ".."'s that we took off.
-		 */
-		while (--pending_strips > 0)
-			strcat(path, "../");
-		strcat(path, "..");
-	}
+	/* trim trailing separators */
+	while (dst > path + 1 && IS_DIR_SEP(dst[-1]))
+		dst--;
+	*dst = 0;
 }
 
 /*

@@ -10420,6 +10420,14 @@ do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
 			linkpath[rllen] = '\0';
 
 			/*
+			 * In the relative path cases, the link target is always prefixed
+			 * by "../" to convert from data directory-based. So we just do
+			 * the reverse here.
+			 */
+			if (strncmp(s, "../", 3) == 0)
+				s += 3;
+
+			/*
 			 * Add the escape character '\\' before newline in a string to
 			 * ensure that we can distinguish between the newline in the
 			 * tablespace path and end of line while reading tablespace_map

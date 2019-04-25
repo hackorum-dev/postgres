@@ -293,6 +293,7 @@ pg_tablespace_location(PG_FUNCTION_ARGS)
 	char		sourcepath[MAXPGPATH];
 	char		targetpath[MAXPGPATH];
 	int			rllen;
+	int			pathoffset = 0;
 
 	/*
 	 * It's useful to apply this function to pg_class.reltablespace, wherein
@@ -330,7 +331,14 @@ pg_tablespace_location(PG_FUNCTION_ARGS)
 						sourcepath)));
 	targetpath[rllen] = '\0';
 
-	PG_RETURN_TEXT_P(cstring_to_text(targetpath));
+	/*
+	 * Relative target paths are always prefixed by "../". Remove it to obtain
+	 * tablespace directory relative to the data directory.
+	 */
+	if (strncmp(targetpath, "../", 3) == 0)
+		pathoffset = 3;
+
+	PG_RETURN_TEXT_P(cstring_to_text(targetpath + pathoffset));
 #else
 	ereport(ERROR,
 			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),

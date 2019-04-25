@@ -6,7 +6,7 @@ use File::Basename qw(basename dirname);
 use File::Path qw(rmtree);
 use PostgresNode;
 use TestLib;
-use Test::More tests => 106;
+use Test::More tests => 108;
 
 program_help_ok('pg_basebackup');
 program_version_ok('pg_basebackup');
@@ -186,12 +186,20 @@ $node->command_fails(
 		"-T/foo=/bar=/baz"
 	],
 	'-T with multiple = fails');
+$node->command_ok(
+	[ 'pg_basebackup', '-D', "$tempdir/backup_foo", '-Fp', "-Tfoo=../bar/baz/foo" ],
+	'-T with relative old directory not rejected');
+rmtree("$tempdir/backup_foo");
 $node->command_fails(
-	[ 'pg_basebackup', '-D', "$tempdir/backup_foo", '-Fp', "-Tfoo=/bar" ],
-	'-T with old directory not absolute fails');
+	[ 'pg_basebackup', '-D', "$tempdir/backup_foo", '-Fp', "-T/foo=../backup_foo/bar/baz" ],
+	'-T with new relative directory inside data dir fails');
+$node->command_ok(
+	[ 'pg_basebackup', '-D', "$tempdir/backup_foo", '-Fp', "-T/foo=/foo/bar" ],
+	'-T with new directory under nonexistent directory succeeds');
+rmtree("$tempdir/backup_foo");
 $node->command_fails(
-	[ 'pg_basebackup', '-D', "$tempdir/backup_foo", '-Fp', "-T/foo=bar" ],
-	'-T with new directory not absolute fails');
+	[ 'pg_basebackup', '-D', "$tempdir/backup_foo", '-Fp', "-T/foo=../backup_foo/bar/baz" ],
+	'-T with new relative directory inside data dir fails');
 $node->command_fails(
 	[ 'pg_basebackup', '-D', "$tempdir/backup_foo", '-Fp', "-Tfoo" ],
 	'-T with invalid format fails');
