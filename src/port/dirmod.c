@@ -159,10 +159,13 @@ int
 pgsymlink(const char *oldpath, const char *newpath)
 {
 	HANDLE		dirhandle;
-	DWORD		len;
-	char		buffer[MAX_PATH * sizeof(WCHAR) + offsetof(REPARSE_JUNCTION_DATA_BUFFER, PathBuffer)];
+	DWORD		len, plen;
+	char		buffer[MAX_PATH * sizeof(WCHAR) * 2 + offsetof(REPARSE_JUNCTION_DATA_BUFFER, PathBuffer)];
 	char		nativeTarget[MAX_PATH];
+	char		nativePrint[MAX_PATH];
+	char		tmp[MAX_PATH];
 	char	   *p = nativeTarget;
+	char	   *poldpath = oldpath;
 	REPARSE_JUNCTION_DATA_BUFFER *reparseBuf = (REPARSE_JUNCTION_DATA_BUFFER *) buffer;
 
 	CreateDirectory(newpath, 0);
@@ -173,25 +176,50 @@ pgsymlink(const char *oldpath, const char *newpath)
 	if (dirhandle == INVALID_HANDLE_VALUE)
 		return -1;
 
-	/* make sure we have an unparsed native win32 path */
-	if (memcmp("\\??\\", oldpath, 4) != 0)
-		snprintf(nativeTarget, sizeof(nativeTarget), "\\??\\%s", oldpath);
+	/* make absolute path if oldpath is not */
+	if (!is_absolute_path(poldpath))
+	{
+	  char *absnew = make_absolute_path(newpath);
+	  /* back up to pg_tblspc */
+	  get_parent_directory(absnew);
+	  join_path_components(tmp, absnew, oldpath);
+	  free(absnew);
+
+ canonicalize_path(tmp);
+
+	  /* Copy oldpath as print name */
+	  strlcpy(nativePrint, oldpath, sizeof(nativePrint));
+
+	  poldpath = tmp;
+	}
 	else
-		strlcpy(nativeTarget, oldpath, sizeof(nativeTarget));
+	  nativePrint[0] = 0;
+
+	/* make sure we have an unparsed native win32 path */
+	if (is_absolute_path(poldpath))
+	{
+		if (memcmp("\\??\\", poldpath, 4) != 0)
+		  snprintf(nativeTarget, sizeof(nativeTarget), "\\??\\%s", poldpath);
+		else
+		  strlcpy(nativeTarget, poldpath, sizeof(nativeTarget));
+	}
 
 	while ((p = strchr(p, '/')) != NULL)
 		*p++ = '\\';
 
 	len = strlen(nativeTarget) * sizeof(WCHAR);
+	plen = strlen(nativePrint) * sizeof(WCHAR);
 	reparseBuf->ReparseTag = IO_REPARSE_TAG_MOUNT_POINT;
-	reparseBuf->ReparseDataLength = len + 12;
+	reparseBuf->ReparseDataLength = len + plen + 12;
 	reparseBuf->Reserved = 0;
 	reparseBuf->SubstituteNameOffset = 0;
 	reparseBuf->SubstituteNameLength = len;
 	reparseBuf->PrintNameOffset = len + sizeof(WCHAR);
-	reparseBuf->PrintNameLength = 0;
+	reparseBuf->PrintNameLength = plen;
 	MultiByteToWideChar(CP_ACP, 0, nativeTarget, -1,
 						reparseBuf->PathBuffer, MAX_PATH);
+	MultiByteToWideChar(CP_ACP, 0, nativePrint, -1,
+						&reparseBuf->PathBuffer[reparseBuf->PrintNameOffset/2], MAX_PATH);
 
 	/*
 	 * FSCTL_SET_REPARSE_POINT is coded differently depending on SDK version;
@@ -308,15 +336,27 @@ pgreadlink(const char *path, char *buf, size_t size)
 	/* Got it, let's get some results from this */
 	if (reparseBuf->ReparseTag != IO_REPARSE_TAG_MOUNT_POINT)
 	{
-		errno = EINVAL;
-		return -1;
+	  errno = EINVAL;
+	  return -1;
 	}
 
-	r = WideCharToMultiByte(CP_ACP, 0,
-							reparseBuf->PathBuffer, -1,
-							buf,
-							size,
-							NULL, NULL);
+	/*
+	 * if PrintName is registered, this link is emulated relative
+	 * symbolic link. Return the PrintName rather than SubstituteName.
+	 */
+	if (reparseBuf->PrintNameLength > 0)
+	  r = WideCharToMultiByte(CP_ACP, 0,
+							  &reparseBuf->PathBuffer[reparseBuf->PrintNameOffset / 2],
+							  -1,
+							  buf,
+							  size,
+							  NULL, NULL);
+	else
+	  r = WideCharToMultiByte(CP_ACP, 0,
+							  reparseBuf->PathBuffer, -1,
+							  buf,
+							  size,
+							  NULL, NULL);
 
 	if (r <= 0)
 	{
@@ -328,8 +368,9 @@ pgreadlink(const char *path, char *buf, size_t size)
 	 * If the path starts with "\??\", which it will do in most (all?) cases,
 	 * strip those out.
 	 */
-	if (r > 4 && strncmp(buf, "\\??\\", 4) == 0)
-	{
+	if (reparseBuf->PrintNameLength == 0 &&
+		r > 4 && strncmp(buf, "\\??\\", 4) == 0)
+    {
 		memmove(buf, buf + 4, strlen(buf + 4) + 1);
 		r -= 4;
 	}
