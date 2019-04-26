@@ -2326,6 +2326,29 @@ findTargetlistEntrySQL92(ParseState *pstate, Node *node, List **tlist,
 						ParseExprKindName(exprKind), target_pos),
 				 parser_errposition(pstate, aconst->location)));
 	}
+	/*
+	 * If we've got a COLLATE clause covering up an integer referencing a
+	 * targetlist expression, fix it up by replacing the integer with the
+	 * referenced targetlist expression and let findTargetlistEntrySQL99
+	 * finish it up by performing the remaining processing.
+	 */
+	if (IsA(node, CollateClause) &&
+		IsA(((CollateClause *) node)->arg, A_Const))
+	{
+		CollateClause *collclause = (CollateClause *) node;
+		TargetEntry	  *tle;
+
+		/* Recursively get the targetlist entry referenced by the integer. */
+		tle = findTargetlistEntrySQL92(pstate, collclause->arg, tlist,
+									   exprKind);
+
+		/*
+		 * Found one; replace the integer by the targetlist expression.
+		 * findTargetlistEntrySQL99 will finish up the rest.
+		 */
+		Assert(tle != NULL);
+		collclause->arg = tle->expr;
+	}
 
 	/*
 	 * Otherwise, we have an expression, so process it per SQL99 rules.
