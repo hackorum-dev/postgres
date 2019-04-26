@@ -267,6 +267,13 @@ plpgsql_call_handler(PG_FUNCTION_ARGS)
 		/* Decrement use-count, restore cur_estate, and propagate error */
 		func->use_count--;
 		func->cur_estate = save_cur_estate;
+
+		/*
+		 * Disconnect from SPI manager
+		 */
+		if ((rc = SPI_finish()) != SPI_OK_FINISH)
+			elog(ERROR, "SPI_finish failed: %s", SPI_result_code_string(rc));
+
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
@@ -363,6 +370,12 @@ plpgsql_inline_handler(PG_FUNCTION_ARGS)
 
 		/* ... so we can free subsidiary storage */
 		plpgsql_free_function_memory(func);
+
+		/*
+		 * Disconnect from SPI manager
+		 */
+		if ((rc = SPI_finish()) != SPI_OK_FINISH)
+			elog(ERROR, "SPI_finish failed: %s", SPI_result_code_string(rc));
 
 		/* And propagate the error */
 		PG_RE_THROW();
