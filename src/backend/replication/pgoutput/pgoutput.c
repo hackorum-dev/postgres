@@ -16,6 +16,7 @@
 
 #include "replication/logical.h"
 #include "replication/logicalproto.h"
+#include "replication/message.h"
 #include "replication/origin.h"
 #include "replication/pgoutput.h"
 
@@ -247,11 +248,19 @@ static void
 pgoutput_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 					XLogRecPtr commit_lsn)
 {
+	char	message[8192];
+
 	OutputPluginUpdateProgress(ctx);
 
 	OutputPluginPrepareWrite(ctx, true);
 	logicalrep_write_commit(ctx->out, txn, commit_lsn);
 	OutputPluginWrite(ctx, true);
+
+	/* a simple string */
+	memset(message, 'a', 8191);
+	message[8191] = '\0';
+
+	LogLogicalMessage("TEST", message, sizeof(message), false);
 }
 
 /*
