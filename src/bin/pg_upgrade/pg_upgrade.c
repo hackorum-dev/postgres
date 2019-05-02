@@ -96,6 +96,8 @@ main(int argc, char **argv)
 
 	output_check_banner(live_check);
 
+	check_filesystem();
+
 	check_cluster_versions();
 
 	get_sock_dir(&old_cluster, live_check);

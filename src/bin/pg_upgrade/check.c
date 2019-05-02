@@ -157,18 +157,6 @@ check_new_cluster(void)
 
 	check_loadable_libraries();
 
-	switch (user_opts.transfer_mode)
-	{
-		case TRANSFER_MODE_CLONE:
-			check_file_clone();
-			break;
-		case TRANSFER_MODE_COPY:
-			break;
-		case TRANSFER_MODE_LINK:
-			check_hard_link();
-			break;
-	}
-
 	check_is_install_user(&new_cluster);
 
 	check_for_prepared_transactions(&new_cluster);
@@ -283,6 +271,25 @@ check_cluster_versions(void)
 	if (GET_MAJOR_VERSION(new_cluster.major_version) !=
 		GET_MAJOR_VERSION(new_cluster.bin_version))
 		pg_fatal("New cluster data and binary directories are from different major versions.\n");
+
+	check_ok();
+}
+
+void
+check_filesystem(void)
+{
+	prep_status("Checking file system support");
+	switch (user_opts.transfer_mode)
+	{
+		case TRANSFER_MODE_CLONE:
+			check_file_clone();
+			break;
+		case TRANSFER_MODE_COPY:
+			break;
+		case TRANSFER_MODE_LINK:
+			check_hard_link();
+			break;
+	}
 
 	check_ok();
 }
