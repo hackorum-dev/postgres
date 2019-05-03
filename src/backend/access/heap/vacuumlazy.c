@@ -136,6 +136,7 @@ typedef struct LVRelStats
 	int			num_index_scans;
 	TransactionId latestRemovedXid;
 	bool		lock_waiter_detected;
+	bool		warn_limit_reached;
 } LVRelStats;
 
 
@@ -207,6 +208,7 @@ heap_vacuum_rel(Relation onerel, VacuumParams *params,
 	double		new_live_tuples;
 	TransactionId new_frozen_xid;
 	MultiXactId new_min_multi;
+	bool		warn_limit_reached;
 
 	Assert(params != NULL);
 	Assert(params->index_cleanup != VACOPT_TERNARY_DEFAULT);
@@ -238,7 +240,8 @@ heap_vacuum_rel(Relation onerel, VacuumParams *params,
 						  params->multixact_freeze_min_age,
 						  params->multixact_freeze_table_age,
 						  &OldestXmin, &FreezeLimit, &xidFullScanLimit,
-						  &MultiXactCutoff, &mxactFullScanLimit);
+						  &MultiXactCutoff, &mxactFullScanLimit,
+						  &warn_limit_reached);
 
 	/*
 	 * We request an aggressive scan if the table's frozen Xid is now older
@@ -277,6 +280,7 @@ heap_vacuum_rel(Relation onerel, VacuumParams *params,
 	vacrelstats->num_index_scans = 0;
 	vacrelstats->pages_removed = 0;
 	vacrelstats->lock_waiter_detected = false;
+	vacrelstats->warn_limit_reached = warn_limit_reached;
 
 	/* Open all indexes of the relation */
 	vac_open_indexes(onerel, RowExclusiveLock, &nindexes, &Irel);
@@ -1065,9 +1069,9 @@ lazy_scan_heap(Relation onerel, VacuumParams *params, LVRelStats *vacrelstats,
 					 * cheaper to get rid of it in the next pruning pass than
 					 * to treat it like an indexed tuple. Finally, if index
 					 * cleanup is disabled, the second heap pass will not
-					 * execute, and the tuple will not get removed, so we
-					 * must treat it like any other dead tuple that we choose
-					 * to keep.
+					 * execute, and the tuple will not get removed, so we must
+					 * treat it like any other dead tuple that we choose to
+					 * keep.
 					 *
 					 * If this were to happen for a tuple that actually needed
 					 * to be deleted, we'd be in trouble, because it'd
@@ -1085,6 +1089,7 @@ lazy_scan_heap(Relation onerel, VacuumParams *params, LVRelStats *vacrelstats,
 					all_visible = false;
 					break;
 				case HEAPTUPLE_LIVE:
+
 					/*
 					 * Count it as live.  Not only is this natural, but it's
 					 * also what acquire_sample_rows() does.
@@ -1249,13 +1254,14 @@ lazy_scan_heap(Relation onerel, VacuumParams *params, LVRelStats *vacrelstats,
 			else
 			{
 				/*
-				 * Here, we have indexes but index cleanup is disabled. Instead of
-				 * vacuuming the dead tuples on the heap, we just forget them.
+				 * Here, we have indexes but index cleanup is disabled.
+				 * Instead of vacuuming the dead tuples on the heap, we just
+				 * forget them.
 				 *
 				 * Note that vacrelstats->dead_tuples could have tuples which
 				 * became dead after HOT-pruning but are not marked dead yet.
-				 * We do not process them because it's a very rare condition, and
-				 * the next vacuum will process them anyway.
+				 * We do not process them because it's a very rare condition,
+				 * and the next vacuum will process them anyway.
 				 */
 				Assert(params->index_cleanup == VACOPT_TERNARY_DISABLED);
 			}
@@ -1829,18 +1835,6 @@ lazy_cleanup_index(Relation indrel,
 /*
  * should_attempt_truncation - should we attempt to truncate the heap?
  *
- * Don't even think about it unless we have a shot at releasing a goodly
- * number of pages.  Otherwise, the time taken isn't worth it.
- *
- * Also don't attempt it if we are doing early pruning/vacuuming, because a
- * scan which cannot find a truncated heap page cannot determine that the
- * snapshot is too old to read that page.  We might be able to get away with
- * truncating all except one of the pages, setting its LSN to (at least) the
- * maximum of the truncated range if we also treated an index leaf tuple
- * pointing to a missing heap page as something to trigger the "snapshot too
- * old" error, but that seems fragile and seems like it deserves its own patch
- * if we consider it.
- *
  * This is split out so that we can test whether truncation is going to be
  * called for before we actually do it.  If you change the logic here, be
  * careful to depend only on fields that lazy_scan_heap updates on-the-fly.
@@ -1850,10 +1844,34 @@ should_attempt_truncation(Relation rel, LVRelStats *vacrelstats)
 {
 	BlockNumber possibly_freeable;
 
+	/* Don't truncate if truncation is disabled for this relation. */
 	if (rel->rd_options != NULL &&
 		((StdRdOptions *) rel->rd_options)->vacuum_truncate == false)
 		return false;
 
+	/*
+	 * Also don't truncate if we are very close to transaction ID wraparound.
+	 * Truncating the relation will require an AccessExclusiveLock, which will
+	 * force an XID assignment.  If there are not very many XIDs left before
+	 * the system starts refusing new write transactions, it is better to skip
+	 * truncation.
+	 */
+	if (vacrelstats->warn_limit_reached)
+		return false;
+
+	/*
+	 * Finally, don't try to truncate unless we have a shot at releasing a
+	 * goodly number of pages.  Otherwise, the time taken isn't worth it.
+	 *
+	 * Also don't attempt it if we are doing early pruning/vacuuming, because
+	 * a scan which cannot find a truncated heap page cannot determine that
+	 * the snapshot is too old to read that page.  We might be able to get
+	 * away with truncating all except one of the pages, setting its LSN to
+	 * (at least) the maximum of the truncated range if we also treated an
+	 * index leaf tuple pointing to a missing heap page as something to
+	 * trigger the "snapshot too old" error, but that seems fragile and seems
+	 * like it deserves its own patch if we consider it.
+	 */
 	possibly_freeable = vacrelstats->rel_pages - vacrelstats->nonempty_pages;
 	if (possibly_freeable > 0 &&
 		(possibly_freeable >= REL_TRUNCATE_MINIMUM ||

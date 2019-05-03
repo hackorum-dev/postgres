@@ -859,9 +859,11 @@ get_all_vacuum_rels(int options)
  *	 Xmax.
  * - mxactFullScanLimit is a value against which a table's relminmxid value is
  *	 compared to produce a full-table vacuum, as with xidFullScanLimit.
+ * - warn_limit_reached is set to true if the cluster has reached the point
+ *   where we emit warnings about imminent wraparound, and false otherwise.
  *
- * xidFullScanLimit and mxactFullScanLimit can be passed as NULL if caller is
- * not interested.
+ * xidFullScanLimit, mxactFullScanLimit, and warn_limit_reached can be passed
+ * as NULL if caller is not interested.
  */
 void
 vacuum_set_xid_limits(Relation rel,
@@ -873,11 +875,14 @@ vacuum_set_xid_limits(Relation rel,
 					  TransactionId *freezeLimit,
 					  TransactionId *xidFullScanLimit,
 					  MultiXactId *multiXactCutoff,
-					  MultiXactId *mxactFullScanLimit)
+					  MultiXactId *mxactFullScanLimit,
+					  bool *warn_limit_reached)
 {
 	int			freezemin;
 	int			mxid_freezemin;
 	int			effective_multixact_freeze_max_age;
+	TransactionId nextXid;
+	TransactionId xidWarnLimit;
 	TransactionId limit;
 	TransactionId safeLimit;
 	MultiXactId mxactLimit;
@@ -921,7 +926,8 @@ vacuum_set_xid_limits(Relation rel,
 	 * autovacuum_freeze_max_age / 2 XIDs old), complain and force a minimum
 	 * freeze age of zero.
 	 */
-	safeLimit = ReadNewTransactionId() - autovacuum_freeze_max_age;
+	ReadNextXIDAndWarnLimit(&nextXid, &xidWarnLimit);
+	safeLimit = nextXid - autovacuum_freeze_max_age;
 	if (!TransactionIdIsNormal(safeLimit))
 		safeLimit = FirstNormalTransactionId;
 
@@ -933,6 +939,10 @@ vacuum_set_xid_limits(Relation rel,
 						 "You might also need to commit or roll back old prepared transactions, or drop stale replication slots.")));
 		limit = *oldestXmin;
 	}
+
+	if (warn_limit_reached)
+		*warn_limit_reached =
+			TransactionIdFollowsOrEquals(nextXid, xidWarnLimit);
 
 	*freezeLimit = limit;
 

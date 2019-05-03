@@ -255,6 +255,19 @@ ReadNextFullTransactionId(void)
 }
 
 /*
+ * Read the next XID that will be allocated without actually allocating it,
+ * and also the xidWarnLimit.
+ */
+void
+ReadNextXIDAndWarnLimit(TransactionId *nextXid, TransactionId *xidWarnLimit)
+{
+	LWLockAcquire(XidGenLock, LW_SHARED);
+	*nextXid = XidFromFullTransactionId(ShmemVariableCache->nextFullXid);
+	*xidWarnLimit = ShmemVariableCache->xidWarnLimit;
+	LWLockRelease(XidGenLock);
+}
+
+/*
  * Advance nextFullXid to the value after a given xid.  The epoch is inferred.
  * This must only be called during recovery or from two-phase start-up code.
  */
