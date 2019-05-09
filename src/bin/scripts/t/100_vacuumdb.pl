@@ -3,7 +3,7 @@ use warnings;
 
 use PostgresNode;
 use TestLib;
-use Test::More tests => 44;
+use Test::More tests => 50;
 
 program_help_ok('vacuumdb');
 program_version_ok('vacuumdb');
@@ -45,9 +45,23 @@ $node->issues_sql_like(
 	[ 'vacuumdb', '--skip-locked', '--analyze-only', 'postgres' ],
 	qr/statement: ANALYZE \(SKIP_LOCKED\).*;/,
 	'vacuumdb --skip-locked --analyze-only');
+$node->issues_sql_like(
+	[ 'vacuumdb', '--index-cleanup=false', 'postgres' ],
+	qr/statement: VACUUM \(INDEX_CLEANUP false\).*;/,
+	'vacuumdb --index-cleanup=false');
+$node->issues_sql_like(
+	[ 'vacuumdb', '--index-cleanup=true', 'postgres' ],
+	qr/statement: VACUUM \(INDEX_CLEANUP true\).*;/,
+	'vacuumdb --index-cleanup=true');
 $node->command_fails(
 	[ 'vacuumdb', '--analyze-only', '--disable-page-skipping', 'postgres' ],
 	'--analyze-only and --disable-page-skipping specified together');
+$node->command_fails(
+	[ 'vacuumdb', '--analyze-only', '--index-cleanup=true', 'postgres' ],
+	'--analyze-only and --index-cleanup specified together');
+$node->command_fails(
+	[ 'vacuumdb', '--index-cleanup=invalid', 'postgres' ],
+	'--index-cleanup with an invalid argument');
 $node->command_ok([qw(vacuumdb -Z --table=pg_am dbname=template1)],
 	'vacuumdb with connection string');
 

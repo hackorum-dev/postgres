@@ -46,6 +46,7 @@ typedef struct vacuumingOptions
 	bool		skip_locked;
 	int			min_xid_age;
 	int			min_mxid_age;
+	char		*index_cleanup;
 } vacuumingOptions;
 
 
@@ -87,6 +88,7 @@ static void init_slot(ParallelSlot *slot, PGconn *conn);
 
 static void help(const char *progname);
 
+
 /* For analyze-in-stages mode */
 #define ANALYZE_NO_STAGE	-1
 #define ANALYZE_NUM_STAGES	3
@@ -118,6 +120,7 @@ main(int argc, char *argv[])
 		{"skip-locked", no_argument, NULL, 5},
 		{"min-xid-age", required_argument, NULL, 6},
 		{"min-mxid-age", required_argument, NULL, 7},
+		{"index-cleanup", required_argument, NULL, 8},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -242,6 +245,9 @@ main(int argc, char *argv[])
 					exit(1);
 				}
 				break;
+			case 8:
+				vacopts.index_cleanup = pg_strdup(optarg);
+				break;
 			default:
 				fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
 				exit(1);
@@ -284,6 +290,12 @@ main(int argc, char *argv[])
 		{
 			pg_log_error("cannot use the \"%s\" option when performing only analyze",
 						 "disable-page-skipping");
+			exit(1);
+		}
+		if (vacopts.index_cleanup != NULL)
+		{
+			pg_log_error("cannot use the \"%s\" option when performing only analyze",
+						 "index-cleanup");
 			exit(1);
 		}
 		/* allow 'and_analyze' with 'analyze_only' */
@@ -411,6 +423,14 @@ vacuum_one_database(const char *dbname, vacuumingOptions *vacopts,
 		PQfinish(conn);
 		pg_log_error("cannot use the \"%s\" option on server versions older than PostgreSQL %s",
 					 "disable-page-skipping", "9.6");
+		exit(1);
+	}
+
+	if (vacopts->index_cleanup != NULL && PQserverVersion(conn) < 120000)
+	{
+		PQfinish(conn);
+		pg_log_error("cannot use the \"%s\" option on server versions older than PostgreSQL 12",
+					 "index-cleanup");
 		exit(1);
 	}
 
@@ -874,6 +894,14 @@ prepare_vacuum_command(PQExpBuffer sql, int serverVersion,
 				appendPQExpBuffer(sql, "%sSKIP_LOCKED", sep);
 				sep = comma;
 			}
+			if (vacopts->index_cleanup)
+			{
+				/* INDEX_CLEANUP is supported since 12 */
+				Assert(serverVersion >= 120000);
+				appendPQExpBuffer(sql, "%sINDEX_CLEANUP %s", sep,
+								  vacopts->index_cleanup);
+				sep = comma;
+			}
 			if (vacopts->full)
 			{
 				appendPQExpBuffer(sql, "%sFULL", sep);
@@ -1222,6 +1250,7 @@ help(const char *progname)
 	printf(_("  -e, --echo                      show the commands being sent to the server\n"));
 	printf(_("  -f, --full                      do full vacuuming\n"));
 	printf(_("  -F, --freeze                    freeze row transaction information\n"));
+	printf(_("      --index-cleanup=BOOLEAN     do or do not index vacuuming and index cleanup\n"));
 	printf(_("  -j, --jobs=NUM                  use this many concurrent connections to vacuum\n"));
 	printf(_("      --min-mxid-age=MXID_AGE     minimum multixact ID age of tables to vacuum\n"));
 	printf(_("      --min-xid-age=XID_AGE       minimum transaction ID age of tables to vacuum\n"));
