@@ -4196,7 +4196,7 @@ ANY <replaceable class="parameter">num_sync</replaceable> ( <replaceable class="
         however, if the parameter is specified it will be honored in all cases.
 
         <varname>hot_standby_feedback</varname> will be delayed by use of this feature.
-        Combinining these settings could lead to bloat on the master, so should
+        Combining these settings could lead to bloat on the master, so should
         be done only with care.
 
         <warning>

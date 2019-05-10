@@ -12268,7 +12268,7 @@ table2-mapping
         <entry><literal>@@</literal></entry>
         <entry><type>jsonpath</type></entry>
         <entry>JSON path predicate check result for the specified JSON value.
-        Only first result item is taken into account.  If there are no results
+        Only the first result item is taken into account.  If there are no results
         or the first result item is not Boolean, then null
         is returned.</entry>
         <entry><literal>'{"a":[1,2,3,4,5]}'::jsonb @@ '$.a[*] > 2'</literal></entry>
@@ -12934,7 +12934,7 @@ table2-mapping
         <entry><type>boolean</type></entry>
         <entry>
           Returns JSON path predicate result for the specified JSON value.
-          Only first result item is taken into account.  If there are no results
+          Only the first result item is taken into account.  If there are no results
           or the first result item is not Boolean, then null
           is returned.
         </entry>
