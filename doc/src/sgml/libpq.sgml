@@ -7107,7 +7107,7 @@ int PQresultSetInstanceData(PGresult *res, PGEventProc proc, void *data);
        Beware that any storage represented by <parameter>data</parameter>
        will not be accounted for by <function>PQresultMemorySize</function>,
        unless it is allocated using <function>PQresultAlloc</function>.
-       (Doing so is recommendable because it eliminates the need to free
+       (Doing so is recommended because it eliminates the need to free
        such storage explicitly when the result is destroyed.)
       </para>
      </listitem>

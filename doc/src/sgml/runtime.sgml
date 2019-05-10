@@ -111,7 +111,7 @@
    <command>initdb</command> will attempt to create the directory you
    specify if it does not already exist.  Of course, this will fail if
    <command>initdb</command> does not have permissions to write in the
-   parent directory.  It's generally recommendable that the
+   parent directory.  It's generally recommended that the
    <productname>PostgreSQL</productname> user own not just the data
    directory but its parent directory as well, so that this should not
    be a problem.  If the desired parent directory doesn't exist either,

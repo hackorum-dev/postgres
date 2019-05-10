@@ -60,7 +60,7 @@
   contain the single-type operators (and associated support functions)
   for its input data type, while cross-type comparison operators and
   support functions are <quote>loose</quote> in the family.  It is
-  recommendable that a complete set of cross-type operators be included
+  recommended that a complete set of cross-type operators be included
   in the family, thus ensuring that the planner can represent any
   comparison conditions that it deduces from transitivity.
  </para>
