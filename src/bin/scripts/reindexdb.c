@@ -16,8 +16,16 @@
 #include "fe_utils/string_utils.h"
 
 
+typedef enum ReindexType
+{
+	REINDEX_DATABASE,
+	REINDEX_SCHEMA,
+	REINDEX_TABLE,
+	REINDEX_INDEX
+}			ReindexType;
+
 static void reindex_one_database(const char *name, const char *dbname,
-					 const char *type, const char *host,
+					 ReindexType type, const char *host,
 					 const char *port, const char *username,
 					 enum trivalue prompt_password, const char *progname,
 					 bool echo, bool verbose, bool concurrently);
@@ -241,7 +249,7 @@ main(int argc, char *argv[])
 
 			for (cell = schemas.head; cell; cell = cell->next)
 			{
-				reindex_one_database(cell->val, dbname, "SCHEMA", host, port,
+				reindex_one_database(cell->val, dbname, REINDEX_SCHEMA, host, port,
 									 username, prompt_password, progname, echo, verbose, concurrently);
 			}
 		}
@@ -252,7 +260,7 @@ main(int argc, char *argv[])
 
 			for (cell = indexes.head; cell; cell = cell->next)
 			{
-				reindex_one_database(cell->val, dbname, "INDEX", host, port,
+				reindex_one_database(cell->val, dbname, REINDEX_INDEX, host, port,
 									 username, prompt_password, progname, echo, verbose, concurrently);
 			}
 		}
@@ -262,7 +270,7 @@ main(int argc, char *argv[])
 
 			for (cell = tables.head; cell; cell = cell->next)
 			{
-				reindex_one_database(cell->val, dbname, "TABLE", host, port,
+				reindex_one_database(cell->val, dbname, REINDEX_TABLE, host, port,
 									 username, prompt_password, progname, echo, verbose, concurrently);
 			}
 		}
@@ -272,7 +280,7 @@ main(int argc, char *argv[])
 		 * specified
 		 */
 		if (indexes.head == NULL && tables.head == NULL && schemas.head == NULL)
-			reindex_one_database(NULL, dbname, "DATABASE", host, port,
+			reindex_one_database(NULL, dbname, REINDEX_DATABASE, host, port,
 								 username, prompt_password, progname, echo, verbose, concurrently);
 	}
 
@@ -280,12 +288,14 @@ main(int argc, char *argv[])
 }
 
 static void
-reindex_one_database(const char *name, const char *dbname, const char *type,
+reindex_one_database(const char *name, const char *dbname, ReindexType type,
 					 const char *host, const char *port, const char *username,
 					 enum trivalue prompt_password, const char *progname, bool echo,
 					 bool verbose, bool concurrently)
 {
 	PQExpBufferData sql;
+	const char *verbose_str = verbose ? " (VERBOSE)" : "";
+	const char *concurrent_str = concurrently ? " CONCURRENTLY" : "";
 
 	PGconn	   *conn;
 
@@ -302,38 +312,51 @@ reindex_one_database(const char *name, const char *dbname, const char *type,
 
 	initPQExpBuffer(&sql);
 
-	appendPQExpBufferStr(&sql, "REINDEX ");
-
-	if (verbose)
-		appendPQExpBufferStr(&sql, "(VERBOSE) ");
-
-	appendPQExpBufferStr(&sql, type);
-	appendPQExpBufferChar(&sql, ' ');
-	if (concurrently)
-		appendPQExpBufferStr(&sql, "CONCURRENTLY ");
-	if (strcmp(type, "TABLE") == 0 ||
-		strcmp(type, "INDEX") == 0)
-		appendQualifiedRelation(&sql, name, conn, progname, echo);
-	else if (strcmp(type, "SCHEMA") == 0)
-		appendPQExpBufferStr(&sql, name);
-	else if (strcmp(type, "DATABASE") == 0)
-		appendPQExpBufferStr(&sql, fmtId(PQdb(conn)));
-	appendPQExpBufferChar(&sql, ';');
+	switch (type)
+	{
+		case REINDEX_DATABASE:
+			appendPQExpBuffer(&sql, "REINDEX%s DATABASE%s %s;", verbose_str,
+							  concurrent_str, fmtId(PQdb(conn)));
+			break;
+		case REINDEX_SCHEMA:
+			appendPQExpBuffer(&sql, "REINDEX%s SCHEMA%s %s;", verbose_str,
+							  concurrent_str, name);
+			break;
+		case REINDEX_TABLE:
+			appendPQExpBuffer(&sql, "REINDEX%s TABLE%s ", verbose_str,
+							  concurrent_str);
+			appendQualifiedRelation(&sql, name, conn, progname, echo);
+			appendPQExpBufferStr(&sql, ";");
+			break;
+		case REINDEX_INDEX:
+			appendPQExpBuffer(&sql, "REINDEX%s INDEX%s ", verbose_str,
+							  concurrent_str);
+			appendQualifiedRelation(&sql, name, conn, progname, echo);
+			appendPQExpBufferStr(&sql, ";");
+			break;
+	}
 
 	if (!executeMaintenanceCommand(conn, sql.data, echo))
 	{
-		if (strcmp(type, "TABLE") == 0)
-			pg_log_error("reindexing of table \"%s\" in database \"%s\" failed: %s",
-						 name, PQdb(conn), PQerrorMessage(conn));
-		else if (strcmp(type, "INDEX") == 0)
-			pg_log_error("reindexing of index \"%s\" in database \"%s\" failed: %s",
-						 name, PQdb(conn), PQerrorMessage(conn));
-		else if (strcmp(type, "SCHEMA") == 0)
-			pg_log_error("reindexing of schema \"%s\" in database \"%s\" failed: %s",
-						 name, PQdb(conn), PQerrorMessage(conn));
-		else
-			pg_log_error("reindexing of database \"%s\" failed: %s",
-						 PQdb(conn), PQerrorMessage(conn));
+		switch (type)
+		{
+			case REINDEX_TABLE:
+				pg_log_error("reindexing of table \"%s\" in database \"%s\" failed: %s",
+							 name, PQdb(conn), PQerrorMessage(conn));
+				break;
+			case REINDEX_INDEX:
+				pg_log_error("reindexing of index \"%s\" in database \"%s\" failed: %s",
+							 name, PQdb(conn), PQerrorMessage(conn));
+				break;
+			case REINDEX_SCHEMA:
+				pg_log_error("reindexing of schema \"%s\" in database \"%s\" failed: %s",
+							 name, PQdb(conn), PQerrorMessage(conn));
+				break;
+			case REINDEX_DATABASE:
+				pg_log_error("reindexing of database \"%s\" failed: %s",
+							 PQdb(conn), PQerrorMessage(conn));
+				break;
+		}
 		PQfinish(conn);
 		exit(1);
 	}
@@ -374,7 +397,7 @@ reindex_all_databases(const char *maintenance_db,
 		appendPQExpBuffer(&connstr, "dbname=");
 		appendConnStrVal(&connstr, dbname);
 
-		reindex_one_database(NULL, connstr.data, "DATABASE", host,
+		reindex_one_database(NULL, connstr.data, REINDEX_DATABASE, host,
 							 port, username, prompt_password,
 							 progname, echo, verbose, concurrently);
 	}
