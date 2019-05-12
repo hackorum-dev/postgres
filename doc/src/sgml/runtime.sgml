@@ -168,13 +168,22 @@ postgres$ <userinput>initdb -D /usr/local/pgsql/data</userinput>
   <para>
    Because the data directory contains all the data stored in the
    database, it is essential that it be secured from unauthorized
-   access. <command>initdb</command> therefore revokes access
-   permissions from everyone but the
+   access. On all operating systems other than Windows,
+   <command>initdb</command> revokes access permissions from everyone but the
    <productname>PostgreSQL</productname> user, and optionally, group.
    Group access, when enabled, is read-only.  This allows an unprivileged
    user in the same group as the cluster owner to take a backup of the
    cluster data or perform other operations that only require read access.
   </para>
+
+  <warning>
+   <para>
+   If you are running PostgreSQL on Windows and create your cluster using
+   <command>initdb</command>, you will need to set the permissions on the data
+   directory manually. You should revoke all user access to the data directory
+   except for the <productname>PostgreSQL</productname> user.
+   </para>
+  </warning>
 
   <para>
    Note that enabling or disabling group access on an existing cluster requires
