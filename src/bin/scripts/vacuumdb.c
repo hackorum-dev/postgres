@@ -47,6 +47,7 @@ typedef struct vacuumingOptions
 	int			min_xid_age;
 	int			min_mxid_age;
 	char		*index_cleanup;
+	char		*truncate;
 } vacuumingOptions;
 
 
@@ -121,6 +122,7 @@ main(int argc, char *argv[])
 		{"min-xid-age", required_argument, NULL, 6},
 		{"min-mxid-age", required_argument, NULL, 7},
 		{"index-cleanup", required_argument, NULL, 8},
+		{"truncate", required_argument, NULL, 9},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -248,6 +250,9 @@ main(int argc, char *argv[])
 			case 8:
 				vacopts.index_cleanup = pg_strdup(optarg);
 				break;
+			case 9:
+				vacopts.truncate = pg_strdup(optarg);
+				break;
 			default:
 				fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
 				exit(1);
@@ -296,6 +301,12 @@ main(int argc, char *argv[])
 		{
 			pg_log_error("cannot use the \"%s\" option when performing only analyze",
 						 "index-cleanup");
+			exit(1);
+		}
+		if (vacopts.truncate != NULL)
+		{
+			pg_log_error("cannot use the \"%s\" option when performing only analyze",
+						 "truncate");
 			exit(1);
 		}
 		/* allow 'and_analyze' with 'analyze_only' */
@@ -431,6 +442,14 @@ vacuum_one_database(const char *dbname, vacuumingOptions *vacopts,
 		PQfinish(conn);
 		pg_log_error("cannot use the \"%s\" option on server versions older than PostgreSQL 12",
 					 "index-cleanup");
+		exit(1);
+	}
+
+	if (vacopts->truncate != NULL && PQserverVersion(conn) < 120000)
+	{
+		PQfinish(conn);
+		pg_log_error("cannot use the \"%s\" option on server versions older than PostgreSQL 12",
+					 "truncate");
 		exit(1);
 	}
 
@@ -902,6 +921,14 @@ prepare_vacuum_command(PQExpBuffer sql, int serverVersion,
 								  vacopts->index_cleanup);
 				sep = comma;
 			}
+			if (vacopts->truncate)
+			{
+				/* TRUNCATE is supported since 12 */
+				Assert(serverVersion >= 120000);
+				appendPQExpBuffer(sql, "%sTRUNCATE %s", sep,
+								  vacopts->truncate);
+				sep = comma;
+			}
 			if (vacopts->full)
 			{
 				appendPQExpBuffer(sql, "%sFULL", sep);
@@ -1257,6 +1284,7 @@ help(const char *progname)
 	printf(_("  -q, --quiet                     don't write any messages\n"));
 	printf(_("      --skip-locked               skip relations that cannot be immediately locked\n"));
 	printf(_("  -t, --table='TABLE[(COLUMNS)]'  vacuum specific table(s) only\n"));
+	printf(_("      --truncate=BOOLEAN          do or do not truncate off empty pages at the end of the table\n"));
 	printf(_("  -v, --verbose                   write a lot of output\n"));
 	printf(_("  -V, --version                   output version information, then exit\n"));
 	printf(_("  -z, --analyze                   update optimizer statistics\n"));

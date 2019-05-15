@@ -290,6 +290,24 @@ PostgreSQL documentation
      </varlistentry>
 
      <varlistentry>
+      <term><option>--truncate=<replaceable class="parameter">boolean</replaceable></option></term>
+      <listitem>
+       <para>
+         Specify that <command>VACUUM</command> should attempt to truncate off
+         any empty pages at the end of the table. If this option is not specified
+         the behavior depends on <literal>vacuum_truncate</literal> option
+         for the table to be vacuumed.
+       </para>
+       <note>
+        <para>
+         This option is only available for servers running
+         <productname>PostgreSQL</productname> 12 and later.
+        </para>
+       </note>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
       <term><option>-v</option></term>
       <term><option>--verbose</option></term>
       <listitem>
