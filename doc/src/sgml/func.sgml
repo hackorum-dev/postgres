@@ -1683,6 +1683,10 @@
    </table>
 
    <para>
+    The database must be compiled with ICU in order for contextual aware case-folding,
+    such as word-final characters.
+   </para>
+   <para>
     Additional string manipulation functions are available and are
     listed in <xref linkend="functions-string-other"/>.  Some of them are used internally to implement the
     <acronym>SQL</acronym>-standard string functions listed in <xref linkend="functions-string-sql"/>.
