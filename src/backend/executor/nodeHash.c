@@ -531,7 +531,7 @@ ExecHashTableCreate(HashState *state)
 	hashtable->curbatch = 0;
 	hashtable->nbatch_original = nbatch;
 	hashtable->nbatch_outstart = nbatch;
-	hashtable->growEnabled = true;
+	hashtable->growPenalty = 0;
 	hashtable->totalTuples = 0;
 	hashtable->reportTuples = 0;
 	hashtable->skewTuples = 0;
@@ -1061,10 +1061,6 @@ ExecHashIncreaseNumBatches(HashJoinTable hashtable)
 	long		nfreed;
 	HashMemoryChunk oldchunks;
 
-	/* do nothing if we've decided to shut off growth */
-	if (!hashtable->growEnabled)
-		return;
-
 	/* safety check to avoid overflow */
 	if (oldnbatch > Min(INT_MAX / 2, MaxAllocSize / (sizeof(void *) * 2)))
 		return;
@@ -1197,19 +1193,19 @@ ExecHashIncreaseNumBatches(HashJoinTable hashtable)
 #endif
 
 	/*
-	 * If we dumped out either all or none of the tuples in the table, disable
-	 * further expansion of nbatch.  This situation implies that we have
-	 * enough tuples of identical hashvalues to overflow spaceAllowed.
-	 * Increasing nbatch will not fix it since there's no way to subdivide the
-	 * group any more finely. We have to just gut it out and hope the server
-	 * has enough RAM.
+	 * If we dumped out either all or none of the tuples in the table, punish
+	 * further expansion of nbatch. The penalty will increased the threshold
+	 * to recheck whether it is worth to increase nbatch next time.
+	 * In past, Postgres uses a simple flag growEnable to diskable expansion
+	 * of nbatch, this is not appropriate since data may with identical
+	 * hashvalues at the begining but would be diverse in future.
 	 */
 	if (nfreed == 0 || nfreed == ninmemory)
 	{
-		hashtable->growEnabled = false;
+		hashtable->growPenalty++;
 #ifdef HJDEBUG
-		printf("Hashjoin %p: disabling further increase of nbatch\n",
-			   hashtable);
+		printf("Hashjoin %p: further increase of nbatch with penalty: %d\n",
+			   hashtable, hashtable->growPenalty);
 #endif
 	}
 }
@@ -1838,7 +1834,7 @@ ExecHashTableInsert(HashJoinTable hashtable,
 			hashtable->spacePeak = hashtable->spaceUsed;
 		if (hashtable->spaceUsed +
 			hashtable->nbuckets_optimal * sizeof(HashJoinTuple)
-			> hashtable->spaceAllowed)
+			> hashtable->spaceAllowed * (hashtable->growPenalty + 1) )
 			ExecHashIncreaseNumBatches(hashtable);
 	}
 	else
@@ -2657,7 +2653,7 @@ ExecHashSkewTableInsert(HashJoinTable hashtable,
 		ExecHashRemoveNextSkewBucket(hashtable);
 
 	/* Check we are not over the total spaceAllowed, either */
-	if (hashtable->spaceUsed > hashtable->spaceAllowed)
+	if (hashtable->spaceUsed > hashtable->spaceAllowed * (hashtable->growPenalty + 1))
 		ExecHashIncreaseNumBatches(hashtable);
 
 	if (shouldFree)
