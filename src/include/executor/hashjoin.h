@@ -336,7 +336,7 @@ typedef struct HashJoinTableData
 	int			nbatch_original;	/* nbatch when we started inner scan */
 	int			nbatch_outstart;	/* nbatch when we started outer scan */
 
-	bool		growEnabled;	/* flag to shut off nbatch increases */
+	int			growPenalty;	/* nbatch increases penalty, default 0 */
 
 	/*
 	 * totalTuples is the running total of tuples inserted into either the
