@@ -106,6 +106,7 @@ typedef enum PartClauseTarget
  * we found any potentially-useful-for-pruning clause having those properties,
  * whether or not we actually used the clause in the steps list.  This
  * definition allows us to skip the PARTTARGET_EXEC pass in some cases.
+ * exec_paramids is only set when target is PARTTARGET_EXEC.
  */
 typedef struct GeneratePruningStepsContext
 {
@@ -119,6 +120,7 @@ typedef struct GeneratePruningStepsContext
 									 * values, *other than* exec params */
 	bool		has_exec_param; /* clauses include any PARAM_EXEC params */
 	bool		contradictory;	/* clauses were proven self-contradictory */
+	Bitmapset   *exec_paramids; /* exec Param IDs matched to partition keys */
 	/* Working state: */
 	int			next_step_id;
 } GeneratePruningStepsContext;
@@ -158,7 +160,8 @@ static PartitionPruneStep *gen_prune_steps_from_opexps(GeneratePruningStepsConte
 static PartClauseMatchStatus match_clause_to_partition_key(GeneratePruningStepsContext *context,
 							  Expr *clause, Expr *partkey, int partkeyidx,
 							  bool *clause_is_not_null,
-							  PartClauseInfo **pc, List **clause_steps);
+							  PartClauseInfo **pc, List **clause_steps,
+							  Bitmapset **exec_paramids);
 static List *get_steps_using_prefix(GeneratePruningStepsContext *context,
 					   StrategyNumber step_opstrategy,
 					   bool step_op_is_ne,
@@ -188,7 +191,6 @@ static PruneStepResult *get_matching_range_bounds(PartitionPruneContext *context
 						  FmgrInfo *partsupfunc, Bitmapset *nullkeys);
 static Bitmapset *pull_exec_paramids(Expr *expr);
 static bool pull_exec_paramids_walker(Node *node, Bitmapset **context);
-static Bitmapset *get_partkey_exec_paramids(List *steps);
 static PruneStepResult *perform_pruning_base_step(PartitionPruneContext *context,
 						  PartitionPruneStepOp *opstep);
 static PruneStepResult *perform_pruning_combine_step(PartitionPruneContext *context,
@@ -483,17 +485,18 @@ make_partitionedrel_pruneinfo(PlannerInfo *root, RelOptInfo *parentrel,
 				return NIL;
 			}
 
-			exec_pruning_steps = context.steps;
+			execparamids = context.exec_paramids;
 
 			/*
-			 * Detect which exec Params actually got used; the fact that some
-			 * were in available clauses doesn't mean we actually used them.
-			 * Skip per-scan pruning if there are none.
+			 * Check if any exec Params actually got used; we can't just look
+			 * at context.has_exec_param since some of those clauses may have
+			 * been rejected later in the clause matching process.  Skip
+			 * per-scan pruning if there are none.
 			 */
-			execparamids = get_partkey_exec_paramids(exec_pruning_steps);
-
 			if (bms_is_empty(execparamids))
 				exec_pruning_steps = NIL;
+			else
+				exec_pruning_steps = context.steps;
 		}
 		else
 		{
@@ -1034,11 +1037,13 @@ gen_partprune_steps_internal(GeneratePruningStepsContext *context,
 			bool		clause_is_not_null = false;
 			PartClauseInfo *pc = NULL;
 			List	   *clause_steps = NIL;
+			Bitmapset  *exec_paramids = NULL;
 
 			switch (match_clause_to_partition_key(context,
 												  clause, partkey, i,
 												  &clause_is_not_null,
-												  &pc, &clause_steps))
+												  &pc, &clause_steps,
+												  &exec_paramids))
 			{
 				case PARTCLAUSE_MATCH_CLAUSE:
 					Assert(pc != NULL);
@@ -1054,6 +1059,8 @@ gen_partprune_steps_internal(GeneratePruningStepsContext *context,
 					}
 					generate_opsteps = true;
 					keyclauses[i] = lappend(keyclauses[i], pc);
+					context->exec_paramids = bms_join(context->exec_paramids,
+													  exec_paramids);
 					break;
 
 				case PARTCLAUSE_MATCH_NULLNESS:
@@ -1081,6 +1088,8 @@ gen_partprune_steps_internal(GeneratePruningStepsContext *context,
 
 				case PARTCLAUSE_MATCH_STEPS:
 					Assert(clause_steps != NIL);
+					context->exec_paramids = bms_join(context->exec_paramids,
+													  exec_paramids);
 					result = list_concat(result, clause_steps);
 					break;
 
@@ -1621,7 +1630,7 @@ static PartClauseMatchStatus
 match_clause_to_partition_key(GeneratePruningStepsContext *context,
 							  Expr *clause, Expr *partkey, int partkeyidx,
 							  bool *clause_is_not_null, PartClauseInfo **pc,
-							  List **clause_steps)
+							  List **clause_steps, Bitmapset **exec_paramids)
 {
 	PartitionScheme part_scheme = context->rel->part_scheme;
 	Oid			partopfamily = part_scheme->partopfamily[partkeyidx],
@@ -1804,6 +1813,9 @@ match_clause_to_partition_key(GeneratePruningStepsContext *context,
 				context->has_exec_param = true;
 				if (context->target != PARTTARGET_EXEC)
 					return PARTCLAUSE_UNSUPPORTED;
+
+				/* Pass back Param IDs to save having to relearn them later */
+				*exec_paramids = paramids;
 			}
 			else
 			{
@@ -2002,6 +2014,9 @@ match_clause_to_partition_key(GeneratePruningStepsContext *context,
 				context->has_exec_param = true;
 				if (context->target != PARTTARGET_EXEC)
 					return PARTCLAUSE_UNSUPPORTED;
+
+				/* Pass back Param IDs to save having to relearn them later */
+				*exec_paramids = paramids;
 			}
 			else
 			{
@@ -3103,41 +3118,6 @@ pull_exec_paramids_walker(Node *node, Bitmapset **context)
 	}
 	return expression_tree_walker(node, pull_exec_paramids_walker,
 								  (void *) context);
-}
-
-/*
- * get_partkey_exec_paramids
- *		Loop through given pruning steps and find out which exec Params
- *		are used.
- *
- * Returns a Bitmapset of Param IDs.
- */
-static Bitmapset *
-get_partkey_exec_paramids(List *steps)
-{
-	Bitmapset  *execparamids = NULL;
-	ListCell   *lc;
-
-	foreach(lc, steps)
-	{
-		PartitionPruneStepOp *step = (PartitionPruneStepOp *) lfirst(lc);
-		ListCell   *lc2;
-
-		if (!IsA(step, PartitionPruneStepOp))
-			continue;
-
-		foreach(lc2, step->exprs)
-		{
-			Expr	   *expr = lfirst(lc2);
-
-			/* We can be quick for plain Consts */
-			if (!IsA(expr, Const))
-				execparamids = bms_join(execparamids,
-										pull_exec_paramids(expr));
-		}
-	}
-
-	return execparamids;
 }
 
 /*
