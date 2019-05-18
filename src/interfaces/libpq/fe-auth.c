@@ -897,7 +897,7 @@ pg_fe_sendauth(AuthRequest areq, int payloadlen, PGconn *conn)
 			/*
 			 * No SSPI support. However, if we have GSSAPI but not SSPI
 			 * support, AUTH_REQ_SSPI will have been handled in the codepath
-			 * for AUTH_REQ_GSSAPI above, so don't duplicate the case label in
+			 * for AUTH_REQ_GSS above, so don't duplicate the case label in
 			 * that case.
 			 */
 #if !defined(ENABLE_GSS)
