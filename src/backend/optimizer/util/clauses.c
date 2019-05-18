@@ -3409,8 +3409,8 @@ eval_const_expressions_mutator(Node *node,
 			{
 				/*
 				 * This case could be folded into the generic handling used
-				 * for ArrayRef etc.  But because the simplification logic is
-				 * so trivial, applying evaluate_expr() to perform it would be
+				 * for SubscriptingRef etc.  But because the simplification logic
+				 * is so trivial, applying evaluate_expr() to perform it would be
 				 * a heavy overhead.  BooleanTest is probably common enough to
 				 * justify keeping this bespoke implementation.
 				 */

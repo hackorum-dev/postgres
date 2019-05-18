@@ -127,8 +127,6 @@ ArrayIterator
 ArrayMapState
 ArrayMetaState
 ArrayParseState
-ArrayRef
-ArrayRefState
 ArrayType
 AsyncQueueControl
 AsyncQueueEntry
@@ -2276,6 +2274,8 @@ SubXactEvent
 SubqueryScan
 SubqueryScanPath
 SubqueryScanState
+SubscriptingRef
+SubscriptingRefState
 Subscription
 SubscriptionInfo
 SubscriptionRelState
