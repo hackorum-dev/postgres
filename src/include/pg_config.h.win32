@@ -162,9 +162,6 @@
 /* Define to 1 if you have the `fdatasync' function. */
 /* #undef HAVE_FDATASYNC */
 
-/* Define to 1 if you have finite(). */
-#define HAVE_FINITE 1
-
 /* Define to 1 if you have the `fpclass' function. */
 /* #undef HAVE_FPCLASS */
 
