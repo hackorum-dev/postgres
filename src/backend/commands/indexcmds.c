@@ -2898,7 +2898,7 @@ ReindexRelationConcurrently(Oid relationOid, int options)
 			/* see reindex_relation() */
 			ereport(WARNING,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("REINDEX of partitioned tables is not yet implemented, skipping \"%s\"",
+					 errmsg("REINDEX of partitioned tables is not implemented, skipping \"%s\"",
 							get_rel_name(relationOid))));
 			return false;
 		default:
@@ -3344,7 +3344,7 @@ ReindexPartitionedIndex(Relation parentIdx)
 {
 	ereport(ERROR,
 			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-			 errmsg("REINDEX is not yet implemented for partitioned indexes")));
+			 errmsg("REINDEX is not implemented for partitioned indexes")));
 }
 
 /*

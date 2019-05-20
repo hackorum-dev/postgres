@@ -3511,7 +3511,7 @@ reindex_relation(Oid relid, int flags, int options)
 	{
 		ereport(WARNING,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("REINDEX of partitioned tables is not yet implemented, skipping \"%s\"",
+				 errmsg("REINDEX of partitioned tables is not implemented, skipping \"%s\"",
 						RelationGetRelationName(rel))));
 		table_close(rel, ShareLock);
 		return false;
