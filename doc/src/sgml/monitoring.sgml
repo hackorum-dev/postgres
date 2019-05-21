@@ -602,12 +602,12 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
     <row>
      <entry><structfield>datid</structfield></entry>
      <entry><type>oid</type></entry>
-     <entry>OID of the database this backend is connected to</entry>
+     <entry>OID of the database to which this backend is connected</entry>
     </row>
     <row>
      <entry><structfield>datname</structfield></entry>
      <entry><type>name</type></entry>
-     <entry>Name of the database this backend is connected to</entry>
+     <entry>Name of the database to which this backend is connected</entry>
     </row>
     <row>
      <entry><structfield>pid</structfield></entry>
@@ -2099,7 +2099,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
      <entry><type>text</type></entry>
      <entry>
       Host of the <productname>PostgreSQL</productname> instance
-      this WAL receiver is connected to. This can be a host name,
+      to which this WAL receiver is connected. This can be a host name,
       an IP address, or a directory path if the connection is via
       Unix socket.  (The path case can be distinguished because it
       will always be an absolute path, beginning with <literal>/</literal>.)
@@ -2110,7 +2110,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
      <entry><type>integer</type></entry>
      <entry>
       Port number of the <productname>PostgreSQL</productname> instance
-      this WAL receiver is connected to.
+      to which this WAL receiver is connected.
      </entry>
     </row>
     <row>
@@ -3375,7 +3375,7 @@ SELECT pg_stat_get_backend_pid(s.backendid) AS pid,
      <row>
       <entry><literal><function>pg_stat_get_backend_dbid(integer)</function></literal></entry>
       <entry><type>oid</type></entry>
-      <entry>OID of the database this backend is connected to</entry>
+      <entry>OID of the database to which this backend is connected</entry>
      </row>
 
      <row>
