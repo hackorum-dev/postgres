@@ -1976,9 +1976,9 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
   </table>
 
   <para>
-   The <structname>pg_stat_replication</structname> view will contain one row
-   per WAL sender process, showing statistics about replication to that
-   sender's connected standby server.  Only directly connected standbys are
+   The <structname>pg_stat_replication</structname> view contains one row
+   per WAL sender process, showing statistics about replication to the
+   associated standby server.  Only directly connected standbys are
    listed; no information is available about downstream standby servers.
   </para>
 
@@ -2126,7 +2126,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
   </table>
 
   <para>
-   The <structname>pg_stat_wal_receiver</structname> view will contain only
+   The <structname>pg_stat_wal_receiver</structname> view contains only
    one row, showing statistics about the WAL receiver from that receiver's
    connected server.
   </para>
@@ -2198,8 +2198,8 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
   </table>
 
   <para>
-   The <structname>pg_stat_subscription</structname> view will contain one
-   row per subscription for main worker (with null PID if the worker is
+   The <structname>pg_stat_subscription</structname> view contains one
+   row per subscription for the main worker (with null PID if the worker is
    not running), and additional rows for workers handling the initial data
    copy of the subscribed tables.
   </para>
@@ -2281,9 +2281,9 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
   </table>
 
   <para>
-   The <structname>pg_stat_ssl</structname> view will contain one row per
+   The <structname>pg_stat_ssl</structname> view contains one row per
    backend or WAL sender process, showing statistics about SSL usage on
-   this connection. It can be joined to <structname>pg_stat_activity</structname>
+   the associated connection. It can be joined to <structname>pg_stat_activity</structname>
    or <structname>pg_stat_replication</structname> on the
    <structfield>pid</structfield> column to get more details about the
    connection.
@@ -2330,8 +2330,8 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
   </table>
 
   <para>
-   The <structname>pg_stat_gssapi</structname> view will contain one row per
-   backend, showing information about GSSAPI usage on this connection. It can
+   The <structname>pg_stat_gssapi</structname> view contains one row per
+   backend, showing information about GSSAPI usage on the associated connection. It can
    be joined to <structname>pg_stat_activity</structname> or
    <structname>pg_stat_replication</structname> on the
    <structfield>pid</structfield> column to get more details about the
@@ -2632,7 +2632,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
   </table>
 
   <para>
-   The <structname>pg_stat_database</structname> view will contain one row
+   The <structname>pg_stat_database</structname> view contains one row
    for each database in the cluster, plus one for shared objects, showing
    database-wide statistics.
   </para>
@@ -2694,7 +2694,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
   </table>
 
   <para>
-   The <structname>pg_stat_database_conflicts</structname> view will contain
+   The <structname>pg_stat_database_conflicts</structname> view contains
    one row per database, showing database-wide statistics about
    query cancels occurring due to conflicts with recovery on standby servers.
    This view will only contain information on standby servers, since
@@ -2835,7 +2835,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
   </table>
 
   <para>
-   The <structname>pg_stat_all_tables</structname> view will contain
+   The <structname>pg_stat_all_tables</structname> view contains
    one row for each table in the current database (including TOAST
    tables), showing statistics about accesses to that specific table. The
    <structname>pg_stat_user_tables</structname> and
@@ -2902,7 +2902,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
   </table>
 
   <para>
-   The <structname>pg_stat_all_indexes</structname> view will contain
+   The <structname>pg_stat_all_indexes</structname> view contains
    one row for each index in the current database,
    showing statistics about accesses to that specific index. The
    <structname>pg_stat_user_indexes</structname> and
@@ -3012,7 +3012,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
   </table>
 
   <para>
-   The <structname>pg_statio_all_tables</structname> view will contain
+   The <structname>pg_statio_all_tables</structname> view contains
    one row for each table in the current database (including TOAST
    tables), showing statistics about I/O on that specific table. The
    <structname>pg_statio_user_tables</structname> and
@@ -3073,7 +3073,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
   </table>
 
   <para>
-   The <structname>pg_statio_all_indexes</structname> view will contain
+   The <structname>pg_statio_all_indexes</structname> view contains
    one row for each index in the current database,
    showing statistics about I/O on that specific index. The
    <structname>pg_statio_user_indexes</structname> and
@@ -3124,7 +3124,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
   </table>
 
   <para>
-   The <structname>pg_statio_all_sequences</structname> view will contain
+   The <structname>pg_statio_all_sequences</structname> view contains
    one row for each sequence in the current database,
    showing statistics about I/O on that specific sequence.
   </para>
@@ -3178,7 +3178,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
   </table>
 
   <para>
-   The <structname>pg_stat_user_functions</structname> view will contain
+   The <structname>pg_stat_user_functions</structname> view contains
    one row for each tracked function, showing statistics about executions of
    that function.  The <xref linkend="guc-track-functions"/> parameter
    controls exactly which functions are tracked.
@@ -3490,7 +3490,7 @@ SELECT pg_stat_get_backend_pid(s.backendid) AS pid,
 
   <para>
    Whenever <command>CREATE INDEX</command> or <command>REINDEX</command> is running, the
-   <structname>pg_stat_progress_create_index</structname> view will contain
+   <structname>pg_stat_progress_create_index</structname> view contains
    one row for each backend that is currently creating indexes.  The tables
    below describe the information that will be reported and provide information
    about how to interpret it.
@@ -3653,7 +3653,7 @@ SELECT pg_stat_get_backend_pid(s.backendid) AS pid,
        The index is being built by code specific to the access method, and if
        it supports progress reporting, this indicates the method's subphase.
        <structname>blocks_total</structname> and <structname>blocks_done</structname>
-       will contain progress data, as may
+       contain progress data, as may
        <structname>tuples_total</structname> and <structname>tuples_done</structname>.
       </entry>
      </row>
@@ -3738,7 +3738,7 @@ SELECT pg_stat_get_backend_pid(s.backendid) AS pid,
   <title>VACUUM Progress Reporting</title>
 
   <para>
-   The <structname>pg_stat_progress_vacuum</structname> view will contain one
+   The <structname>pg_stat_progress_vacuum</structname> view contains one
    row for each backend that is running <command>VACUUM</command>, including
    autovacuum worker processes.
    The tables below describe the information
@@ -3930,8 +3930,8 @@ SELECT pg_stat_get_backend_pid(s.backendid) AS pid,
   <title>CLUSTER Progress Reporting</title>
 
   <para>
-   The <structname>pg_stat_progress_cluster</structname> view will contain a
-   row for each backend that is running either
+   The <structname>pg_stat_progress_cluster</structname> view contains a
+   row for each backend running
    <command>CLUSTER</command> or <command>VACUUM FULL</command>.
    The tables below describe the information that will be reported and
    provide information about how to interpret it.
