@@ -2352,12 +2352,14 @@ PrepareTransaction(void)
 	/* NOTIFY will be handled below */
 
 	/*
-	 * Don't allow PREPARE TRANSACTION if we've accessed a temporary table in
+	 * Don't allow PREPARE TRANSACTION if we've modified a temporary table in
 	 * this transaction.  Having the prepared xact hold locks on another
 	 * backend's temp table seems a bad idea --- for instance it would prevent
 	 * the backend from exiting.  There are other problems too, such as how to
 	 * clean up the source backend's local buffers and ON COMMIT state if the
-	 * prepared xact includes a DROP of a temp table.
+	 * prepared xact includes a DROP of a temp table.  Special case of reading
+	 * from a temporary table is allowed by dropping AccessShare locks during
+	 * PREPARE.
 	 *
 	 * Other objects types, like functions, operators or extensions, share the
 	 * same restriction as they should not be created, locked or dropped as
@@ -2368,8 +2370,9 @@ PrepareTransaction(void)
 	 * might still access a temp relation.
 	 *
 	 * XXX In principle this could be relaxed to allow some useful special
-	 * cases, such as a temp table created and dropped all within the
-	 * transaction.  That seems to require much more bookkeeping though.
+	 * cases besides reading from a temp table, such as a temp table created
+	 * and dropped all within the transaction.  That seems to require much more
+	 * bookkeeping though.
 	 */
 	if ((MyXactFlags & XACT_FLAGS_ACCESSEDTEMPNAMESPACE))
 		ereport(ERROR,

@@ -23,6 +23,7 @@
 #include "access/relation.h"
 #include "access/xact.h"
 #include "catalog/namespace.h"
+#include "commands/tablecmds.h"
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "storage/lmgr.h"
@@ -69,9 +70,18 @@ relation_open(Oid relationId, LOCKMODE lockmode)
 		   IsBootstrapProcessingMode() ||
 		   CheckRelationLockedByMe(r, AccessShareLock, true));
 
-	/* Make note that we've accessed a temporary relation */
-	if (RelationUsesLocalBuffers(r))
+	/*
+	 * Make note that we've accessed a temporary relation with at least
+	 * RowShareLock lockmode. See also comments above MyXactFlags check
+	 * in PrepareTransaction().
+	 */
+	if (RelationUsesLocalBuffers(r) &&
+		(lockmode > AccessShareLock ||
+		 (lockmode == NoLock &&
+		  CheckRelationLockedByMe(r, RowShareLock, true))))
+	{
 		MyXactFlags |= XACT_FLAGS_ACCESSEDTEMPNAMESPACE;
+	}
 
 	pgstat_initstats(r);
 
@@ -119,9 +129,18 @@ try_relation_open(Oid relationId, LOCKMODE lockmode)
 	Assert(lockmode != NoLock ||
 		   CheckRelationLockedByMe(r, AccessShareLock, true));
 
-	/* Make note that we've accessed a temporary relation */
-	if (RelationUsesLocalBuffers(r))
+	/*
+	 * Make note that we've accessed a temporary relation with at least
+	 * RowShareLock lockmode. See also comments above MyXactFlags check
+	 * in PrepareTransaction().
+	 */
+	if (RelationUsesLocalBuffers(r) &&
+		(lockmode > AccessShareLock ||
+		 (lockmode == NoLock &&
+		  CheckRelationLockedByMe(r, RowShareLock, true))))
+	{
 		MyXactFlags |= XACT_FLAGS_ACCESSEDTEMPNAMESPACE;
+	}
 
 	pgstat_initstats(r);
 

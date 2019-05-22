@@ -235,6 +235,42 @@ SELECT * FROM pxtest3;
 -----
 (0 rows)
 
+-- Read-only access to temporary table is allowed from a prepared
+-- transaction
+create temp table twophase_tab_preparable (a int);
+begin;
+select a from twophase_tab_preparable;
+ a 
+---
+(0 rows)
+
+prepare transaction 'twophase_tab_preparable';
+ERROR:  prepared transactions are disabled
+HINT:  Set max_prepared_transactions to a nonzero value.
+-- prepared transactions should not hold AccessShare locks
+create table twophase_tab_testdrop1 (a int);
+create table twophase_tab_testdrop2 (a int);
+begin;
+select a from twophase_tab_testdrop1;
+ a 
+---
+(0 rows)
+
+select a from twophase_tab_testdrop2;
+ a 
+---
+(0 rows)
+
+prepare transaction 'twophase_tab_testdrop';
+ERROR:  prepared transactions are disabled
+HINT:  Set max_prepared_transactions to a nonzero value.
+drop table twophase_tab_testdrop1;
+\c -
+drop table twophase_tab_testdrop2;
+commit prepared 'twophase_tab_preparable';
+ERROR:  prepared transaction with identifier "twophase_tab_preparable" does not exist
+commit prepared 'twophase_tab_testdrop';
+ERROR:  prepared transaction with identifier "twophase_tab_testdrop" does not exist
 -- There should be no prepared transactions
 SELECT gid FROM pg_prepared_xacts;
  gid 

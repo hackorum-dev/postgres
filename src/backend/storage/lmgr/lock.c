@@ -3213,6 +3213,13 @@ AtPrepare_Locks(void)
 		}
 
 		/*
+		 * Do not save any AccessShare locks as they will not be transfered to
+		 * a dummy PGPRPROC by PostPrepare_Locks().
+		 */
+		if (locallock->tag.mode == AccessShareLock)
+			continue;
+
+		/*
 		 * Arrange to not release any strong lock count held by this lock
 		 * entry.  We must retain the count until the prepared transaction is
 		 * committed or rolled back.
@@ -3381,6 +3388,33 @@ PostPrepare_Locks(TransactionId xid)
 			/* Else we should be releasing all locks */
 			if (proclock->releaseMask != proclock->holdMask)
 				elog(PANIC, "we seem to have dropped a bit somewhere");
+
+			/*
+			 * To be able to safely read from temp tables prepared transaction
+			 * should not hold AccessShare locks. So here we are releasing any
+			 * AccessShare locks without transfering them further to a dummy
+			 * PGPROC.  See also comments above MyXactFlags check in
+			 * PrepareTransaction().
+			 */
+			if (proclock->holdMask & LOCKBIT_ON(AccessShareLock))
+			{
+				LockMethod	lockMethodTable;
+				bool wakeupNeeded;
+
+				lockMethodTable = LockMethods[lock->tag.locktag_lockmethodid];
+				wakeupNeeded = UnGrantLock(lock, AccessShareLock,
+										   proclock, lockMethodTable);
+
+				CleanUpLock(lock, proclock, lockMethodTable,
+							LockTagHashCode(&lock->tag), wakeupNeeded);
+
+				/*
+				 * If we were holding lock only in AccessShare mode than
+				 * there is nothing to pass to a new PGPROC.
+				 */
+				if (proclock->holdMask == 0)
+					continue;
+			}
 
 			/*
 			 * We cannot simply modify proclock->tag.myProc to reassign

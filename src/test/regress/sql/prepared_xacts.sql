@@ -149,6 +149,26 @@ SELECT gid FROM pg_prepared_xacts;
 COMMIT PREPARED 'regress-two';
 SELECT * FROM pxtest3;
 
+-- Read-only access to temporary table is allowed from a prepared
+-- transaction
+create temp table twophase_tab_preparable (a int);
+begin;
+select a from twophase_tab_preparable;
+prepare transaction 'twophase_tab_preparable';
+
+-- prepared transactions should not hold AccessShare locks
+create table twophase_tab_testdrop1 (a int);
+create table twophase_tab_testdrop2 (a int);
+begin;
+select a from twophase_tab_testdrop1;
+select a from twophase_tab_testdrop2;
+prepare transaction 'twophase_tab_testdrop';
+drop table twophase_tab_testdrop1;
+\c -
+drop table twophase_tab_testdrop2;
+commit prepared 'twophase_tab_preparable';
+commit prepared 'twophase_tab_testdrop';
+
 -- There should be no prepared transactions
 SELECT gid FROM pg_prepared_xacts;
 

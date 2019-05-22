@@ -257,11 +257,8 @@ begin;
 create sequence pg_temp.twophase_seq;
 prepare transaction 'twophase_sequence';
 
--- Temporary tables cannot be used with two-phase commit.
+-- Temporary tables cannot be modified by prepared transaction.
 create temp table twophase_tab (a int);
-begin;
-select a from twophase_tab;
-prepare transaction 'twophase_tab';
 begin;
 insert into twophase_tab values (1);
 prepare transaction 'twophase_tab';
