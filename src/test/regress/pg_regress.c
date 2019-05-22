@@ -1087,6 +1087,7 @@ psql_command(const char *database, const char *query,...)
 	char		query_formatted[1024];
 	char		query_escaped[2048];
 	char		psql_cmd[MAXPGPATH + 2048];
+	const char *quiet;
 	va_list		args;
 	char	   *s;
 	char	   *d;
@@ -1106,11 +1107,23 @@ psql_command(const char *database, const char *query,...)
 	}
 	*d = '\0';
 
+	/*
+	 * If the query uses IF EXISTS or IF NOT EXISTS, suppress useless
+	 * "skipping" notices.  We intentionally consider only the constant
+	 * "query" string, not what was interpolated into it.
+	 */
+	if (strstr(query, "IF EXISTS") != NULL ||
+		strstr(query, "IF NOT EXISTS") != NULL)
+		quiet = " -c \"SET client_min_messages = warning\"";
+	else
+		quiet = "";
+
 	/* And now we can build and execute the shell command */
 	snprintf(psql_cmd, sizeof(psql_cmd),
-			 "\"%s%spsql\" -X -c \"%s\" \"%s\"",
+			 "\"%s%spsql\" -X%s -c \"%s\" \"%s\"",
 			 bindir ? bindir : "",
 			 bindir ? "/" : "",
+			 quiet,
 			 query_escaped,
 			 database);
 
