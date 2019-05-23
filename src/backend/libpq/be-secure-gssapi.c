@@ -5,10 +5,6 @@
  *
  * Portions Copyright (c) 2018-2018, PostgreSQL Global Development Group
  *
- *
- * IDENTIFICATION
- *  src/backend/libpq/be-secure-gssapi.c
- *
  *-------------------------------------------------------------------------
  */
 

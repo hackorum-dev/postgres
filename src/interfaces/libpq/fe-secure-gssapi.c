@@ -5,9 +5,6 @@
  *
  * Portions Copyright (c) 2016-2018, PostgreSQL Global Development Group
  *
- * IDENTIFICATION
- *  src/interfaces/libpq/fe-secure-gssapi.c
- *
  *-------------------------------------------------------------------------
  */
 
