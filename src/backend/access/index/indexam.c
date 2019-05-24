@@ -480,8 +480,7 @@ index_beginscan_parallel(Relation heaprel, Relation indexrel, int nkeys,
 	IndexScanDesc scan;
 
 	Assert(RelationGetRelid(heaprel) == pscan->ps_relid);
-	snapshot = RestoreSnapshot(pscan->ps_snapshot_data);
-	RegisterSnapshot(snapshot);
+	snapshot = RegisterSnapshot(RestoreSnapshot(pscan->ps_snapshot_data));
 	scan = index_beginscan_internal(indexrel, nkeys, norderbys, snapshot,
 									pscan, true);
 

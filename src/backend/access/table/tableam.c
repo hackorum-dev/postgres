@@ -107,8 +107,7 @@ table_scan_update_snapshot(TableScanDesc scan, Snapshot snapshot)
 {
 	Assert(IsMVCCSnapshot(snapshot));
 
-	RegisterSnapshot(snapshot);
-	scan->rs_snapshot = snapshot;
+	scan->rs_snapshot = RegisterSnapshot(snapshot);
 	scan->rs_flags |= SO_TEMP_SNAPSHOT;
 }
 
@@ -167,7 +166,7 @@ table_beginscan_parallel(Relation relation, ParallelTableScanDesc parallel_scan)
 		/* Snapshot was serialized -- restore it */
 		snapshot = RestoreSnapshot((char *) parallel_scan +
 								   parallel_scan->phs_snapshot_off);
-		RegisterSnapshot(snapshot);
+		snapshot = RegisterSnapshot(snapshot);
 		flags |= SO_TEMP_SNAPSHOT;
 	}
 	else
