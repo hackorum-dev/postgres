@@ -1571,7 +1571,7 @@ substitute_grouped_columns_mutator(Node *node,
 		if (context->sublevels_up == 0)
 			ereport(ERROR,
 					(errcode(ERRCODE_GROUPING_ERROR),
-					 errmsg("column \"%s.%s\" must appear in the GROUP BY clause or be used in an aggregate function",
+					 errmsg("column \"%s.%s\" must appear in the GROUP BY clause or be used in an aggregate or window function",
 							rte->eref->aliasname, attname),
 					 context->in_agg_direct_args ?
 					 errdetail("Direct arguments of an ordered-set aggregate must use only grouped columns.") : 0,
