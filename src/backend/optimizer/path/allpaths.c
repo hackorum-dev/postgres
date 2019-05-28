@@ -513,6 +513,25 @@ set_rel_size(PlannerInfo *root, RelOptInfo *rel,
 }
 
 /*
+ * call_pathlist_hook
+ *     Call the hook that allows extensions to editorialize pathlists on a base rel.
+ *
+ */
+void
+call_pathlist_hook(PlannerInfo *root, RelOptInfo *rel,
+				 Index rti, RangeTblEntry *rte)
+{
+	/*
+	 * Allow a plugin to editorialize on the set of Paths for this base
+	 * relation.  It could add new paths (such as CustomPaths) by calling
+	 * add_path(), or add_partial_path() if parallel aware.  It could also
+	 * delete or modify paths added by the core code.
+	 */
+	if (set_rel_pathlist_hook)
+		(*set_rel_pathlist_hook) (root, rel, rti, rte);
+}
+
+/*
  * set_rel_pathlist
  *	  Build access paths for a base relation
  */
@@ -580,14 +599,7 @@ set_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 		}
 	}
 
-	/*
-	 * Allow a plugin to editorialize on the set of Paths for this base
-	 * relation.  It could add new paths (such as CustomPaths) by calling
-	 * add_path(), or add_partial_path() if parallel aware.  It could also
-	 * delete or modify paths added by the core code.
-	 */
-	if (set_rel_pathlist_hook)
-		(*set_rel_pathlist_hook) (root, rel, rti, rte);
+	call_pathlist_hook(root, rel, rti, rte);
 
 	/*
 	 * If this is a baserel, we should normally consider gathering any partial
