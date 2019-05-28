@@ -286,4 +286,7 @@ extern PathKey *make_canonical_pathkey(PlannerInfo *root,
 extern void add_paths_to_append_rel(PlannerInfo *root, RelOptInfo *rel,
 									List *live_childrels);
 
+extern void call_pathlist_hook(PlannerInfo *root, RelOptInfo *rel,
+				 Index rti, RangeTblEntry *rte);
+
 #endif							/* PATHS_H */

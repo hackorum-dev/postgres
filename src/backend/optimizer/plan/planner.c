@@ -8344,6 +8344,8 @@ apply_scanjoin_target_to_paths(PlannerInfo *root,
 
 		/* Build new paths for this relation by appending child paths. */
 		add_paths_to_append_rel(root, rel, live_children);
+
+		call_pathlist_hook(root, rel, rel->relid, root->simple_rte_array[rel->relid]);
 	}
 
 	/*
