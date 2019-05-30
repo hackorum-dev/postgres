@@ -422,6 +422,12 @@ print_expr(const Node *expr, const List *rtable)
 		}
 		printf(")");
 	}
+	else if (IsA(expr, RelabelType))
+	{
+		const RelabelType *r = (const RelabelType*) expr;
+
+		print_expr((Node *) r->arg, rtable);
+	}
 	else
 		printf("unknown expr");
 }
