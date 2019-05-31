@@ -3516,6 +3516,10 @@ fi
 if test -z "$GENHTML"; then
   as_fn_error $? "genhtml not found" "$LINENO" 5
 fi
+
+$as_echo "#define USE_GCOV_COVERAGE 1" >>confdefs.h
+
+
       ;;
     no)
       :

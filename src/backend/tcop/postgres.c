@@ -2729,6 +2729,14 @@ quickdie(SIGNAL_ARGS)
 			 errhint("In a moment you should be able to reconnect to the"
 					 " database and repeat your command.")));
 
+#ifdef USE_GCOV_COVERAGE
+	/*
+	 * We still want to flush coverage data down to disk, which gcov's atexit
+	 * callback would do, but we're preventing that below.
+	 */
+	__gcov_flush();
+#endif
+
 	/*
 	 * We DO NOT want to run proc_exit() or atexit() callbacks -- we're here
 	 * because shared memory may be corrupted, so we don't want to try to

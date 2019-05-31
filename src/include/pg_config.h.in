@@ -916,6 +916,9 @@
    (--enable-float8-byval) */
 #undef USE_FLOAT8_BYVAL
 
+/* Define to use gcov coverage support stuff */
+#undef USE_GCOV_COVERAGE
+
 /* Define to build with ICU support. (--with-icu) */
 #undef USE_ICU
 

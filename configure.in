@@ -222,7 +222,9 @@ fi
 PGAC_PATH_PROGS(GENHTML, genhtml)
 if test -z "$GENHTML"; then
   AC_MSG_ERROR([genhtml not found])
-fi])
+fi
+AC_DEFINE([USE_GCOV_COVERAGE], 1, [Define to use gcov coverage support stuff])
+])
 AC_SUBST(enable_coverage)
 
 #
