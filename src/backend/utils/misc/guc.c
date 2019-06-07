@@ -3446,7 +3446,7 @@ static struct config_real ConfigureNamesReal[] =
 
 	{
 		{"log_transaction_sample_rate", PGC_SUSET, LOGGING_WHEN,
-			gettext_noop("Set the fraction of transactions to log for new transactions."),
+			gettext_noop("Sets the fraction of transactions to log for new transactions."),
 			gettext_noop("Logs all statements from a fraction of transactions. "
 						 "Use a value between 0.0 (never log) and 1.0 (log all "
 						 "statements for all transactions).")
@@ -4422,7 +4422,7 @@ static struct config_enum ConfigureNamesEnum[] =
 
 	{
 		{"wal_level", PGC_POSTMASTER, WAL_SETTINGS,
-			gettext_noop("Set the level of information written to the WAL."),
+			gettext_noop("Sets the level of information written to the WAL."),
 			NULL
 		},
 		&wal_level,
