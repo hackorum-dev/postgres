@@ -5370,6 +5370,7 @@ SelectConfigFiles(const char *userDoption, const char *progname)
 					 strerror(errno));
 		if (errno == ENOENT)
 			write_stderr("Run initdb or pg_basebackup to initialize a PostgreSQL data directory.\n");
+		free(configdir);
 		return false;
 	}
 
