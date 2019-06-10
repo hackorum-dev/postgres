@@ -139,6 +139,7 @@ typedef struct Plan
 	int			plan_node_id;	/* unique across entire final plan tree */
 	List	   *targetlist;		/* target list to be computed at this node */
 	List	   *qual;			/* implicitly-ANDed qual conditions */
+	List	   *path_clauses;	/* original quals copied from best path */
 	struct Plan *lefttree;		/* input plan tree(s) */
 	struct Plan *righttree;
 	List	   *initPlan;		/* Init Plan nodes (un-correlated expr

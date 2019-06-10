@@ -70,6 +70,9 @@
 #define CP_LABEL_TLIST		0x0004	/* tlist must contain sortgrouprefs */
 #define CP_IGNORE_TLIST		0x0008	/* caller will replace tlist */
 
+/* Hook for plugins to get control in creating plan from path */
+copy_generic_path_info_hook_type copy_generic_path_info_hook = NULL;
+ 
 
 static Plan *create_plan_recurse(PlannerInfo *root, Path *best_path,
 								 int flags);
@@ -5018,6 +5021,9 @@ copy_generic_path_info(Plan *dest, Path *src)
 	dest->plan_width = src->pathtarget->width;
 	dest->parallel_aware = src->parallel_aware;
 	dest->parallel_safe = src->parallel_safe;
+
+	if (copy_generic_path_info_hook)
+		(*copy_generic_path_info_hook) (dest, src);
 }
 
 /*

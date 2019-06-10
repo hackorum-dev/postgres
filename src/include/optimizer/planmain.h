@@ -24,6 +24,11 @@ extern double cursor_tuple_fraction;
 /* query_planner callback to compute query_pathkeys */
 typedef void (*query_pathkeys_callback) (PlannerInfo *root, void *extra);
 
+/* hook for plugins to get control in creating plan from path */
+typedef void (*copy_generic_path_info_hook_type)(Plan *dest, Path *src);
+
+extern PGDLLIMPORT copy_generic_path_info_hook_type copy_generic_path_info_hook;
+
 /*
  * prototypes for plan/planmain.c
  */

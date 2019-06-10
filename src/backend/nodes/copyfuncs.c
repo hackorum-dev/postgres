@@ -123,6 +123,7 @@ CopyPlanFields(const Plan *from, Plan *newnode)
 	COPY_SCALAR_FIELD(plan_node_id);
 	COPY_NODE_FIELD(targetlist);
 	COPY_NODE_FIELD(qual);
+	COPY_NODE_FIELD(path_clauses);
 	COPY_NODE_FIELD(lefttree);
 	COPY_NODE_FIELD(righttree);
 	COPY_NODE_FIELD(initPlan);
