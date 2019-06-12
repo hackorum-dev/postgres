@@ -124,14 +124,7 @@ CATALOG(pg_proc,1255,ProcedureRelationId) BKI_BOOTSTRAP BKI_ROWTYPE_OID(81,Proce
 	/* access permissions */
 	aclitem		proacl[1] BKI_DEFAULT(_null_);
 #endif
-} FormData_pg_proc;
-
-/* ----------------
- *		Form_pg_proc corresponds to a pointer to a tuple with
- *		the format of pg_proc relation.
- * ----------------
- */
-typedef FormData_pg_proc *Form_pg_proc;
+};
 
 #ifdef EXPOSE_TO_CLIENT_CODE
 

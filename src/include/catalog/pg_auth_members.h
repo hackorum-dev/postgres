@@ -33,13 +33,6 @@ CATALOG(pg_auth_members,1261,AuthMemRelationId) BKI_SHARED_RELATION BKI_ROWTYPE_
 	Oid			member;			/* ID of a member of that role */
 	Oid			grantor;		/* who granted the membership */
 	bool		admin_option;	/* granted with admin option? */
-} FormData_pg_auth_members;
-
-/* ----------------
- *		Form_pg_auth_members corresponds to a pointer to a tuple with
- *		the format of pg_auth_members relation.
- * ----------------
- */
-typedef FormData_pg_auth_members *Form_pg_auth_members;
+};
 
 #endif							/* PG_AUTH_MEMBERS_H */

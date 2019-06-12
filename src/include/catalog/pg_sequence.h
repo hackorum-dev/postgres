@@ -30,13 +30,6 @@ CATALOG(pg_sequence,2224,SequenceRelationId)
 	int64		seqmin;
 	int64		seqcache;
 	bool		seqcycle;
-} FormData_pg_sequence;
-
-/* ----------------
- *		Form_pg_sequence corresponds to a pointer to a tuple with
- *		the format of pg_sequence relation.
- * ----------------
- */
-typedef FormData_pg_sequence *Form_pg_sequence;
+};
 
 #endif							/* PG_SEQUENCE_H */

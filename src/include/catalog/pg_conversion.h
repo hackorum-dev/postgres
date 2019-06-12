@@ -52,14 +52,7 @@ CATALOG(pg_conversion,2607,ConversionRelationId)
 
 	/* true if this is a default conversion */
 	bool		condefault BKI_DEFAULT(t);
-} FormData_pg_conversion;
-
-/* ----------------
- *		Form_pg_conversion corresponds to a pointer to a tuple with
- *		the format of pg_conversion relation.
- * ----------------
- */
-typedef FormData_pg_conversion *Form_pg_conversion;
+};
 
 
 extern ObjectAddress ConversionCreate(const char *conname, Oid connamespace,

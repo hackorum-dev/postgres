@@ -74,14 +74,7 @@ CATALOG(pg_operator,2617,OperatorRelationId)
 
 	/* OID of join estimator, or 0 */
 	regproc		oprjoin BKI_DEFAULT(-) BKI_LOOKUP(pg_proc);
-} FormData_pg_operator;
-
-/* ----------------
- *		Form_pg_operator corresponds to a pointer to a tuple with
- *		the format of pg_operator relation.
- * ----------------
- */
-typedef FormData_pg_operator *Form_pg_operator;
+};
 
 
 extern ObjectAddress OperatorCreate(const char *operatorName,

@@ -42,13 +42,6 @@ CATALOG(pg_rewrite,2618,RewriteRelationId)
 	pg_node_tree ev_qual BKI_FORCE_NOT_NULL;
 	pg_node_tree ev_action BKI_FORCE_NOT_NULL;
 #endif
-} FormData_pg_rewrite;
-
-/* ----------------
- *		Form_pg_rewrite corresponds to a pointer to a tuple with
- *		the format of pg_rewrite relation.
- * ----------------
- */
-typedef FormData_pg_rewrite *Form_pg_rewrite;
+};
 
 #endif							/* PG_REWRITE_H */

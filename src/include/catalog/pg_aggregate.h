@@ -99,14 +99,7 @@ CATALOG(pg_aggregate,2600,AggregateRelationId)
 	/* initial value for moving-agg state (can be NULL) */
 	text		aggminitval BKI_DEFAULT(_null_);
 #endif
-} FormData_pg_aggregate;
-
-/* ----------------
- *		Form_pg_aggregate corresponds to a pointer to a tuple with
- *		the format of pg_aggregate relation.
- * ----------------
- */
-typedef FormData_pg_aggregate *Form_pg_aggregate;
+};
 
 #ifdef EXPOSE_TO_CLIENT_CODE
 

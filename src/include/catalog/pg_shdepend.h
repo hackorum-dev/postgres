@@ -60,13 +60,6 @@ CATALOG(pg_shdepend,1214,SharedDependRelationId) BKI_SHARED_RELATION
 	 * field.  See SharedDependencyType in catalog/dependency.h.
 	 */
 	char		deptype;		/* see codes in dependency.h */
-} FormData_pg_shdepend;
-
-/* ----------------
- *		Form_pg_shdepend corresponds to a pointer to a row with
- *		the format of pg_shdepend relation.
- * ----------------
- */
-typedef FormData_pg_shdepend *Form_pg_shdepend;
+};
 
 #endif							/* PG_SHDEPEND_H */

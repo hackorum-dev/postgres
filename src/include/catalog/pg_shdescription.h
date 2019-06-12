@@ -46,13 +46,6 @@ CATALOG(pg_shdescription,2396,SharedDescriptionRelationId) BKI_SHARED_RELATION
 #ifdef CATALOG_VARLEN			/* variable-length fields start here */
 	text		description BKI_FORCE_NOT_NULL; /* description of object */
 #endif
-} FormData_pg_shdescription;
-
-/* ----------------
- *		Form_pg_shdescription corresponds to a pointer to a tuple with
- *		the format of pg_shdescription relation.
- * ----------------
- */
-typedef FormData_pg_shdescription * Form_pg_shdescription;
+};
 
 #endif							/* PG_SHDESCRIPTION_H */

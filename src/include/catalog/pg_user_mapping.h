@@ -36,13 +36,6 @@ CATALOG(pg_user_mapping,1418,UserMappingRelationId)
 #ifdef CATALOG_VARLEN			/* variable-length fields start here */
 	text		umoptions[1];	/* user mapping options */
 #endif
-} FormData_pg_user_mapping;
-
-/* ----------------
- *		Form_pg_user_mapping corresponds to a pointer to a tuple with
- *		the format of pg_user_mapping relation.
- * ----------------
- */
-typedef FormData_pg_user_mapping *Form_pg_user_mapping;
+};
 
 #endif							/* PG_USER_MAPPING_H */

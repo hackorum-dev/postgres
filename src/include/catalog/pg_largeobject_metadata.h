@@ -36,13 +36,6 @@ CATALOG(pg_largeobject_metadata,2995,LargeObjectMetadataRelationId)
 #ifdef CATALOG_VARLEN			/* variable-length fields start here */
 	aclitem		lomacl[1];		/* access permissions */
 #endif
-} FormData_pg_largeobject_metadata;
-
-/* ----------------
- *		Form_pg_largeobject_metadata corresponds to a pointer to a tuple
- *		with the format of pg_largeobject_metadata relation.
- * ----------------
- */
-typedef FormData_pg_largeobject_metadata *Form_pg_largeobject_metadata;
+};
 
 #endif							/* PG_LARGEOBJECT_METADATA_H */

@@ -34,8 +34,6 @@ CATALOG(pg_shseclabel,3592,SharedSecLabelRelationId) BKI_SHARED_RELATION BKI_ROW
 	text		provider BKI_FORCE_NOT_NULL;	/* name of label provider */
 	text		label BKI_FORCE_NOT_NULL;	/* security label of the object */
 #endif
-} FormData_pg_shseclabel;
-
-typedef FormData_pg_shseclabel * Form_pg_shseclabel;
+};
 
 #endif							/* PG_SHSECLABEL_H */

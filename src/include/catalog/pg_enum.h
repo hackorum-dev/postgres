@@ -34,14 +34,7 @@ CATALOG(pg_enum,3501,EnumRelationId)
 	Oid			enumtypid;		/* OID of owning enum type */
 	float4		enumsortorder;	/* sort position of this enum value */
 	NameData	enumlabel;		/* text representation of enum value */
-} FormData_pg_enum;
-
-/* ----------------
- *		Form_pg_enum corresponds to a pointer to a tuple with
- *		the format of pg_enum relation.
- * ----------------
- */
-typedef FormData_pg_enum *Form_pg_enum;
+};
 
 /*
  * prototypes for functions in pg_enum.c

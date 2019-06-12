@@ -61,13 +61,6 @@ CATALOG(pg_depend,2608,DependRelationId)
 	 * field.  See DependencyType in catalog/dependency.h.
 	 */
 	char		deptype;		/* see codes in dependency.h */
-} FormData_pg_depend;
-
-/* ----------------
- *		Form_pg_depend corresponds to a pointer to a row with
- *		the format of pg_depend relation.
- * ----------------
- */
-typedef FormData_pg_depend *Form_pg_depend;
+};
 
 #endif							/* PG_DEPEND_H */

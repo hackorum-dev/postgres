@@ -71,13 +71,6 @@ CATALOG(pg_database,1262,DatabaseRelationId) BKI_SHARED_RELATION BKI_ROWTYPE_OID
 	/* access permissions */
 	aclitem		datacl[1];
 #endif
-} FormData_pg_database;
-
-/* ----------------
- *		Form_pg_database corresponds to a pointer to a tuple with
- *		the format of pg_database relation.
- * ----------------
- */
-typedef FormData_pg_database *Form_pg_database;
+};
 
 #endif							/* PG_DATABASE_H */

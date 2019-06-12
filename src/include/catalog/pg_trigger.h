@@ -61,14 +61,7 @@ CATALOG(pg_trigger,2620,TriggerRelationId)
 	NameData	tgoldtable;		/* old transition table, or NULL if none */
 	NameData	tgnewtable;		/* new transition table, or NULL if none */
 #endif
-} FormData_pg_trigger;
-
-/* ----------------
- *		Form_pg_trigger corresponds to a pointer to a tuple with
- *		the format of pg_trigger relation.
- * ----------------
- */
-typedef FormData_pg_trigger *Form_pg_trigger;
+};
 
 #ifdef EXPOSE_TO_CLIENT_CODE
 

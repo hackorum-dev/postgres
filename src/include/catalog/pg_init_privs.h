@@ -53,14 +53,7 @@ CATALOG(pg_init_privs,3394,InitPrivsRelationId)
 #ifdef CATALOG_VARLEN			/* variable-length fields start here */
 	aclitem		initprivs[1] BKI_FORCE_NOT_NULL;	/* initial privs on object */
 #endif
-} FormData_pg_init_privs;
-
-/* ----------------
- *		Form_pg_init_privs corresponds to a pointer to a tuple with
- *		the format of pg_init_privs relation.
- * ----------------
- */
-typedef FormData_pg_init_privs * Form_pg_init_privs;
+};
 
 /*
  * It is important to know if the initial privileges are from initdb or from an

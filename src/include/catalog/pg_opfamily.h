@@ -41,14 +41,7 @@ CATALOG(pg_opfamily,2753,OperatorFamilyRelationId)
 
 	/* opfamily owner */
 	Oid			opfowner BKI_DEFAULT(PGUID);
-} FormData_pg_opfamily;
-
-/* ----------------
- *		Form_pg_opfamily corresponds to a pointer to a tuple with
- *		the format of pg_opfamily relation.
- * ----------------
- */
-typedef FormData_pg_opfamily *Form_pg_opfamily;
+};
 
 #ifdef EXPOSE_TO_CLIENT_CODE
 

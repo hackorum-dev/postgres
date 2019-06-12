@@ -40,13 +40,6 @@ CATALOG(pg_extension,3079,ExtensionRelationId)
 	Oid			extconfig[1];	/* dumpable configuration tables */
 	text		extcondition[1];	/* WHERE clauses for config tables */
 #endif
-} FormData_pg_extension;
-
-/* ----------------
- *		Form_pg_extension corresponds to a pointer to a tuple with
- *		the format of pg_extension relation.
- * ----------------
- */
-typedef FormData_pg_extension *Form_pg_extension;
+};
 
 #endif							/* PG_EXTENSION_H */

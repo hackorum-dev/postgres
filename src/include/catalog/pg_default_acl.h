@@ -38,14 +38,7 @@ CATALOG(pg_default_acl,826,DefaultAclRelationId)
 	aclitem		defaclacl[1] BKI_FORCE_NOT_NULL;	/* permissions to add at
 													 * CREATE time */
 #endif
-} FormData_pg_default_acl;
-
-/* ----------------
- *		Form_pg_default_acl corresponds to a pointer to a tuple with
- *		the format of pg_default_acl relation.
- * ----------------
- */
-typedef FormData_pg_default_acl *Form_pg_default_acl;
+};
 
 #ifdef EXPOSE_TO_CLIENT_CODE
 

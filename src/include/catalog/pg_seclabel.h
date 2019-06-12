@@ -35,6 +35,6 @@ CATALOG(pg_seclabel,3596,SecLabelRelationId)
 	text		provider BKI_FORCE_NOT_NULL;	/* name of label provider */
 	text		label BKI_FORCE_NOT_NULL;	/* security label of the object */
 #endif
-} FormData_pg_seclabel;
+};
 
 #endif							/* PG_SECLABEL_H */

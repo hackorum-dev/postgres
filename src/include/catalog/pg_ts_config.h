@@ -43,8 +43,6 @@ CATALOG(pg_ts_config,3602,TSConfigRelationId)
 
 	/* OID of parser */
 	Oid			cfgparser BKI_LOOKUP(pg_ts_parser);
-} FormData_pg_ts_config;
-
-typedef FormData_pg_ts_config *Form_pg_ts_config;
+};
 
 #endif							/* PG_TS_CONFIG_H */

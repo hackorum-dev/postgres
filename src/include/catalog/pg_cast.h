@@ -46,14 +46,7 @@ CATALOG(pg_cast,2605,CastRelationId)
 
 	/* cast method */
 	char		castmethod;
-} FormData_pg_cast;
-
-/* ----------------
- *		Form_pg_cast corresponds to a pointer to a tuple with
- *		the format of pg_cast relation.
- * ----------------
- */
-typedef FormData_pg_cast *Form_pg_cast;
+};
 
 #ifdef EXPOSE_TO_CLIENT_CODE
 

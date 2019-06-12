@@ -20,7 +20,7 @@
 #define GENBKI_H
 
 /* Introduces a catalog's structure definition */
-#define CATALOG(name,oid,oidmacro)	typedef struct CppConcat(FormData_,name)
+#define CATALOG(name,oid,oidmacro)	typedef struct CppConcat(FormData_,name) CppConcat(FormData_,name); typedef CppConcat(FormData_,name) *CppConcat(Form_,name); struct CppConcat(FormData_,name)
 
 /* Options that may appear after CATALOG (on the same line) */
 #define BKI_BOOTSTRAP

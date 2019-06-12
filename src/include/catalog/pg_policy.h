@@ -40,13 +40,6 @@ CATALOG(pg_policy,3256,PolicyRelationId)
 	pg_node_tree polqual;		/* Policy quals. */
 	pg_node_tree polwithcheck;	/* WITH CHECK quals. */
 #endif
-} FormData_pg_policy;
-
-/* ----------------
- *		Form_pg_policy corresponds to a pointer to a row with
- *		the format of pg_policy relation.
- * ----------------
- */
-typedef FormData_pg_policy *Form_pg_policy;
+};
 
 #endif							/* PG_POLICY_H */

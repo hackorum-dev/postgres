@@ -41,14 +41,7 @@ CATALOG(pg_collation,3456,CollationRelationId)
 	text		collversion;	/* provider-dependent version of collation
 								 * data */
 #endif
-} FormData_pg_collation;
-
-/* ----------------
- *		Form_pg_collation corresponds to a pointer to a row with
- *		the format of pg_collation relation.
- * ----------------
- */
-typedef FormData_pg_collation *Form_pg_collation;
+};
 
 #ifdef EXPOSE_TO_CLIENT_CODE
 

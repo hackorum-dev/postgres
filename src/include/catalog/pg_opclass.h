@@ -73,13 +73,6 @@ CATALOG(pg_opclass,2616,OperatorClassRelationId)
 
 	/* type of data in index, or InvalidOid */
 	Oid			opckeytype BKI_DEFAULT(0) BKI_LOOKUP(pg_type);
-} FormData_pg_opclass;
-
-/* ----------------
- *		Form_pg_opclass corresponds to a pointer to a tuple with
- *		the format of pg_opclass relation.
- * ----------------
- */
-typedef FormData_pg_opclass *Form_pg_opclass;
+};
 
 #endif							/* PG_OPCLASS_H */

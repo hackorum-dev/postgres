@@ -33,13 +33,6 @@ CATALOG(pg_foreign_table,3118,ForeignTableRelationId)
 #ifdef CATALOG_VARLEN			/* variable-length fields start here */
 	text		ftoptions[1];	/* FDW-specific options */
 #endif
-} FormData_pg_foreign_table;
-
-/* ----------------
- *		Form_pg_foreign_table corresponds to a pointer to a tuple with
- *		the format of pg_foreign_table relation.
- * ----------------
- */
-typedef FormData_pg_foreign_table *Form_pg_foreign_table;
+};
 
 #endif							/* PG_FOREIGN_TABLE_H */

@@ -38,13 +38,6 @@ CATALOG(pg_foreign_server,1417,ForeignServerRelationId)
 	aclitem		srvacl[1];		/* access permissions */
 	text		srvoptions[1];	/* FDW-specific options */
 #endif
-} FormData_pg_foreign_server;
-
-/* ----------------
- *		Form_pg_foreign_server corresponds to a pointer to a tuple with
- *		the format of pg_foreign_server relation.
- * ----------------
- */
-typedef FormData_pg_foreign_server *Form_pg_foreign_server;
+};
 
 #endif							/* PG_FOREIGN_SERVER_H */

@@ -145,14 +145,7 @@ CATALOG(pg_constraint,2606,ConstraintRelationId)
 	 */
 	pg_node_tree conbin;
 #endif
-} FormData_pg_constraint;
-
-/* ----------------
- *		Form_pg_constraint corresponds to a pointer to a tuple with
- *		the format of pg_constraint relation.
- * ----------------
- */
-typedef FormData_pg_constraint *Form_pg_constraint;
+};
 
 #ifdef EXPOSE_TO_CLIENT_CODE
 

@@ -36,9 +36,7 @@ CATALOG(pg_subscription_rel,6102,SubscriptionRelRelationId)
 	char		srsubstate;		/* state of the relation in subscription */
 	XLogRecPtr	srsublsn;		/* remote lsn of the state change used for
 								 * synchronization coordination */
-} FormData_pg_subscription_rel;
-
-typedef FormData_pg_subscription_rel *Form_pg_subscription_rel;
+};
 
 #ifdef EXPOSE_TO_CLIENT_CODE
 

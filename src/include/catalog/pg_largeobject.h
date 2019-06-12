@@ -34,14 +34,7 @@ CATALOG(pg_largeobject,2613,LargeObjectRelationId)
 	/* data has variable length, but we allow direct access; see inv_api.c */
 	bytea		data BKI_FORCE_NOT_NULL;	/* Data for page (may be
 											 * zero-length) */
-} FormData_pg_largeobject;
-
-/* ----------------
- *		Form_pg_largeobject corresponds to a pointer to a tuple with
- *		the format of pg_largeobject relation.
- * ----------------
- */
-typedef FormData_pg_largeobject *Form_pg_largeobject;
+};
 
 extern Oid	LargeObjectCreate(Oid loid);
 extern void LargeObjectDrop(Oid loid);

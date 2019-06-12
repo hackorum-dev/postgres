@@ -55,13 +55,6 @@ CATALOG(pg_language,2612,LanguageRelationId)
 	/* Access privileges */
 	aclitem		lanacl[1] BKI_DEFAULT(_null_);
 #endif
-} FormData_pg_language;
-
-/* ----------------
- *		Form_pg_language corresponds to a pointer to a tuple with
- *		the format of pg_language relation.
- * ----------------
- */
-typedef FormData_pg_language *Form_pg_language;
+};
 
 #endif							/* PG_LANGUAGE_H */

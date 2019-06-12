@@ -31,13 +31,6 @@ CATALOG(pg_publication_rel,6106,PublicationRelRelationId)
 	Oid			oid;			/* oid */
 	Oid			prpubid;		/* Oid of the publication */
 	Oid			prrelid;		/* Oid of the relation */
-} FormData_pg_publication_rel;
-
-/* ----------------
- *		Form_pg_publication_rel corresponds to a pointer to a tuple with
- *		the format of pg_publication_rel relation.
- * ----------------
- */
-typedef FormData_pg_publication_rel *Form_pg_publication_rel;
+};
 
 #endif							/* PG_PUBLICATION_REL_H */

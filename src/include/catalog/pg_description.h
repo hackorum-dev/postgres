@@ -54,13 +54,6 @@ CATALOG(pg_description,2609,DescriptionRelationId)
 #ifdef CATALOG_VARLEN			/* variable-length fields start here */
 	text		description BKI_FORCE_NOT_NULL; /* description of object */
 #endif
-} FormData_pg_description;
-
-/* ----------------
- *		Form_pg_description corresponds to a pointer to a tuple with
- *		the format of pg_description relation.
- * ----------------
- */
-typedef FormData_pg_description * Form_pg_description;
+};
 
 #endif							/* PG_DESCRIPTION_H */

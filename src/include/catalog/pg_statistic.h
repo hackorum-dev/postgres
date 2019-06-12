@@ -121,17 +121,9 @@ CATALOG(pg_statistic,2619,StatisticRelationId)
 	anyarray	stavalues4;
 	anyarray	stavalues5;
 #endif
-} FormData_pg_statistic;
+};
 
 #define STATISTIC_NUM_SLOTS  5
-
-
-/* ----------------
- *		Form_pg_statistic corresponds to a pointer to a tuple with
- *		the format of pg_statistic relation.
- * ----------------
- */
-typedef FormData_pg_statistic *Form_pg_statistic;
 
 #ifdef EXPOSE_TO_CLIENT_CODE
 

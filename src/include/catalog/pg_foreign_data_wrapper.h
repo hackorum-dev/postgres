@@ -38,13 +38,6 @@ CATALOG(pg_foreign_data_wrapper,2328,ForeignDataWrapperRelationId)
 	aclitem		fdwacl[1];		/* access permissions */
 	text		fdwoptions[1];	/* FDW options */
 #endif
-} FormData_pg_foreign_data_wrapper;
-
-/* ----------------
- *		Form_pg_fdw corresponds to a pointer to a tuple with
- *		the format of pg_fdw relation.
- * ----------------
- */
-typedef FormData_pg_foreign_data_wrapper *Form_pg_foreign_data_wrapper;
+};
 
 #endif							/* PG_FOREIGN_DATA_WRAPPER_H */

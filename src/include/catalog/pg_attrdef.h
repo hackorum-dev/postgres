@@ -37,13 +37,6 @@ CATALOG(pg_attrdef,2604,AttrDefaultRelationId)
 	pg_node_tree adbin BKI_FORCE_NOT_NULL;	/* nodeToString representation of
 											 * default */
 #endif
-} FormData_pg_attrdef;
-
-/* ----------------
- *		Form_pg_attrdef corresponds to a pointer to a tuple with
- *		the format of pg_attrdef relation.
- * ----------------
- */
-typedef FormData_pg_attrdef *Form_pg_attrdef;
+};
 
 #endif							/* PG_ATTRDEF_H */

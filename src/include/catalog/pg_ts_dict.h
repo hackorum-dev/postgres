@@ -47,8 +47,6 @@ CATALOG(pg_ts_dict,3600,TSDictionaryRelationId)
 	/* options passed to dict_init() */
 	text		dictinitoption;
 #endif
-} FormData_pg_ts_dict;
-
-typedef FormData_pg_ts_dict *Form_pg_ts_dict;
+};
 
 #endif							/* PG_TS_DICT_H */

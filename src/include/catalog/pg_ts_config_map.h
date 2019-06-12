@@ -40,8 +40,6 @@ CATALOG(pg_ts_config_map,3603,TSConfigMapRelationId)
 
 	/* dictionary to consult */
 	Oid			mapdict BKI_LOOKUP(pg_ts_dict);
-} FormData_pg_ts_config_map;
-
-typedef FormData_pg_ts_config_map *Form_pg_ts_config_map;
+};
 
 #endif							/* PG_TS_CONFIG_MAP_H */

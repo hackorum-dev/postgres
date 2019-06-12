@@ -45,14 +45,7 @@ CATALOG(pg_range,3541,RangeRelationId)
 
 	/* subtype difference as a float8, or 0 */
 	regproc		rngsubdiff BKI_LOOKUP(pg_proc);
-} FormData_pg_range;
-
-/* ----------------
- *		Form_pg_range corresponds to a pointer to a tuple with
- *		the format of pg_range relation.
- * ----------------
- */
-typedef FormData_pg_range *Form_pg_range;
+};
 
 /*
  * prototypes for functions in pg_range.c

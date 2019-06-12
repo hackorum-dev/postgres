@@ -136,18 +136,11 @@ CATALOG(pg_class,1259,RelationRelationId) BKI_BOOTSTRAP BKI_ROWTYPE_OID(83,Relat
 	/* partition bound node tree */
 	pg_node_tree relpartbound;
 #endif
-} FormData_pg_class;
+};
 
 /* Size of fixed part of pg_class tuples, not counting var-length fields */
 #define CLASS_TUPLE_SIZE \
 	 (offsetof(FormData_pg_class,relminmxid) + sizeof(TransactionId))
-
-/* ----------------
- *		Form_pg_class corresponds to a pointer to a tuple with
- *		the format of pg_class relation.
- * ----------------
- */
-typedef FormData_pg_class *Form_pg_class;
 
 #ifdef EXPOSE_TO_CLIENT_CODE
 

@@ -181,7 +181,7 @@ CATALOG(pg_attribute,1249,AttributeRelationId) BKI_BOOTSTRAP BKI_ROWTYPE_OID(75,
 	 */
 	anyarray	attmissingval BKI_DEFAULT(_null_);
 #endif
-} FormData_pg_attribute;
+};
 
 /*
  * ATTRIBUTE_FIXED_PART_SIZE is the size of the fixed-layout,
@@ -191,13 +191,6 @@ CATALOG(pg_attribute,1249,AttributeRelationId) BKI_BOOTSTRAP BKI_ROWTYPE_OID(75,
  */
 #define ATTRIBUTE_FIXED_PART_SIZE \
 	(offsetof(FormData_pg_attribute,attcollation) + sizeof(Oid))
-
-/* ----------------
- *		Form_pg_attribute corresponds to a pointer to a tuple with
- *		the format of pg_attribute relation.
- * ----------------
- */
-typedef FormData_pg_attribute *Form_pg_attribute;
 
 #ifdef EXPOSE_TO_CLIENT_CODE
 

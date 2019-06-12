@@ -40,13 +40,6 @@ CATALOG(pg_pltemplate,1136,PLTemplateRelationId) BKI_SHARED_RELATION
 	text		tmpllibrary BKI_FORCE_NOT_NULL; /* path of shared library */
 	aclitem		tmplacl[1];		/* access privileges for template */
 #endif
-} FormData_pg_pltemplate;
-
-/* ----------------
- *		Form_pg_pltemplate corresponds to a pointer to a row with
- *		the format of pg_pltemplate relation.
- * ----------------
- */
-typedef FormData_pg_pltemplate *Form_pg_pltemplate;
+};
 
 #endif							/* PG_PLTEMPLATE_H */

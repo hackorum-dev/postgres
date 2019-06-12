@@ -39,13 +39,6 @@ CATALOG(pg_event_trigger,3466,EventTriggerRelationId)
 #ifdef CATALOG_VARLEN
 	text		evttags[1];		/* command TAGs this event trigger targets */
 #endif
-} FormData_pg_event_trigger;
-
-/* ----------------
- *		Form_pg_event_trigger corresponds to a pointer to a tuple with
- *		the format of pg_event_trigger relation.
- * ----------------
- */
-typedef FormData_pg_event_trigger *Form_pg_event_trigger;
+};
 
 #endif							/* PG_EVENT_TRIGGER_H */

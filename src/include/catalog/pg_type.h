@@ -241,14 +241,7 @@ CATALOG(pg_type,1247,TypeRelationId) BKI_BOOTSTRAP BKI_ROWTYPE_OID(71,TypeRelati
 	 */
 	aclitem		typacl[1] BKI_DEFAULT(_null_);
 #endif
-} FormData_pg_type;
-
-/* ----------------
- *		Form_pg_type corresponds to a pointer to a row with
- *		the format of pg_type relation.
- * ----------------
- */
-typedef FormData_pg_type *Form_pg_type;
+};
 
 #ifdef EXPOSE_TO_CLIENT_CODE
 

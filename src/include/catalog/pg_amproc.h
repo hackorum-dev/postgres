@@ -58,13 +58,6 @@ CATALOG(pg_amproc,2603,AccessMethodProcedureRelationId)
 
 	/* OID of the proc */
 	regproc		amproc BKI_LOOKUP(pg_proc);
-} FormData_pg_amproc;
-
-/* ----------------
- *		Form_pg_amproc corresponds to a pointer to a tuple with
- *		the format of pg_amproc relation.
- * ----------------
- */
-typedef FormData_pg_amproc *Form_pg_amproc;
+};
 
 #endif							/* PG_AMPROC_H */

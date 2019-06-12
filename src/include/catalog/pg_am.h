@@ -38,14 +38,7 @@ CATALOG(pg_am,2601,AccessMethodRelationId)
 
 	/* see AMTYPE_xxx constants below */
 	char		amtype;
-} FormData_pg_am;
-
-/* ----------------
- *		Form_pg_am corresponds to a pointer to a tuple with
- *		the format of pg_am relation.
- * ----------------
- */
-typedef FormData_pg_am *Form_pg_am;
+};
 
 #ifdef EXPOSE_TO_CLIENT_CODE
 

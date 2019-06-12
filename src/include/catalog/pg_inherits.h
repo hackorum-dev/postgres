@@ -34,14 +34,7 @@ CATALOG(pg_inherits,2611,InheritsRelationId)
 	Oid			inhrelid;
 	Oid			inhparent;
 	int32		inhseqno;
-} FormData_pg_inherits;
-
-/* ----------------
- *		Form_pg_inherits corresponds to a pointer to a tuple with
- *		the format of pg_inherits relation.
- * ----------------
- */
-typedef FormData_pg_inherits *Form_pg_inherits;
+};
 
 
 extern List *find_inheritance_children(Oid parentrelId, LOCKMODE lockmode);

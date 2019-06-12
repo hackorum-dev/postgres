@@ -46,13 +46,6 @@ CATALOG(pg_authid,1260,AuthIdRelationId) BKI_SHARED_RELATION BKI_ROWTYPE_OID(284
 	text		rolpassword;	/* password, if any */
 	timestamptz rolvaliduntil;	/* password expiration time, if any */
 #endif
-} FormData_pg_authid;
-
-/* ----------------
- *		Form_pg_authid corresponds to a pointer to a tuple with
- *		the format of pg_authid relation.
- * ----------------
- */
-typedef FormData_pg_authid *Form_pg_authid;
+};
 
 #endif							/* PG_AUTHID_H */

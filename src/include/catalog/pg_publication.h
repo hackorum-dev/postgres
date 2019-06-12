@@ -53,14 +53,7 @@ CATALOG(pg_publication,6104,PublicationRelationId)
 	/* true if truncates are published */
 	bool		pubtruncate;
 
-} FormData_pg_publication;
-
-/* ----------------
- *		Form_pg_publication corresponds to a pointer to a tuple with
- *		the format of pg_publication relation.
- * ----------------
- */
-typedef FormData_pg_publication *Form_pg_publication;
+};
 
 typedef struct PublicationActions
 {

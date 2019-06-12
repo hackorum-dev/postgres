@@ -50,8 +50,6 @@ CATALOG(pg_ts_parser,3601,TSParserRelationId)
 
 	/* return descriptions of lexeme's types */
 	regproc		prslextype BKI_LOOKUP(pg_proc);
-} FormData_pg_ts_parser;
-
-typedef FormData_pg_ts_parser *Form_pg_ts_parser;
+};
 
 #endif							/* PG_TS_PARSER_H */

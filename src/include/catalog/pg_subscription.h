@@ -61,9 +61,7 @@ CATALOG(pg_subscription,6100,SubscriptionRelationId) BKI_SHARED_RELATION BKI_ROW
 	/* List of publications subscribed to */
 	text		subpublications[1] BKI_FORCE_NOT_NULL;
 #endif
-} FormData_pg_subscription;
-
-typedef FormData_pg_subscription *Form_pg_subscription;
+};
 
 typedef struct Subscription
 {

@@ -39,9 +39,7 @@ CATALOG(pg_db_role_setting,2964,DbRoleSettingRelationId) BKI_SHARED_RELATION
 #ifdef CATALOG_VARLEN			/* variable-length fields start here */
 	text		setconfig[1];	/* GUC settings to apply at login */
 #endif
-} FormData_pg_db_role_setting;
-
-typedef FormData_pg_db_role_setting * Form_pg_db_role_setting;
+};
 
 /*
  * prototypes for functions in pg_db_role_setting.h

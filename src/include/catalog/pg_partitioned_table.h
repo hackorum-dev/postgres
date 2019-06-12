@@ -51,13 +51,6 @@ CATALOG(pg_partitioned_table,3350,PartitionedRelationId)
 	pg_node_tree partexprs;		/* list of expressions in the partition key;
 								 * one item for each zero entry in partattrs[] */
 #endif
-} FormData_pg_partitioned_table;
-
-/* ----------------
- *		Form_pg_partitioned_table corresponds to a pointer to a tuple with
- *		the format of pg_partitioned_table relation.
- * ----------------
- */
-typedef FormData_pg_partitioned_table *Form_pg_partitioned_table;
+};
 
 #endif							/* PG_PARTITIONED_TABLE_H */

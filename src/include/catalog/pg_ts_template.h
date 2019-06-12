@@ -41,8 +41,6 @@ CATALOG(pg_ts_template,3764,TSTemplateRelationId)
 
 	/* base method of dictionary */
 	regproc		tmpllexize BKI_LOOKUP(pg_proc);
-} FormData_pg_ts_template;
-
-typedef FormData_pg_ts_template *Form_pg_ts_template;
+};
 
 #endif							/* PG_TS_TEMPLATE_H */

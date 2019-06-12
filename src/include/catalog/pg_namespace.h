@@ -41,14 +41,7 @@ CATALOG(pg_namespace,2615,NamespaceRelationId)
 #ifdef CATALOG_VARLEN			/* variable-length fields start here */
 	aclitem		nspacl[1];
 #endif
-} FormData_pg_namespace;
-
-/* ----------------
- *		Form_pg_namespace corresponds to a pointer to a tuple with
- *		the format of pg_namespace relation.
- * ----------------
- */
-typedef FormData_pg_namespace *Form_pg_namespace;
+};
 
 /*
  * prototypes for functions in pg_namespace.c

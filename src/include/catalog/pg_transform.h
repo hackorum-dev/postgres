@@ -33,13 +33,6 @@ CATALOG(pg_transform,3576,TransformRelationId)
 	Oid			trflang;
 	regproc		trffromsql;
 	regproc		trftosql;
-} FormData_pg_transform;
-
-/* ----------------
- *		Form_pg_transform corresponds to a pointer to a tuple with
- *		the format of pg_transform relation.
- * ----------------
- */
-typedef FormData_pg_transform *Form_pg_transform;
+};
 
 #endif							/* PG_TRANSFORM_H */

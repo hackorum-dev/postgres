@@ -52,14 +52,7 @@ CATALOG(pg_statistic_ext,3381,StatisticExtRelationId)
 	pg_mcv_list stxmcv;			/* MCV (serialized) */
 #endif
 
-} FormData_pg_statistic_ext;
-
-/* ----------------
- *		Form_pg_statistic_ext corresponds to a pointer to a tuple with
- *		the format of pg_statistic_ext relation.
- * ----------------
- */
-typedef FormData_pg_statistic_ext *Form_pg_statistic_ext;
+};
 
 #ifdef EXPOSE_TO_CLIENT_CODE
 

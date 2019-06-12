@@ -56,14 +56,7 @@ CATALOG(pg_index,2610,IndexRelationId) BKI_SCHEMA_MACRO
 	pg_node_tree indpred;		/* expression tree for predicate, if a partial
 								 * index; else NULL */
 #endif
-} FormData_pg_index;
-
-/* ----------------
- *		Form_pg_index corresponds to a pointer to a tuple with
- *		the format of pg_index relation.
- * ----------------
- */
-typedef FormData_pg_index *Form_pg_index;
+};
 
 #ifdef EXPOSE_TO_CLIENT_CODE
 

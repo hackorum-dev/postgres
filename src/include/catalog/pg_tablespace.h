@@ -36,13 +36,6 @@ CATALOG(pg_tablespace,1213,TableSpaceRelationId) BKI_SHARED_RELATION
 	aclitem		spcacl[1];		/* access permissions */
 	text		spcoptions[1];	/* per-tablespace options */
 #endif
-} FormData_pg_tablespace;
-
-/* ----------------
- *		Form_pg_tablespace corresponds to a pointer to a tuple with
- *		the format of pg_tablespace relation.
- * ----------------
- */
-typedef FormData_pg_tablespace *Form_pg_tablespace;
+};
 
 #endif							/* PG_TABLESPACE_H */
