@@ -609,6 +609,41 @@ get_control_data(ClusterInfo *cluster, bool live_check)
 	}
 }
 
+/*
+ * subroutine for checking each item in pg_control_data
+ *
+ * This is intended to be a part of CHECK_CTRL_ITEM macro.
+ * item is translated item name to be printed on error
+ * old_invalid, new_invalid, do_not_match is the check results of an item
+ * old/new_invalid are ignored if check_invalid is false.
+ */
+static void
+check_control_data_item(char *item,
+						bool check_invalid, bool old_invalid, bool new_invalid,
+						bool do_not_match)
+{
+	static char *message[] = {
+		"no error", /* should not be used */
+		gettext_noop("souce pg_controldata item is invalid:%s"),
+		gettext_noop("target pg_controldata item is invalid:%s"),
+		gettext_noop("source and target pg_controldata items do not match:%s")
+	};
+	int failure_type = 0;
+
+	if (check_invalid)
+	{
+		if (old_invalid)
+			failure_type = 1;
+		else if (new_invalid)
+			failure_type = 2;
+	}
+
+	if (failure_type == 0 && do_not_match)
+		failure_type = 3;
+
+	if (failure_type > 0)
+		pg_fatal(message[failure_type], item);
+}
 
 /*
  * check_control_data()
@@ -619,38 +654,24 @@ void
 check_control_data(ControlData *oldctrl,
 				   ControlData *newctrl)
 {
-	if (oldctrl->align == 0 || oldctrl->align != newctrl->align)
-		pg_fatal("old and new pg_controldata alignments are invalid or do not match\n"
-				 "Likely one cluster is a 32-bit install, the other 64-bit\n");
+#define CHECK_CTRL_ITEM(member, item, check_invalid)	\
+	check_control_data_item(_(item), check_invalid,						\
+							oldctrl->member == 0, newctrl->member == 0,	\
+							oldctrl->member != newctrl->member)
 
-	if (oldctrl->blocksz == 0 || oldctrl->blocksz != newctrl->blocksz)
-		pg_fatal("old and new pg_controldata block sizes are invalid or do not match\n");
-
-	if (oldctrl->largesz == 0 || oldctrl->largesz != newctrl->largesz)
-		pg_fatal("old and new pg_controldata maximum relation segment sizes are invalid or do not match\n");
-
-	if (oldctrl->walsz == 0 || oldctrl->walsz != newctrl->walsz)
-		pg_fatal("old and new pg_controldata WAL block sizes are invalid or do not match\n");
-
-	if (oldctrl->walseg == 0 || oldctrl->walseg != newctrl->walseg)
-		pg_fatal("old and new pg_controldata WAL segment sizes are invalid or do not match\n");
-
-	if (oldctrl->ident == 0 || oldctrl->ident != newctrl->ident)
-		pg_fatal("old and new pg_controldata maximum identifier lengths are invalid or do not match\n");
-
-	if (oldctrl->index == 0 || oldctrl->index != newctrl->index)
-		pg_fatal("old and new pg_controldata maximum indexed columns are invalid or do not match\n");
-
-	if (oldctrl->toast == 0 || oldctrl->toast != newctrl->toast)
-		pg_fatal("old and new pg_controldata maximum TOAST chunk sizes are invalid or do not match\n");
+	CHECK_CTRL_ITEM(align, "  maximum alignment\n", true);
+	CHECK_CTRL_ITEM(blocksz, "  block size\n", true);
+	CHECK_CTRL_ITEM(largesz, "  large relation segment size\n", true);
+	CHECK_CTRL_ITEM(walsz, "  WAL block size\n", true);
+	CHECK_CTRL_ITEM(walseg, "  WAL segment size\n", true);
+	CHECK_CTRL_ITEM(ident, "  maximum identifier length\n", true);
+	CHECK_CTRL_ITEM(index, "  maximum number of indexed columns\n", true);
+	CHECK_CTRL_ITEM(toast, "  maximum TOAST chunk size\n", true);
 
 	/* large_object added in 9.5, so it might not exist in the old cluster */
-	if (oldctrl->large_object != 0 &&
-		oldctrl->large_object != newctrl->large_object)
-		pg_fatal("old and new pg_controldata large-object chunk sizes are invalid or do not match\n");
+	CHECK_CTRL_ITEM(large_object, "  large-object chunk size\n", true);
 
-	if (oldctrl->date_is_int != newctrl->date_is_int)
-		pg_fatal("old and new pg_controldata date/time storage types do not match\n");
+	CHECK_CTRL_ITEM(date_is_int, "  dates/times are integers\n", false);
 
 	/*
 	 * float8_pass_by_value does not need to match, but is used in
