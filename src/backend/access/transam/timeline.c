@@ -581,3 +581,54 @@ tliSwitchPoint(TimeLineID tli, List *history, TimeLineID *nextTLI)
 					tli)));
 	return InvalidXLogRecPtr;	/* keep compiler quiet */
 }
+
+/*
+ * Returns the relationship between lsn and the range of LSN of tli in history.
+ *
+ * Returns 0 if lsn is in the range of tli.
+ *
+ * Returns a negative number if lsn is before the range. The beginnig LSN of
+ * the tli is stored into *switchpoint if it not NULL.
+ *
+ * Returns a positive number if lsn is after the range. The ending LSN of the
+ * tli is stored into *switchpoint if it is not NULL.
+ */
+int
+compareLSNtoTLI(XLogRecPtr lsn, TimeLineID tli, List *history,
+				XLogRecPtr *switchpoint)
+{
+	ListCell   *cell;
+
+	if (switchpoint)
+		*switchpoint = 0;
+
+	foreach(cell, history)
+	{
+		TimeLineHistoryEntry *tle = (TimeLineHistoryEntry *) lfirst(cell);
+
+		if (tle->tli != tli)
+			continue;
+
+		if (lsn < tle->begin)
+		{
+			if (switchpoint)
+				*switchpoint = tle->begin;
+			return -1;
+		}
+
+		/* tle->end is exclusive */
+		if (lsn >= tle->end)
+		{
+			if (switchpoint)
+				*switchpoint = tle->end;
+			return 1;
+		}
+		return 0;
+	}
+
+	ereport(ERROR,
+			(errmsg("requested timeline %u is not in this server's history",
+					tli)));
+	return 0;	/* keep compiler quiet */
+}
+

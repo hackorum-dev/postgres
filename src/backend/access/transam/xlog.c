@@ -6554,12 +6554,27 @@ StartupXLOG(void)
 		checkPoint.ThisTimeLineID)
 	{
 		XLogRecPtr	switchpoint;
+		int			comp;
 
 		/*
-		 * tliSwitchPoint will throw an error if the checkpoint's timeline is
+		 * compareLSNtoTLI will throw an error if the checkpoint's timeline is
 		 * not in expectedTLEs at all.
 		 */
-		switchpoint = tliSwitchPoint(ControlFile->checkPointCopy.ThisTimeLineID, expectedTLEs, NULL);
+		comp = compareLSNtoTLI(checkPointLoc, checkPoint.ThisTimeLineID,
+							   expectedTLEs, &switchpoint);
+		Assert(comp != 0);
+
+
+		if (comp < 0)
+			ereport(FATAL,
+					(errmsg("requested timeline %u is not a child of this server's history",
+							recoveryTargetTLI),
+					 errdetail("Latest checkpoint is at %X/%X on timeline %u, but in the history of the requested timeline, the server entered that timeline at %X/%X.",
+						   (uint32) (ControlFile->checkPoint >> 32),
+						   (uint32) ControlFile->checkPoint,
+						   ControlFile->checkPointCopy.ThisTimeLineID,
+						   (uint32) (switchpoint >> 32),
+						   (uint32) switchpoint)));
 		ereport(FATAL,
 				(errmsg("requested timeline %u is not a child of this server's history",
 						recoveryTargetTLI),

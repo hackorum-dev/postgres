@@ -40,5 +40,7 @@ extern bool tliInHistory(TimeLineID tli, List *expectedTLIs);
 extern TimeLineID tliOfPointInHistory(XLogRecPtr ptr, List *history);
 extern XLogRecPtr tliSwitchPoint(TimeLineID tli, List *history,
 								 TimeLineID *nextTLI);
+extern int compareLSNtoTLI(XLogRecPtr lsn, TimeLineID tli,
+						   List *history, XLogRecPtr *switchpoint);
 
 #endif							/* TIMELINE_H */
