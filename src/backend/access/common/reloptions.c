@@ -2357,6 +2357,8 @@ heap_reloptions(char relkind, Datum reloptions, bool validate)
 				rdopts->fillfactor = 100;
 				rdopts->autovacuum.analyze_threshold = -1;
 				rdopts->autovacuum.analyze_scale_factor = -1;
+				rdopts->parallel_workers = -1;
+				rdopts->toast_tuple_target = TOAST_TUPLE_TARGET;
 			}
 			return (bytea *) rdopts;
 		case RELKIND_RELATION:
