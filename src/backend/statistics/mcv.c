@@ -78,6 +78,9 @@ static MultiSortSupport build_mss(VacAttrStats **stats, int numattrs);
 static SortItem *build_distinct_groups(int numrows, SortItem *items,
 									   MultiSortSupport mss, int *ndistinct);
 
+static SortItem **compute_column_counts(SortItem *groups, int ngroups,
+										MultiSortSupport mss, int *ncounts);
+
 static int	count_distinct_groups(int numrows, SortItem *items,
 								  MultiSortSupport mss);
 
@@ -172,6 +175,8 @@ statext_mcv_build(int numrows, HeapTuple *rows, Bitmapset *attrs,
 	SortItem   *groups;
 	MCVList    *mcvlist = NULL;
 	MultiSortSupport mss;
+	SortItem  **counts;
+	int		   *ncounts;
 
 	attnums = build_attnums_array(attrs, &numattrs);
 
@@ -187,6 +192,10 @@ statext_mcv_build(int numrows, HeapTuple *rows, Bitmapset *attrs,
 
 	/* transform the sorted rows into groups (sorted by frequency) */
 	groups = build_distinct_groups(nitems, items, mss, &ngroups);
+
+	/* compute frequencies for values in each column */
+	ncounts = (int *) palloc0(sizeof(int) * numattrs);
+	counts = compute_column_counts(groups, ngroups, mss, ncounts);
 
 	/*
 	 * Maximum number of MCV items to store, based on the attribute with the
@@ -242,6 +251,16 @@ statext_mcv_build(int numrows, HeapTuple *rows, Bitmapset *attrs,
 	if (nitems > 0)
 	{
 		int			j;
+		SortItem	key;
+		MultiSortSupport	tmp;
+
+		/* used to search values */
+		tmp = (MultiSortSupport) palloc(offsetof(MultiSortSupportData, ssup)
+										+ sizeof(SortSupportData));
+
+		/* space for search key */
+		key.values = palloc(sizeof(Datum));
+		key.isnull = palloc(sizeof(bool));
 
 		/*
 		 * Allocate the MCV list structure, set the global parameters.
@@ -281,16 +300,21 @@ statext_mcv_build(int numrows, HeapTuple *rows, Bitmapset *attrs,
 			item->base_frequency = 1.0;
 			for (j = 0; j < numattrs; j++)
 			{
-				int			count = 0;
-				int			k;
+				SortItem   *result;
 
-				for (k = 0; k < ngroups; k++)
-				{
-					if (multi_sort_compare_dim(j, &groups[i], &groups[k], mss) == 0)
-						count += groups[k].count;
-				}
+				/* single dimension */
+				tmp->ndims = 1;
+				tmp->ssup[0] = mss->ssup[j];
 
-				item->base_frequency *= (double) count / numrows;
+				/* fill search key */
+				key.values[0] = groups[i].values[j];
+				key.isnull[0] = groups[i].isnull[j];
+
+				result = (SortItem *) bsearch_arg(&key, counts[j], ncounts[j],
+												  sizeof(SortItem),
+												  multi_sort_compare, tmp);
+
+				item->base_frequency *= ((double) result->count) / numrows;
 			}
 		}
 	}
@@ -419,6 +443,61 @@ build_distinct_groups(int numrows, SortItem *items, MultiSortSupport mss,
 	return groups;
 }
 
+static SortItem **
+compute_column_counts(SortItem *groups, int ngroups, MultiSortSupport mss,
+					  int *ncounts)
+{
+	int			i,
+				j;
+	SortItem  **result;
+	MultiSortSupport	tmp;
+
+	result = (SortItem **) palloc(sizeof(SortItem *) * mss->ndims);
+	tmp = (MultiSortSupport) palloc(offsetof(MultiSortSupportData, ssup)
+									 + sizeof(SortSupportData));
+
+	for (i = 0; i < mss->ndims; i++)
+	{
+		result[i] = (SortItem *) palloc0(sizeof(SortItem) * ngroups);
+
+		/* single dimension */
+		tmp->ndims = 1;
+		tmp->ssup[0] = mss->ssup[i];
+
+		/* extract data for the dimension */
+		for (j = 0; j < ngroups; j++)
+		{
+			result[i][j].values = palloc(sizeof(Datum));
+			result[i][j].isnull = palloc(sizeof(bool));
+
+			result[i][j].values[0] = groups[j].values[i];
+			result[i][j].isnull[0] = groups[j].isnull[i];
+			result[i][j].count = groups[j].count;
+		}
+
+		/* sort the values, deduplicate */
+		qsort_arg((void *) result[i], ngroups, sizeof(SortItem),
+				  multi_sort_compare, tmp);
+
+		ncounts[i] = 1;
+		for (j = 1; j < ngroups; j++)
+		{
+			if (multi_sort_compare(&result[i][(ncounts[i] - 1)], &result[i][j], tmp) == 0)
+			{
+				result[i][(ncounts[i] - 1)].count += result[i][j].count;
+				continue;
+			}
+
+			/* */
+			if (ncounts[i] != j)
+				result[i][ncounts[i]] = result[i][j];
+
+			ncounts[i]++;
+		}
+	}
+
+	return result;
+}
 
 /*
  * statext_mcv_load
