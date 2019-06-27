@@ -89,7 +89,17 @@ typedef struct TupleDescData
 typedef struct TupleDescData *TupleDesc;
 
 /* Accessor for the i'th attribute of tupdesc. */
+#if 1
+static inline FormData_pg_attribute *TupleDescAttr(TupleDesc tupdesc, int i)
+{
+	AssertArg(PointerIsValid(tupdesc));
+	AssertArg(i >= 0);
+	AssertArg(i < tupdesc->natts);
+	return &tupdesc->attrs[i];
+}
+#else
 #define TupleDescAttr(tupdesc, i) (&(tupdesc)->attrs[(i)])
+#endif
 
 extern TupleDesc CreateTemplateTupleDesc(int natts);
 

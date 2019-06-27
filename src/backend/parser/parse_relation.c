@@ -2600,7 +2600,6 @@ expandTupleDesc(TupleDesc tupdesc, Alias *eref, int count, int offset,
 		}
 	}
 
-	Assert(count <= tupdesc->natts);
 	for (varattno = 0; varattno < count; varattno++)
 	{
 		Form_pg_attribute attr = TupleDescAttr(tupdesc, varattno);
@@ -2837,8 +2836,6 @@ get_rte_attribute_type(RangeTblEntry *rte, AttrNumber attnum,
 							/* Composite data type, e.g. a table's row type */
 							Form_pg_attribute att_tup;
 
-							Assert(tupdesc);
-							Assert(attnum <= tupdesc->natts);
 							att_tup = TupleDescAttr(tupdesc, attnum - 1);
 
 							/*
@@ -3050,8 +3047,6 @@ get_rte_attribute_is_dropped(RangeTblEntry *rte, AttrNumber attnum)
 							/* Composite data type, e.g. a table's row type */
 							Form_pg_attribute att_tup;
 
-							Assert(tupdesc);
-							Assert(attnum - atts_done <= tupdesc->natts);
 							att_tup = TupleDescAttr(tupdesc,
 													attnum - atts_done - 1);
 							return att_tup->attisdropped;

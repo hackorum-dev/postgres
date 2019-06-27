@@ -115,7 +115,8 @@ CreateTupleDescCopy(TupleDesc tupdesc)
 	desc = CreateTemplateTupleDesc(tupdesc->natts);
 
 	/* Flat-copy the attribute array */
-	memcpy(TupleDescAttr(desc, 0),
+	if (desc->natts)
+		memcpy(TupleDescAttr(desc, 0),
 		   TupleDescAttr(tupdesc, 0),
 		   desc->natts * sizeof(FormData_pg_attribute));
 
@@ -156,7 +157,8 @@ CreateTupleDescCopyConstr(TupleDesc tupdesc)
 	desc = CreateTemplateTupleDesc(tupdesc->natts);
 
 	/* Flat-copy the attribute array */
-	memcpy(TupleDescAttr(desc, 0),
+	if (desc->natts)
+		memcpy(TupleDescAttr(desc, 0),
 		   TupleDescAttr(tupdesc, 0),
 		   desc->natts * sizeof(FormData_pg_attribute));
 
@@ -273,16 +275,6 @@ TupleDescCopyEntry(TupleDesc dst, AttrNumber dstAttno,
 {
 	Form_pg_attribute dstAtt = TupleDescAttr(dst, dstAttno - 1);
 	Form_pg_attribute srcAtt = TupleDescAttr(src, srcAttno - 1);
-
-	/*
-	 * sanity checks
-	 */
-	AssertArg(PointerIsValid(src));
-	AssertArg(PointerIsValid(dst));
-	AssertArg(srcAttno >= 1);
-	AssertArg(srcAttno <= src->natts);
-	AssertArg(dstAttno >= 1);
-	AssertArg(dstAttno <= dst->natts);
 
 	memcpy(dstAtt, srcAtt, ATTRIBUTE_FIXED_PART_SIZE);
 
@@ -612,13 +604,6 @@ TupleDescInitEntry(TupleDesc desc,
 	Form_pg_attribute att;
 
 	/*
-	 * sanity checks
-	 */
-	AssertArg(PointerIsValid(desc));
-	AssertArg(attributeNumber >= 1);
-	AssertArg(attributeNumber <= desc->natts);
-
-	/*
 	 * initialize the attribute fields
 	 */
 	att = TupleDescAttr(desc, attributeNumber - 1);
@@ -681,11 +666,6 @@ TupleDescInitBuiltinEntry(TupleDesc desc,
 						  int attdim)
 {
 	Form_pg_attribute att;
-
-	/* sanity checks */
-	AssertArg(PointerIsValid(desc));
-	AssertArg(attributeNumber >= 1);
-	AssertArg(attributeNumber <= desc->natts);
 
 	/* initialize the attribute fields */
 	att = TupleDescAttr(desc, attributeNumber - 1);
@@ -770,13 +750,6 @@ TupleDescInitEntryCollation(TupleDesc desc,
 							AttrNumber attributeNumber,
 							Oid collationid)
 {
-	/*
-	 * sanity checks
-	 */
-	AssertArg(PointerIsValid(desc));
-	AssertArg(attributeNumber >= 1);
-	AssertArg(attributeNumber <= desc->natts);
-
 	TupleDescAttr(desc, attributeNumber - 1)->attcollation = collationid;
 }
 

@@ -3842,7 +3842,6 @@ heap_tuple_attr_equals(TupleDesc tupdesc, int attrnum,
 	}
 	else
 	{
-		Assert(attrnum <= tupdesc->natts);
 		att = TupleDescAttr(tupdesc, attrnum - 1);
 		return datumIsEqual(value1, value2, att->attbyval, att->attlen);
 	}

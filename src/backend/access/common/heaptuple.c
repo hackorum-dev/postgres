@@ -86,9 +86,6 @@ getmissingattr(TupleDesc tupleDesc,
 {
 	Form_pg_attribute att;
 
-	Assert(attnum <= tupleDesc->natts);
-	Assert(attnum > 0);
-
 	att = TupleDescAttr(tupleDesc, attnum - 1);
 
 	if (att->atthasmissing)

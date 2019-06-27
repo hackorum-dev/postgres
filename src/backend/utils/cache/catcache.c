@@ -1918,8 +1918,6 @@ CatCacheFreeKeys(TupleDesc tupdesc, int nkeys, int *attnos, Datum *keys)
 		Form_pg_attribute att;
 
 		/* system attribute are not supported in caches */
-		Assert(attnum > 0);
-
 		att = TupleDescAttr(tupdesc, attnum - 1);
 
 		if (!att->attbyval)
