@@ -279,6 +279,11 @@
   &limits;
   &acronyms;
 
+  <appendix id="list-of-figures">
+   <title>List of Figures</title>
+   <para />
+  </appendix>
+
  </part>
 
  &biblio;

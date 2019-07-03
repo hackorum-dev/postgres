@@ -81,6 +81,13 @@ set       toc,title
   </xsl:call-template>
 </xsl:template>
 
+<!--  List of Figures -->
+<xsl:template match="/book/part/appendix[@id='list-of-figures']/para">
+  <xsl:call-template name="list.of.titles">
+    <xsl:with-param name="titles" select="'figure'"/>
+    <xsl:with-param name="nodes" select="//figure"/>
+  </xsl:call-template>
+</xsl:template>
 
 <!-- Put index "quicklinks" (A | B | C | ...) at the top of the bookindex page. -->
 
