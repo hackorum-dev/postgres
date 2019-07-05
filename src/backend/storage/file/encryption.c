@@ -63,6 +63,8 @@ char encryption_verification[ENCRYPTION_SAMPLE_SIZE];
 
 bool	encryption_setup_done = false;
 
+char	   *encrypt_buf_xlog = NULL;
+
 #ifdef USE_ENCRYPTION
 static void init_encryption_context(EVP_CIPHER_CTX **ctx_p, bool stream);
 static void evp_error(void);
@@ -165,6 +167,21 @@ setup_encryption(void)
 	init_encryption_context(&ctx_encrypt_stream, true);
 	init_encryption_context(&ctx_decrypt_stream, true);
 
+	/*
+	 * We need multiple pages here, so allocate the memory dynamically instead
+	 * of using PGAlignedBlock. That also ensures it'll be MAXALIGNed, which
+	 * is useful because the buffer will be used for I/O.
+	 *
+	 * Use TopMemoryContext because on server side this code is run by
+	 * postmaster and postmaster context gets freed after fork().
+	 */
+#ifndef FRONTEND
+	encrypt_buf_xlog = (char *) MemoryContextAlloc(TopMemoryContext,
+												   ENCRYPT_BUF_XLOG_SIZE);
+#else
+	encrypt_buf_xlog = (char *) palloc(ENCRYPT_BUF_XLOG_SIZE);
+#endif
+
 	encryption_setup_done = true;
 #else  /* !USE_ENCRYPTION */
 #ifndef FRONTEND
@@ -264,6 +281,50 @@ encrypt_block(const char *input, char *output, Size size, char *tweak,
 #endif							/* USE_ENCRYPTION */
 }
 
+/*
+ * Decrypts one block of data with a specified tweak value. May only be called
+ * when encryption_enabled is true.
+ *
+ * Input and output buffer may point to the same location.
+ *
+ * For detailed comments see encrypt_block().
+ */
+void
+decrypt_block(const char *input, char *output, Size size, char *tweak,
+			  bool stream)
+{
+#ifdef USE_ENCRYPTION
+	int			out_size;
+	EVP_CIPHER_CTX *ctx;
+
+	Assert(data_encrypted);
+	Assert((size >= ENCRYPTION_BLOCK && size % ENCRYPTION_BLOCK == 0) ||
+		   stream);
+
+	if (!stream && IsAllZero(input, size))
+	{
+		memset(output, 0, size);
+		return;
+	}
+
+	ctx = !stream ? ctx_decrypt : ctx_decrypt_stream;
+
+	/* The remaining initialization. */
+	if (EVP_DecryptInit_ex(ctx, NULL, NULL, encryption_key,
+						   (unsigned char *) tweak) != 1)
+		evp_error();
+
+	/* Do the actual encryption. */
+	if (EVP_DecryptUpdate(ctx, (unsigned char *) output,
+						  &out_size, (unsigned char *) input, size) != 1)
+		evp_error();
+
+	Assert(out_size == size);
+#else
+	/* data_encrypted should not be set */
+	Assert(false);
+#endif							/* USE_ENCRYPTION */
+}
 
 #ifdef USE_ENCRYPTION
 /*
@@ -345,3 +406,22 @@ evp_error(void)
 #endif							/* FRONTEND */
 }
 #endif							/* USE_ENCRYPTION */
+
+/*
+ * Xlog is encrypted page at a time. Each xlog page gets a unique tweak via
+ * timeline, segment and offset.
+ *
+ * The function is located here rather than some of the xlog*.c modules so
+ * that front-end applications can easily use it too.
+ */
+void
+XLogEncryptionTweak(char *tweak, TimeLineID timeline, XLogSegNo segment,
+					uint32 offset)
+{
+	memset(tweak, 0, TWEAK_SIZE);
+	memcpy(tweak, &timeline, sizeof(timeline));
+	tweak += sizeof(timeline);
+	memcpy(tweak, &segment, sizeof(XLogSegNo));
+	tweak += sizeof(XLogSegNo);
+	memcpy(tweak, &offset, sizeof(offset));
+}

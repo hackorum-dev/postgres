@@ -116,6 +116,16 @@ extern char encryption_verification[];
 /* Do we have encryption_key and the encryption library initialized? */
 extern bool	encryption_setup_done;
 
+/*
+ * XLOG encryption/decryption buffer. This buffer spans multiple pages, in
+ * order to reduce the number of syscalls when doing I/O.
+ *
+ * XXX Fine tune the buffer size.
+ */
+extern char *encrypt_buf_xlog;
+#define	XLOG_ENCRYPT_BUF_PAGES	8
+#define ENCRYPT_BUF_XLOG_SIZE	(XLOG_ENCRYPT_BUF_PAGES * XLOG_BLCKSZ)
+
 #ifndef FRONTEND
 extern Size EncryptionShmemSize(void);
 extern void EncryptionShmemInit(void);
@@ -127,7 +137,12 @@ extern void read_encryption_key(read_encryption_key_cb read_char);
 extern void setup_encryption(void);
 extern void sample_encryption(char *buf);
 extern void encrypt_block(const char *input, char *output, Size size,
-							char *tweak, bool stream);
+			  char *tweak, bool stream);
+extern void decrypt_block(const char *input, char *output, Size size,
+			  char *tweak, bool stream);
 extern void encryption_error(bool fatal, char *message);
+
+extern void XLogEncryptionTweak(char *tweak, TimeLineID timeline,
+					XLogSegNo segment, uint32 offset);
 
 #endif							/* ENCRYPTION_H */

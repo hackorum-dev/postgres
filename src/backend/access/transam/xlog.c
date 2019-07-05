@@ -2489,7 +2489,61 @@ XLogWrite(XLogwrtRqst WriteRqst, bool flexible)
 
 			/* OK to write the page(s) */
 			from = XLogCtl->pages + startidx * (Size) XLOG_BLCKSZ;
-			startoffset += XLogWritePages(from, npages, startoffset);
+			if (data_encrypted)
+			{
+				int			i,
+							nencrypted;
+				char	   *to;
+				uint32		encr_offset;
+
+				/*
+				 * Encrypt and write multiple pages at a time, in order to
+				 * reduce the number of syscalls.
+				 */
+				nencrypted = 0;
+				to = encrypt_buf_xlog;
+				encr_offset = startoffset;
+				for (i = 1; i <= npages; i++)
+				{
+					char		tweak[TWEAK_SIZE];
+					Size		nbytes;
+
+					XLogEncryptionTweak(tweak, ThisTimeLineID, openLogSegNo, encr_offset);
+
+					/*
+					 * We should not encrypt the unused space, in order to
+					 * avoid "reused key attack".
+					 */
+					if (i == npages && ispartialpage)
+						nbytes = WriteRqst.Write % XLOG_BLCKSZ;
+					else
+						nbytes = XLOG_BLCKSZ;
+
+					encrypt_block(from, to, nbytes, tweak, true);
+					nencrypted++;
+					from += XLOG_BLCKSZ;
+					to += XLOG_BLCKSZ;
+					encr_offset += XLOG_BLCKSZ;
+
+					/*
+					 * Write the encrypted data if the encryption buffer is
+					 * full or if the last page has been encrypted.
+					 */
+					if (nencrypted >= XLOG_ENCRYPT_BUF_PAGES || i >= npages)
+					{
+						startoffset += XLogWritePages(encrypt_buf_xlog,
+													  nencrypted,
+													  startoffset);
+
+						/* Prepare for the next round of page encryptions. */
+						nencrypted = 0;
+						to = encrypt_buf_xlog;
+						encr_offset = startoffset;
+					}
+				}
+			}
+			else
+				startoffset += XLogWritePages(from, npages, startoffset);
 
 			npages = 0;
 
@@ -3479,6 +3533,24 @@ XLogFileCopy(XLogSegNo destsegno, TimeLineID srcTLI, XLogSegNo srcsegno,
 			}
 			pgstat_report_wait_end();
 		}
+
+		/*
+		 * Since timeline is being changed and since encryption tweak contains
+		 * the timeline, we need to decrypt the buffer and encrypt it with the
+		 * new tweak. Do not encrypt the unused space, in order to avoid
+		 * "reused key attack".
+		 */
+		if (data_encrypted && nread > 0)
+		{
+			char		tweak[TWEAK_SIZE];
+
+			XLogEncryptionTweak(tweak, srcTLI, srcsegno, nbytes);
+			decrypt_block(buffer.data, buffer.data, nread, tweak, true);
+
+			XLogEncryptionTweak(tweak, ThisTimeLineID, destsegno, nbytes);
+			encrypt_block(buffer.data, buffer.data, nread, tweak, true);
+		}
+
 		errno = 0;
 		pgstat_report_wait_start(WAIT_EVENT_WAL_COPY_WRITE);
 		if ((int) write(fd, buffer.data, sizeof(buffer)) != (int) sizeof(buffer))
@@ -5272,6 +5344,14 @@ BootStrapXLOG(void)
 	/* Create first XLOG segment file */
 	use_existent = false;
 	openLogFile = XLogFileInit(1, &use_existent, false);
+
+	if (data_encrypted)
+	{
+		char		tweak[TWEAK_SIZE];
+
+		XLogEncryptionTweak(tweak, ThisTimeLineID, 1, 0);
+		encrypt_block((char *) page, (char *) page, XLOG_BLCKSZ, tweak, true);
+	}
 
 	/* Write the first page with the initial record */
 	errno = 0;
@@ -11723,6 +11803,14 @@ retry:
 	Assert(targetSegNo == readSegNo);
 	Assert(targetPageOff == readOff);
 	Assert(reqLen <= readLen);
+
+	if (data_encrypted)
+	{
+		char		tweak[TWEAK_SIZE];
+
+		XLogEncryptionTweak(tweak, curFileTLI, readSegNo, readOff);
+		decrypt_block(readBuf, readBuf, XLOG_BLCKSZ, tweak, true);
+	}
 
 	*readTLI = curFileTLI;
 
