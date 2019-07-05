@@ -56,16 +56,11 @@
 #include "utils/resowner.h"
 
 /*
- * We break BufFiles into gigabyte-sized segments, regardless of RELSEG_SIZE.
- * The reason is that we'd like large BufFiles to be spread across multiple
- * tablespaces when available.
- *
- * An integer value indicating the number of useful bytes in the segment is
- * appended to each segment of if the file is both shared and encrypted, see
- * BufFile.useful.
+ * The functions bellow actually use integer constants so that the size can be
+ * controlled by GUC. This is useful for development and regression tests.
  */
-#define MAX_PHYSICAL_FILESIZE	0x40000000
-#define BUFFILE_SEG_SIZE		(MAX_PHYSICAL_FILESIZE / BLCKSZ)
+int buffile_max_filesize	=  MAX_PHYSICAL_FILESIZE;
+int buffile_seg_blocks	=	BUFFILE_SEG_BLOCKS(MAX_PHYSICAL_FILESIZE);
 
 /*
  * Fields that both BufFile and TransientBufFile structures need. It must be
@@ -123,7 +118,7 @@ struct BufFile
 	BufFileCommon common;		/* Common fields, see above. */
 
 	int			numFiles;		/* number of physical files in set */
-	/* all files except the last have length exactly MAX_PHYSICAL_FILESIZE */
+	/* all files except the last have length exactly buffile_max_filesize */
 	File	   *files;			/* palloc'd array with numFiles entries */
 
 	/*
@@ -291,7 +286,7 @@ extendBufFile(BufFile *file)
 
 /*
  * Create a BufFile for a new temporary file (which will expand to become
- * multiple temporary files if more than MAX_PHYSICAL_FILESIZE bytes are
+ * multiple temporary files if more than buffile_max_filesize bytes are
  * written to it).
  *
  * If interXact is true, the temp file will not be automatically deleted
@@ -595,7 +590,7 @@ BufFileLoadBuffer(BufFile *file)
 	File		thisfile;
 
 	/*
-	 * Only whole multiple of ENCRYPTION_BLOCK can be encrypted / decrypted,
+	 * Only whole multiple of ENCRYPTION_BLOCK can be encrypted / decrypted.
 	 */
 	Assert((file->common.curOffset % BLCKSZ == 0 &&
 			file->common.curOffset % ENCRYPTION_BLOCK == 0) ||
@@ -604,7 +599,7 @@ BufFileLoadBuffer(BufFile *file)
 	/*
 	 * Advance to next component file if necessary and possible.
 	 */
-	if (file->common.curOffset >= MAX_PHYSICAL_FILESIZE &&
+	if (file->common.curOffset >= buffile_max_filesize &&
 		file->common.curFile + 1 < file->numFiles)
 	{
 		file->common.curFile++;
@@ -715,7 +710,7 @@ BufFileDumpBuffer(BufFile *file)
 		/*
 		 * Advance to next component file if necessary and possible.
 		 */
-		if (file->common.curOffset >= MAX_PHYSICAL_FILESIZE)
+		if (file->common.curOffset >= buffile_max_filesize)
 		{
 			while (file->common.curFile + 1 >= file->numFiles)
 				extendBufFile(file);
@@ -727,7 +722,7 @@ BufFileDumpBuffer(BufFile *file)
 		 * Determine how much we need to write into this file.
 		 */
 		bytestowrite = file->common.nbytes - wpos;
-		availbytes = MAX_PHYSICAL_FILESIZE - file->common.curOffset;
+		availbytes = buffile_max_filesize - file->common.curOffset;
 
 		if ((off_t) bytestowrite > availbytes)
 			bytestowrite = (int) availbytes;
@@ -758,7 +753,7 @@ BufFileDumpBuffer(BufFile *file)
 	{
 		file->common.curFile--;
 		Assert(file->common.curFile >= 0);
-		file->common.curOffset += MAX_PHYSICAL_FILESIZE;
+		file->common.curOffset += buffile_max_filesize;
 	}
 
 	/*
@@ -796,7 +791,7 @@ BufFileDumpBufferEncrypted(BufFile *file)
 	/*
 	 * Advance to next component file if necessary and possible.
 	 */
-	if (file->common.curOffset >= MAX_PHYSICAL_FILESIZE)
+	if (file->common.curOffset >= buffile_max_filesize)
 	{
 		while (file->common.curFile + 1 >= file->numFiles)
 			extendBufFile(file);
@@ -809,15 +804,14 @@ BufFileDumpBufferEncrypted(BufFile *file)
 	 * above) ensure that the encrypted buffer never crosses component file
 	 * boundary.
 	 */
-	StaticAssertStmt((MAX_PHYSICAL_FILESIZE % BLCKSZ) == 0,
-					 "BLCKSZ is not whole multiple of MAX_PHYSICAL_FILESIZE");
+	Assert((buffile_max_filesize % BLCKSZ) == 0);
 
 	/*
 	 * Encrypted data is dumped all at once.
 	 *
 	 * Unlike BufFileDumpBuffer(), we don't have to check here how much bytes
 	 * is available in the segment. According to the assertions above,
-	 * currOffset should be lower than MAX_PHYSICAL_FILESIZE by non-zero
+	 * currOffset should be lower than buffile_max_filesize by non-zero
 	 * multiple of BLCKSZ.
 	 */
 	bytestowrite = BLCKSZ;
@@ -1021,7 +1015,7 @@ BufFileSeek(BufFile *file, int fileno, off_t offset, int whence)
 	{
 		if (--newFile < 0)
 			return EOF;
-		newOffset += MAX_PHYSICAL_FILESIZE;
+		newOffset += buffile_max_filesize;
 	}
 	if (newFile == file->common.curFile &&
 		newOffset >= file->common.curOffset &&
@@ -1050,13 +1044,13 @@ BufFileSeek(BufFile *file, int fileno, off_t offset, int whence)
 	if (newFile == file->numFiles && newOffset == 0)
 	{
 		newFile--;
-		newOffset = MAX_PHYSICAL_FILESIZE;
+		newOffset = buffile_max_filesize;
 	}
-	while (newOffset > MAX_PHYSICAL_FILESIZE)
+	while (newOffset > buffile_max_filesize)
 	{
 		if (++newFile >= file->numFiles)
 			return EOF;
-		newOffset -= MAX_PHYSICAL_FILESIZE;
+		newOffset -= buffile_max_filesize;
 	}
 	if (newFile >= file->numFiles)
 		return EOF;
@@ -1124,8 +1118,8 @@ int
 BufFileSeekBlock(BufFile *file, long blknum)
 {
 	return BufFileSeek(file,
-					   (int) (blknum / BUFFILE_SEG_SIZE),
-					   (off_t) (blknum % BUFFILE_SEG_SIZE) * BLCKSZ,
+					   (int) (blknum / buffile_seg_blocks),
+					   (off_t) (blknum % buffile_seg_blocks) * BLCKSZ,
 					   SEEK_SET);
 }
 
@@ -1166,7 +1160,7 @@ BufFileTweak(char *tweak, BufFileCommon *file, bool is_transient)
 		if (tmpfile->segnos)
 			curFile = tmpfile->segnos[curFile];
 
-		block = curFile * BUFFILE_SEG_SIZE + file->curOffset / BLCKSZ;
+		block = curFile * buffile_seg_blocks + file->curOffset / BLCKSZ;
 
 		StaticAssertStmt(sizeof(pid) + sizeof(number) + sizeof(block) <=
 						 TWEAK_SIZE,
@@ -1258,7 +1252,7 @@ BufFileTellBlock(BufFile *file)
 	long		blknum;
 
 	blknum = (file->common.curOffset + file->common.pos) / BLCKSZ;
-	blknum += file->common.curFile * BUFFILE_SEG_SIZE;
+	blknum += file->common.curFile * buffile_seg_blocks;
 	return blknum;
 }
 
@@ -1304,7 +1298,7 @@ BufFileSize(BufFile *file)
 		lastFileSize = file->common.useful[file->common.nuseful - 1];
 	}
 
-	return ((file->numFiles - 1) * (int64) MAX_PHYSICAL_FILESIZE) +
+	return ((file->numFiles - 1) * (int64) buffile_max_filesize) +
 		lastFileSize;
 }
 
@@ -1317,11 +1311,10 @@ BufFileSize(BufFile *file)
  * called here first.  Resource owners for source and target must match,
  * too.
  *
- * This operation works by manipulating lists of segment files, so the
- * file content is always appended at a MAX_PHYSICAL_FILESIZE-aligned
- * boundary, typically creating empty holes before the boundary.  These
- * areas do not contain any interesting data, and cannot be read from by
- * caller.
+ * This operation works by manipulating lists of segment files, so the file
+ * content is always appended at a buffile_max_filesize-aligned boundary,
+ * typically creating empty holes before the boundary.  These areas do not
+ * contain any interesting data, and cannot be read from by caller.
  *
  * Returns the block number within target where the contents of source
  * begins.  Caller should apply this as an offset when working off block
@@ -1330,7 +1323,7 @@ BufFileSize(BufFile *file)
 long
 BufFileAppend(BufFile *target, BufFile *source)
 {
-	long		startBlock = target->numFiles * BUFFILE_SEG_SIZE;
+	long		startBlock = target->numFiles * buffile_seg_blocks;
 	int			newNumFiles = target->numFiles + source->numFiles;
 	int			i;
 
@@ -2084,14 +2077,14 @@ BufFileUpdateUsefulLength(BufFileCommon *file, bool is_transient)
 		 * w/o dumping anything of it. While curFile will be fixed during the
 		 * next dump, we need valid fileno now.
 		 */
-		if (file->curOffset >= MAX_PHYSICAL_FILESIZE)
+		if (file->curOffset >= buffile_max_filesize)
 		{
 			/*
 			 * Even BufFileSeek() should not allow curOffset to become more
-			 * than MAX_PHYSICAL_FILESIZE (if caller passes higher offset,
+			 * than buffile_max_filesize (if caller passes higher offset,
 			 * curFile gets increased instead).
 			 */
-			Assert(file->curOffset == MAX_PHYSICAL_FILESIZE);
+			Assert(file->curOffset == buffile_max_filesize);
 
 			fileno++;
 		}
@@ -2114,8 +2107,8 @@ BufFileUpdateUsefulLength(BufFileCommon *file, bool is_transient)
 		 * new_useful is also relative to the start of that previous
 		 * segment. Make sure it's relative to the current (fileno) segment.
 		 */
-		if (file->curOffset % MAX_PHYSICAL_FILESIZE == 0)
-			new_useful %= MAX_PHYSICAL_FILESIZE;
+		if (file->curOffset % buffile_max_filesize == 0)
+			new_useful %= buffile_max_filesize;
 
 		/* Finalize the offset. */
 		new_useful += file->pos;
