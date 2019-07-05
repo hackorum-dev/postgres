@@ -881,7 +881,7 @@ do_start(void)
 		 * If encryption key is needed, retrieve it before trying to start
 		 * postmaster.
 		 */
-		run_encryption_key_command(encryption_key);
+		run_encryption_key_command(encryption_key, pg_data);
 
 		/*
 		 * Where should the key be sent?

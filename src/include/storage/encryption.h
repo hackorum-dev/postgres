@@ -57,6 +57,14 @@ typedef enum CipherKind
 	PG_CIPHER_AES_BLOCK_CBC_256_STREAM_CTR_256
 }			CipherKind;
 
+/*
+ * TODO Tune these values.
+ */
+#define ENCRYPTION_PWD_MIN_LENGTH	8
+#define ENCRYPTION_PWD_MAX_LENGTH	16
+#define ENCRYPTION_KDF_NITER		1048576
+#define	ENCRYPTION_KDF_SALT_LEN		sizeof(uint64)
+
 /* Key to encrypt / decrypt data. */
 extern unsigned char encryption_key[];
 

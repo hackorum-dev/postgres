@@ -3004,11 +3004,31 @@ initialize_data_directory(void)
 	write_version_file(NULL);
 
 	/*
-	 * If the cluster will be encrypted, run the command to generate the
-	 * encryption key.
+	 * If the cluster will be encrypted, write the KDF file so that encryption
+	 * key can be derived from password.
 	 */
 	if (encryption_key_command)
-		run_encryption_key_command(encryption_key);
+	{
+		/*
+		 * XXX Since execution of encryption_key_command produce the key (as
+		 * opposed to password), we don't know if the command received the key
+		 * itself or a password. If DBA provided initdb with a key, he will
+		 * never use password in the future (there was no KDF so far so the
+		 * key could not be derived from password, and the password can hardly
+		 * be derived from the key), so the KDF file may be useless. We don't
+		 * have enough information to recognize this special case, so just
+		 * initialize and write the KDF unconditionally.
+		 */
+		init_kdf();
+		write_kdf_file(pg_data);
+
+		/*
+		 * The key command is allowed to use pg_keytool, which in turn needs
+		 * the KDF parameters. The KDF parameters are now available so we can
+		 * run the command.
+		 */
+		run_encryption_key_command(encryption_key, pg_data);
+	}
 
 	/* Select suitable configuration settings */
 	set_null_conf();

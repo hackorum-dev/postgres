@@ -43,6 +43,7 @@ usage(const char *progname)
 	printf(_("Usage:\n"));
 	printf(_("  %s [OPTION]...\n"), progname);
 	printf(_("\nOptions:\n"));
+	printf(_("  -D, --pgdata=DATADIR   data directory\n"));
 	/* Display default host */
 	env = getenv("PGHOST");
 	printf(_("  -h, --host=HOSTNAME    database server host or socket directory (default: \"%s\")\n"),
@@ -52,8 +53,9 @@ usage(const char *progname)
 	printf(_("  -p, --port=PORT        database server port (default: \"%s\")\n"),
 			env ? env : DEF_PGPORT_STR);
 	printf(_("  -s,                    send output to database server\n"));
+	printf(_("  -w                     expect password on input, not a key\n"));
 	printf(_("  -?, --help             show this help, then exit\n\n"));
-	printf(_("Key is read from stdin and sent either to stdout or to PostgreSQL server being started\n"));
+	printf(_("Password or key is read from stdin. Key is sent to PostgreSQL server being started\n"));
 }
 #endif							/* USE_ENCRYPTION */
 
@@ -69,9 +71,12 @@ main(int argc, char **argv)
 	int			c;
 	char		*host = NULL;
 	char		*port_str = NULL;
+	char	   *DataDir = NULL;
 	bool		to_server = false;
+	bool		expect_password = false;
 	int			i, n;
 	int			optindex;
+	char		password[ENCRYPTION_PWD_MAX_LENGTH];
 	char		key_chars[ENCRYPTION_KEY_CHARS];
 
 	static struct option long_options[] =
@@ -99,11 +104,15 @@ main(int argc, char **argv)
 		}
 	}
 
-	while ((c = getopt_long(argc, argv, "h:p:s",
+	while ((c = getopt_long(argc, argv, "h:D:p:sw",
 							long_options, &optindex)) != -1)
 	{
 		switch (c)
 		{
+			case 'D':
+				DataDir = optarg;
+				break;
+
 			case 'h':
 				host = pg_strdup(optarg);
 				break;
@@ -114,6 +123,10 @@ main(int argc, char **argv)
 
 			case 's':
 				to_server = true;
+				break;
+
+			case 'w':
+				expect_password = true;
 				break;
 
 			case '?':
@@ -146,34 +159,78 @@ main(int argc, char **argv)
 		exit(1);
 	}
 
-	/* Read the key. */
+	/*
+	 * The KDF file is needed to derive the key from password, and this file
+	 * is located in the data directory.
+	 */
+	if (expect_password && DataDir == NULL)
+	{
+		pg_log_error("%s: no data directory specified", progname);
+		pg_log_error("Try \"%s --help\" for more information.", progname);
+		exit(EXIT_FAILURE);
+	}
+
+	/*
+	 * Read the credentials (key or password).
+	 */
 	n = 0;
 	/* Key length in characters (two characters per hexadecimal digit) */
 	while ((c = getchar()) != EOF && c != '\n')
 	{
-		if (n >= ENCRYPTION_KEY_CHARS)
+		if (!expect_password)
 		{
-			pg_log_error("The key is too long");
+			if (n >= ENCRYPTION_KEY_CHARS)
+			{
+				pg_log_error("The key is too long");
+				exit(EXIT_FAILURE);
+			}
+
+			key_chars[n++] = c;
+		}
+		else
+		{
+			if (n >= ENCRYPTION_PWD_MAX_LENGTH)
+			{
+				pg_log_error("The password is too long");
+				exit(EXIT_FAILURE);
+			}
+
+			password[n++] = c;
+		}
+	}
+
+	/* If password was received, turn it into encryption key. */
+	if (!expect_password)
+	{
+		if (n < ENCRYPTION_KEY_CHARS)
+		{
+			pg_log_error("The key is too short");
 			exit(EXIT_FAILURE);
 		}
 
-		key_chars[n++] = c;
-	}
-
-	if (n < ENCRYPTION_KEY_CHARS)
-	{
-		pg_log_error("The key is too short");
-		exit(EXIT_FAILURE);
-	}
-
-	for (i = 0; i < ENCRYPTION_KEY_LENGTH; i++)
-	{
-		if (sscanf(key_chars + 2 * i, "%2hhx", encryption_key + i) == 0)
+		for (i = 0; i < ENCRYPTION_KEY_LENGTH; i++)
 		{
-			pg_log_error("Invalid character in encryption key at position %d",
-						 2 * i);
+			if (sscanf(key_chars + 2 * i, "%2hhx", encryption_key + i) == 0)
+			{
+				pg_log_error("Invalid character in encryption key at position %d",
+							 2 * i);
+				exit(EXIT_FAILURE);
+			}
+		}
+	}
+	else
+	{
+		if (n < ENCRYPTION_PWD_MIN_LENGTH)
+		{
+			pg_log_error("The password is too short");
 			exit(EXIT_FAILURE);
 		}
+
+		/* Read the KDF parameters. */
+		read_kdf_file(DataDir);
+
+		/* Run the KDF. */
+		derive_key_from_password(encryption_key, password, n);
 	}
 
 	/*
