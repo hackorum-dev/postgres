@@ -92,6 +92,7 @@ static void remove_dbtablespaces(Oid db_id);
 static bool check_db_file_conflict(Oid db_id);
 static int	errdetail_busy_db(int notherbackends, int npreparedxacts);
 
+Oid	binary_upgrade_next_pg_database_oid = InvalidOid;
 
 /*
  * CREATE DATABASE
@@ -522,6 +523,16 @@ createdb(ParseState *pstate, const CreatedbStmt *stmt)
 			ereport(ERROR,
 					(errcode(ERRCODE_DUPLICATE_DATABASE),
 					 errmsg("database \"%s\" already exists", dbname)));
+	}
+	else if (IsBinaryUpgrade)
+	{
+		if (!OidIsValid(binary_upgrade_next_pg_database_oid))
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("pg_database OID value not set when in binary upgrade mode")));
+
+		dboid = binary_upgrade_next_pg_database_oid;
+		binary_upgrade_next_pg_database_oid = InvalidOid;
 	}
 	else
 	{

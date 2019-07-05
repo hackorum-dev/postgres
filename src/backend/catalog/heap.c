@@ -91,7 +91,9 @@
 
 /* Potentially set by pg_upgrade_support functions */
 Oid			binary_upgrade_next_heap_pg_class_oid = InvalidOid;
+Oid			binary_upgrade_next_heap_pg_class_relfilenode = InvalidOid;
 Oid			binary_upgrade_next_toast_pg_class_oid = InvalidOid;
+Oid			binary_upgrade_next_toast_pg_class_relfilenode = InvalidOid;
 
 static void AddNewRelationTuple(Relation pg_class_desc,
 								Relation new_rel_desc,
@@ -366,17 +368,60 @@ heap_create(const char *relname,
 			break;
 	}
 
-	/*
-	 * Decide whether to create storage. If caller passed a valid relfilenode,
-	 * storage is already created, so don't do it here.  Also don't create it
-	 * for relkinds without physical storage.
-	 */
-	if (!RELKIND_HAS_STORAGE(relkind) || OidIsValid(relfilenode))
-		create_storage = false;
+	/* Decide whether to create storage. */
+	if (!IsBinaryUpgrade)
+	{
+		/*
+		 * If caller passed a valid relfilenode, storage is already created,
+		 * so don't do it here.  Also don't create it for relkinds without
+		 * physical storage.
+		 */
+		if (!RELKIND_HAS_STORAGE(relkind) || OidIsValid(relfilenode))
+			create_storage = false;
+		else
+		{
+			create_storage = true;
+			relfilenode = relid;
+		}
+	}
 	else
 	{
+		/* Override relfilenode? */
+		if (relkind == RELKIND_RELATION || relkind == RELKIND_SEQUENCE ||
+			relkind == RELKIND_MATVIEW)
+		{
+			if (!OidIsValid(binary_upgrade_next_heap_pg_class_relfilenode))
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("relfilenode value not set when in binary upgrade mode")));
+
+			relfilenode = binary_upgrade_next_heap_pg_class_relfilenode;
+			binary_upgrade_next_heap_pg_class_relfilenode = InvalidOid;
+		}
+		else if (relkind == RELKIND_TOASTVALUE)
+		{
+			if (!OidIsValid(binary_upgrade_next_toast_pg_class_relfilenode))
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("toast relfilenode value not set when in binary upgrade mode")));
+			relfilenode = binary_upgrade_next_toast_pg_class_relfilenode;
+			binary_upgrade_next_toast_pg_class_relfilenode = InvalidOid;
+		}
+		else if (relkind == RELKIND_INDEX)
+		{
+			if (!OidIsValid(binary_upgrade_next_index_pg_class_relfilenode))
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("pg_class index relfilenode value not set when in binary upgrade mode")));
+			relfilenode = binary_upgrade_next_index_pg_class_relfilenode;
+			binary_upgrade_next_index_pg_class_relfilenode = InvalidOid;
+		}
+
+		/*
+		 * The storage is needed for the following DDLs, although it will
+		 * eventually be overwritten with that of the old cluster.
+		 */
 		create_storage = true;
-		relfilenode = relid;
 	}
 
 	/*
@@ -1149,9 +1194,6 @@ heap_create_with_catalog(const char *relname,
 
 	/*
 	 * Allocate an OID for the relation, unless we were told what to use.
-	 *
-	 * The OID will be the relfilenode as well, so make sure it doesn't
-	 * collide with either pg_class OIDs or existing physical files.
 	 */
 	if (!OidIsValid(relid))
 	{
@@ -1179,8 +1221,15 @@ heap_create_with_catalog(const char *relname,
 			binary_upgrade_next_toast_pg_class_oid = InvalidOid;
 		}
 		else
+		{
+			/*
+			 * The OID will be the relfilenode as well, so make sure it
+			 * doesn't collide with either pg_class OIDs or existing physical
+			 * files.
+			 */
 			relid = GetNewRelFileNode(reltablespace, pg_class_desc,
 									  relpersistence);
+		}
 	}
 
 	/*
