@@ -403,6 +403,7 @@ static void BackendInitialize(Port *port);
 static void BackendRun(Port *port) pg_attribute_noreturn();
 static void ExitPostmaster(int status) pg_attribute_noreturn();
 static int	ServerLoop(void);
+static void ServerLoopCheckTimeouts(void);
 static int	BackendStartup(Port *port);
 static int	ProcessStartupPacket(Port *port, bool secure_done);
 static void SendNegotiateProtocolVersion(List *unrecognized_protocol_options);
@@ -1611,6 +1612,8 @@ DetermineSleepTime(struct timeval *timeout)
 	}
 }
 
+static time_t		last_lockfile_recheck_time, last_touch_time;
+
 /*
  * Main idle loop of postmaster
  *
@@ -1621,8 +1624,6 @@ ServerLoop(void)
 {
 	fd_set		readmask;
 	int			nSockets;
-	time_t		last_lockfile_recheck_time,
-				last_touch_time;
 
 	last_lockfile_recheck_time = last_touch_time = time(NULL);
 
@@ -1632,7 +1633,6 @@ ServerLoop(void)
 	{
 		fd_set		rmask;
 		int			selres;
-		time_t		now;
 
 		/*
 		 * Wait for a connection request to arrive.
@@ -1797,58 +1797,68 @@ ServerLoop(void)
 		 * us sleep at most that long; except for SIGKILL timeout which has
 		 * special-case logic there.
 		 */
-		now = time(NULL);
+		ServerLoopCheckTimeouts();
+	}
+}
 
-		/*
-		 * If we already sent SIGQUIT to children and they are slow to shut
-		 * down, it's time to send them SIGKILL.  This doesn't happen
-		 * normally, but under certain conditions backends can get stuck while
-		 * shutting down.  This is a last measure to get them unwedged.
-		 *
-		 * Note we also do this during recovery from a process crash.
-		 */
-		if ((Shutdown >= ImmediateShutdown || (FatalError && !SendStop)) &&
-			AbortStartTime != 0 &&
-			(now - AbortStartTime) >= SIGKILL_CHILDREN_AFTER_SECS)
-		{
-			/* We were gentle with them before. Not anymore */
-			TerminateChildren(SIGKILL);
-			/* reset flag so we don't SIGKILL again */
-			AbortStartTime = 0;
-		}
+/*
+ * Subroutine of ServerLoop() that checks if various timeouts elapsed, and if
+ * so, takes the appropriate action.
+ */
+static void
+ServerLoopCheckTimeouts(void)
+{
+	time_t		now = time(NULL);
 
-		/*
-		 * Once a minute, verify that postmaster.pid hasn't been removed or
-		 * overwritten.  If it has, we force a shutdown.  This avoids having
-		 * postmasters and child processes hanging around after their database
-		 * is gone, and maybe causing problems if a new database cluster is
-		 * created in the same place.  It also provides some protection
-		 * against a DBA foolishly removing postmaster.pid and manually
-		 * starting a new postmaster.  Data corruption is likely to ensue from
-		 * that anyway, but we can minimize the damage by aborting ASAP.
-		 */
-		if (now - last_lockfile_recheck_time >= 1 * SECS_PER_MINUTE)
-		{
-			if (!RecheckDataDirLockFile())
-			{
-				ereport(LOG,
-						(errmsg("performing immediate shutdown because data directory lock file is invalid")));
-				kill(MyProcPid, SIGQUIT);
-			}
-			last_lockfile_recheck_time = now;
-		}
+	/*
+	 * If we already sent SIGQUIT to children and they are slow to shut down,
+	 * it's time to send them SIGKILL.  This doesn't happen normally, but
+	 * under certain conditions backends can get stuck while shutting down.
+	 * This is a last measure to get them unwedged.
+	 *
+	 * Note we also do this during recovery from a process crash.
+	 */
+	if ((Shutdown >= ImmediateShutdown || (FatalError && !SendStop)) &&
+		AbortStartTime != 0 &&
+		(now - AbortStartTime) >= SIGKILL_CHILDREN_AFTER_SECS)
+	{
+		/* We were gentle with them before. Not anymore */
+		TerminateChildren(SIGKILL);
+		/* reset flag so we don't SIGKILL again */
+		AbortStartTime = 0;
+	}
 
-		/*
-		 * Touch Unix socket and lock files every 58 minutes, to ensure that
-		 * they are not removed by overzealous /tmp-cleaning tasks.  We assume
-		 * no one runs cleaners with cutoff times of less than an hour ...
-		 */
-		if (now - last_touch_time >= 58 * SECS_PER_MINUTE)
+	/*
+	 * Once a minute, verify that postmaster.pid hasn't been removed or
+	 * overwritten.  If it has, we force a shutdown.  This avoids having
+	 * postmasters and child processes hanging around after their database is
+	 * gone, and maybe causing problems if a new database cluster is created
+	 * in the same place.  It also provides some protection against a DBA
+	 * foolishly removing postmaster.pid and manually starting a new
+	 * postmaster.  Data corruption is likely to ensue from that anyway, but
+	 * we can minimize the damage by aborting ASAP.
+	 */
+	if (now - last_lockfile_recheck_time >= 1 * SECS_PER_MINUTE)
+	{
+		if (!RecheckDataDirLockFile())
 		{
-			TouchSocketFiles();
-			TouchSocketLockFiles();
-			last_touch_time = now;
+			ereport(LOG,
+					(errmsg("performing immediate shutdown because data directory lock file is invalid")));
+			kill(MyProcPid, SIGQUIT);
 		}
+		last_lockfile_recheck_time = now;
+	}
+
+	/*
+	 * Touch Unix socket and lock files every 58 minutes, to ensure that they
+	 * are not removed by overzealous /tmp-cleaning tasks.  We assume no one
+	 * runs cleaners with cutoff times of less than an hour ...
+	 */
+	if (now - last_touch_time >= 58 * SECS_PER_MINUTE)
+	{
+		TouchSocketFiles();
+		TouchSocketLockFiles();
+		last_touch_time = now;
 	}
 }
 
