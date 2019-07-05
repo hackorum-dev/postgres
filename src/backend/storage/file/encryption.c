@@ -63,6 +63,7 @@ char encryption_verification[ENCRYPTION_SAMPLE_SIZE];
 
 bool	encryption_setup_done = false;
 
+PGAlignedBlock encrypt_buf;
 char	   *encrypt_buf_xlog = NULL;
 
 #ifdef USE_ENCRYPTION
@@ -425,3 +426,106 @@ XLogEncryptionTweak(char *tweak, TimeLineID timeline, XLogSegNo segment,
 	tweak += sizeof(XLogSegNo);
 	memcpy(tweak, &offset, sizeof(offset));
 }
+
+/*
+ * Copying relations between tablespaces/databases means that the tweak values
+ * of each block will change. This function transcodes a series of blocks with
+ * new tweak values. Returns the new block number for convenience.
+ */
+BlockNumber
+ReencryptBlock(char *buffer, int blocks,
+			   RelFileNode *srcNode, RelFileNode *dstNode,
+			   ForkNumber srcForkNum, ForkNumber dstForkNum,
+			   BlockNumber blockNum)
+{
+	char	   *cur;
+	char		srcTweak[TWEAK_SIZE];
+	char		dstTweak[TWEAK_SIZE];
+
+	for (cur = buffer; cur < buffer + blocks * BLCKSZ; cur += BLCKSZ)
+	{
+		mdtweak(srcTweak, srcNode, srcForkNum, blockNum);
+		mdtweak(dstTweak, dstNode, dstForkNum, blockNum);
+		decrypt_block(cur, cur, BLCKSZ, srcTweak, false);
+		encrypt_block(cur, cur, BLCKSZ, dstTweak, false);
+		blockNum++;
+	}
+	return blockNum;
+}
+
+/*
+ * md files are encrypted block at a time. Tweak will alias higher numbered
+ * forks for huge tables.
+ */
+void
+mdtweak(char *tweak, RelFileNode *relnode, ForkNumber forknum, BlockNumber blocknum)
+{
+	uint32		fork_and_block = (forknum << 24) ^ blocknum;
+
+	memcpy(tweak, relnode, sizeof(RelFileNode));
+	memcpy(tweak + sizeof(RelFileNode), &fork_and_block, 4);
+}
+
+#ifndef FRONTEND
+/*
+ * When page is encrypted using a cipher in the cipher-block chaining (CBC)
+ * mode, the fact that the page starts with LSN makes it harder for adversary
+ * to see which part of the plain (unencrypted) page changed: the LSN changes
+ * even if only the plain data at the end of the page changed, and, due to the
+ * chaining, the encrypted page becomes completely different.  Although no LSN
+ * is needed for unlogged tables, we still want to keep the advantage
+ * described here. So we set pd_lsn to "fake LSN" before each write.
+ *
+ * Note that caller needs to restore InvalidXLogRecPtr after the write so that
+ * it can be recognized later that the page needs to be treated specially.
+ *
+ * LW_SHARED on the buffer contents is sufficient because pd_lsn is not
+ * expected to be used for other purposes.
+ *
+ * Returns true iff the LSN was updated.
+ */
+bool
+EnforceLSNUpdateForEncryption(char	*buf_contents)
+{
+	PageHeader	hdr = (PageHeader) buf_contents;
+	XLogRecPtr	recptr;
+
+	/* Failure indicates incorrect user of the function. */
+	Assert(data_encrypted);
+
+	/*
+	 * All-zero page shouldn't be encrypted, so don't care about the fake LSN.
+	 */
+	if (PageIsNew(hdr))
+		return false;
+
+	recptr = PageXLogRecPtrGet(hdr->pd_lsn);
+
+	/*
+	 * Valid LSN indicates that the relation is either logged or it's a page
+	 * of unlogged GIST index. In either case we must not touch the LSN.
+	 */
+	if (!XLogRecPtrIsInvalid(recptr))
+		return false;
+
+	PageXLogRecPtrSet(hdr->pd_lsn, GetFakeLSNForUnloggedRel());
+
+	return true;
+}
+
+/*
+ * If EnforceLSNUpdateForEncryption() returned true and if the function can be
+ * passed that buffer again, use this function to restore the
+ * InvalidXLogRecPtr value.
+ */
+void
+RestoreInvalidLSN(char	*buf_contents)
+{
+	PageHeader	hdr = (PageHeader) buf_contents;
+
+	/* Failure indicates incorrect user of the function. */
+	Assert(data_encrypted);
+
+	PageXLogRecPtrSet(hdr->pd_lsn, (XLogRecPtr) InvalidXLogRecPtr);
+}
+#endif	/* FRONTEND */

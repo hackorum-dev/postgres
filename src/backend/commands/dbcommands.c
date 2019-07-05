@@ -609,6 +609,8 @@ createdb(ParseState *pstate, const CreatedbStmt *stmt)
 			Oid			dsttablespace;
 			char	   *srcpath;
 			char	   *dstpath;
+			RelFileNode src_node = {srctablespace, src_dboid, InvalidOid};
+			RelFileNode dst_node;
 			struct stat st;
 
 			/* No need to copy global tablespace */
@@ -630,6 +632,10 @@ createdb(ParseState *pstate, const CreatedbStmt *stmt)
 			else
 				dsttablespace = srctablespace;
 
+			dst_node.spcNode = dsttablespace;
+			dst_node.dbNode = dboid;
+			dst_node.relNode= InvalidOid;
+
 			dstpath = GetDatabasePath(dboid, dsttablespace);
 
 			/*
@@ -637,7 +643,7 @@ createdb(ParseState *pstate, const CreatedbStmt *stmt)
 			 *
 			 * We don't need to copy subdirectories
 			 */
-			copydir(srcpath, dstpath, false);
+			copydir(srcpath, dstpath, &src_node, &dst_node);
 
 			/* Record the filesystem change in XLOG */
 			{
@@ -1272,10 +1278,13 @@ movedb(const char *dbname, const char *tblspcname)
 	PG_ENSURE_ERROR_CLEANUP(movedb_failure_callback,
 							PointerGetDatum(&fparms));
 	{
+		RelFileNode src_node = {src_tblspcoid, db_id, InvalidOid};
+		RelFileNode dst_node = {dst_tblspcoid, db_id, InvalidOid};
+
 		/*
 		 * Copy files from the old tablespace to the new one
 		 */
-		copydir(src_dbpath, dst_dbpath, false);
+		copydir(src_dbpath, dst_dbpath, &src_node, &dst_node);
 
 		/*
 		 * Record the filesystem change in XLOG
@@ -2109,6 +2118,8 @@ dbase_redo(XLogReaderState *record)
 		char	   *src_path;
 		char	   *dst_path;
 		struct stat st;
+		RelFileNode src_node = {xlrec->src_tablespace_id, xlrec->src_db_id, InvalidOid};
+		RelFileNode dst_node = {xlrec->tablespace_id, xlrec->db_id, InvalidOid};
 
 		src_path = GetDatabasePath(xlrec->src_db_id, xlrec->src_tablespace_id);
 		dst_path = GetDatabasePath(xlrec->db_id, xlrec->tablespace_id);
@@ -2138,7 +2149,7 @@ dbase_redo(XLogReaderState *record)
 		 *
 		 * We don't need to copy subdirectories
 		 */
-		copydir(src_path, dst_path, false);
+		copydir(src_path, dst_path, &src_node, &dst_node);
 	}
 	else if (info == XLOG_DBASE_DROP)
 	{

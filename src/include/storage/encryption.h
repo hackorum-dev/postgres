@@ -117,8 +117,15 @@ extern char encryption_verification[];
 extern bool	encryption_setup_done;
 
 /*
- * XLOG encryption/decryption buffer. This buffer spans multiple pages, in
- * order to reduce the number of syscalls when doing I/O.
+ * In some cases we need a separate copy of the data because encryption
+ * in-place (typically in the shared buffers) would make the data unusable for
+ * backends.
+ */
+extern PGAlignedBlock encrypt_buf;
+
+/*
+ * The same for XLOG. This buffer spans multiple pages, in order to reduce the
+ * number of syscalls when doing I/O.
  *
  * XXX Fine tune the buffer size.
  */
@@ -144,5 +151,16 @@ extern void encryption_error(bool fatal, char *message);
 
 extern void XLogEncryptionTweak(char *tweak, TimeLineID timeline,
 					XLogSegNo segment, uint32 offset);
+extern BlockNumber ReencryptBlock(char *buffer, int blocks,
+			   RelFileNode *srcNode, RelFileNode *dstNode,
+			   ForkNumber srcForkNum, ForkNumber dstForkNum,
+			   BlockNumber blockNum);
+extern void mdtweak(char *tweak, RelFileNode *relnode, ForkNumber forknum,
+		BlockNumber blocknum);
+
+#ifndef FRONTEND
+extern bool EnforceLSNUpdateForEncryption(char	*buf_contents);
+extern void RestoreInvalidLSN(char	*buf_contents);
+#endif	/* FRONTEND */
 
 #endif							/* ENCRYPTION_H */
