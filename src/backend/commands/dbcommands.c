@@ -513,11 +513,24 @@ createdb(ParseState *pstate, const CreatedbStmt *stmt)
 	 */
 	pg_database_rel = table_open(DatabaseRelationId, RowExclusiveLock);
 
-	do
+	/* The "postgres" database has fixed OID. */
+	if (strcmp(dbname, "postgres") == 0)
 	{
-		dboid = GetNewOidWithIndex(pg_database_rel, DatabaseOidIndexId,
-								   Anum_pg_database_oid);
-	} while (check_db_file_conflict(dboid));
+		dboid = PostgresDbOid;
+
+		if (check_db_file_conflict(dboid))
+			ereport(ERROR,
+					(errcode(ERRCODE_DUPLICATE_DATABASE),
+					 errmsg("database \"%s\" already exists", dbname)));
+	}
+	else
+	{
+		do
+		{
+			dboid = GetNewOidWithIndex(pg_database_rel, DatabaseOidIndexId,
+									   Anum_pg_database_oid);
+		} while (check_db_file_conflict(dboid));
+	}
 
 	/*
 	 * Insert a new tuple into pg_database.  This establishes our ownership of
