@@ -60,6 +60,29 @@ typedef enum CipherKind
 /* Key to encrypt / decrypt data. */
 extern unsigned char encryption_key[];
 
+#ifndef FRONTEND
+/*
+ * Space for the encryption key in shared memory. Backend that receives the
+ * key during startup stores it here so postmaster can eventually take a local
+ * copy.
+ *
+ * We cannot protect the "initialized" field with a spinlock because the data
+ * will be accessed by postmaster, but it should not be necessary for bool
+ * type. Furthermore, synchronization is not really critical here, see
+ * processEncryptionKey().
+ */
+typedef struct ShmemEncryptionKey
+{
+	char	data[ENCRYPTION_KEY_LENGTH]; /* the key */
+	bool	initialized;				/* received the key? */
+} ShmemEncryptionKey;
+
+/*
+ * Encryption key in the shared memory.
+ */
+extern ShmemEncryptionKey *encryption_key_shmem;
+#endif							/* FRONTEND */
+
 /*
  * The encrypted data is a series of blocks of size
  * ENCRYPTION_BLOCK. Currently we use the EVP_aes_256_xts implementation. Make
@@ -86,6 +109,9 @@ extern char encryption_verification[];
 extern bool	encryption_setup_done;
 
 #ifndef FRONTEND
+extern Size EncryptionShmemSize(void);
+extern void EncryptionShmemInit(void);
+
 typedef int (*read_encryption_key_cb) (void);
 extern void read_encryption_key(read_encryption_key_cb read_char);
 #endif							/* FRONTEND */

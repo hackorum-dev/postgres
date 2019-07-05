@@ -53,6 +53,10 @@ EVP_CIPHER_CTX *ctx_encrypt,
 
 unsigned char encryption_key[ENCRYPTION_KEY_LENGTH];
 
+#ifndef FRONTEND
+ShmemEncryptionKey *encryption_key_shmem = NULL;
+#endif							/* FRONTEND */
+
 bool		data_encrypted = false;
 
 char encryption_verification[ENCRYPTION_SAMPLE_SIZE];
@@ -65,6 +69,36 @@ static void evp_error(void);
 #endif							/* USE_ENCRYPTION */
 
 #ifndef FRONTEND
+/*
+ * Report space needed for our shared memory area
+ */
+Size
+EncryptionShmemSize(void)
+{
+	return sizeof(ShmemEncryptionKey);
+}
+
+/*
+ * Initialize our shared memory area
+ */
+void
+EncryptionShmemInit(void)
+{
+	bool	found;
+
+	encryption_key_shmem = ShmemInitStruct("Cluster Encryption Key",
+										   EncryptionShmemSize(),
+										   &found);
+	if (!IsUnderPostmaster)
+	{
+		Assert(!found);
+
+		encryption_key_shmem->initialized = false;
+	}
+	else
+		Assert(found);
+}
+
 /*
  * Read encryption key in hexadecimal form from stdin and store it in
  * encryption_key variable.

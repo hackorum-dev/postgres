@@ -16,3 +16,5 @@
 extern char *encryption_key_command;
 
 extern void run_encryption_key_command(unsigned char *encryption_key);
+extern bool send_key_to_postmaster(const char *host, const char *port,
+								   const unsigned char *encryption_Key);

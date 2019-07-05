@@ -88,3 +88,104 @@ run_encryption_key_command(unsigned char *encryption_key)
 	pfree(buf);
 	pclose(fp);
 }
+
+/*
+ * Send the contents of encryption_key in the form of special startup packet
+ * to a server that is being started.
+ *
+ * Returns true if we could send the message and false if not, however even
+ * success does not guarantee that server started up - caller should
+ * eventually test server connection himself.
+ *
+ * TODO Windows stuff?
+ */
+bool
+send_key_to_postmaster(const char *host, const char *port,
+					   const unsigned char *encryption_Key)
+{
+	const char **keywords = pg_malloc0(3 * sizeof(*keywords));
+	const char **values = pg_malloc0(3 * sizeof(*values));
+	int	i;
+	PGconn *conn = NULL;
+	int	sock = -1;
+	EncryptionKeyMsg	message;
+	int	msg_size, packet_size;
+	char	*packet = NULL;
+	bool	res = true;
+
+/* How many seconds we can wait for the postmaster to receive the key. */
+#define SEND_ENCRYPT_KEY_TIMEOUT	60
+
+	if (host)
+	{
+		keywords[0] = "host";
+		values[0] = host;
+	}
+	keywords[1] = "port";
+	values[1] = port;
+
+	/* Compose the message. */
+	message.encryptionKeyCode = pg_hton32(ENCRYPTION_KEY_MSG_CODE);
+	message.version = 1;
+	memcpy(message.data, encryption_key, ENCRYPTION_KEY_LENGTH);
+	msg_size = offsetof(EncryptionKeyMsg, data) + ENCRYPTION_KEY_LENGTH;
+
+	packet_size = msg_size + 4;
+	packet = (char *) palloc(packet_size);
+	*((int32 *) packet) = pg_hton32(packet_size);
+	memcpy(packet + 4, &message, msg_size);
+
+	/*
+	 * Although we don't expect the server to accept regular libpq messages,
+	 * we try to get at least a valid socket.
+	 */
+	for (i = 0; i < SEND_ENCRYPT_KEY_TIMEOUT + 1; i++)
+	{
+		if (i > 0)
+			/* Sleep for 1 second. */
+			pg_usleep(1000000L);
+
+		if (conn)
+		{
+			PQfinish(conn);
+			conn = NULL;
+		}
+
+		conn = PQconnectStartParams(keywords, values, false);
+		if (conn == NULL)
+			continue;
+
+		sock = PQsocket(conn);
+		/* Cannot send the key if there's no valid socket. */
+		if (sock == -1)
+			continue;
+
+		/* Non-blocking write would only make this simple case tricky. */
+		if (!pg_set_block(sock))
+			continue;
+
+	retry:
+		/*
+		 * Send the packet. Here we need to use low level API because the server
+		 * does is not fully up so libpq cannot be used properly.
+		 */
+		if (send(sock, (char *) packet, packet_size, 0) != packet_size)
+		{
+			if (SOCK_ERRNO == EINTR)
+				/* Interrupted system call - we'll just try again */
+				goto retry;
+			continue;
+		}
+		else
+			/* Success */
+			break;
+	}
+
+	pg_free(keywords);
+	pg_free(values);
+	if (conn)
+		PQfinish(conn);
+	pfree(packet);
+
+	return res;
+}
