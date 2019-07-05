@@ -71,6 +71,7 @@
 #include "replication/walreceiver.h"
 #include "replication/walsender.h"
 #include "storage/bufmgr.h"
+#include "storage/encryption.h"
 #include "storage/dsm_impl.h"
 #include "storage/standby.h"
 #include "storage/fd.h"
@@ -1831,6 +1832,17 @@ static struct config_bool ConfigureNamesBool[] =
 			GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
 		},
 		&data_checksums,
+		false,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"data_encryption", PGC_INTERNAL, PRESET_OPTIONS,
+			gettext_noop("Shows whether data encryption is turned on for this cluster."),
+			NULL,
+			GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
+		},
+		&data_encrypted,
 		false,
 		NULL, NULL, NULL
 	},

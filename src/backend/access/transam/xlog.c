@@ -55,6 +55,7 @@
 #include "replication/walreceiver.h"
 #include "replication/walsender.h"
 #include "storage/bufmgr.h"
+#include "storage/encryption.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
 #include "storage/large_object.h"
@@ -77,6 +78,7 @@
 #include "pg_trace.h"
 
 extern uint32 bootstrap_data_checksum_version;
+extern char *bootstrap_encryption_sample;
 
 /* Unsupported old recovery command file names (relative to $PGDATA) */
 #define RECOVERY_COMMAND_FILE	"recovery.conf"
@@ -4774,6 +4776,58 @@ ReadControlFile(void)
 		ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						errmsg("\"max_wal_size\" must be at least twice \"wal_segment_size\"")));
 
+	/*
+	 * Initialize encryption, but not if the current backend has already done
+	 * that.
+	 */
+	if (ControlFile->data_cipher > PG_CIPHER_NONE && !data_encrypted)
+	{
+		/*
+		 * Set data_encryption for caller to know that he needs to retrieve
+		 * the key and initialize the encryption library.
+		 */
+		SetConfigOption("data_encryption", "true", PGC_INTERNAL,
+						PGC_S_OVERRIDE);
+
+		/*
+		 * Save the verification string. We'll perform the actual verification
+		 * as soon as the encryption setup is done.
+		 */
+		memcpy(encryption_verification,
+			   ControlFile->encryption_verification,
+			   ENCRYPTION_SAMPLE_SIZE);
+
+		/*
+		 * full_page_writes must be set because torn page write of an
+		 * encrypted page implies that decryption of the page will produce
+		 * garbage. This damage can affect even those parts of the page that
+		 * haven't been modified by any access method. And since no access
+		 * method modified those parts, there might be no XLOG records to
+		 * repair them during crash recovery. So full page image is the only
+		 * way to fix such a page.
+		 *
+		 * Do not enforce this setting in binary upgrade mode, since
+		 * pg_upgrade sets it to off for performance reasons. (If the upgrade
+		 * crashes, the new cluster must be created from scratch anyway.)
+		 *
+		 * XXX It would be nice to have guc.c check so that we don't have to
+		 * copy and paste the error message. However it's unclear how to
+		 * ensure that either ERROR is raised or nothing happens at all. It
+		 * seems that set_config_option() can change
+		 * config_generic.reset_source if the check succeeded, but that's too
+		 * invasive.
+		 */
+		if (!fullPageWrites && !IsBinaryUpgrade)
+			ereport(FATAL,
+					(errmsg("invalid value for parameter \"full_page_writes\": %d",
+							fullPageWrites),
+					 errdetail("Cannot disable parameter when the cluster is encrypted.")));
+	}
+
+	/*
+	 * This calculation relies on data_encryption (in particular the header
+	 * sizes do), so we could not do it earlier.
+	 */
 	UsableBytesInSegment =
 		(wal_segment_size / XLOG_BLCKSZ * UsableBytesInPage) -
 		(SizeOfXLogLongPHD - SizeOfXLogShortPHD);
@@ -5254,6 +5308,24 @@ BootStrapXLOG(void)
 	ControlFile->wal_log_hints = wal_log_hints;
 	ControlFile->track_commit_timestamp = track_commit_timestamp;
 	ControlFile->data_checksum_version = bootstrap_data_checksum_version;
+
+	if (data_encrypted)
+	{
+		char	sample[ENCRYPTION_SAMPLE_SIZE];
+
+		ControlFile->data_cipher = PG_CIPHER_AES_BLOCK_CBC_256_STREAM_CTR_256;
+
+		sample_encryption(sample);
+
+		memcpy(ControlFile->encryption_verification, sample,
+			   ENCRYPTION_SAMPLE_SIZE);
+	}
+	else
+	{
+		ControlFile->data_cipher = PG_CIPHER_NONE;
+		memset(ControlFile->encryption_verification, 0,
+			   ENCRYPTION_SAMPLE_SIZE);
+	}
 
 	/* some additional ControlFile fields are set in WriteControlFile() */
 
