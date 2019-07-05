@@ -22,5 +22,6 @@ extern void derive_key_from_password(unsigned char *encryption_key,
 									 const char *password, int len);
 extern void run_encryption_key_command(unsigned char *encryption_key,
 									   char *data_dir);
+extern void read_encryption_key_fe(FILE *f);
 extern bool send_key_to_postmaster(const char *host, const char *port,
 								   const unsigned char *encryption_Key);

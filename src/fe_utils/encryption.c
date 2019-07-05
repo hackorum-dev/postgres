@@ -259,8 +259,6 @@ run_encryption_key_command(unsigned char *encryption_key, char *data_dir)
 	FILE	   *fp;
 	char	cmd[MAXPGPATH];
 	char	*sp, *dp, *endp;
-	char	   *buf;
-	int		read_len, i, c;
 
 	Assert(encryption_key_command != NULL &&
 		   strlen(encryption_key_command) > 0);
@@ -312,15 +310,25 @@ run_encryption_key_command(unsigned char *encryption_key, char *data_dir)
 		exit(EXIT_FAILURE);
 	}
 
+	/* Read the key. */
+	read_encryption_key_fe(fp);
+
+	pclose(fp);
+}
+
+/*
+ * Frontend counterpart of read_encryption_key().
+ */
+void
+read_encryption_key_fe(FILE *f)
+{
+	char	   *buf;
+	int		read_len, i, c;
+
 	buf = (char *) palloc(ENCRYPTION_KEY_CHARS);
 
-	/*
-	 * Read the key. This is very similar to backend's read_encryption_key()
-	 * but there seems to be no straightforward way to call the function from
-	 * here.
-	 */
 	read_len = 0;
-	while ((c = fgetc(fp)) != EOF && c != '\n')
+	while ((c = fgetc(f)) != EOF && c != '\n')
 	{
 		if (read_len >= ENCRYPTION_KEY_CHARS)
 		{
@@ -349,7 +357,6 @@ run_encryption_key_command(unsigned char *encryption_key, char *data_dir)
 	}
 
 	pfree(buf);
-	pclose(fp);
 }
 
 /*
