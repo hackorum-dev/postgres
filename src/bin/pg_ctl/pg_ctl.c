@@ -27,6 +27,7 @@
 #include "common/controldata_utils.h"
 #include "common/file_perm.h"
 #include "common/logging.h"
+#include "fe_utils/encryption.h"
 #include "getopt_long.h"
 #include "utils/pidfile.h"
 
@@ -106,6 +107,12 @@ static char logrotate_file[MAXPGPATH];
 
 static volatile pgpid_t postmasterPID = -1;
 
+/*
+ * Define encryption_key locally rather that linking to storage/encryption.c
+ * only because of this one variable.
+ */
+unsigned char encryption_key[ENCRYPTION_KEY_LENGTH];
+
 #ifdef WIN32
 static DWORD pgctl_start_type = SERVICE_AUTO_START;
 static SERVICE_STATUS status;
@@ -134,6 +141,8 @@ static void do_kill(pgpid_t pid);
 static void print_msg(const char *msg);
 static void adjust_data_dir(void);
 static char *get_config_variable(const char *var_name, size_t res_size);
+static char *get_first_csv_item(char *csv_list);
+static void get_postmaster_address(char **host_p, char **port_str_p);
 
 #ifdef WIN32
 #if (_MSC_VER >= 1800)
@@ -825,6 +834,8 @@ do_start(void)
 {
 	pgpid_t		old_pid = 0;
 	pgpid_t		pm_pid;
+	char	*host = NULL;
+	char	*port_str = NULL;
 
 	if (ctl_command != RESTART_COMMAND)
 	{
@@ -864,7 +875,35 @@ do_start(void)
 	}
 #endif
 
+	if (encryption_key_command)
+	{
+		/*
+		 * If encryption key is needed, retrieve it before trying to start
+		 * postmaster.
+		 */
+		run_encryption_key_command(encryption_key);
+
+		/*
+		 * Where should the key be sent?
+		 *
+		 * Retrieve the info now because the time the retrieval will take
+		 * should not overlap with waiting for the startup completion below.
+		 */
+		get_postmaster_address(&host, &port_str);
+	}
+
 	pm_pid = start_postmaster();
+
+	if (encryption_key_command)
+	{
+		/* Send the key to the postmaster */
+		if (!send_key_to_postmaster(host, port_str, encryption_key))
+		{
+			write_stderr(_("%s: could not send encryption key to postmaster\n"),
+						 progname);
+			exit(1);
+		}
+	}
 
 	if (do_wait)
 	{
@@ -2025,10 +2064,10 @@ do_help(void)
 	printf(_("%s is a utility to initialize, start, stop, or control a PostgreSQL server.\n\n"), progname);
 	printf(_("Usage:\n"));
 	printf(_("  %s init[db]   [-D DATADIR] [-s] [-o OPTIONS]\n"), progname);
-	printf(_("  %s start      [-D DATADIR] [-l FILENAME] [-W] [-t SECS] [-s]\n"
+	printf(_("  %s start      [-D DATADIR] [-l FILENAME] [-W] [-t SECS] [-K KEY-CMD] [-s]\n"
 			 "                    [-o OPTIONS] [-p PATH] [-c]\n"), progname);
 	printf(_("  %s stop       [-D DATADIR] [-m SHUTDOWN-MODE] [-W] [-t SECS] [-s]\n"), progname);
-	printf(_("  %s restart    [-D DATADIR] [-m SHUTDOWN-MODE] [-W] [-t SECS] [-s]\n"
+	printf(_("  %s restart    [-D DATADIR] [-m SHUTDOWN-MODE] [-W] [-t SECS] [-K KEY-CMD] [-s]\n"
 			 "                    [-o OPTIONS] [-c]\n"), progname);
 	printf(_("  %s reload     [-D DATADIR] [-s]\n"), progname);
 	printf(_("  %s status     [-D DATADIR]\n"), progname);
@@ -2046,6 +2085,10 @@ do_help(void)
 #ifdef WIN32
 	printf(_("  -e SOURCE              event source for logging when running as a service\n"));
 #endif
+#ifdef	USE_ENCRYPTION
+	printf(_("  -K, --encryption-key-command\n"
+			 "                         command that returns encryption key\n\n"));
+#endif							/* USE_ENCRYPTION */
 	printf(_("  -s, --silent           only print errors, no informational messages\n"));
 	printf(_("  -t, --timeout=SECS     seconds to wait when using -w option\n"));
 	printf(_("  -V, --version          output version information, then exit\n"));
@@ -2254,6 +2297,66 @@ get_config_variable(const char *var_name, size_t res_size)
 	return result;
 }
 
+/*
+ * Get the first item of comma-separated list or NULL if there's no valid
+ * item.
+ */
+static char *
+get_first_csv_item(char *csv_list)
+{
+	char	*start, *end, *result;
+
+	start = csv_list;
+	/* First, skip the leading space. */
+	while (isspace(*start))
+		start++;
+	if (*start == '\0')
+		return NULL;
+
+	end = start;
+	while (*end != '\0' && *end != ',' && !isspace(*end))
+		end++;
+	if (end == start)
+		return NULL;
+
+	result = pg_strdup(start);
+
+	/* Trim the string if needed. */
+	if (*end != '\0')
+		result[end - start] = '\0';
+
+	return result;
+}
+
+/*
+ * Retrieve host name and port to which the encryption key should be
+ * sent. host can remain NULL, which will make libpq assume "localhost".
+ */
+static void
+get_postmaster_address(char **host_p, char **port_str_p)
+{
+	char	*socket_dirs;
+
+	/* First, try to connect via the unix socket. */
+	socket_dirs = get_config_variable("unix_socket_directories",
+									  MAXPGPATH);
+	if (socket_dirs)
+	{
+		/* If there are multiple sockets, use the first one. */
+		*host_p = get_first_csv_item(socket_dirs);
+	}
+	else
+	{
+		/* Let libpq assume "localhost".*/
+		*host_p = NULL;
+	}
+
+	/*
+	 * The maximum length of the port number is 5 characters for the port
+	 * number (65535 at maximum) + '\n' + terminating '\0'.
+	 */
+	*port_str_p = get_config_variable("port", 7);
+}
 
 static DBState
 get_control_dbstate(void)
@@ -2286,6 +2389,7 @@ main(int argc, char **argv)
 		{"options", required_argument, NULL, 'o'},
 		{"silent", no_argument, NULL, 's'},
 		{"timeout", required_argument, NULL, 't'},
+		{"encryption-key-command", required_argument, NULL, 'K'},
 		{"core-files", no_argument, NULL, 'c'},
 		{"wait", no_argument, NULL, 'w'},
 		{"no-wait", no_argument, NULL, 'W'},
@@ -2356,7 +2460,7 @@ main(int argc, char **argv)
 	/* process command-line options */
 	while (optind < argc)
 	{
-		while ((c = getopt_long(argc, argv, "cD:e:l:m:N:o:p:P:sS:t:U:wW",
+		while ((c = getopt_long(argc, argv, "cD:e:K:l:m:N:o:p:P:sS:t:U:wW",
 								long_options, &option_index)) != -1)
 		{
 			switch (c)
@@ -2381,6 +2485,9 @@ main(int argc, char **argv)
 					}
 				case 'e':
 					event_source = pg_strdup(optarg);
+					break;
+				case 'K':
+					encryption_key_command = pg_strdup(optarg);
 					break;
 				case 'l':
 					log_file = pg_strdup(optarg);
@@ -2557,6 +2664,10 @@ main(int argc, char **argv)
 		if (GetDataDirectoryCreatePerm(pg_data))
 			umask(pg_mode_mask);
 	}
+
+	if (encryption_key_command && ctl_command !=
+		START_COMMAND && ctl_command != RESTART_COMMAND)
+		write_stderr(_("%s: ignoring the -K option, it's only useful for start or restart commands\n"), progname);
 
 	switch (ctl_command)
 	{
