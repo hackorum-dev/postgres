@@ -875,6 +875,7 @@ static void LocalSetXLogInsertAllowed(void);
 static void CreateEndOfRecoveryRecord(void);
 static void CheckPointGuts(XLogRecPtr checkPointRedo, int flags);
 static void KeepLogSeg(XLogRecPtr recptr, XLogSegNo *logSegNo);
+static Size XLogWritePages(char *from, int npages, uint32 startoffset);
 static XLogRecPtr XLogGetReplicationSlotMinimumLSN(void);
 
 static void AdvanceXLInsertBuffer(XLogRecPtr upto, bool opportunistic);
@@ -2485,35 +2486,10 @@ XLogWrite(XLogwrtRqst WriteRqst, bool flexible)
 			finishing_seg)
 		{
 			char	   *from;
-			Size		nbytes;
-			Size		nleft;
-			int			written;
 
 			/* OK to write the page(s) */
 			from = XLogCtl->pages + startidx * (Size) XLOG_BLCKSZ;
-			nbytes = npages * (Size) XLOG_BLCKSZ;
-			nleft = nbytes;
-			do
-			{
-				errno = 0;
-				pgstat_report_wait_start(WAIT_EVENT_WAL_WRITE);
-				written = pg_pwrite(openLogFile, from, nleft, startoffset);
-				pgstat_report_wait_end();
-				if (written <= 0)
-				{
-					if (errno == EINTR)
-						continue;
-					ereport(PANIC,
-							(errcode_for_file_access(),
-							 errmsg("could not write to log file %s "
-									"at offset %u, length %zu: %m",
-									XLogFileNameP(ThisTimeLineID, openLogSegNo),
-									startoffset, nleft)));
-				}
-				nleft -= written;
-				from += written;
-				startoffset += written;
-			} while (nleft > 0);
+			startoffset += XLogWritePages(from, npages, startoffset);
 
 			npages = 0;
 
@@ -2627,6 +2603,45 @@ XLogWrite(XLogwrtRqst WriteRqst, bool flexible)
 			XLogCtl->LogwrtRqst.Flush = LogwrtResult.Flush;
 		SpinLockRelease(&XLogCtl->info_lck);
 	}
+}
+
+/*
+ * Write page(s) to the XLOG file.
+ *
+ * Returns the number of bytes written.
+ */
+static Size
+XLogWritePages(char *from, int npages, uint32 startoffset)
+{
+	Size		nbytes,
+				nleft;
+	Size		written;
+
+	nbytes = npages * (Size) XLOG_BLCKSZ;
+	nleft = nbytes;
+	do
+	{
+		errno = 0;
+		pgstat_report_wait_start(WAIT_EVENT_WAL_WRITE);
+		written = pg_pwrite(openLogFile, from, nleft, startoffset);
+		pgstat_report_wait_end();
+		if (written <= 0)
+		{
+			if (errno == EINTR)
+				continue;
+			ereport(PANIC,
+					(errcode_for_file_access(),
+					 errmsg("could not write to log file %s "
+							"at offset %u, length %zu: %m",
+							XLogFileNameP(ThisTimeLineID, openLogSegNo),
+							startoffset, nbytes)));
+		}
+		nleft -= written;
+		from += written;
+		startoffset += written;
+	} while (nleft > 0);
+
+	return written;
 }
 
 /*
