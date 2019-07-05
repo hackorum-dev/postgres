@@ -31,6 +31,10 @@ char	   *encryption_key_command = NULL;
 /*
  * Run the command that is supposed to generate encryption key and store it
  * where encryption_key points to.
+ *
+ * TODO Replace pattern (e.g. %D) in the command with data directory so that
+ * DBA knows for which cluster he enters the password. That should also make
+ * the use of pg_keytool in the command easier.
  */
 void
 run_encryption_key_command(unsigned char *encryption_key)

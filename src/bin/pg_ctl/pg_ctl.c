@@ -133,6 +133,7 @@ static void do_logrotate(void);
 static void do_kill(pgpid_t pid);
 static void print_msg(const char *msg);
 static void adjust_data_dir(void);
+static char *get_config_variable(const char *var_name, size_t res_size);
 
 #ifdef WIN32
 #if (_MSC_VER >= 1800)
@@ -2172,28 +2173,46 @@ set_starttype(char *starttypeopt)
 static void
 adjust_data_dir(void)
 {
-	char		cmd[MAXPGPATH],
-				filename[MAXPGPATH],
-			   *my_exec_path;
-	FILE	   *fd;
+	char conf_path[MAXPGPATH];
+	char	*filename;
+	FILE	*fd;
 
 	/* do nothing if we're working without knowledge of data dir */
 	if (pg_config == NULL)
 		return;
 
-	/* If there is no postgresql.conf, it can't be a config-only dir */
+	/* If PG_VERSION exists, it can't be a config-only dir */
+	snprintf(conf_path, sizeof(conf_path), "%s/PG_VERSION", pg_config);
+	if ((fd = fopen(conf_path, "r")) != NULL)
+		return;
+
+	filename = get_config_variable("data_directory", MAXPGPATH);
+
+	if (filename)
+	{
+		free(pg_data);
+		pg_data = filename;
+		canonicalize_path(pg_data);
+	}
+}
+
+/*
+ * Retrieve value of configuration variable from configuration file.
+ */
+static char *
+get_config_variable(const char *var_name, size_t res_size)
+{
+	char		cmd[MAXPGPATH],
+				filename[MAXPGPATH],
+			   *my_exec_path;
+	char	*result;
+	FILE	   *fd;
+
+	/* If there is no postgresql.conf, the data dir is not useful. */
 	snprintf(filename, sizeof(filename), "%s/postgresql.conf", pg_config);
 	if ((fd = fopen(filename, "r")) == NULL)
-		return;
+		return NULL;
 	fclose(fd);
-
-	/* If PG_VERSION exists, it can't be a config-only dir */
-	snprintf(filename, sizeof(filename), "%s/PG_VERSION", pg_config);
-	if ((fd = fopen(filename, "r")) != NULL)
-	{
-		fclose(fd);
-		return;
-	}
 
 	/* Must be a configuration directory, so find the data directory */
 
@@ -2204,27 +2223,35 @@ adjust_data_dir(void)
 		my_exec_path = pg_strdup(exec_path);
 
 	/* it's important for -C to be the first option, see main.c */
-	snprintf(cmd, MAXPGPATH, "\"%s\" -C data_directory %s%s",
+	snprintf(cmd, MAXPGPATH, "\"%s\" -C %s %s%s",
 			 my_exec_path,
+			 var_name,
 			 pgdata_opt ? pgdata_opt : "",
 			 post_opts ? post_opts : "");
 
+	result = pg_malloc(res_size);
 	fd = popen(cmd, "r");
-	if (fd == NULL || fgets(filename, sizeof(filename), fd) == NULL)
+	if (fd == NULL || fgets(result, res_size, fd) == NULL)
 	{
-		write_stderr(_("%s: could not determine the data directory using command \"%s\"\n"), progname, cmd);
+		write_stderr(_("%s: could not determine the value of \"%s\" \"%s\"\n"),
+					 progname, var_name, cmd);
+		free(result);
 		exit(1);
 	}
 	pclose(fd);
 	free(my_exec_path);
 
 	/* Remove trailing newline */
-	if (strchr(filename, '\n') != NULL)
-		*strchr(filename, '\n') = '\0';
+	if (strchr(result, '\n') != NULL)
+		*strchr(result, '\n') = '\0';
 
-	free(pg_data);
-	pg_data = pg_strdup(filename);
-	canonicalize_path(pg_data);
+	if (strlen(result) == 0)
+	{
+		pg_free(result);
+		result = NULL;
+	}
+
+	return result;
 }
 
 
