@@ -3739,7 +3739,8 @@ static struct config_string ConfigureNamesString[] =
 	{
 		{"lc_monetary", PGC_USERSET, CLIENT_CONN_LOCALE,
 			gettext_noop("Sets the locale for formatting monetary amounts."),
-			NULL
+			NULL,
+			GUC_REPORT
 		},
 		&locale_monetary,
 		"C",
@@ -3749,7 +3750,8 @@ static struct config_string ConfigureNamesString[] =
 	{
 		{"lc_numeric", PGC_USERSET, CLIENT_CONN_LOCALE,
 			gettext_noop("Sets the locale for formatting numbers."),
-			NULL
+			NULL,
+			GUC_REPORT
 		},
 		&locale_numeric,
 		"C",
@@ -3803,7 +3805,7 @@ static struct config_string ConfigureNamesString[] =
 		{"search_path", PGC_USERSET, CLIENT_CONN_STATEMENT,
 			gettext_noop("Sets the schema search order for names that are not schema-qualified."),
 			NULL,
-			GUC_LIST_INPUT | GUC_LIST_QUOTE | GUC_EXPLAIN
+			GUC_LIST_INPUT | GUC_REPORT | GUC_LIST_QUOTE | GUC_EXPLAIN
 		},
 		&namespace_search_path,
 		"\"$user\", public",
