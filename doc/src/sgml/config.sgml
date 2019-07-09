@@ -112,7 +112,7 @@
        For example, <literal>30.1 GB</literal> will be converted
        to <literal>30822 MB</literal> not <literal>32319628902 B</literal>.
        If the parameter is of integer type, a final rounding to integer
-       occurs after any units conversion.
+       occurs after any unit conversion.
       </para>
      </listitem>
 
@@ -3540,7 +3540,7 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
         servers or streaming base backup clients (i.e., the maximum number of
         simultaneously running WAL sender processes). The default is
         <literal>10</literal>.  The value <literal>0</literal> means
-        replication is disabled.  Abrupt streaming client disconnection might
+        replication is disabled.  Abrupt disconnection of a streaming client might
         leave an orphaned connection slot behind until a timeout is reached,
         so this parameter should be set slightly higher than the maximum
         number of expected clients so disconnected clients can immediately
