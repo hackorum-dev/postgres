@@ -12,14 +12,15 @@ subdir = src
 top_builddir = ..
 include Makefile.global
 
+# include is needed to be processed prior to the other subdirs
 SUBDIRS = \
+	include \
 	common \
 	port \
 	timezone \
 	backend \
 	backend/utils/mb/conversion_procs \
 	backend/snowball \
-	include \
 	interfaces \
 	backend/replication/libpqwalreceiver \
 	backend/replication/pgoutput \
