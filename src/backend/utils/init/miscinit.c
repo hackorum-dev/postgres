@@ -1129,9 +1129,21 @@ UnlinkLockFiles(int status, Datum arg)
 
 	foreach(l, lock_files)
 	{
-		char	   *curfile = (char *) lfirst(l);
-
-		unlink(curfile);
+		/*
+		 * On Windows systems we cannot handle ERROR_DELETE_PENDING
+		 * because GetLastError() returns ERROR_ACCESS_DENIED instead.
+		 * So rename the file first.
+		 */
+		char	   *tmpfile;
+		char	   *curfile = (char *)lfirst(l);
+		tmpfile = psprintf("%s.deleted", curfile);
+		if (rename(curfile, tmpfile) == 0) {
+			unlink(tmpfile);
+		}
+		else {
+			unlink(curfile);
+		}
+		pfree(tmpfile);
 		/* Should we complain if the unlink fails? */
 	}
 	/* Since we're about to exit, no need to reclaim storage */
