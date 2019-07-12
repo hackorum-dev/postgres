@@ -32,6 +32,8 @@
 
 #ifdef WIN32					/* on Unix, we don't need libpq */
 #include "pqexpbuffer.h"
+#include "windows.h"
+#include "tlhelp32.h"
 #endif
 
 
@@ -75,6 +77,11 @@ StaticAssertDecl(USECS_PER_SEC % WAITS_PER_SEC == 0,
 
 static bool do_wait = true;
 static int	wait_seconds = DEFAULT_WAIT;
+#ifdef WIN32
+static int	windows_shell_wait_seconds = 1;
+#define		open(a,b,c) pgwin32_open(a,b,c) /* It is not necessary to include whole port.h */
+#define		fopen(a,b) pgwin32_fopen(a,b)
+#endif
 static bool wait_seconds_arg = false;
 static bool silent_mode = false;
 static ShutdownMode shutdown_mode = FAST_MODE;
@@ -111,6 +118,8 @@ static HANDLE shutdownHandles[2];
 
 #define shutdownEvent	  shutdownHandles[0]
 #define postmasterProcess shutdownHandles[1]
+static pgpid_t	pgwin32_getppid(pgpid_t pid);
+static bool		pgwin32_parent_shell_is_alive(pid_t pid);
 #endif
 
 
@@ -1033,6 +1042,12 @@ do_stop(void)
 
 	pid = get_pgpid(false);
 
+#ifdef WIN32
+	/* On Windows systems we must additionaly check status of the processes after server stops */
+	pgpid_t		postmasters_shell_pid;
+	postmasters_shell_pid = pgwin32_getppid(pid);
+#endif
+
 	if (pid == 0)				/* no pid file */
 	{
 		write_stderr(_("%s: PID file \"%s\" does not exist\n"), progname, pid_file);
@@ -1073,6 +1088,32 @@ do_stop(void)
 							   "waiting for session-initiated disconnection.\n"));
 			exit(1);
 		}
+
+#ifdef WIN32
+		/*
+		* On Windows systems postmaster's shell may still run after postmaster.pid file has deleted.
+		* This may lead to share locks on log_file between old and new cmd.exe when the server restarts.
+		* The share locks do not allow the new cmd.exe to run.
+		*/
+		if (postmasters_shell_pid > 0 && pgwin32_parent_shell_is_alive(postmasters_shell_pid))
+		{
+			print_msg(_("\npostmaster's shell is still alive. waiting for server to shut down again..."));
+			/* wait for stop */
+			for (cnt = 0; cnt < windows_shell_wait_seconds * WAITS_PER_SEC; cnt++)
+			{
+				if (pgwin32_parent_shell_is_alive(postmasters_shell_pid))
+				{
+					if (cnt % WAITS_PER_SEC == 0)
+						print_msg(".");
+					pg_usleep(USEC_PER_SEC / WAITS_PER_SEC);
+				}
+				else
+					break;
+			}
+			/* Do not fail if the parent process is still running. */
+		}
+#endif
+
 		print_msg(_(" done\n"));
 
 		print_msg(_("server stopped\n"));
@@ -1090,6 +1131,12 @@ do_restart(void)
 	pid_t		pid;
 
 	pid = get_pgpid(false);
+
+#ifdef WIN32
+	/* On Windows systems we must additionaly check status of the processes after server stops */
+	pgpid_t		postmasters_shell_pid;
+	postmasters_shell_pid = pgwin32_getppid(pid);
+#endif
 
 	if (pid == 0)				/* no pid file */
 	{
@@ -1134,6 +1181,31 @@ do_restart(void)
 							   "waiting for session-initiated disconnection.\n"));
 			exit(1);
 		}
+
+#ifdef WIN32
+		/*
+		* On Windows systems postmaster's shell may still run after postmaster.pid file has deleted.
+		* This may lead to share locks on log_file between old and new cmd.exe when the server restarts.
+		* The share locks do not allow the new cmd.exe to run.
+		*/
+		if (postmasters_shell_pid > 0 && pgwin32_parent_shell_is_alive(postmasters_shell_pid))
+		{
+			print_msg(_("\npostmaster's shell is still alive. waiting for server to shut down again..."));
+			/* wait for stop */
+			for (cnt = 0; cnt < windows_shell_wait_seconds * WAITS_PER_SEC; cnt++)
+			{
+				if (pgwin32_parent_shell_is_alive(postmasters_shell_pid))
+				{
+					if (cnt % WAITS_PER_SEC == 0)
+						print_msg(".");
+					pg_usleep(USEC_PER_SEC / WAITS_PER_SEC);
+				}
+				else
+					break;
+			}
+			/* Do not fail if the parent process is still running. */
+		}
+#endif
 
 		print_msg(_(" done\n"));
 		print_msg(_("server stopped\n"));
@@ -1322,6 +1394,69 @@ do_logrotate(void)
 /*
  *	utility routines
  */
+
+#ifdef WIN32
+static pgpid_t
+pgwin32_getppid(pgpid_t pid)
+{
+	/* Finds parent process id. Returns 0 by default. */
+	HANDLE hSnapshot;
+	PROCESSENTRY32 pe32;
+	pgpid_t ppid = 0;
+
+	hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, (DWORD)pid);
+	__try{
+		if (hSnapshot == INVALID_HANDLE_VALUE) __leave;
+
+		ZeroMemory(&pe32, sizeof(pe32));
+		pe32.dwSize = sizeof(pe32);
+		if (!Process32First(hSnapshot, &pe32)) __leave;
+
+		do{
+			if (pe32.th32ProcessID == pid){
+				ppid = (pgpid_t)pe32.th32ParentProcessID;
+				break;
+			}
+		} while (Process32Next(hSnapshot, &pe32));
+
+	}
+	__finally{
+		if (hSnapshot != INVALID_HANDLE_VALUE) CloseHandle(hSnapshot);
+	}
+	return ppid;
+}
+
+static bool
+pgwin32_parent_shell_is_alive(pid_t pid)
+{
+	{
+		/* Checks the parent cmd.exe with specified pid is running */
+		HANDLE hSnapshot;
+		PROCESSENTRY32 pe32;
+		bool res = false;
+
+		hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, (DWORD)pid);
+		__try{
+			if (hSnapshot == INVALID_HANDLE_VALUE) __leave;
+
+			ZeroMemory(&pe32, sizeof(pe32));
+			pe32.dwSize = sizeof(pe32);
+			if (!Process32First(hSnapshot, &pe32)) __leave;
+
+			do{
+				if (pe32.th32ProcessID == pid && strcmp(pe32.szExeFile, "cmd.exe") == 0){
+					res = true;
+				}
+			} while (Process32Next(hSnapshot, &pe32));
+
+		}
+		__finally{
+			if (hSnapshot != INVALID_HANDLE_VALUE) CloseHandle(hSnapshot);
+		}
+		return res;
+	}
+}
+#endif
 
 static bool
 postmaster_is_alive(pid_t pid)
