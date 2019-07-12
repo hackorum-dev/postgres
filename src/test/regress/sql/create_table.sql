@@ -317,6 +317,9 @@ CREATE TABLE default_expr_agg (a int DEFAULT (avg(1)));
 CREATE TABLE default_expr_agg (a int DEFAULT (select 1));
 -- invalid use of set-returning function
 CREATE TABLE default_expr_agg (a int DEFAULT (generate_series(1,3)));
+-- invalid use of mutable function
+CREATE TABLE mutable_incheckconstr_sqlvar (a text CHECK (a = CURRENT_USER));
+CREATE TABLE mutable_incheckconstr_expr (a real CHECK (a = random()));
 
 --
 -- Partitioned tables

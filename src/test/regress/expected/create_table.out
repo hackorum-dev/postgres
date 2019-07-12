@@ -331,6 +331,13 @@ CREATE TABLE default_expr_agg (a int DEFAULT (generate_series(1,3)));
 ERROR:  set-returning functions are not allowed in DEFAULT expressions
 LINE 1: CREATE TABLE default_expr_agg (a int DEFAULT (generate_serie...
                                                       ^
+-- invalid use of mutable function
+CREATE TABLE mutable_incheckconstr_sqlvar (a text CHECK (a = CURRENT_USER));
+ERROR:  mutable functions are not allowed in check constraints
+CREATE TABLE mutable_incheckconstr_expr (a real CHECK (a = random()));
+ERROR:  mutable functions are not allowed in constraint expression
+LINE 1: ...BLE mutable_incheckconstr_expr (a real CHECK (a = random()))...
+                                                             ^
 --
 -- Partitioned tables
 --
