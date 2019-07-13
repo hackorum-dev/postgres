@@ -13,7 +13,8 @@ involve diffable source files.
 These tools are acceptable:
 
 - Graphviz (https://graphviz.org/)
-- Ditaa (http://ditaa.sourceforge.net/)
+- Ditaa (https://github.com/stathissideris/ditaa), version 0.11 or
+  higher. Previous versions does not support SVG.
 
 We use SVG as the format for integrating the image into the ultimate
 output formats of the documentation, that is, HTML, PDF, and others.
