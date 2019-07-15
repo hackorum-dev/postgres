@@ -184,7 +184,7 @@ make_plain_restrictinfo(PlannerInfo *root,
 	if (required_relids != NULL)
 		restrictinfo->required_relids = required_relids;
 	else
-		restrictinfo->required_relids = restrictinfo->clause_relids;
+		restrictinfo->required_relids = bms_copy(restrictinfo->clause_relids);
 
 	/*
 	 * Count the number of base rels appearing in clause_relids.  To do this,
