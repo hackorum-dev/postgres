@@ -4355,17 +4355,17 @@ pg_stat_get_wal_senders(PG_FUNCTION_ARGS)
 			 */
 			priority = XLogRecPtrIsValid(flush) ? priority : 0;
 
-			if (writeLag < 0)
+			if (writeLag < 0 || XLogRecPtrIsInvalid(write))
 				nulls[6] = true;
 			else
 				values[6] = IntervalPGetDatum(offset_to_interval(writeLag));
 
-			if (flushLag < 0)
+			if (flushLag < 0 || XLogRecPtrIsInvalid(flush))
 				nulls[7] = true;
 			else
 				values[7] = IntervalPGetDatum(offset_to_interval(flushLag));
 
-			if (applyLag < 0)
+			if (applyLag < 0 || XLogRecPtrIsInvalid(apply))
 				nulls[8] = true;
 			else
 				values[8] = IntervalPGetDatum(offset_to_interval(applyLag));
