@@ -130,7 +130,8 @@ static char *ecpg_statement_type_name[] = {
 	"ECPGst_exec_immediate",
 	"ECPGst_prepnormal",
 	"ECPGst_prepare",
-	"ECPGst_exec_with_exprlist"
+	"ECPGst_exec_with_exprlist",
+	"ECPGst_exec_embedded_in_other_stmt"
 };
 
 void
@@ -143,8 +144,9 @@ output_statement(char *stmt, int whenever_mode, enum ECPG_statement_type st)
 
 	/*
 	 * In following cases, stmt is CSTRING or char_variable. They must be
-	 * output directly. - prepared_name of EXECUTE without exprlist -
-	 * execstring of EXECUTE IMMEDIATE
+	 * output directly.
+	 * - prepared_name of EXECUTE without exprlist
+	 * - execstring of EXECUTE IMMEDIATE
 	 */
 	fprintf(base_yyout, "%s, ", ecpg_statement_type_name[st]);
 	if (st == ECPGst_execute || st == ECPGst_exec_immediate)

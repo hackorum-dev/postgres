@@ -110,6 +110,8 @@ struct exec
 {
 	char	   *name;
 	char	   *type;
+	char	   *stmt;
+	enum ECPG_statement_type	stmt_type;
 };
 
 struct this_type

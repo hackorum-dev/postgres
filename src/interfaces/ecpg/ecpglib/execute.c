@@ -33,6 +33,8 @@
 #include "pgtypes_timestamp.h"
 #include "pgtypes_interval.h"
 
+#define MAXLEN_INT_IN_TEXTFORMAT (sizeof(int) * CHAR_BIT * 3 / 10)
+
 /*
  *	This function returns a newly malloced string that has ' and \
  *	escaped.
@@ -112,7 +114,7 @@ free_statement(struct statement *stmt)
 }
 
 static int
-next_insert(char *text, int pos, bool questionmarks, bool std_strings)
+next_insert(char *text, int pos, bool questionmarks, bool std_strings, int *replace_len_p)
 {
 	bool		string = false;
 	int			p = pos;
@@ -134,12 +136,18 @@ next_insert(char *text, int pos, bool questionmarks, bool std_strings)
 					 /* empty loop body */ ;
 				if (!isalpha((unsigned char) text[i]) &&
 					isascii((unsigned char) text[i]) &&text[i] != '_')
+				{
 					/* not dollar delimited quote */
+					if (replace_len_p)
+						*replace_len_p = i - p;
 					return p;
+				}
 			}
 			else if (questionmarks && text[p] == '?')
 			{
 				/* also allow old style placeholders */
+				if (replace_len_p)
+					*replace_len_p = 1;
 				return p;
 			}
 		}
@@ -1130,34 +1138,59 @@ ecpg_free_params(struct statement *stmt, bool print)
 }
 
 static bool
-insert_tobeinserted(int position, int ph_len, struct statement *stmt, char *tobeinserted)
+expand_exprlist(struct statement *stmt, int pos, int num)
+{
+	char	   *newcopy;
+	int			newsize;
+	int			c;
+	static const int param_len = 1 /* $ */ + MAXLEN_INT_IN_TEXTFORMAT;
+
+	newsize = strlen(stmt->command) + param_len + 1 /* null terminate */;
+
+	if (num == 1)
+		/* 1st calling. Create expression list */
+		newsize += 2;	/* for two parentheses */
+	else
+		newsize += 1;	/* for comma */
+
+	if (!(newcopy = (char *) ecpg_alloc(newsize, stmt->lineno)))
+		return false;
+
+	strncpy(newcopy, stmt->command, newsize);
+
+	if (num == 1)
+		c = snprintf(newcopy + pos, newsize, "($%d)", num);
+	else
+		c = snprintf(newcopy + pos, newsize, ",$%d", num);
+
+	strncat(newcopy + pos + c, stmt->command + pos, newsize);
+	stmt->command = newcopy;
+
+	return true;
+}
+
+static bool
+replace_parameter(int position, int tobereplaced, struct statement *stmt, char *replacer)
 {
 	char	   *newcopy;
 
 	if (!(newcopy = (char *) ecpg_alloc(strlen(stmt->command)
-										+ strlen(tobeinserted)
+										+ strlen(replacer)
 										+ 1, stmt->lineno)))
-	{
-		ecpg_free(tobeinserted);
 		return false;
-	}
 
 	strcpy(newcopy, stmt->command);
-	strcpy(newcopy + position - 1, tobeinserted);
+	strcpy(newcopy + position, replacer);
 
 	/*
 	 * The strange thing in the second argument is the rest of the string from
 	 * the old string
 	 */
-	strcat(newcopy,
-		   stmt->command
-		   + position
-		   + ph_len - 1);
+	strcat(newcopy, stmt->command + position + tobereplaced);
 
 	ecpg_free(stmt->command);
 	stmt->command = newcopy;
 
-	ecpg_free(tobeinserted);
 	return true;
 }
 
@@ -1220,9 +1253,11 @@ ecpg_build_params(struct statement *stmt)
 {
 	struct variable *var;
 	int			desc_counter = 0;
-	int			position = 0;
+	int			next_search_pos = 0;
+	int			param_num = 1;
 	const char *value;
 	bool		std_strings = false;
+	int			replacee_pos;
 
 	/* Get standard_conforming_strings setting. */
 	value = PQparameterStatus(stmt->connection->connection, "standard_conforming_strings");
@@ -1241,6 +1276,10 @@ ecpg_build_params(struct statement *stmt)
 		int			counter = 1;
 		bool		binary_format;
 		int			binary_length;
+		char	   *replacer;
+		int			replacer_len;
+		int		    bytes_tobereplaced;
+		bool		set_to_param = true;
 
 
 		tobeinserted = NULL;
@@ -1410,15 +1449,52 @@ ecpg_build_params(struct statement *stmt)
 		}
 
 		/*
-		 * now tobeinserted points to an area that contains the next
-		 * parameter; now find the position in the string where it belongs
+		 * When ECPGst_exec_embedded_in_other_stmt, we create parameter list in query and
+		 * replace them with value of the var incrementally.
+		 * In this case, $0 as prepared statement name has always appeared at first.
+		 * Therefore, if next_search_pos is not initial value, it's pointing to
+		 * the next byte of prepared statement name that is position for creating
+		 * parameter list, or pointing to position for expanding.
 		 */
-		if ((position = next_insert(stmt->command, position, stmt->questionmarks, std_strings) + 1) == 0)
+		if (next_search_pos != 0 && stmt->statement_type == ECPGst_exec_embedded_in_other_stmt)
 		{
-			/*
-			 * We have an argument but we don't have the matched up
-			 * placeholder in the string
-			 */
+			if (!expand_exprlist(stmt, next_search_pos, param_num))
+			{
+				ecpg_free_params(stmt, false);
+				ecpg_free(tobeinserted);
+				return false;
+			}
+			++param_num;
+		}
+
+		/*
+		 * Find parameter in query and do the followings:
+		 *
+		 * 1. Check whether we must replace the parameter.
+		 * - $0: It is a special parameter cursor name or statement name because
+		 *       backend cannot accept parameterized cursor name.
+		 * - $1: It is a special parameter query for cursor because backend cannot
+		 *       accept parameterized query for cursor.
+		 *       It can be distinguished by var->type == ECPGt_char_variable.
+		 * - ? : It is a simple parameter in old style. We should replace it new style
+		 *       '$[0-9]*' and fall through.
+		 * - $[0-9]*:
+		 *       It is a simple parameter in new style, but we should replace it
+		 *       because we cannot send the value of parameter with PQexecParams
+		 *       in case of ECPGst_exec_with_exprlist and ECPGst_exec_embedded_in_other_stmt.
+		 *
+		 * 2. Otherwise
+		 * - $[0-9]*:
+		 *       Set value of the var to params.
+		 */
+		replacee_pos = next_insert(stmt->command, next_search_pos, stmt->questionmarks,
+								   std_strings, &bytes_tobereplaced);
+
+		/*
+		 * There is no paremeter for replacing.
+		 */ 
+		if (replacee_pos == -1)
+		{
 			ecpg_raise(stmt->lineno, ECPG_TOO_MANY_ARGUMENTS,
 					   ECPG_SQLSTATE_USING_CLAUSE_DOES_NOT_MATCH_PARAMETERS,
 					   NULL);
@@ -1427,80 +1503,86 @@ ecpg_build_params(struct statement *stmt)
 			return false;
 		}
 
-		/*
-		 * if var->type=ECPGt_char_variable we have a dynamic cursor we have
-		 * to simulate a dynamic cursor because there is no backend
-		 * functionality for it
-		 */
-		if (var->type == ECPGt_char_variable)
+		set_to_param = true;
+		replacer = NULL;
+		if (strcmp(stmt->command + replacee_pos, "$0") == 0)
 		{
-			int			ph_len = (stmt->command[position] == '?') ? strlen("?") : strlen("$1");
-
-			if (!insert_tobeinserted(position, ph_len, stmt, tobeinserted))
+			set_to_param = false;
+			replacer_len = strlen(tobeinserted);
+			replacer = tobeinserted;
+		}
+		else if (strcmp(stmt->command + replacee_pos, "$1") == 0 &&
+				 var->type == ECPGt_char_variable)
+		{
+			set_to_param = false;
+			replacer_len = strlen(tobeinserted);
+			replacer = tobeinserted;
+		}
+		else if (stmt->command[replacee_pos] == '?')
+		{
+			set_to_param = false;
+			replacer_len = 1 + MAXLEN_INT_IN_TEXTFORMAT;	/* $[0-9]* */
+			if (!(replacer = (char *) ecpg_alloc(replacer_len + 1, stmt->lineno)))
 			{
 				ecpg_free_params(stmt, false);
-				return false;
-			}
-			tobeinserted = NULL;
-		}
-
-		/*
-		 * if the placeholder is '$0' we have to replace it on the client side
-		 * this is for places we want to support variables at that are not
-		 * supported in the backend
-		 */
-		else if (stmt->command[position] == '0')
-		{
-			if (stmt->statement_type == ECPGst_prepare ||
-				stmt->statement_type == ECPGst_exec_with_exprlist)
-			{
-				/* Need to double-quote the inserted statement name. */
-				char	   *str = ecpg_alloc(strlen(tobeinserted) + 2 + 1,
-											 stmt->lineno);
-
-				if (!str)
-				{
-					ecpg_free(tobeinserted);
-					ecpg_free_params(stmt, false);
-					return false;
-				}
-				sprintf(str, "\"%s\"", tobeinserted);
 				ecpg_free(tobeinserted);
-				tobeinserted = str;
-			}
-
-			if (!insert_tobeinserted(position, 2, stmt, tobeinserted))
-			{
-				ecpg_free_params(stmt, false);
 				return false;
 			}
-			tobeinserted = NULL;
+			snprintf(replacer, replacer_len, "$%d", counter++);
 		}
-		else if (stmt->statement_type == ECPGst_exec_with_exprlist)
+
+		if (stmt->statement_type == ECPGst_exec_with_exprlist ||
+		    stmt->statement_type == ECPGst_exec_embedded_in_other_stmt)
 		{
+			set_to_param = false;
+
+			/*
+			 * tobeinerted is in binary format, but it must be in text format
+			 * for embedding to query
+			 */
 			if (binary_format)
 			{
-				char	   *p = convert_bytea_to_string(tobeinserted,
-														binary_length,
-														stmt->lineno);
+				if (replacer && replacer != tobeinserted)
+					ecpg_free(replacer);
 
-				ecpg_free(tobeinserted);
-				if (!p)
+				replacer = convert_bytea_to_string(tobeinserted,
+													binary_length,
+													stmt->lineno);
+				if (!replacer)
 				{
 					ecpg_free_params(stmt, false);
+					ecpg_free(tobeinserted);
 					return false;
 				}
-				tobeinserted = p;
 			}
+			else
+				replacer = tobeinserted;
 
-			if (!insert_tobeinserted(position, 2, stmt, tobeinserted))
+			replacer_len = strlen(replacer);
+		}
+
+		if (replacer)
+		{
+			if (!replace_parameter(replacee_pos, bytes_tobereplaced, stmt, replacer))
 			{
+				if (replacer != tobeinserted)
+					ecpg_free(replacer);
 				ecpg_free_params(stmt, false);
+				ecpg_free(tobeinserted);
 				return false;
 			}
-			tobeinserted = NULL;
+			if (replacer != tobeinserted)
+				ecpg_free(replacer);
+
+			next_search_pos = replacee_pos + replacer_len;
 		}
 		else
+			next_search_pos = replacee_pos + bytes_tobereplaced;
+
+		/*
+		 * Set value of the var to params
+		 */
+		if (set_to_param)
 		{
 			if (!(stmt->paramvalues = (char **) ecpg_realloc(stmt->paramvalues, sizeof(char *) * (stmt->nparams + 1), stmt->lineno)))
 			{
@@ -1513,6 +1595,7 @@ ecpg_build_params(struct statement *stmt)
 			if (!(stmt->paramlengths = (int *) ecpg_realloc(stmt->paramlengths, sizeof(int) * (stmt->nparams + 1), stmt->lineno)))
 			{
 				ecpg_free_params(stmt, false);
+				ecpg_free(tobeinserted);
 				return false;
 			}
 			stmt->paramlengths[stmt->nparams] = binary_length;
@@ -1520,52 +1603,31 @@ ecpg_build_params(struct statement *stmt)
 			if (!(stmt->paramformats = (int *) ecpg_realloc(stmt->paramformats, sizeof(int) * (stmt->nparams + 1), stmt->lineno)))
 			{
 				ecpg_free_params(stmt, false);
+				ecpg_free(tobeinserted);
 				return false;
 			}
 			stmt->paramformats[stmt->nparams] = (binary_format ? 1 : 0);
 			stmt->nparams++;
-
-			/* let's see if this was an old style placeholder */
-			if (stmt->command[position] == '?')
-			{
-				/* yes, replace with new style */
-				int			buffersize = sizeof(int) * CHAR_BIT * 10 / 3;	/* a rough guess of the
-																			 * size we need */
-
-				if (!(tobeinserted = (char *) ecpg_alloc(buffersize, stmt->lineno)))
-				{
-					ecpg_free_params(stmt, false);
-					return false;
-				}
-
-				snprintf(tobeinserted, buffersize, "$%d", counter++);
-
-				if (!insert_tobeinserted(position, 2, stmt, tobeinserted))
-				{
-					ecpg_free_params(stmt, false);
-					return false;
-				}
-				tobeinserted = NULL;
-			}
 		}
+
+		tobeinserted = NULL;
 
 		if (desc_counter == 0)
 			var = var->next;
 	}
 
 	/*
-	 * Check if there are unmatched things left. PREPARE AS has no parameter.
-	 * Check other statement.
+	 * Check number of parameters and vars.
+	 * ECPGst_prepare must be excluded because it includes unreplacable parameters.
 	 */
-	if (stmt->statement_type != ECPGst_prepare &&
-		next_insert(stmt->command, position, stmt->questionmarks, std_strings) >= 0)
+	replacee_pos = next_insert(stmt->command, next_search_pos, stmt->questionmarks, std_strings, NULL);
+	if (replacee_pos != -1 && stmt->statement_type != ECPGst_prepare)
 	{
 		ecpg_raise(stmt->lineno, ECPG_TOO_FEW_ARGUMENTS,
 				   ECPG_SQLSTATE_USING_CLAUSE_DOES_NOT_MATCH_PARAMETERS, NULL);
 		ecpg_free_params(stmt, false);
 		return false;
 	}
-
 	return true;
 }
 

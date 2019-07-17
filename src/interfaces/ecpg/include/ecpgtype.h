@@ -99,7 +99,8 @@ enum ECPG_statement_type
 	ECPGst_exec_immediate,
 	ECPGst_prepnormal,
 	ECPGst_prepare,
-	ECPGst_exec_with_exprlist
+	ECPGst_exec_with_exprlist,
+	ECPGst_exec_embedded_in_other_stmt
 };
 
 enum ECPG_cursor_statement_type

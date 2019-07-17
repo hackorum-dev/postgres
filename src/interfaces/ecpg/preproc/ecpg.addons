@@ -21,8 +21,8 @@ ECPG: stmtUpdateStmt block
 	{ output_statement($1, 1, ECPGst_prepnormal); }
 ECPG: stmtExecuteStmt block
 	{
-		if ($1.type == NULL || strlen($1.type) == 0)
-			output_statement($1.name, 1, ECPGst_execute);
+		if ($1.stmt_type == ECPGst_execute)
+			output_statement($1.name, 1, $1.stmt_type);
 		else
 		{
 			if ($1.name[0] != '"')
@@ -39,7 +39,7 @@ ECPG: stmtExecuteStmt block
 				sprintf(length, "%zu", strlen(str));
 				add_variable_to_tail(&argsinsert, new_variable(str, ECPGmake_simple_type(ECPGt_const, length, 0), 0), &no_indicator);
 			}
-			output_statement(cat_str(3, mm_strdup("execute"), mm_strdup("$0"), $1.type), 0, ECPGst_exec_with_exprlist);
+			output_statement(mm_strdup($1.stmt), 0, $1.stmt_type);
 		}
 	}
 ECPG: stmtPrepareStmt block
@@ -337,14 +337,30 @@ ECPG: ExecuteStmtEXECUTEprepared_nameexecute_param_clauseexecute_rest block
 	{
 		$$.name = $2;
 		$$.type = $3;
+		if (strlen($$.type) == 0)
+		{
+			$$.stmt = $$.name;
+			$$.stmt_type = ECPGst_execute;
+		}
+		else
+		{
+			$$.stmt = cat_str(3,mm_strdup("execute"),mm_strdup("$0"),mm_strdup($3));
+			$$.stmt_type = ECPGst_exec_with_exprlist;
+		}
 	}
 ECPG: ExecuteStmtCREATEOptTempTABLEcreate_as_targetASEXECUTEprepared_nameexecute_param_clauseopt_with_dataexecute_rest block
 	{
-		$$.name = cat_str(8,mm_strdup("create"),$2,mm_strdup("table"),$4,mm_strdup("as execute"),$7,$8,$9);
+		$$.name = $7;
+		$$.type = $8;
+		$$.stmt = cat_str(8,mm_strdup("create"),$2,mm_strdup("table"),$4,mm_strdup("as execute"),mm_strdup("$0"),mm_strdup($8),$9);
+		$$.stmt_type = ECPGst_exec_embedded_in_other_stmt;
 	}
 ECPG: ExecuteStmtCREATEOptTempTABLEIF_PNOTEXISTScreate_as_targetASEXECUTEprepared_nameexecute_param_clauseopt_with_dataexecute_rest block
 	{
-		$$.name = cat_str(8,mm_strdup("create"),$2,mm_strdup("table if not exists"),$7,mm_strdup("as execute"),$10,$11,$12);
+		$$.name = $10;
+		$$.type = $11;
+		$$.stmt = cat_str(8,mm_strdup("create"),$2,mm_strdup("table if not exists"),$7,mm_strdup("as execute"),mm_strdup("$0"),mm_strdup($11),$12);
+		$$.stmt_type = ECPGst_exec_embedded_in_other_stmt;
 	}
 ECPG: DeclareCursorStmtDECLAREcursor_namecursor_optionsCURSORopt_holdFORSelectStmt block
 	{
