@@ -669,7 +669,6 @@ xpath_table(PG_FUNCTION_ARGS)
 
 	int			numpaths;
 	int			ret;
-	uint64		proc;
 	int			j;
 	int			rownr;			/* For issuing multiple rows from one original
 								 * document */
@@ -739,7 +738,6 @@ xpath_table(PG_FUNCTION_ARGS)
 		elog(ERROR, "xpath_table: SPI execution failed for query %s",
 			 query_buf.data);
 
-	proc = SPI_processed;
 	tuptable = SPI_tuptable;
 	spi_tupdesc = tuptable->tupdesc;
 
@@ -766,7 +764,7 @@ xpath_table(PG_FUNCTION_ARGS)
 		/* For each row i.e. document returned from SPI */
 		uint64		i;
 
-		for (i = 0; i < proc; i++)
+		for (i = 0; i < tuptable->numvals; i++)
 		{
 			char	   *pkey;
 			char	   *xmldoc;
