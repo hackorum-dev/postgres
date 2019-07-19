@@ -1,0 +1,8 @@
+Stored procedure1 output: hv1 = 100, hv2 = 200
+
+Stored procedure1 output with indicator variables.
+Indicator variables ind1 and ind2 must hold negative values indicating that server returned NULL values this time.
+
+hv1 = 100 ind1 = -1, hv2 = 200 ind2 = -1
+
+Stored procedure2 output: hv2 = 300

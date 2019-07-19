@@ -1,0 +1,77 @@
+#include <stdio.h>
+#include <string.h>
+
+exec sql include sqlca;
+exec sql include ../regression;
+
+int
+main(void)
+{
+   exec sql begin declare section;
+     int hv1 = 10;
+     int hv2 = 20;
+     int ind1 = 0;
+     int ind2 = 0;
+   exec sql end declare section;
+
+   exec sql whenever sqlerror do sqlprint();
+   exec sql connect to REGRESSDB1;;
+
+   /* Start a new transaction. */
+   exec sql begin transaction;
+
+   /* Create test tables. */
+   exec sql create table t1(a int, b int);
+   exec sql create table t2(a int, b int);
+
+   /* Insert some data into test tables created above. */
+   exec sql insert into t1 values (10, 100), (30, 300), (50, 500);
+   exec sql insert into t2 values (20, 200), (40, 400), (60, 600);
+
+   /* Create stored procedure1 with INOUT params. */
+   exec sql create or replace procedure sp1(INOUT v1 int, INOUT v2 int)
+     as $$
+     begin
+     v1 := (select b from t1 where a = v1);
+     v2 := (select b from t2 where a = v2);
+     end; $$
+     language plpgsql;
+
+   /* Create stored procedure2 with IN and INOUT params. */
+   exec sql create or replace procedure sp2(IN v1 int, INOUT v2 int)
+     as $$
+     declare
+     v3 int := v2;
+     begin
+     v2 := (select b from t1 where a = v1);
+     v3 := (select b from t2 where a = v3);
+     end; $$
+     language plpgsql;
+
+   /* Call stored procedure1 and print it's output. */
+   exec sql call sp1(:hv1, :hv2) into :hv1, :hv2;
+
+   printf("Stored procedure1 output: hv1 = %d, hv2 = %d\n", hv1, hv2);
+
+   /* Call stored procedure1 with indicator variables and print it's output. */
+   exec sql call sp1(:hv1, :hv2) into :hv1 :ind1, :hv2 :ind2;
+
+   printf("\nStored procedure1 output with indicator variables.\n");
+   printf("Indicator variables ind1 and ind2 must hold negative values indicating that server returned NULL values this time.\n");
+   printf("\nhv1 = %d ind1 = %d, hv2 = %d ind2 = %d\n", hv1, ind1, hv2, ind2);
+
+   /* Reset the value of hv1 and hv2 before calling stored procedure sp2. */
+   hv1 = 30;
+   hv2 = 40;
+
+   /* Call stored procedure2 and print it's output. */
+   exec sql call sp2(:hv1, :hv2) into :hv2;
+
+   printf("\nStored procedure2 output: hv2 = %d\n", hv2);
+
+   exec sql rollback;
+
+   exec sql disconnect;
+
+   return 0;
+}

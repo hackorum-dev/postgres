@@ -28,7 +28,8 @@ TESTS = array array.c \
         insupd insupd.c \
 		declare declare.c \
 		bytea bytea.c \
-		prepareas prepareas.c
+		prepareas prepareas.c \
+		call call.c
 
 all: $(TESTS)
 
