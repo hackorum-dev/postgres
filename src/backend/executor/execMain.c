@@ -2309,7 +2309,7 @@ ExecBuildSlotValueDescription(Oid reloid,
 	if (!table_perm)
 	{
 		appendStringInfoString(&collist, ") = ");
-		appendBinaryStringInfo(&collist, buf.data, buf.len);
+		appendStringInfoStringInfo(&collist, &buf);
 
 		return collist.data;
 	}

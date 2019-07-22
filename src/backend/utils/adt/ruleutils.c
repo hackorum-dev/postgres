@@ -2804,9 +2804,9 @@ pg_get_functiondef(PG_FUNCTION_ARGS)
 		appendStringInfoChar(&dq, 'x');
 	appendStringInfoChar(&dq, '$');
 
-	appendBinaryStringInfo(&buf, dq.data, dq.len);
+	appendStringInfoStringInfo(&buf, &dq);
 	appendStringInfoString(&buf, prosrc);
-	appendBinaryStringInfo(&buf, dq.data, dq.len);
+	appendStringInfoStringInfo(&buf, &dq);
 
 	appendStringInfoChar(&buf, '\n');
 
@@ -2930,7 +2930,7 @@ print_function_rettype(StringInfo buf, HeapTuple proctup)
 		appendStringInfoString(&rbuf, format_type_be(proc->prorettype));
 	}
 
-	appendBinaryStringInfo(buf, rbuf.data, rbuf.len);
+	appendStringInfoStringInfo(buf, &rbuf);
 }
 
 /*
@@ -5682,7 +5682,7 @@ get_target_list(List *targetList, deparse_context *context,
 		}
 
 		/* Add the new field */
-		appendBinaryStringInfo(buf, targetbuf.data, targetbuf.len);
+		appendStringInfoStringInfo(buf, &targetbuf);
 	}
 
 	/* clean up */
@@ -9987,7 +9987,7 @@ get_from_clause(Query *query, const char *prefix, deparse_context *context)
 			}
 
 			/* Add the new item */
-			appendBinaryStringInfo(buf, itembuf.data, itembuf.len);
+			appendStringInfoStringInfo(buf, &itembuf);
 
 			/* clean up */
 			pfree(itembuf.data);

@@ -113,6 +113,13 @@ extern int	appendStringInfoVA(StringInfo str, const char *fmt, va_list args) pg_
 extern void appendStringInfoString(StringInfo str, const char *s);
 
 /*------------------------
+ * appendStringInfoString
+ * Append another StringInfo to str.
+ * Like appendBinaryStringInfo(str, str2->data, str2->len)
+ */
+extern void appendStringInfoStringInfo(StringInfo str, const StringInfo str2);
+
+/*------------------------
  * appendStringInfoChar
  * Append a single byte to str.
  * Like appendStringInfo(str, "%c", ch) but much faster.

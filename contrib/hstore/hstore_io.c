@@ -1309,7 +1309,7 @@ hstore_to_json_loose(PG_FUNCTION_ARGS)
 			appendBinaryStringInfo(&tmp, HSTORE_VAL(entries, base, i),
 								   HSTORE_VALLEN(entries, i));
 			if (IsValidJsonNumber(tmp.data, tmp.len))
-				appendBinaryStringInfo(&dst, tmp.data, tmp.len);
+				appendStringInfoStringInfo(&dst, &tmp);
 			else
 				escape_json(&dst, tmp.data);
 		}

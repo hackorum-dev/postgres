@@ -1192,7 +1192,7 @@ XLogInsertRecord(XLogRecData *rdata,
 		 */
 		initStringInfo(&recordBuf);
 		for (; rdata != NULL; rdata = rdata->next)
-			appendBinaryStringInfo(&recordBuf, rdata->data, rdata->len);
+			appendStringInfoStringInfo(&recordBuf, rdata);
 
 		if (!debug_reader)
 			debug_reader = XLogReaderAllocate(wal_segment_size, NULL, NULL);

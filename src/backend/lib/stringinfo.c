@@ -166,6 +166,18 @@ appendStringInfoString(StringInfo str, const char *s)
 }
 
 /*
+ * appendStringInfoStringInfo
+ *
+ * Append another StringInfo to str.
+ * Like appendBinaryStringInfo(str, str2->data, str2->len)
+ */
+void
+appendStringInfoStringInfo(StringInfo str, const StringInfo str2)
+{
+	appendBinaryStringInfo(str, str2->data, str2->len);
+}
+
+/*
  * appendStringInfoChar
  *
  * Append a single byte to str.
