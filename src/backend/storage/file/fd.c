@@ -1399,11 +1399,10 @@ PathNameOpenFilePerm(const char *fileName, int fileFlags, mode_t fileMode)
 void
 PathNameCreateTemporaryDir(const char *basedir, const char *directory)
 {
+	struct stat statbuf;
+
 	if (MakePGDirectory(directory) < 0)
 	{
-		if (errno == EEXIST)
-			return;
-
 		/*
 		 * Failed.  Try to create basedir first in case it's missing. Tolerate
 		 * EEXIST to close a race against another process following the same
@@ -1422,6 +1421,17 @@ PathNameCreateTemporaryDir(const char *basedir, const char *directory)
 					 errmsg("cannot create temporary subdirectory \"%s\": %m",
 							directory)));
 	}
+
+	if (stat(directory, &statbuf) < 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("cannot stat temporary subdirectory \"%s\": %m",
+						directory)));
+	else if (!S_ISDIR(statbuf.st_mode))
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg("\"%s\" is not a directory",
+						directory)));
 }
 
 /*
