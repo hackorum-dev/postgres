@@ -429,6 +429,15 @@ PostgresPollingStatusType PQconnectPoll(PGconn *conn);
          </listitem>
         </varlistentry>
 
+        <varlistentry id="libpq-connection-check-writable-needed">
+         <term><symbol>CONNECTION_CHECK_WRITABLE_NEEDED</symbol></term>
+         <listitem>
+          <para>
+           Waiting to send a query that checks if connection is able to handle write transactions.
+          </para>
+         </listitem>
+        </varlistentry>
+
         <varlistentry id="libpq-connection-check-writable">
          <term><symbol>CONNECTION_CHECK_WRITABLE</symbol></term>
          <listitem>

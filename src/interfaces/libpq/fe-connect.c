@@ -2186,6 +2186,7 @@ PQconnectPoll(PGconn *conn)
 			/* Special cases: proceed without waiting. */
 		case CONNECTION_SSL_STARTUP:
 		case CONNECTION_NEEDED:
+		case CONNECTION_CHECK_WRITABLE_NEEDED:
 		case CONNECTION_CHECK_WRITABLE:
 		case CONNECTION_CONSUME:
 		case CONNECTION_GSS_STARTUP:
@@ -3444,26 +3445,8 @@ keep_going:						/* We will come back to here until there is
 					conn->target_session_attrs != NULL &&
 					strcmp(conn->target_session_attrs, "read-write") == 0)
 				{
-					/*
-					 * Save existing error messages across the PQsendQuery
-					 * attempt.  This is necessary because PQsendQuery is
-					 * going to reset conn->errorMessage, so we would lose
-					 * error messages related to previous hosts we have tried
-					 * and failed to connect to.
-					 */
-					if (!saveErrorMessage(conn, &savedMessage))
-						goto error_return;
-
-					conn->status = CONNECTION_OK;
-					if (!PQsendQuery(conn,
-									 "SHOW transaction_read_only"))
-					{
-						restoreErrorMessage(conn, &savedMessage);
-						goto error_return;
-					}
-					conn->status = CONNECTION_CHECK_WRITABLE;
-					restoreErrorMessage(conn, &savedMessage);
-					return PGRES_POLLING_READING;
+					conn->status = CONNECTION_CHECK_WRITABLE_NEEDED;
+					return PGRES_POLLING_WRITING;
 				}
 
 				/* We can release the address list now. */
@@ -3514,19 +3497,8 @@ keep_going:						/* We will come back to here until there is
 				conn->target_session_attrs != NULL &&
 				strcmp(conn->target_session_attrs, "read-write") == 0)
 			{
-				if (!saveErrorMessage(conn, &savedMessage))
-					goto error_return;
-
-				conn->status = CONNECTION_OK;
-				if (!PQsendQuery(conn,
-								 "SHOW transaction_read_only"))
-				{
-					restoreErrorMessage(conn, &savedMessage);
-					goto error_return;
-				}
-				conn->status = CONNECTION_CHECK_WRITABLE;
-				restoreErrorMessage(conn, &savedMessage);
-				return PGRES_POLLING_READING;
+				conn->status = CONNECTION_CHECK_WRITABLE_NEEDED;
+				return PGRES_POLLING_WRITING;
 			}
 
 			/* We can release the address list now. */
@@ -3566,6 +3538,31 @@ keep_going:						/* We will come back to here until there is
 				conn->status = CONNECTION_OK;
 				return PGRES_POLLING_OK;
 			}
+
+		case CONNECTION_CHECK_WRITABLE_NEEDED:
+			{
+				/*
+				 * Save existing error messages across the PQsendQuery
+				 * attempt.  This is necessary because PQsendQuery is
+				 * going to reset conn->errorMessage, so we would lose
+				 * error messages related to previous hosts we have tried
+				 * and failed to connect to.
+				 */
+				if (!saveErrorMessage(conn, &savedMessage))
+					goto error_return;
+
+				conn->status = CONNECTION_OK;
+				if (!PQsendQuery(conn,
+								 "SHOW transaction_read_only"))
+				{
+					restoreErrorMessage(conn, &savedMessage);
+					goto error_return;
+				}
+				conn->status = CONNECTION_CHECK_WRITABLE;
+				restoreErrorMessage(conn, &savedMessage);
+				return PGRES_POLLING_READING;
+			}
+
 		case CONNECTION_CHECK_WRITABLE:
 			{
 				const char *displayed_host;

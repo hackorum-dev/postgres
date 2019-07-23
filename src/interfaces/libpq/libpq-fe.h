@@ -67,7 +67,9 @@ typedef enum
 								 * connection. */
 	CONNECTION_CONSUME,			/* Wait for any pending message and consume
 								 * them. */
-	CONNECTION_GSS_STARTUP		/* Negotiating GSSAPI. */
+	CONNECTION_GSS_STARTUP,		/* Negotiating GSSAPI. */
+	CONNECTION_CHECK_WRITABLE_NEEDED	/* Need to check if we could make a
+										 * writable connection. */
 } ConnStatusType;
 
 typedef enum
