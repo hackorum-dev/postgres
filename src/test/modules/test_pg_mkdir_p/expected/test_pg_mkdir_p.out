@@ -1,0 +1,67 @@
+CREATE EXTENSION test_pg_mkdir_p;
+select * from test_pg_mkdir_p(1);
+ test_pg_mkdir_p 
+-----------------
+ t
+(1 row)
+
+select * from test_pg_mkdir_p(2);
+ test_pg_mkdir_p 
+-----------------
+ t
+(1 row)
+
+select * from test_pg_mkdir_p(2);
+ test_pg_mkdir_p 
+-----------------
+ t
+(1 row)
+
+select * from test_pg_mkdir_p(4);
+ test_pg_mkdir_p 
+-----------------
+ t
+(1 row)
+
+select * from test_pg_mkdir_p(4);
+ test_pg_mkdir_p 
+-----------------
+ t
+(1 row)
+
+select * from test_pg_mkdir_p(8);
+ test_pg_mkdir_p 
+-----------------
+ t
+(1 row)
+
+select * from test_pg_mkdir_p(8);
+ test_pg_mkdir_p 
+-----------------
+ t
+(1 row)
+
+select * from test_pg_mkdir_p(16);
+ test_pg_mkdir_p 
+-----------------
+ t
+(1 row)
+
+select * from test_pg_mkdir_p(16);
+ test_pg_mkdir_p 
+-----------------
+ t
+(1 row)
+
+select * from test_pg_mkdir_p(32);
+ test_pg_mkdir_p 
+-----------------
+ t
+(1 row)
+
+select * from test_pg_mkdir_p(32);
+ test_pg_mkdir_p 
+-----------------
+ t
+(1 row)
+

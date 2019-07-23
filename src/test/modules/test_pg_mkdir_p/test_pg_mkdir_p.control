@@ -1,0 +1,5 @@
+# test_pg_mkdir_p extension
+comment = 'Test concurrent call to pg_mkdir_p()'
+default_version = '1.0'
+module_pathname = '$libdir/test_pg_mkdir_p'
+relocatable = true
