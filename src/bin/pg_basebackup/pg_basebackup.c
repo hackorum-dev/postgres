@@ -1076,7 +1076,7 @@ ReceiveTarFile(PGconn *conn, PGresult *res, int rownum)
 			/*
 			 * End of chunk. If requested, and this is the base tablespace,
 			 * write configuration file into the tarfile. When done, close the
-			 * file (but not stdout).
+			 * file.
 			 *
 			 * Also, write two completely empty blocks at the end of the tar
 			 * file, as required by some tar programs.
@@ -1148,14 +1148,11 @@ ReceiveTarFile(PGconn *conn, PGresult *res, int rownum)
 			else
 #endif
 			{
-				if (strcmp(basedir, "-") != 0)
+				if (fclose(tarfile) != 0)
 				{
-					if (fclose(tarfile) != 0)
-					{
-						pg_log_error("could not close file \"%s\": %m",
-									 filename);
-						exit(1);
-					}
+					pg_log_error("could not close file \"%s\": %m",
+								 filename);
+					exit(1);
 				}
 			}
 
