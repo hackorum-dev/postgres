@@ -496,12 +496,28 @@ sub recoverycheck
 }
 
 # Run "initdb", then reconfigure authentication.
+# mimics what is done in src/bin/pg_upgrade/test.sh:standard_initdb()
 sub standard_initdb
 {
-	return (
-		system('initdb', '-N') == 0 and system(
-			"$topdir/$Config/pg_regress/pg_regress", '--config-auth',
-			$ENV{PGDATA}) == 0);
+	my @opts = qw(-N --wal-segsize 1 -g -A trust);
+	my $status = system('initdb',@opts);
+	if ($status == 0)
+	{
+		if (defined($ENV{TEMP_CONFIG}) && -r $ENV{TEMP_CONFIG})
+		{
+			open(my $handle, '<', $ENV{TEMP_CONFIG})
+			  || die "file $ENV{TEMP_CONFIG} not found";
+			my $contents = <$handle>;
+			close($handle);
+			open($handle, '>>', "$ENV{PGDATA}/postgresql.conf")
+			  || die "file $ENV{PGDATA}/postgresql.conf not found";
+			print $handle $contents;
+			close($handle);
+		}
+		$status = system("$topdir/$Config/pg_regress/pg_regress",
+						 '--config-auth', $ENV{PGDATA})
+	}
+	return $status;
 }
 
 # This is similar to appendShellString().  Perl system(@args) bypasses
