@@ -167,6 +167,7 @@ typedef struct
 #define NODE_TYPE_CHAR		3
 #define NODE_TYPE_SEPARATOR	4
 #define NODE_TYPE_SPACE		5
+#define NODE_TYPE_QUOTE_CHAR 6
 
 #define SUFFTYPE_PREFIX		1
 #define SUFFTYPE_POSTFIX	2
@@ -1325,7 +1326,7 @@ parse_format(FormatNode *node, const char *str, const KeyWord *kw,
 					if (*str == '\\' && *(str + 1))
 						str++;
 					chlen = pg_mblen(str);
-					n->type = NODE_TYPE_CHAR;
+					n->type = NODE_TYPE_QUOTE_CHAR;
 					memcpy(n->character, str, chlen);
 					n->character[chlen] = '\0';
 					n->key = NULL;
@@ -3069,6 +3070,20 @@ DCH_from_char(FormatNode *node, char *in, TmFromChar *out)
 				s += pg_mblen(s);
 			}
 			continue;
+		}
+		else if(n->type == NODE_TYPE_QUOTE_CHAR)
+		{
+			int char_len = strlen(n->character);
+
+			if (strncmp(s, n->character, char_len) == 0)
+			{
+				s = s + char_len;
+				continue;
+			}
+			else
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("literal does not match the format string")));
 		}
 		else if (n->type != NODE_TYPE_ACTION)
 		{
