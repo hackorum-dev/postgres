@@ -61,7 +61,12 @@ PostgreSQL documentation
    <varname>application_name</varname> for
    <application>pg_receivewal</application> that does not match it, or
    change the value of <varname>synchronous_commit</varname> to
-   something other than <literal>remote_apply</literal>.
+   something other than <literal>remote_apply</literal> either cluster wide or
+   just for a dedicated role to <application>pg_receivewal</application>:
+<programlisting>
+CREATE ROLE receivewal WITH LOGIN REPLICATION;
+ALTER ROLE receivewal SET synchronous_commit TO on;
+</programlisting>
   </para>
 
   <para>
