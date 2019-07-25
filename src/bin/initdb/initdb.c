@@ -2922,6 +2922,12 @@ create_data_directory(void)
 {
 	int			ret;
 
+	if (strlen(pg_data) > MAXPGPATH)
+	{
+		pg_log_error("too long directory name\"%s\": %m", pg_data);
+		exit(1);
+	}
+
 	switch ((ret = pg_check_dir(pg_data)))
 	{
 		case 0:
