@@ -64,6 +64,9 @@ static Query *transformValuesClause(ParseState *pstate, SelectStmt *stmt);
 static Query *transformSetOperationStmt(ParseState *pstate, SelectStmt *stmt);
 static Node *transformSetOperationTree(ParseState *pstate, SelectStmt *stmt,
 									   bool isTopLevel, List **targetlist);
+static void trimSetOperationStatement(SetOperationStmt *sostmt, SetOperationStmt *topstmt);
+static void trimCorrespondingTargetList(List **larg_tlist, List **rarg_tlist, List *correspondingClause);
+static void trimPasrseStateRangeTbl(ParseState *pstate, List *targetList);
 static void determineRecursiveColTypes(ParseState *pstate,
 									   Node *larg, List *nrtargetlist);
 static Query *transformUpdateStmt(ParseState *pstate, UpdateStmt *stmt);
@@ -1589,6 +1592,7 @@ transformSetOperationStmt(ParseState *pstate, SelectStmt *stmt)
 			   *lcm,
 			   *lcc,
 			   *l;
+	List	   *targetList;
 	List	   *targetvars,
 			   *targetnames,
 			   *sv_namespace;
@@ -1657,8 +1661,12 @@ transformSetOperationStmt(ParseState *pstate, SelectStmt *stmt)
 	 * Recursively transform the components of the tree.
 	 */
 	sostmt = castNode(SetOperationStmt,
-					  transformSetOperationTree(pstate, stmt, true, NULL));
+					  transformSetOperationTree(pstate, stmt, true, &targetList));
 	Assert(sostmt);
+	if (stmt->correspondingClause != NIL) {
+		trimSetOperationStatement(sostmt, NULL);
+		trimPasrseStateRangeTbl(pstate, targetList);
+	}
 	qry->setOperations = (Node *) sostmt;
 
 	/*
@@ -1683,39 +1691,74 @@ transformSetOperationStmt(ParseState *pstate, SelectStmt *stmt)
 	 * have one that corresponds to a real RT entry; else funny things may
 	 * happen when the tree is mashed by rule rewriting.
 	 */
-	qry->targetList = NIL;
-	targetvars = NIL;
-	targetnames = NIL;
+	if (stmt->correspondingClause == NIL) {
+		qry->targetList = NIL;
+		targetvars = NIL;
+		targetnames = NIL;
+		forfour(lct, sostmt->colTypes,
+				lcm, sostmt->colTypmods,
+				lcc, sostmt->colCollations,
+				left_tlist, leftmostQuery->targetList)
+		{
+			Oid			colType = lfirst_oid(lct);
+			int32		colTypmod = lfirst_int(lcm);
+			Oid			colCollation = lfirst_oid(lcc);
+			TargetEntry *lefttle = (TargetEntry *) lfirst(left_tlist);
+			char	   *colName;
+			TargetEntry *tle;
+			Var		   *var;
 
-	forfour(lct, sostmt->colTypes,
-			lcm, sostmt->colTypmods,
-			lcc, sostmt->colCollations,
-			left_tlist, leftmostQuery->targetList)
-	{
-		Oid			colType = lfirst_oid(lct);
-		int32		colTypmod = lfirst_int(lcm);
-		Oid			colCollation = lfirst_oid(lcc);
-		TargetEntry *lefttle = (TargetEntry *) lfirst(left_tlist);
-		char	   *colName;
-		TargetEntry *tle;
-		Var		   *var;
+			Assert(!lefttle->resjunk);
+			colName = pstrdup(lefttle->resname);
+			var = makeVar(leftmostRTI,
+						  lefttle->resno,
+						  colType,
+						  colTypmod,
+						  colCollation,
+						  0);
+			var->location = exprLocation((Node *) lefttle->expr);
+			tle = makeTargetEntry((Expr *) var,
+								  (AttrNumber) pstate->p_next_resno++,
+								  colName,
+								  false);
+			qry->targetList = lappend(qry->targetList, tle);
+			targetvars = lappend(targetvars, var);
+			targetnames = lappend(targetnames, makeString(colName));
+		}
+	} else {
+		qry->targetList = NIL;
+		targetvars = NIL;
+		targetnames = NIL;
+		forfour(lct, sostmt->colTypes,
+				lcm, sostmt->colTypmods,
+				lcc, sostmt->colCollations,
+				left_tlist, targetList)
+		{
+			Oid			colType = lfirst_oid(lct);
+			int32		colTypmod = lfirst_int(lcm);
+			Oid			colCollation = lfirst_oid(lcc);
+			TargetEntry *lefttle = (TargetEntry *) lfirst(left_tlist);
+			char	   *colName;
+			TargetEntry *tle;
+			Var		   *var;
 
-		Assert(!lefttle->resjunk);
-		colName = pstrdup(lefttle->resname);
-		var = makeVar(leftmostRTI,
-					  lefttle->resno,
-					  colType,
-					  colTypmod,
-					  colCollation,
-					  0);
-		var->location = exprLocation((Node *) lefttle->expr);
-		tle = makeTargetEntry((Expr *) var,
-							  (AttrNumber) pstate->p_next_resno++,
-							  colName,
-							  false);
-		qry->targetList = lappend(qry->targetList, tle);
-		targetvars = lappend(targetvars, var);
-		targetnames = lappend(targetnames, makeString(colName));
+			Assert(!lefttle->resjunk);
+			colName = pstrdup(lefttle->resname);
+			var = makeVar(leftmostRTI,
+						  lefttle->resno,
+						  colType,
+						  colTypmod,
+						  colCollation,
+						  0);
+			var->location = exprLocation((Node *) lefttle->expr);
+			tle = makeTargetEntry((Expr *) var,
+								  (AttrNumber) pstate->p_next_resno++,
+								  colName,
+								  false);
+			qry->targetList = lappend(qry->targetList, tle);
+			targetvars = lappend(targetvars, var);
+			targetnames = lappend(targetnames, makeString(colName));
+		}
 	}
 
 	/*
@@ -1986,7 +2029,11 @@ transformSetOperationTree(ParseState *pstate, SelectStmt *stmt,
 		/*
 		 * Verify that the two children have the same number of non-junk
 		 * columns, and determine the types of the merged output columns.
+		 * For CORRESPONDING clause, verify that the 
 		 */
+		if (stmt->correspondingClause != NIL) {
+			trimCorrespondingTargetList(&ltargetlist, &rtargetlist, stmt->correspondingClause);
+		}
 		if (list_length(ltargetlist) != list_length(rtargetlist))
 			ereport(ERROR,
 					(errcode(ERRCODE_SYNTAX_ERROR),
@@ -2137,22 +2184,190 @@ transformSetOperationTree(ParseState *pstate, SelectStmt *stmt,
 			 */
 			if (targetlist)
 			{
-				SetToDefault *rescolnode = makeNode(SetToDefault);
+				char	   *colName;
 				TargetEntry *restle;
+				Var		   *var;
 
-				rescolnode->typeId = rescoltype;
-				rescolnode->typeMod = rescoltypmod;
-				rescolnode->collation = rescolcoll;
-				rescolnode->location = bestlocation;
-				restle = makeTargetEntry((Expr *) rescolnode,
-										 0, /* no need to set resno */
-										 NULL,
+				colName = pstrdup(ltle->resname);
+				var = makeVar(((Var *)lcolnode)->varno,
+							  ltle->resno,
+							  rescoltype,
+							  rescoltypmod,
+							  rescolcoll,
+							  bestlocation);
+				restle = makeTargetEntry(var,
+										 ltle->resno,
+										 colName,
 										 false);
 				*targetlist = lappend(*targetlist, restle);
 			}
 		}
 
 		return (Node *) op;
+	}
+}
+
+static void trimCorrespondingTargetList(List **larg_tlist, List **rarg_tlist, List *correspondingClause)
+{
+	List	   *tlist = NIL;
+	ListCell   *itlc,
+		   *ltlc,
+		   *rtlc,
+		   *ctlc;
+	TargetEntry *tle;
+	List	   *lmatchingTargetList = NIL;
+	List	   *rmatchingTargetList = NIL;
+
+	if (linitial(correspondingClause) == NULL) {
+		int resno = 1;
+		foreach(ltlc, *larg_tlist) {
+			foreach(rtlc, *rarg_tlist) {
+				TargetEntry *ltle = (TargetEntry *) lfirst(ltlc);
+				TargetEntry *rtle = (TargetEntry *) lfirst(rtlc);
+
+				Assert(ltle->resname != NULL);
+				Assert(rtle->resname != NULL);
+
+				if(strcmp(ltle->resname, rtle->resname) == 0) {
+					ltle->resno = resno;
+					rtle->resno = resno;
+					resno++;
+					lmatchingTargetList = lappend(lmatchingTargetList, ltle);
+					rmatchingTargetList = lappend(rmatchingTargetList, rtle);
+					continue;
+				}
+			}
+		}
+		*larg_tlist = lmatchingTargetList;
+		*rarg_tlist = rmatchingTargetList;
+	} else {
+		int lresno = 1, rresno = 1;
+		foreach (ctlc, correspondingClause) {
+			Node* ctle = lfirst(ctlc);
+			if (IsA(ctle, String)) {
+				char *name = strVal(ctle);
+				foreach(ltlc, *larg_tlist) {
+					TargetEntry *ltle = (TargetEntry *) lfirst(ltlc);
+					Assert(ltle->resname != NULL);
+					if(strcmp(ltle->resname, name) == 0) {
+						ltle->resno = lresno;
+						lresno++;
+						lmatchingTargetList = lappend(lmatchingTargetList, ltle);
+						continue;
+					}
+				}
+				foreach(rtlc, *rarg_tlist) {
+					TargetEntry *rtle = (TargetEntry *) lfirst(rtlc);
+					Assert(rtle->resname != NULL);
+					if(strcmp(rtle->resname, name) == 0) {
+						rtle->resno = rresno;
+						rresno++;
+						rmatchingTargetList = lappend(rmatchingTargetList, rtle);
+						continue;
+					}
+				}
+				if (rresno != lresno) {
+					ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
+									errmsg("CORRESPONDING BY clause must only contain column names from both tables.")));
+				}
+			} else {
+				ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
+								errmsg(
+								"CORRESPONDING BY clause must have only column names and not constants or ordinals in the column name list."
+								)));
+			}
+		}
+		*larg_tlist = lmatchingTargetList;
+		*rarg_tlist = rmatchingTargetList;
+	}
+	
+	if(list_length(*larg_tlist) == 0 || list_length(*rarg_tlist) == 0) {
+		ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
+						errmsg("CORRESPONDING/CORRESPONDING BY clause must have at least one column name in both of the queries or in BY clause."
+						)));
+	}
+
+}
+
+static void trimSetOperationStatement(SetOperationStmt *sostmt, SetOperationStmt *topstmt) {
+	if (topstmt != NULL) {
+		sostmt->colTypes = list_copy(topstmt->colTypes);
+		sostmt->colTypmods = list_copy(topstmt->colTypmods);
+		sostmt->colCollations = list_copy(topstmt->colCollations);
+	}
+	if (sostmt->larg && IsA(sostmt->larg, SetOperationStmt))
+		trimSetOperationStatement(sostmt->larg, sostmt);
+	if (sostmt->rarg && IsA(sostmt->rarg, SetOperationStmt))
+		trimSetOperationStatement(sostmt->rarg, sostmt);
+}
+
+static void trimPasrseStateRangeTbl(ParseState *pstate, List *ref_tlist)
+{
+	ListCell   *rtc,
+		   *itlc,
+		   *rtlc;
+	foreach (rtc, pstate->p_rtable)
+	{
+		RangeTblEntry *rte = (RangeTblEntry *) lfirst(rtc);
+		int 		resno = 1;
+		List	   *tlist = NIL;
+		char selectName[32];
+		Alias	   *eref;
+		int			numaliases;
+		int			varattno;
+		ListCell   *tlistitem;
+		char	   *refname = rte->alias->aliasname;
+		foreach(rtlc, ref_tlist)
+		{
+			foreach(itlc, rte->subquery->targetList)
+			{
+				TargetEntry *itle = (TargetEntry *) lfirst(itlc);
+				TargetEntry *rtle = (TargetEntry *) lfirst(rtlc);
+				TargetEntry *tle;
+
+				Assert(itle->resname != NULL);
+				Assert(rtle->resname != NULL);
+
+				if(strcmp(itle->resname, rtle->resname) == 0) {
+					tle = makeTargetEntry((Expr *) itle->expr,
+								  (AttrNumber) resno++,
+								  pstrdup(itle->resname),
+								  false);
+					tle->ressortgroupref = tle->resno;
+					tlist = lappend(tlist, tle);
+					continue;
+				}
+			}
+		}
+		rte->subquery->targetList = tlist;
+		eref = copyObject(rte->alias);
+		numaliases = list_length(eref->colnames);
+
+		/* fill in any unspecified alias columns */
+		varattno = 0;
+		foreach(tlistitem, rte->subquery->targetList)
+		{
+			TargetEntry *te = (TargetEntry *) lfirst(tlistitem);
+
+			if (te->resjunk)
+				continue;
+			varattno++;
+			Assert(varattno == te->resno);
+			if (varattno > numaliases)
+			{
+				char	   *attrname;
+
+				attrname = pstrdup(te->resname);
+				eref->colnames = lappend(eref->colnames, makeString(attrname));
+			}
+		}
+		if (varattno < numaliases)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
+					 errmsg("table \"%s\" has %d columns available but %d columns specified",
+							refname, varattno, numaliases)));
+
+		rte->eref = eref;
 	}
 }
 

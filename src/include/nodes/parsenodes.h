@@ -1605,6 +1605,7 @@ typedef struct SelectStmt
 	bool		all;			/* ALL specified? */
 	struct SelectStmt *larg;	/* left child */
 	struct SelectStmt *rarg;	/* right child */
+	List	   *correspondingClause;
 	/* Eventually add fields for CORRESPONDING spec here */
 } SelectStmt;
 
