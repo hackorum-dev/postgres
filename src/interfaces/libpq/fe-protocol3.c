@@ -475,6 +475,10 @@ pqParseInput3(PGconn *conn)
 			/* trust the specified message length as what to skip */
 			conn->inStart += 5 + msgLength;
 		}
+
+		/* As we get ready now, give caller a chance to process the result */
+		if (conn->asyncStatus == PGASYNC_READY)
+			return;
 	}
 }
 
