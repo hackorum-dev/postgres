@@ -7008,7 +7008,7 @@ set_config_option(const char *name, const char *value,
 
 				if (prohibitValueChange)
 				{
-					if (*conf->variable != newval)
+					if (changeVal && *conf->variable != newval)
 					{
 						record->status |= GUC_PENDING_RESTART;
 						ereport(elevel,
@@ -7098,7 +7098,7 @@ set_config_option(const char *name, const char *value,
 
 				if (prohibitValueChange)
 				{
-					if (*conf->variable != newval)
+					if (changeVal && *conf->variable != newval)
 					{
 						record->status |= GUC_PENDING_RESTART;
 						ereport(elevel,
@@ -7188,7 +7188,7 @@ set_config_option(const char *name, const char *value,
 
 				if (prohibitValueChange)
 				{
-					if (*conf->variable != newval)
+					if (changeVal && *conf->variable != newval)
 					{
 						record->status |= GUC_PENDING_RESTART;
 						ereport(elevel,
@@ -7295,8 +7295,9 @@ set_config_option(const char *name, const char *value,
 				if (prohibitValueChange)
 				{
 					/* newval shouldn't be NULL, so we're a bit sloppy here */
-					if (*conf->variable == NULL || newval == NULL ||
-						strcmp(*conf->variable, newval) != 0)
+					if (changeVal && (*conf->variable == NULL ||
+									  newval == NULL ||
+									  strcmp(*conf->variable, newval) != 0))
 					{
 						record->status |= GUC_PENDING_RESTART;
 						ereport(elevel,
@@ -7391,7 +7392,7 @@ set_config_option(const char *name, const char *value,
 
 				if (prohibitValueChange)
 				{
-					if (*conf->variable != newval)
+					if (changeVal && *conf->variable != newval)
 					{
 						record->status |= GUC_PENDING_RESTART;
 						ereport(elevel,
