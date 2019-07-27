@@ -1421,11 +1421,15 @@ explain (costs off) delete from t1 where a = 1;
                Index Cond: (a = 1)
          ->  Seq Scan on t2
                Filter: (b = 1)
+ Trigger for constraint t2_b_fkey
+ Trigger for constraint t2_b_fkey
  
  Delete on t1
    ->  Index Scan using t1_pkey on t1
          Index Cond: (a = 1)
-(10 rows)
+ Trigger for constraint t2_b_fkey
+ Trigger for constraint t2_b_fkey
+(14 rows)
 
 delete from t1 where a = 1;
 -- Test a primary key with attributes located in later attnum positions

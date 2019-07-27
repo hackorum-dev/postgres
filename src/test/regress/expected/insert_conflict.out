@@ -218,7 +218,9 @@ explain (costs off, format json) insert into insertconflicttest values (0, 'Bilb
            "Parallel Aware": false                                     +
          }                                                             +
        ]                                                               +
-     }                                                                 +
+     },                                                                +
+     "Triggers": [                                                     +
+     ]                                                                 +
    }                                                                   +
  ]
 (1 row)

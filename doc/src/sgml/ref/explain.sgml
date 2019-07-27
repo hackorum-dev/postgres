@@ -43,6 +43,7 @@ EXPLAIN [ ANALYZE ] [ VERBOSE ] <replaceable class="parameter">statement</replac
     BUFFERS [ <replaceable class="parameter">boolean</replaceable> ]
     TIMING [ <replaceable class="parameter">boolean</replaceable> ]
     SUMMARY [ <replaceable class="parameter">boolean</replaceable> ]
+    TRIGGERS [ <replaceable class="parameter">boolean</replaceable> ]
     FORMAT { TEXT | XML | JSON | YAML }
 </synopsis>
  </refsynopsisdiv>
@@ -224,6 +225,14 @@ ROLLBACK;
     </listitem>
    </varlistentry>
 
+   <varlistentry>
+    <term><literal>TRIGGERS</literal></term>
+    <listitem>
+     <para>
+       TODO
+     </para>
+    </listitem>
+   </varlistentry>
    <varlistentry>
     <term><literal>FORMAT</literal></term>
     <listitem>

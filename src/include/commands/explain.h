@@ -35,6 +35,7 @@ typedef struct ExplainState
 	bool		buffers;		/* print buffer usage */
 	bool		timing;			/* print detailed node timing */
 	bool		summary;		/* print total planning and execution timing */
+	bool            triggers;               /* print triggers */
 	bool		settings;		/* print modified settings */
 	ExplainFormat format;		/* output format */
 	/* state for output formatting --- not reset for each new plan tree */

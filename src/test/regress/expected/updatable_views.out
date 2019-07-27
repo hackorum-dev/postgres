@@ -899,7 +899,10 @@ EXPLAIN (costs off) UPDATE rw_view2 SET a=3 WHERE a=2;
                Recheck Cond: (a > 0)
                ->  Bitmap Index Scan on base_tbl_pkey
                      Index Cond: (a > 0)
-(7 rows)
+ Trigger rw_view1_del_trig
+ Trigger rw_view1_ins_trig
+ Trigger rw_view1_upd_trig
+(10 rows)
 
 EXPLAIN (costs off) DELETE FROM rw_view2 WHERE a=2;
                         QUERY PLAN                        
@@ -911,7 +914,10 @@ EXPLAIN (costs off) DELETE FROM rw_view2 WHERE a=2;
                Recheck Cond: (a > 0)
                ->  Bitmap Index Scan on base_tbl_pkey
                      Index Cond: (a > 0)
-(7 rows)
+ Trigger rw_view1_del_trig
+ Trigger rw_view1_ins_trig
+ Trigger rw_view1_upd_trig
+(10 rows)
 
 DROP TABLE base_tbl CASCADE;
 NOTICE:  drop cascades to 2 other objects

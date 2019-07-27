@@ -149,6 +149,7 @@ ExplainQuery(ParseState *pstate, ExplainStmt *stmt, const char *queryString,
 	ListCell   *lc;
 	bool		timing_set = false;
 	bool		summary_set = false;
+	bool		triggers_set = false;
 
 	/* Parse options list. */
 	foreach(lc, stmt->options)
@@ -174,6 +175,11 @@ ExplainQuery(ParseState *pstate, ExplainStmt *stmt, const char *queryString,
 		{
 			summary_set = true;
 			es->summary = defGetBoolean(opt);
+		}
+		else if (strcmp(opt->defname, "triggers") == 0)
+		{
+			triggers_set = true;
+			es->triggers = defGetBoolean(opt);
 		}
 		else if (strcmp(opt->defname, "format") == 0)
 		{
@@ -209,6 +215,9 @@ ExplainQuery(ParseState *pstate, ExplainStmt *stmt, const char *queryString,
 
 	/* if the timing was not set explicitly, set default value */
 	es->timing = (timing_set) ? es->timing : es->analyze;
+
+	/* if the triggers was not set explicitly, set default value */
+	es->triggers = (triggers_set) ? es->triggers : true;
 
 	/* check that timing is used with EXPLAIN ANALYZE */
 	if (es->timing && !es->analyze)
@@ -556,7 +565,7 @@ ExplainOnePlan(PlannedStmt *plannedstmt, IntoClause *into, ExplainState *es,
 	}
 
 	/* Print info about runtime of triggers */
-	if (es->analyze)
+	if (es->triggers)
 		ExplainPrintTriggers(es, queryDesc);
 
 	/*
@@ -911,17 +920,23 @@ report_triggers(ResultRelInfo *rInfo, bool show_relname, ExplainState *es)
 {
 	int			nt;
 
-	if (!rInfo->ri_TrigDesc || !rInfo->ri_TrigInstrument)
+	if (!rInfo->ri_TrigDesc || (es->analyze && !rInfo->ri_TrigInstrument))
 		return;
 	for (nt = 0; nt < rInfo->ri_TrigDesc->numtriggers; nt++)
 	{
 		Trigger    *trig = rInfo->ri_TrigDesc->triggers + nt;
-		Instrumentation *instr = rInfo->ri_TrigInstrument + nt;
+		Instrumentation *instr;
 		char	   *relname;
 		char	   *conname = NULL;
 
 		/* Must clean up instrumentation state */
-		InstrEndLoop(instr);
+		if (es->analyze) {
+			instr = rInfo->ri_TrigInstrument + nt;
+			InstrEndLoop(instr);
+
+			if (instr->ntuples == 0)
+				continue;
+		}
 
 		/*
 		 * We ignore triggers that were never invoked; they likely aren't
@@ -951,11 +966,15 @@ report_triggers(ResultRelInfo *rInfo, bool show_relname, ExplainState *es)
 				appendStringInfo(es->str, " for constraint %s", conname);
 			if (show_relname)
 				appendStringInfo(es->str, " on %s", relname);
-			if (es->timing)
-				appendStringInfo(es->str, ": time=%.3f calls=%.0f\n",
-								 1000.0 * instr->total, instr->ntuples);
+			if (es->analyze)
+			{
+				if (es->timing)
+					appendStringInfo(es->str, ": time=%.3f calls=%.0f",
+						1000.0 * instr->total, instr->ntuples);
 			else
-				appendStringInfo(es->str, ": calls=%.0f\n", instr->ntuples);
+				appendStringInfo(es->str, ": calls=%.0f", instr->ntuples);
+			}
+			appendStringInfoString(es->str, "\n");
 		}
 		else
 		{
@@ -966,7 +985,13 @@ report_triggers(ResultRelInfo *rInfo, bool show_relname, ExplainState *es)
 			if (es->timing)
 				ExplainPropertyFloat("Time", "ms", 1000.0 * instr->total, 3,
 									 es);
-			ExplainPropertyFloat("Calls", NULL, instr->ntuples, 0, es);
+			if (es->analyze)
+			{
+				if (es->timing)
+					ExplainPropertyFloat("Time", "ms", 1000.0 * instr->total, 3,
+						es);
+				ExplainPropertyFloat("Calls", NULL, instr->ntuples, 0, es);
+			}
 		}
 
 		if (conname)
