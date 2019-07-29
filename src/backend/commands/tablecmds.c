@@ -13050,6 +13050,16 @@ MergeAttributesIntoExisting(Relation child_rel, Relation parent_rel)
 						 errmsg("column \"%s\" in child table must be marked NOT NULL",
 								attributeName)));
 
+			/* No conflicting storage options allowed either. */
+			if (attribute->attstorage != childatt->attstorage)
+				ereport(ERROR,
+						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+						 errmsg("child table \"%s\" has storage option \"%s\" for column \"%s\" mismatching \"%s\" on parent",
+								RelationGetRelationName(child_rel),
+								storage_name(childatt->attstorage),
+								attributeName,
+								storage_name(attribute->attstorage))));
+
 			/*
 			 * OK, bump the child column's inheritance count.  (If we fail
 			 * later on, this change will just roll back.)

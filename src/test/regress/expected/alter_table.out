@@ -4073,3 +4073,14 @@ alter table at_test_sql_partop attach partition at_test_sql_partop_1 for values 
 drop table at_test_sql_partop;
 drop operator class at_test_sql_partop using btree;
 drop function at_test_sql_partop;
+-- check the inheritance of attribute storage option
+create table attstorage_inh_test (a text);
+alter table attstorage_inh_test alter a set storage main;
+create table attstorage_inh_test1 (a text);
+-- error
+alter table attstorage_inh_test1 inherit attstorage_inh_test;
+ERROR:  child table "attstorage_inh_test1" has storage option "EXTENDED" for column "a" mismatching "MAIN" on parent
+alter table attstorage_inh_test1 alter a set storage main;
+-- ok
+alter table attstorage_inh_test1 inherit attstorage_inh_test;
+drop table attstorage_inh_test, attstorage_inh_test1;
