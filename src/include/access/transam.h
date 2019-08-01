@@ -48,6 +48,7 @@
 #define XidFromFullTransactionId(x)		((uint32) (x).value)
 #define U64FromFullTransactionId(x)		((x).value)
 #define FullTransactionIdPrecedes(a, b)	((a).value < (b).value)
+#define FullTransactionIdEquals(a, b)   ((a).value == (b).value)
 #define FullTransactionIdIsValid(x)		TransactionIdIsValid(XidFromFullTransactionId(x))
 #define InvalidFullTransactionId		FullTransactionIdFromEpochAndXid(0, InvalidTransactionId)
 
