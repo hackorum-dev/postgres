@@ -278,7 +278,7 @@ pgstattuple_approx_internal(Oid relid, FunctionCallInfo fcinfo)
 				 errmsg("cannot access temporary tables of other sessions")));
 
 	/*
-	 * We support only ordinary relations and materialised views, because we
+	 * We support only ordinary relations and materialized views, because we
 	 * depend on the visibility map and free space map for our estimates about
 	 * unscanned pages.
 	 */

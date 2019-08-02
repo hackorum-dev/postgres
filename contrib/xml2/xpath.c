@@ -573,7 +573,7 @@ xpath_table(PG_FUNCTION_ARGS)
 				 errmsg("xpath_table must be called as a table function")));
 
 	/*
-	 * We want to materialise because it means that we don't have to carry
+	 * We want to materialize because it means that we don't have to carry
 	 * libxml2 parser state between invocations of this function
 	 */
 	if (!(rsinfo->allowedModes & SFRM_Materialize))

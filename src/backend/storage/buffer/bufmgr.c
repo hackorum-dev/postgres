@@ -3519,7 +3519,7 @@ MarkBufferDirtyHint(Buffer buffer, bool buffer_std)
 			/*
 			 * Set the page LSN if we wrote a backup block. We aren't supposed
 			 * to set this when only holding a share lock but as long as we
-			 * serialise it somehow we're OK. We choose to set LSN while
+			 * serialize it somehow we're OK. We choose to set LSN while
 			 * holding the buffer header lock, which causes any reader of an
 			 * LSN who holds only a share lock to also obtain a buffer header
 			 * lock before using PageGetLSN(), which is enforced in

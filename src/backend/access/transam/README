@@ -609,8 +609,8 @@ or more buffer locks be held concurrently, you must lock the pages in
 appropriate order, and not release the locks until all the changes are done.
 
 Note that we must only use PageSetLSN/PageGetLSN() when we know the action
-is serialised. Only Startup process may modify data blocks during recovery,
-so Startup process may execute PageGetLSN() without fear of serialisation
+is serialized. Only Startup process may modify data blocks during recovery,
+so Startup process may execute PageGetLSN() without fear of serialization
 problems. All other processes must only call PageSet/GetLSN when holding
 either an exclusive buffer lock or a shared lock plus buffer header lock,
 or be writing the data block directly rather than through shared buffers
