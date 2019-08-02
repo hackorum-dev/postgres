@@ -5859,7 +5859,7 @@
 { oid => '1065', descr => 'view two-phase transactions',
   proname => 'pg_prepared_xact', prorows => '1000', proretset => 't',
   provolatile => 'v', prorettype => 'record', proargtypes => '',
-  proallargtypes => '{xid,text,timestamptz,oid,oid}',
+  proallargtypes => '{xid8,text,timestamptz,oid,oid}',
   proargmodes => '{o,o,o,o,o}',
   proargnames => '{transaction,gid,prepared,ownerid,dbid}',
   prosrc => 'pg_prepared_xact' },
