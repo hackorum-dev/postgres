@@ -69,8 +69,14 @@ RelationBuildPartitionDesc(Relation rel)
 	int			i,
 				nparts;
 	PartitionKey key = RelationGetPartitionKey(rel);
-	MemoryContext oldcxt;
+	MemoryContext oldcxt,
+				  tmp_cxt;
 	int		   *mapping;
+
+	tmp_cxt = AllocSetContextCreate(CurrentMemoryContext,
+									"partition context",
+									ALLOCSET_DEFAULT_SIZES);
+	oldcxt = MemoryContextSwitchTo(tmp_cxt);
 
 	/*
 	 * Get partition oids from pg_inherits.  This uses a single snapshot to
@@ -205,11 +211,10 @@ RelationBuildPartitionDesc(Relation rel)
 		boundinfo = partition_bounds_create(boundspecs, nparts, key, &mapping);
 
 		/* Now copy all info into relcache's partdesc. */
-		oldcxt = MemoryContextSwitchTo(rel->rd_pdcxt);
+		MemoryContextSwitchTo(rel->rd_pdcxt);
 		partdesc->boundinfo = partition_bounds_copy(boundinfo, key);
 		partdesc->oids = (Oid *) palloc(nparts * sizeof(Oid));
 		partdesc->is_leaf = (bool *) palloc(nparts * sizeof(bool));
-		MemoryContextSwitchTo(oldcxt);
 
 		/*
 		 * Assign OIDs from the original array into mapped indexes of the
@@ -230,6 +235,8 @@ RelationBuildPartitionDesc(Relation rel)
 				(get_rel_relkind(oids[i]) != RELKIND_PARTITIONED_TABLE);
 		}
 	}
+	MemoryContextSwitchTo(oldcxt);
+	MemoryContextDelete(tmp_cxt);
 
 	rel->rd_partdesc = partdesc;
 }
