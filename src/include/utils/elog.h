@@ -300,8 +300,8 @@ extern PGDLLIMPORT ErrorContextCallback *error_context_stack;
  */
 #define PG_TRY()  \
 	do { \
-		sigjmp_buf *save_exception_stack = PG_exception_stack; \
-		ErrorContextCallback *save_context_stack = error_context_stack; \
+		sigjmp_buf * volatile save_exception_stack = PG_exception_stack; \
+		ErrorContextCallback * volatile save_context_stack = error_context_stack; \
 		sigjmp_buf local_sigjmp_buf; \
 		if (sigsetjmp(local_sigjmp_buf, 0) == 0) \
 		{ \
