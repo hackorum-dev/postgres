@@ -2534,9 +2534,6 @@ CopyMultiInsertBufferCleanup(CopyMultiInsertInfo *miinfo,
 	for (i = 0; i < MAX_BUFFERED_TUPLES && buffer->slots[i] != NULL; i++)
 		ExecDropSingleTupleTableSlot(buffer->slots[i]);
 
-	table_finish_bulk_insert(buffer->resultRelInfo->ri_RelationDesc,
-							 miinfo->ti_options);
-
 	pfree(buffer);
 }
 
@@ -3355,9 +3352,23 @@ CopyFrom(CopyState cstate)
 		target_resultRelInfo->ri_FdwRoutine->EndForeignInsert(estate,
 															  target_resultRelInfo);
 
-	/* Tear down the multi-insert buffer data */
+	/* Tear down the multi-insert buffer data. */
 	if (insertMethod != CIM_SINGLE)
+	{
 		CopyMultiInsertInfoCleanup(&multiInsertInfo);
+
+		/* Finalize bulk inserts for each relation we inserted tuples into. */
+		if (proute)
+		{
+			List	   *rels = ExecGetRoutedToRelations(proute);
+			ListCell   *lc;
+
+			foreach(lc, rels)
+				table_finish_bulk_insert((Relation) lfirst(lc), multiInsertInfo.ti_options);
+		}
+		else
+			table_finish_bulk_insert(cstate->rel, multiInsertInfo.ti_options);
+	}
 
 	ExecCloseIndices(target_resultRelInfo);
 

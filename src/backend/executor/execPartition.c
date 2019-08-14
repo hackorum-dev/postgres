@@ -1098,6 +1098,26 @@ ExecInitPartitionDispatchInfo(EState *estate,
 }
 
 /*
+ * ExecGetRoutedToRelations -- Return all leaf partition relations which were
+ * found by ExecFindPartition() for this proute.
+ */
+List *
+ExecGetRoutedToRelations(PartitionTupleRouting *proute)
+{
+	List	   *result = NIL;
+	int			i;
+
+	for (i = 0; i < proute->num_partitions; i++)
+	{
+		ResultRelInfo *resultRelInfo = proute->partitions[i];
+
+		result = lappend(result, resultRelInfo->ri_RelationDesc);
+	}
+
+	return result;
+}
+
+/*
  * ExecCleanupTupleRouting -- Clean up objects allocated for partition tuple
  * routing.
  *

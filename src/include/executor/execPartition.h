@@ -145,6 +145,7 @@ extern ResultRelInfo *ExecFindPartition(ModifyTableState *mtstate,
 										PartitionTupleRouting *proute,
 										TupleTableSlot *slot,
 										EState *estate);
+extern List *ExecGetRoutedToRelations(PartitionTupleRouting *proute);
 extern void ExecCleanupTupleRouting(ModifyTableState *mtstate,
 									PartitionTupleRouting *proute);
 extern PartitionPruneState *ExecCreatePartitionPruneState(PlanState *planstate,
