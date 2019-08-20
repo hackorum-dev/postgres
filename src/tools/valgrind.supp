@@ -95,6 +95,14 @@
 }
 
 {
+	padding_slru_page_write
+	Memcheck:Param
+	write(buf)
+	...
+	fun:SlruPhysicalWritePage
+}
+
+{
 	bootstrap_write_relmap_overlap
 	Memcheck:Overlap
 	fun:memcpy*
