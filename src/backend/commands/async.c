@@ -2005,19 +2005,23 @@ asyncQueueNotificationToEntry(Notification *n, AsyncQueueEntry *qe)
 {
 	size_t		channellen = n->channel_len;
 	size_t		payloadlen = n->payload_len;
+	int			rawLength;
 	int			entryLength;
 
 	Assert(channellen < NAMEDATALEN);
 	Assert(payloadlen < NOTIFY_PAYLOAD_MAX_LENGTH);
 
 	/* The terminators are already included in AsyncQueueEntryEmptySize */
-	entryLength = AsyncQueueEntryEmptySize + payloadlen + channellen;
-	entryLength = QUEUEALIGN(entryLength);
+	rawLength = AsyncQueueEntryEmptySize + payloadlen + channellen;
+	entryLength = QUEUEALIGN(rawLength);
 	qe->length = entryLength;
 	qe->dboid = MyDatabaseId;
 	qe->xid = GetCurrentTransactionId();
 	qe->srcPid = MyProcPid;
 	memcpy(qe->data, n->data, channellen + payloadlen + 2);
+	/* initialize the padding bytes to zero */
+	for (int i = 0; i < entryLength - rawLength; i++)
+		qe->data[channellen + payloadlen + 2 + i] = 0;
 }
 
 /*
