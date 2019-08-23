@@ -19,6 +19,7 @@
 
 #include "access/htup_details.h"
 #include "catalog/pg_type.h"
+#include "executor/spi.h"
 #include "funcapi.h"
 #include "libpq/pqformat.h"
 #include "nodes/nodeFuncs.h"
@@ -5939,9 +5940,135 @@ array_fill_internal(ArrayType *dims, ArrayType *lbs,
 	return result;
 }
 
+/*
+ * UNNEST (REFCURSOR)
+ */
+Datum
+refcursor_unnest(PG_FUNCTION_ARGS)
+{
+	typedef struct
+	{
+		Portal	portal;
+	} refcursor_unnest_fctx;
+	
+	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
+	FuncCallContext *funcctx;
+	refcursor_unnest_fctx *fctx;
+	MemoryContext oldcontext;
+	bool connected = false;
+	
+	/* stuff done only on the first call of the function */
+	if (SRF_IS_FIRSTCALL())
+	{
+		/* create a function context for cross-call persistence */
+		funcctx = SRF_FIRSTCALL_INIT();
+		
+		/* Check to see if caller supports us returning a tuplestore */
+		if (rsinfo == NULL || !IsA(rsinfo, ReturnSetInfo))
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("set-valued function called in context that cannot accept a set")));
+		if (!(rsinfo->allowedModes & SFRM_Materialize))
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("materialize mode required, but it is not " \
+							"allowed in this context")));
+		
+		/*
+		 * switch to memory context appropriate for multiple function calls
+		 */
+		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
+
+		/* allocate memory for user context */
+		fctx = (refcursor_unnest_fctx *) palloc(sizeof(refcursor_unnest_fctx));
+		
+		MemoryContextSwitchTo(oldcontext);
+
+		char	   *portal_name = text_to_cstring(PG_GETARG_TEXT_PP(0));
+		
+		if (SPI_connect() != SPI_OK_CONNECT)
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_CURSOR), // FIXME: correct error code
+					 errmsg("failed to connect to SPI manager")));
+		connected = true;
+
+		Portal portal = SPI_cursor_find(portal_name);
+		
+		if (portal == NULL)
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_CURSOR),
+					 errmsg("cursor \"%s\" does not exist", portal_name)));
+		
+		/* initialize state */
+		fctx->portal = portal;
+
+		funcctx->user_fctx = fctx;
+	}
+	
+	/* stuff done on every call of the function */
+	funcctx = SRF_PERCALL_SETUP();
+	fctx = funcctx->user_fctx;
+	
+	if (!connected) // we already connected above
+		if (SPI_connect() != SPI_OK_CONNECT)
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_CURSOR), // FIXME: correct error code
+					 errmsg("failed to connect to SPI manager")));
+	
+	// Retrieve a single row...
+	SPI_cursor_fetch(fctx->portal, true, 1);
+	
+	/*
+	 * switch to memory context appropriate for multiple function calls
+	 */
+	oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
+	
+	/* Build a tuplestore to return our results in */
+	rsinfo->setDesc = CreateTupleDescCopy (SPI_tuptable->tupdesc);
+	
+	MemoryContextSwitchTo(oldcontext);
+
+	rsinfo->returnMode = SFRM_ValuePerCall;
+	// rsinfo->setResult = tupstore; // FIXME: is this needed...?
+	
+	bool next;
+	Datum result;
+
+	if  (SPI_processed > 1)
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_CURSOR), // FIXME: correct error code
+				 errmsg("too many rows obtained from cursor")));
+	}
+	else if (SPI_processed == 1)
+	{
+		result = PointerGetDatum (SPI_returntuple (SPI_tuptable->vals[0], SPI_tuptable->tupdesc));
+		
+		if (SPI_finish() != SPI_OK_FINISH)
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_CURSOR), // FIXME: correct error code
+					 errmsg("failed to disconnect from SPI manager")));
+		
+		next = true;
+	}
+	else // no rows retrieved
+	{
+		next = false;
+
+		if (SPI_finish() != SPI_OK_FINISH)
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_CURSOR), // FIXME: correct error code
+					 errmsg("failed to disconnect from SPI manager")));
+	}
+	
+	if (next)
+		SRF_RETURN_NEXT (funcctx, result);
+	else
+		SRF_RETURN_DONE(funcctx);
+}
 
 /*
- * UNNEST
+ * UNNEST (array)
  */
 Datum
 array_unnest(PG_FUNCTION_ARGS)
