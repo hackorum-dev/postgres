@@ -6155,7 +6155,13 @@ CheckRequiredParameterValues(void)
 	{
 		ereport(WARNING,
 				(errmsg("WAL was generated with wal_level=minimal, data may be missing"),
-				 errhint("This happens if you temporarily set wal_level=minimal without taking a new base backup.")));
+				 errhint("This happens if you temporarily set wal_level=minimal or logical_only without taking a new base backup.")));
+	}
+	if (ArchiveRecoveryRequested && ControlFile->wal_level == WAL_LEVEL_LOGICAL_ONLY)
+	{
+		ereport(WARNING,
+				(errmsg("WAL was generated with wal_level=logical_only, data may be missing"),
+				 errhint("This happens if you temporarily set wal_level=logical_only or logical_only without taking a new base backup.")));
 	}
 
 	/*
@@ -6164,7 +6170,7 @@ CheckRequiredParameterValues(void)
 	 */
 	if (ArchiveRecoveryRequested && EnableHotStandby)
 	{
-		if (ControlFile->wal_level < WAL_LEVEL_REPLICA)
+		if (ControlFile->wal_level < WAL_LEVEL_REPLICA || ControlFile->wal_level == WAL_LEVEL_LOGICAL_ONLY)
 			ereport(ERROR,
 					(errmsg("hot standby is not possible because wal_level was not set to \"replica\" or higher on the master server"),
 					 errhint("Either set wal_level to \"replica\" on the master, or turn off hot_standby here.")));
@@ -10207,7 +10213,7 @@ do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
 	 * During recovery, we don't need to check WAL level. Because, if WAL
 	 * level is not sufficient, it's impossible to get here during recovery.
 	 */
-	if (!backup_started_in_recovery && !XLogIsNeeded())
+	if (!backup_started_in_recovery && !XLogPhysicalIsNeeded())
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				 errmsg("WAL level not sufficient for making an online backup"),
@@ -10736,7 +10742,7 @@ do_pg_stop_backup(char *labelfile, bool waitforarchive, TimeLineID *stoptli_p)
 	 * During recovery, we don't need to check WAL level. Because, if WAL
 	 * level is not sufficient, it's impossible to get here during recovery.
 	 */
-	if (!backup_started_in_recovery && !XLogIsNeeded())
+	if (!backup_started_in_recovery && !XLogPhysicalIsNeeded())
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				 errmsg("WAL level not sufficient for making an online backup"),

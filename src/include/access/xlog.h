@@ -161,17 +161,18 @@ typedef enum WalLevel
 {
 	WAL_LEVEL_MINIMAL = 0,
 	WAL_LEVEL_REPLICA,
-	WAL_LEVEL_LOGICAL
+	WAL_LEVEL_LOGICAL,
+	WAL_LEVEL_LOGICAL_ONLY
 } WalLevel;
 
 extern PGDLLIMPORT int wal_level;
 
 /* Is WAL archiving enabled (always or only while server is running normally)? */
 #define XLogArchivingActive() \
-	(AssertMacro(XLogArchiveMode == ARCHIVE_MODE_OFF || wal_level >= WAL_LEVEL_REPLICA), XLogArchiveMode > ARCHIVE_MODE_OFF)
+	(AssertMacro(XLogArchiveMode == ARCHIVE_MODE_OFF || XLogPhysicalIsNeeded()), XLogArchiveMode > ARCHIVE_MODE_OFF)
 /* Is WAL archiving enabled always (even during recovery)? */
 #define XLogArchivingAlways() \
-	(AssertMacro(XLogArchiveMode == ARCHIVE_MODE_OFF || wal_level >= WAL_LEVEL_REPLICA), XLogArchiveMode == ARCHIVE_MODE_ALWAYS)
+	(AssertMacro(XLogArchiveMode == ARCHIVE_MODE_OFF || XLogPhysicalIsNeeded()), XLogArchiveMode == ARCHIVE_MODE_ALWAYS)
 #define XLogArchiveCommandSet() (XLogArchiveCommand[0] != '\0')
 
 /*
@@ -179,6 +180,11 @@ extern PGDLLIMPORT int wal_level;
  * WAL-logging if we fsync() the data before committing instead?
  */
 #define XLogIsNeeded() (wal_level >= WAL_LEVEL_REPLICA)
+
+/*
+ * Is WAL-logging necessary for archival or physical replication?
+ */
+#define XLogPhysicalIsNeeded() (XLogIsNeeded() && wal_level != WAL_LEVEL_LOGICAL_ONLY)
 
 /*
  * Is a full-page image needed for hint bit updates?

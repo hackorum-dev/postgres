@@ -80,6 +80,8 @@ wal_level_str(WalLevel wal_level)
 			return "replica";
 		case WAL_LEVEL_LOGICAL:
 			return "logical";
+		case WAL_LEVEL_LOGICAL_ONLY:
+			return "logical_only";
 	}
 	return _("unrecognized wal_level");
 }

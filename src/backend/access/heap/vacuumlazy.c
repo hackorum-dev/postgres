@@ -466,7 +466,7 @@ vacuum_log_cleanup_info(Relation rel, LVRelStats *vacrelstats)
 	 * Skip this for relations for which no WAL is to be written, or if we're
 	 * not trying to support archive recovery.
 	 */
-	if (!RelationNeedsWAL(rel) || !XLogIsNeeded())
+	if (!RelationNeedsWAL(rel) || !XLogPhysicalIsNeeded())
 		return;
 
 	/*

@@ -719,7 +719,7 @@ heapam_relation_copy_for_cluster(Relation OldHeap, Relation NewHeap,
 	 * We need to log the copied data in WAL iff WAL archiving/streaming is
 	 * enabled AND it's a WAL-logged rel.
 	 */
-	use_wal = XLogIsNeeded() && RelationNeedsWAL(NewHeap);
+	use_wal = XLogPhysicalIsNeeded() && RelationNeedsWAL(NewHeap);
 
 	/* use_wal off requires smgr_targblock be initially invalid */
 	Assert(RelationGetTargetBlock(NewHeap) == InvalidBlockNumber);

@@ -1523,6 +1523,12 @@ RestoreSlotFromDisk(const char *name)
 				 errmsg("logical replication slot \"%s\" exists, but wal_level < logical",
 						NameStr(cp.slotdata.name)),
 				 errhint("Change wal_level to be logical or higher.")));
+	else if (wal_level == WAL_LEVEL_LOGICAL_ONLY)
+		ereport(FATAL,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("physical replication slot \"%s\" exists, but wal_level = logical_only",
+						NameStr(cp.slotdata.name)),
+				 errhint("Change wal_level to be replica or logical.")));
 	else if (wal_level < WAL_LEVEL_REPLICA)
 		ereport(FATAL,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),

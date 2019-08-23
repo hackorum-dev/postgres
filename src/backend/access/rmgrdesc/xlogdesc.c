@@ -30,6 +30,7 @@ const struct config_enum_entry wal_level_options[] = {
 	{"archive", WAL_LEVEL_REPLICA, true},	/* deprecated */
 	{"hot_standby", WAL_LEVEL_REPLICA, true},	/* deprecated */
 	{"logical", WAL_LEVEL_LOGICAL, false},
+	{"logical_only", WAL_LEVEL_LOGICAL_ONLY, false},
 	{NULL, 0, false}
 };
 

@@ -4772,7 +4772,7 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap, LOCKMODE lockmode)
 		bistate = GetBulkInsertState();
 
 		ti_options = TABLE_INSERT_SKIP_FSM;
-		if (!XLogIsNeeded())
+		if (!XLogPhysicalIsNeeded())
 			ti_options |= TABLE_INSERT_SKIP_WAL;
 	}
 	else
