@@ -28,6 +28,7 @@
 #include "catalog/pg_type.h"
 #include "executor/executor.h"
 #include "executor/functions.h"
+#include "executor/spi.h"
 #include "funcapi.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
@@ -42,6 +43,7 @@
 #include "parser/parse_agg.h"
 #include "parser/parse_coerce.h"
 #include "parser/parse_func.h"
+#include "parser/parser.h"
 #include "rewrite/rewriteManip.h"
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
@@ -4968,15 +4970,18 @@ inline_set_returning_function(PlannerInfo *root, RangeTblEntry *rte)
 	 * SETOF VOID, because inlining would result in exposing the actual result
 	 * of the function's last SELECT, which should not happen in that case.
 	 * (Rechecking prokind and proretset is just paranoia.)
+	 *
+	 * The form UNNEST (QUERY) gets a free pass, and is handled specially.
 	 */
-	if (funcform->prolang != SQLlanguageId ||
+	if ((funcform->prolang != SQLlanguageId ||
 		funcform->prokind != PROKIND_FUNCTION ||
 		funcform->proisstrict ||
 		funcform->provolatile == PROVOLATILE_VOLATILE ||
 		funcform->prorettype == VOIDOID ||
 		funcform->prosecdef ||
 		!funcform->proretset ||
-		!heap_attisnull(func_tuple, Anum_pg_proc_proconfig, NULL))
+		!heap_attisnull(func_tuple, Anum_pg_proc_proconfig, NULL)) &&
+		(funcform->oid != F_REFCURSOR_UNNEST))
 	{
 		ReleaseSysCache(func_tuple);
 		return NULL;
@@ -5001,6 +5006,59 @@ inline_set_returning_function(PlannerInfo *root, RangeTblEntry *rte)
 	saveInvalItems = root->glob->invalItems;
 	root->glob->invalItems = NIL;
 
+	if (funcform->oid == F_REFCURSOR_UNNEST)
+	{
+		// FIXME: todo
+		
+		// Construct a FuncExpr to CAST the query back to text.
+		// FIXME: this doesn't work because TypeCast is a parse-time representation
+		//TypeCast *cast = makeNode(TypeCast);
+		Node *arg = (Node *) list_nth (fexpr->args, 0); // UNNEST()'s first arg
+		//cast->arg = arg;
+		//cast->typeName = SystemTypeName ("text");
+		//cast->location = -1;
+
+		// Execute the FuncExpr, yielding the text.
+		Const *cexpr = (Const *) eval_const_expressions(root, arg);
+		
+		if (!IsA(cexpr, Const))
+			return NULL;
+		
+		if (cexpr->constisnull)
+			return NULL;
+		
+		// FIXME: check other const attrs — oid, typmod
+		
+		// We can ignore a check on the collation, because we are not interested in sorting.
+		Oid			typoutput;
+		bool		typIsVarlena;
+		getTypeOutputInfo(cexpr->consttype, &typoutput, &typIsVarlena);
+
+		char *portal_name = OidOutputFunctionCall(typoutput, cexpr->constvalue);
+		
+		// From the Portal, obtain the query string...
+		if (SPI_connect() != SPI_OK_CONNECT)
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_CURSOR), // FIXME: correct error code
+					 errmsg("failed to connect to SPI manager")));
+		
+		Portal portal = SPI_cursor_find(portal_name);
+		
+		if (portal == NULL)
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_CURSOR),
+					 errmsg("cursor \"%s\" does not exist", portal_name)));
+
+		if (SPI_finish() != SPI_OK_FINISH)
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_CURSOR), // FIXME: correct error code
+					 errmsg("failed to disconnect from SPI manager")));
+		
+		// We proceed below, using the text of the query...
+		src = (char *) portal->sourceText;
+	}
+	else
+	{
 	/* Fetch the function body */
 	tmp = SysCacheGetAttr(PROCOID,
 						  func_tuple,
@@ -5039,6 +5097,7 @@ inline_set_returning_function(PlannerInfo *root, RangeTblEntry *rte)
 	/* Arg list length should now match the function */
 	if (list_length(fexpr->args) != funcform->pronargs)
 		goto fail;
+	}
 
 	/*
 	 * Set up to handle parameters while parsing the function body.  We can
