@@ -507,6 +507,7 @@ parse_psql_options(int argc, char *argv[], struct adhoc_opts *options)
 	int			c;
 
 	memset(options, 0, sizeof *options);
+	optopt = 0;
 
 	while ((c = getopt_long(argc, argv, "aAbc:d:eEf:F:h:HlL:no:p:P:qR:sStT:U:v:VwWxXz?01",
 							long_options, &optindex)) != -1)
@@ -667,7 +668,7 @@ parse_psql_options(int argc, char *argv[], struct adhoc_opts *options)
 				break;
 			case '?':
 				/* Actual help option given */
-				if (strcmp(argv[optind - 1], "-?") == 0)
+				if (!optopt)
 				{
 					usage(NOPAGER);
 					exit(EXIT_SUCCESS);
