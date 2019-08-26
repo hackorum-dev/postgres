@@ -1751,6 +1751,8 @@ _bt_killitems(IndexScanDesc scan)
 		Buffer		buf;
 
 		/* Attempt to re-read the buffer, getting pin and lock. */
+		/* TODO Is it possible that currPage is not valid anymore? */
+		Assert(BTScanPosIsValid(so->currPos));
 		buf = _bt_getbuf(scan->indexRelation, so->currPos.currPage, BT_READ);
 
 		/* It might not exist anymore; in which case we can't hint it. */

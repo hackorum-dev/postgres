@@ -512,14 +512,6 @@ typedef struct BTInsertStateData
 typedef BTInsertStateData *BTInsertState;
 
 /*
- * BTScanOpaqueData is the btree-private state needed for an indexscan.
- * This consists of preprocessed scan keys (see _bt_preprocess_keys() for
- * details of the preprocessing), information about the current location
- * of the scan, and information about the marked location, if any.  (We use
- * BTScanPosData to represent the data needed for each of current and marked
- * locations.)	In addition we can remember some known-killed index entries
- * that must be marked before we can move off the current page.
- *
  * Index scans work a page at a time: we pin and read-lock the page, identify
  * all the matching items on the page and save them in BTScanPosData, then
  * release the read-lock while returning the items to the caller for
@@ -583,6 +575,14 @@ typedef struct BTScanPosData
 
 typedef BTScanPosData *BTScanPos;
 
+/*
+ * It's enough to check BufferIsValid inside this macro,
+ * since in context of BTScanPosData buf is always pinned if valid,
+ * see comment to struct's field above.
+ *
+ * NOTE To keep this assumption correct all users of scanpos must unpin buffer
+ * using macros below instead of directly calling ReleaseBuffer.
+ */
 #define BTScanPosIsPinned(scanpos) \
 ( \
 	AssertMacro(BlockNumberIsValid((scanpos).currPage) || \
@@ -600,12 +600,24 @@ typedef BTScanPosData *BTScanPos;
 			BTScanPosUnpin(scanpos); \
 	} while (0)
 
+/*
+ * Check if scanpos is initialized.
+ * TODO It is not clear to me
+ * why to check scanpos validity based on currPage value.
+ * I wonder, if we need currPage at all? Is there any codepath that
+ * assumes that currPage is not the same as BufferGetBlockNumber(buf)?
+ */
 #define BTScanPosIsValid(scanpos) \
 ( \
 	AssertMacro(BlockNumberIsValid((scanpos).currPage) || \
 				!BufferIsValid((scanpos).buf)), \
 	BlockNumberIsValid((scanpos).currPage) \
 )
+
+/*
+ * Reset BTScanPos fields.
+ * If scanpos was valid, caller must call BTScanPosUnpinIfPinned in advance.
+ */
 #define BTScanPosInvalidate(scanpos) \
 	do { \
 		(scanpos).currPage = InvalidBlockNumber; \
@@ -625,6 +637,15 @@ typedef struct BTArrayKeyInfo
 	Datum	   *elem_values;	/* array of num_elems Datums */
 } BTArrayKeyInfo;
 
+/*
+ * BTScanOpaqueData is the btree-private state needed for an indexscan.
+ * This consists of preprocessed scan keys (see _bt_preprocess_keys() for
+ * details of the preprocessing), information about the current location
+ * of the scan, and information about the marked location, if any.  (We use
+ * BTScanPosData to represent the data needed for each of current and marked
+ * locations.)	In addition we can remember some known-killed index entries
+ * that must be marked before we can move off the current page.
+ */
 typedef struct BTScanOpaqueData
 {
 	/* these fields are set by _bt_preprocess_keys(): */
