@@ -249,7 +249,7 @@ start_postmaster(ClusterInfo *cluster, bool report_and_exit_on_error)
 			 " -c autovacuum=off -c autovacuum_freeze_max_age=2000000000",
 			 (cluster == &new_cluster) ?
 			 " -c synchronous_commit=off -c fsync=off -c full_page_writes=off" : "",
-			 cluster->pgopts ? cluster->pgopts : "", socket_string);
+			 socket_string, cluster->pgopts ? cluster->pgopts : "");
 
 	/*
 	 * Don't throw an error right away, let connecting throw the error because
