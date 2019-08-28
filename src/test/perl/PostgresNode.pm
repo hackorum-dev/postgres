@@ -32,8 +32,7 @@ PostgresNode - class representing PostgreSQL server instance
   my $cmdret = $node->psql('postgres', 'SELECT pg_sleep(60)',
 	  stdout => \$stdout, stderr => \$stderr,
 	  timeout => 30, timed_out => \$timed_out,
-	  extra_params => ['--single-transaction'],
-	  on_error_die => 1)
+	  extra_params => ['--single-transaction'])
   print "Sleep timed out" if $timed_out;
 
   # Similar thing, more convenient in common cases
@@ -1332,10 +1331,12 @@ disabled.  That may be overridden by passing extra psql parameters.
 stdout and stderr are transformed to UNIX line endings if on Windows. Any
 trailing newline is removed.
 
-Dies on failure to invoke psql but not if psql exits with a nonzero
-return code (unless on_error_die specified).
+By default, dies with an informative error message if psql exits with a
+nonzero return code.  Set on_error_die to 0 to have the return code be
+returned, instead.
 
-If psql exits because of a signal, an exception is raised.
+If psql cannot be invoked, or it exits because of a signal,
+an exception is raised.
 
 =over
 
@@ -1357,10 +1358,11 @@ By default, the B<psql> method invokes the B<psql> program with ON_ERROR_STOP=1
 set, so SQL execution is stopped at the first error and exit code 2 is
 returned.  Set B<on_error_stop> to 0 to ignore errors instead.
 
-=item on_error_die => 0
+=item on_error_die => 1
 
-By default, this method returns psql's result code. Pass on_error_die to
-instead die with an informative message.
+By default, this method dies if psql returns a nonzero exit code.
+Set B<on_error_die> to 0 to return the exit code and let the caller
+handle errors.
 
 =item timeout => 'interval'
 
@@ -1381,17 +1383,17 @@ If given, it must be an array reference containing additional parameters to B<ps
 
 e.g.
 
+	$node->psql('postgres', $sql);
+
+dies with an informative message if $sql fails.
+
 	my ($stdout, $stderr, $timed_out);
 	my $cmdret = $node->psql('postgres', 'SELECT pg_sleep(60)',
-		stdout => \$stdout, stderr => \$stderr,
+		stdout => \$stdout, stderr => \$stderr, on_error_die => 0,
 		timeout => 30, timed_out => \$timed_out,
 		extra_params => ['--single-transaction'])
 
 will set $cmdret to undef and $timed_out to a true value.
-
-	$node->psql('postgres', $sql, on_error_die => 1);
-
-dies with an informative message if $sql fails.
 
 =cut
 
@@ -1424,7 +1426,7 @@ sub psql
 	}
 
 	$params{on_error_stop} = 1 unless defined $params{on_error_stop};
-	$params{on_error_die}  = 0 unless defined $params{on_error_die};
+	$params{on_error_die}  = 1 unless defined $params{on_error_die};
 
 	push @psql_params, '-v', 'ON_ERROR_STOP=1' if $params{on_error_stop};
 	push @psql_params, @{ $params{extra_params} }

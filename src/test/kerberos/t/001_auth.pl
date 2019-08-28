@@ -175,6 +175,7 @@ sub test_access
 	my ($res, $stdoutres, $stderrres) = $node->psql(
 		'postgres',
 		"$server_check",
+		on_error_die => 0,
 		extra_params => [
 			'-XAtd',
 			$node->connstr('postgres')

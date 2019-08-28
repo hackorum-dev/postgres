@@ -51,9 +51,10 @@ $standby->poll_query_until('postgres',
 $standby->safe_psql('postgres', 'checkpoint');
 
 # This one should raise an error now
-my ($ret, $standby_ts_stdout, $standby_ts_stderr) = $standby->psql('postgres',
-	'select ts.* from pg_class, pg_xact_commit_timestamp(xmin) ts where relname = \'t10\''
-);
+my ($ret, $standby_ts_stdout, $standby_ts_stderr) = $standby->psql(
+	'postgres',
+	'select ts.* from pg_class, pg_xact_commit_timestamp(xmin) ts where relname = \'t10\'',
+	on_error_die => 0);
 is($ret, 3, 'standby errors when master turned feature off');
 is($standby_ts_stdout, '',
 	"standby gives no value when master turned feature off");

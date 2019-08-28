@@ -40,8 +40,8 @@ $standby->restart;
 
 my ($psql_ret, $standby_ts_stdout, $standby_ts_stderr) = $standby->psql(
 	'postgres',
-	qq{SELECT ts.* FROM pg_class, pg_xact_commit_timestamp(xmin) AS ts WHERE relname = 't10'}
-);
+	qq{SELECT ts.* FROM pg_class, pg_xact_commit_timestamp(xmin) AS ts WHERE relname = 't10'},
+	on_error_die => 0);
 is($psql_ret, 3, 'expect error when getting commit timestamp after restart');
 is($standby_ts_stdout, '', "standby does not return a value after restart");
 like(

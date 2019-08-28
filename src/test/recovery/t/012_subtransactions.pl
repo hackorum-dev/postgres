@@ -167,7 +167,10 @@ is($psql_out, '-1', "Not visible");
 ($node_master, $node_standby) = ($node_standby, $node_master);
 $node_standby->enable_streaming($node_master);
 $node_standby->start;
-$psql_rc = $node_master->psql('postgres', "COMMIT PREPARED 'xact_012_1'");
+$psql_rc = $node_master->psql(
+	'postgres',
+	"COMMIT PREPARED 'xact_012_1'",
+	on_error_die => 0);
 is($psql_rc, '0',
 	"Restore of PGPROC_MAX_CACHED_SUBXIDS+ prepared transaction on promoted standby"
 );
@@ -204,7 +207,10 @@ is($psql_out, '-1', "Not visible");
 ($node_master, $node_standby) = ($node_standby, $node_master);
 $node_standby->enable_streaming($node_master);
 $node_standby->start;
-$psql_rc = $node_master->psql('postgres', "ROLLBACK PREPARED 'xact_012_1'");
+$psql_rc = $node_master->psql(
+	'postgres',
+	"ROLLBACK PREPARED 'xact_012_1'",
+	on_error_die => 0);
 is($psql_rc, '0',
 	"Rollback of PGPROC_MAX_CACHED_SUBXIDS+ prepared transaction on promoted standby"
 );

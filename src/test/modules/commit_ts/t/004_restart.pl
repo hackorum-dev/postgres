@@ -12,21 +12,27 @@ $node_master->start;
 
 my ($ret, $stdout, $stderr);
 
-($ret, $stdout, $stderr) =
-  $node_master->psql('postgres', qq[SELECT pg_xact_commit_timestamp('0');]);
+($ret, $stdout, $stderr) = $node_master->psql(
+	'postgres',
+	qq[SELECT pg_xact_commit_timestamp('0');],
+	on_error_die => 0);
 is($ret, 3, 'getting ts of InvalidTransactionId reports error');
 like(
 	$stderr,
 	qr/cannot retrieve commit timestamp for transaction/,
 	'expected error from InvalidTransactionId');
 
-($ret, $stdout, $stderr) =
-  $node_master->psql('postgres', qq[SELECT pg_xact_commit_timestamp('1');]);
+($ret, $stdout, $stderr) = $node_master->psql(
+	'postgres',
+	qq[SELECT pg_xact_commit_timestamp('1');],
+	on_error_die => 0);
 is($ret,    0,  'getting ts of BootstrapTransactionId succeeds');
 is($stdout, '', 'timestamp of BootstrapTransactionId is null');
 
-($ret, $stdout, $stderr) =
-  $node_master->psql('postgres', qq[SELECT pg_xact_commit_timestamp('2');]);
+($ret, $stdout, $stderr) = $node_master->psql(
+	'postgres',
+	qq[SELECT pg_xact_commit_timestamp('2');],
+	on_error_die => 0);
 is($ret,    0,  'getting ts of FrozenTransactionId succeeds');
 is($stdout, '', 'timestamp of FrozenTransactionId is null');
 
@@ -102,8 +108,10 @@ LANGUAGE plpgsql;
 ));
 $node_master->safe_psql('postgres', 'CALL consume_xid(2000)');
 
-($ret, $stdout, $stderr) = $node_master->psql('postgres',
-	qq[SELECT pg_xact_commit_timestamp('$xid');]);
+($ret, $stdout, $stderr) = $node_master->psql(
+	'postgres',
+	qq[SELECT pg_xact_commit_timestamp('$xid');],
+	on_error_die => 0);
 is($ret, 3, 'no commit timestamp from enable tx when cts disabled');
 like(
 	$stderr,
@@ -120,8 +128,10 @@ my $xid_disabled = $node_master->safe_psql(
 ]);
 
 # Should be inaccessible
-($ret, $stdout, $stderr) = $node_master->psql('postgres',
-	qq[SELECT pg_xact_commit_timestamp('$xid_disabled');]);
+($ret, $stdout, $stderr) = $node_master->psql(
+	'postgres',
+	qq[SELECT pg_xact_commit_timestamp('$xid_disabled');],
+	on_error_die => 0);
 is($ret, 3, 'no commit timestamp when disabled');
 like(
 	$stderr,

@@ -60,10 +60,18 @@ print "standby 2: $result\n";
 is($result, qq(1002), 'check streamed content on standby 2');
 
 # Check that only READ-only queries can run on standbys
-is($node_standby_1->psql('postgres', 'INSERT INTO tab_int VALUES (1)'),
-	3, 'read-only queries on standby 1');
-is($node_standby_2->psql('postgres', 'INSERT INTO tab_int VALUES (1)'),
-	3, 'read-only queries on standby 2');
+is( $node_standby_1->psql(
+		'postgres',
+		'INSERT INTO tab_int VALUES (1)',
+		on_error_die => 0),
+	3,
+	'read-only queries on standby 1');
+is( $node_standby_2->psql(
+		'postgres',
+		'INSERT INTO tab_int VALUES (1)',
+		on_error_die => 0),
+	3,
+	'read-only queries on standby 2');
 
 # Tests for connection parameter target_session_attrs
 note "testing connection parameter \"target_session_attrs\"";
@@ -94,8 +102,9 @@ sub test_target_session_attrs
 
 	# The client used for the connection does not matter, only the backend
 	# point does.
-	my ($ret, $stdout, $stderr) =
-	  $node1->psql('postgres', 'SHOW port;',
+	my ($ret, $stdout, $stderr) = $node1->psql(
+		'postgres', 'SHOW port;',
+		on_error_die => 0,
 		extra_params => [ '-d', $connstr ]);
 	is( $status == $ret && $stdout eq $target_node->port,
 		1,
@@ -138,26 +147,26 @@ my $connstr_db     = "$connstr_common replication=database dbname=postgres";
 # Test SHOW ALL
 my ($ret, $stdout, $stderr) = $node_master->psql(
 	'postgres', 'SHOW ALL;',
-	on_error_die => 1,
+	on_error_die => 0,
 	extra_params => [ '-d', $connstr_rep ]);
 ok($ret == 0, "SHOW ALL with replication role and physical replication");
 ($ret, $stdout, $stderr) = $node_master->psql(
 	'postgres', 'SHOW ALL;',
-	on_error_die => 1,
+	on_error_die => 0,
 	extra_params => [ '-d', $connstr_db ]);
 ok($ret == 0, "SHOW ALL with replication role and logical replication");
 
 # Test SHOW with a user-settable parameter
 ($ret, $stdout, $stderr) = $node_master->psql(
 	'postgres', 'SHOW work_mem;',
-	on_error_die => 1,
+	on_error_die => 0,
 	extra_params => [ '-d', $connstr_rep ]);
 ok( $ret == 0,
 	"SHOW with user-settable parameter, replication role and physical replication"
 );
 ($ret, $stdout, $stderr) = $node_master->psql(
 	'postgres', 'SHOW work_mem;',
-	on_error_die => 1,
+	on_error_die => 0,
 	extra_params => [ '-d', $connstr_db ]);
 ok( $ret == 0,
 	"SHOW with user-settable parameter, replication role and logical replication"
@@ -166,14 +175,14 @@ ok( $ret == 0,
 # Test SHOW with a superuser-settable parameter
 ($ret, $stdout, $stderr) = $node_master->psql(
 	'postgres', 'SHOW primary_conninfo;',
-	on_error_die => 1,
+	on_error_die => 0,
 	extra_params => [ '-d', $connstr_rep ]);
 ok( $ret == 0,
 	"SHOW with superuser-settable parameter, replication role and physical replication"
 );
 ($ret, $stdout, $stderr) = $node_master->psql(
 	'postgres', 'SHOW primary_conninfo;',
-	on_error_die => 1,
+	on_error_die => 0,
 	extra_params => [ '-d', $connstr_db ]);
 ok( $ret == 0,
 	"SHOW with superuser-settable parameter, replication role and logical replication"
@@ -190,7 +199,8 @@ $node_master->append_conf('postgresql.conf', "max_replication_slots = 4");
 $node_master->restart;
 is( $node_master->psql(
 		'postgres',
-		qq[SELECT pg_create_physical_replication_slot('$slotname_1');]),
+		qq[SELECT pg_create_physical_replication_slot('$slotname_1');],
+		on_error_die => 0),
 	0,
 	'physical slot created on master');
 $node_standby_1->append_conf('postgresql.conf',
@@ -201,7 +211,8 @@ $node_standby_1->append_conf('postgresql.conf', "max_replication_slots = 4");
 $node_standby_1->restart;
 is( $node_standby_1->psql(
 		'postgres',
-		qq[SELECT pg_create_physical_replication_slot('$slotname_2');]),
+		qq[SELECT pg_create_physical_replication_slot('$slotname_2');],
+		on_error_die => 0),
 	0,
 	'physical slot created on intermediate replica');
 $node_standby_2->append_conf('postgresql.conf',

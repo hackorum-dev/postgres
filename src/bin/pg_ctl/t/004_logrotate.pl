@@ -19,7 +19,7 @@ $node->start();
 
 # Verify that log output gets to the file
 
-$node->psql('postgres', 'SELECT 1/0');
+$node->psql('postgres', 'SELECT 1/0', on_error_die => 0);
 
 my $current_logfiles = slurp_file($node->data_dir . '/current_logfiles');
 
@@ -75,7 +75,7 @@ chomp $lfname;
 
 # Verify that log output gets to this file, too
 
-$node->psql('postgres', 'fee fi fo fum');
+$node->psql('postgres', 'fee fi fo fum', on_error_die => 0);
 
 my $second_logfile;
 for (my $attempts = 0; $attempts < $max_attempts; $attempts++)

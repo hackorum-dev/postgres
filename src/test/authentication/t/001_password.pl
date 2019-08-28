@@ -45,7 +45,10 @@ sub test_role
 
 	$status_string = 'success' if ($expected_res eq 0);
 
-	my $res = $node->psql('postgres', undef, extra_params => [ '-U', $role ]);
+	my $res = $node->psql(
+		'postgres', undef,
+		on_error_die => 0,
+		extra_params => [ '-U', $role ]);
 	is($res, $expected_res,
 		"authentication $status_string for method $method, role $role");
 	return;

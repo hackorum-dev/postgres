@@ -487,12 +487,10 @@ INSERT INTO seeded_random(seed, rand, val) VALUES
 }
 
 # check that all runs generated the same 4 values
-my ($ret, $out, $err) = $node->psql('postgres',
+my $out = $node->safe_psql('postgres',
 	'SELECT seed, rand, val, COUNT(*) FROM seeded_random GROUP BY seed, rand, val'
 );
 
-ok($ret == 0,  "psql seeded_random count ok");
-ok($err eq '', "psql seeded_random count stderr is empty");
 ok($out =~ /\b$seed\|uniform\|1\d\d\d\|2/,
 	"psql seeded_random count uniform");
 ok( $out =~ /\b$seed\|exponential\|2\d\d\d\|2/,

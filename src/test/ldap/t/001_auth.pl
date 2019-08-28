@@ -164,8 +164,10 @@ sub test_access
 {
 	my ($node, $role, $expected_res, $test_name) = @_;
 
-	my $res =
-	  $node->psql('postgres', 'SELECT 1', extra_params => [ '-U', $role ]);
+	my $res = $node->psql(
+		'postgres', 'SELECT 1',
+		on_error_die => 0,
+		extra_params => [ '-U', $role ]);
 	is($res, $expected_res, $test_name);
 	return;
 }

@@ -83,8 +83,9 @@ $node_replica->start;
 
 # If we drop 'dropme' on the master, the standby should drop the
 # db and associated slot.
-is($node_master->psql('postgres', 'DROP DATABASE dropme'),
-	0, 'dropped DB with logical slot OK on master');
+is( $node_master->psql('postgres', 'DROP DATABASE dropme', on_error_die => 0),
+	0,
+	'dropped DB with logical slot OK on master');
 $node_master->wait_for_catchup($node_replica, 'replay',
 	$node_master->lsn('insert'));
 is( $node_replica->safe_psql(
@@ -141,9 +142,10 @@ $node_replica->safe_psql('postgres',
 	"INSERT INTO decoding(blah) VALUES ('after failover');");
 
 # Shouldn't be able to read from slot created after base backup
-($ret, $stdout, $stderr) = $node_replica->psql('postgres',
-	"SELECT data FROM pg_logical_slot_peek_changes('after_basebackup', NULL, NULL, 'include-xids', '0', 'skip-empty-xacts', '1');"
-);
+($ret, $stdout, $stderr) = $node_replica->psql(
+	'postgres',
+	"SELECT data FROM pg_logical_slot_peek_changes('after_basebackup', NULL, NULL, 'include-xids', '0', 'skip-empty-xacts', '1');",
+	on_error_die => 0);
 is($ret, 3, 'replaying from after_basebackup slot fails');
 like(
 	$stderr,
@@ -154,7 +156,8 @@ like(
 ($ret, $stdout, $stderr) = $node_replica->psql(
 	'postgres',
 	"SELECT data FROM pg_logical_slot_peek_changes('before_basebackup', NULL, NULL, 'include-xids', '0', 'skip-empty-xacts', '1');",
-	timeout => 30);
+	on_error_die => 0,
+	timeout      => 30);
 is($ret, 0, 'replay from slot before_basebackup succeeds');
 
 my $final_expected_output_bb = q(BEGIN

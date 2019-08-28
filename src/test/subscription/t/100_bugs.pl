@@ -87,14 +87,16 @@ $node_publisher->safe_psql('postgres',
 
 is( $node_publisher->psql(
 		'postgres',
-		"CREATE TEMPORARY TABLE tt1 AS SELECT 1 AS a; UPDATE tt1 SET a = 2;"),
+		"CREATE TEMPORARY TABLE tt1 AS SELECT 1 AS a; UPDATE tt1 SET a = 2;",
+		on_error_die => 0),
 	0,
 	'update to temporary table without replica identity with FOR ALL TABLES publication'
 );
 
 is( $node_publisher->psql(
 		'postgres',
-		"CREATE UNLOGGED TABLE tu1 AS SELECT 1 AS a; UPDATE tu1 SET a = 2;"),
+		"CREATE UNLOGGED TABLE tu1 AS SELECT 1 AS a; UPDATE tu1 SET a = 2;",
+		on_error_die => 0),
 	0,
 	'update to unlogged table without replica identity with FOR ALL TABLES publication'
 );

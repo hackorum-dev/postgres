@@ -76,10 +76,16 @@ $cur_master->psql(
 $cur_master->stop;
 $cur_master->start;
 
-$psql_rc = $cur_master->psql('postgres', "COMMIT PREPARED 'xact_009_1'");
+$psql_rc = $cur_master->psql(
+	'postgres',
+	"COMMIT PREPARED 'xact_009_1'",
+	on_error_die => 0);
 is($psql_rc, '0', 'Commit prepared transaction after restart');
 
-$psql_rc = $cur_master->psql('postgres', "ROLLBACK PREPARED 'xact_009_2'");
+$psql_rc = $cur_master->psql(
+	'postgres',
+	"ROLLBACK PREPARED 'xact_009_2'",
+	on_error_die => 0);
 is($psql_rc, '0', 'Rollback prepared transaction after restart');
 
 ###############################################################################
@@ -104,10 +110,16 @@ $cur_master->psql(
 $cur_master->teardown_node;
 $cur_master->start;
 
-$psql_rc = $cur_master->psql('postgres', "COMMIT PREPARED 'xact_009_3'");
+$psql_rc = $cur_master->psql(
+	'postgres',
+	"COMMIT PREPARED 'xact_009_3'",
+	on_error_die => 0);
 is($psql_rc, '0', 'Commit prepared transaction after teardown');
 
-$psql_rc = $cur_master->psql('postgres', "ROLLBACK PREPARED 'xact_009_4'");
+$psql_rc = $cur_master->psql(
+	'postgres',
+	"ROLLBACK PREPARED 'xact_009_4'",
+	on_error_die => 0);
 is($psql_rc, '0', 'Rollback prepared transaction after teardown');
 
 ###############################################################################
@@ -131,7 +143,10 @@ $cur_master->psql(
 $cur_master->teardown_node;
 $cur_master->start;
 
-$psql_rc = $cur_master->psql('postgres', "COMMIT PREPARED 'xact_009_5'");
+$psql_rc = $cur_master->psql(
+	'postgres',
+	"COMMIT PREPARED 'xact_009_5'",
+	on_error_die => 0);
 is($psql_rc, '0', 'Replay several transactions with same GID');
 
 ###############################################################################
@@ -157,7 +172,8 @@ $psql_rc = $cur_master->psql(
 	INSERT INTO t_009_tbl VALUES (16, 'issued to ${cur_master_name}');
 	-- This prepare can fail due to conflicting GID or locks conflicts if
 	-- replay did not fully cleanup its state on previous commit.
-	PREPARE TRANSACTION 'xact_009_7';");
+	PREPARE TRANSACTION 'xact_009_7';",
+	on_error_die => 0);
 is($psql_rc, '0', "Cleanup of shared memory state for 2PC commit");
 
 $cur_master->psql('postgres', "COMMIT PREPARED 'xact_009_7'");
@@ -223,8 +239,10 @@ $cur_master_name = $cur_master->name;
 
 # because london is not running at this point, we can't use syncrep commit
 # on this command
-$psql_rc = $cur_master->psql('postgres',
-	"SET synchronous_commit = off; COMMIT PREPARED 'xact_009_10'");
+$psql_rc = $cur_master->psql(
+	'postgres',
+	"SET synchronous_commit = off; COMMIT PREPARED 'xact_009_10'",
+	on_error_die => 0);
 is($psql_rc, '0', "Restore of prepared transaction on promoted standby");
 
 # restart old master as new standby
@@ -355,10 +373,16 @@ $cur_master->psql(
 $cur_master->teardown_node;
 $cur_master->start;
 
-$psql_rc = $cur_master->psql('postgres', "COMMIT PREPARED 'xact_009_14'");
+$psql_rc = $cur_master->psql(
+	'postgres',
+	"COMMIT PREPARED 'xact_009_14'",
+	on_error_die => 0);
 is($psql_rc, '0', 'Commit prepared transaction after teardown');
 
-$psql_rc = $cur_master->psql('postgres', "ROLLBACK PREPARED 'xact_009_15'");
+$psql_rc = $cur_master->psql(
+	'postgres',
+	"ROLLBACK PREPARED 'xact_009_15'",
+	on_error_die => 0);
 is($psql_rc, '0', 'Rollback prepared transaction after teardown');
 
 ###############################################################################
@@ -382,10 +406,16 @@ $cur_master->psql(
 $cur_master->stop;
 $cur_master->start;
 
-$psql_rc = $cur_master->psql('postgres', "COMMIT PREPARED 'xact_009_16'");
+$psql_rc = $cur_master->psql(
+	'postgres',
+	"COMMIT PREPARED 'xact_009_16'",
+	on_error_die => 0);
 is($psql_rc, '0', 'Commit prepared transaction after restart');
 
-$psql_rc = $cur_master->psql('postgres', "ROLLBACK PREPARED 'xact_009_17'");
+$psql_rc = $cur_master->psql(
+	'postgres',
+	"ROLLBACK PREPARED 'xact_009_17'",
+	on_error_die => 0);
 is($psql_rc, '0', 'Rollback prepared transaction after restart');
 
 ###############################################################################

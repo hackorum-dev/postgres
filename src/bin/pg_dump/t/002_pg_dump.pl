@@ -3274,6 +3274,7 @@ $node->psql(
 	'postgres',
 	"CREATE COLLATION testing FROM \"C\"; DROP COLLATION testing;",
 	on_error_stop => 0,
+	on_error_die  => 0,
 	stderr        => \$collation_check_stderr);
 
 if ($collation_check_stderr !~ /ERROR: /)

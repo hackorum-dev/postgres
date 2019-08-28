@@ -91,6 +91,7 @@ $node_standby->restart;
 # Insert should work on standby
 is( $node_standby->psql(
 		'postgres',
-		qq{insert into testtab select generate_series(1,1000), 'foo';}),
+		qq{insert into testtab select generate_series(1,1000), 'foo';},
+		on_error_die => 0),
 	0,
 	'INSERT succeeds with truncated relation FSM');

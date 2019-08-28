@@ -95,8 +95,8 @@ $node_master->safe_psql('postgres', 'CREATE DATABASE otherdb');
 
 is( $node_master->psql(
 		'otherdb',
-		"SELECT lsn FROM pg_logical_slot_peek_changes('test_slot', NULL, NULL) ORDER BY lsn DESC LIMIT 1;"
-	),
+		"SELECT lsn FROM pg_logical_slot_peek_changes('test_slot', NULL, NULL) ORDER BY lsn DESC LIMIT 1;",
+		on_error_die => 0),
 	3,
 	'replaying logical slot from another database fails');
 
@@ -119,8 +119,12 @@ SKIP:
 	$node_master->poll_query_until('otherdb',
 		"SELECT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = 'otherdb_slot' AND active_pid IS NOT NULL)"
 	) or die "slot never became active";
-	is($node_master->psql('postgres', 'DROP DATABASE otherdb'),
-		3, 'dropping a DB with active logical slots fails');
+	is( $node_master->psql(
+			'postgres',
+			'DROP DATABASE otherdb',
+			on_error_die => 0),
+		3,
+		'dropping a DB with active logical slots fails');
 	$pg_recvlogical->kill_kill;
 	is($node_master->slot('otherdb_slot')->{'slot_name'},
 		undef, 'logical slot still exists');
@@ -130,8 +134,10 @@ $node_master->poll_query_until('otherdb',
 	"SELECT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = 'otherdb_slot' AND active_pid IS NULL)"
 ) or die "slot never became inactive";
 
-is($node_master->psql('postgres', 'DROP DATABASE otherdb'),
-	0, 'dropping a DB with inactive logical slots succeeds');
+is( $node_master->psql(
+		'postgres', 'DROP DATABASE otherdb', on_error_die => 0),
+	0,
+	'dropping a DB with inactive logical slots succeeds');
 is($node_master->slot('otherdb_slot')->{'slot_name'},
 	undef, 'logical slot was actually dropped with DB');
 
