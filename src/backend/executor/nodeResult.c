@@ -71,7 +71,7 @@ ExecResult(PlanState *pstate)
 	PlanState  *outerPlan;
 	ExprContext *econtext;
 
-	CHECK_FOR_INTERRUPTS();
+//	CHECK_FOR_INTERRUPTS();
 
 	econtext = node->ps.ps_ExprContext;
 
