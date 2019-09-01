@@ -366,7 +366,7 @@ pg_sleep(PG_FUNCTION_ARGS)
 		TimestampTz delay;
 		long		delay_ms;
 
-		CHECK_FOR_INTERRUPTS();
+//		CHECK_FOR_INTERRUPTS();
 
 		delay = endtime - GetCurrentTimestamp();
 		if (delay >= 600 * USECS_PER_SEC)
