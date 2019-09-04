@@ -97,11 +97,11 @@ static const char *llvm_triple = NULL;
 static const char *llvm_layout = NULL;
 
 
-static LLVMTargetMachineRef llvm_opt0_targetmachine;
+static LLVMTargetMachineRef llvm_opt1_targetmachine;
 static LLVMTargetMachineRef llvm_opt3_targetmachine;
 
 static LLVMTargetRef llvm_targetref;
-static LLVMOrcJITStackRef llvm_opt0_orc;
+static LLVMOrcJITStackRef llvm_opt1_orc;
 static LLVMOrcJITStackRef llvm_opt3_orc;
 
 
@@ -282,12 +282,12 @@ llvm_get_function(LLVMJitContext *context, const char *funcname)
 #else
 
 #if LLVM_VERSION_MAJOR < 5
-	if ((addr = LLVMOrcGetSymbolAddress(llvm_opt0_orc, funcname)))
+	if ((addr = LLVMOrcGetSymbolAddress(llvm_opt1_orc, funcname)))
 		return (void *) (uintptr_t) addr;
 	if ((addr = LLVMOrcGetSymbolAddress(llvm_opt3_orc, funcname)))
 		return (void *) (uintptr_t) addr;
 #else
-	if (LLVMOrcGetSymbolAddress(llvm_opt0_orc, &addr, funcname))
+	if (LLVMOrcGetSymbolAddress(llvm_opt1_orc, &addr, funcname))
 		elog(ERROR, "failed to look up symbol \"%s\"", funcname);
 	if (addr)
 		return (void *) (uintptr_t) addr;
@@ -428,7 +428,7 @@ llvm_optimize_module(LLVMJitContext *context, LLVMModuleRef module)
 	if (context->base.flags & PGJIT_OPT3)
 		compile_optlevel = 3;
 	else
-		compile_optlevel = 0;
+		compile_optlevel = 1;
 
 	/*
 	 * Have to create a new pass manager builder every pass through, as the
@@ -499,7 +499,7 @@ llvm_compile_module(LLVMJitContext *context)
 	if (context->base.flags & PGJIT_OPT3)
 		compile_orc = llvm_opt3_orc;
 	else
-		compile_orc = llvm_opt0_orc;
+		compile_orc = llvm_opt1_orc;
 
 	/* perform inlining */
 	if (context->base.flags & PGJIT_INLINE)
@@ -648,9 +648,9 @@ llvm_session_initialize(void)
 	elog(DEBUG2, "LLVMJIT detected CPU \"%s\", with features \"%s\"",
 		 cpu, features);
 
-	llvm_opt0_targetmachine =
+	llvm_opt1_targetmachine =
 		LLVMCreateTargetMachine(llvm_targetref, llvm_triple, cpu, features,
-								LLVMCodeGenLevelNone,
+								LLVMCodeGenLevelLess,
 								LLVMRelocDefault,
 								LLVMCodeModelJITDefault);
 	llvm_opt3_targetmachine =
@@ -667,7 +667,7 @@ llvm_session_initialize(void)
 	/* force symbols in main binary to be loaded */
 	LLVMLoadLibraryPermanently(NULL);
 
-	llvm_opt0_orc = LLVMOrcCreateInstance(llvm_opt0_targetmachine);
+	llvm_opt1_orc = LLVMOrcCreateInstance(llvm_opt1_targetmachine);
 	llvm_opt3_orc = LLVMOrcCreateInstance(llvm_opt3_targetmachine);
 
 #if defined(HAVE_DECL_LLVMCREATEGDBREGISTRATIONLISTENER) && HAVE_DECL_LLVMCREATEGDBREGISTRATIONLISTENER
@@ -675,7 +675,7 @@ llvm_session_initialize(void)
 	{
 		LLVMJITEventListenerRef l = LLVMCreateGDBRegistrationListener();
 
-		LLVMOrcRegisterJITEventListener(llvm_opt0_orc, l);
+		LLVMOrcRegisterJITEventListener(llvm_opt1_orc, l);
 		LLVMOrcRegisterJITEventListener(llvm_opt3_orc, l);
 	}
 #endif
@@ -684,7 +684,7 @@ llvm_session_initialize(void)
 	{
 		LLVMJITEventListenerRef l = LLVMCreatePerfJITEventListener();
 
-		LLVMOrcRegisterJITEventListener(llvm_opt0_orc, l);
+		LLVMOrcRegisterJITEventListener(llvm_opt1_orc, l);
 		LLVMOrcRegisterJITEventListener(llvm_opt3_orc, l);
 	}
 #endif
@@ -711,14 +711,14 @@ llvm_shutdown(int code, Datum arg)
 		llvm_opt3_orc = NULL;
 	}
 
-	if (llvm_opt0_orc)
+	if (llvm_opt1_orc)
 	{
 #if defined(HAVE_DECL_LLVMORCREGISTERPERF) && HAVE_DECL_LLVMORCREGISTERPERF
 		if (jit_profiling_support)
-			LLVMOrcUnregisterPerf(llvm_opt0_orc);
+			LLVMOrcUnregisterPerf(llvm_opt1_orc);
 #endif
-		LLVMOrcDisposeInstance(llvm_opt0_orc);
-		llvm_opt0_orc = NULL;
+		LLVMOrcDisposeInstance(llvm_opt1_orc);
+		llvm_opt1_orc = NULL;
 	}
 }
 
