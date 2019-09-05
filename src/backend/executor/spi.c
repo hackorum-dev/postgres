@@ -2761,6 +2761,27 @@ _SPI_execute_plan(SPIPlanPtr plan, const SPIExecuteOptions *options,
 					Assert(qc.commandTag == CMDTAG_COPY);
 					_SPI_current->processed = qc.nprocessed;
 				}
+				else if (IsA(stmt->utilityStmt, ExecuteStmt))
+				{
+					if (strncmp(completionTag, "INSERT ", 7) == 0)
+					{
+						char *p = completionTag + 7;
+						/* INSERT: skip oid and space */
+						while (*p && *p != ' ')
+							p++;
+						if (*p != 0)
+						{
+							_SPI_current->processed =
+									pg_strtouint64(p, NULL, 10);
+						}
+					}
+					else if (strncmp(completionTag, "UPDATE ", 7) == 0 ||
+							strncmp(completionTag, "DELETE ", 7) == 0)
+					{
+						_SPI_current->processed =
+								pg_strtouint64(completionTag + 7, NULL, 10);
+					}
+				}
 			}
 
 			/*
