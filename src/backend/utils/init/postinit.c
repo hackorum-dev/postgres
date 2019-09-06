@@ -54,6 +54,7 @@
 #include "storage/sync.h"
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
+#include "utils/faultinjector.h"
 #include "utils/fmgroids.h"
 #include "utils/guc.h"
 #include "utils/memutils.h"
@@ -842,7 +843,11 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	 * backend startup by processing any options from the startup packet, and
 	 * we're done.
 	 */
-	if (am_walsender && !am_db_walsender)
+	if ((am_walsender && !am_db_walsender)
+#ifdef FAULT_INJECTOR
+		|| am_faultinjector
+#endif
+		)
 	{
 		/* process any options passed in the startup packet */
 		if (MyProcPort != NULL)

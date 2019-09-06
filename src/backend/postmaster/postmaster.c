@@ -125,6 +125,7 @@
 #include "tcop/tcopprot.h"
 #include "utils/builtins.h"
 #include "utils/datetime.h"
+#include "utils/faultinjector.h"
 #include "utils/memutils.h"
 #include "utils/pidfile.h"
 #include "utils/ps_status.h"
@@ -2122,6 +2123,10 @@ retry1:
 									valptr),
 							 errhint("Valid values are: \"false\", 0, \"true\", 1, \"database\".")));
 			}
+#ifdef FAULT_INJECTOR
+			else if (strcmp(nameptr, "fault") == 0)
+				am_faultinjector = true;
+#endif
 			else if (strncmp(nameptr, "_pq_.", 5) == 0)
 			{
 				/*
@@ -2246,6 +2251,12 @@ retry1:
 	 */
 	if (am_walsender && !am_db_walsender)
 		port->database_name[0] = '\0';
+
+#ifdef FAULT_INJECTOR
+	/* Fault handler process need not connect to a particular database. */
+	if (am_faultinjector)
+		port->database_name[0] = '\0';
+#endif
 
 	/*
 	 * Done putting stuff in TopMemoryContext.

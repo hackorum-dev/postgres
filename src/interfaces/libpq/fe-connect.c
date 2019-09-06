@@ -339,6 +339,12 @@ static const internalPQconninfoOption PQconninfoOptions[] = {
 		"Replication", "D", 5,
 	offsetof(struct pg_conn, replication)},
 
+#if defined(FAULT_INJECTOR)
+	{"fault", NULL, NULL, NULL,
+		"Faultinjector", "D", 5,
+	offsetof(struct pg_conn, fault)},
+#endif
+
 	{"target_session_attrs", "PGTARGETSESSIONATTRS",
 		DefaultTargetSessionAttrs, NULL,
 		"Target-Session-Attrs", "", 11, /* sizeof("read-write") = 11 */

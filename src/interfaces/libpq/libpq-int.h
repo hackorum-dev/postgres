@@ -344,6 +344,9 @@ struct pg_conn
 	char	   *fbappname;		/* fallback application name */
 	char	   *dbName;			/* database name */
 	char	   *replication;	/* connect as the replication standby? */
+#if defined(FAULT_INJECTOR)
+	char	   *fault;			/* connection to send a fault injector message */
+#endif
 	char	   *pguser;			/* Postgres username and password, if any */
 	char	   *pgpass;
 	char	   *pgpassfile;		/* path to a file containing password(s) */
