@@ -3,7 +3,9 @@ use strict;
 use warnings;
 use PostgresNode;
 use TestLib;
-use Test::More tests => 11;
+use Test::More tests => 15;
+
+use IPC::Run qw( start pump finish );
 
 # Query checking sync_priority and sync_state of each standby
 my $check_sql =
@@ -43,6 +45,123 @@ sub start_standby_and_wait
 	print("### Waiting for standby \"$standby_name\" on \"$master_name\"\n");
 	$master->poll_query_until('postgres', $query);
 	return;
+}
+
+sub startpsql
+{
+	my ($host, $port) = @_;
+	unless (defined($host) && defined($port))
+	{
+		die "host and port must be specified";
+	}
+
+	my %ret;
+	my $in;
+	my $out;
+	my $err;
+	my $harness;
+	my @psql = qw( psql -d postgres -h );
+	$psql[++$#psql] = $host;
+	$psql[++$#psql] = '-p';
+	$psql[++$#psql] = $port;
+
+	$ret{"harness"} = start \@psql, \$in, \$out, \$err;
+	$ret{"in"} = \$in;
+	$ret{"out"} = \$out;
+	$ret{"err"} = \$err;
+	return \%ret;
+}
+
+sub sendSQL
+{
+	my $session = $_[0];
+	my $outref = $session->{out};
+	my $errref = $session->{err};
+
+	# Reset output and error buffers so that they will only contain
+	# the results of this SQL command.
+	$$outref = "";
+	$$errref = "";
+
+	# Assigning the SQL statement to $inref causes it to be sent to
+	# the psql child process.
+	my $inref = $session->{in};
+	$$inref = $_[1];
+
+	pump $session->{harness} while length $$inref;
+}
+
+sub getResults
+{
+	my $session = $_[0];
+	my $inref = $session->{in};
+	my $outref = $session->{out};
+	my $errref = $session->{err};
+
+	while ($$outref !~ /$_[1]/ && $$errref !~ /ERR/)
+	{
+		pump $session->{harness};
+	}
+	die "psql failed:\n", $$errref if length $$errref;
+	return $$outref;
+}
+
+# This test injects a fault in a standby by invoking faultinjector
+# interface on master.  The fault causes standby to respond with stale
+# flush LSN value, simulating the case that it has not caught up.  If
+# the standby is synchronous, commits on master should wait until
+# standby confirms it has flush WAL greater than or up to commit LSN.
+sub test_sync_commit
+{
+	my ($master, $standby) = @_;
+
+	# inject fault remotely on standby1 such that it replies with the same
+	# LSN as the last time, in spite of having flushed newer WAL records
+	# received from master.
+	my ($cmdret, $stdout, $stderr) =
+	  $master->psql('postgres', 'create extension faultinjector;', on_error_die => 1);
+	
+	my $sql = sprintf(
+		"select inject_fault_infinite('standby_flush', 'skip', '%s', %d)",
+		$standby->host, $standby->port);
+	($cmdret, $stdout, $stderr) = $master->psql('postgres', $sql);
+	ok($stdout =~ /Success/, 'inject skip fault in standby');
+
+ 	# commit a transaction on master, the master backend should wait
+ 	# because standby1 hasn't acknowledged the receipt of the commit LSN.
+ 	my $background_psql = startpsql($master->host, $master->port);
+ 	sendSQL $background_psql, "create table test_sync_commit(a int);\n";
+
+	# Checkpoint so as to advance sent_lsn.  Due to the fault,
+	# flush_lsn should remain unchanged.
+	($cmdret, $stdout, $stderr) =
+	  $master->psql('postgres', 'checkpoint;', on_error_die => 1);
+	($cmdret, $stdout, $stderr) =
+	  $master->psql(
+		  'postgres',
+		  qq(select case when sent_lsn > flush_lsn then 'Success'
+ else 'Failure' end from pg_stat_replication),
+		  on_error_die => 1);
+	ok($stdout =~ /Success/, 'master WAL has moved ahead of standby');
+
+	# Verify that the create table transaction started in background
+	# is waiting for sync rep.
+	($cmdret, $stdout, $stderr) =
+	  $master->psql(
+		  'postgres',
+		  qq(select query from pg_stat_activity where wait_event = 'SyncRep'),
+		  on_error_die => 1);
+	ok($stdout =~ /create table test_sync_commit/, 'commit waits for standby');
+
+	# Remove the fault from standby so that it starts responding with
+	# the real write and flush LSN values.
+	$sql =~ s/skip/reset/;
+	$sql =~ s/_infinite//;
+	($cmdret, $stdout, $stderr) = $master->psql('postgres', $sql);
+	ok($stdout =~ /Success/, ' fault removed from standby');
+
+	# Wait for the create table transaction to commit.
+	getResults($background_psql, 'CREATE TABLE');
 }
 
 # Initialize master node
@@ -95,6 +214,10 @@ standby2|1|potential
 standby3|1|potential),
 	'asterisk in synchronous_standby_names',
 	'*');
+
+# Now that standby1 is considered synchronous, check if commits made
+# on master wait for standby1 to catch up.
+test_sync_commit($node_master, $node_standby_1);
 
 # Stop and start standbys to rearrange the order of standbys
 # in WalSnd array. Now, if standbys have the same priority,
