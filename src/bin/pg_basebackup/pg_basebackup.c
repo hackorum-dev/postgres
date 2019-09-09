@@ -31,6 +31,7 @@
 #include "common/file_utils.h"
 #include "common/logging.h"
 #include "common/string.h"
+#include "fe_utils/simple_list.h"
 #include "fe_utils/string_utils.h"
 #include "getopt_long.h"
 #include "libpq-fe.h"
@@ -42,19 +43,6 @@
 #include "streamutil.h"
 
 #define ERRCODE_DATA_CORRUPTED	"XX001"
-
-typedef struct TablespaceListCell
-{
-	struct TablespaceListCell *next;
-	char		old_dir[MAXPGPATH];
-	char		new_dir[MAXPGPATH];
-} TablespaceListCell;
-
-typedef struct TablespaceList
-{
-	TablespaceListCell *head;
-	TablespaceListCell *tail;
-} TablespaceList;
 
 /*
  * pg_xlog has been renamed to pg_wal in version 10.  This version number
@@ -155,9 +143,6 @@ static void BaseBackup(void);
 static bool reached_end_position(XLogRecPtr segendpos, uint32 timeline,
 								 bool segment_finished);
 
-static const char *get_tablespace_mapping(const char *dir);
-static void tablespace_list_append(const char *arg);
-
 
 static void
 cleanup_directories_atexit(void)
@@ -226,84 +211,6 @@ kill_bgchild_atexit(void)
 		kill(bgchild, SIGTERM);
 }
 #endif
-
-/*
- * Split argument into old_dir and new_dir and append to tablespace mapping
- * list.
- */
-static void
-tablespace_list_append(const char *arg)
-{
-	TablespaceListCell *cell = (TablespaceListCell *) pg_malloc0(sizeof(TablespaceListCell));
-	char	   *dst;
-	char	   *dst_ptr;
-	const char *arg_ptr;
-
-	dst_ptr = dst = cell->old_dir;
-	for (arg_ptr = arg; *arg_ptr; arg_ptr++)
-	{
-		if (dst_ptr - dst >= MAXPGPATH)
-		{
-			pg_log_error("directory name too long");
-			exit(1);
-		}
-
-		if (*arg_ptr == '\\' && *(arg_ptr + 1) == '=')
-			;					/* skip backslash escaping = */
-		else if (*arg_ptr == '=' && (arg_ptr == arg || *(arg_ptr - 1) != '\\'))
-		{
-			if (*cell->new_dir)
-			{
-				pg_log_error("multiple \"=\" signs in tablespace mapping");
-				exit(1);
-			}
-			else
-				dst = dst_ptr = cell->new_dir;
-		}
-		else
-			*dst_ptr++ = *arg_ptr;
-	}
-
-	if (!*cell->old_dir || !*cell->new_dir)
-	{
-		pg_log_error("invalid tablespace mapping format \"%s\", must be \"OLDDIR=NEWDIR\"", arg);
-		exit(1);
-	}
-
-	/*
-	 * This check isn't absolutely necessary.  But all tablespaces are created
-	 * with absolute directories, so specifying a non-absolute path here would
-	 * just never match, possibly confusing users.  It's also good to be
-	 * consistent with the new_dir check.
-	 */
-	if (!is_absolute_path(cell->old_dir))
-	{
-		pg_log_error("old directory is not an absolute path in tablespace mapping: %s",
-					 cell->old_dir);
-		exit(1);
-	}
-
-	if (!is_absolute_path(cell->new_dir))
-	{
-		pg_log_error("new directory is not an absolute path in tablespace mapping: %s",
-					 cell->new_dir);
-		exit(1);
-	}
-
-	/*
-	 * Comparisons done with these values should involve similarly
-	 * canonicalized path values.  This is particularly sensitive on Windows
-	 * where path values may not necessarily use Unix slashes.
-	 */
-	canonicalize_path(cell->old_dir);
-	canonicalize_path(cell->new_dir);
-
-	if (tablespace_dirs.tail)
-		tablespace_dirs.tail->next = cell;
-	else
-		tablespace_dirs.head = cell;
-	tablespace_dirs.tail = cell;
-}
 
 
 #ifdef HAVE_LIBZ
@@ -1359,28 +1266,6 @@ ReceiveTarFile(PGconn *conn, PGresult *res, int rownum)
 
 
 /*
- * Retrieve tablespace path, either relocated or original depending on whether
- * -T was passed or not.
- */
-static const char *
-get_tablespace_mapping(const char *dir)
-{
-	TablespaceListCell *cell;
-	char		canon_dir[MAXPGPATH];
-
-	/* Canonicalize path for comparison consistency */
-	strlcpy(canon_dir, dir, sizeof(canon_dir));
-	canonicalize_path(canon_dir);
-
-	for (cell = tablespace_dirs.head; cell; cell = cell->next)
-		if (strcmp(canon_dir, cell->old_dir) == 0)
-			return cell->new_dir;
-
-	return dir;
-}
-
-
-/*
  * Receive a tar format stream from the connection to the server, and unpack
  * the contents of it into a directory. Only files, directories and
  * symlinks are supported, no other kinds of special files.
@@ -1406,7 +1291,8 @@ ReceiveAndUnpackTarFile(PGconn *conn, PGresult *res, int rownum)
 		strlcpy(current_path, basedir, sizeof(current_path));
 	else
 		strlcpy(current_path,
-				get_tablespace_mapping(PQgetvalue(res, rownum, 1)),
+				get_tablespace_mapping(&tablespace_dirs,
+									   PQgetvalue(res, rownum, 1)),
 				sizeof(current_path));
 
 	/*
@@ -1537,7 +1423,8 @@ ReceiveAndUnpackTarFile(PGconn *conn, PGresult *res, int rownum)
 					 */
 					filename[strlen(filename) - 1] = '\0';	/* Remove trailing slash */
 
-					mapped_tblspc_path = get_tablespace_mapping(&copybuf[157]);
+					mapped_tblspc_path = get_tablespace_mapping(&tablespace_dirs,
+																&copybuf[157]);
 					if (symlink(mapped_tblspc_path, filename) != 0)
 					{
 						pg_log_error("could not create symbolic link from \"%s\" to \"%s\": %m",
@@ -1966,7 +1853,9 @@ BaseBackup(void)
 		 */
 		if (format == 'p' && !PQgetisnull(res, i, 1))
 		{
-			char	   *path = unconstify(char *, get_tablespace_mapping(PQgetvalue(res, i, 1)));
+			char	   *path = unconstify(char *,
+										  get_tablespace_mapping(&tablespace_dirs,
+																 PQgetvalue(res, i, 1)));
 
 			verify_dir_is_empty_or_create(path, &made_tablespace_dirs, &found_tablespace_dirs);
 		}
@@ -2276,7 +2165,7 @@ main(int argc, char **argv)
 				no_slot = true;
 				break;
 			case 'T':
-				tablespace_list_append(optarg);
+				tablespace_list_append(&tablespace_dirs, optarg);
 				break;
 			case 'X':
 				if (strcmp(optarg, "n") == 0 ||

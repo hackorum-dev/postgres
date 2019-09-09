@@ -6,6 +6,9 @@
  * these is very primitive compared to the backend's List facilities, but
  * it's all we need in, eg, pg_dump.
  *
+ * Also, has data structures for simple lists of tablespace mappings used in
+ * backups.
+ *
  *
  * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
@@ -43,6 +46,19 @@ typedef struct SimpleStringList
 	SimpleStringListCell *tail;
 } SimpleStringList;
 
+typedef struct TablespaceListCell
+{
+	struct TablespaceListCell *next;
+	char		old_dir[MAXPGPATH];
+	char		new_dir[MAXPGPATH];
+} TablespaceListCell;
+
+typedef struct TablespaceList
+{
+	TablespaceListCell *head;
+	TablespaceListCell *tail;
+} TablespaceList;
+
 
 extern void simple_oid_list_append(SimpleOidList *list, Oid val);
 extern bool simple_oid_list_member(SimpleOidList *list, Oid val);
@@ -53,5 +69,10 @@ extern bool simple_string_list_member(SimpleStringList *list, const char *val);
 extern void simple_string_list_destroy(SimpleStringList *list);
 
 extern const char *simple_string_list_not_touched(SimpleStringList *list);
+
+extern void tablespace_list_append(TablespaceList *tablespace_dirs,
+								   const char *arg);
+extern const char *get_tablespace_mapping(TablespaceList *tablespace_dirs,
+										  const char *dir);
 
 #endif							/* SIMPLE_LIST_H */

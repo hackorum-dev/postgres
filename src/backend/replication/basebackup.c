@@ -75,6 +75,14 @@ static void SendXlogRecPtrResult(XLogRecPtr ptr, TimeLineID tli);
 static int	compareWalFileNames(const ListCell *a, const ListCell *b);
 static void throttle(size_t increment);
 static bool is_checksummed_file(const char *fullpath, const char *filename);
+static void verify_page_checksum(const char *readfilename, FILE *fp,
+								 char *page, int backup_distance,
+								 BlockNumber blkno, int segmentno,
+								 int *checksum_failures);
+static pgoff_t sendCompleteFile(const char *readfilename,
+								const char *tarfilename, FILE *fp,
+								struct stat *statbuf, int segmentno,
+								bool verify_checksum, int *checksum_failures);
 
 /* Was the backup currently in-progress initiated in recovery mode? */
 static bool backup_started_in_recovery = false;
@@ -1391,17 +1399,11 @@ sendFile(const char *readfilename, const char *tarfilename, struct stat *statbuf
 		 bool missing_ok, Oid dboid)
 {
 	FILE	   *fp;
-	BlockNumber blkno = 0;
-	bool		block_retry = false;
 	char		buf[TAR_SEND_SIZE];
-	uint16		checksum;
 	int			checksum_failures = 0;
 	off_t		cnt;
-	int			i;
 	pgoff_t		len = 0;
-	char	   *page;
 	size_t		pad;
-	PageHeader	phdr;
 	int			segmentno = 0;
 	char	   *segmentpath;
 	bool		verify_checksum = false;
@@ -1415,8 +1417,6 @@ sendFile(const char *readfilename, const char *tarfilename, struct stat *statbuf
 				(errcode_for_file_access(),
 				 errmsg("could not open file \"%s\": %m", readfilename)));
 	}
-
-	_tarWriteHeader(tarfilename, NULL, statbuf, false);
 
 	if (!noverify_checksums && DataChecksumsEnabled())
 	{
@@ -1449,146 +1449,9 @@ sendFile(const char *readfilename, const char *tarfilename, struct stat *statbuf
 		}
 	}
 
-	while ((cnt = fread(buf, 1, Min(sizeof(buf), statbuf->st_size - len), fp)) > 0)
-	{
-		/*
-		 * The checksums are verified at block level, so we iterate over the
-		 * buffer in chunks of BLCKSZ, after making sure that
-		 * TAR_SEND_SIZE/buf is divisible by BLCKSZ and we read a multiple of
-		 * BLCKSZ bytes.
-		 */
-		Assert(TAR_SEND_SIZE % BLCKSZ == 0);
-
-		if (verify_checksum && (cnt % BLCKSZ != 0))
-		{
-			ereport(WARNING,
-					(errmsg("cannot verify checksum in file \"%s\", block "
-							"%d: read buffer size %d and page size %d "
-							"differ",
-							readfilename, blkno, (int) cnt, BLCKSZ)));
-			verify_checksum = false;
-		}
-
-		if (verify_checksum)
-		{
-			for (i = 0; i < cnt / BLCKSZ; i++)
-			{
-				page = buf + BLCKSZ * i;
-
-				/*
-				 * Only check pages which have not been modified since the
-				 * start of the base backup. Otherwise, they might have been
-				 * written only halfway and the checksum would not be valid.
-				 * However, replaying WAL would reinstate the correct page in
-				 * this case. We also skip completely new pages, since they
-				 * don't have a checksum yet.
-				 */
-				if (!PageIsNew(page) && PageGetLSN(page) < startptr)
-				{
-					checksum = pg_checksum_page((char *) page, blkno + segmentno * RELSEG_SIZE);
-					phdr = (PageHeader) page;
-					if (phdr->pd_checksum != checksum)
-					{
-						/*
-						 * Retry the block on the first failure.  It's
-						 * possible that we read the first 4K page of the
-						 * block just before postgres updated the entire block
-						 * so it ends up looking torn to us.  We only need to
-						 * retry once because the LSN should be updated to
-						 * something we can ignore on the next pass.  If the
-						 * error happens again then it is a true validation
-						 * failure.
-						 */
-						if (block_retry == false)
-						{
-							/* Reread the failed block */
-							if (fseek(fp, -(cnt - BLCKSZ * i), SEEK_CUR) == -1)
-							{
-								ereport(ERROR,
-										(errcode_for_file_access(),
-										 errmsg("could not fseek in file \"%s\": %m",
-												readfilename)));
-							}
-
-							if (fread(buf + BLCKSZ * i, 1, BLCKSZ, fp) != BLCKSZ)
-							{
-								/*
-								 * If we hit end-of-file, a concurrent
-								 * truncation must have occurred, so break out
-								 * of this loop just as if the initial fread()
-								 * returned 0. We'll drop through to the same
-								 * code that handles that case. (We must fix
-								 * up cnt first, though.)
-								 */
-								if (feof(fp))
-								{
-									cnt = BLCKSZ * i;
-									break;
-								}
-
-								ereport(ERROR,
-										(errcode_for_file_access(),
-										 errmsg("could not reread block %d of file \"%s\": %m",
-												blkno, readfilename)));
-							}
-
-							if (fseek(fp, cnt - BLCKSZ * i - BLCKSZ, SEEK_CUR) == -1)
-							{
-								ereport(ERROR,
-										(errcode_for_file_access(),
-										 errmsg("could not fseek in file \"%s\": %m",
-												readfilename)));
-							}
-
-							/* Set flag so we know a retry was attempted */
-							block_retry = true;
-
-							/* Reset loop to validate the block again */
-							i--;
-							continue;
-						}
-
-						checksum_failures++;
-
-						if (checksum_failures <= 5)
-							ereport(WARNING,
-									(errmsg("checksum verification failed in "
-											"file \"%s\", block %d: calculated "
-											"%X but expected %X",
-											readfilename, blkno, checksum,
-											phdr->pd_checksum)));
-						if (checksum_failures == 5)
-							ereport(WARNING,
-									(errmsg("further checksum verification "
-											"failures in file \"%s\" will not "
-											"be reported", readfilename)));
-					}
-				}
-				block_retry = false;
-				blkno++;
-			}
-		}
-
-		/* Send the chunk as a CopyData message */
-		if (pq_putmessage('d', buf, cnt))
-			ereport(ERROR,
-					(errmsg("base backup could not send data, aborting backup")));
-
-		len += cnt;
-		throttle(cnt);
-
-		if (feof(fp) || len >= statbuf->st_size)
-		{
-			/*
-			 * Reached end of file. The file could be longer, if it was
-			 * extended while we were sending it, but for a base backup we can
-			 * ignore such extended data. It will be restored from WAL.
-			 */
-			break;
-		}
-	}
-
-	CHECK_FREAD_ERROR(fp, readfilename);
+	/* Send complete file to the client. */
+	len = sendCompleteFile(readfilename, tarfilename, fp, statbuf, segmentno,
+						   verify_checksum, &checksum_failures);
 
 	/* If the file was truncated while we were sending it, pad it with zeros */
 	if (len < statbuf->st_size)
@@ -1760,4 +1623,193 @@ throttle(size_t increment)
 	 * starts now.
 	 */
 	throttled_last = GetCurrentTimestamp();
+}
+
+/*
+ * verify_page_checksum
+ *
+ * Verifies checksum for one page.
+ */
+static void
+verify_page_checksum(const char *readfilename, FILE *fp, char *page,
+					 int backup_distance, BlockNumber blkno, int segmentno,
+					 int *checksum_failures)
+{
+	uint16		checksum;
+	bool		block_retried = false;
+	PageHeader	phdr;
+
+	while (1)
+	{
+		/*
+		 * Only check pages which have not been modified since the start of the
+		 * base backup.  Otherwise, they might have been written only halfway
+		 * and the checksum would not be valid.  However, replaying WAL would
+		 * reinstate the correct page in this case.  We also skip completely
+		 * new pages, since they don't have a checksum yet.
+		 */
+		if (PageIsNew(page) || PageGetLSN(page) >= startptr)
+			return;
+
+		checksum = pg_checksum_page(page, blkno + segmentno * RELSEG_SIZE);
+		phdr = (PageHeader) page;
+		if (phdr->pd_checksum == checksum)
+			return;
+
+		/*
+		 * Retry the block on the first failure.  It's possible that we
+		 * read the first 4K page of the block just before postgres updated
+		 * the entire block so it ends up looking torn to us.  We only need
+		 * to retry once because the LSN should be updated to something we
+		 * can ignore on the next pass.  If the error happens again then it
+		 * is a true validation failure.
+		 */
+		if (block_retried == false)
+		{
+			/* Reread the failed block */
+			if (fseek(fp, -backup_distance, SEEK_CUR) == -1)
+			{
+				ereport(ERROR,
+						(errcode_for_file_access(),
+						 errmsg("could not fseek in file \"%s\": %m",
+								readfilename)));
+			}
+
+			if (fread(page, 1, BLCKSZ, fp) != BLCKSZ)
+			{
+				/*
+				 * If we hit end-of-file, return from here.  Caller will take
+				 * care of the rest.
+				 */
+				if (feof(fp))
+					return;
+
+				ereport(ERROR,
+						(errcode_for_file_access(),
+						 errmsg("could not reread block %d of file \"%s\": %m",
+								blkno, readfilename)));
+			}
+
+			if (fseek(fp, backup_distance - BLCKSZ, SEEK_CUR) == -1)
+			{
+				ereport(ERROR,
+						(errcode_for_file_access(),
+						 errmsg("could not fseek in file \"%s\": %m",
+								readfilename)));
+			}
+
+			/* Set flag so we know a retry was attempted */
+			block_retried = true;
+
+			/* Re-validate the block again */
+			continue;
+		}
+
+		(*checksum_failures)++;
+
+		if (*checksum_failures <= 5)
+			ereport(WARNING,
+					(errmsg("checksum verification failed in file \"%s\", block %d: calculated %X but expected %X",
+							readfilename, blkno, checksum,
+							phdr->pd_checksum)));
+		if (*checksum_failures == 5)
+			ereport(WARNING,
+					(errmsg("further checksum verification failures in file \"%s\" will not be reported",
+							readfilename)));
+
+		/*
+		 * Note that we want this loop to run only once, so we return from
+		 * here.  If we were needed to reread the block, then it was already
+		 * done above.
+		 */
+		return;
+	}
+}
+
+/*
+ * sendCompleteFile
+ *
+ * Sends complete file to the client.
+ */
+static pgoff_t
+sendCompleteFile(const char *readfilename, const char *tarfilename, FILE *fp,
+				 struct stat *statbuf, int segmentno, bool verify_checksum,
+				 int *checksum_failures)
+{
+	char		buf[TAR_SEND_SIZE];
+	off_t		cnt;
+	pgoff_t		len = 0;
+	BlockNumber blkno = 0;
+	int			i;
+
+	_tarWriteHeader(tarfilename, NULL, statbuf, false);
+
+	while ((cnt = fread(buf, 1, Min(sizeof(buf), statbuf->st_size - len), fp)) > 0)
+	{
+		/*
+		 * The checksums are verified at block level, so we iterate over the
+		 * buffer in chunks of BLCKSZ, after making sure that
+		 * TAR_SEND_SIZE/buf is divisible by BLCKSZ and we read a multiple of
+		 * BLCKSZ bytes.
+		 */
+		Assert(TAR_SEND_SIZE % BLCKSZ == 0);
+
+		if (verify_checksum && (cnt % BLCKSZ != 0))
+		{
+			ereport(WARNING,
+					(errmsg("cannot verify checksum in file \"%s\", block "
+							"%d: read buffer size %d and page size %d "
+							"differ",
+							readfilename, blkno, (int) cnt, BLCKSZ)));
+			verify_checksum = false;
+		}
+
+		if (verify_checksum)
+		{
+			for (i = 0; i < cnt / BLCKSZ; i++)
+			{
+				int			page_index_in_buf = (BLCKSZ * i);
+
+				verify_page_checksum(readfilename, fp, buf + page_index_in_buf,
+									 (cnt - page_index_in_buf), blkno,
+									 segmentno, checksum_failures);
+
+				/*
+				 * If we hit end-of-file, a concurrent truncation must have
+				 * occurred, so break out of this loop just as if the initial
+				 * fread() returned 0. We'll drop through to the same code that
+				 * handles that case. (We must fix up cnt first, though.)
+				 */
+				if (feof(fp))
+				{
+					cnt = page_index_in_buf;
+					break;
+				}
+
+				blkno++;
+			}
+		}
+
+		/* Send the chunk as a CopyData message */
+		if (pq_putmessage('d', buf, cnt))
+			ereport(ERROR,
+					(errmsg("base backup could not send data, aborting backup")));
+
+		len += cnt;
+		throttle(cnt);
+
+		if (feof(fp) || len >= statbuf->st_size)
+		{
+			/*
+			 * Reached end of file. The file could be longer, if it was
+			 * extended while we were sending it, but for a base backup we can
+			 * ignore such extended data. It will be restored from WAL.
+			 */
+			break;
+		}
+	}
+
+	CHECK_FREAD_ERROR(fp, readfilename);
+
+	return len;
 }
