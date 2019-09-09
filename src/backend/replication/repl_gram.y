@@ -87,6 +87,7 @@ static SQLCmd *make_sqlcmd(void);
 %token K_EXPORT_SNAPSHOT
 %token K_NOEXPORT_SNAPSHOT
 %token K_USE_SNAPSHOT
+%token K_LSN
 
 %type <node>	command
 %type <node>	base_backup start_replication start_logical_replication
@@ -213,6 +214,11 @@ base_backup_opt:
 				{
 				  $$ = makeDefElem("noverify_checksums",
 								   (Node *)makeInteger(true), -1);
+				}
+			| K_LSN SCONST
+				{
+				  $$ = makeDefElem("lsn",
+								   (Node *)makeString($2), -1);
 				}
 			;
 

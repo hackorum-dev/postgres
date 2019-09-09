@@ -6,7 +6,7 @@ use File::Basename qw(basename dirname);
 use File::Path qw(rmtree);
 use PostgresNode;
 use TestLib;
-use Test::More tests => 106;
+use Test::More tests => 108;
 
 program_help_ok('pg_basebackup');
 program_version_ok('pg_basebackup');
@@ -555,6 +555,16 @@ $node->command_ok(
 	],
 	'pg_basebackup with -k does not report checksum mismatch');
 rmtree("$tempdir/backup_corrupt4");
+
+# check LSN
+$node->command_fails(
+	[ 'pg_basebackup', '-D', "$tempdir/lsn_test", '--lsn', "0/INVALID" ],
+	'pg_basebackup with invalid LSN fails');
+$node->command_ok(
+	[ 'pg_basebackup', '-D', "$tempdir/lsn_test", '--lsn', "0/ABCDEF01", '--no-verify-checksums' ],
+	'pg_basebackup with valid LSN');
+rmtree("$tempdir/lsn_test");
+
 
 $node->safe_psql('postgres', "DROP TABLE corrupt1;");
 $node->safe_psql('postgres', "DROP TABLE corrupt2;");

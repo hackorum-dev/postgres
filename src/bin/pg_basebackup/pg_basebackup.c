@@ -105,6 +105,7 @@ static bool temp_replication_slot = true;
 static bool create_slot = false;
 static bool no_slot = false;
 static bool verify_checksums = true;
+static char *lsn = NULL;
 
 static bool success = false;
 static bool made_new_pgdata = false;
@@ -341,6 +342,7 @@ usage(void)
 			 "                         include required WAL files with specified method\n"));
 	printf(_("  -z, --gzip             compress tar output\n"));
 	printf(_("  -Z, --compress=0-9     compress tar output with given compression level\n"));
+	printf(_("      --lsn=LSN          incremental backup, using LSN as threshold\n"));
 	printf(_("\nGeneral options:\n"));
 	printf(_("  -c, --checkpoint=fast|spread\n"
 			 "                         set fast or spread checkpointing\n"));
@@ -1805,6 +1807,7 @@ BaseBackup(void)
 				maxServerMajor;
 	int			serverVersion,
 				serverMajor;
+	char	   *lsn_clause = NULL;
 
 	Assert(conn != NULL);
 
@@ -1871,8 +1874,11 @@ BaseBackup(void)
 			fprintf(stderr, "\n");
 	}
 
+	if (lsn)
+		lsn_clause = psprintf("LSN '%s'", lsn);
+
 	basebkp =
-		psprintf("BASE_BACKUP LABEL '%s' %s %s %s %s %s %s %s",
+		psprintf("BASE_BACKUP LABEL '%s' %s %s %s %s %s %s %s %s",
 				 escaped_label,
 				 showprogress ? "PROGRESS" : "",
 				 includewal == FETCH_WAL ? "WAL" : "",
@@ -1880,7 +1886,8 @@ BaseBackup(void)
 				 includewal == NO_WAL ? "" : "NOWAIT",
 				 maxrate_clause ? maxrate_clause : "",
 				 format == 't' ? "TABLESPACE_MAP" : "",
-				 verify_checksums ? "" : "NOVERIFY_CHECKSUMS");
+				 verify_checksums ? "" : "NOVERIFY_CHECKSUMS",
+				 lsn_clause ? lsn_clause : "");
 
 	if (PQsendQuery(conn, basebkp) == 0)
 	{
@@ -2199,6 +2206,7 @@ main(int argc, char **argv)
 		{"waldir", required_argument, NULL, 1},
 		{"no-slot", no_argument, NULL, 2},
 		{"no-verify-checksums", no_argument, NULL, 3},
+		{"lsn", required_argument, NULL, 4},
 		{NULL, 0, NULL, 0}
 	};
 	int			c;
@@ -2366,6 +2374,9 @@ main(int argc, char **argv)
 				break;
 			case 3:
 				verify_checksums = false;
+				break;
+			case 4:
+				lsn = pg_strdup(optarg);
 				break;
 			default:
 

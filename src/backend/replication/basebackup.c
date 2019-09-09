@@ -38,6 +38,7 @@
 #include "storage/ipc.h"
 #include "storage/reinit.h"
 #include "utils/builtins.h"
+#include "utils/pg_lsn.h"
 #include "utils/ps_status.h"
 #include "utils/relcache.h"
 #include "utils/timestamp.h"
@@ -52,6 +53,7 @@ typedef struct
 	bool		includewal;
 	uint32		maxrate;
 	bool		sendtblspcmapfile;
+	XLogRecPtr 	lsn;
 } basebackup_options;
 
 
@@ -652,6 +654,7 @@ parse_basebackup_options(List *options, basebackup_options *opt)
 	bool		o_maxrate = false;
 	bool		o_tablespace_map = false;
 	bool		o_noverify_checksums = false;
+	bool		o_lsn = false;
 
 	MemSet(opt, 0, sizeof(*opt));
 	foreach(lopt, options)
@@ -739,6 +742,23 @@ parse_basebackup_options(List *options, basebackup_options *opt)
 						 errmsg("duplicate option \"%s\"", defel->defname)));
 			noverify_checksums = true;
 			o_noverify_checksums = true;
+		}
+		else if (strcmp(defel->defname, "lsn") == 0)
+		{
+			bool		have_error = false;
+
+			if (o_lsn)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("duplicate option \"%s\"", defel->defname)));
+			o_lsn = true;
+
+			/* Validate given LSN and convert it into XLogRecPtr. */
+			opt->lsn = pg_lsn_in_internal(strVal(defel->arg), &have_error);
+			if (XLogRecPtrIsInvalid(opt->lsn))
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
+						 errmsg("invalid value for LSN")));
 		}
 		else
 			elog(ERROR, "option \"%s\" not recognized",
