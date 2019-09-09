@@ -1,0 +1,232 @@
+<!--
+doc/src/sgml/ref/pg_combinebackup.sgml
+PostgreSQL documentation
+-->
+
+<refentry id="app-pgcombinebackup">
+ <indexterm zone="app-pgcombinebackup">
+  <primary>pg_combinebackup</primary>
+ </indexterm>
+
+ <refmeta>
+  <refentrytitle><application>pg_combinebackup</application></refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Application</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>pg_combinebackup</refname>
+  <refpurpose>create a synthetic backup from a full backup and one or more incremental backups</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>pg_combinebackup</command>
+   <arg rep="repeat" choice="opt"><replaceable class="parameter">option</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+ <refsect1 id="r1-app-pg_combinebackup-1">
+  <title>Description</title>
+  <para>
+   <application>pg_combinebackup</application> combines one or more incremental
+   backups with the full base-backup to generate a synthetic backup.
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>Options</title>
+
+   <para>
+    The following command-line options are available:
+
+    <variablelist>
+     <varlistentry>
+      <term><option>-f <replaceable>directory</replaceable></option></term>
+      <term><option>--full-backup=<replaceable>directory</replaceable></option></term>
+      <listitem>
+       <para>
+        Specifies the directory where the full backup is stored.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-i <replaceable>directory</replaceable></option></term>
+      <term><option>--incr-backup=<replaceable>directory</replaceable></option></term>
+      <listitem>
+       <para>
+        Specifies the directory where the incremental backup is stored. If
+        there are more than one incremental backups to be combined with the
+        full backup, then they must be provided in the order the backups were
+        taken.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-T <replaceable class="parameter">olddir</replaceable>=<replaceable class="parameter">newdir</replaceable></option></term>
+      <term><option>--tablespace-mapping=<replaceable class="parameter">olddir</replaceable>=<replaceable class="parameter">newdir</replaceable></option></term>
+      <listitem>
+       <para>
+        Relocate the tablespace in directory <replaceable>olddir</replaceable>
+        to <replaceable>newdir</replaceable> during combining the backup. To be
+        effective, <replaceable>olddir</replaceable> must exactly match the
+        path specification of the tablespace as it is in the last incremental
+        backup directory.  (But it is not an error if there is no tablespace
+        in <replaceable>olddir</replaceable> contained in that backup.)
+        Both <replaceable>olddir</replaceable>
+        and <replaceable>newdir</replaceable> must be absolute paths.  If a
+        path happens to contain a <literal>=</literal> sign, escape it with a
+        backslash.  This option can be specified multiple times for multiple
+        tablespaces.
+       </para>
+
+       <para>
+        If a tablespace is relocated in this way, the symbolic links inside
+        the combined data directory are updated to point to the new location.
+        so the new data directory is ready to be used for a new server instance
+        with all tablespaces in the updated locations.
+        </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-o <replaceable>directory</replaceable></option></term>
+      <term><option>--output-backup=<replaceable>directory</replaceable></option></term>
+      <listitem>
+       <para>
+        Specifies the output directory where the combined full synthetic backup
+        to be stored.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-l <replaceable class="parameter">label</replaceable></option></term>
+      <term><option>--label=<replaceable class="parameter">label</replaceable></option></term>
+      <listitem>
+       <para>
+        Sets the label for the combined backup. If none is specified, a default
+        value of <quote><literal>pg_combinebackup combined full backup</literal></quote>
+        will be used.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-n</option></term>
+      <term><option>--no-clean</option></term>
+      <listitem>
+       <para>
+        By default, when <command>pg_combinebackup</command> aborts with an
+        error, it removes the output data directories it might have created
+        before discovering that it cannot finish the job. This option inhibits
+        tidying-up and is thus useful for debugging.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-v</option></term>
+      <term><option>--verbose</option></term>
+      <listitem>
+       <para>
+        Enable verbose output. Lists all partial files processed and its
+        checksum status.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>-V</option></term>
+       <term><option>--version</option></term>
+       <listitem>
+       <para>
+        Print the <application>pg_combinebackup</application> version and exit.
+       </para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-?</option></term>
+      <term><option>--help</option></term>
+       <listitem>
+        <para>
+         Show help about <application>pg_combinebackup</application> command line
+         arguments, and exit.
+        </para>
+       </listitem>
+      </varlistentry>
+    </variablelist>
+   </para>
+ </refsect1>
+
+ <refsect1>
+  <title>Environment</title>
+  <variablelist>
+   <varlistentry>
+    <term><envar>PG_COLOR</envar></term>
+    <listitem>
+     <para>
+      Specifies whether to use color in diagnostics messages.  Possible values
+      are <literal>always</literal>, <literal>auto</literal>,
+      <literal>never</literal>.
+     </para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Notes</title>
+  <para>
+   Output directory, full backup directory, and at-least one incremental backup
+   directory must be specified.
+  </para>
+
+  <para>
+   <literal>PREVIOUS WAL LOCATION</literal> of the incremental backup must
+   match with the <literal>START WAL LOCATION</literal> of the previous full
+   or incremental backup in a given sequence.
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>Examples</title>
+
+  <para>
+   To combine a full backup with two incremental backups and store it in the
+   output directory:
+<screen>
+<prompt>$</prompt> <userinput>pg_combinebackup -f /data/full/data -i /data/incr/data1 -i /data/incr/data2 -o /data/full/fulldata</userinput>
+</screen>
+  </para>
+
+  <para>
+   To combine a full backup with an incremental backups and store it in the
+   output directory along with tablespace relocation from
+   <filename>/data/incr/ts1</filename> to <filename>/data/full/ts</filename>
+<screen>
+<prompt>$</prompt> <userinput>pg_combinebackup -f /data/full/data -i /data/incr/data1 -o /data/full/fulldata -T /data/incr/ts1=/data/full/ts</userinput>
+</screen>
+  </para>
+
+  <para>
+   To combine a full backup with an incremental backups and store it in the
+   output directory along with various options like, verbose, no-clean etc.:
+<screen>
+<prompt>$</prompt> <userinput>pg_combinebackup -v --no-clean -f /data/full/data -i /data/incr/data1 -o /data/full/fulldata</userinput>
+</screen>
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>See Also</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="app-pgbasebackup"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

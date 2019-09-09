@@ -415,7 +415,7 @@ PostgreSQL documentation
         which are modified after this given LSN will be backed up. The file
         which has these partial blocks has .partial as an extension. Backup
         taken in this manner has to be combined with the full backup with the
-        <command>pg_combinebackup</command> utility. The value of LSN should
+        <xref linkend="app-pgcombinebackup"/> utility. The value of LSN should
         match the <literal>START WAL LOCATION</literal> of previously taken
         full or incremental backup from <literal>backup_label</literal> file.
        </para>
