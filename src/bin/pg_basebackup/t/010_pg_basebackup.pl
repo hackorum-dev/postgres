@@ -561,7 +561,7 @@ $node->command_fails(
 	[ 'pg_basebackup', '-D', "$tempdir/lsn_test", '--lsn', "0/INVALID" ],
 	'pg_basebackup with invalid LSN fails');
 $node->command_ok(
-	[ 'pg_basebackup', '-D', "$tempdir/lsn_test", '--lsn', "0/ABCDEF01", '--no-verify-checksums' ],
+	[ 'pg_basebackup', '-D', "$tempdir/lsn_test", '--lsn', "0/00000001", '--no-verify-checksums' ],
 	'pg_basebackup with valid LSN');
 rmtree("$tempdir/lsn_test");
 

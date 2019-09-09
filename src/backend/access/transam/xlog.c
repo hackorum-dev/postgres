@@ -10178,7 +10178,8 @@ XLogRecPtr
 do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
 				   StringInfo labelfile, List **tablespaces,
 				   StringInfo tblspcmapfile, bool infotbssize,
-				   bool needtblspcmapfile)
+				   bool needtblspcmapfile,
+				   XLogRecPtr incremental_reference_lsn)
 {
 	bool		exclusive = (labelfile == NULL);
 	bool		backup_started_in_recovery = false;
@@ -10391,6 +10392,18 @@ do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
 		XLogFileName(xlogfilename, starttli, _logSegNo, wal_segment_size);
 
 		/*
+		 * If we are doing an incremental backup, then passed in reference LSN
+		 * must be from past i.e. it should be less than the startpoint.
+		 */
+		if (!XLogRecPtrIsInvalid(incremental_reference_lsn) &&
+			incremental_reference_lsn >= startpoint)
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("incremental backup reference lsn %X/%X is in the future",
+							(uint32) (incremental_reference_lsn >> 32),
+							(uint32) incremental_reference_lsn)));
+
+		/*
 		 * Construct tablespace_map file
 		 */
 		if (exclusive)
@@ -10506,6 +10519,10 @@ do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
 		appendStringInfo(labelfile, "START TIME: %s\n", strfbuf);
 		appendStringInfo(labelfile, "LABEL: %s\n", backupidstr);
 		appendStringInfo(labelfile, "START TIMELINE: %u\n", starttli);
+		if (!XLogRecPtrIsInvalid(incremental_reference_lsn))
+			appendStringInfo(labelfile, "INCREMENTAL BACKUP REFERENCE WAL LOCATION: %X/%X\n",
+							 (uint32) (incremental_reference_lsn >> 32),
+							 (uint32) incremental_reference_lsn);
 
 		/*
 		 * Okay, write the file, or return its contents to caller.

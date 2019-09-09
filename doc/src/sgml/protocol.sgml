@@ -2466,7 +2466,7 @@ The commands accepted in replication mode are:
   </varlistentry>
 
   <varlistentry>
-    <term><literal>BASE_BACKUP</literal> [ <literal>LABEL</literal> <replaceable>'label'</replaceable> ] [ <literal>PROGRESS</literal> ] [ <literal>FAST</literal> ] [ <literal>WAL</literal> ] [ <literal>NOWAIT</literal> ] [ <literal>MAX_RATE</literal> <replaceable>rate</replaceable> ] [ <literal>TABLESPACE_MAP</literal> ] [ <literal>NOVERIFY_CHECKSUMS</literal> ]
+    <term><literal>BASE_BACKUP</literal> [ <literal>LABEL</literal> <replaceable>'label'</replaceable> ] [ <literal>PROGRESS</literal> ] [ <literal>FAST</literal> ] [ <literal>WAL</literal> ] [ <literal>NOWAIT</literal> ] [ <literal>MAX_RATE</literal> <replaceable>rate</replaceable> ] [ <literal>TABLESPACE_MAP</literal> ] [ <literal>NOVERIFY_CHECKSUMS</literal> ] [ <literal>LSN</literal> <replaceable>'lsn'</replaceable> ]
      <indexterm><primary>BASE_BACKUP</primary></indexterm>
     </term>
     <listitem>
@@ -2573,6 +2573,22 @@ The commands accepted in replication mode are:
           By default, checksums are verified during a base backup if they are
           enabled. Specifying <literal>NOVERIFY_CHECKSUMS</literal> disables
           this verification.
+         </para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>LSN</literal> <replaceable>'lsn'</replaceable></term>
+        <listitem>
+         <para>
+          Includes only those data blocks in backup which has LSN greater than
+          or equal to the given lsn. However, if 90% or more data blocks are
+          modified in the file, then sends the entire file. Otherwise, creates
+          a <filename>.partial</filename> file containing only the blocks which
+          are modified and sends that instead. The <filename>.partial</filename>
+          file has its own header followed by the actual data blocks. Note that
+          only relation files are considered here, all other files are sent as
+          is.
          </para>
         </listitem>
        </varlistentry>
@@ -2697,6 +2713,38 @@ The commands accepted in replication mode are:
       </itemizedlist>
       Owner, group, and file mode are set if the underlying file system on
       the server supports it.
+     </para>
+     <para>
+      An incremental backup's <filename>.partial</filename> file has the
+      following format:
+      <itemizedlist>
+       <listitem>
+        <para>
+         Starts with a 4-byte magic number
+        </para>
+       </listitem>
+       <listitem>
+        <para>
+         Followed by a 4-byte CRC of the header (containing a magic number,
+         count of the number of blocks, and all block numbers)
+        </para>
+       </listitem>
+       <listitem>
+        <para>
+         Then a 4-byte count of the number of blocks included in the file
+        </para>
+       </listitem>
+       <listitem>
+        <para>
+         Then the block numbers, each as a 4-byte quantity
+        </para>
+       </listitem>
+       <listitem>
+        <para>
+         Followed by the actual data blocks in order with the block numbers
+        </para>
+       </listitem>
+      </itemizedlist>
      </para>
     </listitem>
   </varlistentry>

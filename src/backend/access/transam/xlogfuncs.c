@@ -89,7 +89,8 @@ pg_start_backup(PG_FUNCTION_ARGS)
 	if (exclusive)
 	{
 		startpoint = do_pg_start_backup(backupidstr, fast, NULL, NULL,
-										NULL, NULL, false, true);
+										NULL, NULL, false, true,
+										InvalidXLogRecPtr);
 	}
 	else
 	{
@@ -105,7 +106,8 @@ pg_start_backup(PG_FUNCTION_ARGS)
 		MemoryContextSwitchTo(oldcontext);
 
 		startpoint = do_pg_start_backup(backupidstr, fast, NULL, label_file,
-										NULL, tblspc_map_file, false, true);
+										NULL, tblspc_map_file, false, true,
+										InvalidXLogRecPtr);
 
 		before_shmem_exit(nonexclusive_base_backup_cleanup, (Datum) 0);
 	}

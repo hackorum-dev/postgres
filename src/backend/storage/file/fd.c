@@ -3111,6 +3111,35 @@ looks_like_temp_rel_name(const char *name)
 	return true;
 }
 
+/* <digits>, or <digits>.<digits> */
+bool
+looks_like_non_temp_rel_name(const char *name)
+{
+	int			pos;
+
+	/* Look for a non-empty string of digits (that isn't too long). */
+	for (pos = 0; isdigit((unsigned char) name[pos]); ++pos)
+		;
+	if (pos == 0 || pos > OIDCHARS)
+		return false;
+
+	if (name[pos] == '.')
+	{
+		int			segchar;
+
+		for (segchar = 1; isdigit((unsigned char) name[pos + segchar]); ++segchar)
+			;
+		if (segchar <= 1)
+			return false;
+		pos += segchar;
+	}
+
+	/* Now we should be at the end. */
+	if (name[pos] != '\0')
+		return false;
+	return true;
+}
+
 
 /*
  * Issue fsync recursively on PGDATA and all its contents.

@@ -20,6 +20,9 @@
 #define MAX_RATE_LOWER	32
 #define MAX_RATE_UPPER	1048576
 
+/* magic number in incremental backup's .partial file */
+#define INCREMENTAL_BACKUP_MAGIC	0x494E4352
+
 
 typedef struct
 {
@@ -28,6 +31,16 @@ typedef struct
 	char	   *rpath;			/* relative path within PGDATA, or NULL */
 	int64		size;
 } tablespaceinfo;
+
+/* Definition of the partial file header */
+typedef struct
+{
+	uint32		magic;
+	pg_crc32c	checksum;
+	uint32		nblocks;
+	uint32		blocknumbers[FLEXIBLE_ARRAY_MEMBER];
+} partial_file_header;
+
 
 extern void SendBaseBackup(BaseBackupCmd *cmd);
 

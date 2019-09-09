@@ -83,6 +83,11 @@ static pgoff_t sendCompleteFile(const char *readfilename,
 								const char *tarfilename, FILE *fp,
 								struct stat *statbuf, int segmentno,
 								bool verify_checksum, int *checksum_failures);
+static pgoff_t sendPartialFile(const char *readfilename,
+							   const char *tarfilename, FILE *fp,
+							   XLogRecPtr incremental_reference_lsn,
+							   struct stat *statbuf, int segmentno,
+							   bool verify_checksum, int *checksum_failures);
 
 /* Was the backup currently in-progress initiated in recovery mode? */
 static bool backup_started_in_recovery = false;
@@ -112,6 +117,11 @@ do { \
 				(errmsg("could not read from file \"%s\"", filename))); \
 } while (0)
 
+/*
+ * When to send the whole file, % blocks modified (90%)
+ */
+#define WHOLE_FILE_THRESHOLD	0.9
+
 /* The actual number of bytes, transfer of which may cause sleep. */
 static uint64 throttling_sample;
 
@@ -126,6 +136,9 @@ static TimestampTz throttled_last;
 
 /* The starting XLOG position of the base backup. */
 static XLogRecPtr startptr;
+
+/* The reference XLOG position for the incremental backup. */
+static XLogRecPtr incremental_reference_lsn;
 
 /* Total number of checksum failures during base backup. */
 static long long int total_checksum_failures;
@@ -267,7 +280,9 @@ perform_base_backup(basebackup_options *opt)
 	startptr = do_pg_start_backup(opt->label, opt->fastcheckpoint, &starttli,
 								  labelfile, &tablespaces,
 								  tblspc_map_file,
-								  opt->progress, opt->sendtblspcmapfile);
+								  opt->progress, opt->sendtblspcmapfile,
+								  opt->lsn);
+	incremental_reference_lsn = opt->lsn;
 
 	/*
 	 * Once do_pg_start_backup has been called, ensure that any failure causes
@@ -665,6 +680,7 @@ parse_basebackup_options(List *options, basebackup_options *opt)
 	bool		o_lsn = false;
 
 	MemSet(opt, 0, sizeof(*opt));
+	opt->lsn = InvalidXLogRecPtr;
 	foreach(lopt, options)
 	{
 		DefElem    *defel = (DefElem *) lfirst(lopt);
@@ -1407,6 +1423,7 @@ sendFile(const char *readfilename, const char *tarfilename, struct stat *statbuf
 	int			segmentno = 0;
 	char	   *segmentpath;
 	bool		verify_checksum = false;
+	char	   *filename;
 
 	fp = AllocateFile(readfilename, "rb");
 	if (fp == NULL)
@@ -1418,17 +1435,15 @@ sendFile(const char *readfilename, const char *tarfilename, struct stat *statbuf
 				 errmsg("could not open file \"%s\": %m", readfilename)));
 	}
 
+	/*
+	 * Get the filename (excluding path).  As last_dir_separator() includes
+	 * the last directory separator, we chop that off by incrementing the
+	 * pointer.
+	 */
+	filename = last_dir_separator(readfilename) + 1;
+
 	if (!noverify_checksums && DataChecksumsEnabled())
 	{
-		char	   *filename;
-
-		/*
-		 * Get the filename (excluding path).  As last_dir_separator()
-		 * includes the last directory separator, we chop that off by
-		 * incrementing the pointer.
-		 */
-		filename = last_dir_separator(readfilename) + 1;
-
 		if (is_checksummed_file(readfilename, filename))
 		{
 			verify_checksum = true;
@@ -1449,9 +1464,25 @@ sendFile(const char *readfilename, const char *tarfilename, struct stat *statbuf
 		}
 	}
 
-	/* Send complete file to the client. */
-	len = sendCompleteFile(readfilename, tarfilename, fp, statbuf, segmentno,
-						   verify_checksum, &checksum_failures);
+	/*
+	 * If incremental backup, see whether the filename is a non-temporary
+	 * relation filename or not and can be sent partially.  All other files are
+	 * sent completely.
+	 */
+	if (!XLogRecPtrIsInvalid(incremental_reference_lsn) &&
+		OidIsValid(dboid) && looks_like_non_temp_rel_name(filename))
+	{
+		/* Send partial file to the client. */
+		len = sendPartialFile(readfilename, tarfilename, fp,
+							  incremental_reference_lsn, statbuf, segmentno,
+							  verify_checksum, &checksum_failures);
+	}
+	else
+	{
+		/* Send complete file to the client. */
+		len = sendCompleteFile(readfilename, tarfilename, fp, statbuf,
+							   segmentno, verify_checksum, &checksum_failures);
+	}
 
 	/* If the file was truncated while we were sending it, pad it with zeros */
 	if (len < statbuf->st_size)
@@ -1810,6 +1841,260 @@ sendCompleteFile(const char *readfilename, const char *tarfilename, FILE *fp,
 	}
 
 	CHECK_FREAD_ERROR(fp, readfilename);
+
+	return len;
+}
+
+/*
+ * sendPartialFile
+ *
+ * Sends a partial file containing only the blocks which are modified after
+ * given LSN.  However, if the file is heavily modified, then we send complete
+ * file instead.
+ */
+static pgoff_t
+sendPartialFile(const char *readfilename, const char *tarfilename, FILE *fp,
+				XLogRecPtr incremental_reference_lsn, struct stat *statbuf,
+				int segmentno, bool verify_checksum, int *checksum_failures)
+{
+	char	   *buf;
+	off_t		cnt;
+	pgoff_t		len = 0;
+	bool		sendwholefile = false;
+
+	/*
+	 * Relation file is segmented at size RELSEG_SIZE * BLCKSZ, so we will
+	 * never have size more than that.
+	 */
+	Assert(statbuf->st_size <= (RELSEG_SIZE * BLCKSZ));
+
+	/*
+	 * We want to read the whole file in memory to see how many blocks were
+	 * actually changed.  We don't want to do that incrementally as it will
+	 * need to reread the file while sending the blocks.  palloc() reads
+	 * maximum 1GB - 1, and current max relation segment will be of 1GB, thus
+	 * we use malloc() here.
+	 */
+	buf = (char *) malloc(statbuf->st_size);
+	if (buf == NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_OUT_OF_MEMORY),
+				 errmsg("out of memory")));
+
+	if ((cnt = fread(buf, 1, statbuf->st_size, fp)) > 0)
+	{
+		Bitmapset  *mod_blocks = NULL;
+		int			nmodblocks = 0;
+		int			part_size = 0;
+		int			part_header_size;
+		int			blknum;
+		int			blknocnt;
+		partial_file_header *pfh;
+		char	   *partialtarfilename = NULL;
+
+		/*
+		 * A valid relation size is multiple of BLCKSZ.  However, if we read
+		 * some arbitrary size data, then instead of throwing an error, we
+		 * chose to send that file as-is.  Inform the same to the client by
+		 * emitting a warning.  Also, we cannot verify the checksum, if
+		 * enabled, emit a warning for that too.
+		 */
+		if (cnt % BLCKSZ != 0)
+		{
+			if (verify_checksum)
+			{
+				ereport(WARNING,
+						(errmsg("cannot verify checksum in file \"%s\"",
+								readfilename)));
+				verify_checksum = false;
+			}
+
+			ereport(WARNING,
+					(errmsg("file size (%d) not in multiple of page size (%d), sending whole file",
+							(int) cnt, BLCKSZ)));
+
+			/* File size is not in multiple of BLCKSZ, send as is. */
+			sendwholefile = true;
+		}
+
+		/*
+		 * Check each page LSN and see if it is modified after the given LSN or
+		 * not.  Create a bitmap of all such modified blocks and then decide
+		 * whether we want to send a whole file or a partial file.  Skip this
+		 * check if we decided to send whole file already.
+		 */
+		if (!sendwholefile)
+		{
+			XLogRecPtr	pglsn;
+			int 		i;
+			int			nblocks = (cnt / BLCKSZ);
+
+			for (i = 0; i < nblocks; i++)
+			{
+				int			page_index_in_buf = (BLCKSZ * i);
+				char	   *page = buf + page_index_in_buf;
+
+				pglsn = PageGetLSN(page);
+
+				if (pglsn >= incremental_reference_lsn)
+				{
+					/*
+					 * Verify checksum, if requested, for the modified blocks.
+					 */
+					if (verify_checksum)
+					{
+						verify_page_checksum(readfilename, fp, page,
+											 (cnt - page_index_in_buf), i,
+											 segmentno, checksum_failures);
+
+						/*
+						 * If we hit end-of-file, a concurrent truncation must
+						 * have occurred, so break out of this loop just as if
+						 * the initial fread() returned 0. We'll drop through
+						 * to the same code that handles that case. (We must
+						 * fix up cnt first, though.)
+						 */
+						if (feof(fp))
+						{
+							cnt = page_index_in_buf;
+							break;
+						}
+					}
+
+					mod_blocks = bms_add_member(mod_blocks, i);
+				}
+			}
+
+			nmodblocks = bms_num_members(mod_blocks);
+
+			/*
+			 * We need to send whole file if the modified block count is equal
+			 * to or greater than the WHOLE_FILE_THRESHOLD.  Check that.
+			 */
+			if (i > 0 && (nmodblocks / (double) i) >= WHOLE_FILE_THRESHOLD)
+				sendwholefile = true;
+		}
+
+		/*
+		 * If sendwholefile is true then we need to send the whole file as is.
+		 * Otherwise send a partial file.  Instead of sending entire file at a
+		 * time, we send data in a series of chunks of size CHUNK_SIZE.
+		 * CHUNK_SIZE is arbitrary chosen to 1MB assuming BLCKSZ is of 8K.
+		 */
+		if (sendwholefile)
+		{
+#define CHUNK_SIZE	(BLCKSZ * 128)
+			int			i;
+			int			nchunks = cnt / CHUNK_SIZE;
+			off_t		sent = 0;
+
+			_tarWriteHeader(tarfilename, NULL, statbuf, false);
+
+			/* Send data in chunks of size CHUNK_SIZE each. */
+			for (i = 0; i < nchunks; i++)
+			{
+				/* Send the chunk as a CopyData message */
+				if (pq_putmessage('d', buf + sent, CHUNK_SIZE))
+					ereport(ERROR,
+							(errmsg("base backup could not send data, aborting backup")));
+
+				throttle(CHUNK_SIZE);
+				sent += CHUNK_SIZE;
+			}
+
+			/* Send remaining data, if present. */
+			if (sent < cnt)
+			{
+				off_t		remaining = cnt - sent;
+
+				/* Send the chunk as a CopyData message */
+				if (pq_putmessage('d', buf + sent, remaining))
+					ereport(ERROR,
+							(errmsg("base backup could not send data, aborting backup")));
+
+				throttle(remaining);
+				sent += remaining;
+			}
+
+			free(buf);
+			Assert(sent = cnt);
+
+			return cnt;
+		}
+
+		/* Create a partial file */
+
+		/* Calculate partial file size. */
+		part_header_size = offsetof(partial_file_header, blocknumbers) +
+			(sizeof(uint32) * nmodblocks);
+		part_size = part_header_size + (BLCKSZ * nmodblocks);
+
+		/* Add .partial to filename */
+		partialtarfilename = (char *) palloc(strlen(tarfilename) + 9);
+		snprintf(partialtarfilename, strlen(tarfilename) + 9, "%s.partial", tarfilename);
+
+		statbuf->st_size = part_size;
+		_tarWriteHeader(partialtarfilename, NULL, statbuf, false);
+		pfree(partialtarfilename);
+
+		pfh = (partial_file_header *) palloc(part_header_size);
+		pfh->magic = INCREMENTAL_BACKUP_MAGIC;
+		pfh->nblocks = nmodblocks;
+
+		blknum = -1;
+		blknocnt = 0;
+		while ((blknum = bms_next_member(mod_blocks, blknum)) >= 0)
+		{
+			pfh->blocknumbers[blknocnt] = blknum;
+			/* Calculate CRC for each block to be transferred. */
+			blknocnt++;
+		}
+
+		Assert(blknocnt == nmodblocks);
+
+		/* Now calculate CRC for the header */
+		INIT_CRC32C(pfh->checksum);
+		COMP_CRC32C(pfh->checksum, pfh, part_header_size);
+
+		/* Send header */
+		if (pq_putmessage('d', (char *) pfh, part_header_size))
+			ereport(ERROR,
+					(errmsg("base backup could not send data, aborting backup")));
+		throttle(part_header_size);
+
+		/* Send data blocks */
+		for (blknocnt = 0; blknocnt < nmodblocks; blknocnt++)
+		{
+			int			offset = BLCKSZ * pfh->blocknumbers[blknocnt];
+
+			if (pq_putmessage('d', buf + offset, BLCKSZ))
+				ereport(ERROR,
+						(errmsg("base backup could not send data, aborting backup")));
+			throttle(BLCKSZ);
+		}
+
+		Assert(blknocnt == nmodblocks && statbuf->st_size == part_size);
+
+		len = part_size;
+		pfree(pfh);
+	}
+	else
+	{
+		/* Check for fread() error. */
+		if (ferror(fp))
+		{
+			free(buf);
+			ereport(ERROR,
+					(errmsg("could not read from file \"%s\"", readfilename)));
+		}
+
+		/* Send empty file as is */
+		_tarWriteHeader(tarfilename, NULL, statbuf, false);
+		len = cnt;
+	}
+
+	/* free buffer allocated */
+	free(buf);
 
 	return len;
 }

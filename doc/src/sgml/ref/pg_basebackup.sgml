@@ -408,6 +408,21 @@ PostgreSQL documentation
      </varlistentry>
 
      <varlistentry>
+      <term><option>--lsn=<replaceable class="parameter">LSN</replaceable></option></term>
+      <listitem>
+       <para>
+        Takes an incremental backup, using LSN as a threshold. Only the blocks
+        which are modified after this given LSN will be backed up. The file
+        which has these partial blocks has .partial as an extension. Backup
+        taken in this manner has to be combined with the full backup with the
+        <command>pg_combinebackup</command> utility. The value of LSN should
+        match the <literal>START WAL LOCATION</literal> of previously taken
+        full or incremental backup from <literal>backup_label</literal> file.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
       <term><option>-n</option></term>
       <term><option>--no-clean</option></term>
       <listitem>
@@ -790,6 +805,14 @@ PostgreSQL documentation
    to <filename>./backup/ts</filename>:
 <screen>
 <prompt>$</prompt> <userinput>pg_basebackup -D backup/data -T /opt/ts=$(pwd)/backup/ts</userinput>
+</screen>
+  </para>
+
+  <para>
+   To create an incremental backup having LSN greater than or equal to
+   <literal>5/19000060</literal>:
+<screen>
+<prompt>$</prompt> <userinput>pg_basebackup -D incbackup --lsn='5/19000060'</userinput>
 </screen>
   </para>
  </refsect1>
