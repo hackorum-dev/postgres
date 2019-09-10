@@ -453,6 +453,7 @@ start_postmaster(void)
 
 #ifndef WIN32
 	pgpid_t		pm_pid;
+	char	   *shell;
 
 	/* Flush stdio channels just before fork, to avoid double-output problems */
 	fflush(stdout);
@@ -501,7 +502,10 @@ start_postmaster(void)
 		snprintf(cmd, MAXPGPATH, "exec \"%s\" %s%s < \"%s\" 2>&1",
 				 exec_path, pgdata_opt, post_opts, DEVNULL);
 
-	(void) execl("/bin/sh", "/bin/sh", "-c", cmd, (char *) NULL);
+	shell = getenv("PG_CTL_SHELL");
+	if (!shell)
+		shell = "/bin/sh";
+	(void) execl(shell, "sh", "-c", cmd, (char *) NULL);
 
 	/* exec failed */
 	write_stderr(_("%s: could not start server: %s\n"),

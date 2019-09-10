@@ -1173,6 +1173,9 @@ spawn_process(const char *cmdline)
 		 * parallel test case.
 		 */
 		char	   *cmdline2;
+		char	   *env = getenv("PG_REGRESS_SHELL");
+		if (env)
+			shellprog = env;
 
 		cmdline2 = psprintf("exec %s", cmdline);
 		execl(shellprog, shellprog, "-c", cmdline2, (char *) NULL);

@@ -11,6 +11,17 @@ else
   BE_DLLLIBS = -bundle_loader $(top_builddir)/src/backend/postgres
 endif
 
+# On macOS with System Integrity Protection (SIP) enabled, /bin/sh
+# filters out DYLD_* environment variables, so our setting of
+# DYLD_LIBRARY_PATH won't survive a sytem() call.  The workaround is
+# to write our own replacement system() that uses a different shell,
+# settable by the PG_REGRESS_SHELL environment variable, and then
+# preload that via DYLD_INSERT_LIBRARIES.  DYLD_FORCE_FLAT_NAMESPACE
+# is required for DYLD_INSERT_LIBRARIES to work.
+ifdef PG_REGRESS_SHELL
+with_temp_install_extra = DYLD_FORCE_FLAT_NAMESPACE=1 DYLD_INSERT_LIBRARIES=$(abs_top_builddir)/src/test/regress/fake_system.dylib
+endif
+
 # Rule for building a shared library from a single .o file
 %.so: %.o
 	$(CC) $(CFLAGS) $< $(LDFLAGS) $(LDFLAGS_SL) -bundle $(BE_DLLLIBS) -o $@

@@ -91,6 +91,37 @@ make MAX_CONNECTIONS=10 check
 </screen>
     runs no more than ten tests concurrently.
    </para>
+
+   <sect3>
+    <title>macOS System Integrity Protection</title>
+
+    <para>
+     On macOS, if System Integrity Protection (SIP) is enabled, which has been
+     the default since version 10.11/El Capitan, then running the tests
+     against a temporary installation requires some additional setup.  With
+     SIP enabled, the default shell <filename>/bin/sh</filename> and the
+     default Perl binary <filename>/usr/bin/perl</filename>> defeat the use of
+     the environment variable <envar>DYLD_LIBRARY_PATH</envar>, which is
+     used to let binaries find libraries in the temporary installation as
+     opposed to the final installation location.  As a result, a test run will
+     likely crash because it cannot find missing libraries (or alternatively,
+     find the wrong ones).
+    </para>
+
+    <para>
+     One workaround is to run <literal>make install</literal> before
+     <literal>make check</literal>.
+    </para>
+
+    <para>
+     Another workaround is to set the environment variable
+     <envar>PG_REGRESS_SHELL</envar> to another shell installed via a
+     third-party package manager such as Homebrew or MacPorts, for example
+     <literal>PG_REGRESS_SHELL=/usr/local/bin/bash</literal>.  For the TAP
+     tests, you also need to use a Perl binary other than the default for
+     running the <command>prove</command> program.
+    </para>
+   </sect3>
   </sect2>
 
   <sect2>

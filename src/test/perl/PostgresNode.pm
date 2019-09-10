@@ -122,6 +122,7 @@ INIT
 	$test_pghost        = $use_tcp ? $test_localhost : TestLib::tempdir_short;
 	$ENV{PGHOST}        = $test_pghost;
 	$ENV{PGDATABASE}    = 'postgres';
+	$ENV{PG_CTL_SHELL}	= $ENV{PG_REGRESS_SHELL};
 
 	# Tracking of last port value assigned to accelerate free port lookup.
 	$last_port_assigned = int(rand() * 16384) + 49152;

@@ -404,7 +404,7 @@ endif # REGRESS
 .PHONY: submake
 submake:
 ifndef PGXS
-	$(MAKE) -C $(top_builddir)/src/test/regress pg_regress$(X)
+	$(MAKE) -C $(top_builddir)/src/test/regress all
 	$(MAKE) -C $(top_builddir)/src/test/isolation all
 endif
 

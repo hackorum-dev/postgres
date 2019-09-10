@@ -75,6 +75,17 @@ input_files = $(patsubst $(srcdir)/input/%.source,sql/%.sql, $(wildcard $(srcdir
 output_files := $(patsubst $(srcdir)/output/%.source,expected/%.out, $(wildcard $(srcdir)/output/*.source))
 
 
+# Workaround for macOS SIP: Replacement for system() library call that
+# does not filter DYLD_* environment variables
+
+ifeq ($(PORTNAME),darwin)
+all: fake_system.dylib
+
+fake_system.dylib: fake_system.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -dynamiclib $< -o $@
+endif
+
+
 # not installed by default
 
 regress_data_files = \
@@ -167,6 +178,9 @@ clean distclean maintainer-clean: clean-lib
 # things built by `all' target
 	rm -f $(OBJS) refint$(DLSUFFIX) autoinc$(DLSUFFIX)
 	rm -f pg_regress_main.o pg_regress.o pg_regress$(X)
+ifeq ($(PORTNAME),darwin)
+	rm -f fake_system.dylib
+endif
 # things created by various check targets
 	rm -f $(output_files) $(input_files)
 	rm -rf testtablespace
