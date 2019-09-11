@@ -36,6 +36,10 @@
 #include "utils/syscache.h"
 
 
+#ifdef USE_ICU
+static char *get_icu_locale_comment(const char *localename);
+#endif
+
 typedef struct
 {
 	char	   *localename;		/* name of locale, as per "locale -a" */
@@ -231,6 +235,16 @@ DefineCollation(ParseState *pstate, List *names, List *parameters, bool if_not_e
 
 	if (!OidIsValid(newoid))
 		return InvalidObjectAddress;
+
+#ifdef USE_ICU
+	if (collprovider == COLLPROVIDER_ICU)
+	{
+		char *display_name = get_icu_locale_comment(collcollate);
+		if (display_name != NULL)
+			ereport(NOTICE,
+					(errmsg("ICU locale: \"%s\"", display_name)));
+	}
+#endif
 
 	/*
 	 * Check that the locales can be loaded.  NB: pg_newlocale_from_collation
