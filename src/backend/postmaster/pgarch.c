@@ -108,6 +108,50 @@ static bool pgarch_archiveXlog(char *xlog);
 static bool pgarch_readyXlog(char *xlog);
 static void pgarch_archiveDone(char *xlog);
 
+pid_t system_pid = -1;
+
+static void
+pg_system_kill()
+{
+	if (system_pid >= 0)
+		kill(system_pid, SIGKILL);
+}
+
+static int
+pg_system(char *cmd)
+{
+  int status;
+  long result;
+
+
+  system_pid = fork();
+  if (system_pid == 0)
+  {
+	  char *new_argv[4] = {"sh", "-c", cmd, NULL};
+
+	  pqsignal(SIGINT, SIG_DFL);
+	  pqsignal(SIGQUIT, SIG_IGN);
+	  (void) execve ("/bin/sh", (char * const *) new_argv, __environ);
+	  _exit(127);
+  }
+
+  if (system_pid < 0)
+	  return -1;
+
+  do
+  {
+	  result = waitpid(system_pid, &status, 0);
+  } while (result == -1L && errno == EINTR);
+
+  if (result != system_pid)
+  {
+	  system_pid = -1;
+	  return -1;
+  }
+
+  system_pid = -1;
+  return status;
+}
 
 /* ------------------------------------------------------------
  * Public functions called from postmaster follow
@@ -255,6 +299,9 @@ PgArchiverMain(int argc, char *argv[])
 static void
 pgarch_exit(SIGNAL_ARGS)
 {
+	if (postgres_signal_arg == SIGQUIT)
+		pg_system_kill();
+
 	/* SIGQUIT means curl up and die ... */
 	exit(1);
 }
@@ -620,7 +667,7 @@ pgarch_archiveXlog(char *xlog)
 	snprintf(activitymsg, sizeof(activitymsg), "archiving %s", xlog);
 	set_ps_display(activitymsg, false);
 
-	rc = system(xlogarchcmd);
+	rc = pg_system(xlogarchcmd);
 	if (rc != 0)
 	{
 		/*

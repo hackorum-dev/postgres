@@ -3964,6 +3964,8 @@ PostmasterStateMachine(void)
 static void
 signal_child(pid_t pid, int signal)
 {
+	if (pid == PgArchPID)
+		elog(LOG, "Send %d to archiver", signal);
 	if (kill(pid, signal) < 0)
 		elog(DEBUG3, "kill(%ld,%d) failed: %m", (long) pid, signal);
 #ifdef HAVE_SETSID
