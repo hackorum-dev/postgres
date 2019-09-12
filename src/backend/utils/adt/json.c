@@ -142,17 +142,26 @@ lex_accept(JsonLexContext *lex, JsonTokenType token, char **lexeme)
 	{
 		if (lexeme != NULL)
 		{
-			if (lex->token_type == JSON_TOKEN_STRING)
-			{
-				if (lex->strval != NULL)
-					*lexeme = pstrdup(lex->strval->data);
-			}
+			if (lex->token_type == JSON_TOKEN_STRING && lex->strval != NULL)
+				*lexeme = pstrdup(lex->strval->data);
 			else
 			{
 				int			len = (lex->token_terminator - lex->token_start);
-				char	   *tokstr = palloc(len + 1);
+				char	*src = lex->token_start;
+				char	   *tokstr;
 
-				memcpy(tokstr, lex->token_start, len);
+				/* String token should be quoted. */
+				if (lex->token_type == JSON_TOKEN_STRING)
+				{
+					Assert(len >= 2);
+					Assert(src[0] == '"' && src[len - 1] == '"');
+
+					src++;
+					len -= 2;
+				}
+
+				tokstr = palloc(len + 1);
+				memcpy(tokstr, src, len);
 				tokstr[len] = '\0';
 				*lexeme = tokstr;
 			}
