@@ -27,6 +27,7 @@
 #include "access/xlog.h"
 #include "catalog/catalog.h"
 #include "catalog/dependency.h"
+#include "catalog/index.h"
 #include "catalog/heap.h"
 #include "catalog/pg_am.h"
 #include "catalog/pg_proc.h"
@@ -198,6 +199,14 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 			 */
 			indexRelation = index_open(indexoid, lmode);
 			index = indexRelation->rd_index;
+
+			if (ReindexIsProcessingIndex(indexoid))
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+						 errmsg("cannot use index %s which is currently being reindexed",
+								RelationGetRelationName(indexRelation)),
+						 errhint("Probably index expressions include functions "
+								 "accessing indexed table itself, but they must be immutable.")));
 
 			/*
 			 * Ignore invalid indexes, since they can't safely be used for

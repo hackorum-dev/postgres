@@ -1174,7 +1174,22 @@ index_create(Relation heapRelation,
 	}
 	else
 	{
-		index_build(heapRelation, indexRelation, indexInfo, false, true);
+		/* ensure SetReindexProcessing state isn't leaked */
+		PG_TRY();
+		{
+			/* Suppress use of the target index while building it */
+			SetReindexProcessing(heapRelationId, indexRelationId);
+
+			index_build(heapRelation, indexRelation, indexInfo, false, true);
+		}
+		PG_CATCH();
+		{
+			/* Make sure flag gets cleared on error exit */
+			ResetReindexProcessing();
+			PG_RE_THROW();
+		}
+		PG_END_TRY();
+		ResetReindexProcessing();
 	}
 
 	/*
@@ -1379,7 +1394,10 @@ index_concurrently_build(Oid heapRelationId,
 	indexInfo->ii_Concurrent = true;
 	indexInfo->ii_BrokenHotChain = false;
 
-	/* Now build the index */
+	/*
+	 * Now build the index
+	 * SetReindexProcessing is not required since indisvalid is false anyway
+	 */
 	index_build(heapRel, indexRelation, indexInfo, false, true);
 
 	/* Close both the relations, but keep the locks */

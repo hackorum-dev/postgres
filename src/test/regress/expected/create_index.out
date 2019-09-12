@@ -1323,6 +1323,21 @@ create unique index hash_f8_index_1 on hash_f8_heap(abs(random));
 create unique index hash_f8_index_2 on hash_f8_heap((seqno + 1), random);
 create unique index hash_f8_index_3 on hash_f8_heap(random) where seqno > 1000;
 --
+-- Create an index which might consider using this very index during the build.
+--
+-- primary key ensures relhasindex is set
+CREATE TABLE pears(f1 int primary key, f2 int);
+INSERT INTO pears SELECT i, i+1 FROM generate_series(1, 100) i;
+CREATE FUNCTION pears_f(i int) RETURNS int LANGUAGE SQL IMMUTABLE AS $$
+  SELECT f1 FROM pears WHERE pears.f2 = 42
+$$;
+CREATE index ON pears ((pears_f(f1)));
+ERROR:  cannot use index pears_pears_f_idx which is currently being reindexed
+HINT:  Probably index expressions include functions accessing indexed table itself, but they must be immutable.
+CONTEXT:  SQL function "pears_f" during startup
+DROP TABLE pears;
+DROP FUNCTION pears_f;
+--
 -- Try some concurrent index builds
 --
 -- Unfortunately this only tests about half the code paths because there are
