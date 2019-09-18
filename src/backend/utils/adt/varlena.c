@@ -5626,8 +5626,11 @@ text_format(PG_FUNCTION_ARGS)
 
 				str = OutputFunctionCall(&typoutputinfo_width, value);
 
-				/* pg_strtoint32 will complain about bad data or overflow */
-				width = pg_strtoint32(str);
+				/*
+				 * pg_strtoint32_check will complain about bad data or
+				 * overflow.
+				 */
+				width = pg_strtoint32_check(str);
 
 				pfree(str);
 			}
