@@ -12,6 +12,11 @@ use Test::More;
 
 my $node_publisher = PostgreSQL::Test::Cluster->new('publisher');
 $node_publisher->init(allows_streaming => 'logical');
+$node_publisher->append_conf('postgresql.conf', q{
+log_checkpoints = on
+log_min_messages = 'debug1'
+log_error_verbosity = verbose
+});
 $node_publisher->start;
 
 my $node_subscriber = PostgreSQL::Test::Cluster->new('subscriber');
