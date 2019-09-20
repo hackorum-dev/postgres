@@ -1713,10 +1713,13 @@ SnapBuildSerialize(SnapBuild *builder, XLogRecPtr lsn)
 				 errmsg("could not rename file \"%s\" to \"%s\": %m",
 						tmppath, path)));
 	}
+	elog(DEBUG1, "renamed serialized snapshot %s to %s", tmppath, path);
 
 	/* make sure we persist */
 	fsync_fname(path, false);
 	fsync_fname(PG_LOGICAL_SNAPSHOTS_DIR, true);
+
+	elog(DEBUG1, "fsynced %s", path);
 
 	/*
 	 * Now there's no way we can lose the dumped state anymore, remember this
