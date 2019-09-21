@@ -33,6 +33,8 @@
 #define JSONB_MAX_ELEMS (Min(MaxAllocSize / sizeof(JsonbValue), JB_CMASK))
 #define JSONB_MAX_PAIRS (Min(MaxAllocSize / sizeof(JsonbPair), JB_CMASK))
 
+static JsonbValue *findJsonbElementInArray(JsonbContainer *container,
+										   JsonbValue *elem, JsonbValue *res);
 static void fillJsonbValue(JsonbContainer *container, int index,
 						   char *base_addr, uint32 offset,
 						   JsonbValue *result);
@@ -327,38 +329,19 @@ compareJsonbContainers(JsonbContainer *a, JsonbContainer *b)
  */
 JsonbValue *
 findJsonbValueFromContainer(JsonbContainer *container, uint32 flags,
-							JsonbValue *key)
+							JsonbValue *key, JsonbValue *res)
 {
-	JEntry	   *children = container->children;
 	int			count = JsonContainerSize(container);
 
 	Assert((flags & ~(JB_FARRAY | JB_FOBJECT)) == 0);
 
-	/* Quick out without a palloc cycle if object/array is empty */
+	/* Quick out if object/array is empty */
 	if (count <= 0)
 		return NULL;
 
 	if ((flags & JB_FARRAY) && JsonContainerIsArray(container))
 	{
-		JsonbValue *result = palloc(sizeof(JsonbValue));
-		char	   *base_addr = (char *) (children + count);
-		uint32		offset = 0;
-		int			i;
-
-		for (i = 0; i < count; i++)
-		{
-			fillJsonbValue(container, i, base_addr, offset, result);
-
-			if (key->type == result->type)
-			{
-				if (equalsJsonbScalarValue(key, result))
-					return result;
-			}
-
-			JBE_ADVANCE_OFFSET(offset, children[i]);
-		}
-
-		pfree(result);
+		return findJsonbElementInArray(container, key, res);
 	}
 	else if ((flags & JB_FOBJECT) && JsonContainerIsObject(container))
 	{
@@ -366,10 +349,45 @@ findJsonbValueFromContainer(JsonbContainer *container, uint32 flags,
 		Assert(key->type == jbvString);
 
 		return getKeyJsonValueFromContainer(container, key->val.string.val,
-											key->val.string.len, NULL);
+											key->val.string.len, res);
 	}
 
 	/* Not found */
+	return NULL;
+}
+
+/*
+ * Subroutine for findJsonbValueFromContainer
+ *
+ * Find scalar element in Jsonb array and return it.
+ */
+static JsonbValue *
+findJsonbElementInArray(JsonbContainer *container, JsonbValue *elem,
+						JsonbValue *res)
+{
+	JsonbValue *result;
+	JEntry	   *children = container->children;
+	int			count = JsonContainerSize(container);
+	char	   *baseAddr = (char *) (children + count);
+	uint32		offset = 0;
+	int			i;
+
+	result = res ? res : palloc(sizeof(*result));
+
+	for (i = 0; i < count; i++)
+	{
+		fillJsonbValue(container, i, baseAddr, offset, result);
+
+		if (elem->type == result->type &&
+			equalsJsonbScalarValue(elem, result))
+			return result;
+
+		JBE_ADVANCE_OFFSET(offset, children[i]);
+	}
+
+	if (!res)
+		pfree(result);
+
 	return NULL;
 }
 
@@ -450,9 +468,9 @@ getKeyJsonValueFromContainer(JsonbContainer *container,
  * Returns palloc()'d copy of the value, or NULL if it does not exist.
  */
 JsonbValue *
-getIthJsonbValueFromContainer(JsonbContainer *container, uint32 i)
+getIthJsonbValueFromContainer(JsonbContainer *container, uint32 i,
+							  JsonbValue *result)
 {
-	JsonbValue *result;
 	char	   *base_addr;
 	uint32		nelements;
 
@@ -465,7 +483,8 @@ getIthJsonbValueFromContainer(JsonbContainer *container, uint32 i)
 	if (i >= nelements)
 		return NULL;
 
-	result = palloc(sizeof(JsonbValue));
+	if (!result)
+		result = palloc(sizeof(JsonbValue));
 
 	fillJsonbValue(container, i, base_addr,
 				   getJsonbOffset(container, i),
@@ -1163,9 +1182,10 @@ JsonbDeepContains(JsonbIterator **val, JsonbIterator **mContained)
 
 			if (IsAJsonbScalar(&vcontained))
 			{
-				if (!findJsonbValueFromContainer((*val)->container,
-												 JB_FARRAY,
-												 &vcontained))
+				JsonbValue	elemBuf;
+
+				if (!findJsonbElementInArray((*val)->container, &vcontained,
+											 &elemBuf))
 					return false;
 			}
 			else

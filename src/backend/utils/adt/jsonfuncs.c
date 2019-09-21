@@ -787,6 +787,7 @@ jsonb_array_element(PG_FUNCTION_ARGS)
 	Jsonb	   *jb = PG_GETARG_JSONB_P(0);
 	int			element = PG_GETARG_INT32(1);
 	JsonbValue *v;
+	JsonbValue	vbuf;
 
 	if (!JB_ROOT_IS_ARRAY(jb))
 		PG_RETURN_NULL();
@@ -802,7 +803,7 @@ jsonb_array_element(PG_FUNCTION_ARGS)
 			element += nelements;
 	}
 
-	v = getIthJsonbValueFromContainer(&jb->root, element);
+	v = getIthJsonbValueFromContainer(&jb->root, element, &vbuf);
 	if (v != NULL)
 		PG_RETURN_JSONB_P(JsonbValueToJsonb(v));
 
@@ -830,6 +831,7 @@ jsonb_array_element_text(PG_FUNCTION_ARGS)
 	Jsonb	   *jb = PG_GETARG_JSONB_P(0);
 	int			element = PG_GETARG_INT32(1);
 	JsonbValue *v;
+	JsonbValue	vbuf;
 
 	if (!JB_ROOT_IS_ARRAY(jb))
 		PG_RETURN_NULL();
@@ -845,7 +847,7 @@ jsonb_array_element_text(PG_FUNCTION_ARGS)
 			element += nelements;
 	}
 
-	v = getIthJsonbValueFromContainer(&jb->root, element);
+	v = getIthJsonbValueFromContainer(&jb->root, element, &vbuf);
 
 	if (v != NULL && v->type != jbvNull)
 		PG_RETURN_TEXT_P(JsonbValueAsText(v));
@@ -1361,7 +1363,7 @@ get_jsonb_path_all(FunctionCallInfo fcinfo, bool as_text)
 		Assert(JB_ROOT_IS_ARRAY(jb) && JB_ROOT_IS_SCALAR(jb));
 		/* Extract the scalar value, if it is what we'll return */
 		if (npath <= 0)
-			jbvp = getIthJsonbValueFromContainer(container, 0);
+			jbvp = getIthJsonbValueFromContainer(container, 0, &jbvbuf);
 	}
 
 	/*
@@ -1430,7 +1432,7 @@ get_jsonb_path_all(FunctionCallInfo fcinfo, bool as_text)
 					index = nelements + lindex;
 			}
 
-			jbvp = getIthJsonbValueFromContainer(container, index);
+			jbvp = getIthJsonbValueFromContainer(container, index, &jbvbuf);
 		}
 		else
 		{
