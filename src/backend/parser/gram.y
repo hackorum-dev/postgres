@@ -588,6 +588,8 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <list>		part_params
 %type <partboundspec> PartitionBoundSpec
 %type <list>		hash_partbound
+%type <list>		table_partitions_list
+%type <node>		table_partition
 %type <defelt>		hash_partbound_elem
 
 /*
@@ -3870,6 +3872,18 @@ PartitionSpec: PARTITION BY part_strategy '(' part_params ')'
 
 					$$ = n;
 				}
+
+				|  PARTITION BY part_strategy '(' part_params ')' '(' table_partitions_list ')'
+				{
+					PartitionSpec *n = makeNode(PartitionSpec);
+
+					n->strategy = $3;
+					n->partParams = $5;
+					n->partdefs = $8;
+					n->location = @1;
+
+					$$ = n;
+				}
 		;
 
 part_strategy:	IDENT					{ $$ = $1; }
@@ -3911,6 +3925,35 @@ part_elem: ColId opt_collate opt_class
 					n->collation = $4;
 					n->opclass = $5;
 					n->location = @1;
+					$$ = n;
+				}
+		;
+
+/*
+ * table_partitions_list returns the list of PartitionCmd
+ * for now, Latter we may want to use more specific data structure
+ * when we will introduce the shard server specification syntax.
+ */
+table_partitions_list:
+			table_partitions_list ',' table_partition
+			{
+				$$ = lappend($1, $3);
+			}
+
+			| table_partition
+			{
+				$$ = list_make1($1);
+			}
+		;
+
+table_partition: PARTITION qualified_name PartitionBoundSpec OptTableSpace OptPartitionSpec
+				{
+					SubPartition *n = makeNode(SubPartition);
+
+					n->name = $2;
+					n->bound = $3;
+					n->tablespacename = $4;
+					n->partspec = $5;
 					$$ = n;
 				}
 		;

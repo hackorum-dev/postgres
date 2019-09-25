@@ -791,6 +791,9 @@ typedef struct PartitionSpec
 	char	   *strategy;		/* partitioning strategy ('hash', 'list' or
 								 * 'range') */
 	List	   *partParams;		/* List of PartitionElems */
+	List       *partdefs;       /* List of partition definations
+								 * provided in the CREATE TABLE
+								 */
 	int			location;		/* token location, or -1 if unknown */
 } PartitionSpec;
 
@@ -858,6 +861,23 @@ typedef struct PartitionCmd
 	RangeVar   *name;			/* name of partition to attach/detach */
 	PartitionBoundSpec *bound;	/* FOR VALUES, if attaching */
 } PartitionCmd;
+
+/*
+ * Partition - info for subpartition which created during create parent table.
+ */
+typedef struct SubPartition
+{
+	/*
+	 * TODO
+	 * It supports the necessary options in our current version
+	 * We should add something here for options support.
+	 */
+	NodeTag		type;
+	RangeVar   *name;			/* name of partition to attach/detach/create */
+	char       *tablespacename;	/* table space to use, or NULL */
+	PartitionBoundSpec *bound;	/* FOR VALUES of creating subpartition*/
+	PartitionSpec *partspec;	/* PARTITION BY clause */
+}SubPartition;
 
 /****************************************************************************
  *	Nodes for a Query tree

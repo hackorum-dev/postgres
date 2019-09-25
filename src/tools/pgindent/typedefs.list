@@ -1698,6 +1698,7 @@ PartitionBoundInfo
 PartitionBoundInfoData
 PartitionBoundSpec
 PartitionCmd
+SubPartition
 PartitionDesc
 PartitionDescData
 PartitionDirectory

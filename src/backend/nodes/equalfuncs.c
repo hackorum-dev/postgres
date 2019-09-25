@@ -2872,6 +2872,7 @@ _equalPartitionSpec(const PartitionSpec *a, const PartitionSpec *b)
 {
 	COMPARE_STRING_FIELD(strategy);
 	COMPARE_NODE_FIELD(partParams);
+	COMPARE_NODE_FIELD(partdefs);
 	COMPARE_LOCATION_FIELD(location);
 
 	return true;
@@ -2907,6 +2908,21 @@ _equalPartitionCmd(const PartitionCmd *a, const PartitionCmd *b)
 {
 	COMPARE_NODE_FIELD(name);
 	COMPARE_NODE_FIELD(bound);
+
+	return true;
+}
+
+static bool
+_equalSubPartition(const SubPartition *a, const SubPartition *b)
+{
+	/*
+	 * TODO
+	 * It just supports the necessary options currently for POC
+	 */
+	COMPARE_NODE_FIELD(name);
+	COMPARE_NODE_FIELD(bound);
+	COMPARE_STRING_FIELD(tablespacename);
+	COMPARE_NODE_FIELD(partspec);
 
 	return true;
 }
@@ -3729,6 +3745,9 @@ equal(const void *a, const void *b)
 			break;
 		case T_PartitionCmd:
 			retval = _equalPartitionCmd(a, b);
+			break;
+		case T_SubPartition:
+			retval = _equalSubPartition(a, b);
 			break;
 
 		default:

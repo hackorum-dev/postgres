@@ -4563,6 +4563,7 @@ _copyPartitionSpec(const PartitionSpec *from)
 
 	COPY_STRING_FIELD(strategy);
 	COPY_NODE_FIELD(partParams);
+	COPY_NODE_FIELD(partdefs);
 	COPY_LOCATION_FIELD(location);
 
 	return newnode;
@@ -4604,6 +4605,23 @@ _copyPartitionCmd(const PartitionCmd *from)
 
 	COPY_NODE_FIELD(name);
 	COPY_NODE_FIELD(bound);
+
+	return newnode;
+}
+
+static SubPartition *
+_copySubPartition(const SubPartition *from)
+{
+	SubPartition *newnode = makeNode(SubPartition);
+	/*
+	 * TODO (Next Version)
+	 * It supports the necessary options in our current version
+	 * We should add something here for options support.
+	 */
+	COPY_NODE_FIELD(name);
+	COPY_NODE_FIELD(bound);
+	COPY_STRING_FIELD(tablespacename);
+	COPY_NODE_FIELD(partspec);
 
 	return newnode;
 }
@@ -5633,6 +5651,9 @@ copyObjectImpl(const void *from)
 			break;
 		case T_PartitionCmd:
 			retval = _copyPartitionCmd(from);
+			break;
+		case T_SubPartition:
+			retval = _copySubPartition(from);
 			break;
 
 			/*

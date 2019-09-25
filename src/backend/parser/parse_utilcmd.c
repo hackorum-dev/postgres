@@ -121,6 +121,10 @@ static void transformTableLikeClause(CreateStmtContext *cxt,
 									 TableLikeClause *table_like_clause);
 static void transformOfType(CreateStmtContext *cxt,
 							TypeName *ofTypename);
+static void transformSubPartitionDefinition(CreateStmtContext *cxt,
+											SubPartition *partition, RangeVar *parentrelation);
+static void transformSubPartitionList(CreateStmtContext *cxt, List *partlist, RangeVar *parentrelation);
+
 static CreateStatsStmt *generateClonedExtStatsStmt(RangeVar *heapRel,
 												   Oid heapRelid, Oid source_statsid);
 static List *get_collation(Oid collation, Oid actual_datatype);
@@ -261,6 +265,14 @@ transformCreateStmt(CreateStmt *stmt, const char *queryString)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 					 errmsg("cannot create partitioned table as inheritance child")));
+		/*
+		 * For handle the new syntax for create subpartition
+		 * during create parent partition table.
+		 */
+		if(stmt->partspec->partdefs)
+		{
+			transformSubPartitionList(&cxt, stmt->partspec->partdefs, cxt.relation);
+		}
 	}
 
 	/*
@@ -490,6 +502,66 @@ generateSerialExtraStmts(CreateStmtContext *cxt, ColumnDef *column,
 		*snamespace_p = snamespace;
 	if (sname_p)
 		*sname_p = sname;
+}
+
+/*
+ * transformSubPartitionList -
+ * Handle the subpartition list, and the function body is in transformCreateStmt
+ * function at first, and it comes to a independent function because of to
+ * implement recursion subpartition.
+ */
+static void
+transformSubPartitionList(CreateStmtContext *cxt, List *partlist, RangeVar *parentrelation)
+{
+	ListCell	*partielems = NULL;
+
+	//partlist = stmt->partspec->partdefs;
+	foreach(partielems, partlist)
+	{
+		Node *element = lfirst(partielems);
+		/*
+		* Set the subpartition create, into cxt.alist.
+		*/
+		transformSubPartitionDefinition(cxt, (SubPartition *) element, parentrelation);
+	}
+}
+
+/*
+ * transformSubPartitionDefinition -
+ * 		transform a partition create within CREATE TABLE
+ */
+static void
+transformSubPartitionDefinition(CreateStmtContext *cxt, SubPartition *partition, RangeVar *relation)
+{
+	CreateStmt *stmt = NULL;
+
+	stmt = makeNode(CreateStmt);
+	stmt->relation = partition->name;
+	stmt->relation->relpersistence = RELPERSISTENCE_PERMANENT;
+	stmt->tableElts = NULL;
+	stmt->inhRelations = list_make1(relation);
+	stmt->partbound = partition->bound;
+	stmt->partspec = partition->partspec;
+	stmt->ofTypename = NULL;
+	stmt->constraints = NIL;
+	/*
+	 * TODO
+	 * For table_access_method_clause
+	 */
+	stmt->accessMethod = NULL;
+	/*
+	 * TODO
+	 * For OptWith
+	 */
+	stmt->options = NULL;
+	stmt->oncommit = ONCOMMIT_NOOP;
+	stmt->tablespacename = partition->tablespacename;
+	cxt->alist = lappend(cxt->alist, stmt);
+
+	if(partition->partspec)
+	{
+		transformSubPartitionList(cxt, partition->partspec->partdefs, partition->name);
+	}
 }
 
 /*
