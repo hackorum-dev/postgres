@@ -210,6 +210,7 @@ StreamLogicalLog(void)
 	TimestampTz last_status = -1;
 	int			i;
 	PQExpBuffer query;
+	ino_t 		ino_store = 0;
 
 	output_written_lsn = InvalidXLogRecPtr;
 	output_fsync_lsn = InvalidXLogRecPtr;
@@ -340,8 +341,12 @@ StreamLogicalLog(void)
 
 			if (fstat(outfd, &statbuf) != 0)
 				pg_log_error("could not stat file \"%s\": %m", outfile);
-
 			output_isfile = S_ISREG(statbuf.st_mode) && !isatty(outfd);
+			/* 
+			 * store the st_ino when open the file, to use to judge if
+			 * the file has beed changed.
+			 */
+			ino_store = statbuf.st_ino;
 		}
 
 		r = PQgetCopyData(conn, &copybuf, 1);
@@ -402,6 +407,32 @@ StreamLogicalLog(void)
 			}
 
 			r = select(PQsocket(conn) + 1, &input_mask, NULL, NULL, timeoutptr);
+			if(output_isfile)
+			{
+				struct stat statbuf_check;
+
+				memset(&statbuf_check, 0, sizeof(struct stat));
+				if (stat(outfile, &statbuf_check) != 0)
+				{
+					pg_log_error("could not stat file \"%s\": %m", outfile);
+				}
+
+				/*
+				* If the old file is renamed and a new file is puted there, it will 
+				* reopen the new file.
+				*
+				* If the old file is removed and no new file appear, it will create 
+				* a new file and open it.  
+				*/
+				if(ino_store != statbuf_check.st_ino)
+				{
+					pg_log_info("stat of file \"%s\" has changed and will output to the new file",
+																	outfile);
+					output_reopen = true;
+					continue;
+				}
+			}
+
 			if (r == 0 || (r < 0 && errno == EINTR))
 			{
 				/*
