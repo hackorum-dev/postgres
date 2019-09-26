@@ -84,14 +84,6 @@ static void show_sort_keys(SortState *sortstate, List *ancestors,
 						   ExplainState *es);
 static void show_merge_append_keys(MergeAppendState *mstate, List *ancestors,
 								   ExplainState *es);
-static void show_agg_keys(AggState *astate, List *ancestors,
-						  ExplainState *es);
-static void show_grouping_sets(PlanState *planstate, Agg *agg,
-							   List *ancestors, ExplainState *es);
-static void show_grouping_set_keys(PlanState *planstate,
-								   Agg *aggnode, Sort *sortnode,
-								   List *context, bool useprefix,
-								   List *ancestors, ExplainState *es);
 static void show_group_keys(GroupState *gstate, List *ancestors,
 							ExplainState *es);
 static void show_sort_group_keys(PlanState *planstate, const char *qlabel,
@@ -103,6 +95,7 @@ static void show_sortorder_options(StringInfo buf, Node *sortexpr,
 static void show_tablesample(TableSampleClause *tsc, PlanState *planstate,
 							 List *ancestors, ExplainState *es);
 static void show_sort_info(SortState *sortstate, ExplainState *es);
+static void show_agg_info(AggState *aggstate, List *ancestors, ExplainState *es);
 static void show_hash_info(HashState *hashstate, ExplainState *es);
 static void show_tidbitmap_info(BitmapHeapScanState *planstate,
 								ExplainState *es);
@@ -1872,12 +1865,12 @@ ExplainNode(PlanState *planstate, List *ancestors,
 										   planstate, es);
 			break;
 		case T_Agg:
-			show_agg_keys(castNode(AggState, planstate), ancestors, es);
 			show_upper_qual(plan->qual, planstate->qual, "Filter", planstate,
 							ancestors, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
+			show_agg_info((AggState *) planstate, ancestors, es);
 			break;
 		case T_Group:
 			show_group_keys(castNode(GroupState, planstate), ancestors, es);
@@ -2431,138 +2424,6 @@ show_merge_append_keys(MergeAppendState *mstate, List *ancestors,
 }
 
 /*
- * Show the grouping keys for an Agg node.
- */
-static void
-show_agg_keys(AggState *astate, List *ancestors,
-			  ExplainState *es)
-{
-	Agg		   *plan = (Agg *) astate->ss.ps.plan;
-
-	if (plan->numCols > 0 || plan->groupingSets)
-	{
-		/* The key columns refer to the tlist of the child plan */
-		ancestors = lcons(astate, ancestors);
-
-		if (plan->groupingSets)
-			show_grouping_sets(outerPlanState(astate), plan, ancestors, es);
-		else
-			show_sort_group_keys(outerPlanState(astate), "Group Key",
-								 plan->numCols, plan->grpColIdx,
-								 NULL, NULL, NULL,
-								 ancestors, es);
-
-		ancestors = list_delete_first(ancestors);
-	}
-}
-
-static void
-show_grouping_sets(PlanState *planstate, Agg *agg,
-				   List *ancestors, ExplainState *es)
-{
-	List	   *context;
-	bool		useprefix;
-	ListCell   *lc;
-
-	/* Set up deparsing context */
-	context = set_deparse_context_planstate(es->deparse_cxt,
-											(Node *) planstate,
-											ancestors);
-	useprefix = (list_length(es->rtable) > 1 || es->verbose);
-
-	ExplainOpenGroup("Grouping Sets", "Grouping Sets", false, es);
-
-	show_grouping_set_keys(planstate, agg, NULL,
-						   context, useprefix, ancestors, es);
-
-	foreach(lc, agg->chain)
-	{
-		Agg		   *aggnode = lfirst(lc);
-		Sort	   *sortnode = (Sort *) aggnode->plan.lefttree;
-
-		show_grouping_set_keys(planstate, aggnode, sortnode,
-							   context, useprefix, ancestors, es);
-	}
-
-	ExplainCloseGroup("Grouping Sets", "Grouping Sets", false, es);
-}
-
-static void
-show_grouping_set_keys(PlanState *planstate,
-					   Agg *aggnode, Sort *sortnode,
-					   List *context, bool useprefix,
-					   List *ancestors, ExplainState *es)
-{
-	Plan	   *plan = planstate->plan;
-	char	   *exprstr;
-	ListCell   *lc;
-	List	   *gsets = aggnode->groupingSets;
-	AttrNumber *keycols = aggnode->grpColIdx;
-	const char *keyname;
-	const char *keysetname;
-
-	if (aggnode->aggstrategy == AGG_HASHED || aggnode->aggstrategy == AGG_MIXED)
-	{
-		keyname = "Hash Key";
-		keysetname = "Hash Keys";
-	}
-	else
-	{
-		keyname = "Group Key";
-		keysetname = "Group Keys";
-	}
-
-	ExplainOpenGroup("Grouping Set", NULL, true, es);
-
-	if (sortnode)
-	{
-		show_sort_group_keys(planstate, "Sort Key",
-							 sortnode->numCols, sortnode->sortColIdx,
-							 sortnode->sortOperators, sortnode->collations,
-							 sortnode->nullsFirst,
-							 ancestors, es);
-		if (es->format == EXPLAIN_FORMAT_TEXT)
-			es->indent++;
-	}
-
-	ExplainOpenGroup(keysetname, keysetname, false, es);
-
-	foreach(lc, gsets)
-	{
-		List	   *result = NIL;
-		ListCell   *lc2;
-
-		foreach(lc2, (List *) lfirst(lc))
-		{
-			Index		i = lfirst_int(lc2);
-			AttrNumber	keyresno = keycols[i];
-			TargetEntry *target = get_tle_by_resno(plan->targetlist,
-												   keyresno);
-
-			if (!target)
-				elog(ERROR, "no tlist entry for key %d", keyresno);
-			/* Deparse the expression, showing any top-level cast */
-			exprstr = deparse_expression((Node *) target->expr, context,
-										 useprefix, true);
-
-			result = lappend(result, exprstr);
-		}
-
-		if (!result && es->format == EXPLAIN_FORMAT_TEXT)
-			ExplainPropertyText(keyname, "()", es);
-		else
-			ExplainPropertyListNested(keyname, result, es);
-	}
-
-	ExplainCloseGroup(keysetname, keysetname, false, es);
-
-	if (sortnode && es->format == EXPLAIN_FORMAT_TEXT)
-		es->indent--;
-
-	ExplainCloseGroup("Grouping Set", NULL, true, es);
-}
-
-/*
  * Show the grouping keys for a Group node.
  */
 static void
@@ -2843,6 +2704,383 @@ show_sort_info(SortState *sortstate, ExplainState *es)
 		if (opened_group)
 			ExplainCloseGroup("Workers", "Workers", false, es);
 	}
+}
+
+/*
+ * Generate an expression like string describing the computations for a
+ * phase's transition / combiner function.
+ */
+static char *
+exprstr_for_agg_phase(AggState *aggstate, AggStatePerPhase perphase, List *ancestors, ExplainState *es)
+{
+	PlanState  *planstate = &aggstate->ss.ps;
+	StringInfoData transbuf;
+	List	   *context;
+	bool		useprefix;
+	bool		isCombine = DO_AGGSPLIT_COMBINE(aggstate->aggsplit);
+	ListCell   *lc;
+
+	initStringInfo(&transbuf);
+
+	/* Set up deparsing context */
+	context = set_deparse_context_planstate(es->deparse_cxt,
+											(Node *) planstate,
+											ancestors);
+	useprefix = list_length(es->rtable) > 1;
+
+	for (int transno = 0; transno < aggstate->numtrans; transno++)
+	{
+		AggStatePerTrans pertrans = &aggstate->pertrans[transno];
+		int count = 0;
+		bool first;
+
+		if (perphase->uses_sorting)
+			count += Max(perphase->numsets, 1);
+
+		if (perphase->uses_hashing)
+			count += aggstate->num_hashes;
+
+		if (transno != 0)
+			appendStringInfoString(&transbuf, ", ");
+
+		if (pertrans->aggref->aggfilter && !isCombine)
+		{
+			appendStringInfo(&transbuf, "FILTER (%s) && ",
+							 deparse_expression((Node *) pertrans->aggref->aggfilter,
+												context, useprefix, false));
+		}
+
+		/*
+		 * XXX: should we instead somehow encode this as separate elements in
+		 * non-text mode?
+		 */
+		/* simplify for text output */
+		if (count > 1 || es->format != EXPLAIN_FORMAT_TEXT)
+			appendStringInfo(&transbuf, "%d * ", count);
+
+		appendStringInfo(&transbuf, "%s(TRANS",
+						 get_func_name(pertrans->transfn_oid));
+
+		if (isCombine && pertrans->deserialfn_oid)
+		{
+			first = true;
+			appendStringInfo(&transbuf, ", %s(",
+							 get_func_name(pertrans->deserialfn_oid));
+		}
+		else
+			first = false;
+
+		foreach(lc, pertrans->aggref->args)
+		{
+			TargetEntry *tle = lfirst(lc);
+
+			if (!first)
+				appendStringInfoString(&transbuf, ", ");
+
+			first = false;
+			appendStringInfo(&transbuf, "%s",
+							 deparse_expression((Node *) tle->expr,
+												context, useprefix, false));
+		}
+
+		if (isCombine && pertrans->deserialfn_oid)
+			appendStringInfoString(&transbuf, ")");
+		appendStringInfoString(&transbuf, ")");
+	}
+
+	return transbuf.data;
+}
+
+static void
+show_agg_group_info(AggState *aggstate, AttrNumber *keycols, int length,
+					ExprState *expr, const char *label,
+					List *context, List *ancestors, ExplainState *es)
+{
+	bool useprefix = (list_length(es->rtable) > 1 || es->verbose);
+	List	   *result = NIL;
+
+	for (int colno = 0; colno < length; colno++)
+	{
+		char *exprstr;
+		AttrNumber	keyresno = keycols[colno];
+		TargetEntry *target = get_tle_by_resno(outerPlanState(aggstate)->plan->targetlist,
+											   keyresno);
+
+		if (!target)
+			elog(ERROR, "no tlist entry for key %d", keyresno);
+		/* Deparse the expression, showing any top-level cast */
+		exprstr = deparse_expression((Node *) target->expr, context,
+									 useprefix, true);
+
+		result = lappend(result, exprstr);
+	}
+
+	if (es->format == EXPLAIN_FORMAT_TEXT)
+	{
+		ListCell *lc;
+		bool first = true;
+
+		appendStringInfoSpaces(es->str, es->indent * 2);
+
+		if (result != NIL)
+		{
+			appendStringInfo(es->str, "%s: ", label);
+
+			foreach(lc, result)
+			{
+				if (!first)
+					appendStringInfoString(es->str, ", ");
+				appendStringInfoString(es->str, (const char *) lfirst(lc));
+				first = false;
+			}
+		}
+		else
+			appendStringInfo(es->str, "%s", label);
+
+		if (expr && es->jit_details)
+		{
+			appendStringInfoString(es->str, "; ");
+			show_jit_expr_details(expr, es);
+		}
+
+		appendStringInfoChar(es->str, '\n');
+	}
+	else
+	{
+		ExplainOpenGroup("Group", NULL, true, es);
+		ExplainPropertyText("Method", label, es);
+		ExplainPropertyList("Key", result, es);
+		ExplainCloseGroup("Group", NULL, true, es);
+	}
+
+}
+
+/*
+ * Show information about Agg ndoes.
+ */
+static void
+show_agg_info(AggState *aggstate, List *ancestors, ExplainState *es)
+{
+	Agg *plan = (Agg *) aggstate->ss.ps.plan;
+
+	if (!plan->groupingSets &&
+		(!es->verbose && !es->jit_details && es->format == EXPLAIN_FORMAT_TEXT))
+	{
+		/* The key columns refer to the tlist of the child plan */
+		ancestors = lcons(aggstate, ancestors);
+		show_sort_group_keys(outerPlanState(aggstate), "Group Key",
+							 plan->numCols, plan->grpColIdx,
+							 NULL, NULL, NULL,
+							 ancestors, es);
+		ancestors = list_delete_first(ancestors);
+
+		return;
+	}
+
+	ExplainOpenGroup("Phases", "Phases", false, es);
+
+	for (int phaseno = aggstate->numphases - 1; phaseno >= 0; phaseno--)
+	{
+		AggStatePerPhase perphase = &aggstate->phases[phaseno];
+		Sort *sortnode = perphase->sortnode;
+		char *exprstr;
+		bool has_zero_length = false;
+		List	   *context;
+		List	   *strategy = NIL;
+		char	   *plain_strategy;
+
+		if (!perphase->evaltrans)
+			continue;
+
+		for (int i = 0; i < perphase->numsets; i++)
+		{
+			if (perphase->gset_lengths[i] == 0)
+				has_zero_length = true;
+		}
+
+		switch (perphase->aggstrategy)
+		{
+			case AGG_PLAIN:
+				strategy = lappend(strategy, "All");
+
+				if (aggstate->aggstrategy == AGG_MIXED && phaseno == 1)
+					strategy = lappend(strategy, "Hash");
+				plain_strategy = "All Group";
+				break;
+			case AGG_SORTED:
+				if (!perphase->sortnode)
+				{
+					strategy = lappend(strategy, "Sorted Input");
+					plain_strategy = "Sorted Input Group";
+				}
+				else
+				{
+					strategy = lappend(strategy, "Sort");
+					plain_strategy = "Sort Group";
+				}
+
+				if (has_zero_length)
+					strategy = lappend(strategy, "All");
+
+				if (aggstate->aggstrategy == AGG_MIXED && phaseno == 1)
+					strategy = lappend(strategy, "Hash");
+
+				break;
+			case AGG_HASHED:
+				strategy = lappend(strategy, "Hash");
+				plain_strategy = "Hash Group";
+				break;
+			case AGG_MIXED:
+				if (has_zero_length)
+					strategy = lappend(strategy, "All");
+				strategy = lappend(strategy, "Hash");
+				plain_strategy = "???";
+				break;
+		}
+
+		exprstr = exprstr_for_agg_phase(aggstate, perphase, ancestors, es);
+
+		ExplainOpenGroup("Phase", NULL, true, es);
+
+		/* The key columns refer to the tlist of the child plan */
+		ancestors = lcons(aggstate, ancestors);
+		context = set_deparse_context_planstate(es->deparse_cxt,
+												(Node *) outerPlanState(aggstate),
+												ancestors);
+
+		if (es->format == EXPLAIN_FORMAT_TEXT)
+		{
+			ListCell *lc;
+			bool first = true;
+
+			/* output phase data */
+			appendStringInfoSpaces(es->str, es->indent * 2);
+			appendStringInfo(es->str, "Phase %d using strategy \"",
+							 phaseno);
+
+			foreach(lc, strategy)
+			{
+				if (!first)
+					appendStringInfoString(es->str, " & ");
+				first = false;
+				appendStringInfoString(es->str, (const char *) lfirst(lc));
+			}
+			appendStringInfoString(es->str, "\":\n");
+			es->indent++;
+		}
+		else
+		{
+			ExplainPropertyInteger("Phase-Number", NULL, phaseno, es);
+			ExplainPropertyList("Strategy", strategy, es);
+		}
+
+		if (sortnode)
+		{
+			show_sort_group_keys(outerPlanState(aggstate), "Sort Key",
+								 sortnode->numCols, sortnode->sortColIdx,
+								 sortnode->sortOperators, sortnode->collations,
+								 sortnode->nullsFirst,
+								 ancestors, es);
+		}
+
+		if (es->format == EXPLAIN_FORMAT_TEXT)
+		{
+			if (aggstate->numtrans > 0)
+			{
+				appendStringInfoSpaces(es->str, es->indent * 2);
+				appendStringInfo(es->str, "Transition Function: %s",
+								 exprstr);
+				if (es->jit_details)
+				{
+					appendStringInfoString(es->str, "; ");
+					show_jit_expr_details(perphase->evaltrans, es);
+				}
+				appendStringInfoString(es->str, "\n");
+			}
+		}
+		else
+		{
+			if (es->jit_details)
+			{
+				ExplainOpenGroup("Transition Function", "Transition Function", true, es);
+				ExplainPropertyText("Expr", exprstr, es);
+				if (es->jit_details && aggstate->numtrans > 0)
+					show_jit_expr_details(perphase->evaltrans, es);
+				ExplainCloseGroup("Transition Function", "Transition Function", true, es);
+			}
+			else
+				ExplainPropertyText("Transition Function", exprstr, es);
+		}
+
+		ExplainOpenGroup("Groups", "Groups", false, es);
+
+		/* output data about each group */
+
+		if (perphase->uses_sorting)
+		{
+			if (perphase->numsets == 0)
+			{
+				int			length = perphase->aggnode->numCols;
+				ExprState  *expr = NULL;
+
+				if (length > 0)
+					expr = perphase->eqfunctions[perphase->aggnode->numCols - 1];
+
+				show_agg_group_info(aggstate, perphase->aggnode->grpColIdx,
+									length, expr, plain_strategy, context,
+									ancestors, es);
+			}
+
+			for (int sortno = 0; sortno < perphase->numsets; sortno++)
+			{
+				int			length = perphase->gset_lengths[sortno];
+				ExprState  *expr = NULL;
+				char	   *sort_strat;
+
+				if (length == 0)
+					sort_strat = "All Group";
+				else if (sortnode)
+				{
+					sort_strat = "Sorted Group";
+					expr = perphase->eqfunctions[length - 1];
+				}
+				else
+				{
+					sort_strat = "Sorted Input Group";
+					expr = perphase->eqfunctions[length - 1];
+				}
+
+				show_agg_group_info(aggstate, perphase->aggnode->grpColIdx, length,
+									expr, sort_strat, context, ancestors, es);
+			}
+		}
+
+		if (perphase->uses_hashing)
+		{
+			for (int hashno = 0; hashno < aggstate->num_hashes; hashno++)
+			{
+				AggStatePerHash perhash = &aggstate->perhash[hashno];
+
+				show_agg_group_info(aggstate, perhash->hashGrpColIdxInput,
+									perhash->numCols,
+									perhash->hashtable->tab_eq_func,
+									"Hash Group", context, ancestors, es);
+			}
+
+			ancestors = list_delete_first(ancestors);
+		}
+
+		ExplainCloseGroup("Groups", "Groups", false, es);
+
+		if (es->format == EXPLAIN_FORMAT_TEXT)
+			es->indent--;
+
+		/* TODO: should really show memory usage here */
+
+		ExplainCloseGroup("Phase", NULL, true, es);
+	}
+
+	ExplainCloseGroup("Phases", "Phases", false, es);
 }
 
 /*

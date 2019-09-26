@@ -134,12 +134,16 @@ SELECT count(*) FROM
 ---------------------------------------------------------
  Aggregate
    Project: count(*)
+   Phase 1 using strategy "All":
+     Transition Function: int8inc(TRANS)
+     All Group
    ->  HashAggregate
          Project: tenk1.two, tenk1.four, tenk1.two
-         Group Key: tenk1.two, tenk1.four, tenk1.two
+         Phase 0 using strategy "Hash":
+           Hash Group: tenk1.two, tenk1.four, tenk1.two
          ->  Seq Scan on public.tenk1
                Project: tenk1.two, tenk1.four, tenk1.two
-(7 rows)
+(11 rows)
 
 SELECT count(*) FROM
   (SELECT DISTINCT two, four, two FROM tenk1) ss;

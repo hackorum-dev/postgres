@@ -369,12 +369,13 @@ select g as alias1, g as alias2
                    QUERY PLAN                   
 ------------------------------------------------
  GroupAggregate
-   Group Key: g, g
-   Group Key: g
+   Phase 1 using strategy "Sorted Input":
+     Sorted Input Group: g, g
+     Sorted Input Group: g
    ->  Sort
          Sort Key: g
          ->  Function Scan on generate_series g
-(6 rows)
+(7 rows)
 
 select g as alias1, g as alias2
   from generate_series(1,3) g
@@ -640,15 +641,16 @@ select a, b, sum(v.x)
 -- Test reordering of grouping sets
 explain (costs off)
 select * from gstest1 group by grouping sets((a,b,v),(v)) order by v,b,a;
-                                  QUERY PLAN                                  
-------------------------------------------------------------------------------
+                                     QUERY PLAN                                     
+------------------------------------------------------------------------------------
  GroupAggregate
-   Group Key: "*VALUES*".column3, "*VALUES*".column2, "*VALUES*".column1
-   Group Key: "*VALUES*".column3
+   Phase 1 using strategy "Sorted Input":
+     Sorted Input Group: "*VALUES*".column3, "*VALUES*".column2, "*VALUES*".column1
+     Sorted Input Group: "*VALUES*".column3
    ->  Sort
          Sort Key: "*VALUES*".column3, "*VALUES*".column2, "*VALUES*".column1
          ->  Values Scan on "*VALUES*"
-(6 rows)
+(7 rows)
 
 -- Agg level check. This query should error out.
 select (select grouping(a,b) from gstest2) from gstest2 group by a,b;
@@ -720,16 +722,18 @@ select a,count(*) from gstest2 group by rollup(a) having a is distinct from 1 or
 
 explain (costs off)
   select a,count(*) from gstest2 group by rollup(a) having a is distinct from 1 order by a;
-            QUERY PLAN            
-----------------------------------
+                   QUERY PLAN                   
+------------------------------------------------
  GroupAggregate
-   Group Key: a
-   Group Key: ()
    Filter: (a IS DISTINCT FROM 1)
+   Phase 1 using strategy "Sorted Input & All":
+     Transition Function: 2 * int8inc(TRANS)
+     Sorted Input Group: a
+     All Group
    ->  Sort
          Sort Key: a
          ->  Seq Scan on gstest2
-(7 rows)
+(9 rows)
 
 select v.c, (select count(*) from gstest2 group by () having v.c)
   from (values (false),(true)) v(c) order by v.c;
@@ -749,12 +753,14 @@ explain (costs off)
    ->  Values Scan on "*VALUES*"
          SubPlan 1
            ->  Aggregate
-                 Group Key: ()
                  Filter: "*VALUES*".column1
+                 Phase 1 using strategy "All":
+                   Transition Function: int8inc(TRANS)
+                   All Group
                  ->  Result
                        One-Time Filter: "*VALUES*".column1
                        ->  Seq Scan on gstest2
-(10 rows)
+(12 rows)
 
 -- HAVING with GROUPING queries
 select ten, grouping(ten) from onek
@@ -968,15 +974,17 @@ select a, b, grouping(a,b), sum(v), count(*), max(v)
 
 explain (costs off) select a, b, grouping(a,b), sum(v), count(*), max(v)
   from gstest1 group by grouping sets ((a),(b)) order by 3,1,2;
-                                               QUERY PLAN                                               
---------------------------------------------------------------------------------------------------------
+                                                              QUERY PLAN                                                               
+---------------------------------------------------------------------------------------------------------------------------------------
  Sort
    Sort Key: (GROUPING("*VALUES*".column1, "*VALUES*".column2)), "*VALUES*".column1, "*VALUES*".column2
    ->  HashAggregate
-         Hash Key: "*VALUES*".column1
-         Hash Key: "*VALUES*".column2
+         Phase 0 using strategy "Hash":
+           Transition Function: 2 * int4_sum(TRANS, "*VALUES*".column3), 2 * int8inc(TRANS), 2 * int4larger(TRANS, "*VALUES*".column3)
+           Hash Group: "*VALUES*".column1
+           Hash Group: "*VALUES*".column2
          ->  Values Scan on "*VALUES*"
-(6 rows)
+(8 rows)
 
 select a, b, grouping(a,b), sum(v), count(*), max(v)
   from gstest1 group by cube(a,b) order by 3,1,2;
@@ -1002,34 +1010,40 @@ select a, b, grouping(a,b), sum(v), count(*), max(v)
 
 explain (costs off) select a, b, grouping(a,b), sum(v), count(*), max(v)
   from gstest1 group by cube(a,b) order by 3,1,2;
-                                               QUERY PLAN                                               
---------------------------------------------------------------------------------------------------------
+                                                              QUERY PLAN                                                               
+---------------------------------------------------------------------------------------------------------------------------------------
  Sort
    Sort Key: (GROUPING("*VALUES*".column1, "*VALUES*".column2)), "*VALUES*".column1, "*VALUES*".column2
    ->  MixedAggregate
-         Hash Key: "*VALUES*".column1, "*VALUES*".column2
-         Hash Key: "*VALUES*".column1
-         Hash Key: "*VALUES*".column2
-         Group Key: ()
+         Phase 1 using strategy "All & Hash":
+           Transition Function: 4 * int4_sum(TRANS, "*VALUES*".column3), 4 * int8inc(TRANS), 4 * int4larger(TRANS, "*VALUES*".column3)
+           All Group
+           Hash Group: "*VALUES*".column1, "*VALUES*".column2
+           Hash Group: "*VALUES*".column1
+           Hash Group: "*VALUES*".column2
          ->  Values Scan on "*VALUES*"
-(8 rows)
+(10 rows)
 
 -- shouldn't try and hash
 explain (costs off)
   select a, b, grouping(a,b), array_agg(v order by v)
     from gstest1 group by cube(a,b);
-                        QUERY PLAN                        
-----------------------------------------------------------
+                                QUERY PLAN                                 
+---------------------------------------------------------------------------
  GroupAggregate
-   Group Key: "*VALUES*".column1, "*VALUES*".column2
-   Group Key: "*VALUES*".column1
-   Group Key: ()
-   Sort Key: "*VALUES*".column2
-     Group Key: "*VALUES*".column2
+   Phase 2 using strategy "Sort":
+     Sort Key: "*VALUES*".column2
+     Transition Function: array_agg_transfn(TRANS, "*VALUES*".column3)
+     Sorted Group: "*VALUES*".column2
+   Phase 1 using strategy "Sorted Input & All":
+     Transition Function: 3 * array_agg_transfn(TRANS, "*VALUES*".column3)
+     Sorted Input Group: "*VALUES*".column1, "*VALUES*".column2
+     Sorted Input Group: "*VALUES*".column1
+     All Group
    ->  Sort
          Sort Key: "*VALUES*".column1, "*VALUES*".column2
          ->  Values Scan on "*VALUES*"
-(9 rows)
+(13 rows)
 
 -- unsortable cases
 select unsortable_col, count(*)
@@ -1065,17 +1079,19 @@ explain (costs off)
          count(*), sum(v)
     from gstest4 group by grouping sets ((unhashable_col),(unsortable_col))
    order by 3,5;
-                            QUERY PLAN                            
-------------------------------------------------------------------
+                                QUERY PLAN                                 
+---------------------------------------------------------------------------
  Sort
    Sort Key: (GROUPING(unhashable_col, unsortable_col)), (sum(v))
    ->  MixedAggregate
-         Hash Key: unsortable_col
-         Group Key: unhashable_col
+         Phase 1 using strategy "Sorted Input & Hash":
+           Transition Function: 2 * int8inc(TRANS), 2 * int4_sum(TRANS, v)
+           Sorted Input Group: unhashable_col
+           Hash Group: unsortable_col
          ->  Sort
                Sort Key: unhashable_col
                ->  Seq Scan on gstest4
-(8 rows)
+(10 rows)
 
 select unhashable_col, unsortable_col,
        grouping(unhashable_col, unsortable_col),
@@ -1108,17 +1124,19 @@ explain (costs off)
          count(*), sum(v)
     from gstest4 group by grouping sets ((v,unhashable_col),(v,unsortable_col))
    order by 3,5;
-                            QUERY PLAN                            
-------------------------------------------------------------------
+                                QUERY PLAN                                 
+---------------------------------------------------------------------------
  Sort
    Sort Key: (GROUPING(unhashable_col, unsortable_col)), (sum(v))
    ->  MixedAggregate
-         Hash Key: v, unsortable_col
-         Group Key: v, unhashable_col
+         Phase 1 using strategy "Sorted Input & Hash":
+           Transition Function: 2 * int8inc(TRANS), 2 * int4_sum(TRANS, v)
+           Sorted Input Group: v, unhashable_col
+           Hash Group: v, unsortable_col
          ->  Sort
                Sort Key: v, unhashable_col
                ->  Seq Scan on gstest4
-(8 rows)
+(10 rows)
 
 -- empty input: first is 0 rows, second 1, third 3 etc.
 select a, b, sum(v), count(*) from gstest_empty group by grouping sets ((a,b),a);
@@ -1128,13 +1146,15 @@ select a, b, sum(v), count(*) from gstest_empty group by grouping sets ((a,b),a)
 
 explain (costs off)
   select a, b, sum(v), count(*) from gstest_empty group by grouping sets ((a,b),a);
-           QUERY PLAN           
---------------------------------
+                             QUERY PLAN                              
+---------------------------------------------------------------------
  HashAggregate
-   Hash Key: a, b
-   Hash Key: a
+   Phase 0 using strategy "Hash":
+     Transition Function: 2 * int4_sum(TRANS, v), 2 * int8inc(TRANS)
+     Hash Group: a, b
+     Hash Group: a
    ->  Seq Scan on gstest_empty
-(4 rows)
+(6 rows)
 
 select a, b, sum(v), count(*) from gstest_empty group by grouping sets ((a,b),());
  a | b | sum | count 
@@ -1152,15 +1172,17 @@ select a, b, sum(v), count(*) from gstest_empty group by grouping sets ((a,b),()
 
 explain (costs off)
   select a, b, sum(v), count(*) from gstest_empty group by grouping sets ((a,b),(),(),());
-           QUERY PLAN           
---------------------------------
+                             QUERY PLAN                              
+---------------------------------------------------------------------
  MixedAggregate
-   Hash Key: a, b
-   Group Key: ()
-   Group Key: ()
-   Group Key: ()
+   Phase 1 using strategy "All & Hash":
+     Transition Function: 4 * int4_sum(TRANS, v), 4 * int8inc(TRANS)
+     All Group
+     All Group
+     All Group
+     Hash Group: a, b
    ->  Seq Scan on gstest_empty
-(6 rows)
+(8 rows)
 
 select sum(v), count(*) from gstest_empty group by grouping sets ((),(),());
  sum | count 
@@ -1172,14 +1194,16 @@ select sum(v), count(*) from gstest_empty group by grouping sets ((),(),());
 
 explain (costs off)
   select sum(v), count(*) from gstest_empty group by grouping sets ((),(),());
-           QUERY PLAN           
---------------------------------
+                             QUERY PLAN                              
+---------------------------------------------------------------------
  Aggregate
-   Group Key: ()
-   Group Key: ()
-   Group Key: ()
+   Phase 1 using strategy "All":
+     Transition Function: 3 * int4_sum(TRANS, v), 3 * int8inc(TRANS)
+     All Group
+     All Group
+     All Group
    ->  Seq Scan on gstest_empty
-(5 rows)
+(7 rows)
 
 -- check that functionally dependent cols are not nulled
 select a, d, grouping(a,b,c)
@@ -1197,13 +1221,14 @@ explain (costs off)
   select a, d, grouping(a,b,c)
     from gstest3
    group by grouping sets ((a,b), (a,c));
-        QUERY PLAN         
----------------------------
+            QUERY PLAN            
+----------------------------------
  HashAggregate
-   Hash Key: a, b
-   Hash Key: a, c
+   Phase 0 using strategy "Hash":
+     Hash Group: a, b
+     Hash Group: a, c
    ->  Seq Scan on gstest3
-(4 rows)
+(5 rows)
 
 -- simple rescan tests
 select a, b, sum(v.x)
@@ -1224,17 +1249,19 @@ explain (costs off)
     from (values (1),(2)) v(x), gstest_data(v.x)
    group by grouping sets (a,b)
    order by 3, 1, 2;
-                             QUERY PLAN                              
----------------------------------------------------------------------
+                               QUERY PLAN                               
+------------------------------------------------------------------------
  Sort
    Sort Key: (sum("*VALUES*".column1)), gstest_data.a, gstest_data.b
    ->  HashAggregate
-         Hash Key: gstest_data.a
-         Hash Key: gstest_data.b
+         Phase 0 using strategy "Hash":
+           Transition Function: 2 * int4_sum(TRANS, "*VALUES*".column1)
+           Hash Group: gstest_data.a
+           Hash Group: gstest_data.b
          ->  Nested Loop
                ->  Values Scan on "*VALUES*"
                ->  Function Scan on gstest_data
-(8 rows)
+(10 rows)
 
 select *
   from (values (1),(2)) v(x),
@@ -1280,16 +1307,18 @@ select a, b, grouping(a,b), sum(v), count(*), max(v)
 explain (costs off)
   select a, b, grouping(a,b), sum(v), count(*), max(v)
     from gstest1 group by grouping sets ((a,b),(a+1,b+1),(a+2,b+2)) order by 3,6;
-                                        QUERY PLAN                                         
--------------------------------------------------------------------------------------------
+                                                              QUERY PLAN                                                               
+---------------------------------------------------------------------------------------------------------------------------------------
  Sort
    Sort Key: (GROUPING("*VALUES*".column1, "*VALUES*".column2)), (max("*VALUES*".column3))
    ->  HashAggregate
-         Hash Key: "*VALUES*".column1, "*VALUES*".column2
-         Hash Key: ("*VALUES*".column1 + 1), ("*VALUES*".column2 + 1)
-         Hash Key: ("*VALUES*".column1 + 2), ("*VALUES*".column2 + 2)
+         Phase 0 using strategy "Hash":
+           Transition Function: 3 * int4_sum(TRANS, "*VALUES*".column3), 3 * int8inc(TRANS), 3 * int4larger(TRANS, "*VALUES*".column3)
+           Hash Group: "*VALUES*".column1, "*VALUES*".column2
+           Hash Group: ("*VALUES*".column1 + 1), ("*VALUES*".column2 + 1)
+           Hash Group: ("*VALUES*".column1 + 2), ("*VALUES*".column2 + 2)
          ->  Values Scan on "*VALUES*"
-(7 rows)
+(9 rows)
 
 select a, b, sum(c), sum(sum(c)) over (order by a,b) as rsum
   from gstest2 group by cube (a,b) order by rsum, a, b;
@@ -1308,20 +1337,22 @@ select a, b, sum(c), sum(sum(c)) over (order by a,b) as rsum
 explain (costs off)
   select a, b, sum(c), sum(sum(c)) over (order by a,b) as rsum
     from gstest2 group by cube (a,b) order by rsum, a, b;
-                 QUERY PLAN                  
----------------------------------------------
+                            QUERY PLAN                             
+-------------------------------------------------------------------
  Sort
    Sort Key: (sum((sum(c))) OVER (?)), a, b
    ->  WindowAgg
          ->  Sort
                Sort Key: a, b
                ->  MixedAggregate
-                     Hash Key: a, b
-                     Hash Key: a
-                     Hash Key: b
-                     Group Key: ()
+                     Phase 1 using strategy "All & Hash":
+                       Transition Function: 4 * int4_sum(TRANS, c)
+                       All Group
+                       Hash Group: a, b
+                       Hash Group: a
+                       Hash Group: b
                      ->  Seq Scan on gstest2
-(11 rows)
+(13 rows)
 
 select a, b, sum(v.x)
   from (values (1),(2)) v(x), gstest_data(v.x)
@@ -1346,19 +1377,21 @@ explain (costs off)
   select a, b, sum(v.x)
     from (values (1),(2)) v(x), gstest_data(v.x)
    group by cube (a,b) order by a,b;
-                   QUERY PLAN                   
-------------------------------------------------
+                               QUERY PLAN                               
+------------------------------------------------------------------------
  Sort
    Sort Key: gstest_data.a, gstest_data.b
    ->  MixedAggregate
-         Hash Key: gstest_data.a, gstest_data.b
-         Hash Key: gstest_data.a
-         Hash Key: gstest_data.b
-         Group Key: ()
+         Phase 1 using strategy "All & Hash":
+           Transition Function: 4 * int4_sum(TRANS, "*VALUES*".column1)
+           All Group
+           Hash Group: gstest_data.a, gstest_data.b
+           Hash Group: gstest_data.a
+           Hash Group: gstest_data.b
          ->  Nested Loop
                ->  Values Scan on "*VALUES*"
                ->  Function Scan on gstest_data
-(10 rows)
+(12 rows)
 
 -- Verify that we correctly handle the child node returning a
 -- non-minimal slot, which happens if the input is pre-sorted,
@@ -1366,19 +1399,23 @@ explain (costs off)
 BEGIN;
 SET LOCAL enable_hashagg = false;
 EXPLAIN (COSTS OFF) SELECT a, b, count(*), max(a), max(b) FROM gstest3 GROUP BY GROUPING SETS(a, b,()) ORDER BY a, b;
-              QUERY PLAN               
----------------------------------------
+                                              QUERY PLAN                                               
+-------------------------------------------------------------------------------------------------------
  Sort
    Sort Key: a, b
    ->  GroupAggregate
-         Group Key: a
-         Group Key: ()
-         Sort Key: b
-           Group Key: b
+         Phase 2 using strategy "Sort":
+           Sort Key: b
+           Transition Function: int8inc(TRANS), int4larger(TRANS, a), int4larger(TRANS, b)
+           Sorted Group: b
+         Phase 1 using strategy "Sorted Input & All":
+           Transition Function: 2 * int8inc(TRANS), 2 * int4larger(TRANS, a), 2 * int4larger(TRANS, b)
+           Sorted Input Group: a
+           All Group
          ->  Sort
                Sort Key: a
                ->  Seq Scan on gstest3
-(10 rows)
+(14 rows)
 
 SELECT a, b, count(*), max(a), max(b) FROM gstest3 GROUP BY GROUPING SETS(a, b,()) ORDER BY a, b;
  a | b | count | max | max 
@@ -1392,17 +1429,21 @@ SELECT a, b, count(*), max(a), max(b) FROM gstest3 GROUP BY GROUPING SETS(a, b,(
 
 SET LOCAL enable_seqscan = false;
 EXPLAIN (COSTS OFF) SELECT a, b, count(*), max(a), max(b) FROM gstest3 GROUP BY GROUPING SETS(a, b,()) ORDER BY a, b;
-                      QUERY PLAN                      
-------------------------------------------------------
+                                              QUERY PLAN                                               
+-------------------------------------------------------------------------------------------------------
  Sort
    Sort Key: a, b
    ->  GroupAggregate
-         Group Key: a
-         Group Key: ()
-         Sort Key: b
-           Group Key: b
+         Phase 2 using strategy "Sort":
+           Sort Key: b
+           Transition Function: int8inc(TRANS), int4larger(TRANS, a), int4larger(TRANS, b)
+           Sorted Group: b
+         Phase 1 using strategy "Sorted Input & All":
+           Transition Function: 2 * int8inc(TRANS), 2 * int4larger(TRANS, a), 2 * int4larger(TRANS, b)
+           Sorted Input Group: a
+           All Group
          ->  Index Scan using gstest3_pkey on gstest3
-(8 rows)
+(12 rows)
 
 SELECT a, b, count(*), max(a), max(b) FROM gstest3 GROUP BY GROUPING SETS(a, b,()) ORDER BY a, b;
  a | b | count | max | max 
@@ -1549,22 +1590,28 @@ explain (costs off)
          count(hundred), count(thousand), count(twothousand),
          count(*)
     from tenk1 group by grouping sets (unique1,twothousand,thousand,hundred,ten,four,two);
-          QUERY PLAN           
--------------------------------
+                                                                                                                 QUERY PLAN                                                                                                                  
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  MixedAggregate
-   Hash Key: two
-   Hash Key: four
-   Hash Key: ten
-   Hash Key: hundred
-   Group Key: unique1
-   Sort Key: twothousand
-     Group Key: twothousand
-   Sort Key: thousand
-     Group Key: thousand
+   Phase 3 using strategy "Sort":
+     Sort Key: thousand
+     Transition Function: int8inc_any(TRANS, two), int8inc_any(TRANS, four), int8inc_any(TRANS, ten), int8inc_any(TRANS, hundred), int8inc_any(TRANS, thousand), int8inc_any(TRANS, twothousand), int8inc(TRANS)
+     Sorted Group: thousand
+   Phase 2 using strategy "Sort":
+     Sort Key: twothousand
+     Transition Function: int8inc_any(TRANS, two), int8inc_any(TRANS, four), int8inc_any(TRANS, ten), int8inc_any(TRANS, hundred), int8inc_any(TRANS, thousand), int8inc_any(TRANS, twothousand), int8inc(TRANS)
+     Sorted Group: twothousand
+   Phase 1 using strategy "Sorted Input & Hash":
+     Transition Function: 5 * int8inc_any(TRANS, two), 5 * int8inc_any(TRANS, four), 5 * int8inc_any(TRANS, ten), 5 * int8inc_any(TRANS, hundred), 5 * int8inc_any(TRANS, thousand), 5 * int8inc_any(TRANS, twothousand), 5 * int8inc(TRANS)
+     Sorted Input Group: unique1
+     Hash Group: two
+     Hash Group: four
+     Hash Group: ten
+     Hash Group: hundred
    ->  Sort
          Sort Key: unique1
          ->  Seq Scan on tenk1
-(13 rows)
+(19 rows)
 
 explain (costs off)
   select unique1,
@@ -1572,18 +1619,20 @@ explain (costs off)
          count(hundred), count(thousand), count(twothousand),
          count(*)
     from tenk1 group by grouping sets (unique1,hundred,ten,four,two);
-          QUERY PLAN           
--------------------------------
+                                                                                                                 QUERY PLAN                                                                                                                  
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  MixedAggregate
-   Hash Key: two
-   Hash Key: four
-   Hash Key: ten
-   Hash Key: hundred
-   Group Key: unique1
+   Phase 1 using strategy "Sorted Input & Hash":
+     Transition Function: 5 * int8inc_any(TRANS, two), 5 * int8inc_any(TRANS, four), 5 * int8inc_any(TRANS, ten), 5 * int8inc_any(TRANS, hundred), 5 * int8inc_any(TRANS, thousand), 5 * int8inc_any(TRANS, twothousand), 5 * int8inc(TRANS)
+     Sorted Input Group: unique1
+     Hash Group: two
+     Hash Group: four
+     Hash Group: ten
+     Hash Group: hundred
    ->  Sort
          Sort Key: unique1
          ->  Seq Scan on tenk1
-(9 rows)
+(11 rows)
 
 set work_mem = '384kB';
 explain (costs off)
@@ -1592,21 +1641,25 @@ explain (costs off)
          count(hundred), count(thousand), count(twothousand),
          count(*)
     from tenk1 group by grouping sets (unique1,twothousand,thousand,hundred,ten,four,two);
-          QUERY PLAN           
--------------------------------
+                                                                                                                 QUERY PLAN                                                                                                                  
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  MixedAggregate
-   Hash Key: two
-   Hash Key: four
-   Hash Key: ten
-   Hash Key: hundred
-   Hash Key: thousand
-   Group Key: unique1
-   Sort Key: twothousand
-     Group Key: twothousand
+   Phase 2 using strategy "Sort":
+     Sort Key: twothousand
+     Transition Function: int8inc_any(TRANS, two), int8inc_any(TRANS, four), int8inc_any(TRANS, ten), int8inc_any(TRANS, hundred), int8inc_any(TRANS, thousand), int8inc_any(TRANS, twothousand), int8inc(TRANS)
+     Sorted Group: twothousand
+   Phase 1 using strategy "Sorted Input & Hash":
+     Transition Function: 6 * int8inc_any(TRANS, two), 6 * int8inc_any(TRANS, four), 6 * int8inc_any(TRANS, ten), 6 * int8inc_any(TRANS, hundred), 6 * int8inc_any(TRANS, thousand), 6 * int8inc_any(TRANS, twothousand), 6 * int8inc(TRANS)
+     Sorted Input Group: unique1
+     Hash Group: two
+     Hash Group: four
+     Hash Group: ten
+     Hash Group: hundred
+     Hash Group: thousand
    ->  Sort
          Sort Key: unique1
          ->  Seq Scan on tenk1
-(12 rows)
+(16 rows)
 
 -- check collation-sensitive matching between grouping expressions
 -- (similar to a check for aggregates, but there are additional code

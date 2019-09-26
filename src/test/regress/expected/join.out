@@ -6172,7 +6172,8 @@ where exists (select 1 from tenk1 t3
          Hash Cond: (t3.thousand = t1.unique1)
          ->  HashAggregate
                Project: t3.thousand, t3.tenthous
-               Group Key: t3.thousand, t3.tenthous
+               Phase 0 using strategy "Hash":
+                 Hash Group: t3.thousand, t3.tenthous
                ->  Index Only Scan using tenk1_thous_tenthous on public.tenk1 t3
                      Output: t3.thousand, t3.tenthous
          ->  Hash
@@ -6183,7 +6184,7 @@ where exists (select 1 from tenk1 t3
    ->  Index Only Scan using tenk1_hundred on public.tenk1 t2
          Output: t2.hundred
          Index Cond: (t2.hundred = t3.tenthous)
-(18 rows)
+(19 rows)
 
 -- ... unless it actually is unique
 create table j3 as select unique1, tenthous from onek;

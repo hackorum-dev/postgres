@@ -966,6 +966,9 @@ explain (costs off, verbose)
 ----------------------------------------------------------------------------------------------
  Aggregate
    Project: count(*)
+   Phase 1 using strategy "All":
+     Transition Function: int8inc(TRANS)
+     All Group
    ->  Hash Semi Join
          Hash Cond: ((a.unique1 = b.unique1) AND (a.two = (row_number() OVER (?))))
          ->  Gather
@@ -982,7 +985,7 @@ explain (costs off, verbose)
                            Workers Planned: 4
                            ->  Parallel Index Only Scan using tenk1_unique1 on public.tenk1 b
                                  Output: b.unique1
-(18 rows)
+(21 rows)
 
 -- LIMIT/OFFSET within sub-selects can't be pushed to workers.
 explain (costs off)

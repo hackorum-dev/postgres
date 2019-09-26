@@ -280,6 +280,9 @@ typedef struct AggStatePerPhaseData
 	Sort	   *sortnode;		/* Sort node for input ordering for phase */
 
 	ExprState  *evaltrans;		/* evaluation of transition functions  */
+
+	bool		uses_hashing;	/* phase uses hashing */
+	bool		uses_sorting;	/* phase uses sorting */
 }			AggStatePerPhaseData;
 
 /*

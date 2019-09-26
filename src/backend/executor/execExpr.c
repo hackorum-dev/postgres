@@ -2933,8 +2933,7 @@ ExecInitCoerceToDomain(ExprEvalStep *scratch, CoerceToDomain *ctest,
  * transition for each of the concurrently computed grouping sets.
  */
 ExprState *
-ExecBuildAggTrans(AggState *aggstate, AggStatePerPhase phase,
-				  bool doSort, bool doHash)
+ExecBuildAggTrans(AggState *aggstate, AggStatePerPhase phase)
 {
 	ExprState  *state = makeNode(ExprState);
 	PlanState  *parent = &aggstate->ss.ps;
@@ -3160,7 +3159,7 @@ ExecBuildAggTrans(AggState *aggstate, AggStatePerPhase phase,
 		 * applicable.
 		 */
 		setoff = 0;
-		if (doSort)
+		if (phase->uses_sorting)
 		{
 			int			processGroupingSets = Max(phase->numsets, 1);
 
@@ -3172,7 +3171,7 @@ ExecBuildAggTrans(AggState *aggstate, AggStatePerPhase phase,
 			}
 		}
 
-		if (doHash)
+		if (phase->uses_hashing)
 		{
 			int			numHashes = aggstate->num_hashes;
 

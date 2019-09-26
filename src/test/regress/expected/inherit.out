@@ -1435,10 +1435,13 @@ select * from matest0 order by 1-id;
 (6 rows)
 
 explain (verbose, costs off) select min(1-id) from matest0;
-               QUERY PLAN               
-----------------------------------------
+                          QUERY PLAN                           
+---------------------------------------------------------------
  Aggregate
    Project: min((1 - matest0.id))
+   Phase 1 using strategy "All":
+     Transition Function: int4smaller(TRANS, (1 - matest0.id))
+     All Group
    ->  Append
          ->  Seq Scan on public.matest0
                Project: matest0.id
@@ -1448,7 +1451,7 @@ explain (verbose, costs off) select min(1-id) from matest0;
                Project: matest2.id
          ->  Seq Scan on public.matest3
                Project: matest3.id
-(11 rows)
+(14 rows)
 
 select min(1-id) from matest0;
  min 

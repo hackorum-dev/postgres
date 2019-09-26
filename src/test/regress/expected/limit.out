@@ -489,10 +489,12 @@ select sum(tenthous) as s1, sum(tenthous) + random()*0 as s2
    Output: (sum(tenthous)), (((sum(tenthous))::double precision + (random() * '0'::double precision))), thousand
    ->  GroupAggregate
          Project: sum(tenthous), ((sum(tenthous))::double precision + (random() * '0'::double precision)), thousand
-         Group Key: tenk1.thousand
+         Phase 1 using strategy "Sorted Input":
+           Transition Function: int4_sum(TRANS, tenthous)
+           Sorted Input Group: tenk1.thousand
          ->  Index Only Scan using tenk1_thous_tenthous on public.tenk1
                Output: thousand, tenthous
-(7 rows)
+(9 rows)
 
 select sum(tenthous) as s1, sum(tenthous) + random()*0 as s2
   from tenk1 group by thousand order by thousand limit 3;

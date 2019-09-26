@@ -2904,8 +2904,10 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 		else
 			Assert(false);
 
-		phase->evaltrans = ExecBuildAggTrans(aggstate, phase, dosort, dohash);
+		phase->uses_hashing = dohash;
+		phase->uses_sorting = dosort;
 
+		phase->evaltrans = ExecBuildAggTrans(aggstate, phase);
 	}
 
 	return aggstate;
