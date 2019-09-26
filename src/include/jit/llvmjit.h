@@ -41,7 +41,10 @@ typedef struct LLVMJitContext
 {
 	JitContext	base;
 
-	/* number of modules created */
+	/*
+	 * llvm_generation when ->module was created, monotonically increasing
+	 * within the lifetime of a backend.
+	 */
 	size_t		module_generation;
 
 	/* current, "open for write", module */

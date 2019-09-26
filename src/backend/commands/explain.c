@@ -2228,6 +2228,43 @@ show_expression(Node *node, ExprState *expr, const char *qlabel,
 	}
 }
 
+/*
+ * To make JIT explain output reproducible, remove the module generation from
+ * function names. That makes it a bit harder to correlate with profiles etc,
+ * but reproducability is more important.
+ */
+static char *
+jit_funcname_for_display(const char *funcname)
+{
+	int			func_counter; /* nth function in query */
+	size_t		mod_num; /* nth module in query */
+	size_t		mod_generation; /* nth module in backend */
+	int			basename_end;
+	int			matchcount = 0;
+
+	/*
+	 * The pattern we need to match, see llvm_expand_funcname, is
+	 * "%s_%zu_%d_mod_%zu". Find the fourth _ from the end, so a _ in the name
+	 * is OK.
+	 */
+	for (basename_end = strlen(funcname); basename_end >= 0; basename_end--)
+	{
+		if (funcname[basename_end] == '_' && ++matchcount == 4)
+			break;
+	}
+
+	/* couldn't parse, bail out */
+	if (matchcount != 4)
+		return pstrdup(funcname);
+
+	/* couldn't parse, bail out */
+	if (sscanf(funcname + basename_end, "_%zu_%d_mod_%zu",
+			   &mod_num, &func_counter, &mod_generation) != 3)
+		return pstrdup(funcname);
+
+	return psprintf("%s_%zu_%d", pnstrdup(funcname, basename_end), mod_num, func_counter);
+}
+
 static void
 show_jit_expr_details(ExprState *expr, ExplainState *es)
 {
@@ -2239,7 +2276,8 @@ show_jit_expr_details(ExprState *expr, ExplainState *es)
 	if (es->format == EXPLAIN_FORMAT_TEXT)
 	{
 		if (expr->flags & EEO_FLAG_JIT_EXPR)
-			appendStringInfo(es->str, "JIT-Expr: %s", expr->expr_funcname);
+			appendStringInfo(es->str, "JIT-Expr: %s",
+							 jit_funcname_for_display(expr->expr_funcname));
 		else
 			appendStringInfoString(es->str, "JIT-Expr: false");
 
@@ -2250,19 +2288,22 @@ show_jit_expr_details(ExprState *expr, ExplainState *es)
 		 */
 
 		if (expr->scan_funcname)
-			appendStringInfo(es->str, ", JIT-Deform-Scan: %s", expr->scan_funcname);
+			appendStringInfo(es->str, ", JIT-Deform-Scan: %s",
+							 jit_funcname_for_display(expr->scan_funcname));
 		else if (expr->flags & EEO_FLAG_JIT_EXPR &&
 				 expr->flags & EEO_FLAG_DEFORM_SCAN)
 			appendStringInfo(es->str, ", JIT-Deform-Scan: false");
 
 		if (expr->outer_funcname)
-			appendStringInfo(es->str, ", JIT-Deform-Outer: %s", expr->outer_funcname);
+			appendStringInfo(es->str, ", JIT-Deform-Outer: %s",
+							 jit_funcname_for_display(expr->outer_funcname));
 		else if (expr->flags & EEO_FLAG_JIT_EXPR &&
 				 expr->flags & EEO_FLAG_DEFORM_OUTER)
 			appendStringInfo(es->str, ", JIT-Deform-Outer: false");
 
 		if (expr->inner_funcname)
-			appendStringInfo(es->str, ", JIT-Deform-Inner: %s", expr->inner_funcname);
+			appendStringInfo(es->str, ", JIT-Deform-Inner: %s",
+							 jit_funcname_for_display(expr->inner_funcname));
 		else if (expr->flags & EEO_FLAG_JIT_EXPR &&
 				 expr->flags & (EEO_FLAG_DEFORM_INNER))
 			appendStringInfo(es->str, ", JIT-Deform-Inner: false");
@@ -2270,26 +2311,34 @@ show_jit_expr_details(ExprState *expr, ExplainState *es)
 	else
 	{
 		if (expr->flags & EEO_FLAG_JIT_EXPR)
-			ExplainPropertyText("JIT-Expr", expr->expr_funcname, es);
+			ExplainPropertyText("JIT-Expr",
+								jit_funcname_for_display(expr->expr_funcname),
+								es);
 		else
 			ExplainPropertyBool("JIT-Expr", false, es);
 
 		if (expr->scan_funcname)
-			ExplainProperty("JIT-Deform-Scan", NULL, expr->scan_funcname, false, es);
+			ExplainProperty("JIT-Deform-Scan", NULL,
+							jit_funcname_for_display(expr->scan_funcname),
+							false, es);
 		else if (expr->flags & EEO_FLAG_DEFORM_SCAN)
 			ExplainProperty("JIT-Deform-Scan", NULL, "false", true, es);
 		else
 			ExplainProperty("JIT-Deform-Scan", NULL, "null", true, es);
 
 		if (expr->outer_funcname)
-			ExplainProperty("JIT-Deform-Outer", NULL, expr->outer_funcname, false, es);
+			ExplainProperty("JIT-Deform-Outer", NULL,
+							jit_funcname_for_display(expr->outer_funcname),
+							false, es);
 		else if (expr->flags & EEO_FLAG_DEFORM_OUTER)
 			ExplainProperty("JIT-Deform-Outer", NULL, "false", true, es);
 		else
 			ExplainProperty("JIT-Deform-Outer", NULL, "null", true, es);
 
 		if (expr->inner_funcname)
-			ExplainProperty("JIT-Deform-Inner", NULL, expr->inner_funcname, false, es);
+			ExplainProperty("JIT-Deform-Inner", NULL,
+							jit_funcname_for_display(expr->inner_funcname),
+							false, es);
 		else if (expr->flags & EEO_FLAG_DEFORM_INNER)
 			ExplainProperty("JIT-Deform-Inner", NULL, "false", true, es);
 		else

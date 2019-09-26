@@ -227,6 +227,8 @@ llvm_mutable_module(LLVMJitContext *context)
 char *
 llvm_expand_funcname(struct LLVMJitContext *context, const char *basename)
 {
+	char *funcname;
+
 	Assert(context->module != NULL);
 
 	context->base.instr.created_functions++;
@@ -234,11 +236,19 @@ llvm_expand_funcname(struct LLVMJitContext *context, const char *basename)
 	/*
 	 * Previously we used dots to separate, but turns out some tools, e.g.
 	 * GDB, don't like that and truncate name.
+	 *
+	 * Append the backend-lifetime module count to the end, so it's easier for
+	 * humans and machines to compare the generated function names across
+	 * queries, the prefix will be the same from query execution to query
+	 * execution.
 	 */
-	return psprintf("%s_%zu_%d",
-					basename,
-					context->module_generation,
-					context->counter++);
+	funcname = psprintf("%s_%zu_%d_mod_%zu",
+					  basename,
+					  context->base.instr.created_modules - 1,
+					  context->counter++,
+					  context->module_generation);
+
+	return funcname;
 }
 
 /*
