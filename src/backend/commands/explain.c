@@ -66,16 +66,16 @@ static void ExplainNode(PlanState *planstate, List *ancestors,
 						ExplainState *es);
 static void show_plan_tlist(PlanState *planstate, List *ancestors,
 							ExplainState *es);
-static void show_expression(Node *node, const char *qlabel,
+static void show_expression(Node *node, ExprState *expr, const char *qlabel,
 							PlanState *planstate, List *ancestors,
 							bool useprefix, ExplainState *es);
-static void show_qual(List *qual, const char *qlabel,
+static void show_qual(List *qual, ExprState *expr, const char *qlabel,
 					  PlanState *planstate, List *ancestors,
 					  bool useprefix, ExplainState *es);
-static void show_scan_qual(List *qual, const char *qlabel,
+static void show_scan_qual(List *qual, ExprState *expr, const char *qlabel,
 						   PlanState *planstate, List *ancestors,
 						   ExplainState *es);
-static void show_upper_qual(List *qual, const char *qlabel,
+static void show_upper_qual(List *qual, ExprState *expr, const char *qlabel,
 							PlanState *planstate, List *ancestors,
 							ExplainState *es);
 static void show_sort_keys(SortState *sortstate, List *ancestors,
@@ -1605,26 +1605,31 @@ ExplainNode(PlanState *planstate, List *ancestors,
 	{
 		case T_IndexScan:
 			show_scan_qual(((IndexScan *) plan)->indexqualorig,
+						   ((IndexScanState *) planstate)->indexqualorig,
 						   "Index Cond", planstate, ancestors, es);
 			if (((IndexScan *) plan)->indexqualorig)
 				show_instrumentation_count("Rows Removed by Index Recheck", 2,
 										   planstate, es);
 			show_scan_qual(((IndexScan *) plan)->indexorderbyorig,
+						   NULL,
 						   "Order By", planstate, ancestors, es);
-			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+			show_scan_qual(plan->qual, planstate->qual, "Filter", planstate,
+						   ancestors, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
 			break;
 		case T_IndexOnlyScan:
 			show_scan_qual(((IndexOnlyScan *) plan)->indexqual,
+						   ((IndexOnlyScanState *) planstate)->indexqual,
 						   "Index Cond", planstate, ancestors, es);
 			if (((IndexOnlyScan *) plan)->indexqual)
 				show_instrumentation_count("Rows Removed by Index Recheck", 2,
 										   planstate, es);
-			show_scan_qual(((IndexOnlyScan *) plan)->indexorderby,
+			show_scan_qual(((IndexOnlyScan *) plan)->indexorderby, NULL,
 						   "Order By", planstate, ancestors, es);
-			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+			show_scan_qual(plan->qual, planstate->qual, "Filter", planstate,
+						   ancestors, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
@@ -1633,16 +1638,18 @@ ExplainNode(PlanState *planstate, List *ancestors,
 									 planstate->instrument->ntuples2, 0, es);
 			break;
 		case T_BitmapIndexScan:
-			show_scan_qual(((BitmapIndexScan *) plan)->indexqualorig,
+			show_scan_qual(((BitmapIndexScan *) plan)->indexqualorig, NULL,
 						   "Index Cond", planstate, ancestors, es);
 			break;
 		case T_BitmapHeapScan:
 			show_scan_qual(((BitmapHeapScan *) plan)->bitmapqualorig,
+						   ((BitmapHeapScanState *) planstate)->bitmapqualorig,
 						   "Recheck Cond", planstate, ancestors, es);
 			if (((BitmapHeapScan *) plan)->bitmapqualorig)
 				show_instrumentation_count("Rows Removed by Index Recheck", 2,
 										   planstate, es);
-			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+			show_scan_qual(plan->qual, planstate->qual, "Filter", planstate,
+						   ancestors, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
@@ -1660,7 +1667,8 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		case T_NamedTuplestoreScan:
 		case T_WorkTableScan:
 		case T_SubqueryScan:
-			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+			show_scan_qual(plan->qual, planstate->qual, "Filter", planstate,
+						   ancestors, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
@@ -1669,7 +1677,8 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			{
 				Gather	   *gather = (Gather *) plan;
 
-				show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+				show_scan_qual(plan->qual, planstate->qual, "Filter",
+							   planstate, ancestors, es);
 				if (plan->qual)
 					show_instrumentation_count("Rows Removed by Filter", 1,
 											   planstate, es);
@@ -1715,7 +1724,8 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			{
 				GatherMerge *gm = (GatherMerge *) plan;
 
-				show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+				show_scan_qual(plan->qual, planstate->qual, "Filter",
+							   planstate, ancestors, es);
 				if (plan->qual)
 					show_instrumentation_count("Rows Removed by Filter", 1,
 											   planstate, es);
@@ -1749,11 +1759,12 @@ ExplainNode(PlanState *planstate, List *ancestors,
 					fexprs = lappend(fexprs, rtfunc->funcexpr);
 				}
 				/* We rely on show_expression to insert commas as needed */
-				show_expression((Node *) fexprs,
+				show_expression((Node *) fexprs, NULL,
 								"Function Call", planstate, ancestors,
 								es->verbose, es);
 			}
-			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+			show_scan_qual(plan->qual, planstate->qual, "Filter", planstate,
+						   ancestors, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
@@ -1763,11 +1774,12 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			{
 				TableFunc  *tablefunc = ((TableFuncScan *) plan)->tablefunc;
 
-				show_expression((Node *) tablefunc,
+				show_expression((Node *) tablefunc, NULL,
 								"Table Function Call", planstate, ancestors,
 								es->verbose, es);
 			}
-			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+			show_scan_qual(plan->qual, planstate->qual, "Filter", planstate,
+						   ancestors, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
@@ -1782,15 +1794,18 @@ ExplainNode(PlanState *planstate, List *ancestors,
 
 				if (list_length(tidquals) > 1)
 					tidquals = list_make1(make_orclause(tidquals));
-				show_scan_qual(tidquals, "TID Cond", planstate, ancestors, es);
-				show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+				show_scan_qual(tidquals, NULL, "TID Cond", planstate,
+							   ancestors, es);
+				show_scan_qual(plan->qual, planstate->qual, "Filter",
+							   planstate, ancestors, es);
 				if (plan->qual)
 					show_instrumentation_count("Rows Removed by Filter", 1,
 											   planstate, es);
 			}
 			break;
 		case T_ForeignScan:
-			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+			show_scan_qual(plan->qual, planstate->qual, "Filter", planstate,
+						   ancestors, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
@@ -1800,7 +1815,8 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			{
 				CustomScanState *css = (CustomScanState *) planstate;
 
-				show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+				show_scan_qual(plan->qual, planstate->qual, "Filter",
+							   planstate, ancestors, es);
 				if (plan->qual)
 					show_instrumentation_count("Rows Removed by Filter", 1,
 											   planstate, es);
@@ -1810,51 +1826,60 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			break;
 		case T_NestLoop:
 			show_upper_qual(((NestLoop *) plan)->join.joinqual,
+							((NestLoopState *) planstate)->js.joinqual,
 							"Join Filter", planstate, ancestors, es);
 			if (((NestLoop *) plan)->join.joinqual)
 				show_instrumentation_count("Rows Removed by Join Filter", 1,
 										   planstate, es);
-			show_upper_qual(plan->qual, "Filter", planstate, ancestors, es);
+			show_upper_qual(plan->qual, planstate->qual, "Filter", planstate,
+							ancestors, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 2,
 										   planstate, es);
 			break;
 		case T_MergeJoin:
-			show_upper_qual(((MergeJoin *) plan)->mergeclauses,
+			show_upper_qual(((MergeJoin *) plan)->mergeclauses, NULL,
 							"Merge Cond", planstate, ancestors, es);
 			show_upper_qual(((MergeJoin *) plan)->join.joinqual,
+							((MergeJoinState *) planstate)->js.joinqual,
 							"Join Filter", planstate, ancestors, es);
 			if (((MergeJoin *) plan)->join.joinqual)
 				show_instrumentation_count("Rows Removed by Join Filter", 1,
 										   planstate, es);
-			show_upper_qual(plan->qual, "Filter", planstate, ancestors, es);
+			show_upper_qual(plan->qual, planstate->qual, "Filter", planstate,
+							ancestors, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 2,
 										   planstate, es);
 			break;
 		case T_HashJoin:
 			show_upper_qual(((HashJoin *) plan)->hashclauses,
+							((HashJoinState *) planstate)->hashclauses,
 							"Hash Cond", planstate, ancestors, es);
 			show_upper_qual(((HashJoin *) plan)->join.joinqual,
+							((HashJoinState *) planstate)->js.joinqual,
 							"Join Filter", planstate, ancestors, es);
 			if (((HashJoin *) plan)->join.joinqual)
 				show_instrumentation_count("Rows Removed by Join Filter", 1,
 										   planstate, es);
-			show_upper_qual(plan->qual, "Filter", planstate, ancestors, es);
+			show_upper_qual(plan->qual, planstate->qual, "Filter", planstate,
+							ancestors, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 2,
 										   planstate, es);
 			break;
 		case T_Agg:
 			show_agg_keys(castNode(AggState, planstate), ancestors, es);
-			show_upper_qual(plan->qual, "Filter", planstate, ancestors, es);
+			show_upper_qual(plan->qual, planstate->qual, "Filter", planstate,
+							ancestors, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
 			break;
 		case T_Group:
 			show_group_keys(castNode(GroupState, planstate), ancestors, es);
-			show_upper_qual(plan->qual, "Filter", planstate, ancestors, es);
+			show_upper_qual(plan->qual, planstate->qual, "Filter", planstate,
+							ancestors, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
@@ -1869,8 +1894,10 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			break;
 		case T_Result:
 			show_upper_qual((List *) ((Result *) plan)->resconstantqual,
+							((ResultState *) planstate)->resconstantqual,
 							"One-Time Filter", planstate, ancestors, es);
-			show_upper_qual(plan->qual, "Filter", planstate, ancestors, es);
+			show_upper_qual(plan->qual, planstate->qual, "Filter", planstate,
+							ancestors, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
@@ -2120,12 +2147,14 @@ show_plan_tlist(PlanState *planstate, List *ancestors, ExplainState *es)
  * Show a generic expression
  */
 static void
-show_expression(Node *node, const char *qlabel,
+show_expression(Node *node, ExprState *expr, const char *qlabel,
 				PlanState *planstate, List *ancestors,
 				bool useprefix, ExplainState *es)
 {
 	List	   *context;
 	char	   *exprstr;
+
+	Assert(expr == NULL || IsA(expr, ExprState));
 
 	/* Set up deparsing context */
 	context = set_deparse_context_planstate(es->deparse_cxt,
@@ -2143,7 +2172,7 @@ show_expression(Node *node, const char *qlabel,
  * Show a qualifier expression (which is a List with implicit AND semantics)
  */
 static void
-show_qual(List *qual, const char *qlabel,
+show_qual(List *qual, ExprState *expr, const char *qlabel,
 		  PlanState *planstate, List *ancestors,
 		  bool useprefix, ExplainState *es)
 {
@@ -2153,39 +2182,43 @@ show_qual(List *qual, const char *qlabel,
 	if (qual == NIL)
 		return;
 
+	Assert(expr == NULL ||
+		   (IsA(expr, ExprState) &&
+			(expr->flags & EEO_FLAG_IS_QUAL)));
+
 	/* Convert AND list to explicit AND */
 	node = (Node *) make_ands_explicit(qual);
 
 	/* And show it */
-	show_expression(node, qlabel, planstate, ancestors, useprefix, es);
+	show_expression(node, expr, qlabel, planstate, ancestors, useprefix, es);
 }
 
 /*
  * Show a qualifier expression for a scan plan node
  */
 static void
-show_scan_qual(List *qual, const char *qlabel,
+show_scan_qual(List *qual, ExprState *expr, const char *qlabel,
 			   PlanState *planstate, List *ancestors,
 			   ExplainState *es)
 {
 	bool		useprefix;
 
 	useprefix = (IsA(planstate->plan, SubqueryScan) ||es->verbose);
-	show_qual(qual, qlabel, planstate, ancestors, useprefix, es);
+	show_qual(qual, expr, qlabel, planstate, ancestors, useprefix, es);
 }
 
 /*
  * Show a qualifier expression for an upper-level plan node
  */
 static void
-show_upper_qual(List *qual, const char *qlabel,
+show_upper_qual(List *qual, ExprState *expr, const char *qlabel,
 				PlanState *planstate, List *ancestors,
 				ExplainState *es)
 {
 	bool		useprefix;
 
 	useprefix = (list_length(es->rtable) > 1 || es->verbose);
-	show_qual(qual, qlabel, planstate, ancestors, useprefix, es);
+	show_qual(qual, expr, qlabel, planstate, ancestors, useprefix, es);
 }
 
 /*
@@ -3300,8 +3333,8 @@ show_modifytable_info(ModifyTableState *mtstate, List *ancestors,
 		/* ON CONFLICT DO UPDATE WHERE qual is specially displayed */
 		if (node->onConflictWhere)
 		{
-			show_upper_qual((List *) node->onConflictWhere, "Conflict Filter",
-							&mtstate->ps, ancestors, es);
+			show_upper_qual((List *) node->onConflictWhere, NULL,
+							"Conflict Filter", &mtstate->ps, ancestors, es);
 			show_instrumentation_count("Rows Removed by Conflict Filter", 1, &mtstate->ps, es);
 		}
 
