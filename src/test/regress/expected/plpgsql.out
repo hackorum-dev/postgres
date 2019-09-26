@@ -5209,10 +5209,12 @@ UPDATE transition_table_base
 INFO:  Hash Full Join
   Project: COALESCE(ot.id, nt.id), ot.val, nt.val
   Hash Cond: (ot.id = nt.id)
+  Outer Hash Key: ot.id
   ->  Named Tuplestore Scan
         Output: ot.id, ot.val
   ->  Hash
         Output: nt.id, nt.val
+        Hash Key: nt.id
         ->  Named Tuplestore Scan
               Output: nt.id, nt.val
 

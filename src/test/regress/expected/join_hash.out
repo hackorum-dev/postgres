@@ -919,6 +919,8 @@ WHERE
    Project: hjtest_1.a, hjtest_2.a, (hjtest_1.tableoid)::regclass, (hjtest_2.tableoid)::regclass
    Hash Cond: ((hjtest_1.id = (SubPlan 1)) AND ((SubPlan 2) = (SubPlan 3)))
    Join Filter: (hjtest_1.a <> hjtest_2.b)
+   Outer Hash Key: hjtest_1.id
+   Outer Hash Key: (SubPlan 2)
    ->  Seq Scan on public.hjtest_1
          Project: hjtest_1.a, hjtest_1.tableoid, hjtest_1.id, hjtest_1.b
          Filter: ((SubPlan 4) < 50)
@@ -927,6 +929,8 @@ WHERE
                  Project: (hjtest_1.b * 5)
    ->  Hash
          Output: hjtest_2.a, hjtest_2.tableoid, hjtest_2.id, hjtest_2.c, hjtest_2.b
+         Hash Key: (SubPlan 1)
+         Hash Key: (SubPlan 3)
          ->  Seq Scan on public.hjtest_2
                Project: hjtest_2.a, hjtest_2.tableoid, hjtest_2.id, hjtest_2.c, hjtest_2.b
                Filter: ((SubPlan 5) < 55)
@@ -943,7 +947,7 @@ WHERE
    SubPlan 2
      ->  Result
            Project: (hjtest_1.b * 5)
-(28 rows)
+(32 rows)
 
 SELECT hjtest_1.a a1, hjtest_2.a a2,hjtest_1.tableoid::regclass t1, hjtest_2.tableoid::regclass t2
 FROM hjtest_1, hjtest_2
@@ -973,6 +977,8 @@ WHERE
    Project: hjtest_1.a, hjtest_2.a, (hjtest_1.tableoid)::regclass, (hjtest_2.tableoid)::regclass
    Hash Cond: (((SubPlan 1) = hjtest_1.id) AND ((SubPlan 3) = (SubPlan 2)))
    Join Filter: (hjtest_1.a <> hjtest_2.b)
+   Outer Hash Key: (SubPlan 1)
+   Outer Hash Key: (SubPlan 3)
    ->  Seq Scan on public.hjtest_2
          Project: hjtest_2.a, hjtest_2.tableoid, hjtest_2.id, hjtest_2.c, hjtest_2.b
          Filter: ((SubPlan 5) < 55)
@@ -981,6 +987,8 @@ WHERE
                  Project: (hjtest_2.c * 5)
    ->  Hash
          Output: hjtest_1.a, hjtest_1.tableoid, hjtest_1.id, hjtest_1.b
+         Hash Key: hjtest_1.id
+         Hash Key: (SubPlan 2)
          ->  Seq Scan on public.hjtest_1
                Project: hjtest_1.a, hjtest_1.tableoid, hjtest_1.id, hjtest_1.b
                Filter: ((SubPlan 4) < 50)
@@ -997,7 +1005,7 @@ WHERE
    SubPlan 3
      ->  Result
            Project: (hjtest_2.c * 5)
-(28 rows)
+(32 rows)
 
 SELECT hjtest_1.a a1, hjtest_2.a a2,hjtest_1.tableoid::regclass t1, hjtest_2.tableoid::regclass t2
 FROM hjtest_2, hjtest_1

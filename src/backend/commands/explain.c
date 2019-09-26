@@ -96,7 +96,7 @@ static void show_tablesample(TableSampleClause *tsc, PlanState *planstate,
 							 List *ancestors, ExplainState *es);
 static void show_sort_info(SortState *sortstate, ExplainState *es);
 static void show_agg_info(AggState *aggstate, List *ancestors, ExplainState *es);
-static void show_hash_info(HashState *hashstate, ExplainState *es);
+static void show_hash_info(HashState *hashstate, List *ancestors, ExplainState *es);
 static void show_tidbitmap_info(BitmapHeapScanState *planstate,
 								ExplainState *es);
 static void show_instrumentation_count(const char *qlabel, int which,
@@ -1863,6 +1863,17 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 2,
 										   planstate, es);
+			if (es->verbose)
+			{
+				ListCell *lc1, *lc2;
+
+				forboth(lc1, ((HashJoin *) plan)->hashkeys,
+						lc2, ((HashJoinState *) planstate)->hj_OuterHashKeys)
+				{
+					show_expression(lfirst(lc1), lfirst(lc2), "Outer Hash Key",
+									planstate, ancestors, true, es);
+				}
+			}
 			break;
 		case T_Agg:
 			show_upper_qual(plan->qual, planstate->qual, "Filter", planstate,
@@ -1903,7 +1914,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 								  es);
 			break;
 		case T_Hash:
-			show_hash_info(castNode(HashState, planstate), es);
+			show_hash_info(castNode(HashState, planstate), ancestors, es);
 			break;
 		default:
 			break;
@@ -3087,7 +3098,7 @@ show_agg_info(AggState *aggstate, List *ancestors, ExplainState *es)
  * Show information on hash buckets/batches.
  */
 static void
-show_hash_info(HashState *hashstate, ExplainState *es)
+show_hash_info(HashState *hashstate, List *ancestors, ExplainState *es)
 {
 	HashInstrumentation hinstrument = {0};
 
@@ -3182,6 +3193,18 @@ show_hash_info(HashState *hashstate, ExplainState *es)
 							 "Buckets: %d  Batches: %d  Memory Usage: %ldkB\n",
 							 hinstrument.nbuckets, hinstrument.nbatch,
 							 spacePeakKb);
+		}
+	}
+
+	if (es->verbose)
+	{
+		ListCell *lc1, *lc2;
+
+		forboth(lc1, ((Hash *) hashstate->ps.plan)->hashkeys,
+				lc2, hashstate->hashkeys)
+		{
+			show_expression(lfirst(lc1), (ExprState *) lfirst(lc2), "Hash Key",
+							&hashstate->ps, ancestors, true, es);
 		}
 	}
 }

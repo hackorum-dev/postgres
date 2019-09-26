@@ -971,6 +971,8 @@ explain (costs off, verbose)
      All Group
    ->  Hash Semi Join
          Hash Cond: ((a.unique1 = b.unique1) AND (a.two = (row_number() OVER (?))))
+         Outer Hash Key: a.unique1
+         Outer Hash Key: a.two
          ->  Gather
                Output: a.unique1, a.two
                Workers Planned: 4
@@ -978,6 +980,8 @@ explain (costs off, verbose)
                      Project: a.unique1, a.two
          ->  Hash
                Output: b.unique1, (row_number() OVER (?))
+               Hash Key: b.unique1
+               Hash Key: (row_number() OVER (?))
                ->  WindowAgg
                      Project: b.unique1, row_number() OVER (?)
                      ->  Gather
@@ -985,7 +989,7 @@ explain (costs off, verbose)
                            Workers Planned: 4
                            ->  Parallel Index Only Scan using tenk1_unique1 on public.tenk1 b
                                  Output: b.unique1
-(21 rows)
+(25 rows)
 
 -- LIMIT/OFFSET within sub-selects can't be pushed to workers.
 explain (costs off)
