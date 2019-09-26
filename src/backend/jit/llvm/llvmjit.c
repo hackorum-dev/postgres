@@ -212,6 +212,8 @@ llvm_mutable_module(LLVMJitContext *context)
 		context->module = LLVMModuleCreateWithName("pg");
 		LLVMSetTarget(context->module, llvm_triple);
 		LLVMSetDataLayout(context->module, llvm_layout);
+
+		context->base.instr.created_modules++;
 	}
 
 	return context->module;

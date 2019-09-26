@@ -186,7 +186,10 @@ jit_compile_expr(struct ExprState *state)
 void
 InstrJitAgg(JitInstrumentation *dst, JitInstrumentation *add)
 {
+	dst->created_modules += add->created_modules;
 	dst->created_functions += add->created_functions;
+	dst->created_expr_functions += add->created_expr_functions;
+	dst->created_deform_functions += add->created_deform_functions;
 	INSTR_TIME_ADD(dst->generation_counter, add->generation_counter);
 	INSTR_TIME_ADD(dst->inlining_counter, add->inlining_counter);
 	INSTR_TIME_ADD(dst->optimization_counter, add->optimization_counter);

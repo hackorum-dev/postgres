@@ -825,7 +825,26 @@ ExplainPrintJIT(ExplainState *es, int jit_flags,
 			appendStringInfoString(es->str, "JIT:\n");
 		es->indent += 1;
 
-		ExplainPropertyInteger("Functions", NULL, ji->created_functions, es);
+		/* having to emit code more than once has performance consequences */
+		if (ji->created_modules > 1)
+			ExplainPropertyInteger("Modules", NULL, ji->created_modules, es);
+
+		appendStringInfoSpaces(es->str, es->indent * 2);
+		appendStringInfo(es->str, "Functions: %zu", ji->created_functions);
+		if (ji->created_expr_functions > 0 || ji->created_deform_functions)
+		{
+			appendStringInfoString(es->str, " (");
+			if (ji->created_expr_functions)
+			{
+				appendStringInfo(es->str, "%zu for expression evaluation", ji->created_expr_functions);
+				if (ji->created_deform_functions)
+					appendStringInfoString(es->str, ", ");
+			}
+			if (ji->created_deform_functions)
+				appendStringInfo(es->str, "%zu for tuple deforming", ji->created_deform_functions);
+			appendStringInfoChar(es->str, ')');
+		}
+		appendStringInfoChar(es->str, '\n');
 
 		appendStringInfoSpaces(es->str, es->indent * 2);
 		appendStringInfo(es->str, "Options: %s %s, %s %s, %s %s, %s %s\n",
@@ -851,7 +870,10 @@ ExplainPrintJIT(ExplainState *es, int jit_flags,
 	else
 	{
 		ExplainPropertyInteger("Worker Number", NULL, worker_num, es);
+		ExplainPropertyInteger("Modules", NULL, ji->created_modules, es);
 		ExplainPropertyInteger("Functions", NULL, ji->created_functions, es);
+		ExplainPropertyInteger("Expression Functions", NULL, ji->created_expr_functions, es);
+		ExplainPropertyInteger("Deforming Functions", NULL, ji->created_deform_functions, es);
 
 		ExplainOpenGroup("Options", "Options", true, es);
 		ExplainPropertyBool("Inlining", jit_flags & PGJIT_INLINE, es);

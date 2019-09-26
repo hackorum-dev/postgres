@@ -26,8 +26,17 @@
 
 typedef struct JitInstrumentation
 {
-	/* number of emitted functions */
+	/* number of modules (i.e. separate optimize / link cycles) created */
+	size_t		created_modules;
+
+	/* number of functions generated */
 	size_t		created_functions;
+
+	/* number of expression evaluation functions generated */
+	size_t		created_expr_functions;
+
+	/* number of tuple deforming functions generated */
+	size_t		created_deform_functions;
 
 	/* accumulated time to generate code */
 	instr_time	generation_counter;

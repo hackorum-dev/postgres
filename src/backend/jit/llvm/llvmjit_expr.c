@@ -144,6 +144,7 @@ llvm_compile_expr(ExprState *state)
 	b = LLVMCreateBuilder();
 
 	funcname = llvm_expand_funcname(context, "evalexpr");
+	context->base.instr.created_expr_functions++;
 
 	/* Create the signature and function */
 	{
