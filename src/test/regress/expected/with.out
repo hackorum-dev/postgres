@@ -2181,8 +2181,8 @@ SELECT * FROM parent;
 EXPLAIN (VERBOSE, COSTS OFF)
 WITH wcte AS ( INSERT INTO int8_tbl VALUES ( 42, 47 ) RETURNING q2 )
 DELETE FROM a USING wcte WHERE aa = q2;
-                     QUERY PLAN                     
-----------------------------------------------------
+                     QUERY PLAN                      
+-----------------------------------------------------
  Delete on public.a
    Delete on public.a
    Delete on public.b
@@ -2192,35 +2192,35 @@ DELETE FROM a USING wcte WHERE aa = q2;
      ->  Insert on public.int8_tbl
            Output: int8_tbl.q2
            ->  Result
-                 Output: '42'::bigint, '47'::bigint
+                 Project: '42'::bigint, '47'::bigint
    ->  Nested Loop
-         Output: a.ctid, wcte.*
+         Project: a.ctid, wcte.*
          Join Filter: (a.aa = wcte.q2)
          ->  Seq Scan on public.a
-               Output: a.ctid, a.aa
+               Project: a.ctid, a.aa
          ->  CTE Scan on wcte
-               Output: wcte.*, wcte.q2
+               Project: wcte.*, wcte.q2
    ->  Nested Loop
-         Output: b.ctid, wcte.*
+         Project: b.ctid, wcte.*
          Join Filter: (b.aa = wcte.q2)
          ->  Seq Scan on public.b
-               Output: b.ctid, b.aa
+               Project: b.ctid, b.aa
          ->  CTE Scan on wcte
-               Output: wcte.*, wcte.q2
+               Project: wcte.*, wcte.q2
    ->  Nested Loop
-         Output: c.ctid, wcte.*
+         Project: c.ctid, wcte.*
          Join Filter: (c.aa = wcte.q2)
          ->  Seq Scan on public.c
-               Output: c.ctid, c.aa
+               Project: c.ctid, c.aa
          ->  CTE Scan on wcte
-               Output: wcte.*, wcte.q2
+               Project: wcte.*, wcte.q2
    ->  Nested Loop
-         Output: d.ctid, wcte.*
+         Project: d.ctid, wcte.*
          Join Filter: (d.aa = wcte.q2)
          ->  Seq Scan on public.d
-               Output: d.ctid, d.aa
+               Project: d.ctid, d.aa
          ->  CTE Scan on wcte
-               Output: wcte.*, wcte.q2
+               Project: wcte.*, wcte.q2
 (38 rows)
 
 -- error cases

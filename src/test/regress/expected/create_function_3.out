@@ -303,10 +303,10 @@ SELECT voidtest2(11,22);
 
 -- currently, we can inline voidtest2 but not voidtest1
 EXPLAIN (verbose, costs off) SELECT voidtest2(11,22);
-       QUERY PLAN        
--------------------------
+        QUERY PLAN        
+--------------------------
  Result
-   Output: voidtest1(33)
+   Project: voidtest1(33)
 (2 rows)
 
 CREATE TEMP TABLE sometable(f1 int);

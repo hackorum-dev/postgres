@@ -1117,7 +1117,7 @@ EXPLAIN (COSTS OFF, VERBOSE) SELECT * FROM xmltableview1;
                                                                                                                                                                                                                             QUERY PLAN                                                                                                                                                                                                                            
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Nested Loop
-   Output: "xmltable".id, "xmltable"._id, "xmltable".country_name, "xmltable".country_id, "xmltable".region_id, "xmltable".size, "xmltable".unit, "xmltable".premier_name
+   Project: "xmltable".id, "xmltable"._id, "xmltable".country_name, "xmltable".country_id, "xmltable".region_id, "xmltable".size, "xmltable".unit, "xmltable".premier_name
    ->  Seq Scan on public.xmldata
          Output: xmldata.data
    ->  Table Function Scan on "xmltable"
@@ -1293,7 +1293,7 @@ SELECT  xmltable.*
                                                                                                                                                                                                                         QUERY PLAN                                                                                                                                                                                                                         
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Nested Loop
-   Output: "xmltable".id, "xmltable"._id, "xmltable".country_name, "xmltable".country_id, "xmltable".region_id, "xmltable".size, "xmltable".unit, "xmltable".premier_name
+   Project: "xmltable".id, "xmltable"._id, "xmltable".country_name, "xmltable".country_id, "xmltable".region_id, "xmltable".size, "xmltable".unit, "xmltable".premier_name
    ->  Seq Scan on public.xmldata
          Output: xmldata.data
    ->  Table Function Scan on "xmltable"
@@ -1313,7 +1313,7 @@ SELECT xmltable.* FROM xmldata, LATERAL xmltable('/ROWS/ROW[COUNTRY_NAME="Japan"
                                                                                     QUERY PLAN                                                                                    
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Nested Loop
-   Output: "xmltable"."COUNTRY_NAME", "xmltable"."REGION_ID"
+   Project: "xmltable"."COUNTRY_NAME", "xmltable"."REGION_ID"
    ->  Seq Scan on public.xmldata
          Output: xmldata.data
    ->  Table Function Scan on "xmltable"
@@ -1416,7 +1416,7 @@ SELECT  xmltable.*
                                                                                                                                                                                                                         QUERY PLAN                                                                                                                                                                                                                         
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Nested Loop
-   Output: "xmltable".id, "xmltable"._id, "xmltable".country_name, "xmltable".country_id, "xmltable".region_id, "xmltable".size, "xmltable".unit, "xmltable".premier_name
+   Project: "xmltable".id, "xmltable"._id, "xmltable".country_name, "xmltable".country_id, "xmltable".region_id, "xmltable".size, "xmltable".unit, "xmltable".premier_name
    ->  Seq Scan on public.xmldata
          Output: xmldata.data
    ->  Table Function Scan on "xmltable"

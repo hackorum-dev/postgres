@@ -212,10 +212,10 @@ select sp_parallel_restricted(unique1) from tenk1
    Output: (sp_parallel_restricted(unique1))
    Sort Key: (sp_parallel_restricted(tenk1.unique1))
    ->  Gather
-         Output: sp_parallel_restricted(unique1)
+         Project: sp_parallel_restricted(unique1)
          Workers Planned: 4
          ->  Parallel Seq Scan on public.tenk1
-               Output: unique1
+               Project: unique1
                Filter: (tenk1.stringu1 = 'GRAAAA'::name)
 (9 rows)
 
@@ -649,12 +649,12 @@ explain (costs off, verbose)
    Output: ten, (sp_simple_func(ten))
    Workers Planned: 4
    ->  Result
-         Output: ten, sp_simple_func(ten)
+         Project: ten, sp_simple_func(ten)
          ->  Sort
                Output: ten
                Sort Key: tenk1.ten
                ->  Parallel Seq Scan on public.tenk1
-                     Output: ten
+                     Project: ten
                      Filter: (tenk1.ten < 100)
 (11 rows)
 
@@ -965,18 +965,18 @@ explain (costs off, verbose)
                                           QUERY PLAN                                          
 ----------------------------------------------------------------------------------------------
  Aggregate
-   Output: count(*)
+   Project: count(*)
    ->  Hash Semi Join
          Hash Cond: ((a.unique1 = b.unique1) AND (a.two = (row_number() OVER (?))))
          ->  Gather
                Output: a.unique1, a.two
                Workers Planned: 4
                ->  Parallel Seq Scan on public.tenk1 a
-                     Output: a.unique1, a.two
+                     Project: a.unique1, a.two
          ->  Hash
                Output: b.unique1, (row_number() OVER (?))
                ->  WindowAgg
-                     Output: b.unique1, row_number() OVER (?)
+                     Project: b.unique1, row_number() OVER (?)
                      ->  Gather
                            Output: b.unique1
                            Workers Planned: 4

@@ -2381,10 +2381,10 @@ View definition:
    FROM at_view_1 v1;
 
 explain (verbose, costs off) select * from at_view_2;
-                        QUERY PLAN                        
-----------------------------------------------------------
+                        QUERY PLAN                         
+-----------------------------------------------------------
  Seq Scan on public.at_base_table bt
-   Output: bt.id, bt.stuff, to_json(ROW(bt.id, bt.stuff))
+   Project: bt.id, bt.stuff, to_json(ROW(bt.id, bt.stuff))
 (2 rows)
 
 select * from at_view_2;
@@ -2421,10 +2421,10 @@ View definition:
    FROM at_view_1 v1;
 
 explain (verbose, costs off) select * from at_view_2;
-                           QUERY PLAN                           
-----------------------------------------------------------------
+                           QUERY PLAN                            
+-----------------------------------------------------------------
  Seq Scan on public.at_base_table bt
-   Output: bt.id, bt.stuff, to_json(ROW(bt.id, bt.stuff, NULL))
+   Project: bt.id, bt.stuff, to_json(ROW(bt.id, bt.stuff, NULL))
 (2 rows)
 
 select * from at_view_2;

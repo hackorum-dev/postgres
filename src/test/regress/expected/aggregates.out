@@ -510,12 +510,12 @@ order by 1, 2;
    Output: s1.s1, s2.s2, (sum((s1.s1 + s2.s2)))
    Sort Key: s1.s1, s2.s2
    ->  Nested Loop
-         Output: s1.s1, s2.s2, (sum((s1.s1 + s2.s2)))
+         Project: s1.s1, s2.s2, (sum((s1.s1 + s2.s2)))
          ->  Function Scan on pg_catalog.generate_series s1
                Output: s1.s1
                Function Call: generate_series(1, 3)
          ->  HashAggregate
-               Output: s2.s2, sum((s1.s1 + s2.s2))
+               Project: s2.s2, sum((s1.s1 + s2.s2))
                Group Key: s2.s2
                ->  Function Scan on pg_catalog.generate_series s2
                      Output: s2.s2
@@ -547,14 +547,14 @@ select array(select sum(x+y) s
                             QUERY PLAN                             
 -------------------------------------------------------------------
  Function Scan on pg_catalog.generate_series x
-   Output: (SubPlan 1)
+   Project: (SubPlan 1)
    Function Call: generate_series(1, 3)
    SubPlan 1
      ->  Sort
            Output: (sum((x.x + y.y))), y.y
            Sort Key: (sum((x.x + y.y)))
            ->  HashAggregate
-                 Output: sum((x.x + y.y)), y.y
+                 Project: sum((x.x + y.y)), y.y
                  Group Key: y.y
                  ->  Function Scan on pg_catalog.generate_series y
                        Output: y.y
@@ -2253,12 +2253,12 @@ EXPLAIN (COSTS OFF, VERBOSE)
                                                                             QUERY PLAN                                                                             
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Finalize Aggregate
-   Output: variance(unique1), sum((unique1)::bigint), regr_count((unique1)::double precision, (unique1)::double precision)
+   Project: variance(unique1), sum((unique1)::bigint), regr_count((unique1)::double precision, (unique1)::double precision)
    ->  Gather
          Output: (PARTIAL variance(unique1)), (PARTIAL sum((unique1)::bigint)), (PARTIAL regr_count((unique1)::double precision, (unique1)::double precision))
          Workers Planned: 4
          ->  Partial Aggregate
-               Output: PARTIAL variance(unique1), PARTIAL sum((unique1)::bigint), PARTIAL regr_count((unique1)::double precision, (unique1)::double precision)
+               Project: PARTIAL variance(unique1), PARTIAL sum((unique1)::bigint), PARTIAL regr_count((unique1)::double precision, (unique1)::double precision)
                ->  Parallel Seq Scan on public.tenk1
                      Output: unique1, unique2, two, four, ten, twenty, hundred, thousand, twothousand, fivethous, tenthous, odd, even, stringu1, stringu2, string4
 (9 rows)

@@ -2140,7 +2140,10 @@ show_plan_tlist(PlanState *planstate, List *ancestors, ExplainState *es)
 	}
 
 	/* Print results */
-	ExplainPropertyList("Output", result, es);
+	if (planstate->ps_ProjInfo)
+		ExplainPropertyList("Project", result, es);
+	else
+		ExplainPropertyList("Output", result, es);
 }
 
 /*
