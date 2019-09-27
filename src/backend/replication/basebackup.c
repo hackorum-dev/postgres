@@ -184,6 +184,13 @@ static const char *const excludeFiles[] =
 	RELCACHE_INIT_FILENAME,
 
 	/*
+	 * Skip recovery/standby signal files. These files should be created after
+	 * restore if they are required.
+	 */
+	RECOVERY_SIGNAL_FILE,
+	STANDBY_SIGNAL_FILE,
+
+	/*
 	 * If there's a backup_label or tablespace_map file, it belongs to a
 	 * backup started by the user with pg_start_backup().  It is *not* correct
 	 * for this backup.  Our backup_label/tablespace_map is injected into the

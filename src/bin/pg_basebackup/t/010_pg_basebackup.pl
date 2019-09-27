@@ -6,7 +6,7 @@ use File::Basename qw(basename dirname);
 use File::Path qw(rmtree);
 use PostgresNode;
 use TestLib;
-use Test::More tests => 106;
+use Test::More tests => 108;
 
 program_help_ok('pg_basebackup');
 program_version_ok('pg_basebackup');
@@ -65,7 +65,8 @@ $node->restart;
 
 # Write some files to test that they are not copied.
 foreach my $filename (
-	qw(backup_label tablespace_map postgresql.auto.conf.tmp current_logfiles.tmp)
+	qw(backup_label tablespace_map postgresql.auto.conf.tmp current_logfiles.tmp
+		recovery.signal standby.signal)
   )
 {
 	open my $file, '>>', "$pgdata/$filename";
@@ -135,9 +136,16 @@ foreach my $dirname (
 # These files should not be copied.
 foreach my $filename (
 	qw(postgresql.auto.conf.tmp postmaster.opts postmaster.pid tablespace_map current_logfiles.tmp
-	global/pg_internal.init))
+	global/pg_internal.init recovery.signal standby.signal))
 {
 	ok(!-f "$tempdir/backup/$filename", "$filename not copied");
+}
+
+# Remove recovery/standby signal files so they don't break further testing.
+foreach my $filename (qw(recovery.signal standby.signal))
+{
+	unlink("$pgdata/$filename")
+	  or BAIL_OUT("unable to unlink $pgdata/backup/$filename");
 }
 
 # Unlogged relation forks other than init should not be copied
