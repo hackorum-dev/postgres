@@ -2928,7 +2928,7 @@ initialize_data_directory(void)
 
 	check_ok();
 
-	/* Top level PG_VERSION is checked by bootstrapper, so make it first */
+	/* Top level PG_VERSION is checked by bootstrap mode backend, so make it first */
 	write_version_file(NULL);
 
 	/* Select suitable configuration settings */

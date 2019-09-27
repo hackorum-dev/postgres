@@ -198,6 +198,10 @@ main(int argc, char *argv[])
 	pgwin32_signal_initialize();
 #endif
 
+	/*
+	 * Bootstrap mode for initdb.  This mode is handled by
+	 * AuxiliaryProcessMain() for historical reasons.
+	 */
 	if (argc > 1 && strcmp(argv[1], "--boot") == 0)
 		AuxiliaryProcessMain(argc, argv);	/* does not return */
 	else if (argc > 1 && strcmp(argv[1], "--describe-config") == 0)

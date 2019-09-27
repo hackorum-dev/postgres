@@ -190,7 +190,8 @@ static IndexList *ILHead = NULL;
  *	 AuxiliaryProcessMain
  *
  *	 The main entry point for auxiliary processes, such as the bgwriter,
- *	 walwriter, walreceiver, bootstrapper and the shared memory checker code.
+ *	 walwriter, walreceiver, bootstrap mode backend and the shared memory
+ *	 checker code.
  *
  *	 This code is here just because of historical reasons.
  */
