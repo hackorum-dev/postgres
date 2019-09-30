@@ -2740,8 +2740,8 @@ pmdie(SIGNAL_ARGS)
 			{
 				/* autovac workers are told to shut down immediately */
 				/* and bgworkers too; does this need tweaking? */
-				SignalSomeChildren(SIGTERM,
-								   BACKEND_TYPE_AUTOVAC | BACKEND_TYPE_BGWORKER);
+				SignalSomeChildren(SIGTERM, BACKEND_TYPE_WORKER);
+
 				/* and the autovac launcher too */
 				if (AutoVacPID != 0)
 					signal_child(AutoVacPID, SIGTERM);
@@ -2821,8 +2821,7 @@ pmdie(SIGNAL_ARGS)
 						(errmsg("aborting any active transactions")));
 				/* shut down all backends and workers */
 				SignalSomeChildren(SIGTERM,
-								   BACKEND_TYPE_NORMAL | BACKEND_TYPE_AUTOVAC |
-								   BACKEND_TYPE_BGWORKER);
+								   BACKEND_TYPE_NORMAL | BACKEND_TYPE_WORKER);
 				/* and the autovac launcher too */
 				if (AutoVacPID != 0)
 					signal_child(AutoVacPID, SIGTERM);
