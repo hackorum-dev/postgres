@@ -350,6 +350,12 @@ XGETTEXT = @XGETTEXT@
 GZIP	= gzip
 BZIP2	= bzip2
 
+msys_version = @msys_version@ # 0 = not msys
+ifeq ($(msys_version),1)
+	PEXPORTS = pexports
+else
+	PEXPORTS = "gendef -"
+endif
 
 # Tree-wide build support
 

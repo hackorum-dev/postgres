@@ -69,7 +69,7 @@ libpython${pytverstr}.a: python${pytverstr}.def
 	dlltool --dllname python${pytverstr}.dll --def python${pytverstr}.def --output-lib libpython${pytverstr}.a
 
 python${pytverstr}.def:
-	pexports $(PYTHONDLL) > $@
+	$(PEXPORTS) $(PYTHONDLL) > $@
 
 endif # win32
 

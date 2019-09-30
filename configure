@@ -649,6 +649,7 @@ MSGFMT
 PG_CRC32C_OBJS
 CFLAGS_ARMV8_CRC32C
 CFLAGS_SSE42
+msys_version
 have_win32_dbghelp
 LIBOBJS
 UUID_LIBS
@@ -16082,7 +16083,9 @@ esac
 fi
 
 # Win32 (really MinGW) support
+msys_version=0
 if test "$PORTNAME" = "win32"; then
+  msys_version=`uname -r | sed 's/..*//'`
   for ac_func in _configthreadlocale
 do :
   ac_fn_c_check_func "$LINENO" "_configthreadlocale" "ac_cv_func__configthreadlocale"
@@ -16184,6 +16187,7 @@ else
   have_win32_dbghelp=no
 
 fi
+
 
 # Cygwin needs only a bit of that
 if test "$PORTNAME" = "cygwin"; then
