@@ -2,8 +2,10 @@
 -- CHAR
 --
 
--- fixed-length by value
--- internally passed by value if <= 4 bytes in storage
+-- This type, known internally as bpchar, is the same as varchar or text
+-- except that trailing blanks are considered insignificant in comparisons
+-- (so we strip them when converting to text), and we blank-pad to the
+-- declared length if there is one.
 
 SELECT char 'c' = char 'c' AS true;
 
@@ -73,3 +75,14 @@ INSERT INTO CHAR_TBL (f1) VALUES ('abcde');
 INSERT INTO CHAR_TBL (f1) VALUES ('abcd    ');
 
 SELECT '' AS four, * FROM CHAR_TBL;
+
+--
+-- Check regex and LIKE comparisons
+--
+
+SELECT * FROM CHAR_TBL WHERE f1 LIKE 'a';
+SELECT * FROM CHAR_TBL WHERE f1 LIKE 'ab%';
+SELECT * FROM CHAR_TBL WHERE f1 ILIKE 'AB%';
+SELECT * FROM CHAR_TBL WHERE f1 ~ 'b';
+SELECT * FROM CHAR_TBL WHERE f1 ~ '^ab';
+SELECT * FROM CHAR_TBL WHERE f1 ~ '^ab$';
