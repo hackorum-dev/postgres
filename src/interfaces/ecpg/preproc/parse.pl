@@ -26,6 +26,7 @@ my $in_rule               = 0;
 my $header_included       = 0;
 my $feature_not_supported = 0;
 my $tokenmode             = 0;
+my $has_condition         = 0;
 
 my (%buff, $infield, $comment, %tokens, %addons);
 my ($stmt_mode, @fields);
@@ -130,9 +131,20 @@ sub main
 {
   line: while (<>)
 	{
+		# Even if ERRCODE_FEATURE_NOT_SUPPORTED is found inside a rule,
+		# its syntax may be supported in some situations.
+		# Therefore, the warning about unsupported feature is output
+		# only when no condition is specified inside the same rule.
+		if(/if \(/)
+		{
+			$has_condition = 1;
+		}
 		if (/ERRCODE_FEATURE_NOT_SUPPORTED/)
 		{
-			$feature_not_supported = 1;
+			if ($has_condition ne 1)
+			{
+				$feature_not_supported = 1;
+			}
 			next line;
 		}
 
@@ -508,18 +520,12 @@ sub dump_fields
 		add_to_buffer('rules', $ln);
 		if ($feature_not_supported == 1)
 		{
-
-			# we found an unsupported feature, but we have to
-			# filter out ExecuteStmt: CREATE OptTemp TABLE ...
-			# because the warning there is only valid in some situations
-			if ($flds->[0] ne 'create' || $flds->[2] ne 'table')
-			{
-				add_to_buffer('rules',
-					'mmerror(PARSE_ERROR, ET_WARNING, "unsupported feature will be passed to server");'
-				);
-			}
+			add_to_buffer('rules',
+				'mmerror(PARSE_ERROR, ET_WARNING, "unsupported feature will be passed to server");'
+			);
 			$feature_not_supported = 0;
 		}
+		$has_condition = 0;
 
 		if ($len == 0)
 		{
