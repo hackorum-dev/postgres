@@ -1947,7 +1947,10 @@ str_initcap(const char *buff, size_t nbytes, Oid collid)
 				wchar_t    *workspace;
 				size_t		curr_char;
 				size_t		result_size;
+				int			encoding;
+				char		wdsplen[MAX_MULTIBYTE_CHAR_LEN];
 
+				encoding = GetDatabaseEncoding();
 				/* Overflow paranoia */
 				if ((nbytes + 1) > (INT_MAX / sizeof(wchar_t)))
 					ereport(ERROR,
@@ -1968,7 +1971,9 @@ str_initcap(const char *buff, size_t nbytes, Oid collid)
 							workspace[curr_char] = towlower_l(workspace[curr_char], mylocale->info.lt);
 						else
 							workspace[curr_char] = towupper_l(workspace[curr_char], mylocale->info.lt);
-						wasalnum = iswalnum_l(workspace[curr_char], mylocale->info.lt);
+						wchar2char(wdsplen, &workspace[curr_char], MAX_MULTIBYTE_CHAR_LEN, mylocale);
+						if (pg_encoding_dsplen(encoding, wdsplen) != 0)
+							wasalnum = iswalnum_l(workspace[curr_char], mylocale->info.lt);
 					}
 					else
 #endif
@@ -1977,7 +1982,9 @@ str_initcap(const char *buff, size_t nbytes, Oid collid)
 							workspace[curr_char] = towlower(workspace[curr_char]);
 						else
 							workspace[curr_char] = towupper(workspace[curr_char]);
-						wasalnum = iswalnum(workspace[curr_char]);
+						wchar2char(wdsplen, &workspace[curr_char], MAX_MULTIBYTE_CHAR_LEN, mylocale);
+						if (pg_encoding_dsplen(encoding, wdsplen) != 0)
+							wasalnum = iswalnum(workspace[curr_char]);
 					}
 				}
 
