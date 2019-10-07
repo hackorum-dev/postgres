@@ -417,10 +417,6 @@ MarkPortalDone(Portal portal)
 	/*
 	 * Allow portalcmds.c to clean up the state it knows about.  We might as
 	 * well do that now, since the portal can't be executed any more.
-	 *
-	 * In some cases involving execution of a ROLLBACK command in an already
-	 * aborted transaction, this is necessary, or we'd reach AtCleanup_Portals
-	 * with the cleanup hook still unexecuted.
 	 */
 	if (PointerIsValid(portal->cleanup))
 	{
@@ -445,10 +441,6 @@ MarkPortalFailed(Portal portal)
 	/*
 	 * Allow portalcmds.c to clean up the state it knows about.  We might as
 	 * well do that now, since the portal can't be executed any more.
-	 *
-	 * In some cases involving cleanup of an already aborted transaction, this
-	 * is necessary, or we'd reach AtCleanup_Portals with the cleanup hook
-	 * still unexecuted.
 	 */
 	if (PointerIsValid(portal->cleanup))
 	{
@@ -765,8 +757,11 @@ PreCommit_Portals(bool isPrepare)
 /*
  * Abort processing for portals.
  *
- * At this point we run the cleanup hook if present, but we can't release the
- * portal's memory until the cleanup call.
+ * Most portals don't and shouldn't survive transaction abort, but there are
+ * some important special cases where they do and must: (1) held portals must
+ * survive by definition, and (2) any active portal must be part of a command
+ * that uses multiple transactions internally, and needs to survive until
+ * execution of that command has completed.
  */
 void
 AtAbort_Portals(void)
@@ -781,14 +776,22 @@ AtAbort_Portals(void)
 		Portal		portal = hentry->portal;
 
 		/*
-		 * When elog(FATAL) is progress, we need to set the active portal to
-		 * failed, so that PortalCleanup() doesn't run the executor shutdown.
+		 * If we're exiting due to a FATAL error, just blow away all portals
+		 * without really doing any cleanup.  Because the process is going
+		 * to exit anyway, it shouldn't really be necessary to do any cleanup.
+		 * It might also not be safe, if other parts of the system have
+		 * already been shut down. This also makes sure that no future
+		 * references to existing portals are possible.
 		 */
-		if (portal->status == PORTAL_ACTIVE && shmem_exit_inprogress)
-			MarkPortalFailed(portal);
+		if (shmem_exit_inprogress)
+		{
+			PortalHashTableDelete(portal);
+			continue;
+		}
 
 		/*
-		 * Do nothing else to cursors held over from a previous transaction.
+		 * Otherwise, do nothing to cursors held over from a previous
+		 * transaction.
 		 */
 		if (portal->createSubid == InvalidSubTransactionId)
 			continue;
@@ -802,98 +805,40 @@ AtAbort_Portals(void)
 			continue;
 
 		/*
-		 * If it was created in the current transaction, we can't do normal
-		 * shutdown on a READY portal either; it might refer to objects
-		 * created in the failed transaction.  See comments in
-		 * AtSubAbort_Portals.
-		 */
-		if (portal->status == PORTAL_READY)
-			MarkPortalFailed(portal);
-
-		/*
-		 * Allow portalcmds.c to clean up the state it knows about, if we
-		 * haven't already.
-		 */
-		if (PointerIsValid(portal->cleanup))
-		{
-			portal->cleanup(portal);
-			portal->cleanup = NULL;
-		}
-
-		/* drop cached plan reference, if any */
-		PortalReleaseCachedPlan(portal);
-
-		/*
-		 * Any resources belonging to the portal will be released in the
-		 * upcoming transaction-wide cleanup; they will be gone before we run
-		 * PortalDrop.
-		 */
-		portal->resowner = NULL;
-
-		/*
-		 * Although we can't delete the portal data structure proper, we can
-		 * release any memory in subsidiary contexts, such as executor state.
-		 * The cleanup hook was the last thing that might have needed data
-		 * there.  But leave active portals alone.
-		 */
-		if (portal->status != PORTAL_ACTIVE)
-			MemoryContextDeleteChildren(portal->portalContext);
-	}
-}
-
-/*
- * Post-abort cleanup for portals.
- *
- * Delete all portals not held over from prior transactions.  */
-void
-AtCleanup_Portals(void)
-{
-	HASH_SEQ_STATUS status;
-	PortalHashEnt *hentry;
-
-	hash_seq_init(&status, PortalHashTable);
-
-	while ((hentry = (PortalHashEnt *) hash_seq_search(&status)) != NULL)
-	{
-		Portal		portal = hentry->portal;
-
-		/*
-		 * Do not touch active portals --- this can only happen in the case of
-		 * a multi-transaction command.
+		 * If the status is PORTAL_ACTIVE, then we must be executing a command
+		 * that uses multiple transactions internally. In that case, the
+		 * command in question must be one that does not internally rely on
+		 * any transaction-lifetime resources, because they would disappear
+		 * in the upcoming transaction-wide cleanup.
 		 */
 		if (portal->status == PORTAL_ACTIVE)
-			continue;
-
-		/*
-		 * Do nothing to cursors held over from a previous transaction or
-		 * auto-held ones.
-		 */
-		if (portal->createSubid == InvalidSubTransactionId || portal->autoHeld)
 		{
-			Assert(portal->status != PORTAL_ACTIVE);
-			Assert(portal->resowner == NULL);
+			/*
+			 * The resource owner is about to be destroyed, so we must not
+			 * retain a pointer to it.
+			 */
+			portal->resowner = NULL;
 			continue;
 		}
 
 		/*
+		 * Drop the portal.
+		 *
+		 * We used to postpone the actual removal of the portal until
+		 * CleanupTransaction() time, but there's not much point, because
+		 * until then the transaction is in a failed state and existing portals
+		 * can't be used anyway.
+		 *
+		 * (Maybe it would be a good idea to rearrange things so that a
+		 * transaction statement whose portal was created before the abort
+		 * could still be used afterwards to roll back the transaction, but
+		 * historically we haven't cared to support that case.)
+		 *
 		 * If a portal is still pinned, forcibly unpin it. PortalDrop will not
 		 * let us drop the portal otherwise. Whoever pinned the portal was
 		 * interrupted by the abort too and won't try to use it anymore.
 		 */
-		if (portal->portalPinned)
-			portal->portalPinned = false;
-
-		/*
-		 * We had better not call any user-defined code during cleanup, so if
-		 * the cleanup hook hasn't been run yet, too bad; we'll just skip it.
-		 */
-		if (PointerIsValid(portal->cleanup))
-		{
-			elog(WARNING, "skipping cleanup for portal \"%s\"", portal->name);
-			portal->cleanup = NULL;
-		}
-
-		/* Zap it. */
+		portal->portalPinned = false;
 		PortalDrop(portal, false);
 	}
 }
@@ -958,11 +903,9 @@ AtSubCommit_Portals(SubTransactionId mySubid,
 /*
  * Subtransaction abort handling for portals.
  *
- * Deactivate portals created or used during the failed subtransaction.
+ * Destroy portals created or used during the failed subtransaction.
  * Note that per AtSubCommit_Portals, this will catch portals created/used
  * in descendants of the subtransaction too.
- *
- * We don't destroy any portals here; that's done in AtSubCleanup_Portals.
  */
 void
 AtSubAbort_Portals(SubTransactionId mySubid,
@@ -979,6 +922,40 @@ AtSubAbort_Portals(SubTransactionId mySubid,
 	{
 		Portal		portal = hentry->portal;
 
+		/*
+		 * If we're exiting due to a FATAL error, just blow away all portals,
+		 * same as in AtAbort_Portals.
+		 */
+		if (shmem_exit_inprogress)
+		{
+			PortalHashTableDelete(portal);
+			continue;
+		}
+
+		/*
+		 * If we find an active portal, it means that the calling code is
+		 * trying to roll back a subtransaction in mid-command. Note that we
+		 * wouldn't reach this case on ERROR, because an ERROR while running
+		 * a portal puts it into a failed state, nor would we reach it from
+		 * executing a normal ROLLBACK TO SAVEPOINT command, which arranges
+		 * to do the real work after the portal is no longer active.  But
+		 * C code that manipulates transactions explicitly could cause us
+		 * to reach this.
+		 *
+		 * We would have big problems here if this portal depends on any
+		 * resources proper to the current subtransaction, but let's leave
+		 * that problem to the (hypothetical) caller.
+		 */
+		if (portal->status == PORTAL_ACTIVE)
+		{
+			/*
+			 * This would be nonsensical if the portal had been created in
+			 * the current subtransaction.
+			 */
+			Assert(portal->createSubid != mySubid);
+			continue;
+		}
+
 		/* Was it created in this subtransaction? */
 		if (portal->createSubid != mySubid)
 		{
@@ -987,25 +964,6 @@ AtSubAbort_Portals(SubTransactionId mySubid,
 			{
 				/* Maintain activeSubid until the portal is removed */
 				portal->activeSubid = parentSubid;
-
-				/*
-				 * A MarkPortalActive() caller ran an upper-level portal in
-				 * this subtransaction and left the portal ACTIVE.  This can't
-				 * happen, but force the portal into FAILED state for the same
-				 * reasons discussed below.
-				 *
-				 * We assume we can get away without forcing upper-level READY
-				 * portals to fail, even if they were run and then suspended.
-				 * In theory a suspended upper-level portal could have
-				 * acquired some references to objects that are about to be
-				 * destroyed, but there should be sufficient defenses against
-				 * such cases: the portal's original query cannot contain such
-				 * references, and any references within, say, cached plans of
-				 * PL/pgSQL functions are not from active queries and should
-				 * be protected by revalidation logic.
-				 */
-				if (portal->status == PORTAL_ACTIVE)
-					MarkPortalFailed(portal);
 
 				/*
 				 * Also, if we failed it during the current subtransaction
@@ -1028,89 +986,10 @@ AtSubAbort_Portals(SubTransactionId mySubid,
 		}
 
 		/*
-		 * Force any live portals of my own subtransaction into FAILED state.
-		 * We have to do this because they might refer to objects created or
-		 * changed in the failed subtransaction, leading to crashes within
-		 * ExecutorEnd when portalcmds.c tries to close down the portal.
-		 * Currently, every MarkPortalActive() caller ensures it updates the
-		 * portal status again before relinquishing control, so ACTIVE can't
-		 * happen here.  If it does happen, dispose the portal like existing
-		 * MarkPortalActive() callers would.
+		 * Portals created in this subtransaction should be dropped, even
+		 * if pinned. See comments in AtAbort_Portals for more details.
 		 */
-		if (portal->status == PORTAL_READY ||
-			portal->status == PORTAL_ACTIVE)
-			MarkPortalFailed(portal);
-
-		/*
-		 * Allow portalcmds.c to clean up the state it knows about, if we
-		 * haven't already.
-		 */
-		if (PointerIsValid(portal->cleanup))
-		{
-			portal->cleanup(portal);
-			portal->cleanup = NULL;
-		}
-
-		/* drop cached plan reference, if any */
-		PortalReleaseCachedPlan(portal);
-
-		/*
-		 * Any resources belonging to the portal will be released in the
-		 * upcoming transaction-wide cleanup; they will be gone before we run
-		 * PortalDrop.
-		 */
-		portal->resowner = NULL;
-
-		/*
-		 * Although we can't delete the portal data structure proper, we can
-		 * release any memory in subsidiary contexts, such as executor state.
-		 * The cleanup hook was the last thing that might have needed data
-		 * there.
-		 */
-		MemoryContextDeleteChildren(portal->portalContext);
-	}
-}
-
-/*
- * Post-subabort cleanup for portals.
- *
- * Drop all portals created in the failed subtransaction (but note that
- * we will not drop any that were reassigned to the parent above).
- */
-void
-AtSubCleanup_Portals(SubTransactionId mySubid)
-{
-	HASH_SEQ_STATUS status;
-	PortalHashEnt *hentry;
-
-	hash_seq_init(&status, PortalHashTable);
-
-	while ((hentry = (PortalHashEnt *) hash_seq_search(&status)) != NULL)
-	{
-		Portal		portal = hentry->portal;
-
-		if (portal->createSubid != mySubid)
-			continue;
-
-		/*
-		 * If a portal is still pinned, forcibly unpin it. PortalDrop will not
-		 * let us drop the portal otherwise. Whoever pinned the portal was
-		 * interrupted by the abort too and won't try to use it anymore.
-		 */
-		if (portal->portalPinned)
-			portal->portalPinned = false;
-
-		/*
-		 * We had better not call any user-defined code during cleanup, so if
-		 * the cleanup hook hasn't been run yet, too bad; we'll just skip it.
-		 */
-		if (PointerIsValid(portal->cleanup))
-		{
-			elog(WARNING, "skipping cleanup for portal \"%s\"", portal->name);
-			portal->cleanup = NULL;
-		}
-
-		/* Zap it. */
+		portal->portalPinned = false;
 		PortalDrop(portal, false);
 	}
 }

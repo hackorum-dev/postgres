@@ -2756,7 +2756,6 @@ CleanupTransaction(void)
 	/*
 	 * do abort cleanup processing
 	 */
-	AtCleanup_Portals();		/* now safe to release portal memory */
 	AtEOXact_Snapshot(false, true); /* and release the transaction's snapshots */
 
 	CurrentResourceOwner = NULL;	/* and resource owner */
@@ -5030,8 +5029,6 @@ CleanupSubTransaction(void)
 	if (s->state != TRANS_ABORT)
 		elog(WARNING, "CleanupSubTransaction while in %s state",
 			 TransStateAsString(s->state));
-
-	AtSubCleanup_Portals(s->subTransactionId);
 
 	CurrentResourceOwner = s->parent->curTransactionOwner;
 	CurTransactionResourceOwner = s->parent->curTransactionOwner;
