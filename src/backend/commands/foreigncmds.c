@@ -563,8 +563,8 @@ ObjectAddress
 CreateForeignDataWrapper(CreateFdwStmt *stmt)
 {
 	Relation	rel;
-	Datum		values[Natts_pg_foreign_data_wrapper];
-	bool		nulls[Natts_pg_foreign_data_wrapper];
+	Datum		values[Natts_pg_foreign_data_wrapper] = INIT_ALL_ELEMS_ZERO;
+	bool		nulls[Natts_pg_foreign_data_wrapper] = INIT_ALL_ELEMS_ZERO;
 	HeapTuple	tuple;
 	Oid			fdwId;
 	bool		handler_given;
@@ -601,9 +601,6 @@ CreateForeignDataWrapper(CreateFdwStmt *stmt)
 	/*
 	 * Insert tuple into pg_foreign_data_wrapper.
 	 */
-	memset(values, 0, sizeof(values));
-	memset(nulls, false, sizeof(nulls));
-
 	fdwId = GetNewOidWithIndex(rel, ForeignDataWrapperOidIndexId,
 							   Anum_pg_foreign_data_wrapper_oid);
 	values[Anum_pg_foreign_data_wrapper_oid - 1] = ObjectIdGetDatum(fdwId);
@@ -868,8 +865,8 @@ CreateForeignServer(CreateForeignServerStmt *stmt)
 {
 	Relation	rel;
 	Datum		srvoptions;
-	Datum		values[Natts_pg_foreign_server];
-	bool		nulls[Natts_pg_foreign_server];
+	Datum		values[Natts_pg_foreign_server] = INIT_ALL_ELEMS_ZERO;
+	bool		nulls[Natts_pg_foreign_server] = INIT_ALL_ELEMS_ZERO;
 	HeapTuple	tuple;
 	Oid			srvId;
 	Oid			ownerId;
@@ -918,9 +915,6 @@ CreateForeignServer(CreateForeignServerStmt *stmt)
 	/*
 	 * Insert tuple into pg_foreign_server.
 	 */
-	memset(values, 0, sizeof(values));
-	memset(nulls, false, sizeof(nulls));
-
 	srvId = GetNewOidWithIndex(rel, ForeignServerOidIndexId,
 							   Anum_pg_foreign_server_oid);
 	values[Anum_pg_foreign_server_oid - 1] = ObjectIdGetDatum(srvId);
@@ -1145,8 +1139,8 @@ CreateUserMapping(CreateUserMappingStmt *stmt)
 {
 	Relation	rel;
 	Datum		useoptions;
-	Datum		values[Natts_pg_user_mapping];
-	bool		nulls[Natts_pg_user_mapping];
+	Datum		values[Natts_pg_user_mapping] = INIT_ALL_ELEMS_ZERO;
+	bool		nulls[Natts_pg_user_mapping] = INIT_ALL_ELEMS_ZERO;
 	HeapTuple	tuple;
 	Oid			useId;
 	Oid			umId;
@@ -1201,9 +1195,6 @@ CreateUserMapping(CreateUserMappingStmt *stmt)
 	/*
 	 * Insert tuple into pg_user_mapping.
 	 */
-	memset(values, 0, sizeof(values));
-	memset(nulls, false, sizeof(nulls));
-
 	umId = GetNewOidWithIndex(rel, UserMappingOidIndexId,
 							  Anum_pg_user_mapping_oid);
 	values[Anum_pg_user_mapping_oid - 1] = ObjectIdGetDatum(umId);
@@ -1465,8 +1456,8 @@ CreateForeignTable(CreateForeignTableStmt *stmt, Oid relid)
 {
 	Relation	ftrel;
 	Datum		ftoptions;
-	Datum		values[Natts_pg_foreign_table];
-	bool		nulls[Natts_pg_foreign_table];
+	Datum		values[Natts_pg_foreign_table] = INIT_ALL_ELEMS_ZERO;
+	bool		nulls[Natts_pg_foreign_table] = INIT_ALL_ELEMS_ZERO;
 	HeapTuple	tuple;
 	AclResult	aclresult;
 	ObjectAddress myself;
@@ -1502,9 +1493,6 @@ CreateForeignTable(CreateForeignTableStmt *stmt, Oid relid)
 	/*
 	 * Insert tuple into pg_foreign_table.
 	 */
-	memset(values, 0, sizeof(values));
-	memset(nulls, false, sizeof(nulls));
-
 	values[Anum_pg_foreign_table_ftrelid - 1] = ObjectIdGetDatum(relid);
 	values[Anum_pg_foreign_table_ftserver - 1] = ObjectIdGetDatum(server->serverid);
 	/* Add table generic options */

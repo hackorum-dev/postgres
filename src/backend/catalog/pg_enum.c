@@ -66,7 +66,7 @@ EnumValuesCreate(Oid enumTypeOid, List *vals)
 	int			elemno,
 				num_elems;
 	Datum		values[Natts_pg_enum];
-	bool		nulls[Natts_pg_enum];
+	bool		nulls[Natts_pg_enum] = INIT_ALL_ELEMS_ZERO;
 	ListCell   *lc;
 	HeapTuple	tup;
 
@@ -111,8 +111,6 @@ EnumValuesCreate(Oid enumTypeOid, List *vals)
 	qsort(oids, num_elems, sizeof(Oid), oid_cmp);
 
 	/* and make the entries */
-	memset(nulls, false, sizeof(nulls));
-
 	elemno = 0;
 	foreach(lc, vals)
 	{
@@ -215,7 +213,7 @@ AddEnumLabel(Oid enumTypeOid,
 	Relation	pg_enum;
 	Oid			newOid;
 	Datum		values[Natts_pg_enum];
-	bool		nulls[Natts_pg_enum];
+	bool		nulls[Natts_pg_enum] = INIT_ALL_ELEMS_ZERO;
 	NameData	enumlabel;
 	HeapTuple	enum_tup;
 	float4		newelemorder;
@@ -480,7 +478,6 @@ restart:
 	ReleaseCatCacheList(list);
 
 	/* Create the new pg_enum entry */
-	memset(nulls, false, sizeof(nulls));
 	values[Anum_pg_enum_oid - 1] = ObjectIdGetDatum(newOid);
 	values[Anum_pg_enum_enumtypid - 1] = ObjectIdGetDatum(enumTypeOid);
 	values[Anum_pg_enum_enumsortorder - 1] = Float4GetDatum(newelemorder);

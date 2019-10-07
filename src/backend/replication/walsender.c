@@ -351,7 +351,7 @@ IdentifySystem(void)
 	TupOutputState *tstate;
 	TupleDesc	tupdesc;
 	Datum		values[4];
-	bool		nulls[4];
+	bool		nulls[4] = INIT_ALL_ELEMS_ZERO;
 
 	/*
 	 * Reply with a result set with one row, four columns. First col is system
@@ -388,7 +388,6 @@ IdentifySystem(void)
 	}
 
 	dest = CreateDestReceiver(DestRemoteSimple);
-	MemSet(nulls, false, sizeof(nulls));
 
 	/* need a tuple descriptor representing four columns */
 	tupdesc = CreateTemplateTupleDesc(4);
@@ -717,14 +716,13 @@ StartReplication(StartReplicationCmd *cmd)
 		TupOutputState *tstate;
 		TupleDesc	tupdesc;
 		Datum		values[2];
-		bool		nulls[2];
+		bool		nulls[2] = INIT_ALL_ELEMS_ZERO;
 
 		snprintf(startpos_str, sizeof(startpos_str), "%X/%X",
 				 (uint32) (sendTimeLineValidUpto >> 32),
 				 (uint32) sendTimeLineValidUpto);
 
 		dest = CreateDestReceiver(DestRemoteSimple);
-		MemSet(nulls, false, sizeof(nulls));
 
 		/*
 		 * Need a tuple descriptor representing two columns. int8 may seem
@@ -859,7 +857,7 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 	TupOutputState *tstate;
 	TupleDesc	tupdesc;
 	Datum		values[4];
-	bool		nulls[4];
+	bool		nulls[4] = INIT_ALL_ELEMS_ZERO;
 
 	Assert(!MyReplicationSlot);
 
@@ -995,7 +993,6 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 			 (uint32) MyReplicationSlot->data.confirmed_flush);
 
 	dest = CreateDestReceiver(DestRemoteSimple);
-	MemSet(nulls, false, sizeof(nulls));
 
 	/*----------
 	 * Need a tuple descriptor representing four columns:
@@ -3286,7 +3283,7 @@ pg_stat_get_wal_senders(PG_FUNCTION_ARGS)
 		WalSndState state;
 		TimestampTz replyTime;
 		Datum		values[PG_STAT_GET_WAL_SENDERS_COLS];
-		bool		nulls[PG_STAT_GET_WAL_SENDERS_COLS];
+		bool		nulls[PG_STAT_GET_WAL_SENDERS_COLS] = INIT_ALL_ELEMS_ZERO;
 
 		SpinLockAcquire(&walsnd->mutex);
 		if (walsnd->pid == 0)
@@ -3307,7 +3304,6 @@ pg_stat_get_wal_senders(PG_FUNCTION_ARGS)
 		replyTime = walsnd->replyTime;
 		SpinLockRelease(&walsnd->mutex);
 
-		memset(nulls, 0, sizeof(nulls));
 		values[0] = Int32GetDatum(pid);
 
 		if (!is_member_of_role(GetUserId(), DEFAULT_ROLE_READ_ALL_STATS))

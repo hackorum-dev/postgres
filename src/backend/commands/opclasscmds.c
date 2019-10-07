@@ -248,8 +248,8 @@ CreateOpFamily(const char *amname, const char *opfname, Oid namespaceoid, Oid am
 	Oid			opfamilyoid;
 	Relation	rel;
 	HeapTuple	tup;
-	Datum		values[Natts_pg_opfamily];
-	bool		nulls[Natts_pg_opfamily];
+	Datum		values[Natts_pg_opfamily] = INIT_ALL_ELEMS_ZERO;
+	bool		nulls[Natts_pg_opfamily] = INIT_ALL_ELEMS_ZERO;
 	NameData	opfName;
 	ObjectAddress myself,
 				referenced;
@@ -272,9 +272,6 @@ CreateOpFamily(const char *amname, const char *opfname, Oid namespaceoid, Oid am
 	/*
 	 * Okay, let's create the pg_opfamily entry.
 	 */
-	memset(values, 0, sizeof(values));
-	memset(nulls, false, sizeof(nulls));
-
 	opfamilyoid = GetNewOidWithIndex(rel, OpfamilyOidIndexId,
 									 Anum_pg_opfamily_oid);
 	values[Anum_pg_opfamily_oid - 1] = ObjectIdGetDatum(opfamilyoid);
@@ -347,8 +344,8 @@ DefineOpClass(CreateOpClassStmt *stmt)
 	HeapTuple	tup;
 	Form_pg_am	amform;
 	IndexAmRoutine *amroutine;
-	Datum		values[Natts_pg_opclass];
-	bool		nulls[Natts_pg_opclass];
+	Datum		values[Natts_pg_opclass] = INIT_ALL_ELEMS_ZERO;
+	bool		nulls[Natts_pg_opclass] = INIT_ALL_ELEMS_ZERO;
 	AclResult	aclresult;
 	NameData	opcName;
 	ObjectAddress myself,
@@ -639,9 +636,6 @@ DefineOpClass(CreateOpClassStmt *stmt)
 	/*
 	 * Okay, let's create the pg_opclass entry.
 	 */
-	memset(values, 0, sizeof(values));
-	memset(nulls, false, sizeof(nulls));
-
 	opclassoid = GetNewOidWithIndex(rel, OpclassOidIndexId,
 									Anum_pg_opclass_oid);
 	values[Anum_pg_opclass_oid - 1] = ObjectIdGetDatum(opclassoid);
@@ -1308,8 +1302,8 @@ storeOperators(List *opfamilyname, Oid amoid,
 			   List *operators, bool isAdd)
 {
 	Relation	rel;
-	Datum		values[Natts_pg_amop];
-	bool		nulls[Natts_pg_amop];
+	Datum		values[Natts_pg_amop] = INIT_ALL_ELEMS_ZERO;
+	bool		nulls[Natts_pg_amop] = INIT_ALL_ELEMS_ZERO;
 	HeapTuple	tup;
 	Oid			entryoid;
 	ObjectAddress myself,
@@ -1344,8 +1338,6 @@ storeOperators(List *opfamilyname, Oid amoid,
 		oppurpose = OidIsValid(op->sortfamily) ? AMOP_ORDER : AMOP_SEARCH;
 
 		/* Create the pg_amop entry */
-		memset(values, 0, sizeof(values));
-		memset(nulls, false, sizeof(nulls));
 
 		entryoid = GetNewOidWithIndex(rel, AccessMethodOperatorOidIndexId,
 									  Anum_pg_amop_oid);
@@ -1426,8 +1418,8 @@ storeProcedures(List *opfamilyname, Oid amoid,
 				List *procedures, bool isAdd)
 {
 	Relation	rel;
-	Datum		values[Natts_pg_amproc];
-	bool		nulls[Natts_pg_amproc];
+	Datum		values[Natts_pg_amproc] = INIT_ALL_ELEMS_ZERO;
+	bool		nulls[Natts_pg_amproc] = INIT_ALL_ELEMS_ZERO;
 	HeapTuple	tup;
 	Oid			entryoid;
 	ObjectAddress myself,
@@ -1459,9 +1451,6 @@ storeProcedures(List *opfamilyname, Oid amoid,
 							NameListToString(opfamilyname))));
 
 		/* Create the pg_amproc entry */
-		memset(values, 0, sizeof(values));
-		memset(nulls, false, sizeof(nulls));
-
 		entryoid = GetNewOidWithIndex(rel, AccessMethodProcedureOidIndexId,
 									  Anum_pg_amproc_oid);
 		values[Anum_pg_amproc_oid - 1] = ObjectIdGetDatum(entryoid);

@@ -1771,8 +1771,8 @@ InsertExtensionTuple(const char *extName, Oid extOwner,
 {
 	Oid			extensionOid;
 	Relation	rel;
-	Datum		values[Natts_pg_extension];
-	bool		nulls[Natts_pg_extension];
+	Datum		values[Natts_pg_extension] = INIT_ALL_ELEMS_ZERO;
+	bool		nulls[Natts_pg_extension] = INIT_ALL_ELEMS_ZERO;
 	HeapTuple	tuple;
 	ObjectAddress myself;
 	ObjectAddress nsp;
@@ -1782,9 +1782,6 @@ InsertExtensionTuple(const char *extName, Oid extOwner,
 	 * Build and insert the pg_extension tuple
 	 */
 	rel = table_open(ExtensionRelationId, RowExclusiveLock);
-
-	memset(values, 0, sizeof(values));
-	memset(nulls, 0, sizeof(nulls));
 
 	extensionOid = GetNewOidWithIndex(rel, ExtensionOidIndexId,
 									  Anum_pg_extension_oid);
@@ -1960,8 +1957,8 @@ pg_available_extensions(PG_FUNCTION_ARGS)
 		{
 			ExtensionControlFile *control;
 			char	   *extname;
-			Datum		values[3];
-			bool		nulls[3];
+			Datum		values[3] = INIT_ALL_ELEMS_ZERO;
+			bool		nulls[3] = INIT_ALL_ELEMS_ZERO;
 
 			if (!is_extension_control_filename(de->d_name))
 				continue;
@@ -1975,9 +1972,6 @@ pg_available_extensions(PG_FUNCTION_ARGS)
 				continue;
 
 			control = read_extension_control_file(extname);
-
-			memset(values, 0, sizeof(values));
-			memset(nulls, 0, sizeof(nulls));
 
 			/* name */
 			values[0] = DirectFunctionCall1(namein,
@@ -2117,8 +2111,8 @@ get_available_versions_for_extension(ExtensionControlFile *pcontrol,
 	{
 		ExtensionVersionInfo *evi = (ExtensionVersionInfo *) lfirst(lc);
 		ExtensionControlFile *control;
-		Datum		values[7];
-		bool		nulls[7];
+		Datum		values[7] = INIT_ALL_ELEMS_ZERO;
+		bool		nulls[7] = INIT_ALL_ELEMS_ZERO;
 		ListCell   *lc2;
 
 		if (!evi->installable)
@@ -2128,9 +2122,6 @@ get_available_versions_for_extension(ExtensionControlFile *pcontrol,
 		 * Fetch parameters for specific version (pcontrol is not changed)
 		 */
 		control = read_extension_aux_control_file(pcontrol, evi->name);
-
-		memset(values, 0, sizeof(values));
-		memset(nulls, 0, sizeof(nulls));
 
 		/* name */
 		values[0] = DirectFunctionCall1(namein,
@@ -2292,8 +2283,8 @@ pg_extension_update_paths(PG_FUNCTION_ARGS)
 		{
 			ExtensionVersionInfo *evi2 = (ExtensionVersionInfo *) lfirst(lc2);
 			List	   *path;
-			Datum		values[3];
-			bool		nulls[3];
+			Datum		values[3] = INIT_ALL_ELEMS_ZERO;
+			bool		nulls[3] = INIT_ALL_ELEMS_ZERO;
 
 			if (evi1 == evi2)
 				continue;
@@ -2302,8 +2293,6 @@ pg_extension_update_paths(PG_FUNCTION_ARGS)
 			path = find_update_path(evi_list, evi1, evi2, false, true);
 
 			/* Emit result row */
-			memset(values, 0, sizeof(values));
-			memset(nulls, 0, sizeof(nulls));
 
 			/* source */
 			values[0] = CStringGetTextDatum(evi1->name);
@@ -3061,9 +3050,9 @@ ApplyExtensionUpdates(Oid extensionOid,
 		SysScanDesc extScan;
 		HeapTuple	extTup;
 		Form_pg_extension extForm;
-		Datum		values[Natts_pg_extension];
-		bool		nulls[Natts_pg_extension];
-		bool		repl[Natts_pg_extension];
+		Datum		values[Natts_pg_extension] = INIT_ALL_ELEMS_ZERO;
+		bool		nulls[Natts_pg_extension] = INIT_ALL_ELEMS_ZERO;
+		bool		repl[Natts_pg_extension] = INIT_ALL_ELEMS_ZERO;
 		ObjectAddress myself;
 		ListCell   *lc;
 
@@ -3100,10 +3089,6 @@ ApplyExtensionUpdates(Oid extensionOid,
 		/*
 		 * Modify extrelocatable and extversion in the pg_extension tuple
 		 */
-		memset(values, 0, sizeof(values));
-		memset(nulls, 0, sizeof(nulls));
-		memset(repl, 0, sizeof(repl));
-
 		values[Anum_pg_extension_extrelocatable - 1] =
 			BoolGetDatum(control->relocatable);
 		repl[Anum_pg_extension_extrelocatable - 1] = true;
