@@ -119,6 +119,8 @@ extern LLVMValueRef llvm_function_reference(LLVMJitContext *context,
 						LLVMBuilderRef builder,
 						LLVMModuleRef mod,
 						FunctionCallInfo fcinfo);
+extern void llvm_optimize_function(LLVMJitContext *context,
+						LLVMValueRef func);
 
 extern void llvm_inline_reset_caches(void);
 extern void llvm_inline(LLVMModuleRef mod);
