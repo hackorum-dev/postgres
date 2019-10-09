@@ -2441,17 +2441,43 @@ canAcceptConnections(int backend_type)
 	/*
 	 * Don't start too many children.
 	 *
-	 * We allow more connections here than we can have backends because some
-	 * might still be authenticating; they might fail auth, or some existing
-	 * backend might exit before the auth cycle is completed.  The exact
-	 * MaxBackends limit is enforced when a new backend tries to join the
-	 * shared-inval backend array.
+	 * We allow more connections (including walsenders) here than we can have
+	 * backends because some might still be authenticating; they might fail
+	 * auth, or some existing backend might exit before the auth cycle is
+	 * completed.  The exact MaxBackends limit is enforced when a new backend
+	 * tries to join the shared-inval backend array.
 	 *
-	 * The limit here must match the sizes of the per-child-process arrays;
-	 * see comments for MaxLivePostmasterChildren().
+	 * On the other hand, there's no need to allow extra autovac workers or
+	 * bgworkers, because the requesting logic for those should never request
+	 * more processes than the corresponding limit.
+	 *
+	 * This logic must agree with MaxLivePostmasterChildren(), which sets the
+	 * total size of the per-child-process arrays.
+	 *
+	 * Note: currently, we can't see backend_type == BACKEND_TYPE_WALSND here,
+	 * but it seems less weird to include it in the switch than not.  We must
+	 * treat normal backends and walsenders alike for this purpose because one
+	 * type can metamorphose into the other later.
 	 */
-	if (CountChildren(BACKEND_TYPE_ALL) >= MaxLivePostmasterChildren())
-		result = CAC_TOOMANY;
+	switch (backend_type)
+	{
+		case BACKEND_TYPE_NORMAL:
+		case BACKEND_TYPE_WALSND:
+			if (CountChildren(BACKEND_TYPE_NORMAL | BACKEND_TYPE_WALSND) >=
+				2 * (MaxConnections + max_wal_senders))
+				result = CAC_TOOMANY;
+			break;
+		case BACKEND_TYPE_AUTOVAC:
+			if (CountChildren(BACKEND_TYPE_AUTOVAC) >= autovacuum_max_workers)
+				result = CAC_TOOMANY;
+			break;
+		case BACKEND_TYPE_BGWORKER:
+			if (CountChildren(BACKEND_TYPE_BGWORKER) >= max_worker_processes)
+				result = CAC_TOOMANY;
+			break;
+		default:
+			elog(ERROR, "unexpected backend_type: %d", backend_type);
+	}
 
 	return result;
 }
@@ -5334,7 +5360,17 @@ static int
 CountChildren(int target)
 {
 	dlist_iter	iter;
+	bool		check_walsender;
 	int			cnt = 0;
+
+	/*
+	 * In common cases we don't need to distinguish normal from walsender
+	 * children, so we can save a few cycles and shared-memory touches by not
+	 * checking for walsenders if not.
+	 */
+	check_walsender =
+		(target & (BACKEND_TYPE_NORMAL | BACKEND_TYPE_WALSND)) != 0 &&
+		(target & (BACKEND_TYPE_NORMAL | BACKEND_TYPE_WALSND)) != (BACKEND_TYPE_NORMAL | BACKEND_TYPE_WALSND);
 
 	dlist_foreach(iter, &BackendList)
 	{
@@ -5343,11 +5379,7 @@ CountChildren(int target)
 		if (bp->dead_end)
 			continue;
 
-		/*
-		 * Since target == BACKEND_TYPE_ALL is the most common case, we test
-		 * it first and avoid touching shared memory for every child.
-		 */
-		if (target != BACKEND_TYPE_ALL)
+		if (check_walsender)
 		{
 			/*
 			 * Assign bkend_type for any recently announced WAL Sender
@@ -5356,10 +5388,10 @@ CountChildren(int target)
 			if (bp->bkend_type == BACKEND_TYPE_NORMAL &&
 				IsPostmasterChildWalSender(bp->child_slot))
 				bp->bkend_type = BACKEND_TYPE_WALSND;
-
-			if (!(target & bp->bkend_type))
-				continue;
 		}
+
+		if (!(target & bp->bkend_type))
+			continue;
 
 		cnt++;
 	}
@@ -5626,15 +5658,31 @@ CreateOptsFile(int argc, char *argv[], char *fullprogname)
  * (the PMChildFlags array, and if EXEC_BACKEND the ShmemBackendArray).
  * These arrays include regular backends, autovac workers, walsenders
  * and background workers, but not special children nor dead_end children.
- * This allows the arrays to have a fixed maximum size, to wit the same
- * too-many-children limit enforced by canAcceptConnections().  The exact value
- * isn't too critical as long as it's more than MaxBackends.
+ * This allows the arrays to have a fixed maximum size.  The total amount
+ * of space we reserve here mustn't be less than the number of child processes
+ * that canAcceptConnections() will allow.
  */
 int
 MaxLivePostmasterChildren(void)
 {
-	return 2 * (MaxConnections + autovacuum_max_workers + 1 +
-				max_wal_senders + max_worker_processes);
+	int			nchildren = 0;
+
+	/*
+	 * For children that are launched from asynchronous connection requests,
+	 * allow some extra space in the arrays so that we don't deny a connection
+	 * that would have succeeded by the time it is ready to join the shared-
+	 * memory data structures.  The 2X multiplier is arbitrary, and probably
+	 * overkill, but the amount of space wasted is minimal.
+	 */
+	nchildren += 2 * (MaxConnections + max_wal_senders);
+
+	/* Allow for the autovac launcher and its workers */
+	nchildren += 1 + autovacuum_max_workers;
+
+	/* Allow for bgworkers */
+	nchildren += max_worker_processes;
+
+	return nchildren;
 }
 
 /*
