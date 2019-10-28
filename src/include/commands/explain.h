@@ -36,6 +36,7 @@ typedef struct ExplainState
 	bool		timing;			/* print detailed node timing */
 	bool		summary;		/* print total planning and execution timing */
 	bool		settings;		/* print modified settings */
+	bool		jit_details;	/* print per-expression details about JIT */
 	ExplainFormat format;		/* output format */
 	/* state for output formatting --- not reset for each new plan tree */
 	int			indent;			/* current indentation level */

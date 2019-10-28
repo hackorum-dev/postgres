@@ -145,6 +145,7 @@ llvm_compile_expr(ExprState *state)
 
 	funcname = llvm_expand_funcname(context, "evalexpr");
 	context->base.instr.created_expr_functions++;
+	state->expr_funcname = funcname;
 
 	/* Create the signature and function */
 	{
@@ -336,6 +337,13 @@ llvm_compile_expr(ExprState *state)
 
 						LLVMBuildCall(b, l_jit_deform,
 									  params, lengthof(params), "");
+
+						if (opcode == EEOP_INNER_FETCHSOME)
+							state->inner_funcname = pstrdup(LLVMGetValueName(l_jit_deform));
+						else if (opcode == EEOP_OUTER_FETCHSOME)
+							state->outer_funcname = pstrdup(LLVMGetValueName(l_jit_deform));
+						else
+							state->scan_funcname = pstrdup(LLVMGetValueName(l_jit_deform));
 					}
 					else
 					{
@@ -2462,6 +2470,7 @@ llvm_compile_expr(ExprState *state)
 	INSTR_TIME_SET_CURRENT(endtime);
 	INSTR_TIME_ACCUM_DIFF(context->base.instr.generation_counter,
 						  endtime, starttime);
+	state->flags |= EEO_FLAG_JIT_EXPR;
 
 	return true;
 }

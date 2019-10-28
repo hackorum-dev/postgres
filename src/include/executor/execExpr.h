@@ -26,6 +26,12 @@ struct SubscriptingRefState;
 #define EEO_FLAG_INTERPRETER_INITIALIZED	(1 << 1)
 /* jump-threading is in use */
 #define EEO_FLAG_DIRECT_THREADED			(1 << 2)
+/* is expression jit compiled */
+#define EEO_FLAG_JIT_EXPR					(1 << 3)
+/* does expression require tuple deforming */
+#define EEO_FLAG_DEFORM_INNER				(1 << 4)
+#define EEO_FLAG_DEFORM_OUTER				(1 << 5)
+#define EEO_FLAG_DEFORM_SCAN				(1 << 6)
 
 /* Typical API for out-of-line evaluation subroutines */
 typedef void (*ExecEvalSubroutine) (ExprState *state,

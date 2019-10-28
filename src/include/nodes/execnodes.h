@@ -113,6 +113,11 @@ typedef struct ExprState
 
 	Datum	   *innermost_domainval;
 	bool	   *innermost_domainnull;
+
+	const char *expr_funcname;
+	const char *outer_funcname;
+	const char *inner_funcname;
+	const char *scan_funcname;
 } ExprState;
 
 

@@ -19,6 +19,7 @@
 #include "commands/defrem.h"
 #include "commands/prepare.h"
 #include "executor/nodeHash.h"
+#include "executor/execExpr.h"
 #include "foreign/fdwapi.h"
 #include "jit/jit.h"
 #include "nodes/extensible.h"
@@ -69,6 +70,7 @@ static void show_plan_tlist(PlanState *planstate, List *ancestors,
 static void show_expression(Node *node, ExprState *expr, const char *qlabel,
 							PlanState *planstate, List *ancestors,
 							bool useprefix, ExplainState *es);
+static void show_jit_expr_details(ExprState *expr, ExplainState *es);
 static void show_qual(List *qual, ExprState *expr, const char *qlabel,
 					  PlanState *planstate, List *ancestors,
 					  bool useprefix, ExplainState *es);
@@ -170,6 +172,8 @@ ExplainQuery(ParseState *pstate, ExplainStmt *stmt, const char *queryString,
 			timing_set = true;
 			es->timing = defGetBoolean(opt);
 		}
+		else if (strcmp(opt->defname, "jit_details") == 0)
+			es->jit_details = defGetBoolean(opt);
 		else if (strcmp(opt->defname, "summary") == 0)
 		{
 			summary_set = true;
@@ -560,12 +564,11 @@ ExplainOnePlan(PlannedStmt *plannedstmt, IntoClause *into, ExplainState *es,
 		ExplainPrintTriggers(es, queryDesc);
 
 	/*
-	 * Print info about JITing. Tied to es->costs because we don't want to
-	 * display this in regression tests, as it'd cause output differences
-	 * depending on build options.  Might want to separate that out from COSTS
-	 * at a later stage.
+	 * Print info about JITing. Tied to es->costs unless jit_details is set,
+	 * because we don't want to display this in regression tests, as it'd
+	 * cause output differences depending on build options.
 	 */
-	if (es->costs)
+	if (es->costs || es->jit_details)
 		ExplainPrintJITSummary(es, queryDesc);
 
 	/*
@@ -2140,10 +2143,40 @@ show_plan_tlist(PlanState *planstate, List *ancestors, ExplainState *es)
 	}
 
 	/* Print results */
-	if (planstate->ps_ProjInfo)
-		ExplainPropertyList("Project", result, es);
-	else
+	if (!planstate->ps_ProjInfo)
 		ExplainPropertyList("Output", result, es);
+	else if (!es->jit_details)
+		ExplainPropertyList("Project", result, es);
+	else if (es->format != EXPLAIN_FORMAT_TEXT)
+	{
+		ExplainOpenGroup("Project", "Project", true, es);
+
+		ExplainPropertyList("Expr", result, es);
+
+		if (planstate->ps_ProjInfo)
+		{
+			ExprState *expr = &planstate->ps_ProjInfo->pi_state;
+
+			show_jit_expr_details(expr, es);
+		}
+		ExplainCloseGroup("Project", "Project", true, es);
+	}
+	else
+	{
+		ExplainPropertyList("Project", result, es);
+
+		if (planstate->ps_ProjInfo)
+		{
+			ExprState *expr = &planstate->ps_ProjInfo->pi_state;
+
+			/* XXX: remove \n, probably instead just open-code ExplainPropertyList */
+			es->str->len--;
+
+			appendStringInfoString(es->str, "; ");
+			show_jit_expr_details(expr, es);
+			appendStringInfoChar(es->str, '\n');
+		}
+	}
 }
 
 /*
@@ -2167,8 +2200,101 @@ show_expression(Node *node, ExprState *expr, const char *qlabel,
 	/* Deparse the expression */
 	exprstr = deparse_expression(node, context, useprefix, false);
 
-	/* And add to es->str */
-	ExplainPropertyText(qlabel, exprstr, es);
+	if (!es->jit_details)
+		ExplainPropertyText(qlabel, exprstr, es);
+	else if (es->format != EXPLAIN_FORMAT_TEXT)
+	{
+		ExplainOpenGroup(qlabel, qlabel, true, es);
+
+		ExplainPropertyText("Expr", exprstr, es);
+
+		if (expr != NULL)
+			show_jit_expr_details(expr, es);
+		ExplainCloseGroup(qlabel, qlabel, true, es);
+	}
+	else
+	{
+		appendStringInfoSpaces(es->str, es->indent * 2);
+		appendStringInfo(es->str, "%s: %s", qlabel, exprstr);
+
+		if (expr != NULL)
+		{
+			appendStringInfoString(es->str, "; ");
+
+			show_jit_expr_details(expr, es);
+		}
+
+		appendStringInfoChar(es->str, '\n');
+	}
+}
+
+static void
+show_jit_expr_details(ExprState *expr, ExplainState *es)
+{
+	if (expr == NULL)
+		return;
+
+	Assert(es->jit_details);
+
+	if (es->format == EXPLAIN_FORMAT_TEXT)
+	{
+		if (expr->flags & EEO_FLAG_JIT_EXPR)
+			appendStringInfo(es->str, "JIT-Expr: %s", expr->expr_funcname);
+		else
+			appendStringInfoString(es->str, "JIT-Expr: false");
+
+		/*
+		 * Either show the function name for tuple deforming quoted in "", or
+		 * false if JIT compilation was performed, but no code was generated
+		 * for deforming the respective attribute.
+		 */
+
+		if (expr->scan_funcname)
+			appendStringInfo(es->str, ", JIT-Deform-Scan: %s", expr->scan_funcname);
+		else if (expr->flags & EEO_FLAG_JIT_EXPR &&
+				 expr->flags & EEO_FLAG_DEFORM_SCAN)
+			appendStringInfo(es->str, ", JIT-Deform-Scan: false");
+
+		if (expr->outer_funcname)
+			appendStringInfo(es->str, ", JIT-Deform-Outer: %s", expr->outer_funcname);
+		else if (expr->flags & EEO_FLAG_JIT_EXPR &&
+				 expr->flags & EEO_FLAG_DEFORM_OUTER)
+			appendStringInfo(es->str, ", JIT-Deform-Outer: false");
+
+		if (expr->inner_funcname)
+			appendStringInfo(es->str, ", JIT-Deform-Inner: %s", expr->inner_funcname);
+		else if (expr->flags & EEO_FLAG_JIT_EXPR &&
+				 expr->flags & (EEO_FLAG_DEFORM_INNER))
+			appendStringInfo(es->str, ", JIT-Deform-Inner: false");
+	}
+	else
+	{
+		if (expr->flags & EEO_FLAG_JIT_EXPR)
+			ExplainPropertyText("JIT-Expr", expr->expr_funcname, es);
+		else
+			ExplainPropertyBool("JIT-Expr", false, es);
+
+		if (expr->scan_funcname)
+			ExplainProperty("JIT-Deform-Scan", NULL, expr->scan_funcname, false, es);
+		else if (expr->flags & EEO_FLAG_DEFORM_SCAN)
+			ExplainProperty("JIT-Deform-Scan", NULL, "false", true, es);
+		else
+			ExplainProperty("JIT-Deform-Scan", NULL, "null", true, es);
+
+		if (expr->outer_funcname)
+			ExplainProperty("JIT-Deform-Outer", NULL, expr->outer_funcname, false, es);
+		else if (expr->flags & EEO_FLAG_DEFORM_OUTER)
+			ExplainProperty("JIT-Deform-Outer", NULL, "false", true, es);
+		else
+			ExplainProperty("JIT-Deform-Outer", NULL, "null", true, es);
+
+		if (expr->inner_funcname)
+			ExplainProperty("JIT-Deform-Inner", NULL, expr->inner_funcname, false, es);
+		else if (expr->flags & EEO_FLAG_DEFORM_INNER)
+			ExplainProperty("JIT-Deform-Inner", NULL, "false", true, es);
+		else
+			ExplainProperty("JIT-Deform-Inner", NULL, "null", true, es);
+	}
 }
 
 /*

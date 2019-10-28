@@ -2458,6 +2458,13 @@ ExecComputeSlotInfo(ExprState *state, ExprEvalStep *op)
 	if (op->d.fetch.fixed && op->d.fetch.kind == &TTSOpsVirtual)
 		return false;
 
+	if (opcode == EEOP_INNER_FETCHSOME)
+		state->flags |= EEO_FLAG_DEFORM_INNER;
+	else if (opcode == EEOP_OUTER_FETCHSOME)
+		state->flags |= EEO_FLAG_DEFORM_OUTER;
+	else if (opcode == EEOP_SCAN_FETCHSOME)
+		state->flags |= EEO_FLAG_DEFORM_SCAN;
+
 	return true;
 }
 
