@@ -2098,7 +2098,14 @@ _readHashJoin(void)
 	READ_NODE_FIELD(hashclauses);
 	READ_NODE_FIELD(hashoperators);
 	READ_NODE_FIELD(hashcollations);
-	READ_NODE_FIELD(hashkeys);
+	READ_NODE_FIELD(hashkeys_outer);
+	READ_NODE_FIELD(hashkeys_inner);
+	READ_OID_FIELD(skewTable);
+	READ_INT_FIELD(skewColumn);
+	READ_BOOL_FIELD(skewInherit);
+	READ_FLOAT_FIELD(inner_rows_total);
+
+	READ_NODE_FIELD(inner_tlist);
 
 	READ_DONE();
 }
@@ -2263,25 +2270,6 @@ _readGatherMerge(void)
 	READ_OID_ARRAY(collations, local_node->numCols);
 	READ_BOOL_ARRAY(nullsFirst, local_node->numCols);
 	READ_BITMAPSET_FIELD(initParam);
-
-	READ_DONE();
-}
-
-/*
- * _readHash
- */
-static Hash *
-_readHash(void)
-{
-	READ_LOCALS(Hash);
-
-	ReadCommonPlan(&local_node->plan);
-
-	READ_NODE_FIELD(hashkeys);
-	READ_OID_FIELD(skewTable);
-	READ_INT_FIELD(skewColumn);
-	READ_BOOL_FIELD(skewInherit);
-	READ_FLOAT_FIELD(rows_total);
 
 	READ_DONE();
 }
@@ -2777,8 +2765,6 @@ parseNodeString(void)
 		return_value = _readGather();
 	else if (MATCH("GATHERMERGE", 11))
 		return_value = _readGatherMerge();
-	else if (MATCH("HASH", 4))
-		return_value = _readHash();
 	else if (MATCH("SETOP", 5))
 		return_value = _readSetOp();
 	else if (MATCH("LOCKROWS", 8))

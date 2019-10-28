@@ -29,7 +29,6 @@
 #include "executor/nodeGatherMerge.h"
 #include "executor/nodeGroup.h"
 #include "executor/nodeGroup.h"
-#include "executor/nodeHash.h"
 #include "executor/nodeHashjoin.h"
 #include "executor/nodeIndexonlyscan.h"
 #include "executor/nodeIndexscan.h"
@@ -268,10 +267,6 @@ ExecReScan(PlanState *node)
 
 		case T_UniqueState:
 			ExecReScanUnique((UniqueState *) node);
-			break;
-
-		case T_HashState:
-			ExecReScanHash((HashState *) node);
 			break;
 
 		case T_SetOpState:

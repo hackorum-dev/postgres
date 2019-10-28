@@ -18,7 +18,7 @@
 #include "commands/createas.h"
 #include "commands/defrem.h"
 #include "commands/prepare.h"
-#include "executor/nodeHash.h"
+#include "executor/nodeHashjoin.h"
 #include "foreign/fdwapi.h"
 #include "jit/jit.h"
 #include "nodes/extensible.h"
@@ -101,7 +101,7 @@ static void show_sortorder_options(StringInfo buf, Node *sortexpr,
 static void show_tablesample(TableSampleClause *tsc, PlanState *planstate,
 							 List *ancestors, ExplainState *es);
 static void show_sort_info(SortState *sortstate, ExplainState *es);
-static void show_hash_info(HashState *hashstate, ExplainState *es);
+static void show_hash_info(HashJoinState *hashjoinstate, ExplainState *es);
 static void show_tidbitmap_info(BitmapHeapScanState *planstate,
 								ExplainState *es);
 static void show_instrumentation_count(const char *qlabel, int which,
@@ -1291,9 +1291,6 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		case T_Limit:
 			pname = sname = "Limit";
 			break;
-		case T_Hash:
-			pname = sname = "Hash";
-			break;
 		default:
 			pname = sname = "???";
 			break;
@@ -1822,6 +1819,10 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 2,
 										   planstate, es);
+
+			show_hash_info(castNode(HashJoinState, planstate), es);
+			break;
+
 			break;
 		case T_Agg:
 			show_agg_keys(castNode(AggState, planstate), ancestors, es);
@@ -1856,9 +1857,6 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		case T_ModifyTable:
 			show_modifytable_info(castNode(ModifyTableState, planstate), ancestors,
 								  es);
-			break;
-		case T_Hash:
-			show_hash_info(castNode(HashState, planstate), es);
 			break;
 		default:
 			break;
@@ -1966,10 +1964,65 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		ExplainNode(outerPlanState(planstate), ancestors,
 					"Outer", NULL, es);
 
+	/* XXX: Temporary hack to hide explain changes */
+	if (IsA(plan, HashJoin))
+	{
+		if (es->format == EXPLAIN_FORMAT_TEXT)
+		{
+			if (es->indent)
+			{
+				appendStringInfoSpaces(es->str, es->indent * 2);
+				appendStringInfoString(es->str, "->  ");
+				es->indent += 2;
+			}
+			if (plan->parallel_aware)
+				appendStringInfoString(es->str, "Parallel ");
+			appendStringInfoString(es->str, "Hash\n");
+			es->indent++;
+		}
+
+		/* fake up Hash targetlist */
+		if (es->verbose)
+		{
+			List	   *context;
+			List	   *result = NIL;
+			bool		useprefix;
+			ListCell   *lc;
+
+			/* Set up deparsing context */
+			context = set_deparse_context_planstate(es->deparse_cxt,
+													(Node *) planstate,
+													ancestors);
+			useprefix = list_length(es->rtable) > 1;
+
+			/* Deparse each result column (we now include resjunk ones) */
+			foreach(lc, ((HashJoin *) plan)->inner_tlist)
+			{
+				TargetEntry *tle = (TargetEntry *) lfirst(lc);
+
+				result = lappend(result,
+								 deparse_expression((Node *) tle->expr, context,
+													useprefix, false));
+			}
+
+			/* Print results */
+			ExplainPropertyList("Output", result, es);
+		}
+	}
+
 	/* righttree */
 	if (innerPlanState(planstate))
 		ExplainNode(innerPlanState(planstate), ancestors,
 					"Inner", NULL, es);
+
+	/* XXX: Temporary hack to hide explain changes */
+	if (IsA(plan, HashJoin))
+	{
+		if (es->format == EXPLAIN_FORMAT_TEXT)
+		{
+			es->indent -= 3;
+		}
+	}
 
 	/* special child plans */
 	switch (nodeTag(plan))
@@ -2616,7 +2669,7 @@ show_sort_info(SortState *sortstate, ExplainState *es)
  * Show information on hash buckets/batches.
  */
 static void
-show_hash_info(HashState *hashstate, ExplainState *es)
+show_hash_info(HashJoinState *hashstate, ExplainState *es)
 {
 	HashInstrumentation hinstrument = {0};
 
@@ -2628,7 +2681,7 @@ show_hash_info(HashState *hashstate, ExplainState *es)
 	 * prepared to get instrumentation data from all participants.
 	 */
 	if (hashstate->hashtable)
-		ExecHashGetInstrumentation(&hinstrument, hashstate->hashtable);
+		ExecHashJoinGetInstrumentation(&hinstrument, hashstate->hashtable);
 
 	/*
 	 * Merge results from workers.  In the parallel-oblivious case, the

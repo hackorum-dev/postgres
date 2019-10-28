@@ -763,7 +763,15 @@ _outHashJoin(StringInfo str, const HashJoin *node)
 	WRITE_NODE_FIELD(hashclauses);
 	WRITE_NODE_FIELD(hashoperators);
 	WRITE_NODE_FIELD(hashcollations);
-	WRITE_NODE_FIELD(hashkeys);
+	WRITE_NODE_FIELD(hashkeys_outer);
+	WRITE_NODE_FIELD(hashkeys_inner);
+
+	WRITE_OID_FIELD(skewTable);
+	WRITE_INT_FIELD(skewColumn);
+	WRITE_BOOL_FIELD(skewInherit);
+	WRITE_FLOAT_FIELD(inner_rows_total, "%.0f");
+
+	WRITE_NODE_FIELD(inner_tlist);
 }
 
 static void
@@ -857,20 +865,6 @@ _outUnique(StringInfo str, const Unique *node)
 	WRITE_ATTRNUMBER_ARRAY(uniqColIdx, node->numCols);
 	WRITE_OID_ARRAY(uniqOperators, node->numCols);
 	WRITE_OID_ARRAY(uniqCollations, node->numCols);
-}
-
-static void
-_outHash(StringInfo str, const Hash *node)
-{
-	WRITE_NODE_TYPE("HASH");
-
-	_outPlanInfo(str, (const Plan *) node);
-
-	WRITE_NODE_FIELD(hashkeys);
-	WRITE_OID_FIELD(skewTable);
-	WRITE_INT_FIELD(skewColumn);
-	WRITE_BOOL_FIELD(skewInherit);
-	WRITE_FLOAT_FIELD(rows_total, "%.0f");
 }
 
 static void
@@ -3773,9 +3767,6 @@ outNode(StringInfo str, const void *obj)
 				break;
 			case T_Unique:
 				_outUnique(str, obj);
-				break;
-			case T_Hash:
-				_outHash(str, obj);
 				break;
 			case T_SetOp:
 				_outSetOp(str, obj);

@@ -86,7 +86,6 @@
 #include "executor/nodeGather.h"
 #include "executor/nodeGatherMerge.h"
 #include "executor/nodeGroup.h"
-#include "executor/nodeHash.h"
 #include "executor/nodeHashjoin.h"
 #include "executor/nodeIndexonlyscan.h"
 #include "executor/nodeIndexscan.h"
@@ -344,11 +343,6 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 													   estate, eflags);
 			break;
 
-		case T_Hash:
-			result = (PlanState *) ExecInitHash((Hash *) node,
-												estate, eflags);
-			break;
-
 		case T_SetOp:
 			result = (PlanState *) ExecInitSetOp((SetOp *) node,
 												 estate, eflags);
@@ -496,10 +490,6 @@ MultiExecProcNode(PlanState *node)
 			/*
 			 * Only node types that actually support multiexec will be listed
 			 */
-
-		case T_HashState:
-			result = MultiExecHash((HashState *) node);
-			break;
 
 		case T_BitmapIndexScanState:
 			result = MultiExecBitmapIndexScan((BitmapIndexScanState *) node);
@@ -710,10 +700,6 @@ ExecEndNode(PlanState *node)
 			ExecEndUnique((UniqueState *) node);
 			break;
 
-		case T_HashState:
-			ExecEndHash((HashState *) node);
-			break;
-
 		case T_SetOpState:
 			ExecEndSetOp((SetOpState *) node);
 			break;
@@ -774,9 +760,6 @@ ExecShutdownNode(PlanState *node)
 			break;
 		case T_GatherMergeState:
 			ExecShutdownGatherMerge((GatherMergeState *) node);
-			break;
-		case T_HashState:
-			ExecShutdownHash((HashState *) node);
 			break;
 		case T_HashJoinState:
 			ExecShutdownHashJoin((HashJoinState *) node);

@@ -901,7 +901,15 @@ _copyHashJoin(const HashJoin *from)
 	COPY_NODE_FIELD(hashclauses);
 	COPY_NODE_FIELD(hashoperators);
 	COPY_NODE_FIELD(hashcollations);
-	COPY_NODE_FIELD(hashkeys);
+	COPY_NODE_FIELD(hashkeys_outer);
+	COPY_NODE_FIELD(hashkeys_inner);
+
+	COPY_SCALAR_FIELD(skewTable);
+	COPY_SCALAR_FIELD(skewColumn);
+	COPY_SCALAR_FIELD(skewInherit);
+	COPY_SCALAR_FIELD(inner_rows_total);
+
+	COPY_NODE_FIELD(inner_tlist);
 
 	return newnode;
 }
@@ -1049,31 +1057,6 @@ _copyUnique(const Unique *from)
 	COPY_POINTER_FIELD(uniqColIdx, from->numCols * sizeof(AttrNumber));
 	COPY_POINTER_FIELD(uniqOperators, from->numCols * sizeof(Oid));
 	COPY_POINTER_FIELD(uniqCollations, from->numCols * sizeof(Oid));
-
-	return newnode;
-}
-
-/*
- * _copyHash
- */
-static Hash *
-_copyHash(const Hash *from)
-{
-	Hash	   *newnode = makeNode(Hash);
-
-	/*
-	 * copy node superclass fields
-	 */
-	CopyPlanFields((const Plan *) from, (Plan *) newnode);
-
-	/*
-	 * copy remainder of node
-	 */
-	COPY_NODE_FIELD(hashkeys);
-	COPY_SCALAR_FIELD(skewTable);
-	COPY_SCALAR_FIELD(skewColumn);
-	COPY_SCALAR_FIELD(skewInherit);
-	COPY_SCALAR_FIELD(rows_total);
 
 	return newnode;
 }
@@ -4885,9 +4868,6 @@ copyObjectImpl(const void *from)
 			break;
 		case T_Unique:
 			retval = _copyUnique(from);
-			break;
-		case T_Hash:
-			retval = _copyHash(from);
 			break;
 		case T_SetOp:
 			retval = _copySetOp(from);

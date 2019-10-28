@@ -29,7 +29,6 @@
 #include "executor/nodeBitmapHeapscan.h"
 #include "executor/nodeCustom.h"
 #include "executor/nodeForeignscan.h"
-#include "executor/nodeHash.h"
 #include "executor/nodeHashjoin.h"
 #include "executor/nodeIndexscan.h"
 #include "executor/nodeIndexonlyscan.h"
@@ -268,13 +267,9 @@ ExecParallelEstimate(PlanState *planstate, ExecParallelEstimateContext *e)
 									   e->pcxt);
 			break;
 		case T_HashJoinState:
-			if (planstate->plan->parallel_aware)
-				ExecHashJoinEstimate((HashJoinState *) planstate,
-									 e->pcxt);
-			break;
-		case T_HashState:
 			/* even when not parallel-aware, for EXPLAIN ANALYZE */
-			ExecHashEstimate((HashState *) planstate, e->pcxt);
+			ExecHashJoinEstimate((HashJoinState *) planstate,
+								 e->pcxt);
 			break;
 		case T_SortState:
 			/* even when not parallel-aware, for EXPLAIN ANALYZE */
@@ -481,13 +476,9 @@ ExecParallelInitializeDSM(PlanState *planstate,
 											d->pcxt);
 			break;
 		case T_HashJoinState:
-			if (planstate->plan->parallel_aware)
-				ExecHashJoinInitializeDSM((HashJoinState *) planstate,
-										  d->pcxt);
-			break;
-		case T_HashState:
 			/* even when not parallel-aware, for EXPLAIN ANALYZE */
-			ExecHashInitializeDSM((HashState *) planstate, d->pcxt);
+			ExecHashJoinInitializeDSM((HashJoinState *) planstate,
+									  d->pcxt);
 			break;
 		case T_SortState:
 			/* even when not parallel-aware, for EXPLAIN ANALYZE */
@@ -953,7 +944,6 @@ ExecParallelReInitializeDSM(PlanState *planstate,
 				ExecHashJoinReInitializeDSM((HashJoinState *) planstate,
 											pcxt);
 			break;
-		case T_HashState:
 		case T_SortState:
 			/* these nodes have DSM state, but no reinitialization is required */
 			break;
@@ -1015,8 +1005,8 @@ ExecParallelRetrieveInstrumentation(PlanState *planstate,
 		case T_SortState:
 			ExecSortRetrieveInstrumentation((SortState *) planstate);
 			break;
-		case T_HashState:
-			ExecHashRetrieveInstrumentation((HashState *) planstate);
+		case T_HashJoinState:
+			ExecHashJoinRetrieveInstrumentation((HashJoinState *) planstate);
 			break;
 		default:
 			break;
@@ -1289,13 +1279,9 @@ ExecParallelInitializeWorker(PlanState *planstate, ParallelWorkerContext *pwcxt)
 											   pwcxt);
 			break;
 		case T_HashJoinState:
-			if (planstate->plan->parallel_aware)
-				ExecHashJoinInitializeWorker((HashJoinState *) planstate,
-											 pwcxt);
-			break;
-		case T_HashState:
 			/* even when not parallel-aware, for EXPLAIN ANALYZE */
-			ExecHashInitializeWorker((HashState *) planstate, pwcxt);
+			ExecHashJoinInitializeWorker((HashJoinState *) planstate,
+										 pwcxt);
 			break;
 		case T_SortState:
 			/* even when not parallel-aware, for EXPLAIN ANALYZE */

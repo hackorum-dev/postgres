@@ -744,7 +744,27 @@ typedef struct HashJoin
 	 * List of expressions to be hashed for tuples from the outer plan, to
 	 * perform lookups in the hashtable over the inner plan.
 	 */
-	List	   *hashkeys;
+	List	   *hashkeys_outer;
+
+	/*
+	 * List of expressions to be hashed for tuples from inner plan, needed to
+	 * put them into the hashtable.
+	 */
+	List	   *hashkeys_inner;		/* hash keys for the hashjoin condition */
+
+	/*
+	 * If the executor is supposed to try to apply skew join optimization,
+	 * then skewTable/skewColumn/skewInherit identify the outer relation's
+	 * join key column, from which the relevant MCV statistics can be fetched.
+	 */
+	Oid			skewTable;		/* outer join key's table OID, or InvalidOid */
+	AttrNumber	skewColumn;		/* outer join key's column #, or zero */
+	bool		skewInherit;	/* is outer join rel an inheritance tree? */
+
+	double		inner_rows_total;		/* estimate total inner rows if parallel_aware */
+
+	/* XXX: explain hack */
+	List *inner_tlist;
 } HashJoin;
 
 /* ----------------
@@ -895,30 +915,6 @@ typedef struct GatherMerge
 	Bitmapset  *initParam;		/* param id's of initplans which are referred
 								 * at gather merge or one of it's child node */
 } GatherMerge;
-
-/* ----------------
- *		hash build node
- *
- * If the executor is supposed to try to apply skew join optimization, then
- * skewTable/skewColumn/skewInherit identify the outer relation's join key
- * column, from which the relevant MCV statistics can be fetched.
- * ----------------
- */
-typedef struct Hash
-{
-	Plan		plan;
-
-	/*
-	 * List of expressions to be hashed for tuples from Hash's outer plan,
-	 * needed to put them into the hashtable.
-	 */
-	List	   *hashkeys;		/* hash keys for the hashjoin condition */
-	Oid			skewTable;		/* outer join key's table OID, or InvalidOid */
-	AttrNumber	skewColumn;		/* outer join key's column #, or zero */
-	bool		skewInherit;	/* is outer join rel an inheritance tree? */
-	/* all other info is in the parent HashJoin node */
-	double		rows_total;		/* estimate total rows if parallel_aware */
-} Hash;
 
 /* ----------------
  *		setop node

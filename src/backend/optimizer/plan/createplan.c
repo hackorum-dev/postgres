@@ -223,14 +223,12 @@ static HashJoin *make_hashjoin(List *tlist,
 							   List *joinclauses, List *otherclauses,
 							   List *hashclauses,
 							   List *hashoperators, List *hashcollations,
-							   List *hashkeys,
+							   List *hashkeys_outer, List *hashkeys_inner,
+							   Oid skewTable,
+							   AttrNumber skewColumn,
+							   bool skewInherit,
 							   Plan *lefttree, Plan *righttree,
 							   JoinType jointype, bool inner_unique);
-static Hash *make_hash(Plan *lefttree,
-					   List *hashkeys,
-					   Oid skewTable,
-					   AttrNumber skewColumn,
-					   bool skewInherit);
 static MergeJoin *make_mergejoin(List *tlist,
 								 List *joinclauses, List *otherclauses,
 								 List *mergeclauses,
@@ -4376,7 +4374,6 @@ create_hashjoin_plan(PlannerInfo *root,
 					 HashPath *best_path)
 {
 	HashJoin   *join_plan;
-	Hash	   *hash_plan;
 	Plan	   *outer_plan;
 	Plan	   *inner_plan;
 	List	   *tlist = build_path_tlist(root, &best_path->jpath.path);
@@ -4501,31 +4498,8 @@ create_hashjoin_plan(PlannerInfo *root,
 	}
 
 	/*
-	 * Build the hash node and hash join node.
+	 * Build the hash join node.
 	 */
-	hash_plan = make_hash(inner_plan,
-						  inner_hashkeys,
-						  skewTable,
-						  skewColumn,
-						  skewInherit);
-
-	/*
-	 * Set Hash node's startup & total costs equal to total cost of input
-	 * plan; this only affects EXPLAIN display not decisions.
-	 */
-	copy_plan_costsize(&hash_plan->plan, inner_plan);
-	hash_plan->plan.startup_cost = hash_plan->plan.total_cost;
-
-	/*
-	 * If parallel-aware, the executor will also need an estimate of the total
-	 * number of rows expected from all participants so that it can size the
-	 * shared hash table.
-	 */
-	if (best_path->jpath.path.parallel_aware)
-	{
-		hash_plan->plan.parallel_aware = true;
-		hash_plan->rows_total = best_path->inner_rows_total;
-	}
 
 	join_plan = make_hashjoin(tlist,
 							  joinclauses,
@@ -4534,10 +4508,25 @@ create_hashjoin_plan(PlannerInfo *root,
 							  hashoperators,
 							  hashcollations,
 							  outer_hashkeys,
+							  inner_hashkeys,
+							  skewTable,
+							  skewColumn,
+							  skewInherit,
 							  outer_plan,
-							  (Plan *) hash_plan,
+							  (Plan *) inner_plan,
 							  best_path->jpath.jointype,
 							  best_path->jpath.inner_unique);
+
+	/*
+	 * If parallel-aware, the executor will also need an estimate of the total
+	 * number of rows expected from all participants so that it can size the
+	 * shared hash table.
+	 */
+	if (best_path->jpath.path.parallel_aware)
+	{
+		join_plan->join.plan.parallel_aware = true;
+		join_plan->inner_rows_total = best_path->inner_rows_total;
+	}
 
 	copy_generic_path_info(&join_plan->join.plan, &best_path->jpath.path);
 
@@ -5577,7 +5566,11 @@ make_hashjoin(List *tlist,
 			  List *hashclauses,
 			  List *hashoperators,
 			  List *hashcollations,
-			  List *hashkeys,
+			  List *outer_hashkeys,
+			  List *inner_hashkeys,
+			  Oid skewTable,
+			  AttrNumber skewColumn,
+			  bool skewInherit,
 			  Plan *lefttree,
 			  Plan *righttree,
 			  JoinType jointype,
@@ -5593,34 +5586,16 @@ make_hashjoin(List *tlist,
 	node->hashclauses = hashclauses;
 	node->hashoperators = hashoperators;
 	node->hashcollations = hashcollations;
-	node->hashkeys = hashkeys;
+	node->hashkeys_outer = outer_hashkeys;
+	node->hashkeys_inner = inner_hashkeys;
+	node->skewTable = skewTable;
+	node->skewColumn = skewColumn;
+	node->skewInherit = skewInherit;
 	node->join.jointype = jointype;
 	node->join.inner_unique = inner_unique;
 	node->join.joinqual = joinclauses;
 
-	return node;
-}
-
-static Hash *
-make_hash(Plan *lefttree,
-		  List *hashkeys,
-		  Oid skewTable,
-		  AttrNumber skewColumn,
-		  bool skewInherit)
-{
-	Hash	   *node = makeNode(Hash);
-	Plan	   *plan = &node->plan;
-
-	plan->targetlist = lefttree->targetlist;
-	plan->qual = NIL;
-	plan->lefttree = lefttree;
-	plan->righttree = NULL;
-
-	node->hashkeys = hashkeys;
-	node->skewTable = skewTable;
-	node->skewColumn = skewColumn;
-	node->skewInherit = skewInherit;
-
+	node->inner_tlist = righttree->targetlist;
 	return node;
 }
 
@@ -6763,7 +6738,6 @@ is_projection_capable_path(Path *path)
 	/* Most plan types can project, so just list the ones that can't */
 	switch (path->pathtype)
 	{
-		case T_Hash:
 		case T_Material:
 		case T_Sort:
 		case T_Unique:
@@ -6807,7 +6781,6 @@ is_projection_capable_plan(Plan *plan)
 	/* Most plan types can project, so just list the ones that can't */
 	switch (nodeTag(plan))
 	{
-		case T_Hash:
 		case T_Material:
 		case T_Sort:
 		case T_Unique:

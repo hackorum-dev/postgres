@@ -2683,7 +2683,6 @@ finalize_plan(PlannerInfo *root, Plan *plan,
 			break;
 
 		case T_ProjectSet:
-		case T_Hash:
 		case T_Material:
 		case T_Sort:
 		case T_Unique:

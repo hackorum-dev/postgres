@@ -107,7 +107,6 @@ static Plan *set_append_references(PlannerInfo *root,
 static Plan *set_mergeappend_references(PlannerInfo *root,
 										MergeAppend *mplan,
 										int rtoffset);
-static void set_hash_references(PlannerInfo *root, Plan *plan, int rtoffset);
 static Node *fix_scan_expr(PlannerInfo *root, Node *node, int rtoffset);
 static Node *fix_scan_expr_mutator(Node *node, fix_scan_expr_context *context);
 static bool fix_scan_expr_walker(Node *node, fix_scan_expr_context *context);
@@ -644,10 +643,6 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 				set_upper_references(root, plan, rtoffset);
 				set_param_references(root, plan);
 			}
-			break;
-
-		case T_Hash:
-			set_hash_references(root, plan, rtoffset);
 			break;
 
 		case T_Material:
@@ -1424,37 +1419,6 @@ set_mergeappend_references(PlannerInfo *root,
 }
 
 /*
- * set_hash_references
- *	   Do set_plan_references processing on a Hash node
- */
-static void
-set_hash_references(PlannerInfo *root, Plan *plan, int rtoffset)
-{
-	Hash	   *hplan = (Hash *) plan;
-	Plan	   *outer_plan = plan->lefttree;
-	indexed_tlist *outer_itlist;
-
-	/*
-	 * Hash's hashkeys are used when feeding tuples into the hashtable,
-	 * therefore have them reference Hash's outer plan (which itself is the
-	 * inner plan of the HashJoin).
-	 */
-	outer_itlist = build_tlist_index(outer_plan->targetlist);
-	hplan->hashkeys = (List *)
-		fix_upper_expr(root,
-					   (Node *) hplan->hashkeys,
-					   outer_itlist,
-					   OUTER_VAR,
-					   rtoffset);
-
-	/* Hash doesn't project */
-	set_dummy_tlist_references(plan, rtoffset);
-
-	/* Hash nodes don't have their own quals */
-	Assert(plan->qual == NIL);
-}
-
-/*
  * copyVar
  *		Copy a Var node.
  *
@@ -1789,15 +1753,23 @@ set_join_references(PlannerInfo *root, Join *join, int rtoffset)
 										(Index) 0,
 										rtoffset);
 
-		/*
-		 * HashJoin's hashkeys are used to look for matching tuples from its
-		 * outer plan (not the Hash node!) in the hashtable.
-		 */
-		hj->hashkeys = (List *) fix_upper_expr(root,
-											   (Node *) hj->hashkeys,
-											   outer_itlist,
-											   OUTER_VAR,
-											   rtoffset);
+		hj->hashkeys_outer = (List *) fix_upper_expr(root,
+													 (Node *) hj->hashkeys_outer,
+													 outer_itlist,
+													 OUTER_VAR,
+													 rtoffset);
+
+		hj->hashkeys_inner = (List *) fix_upper_expr(root,
+													 (Node *) hj->hashkeys_inner,
+													 inner_itlist,
+													 INNER_VAR,
+													 rtoffset);
+
+		hj->inner_tlist = (List *) fix_upper_expr(root,
+												  (Node *) hj->inner_tlist,
+												  inner_itlist,
+												  INNER_VAR,
+												  rtoffset);
 	}
 
 	/*

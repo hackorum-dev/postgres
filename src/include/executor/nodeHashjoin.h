@@ -27,8 +27,15 @@ extern void ExecHashJoinInitializeDSM(HashJoinState *state, ParallelContext *pcx
 extern void ExecHashJoinReInitializeDSM(HashJoinState *state, ParallelContext *pcxt);
 extern void ExecHashJoinInitializeWorker(HashJoinState *state,
 										 ParallelWorkerContext *pwcxt);
-
-extern void ExecHashJoinSaveTuple(MinimalTuple tuple, uint32 hashvalue,
-								  BufFile **fileptr);
+extern void ExecHashJoinRetrieveInstrumentation(HashJoinState *node);
+extern void ExecHashJoinGetInstrumentation(HashInstrumentation *instrument,
+										   HashJoinTable hashtable);
+extern void ExecChooseHashTableSize(double ntuples, int tupwidth, bool useskew,
+									bool try_combined_work_mem,
+									int parallel_workers,
+									size_t *space_allowed,
+									int *numbuckets,
+									int *numbatches,
+									int *num_skew_mcvs);
 
 #endif							/* NODEHASHJOIN_H */
