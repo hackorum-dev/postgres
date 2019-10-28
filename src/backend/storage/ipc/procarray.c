@@ -92,6 +92,12 @@ typedef struct ProcArrayStruct
 	/* oldest catalog xmin of any replication slot */
 	TransactionId replication_slot_catalog_xmin;
 
+	/*
+	 * If oldest_running_xmin is valid value, then we assume oldest_running_xmin <= xid < xmax is still running.
+	 * When standbyState is switched to STANDBY_SNAPSHOT_PENDING, we initialize oldest_running_xmin with oldestRunningXid.
+	 * When we have full knowledge of transactions that are running, we set oldest_running_xmin to be InvalidTransactionId.
+	 */
+	TransactionId oldest_running_xmin;
 	/* indexes into allPgXact[], has PROCARRAY_MAXPROCS entries */
 	int			pgprocnos[FLEXIBLE_ARRAY_MEMBER];
 } ProcArrayStruct;
@@ -856,12 +862,14 @@ ProcArrayApplyRecoveryInfo(RunningTransactions running)
 
 		standbySnapshotPendingXmin = latestObservedXid;
 		procArray->lastOverflowedXid = latestObservedXid;
+		procArray->oldest_running_xmin = running->oldestRunningXid;
 	}
 	else
 	{
 		standbyState = STANDBY_SNAPSHOT_READY;
 
 		standbySnapshotPendingXmin = InvalidTransactionId;
+		procArray->oldest_running_xmin = InvalidTransactionId;
 	}
 
 	/*
@@ -1688,6 +1696,9 @@ GetSnapshotData(Snapshot snapshot)
 		 * those newly added transaction ids would be filtered away, so we
 		 * need not be concerned about them.
 		 */
+		if (procArray->oldest_running_xmin != InvalidTransactionId
+				&& TransactionIdPrecedes(procArray->oldest_running_xmin, xmin))
+			xmin = procArray->oldest_running_xmin;
 		subcount = KnownAssignedXidsGetAndSetXmin(snapshot->subxip, &xmin,
 												  xmax);
 

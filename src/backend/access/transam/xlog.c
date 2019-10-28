@@ -7889,7 +7889,7 @@ CheckRecoveryConsistency(void)
 	 * run? If so, we can tell postmaster that the database is consistent now,
 	 * enabling connections.
 	 */
-	if (standbyState == STANDBY_SNAPSHOT_READY &&
+	if ((standbyState == STANDBY_SNAPSHOT_READY || standbyState == STANDBY_SNAPSHOT_PENDING) &&
 		!LocalHotStandbyActive &&
 		reachedConsistency &&
 		IsUnderPostmaster)
