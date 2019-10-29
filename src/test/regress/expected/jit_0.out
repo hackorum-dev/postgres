@@ -1,0 +1,5 @@
+/* skip test if JIT is not available */
+SELECT NOT (pg_jit_available() AND current_setting('jit')::bool)
+       AS skip_test \gset
+\if :skip_test
+\quit
