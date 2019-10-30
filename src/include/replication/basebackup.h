@@ -31,6 +31,6 @@ typedef struct
 
 extern void SendBaseBackup(BaseBackupCmd *cmd);
 
-extern int64 sendTablespace(char *path, bool sizeonly);
+extern int64 sendTablespace(char *path, bool dryrun);
 
 #endif							/* _BASEBACKUP_H */

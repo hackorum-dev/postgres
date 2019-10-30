@@ -55,15 +55,15 @@ typedef struct
 } basebackup_options;
 
 
-static int64 sendDir(const char *path, int basepathlen, bool sizeonly,
+static int64 sendDir(const char *path, int basepathlen, bool dryrun,
 					 List *tablespaces, bool sendtblspclinks);
 static bool sendFile(const char *readfilename, const char *tarfilename,
 					 struct stat *statbuf, bool missing_ok, Oid dboid);
 static void sendFileWithContent(const char *filename, const char *content);
 static int64 _tarWriteHeader(const char *filename, const char *linktarget,
-							 struct stat *statbuf, bool sizeonly);
+							 struct stat *statbuf, bool dryrun);
 static int64 _tarWriteDir(const char *pathbuf, int basepathlen, struct stat *statbuf,
-						  bool sizeonly);
+						  bool dryrun);
 static void send_int8_string(StringInfoData *buf, int64 intval);
 static void SendBackupHeader(List *tablespaces);
 static void perform_base_backup(basebackup_options *opt);
@@ -1021,13 +1021,13 @@ sendFileWithContent(const char *filename, const char *content)
 
 /*
  * Include the tablespace directory pointed to by 'path' in the output tar
- * stream.  If 'sizeonly' is true, we just calculate a total length and return
+ * stream.  If 'dryrun' is true, we just calculate a total length and return
  * it, without actually sending anything.
  *
  * Only used to send auxiliary tablespaces, not PGDATA.
  */
 int64
-sendTablespace(char *path, bool sizeonly)
+sendTablespace(char *path, bool dryrun)
 {
 	int64		size;
 	char		pathbuf[MAXPGPATH];
@@ -1057,17 +1057,17 @@ sendTablespace(char *path, bool sizeonly)
 	}
 
 	size = _tarWriteHeader(TABLESPACE_VERSION_DIRECTORY, NULL, &statbuf,
-						   sizeonly);
+						   dryrun);
 
 	/* Send all the files in the tablespace version directory */
-	size += sendDir(pathbuf, strlen(path), sizeonly, NIL, true);
+	size += sendDir(pathbuf, strlen(path), dryrun, NIL, true);
 
 	return size;
 }
 
 /*
  * Include all files from the given directory in the output tar stream. If
- * 'sizeonly' is true, we just calculate a total length and return it, without
+ * 'dryrun' is true, we just calculate a total length and return it, without
  * actually sending anything.
  *
  * Omit any directory in the tablespaces list, to avoid backing up
@@ -1078,7 +1078,7 @@ sendTablespace(char *path, bool sizeonly)
  * as it will be sent separately in the tablespace_map file.
  */
 static int64
-sendDir(const char *path, int basepathlen, bool sizeonly, List *tablespaces,
+sendDir(const char *path, int basepathlen, bool dryrun, List *tablespaces,
 		bool sendtblspclinks)
 {
 	DIR		   *dir;
@@ -1237,7 +1237,7 @@ sendDir(const char *path, int basepathlen, bool sizeonly, List *tablespaces,
 			if (strcmp(de->d_name, excludeDirContents[excludeIdx]) == 0)
 			{
 				elog(DEBUG1, "contents of directory \"%s\" excluded from backup", de->d_name);
-				size += _tarWriteDir(pathbuf, basepathlen, &statbuf, sizeonly);
+				size += _tarWriteDir(pathbuf, basepathlen, &statbuf, dryrun);
 				excludeFound = true;
 				break;
 			}
@@ -1253,7 +1253,7 @@ sendDir(const char *path, int basepathlen, bool sizeonly, List *tablespaces,
 		if (statrelpath != NULL && strcmp(pathbuf, statrelpath) == 0)
 		{
 			elog(DEBUG1, "contents of directory \"%s\" excluded from backup", statrelpath);
-			size += _tarWriteDir(pathbuf, basepathlen, &statbuf, sizeonly);
+			size += _tarWriteDir(pathbuf, basepathlen, &statbuf, dryrun);
 			continue;
 		}
 
@@ -1265,14 +1265,14 @@ sendDir(const char *path, int basepathlen, bool sizeonly, List *tablespaces,
 		if (strcmp(pathbuf, "./pg_wal") == 0)
 		{
 			/* If pg_wal is a symlink, write it as a directory anyway */
-			size += _tarWriteDir(pathbuf, basepathlen, &statbuf, sizeonly);
+			size += _tarWriteDir(pathbuf, basepathlen, &statbuf, dryrun);
 
 			/*
 			 * Also send archive_status directory (by hackishly reusing
 			 * statbuf from above ...).
 			 */
 			size += _tarWriteHeader("./pg_wal/archive_status", NULL, &statbuf,
-									sizeonly);
+									dryrun);
 
 			continue;			/* don't recurse into pg_wal */
 		}
@@ -1304,7 +1304,7 @@ sendDir(const char *path, int basepathlen, bool sizeonly, List *tablespaces,
 			linkpath[rllen] = '\0';
 
 			size += _tarWriteHeader(pathbuf + basepathlen + 1, linkpath,
-									&statbuf, sizeonly);
+									&statbuf, dryrun);
 #else
 
 			/*
@@ -1328,7 +1328,7 @@ sendDir(const char *path, int basepathlen, bool sizeonly, List *tablespaces,
 			 * permissions right.
 			 */
 			size += _tarWriteHeader(pathbuf + basepathlen + 1, NULL, &statbuf,
-									sizeonly);
+									dryrun);
 
 			/*
 			 * Call ourselves recursively for a directory, unless it happens
@@ -1359,17 +1359,17 @@ sendDir(const char *path, int basepathlen, bool sizeonly, List *tablespaces,
 				skip_this_dir = true;
 
 			if (!skip_this_dir)
-				size += sendDir(pathbuf, basepathlen, sizeonly, tablespaces, sendtblspclinks);
+				size += sendDir(pathbuf, basepathlen, dryrun, tablespaces, sendtblspclinks);
 		}
 		else if (S_ISREG(statbuf.st_mode))
 		{
 			bool		sent = false;
 
-			if (!sizeonly)
+			if (!dryrun)
 				sent = sendFile(pathbuf, pathbuf + basepathlen + 1, &statbuf,
 								true, isDbDir ? atooid(lastDir + 1) : InvalidOid);
 
-			if (sent || sizeonly)
+			if (sent || dryrun)
 			{
 				/* Add size, rounded up to 512byte block */
 				size += ((statbuf.st_size + 511) & ~511);
@@ -1688,12 +1688,12 @@ sendFile(const char *readfilename, const char *tarfilename, struct stat *statbuf
 
 static int64
 _tarWriteHeader(const char *filename, const char *linktarget,
-				struct stat *statbuf, bool sizeonly)
+				struct stat *statbuf, bool dryrun)
 {
 	char		h[512];
 	enum tarError rc;
 
-	if (!sizeonly)
+	if (!dryrun)
 	{
 		rc = tarCreateHeader(h, filename, linktarget, statbuf->st_size,
 							 statbuf->st_mode, statbuf->st_uid, statbuf->st_gid,
@@ -1731,7 +1731,7 @@ _tarWriteHeader(const char *filename, const char *linktarget,
  */
 static int64
 _tarWriteDir(const char *pathbuf, int basepathlen, struct stat *statbuf,
-			 bool sizeonly)
+			 bool dryrun)
 {
 	/* If symlink, write it as a directory anyway */
 #ifndef WIN32
@@ -1741,7 +1741,7 @@ _tarWriteDir(const char *pathbuf, int basepathlen, struct stat *statbuf,
 #endif
 		statbuf->st_mode = S_IFDIR | pg_dir_create_mode;
 
-	return _tarWriteHeader(pathbuf + basepathlen + 1, NULL, statbuf, sizeonly);
+	return _tarWriteHeader(pathbuf + basepathlen + 1, NULL, statbuf, dryrun);
 }
 
 /*
