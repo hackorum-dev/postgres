@@ -24,6 +24,7 @@ extern bool parse_bool(const char *value, bool *result);
 extern bool parse_bool_with_len(const char *value, size_t len, bool *result);
 
 /* domains.c */
+extern bool suppress_constraints;
 extern void domain_check(Datum value, bool isnull, Oid domainType,
 						 void **extra, MemoryContext mcxt);
 extern int	errdatatype(Oid datatypeOid);

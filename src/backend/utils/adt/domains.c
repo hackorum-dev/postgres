@@ -61,6 +61,8 @@ typedef struct DomainIOData
 } DomainIOData;
 
 
+bool suppress_constraints = false;
+
 /*
  * domain_state_setup - initialize the cache for a new domain type.
  *
@@ -132,6 +134,9 @@ domain_check_input(Datum value, bool isnull, DomainIOData *my_extra)
 {
 	ExprContext *econtext = my_extra->econtext;
 	ListCell   *l;
+
+	if (suppress_constraints)
+		return;
 
 	/* Make sure we have up-to-date constraints */
 	UpdateDomainConstraintRef(&my_extra->constraint_ref);

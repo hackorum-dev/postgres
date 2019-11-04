@@ -709,8 +709,20 @@ apply_handle_update(StringInfo s)
 
 	/* Build the search tuple. */
 	oldctx = MemoryContextSwitchTo(GetPerTupleMemoryContext(estate));
-	slot_store_cstrings(remoteslot, rel,
-						has_oldtup ? oldtup.values : newtup.values);
+
+	suppress_constraints = has_oldtup ? true : false;
+	PG_TRY();
+	{
+		slot_store_cstrings(remoteslot, rel,
+							has_oldtup ? oldtup.values : newtup.values);
+	}
+	PG_CATCH();
+	{
+		suppress_constraints = false;
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	suppress_constraints = false;
 	MemoryContextSwitchTo(oldctx);
 
 	/*
