@@ -286,7 +286,8 @@
 #max_wal_senders = 10		# max number of walsender processes
 				# (change requires restart)
 #wal_keep_segments = 0		# in logfile segments; 0 disables
-#wal_sender_timeout = 60s	# in milliseconds; 0 disables
+#wal_sender_timeout = 60s	# in milliseconds if no unit specified;
+				# 0 disables
 
 #max_replication_slots = 10	# max number of replication slots
 				# (change requires restart)
@@ -326,7 +327,8 @@
 					# query conflicts
 #wal_receiver_timeout = 60s		# time that receiver waits for
 					# communication from master
-					# in milliseconds; 0 disables
+					# in milliseconds if no unit specified;
+					# 0 disables
 #wal_retrieve_retry_interval = 5s	# time to wait before retrying to
 					# retrieve WAL after a failed attempt
 #recovery_min_apply_delay = 0		# minimum delay for applying changes during recovery
