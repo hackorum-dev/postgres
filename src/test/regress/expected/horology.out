@@ -2597,7 +2597,7 @@ SELECT to_timestamp('1,582nd VIII 21', 'Y,YYYth FMRM DD');
 (1 row)
 
 SELECT to_timestamp('15 "text between quote marks" 98 54 45',
-                    E'HH24 "\\"text between quote marks\\"" YY MI SS');
+                    E'HH24 "\\"text between quote marks\\"" RR MI SS');
          to_timestamp         
 ------------------------------
  Thu Jan 01 15:54:45 1998 PST
@@ -2618,25 +2618,34 @@ SELECT to_timestamp('2000January09Sunday', 'YYYYFMMonthDDFMDay');
 SELECT to_timestamp('97/Feb/16', 'YYMonDD');
 ERROR:  invalid value "/Fe" for "Mon"
 DETAIL:  The given value did not match any of the allowed values for this field.
+SELECT to_timestamp('97/Feb/16', 'RRMonDD');
+ERROR:  invalid value "/Fe" for "Mon"
+DETAIL:  The given value did not match any of the allowed values for this field.
 SELECT to_timestamp('97/Feb/16', 'YY:Mon:DD');
          to_timestamp         
 ------------------------------
- Sun Feb 16 00:00:00 1997 PST
+ Sat Feb 16 00:00:00 2097 PST
 (1 row)
 
-SELECT to_timestamp('97/Feb/16', 'FXYY:Mon:DD');
+SELECT to_timestamp('97/Feb/16', 'FXRR:Mon:DD');
          to_timestamp         
 ------------------------------
  Sun Feb 16 00:00:00 1997 PST
 (1 row)
 
-SELECT to_timestamp('97/Feb/16', 'FXYY/Mon/DD');
+SELECT to_timestamp('97/Feb/16', 'FXRR/Mon/DD');
          to_timestamp         
 ------------------------------
  Sun Feb 16 00:00:00 1997 PST
 (1 row)
 
 SELECT to_timestamp('19971116', 'YYYYMMDD');
+         to_timestamp         
+------------------------------
+ Sun Nov 16 00:00:00 1997 PST
+(1 row)
+
+SELECT to_timestamp('19971116', 'RRRRMMDD');
          to_timestamp         
 ------------------------------
  Sun Nov 16 00:00:00 1997 PST
@@ -2663,10 +2672,16 @@ SELECT to_timestamp('1997 BC 11 16', 'YYYY BC MM DD');
 SELECT to_timestamp('9-1116', 'Y-MMDD');
          to_timestamp         
 ------------------------------
- Mon Nov 16 00:00:00 2009 PST
+ Fri Nov 16 00:00:00 2029 PST
 (1 row)
 
 SELECT to_timestamp('95-1116', 'YY-MMDD');
+         to_timestamp         
+------------------------------
+ Wed Nov 16 00:00:00 2095 PST
+(1 row)
+
+SELECT to_timestamp('95-1116', 'RR-MMDD');
          to_timestamp         
 ------------------------------
  Thu Nov 16 00:00:00 1995 PST
@@ -2675,7 +2690,7 @@ SELECT to_timestamp('95-1116', 'YY-MMDD');
 SELECT to_timestamp('995-1116', 'YYY-MMDD');
          to_timestamp         
 ------------------------------
- Thu Nov 16 00:00:00 1995 PST
+ Mon Nov 16 00:00:00 2995 PST
 (1 row)
 
 SELECT to_timestamp('2005426', 'YYYYWWD');
@@ -2711,7 +2726,7 @@ SELECT to_timestamp('05527', 'IYIWID');
 SELECT to_timestamp('5527', 'IIWID');
          to_timestamp         
 ------------------------------
- Sun Jan 01 00:00:00 2006 PST
+ Sun Dec 28 00:00:00 2025 PST
 (1 row)
 
 SELECT to_timestamp('2005364', 'IYYYIDDD');

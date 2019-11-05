@@ -344,7 +344,7 @@ SELECT to_timestamp('My birthday-> Year: 1976, Month: May, Day: 16',
 SELECT to_timestamp('1,582nd VIII 21', 'Y,YYYth FMRM DD');
 
 SELECT to_timestamp('15 "text between quote marks" 98 54 45',
-                    E'HH24 "\\"text between quote marks\\"" YY MI SS');
+                    E'HH24 "\\"text between quote marks\\"" RR MI SS');
 
 SELECT to_timestamp('05121445482000', 'MMDDHH24MISSYYYY');
 
@@ -352,13 +352,17 @@ SELECT to_timestamp('2000January09Sunday', 'YYYYFMMonthDDFMDay');
 
 SELECT to_timestamp('97/Feb/16', 'YYMonDD');
 
+SELECT to_timestamp('97/Feb/16', 'RRMonDD');
+
 SELECT to_timestamp('97/Feb/16', 'YY:Mon:DD');
 
-SELECT to_timestamp('97/Feb/16', 'FXYY:Mon:DD');
+SELECT to_timestamp('97/Feb/16', 'FXRR:Mon:DD');
 
-SELECT to_timestamp('97/Feb/16', 'FXYY/Mon/DD');
+SELECT to_timestamp('97/Feb/16', 'FXRR/Mon/DD');
 
 SELECT to_timestamp('19971116', 'YYYYMMDD');
+
+SELECT to_timestamp('19971116', 'RRRRMMDD');
 
 SELECT to_timestamp('20000-1116', 'YYYY-MMDD');
 
@@ -368,6 +372,8 @@ SELECT to_timestamp('1997 BC 11 16', 'YYYY BC MM DD');
 SELECT to_timestamp('9-1116', 'Y-MMDD');
 
 SELECT to_timestamp('95-1116', 'YY-MMDD');
+
+SELECT to_timestamp('95-1116', 'RR-MMDD');
 
 SELECT to_timestamp('995-1116', 'YYY-MMDD');
 

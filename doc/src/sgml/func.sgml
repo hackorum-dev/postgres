@@ -6332,7 +6332,7 @@ SELECT regexp_match('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
         <entry>year (4 or more digits) with comma</entry>
        </row>
        <row>
-        <entry><literal>YYYY</literal></entry>
+        <entry><literal>YYYY</literal>, <literal>RRRR</literal></entry>
         <entry>year (4 or more digits)</entry>
        </row>
        <row>
@@ -6362,6 +6362,10 @@ SELECT regexp_match('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
        <row>
         <entry><literal>I</literal></entry>
         <entry>last digit of ISO 8601 week-numbering year</entry>
+       </row>
+       <row>
+        <entry><literal>RR</literal></entry>
+        <entry>last 2 digits of rounded year</entry>
        </row>
        <row>
         <entry><literal>BC</literal>, <literal>bc</literal>,
@@ -6683,10 +6687,18 @@ SELECT regexp_match('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
      <listitem>
       <para>
        In <function>to_timestamp</function> and <function>to_date</function>,
-       if the year format specification is less than four digits, e.g.
-       <literal>YYY</literal>, and the supplied year is less than four digits,
-       the year will be adjusted to be nearest to the year 2020, e.g.
-       <literal>95</literal> becomes 1995.
+       when using <literal>YYY</literal>, <literal>YY</literal> or
+       <literal>Y</literal> fields, then higher year digits are taken from
+       2020, e.g. <literal>7</literal> becomes 2027.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       In <function>to_timestamp</function> and <function>to_date</function>,
+       when using <literal>RR</literal> field, the supplied year will be
+       adjusted to be nearest to the year 2020, e.g. <literal>95</literal>
+       becomes 1995.
       </para>
      </listitem>
 
@@ -6804,6 +6816,16 @@ SELECT regexp_match('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
         matches the <function>extract(isodow from ...)</function> function, but
         <function>to_char(..., 'D')</function>'s does not match
         <function>extract(dow from ...)</function>'s day numbering.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+        <function>to_char(interval)</function> formats <literal>HH</literal> and
+        <literal>HH12</literal> as shown on a 12-hour clock, for example zero hours
+        and 36 hours both output as <literal>12</literal>, while <literal>HH24</literal>
+        outputs the full hour value, which can exceed 23 in
+        an <type>interval</type> value.
       </para>
      </listitem>
 

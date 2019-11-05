@@ -665,6 +665,8 @@ typedef enum
 	DCH_PM,
 	DCH_Q,
 	DCH_RM,
+	DCH_RRRR,
+	DCH_RR,
 	DCH_SSSSS,
 	DCH_SSSS,
 	DCH_SS,
@@ -718,6 +720,8 @@ typedef enum
 	DCH_pm,
 	DCH_q,
 	DCH_rm,
+	DCH_rrrr,
+	DCH_rr,
 	DCH_sssss,
 	DCH_ssss,
 	DCH_ss,
@@ -828,6 +832,8 @@ static const KeyWord DCH_keywords[] = {
 	{"PM", 2, DCH_PM, false, FROM_CHAR_DATE_NONE},
 	{"Q", 1, DCH_Q, true, FROM_CHAR_DATE_NONE}, /* Q */
 	{"RM", 2, DCH_RM, false, FROM_CHAR_DATE_GREGORIAN}, /* R */
+	{"RRRR", 4, DCH_RRRR, true, FROM_CHAR_DATE_GREGORIAN},
+	{"RR", 2, DCH_RR, true, FROM_CHAR_DATE_GREGORIAN},
 	{"SSSSS", 5, DCH_SSSS, true, FROM_CHAR_DATE_NONE},	/* S */
 	{"SSSS", 4, DCH_SSSS, true, FROM_CHAR_DATE_NONE},
 	{"SS", 2, DCH_SS, true, FROM_CHAR_DATE_NONE},
@@ -881,6 +887,8 @@ static const KeyWord DCH_keywords[] = {
 	{"pm", 2, DCH_pm, false, FROM_CHAR_DATE_NONE},
 	{"q", 1, DCH_Q, true, FROM_CHAR_DATE_NONE}, /* q */
 	{"rm", 2, DCH_rm, false, FROM_CHAR_DATE_GREGORIAN}, /* r */
+	{"rrrr", 4, DCH_RRRR, true, FROM_CHAR_DATE_GREGORIAN},
+	{"rr", 2, DCH_RR, true, FROM_CHAR_DATE_GREGORIAN},
 	{"sssss", 5, DCH_SSSS, true, FROM_CHAR_DATE_NONE},	/* s */
 	{"ssss", 4, DCH_SSSS, true, FROM_CHAR_DATE_NONE},
 	{"ss", 2, DCH_SS, true, FROM_CHAR_DATE_NONE},
@@ -1058,7 +1066,8 @@ static void dump_node(FormatNode *node, int max);
 
 static const char *get_th(char *num, int type);
 static char *str_numth(char *dest, char *num, int type);
-static int	adjust_partial_year_to_2020(int year);
+static int	adjust_partial_year_to_2020(int year, int ndigits);
+static int	adjust_partial_round_year_to_2020(int year);
 static int	strspace_len(char *str);
 static void from_char_set_mode(TmFromChar *tmfc, const FromCharDateMode mode,
 							   bool *have_error);
@@ -2234,8 +2243,27 @@ is_next_separator(FormatNode *n)
 }
 
 
+/*
+ * Get lower 'ndigits' from 'year' while take other higher digits from
+ * 2020.
+ */
 static int
-adjust_partial_year_to_2020(int year)
+adjust_partial_year_to_2020(int year, int ndigits)
+{
+	if (ndigits == 1)
+		return year + 2020;
+	else if (ndigits == 2 || ndigits == 3)
+		return year + 2000;
+	else
+		return year;
+}
+
+
+/*
+ * Get closest to 2020 4-digit year, which corresponds to given 2-digits year.
+ */
+static int
+adjust_partial_round_year_to_2020(int year)
 {
 	/*
 	 * Adjust all dates toward 2020; this is effectively what happens when we
@@ -2247,12 +2275,6 @@ adjust_partial_year_to_2020(int year)
 	/* Force 70-99 into the 1900's */
 	else if (year < 100)
 		return year + 1900;
-	/* Force 100-519 into the 2000's */
-	else if (year < 520)
-		return year + 2000;
-	/* Force 520-999 into the 1000's */
-	else if (year < 1000)
-		return year + 1000;
 	else
 		return year;
 }
@@ -3065,6 +3087,7 @@ DCH_to_char(FormatNode *node, bool is_interval, TmToChar *in, char *out, Oid col
 					str_numth(s, s, S_TH_TYPE(n->suffix));
 				s += strlen(s);
 				break;
+			case DCH_RRRR:
 			case DCH_YYYY:
 			case DCH_IYYY:
 				sprintf(s, "%0*d",
@@ -3095,6 +3118,7 @@ DCH_to_char(FormatNode *node, bool is_interval, TmToChar *in, char *out, Oid col
 					str_numth(s, s, S_TH_TYPE(n->suffix));
 				s += strlen(s);
 				break;
+			case DCH_RR:
 			case DCH_YY:
 			case DCH_IY:
 				sprintf(s, "%0*d",
@@ -3536,6 +3560,7 @@ DCH_from_char(FormatNode *node, char *in, TmFromChar *out, bool std,
 					SKIP_THth(s, n->suffix);
 				}
 				break;
+			case DCH_RRRR:
 			case DCH_YYYY:
 			case DCH_IYYY:
 				from_char_parse_int(&out->year, &s, n, have_error);
@@ -3547,17 +3572,22 @@ DCH_from_char(FormatNode *node, char *in, TmFromChar *out, bool std,
 			case DCH_IYY:
 				len = from_char_parse_int(&out->year, &s, n, have_error);
 				CHECK_ERROR;
-				if (len < 4)
-					out->year = adjust_partial_year_to_2020(out->year);
+				out->year = adjust_partial_year_to_2020(out->year, len);
 				out->yysz = 3;
+				SKIP_THth(s, n->suffix);
+				break;
+			case DCH_RR:
+				from_char_parse_int(&out->year, &s, n, have_error);
+				CHECK_ERROR;
+				out->year = adjust_partial_round_year_to_2020(out->year);
+				out->yysz = 2;
 				SKIP_THth(s, n->suffix);
 				break;
 			case DCH_YY:
 			case DCH_IY:
 				len = from_char_parse_int(&out->year, &s, n, have_error);
 				CHECK_ERROR;
-				if (len < 4)
-					out->year = adjust_partial_year_to_2020(out->year);
+				out->year = adjust_partial_year_to_2020(out->year, len);
 				out->yysz = 2;
 				SKIP_THth(s, n->suffix);
 				break;
@@ -3565,8 +3595,7 @@ DCH_from_char(FormatNode *node, char *in, TmFromChar *out, bool std,
 			case DCH_I:
 				len = from_char_parse_int(&out->year, &s, n, have_error);
 				CHECK_ERROR;
-				if (len < 4)
-					out->year = adjust_partial_year_to_2020(out->year);
+				out->year = adjust_partial_year_to_2020(out->year, len);
 				out->yysz = 1;
 				SKIP_THth(s, n->suffix);
 				break;
@@ -3742,10 +3771,12 @@ DCH_datetime_type(FormatNode *node, bool *have_error)
 			case DCH_Y_YYY:
 			case DCH_YYYY:
 			case DCH_IYYY:
+			case DCH_RRRR:
 			case DCH_YYY:
 			case DCH_IYY:
 			case DCH_YY:
 			case DCH_IY:
+			case DCH_RR:
 			case DCH_Y:
 			case DCH_I:
 			case DCH_RM:
