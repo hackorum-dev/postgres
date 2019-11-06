@@ -29,6 +29,12 @@
  * in the pg_database system catalog. To work around that, when setlocale()
  * returns that locale name, map it to a pure-ASCII alias for the same
  * locale.
+ *
+ * These workarounds are complicated by the fact that these long-form locale
+ * names aren't particularly static across Windows versions; punctuation and
+ * spacing, for example, can vary.  To ensure we match when we should match,
+ * ignore everything but ASCII letters in the locale name.  (This also eases
+ * recognizing Bokm&aring;l.)
  *-------------------------------------------------------------------------
  */
 
@@ -39,16 +45,18 @@
 struct locale_map
 {
 	/*
-	 * String in locale name to replace. Can be a single string (end is NULL),
-	 * or separate start and end strings. If two strings are given, the locale
-	 * name must contain both of them, and everything between them is
-	 * replaced. This is used for a poor-man's regexp search, allowing
-	 * replacement of "start.*end".
+	 * String in locale name to replace.  While matching, we consider only
+	 * plain ASCII letters, and the match is case-insensitive.
 	 */
-	const char *locale_name_start;
-	const char *locale_name_end;
+	const char *locale_name;	/* locale name to search for */
 
 	const char *replacement;	/* string to replace the match with */
+
+	/*
+	 * If this is true, copy any code page specification (trailing .NNNN) from
+	 * the source locale name.
+	 */
+	bool		copy_code_page;
 };
 
 /*
@@ -57,14 +65,14 @@ struct locale_map
 static const struct locale_map locale_map_argument[] = {
 	/*
 	 * "HKG" is listed here:
-	 * http://msdn.microsoft.com/en-us/library/cdax410z%28v=vs.71%29.aspx
+	 * https://docs.microsoft.com/en-us/cpp/c-runtime-library/country-region-strings
 	 * (Country/Region Strings).
 	 *
 	 * "ARE" is the ISO-3166 three-letter code for U.A.E. It is not on the
 	 * above list, but seems to work anyway.
 	 */
-	{"Hong Kong S.A.R.", NULL, "HKG"},
-	{"U.A.E.", NULL, "ARE"},
+	{"Hong Kong S.A.R.", "HKG", true},
+	{"U.A.E.", "ARE", true},
 
 	/*
 	 * The ISO-3166 country code for Macau S.A.R. is MAC, but Windows doesn't
@@ -75,15 +83,15 @@ static const struct locale_map locale_map_argument[] = {
 	 * works.
 	 *
 	 * Note that unlike HKG and ARE, ZHM is an alias for the *whole* locale
-	 * name, not just the country part.
+	 * name, not just the country part, so we suppress any code page spec.
 	 *
 	 * Some versions of Windows spell it "Macau", others "Macao".
 	 */
-	{"Chinese (Traditional)_Macau S.A.R..950", NULL, "ZHM"},
-	{"Chinese_Macau S.A.R..950", NULL, "ZHM"},
-	{"Chinese (Traditional)_Macao S.A.R..950", NULL, "ZHM"},
-	{"Chinese_Macao S.A.R..950", NULL, "ZHM"},
-	{NULL, NULL, NULL}
+	{"Chinese (Traditional)_Macau S.A.R..950", "ZHM", false},
+	{"Chinese_Macau S.A.R..950", "ZHM", false},
+	{"Chinese (Traditional)_Macao S.A.R..950", "ZHM", false},
+	{"Chinese_Macao S.A.R..950", "ZHM", false},
+	{NULL, NULL, false}
 };
 
 /*
@@ -95,14 +103,11 @@ static const struct locale_map locale_map_result[] = {
 	 * Map it to a pure-ASCII alias.
 	 *
 	 * It's not clear what encoding setlocale() uses when it returns the
-	 * locale name, so to play it safe, we search for "Norwegian (Bok*l)".
-	 *
-	 * Just to make life even more complicated, some versions of Windows spell
-	 * the locale name without parentheses.  Translate that too.
+	 * locale name, but since the search will ignore non-ASCII characters, we
+	 * can just leave &aring; out of the match string.
 	 */
-	{"Norwegian (Bokm", "l)_Norway", "Norwegian_Norway"},
-	{"Norwegian Bokm", "l_Norway", "Norwegian_Norway"},
-	{NULL, NULL, NULL}
+	{"Norwegian Bokml Norway", "Norwegian_Norway", true},
+	{NULL, NULL, false}
 };
 
 #define MAX_LOCALE_NAME_LEN		100
@@ -114,54 +119,73 @@ map_locale(const struct locale_map *map, const char *locale)
 	int			i;
 
 	/* Check if the locale name matches any of the problematic ones. */
-	for (i = 0; map[i].locale_name_start != NULL; i++)
+	for (i = 0; map[i].locale_name != NULL; i++)
 	{
-		const char *needle_start = map[i].locale_name_start;
-		const char *needle_end = map[i].locale_name_end;
+		const char *needle = map[i].locale_name;
 		const char *replacement = map[i].replacement;
-		char	   *match;
-		char	   *match_start = NULL;
-		char	   *match_end = NULL;
+		bool		match = true;
+		const char *p1,
+				   *p2;
+		const char *codepage;
+		int			replacementlen;
+		int			cplen;
 
-		match = strstr(locale, needle_start);
-		if (match)
+#define ASCII_LETTERS "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+		p1 = locale;
+		p2 = needle;
+		for (;;)
 		{
-			/*
-			 * Found a match for the first part. If this was a two-part
-			 * replacement, find the second part.
-			 */
-			match_start = match;
-			if (needle_end)
+			/* Ignore characters that aren't ASCII letters */
+			while (*p1 && strchr(ASCII_LETTERS, (unsigned char) *p1) == NULL)
+				p1++;
+
+			while (*p2 && strchr(ASCII_LETTERS, (unsigned char) *p2) == NULL)
+				p2++;
+
+			/* Must match case-insensitively */
+			if (*p1 && *p2)
 			{
-				match = strstr(match_start + strlen(needle_start), needle_end);
-				if (match)
-					match_end = match + strlen(needle_end);
-				else
-					match_start = NULL;
+				if (pg_toupper(*p1) != pg_toupper(*p2))
+				{
+					match = false;
+					break;
+				}
+				p1++, p2++;
 			}
 			else
-				match_end = match_start + strlen(needle_start);
+			{
+				if (*p1 || *p2)
+					match = false;	/* one is longer */
+				break;
+			}
 		}
 
-		if (match_start)
+		if (!match)
+			continue;
+
+		/* Found a match.  Should we include the codepage spec, if any? */
+		if (map[i].copy_code_page)
 		{
-			/* Found a match. Replace the matched string. */
-			int			matchpos = match_start - locale;
-			int			replacementlen = strlen(replacement);
-			char	   *rest = match_end;
-			int			restlen = strlen(rest);
-
-			/* check that the result fits in the static buffer */
-			if (matchpos + replacementlen + restlen + 1 > MAX_LOCALE_NAME_LEN)
-				return NULL;
-
-			memcpy(&aliasbuf[0], &locale[0], matchpos);
-			memcpy(&aliasbuf[matchpos], replacement, replacementlen);
-			/* includes null terminator */
-			memcpy(&aliasbuf[matchpos + replacementlen], rest, restlen + 1);
-
-			return aliasbuf;
+			codepage = strrchr(locale, '.');
+			if (!(codepage && codepage[1] &&
+				  strspn(codepage + 1, "0123456789") == strlen(codepage + 1)))
+				codepage = NULL;
 		}
+		else
+			codepage = NULL;
+
+		/* check that the result fits in the static buffer */
+		replacementlen = strlen(replacement);
+		cplen = (codepage ? strlen(codepage) : 0);
+		if (replacementlen + cplen + 1 > MAX_LOCALE_NAME_LEN)
+			break;				/* treat as no-match */
+
+		memcpy(&aliasbuf[0], replacement, replacementlen + 1);
+		if (codepage)
+			memcpy(&aliasbuf[replacementlen], codepage, cplen + 1);
+
+		return aliasbuf;
 	}
 
 	/* no match, just return the original string */
