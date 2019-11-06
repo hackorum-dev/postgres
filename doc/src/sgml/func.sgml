@@ -12879,7 +12879,8 @@ table2-mapping
    <xref linkend="datatype-jsonpath"/>.
   </para>
 
-  <para>JSON query functions and operators
+  <para>
+   JSON query functions and operators
    pass the provided path expression to the <firstterm>path engine</firstterm>
    for evaluation. If the expression matches the queried JSON data,
    the corresponding SQL/JSON item is returned.
