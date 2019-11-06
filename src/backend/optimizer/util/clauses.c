@@ -4369,6 +4369,49 @@ simplify_or_arguments(List *args,
 			continue;
 		}
 
+		if (IsA(arg, NullTest))
+		{
+			NullTest	*null_check = (NullTest*) arg;
+
+			/* Only check for $VAR IS NULL, ignore other expressions */
+			if (!IsA(null_check->arg, Var))
+				goto next;
+
+			if (null_checks == NIL)
+			{
+				null_checks = lappend(null_checks, null_check);
+				goto next;
+			}
+			else
+			{
+				Var			*null_check_var = (Var *) null_check->arg;
+
+				/* Now, we can check every other null check from our list */
+				ListCell	*other_null;
+				foreach (other_null, null_checks)
+				{
+					NullTest	*other_null_check = (NullTest *) lfirst(other_null);
+					Var			*other_null_var = (Var *) other_null_check->arg;
+
+					if ((other_null_check->nulltesttype != null_check->nulltesttype) &&
+						(other_null_var->varno == null_check_var->varno) &&
+						(other_null_var->varattno == null_check_var->varattno))
+					{
+						*forceFalse = true;
+
+						/*
+						* Once we detect a FALSE result we can just exit the loop
+						* immediately.  However, if we ever add a notion of
+						* non-removable functions, we'd need to keep scanning.
+						*/
+						return NIL;
+					}
+				}
+				lappend(null_checks, null_check);
+			}
+		}
+
+next:
 		/* else emit the simplified arg into the result list */
 		newargs = lappend(newargs, arg);
 	}
@@ -4402,6 +4445,7 @@ simplify_and_arguments(List *args,
 {
 	List	   *newargs = NIL;
 	List	   *unprocessed_args;
+	List	   *null_checks = NIL;
 
 	/* See comments in simplify_or_arguments */
 	unprocessed_args = list_copy(args);
