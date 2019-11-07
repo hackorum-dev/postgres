@@ -82,16 +82,19 @@ static MemoryContext _SPI_execmem(void);
 static MemoryContext _SPI_procmem(void);
 static bool _SPI_checktuples(void);
 
+/* Defend against BACKWARDS_COMPATIBLE_SPI_CALLS wrapper macros */
+#undef SPI_connect
+#undef SPI_connect_ext
 
 /* =================== interface functions =================== */
 
-int
+void
 SPI_connect(void)
 {
-	return SPI_connect_ext(0);
+	SPI_connect_ext(0);
 }
 
-int
+void
 SPI_connect_ext(int options)
 {
 	int			newdepth;
@@ -168,8 +171,6 @@ SPI_connect_ext(int options)
 	SPI_processed = 0;
 	SPI_tuptable = NULL;
 	SPI_result = 0;
-
-	return SPI_OK_CONNECT;
 }
 
 int

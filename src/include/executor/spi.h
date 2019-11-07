@@ -81,8 +81,8 @@ extern PGDLLIMPORT uint64 SPI_processed;
 extern PGDLLIMPORT SPITupleTable *SPI_tuptable;
 extern PGDLLIMPORT int SPI_result;
 
-extern int	SPI_connect(void);
-extern int	SPI_connect_ext(int options);
+extern void	SPI_connect(void);
+extern void	SPI_connect_ext(int options);
 extern int	SPI_finish(void);
 extern int	SPI_execute(const char *src, bool read_only, long tcount);
 extern int	SPI_execute_plan(SPIPlanPtr plan, Datum *Values, const char *Nulls,
@@ -171,5 +171,19 @@ extern void SPICleanup(void);
 extern void AtEOXact_SPI(bool isCommit);
 extern void AtEOSubXact_SPI(bool isCommit, SubTransactionId mySubid);
 extern bool SPI_inside_nonatomic_context(void);
+
+/*
+ * Backward compatibility for third-party code which expects the older SPI
+ * function prototypes returning int rather than void.
+ *
+ * This switch should only be defined when compiling legacy third-party code
+ * which expects an integer return value, otherwise, at least under some
+ * compilers, compilation may draw warnings about the right-hand side value
+ * being ignored (-Wunused-value).
+ */
+#ifdef BACKWARDS_COMPATIBLE_SPI_CALLS
+#define SPI_connect() (SPI_connect(), SPI_OK_CONNECT)
+#define SPI_connect_ext(o) (SPI_connect_ext(o), SPI_OK_CONNECT)
+#endif
 
 #endif							/* SPI_H */
