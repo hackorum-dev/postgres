@@ -521,15 +521,6 @@ typedef struct SPITupleTable
     </varlistentry>
 
     <varlistentry>
-     <term><symbol>SPI_ERROR_OPUNKNOWN</symbol></term>
-     <listitem>
-      <para>
-       if the command type is unknown (shouldn't happen)
-      </para>
-     </listitem>
-    </varlistentry>
-
-    <varlistentry>
      <term><symbol>SPI_ERROR_UNCONNECTED</symbol></term>
      <listitem>
       <para>

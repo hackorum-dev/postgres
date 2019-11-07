@@ -1711,8 +1711,6 @@ SPI_result_code_string(int code)
 	{
 		case SPI_ERROR_COPY:
 			return "SPI_ERROR_COPY";
-		case SPI_ERROR_OPUNKNOWN:
-			return "SPI_ERROR_OPUNKNOWN";
 		case SPI_ERROR_UNCONNECTED:
 			return "SPI_ERROR_UNCONNECTED";
 		case SPI_ERROR_ARGUMENT:
@@ -2459,7 +2457,7 @@ _SPI_convert_params(int nargs, Oid *argtypes,
 static int
 _SPI_pquery(QueryDesc *queryDesc, bool fire_triggers, uint64 tcount)
 {
-	int			operation = queryDesc->operation;
+	CmdType		operation = queryDesc->operation;
 	int			eflags;
 	int			res;
 
@@ -2492,8 +2490,11 @@ _SPI_pquery(QueryDesc *queryDesc, bool fire_triggers, uint64 tcount)
 			else
 				res = SPI_OK_UPDATE;
 			break;
+		case CMD_UNKNOWN:
+		case CMD_UTILITY:
+		case CMD_NOTHING:
 		default:
-			return SPI_ERROR_OPUNKNOWN;
+			elog(ERROR, "Unsupported command type %d encountered while executing query", (int)operation);
 	}
 
 #ifdef SPI_EXECUTOR_STATS
