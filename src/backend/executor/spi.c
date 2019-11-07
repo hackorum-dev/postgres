@@ -1725,10 +1725,6 @@ SPI_result_code_string(int code)
 			return "SPI_ERROR_NOATTRIBUTE";
 		case SPI_ERROR_TYPUNKNOWN:
 			return "SPI_ERROR_TYPUNKNOWN";
-		case SPI_ERROR_REL_DUPLICATE:
-			return "SPI_ERROR_REL_DUPLICATE";
-		case SPI_ERROR_REL_NOT_FOUND:
-			return "SPI_ERROR_REL_NOT_FOUND";
 		case SPI_OK_CONNECT:
 			return "SPI_OK_CONNECT";
 		case SPI_OK_FINISH:
@@ -2875,7 +2871,7 @@ SPI_register_relation(EphemeralNamedRelation enr)
 
 	match = _SPI_find_ENR_by_name(enr->md.name);
 	if (match)
-		res = SPI_ERROR_REL_DUPLICATE;
+		elog(ERROR, "duplicate relation registration");
 	else
 	{
 		if (_SPI_current->queryEnv == NULL)
@@ -2914,7 +2910,7 @@ SPI_unregister_relation(const char *name)
 		res = SPI_OK_REL_UNREGISTER;
 	}
 	else
-		res = SPI_ERROR_REL_NOT_FOUND;
+		elog(ERROR, "unknown relation unregistration");
 
 	_SPI_end_call(false);
 

@@ -2756,15 +2756,6 @@ int SPI_register_relation(EphemeralNamedRelation <parameter>enr</parameter>)
      </listitem>
     </varlistentry>
 
-    <varlistentry>
-     <term><symbol>SPI_ERROR_REL_DUPLICATE</symbol></term>
-     <listitem>
-      <para>
-       if the name specified in the <varname>name</varname> field of
-       <parameter>enr</parameter> is already registered for this connection
-      </para>
-     </listitem>
-    </varlistentry>
    </variablelist>
   </para>
  </refsect1>
@@ -2861,15 +2852,6 @@ int SPI_unregister_relation(const char * <parameter>name</parameter>)
      </listitem>
     </varlistentry>
 
-    <varlistentry>
-     <term><symbol>SPI_ERROR_REL_NOT_FOUND</symbol></term>
-     <listitem>
-      <para>
-       if <parameter>name</parameter> is not found in the registry for the
-       current connection
-      </para>
-     </listitem>
-    </varlistentry>
    </variablelist>
   </para>
  </refsect1>
@@ -2976,15 +2958,6 @@ int SPI_register_trigger_data(TriggerData *<parameter>tdata</parameter>)
      </listitem>
     </varlistentry>
 
-    <varlistentry>
-     <term><symbol>SPI_ERROR_REL_DUPLICATE</symbol></term>
-     <listitem>
-      <para>
-       if the name of any trigger data transient relation is already
-       registered for this connection
-      </para>
-     </listitem>
-    </varlistentry>
    </variablelist>
   </para>
  </refsect1>

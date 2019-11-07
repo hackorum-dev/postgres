@@ -47,8 +47,8 @@ typedef struct _SPI_plan *SPIPlanPtr;
 #define SPI_ERROR_NOATTRIBUTE	(-9)
 #define SPI_ERROR_NOOUTFUNC		(-10)	/* not used anymore */
 #define SPI_ERROR_TYPUNKNOWN	(-11)
-#define SPI_ERROR_REL_DUPLICATE (-12)
-#define SPI_ERROR_REL_NOT_FOUND (-13)
+#define SPI_ERROR_REL_DUPLICATE (-12)	/* not used anymore */
+#define SPI_ERROR_REL_NOT_FOUND (-13)	/* not used anymore */
 
 #define SPI_OK_CONNECT			1
 #define SPI_OK_FINISH			2
