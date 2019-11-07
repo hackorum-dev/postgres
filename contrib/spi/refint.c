@@ -392,7 +392,7 @@ check_foreign_key(PG_FUNCTION_ARGS)
 			char	   *oldval = SPI_getvalue(trigtuple, tupdesc, fnumber);
 			char	   *newval;
 
-			/* this shouldn't happen! SPI_ERROR_NOOUTFUNC ? */
+			/* this shouldn't happen! */
 			if (oldval == NULL)
 				/* internal error */
 				elog(ERROR, "check_foreign_key: SPI_getvalue returned %s", SPI_result_code_string(SPI_result));

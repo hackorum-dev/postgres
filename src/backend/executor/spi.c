@@ -1708,8 +1708,6 @@ SPI_result_code_string(int code)
 
 	switch (code)
 	{
-		case SPI_ERROR_CONNECT:
-			return "SPI_ERROR_CONNECT";
 		case SPI_ERROR_COPY:
 			return "SPI_ERROR_COPY";
 		case SPI_ERROR_OPUNKNOWN:
@@ -1724,8 +1722,6 @@ SPI_result_code_string(int code)
 			return "SPI_ERROR_TRANSACTION";
 		case SPI_ERROR_NOATTRIBUTE:
 			return "SPI_ERROR_NOATTRIBUTE";
-		case SPI_ERROR_NOOUTFUNC:
-			return "SPI_ERROR_NOOUTFUNC";
 		case SPI_ERROR_TYPUNKNOWN:
 			return "SPI_ERROR_TYPUNKNOWN";
 		case SPI_ERROR_REL_DUPLICATE:

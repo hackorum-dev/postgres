@@ -36,7 +36,7 @@ typedef struct SPITupleTable
 /* Plans are opaque structs for standard users of SPI */
 typedef struct _SPI_plan *SPIPlanPtr;
 
-#define SPI_ERROR_CONNECT		(-1)
+#define SPI_ERROR_CONNECT		(-1)	/* not used anymore */
 #define SPI_ERROR_COPY			(-2)
 #define SPI_ERROR_OPUNKNOWN		(-3)
 #define SPI_ERROR_UNCONNECTED	(-4)
@@ -45,7 +45,7 @@ typedef struct _SPI_plan *SPIPlanPtr;
 #define SPI_ERROR_PARAM			(-7)
 #define SPI_ERROR_TRANSACTION	(-8)
 #define SPI_ERROR_NOATTRIBUTE	(-9)
-#define SPI_ERROR_NOOUTFUNC		(-10)
+#define SPI_ERROR_NOOUTFUNC		(-10)	/* not used anymore */
 #define SPI_ERROR_TYPUNKNOWN	(-11)
 #define SPI_ERROR_REL_DUPLICATE (-12)
 #define SPI_ERROR_REL_NOT_FOUND (-13)

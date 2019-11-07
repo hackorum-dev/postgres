@@ -128,14 +128,6 @@ int SPI_connect_ext(int <parameter>options</parameter>)
     </listitem>
    </varlistentry>
 
-   <varlistentry>
-    <term><symbol>SPI_ERROR_CONNECT</symbol></term>
-    <listitem>
-     <para>
-      on error
-     </para>
-    </listitem>
-   </varlistentry>
   </variablelist>
  </refsect1>
 </refentry>
@@ -3231,12 +3223,10 @@ char * SPI_getvalue(HeapTuple <parameter>row</parameter>, TupleDesc <parameter>r
   <title>Return Value</title>
 
   <para>
-   Column value, or <symbol>NULL</symbol> if the column is null,
+   Column value, or <symbol>NULL</symbol> if the column is null, or
    <parameter>colnumber</parameter> is out of range
    (<varname>SPI_result</varname> is set to
-   <symbol>SPI_ERROR_NOATTRIBUTE</symbol>), or no output function is
-   available (<varname>SPI_result</varname> is set to
-   <symbol>SPI_ERROR_NOOUTFUNC</symbol>).
+   <symbol>SPI_ERROR_NOATTRIBUTE</symbol>).
   </para>
  </refsect1>
 </refentry>
