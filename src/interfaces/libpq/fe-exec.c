@@ -1671,6 +1671,233 @@ sendFailed:
 }
 
 /*
+ * PQsendPortalBind
+ *
+ *   Bind a portal to a previously prepared statement with parameters
+ */
+int
+PQsendPortalBindParams(PGconn* conn,
+								  const char *stmtName,
+								  const char *portalName,
+								  int nParams,
+								  const char *const *paramValues,
+								  const int *paramLengths,
+								  const int *paramFormats,
+								  int resultFormat)
+{
+	int			i;
+
+	if (!PQsendQueryStart(conn))
+		return 0;
+
+	/* This isn't gonna work on a 2.0 server */
+	if (PG_PROTOCOL_MAJOR(conn->pversion) < 3)
+	{
+		printfPQExpBuffer(&conn->errorMessage,
+						  libpq_gettext("function requires at least protocol version 3.0\n"));
+		return 0;
+	}
+
+	/* check the arguments */
+	if (!stmtName)
+	{
+		printfPQExpBuffer(&conn->errorMessage,
+						  libpq_gettext("statement name is a null pointer\n"));
+		return 0;
+	}
+	if (!portalName)
+	{
+		printfPQExpBuffer(&conn->errorMessage,
+						  libpq_gettext("portal name is a null pointer\n"));
+		return 0;
+	}
+	if (nParams < 0 || nParams > 65535)
+	{
+		printfPQExpBuffer(&conn->errorMessage,
+						  libpq_gettext("number of parameters must be between 0 and 65535\n"));
+		return 0;
+	}
+
+	if (conn->xactStatus != PQTRANS_INTRANS)
+	{
+		printfPQExpBuffer(&conn->errorMessage,
+						  libpq_gettext("a portal must be bound inside a transaction block\n"));
+		return 0;
+	}
+
+	/* Construct the Bind message */
+	if (pqPutMsgStart('B', false, conn) < 0 ||
+		pqPuts(portalName, conn) < 0 ||
+		pqPuts(stmtName, conn) < 0)
+		goto sendFailed;
+
+	/* Send parameter formats */
+	if (nParams > 0 && paramFormats)
+	{
+		if (pqPutInt(nParams, 2, conn) < 0)
+			goto sendFailed;
+		for (i = 0; i < nParams; i++)
+		{
+			if (pqPutInt(paramFormats[i], 2, conn) < 0)
+				goto sendFailed;
+		}
+	}
+	else
+	{
+		if (pqPutInt(0, 2, conn) < 0)
+			goto sendFailed;
+	}
+
+	if (pqPutInt(nParams, 2, conn) < 0)
+		goto sendFailed;
+
+	/* Send parameters */
+	for (i = 0; i < nParams; i++)
+	{
+		if (paramValues && paramValues[i])
+		{
+			int			nbytes;
+
+			if (paramFormats && paramFormats[i] != 0)
+			{
+				/* binary parameter */
+				if (paramLengths)
+					nbytes = paramLengths[i];
+				else
+				{
+					printfPQExpBuffer(&conn->errorMessage,
+									  libpq_gettext("length must be given for binary parameter\n"));
+					goto sendFailed;
+				}
+			}
+			else
+			{
+				/* text parameter, do not use paramLengths */
+				nbytes = strlen(paramValues[i]);
+			}
+			if (pqPutInt(nbytes, 4, conn) < 0 ||
+				pqPutnchar(paramValues[i], nbytes, conn) < 0)
+				goto sendFailed;
+		}
+		else
+		{
+			/* take the param as NULL */
+			if (pqPutInt(-1, 4, conn) < 0)
+				goto sendFailed;
+		}
+	}
+	if (pqPutInt(1, 2, conn) < 0 ||
+		pqPutInt(resultFormat, 2, conn))
+		goto sendFailed;
+	if (pqPutMsgEnd(conn) < 0)
+		goto sendFailed;
+
+	/* construct the Sync message */
+	if (pqPutMsgStart('S', false, conn) < 0 ||
+		pqPutMsgEnd(conn) < 0)
+		goto sendFailed;
+
+	/* remember we are using extended query protocol */
+	conn->queryclass = PGQUERY_EXTENDED;
+
+	/* we don't have query text here, so just clean up the old one */
+	if (conn->last_query)
+		free(conn->last_query);
+	else
+		conn->last_query = NULL;
+
+	/*
+	 * Give the data a push.  In nonblock mode, don't complain if we're unable
+	 * to send it all; PQgetResult() will do any additional flushing needed.
+	 */
+	if (pqFlush(conn) < 0)
+		goto sendFailed;
+
+	/* OK, it's launched! */
+	return 1;
+
+sendFailed:
+	/* error message should be set up already */
+	return 0;
+}
+
+/*
+ * PQsendPortalExecute
+ *
+ *   Execute a portal previously bound with PQsendPortalBindParams.
+ *   Will send a command to the backend to execute portal and return
+ *   nRows rows.
+ */
+int PQsendPortalExecute(PGconn* conn,
+							   const char* portalName,
+							   int nRows)
+{
+	if (!PQsendQueryStart(conn))
+		return 0;
+
+	/* This isn't gonna work on a 2.0 server */
+	if (PG_PROTOCOL_MAJOR(conn->pversion) < 3)
+	{
+		printfPQExpBuffer(&conn->errorMessage,
+						  libpq_gettext("function requires at least protocol version 3.0\n"));
+		return 0;
+	}
+
+	/* check the arguments */
+	if (!portalName)
+	{
+		printfPQExpBuffer(&conn->errorMessage,
+						  libpq_gettext("portal name is a null pointer\n"));
+		return 0;
+	}
+
+	/* TODO Some sanity check for nRows */
+
+	/* construct the Describe Portal message */
+	if (pqPutMsgStart('D', false, conn) < 0 ||
+		pqPutc('P', conn) < 0 ||
+		pqPuts(portalName, conn) < 0 ||
+		pqPutMsgEnd(conn) < 0)
+		goto sendFailed;
+
+	/* construct the Execute message */
+	if (pqPutMsgStart('E', false, conn) < 0 ||
+		pqPuts(portalName, conn) < 0 ||
+		pqPutInt(nRows, 4, conn) < 0 ||
+		pqPutMsgEnd(conn) < 0)
+		goto sendFailed;
+
+	/* construct the Sync message */
+	if (pqPutMsgStart('S', false, conn) < 0 ||
+		pqPutMsgEnd(conn) < 0)
+		goto sendFailed;
+
+
+	/* remember we are using extended query protocol */
+	conn->queryclass = PGQUERY_EXTENDED;
+
+	/* we don't have query text here, so just clean up the old one */
+	if (conn->last_query)
+		free(conn->last_query);
+	else
+		conn->last_query = NULL;
+
+	/*
+	 * Give the data a push.  In nonblock mode, don't complain if we're unable
+	 * to send it all; PQgetResult() will do any additional flushing needed.
+	 */
+	if (pqFlush(conn) < 0)
+		goto sendFailed;
+
+	/* OK, it's launched! */
+	return 1;
+
+sendFailed:
+	/* error message should be set up already */
+	return 0;
+}
+
+/*
  * Select row-by-row processing mode
  */
 int

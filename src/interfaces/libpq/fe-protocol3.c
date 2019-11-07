@@ -403,6 +403,14 @@ pqParseInput3(PGconn *conn)
 					 * the COPY command.
 					 */
 					break;
+				case 's':		/* Portal Suspended */
+					/*
+					* We see this message only when an application issued an
+					* execute portal command with row limit. We can effectively
+					* ignore the message
+					*/
+					conn->asyncStatus = PGASYNC_READY;
+					break;
 				default:
 					printfPQExpBuffer(&conn->errorMessage,
 									  libpq_gettext(

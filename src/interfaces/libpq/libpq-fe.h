@@ -428,6 +428,17 @@ extern int	PQsendQueryPrepared(PGconn *conn,
 								const int *paramLengths,
 								const int *paramFormats,
 								int resultFormat);
+extern int PQsendPortalBindParams(PGconn* conn,
+								  const char *stmtName,
+								  const char *portalName,
+								  int nParams,
+								  const char *const *paramValues,
+								  const int *paramLengths,
+								  const int *paramFormats,
+								  int resultFormat);
+extern int PQsendPortalExecute(PGconn* conn,
+							   const char* portalName,
+							   int nRows);
 extern int	PQsetSingleRowMode(PGconn *conn);
 extern PGresult *PQgetResult(PGconn *conn);
 
