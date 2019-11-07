@@ -538,7 +538,7 @@ SPI_execute_plan(SPIPlanPtr plan, Datum *Values, const char *Nulls,
 		return SPI_ERROR_ARGUMENT;
 
 	if (plan->nargs > 0 && Values == NULL)
-		return SPI_ERROR_PARAM;
+		elog(ERROR, "SPI_execute_plan passed invalid parameters");
 
 	res = _SPI_begin_call(true);
 	if (res < 0)
@@ -608,7 +608,7 @@ SPI_execute_snapshot(SPIPlanPtr plan,
 		return SPI_ERROR_ARGUMENT;
 
 	if (plan->nargs > 0 && Values == NULL)
-		return SPI_ERROR_PARAM;
+		elog(ERROR, "SPI_execute_snapshot passed invalid parameters");
 
 	res = _SPI_begin_call(true);
 	if (res < 0)
@@ -644,7 +644,7 @@ SPI_execute_with_args(const char *src,
 		return SPI_ERROR_ARGUMENT;
 
 	if (nargs > 0 && (argtypes == NULL || Values == NULL))
-		return SPI_ERROR_PARAM;
+		elog(ERROR, "SPI_execute_with_args passed invalid parameters");
 
 	res = _SPI_begin_call(true);
 	if (res < 0)
@@ -1717,8 +1717,6 @@ SPI_result_code_string(int code)
 			return "SPI_ERROR_UNCONNECTED";
 		case SPI_ERROR_ARGUMENT:
 			return "SPI_ERROR_ARGUMENT";
-		case SPI_ERROR_PARAM:
-			return "SPI_ERROR_PARAM";
 		case SPI_ERROR_TRANSACTION:
 			return "SPI_ERROR_TRANSACTION";
 		case SPI_ERROR_NOATTRIBUTE:

@@ -1439,15 +1439,6 @@ int SPI_execute_plan(SPIPlanPtr <parameter>plan</parameter>, Datum * <parameter>
      </listitem>
     </varlistentry>
 
-    <varlistentry>
-     <term><symbol>SPI_ERROR_PARAM</symbol></term>
-     <listitem>
-      <para>
-       if <parameter>values</parameter> is <symbol>NULL</symbol> and
-       <parameter>plan</parameter> was prepared with some parameters
-      </para>
-     </listitem>
-    </varlistentry>
    </variablelist>
   </para>
 

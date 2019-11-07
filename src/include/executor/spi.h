@@ -42,7 +42,7 @@ typedef struct _SPI_plan *SPIPlanPtr;
 #define SPI_ERROR_UNCONNECTED	(-4)
 #define SPI_ERROR_CURSOR		(-5)	/* not used anymore */
 #define SPI_ERROR_ARGUMENT		(-6)
-#define SPI_ERROR_PARAM			(-7)
+#define SPI_ERROR_PARAM			(-7)	/* not used anymore */
 #define SPI_ERROR_TRANSACTION	(-8)
 #define SPI_ERROR_NOATTRIBUTE	(-9)
 #define SPI_ERROR_NOOUTFUNC		(-10)	/* not used anymore */
