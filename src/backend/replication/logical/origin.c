@@ -367,7 +367,7 @@ restart:
 				if (nowait)
 					ereport(ERROR,
 							(errcode(ERRCODE_OBJECT_IN_USE),
-							 errmsg("could not drop replication origin with OID %d, in use by PID %d",
+							 errmsg("could not drop replication origin with OID %u, in use by PID %d",
 									state->roident,
 									state->acquired_by)));
 
@@ -411,7 +411,7 @@ restart:
 	 */
 	tuple = SearchSysCache1(REPLORIGIDENT, ObjectIdGetDatum(roident));
 	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "cache lookup failed for replication origin with oid %u",
+		elog(ERROR, "cache lookup failed for replication origin with OID %u",
 			 roident);
 
 	CatalogTupleDelete(rel, &tuple->t_self);
@@ -914,7 +914,7 @@ replorigin_advance(RepOriginId node,
 		{
 			ereport(ERROR,
 					(errcode(ERRCODE_OBJECT_IN_USE),
-					 errmsg("replication origin with OID %d is already active for PID %d",
+					 errmsg("replication origin with OID %u is already active for PID %d",
 							replication_state->roident,
 							replication_state->acquired_by)));
 		}
@@ -1100,7 +1100,7 @@ replorigin_session_setup(RepOriginId node)
 		{
 			ereport(ERROR,
 					(errcode(ERRCODE_OBJECT_IN_USE),
-					 errmsg("replication origin with OID %d is already active for PID %d",
+					 errmsg("replication origin with OID %u is already active for PID %d",
 							curstate->roident, curstate->acquired_by)));
 		}
 
