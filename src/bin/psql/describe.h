@@ -43,7 +43,7 @@ extern bool listDefaultACLs(const char *pattern);
 extern bool objectDescription(const char *pattern, bool showSystem);
 
 /* \d foo */
-extern bool describeTableDetails(const char *pattern, bool verbose, bool showSystem);
+extern bool describeTableDetails(const char *pattern, bool verbose, bool showSystem, const char *pattern2);
 
 /* \dF */
 extern bool listTSConfigs(const char *pattern, bool verbose);

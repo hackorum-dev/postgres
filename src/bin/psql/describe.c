@@ -30,7 +30,8 @@
 static bool describeOneTableDetails(const char *schemaname,
 									const char *relationname,
 									const char *oid,
-									bool verbose);
+									bool verbose,
+									const char *pattern2);
 static void add_tablespace_footer(printTableContent *const cont, char relkind,
 								  Oid tablespace, const bool newline);
 static void add_role_attribute(PQExpBuffer buf, const char *const str);
@@ -1363,7 +1364,7 @@ objectDescription(const char *pattern, bool showSystem)
  * verbose: if true, this is \d+
  */
 bool
-describeTableDetails(const char *pattern, bool verbose, bool showSystem)
+describeTableDetails(const char *pattern, bool verbose, bool showSystem, const char *pattern2)
 {
 	PQExpBufferData buf;
 	PGresult   *res;
@@ -1417,7 +1418,7 @@ describeTableDetails(const char *pattern, bool verbose, bool showSystem)
 		nspname = PQgetvalue(res, i, 1);
 		relname = PQgetvalue(res, i, 2);
 
-		if (!describeOneTableDetails(nspname, relname, oid, verbose))
+		if (!describeOneTableDetails(nspname, relname, oid, verbose, pattern2))
 		{
 			PQclear(res);
 			return false;
@@ -1444,7 +1445,8 @@ static bool
 describeOneTableDetails(const char *schemaname,
 						const char *relationname,
 						const char *oid,
-						bool verbose)
+						bool verbose,
+						const char *pattern2)
 {
 	bool		retval = false;
 	PQExpBufferData buf;
@@ -1917,12 +1919,16 @@ describeOneTableDetails(const char *schemaname,
 
 	appendPQExpBufferStr(&buf, "\nFROM pg_catalog.pg_attribute a");
 	appendPQExpBuffer(&buf, "\nWHERE a.attrelid = '%s' AND a.attnum > 0 AND NOT a.attisdropped", oid);
-	appendPQExpBufferStr(&buf, "\nORDER BY a.attnum;");
-
-	res = PSQLexec(buf.data);
-	if (!res)
-		goto error_return;
-	numrows = PQntuples(res);
+	if (pattern2 && !*pattern2) {
+		numrows = 0;
+	} else {
+		processSQLNamePattern(pset.db, &buf, pattern2, true, false, NULL, "attname", NULL, NULL);
+		appendPQExpBufferStr(&buf, "\nORDER BY a.attnum;");
+		res = PSQLexec(buf.data);
+		if (!res)
+			goto error_return;
+		numrows = PQntuples(res);
+	}
 
 	/* Make title */
 	switch (tableinfo.relkind)

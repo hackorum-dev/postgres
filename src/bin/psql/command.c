@@ -699,13 +699,16 @@ exec_command_d(PsqlScanState scan_state, bool active_branch, const char *cmd)
 
 	if (active_branch)
 	{
-		char	   *pattern;
+		char	   *pattern, *pattern2, quote;
 		bool		show_verbose,
 					show_system;
 
 		/* We don't do SQLID reduction on the pattern yet */
 		pattern = psql_scan_slash_option(scan_state,
 										 OT_NORMAL, NULL, true);
+		if (pattern)
+			pattern2 = psql_scan_slash_option(scan_state,
+										 OT_SQLID, &quote, true);
 
 		show_verbose = strchr(cmd, '+') ? true : false;
 		show_system = strchr(cmd, 'S') ? true : false;
@@ -716,7 +719,7 @@ exec_command_d(PsqlScanState scan_state, bool active_branch, const char *cmd)
 			case '+':
 			case 'S':
 				if (pattern)
-					success = describeTableDetails(pattern, show_verbose, show_system);
+					success = describeTableDetails(pattern, show_verbose, show_system, pattern2);
 				else
 					/* standard listing of interesting things */
 					success = listTables("tvmsE", NULL, show_verbose, show_system);
