@@ -501,6 +501,13 @@ typedef struct TableAmRoutine
 									BufferAccessStrategy bstrategy);
 
 	/*
+	 * The total blocks the analyze can scan, it can be the physical number of
+	 * blocks or the logical number, it depends on how the table AM implement
+	 * scan_analyze_next_block() and scan_analyze_next_tuple().
+	 */
+	BlockNumber	(*scan_analyze_total_blocks) (TableScanDesc scan);
+
+	/*
 	 * Prepare to analyze block `blockno` of `scan`. The scan has been started
 	 * with table_beginscan_analyze().  See also
 	 * table_scan_analyze_next_block().
@@ -1430,6 +1437,17 @@ table_relation_vacuum(Relation rel, struct VacuumParams *params,
 					  BufferAccessStrategy bstrategy)
 {
 	rel->rd_tableam->relation_vacuum(rel, params, bstrategy);
+}
+
+/*
+ * The total blocks the analyze can scan, it can be the physical number of
+ * blocks or the logical number, it depends on how the table AM implement
+ * table_scan_analyze_next_block() and table_scan_analyze_next_tuple().
+ */
+static inline BlockNumber
+table_scan_analyze_total_blocks(TableScanDesc scan)
+{
+	return scan->rs_rd->rd_tableam->scan_analyze_total_blocks(scan);
 }
 
 /*

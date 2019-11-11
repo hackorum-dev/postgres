@@ -977,6 +977,13 @@ heapam_relation_copy_for_cluster(Relation OldHeap, Relation NewHeap,
 	pfree(isnull);
 }
 
+static int
+heapam_scan_analyze_total_blocks(TableScanDesc scan)
+{
+	Assert(scan->rs_rd);
+	return RelationGetNumberOfBlocks(scan->rs_rd);
+}
+
 static bool
 heapam_scan_analyze_next_block(TableScanDesc scan, BlockNumber blockno,
 							   BufferAccessStrategy bstrategy)
@@ -2531,6 +2538,7 @@ static const TableAmRoutine heapam_methods = {
 	.relation_copy_data = heapam_relation_copy_data,
 	.relation_copy_for_cluster = heapam_relation_copy_for_cluster,
 	.relation_vacuum = heap_vacuum_rel,
+	.scan_analyze_total_blocks = heapam_scan_analyze_total_blocks,
 	.scan_analyze_next_block = heapam_scan_analyze_next_block,
 	.scan_analyze_next_tuple = heapam_scan_analyze_next_tuple,
 	.index_build_range_scan = heapam_index_build_range_scan,

@@ -1037,7 +1037,10 @@ acquire_sample_rows(Relation onerel, int elevel,
 
 	Assert(targrows > 0);
 
-	totalblocks = RelationGetNumberOfBlocks(onerel);
+	scan = table_beginscan_analyze(onerel);
+	slot = table_slot_create(onerel, NULL);
+
+	totalblocks = table_scan_analyze_total_blocks(scan);
 
 	/* Need a cutoff xmin for HeapTupleSatisfiesVacuum */
 	OldestXmin = GetOldestXmin(onerel, PROCARRAY_FLAGS_VACUUM);
@@ -1046,9 +1049,6 @@ acquire_sample_rows(Relation onerel, int elevel,
 	BlockSampler_Init(&bs, totalblocks, targrows, random());
 	/* Prepare for sampling rows */
 	reservoir_init_selection_state(&rstate, targrows);
-
-	scan = table_beginscan_analyze(onerel);
-	slot = table_slot_create(onerel, NULL);
 
 	/* Outer loop over blocks to sample */
 	while (BlockSampler_HasMore(&bs))
