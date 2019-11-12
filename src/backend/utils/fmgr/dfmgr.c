@@ -77,8 +77,8 @@ static DynamicFileList *file_tail = NULL;
 char	   *Dynamic_library_path;
 
 static void *internal_load_library(const char *libname);
-static void incompatible_module_error(const char *libname,
-									  const Pg_magic_struct *module_magic_data) pg_attribute_noreturn();
+static pg_noreturn void incompatible_module_error(const char *libname,
+												  const Pg_magic_struct *module_magic_data);
 static void internal_unload_library(const char *libname);
 static bool file_exists(const char *name);
 static char *expand_dynamic_library_name(const char *name);

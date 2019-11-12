@@ -13,7 +13,7 @@
 #define _STARTUP_H
 
 extern void HandleStartupProcInterrupts(void);
-extern void StartupProcessMain(void) pg_attribute_noreturn();
+extern pg_noreturn void StartupProcessMain(void);
 extern void PreRestoreCommand(void);
 extern void PostRestoreCommand(void);
 extern bool IsPromoteTriggered(void);

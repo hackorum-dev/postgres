@@ -120,7 +120,7 @@ extern void WalSndSetState(WalSndState state);
  */
 extern int	replication_yyparse(void);
 extern int	replication_yylex(void);
-extern void replication_yyerror(const char *str) pg_attribute_noreturn();
+extern pg_noreturn void replication_yyerror(const char *str);
 extern void replication_scanner_init(const char *query_string);
 extern void replication_scanner_finish(void);
 

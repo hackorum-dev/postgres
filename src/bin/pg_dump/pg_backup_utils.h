@@ -31,7 +31,7 @@ extern const char *progname;
 
 extern void set_dump_section(const char *arg, int *dumpSections);
 extern void on_exit_nicely(on_exit_nicely_callback function, void *arg);
-extern void exit_nicely(int code) pg_attribute_noreturn();
+extern pg_noreturn void exit_nicely(int code);
 
 #define fatal(...) do { pg_log_error(__VA_ARGS__); exit_nicely(1); } while(0)
 

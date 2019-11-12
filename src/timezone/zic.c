@@ -118,11 +118,11 @@ struct zone
 
 extern int	link(const char *fromname, const char *toname);
 
-static void memory_exhausted(const char *msg) pg_attribute_noreturn();
+static pg_noreturn void memory_exhausted(const char *msg);
 static void verror(const char *string, va_list args) pg_attribute_printf(1, 0);
 static void error(const char *string,...) pg_attribute_printf(1, 2);
 static void warning(const char *string,...) pg_attribute_printf(1, 2);
-static void usage(FILE *stream, int status) pg_attribute_noreturn();
+static pg_noreturn void usage(FILE *stream, int status);
 static void addtt(zic_t starttime, int type);
 static int	addtype(zic_t, char const *, bool, bool, bool);
 static void leapadd(zic_t, bool, int, int);

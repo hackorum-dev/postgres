@@ -11624,8 +11624,7 @@ assign_recovery_target_timeline(const char *newval, void *extra)
  * string.
  */
 
-static void
-pg_attribute_noreturn()
+static pg_noreturn void
 error_multiple_recovery_targets(void)
 {
 	ereport(ERROR,

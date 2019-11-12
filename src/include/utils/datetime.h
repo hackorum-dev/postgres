@@ -304,8 +304,8 @@ extern int	DecodeInterval(char **field, int *ftype, int nf, int range,
 extern int	DecodeISO8601Interval(char *str,
 								  int *dtype, struct pg_tm *tm, fsec_t *fsec);
 
-extern void DateTimeParseError(int dterr, const char *str,
-							   const char *datatype) pg_attribute_noreturn();
+extern pg_noreturn void DateTimeParseError(int dterr, const char *str,
+										   const char *datatype);
 
 extern int	DetermineTimeZoneOffset(struct pg_tm *tm, pg_tz *tzp);
 extern int	DetermineTimeZoneAbbrevOffset(struct pg_tm *tm, const char *abbr, pg_tz *tzp);

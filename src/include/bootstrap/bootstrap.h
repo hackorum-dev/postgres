@@ -32,7 +32,7 @@ extern Form_pg_attribute attrtypes[MAXATTR];
 extern int	numattr;
 
 
-extern void AuxiliaryProcessMain(int argc, char *argv[]) pg_attribute_noreturn();
+extern pg_noreturn void AuxiliaryProcessMain(int argc, char *argv[]);
 
 extern void closerel(char *name);
 extern void boot_openrel(char *name);
@@ -57,6 +57,6 @@ extern void boot_get_type_io_data(Oid typid,
 extern int	boot_yyparse(void);
 
 extern int	boot_yylex(void);
-extern void boot_yyerror(const char *str) pg_attribute_noreturn();
+extern pg_noreturn void boot_yyerror(const char *str);
 
 #endif							/* BOOTSTRAP_H */

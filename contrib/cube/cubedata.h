@@ -61,7 +61,7 @@ typedef struct NDBOX
 
 /* in cubescan.l */
 extern int	cube_yylex(void);
-extern void cube_yyerror(NDBOX **result, const char *message) pg_attribute_noreturn();
+extern pg_noreturn void cube_yyerror(NDBOX **result, const char *message);
 extern void cube_scanner_init(const char *str);
 extern void cube_scanner_finish(void);
 

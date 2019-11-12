@@ -135,7 +135,7 @@
 /* GCC, Sunpro and XLC support aligned, packed and noreturn */
 #if defined(__GNUC__) || defined(__SUNPRO_C) || defined(__IBMC__)
 #define pg_attribute_aligned(a) __attribute__((aligned(a)))
-#define pg_attribute_noreturn() __attribute__((noreturn))
+#define pg_noreturn __attribute__((noreturn))
 #define pg_attribute_packed() __attribute__((packed))
 #define HAVE_PG_ATTRIBUTE_NORETURN 1
 #else
@@ -144,7 +144,7 @@
  * affect code functionality; they *must* be implemented by the compiler
  * if they are to be used.
  */
-#define pg_attribute_noreturn()
+#define pg_noreturn
 #endif
 
 /*
@@ -813,9 +813,9 @@ typedef NameData *Name;
  * we should declare it as long as !FRONTEND.
  */
 #ifndef FRONTEND
-extern void ExceptionalCondition(const char *conditionName,
-								 const char *errorType,
-								 const char *fileName, int lineNumber) pg_attribute_noreturn();
+extern pg_noreturn void ExceptionalCondition(const char *conditionName,
+											 const char *errorType,
+											 const char *fileName, int lineNumber);
 #endif
 
 /*
