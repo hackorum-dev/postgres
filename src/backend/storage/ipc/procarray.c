@@ -1517,6 +1517,9 @@ GetSnapshotData(Snapshot snapshot)
 
 	Assert(snapshot != NULL);
 
+	/* Unsafe if transaction is aborted, or if we're not in a transaction. */
+	Assert(IsTransactionState());
+
 	/*
 	 * Allocating space for maxProcs xids is usually overkill; numProcs would
 	 * be sufficient.  But it seems better to do the malloc while not holding
