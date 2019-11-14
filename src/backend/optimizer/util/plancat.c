@@ -46,6 +46,7 @@
 #include "rewrite/rewriteManip.h"
 #include "statistics/statistics.h"
 #include "storage/bufmgr.h"
+#include "storage/lmgr.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/partcache.h"
@@ -1305,9 +1306,13 @@ get_relation_statistics(RelOptInfo *rel, Relation relation)
 		Bitmapset  *keys = NULL;
 		int			i;
 
+		LockDatabaseObject(StatisticExtRelationId, statOid, 0, AccessShareLock);
+
+		/* we may get invalid tuple, if the statistic just got dropped */
 		htup = SearchSysCache1(STATEXTOID, ObjectIdGetDatum(statOid));
 		if (!HeapTupleIsValid(htup))
-			elog(ERROR, "cache lookup failed for statistics object %u", statOid);
+			continue;
+
 		staForm = (Form_pg_statistic_ext) GETSTRUCT(htup);
 
 		dtup = SearchSysCache1(STATEXTDATASTXOID, ObjectIdGetDatum(statOid));
