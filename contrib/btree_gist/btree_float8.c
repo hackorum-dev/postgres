@@ -1,5 +1,13 @@
-/*
- * contrib/btree_gist/btree_float8.c
+/*-------------------------------------------------------------------------
+ *
+ * btree_float8.c
+ *
+ * Copyright (c) 2004-2019, PostgreSQL Global Development Group
+ *
+ * IDENTIFICATION
+ *	  contrib/btree_gist/btree_float8.c
+ *
+ *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 

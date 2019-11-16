@@ -1,5 +1,13 @@
-/*
- * contrib/hstore/hstore_io.c
+/*-------------------------------------------------------------------------
+ *
+ * hstore_io.c
+ *
+ * Copyright (c) 2006-2019, PostgreSQL Global Development Group
+ *
+ * IDENTIFICATION
+ *	  contrib/hstore/hstore_io.c
+ *
+ *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 

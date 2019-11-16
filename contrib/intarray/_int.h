@@ -1,5 +1,13 @@
-/*
- * contrib/intarray/_int.h
+/*-------------------------------------------------------------------------
+ *
+ * _int.h
+ *
+ * Copyright (c) 2003-2019, PostgreSQL Global Development Group
+ *
+ * IDENTIFICATION
+ *	  contrib/intarray/_int.h
+ *
+ *-------------------------------------------------------------------------
  */
 #ifndef ___INT_H__
 #define ___INT_H__

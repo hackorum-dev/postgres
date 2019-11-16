@@ -1,3 +1,14 @@
+/*-------------------------------------------------------------------------
+ *
+ * hstore_plpython.c
+ *
+ * Copyright (c) 2015-2019, PostgreSQL Global Development Group
+ *
+ * IDENTIFICATION
+ *	  contrib/hstore_plpython/hstore_plpython.c
+ *
+ *-------------------------------------------------------------------------
+ */
 #include "postgres.h"
 
 #include "fmgr.h"

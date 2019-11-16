@@ -1,5 +1,13 @@
-/*
- * contrib/btree_gin/btree_gin.c
+/*-------------------------------------------------------------------------
+ *
+ * btree_gin.c
+ *
+ * Copyright (c) 2009-2019, PostgreSQL Global Development Group
+ *
+ * IDENTIFICATION
+ *	  contrib/btree_gin/btree_gin.c
+ *
+ *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 

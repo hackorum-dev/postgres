@@ -1,10 +1,19 @@
-/******************************************************************************
-  contrib/cube/cube.c
-
-  This file contains routines that can be bound to a Postgres backend and
-  called by the backend in the process of processing queries.  The calling
-  format for these routines is dictated by Postgres architecture.
-******************************************************************************/
+/*-------------------------------------------------------------------------
+ *
+ * cube.c
+ *
+ * Copyright (c) 2000-2019, PostgreSQL Global Development Group
+ *
+ * IDENTIFICATION
+ *	  contrib/cube/cube.c
+ *
+ * NOTES
+ *	  This file contains routines that can be bound to a Postgres backend and
+ *	  called by the backend in the process of processing queries.  The calling
+ *	  format for these routines is dictated by Postgres architecture.
+ *
+ *-------------------------------------------------------------------------
+ */
 
 #include "postgres.h"
 

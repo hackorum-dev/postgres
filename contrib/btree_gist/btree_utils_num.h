@@ -1,5 +1,13 @@
-/*
- * contrib/btree_gist/btree_utils_num.h
+/*-------------------------------------------------------------------------
+ *
+ * btree_utils_num.h
+ *
+ * Copyright (c) 2004-2019, PostgreSQL Global Development Group
+ *
+ * IDENTIFICATION
+ *	  contrib/btree_gist/btree_utils_num.h
+ *
+ *-------------------------------------------------------------------------
  */
 #ifndef __BTREE_UTILS_NUM_H__
 #define __BTREE_UTILS_NUM_H__

@@ -1,5 +1,13 @@
-/*
- * contrib/btree_gist/btree_date.c
+/*-------------------------------------------------------------------------
+ *
+ * btree_date.c
+ *
+ * Copyright (c) 2004-2019, PostgreSQL Global Development Group
+ *
+ * IDENTIFICATION
+ *	  contrib/btree_gist/btree_date.c
+ *
+ *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 

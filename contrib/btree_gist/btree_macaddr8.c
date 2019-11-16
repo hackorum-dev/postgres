@@ -1,5 +1,13 @@
-/*
- * contrib/btree_gist/btree_macaddr8.c
+/*-------------------------------------------------------------------------
+ *
+ * btree_macaddr8.c
+ *
+ * Copyright (c) 2017-2019, PostgreSQL Global Development Group
+ *
+ * IDENTIFICATION
+ *	  contrib/btree_gist/btree_macaddr8.c
+ *
+ *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 

@@ -1,5 +1,13 @@
-/*
- * contrib/citext/citext.c
+/*-------------------------------------------------------------------------
+ *
+ * citext.c
+ *
+ * Copyright (c) 2008-2019, PostgreSQL Global Development Group
+ *
+ * IDENTIFICATION
+ *	  contrib/citext/citext.c
+ *
+ *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 

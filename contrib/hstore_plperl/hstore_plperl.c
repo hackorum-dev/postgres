@@ -1,3 +1,14 @@
+/*-------------------------------------------------------------------------
+ *
+ * hstore_plperl.c
+ *
+ * Copyright (c) 2015-2019, PostgreSQL Global Development Group
+ *
+ * IDENTIFICATION
+ *	  contrib/hstore_plperl/hstore_plperl.c
+ *
+ *-------------------------------------------------------------------------
+ */
 #include "postgres.h"
 
 #include "fmgr.h"

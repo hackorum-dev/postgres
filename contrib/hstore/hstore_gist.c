@@ -1,5 +1,13 @@
-/*
- * contrib/hstore/hstore_gist.c
+/*-------------------------------------------------------------------------
+ *
+ * hstore_gist.c
+ *
+ * Copyright (c) 2006-2019, PostgreSQL Global Development Group
+ *
+ * IDENTIFICATION
+ *	  contrib/hstore/hstore_gist.c
+ *
+ *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 

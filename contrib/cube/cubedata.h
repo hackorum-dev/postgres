@@ -1,4 +1,14 @@
-/* contrib/cube/cubedata.h */
+/*-------------------------------------------------------------------------
+ *
+ * cubedata.h
+ *
+ * Copyright (c) 2000-2019, PostgreSQL Global Development Group
+ *
+ * IDENTIFICATION
+ *	  contrib/cube/cubedata.h
+ *
+ *-------------------------------------------------------------------------
+ */
 
 /*
  * This limit is pretty arbitrary, but don't make it so large that you

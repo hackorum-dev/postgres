@@ -1,5 +1,13 @@
-/*
- * contrib/intarray/_int_tool.c
+/*-------------------------------------------------------------------------
+ *
+ * _int_tool.c
+ *
+ * Copyright (c) 2003-2019, PostgreSQL Global Development Group
+ *
+ * IDENTIFICATION
+ *	  contrib/intarray/_int_tool.c
+ *
+ *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 

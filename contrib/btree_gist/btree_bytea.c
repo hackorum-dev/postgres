@@ -1,5 +1,13 @@
-/*
- * contrib/btree_gist/btree_bytea.c
+/*-------------------------------------------------------------------------
+ *
+ * btree_bytea.c
+ *
+ * Copyright (c) 2004-2019, PostgreSQL Global Development Group
+ *
+ * IDENTIFICATION
+ *	  contrib/btree_gist/btree_bytea.c
+ *
+ *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 

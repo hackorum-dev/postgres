@@ -1,5 +1,13 @@
-/*
- * contrib/btree_gist/btree_uuid.c
+/*-------------------------------------------------------------------------
+ *
+ * btree_uuid.c
+ *
+ * Copyright (c) 2016-2019, PostgreSQL Global Development Group
+ *
+ * IDENTIFICATION
+ *	  contrib/btree_gist/btree_uuid.c
+ *
+ *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 

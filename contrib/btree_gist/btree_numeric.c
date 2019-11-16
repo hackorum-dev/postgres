@@ -1,5 +1,13 @@
-/*
- * contrib/btree_gist/btree_numeric.c
+/*-------------------------------------------------------------------------
+ *
+ * btree_numeric.c
+ *
+ * Copyright (c) 2004-2019, PostgreSQL Global Development Group
+ *
+ * IDENTIFICATION
+ *	  contrib/btree_gist/btree_numeric.c
+ *
+ *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 

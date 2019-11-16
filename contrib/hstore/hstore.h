@@ -1,5 +1,13 @@
-/*
- * contrib/hstore/hstore.h
+/*-------------------------------------------------------------------------
+ *
+ * hstore.h
+ *
+ * Copyright (c) 2006-2019, PostgreSQL Global Development Group
+ *
+ * IDENTIFICATION
+ *	  contrib/hstore/hstore.h
+ *
+ *-------------------------------------------------------------------------
  */
 #ifndef __HSTORE_H__
 #define __HSTORE_H__

@@ -1,5 +1,13 @@
-/*
- * contrib/btree_gist/btree_interval.c
+/*-------------------------------------------------------------------------
+ *
+ * btree_interval.c
+ *
+ * Copyright (c) 2004-2019, PostgreSQL Global Development Group
+ *
+ * IDENTIFICATION
+ *	  contrib/btree_gist/btree_interval.c
+ *
+ *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 

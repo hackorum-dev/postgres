@@ -1,5 +1,13 @@
-/*
- * contrib/intarray/_int_gin.c
+/*-------------------------------------------------------------------------
+ *
+ * _int_gin.c
+ *
+ * Copyright (c) 2006-2019, PostgreSQL Global Development Group
+ *
+ * IDENTIFICATION
+ *	  contrib/intarray/_int_gin.c
+ *
+ *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 

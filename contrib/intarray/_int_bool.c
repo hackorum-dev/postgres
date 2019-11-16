@@ -1,5 +1,13 @@
-/*
- * contrib/intarray/_int_bool.c
+/*-------------------------------------------------------------------------
+ *
+ * _int_bool.c
+ *
+ * Copyright (c) 2003-2019, PostgreSQL Global Development Group
+ *
+ * IDENTIFICATION
+ *	  contrib/intarray/_int_bool.c
+ *
+ *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 

@@ -1,5 +1,13 @@
-/*
- * contrib/btree_gist/btree_enum.c
+/*-------------------------------------------------------------------------
+ *
+ * btree_enum.c
+ *
+ * Copyright (c) 2017-2019, PostgreSQL Global Development Group
+ *
+ * IDENTIFICATION
+ *	  contrib/btree_gist/btree_enum.c
+ *
+ *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 

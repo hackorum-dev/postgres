@@ -1,4 +1,14 @@
-/* contrib/earthdistance/earthdistance.c */
+/*-------------------------------------------------------------------------
+ *
+ * earthdistance.c
+ *
+ * Copyright (c) 1998-2019, PostgreSQL Global Development Group
+ *
+ * IDENTIFICATION
+ *	  contrib/earthdistance/earthdistance.c
+ *
+ *-------------------------------------------------------------------------
+ */
 
 #include "postgres.h"
 

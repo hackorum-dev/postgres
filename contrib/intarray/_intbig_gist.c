@@ -1,5 +1,13 @@
-/*
- * contrib/intarray/_intbig_gist.c
+/*-------------------------------------------------------------------------
+ *
+ * _intbig_gist.c
+ *
+ * Copyright (c) 2003-2019, PostgreSQL Global Development Group
+ *
+ * IDENTIFICATION
+ *	  contrib/intarray/_intbig_gist.c
+ *
+ *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 
