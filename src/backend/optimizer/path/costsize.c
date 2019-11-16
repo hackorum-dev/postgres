@@ -447,6 +447,35 @@ cost_gather(GatherPath *path, PlannerInfo *root,
 
 	run_cost = path->subpath->total_cost - path->subpath->startup_cost;
 
+	/*
+	 * Early experience with parallel query suggests that when there is only
+	 * one worker, the leader often makes a very substantial contribution to
+	 * executing the parallel portion of the plan, but as more workers are
+	 * added, it does less and less, because it's busy reading tuples from the
+	 * workers and doing whatever non-parallel post-processing is needed.  By
+	 * the time we reach 4 workers, the leader no longer makes a meaningful
+	 * contribution.  Thus, for now, estimate that the leader spends 30% of
+	 * its time servicing each worker, and the remainder executing the
+	 * parallel plan.
+	 *
+	 * Apply this reasoning only to the run cost, so that we can estimate when
+	 * the final process will complete.
+	 */
+	if (parallel_leader_participation)
+	{
+		double		leader_contribution;
+
+		leader_contribution = 1.0 - (0.3 * path->path.parallel_workers);
+		if (leader_contribution > 0)
+		{
+			double		total_run_cost;
+
+			total_run_cost = run_cost * get_parallel_divisor(&path->path);
+			run_cost = total_run_cost / (path->path.parallel_workers +
+										 leader_contribution);
+		}
+	}
+
 	/* Parallel setup and communication cost. */
 	startup_cost += parallel_setup_cost;
 	run_cost += parallel_tuple_cost * path->path.rows;
@@ -6640,29 +6669,10 @@ page_size(double tuples, int width)
 static double
 get_parallel_divisor(Path *path)
 {
-	double		parallel_divisor = path->parallel_workers;
-
-	/*
-	 * Early experience with parallel query suggests that when there is only
-	 * one worker, the leader often makes a very substantial contribution to
-	 * executing the parallel portion of the plan, but as more workers are
-	 * added, it does less and less, because it's busy reading tuples from the
-	 * workers and doing whatever non-parallel post-processing is needed.  By
-	 * the time we reach 4 workers, the leader no longer makes a meaningful
-	 * contribution.  Thus, for now, estimate that the leader spends 30% of
-	 * its time servicing each worker, and the remainder executing the
-	 * parallel plan.
-	 */
 	if (parallel_leader_participation)
-	{
-		double		leader_contribution;
-
-		leader_contribution = 1.0 - (0.3 * path->parallel_workers);
-		if (leader_contribution > 0)
-			parallel_divisor += leader_contribution;
-	}
-
-	return parallel_divisor;
+		return path->parallel_workers + 1;
+	else
+		return path->parallel_workers;
 }
 
 /*
