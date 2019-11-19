@@ -3318,6 +3318,11 @@ main(int argc, char *argv[])
 	 * Build up a shell command to tell the user how to start the server
 	 */
 	start_db_cmd = createPQExpBuffer();
+	if (!start_db_cmd)
+	{
+		pg_log_error("out of memory");
+		exit(1);
+	}
 
 	/* Get directory specification used to start initdb ... */
 	strlcpy(pg_ctl_path, argv[0], sizeof(pg_ctl_path));
