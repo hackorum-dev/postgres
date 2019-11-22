@@ -3382,6 +3382,9 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 	double		virtualbuckets;
 	Selectivity innerbucketsize;
 	Selectivity innermcvfreq;
+	double		outerndistinct;
+	double		innerndistinct;
+	Selectivity outer_match_nonempty_frac;
 	ListCell   *hcl;
 
 	/* Mark the path with the correct row estimate */
@@ -3426,20 +3429,30 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 	 * because we avoid contaminating the cache with a value that's wrong for
 	 * non-unique-ified paths.
 	 */
+	outerndistinct = 1.0;
+
 	if (IsA(inner_path, UniquePath))
 	{
 		innerbucketsize = 1.0 / virtualbuckets;
 		innermcvfreq = 0.0;
+		innerndistinct = inner_path_rows;
 	}
 	else
 	{
 		innerbucketsize = 1.0;
 		innermcvfreq = 1.0;
+		innerndistinct = 1.0;
+
 		foreach(hcl, hashclauses)
 		{
 			RestrictInfo *restrictinfo = lfirst_node(RestrictInfo, hcl);
 			Selectivity thisbucketsize;
 			Selectivity thismcvfreq;
+			double thisinnerndistinct;
+			double thisouterndistinct;
+			VariableStatData vardatainner;
+			VariableStatData vardataouter;
+			bool isdefault;
 
 			/*
 			 * First we have to figure out which side of the hashjoin clause
@@ -3465,6 +3478,25 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 					thisbucketsize = restrictinfo->right_bucketsize;
 				}
 				thismcvfreq = restrictinfo->right_mcvfreq;
+
+				examine_variable(root, get_rightop(restrictinfo->clause), 0, &vardatainner);
+				thisinnerndistinct = get_variable_numdistinct(&vardatainner, &isdefault);
+				if (vardatainner.rel && vardatainner.rel->tuples > 0)
+				{
+					thisinnerndistinct *= vardatainner.rel->rows / vardatainner.rel->tuples;
+					thisinnerndistinct = clamp_row_est(thisinnerndistinct);
+				}
+				ReleaseVariableStats(vardatainner);
+
+				/* lefthand side is outer */
+				examine_variable(root, get_leftop(restrictinfo->clause), 0, &vardataouter);
+				thisouterndistinct = get_variable_numdistinct(&vardataouter, &isdefault);
+				if (vardataouter.rel && vardataouter.rel->tuples > 0)
+				{
+					thisinnerndistinct *= vardataouter.rel->rows / vardataouter.rel->tuples;
+					thisinnerndistinct = clamp_row_est(thisinnerndistinct);
+				}
+				ReleaseVariableStats(vardataouter);
 			}
 			else
 			{
@@ -3483,12 +3515,35 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 					thisbucketsize = restrictinfo->left_bucketsize;
 				}
 				thismcvfreq = restrictinfo->left_mcvfreq;
+
+				examine_variable(root, get_leftop(restrictinfo->clause), 0, &vardatainner);
+				thisinnerndistinct = get_variable_numdistinct(&vardatainner, &isdefault);
+				if (vardatainner.rel && vardatainner.rel->tuples > 0)
+				{
+					thisinnerndistinct *= vardatainner.rel->rows / vardatainner.rel->tuples;
+					thisinnerndistinct = clamp_row_est(thisinnerndistinct);
+				}
+				ReleaseVariableStats(vardatainner);
+
+				/* righthand side is outers */
+				examine_variable(root, get_rightop(restrictinfo->clause), 0, &vardataouter);
+				thisouterndistinct = get_variable_numdistinct(&vardataouter, &isdefault);
+				if (vardataouter.rel && vardataouter.rel->tuples > 0)
+				{
+					thisinnerndistinct *= vardataouter.rel->rows / vardataouter.rel->tuples;
+					thisinnerndistinct = clamp_row_est(thisinnerndistinct);
+				}
+				ReleaseVariableStats(vardataouter);
 			}
 
 			if (innerbucketsize > thisbucketsize)
 				innerbucketsize = thisbucketsize;
 			if (innermcvfreq > thismcvfreq)
 				innermcvfreq = thismcvfreq;
+			if (outerndistinct < thisouterndistinct)
+				outerndistinct = thisouterndistinct;
+			if (innerndistinct < thisinnerndistinct)
+				innerndistinct =  thisinnerndistinct;
 		}
 	}
 
@@ -3516,6 +3571,21 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 
 	/* CPU costs */
 
+	/*
+	 * If virtualbuckets is much larger than innerndistinct, and
+	 * outerndistinct is much larger than innerndistinct. Then most
+	 * tuples of the outer table will match the empty bucket. So when
+	 * we calculate the cost of traversing the bucket, we need to ignore
+	 * the tuple matching empty bucket.
+	 */
+	outer_match_nonempty_frac = 1.0;
+	if (virtualbuckets > innerndistinct * 2 && outerndistinct > innerndistinct * 2)
+	{
+		outer_match_nonempty_frac = (1 -
+				((outerndistinct - innerndistinct)/outerndistinct)*
+				((virtualbuckets - innerndistinct)/virtualbuckets));
+	}
+
 	if (path->jpath.jointype == JOIN_SEMI ||
 		path->jpath.jointype == JOIN_ANTI ||
 		extra->inner_unique)
@@ -3539,7 +3609,7 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 		inner_scan_frac = 2.0 / (extra->semifactors.match_count + 1.0);
 
 		startup_cost += hash_qual_cost.startup;
-		run_cost += hash_qual_cost.per_tuple * outer_matched_rows *
+		run_cost += hash_qual_cost.per_tuple * outer_matched_rows * outer_match_nonempty_frac *
 			clamp_row_est(inner_path_rows * innerbucketsize * inner_scan_frac) * 0.5;
 
 		/*
@@ -3579,6 +3649,7 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 		 */
 		startup_cost += hash_qual_cost.startup;
 		run_cost += hash_qual_cost.per_tuple * outer_path_rows *
+			outer_match_nonempty_frac *
 			clamp_row_est(inner_path_rows * innerbucketsize) * 0.5;
 
 		/*
