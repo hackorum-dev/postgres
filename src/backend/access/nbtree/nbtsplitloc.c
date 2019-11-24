@@ -662,7 +662,7 @@ _bt_afternewitemoff(FindSplitData *state, OffsetNumber maxoff,
 	 */
 	if (state->newitemsz != state->minfirstrightsz)
 		return false;
-	if (state->newitemsz * (maxoff - 1) != state->olddataitemstotal)
+	if ((maxoff <= 1) || (state->newitemsz * (maxoff - 1) != state->olddataitemstotal))
 		return false;
 
 	/*
