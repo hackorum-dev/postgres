@@ -9889,14 +9889,14 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
         <entry> <literal>@@</literal> </entry>
         <entry><type>boolean</type></entry>
         <entry><type>tsvector</type> matches <type>tsquery</type> ?</entry>
-        <entry><literal>to_tsvector('fat cats ate rats') @@ to_tsquery('cat &amp; rat')</literal></entry>
+        <entry><literal>to_tsvector('english', 'fat cats ate rats') @@ to_tsquery('english', 'cat &amp; rat')</literal></entry>
         <entry><literal>t</literal></entry>
        </row>
        <row>
         <entry> <literal>@@@</literal> </entry>
         <entry><type>boolean</type></entry>
         <entry>deprecated synonym for <literal>@@</literal></entry>
-        <entry><literal>to_tsvector('fat cats ate rats') @@@ to_tsquery('cat &amp; rat')</literal></entry>
+        <entry><literal>to_tsvector('english', 'fat cats ate rats') @@@ to_tsquery('english', 'cat &amp; rat')</literal></entry>
         <entry><literal>t</literal></entry>
        </row>
        <row>
