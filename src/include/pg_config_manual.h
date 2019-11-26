@@ -85,6 +85,11 @@
 #define MAXPGPATH		1024
 
 /*
+ * FMTPGPATH: standard format to scan pathname buffer, must follow MAXPGPATH
+ */
+#define FMTPGPATH               "%1023s %n"
+
+/*
  * PG_SOMAXCONN: maximum accept-queue length limit passed to
  * listen(2).  You'd think we should use SOMAXCONN from
  * <sys/socket.h>, but on many systems that symbol is much smaller

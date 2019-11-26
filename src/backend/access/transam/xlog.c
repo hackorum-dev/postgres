@@ -11382,7 +11382,7 @@ read_tablespace_map(List **tablespaces)
 		if ((ch == '\n' || ch == '\r') && prev_ch != '\\')
 		{
 			str[i] = '\0';
-			if (sscanf(str, "%s %n", tbsoid, &n) != 1)
+			if (sscanf(str, FMTPGPATH, tbsoid, &n) != 1)
 				ereport(FATAL,
 						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 						 errmsg("invalid data in file \"%s\"", TABLESPACE_MAP)));
