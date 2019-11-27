@@ -1829,7 +1829,8 @@ REVOKE ALL ON accounts FROM PUBLIC;
       <para>
        For foreign servers, allows creation of foreign tables using the
        server.  Grantees may also create, alter, or drop their own user
-       mappings associated with that server.
+       mappings associated with that server. Grantees may also use the foreign
+       server as a connection name in <xref linkend="dblink"/>.
       </para>
      </listitem>
     </varlistentry>
