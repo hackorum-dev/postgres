@@ -33,6 +33,8 @@
 /* pointer to "variable cache" in shared memory (set up by shmem.c) */
 VariableCache ShmemVariableCache = NULL;
 
+int JJ_xid = 0;
+
 
 /*
  * Allocate the next XID for a new transaction or subtransaction.
@@ -168,17 +170,24 @@ GetNewTransactionId(bool isSubXact)
 	 *
 	 * Extend pg_subtrans and pg_commit_ts too.
 	 */
-	ExtendCLOG(xid);
-	ExtendCommitTs(xid);
-	ExtendSUBTRANS(xid);
+	{
+		int		incr;
+		for (incr=0; incr <=JJ_xid; incr++)
+		{
+			xid = ShmemVariableCache->nextXid;
+			ExtendCLOG(xid);
+			ExtendCommitTs(xid);
+			ExtendSUBTRANS(xid);
 
-	/*
-	 * Now advance the nextXid counter.  This must not happen until after we
-	 * have successfully completed ExtendCLOG() --- if that routine fails, we
-	 * want the next incoming transaction to try it again.  We cannot assign
-	 * more XIDs until there is CLOG space for them.
-	 */
-	TransactionIdAdvance(ShmemVariableCache->nextXid);
+			/*
+			 * Now advance the nextXid counter.  This must not happen until after we
+			 * have successfully completed ExtendCLOG() --- if that routine fails, we
+			 * want the next incoming transaction to try it again.  We cannot assign
+			 * more XIDs until there is CLOG space for them.
+			 */
+			TransactionIdAdvance(ShmemVariableCache->nextXid);
+		}
+	}
 
 	/*
 	 * We must store the new XID into the shared ProcArray before releasing
