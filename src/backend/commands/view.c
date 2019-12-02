@@ -78,8 +78,11 @@ DefineVirtualRelation(RangeVar *relation, List *tlist, bool replace,
 									def->colname),
 							 errhint("Use the COLLATE clause to set the collation explicitly.")));
 			}
-			else
-				Assert(!OidIsValid(def->collOid));
+
+			/*
+			 * If it's not collatable and a collation has been provided, then
+			 * BuildDescForRelation() will raise an error further down.
+			 */
 
 			attrList = lappend(attrList, def);
 		}
