@@ -3371,7 +3371,7 @@ XLogFileInitInternal(XLogSegNo logsegno, TimeLineID logtli,
 		save_errno = errno;
 		close(fd);
 		errno = save_errno;
-		ereport(ERROR,
+		ereport(data_sync_elevel(ERROR),
 				(errcode_for_file_access(),
 				 errmsg("could not fsync file \"%s\": %m", tmppath)));
 	}
