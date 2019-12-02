@@ -2614,7 +2614,7 @@ SaveSlotToPath(ReplicationSlot *slot, const char *dir, int elevel)
 		LWLockRelease(&slot->io_in_progress_lock);
 
 		errno = save_errno;
-		ereport(elevel,
+		ereport(data_sync_elevel(elevel),
 				(errcode_for_file_access(),
 				 errmsg("could not fsync file \"%s\": %m",
 						tmppath)));
