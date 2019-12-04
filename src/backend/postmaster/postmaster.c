@@ -77,6 +77,14 @@
 #include <netdb.h>
 #include <limits.h>
 
+#ifdef HAVE_EXECINFO_H
+#include <execinfo.h>
+#endif
+
+#ifdef HAVE_SYS_SELECT_H
+#include <sys/select.h>
+#endif
+
 #ifdef USE_BONJOUR
 #include <dns_sd.h>
 #endif
@@ -430,6 +438,7 @@ static void process_pm_child_exit(void);
 static void process_pm_reload_request(void);
 static void process_pm_shutdown_request(void);
 static void dummy_handler(SIGNAL_ARGS);
+static void abort_handler(SIGNAL_ARGS);
 static void CleanupBackend(PMChild *bp, int exitstatus);
 static void HandleChildCrash(int pid, int exitstatus, const char *procname);
 static void HandleFatalError(QuitSignalReason reason, bool consider_sigabrt);
@@ -562,6 +571,10 @@ PostmasterMain(int argc, char *argv[])
 	pqsignal(SIGUSR1, handle_pm_pmsignal_signal);
 	pqsignal(SIGUSR2, dummy_handler);	/* unused, reserve for children */
 	pqsignal(SIGCHLD, handle_pm_child_exit_signal);
+
+	pqsignal(SIGABRT, abort_handler);
+	pqsignal(SIGBUS, abort_handler);
+	pqsignal(SIGSEGV, abort_handler);
 
 	/* This may configure SIGURG, depending on platform. */
 	InitializeWaitEventSupport();
@@ -3959,6 +3972,28 @@ process_pm_pmsignal(void)
 		 */
 		signal_child(StartupPMChild, SIGUSR2);
 	}
+}
+
+/*
+ * Signal handler for SIGABRT, SIGBUS, SIGSEGV
+ *
+ * If supported, print stack trace, then continue with normal signal handler.
+ */
+static void
+abort_handler(SIGNAL_ARGS)
+{
+#ifdef HAVE_BACKTRACE_SYMBOLS
+	{
+		void	   *buf[100];
+		int			nframes;
+
+		nframes = backtrace(buf, lengthof(buf));
+		backtrace_symbols_fd(buf, nframes, fileno(stderr));
+	}
+#endif
+
+	pqsignal(postgres_signal_arg, SIG_DFL);
+	raise(postgres_signal_arg);
 }
 
 /*
