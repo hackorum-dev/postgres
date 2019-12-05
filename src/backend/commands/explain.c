@@ -101,6 +101,7 @@ static void show_sortorder_options(StringInfo buf, Node *sortexpr,
 static void show_tablesample(TableSampleClause *tsc, PlanState *planstate,
 							 List *ancestors, ExplainState *es);
 static void show_sort_info(SortState *sortstate, ExplainState *es);
+static void show_parallel_sort_info(SortState *sortstate, ExplainState *es, int n);
 static void show_hash_info(HashState *hashstate, ExplainState *es);
 static void show_tidbitmap_info(BitmapHeapScanState *planstate,
 								ExplainState *es);
@@ -1904,6 +1905,10 @@ ExplainNode(PlanState *planstate, List *ancestors,
 				es->indent++;
 				if (es->buffers)
 					show_buffer_usage(es, &instrument->bufusage);
+
+				if (nodeTag(plan) == T_Sort)
+					show_parallel_sort_info(castNode(SortState, planstate), es, n);
+
 				es->indent--;
 			}
 			else
@@ -1928,6 +1933,9 @@ ExplainNode(PlanState *planstate, List *ancestors,
 
 				if (es->buffers)
 					show_buffer_usage(es, &instrument->bufusage);
+
+				if (nodeTag(plan) == T_Sort)
+					show_parallel_sort_info(castNode(SortState, planstate), es, n);
 
 				ExplainCloseGroup("Worker", NULL, true, es);
 			}
@@ -2565,50 +2573,49 @@ show_sort_info(SortState *sortstate, ExplainState *es)
 			ExplainPropertyText("Sort Space Type", spaceType, es);
 		}
 	}
+}
 
-	if (sortstate->shared_info != NULL)
+/*
+ * If it's EXPLAIN ANALYZE, show tuplesort stats for a parallel sort node
+ */
+static void
+show_parallel_sort_info(SortState *sortstate, ExplainState *es, int n)
+{
+	TuplesortInstrumentation *sinstrument;
+	const char *sortMethod;
+	const char *spaceType;
+	long		spaceUsed;
+
+	if (!es->analyze)
+		return;
+
+	if (! sortstate->sort_Done || sortstate->tuplesortstate == NULL)
+		return;
+
+	if (sortstate->shared_info == NULL)
+		return;
+
+	sinstrument = &sortstate->shared_info->sinstrument[n];
+
+	if (sinstrument->sortMethod == SORT_TYPE_STILL_IN_PROGRESS)
+		return;		/* ignore any unfilled slots */
+
+	sortMethod = tuplesort_method_name(sinstrument->sortMethod);
+	spaceType = tuplesort_space_type_name(sinstrument->spaceType);
+	spaceUsed = sinstrument->spaceUsed;
+
+	if (es->format == EXPLAIN_FORMAT_TEXT)
 	{
-		int			n;
-		bool		opened_group = false;
-
-		for (n = 0; n < sortstate->shared_info->num_workers; n++)
-		{
-			TuplesortInstrumentation *sinstrument;
-			const char *sortMethod;
-			const char *spaceType;
-			long		spaceUsed;
-
-			sinstrument = &sortstate->shared_info->sinstrument[n];
-			if (sinstrument->sortMethod == SORT_TYPE_STILL_IN_PROGRESS)
-				continue;		/* ignore any unfilled slots */
-			sortMethod = tuplesort_method_name(sinstrument->sortMethod);
-			spaceType = tuplesort_space_type_name(sinstrument->spaceType);
-			spaceUsed = sinstrument->spaceUsed;
-
-			if (es->format == EXPLAIN_FORMAT_TEXT)
-			{
-				appendStringInfoSpaces(es->str, es->indent * 2);
-				appendStringInfo(es->str,
-								 "Worker %d:  Sort Method: %s  %s: %ldkB\n",
-								 n, sortMethod, spaceType, spaceUsed);
-			}
-			else
-			{
-				if (!opened_group)
-				{
-					ExplainOpenGroup("Workers", "Workers", false, es);
-					opened_group = true;
-				}
-				ExplainOpenGroup("Worker", NULL, true, es);
-				ExplainPropertyInteger("Worker Number", NULL, n, es);
-				ExplainPropertyText("Sort Method", sortMethod, es);
-				ExplainPropertyInteger("Sort Space Used", "kB", spaceUsed, es);
-				ExplainPropertyText("Sort Space Type", spaceType, es);
-				ExplainCloseGroup("Worker", NULL, true, es);
-			}
-		}
-		if (opened_group)
-			ExplainCloseGroup("Workers", "Workers", false, es);
+		appendStringInfoSpaces(es->str, es->indent * 2);
+		appendStringInfo(es->str,
+						 "Sort Method: %s  %s: %ldkB\n",
+						 sortMethod, spaceType, spaceUsed);
+	}
+	else
+	{
+		ExplainPropertyText("Sort Method", sortMethod, es);
+		ExplainPropertyInteger("Sort Space Used", "kB", spaceUsed, es);
+		ExplainPropertyText("Sort Space Type", spaceType, es);
 	}
 }
 
