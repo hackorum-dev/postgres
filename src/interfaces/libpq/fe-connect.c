@@ -1965,11 +1965,6 @@ connectDBStart(PGconn *conn)
 	 */
 	resetPQExpBuffer(&conn->errorMessage);
 
-#ifdef ENABLE_GSS
-	if (conn->gssencmode[0] == 'd') /* "disable" */
-		conn->try_gss = false;
-#endif
-
 	/*
 	 * Set up to try to connect to the first host.  (Setting whichhost = -1 is
 	 * a bit of a cheat, but PQconnectPoll will advance it to 0 before
@@ -2409,6 +2404,13 @@ keep_going:						/* We will come back to here until there is
 		conn->allow_ssl_try = (conn->sslmode[0] != 'd');	/* "disable" */
 		conn->wait_ssl_try = (conn->sslmode[0] == 'a'); /* "allow" */
 #endif
+		
+#ifdef ENABLE_GSS
+	if (conn->gssencmode[0] == 'd') /* "disable" */
+		conn->try_gss = false;
+#endif
+		
+		conn->did_negotiate = false;
 
 		reset_connection_state_machine = false;
 		need_new_connection = true;
@@ -2430,6 +2432,8 @@ keep_going:						/* We will come back to here until there is
 
 		/* Reset conn->status to put the state machine in the right state */
 		conn->status = CONNECTION_NEEDED;
+
+		conn->did_negotiate = false;
 
 		need_new_connection = false;
 	}
@@ -2971,24 +2975,37 @@ keep_going:						/* We will come back to here until there is
 							goto error_return;
 						}
 						/* Otherwise, proceed with normal startup */
+						conn->did_negotiate = true;
 						conn->allow_ssl_try = false;
 						conn->status = CONNECTION_MADE;
 						return PGRES_POLLING_WRITING;
 					}
 					else if (SSLok == 'E')
 					{
-						/*
-						 * Server failure of some sort, such as failure to
-						 * fork a backend process.  We need to process and
-						 * report the error message, which might be formatted
-						 * according to either protocol 2 or protocol 3.
-						 * Rather than duplicate the code for that, we flip
-						 * into AWAITING_RESPONSE state and let the code there
-						 * deal with it.  Note we have *not* consumed the "E"
-						 * byte here.
-						 */
-						conn->status = CONNECTION_AWAITING_RESPONSE;
-						goto keep_going;
+						if (conn->did_negotiate) {
+							/*
+							 * Postmaster used to allow only a single negotiation attempt.
+							 * If we get an error on the second negotiation attempt,
+							 * we reconnect and try again.
+							 */
+							need_new_connection = true;
+							goto keep_going;
+						}
+						else
+						{
+							/*
+							 * Server failure of some sort, such as failure to
+							 * fork a backend process.  We need to process and
+							 * report the error message, which might be formatted
+							 * according to either protocol 2 or protocol 3.
+							 * Rather than duplicate the code for that, we flip
+							 * into AWAITING_RESPONSE state and let the code there
+							 * deal with it.  Note we have *not* consumed the "E"
+							 * byte here.
+							 */
+							conn->status = CONNECTION_AWAITING_RESPONSE;
+							goto keep_going;
+						}
 					}
 					else
 					{
@@ -3061,17 +3078,29 @@ keep_going:						/* We will come back to here until there is
 
 					if (gss_ok == 'E')
 					{
-						/*
-						 * Server failure of some sort.  Assume it's a
-						 * protocol version support failure, and let's see if
-						 * we can't recover (if it's not, we'll get a better
-						 * error message on retry).  Server gets fussy if we
-						 * don't hang up the socket, though.
-						 */
-						conn->try_gss = false;
-						pqDropConnection(conn, true);
-						conn->status = CONNECTION_NEEDED;
-						goto keep_going;
+						if (conn->did_negotiate) {
+							/*
+							 * Postmaster used to allow only a single negotiation attempt.
+							 * If we get an error on the second negotiation attempt,
+							 * we reconnect and try again.
+							 */
+							need_new_connection = true;
+							goto keep_going;
+						}
+						else
+						{
+							/*
+							 * Server failure of some sort.  Assume it's a
+							 * protocol version support failure, and let's see if
+							 * we can't recover (if it's not, we'll get a better
+							 * error message on retry).  Server gets fussy if we
+							 * don't hang up the socket, though.
+							 */
+							conn->try_gss = false;
+							pqDropConnection(conn, true);
+							conn->status = CONNECTION_NEEDED;
+							goto keep_going;
+						}
 					}
 
 					/* mark byte consumed */
@@ -3087,6 +3116,7 @@ keep_going:						/* We will come back to here until there is
 							goto error_return;
 						}
 
+						conn->did_negotiate = true;
 						conn->try_gss = false;
 						conn->status = CONNECTION_MADE;
 						return PGRES_POLLING_WRITING;

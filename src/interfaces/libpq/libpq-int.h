@@ -507,6 +507,9 @@ struct pg_conn
 								 * connection */
 #endif
 
+	/* Did we try negotiating SSL or GSS? Postmaster used to allow only a single attempt */
+	bool did_negotiate;
+	
 	/* Buffer for current error message */
 	PQExpBufferData errorMessage;	/* expansible string */
 
