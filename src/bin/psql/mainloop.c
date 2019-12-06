@@ -354,6 +354,54 @@ MainLoop(FILE *source)
 #else
 				puts(_("Use control-C to quit."));
 #endif
+
+			/*
+			 * New users tend to be confused about the command line utilities
+			 * pg_dump, pg_restore, createdb, etc, and try to run them
+			 * interatively in psql. Detect this and emit a suitable hint.
+			 *
+			 * We check for them even when the buffer is non-empty because
+			 * users frequently try multiple commands without semicolons when
+			 * trying to misuse psql as a command-line shell. Like with "help"
+			 * etc, the text is still added to the buffer unless it's the
+			 * first word on an empty buffer.
+			 */
+			if (line[0] == 'p' || line[0] == 'c' || line[0] == 'd')
+			{
+				if (strncmp(line, "pg_restore", sizeof("pg_restore")) == 0
+					|| strncmp(line, "pg_dump", sizeof("pg_dump")) == 0
+					|| strncmp(line, "createdb", sizeof("createdb")) == 0
+					|| strncmp(line, "dropdb", sizeof("dropdb")) == 0
+					|| strncmp(line, "createuser", sizeof("createuser")) == 0
+					|| strncmp(line, "dropuser", sizeof("dropuser")) == 0)
+				{
+					char		cmdname[12];
+
+					strlcpy(&cmdname[0], line,
+							Min(strcspn(line, " \r\n") + 1, sizeof(cmdname)));
+					if (query_buf->len != 0)
+					{
+						/*
+						 * Print a short hint but don't swallow the input if
+						 * there's already something in the buffer.
+						 */
+						printf(_("\"%s\" is a command-line utility program "
+								 "not a psql command.\n"),
+							   cmdname);
+					}
+					else
+					{
+						/* Swallow the input and emit more help */
+						printf(_("\"%s\" is a command line utility program.\n"
+								 "Use it from the system terminal or command "
+								 "prompt not from psql.\n"),
+							   cmdname);
+						free(line);
+						fflush(stdout);
+						continue;
+					}
+				}
+			}
 		}
 
 		/* echo back if flag is set, unless interactive */
