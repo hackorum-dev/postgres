@@ -404,7 +404,7 @@ static void BackendRun(Port *port) pg_attribute_noreturn();
 static void ExitPostmaster(int status) pg_attribute_noreturn();
 static int	ServerLoop(void);
 static int	BackendStartup(Port *port);
-static int	ProcessStartupPacket(Port *port, bool secure_done);
+static int	ProcessStartupPacket(Port *port, bool secure_done, bool allow_ssl, bool allow_gss);
 static void SendNegotiateProtocolVersion(List *unrecognized_protocol_options);
 static void processCancelRequest(Port *port, void *pkt);
 static int	initMasks(fd_set *rmask);
@@ -1918,7 +1918,7 @@ initMasks(fd_set *rmask)
  * GSSAPI) is already completed.
  */
 static int
-ProcessStartupPacket(Port *port, bool secure_done)
+ProcessStartupPacket(Port *port, bool secure_done, bool allow_ssl, bool allow_gss)
 {
 	int32		len;
 	void	   *buf;
@@ -2009,7 +2009,7 @@ ProcessStartupPacket(Port *port, bool secure_done)
 
 #ifdef USE_SSL
 		/* No SSL when disabled or on Unix sockets */
-		if (!LoadedSSL || IS_AF_UNIX(port->laddr.addr.ss_family))
+		if (!LoadedSSL || IS_AF_UNIX(port->laddr.addr.ss_family) || !allow_ssl)
 			SSLok = 'N';
 		else
 			SSLok = 'S';		/* Support for SSL */
@@ -2029,19 +2029,26 @@ retry1:
 		}
 
 #ifdef USE_SSL
-		if (SSLok == 'S' && secure_open_server(port) == -1)
-			return STATUS_ERROR;
+		if (SSLok == 'S') {
+			if (secure_open_server(port) == -1) {
+				return STATUS_ERROR;
+			}
+			else
+			{
+				secure_done = true;
+			}
+		}
 #endif
 		/* regular startup packet, cancel, etc packet should follow... */
 		/* but not another SSL negotiation request */
-		return ProcessStartupPacket(port, true);
+		return ProcessStartupPacket(port, secure_done, false, allow_gss);
 	}
 	else if (proto == NEGOTIATE_GSS_CODE && !secure_done)
 	{
 		char		GSSok = 'N';
 #ifdef ENABLE_GSS
 		/* No GSSAPI encryption when on Unix socket */
-		if (!IS_AF_UNIX(port->laddr.addr.ss_family))
+		if (!IS_AF_UNIX(port->laddr.addr.ss_family) && allow_gss)
 			GSSok = 'G';
 #endif
 
@@ -2056,11 +2063,18 @@ retry1:
 		}
 
 #ifdef ENABLE_GSS
-		if (GSSok == 'G' && secure_open_gssapi(port) == -1)
-			return STATUS_ERROR;
+		if (GSSok == 'G') {
+			if (secure_open_gssapi(port) == -1) {
+				return STATUS_ERROR;
+			}
+			else
+			{
+				secure_done = true;
+			}
+		}
 #endif
 		/* Won't ever see more than one negotiation request */
-		return ProcessStartupPacket(port, true);
+		return ProcessStartupPacket(port, secure_done, allow_ssl, false);
 	}
 
 	/* Could add additional special packet types here */
@@ -4400,7 +4414,7 @@ BackendInitialize(Port *port)
 	 * Receive the startup packet (which might turn out to be a cancel request
 	 * packet).
 	 */
-	status = ProcessStartupPacket(port, false);
+	status = ProcessStartupPacket(port, false, true, true);
 
 	/*
 	 * Stop here if it was bad or a cancel packet.  ProcessStartupPacket
