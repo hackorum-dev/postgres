@@ -228,11 +228,16 @@ MainLoop(FILE *source)
 		/* Recognize "help", "quit", "exit" only in interactive mode */
 		if (pset.cur_cmd_interactive)
 		{
-			char	   *first_word = line;
+			char	   *first_word = NULL;
 			char	   *rest_of_line = NULL;
 			bool		found_help = false;
 			bool		found_exit_or_quit = false;
 			bool		found_q = false;
+			unsigned int offset = 0;
+
+			/* Ignore leading whitespace */
+			offset = strspn(line, " \t");
+			first_word = line + offset;
 
 			/*
 			 * The assistance words, help/exit/quit, must have no whitespace
