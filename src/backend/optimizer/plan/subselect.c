@@ -2060,7 +2060,7 @@ SS_identify_outer_params(PlannerInfo *root)
 void
 SS_charge_for_initplans(PlannerInfo *root, RelOptInfo *final_rel)
 {
-	Cost		initplan_cost;
+	Cost		initplan_cost = {0};
 	ListCell   *lc;
 
 	/* Nothing to do if no initPlans */
@@ -2073,12 +2073,11 @@ SS_charge_for_initplans(PlannerInfo *root, RelOptInfo *final_rel)
 	 * This is a conservative overestimate, since in fact an initPlan might be
 	 * executed later than plan startup, or even not at all.
 	 */
-	initplan_cost = 0;
 	foreach(lc, root->init_plans)
 	{
 		SubPlan    *initsubplan = (SubPlan *) lfirst(lc);
 
-		initplan_cost += initsubplan->startup_cost + initsubplan->per_call_cost;
+		cost_add2(&initplan_cost, &initsubplan->startup_cost, &initsubplan->per_call_cost);
 	}
 
 	/*
@@ -2088,8 +2087,8 @@ SS_charge_for_initplans(PlannerInfo *root, RelOptInfo *final_rel)
 	{
 		Path	   *path = (Path *) lfirst(lc);
 
-		path->startup_cost += initplan_cost;
-		path->total_cost += initplan_cost;
+		cost_add(&path->startup_cost, &initplan_cost);
+		cost_add(&path->total_cost, &initplan_cost);
 		path->parallel_safe = false;
 	}
 

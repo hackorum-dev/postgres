@@ -112,6 +112,7 @@
 #include "executor/hashjoin.h"
 #include "executor/nodeHash.h"
 #include "executor/nodeHashjoin.h"
+#include "optimizer/cost.h"
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "utils/memutils.h"
@@ -256,7 +257,7 @@ ExecHashJoinImpl(PlanState *pstate, bool parallel)
 					node->hj_FirstOuterTupleSlot = NULL;
 				}
 				else if (HJ_FILL_OUTER(node) ||
-						 (outerNode->plan->startup_cost < hashNode->ps.plan->total_cost &&
+						 (cost_islt(&outerNode->plan->startup_cost, &hashNode->ps.plan->total_cost) &&
 						  !node->hj_OuterNotEmpty))
 				{
 					node->hj_FirstOuterTupleSlot = ExecProcNode(outerNode);

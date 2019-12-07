@@ -1924,8 +1924,8 @@ add_function_cost(PlannerInfo *root, Oid funcid, Node *node,
 		req.node = node;
 
 		/* Initialize cost fields so that support function doesn't have to */
-		req.startup = 0;
-		req.per_tuple = 0;
+		cost_zero(&req.startup);
+		cost_zero(&req.per_tuple);
 
 		sresult = (SupportRequestCost *)
 			DatumGetPointer(OidFunctionCall1(procform->prosupport,
@@ -1934,15 +1934,15 @@ add_function_cost(PlannerInfo *root, Oid funcid, Node *node,
 		if (sresult == &req)
 		{
 			/* Success, so accumulate support function's estimate into *cost */
-			cost->startup += req.startup;
-			cost->per_tuple += req.per_tuple;
+			cost_add(&cost->startup, &req.startup);
+			cost_add(&cost->per_tuple, &req.per_tuple);
 			ReleaseSysCache(proctup);
 			return;
 		}
 	}
 
 	/* No support function, or it failed, so rely on procost */
-	cost->per_tuple += procform->procost * cpu_operator_cost;
+	cost_add_member_mul(&cost->per_tuple, cpu_operator_cost, procform->procost);
 
 	ReleaseSysCache(proctup);
 }

@@ -117,7 +117,7 @@ double		parallel_setup_cost = DEFAULT_PARALLEL_SETUP_COST;
 
 int			effective_cache_size = DEFAULT_EFFECTIVE_CACHE_SIZE;
 
-Cost		disable_cost = 1.0e10;
+double		disable_cost = 1.0e10;
 
 int			max_parallel_workers_per_gather = 2;
 
@@ -171,7 +171,7 @@ static Selectivity get_foreign_key_join_selectivity(PlannerInfo *root,
 													Relids inner_relids,
 													SpecialJoinInfo *sjinfo,
 													List **restrictlist);
-static Cost append_nonpartial_cost(List *subpaths, int numpaths,
+static Cost *append_nonpartial_cost(List *subpaths, int numpaths,
 								   int parallel_workers);
 static void set_rel_width(PlannerInfo *root, RelOptInfo *rel);
 static double relation_byte_size(double tuples, int width);
@@ -211,7 +211,7 @@ void
 cost_seqscan(Path *path, PlannerInfo *root,
 			 RelOptInfo *baserel, ParamPathInfo *param_info)
 {
-	Cost		startup_cost = 0;
+	Cost		startup_cost = {0};
 	Cost		cpu_run_cost;
 	Cost		disk_run_cost;
 	double		spc_seq_page_cost;
@@ -229,7 +229,7 @@ cost_seqscan(Path *path, PlannerInfo *root,
 		path->rows = baserel->rows;
 
 	if (!enable_seqscan)
-		startup_cost += disable_cost;
+		cost_add_member(&startup_cost, disable_cost);
 
 	/* fetch estimated page cost for tablespace containing table */
 	get_tablespace_page_costs(baserel->reltablespace,
@@ -239,17 +239,18 @@ cost_seqscan(Path *path, PlannerInfo *root,
 	/*
 	 * disk costs
 	 */
-	disk_run_cost = spc_seq_page_cost * baserel->pages;
+	cost_set_member_mul_spc(&disk_run_cost, spc_, seq_page_cost, baserel->pages);
 
 	/* CPU costs */
 	get_restriction_qual_cost(root, baserel, param_info, &qpqual_cost);
 
-	startup_cost += qpqual_cost.startup;
-	cpu_per_tuple = cpu_tuple_cost + qpqual_cost.per_tuple;
-	cpu_run_cost = cpu_per_tuple * baserel->tuples;
+	cost_add(&startup_cost, &qpqual_cost.startup);
+	cost_set_member_add(&cpu_per_tuple, cpu_tuple_cost, &qpqual_cost.per_tuple);
+	cpu_run_cost = cpu_per_tuple;
+	cost_mul_scalar(&cpu_run_cost, baserel->tuples);
 	/* tlist eval costs are paid per output row, not per tuple scanned */
-	startup_cost += path->pathtarget->cost.startup;
-	cpu_run_cost += path->pathtarget->cost.per_tuple * path->rows;
+	cost_add(&startup_cost, &path->pathtarget->cost.startup);
+	cost_add_mul(&cpu_run_cost, &path->pathtarget->cost.per_tuple, path->rows);
 
 	/* Adjust costing for parallelism, if used. */
 	if (path->parallel_workers > 0)
@@ -257,7 +258,7 @@ cost_seqscan(Path *path, PlannerInfo *root,
 		double		parallel_divisor = get_parallel_divisor(path);
 
 		/* The CPU cost is divided among all the workers. */
-		cpu_run_cost /= parallel_divisor;
+		cost_mul_scalar(&cpu_run_cost, 1.0/parallel_divisor);
 
 		/*
 		 * It may be possible to amortize some of the I/O cost, but probably
@@ -274,7 +275,7 @@ cost_seqscan(Path *path, PlannerInfo *root,
 	}
 
 	path->startup_cost = startup_cost;
-	path->total_cost = startup_cost + cpu_run_cost + disk_run_cost;
+	cost_set_sum3(&path->total_cost, &startup_cost, &cpu_run_cost, &disk_run_cost);
 }
 
 /*
@@ -288,14 +289,13 @@ void
 cost_samplescan(Path *path, PlannerInfo *root,
 				RelOptInfo *baserel, ParamPathInfo *param_info)
 {
-	Cost		startup_cost = 0;
-	Cost		run_cost = 0;
+	Cost		startup_cost = {0};
+	Cost		run_cost = {0};
 	RangeTblEntry *rte;
 	TableSampleClause *tsc;
 	TsmRoutine *tsm;
 	double		spc_seq_page_cost,
-				spc_random_page_cost,
-				spc_page_cost;
+				spc_random_page_cost;
 	QualCost	qpqual_cost;
 	Cost		cpu_per_tuple;
 
@@ -319,14 +319,16 @@ cost_samplescan(Path *path, PlannerInfo *root,
 							  &spc_seq_page_cost);
 
 	/* if NextSampleBlock is used, assume random access, else sequential */
-	spc_page_cost = (tsm->NextSampleBlock != NULL) ?
-		spc_random_page_cost : spc_seq_page_cost;
 
 	/*
 	 * disk costs (recall that baserel->pages has already been set to the
 	 * number of pages the sampling method will visit)
 	 */
-	run_cost += spc_page_cost * baserel->pages;
+
+	if (tsm->NextSampleBlock != NULL)
+		cost_add_member_mul(&run_cost, random_page_cost, baserel->pages);
+	else
+		cost_add_member_mul(&run_cost, seq_page_cost, baserel->pages);
 
 	/*
 	 * CPU costs (recall that baserel->tuples has already been set to the
@@ -338,15 +340,15 @@ cost_samplescan(Path *path, PlannerInfo *root,
 	 */
 	get_restriction_qual_cost(root, baserel, param_info, &qpqual_cost);
 
-	startup_cost += qpqual_cost.startup;
-	cpu_per_tuple = cpu_tuple_cost + qpqual_cost.per_tuple;
-	run_cost += cpu_per_tuple * baserel->tuples;
+	cost_add(&startup_cost, &qpqual_cost.startup);
+	cost_set_member_add(&cpu_per_tuple, cpu_tuple_cost, &qpqual_cost.per_tuple);
+	cost_add_mul(&run_cost, &cpu_per_tuple, baserel->tuples);
 	/* tlist eval costs are paid per output row, not per tuple scanned */
-	startup_cost += path->pathtarget->cost.startup;
-	run_cost += path->pathtarget->cost.per_tuple * path->rows;
+	cost_add(&startup_cost, &path->pathtarget->cost.startup);
+	cost_add_mul(&run_cost, &path->pathtarget->cost.per_tuple, path->rows);
 
 	path->startup_cost = startup_cost;
-	path->total_cost = startup_cost + run_cost;
+	cost_set_sum2(&path->total_cost, &startup_cost, &run_cost);
 }
 
 /*
@@ -364,8 +366,8 @@ cost_gather(GatherPath *path, PlannerInfo *root,
 			RelOptInfo *rel, ParamPathInfo *param_info,
 			double *rows)
 {
-	Cost		startup_cost = 0;
-	Cost		run_cost = 0;
+	Cost		startup_cost = {0};
+	Cost		run_cost = {0};
 
 	/* Mark the path with the correct row estimate */
 	if (rows)
@@ -377,14 +379,14 @@ cost_gather(GatherPath *path, PlannerInfo *root,
 
 	startup_cost = path->subpath->startup_cost;
 
-	run_cost = path->subpath->total_cost - path->subpath->startup_cost;
+	cost_set_diff(&run_cost, &path->subpath->total_cost, &path->subpath->startup_cost);
 
 	/* Parallel setup and communication cost. */
-	startup_cost += parallel_setup_cost;
-	run_cost += parallel_tuple_cost * path->path.rows;
+	cost_add_member(&startup_cost, parallel_setup_cost);
+	cost_add_member_mul(&run_cost, parallel_tuple_cost, path->path.rows);
 
 	path->path.startup_cost = startup_cost;
-	path->path.total_cost = (startup_cost + run_cost);
+	cost_set_sum2(&path->path.total_cost, &startup_cost, &run_cost);
 }
 
 /*
@@ -403,8 +405,8 @@ cost_gather_merge(GatherMergePath *path, PlannerInfo *root,
 				  Cost input_startup_cost, Cost input_total_cost,
 				  double *rows)
 {
-	Cost		startup_cost = 0;
-	Cost		run_cost = 0;
+	Cost		startup_cost = {0};
+	Cost		run_cost = {0};
 	Cost		comparison_cost;
 	double		N;
 	double		logN;
@@ -418,7 +420,7 @@ cost_gather_merge(GatherMergePath *path, PlannerInfo *root,
 		path->path.rows = rel->rows;
 
 	if (!enable_gathermerge)
-		startup_cost += disable_cost;
+		cost_add_member(&startup_cost, disable_cost);
 
 	/*
 	 * Add one to the number of workers to account for the leader.  This might
@@ -430,16 +432,16 @@ cost_gather_merge(GatherMergePath *path, PlannerInfo *root,
 	logN = LOG2(N);
 
 	/* Assumed cost per tuple comparison */
-	comparison_cost = 2.0 * cpu_operator_cost;
+	cost_set_member_mul(&comparison_cost, cpu_operator_cost, 2.0);
 
 	/* Heap creation cost */
-	startup_cost += comparison_cost * N * logN;
+	cost_add_mul(&startup_cost, &comparison_cost, N * logN);
 
 	/* Per-tuple heap maintenance cost */
-	run_cost += path->path.rows * comparison_cost * logN;
+	cost_add_mul(&run_cost, &comparison_cost, path->path.rows * logN);
 
 	/* small cost for heap management, like cost_merge_append */
-	run_cost += cpu_operator_cost * path->path.rows;
+	cost_add_member_mul(&run_cost, cpu_operator_cost, path->path.rows);
 
 	/*
 	 * Parallel setup and communication cost.  Since Gather Merge, unlike
@@ -447,11 +449,11 @@ cost_gather_merge(GatherMergePath *path, PlannerInfo *root,
 	 * worker, we bump the IPC cost up a little bit as compared with Gather.
 	 * For lack of a better idea, charge an extra 5%.
 	 */
-	startup_cost += parallel_setup_cost;
-	run_cost += parallel_tuple_cost * path->path.rows * 1.05;
+	cost_add_member(&startup_cost, parallel_setup_cost);
+	cost_add_member_mul(&run_cost, parallel_tuple_cost, path->path.rows * 1.05);
 
-	path->path.startup_cost = startup_cost + input_startup_cost;
-	path->path.total_cost = (startup_cost + run_cost + input_total_cost);
+	cost_set_sum2(&path->path.startup_cost, &startup_cost, &input_startup_cost);
+	cost_set_sum3(&path->path.total_cost, &startup_cost, &run_cost, &input_total_cost);
 }
 
 /*
@@ -481,9 +483,9 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 	bool		indexonly = (path->path.pathtype == T_IndexOnlyScan);
 	amcostestimate_function amcostestimate;
 	List	   *qpquals;
-	Cost		startup_cost = 0;
-	Cost		run_cost = 0;
-	Cost		cpu_run_cost = 0;
+	Cost		startup_cost = {0};
+	Cost		run_cost = {0};
+	Cost		cpu_run_cost = {0};
 	Cost		indexStartupCost;
 	Cost		indexTotalCost;
 	Selectivity indexSelectivity;
@@ -531,7 +533,7 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 	}
 
 	if (!enable_indexscan)
-		startup_cost += disable_cost;
+		cost_add_member(&startup_cost, disable_cost);
 	/* we don't need to check enable_indexonlyscan; indxpath.c does that */
 
 	/*
@@ -556,8 +558,9 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 	path->indexselectivity = indexSelectivity;
 
 	/* all costs for touching index itself included here */
-	startup_cost += indexStartupCost;
-	run_cost += indexTotalCost - indexStartupCost;
+	cost_add(&startup_cost, &indexStartupCost);
+	cost_add(&run_cost, &indexTotalCost);
+	cost_sub(&run_cost, &indexStartupCost);
 
 	/* estimate number of main-table tuples fetched */
 	tuples_fetched = clamp_row_est(indexSelectivity * baserel->tuples);
@@ -614,7 +617,7 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 
 		rand_heap_pages = pages_fetched;
 
-		max_IO_cost = (pages_fetched * spc_random_page_cost) / loop_count;
+		cost_set_member_mul_spc(&max_IO_cost, spc_, random_page_cost, pages_fetched / loop_count);
 
 		/*
 		 * In the perfectly correlated case, the number of pages touched by
@@ -636,7 +639,7 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 		if (indexonly)
 			pages_fetched = ceil(pages_fetched * (1.0 - baserel->allvisfrac));
 
-		min_IO_cost = (pages_fetched * spc_random_page_cost) / loop_count;
+		cost_set_member_mul_spc(&min_IO_cost, spc_, seq_page_cost, pages_fetched / loop_count);
 	}
 	else
 	{
@@ -655,7 +658,7 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 		rand_heap_pages = pages_fetched;
 
 		/* max_IO_cost is for the perfectly uncorrelated case (csquared=0) */
-		max_IO_cost = pages_fetched * spc_random_page_cost;
+		cost_set_member_mul_spc(&max_IO_cost, spc_, random_page_cost, pages_fetched);
 
 		/* min_IO_cost is for the perfectly correlated case (csquared=1) */
 		pages_fetched = ceil(indexSelectivity * (double) baserel->pages);
@@ -665,12 +668,12 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 
 		if (pages_fetched > 0)
 		{
-			min_IO_cost = spc_random_page_cost;
+			cost_set_member_mul_spc(&min_IO_cost, spc_, random_page_cost, 1.0);
 			if (pages_fetched > 1)
-				min_IO_cost += (pages_fetched - 1) * spc_seq_page_cost;
+				cost_set_member_mul_spc(&min_IO_cost, spc_, seq_page_cost, pages_fetched - 1);
 		}
 		else
-			min_IO_cost = 0;
+			cost_zero(&min_IO_cost);
 	}
 
 	if (partial_path)
@@ -711,7 +714,10 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 	 */
 	csquared = indexCorrelation * indexCorrelation;
 
-	run_cost += max_IO_cost + csquared * (min_IO_cost - max_IO_cost);
+	cost_add(&run_cost, &max_IO_cost);
+	cost_sub(&min_IO_cost, &max_IO_cost);
+	cost_mul_scalar(&min_IO_cost, csquared);
+	cost_add(&run_cost, &min_IO_cost);
 
 	/*
 	 * Estimate CPU costs per tuple.
@@ -721,14 +727,14 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 	 */
 	cost_qual_eval(&qpqual_cost, qpquals, root);
 
-	startup_cost += qpqual_cost.startup;
-	cpu_per_tuple = cpu_tuple_cost + qpqual_cost.per_tuple;
+	cost_add(&startup_cost, &qpqual_cost.startup);
+	cost_set_member_add(&cpu_per_tuple, cpu_tuple_cost, &qpqual_cost.per_tuple);
 
-	cpu_run_cost += cpu_per_tuple * tuples_fetched;
+	cost_add_mul(&cpu_run_cost, &cpu_per_tuple, tuples_fetched);
 
 	/* tlist eval costs are paid per output row, not per tuple scanned */
-	startup_cost += path->path.pathtarget->cost.startup;
-	cpu_run_cost += path->path.pathtarget->cost.per_tuple * path->path.rows;
+	cost_add(&startup_cost, &path->path.pathtarget->cost.startup);
+	cost_add_mul(&cpu_run_cost, &path->path.pathtarget->cost.per_tuple, path->path.rows);
 
 	/* Adjust costing for parallelism, if used. */
 	if (path->path.parallel_workers > 0)
@@ -738,13 +744,13 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 		path->path.rows = clamp_row_est(path->path.rows / parallel_divisor);
 
 		/* The CPU cost is divided among all the workers. */
-		cpu_run_cost /= parallel_divisor;
+		cost_mul_scalar(&cpu_run_cost, 1.0/parallel_divisor);
 	}
 
-	run_cost += cpu_run_cost;
+	cost_add(&run_cost, &cpu_run_cost);
 
 	path->path.startup_cost = startup_cost;
-	path->path.total_cost = startup_cost + run_cost;
+	cost_set_sum2(&path->path.total_cost, &startup_cost, &run_cost);
 }
 
 /*
@@ -941,8 +947,8 @@ cost_bitmap_heap_scan(Path *path, PlannerInfo *root, RelOptInfo *baserel,
 					  ParamPathInfo *param_info,
 					  Path *bitmapqual, double loop_count)
 {
-	Cost		startup_cost = 0;
-	Cost		run_cost = 0;
+	Cost		startup_cost = {0};
+	Cost		run_cost = {0};
 	Cost		indexTotalCost;
 	QualCost	qpqual_cost;
 	Cost		cpu_per_tuple;
@@ -966,13 +972,13 @@ cost_bitmap_heap_scan(Path *path, PlannerInfo *root, RelOptInfo *baserel,
 		path->rows = baserel->rows;
 
 	if (!enable_bitmapscan)
-		startup_cost += disable_cost;
+		cost_add_member(&startup_cost, disable_cost);
 
 	pages_fetched = compute_bitmap_pages(root, baserel, bitmapqual,
 										 loop_count, &indexTotalCost,
 										 &tuples_fetched);
 
-	startup_cost += indexTotalCost;
+	cost_add(&startup_cost, &indexTotalCost);
 	T = (baserel->pages > 1) ? (double) baserel->pages : 1.0;
 
 	/* Fetch estimated page costs for tablespace containing table. */
@@ -987,14 +993,15 @@ cost_bitmap_heap_scan(Path *path, PlannerInfo *root, RelOptInfo *baserel,
 	 * nonlinear, too. For lack of a better idea, interpolate like this to
 	 * determine the cost per page.
 	 */
-	if (pages_fetched >= 2.0)
-		cost_per_page = spc_random_page_cost -
-			(spc_random_page_cost - spc_seq_page_cost)
-			* sqrt(pages_fetched / T);
-	else
-		cost_per_page = spc_random_page_cost;
+	if (pages_fetched >= 2.0) {
+		cost_set_member_mul_spc(&cost_per_page, spc_, random_page_cost,
+				1-sqrt(pages_fetched/T));
 
-	run_cost += pages_fetched * cost_per_page;
+		cost_set_member_mul_spc(&cost_per_page, spc_, seq_page_cost, sqrt(pages_fetched/T));
+	} else
+		cost_set_member_mul_spc(&cost_per_page, spc_, random_page_cost, 1.0);
+
+	cost_add_mul(&run_cost, &cost_per_page, pages_fetched);
 
 	/*
 	 * Estimate CPU costs per tuple.
@@ -1007,9 +1014,9 @@ cost_bitmap_heap_scan(Path *path, PlannerInfo *root, RelOptInfo *baserel,
 	 */
 	get_restriction_qual_cost(root, baserel, param_info, &qpqual_cost);
 
-	startup_cost += qpqual_cost.startup;
-	cpu_per_tuple = cpu_tuple_cost + qpqual_cost.per_tuple;
-	cpu_run_cost = cpu_per_tuple * tuples_fetched;
+	cost_add(&startup_cost, &qpqual_cost.startup);
+	cost_set_member_add(&cpu_per_tuple, cpu_tuple_cost, &qpqual_cost.per_tuple);
+	cost_add_mul(&cpu_run_cost, &cpu_per_tuple, tuples_fetched);
 
 	/* Adjust costing for parallelism, if used. */
 	if (path->parallel_workers > 0)
@@ -1017,20 +1024,20 @@ cost_bitmap_heap_scan(Path *path, PlannerInfo *root, RelOptInfo *baserel,
 		double		parallel_divisor = get_parallel_divisor(path);
 
 		/* The CPU cost is divided among all the workers. */
-		cpu_run_cost /= parallel_divisor;
+		cost_mul_scalar(&cpu_run_cost, 1.0/parallel_divisor);
 
 		path->rows = clamp_row_est(path->rows / parallel_divisor);
 	}
 
 
-	run_cost += cpu_run_cost;
+	cost_add(&run_cost, &cpu_run_cost);
 
 	/* tlist eval costs are paid per output row, not per tuple scanned */
-	startup_cost += path->pathtarget->cost.startup;
-	run_cost += path->pathtarget->cost.per_tuple * path->rows;
+	cost_add(&startup_cost, &path->pathtarget->cost.startup);
+	cost_add_mul(&run_cost, &path->pathtarget->cost.per_tuple, path->rows);
 
 	path->startup_cost = startup_cost;
-	path->total_cost = startup_cost + run_cost;
+	cost_set_sum2(&path->total_cost, &startup_cost, &run_cost);
 }
 
 /*
@@ -1051,7 +1058,7 @@ cost_bitmap_tree_node(Path *path, Cost *cost, Selectivity *selec)
 		 * scan doesn't look to be the same cost as an indexscan to retrieve a
 		 * single tuple.
 		 */
-		*cost += 0.1 * cpu_operator_cost * path->rows;
+		cost_add_member_mul(cost, cpu_operator_cost, 0.1 * path->rows);
 	}
 	else if (IsA(path, BitmapAndPath))
 	{
@@ -1066,7 +1073,8 @@ cost_bitmap_tree_node(Path *path, Cost *cost, Selectivity *selec)
 	else
 	{
 		elog(ERROR, "unrecognized node type: %d", nodeTag(path));
-		*cost = *selec = 0;		/* keep compiler quiet */
+		*selec = 0;		/* keep compiler quiet */
+		cost_zero(cost);
 	}
 }
 
@@ -1083,7 +1091,7 @@ cost_bitmap_tree_node(Path *path, Cost *cost, Selectivity *selec)
 void
 cost_bitmap_and_node(BitmapAndPath *path, PlannerInfo *root)
 {
-	Cost		totalCost;
+	Cost		totalCost = {0};
 	Selectivity selec;
 	ListCell   *l;
 
@@ -1096,7 +1104,6 @@ cost_bitmap_and_node(BitmapAndPath *path, PlannerInfo *root)
 	 * cpu_operator_cost for each tbm_intersect needed.  Probably too small,
 	 * definitely too simplistic?
 	 */
-	totalCost = 0.0;
 	selec = 1.0;
 	foreach(l, path->bitmapquals)
 	{
@@ -1108,9 +1115,9 @@ cost_bitmap_and_node(BitmapAndPath *path, PlannerInfo *root)
 
 		selec *= subselec;
 
-		totalCost += subCost;
+		cost_add(&totalCost, &subCost);
 		if (l != list_head(path->bitmapquals))
-			totalCost += 100.0 * cpu_operator_cost;
+			cost_add_member_mul(&totalCost, cpu_operator_cost, 100.0);
 	}
 	path->bitmapselectivity = selec;
 	path->path.rows = 0;		/* per above, not used */
@@ -1127,7 +1134,7 @@ cost_bitmap_and_node(BitmapAndPath *path, PlannerInfo *root)
 void
 cost_bitmap_or_node(BitmapOrPath *path, PlannerInfo *root)
 {
-	Cost		totalCost;
+	Cost		totalCost = {0};
 	Selectivity selec;
 	ListCell   *l;
 
@@ -1141,7 +1148,6 @@ cost_bitmap_or_node(BitmapOrPath *path, PlannerInfo *root)
 	 * definitely too simplistic?  We are aware that the tbm_unions are
 	 * optimized out when the inputs are BitmapIndexScans.
 	 */
-	totalCost = 0.0;
 	selec = 0.0;
 	foreach(l, path->bitmapquals)
 	{
@@ -1153,10 +1159,10 @@ cost_bitmap_or_node(BitmapOrPath *path, PlannerInfo *root)
 
 		selec += subselec;
 
-		totalCost += subCost;
+		cost_add(&totalCost, &subCost);
 		if (l != list_head(path->bitmapquals) &&
 			!IsA(subpath, IndexPath))
-			totalCost += 100.0 * cpu_operator_cost;
+			cost_add_member_mul(&totalCost, cpu_operator_cost, 100.0);
 	}
 	path->bitmapselectivity = Min(selec, 1.0);
 	path->path.rows = 0;		/* per above, not used */
@@ -1176,8 +1182,8 @@ void
 cost_tidscan(Path *path, PlannerInfo *root,
 			 RelOptInfo *baserel, List *tidquals, ParamPathInfo *param_info)
 {
-	Cost		startup_cost = 0;
-	Cost		run_cost = 0;
+	Cost		startup_cost = {0};
+	Cost		run_cost = {0};
 	bool		isCurrentOf = false;
 	QualCost	qpqual_cost;
 	Cost		cpu_per_tuple;
@@ -1234,11 +1240,12 @@ cost_tidscan(Path *path, PlannerInfo *root,
 	 */
 	if (isCurrentOf)
 	{
-		Assert(baserel->baserestrictcost.startup >= disable_cost);
-		startup_cost -= disable_cost;
+		// Assert(cost_asscalar(&baserel->baserestrictcost.startup) >= disable_cost);
+		Assert(&baserel->baserestrictcost.startup.disable_cost!=0);
+		cost_add_member_mul(&startup_cost, disable_cost, -1);
 	}
 	else if (!enable_tidscan)
-		startup_cost += disable_cost;
+		cost_add_member(&startup_cost, disable_cost);
 
 	/*
 	 * The TID qual expressions will be computed once, any other baserestrict
@@ -1252,23 +1259,23 @@ cost_tidscan(Path *path, PlannerInfo *root,
 							  NULL);
 
 	/* disk costs --- assume each tuple on a different page */
-	run_cost += spc_random_page_cost * ntuples;
+	cost_add_member_mul_spc(&run_cost, spc_, random_page_cost, ntuples);
 
 	/* Add scanning CPU costs */
 	get_restriction_qual_cost(root, baserel, param_info, &qpqual_cost);
 
 	/* XXX currently we assume TID quals are a subset of qpquals */
-	startup_cost += qpqual_cost.startup + tid_qual_cost.per_tuple;
-	cpu_per_tuple = cpu_tuple_cost + qpqual_cost.per_tuple -
-		tid_qual_cost.per_tuple;
-	run_cost += cpu_per_tuple * ntuples;
+	cost_add2(&startup_cost, &qpqual_cost.startup, &tid_qual_cost.per_tuple);
+	cost_set_member_add(&cpu_per_tuple, cpu_tuple_cost, &qpqual_cost.per_tuple);
+	cost_sub(&cpu_per_tuple, &tid_qual_cost.per_tuple);
+	cost_add_mul(&run_cost, &cpu_per_tuple, ntuples);
 
 	/* tlist eval costs are paid per output row, not per tuple scanned */
-	startup_cost += path->pathtarget->cost.startup;
-	run_cost += path->pathtarget->cost.per_tuple * path->rows;
+	cost_add(&startup_cost, &path->pathtarget->cost.startup);
+	cost_add_mul(&run_cost, &path->pathtarget->cost.per_tuple, path->rows);
 
 	path->startup_cost = startup_cost;
-	path->total_cost = startup_cost + run_cost;
+	cost_set_sum2(&path->total_cost, &startup_cost, &run_cost);
 }
 
 /*
@@ -1309,15 +1316,16 @@ cost_subqueryscan(SubqueryScanPath *path, PlannerInfo *root,
 	get_restriction_qual_cost(root, baserel, param_info, &qpqual_cost);
 
 	startup_cost = qpqual_cost.startup;
-	cpu_per_tuple = cpu_tuple_cost + qpqual_cost.per_tuple;
-	run_cost = cpu_per_tuple * baserel->tuples;
+	cost_set_member_add(&cpu_per_tuple, cpu_tuple_cost, &qpqual_cost.per_tuple);
+	run_cost = cpu_per_tuple;
+	cost_mul_scalar(&run_cost, baserel->tuples);
 
 	/* tlist eval costs are paid per output row, not per tuple scanned */
-	startup_cost += path->path.pathtarget->cost.startup;
-	run_cost += path->path.pathtarget->cost.per_tuple * path->path.rows;
+	cost_add(&startup_cost, &path->path.pathtarget->cost.startup);
+	cost_add_mul(&run_cost, &path->path.pathtarget->cost.per_tuple, path->path.rows);
 
-	path->path.startup_cost += startup_cost;
-	path->path.total_cost += startup_cost + run_cost;
+	cost_add(&path->path.startup_cost, &startup_cost);
+	cost_add2(&path->path.total_cost, &startup_cost, &run_cost);
 }
 
 /*
@@ -1331,8 +1339,8 @@ void
 cost_functionscan(Path *path, PlannerInfo *root,
 				  RelOptInfo *baserel, ParamPathInfo *param_info)
 {
-	Cost		startup_cost = 0;
-	Cost		run_cost = 0;
+	Cost		startup_cost = {0};
+	Cost		run_cost = {0};
 	QualCost	qpqual_cost;
 	Cost		cpu_per_tuple;
 	RangeTblEntry *rte;
@@ -1364,21 +1372,21 @@ cost_functionscan(Path *path, PlannerInfo *root,
 	 */
 	cost_qual_eval_node(&exprcost, (Node *) rte->functions, root);
 
-	startup_cost += exprcost.startup + exprcost.per_tuple;
+	cost_add2(&startup_cost, &exprcost.startup, &exprcost.per_tuple);
 
 	/* Add scanning CPU costs */
 	get_restriction_qual_cost(root, baserel, param_info, &qpqual_cost);
 
-	startup_cost += qpqual_cost.startup;
-	cpu_per_tuple = cpu_tuple_cost + qpqual_cost.per_tuple;
-	run_cost += cpu_per_tuple * baserel->tuples;
+	cost_add(&startup_cost, &qpqual_cost.startup);
+	cost_set_member_add(&cpu_per_tuple, cpu_tuple_cost, &qpqual_cost.per_tuple);
+	cost_add_mul(&run_cost, &cpu_per_tuple, baserel->tuples);
 
 	/* tlist eval costs are paid per output row, not per tuple scanned */
-	startup_cost += path->pathtarget->cost.startup;
-	run_cost += path->pathtarget->cost.per_tuple * path->rows;
+	cost_add(&startup_cost, &path->pathtarget->cost.startup);
+	cost_add_mul(&run_cost, &path->pathtarget->cost.per_tuple, path->rows);
 
 	path->startup_cost = startup_cost;
-	path->total_cost = startup_cost + run_cost;
+	cost_set_sum2(&path->total_cost, &startup_cost, &run_cost);
 }
 
 /*
@@ -1392,8 +1400,8 @@ void
 cost_tablefuncscan(Path *path, PlannerInfo *root,
 				   RelOptInfo *baserel, ParamPathInfo *param_info)
 {
-	Cost		startup_cost = 0;
-	Cost		run_cost = 0;
+	Cost		startup_cost = {0};
+	Cost		run_cost = {0};
 	QualCost	qpqual_cost;
 	Cost		cpu_per_tuple;
 	RangeTblEntry *rte;
@@ -1420,21 +1428,21 @@ cost_tablefuncscan(Path *path, PlannerInfo *root,
 	 */
 	cost_qual_eval_node(&exprcost, (Node *) rte->tablefunc, root);
 
-	startup_cost += exprcost.startup + exprcost.per_tuple;
+	cost_add2(&startup_cost, &exprcost.startup, &exprcost.per_tuple);
 
 	/* Add scanning CPU costs */
 	get_restriction_qual_cost(root, baserel, param_info, &qpqual_cost);
 
-	startup_cost += qpqual_cost.startup;
-	cpu_per_tuple = cpu_tuple_cost + qpqual_cost.per_tuple;
-	run_cost += cpu_per_tuple * baserel->tuples;
+	cost_add(&startup_cost, &qpqual_cost.startup);
+	cost_set_member_add(&cpu_per_tuple, cpu_tuple_cost, &qpqual_cost.per_tuple);
+	cost_add_mul(&run_cost, &cpu_per_tuple, baserel->tuples);
 
 	/* tlist eval costs are paid per output row, not per tuple scanned */
-	startup_cost += path->pathtarget->cost.startup;
-	run_cost += path->pathtarget->cost.per_tuple * path->rows;
+	cost_add(&startup_cost, &path->pathtarget->cost.startup);
+	cost_add_mul(&run_cost, &path->pathtarget->cost.per_tuple, path->rows);
 
 	path->startup_cost = startup_cost;
-	path->total_cost = startup_cost + run_cost;
+	cost_set_sum2(&path->total_cost, &startup_cost, &run_cost);
 }
 
 /*
@@ -1448,8 +1456,8 @@ void
 cost_valuesscan(Path *path, PlannerInfo *root,
 				RelOptInfo *baserel, ParamPathInfo *param_info)
 {
-	Cost		startup_cost = 0;
-	Cost		run_cost = 0;
+	Cost		startup_cost = {0};
+	Cost		run_cost = {0};
 	QualCost	qpqual_cost;
 	Cost		cpu_per_tuple;
 
@@ -1467,21 +1475,22 @@ cost_valuesscan(Path *path, PlannerInfo *root,
 	 * For now, estimate list evaluation cost at one operator eval per list
 	 * (probably pretty bogus, but is it worth being smarter?)
 	 */
-	cpu_per_tuple = cpu_operator_cost;
+	cost_set_member(&cpu_per_tuple, cpu_operator_cost);
 
 	/* Add scanning CPU costs */
 	get_restriction_qual_cost(root, baserel, param_info, &qpqual_cost);
 
-	startup_cost += qpqual_cost.startup;
-	cpu_per_tuple += cpu_tuple_cost + qpqual_cost.per_tuple;
-	run_cost += cpu_per_tuple * baserel->tuples;
+	cost_add(&startup_cost, &qpqual_cost.startup);
+	cost_add_member(&cpu_per_tuple, cpu_tuple_cost);
+	cost_add(&cpu_per_tuple, &qpqual_cost.per_tuple);
+	cost_add_mul(&run_cost, &cpu_per_tuple, baserel->tuples);
 
 	/* tlist eval costs are paid per output row, not per tuple scanned */
-	startup_cost += path->pathtarget->cost.startup;
-	run_cost += path->pathtarget->cost.per_tuple * path->rows;
+	cost_add(&startup_cost, &path->pathtarget->cost.startup);
+	cost_add_mul(&run_cost, &path->pathtarget->cost.per_tuple, path->rows);
 
 	path->startup_cost = startup_cost;
-	path->total_cost = startup_cost + run_cost;
+	cost_set_sum2(&path->total_cost, &startup_cost, &run_cost);
 }
 
 /*
@@ -1498,8 +1507,8 @@ void
 cost_ctescan(Path *path, PlannerInfo *root,
 			 RelOptInfo *baserel, ParamPathInfo *param_info)
 {
-	Cost		startup_cost = 0;
-	Cost		run_cost = 0;
+	Cost		startup_cost = {0};
+	Cost		run_cost = {0};
 	QualCost	qpqual_cost;
 	Cost		cpu_per_tuple;
 
@@ -1514,21 +1523,21 @@ cost_ctescan(Path *path, PlannerInfo *root,
 		path->rows = baserel->rows;
 
 	/* Charge one CPU tuple cost per row for tuplestore manipulation */
-	cpu_per_tuple = cpu_tuple_cost;
+	cost_set_member(&cpu_per_tuple, cpu_tuple_cost);
 
 	/* Add scanning CPU costs */
 	get_restriction_qual_cost(root, baserel, param_info, &qpqual_cost);
 
-	startup_cost += qpqual_cost.startup;
-	cpu_per_tuple += cpu_tuple_cost + qpqual_cost.per_tuple;
-	run_cost += cpu_per_tuple * baserel->tuples;
+	cost_add(&startup_cost, &qpqual_cost.startup);
+	cost_set_member_add(&cpu_per_tuple, cpu_tuple_cost, &qpqual_cost.per_tuple);
+	cost_add_mul(&run_cost, &cpu_per_tuple, baserel->tuples);
 
 	/* tlist eval costs are paid per output row, not per tuple scanned */
-	startup_cost += path->pathtarget->cost.startup;
-	run_cost += path->pathtarget->cost.per_tuple * path->rows;
+	cost_add(&startup_cost, &path->pathtarget->cost.startup);
+	cost_add_mul(&run_cost, &path->pathtarget->cost.per_tuple, path->rows);
 
 	path->startup_cost = startup_cost;
-	path->total_cost = startup_cost + run_cost;
+	cost_set_sum2(&path->total_cost, &startup_cost, &run_cost);
 }
 
 /*
@@ -1539,8 +1548,8 @@ void
 cost_namedtuplestorescan(Path *path, PlannerInfo *root,
 						 RelOptInfo *baserel, ParamPathInfo *param_info)
 {
-	Cost		startup_cost = 0;
-	Cost		run_cost = 0;
+	Cost		startup_cost = {0};
+	Cost		run_cost = {0};
 	QualCost	qpqual_cost;
 	Cost		cpu_per_tuple;
 
@@ -1555,17 +1564,17 @@ cost_namedtuplestorescan(Path *path, PlannerInfo *root,
 		path->rows = baserel->rows;
 
 	/* Charge one CPU tuple cost per row for tuplestore manipulation */
-	cpu_per_tuple = cpu_tuple_cost;
+	cost_set_member(&cpu_per_tuple, cpu_tuple_cost);
 
 	/* Add scanning CPU costs */
 	get_restriction_qual_cost(root, baserel, param_info, &qpqual_cost);
 
-	startup_cost += qpqual_cost.startup;
-	cpu_per_tuple += cpu_tuple_cost + qpqual_cost.per_tuple;
-	run_cost += cpu_per_tuple * baserel->tuples;
+	cost_add(&startup_cost, &qpqual_cost.startup);
+	cost_set_member_add(&cpu_per_tuple, cpu_tuple_cost, &qpqual_cost.per_tuple);
+	cost_add_mul(&run_cost, &cpu_per_tuple, baserel->tuples);
 
 	path->startup_cost = startup_cost;
-	path->total_cost = startup_cost + run_cost;
+	cost_set_sum2(&path->total_cost, &startup_cost, &run_cost);
 }
 
 /*
@@ -1576,8 +1585,8 @@ void
 cost_resultscan(Path *path, PlannerInfo *root,
 				RelOptInfo *baserel, ParamPathInfo *param_info)
 {
-	Cost		startup_cost = 0;
-	Cost		run_cost = 0;
+	Cost		startup_cost = {0};
+	Cost		run_cost = {0};
 	QualCost	qpqual_cost;
 	Cost		cpu_per_tuple;
 
@@ -1594,12 +1603,12 @@ cost_resultscan(Path *path, PlannerInfo *root,
 	/* We charge qual cost plus cpu_tuple_cost */
 	get_restriction_qual_cost(root, baserel, param_info, &qpqual_cost);
 
-	startup_cost += qpqual_cost.startup;
-	cpu_per_tuple = cpu_tuple_cost + qpqual_cost.per_tuple;
-	run_cost += cpu_per_tuple * baserel->tuples;
+	cost_add(&startup_cost, &qpqual_cost.startup);
+	cost_set_member_add(&cpu_per_tuple, cpu_tuple_cost, &qpqual_cost.per_tuple);
+	cost_add_mul(&run_cost, &cpu_per_tuple, baserel->tuples);
 
 	path->startup_cost = startup_cost;
-	path->total_cost = startup_cost + run_cost;
+	cost_set_sum2(&path->total_cost, &startup_cost, &run_cost);
 }
 
 /*
@@ -1627,7 +1636,7 @@ cost_recursive_union(Path *runion, Path *nrterm, Path *rterm)
 	 * size of each one of them.  These are mighty shaky assumptions but it's
 	 * hard to see how to do better.
 	 */
-	total_cost += 10 * rterm->total_cost;
+	cost_add_mul(&total_cost, &rterm->total_cost, 10);
 	total_rows += 10 * rterm->rows;
 
 	/*
@@ -1635,7 +1644,7 @@ cost_recursive_union(Path *runion, Path *nrterm, Path *rterm)
 	 * manipulating the tuplestores.  (We don't worry about possible
 	 * spill-to-disk costs.)
 	 */
-	total_cost += cpu_tuple_cost * total_rows;
+	cost_add_member_mul(&total_cost, cpu_tuple_cost, total_rows);
 
 	runion->startup_cost = startup_cost;
 	runion->total_cost = total_cost;
@@ -1691,19 +1700,19 @@ cost_recursive_union(Path *runion, Path *nrterm, Path *rterm)
  */
 void
 cost_sort(Path *path, PlannerInfo *root,
-		  List *pathkeys, Cost input_cost, double tuples, int width,
-		  Cost comparison_cost, int sort_mem,
+		  List *pathkeys, Cost *input_cost, double tuples, int width,
+		  Cost *comparison_cost, int sort_mem,
 		  double limit_tuples)
 {
-	Cost		startup_cost = input_cost;
-	Cost		run_cost = 0;
+	Cost		startup_cost = *input_cost;
+	Cost		run_cost = {0};
 	double		input_bytes = relation_byte_size(tuples, width);
 	double		output_bytes;
 	double		output_tuples;
 	long		sort_mem_bytes = sort_mem * 1024L;
 
 	if (!enable_sort)
-		startup_cost += disable_cost;
+		cost_add_member(&startup_cost, disable_cost);
 
 	path->rows = tuples;
 
@@ -1715,7 +1724,7 @@ cost_sort(Path *path, PlannerInfo *root,
 		tuples = 2.0;
 
 	/* Include the default cost-per-comparison */
-	comparison_cost += 2.0 * cpu_operator_cost;
+	cost_add_member_mul(comparison_cost, cpu_operator_cost, 2.0);
 
 	/* Do we have a useful LIMIT? */
 	if (limit_tuples > 0 && limit_tuples < tuples)
@@ -1745,7 +1754,7 @@ cost_sort(Path *path, PlannerInfo *root,
 		 *
 		 * Assume about N log2 N comparisons
 		 */
-		startup_cost += comparison_cost * tuples * LOG2(tuples);
+		cost_add_mul(&startup_cost, comparison_cost, tuples * LOG2(tuples));
 
 		/* Disk costs */
 
@@ -1756,8 +1765,8 @@ cost_sort(Path *path, PlannerInfo *root,
 			log_runs = 1.0;
 		npageaccesses = 2.0 * npages * log_runs;
 		/* Assume 3/4ths of accesses are sequential, 1/4th are not */
-		startup_cost += npageaccesses *
-			(seq_page_cost * 0.75 + random_page_cost * 0.25);
+		cost_add_member_mul(&startup_cost, seq_page_cost, npageaccesses * 0.75);
+		cost_add_member_mul(&startup_cost, random_page_cost, npageaccesses * 0.25);
 	}
 	else if (tuples > 2 * output_tuples || input_bytes > sort_mem_bytes)
 	{
@@ -1767,12 +1776,12 @@ cost_sort(Path *path, PlannerInfo *root,
 		 * factor is a bit higher than for quicksort.  Tweak it so that the
 		 * cost curve is continuous at the crossover point.
 		 */
-		startup_cost += comparison_cost * tuples * LOG2(2.0 * output_tuples);
+		cost_add_mul(&startup_cost, comparison_cost, tuples * LOG2(2.0 * output_tuples));
 	}
 	else
 	{
 		/* We'll use plain quicksort on all the input tuples */
-		startup_cost += comparison_cost * tuples * LOG2(tuples);
+		cost_add_mul(&startup_cost, comparison_cost, tuples * LOG2(tuples));
 	}
 
 	/*
@@ -1783,10 +1792,10 @@ cost_sort(Path *path, PlannerInfo *root,
 	 * here --- the upper LIMIT will pro-rate the run cost so we'd be double
 	 * counting the LIMIT otherwise.
 	 */
-	run_cost += cpu_operator_cost * tuples;
+	cost_add_member_mul(&run_cost, cpu_operator_cost, tuples);
 
 	path->startup_cost = startup_cost;
-	path->total_cost = startup_cost + run_cost;
+	cost_set_sum2(&path->total_cost, &startup_cost, &run_cost);
 }
 
 /*
@@ -1795,7 +1804,7 @@ cost_sort(Path *path, PlannerInfo *root,
  *	  The non-partial paths are assumed to be the first "numpaths" paths
  *	  from the subpaths list, and to be in order of decreasing cost.
  */
-static Cost
+static Cost *
 append_nonpartial_cost(List *subpaths, int numpaths, int parallel_workers)
 {
 	Cost	   *costarr;
@@ -1808,7 +1817,7 @@ append_nonpartial_cost(List *subpaths, int numpaths, int parallel_workers)
 	int			max_index;
 
 	if (numpaths == 0)
-		return 0;
+		return NULL;
 
 	/*
 	 * Array length is number of workers or number of relevant paths,
@@ -1847,12 +1856,12 @@ append_nonpartial_cost(List *subpaths, int numpaths, int parallel_workers)
 		if (path_index++ == numpaths)
 			break;
 
-		costarr[min_index] += subpath->total_cost;
+		cost_add(&costarr[min_index], &subpath->total_cost);
 
 		/* Update the new min cost array index */
 		for (min_index = i = 0; i < arrlen; i++)
 		{
-			if (costarr[i] < costarr[min_index])
+			if (cost_islt(&costarr[i], &costarr[min_index]))
 				min_index = i;
 		}
 	}
@@ -1860,11 +1869,11 @@ append_nonpartial_cost(List *subpaths, int numpaths, int parallel_workers)
 	/* Return the highest cost from the array */
 	for (max_index = i = 0; i < arrlen; i++)
 	{
-		if (costarr[i] > costarr[max_index])
+		if (cost_isgt(&costarr[i], &costarr[max_index]))
 			max_index = i;
 	}
 
-	return costarr[max_index];
+	return costarr+max_index;
 }
 
 /*
@@ -1876,8 +1885,8 @@ cost_append(AppendPath *apath)
 {
 	ListCell   *l;
 
-	apath->path.startup_cost = 0;
-	apath->path.total_cost = 0;
+	cost_zero(&apath->path.startup_cost);
+	cost_zero(&apath->path.total_cost);
 	apath->path.rows = 0;
 
 	if (apath->subpaths == NIL)
@@ -1903,7 +1912,7 @@ cost_append(AppendPath *apath)
 				Path	   *subpath = (Path *) lfirst(l);
 
 				apath->path.rows += subpath->rows;
-				apath->path.total_cost += subpath->total_cost;
+				cost_add(&apath->path.total_cost, &subpath->total_cost);
 			}
 		}
 		else
@@ -1933,6 +1942,7 @@ cost_append(AppendPath *apath)
 
 				if (!pathkeys_contained_in(pathkeys, subpath->pathkeys))
 				{
+					Cost zerocost = {0};
 					/*
 					 * We'll need to insert a Sort node, so include costs for
 					 * that.  We can use the parent's LIMIT if any, since we
@@ -1942,18 +1952,18 @@ cost_append(AppendPath *apath)
 					cost_sort(&sort_path,
 							  NULL, /* doesn't currently need root */
 							  pathkeys,
-							  subpath->total_cost,
+							  &subpath->total_cost,
 							  subpath->rows,
 							  subpath->pathtarget->width,
-							  0.0,
+							  &zerocost,
 							  work_mem,
 							  apath->limit_tuples);
 					subpath = &sort_path;
 				}
 
 				apath->path.rows += subpath->rows;
-				apath->path.startup_cost += subpath->startup_cost;
-				apath->path.total_cost += subpath->total_cost;
+				cost_add(&apath->path.startup_cost, &subpath->startup_cost);
+				cost_add(&apath->path.total_cost, &subpath->total_cost);
 			}
 		}
 	}
@@ -1978,8 +1988,10 @@ cost_append(AppendPath *apath)
 			if (i == 0)
 				apath->path.startup_cost = subpath->startup_cost;
 			else if (i < apath->path.parallel_workers)
-				apath->path.startup_cost = Min(apath->path.startup_cost,
-											   subpath->startup_cost);
+				apath->path.startup_cost = cost_islt(&apath->path.startup_cost,
+											   &subpath->startup_cost) ?
+												apath->path.startup_cost :
+												subpath->startup_cost;
 
 			/*
 			 * Apply parallel divisor to subpaths.  Scale the number of rows
@@ -1997,7 +2009,7 @@ cost_append(AppendPath *apath)
 				subpath_parallel_divisor = get_parallel_divisor(subpath);
 				apath->path.rows += subpath->rows * (subpath_parallel_divisor /
 													 parallel_divisor);
-				apath->path.total_cost += subpath->total_cost;
+				cost_add(&apath->path.total_cost, &subpath->total_cost);
 			}
 
 			apath->path.rows = clamp_row_est(apath->path.rows);
@@ -2006,18 +2018,18 @@ cost_append(AppendPath *apath)
 		}
 
 		/* Add cost for non-partial subpaths. */
-		apath->path.total_cost +=
+		cost_add(&apath->path.total_cost,
 			append_nonpartial_cost(apath->subpaths,
 								   apath->first_partial_path,
-								   apath->path.parallel_workers);
+								   apath->path.parallel_workers));
 	}
 
 	/*
 	 * Although Append does not do any selection or projection, it's not free;
 	 * add a small per-tuple overhead.
 	 */
-	apath->path.total_cost +=
-		cpu_tuple_cost * APPEND_CPU_COST_MULTIPLIER * apath->path.rows;
+	cost_add_member_mul(&apath->path.total_cost,
+		cpu_tuple_cost, APPEND_CPU_COST_MULTIPLIER * apath->path.rows);
 }
 
 /*
@@ -2050,8 +2062,8 @@ cost_merge_append(Path *path, PlannerInfo *root,
 				  Cost input_startup_cost, Cost input_total_cost,
 				  double tuples)
 {
-	Cost		startup_cost = 0;
-	Cost		run_cost = 0;
+	Cost		startup_cost = {0};
+	Cost		run_cost = {0};
 	Cost		comparison_cost;
 	double		N;
 	double		logN;
@@ -2063,22 +2075,22 @@ cost_merge_append(Path *path, PlannerInfo *root,
 	logN = LOG2(N);
 
 	/* Assumed cost per tuple comparison */
-	comparison_cost = 2.0 * cpu_operator_cost;
+	cost_add_member_mul(&comparison_cost, cpu_operator_cost, 2.0);
 
 	/* Heap creation cost */
-	startup_cost += comparison_cost * N * logN;
+	cost_add_mul(&startup_cost, &comparison_cost, N * logN);
 
 	/* Per-tuple heap maintenance cost */
-	run_cost += tuples * comparison_cost * logN;
+	cost_add_mul(&run_cost, &comparison_cost, logN);
 
 	/*
 	 * Although MergeAppend does not do any selection or projection, it's not
 	 * free; add a small per-tuple overhead.
 	 */
-	run_cost += cpu_tuple_cost * APPEND_CPU_COST_MULTIPLIER * tuples;
+	cost_add_member_mul(&run_cost, cpu_tuple_cost, APPEND_CPU_COST_MULTIPLIER * tuples);
 
-	path->startup_cost = startup_cost + input_startup_cost;
-	path->total_cost = startup_cost + run_cost + input_total_cost;
+	cost_set_sum2(&path->startup_cost, &startup_cost, &input_startup_cost);
+	cost_set_sum3(&path->total_cost, &startup_cost, &run_cost, &input_total_cost);
 }
 
 /*
@@ -2099,10 +2111,11 @@ cost_material(Path *path,
 			  double tuples, int width)
 {
 	Cost		startup_cost = input_startup_cost;
-	Cost		run_cost = input_total_cost - input_startup_cost;
+	Cost		run_cost;
 	double		nbytes = relation_byte_size(tuples, width);
 	long		work_mem_bytes = work_mem * 1024L;
 
+	cost_set_diff(&run_cost, &input_total_cost, &input_startup_cost);
 	path->rows = tuples;
 
 	/*
@@ -2117,7 +2130,7 @@ cost_material(Path *path,
 	 * doesn't do qual-checking or projection, so it's got less overhead than
 	 * most plan nodes.
 	 */
-	run_cost += 2 * cpu_operator_cost * tuples;
+	cost_add_member_mul(&run_cost, cpu_operator_cost, 2 * tuples);
 
 	/*
 	 * If we will spill to disk, charge at the rate of seq_page_cost per page.
@@ -2129,11 +2142,11 @@ cost_material(Path *path,
 	{
 		double		npages = ceil(nbytes / BLCKSZ);
 
-		run_cost += seq_page_cost * npages;
+		cost_add_member_mul(&run_cost, seq_page_cost, npages);
 	}
 
 	path->startup_cost = startup_cost;
-	path->total_cost = startup_cost + run_cost;
+	cost_set_sum2(&path->total_cost, &startup_cost, &run_cost);
 }
 
 /*
@@ -2152,7 +2165,7 @@ cost_agg(Path *path, PlannerInfo *root,
 		 AggStrategy aggstrategy, const AggClauseCosts *aggcosts,
 		 int numGroupCols, double numGroups,
 		 List *quals,
-		 Cost input_startup_cost, Cost input_total_cost,
+		 Cost *input_startup_cost, Cost *input_total_cost,
 		 double input_tuples)
 {
 	double		output_tuples;
@@ -2192,47 +2205,48 @@ cost_agg(Path *path, PlannerInfo *root,
 	 */
 	if (aggstrategy == AGG_PLAIN)
 	{
-		startup_cost = input_total_cost;
-		startup_cost += aggcosts->transCost.startup;
-		startup_cost += aggcosts->transCost.per_tuple * input_tuples;
-		startup_cost += aggcosts->finalCost.startup;
-		startup_cost += aggcosts->finalCost.per_tuple;
+		startup_cost = *input_total_cost;
+		cost_add(&startup_cost, &aggcosts->transCost.startup);
+		cost_add_mul(&startup_cost, &aggcosts->transCost.per_tuple, input_tuples);
+		cost_add(&startup_cost, &aggcosts->finalCost.startup);
+		cost_add(&startup_cost, &aggcosts->finalCost.per_tuple);
 		/* we aren't grouping */
-		total_cost = startup_cost + cpu_tuple_cost;
+		total_cost = startup_cost;
+		cost_add_member(&total_cost, cpu_tuple_cost);
 		output_tuples = 1;
 	}
 	else if (aggstrategy == AGG_SORTED || aggstrategy == AGG_MIXED)
 	{
 		/* Here we are able to deliver output on-the-fly */
-		startup_cost = input_startup_cost;
-		total_cost = input_total_cost;
+		startup_cost = *input_startup_cost;
+		total_cost = *input_total_cost;
 		if (aggstrategy == AGG_MIXED && !enable_hashagg)
 		{
-			startup_cost += disable_cost;
-			total_cost += disable_cost;
+			cost_add_member(&startup_cost, disable_cost);
+			cost_add_member(&total_cost, disable_cost);
 		}
 		/* calcs phrased this way to match HASHED case, see note above */
-		total_cost += aggcosts->transCost.startup;
-		total_cost += aggcosts->transCost.per_tuple * input_tuples;
-		total_cost += (cpu_operator_cost * numGroupCols) * input_tuples;
-		total_cost += aggcosts->finalCost.startup;
-		total_cost += aggcosts->finalCost.per_tuple * numGroups;
-		total_cost += cpu_tuple_cost * numGroups;
+		cost_add(&total_cost, &aggcosts->transCost.startup);
+		cost_add_mul(&total_cost, &aggcosts->transCost.per_tuple, input_tuples);
+		cost_add_member_mul(&total_cost, cpu_operator_cost, numGroupCols * input_tuples);
+		cost_add(&total_cost, &aggcosts->finalCost.startup);
+		cost_add_mul(&total_cost, &aggcosts->finalCost.per_tuple, numGroups);
+		cost_add_member_mul(&total_cost, cpu_tuple_cost, numGroups);
 		output_tuples = numGroups;
 	}
 	else
 	{
 		/* must be AGG_HASHED */
-		startup_cost = input_total_cost;
+		startup_cost = *input_total_cost;
 		if (!enable_hashagg)
-			startup_cost += disable_cost;
-		startup_cost += aggcosts->transCost.startup;
-		startup_cost += aggcosts->transCost.per_tuple * input_tuples;
-		startup_cost += (cpu_operator_cost * numGroupCols) * input_tuples;
-		startup_cost += aggcosts->finalCost.startup;
+			cost_add_member(&startup_cost, disable_cost);
+		cost_add(&startup_cost, &aggcosts->transCost.startup);
+		cost_add_mul(&startup_cost, &aggcosts->transCost.per_tuple, input_tuples);
+		cost_add_member_mul(&startup_cost, cpu_operator_cost, numGroupCols * input_tuples);
+		cost_add(&startup_cost, &aggcosts->finalCost.startup);
 		total_cost = startup_cost;
-		total_cost += aggcosts->finalCost.per_tuple * numGroups;
-		total_cost += cpu_tuple_cost * numGroups;
+		cost_add_mul(&total_cost, &aggcosts->finalCost.per_tuple, numGroups);
+		cost_add_member_mul(&total_cost, cpu_tuple_cost, numGroups);
 		output_tuples = numGroups;
 	}
 
@@ -2245,8 +2259,9 @@ cost_agg(Path *path, PlannerInfo *root,
 		QualCost	qual_cost;
 
 		cost_qual_eval(&qual_cost, quals, root);
-		startup_cost += qual_cost.startup;
-		total_cost += qual_cost.startup + output_tuples * qual_cost.per_tuple;
+		cost_add(&startup_cost, &qual_cost.startup);
+		cost_add(&total_cost, &qual_cost.startup);
+		cost_add_mul(&total_cost, &qual_cost.per_tuple, output_tuples);
 
 		output_tuples = clamp_row_est(output_tuples *
 									  clauselist_selectivity(root,
@@ -2296,26 +2311,27 @@ cost_windowagg(Path *path, PlannerInfo *root,
 		Cost		wfunccost;
 		QualCost	argcosts;
 
-		argcosts.startup = argcosts.per_tuple = 0;
+		cost_zero(&argcosts.startup);
+		cost_zero(&argcosts.per_tuple);
 		add_function_cost(root, wfunc->winfnoid, (Node *) wfunc,
 						  &argcosts);
-		startup_cost += argcosts.startup;
+		cost_add(&startup_cost, &argcosts.startup);
 		wfunccost = argcosts.per_tuple;
 
 		/* also add the input expressions' cost to per-input-row costs */
 		cost_qual_eval_node(&argcosts, (Node *) wfunc->args, root);
-		startup_cost += argcosts.startup;
-		wfunccost += argcosts.per_tuple;
+		cost_add(&startup_cost, &argcosts.startup);
+		cost_add(&wfunccost, &argcosts.per_tuple);
 
 		/*
 		 * Add the filter's cost to per-input-row costs.  XXX We should reduce
 		 * input expression costs according to filter selectivity.
 		 */
 		cost_qual_eval_node(&argcosts, (Node *) wfunc->aggfilter, root);
-		startup_cost += argcosts.startup;
-		wfunccost += argcosts.per_tuple;
+		cost_add(&startup_cost, &argcosts.startup);
+		cost_add(&wfunccost, &argcosts.per_tuple);
 
-		total_cost += wfunccost * input_tuples;
+		cost_add_mul(&total_cost, &wfunccost, input_tuples);
 	}
 
 	/*
@@ -2326,8 +2342,8 @@ cost_windowagg(Path *path, PlannerInfo *root,
 	 * XXX this neglects costs of spooling the data to disk when it overflows
 	 * work_mem.  Sooner or later that should get accounted for.
 	 */
-	total_cost += cpu_operator_cost * (numPartCols + numOrderCols) * input_tuples;
-	total_cost += cpu_tuple_cost * input_tuples;
+	cost_add_member_mul(&total_cost, cpu_operator_cost, (numPartCols + numOrderCols) * input_tuples);
+	cost_add_member_mul(&total_cost, cpu_tuple_cost, input_tuples);
 
 	path->rows = input_tuples;
 	path->startup_cost = startup_cost;
@@ -2361,7 +2377,7 @@ cost_group(Path *path, PlannerInfo *root,
 	 * Charge one cpu_operator_cost per comparison per input tuple. We assume
 	 * all columns get compared at most of the tuples.
 	 */
-	total_cost += cpu_operator_cost * input_tuples * numGroupCols;
+	cost_add_member_mul(&total_cost, cpu_operator_cost, input_tuples * numGroupCols);
 
 	/*
 	 * If there are quals (HAVING quals), account for their cost and
@@ -2372,8 +2388,9 @@ cost_group(Path *path, PlannerInfo *root,
 		QualCost	qual_cost;
 
 		cost_qual_eval(&qual_cost, quals, root);
-		startup_cost += qual_cost.startup;
-		total_cost += qual_cost.startup + output_tuples * qual_cost.per_tuple;
+		cost_add(&startup_cost, &qual_cost.startup);;
+		cost_add(&total_cost, &qual_cost.startup);
+		cost_add_mul(&total_cost, &qual_cost.per_tuple, output_tuples);
 
 		output_tuples = clamp_row_est(output_tuples *
 									  clauselist_selectivity(root,
@@ -2418,8 +2435,8 @@ initial_cost_nestloop(PlannerInfo *root, JoinCostWorkspace *workspace,
 					  Path *outer_path, Path *inner_path,
 					  JoinPathExtraData *extra)
 {
-	Cost		startup_cost = 0;
-	Cost		run_cost = 0;
+	Cost		startup_cost = {0};
+	Cost		run_cost = {0};
 	double		outer_path_rows = outer_path->rows;
 	Cost		inner_rescan_start_cost;
 	Cost		inner_rescan_total_cost;
@@ -2439,13 +2456,14 @@ initial_cost_nestloop(PlannerInfo *root, JoinCostWorkspace *workspace,
 	 * their sum.  We'll also pay the inner path's rescan startup cost
 	 * multiple times.
 	 */
-	startup_cost += outer_path->startup_cost + inner_path->startup_cost;
-	run_cost += outer_path->total_cost - outer_path->startup_cost;
+	cost_add2(&startup_cost, &outer_path->startup_cost, &inner_path->startup_cost);
+	cost_add(&run_cost, &outer_path->total_cost);
+	cost_sub(&run_cost, &outer_path->startup_cost);
 	if (outer_path_rows > 1)
-		run_cost += (outer_path_rows - 1) * inner_rescan_start_cost;
+		cost_add_mul(&run_cost, &inner_rescan_start_cost, outer_path_rows - 1);
 
-	inner_run_cost = inner_path->total_cost - inner_path->startup_cost;
-	inner_rescan_run_cost = inner_rescan_total_cost - inner_rescan_start_cost;
+	cost_set_diff(&inner_run_cost, &inner_path->total_cost, &inner_path->startup_cost);
+	cost_set_diff(&inner_rescan_run_cost, &inner_rescan_total_cost, &inner_rescan_start_cost);
 
 	if (jointype == JOIN_SEMI || jointype == JOIN_ANTI ||
 		extra->inner_unique)
@@ -2465,16 +2483,16 @@ initial_cost_nestloop(PlannerInfo *root, JoinCostWorkspace *workspace,
 	else
 	{
 		/* Normal case; we'll scan whole input rel for each outer row */
-		run_cost += inner_run_cost;
+		cost_add(&run_cost, &inner_run_cost);
 		if (outer_path_rows > 1)
-			run_cost += (outer_path_rows - 1) * inner_rescan_run_cost;
+			cost_add_mul(&run_cost, &inner_rescan_run_cost, outer_path_rows - 1);
 	}
 
 	/* CPU costs left for later */
 
 	/* Public result fields */
 	workspace->startup_cost = startup_cost;
-	workspace->total_cost = startup_cost + run_cost;
+	cost_set_sum2(&workspace->total_cost, &startup_cost, &run_cost);
 	/* Save private data for final_cost_nestloop */
 	workspace->run_cost = run_cost;
 }
@@ -2529,7 +2547,7 @@ final_cost_nestloop(PlannerInfo *root, NestPath *path,
 	 * disabled, which doesn't seem like the way to bet.
 	 */
 	if (!enable_nestloop)
-		startup_cost += disable_cost;
+		cost_add_member(&startup_cost, disable_cost);
 
 	/* cost of inner-relation source data (we already dealt with outer rel) */
 
@@ -2590,9 +2608,9 @@ final_cost_nestloop(PlannerInfo *root, NestPath *path,
 			 * case, use inner_run_cost for the first matched tuple and
 			 * inner_rescan_run_cost for additional ones.
 			 */
-			run_cost += inner_run_cost * inner_scan_frac;
+			cost_add_mul(&run_cost, &inner_run_cost, inner_scan_frac);
 			if (outer_matched_rows > 1)
-				run_cost += (outer_matched_rows - 1) * inner_rescan_run_cost * inner_scan_frac;
+				cost_add_mul(&run_cost, &inner_rescan_run_cost, (outer_matched_rows - 1) * inner_scan_frac);
 
 			/*
 			 * Add the cost of inner-scan executions for unmatched outer rows.
@@ -2600,8 +2618,7 @@ final_cost_nestloop(PlannerInfo *root, NestPath *path,
 			 * of a nonempty scan.  We consider that these are all rescans,
 			 * since we used inner_run_cost once already.
 			 */
-			run_cost += outer_unmatched_rows *
-				inner_rescan_run_cost / inner_path_rows;
+			cost_add_mul(&run_cost, &inner_rescan_run_cost, outer_unmatched_rows / inner_path_rows);
 
 			/*
 			 * We won't be evaluating any quals at all for unmatched rows, so
@@ -2627,7 +2644,7 @@ final_cost_nestloop(PlannerInfo *root, NestPath *path,
 			ntuples += outer_unmatched_rows * inner_path_rows;
 
 			/* Now add the forced full scan, and decrement appropriate count */
-			run_cost += inner_run_cost;
+			cost_add(&run_cost, &inner_run_cost);
 			if (outer_unmatched_rows >= 1)
 				outer_unmatched_rows -= 1;
 			else
@@ -2635,11 +2652,11 @@ final_cost_nestloop(PlannerInfo *root, NestPath *path,
 
 			/* Add inner run cost for additional outer tuples having matches */
 			if (outer_matched_rows > 0)
-				run_cost += outer_matched_rows * inner_rescan_run_cost * inner_scan_frac;
+				cost_add_mul(&run_cost, &inner_rescan_run_cost, outer_matched_rows * inner_scan_frac);
 
 			/* Add inner run cost for additional unmatched outer tuples */
 			if (outer_unmatched_rows > 0)
-				run_cost += outer_unmatched_rows * inner_rescan_run_cost;
+				cost_add_mul(&run_cost, &inner_rescan_run_cost, outer_unmatched_rows);
 		}
 	}
 	else
@@ -2652,16 +2669,17 @@ final_cost_nestloop(PlannerInfo *root, NestPath *path,
 
 	/* CPU costs */
 	cost_qual_eval(&restrict_qual_cost, path->joinrestrictinfo, root);
-	startup_cost += restrict_qual_cost.startup;
-	cpu_per_tuple = cpu_tuple_cost + restrict_qual_cost.per_tuple;
-	run_cost += cpu_per_tuple * ntuples;
+	cost_add(&startup_cost, &restrict_qual_cost.startup);
+	cpu_per_tuple = restrict_qual_cost.per_tuple;
+	cost_add_member(&cpu_per_tuple, cpu_tuple_cost);
+	cost_add_mul(&run_cost, &cpu_per_tuple, ntuples);
 
 	/* tlist eval costs are paid per output row, not per tuple scanned */
-	startup_cost += path->path.pathtarget->cost.startup;
-	run_cost += path->path.pathtarget->cost.per_tuple * path->path.rows;
+	cost_add(&startup_cost, &path->path.pathtarget->cost.startup);
+	cost_add_mul(&run_cost, &path->path.pathtarget->cost.per_tuple, path->path.rows);
 
 	path->path.startup_cost = startup_cost;
-	path->path.total_cost = startup_cost + run_cost;
+	cost_set_sum2(&path->path.total_cost, &startup_cost, &run_cost);
 }
 
 /*
@@ -2702,8 +2720,9 @@ initial_cost_mergejoin(PlannerInfo *root, JoinCostWorkspace *workspace,
 					   List *outersortkeys, List *innersortkeys,
 					   JoinPathExtraData *extra)
 {
-	Cost		startup_cost = 0;
-	Cost		run_cost = 0;
+	Cost		startup_cost = {0};
+	Cost		run_cost = {0};
+	Cost		zerocost = {0};
 	double		outer_path_rows = outer_path->rows;
 	double		inner_path_rows = inner_path->rows;
 	Cost		inner_run_cost;
@@ -2825,28 +2844,28 @@ initial_cost_mergejoin(PlannerInfo *root, JoinCostWorkspace *workspace,
 
 	if (outersortkeys)			/* do we need to sort outer? */
 	{
+		Cost tmp;
 		cost_sort(&sort_path,
 				  root,
 				  outersortkeys,
-				  outer_path->total_cost,
+				  &outer_path->total_cost,
 				  outer_path_rows,
 				  outer_path->pathtarget->width,
-				  0.0,
+				  &zerocost,
 				  work_mem,
 				  -1.0);
-		startup_cost += sort_path.startup_cost;
-		startup_cost += (sort_path.total_cost - sort_path.startup_cost)
-			* outerstartsel;
-		run_cost += (sort_path.total_cost - sort_path.startup_cost)
-			* (outerendsel - outerstartsel);
+		cost_add(&startup_cost, &sort_path.startup_cost);
+		cost_set_diff(&tmp, &sort_path.total_cost, &sort_path.startup_cost);
+		cost_add_mul(&startup_cost, &tmp, outerstartsel);
+		cost_add_mul(&run_cost, &tmp, outerendsel - outerstartsel);
 	}
 	else
 	{
-		startup_cost += outer_path->startup_cost;
-		startup_cost += (outer_path->total_cost - outer_path->startup_cost)
-			* outerstartsel;
-		run_cost += (outer_path->total_cost - outer_path->startup_cost)
-			* (outerendsel - outerstartsel);
+		Cost tmp;
+		cost_add(&startup_cost, &outer_path->startup_cost);
+		cost_set_diff(&tmp, &outer_path->total_cost, &outer_path->startup_cost);
+		cost_add_mul(&startup_cost, &tmp, outerstartsel);
+		cost_add_mul(&run_cost, &tmp, outerendsel - outerstartsel);
 	}
 
 	if (innersortkeys)			/* do we need to sort inner? */
@@ -2854,25 +2873,23 @@ initial_cost_mergejoin(PlannerInfo *root, JoinCostWorkspace *workspace,
 		cost_sort(&sort_path,
 				  root,
 				  innersortkeys,
-				  inner_path->total_cost,
+				  &inner_path->total_cost,
 				  inner_path_rows,
 				  inner_path->pathtarget->width,
-				  0.0,
+				  &zerocost,
 				  work_mem,
 				  -1.0);
-		startup_cost += sort_path.startup_cost;
-		startup_cost += (sort_path.total_cost - sort_path.startup_cost)
-			* innerstartsel;
-		inner_run_cost = (sort_path.total_cost - sort_path.startup_cost)
-			* (innerendsel - innerstartsel);
+		cost_add(&startup_cost, &sort_path.startup_cost);
+		cost_set_diff(&inner_run_cost, &sort_path.total_cost, &sort_path.startup_cost);
+		cost_add_mul(&startup_cost, &inner_run_cost, innerstartsel);
+		cost_mul_scalar(&inner_run_cost, innerendsel - innerstartsel);
 	}
 	else
 	{
-		startup_cost += inner_path->startup_cost;
-		startup_cost += (inner_path->total_cost - inner_path->startup_cost)
-			* innerstartsel;
-		inner_run_cost = (inner_path->total_cost - inner_path->startup_cost)
-			* (innerendsel - innerstartsel);
+		cost_add(&startup_cost, &inner_path->startup_cost);
+		cost_set_diff(&inner_run_cost, &inner_path->total_cost, &inner_path->startup_cost);
+		cost_add_mul(&startup_cost, &inner_run_cost, innerstartsel);
+		cost_mul_scalar(&inner_run_cost, innerendsel - innerstartsel);
 	}
 
 	/*
@@ -2887,7 +2904,7 @@ initial_cost_mergejoin(PlannerInfo *root, JoinCostWorkspace *workspace,
 
 	/* Public result fields */
 	workspace->startup_cost = startup_cost;
-	workspace->total_cost = startup_cost + run_cost + inner_run_cost;
+	cost_set_sum3(&workspace->total_cost, &startup_cost, &run_cost, &inner_run_cost);
 	/* Save private data for final_cost_mergejoin */
 	workspace->run_cost = run_cost;
 	workspace->inner_run_cost = inner_run_cost;
@@ -2975,7 +2992,7 @@ final_cost_mergejoin(PlannerInfo *root, MergePath *path,
 	 * disabled, which doesn't seem like the way to bet.
 	 */
 	if (!enable_mergejoin)
-		startup_cost += disable_cost;
+		cost_add_member(&startup_cost, disable_cost);
 
 	/*
 	 * Compute cost of the mergequals and qpquals (other restriction clauses)
@@ -2983,8 +3000,8 @@ final_cost_mergejoin(PlannerInfo *root, MergePath *path,
 	 */
 	cost_qual_eval(&merge_qual_cost, mergeclauses, root);
 	cost_qual_eval(&qp_qual_cost, path->jpath.joinrestrictinfo, root);
-	qp_qual_cost.startup -= merge_qual_cost.startup;
-	qp_qual_cost.per_tuple -= merge_qual_cost.per_tuple;
+	cost_sub(&qp_qual_cost.startup, &merge_qual_cost.startup);
+	cost_sub(&qp_qual_cost.per_tuple, &merge_qual_cost.per_tuple);
 
 	/*
 	 * With a SEMI or ANTI join, or if the innerrel is known unique, the
@@ -3059,7 +3076,8 @@ final_cost_mergejoin(PlannerInfo *root, MergePath *path,
 	 * a more refined model.  So we just need to inflate the inner run cost by
 	 * rescanratio.
 	 */
-	bare_inner_cost = inner_run_cost * rescanratio;
+	bare_inner_cost = inner_run_cost;
+	cost_mul_scalar(&bare_inner_cost, rescanratio);
 
 	/*
 	 * When we interpose a Material node the re-fetch cost is assumed to be
@@ -3074,8 +3092,8 @@ final_cost_mergejoin(PlannerInfo *root, MergePath *path,
 	 * Note: keep this estimate in sync with create_mergejoin_plan's labeling
 	 * of the generated Material node.
 	 */
-	mat_inner_cost = inner_run_cost +
-		cpu_operator_cost * inner_rows * rescanratio;
+	mat_inner_cost = inner_run_cost;
+	cost_add_member_mul(&mat_inner_cost, cpu_operator_cost, inner_rows * rescanratio);
 
 	/*
 	 * If we don't need mark/restore at all, we don't need materialization.
@@ -3087,7 +3105,7 @@ final_cost_mergejoin(PlannerInfo *root, MergePath *path,
 	 * Prefer materializing if it looks cheaper, unless the user has asked to
 	 * suppress materialization.
 	 */
-	else if (enable_material && mat_inner_cost < bare_inner_cost)
+	else if (enable_material && cost_asscalar(&mat_inner_cost) < cost_asscalar(&bare_inner_cost))
 		path->materialize_inner = true;
 
 	/*
@@ -3131,9 +3149,9 @@ final_cost_mergejoin(PlannerInfo *root, MergePath *path,
 
 	/* Charge the right incremental cost for the chosen case */
 	if (path->materialize_inner)
-		run_cost += mat_inner_cost;
+		cost_add(&run_cost, &mat_inner_cost);
 	else
-		run_cost += bare_inner_cost;
+		cost_add(&run_cost, &bare_inner_cost);
 
 	/* CPU costs */
 
@@ -3142,12 +3160,12 @@ final_cost_mergejoin(PlannerInfo *root, MergePath *path,
 	 * rows plus number of inner rows plus number of rescanned tuples (can we
 	 * refine this?).  At each one, we need to evaluate the mergejoin quals.
 	 */
-	startup_cost += merge_qual_cost.startup;
-	startup_cost += merge_qual_cost.per_tuple *
-		(outer_skip_rows + inner_skip_rows * rescanratio);
-	run_cost += merge_qual_cost.per_tuple *
+	cost_add(&startup_cost, &merge_qual_cost.startup);
+	cost_add_mul(&startup_cost, &merge_qual_cost.per_tuple,
+		outer_skip_rows + inner_skip_rows * rescanratio);
+	cost_add_mul(&run_cost, &merge_qual_cost.per_tuple,
 		((outer_rows - outer_skip_rows) +
-		 (inner_rows - inner_skip_rows) * rescanratio);
+		 (inner_rows - inner_skip_rows) * rescanratio));
 
 	/*
 	 * For each tuple that gets through the mergejoin proper, we charge
@@ -3158,16 +3176,16 @@ final_cost_mergejoin(PlannerInfo *root, MergePath *path,
 	 * Note: we could adjust for SEMI/ANTI joins skipping some qual
 	 * evaluations here, but it's probably not worth the trouble.
 	 */
-	startup_cost += qp_qual_cost.startup;
-	cpu_per_tuple = cpu_tuple_cost + qp_qual_cost.per_tuple;
-	run_cost += cpu_per_tuple * mergejointuples;
+	cost_add(&startup_cost, &qp_qual_cost.startup);
+	cost_set_member_add(&cpu_per_tuple, cpu_tuple_cost, &qp_qual_cost.per_tuple);
+	cost_add_mul(&run_cost, &cpu_per_tuple, mergejointuples);
 
 	/* tlist eval costs are paid per output row, not per tuple scanned */
-	startup_cost += path->jpath.path.pathtarget->cost.startup;
-	run_cost += path->jpath.path.pathtarget->cost.per_tuple * path->jpath.path.rows;
+	cost_add(&startup_cost, &path->jpath.path.pathtarget->cost.startup);
+	cost_add_mul(&run_cost, &path->jpath.path.pathtarget->cost.per_tuple, path->jpath.path.rows);
 
 	path->jpath.path.startup_cost = startup_cost;
-	path->jpath.path.total_cost = startup_cost + run_cost;
+	cost_set_sum2(&path->jpath.path.total_cost, &startup_cost, &run_cost);
 }
 
 /*
@@ -3260,8 +3278,8 @@ initial_cost_hashjoin(PlannerInfo *root, JoinCostWorkspace *workspace,
 					  JoinPathExtraData *extra,
 					  bool parallel_hash)
 {
-	Cost		startup_cost = 0;
-	Cost		run_cost = 0;
+	Cost		startup_cost = {0};
+	Cost		run_cost = {0};
 	double		outer_path_rows = outer_path->rows;
 	double		inner_path_rows = inner_path->rows;
 	double		inner_path_rows_total = inner_path_rows;
@@ -3272,9 +3290,10 @@ initial_cost_hashjoin(PlannerInfo *root, JoinCostWorkspace *workspace,
 	size_t		space_allowed;	/* unused */
 
 	/* cost of source data */
-	startup_cost += outer_path->startup_cost;
-	run_cost += outer_path->total_cost - outer_path->startup_cost;
-	startup_cost += inner_path->total_cost;
+	cost_add(&startup_cost, &outer_path->startup_cost);
+	cost_add(&run_cost, &outer_path->total_cost);
+	cost_sub(&run_cost, &outer_path->startup_cost);
+	cost_add(&startup_cost, &inner_path->total_cost);
 
 	/*
 	 * Cost of computing hash function: must do it once per input tuple. We
@@ -3286,9 +3305,9 @@ initial_cost_hashjoin(PlannerInfo *root, JoinCostWorkspace *workspace,
 	 * should charge the extra eval costs of the left or right side, as
 	 * appropriate, here.  This seems more work than it's worth at the moment.
 	 */
-	startup_cost += (cpu_operator_cost * num_hashclauses + cpu_tuple_cost)
-		* inner_path_rows;
-	run_cost += cpu_operator_cost * num_hashclauses * outer_path_rows;
+	cost_add_member_mul(&startup_cost, cpu_operator_cost, num_hashclauses * inner_path_rows);
+	cost_add_member_mul(&startup_cost, cpu_tuple_cost, inner_path_rows);
+	cost_add_member_mul(&run_cost, cpu_operator_cost, num_hashclauses * outer_path_rows);
 
 	/*
 	 * If this is a parallel hash build, then the value we have for
@@ -3333,15 +3352,15 @@ initial_cost_hashjoin(PlannerInfo *root, JoinCostWorkspace *workspace,
 		double		innerpages = page_size(inner_path_rows,
 										   inner_path->pathtarget->width);
 
-		startup_cost += seq_page_cost * innerpages;
-		run_cost += seq_page_cost * (innerpages + 2 * outerpages);
+		cost_add_member_mul(&startup_cost, seq_page_cost, innerpages);
+		cost_add_member_mul(&run_cost, seq_page_cost, (innerpages + 2 * outerpages));
 	}
 
 	/* CPU costs left for later */
 
 	/* Public result fields */
 	workspace->startup_cost = startup_cost;
-	workspace->total_cost = startup_cost + run_cost;
+	cost_set_sum2(&workspace->total_cost, &startup_cost, &run_cost);
 	/* Save private data for final_cost_hashjoin */
 	workspace->run_cost = run_cost;
 	workspace->numbuckets = numbuckets;
@@ -3405,7 +3424,7 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 	 * disabled, which doesn't seem like the way to bet.
 	 */
 	if (!enable_hashjoin)
-		startup_cost += disable_cost;
+		cost_add_member(&startup_cost, disable_cost);
 
 	/* mark the path with estimated # of batches */
 	path->num_batches = numbatches;
@@ -3503,7 +3522,7 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 	if (relation_byte_size(clamp_row_est(inner_path_rows * innermcvfreq),
 						   inner_path->pathtarget->width) >
 		(work_mem * 1024L))
-		startup_cost += disable_cost;
+		cost_add_member(&startup_cost, disable_cost);
 
 	/*
 	 * Compute cost of the hashquals and qpquals (other restriction clauses)
@@ -3511,8 +3530,8 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 	 */
 	cost_qual_eval(&hash_qual_cost, hashclauses, root);
 	cost_qual_eval(&qp_qual_cost, path->jpath.joinrestrictinfo, root);
-	qp_qual_cost.startup -= hash_qual_cost.startup;
-	qp_qual_cost.per_tuple -= hash_qual_cost.per_tuple;
+	cost_sub(&qp_qual_cost.startup, &hash_qual_cost.startup);
+	cost_sub(&qp_qual_cost.per_tuple, &hash_qual_cost.per_tuple);
 
 	/* CPU costs */
 
@@ -3538,9 +3557,9 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 		outer_matched_rows = rint(outer_path_rows * extra->semifactors.outer_match_frac);
 		inner_scan_frac = 2.0 / (extra->semifactors.match_count + 1.0);
 
-		startup_cost += hash_qual_cost.startup;
-		run_cost += hash_qual_cost.per_tuple * outer_matched_rows *
-			clamp_row_est(inner_path_rows * innerbucketsize * inner_scan_frac) * 0.5;
+		cost_add(&startup_cost, &hash_qual_cost.startup);
+		cost_add_mul(&run_cost, &hash_qual_cost.per_tuple, outer_matched_rows *
+			clamp_row_est(inner_path_rows * innerbucketsize * inner_scan_frac) * 0.5);
 
 		/*
 		 * For unmatched outer-rel rows, the picture is quite a lot different.
@@ -3555,9 +3574,9 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 		 * effective cost per bucket entry is one-tenth what it is for
 		 * matchable tuples.
 		 */
-		run_cost += hash_qual_cost.per_tuple *
+		cost_add_mul(&run_cost, &hash_qual_cost.per_tuple,
 			(outer_path_rows - outer_matched_rows) *
-			clamp_row_est(inner_path_rows / virtualbuckets) * 0.05;
+			clamp_row_est(inner_path_rows / virtualbuckets) * 0.05);
 
 		/* Get # of tuples that will pass the basic join */
 		if (path->jpath.jointype == JOIN_ANTI)
@@ -3577,9 +3596,9 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 		 * exactly.  For lack of a better idea, halve the cost estimate to
 		 * allow for that.
 		 */
-		startup_cost += hash_qual_cost.startup;
-		run_cost += hash_qual_cost.per_tuple * outer_path_rows *
-			clamp_row_est(inner_path_rows * innerbucketsize) * 0.5;
+		cost_add(&startup_cost, &hash_qual_cost.startup);
+		cost_add_mul(&run_cost, &hash_qual_cost.per_tuple, outer_path_rows *
+			clamp_row_est(inner_path_rows * innerbucketsize) * 0.5);
 
 		/*
 		 * Get approx # tuples passing the hashquals.  We use
@@ -3595,16 +3614,17 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 	 * clauses that are to be applied at the join.  (This is pessimistic since
 	 * not all of the quals may get evaluated at each tuple.)
 	 */
-	startup_cost += qp_qual_cost.startup;
-	cpu_per_tuple = cpu_tuple_cost + qp_qual_cost.per_tuple;
-	run_cost += cpu_per_tuple * hashjointuples;
+	cost_add(&startup_cost, &qp_qual_cost.startup);
+	cpu_per_tuple = qp_qual_cost.per_tuple;
+	cost_add_member(&cpu_per_tuple, cpu_tuple_cost);
+	cost_add_mul(&run_cost, &cpu_per_tuple, hashjointuples);
 
 	/* tlist eval costs are paid per output row, not per tuple scanned */
-	startup_cost += path->jpath.path.pathtarget->cost.startup;
-	run_cost += path->jpath.path.pathtarget->cost.per_tuple * path->jpath.path.rows;
+	cost_add(&startup_cost, &path->jpath.path.pathtarget->cost.startup);
+	cost_add_mul(&run_cost, &path->jpath.path.pathtarget->cost.per_tuple, path->jpath.path.rows);
 
 	path->jpath.path.startup_cost = startup_cost;
-	path->jpath.path.total_cost = startup_cost + run_cost;
+	cost_set_sum2(&path->jpath.path.total_cost, &startup_cost, &run_cost);
 }
 
 
@@ -3633,8 +3653,8 @@ cost_subplan(PlannerInfo *root, SubPlan *subplan, Plan *plan)
 		 * cpu_operator_cost per tuple for the work of loading the hashtable,
 		 * too.
 		 */
-		sp_cost.startup += plan->total_cost +
-			cpu_operator_cost * plan->plan_rows;
+		cost_add(&sp_cost.startup, &plan->total_cost);
+		cost_add_member_mul(&sp_cost.startup, cpu_operator_cost, plan->plan_rows);
 
 		/*
 		 * The per-tuple costs include the cost of evaluating the lefthand
@@ -3654,25 +3674,26 @@ cost_subplan(PlannerInfo *root, SubPlan *subplan, Plan *plan)
 		 * tuple_fraction estimates used by make_subplan() in
 		 * plan/subselect.c.
 		 */
-		Cost		plan_run_cost = plan->total_cost - plan->startup_cost;
+		Cost		plan_run_cost;
+		cost_set_diff(&plan_run_cost, &plan->total_cost, &plan->startup_cost);
 
 		if (subplan->subLinkType == EXISTS_SUBLINK)
 		{
 			/* we only need to fetch 1 tuple; clamp to avoid zero divide */
-			sp_cost.per_tuple += plan_run_cost / clamp_row_est(plan->plan_rows);
+			cost_add_mul(&sp_cost.per_tuple, &plan_run_cost, clamp_row_est(plan->plan_rows));
 		}
 		else if (subplan->subLinkType == ALL_SUBLINK ||
 				 subplan->subLinkType == ANY_SUBLINK)
 		{
 			/* assume we need 50% of the tuples */
-			sp_cost.per_tuple += 0.50 * plan_run_cost;
+			cost_add_mul(&sp_cost.per_tuple, &plan_run_cost, 0.50);
 			/* also charge a cpu_operator_cost per row examined */
-			sp_cost.per_tuple += 0.50 * plan->plan_rows * cpu_operator_cost;
+			cost_add_member_mul(&sp_cost.per_tuple, cpu_operator_cost, 0.50 * plan->plan_rows);
 		}
 		else
 		{
 			/* assume we need all tuples */
-			sp_cost.per_tuple += plan_run_cost;
+			cost_add(&sp_cost.per_tuple, &plan_run_cost);
 		}
 
 		/*
@@ -3684,9 +3705,9 @@ cost_subplan(PlannerInfo *root, SubPlan *subplan, Plan *plan)
 		 */
 		if (subplan->parParam == NIL &&
 			ExecMaterializesOutput(nodeTag(plan)))
-			sp_cost.startup += plan->startup_cost;
+			cost_add(&sp_cost.startup, &plan->startup_cost);
 		else
-			sp_cost.per_tuple += plan->startup_cost;
+			cost_add(&sp_cost.per_tuple, &plan->startup_cost);
 	}
 
 	subplan->startup_cost = sp_cost.startup;
@@ -3724,8 +3745,8 @@ cost_rescan(PlannerInfo *root, Path *path,
 			 * and isn't paid over again on rescans. However, all run costs
 			 * will be paid over again.
 			 */
-			*rescan_startup_cost = 0;
-			*rescan_total_cost = path->total_cost - path->startup_cost;
+			cost_zero(rescan_startup_cost);
+			cost_set_diff(rescan_total_cost, &path->total_cost, &path->startup_cost);
 			break;
 		case T_HashJoin:
 
@@ -3736,8 +3757,8 @@ cost_rescan(PlannerInfo *root, Path *path,
 			if (((HashPath *) path)->num_batches == 1)
 			{
 				/* Startup cost is exactly the cost of hash table building */
-				*rescan_startup_cost = 0;
-				*rescan_total_cost = path->total_cost - path->startup_cost;
+				cost_zero(rescan_startup_cost);
+				cost_set_diff(rescan_total_cost, &path->total_cost, &path->startup_cost);
 			}
 			else
 			{
@@ -3755,19 +3776,20 @@ cost_rescan(PlannerInfo *root, Path *path,
 				 * cpu_tuple_cost per tuple, unless the result is large enough
 				 * to spill to disk.
 				 */
-				Cost		run_cost = cpu_tuple_cost * path->rows;
+				Cost		run_cost;
 				double		nbytes = relation_byte_size(path->rows,
 														path->pathtarget->width);
 				long		work_mem_bytes = work_mem * 1024L;
 
+				cost_set_member_mul(&run_cost, cpu_tuple_cost, path->rows);
 				if (nbytes > work_mem_bytes)
 				{
 					/* It will spill, so account for re-read cost */
 					double		npages = ceil(nbytes / BLCKSZ);
 
-					run_cost += seq_page_cost * npages;
+					cost_add_member_mul(&run_cost, seq_page_cost, npages);
 				}
-				*rescan_startup_cost = 0;
+				cost_zero(rescan_startup_cost);
 				*rescan_total_cost = run_cost;
 			}
 			break;
@@ -3782,19 +3804,20 @@ cost_rescan(PlannerInfo *root, Path *path,
 				 * the run_cost charge in cost_sort, and also see comments in
 				 * cost_material before you change it.)
 				 */
-				Cost		run_cost = cpu_operator_cost * path->rows;
+				Cost		run_cost;
 				double		nbytes = relation_byte_size(path->rows,
 														path->pathtarget->width);
 				long		work_mem_bytes = work_mem * 1024L;
 
+				cost_set_member_mul(&run_cost, cpu_operator_cost, path->rows);
 				if (nbytes > work_mem_bytes)
 				{
 					/* It will spill, so account for re-read cost */
 					double		npages = ceil(nbytes / BLCKSZ);
 
-					run_cost += seq_page_cost * npages;
+					cost_add_member_mul(&run_cost, seq_page_cost, npages);
 				}
-				*rescan_startup_cost = 0;
+				cost_zero(rescan_startup_cost);
 				*rescan_total_cost = run_cost;
 			}
 			break;
@@ -3822,8 +3845,8 @@ cost_qual_eval(QualCost *cost, List *quals, PlannerInfo *root)
 	ListCell   *l;
 
 	context.root = root;
-	context.total.startup = 0;
-	context.total.per_tuple = 0;
+	cost_zero(&context.total.startup);
+	cost_zero(&context.total.per_tuple);
 
 	/* We don't charge any cost for the implicit ANDing at top level ... */
 
@@ -3847,8 +3870,8 @@ cost_qual_eval_node(QualCost *cost, Node *qual, PlannerInfo *root)
 	cost_qual_eval_context context;
 
 	context.root = root;
-	context.total.startup = 0;
-	context.total.per_tuple = 0;
+	cost_zero(&context.total.startup);
+	cost_zero(&context.total.per_tuple);
 
 	cost_qual_eval_walker(qual, &context);
 
@@ -3871,13 +3894,13 @@ cost_qual_eval_walker(Node *node, cost_qual_eval_context *context)
 	{
 		RestrictInfo *rinfo = (RestrictInfo *) node;
 
-		if (rinfo->eval_cost.startup < 0)
+		if (cost_asscalar(&rinfo->eval_cost.startup) < 0)
 		{
 			cost_qual_eval_context locContext;
 
 			locContext.root = context->root;
-			locContext.total.startup = 0;
-			locContext.total.per_tuple = 0;
+			cost_zero(&locContext.total.startup);
+			cost_zero(&locContext.total.per_tuple);
 
 			/*
 			 * For an OR clause, recurse into the marked-up tree so that we
@@ -3895,13 +3918,13 @@ cost_qual_eval_walker(Node *node, cost_qual_eval_context *context)
 			if (rinfo->pseudoconstant)
 			{
 				/* count one execution during startup */
-				locContext.total.startup += locContext.total.per_tuple;
-				locContext.total.per_tuple = 0;
+				cost_add(&locContext.total.startup, &locContext.total.per_tuple);
+				cost_zero(&locContext.total.per_tuple);
 			}
 			rinfo->eval_cost = locContext.total;
 		}
-		context->total.startup += rinfo->eval_cost.startup;
-		context->total.per_tuple += rinfo->eval_cost.per_tuple;
+		cost_add(&context->total.startup, &rinfo->eval_cost.startup);
+		cost_add(&context->total.per_tuple, &rinfo->eval_cost.per_tuple);
 		/* do NOT recurse into children */
 		return false;
 	}
@@ -3953,12 +3976,13 @@ cost_qual_eval_walker(Node *node, cost_qual_eval_context *context)
 		QualCost	sacosts;
 
 		set_sa_opfuncid(saop);
-		sacosts.startup = sacosts.per_tuple = 0;
+		cost_zero(&sacosts.startup);
+		cost_zero(&sacosts.per_tuple);
 		add_function_cost(context->root, saop->opfuncid, NULL,
 						  &sacosts);
-		context->total.startup += sacosts.startup;
-		context->total.per_tuple += sacosts.per_tuple *
-			estimate_array_length(arraynode) * 0.5;
+		cost_add(&context->total.startup, &sacosts.startup);
+		cost_add_mul(&context->total.per_tuple, &sacosts.per_tuple,
+			estimate_array_length(arraynode) * 0.5);
 	}
 	else if (IsA(node, Aggref) ||
 			 IsA(node, WindowFunc))
@@ -3999,10 +4023,10 @@ cost_qual_eval_walker(Node *node, cost_qual_eval_context *context)
 
 		cost_qual_eval_node(&perelemcost, (Node *) acoerce->elemexpr,
 							context->root);
-		context->total.startup += perelemcost.startup;
-		if (perelemcost.per_tuple > 0)
-			context->total.per_tuple += perelemcost.per_tuple *
-				estimate_array_length((Node *) acoerce->arg);
+		cost_add(&context->total.startup, &perelemcost.startup);
+		if (cost_asscalar(&perelemcost.per_tuple) > 0)
+			cost_add_mul(&context->total.per_tuple, &perelemcost.per_tuple,
+				estimate_array_length((Node *) acoerce->arg));
 	}
 	else if (IsA(node, RowCompareExpr))
 	{
@@ -4025,12 +4049,12 @@ cost_qual_eval_walker(Node *node, cost_qual_eval_context *context)
 			 IsA(node, NextValueExpr))
 	{
 		/* Treat all these as having cost 1 */
-		context->total.per_tuple += cpu_operator_cost;
+		cost_add_member(&context->total.per_tuple, cpu_operator_cost);
 	}
 	else if (IsA(node, CurrentOfExpr))
 	{
 		/* Report high cost to prevent selection of anything but TID scan */
-		context->total.startup += disable_cost;
+		cost_add_member(&context->total.startup, disable_cost);
 	}
 	else if (IsA(node, SubLink))
 	{
@@ -4047,8 +4071,8 @@ cost_qual_eval_walker(Node *node, cost_qual_eval_context *context)
 		 */
 		SubPlan    *subplan = (SubPlan *) node;
 
-		context->total.startup += subplan->startup_cost;
-		context->total.per_tuple += subplan->per_call_cost;
+		cost_add(&context->total.startup, &subplan->startup_cost);
+		cost_add(&context->total.per_tuple, &subplan->per_call_cost);
 
 		/*
 		 * We don't want to recurse into the testexpr, because it was already
@@ -4111,8 +4135,8 @@ get_restriction_qual_cost(PlannerInfo *root, RelOptInfo *baserel,
 		/* Include costs of pushed-down clauses */
 		cost_qual_eval(qpqual_cost, param_info->ppi_clauses, root);
 
-		qpqual_cost->startup += baserel->baserestrictcost.startup;
-		qpqual_cost->per_tuple += baserel->baserestrictcost.per_tuple;
+		cost_add(&qpqual_cost->startup, &baserel->baserestrictcost.startup);
+		cost_add(&qpqual_cost->per_tuple, &baserel->baserestrictcost.per_tuple);
 	}
 	else
 		*qpqual_cost = baserel->baserestrictcost;
@@ -5223,8 +5247,8 @@ set_rel_width(PlannerInfo *root, RelOptInfo *rel)
 	ListCell   *lc;
 
 	/* Vars are assumed to have cost zero, but other exprs do not */
-	rel->reltarget->cost.startup = 0;
-	rel->reltarget->cost.per_tuple = 0;
+	cost_zero(&rel->reltarget->cost.startup);
+	cost_zero(&rel->reltarget->cost.per_tuple);
 
 	foreach(lc, rel->reltarget->exprs)
 	{
@@ -5301,8 +5325,8 @@ set_rel_width(PlannerInfo *root, RelOptInfo *rel)
 
 			tuple_width += phinfo->ph_width;
 			cost_qual_eval_node(&cost, (Node *) phv->phexpr, root);
-			rel->reltarget->cost.startup += cost.startup;
-			rel->reltarget->cost.per_tuple += cost.per_tuple;
+			cost_add(&rel->reltarget->cost.startup, &cost.startup);
+			cost_add(&rel->reltarget->cost.per_tuple, &cost.per_tuple);
 		}
 		else
 		{
@@ -5319,8 +5343,8 @@ set_rel_width(PlannerInfo *root, RelOptInfo *rel)
 			tuple_width += item_width;
 			/* Not entirely clear if we need to account for cost, but do so */
 			cost_qual_eval_node(&cost, node, root);
-			rel->reltarget->cost.startup += cost.startup;
-			rel->reltarget->cost.per_tuple += cost.per_tuple;
+			cost_add(&rel->reltarget->cost.startup, &cost.startup);
+			cost_add(&rel->reltarget->cost.per_tuple, &cost.per_tuple);
 		}
 	}
 
@@ -5379,8 +5403,8 @@ set_pathtarget_cost_width(PlannerInfo *root, PathTarget *target)
 	ListCell   *lc;
 
 	/* Vars are assumed to have cost zero, but other exprs do not */
-	target->cost.startup = 0;
-	target->cost.per_tuple = 0;
+	cost_zero(&target->cost.startup);
+	cost_zero(&target->cost.per_tuple);
 
 	foreach(lc, target->exprs)
 	{
@@ -5434,8 +5458,8 @@ set_pathtarget_cost_width(PlannerInfo *root, PathTarget *target)
 
 			/* Account for cost, too */
 			cost_qual_eval_node(&cost, node, root);
-			target->cost.startup += cost.startup;
-			target->cost.per_tuple += cost.per_tuple;
+			cost_add(&target->cost.startup, &cost.startup);
+			cost_add(&target->cost.per_tuple, &cost.per_tuple);
 		}
 	}
 
@@ -5602,4 +5626,179 @@ compute_bitmap_pages(PlannerInfo *root, RelOptInfo *baserel, Path *bitmapqual,
 		*tuple = tuples_fetched;
 
 	return pages_fetched;
+}
+
+void cost_zero(Cost *to)
+{
+	memset(to, 0, sizeof(*to));
+}
+
+void cost_set_sum2(Cost *to, const Cost *from1, const Cost *from2)
+{
+        to->cpu_index_tuple_cost = from1->cpu_index_tuple_cost + from2 ->cpu_index_tuple_cost;
+        to->cpu_operator_cost = from1->cpu_operator_cost + from2->cpu_operator_cost;
+        to->cpu_tuple_cost = from1->cpu_tuple_cost  + from2->cpu_tuple_cost;
+        to->parallel_setup_cost = from1->parallel_setup_cost  + from2->parallel_setup_cost;
+        to->parallel_tuple_cost = from1->parallel_tuple_cost  + from2->parallel_tuple_cost;
+        to->random_page_cost = from1->random_page_cost  + from2->random_page_cost;
+        to->seq_page_cost = from1->seq_page_cost  + from2->seq_page_cost;
+        to->disable_cost = from1->disable_cost  + from2->disable_cost;
+}
+
+void cost_set_sum3(Cost *to, const Cost *from1, const Cost *from2, const Cost *from3)
+{
+        to->cpu_index_tuple_cost =
+		from1->cpu_index_tuple_cost +
+		from2->cpu_index_tuple_cost +
+		from3->cpu_index_tuple_cost;
+        to->cpu_operator_cost =
+		from1->cpu_operator_cost +
+		from2->cpu_operator_cost +
+		from3->cpu_operator_cost;
+        to->cpu_tuple_cost =
+		from1->cpu_tuple_cost +
+		from2->cpu_tuple_cost +
+		from3->cpu_tuple_cost;
+        to->parallel_setup_cost =
+		from1->parallel_setup_cost +
+		from2->parallel_setup_cost +
+		from3->parallel_setup_cost;
+        to->parallel_tuple_cost =
+		from1->parallel_tuple_cost +
+		from2->parallel_tuple_cost +
+		from3->parallel_tuple_cost;
+        to->random_page_cost =
+		from1->random_page_cost +
+		from2->random_page_cost +
+		from3->random_page_cost;
+        to->seq_page_cost =
+		from1->seq_page_cost +
+		from2->seq_page_cost +
+		from3->seq_page_cost;
+        to->disable_cost =
+		from1->disable_cost +
+		from2->disable_cost +
+		from3->disable_cost;
+}
+
+void cost_set_diff(Cost *to, const Cost *from1, const Cost *from2)
+{
+        to->cpu_index_tuple_cost = from1->cpu_index_tuple_cost - from2 ->cpu_index_tuple_cost;
+        to->cpu_operator_cost = from1->cpu_operator_cost - from2->cpu_operator_cost;
+        to->cpu_tuple_cost = from1->cpu_tuple_cost  - from2->cpu_tuple_cost;
+        to->parallel_setup_cost = from1->parallel_setup_cost  - from2->parallel_setup_cost;
+        to->parallel_tuple_cost = from1->parallel_tuple_cost  - from2->parallel_tuple_cost;
+        to->random_page_cost = from1->random_page_cost  - from2->random_page_cost;
+        to->seq_page_cost = from1->seq_page_cost  - from2->seq_page_cost;
+        to->disable_cost = from1->disable_cost  - from2->disable_cost;
+}
+
+void cost_add(Cost *to, const Cost *from1)
+{
+        /* Hack to allow calling append_nonpartial_cost... */
+        if (!from1)
+		return;
+
+        to->cpu_index_tuple_cost += from1->cpu_index_tuple_cost;
+        to->cpu_operator_cost += from1->cpu_operator_cost;
+        to->cpu_tuple_cost += from1->cpu_tuple_cost;
+        to->parallel_setup_cost += from1->parallel_setup_cost;
+        to->parallel_tuple_cost += from1->parallel_tuple_cost;
+        to->random_page_cost += from1->random_page_cost;
+        to->seq_page_cost += from1->seq_page_cost;
+        to->disable_cost += from1->disable_cost;
+}
+
+void cost_add2(Cost *to, const Cost *from1, const Cost *from2)
+{
+        to->cpu_index_tuple_cost +=
+		from1->cpu_index_tuple_cost +
+		from2->cpu_index_tuple_cost;
+        to->cpu_operator_cost +=
+		from1->cpu_operator_cost +
+		from2->cpu_operator_cost;
+        to->cpu_tuple_cost +=
+		from1->cpu_tuple_cost +
+		from2->cpu_tuple_cost;
+        to->parallel_setup_cost +=
+		from1->parallel_setup_cost +
+		from2->parallel_setup_cost;
+        to->parallel_tuple_cost +=
+		from1->parallel_tuple_cost +
+		from2->parallel_tuple_cost;
+        to->random_page_cost +=
+		from1->random_page_cost +
+		from2->random_page_cost;
+        to->seq_page_cost +=
+		from1->seq_page_cost +
+		from2->seq_page_cost;
+        to->disable_cost +=
+		from1->disable_cost +
+		from2->disable_cost;
+}
+
+void cost_add_mul(Cost *to, const Cost *from1, double mul)
+{
+        to->cpu_index_tuple_cost +=
+		mul * from1->cpu_index_tuple_cost;
+        to->cpu_operator_cost +=
+		mul * from1->cpu_operator_cost;
+        to->cpu_tuple_cost +=
+		mul * from1->cpu_tuple_cost;
+        to->parallel_setup_cost +=
+		mul * from1->parallel_setup_cost;
+        to->parallel_tuple_cost +=
+		mul * from1->parallel_tuple_cost;
+        to->random_page_cost +=
+		mul * from1->random_page_cost;
+        to->seq_page_cost +=
+		mul * from1->seq_page_cost;
+        to->disable_cost +=
+		mul * from1->disable_cost;
+}
+
+void cost_sub(Cost *to, const Cost *from1)
+{
+        to->cpu_index_tuple_cost -= from1->cpu_index_tuple_cost;
+        to->cpu_operator_cost -= from1->cpu_operator_cost;
+        to->cpu_tuple_cost -= from1->cpu_tuple_cost;
+        to->parallel_setup_cost -= from1->parallel_setup_cost;
+        to->parallel_tuple_cost -= from1->parallel_tuple_cost;
+        to->random_page_cost -= from1->random_page_cost;
+        to->seq_page_cost -= from1->seq_page_cost;
+        to->disable_cost -= from1->disable_cost;
+}
+
+void cost_mul_scalar(Cost *to, double mul)
+{
+        to->cpu_index_tuple_cost *= mul;
+        to->cpu_operator_cost *= mul;
+        to->cpu_tuple_cost *= mul;
+        to->parallel_setup_cost *= mul;
+        to->parallel_tuple_cost *= mul;
+        to->random_page_cost *= mul;
+        to->seq_page_cost *= mul;
+        to->disable_cost *= mul;
+}
+
+double cost_asscalar(const Cost *to)
+{
+	return to->cpu_index_tuple_cost 
+		+ to->cpu_operator_cost 
+		+ to->cpu_tuple_cost 
+		+ to->parallel_setup_cost 
+		+ to->parallel_tuple_cost 
+		+ to->random_page_cost 
+		+ to->seq_page_cost 
+		+ to->disable_cost;
+}
+
+bool cost_isgt(const Cost *to, const Cost *than)
+{
+	return cost_asscalar(to) > cost_asscalar(than);
+}
+
+bool cost_islt(const Cost *to, const Cost *than)
+{
+	return cost_asscalar(to) < cost_asscalar(than);
 }

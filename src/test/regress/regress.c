@@ -31,6 +31,7 @@
 #include "executor/spi.h"
 #include "miscadmin.h"
 #include "nodes/supportnodes.h"
+#include "optimizer/cost.h"
 #include "optimizer/optimizer.h"
 #include "optimizer/plancat.h"
 #include "port/atomics.h"
@@ -853,8 +854,8 @@ test_support_func(PG_FUNCTION_ARGS)
 		/* Provide some generic estimate */
 		SupportRequestCost *req = (SupportRequestCost *) rawreq;
 
-		req->startup = 0;
-		req->per_tuple = 2 * cpu_operator_cost;
+		cost_zero(&req->startup);
+		cost_add_member_mul(&req->per_tuple, cpu_operator_cost, 2);
 		ret = (Node *) req;
 	}
 

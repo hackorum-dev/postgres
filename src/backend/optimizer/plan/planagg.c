@@ -314,7 +314,7 @@ find_minmax_aggs_walker(Node *node, List **context)
 		mminfo->target = curTarget->expr;
 		mminfo->subroot = NULL; /* don't compute path yet */
 		mminfo->path = NULL;
-		mminfo->pathcost = 0;
+		cost_zero(&mminfo->pathcost);
 		mminfo->param = NULL;
 
 		*context = lappend(*context, mminfo);
@@ -484,8 +484,9 @@ build_minmax_path(PlannerInfo *root, MinMaxAggInfo *mminfo,
 	 * Note: cost calculation here should match
 	 * compare_fractional_path_costs().
 	 */
-	path_cost = sorted_path->startup_cost +
-		path_fraction * (sorted_path->total_cost - sorted_path->startup_cost);
+	cost_set_diff(&path_cost, &sorted_path->total_cost, &sorted_path->startup_cost);
+	cost_mul_scalar(&path_cost, path_fraction);
+	cost_add(&path_cost, &sorted_path->startup_cost);
 
 	/* Save state for further processing */
 	mminfo->subroot = subroot;

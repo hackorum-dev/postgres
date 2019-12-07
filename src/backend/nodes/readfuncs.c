@@ -38,6 +38,7 @@
 #include "nodes/parsenodes.h"
 #include "nodes/plannodes.h"
 #include "nodes/readfuncs.h"
+#include "optimizer/cost.h"
 #include "utils/builtins.h"
 
 
@@ -112,6 +113,12 @@
 	token = pg_strtok(&length);		/* skip :fldname */ \
 	token = pg_strtok(&length);		/* get field value */ \
 	local_node->fldname = atof(token)
+
+/* Read a float field */
+#define READ_COST_FIELD(fldname) \
+	token = pg_strtok(&length);		/* skip :fldname */ \
+	token = pg_strtok(&length);		/* get field value */ \
+	local_node->fldname.disable_cost = atof(token) // XXX
 
 /* Read a boolean field */
 #define READ_BOOL_FIELD(fldname) \
@@ -1534,8 +1541,8 @@ ReadCommonPlan(Plan *local_node)
 {
 	READ_TEMP_LOCALS();
 
-	READ_FLOAT_FIELD(startup_cost);
-	READ_FLOAT_FIELD(total_cost);
+	READ_COST_FIELD(startup_cost);
+	READ_COST_FIELD(total_cost);
 	READ_FLOAT_FIELD(plan_rows);
 	READ_INT_FIELD(plan_width);
 	READ_BOOL_FIELD(parallel_aware);
@@ -2466,8 +2473,8 @@ _readSubPlan(void)
 	READ_NODE_FIELD(setParam);
 	READ_NODE_FIELD(parParam);
 	READ_NODE_FIELD(args);
-	READ_FLOAT_FIELD(startup_cost);
-	READ_FLOAT_FIELD(per_call_cost);
+	READ_COST_FIELD(startup_cost);
+	READ_COST_FIELD(per_call_cost);
 
 	READ_DONE();
 }

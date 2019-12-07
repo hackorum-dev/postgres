@@ -656,7 +656,21 @@ extern bool equal(const void *a, const void *b);
  * depend on them...
  */
 typedef double Selectivity;		/* fraction of tuples a qualifier will pass */
-typedef double Cost;			/* execution cost (in page-access units) */
+
+/* execution cost (in page-access units) */
+/* these could be ints to be multipled by associated cost parameter */
+typedef struct {
+	double cpu_index_tuple_cost;
+	double cpu_operator_cost;
+	double cpu_tuple_cost;
+	double parallel_setup_cost;
+	// bool parallel_setup_cost;
+	double parallel_tuple_cost;
+	double random_page_cost;
+	double seq_page_cost;
+	double disable_cost;
+	// bool disable_cost;
+} Cost;
 
 
 /*

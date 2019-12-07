@@ -45,7 +45,7 @@ typedef enum
  */
 
 /* parameter variables and flags (see also optimizer.h) */
-extern PGDLLIMPORT Cost disable_cost;
+extern PGDLLIMPORT double disable_cost;
 extern PGDLLIMPORT int max_parallel_workers_per_gather;
 extern PGDLLIMPORT bool enable_seqscan;
 extern PGDLLIMPORT bool enable_indexscan;
@@ -98,8 +98,8 @@ extern void cost_resultscan(Path *path, PlannerInfo *root,
 							RelOptInfo *baserel, ParamPathInfo *param_info);
 extern void cost_recursive_union(Path *runion, Path *nrterm, Path *rterm);
 extern void cost_sort(Path *path, PlannerInfo *root,
-					  List *pathkeys, Cost input_cost, double tuples, int width,
-					  Cost comparison_cost, int sort_mem,
+					  List *pathkeys, Cost *input_cost, double tuples, int width,
+					  Cost *comparison_cost, int sort_mem,
 					  double limit_tuples);
 extern void cost_append(AppendPath *path);
 extern void cost_merge_append(Path *path, PlannerInfo *root,
@@ -113,7 +113,7 @@ extern void cost_agg(Path *path, PlannerInfo *root,
 					 AggStrategy aggstrategy, const AggClauseCosts *aggcosts,
 					 int numGroupCols, double numGroups,
 					 List *quals,
-					 Cost input_startup_cost, Cost input_total_cost,
+					 Cost *input_startup_cost, Cost *input_total_cost,
 					 double input_tuples);
 extern void cost_windowagg(Path *path, PlannerInfo *root,
 						   List *windowFuncs, int numPartCols, int numOrderCols,
@@ -196,5 +196,28 @@ extern void set_foreign_size_estimates(PlannerInfo *root, RelOptInfo *rel);
 extern PathTarget *set_pathtarget_cost_width(PlannerInfo *root, PathTarget *target);
 extern double compute_bitmap_pages(PlannerInfo *root, RelOptInfo *baserel,
 								   Path *bitmapqual, int loop_count, Cost *cost, double *tuple);
+#define cost_add_member(cost,member) (cost)->member += member
+#define cost_add_member_mul(cost,member,mul) (cost)->member += member*mul
+#define cost_add_member_mul_spc(cost,spc,member,mul) (cost)->member += spc##member*mul
+
+#define cost_set_member(cost,member) do{ cost_zero(cost); (cost)->member = member; } while(0);
+#define cost_set_member_mul(cost,member,mul) do{ cost_zero(cost); (cost)->member = member*mul; } while(0);
+#define cost_set_member_mul_spc(cost,spc,member,mul) do{ cost_zero(cost); (cost)->member = spc##member*mul; } while(0);
+#define cost_set_member_add(cost,member,from1) do{ *cost = *from1; (cost)->member += member; } while(0);
+
+extern void cost_zero(Cost *to);
+extern void cost_set_sum2(Cost *to, const Cost *from1, const Cost *from2);
+extern void cost_set_sum3(Cost *to, const Cost *from1, const Cost *from2, const Cost *from3);
+extern void cost_set_diff(Cost *to, const Cost *from1, const Cost *from2);
+extern void cost_add(Cost *to, const Cost *from);
+extern void cost_add2(Cost *to, const Cost *from1, const Cost *from2);
+extern void cost_add_mul(Cost *to, const Cost *from, double multiplier);
+extern void cost_sub(Cost *to, const Cost *from);
+extern void cost_mul_scalar(Cost *to, double by);
+
+/* Comparison */
+extern bool cost_isgt(const Cost *to, const Cost *than);
+extern bool cost_islt(const Cost *to, const Cost *than);
+extern double cost_asscalar(const Cost *to);
 
 #endif							/* COST_H */

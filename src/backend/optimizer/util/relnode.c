@@ -233,8 +233,8 @@ build_simple_rel(PlannerInfo *root, int relid, RelOptInfo *parent)
 	rel->unique_for_rels = NIL;
 	rel->non_unique_for_rels = NIL;
 	rel->baserestrictinfo = NIL;
-	rel->baserestrictcost.startup = 0;
-	rel->baserestrictcost.per_tuple = 0;
+	cost_zero(&rel->baserestrictcost.startup);
+	cost_zero(&rel->baserestrictcost.per_tuple);
 	rel->baserestrict_min_security = UINT_MAX;
 	rel->joininfo = NIL;
 	rel->has_eclass_joins = false;
@@ -645,8 +645,8 @@ build_join_rel(PlannerInfo *root,
 	joinrel->unique_for_rels = NIL;
 	joinrel->non_unique_for_rels = NIL;
 	joinrel->baserestrictinfo = NIL;
-	joinrel->baserestrictcost.startup = 0;
-	joinrel->baserestrictcost.per_tuple = 0;
+	cost_zero(&joinrel->baserestrictcost.startup);
+	cost_zero(&joinrel->baserestrictcost.per_tuple);
 	joinrel->baserestrict_min_security = UINT_MAX;
 	joinrel->joininfo = NIL;
 	joinrel->has_eclass_joins = false;
@@ -822,8 +822,8 @@ build_child_join_rel(PlannerInfo *root, RelOptInfo *outer_rel,
 	joinrel->fdwroutine = NULL;
 	joinrel->fdw_private = NULL;
 	joinrel->baserestrictinfo = NIL;
-	joinrel->baserestrictcost.startup = 0;
-	joinrel->baserestrictcost.per_tuple = 0;
+	cost_zero(&joinrel->baserestrictcost.startup);
+	cost_zero(&joinrel->baserestrictcost.per_tuple);
 	joinrel->joininfo = NIL;
 	joinrel->has_eclass_joins = false;
 	joinrel->consider_partitionwise_join = false;	/* might get changed later */

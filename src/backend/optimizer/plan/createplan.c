@@ -3211,7 +3211,7 @@ create_bitmap_subplan(PlannerInfo *root, Path *bitmapqual,
 											  iscan->indexqual,
 											  iscan->indexqualorig);
 		/* and set its cost/width fields appropriately */
-		plan->startup_cost = 0.0;
+		cost_zero(&plan->startup_cost);
 		plan->total_cost = ipath->indextotalcost;
 		plan->plan_rows =
 			clamp_row_est(ipath->indexselectivity * ipath->path.parent->tuples);
@@ -4197,7 +4197,7 @@ create_mergejoin_plan(PlannerInfo *root,
 		 * sync with final_cost_mergejoin.)
 		 */
 		copy_plan_costsize(matplan, inner_plan);
-		matplan->total_cost += cpu_operator_cost * matplan->plan_rows;
+		cost_add_member_mul(&matplan->total_cost, cpu_operator_cost, matplan->plan_rows);
 
 		inner_plan = matplan;
 	}
@@ -4994,7 +4994,7 @@ order_qual_clauses(PlannerInfo *root, List *clauses)
 			 * security level, which is not so great, but we can alleviate
 			 * that risk by applying the cost limit cutoff.
 			 */
-			if (rinfo->leakproof && items[i].cost < 10 * cpu_operator_cost)
+			if (rinfo->leakproof && cost_asscalar(&items[i].cost) < 10 * cpu_operator_cost)
 				items[i].security_level = 0;
 			else
 				items[i].security_level = rinfo->security_level;
@@ -5021,7 +5021,7 @@ order_qual_clauses(PlannerInfo *root, List *clauses)
 
 			if (newitem.security_level > olditem->security_level ||
 				(newitem.security_level == olditem->security_level &&
-				 newitem.cost >= olditem->cost))
+				 !cost_islt(&newitem.cost, &olditem->cost)))
 				break;
 			items[j] = *olditem;
 		}
@@ -5083,12 +5083,13 @@ label_sort_with_costsize(PlannerInfo *root, Sort *plan, double limit_tuples)
 {
 	Plan	   *lefttree = plan->plan.lefttree;
 	Path		sort_path;		/* dummy for result of cost_sort */
+	Cost		zero = {0};
 
 	cost_sort(&sort_path, root, NIL,
-			  lefttree->total_cost,
+			  &lefttree->total_cost,
 			  lefttree->plan_rows,
 			  lefttree->plan_width,
-			  0.0,
+			  &zero,
 			  work_mem,
 			  limit_tuples);
 	plan->plan.startup_cost = sort_path.startup_cost;

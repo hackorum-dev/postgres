@@ -1025,6 +1025,7 @@ choose_hashed_setop(PlannerInfo *root, List *groupClauses,
 	Path		hashed_p;
 	Path		sorted_p;
 	double		tuple_fraction;
+	Cost 		zerocost = {0};
 
 	/* Check whether the operators support sorting or hashing */
 	can_sort = grouping_is_sortable(groupClauses);
@@ -1071,7 +1072,7 @@ choose_hashed_setop(PlannerInfo *root, List *groupClauses,
 	cost_agg(&hashed_p, root, AGG_HASHED, NULL,
 			 numGroupCols, dNumGroups,
 			 NIL,
-			 input_path->startup_cost, input_path->total_cost,
+			 &input_path->startup_cost, &input_path->total_cost,
 			 input_path->rows);
 
 	/*
@@ -1081,9 +1082,9 @@ choose_hashed_setop(PlannerInfo *root, List *groupClauses,
 	sorted_p.startup_cost = input_path->startup_cost;
 	sorted_p.total_cost = input_path->total_cost;
 	/* XXX cost_sort doesn't actually look at pathkeys, so just pass NIL */
-	cost_sort(&sorted_p, root, NIL, sorted_p.total_cost,
+	cost_sort(&sorted_p, root, NIL, &sorted_p.total_cost,
 			  input_path->rows, input_path->pathtarget->width,
-			  0.0, work_mem, -1.0);
+			  &zerocost, work_mem, -1.0);
 	cost_group(&sorted_p, root, numGroupCols, dNumGroups,
 			   NIL,
 			   sorted_p.startup_cost, sorted_p.total_cost,

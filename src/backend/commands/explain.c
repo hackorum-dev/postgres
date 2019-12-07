@@ -24,6 +24,7 @@
 #include "nodes/extensible.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
+#include "optimizer/cost.h"
 #include "parser/parsetree.h"
 #include "rewrite/rewriteHandler.h"
 #include "storage/bufmgr.h"
@@ -61,6 +62,7 @@ static void report_triggers(ResultRelInfo *rInfo, bool show_relname,
 							ExplainState *es);
 static double elapsed_time(instr_time *starttime);
 static bool ExplainPreScanNode(PlanState *planstate, Bitmapset **rels_used);
+static void explain_verbose_costs(Cost *cost, ExplainState *es);
 static void ExplainNode(PlanState *planstate, List *ancestors,
 						const char *relationship, const char *plan_name,
 						ExplainState *es);
@@ -1041,6 +1043,26 @@ ExplainPreScanNode(PlanState *planstate, Bitmapset **rels_used)
 	return planstate_tree_walker(planstate, ExplainPreScanNode, rels_used);
 }
 
+static void explain_verbose_costs(Cost *cost, ExplainState *es)
+{
+	ExplainPropertyFloat("cpu_index_tuple_cost", NULL,
+		cost->cpu_index_tuple_cost, 2, es);
+	ExplainPropertyFloat("cpu_operator_cost", NULL,
+		cost->cpu_operator_cost, 2, es);
+	ExplainPropertyFloat("cpu_tuple_cost", NULL,
+		cost->cpu_tuple_cost, 2, es);
+	ExplainPropertyFloat("parallel_setup_cost", NULL,
+		cost->parallel_setup_cost, 2, es);
+	ExplainPropertyFloat("parallel_tuple_cost", NULL,
+		cost->parallel_tuple_cost, 2, es);
+	ExplainPropertyFloat("random_page_cost", NULL,
+		cost->random_page_cost, 2, es);
+	ExplainPropertyFloat("seq_page_cost", NULL,
+		cost->seq_page_cost, 2, es);
+	ExplainPropertyFloat("disable_cost", NULL,
+		cost->disable_cost, 2, es);
+}
+
 /*
  * ExplainNode -
  *	  Appends a description of a plan tree to es->str
@@ -1473,18 +1495,47 @@ ExplainNode(PlanState *planstate, List *ancestors,
 
 	if (es->costs)
 	{
-		if (es->format == EXPLAIN_FORMAT_TEXT)
+		if (es->format == EXPLAIN_FORMAT_TEXT && !es->verbose)
 		{
 			appendStringInfo(es->str, "  (cost=%.2f..%.2f rows=%.0f width=%d)",
-							 plan->startup_cost, plan->total_cost,
+							 cost_asscalar(&plan->startup_cost),
+							 cost_asscalar(&plan->total_cost),
 							 plan->plan_rows, plan->plan_width);
+		} else if (es->format == EXPLAIN_FORMAT_TEXT) { /* && es->verbose */
+			// XXX: other fields
+			appendStringInfo(es->str, "  (cost=Seq page %.2f Rand page %2f CPU tuple: %2f CPU oper %2f"\
+										"..Seq page %.2f Rand page %2f CPU tuple: %2f CPU oper %2f"\
+										" rows=%.0f width=%d)",
+							 plan->startup_cost.seq_page_cost,
+							 plan->startup_cost.random_page_cost,
+							 plan->startup_cost.cpu_tuple_cost,
+							 plan->startup_cost.cpu_operator_cost,
+							 plan->total_cost.seq_page_cost,
+							 plan->total_cost.random_page_cost,
+							 plan->total_cost.cpu_tuple_cost,
+							 plan->total_cost.cpu_operator_cost,
+							 plan->plan_rows, plan->plan_width);
+		} else if (!es->verbose) {
+			ExplainPropertyFloat("Startup Cost", NULL, cost_asscalar(&plan->startup_cost),
+								 2, es);
+			ExplainPropertyFloat("Total Cost", NULL, cost_asscalar(&plan->total_cost),
+								 2, es);
+
+			ExplainPropertyFloat("Plan Rows", NULL, plan->plan_rows,
+								 0, es);
+			ExplainPropertyInteger("Plan Width", NULL, plan->plan_width,
+								   es);
 		}
-		else
+		else /* !EXPLAIN_FORMAT_TEXT text && es->verbose */
 		{
-			ExplainPropertyFloat("Startup Cost", NULL, plan->startup_cost,
-								 2, es);
-			ExplainPropertyFloat("Total Cost", NULL, plan->total_cost,
-								 2, es);
+			ExplainOpenGroup("Startup Cost", "Startup Cost", false, es);
+			explain_verbose_costs(&plan->startup_cost, es);
+			ExplainCloseGroup("Startup Cost", "Startup Cost", false, es);
+
+			ExplainOpenGroup("Total Cost", "Total Cost", true, es);
+			explain_verbose_costs(&plan->total_cost, es);
+			ExplainCloseGroup("Total Cost", "Total Cost", true, es);
+
 			ExplainPropertyFloat("Plan Rows", NULL, plan->plan_rows,
 								 0, es);
 			ExplainPropertyInteger("Plan Width", NULL, plan->plan_width,

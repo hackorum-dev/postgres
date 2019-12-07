@@ -30,6 +30,7 @@
 #include "optimizer/geqo_copy.h"
 #include "optimizer/geqo_pool.h"
 #include "optimizer/geqo_recombination.h"
+#include "optimizer/cost.h"
 
 
 static int	compare(const void *arg1, const void *arg2);
@@ -108,7 +109,7 @@ random_init_pool(PlannerInfo *root, Pool *pool)
 		init_tour(root, chromo[i].string, pool->string_length);
 		pool->data[i].worth = geqo_eval(root, chromo[i].string,
 										pool->string_length);
-		if (pool->data[i].worth < DBL_MAX)
+		if (cost_asscalar(&pool->data[i].worth) < disable_cost)
 			i++;
 		else
 		{
@@ -147,9 +148,9 @@ compare(const void *arg1, const void *arg2)
 	const Chromosome *chromo1 = (const Chromosome *) arg1;
 	const Chromosome *chromo2 = (const Chromosome *) arg2;
 
-	if (chromo1->worth == chromo2->worth)
+	if (cost_asscalar(&chromo1->worth) == cost_asscalar(&chromo2->worth))
 		return 0;
-	else if (chromo1->worth > chromo2->worth)
+	else if (cost_isgt(&chromo1->worth, &chromo2->worth))
 		return 1;
 	else
 		return -1;
@@ -195,7 +196,7 @@ spread_chromo(PlannerInfo *root, Chromosome *chromo, Pool *pool)
 				tmp_chromo;
 
 	/* new chromo is so bad we can't use it */
-	if (chromo->worth > pool->data[pool->size - 1].worth)
+	if (cost_isgt(&chromo->worth, &pool->data[pool->size - 1].worth))
 		return;
 
 	/* do a binary search to find the index of the new chromo */
@@ -209,11 +210,11 @@ spread_chromo(PlannerInfo *root, Chromosome *chromo, Pool *pool)
 	{
 		/* these 4 cases find a new location */
 
-		if (chromo->worth <= pool->data[top].worth)
+		if (!cost_isgt(&chromo->worth, &pool->data[top].worth))
 			index = top;
-		else if (chromo->worth == pool->data[mid].worth)
+		else if (cost_asscalar(&chromo->worth) == cost_asscalar(&pool->data[mid].worth))
 			index = mid;
-		else if (chromo->worth == pool->data[bot].worth)
+		else if (cost_asscalar(&chromo->worth) == cost_asscalar(&pool->data[bot].worth))
 			index = bot;
 		else if (bot - top <= 1)
 			index = bot;
@@ -224,7 +225,7 @@ spread_chromo(PlannerInfo *root, Chromosome *chromo, Pool *pool)
 		 * yet been found.
 		 */
 
-		else if (chromo->worth < pool->data[mid].worth)
+		else if (cost_islt(&chromo->worth, &pool->data[mid].worth))
 		{
 			bot = mid;
 			mid = top + ((bot - top) / 2);

@@ -447,8 +447,8 @@ add_placeholders_to_joinrel(PlannerInfo *root, RelOptInfo *joinrel,
 
 					cost_qual_eval_node(&cost, (Node *) phinfo->ph_var->phexpr,
 										root);
-					joinrel->reltarget->cost.startup += cost.startup;
-					joinrel->reltarget->cost.per_tuple += cost.per_tuple;
+					cost_add(&joinrel->reltarget->cost.startup, &cost.startup);
+					cost_add(&joinrel->reltarget->cost.per_tuple, &cost.per_tuple);
 				}
 
 				/* Adjust joinrel's direct_lateral_relids as needed */

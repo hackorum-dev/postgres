@@ -455,10 +455,11 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 		 * Ideally we'd use cost_gather here, but setting up dummy path data
 		 * to satisfy it doesn't seem much cleaner than knowing what it does.
 		 */
-		gather->plan.startup_cost = top_plan->startup_cost +
-			parallel_setup_cost;
-		gather->plan.total_cost = top_plan->total_cost +
-			parallel_setup_cost + parallel_tuple_cost * top_plan->plan_rows;
+		cost_set_member_add(&gather->plan.startup_cost, parallel_setup_cost, &top_plan->startup_cost);
+
+		cost_set_member_mul(&gather->plan.total_cost, parallel_tuple_cost, top_plan->plan_rows);
+		cost_add_member(&gather->plan.total_cost, parallel_setup_cost);
+		cost_add(&gather->plan.total_cost, &top_plan->total_cost);
 		gather->plan.plan_rows = top_plan->plan_rows;
 		gather->plan.plan_width = top_plan->plan_width;
 		gather->plan.parallel_aware = false;
@@ -533,7 +534,7 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 
 	result->jitFlags = PGJIT_NONE;
 	if (jit_enabled && jit_above_cost >= 0 &&
-		top_plan->total_cost > jit_above_cost)
+		cost_asscalar(&top_plan->total_cost) > jit_above_cost)
 	{
 		result->jitFlags |= PGJIT_PERFORM;
 
@@ -541,10 +542,10 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 		 * Decide how much effort should be put into generating better code.
 		 */
 		if (jit_optimize_above_cost >= 0 &&
-			top_plan->total_cost > jit_optimize_above_cost)
+			cost_asscalar(&top_plan->total_cost) > jit_optimize_above_cost)
 			result->jitFlags |= PGJIT_OPT3;
 		if (jit_inline_above_cost >= 0 &&
-			top_plan->total_cost > jit_inline_above_cost)
+			cost_asscalar(&top_plan->total_cost) > jit_inline_above_cost)
 			result->jitFlags |= PGJIT_INLINE;
 
 		/*
@@ -5790,7 +5791,7 @@ make_sort_input_target(PlannerInfo *root,
 				 * cpu_operator_cost".  Note this will take in any PL function
 				 * with default cost.
 				 */
-				if (cost.per_tuple > 10 * cpu_operator_cost)
+				if (cost_asscalar(&cost.per_tuple) > 10 * cpu_operator_cost)
 				{
 					postpone_col[i] = true;
 					have_expensive = true;
@@ -6206,13 +6207,14 @@ plan_cluster_use_sort(Oid tableOid, Oid indexOid)
 	 * expressions each time.  (XXX that's pretty inefficient...)
 	 */
 	cost_qual_eval(&indexExprCost, indexInfo->indexprs, root);
-	comparisonCost = 2.0 * (indexExprCost.startup + indexExprCost.per_tuple);
+	cost_set_sum2(&comparisonCost, &indexExprCost.startup, &indexExprCost.per_tuple);
+	cost_mul_scalar(&comparisonCost, 2);
 
 	/* Estimate the cost of seq scan + sort */
 	seqScanPath = create_seqscan_path(root, rel, NULL, 0);
 	cost_sort(&seqScanAndSortPath, root, NIL,
-			  seqScanPath->total_cost, rel->tuples, rel->reltarget->width,
-			  comparisonCost, maintenance_work_mem, -1.0);
+			  &seqScanPath->total_cost, rel->tuples, rel->reltarget->width,
+			  &comparisonCost, maintenance_work_mem, -1.0);
 
 	/* Estimate the cost of index scan */
 	indexScanPath = create_index_path(root, indexInfo,
@@ -6220,7 +6222,7 @@ plan_cluster_use_sort(Oid tableOid, Oid indexOid)
 									  ForwardScanDirection, false,
 									  NULL, 1.0, false);
 
-	return (seqScanAndSortPath.total_cost < indexScanPath->path.total_cost);
+	return cost_islt(&seqScanAndSortPath.total_cost, &indexScanPath->path.total_cost);
 }
 
 /*

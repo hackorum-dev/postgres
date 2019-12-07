@@ -62,6 +62,7 @@
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/optimizer.h"
+#include "optimizer/cost.h"
 #include "parser/analyze.h"
 #include "parser/parsetree.h"
 #include "storage/lmgr.h"
@@ -1082,7 +1083,7 @@ cached_plan_cost(CachedPlan *plan, bool include_planner)
 		if (plannedstmt->commandType == CMD_UTILITY)
 			continue;			/* Ignore utility statements */
 
-		result += plannedstmt->planTree->total_cost;
+		result += cost_asscalar(&plannedstmt->planTree->total_cost);
 
 		if (include_planner)
 		{

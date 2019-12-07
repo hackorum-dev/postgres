@@ -18,6 +18,7 @@
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/appendinfo.h"
+#include "optimizer/cost.h"
 #include "parser/parsetree.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
@@ -461,7 +462,7 @@ adjust_appendrel_attrs_mutator(Node *node,
 		 * don't reset left_ec/right_ec: each child variable is implicitly
 		 * equivalent to its parent, so still a member of the same EC if any.
 		 */
-		newinfo->eval_cost.startup = -1;
+		cost_zero(&newinfo->eval_cost.startup); // XXX
 		newinfo->norm_selec = -1;
 		newinfo->outer_selec = -1;
 		newinfo->left_em = NULL;

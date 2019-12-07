@@ -29,6 +29,7 @@
 #include "optimizer/joininfo.h"
 #include "optimizer/pathnode.h"
 #include "optimizer/paths.h"
+#include "optimizer/cost.h"
 #include "utils/memutils.h"
 
 
@@ -62,7 +63,7 @@ geqo_eval(PlannerInfo *root, Gene *tour, int num_gene)
 	Cost		fitness;
 	int			savelength;
 	struct HTAB *savehash;
-
+	extern double disable_cost;
 	/*
 	 * Create a private memory context that will hold all temp storage
 	 * allocated inside gimme_tree().
@@ -115,7 +116,7 @@ geqo_eval(PlannerInfo *root, Gene *tour, int num_gene)
 		fitness = best_path->total_cost;
 	}
 	else
-		fitness = DBL_MAX;
+		cost_set_member(&fitness, disable_cost);
 
 	/*
 	 * Restore join_rel_list to its former state, and put back original

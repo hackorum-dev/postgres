@@ -32,6 +32,7 @@
 #include "miscadmin.h"
 #include "nodes/extensible.h"
 #include "nodes/pathnodes.h"
+#include "optimizer/cost.h"
 #include "utils/datum.h"
 
 
@@ -449,8 +450,10 @@ _equalSubPlan(const SubPlan *a, const SubPlan *b)
 	COMPARE_NODE_FIELD(setParam);
 	COMPARE_NODE_FIELD(parParam);
 	COMPARE_NODE_FIELD(args);
-	COMPARE_SCALAR_FIELD(startup_cost);
-	COMPARE_SCALAR_FIELD(per_call_cost);
+	if (cost_asscalar(&a->startup_cost) != cost_asscalar(&b->startup_cost))
+		return false;
+	if (cost_asscalar(&a->per_call_cost) != cost_asscalar(&b->per_call_cost))
+		return false;
 
 	return true;
 }

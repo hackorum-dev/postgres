@@ -1372,7 +1372,7 @@ choose_bitmap_and(PlannerInfo *root, RelOptInfo *rel, List *paths)
 	PathClauseUsage *pathinfo;
 	List	   *clauselist;
 	List	   *bestpaths = NIL;
-	Cost		bestcost = 0;
+	Cost		bestcost = {0};
 	int			i,
 				j;
 	ListCell   *l;
@@ -1469,7 +1469,7 @@ choose_bitmap_and(PlannerInfo *root, RelOptInfo *rel, List *paths)
 
 			cost_bitmap_tree_node(pathinfo->path, &ncost, &nselec);
 			cost_bitmap_tree_node(pathinfoarray[i]->path, &ocost, &oselec);
-			if (ncost < ocost)
+			if (cost_islt(&ncost, &ocost))
 				pathinfoarray[i] = pathinfo;
 		}
 		else
@@ -1537,7 +1537,7 @@ choose_bitmap_and(PlannerInfo *root, RelOptInfo *rel, List *paths)
 			/* tentatively add new path to paths, so we can estimate cost */
 			paths = lappend(paths, pathinfo->path);
 			newcost = bitmap_and_cost_est(root, rel, paths);
-			if (newcost < costsofar)
+			if (cost_islt(&newcost, &costsofar))
 			{
 				/* keep new path in paths, update subsidiary variables */
 				costsofar = newcost;
@@ -1554,7 +1554,7 @@ choose_bitmap_and(PlannerInfo *root, RelOptInfo *rel, List *paths)
 		}
 
 		/* Keep the cheapest AND-group (or singleton) */
-		if (i == 0 || costsofar < bestcost)
+		if (i == 0 || cost_islt(&costsofar, &bestcost))
 		{
 			bestpaths = paths;
 			bestcost = costsofar;
@@ -1586,9 +1586,9 @@ path_usage_comparator(const void *a, const void *b)
 	/*
 	 * If costs are the same, sort by selectivity.
 	 */
-	if (acost < bcost)
+	if (cost_islt(&acost, &bcost))
 		return -1;
-	if (acost > bcost)
+	if (cost_isgt(&acost, &bcost))
 		return 1;
 
 	if (aselec < bselec)

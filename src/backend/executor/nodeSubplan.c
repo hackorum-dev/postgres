@@ -35,6 +35,7 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
+#include "optimizer/cost.h"
 #include "utils/array.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
@@ -1353,10 +1354,12 @@ ExecInitAlternativeSubPlan(AlternativeSubPlan *asplan, PlanState *parent)
 	subplan1 = (SubPlan *) linitial(asplan->subplans);
 	subplan2 = (SubPlan *) lsecond(asplan->subplans);
 
-	cost1 = subplan1->startup_cost + num_calls * subplan1->per_call_cost;
-	cost2 = subplan2->startup_cost + num_calls * subplan2->per_call_cost;
+	cost1 = subplan1->startup_cost;
+	cost_add_mul(&cost1, &subplan1->per_call_cost, num_calls);
+	cost2 = subplan2->startup_cost;
+	cost_add_mul(&cost2, &subplan2->per_call_cost, num_calls);
 
-	if (cost1 < cost2)
+	if (cost_islt(&cost1, &cost2))
 		asstate->active = 0;
 	else
 		asstate->active = 1;

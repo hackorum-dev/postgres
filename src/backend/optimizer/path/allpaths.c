@@ -1419,7 +1419,7 @@ add_paths_to_append_rel(PlannerInfo *root, RelOptInfo *rel,
 			}
 			else if (nppath == NULL ||
 					 (cheapest_partial_path != NULL &&
-					  cheapest_partial_path->total_cost < nppath->total_cost))
+					  cost_islt(&cheapest_partial_path->total_cost, &nppath->total_cost)))
 			{
 				/* Partial path is cheaper or the only option. */
 				Assert(cheapest_partial_path != NULL);

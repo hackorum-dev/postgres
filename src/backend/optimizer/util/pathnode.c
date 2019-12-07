@@ -58,6 +58,8 @@ static List *reparameterize_pathlist_by_child(PlannerInfo *root,
 											  RelOptInfo *child_rel);
 
 
+static Cost zerocost = {0};
+
 /*****************************************************************************
  *		MISC. PATH UTILITIES
  *****************************************************************************/
@@ -72,33 +74,33 @@ compare_path_costs(Path *path1, Path *path2, CostSelector criterion)
 {
 	if (criterion == STARTUP_COST)
 	{
-		if (path1->startup_cost < path2->startup_cost)
+		if (cost_asscalar(&path1->startup_cost) < cost_asscalar(&path2->startup_cost))
 			return -1;
-		if (path1->startup_cost > path2->startup_cost)
+		if (cost_asscalar(&path1->startup_cost) > cost_asscalar(&path2->startup_cost))
 			return +1;
 
 		/*
 		 * If paths have the same startup cost (not at all unlikely), order
 		 * them by total cost.
 		 */
-		if (path1->total_cost < path2->total_cost)
+		if (cost_asscalar(&path1->total_cost) < cost_asscalar(&path2->total_cost))
 			return -1;
-		if (path1->total_cost > path2->total_cost)
+		if (cost_asscalar(&path1->total_cost) > cost_asscalar(&path2->total_cost))
 			return +1;
 	}
 	else
 	{
-		if (path1->total_cost < path2->total_cost)
+		if (cost_asscalar(&path1->total_cost) < cost_asscalar(&path2->total_cost))
 			return -1;
-		if (path1->total_cost > path2->total_cost)
+		if (cost_asscalar(&path1->total_cost) > cost_asscalar(&path2->total_cost))
 			return +1;
 
 		/*
 		 * If paths have the same total cost, order them by startup cost.
 		 */
-		if (path1->startup_cost < path2->startup_cost)
+		if (cost_asscalar(&path1->startup_cost) < cost_asscalar(&path2->startup_cost))
 			return -1;
-		if (path1->startup_cost > path2->startup_cost)
+		if (cost_asscalar(&path1->startup_cost) > cost_asscalar(&path2->startup_cost))
 			return +1;
 	}
 	return 0;
@@ -122,13 +124,17 @@ compare_fractional_path_costs(Path *path1, Path *path2,
 
 	if (fraction <= 0.0 || fraction >= 1.0)
 		return compare_path_costs(path1, path2, TOTAL_COST);
-	cost1 = path1->startup_cost +
-		fraction * (path1->total_cost - path1->startup_cost);
-	cost2 = path2->startup_cost +
-		fraction * (path2->total_cost - path2->startup_cost);
-	if (cost1 < cost2)
+	cost_set_diff(&cost1, &path1->total_cost, &path1->startup_cost);
+	cost_mul_scalar(&cost1, fraction);
+	cost_add(&cost1, &path1->startup_cost);
+
+	cost_set_diff(&cost2, &path2->total_cost, &path2->startup_cost);
+	cost_mul_scalar(&cost2, fraction);
+	cost_add(&cost2, &path2->startup_cost);
+
+	if (cost_asscalar(&cost1) < cost_asscalar(&cost2))
 		return -1;
-	if (cost1 > cost2)
+	if (cost_asscalar(&cost1) > cost_asscalar(&cost2))
 		return +1;
 	return 0;
 }
@@ -172,11 +178,11 @@ compare_path_costs_fuzzily(Path *path1, Path *path2, double fuzz_factor)
 	 * Check total cost first since it's more likely to be different; many
 	 * paths have zero startup cost.
 	 */
-	if (path1->total_cost > path2->total_cost * fuzz_factor)
+	if (cost_asscalar(&path1->total_cost) > cost_asscalar(&path2->total_cost) * fuzz_factor)
 	{
 		/* path1 fuzzily worse on total cost */
 		if (CONSIDER_PATH_STARTUP_COST(path1) &&
-			path2->startup_cost > path1->startup_cost * fuzz_factor)
+			cost_asscalar(&path2->startup_cost) > cost_asscalar(&path1->startup_cost) * fuzz_factor)
 		{
 			/* ... but path2 fuzzily worse on startup, so DIFFERENT */
 			return COSTS_DIFFERENT;
@@ -184,11 +190,11 @@ compare_path_costs_fuzzily(Path *path1, Path *path2, double fuzz_factor)
 		/* else path2 dominates */
 		return COSTS_BETTER2;
 	}
-	if (path2->total_cost > path1->total_cost * fuzz_factor)
+	if (cost_asscalar(&path2->total_cost) > cost_asscalar(&path1->total_cost) * fuzz_factor)
 	{
 		/* path2 fuzzily worse on total cost */
 		if (CONSIDER_PATH_STARTUP_COST(path2) &&
-			path1->startup_cost > path2->startup_cost * fuzz_factor)
+			cost_asscalar(&path1->startup_cost) > cost_asscalar(&path2->startup_cost) * fuzz_factor)
 		{
 			/* ... but path1 fuzzily worse on startup, so DIFFERENT */
 			return COSTS_DIFFERENT;
@@ -197,12 +203,12 @@ compare_path_costs_fuzzily(Path *path1, Path *path2, double fuzz_factor)
 		return COSTS_BETTER1;
 	}
 	/* fuzzily the same on total cost ... */
-	if (path1->startup_cost > path2->startup_cost * fuzz_factor)
+	if (cost_asscalar(&path1->startup_cost) > cost_asscalar(&path2->startup_cost) * fuzz_factor)
 	{
 		/* ... but path1 fuzzily worse on startup, so path2 wins */
 		return COSTS_BETTER2;
 	}
-	if (path2->startup_cost > path1->startup_cost * fuzz_factor)
+	if (cost_asscalar(&path2->startup_cost) > cost_asscalar(&path1->startup_cost) * fuzz_factor)
 	{
 		/* ... but path2 fuzzily worse on startup, so path1 wins */
 		return COSTS_BETTER1;
@@ -596,7 +602,7 @@ add_path(RelOptInfo *parent_rel, Path *new_path)
 		else
 		{
 			/* new belongs after this old path if it has cost >= old's */
-			if (new_path->total_cost >= old_path->total_cost)
+			if (cost_asscalar(&new_path->total_cost) >= cost_asscalar(&old_path->total_cost))
 				insert_at = foreach_current_index(p1) + 1;
 		}
 
@@ -668,10 +674,10 @@ add_path_precheck(RelOptInfo *parent_rel,
 		 *
 		 * Cost comparisons here should match compare_path_costs_fuzzily.
 		 */
-		if (total_cost > old_path->total_cost * STD_FUZZ_FACTOR)
+		if (cost_asscalar(&total_cost) > cost_asscalar(&old_path->total_cost) * STD_FUZZ_FACTOR)
 		{
 			/* new path can win on startup cost only if consider_startup */
-			if (startup_cost > old_path->startup_cost * STD_FUZZ_FACTOR ||
+			if (cost_asscalar(&startup_cost) > cost_asscalar(&old_path->startup_cost) * STD_FUZZ_FACTOR ||
 				!consider_startup)
 			{
 				/* new path loses on cost, so check pathkeys... */
@@ -777,13 +783,13 @@ add_partial_path(RelOptInfo *parent_rel, Path *new_path)
 		/* Unless pathkeys are incompatible, keep just one of the two paths. */
 		if (keyscmp != PATHKEYS_DIFFERENT)
 		{
-			if (new_path->total_cost > old_path->total_cost * STD_FUZZ_FACTOR)
+			if (cost_asscalar(&new_path->total_cost) > cost_asscalar(&old_path->total_cost) * STD_FUZZ_FACTOR)
 			{
 				/* New path costs more; keep it only if pathkeys are better. */
 				if (keyscmp != PATHKEYS_BETTER1)
 					accept_new = false;
 			}
-			else if (old_path->total_cost > new_path->total_cost
+			else if (cost_asscalar(&old_path->total_cost) > cost_asscalar(&new_path->total_cost)
 					 * STD_FUZZ_FACTOR)
 			{
 				/* Old path costs more; keep it only if pathkeys are better. */
@@ -800,7 +806,7 @@ add_partial_path(RelOptInfo *parent_rel, Path *new_path)
 				/* Costs are about the same, old path has better pathkeys. */
 				accept_new = false;
 			}
-			else if (old_path->total_cost > new_path->total_cost * 1.0000000001)
+			else if (cost_asscalar(&old_path->total_cost) > cost_asscalar(&new_path->total_cost) * 1.0000000001)
 			{
 				/* Pathkeys are the same, and the old path costs more. */
 				remove_old = true;
@@ -827,7 +833,7 @@ add_partial_path(RelOptInfo *parent_rel, Path *new_path)
 		else
 		{
 			/* new belongs after this old path if it has cost >= old's */
-			if (new_path->total_cost >= old_path->total_cost)
+			if (cost_asscalar(&new_path->total_cost) >= cost_asscalar(&old_path->total_cost))
 				insert_at = foreach_current_index(p1) + 1;
 		}
 
@@ -888,10 +894,10 @@ add_partial_path_precheck(RelOptInfo *parent_rel, Cost total_cost,
 		keyscmp = compare_pathkeys(pathkeys, old_path->pathkeys);
 		if (keyscmp != PATHKEYS_DIFFERENT)
 		{
-			if (total_cost > old_path->total_cost * STD_FUZZ_FACTOR &&
+			if (cost_asscalar(&total_cost) > cost_asscalar(&old_path->total_cost) * STD_FUZZ_FACTOR &&
 				keyscmp != PATHKEYS_BETTER1)
 				return false;
-			if (old_path->total_cost > total_cost * STD_FUZZ_FACTOR &&
+			if (cost_asscalar(&old_path->total_cost) > cost_asscalar(&total_cost) * STD_FUZZ_FACTOR &&
 				keyscmp != PATHKEYS_BETTER2)
 				return true;
 		}
@@ -1350,8 +1356,8 @@ create_merge_append_path(PlannerInfo *root,
 						 List *partitioned_rels)
 {
 	MergeAppendPath *pathnode = makeNode(MergeAppendPath);
-	Cost		input_startup_cost;
-	Cost		input_total_cost;
+	Cost		input_startup_cost = {0};
+	Cost		input_total_cost = {0};
 	ListCell   *l;
 
 	pathnode->path.pathtype = T_MergeAppend;
@@ -1379,8 +1385,6 @@ create_merge_append_path(PlannerInfo *root,
 	 * Add up the sizes and costs of the input paths.
 	 */
 	pathnode->path.rows = 0;
-	input_startup_cost = 0;
-	input_total_cost = 0;
 	foreach(l, subpaths)
 	{
 		Path	   *subpath = (Path *) lfirst(l);
@@ -1392,8 +1396,8 @@ create_merge_append_path(PlannerInfo *root,
 		if (pathkeys_contained_in(pathkeys, subpath->pathkeys))
 		{
 			/* Subpath is adequately ordered, we won't need to sort it */
-			input_startup_cost += subpath->startup_cost;
-			input_total_cost += subpath->total_cost;
+			cost_add(&input_startup_cost, &subpath->startup_cost);
+			cost_add(&input_total_cost, &subpath->total_cost);
 		}
 		else
 		{
@@ -1403,14 +1407,14 @@ create_merge_append_path(PlannerInfo *root,
 			cost_sort(&sort_path,
 					  root,
 					  pathkeys,
-					  subpath->total_cost,
+					  &subpath->total_cost,
 					  subpath->parent->tuples,
 					  subpath->pathtarget->width,
-					  0.0,
+					  &zerocost,
 					  work_mem,
 					  pathnode->limit_tuples);
-			input_startup_cost += sort_path.startup_cost;
-			input_total_cost += sort_path.total_cost;
+			cost_add(&input_startup_cost, &sort_path.startup_cost);
+			cost_add(&input_total_cost, &sort_path.total_cost);
 		}
 
 		/* All child paths must have same parameterization */
@@ -1466,8 +1470,9 @@ create_group_result_path(PlannerInfo *root, RelOptInfo *rel,
 	 */
 	pathnode->path.rows = 1;
 	pathnode->path.startup_cost = target->cost.startup;
-	pathnode->path.total_cost = target->cost.startup +
-		cpu_tuple_cost + target->cost.per_tuple;
+	cost_set_member(&pathnode->path.total_cost, cpu_tuple_cost);
+	cost_add2(&pathnode->path.total_cost, &target->cost.startup,
+		&target->cost.per_tuple);
 
 	/*
 	 * Add cost of qual, if any --- but we ignore its selectivity, since our
@@ -1479,8 +1484,8 @@ create_group_result_path(PlannerInfo *root, RelOptInfo *rel,
 
 		cost_qual_eval(&qual_cost, havingqual, root);
 		/* havingqual is evaluated once at startup */
-		pathnode->path.startup_cost += qual_cost.startup + qual_cost.per_tuple;
-		pathnode->path.total_cost += qual_cost.startup + qual_cost.per_tuple;
+		cost_add2(&pathnode->path.startup_cost, &qual_cost.startup, &qual_cost.per_tuple);
+		cost_add2(&pathnode->path.total_cost, &qual_cost.startup, &qual_cost.per_tuple);
 	}
 
 	return pathnode;
@@ -1665,10 +1670,10 @@ create_unique_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 		 * Estimate cost for sort+unique implementation
 		 */
 		cost_sort(&sort_path, root, NIL,
-				  subpath->total_cost,
+				  &subpath->total_cost,
 				  rel->rows,
 				  subpath->pathtarget->width,
-				  0.0,
+				  &zerocost,
 				  work_mem,
 				  -1.0);
 
@@ -1678,7 +1683,7 @@ create_unique_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 		 * probably this is an overestimate.)  This should agree with
 		 * create_upper_unique_path.
 		 */
-		sort_path.total_cost += cpu_operator_cost * rel->rows * numCols;
+		cost_add_member_mul(&sort_path.total_cost, cpu_operator_cost, rel->rows * numCols);
 	}
 
 	if (sjinfo->semi_can_hash)
@@ -1702,14 +1707,14 @@ create_unique_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 					 AGG_HASHED, NULL,
 					 numCols, pathnode->path.rows,
 					 NIL,
-					 subpath->startup_cost,
-					 subpath->total_cost,
+					 &subpath->startup_cost,
+					 &subpath->total_cost,
 					 rel->rows);
 	}
 
 	if (sjinfo->semi_can_btree && sjinfo->semi_can_hash)
 	{
-		if (agg_path.total_cost < sort_path.total_cost)
+		if (cost_asscalar(&agg_path.total_cost) < cost_asscalar(&sort_path.total_cost))
 			pathnode->umethod = UNIQUE_PATH_HASH;
 		else
 			pathnode->umethod = UNIQUE_PATH_SORT;
@@ -1755,8 +1760,8 @@ create_gather_merge_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 						 Relids required_outer, double *rows)
 {
 	GatherMergePath *pathnode = makeNode(GatherMergePath);
-	Cost		input_startup_cost = 0;
-	Cost		input_total_cost = 0;
+	Cost		input_startup_cost = {0};
+	Cost		input_total_cost = {0};
 
 	Assert(subpath->parallel_safe);
 	Assert(pathkeys);
@@ -1776,8 +1781,8 @@ create_gather_merge_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	if (pathkeys_contained_in(pathkeys, subpath->pathkeys))
 	{
 		/* Subpath is adequately ordered, we won't need to sort it */
-		input_startup_cost += subpath->startup_cost;
-		input_total_cost += subpath->total_cost;
+		cost_add(&input_startup_cost, &subpath->startup_cost);
+		cost_add(&input_total_cost, &subpath->total_cost);
 	}
 	else
 	{
@@ -1787,14 +1792,14 @@ create_gather_merge_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 		cost_sort(&sort_path,
 				  root,
 				  pathkeys,
-				  subpath->total_cost,
+				  &subpath->total_cost,
 				  subpath->rows,
 				  subpath->pathtarget->width,
-				  0.0,
+				  &zerocost,
 				  work_mem,
 				  -1);
-		input_startup_cost += sort_path.startup_cost;
-		input_total_cost += sort_path.total_cost;
+		cost_add(&input_startup_cost, &sort_path.startup_cost);
+		cost_add(&input_total_cost, &sort_path.total_cost);
 	}
 
 	cost_gather_merge(pathnode, root, rel, pathnode->path.param_info,
@@ -2558,11 +2563,14 @@ create_projection_path(PlannerInfo *root,
 		 * Set cost of plan as subpath's cost, adjusted for tlist replacement.
 		 */
 		pathnode->path.rows = subpath->rows;
-		pathnode->path.startup_cost = subpath->startup_cost +
-			(target->cost.startup - oldtarget->cost.startup);
-		pathnode->path.total_cost = subpath->total_cost +
-			(target->cost.startup - oldtarget->cost.startup) +
-			(target->cost.per_tuple - oldtarget->cost.per_tuple) * subpath->rows;
+
+		cost_set_sum2(&pathnode->path.startup_cost, &subpath->startup_cost, &target->cost.startup);
+		cost_sub(&pathnode->path.startup_cost, &oldtarget->cost.startup);
+
+		cost_set_diff(&pathnode->path.total_cost, &target->cost.per_tuple, &oldtarget->cost.per_tuple);
+		cost_mul_scalar(&pathnode->path.total_cost, subpath->rows);
+		cost_add2(&pathnode->path.total_cost, &subpath->total_cost, &target->cost.startup);
+		cost_sub(&pathnode->path.total_cost, &oldtarget->cost.startup);
 	}
 	else
 	{
@@ -2574,11 +2582,12 @@ create_projection_path(PlannerInfo *root,
 		 * evaluating the tlist.  There is no qual to worry about.
 		 */
 		pathnode->path.rows = subpath->rows;
-		pathnode->path.startup_cost = subpath->startup_cost +
-			target->cost.startup;
-		pathnode->path.total_cost = subpath->total_cost +
-			target->cost.startup +
-			(cpu_tuple_cost + target->cost.per_tuple) * subpath->rows;
+
+		cost_set_sum2(&pathnode->path.startup_cost, &subpath->startup_cost, &target->cost.startup);
+
+		cost_set_member_add(&pathnode->path.total_cost, cpu_tuple_cost, &target->cost.per_tuple);
+		cost_mul_scalar(&pathnode->path.total_cost, subpath->rows);
+		cost_add2(&pathnode->path.total_cost, &subpath->total_cost, &target->cost.startup);
 	}
 
 	return pathnode;
@@ -2613,6 +2622,7 @@ apply_projection_to_path(PlannerInfo *root,
 						 PathTarget *target)
 {
 	QualCost	oldcost;
+	Cost		tmp;
 
 	/*
 	 * If given path can't project, we might need a Result node, so make a
@@ -2628,9 +2638,14 @@ apply_projection_to_path(PlannerInfo *root,
 	oldcost = path->pathtarget->cost;
 	path->pathtarget = target;
 
-	path->startup_cost += target->cost.startup - oldcost.startup;
-	path->total_cost += target->cost.startup - oldcost.startup +
-		(target->cost.per_tuple - oldcost.per_tuple) * path->rows;
+	cost_add(&path->startup_cost, &target->cost.startup);
+	cost_sub(&path->startup_cost, &oldcost.startup);
+
+	cost_set_diff(&tmp, &target->cost.per_tuple, &oldcost.per_tuple);
+	cost_mul_scalar(&tmp, path->rows);
+	cost_add(&path->total_cost, &target->cost.startup);
+	cost_sub(&path->total_cost, &oldcost.startup);
+	cost_add(&path->total_cost, &tmp);
 
 	/*
 	 * If the path happens to be a Gather or GatherMerge path, we'd like to
@@ -2704,6 +2719,7 @@ create_set_projection_path(PlannerInfo *root,
 	ProjectSetPath *pathnode = makeNode(ProjectSetPath);
 	double		tlist_rows;
 	ListCell   *lc;
+	Cost	tmp;
 
 	pathnode->path.pathtype = T_ProjectSet;
 	pathnode->path.parent = rel;
@@ -2742,12 +2758,15 @@ create_set_projection_path(PlannerInfo *root,
 	 * this estimate later.
 	 */
 	pathnode->path.rows = subpath->rows * tlist_rows;
-	pathnode->path.startup_cost = subpath->startup_cost +
-		target->cost.startup;
-	pathnode->path.total_cost = subpath->total_cost +
-		target->cost.startup +
-		(cpu_tuple_cost + target->cost.per_tuple) * subpath->rows +
-		(pathnode->path.rows - subpath->rows) * cpu_tuple_cost / 2;
+
+	cost_set_sum2(&pathnode->path.startup_cost, &subpath->startup_cost,
+		&target->cost.startup);
+	cost_set_sum2(&pathnode->path.total_cost, &subpath->total_cost, &target->cost.startup);
+
+	cost_set_member_add(&tmp, cpu_tuple_cost, &target->cost.per_tuple);
+	cost_add_mul(&pathnode->path.total_cost, &tmp, subpath->rows);
+
+	cost_add_member_mul(&pathnode->path.total_cost, cpu_tuple_cost, 0.5 * (pathnode->path.rows - subpath->rows) );
 
 	return pathnode;
 }
@@ -2786,10 +2805,10 @@ create_sort_path(PlannerInfo *root,
 	pathnode->subpath = subpath;
 
 	cost_sort(&pathnode->path, root, pathkeys,
-			  subpath->total_cost,
+			  &subpath->total_cost,
 			  subpath->rows,
 			  subpath->pathtarget->width,
-			  0.0,				/* XXX comparison_cost shouldn't be 0? */
+			  &zerocost,				/* XXX comparison_cost shouldn't be 0? */
 			  work_mem, limit_tuples);
 
 	return pathnode;
@@ -2842,9 +2861,9 @@ create_group_path(PlannerInfo *root,
 			   subpath->rows);
 
 	/* add tlist eval cost for each output row */
-	pathnode->path.startup_cost += target->cost.startup;
-	pathnode->path.total_cost += target->cost.startup +
-		target->cost.per_tuple * pathnode->path.rows;
+	cost_add(&pathnode->path.startup_cost, &target->cost.startup);
+	cost_add(&pathnode->path.total_cost, &target->cost.startup);
+	cost_add_mul(&pathnode->path.total_cost, &target->cost.per_tuple, pathnode->path.rows);
 
 	return pathnode;
 }
@@ -2896,8 +2915,8 @@ create_upper_unique_path(PlannerInfo *root,
 	 * an overestimate.)
 	 */
 	pathnode->path.startup_cost = subpath->startup_cost;
-	pathnode->path.total_cost = subpath->total_cost +
-		cpu_operator_cost * subpath->rows * numCols;
+	pathnode->path.total_cost = subpath->total_cost;
+	cost_add_member_mul(&pathnode->path.total_cost, cpu_operator_cost, subpath->rows * numCols);
 	pathnode->path.rows = numGroups;
 
 	return pathnode;
@@ -2956,13 +2975,13 @@ create_agg_path(PlannerInfo *root,
 			 aggstrategy, aggcosts,
 			 list_length(groupClause), numGroups,
 			 qual,
-			 subpath->startup_cost, subpath->total_cost,
+			 &subpath->startup_cost, &subpath->total_cost,
 			 subpath->rows);
 
 	/* add tlist eval cost for each output row */
-	pathnode->path.startup_cost += target->cost.startup;
-	pathnode->path.total_cost += target->cost.startup +
-		target->cost.per_tuple * pathnode->path.rows;
+	cost_add(&pathnode->path.startup_cost, &target->cost.startup);
+	cost_add(&pathnode->path.total_cost, &target->cost.startup);
+	cost_add_mul(&pathnode->path.total_cost, &target->cost.per_tuple, pathnode->path.rows);
 
 	return pathnode;
 }
@@ -3065,8 +3084,8 @@ create_groupingsets_path(PlannerInfo *root,
 					 numGroupCols,
 					 rollup->numGroups,
 					 having_qual,
-					 subpath->startup_cost,
-					 subpath->total_cost,
+					 &subpath->startup_cost,
+					 &subpath->total_cost,
 					 subpath->rows);
 			is_first = false;
 			if (!rollup->is_hashed)
@@ -3089,7 +3108,7 @@ create_groupingsets_path(PlannerInfo *root,
 						 numGroupCols,
 						 rollup->numGroups,
 						 having_qual,
-						 0.0, 0.0,
+						 &zerocost, &zerocost,
 						 subpath->rows);
 				if (!rollup->is_hashed)
 					is_first_sort = false;
@@ -3098,10 +3117,10 @@ create_groupingsets_path(PlannerInfo *root,
 			{
 				/* Account for cost of sort, but don't charge input cost again */
 				cost_sort(&sort_path, root, NIL,
-						  0.0,
+						  &zerocost,
 						  subpath->rows,
 						  subpath->pathtarget->width,
-						  0.0,
+						  &zerocost,
 						  work_mem,
 						  -1.0);
 
@@ -3113,20 +3132,20 @@ create_groupingsets_path(PlannerInfo *root,
 						 numGroupCols,
 						 rollup->numGroups,
 						 having_qual,
-						 sort_path.startup_cost,
-						 sort_path.total_cost,
+						 &sort_path.startup_cost,
+						 &sort_path.total_cost,
 						 sort_path.rows);
 			}
 
-			pathnode->path.total_cost += agg_path.total_cost;
+			cost_add(&pathnode->path.total_cost, &agg_path.total_cost);
 			pathnode->path.rows += agg_path.rows;
 		}
 	}
 
 	/* add tlist eval cost for each output row */
-	pathnode->path.startup_cost += target->cost.startup;
-	pathnode->path.total_cost += target->cost.startup +
-		target->cost.per_tuple * pathnode->path.rows;
+	cost_add(&pathnode->path.startup_cost,  &target->cost.startup);
+	cost_add(&pathnode->path.total_cost, &target->cost.startup);
+	cost_add_mul(&pathnode->path.total_cost, &target->cost.per_tuple, pathnode->path.rows);
 
 	return pathnode;
 }
@@ -3169,18 +3188,18 @@ create_minmaxagg_path(PlannerInfo *root,
 	pathnode->quals = quals;
 
 	/* Calculate cost of all the initplans ... */
-	initplan_cost = 0;
+	cost_zero(&initplan_cost); // = zerocost?
 	foreach(lc, mmaggregates)
 	{
 		MinMaxAggInfo *mminfo = (MinMaxAggInfo *) lfirst(lc);
 
-		initplan_cost += mminfo->pathcost;
+		cost_add(&initplan_cost, &mminfo->pathcost);
 	}
 
 	/* add tlist eval cost for each output row, plus cpu_tuple_cost */
-	pathnode->path.startup_cost = initplan_cost + target->cost.startup;
-	pathnode->path.total_cost = initplan_cost + target->cost.startup +
-		target->cost.per_tuple + cpu_tuple_cost;
+	cost_set_sum2(&pathnode->path.startup_cost, &initplan_cost, &target->cost.startup);
+	cost_set_sum3(&pathnode->path.total_cost, &initplan_cost, &target->cost.startup, &target->cost.per_tuple);
+	cost_add_member(&pathnode->path.total_cost, cpu_tuple_cost);
 
 	/*
 	 * Add cost of qual, if any --- but we ignore its selectivity, since our
@@ -3191,8 +3210,8 @@ create_minmaxagg_path(PlannerInfo *root,
 		QualCost	qual_cost;
 
 		cost_qual_eval(&qual_cost, quals, root);
-		pathnode->path.startup_cost += qual_cost.startup;
-		pathnode->path.total_cost += qual_cost.startup + qual_cost.per_tuple;
+		cost_add(&pathnode->path.startup_cost, &qual_cost.startup);
+		cost_add2(&pathnode->path.total_cost, &qual_cost.startup, &qual_cost.per_tuple);
 	}
 
 	return pathnode;
@@ -3251,9 +3270,9 @@ create_windowagg_path(PlannerInfo *root,
 				   subpath->rows);
 
 	/* add tlist eval cost for each output row */
-	pathnode->path.startup_cost += target->cost.startup;
-	pathnode->path.total_cost += target->cost.startup +
-		target->cost.per_tuple * pathnode->path.rows;
+	cost_add(&pathnode->path.startup_cost, &target->cost.startup);
+	cost_add(&pathnode->path.total_cost, &target->cost.startup);
+	cost_add_mul(&pathnode->path.total_cost, &target->cost.per_tuple, pathnode->path.rows);
 
 	return pathnode;
 }
@@ -3314,8 +3333,8 @@ create_setop_path(PlannerInfo *root,
 	 * all columns get compared at most of the tuples.
 	 */
 	pathnode->path.startup_cost = subpath->startup_cost;
-	pathnode->path.total_cost = subpath->total_cost +
-		cpu_operator_cost * subpath->rows * list_length(distinctList);
+	pathnode->path.total_cost = subpath->total_cost;
+	cost_add_member_mul(&pathnode->path.total_cost, cpu_operator_cost, subpath->rows * list_length(distinctList));
 	pathnode->path.rows = outputRows;
 
 	return pathnode;
@@ -3413,8 +3432,8 @@ create_lockrows_path(PlannerInfo *root, RelOptInfo *rel,
 	 * cpu_tuple_cost per row.
 	 */
 	pathnode->path.startup_cost = subpath->startup_cost;
-	pathnode->path.total_cost = subpath->total_cost +
-		cpu_tuple_cost * subpath->rows;
+	pathnode->path.total_cost = subpath->total_cost;
+	cost_add_member_mul(&pathnode->path.total_cost, cpu_tuple_cost, subpath->rows);
 
 	return pathnode;
 }
@@ -3482,8 +3501,8 @@ create_modifytable_path(PlannerInfo *root, RelOptInfo *rel,
 	 * costs to change any higher-level planning choices.  But we might want
 	 * to make it look better sometime.
 	 */
-	pathnode->path.startup_cost = 0;
-	pathnode->path.total_cost = 0;
+	cost_zero(&pathnode->path.startup_cost); // = zerocost?
+	cost_zero(&pathnode->path.total_cost); // = zerocost?
 	pathnode->path.rows = 0;
 	total_size = 0;
 	foreach(lc, subpaths)
@@ -3492,7 +3511,7 @@ create_modifytable_path(PlannerInfo *root, RelOptInfo *rel,
 
 		if (lc == list_head(subpaths))	/* first node? */
 			pathnode->path.startup_cost = subpath->startup_cost;
-		pathnode->path.total_cost += subpath->total_cost;
+		cost_add(&pathnode->path.total_cost, &subpath->total_cost);
 		pathnode->path.rows += subpath->rows;
 		total_size += subpath->pathtarget->width * subpath->rows;
 	}
@@ -3615,10 +3634,11 @@ adjust_limit_rows_costs(double *rows,	/* in/out parameter */
 			offset_rows = clamp_row_est(input_rows * 0.10);
 		if (offset_rows > *rows)
 			offset_rows = *rows;
-		if (input_rows > 0)
-			*startup_cost +=
-				(input_total_cost - input_startup_cost)
-				* offset_rows / input_rows;
+		if (input_rows > 0) {
+			Cost tmp;
+			cost_set_diff(&tmp, &input_total_cost, &input_startup_cost);
+			cost_add_mul(startup_cost, &tmp, offset_rows / input_rows);
+		}
 		*rows -= offset_rows;
 		if (*rows < 1)
 			*rows = 1;
@@ -3634,10 +3654,12 @@ adjust_limit_rows_costs(double *rows,	/* in/out parameter */
 			count_rows = clamp_row_est(input_rows * 0.10);
 		if (count_rows > *rows)
 			count_rows = *rows;
-		if (input_rows > 0)
-			*total_cost = *startup_cost +
-				(input_total_cost - input_startup_cost)
-				* count_rows / input_rows;
+
+		if (input_rows > 0) {
+			cost_set_diff(total_cost, &input_total_cost, &input_startup_cost);
+			cost_mul_scalar(total_cost, count_rows / input_rows);
+			cost_add(total_cost, startup_cost);
+		}
 		*rows = count_rows;
 		if (*rows < 1)
 			*rows = 1;

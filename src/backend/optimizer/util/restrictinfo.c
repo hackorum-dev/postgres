@@ -17,6 +17,7 @@
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/clauses.h"
+#include "optimizer/cost.h"
 #include "optimizer/optimizer.h"
 #include "optimizer/restrictinfo.h"
 
@@ -183,7 +184,7 @@ make_restrictinfo_internal(Expr *clause,
 	 */
 	restrictinfo->parent_ec = NULL;
 
-	restrictinfo->eval_cost.startup = -1;
+	cost_zero(&restrictinfo->eval_cost.startup); // XXX
 	restrictinfo->norm_selec = -1;
 	restrictinfo->outer_selec = -1;
 

@@ -34,6 +34,7 @@
 #include "nodes/extensible.h"
 #include "nodes/pathnodes.h"
 #include "nodes/plannodes.h"
+#include "optimizer/cost.h"
 #include "utils/datum.h"
 #include "utils/rel.h"
 
@@ -85,6 +86,10 @@ static void outChar(StringInfo str, char c);
 /* Write a float field --- caller must give format to define precision */
 #define WRITE_FLOAT_FIELD(fldname,format) \
 	appendStringInfo(str, " :" CppAsString(fldname) " " format, node->fldname)
+
+/* Write a float field --- caller must give format to define precision */
+#define WRITE_COST_FIELD(fldname,format) \
+	appendStringInfo(str, " :" CppAsString(fldname) " " format, cost_asscalar(&node->fldname))
 
 /* Write a boolean field */
 #define WRITE_BOOL_FIELD(fldname) \
@@ -327,8 +332,8 @@ _outPlannedStmt(StringInfo str, const PlannedStmt *node)
 static void
 _outPlanInfo(StringInfo str, const Plan *node)
 {
-	WRITE_FLOAT_FIELD(startup_cost, "%.2f");
-	WRITE_FLOAT_FIELD(total_cost, "%.2f");
+	WRITE_COST_FIELD(startup_cost, "%.2f");
+	WRITE_COST_FIELD(total_cost, "%.2f");
 	WRITE_FLOAT_FIELD(plan_rows, "%.0f");
 	WRITE_INT_FIELD(plan_width);
 	WRITE_BOOL_FIELD(parallel_aware);
@@ -1321,8 +1326,8 @@ _outSubPlan(StringInfo str, const SubPlan *node)
 	WRITE_NODE_FIELD(setParam);
 	WRITE_NODE_FIELD(parParam);
 	WRITE_NODE_FIELD(args);
-	WRITE_FLOAT_FIELD(startup_cost, "%.2f");
-	WRITE_FLOAT_FIELD(per_call_cost, "%.2f");
+	WRITE_COST_FIELD(startup_cost, "%.2f");
+	WRITE_COST_FIELD(per_call_cost, "%.2f");
 }
 
 static void
@@ -1717,8 +1722,8 @@ _outPathInfo(StringInfo str, const Path *node)
 	WRITE_BOOL_FIELD(parallel_safe);
 	WRITE_INT_FIELD(parallel_workers);
 	WRITE_FLOAT_FIELD(rows, "%.0f");
-	WRITE_FLOAT_FIELD(startup_cost, "%.2f");
-	WRITE_FLOAT_FIELD(total_cost, "%.2f");
+	WRITE_COST_FIELD(startup_cost, "%.2f");
+	WRITE_COST_FIELD(total_cost, "%.2f");
 	WRITE_NODE_FIELD(pathkeys);
 }
 
@@ -1757,7 +1762,7 @@ _outIndexPath(StringInfo str, const IndexPath *node)
 	WRITE_NODE_FIELD(indexorderbys);
 	WRITE_NODE_FIELD(indexorderbycols);
 	WRITE_ENUM_FIELD(indexscandir, ScanDirection);
-	WRITE_FLOAT_FIELD(indextotalcost, "%.2f");
+	WRITE_COST_FIELD(indextotalcost, "%.2f");
 	WRITE_FLOAT_FIELD(indexselectivity, "%.4f");
 }
 
@@ -2411,8 +2416,8 @@ _outPathTarget(StringInfo str, const PathTarget *node)
 		for (i = 0; i < list_length(node->exprs); i++)
 			appendStringInfo(str, " %u", node->sortgrouprefs[i]);
 	}
-	WRITE_FLOAT_FIELD(cost.startup, "%.2f");
-	WRITE_FLOAT_FIELD(cost.per_tuple, "%.2f");
+	WRITE_COST_FIELD(cost.startup, "%.2f");
+	WRITE_COST_FIELD(cost.per_tuple, "%.2f");
 	WRITE_INT_FIELD(width);
 }
 
@@ -2537,7 +2542,7 @@ _outMinMaxAggInfo(StringInfo str, const MinMaxAggInfo *node)
 	WRITE_NODE_FIELD(target);
 	/* We intentionally omit subroot --- too large, not interesting enough */
 	WRITE_NODE_FIELD(path);
-	WRITE_FLOAT_FIELD(pathcost, "%.2f");
+	WRITE_COST_FIELD(pathcost, "%.2f");
 	WRITE_NODE_FIELD(param);
 }
 

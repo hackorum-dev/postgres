@@ -5592,12 +5592,12 @@ get_quals_from_indexclauses(List *indexclauses)
  * or directly on an indexorderbys list.  In both cases, we expect that the
  * index key expression is on the left side of binary clauses.
  */
-Cost
-index_other_operands_eval_cost(PlannerInfo *root, List *indexquals)
+void
+index_other_operands_eval_cost(PlannerInfo *root, List *indexquals, Cost *qual_arg_cost)
 {
-	Cost		qual_arg_cost = 0;
 	ListCell   *lc;
 
+	cost_zero(qual_arg_cost);
 	foreach(lc, indexquals)
 	{
 		Expr	   *clause = (Expr *) lfirst(lc);
@@ -5641,9 +5641,8 @@ index_other_operands_eval_cost(PlannerInfo *root, List *indexquals)
 		}
 
 		cost_qual_eval_node(&index_qual_cost, other_operand, root);
-		qual_arg_cost += index_qual_cost.startup + index_qual_cost.per_tuple;
+		cost_add2(qual_arg_cost, &index_qual_cost.startup, &index_qual_cost.per_tuple);
 	}
-	return qual_arg_cost;
 }
 
 void
@@ -5665,8 +5664,9 @@ genericcostestimate(PlannerInfo *root,
 	double		num_sa_scans;
 	double		num_outer_scans;
 	double		num_scans;
-	double		qual_op_cost;
-	double		qual_arg_cost;
+	Cost		qual_op_cost;
+	Cost		qual_arg_cost;
+	Cost		tmp;
 	List	   *selectivityQuals;
 	ListCell   *l;
 
@@ -5792,8 +5792,7 @@ genericcostestimate(PlannerInfo *root,
 		 * share for each outer scan.  (Don't pro-rate for ScalarArrayOpExpr,
 		 * since that's internal to the indexscan.)
 		 */
-		indexTotalCost = (pages_fetched * spc_random_page_cost)
-			/ num_outer_scans;
+		cost_add_member_mul_spc(&indexTotalCost, spc_, random_page_cost, pages_fetched/num_outer_scans);
 	}
 	else
 	{
@@ -5801,7 +5800,7 @@ genericcostestimate(PlannerInfo *root,
 		 * For a single index scan, we just charge spc_random_page_cost per
 		 * page touched.
 		 */
-		indexTotalCost = numIndexPages * spc_random_page_cost;
+		cost_add_member_mul_spc(&indexTotalCost, spc_, random_page_cost, numIndexPages);
 	}
 
 	/*
@@ -5818,14 +5817,16 @@ genericcostestimate(PlannerInfo *root,
 	 * Detecting that that might be needed seems more expensive than it's
 	 * worth, though, considering all the other inaccuracies here ...
 	 */
-	qual_arg_cost = index_other_operands_eval_cost(root, indexQuals) +
-		index_other_operands_eval_cost(root, indexOrderBys);
-	qual_op_cost = cpu_operator_cost *
-		(list_length(indexQuals) + list_length(indexOrderBys));
+	index_other_operands_eval_cost(root, indexQuals, &qual_arg_cost);
+	index_other_operands_eval_cost(root, indexOrderBys, &tmp);
+	cost_add(&qual_arg_cost, &tmp);
+
+	cost_set_member_mul(&qual_op_cost, cpu_operator_cost, list_length(indexQuals) + list_length(indexOrderBys));
 
 	indexStartupCost = qual_arg_cost;
-	indexTotalCost += qual_arg_cost;
-	indexTotalCost += numIndexTuples * num_sa_scans * (cpu_index_tuple_cost + qual_op_cost);
+	cost_add(&indexTotalCost, &qual_arg_cost);
+	cost_add_mul(&indexTotalCost, &qual_op_cost, numIndexTuples * num_sa_scans);
+	cost_add_member_mul(&indexTotalCost, cpu_index_tuple_cost, numIndexTuples * num_sa_scans);
 
 	/*
 	 * Generic assumption about index correlation: there isn't any.
@@ -6065,9 +6066,9 @@ btcostestimate(PlannerInfo *root, IndexPath *path, double loop_count,
 	 */
 	if (index->tuples > 1)		/* avoid computing log(0) */
 	{
-		descentCost = ceil(log(index->tuples) / log(2.0)) * cpu_operator_cost;
-		costs.indexStartupCost += descentCost;
-		costs.indexTotalCost += costs.num_sa_scans * descentCost;
+		cost_set_member_mul(&descentCost, cpu_operator_cost, ceil(log(index->tuples) / log(2.0)));
+		cost_add(&costs.indexStartupCost, &descentCost);
+		cost_add_mul(&costs.indexTotalCost, &descentCost, costs.num_sa_scans);
 	}
 
 	/*
@@ -6080,9 +6081,9 @@ btcostestimate(PlannerInfo *root, IndexPath *path, double loop_count,
 	 * touched.  The number of such pages is btree tree height plus one (ie,
 	 * we charge for the leaf page too).  As above, charge once per SA scan.
 	 */
-	descentCost = (index->tree_height + 1) * 50.0 * cpu_operator_cost;
-	costs.indexStartupCost += descentCost;
-	costs.indexTotalCost += costs.num_sa_scans * descentCost;
+	cost_set_member_mul(&descentCost, cpu_operator_cost, (index->tree_height + 1) * 50.0);
+	cost_add(&costs.indexStartupCost, &descentCost);
+	cost_add_mul(&costs.indexTotalCost, &descentCost, costs.num_sa_scans);
 
 	/*
 	 * If we can get an estimate of the first column's ordering correlation C
@@ -6273,17 +6274,17 @@ gistcostestimate(PlannerInfo *root, IndexPath *path, double loop_count,
 	 */
 	if (index->tuples > 1)		/* avoid computing log(0) */
 	{
-		descentCost = ceil(log(index->tuples)) * cpu_operator_cost;
-		costs.indexStartupCost += descentCost;
-		costs.indexTotalCost += costs.num_sa_scans * descentCost;
+		cost_set_member_mul(&descentCost, cpu_operator_cost, ceil(log(index->tuples)));
+		cost_add(&costs.indexStartupCost, &descentCost);
+		cost_add_mul(&costs.indexTotalCost, &descentCost, costs.num_sa_scans);
 	}
 
 	/*
 	 * Likewise add a per-page charge, calculated the same as for btrees.
 	 */
-	descentCost = (index->tree_height + 1) * 50.0 * cpu_operator_cost;
-	costs.indexStartupCost += descentCost;
-	costs.indexTotalCost += costs.num_sa_scans * descentCost;
+	cost_set_member_mul(&descentCost, cpu_operator_cost, (index->tree_height + 1) * 50.0);
+	cost_add(&costs.indexStartupCost, &descentCost);
+	cost_add_mul(&costs.indexTotalCost, &descentCost, costs.num_sa_scans);
 
 	*indexStartupCost = costs.indexStartupCost;
 	*indexTotalCost = costs.indexTotalCost;
@@ -6330,17 +6331,17 @@ spgcostestimate(PlannerInfo *root, IndexPath *path, double loop_count,
 	 */
 	if (index->tuples > 1)		/* avoid computing log(0) */
 	{
-		descentCost = ceil(log(index->tuples)) * cpu_operator_cost;
-		costs.indexStartupCost += descentCost;
-		costs.indexTotalCost += costs.num_sa_scans * descentCost;
+		cost_set_member_mul(&descentCost, cpu_operator_cost, ceil(log(index->tuples)));
+		cost_add(&costs.indexStartupCost, &descentCost);
+		cost_add_mul(&costs.indexTotalCost, &descentCost, costs.num_sa_scans);
 	}
 
 	/*
 	 * Likewise add a per-page charge, calculated the same as for btrees.
 	 */
-	descentCost = (index->tree_height + 1) * 50.0 * cpu_operator_cost;
-	costs.indexStartupCost += descentCost;
-	costs.indexTotalCost += costs.num_sa_scans * descentCost;
+	cost_set_member_mul(&descentCost, cpu_operator_cost, (index->tree_height + 1) * 50.0);
+	cost_add(&costs.indexStartupCost, &descentCost);
+	cost_add_mul(&costs.indexTotalCost, &descentCost, costs.num_sa_scans);
 
 	*indexStartupCost = costs.indexStartupCost;
 	*indexTotalCost = costs.indexTotalCost;
@@ -6658,9 +6659,9 @@ gincostestimate(PlannerInfo *root, IndexPath *path, double loop_count,
 	double		entryPagesFetched,
 				dataPagesFetched,
 				dataPagesFetchedBySel;
-	double		qual_op_cost,
-				qual_arg_cost,
-				spc_random_page_cost,
+	Cost		qual_op_cost,
+				qual_arg_cost;
+	double		spc_random_page_cost,
 				outer_scans;
 	Relation	indexRel;
 	GinStatsData ginStats;
@@ -6815,9 +6816,9 @@ gincostestimate(PlannerInfo *root, IndexPath *path, double loop_count,
 	/* Fall out if there were any provably-unsatisfiable quals */
 	if (!matchPossible)
 	{
-		*indexStartupCost = 0;
-		*indexTotalCost = 0;
-		*indexSelectivity = 0;
+		cost_zero(indexStartupCost);
+		cost_zero(indexTotalCost);
+		indexSelectivity = 0;
 		return;
 	}
 
@@ -6892,7 +6893,7 @@ gincostestimate(PlannerInfo *root, IndexPath *path, double loop_count,
 	 * Here we use random page cost because logically-close pages could be far
 	 * apart on disk.
 	 */
-	*indexStartupCost = (entryPagesFetched + dataPagesFetched) * spc_random_page_cost;
+	cost_set_member_mul_spc(indexStartupCost, spc_, random_page_cost, entryPagesFetched + dataPagesFetched);
 
 	/*
 	 * Now compute the number of data pages fetched during the scan.
@@ -6931,19 +6932,20 @@ gincostestimate(PlannerInfo *root, IndexPath *path, double loop_count,
 	}
 
 	/* And apply random_page_cost as the cost per page */
-	*indexTotalCost = *indexStartupCost +
-		dataPagesFetched * spc_random_page_cost;
+	*indexTotalCost = *indexStartupCost;
+	cost_add_member_mul_spc(indexTotalCost, spc_, random_page_cost, dataPagesFetched);
 
 	/*
 	 * Add on index qual eval costs, much as in genericcostestimate.  But we
 	 * can disregard indexorderbys, since GIN doesn't support those.
 	 */
-	qual_arg_cost = index_other_operands_eval_cost(root, indexQuals);
-	qual_op_cost = cpu_operator_cost * list_length(indexQuals);
+	index_other_operands_eval_cost(root, indexQuals, &qual_arg_cost);
+	cost_set_member_mul(&qual_op_cost, cpu_operator_cost, list_length(indexQuals));
 
-	*indexStartupCost += qual_arg_cost;
-	*indexTotalCost += qual_arg_cost;
-	*indexTotalCost += (numTuples * *indexSelectivity) * (cpu_index_tuple_cost + qual_op_cost);
+	cost_add(indexStartupCost, &qual_arg_cost);
+	cost_add(indexTotalCost, &qual_arg_cost);
+	cost_add_mul(indexTotalCost, &qual_op_cost, *indexSelectivity * numTuples);
+	cost_add_member_mul(indexTotalCost, cpu_index_tuple_cost, *indexSelectivity * numTuples);
 	*indexPages = dataPagesFetched;
 }
 
@@ -6961,9 +6963,9 @@ brincostestimate(PlannerInfo *root, IndexPath *path, double loop_count,
 	double		numPages = index->pages;
 	RelOptInfo *baserel = index->rel;
 	RangeTblEntry *rte = planner_rt_fetch(baserel->relid, root);
-	Cost		spc_seq_page_cost;
-	Cost		spc_random_page_cost;
-	double		qual_arg_cost;
+	double		spc_seq_page_cost;
+	double		spc_random_page_cost;
+	Cost		qual_arg_cost;
 	double		qualSelectivity;
 	BrinStatsData statsData;
 	double		indexRanges;
@@ -7137,23 +7139,23 @@ brincostestimate(PlannerInfo *root, IndexPath *path, double loop_count,
 	 * the index costs.  We can disregard indexorderbys, since BRIN doesn't
 	 * support those.
 	 */
-	qual_arg_cost = index_other_operands_eval_cost(root, indexQuals);
+	index_other_operands_eval_cost(root, indexQuals, &qual_arg_cost);
 
 	/*
 	 * Compute the startup cost as the cost to read the whole revmap
 	 * sequentially, including the cost to execute the index quals.
 	 */
-	*indexStartupCost =
-		spc_seq_page_cost * statsData.revmapNumPages * loop_count;
-	*indexStartupCost += qual_arg_cost;
+	cost_set_member_mul_spc(indexStartupCost,
+		spc_, seq_page_cost, statsData.revmapNumPages * loop_count);
+	cost_add(indexStartupCost, &qual_arg_cost);
 
 	/*
 	 * To read a BRIN index there might be a bit of back and forth over
 	 * regular pages, as revmap might point to them out of sequential order;
 	 * calculate the total cost as reading the whole index in random order.
 	 */
-	*indexTotalCost = *indexStartupCost +
-		spc_random_page_cost * (numPages - statsData.revmapNumPages) * loop_count;
+	*indexTotalCost = *indexStartupCost;
+	cost_add_member_mul_spc(indexTotalCost, spc_, random_page_cost, (numPages - statsData.revmapNumPages) * loop_count);
 
 	/*
 	 * Charge a small amount per range tuple which we expect to match to. This
@@ -7162,8 +7164,8 @@ brincostestimate(PlannerInfo *root, IndexPath *path, double loop_count,
 	 * range, so we must multiply the charge by the number of pages in the
 	 * range.
 	 */
-	*indexTotalCost += 0.1 * cpu_operator_cost * estimatedRanges *
-		statsData.pagesPerRange;
+	cost_add_member_mul(indexTotalCost, cpu_operator_cost, 0.1 * estimatedRanges *
+		statsData.pagesPerRange);
 
 	*indexPages = index->pages;
 }
