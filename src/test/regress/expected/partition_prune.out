@@ -2455,9 +2455,9 @@ update ab_a1 set b = 3 from ab where ab.a = 1 and ab.a = ab_a1.a;
                      Heap Blocks: exact=1
                      ->  Bitmap Index Scan on ab_a1_b2_a_idx (actual rows=1 loops=1)
                            Index Cond: (a = 1)
-               ->  Bitmap Heap Scan on ab_a1_b3 ab_2 (actual rows=0 loops=1)
+               ->  Bitmap Heap Scan on ab_a1_b3 ab_2 (never executed)
                      Recheck Cond: (a = 1)
-                     ->  Bitmap Index Scan on ab_a1_b3_a_idx (actual rows=0 loops=1)
+                     ->  Bitmap Index Scan on ab_a1_b3_a_idx (never executed)
                            Index Cond: (a = 1)
          ->  Materialize (actual rows=0 loops=1)
                ->  Bitmap Heap Scan on ab_a1_b1 ab_a1_1 (actual rows=0 loops=1)
@@ -2496,9 +2496,9 @@ update ab_a1 set b = 3 from ab where ab.a = 1 and ab.a = ab_a1.a;
                      Heap Blocks: exact=1
                      ->  Bitmap Index Scan on ab_a1_b2_a_idx (actual rows=1 loops=1)
                            Index Cond: (a = 1)
-               ->  Bitmap Heap Scan on ab_a1_b3 ab_2 (actual rows=0 loops=1)
+               ->  Bitmap Heap Scan on ab_a1_b3 ab_2 (never executed)
                      Recheck Cond: (a = 1)
-                     ->  Bitmap Index Scan on ab_a1_b3_a_idx (actual rows=1 loops=1)
+                     ->  Bitmap Index Scan on ab_a1_b3_a_idx (never executed)
                            Index Cond: (a = 1)
          ->  Materialize (actual rows=0 loops=1)
                ->  Bitmap Heap Scan on ab_a1_b3 ab_a1_3 (actual rows=0 loops=1)

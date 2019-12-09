@@ -164,6 +164,11 @@ ExecNestLoop(PlanState *pstate)
 		{
 			ENL1_printf("no inner tuple, need new outer tuple");
 
+			if (node->nl_InnerEmpty && list_length(nl->nestParams) == 0 &&
+				(node->js.jointype == JOIN_INNER ||
+				 node->js.jointype == JOIN_SEMI))
+				return NULL;
+
 			node->nl_NeedNewOuter = true;
 
 			if (!node->nl_MatchedOuter &&
@@ -200,6 +205,8 @@ ExecNestLoop(PlanState *pstate)
 			 */
 			continue;
 		}
+		else
+			node->nl_InnerEmpty = false;
 
 		/*
 		 * at this point we have a new pair of inner and outer tuples so we
@@ -327,6 +334,7 @@ ExecInitNestLoop(NestLoop *node, EState *estate, int eflags)
 	{
 		case JOIN_INNER:
 		case JOIN_SEMI:
+			nlstate->nl_InnerEmpty = true;
 			break;
 		case JOIN_LEFT:
 		case JOIN_ANTI:
