@@ -332,6 +332,15 @@ RequestXLogStreaming(TimeLineID tli, XLogRecPtr recptr, const char *conninfo,
 		 */
 		pg_atomic_write_membarrier_u64(&walrcv->writtenUpto, recptr);
 	}
+	/*
+	 * If it will restart the walreceiver, set the receivedUpto to the starting point,
+	 * so that the process will not read the old data before walreceiver starts.
+	 */
+	else if (launch && recptr < walrcv->receivedUpto)
+	{
+		walrcv->receivedUpto = recptr;
+		walrcv->latestChunkStart = recptr;
+	}
 	walrcv->receiveStart = recptr;
 	walrcv->receiveStartTLI = tli;
 
