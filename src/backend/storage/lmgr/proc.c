@@ -390,6 +390,8 @@ InitProcess(void)
 	MyPgXact->xid = InvalidTransactionId;
 	MyPgXact->xmin = InvalidTransactionId;
 	MyProc->pid = MyProcPid;
+	pg_atomic_init_u64(&MyProc->walWritten, 0);
+
 	/* backendId, databaseId and roleId will be filled in later */
 	MyProc->backendId = InvalidBackendId;
 	MyProc->databaseId = InvalidOid;

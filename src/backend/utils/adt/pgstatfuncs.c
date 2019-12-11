@@ -919,6 +919,22 @@ pg_stat_get_activity(PG_FUNCTION_ARGS)
 
 
 Datum
+pg_stat_get_wal_activity(PG_FUNCTION_ARGS)
+{
+	int32	pid = PG_GETARG_INT32(0);
+	PGPROC* proc = BackendPidGetProc(pid);
+	if (proc == NULL)
+	{
+		proc = AuxiliaryPidGetProc(pid);
+	}
+	if (proc == NULL)
+		PG_RETURN_NULL();
+	else
+		PG_RETURN_INT64(pg_atomic_read_u64(&proc->walWritten));
+}
+
+
+Datum
 pg_backend_pid(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_INT32(MyProcPid);
