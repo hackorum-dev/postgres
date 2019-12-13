@@ -122,6 +122,7 @@ Cost		disable_cost = 1.0e10;
 int			max_parallel_workers_per_gather = 2;
 
 bool		enable_seqscan = true;
+bool		enable_singleseqscan = true;
 bool		enable_indexscan = true;
 bool		enable_indexonlyscan = true;
 bool		enable_bitmapscan = true;
@@ -229,6 +230,9 @@ cost_seqscan(Path *path, PlannerInfo *root,
 		path->rows = baserel->rows;
 
 	if (!enable_seqscan)
+		startup_cost += disable_cost;
+
+	if (!enable_singleseqscan && path->parallel_workers==0)
 		startup_cost += disable_cost;
 
 	/* fetch estimated page cost for tablespace containing table */
