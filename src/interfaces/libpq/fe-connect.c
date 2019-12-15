@@ -994,7 +994,9 @@ connectOptions2(PGconn *conn)
 	/*
 	 * Allocate memory for details about each host to which we might possibly
 	 * try to connect.  For that, count the number of elements in the hostaddr
-	 * or host options.  If neither is given, assume one host.
+	 * or host options.  If neither is given, assume 2 hosts on systems with
+	 * unix socket support, try to connect via sockets first, if that fails,
+	 *  connect via tcp. On non-unix systems, connect via tcp directly.
 	 */
 	conn->whichhost = 0;
 	if (conn->pghostaddr && conn->pghostaddr[0] != '\0')
@@ -1002,7 +1004,11 @@ connectOptions2(PGconn *conn)
 	else if (conn->pghost && conn->pghost[0] != '\0')
 		conn->nconnhost = count_comma_separated_elems(conn->pghost);
 	else
-		conn->nconnhost = 1;
+		#ifdef HAVE_UNIX_SOCKETS
+			conn->nconnhost = 2;
+		#else
+			conn->nconnhost = 1;
+		#endif
 	conn->connhost = (pg_conn_host *)
 		calloc(conn->nconnhost, sizeof(pg_conn_host));
 	if (conn->connhost == NULL)
@@ -1058,7 +1064,7 @@ connectOptions2(PGconn *conn)
 
 	/*
 	 * Now, for each host slot, identify the type of address spec, and fill in
-	 * the default address if nothing was given.
+	 * the default addresses if nothing was given.
 	 */
 	for (i = 0; i < conn->nconnhost; i++)
 	{
@@ -1075,16 +1081,22 @@ connectOptions2(PGconn *conn)
 #endif
 		}
 		else
+		/* No address specified, try default address(es) */
 		{
+
 			if (ch->host)
 				free(ch->host);
 #ifdef HAVE_UNIX_SOCKETS
-			ch->host = strdup(DEFAULT_PGSOCKET_DIR);
-			ch->type = CHT_UNIX_SOCKET;
-#else
-			ch->host = strdup(DefaultHost);
-			ch->type = CHT_HOST_NAME;
+			if (i == 0){
+				ch->host = strdup(DEFAULT_PGSOCKET_DIR);
+				ch->type = CHT_UNIX_SOCKET;
+			} else
 #endif
+			{
+				ch->host = strdup(DefaultHost);
+				ch->type = CHT_HOST_NAME;
+			}
+
 			if (ch->host == NULL)
 				goto oom_error;
 		}
