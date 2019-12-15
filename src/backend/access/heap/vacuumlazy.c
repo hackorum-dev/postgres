@@ -501,6 +501,7 @@ heap_vacuum_rel(Relation onerel, VacuumParams *params,
 		lazy_truncate_heap(onerel, vacrelstats);
 
 	/* Report that we are now doing final cleanup */
+	elog(DEBUG1, "cleaning up");
 	pgstat_progress_update_param(PROGRESS_VACUUM_PHASE,
 								 PROGRESS_VACUUM_PHASE_FINAL_CLEANUP);
 
@@ -1773,9 +1774,12 @@ lazy_vacuum_all_indexes(Relation onerel, Relation *Irel,
 	{
 		int			idx;
 
-		for (idx = 0; idx < nindexes; idx++)
+		for (idx = 0; idx < nindexes; idx++) {
+			ereport(DEBUG1, (errmsg("\"%s\": vacuuming index",
+							RelationGetRelationName(Irel[idx]))));
 			lazy_vacuum_index(Irel[idx], &stats[idx], vacrelstats->dead_tuples,
 							  vacrelstats->old_live_tuples);
+		}
 	}
 
 	/* Increase and report the number of index scans */
@@ -1805,6 +1809,8 @@ lazy_vacuum_heap(Relation onerel, LVRelStats *vacrelstats)
 	Buffer		vmbuffer = InvalidBuffer;
 
 	/* Report that we are now vacuuming the heap */
+	ereport(DEBUG1, (errmsg("\"%s\": vacuuming heap",
+					RelationGetRelationName(onerel))));
 	pgstat_progress_update_param(PROGRESS_VACUUM_PHASE,
 								 PROGRESS_VACUUM_PHASE_VACUUM_HEAP);
 
@@ -1848,7 +1854,7 @@ lazy_vacuum_heap(Relation onerel, LVRelStats *vacrelstats)
 		vmbuffer = InvalidBuffer;
 	}
 
-	ereport(elevel,
+	ereport(DEBUG1,
 			(errmsg("\"%s\": removed %d row versions in %d pages",
 					RelationGetRelationName(onerel),
 					tupindex, npages),
@@ -2093,13 +2099,13 @@ lazy_parallel_vacuum_indexes(Relation *Irel, IndexBulkDeleteResult **stats,
 		}
 
 		if (lps->lvshared->for_cleanup)
-			ereport(elevel,
+			ereport(DEBUG1,
 					(errmsg(ngettext("launched %d parallel vacuum worker for index cleanup (planned: %d)",
 									 "launched %d parallel vacuum workers for index cleanup (planned: %d)",
 									 lps->pcxt->nworkers_launched),
 							lps->pcxt->nworkers_launched, nworkers)));
 		else
-			ereport(elevel,
+			ereport(DEBUG1,
 					(errmsg(ngettext("launched %d parallel vacuum worker for index vacuuming (planned: %d)",
 									 "launched %d parallel vacuum workers for index vacuuming (planned: %d)",
 									 lps->pcxt->nworkers_launched),
@@ -2326,10 +2332,13 @@ lazy_cleanup_all_indexes(Relation *Irel, IndexBulkDeleteResult **stats,
 	}
 	else
 	{
-		for (idx = 0; idx < nindexes; idx++)
+		for (idx = 0; idx < nindexes; idx++) {
+			ereport(DEBUG1, (errmsg("cleaning up index \"%s\"",
+							RelationGetRelationName(Irel[idx]))));
 			lazy_cleanup_index(Irel[idx], &stats[idx],
 							   vacrelstats->new_rel_tuples,
 							   vacrelstats->tupcount_pages < vacrelstats->rel_pages);
+		}
 	}
 }
 
@@ -2369,7 +2378,7 @@ lazy_vacuum_index(Relation indrel, IndexBulkDeleteResult **stats,
 	else
 		msg = gettext_noop("scanned index \"%s\" to remove %d row versions");
 
-	ereport(elevel,
+	ereport(DEBUG1,
 			(errmsg(msg,
 					RelationGetRelationName(indrel),
 					dead_tuples->num_tuples),
@@ -2412,7 +2421,7 @@ lazy_cleanup_index(Relation indrel,
 	else
 		msg = gettext_noop("index \"%s\" now contains %.0f row versions in %u pages");
 
-	ereport(elevel,
+	ereport(DEBUG1,
 			(errmsg(msg,
 					RelationGetRelationName(indrel),
 					(*stats)->num_index_tuples,
@@ -2476,6 +2485,7 @@ lazy_truncate_heap(Relation onerel, LVRelStats *vacrelstats)
 	pg_rusage_init(&ru0);
 
 	/* Report that we are now truncating */
+	elog(DEBUG1, "truncating heap");
 	pgstat_progress_update_param(PROGRESS_VACUUM_PHASE,
 								 PROGRESS_VACUUM_PHASE_TRUNCATE);
 
