@@ -65,7 +65,7 @@ my @frontend_uselibpgcommon = (
 my $frontend_extralibs = {
 	'initdb'     => ['ws2_32.lib'],
 	'pg_restore' => ['ws2_32.lib'],
-	'pgbench'    => ['ws2_32.lib'],
+	'pgbench'    => ['ws2_32.lib', 'bcrypt.lib'],
 	'psql'       => ['ws2_32.lib']
 };
 my $frontend_extraincludes = {
@@ -184,6 +184,7 @@ sub mkvcbuild
 	$postgres->AddFiles('src/backend/utils/adt', 'jsonpath_scan.l',
 		'jsonpath_gram.y');
 	$postgres->AddDefine('BUILDING_DLL');
+	$postgres->AddLibrary('bcrypt.lib') if ($vsVersion > '12.00');
 	$postgres->AddLibrary('secur32.lib');
 	$postgres->AddLibrary('ws2_32.lib');
 	$postgres->AddLibrary('wldap32.lib') if ($solution->{options}->{ldap});
@@ -246,6 +247,7 @@ sub mkvcbuild
 	$libpq->AddDefine('FRONTEND');
 	$libpq->AddDefine('UNSAFE_STAT_OK');
 	$libpq->AddIncludeDir('src/port');
+	$libpq->AddLibrary('bcrypt.lib')  if ($vsVersion > '12.00');
 	$libpq->AddLibrary('secur32.lib');
 	$libpq->AddLibrary('ws2_32.lib');
 	$libpq->AddLibrary('wldap32.lib') if ($solution->{options}->{ldap});
