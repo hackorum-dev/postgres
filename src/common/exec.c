@@ -72,14 +72,15 @@ validate_exec(const char *path)
 	int			is_x;
 
 #ifdef WIN32
-	char		path_exe[MAXPGPATH + sizeof(".exe") - 1];
+	char		path_exe[MAXPGPATH + sizeof(".exe")];
+	int             path_len;
 
 	/* Win32 requires a .exe suffix for stat() */
-	if (strlen(path) >= strlen(".exe") &&
-		pg_strcasecmp(path + strlen(path) - strlen(".exe"), ".exe") != 0)
+	path_len = strlen(path);
+	if (path_len >= (sizeof(".exe") - 1) &&
+		pg_strcasecmp(path + path_len - (sizeof(".exe") - 1), ".exe") != 0)
 	{
-		strlcpy(path_exe, path, sizeof(path_exe) - 4);
-		strcat(path_exe, ".exe");
+		snprintf(path_exe, sizeof(path_exe) - 5, "%s.exe", path);
 		path = path_exe;
 	}
 #endif
@@ -566,11 +567,8 @@ set_pglocale_pgservice(const char *argv0, const char *app)
 {
 	char		path[MAXPGPATH];
 	char		my_exec_path[MAXPGPATH];
-	char		env_path[MAXPGPATH + sizeof("PGSYSCONFDIR=")];	/* longer than
-																 * PGLOCALEDIR */
-	char	   *dup_path;
 
-	/* don't set LC_ALL in the backend */
+        /* don't set LC_ALL in the backend */
 	if (strcmp(app, PG_TEXTDOMAIN("postgres")) != 0)
 	{
 		setlocale(LC_ALL, "");
@@ -596,25 +594,19 @@ set_pglocale_pgservice(const char *argv0, const char *app)
 
 	if (getenv("PGLOCALEDIR") == NULL)
 	{
-		/* set for libpq to use */
-		snprintf(env_path, sizeof(env_path), "PGLOCALEDIR=%s", path);
-		canonicalize_path(env_path + 12);
-		dup_path = strdup(env_path);
-		if (dup_path)
-			putenv(dup_path);
+	    /* set for libpq to use */
+	    canonicalize_path(path);
+            setenv("PGLOCALEDIR", path, 1);
 	}
 #endif
 
 	if (getenv("PGSYSCONFDIR") == NULL)
 	{
-		get_etc_path(my_exec_path, path);
+	    get_etc_path(my_exec_path, path);
 
-		/* set for libpq to use */
-		snprintf(env_path, sizeof(env_path), "PGSYSCONFDIR=%s", path);
-		canonicalize_path(env_path + 13);
-		dup_path = strdup(env_path);
-		if (dup_path)
-			putenv(dup_path);
+	    /* set for libpq to use */
+	    canonicalize_path(path);
+            setenv("PGSYSCONFDIR", path, 1);
 	}
 }
 
