@@ -123,3 +123,35 @@ pgwin32_unsetenv(const char *name)
 	pgwin32_putenv(envbuf);
 	free(envbuf);
 }
+
+
+int
+pgwin32_setenv(const char *name, const char *envval, int overwrite)
+{
+        if (name == NULL)
+            return -1;
+
+        if (overwrite || !getenv(name)) {
+           char *envbuf;
+           int  name_len;
+
+           name_len = strlen(name);
+           if (envval != NULL) {
+               envbuf = (char *) malloc(name_len + strlen(envval) + 2);
+	       if (!envbuf)
+		   return -1;
+ 
+	       sprintf(envbuf, "%s=%s", name, envval);
+           } else {
+               envbuf = (char *) malloc(name_len + 2);
+	       if (!envbuf)
+		   return -1;
+ 
+	       sprintf(envbuf, "%s=", name);
+           }
+	   pgwin32_putenv(envbuf);
+	   free(envbuf);
+        }
+
+        return 0;
+}
