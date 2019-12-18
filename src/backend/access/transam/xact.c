@@ -943,6 +943,7 @@ bool
 TransactionIdIsCurrentTransactionId(TransactionId xid)
 {
 	TransactionState s;
+	TransactionId topxid = GetTopTransactionIdIfAny();
 
 	/*
 	 * We always say that BootstrapTransactionId is "not my transaction ID"
@@ -957,10 +958,10 @@ TransactionIdIsCurrentTransactionId(TransactionId xid)
 	 * not my transaction ID, so we can just return "false" immediately for
 	 * any non-normal XID.
 	 */
-	if (!TransactionIdIsNormal(xid))
+	if (!TransactionIdIsNormal(xid) || !TransactionIdIsNormal(topxid))
 		return false;
 
-	if (TransactionIdEquals(xid, GetTopTransactionIdIfAny()))
+	if (TransactionIdEquals(xid, topxid))
 		return true;
 
 	/*
