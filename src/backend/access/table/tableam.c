@@ -640,7 +640,7 @@ table_block_relation_estimate_size(Relation rel, int32 *attr_widths,
 	 * the last VACUUM are most likely not marked all-visible.  But costsize.c
 	 * wants it converted to a fraction.
 	 */
-	if (relallvisible == 0 || curpages <= 0)
+	if (relallvisible == 0)
 		*allvisfrac = 0;
 	else if ((double) relallvisible >= curpages)
 		*allvisfrac = 1;
