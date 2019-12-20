@@ -3505,7 +3505,7 @@ ExecEvalArrayExpr(ExprState *state, ExprEvalStep *op)
 				/* Get sub-array details from first member */
 				elem_ndims = this_ndims;
 				ndims = elem_ndims + 1;
-				if (ndims <= 0 || ndims > MAXDIM)
+				if (ndims > MAXDIM)
 					ereport(ERROR,
 							(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
 							 errmsg("number of array dimensions (%d) exceeds the maximum allowed (%d)",
