@@ -727,12 +727,11 @@ InsertPgAttributeTuple(Relation pg_attribute_rel,
 					   CatalogIndexState indstate)
 {
 	Datum		values[Natts_pg_attribute];
-	bool		nulls[Natts_pg_attribute];
+	bool		nulls[Natts_pg_attribute] = {0,};
 	HeapTuple	tup;
 
 	/* This is a tad tedious, but way cleaner than what we used to do... */
 	memset(values, 0, sizeof(values));
-	memset(nulls, false, sizeof(nulls));
 
 	values[Anum_pg_attribute_attrelid - 1] = ObjectIdGetDatum(new_attribute->attrelid);
 	values[Anum_pg_attribute_attname - 1] = NameGetDatum(&new_attribute->attname);
@@ -884,12 +883,11 @@ InsertPgClassTuple(Relation pg_class_desc,
 {
 	Form_pg_class rd_rel = new_rel_desc->rd_rel;
 	Datum		values[Natts_pg_class];
-	bool		nulls[Natts_pg_class];
+	bool		nulls[Natts_pg_class] = {0,};
 	HeapTuple	tup;
 
 	/* This is a tad tedious, but way cleaner than what we used to do... */
 	memset(values, 0, sizeof(values));
-	memset(nulls, false, sizeof(nulls));
 
 	values[Anum_pg_class_oid - 1] = ObjectIdGetDatum(new_rel_oid);
 	values[Anum_pg_class_relname - 1] = NameGetDatum(&rd_rel->relname);

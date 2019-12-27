@@ -1902,10 +1902,9 @@ dblink_get_notify(PG_FUNCTION_ARGS)
 	while ((notify = PQnotifies(conn)) != NULL)
 	{
 		Datum		values[DBLINK_NOTIFY_COLS];
-		bool		nulls[DBLINK_NOTIFY_COLS];
+		bool		nulls[DBLINK_NOTIFY_COLS] = {0,};
 
 		memset(values, 0, sizeof(values));
-		memset(nulls, 0, sizeof(nulls));
 
 		if (notify->relname != NULL)
 			values[0] = CStringGetTextDatum(notify->relname);

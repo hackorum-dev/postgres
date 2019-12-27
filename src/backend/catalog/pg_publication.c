@@ -152,7 +152,7 @@ publication_add_relation(Oid pubid, Relation targetrel,
 	Relation	rel;
 	HeapTuple	tup;
 	Datum		values[Natts_pg_publication_rel];
-	bool		nulls[Natts_pg_publication_rel];
+	bool		nulls[Natts_pg_publication_rel] = {0,};
 	Oid			relid = RelationGetRelid(targetrel);
 	Oid			prrelid;
 	Publication *pub = GetPublication(pubid);
@@ -184,7 +184,6 @@ publication_add_relation(Oid pubid, Relation targetrel,
 
 	/* Form a tuple. */
 	memset(values, 0, sizeof(values));
-	memset(nulls, false, sizeof(nulls));
 
 	prrelid = GetNewOidWithIndex(rel, PublicationRelObjectIndexId,
 								 Anum_pg_publication_rel_oid);

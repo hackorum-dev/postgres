@@ -563,7 +563,7 @@ CreateForeignDataWrapper(CreateFdwStmt *stmt)
 {
 	Relation	rel;
 	Datum		values[Natts_pg_foreign_data_wrapper];
-	bool		nulls[Natts_pg_foreign_data_wrapper];
+	bool		nulls[Natts_pg_foreign_data_wrapper] = {0,};
 	HeapTuple	tuple;
 	Oid			fdwId;
 	bool		handler_given;
@@ -601,7 +601,6 @@ CreateForeignDataWrapper(CreateFdwStmt *stmt)
 	 * Insert tuple into pg_foreign_data_wrapper.
 	 */
 	memset(values, 0, sizeof(values));
-	memset(nulls, false, sizeof(nulls));
 
 	fdwId = GetNewOidWithIndex(rel, ForeignDataWrapperOidIndexId,
 							   Anum_pg_foreign_data_wrapper_oid);

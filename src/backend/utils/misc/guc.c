@@ -9546,10 +9546,9 @@ show_all_file_settings(PG_FUNCTION_ARGS)
 	for (seqno = 1; conf != NULL; conf = conf->next, seqno++)
 	{
 		Datum		values[NUM_PG_FILE_SETTINGS_ATTS];
-		bool		nulls[NUM_PG_FILE_SETTINGS_ATTS];
+		bool		nulls[NUM_PG_FILE_SETTINGS_ATTS] = {0,};
 
 		memset(values, 0, sizeof(values));
-		memset(nulls, 0, sizeof(nulls));
 
 		/* sourcefile */
 		if (conf->filename)

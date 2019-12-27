@@ -138,7 +138,7 @@ CreatePublication(CreatePublicationStmt *stmt)
 	Relation	rel;
 	ObjectAddress myself;
 	Oid			puboid;
-	bool		nulls[Natts_pg_publication];
+	bool		nulls[Natts_pg_publication] = {0,};
 	Datum		values[Natts_pg_publication];
 	HeapTuple	tup;
 	bool		publish_given;
@@ -175,7 +175,6 @@ CreatePublication(CreatePublicationStmt *stmt)
 
 	/* Form a tuple. */
 	memset(values, 0, sizeof(values));
-	memset(nulls, false, sizeof(nulls));
 
 	values[Anum_pg_publication_pubname - 1] =
 		DirectFunctionCall1(namein, CStringGetDatum(stmt->pubname));
@@ -246,8 +245,8 @@ static void
 AlterPublicationOptions(AlterPublicationStmt *stmt, Relation rel,
 						HeapTuple tup)
 {
-	bool		nulls[Natts_pg_publication];
-	bool		replaces[Natts_pg_publication];
+	bool		nulls[Natts_pg_publication] = {0,};
+	bool		replaces[Natts_pg_publication] = {0,};
 	Datum		values[Natts_pg_publication];
 	bool		publish_given;
 	bool		publish_insert;
@@ -264,8 +263,6 @@ AlterPublicationOptions(AlterPublicationStmt *stmt, Relation rel,
 
 	/* Everything ok, form a new tuple. */
 	memset(values, 0, sizeof(values));
-	memset(nulls, false, sizeof(nulls));
-	memset(replaces, false, sizeof(replaces));
 
 	if (publish_given)
 	{

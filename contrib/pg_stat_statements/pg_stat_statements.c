@@ -1530,14 +1530,13 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 	while ((entry = hash_seq_search(&hash_seq)) != NULL)
 	{
 		Datum		values[PG_STAT_STATEMENTS_COLS];
-		bool		nulls[PG_STAT_STATEMENTS_COLS];
+		bool		nulls[PG_STAT_STATEMENTS_COLS] = {0,};
 		int			i = 0;
 		Counters	tmp;
 		double		stddev;
 		int64		queryid = entry->key.queryid;
 
 		memset(values, 0, sizeof(values));
-		memset(nulls, 0, sizeof(nulls));
 
 		values[i++] = ObjectIdGetDatum(entry->key.userid);
 		values[i++] = ObjectIdGetDatum(entry->key.dbid);

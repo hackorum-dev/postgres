@@ -237,7 +237,7 @@ AddSubscriptionRelState(Oid subid, Oid relid, char state,
 {
 	Relation	rel;
 	HeapTuple	tup;
-	bool		nulls[Natts_pg_subscription_rel];
+	bool		nulls[Natts_pg_subscription_rel] = {0,};
 	Datum		values[Natts_pg_subscription_rel];
 
 	LockSharedObject(SubscriptionRelationId, subid, 0, AccessShareLock);
@@ -254,7 +254,6 @@ AddSubscriptionRelState(Oid subid, Oid relid, char state,
 
 	/* Form the tuple. */
 	memset(values, 0, sizeof(values));
-	memset(nulls, false, sizeof(nulls));
 	values[Anum_pg_subscription_rel_srsubid - 1] = ObjectIdGetDatum(subid);
 	values[Anum_pg_subscription_rel_srrelid - 1] = ObjectIdGetDatum(relid);
 	values[Anum_pg_subscription_rel_srsubstate - 1] = CharGetDatum(state);
@@ -283,9 +282,9 @@ UpdateSubscriptionRelState(Oid subid, Oid relid, char state,
 {
 	Relation	rel;
 	HeapTuple	tup;
-	bool		nulls[Natts_pg_subscription_rel];
+	bool		nulls[Natts_pg_subscription_rel] = {0,};
+	bool		replaces[Natts_pg_subscription_rel] = {0,};
 	Datum		values[Natts_pg_subscription_rel];
-	bool		replaces[Natts_pg_subscription_rel];
 
 	LockSharedObject(SubscriptionRelationId, subid, 0, AccessShareLock);
 
@@ -301,8 +300,6 @@ UpdateSubscriptionRelState(Oid subid, Oid relid, char state,
 
 	/* Update the tuple. */
 	memset(values, 0, sizeof(values));
-	memset(nulls, false, sizeof(nulls));
-	memset(replaces, false, sizeof(replaces));
 
 	replaces[Anum_pg_subscription_rel_srsubstate - 1] = true;
 	values[Anum_pg_subscription_rel_srsubstate - 1] = CharGetDatum(state);

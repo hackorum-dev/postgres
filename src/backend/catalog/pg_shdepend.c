@@ -799,8 +799,8 @@ copyTemplateDependencies(Oid templateDbId, Oid newDbId)
 	HeapTuple	tup;
 	CatalogIndexState indstate;
 	Datum		values[Natts_pg_shdepend];
-	bool		nulls[Natts_pg_shdepend];
-	bool		replace[Natts_pg_shdepend];
+	bool		nulls[Natts_pg_shdepend] = {0,};
+	bool		replace[Natts_pg_shdepend] = {0,};
 
 	sdepRel = table_open(SharedDependRelationId, RowExclusiveLock);
 	sdepDesc = RelationGetDescr(sdepRel);
@@ -818,8 +818,6 @@ copyTemplateDependencies(Oid templateDbId, Oid newDbId)
 
 	/* Set up to copy the tuples except for inserting newDbId */
 	memset(values, 0, sizeof(values));
-	memset(nulls, false, sizeof(nulls));
-	memset(replace, false, sizeof(replace));
 
 	replace[Anum_pg_shdepend_dbid - 1] = true;
 	values[Anum_pg_shdepend_dbid - 1] = ObjectIdGetDatum(newDbId);

@@ -43,7 +43,7 @@ LargeObjectCreate(Oid loid)
 	HeapTuple	ntup;
 	Oid			loid_new;
 	Datum		values[Natts_pg_largeobject_metadata];
-	bool		nulls[Natts_pg_largeobject_metadata];
+	bool		nulls[Natts_pg_largeobject_metadata] = {0,};
 
 	pg_lo_meta = table_open(LargeObjectMetadataRelationId,
 							RowExclusiveLock);
@@ -52,7 +52,6 @@ LargeObjectCreate(Oid loid)
 	 * Insert metadata of the largeobject
 	 */
 	memset(values, 0, sizeof(values));
-	memset(nulls, false, sizeof(nulls));
 
 	if (OidIsValid(loid))
 		loid_new = loid;

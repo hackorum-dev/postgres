@@ -315,8 +315,8 @@ AlterCollation(AlterCollationStmt *stmt)
 		elog(ERROR, "invalid collation version change");
 	else if (oldversion && newversion && strcmp(newversion, oldversion) != 0)
 	{
-		bool		nulls[Natts_pg_collation];
-		bool		replaces[Natts_pg_collation];
+		bool		nulls[Natts_pg_collation] = {0,};
+		bool		replaces[Natts_pg_collation] = {0,};
 		Datum		values[Natts_pg_collation];
 
 		ereport(NOTICE,
@@ -324,8 +324,6 @@ AlterCollation(AlterCollationStmt *stmt)
 						oldversion, newversion)));
 
 		memset(values, 0, sizeof(values));
-		memset(nulls, false, sizeof(nulls));
-		memset(replaces, false, sizeof(replaces));
 
 		values[Anum_pg_collation_collversion - 1] = CStringGetTextDatum(newversion);
 		replaces[Anum_pg_collation_collversion - 1] = true;
