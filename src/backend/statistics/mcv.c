@@ -1380,7 +1380,7 @@ pg_stats_ext_mcvlist_items(PG_FUNCTION_ARGS)
 	if (funcctx->call_cntr < funcctx->max_calls)	/* do when there is more left to send */
 	{
 		Datum		values[5];
-		bool		nulls[5];
+		bool		nulls[5] = {0,};
 		HeapTuple	tuple;
 		Datum		result;
 		ArrayBuildState *astate_values = NULL;
@@ -1439,9 +1439,6 @@ pg_stats_ext_mcvlist_items(PG_FUNCTION_ARGS)
 		values[2] = PointerGetDatum(makeArrayResult(astate_nulls, CurrentMemoryContext));
 		values[3] = Float8GetDatum(item->frequency);
 		values[4] = Float8GetDatum(item->base_frequency);
-
-		/* no NULLs in the tuple */
-		memset(nulls, 0, sizeof(nulls));
 
 		/* build a tuple */
 		tuple = heap_form_tuple(funcctx->attinmeta->tupdesc, values, nulls);

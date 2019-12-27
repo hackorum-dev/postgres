@@ -3237,7 +3237,7 @@ pg_stat_get_wal_senders(PG_FUNCTION_ARGS)
 		int64		spillCount;
 		int64		spillBytes;
 		Datum		values[PG_STAT_GET_WAL_SENDERS_COLS];
-		bool		nulls[PG_STAT_GET_WAL_SENDERS_COLS];
+		bool		nulls[PG_STAT_GET_WAL_SENDERS_COLS] = {0,};
 
 		SpinLockAcquire(&walsnd->mutex);
 		if (walsnd->pid == 0)
@@ -3261,7 +3261,6 @@ pg_stat_get_wal_senders(PG_FUNCTION_ARGS)
 		spillBytes = walsnd->spillBytes;
 		SpinLockRelease(&walsnd->mutex);
 
-		memset(nulls, 0, sizeof(nulls));
 		values[0] = Int32GetDatum(pid);
 
 		if (!is_member_of_role(GetUserId(), DEFAULT_ROLE_READ_ALL_STATS))

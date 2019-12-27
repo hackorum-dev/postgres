@@ -365,7 +365,7 @@ pg_stat_file(PG_FUNCTION_ARGS)
 	char	   *filename;
 	struct stat fst;
 	Datum		values[6];
-	bool		isnull[6];
+	bool		isnull[6] = {0,};
 	HeapTuple	tuple;
 	TupleDesc	tupdesc;
 	bool		missing_ok = false;
@@ -404,8 +404,6 @@ pg_stat_file(PG_FUNCTION_ARGS)
 	TupleDescInitEntry(tupdesc, (AttrNumber) 6,
 					   "isdir", BOOLOID, -1, 0);
 	BlessTupleDesc(tupdesc);
-
-	memset(isnull, false, sizeof(isnull));
 
 	values[0] = Int64GetDatum((int64) fst.st_size);
 	values[1] = TimestampTzGetDatum(time_t_to_timestamptz(fst.st_atime));

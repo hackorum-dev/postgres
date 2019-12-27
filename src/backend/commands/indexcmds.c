@@ -3400,7 +3400,7 @@ IndexSetParentIndex(Relation partitionIdx, Oid parentOid)
 		else
 		{
 			Datum		values[Natts_pg_inherits];
-			bool		isnull[Natts_pg_inherits];
+			bool		isnull[Natts_pg_inherits] = {0,};
 
 			/*
 			 * No pg_inherits row exists, and we want a parent for this index,
@@ -3410,7 +3410,6 @@ IndexSetParentIndex(Relation partitionIdx, Oid parentOid)
 			values[Anum_pg_inherits_inhparent - 1] =
 				ObjectIdGetDatum(parentOid);
 			values[Anum_pg_inherits_inhseqno - 1] = Int32GetDatum(1);
-			memset(isnull, false, sizeof(isnull));
 
 			tuple = heap_form_tuple(RelationGetDescr(pg_inherits),
 									values, isnull);

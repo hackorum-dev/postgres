@@ -57,7 +57,7 @@ CollationCreate(const char *collname, Oid collnamespace,
 	TupleDesc	tupDesc;
 	HeapTuple	tup;
 	Datum		values[Natts_pg_collation];
-	bool		nulls[Natts_pg_collation];
+	bool		nulls[Natts_pg_collation] = {0,};
 	NameData	name_name,
 				name_collate,
 				name_ctype;
@@ -151,8 +151,6 @@ CollationCreate(const char *collname, Oid collnamespace,
 	tupDesc = RelationGetDescr(rel);
 
 	/* form a tuple */
-	memset(nulls, 0, sizeof(nulls));
-
 	namestrcpy(&name_name, collname);
 	oid = GetNewOidWithIndex(rel, CollationOidIndexId,
 							 Anum_pg_collation_oid);

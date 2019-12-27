@@ -254,7 +254,7 @@ pgstattuple_approx_internal(Oid relid, FunctionCallInfo fcinfo)
 	Relation	rel;
 	output_type stat = {0};
 	TupleDesc	tupdesc;
-	bool		nulls[NUM_OUTPUT_COLUMNS];
+	bool		nulls[NUM_OUTPUT_COLUMNS] = {0,};
 	Datum		values[NUM_OUTPUT_COLUMNS];
 	HeapTuple	ret;
 	int			i = 0;
@@ -296,8 +296,6 @@ pgstattuple_approx_internal(Oid relid, FunctionCallInfo fcinfo)
 	statapprox_heap(rel, &stat);
 
 	relation_close(rel, AccessShareLock);
-
-	memset(nulls, 0, sizeof(nulls));
 
 	values[i++] = Int64GetDatum(stat.table_len);
 	values[i++] = Float8GetDatum(stat.scanned_percent);

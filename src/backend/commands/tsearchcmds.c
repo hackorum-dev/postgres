@@ -1420,9 +1420,8 @@ MakeConfigurationMapping(AlterTSConfigurationStmt *stmt,
 			for (j = 0; j < ndict; j++)
 			{
 				Datum		values[Natts_pg_ts_config_map];
-				bool		nulls[Natts_pg_ts_config_map];
+				bool		nulls[Natts_pg_ts_config_map] = {0,};
 
-				memset(nulls, false, sizeof(nulls));
 				values[Anum_pg_ts_config_map_mapcfg - 1] = ObjectIdGetDatum(cfgId);
 				values[Anum_pg_ts_config_map_maptokentype - 1] = Int32GetDatum(tokens[i]);
 				values[Anum_pg_ts_config_map_mapseqno - 1] = Int32GetDatum(j + 1);

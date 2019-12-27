@@ -272,9 +272,7 @@ shdepChangeDep(Relation sdepRel,
 	{
 		/* Need to insert new entry */
 		Datum		values[Natts_pg_shdepend];
-		bool		nulls[Natts_pg_shdepend];
-
-		memset(nulls, false, sizeof(nulls));
+		bool		nulls[Natts_pg_shdepend] = {0,};
 
 		values[Anum_pg_shdepend_dbid - 1] = ObjectIdGetDatum(dbid);
 		values[Anum_pg_shdepend_classid - 1] = ObjectIdGetDatum(classid);
@@ -933,7 +931,7 @@ shdepAddDependency(Relation sdepRel,
 {
 	HeapTuple	tup;
 	Datum		values[Natts_pg_shdepend];
-	bool		nulls[Natts_pg_shdepend];
+	bool		nulls[Natts_pg_shdepend] = {0,};
 
 	/*
 	 * Make sure the object doesn't go away while we record the dependency on
@@ -941,8 +939,6 @@ shdepAddDependency(Relation sdepRel,
 	 * shared dependencies.
 	 */
 	shdepLockAndCheckObject(refclassId, refobjId);
-
-	memset(nulls, false, sizeof(nulls));
 
 	/*
 	 * Form the new tuple and record the dependency.

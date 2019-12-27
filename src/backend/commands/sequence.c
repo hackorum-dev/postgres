@@ -128,9 +128,9 @@ DefineSequence(ParseState *pstate, CreateSeqStmt *seq)
 	HeapTuple	tuple;
 	TupleDesc	tupDesc;
 	Datum		value[SEQ_COL_LASTCOL];
-	bool		null[SEQ_COL_LASTCOL];
+	bool		null[SEQ_COL_LASTCOL] = {0,};
 	Datum		pgs_values[Natts_pg_sequence];
-	bool		pgs_nulls[Natts_pg_sequence];
+	bool		pgs_nulls[Natts_pg_sequence] = {0,};
 	int			i;
 
 	/* Unlogged sequences are not implemented -- not clear if useful. */
@@ -182,8 +182,6 @@ DefineSequence(ParseState *pstate, CreateSeqStmt *seq)
 		coldef->constraints = NIL;
 		coldef->location = -1;
 
-		null[i - 1] = false;
-
 		switch (i)
 		{
 			case SEQ_COL_LASTVAL:
@@ -233,8 +231,6 @@ DefineSequence(ParseState *pstate, CreateSeqStmt *seq)
 	/* fill in pg_sequence */
 	rel = table_open(SequenceRelationId, RowExclusiveLock);
 	tupDesc = RelationGetDescr(rel);
-
-	memset(pgs_nulls, 0, sizeof(pgs_nulls));
 
 	pgs_values[Anum_pg_sequence_seqrelid - 1] = ObjectIdGetDatum(seqoid);
 	pgs_values[Anum_pg_sequence_seqtypid - 1] = ObjectIdGetDatum(seqform.seqtypid);
@@ -1790,7 +1786,7 @@ pg_sequence_parameters(PG_FUNCTION_ARGS)
 	Oid			relid = PG_GETARG_OID(0);
 	TupleDesc	tupdesc;
 	Datum		values[7];
-	bool		isnull[7];
+	bool		isnull[7] = {0,};
 	HeapTuple	pgstuple;
 	Form_pg_sequence pgsform;
 
@@ -1817,8 +1813,6 @@ pg_sequence_parameters(PG_FUNCTION_ARGS)
 					   OIDOID, -1, 0);
 
 	BlessTupleDesc(tupdesc);
-
-	memset(isnull, 0, sizeof(isnull));
 
 	pgstuple = SearchSysCache1(SEQRELID, relid);
 	if (!HeapTupleIsValid(pgstuple))

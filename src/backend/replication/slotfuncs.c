@@ -167,7 +167,7 @@ pg_create_logical_replication_slot(PG_FUNCTION_ARGS)
 	TupleDesc	tupdesc;
 	HeapTuple	tuple;
 	Datum		values[2];
-	bool		nulls[2];
+	bool		nulls[2] = {0,};
 
 	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
 		elog(ERROR, "return type must be a row type");
@@ -183,8 +183,6 @@ pg_create_logical_replication_slot(PG_FUNCTION_ARGS)
 
 	values[0] = NameGetDatum(&MyReplicationSlot->data.name);
 	values[1] = LSNGetDatum(MyReplicationSlot->data.confirmed_flush);
-
-	memset(nulls, 0, sizeof(nulls));
 
 	tuple = heap_form_tuple(tupdesc, values, nulls);
 	result = HeapTupleGetDatum(tuple);
@@ -264,7 +262,7 @@ pg_get_replication_slots(PG_FUNCTION_ARGS)
 	{
 		ReplicationSlot *slot = &ReplicationSlotCtl->replication_slots[slotno];
 		Datum		values[PG_GET_REPLICATION_SLOTS_COLS];
-		bool		nulls[PG_GET_REPLICATION_SLOTS_COLS];
+		bool		nulls[PG_GET_REPLICATION_SLOTS_COLS] = {0,};
 
 		ReplicationSlotPersistency persistency;
 		TransactionId xmin;
@@ -293,8 +291,6 @@ pg_get_replication_slots(PG_FUNCTION_ARGS)
 		persistency = slot->data.persistency;
 
 		SpinLockRelease(&slot->mutex);
-
-		memset(nulls, 0, sizeof(nulls));
 
 		i = 0;
 		values[i++] = NameGetDatum(&slot_name);
