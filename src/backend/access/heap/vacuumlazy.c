@@ -287,6 +287,7 @@ typedef struct LVRelStats
 	BlockNumber pages_allvisible;
 	BlockNumber pages_frozen;
 	double		tuples_deleted;
+	double		hintbit_tuples;
 	BlockNumber nonempty_pages; /* actually, last nonempty page + 1 */
 	LVDeadTuples *dead_tuples;
 	int			num_index_scans;
@@ -612,11 +613,12 @@ heap_vacuum_rel(Relation onerel, VacuumParams *params,
 							 vacrelstats->pages_allvisible,
 							 vacrelstats->pages_frozen);
 			appendStringInfo(&buf,
-							 _("tuples: %.0f removed, %.0f remain, %.0f are dead but not yet removable, oldest xmin: %u\n"),
+							 _("tuples: %.0f removed, %.0f remain, %.0f are dead but not yet removable, oldest xmin: %u, wrote %.0f hint bits\n"),
 							 vacrelstats->tuples_deleted,
 							 vacrelstats->new_rel_tuples,
 							 vacrelstats->new_dead_tuples,
-							 OldestXmin);
+							 OldestXmin,
+							 vacrelstats->hintbit_tuples);
 			appendStringInfo(&buf,
 							 _("buffer usage: %d hits, %d misses, %d dirtied\n"),
 							 VacuumPageHit,
@@ -1188,14 +1190,6 @@ lazy_scan_heap(Relation onerel, VacuumParams *params, LVRelStats *vacrelstats,
 		}
 
 		/*
-		 * Prune all HOT-update chains in this page.
-		 *
-		 * We count tuples removed by the pruning step as removed by VACUUM.
-		 */
-		tups_vacuumed += heap_page_prune(onerel, buf, OldestXmin, false,
-										 &vacrelstats->latestRemovedXid);
-
-		/*
 		 * Now scan the page to collect vacuumable items and check for tuples
 		 * requiring freezing.
 		 */
@@ -1215,6 +1209,8 @@ lazy_scan_heap(Relation onerel, VacuumParams *params, LVRelStats *vacrelstats,
 			 offnum = OffsetNumberNext(offnum))
 		{
 			ItemId		itemid;
+			HTSV_Result satisfies;
+			int			oldmask;
 
 			itemid = PageGetItemId(page, offnum);
 
@@ -1266,7 +1262,12 @@ lazy_scan_heap(Relation onerel, VacuumParams *params, LVRelStats *vacrelstats,
 			 * cases impossible (e.g. in-progress insert from the same
 			 * transaction).
 			 */
-			switch (HeapTupleSatisfiesVacuum(&tuple, OldestXmin, buf))
+			oldmask = tuple.t_data->t_infomask;
+			satisfies = HeapTupleSatisfiesVacuum(&tuple, OldestXmin, buf);
+#define HINT_FLAGS (HEAP_XMIN_COMMITTED|HEAP_XMIN_INVALID|HEAP_XMAX_COMMITTED|HEAP_XMAX_INVALID)
+			if ((oldmask&HINT_FLAGS) != (tuple.t_data->t_infomask&HINT_FLAGS))
+				vacrelstats->hintbit_tuples++;
+			switch (satisfies)
 			{
 				case HEAPTUPLE_DEAD:
 
@@ -1405,7 +1406,9 @@ lazy_scan_heap(Relation onerel, VacuumParams *params, LVRelStats *vacrelstats,
 				 * Each non-removable tuple must be checked to see if it needs
 				 * freezing.  Note we already have exclusive buffer lock.
 				 */
-				if (heap_prepare_freeze_tuple(tuple.t_data,
+				// Avoid freezing HEAPTUPLE_DEAD, as required
+				if (satisfies!=HEAPTUPLE_DEAD &&
+						heap_prepare_freeze_tuple(tuple.t_data,
 											  relfrozenxid, relminmxid,
 											  FreezeLimit, MultiXactCutoff,
 											  &frozen[nfrozen],
@@ -1416,6 +1419,14 @@ lazy_scan_heap(Relation onerel, VacuumParams *params, LVRelStats *vacrelstats,
 					all_frozen = false;
 			}
 		}						/* scan along page */
+
+		/*
+		 * Prune all HOT-update chains in this page.
+		 *
+		 * We count tuples removed by the pruning step as removed by VACUUM.
+		 */
+		tups_vacuumed += heap_page_prune(onerel, buf, OldestXmin, false,
+										 &vacrelstats->latestRemovedXid);
 
 		/*
 		 * If we froze any tuples, mark the buffer dirty, and write a WAL
@@ -1711,6 +1722,10 @@ lazy_scan_heap(Relation onerel, VacuumParams *params, LVRelStats *vacrelstats,
 									"%u pages frozen.\n",
 									vacrelstats->pages_frozen),
 					vacrelstats->pages_frozen);
+	appendStringInfo(&buf, ngettext("Wrote %.0f hint bit.\n",
+									"Wrote %.0f hint bits.\n",
+									vacrelstats->hintbit_tuples),
+									vacrelstats->hintbit_tuples);
 	appendStringInfo(&buf, _("%s."), pg_rusage_show(&ru0));
 
 	ereport(elevel,
