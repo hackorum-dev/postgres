@@ -283,7 +283,9 @@ typedef struct LVRelStats
 	double		new_rel_tuples; /* new estimated total # of tuples */
 	double		new_live_tuples;	/* new estimated total # of live tuples */
 	double		new_dead_tuples;	/* new estimated total # of dead tuples */
-	BlockNumber pages_removed;
+	BlockNumber pages_removed;	/* Due to truncation */
+	BlockNumber pages_allvisible;
+	BlockNumber pages_frozen;
 	double		tuples_deleted;
 	BlockNumber nonempty_pages; /* actually, last nonempty page + 1 */
 	LVDeadTuples *dead_tuples;
@@ -602,11 +604,13 @@ heap_vacuum_rel(Relation onerel, VacuumParams *params,
 							 get_namespace_name(RelationGetNamespace(onerel)),
 							 RelationGetRelationName(onerel),
 							 vacrelstats->num_index_scans);
-			appendStringInfo(&buf, _("pages: %u removed, %u remain, %u skipped due to pins, %u skipped frozen\n"),
+			appendStringInfo(&buf, _("pages: %u removed, %u remain, %u skipped due to pins, %u skipped frozen, %u marked all visible, %u marked frozen\n"),
 							 vacrelstats->pages_removed,
 							 vacrelstats->rel_pages,
 							 vacrelstats->pinskipped_pages,
-							 vacrelstats->frozenskipped_pages);
+							 vacrelstats->frozenskipped_pages,
+							 vacrelstats->pages_allvisible,
+							 vacrelstats->pages_frozen);
 			appendStringInfo(&buf,
 							 _("tuples: %.0f removed, %.0f remain, %.0f are dead but not yet removable, oldest xmin: %u\n"),
 							 vacrelstats->tuples_deleted,
@@ -751,6 +755,9 @@ lazy_scan_heap(Relation onerel, VacuumParams *params, LVRelStats *vacrelstats,
 	vacrelstats->scanned_pages = 0;
 	vacrelstats->tupcount_pages = 0;
 	vacrelstats->nonempty_pages = 0;
+	vacrelstats->pages_allvisible = 0;
+	vacrelstats->pages_frozen = 0;
+
 	vacrelstats->latestRemovedXid = InvalidTransactionId;
 
 	/*
@@ -1170,6 +1177,8 @@ lazy_scan_heap(Relation onerel, VacuumParams *params, LVRelStats *vacrelstats,
 				visibilitymap_set(onerel, blkno, buf, InvalidXLogRecPtr,
 								  vmbuffer, InvalidTransactionId,
 								  VISIBILITYMAP_ALL_VISIBLE | VISIBILITYMAP_ALL_FROZEN);
+				vacrelstats->pages_allvisible++;
+				vacrelstats->pages_frozen++;
 				END_CRIT_SECTION();
 			}
 
@@ -1501,8 +1510,12 @@ lazy_scan_heap(Relation onerel, VacuumParams *params, LVRelStats *vacrelstats,
 		{
 			uint8		flags = VISIBILITYMAP_ALL_VISIBLE;
 
-			if (all_frozen)
+			if (all_frozen) {
 				flags |= VISIBILITYMAP_ALL_FROZEN;
+				vacrelstats->pages_frozen++;
+			}
+
+			vacrelstats->pages_allvisible++;
 
 			/*
 			 * It should never be the case that the visibility map page is set
@@ -1690,6 +1703,14 @@ lazy_scan_heap(Relation onerel, VacuumParams *params, LVRelStats *vacrelstats,
 									"%u pages are entirely empty.\n",
 									empty_pages),
 					 empty_pages);
+	appendStringInfo(&buf, ngettext("Marked %u page all visible, ",
+									"Marked %u pages all visible, ",
+									vacrelstats->pages_allvisible),
+					vacrelstats->pages_allvisible);
+	appendStringInfo(&buf, ngettext("%u page frozen.\n",
+									"%u pages frozen.\n",
+									vacrelstats->pages_frozen),
+					vacrelstats->pages_frozen);
 	appendStringInfo(&buf, _("%s."), pg_rusage_show(&ru0));
 
 	ereport(elevel,
@@ -1912,10 +1933,14 @@ lazy_vacuum_page(Relation onerel, BlockNumber blkno, Buffer buffer,
 		uint8		flags = 0;
 
 		/* Set the VM all-frozen bit to flag, if needed */
-		if ((vm_status & VISIBILITYMAP_ALL_VISIBLE) == 0)
+		if ((vm_status & VISIBILITYMAP_ALL_VISIBLE) == 0) {
 			flags |= VISIBILITYMAP_ALL_VISIBLE;
-		if ((vm_status & VISIBILITYMAP_ALL_FROZEN) == 0 && all_frozen)
+			vacrelstats->pages_allvisible++;
+		}
+		if ((vm_status & VISIBILITYMAP_ALL_FROZEN) == 0 && all_frozen) {
 			flags |= VISIBILITYMAP_ALL_FROZEN;
+			vacrelstats->pages_frozen++;
+		}
 
 		Assert(BufferIsValid(*vmbuffer));
 		if (flags != 0)
