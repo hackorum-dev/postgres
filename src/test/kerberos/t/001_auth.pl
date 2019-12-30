@@ -197,7 +197,7 @@ sub test_access
 
 unlink($node->data_dir . '/pg_hba.conf');
 $node->append_conf('pg_hba.conf',
-	qq{host all all $hostaddr/32 gss map=mymap});
+	qq{host &all &all $hostaddr/32 gss map=mymap});
 $node->restart;
 
 test_access($node, 'test1', 'SELECT true', 2, '', 'fails without ticket');
@@ -233,7 +233,7 @@ test_access(
 
 unlink($node->data_dir . '/pg_hba.conf');
 $node->append_conf('pg_hba.conf',
-	qq{hostgssenc all all $hostaddr/32 gss map=mymap});
+	qq{hostgssenc &all &all $hostaddr/32 gss map=mymap});
 $node->restart;
 
 test_access(
@@ -255,7 +255,7 @@ test_access($node, "test1", 'SELECT true', 2, "gssencmode=disable",
 
 unlink($node->data_dir . '/pg_hba.conf');
 $node->append_conf('pg_hba.conf',
-	qq{hostnogssenc all all $hostaddr/32 gss map=mymap});
+	qq{hostnogssenc &all &all $hostaddr/32 gss map=mymap});
 $node->restart;
 
 test_access(
@@ -279,7 +279,7 @@ test_access(
 truncate($node->data_dir . '/pg_ident.conf', 0);
 unlink($node->data_dir . '/pg_hba.conf');
 $node->append_conf('pg_hba.conf',
-	qq{host all all $hostaddr/32 gss include_realm=0});
+	qq{host &all &all $hostaddr/32 gss include_realm=0});
 $node->restart;
 
 test_access(
