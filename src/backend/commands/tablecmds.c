@@ -366,7 +366,7 @@ static void ATRewriteTables(AlterTableStmt *parsetree,
 static void ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap, LOCKMODE lockmode);
 static AlteredTableInfo *ATGetQueueEntry(List **wqueue, Relation rel);
 static void ATSimplePermissions(Relation rel, int allowed_targets);
-static void ATWrongRelkindError(Relation rel, int allowed_targets);
+static void ATWrongRelkindError(Relation rel, int allowed_targets, int actual_target);
 static void ATSimpleRecursion(List **wqueue, Relation rel,
 							  AlterTableCmd *cmd, bool recurse, LOCKMODE lockmode,
 							  AlterTableUtilityContext *context);
@@ -5458,7 +5458,7 @@ ATSimplePermissions(Relation rel, int allowed_targets)
 
 	/* Wrong target type? */
 	if ((actual_target & allowed_targets) == 0)
-		ATWrongRelkindError(rel, allowed_targets);
+		ATWrongRelkindError(rel, allowed_targets, actual_target);
 
 	/* Permissions checks */
 	if (!pg_class_ownercheck(RelationGetRelid(rel), GetUserId()))
@@ -5479,7 +5479,7 @@ ATSimplePermissions(Relation rel, int allowed_targets)
  * type.
  */
 static void
-ATWrongRelkindError(Relation rel, int allowed_targets)
+ATWrongRelkindError(Relation rel, int allowed_targets, int actual_target)
 {
 	char	   *msg;
 
@@ -5527,9 +5527,20 @@ ATWrongRelkindError(Relation rel, int allowed_targets)
 			break;
 	}
 
-	ereport(ERROR,
-			(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-			 errmsg(msg, RelationGetRelationName(rel))));
+	if (actual_target == ATT_PARTITIONED_INDEX &&
+			(allowed_targets&ATT_INDEX) &&
+			!(allowed_targets&ATT_PARTITIONED_INDEX))
+		/* Add a special errhint for this case, since "is not an index" message is unfriendly */
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg(msg, RelationGetRelationName(rel)),
+				 // errhint("\"%s\" is a partitioned index", RelationGetRelationName(rel))));
+				 errhint("operation is not supported on partitioned indexes")));
+	else
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg(msg, RelationGetRelationName(rel))));
+
 }
 
 /*
