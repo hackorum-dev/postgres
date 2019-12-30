@@ -4233,14 +4233,19 @@ convert_one_bytea_to_scalar(unsigned char *value, int valuelen,
 static double
 convert_timevalue_to_scalar(Datum value, Oid typid, bool *failure)
 {
+	double	ret;
+
 	switch (typid)
 	{
 		case TIMESTAMPOID:
-			return DatumGetTimestamp(value);
+			ret = DatumGetTimestamp(value);
+			break;
 		case TIMESTAMPTZOID:
-			return DatumGetTimestampTz(value);
+			ret = DatumGetTimestampTz(value);
+			break;
 		case DATEOID:
-			return date2timestamp_no_overflow(DatumGetDateADT(value));
+			ret = date2timestamp_no_overflow(DatumGetDateADT(value));
+			break;
 		case INTERVALOID:
 			{
 				Interval   *interval = DatumGetIntervalP(value);
@@ -4250,22 +4255,31 @@ convert_timevalue_to_scalar(Datum value, Oid typid, bool *failure)
 				 * average month length of 365.25/12.0 days.  Not too
 				 * accurate, but plenty good enough for our purposes.
 				 */
-				return interval->time + interval->day * (double) USECS_PER_DAY +
+				ret = interval->time + interval->day * (double) USECS_PER_DAY +
 					interval->month * ((DAYS_PER_YEAR / (double) MONTHS_PER_YEAR) * USECS_PER_DAY);
 			}
+			break;
 		case TIMEOID:
-			return DatumGetTimeADT(value);
+			ret = DatumGetTimeADT(value);
+			break;
 		case TIMETZOID:
 			{
 				TimeTzADT  *timetz = DatumGetTimeTzADTP(value);
 
 				/* use GMT-equivalent time */
-				return (double) (timetz->time + (timetz->zone * 1000000.0));
+				ret = (double) (timetz->time + (timetz->zone * 1000000.0));
 			}
+			break;
+		default:
+			*failure = true;
+			return 0;
 	}
 
-	*failure = true;
-	return 0;
+	if (ret==PG_INT64_MIN ||
+		ret==PG_INT64_MAX)
+		ret = nan(""); /* C99 */
+
+	return ret;
 }
 
 
