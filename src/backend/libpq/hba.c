@@ -608,6 +608,16 @@ check_role(const char *role, Oid roleid, List *tokens)
 			if (is_member(roleid, tok->string + 1))
 				return true;
 		}
+		else if (token_is_keyword(tok, "superuser"))
+		{
+			if (superuser_arg(roleid))
+				return true;
+		}
+		else if (token_is_keyword(tok, "nonsuperuser"))
+		{
+			if (!superuser_arg(roleid))
+				return true;
+		}
 		else if (token_matches(tok, role) ||
 				 token_is_keyword(tok, "all"))
 			return true;

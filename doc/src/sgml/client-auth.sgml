@@ -265,7 +265,11 @@ hostnogssenc <replaceable>database</replaceable>  <replaceable>user</replaceable
       <para>
        Specifies which database user name(s) this record
        matches. The value <literal>&amp;all</literal> specifies that it
-       matches all users.  Otherwise, this is either the name of a specific
+       matches all users.
+       The value <literal>&amp;superuser</literal> specifies that it matches all
+       superusers.  The value <literal>&amp;nonsuperuser</literal> specifies that it
+       matches no superusers.
+       Otherwise, this is either the name of a specific
        database user, or a group name preceded by <literal>+</literal>.
        (Recall that there is no real distinction between users and groups
        in <productname>PostgreSQL</productname>; a <literal>+</literal> mark really means
