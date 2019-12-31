@@ -120,6 +120,7 @@ CreateSharedMemoryAndSemaphores(void)
 		size = add_size(size, hash_estimate_size(SHMEM_INDEX_SIZE,
 												 sizeof(ShmemIndexEnt)));
 		size = add_size(size, BufferShmemSize());
+		size = add_size(size, RelNodeDeletedBufferSize());
 		size = add_size(size, LockShmemSize());
 		size = add_size(size, PredicateLockShmemSize());
 		size = add_size(size, ProcGlobalShmemSize());
@@ -217,6 +218,7 @@ CreateSharedMemoryAndSemaphores(void)
 	SUBTRANSShmemInit();
 	MultiXactShmemInit();
 	InitBufferPool();
+	InitRelNodeDeletedBuffer();
 
 	/*
 	 * Set up lock manager

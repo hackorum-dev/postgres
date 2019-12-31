@@ -66,8 +66,6 @@
 #define BUF_WRITTEN				0x01
 #define BUF_REUSABLE			0x02
 
-#define DROP_RELS_BSEARCH_THRESHOLD		20
-
 typedef struct PrivateRefCountEntry
 {
 	Buffer		buffer;
@@ -411,6 +409,72 @@ ForgetPrivateRefCountEntry(PrivateRefCountEntry *ref)
 }
 
 /*
+ * Lazy relations delete mechanism.
+ *
+ * On relation drop no need to walk shared buffers every time, just put a deleted
+ * RelFileNode into an array. Thus we store RelFileNodes in RelNodeDeleted
+ * struct and delete them later when number of deleted relations will
+ * exceed LAZY_DELETE_ARRAY_SIZE.
+ */
+
+#define	LAZY_DELETE_ARRAY_SIZE 				128
+
+/* Wrapper for array of lazy deleted RelFileNodes. */
+typedef struct RelNodeDeletedBuffer
+{
+	RelFileNode 	rnodes[LAZY_DELETE_ARRAY_SIZE];	/* Array of deleted */
+	int 			idx;							/* Current position */
+} RelNodeDeletedBuffer;
+
+static RelNodeDeletedBuffer *RelNodeDeleted = NULL;
+
+/*
+ * Initialize shared array of lazy deleted relations.
+ *
+ * This is called once during shared-memory initialization (either in the
+ * postmaster, or in a standalone backend).
+ */
+void InitRelNodeDeletedBuffer(void)
+{
+	bool 	found;
+
+	RelNodeDeleted = ShmemInitStruct("Lazy Deleted Relations",
+								sizeof(RelNodeDeletedBuffer),
+								&found);
+
+	if (!found)
+		MemSet(RelNodeDeleted, 0, sizeof(RelNodeDeletedBuffer));
+}
+
+/*
+ * Compute the size of shared memory for the buffer of lazy deleted relations.
+ */
+Size
+RelNodeDeletedBufferSize(void)
+{
+	Size		size = 0;
+
+	size = add_size(size, sizeof(RelNodeDeletedBuffer));
+
+	return size;
+}
+
+/*
+ * Check for relation is in lazy deleted buffer (up to n-th position).
+ */
+static inline bool
+IsRelFileNodeDeleted(RelFileNode rnode, int n)
+{
+	int i;
+
+	for (i = 0; i < n; i++)
+		if (RelFileNodeEquals(rnode, RelNodeDeleted->rnodes[i]))
+			return true;
+
+	return false;
+}
+
+/*
  * BufferIsPinned
  *		True iff the buffer is pinned (also checks for valid buffer number).
  *
@@ -452,6 +516,7 @@ static BufferDesc *BufferAlloc(SMgrRelation smgr,
 							   BlockNumber blockNum,
 							   BufferAccessStrategy strategy,
 							   bool *foundPtr);
+static void InvalidateRelFileNodesBuffers(RelFileNode *nodes, int nnodes);
 static void FlushBuffer(BufferDesc *buf, SMgrRelation reln);
 static void AtProcExit_Buffers(int code, Datum arg);
 static void CheckForBufferLeaks(void);
@@ -2690,6 +2755,22 @@ FlushBuffer(BufferDesc *buf, SMgrRelation reln)
 	char	   *bufToWrite;
 	uint32		buf_state;
 
+	LWLockAcquire(LazyRelDeleteLock, LW_SHARED);
+
+	/*
+	 * If rnode is in lazy deleted buffer clear dirty and checkpoint flags.
+	 */
+	if (IsRelFileNodeDeleted(buf->tag.rnode, RelNodeDeleted->idx))
+	{
+		buf_state = LockBufHdr(buf);
+		buf_state &= ~(BM_DIRTY | BM_CHECKPOINT_NEEDED);
+		UnlockBufHdr(buf, buf_state);
+		LWLockRelease(LazyRelDeleteLock);
+		return;
+	}
+
+	LWLockRelease(LazyRelDeleteLock);
+
 	/*
 	 * Acquire the buffer's io_in_progress lock.  If StartBufferIO returns
 	 * false, then someone else flushed the buffer before we could, so we need
@@ -2993,6 +3074,43 @@ DropRelFileNodeBuffers(RelFileNodeBackend rnode, ForkNumber *forkNum,
 	}
 }
 
+/*
+ * Invalidate all of the nodes buffers.
+ */
+void
+InvalidateRelFileNodesBuffers(RelFileNode *nodes, int nnodes)
+{
+	int 		i;
+
+	pg_qsort(nodes, nnodes, sizeof(RelFileNode), rnode_comparator);
+
+	for (i = 0; i < NBuffers; i++)
+	{
+		RelFileNode *rnode = NULL;
+		BufferDesc *bufHdr = GetBufferDescriptor(i);
+		uint32		buf_state;
+
+		/*
+		 * As in DropRelFileNodeBuffers, an unlocked precheck should be safe
+		 * and saves some cycles.
+		 */
+
+		rnode = bsearch((const void *) &(bufHdr->tag.rnode),
+						nodes, nnodes, sizeof(RelFileNode),
+						rnode_comparator);
+
+		/* buffer doesn't belong to any of the given relfilenodes; skip it */
+		if (rnode == NULL)
+			continue;
+
+		buf_state = LockBufHdr(bufHdr);
+		if (RelFileNodeEquals(bufHdr->tag.rnode, (*rnode)))
+			InvalidateBuffer(bufHdr);	/* releases spinlock */
+		else
+			UnlockBufHdr(bufHdr, buf_state);
+	}
+}
+
 /* ---------------------------------------------------------------------
  *		DropRelFileNodesAllBuffers
  *
@@ -3006,25 +3124,27 @@ void
 DropRelFileNodesAllBuffers(RelFileNodeBackend *rnodes, int nnodes)
 {
 	int			i,
+				j,
 				n = 0;
 	RelFileNode *nodes;
-	bool		use_bsearch;
 
 	if (nnodes == 0)
 		return;
 
 	nodes = palloc(sizeof(RelFileNode) * nnodes);	/* non-local relations */
 
-	/* If it's a local relation, it's localbuf.c's problem. */
 	for (i = 0; i < nnodes; i++)
 	{
+		/* If it's a local relation, it's localbuf.c's problem. */
 		if (RelFileNodeBackendIsTemp(rnodes[i]))
 		{
 			if (rnodes[i].backend == MyBackendId)
 				DropRelFileNodeAllLocalBuffers(rnodes[i].node);
 		}
 		else
+		{
 			nodes[n++] = rnodes[i].node;
+		}
 	}
 
 	/*
@@ -3037,58 +3157,41 @@ DropRelFileNodesAllBuffers(RelFileNodeBackend *rnodes, int nnodes)
 		return;
 	}
 
-	/*
-	 * For low number of relations to drop just use a simple walk through, to
-	 * save the bsearch overhead. The threshold to use is rather a guess than
-	 * an exactly determined value, as it depends on many factors (CPU and RAM
-	 * speeds, amount of shared buffers etc.).
-	 */
-	use_bsearch = n > DROP_RELS_BSEARCH_THRESHOLD;
-
-	/* sort the list of rnodes if necessary */
-	if (use_bsearch)
-		pg_qsort(nodes, n, sizeof(RelFileNode), rnode_comparator);
-
-	for (i = 0; i < NBuffers; i++)
+	if (n > LAZY_DELETE_ARRAY_SIZE)
 	{
-		RelFileNode *rnode = NULL;
-		BufferDesc *bufHdr = GetBufferDescriptor(i);
-		uint32		buf_state;
+		InvalidateRelFileNodesBuffers(nodes, n);
+	}
+	else
+	{
+		int		idx;
 
-		/*
-		 * As in DropRelFileNodeBuffers, an unlocked precheck should be safe
-		 * and saves some cycles.
-		 */
+		LWLockAcquire(LazyRelDeleteLock, LW_SHARED);
+		idx = RelNodeDeleted->idx;
+		Assert(idx < LAZY_DELETE_ARRAY_SIZE);
 
-		if (!use_bsearch)
+		/* Copy deleted relations into lazy deleted array, but watch the size ... */
+		for (i = idx, j = 0; i < LAZY_DELETE_ARRAY_SIZE && j < n; i++, j++)
+			RelNodeDeleted->rnodes[i] = rnodes[j].node;
+
+		idx += j;
+
+		if (idx == LAZY_DELETE_ARRAY_SIZE)
 		{
-			int			j;
+			InvalidateRelFileNodesBuffers(RelNodeDeleted->rnodes, idx);
 
-			for (j = 0; j < n; j++)
-			{
-				if (RelFileNodeEquals(bufHdr->tag.rnode, nodes[j]))
-				{
-					rnode = &nodes[j];
-					break;
-				}
-			}
+			/* ... and Ñopy rest of deleted relations. */
+			for (i = 0; j < n; i++, j++)
+				RelNodeDeleted->rnodes[i] = rnodes[j].node;
+
+			RelNodeDeleted->idx = i;
 		}
 		else
 		{
-			rnode = bsearch((const void *) &(bufHdr->tag.rnode),
-							nodes, n, sizeof(RelFileNode),
-							rnode_comparator);
+			RelNodeDeleted->idx = idx;
 		}
 
-		/* buffer doesn't belong to any of the given relfilenodes; skip it */
-		if (rnode == NULL)
-			continue;
-
-		buf_state = LockBufHdr(bufHdr);
-		if (RelFileNodeEquals(bufHdr->tag.rnode, (*rnode)))
-			InvalidateBuffer(bufHdr);	/* releases spinlock */
-		else
-			UnlockBufHdr(bufHdr, buf_state);
+		Assert(RelNodeDeleted->idx < LAZY_DELETE_ARRAY_SIZE);
+		LWLockRelease(LazyRelDeleteLock);
 	}
 
 	pfree(nodes);
@@ -3133,6 +3236,22 @@ DropDatabaseBuffers(Oid dbid)
 		else
 			UnlockBufHdr(bufHdr, buf_state);
 	}
+
+	/*
+	 * Remove all relations of dbid from lazy deleted array.
+	 */
+	LWLockAcquire(LazyRelDeleteLock, LW_SHARED);
+	{
+		int		idx = RelNodeDeleted->idx;
+
+		for (i = 0; i < idx; i++)
+		{
+			if (RelNodeDeleted->rnodes[i].dbNode == dbid)
+				RelNodeDeleted->rnodes[i] = RelNodeDeleted->rnodes[--idx];
+		}
+		RelNodeDeleted->idx = idx;
+	}
+	LWLockRelease(LazyRelDeleteLock);
 }
 
 /* -----------------------------------------------------------------
@@ -3330,6 +3449,15 @@ FlushDatabaseBuffers(Oid dbid)
 		if (bufHdr->tag.rnode.dbNode != dbid)
 			continue;
 
+		LWLockAcquire(LazyRelDeleteLock, LW_SHARED);
+
+		if (IsRelFileNodeDeleted(bufHdr->tag.rnode, RelNodeDeleted->idx))
+		{
+			LWLockRelease(LazyRelDeleteLock);
+			continue;
+		}
+
+		LWLockRelease(LazyRelDeleteLock);
 		ReservePrivateRefCountEntry();
 
 		buf_state = LockBufHdr(bufHdr);

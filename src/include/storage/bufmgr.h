@@ -179,6 +179,7 @@ extern Buffer ReleaseAndReadBuffer(Buffer buffer, Relation relation,
 								   BlockNumber blockNum);
 
 extern void InitBufferPool(void);
+extern void InitRelNodeDeletedBuffer(void);
 extern void InitBufferPoolAccess(void);
 extern void InitBufferPoolBackend(void);
 extern void AtEOXact_Buffers(bool isCommit);
@@ -205,6 +206,7 @@ extern XLogRecPtr BufferGetLSNAtomic(Buffer buffer);
 extern void PrintPinnedBufs(void);
 #endif
 extern Size BufferShmemSize(void);
+extern Size RelNodeDeletedBufferSize(void);
 extern void BufferGetTag(Buffer buffer, RelFileNode *rnode,
 						 ForkNumber *forknum, BlockNumber *blknum);
 
