@@ -693,6 +693,14 @@ typedef struct TupleHashEntryData
 #define SH_DECLARE
 #include "lib/simplehash.h"
 
+typedef struct HashTableInstrumentation
+{
+	size_t	nbuckets;				/* number of buckets at end of execution */
+	size_t	nbuckets_original;		/* planned number of buckets */
+	size_t	space_peak_hash;		/* peak memory usage in bytes */
+	size_t	space_peak_tuples;		/* peak memory usage in bytes */
+} HashTableInstrumentation;
+
 typedef struct TupleHashTableData
 {
 	tuplehash_hash *hashtab;	/* underlying hash table */
@@ -711,6 +719,7 @@ typedef struct TupleHashTableData
 	ExprState  *cur_eq_func;	/* comparator for input vs. table */
 	uint32		hash_iv;		/* hash-function IV */
 	ExprContext *exprcontext;	/* expression context */
+	HashTableInstrumentation instrument;
 }			TupleHashTableData;
 
 typedef tuplehash_iterator TupleHashIterator;
@@ -2173,9 +2182,9 @@ typedef struct AggState
 	int			hash_planned_partitions; /* number of partitions planned
 											for first pass */
 	double		hashentrysize;	/* estimate revised during execution */
-	Size		hash_mem_peak;	/* peak hash table memory usage */
 	uint64		hash_ngroups_current;	/* number of groups currently in
 										   memory in all hash tables */
+// Move these to instrumentation ?
 	uint64		hash_disk_used; /* kB of disk space used */
 	int			hash_batches_used;	/* batches used during entire execution */
 

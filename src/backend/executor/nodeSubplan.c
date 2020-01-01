@@ -621,6 +621,9 @@ buildSubPlanHash(SubPlanState *node, ExprContext *econtext)
 	ExecClearTuple(node->projRight->pi_state.resultslot);
 
 	MemoryContextSwitchTo(oldcontext);
+	UpdateTupleHashTableStats(node->hashtable, false);
+	if (node->hashnulls)
+		UpdateTupleHashTableStats(node->hashnulls, false);
 }
 
 /*

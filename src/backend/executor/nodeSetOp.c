@@ -415,6 +415,7 @@ setop_fill_hash_table(SetOpState *setopstate)
 
 	setopstate->table_filled = true;
 	/* Initialize to walk the hash table */
+	UpdateTupleHashTableStats(setopstate->hashtable, false);
 	ResetTupleHashIterator(setopstate->hashtable, &setopstate->hashiter);
 }
 

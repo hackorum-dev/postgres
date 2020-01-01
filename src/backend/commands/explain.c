@@ -18,6 +18,7 @@
 #include "commands/createas.h"
 #include "commands/defrem.h"
 #include "commands/prepare.h"
+#include "executor/nodeAgg.h"
 #include "executor/nodeHash.h"
 #include "foreign/fdwapi.h"
 #include "jit/jit.h"
@@ -88,12 +89,14 @@ static void show_merge_append_keys(MergeAppendState *mstate, List *ancestors,
 								   ExplainState *es);
 static void show_agg_keys(AggState *astate, List *ancestors,
 						  ExplainState *es);
-static void show_grouping_sets(PlanState *planstate, Agg *agg,
+static void show_grouping_sets(AggState *aggstate, Agg *agg,
 							   List *ancestors, ExplainState *es);
-static void show_grouping_set_keys(PlanState *planstate,
+static void show_grouping_set_info(AggState *aggstate,
 								   Agg *aggnode, Sort *sortnode,
 								   List *context, bool useprefix,
-								   List *ancestors, ExplainState *es);
+								   List *ancestors,
+								   HashTableInstrumentation *inst,
+								   ExplainState *es);
 static void show_group_keys(GroupState *gstate, List *ancestors,
 							ExplainState *es);
 static void show_sort_group_keys(PlanState *planstate, const char *qlabel,
@@ -108,7 +111,8 @@ static void show_sort_info(SortState *sortstate, ExplainState *es);
 static void show_incremental_sort_info(IncrementalSortState *incrsortstate,
 									   ExplainState *es);
 static void show_hash_info(HashState *hashstate, ExplainState *es);
-static void show_hashagg_info(AggState *hashstate, ExplainState *es);
+static void show_tuplehash_info(HashTableInstrumentation *inst, AggState *as,
+		ExplainState *es);
 static void show_tidbitmap_info(BitmapHeapScanState *planstate,
 								ExplainState *es);
 static void show_instrumentation_count(const char *qlabel, int which,
@@ -1535,6 +1539,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 					appendStringInfo(es->str, " %s", setopcmd);
 				else
 					ExplainPropertyText("Command", setopcmd, es);
+				// show strategy in text mode ?
 			}
 			break;
 		default:
@@ -1928,10 +1933,23 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		case T_Agg:
 			show_agg_keys(castNode(AggState, planstate), ancestors, es);
 			show_upper_qual(plan->qual, "Filter", planstate, ancestors, es);
-			show_hashagg_info((AggState *) planstate, es);
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
+			break;
+		case T_SetOp:
+			{
+				SetOpState *sos = castNode(SetOpState, planstate);
+				if (sos->hashtable)
+					show_tuplehash_info(&sos->hashtable->instrument, NULL, es);
+			}
+			break;
+		case T_RecursiveUnion:
+			{
+				RecursiveUnionState *rus = (RecursiveUnionState *)planstate;
+				if (rus->hashtable)
+					show_tuplehash_info(&rus->hashtable->instrument, NULL, es);
+			}
 			break;
 		case T_Group:
 			show_group_keys(castNode(GroupState, planstate), ancestors, es);
@@ -2337,24 +2355,31 @@ show_agg_keys(AggState *astate, List *ancestors,
 		ancestors = lcons(plan, ancestors);
 
 		if (plan->groupingSets)
-			show_grouping_sets(outerPlanState(astate), plan, ancestors, es);
+			show_grouping_sets(astate, plan, ancestors, es);
 		else
+		{
 			show_sort_group_keys(outerPlanState(astate), "Group Key",
 								 plan->numCols, 0, plan->grpColIdx,
 								 NULL, NULL, NULL,
 								 ancestors, es);
+			Assert(astate->num_hashes <= 1);
+			if (astate->num_hashes)
+				show_tuplehash_info(&astate->perhash[0].hashtable->instrument, astate, es);
+		}
 
 		ancestors = list_delete_first(ancestors);
 	}
 }
 
 static void
-show_grouping_sets(PlanState *planstate, Agg *agg,
+show_grouping_sets(AggState *aggstate, Agg *agg,
 				   List *ancestors, ExplainState *es)
 {
+	PlanState	*planstate = outerPlanState(aggstate);
 	List	   *context;
 	bool		useprefix;
 	ListCell   *lc;
+	int			setno = 0;
 
 	/* Set up deparsing context */
 	context = set_deparse_context_plan(es->deparse_cxt,
@@ -2364,27 +2389,41 @@ show_grouping_sets(PlanState *planstate, Agg *agg,
 
 	ExplainOpenGroup("Grouping Sets", "Grouping Sets", false, es);
 
-	show_grouping_set_keys(planstate, agg, NULL,
-						   context, useprefix, ancestors, es);
+	show_grouping_set_info(aggstate, agg, NULL, context, useprefix, ancestors,
+			aggstate->num_hashes ?
+			&aggstate->perhash[setno++].hashtable->instrument : NULL,
+			es);
 
 	foreach(lc, agg->chain)
 	{
 		Agg		   *aggnode = lfirst(lc);
 		Sort	   *sortnode = (Sort *) aggnode->plan.lefttree;
+		HashTableInstrumentation *inst = NULL;
 
-		show_grouping_set_keys(planstate, aggnode, sortnode,
-							   context, useprefix, ancestors, es);
+		if (aggnode->aggstrategy == AGG_HASHED ||
+				aggnode->aggstrategy == AGG_MIXED)
+		{
+			Assert(setno < aggstate->num_hashes);
+			inst = &aggstate->perhash[setno++].hashtable->instrument;
+		}
+
+		show_grouping_set_info(aggstate, aggnode, sortnode,
+							   context, useprefix, ancestors,
+							   inst, es);
 	}
 
 	ExplainCloseGroup("Grouping Sets", "Grouping Sets", false, es);
 }
 
+/* Show keys and any hash instrumentation for a grouping set */
 static void
-show_grouping_set_keys(PlanState *planstate,
+show_grouping_set_info(AggState *aggstate,
 					   Agg *aggnode, Sort *sortnode,
 					   List *context, bool useprefix,
-					   List *ancestors, ExplainState *es)
+					   List *ancestors, HashTableInstrumentation *inst,
+					   ExplainState *es)
 {
+	PlanState	*planstate = outerPlanState(aggstate);
 	Plan	   *plan = planstate->plan;
 	char	   *exprstr;
 	ListCell   *lc;
@@ -2447,6 +2486,10 @@ show_grouping_set_keys(PlanState *planstate,
 	}
 
 	ExplainCloseGroup(keysetname, keysetname, false, es);
+
+	if (aggnode->aggstrategy == AGG_HASHED ||
+			aggnode->aggstrategy == AGG_MIXED)
+		show_tuplehash_info(inst, NULL, es);
 
 	if (sortnode && es->format == EXPLAIN_FORMAT_TEXT)
 		es->indent--;
@@ -3059,37 +3102,78 @@ show_hash_info(HashState *hashstate, ExplainState *es)
 }
 
 /*
- * Show information on hash aggregate memory usage and batches.
+ * Show hash bucket stats and (optionally) memory.
  */
 static void
-show_hashagg_info(AggState *aggstate, ExplainState *es)
+show_tuplehash_info(HashTableInstrumentation *inst, AggState *aggstate, ExplainState *es)
 {
-	Agg		*agg	   = (Agg *)aggstate->ss.ps.plan;
-	int64	 memPeakKb = (aggstate->hash_mem_peak + 1023) / 1024;
+	int64	 spacePeakKb_tuples = (inst->space_peak_tuples + 1023) / 1024,
+		 spacePeakKb_hash = (inst->space_peak_hash + 1023) / 1024;
 
-	Assert(IsA(aggstate, AggState));
-
-	if (agg->aggstrategy != AGG_HASHED &&
-		agg->aggstrategy != AGG_MIXED)
-		return;
-
-	if (es->costs && aggstate->hash_planned_partitions > 0)
-	{
+	if (es->costs && aggstate!=NULL && aggstate->hash_planned_partitions > 0)
 		ExplainPropertyInteger("Planned Partitions", NULL,
 							   aggstate->hash_planned_partitions, es);
-	}
 
 	if (!es->analyze)
 		return;
 
-	/* EXPLAIN ANALYZE */
-	ExplainPropertyInteger("Peak Memory Usage", "kB", memPeakKb, es);
-	if (aggstate->hash_batches_used > 0)
+	if (es->format != EXPLAIN_FORMAT_TEXT)
 	{
-		ExplainPropertyInteger("Disk Usage", "kB",
-							   aggstate->hash_disk_used, es);
-		ExplainPropertyInteger("HashAgg Batches", NULL,
-							   aggstate->hash_batches_used, es);
+		ExplainPropertyInteger("Hash Buckets", NULL,
+							   inst->nbuckets, es);
+		ExplainPropertyInteger("Original Hash Buckets", NULL,
+							   inst->nbuckets_original, es);
+		ExplainPropertyInteger("Peak Memory Usage (hashtable)", "kB",
+							   spacePeakKb_hash, es);
+		ExplainPropertyInteger("Peak Memory Usage (tuples)", "kB",
+							   spacePeakKb_tuples, es);
+		if (aggstate != NULL)
+		{
+			Agg		*agg = (Agg *)aggstate->ss.ps.plan;
+			if (agg->aggstrategy == AGG_HASHED ||
+					agg->aggstrategy == AGG_MIXED)
+			{
+				ExplainPropertyInteger("Disk Usage", "kB",
+									   aggstate->hash_disk_used, es);
+				ExplainPropertyInteger("HashAgg Batches", NULL,
+									   aggstate->hash_batches_used, es);
+			}
+		}
+	}
+	else if (!inst->nbuckets)
+		; /* Do nothing */
+	else
+	{
+		if (inst->nbuckets_original != inst->nbuckets)
+		{
+			ExplainIndentText(es);
+			appendStringInfo(es->str,
+						"Buckets: %lld (originally %lld)",
+						(long long)inst->nbuckets,
+						(long long)inst->nbuckets_original);
+		}
+		else
+		{
+			ExplainIndentText(es);
+			appendStringInfo(es->str,
+						"Buckets: %lld",
+						(long long)inst->nbuckets);
+		}
+
+		appendStringInfoChar(es->str, '\n');
+		ExplainIndentText(es);
+		appendStringInfo(es->str,
+				"Peak Memory Usage: hashtable: %lldkB, tuples: %lldkB",
+				(long long)spacePeakKb_hash, (long long)spacePeakKb_tuples);
+		appendStringInfoChar(es->str, '\n');
+
+		if (aggstate != NULL && aggstate->hash_batches_used > 0)
+		{
+			ExplainPropertyInteger("Disk Usage", "kB",
+								   aggstate->hash_disk_used, es);
+			ExplainPropertyInteger("HashAgg Batches", NULL,
+								   aggstate->hash_batches_used, es);
+		}
 	}
 }
 
@@ -3798,6 +3882,29 @@ ExplainSubPlans(List *plans, List *ancestors,
 
 		ExplainNode(sps->planstate, ancestors,
 					relationship, sp->plan_name, es);
+		if (sps->hashtable)
+		{
+			ExplainOpenGroup("Hashtable", "Hashtable", true, es);
+			if (es->format == EXPLAIN_FORMAT_TEXT)
+			{
+				ExplainIndentText(es);
+				appendStringInfoString(es->str, "Hashtable: ");
+			}
+			show_tuplehash_info(&sps->hashtable->instrument, NULL, es);
+			ExplainCloseGroup("Hashtable", "Hashtable", true, es);
+		}
+
+		if (sps->hashnulls)
+		{
+			ExplainOpenGroup("Null Hashtable", "Null Hashtable", true, es);
+			if (es->format == EXPLAIN_FORMAT_TEXT)
+			{
+				ExplainIndentText(es);
+				appendStringInfoString(es->str, "Null Hashtable: ");
+			}
+			show_tuplehash_info(&sps->hashnulls->instrument, NULL, es);
+			ExplainCloseGroup("Null Hashtable", "Null Hashtable", true, es);
+		}
 
 		ancestors = list_delete_first(ancestors);
 	}

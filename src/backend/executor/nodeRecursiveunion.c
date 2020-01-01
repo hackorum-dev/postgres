@@ -156,6 +156,9 @@ ExecRecursiveUnion(PlanState *pstate)
 		return slot;
 	}
 
+	if (node->hashtable)
+		UpdateTupleHashTableStats(node->hashtable, false);
+
 	return NULL;
 }
 

@@ -1867,35 +1867,24 @@ hash_agg_enter_spill_mode(AggState *aggstate)
 static void
 hash_agg_update_metrics(AggState *aggstate, bool from_tape, int npartitions)
 {
-	Size	meta_mem = 0;
 	Size	hash_mem = 0;
 	Size	buffer_mem;
-	Size	total_mem;
 
 	if (aggstate->aggstrategy != AGG_MIXED &&
 		aggstate->aggstrategy != AGG_HASHED)
 		return;
 
-
 	for (int i = 0; i < aggstate->num_hashes; ++i)
 	{
-		/* memory for the hash table itself */
-		meta_mem += MemoryContextMemAllocated(
-			aggstate->perhash[i].hash_metacxt, true);
-		/* memory for the group keys and transition states */
 		hash_mem += MemoryContextMemAllocated(
 			aggstate->perhash[i].hashcontext->ecxt_per_tuple_memory, true);
+		UpdateTupleHashTableStats(aggstate->perhash[i].hashtable, false);
 	}
 
-	/* memory for read/write tape buffers, if spilled */
+	/* memory for read/write tape buffers, if spilled XXX */
 	buffer_mem = npartitions * HASHAGG_WRITE_BUFFER_SIZE;
 	if (from_tape)
 		buffer_mem += HASHAGG_READ_BUFFER_SIZE;
-
-	/* update peak mem */
-	total_mem = meta_mem + hash_mem + buffer_mem;
-	if (total_mem > aggstate->hash_mem_peak)
-		aggstate->hash_mem_peak = total_mem;
 
 	/* update disk usage */
 	if (aggstate->hash_tapeinfo != NULL)
@@ -3269,7 +3258,7 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 	/*
 	 * Create expression contexts.  We need three or more, one for
 	 * per-input-tuple processing, one for per-output-tuple processing, one
-	 * for all the hashtables, and one for each grouping set.  The per-tuple
+	 * for each hashtable, and one for each grouping set.  The per-tuple
 	 * memory context of the per-grouping-set ExprContexts (aggcontexts)
 	 * replaces the standalone memory context formerly used to hold transition
 	 * values.  We cheat a little by using ExecAssignExprContext() to build
