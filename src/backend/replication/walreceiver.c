@@ -202,7 +202,6 @@ WalReceiverMain(const void *startup_data, size_t startup_data_len)
 			SpinLockRelease(&walrcv->mutex);
 			ConditionVariableBroadcast(&walrcv->walRcvStoppedCV);
 			proc_exit(1);
-			break;
 
 		case WALRCV_STARTING:
 			/* The usual case */
@@ -746,8 +745,8 @@ WalRcvWaitForStartPosition(XLogRecPtr *startpoint, TimeLineID *startpointTLI)
 		SpinLockRelease(&walrcv->mutex);
 		if (state == WALRCV_STOPPING)
 			proc_exit(0);
-		else
-			elog(FATAL, "unexpected walreceiver state");
+
+		elog(FATAL, "unexpected walreceiver state");
 	}
 	walrcv->walRcvState = WALRCV_WAITING;
 	walrcv->receiveStart = InvalidXLogRecPtr;
