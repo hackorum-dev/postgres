@@ -110,8 +110,8 @@ StartupProcShutdownHandler(SIGNAL_ARGS)
 {
 	if (in_restore_command)
 		proc_exit(1);
-	else
-		shutdown_requested = true;
+
+	shutdown_requested = true;
 	WakeupRecovery();
 }
 
