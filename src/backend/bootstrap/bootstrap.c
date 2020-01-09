@@ -339,7 +339,6 @@ BootstrapModeMain(int argc, char *argv[], bool check_only)
 				write_stderr("Try \"%s --help\" for more information.\n",
 							 progname);
 				proc_exit(1);
-				break;
 		}
 	}
 
