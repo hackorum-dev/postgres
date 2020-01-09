@@ -503,12 +503,13 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 				csquared;
 	double		spc_seq_page_cost,
 				spc_random_page_cost;
-	Cost		min_IO_cost,
+	double		min_pages_fetched,	/* The min and max page count based on index correlation */
+				max_pages_fetched;
+	Cost		min_IO_cost,	/* The min and max cost based on index correlation */
 				max_IO_cost;
 	QualCost	qpqual_cost;
 	Cost		cpu_per_tuple;
 	double		tuples_fetched;
-	double		pages_fetched;
 	double		rand_heap_pages;
 	double		index_pages;
 
@@ -591,7 +592,8 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 	 * (just after a CLUSTER, for example), the number of pages fetched should
 	 * be exactly selectivity * table_size.  What's more, all but the first
 	 * will be sequential fetches, not the random fetches that occur in the
-	 * uncorrelated case.  So if the number of pages is more than 1, we
+	 * uncorrelated case (the index is expected to read fewer pages, *and* each
+	 * page read is cheaper).  So if the number of pages is more than 1, we
 	 * ought to charge
 	 *		spc_random_page_cost + (pages_fetched - 1) * spc_seq_page_cost
 	 * For partially-correlated indexes, we ought to charge somewhere between
@@ -616,17 +618,17 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 		 * pro-rate the costs for one scan.  In this case we assume all the
 		 * fetches are random accesses.
 		 */
-		pages_fetched = index_pages_fetched(tuples_fetched * loop_count,
+		max_pages_fetched = index_pages_fetched(tuples_fetched * loop_count,
 											baserel->pages,
 											(double) index->pages,
 											root);
 
 		if (indexonly)
-			pages_fetched = ceil(pages_fetched * (1.0 - baserel->allvisfrac));
+			max_pages_fetched = ceil(max_pages_fetched * (1.0 - baserel->allvisfrac));
 
-		rand_heap_pages = pages_fetched;
+		rand_heap_pages = max_pages_fetched;
 
-		max_IO_cost = (pages_fetched * spc_random_page_cost) / loop_count;
+		max_IO_cost = (max_pages_fetched * spc_random_page_cost) / loop_count;
 
 		/*
 		 * In the perfectly correlated case, the number of pages touched by
@@ -638,17 +640,17 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 		 * where such a plan is actually interesting, only one page would get
 		 * fetched per scan anyway, so it shouldn't matter much.)
 		 */
-		pages_fetched = ceil(indexSelectivity * (double) baserel->pages);
+		min_pages_fetched = ceil(indexSelectivity * (double) baserel->pages);
 
-		pages_fetched = index_pages_fetched(pages_fetched * loop_count,
+		min_pages_fetched = index_pages_fetched(min_pages_fetched * loop_count,
 											baserel->pages,
 											(double) index->pages,
 											root);
 
 		if (indexonly)
-			pages_fetched = ceil(pages_fetched * (1.0 - baserel->allvisfrac));
+			min_pages_fetched = ceil(min_pages_fetched * (1.0 - baserel->allvisfrac));
 
-		min_IO_cost = (pages_fetched * spc_random_page_cost) / loop_count;
+		min_IO_cost = (min_pages_fetched * spc_random_page_cost) / loop_count;
 	}
 	else
 	{
@@ -656,30 +658,31 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 		 * Normal case: apply the Mackert and Lohman formula, and then
 		 * interpolate between that and the correlation-derived result.
 		 */
-		pages_fetched = index_pages_fetched(tuples_fetched,
+
+		/* For the perfectly uncorrelated case (csquared=0) */
+		max_pages_fetched = index_pages_fetched(tuples_fetched,
 											baserel->pages,
 											(double) index->pages,
 											root);
 
 		if (indexonly)
-			pages_fetched = ceil(pages_fetched * (1.0 - baserel->allvisfrac));
+			max_pages_fetched = ceil(max_pages_fetched * (1.0 - baserel->allvisfrac));
 
-		rand_heap_pages = pages_fetched;
+		rand_heap_pages = max_pages_fetched;
 
-		/* max_IO_cost is for the perfectly uncorrelated case (csquared=0) */
-		max_IO_cost = pages_fetched * spc_random_page_cost;
+		max_IO_cost = max_pages_fetched * spc_random_page_cost;
 
-		/* min_IO_cost is for the perfectly correlated case (csquared=1) */
-		pages_fetched = ceil(indexSelectivity * (double) baserel->pages);
+		/* For the perfectly correlated case (csquared=1) */
+		min_pages_fetched = ceil(indexSelectivity * (double) baserel->pages);
 
 		if (indexonly)
-			pages_fetched = ceil(pages_fetched * (1.0 - baserel->allvisfrac));
+			min_pages_fetched = ceil(min_pages_fetched * (1.0 - baserel->allvisfrac));
 
-		if (pages_fetched > 0)
+		if (min_pages_fetched > 0)
 		{
 			min_IO_cost = spc_random_page_cost;
-			if (pages_fetched > 1)
-				min_IO_cost += (pages_fetched - 1) * spc_seq_page_cost;
+			if (min_pages_fetched > 1)
+				min_IO_cost += (min_pages_fetched - 1) * spc_seq_page_cost;
 		}
 		else
 			min_IO_cost = 0;
