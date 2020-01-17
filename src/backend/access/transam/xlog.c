@@ -4279,6 +4279,10 @@ ReadRecord(XLogReaderState *xlogreader, XLogRecPtr RecPtr, int emode,
 		EndRecPtr = xlogreader->EndRecPtr;
 		if (record == NULL)
 		{
+			int actual_emode =
+				emode_for_corrupt_record(emode,
+										 RecPtr ? RecPtr : EndRecPtr);
+
 			if (readFile >= 0)
 			{
 				close(readFile);
@@ -4286,15 +4290,43 @@ ReadRecord(XLogReaderState *xlogreader, XLogRecPtr RecPtr, int emode,
 			}
 
 			/*
-			 * We only end up here without a message when XLogPageRead()
-			 * failed - in that case we already logged something. In
-			 * StandbyMode that only happens if we have been triggered, so we
-			 * shouldn't loop anymore in that case.
+			 * Invalid RecPtr here means we are reading successive records
+			 * during recovery. If we get here during recovery, we assume that
+			 * we reached the end of WAL.  Otherwise something's really wrong
+			 * and we report just only the errormsg if any. If we don't receive
+			 * errormsg here, we already logged something.  We are going to
+			 * emit duplicate message at the same LSN if
+			 * emode_for_currupt_record decided to mute it.  We don't repeat
+			 * "reached end of WAL" in the muted messages.
+			 *
+			 * Note: errormsg is alreay translated.
 			 */
-			if (errormsg)
-				ereport(emode_for_corrupt_record(emode,
-												 RecPtr ? RecPtr : EndRecPtr),
-						(errmsg_internal("%s", errormsg) /* already translated */ ));
+			if (RecPtr == InvalidXLogRecPtr && actual_emode == emode)
+			{
+				if (StandbyMode)
+					ereport(actual_emode,
+							(errmsg ("rached end of WAL at %X/%X on timeline %u in %s during streaming replication",
+									 (uint32) (EndRecPtr >> 32), (uint32) EndRecPtr,
+									 ThisTimeLineID,
+									 xlogSourceNames[currentSource]),
+							 (errormsg ? errdetail_internal("%s", errormsg) : 0)));
+				else if (InArchiveRecovery)
+					ereport(actual_emode,
+							(errmsg ("rached end of WAL at %X/%X on timeline %u in %s during archive recovery",
+									 (uint32) (EndRecPtr >> 32), (uint32) EndRecPtr,
+									 ThisTimeLineID,
+									 xlogSourceNames[currentSource]),
+							 (errormsg ? errdetail_internal("%s", errormsg) : 0)));
+				else
+					ereport(actual_emode,
+							(errmsg ("rached end of WAL at %X/%X on timeline %u in %s during crash recovery",
+									 (uint32) (EndRecPtr >> 32), (uint32) EndRecPtr,
+									 ThisTimeLineID,
+									 xlogSourceNames[currentSource]),
+							 (errormsg ? errdetail_internal("%s", errormsg) : 0)));
+			}
+			else if (errormsg)
+				ereport(actual_emode, (errmsg_internal("%s", errormsg)));
 		}
 
 		/*
