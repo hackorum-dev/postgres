@@ -3950,6 +3950,8 @@ include_dir 'conf.d'
         that are bigger than <xref linkend="guc-shared-buffers"/>, but smaller
         than the OS's page cache, where performance might degrade.  This
         setting may have no effect on some platforms.
+        This setting also applies to the checkpoint written at the end of crash
+        recovery.
         If this value is specified without units, it is taken as blocks,
         that is <symbol>BLCKSZ</symbol> bytes, typically 8kB.
         The valid range is
