@@ -700,8 +700,13 @@ ExecChooseHashTableSize(double ntuples, int tupwidth, bool useskew,
 	/*
 	 * Target in-memory hashtable size is work_mem kilobytes.
 	 */
-	hash_table_bytes = work_mem * 1024L;
-
+	if (work_mem <= sqrt(4. * 4 * BLCKSZ * inner_rel_bytes) / 1024)
+		hash_table_bytes = (long) sqrt(4. * 4 * BLCKSZ * inner_rel_bytes) / 2;
+	else
+	{
+		long wm = work_mem * 1024L;
+		hash_table_bytes = (wm + sqrt(wm*wm - 4. * 4 * BLCKSZ * inner_rel_bytes)) / 2;
+	}
 	/*
 	 * Parallel Hash tries to use the combined work_mem of all workers to
 	 * avoid the need to batch.  If that won't work, it falls back to work_mem
