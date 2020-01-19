@@ -47,32 +47,32 @@ typedef struct TapeShare
 	 * Currently, all the leader process needs is the location of the
 	 * materialized tape's first block.
 	 */
-	long		firstblocknumber;
+	uint64		firstblocknumber;
 } TapeShare;
 
 /*
  * prototypes for functions in logtape.c
  */
 
-extern LogicalTapeSet *LogicalTapeSetCreate(int ntapes, TapeShare *shared,
+extern LogicalTapeSet *LogicalTapeSetCreate(uint32 ntapes, TapeShare *shared,
 											SharedFileSet *fileset, int worker);
 extern void LogicalTapeSetClose(LogicalTapeSet *lts);
 extern void LogicalTapeSetForgetFreeSpace(LogicalTapeSet *lts);
-extern size_t LogicalTapeRead(LogicalTapeSet *lts, int tapenum,
+extern size_t LogicalTapeRead(LogicalTapeSet *lts, uint32 tapenum,
 							  void *ptr, size_t size);
-extern void LogicalTapeWrite(LogicalTapeSet *lts, int tapenum,
+extern void LogicalTapeWrite(LogicalTapeSet *lts, uint32 tapenum,
 							 void *ptr, size_t size);
-extern void LogicalTapeRewindForRead(LogicalTapeSet *lts, int tapenum,
+extern void LogicalTapeRewindForRead(LogicalTapeSet *lts, uint32 tapenum,
 									 size_t buffer_size);
-extern void LogicalTapeRewindForWrite(LogicalTapeSet *lts, int tapenum);
-extern void LogicalTapeFreeze(LogicalTapeSet *lts, int tapenum,
+extern void LogicalTapeRewindForWrite(LogicalTapeSet *lts, uint32 tapenum);
+extern void LogicalTapeFreeze(LogicalTapeSet *lts, uint32 tapenum,
 							  TapeShare *share);
-extern size_t LogicalTapeBackspace(LogicalTapeSet *lts, int tapenum,
+extern size_t LogicalTapeBackspace(LogicalTapeSet *lts, uint32 tapenum,
 								   size_t size);
-extern void LogicalTapeSeek(LogicalTapeSet *lts, int tapenum,
-							long blocknum, int offset);
-extern void LogicalTapeTell(LogicalTapeSet *lts, int tapenum,
-							long *blocknum, int *offset);
-extern long LogicalTapeSetBlocks(LogicalTapeSet *lts);
+extern void LogicalTapeSeek(LogicalTapeSet *lts, uint32 tapenum,
+							uint64 blocknum, int offset);
+extern void LogicalTapeTell(LogicalTapeSet *lts, uint32 tapenum,
+							uint64 *blocknum, int *offset);
+extern uint64 LogicalTapeSetBlocks(LogicalTapeSet *lts);
 
 #endif							/* LOGTAPE_H */

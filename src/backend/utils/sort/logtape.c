@@ -97,9 +97,9 @@
  */
 typedef struct TapeBlockTrailer
 {
-	long		prev;			/* previous block on this tape, or -1 on first
+	int64		prev;			/* previous block on this tape, or -1 on first
 								 * block */
-	long		next;			/* next block on this tape, or # of valid
+	int64		next;			/* next block on this tape, or # of valid
 								 * bytes on last block (if < 0) */
 } TapeBlockTrailer;
 
@@ -142,10 +142,10 @@ typedef struct LogicalTape
 	 * When concatenation of worker tape BufFiles is performed, an offset to
 	 * the first block in the unified BufFile space is applied during reads.
 	 */
-	long		firstBlockNumber;
-	long		curBlockNumber;
-	long		nextBlockNumber;
-	long		offsetBlockNumber;
+	uint64		firstBlockNumber;
+	uint64		curBlockNumber;
+	uint64		nextBlockNumber;
+	uint64		offsetBlockNumber;
 
 	/*
 	 * Buffer for current data block(s).
@@ -177,9 +177,9 @@ struct LogicalTapeSet
 	 * blocks that are in unused holes between worker spaces following BufFile
 	 * concatenation.
 	 */
-	long		nBlocksAllocated;	/* # of blocks allocated */
-	long		nBlocksWritten; /* # of blocks used in underlying file */
-	long		nHoleBlocks;	/* # of "hole" blocks left */
+	uint64		nBlocksAllocated;	/* # of blocks allocated */
+	uint64		nBlocksWritten; /* # of blocks used in underlying file */
+	uint64		nHoleBlocks;	/* # of "hole" blocks left */
 
 	/*
 	 * We store the numbers of recycled-and-available blocks in freeBlocks[].
@@ -196,7 +196,7 @@ struct LogicalTapeSet
 	 */
 	bool		forgetFreeSpace;	/* are we remembering free blocks? */
 	bool		blocksSorted;	/* is freeBlocks[] currently in order? */
-	long	   *freeBlocks;		/* resizable array */
+	uint64	   *freeBlocks;		/* resizable array */
 	int			nFreeBlocks;	/* # of currently free blocks */
 	int			freeBlocksLen;	/* current allocated length of freeBlocks[] */
 
@@ -205,10 +205,10 @@ struct LogicalTapeSet
 	LogicalTape tapes[FLEXIBLE_ARRAY_MEMBER];	/* has nTapes nentries */
 };
 
-static void ltsWriteBlock(LogicalTapeSet *lts, long blocknum, void *buffer);
-static void ltsReadBlock(LogicalTapeSet *lts, long blocknum, void *buffer);
-static long ltsGetFreeBlock(LogicalTapeSet *lts);
-static void ltsReleaseBlock(LogicalTapeSet *lts, long blocknum);
+static void ltsWriteBlock(LogicalTapeSet *lts, uint64 blocknum, void *buffer);
+static void ltsReadBlock(LogicalTapeSet *lts, uint64 blocknum, void *buffer);
+static uint64 ltsGetFreeBlock(LogicalTapeSet *lts);
+static void ltsReleaseBlock(LogicalTapeSet *lts, uint64 blocknum);
 static void ltsConcatWorkerTapes(LogicalTapeSet *lts, TapeShare *shared,
 								 SharedFileSet *fileset);
 
@@ -219,7 +219,7 @@ static void ltsConcatWorkerTapes(LogicalTapeSet *lts, TapeShare *shared,
  * No need for an error return convention; we ereport() on any error.
  */
 static void
-ltsWriteBlock(LogicalTapeSet *lts, long blocknum, void *buffer)
+ltsWriteBlock(LogicalTapeSet *lts, uint64 blocknum, void *buffer)
 {
 	/*
 	 * BufFile does not support "holes", so if we're about to write a block
@@ -267,7 +267,7 @@ ltsWriteBlock(LogicalTapeSet *lts, long blocknum, void *buffer)
  * module should never attempt to read a block it doesn't know is there.
  */
 static void
-ltsReadBlock(LogicalTapeSet *lts, long blocknum, void *buffer)
+ltsReadBlock(LogicalTapeSet *lts, uint64 blocknum, void *buffer)
 {
 	if (BufFileSeekBlock(lts->pfile, blocknum) != 0 ||
 		BufFileRead(lts->pfile, buffer, BLCKSZ) != BLCKSZ)
@@ -291,7 +291,7 @@ ltsReadFillBuffer(LogicalTapeSet *lts, LogicalTape *lt)
 	do
 	{
 		char	   *thisbuf = lt->buffer + lt->nbytes;
-		long		datablocknum = lt->nextBlockNumber;
+		uint64		datablocknum = lt->nextBlockNumber;
 
 		/* Fetch next block number */
 		if (datablocknum == -1L)
@@ -327,10 +327,10 @@ ltsReadFillBuffer(LogicalTapeSet *lts, LogicalTape *lt)
 static int
 freeBlocks_cmp(const void *a, const void *b)
 {
-	long		ablk = *((const long *) a);
-	long		bblk = *((const long *) b);
+	uint64		ablk = *((const uint64 *) a);
+	uint64		bblk = *((const uint64 *) b);
 
-	/* can't just subtract because long might be wider than int */
+	/* can't just subtract because uint64 might be wider than int */
 	if (ablk < bblk)
 		return 1;
 	if (ablk > bblk)
@@ -341,7 +341,7 @@ freeBlocks_cmp(const void *a, const void *b)
 /*
  * Select a currently unused block for writing to.
  */
-static long
+static uint64
 ltsGetFreeBlock(LogicalTapeSet *lts)
 {
 	/*
@@ -354,7 +354,7 @@ ltsGetFreeBlock(LogicalTapeSet *lts)
 		if (!lts->blocksSorted)
 		{
 			qsort((void *) lts->freeBlocks, lts->nFreeBlocks,
-				  sizeof(long), freeBlocks_cmp);
+				  sizeof(uint64), freeBlocks_cmp);
 			lts->blocksSorted = true;
 		}
 		return lts->freeBlocks[--lts->nFreeBlocks];
@@ -367,7 +367,7 @@ ltsGetFreeBlock(LogicalTapeSet *lts)
  * Return a block# to the freelist.
  */
 static void
-ltsReleaseBlock(LogicalTapeSet *lts, long blocknum)
+ltsReleaseBlock(LogicalTapeSet *lts, uint64 blocknum)
 {
 	int			ndx;
 
@@ -383,8 +383,8 @@ ltsReleaseBlock(LogicalTapeSet *lts, long blocknum)
 	if (lts->nFreeBlocks >= lts->freeBlocksLen)
 	{
 		lts->freeBlocksLen *= 2;
-		lts->freeBlocks = (long *) repalloc(lts->freeBlocks,
-											lts->freeBlocksLen * sizeof(long));
+		lts->freeBlocks = (uint64 *) repalloc(lts->freeBlocks,
+											lts->freeBlocksLen * sizeof(uint64));
 	}
 
 	/*
@@ -410,8 +410,8 @@ ltsConcatWorkerTapes(LogicalTapeSet *lts, TapeShare *shared,
 					 SharedFileSet *fileset)
 {
 	LogicalTape *lt = NULL;
-	long		tapeblocks = 0L;
-	long		nphysicalblocks = 0L;
+	uint64		tapeblocks = 0L;
+	uint64		nphysicalblocks = 0L;
 	int			i;
 
 	/* Should have at least one worker tape, plus leader's tape */
@@ -507,7 +507,7 @@ ltsConcatWorkerTapes(LogicalTapeSet *lts, TapeShare *shared,
  * infrastructure that may be lifted in the future.
  */
 LogicalTapeSet *
-LogicalTapeSetCreate(int ntapes, TapeShare *shared, SharedFileSet *fileset,
+LogicalTapeSetCreate(uint32 ntapes, TapeShare *shared, SharedFileSet *fileset,
 					 int worker)
 {
 	LogicalTapeSet *lts;
@@ -526,7 +526,7 @@ LogicalTapeSetCreate(int ntapes, TapeShare *shared, SharedFileSet *fileset,
 	lts->forgetFreeSpace = false;
 	lts->blocksSorted = true;	/* a zero-length array is sorted ... */
 	lts->freeBlocksLen = 32;	/* reasonable initial guess */
-	lts->freeBlocks = (long *) palloc(lts->freeBlocksLen * sizeof(long));
+	lts->freeBlocks = (uint64 *) palloc(lts->freeBlocksLen * sizeof(uint64));
 	lts->nFreeBlocks = 0;
 	lts->nTapes = ntapes;
 
@@ -618,7 +618,7 @@ LogicalTapeSetForgetFreeSpace(LogicalTapeSet *lts)
  * There are no error returns; we ereport() on failure.
  */
 void
-LogicalTapeWrite(LogicalTapeSet *lts, int tapenum,
+LogicalTapeWrite(LogicalTapeSet *lts, uint32 tapenum,
 				 void *ptr, size_t size)
 {
 	LogicalTape *lt;
@@ -652,7 +652,7 @@ LogicalTapeWrite(LogicalTapeSet *lts, int tapenum,
 		if (lt->pos >= TapeBlockPayloadSize)
 		{
 			/* Buffer full, dump it out */
-			long		nextBlockNumber;
+			uint64		nextBlockNumber;
 
 			if (!lt->dirty)
 			{
@@ -706,7 +706,7 @@ LogicalTapeWrite(LogicalTapeSet *lts, int tapenum,
  * byte buffer is used.
  */
 void
-LogicalTapeRewindForRead(LogicalTapeSet *lts, int tapenum, size_t buffer_size)
+LogicalTapeRewindForRead(LogicalTapeSet *lts, uint32 tapenum, size_t buffer_size)
 {
 	LogicalTape *lt;
 
@@ -793,7 +793,7 @@ LogicalTapeRewindForRead(LogicalTapeSet *lts, int tapenum, size_t buffer_size)
  * code.
  */
 void
-LogicalTapeRewindForWrite(LogicalTapeSet *lts, int tapenum)
+LogicalTapeRewindForWrite(LogicalTapeSet *lts, uint32 tapenum)
 {
 	LogicalTape *lt;
 
@@ -819,7 +819,7 @@ LogicalTapeRewindForWrite(LogicalTapeSet *lts, int tapenum)
  * Early EOF is indicated by return value less than #bytes requested.
  */
 size_t
-LogicalTapeRead(LogicalTapeSet *lts, int tapenum,
+LogicalTapeRead(LogicalTapeSet *lts, uint32 tapenum,
 				void *ptr, size_t size)
 {
 	LogicalTape *lt;
@@ -873,7 +873,7 @@ LogicalTapeRead(LogicalTapeSet *lts, int tapenum,
  * Serial sorts should set share to NULL.
  */
 void
-LogicalTapeFreeze(LogicalTapeSet *lts, int tapenum, TapeShare *share)
+LogicalTapeFreeze(LogicalTapeSet *lts, uint32 tapenum, TapeShare *share)
 {
 	LogicalTape *lt;
 
@@ -957,7 +957,7 @@ LogicalTapeFreeze(LogicalTapeSet *lts, int tapenum, TapeShare *share)
  * that case.
  */
 size_t
-LogicalTapeBackspace(LogicalTapeSet *lts, int tapenum, size_t size)
+LogicalTapeBackspace(LogicalTapeSet *lts, uint32 tapenum, size_t size)
 {
 	LogicalTape *lt;
 	size_t		seekpos = 0;
@@ -984,7 +984,7 @@ LogicalTapeBackspace(LogicalTapeSet *lts, int tapenum, size_t size)
 	seekpos = (size_t) lt->pos; /* part within this block */
 	while (size > seekpos)
 	{
-		long		prev = TapeBlockGetTrailer(lt->buffer)->prev;
+		uint64		prev = TapeBlockGetTrailer(lt->buffer)->prev;
 
 		if (prev == -1L)
 		{
@@ -1028,8 +1028,8 @@ LogicalTapeBackspace(LogicalTapeSet *lts, int tapenum, size_t size)
  * LogicalTapeTell().
  */
 void
-LogicalTapeSeek(LogicalTapeSet *lts, int tapenum,
-				long blocknum, int offset)
+LogicalTapeSeek(LogicalTapeSet *lts, uint32 tapenum,
+				uint64 blocknum, int offset)
 {
 	LogicalTape *lt;
 
@@ -1059,12 +1059,12 @@ LogicalTapeSeek(LogicalTapeSet *lts, int tapenum,
  * the position for a seek after freezing.  Not clear if anyone needs that.
  */
 void
-LogicalTapeTell(LogicalTapeSet *lts, int tapenum,
-				long *blocknum, int *offset)
+LogicalTapeTell(LogicalTapeSet *lts, uint32 tapenum,
+				uint64 *blocknum, int *offset)
 {
 	LogicalTape *lt;
 
-	Assert(tapenum >= 0 && tapenum < lts->nTapes);
+	Assert(tapenum < lts->nTapes);
 	lt = &lts->tapes[tapenum];
 	Assert(lt->offsetBlockNumber == 0L);
 
@@ -1078,7 +1078,7 @@ LogicalTapeTell(LogicalTapeSet *lts, int tapenum,
 /*
  * Obtain total disk space currently used by a LogicalTapeSet, in blocks.
  */
-long
+uint64
 LogicalTapeSetBlocks(LogicalTapeSet *lts)
 {
 	return lts->nBlocksAllocated - lts->nHoleBlocks;

@@ -239,7 +239,7 @@ struct Tuplesortstate
 	bool		tuples;			/* Can SortTuple.tuple ever be set? */
 	int64		availMem;		/* remaining memory available, in bytes */
 	int64		allowedMem;		/* total memory allowed, in bytes */
-	int			maxTapes;		/* number of tapes (Knuth's T) */
+	uint32			maxTapes;		/* number of tapes (Knuth's T) */
 	int			tapeRange;		/* maxTapes-1 (Knuth's P) */
 	MemoryContext sortcontext;	/* memory context holding most sort data */
 	MemoryContext tuplecontext; /* sub-context of sortcontext for tuple data */
@@ -380,7 +380,7 @@ struct Tuplesortstate
 	bool		eof_reached;	/* reached EOF (needed for cursors) */
 
 	/* markpos_xxx holds marked position for mark and restore */
-	long		markpos_block;	/* tape block# (only used if SORTEDONTAPE) */
+	uint64		markpos_block;	/* tape block# (only used if SORTEDONTAPE) */
 	int			markpos_offset; /* saved "current", or offset in tape block */
 	bool		markpos_eof;	/* saved "eof_reached" */
 
@@ -1239,7 +1239,7 @@ tuplesort_end(Tuplesortstate *state)
 	MemoryContext oldcontext = MemoryContextSwitchTo(state->sortcontext);
 
 #ifdef TRACE_SORT
-	long		spaceUsed;
+	uint64		spaceUsed;
 
 	if (state->tapeset)
 		spaceUsed = LogicalTapeSetBlocks(state->tapeset);
