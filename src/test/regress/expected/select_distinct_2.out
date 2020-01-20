@@ -1,0 +1,88 @@
+create table select_distinct_a(a int, b char(20),  c char(20) not null,  d int, e int, primary key(a, b));
+set enable_mergejoin to off;
+set enable_hashjoin to off;
+-- no node for distinct.
+explain (costs off) select distinct * from select_distinct_a;
+          QUERY PLAN           
+-------------------------------
+ Seq Scan on select_distinct_a
+(1 row)
+
+explain (costs off) select distinct b,c,d,e from select_distinct_a;
+             QUERY PLAN              
+-------------------------------------
+ HashAggregate
+   Group Key: b, c, d, e
+   ->  Seq Scan on select_distinct_a
+(3 rows)
+
+create unique index select_distinct_a_uk on select_distinct_a(c, d);
+explain (costs off) select distinct b,c,d,e from select_distinct_a where c is not null;
+             QUERY PLAN              
+-------------------------------------
+ HashAggregate
+   Group Key: b, c, d, e
+   ->  Seq Scan on select_distinct_a
+         Filter: (c IS NOT NULL)
+(4 rows)
+
+explain (costs off) select distinct b,c,d,e from select_distinct_a where c is not null and d is not null;
+                   QUERY PLAN                    
+-------------------------------------------------
+ Seq Scan on select_distinct_a
+   Filter: ((c IS NOT NULL) AND (d IS NOT NULL))
+(2 rows)
+
+explain select distinct d, e from select_distinct_a group by d, e;
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ HashAggregate  (cost=15.85..17.85 rows=200 width=8)
+   Group Key: d, e
+   ->  Seq Scan on select_distinct_a  (cost=0.00..13.90 rows=390 width=8)
+(3 rows)
+
+create table select_distinct_b(a int, b char(20),  c char(20) not null,  d int, e int, primary key(a, b));
+explain (costs off) select distinct * from select_distinct_a a, select_distinct_b b;
+                 QUERY PLAN                  
+---------------------------------------------
+ Nested Loop
+   ->  Seq Scan on select_distinct_a a
+   ->  Materialize
+         ->  Seq Scan on select_distinct_b b
+(4 rows)
+
+explain (costs off) select distinct a.b, a.c, b.a, b.b from select_distinct_a a, select_distinct_b b;
+                       QUERY PLAN                        
+---------------------------------------------------------
+ Unique
+   ->  Sort
+         Sort Key: a.b, a.c, b.a, b.b
+         ->  Nested Loop
+               ->  Seq Scan on select_distinct_a a
+               ->  Materialize
+                     ->  Seq Scan on select_distinct_b b
+(7 rows)
+
+explain (costs off) select distinct a.d, a.c, b.a, b.b from select_distinct_a a, select_distinct_b b where a.d is not null;
+                 QUERY PLAN                  
+---------------------------------------------
+ Nested Loop
+   ->  Seq Scan on select_distinct_b b
+   ->  Materialize
+         ->  Seq Scan on select_distinct_a a
+               Filter: (d IS NOT NULL)
+(5 rows)
+
+explain (costs off) select distinct a.d, b.a from select_distinct_a a, select_distinct_b b group by a.d, b.a;
+                    QUERY PLAN                     
+---------------------------------------------------
+ HashAggregate
+   Group Key: a.d, b.a
+   ->  Nested Loop
+         ->  Seq Scan on select_distinct_a a
+         ->  Materialize
+               ->  Seq Scan on select_distinct_b b
+(6 rows)
+
+drop table select_distinct_a;
+drop table select_distinct_b;

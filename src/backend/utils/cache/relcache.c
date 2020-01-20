@@ -2346,6 +2346,8 @@ RelationDestroyRelation(Relation relation, bool remember_tupdesc)
 	bms_free(relation->rd_keyattr);
 	bms_free(relation->rd_pkattr);
 	bms_free(relation->rd_idattr);
+	if (relation->rd_plain_ukattrs)
+		bms_array_free(relation->rd_plain_ukattrs, relation->rd_plain_ukcount);
 	if (relation->rd_pubactions)
 		pfree(relation->rd_pubactions);
 	if (relation->rd_options)
@@ -4762,6 +4764,7 @@ RelationGetIndexAttrBitmap(Relation relation, IndexAttrBitmapKind attrKind)
 	Bitmapset  *indexattrs;		/* indexed columns */
 	Bitmapset  *uindexattrs;	/* columns in unique indexes */
 	Bitmapset  *pkindexattrs;	/* columns in the primary index */
+	Bitmapset  **ukindexattrs = NULL; /* columns in the unique indexes */
 	Bitmapset  *idindexattrs;	/* columns in the replica identity */
 	List	   *indexoidlist;
 	List	   *newindexoidlist;
@@ -4769,6 +4772,7 @@ RelationGetIndexAttrBitmap(Relation relation, IndexAttrBitmapKind attrKind)
 	Oid			relreplindex;
 	ListCell   *l;
 	MemoryContext oldcxt;
+	int			plain_uk_index_count = 0, index_count = 0, indexno = 0;
 
 	/* Quick exit if we already computed the result. */
 	if (relation->rd_indexattr != NULL)
@@ -4826,6 +4830,9 @@ restart:
 	uindexattrs = NULL;
 	pkindexattrs = NULL;
 	idindexattrs = NULL;
+	index_count = list_length(indexoidlist);
+	ukindexattrs = palloc0(sizeof(Bitmapset *) * index_count);
+
 	foreach(l, indexoidlist)
 	{
 		Oid			indexOid = lfirst_oid(l);
@@ -4875,6 +4882,9 @@ restart:
 		/* Is this index the configured (or default) replica identity? */
 		isIDKey = (indexOid == relreplindex);
 
+		if (isKey)
+			plain_uk_index_count++;
+
 		/* Collect simple attribute references */
 		for (i = 0; i < indexDesc->rd_index->indnatts; i++)
 		{
@@ -4904,6 +4914,11 @@ restart:
 				if (isIDKey && i < indexDesc->rd_index->indnkeyatts)
 					idindexattrs = bms_add_member(idindexattrs,
 												  attrnum - FirstLowInvalidHeapAttributeNumber);
+
+				if (isKey)
+					ukindexattrs[indexno] = bms_add_member(ukindexattrs[indexno],
+														   attrnum - FirstLowInvalidHeapAttributeNumber);
+
 			}
 		}
 
@@ -4914,6 +4929,7 @@ restart:
 		pull_varattnos(indexPredicate, 1, &indexattrs);
 
 		index_close(indexDesc, AccessShareLock);
+		indexno++;
 	}
 
 	/*
@@ -4940,6 +4956,7 @@ restart:
 		bms_free(pkindexattrs);
 		bms_free(idindexattrs);
 		bms_free(indexattrs);
+		bms_array_free(ukindexattrs, index_count);
 
 		goto restart;
 	}
@@ -4953,7 +4970,8 @@ restart:
 	relation->rd_pkattr = NULL;
 	bms_free(relation->rd_idattr);
 	relation->rd_idattr = NULL;
-
+	bms_array_free(relation->rd_plain_ukattrs, relation->rd_plain_ukcount);
+	relation->rd_plain_ukattrs = NULL;
 	/*
 	 * Now save copies of the bitmaps in the relcache entry.  We intentionally
 	 * set rd_indexattr last, because that's the one that signals validity of
@@ -4966,6 +4984,8 @@ restart:
 	relation->rd_pkattr = bms_copy(pkindexattrs);
 	relation->rd_idattr = bms_copy(idindexattrs);
 	relation->rd_indexattr = bms_copy(indexattrs);
+	relation->rd_plain_ukattrs = bms_array_copy(ukindexattrs, index_count);
+	relation->rd_plain_ukcount = plain_uk_index_count;
 	MemoryContextSwitchTo(oldcxt);
 
 	/* We return our original working copy for caller to play with */
@@ -5618,6 +5638,8 @@ load_relcache_init_file(bool shared)
 		rel->rd_keyattr = NULL;
 		rel->rd_pkattr = NULL;
 		rel->rd_idattr = NULL;
+		rel->rd_plain_ukattrs = NULL;
+		rel->rd_plain_ukcount = 0;
 		rel->rd_pubactions = NULL;
 		rel->rd_statvalid = false;
 		rel->rd_statlist = NIL;

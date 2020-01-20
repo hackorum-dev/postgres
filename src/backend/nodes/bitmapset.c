@@ -1167,3 +1167,41 @@ bms_hash_value(const Bitmapset *a)
 	return DatumGetUInt32(hash_any((const unsigned char *) a->words,
 								   (lastword + 1) * sizeof(bitmapword)));
 }
+
+/*
+ * bms_array_copy --  copy the bms data in the newly palloc allocated memory
+ */
+
+Bitmapset**
+bms_array_copy(Bitmapset **bms_array, int len)
+{
+	Bitmapset **res;
+	int i;
+	if (bms_array == NULL || len < 1)
+		return NULL;
+
+	res = palloc(sizeof(Bitmapset*) * len);
+	for(i = 0; i < len; i++)
+	{
+		res[i] = bms_copy(bms_array[i]);
+	}
+	return res;
+}
+
+/*
+ * bms_array_free
+ *
+ * free the element in the array one by one, last free the array as well at last
+ */
+void
+bms_array_free(Bitmapset **bms_array,  int len)
+{
+	int idx;
+	if (bms_array == NULL)
+		return;
+	for(idx = 0 ; idx < len; idx++)
+	{
+		bms_free(bms_array[idx]);
+	}
+	pfree(bms_array);
+}

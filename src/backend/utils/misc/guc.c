@@ -1065,6 +1065,16 @@ static struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 	{
+		{"enable_unique_elimination", PGC_USERSET, QUERY_TUNING_METHOD,
+			gettext_noop("Enables plan-time and run-time unique elimination."),
+		    gettext_noop("Allows the query planner to remove the uncecessary distinct clause."), 
+			GUC_EXPLAIN
+		},
+		&enable_unique_elimination,
+		true,
+		NULL, NULL, NULL
+	},
+	{
 		{"geqo", PGC_USERSET, QUERY_TUNING_GEQO,
 			gettext_noop("Enables genetic query optimization."),
 			gettext_noop("This algorithm attempts to do planning without "

@@ -120,6 +120,9 @@ typedef struct RelationData
 	Bitmapset  *rd_indexattr;	/* identifies columns used in indexes */
 	Bitmapset  *rd_keyattr;		/* cols that can be ref'd by foreign keys */
 	Bitmapset  *rd_pkattr;		/* cols included in primary key */
+	Bitmapset  **rd_plain_ukattrs;    /* cols included in the plain unique indexes,
+                                   only non-expression, non-partical columns are count */
+	int        rd_plain_ukcount;  /* the no. of uk count */
 	Bitmapset  *rd_idattr;		/* included in replica identity index */
 
 	PublicationActions *rd_pubactions;	/* publication actions */

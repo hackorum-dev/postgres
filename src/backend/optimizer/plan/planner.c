@@ -22,8 +22,10 @@
 #include "access/htup_details.h"
 #include "access/parallel.h"
 #include "access/sysattr.h"
+#include "access/relation.h"
 #include "access/table.h"
 #include "access/xact.h"
+#include "catalog/index.h"
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_inherits.h"
 #include "catalog/pg_proc.h"
@@ -35,6 +37,7 @@
 #include "lib/bipartite_match.h"
 #include "lib/knapsack.h"
 #include "miscadmin.h"
+#include "nodes/bitmapset.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #ifdef OPTIMIZER_DEBUG
@@ -248,6 +251,7 @@ static bool group_by_has_partkey(RelOptInfo *input_rel,
 								 List *targetList,
 								 List *groupClause);
 static int	common_prefix_cmp(const void *a, const void *b);
+static void	preprocess_unique_node(PlannerInfo *root);
 
 
 /*****************************************************************************
@@ -988,6 +992,9 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 
 	/* Remove any redundant GROUP BY columns */
 	remove_useless_groupby_columns(root);
+
+	if (enable_unique_elimination)
+		preprocess_unique_node(root);
 
 	/*
 	 * If we have any outer joins, try to reduce them to plain inner joins.
@@ -7408,4 +7415,213 @@ group_by_has_partkey(RelOptInfo *input_rel,
 	}
 
 	return true;
+}
+
+/*
+ * is_unique_result_already
+ *
+ * Given a relation, we can know its primary key + unique key information
+ * unique target is the target list of distinct/distinct on target.
+ * not_null_columns is a union of not null columns based on catalog and quals.
+ * then we can know the result is unique already before executing it if
+ * the primary key or uk + not null in target list.
+ */
+static bool
+is_unique_result_already(Relation relation,
+						 Bitmapset *unique_target,
+						 Bitmapset *not_null_columns)
+{
+	int i;
+	Bitmapset *pkattr = RelationGetIndexAttrBitmap(relation,
+												   INDEX_ATTR_BITMAP_PRIMARY_KEY);
+
+	/*
+	 * if the pk is in the target list,
+	 * the result set is unique for this relation
+	 */
+	if (pkattr != NULL &&
+		!bms_is_empty(pkattr) &&
+		bms_is_subset(pkattr, unique_target))
+	{
+		return true;
+	}
+
+	/*
+	 * check if the pk is in the unique index
+	 */
+	for (i = 0; i < relation->rd_plain_ukcount; i++)
+	{
+		Bitmapset *ukattr = relation->rd_plain_ukattrs[i];
+		if (!bms_is_empty(ukattr)
+			&& bms_is_subset(ukattr, unique_target)
+			&& bms_is_subset(ukattr, not_null_columns))
+			return true;
+	}
+
+	/*
+	 * If a unique index is in the target list, and the columns are not null
+	 * the result set is unique as well
+	 */
+
+	return false;
+}
+
+/*
+ * preprocess_unique_node
+ *
+ * remove the distinctClause if it is not necessary
+ */
+static void
+preprocess_unique_node(PlannerInfo *root)
+{
+	Query *query = root->parse;
+	ListCell *lc;
+	int num_of_rtables;
+	Bitmapset **target_columns_by_table = NULL;
+    Bitmapset **notnullcolumns = NULL;
+	Index rel_idx;
+	bool should_unique_elimination = false;
+
+		if (query->distinctClause == NIL)
+		return;
+
+	foreach(lc, query->rtable)
+	{
+		RangeTblEntry *rte = lfirst_node(RangeTblEntry, lc);
+		if (rte->rtekind != RTE_RELATION)
+			return;
+	}
+
+	num_of_rtables = list_length(query->rtable);
+
+	/* if the group clause in the target list, we don't need distinct */
+	if (query->groupClause != NIL)
+	{
+		Bitmapset *groupclause_bitmap = NULL,  *groupclause_in_target_bitmap = NULL;
+		ListCell *lc;
+		foreach(lc, query->groupClause)
+			groupclause_bitmap = bms_add_member(groupclause_bitmap,
+												lfirst_node(SortGroupClause, lc)->tleSortGroupRef);
+
+		foreach(lc, query->targetList)
+		{
+			TargetEntry *te = lfirst_node(TargetEntry, lc);
+			if (te->resjunk)
+				continue;
+			groupclause_in_target_bitmap = bms_add_member(groupclause_in_target_bitmap,
+														  te->ressortgroupref);
+		}
+
+		should_unique_elimination = bms_is_subset(groupclause_bitmap,
+												  groupclause_in_target_bitmap);
+		bms_free(groupclause_bitmap);
+		bms_free(groupclause_in_target_bitmap);
+		if (should_unique_elimination)
+			goto ret;
+	}
+
+	target_columns_by_table = palloc0(sizeof(Bitmapset*) * num_of_rtables);
+	notnullcolumns = palloc0(sizeof(Bitmapset* ) * num_of_rtables);
+
+
+	/* build a unique targetlist bitmapset, handle distincton differently */
+	foreach(lc, query->targetList)
+	{
+		TargetEntry *te = lfirst_node(TargetEntry, lc);
+		Expr *expr = te->expr;
+		Var *var;
+		Bitmapset **target_column_per_rel;
+		int target_attno;
+
+		if (!IsA(expr, Var))
+			continue;
+		var = (Var *)(expr);
+		if (var->varlevelsup != 0)
+			continue;
+
+		target_column_per_rel = &target_columns_by_table[var->varno - 1];
+		target_attno = var->varattno - FirstLowInvalidHeapAttributeNumber;
+
+		if (query->hasDistinctOn)
+		{
+			Index ref = te->ressortgroupref;
+			ListCell *lc;
+
+			if (ref == 0)
+				continue;
+
+			foreach(lc, query->distinctClause)
+			{
+				if (ref == lfirst_node(SortGroupClause, lc)->tleSortGroupRef)
+					*target_column_per_rel = bms_add_member(*target_column_per_rel,
+															target_attno);
+			}
+		}
+		else
+			*target_column_per_rel = bms_add_member(*target_column_per_rel,
+												  target_attno);
+	}
+
+	/* find out nonnull columns from qual */
+	foreach(lc, find_nonnullable_vars(query->jointree->quals))
+	{
+		Var *not_null_var;
+		Bitmapset **notnullcolumns_per_rel;
+		int notnull_attno;
+		if (!IsA(lfirst(lc), Var))
+			continue;
+		not_null_var = lfirst_node(Var, lc);
+		if (not_null_var->varno == INNER_VAR ||
+			not_null_var->varno == OUTER_VAR ||
+			not_null_var->varno == INDEX_VAR)
+			continue;
+		notnullcolumns_per_rel = &notnullcolumns[not_null_var->varno - 1];
+		notnull_attno = not_null_var->varattno - FirstLowInvalidHeapAttributeNumber;
+		*notnullcolumns_per_rel = bms_add_member(*notnullcolumns_per_rel,
+												 notnull_attno);
+	}
+
+	/* Check if every related rtable can yield a unique result set */
+	rel_idx = 0;
+	foreach(lc, query->rtable)
+	{
+		RangeTblEntry *te = lfirst_node(RangeTblEntry, lc);
+	    Relation relation = relation_open(te->relid, RowExclusiveLock);
+		int attr_idx = 0;
+		TupleDesc desc = relation->rd_att;
+
+		/* check non-nullable in catalog */
+		for(; attr_idx < desc->natts; attr_idx++)
+		{
+			int notnull_attno;
+			if (!desc->attrs[attr_idx].attnotnull)
+				continue;
+			notnull_attno = attr_idx + 1 - FirstLowInvalidHeapAttributeNumber;
+			notnullcolumns[rel_idx] = bms_add_member(notnullcolumns[rel_idx],
+													 notnull_attno);
+		}
+
+		/* check non-nullable in qual, only col is not null checked now */
+		if (!is_unique_result_already(relation,
+									  target_columns_by_table[rel_idx],
+									  notnullcolumns[rel_idx]))
+		{
+			RelationClose(relation);
+			goto ret;
+		}
+		RelationClose(relation);
+		rel_idx++;
+	}
+
+	should_unique_elimination = true;
+
+ ret:
+	bms_array_free(notnullcolumns, num_of_rtables);
+	bms_array_free(target_columns_by_table, num_of_rtables);
+
+	if (should_unique_elimination)
+	{
+		query->distinctClause = NIL;
+		query->hasDistinctOn = false;
+	}
 }
