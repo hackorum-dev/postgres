@@ -3077,6 +3077,10 @@ copy_opt_item:
 				{
 					$$ = makeDefElem("encoding", (Node *)makeString($2), @1);
 				}
+			| LIMIT Iconst
+				{
+					$$ = makeDefElem("limit", (Node *)makeInteger($2), @1);
+				}
 		;
 
 /* The following exist for backward compatibility with very old versions */

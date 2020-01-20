@@ -222,6 +222,11 @@ typedef struct CopyStateData
 	char	   *raw_buf;
 	int			raw_buf_index;	/* next byte to process */
 	int			raw_buf_len;	/* total # of bytes stored */
+
+	/*
+	 * Limit the number of input / output lines.
+	 */
+	uint64			limit_lineno;
 } CopyStateData;
 
 /* DestReceiver for COPY (query) TO */
@@ -1290,6 +1295,21 @@ ProcessCopyOptions(ParseState *pstate,
 								defel->defname),
 						 parser_errposition(pstate, defel->location)));
 		}
+		else if (strcmp(defel->defname, "limit") == 0)
+		{
+			if (cstate->limit_lineno > 0)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options"),
+						 parser_errposition(pstate, defel->location)));
+			cstate->limit_lineno = defGetInt64(defel);
+			if (cstate->limit_lineno <= 0)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("argument to option \"%s\" must be a numeric more than zero",
+								defel->defname),
+						 parser_errposition(pstate, defel->location)));
+		}
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_SYNTAX_ERROR),
@@ -2120,6 +2140,10 @@ CopyTo(CopyState cstate)
 		while (table_scan_getnextslot(scandesc, ForwardScanDirection, slot))
 		{
 			CHECK_FOR_INTERRUPTS();
+			if (cstate->limit_lineno != 0 && processed >= cstate->limit_lineno)
+			{
+				break;
+			}
 
 			/* Deconstruct the tuple ... */
 			slot_getallattrs(slot);
@@ -3039,6 +3063,10 @@ CopyFrom(CopyState cstate)
 
 		/* Directly store the values/nulls array in the slot */
 		if (!NextCopyFrom(cstate, econtext, myslot->tts_values, myslot->tts_isnull))
+			break;
+
+		/* Check cur_lineno greater than limit_lineno */
+		if (cstate->limit_lineno != 0 && cstate->cur_lineno > cstate->limit_lineno)
 			break;
 
 		ExecStoreVirtualTuple(myslot);
