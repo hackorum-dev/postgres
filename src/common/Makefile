@@ -48,6 +48,7 @@ LIBS += $(PTHREAD_LIBS)
 
 OBJS_COMMON = \
 	base64.o \
+	cipher.o \
 	config_info.o \
 	controldata_utils.o \
 	d2s.o \
@@ -57,6 +58,7 @@ OBJS_COMMON = \
 	file_perm.o \
 	ip.o \
 	keywords.o \
+	kmgr_utils.o \
 	kwlookup.o \
 	link-canary.o \
 	md5.o \
@@ -76,6 +78,7 @@ OBJS_COMMON = \
 
 ifeq ($(with_openssl),yes)
 OBJS_COMMON += \
+	cipher_openssl.o \
 	protocol_openssl.o \
 	sha2_openssl.o
 else
