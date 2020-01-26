@@ -307,6 +307,7 @@ static BufferAccessStrategy vac_strategy;
 static void lazy_scan_heap(Relation onerel, VacuumParams *params,
 						   LVRelStats *vacrelstats, Relation *Irel, int nindexes,
 						   bool aggressive);
+static void vacuum_msg(StringInfoData *buf, const char *prefix, LVRelStats *vacrelstats, double nkeep, double nunused, BlockNumber empty_pages, PGRUsage *ru0);
 static void lazy_vacuum_heap(Relation onerel, LVRelStats *vacrelstats);
 static bool lazy_check_needs_freeze(Buffer buf, bool *hastup);
 static void lazy_vacuum_all_indexes(Relation onerel, Relation *Irel,
@@ -717,7 +718,8 @@ lazy_scan_heap(Relation onerel, VacuumParams *params, LVRelStats *vacrelstats,
 	BlockNumber next_unskippable_block;
 	bool		skipping_blocks;
 	xl_heap_freeze_tuple *frozen;
-	StringInfoData buf;
+	StringInfoData logdetail,
+				clientdetail;
 	const int	initprog_index[] = {
 		PROGRESS_VACUUM_PHASE,
 		PROGRESS_VACUUM_TOTAL_HEAP_BLKS,
@@ -1668,40 +1670,66 @@ lazy_scan_heap(Relation onerel, VacuumParams *params, LVRelStats *vacrelstats,
 						RelationGetRelationName(onerel),
 						tups_vacuumed, vacuumed_pages)));
 
-	/*
-	 * This is pretty messy, but we split it up so that we can skip emitting
-	 * individual parts of the message when not applicable.
-	 */
-	initStringInfo(&buf);
-	appendStringInfo(&buf, ngettext("%.0f dead row version cannot be removed yet, oldest xmin: %u\n",
-									"%.0f dead row versions cannot be removed yet, oldest xmin: %u\n",
-									nkeep),
-					 nkeep, OldestXmin);
-	appendStringInfo(&buf, ngettext("There was %.0f unused item identifier.\n",
-									"There were %.0f unused item identifiers.\n",
-									nunused),
-					 nunused);
-	appendStringInfo(&buf, ngettext("Skipped %u page due to buffer pins, ",
-									"Skipped %u pages due to buffer pins, ",
-									vacrelstats->pinskipped_pages),
-					 vacrelstats->pinskipped_pages);
-	appendStringInfo(&buf, ngettext("%u frozen page.\n",
-									"%u frozen pages.\n",
-									vacrelstats->frozenskipped_pages),
-					 vacrelstats->frozenskipped_pages);
-	appendStringInfo(&buf, ngettext("%u page is entirely empty.\n",
-									"%u pages are entirely empty.\n",
-									empty_pages),
-					 empty_pages);
-	appendStringInfo(&buf, "%s.", pg_rusage_show(&ru0));
+	/* Write separate log messages to client (with prefix) and logfile (without prefix) */
+	vacuum_msg(&logdetail, "", vacrelstats, nkeep, nunused, empty_pages, &ru0);
+	vacuum_msg(&clientdetail, "! ", vacrelstats, nkeep, nunused, empty_pages, &ru0);
 
 	ereport(elevel,
 			(errmsg("\"%s\": found %.0f removable, %.0f nonremovable row versions in %u out of %u pages",
 					RelationGetRelationName(onerel),
 					tups_vacuumed, num_tuples,
 					vacrelstats->scanned_pages, nblocks),
-			 errdetail_internal("%s", buf.data)));
-	pfree(buf.data);
+			 errdetail_log("%s", logdetail.data),
+			 errdetail_internal("%s", clientdetail.data)));
+
+	pfree(logdetail.data);
+	pfree(clientdetail.data);
+}
+
+/* Populate buf with string to be freed by caller */
+static void
+vacuum_msg(StringInfoData *buf, const char *prefix, LVRelStats *vacrelstats, double nkeep, double nunused, BlockNumber empty_pages, PGRUsage *ru0)
+{
+	/*
+	 * This is pretty messy, but we split it up so that we can skip emitting
+	 * individual parts of the message when not applicable.
+	 */
+	initStringInfo(buf);
+	if (prefix)
+		appendStringInfoString(buf, prefix);
+	appendStringInfo(buf, ngettext("%.0f dead row version cannot be removed yet, oldest xmin: %u\n",
+									"%.0f dead row versions cannot be removed yet, oldest xmin: %u\n",
+									nkeep),
+					 nkeep, OldestXmin);
+
+	if (prefix)
+		appendStringInfoString(buf, prefix);
+	appendStringInfo(buf, ngettext("There was %.0f unused item identifier.\n",
+									"There were %.0f unused item identifiers.\n",
+									nunused),
+					 nunused);
+
+	if (prefix)
+		appendStringInfoString(buf, prefix);
+	appendStringInfo(buf, ngettext("Skipped %u page due to buffer pins, ",
+									"Skipped %u pages due to buffer pins, ",
+									vacrelstats->pinskipped_pages),
+					 vacrelstats->pinskipped_pages);
+	appendStringInfo(buf, ngettext("%u frozen page.\n",
+									"%u frozen pages.\n",
+									vacrelstats->frozenskipped_pages),
+					 vacrelstats->frozenskipped_pages);
+
+	if (prefix)
+		appendStringInfoString(buf, prefix);
+	appendStringInfo(buf, ngettext("%u page is entirely empty.\n",
+									"%u pages are entirely empty.\n",
+									empty_pages),
+					 empty_pages);
+
+	if (prefix)
+		appendStringInfoString(buf, prefix);
+	appendStringInfo(buf, "%s.", pg_rusage_show(ru0));
 }
 
 /*
