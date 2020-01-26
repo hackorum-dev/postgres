@@ -1673,10 +1673,13 @@ lazy_scan_heap(Relation onerel, VacuumParams *params, LVRelStats *vacrelstats,
 	 * individual parts of the message when not applicable.
 	 */
 	initStringInfo(&buf);
-	appendStringInfo(&buf,
-					 _("%.0f dead row versions cannot be removed yet, oldest xmin: %u\n"),
+	appendStringInfo(&buf, ngettext("%.0f dead row version cannot be removed yet, oldest xmin: %u\n",
+									"%.0f dead row versions cannot be removed yet, oldest xmin: %u\n",
+									nkeep),
 					 nkeep, OldestXmin);
-	appendStringInfo(&buf, _("There were %.0f unused item identifiers.\n"),
+	appendStringInfo(&buf, ngettext("There was %.0f unused item identifier.\n",
+									"There were %.0f unused item identifiers.\n",
+									nunused),
 					 nunused);
 	appendStringInfo(&buf, ngettext("Skipped %u page due to buffer pins, ",
 									"Skipped %u pages due to buffer pins, ",
