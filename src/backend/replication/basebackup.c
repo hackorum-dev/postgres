@@ -67,6 +67,8 @@ static int64 _tarWriteDir(const char *pathbuf, int basepathlen, struct stat *sta
 static void send_int8_string(StringInfoData *buf, int64 intval);
 static void SendBackupHeader(List *tablespaces);
 static void perform_base_backup(basebackup_options *opt);
+static List *collect_wal_files(XLogRecPtr startptr, XLogRecPtr endptr,
+							   List **historyFileList);
 static void parse_basebackup_options(List *options, basebackup_options *opt);
 static void SendXlogRecPtrResult(XLogRecPtr ptr, TimeLineID tli);
 static int	compareWalFileNames(const ListCell *a, const ListCell *b);
@@ -438,115 +440,16 @@ perform_base_backup(basebackup_options *opt)
 		 */
 		char		pathbuf[MAXPGPATH];
 		XLogSegNo	segno;
-		XLogSegNo	startsegno;
-		XLogSegNo	endsegno;
 		struct stat statbuf;
 		List	   *historyFileList = NIL;
 		List	   *walFileList = NIL;
-		char		firstoff[MAXFNAMELEN];
-		char		lastoff[MAXFNAMELEN];
-		DIR		   *dir;
-		struct dirent *de;
 		ListCell   *lc;
 		TimeLineID	tli;
 
 		pgstat_progress_update_param(PROGRESS_BASEBACKUP_PHASE,
 									 PROGRESS_BASEBACKUP_PHASE_TRANSFER_WAL);
 
-		/*
-		 * I'd rather not worry about timelines here, so scan pg_wal and
-		 * include all WAL files in the range between 'startptr' and 'endptr',
-		 * regardless of the timeline the file is stamped with. If there are
-		 * some spurious WAL files belonging to timelines that don't belong in
-		 * this server's history, they will be included too. Normally there
-		 * shouldn't be such files, but if there are, there's little harm in
-		 * including them.
-		 */
-		XLByteToSeg(startptr, startsegno, wal_segment_size);
-		XLogFileName(firstoff, ThisTimeLineID, startsegno, wal_segment_size);
-		XLByteToPrevSeg(endptr, endsegno, wal_segment_size);
-		XLogFileName(lastoff, ThisTimeLineID, endsegno, wal_segment_size);
-
-		dir = AllocateDir("pg_wal");
-		while ((de = ReadDir(dir, "pg_wal")) != NULL)
-		{
-			/* Does it look like a WAL segment, and is it in the range? */
-			if (IsXLogFileName(de->d_name) &&
-				strcmp(de->d_name + 8, firstoff + 8) >= 0 &&
-				strcmp(de->d_name + 8, lastoff + 8) <= 0)
-			{
-				walFileList = lappend(walFileList, pstrdup(de->d_name));
-			}
-			/* Does it look like a timeline history file? */
-			else if (IsTLHistoryFileName(de->d_name))
-			{
-				historyFileList = lappend(historyFileList, pstrdup(de->d_name));
-			}
-		}
-		FreeDir(dir);
-
-		/*
-		 * Before we go any further, check that none of the WAL segments we
-		 * need were removed.
-		 */
-		CheckXLogRemoved(startsegno, ThisTimeLineID);
-
-		/*
-		 * Sort the WAL filenames.  We want to send the files in order from
-		 * oldest to newest, to reduce the chance that a file is recycled
-		 * before we get a chance to send it over.
-		 */
-		list_sort(walFileList, compareWalFileNames);
-
-		/*
-		 * There must be at least one xlog file in the pg_wal directory, since
-		 * we are doing backup-including-xlog.
-		 */
-		if (walFileList == NIL)
-			ereport(ERROR,
-					(errmsg("could not find any WAL files")));
-
-		/*
-		 * Sanity check: the first and last segment should cover startptr and
-		 * endptr, with no gaps in between.
-		 */
-		XLogFromFileName((char *) linitial(walFileList),
-						 &tli, &segno, wal_segment_size);
-		if (segno != startsegno)
-		{
-			char		startfname[MAXFNAMELEN];
-
-			XLogFileName(startfname, ThisTimeLineID, startsegno,
-						 wal_segment_size);
-			ereport(ERROR,
-					(errmsg("could not find WAL file \"%s\"", startfname)));
-		}
-		foreach(lc, walFileList)
-		{
-			char	   *walFileName = (char *) lfirst(lc);
-			XLogSegNo	currsegno = segno;
-			XLogSegNo	nextsegno = segno + 1;
-
-			XLogFromFileName(walFileName, &tli, &segno, wal_segment_size);
-			if (!(nextsegno == segno || currsegno == segno))
-			{
-				char		nextfname[MAXFNAMELEN];
-
-				XLogFileName(nextfname, ThisTimeLineID, nextsegno,
-							 wal_segment_size);
-				ereport(ERROR,
-						(errmsg("could not find WAL file \"%s\"", nextfname)));
-			}
-		}
-		if (segno != endsegno)
-		{
-			char		endfname[MAXFNAMELEN];
-
-			XLogFileName(endfname, ThisTimeLineID, endsegno, wal_segment_size);
-			ereport(ERROR,
-					(errmsg("could not find WAL file \"%s\"", endfname)));
-		}
-
+		walFileList = collect_wal_files(startptr, endptr, &historyFileList);
 		/* Ok, we have everything we need. Send the WAL files. */
 		foreach(lc, walFileList)
 		{
@@ -679,6 +582,120 @@ perform_base_backup(basebackup_options *opt)
 	}
 
 	pgstat_progress_end_command();
+}
+
+/*
+ * construct a list of WAL files to be included in the backup.
+ */
+static List *
+collect_wal_files(XLogRecPtr startptr, XLogRecPtr endptr, List **historyFileList)
+{
+	XLogSegNo	segno;
+	XLogSegNo	startsegno;
+	XLogSegNo	endsegno;
+	List	   *walFileList = NIL;
+	char		firstoff[MAXFNAMELEN];
+	char		lastoff[MAXFNAMELEN];
+	DIR		   *dir;
+	struct dirent *de;
+	ListCell   *lc;
+	TimeLineID	tli;
+
+	/*
+	 * I'd rather not worry about timelines here, so scan pg_wal and include
+	 * all WAL files in the range between 'startptr' and 'endptr', regardless
+	 * of the timeline the file is stamped with. If there are some spurious
+	 * WAL files belonging to timelines that don't belong in this server's
+	 * history, they will be included too. Normally there shouldn't be such
+	 * files, but if there are, there's little harm in including them.
+	 */
+	XLByteToSeg(startptr, startsegno, wal_segment_size);
+	XLogFileName(firstoff, ThisTimeLineID, startsegno, wal_segment_size);
+	XLByteToPrevSeg(endptr, endsegno, wal_segment_size);
+	XLogFileName(lastoff, ThisTimeLineID, endsegno, wal_segment_size);
+
+	dir = AllocateDir("pg_wal");
+	while ((de = ReadDir(dir, "pg_wal")) != NULL)
+	{
+		/* Does it look like a WAL segment, and is it in the range? */
+		if (IsXLogFileName(de->d_name) &&
+			strcmp(de->d_name + 8, firstoff + 8) >= 0 &&
+			strcmp(de->d_name + 8, lastoff + 8) <= 0)
+		{
+			walFileList = lappend(walFileList, pstrdup(de->d_name));
+		}
+		/* Does it look like a timeline history file? */
+		else if (IsTLHistoryFileName(de->d_name))
+		{
+			if (historyFileList)
+				*historyFileList = lappend(*historyFileList, pstrdup(de->d_name));
+		}
+	}
+	FreeDir(dir);
+
+	/*
+	 * Before we go any further, check that none of the WAL segments we need
+	 * were removed.
+	 */
+	CheckXLogRemoved(startsegno, ThisTimeLineID);
+
+	/*
+	 * Sort the WAL filenames.  We want to send the files in order from oldest
+	 * to newest, to reduce the chance that a file is recycled before we get a
+	 * chance to send it over.
+	 */
+	list_sort(walFileList, compareWalFileNames);
+
+	/*
+	 * There must be at least one xlog file in the pg_wal directory, since we
+	 * are doing backup-including-xlog.
+	 */
+	if (walFileList == NIL)
+		ereport(ERROR,
+				(errmsg("could not find any WAL files")));
+
+	/*
+	 * Sanity check: the first and last segment should cover startptr and
+	 * endptr, with no gaps in between.
+	 */
+	XLogFromFileName((char *) linitial(walFileList),
+					 &tli, &segno, wal_segment_size);
+	if (segno != startsegno)
+	{
+		char		startfname[MAXFNAMELEN];
+
+		XLogFileName(startfname, ThisTimeLineID, startsegno,
+					 wal_segment_size);
+		ereport(ERROR,
+				(errmsg("could not find WAL file \"%s\"", startfname)));
+	}
+	foreach(lc, walFileList)
+	{
+		char	   *walFileName = (char *) lfirst(lc);
+		XLogSegNo	currsegno = segno;
+		XLogSegNo	nextsegno = segno + 1;
+
+		XLogFromFileName(walFileName, &tli, &segno, wal_segment_size);
+		if (!(nextsegno == segno || currsegno == segno))
+		{
+			char		nextfname[MAXFNAMELEN];
+
+			XLogFileName(nextfname, ThisTimeLineID, nextsegno,
+						 wal_segment_size);
+			ereport(ERROR,
+					(errmsg("could not find WAL file \"%s\"", nextfname)));
+		}
+	}
+	if (segno != endsegno)
+	{
+		char		endfname[MAXFNAMELEN];
+
+		XLogFileName(endfname, ThisTimeLineID, endsegno, wal_segment_size);
+		ereport(ERROR,
+				(errmsg("could not find WAL file \"%s\"", endfname)));
+	}
+
+	return walFileList;
 }
 
 /*
