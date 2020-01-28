@@ -2978,6 +2978,12 @@ ReindexRelationConcurrently(Oid relationOid, int options)
 		if (indexRel->rd_rel->relpersistence == RELPERSISTENCE_TEMP)
 			elog(ERROR, "cannot reindex a temporary table concurrently");
 
+		/*
+		 * Also check for active uses of the relation in the current
+		 * transaction, including open scans and pending AFTER trigger events.
+		 */
+		CheckTableNotInUse(indexRel, "REINDEX");
+
 		pgstat_progress_start_command(PROGRESS_COMMAND_CREATE_INDEX,
 									  RelationGetRelid(heapRel));
 		pgstat_progress_update_param(PROGRESS_CREATEIDX_COMMAND,

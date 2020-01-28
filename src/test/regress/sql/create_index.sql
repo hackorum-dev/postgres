@@ -1039,6 +1039,23 @@ SELECT  b.relname,
   ORDER BY 1;
 DROP TABLE concur_temp_tab_1, concur_temp_tab_2, reindex_temp_before;
 
+-- Check that REINDEX CONCURRENTLY does not work if a relation is being
+-- used.  Note that this does not work as REINDEX CONCURRENTLY is not
+-- allowed in a transaction block.
+CREATE TABLE reindex_tab_ref (a int);
+CREATE INDEX reindex_ind_ref ON reindex_tab_ref(a);
+CREATE OR REPLACE FUNCTION reindex_func_ref() RETURNS trigger
+  LANGUAGE plpgsql AS $$
+  BEGIN
+    EXECUTE 'REINDEX INDEX CONCURRENTLY reindex_ind_ref';
+    RETURN NULL;
+  END $$;
+CREATE TRIGGER reindex_trig_ref BEFORE INSERT ON reindex_tab_ref
+  FOR EACH STATEMENT EXECUTE PROCEDURE reindex_func_ref();
+INSERT INTO reindex_tab_ref VALUES (1);
+DROP TABLE reindex_tab_ref;
+DROP FUNCTION reindex_func_ref;
+
 --
 -- REINDEX SCHEMA
 --
