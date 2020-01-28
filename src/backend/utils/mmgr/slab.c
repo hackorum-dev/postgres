@@ -173,6 +173,14 @@ static const MemoryContextMethods SlabMethods = {
 #define SlabAllocInfo(_cxt, _chunk)
 #endif
 
+/* Cast MemoryContext to SlabContext * after appropriate sanity checks. */
+static inline SlabContext *
+SlabContextFromMemoryContext(MemoryContext context)
+{
+	Assert(context->magic == MCXT_MAGIC);
+	Assert(context->methods == &SlabMethods);
+	return (SlabContext *) context;
+}
 
 /*
  * SlabContextCreate
@@ -278,7 +286,6 @@ SlabContextCreate(MemoryContext parent,
 
 	/* Finally, do the type-independent part of context creation */
 	MemoryContextCreate((MemoryContext) slab,
-						T_SlabContext,
 						&SlabMethods,
 						parent,
 						name);
@@ -297,7 +304,7 @@ static void
 SlabReset(MemoryContext context)
 {
 	int			i;
-	SlabContext *slab = castNode(SlabContext, context);
+	SlabContext *slab = SlabContextFromMemoryContext(context);
 
 	Assert(slab);
 
@@ -353,7 +360,7 @@ SlabDelete(MemoryContext context)
 static void *
 SlabAlloc(MemoryContext context, Size size)
 {
-	SlabContext *slab = castNode(SlabContext, context);
+	SlabContext *slab = SlabContextFromMemoryContext(context);
 	SlabBlock  *block;
 	SlabChunk  *chunk;
 	int			idx;
@@ -514,7 +521,7 @@ static void
 SlabFree(MemoryContext context, void *pointer)
 {
 	int			idx;
-	SlabContext *slab = castNode(SlabContext, context);
+	SlabContext *slab = SlabContextFromMemoryContext(context);
 	SlabChunk  *chunk = SlabPointerGetChunk(pointer);
 	SlabBlock  *block = chunk->block;
 
@@ -603,7 +610,7 @@ SlabFree(MemoryContext context, void *pointer)
 static void *
 SlabRealloc(MemoryContext context, void *pointer, Size size)
 {
-	SlabContext *slab = castNode(SlabContext, context);
+	SlabContext *slab = SlabContextFromMemoryContext(context);
 
 	Assert(slab);
 
@@ -623,7 +630,7 @@ SlabRealloc(MemoryContext context, void *pointer, Size size)
 static Size
 SlabGetChunkSpace(MemoryContext context, void *pointer)
 {
-	SlabContext *slab = castNode(SlabContext, context);
+	SlabContext *slab = SlabContextFromMemoryContext(context);
 
 	Assert(slab);
 
@@ -637,7 +644,7 @@ SlabGetChunkSpace(MemoryContext context, void *pointer)
 static bool
 SlabIsEmpty(MemoryContext context)
 {
-	SlabContext *slab = castNode(SlabContext, context);
+	SlabContext *slab = SlabContextFromMemoryContext(context);
 
 	Assert(slab);
 
@@ -657,7 +664,7 @@ SlabStats(MemoryContext context,
 		  MemoryStatsPrintFunc printfunc, void *passthru,
 		  MemoryContextCounters *totals)
 {
-	SlabContext *slab = castNode(SlabContext, context);
+	SlabContext *slab = SlabContextFromMemoryContext(context);
 	Size		nblocks = 0;
 	Size		freechunks = 0;
 	Size		totalspace;
@@ -717,7 +724,7 @@ static void
 SlabCheck(MemoryContext context)
 {
 	int			i;
-	SlabContext *slab = castNode(SlabContext, context);
+	SlabContext *slab = SlabContextFromMemoryContext(context);
 	const char *name = slab->header.name;
 
 	Assert(slab);

@@ -736,7 +736,6 @@ MemoryContextContains(MemoryContext context, void *pointer)
  *		sure the node is left in a state that delete will handle.
  *
  * node: the as-yet-uninitialized common part of the context header node.
- * tag: NodeTag code identifying the memory context type.
  * methods: context-type-specific methods (usually statically allocated).
  * parent: parent context, or NULL if this will be a top-level context.
  * name: name of context (must be statically allocated).
@@ -746,7 +745,6 @@ MemoryContextContains(MemoryContext context, void *pointer)
  */
 void
 MemoryContextCreate(MemoryContext node,
-					NodeTag tag,
 					const MemoryContextMethods *methods,
 					MemoryContext parent,
 					const char *name)
@@ -755,7 +753,7 @@ MemoryContextCreate(MemoryContext node,
 	Assert(CritSectionCount == 0);
 
 	/* Initialize all standard fields of memory context header */
-	node->type = tag;
+	node->magic = MCXT_MAGIC;
 	node->isReset = true;
 	node->methods = methods;
 	node->parent = parent;

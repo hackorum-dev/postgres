@@ -14,7 +14,8 @@
 #ifndef MEMNODES_H
 #define MEMNODES_H
 
-#include "nodes/nodes.h"
+/* Magic number to help us identify memory contexts. */
+#define MCXT_MAGIC				0x56269b04
 
 /*
  * MemoryContextCounters
@@ -75,7 +76,7 @@ typedef struct MemoryContextMethods
 
 typedef struct MemoryContextData
 {
-	NodeTag		type;			/* identifies exact kind of context */
+	int			magic;			/* always MCXT_MAGIC */
 	/* these two fields are placed here to minimize alignment wastage: */
 	bool		isReset;		/* T = no space alloced since last reset */
 	bool		allowInCritSection; /* allow palloc in critical section */
@@ -99,10 +100,10 @@ typedef struct MemoryContextData
  *
  * Add new context types to the set accepted by this macro.
  */
-#define MemoryContextIsValid(context) \
-	((context) != NULL && \
-	 (IsA((context), AllocSetContext) || \
-	  IsA((context), SlabContext) || \
-	  IsA((context), GenerationContext)))
+static inline bool
+MemoryContextIsValid(MemoryContext context)
+{
+	return context != NULL && context->magic == MCXT_MAGIC;
+}
 
 #endif							/* MEMNODES_H */

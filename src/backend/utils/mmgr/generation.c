@@ -263,7 +263,6 @@ GenerationContextCreate(MemoryContext parent,
 
 	/* Finally, do the type-independent part of context creation */
 	MemoryContextCreate((MemoryContext) set,
-						T_GenerationContext,
 						&GenerationMethods,
 						parent,
 						name);

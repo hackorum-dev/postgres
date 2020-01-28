@@ -459,7 +459,6 @@ AllocSetContextCreateInternal(MemoryContext parent,
 
 			/* Reinitialize its header, installing correct name and parent */
 			MemoryContextCreate((MemoryContext) set,
-								T_AllocSetContext,
 								&AllocSetMethods,
 								parent,
 								name);
@@ -550,7 +549,6 @@ AllocSetContextCreateInternal(MemoryContext parent,
 
 	/* Finally, do the type-independent part of context creation */
 	MemoryContextCreate((MemoryContext) set,
-						T_AllocSetContext,
 						&AllocSetMethods,
 						parent,
 						name);
