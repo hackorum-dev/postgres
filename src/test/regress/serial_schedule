@@ -185,6 +185,7 @@ test: returning
 test: largeobject
 test: with
 test: xml
+test: collation_join
 test: partition_join
 test: partition_prune
 test: reloptions
