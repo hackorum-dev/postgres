@@ -671,6 +671,36 @@ psql: error: connection to server on socket "/tmp/.s.PGSQL.5432" failed: No such
      indicate more fundamental problems, like lack of network
      connectivity, or a firewall blocking the connection.
     </para>
+
+    <para>
+     You will get server closed the connection unexpectedly message while
+     trying to execute sql command on disconnected connection. The message is
+     slightly different in windows and non-windows. In non-windows, you will
+     see a FATAL message before the error message:
+<screen>
+FATAL:  terminating connection due to idle-in-transaction timeout
+server closed the connection unexpectedly
+        This probably means the server terminated abnormally
+        before or while processing the request.
+The connection to the server was lost. Attempting reset: Succeeded.
+</screen>
+     In windows, you might not see the FATAL message:
+<screen>
+server closed the connection unexpectedly
+        This probably means the server terminated abnormally
+        before or while processing the request.
+The connection to the server was lost. Attempting reset: Succeeded.
+</screen>
+     This message "FATAL:  terminating connection due to idle-in-transaction
+     timeout" that is sent from server will not be displayed in windows,
+     however it will be present in the log file. The reason for this is, in
+     windows the client cannot receive the message sent by the server when the
+     server has closed the client connection. This behavior can be noticed when
+     the client connection has been disconnected because of
+     idle_in_transaction_session_timeout, pg_terminate_backend, pg_ctl kill
+     TERM and drop database with (force).
+    </para>
+
    </sect2>
   </sect1>
 
