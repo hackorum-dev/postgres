@@ -863,6 +863,7 @@ static bool recoveryStopsAfter(XLogReaderState *record);
 static void recoveryPausesHere(void);
 static bool recoveryApplyDelay(XLogReaderState *record);
 static void SetLatestXTime(TimestampTz xtime);
+static void SetLatestXTimeConditional(TimestampTz xtime);
 static void SetCurrentChunkStartTime(TimestampTz xtime);
 static void CheckRequiredParameterValues(void);
 static void XLogReportParameters(void);
@@ -5560,32 +5561,66 @@ exitArchiveRecovery(TimeLineID endTLI, XLogRecPtr endOfLog)
  *
  * If the record contains a timestamp, returns true, and saves the timestamp
  * in *recordXtime. If the record type has no timestamp, returns false.
- * Currently, only transaction commit/abort records and restore points contain
- * timestamps.
+ * Currently, only transaction prepare/commit/abort records, restore points,
+ * end-of-recovery and checkpoints contain timestamps.
+ *
+ * If canGoBack is not NULL, it's set to true if the timestamp can have a time
+ * far in the past.  This currently only happens for checkpoint records
+ * (because the timestamp they carry is that of the start of the checkpoint.)
  */
 static bool
-getRecordTimestamp(XLogReaderState *record, TimestampTz *recordXtime)
+getRecordTimestamp(XLogReaderState *record, TimestampTz *recordXtime,
+				   bool *canGoBack)
 {
-	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
-	uint8		xact_info = info & XLOG_XACT_OPMASK;
-	uint8		rmid = XLogRecGetRmid(record);
+	RmgrId		rmid = XLogRecGetRmid(record);
+	uint8		info;
 
-	if (rmid == RM_XLOG_ID && info == XLOG_RESTORE_POINT)
+	if (canGoBack)
+		*canGoBack = false;
+
+	switch (rmid)
 	{
-		*recordXtime = ((xl_restore_point *) XLogRecGetData(record))->rp_time;
-		return true;
-	}
-	if (rmid == RM_XACT_ID && (xact_info == XLOG_XACT_COMMIT ||
-							   xact_info == XLOG_XACT_COMMIT_PREPARED))
-	{
-		*recordXtime = ((xl_xact_commit *) XLogRecGetData(record))->xact_time;
-		return true;
-	}
-	if (rmid == RM_XACT_ID && (xact_info == XLOG_XACT_ABORT ||
-							   xact_info == XLOG_XACT_ABORT_PREPARED))
-	{
-		*recordXtime = ((xl_xact_abort *) XLogRecGetData(record))->xact_time;
-		return true;
+		case RM_XLOG_ID:
+			info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+
+			switch (info)
+			{
+				case XLOG_RESTORE_POINT:
+					*recordXtime = ((xl_restore_point *) XLogRecGetData(record))->rp_time;
+					return true;
+				case XLOG_END_OF_RECOVERY:
+					*recordXtime = ((xl_end_of_recovery *) XLogRecGetData(record))->end_time;
+					return true;
+				case XLOG_CHECKPOINT_ONLINE:
+				case XLOG_CHECKPOINT_SHUTDOWN:
+					if (canGoBack)
+						*canGoBack = true;
+					*recordXtime =
+						time_t_to_timestamptz(((CheckPoint *) XLogRecGetData(record))->time);
+					return true;
+			}
+			break;
+
+		case RM_XACT_ID:
+			info = XLogRecGetInfo(record) & XLOG_XACT_OPMASK;
+
+			switch (info)
+			{
+				case XLOG_XACT_PREPARE:
+					*recordXtime = ((xl_xact_prepare *) XLogRecGetData(record))->prepared_at;
+					return true;
+
+				case XLOG_XACT_COMMIT:
+				case XLOG_XACT_COMMIT_PREPARED:
+					*recordXtime = ((xl_xact_commit *) XLogRecGetData(record))->xact_time;
+					return true;
+
+				case XLOG_XACT_ABORT:
+				case XLOG_XACT_ABORT_PREPARED:
+					*recordXtime = ((xl_xact_abort *) XLogRecGetData(record))->xact_time;
+					return true;
+			}
+			break;
 	}
 	return false;
 }
@@ -5701,7 +5736,7 @@ recoveryStopsBefore(XLogReaderState *record)
 	}
 
 	if (recoveryTarget == RECOVERY_TARGET_TIME &&
-		getRecordTimestamp(record, &recordXtime))
+		getRecordTimestamp(record, &recordXtime, NULL))
 	{
 		/*
 		 * There can be many transactions that share the same commit time, so
@@ -5743,9 +5778,6 @@ recoveryStopsBefore(XLogReaderState *record)
 
 /*
  * Same as recoveryStopsBefore, but called after applying the record.
- *
- * We also track the timestamp of the latest applied COMMIT/ABORT
- * record in XLogCtl->recoveryLastXTime.
  */
 static bool
 recoveryStopsAfter(XLogReaderState *record)
@@ -5753,7 +5785,6 @@ recoveryStopsAfter(XLogReaderState *record)
 	uint8		info;
 	uint8		xact_info;
 	uint8		rmid;
-	TimestampTz recordXtime;
 
 	/*
 	 * Ignore recovery target settings when not in archive recovery (meaning
@@ -5781,7 +5812,7 @@ recoveryStopsAfter(XLogReaderState *record)
 			recoveryStopAfter = true;
 			recoveryStopXid = InvalidTransactionId;
 			recoveryStopLSN = InvalidXLogRecPtr;
-			(void) getRecordTimestamp(record, &recoveryStopTime);
+			(void) getRecordTimestamp(record, &recoveryStopTime, NULL);
 			strlcpy(recoveryStopName, recordRestorePointData->rp_name, MAXFNAMELEN);
 
 			ereport(LOG,
@@ -5821,10 +5852,6 @@ recoveryStopsAfter(XLogReaderState *record)
 	{
 		TransactionId recordXid;
 
-		/* Update the last applied transaction timestamp */
-		if (getRecordTimestamp(record, &recordXtime))
-			SetLatestXTime(recordXtime);
-
 		/* Extract the XID of the committed/aborted transaction */
 		if (xact_info == XLOG_XACT_COMMIT_PREPARED)
 		{
@@ -5863,7 +5890,7 @@ recoveryStopsAfter(XLogReaderState *record)
 		{
 			recoveryStopAfter = true;
 			recoveryStopXid = recordXid;
-			recoveryStopTime = recordXtime;
+			getRecordTimestamp(record, &recoveryStopTime, NULL);
 			recoveryStopLSN = InvalidXLogRecPtr;
 			recoveryStopName[0] = '\0';
 
@@ -6000,7 +6027,7 @@ recoveryApplyDelay(XLogReaderState *record)
 		xact_info != XLOG_XACT_COMMIT_PREPARED)
 		return false;
 
-	if (!getRecordTimestamp(record, &xtime))
+	if (!getRecordTimestamp(record, &xtime, NULL))
 		return false;
 
 	delayUntil = TimestampTzPlusMilliseconds(xtime, recovery_min_apply_delay);
@@ -6048,6 +6075,26 @@ recoveryApplyDelay(XLogReaderState *record)
 }
 
 /*
+ * Track the timestamp of the latest applied time-bearing WAL record in
+ * XLogCtl->recoveryLastXTime, being careful with records whose timestamps
+ * can be far in the past.
+ */
+static void
+updateRecoveryXTime(XLogReaderState *record)
+{
+	TimestampTz	recordXtime;
+	bool	canGoBack;
+
+	if (getRecordTimestamp(record, &recordXtime, &canGoBack))
+	{
+		if (canGoBack)
+			SetLatestXTimeConditional(recordXtime);
+		else
+			SetLatestXTime(recordXtime);
+	}
+}
+
+/*
  * Save timestamp of latest processed commit/abort record.
  *
  * We keep this in XLogCtl, not a simple static variable, so that it can be
@@ -6062,8 +6109,18 @@ SetLatestXTime(TimestampTz xtime)
 	SpinLockRelease(&XLogCtl->info_lck);
 }
 
+/* as above, but do nothing if timestamp is in the past */
+static void
+SetLatestXTimeConditional(TimestampTz xtime)
+{
+	SpinLockAcquire(&XLogCtl->info_lck);
+	if (xtime > XLogCtl->recoveryLastXTime)
+		XLogCtl->recoveryLastXTime = xtime;
+	SpinLockRelease(&XLogCtl->info_lck);
+}
+
 /*
- * Fetch timestamp of latest processed commit/abort record.
+ * Fetch timestamp of latest processed timestamped record.
  */
 TimestampTz
 GetLatestXTime(void)
@@ -7255,6 +7312,9 @@ StartupXLOG(void)
 						WalSndWakeup();
 				}
 
+				/* update last recovery time */
+				updateRecoveryXTime(xlogreader);
+
 				/* Exit loop if we reached inclusive recovery target */
 				if (recoveryStopsAfter(xlogreader))
 				{
@@ -7317,7 +7377,7 @@ StartupXLOG(void)
 			xtime = GetLatestXTime();
 			if (xtime)
 				ereport(LOG,
-						(errmsg("last completed transaction was at log time %s",
+						(errmsg("last transaction activity was at log time %s",
 								timestamptz_to_str(xtime))));
 
 			InRedo = false;
@@ -9317,7 +9377,7 @@ CreateRestartPoint(int flags)
 	ereport((log_checkpoints ? LOG : DEBUG2),
 			(errmsg("recovery restart point at %X/%X",
 					(uint32) (lastCheckPoint.redo >> 32), (uint32) lastCheckPoint.redo),
-			 xtime ? errdetail("Last completed transaction was at log time %s.",
+			 xtime ? errdetail("Last transaction activity was at log time %s.",
 							   timestamptz_to_str(xtime)) : 0));
 
 	LWLockRelease(CheckpointLock);
