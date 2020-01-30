@@ -654,7 +654,7 @@ msgid ""
 "  -o, --options=OPTIONS  command line options to pass to postgres\n"
 "                         (PostgreSQL server executable) or initdb\n"
 msgstr ""
-"  -o, --optons=OPTIONEN  Kommandozeilenoptionen für postgres (PostgreSQL-\n"
+"  -o, --options=OPTIONEN  Kommandozeilenoptionen für postgres (PostgreSQL-\n"
 "                         Serverprogramm) oder initdb\n"
 
 #: pg_ctl.c:1953
