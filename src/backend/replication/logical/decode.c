@@ -336,10 +336,9 @@ DecodeStandbyOp(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 				xl_invalidations *invalidations =
 				(xl_invalidations *) XLogRecGetData(r);
 
-				if (!ctx->fast_forward)
-					ReorderBufferImmediateInvalidation(ctx->reorder,
-													   invalidations->nmsgs,
-													   invalidations->msgs);
+				ReorderBufferImmediateInvalidation(ctx->reorder,
+												   invalidations->nmsgs,
+												   invalidations->msgs);
 			}
 			break;
 		default:
@@ -360,11 +359,9 @@ DecodeHeap2Op(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	ReorderBufferProcessXid(ctx->reorder, xid, buf->origptr);
 
 	/*
-	 * If we don't have snapshot or we are just fast-forwarding, there is no
-	 * point in decoding changes.
+	 * If we don't have snapshot, we have no reason to decode changes.
 	 */
-	if (SnapBuildCurrentState(builder) < SNAPBUILD_FULL_SNAPSHOT ||
-		ctx->fast_forward)
+	if (SnapBuildCurrentState(builder) < SNAPBUILD_FULL_SNAPSHOT)
 		return;
 
 	switch (info)
@@ -379,6 +376,13 @@ DecodeHeap2Op(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 				xl_heap_new_cid *xlrec;
 
 				xlrec = (xl_heap_new_cid *) XLogRecGetData(buf->record);
+
+				/*
+				 * Must process this one even when fast-forwarding.  (If we
+				 * were to skip it, an incorrect snapshout would be built
+				 * for catalog changes that don't carry invalidations, such
+				 * as for user-marked catalog tables.)
+				 */
 				SnapBuildProcessNewCid(builder, xid, buf->origptr, xlrec);
 
 				break;
