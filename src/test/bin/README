@@ -1,0 +1,11 @@
+src/test/bin/README
+
+Binary executable tests
+=======================
+
+This directory contains programs that are built and executed for testing
+purposes, but never installed. It may be used, for example, to test that code
+in src/common works in frontend environments.
+
+These test programs are part of the tap-test suite.  Configure with tap tests
+enabled or these tests will be skipped.

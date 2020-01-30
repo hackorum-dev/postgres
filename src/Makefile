@@ -2,7 +2,8 @@
 #
 # Makefile for src
 #
-# Copyright (c) 1994, Regents of the University of California
+# Portions Copyright (c) 1994, Regents of the University of California
+# Portions Copyright (c) 1996-2020, PostgreSQL Global Development Group
 #
 # src/Makefile
 #
@@ -27,6 +28,7 @@ SUBDIRS = \
 	bin \
 	pl \
 	makefiles \
+	test/bin \
 	test/regress \
 	test/isolation \
 	test/perl

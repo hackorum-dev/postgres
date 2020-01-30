@@ -814,6 +814,30 @@ sub mkvcbuild
 		$proj->AddLibrary('ws2_32.lib');
 	}
 
+	# test programs in src/test/bin
+	$mf = Project::read_file('src/test/bin/Makefile');
+	$mf =~ s{\\\r?\n}{}g;
+	$mf =~ m{PROGRAMS\s*=\s*(.*)$}m
+	  || die 'Could not match in src/test/bin/Makefile' . "\n";
+	foreach my $prg (split /\s+/, $1)
+	{
+		my $proj = $solution->AddProject($prg, 'exe', 'test/bin');
+		$mf =~ m{$prg\s*:\s*(.*)$}m
+		  || die 'Could not find test define for $prg' . "\n";
+		my @files = split /\s+/, $1;
+		foreach my $f (@files)
+		{
+			$f =~ s/\.o$/\.c/;
+			if ($f =~ /\.c$/)
+			{
+				$proj->AddFile('src/test/bin/' . $f);
+			}
+		}
+		$proj->AddIncludeDir('src/interfaces/libpq');
+		$proj->AddReference($libpq, $libpgfeutils, $libpgcommon, $libpgport);
+		$proj->AddDirResourceFile('src/test/bin');
+	}
+
 	# Regression DLL and EXE
 	my $regress = $solution->AddProject('regress', 'dll', 'misc');
 	$regress->AddFile('src/test/regress/regress.c');
