@@ -364,6 +364,7 @@ static void ATRewriteTables(AlterTableStmt *parsetree,
 							List **wqueue, LOCKMODE lockmode,
 							AlterTableUtilityContext *context);
 static void ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap, LOCKMODE lockmode);
+static Oid cluster_index(Relation rel);
 static AlteredTableInfo *ATGetQueueEntry(List **wqueue, Relation rel);
 static void ATSimplePermissions(Relation rel, int allowed_targets);
 static void ATWrongRelkindError(Relation rel, int allowed_targets);
@@ -4294,7 +4295,7 @@ ATRewriteCatalogs(List **wqueue, LOCKMODE lockmode,
 			 * multiple columns of a table are altered).
 			 */
 			if (pass == AT_PASS_ALTER_TYPE)
-				ATPostAlterTypeCleanup(wqueue, tab, lockmode);
+				; // ATPostAlterTypeCleanup(wqueue, tab, lockmode);
 
 			relation_close(rel, NoLock);
 		}
@@ -5005,6 +5006,36 @@ ATRewriteTables(AlterTableStmt *parsetree, List **wqueue, LOCKMODE lockmode,
 	}
 }
 
+/* Return the OID of the index on which the table was previously (SET) clustered */
+/* stolen from alter.c */
+static Oid cluster_index(Relation rel)
+{
+	ListCell   *index;
+
+	/* We need to find the index that has indisclustered set. */
+	foreach(index, RelationGetIndexList(rel))
+	{
+		HeapTuple		idxtuple;
+		Form_pg_index	indexForm;
+		Oid				indexOid;
+
+		indexOid = lfirst_oid(index);
+		idxtuple = SearchSysCache1(INDEXRELID,
+						   ObjectIdGetDatum(indexOid));
+		if (!HeapTupleIsValid(idxtuple))
+				elog(ERROR, "cache lookup failed for index %u", indexOid);
+		indexForm = (Form_pg_index) GETSTRUCT(idxtuple);
+		if (indexForm->indisclustered)
+		{
+				ReleaseSysCache(idxtuple);
+				return indexOid;
+		}
+		ReleaseSysCache(idxtuple);
+	}
+
+	return InvalidOid;
+}
+
 /*
  * ATRewriteTable: scan or rewrite one table
  *
@@ -5015,6 +5046,7 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap, LOCKMODE lockmode)
 {
 	Relation	oldrel;
 	Relation	newrel;
+	Relation	index;
 	TupleDesc	oldTupDesc;
 	TupleDesc	newTupDesc;
 	bool		needscan = false;
@@ -5026,6 +5058,7 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap, LOCKMODE lockmode)
 	BulkInsertState bistate;
 	int			ti_options;
 	ExprState  *partqualstate = NULL;
+	Oid			OIDindex;
 
 	/*
 	 * Open the relation(s).  We have surely already locked the existing
@@ -5039,6 +5072,9 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap, LOCKMODE lockmode)
 		newrel = table_open(OIDNewHeap, lockmode);
 	else
 		newrel = NULL;
+
+	OIDindex = cluster_index(oldrel);
+	index = OidIsValid(OIDindex) ? index_open(OIDindex, lockmode) : NULL;
 
 	/*
 	 * Prepare a BulkInsertState and options for table_tuple_insert. Because
@@ -5129,7 +5165,8 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap, LOCKMODE lockmode)
 		ExprContext *econtext;
 		TupleTableSlot *oldslot;
 		TupleTableSlot *newslot;
-		TableScanDesc scan;
+		TableScanDesc tblscan;
+		IndexScanDesc indscan;
 		MemoryContext oldCxt;
 		List	   *dropped_attrs = NIL;
 		ListCell   *lc;
@@ -5205,7 +5242,13 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap, LOCKMODE lockmode)
 		 * checking all the constraints.
 		 */
 		snapshot = RegisterSnapshot(GetLatestSnapshot());
-		scan = table_beginscan(oldrel, snapshot, 0, NULL);
+		if (index) {
+			indscan = index_beginscan(oldrel, index, snapshot, 0, 0); // SnapshotAny?
+			tblscan = NULL;
+		} else {
+			tblscan = table_beginscan(oldrel, snapshot, 0, NULL);
+			indscan = NULL;
+		}
 
 		/*
 		 * Switch to per-tuple memory context and reset it for each tuple
@@ -5213,9 +5256,18 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap, LOCKMODE lockmode)
 		 */
 		oldCxt = MemoryContextSwitchTo(GetPerTupleMemoryContext(estate));
 
-		while (table_scan_getnextslot(scan, ForwardScanDirection, oldslot))
+		for (;;)
 		{
 			TupleTableSlot *insertslot;
+
+			if (tblscan) {
+				if (!table_scan_getnextslot(tblscan, ForwardScanDirection, oldslot))
+					break;
+			} else {
+				/* indscan */
+				if (!index_getnext_slot(indscan, ForwardScanDirection, oldslot))
+					break;
+			}
 
 			if (tab->rewrite > 0)
 			{
@@ -5362,7 +5414,10 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap, LOCKMODE lockmode)
 		}
 
 		MemoryContextSwitchTo(oldCxt);
-		table_endscan(scan);
+		if (tblscan)
+			table_endscan(tblscan);
+		if (indscan)
+			index_endscan(indscan);
 		UnregisterSnapshot(snapshot);
 
 		ExecDropSingleTupleTableSlot(oldslot);
@@ -5373,6 +5428,8 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap, LOCKMODE lockmode)
 	FreeExecutorState(estate);
 
 	table_close(oldrel, NoLock);
+	if (index)
+		table_close(index, NoLock);
 	if (newrel)
 	{
 		FreeBulkInsertState(bistate);
