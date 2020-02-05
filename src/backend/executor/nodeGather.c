@@ -159,10 +159,16 @@ ExecGather(PlanState *pstate)
 		Gather	   *gather = (Gather *) node->ps.plan;
 
 		/*
+		 * Gather node should not be created if there are no parallel
+		 * workers.
+		 */
+		Assert(gather->num_workers > 0);
+
+		/*
 		 * Sometimes we might have to run without parallelism; but if parallel
 		 * mode is active then we can try to fire up some workers.
 		 */
-		if (gather->num_workers > 0 && estate->es_use_parallel_mode)
+		if (estate->es_use_parallel_mode)
 		{
 			ParallelContext *pcxt;
 

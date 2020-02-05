@@ -758,6 +758,12 @@ add_partial_path(RelOptInfo *parent_rel, Path *new_path)
 	/* Path to be added must be parallel safe. */
 	Assert(new_path->parallel_safe);
 
+	/*
+	 * No partial path should be created if there's not enough work for
+	 * parallel workers.
+	 */
+	Assert(new_path->parallel_workers > 0);
+
 	/* Relation should be OK for parallelism, too. */
 	Assert(parent_rel->consider_parallel);
 
@@ -1847,6 +1853,7 @@ create_gather_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	GatherPath *pathnode = makeNode(GatherPath);
 
 	Assert(subpath->parallel_safe);
+	Assert(subpath->parallel_workers > 0);
 
 	pathnode->path.pathtype = T_Gather;
 	pathnode->path.parent = rel;
@@ -1860,14 +1867,6 @@ create_gather_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 
 	pathnode->subpath = subpath;
 	pathnode->num_workers = subpath->parallel_workers;
-	pathnode->single_copy = false;
-
-	if (pathnode->num_workers == 0)
-	{
-		pathnode->path.pathkeys = subpath->pathkeys;
-		pathnode->num_workers = 1;
-		pathnode->single_copy = true;
-	}
 
 	cost_gather(pathnode, root, rel, pathnode->path.param_info, rows);
 
