@@ -87,6 +87,7 @@
 #include "storage/proclist.h"
 #include "storage/spin.h"
 #include "utils/memutils.h"
+#include "utils/shared_meta_cache.h"
 
 #ifdef LWLOCK_STATS
 #include "utils/hsearch.h"
@@ -522,6 +523,14 @@ RegisterLWLockTranches(void)
 	LWLockRegisterTranche(LWTRANCHE_PARALLEL_APPEND, "parallel_append");
 	LWLockRegisterTranche(LWTRANCHE_PARALLEL_HASH_JOIN, "parallel_hash_join");
 	LWLockRegisterTranche(LWTRANCHE_SXACT, "serializable_xact");
+	LWLockRegisterTranche(LWTRANCHE_SHARED_MCXT, "shared_mcxt");
+
+	if (IS_GLOBAL_META_CACHE)
+	{
+		LWLockRegisterTranche(LWTRANCHE_META_CACHE_MAP, "meta_cache_map");
+		LWLockRegisterTranche(LWTRANCHE_GLOBAL_CATCACHE, "global_metacache");
+		LWLockRegisterTranche(LWTRANCHE_META_CACHE_HANDLE, "meta_cache_handle");
+	}
 
 	/* Register named tranches. */
 	for (i = 0; i < NamedLWLockTrancheRequests; i++)

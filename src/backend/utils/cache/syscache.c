@@ -997,6 +997,8 @@ static int	SysCacheSupportingRelOidSize;
 
 static int	oid_compare(const void *a, const void *b);
 
+static inline bool
+SysCacheInvalidteCheck(int cacheId, uint32 hashValue);
 
 /*
  * InitCatalogCache - initialize the caches
@@ -1446,7 +1448,7 @@ SearchSysCacheList(int cacheId, int nkeys,
  *	This routine is only quasi-public: it should only be used by inval.c.
  */
 void
-SysCacheInvalidate(int cacheId, uint32 hashValue)
+SysCacheInvalidate(int cacheId, uint32 hashValue, InvalPhase invalPhase)
 {
 	if (cacheId < 0 || cacheId >= SysCacheSize)
 		elog(ERROR, "invalid cache ID: %d", cacheId);
@@ -1455,9 +1457,31 @@ SysCacheInvalidate(int cacheId, uint32 hashValue)
 	if (!PointerIsValid(SysCache[cacheId]))
 		return;
 
-	CatCacheInvalidate(SysCache[cacheId], hashValue);
+	CatCacheInvalidate(SysCache[cacheId], hashValue, invalPhase);
 }
 
+
+void
+GlobalSysCacheInvalidate(int cacheId, uint32 hashValue)
+{
+	if (!SysCacheInvalidteCheck(cacheId, hashValue))
+		return;
+
+	GlobalCatCacheInvalidate(SysCache[cacheId], hashValue);
+}
+
+static inline bool
+SysCacheInvalidteCheck(int cacheId, uint32 hashValue)
+{
+	if (cacheId < 0 || cacheId >= SysCacheSize)
+		elog(ERROR, "invalid cache ID: %d", cacheId);
+
+	/* if this cache isn't initialized yet, no need to do anything */
+	if (PointerIsValid(SysCache[cacheId]))
+		return true;
+	else
+		return false;
+}
 /*
  * Certain relations that do not have system caches send snapshot invalidation
  * messages in lieu of catcache messages.  This is for the benefit of

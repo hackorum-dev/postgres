@@ -149,5 +149,7 @@ extern void ProcessCommittedInvalidationMessages(SharedInvalidationMessage *msgs
 												 Oid dbid, Oid tsid);
 
 extern void LocalExecuteInvalidationMessage(SharedInvalidationMessage *msg);
-
+extern void GMCEOXactExecInvalMessage(SharedInvalidationMessage *msg);
+extern void GMCAbortSubXactExecInvalMessage(SharedInvalidationMessage *msg);
+extern void GMCEOCommandExecInvalMessage(SharedInvalidationMessage *msg);
 #endif							/* SINVAL_H */

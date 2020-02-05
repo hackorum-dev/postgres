@@ -83,6 +83,7 @@
 #include "tsearch/ts_cache.h"
 #include "utils/builtins.h"
 #include "utils/bytea.h"
+#include "utils/shared_meta_cache.h"
 #include "utils/float.h"
 #include "utils/guc_tables.h"
 #include "utils/memutils.h"
@@ -2351,6 +2352,20 @@ static struct config_int ConfigureNamesInt[] =
 		65536, 64, MAX_KILOBYTES,
 		NULL, NULL, NULL
 	},
+
+#if !defined(RELCACHE_FORCE_RELEASE) || !defined(CLOBBER_CACHE_ALWAYS) || \
+	!defined(CLOBBER_CACHE_RECURSIVELY) || !defined(CLOBBER_CACHE_RECURSIVELY)
+	{
+		{"shared_metacache_mem", PGC_POSTMASTER, RESOURCES_MEM,
+			gettext_noop("Sets the memory for global system catlog cache and relation cache."),
+			gettext_noop("A value of 0 disables this feature and meta cache is built per backend."),
+			GUC_UNIT_MB
+		},
+		&shared_metacache_mem,
+		0, 0, INT_MAX,
+		NULL, NULL, NULL
+	},
+#endif
 
 	/*
 	 * We use the hopefully-safely-small value of 100kB as the compiled-in

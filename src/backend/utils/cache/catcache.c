@@ -39,6 +39,14 @@
 #include "utils/resowner_private.h"
 #include "utils/syscache.h"
 
+#define CATC_HANDLE_VALID(localCatCTup) \
+	((localCatCTup)->lct_generation == localCatCTup->lct_handle->generation)
+
+#define CATC_IS_INVALID_DUMMY(localCatCTup) \
+	((localCatCTup)->lct_skip_global_subxid != InvalidSubTransactionId)
+
+/**/
+#define MAX_CC_BUCKET_LOCKS 64
 
  /* #define CACHEDEBUG */	/* turns DEBUG elogs on */
 
@@ -60,6 +68,39 @@
 #define CACHE_elog(...)
 #endif
 
+
+/* structs for Global CatCache */
+struct GlobalCatCache
+{
+	CatCache gcc_catcache; 	/* normal CatCache */
+	slock_t gcc_mutex; 	/* lock for CatCache itself */
+	LWLock *gcc_bucket_locks;	/* locks for buckets */
+	HandleHeader gcc_handle_hdr; /* handle */
+};
+
+/* struct for Global CatCtup */
+struct LocalCatCTup
+{
+	CatCTup lct_ct;		/* regular CatCTup */
+	Handle *lct_handle; /* handle pointing to global cache entry */
+	int lct_generation; /* handle generation to check handle validity */
+	bool lct_committed; /* committed or not */
+	/*
+	 * lct_skip_global_subxid is xid this entry is invalidated. In the
+	 * middle of xact, regular catctup is removed or gets dead by local
+	 * invalidation messages. However, SharedLocal cache
+	 */
+	SubTransactionId lct_skip_global_subxid;  /* lct was invalidated in this xaxt */
+};
+
+/* struct for Global CatCtup */
+struct GlobalCatCTup
+{
+	CatCTup gct_ct;    	/* regular CatCTup */
+	Handle *gct_handle; /* handle */
+	slock_t gct_mutex; 	/* lock for refcount/dead of CatCTup */
+};
+
 /* Cache management header --- pointer is NULL until created */
 static CatCacheHeader *CacheHdr = NULL;
 
@@ -79,9 +120,11 @@ static uint32 CatalogCacheComputeHashValue(CatCache *cache, int nkeys,
 										   Datum v1, Datum v2, Datum v3, Datum v4);
 static uint32 CatalogCacheComputeTupleHashValue(CatCache *cache, int nkeys,
 												HeapTuple tuple);
-static inline bool CatalogCacheCompareTuple(const CatCache *cache, int nkeys,
+static inline bool CatalogCacheCompareTuple(const CCFastEqualFN *gcc_fastequal,
+											int nkeys,
 											const Datum *cachekeys,
 											const Datum *searchkeys);
+
 
 #ifdef CATCACHE_STATS
 static void CatCachePrintStats(int code, Datum arg);
@@ -92,13 +135,45 @@ static void CatalogCacheInitializeCache(CatCache *cache);
 static CatCTup *CatalogCacheCreateEntry(CatCache *cache, HeapTuple ntp,
 										Datum *arguments,
 										uint32 hashValue, Index hashIndex,
-										bool negative);
+										bool negative, Handle* handle);
 
 static void CatCacheFreeKeys(TupleDesc tupdesc, int nkeys, int *attnos,
 							 Datum *keys);
 static void CatCacheCopyKeys(TupleDesc tupdesc, int nkeys, int *attnos,
 							 Datum *srckeys, Datum *dstkeys);
 
+static void InitLocalCatCacheInternal(CatCache *cache);
+static void InitGlobalCatCache(CatCache *local_cache, GlobalCatCacheMapKey *keyPtr);
+static GlobalCatCache *InitGlobalCatCacheInternal(CatCache *local_cache);
+static GlobalCatCache *AttachGlobalCatCache(GlobalCatCacheMapKey *keyPtr);
+
+static CatCTup *
+SearchCatCacheBucket(CatCache *cache, int nkeys, Datum *searchkeys,
+					 uint32 hashValue, Index hashIndex,
+					 const CCFastEqualFN *gcc_fastequal);
+
+static CatCTup *
+CreateCatCTupWithTuple(CatCache *cache, HeapTuple ntp);
+static CatCTup *CreateCatCTupWithoutTuple(CatCache *cache, Datum *arguments);
+static CatCTup *
+LocalCacheGetValidEntry(LocalCatCTup *lct);
+
+static LWLock *
+GetCatCacheBucketLock(GlobalCatCache *gcp, uint32 hashValue);
+static void ReleaseLocalCtlistItem(CatCache *cache, List *ctlist);
+static void IncreaceGlobalCatCTupRefCount(GlobalCatCTup *gct);
+static void GlobalCatCacheRemoveCTup(GlobalCatCache *gcp, GlobalCatCTup *gct);
+static void
+GlobalCatCTupDecrementAndRemove(GlobalCatCache *gcp, GlobalCatCTup *gct);
+static void CatCacheInvalidateInternal(CatCache *local_cach, CatCTup *ct);
+static void	CreateInvalCatalogCache(CatCache *cache, uint32 hashValue);
+static void ResetRemoveCatalogCache(CatCache *cache);
+static void SetSkipGlobalSubxid(CatCache *cache);
+static void ResetSkipGlobalSubxid(CatCache *cache);
+static bool SkipGlobalSubxidIsOwnOrChild(CatCache *cache);
+static void ResetGlobalCatalogCache(CatCache *local_cache);
+static void GlobalCatCacheInvalInternal(GlobalCatCache *gcp,
+										CatCTup *global_ct);
 
 /*
  *					internal support functions
@@ -371,11 +446,10 @@ CatalogCacheComputeTupleHashValue(CatCache *cache, int nkeys, HeapTuple tuple)
  * Compare a tuple to the passed arguments.
  */
 static inline bool
-CatalogCacheCompareTuple(const CatCache *cache, int nkeys,
+CatalogCacheCompareTuple(const CCFastEqualFN *cc_fastequal, int nkeys,
 						 const Datum *cachekeys,
 						 const Datum *searchkeys)
 {
-	const CCFastEqualFN *cc_fastequal = cache->cc_fastequal;
 	int			i;
 
 	for (i = 0; i < nkeys; i++)
@@ -388,7 +462,6 @@ CatalogCacheCompareTuple(const CatCache *cache, int nkeys,
 
 
 #ifdef CATCACHE_STATS
-
 static void
 CatCachePrintStats(int code, Datum arg)
 {
@@ -420,7 +493,8 @@ CatCachePrintStats(int code, Datum arg)
 			 cache->cc_searches - cache->cc_hits - cache->cc_neg_hits,
 			 cache->cc_invals,
 			 cache->cc_lsearches,
-			 cache->cc_lhits);
+			 cache->cc_lhits
+			);
 		cc_searches += cache->cc_searches;
 		cc_hits += cache->cc_hits;
 		cc_neg_hits += cache->cc_neg_hits;
@@ -458,6 +532,7 @@ CatCacheRemoveCTup(CatCache *cache, CatCTup *ct)
 {
 	Assert(ct->refcount == 0);
 	Assert(ct->my_cache == cache);
+	Assert(cache->cc_type != CC_SHAREDGLOBAL);
 
 	if (ct->c_list)
 	{
@@ -482,11 +557,98 @@ CatCacheRemoveCTup(CatCache *cache, CatCTup *ct)
 		CatCacheFreeKeys(cache->cc_tupdesc, cache->cc_nkeys,
 						 cache->cc_keyno, ct->keys);
 
+	if (cache->cc_type == CC_SHAREDLOCAL)
+	{
+		/* Committed tuple is not negative but has keys. */
+		if (((LocalCatCTup *)ct)->lct_committed)
+			CatCacheFreeKeys(cache->cc_tupdesc, cache->cc_nkeys,
+							 cache->cc_keyno, ct->keys);
+	}
+
 	pfree(ct);
 
 	--cache->cc_ntup;
 	--CacheHdr->ch_ntup;
 }
+
+/*
+ *		GlobalCatCTupDecrementAndRemove
+ *
+ * Release the reference counter of global cache entry. If cache entry is
+ * dead and referenced by one process alone, it's removed.
+ */
+static void
+GlobalCatCTupDecrementAndRemove(GlobalCatCache *gcp, GlobalCatCTup *gct)
+{
+	CatCTup *ct = (CatCTup *)gct;
+	LWLock *bucket_lock;
+
+	Assert(ct->my_cache == (CatCache *)gcp);
+	Assert(ct->my_cache->cc_type == CC_SHAREDGLOBAL);
+
+	SpinLockAcquire(&gct->gct_mutex);
+
+	Assert(ct->refcount > 0);
+
+	if (ct->dead && ct->refcount == 1)
+		SpinLockRelease(&gct->gct_mutex);
+	else
+	{
+		ct->refcount--;
+		SpinLockRelease(&gct->gct_mutex);
+		return;
+	}
+
+	/*
+	 * Here spin lock is not needed. Dead cache entry is never newly fetched.
+	 * So dead cache with refcount one is referenced only by this process.
+	 */
+	ct->refcount--;
+
+	bucket_lock = GetCatCacheBucketLock(gcp, ct->hash_value);
+
+	LWLockAcquire(bucket_lock, LW_EXCLUSIVE);
+	GlobalCatCacheRemoveCTup(gcp, gct);
+	LWLockRelease(bucket_lock);
+}
+
+/*
+ *		GlobalCatCacheRemoveCTup
+ *
+ * Unlink and delete the given global cache entry.
+ * This assumes that the bucket lock is aquired by the caller because multiple
+ * entries in one bucket are possibly removed recursively.
+ */
+static void
+GlobalCatCacheRemoveCTup(GlobalCatCache *gcp, GlobalCatCTup *gct)
+{
+	CatCTup *ct = (CatCTup *)gct;
+	LWLock *handle_lock;
+
+	Assert(ct->refcount == 0);
+
+	handle_lock = GET_HANDLE_LOCK(gct->gct_handle);
+	LWLockAcquire(handle_lock, LW_EXCLUSIVE);
+
+	/* delete from hash table */
+	dlist_delete(&ct->cache_elem);
+
+	/* invalidate handle */
+	Assert(gct->gct_handle->entry == gct);
+	InvalCacheHandle(&gcp->gcc_handle_hdr, gct->gct_handle);
+	LWLockRelease(handle_lock);
+
+	/*
+	 * Free after releasing hadnle lock is safe because no other process cannot
+	 * access this entry here.
+	 */
+	pfree(gct);
+
+	SpinLockAcquire(&gcp->gcc_mutex);
+	((CatCache *)gcp)->cc_ntup--;
+	SpinLockRelease(&gcp->gcc_mutex);
+}
+
 
 /*
  *		CatCacheRemoveCList
@@ -502,11 +664,16 @@ CatCacheRemoveCList(CatCache *cache, CatCList *cl)
 
 	Assert(cl->refcount == 0);
 	Assert(cl->my_cache == cache);
+	Assert(cache->cc_type != CC_SHAREDGLOBAL);
 
 	/* delink from member tuples */
 	for (i = cl->n_members; --i >= 0;)
 	{
-		CatCTup    *ct = cl->members[i];
+		CatCTup    *ct;
+		if (cache->cc_type == CC_REGULAR)
+			ct = cl->members[i];
+		else
+			ct = (CatCTup *)cl->shared_local_members[i];
 
 		Assert(ct->c_list == cl);
 		ct->c_list = NULL;
@@ -525,6 +692,9 @@ CatCacheRemoveCList(CatCache *cache, CatCList *cl)
 	/* free associated column data */
 	CatCacheFreeKeys(cache->cc_tupdesc, cl->nkeys,
 					 cache->cc_keyno, cl->keys);
+
+	if (cache->cc_type == CC_SHAREDLOCAL)
+		pfree(cl->shared_local_members);
 
 	pfree(cl);
 }
@@ -549,10 +719,12 @@ CatCacheRemoveCList(CatCache *cache, CatCList *cl)
  *	This routine is only quasi-public: it should only be used by inval.c.
  */
 void
-CatCacheInvalidate(CatCache *cache, uint32 hashValue)
+CatCacheInvalidate(CatCache *cache, uint32 hashValue, InvalPhase invalPhase)
 {
 	Index		hashIndex;
 	dlist_mutable_iter iter;
+	LocalCatCTup *lct;
+	bool found_invaldummy = false;
 
 	CACHE_elog(DEBUG2, "CatCacheInvalidate: called");
 
@@ -585,22 +757,164 @@ CatCacheInvalidate(CatCache *cache, uint32 hashValue)
 
 		if (hashValue == ct->hash_value)
 		{
-			if (ct->refcount > 0 ||
-				(ct->c_list && ct->c_list->refcount > 0))
+			switch (invalPhase)
 			{
-				ct->dead = true;
-				/* list, if any, was marked dead above */
-				Assert(ct->c_list == NULL || ct->c_list->dead);
-			}
-			else
-				CatCacheRemoveCTup(cache, ct);
-			CACHE_elog(DEBUG2, "CatCacheInvalidate: invalidated");
+				case INVAL_COMMON:
+				case INVAL_GMC_ABORT_XACT:
+					CatCacheInvalidateInternal(cache, ct);
+
+					CACHE_elog(DEBUG2, "CatCacheInvalidate: invalidated");
 #ifdef CATCACHE_STATS
-			cache->cc_invals++;
+					cache->cc_invals++;
 #endif
+					break;
+
+				case INVAL_GMC_EO_COMMAND:
+				case INVAL_GMC_COMMIT_SUBXACT:
+					lct = (LocalCatCTup *)ct;
+
+					if (CATC_IS_INVALID_DUMMY(lct))
+					{
+						found_invaldummy = true;
+						continue;
+					}
+
+					CatCacheInvalidateInternal(cache, ct);
+					break;
+
+				case INVAL_GMC_COMMIT_XACT:
+					lct = (LocalCatCTup *)ct;
+
+					if (lct->lct_committed || !CATC_IS_INVALID_DUMMY(lct))
+						continue;
+
+					CatCacheInvalidateInternal(cache, ct);
+					break;
+
+				case INVAL_GMC_ABORT_SUBXACT:
+					lct = (LocalCatCTup *)ct;
+
+					/*
+					 * if found one has skip-flag and it's set by parent's
+					 * transaction, that dummy cache cannot be erased.
+					 */
+					if (lct->lct_skip_global_subxid != InvalidSubTransactionId &&
+						lct->lct_skip_global_subxid < GetCurrentSubTransactionId())
+						continue;
+
+					CatCacheInvalidateInternal(cache, ct);
+					break;
+			}
 			/* could be multiple matches, so keep looking! */
 		}
 	}
+
+	/*
+	 * Create a dummy cache with subxid to prevent upcoming command from
+	 * searching global cache instead of actual system catalog.
+	 */
+	if (invalPhase == INVAL_GMC_EO_COMMAND && !found_invaldummy)
+		CreateInvalCatalogCache(cache, hashValue);
+
+}
+
+static void
+CatCacheInvalidateInternal(CatCache *local_cache, CatCTup *ct)
+{
+	Assert(local_cache->cc_type != CC_SHAREDGLOBAL);
+
+	if (ct->refcount > 0 ||
+		(ct->c_list && ct->c_list->refcount > 0))
+	{
+		ct->dead = true;
+		/* list, if any, was marked dead in CatCacheInvalidate */
+		Assert(ct->c_list == NULL || ct->c_list->dead);
+	}
+	else
+		CatCacheRemoveCTup(local_cache, ct);
+}
+
+static void
+CreateInvalCatalogCache(CatCache *cache, uint32 hashValue)
+{
+	Index hashIndex;
+
+	Assert(cache->cc_type == CC_SHAREDLOCAL);
+
+	hashIndex = HASH_INDEX(hashValue, cache->cc_nbuckets);
+
+	CatalogCacheCreateEntry(cache, NULL, NULL,
+							hashValue, hashIndex,
+							false, NULL);
+
+}
+
+void
+GlobalCatCacheInvalidate(CatCache *local_cache, uint32 hashValue)
+{
+	CatCache *global_cache;
+	Index		hashIndex;
+	dlist_mutable_iter iter;
+	LWLock *bucket_lock;
+
+	CACHE_elog(DEBUG2, "GlobalCatCacheInvalidate: called");
+
+	/*
+	 * We don't bother to check whether the cache has finished initialization
+	 * yet; if not, there will be no entries in it so no problem.
+	 *
+	 * We don't also care CatCList because there is no global CatCList.
+	 */
+
+	/*
+	 * inspect the proper hash bucket of global hash table
+	 */
+
+	/* First acquire lock for bucket */
+	bucket_lock = GetCatCacheBucketLock(local_cache->gcp, hashValue);
+
+	LWLockAcquire(bucket_lock, LW_EXCLUSIVE);
+
+	global_cache = (CatCache *)local_cache->gcp;
+
+	hashIndex = HASH_INDEX(hashValue, global_cache->cc_nbuckets);
+
+	dlist_foreach_modify(iter, &global_cache->cc_bucket[hashIndex])
+	{
+		CatCTup    *ct = dlist_container(CatCTup, cache_elem, iter.cur);
+
+		if (hashValue == ct->hash_value)
+		{
+			GlobalCatCacheInvalInternal(local_cache->gcp, ct);
+
+			CACHE_elog(DEBUG2, "GlobalCatCacheInvalidate: invalidated");
+
+			/* could be multiple matches, so keep looking! */
+		}
+	}
+
+	LWLockRelease(bucket_lock);
+}
+
+/*
+ * Lock to bucket should be aquired by the caller
+ */
+static void
+GlobalCatCacheInvalInternal(GlobalCatCache *gcp, CatCTup *global_ct)
+{
+	slock_t *gct_mutex;
+	GlobalCatCTup *gct = (GlobalCatCTup *)global_ct;
+
+	if (global_ct->refcount > 0)
+	{
+		/* Get lock for CatCTup */
+		gct_mutex = &gct->gct_mutex;
+		SpinLockAcquire(gct_mutex);
+		global_ct->dead = true;
+		SpinLockRelease(gct_mutex);
+	}
+	else
+		GlobalCatCacheRemoveCTup(gcp, gct);
 }
 
 /* ----------------------------------------------------------------
@@ -629,7 +943,6 @@ CreateCacheMemoryContext(void)
 												   ALLOCSET_DEFAULT_SIZES);
 }
 
-
 /*
  *		ResetCatalogCache
  *
@@ -639,10 +952,9 @@ CreateCacheMemoryContext(void)
  * However, it shouldn't need to be efficient; we don't invoke it often.
  */
 static void
-ResetCatalogCache(CatCache *cache)
+ResetCatalogCache(CatCache *cache, InvalPhase invalPhase)
 {
 	dlist_mutable_iter iter;
-	int			i;
 
 	/* Remove each list in this cache, or at least mark it dead */
 	dlist_foreach_modify(iter, &cache->cc_lists)
@@ -654,6 +966,65 @@ ResetCatalogCache(CatCache *cache)
 		else
 			CatCacheRemoveCList(cache, cl);
 	}
+
+	switch (invalPhase)
+	{
+		case INVAL_COMMON:
+		case INVAL_GMC_ABORT_XACT: /* this label is not used */
+
+			/*
+			 * When GMC is off and some cases when GMC is on; accepting sinval
+			 * or abort transaction.
+			 */
+			ResetRemoveCatalogCache(cache);
+
+			if (cache->cc_type == CC_SHAREDLOCAL)
+				ResetSkipGlobalSubxid(cache);
+
+			break;
+
+		case INVAL_GMC_EO_COMMAND:
+		case INVAL_GMC_COMMIT_SUBXACT: /* this label is not used */
+			ResetRemoveCatalogCache(cache);
+
+			/* Mark skip flag not to search global cache */
+			SetSkipGlobalSubxid(cache);
+			break;
+
+		case INVAL_GMC_COMMIT_XACT:
+			/* ResetRemoveCatalogCache is not called  */
+			ResetGlobalCatalogCache(cache);
+			ResetSkipGlobalSubxid(cache);
+			break;
+
+		case INVAL_GMC_ABORT_SUBXACT:
+			ResetGlobalCatalogCache(cache);
+
+			/*
+			 * Reset skip-flag only if it's set by current subtransaction or
+			 * children's subtransaction not to affect parent's subtransaction.
+			 */
+			if (SkipGlobalSubxidIsOwnOrChild(cache))
+				ResetSkipGlobalSubxid(cache);
+
+			break;
+	}
+}
+
+
+/*
+ * ResetRemoveCatalogCache
+ *   Workhorse for ResetRemoveCatalogCache
+ *   This fucntion invalidates all caches and reset skip_global_subxid only if
+ *   GMC is on.
+ */
+static void
+ResetRemoveCatalogCache(CatCache *cache)
+{
+	dlist_mutable_iter iter;
+	int  i;
+
+	Assert(cache->cc_type != CC_SHAREDGLOBAL);
 
 	/* Remove each tuple in this cache, or at least mark it dead */
 	for (i = 0; i < cache->cc_nbuckets; i++)
@@ -678,6 +1049,69 @@ ResetCatalogCache(CatCache *cache)
 #endif
 		}
 	}
+
+}
+
+static void
+SetSkipGlobalSubxid(CatCache *cache)
+{
+	Assert(cache->cc_type == CC_SHAREDLOCAL);
+
+	cache->cc_skip_global_subxid = GetCurrentSubTransactionId();
+}
+
+static void
+ResetSkipGlobalSubxid(CatCache *cache)
+{
+	Assert(cache->cc_type == CC_SHAREDLOCAL);
+
+	cache->cc_skip_global_subxid = InvalidSubTransactionId;
+}
+
+static bool
+SkipGlobalSubxidIsOwnOrChild(CatCache *cache)
+{
+	return cache->cc_skip_global_subxid >= GetCurrentSubTransactionId();
+}
+
+static void
+ResetGlobalCatalogCache(CatCache *local_cache)
+{
+	CatCache *global_cache;
+	GlobalCatCache *gcp;
+	dlist_mutable_iter iter;
+	int			i;
+	int num_locks;
+
+	Assert(local_cache->cc_type == CC_SHAREDLOCAL);
+
+	/* global cache doesn't have cc_lists */
+
+	/* Get the corresponding cache and aquire locks */
+	gcp = local_cache->gcp;
+	global_cache = (CatCache *)gcp;
+
+	num_locks = MAX_CC_BUCKET_LOCKS;
+
+	for (i = 0; i < num_locks; ++i)
+		LWLockAcquire(&gcp->gcc_bucket_locks[i], LW_EXCLUSIVE);
+
+	/* Remove each tuple in this cache, or at least mark it dead */
+	for (i = 0; i < global_cache->cc_nbuckets; i++)
+	{
+		dlist_head *bucket = &global_cache->cc_bucket[i];
+
+		dlist_foreach_modify(iter, bucket)
+		{
+			CatCTup    *ct = dlist_container(CatCTup, cache_elem, iter.cur);
+
+			GlobalCatCacheInvalInternal(gcp, ct);
+		}
+	}
+
+	/* Release locks in reverse order */
+	for (i = num_locks - 1 ; i >= 0; --i)
+		LWLockRelease(&gcp->gcc_bucket_locks[i]);
 }
 
 /*
@@ -696,7 +1130,7 @@ ResetCatalogCaches(void)
 	{
 		CatCache   *cache = slist_container(CatCache, cc_next, iter.cur);
 
-		ResetCatalogCache(cache);
+		ResetCatalogCache(cache, INVAL_COMMON);
 	}
 
 	CACHE_elog(DEBUG2, "end of ResetCatalogCaches call");
@@ -716,7 +1150,7 @@ ResetCatalogCaches(void)
  *	this assumes the tupdesc of a cachable system table will not change...)
  */
 void
-CatalogCacheFlushCatalog(Oid catId)
+CatalogCacheFlushCatalog(Oid catId, InvalPhase invalPhase)
 {
 	slist_iter	iter;
 
@@ -730,7 +1164,7 @@ CatalogCacheFlushCatalog(Oid catId)
 		if (cache->cc_reloid == catId)
 		{
 			/* Yes, so flush all its contents */
-			ResetCatalogCache(cache);
+			ResetCatalogCache(cache, invalPhase);
 
 			/* Tell inval.c to call syscache callbacks for this cache */
 			CallSyscacheCallbacks(cache->id, 0);
@@ -739,6 +1173,7 @@ CatalogCacheFlushCatalog(Oid catId)
 
 	CACHE_elog(DEBUG2, "end of CatalogCacheFlushCatalog call");
 }
+
 
 /*
  *		InitCatCache
@@ -817,6 +1252,11 @@ InitCatCache(int id,
 	cp = (CatCache *) CACHELINEALIGN(palloc0(sz));
 	cp->cc_bucket = palloc0(nbuckets * sizeof(dlist_head));
 
+	if (!IS_GLOBAL_META_CACHE)
+		cp->cc_type = CC_REGULAR;
+	else
+		cp->cc_type = CC_SHAREDLOCAL;
+
 	/*
 	 * initialize the cache's relation information for the relation
 	 * corresponding to this cache, and initialize some of the new cache's
@@ -831,6 +1271,8 @@ InitCatCache(int id,
 	cp->cc_ntup = 0;
 	cp->cc_nbuckets = nbuckets;
 	cp->cc_nkeys = nkeys;
+	cp->gcp = (GlobalCatCache *) NULL;
+	cp->cc_skip_global_subxid = InvalidSubTransactionId;
 	for (i = 0; i < nkeys; ++i)
 		cp->cc_keyno[i] = key[i];
 
@@ -860,15 +1302,36 @@ static void
 RehashCatCache(CatCache *cp)
 {
 	dlist_head *newbucket;
-	int			newnbuckets;
+	int		    newnbuckets;
 	int			i;
+	MemoryContext Context = NULL;
+	MemoryContext TempGlobalCatCacheContext = NULL;
 
-	elog(DEBUG1, "rehashing catalog cache id %d for %s; %d tups, %d buckets",
-		 cp->id, cp->cc_relname, cp->cc_ntup, cp->cc_nbuckets);
+	elog(DEBUG1, "rehashing catalog cache id %d for %s; %d tups, %d buckets"
+		 ", %d cc_type",
+		 cp->id, cp->cc_relname, cp->cc_ntup, cp->cc_nbuckets, cp->cc_type);
 
 	/* Allocate a new, larger, hash table. */
 	newnbuckets = cp->cc_nbuckets * 2;
-	newbucket = (dlist_head *) MemoryContextAllocZero(CacheMemoryContext, newnbuckets * sizeof(dlist_head));
+
+	if (cp->cc_type == CC_REGULAR || cp->cc_type == CC_SHAREDLOCAL)
+		Context = CacheMemoryContext;
+	else /* CC_SHAREDGLOBAL */
+	{
+		/*
+		 * CurrentContext is assumed to be transient so that it will be
+		 * cleaned up on error.
+		 */
+		TempGlobalCatCacheContext = MemoryContextClone(GlobalCatCacheContext,
+													   CurrentMemoryContext);
+		Context = TempGlobalCatCacheContext;
+	}
+
+	newbucket = (dlist_head *) MemoryContextAllocZero(Context,
+													  newnbuckets *
+													  sizeof(dlist_head));
+
+
 
 	/* Move all entries from old hash table to new. */
 	for (i = 0; i < cp->cc_nbuckets; i++)
@@ -889,6 +1352,9 @@ RehashCatCache(CatCache *cp)
 	pfree(cp->cc_bucket);
 	cp->cc_nbuckets = newnbuckets;
 	cp->cc_bucket = newbucket;
+
+	if (cp->cc_type == CC_SHAREDGLOBAL)
+		ShmRetailContextMoveChunk(TempGlobalCatCacheContext, GlobalCatCacheContext);
 }
 
 /*
@@ -922,101 +1388,25 @@ do { \
 static void
 CatalogCacheInitializeCache(CatCache *cache)
 {
-	Relation	relation;
-	MemoryContext oldcxt;
-	TupleDesc	tupdesc;
-	int			i;
+	GlobalCatCacheMapKey key;
 
 	CatalogCacheInitializeCache_DEBUG1;
 
-	relation = table_open(cache->cc_reloid, AccessShareLock);
-
-	/*
-	 * switch to the cache context so our allocations do not vanish at the end
-	 * of a transaction
-	 */
-	Assert(CacheMemoryContext != NULL);
-
-	oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
-
-	/*
-	 * copy the relcache's tuple descriptor to permanent cache storage
-	 */
-	tupdesc = CreateTupleDescCopyConstr(RelationGetDescr(relation));
-
-	/*
-	 * save the relation's name and relisshared flag, too (cc_relname is used
-	 * only for debugging purposes)
-	 */
-	cache->cc_relname = pstrdup(RelationGetRelationName(relation));
-	cache->cc_relisshared = RelationGetForm(relation)->relisshared;
-
-	/*
-	 * return to the caller's memory context and close the rel
-	 */
-	MemoryContextSwitchTo(oldcxt);
-
-	table_close(relation, AccessShareLock);
-
-	CACHE_elog(DEBUG2, "CatalogCacheInitializeCache: %s, %d keys",
-			   cache->cc_relname, cache->cc_nkeys);
-
-	/*
-	 * initialize cache's key information
-	 */
-	for (i = 0; i < cache->cc_nkeys; ++i)
+	if (cache->cc_type == CC_REGULAR)
+		InitLocalCatCacheInternal(cache);
+	else
 	{
-		Oid			keytype;
-		RegProcedure eqfunc;
+		Assert(cache->cc_type == CC_SHAREDLOCAL);
 
-		CatalogCacheInitializeCache_DEBUG2;
+		/* Fill in local CatCache members */
+		InitLocalCatCacheInternal(cache);
 
-		if (cache->cc_keyno[i] > 0)
-		{
-			Form_pg_attribute attr = TupleDescAttr(tupdesc,
-												   cache->cc_keyno[i] - 1);
-
-			keytype = attr->atttypid;
-			/* cache key columns should always be NOT NULL */
-			Assert(attr->attnotnull);
-		}
-		else
-		{
-			if (cache->cc_keyno[i] < 0)
-				elog(FATAL, "sys attributes are not supported in caches");
-			keytype = OIDOID;
-		}
-
-		GetCCHashEqFuncs(keytype,
-						 &cache->cc_hashfunc[i],
-						 &eqfunc,
-						 &cache->cc_fastequal[i]);
-
-		/*
-		 * Do equality-function lookup (we assume this won't need a catalog
-		 * lookup for any supported type)
-		 */
-		fmgr_info_cxt(eqfunc,
-					  &cache->cc_skey[i].sk_func,
-					  CacheMemoryContext);
-
-		/* Initialize sk_attno suitably for HeapKeyTest() and heap scans */
-		cache->cc_skey[i].sk_attno = cache->cc_keyno[i];
-
-		/* Fill in sk_strategy as well --- always standard equality */
-		cache->cc_skey[i].sk_strategy = BTEqualStrategyNumber;
-		cache->cc_skey[i].sk_subtype = InvalidOid;
-		/* If a catcache key requires a collation, it must be C collation */
-		cache->cc_skey[i].sk_collation = C_COLLATION_OID;
-
-		CACHE_elog(DEBUG2, "CatalogCacheInitializeCache %s %d %p",
-				   cache->cc_relname, i, cache);
+		/* Attach to global CatCache. If not exist, initialize it */
+		GlobalCatCacheMapInitKey(cache, &key);
+		cache->gcp = AttachGlobalCatCache(&key);
+		if (!cache->gcp)
+			InitGlobalCatCache(cache, &key);
 	}
-
-	/*
-	 * mark this cache fully initialized
-	 */
-	cache->cc_tupdesc = tupdesc;
 }
 
 /*
@@ -1195,7 +1585,7 @@ SearchCatCache4(CatCache *cache,
  * Work-horse for SearchCatCache/SearchCatCacheN.
  */
 static inline HeapTuple
-SearchCatCacheInternal(CatCache *cache,
+SearchCatCacheInternal(CatCache *local_cache,
 					   int nkeys,
 					   Datum v1,
 					   Datum v2,
@@ -1204,24 +1594,27 @@ SearchCatCacheInternal(CatCache *cache,
 {
 	Datum		arguments[CATCACHE_MAXKEYS];
 	uint32		hashValue;
-	Index		hashIndex;
-	dlist_iter	iter;
-	dlist_head *bucket;
-	CatCTup    *ct;
+	Index		local_hashIndex;
+	Index 		global_hashIndex;
+	CatCache *global_cache;
+	CatCTup    *local_ct;
+	CatCTup	   *global_ct;
 
 	/* Make sure we're in an xact, even if this ends up being a cache hit */
 	Assert(IsTransactionState());
 
-	Assert(cache->cc_nkeys == nkeys);
+	Assert(local_cache->cc_nkeys == nkeys);
+
+	Assert(local_cache->cc_type != CC_SHAREDGLOBAL);
 
 	/*
 	 * one-time startup overhead for each cache
 	 */
-	if (unlikely(cache->cc_tupdesc == NULL))
-		CatalogCacheInitializeCache(cache);
+	if (unlikely(local_cache->cc_tupdesc == NULL))
+		CatalogCacheInitializeCache(local_cache);
 
 #ifdef CATCACHE_STATS
-	cache->cc_searches++;
+	local_cache->cc_searches++;
 #endif
 
 	/* Initialize local parameter array */
@@ -1233,70 +1626,108 @@ SearchCatCacheInternal(CatCache *cache,
 	/*
 	 * find the hash bucket in which to look for the tuple
 	 */
-	hashValue = CatalogCacheComputeHashValue(cache, nkeys, v1, v2, v3, v4);
-	hashIndex = HASH_INDEX(hashValue, cache->cc_nbuckets);
+	hashValue = CatalogCacheComputeHashValue(local_cache, nkeys,
+											 v1, v2, v3, v4);
+	local_hashIndex = HASH_INDEX(hashValue, local_cache->cc_nbuckets);
+
+	/* Search local hash table. If not found, local_ct is NULL */
+	local_ct = SearchCatCacheBucket(local_cache, nkeys, arguments,
+									hashValue, local_hashIndex, NULL);
 
 	/*
-	 * scan the hash bucket until we find a match or exhaust our tuples
-	 *
-	 * Note: it's okay to use dlist_foreach here, even though we modify the
-	 * dlist within the loop, because we don't continue the loop afterwards.
+	 * In case of traditional CatCache, if entry is not found locally,
+	 * consult the actual catalog.
 	 */
-	bucket = &cache->cc_bucket[hashIndex];
-	dlist_foreach(iter, bucket)
+	if (local_cache->cc_type == CC_REGULAR)
 	{
-		ct = dlist_container(CatCTup, cache_elem, iter.cur);
-
-		if (ct->dead)
-			continue;			/* ignore dead entries */
-
-		if (ct->hash_value != hashValue)
-			continue;			/* quickly skip entry if wrong hash val */
-
-		if (!CatalogCacheCompareTuple(cache, nkeys, ct->keys, arguments))
-			continue;
-
-		/*
-		 * We found a match in the cache.  Move it to the front of the list
-		 * for its hashbucket, in order to speed subsequent searches.  (The
-		 * most frequently accessed elements in any hashbucket will tend to be
-		 * near the front of the hashbucket's list.)
-		 */
-		dlist_move_head(bucket, &ct->cache_elem);
-
-		/*
-		 * If it's a positive entry, bump its refcount and return it. If it's
-		 * negative, we can report failure to the caller.
-		 */
-		if (!ct->negative)
+		/* if ct is found but negative, return NULL */
+		if (local_ct)
+			return !local_ct->negative ? &local_ct->tuple : NULL;
+		else
+			return SearchCatCacheMiss(local_cache, nkeys, hashValue,
+									  local_hashIndex, v1, v2, v3, v4);
+	}
+	else if (local_cache->cc_type == CC_SHAREDLOCAL)
+	{
+		if (local_ct)
 		{
-			ResourceOwnerEnlargeCatCacheRefs(CurrentResourceOwner);
-			ct->refcount++;
-			ResourceOwnerRememberCatCacheRef(CurrentResourceOwner, &ct->tuple);
+			CatCTup *temp_ct;
+			LocalCatCTup *lct = (LocalCatCTup *)local_ct;
 
-			CACHE_elog(DEBUG2, "SearchCatCache(%s): found in bucket %d",
-					   cache->cc_relname, hashIndex);
+			if (CATC_IS_INVALID_DUMMY(lct))
+				return SearchCatCacheMiss(local_cache, nkeys, hashValue,
+										  local_hashIndex, v1, v2, v3, v4);
 
-#ifdef CATCACHE_STATS
-			cache->cc_hits++;
-#endif
 
-			return &ct->tuple;
+			/* Get global cache or local uncommitted cache */
+			temp_ct = LocalCacheGetValidEntry(lct);
+
+			/* if it's valid, early return, otherwise seach global cache */
+			if (temp_ct)
+				return !temp_ct->negative ? &temp_ct->tuple : NULL;
 		}
 		else
 		{
-			CACHE_elog(DEBUG2, "SearchCatCache(%s): found neg entry in bucket %d",
-					   cache->cc_relname, hashIndex);
+			/*
+			 * Cache entry is not found in local hash table. This could be
+			 * because all caches are invalidated by CatalogCacheFlushCatalog.
+			 * Since system catalog is updated in this case, global cache is
+			 * outdated for this transaction.
+			 */
+			if (local_cache->cc_skip_global_subxid != InvalidSubTransactionId)
+				return SearchCatCacheMiss(local_cache, nkeys, hashValue,
+										  local_hashIndex, v1, v2, v3, v4);
 
-#ifdef CATCACHE_STATS
-			cache->cc_neg_hits++;
-#endif
-
-			return NULL;
 		}
 	}
 
-	return SearchCatCacheMiss(cache, nkeys, hashValue, hashIndex, v1, v2, v3, v4);
+	CACHE_elog(DEBUG2, "try to search global cache entry");
+	/*
+	 * Now valid local cache entry is not obtained. Let's search the global hash
+	 * bucket. hashIndex is generally diffrent from local one because of hash
+	 * table expansion.
+	 */
+	global_cache = (CatCache *)local_cache->gcp;
+	global_hashIndex = HASH_INDEX(hashValue, global_cache->cc_nbuckets);
+
+	/* global cache refcount is bumped if found */
+	global_ct = SearchCatCacheBucket(global_cache,
+									 nkeys, arguments,
+									 hashValue, global_hashIndex,
+									 local_cache->cc_fastequal);
+
+
+	/*
+	 * If global entry is found, register it to local table. If not,
+	 * consult actual system catalog and register it to local table.
+	 */
+	if (global_ct)
+	{
+		Handle *handle;
+
+		/*
+		 * Create local cache entry based on global cache entry. Refcount of
+		 * local entry is not bumped because it doesn't have tuple which
+		 * refcount would protect.
+		 */
+		handle = ((GlobalCatCTup *)global_ct)->gct_handle;
+
+		local_ct = CatalogCacheCreateEntry(local_cache,
+										   &global_ct->tuple, arguments,
+										   hashValue, local_hashIndex,
+										   global_ct->negative,
+										   handle);
+
+		/* There is no negative entry in GlobalCatCache */
+		return &global_ct->tuple;
+	}
+	else
+	{
+		/* Create local entry and also global entry if needed */
+		return SearchCatCacheMiss(local_cache, nkeys, hashValue,
+								  local_hashIndex, v1, v2, v3, v4);
+
+	}
 }
 
 /*
@@ -1320,8 +1751,14 @@ SearchCatCacheMiss(CatCache *cache,
 	Relation	relation;
 	SysScanDesc scandesc;
 	HeapTuple	ntp;
-	CatCTup    *ct;
+	CatCTup    *local_ct;
 	Datum		arguments[CATCACHE_MAXKEYS];
+	GlobalCatCTup *gct = NULL;
+	Index global_hashIndex;
+	Handle* handle;
+	HeapTuple tuple = NULL;
+
+	Assert(cache->cc_type != CC_SHAREDGLOBAL);
 
 	/* Initialize local parameter array */
 	arguments[0] = v1;
@@ -1363,17 +1800,58 @@ SearchCatCacheMiss(CatCache *cache,
 								  nkeys,
 								  cur_skey);
 
-	ct = NULL;
+	local_ct = NULL;
 
 	while (HeapTupleIsValid(ntp = systable_getnext(scandesc)))
 	{
-		ct = CatalogCacheCreateEntry(cache, ntp, arguments,
-									 hashValue, hashIndex,
-									 false);
-		/* immediately set the refcount to 1 */
-		ResourceOwnerEnlargeCatCacheRefs(CurrentResourceOwner);
-		ct->refcount++;
-		ResourceOwnerRememberCatCacheRef(CurrentResourceOwner, &ct->tuple);
+		if (cache->cc_type == CC_REGULAR)
+			local_ct = CatalogCacheCreateEntry(cache, ntp, arguments,
+											   hashValue, hashIndex,
+											   false, NULL);
+		else if (cache->cc_type == CC_SHAREDLOCAL)
+		{
+			/* create global cache entry first then local one */
+
+			global_hashIndex = HASH_INDEX(hashValue,
+										  ((CatCache *)cache->gcp)->cc_nbuckets);
+
+			/* set the refcount of global cache entry to 1 here */
+			gct = (GlobalCatCTup *)
+				CatalogCacheCreateEntry((CatCache *)cache->gcp, ntp, arguments,
+										hashValue, global_hashIndex,
+										false, NULL);
+
+			/* If tuple is uncommitted, it's not located in GlobalCatCache */
+			if (gct)
+				handle = gct->gct_handle;
+			else
+				handle = NULL;
+
+			local_ct = CatalogCacheCreateEntry(cache, ntp, arguments,
+											   hashValue, hashIndex,
+											   false, handle);
+
+		}
+		else
+			elog(FATAL, "The target of CatCacheSearchMiss is not SHAREDGLOBAL");
+
+		/*
+		 * If local cache entry is a pointer to global entry, keep refcount to
+		 * zero because there is no need to protect tuple which doesn't exist.
+		 */
+		if (cache->cc_type == CC_REGULAR
+			||(cache->cc_type == CC_SHAREDLOCAL &&
+			   !((LocalCatCTup *)local_ct)->lct_committed))
+		{
+			/* immediately set the local refcount to 1 */
+			ResourceOwnerEnlargeCatCacheRefs(CurrentResourceOwner);
+			local_ct->refcount++;
+			ResourceOwnerRememberCatCacheRef(CurrentResourceOwner, &local_ct->tuple);
+
+			CACHE_elog(DEBUG2, "SearchCatCacheMiss local refcount is bumped: %s, %d tuple %p",
+					   local_ct->my_cache->cc_relname, local_ct->refcount,
+					   &local_ct->tuple);
+		}
 		break;					/* assume only one match */
 	}
 
@@ -1391,14 +1869,14 @@ SearchCatCacheMiss(CatCache *cache,
 	 * gets created later.  (Bootstrap doesn't do UPDATEs, so it doesn't need
 	 * cache inval for that.)
 	 */
-	if (ct == NULL)
+	if (local_ct == NULL)
 	{
 		if (IsBootstrapProcessingMode())
 			return NULL;
 
-		ct = CatalogCacheCreateEntry(cache, NULL, arguments,
-									 hashValue, hashIndex,
-									 true);
+		local_ct = CatalogCacheCreateEntry(cache, NULL, arguments,
+										   hashValue, hashIndex,
+										   true, NULL);
 
 		CACHE_elog(DEBUG2, "SearchCatCache(%s): Contains %d/%d tuples",
 				   cache->cc_relname, cache->cc_ntup, CacheHdr->ch_ntup);
@@ -1422,7 +1900,18 @@ SearchCatCacheMiss(CatCache *cache,
 	cache->cc_newloads++;
 #endif
 
-	return &ct->tuple;
+
+	if (cache->cc_type == CC_REGULAR)
+		tuple = &local_ct->tuple;
+	else if (cache->cc_type == CC_SHAREDLOCAL)
+	{
+		if (gct)
+			tuple = &((CatCTup *)gct)->tuple;
+		else
+			tuple = &local_ct->tuple;
+	}
+
+	return tuple;
 }
 
 /*
@@ -1439,6 +1928,7 @@ SearchCatCacheMiss(CatCache *cache,
 void
 ReleaseCatCache(HeapTuple tuple)
 {
+	CatCache *cache;
 	CatCTup    *ct = (CatCTup *) (((char *) tuple) -
 								  offsetof(CatCTup, tuple));
 
@@ -1446,8 +1936,21 @@ ReleaseCatCache(HeapTuple tuple)
 	Assert(ct->ct_magic == CT_MAGIC);
 	Assert(ct->refcount > 0);
 
-	ct->refcount--;
-	ResourceOwnerForgetCatCacheRef(CurrentResourceOwner, &ct->tuple);
+	cache = ct->my_cache;
+
+	if (cache->cc_type == CC_REGULAR ||
+		(cache->cc_type == CC_SHAREDLOCAL &&
+		 !((LocalCatCTup *)ct)->lct_committed))
+	{
+		/*
+		 * CC_REGULAR and CC_SHAREDLOCAL case.
+		 * Note that CC_SHAREDLOCAL might have uncommitted tuple locally
+		 */
+		ct->refcount--;
+		ResourceOwnerForgetCatCacheRef(CurrentResourceOwner, &ct->tuple);
+	}
+	else if (cache->cc_type == CC_SHAREDGLOBAL)
+		GlobalCatCTupDecrementAndRemove((GlobalCatCache *)cache, (GlobalCatCTup *)ct);
 
 	if (
 #ifndef CATCACHE_FORCE_RELEASE
@@ -1455,7 +1958,7 @@ ReleaseCatCache(HeapTuple tuple)
 #endif
 		ct->refcount == 0 &&
 		(ct->c_list == NULL || ct->c_list->refcount == 0))
-		CatCacheRemoveCTup(ct->my_cache, ct);
+		CatCacheRemoveCTup(cache, ct);
 }
 
 
@@ -1511,16 +2014,20 @@ SearchCatCacheList(CatCache *cache,
 {
 	Datum		v4 = 0;			/* dummy last-column value */
 	Datum		arguments[CATCACHE_MAXKEYS];
+	Datum		lct_arguments[CATCACHE_MAXKEYS];
 	uint32		lHashValue;
 	dlist_iter	iter;
 	CatCList   *cl;
 	CatCTup    *ct;
+	CatCTup    *local_ct;
+	LocalCatCTup *lct;
 	List	   *volatile ctlist;
 	ListCell   *ctlist_item;
 	int			nmembers;
 	bool		ordered;
 	HeapTuple	ntp;
 	MemoryContext oldcxt;
+	const CCFastEqualFN *cc_fastequal;
 	int			i;
 
 	/*
@@ -1570,8 +2077,58 @@ SearchCatCacheList(CatCache *cache,
 		if (cl->nkeys != nkeys)
 			continue;
 
-		if (!CatalogCacheCompareTuple(cache, nkeys, cl->keys, arguments))
+		cc_fastequal =  cache->cc_fastequal;
+		if (!CatalogCacheCompareTuple(cc_fastequal, nkeys, cl->keys, arguments))
 			continue;
+
+		/*
+		 * Cache entries may be stale. If there's invalid entry, the entry and
+		 * its list are removed or marked as dead. Moreover, we need to decrease
+		 * the refcounts of valid entries, which are already bumped.
+		 */
+		if (cache->cc_type == CC_SHAREDLOCAL)
+		{
+			CatCTup *temp_ct;
+
+			for (i = 0; i < cl->n_members; i++)
+			{
+				/* Note global refcount is raised if it's valid */
+				temp_ct = LocalCacheGetValidEntry(cl->shared_local_members[i]);
+
+				/* If it's valid, go through. If not, do clean up. */
+				if (!temp_ct)
+				{
+					LocalCatCTup *temp_lct;
+					GlobalCatCTup *temp_gct;
+
+					for (--i ; i >= 0; i--)
+					{
+						temp_lct = cl->shared_local_members[i];
+
+						/* Refcount of local entry is not increased */
+						if (!temp_lct->lct_committed || ((CatCTup *)temp_lct)->negative)
+							continue;
+
+						temp_gct = temp_lct->lct_handle->entry;
+
+						GlobalCatCTupDecrementAndRemove((GlobalCatCache *)(((CatCTup *)temp_gct)->my_cache),
+														temp_gct);
+					}
+
+					/* cl is not valid eitehr */
+					if (cl->refcount > 0)
+						cl->dead = true;
+					else
+						CatCacheRemoveCList(cache, cl);
+
+					break;
+				}
+			}
+
+			/* if last temp_ct is not valid, break dlist_foreach loop */
+			if (!temp_ct)
+				break;
+		}
 
 		/*
 		 * We found a matching list.  Move the list to the front of the
@@ -1649,29 +2206,66 @@ SearchCatCacheList(CatCache *cache,
 			/*
 			 * See if there's an entry for this tuple already.
 			 */
-			ct = NULL;
-			hashValue = CatalogCacheComputeTupleHashValue(cache, cache->cc_nkeys, ntp);
+			local_ct = NULL;
+			hashValue = CatalogCacheComputeTupleHashValue(cache,
+														  cache->cc_nkeys, ntp);
 			hashIndex = HASH_INDEX(hashValue, cache->cc_nbuckets);
 
 			bucket = &cache->cc_bucket[hashIndex];
+
 			dlist_foreach(iter, bucket)
 			{
-				ct = dlist_container(CatCTup, cache_elem, iter.cur);
+				local_ct = dlist_container(CatCTup, cache_elem, iter.cur);
 
-				if (ct->dead || ct->negative)
+				if (local_ct->dead || local_ct->negative)
 					continue;	/* ignore dead and negative entries */
 
-				if (ct->hash_value != hashValue)
+				if (local_ct->hash_value != hashValue)
 					continue;	/* quickly skip entry if wrong hash val */
 
-				if (!ItemPointerEquals(&(ct->tuple.t_self), &(ntp->t_self)))
-					continue;	/* not same tuple */
+				if (cache->cc_type == CC_REGULAR)
+				{
+					if (!ItemPointerEquals(&(local_ct->tuple.t_self), &(ntp->t_self)))
+						continue;	/* not same tuple */
+				}
+				else if (cache->cc_type == CC_SHAREDLOCAL)
+				{
+					/*
+					 * ct is global cache entry or local uncommitted entry.
+					 * Refcount of global cache entry is bumped if it's valid.
+					 * If ct is NULL, ct is not valid and removed or marked
+					 * as dead.
+					 */
+					ct = LocalCacheGetValidEntry((LocalCatCTup *)local_ct);
+
+					if (CATC_IS_INVALID_DUMMY((LocalCatCTup *)local_ct))
+						continue;
+
+					if (ct)
+					{
+						if (!ItemPointerEquals(&(ct->tuple.t_self),
+											   &(ntp->t_self)))
+						{
+
+							/* Release refcount of unmatched global entry */
+							if (ct->my_cache->cc_type == CC_SHAREDGLOBAL)
+								GlobalCatCTupDecrementAndRemove((GlobalCatCache *)ct->my_cache,
+																(GlobalCatCTup *)ct);
+
+								continue;	/* not same tuple */
+						}
+					}
+					else
+						continue;
+				}
+				else
+					elog(FATAL, "CatCList is not located in shared memory");
 
 				/*
 				 * Found a match, but can't use it if it belongs to another
 				 * list already
 				 */
-				if (ct->c_list)
+				if (local_ct->c_list)
 					continue;
 
 				found = true;
@@ -1680,16 +2274,74 @@ SearchCatCacheList(CatCache *cache,
 
 			if (!found)
 			{
-				/* We didn't find a usable entry, so make a new one */
-				ct = CatalogCacheCreateEntry(cache, ntp, arguments,
-											 hashValue, hashIndex,
-											 false);
+				Index global_hashIndex;
+				GlobalCatCTup *gct;
+				Handle* handle;
+
+				if (cache->cc_type == CC_REGULAR)
+				{
+					/* We didn't find a usable entry, so make a new one */
+					local_ct = CatalogCacheCreateEntry(cache, ntp, arguments,
+													   hashValue, hashIndex,
+													   false, NULL);
+				}
+				else if (cache->cc_type == CC_SHAREDLOCAL)
+				{
+					global_hashIndex = HASH_INDEX(hashValue,
+												  ((CatCache *)cache->gcp)->
+												  cc_nbuckets);
+
+					gct = (GlobalCatCTup *)
+						CatalogCacheCreateEntry((CatCache *)cache->gcp,
+												ntp, arguments,
+												hashValue, global_hashIndex,
+												false, NULL);
+
+					/*
+					 * If tuple is uncommitted, it's not in GlobalCatCache
+					 * and ct has tuple locally.
+					 */
+					if (gct)
+						handle = gct->gct_handle;
+					else
+						handle = NULL;
+
+					/*
+					 * Local cache entry stores keys but arguments are partial
+					 * key and committed local cache entry doen't
+					 * have heapTuple. So keys cannot point to heapTuple.
+					 * So fill in arguments fully here and copy them.
+					 */
+					for (i = 0; i < nkeys; i++)
+						lct_arguments[i] = arguments[i];
+
+					for (i = nkeys; i < cache->cc_nkeys; i++)
+					{
+						Datum		atp;
+						bool		isnull;
+
+						atp = heap_getattr(ntp,
+										   cache->cc_keyno[i],
+										   cache->cc_tupdesc,
+										   &isnull);
+						Assert(!isnull);
+						lct_arguments[i] = atp;
+					}
+
+					local_ct = CatalogCacheCreateEntry(cache, ntp, lct_arguments,
+													   hashValue, hashIndex,
+													   false, handle);
+
+				}
 			}
 
-			/* Careful here: add entry to ctlist, then bump its refcount */
-			/* This way leaves state correct if lappend runs out of memory */
-			ctlist = lappend(ctlist, ct);
-			ct->refcount++;
+			/* Careful here: add entry to ctlist, then bump its refcount
+			 * This way leaves state correct if lappend runs out of memory.
+			 * The refcount of global cache entry is already bumped in
+			 * LocalCacheGetValidEntry.
+			 */
+			ctlist = lappend(ctlist, local_ct);
+			local_ct->refcount++;
 		}
 
 		systable_endscan(scandesc);
@@ -1701,6 +2353,12 @@ SearchCatCacheList(CatCache *cache,
 		nmembers = list_length(ctlist);
 		cl = (CatCList *)
 			palloc(offsetof(CatCList, members) + nmembers * sizeof(CatCTup *));
+
+		if (cache->cc_type == CC_REGULAR)
+			cl->shared_local_members = NULL;
+		else if (cache->cc_type == CC_SHAREDLOCAL)
+			cl->shared_local_members = (LocalCatCTup **)
+				palloc(nmembers * sizeof(LocalCatCTup *));
 
 		/* Extract key values */
 		CatCacheCopyKeys(cache->cc_tupdesc, nkeys, cache->cc_keyno,
@@ -1718,19 +2376,37 @@ SearchCatCacheList(CatCache *cache,
 	}
 	PG_CATCH();
 	{
-		foreach(ctlist_item, ctlist)
+		GlobalCatCTup *gct;
+		GlobalCatCache *gcp;
+
+		/* Release refernce of local and global cache entry if it exists */
+		if (cache->cc_type == CC_REGULAR)
+			ReleaseLocalCtlistItem(cache, ctlist);
+		else if (cache->cc_type == CC_SHAREDLOCAL)
 		{
-			ct = (CatCTup *) lfirst(ctlist_item);
-			Assert(ct->c_list == NULL);
-			Assert(ct->refcount > 0);
-			ct->refcount--;
-			if (
-#ifndef CATCACHE_FORCE_RELEASE
-				ct->dead &&
-#endif
-				ct->refcount == 0 &&
-				(ct->c_list == NULL || ct->c_list->refcount == 0))
-				CatCacheRemoveCTup(cache, ct);
+			/*
+			 * Release global cache entry. If it's uncommitted entry release
+			 * local refcount.
+			 */
+			foreach(ctlist_item, ctlist)
+			{
+				ct = (CatCTup *) lfirst(ctlist_item);
+
+				Assert(ct->c_list == NULL);
+				Assert(ct->refcount > 0);
+
+				lct = (LocalCatCTup *)ct;
+
+				if (lct->lct_committed)
+				{
+					gct = lct->lct_handle->entry;
+					gcp = (GlobalCatCache *)(((CatCTup *)gct)->my_cache);
+
+					GlobalCatCTupDecrementAndRemove(gcp, gct);
+				}
+				else
+					ReleaseLocalCtlistItem(cache, ctlist);
+			}
 		}
 
 		PG_RE_THROW();
@@ -1746,20 +2422,57 @@ SearchCatCacheList(CatCache *cache,
 	cl->hash_value = lHashValue;
 	cl->n_members = nmembers;
 
-	i = 0;
-	foreach(ctlist_item, ctlist)
+
+	if (cache->cc_type == CC_REGULAR)
 	{
-		cl->members[i++] = ct = (CatCTup *) lfirst(ctlist_item);
-		Assert(ct->c_list == NULL);
-		ct->c_list = cl;
-		/* release the temporary refcount on the member */
-		Assert(ct->refcount > 0);
-		ct->refcount--;
-		/* mark list dead if any members already dead */
-		if (ct->dead)
-			cl->dead = true;
+		i = 0;
+		foreach(ctlist_item, ctlist)
+		{
+			cl->members[i++] = ct = (CatCTup *) lfirst(ctlist_item);
+			Assert(ct->c_list == NULL);
+			ct->c_list = cl;
+			/* release the temporary refcount on the member */
+			Assert(ct->refcount > 0);
+			ct->refcount--;
+			/* mark list dead if any members already dead */
+			if (ct->dead)
+				cl->dead = true;
+		}
+		Assert(i == nmembers);
 	}
-	Assert(i == nmembers);
+	else if (cache->cc_type == CC_SHAREDLOCAL)
+	{
+		/* Set local cache entries to the list */
+		i = 0;
+		foreach(ctlist_item, ctlist)
+		{
+			ct = lfirst(ctlist_item);
+			cl->shared_local_members[i] = lct = (LocalCatCTup *)ct;
+
+			Assert(ct->c_list == NULL);
+			ct->c_list = cl;
+
+			/* release the temporary refcount on the member */
+			Assert(ct->refcount > 0);
+			ct->refcount--;
+
+			/* mark list dead if any members already dead */
+			if (ct->dead)
+				cl->dead = true;
+
+			/* Set global cache entries or uncommitted local one to the list */
+			if (lct->lct_committed)
+			{
+				cl->members[i] = (CatCTup *)lct->lct_handle->entry;
+				Assert(cl->members[i]->refcount > 0);
+			}
+			else
+				cl->members[i] = ct;
+
+			i++;
+		}
+		Assert(i == nmembers);
+	}
 
 	dlist_push_head(&cache->cc_lists, &cl->cache_elem);
 
@@ -1767,10 +2480,39 @@ SearchCatCacheList(CatCache *cache,
 	cl->refcount++;
 	ResourceOwnerRememberCatCacheListRef(CurrentResourceOwner, cl);
 
-	CACHE_elog(DEBUG2, "SearchCatCacheList(%s): made list of %d members",
+	CACHE_elog(DEBUG2, "SearchCatCacheList (%s): made list of %d members",
 			   cache->cc_relname, nmembers);
 
 	return cl;
+}
+
+/*
+ *	ReleaseLocalCtlistItem
+ *
+ *  Workhorse of SearchCatCacheList.
+ *	Decrement the temporarily raised reference count of each ctlist item.
+ */
+static void
+ReleaseLocalCtlistItem(CatCache *cache, List *ctlist)
+{
+	CatCTup		*ct;
+	ListCell 	*ctlist_item;
+
+	foreach(ctlist_item, ctlist)
+	{
+		ct = (CatCTup *) lfirst(ctlist_item);
+		Assert(ct->c_list == NULL);
+		Assert(ct->refcount > 0);
+		ct->refcount--;
+		if (
+#ifndef CATCACHE_FORCE_RELEASE
+			ct->dead &&
+#endif
+			ct->refcount == 0 &&
+			(ct->c_list == NULL || ct->c_list->refcount == 0))
+			CatCacheRemoveCTup(cache, ct);
+
+	}
 }
 
 /*
@@ -1786,6 +2528,28 @@ ReleaseCatCacheList(CatCList *list)
 	Assert(list->refcount > 0);
 	list->refcount--;
 	ResourceOwnerForgetCatCacheListRef(CurrentResourceOwner, list);
+
+	/*
+	 * Decrement the reference count of global cache entry.
+	 * members[] points to global entry but cannot be cast to GlobalCatCTup
+	 * so traverse from shared_local_members
+	 */
+	if (list->shared_local_members)
+	{
+		GlobalCatCTup *gct;
+		GlobalCatCache *gcp;
+
+		for (int i = 0; i < list->n_members; i++)
+		{
+			if (!list->shared_local_members[i]->lct_committed)
+				continue;
+
+			gct = (GlobalCatCTup *)list->members[i];
+			gcp = (GlobalCatCache *)list->members[i]->my_cache;
+
+			GlobalCatCTupDecrementAndRemove(gcp, gct);
+		}
+	}
 
 	if (
 #ifndef CATCACHE_FORCE_RELEASE
@@ -1804,77 +2568,126 @@ ReleaseCatCacheList(CatCList *list)
 static CatCTup *
 CatalogCacheCreateEntry(CatCache *cache, HeapTuple ntp, Datum *arguments,
 						uint32 hashValue, Index hashIndex,
-						bool negative)
+						bool negative, Handle* handle)
 {
 	CatCTup    *ct;
-	HeapTuple	dtp;
-	MemoryContext oldcxt;
+	MemoryContext oldcxt = NULL;
+	MemoryContext TempGlobalCatCacheContext = NULL;
+	LWLock *bucket_lock = NULL;
+	int i;
+	LocalCatCTup *lct;
+	GlobalCatCTup *gct;
 
-	/* negative entries have no tuple associated */
-	if (ntp)
-	{
-		int			i;
 
-		Assert(!negative);
-
-		/*
-		 * If there are any out-of-line toasted fields in the tuple, expand
-		 * them in-line.  This saves cycles during later use of the catcache
-		 * entry, and also protects us against the possibility of the toast
-		 * tuples being freed before we attempt to fetch them, in case of
-		 * something using a slightly stale catcache entry.
-		 */
-		if (HeapTupleHasExternal(ntp))
-			dtp = toast_flatten_tuple(ntp, cache->cc_tupdesc);
-		else
-			dtp = ntp;
-
-		/* Allocate memory for CatCTup and the cached tuple in one go */
+	/* Allocate memory for CatCTup and the cached tuple in one go */
+	if (cache->cc_type == CC_REGULAR || cache->cc_type == CC_SHAREDLOCAL)
 		oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
+	else if (cache->cc_type == CC_SHAREDGLOBAL)
+	{
+			TempGlobalCatCacheContext = MemoryContextClone(GlobalCatCacheContext,
+														   CurrentMemoryContext);
 
-		ct = (CatCTup *) palloc(sizeof(CatCTup) +
-								MAXIMUM_ALIGNOF + dtp->t_len);
-		ct->tuple.t_len = dtp->t_len;
-		ct->tuple.t_self = dtp->t_self;
-		ct->tuple.t_tableOid = dtp->t_tableOid;
-		ct->tuple.t_data = (HeapTupleHeader)
-			MAXALIGN(((char *) ct) + sizeof(CatCTup));
-		/* copy tuple contents */
-		memcpy((char *) ct->tuple.t_data,
-			   (const char *) dtp->t_data,
-			   dtp->t_len);
-		MemoryContextSwitchTo(oldcxt);
+		oldcxt = MemoryContextSwitchTo(TempGlobalCatCacheContext);
+	}
 
-		if (dtp != ntp)
-			heap_freetuple(dtp);
-
-		/* extract keys - they'll point into the tuple if not by-value */
-		for (i = 0; i < cache->cc_nkeys; i++)
+	if (cache->cc_type == CC_REGULAR)
+	{
+		if (ntp)
+			ct = CreateCatCTupWithTuple(cache, ntp);
+		else
+			ct = CreateCatCTupWithoutTuple(cache, arguments);
+	}
+	else if (cache->cc_type == CC_SHAREDLOCAL)
+	{
+		if (ntp)
 		{
-			Datum		atp;
-			bool		isnull;
+			/*
+			 * If the tuple is made by its own transaction (not committed
+			 * yet), the entry should not be placed in Global CatCache
+			 * hash table to prevent other process from seeing uncommitted
+			 * cache entry. So just put it in local hash table.
+			 */
+			if (HeapTupleHeaderXminCommitted(ntp->t_data))
+			{
+				/* Create local tuple, which has keys but doesn't tuple */
+				ct = CreateCatCTupWithoutTuple(cache, arguments);
+				lct =  (LocalCatCTup *) ct;
+				lct->lct_committed = true;
 
-			atp = heap_getattr(&ct->tuple,
-							   cache->cc_keyno[i],
-							   cache->cc_tupdesc,
-							   &isnull);
-			Assert(!isnull);
-			ct->keys[i] = atp;
+				Assert(handle);
+				Assert(!handle->free);
+				lct->lct_handle = handle;
+				lct->lct_generation = handle->generation;
+				lct->lct_skip_global_subxid = InvalidSubTransactionId;
+			}
+			else
+			{
+				/*
+				 * Assume global cache entry and its handle doesn't exist,
+				 * because we get uncommitted tuple.
+				 */
+				Assert(!handle);
+
+				ct = CreateCatCTupWithTuple(cache, ntp);
+				lct = (LocalCatCTup *) ct;
+
+				lct->lct_committed = false;
+				lct->lct_handle = NULL;
+				lct->lct_generation = 0;
+				lct->lct_skip_global_subxid = InvalidSubTransactionId;
+			}
+		}
+		else
+		{
+			/* Negative cache is not in shared memory */
+			Assert(!handle);
+
+			/* Negative cache case */
+			ct = CreateCatCTupWithoutTuple(cache, arguments);
+			lct = (LocalCatCTup *) ct;
+
+			lct->lct_committed = false;
+			lct->lct_handle = NULL;
+			lct->lct_generation = 0;
+
+			/* inval_tuple doesn't have information about keys */
+			if (arguments)
+				lct->lct_skip_global_subxid = InvalidSubTransactionId;
+			else
+				lct->lct_skip_global_subxid = GetCurrentSubTransactionId();
+
 		}
 	}
-	else
+	else /* shared global */
 	{
-		Assert(negative);
-		oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
-		ct = (CatCTup *) palloc(sizeof(CatCTup));
+		if (!ntp)
+			elog(FATAL, "Negative global cache entry is not supported");
 
 		/*
-		 * Store keys - they'll point into separately allocated memory if not
-		 * by-value.
+		 * If the tuple is made by its own transaction (not committed
+		 * yet), the entry should not be placed in Global CatCache
+		 * hash table to prevent other process from seeing uncommitted
+		 * cache entry. So return NULL.
 		 */
-		CatCacheCopyKeys(cache->cc_tupdesc, cache->cc_nkeys, cache->cc_keyno,
-						 arguments, ct->keys);
-		MemoryContextSwitchTo(oldcxt);
+		if (!HeapTupleHeaderXminCommitted(ntp->t_data))
+		{
+			ShmRetailContextMoveChunk(TempGlobalCatCacheContext,
+									  GlobalCatCacheContext);
+
+			MemoryContextSwitchTo(oldcxt);
+			return NULL;
+		}
+
+		ct =  CreateCatCTupWithTuple(cache, ntp);
+
+		gct = (GlobalCatCTup *)ct;
+
+		gct->gct_handle =
+			GetCacheHandle(&((GlobalCatCache *)cache)->gcc_handle_hdr,
+						   (void *)gct);
+
+		/* Initailize lock for GlobalCatCTup */
+		SpinLockInit(&gct->gct_mutex);
 	}
 
 	/*
@@ -1889,17 +2702,81 @@ CatalogCacheCreateEntry(CatCache *cache, HeapTuple ntp, Datum *arguments,
 	ct->negative = negative;
 	ct->hash_value = hashValue;
 
+	MemoryContextSwitchTo(oldcxt);
+
+	if (cache->cc_type == CC_SHAREDGLOBAL)
+	{
+		/* bump global refcount as soon as possible. No lock is needed here yet */
+		ct->refcount++;
+
+		CACHE_elog(DEBUG2, "CatalogCacheCreateEntry global refcount is bumped: %s, %d tuple %p",
+				   ct->my_cache->cc_relname, ct->refcount,
+				   &ct->tuple);
+
+		/* Get lock for bucket */
+		bucket_lock = GetCatCacheBucketLock((GlobalCatCache *)cache, hashValue);
+		LWLockAcquire(bucket_lock, LW_EXCLUSIVE);
+		hashIndex = HASH_INDEX(hashValue, cache->cc_nbuckets);
+	}
+
+	/* Now insert entry to hash table */
 	dlist_push_head(&cache->cc_bucket[hashIndex], &ct->cache_elem);
 
+	if (cache->cc_type == CC_SHAREDGLOBAL)
+	{
+		ShmRetailContextMoveChunk(TempGlobalCatCacheContext, GlobalCatCacheContext);
+		LWLockRelease(bucket_lock);
+		SpinLockAcquire(&((GlobalCatCache *)cache)->gcc_mutex);
+	}
+
 	cache->cc_ntup++;
-	CacheHdr->ch_ntup++;
+
+	if (cache->cc_type == CC_SHAREDGLOBAL)
+		SpinLockRelease(&((GlobalCatCache *)cache)->gcc_mutex);
+	else
+		CacheHdr->ch_ntup++;
 
 	/*
 	 * If the hash table has become too full, enlarge the buckets array. Quite
 	 * arbitrarily, we enlarge when fill factor > 2.
 	 */
 	if (cache->cc_ntup > cache->cc_nbuckets * 2)
+	{
+		GlobalCatCache *gcp;
+		LWLock *old_bucket_locks = NULL;
+		int num_locks;
+
+		/* Enlarge bucket locks as well */
+		if (cache->cc_type == CC_SHAREDGLOBAL)
+		{
+			gcp = (GlobalCatCache *) cache;
+
+			/* bucket locks will be changed after rehasing */
+
+			old_bucket_locks = gcp->gcc_bucket_locks;
+			num_locks = MAX_CC_BUCKET_LOCKS;
+
+			for (i = 0; i < num_locks; ++i)
+				LWLockAcquire(&old_bucket_locks[i], LW_EXCLUSIVE);
+
+			/* other process might already enlarge the hash table */
+			if (cache->cc_ntup <= cache->cc_nbuckets * 2)
+			{
+				/* Release locks in reverse order */
+				for (i = num_locks - 1 ; i >= 0; --i)
+					LWLockRelease(&old_bucket_locks[i]);
+			}
+		}
+
 		RehashCatCache(cache);
+
+		if (cache->cc_type == CC_SHAREDGLOBAL)
+		{
+			/* Release locks in reverse order */
+			for (i = num_locks - 1 ; i >= 0; --i)
+				LWLockRelease(&old_bucket_locks[i]);
+		}
+	}
 
 	return ct;
 }
@@ -2076,6 +2953,9 @@ PrintCatCacheLeakWarning(HeapTuple tuple)
 	/* Safety check to ensure we were handed a cache entry */
 	Assert(ct->ct_magic == CT_MAGIC);
 
+	/* CC_SHAREDLOCAL is ok if it's uncommitted tuple */
+	Assert(ct->my_cache->cc_type != CC_SHAREDGLOBAL);
+
 	elog(WARNING, "cache reference leak: cache %s (%d), tuple %u/%u has count %d",
 		 ct->my_cache->cc_relname, ct->my_cache->id,
 		 ItemPointerGetBlockNumber(&(tuple->t_self)),
@@ -2089,4 +2969,594 @@ PrintCatCacheListLeakWarning(CatCList *list)
 	elog(WARNING, "cache reference leak: cache %s (%d), list %p has count %d",
 		 list->my_cache->cc_relname, list->my_cache->id,
 		 list, list->refcount);
+}
+
+/*
+ * Functions for shared catalog cache
+ */
+
+
+/*
+ * Initialize GlobalCatCache.
+ */
+static void
+InitGlobalCatCache(CatCache *local_cache, GlobalCatCacheMapKey *keyPtr)
+{
+	uint32 hashcode;
+	LWLock *map_lock;
+	GlobalCatCache *gcp;
+	GlobalCatCacheMapEnt *entry;
+	MemoryContext oldcxt;
+	MemoryContext TempGlobalCatCacheContext;
+
+	Assert(local_cache->gcp == NULL);
+
+	/* Get hashcode and lock instance */
+	hashcode = GlobalCatCacheMapHashCode(keyPtr);
+	map_lock = GlobalCatCachePartitionLock(hashcode);
+
+	/* Acquire lock for partition of GlobalCatCacheMap */
+	LWLockAcquire(map_lock, LW_EXCLUSIVE);
+
+	/*
+	 * If someone already registered GlobalCatCache to GlobalCatCacheMap,
+	 * attach and return.
+	 */
+	entry = GlobalCatCacheMapLookup(keyPtr, hashcode);
+
+	if (entry)
+	{
+		local_cache->gcp = entry->gcp;
+		LWLockRelease(map_lock);
+		return;
+	}
+
+	/* Allocate memory and initialize GlobalCatCache */
+
+	TempGlobalCatCacheContext = MemoryContextClone(GlobalCatCacheContext,
+												   CurrentMemoryContext);
+
+	oldcxt = MemoryContextSwitchTo(TempGlobalCatCacheContext);
+	gcp = InitGlobalCatCacheInternal(local_cache);
+	MemoryContextSwitchTo(oldcxt);
+	ShmRetailContextMoveChunk(TempGlobalCatCacheContext, GlobalCatCacheContext);
+
+	/* Insert GlobalCatCache to GlobalCatCacheMap */
+	if (!GlobalCatCacheMapInsert(keyPtr, hashcode, gcp))
+		elog(FATAL, "GlobalCatCache oid: %u, cacheid: %d"
+			 "is already registered to GlobalCatCacheMap",
+			 keyPtr->dbId, keyPtr->cacheId);
+
+	/* Now initialization is done */
+	local_cache->gcp = gcp;
+
+	LWLockRelease(map_lock);
+}
+
+/*
+ * Allocate and build GlobalCatCache
+ */
+static GlobalCatCache *
+InitGlobalCatCacheInternal(CatCache *local_cache)
+{
+	GlobalCatCache *gcp;
+	CatCache *global_cache;
+	size_t sz;
+	int num_locks;
+	int i;
+
+	/*
+	 * Allocate memory for GlobalCatCache and hash buckets as well.
+	 */
+	sz = sizeof(GlobalCatCache) + PG_CACHE_LINE_SIZE;
+	gcp = (GlobalCatCache *) CACHELINEALIGN(palloc0(sz));
+	global_cache = (CatCache *)gcp;
+
+	global_cache->cc_nbuckets = local_cache->cc_nbuckets;
+
+	global_cache->cc_bucket =
+		palloc0(global_cache->cc_nbuckets * sizeof(dlist_head));
+
+	/*
+	 * Allocate memory for bucket locks.
+	 * nbuckets of GlobalCatCache is same as local one at first.
+	 */
+	gcp->gcc_bucket_locks =
+		(LWLock *) palloc(MAX_CC_BUCKET_LOCKS * sizeof(LWLock));
+
+	global_cache->id = local_cache->id;
+	global_cache->cc_type = CC_SHAREDGLOBAL;
+	global_cache->cc_relname = pstrdup(local_cache->cc_relname);
+	global_cache->cc_reloid = local_cache->cc_reloid;
+	global_cache->cc_indexoid = local_cache->cc_indexoid;
+	global_cache->cc_relisshared = local_cache->cc_relisshared;
+	global_cache->cc_ntup = 0;
+	global_cache->cc_nkeys = local_cache->cc_nkeys;
+
+	global_cache->cc_tupdesc = CreateTupleDescCopyConstr(local_cache->cc_tupdesc);
+
+	/* following members are not used in GlobalCatCache */
+	for (i = 0; i < local_cache->cc_nkeys; ++i)
+		global_cache->cc_keyno[i] = local_cache->cc_keyno[i];
+
+	/* Initialize lock for GlobalCatCache members */
+	SpinLockInit(&gcp->gcc_mutex);
+
+	/* Initialize lock partitions of hash table */
+	/* if (global_cache->cc_nbuckets > MAX_CC_BUCKET_LOCKS) */
+	/* 	num_locks = MAX_CC_BUCKET_LOCKS; */
+	/* else */
+	/* 	num_locks = global_cache->cc_nbuckets; */
+	num_locks = MAX_CC_BUCKET_LOCKS;
+
+	for (i = 0; i < num_locks ; ++i)
+		LWLockInitialize(&gcp->gcc_bucket_locks[i],
+						 LWTRANCHE_GLOBAL_CATCACHE);
+
+	/* Initailize handler for Global CatCache entries */
+	InitCacheHandle(&gcp->gcc_handle_hdr, (void *)gcp);
+
+	return gcp;
+}
+
+
+/*
+ * Link local CatCache to global CatCache if available.
+ */
+static GlobalCatCache *
+AttachGlobalCatCache(GlobalCatCacheMapKey *keyPtr)
+{
+	uint32 hashcode;
+	LWLock *map_lock;
+	GlobalCatCacheMapEnt* entry;
+
+	hashcode = GlobalCatCacheMapHashCode(keyPtr);
+	map_lock = GlobalCatCachePartitionLock(hashcode);
+
+	LWLockAcquire(map_lock, LW_SHARED);
+	entry = GlobalCatCacheMapLookup(keyPtr, hashcode);
+	LWLockRelease(map_lock);
+
+	if (!entry)
+		return NULL;
+
+	return entry->gcp;
+}
+
+
+/*
+ * Workhorse of CatalogCacheInitializeCache.
+ * This initailize CatCache whose type is CC_REGULAR and CC_SHAREDLOCAL,
+ * consulting relation and filling in actual members of CatCache.
+ */
+static void
+InitLocalCatCacheInternal(CatCache *cache)
+{
+	Relation	relation;
+	MemoryContext oldcxt;
+	TupleDesc	tupdesc;
+	int			i;
+
+	Assert(cache->cc_type != CC_SHAREDGLOBAL);
+
+	relation = table_open(cache->cc_reloid, AccessShareLock);
+
+	/*
+	 * switch to the cache context so our allocations do not vanish
+	 * at the end of a transaction
+	 */
+	Assert(CacheMemoryContext != NULL);
+	oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
+
+	/*
+	 * copy the relcache's tuple descriptor to permanent cache storage
+	 */
+	tupdesc = CreateTupleDescCopyConstr(RelationGetDescr(relation));
+
+	/*
+	 * save the relation's name and relisshared flag, too (cc_relname is used
+	 * only for debugging purposes)
+	 */
+	cache->cc_relname = pstrdup(RelationGetRelationName(relation));
+	cache->cc_relisshared = RelationGetForm(relation)->relisshared;
+
+	table_close(relation, AccessShareLock);
+
+	CACHE_elog(DEBUG2, "CatalogCacheInitializeCache: %s, %d keys",
+			   cache->cc_relname, cache->cc_nkeys);
+
+	/*
+	 * initialize cache's key information
+	 */
+	for (i = 0; i < cache->cc_nkeys; ++i)
+	{
+		Oid			keytype;
+		RegProcedure eqfunc;
+
+		CatalogCacheInitializeCache_DEBUG2;
+
+		if (cache->cc_keyno[i] > 0)
+		{
+			Form_pg_attribute attr = TupleDescAttr(tupdesc,
+												   cache->cc_keyno[i] - 1);
+
+			keytype = attr->atttypid;
+			/* cache key columns should always be NOT NULL */
+			Assert(attr->attnotnull);
+		}
+		else
+		{
+			if (cache->cc_keyno[i] < 0)
+				elog(FATAL, "sys attributes are not supported in caches");
+			keytype = OIDOID;
+		}
+
+		GetCCHashEqFuncs(keytype,
+						 &cache->cc_hashfunc[i],
+						 &eqfunc,
+						 &cache->cc_fastequal[i]);
+
+		/*
+		 * Do equality-function lookup (we assume this won't need a catalog
+		 * lookup for any supported type)
+		 */
+		fmgr_info_cxt(eqfunc,
+					  &cache->cc_skey[i].sk_func,
+					  CacheMemoryContext);
+
+		/* Initialize sk_attno suitably for HeapKeyTest() and heap scans */
+		cache->cc_skey[i].sk_attno = cache->cc_keyno[i];
+
+		/* Fill in sk_strategy as well --- always standard equality */
+		cache->cc_skey[i].sk_strategy = BTEqualStrategyNumber;
+		cache->cc_skey[i].sk_subtype = InvalidOid;
+		/* If a catcache key requires a collation, it must be C collation */
+		cache->cc_skey[i].sk_collation = C_COLLATION_OID;
+
+		CACHE_elog(DEBUG2, "CatalogCacheInitializeCache %s %d %p",
+				   cache->cc_relname, i, cache);
+	}
+
+	/*
+	 * mark this cache fully initialized
+	 */
+	cache->cc_tupdesc = tupdesc;
+
+	MemoryContextSwitchTo(oldcxt);
+}
+
+/*
+ * Workhorse for SearchCatCacheInternal().
+ * Search the  hash bucket of local/global catcache.  This returns
+ * local/global catctup even if it's a negative one. If not found, return
+ * NULL.
+ * gcc_fastequal is passed only CatCache type is GlobalCatCache
+ * because GlobalCatCache doesn't have function pointer.
+ */
+static CatCTup *
+SearchCatCacheBucket(CatCache *cache, int nkeys, Datum *searchkeys,
+					 uint32 hashValue, Index hashIndex,
+					 const CCFastEqualFN *gcc_fastequal)
+{
+	dlist_head *bucket;
+	dlist_iter	iter;
+	CatCTup* ct;
+	GlobalCatCache *gcp;
+	LWLock *bucket_lock = NULL;
+	const CCFastEqualFN *cc_fastequal;
+	CatCTup *inval_ct = NULL;
+
+	/*
+	 * If catcache is shared among process and located in shared memory
+	 * get lock for bucket and calculate hashIndex
+	 */
+	if (cache->cc_type == CC_SHAREDGLOBAL)
+	{
+		cc_fastequal = gcc_fastequal;
+
+		gcp = (GlobalCatCache *)cache;
+		bucket_lock = GetCatCacheBucketLock(gcp, hashValue);
+		LWLockAcquire(bucket_lock, LW_SHARED);
+
+		hashIndex = HASH_INDEX(hashValue, cache->cc_nbuckets);
+	}
+	else
+		cc_fastequal = cache->cc_fastequal;
+
+	bucket = &cache->cc_bucket[hashIndex];
+
+
+	/*
+	 * scan the hash bucket until we find a match or exhaust our tuples
+	 *
+	 * Note: it's okay to use dlist_foreach here, even though we modify the
+	 * dlist within the loop, because we don't continue the loop afterwards.
+	 */
+	dlist_foreach(iter, bucket)
+	{
+		ct = dlist_container(CatCTup, cache_elem, iter.cur);
+
+		if (ct->hash_value != hashValue)
+			continue;			/* quickly skip entry if wrong hash val */
+
+		/*  Continue. Valid one could be found after we find dummy one. */
+		if (cache->cc_type == CC_SHAREDLOCAL &&  CATC_IS_INVALID_DUMMY((LocalCatCTup *)ct))
+		{
+			inval_ct = ct;
+			continue;
+		}
+
+
+		if (!CatalogCacheCompareTuple(cc_fastequal, nkeys, ct->keys, searchkeys))
+			continue;
+
+		if (ct->dead)
+			continue;			/* ignore dead entries */
+
+		/*
+		 * We found a match in the cache.  Move it to the front of the list
+		 * for its hashbucket, in order to speed subsequent searches.  (The
+		 * most frequently accessed elements in any hashbucket will tend to be
+		 * near the front of the hashbucket's list.) In case of global cache,
+		 * we don't move cache to avoid acquiring exclusive lock.
+		 */
+		if (cache->cc_type != CC_SHAREDGLOBAL)
+			dlist_move_head(bucket, &ct->cache_elem);
+
+		/*
+		 * If it's a positive entry, bump its refcount and return it. If it's
+		 * negative, we can report failure to the caller. If local cache entry
+		 * is a pointer to global entry, keep refcount to zero because there is
+		 * no need to protect tuple which doesn't exist.
+		 */
+		if (!ct->negative)
+		{
+			if (cache->cc_type == CC_REGULAR ||
+				(cache->cc_type == CC_SHAREDLOCAL &&
+				 !((LocalCatCTup *)ct)->lct_committed))
+			{
+				ResourceOwnerEnlargeCatCacheRefs(CurrentResourceOwner);
+				ct->refcount++;
+				ResourceOwnerRememberCatCacheRef(CurrentResourceOwner,
+												 &ct->tuple);
+			}
+			else if (cache->cc_type == CC_SHAREDGLOBAL)
+				IncreaceGlobalCatCTupRefCount((GlobalCatCTup *)ct);
+
+			CACHE_elog(DEBUG2, "SearchCatCacheBucket (%s): found in %s bucket %d",
+					   cache->cc_relname,
+					   ct->my_cache->cc_type == CC_SHAREDGLOBAL ? "global" : "local",
+					   hashIndex);
+
+#ifdef CATCACHE_STATS
+			cache->cc_hits++;
+#endif
+		}
+		else
+		{
+			CACHE_elog(DEBUG2, "SearchCatCache (%s): found neg entry in bucket %d",
+					   cache->cc_relname, hashIndex);
+
+#ifdef CATCACHE_STATS
+			cache->cc_neg_hits++;
+#endif
+		}
+
+		/* Release lock for catctup and bucket */
+		if (cache->cc_type == CC_SHAREDGLOBAL)
+			LWLockRelease(bucket_lock);
+
+		/* return ct in both cases of positive or negative entry */
+		return ct;
+	}
+	/* Reaching here means we cannot find the cache entry in this bucket */
+	if (cache->cc_type == CC_SHAREDGLOBAL)
+		LWLockRelease(bucket_lock);
+
+	/**/
+	return inval_ct;
+}
+
+
+/*
+ * LocalCacheGetValidEntry
+ *
+ * Return the valid CatCTup entry.
+ */
+static CatCTup *
+LocalCacheGetValidEntry(LocalCatCTup *lct)
+{
+	CatCTup *local_ct;
+	GlobalCatCTup *gct;
+	LWLock *handle_lock;
+
+	CACHE_elog(DEBUG2, "LocalCacheGetValidEntry: called");
+
+	/* To access the CatCTup members */
+	local_ct = (CatCTup *)lct;
+
+	/*
+	 * If local cache entry holds its tuple locally or negative, return itself.
+	 * Note refcount of uncommitted one is assumed to be bumped in caller.
+	 */
+	if (local_ct->negative || !lct->lct_committed)
+		return local_ct;
+
+	handle_lock = GET_HANDLE_LOCK(lct->lct_handle);
+
+	/*
+	 * Check if handle is still valid. If it's invalid,
+	 * remove the local entry or mark it as dead.
+	 */
+	LWLockAcquire(handle_lock, LW_SHARED);
+
+	if (CATC_HANDLE_VALID(lct))
+	{
+		gct = lct->lct_handle->entry;
+
+		if (!((CatCTup *)gct)->dead)
+		{
+			/* bump global refcount to keep it in shared memory */
+			IncreaceGlobalCatCTupRefCount(gct);
+
+			LWLockRelease(handle_lock);
+			/* global cache entry is not negative */
+			return &gct->gct_ct;
+		}
+	}
+
+	LWLockRelease(handle_lock);
+
+	/* reaching here means gct is not valid entry */
+
+	if (local_ct->refcount > 0 ||
+		(local_ct->c_list && local_ct->c_list->refcount > 0))
+	{
+		local_ct->dead = true;
+
+		if (local_ct->c_list)
+			local_ct->c_list->dead = true;
+	}
+	else
+		CatCacheRemoveCTup(local_ct->my_cache, local_ct);
+
+	return NULL;
+}
+
+/*
+ * CreateCatCTupWithTuple
+ *
+ * Workhorse for CatalogCacheCreateEntry.
+ * Create catctup struct and following tuple, which is non-negative Regular
+ * entry, SharedLocal uncommitted entry ,or SharedGlobal entry. MemoryContext
+ * should be already switched appropriately.
+ */
+static CatCTup *
+CreateCatCTupWithTuple(CatCache *cache, HeapTuple ntp)
+{
+	CatCTup *ct;
+	HeapTuple	dtp;
+	int i;
+	size_t ct_size;
+
+	/*
+	 * If there are any out-of-line toasted fields in the tuple, expand
+	 * them in-line.  This saves cycles during later use of the catcache
+	 * entry, and also protects us against the possibility of the toast
+	 * tuples being freed before we attempt to fetch them, in case of
+	 * something using a slightly stale catcache entry.
+	 */
+	if (HeapTupleHasExternal(ntp))
+		dtp = toast_flatten_tuple(ntp, cache->cc_tupdesc);
+	else
+		dtp = ntp;
+
+	/*
+	 * To enable type cast among CatCTup, LocalCatCTup and GlobalCatCTup,
+	 * allocate tuple information just after each struct. Members specific to
+	 * LocalCatCTup and GlobalCatCTup is initialized in the caller function.
+	 */
+	if (cache->cc_type == CC_REGULAR)
+		ct_size = sizeof(CatCTup);
+	else if (cache->cc_type == CC_SHAREDLOCAL)
+		ct_size = sizeof(LocalCatCTup);
+	else if (cache->cc_type == CC_SHAREDGLOBAL)
+		ct_size = sizeof(GlobalCatCTup);
+	else
+		elog(FATAL, "unknown cache type %d",cache->cc_type);
+
+	/* Assumed MemoryContext is already switched properly */
+	ct = (CatCTup *) palloc(ct_size +
+							MAXIMUM_ALIGNOF + dtp->t_len);
+
+	ct->tuple.t_len = dtp->t_len;
+	ct->tuple.t_self = dtp->t_self;
+	ct->tuple.t_tableOid = dtp->t_tableOid;
+	ct->tuple.t_data = (HeapTupleHeader)
+		MAXALIGN(((char *) ct) + ct_size);
+	/* copy tuple contents */
+	memcpy((char *) ct->tuple.t_data,
+		   (const char *) dtp->t_data,
+		   dtp->t_len);
+
+	if (dtp != ntp)
+		heap_freetuple(dtp);
+
+	/* extract keys - they'll point into the tuple if not by-value */
+	for (i = 0; i < cache->cc_nkeys; i++)
+	{
+		Datum		atp;
+		bool		isnull;
+
+		atp = heap_getattr(&ct->tuple,
+						   cache->cc_keyno[i],
+						   cache->cc_tupdesc,
+						   &isnull);
+		Assert(!isnull);
+		ct->keys[i] = atp;
+	}
+
+	return ct;
+}
+
+/*
+ * CreateCatCTupWithoutTuple
+ *
+ * Workhorse for CatalogCacheCreateEntry.
+ * Create only catctup struct, which is negative Regular entry or SharedLocal
+ * committed entry. MemoryContext should be already switched appropriately.
+ */
+static CatCTup *
+CreateCatCTupWithoutTuple(CatCache *cache, Datum *arguments)
+{
+	CatCTup *ct;
+
+	/*
+	 * Members of LocalCatCTup is initialized in the caller function.
+	 * Assumed MemoryContext is already switched properly.
+	 */
+	if (cache->cc_type == CC_REGULAR)
+		ct = (CatCTup *) palloc(sizeof(CatCTup));
+	else if (cache->cc_type == CC_SHAREDLOCAL)
+		ct = (CatCTup *) palloc(sizeof(LocalCatCTup));
+	else
+		elog(FATAL, "Global cache entry without tuple is not supported");
+
+	/*
+	 * Store keys - they'll point into separately allocated memory if not
+	 * by-value. If arguments is NULL, it's skip-global dummy.
+	 */
+	if (arguments)
+		CatCacheCopyKeys(cache->cc_tupdesc, cache->cc_nkeys, cache->cc_keyno,
+						 arguments, ct->keys);
+
+	return ct;
+}
+
+
+/*
+ * Get partition lock of Global CatCache hash table
+ */
+static LWLock *
+GetCatCacheBucketLock(GlobalCatCache *gcp, uint32 hashValue)
+{
+	Index hashIndex = HASH_INDEX(hashValue, ((CatCache *)gcp)->cc_nbuckets);
+
+	return &gcp->gcc_bucket_locks[(hashIndex % MAX_CC_BUCKET_LOCKS)];
+}
+
+/*
+ * Bump global refcount to keep it in shared memory
+ */
+static void
+IncreaceGlobalCatCTupRefCount(GlobalCatCTup *gct)
+{
+	SpinLockAcquire(&gct->gct_mutex);
+	((CatCTup *)gct)->refcount++;
+	SpinLockRelease(&gct->gct_mutex);
+
+	CACHE_elog(DEBUG2, "IncreaseGlobalCatCTupRfCount() global refcount is bumped: %s, %d tuple %p",
+			   ((CatCTup *)gct)->my_cache->cc_relname,
+			   ((CatCTup *)gct)->refcount,
+			   &((CatCTup *)gct)->tuple);
 }

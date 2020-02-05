@@ -18,6 +18,7 @@
 
 #include "access/attnum.h"
 #include "access/htup.h"
+#include "utils/shared_meta_cache.h"
 /* we intentionally do not include utils/catcache.h here */
 
 /*
@@ -160,11 +161,14 @@ struct catclist;
 extern struct catclist *SearchSysCacheList(int cacheId, int nkeys,
 										   Datum key1, Datum key2, Datum key3);
 
-extern void SysCacheInvalidate(int cacheId, uint32 hashValue);
+extern void SysCacheInvalidate(int cacheId, uint32 hashValue, InvalPhase invalPhase);
 
 extern bool RelationInvalidatesSnapshotsOnly(Oid relid);
 extern bool RelationHasSysCache(Oid relid);
 extern bool RelationSupportsSysCache(Oid relid);
+
+/* For GlobalCatCache */
+extern void GlobalSysCacheInvalidate(int cacheId, uint32 hashValue);
 
 /*
  * The use of the macros below rather than direct calls to the corresponding

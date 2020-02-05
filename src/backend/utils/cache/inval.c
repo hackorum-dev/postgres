@@ -106,6 +106,7 @@
 #include "storage/sinval.h"
 #include "storage/smgr.h"
 #include "utils/catcache.h"
+#include "utils/shared_meta_cache.h"
 #include "utils/inval.h"
 #include "utils/memdebug.h"
 #include "utils/memutils.h"
@@ -561,7 +562,7 @@ LocalExecuteInvalidationMessage(SharedInvalidationMessage *msg)
 		{
 			InvalidateCatalogSnapshot();
 
-			SysCacheInvalidate(msg->cc.id, msg->cc.hashValue);
+			SysCacheInvalidate(msg->cc.id, msg->cc.hashValue, INVAL_COMMON);
 
 			CallSyscacheCallbacks(msg->cc.id, msg->cc.hashValue);
 		}
@@ -572,7 +573,7 @@ LocalExecuteInvalidationMessage(SharedInvalidationMessage *msg)
 		{
 			InvalidateCatalogSnapshot();
 
-			CatalogCacheFlushCatalog(msg->cat.catId);
+			CatalogCacheFlushCatalog(msg->cat.catId, INVAL_COMMON);
 
 			/* CatalogCacheFlushCatalog calls CallSyscacheCallbacks as needed */
 		}
@@ -627,6 +628,102 @@ LocalExecuteInvalidationMessage(SharedInvalidationMessage *msg)
 	else
 		elog(FATAL, "unrecognized SI message ID: %d", msg->id);
 }
+
+/*
+ * GMCEOCommandExecInvalMessage
+ *
+ */
+void
+GMCEOCommandExecInvalMessage(SharedInvalidationMessage *msg)
+{
+	if (msg->id >= 0)
+	{
+		if (msg->cc.dbId == MyDatabaseId || msg->cc.dbId == InvalidOid)
+		{
+			InvalidateCatalogSnapshot();
+
+			/* not end of transaction */
+			SysCacheInvalidate(msg->cc.id, msg->cc.hashValue, INVAL_GMC_EO_COMMAND);
+
+			CallSyscacheCallbacks(msg->cc.id, msg->cc.hashValue);
+		}
+	}
+	else if (msg->id == SHAREDINVALCATALOG_ID)
+	{
+		if (msg->cat.dbId == MyDatabaseId || msg->cat.dbId == InvalidOid)
+		{
+			InvalidateCatalogSnapshot();
+
+			CatalogCacheFlushCatalog(msg->cat.catId, INVAL_GMC_EO_COMMAND);
+
+			/* CatalogCacheFlushCatalog calls CallSyscacheCallbacks as needed */
+		}
+	}
+	else
+		LocalExecuteInvalidationMessage(msg);
+
+}
+
+void
+GMCEOXactExecInvalMessage(SharedInvalidationMessage *msg)
+{
+	if (msg->id >= 0)
+	{
+		if (msg->cc.dbId == MyDatabaseId || msg->cc.dbId == InvalidOid)
+		{
+			//InvalidateCatalogSnapshot() must not be executed
+			/* end of transaction */
+			SysCacheInvalidate(msg->cc.id, msg->cc.hashValue, INVAL_GMC_EO_COMMAND);
+
+			/* Only the global caches entires are flushed */
+			GlobalSysCacheInvalidate(msg->cc.id, msg->cc.hashValue);
+
+			CallSyscacheCallbacks(msg->cc.id, msg->cc.hashValue);
+		}
+	}
+	else if (msg->id == SHAREDINVALCATALOG_ID)
+	{
+		if (msg->cat.dbId == MyDatabaseId || msg->cat.dbId == InvalidOid)
+		{
+			//InvalidateCatalogSnapshot() must not be executed
+
+			CatalogCacheFlushCatalog(msg->cat.catId, INVAL_GMC_COMMIT_XACT);
+
+			/* CatalogCacheFlushCatalog calls CallSyscacheCallbacks as needed */
+		}
+	}
+}
+
+void
+GMCAbortSubXactExecInvalMessage(SharedInvalidationMessage *msg)
+{
+	if (msg->id >= 0)
+	{
+		if (msg->cc.dbId == MyDatabaseId || msg->cc.dbId == InvalidOid)
+		{
+			InvalidateCatalogSnapshot();
+			/* end of transaction */
+			SysCacheInvalidate(msg->cc.id, msg->cc.hashValue, INVAL_GMC_ABORT_SUBXACT);
+
+			CallSyscacheCallbacks(msg->cc.id, msg->cc.hashValue);
+		}
+	}
+	else if (msg->id == SHAREDINVALCATALOG_ID)
+	{
+		if (msg->cat.dbId == MyDatabaseId || msg->cat.dbId == InvalidOid)
+		{
+			InvalidateCatalogSnapshot();
+
+			CatalogCacheFlushCatalog(msg->cat.catId, INVAL_GMC_ABORT_SUBXACT);
+
+			/* CatalogCacheFlushCatalog calls CallSyscacheCallbacks as needed */
+		}
+	}
+	else
+		LocalExecuteInvalidationMessage(msg);
+
+}
+
 
 /*
  *		InvalidateSystemCaches
@@ -968,6 +1065,16 @@ AtEOXact_Inval(bool isCommit)
 		AppendInvalidationMessages(&transInvalInfo->PriorCmdInvalidMsgs,
 								   &transInvalInfo->CurrentCmdInvalidMsgs);
 
+		/*
+		 * If catcache is global mode, try to remove global catcache entry.
+		 * And also local catcaches are removed since  cache tuples added
+		 * in this transaction are located in local CatCache rather than
+		 * global CatCache. We don't want to hold entries locally after commit.
+		 */
+		if (IS_GLOBAL_META_CACHE)
+			ProcessInvalidationMessages(&transInvalInfo->PriorCmdInvalidMsgs,
+										GMCEOXactExecInvalMessage);
+
 		ProcessInvalidationMessagesMulti(&transInvalInfo->PriorCmdInvalidMsgs,
 										 SendSharedInvalidMessages);
 
@@ -1055,8 +1162,12 @@ AtEOSubXact_Inval(bool isCommit)
 	}
 	else
 	{
-		ProcessInvalidationMessages(&myInfo->PriorCmdInvalidMsgs,
-									LocalExecuteInvalidationMessage);
+		if (IS_GLOBAL_META_CACHE)
+			ProcessInvalidationMessages(&myInfo->PriorCmdInvalidMsgs,
+										GMCAbortSubXactExecInvalMessage);
+		else
+			ProcessInvalidationMessages(&myInfo->PriorCmdInvalidMsgs,
+										LocalExecuteInvalidationMessage);
 
 		/* Pop the transaction state stack */
 		transInvalInfo = myInfo->parent;
@@ -1092,8 +1203,13 @@ CommandEndInvalidationMessages(void)
 	if (transInvalInfo == NULL)
 		return;
 
-	ProcessInvalidationMessages(&transInvalInfo->CurrentCmdInvalidMsgs,
-								LocalExecuteInvalidationMessage);
+	if (IS_GLOBAL_META_CACHE)
+		ProcessInvalidationMessages(&transInvalInfo->CurrentCmdInvalidMsgs,
+									GMCEOCommandExecInvalMessage);
+	else
+		ProcessInvalidationMessages(&transInvalInfo->CurrentCmdInvalidMsgs,
+									LocalExecuteInvalidationMessage);
+
 	AppendInvalidationMessages(&transInvalInfo->PriorCmdInvalidMsgs,
 							   &transInvalInfo->CurrentCmdInvalidMsgs);
 }
