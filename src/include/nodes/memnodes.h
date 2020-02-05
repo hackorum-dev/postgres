@@ -72,6 +72,16 @@ typedef struct MemoryContextMethods
 #endif
 } MemoryContextMethods;
 
+/* General utilities for ShmRetailContext and ShmZoneContext */
+//#define InvalidShmContextMethodsID ((ShmContextMethodsID) -1)
+
+typedef enum ShmContextMethodsID
+{
+	InvalidShmContextMethodsID = -1,
+	MEMORY_CONTEXT_SHARED_RETAIL,
+	MEMORY_CONTEXT_SHARED_ZONE,
+	MEMORY_CONTEXT_METHODS_ID_MAX
+} ShmContextMethodsID;
 
 typedef struct MemoryContextData
 {
@@ -88,6 +98,12 @@ typedef struct MemoryContextData
 	const char *name;			/* context name (just for debugging) */
 	const char *ident;			/* context ID if any (just for debugging) */
 	MemoryContextCallback *reset_cbs;	/* list of reset/delete callbacks */
+	/*
+	 * InvalidId and use methods if context is not located in shared memory
+	 * otherwise, ID for method table is set and used since function pointers
+	 * cannot be shared.
+	 */
+	ShmContextMethodsID methodsID;
 } MemoryContextData;
 
 /* utils/palloc.h contains typedef struct MemoryContextData *MemoryContext */
@@ -103,6 +119,20 @@ typedef struct MemoryContextData
 	((context) != NULL && \
 	 (IsA((context), AllocSetContext) || \
 	  IsA((context), SlabContext) || \
-	  IsA((context), GenerationContext)))
+	  IsA((context), GenerationContext) || \
+	  IsA((context), ShmRetailContext) || \
+	  IsA((context), ShmZoneContext)))
+
+/*
+ * MemoryContextIsShared
+ *		True iff memory context is shared.
+ *
+ * Add new context types to the set accepted by this macro.
+ */
+#define MemoryContextIsShared(context) \
+	((context) != NULL && \
+	 (IsA((context), ShmRetailContext) || \
+	  IsA((context), ShmZoneContext)))
+
 
 #endif							/* MEMNODES_H */

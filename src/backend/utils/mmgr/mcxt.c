@@ -48,6 +48,9 @@ MemoryContext CacheMemoryContext = NULL;
 MemoryContext MessageContext = NULL;
 MemoryContext TopTransactionContext = NULL;
 MemoryContext CurTransactionContext = NULL;
+MemoryContext GlobalCacheContext = NULL;
+MemoryContext GlobalCatCacheContext = NULL;
+MemoryContext GlobalRelCacheContext = NULL;
 
 /* This is a transient link to the active portal's memory context: */
 MemoryContext PortalContext = NULL;
@@ -66,6 +69,10 @@ static void MemoryContextStatsPrint(MemoryContext context, void *passthru,
  */
 #define AssertNotInCriticalSection(context) \
 	Assert(CritSectionCount == 0 || (context)->allowInCritSection)
+
+/* if the context is located in local memory or shared memory  */
+#define MemoryContextIsLocal(context) \
+	((context->methodsID) == InvalidShmContextMethodsID)
 
 /*****************************************************************************
  *	  EXPORTED ROUTINES														 *
@@ -171,7 +178,11 @@ MemoryContextResetOnly(MemoryContext context)
 		 * for now we assume the programmer got it right.
 		 */
 
-		context->methods->reset(context);
+		if (MemoryContextIsLocal(context))
+			context->methods->reset(context);
+		else
+			shmcxt_methods[context->methodsID].reset(context);
+
 		context->isReset = true;
 		VALGRIND_DESTROY_MEMPOOL(context);
 		VALGRIND_CREATE_MEMPOOL(context, 0, false);
@@ -242,7 +253,10 @@ MemoryContextDelete(MemoryContext context)
 	 */
 	context->ident = NULL;
 
-	context->methods->delete_context(context);
+	if (MemoryContextIsLocal(context))
+		context->methods->delete_context(context);
+	else
+		shmcxt_methods[context->methodsID].delete_context(context);
 
 	VALGRIND_DESTROY_MEMPOOL(context);
 }
@@ -397,6 +411,61 @@ MemoryContextSetParent(MemoryContext context, MemoryContext new_parent)
 }
 
 /*
+ * MemoryContextClone
+ *  	Create a new MemoryContext of the same type as template context
+ * 		and set its parent to specified one.
+ */
+MemoryContext
+MemoryContextClone(MemoryContext template, MemoryContext parent)
+{
+	MemoryContext context;
+
+	AssertArg(MemoryContextIsValid(template));
+	AssertArg(MemoryContextIsValid(parent));
+
+	switch (nodeTag(template))
+	{
+		case T_AllocSetContext:
+		case T_SlabContext:
+		case T_GenerationContext:
+			elog(FATAL, " MemoryContextClone doesn't support cloning"
+				 "memory context (%s)", template->name);
+			break;
+		case T_ShmRetailContext:
+			context = ShmRetailContextCreateLocal(parent,
+												  "clone",
+												  template);
+			break;
+		case T_ShmZoneContext:
+			{
+				MemoryContext old_context;
+
+				/* cloned context is created in shared memory */
+				old_context = MemoryContextSwitchTo(template);
+				context = ShmZoneContextCreateClone(parent,
+													"clone",template);
+				MemoryContextSwitchTo(old_context);
+				break;
+			}
+		default:
+			elog(FATAL, "unrecognized node type: %d",
+				 (int) nodeTag(template));
+	}
+	return context;
+}
+
+/*
+ * MemoryContextSetShmContextMethodsID
+ * 		Set shmContextMethodId for shared memory context.
+ */
+void
+MemoryContextSetShmContextMethodsID(MemoryContext node,
+									ShmContextMethodsID id)
+{
+	node->methodsID = id;
+}
+
+/*
  * MemoryContextAllowInCriticalSection
  *		Allow/disallow allocations in this memory context within a critical
  *		section.
@@ -428,7 +497,12 @@ GetMemoryChunkSpace(void *pointer)
 {
 	MemoryContext context = GetMemoryChunkContext(pointer);
 
-	return context->methods->get_chunk_space(context, pointer);
+	if (MemoryContextIsLocal(context))
+		return context->methods->get_chunk_space(context, pointer);
+	else
+		return shmcxt_methods[context->methodsID].get_chunk_space(context,
+																  pointer);
+
 }
 
 /*
@@ -459,7 +533,11 @@ MemoryContextIsEmpty(MemoryContext context)
 	if (context->firstchild != NULL)
 		return false;
 	/* Otherwise use the type-specific inquiry */
-	return context->methods->is_empty(context);
+	if (MemoryContextIsLocal(context))
+		return context->methods->is_empty(context);
+	else
+		return shmcxt_methods[context->methodsID].is_empty(context);
+
 }
 
 /*
@@ -541,10 +619,18 @@ MemoryContextStatsInternal(MemoryContext context, int level,
 	AssertArg(MemoryContextIsValid(context));
 
 	/* Examine the context itself */
-	context->methods->stats(context,
-							print ? MemoryContextStatsPrint : NULL,
-							(void *) &level,
-							totals);
+	if (MemoryContextIsLocal(context))
+		context->methods->stats(context,
+								print ? MemoryContextStatsPrint : NULL,
+								(void *) &level,
+								totals);
+	else
+		shmcxt_methods[context->methodsID]
+			.stats(context,
+					print ? MemoryContextStatsPrint : NULL,
+					(void *) &level,
+					totals);
+
 
 	/*
 	 * Examine children.  If there are more than max_children of them, we do
@@ -670,7 +756,11 @@ MemoryContextCheck(MemoryContext context)
 
 	AssertArg(MemoryContextIsValid(context));
 
-	context->methods->check(context);
+	if (MemoryContextIsLocal(context))
+		context->methods->check(context);
+	else
+		shmcxt_methods[context->methodsID].check(context);
+
 	for (child = context->firstchild; child != NULL; child = child->nextchild)
 		MemoryContextCheck(child);
 }
@@ -765,6 +855,7 @@ MemoryContextCreate(MemoryContext node,
 	node->name = name;
 	node->ident = NULL;
 	node->reset_cbs = NULL;
+	node->methodsID = InvalidShmContextMethodsID;
 
 	/* OK to link node into context tree */
 	if (parent)
@@ -805,7 +896,11 @@ MemoryContextAlloc(MemoryContext context, Size size)
 
 	context->isReset = false;
 
-	ret = context->methods->alloc(context, size);
+	if (MemoryContextIsLocal(context))
+		ret = context->methods->alloc(context, size);
+	else
+		ret = shmcxt_methods[context->methodsID].alloc(context, size);
+
 	if (unlikely(ret == NULL))
 	{
 		MemoryContextStats(TopMemoryContext);
@@ -848,7 +943,11 @@ MemoryContextAllocZero(MemoryContext context, Size size)
 
 	context->isReset = false;
 
-	ret = context->methods->alloc(context, size);
+	if (MemoryContextIsLocal(context))
+		ret = context->methods->alloc(context, size);
+	else
+		ret = shmcxt_methods[context->methodsID].alloc(context, size);
+
 	if (unlikely(ret == NULL))
 	{
 		MemoryContextStats(TopMemoryContext);
@@ -886,7 +985,11 @@ MemoryContextAllocZeroAligned(MemoryContext context, Size size)
 
 	context->isReset = false;
 
-	ret = context->methods->alloc(context, size);
+	if (MemoryContextIsLocal(context))
+		ret = context->methods->alloc(context, size);
+	else
+		ret = shmcxt_methods[context->methodsID].alloc(context, size);
+
 	if (unlikely(ret == NULL))
 	{
 		MemoryContextStats(TopMemoryContext);
@@ -922,7 +1025,11 @@ MemoryContextAllocExtended(MemoryContext context, Size size, int flags)
 
 	context->isReset = false;
 
-	ret = context->methods->alloc(context, size);
+	if (MemoryContextIsLocal(context))
+		ret = context->methods->alloc(context, size);
+	else
+		ret = shmcxt_methods[context->methodsID].alloc(context, size);
+
 	if (unlikely(ret == NULL))
 	{
 		if ((flags & MCXT_ALLOC_NO_OOM) == 0)
@@ -960,7 +1067,11 @@ palloc(Size size)
 
 	context->isReset = false;
 
-	ret = context->methods->alloc(context, size);
+	if (MemoryContextIsLocal(context))
+		ret = context->methods->alloc(context, size);
+	else
+		ret = shmcxt_methods[context->methodsID].alloc(context, size);
+
 	if (unlikely(ret == NULL))
 	{
 		MemoryContextStats(TopMemoryContext);
@@ -991,7 +1102,11 @@ palloc0(Size size)
 
 	context->isReset = false;
 
-	ret = context->methods->alloc(context, size);
+	if (MemoryContextIsLocal(context))
+		ret = context->methods->alloc(context, size);
+	else
+		ret = shmcxt_methods[context->methodsID].alloc(context, size);
+
 	if (unlikely(ret == NULL))
 	{
 		MemoryContextStats(TopMemoryContext);
@@ -1025,7 +1140,11 @@ palloc_extended(Size size, int flags)
 
 	context->isReset = false;
 
-	ret = context->methods->alloc(context, size);
+	if (MemoryContextIsLocal(context))
+		ret = context->methods->alloc(context, size);
+	else
+		ret = shmcxt_methods[context->methodsID].alloc(context, size);
+
 	if (unlikely(ret == NULL))
 	{
 		if ((flags & MCXT_ALLOC_NO_OOM) == 0)
@@ -1057,7 +1176,11 @@ pfree(void *pointer)
 {
 	MemoryContext context = GetMemoryChunkContext(pointer);
 
-	context->methods->free_p(context, pointer);
+	if (MemoryContextIsLocal(context))
+		context->methods->free_p(context, pointer);
+	else
+		shmcxt_methods[context->methodsID].free_p(context, pointer);
+
 	VALGRIND_MEMPOOL_FREE(context, pointer);
 }
 
@@ -1079,7 +1202,12 @@ repalloc(void *pointer, Size size)
 	/* isReset must be false already */
 	Assert(!context->isReset);
 
-	ret = context->methods->realloc(context, pointer, size);
+	if (MemoryContextIsLocal(context))
+		ret = context->methods->realloc(context, pointer, size);
+	else
+		ret = shmcxt_methods[context->methodsID]
+			.realloc(context, pointer, size);
+
 	if (unlikely(ret == NULL))
 	{
 		MemoryContextStats(TopMemoryContext);
@@ -1114,7 +1242,11 @@ MemoryContextAllocHuge(MemoryContext context, Size size)
 
 	context->isReset = false;
 
-	ret = context->methods->alloc(context, size);
+	if (MemoryContextIsLocal(context))
+		ret = context->methods->alloc(context, size);
+	else
+		ret = shmcxt_methods[context->methodsID].alloc(context, size);
+
 	if (unlikely(ret == NULL))
 	{
 		MemoryContextStats(TopMemoryContext);
@@ -1149,7 +1281,12 @@ repalloc_huge(void *pointer, Size size)
 	/* isReset must be false already */
 	Assert(!context->isReset);
 
-	ret = context->methods->realloc(context, pointer, size);
+	if (MemoryContextIsLocal(context))
+		ret = context->methods->realloc(context, pointer, size);
+	else
+		ret = shmcxt_methods[context->methodsID]
+			.realloc(context, pointer, size);
+
 	if (unlikely(ret == NULL))
 	{
 		MemoryContextStats(TopMemoryContext);

@@ -18,7 +18,8 @@
 #define MEMUTILS_H
 
 #include "nodes/memnodes.h"
-
+#include "utils/dsa.h"
+#include "storage/lwlock.h"
 
 /*
  * MaxAllocSize, MaxAllocHugeSize
@@ -59,6 +60,9 @@ extern PGDLLIMPORT MemoryContext CacheMemoryContext;
 extern PGDLLIMPORT MemoryContext MessageContext;
 extern PGDLLIMPORT MemoryContext TopTransactionContext;
 extern PGDLLIMPORT MemoryContext CurTransactionContext;
+extern PGDLLIMPORT MemoryContext GlobalCacheContext;
+extern PGDLLIMPORT MemoryContext GlobalCatCacheContext;
+extern PGDLLIMPORT MemoryContext GlobalRelCacheContext;
 
 /* This is a transient link to the active portal's memory context: */
 extern PGDLLIMPORT MemoryContext PortalContext;
@@ -79,6 +83,8 @@ extern void MemoryContextDeleteChildren(MemoryContext context);
 extern void MemoryContextSetIdentifier(MemoryContext context, const char *id);
 extern void MemoryContextSetParent(MemoryContext context,
 								   MemoryContext new_parent);
+extern MemoryContext MemoryContextClone(MemoryContext template,
+										MemoryContext parent);
 extern Size GetMemoryChunkSpace(void *pointer);
 extern MemoryContext MemoryContextGetParent(MemoryContext context);
 extern bool MemoryContextIsEmpty(MemoryContext context);
@@ -183,6 +189,70 @@ extern MemoryContext GenerationContextCreate(MemoryContext parent,
 											 Size blockSize);
 
 /*
+ * Shared memory cannot use MemoryContextMethods pointers as general memory
+ * context because function pointers can not be generally shared among process.
+ * So each process needs to register function pointers from this table and
+ * use this method instead.
+ */
+MemoryContextMethods
+shmcxt_methods[MEMORY_CONTEXT_METHODS_ID_MAX];
+
+static inline void
+RegisterMemoryContextMethods(ShmContextMethodsID id,
+							 const MemoryContextMethods *methods)
+{
+	shmcxt_methods[id] = *methods;
+}
+
+/* utility for both shm_retail and shm_zone */
+extern void MemoryContextSetShmContextMethodsID(MemoryContext node,
+												ShmContextMethodsID id);
+extern LWLock* ShmContextGetLock(MemoryContext context);
+
+extern void GlobalCacheContextShmemInit(Size size);
+extern void GlobalCatCacheContextShmemInit(void);
+extern void GlobalRelCacheContextShmemInit(void);
+
+extern Size GlobalCacheContextSize(void);
+extern Size GlobalCatCacheContextSize(void);
+extern Size GlobalRelCacheContextSize(void);
+
+#define dsaptr_to_rawptr(dsa_p, base_p)	\
+	((char *)(base_p) + (dsa_p))
+#define rawptr_to_dsaptr(raw_p, base_p)	\
+	((dsa_pointer) ((char *)(raw_p) - (char *)(base_p)))
+
+
+/* shm_retail.c */
+extern MemoryContext ShmRetailContextCreateGlobal(MemoryContext parent,
+												  const char *name,
+												  void *base);
+extern MemoryContext ShmRetailContextCreateLocal(MemoryContext parent,
+												 const char *name,
+												 MemoryContext global_context);
+
+extern void ShmRetailContextMoveChunk(MemoryContext local_context,
+									  MemoryContext global_context);
+
+extern Size ShmRetailContextSize(void);
+extern void ShmRetailContextSetDSAarea(dsa_area *area);
+extern dsa_area *ShmRetailContextGetDSAarea(void);
+
+/* shm_zone.c */
+extern MemoryContext ShmZoneContextCreateOrigin(MemoryContext parent,
+												const char *name,
+												void *base);
+
+extern MemoryContext ShmZoneContextCreateClone(MemoryContext parent,
+											   const char *name,
+											   MemoryContext origin);
+
+extern Size ShmZoneContextSize(void);
+extern void ShmZoneContextSetDSAarea(dsa_area *area);
+
+
+
+/*
  * Recommended default alloc parameters, suitable for "ordinary" contexts
  * that might hold quite a lot of data.
  */
@@ -220,5 +290,7 @@ extern MemoryContext GenerationContextCreate(MemoryContext parent,
 
 #define SLAB_DEFAULT_BLOCK_SIZE		(8 * 1024)
 #define SLAB_LARGE_BLOCK_SIZE		(8 * 1024 * 1024)
+
+#define ShmZone_DEFAULT_BLOCK_SIZE (1 * 1024)
 
 #endif							/* MEMUTILS_H */

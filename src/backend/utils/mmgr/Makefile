@@ -20,6 +20,9 @@ OBJS = \
 	mcxt.o \
 	memdebug.o \
 	portalmem.o \
-	slab.o
+	slab.o \
+	shm_context.o \
+	shm_retail.o \
+	shm_zone.o
 
 include $(top_srcdir)/src/backend/common.mk
