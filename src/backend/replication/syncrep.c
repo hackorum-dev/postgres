@@ -842,6 +842,16 @@ SyncRepGetSyncStandbysPriority(bool *am_sync)
 		if (this_priority == 0)
 			continue;
 
+		/*
+		 * Walsenders don't reload configuration at the same time. A walsender
+		 * may have out-of-range priority before updating by the reload. Treat
+		 * them the same way as non-syncronous standbys.  Priority is going to
+		 * be fixed soon and we can work with consistent priorities at the next
+		 * standby-reply message.
+		 */
+		if (this_priority > lowest_priority)
+			continue;
+		
 		/* Must have a valid flush position */
 		if (XLogRecPtrIsInvalid(flush))
 			continue;
