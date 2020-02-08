@@ -490,6 +490,7 @@ static void ATPostAlterTypeParse(Oid oldId, Oid oldRelId, Oid refRelId,
 static void RebuildConstraintComment(AlteredTableInfo *tab, int pass,
 									 Oid objid, Relation rel, List *domname,
 									 const char *conname);
+static void PreserveClusterOn(AlteredTableInfo *tab, int pass, Oid indoid);
 static void TryReuseIndex(Oid oldId, IndexStmt *stmt);
 static void TryReuseForeignKey(Oid oldId, Constraint *con);
 static ObjectAddress ATExecAlterColumnGenericOptions(Relation rel, const char *colName,
@@ -11838,6 +11839,9 @@ ATPostAlterTypeParse(Oid oldId, Oid oldRelId, Oid refRelId, char *cmd,
 			newcmd->def = (Node *) stmt;
 			tab->subcmds[AT_PASS_OLD_INDEX] =
 				lappend(tab->subcmds[AT_PASS_OLD_INDEX], newcmd);
+
+			/* Preserve index's indisclustered property, if set. */
+			PreserveClusterOn(tab, AT_PASS_OLD_INDEX, oldId);
 		}
 		else if (IsA(stm, AlterTableStmt))
 		{
@@ -11874,6 +11878,9 @@ ATPostAlterTypeParse(Oid oldId, Oid oldRelId, Oid refRelId, char *cmd,
 											 rel,
 											 NIL,
 											 indstmt->idxname);
+
+					/* Preserve index's indisclustered property, if set. */
+					PreserveClusterOn(tab, AT_PASS_OLD_INDEX, indoid);
 				}
 				else if (cmd->subtype == AT_AddConstraint)
 				{
@@ -11994,6 +12001,38 @@ RebuildConstraintComment(AlteredTableInfo *tab, int pass, Oid objid,
 	newcmd->subtype = AT_ReAddComment;
 	newcmd->def = (Node *) cmd;
 	tab->subcmds[pass] = lappend(tab->subcmds[pass], newcmd);
+}
+
+/*
+ * For a table's index that is to be recreated due to PostAlterType
+ * processing, preserve its indisclustered property by issuing ALTER TABLE
+ * CLUSTER ON command on the table that will run after the command to recreate
+ * the index.
+ */
+static void
+PreserveClusterOn(AlteredTableInfo *tab, int pass, Oid indoid)
+{
+	HeapTuple	indexTuple;
+	Form_pg_index indexForm;
+
+	Assert(OidIsValid(indoid));
+	Assert(pass == AT_PASS_OLD_INDEX);
+
+	indexTuple = SearchSysCache1(INDEXRELID, ObjectIdGetDatum(indoid));
+	if (!HeapTupleIsValid(indexTuple))
+		elog(ERROR, "cache lookup failed for index %u", indoid);
+	indexForm = (Form_pg_index) GETSTRUCT(indexTuple);
+
+	if (indexForm->indisclustered)
+	{
+		AlterTableCmd *newcmd = makeNode(AlterTableCmd);
+
+		newcmd->subtype = AT_ClusterOn;
+		newcmd->name = get_rel_name(indoid);
+		tab->subcmds[pass] = lappend(tab->subcmds[pass], newcmd);
+	}
+
+	ReleaseSysCache(indexTuple);
 }
 
 /*
