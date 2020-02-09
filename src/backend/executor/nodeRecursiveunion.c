@@ -50,6 +50,8 @@ build_hash_table(RecursiveUnionState *rustate)
 												rustate->tableContext,
 												rustate->tempContext,
 												false);
+
+	InitTupleHashTableStats(rustate->instrument, rustate->hashtable->hashtab, rustate->tableContext, 0);
 }
 
 
@@ -157,7 +159,7 @@ ExecRecursiveUnion(PlanState *pstate)
 	}
 
 	if (node->hashtable)
-		UpdateTupleHashTableStats(node->hashtable, false);
+		UpdateTupleHashTableStats(node->instrument, node->hashtable->hashtab);
 
 	return NULL;
 }

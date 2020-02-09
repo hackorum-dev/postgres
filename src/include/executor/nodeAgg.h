@@ -309,6 +309,7 @@ typedef struct AggStatePerHashData
 	Agg		   *aggnode;		/* original Agg node, for numGroups etc. */
 	MemoryContext	hash_metacxt;	/* memory for hash table itself */
 	ExprContext	*hashcontext;	/* context for hash table data */
+	HashTableInstrumentation    instrument;
 }			AggStatePerHashData;
 
 

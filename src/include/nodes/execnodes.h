@@ -693,12 +693,31 @@ typedef struct TupleHashEntryData
 #define SH_DECLARE
 #include "lib/simplehash.h"
 
+#define InitTupleHashTableStats(instr, htable, tupctx, addsize) \
+	do{\
+	instr.entrysize = sizeof(MinimalTuple) + addsize; \
+	instr.tuplectx = tupctx; \
+	instr.nbuckets = htable->size; \
+	instr.nbuckets_original = htable->size; \
+	instr.space_peak_hash = MemoryContextMemAllocated(htable->ctx, false); \
+	instr.space_peak_tuples = 0; \
+	}while(0)
+
+#define UpdateTupleHashTableStats(instr, htable) \
+	do{\
+	instr.nbuckets = htable->size; \
+	instr.space_peak_hash = Max(instr.space_peak_hash, MemoryContextMemAllocated(htable->ctx, false)); \
+	instr.space_peak_tuples = Max(instr.space_peak_tuples, MemoryContextMemAllocated(instr.tuplectx, false)); \
+	}while(0)
+
 typedef struct HashTableInstrumentation
 {
+	size_t	entrysize;				/* Includes additionalsize */
 	size_t	nbuckets;				/* number of buckets at end of execution */
 	size_t	nbuckets_original;		/* planned number of buckets */
 	size_t	space_peak_hash;		/* peak memory usage in bytes */
 	size_t	space_peak_tuples;		/* peak memory usage in bytes */
+	MemoryContext	tuplectx;		/* Context where tuples are stored */
 } HashTableInstrumentation;
 
 typedef struct TupleHashTableData
@@ -719,7 +738,6 @@ typedef struct TupleHashTableData
 	ExprState  *cur_eq_func;	/* comparator for input vs. table */
 	uint32		hash_iv;		/* hash-function IV */
 	ExprContext *exprcontext;	/* expression context */
-	HashTableInstrumentation instrument;
 }			TupleHashTableData;
 
 typedef tuplehash_iterator TupleHashIterator;
@@ -885,6 +903,8 @@ typedef struct SubPlanState
 	FmgrInfo   *lhs_hash_funcs; /* hash functions for lefthand datatype(s) */
 	FmgrInfo   *cur_eq_funcs;	/* equality functions for LHS vs. table */
 	ExprState  *cur_eq_comp;	/* equality comparator for LHS vs. table */
+	HashTableInstrumentation instrument;
+	HashTableInstrumentation instrument_nulls; /* instrumentation for nulls hashtable */
 } SubPlanState;
 
 /* ----------------
@@ -1293,6 +1313,7 @@ typedef struct RecursiveUnionState
 	MemoryContext tempContext;	/* short-term context for comparisons */
 	TupleHashTable hashtable;	/* hash table for tuples already seen */
 	MemoryContext tableContext; /* memory context containing hash table */
+	HashTableInstrumentation instrument;
 } RecursiveUnionState;
 
 /* ----------------
@@ -2424,6 +2445,7 @@ typedef struct SetOpState
 	MemoryContext tableContext; /* memory context containing hash table */
 	bool		table_filled;	/* hash table filled yet? */
 	TupleHashIterator hashiter; /* for iterating through hash table */
+	HashTableInstrumentation instrument;
 } SetOpState;
 
 /* ----------------

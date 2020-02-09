@@ -1500,6 +1500,10 @@ build_hash_table(AggState *aggstate, int setno, long nbuckets)
 		hashcxt,
 		tmpcxt,
 		DO_AGGSPLIT_SKIPFINAL(aggstate->aggsplit));
+
+	InitTupleHashTableStats(perhash->instrument,
+			perhash->hashtable->hashtab,
+			hashcxt, additionalsize);
 }
 
 /*
@@ -1878,7 +1882,8 @@ hash_agg_update_metrics(AggState *aggstate, bool from_tape, int npartitions)
 	{
 		hash_mem += MemoryContextMemAllocated(
 			aggstate->perhash[i].hashcontext->ecxt_per_tuple_memory, true);
-		UpdateTupleHashTableStats(aggstate->perhash[i].hashtable, false);
+		UpdateTupleHashTableStats(aggstate->perhash[i].instrument,
+				aggstate->perhash[i].hashtable->hashtab);
 	}
 
 	/* memory for read/write tape buffers, if spilled XXX */

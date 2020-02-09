@@ -188,7 +188,6 @@ BuildTupleHashTableExt(PlanState *parent,
 	hashtable->inputslot = NULL;
 	hashtable->in_hash_funcs = NULL;
 	hashtable->cur_eq_func = NULL;
-	memset(&hashtable->instrument, 0, sizeof(hashtable->instrument));
 
 	/*
 	 * If parallelism is in use, even if the master backend is performing the
@@ -204,7 +203,6 @@ BuildTupleHashTableExt(PlanState *parent,
 		hashtable->hash_iv = 0;
 
 	hashtable->hashtab = tuplehash_create(metacxt, nbuckets, hashtable);
-	UpdateTupleHashTableStats(hashtable, true);
 
 	/*
 	 * We copy the input tuple descriptor just for safety --- we assume all
@@ -283,38 +281,7 @@ BuildTupleHashTable(PlanState *parent,
 void
 ResetTupleHashTable(TupleHashTable hashtable)
 {
-	UpdateTupleHashTableStats(hashtable, false);
 	tuplehash_reset(hashtable->hashtab);
-}
-
-/* Update instrumentation stats */
-void
-UpdateTupleHashTableStats(TupleHashTable hashtable, bool initial)
-{
-	hashtable->instrument.nbuckets = hashtable->hashtab->size;
-	if (initial)
-	{
-		hashtable->instrument.nbuckets_original = hashtable->hashtab->size;
-		// hashtable->instrument.space_peak_hash = hashtable->hashtab->size *
-			// sizeof(TupleHashEntryData);
-		hashtable->instrument.space_peak_hash =
-			MemoryContextMemAllocated(hashtable->hashtab->ctx, true);
-		hashtable->instrument.space_peak_tuples = 0;
-	}
-	else
-	{
-		/* hashtable->entrysize includes additionalsize */
-		size_t hash_size = MemoryContextMemAllocated(hashtable->hashtab->ctx, true);
-		size_t tuple_size = MemoryContextMemAllocated(hashtable->tablecxt, true);
-
-		hashtable->instrument.space_peak_hash = Max(
-			hashtable->instrument.space_peak_hash,
-			hash_size);
-
-		hashtable->instrument.space_peak_tuples = Max(
-			hashtable->instrument.space_peak_tuples, tuple_size);
-				// hashtable->hashtab->members * hashtable->entrysize);
-	}
 }
 
 /*

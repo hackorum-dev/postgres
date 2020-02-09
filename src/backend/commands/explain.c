@@ -1393,13 +1393,13 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			{
 				ExplainIndentText(es);
 				appendStringInfoString(es->str, "Hashtable: ");
-				show_tuplehash_info(&subplanstate->hashtable->instrument, NULL, es);
+				show_tuplehash_info(&subplanstate->instrument, NULL, es);
 			}
 			if (subplanstate->hashnulls)
 			{
 				ExplainIndentText(es);
 				appendStringInfoString(es->str, "Null Hashtable: ");
-				show_tuplehash_info(&subplanstate->hashnulls->instrument, NULL, es);
+				show_tuplehash_info(&subplanstate->instrument_nulls, NULL, es);
 			}
 		}
 		if (es->indent)
@@ -1433,14 +1433,14 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		if (subplanstate && subplanstate->hashtable)
 		{
 			ExplainOpenGroup("Hashtable", "Hashtable", true, es);
-			show_tuplehash_info(&subplanstate->hashtable->instrument, NULL, es);
+			show_tuplehash_info(&subplanstate->instrument, NULL, es);
 			ExplainCloseGroup("Hashtable", "Hashtable", true, es);
 		}
 
 		if (subplanstate && subplanstate->hashnulls)
 		{
 			ExplainOpenGroup("Null Hashtable", "Null Hashtable", true, es);
-			show_tuplehash_info(&subplanstate->hashnulls->instrument, NULL, es);
+			show_tuplehash_info(&subplanstate->instrument_nulls, NULL, es);
 			ExplainCloseGroup("Null Hashtable", "Null Hashtable", true, es);
 		}
 	}
@@ -1971,14 +1971,14 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			{
 				SetOpState *sos = castNode(SetOpState, planstate);
 				if (sos->hashtable)
-					show_tuplehash_info(&sos->hashtable->instrument, NULL, es);
+					show_tuplehash_info(&sos->instrument, NULL, es);
 			}
 			break;
 		case T_RecursiveUnion:
 			{
 				RecursiveUnionState *rus = (RecursiveUnionState *)planstate;
 				if (rus->hashtable)
-					show_tuplehash_info(&rus->hashtable->instrument, NULL, es);
+					show_tuplehash_info(&rus->instrument, NULL, es);
 			}
 			break;
 		case T_Group:
@@ -2394,7 +2394,7 @@ show_agg_keys(AggState *astate, List *ancestors,
 								 ancestors, es);
 			Assert(astate->num_hashes <= 1);
 			if (astate->num_hashes)
-				show_tuplehash_info(&astate->perhash[0].hashtable->instrument, astate, es);
+				show_tuplehash_info(&astate->perhash[0].instrument, astate, es);
 		}
 
 		ancestors = list_delete_first(ancestors);
@@ -2421,7 +2421,7 @@ show_grouping_sets(AggState *aggstate, Agg *agg,
 
 	show_grouping_set_info(aggstate, agg, NULL, context, useprefix, ancestors,
 			aggstate->num_hashes ?
-			&aggstate->perhash[setno++].hashtable->instrument : NULL,
+			&aggstate->perhash[setno++].instrument : NULL,
 			es);
 
 	foreach(lc, agg->chain)
@@ -2434,7 +2434,7 @@ show_grouping_sets(AggState *aggstate, Agg *agg,
 				aggnode->aggstrategy == AGG_MIXED)
 		{
 			Assert(setno < aggstate->num_hashes);
-			inst = &aggstate->perhash[setno++].hashtable->instrument;
+			inst = &aggstate->perhash[setno++].instrument;
 		}
 
 		show_grouping_set_info(aggstate, aggnode, sortnode,
@@ -3243,7 +3243,7 @@ show_tidbitmap_info(BitmapHeapScanState *planstate, ExplainState *es)
 		}
 	}
 
-	show_tuplehash_info(&planstate->instrument, es, NULL);
+	show_tuplehash_info(&planstate->instrument, NULL, es);
 }
 
 /*
