@@ -417,6 +417,9 @@ ReorderBufferGetTupleBuf(ReorderBuffer *rb, Size tuple_len)
 
 	alloc_len = tuple_len + SizeofHeapTupleHeader;
 
+	if (alloc_len < MaxHeapTupleSize)
+		alloc_len = MaxHeapTupleSize;
+
 	tuple = (ReorderBufferTupleBuf *)
 		MemoryContextAlloc(rb->tup_context,
 						   sizeof(ReorderBufferTupleBuf) +
