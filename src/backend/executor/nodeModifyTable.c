@@ -361,7 +361,14 @@ ExecInsert(ModifyTableState *mtstate,
 	 */
 	resultRelInfo = estate->es_result_relation_info;
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
-
+	if (resultRelationDesc->rd_rel->relpersistence == RELPERSISTENCE_SESSION)
+	{
+		int i;
+		for (i = 0; i < resultRelInfo->ri_NumIndices; i++)
+		{
+			InitGTTIndexes(resultRelInfo->ri_IndexRelationDescs[i]);
+		}
+	}
 	/*
 	 * BEFORE ROW INSERT Triggers.
 	 *

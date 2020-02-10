@@ -80,6 +80,15 @@ static void set_baserel_partition_key_exprs(Relation relation,
 static void set_baserel_partition_constraint(Relation relation,
 											 RelOptInfo *rel);
 
+static bool
+is_index_valid(Relation index)
+{
+	if (!index->rd_index->indisvalid)
+		return false;
+	if (index->rd_rel->relpersistence == RELPERSISTENCE_SESSION)
+		InitGTTIndexes(index);
+	return true;
+}
 
 /*
  * get_relation_info -
@@ -205,7 +214,7 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 			 * still needs to insert into "invalid" indexes, if they're marked
 			 * indisready.
 			 */
-			if (!index->indisvalid)
+			if (!is_index_valid(indexRelation))
 			{
 				index_close(indexRelation, NoLock);
 				continue;
@@ -704,7 +713,7 @@ infer_arbiter_indexes(PlannerInfo *root)
 		idxRel = index_open(indexoid, rte->rellockmode);
 		idxForm = idxRel->rd_index;
 
-		if (!idxForm->indisvalid)
+		if (!is_index_valid(idxRel))
 			goto next;
 
 		/*
