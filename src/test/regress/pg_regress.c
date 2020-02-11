@@ -2290,6 +2290,7 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 		FILE	   *pg_conf;
 		const char *env_wait;
 		int			wait_seconds;
+		const char *env_launcher;
 
 		/*
 		 * Prepare the temp instance
@@ -2423,15 +2424,26 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 		 * Start the temp postmaster
 		 */
 		header(_("starting postmaster"));
-		snprintf(buf, sizeof(buf),
-				 "\"%s%spostgres\" -D \"%s/data\" -F%s "
-				 "-c \"listen_addresses=%s\" -k \"%s\" "
-				 "> \"%s/log/postmaster.log\" 2>&1",
-				 bindir ? bindir : "",
-				 bindir ? "/" : "",
-				 temp_instance, debug ? " -d 5" : "",
-				 hostname ? hostname : "", sockdir ? sockdir : "",
-				 outputdir);
+		env_launcher = getenv("PGLAUNCHER");
+		if (env_launcher != NULL)
+			snprintf(buf, sizeof(buf),
+					"\"%s\" -D \"%s/data\" -F%s "
+					"-c \"listen_addresses=%s\" -k \"%s\" "
+					"> \"%s/log/postmaster.log\" 2>&1",
+					env_launcher,
+					temp_instance, debug ? " -d 5" : "",
+					hostname ? hostname : "", sockdir ? sockdir : "",
+					outputdir);
+		else
+			snprintf(buf, sizeof(buf),
+					"\"%s%spostgres\" -D \"%s/data\" -F%s "
+					"-c \"listen_addresses=%s\" -k \"%s\" "
+					"> \"%s/log/postmaster.log\" 2>&1",
+					bindir ? bindir : "",
+					bindir ? "/" : "",
+					temp_instance, debug ? " -d 5" : "",
+					hostname ? hostname : "", sockdir ? sockdir : "",
+					outputdir);
 		postmaster_pid = spawn_process(buf);
 		if (postmaster_pid == INVALID_PID)
 		{

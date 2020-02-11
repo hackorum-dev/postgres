@@ -751,6 +751,7 @@ sub start
 	my $port   = $self->port;
 	my $pgdata = $self->data_dir;
 	my $name   = $self->name;
+	my @launcher = defined $ENV{PGLAUNCHER} ? ('-p', $ENV{PGLAUNCHER}) : ();
 	my $ret;
 
 	BAIL_OUT("node \"$name\" is already running") if defined $self->{_pid};
@@ -767,7 +768,7 @@ sub start
 		# Note: We set the cluster_name here, not in postgresql.conf (in
 		# sub init) so that it does not get copied to standbys.
 		$ret = TestLib::system_log('pg_ctl', '-D', $self->data_dir, '-l',
-			$self->logfile, '-o', "--cluster-name=$name", 'start');
+			$self->logfile, '-o', "--cluster-name=$name", @launcher, 'start');
 	}
 
 	if ($ret != 0)
@@ -867,6 +868,7 @@ sub restart
 	my $pgdata  = $self->data_dir;
 	my $logfile = $self->logfile;
 	my $name    = $self->name;
+	my @launcher = defined $ENV{PGLAUNCHER} ? ('-p', $ENV{PGLAUNCHER}) : ();
 
 	print "### Restarting node \"$name\"\n";
 
@@ -875,7 +877,7 @@ sub restart
 		delete $ENV{PGAPPNAME};
 
 		TestLib::system_or_bail('pg_ctl', '-D', $pgdata, '-l', $logfile,
-			'restart');
+			@launcher, 'restart');
 	}
 
 	$self->_update_pid(1);
