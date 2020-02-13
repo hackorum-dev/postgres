@@ -1780,8 +1780,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			if (plan->qual)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
-			if (es->analyze)
-				show_tidbitmap_info((BitmapHeapScanState *) planstate, es);
+			show_tidbitmap_info((BitmapHeapScanState *) planstate, es);
 			break;
 		case T_SampleScan:
 			show_tablesample(((SampleScan *) plan)->tablesample,
@@ -3243,6 +3242,8 @@ show_tidbitmap_info(BitmapHeapScanState *planstate, ExplainState *es)
 			appendStringInfoChar(es->str, '\n');
 		}
 	}
+
+	show_tuplehash_info(&planstate->instrument, es, NULL);
 }
 
 /*

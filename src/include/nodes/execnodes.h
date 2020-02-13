@@ -1611,6 +1611,7 @@ typedef struct BitmapHeapScanState
 	TBMSharedIterator *shared_tbmiterator;
 	TBMSharedIterator *shared_prefetch_iterator;
 	ParallelBitmapHeapState *pstate;
+	HashTableInstrumentation instrument;
 } BitmapHeapScanState;
 
 /* ----------------
