@@ -53,6 +53,7 @@
   </partintro>
 
   &start;
+  &architecture;
   &query;
   &advanced;
 
@@ -277,6 +278,7 @@
   &sourcerepo;
   &docguide;
   &limits;
+  &glossary;
   &acronyms;
 
  </part>

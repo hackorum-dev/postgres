@@ -8,9 +8,10 @@
 <!ENTITY problems   SYSTEM "problems.sgml">
 
 <!-- tutorial -->
-<!ENTITY advanced   SYSTEM "advanced.sgml">
-<!ENTITY query      SYSTEM "query.sgml">
-<!ENTITY start      SYSTEM "start.sgml">
+<!ENTITY start         SYSTEM "start.sgml">
+<!ENTITY architecture  SYSTEM "architecture.sgml">
+<!ENTITY query         SYSTEM "query.sgml">
+<!ENTITY advanced      SYSTEM "advanced.sgml">
 
 <!-- user's guide -->
 <!ENTITY array      SYSTEM "array.sgml">
@@ -169,6 +170,7 @@
 <!ENTITY release-13     SYSTEM "release-13.sgml">
 
 <!ENTITY limits     SYSTEM "limits.sgml">
+<!ENTITY glossary   SYSTEM "glossary.sgml">
 <!ENTITY acronyms   SYSTEM "acronyms.sgml">
 
 <!ENTITY features-supported   SYSTEM "features-supported.sgml">

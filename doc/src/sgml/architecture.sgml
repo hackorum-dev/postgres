@@ -1,0 +1,562 @@
+<!-- doc/src/sgml/architecture.sgml -->
+
+ <chapter id="tutorial-architecture">
+  <title>The Architecture</title>
+
+  <para>
+   Every DBMS implements basic strategies to achieve a fast and
+   robust system. This chapter provides an overview about some
+   of the techniques which are used by <productname>
+   PostgreSQL</productname> to reach this aim.
+  </para>
+
+  <sect1 id="tutorial-ram-proc-file">
+   <title>Collabortion of Processes, RAM, and Files</title>
+   <para>
+    As is a matter of course, in a client/server architecture
+    clients do not have direct access to the database. Instead,
+    at the server side there is a group of processes, which
+    receive all requests comming from client applications,
+    handle them, and send resulting information back to
+    the clients.
+    These server-side processes work in close cooperation to
+    each other. Together with their common
+    <xref linkend="glossary-shared-memory"/> they are called an
+    <link linkend="glossary-instance">Instance</link>.
+   </para>
+
+   <para>
+    The instance is initiated by the
+    <xref linkend="glossary-postmaster"/> process.
+    He loads the configuration files, allocates the
+    <firstterm>Shared Memory</firstterm>
+    and starts the comprehensive network of processes:
+    <xref linkend="glossary-background-writer"/>,
+    <xref linkend="glossary-checkpointer"/>,
+    <xref linkend="glossary-wal-writer"/>,
+    <xref linkend="glossary-archiver"/>,
+    <xref linkend="glossary-auto-vacuum"/>,
+    <xref linkend="glossary-stats-collector"/>,
+    <xref linkend="glossary-log-writer"/>, and more.
+    <xref linkend="tutorial-architecture-figure"/> visualizes
+    main aspects of their collaboration.
+   </para>
+
+   <para>
+    Whenever a client application tries to connect to a
+    <xref linkend="glossary-database"/>, this request is handled
+    in a first step by the <firstterm>Postmaster
+    process</firstterm>. He checks the authorization, starts a
+    new <xref linkend="glossary-backend-process"/>,
+    and instructs the client application to connect to this
+    new <firstterm>Backend process</firstterm>. All further
+    client requests go to this process and are handled
+    by him. Thus - after the initial phase - each client
+    application communicates with exactly
+    one <firstterm>Backend process</firstterm>.
+   </para>
+
+   <figure id="tutorial-architecture-figure">
+    <title>Architecture</title>
+    <mediaobject>
+     <imageobject role="html">
+      <!-- attribute 'width=..px' is necessary to keep font-size of SVG text
+           in correlation with font-size of surrounding HTML  -->
+      <imagedata fileref="images/ram-proc-file-raw.svg" format="SVG" width="900px" />
+     </imageobject>
+     <imageobject role="fo">
+      <!-- For PDF attribute 'width=100%' is necessary to keep complete SVG visible
+           on the page, which has a fixed width. Font sizes will be adopted.  -->
+      <imagedata fileref="images/ram-proc-file-raw.svg" format="SVG" width="100%" />
+     </imageobject>
+    </mediaobject>
+   </figure>
+
+   <para>
+    Client requests (SELECT, UPDATE, ...) usually leads to the
+    necessity to read or write some data. In an first attempt
+    the client's <firstterm>Backend process</firstterm> tries
+    to get the information out of <firstterm>Shared
+    Memory</firstterm>. This <firstterm>Shared
+    Memory</firstterm> is a mirror of parts of the
+    <xref linkend="glossary-heap"/> and
+    <xref linkend="glossary-index"/> files. Because files are
+    much huger than memory, it is easily possible that
+    the desired information is not (completely) available
+    in the RAM. In this case the <firstterm>Backend process
+    </firstterm> must transfer additional file pages to
+    <firstterm>Shared Memory</firstterm>. Files are physically
+    organized in pages. Every transfer between files and
+    RAM is performed in units of complete pages while retaining
+    their size and layout.
+   </para>
+
+   <para>
+    Reading file pages is notedly slower than reading
+    RAM. This is the main motivation for the existence of
+    <firstterm>Shared Memory</firstterm>. As soon as one
+    of the <firstterm>Backend processes</firstterm> has done
+    the job, this pages are available for all other
+    <firstterm>Backend processes</firstterm> for direct
+    access in RAM.
+   </para>
+
+   <para>
+    <firstterm>Shared Memory</firstterm> is limited in size.
+    Sooner or later it is necessary to overwrite old RAM
+    pages. As long as the content of such pages hasn't
+    changed, this is not a problem. But in
+    <firstterm>Shared Memory</firstterm> also write
+    actions take place
+    - performed by any of the <firstterm>Backend
+    processes</firstterm> (or the
+    <firstterm>Auto Vacuum</firstterm> or other
+    processes).
+    Such modified pages are called
+    <firstterm>dirty pages</firstterm>.
+    Before <firstterm>dirty pages</firstterm> can be overwritten,
+    they must be saved to disk. This is a two-step process.
+   </para>
+
+   <para>
+    First, whenever the content of a page changes, a
+    <xref linkend="glossary-wal-record"/> is created out
+    of the delta-information (difference between old and
+    new content) and stored in another area of the
+    <firstterm>Shared Memory</firstterm>. These
+    <firstterm>WAL records</firstterm> are read by the
+    <firstterm>WAL writer</firstterm> process,
+    who runs in parallel to the <firstterm>Backend
+    processes</firstterm> and all other processes of
+    the <firstterm>instance</firstterm>. He writes
+    the continuously arising <firstterm>WAL
+    records</firstterm> to
+    the end of the current <firstterm>WAL
+    file</firstterm>. Because of the sequential
+    nature of this writing, it is much faster than
+    the more or less random access
+    to data files with <firstterm>heap</firstterm>
+    and <firstterm>index</firstterm> information.
+    As mentioned, this WAL-writing happens
+    in an independent process. Nevertheless all
+    <firstterm>WAL records</firstterm> created out of one
+    <firstterm>dirty page</firstterm> must be transfered
+    to disk before the <firstterm>dirty page</firstterm>
+    itself can be transfered to disk (???).
+   </para>
+
+   <para>
+    Second, the transfer of <firstterm>dirty pages</firstterm>
+    from <firstterm>Shared Memory</firstterm> to files must
+    take place. This is the primarily duty of the
+    <firstterm>Background Writer</firstterm> process. Because
+    huge I/O activities can block other processes significantly,
+    he starts periodically and acts only for a short period.
+    Doing so, his expensive I/O activities are spread over
+    time avoiding huge I/O peaks. Also the <firstterm>
+    Checkpointer</firstterm> process transfers
+    <firstterm>dirty pages</firstterm> to files, see next
+    paragraph.
+   </para>
+
+   <para>
+    The <firstterm>Checkpointer</firstterm> has a special
+    duty. As its name suggests, he has to create
+    <firstterm>Checkpoints</firstterm>. Such a
+    <xref linkend="glossary-checkpoint"/> is a point in time
+    when all older <firstterm>dirty pages</firstterm>,
+    all older <firstterm>WAL records</firstterm>, and
+    lastly a special <firstterm>Checkpoint record
+    </firstterm> have been written and flushed to disk.
+    In consequence, after a <firstterm>Checkpoint</firstterm>
+    data files and <firstterm>WAL files</firstterm> are in sync.
+    In case of a recovery (after a crash of the instance)
+    it is known, that the information of all
+    <firstterm>WAL records</firstterm> preceding
+    the last <firstterm>Checkpoint record</firstterm>
+    is already integrated into the data files. This
+    speeds up a possibly occurring recovery.
+   </para>
+
+   <para>
+    In correlation with data changes,
+    <firstterm>WAL records</firstterm> arise and are writen
+    to <firstterm>WAL files</firstterm>.
+    Those <firstterm>WAL files</firstterm> - in combination with
+    a previously taken <firstterm>Base Backup</firstterm> -
+    are necessary to restore a database after a crash of the
+    disk, where data files have been stored. Therefore it is
+    recommended to transfer a copy of the <firstterm>
+    WAL files</firstterm>
+    to a second, independent place. The purpose of the
+    <xref linkend="glossary-archiver"/> process is to perform
+    this copy action.
+   </para>
+
+   <para>
+    The <firstterm>Stats Collector</firstterm> process collects
+    counter about accesses to <firstterm>SQL
+    objects</firstterm> like tables, rows, indexes, pages,
+    and others. He stores the obtained information in system
+    tables.
+   </para>
+
+   <para>
+    The <firstterm>Log Writer</firstterm> process writes
+    readable text lines about serious and non-serious events,
+    which can happen during database access, e.g.: wrong password,
+    no permission, long-running query, ... .
+   </para>
+
+  </sect1>
+
+  <sect1 id="tutorial-cluster-db-schema">
+   <title>Cluster, Database, Schema</title>
+   <para>
+    <productname>PostgreSQL</productname> organizes data and
+    meta data in a strict hierarchy and allows connections
+    - depending on the user's rights - to access objects of
+    different hierarchy levels.
+   </para>
+   <sect2 id="tutorial-ownership">
+    <title>Ownership</title>
+
+    <para>
+     <xref linkend="tutorial-internal-objects-hierarchy-figure"/>
+     shows the relation of internal objects to each other, especially
+     their hierarchical nature.
+    </para>
+
+    <para>
+     On a <xref linkend="glossary-server"/>
+     exists one or more <xref linkend="glossary-cluster"/>.
+     A <firstterm>cluster</firstterm> essentially contains
+     <link linkend="managing-databases">databases</link>, but also
+     <link linkend="manage-ag-tablespaces">tablespaces</link>,
+     <link linkend="replication-origins">replication origins</link>,
+     subscriptions for
+     <link linkend="logical-replication">logical replication</link>,
+     <link linkend="database-roles">roles</link>, and information about all
+     <link linkend="catalog-pg-database">database names</link>
+     within this cluster.
+     <!--, as well as associated
+     comments, descriptions and toast-tables for such objects. -->
+     A <firstterm>database</firstterm> essentially contains
+     <firstterm>schemas</firstterm>, but also
+     <link linkend="collation">collations</link>, and - if created -
+     <link linkend="extend-extensions">extensions</link>.
+     A <firstterm>schema</firstterm> contains such objects
+     with which users interact mostly: <firstterm>tables,
+     views</firstterm>, and many more.
+    </para>
+
+    <figure id="tutorial-internal-objects-hierarchy-figure">
+     <title>Hierarchy of Internal Objects</title>
+     <mediaobject>
+      <imageobject role="html">
+       <!-- attribute 'width=..px' is necessary to keep font-size of SVG text
+            in correlation with font-size of surrounding HTML  -->
+       <imagedata fileref="images/internal-objects-hierarchy-raw.svg" format="SVG" width="900px" />
+      </imageobject>
+      <imageobject role="fo">
+       <!-- For PDF attribute 'width=100%' is necessary to keep complete SVG visible
+            on the page, which has a fixed width. Font sizes will be adopted.  -->
+       <imagedata fileref="images/internal-objects-hierarchy-raw.svg" format="SVG" width="100%" />
+      </imageobject>
+     </mediaobject>
+    </figure>
+
+    <para>
+     The hierarchy is strict, which means that each object has
+     exactly one parent, e.g.: each <firstterm>table</firstterm>
+     or <firstterm>view</firstterm> belongs to a certain
+     <firstterm>schema</firstterm>, it cannot belong to another
+     <firstterm>schema</firstterm>. An <firstterm>extension
+     </firstterm> like a <firstterm>foreign data wrapper
+     </firstterm> belongs to exactly one
+     <firstterm>database</firstterm>. If it is needed in another
+     <firstterm>database</firstterm> as well, it must be installed
+     twice.
+    </para>
+
+    <para>
+     <firstterm>Schemas</firstterm> contain <firstterm>SQL objects
+     </firstterm> of different type: <firstterm>table, view,
+     materialized view, index, constraint, sequence, function,
+     procedure, trigger, data type, operator</firstterm>, and more.
+     A schema is a namespace for all of its objects, independent
+     from the object type, and ensures that within its scope object
+     names are unique. E.g.: It is not possible
+     to have a table <literal>employee</literal> and a view
+     <literal>employee</literal> within the same
+     <firstterm>schema</firstterm>. But it is possible to have
+     two tables <literal>employee</literal> in different
+     <firstterm>schemas</firstterm>. In this case the two tables
+     are different objects and absolutely independent from each
+     other.
+    </para>
+
+   </sect2>
+
+   <sect2 id="tutorial-visibility">
+    <title>Visibility</title>
+    <para>
+     Independent from this strict 'belong-to' hierarchy in most
+     cases the knowledge about objects of the same or another
+     level is available via the <firstterm>system catalog</firstterm>.
+     Also the access to them is possible, if appropriate privileges
+     are granted.
+     All connections act at the database level (bold ellipse in the
+     above figure). From here they know about and have access to
+     nearly all objects:
+     <itemizedlist>
+      <listitem>
+       <para>
+        Their direct child objects <firstterm>schema, extension,
+        </firstterm> and <firstterm>collation</firstterm>. They can
+        access different schemas and use all extensions and
+        collations of this database.
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+        Their grandchild objects <firstterm>tables, view, ...
+        </firstterm>. The sequence of schemas for locating
+        such objects is defined via the variable <firstterm>
+        search_path</firstterm>.
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+        All <firstterm>tablespaces</firstterm>. If a tablespace is
+        defined in any database, it is automatically visible and
+        active in all other databases. It's name cannot be used
+        in any of the other databases for creating an additional
+        tablespace.
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+        All <firstterm>roles</firstterm>. If a role is defined
+        in any database, it is visible and active in all
+        other databases. This implies, that the same
+        role cannot be created again in a different
+        <firstterm>database</firstterm>, it
+        exists already. But a DBA can grant different
+        privilegs to the same roles depending on databases.
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+        All <firstterm>database names</firstterm> of this cluster.
+        Although the database names are known, the current
+        connection is not able to switch to a different
+        <firstterm>database</firstterm>. To do so, a different
+        connection is necessary. This behaviour results from the
+        implementation of connections.
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+        Cluster limits are unbreachable boarders for a single
+        connection. No information about other clusters or their
+        content is visible or accessible. Only <firstterm>
+        foreing data wrappers</firstterm> and <firstterm>
+        replication</firstterm> mechanisms are able to communicate
+        across cluster limits. To do so, they use additional
+        communication lines.
+       </para>
+      </listitem>
+
+     </itemizedlist>
+    </para>
+   </sect2>
+
+   <sect2 id="tutorial-initial-objects">
+    <title>Initial Objects</title>
+
+    <para>
+     As a result of its initialization process
+     (<command>initdb</command>) a cluster
+     contains certain objects with predefined names. When
+     DBAs create more objects to satisfy their needs, these
+     user-created objects fit into the same hierarchy
+     and comply to the same visibility rules.
+     <xref linkend="tutorial-cluster-db-schema-figure"/>
+     shows the objects and their names.
+    </para>
+
+    <figure id="tutorial-cluster-db-schema-figure">
+     <title>Cluster, Database, Schema</title>
+     <mediaobject>
+      <imageobject role="html">
+       <!-- attribute 'width=..px' is necessary to keep font-size of SVG text
+            in correlation with font-size of surrounding HTML  -->
+       <imagedata fileref="images/cluster-db-schema-raw.svg" format="SVG" width="900px" />
+      </imageobject>
+      <imageobject role="fo">
+       <!-- For PDF attribute 'width=100%' is necessary to keep complete SVG visible
+            on the page, which has a fixed width. Font sizes will be adopted.  -->
+       <imagedata fileref="images/cluster-db-schema-raw.svg" format="SVG" width="100%" />
+      </imageobject>
+     </mediaobject>
+    </figure>
+
+    <para>
+     By default the command <command>initdb</command> creates the
+     cluster <literal>data</literal>.
+    </para>
+
+    <para>
+     <literal>template0</literal> is the very first
+     <firstterm>database</firstterm> of any <firstterm>
+     cluster</firstterm>. <literal>template0</literal>
+     is created by C-routines during the initialization phase
+     of the <firstterm>cluster</firstterm>.
+     In a second step <literal>template1</literal> is generated
+     as a copy of <literal>template0</literal> and finally
+     <literal>postgres</literal> as a copy of
+     <literal>template1</literal>. All other
+     <link linkend="app-createdb">new databases</link>
+     of this <firstterm>cluster</firstterm>,
+     such as <literal>my_db</literal>, are also copied from
+     <literal>template1</literal>. Due to the special
+     role of <literal>template0</literal> as the origin
+     of all other <firstterm>databases</firstterm>, no client
+     can connect to it.
+    </para>
+
+    <para>
+     The schema <literal>public</literal> acts as the default
+     schema and contains all such
+     <firstterm>SQL objects</firstterm>, which are created
+     within <literal>public</literal> or without using any schema
+     name. <literal>public</literal> should not contain user defined
+     <firstterm>SQL objects</firstterm>. It is recommended to
+     create a separate <firstterm>schema</firstterm> which
+     holds individual objects like application-specific tables or
+     views.
+    </para>
+
+    <para>
+     <literal>pg_catalog</literal> is a schema for all tables
+     and views of the <xref linkend="glossary-system-catalog"/>.
+     <literal>information_schema</literal> is a schema for several
+     tables and views of the <firstterm>System Catalog</firstterm>
+     in a way, which conforms to the SQL standard.
+    </para>
+
+   </sect2>
+  </sect1>
+
+  <sect1 id="tutorial-directories">
+   <title>Directory Structure</title>
+
+   <para>
+    <productname>PostgreSQL</productname> organizes long lasting
+    data as well as temporary state information about transactions
+    or replication actions in the file system. Every
+    <xref linkend="glossary-cluster"/> has its own root directory
+    anywhere in the file system. In many cases, the environment
+    variable <literal>PGDATA</literal> points to this directory.
+    The example of the following survey, which is shown in
+    <xref linkend="tutorial-directories-figure"/>, uses
+    <literal>data</literal> as the name of this root directory.
+   </para>
+
+   <figure id="tutorial-directories-figure">
+    <title>Directory Structure</title>
+    <mediaobject>
+     <imageobject role="html">
+      <!-- attribute 'width=..px' is necessary to keep font-size of SVG text
+           in correlation with font-size of surrounding HTML  -->
+      <imagedata fileref="images/directories-raw.svg" format="SVG" width="900px" />
+     </imageobject>
+     <imageobject role="fo">
+      <!-- For PDF attribute 'width=100%' is necessary to keep complete SVG visible
+           on the page, which has a fixed width. Font sizes will be adopted.  -->
+      <imagedata fileref="images/directories-raw.svg" format="SVG" width="100%" />
+     </imageobject>
+    </mediaobject>
+   </figure>
+
+   <para>
+    <literal>data</literal> contains many subdirectories and
+    some files, all of which are necessary to store long lasting
+    as well as temporary data. The following paragraphs
+    describe the files and subdirectories in
+    <literal>data</literal>.
+   </para>
+
+   <para>
+    <literal>base</literal> is a subdirectory in which one
+    subdirectory per <firstterm>database</firstterm> exists.
+    The names of those sudirectories consists of numbers.
+    These are the internal
+    <firstterm>Object Identifiers (OID)</firstterm>, which are
+    numbers to identify the database definition in the
+    <xref linkend="glossary-system-catalog"/>.
+   </para>
+
+   <para>
+    Within the database-specific
+    subdirectories there are many files. Primarily they contain
+    the <firstterm>heap</firstterm> and <firstterm>
+    index</firstterm>. But there are also optimization information
+    like <link linkend="storage-fsm">Free Space Maps</link> or
+    <link linkend="storage-vm">Visibility Maps</link>.
+   </para>
+
+   <para>
+    Another important subdirectory is <literal>global</literal>.
+    In analogy to the <firstterm>database</firstterm>-specific
+    subdirectories, there are files containing information about
+    <xref linkend="glossary-global-sql-object"/>s. One type
+    of such <firstterm>Global Objects</firstterm> are
+    <firstterm>tablespaces</firstterm>. In
+    <literal>global</literal> there are information about
+    the <firstterm>tablespaces</firstterm>, neither the
+    <firstterm>tablespaces</firstterm> itself nor the
+    symbolic links to them.
+   </para>
+
+   <para>
+    The subdirectory <literal>pg_wal</literal> contains
+    <link linkend="glossary-wal-file">WAL files</link>.
+    They arise and grow in parallel with data changes in the
+    <firstterm>cluster</firstterm> and remain alive as long as
+    they are required for recovery, archiving, or replication.
+    Please note that they belong to the complete cluster, not
+    to single databases.
+   </para>
+
+   <para>
+    The subdirectory <literal>pg_xact</literal> contains
+    information about the status of each transaction.
+   </para>
+
+   <para>
+    In <literal>pg_tblspc</literal> there are symbolic links
+    that point to directories containing such<firstterm>
+    SQL objects</firstterm> that are created within
+    <firstterm>tablespaces</firstterm>.
+   </para>
+
+   <para>
+    In the directory <literal>data</literal> exists also some
+    files. As long as the
+    <firstterm>cluster</firstterm> is up and running, the file
+    <literal>postmaster.pid</literal> exists and contains the ID of
+    the <firstterm>Postmaster</firstterm> process. In many cases
+    the configuration files of this <firstterm>cluster</firstterm>
+    are stored here.
+   </para>
+
+  </sect1>
+
+ </chapter>

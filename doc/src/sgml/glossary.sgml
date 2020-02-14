@@ -1,0 +1,502 @@
+<!-- doc/src/sgml/glossary.sgml -->
+
+<appendix id="glossary">
+ <title>Glossary</title>
+
+ <para>
+  The glossary contains a collection of
+  <productname>PostgreSQL</productname> related terms.
+  In order to keep such terms together, which are related
+  to each other or can be easily confused, they are not
+  ordered alphabetically.
+ </para>
+ <para>
+  In some cases terms are extended by an alternative wording
+  in parenthesize, e.g.: '(or: Database Server)'. Such deviant
+  formulations are sometimes used at various points in the
+  documentation, but will be replaced by the preferred term
+  in a future release.
+ </para>
+
+ <glosslist>
+
+  <glossentry id="glossary-server">
+   <glossterm>Server (or: Host)</glossterm>
+   <glossdef>
+    <para>
+     The term <firstterm>server</firstterm> denotes real hardware,
+     a container, or a Virtual Machine.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-instance">
+   <glossterm>Instance (or: Database Server, or: Backend Server)</glossterm>
+   <glossdef>
+    <para>
+     An <link linkend="app-postgres">instance</link> is a group
+     of processes plus their common
+     <firstterm>Shared Memory</firstterm> running on a single
+     <firstterm>server</firstterm>. The instance handles all key
+     features of a DBMS: read and write access to files and
+     <firstterm>Shared Memory</firstterm>, assurance of the
+     <firstterm>ACID paradigm</firstterm>, <firstterm>MVCC</firstterm>,
+     <firstterm>connections</firstterm> to client programms,
+     <firstterm>backup</firstterm>, <firstterm>recovery</firstterm>,
+     <firstterm>replication</firstterm>, <firstterm>privileges</firstterm>, … .
+    </para>
+    <para>
+     An instance manages exactly one <firstterm>cluster</firstterm>.
+    </para>
+    <para>
+     Many <firstterm>instances</firstterm> can run on the same
+     <firstterm>server</firstterm> – as
+     long as they use different IP ports and manage different
+     <firstterm>clusters</firstterm>. Different
+     <firstterm>instances</firstterm> on a
+     <firstterm>server</firstterm> may use the same or different
+     versions of PostgreSQL.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-cluster">
+   <glossterm>Cluster (or: Database Cluster)</glossterm>
+   <glossdef>
+    <para>
+     A <link linkend="app-initdb">cluster</link> is a
+     group of 3 or more databases (<literal>template0</literal>,
+     <literal>template1</literal>, <literal>postgres</literal>,
+     ...) plus their <link linkend="glossary-global-sql-object">
+     Global SQL objects</link>. The cluster is managed by exactly one
+     <firstterm>instance</firstterm>.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-database">
+   <glossterm>Database</glossterm>
+   <glossdef>
+    <para>
+     A <link linkend="manage-ag-overview">database</link> is
+     a named collection of <firstterm>SQL objects</firstterm>.
+     The database is stored in files of a single directory plus
+     – optionally - in additional tablespaces.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-schema">
+   <glossterm>Schema</glossterm>
+   <glossdef>
+    <para>
+     A <link linkend="ddl-schemas">schema</link> is a
+     namespace for <firstterm>SQL objects</firstterm>, which
+     reside in the same <firstterm>database</firstterm>. The
+     names of such objects are unique - even across different
+     types of objects. Same object names can only
+     be used in different schemas.
+    </para>
+    <para>
+     There are some predefined schemas:
+    </para>
+    <para>
+     Schema <literal>public</literal>: A schema for objects, which
+     were created within this schema or outside of any schema.
+     It is recommended that users do not store their new
+     objects in <literal>public</literal>. Instead, they shall
+     create their own schema, e.g. <literal>my_schema</literal> and
+     store everything over there.
+    </para>
+    <para>
+     Schema <literal>pg_catalog</literal>: A schema for all tables and
+     views of the <literal>System Catalog</literal>.
+    </para>
+    <para>
+     Schema <literal>information_schema</literal>: A schema for several
+     tables and views of the <literal>System Catalog</literal> in a way,
+     which conforms to the SQL standard.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-system-catalog">
+   <glossterm>System Catalog</glossterm>
+   <glossdef>
+    <para>
+     The <link linkend="ddl-schemas-catalog">
+     System Catalog</link> is a collection of tables and
+     views, which describes the structure of all
+     <firstterm>SQL objects</firstterm> of this
+     <firstterm>database</firstterm> and the
+     <firstterm>Global SQL objects</firstterm> of the
+     <firstterm>cluster</firstterm>.
+     The System Catalog resides in the schema
+     <literal>pg_catalog</literal>. Main parts are mirrored as
+     views in the schema <literal>information_schema</literal>.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-catalog">
+   <glossterm>Catalog</glossterm>
+   <glossdef>
+    <para>
+     The SQL standard uses the standalone term
+     <link linkend=" manage-ag-overview">Catalog</link>
+     for what is called a <firstterm>database</firstterm> in
+     PostgreSQL's terminology.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-sql-object">
+   <glossterm>SQL Object</glossterm>
+   <glossdef>
+    <para>
+     An <link linkend="manage-ag-overview">SQL object</link>
+     is a <firstterm>table, view, materialized view, index,
+     constraint, sequence, function, procedure, trigger, data type,
+     operator</firstterm>, … . Every SQL object belongs
+     to exactly one <firstterm>schema</firstterm>. Within this
+     <firstterm>schema</firstterm> its name is unique.
+    </para>
+    <para>
+     See also: <link linkend="glossary-global-sql-object">
+     Global SQL objects</link>.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-global-sql-object">
+   <glossterm>Global SQL Object</glossterm>
+   <glossdef>
+    <para>
+     Not all objects belong to a certain
+     <firstterm>schema</firstterm> but to their
+     <firstterm>database</firstterm> or even to the complete
+     <firstterm>cluster</firstterm>. Therefore they are called
+     <firstterm>Global SQL objects</firstterm>.
+     <firstterm>Collations</firstterm> and <firstterm>Extensions
+     </firstterm> like <firstterm>foreing data wrappers</firstterm>
+     reside at the database level;
+     <firstterm>database names</firstterm>,
+     <firstterm>roles</firstterm>,
+     <firstterm>tablespaces</firstterm>,
+     <firstterm>replication origins</firstterm>, and
+     subscriptions for <firstterm>logical replication</firstterm>
+     at the cluster level.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-shared-memory">
+   <glossterm>Shared Memory</glossterm>
+   <glossdef>
+    <para>
+     <link linkend="runtime-config-resource-memory">
+     Shared Memory</link> is RAM which is used by the processes
+     of an <firstterm>instance</firstterm> in common. It
+     mirrors parts of database files, provides an area for
+     <firstterm>WAL records</firstterm>, and stores some more
+     common information. Please notice, that Shared Memory
+     belongs to the complete <firstterm>instance</firstterm>,
+     not to a single <firstterm>database</firstterm>.
+    </para>
+    <para>
+     Shared Memory is organized in <firstterm>pages</firstterm>.
+     If such a page gets modified, she is called a
+     <firstterm>dirty page</firstterm> until she is written
+     back to the file system.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-postmaster">
+   <glossterm>Postmaster</glossterm>
+   <glossdef>
+    <para>
+     <link linkend="server-start">Postmaster</link> is the
+     name for the very first process of an
+     <firstterm>instance</firstterm>. He starts
+     the other processes and creates <firstterm>
+     backend processes</firstterm> on demand.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-backend-process">
+   <glossterm>Backend Process</glossterm>
+   <glossdef>
+    <para>
+     <link linkend="guc-max-connections">
+     Backend processes</link> are such processes of an
+     <firstterm>instance</firstterm>, which act
+     on behalf of client <firstterm>connections</firstterm>
+     and process their requests.
+    </para>
+    <para>
+     (Don't confuse the term with the similar terms
+     <firstterm>Background Writer</firstterm> or
+     <firstterm>Background Worker</firstterm>).
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-connection">
+   <glossterm>Connection</glossterm>
+   <glossdef>
+    <para>
+     A connection is a <firstterm>TCP/IP</firstterm> or
+     <firstterm>socket</firstterm> line for inter-process
+     communication. If the two involved processes reside on
+     different servers, TCP/IP must be used. Otherwise both
+     techniques are possible.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-background-writer">
+   <glossterm>Background Writer</glossterm>
+   <glossdef>
+    <para>
+     The <link linkend="runtime-config-resource-background-writer">
+     Background Writer</link> process writes continuously dirty
+     pages from <firstterm>Shared Memory</firstterm> to the
+     file system. He starts periodically. But he works only for a
+     short period in order to distribute his expensive I/O activity
+     over time instead of generating few and huge I/O peaks, which
+     could block other processes.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-background-worker">
+   <glossterm>Background Worker</glossterm>
+   <glossdef>
+    <para>
+     <link linkend="bgworker">Background Workers</link> are
+     individual processes within an
+     <firstterm>instance</firstterm>, which run system- or
+     user-supplied code. A typically use case are processes
+     which handle parts of an SQL query to take advantage of parallel
+     execution on <firstterm>servers</firstterm> with multiple CPUs.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-wal-writer">
+   <glossterm>WAL Writer</glossterm>
+   <glossdef>
+    <para>
+     The <link linkend="runtime-config-wal">WAL writer</link>
+     process writes <firstterm>WAL records</firstterm>
+     from the <firstterm>Shared Memory</firstterm> to
+     <firstterm>WAL files</firstterm>.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-wal-record">
+   <glossterm>WAL Record (or: Log Record)</glossterm>
+   <glossdef>
+    <para>
+     A <link linkend="wal-internals">WAL record</link>
+     contains either new or changed heap or index
+     data or COMMIT, ROLLBACK, SAVEPOINT, or CHECKPOINT
+     information in binary format.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-wal-file">
+   <glossterm>WAL File (or: WAL Segment, or WAL Segment File or: WAL Log)</glossterm>
+   <glossdef>
+    <para>
+     <firstterm>WAL records</firstterm> are continously
+     written to the end of the current
+     <link linkend="wal-internals">WAL file</link>. Please notice,
+     that WAL files as well as <firstterm>WAL records</firstterm>
+     belong to the complete <firstterm>cluster</firstterm>,
+     not to a single <firstterm>database</firstterm>.
+     After a WAL file is full
+     (default: 16 MB), a new WAL file is created or
+     - under certain conditions - one of the previous WAL
+     files is renamed and reused.
+    </para>
+    <para>
+     The sequence of <firstterm>WAL records</firstterm>
+     in combination with the sequence of WAL files
+     represents the sequence of changes that have
+     taken place in the <firstterm>cluster</firstterm>
+     over time (???).
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-segment">
+   <glossterm>File Segment (or: Segment)</glossterm>
+   <glossdef>
+    <para>
+      If a database file grows in size, he may be split into
+      multiple physical files. Those files are called
+      <link linkend="storage-file-layout">file segments</link>.
+    </para>
+    <para>
+     (Don't confuse the term with the similar term
+     <firstterm>WAL segment</firstterm>).
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-archiver">
+   <glossterm>Archiver</glossterm>
+   <glossdef>
+    <para>
+     The <link linkend="backup-archiving-wal">archiver</link>
+     process copies <firstterm>WAL files</firstterm> to a
+     different place in the file system.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-checkpointer">
+   <glossterm>Checkpointer</glossterm>
+   <glossdef>
+    <para>
+     When reaching certain time- or volume-depending criterias
+     or when an SQL CHECKPOINT command is issued, the
+     <link linkend="runtime-config-wal">checkpointer</link>
+     process creates a <link linkend="sql-checkpoint">
+     Checkpoint</link>. He writes <firstterm>dirty
+     pages</firstterm> and <firstterm>WAL records</firstterm>
+     to the file system, and generates a special
+     <firstterm>Checkpoint record</firstterm>.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-checkpoint">
+   <glossterm>Checkpoint</glossterm>
+   <glossdef>
+    <para>
+     A <link linkend="sql-checkpoint">
+     Checkpoint</link>
+     is a point in time when all older dirty
+     pages of the <firstterm>Shared Memory</firstterm>,
+     all older <firstterm>WAL records</firstterm>, and a
+     special <firstterm>Checkpoint record</firstterm>
+     have been written and flushed to disk.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-savepoint">
+   <glossterm>Savepoint</glossterm>
+   <glossdef>
+    <para>
+     A <link linkend="sql-savepoint">savepoint</link>
+     is a special mark (like a timestamp) inside
+     a transaction. Data modifications after this point in time
+     may be rolled back to the time of the savepoint.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-data-directory">
+   <glossterm>Data Directory (or: Data Area)</glossterm>
+   <glossdef>
+    <para>
+     A <link linkend="creating-cluster">data directory</link>
+     is the root directory of a
+     <firstterm>cluster</firstterm> (see also:
+     <link linkend="app-postgres">PGDATA</link>).
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <!-- no helpfull reference found  -->
+  <glossentry id="glossary-heap">
+   <glossterm>Heap</glossterm>
+   <glossdef>
+    <para>
+     A heap contains the original values of row attributes,
+     i.e. the data. The heap is realized within database files
+     and mirrored in <firstterm>Shared Memory</firstterm>.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <!-- no helpfull reference found  -->
+  <glossentry id="glossary-index">
+   <glossterm>Index</glossterm>
+   <glossdef>
+    <para>
+     An index consists of keys, which are copies of original
+     row attributes, and pointers to the location of this original
+     rows. Such key/value pairs are organized as a tree or a hash (???).
+     The index is realized within database files and mirrored in
+     <firstterm>Shared Memory</firstterm>.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-log-writer">
+   <glossterm>Log Writer</glossterm>
+   <glossdef>
+    <para>
+     If activated and parameterized, the
+     <link linkend="runtime-config-logging">Log Writer</link>
+     process writes information about database events into the
+     current <firstterm>Log file</firstterm>. When reaching
+     certain time- or volume-dependent criterias, he creates
+     a new <firstterm>Log file</firstterm>.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-log-file">
+   <glossterm>Log File</glossterm>
+   <glossdef>
+    <para>
+     <link linkend="logfile-maintenance">LOG files</link>
+     contain readable text lines about serious
+     and non-serious events, e.g.: use of
+     wrong password, long-running queries, ... .
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-auto-vacuum">
+   <glossterm>AutoVacuum</glossterm>
+   <glossdef>
+    <para>
+     The <link linkend="routine-vacuuming">AutoVacuum</link>
+     processes remove outdated
+     MVCC records of the <firstterm>heap</firstterm>
+     and <firstterm>index</firstterm>.
+    </para>
+   </glossdef>
+  </glossentry>
+
+  <glossentry id="glossary-stats-collector">
+   <glossterm>Stats Collector</glossterm>
+   <glossdef>
+    <para>
+     The <link linkend="monitoring-stats">
+     Stats Collector</link> process collects
+     statistical information about the
+     <firstterm>cluster</firstterm> activities.
+    </para>
+   </glossdef>
+  </glossentry>
+
+<!-- ToDo:
+      WAL (LSN, logical decoding, ... )
+      MVCC
+      backup and recovery
+      replication
+-->
+
+ </glosslist>
+</appendix>
