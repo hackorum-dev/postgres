@@ -1524,6 +1524,13 @@ PQsendQueryGuts(PGconn *conn,
 						  libpq_gettext("function requires at least protocol version 3.0\n"));
 		return 0;
 	}
+    /* Don't bother server if parameters are wrong */
+	if (paramFormats && !paramLengths)
+	{
+		printfPQExpBuffer(&conn->errorMessage,
+						  libpq_gettext("length must be given for binary parameter\n"));
+	    return 0;
+	}
 
 	/*
 	 * We will send Parse (if needed), Bind, Describe Portal, Execute, Sync,
@@ -1583,38 +1590,43 @@ PQsendQueryGuts(PGconn *conn,
 		goto sendFailed;
 
 	/* Send parameters */
-	for (i = 0; i < nParams; i++)
+	if (paramValues)
 	{
-		if (paramValues && paramValues[i])
-		{
-			int			nbytes;
+        int			nbytes;
 
-			if (paramFormats && paramFormats[i] != 0)
-			{
-				/* binary parameter */
-				if (paramLengths)
-					nbytes = paramLengths[i];
-				else
-				{
-					printfPQExpBuffer(&conn->errorMessage,
-									  libpq_gettext("length must be given for binary parameter\n"));
-					goto sendFailed;
-				}
-			}
-			else
-			{
-				/* text parameter, do not use paramLengths */
-				nbytes = strlen(paramValues[i]);
-			}
-			if (pqPutInt(nbytes, 4, conn) < 0 ||
-				pqPutnchar(paramValues[i], nbytes, conn) < 0)
-				goto sendFailed;
+	    for (i = 0; i < nParams; i++)
+	    {
+		     if (paramValues[i])
+		     {
+			     if (paramFormats && paramFormats[i] != 0)
+				 {
+				     /* binary parameter */
+					 nbytes = paramLengths[i];
+				 }
+			     else
+				 {
+				     /* text parameter, do not use paramLengths */
+				     nbytes = strlen(paramValues[i]);
+				 }
+			     if (pqPutInt(nbytes, 4, conn) < 0 ||
+				     pqPutnchar(paramValues[i], nbytes, conn) < 0)
+				     goto sendFailed;
+		     }
+		     else
+		     {
+			     /* take the param as NULL */
+			     if (pqPutInt(-1, 4, conn) < 0)
+				     goto sendFailed;
+			 }
 		}
-		else
-		{
-			/* take the param as NULL */
-			if (pqPutInt(-1, 4, conn) < 0)
-				goto sendFailed;
+	}
+	else
+	{
+        /* take the params as NULL */
+	    for (i = 0; i < nParams; i++)
+	    {
+			 if (pqPutInt(-1, 4, conn) < 0)
+				 goto sendFailed;
 		}
 	}
 	if (pqPutInt(1, 2, conn) < 0 ||
