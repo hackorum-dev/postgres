@@ -66,7 +66,7 @@ static double elapsed_time(instr_time *starttime);
 static bool ExplainPreScanNode(PlanState *planstate, Bitmapset **rels_used);
 static void ExplainNode(PlanState *planstate, List *ancestors,
 						const char *relationship, const char *plan_name,
-						ExplainState *es);
+						SubPlanState *subplanstate, ExplainState *es);
 static void show_plan_tlist(PlanState *planstate, List *ancestors,
 							ExplainState *es);
 static void show_expression(Node *node, const char *qlabel,
@@ -764,7 +764,7 @@ ExplainPrintPlan(ExplainState *es, QueryDesc *queryDesc)
 		ps = outerPlanState(ps);
 		es->hide_workers = true;
 	}
-	ExplainNode(ps, NIL, NULL, NULL, es);
+	ExplainNode(ps, NIL, NULL, NULL, NULL, es);
 
 	/*
 	 * If requested, include information about GUC parameters with values that
@@ -1126,7 +1126,7 @@ ExplainPreScanNode(PlanState *planstate, Bitmapset **rels_used)
 static void
 ExplainNode(PlanState *planstate, List *ancestors,
 			const char *relationship, const char *plan_name,
-			ExplainState *es)
+			SubPlanState *subplanstate, ExplainState *es)
 {
 	Plan	   *plan = planstate->plan;
 	const char *pname;			/* node type name for text output */
@@ -1386,6 +1386,21 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			ExplainIndentText(es);
 			appendStringInfo(es->str, "%s\n", plan_name);
 			es->indent++;
+
+			Assert(subplanstate != NULL);
+			/* Show hash stats for hashed subplan */
+			if (subplanstate->hashtable)
+			{
+				ExplainIndentText(es);
+				appendStringInfoString(es->str, "Hashtable: ");
+				show_tuplehash_info(&subplanstate->hashtable->instrument, NULL, es);
+			}
+			if (subplanstate->hashnulls)
+			{
+				ExplainIndentText(es);
+				appendStringInfoString(es->str, "Null Hashtable: ");
+				show_tuplehash_info(&subplanstate->hashnulls->instrument, NULL, es);
+			}
 		}
 		if (es->indent)
 		{
@@ -1414,6 +1429,20 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		if (custom_name)
 			ExplainPropertyText("Custom Plan Provider", custom_name, es);
 		ExplainPropertyBool("Parallel Aware", plan->parallel_aware, es);
+
+		if (subplanstate && subplanstate->hashtable)
+		{
+			ExplainOpenGroup("Hashtable", "Hashtable", true, es);
+			show_tuplehash_info(&subplanstate->hashtable->instrument, NULL, es);
+			ExplainCloseGroup("Hashtable", "Hashtable", true, es);
+		}
+
+		if (subplanstate && subplanstate->hashnulls)
+		{
+			ExplainOpenGroup("Null Hashtable", "Null Hashtable", true, es);
+			show_tuplehash_info(&subplanstate->hashnulls->instrument, NULL, es);
+			ExplainCloseGroup("Null Hashtable", "Null Hashtable", true, es);
+		}
 	}
 
 	switch (nodeTag(plan))
@@ -2097,12 +2126,12 @@ ExplainNode(PlanState *planstate, List *ancestors,
 	/* lefttree */
 	if (outerPlanState(planstate))
 		ExplainNode(outerPlanState(planstate), ancestors,
-					"Outer", NULL, es);
+					"Outer", NULL, NULL, es);
 
 	/* righttree */
 	if (innerPlanState(planstate))
 		ExplainNode(innerPlanState(planstate), ancestors,
-					"Inner", NULL, es);
+					"Inner", NULL, NULL, es);
 
 	/* special child plans */
 	switch (nodeTag(plan))
@@ -2134,7 +2163,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			break;
 		case T_SubqueryScan:
 			ExplainNode(((SubqueryScanState *) planstate)->subplan, ancestors,
-						"Subquery", NULL, es);
+						"Subquery", NULL, NULL, es);
 			break;
 		case T_CustomScan:
 			ExplainCustomChildren((CustomScanState *) planstate,
@@ -3834,7 +3863,7 @@ ExplainMemberNodes(PlanState **planstates, int nplans,
 
 	for (j = 0; j < nplans; j++)
 		ExplainNode(planstates[j], ancestors,
-					"Member", NULL, es);
+					"Member", NULL, NULL, es);
 }
 
 /*
@@ -3892,30 +3921,7 @@ ExplainSubPlans(List *plans, List *ancestors,
 		ancestors = lcons(sp, ancestors);
 
 		ExplainNode(sps->planstate, ancestors,
-					relationship, sp->plan_name, es);
-		if (sps->hashtable)
-		{
-			ExplainOpenGroup("Hashtable", "Hashtable", true, es);
-			if (es->format == EXPLAIN_FORMAT_TEXT)
-			{
-				ExplainIndentText(es);
-				appendStringInfoString(es->str, "Hashtable: ");
-			}
-			show_tuplehash_info(&sps->hashtable->instrument, NULL, es);
-			ExplainCloseGroup("Hashtable", "Hashtable", true, es);
-		}
-
-		if (sps->hashnulls)
-		{
-			ExplainOpenGroup("Null Hashtable", "Null Hashtable", true, es);
-			if (es->format == EXPLAIN_FORMAT_TEXT)
-			{
-				ExplainIndentText(es);
-				appendStringInfoString(es->str, "Null Hashtable: ");
-			}
-			show_tuplehash_info(&sps->hashnulls->instrument, NULL, es);
-			ExplainCloseGroup("Null Hashtable", "Null Hashtable", true, es);
-		}
+					relationship, sp->plan_name, sps, es);
 
 		ancestors = list_delete_first(ancestors);
 	}
@@ -3932,7 +3938,7 @@ ExplainCustomChildren(CustomScanState *css, List *ancestors, ExplainState *es)
 	(list_length(css->custom_ps) != 1 ? "children" : "child");
 
 	foreach(cell, css->custom_ps)
-		ExplainNode((PlanState *) lfirst(cell), ancestors, label, NULL, es);
+		ExplainNode((PlanState *) lfirst(cell), ancestors, label, NULL, NULL, es);
 }
 
 /*
