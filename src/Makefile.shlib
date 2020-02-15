@@ -295,12 +295,12 @@ ifdef shlib_major
 # If we're using major and minor versions, then make a symlink to major-version-only.
 ifneq ($(shlib), $(shlib_major))
 	rm -f $(shlib_major)
-	$(LN_S) $(shlib) $(shlib_major)
+	ln -s $(shlib) $(shlib_major)
 endif
 # Make sure we have a link to a name without any version numbers
 ifneq ($(shlib), $(shlib_bare))
 	rm -f $(shlib_bare)
-	$(LN_S) $(shlib) $(shlib_bare)
+	ln -s $(shlib) $(shlib_bare)
 endif
 endif # shlib_major
 
@@ -435,12 +435,12 @@ ifneq ($(PORTNAME), win32)
 ifneq ($(shlib), $(shlib_major))
 	cd '$(DESTDIR)$(libdir)' && \
 	rm -f $(shlib_major) && \
-	$(LN_S) $(shlib) $(shlib_major)
+	ln -s $(shlib) $(shlib_major)
 endif
 ifneq ($(shlib), $(shlib_bare))
 	cd '$(DESTDIR)$(libdir)' && \
 	rm -f $(shlib_bare) && \
-	$(LN_S) $(shlib) $(shlib_bare)
+	ln -s $(shlib) $(shlib_bare)
 endif
 endif # not win32
 endif # not cygwin

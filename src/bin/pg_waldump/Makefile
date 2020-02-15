@@ -27,10 +27,10 @@ pg_waldump: $(OBJS) | submake-libpgport
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 xlogreader.c: % : $(top_srcdir)/src/backend/access/transam/%
-	rm -f $@ && $(LN_S) $< .
+	rm -f $@ && ln -s $< .
 
 $(RMGRDESCSOURCES): % : $(top_srcdir)/src/backend/access/rmgrdesc/%
-	rm -f $@ && $(LN_S) $< .
+	rm -f $@ && ln -s $< .
 
 install: all installdirs
 	$(INSTALL_PROGRAM) pg_waldump$(X) '$(DESTDIR)$(bindir)/pg_waldump$(X)'

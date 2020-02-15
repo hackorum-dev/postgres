@@ -39,7 +39,7 @@ pg_rewind: $(OBJS) | submake-libpq submake-libpgport
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 xlogreader.c: % : $(top_srcdir)/src/backend/access/transam/%
-	rm -f $@ && $(LN_S) $< .
+	rm -f $@ && ln -s $< .
 
 install: all installdirs
 	$(INSTALL_PROGRAM) pg_rewind$(X) '$(DESTDIR)$(bindir)/pg_rewind$(X)'

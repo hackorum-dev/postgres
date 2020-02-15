@@ -66,14 +66,14 @@ endif
 $(top_builddir)/src/include/utils/header-stamp: fmgr-stamp errcodes.h
 	prereqdir=`cd '$(dir $<)' >/dev/null && pwd` && \
 	cd '$(dir $@)' && for file in fmgroids.h fmgrprotos.h errcodes.h; do \
-	  rm -f $$file && $(LN_S) "$$prereqdir/$$file" . ; \
+	  rm -f $$file && ln -s "$$prereqdir/$$file" . ; \
 	done
 	touch $@
 
 # probes.h is handled differently because it's not in the distribution tarball.
 $(top_builddir)/src/include/utils/probes.h: probes.h
 	cd '$(dir $@)' && rm -f $(notdir $@) && \
-	    $(LN_S) "../../../$(subdir)/probes.h" .
+	    ln -s "../../../$(subdir)/probes.h" .
 
 
 .PHONY: install-data

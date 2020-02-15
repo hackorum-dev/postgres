@@ -117,7 +117,7 @@ bki-stamp: genbki.pl Catalog.pm $(POSTGRES_BKI_SRCS) $(POSTGRES_BKI_DATA) $(top_
 $(top_builddir)/src/include/catalog/header-stamp: bki-stamp
 	prereqdir=`cd '$(dir $<)' >/dev/null && pwd` && \
 	cd '$(dir $@)' && for file in $(GENERATED_HEADERS); do \
-	  rm -f $$file && $(LN_S) "$$prereqdir/$$file" . ; \
+	  rm -f $$file && ln -s "$$prereqdir/$$file" . ; \
 	done
 	touch $@
 

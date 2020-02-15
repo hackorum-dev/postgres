@@ -167,12 +167,12 @@ generated-headers: $(top_builddir)/src/include/parser/gram.h $(top_builddir)/src
 $(top_builddir)/src/include/parser/gram.h: parser/gram.h
 	prereqdir=`cd '$(dir $<)' >/dev/null && pwd` && \
 	  cd '$(dir $@)' && rm -f $(notdir $@) && \
-	  $(LN_S) "$$prereqdir/$(notdir $<)" .
+	  ln -s "$$prereqdir/$(notdir $<)" .
 
 $(top_builddir)/src/include/storage/lwlocknames.h: storage/lmgr/lwlocknames.h
 	prereqdir=`cd '$(dir $<)' >/dev/null && pwd` && \
 	  cd '$(dir $@)' && rm -f $(notdir $@) && \
-	  $(LN_S) "$$prereqdir/$(notdir $<)" .
+	  ln -s "$$prereqdir/$(notdir $<)" .
 
 utils/probes.o: utils/probes.d $(SUBDIROBJS)
 	$(DTRACE) $(DTRACEFLAGS) -C -G -s $(call expand_subsys,$^) -o $@

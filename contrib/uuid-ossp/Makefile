@@ -33,4 +33,4 @@ include $(top_srcdir)/contrib/contrib-global.mk
 endif
 
 md5.c sha1.c: % : $(pgcrypto_src)/%
-	rm -f $@ && $(LN_S) $< .
+	rm -f $@ && ln -s $< .

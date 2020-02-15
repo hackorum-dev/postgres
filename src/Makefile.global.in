@@ -338,7 +338,6 @@ perl_embed_ldflags	= @perl_embed_ldflags@
 # Miscellaneous
 
 AWK	= @AWK@
-LN_S	= @LN_S@
 MSGFMT  = @MSGFMT@
 MSGFMT_FLAGS = @MSGFMT_FLAGS@
 MSGMERGE = @MSGMERGE@

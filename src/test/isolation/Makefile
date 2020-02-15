@@ -29,7 +29,7 @@ submake-regress:
 	$(MAKE) -C $(top_builddir)/src/test/regress pg_regress.o
 
 pg_regress.o: | submake-regress
-	rm -f $@ && $(LN_S) $(top_builddir)/src/test/regress/pg_regress.o .
+	rm -f $@ && ln -s $(top_builddir)/src/test/regress/pg_regress.o .
 
 pg_isolation_regress$(X): isolation_main.o pg_regress.o $(WIN32RES)
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@

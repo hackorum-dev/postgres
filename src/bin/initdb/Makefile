@@ -44,7 +44,7 @@ initdb: $(OBJS) | submake-libpq submake-libpgport submake-libpgfeutils
 
 # We must pull in localtime.c from src/timezones
 localtime.c: % : $(top_srcdir)/src/timezone/%
-	rm -f $@ && $(LN_S) $< .
+	rm -f $@ && ln -s $< .
 
 install: all installdirs
 	$(INSTALL_PROGRAM) initdb$(X) '$(DESTDIR)$(bindir)/initdb$(X)'

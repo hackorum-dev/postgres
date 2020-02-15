@@ -56,7 +56,7 @@ ecpg: $(OBJS) | submake-libpgport
 
 # We symlink typename.c from ecpglib and recompile it here
 typename.c: % : $(top_srcdir)/src/interfaces/ecpg/ecpglib/%
-	rm -f $@ && $(LN_S) $< .
+	rm -f $@ && ln -s $< .
 
 # See notes in src/backend/parser/Makefile about the following two rules
 preproc.h: preproc.c
