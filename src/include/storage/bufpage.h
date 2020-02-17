@@ -18,6 +18,7 @@
 #include "storage/block.h"
 #include "storage/item.h"
 #include "storage/off.h"
+#include "storage/sync.h"		/* For FileTag */
 
 /*
  * A postgres disk page is an abstraction layered on top of a postgres
@@ -419,7 +420,7 @@ do { \
 						((is_heap) ? PAI_IS_HEAP : 0))
 
 /*
- * Check that BLCKSZ is a multiple of sizeof(size_t).  In PageIsVerified(),
+ * Check that BLCKSZ is a multiple of sizeof(size_t).  In VerifyPage(),
  * it is much faster to check if a page is full of zeroes using the native
  * word size.  Note that this assertion is kept within a header to make
  * sure that StaticAssertDecl() works across various combinations of
@@ -429,7 +430,7 @@ StaticAssertDecl(BLCKSZ == ((BLCKSZ / sizeof(size_t)) * sizeof(size_t)),
 				 "BLCKSZ has to be a multiple of sizeof(size_t)");
 
 extern void PageInit(Page page, Size pageSize, Size specialSize);
-extern bool PageIsVerified(Page page, BlockNumber blkno);
+extern bool VerifyPage(const FileTag *ftag, Page page, BlockNumber blkno, bool zeroDamagePage);
 extern OffsetNumber PageAddItemExtended(Page page, Item item, Size size,
 										OffsetNumber offsetNumber, int flags);
 extern Page PageGetTempPage(Page page);
@@ -448,5 +449,4 @@ extern bool PageIndexTupleOverwrite(Page page, OffsetNumber offnum,
 									Item newtup, Size newsize);
 extern char *PageSetChecksumCopy(Page page, BlockNumber blkno);
 extern void PageSetChecksumInplace(Page page, BlockNumber blkno);
-
 #endif							/* BUFPAGE_H */

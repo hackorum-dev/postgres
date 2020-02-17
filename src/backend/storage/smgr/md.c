@@ -94,6 +94,17 @@ static MemoryContext MdCxt;		/* context for all MdfdVec objects */
 	memset(&(a), 0, sizeof(FileTag)), \
 	(a).handler = SYNC_HANDLER_MD, \
 	(a).rnode = (xx_rnode), \
+	(a).backend = InvalidBackendId, \
+	(a).forknum = (xx_forknum), \
+	(a).segno = (xx_segno) \
+)
+
+#define INIT_MD_FILETAG_WITH_BACKEND(a,xx_rnode,xx_backend,xx_forknum,xx_segno) \
+( \
+	memset(&(a), 0, sizeof(FileTag)), \
+	(a).handler = SYNC_HANDLER_MD, \
+	(a).rnode = (xx_rnode), \
+	(a).backend = (xx_backend), \
 	(a).forknum = (xx_forknum), \
 	(a).segno = (xx_segno) \
 )
@@ -599,11 +610,12 @@ mdwriteback(SMgrRelation reln, ForkNumber forknum,
  */
 void
 mdread(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
-	   char *buffer)
+	   char *buffer, bool zeroDamagePage)
 {
 	off_t		seekpos;
 	int			nbytes;
 	MdfdVec    *v;
+	FileTag		tag;
 
 	TRACE_POSTGRESQL_SMGR_MD_READ_START(forknum, blocknum,
 										reln->smgr_rnode.node.spcNode,
@@ -639,12 +651,12 @@ mdread(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 		/*
 		 * Short read: we are at or past EOF, or we read a partial block at
 		 * EOF.  Normally this is an error; upper levels should never try to
-		 * read a nonexistent block.  However, if zero_damaged_pages is ON or
+		 * read a nonexistent block.  However, if zeroDamagePage is ON or
 		 * we are InRecovery, we should instead return zeroes without
 		 * complaining.  This allows, for example, the case of trying to
 		 * update a block that was later truncated away.
 		 */
-		if (zero_damaged_pages || InRecovery)
+		if (zeroDamagePage || InRecovery)
 			MemSet(buffer, 0, BLCKSZ);
 		else
 			ereport(ERROR,
@@ -653,6 +665,11 @@ mdread(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 							blocknum, FilePathName(v->mdfd_vfd),
 							nbytes, BLCKSZ)));
 	}
+
+	/* verify the read page content satisfy page checksum */
+	INIT_MD_FILETAG_WITH_BACKEND(tag, reln->smgr_rnode.node, reln->smgr_rnode.backend, forknum, v->mdfd_segno);
+
+	VerifyPage(&tag, buffer, blocknum, zeroDamagePage);
 }
 
 /*

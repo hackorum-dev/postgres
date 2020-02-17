@@ -47,6 +47,7 @@ typedef struct FileTag
 	int16		handler;		/* SyncRequestHandler value, saving space */
 	int16		forknum;		/* ForkNumber, saving space */
 	RelFileNode rnode;
+	BackendId	backend;
 	uint32		segno;
 } FileTag;
 

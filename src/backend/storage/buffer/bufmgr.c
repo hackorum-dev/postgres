@@ -891,11 +891,18 @@ ReadBuffer_common(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 		{
 			instr_time	io_start,
 						io_time;
+			bool	zeroDamagePage = false;
 
 			if (track_io_timing)
 				INSTR_TIME_SET_CURRENT(io_start);
 
-			smgrread(smgr, forkNum, blockNum, (char *) bufBlock);
+			/*
+			 * Set whether zero damaged page in checksum veirfy
+			 */
+			if (mode == RBM_ZERO_ON_ERROR || zero_damaged_pages)
+				zeroDamagePage = true;
+
+			smgrread(smgr, forkNum, blockNum, (char *) bufBlock, zeroDamagePage);
 
 			if (track_io_timing)
 			{
@@ -905,25 +912,6 @@ ReadBuffer_common(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 				INSTR_TIME_ADD(pgBufferUsage.blk_read_time, io_time);
 			}
 
-			/* check for garbage data */
-			if (!PageIsVerified((Page) bufBlock, blockNum))
-			{
-				if (mode == RBM_ZERO_ON_ERROR || zero_damaged_pages)
-				{
-					ereport(WARNING,
-							(errcode(ERRCODE_DATA_CORRUPTED),
-							 errmsg("invalid page in block %u of relation %s; zeroing out page",
-									blockNum,
-									relpath(smgr->smgr_rnode, forkNum))));
-					MemSet((char *) bufBlock, 0, BLCKSZ);
-				}
-				else
-					ereport(ERROR,
-							(errcode(ERRCODE_DATA_CORRUPTED),
-							 errmsg("invalid page in block %u of relation %s",
-									blockNum,
-									relpath(smgr->smgr_rnode, forkNum))));
-			}
 		}
 	}
 

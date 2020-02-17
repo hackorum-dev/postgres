@@ -26,7 +26,6 @@
 /* GUC variable */
 bool		ignore_checksum_failure = false;
 
-
 /* ----------------------------------------------------------------
  *						Page support functions
  * ----------------------------------------------------------------
@@ -61,12 +60,16 @@ PageInit(Page page, Size pageSize, Size specialSize)
 
 
 /*
- * PageIsVerified
+ * VerifyPage
  *		Check that the page header and checksum (if any) appear valid.
  *
  * This is called when a page has just been read in from disk.  The idea is
  * to cheaply detect trashed pages before we go nuts following bogus line
  * pointers, testing invalid transaction identifiers, etc.
+ *
+ * FileTag contains the segment file information which the page belongs to.
+ * Note that for large heap table, it may across many physical files. Better
+ * to print the exact file path when checksum fails.
  *
  * It turns out to be necessary to allow zeroed pages here too.  Even though
  * this routine is *not* called when deliberately adding a page to a relation,
@@ -79,7 +82,7 @@ PageInit(Page page, Size pageSize, Size specialSize)
  * will clean up such a page and make it usable.
  */
 bool
-PageIsVerified(Page page, BlockNumber blkno)
+VerifyPage(const FileTag *ftag, Page page, BlockNumber blkno, bool zeroDamagePage)
 {
 	PageHeader	p = (PageHeader) page;
 	size_t	   *pagebytes;
@@ -150,6 +153,30 @@ PageIsVerified(Page page, BlockNumber blkno)
 		if (header_sane && ignore_checksum_failure)
 			return true;
 	}
+
+	/*
+	 * Throw out ERROR or WARNING based on whether zero_damaged_pages_in_checksum is set
+	 *
+	 * Note that using GUC zero_damaged_pages is not suffient here, since we should also
+	 * zero damaged page when ReadBufferMode is RBM_ZERO_ON_ERROR.
+	 */
+	if (zeroDamagePage)
+	{
+		ereport(WARNING,
+				(errcode(ERRCODE_DATA_CORRUPTED),
+				 errmsg("invalid page in block %u of relation file %s.%u; zeroing out page",
+						blkno,
+						relpathbackend(ftag->rnode, ftag->backend, ftag->forknum),
+						ftag->segno)));
+		MemSet((char *) page, 0, BLCKSZ);
+	}
+	else
+		ereport(ERROR,
+				(errcode(ERRCODE_DATA_CORRUPTED),
+				 errmsg("invalid page in block %u of relation file %s.%u",
+						blkno,
+						relpathbackend(ftag->rnode, ftag->backend, ftag->forknum),
+						ftag->segno)));
 
 	return false;
 }

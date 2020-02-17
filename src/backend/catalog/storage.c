@@ -367,16 +367,7 @@ RelationCopyStorage(SMgrRelation src, SMgrRelation dst,
 		/* If we got a cancel signal during the copy of the data, quit */
 		CHECK_FOR_INTERRUPTS();
 
-		smgrread(src, forkNum, blkno, buf.data);
-
-		if (!PageIsVerified(page, blkno))
-			ereport(ERROR,
-					(errcode(ERRCODE_DATA_CORRUPTED),
-					 errmsg("invalid page in block %u of relation %s",
-							blkno,
-							relpathbackend(src->smgr_rnode.node,
-										   src->smgr_rnode.backend,
-										   forkNum))));
+		smgrread(src, forkNum, blkno, buf.data, false);
 
 		/*
 		 * WAL-log the copied page. Unfortunately we don't know what kind of a
