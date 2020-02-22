@@ -506,6 +506,7 @@ typedef struct
 	pid_t		PostmasterPid;
 	TimestampTz PgStartTime;
 	TimestampTz PgReloadTime;
+	TimestampTz PgShmemInitTime;
 	pg_time_t	first_syslogger_file_time;
 	bool		redirection_done;
 	bool		IsBinaryUpgrade;
@@ -2633,6 +2634,8 @@ reset_shared(void)
 	 * clean up dead IPC objects if the postmaster crashes and is restarted.
 	 */
 	CreateSharedMemoryAndSemaphores();
+
+	PgShmemInitTime = GetCurrentTimestamp();
 }
 
 
@@ -6179,6 +6182,7 @@ save_backend_variables(BackendParameters *param, Port *port,
 	param->PostmasterPid = PostmasterPid;
 	param->PgStartTime = PgStartTime;
 	param->PgReloadTime = PgReloadTime;
+	param->PgShmemInitTime = PgShmemInitTime;
 	param->first_syslogger_file_time = first_syslogger_file_time;
 
 	param->redirection_done = redirection_done;
@@ -6414,6 +6418,7 @@ restore_backend_variables(BackendParameters *param, Port *port)
 	PostmasterPid = param->PostmasterPid;
 	PgStartTime = param->PgStartTime;
 	PgReloadTime = param->PgReloadTime;
+	PgShmemInitTime = param->PgShmemInitTime;
 	first_syslogger_file_time = param->first_syslogger_file_time;
 
 	redirection_done = param->redirection_done;
