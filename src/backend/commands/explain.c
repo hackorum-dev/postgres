@@ -97,6 +97,8 @@ static void show_grouping_set_info(AggState *aggstate,
 								   List *ancestors,
 								   HashTableInstrumentation *inst,
 								   ExplainState *es);
+static void show_grouping_set_keys(AggState *aggstate, Agg *aggnode, List
+		*context, bool useprefix, ExplainState *es);
 static void show_group_keys(GroupState *gstate, List *ancestors,
 							ExplainState *es);
 static void show_sort_group_keys(PlanState *planstate, const char *qlabel,
@@ -2424,6 +2426,37 @@ show_grouping_set_info(AggState *aggstate,
 					   ExplainState *es)
 {
 	PlanState	*planstate = outerPlanState(aggstate);
+
+	ExplainOpenGroup("Grouping Set", NULL, true, es);
+
+	if (sortnode)
+	{
+		show_sort_group_keys(planstate, "Sort Key",
+							 sortnode->numCols, 0, sortnode->sortColIdx,
+							 sortnode->sortOperators, sortnode->collations,
+							 sortnode->nullsFirst,
+							 ancestors, es);
+		if (es->format == EXPLAIN_FORMAT_TEXT)
+			es->indent++;
+	}
+
+	show_grouping_set_keys(aggstate, aggnode, context, useprefix, es);
+
+	if (aggnode->aggstrategy == AGG_HASHED ||
+			aggnode->aggstrategy == AGG_MIXED)
+		show_tuplehash_info(inst, NULL, es);
+
+	if (sortnode && es->format == EXPLAIN_FORMAT_TEXT)
+		es->indent--;
+
+	ExplainCloseGroup("Grouping Set", NULL, true, es);
+}
+
+/* Show keys of a grouping set */
+static void
+show_grouping_set_keys(AggState *aggstate, Agg *aggnode, List *context, bool useprefix, ExplainState *es)
+{
+	PlanState	*planstate = outerPlanState(aggstate);
 	Plan	   *plan = planstate->plan;
 	char	   *exprstr;
 	ListCell   *lc;
@@ -2441,19 +2474,6 @@ show_grouping_set_info(AggState *aggstate,
 	{
 		keyname = "Group Key";
 		keysetname = "Group Keys";
-	}
-
-	ExplainOpenGroup("Grouping Set", NULL, true, es);
-
-	if (sortnode)
-	{
-		show_sort_group_keys(planstate, "Sort Key",
-							 sortnode->numCols, 0, sortnode->sortColIdx,
-							 sortnode->sortOperators, sortnode->collations,
-							 sortnode->nullsFirst,
-							 ancestors, es);
-		if (es->format == EXPLAIN_FORMAT_TEXT)
-			es->indent++;
 	}
 
 	ExplainOpenGroup(keysetname, keysetname, false, es);
@@ -2486,15 +2506,6 @@ show_grouping_set_info(AggState *aggstate,
 	}
 
 	ExplainCloseGroup(keysetname, keysetname, false, es);
-
-	if (aggnode->aggstrategy == AGG_HASHED ||
-			aggnode->aggstrategy == AGG_MIXED)
-		show_tuplehash_info(inst, NULL, es);
-
-	if (sortnode && es->format == EXPLAIN_FORMAT_TEXT)
-		es->indent--;
-
-	ExplainCloseGroup("Grouping Set", NULL, true, es);
 }
 
 /*
