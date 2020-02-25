@@ -336,14 +336,10 @@ void
 RelationCopyStorage(SMgrRelation src, SMgrRelation dst,
 					ForkNumber forkNum, char relpersistence)
 {
-	PGAlignedBlock buf;
-	Page		page;
 	bool		use_wal;
 	bool		copying_initfork;
 	BlockNumber nblocks;
 	BlockNumber blkno;
-
-	page = (Page) buf.data;
 
 	/*
 	 * The init fork for an unlogged relation in many respects has to be
@@ -364,6 +360,9 @@ RelationCopyStorage(SMgrRelation src, SMgrRelation dst,
 
 	for (blkno = 0; blkno < nblocks; blkno++)
 	{
+		PGAlignedBlock buf;
+		Page	page = (Page) buf.data;
+
 		/* If we got a cancel signal during the copy of the data, quit */
 		CHECK_FOR_INTERRUPTS();
 
