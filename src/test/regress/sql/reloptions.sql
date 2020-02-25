@@ -128,3 +128,14 @@ SELECT reloptions FROM pg_class WHERE oid = 'reloptions_test_idx'::regclass;
 CREATE INDEX reloptions_test_idx3 ON reloptions_test (s);
 ALTER INDEX reloptions_test_idx3 SET (fillfactor=40);
 SELECT reloptions FROM pg_class WHERE oid = 'reloptions_test_idx3'::regclass;
+
+-- For partitioned tables/indexes, expect ALTER..SET fillfactor not to recurse,
+-- but rather to set a value in the parent table which is used for new children
+CREATE TABLE par(i int) PARTITION BY RANGE(i);
+CREATE INDEX par_i_idx ON par(i);
+CREATE TABLE par1 PARTITION OF par FOR VALUES FROM (1)TO(2);
+ALTER TABLE par SET (fillfactor=13);
+ALTER INDEX par_i_idx SET (fillfactor=13);
+CREATE TABLE par2 PARTITION OF par FOR VALUES FROM (2)TO(3);
+\d par1
+\d par2

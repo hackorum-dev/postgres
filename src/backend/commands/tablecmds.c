@@ -740,16 +740,32 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	/*
 	 * Parse and validate reloptions, if any.
 	 */
-	reloptions = transformRelOptions((Datum) 0, stmt->options, NULL, validnsps,
-									 true, false);
+
+	if (stmt->partbound)
+	{
+		/* If partitioned, also use reloptions from the immediate parent */
+		Datum oldoptions;
+		bool isnull;
+		Oid parentoid = linitial_oid(inheritOids);
+		HeapTuple tuple = SearchSysCache1(RELOID, ObjectIdGetDatum(parentoid));
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for relation %u", parentoid);
+
+		oldoptions = SysCacheGetAttr(RELOID, tuple, Anum_pg_class_reloptions,
+								&isnull);
+
+		reloptions = transformRelOptions(isnull ? 0 : oldoptions,
+				stmt->options, NULL, validnsps, true, false);
+
+		ReleaseSysCache(tuple);
+	} else
+		reloptions = transformRelOptions((Datum) 0, stmt->options, NULL,
+				validnsps, true, false);
 
 	switch (relkind)
 	{
 		case RELKIND_VIEW:
 			(void) view_reloptions(reloptions, true);
-			break;
-		case RELKIND_PARTITIONED_TABLE:
-			(void) partitioned_table_reloptions(reloptions, true);
 			break;
 		default:
 			(void) heap_reloptions(relkind, reloptions, true);
@@ -4155,7 +4171,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_SetRelOptions:	/* SET (...) */
 		case AT_ResetRelOptions:	/* RESET (...) */
 		case AT_ReplaceRelOptions:	/* reset them all, then set just these */
-			ATSimplePermissions(rel, ATT_TABLE | ATT_VIEW | ATT_MATVIEW | ATT_INDEX);
+			ATSimplePermissions(rel, ATT_TABLE | ATT_VIEW | ATT_MATVIEW | ATT_INDEX | ATT_PARTITIONED_INDEX);
 			/* This command never recurses */
 			/* No command-specific prep needed */
 			pass = AT_PASS_MISC;
@@ -12693,10 +12709,8 @@ ATExecSetRelOptions(Relation rel, List *defList, AlterTableType operation,
 		case RELKIND_RELATION:
 		case RELKIND_TOASTVALUE:
 		case RELKIND_MATVIEW:
-			(void) heap_reloptions(rel->rd_rel->relkind, newOptions, true);
-			break;
 		case RELKIND_PARTITIONED_TABLE:
-			(void) partitioned_table_reloptions(newOptions, true);
+			(void) heap_reloptions(rel->rd_rel->relkind, newOptions, true);
 			break;
 		case RELKIND_VIEW:
 			(void) view_reloptions(newOptions, true);

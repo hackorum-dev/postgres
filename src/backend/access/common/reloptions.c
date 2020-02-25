@@ -1108,10 +1108,8 @@ extractRelOptions(HeapTuple tuple, TupleDesc tupdesc,
 		case RELKIND_RELATION:
 		case RELKIND_TOASTVALUE:
 		case RELKIND_MATVIEW:
-			options = heap_reloptions(classForm->relkind, datum, false);
-			break;
 		case RELKIND_PARTITIONED_TABLE:
-			options = partitioned_table_reloptions(datum, false);
+			options = heap_reloptions(classForm->relkind, datum, false);
 			break;
 		case RELKIND_VIEW:
 			options = view_reloptions(datum, false);
@@ -1578,21 +1576,6 @@ build_reloptions(Datum reloptions, bool validate,
 	pfree(options);
 
 	return rdopts;
-}
-
-/*
- * Option parser for partitioned tables
- */
-bytea *
-partitioned_table_reloptions(Datum reloptions, bool validate)
-{
-	/*
-	 * There are no options for partitioned tables yet, but this is able to do
-	 * some validation.
-	 */
-	return (bytea *) build_reloptions(reloptions, validate,
-									  RELOPT_KIND_PARTITIONED,
-									  0, NULL, 0);
 }
 
 /*

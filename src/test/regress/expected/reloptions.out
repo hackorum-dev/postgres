@@ -222,3 +222,32 @@ SELECT reloptions FROM pg_class WHERE oid = 'reloptions_test_idx3'::regclass;
  {fillfactor=40}
 (1 row)
 
+-- For partitioned tables/indexes, expect ALTER..SET fillfactor not to recurse,
+-- but rather to set a value in the parent table which is used for new children
+CREATE TABLE par(i int) PARTITION BY RANGE(i);
+CREATE INDEX par_i_idx ON par(i);
+CREATE TABLE par1 PARTITION OF par FOR VALUES FROM (1)TO(2);
+ALTER TABLE par SET (fillfactor=13);
+ALTER INDEX par_i_idx SET (fillfactor=13);
+CREATE TABLE par2 PARTITION OF par FOR VALUES FROM (2)TO(3);
+\d+ par1
+                                   Table "public.par1"
+ Column |  Type   | Collation | Nullable | Default | Storage | Stats target | Description 
+--------+---------+-----------+----------+---------+---------+--------------+-------------
+ i      | integer |           |          |         | plain   |              | 
+Partition of: par FOR VALUES FROM (1) TO (2)
+Partition constraint: ((i IS NOT NULL) AND (i >= 1) AND (i < 2))
+Indexes:
+    "par1_i_idx" btree (i)
+
+\d+ par2
+                                   Table "public.par2"
+ Column |  Type   | Collation | Nullable | Default | Storage | Stats target | Description 
+--------+---------+-----------+----------+---------+---------+--------------+-------------
+ i      | integer |           |          |         | plain   |              | 
+Partition of: par FOR VALUES FROM (2) TO (3)
+Partition constraint: ((i IS NOT NULL) AND (i >= 2) AND (i < 3))
+Indexes:
+    "par2_i_idx" btree (i) WITH (fillfactor='13')
+Options: fillfactor=13
+
