@@ -4525,8 +4525,8 @@ INSERT INTO mytable VALUES(-1);  -- fails
     several alias types for <type>oid</type>: <type>regproc</type>,
     <type>regprocedure</type>, <type>regoper</type>, <type>regoperator</type>,
     <type>regclass</type>, <type>regtype</type>, <type>regrole</type>,
-    <type>regnamespace</type>, <type>regconfig</type>, and
-    <type>regdictionary</type>.  <xref linkend="datatype-oid-table"/> shows an
+    <type>regnamespace</type>, <type>regconfig</type>, <type>reglanguage</type>
+    and <type>regdictionary</type>.  <xref linkend="datatype-oid-table"/> shows an
     overview.
    </para>
 
@@ -4660,6 +4660,14 @@ SELECT * FROM pg_attribute
         <entry>text search dictionary</entry>
         <entry><literal>simple</literal></entry>
        </row>
+
+       <row>
+        <entry><type>reglanguage</type></entry>
+        <entry><structname>pg_language</structname></entry>
+        <entry>language name</entry>
+        <entry><literal>plpgsql</literal></entry>
+       </row>
+
       </tbody>
      </tgroup>
     </table>

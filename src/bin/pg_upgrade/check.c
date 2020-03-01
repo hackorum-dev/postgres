@@ -1034,9 +1034,11 @@ check_for_reg_data_type_usage(ClusterInfo *cluster)
 								"           'regoper', "
 								"           'regoperator', "
 								"           'regproc', "
-								"           'regprocedure' "
+								"           'regprocedure', "
+								"           'reglanguage' "
 		/* regrole.oid is preserved, so 'regrole' is OK */
 		/* regtype.oid is preserved, so 'regtype' is OK */
+		/* reglanguage.oid is preserved, so 'reglanguage' is OK */
 								"			) AND "
 								"		c.relnamespace = n.oid AND "
 								"		n.nspname NOT IN ('pg_catalog', 'information_schema')");

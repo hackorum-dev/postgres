@@ -40,6 +40,12 @@ SELECT regtype('int4');
  integer
 (1 row)
 
+SELECT reglanguage('plpgsql');
+ reglanguage 
+-------------
+ plpgsql
+(1 row)
+
 SELECT to_regoper('||/');
  to_regoper 
 ------------
@@ -74,6 +80,12 @@ SELECT to_regtype('int4');
  to_regtype 
 ------------
  integer
+(1 row)
+
+SELECT to_reglanguage('plpgsql');
+ to_reglanguage 
+----------------
+ plpgsql
 (1 row)
 
 -- with schemaname
@@ -219,6 +231,10 @@ SELECT regtype('int3');
 ERROR:  type "int3" does not exist
 LINE 1: SELECT regtype('int3');
                        ^
+SELECT reglanguage('plpgsq');
+ERROR:  language "plpgsq" does not exist
+LINE 1: SELECT reglanguage('plpgsq');
+                           ^
 -- with schemaname
 SELECT regoper('ng_catalog.||/');
 ERROR:  schema "ng_catalog" does not exist
@@ -277,6 +293,10 @@ SELECT regnamespace('foo.bar');
 ERROR:  invalid name syntax
 LINE 1: SELECT regnamespace('foo.bar');
                             ^
+SELECT reglanguage('xxx.plpgsq');
+ERROR:  language "xxx.plpgsq" does not exist
+LINE 1: SELECT reglanguage('xxx.plpgsq');
+                           ^
 /* If objects don't exist, return NULL with no error. */
 -- without schemaname
 SELECT to_regoper('||//');
@@ -312,6 +332,12 @@ SELECT to_regclass('pg_classes');
 SELECT to_regtype('int3');
  to_regtype 
 ------------
+ 
+(1 row)
+
+SELECT to_reglanguage('plpgsq');
+ to_reglanguage 
+----------------
  
 (1 row)
 
@@ -395,3 +421,9 @@ SELECT to_regnamespace('"Nonexistent"');
 
 SELECT to_regnamespace('foo.bar');
 ERROR:  invalid name syntax
+SELECT to_reglanguage('xxx.plpgsq');
+ to_reglanguage 
+----------------
+ 
+(1 row)
+

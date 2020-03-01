@@ -14,6 +14,7 @@ SELECT regproc('now');
 SELECT regprocedure('abs(numeric)');
 SELECT regclass('pg_class');
 SELECT regtype('int4');
+SELECT reglanguage('plpgsql');
 
 SELECT to_regoper('||/');
 SELECT to_regoperator('+(int4,int4)');
@@ -21,6 +22,7 @@ SELECT to_regproc('now');
 SELECT to_regprocedure('abs(numeric)');
 SELECT to_regclass('pg_class');
 SELECT to_regtype('int4');
+SELECT to_reglanguage('plpgsql');
 
 -- with schemaname
 
@@ -61,6 +63,7 @@ SELECT regproc('know');
 SELECT regprocedure('absinthe(numeric)');
 SELECT regclass('pg_classes');
 SELECT regtype('int3');
+SELECT reglanguage('plpgsq');
 
 -- with schemaname
 
@@ -81,6 +84,7 @@ SELECT regrole('foo.bar');
 SELECT regnamespace('Nonexistent');
 SELECT regnamespace('"Nonexistent"');
 SELECT regnamespace('foo.bar');
+SELECT reglanguage('xxx.plpgsq');
 
 /* If objects don't exist, return NULL with no error. */
 
@@ -92,6 +96,7 @@ SELECT to_regproc('know');
 SELECT to_regprocedure('absinthe(numeric)');
 SELECT to_regclass('pg_classes');
 SELECT to_regtype('int3');
+SELECT to_reglanguage('plpgsq');
 
 -- with schemaname
 
@@ -113,3 +118,4 @@ SELECT to_regrole('foo.bar');
 SELECT to_regnamespace('Nonexistent');
 SELECT to_regnamespace('"Nonexistent"');
 SELECT to_regnamespace('foo.bar');
+SELECT to_reglanguage('xxx.plpgsq');

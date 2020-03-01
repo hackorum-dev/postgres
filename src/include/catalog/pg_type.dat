@@ -392,6 +392,11 @@
   typinput => 'regnamespacein', typoutput => 'regnamespaceout',
   typreceive => 'regnamespacerecv', typsend => 'regnamespacesend',
   typalign => 'i' },
+{ oid => '4179', array_type_oid => '4180', descr => 'registered language',
+  typname => 'reglanguage', typlen => '4', typbyval => 't', typcategory => 'N',
+  typinput => 'reglanguagein', typoutput => 'reglanguageout',
+  typreceive => 'reglanguagerecv', typsend => 'reglanguagesend',
+  typalign => 'i' },
 
 # uuid
 { oid => '2950', array_type_oid => '2951', descr => 'UUID datatype',

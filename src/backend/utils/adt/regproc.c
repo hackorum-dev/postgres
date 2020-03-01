@@ -29,6 +29,7 @@
 #include "catalog/pg_ts_config.h"
 #include "catalog/pg_ts_dict.h"
 #include "catalog/pg_type.h"
+#include "commands/proclang.h"
 #include "lib/stringinfo.h"
 #include "miscadmin.h"
 #include "parser/parse_type.h"
@@ -1716,6 +1717,118 @@ stringToQualifiedNameList(const char *string)
 
 	return result;
 }
+
+/*
+ * reglanguagein		- converts "language" to type OID
+ *
+ * We also accept a numeric OID, for symmetry with the output routine,
+ * and for possible use in bootstrap mode.
+ *
+ * '-' signifies unknown (OID 0).  In all other cases, the input must
+ * match an existing pg_type entry.
+ */
+Datum
+reglanguagein(PG_FUNCTION_ARGS)
+{
+	char	   *language_name_or_oid = PG_GETARG_CSTRING(0);
+	Oid			result = InvalidOid;
+
+	/* '-' ? */
+	if (strcmp(language_name_or_oid, "-") == 0)
+		PG_RETURN_OID(InvalidOid);
+
+	/* Numeric OID? */
+	if (language_name_or_oid[0] >= '0' &&
+		language_name_or_oid[0] <= '9' &&
+		strspn(language_name_or_oid, "0123456789") == strlen(language_name_or_oid))
+	{
+		result = DatumGetObjectId(DirectFunctionCall1(oidin,
+													  CStringGetDatum(language_name_or_oid)));
+		PG_RETURN_OID(result);
+	}
+
+	/* Else it's a type name, possibly schema-qualified or decorated */
+
+	/* The rest of this wouldn't work in bootstrap mode */
+	if (IsBootstrapProcessingMode())
+		elog(ERROR, "reglanguage values must be OIDs in bootstrap mode");
+
+	result = get_language_oid(language_name_or_oid, false);
+
+	PG_RETURN_OID(result);
+}
+
+/*
+ * to_reglanguage	- converts "language nane" to type OID
+ *
+ * If the name is not found, we return NULL.
+ */
+Datum
+to_reglanguage(PG_FUNCTION_ARGS)
+{
+	char	   *language_name = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	Oid			result;
+
+	result = get_language_oid(language_name, true);
+
+	if (OidIsValid(result))
+		PG_RETURN_OID(result);
+	else
+		PG_RETURN_NULL();
+}
+
+/*
+ * reglanguageout		- converts language OID to "language_name"
+ */
+Datum
+reglanguageout(PG_FUNCTION_ARGS)
+{
+	Oid			langid = PG_GETARG_OID(0);
+	char	   *result;
+
+	if (langid == InvalidOid)
+	{
+		result = pstrdup("-");
+		PG_RETURN_CSTRING(result);
+	}
+
+	result = get_language_name(langid, true);
+
+	if (result)
+	{
+		/* pstrdup is not really necessary, but it avoids a compiler warning */
+		result = pstrdup(quote_identifier(result));
+	}
+	else
+	{
+		/* If OID doesn't match any namespace, return it numerically */
+		result = (char *) palloc(NAMEDATALEN);
+		snprintf(result, NAMEDATALEN, "%u", langid);
+	}
+
+	PG_RETURN_CSTRING(result);
+}
+
+/*
+ *		reglanguagerecv			- converts external binary format to reglanguage
+ */
+Datum
+reglanguagerecv(PG_FUNCTION_ARGS)
+{
+	/* Exactly the same as oidrecv, so share code */
+	return oidrecv(fcinfo);
+}
+
+/*
+ *		reglanguagesend			- converts reglanguage to binary format
+ */
+Datum
+reglanguagesend(PG_FUNCTION_ARGS)
+{
+	/* Exactly the same as oidsend, so share code */
+	return oidsend(fcinfo);
+}
+
 
 /*****************************************************************************
  *	 SUPPORT ROUTINES														 *
