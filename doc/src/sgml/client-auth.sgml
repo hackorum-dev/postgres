@@ -2046,9 +2046,12 @@ host ... radius radiusservers="server1,server2" radiussecrets="""secret one"",""
     authentication, the authentication option <literal>clientcert</literal> is
     assumed to be <literal>verify-ca</literal> or <literal>verify-full</literal>,
     and it cannot be turned off since a client certificate is necessary for this
-    method. What the <literal>cert</literal> method adds to the basic
-    <literal>clientcert</literal> certificate validity test is a check that the
-    <literal>cn</literal> attribute matches the database user name.
+    method. If sslmode is set to <literal>verify-full</literal>, libpq will verify
+    that the server host name matches the <literal>cn</literal> stored in the 
+    client certificate. If sslmode is set to <literal>verify-ca</literal>, libpq
+    will verify that the client is trustworthy by checking the certificate chain
+    up to the root certificate and it does not verify server hostname and client
+    certificate common name match.
    </para>
   </sect1>
 
