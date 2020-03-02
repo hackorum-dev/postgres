@@ -42,6 +42,21 @@
 #undef vprintf
 #undef printf
 
+/*
+ * Starting with Python 3.9, the Python headers contain inline functions that
+ * fall afoul of our -Wdeclaration-after-statement coding style, so we need to
+ * do a little dance here to disable that warning momentarily.
+ */
+
+#ifdef __GNUC__
+#define GCC_VERSION (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__)
+#endif
+
+#if defined(__GNUC__) && GCC_VERSION >= 40600
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeclaration-after-statement"
+#endif
+
 #if defined(_MSC_VER) && defined(_DEBUG)
 /* Python uses #pragma to bring in a non-default libpython on VC++ if
  * _DEBUG is defined */
@@ -57,6 +72,10 @@
 #undef errcode
 #else
 #include <Python.h>
+#endif
+
+#if defined(__GNUC__) && GCC_VERSION >= 40600
+#pragma GCC diagnostic pop
 #endif
 
 /*
