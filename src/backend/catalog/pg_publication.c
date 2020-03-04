@@ -106,7 +106,7 @@ is_publishable_class(Oid relid, Form_pg_class reltuple)
 	return reltuple->relkind == RELKIND_RELATION &&
 		!IsCatalogRelationOid(relid) &&
 		reltuple->relpersistence == RELPERSISTENCE_PERMANENT &&
-		relid >= FirstNormalObjectId;
+		ObjectIsUserObject(relid);
 }
 
 /*
