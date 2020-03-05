@@ -19,7 +19,7 @@ use Test::More;
 
 if ($ENV{with_gssapi} eq 'yes')
 {
-	plan tests => 18;
+	plan tests => 20;
 }
 else
 {
@@ -333,3 +333,25 @@ test_access(
 	0,
 	'',
 	'succeeds with include_realm=0 and defaults');
+
+truncate($node->data_dir . '/pg_ident.conf', 0);
+unlink($node->data_dir . '/pg_hba.conf');
+$node->append_conf('pg_hba.conf',
+	qq{host all all $hostaddr/32 trust});
+$node->restart;
+
+test_access(
+	$node,
+	'test1',
+	'SELECT not gss_authenticated AND encrypted from pg_stat_gssapi where pid = pg_backend_pid();',
+	0,
+	'',
+	'succeeds with GSS-encrypted with default gssencmode and host trust hba');
+
+test_access(
+	$node,
+	"test1",
+	'SELECT not gss_authenticated and not encrypted from pg_stat_gssapi where pid = pg_backend_pid();',
+	0,
+	"gssencmode=disable",
+	"succeeds with GSS encryption disabled with access disabled and host trust hba");
