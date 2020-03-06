@@ -17,7 +17,9 @@
 #include "catalog/pg_type.h"
 #include "funcapi.h"
 #include "miscadmin.h"
+#include "pgstat.h"
 #include "storage/predicate_internals.h"
+#include "storage/procarray.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
 
@@ -578,16 +580,27 @@ pg_safe_snapshot_blocking_pids(PG_FUNCTION_ARGS)
 Datum
 pg_isolation_test_session_is_blocked(PG_FUNCTION_ARGS)
 {
+	TupleDesc	tupdesc;
 	int			blocked_pid = PG_GETARG_INT32(0);
 	ArrayType  *interesting_pids_a = PG_GETARG_ARRAYTYPE_P(1);
 	ArrayType  *blocking_pids_a;
 	int32	   *interesting_pids;
 	int32	   *blocking_pids;
+	Datum		values[3];
+	bool		nulls[3];
+	PGPROC	   *proc;
+	uint32		raw_wait_event = 0;
+	const char *wait_event_type = NULL;
+	const char *wait_event = NULL;
 	int			num_interesting_pids;
 	int			num_blocking_pids;
 	int			dummy;
 	int			i,
 				j;
+
+	/* Initialise values and NULL flags arrays */
+	MemSet(values, 0, sizeof(values));
+	MemSet(nulls, 0, sizeof(nulls));
 
 	/* Validate the passed-in array */
 	Assert(ARR_ELEMTYPE(interesting_pids_a) == INT4OID);
@@ -596,6 +609,34 @@ pg_isolation_test_session_is_blocked(PG_FUNCTION_ARGS)
 	interesting_pids = (int32 *) ARR_DATA_PTR(interesting_pids_a);
 	num_interesting_pids = ArrayGetNItems(ARR_NDIM(interesting_pids_a),
 										  ARR_DIMS(interesting_pids_a));
+
+	/* Initialise attributes information in the tuple descriptor */
+	tupdesc = CreateTemplateTupleDesc(3);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 1, "blocked",
+					   BOOLOID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 2, "wait_event_type",
+					   TEXTOID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 3, "wait_even",
+					   TEXTOID, -1, 0);
+
+	BlessTupleDesc(tupdesc);
+
+	proc = BackendPidGetProc(blocked_pid);
+	if (proc)
+	{
+#define UINT32_ACCESS_ONCE(var)		 ((uint32)(*((volatile uint32 *)&(var))))
+		raw_wait_event = UINT32_ACCESS_ONCE(proc->wait_event_info);
+		wait_event_type = pgstat_get_wait_event_type(raw_wait_event);
+		wait_event = pgstat_get_wait_event(raw_wait_event);
+
+		if (wait_event_type != NULL)
+			values[1] = CStringGetTextDatum(wait_event_type);
+		if (wait_event != NULL)
+			values[2] = CStringGetTextDatum(wait_event);
+	}
+
+	nulls[1] = (wait_event_type == NULL);
+	nulls[2] = (wait_event == NULL);
 
 	/*
 	 * Get the PIDs of all sessions blocking the given session's attempt to
@@ -623,7 +664,11 @@ pg_isolation_test_session_is_blocked(PG_FUNCTION_ARGS)
 		for (j = 0; j < num_interesting_pids; j++)
 		{
 			if (blocking_pids[i] == interesting_pids[j])
-				PG_RETURN_BOOL(true);
+			{
+				values[0] = BoolGetDatum(true);
+				PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(tupdesc,
+								values, nulls)));
+			}
 		}
 
 	/*
@@ -636,9 +681,12 @@ pg_isolation_test_session_is_blocked(PG_FUNCTION_ARGS)
 	 * buffer and check if the number of safe snapshot blockers is non-zero.
 	 */
 	if (GetSafeSnapshotBlockingPids(blocked_pid, &dummy, 1) > 0)
-		PG_RETURN_BOOL(true);
+		values[0] = BoolGetDatum(true);
 
-	PG_RETURN_BOOL(false);
+	values[0] = BoolGetDatum(false);
+
+	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(tupdesc,
+					values, nulls)));
 }
 
 

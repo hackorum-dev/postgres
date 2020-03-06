@@ -26,6 +26,12 @@ struct Session
 	int			nsteps;
 };
 
+typedef struct WaitInfo
+{
+	char	   *wait_event_type;
+	char	   *wait_event;
+} WaitInfo;
+
 struct Step
 {
 	int			session;
@@ -33,6 +39,8 @@ struct Step
 	char	   *name;
 	char	   *sql;
 	char	   *errormsg;
+	WaitInfo   *waitinfo;
+	struct timeval start_time;
 };
 
 typedef struct

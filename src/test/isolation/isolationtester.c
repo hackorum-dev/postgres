@@ -43,6 +43,7 @@ static void run_permutation(TestSpec *testspec, int nsteps, Step **steps);
 
 #define STEP_NONBLOCK	0x1		/* return 0 as soon as cmd waits for a lock */
 #define STEP_RETRY		0x2		/* this is a retry of a previously-waiting cmd */
+#define STEP_WAIT		0x4		/* active wait for a given wait event */
 static bool try_complete_step(TestSpec *testspec, Step *step, int flags);
 
 static int	step_qsort_cmp(const void *a, const void *b);
@@ -212,7 +213,7 @@ main(int argc, char **argv)
 	 */
 	initPQExpBuffer(&wait_query);
 	appendPQExpBufferStr(&wait_query,
-						 "SELECT pg_catalog.pg_isolation_test_session_is_blocked($1, '{");
+						 "SELECT * FROM pg_catalog.pg_isolation_test_session_is_blocked($1, '{");
 	/* The spec syntax requires at least one session; assume that here. */
 	appendPQExpBufferStr(&wait_query, backend_pid_strs[1]);
 	for (i = 2; i < nconns; i++)
@@ -587,8 +588,14 @@ run_permutation(TestSpec *testspec, int nsteps, Step **steps)
 			exit(1);
 		}
 
-		/* Try to complete this step without blocking.  */
-		mustwait = try_complete_step(testspec, step, STEP_NONBLOCK);
+		/*
+		 * Try to complete this step without blocking, unless the step has a
+		 * cancel on clause.
+		 */
+		mustwait = try_complete_step(testspec, step,
+				(step->waitinfo ? STEP_WAIT : STEP_NONBLOCK));
+		if (step->waitinfo)
+			report_error_message(step);
 
 		/* Check for completion of any steps that were previously waiting. */
 		w = 0;
@@ -720,10 +727,12 @@ try_complete_step(TestSpec *testspec, Step *step, int flags)
 		else if (ret == 0)		/* select() timeout: check for lock wait */
 		{
 			struct timeval current_time;
+			char  *wait_event_type = "";
+			char  *wait_event = "";
 			int64		td;
 
 			/* If it's OK for the step to block, check whether it has. */
-			if (flags & STEP_NONBLOCK)
+			if (flags & (STEP_NONBLOCK | STEP_WAIT))
 			{
 				bool		waiting;
 
@@ -738,9 +747,17 @@ try_complete_step(TestSpec *testspec, Step *step, int flags)
 					exit(1);
 				}
 				waiting = ((PQgetvalue(res, 0, 0))[0] == 't');
+				if (waiting && (flags & STEP_WAIT))
+				{
+					wait_event_type = pg_strdup(PQgetvalue(res, 0, 1));
+					Assert(wait_event_type != NULL);
+
+					wait_event = pg_strdup(PQgetvalue(res, 0, 2));
+					Assert(wait_event != NULL);
+				}
 				PQclear(res);
 
-				if (waiting)	/* waiting to acquire a lock */
+				if (waiting && (flags & STEP_NONBLOCK))	/* waiting to acquire a lock */
 				{
 					/*
 					 * Since it takes time to perform the lock-check query,
@@ -787,7 +804,11 @@ try_complete_step(TestSpec *testspec, Step *step, int flags)
 			 * failing, but remaining permutations and tests should still be
 			 * OK.
 			 */
-			if (td > max_step_wait && !canceled)
+			if ((td > max_step_wait ||
+				(step->waitinfo
+				 && strcmp(step->waitinfo->wait_event_type, wait_event_type) == 0
+				 && strcmp(step->waitinfo->wait_event, wait_event) == 0))
+				&& !canceled)
 			{
 				PGcancel   *cancel = PQgetCancel(conn);
 
@@ -801,8 +822,14 @@ try_complete_step(TestSpec *testspec, Step *step, int flags)
 						 * print to stdout not stderr, as this should appear
 						 * in the test case's results
 						 */
-						printf("isolationtester: canceling step %s after %d seconds\n",
-							   step->name, (int) (td / USECS_PER_SEC));
+						if (!step->waitinfo)
+							printf("isolationtester: canceling step %s after %d seconds\n",
+								   step->name, (int) (td / USECS_PER_SEC));
+						else
+							printf("isolationtester: canceling step %s on wait event %s/%s\n",
+									step->name,
+									step->waitinfo->wait_event_type,
+									step->waitinfo->wait_event);
 						canceled = true;
 					}
 					else

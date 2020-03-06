@@ -48,6 +48,8 @@ comment			("#"{non_newline}*)
 	litbufsize = LITBUF_INIT;
 %}
 
+cancel			{ return CANCEL; }
+on				{ return ON; }
 permutation		{ return PERMUTATION; }
 session			{ return SESSION; }
 setup			{ return SETUP; }

@@ -27,6 +27,7 @@ TestSpec		parseresult;			/* result of parsing is left here */
 	char	   *str;
 	Session	   *session;
 	Step	   *step;
+	WaitInfo   *waitinfo;
 	Permutation *permutation;
 	struct
 	{
@@ -43,9 +44,11 @@ TestSpec		parseresult;			/* result of parsing is left here */
 %type <session> session
 %type <step> step
 %type <permutation> permutation
+%type <waitinfo> opt_cancel
 
 %token <str> sqlblock string_literal
-%token PERMUTATION SESSION SETUP STEP TEARDOWN TEST
+%token <str> LITERAL
+%token CANCEL ON PERMUTATION SESSION SETUP STEP TEARDOWN TEST
 
 %%
 
@@ -140,16 +143,29 @@ step_list:
 
 
 step:
-			STEP string_literal sqlblock
+			STEP string_literal sqlblock opt_cancel
 			{
 				$$ = pg_malloc(sizeof(Step));
 				$$->name = $2;
 				$$->sql = $3;
 				$$->used = false;
 				$$->errormsg = NULL;
+				$$->waitinfo = $4;
 			}
 		;
 
+opt_cancel:
+			CANCEL ON string_literal string_literal
+			{
+				$$ = pg_malloc(sizeof(WaitInfo));
+				$$->wait_event_type = $3;
+				$$->wait_event = $4;
+			}
+			| /* EMPTY */
+			{
+				$$ = NULL;
+			}
+		;
 
 opt_permutation_list:
 			permutation_list
