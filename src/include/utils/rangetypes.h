@@ -51,9 +51,13 @@ typedef struct
 											  RANGE_UB_NULL | \
 											  RANGE_UB_INF)))
 
-#define RangeIsEmpty(r)  ((range_get_flags(r) & RANGE_EMPTY) != 0)
-#define RangeIsOrContainsEmpty(r)  \
-	((range_get_flags(r) & (RANGE_EMPTY | RANGE_CONTAIN_EMPTY)) != 0)
+#define RangeFlagsIsEmpty(flags) \
+		(((flags) & RANGE_EMPTY) != 0)
+#define RangeFlagsIsOrContainsEmpty(flags) \
+		(((flags) & (RANGE_EMPTY | RANGE_CONTAIN_EMPTY)) != 0)
+
+#define RangeIsEmpty(r)  (RangeFlagsIsEmpty(range_get_flags(r)))
+#define RangeIsOrContainsEmpty(r)  (RangeFlagsIsOrContainsEmpty(range_get_flags(r)))
 
 
 /* Internal representation of either bound of a range (not what's on disk) */
@@ -123,7 +127,7 @@ extern RangeType *range_serialize(TypeCacheEntry *typcache, RangeBound *lower,
 								  RangeBound *upper, bool empty);
 extern void range_deserialize(TypeCacheEntry *typcache, const RangeType *range,
 							  RangeBound *lower, RangeBound *upper,
-							  bool *empty);
+							  uint8 *flags);
 extern char range_get_flags(const RangeType *range);
 extern void range_set_contain_empty(RangeType *range);
 extern RangeType *make_range(TypeCacheEntry *typcache, RangeBound *lower,

@@ -246,8 +246,8 @@ range_gist_penalty(PG_FUNCTION_ARGS)
 				new_lower,
 				orig_upper,
 				new_upper;
-	bool		orig_empty,
-				new_empty;
+	uint8		orig_flags,
+				new_flags;
 
 	if (RangeTypeGetOid(orig) != RangeTypeGetOid(new))
 		elog(ERROR, "range types do not match");
@@ -256,18 +256,18 @@ range_gist_penalty(PG_FUNCTION_ARGS)
 
 	has_subtype_diff = OidIsValid(typcache->rng_subdiff_finfo.fn_oid);
 
-	range_deserialize(typcache, orig, &orig_lower, &orig_upper, &orig_empty);
-	range_deserialize(typcache, new, &new_lower, &new_upper, &new_empty);
+	range_deserialize(typcache, orig, &orig_lower, &orig_upper, &orig_flags);
+	range_deserialize(typcache, new, &new_lower, &new_upper, &new_flags);
 
 	/*
 	 * Distinct branches for handling distinct classes of ranges.  Note that
 	 * penalty values only need to be commensurate within the same class of
 	 * new range.
 	 */
-	if (new_empty)
+	if (RangeFlagsIsEmpty(new_flags))
 	{
 		/* Handle insertion of empty range */
-		if (orig_empty)
+		if (RangeFlagsIsEmpty(orig_flags))
 		{
 			/*
 			 * The best case is to insert it to empty original range.
@@ -276,7 +276,7 @@ range_gist_penalty(PG_FUNCTION_ARGS)
 			 */
 			*penalty = 0.0;
 		}
-		else if (RangeIsOrContainsEmpty(orig))
+		else if (RangeFlagsIsOrContainsEmpty(orig_flags))
 		{
 			/*
 			 * The second case is to insert empty range into range which
@@ -337,7 +337,7 @@ range_gist_penalty(PG_FUNCTION_ARGS)
 			*penalty = 2 * INFINITE_BOUND_PENALTY;
 		}
 
-		if (RangeIsOrContainsEmpty(orig))
+		if (RangeFlagsIsOrContainsEmpty(orig_flags))
 		{
 			/*
 			 * Original range is narrower when it doesn't contain empty
@@ -349,7 +349,7 @@ range_gist_penalty(PG_FUNCTION_ARGS)
 	else if (new_lower.infinite)
 	{
 		/* Handle insertion of (-inf, x) range */
-		if (!orig_empty && orig_lower.infinite)
+		if (!RangeFlagsIsEmpty(orig_flags) && orig_lower.infinite)
 		{
 			if (orig_upper.infinite)
 			{
@@ -396,7 +396,7 @@ range_gist_penalty(PG_FUNCTION_ARGS)
 	else if (new_upper.infinite)
 	{
 		/* Handle insertion of (x, +inf) range */
-		if (!orig_empty && orig_upper.infinite)
+		if (!RangeFlagsIsEmpty(orig_flags) && orig_upper.infinite)
 		{
 			if (orig_lower.infinite)
 			{
@@ -443,7 +443,7 @@ range_gist_penalty(PG_FUNCTION_ARGS)
 	else
 	{
 		/* Handle insertion of normal (non-empty, non-infinite) range */
-		if (orig_empty || orig_lower.infinite || orig_upper.infinite)
+		if (RangeFlagsIsEmpty(orig_flags) || orig_lower.infinite || orig_upper.infinite)
 		{
 			/*
 			 * Avoid mixing normal ranges with infinite and empty ranges.
@@ -699,19 +699,15 @@ range_super_union(TypeCacheEntry *typcache, RangeType *r1, RangeType *r2)
 				lower2;
 	RangeBound	upper1,
 				upper2;
-	bool		empty1,
-				empty2;
-	char		flags1,
+	uint8		flags1,
 				flags2;
 	RangeBound *result_lower;
 	RangeBound *result_upper;
 
-	range_deserialize(typcache, r1, &lower1, &upper1, &empty1);
-	range_deserialize(typcache, r2, &lower2, &upper2, &empty2);
-	flags1 = range_get_flags(r1);
-	flags2 = range_get_flags(r2);
+	range_deserialize(typcache, r1, &lower1, &upper1, &flags1);
+	range_deserialize(typcache, r2, &lower2, &upper2, &flags2);
 
-	if (empty1)
+	if (RangeFlagsIsEmpty(flags1))
 	{
 		/* We can return r2 as-is if it already is or contains empty */
 		if (flags2 & (RANGE_EMPTY | RANGE_CONTAIN_EMPTY))
@@ -721,7 +717,7 @@ range_super_union(TypeCacheEntry *typcache, RangeType *r1, RangeType *r2)
 		range_set_contain_empty(r2);
 		return r2;
 	}
-	if (empty2)
+	if (RangeFlagsIsEmpty(flags2))
 	{
 		/* We can return r1 as-is if it already is or contains empty */
 		if (flags1 & (RANGE_EMPTY | RANGE_CONTAIN_EMPTY))
@@ -983,17 +979,17 @@ range_gist_single_sorting_split(TypeCacheEntry *typcache,
 	{
 		RangeType  *range = DatumGetRangeTypeP(entryvec->vector[i].key);
 		RangeBound	bound2;
-		bool		empty;
+		uint8		flags;
 
 		sortItems[i - 1].index = i;
 		/* Put appropriate bound into array */
 		if (use_upper_bound)
 			range_deserialize(typcache, range, &bound2,
-							  &sortItems[i - 1].bound, &empty);
+							  &sortItems[i - 1].bound, &flags);
 		else
 			range_deserialize(typcache, range, &sortItems[i - 1].bound,
-							  &bound2, &empty);
-		Assert(!empty);
+							  &bound2, &flags);
+		Assert(!RangeFlagsIsEmpty(flags));
 	}
 
 	qsort_arg(sortItems, maxoff, sizeof(SingleBoundSortItem),
@@ -1084,13 +1080,13 @@ range_gist_double_sorting_split(TypeCacheEntry *typcache,
 	for (i = FirstOffsetNumber; i <= maxoff; i = OffsetNumberNext(i))
 	{
 		RangeType  *range = DatumGetRangeTypeP(entryvec->vector[i].key);
-		bool		empty;
+		uint8		flags;
 
 		range_deserialize(typcache, range,
 						  &by_lower[i - FirstOffsetNumber].lower,
 						  &by_lower[i - FirstOffsetNumber].upper,
-						  &empty);
-		Assert(!empty);
+						  &flags);
+		Assert(!RangeFlagsIsEmpty(flags));
 	}
 
 	/*
@@ -1253,14 +1249,14 @@ range_gist_double_sorting_split(TypeCacheEntry *typcache,
 	{
 		RangeBound	lower,
 					upper;
-		bool		empty;
+		uint8		flags;
 
 		/*
 		 * Get upper and lower bounds along selected axis.
 		 */
 		range = DatumGetRangeTypeP(entryvec->vector[i].key);
 
-		range_deserialize(typcache, range, &lower, &upper, &empty);
+		range_deserialize(typcache, range, &lower, &upper, &flags);
 
 		if (range_cmp_bounds(typcache, &upper, context.left_upper) <= 0)
 		{

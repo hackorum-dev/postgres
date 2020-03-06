@@ -381,7 +381,7 @@ calc_hist_selectivity(TypeCacheEntry *typcache, VariableStatData *vardata,
 	int			i;
 	RangeBound	const_lower;
 	RangeBound	const_upper;
-	bool		empty;
+	uint8		flags;
 	double		hist_selec;
 
 	/* Can't use the histogram with insecure range support functions */
@@ -417,9 +417,9 @@ calc_hist_selectivity(TypeCacheEntry *typcache, VariableStatData *vardata,
 	for (i = 0; i < nhist; i++)
 	{
 		range_deserialize(typcache, DatumGetRangeTypeP(hslot.values[i]),
-						  &hist_lower[i], &hist_upper[i], &empty);
+						  &hist_lower[i], &hist_upper[i], &flags);
 		/* The histogram should not contain any empty ranges */
-		if (empty)
+		if (RangeFlagsIsEmpty(flags))
 			elog(ERROR, "bounds histogram contains an empty range");
 	}
 
@@ -449,8 +449,8 @@ calc_hist_selectivity(TypeCacheEntry *typcache, VariableStatData *vardata,
 		memset(&lslot, 0, sizeof(lslot));
 
 	/* Extract the bounds of the constant value. */
-	range_deserialize(typcache, constval, &const_lower, &const_upper, &empty);
-	Assert(!empty);
+	range_deserialize(typcache, constval, &const_lower, &const_upper, &flags);
+	Assert(!RangeFlagsIsEmpty(flags));
 
 	/*
 	 * Calculate selectivity comparing the lower or upper bound of the

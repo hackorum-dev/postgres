@@ -121,11 +121,11 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 	for (range_no = 0; range_no < samplerows; range_no++)
 	{
 		Datum		value;
-		bool		isnull,
-					empty;
+		bool		isnull;
 		RangeType  *range;
 		RangeBound	lower,
 					upper;
+		uint8		flags;
 		float8		length;
 
 		vacuum_delay_point();
@@ -146,9 +146,9 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 
 		/* Get range and deserialize it for further analysis. */
 		range = DatumGetRangeTypeP(value);
-		range_deserialize(typcache, range, &lower, &upper, &empty);
+		range_deserialize(typcache, range, &lower, &upper, &flags);
 
-		if (!empty)
+		if (!RangeFlagsIsEmpty(flags))
 		{
 			/* Remember bounds and length for further usage in histograms */
 			lowers[non_empty_cnt] = lower;

@@ -96,16 +96,16 @@ getQuadrant(TypeCacheEntry *typcache, const RangeType *centroid, const RangeType
 {
 	RangeBound	centroidLower,
 				centroidUpper;
-	bool		centroidEmpty;
+	uint8		centroidFlags;
 	RangeBound	lower,
 				upper;
-	bool		empty;
+	uint8		flags;
 
 	range_deserialize(typcache, centroid, &centroidLower, &centroidUpper,
-					  &centroidEmpty);
-	range_deserialize(typcache, tst, &lower, &upper, &empty);
+					  &centroidFlags);
+	range_deserialize(typcache, tst, &lower, &upper, &flags);
 
-	if (empty)
+	if (RangeFlagsIsEmpty(flags))
 		return 5;
 
 	if (range_cmp_bounds(typcache, &lower, &centroidLower) >= 0)
@@ -205,7 +205,7 @@ spg_range_quad_picksplit(PG_FUNCTION_ARGS)
 	int			j;
 	int			nonEmptyCount;
 	RangeType  *centroid;
-	bool		empty;
+	uint8		flags;
 	TypeCacheEntry *typcache;
 
 	/* Use the median values of lower and upper bounds as the centroid range */
@@ -224,8 +224,8 @@ spg_range_quad_picksplit(PG_FUNCTION_ARGS)
 	for (i = 0; i < in->nTuples; i++)
 	{
 		range_deserialize(typcache, DatumGetRangeTypeP(in->datums[i]),
-						  &lowerBounds[j], &upperBounds[j], &empty);
-		if (!empty)
+						  &lowerBounds[j], &upperBounds[j], &flags);
+		if (!RangeFlagsIsEmpty(flags))
 			j++;
 	}
 	nonEmptyCount = j;
@@ -409,7 +409,7 @@ spg_range_quad_inner_consistent(PG_FUNCTION_ARGS)
 	{
 		RangeBound	centroidLower,
 					centroidUpper;
-		bool		centroidEmpty;
+		uint8		centroidFlags;
 		TypeCacheEntry *typcache;
 		RangeType  *centroid;
 
@@ -418,7 +418,7 @@ spg_range_quad_inner_consistent(PG_FUNCTION_ARGS)
 		typcache = range_get_typcache(fcinfo,
 									  RangeTypeGetOid(DatumGetRangeTypeP(centroid)));
 		range_deserialize(typcache, centroid, &centroidLower, &centroidUpper,
-						  &centroidEmpty);
+						  &centroidFlags);
 
 		Assert(in->nNodes == 4 || in->nNodes == 5);
 
@@ -434,13 +434,13 @@ spg_range_quad_inner_consistent(PG_FUNCTION_ARGS)
 			StrategyNumber strategy;
 			RangeBound	lower,
 						upper;
-			bool		empty;
+			uint8		flags;
 			RangeType  *range = NULL;
 
 			RangeType  *prevCentroid = NULL;
 			RangeBound	prevLower,
 						prevUpper;
-			bool		prevEmpty;
+			uint8		prevFlags;
 
 			/* Restrictions on range bounds according to scan strategy */
 			RangeBound *minLower = NULL,
@@ -475,14 +475,14 @@ spg_range_quad_inner_consistent(PG_FUNCTION_ARGS)
 				upper.lower = false;
 				upper.val = in->scankeys[i].sk_argument;
 
-				empty = false;
+				flags = 0;
 
 				strategy = RANGESTRAT_CONTAINS;
 			}
 			else
 			{
 				range = DatumGetRangeTypeP(in->scankeys[i].sk_argument);
-				range_deserialize(typcache, range, &lower, &upper, &empty);
+				range_deserialize(typcache, range, &lower, &upper, &flags);
 			}
 
 			/*
@@ -547,7 +547,7 @@ spg_range_quad_inner_consistent(PG_FUNCTION_ARGS)
 					break;
 
 				case RANGESTRAT_ADJACENT:
-					if (empty)
+					if (RangeFlagsIsEmpty(flags))
 						break;	/* Skip to strictEmpty check. */
 
 					/*
@@ -559,7 +559,7 @@ spg_range_quad_inner_consistent(PG_FUNCTION_ARGS)
 					{
 						prevCentroid = DatumGetRangeTypeP(in->traversalValue);
 						range_deserialize(typcache, prevCentroid,
-										  &prevLower, &prevUpper, &prevEmpty);
+										  &prevLower, &prevUpper, &prevFlags);
 					}
 
 					/*
@@ -614,7 +614,7 @@ spg_range_quad_inner_consistent(PG_FUNCTION_ARGS)
 					 * All non-empty ranges contain an empty range.
 					 */
 					strictEmpty = false;
-					if (!empty)
+					if (!RangeFlagsIsEmpty(flags))
 					{
 						which &= (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4);
 						maxLower = &lower;
@@ -625,7 +625,7 @@ spg_range_quad_inner_consistent(PG_FUNCTION_ARGS)
 				case RANGESTRAT_CONTAINED_BY:
 					/* The opposite of contains. */
 					strictEmpty = false;
-					if (empty)
+					if (RangeFlagsIsEmpty(flags))
 					{
 						/* An empty range is only contained by an empty range */
 						which &= (1 << 5);
@@ -654,7 +654,7 @@ spg_range_quad_inner_consistent(PG_FUNCTION_ARGS)
 
 			if (strictEmpty)
 			{
-				if (empty)
+				if (RangeFlagsIsEmpty(flags))
 				{
 					/* Scan key is empty, no branches are satisfying */
 					which = 0;
