@@ -165,7 +165,7 @@ ProcessWalRcvInterrupts(void)
 
 /* Main entry point for walreceiver process */
 void
-WalReceiverMain(void)
+WalReceiverMain(int argc, char *argv[])
 {
 	char		conninfo[MAXCONNINFO];
 	char	   *tmp_conninfo;

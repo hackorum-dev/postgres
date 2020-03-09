@@ -133,7 +133,7 @@ HandleStartupProcInterrupts(void)
  * ----------------------------------
  */
 void
-StartupProcessMain(void)
+StartupProcessMain(int argc, char *argv[])
 {
 	/*
 	 * Properly accept or ignore signals the postmaster might send us.
