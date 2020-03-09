@@ -1686,8 +1686,8 @@ ProcessUtilitySlow(ParseState *pstate,
 
 			case T_DropStmt:
 				ExecDropStmt((DropStmt *) parsetree, isTopLevel);
-				/* no commands stashed for DROP */
-				commandCollected = true;
+				/* Dropped object is not available */
+				address =  InvalidObjectAddress;
 				break;
 
 			case T_RenameStmt:

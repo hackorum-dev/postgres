@@ -1939,7 +1939,8 @@ pg_event_trigger_ddl_commands(PG_FUNCTION_ARGS)
 		 * state anyway.
 		 */
 		if (cmd->type == SCT_Simple &&
-			!OidIsValid(cmd->d.simple.address.objectId))
+			!OidIsValid(cmd->d.simple.address.objectId) &&
+			!IsA(cmd->parsetree, DropStmt))
 			continue;
 
 		MemSet(nulls, 0, sizeof(nulls));
@@ -1952,8 +1953,8 @@ pg_event_trigger_ddl_commands(PG_FUNCTION_ARGS)
 			case SCT_CreateOpClass:
 			case SCT_AlterTSConfig:
 				{
-					char	   *identity;
-					char	   *type;
+					char	   *identity = NULL;
+					char	   *type = NULL;
 					char	   *schema = NULL;
 
 					if (cmd->type == SCT_Simple)
@@ -1969,8 +1970,12 @@ pg_event_trigger_ddl_commands(PG_FUNCTION_ARGS)
 					else if (cmd->type == SCT_AlterTSConfig)
 						addr = cmd->d.atscfg.address;
 
-					type = getObjectTypeDescription(&addr);
-					identity = getObjectIdentity(&addr);
+					if (memcmp(&addr, &InvalidObjectAddress,
+							   sizeof(ObjectAddress)) != 0)
+					{
+						type = getObjectTypeDescription(&addr);
+						identity = getObjectIdentity(&addr);
+					}
 
 					/*
 					 * Obtain schema name, if any ("pg_temp" if a temp
@@ -2023,14 +2028,20 @@ pg_event_trigger_ddl_commands(PG_FUNCTION_ARGS)
 					/* command tag */
 					values[i++] = CStringGetTextDatum(CreateCommandName(cmd->parsetree));
 					/* object_type */
-					values[i++] = CStringGetTextDatum(type);
+					if (type != NULL)
+						values[i++] = CStringGetTextDatum(type);
+					else
+						nulls[i++] = true;
 					/* schema */
 					if (schema == NULL)
 						nulls[i++] = true;
 					else
 						values[i++] = CStringGetTextDatum(schema);
 					/* identity */
-					values[i++] = CStringGetTextDatum(identity);
+					if (identity != NULL)
+						values[i++] = CStringGetTextDatum(identity);
+					else
+						nulls[i++] = true;
 					/* in_extension */
 					values[i++] = BoolGetDatum(cmd->in_extension);
 					/* command */
