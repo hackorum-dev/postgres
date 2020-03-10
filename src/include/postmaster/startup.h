@@ -20,6 +20,6 @@ extern void ResetPromoteSignaled(void);
 
 /* Startup subprocess functions */
 extern void StartupProcessMain(int argc, char *argv[]) pg_attribute_noreturn();
-extern bool StartupCleanup(int child_errno);
+extern bool StartupForkFailure(int fork_errno);
 
 #endif							/* _STARTUP_H */

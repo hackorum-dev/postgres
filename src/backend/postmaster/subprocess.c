@@ -24,32 +24,53 @@ PgSubprocess	   *MySubprocess;
 
 static PgSubprocess process_types[] = {
 	{
+		.name = "boot",
 		.desc = "checker",
-		.entrypoint = CheckerModeMain
+		.needs_aux_proc = true,
+		.entrypoint = CheckerModeMain,
+		.fork_failure = NULL
 	},
 	{
+		.name = "boot",
 		.desc = "bootstrap",
-		.entrypoint = BootstrapModeMain
+		.needs_aux_proc = true,
+		.entrypoint = BootstrapModeMain,
+		.fork_failure = NULL
 	},
 	{
+		.name = "boot",
 		.desc = "startup",
-		.entrypoint = StartupProcessMain
+		.needs_aux_proc = true,
+		.entrypoint = StartupProcessMain,
+		.fork_failure = StartupForkFailure
 	},
 	{
+		.name = "boot",
 		.desc = "background writer",
-		.entrypoint = BackgroundWriterMain
+		.needs_aux_proc = true,
+		.entrypoint = BackgroundWriterMain,
+		.fork_failure = NULL
 	},
 	{
+		.name = "boot",
 		.desc = "checkpointer",
-		.entrypoint = CheckpointerMain
+		.needs_aux_proc = true,
+		.entrypoint = CheckpointerMain,
+		.fork_failure = NULL
 	},
 	{
+		.name = "boot",
 		.desc = "wal writer",
-		.entrypoint = WalWriterMain
+		.needs_aux_proc = true,
+		.entrypoint = WalWriterMain,
+		.fork_failure = NULL
 	},
 	{
+		.name = "boot",
 		.desc = "wal receiver",
-		.entrypoint = WalReceiverMain
+		.needs_aux_proc = true,
+		.entrypoint = WalReceiverMain,
+		.fork_failure = NULL
 	}
 };
 

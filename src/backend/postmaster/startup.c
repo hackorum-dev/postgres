@@ -176,6 +176,18 @@ StartupProcessMain(int argc, char *argv[])
 	proc_exit(0);
 }
 
+/*
+ * StartupForkFailure
+ *
+ * Tell the postmaster to exit/panic on failure to fork.
+ */
+bool
+StartupForkFailure(int fork_errno)
+{
+	/* Panic! */
+	return true;
+}
+
 void
 PreRestoreCommand(void)
 {

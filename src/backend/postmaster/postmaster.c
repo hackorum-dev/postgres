@@ -114,6 +114,7 @@
 #include "postmaster/fork_process.h"
 #include "postmaster/pgarch.h"
 #include "postmaster/postmaster.h"
+#include "postmaster/subprocess.h"
 #include "postmaster/syslogger.h"
 #include "replication/logicallauncher.h"
 #include "replication/walsender.h"
@@ -191,7 +192,8 @@ static Backend *ShmemBackendArray;
 
 BackgroundWorker *MyBgworkerEntry = NULL;
 
-
+/* Struct containing postmaster subprocess control info */
+SubprocessType		MySubprocessType;
 
 /* The socket number we are listening for connections on */
 int			PostPortNumber;
@@ -421,7 +423,7 @@ static int	CountChildren(int target);
 static bool assign_backendlist_entry(RegisteredBgWorker *rw);
 static void maybe_start_bgworkers(void);
 static bool CreateOptsFile(int argc, char *argv[], char *fullprogname);
-static pid_t StartChildProcess(AuxProcType type);
+static pid_t StartSubprocess(SubprocessType type);
 static void StartAutovacuumWorker(void);
 static void MaybeStartWalReceiver(void);
 static void InitPostmasterDeathWatchHandle(void);
@@ -507,6 +509,9 @@ typedef struct
 	TimestampTz PgStartTime;
 	TimestampTz PgReloadTime;
 	pg_time_t	first_syslogger_file_time;
+
+	SubprocessType		MySubprocessType;
+
 	bool		redirection_done;
 	bool		IsBinaryUpgrade;
 	int			max_safe_fds;
@@ -538,11 +543,6 @@ static void ShmemBackendArrayAdd(Backend *bn);
 static void ShmemBackendArrayRemove(Backend *bn);
 #endif							/* EXEC_BACKEND */
 
-#define StartupDataBase()		StartChildProcess(StartupProcess)
-#define StartBackgroundWriter() StartChildProcess(BgWriterProcess)
-#define StartCheckpointer()		StartChildProcess(CheckpointerProcess)
-#define StartWalWriter()		StartChildProcess(WalWriterProcess)
-#define StartWalReceiver()		StartChildProcess(WalReceiverProcess)
 
 /* Macros to check exit status of a child process */
 #define EXIT_STATUS_0(st)  ((st) == 0)
@@ -1389,7 +1389,7 @@ PostmasterMain(int argc, char *argv[])
 	/*
 	 * We're ready to rock and roll...
 	 */
-	StartupPID = StartupDataBase();
+	StartupPID = StartSubprocess(StartupType);
 	Assert(StartupPID != 0);
 	StartupStatus = STARTUP_RUNNING;
 	pmState = PM_STARTUP;
@@ -1750,9 +1750,9 @@ ServerLoop(void)
 			pmState == PM_HOT_STANDBY)
 		{
 			if (CheckpointerPID == 0)
-				CheckpointerPID = StartCheckpointer();
+				CheckpointerPID = StartSubprocess(CheckpointerType);
 			if (BgWriterPID == 0)
-				BgWriterPID = StartBackgroundWriter();
+				BgWriterPID = StartSubprocess(BgWriterType);
 		}
 
 		/*
@@ -1761,7 +1761,7 @@ ServerLoop(void)
 		 * be writing any new WAL).
 		 */
 		if (WalWriterPID == 0 && pmState == PM_RUN)
-			WalWriterPID = StartWalWriter();
+			WalWriterPID = StartSubprocess(WalWriterType);
 
 		/*
 		 * If we have lost the autovacuum launcher, try to start a new one. We
@@ -3042,11 +3042,11 @@ reaper(SIGNAL_ARGS)
 			 * if this fails, we'll just try again later.
 			 */
 			if (CheckpointerPID == 0)
-				CheckpointerPID = StartCheckpointer();
+				CheckpointerPID = StartSubprocess(CheckpointerType);
 			if (BgWriterPID == 0)
-				BgWriterPID = StartBackgroundWriter();
+				BgWriterPID = StartSubprocess(BgWriterType);
 			if (WalWriterPID == 0)
-				WalWriterPID = StartWalWriter();
+				WalWriterPID = StartSubprocess(WalWriterType);
 
 			/*
 			 * Likewise, start other special children as needed.  In a restart
@@ -3860,7 +3860,7 @@ PostmasterStateMachine(void)
 				Assert(Shutdown > NoShutdown);
 				/* Start the checkpointer if not running */
 				if (CheckpointerPID == 0)
-					CheckpointerPID = StartCheckpointer();
+					CheckpointerPID = StartSubprocess(CheckpointerType);
 				/* And tell it to shut down */
 				if (CheckpointerPID != 0)
 				{
@@ -4001,7 +4001,7 @@ PostmasterStateMachine(void)
 
 		reset_shared();
 
-		StartupPID = StartupDataBase();
+		StartupPID = StartSubprocess(StartupType);
 		Assert(StartupPID != 0);
 		StartupStatus = STARTUP_RUNNING;
 		pmState = PM_STARTUP;
@@ -4917,6 +4917,10 @@ SubPostmasterMain(int argc, char *argv[])
 				 errmsg("out of memory")));
 #endif
 
+	/* We should only be here once per fork */
+	Assert(!MySubprocess);
+	InitMySubprocess(MySubprocessType);
+
 	/*
 	 * If appropriate, physically re-attach to shared memory segment. We want
 	 * to do this before going any further to ensure that we can attach at the
@@ -5037,19 +5041,6 @@ SubPostmasterMain(int argc, char *argv[])
 		/* And run the backend */
 		BackendRun(&port);		/* does not return */
 	}
-	if (strcmp(argv[1], "--forkboot") == 0)
-	{
-		/* Restore basic shared memory pointers */
-		InitShmemAccess(UsedShmemSegAddr);
-
-		/* Need a PGPROC to run CreateSharedMemoryAndSemaphores */
-		InitAuxiliaryProcess();
-
-		/* Attach process to shared data structures */
-		CreateSharedMemoryAndSemaphores();
-
-		AuxiliaryProcessMain(argc - 2, argv + 2);	/* does not return */
-	}
 	if (strcmp(argv[1], "--forkavlauncher") == 0)
 	{
 		/* Restore basic shared memory pointers */
@@ -5115,6 +5106,20 @@ SubPostmasterMain(int argc, char *argv[])
 		/* Do not want to attach to shared memory */
 
 		SysLoggerMain(argc, argv);	/* does not return */
+	}
+
+	if (MySubprocess->needs_aux_proc)
+	{
+		/* Restore basic shared memory pointers */
+		InitShmemAccess(UsedShmemSegAddr);
+
+		/* Need a PGPROC to run CreateSharedMemoryAndSemaphores */
+		InitAuxiliaryProcess();
+
+		/* Attach process to shared data structures */
+		CreateSharedMemoryAndSemaphores();
+
+		AuxiliaryProcessMain(argc - 2, argv + 2);	/* does not return */
 	}
 
 	abort();					/* shouldn't get here */
@@ -5198,9 +5203,9 @@ sigusr1_handler(SIGNAL_ARGS)
 		 * we'll just try again later.
 		 */
 		Assert(CheckpointerPID == 0);
-		CheckpointerPID = StartCheckpointer();
+		CheckpointerPID = StartSubprocess(CheckpointerType);
 		Assert(BgWriterPID == 0);
-		BgWriterPID = StartBackgroundWriter();
+		BgWriterPID = StartSubprocess(BgWriterType);
 
 		/*
 		 * Start the archiver if we're responsible for (re-)archiving received
@@ -5425,42 +5430,49 @@ CountChildren(int target)
 	return cnt;
 }
 
-
 /*
  * StartChildProcess -- start an auxiliary process for the postmaster
  *
- * "type" determines what kind of child will be started.  All child types
- * initially go to AuxiliaryProcessMain, which will handle common setup.
+ * "type" determines what kind of child will be started.  This code relies
+ * heavily on MySubprocess, which is an entry in the process_types struct in
+ * subprocess.c. All auxiliary processes go through AuxiliaryProcessMain after
+ * forking. Everything else goes through the designated entrypoint.
  *
- * Return value of StartChildProcess is subprocess' PID, or 0 if failed
- * to start subprocess.
+ * Return value of StartChildProcess is subprocess' PID on success. On failure,
+ * the subprocess cleanup function decides whether or not to panic.
  */
 static pid_t
-StartChildProcess(AuxProcType type)
+StartSubprocess(SubprocessType type)
 {
 	pid_t		pid;
-	char	   *av[10];
-	int			ac = 0;
+	char	   *argv[10];
+	int			argc = 0;
 	char		typebuf[32];
+#ifdef EXEC_BACKEND
+	char		forkname[32];
+#endif
 
 	/*
-	 * Set up command-line arguments for subprocess
+	 * Get new subprocess data every time we start a new subprocess.
 	 */
-	av[ac++] = "postgres";
+	InitMySubprocess(type);
+
+	argv[argc++] = "postgres";
 
 #ifdef EXEC_BACKEND
-	av[ac++] = "--forkboot";
-	av[ac++] = NULL;			/* filled in by postmaster_forkexec */
+	snprintf(forkname, sizeof(forkname), "--fork%s", MySubprocess->name);
+	argv[argc++] = forkname;
+	argv[argc++] = NULL;
 #endif
 
 	snprintf(typebuf, sizeof(typebuf), "-x%d", type);
-	av[ac++] = typebuf;
+	argv[argc++] = typebuf;
 
-	av[ac] = NULL;
-	Assert(ac < lengthof(av));
+	argv[argc] = NULL;
+	Assert(argc < lengthof(argv));
 
 #ifdef EXEC_BACKEND
-	pid = postmaster_forkexec(ac, av);
+	pid = postmaster_forkexec(argc, argv);
 #else							/* !EXEC_BACKEND */
 	pid = fork_process();
 
@@ -5476,7 +5488,7 @@ StartChildProcess(AuxProcType type)
 		MemoryContextDelete(PostmasterContext);
 		PostmasterContext = NULL;
 
-		AuxiliaryProcessMain(ac, av);
+		AuxiliaryProcessMain(argc, argv);
 		ExitPostmaster(0);
 	}
 #endif							/* EXEC_BACKEND */
@@ -5487,40 +5499,20 @@ StartChildProcess(AuxProcType type)
 		int			save_errno = errno;
 
 		errno = save_errno;
-		switch (type)
-		{
-			case StartupProcess:
-				ereport(LOG,
-						(errmsg("could not fork startup process: %m")));
-				break;
-			case BgWriterProcess:
-				ereport(LOG,
-						(errmsg("could not fork background writer process: %m")));
-				break;
-			case CheckpointerProcess:
-				ereport(LOG,
-						(errmsg("could not fork checkpointer process: %m")));
-				break;
-			case WalWriterProcess:
-				ereport(LOG,
-						(errmsg("could not fork WAL writer process: %m")));
-				break;
-			case WalReceiverProcess:
-				ereport(LOG,
-						(errmsg("could not fork WAL receiver process: %m")));
-				break;
-			default:
-				ereport(LOG,
-						(errmsg("could not fork process: %m")));
-				break;
-		}
+		ereport(LOG,
+				(errmsg("could not fork %s process: %m", MySubprocess->desc)));
 
 		/*
-		 * fork failure is fatal during startup, but there's no need to choke
-		 * immediately if starting other child types fails.
+		 * Handle fork-failure per subprocess type. Each subprocess handles
+		 * fork-failure by returning a boolean which tells postmaster whether or
+		 * not to panic.
 		 */
-		if (type == StartupProcess)
-			ExitPostmaster(1);
+		if (MySubprocess->fork_failure)
+		{
+			if (MySubprocess->fork_failure(save_errno))
+				ExitPostmaster(1);
+		}
+
 		return 0;
 	}
 
@@ -5638,7 +5630,7 @@ MaybeStartWalReceiver(void)
 		 pmState == PM_HOT_STANDBY || pmState == PM_WAIT_READONLY) &&
 		Shutdown == NoShutdown)
 	{
-		WalReceiverPID = StartWalReceiver();
+		WalReceiverPID = StartSubprocess(WalReceiverType);
 		if (WalReceiverPID != 0)
 			WalReceiverRequested = false;
 		/* else leave the flag set, so we'll try again later */
@@ -6198,6 +6190,8 @@ save_backend_variables(BackendParameters *param, Port *port,
 	param->PgReloadTime = PgReloadTime;
 	param->first_syslogger_file_time = first_syslogger_file_time;
 
+	param->MySubprocessType = MySubprocessType;
+
 	param->redirection_done = redirection_done;
 	param->IsBinaryUpgrade = IsBinaryUpgrade;
 	param->max_safe_fds = max_safe_fds;
@@ -6432,6 +6426,8 @@ restore_backend_variables(BackendParameters *param, Port *port)
 	PgStartTime = param->PgStartTime;
 	PgReloadTime = param->PgReloadTime;
 	first_syslogger_file_time = param->first_syslogger_file_time;
+
+	MySubprocessType = param->MySubprocessType;
 
 	redirection_done = param->redirection_done;
 	IsBinaryUpgrade = param->IsBinaryUpgrade;

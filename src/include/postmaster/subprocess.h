@@ -28,14 +28,18 @@ typedef enum
 } SubprocessType;
 
 typedef void (*SubprocessEntryPoint) (int argc, char *argv[]);
+typedef bool (*SubprocessForkFailure) (int fork_errno);
 
 /* Current subprocess initializer */
 extern void InitMySubprocess(SubprocessType type);
 
 typedef struct PgSubprocess
 {
+	const char			   *name;
 	const char			   *desc;
+	bool					needs_aux_proc;
 	SubprocessEntryPoint	entrypoint;
+	SubprocessForkFailure	fork_failure;
 } PgSubprocess;
 
 extern SubprocessType				MySubprocessType;
