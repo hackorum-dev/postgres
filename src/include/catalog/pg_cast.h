@@ -95,5 +95,6 @@ extern ObjectAddress CastCreate(Oid sourcetypeid,
 								char castcontext,
 								char castmethod,
 								DependencyType behavior);
+extern void DropCastById(Oid castOid);
 
 #endif							/* PG_CAST_H */

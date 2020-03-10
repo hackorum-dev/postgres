@@ -56,7 +56,6 @@ extern ObjectAddress CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt
 extern void RemoveFunctionById(Oid funcOid);
 extern ObjectAddress AlterFunction(ParseState *pstate, AlterFunctionStmt *stmt);
 extern ObjectAddress CreateCast(CreateCastStmt *stmt);
-extern void DropCastById(Oid castOid);
 extern ObjectAddress CreateTransform(CreateTransformStmt *stmt);
 extern void DropTransformById(Oid transformOid);
 extern void IsThereFunctionInNamespace(const char *proname, int pronargs,

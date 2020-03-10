@@ -14,7 +14,9 @@
  */
 #include "postgres.h"
 
+#include "access/genam.h"
 #include "access/htup_details.h"
+#include "access/skey.h"
 #include "access/table.h"
 #include "catalog/catalog.h"
 #include "catalog/dependency.h"
@@ -24,6 +26,7 @@
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "utils/builtins.h"
+#include "utils/fmgroids.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
 
@@ -120,4 +123,30 @@ CastCreate(Oid sourcetypeid, Oid targettypeid, Oid funcid, char castcontext,
 	table_close(relation, RowExclusiveLock);
 
 	return myself;
+}
+
+void
+DropCastById(Oid castOid)
+{
+	Relation	relation;
+	ScanKeyData scankey;
+	SysScanDesc scan;
+	HeapTuple	tuple;
+
+	relation = table_open(CastRelationId, RowExclusiveLock);
+
+	ScanKeyInit(&scankey,
+				Anum_pg_cast_oid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(castOid));
+	scan = systable_beginscan(relation, CastOidIndexId, true,
+							  NULL, 1, &scankey);
+
+	tuple = systable_getnext(scan);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "could not find tuple for cast %u", castOid);
+	CatalogTupleDelete(relation, &tuple->t_self);
+
+	systable_endscan(scan);
+	table_close(relation, RowExclusiveLock);
 }
