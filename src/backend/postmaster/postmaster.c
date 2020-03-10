@@ -1773,7 +1773,7 @@ ServerLoop(void)
 			(AutoVacuumingActive() || start_autovac_launcher) &&
 			pmState == PM_RUN)
 		{
-			AutoVacPID = StartAutoVacLauncher();
+			AutoVacPID = StartSubprocess(AutoVacuumLauncherType);
 			if (AutoVacPID != 0)
 				start_autovac_launcher = false; /* signal processed */
 		}
@@ -3053,7 +3053,7 @@ reaper(SIGNAL_ARGS)
 			 * situation, some of them may be alive already.
 			 */
 			if (!IsBinaryUpgrade && AutoVacuumingActive() && AutoVacPID == 0)
-				AutoVacPID = StartAutoVacLauncher();
+				AutoVacPID = StartSubprocess(AutoVacuumLauncherType);
 			if (PgArchStartupAllowed() && PgArchPID == 0)
 				PgArchPID = pgarch_start();
 			if (PgStatPID == 0)
@@ -5041,19 +5041,6 @@ SubPostmasterMain(int argc, char *argv[])
 		/* And run the backend */
 		BackendRun(&port);		/* does not return */
 	}
-	if (strcmp(argv[1], "--forkavlauncher") == 0)
-	{
-		/* Restore basic shared memory pointers */
-		InitShmemAccess(UsedShmemSegAddr);
-
-		/* Need a PGPROC to run CreateSharedMemoryAndSemaphores */
-		InitProcess();
-
-		/* Attach process to shared data structures */
-		CreateSharedMemoryAndSemaphores();
-
-		AutoVacLauncherMain(argc - 2, argv + 2);	/* does not return */
-	}
 	if (strcmp(argv[1], "--forkavworker") == 0)
 	{
 		/* Restore basic shared memory pointers */
@@ -5120,6 +5107,19 @@ SubPostmasterMain(int argc, char *argv[])
 		CreateSharedMemoryAndSemaphores();
 
 		AuxiliaryProcessMain(argc - 2, argv + 2);	/* does not return */
+	}
+	else
+	{
+		/* Restore basic shared memory pointers */
+		InitShmemAccess(UsedShmemSegAddr);
+
+		/* Need a PGPROC to run CreateSharedMemoryAndSemaphores */
+		InitProcess();
+
+		/* Attach process to shared data structures */
+		CreateSharedMemoryAndSemaphores();
+
+		MySubprocess->entrypoint(argc - 2, argv + 2);
 	}
 
 	abort();					/* shouldn't get here */
@@ -5488,7 +5488,11 @@ StartSubprocess(SubprocessType type)
 		MemoryContextDelete(PostmasterContext);
 		PostmasterContext = NULL;
 
-		AuxiliaryProcessMain(argc, argv);
+		if (MySubprocess->needs_aux_proc)
+			AuxiliaryProcessMain(argc, argv);
+		else
+			MySubprocess->entrypoint(argc, argv);
+
 		ExitPostmaster(0);
 	}
 #endif							/* EXEC_BACKEND */

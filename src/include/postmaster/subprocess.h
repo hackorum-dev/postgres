@@ -23,6 +23,7 @@ typedef enum
 	CheckpointerType,
 	WalWriterType,
 	WalReceiverType,	/* end of Auxiliary Process Forks */
+	AutoVacuumLauncherType,
 
 	NUMSUBPROCESSTYPES			/* Must be last! */
 } SubprocessType;

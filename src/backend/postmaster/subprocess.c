@@ -12,6 +12,7 @@
  */
 #include "postgres.h"
 #include "bootstrap/bootstrap.h"
+#include "postmaster/autovacuum.h"
 #include "postmaster/bgwriter.h"
 #include "postmaster/postmaster.h"
 #include "postmaster/startup.h"
@@ -70,6 +71,13 @@ static PgSubprocess process_types[] = {
 		.desc = "wal receiver",
 		.needs_aux_proc = true,
 		.entrypoint = WalReceiverMain,
+		.fork_failure = NULL
+	},
+	{
+		.name = "avlauncher",
+		.desc = "autovacuum launcher",
+		.needs_aux_proc = false,
+		.entrypoint = AutoVacLauncherMain,
 		.fork_failure = NULL
 	}
 };
