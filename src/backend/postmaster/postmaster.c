@@ -5041,19 +5041,6 @@ SubPostmasterMain(int argc, char *argv[])
 		/* And run the backend */
 		BackendRun(&port);		/* does not return */
 	}
-	if (strcmp(argv[1], "--forkavworker") == 0)
-	{
-		/* Restore basic shared memory pointers */
-		InitShmemAccess(UsedShmemSegAddr);
-
-		/* Need a PGPROC to run CreateSharedMemoryAndSemaphores */
-		InitProcess();
-
-		/* Attach process to shared data structures */
-		CreateSharedMemoryAndSemaphores();
-
-		AutoVacWorkerMain(argc - 2, argv + 2);	/* does not return */
-	}
 	if (strncmp(argv[1], "--forkbgworker=", 15) == 0)
 	{
 		int			shmem_slot;
@@ -5573,7 +5560,7 @@ StartAutovacuumWorker(void)
 			bn->child_slot = MyPMChildSlot = AssignPostmasterChildSlot();
 			bn->bgworker_notify = false;
 
-			bn->pid = StartAutoVacWorker();
+			bn->pid = StartSubprocess(AutoVacuumWorkerType);
 			if (bn->pid > 0)
 			{
 				bn->bkend_type = BACKEND_TYPE_AUTOVAC;
@@ -5587,7 +5574,7 @@ StartAutovacuumWorker(void)
 
 			/*
 			 * fork failed, fall through to report -- actual error message was
-			 * logged by StartAutoVacWorker
+			 * logged by StartSubprocess
 			 */
 			(void) ReleasePostmasterChildSlot(bn->child_slot);
 			free(bn);

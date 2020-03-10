@@ -58,7 +58,8 @@ extern void autovac_init(void);
 extern int	StartAutoVacLauncher(void);
 extern int	StartAutoVacWorker(void);
 
-extern void AutoVacLauncherMain(int argc, char *argv[]);
+extern void AutoVacLauncherMain(int argc, char *argv[]) pg_attribute_noreturn();
+extern void AutoVacWorkerMain(int argc, char *argv[]) pg_attribute_noreturn();
 
 /* called from postmaster when a worker could not be forked */
 extern void AutoVacWorkerFailed(void);
@@ -67,7 +68,6 @@ extern void AutoVacWorkerFailed(void);
 extern void AutoVacuumUpdateDelay(void);
 
 #ifdef EXEC_BACKEND
-extern void AutoVacWorkerMain(int argc, char *argv[]) pg_attribute_noreturn();
 extern void AutovacuumWorkerIAm(void);
 extern void AutovacuumLauncherIAm(void);
 #endif

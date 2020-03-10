@@ -24,6 +24,7 @@ typedef enum
 	WalWriterType,
 	WalReceiverType,	/* end of Auxiliary Process Forks */
 	AutoVacuumLauncherType,
+	AutoVacuumWorkerType,
 
 	NUMSUBPROCESSTYPES			/* Must be last! */
 } SubprocessType;

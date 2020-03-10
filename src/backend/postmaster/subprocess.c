@@ -79,6 +79,13 @@ static PgSubprocess process_types[] = {
 		.needs_aux_proc = false,
 		.entrypoint = AutoVacLauncherMain,
 		.fork_failure = NULL
+	},
+	{
+		.name = "avworker",
+		.desc = "autovacuum worker",
+		.needs_aux_proc = false,
+		.entrypoint = AutoVacWorkerMain,
+		.fork_failure = NULL
 	}
 };
 
