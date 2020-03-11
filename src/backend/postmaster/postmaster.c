@@ -1785,7 +1785,7 @@ ServerLoop(void)
 
 		/* If we have lost the archiver, try to start a new one. */
 		if (PgArchPID == 0 && PgArchStartupAllowed())
-			PgArchPID = pgarch_start();
+			PgArchPID = StartSubprocess(PgArchiverType);
 
 		/* If we need to signal the autovacuum launcher, do so now */
 		if (avlauncher_needs_signal)
@@ -3055,7 +3055,7 @@ reaper(SIGNAL_ARGS)
 			if (!IsBinaryUpgrade && AutoVacuumingActive() && AutoVacPID == 0)
 				AutoVacPID = StartSubprocess(AutoVacuumLauncherType);
 			if (PgArchStartupAllowed() && PgArchPID == 0)
-				PgArchPID = pgarch_start();
+				PgArchPID = StartSubprocess(PgArchiverType);
 			if (PgStatPID == 0)
 				PgStatPID = StartSubprocess(PgstatCollectorType);
 
@@ -3203,7 +3203,7 @@ reaper(SIGNAL_ARGS)
 				LogChildExit(LOG, _("archiver process"),
 							 pid, exitstatus);
 			if (PgArchStartupAllowed())
-				PgArchPID = pgarch_start();
+				PgArchPID = StartSubprocess(PgArchiverType);
 			continue;
 		}
 
@@ -5063,12 +5063,6 @@ SubPostmasterMain(int argc, char *argv[])
 
 		StartBackgroundWorker();
 	}
-	if (strcmp(argv[1], "--forkarch") == 0)
-	{
-		/* Do not want to attach to shared memory */
-
-		PgArchiverMain(argc, argv); /* does not return */
-	}
 	if (strcmp(argv[1], "--forklog") == 0)
 	{
 		/* Do not want to attach to shared memory */
@@ -5197,7 +5191,7 @@ sigusr1_handler(SIGNAL_ARGS)
 		 */
 		Assert(PgArchPID == 0);
 		if (XLogArchivingAlways())
-			PgArchPID = pgarch_start();
+			PgArchPID = StartSubprocess(PgArchiverType);
 
 		/*
 		 * If we aren't planning to enter hot standby mode later, treat

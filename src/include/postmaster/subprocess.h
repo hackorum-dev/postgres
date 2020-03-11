@@ -26,6 +26,7 @@ typedef enum
 	AutoVacuumLauncherType,
 	AutoVacuumWorkerType,
 	PgstatCollectorType,
+	PgArchiverType,
 
 	NUMSUBPROCESSTYPES			/* Must be last! */
 } SubprocessType;

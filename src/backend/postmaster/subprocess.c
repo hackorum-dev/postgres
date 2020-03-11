@@ -15,6 +15,7 @@
 #include "pgstat.h"
 #include "postmaster/autovacuum.h"
 #include "postmaster/bgwriter.h"
+#include "postmaster/pgarch.h"
 #include "postmaster/postmaster.h"
 #include "postmaster/startup.h"
 #include "postmaster/subprocess.h"
@@ -113,6 +114,15 @@ static PgSubprocess process_types[] = {
 		.needs_shmem = false,
 		.fork_prep = PgstatCollectorPrep,
 		.entrypoint = PgstatCollectorMain,
+		.fork_failure = NULL
+	},
+	{
+		.name = "arch",
+		.desc = "archiver",
+		.needs_aux_proc = false,
+		.needs_shmem = false,
+		.fork_prep = PgArchiverPrep,
+		.entrypoint = PgArchiverMain,
 		.fork_failure = NULL
 	}
 };
