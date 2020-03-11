@@ -14,6 +14,7 @@
 #include "bootstrap/bootstrap.h"
 #include "pgstat.h"
 #include "postmaster/autovacuum.h"
+#include "postmaster/bgworker_internals.h"
 #include "postmaster/bgwriter.h"
 #include "postmaster/pgarch.h"
 #include "postmaster/postmaster.h"
@@ -127,6 +128,17 @@ static PgSubprocess process_types[] = {
 		.fork_prep = SysLoggerPrep,
 		.entrypoint = SysLoggerMain,
 		.postmaster_main = SysLoggerPostmasterMain
+	},
+	{
+		.name = "bgworker",
+		.desc = "background worker",
+		.needs_aux_proc = false,
+		.needs_shmem = true,
+		.keep_postmaster_memcontext = true,
+		.fork_prep = BackgroundWorkerPrep,
+		.entrypoint = BackgroundWorkerMain,
+		.fork_failure = BackgroundWorkerForkFailure,
+		.postmaster_main = BackgroundWorkerPostmasterMain
 	}
 };
 
