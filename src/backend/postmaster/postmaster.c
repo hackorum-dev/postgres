@@ -1781,7 +1781,7 @@ ServerLoop(void)
 		/* If we have lost the stats collector, try to start a new one */
 		if (PgStatPID == 0 &&
 			(pmState == PM_RUN || pmState == PM_HOT_STANDBY))
-			PgStatPID = pgstat_start();
+			PgStatPID = StartSubprocess(PgstatCollectorType);
 
 		/* If we have lost the archiver, try to start a new one. */
 		if (PgArchPID == 0 && PgArchStartupAllowed())
@@ -3057,7 +3057,7 @@ reaper(SIGNAL_ARGS)
 			if (PgArchStartupAllowed() && PgArchPID == 0)
 				PgArchPID = pgarch_start();
 			if (PgStatPID == 0)
-				PgStatPID = pgstat_start();
+				PgStatPID = StartSubprocess(PgstatCollectorType);
 
 			/* workers may be scheduled to start now */
 			maybe_start_bgworkers();
@@ -3219,7 +3219,7 @@ reaper(SIGNAL_ARGS)
 				LogChildExit(LOG, _("statistics collector process"),
 							 pid, exitstatus);
 			if (pmState == PM_RUN || pmState == PM_HOT_STANDBY)
-				PgStatPID = pgstat_start();
+				PgStatPID = StartSubprocess(PgstatCollectorType);
 			continue;
 		}
 
@@ -5069,12 +5069,6 @@ SubPostmasterMain(int argc, char *argv[])
 
 		PgArchiverMain(argc, argv); /* does not return */
 	}
-	if (strcmp(argv[1], "--forkcol") == 0)
-	{
-		/* Do not want to attach to shared memory */
-
-		PgstatCollectorMain(argc, argv);	/* does not return */
-	}
 	if (strcmp(argv[1], "--forklog") == 0)
 	{
 		/* Do not want to attach to shared memory */
@@ -5097,14 +5091,17 @@ SubPostmasterMain(int argc, char *argv[])
 	}
 	else
 	{
-		/* Restore basic shared memory pointers */
-		InitShmemAccess(UsedShmemSegAddr);
+		if (MySubprocess->needs_shmem)
+		{
+			/* Restore basic shared memory pointers */
+			InitShmemAccess(UsedShmemSegAddr);
 
-		/* Need a PGPROC to run CreateSharedMemoryAndSemaphores */
-		InitProcess();
+			/* Need a PGPROC to run CreateSharedMemoryAndSemaphores */
+			InitProcess();
 
-		/* Attach process to shared data structures */
-		CreateSharedMemoryAndSemaphores();
+			/* Attach process to shared data structures */
+			CreateSharedMemoryAndSemaphores();
+		}
 
 		MySubprocess->entrypoint(argc - 2, argv + 2);
 	}
@@ -5224,7 +5221,7 @@ sigusr1_handler(SIGNAL_ARGS)
 		 * Likewise, start other special children as needed.
 		 */
 		Assert(PgStatPID == 0);
-		PgStatPID = pgstat_start();
+		PgStatPID = StartSubprocess(PgstatCollectorType);
 
 		ereport(LOG,
 				(errmsg("database system is ready to accept read only connections")));
@@ -5474,6 +5471,16 @@ StartSubprocess(SubprocessType type)
 		MemoryContextSwitchTo(TopMemoryContext);
 		MemoryContextDelete(PostmasterContext);
 		PostmasterContext = NULL;
+
+		/*
+		 * Drop connection to postmaster's shared memory if the subprocess
+		 * doesn't need it.
+		 */
+		if (!MySubprocess->needs_shmem)
+		{
+			dsm_detach_all();
+			PGSharedMemoryDetach();
+		}
 
 		if (MySubprocess->needs_aux_proc)
 			AuxiliaryProcessMain(argc, argv);

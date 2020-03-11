@@ -12,6 +12,7 @@
  */
 #include "postgres.h"
 #include "bootstrap/bootstrap.h"
+#include "pgstat.h"
 #include "postmaster/autovacuum.h"
 #include "postmaster/bgwriter.h"
 #include "postmaster/postmaster.h"
@@ -28,6 +29,8 @@ static PgSubprocess process_types[] = {
 		.name = "boot",
 		.desc = "checker",
 		.needs_aux_proc = true,
+		.needs_shmem = true,
+		.fork_prep = NULL,
 		.entrypoint = CheckerModeMain,
 		.fork_failure = NULL
 	},
@@ -35,6 +38,8 @@ static PgSubprocess process_types[] = {
 		.name = "boot",
 		.desc = "bootstrap",
 		.needs_aux_proc = true,
+		.needs_shmem = true,
+		.fork_prep = NULL,
 		.entrypoint = BootstrapModeMain,
 		.fork_failure = NULL
 	},
@@ -42,6 +47,8 @@ static PgSubprocess process_types[] = {
 		.name = "boot",
 		.desc = "startup",
 		.needs_aux_proc = true,
+		.needs_shmem = true,
+		.fork_prep = NULL,
 		.entrypoint = StartupProcessMain,
 		.fork_failure = StartupForkFailure
 	},
@@ -49,6 +56,8 @@ static PgSubprocess process_types[] = {
 		.name = "boot",
 		.desc = "background writer",
 		.needs_aux_proc = true,
+		.needs_shmem = true,
+		.fork_prep = NULL,
 		.entrypoint = BackgroundWriterMain,
 		.fork_failure = NULL
 	},
@@ -56,6 +65,8 @@ static PgSubprocess process_types[] = {
 		.name = "boot",
 		.desc = "checkpointer",
 		.needs_aux_proc = true,
+		.needs_shmem = true,
+		.fork_prep = NULL,
 		.entrypoint = CheckpointerMain,
 		.fork_failure = NULL
 	},
@@ -63,6 +74,8 @@ static PgSubprocess process_types[] = {
 		.name = "boot",
 		.desc = "wal writer",
 		.needs_aux_proc = true,
+		.needs_shmem = true,
+		.fork_prep = NULL,
 		.entrypoint = WalWriterMain,
 		.fork_failure = NULL
 	},
@@ -70,6 +83,8 @@ static PgSubprocess process_types[] = {
 		.name = "boot",
 		.desc = "wal receiver",
 		.needs_aux_proc = true,
+		.needs_shmem = true,
+		.fork_prep = NULL,
 		.entrypoint = WalReceiverMain,
 		.fork_failure = NULL
 	},
@@ -77,6 +92,8 @@ static PgSubprocess process_types[] = {
 		.name = "avlauncher",
 		.desc = "autovacuum launcher",
 		.needs_aux_proc = false,
+		.needs_shmem = true,
+		.fork_prep = NULL,
 		.entrypoint = AutoVacLauncherMain,
 		.fork_failure = NULL
 	},
@@ -84,7 +101,18 @@ static PgSubprocess process_types[] = {
 		.name = "avworker",
 		.desc = "autovacuum worker",
 		.needs_aux_proc = false,
+		.needs_shmem = true,
+		.fork_prep = NULL,
 		.entrypoint = AutoVacWorkerMain,
+		.fork_failure = NULL
+	},
+	{
+		.name = "col",
+		.desc = "statistics collector",
+		.needs_aux_proc = false,
+		.needs_shmem = false,
+		.fork_prep = PgstatCollectorPrep,
+		.entrypoint = PgstatCollectorMain,
 		.fork_failure = NULL
 	}
 };

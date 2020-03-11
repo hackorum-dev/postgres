@@ -25,12 +25,14 @@ typedef enum
 	WalReceiverType,	/* end of Auxiliary Process Forks */
 	AutoVacuumLauncherType,
 	AutoVacuumWorkerType,
+	PgstatCollectorType,
 
 	NUMSUBPROCESSTYPES			/* Must be last! */
 } SubprocessType;
 
-typedef void (*SubprocessEntryPoint) (int argc, char *argv[]);
-typedef bool (*SubprocessForkFailure) (int fork_errno);
+typedef int		(*SubprocessPrep) (int argc, char *argv[]);
+typedef void	(*SubprocessEntryPoint) (int argc, char *argv[]);
+typedef bool	(*SubprocessForkFailure) (int fork_errno);
 
 /* Current subprocess initializer */
 extern void InitMySubprocess(SubprocessType type);
@@ -40,6 +42,8 @@ typedef struct PgSubprocess
 	const char			   *name;
 	const char			   *desc;
 	bool					needs_aux_proc;
+	bool					needs_shmem;
+	SubprocessPrep			fork_prep;
 	SubprocessEntryPoint	entrypoint;
 	SubprocessForkFailure	fork_failure;
 } PgSubprocess;
