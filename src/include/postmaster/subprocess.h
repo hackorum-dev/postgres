@@ -27,6 +27,7 @@ typedef enum
 	AutoVacuumWorkerType,
 	PgstatCollectorType,
 	PgArchiverType,
+	SysLoggerType,
 
 	NUMSUBPROCESSTYPES			/* Must be last! */
 } SubprocessType;
@@ -34,19 +35,22 @@ typedef enum
 typedef int		(*SubprocessPrep) (int argc, char *argv[]);
 typedef void	(*SubprocessEntryPoint) (int argc, char *argv[]);
 typedef bool	(*SubprocessForkFailure) (int fork_errno);
+typedef void	(*SubprocessPostmasterMain) (int argc, char *argv[]);
 
 /* Current subprocess initializer */
 extern void InitMySubprocess(SubprocessType type);
 
 typedef struct PgSubprocess
 {
-	const char			   *name;
-	const char			   *desc;
-	bool					needs_aux_proc;
-	bool					needs_shmem;
-	SubprocessPrep			fork_prep;
-	SubprocessEntryPoint	entrypoint;
-	SubprocessForkFailure	fork_failure;
+	const char				   *name;
+	const char				   *desc;
+	bool						needs_aux_proc;
+	bool						needs_shmem;
+	bool						keep_postmaster_memcontext;
+	SubprocessPrep				fork_prep;
+	SubprocessEntryPoint		entrypoint;
+	SubprocessForkFailure		fork_failure;
+	SubprocessPostmasterMain	postmaster_main;
 } PgSubprocess;
 
 extern SubprocessType				MySubprocessType;

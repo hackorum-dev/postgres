@@ -19,6 +19,7 @@
 #include "postmaster/postmaster.h"
 #include "postmaster/startup.h"
 #include "postmaster/subprocess.h"
+#include "postmaster/syslogger.h"
 #include "postmaster/walwriter.h"
 #include "replication/walreceiver.h"
 
@@ -31,25 +32,23 @@ static PgSubprocess process_types[] = {
 		.desc = "checker",
 		.needs_aux_proc = true,
 		.needs_shmem = true,
-		.fork_prep = NULL,
-		.entrypoint = CheckerModeMain,
-		.fork_failure = NULL
+		.keep_postmaster_memcontext = false,
+		.entrypoint = CheckerModeMain
 	},
 	{
 		.name = "boot",
 		.desc = "bootstrap",
 		.needs_aux_proc = true,
 		.needs_shmem = true,
-		.fork_prep = NULL,
-		.entrypoint = BootstrapModeMain,
-		.fork_failure = NULL
+		.keep_postmaster_memcontext = false,
+		.entrypoint = BootstrapModeMain
 	},
 	{
 		.name = "boot",
 		.desc = "startup",
 		.needs_aux_proc = true,
 		.needs_shmem = true,
-		.fork_prep = NULL,
+		.keep_postmaster_memcontext = false,
 		.entrypoint = StartupProcessMain,
 		.fork_failure = StartupForkFailure
 	},
@@ -58,72 +57,76 @@ static PgSubprocess process_types[] = {
 		.desc = "background writer",
 		.needs_aux_proc = true,
 		.needs_shmem = true,
-		.fork_prep = NULL,
-		.entrypoint = BackgroundWriterMain,
-		.fork_failure = NULL
+		.keep_postmaster_memcontext = false,
+		.entrypoint = BackgroundWriterMain
 	},
 	{
 		.name = "boot",
 		.desc = "checkpointer",
 		.needs_aux_proc = true,
 		.needs_shmem = true,
-		.fork_prep = NULL,
-		.entrypoint = CheckpointerMain,
-		.fork_failure = NULL
+		.keep_postmaster_memcontext = false,
+		.entrypoint = CheckpointerMain
 	},
 	{
 		.name = "boot",
 		.desc = "wal writer",
 		.needs_aux_proc = true,
 		.needs_shmem = true,
-		.fork_prep = NULL,
-		.entrypoint = WalWriterMain,
-		.fork_failure = NULL
+		.keep_postmaster_memcontext = false,
+		.entrypoint = WalWriterMain
 	},
 	{
 		.name = "boot",
 		.desc = "wal receiver",
 		.needs_aux_proc = true,
 		.needs_shmem = true,
-		.fork_prep = NULL,
-		.entrypoint = WalReceiverMain,
-		.fork_failure = NULL
+		.keep_postmaster_memcontext = false,
+		.entrypoint = WalReceiverMain
 	},
 	{
 		.name = "avlauncher",
 		.desc = "autovacuum launcher",
 		.needs_aux_proc = false,
 		.needs_shmem = true,
-		.fork_prep = NULL,
-		.entrypoint = AutoVacLauncherMain,
-		.fork_failure = NULL
+		.keep_postmaster_memcontext = false,
+		.entrypoint = AutoVacLauncherMain
 	},
 	{
 		.name = "avworker",
 		.desc = "autovacuum worker",
 		.needs_aux_proc = false,
 		.needs_shmem = true,
-		.fork_prep = NULL,
-		.entrypoint = AutoVacWorkerMain,
-		.fork_failure = NULL
+		.keep_postmaster_memcontext = false,
+		.entrypoint = AutoVacWorkerMain
 	},
 	{
 		.name = "col",
 		.desc = "statistics collector",
 		.needs_aux_proc = false,
 		.needs_shmem = false,
+		.keep_postmaster_memcontext = false,
 		.fork_prep = PgstatCollectorPrep,
-		.entrypoint = PgstatCollectorMain,
-		.fork_failure = NULL
+		.entrypoint = PgstatCollectorMain
 	},
 	{
 		.name = "arch",
 		.desc = "archiver",
 		.needs_aux_proc = false,
 		.needs_shmem = false,
+		.keep_postmaster_memcontext = false,
 		.fork_prep = PgArchiverPrep,
-		.entrypoint = PgArchiverMain,
-		.fork_failure = NULL
+		.entrypoint = PgArchiverMain
+	},
+	{
+		.name = "log",
+		.desc = "syslogger",
+		.needs_aux_proc = false,
+		.needs_shmem = false,
+		.keep_postmaster_memcontext = true,
+		.fork_prep = SysLoggerPrep,
+		.entrypoint = SysLoggerMain,
+		.postmaster_main = SysLoggerPostmasterMain
 	}
 };
 

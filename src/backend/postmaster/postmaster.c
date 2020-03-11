@@ -355,6 +355,8 @@ bool		ClientAuthInProgress = false;	/* T during new-client
 											 * authentication */
 
 bool		redirection_done = false;	/* stderr redirected for syslogger? */
+LogFileNo	syslogFileNo = -1;
+LogFileNo	csvlogFileNo = -1;
 
 /* received START_AUTOVAC_LAUNCHER signal */
 static volatile sig_atomic_t start_autovac_launcher = false;
@@ -513,6 +515,10 @@ typedef struct
 	SubprocessType		MySubprocessType;
 
 	bool		redirection_done;
+#ifdef EXEC_BACKEND
+	LogFileNo	syslogFileNo;
+	LogFileNo	csvlogFileNo;
+#endif
 	bool		IsBinaryUpgrade;
 	int			max_safe_fds;
 	int			MaxBackends;
@@ -1083,7 +1089,7 @@ PostmasterMain(int argc, char *argv[])
 	/*
 	 * If enabled, start up syslogger collection subprocess
 	 */
-	SysLoggerPID = SysLogger_Start();
+	SysLoggerPID = StartSubprocess(SysLoggerType);
 
 	/*
 	 * Reset whereToSendOutput from DestDebug (its starting state) to
@@ -1739,7 +1745,7 @@ ServerLoop(void)
 
 		/* If we have lost the log collector, try to start a new one */
 		if (SysLoggerPID == 0 && Logging_collector)
-			SysLoggerPID = SysLogger_Start();
+			SysLoggerPID = StartSubprocess(SysLoggerType);
 
 		/*
 		 * If no background writer process is running, and we are not in a
@@ -3228,7 +3234,7 @@ reaper(SIGNAL_ARGS)
 		{
 			SysLoggerPID = 0;
 			/* for safety's sake, launch new logger *first* */
-			SysLoggerPID = SysLogger_Start();
+			SysLoggerPID = StartSubprocess(SysLoggerType);
 			if (!EXIT_STATUS_0(exitstatus))
 				LogChildExit(LOG, _("system logger process"),
 							 pid, exitstatus);
@@ -5063,12 +5069,6 @@ SubPostmasterMain(int argc, char *argv[])
 
 		StartBackgroundWorker();
 	}
-	if (strcmp(argv[1], "--forklog") == 0)
-	{
-		/* Do not want to attach to shared memory */
-
-		SysLoggerMain(argc, argv);	/* does not return */
-	}
 
 	if (MySubprocess->needs_aux_proc)
 	{
@@ -5446,6 +5446,15 @@ StartSubprocess(SubprocessType type)
 	snprintf(typebuf, sizeof(typebuf), "-x%d", type);
 	argv[argc++] = typebuf;
 
+	/* Prep subprocess for forking */
+	if (MySubprocess->fork_prep)
+	{
+		if (MySubprocess->fork_prep(argc, argv))
+		{
+			return 0;
+		}
+	}
+
 	argv[argc] = NULL;
 	Assert(argc < lengthof(argv));
 
@@ -5461,10 +5470,16 @@ StartSubprocess(SubprocessType type)
 		/* Close the postmaster's sockets */
 		ClosePostmasterPorts(false);
 
-		/* Release postmaster's working memory context */
-		MemoryContextSwitchTo(TopMemoryContext);
-		MemoryContextDelete(PostmasterContext);
-		PostmasterContext = NULL;
+		/*
+		 * Release postmaster's working memory context if the subprocess doesn't
+		 * need it
+		 */
+		if (!MySubprocess->keep_postmaster_memcontext)
+		{
+			MemoryContextSwitchTo(TopMemoryContext);
+			MemoryContextDelete(PostmasterContext);
+			PostmasterContext = NULL;
+		}
 
 		/*
 		 * Drop connection to postmaster's shared memory if the subprocess
@@ -5507,6 +5522,10 @@ StartSubprocess(SubprocessType type)
 
 		return 0;
 	}
+
+	/* Some subprocesses need to do more work in postmaster. */
+	if (MySubprocess->postmaster_main)
+		MySubprocess->postmaster_main(argc, argv);
 
 	/*
 	 * in parent, successful fork
@@ -6185,6 +6204,8 @@ save_backend_variables(BackendParameters *param, Port *port,
 	param->MySubprocessType = MySubprocessType;
 
 	param->redirection_done = redirection_done;
+	param->syslogFileNo = syslogFileNo;
+	param->csvlogFileNo = csvlogFileNo;
 	param->IsBinaryUpgrade = IsBinaryUpgrade;
 	param->max_safe_fds = max_safe_fds;
 
@@ -6422,6 +6443,8 @@ restore_backend_variables(BackendParameters *param, Port *port)
 	MySubprocessType = param->MySubprocessType;
 
 	redirection_done = param->redirection_done;
+	syslogFileNo = param->syslogFileNo;
+	csvlogFileNo = param->csvlogFileNo;
 	IsBinaryUpgrade = param->IsBinaryUpgrade;
 	max_safe_fds = param->max_safe_fds;
 
