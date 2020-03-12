@@ -1702,6 +1702,7 @@ typedef struct GroupingSetsPath
 	List	   *rollups;		/* list of RollupData */
 	List	   *qual;			/* quals (HAVING quals), if any */
 	uint64		transitionSpace;	/* for pass-by-ref transition data */
+	bool		is_sorted;		/* input sorted in groupcols of first rollup */
 } GroupingSetsPath;
 
 /*

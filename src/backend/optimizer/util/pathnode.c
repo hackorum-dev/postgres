@@ -2984,6 +2984,7 @@ create_agg_path(PlannerInfo *root,
  * 'rollups' is a list of RollupData nodes
  * 'agg_costs' contains cost info about the aggregate functions to be computed
  * 'numGroups' is the estimated total number of groups
+ * 'is_sorted' is the input sorted in the group cols of first rollup
  */
 GroupingSetsPath *
 create_groupingsets_path(PlannerInfo *root,
@@ -2993,7 +2994,8 @@ create_groupingsets_path(PlannerInfo *root,
 						 AggStrategy aggstrategy,
 						 List *rollups,
 						 const AggClauseCosts *agg_costs,
-						 double numGroups)
+						 double numGroups,
+						 bool is_sorted)
 {
 	GroupingSetsPath *pathnode = makeNode(GroupingSetsPath);
 	PathTarget *target = rel->reltarget;
@@ -3011,6 +3013,7 @@ create_groupingsets_path(PlannerInfo *root,
 		subpath->parallel_safe;
 	pathnode->path.parallel_workers = subpath->parallel_workers;
 	pathnode->subpath = subpath;
+	pathnode->is_sorted = is_sorted;
 
 	/*
 	 * Simplify callers by downgrading AGG_SORTED to AGG_PLAIN, and AGG_MIXED
@@ -3062,14 +3065,33 @@ create_groupingsets_path(PlannerInfo *root,
 		 */
 		if (is_first)
 		{
+			Cost	input_startup_cost = subpath->startup_cost;
+			Cost	input_total_cost = subpath->total_cost;
+
+			if (!rollup->is_hashed && !is_sorted && numGroupCols)
+			{
+				Path		sort_path;	/* dummy for result of cost_sort */
+
+				cost_sort(&sort_path, root, NIL,
+						  input_total_cost,
+						  subpath->rows,
+						  subpath->pathtarget->width,
+						  0.0,
+						  work_mem,
+						  -1.0);
+
+				input_startup_cost = sort_path.startup_cost;
+				input_total_cost = sort_path.total_cost;
+			}
+
 			cost_agg(&pathnode->path, root,
 					 aggstrategy,
 					 agg_costs,
 					 numGroupCols,
 					 rollup->numGroups,
 					 having_qual,
-					 subpath->startup_cost,
-					 subpath->total_cost,
+					 input_startup_cost,
+					 input_total_cost,
 					 subpath->rows,
 					 subpath->pathtarget->width);
 			is_first = false;
@@ -3081,7 +3103,7 @@ create_groupingsets_path(PlannerInfo *root,
 			Path		sort_path;	/* dummy for result of cost_sort */
 			Path		agg_path;	/* dummy for result of cost_agg */
 
-			if (rollup->is_hashed || is_first_sort)
+			if (rollup->is_hashed || (is_first_sort && is_sorted))
 			{
 				/*
 				 * Account for cost of aggregation, but don't charge input

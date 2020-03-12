@@ -992,6 +992,7 @@ _copyAgg(const Agg *from)
 	COPY_BITMAPSET_FIELD(aggParams);
 	COPY_NODE_FIELD(groupingSets);
 	COPY_NODE_FIELD(chain);
+	COPY_NODE_FIELD(sortnode);
 
 	return newnode;
 }
