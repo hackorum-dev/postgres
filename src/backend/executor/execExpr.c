@@ -815,10 +815,18 @@ ExecInitExprRec(Expr *node, ExprState *state,
 
 				agg = (Agg *) (state->parent->plan);
 
-				if (agg->groupingSets)
+				if (agg->rollup)
 					scratch.d.grouping_func.clauses = grp_node->cols;
 				else
 					scratch.d.grouping_func.clauses = NIL;
+
+				ExprEvalPushStep(state, &scratch);
+				break;
+			}
+
+		case T_GroupingSetId:
+			{
+				scratch.opcode = EEOP_GROUPING_SET_ID;
 
 				ExprEvalPushStep(state, &scratch);
 				break;

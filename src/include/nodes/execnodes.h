@@ -2047,6 +2047,7 @@ typedef struct AggState
 	int			numtrans;		/* number of pertrans items */
 	AggStrategy aggstrategy;	/* strategy mode */
 	AggSplit	aggsplit;		/* agg-splitting mode, see nodes.h */
+#define FIELDNO_AGGSTATE_PHASE 6
 	AggStatePerPhase phase;		/* pointer to current phase data */
 	int			numphases;		/* number of phases (including phase 0) */
 	int			current_phase;	/* current phase number */
@@ -2070,8 +2071,6 @@ typedef struct AggState
 	/* These fields are for grouping set phase data */
 	int			maxsets;		/* The max number of sets in any phase */
 	AggStatePerPhase *phases;	/* array of all phases */
-	Tuplesortstate *sort_in;	/* sorted input to phases > 1 */
-	Tuplesortstate *sort_out;	/* input is copied here for next phase */
 	TupleTableSlot *sort_slot;	/* slot for sort results */
 	/* these fields are used in AGG_PLAIN and AGG_SORTED modes: */
 	HeapTuple	grp_firstTuple; /* copy of first tuple of current group */
@@ -2103,6 +2102,11 @@ typedef struct AggState
 
 
 	ProjectionInfo *combinedproj;	/* projection machinery */
+
+	/* these field are used in parallel grouping sets */
+	bool		groupingsets_preprocess; /* groupingsets preprocessed yet? */
+	ExprState	*gsetid;				/* expression state to get grpsetid from input */
+	int			*gsetid_phaseidxs;	/* grpsetid <-> phaseidx mapping */
 } AggState;
 
 /* ----------------

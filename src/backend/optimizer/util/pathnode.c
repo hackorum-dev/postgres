@@ -2995,6 +2995,7 @@ create_groupingsets_path(PlannerInfo *root,
 						 List *rollups,
 						 const AggClauseCosts *agg_costs,
 						 double numGroups,
+						 AggSplit aggsplit,
 						 bool is_sorted)
 {
 	GroupingSetsPath *pathnode = makeNode(GroupingSetsPath);
@@ -3012,6 +3013,7 @@ create_groupingsets_path(PlannerInfo *root,
 		subpath->parallel_safe;
 	pathnode->path.parallel_workers = subpath->parallel_workers;
 	pathnode->subpath = subpath;
+	pathnode->aggsplit = aggsplit;
 	pathnode->is_sorted = is_sorted;
 
 	/*
@@ -3046,11 +3048,27 @@ create_groupingsets_path(PlannerInfo *root,
 	Assert(aggstrategy != AGG_PLAIN || list_length(rollups) == 1);
 	Assert(aggstrategy != AGG_MIXED || list_length(rollups) > 1);
 
+	/*
+	 * Estimate the cost of groupingsets.
+	 *
+	 * If we are finalizing grouping sets, the subpath->rows
+	 * contains rows from all sets, we need to estimate the
+	 * number of rows in each rollup. Meanwhile, the cost of
+	 * preprocess groupingsets is not estimated, the expression
+	 * to redirect tuples is a simple Var expression which is
+	 * normally cost zero.
+	 */
 	foreach(lc, rollups)
 	{
 		RollupData *rollup = lfirst(lc);
 		List	   *gsets = rollup->gsets;
 		int			numGroupCols = list_length(linitial(gsets));
+		int			rows = 0.0;
+
+		if (DO_AGGSPLIT_COMBINE(aggsplit))
+			rows = rollup->numGroups * subpath->rows / numGroups;
+		else
+			rows = subpath->rows;
 
 		/*
 		 * In AGG_SORTED or AGG_PLAIN mode, the first rollup do its own
@@ -3072,7 +3090,7 @@ create_groupingsets_path(PlannerInfo *root,
 
 				cost_sort(&sort_path, root, NIL,
 						  input_total_cost,
-						  subpath->rows,
+						  rows,
 						  subpath->pathtarget->width,
 						  0.0,
 						  work_mem,
@@ -3090,7 +3108,7 @@ create_groupingsets_path(PlannerInfo *root,
 					 having_qual,
 					 input_startup_cost,
 					 input_total_cost,
-					 subpath->rows,
+					 rows,
 					 subpath->pathtarget->width);
 			is_first = false;
 		}
@@ -3102,7 +3120,6 @@ create_groupingsets_path(PlannerInfo *root,
 
 			sort_path.startup_cost = 0;
 			sort_path.total_cost = 0;
-			sort_path.rows = subpath->rows;
 
 			rollup_strategy = rollup->is_hashed ?
 				AGG_HASHED : (numGroupCols ? AGG_SORTED : AGG_PLAIN);
@@ -3112,7 +3129,7 @@ create_groupingsets_path(PlannerInfo *root,
 				/* Account for cost of sort, but don't charge input cost again */
 				cost_sort(&sort_path, root, NIL,
 						  0.0,
-						  subpath->rows,
+						  rows,
 						  subpath->pathtarget->width,
 						  0.0,
 						  work_mem,
@@ -3128,7 +3145,7 @@ create_groupingsets_path(PlannerInfo *root,
 					 having_qual,
 					 sort_path.startup_cost,
 					 sort_path.total_cost,
-					 sort_path.rows,
+					 rows,
 					 subpath->pathtarget->width);
 
 			pathnode->path.total_cost += agg_path.total_cost;

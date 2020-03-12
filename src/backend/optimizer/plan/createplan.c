@@ -1641,7 +1641,7 @@ create_unique_plan(PlannerInfo *root, UniquePath *best_path, int flags)
 								 groupColIdx,
 								 groupOperators,
 								 groupCollations,
-								 NIL,
+								 NULL,
 								 NIL,
 								 best_path->path.rows,
 								 0,
@@ -2095,7 +2095,7 @@ create_agg_plan(PlannerInfo *root, AggPath *best_path)
 					extract_grouping_ops(best_path->groupClause),
 					extract_grouping_collations(best_path->groupClause,
 												subplan->targetlist),
-					NIL,
+					NULL,
 					NIL,
 					best_path->numGroups,
 					best_path->transitionSpace,
@@ -2214,7 +2214,6 @@ create_groupingsets_plan(PlannerInfo *root, GroupingSetsPath *best_path)
 	 * never be grouping in an UPDATE/DELETE; but let's Assert that.
 	 */
 	Assert(root->inhTargetKind == INHKIND_NONE);
-	Assert(root->grouping_map == NULL);
 	root->grouping_map = grouping_map;
 
 	/*
@@ -2241,7 +2240,9 @@ create_groupingsets_plan(PlannerInfo *root, GroupingSetsPath *best_path)
 			 * node if the input is not sorted yet, for other rollups using
 			 * sorted mode, always add an explicit sort.
 			 */
-			if (!rollup->is_hashed)
+			/* In final stage, rollup may contain empty set here */
+			if (!rollup->is_hashed &&
+				list_length(linitial(rollup->gsets)) != 0)
 			{
 				sort_plan = (Plan *)
 					make_sort_from_groupcols(rollup->groupClause,
@@ -2265,12 +2266,12 @@ create_groupingsets_plan(PlannerInfo *root, GroupingSetsPath *best_path)
 			agg_plan = (Plan *) make_agg(NIL,
 										 NIL,
 										 strat,
-										 AGGSPLIT_SIMPLE,
+										 best_path->aggsplit,
 										 list_length((List *) linitial(rollup->gsets)),
 										 new_grpColIdx,
 										 extract_grouping_ops(rollup->groupClause),
 										 extract_grouping_collations(rollup->groupClause, subplan->targetlist),
-										 rollup->gsets,
+										 rollup,
 										 NIL,
 										 rollup->numGroups,
 										 best_path->transitionSpace,
@@ -2282,8 +2283,7 @@ create_groupingsets_plan(PlannerInfo *root, GroupingSetsPath *best_path)
 	}
 
 	/*
-	 * Now make the real Agg node
-	 */
+	 * Now make the real Agg node */
 	{
 		RollupData *rollup = linitial(rollups);
 		AttrNumber *top_grpColIdx;
@@ -2315,12 +2315,12 @@ create_groupingsets_plan(PlannerInfo *root, GroupingSetsPath *best_path)
 		plan = make_agg(build_path_tlist(root, &best_path->path),
 						best_path->qual,
 						best_path->aggstrategy,
-						AGGSPLIT_SIMPLE,
+						best_path->aggsplit,
 						numGroupCols,
 						top_grpColIdx,
 						extract_grouping_ops(rollup->groupClause),
 						extract_grouping_collations(rollup->groupClause, subplan->targetlist),
-						rollup->gsets,
+						rollup,
 						chain,
 						rollup->numGroups,
 						best_path->transitionSpace,
@@ -6222,7 +6222,7 @@ Agg *
 make_agg(List *tlist, List *qual,
 		 AggStrategy aggstrategy, AggSplit aggsplit,
 		 int numGroupCols, AttrNumber *grpColIdx, Oid *grpOperators, Oid *grpCollations,
-		 List *groupingSets, List *chain, double dNumGroups,
+		 RollupData *rollup, List *chain, double dNumGroups,
 		 Size transitionSpace, Plan *sortnode, Plan *lefttree)
 {
 	Agg		   *node = makeNode(Agg);
@@ -6241,8 +6241,9 @@ make_agg(List *tlist, List *qual,
 	node->numGroups = numGroups;
 	node->transitionSpace = transitionSpace;
 	node->aggParams = NULL;		/* SS_finalize_plan() will fill this */
-	node->groupingSets = groupingSets;
+	node->rollup= rollup;
 	node->chain = chain;
+	node->gsetid = NULL;
 	node->sortnode = sortnode;
 
 	plan->qual = qual;

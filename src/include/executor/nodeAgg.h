@@ -285,6 +285,8 @@ typedef struct AggStatePerPhaseData
 	AggStatePerGroup *pergroups;	/* pergroup states for a phase */
 
 	bool		skip_evaltrans;		/* do not build evaltrans */
+#define FIELDNO_AGGSTATEPERPHASE_SETNOGSETIDS 12
+	int			*setno_gsetids;		/* setno <-> gsetid map */
 }			AggStatePerPhaseData;
 
 typedef struct AggStatePerPhaseSortData

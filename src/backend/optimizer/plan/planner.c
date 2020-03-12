@@ -113,6 +113,7 @@ typedef struct
 	Bitmapset  *unhashable_refs;
 	List	   *unsortable_sets;
 	int		   *tleref_to_colnum_map;
+	int		   num_sets;
 } grouping_sets_data;
 
 /*
@@ -125,6 +126,8 @@ typedef struct
 	List	   *uniqueOrder;	/* A List of unique ordering/partitioning
 								 * clauses per Window */
 } WindowClauseSortData;
+
+typedef void (*AddPathCallback) (RelOptInfo *parent_rel, Path *new_path);
 
 /* Local functions */
 static Node *preprocess_expression(PlannerInfo *root, Node *expr, int kind);
@@ -142,7 +145,8 @@ static double preprocess_limit(PlannerInfo *root,
 static void remove_useless_groupby_columns(PlannerInfo *root);
 static List *preprocess_groupclause(PlannerInfo *root, List *force);
 static List *extract_rollup_sets(List *groupingSets);
-static List *reorder_grouping_sets(List *groupingSets, List *sortclause);
+static List *reorder_grouping_sets(grouping_sets_data *gd,
+								   List *groupingSets, List *sortclause);
 static void standard_qp_callback(PlannerInfo *root, void *extra);
 static double get_number_of_groups(PlannerInfo *root,
 								   double path_rows,
@@ -176,7 +180,11 @@ static void consider_groupingsets_paths(PlannerInfo *root,
 										grouping_sets_data *gd,
 										const AggClauseCosts *agg_costs,
 										double dNumGroups,
-										AggStrategy strat);
+										List *havingQual,
+										AggStrategy strat,
+										AggSplit aggsplit,
+										AddPathCallback add_path_fn);
+
 static RelOptInfo *create_window_paths(PlannerInfo *root,
 									   RelOptInfo *input_rel,
 									   PathTarget *input_target,
@@ -250,6 +258,9 @@ static bool group_by_has_partkey(RelOptInfo *input_rel,
 								 List *groupClause);
 static int	common_prefix_cmp(const void *a, const void *b);
 
+static List *extract_final_rollups(PlannerInfo *root,
+								   grouping_sets_data *gd,
+								   List *rollups);
 
 /*****************************************************************************
  *
@@ -2491,6 +2502,7 @@ preprocess_grouping_sets(PlannerInfo *root)
 				GroupingSetData *gs = makeNode(GroupingSetData);
 
 				gs->set = gset;
+				gs->setId = gd->num_sets++;
 				gd->unsortable_sets = lappend(gd->unsortable_sets, gs);
 
 				/*
@@ -2535,7 +2547,7 @@ preprocess_grouping_sets(PlannerInfo *root)
 		 * largest-member-first, and applies the GroupingSetData annotations,
 		 * though the data will be filled in later.
 		 */
-		current_sets = reorder_grouping_sets(current_sets,
+		current_sets = reorder_grouping_sets(gd, current_sets,
 											 (list_length(sets) == 1
 											  ? parse->sortClause
 											  : NIL));
@@ -3544,7 +3556,7 @@ extract_rollup_sets(List *groupingSets)
  * gets implemented in one pass.)
  */
 static List *
-reorder_grouping_sets(List *groupingsets, List *sortclause)
+reorder_grouping_sets(grouping_sets_data *gd, List *groupingsets, List *sortclause)
 {
 	ListCell   *lc;
 	List	   *previous = NIL;
@@ -3578,6 +3590,7 @@ reorder_grouping_sets(List *groupingsets, List *sortclause)
 		previous = list_concat(previous, new_elems);
 
 		gs->set = list_copy(previous);
+		gs->setId = gd->num_sets++;
 		result = lcons(gs, result);
 	}
 
@@ -4211,9 +4224,11 @@ consider_groupingsets_paths(PlannerInfo *root,
 							grouping_sets_data *gd,
 							const AggClauseCosts *agg_costs,
 							double dNumGroups,
-							AggStrategy strat)
+							List *havingQual,
+							AggStrategy strat,
+							AggSplit aggsplit,
+							AddPathCallback add_path_fn)
 {
-	Query	   *parse = root->parse;
 	Assert(strat == AGG_HASHED || strat == AGG_SORTED);
 
 	/*
@@ -4378,16 +4393,20 @@ consider_groupingsets_paths(PlannerInfo *root,
 			strat = AGG_MIXED;
 		}
 
-		add_path(grouped_rel, (Path *)
-				 create_groupingsets_path(root,
-										  grouped_rel,
-										  path,
-										  (List *) parse->havingQual,
-										  strat,
-										  new_rollups,
-										  agg_costs,
-										  dNumGroups,
-										  is_sorted));
+		if (DO_AGGSPLIT_COMBINE(aggsplit))
+			new_rollups = extract_final_rollups(root, gd, new_rollups);
+
+		add_path_fn(grouped_rel, (Path *)
+					create_groupingsets_path(root,
+											 grouped_rel,
+											 path,
+											 havingQual,
+											 strat,
+											 new_rollups,
+											 agg_costs,
+											 dNumGroups,
+											 aggsplit,
+											 is_sorted));
 		return;
 	}
 
@@ -4399,7 +4418,7 @@ consider_groupingsets_paths(PlannerInfo *root,
 
 	/*
 	 * Callers consider AGG_SORTED strategy, the first rollup must
-	 * use non-hashed aggregate, 'is_sorted' tells whether the first
+	 * use non-hashed aggregate, is_sorted tells whether the first
 	 * rollup need to do its own sort.
 	 *
 	 * we try and make two paths: one sorted and one mixed
@@ -4544,16 +4563,20 @@ consider_groupingsets_paths(PlannerInfo *root,
 
 		if (rollups)
 		{
-			add_path(grouped_rel, (Path *)
-					 create_groupingsets_path(root,
-											  grouped_rel,
-											  path,
-											  (List *) parse->havingQual,
-											  AGG_MIXED,
-											  rollups,
-											  agg_costs,
-											  dNumGroups,
-											  is_sorted));
+			if (DO_AGGSPLIT_COMBINE(aggsplit))
+				rollups = extract_final_rollups(root, gd, rollups);
+
+			add_path_fn(grouped_rel, (Path *)
+						create_groupingsets_path(root,
+												 grouped_rel,
+												 path,
+												 havingQual,
+												 AGG_MIXED,
+												 rollups,
+												 agg_costs,
+												 dNumGroups,
+												 aggsplit,
+												 is_sorted));
 		}
 	}
 
@@ -4561,16 +4584,82 @@ consider_groupingsets_paths(PlannerInfo *root,
 	 * Now try the simple sorted case.
 	 */
 	if (!gd->unsortable_sets)
-		add_path(grouped_rel, (Path *)
-				 create_groupingsets_path(root,
-										  grouped_rel,
-										  path,
-										  (List *) parse->havingQual,
-										  AGG_SORTED,
-										  gd->rollups,
-										  agg_costs,
-										  dNumGroups,
-										  is_sorted));
+	{
+		List *rollups;
+
+		if (DO_AGGSPLIT_COMBINE(aggsplit))
+			rollups = extract_final_rollups(root, gd, gd->rollups);
+		else
+			rollups = gd->rollups;
+
+		add_path_fn(grouped_rel, (Path *)
+					create_groupingsets_path(root,
+											 grouped_rel,
+											 path,
+											 havingQual,
+											 AGG_SORTED,
+											 rollups,
+											 agg_costs,
+											 dNumGroups,
+											 aggsplit,
+											 is_sorted));
+	}
+}
+
+/*
+ * If we are combining the partial groupingsets aggregation, the input is
+ * mixed with tuples from different grouping sets, executor dispatch the
+ * tuples to different rollups (phases) according to the grouping set id.
+ *
+ * We cannot use the same rollups with initial stage in which each tuple
+ * is processed by one or more grouping sets in one rollup, because in
+ * combining stage, each tuple only belong to one single grouping set.
+ * In this case, we use final_rollups instead in which each rollup has
+ * only one grouping set.
+ */
+static List *
+extract_final_rollups(PlannerInfo *root,
+					  grouping_sets_data *gd,
+					  List *rollups)
+{
+	ListCell	*lc;
+	List		*new_rollups = NIL;
+
+	foreach(lc, rollups)
+	{
+		ListCell	*lc1;
+		RollupData	*rollup = lfirst_node(RollupData, lc);
+
+		foreach(lc1, rollup->gsets_data)
+		{
+			GroupingSetData *gs = lfirst_node(GroupingSetData, lc1);
+			RollupData *new_rollup = makeNode(RollupData);
+
+			if (gs->set != NIL)
+			{
+				new_rollup->groupClause = preprocess_groupclause(root, gs->set);
+				new_rollup->gsets_data = list_make1(gs);
+				new_rollup->gsets = remap_to_groupclause_idx(new_rollup->groupClause,
+															 new_rollup->gsets_data,
+															 gd->tleref_to_colnum_map);
+				new_rollup->hashable = rollup->hashable;
+				new_rollup->is_hashed = rollup->is_hashed;
+			}
+			else
+			{
+				new_rollup->groupClause = NIL;
+				new_rollup->gsets_data = list_make1(gs);
+				new_rollup->gsets = list_make1(NIL);
+				new_rollup->hashable = false;
+				new_rollup->is_hashed = false;
+			}
+
+			new_rollup->numGroups = gs->numGroups;
+			new_rollups = lappend(new_rollups, new_rollup);
+		}
+	}
+
+	return new_rollups;
 }
 
 /*
@@ -5279,6 +5368,17 @@ make_partial_grouping_target(PlannerInfo *root,
 									  PVC_INCLUDE_PLACEHOLDERS);
 
 	add_new_columns_to_pathtarget(partial_target, non_group_exprs);
+
+	/*
+	 * We are generate partial groupingsets path, add an expression to show
+	 * the grouping set ID for a tuple, so in the final stage, executor can
+	 * know which set this tuple belongs to and combine them.
+	 * */
+	if (parse->groupingSets)
+	{
+		GroupingSetId *expr = makeNode(GroupingSetId);
+		add_new_column_to_pathtarget(partial_target, (Expr *)expr);
+	}
 
 	/*
 	 * Adjust Aggrefs to put them in partial mode.  At this point all Aggrefs
@@ -6455,7 +6555,10 @@ add_paths_to_grouping_rel(PlannerInfo *root, RelOptInfo *input_rel,
 					consider_groupingsets_paths(root, grouped_rel,
 												path, is_sorted, can_hash,
 												gd, agg_costs, dNumGroups,
-												AGG_SORTED);
+												havingQual,
+												AGG_SORTED,
+												AGGSPLIT_SIMPLE,
+												add_path);
 					continue;
 				}
 
@@ -6516,15 +6619,37 @@ add_paths_to_grouping_rel(PlannerInfo *root, RelOptInfo *input_rel,
 			foreach(lc, partially_grouped_rel->pathlist)
 			{
 				Path	   *path = (Path *) lfirst(lc);
+				bool		is_sorted;
+
+				is_sorted = pathkeys_contained_in(root->group_pathkeys,
+												  path->pathkeys);
+
+				/*
+				 * Use any available suitably-sorted path as input, and also
+				 * consider sorting the cheapest-total path.
+				 */
+				if (path != partially_grouped_rel->cheapest_total_path &&
+					!is_sorted)
+					continue;
+
+				if (parse->groupingSets)
+				{
+					consider_groupingsets_paths(root, grouped_rel,
+												path, is_sorted, can_hash,
+												gd, agg_final_costs, dNumGroups,
+												havingQual,
+												AGG_SORTED,
+												AGGSPLIT_FINAL_DESERIAL,
+												add_path);
+					continue;
+				}
 
 				/*
 				 * Insert a Sort node, if required.  But there's no point in
 				 * sorting anything but the cheapest path.
 				 */
-				if (!pathkeys_contained_in(root->group_pathkeys, path->pathkeys))
+				if (!is_sorted)
 				{
-					if (path != partially_grouped_rel->cheapest_total_path)
-						continue;
 					path = (Path *) create_sort_path(root,
 													 grouped_rel,
 													 path,
@@ -6568,7 +6693,10 @@ add_paths_to_grouping_rel(PlannerInfo *root, RelOptInfo *input_rel,
 			consider_groupingsets_paths(root, grouped_rel,
 										cheapest_path, false, true,
 										gd, agg_costs, dNumGroups,
-										AGG_HASHED);
+										havingQual,
+										AGG_HASHED,
+										AGGSPLIT_SIMPLE,
+										add_path);
 		}
 		else
 		{
@@ -6612,23 +6740,39 @@ add_paths_to_grouping_rel(PlannerInfo *root, RelOptInfo *input_rel,
 		{
 			Path	   *path = partially_grouped_rel->cheapest_total_path;
 
-			hashaggtablesize = estimate_hashagg_tablesize(path,
-														  agg_final_costs,
-														  dNumGroups);
+			if (parse->groupingSets)
+			{
+				/*
+				 * Try for a hash-only groupingsets path over unsorted input.
+				 */
+				consider_groupingsets_paths(root, grouped_rel,
+											path, false, true,
+											gd, agg_final_costs, dNumGroups,
+											havingQual,
+											AGG_HASHED,
+											AGGSPLIT_FINAL_DESERIAL,
+											add_path);
+			}
+			else
+			{
+				hashaggtablesize = estimate_hashagg_tablesize(path,
+															  agg_final_costs,
+															  dNumGroups);
 
-			if (enable_hashagg_disk ||
-				hashaggtablesize < work_mem * 1024L)
-				add_path(grouped_rel, (Path *)
-						 create_agg_path(root,
-										 grouped_rel,
-										 path,
-										 grouped_rel->reltarget,
-										 AGG_HASHED,
-										 AGGSPLIT_FINAL_DESERIAL,
-										 parse->groupClause,
-										 havingQual,
-										 agg_final_costs,
-										 dNumGroups));
+				if (enable_hashagg_disk ||
+					hashaggtablesize < work_mem * 1024L)
+					add_path(grouped_rel, (Path *)
+							 create_agg_path(root,
+											 grouped_rel,
+											 path,
+											 grouped_rel->reltarget,
+											 AGG_HASHED,
+											 AGGSPLIT_FINAL_DESERIAL,
+											 parse->groupClause,
+											 havingQual,
+											 agg_final_costs,
+											 dNumGroups));
+			}
 		}
 	}
 
@@ -6838,6 +6982,19 @@ create_partial_grouping_paths(PlannerInfo *root,
 											  path->pathkeys);
 			if (path == cheapest_partial_path || is_sorted)
 			{
+				if (parse->groupingSets)
+				{
+					consider_groupingsets_paths(root, partially_grouped_rel,
+												path, is_sorted, can_hash,
+												gd, agg_partial_costs,
+												dNumPartialPartialGroups,
+												NIL,
+												AGG_SORTED,
+												AGGSPLIT_INITIAL_SERIAL,
+												add_partial_path);
+					continue;
+				}
+
 				/* Sort the cheapest partial path, if it isn't already */
 				if (!is_sorted)
 					path = (Path *) create_sort_path(root,
@@ -6907,26 +7064,41 @@ create_partial_grouping_paths(PlannerInfo *root,
 	{
 		double		hashaggtablesize;
 
-		hashaggtablesize =
-			estimate_hashagg_tablesize(cheapest_partial_path,
-									   agg_partial_costs,
-									   dNumPartialPartialGroups);
-
-		/* Do the same for partial paths. */
-		if ((enable_hashagg_disk || hashaggtablesize < work_mem * 1024L) &&
-			cheapest_partial_path != NULL)
+		if (parse->groupingSets)
 		{
-			add_partial_path(partially_grouped_rel, (Path *)
-							 create_agg_path(root,
-											 partially_grouped_rel,
-											 cheapest_partial_path,
-											 partially_grouped_rel->reltarget,
-											 AGG_HASHED,
-											 AGGSPLIT_INITIAL_SERIAL,
-											 parse->groupClause,
-											 NIL,
-											 agg_partial_costs,
-											 dNumPartialPartialGroups));
+			consider_groupingsets_paths(root, partially_grouped_rel,
+										cheapest_partial_path,
+										false, true,
+										gd, agg_partial_costs,
+										dNumPartialPartialGroups,
+										NIL,
+										AGG_HASHED,
+										AGGSPLIT_INITIAL_SERIAL,
+										add_partial_path);
+		}
+		else
+		{
+			hashaggtablesize =
+				estimate_hashagg_tablesize(cheapest_partial_path,
+										   agg_partial_costs,
+										   dNumPartialPartialGroups);
+
+			/* Do the same for partial paths. */
+			if ((enable_hashagg_disk || hashaggtablesize < work_mem * 1024L) &&
+				cheapest_partial_path != NULL)
+			{
+				add_partial_path(partially_grouped_rel, (Path *)
+								 create_agg_path(root,
+												 partially_grouped_rel,
+												 cheapest_partial_path,
+												 partially_grouped_rel->reltarget,
+												 AGG_HASHED,
+												 AGGSPLIT_INITIAL_SERIAL,
+												 parse->groupClause,
+												 NIL,
+												 agg_partial_costs,
+												 dNumPartialPartialGroups));
+			}
 		}
 	}
 
@@ -6970,6 +7142,9 @@ gather_grouping_paths(PlannerInfo *root, RelOptInfo *rel)
 	generate_gather_paths(root, rel, true);
 
 	/* Try cheapest partial path + explicit Sort + Gather Merge. */
+	if (root->parse->groupingSets)
+		return;
+
 	cheapest_partial_path = linitial(rel->partial_pathlist);
 	if (!pathkeys_contained_in(root->group_pathkeys,
 							   cheapest_partial_path->pathkeys))
@@ -7012,11 +7187,6 @@ can_partial_agg(PlannerInfo *root, const AggClauseCosts *agg_costs)
 		 * We don't know how to do parallel aggregation unless we have either
 		 * some aggregates or a grouping clause.
 		 */
-		return false;
-	}
-	else if (parse->groupingSets)
-	{
-		/* We don't know how to do grouping sets in parallel. */
 		return false;
 	}
 	else if (agg_costs->hasNonPartial || agg_costs->hasNonSerial)

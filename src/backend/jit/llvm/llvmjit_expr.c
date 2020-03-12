@@ -1882,6 +1882,46 @@ llvm_compile_expr(ExprState *state)
 				LLVMBuildBr(b, opblocks[opno + 1]);
 				break;
 
+			case EEOP_GROUPING_SET_ID:
+				{
+					LLVMValueRef v_resvalue;
+					LLVMValueRef v_aggstatep;
+					LLVMValueRef v_phase;
+					LLVMValueRef v_current_set;
+					LLVMValueRef v_setno_gsetids;
+
+					v_aggstatep =
+						LLVMBuildBitCast(b, v_parent, l_ptr(StructAggState), "");
+
+					/*
+					 * op->resvalue =
+					 * aggstate->phase->setno_gsetids
+					 * [aggstate->current_set]
+					 */
+					v_phase =
+						l_load_struct_gep(b, v_aggstatep,
+										  FIELDNO_AGGSTATE_PHASE,
+										  "aggstate.phase");
+					v_setno_gsetids =
+						l_load_struct_gep(b, v_phase,
+										  FIELDNO_AGGSTATEPERPHASE_SETNOGSETIDS,
+										  "aggstateperphase.setno_gsetids");
+					v_current_set =
+						l_load_struct_gep(b, v_aggstatep,
+										  FIELDNO_AGGSTATE_CURRENT_SET,
+										  "aggstate.current_set");
+					v_resvalue =
+						l_load_gep1(b, v_setno_gsetids, v_current_set, "");
+					v_resvalue =
+						LLVMBuildZExt(b, v_resvalue, TypeSizeT, "");
+
+					LLVMBuildStore(b, v_resvalue, v_resvaluep);
+					LLVMBuildStore(b, l_sbool_const(0), v_resnullp);
+
+					LLVMBuildBr(b, opblocks[opno + 1]);
+					break;
+				}
+
 			case EEOP_WINDOW_FUNC:
 				{
 					WindowFuncExprState *wfunc = op->d.window_func.wfstate;
