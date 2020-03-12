@@ -3584,39 +3584,8 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 	 */
 	if (use_hashing)
 	{
-		Plan   *outerplan = outerPlan(node);
-		uint64	totalGroups = 0;
-		int 	i;
-
-		aggstate->hash_metacxt = AllocSetContextCreate(
-			aggstate->ss.ps.state->es_query_cxt,
-			"HashAgg meta context",
-			ALLOCSET_DEFAULT_SIZES);
-		aggstate->hash_spill_slot = ExecInitExtraTupleSlot(
-			estate, scanDesc, &TTSOpsMinimalTuple);
-
 		/* this is an array of pointers, not structures */
 		aggstate->hash_pergroup = pergroups;
-
-		aggstate->hashentrysize = hash_agg_entry_size(
-			aggstate->numtrans, outerplan->plan_width, node->transitionSpace);
-
-		/*
-		 * Consider all of the grouping sets together when setting the limits
-		 * and estimating the number of partitions. This can be inaccurate
-		 * when there is more than one grouping set, but should still be
-		 * reasonable.
-		 */
-		for (i = 0; i < aggstate->num_hashes; i++)
-			totalGroups += aggstate->perhash[i].aggnode->numGroups;
-
-		hash_agg_set_limits(aggstate->hashentrysize, totalGroups, 0,
-							&aggstate->hash_mem_limit,
-							&aggstate->hash_ngroups_limit,
-							&aggstate->hash_planned_partitions);
-		find_hash_columns(aggstate);
-		build_hash_tables(aggstate);
-		aggstate->table_filled = false;
 	}
 
 	/*
@@ -3971,6 +3940,42 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 		ereport(ERROR,
 				(errcode(ERRCODE_GROUPING_ERROR),
 				 errmsg("aggregate function calls cannot be nested")));
+
+	/* Initialize hash contexts and hash tables for hash aggregates */
+	if (use_hashing)
+	{
+		Plan   *outerplan = outerPlan(node);
+		uint64	totalGroups = 0;
+		int 	i;
+
+		aggstate->hash_metacxt = AllocSetContextCreate(
+			aggstate->ss.ps.state->es_query_cxt,
+			"HashAgg meta context",
+			ALLOCSET_DEFAULT_SIZES);
+		aggstate->hash_spill_slot = ExecInitExtraTupleSlot(
+			estate, scanDesc, &TTSOpsMinimalTuple);
+
+		aggstate->hashentrysize = hash_agg_entry_size(
+			aggstate->numtrans, outerplan->plan_width, node->transitionSpace);
+
+		/*
+		 * Consider all of the grouping sets together when setting the limits
+		 * and estimating the number of partitions. This can be inaccurate
+		 * when there is more than one grouping set, but should still be
+		 * reasonable.
+		 */
+		for (i = 0; i < aggstate->num_hashes; i++)
+			totalGroups += aggstate->perhash[i].aggnode->numGroups;
+
+		hash_agg_set_limits(aggstate->hashentrysize, totalGroups, 0,
+							&aggstate->hash_mem_limit,
+							&aggstate->hash_ngroups_limit,
+							&aggstate->hash_planned_partitions);
+
+		find_hash_columns(aggstate);
+		build_hash_tables(aggstate);
+		aggstate->table_filled = false;
+	}
 
 	/*
 	 * Build expressions doing all the transition work at once. We build a
