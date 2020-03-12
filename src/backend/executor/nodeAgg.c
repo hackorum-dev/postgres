@@ -2520,10 +2520,6 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 	{
 		/* this is an array of pointers, not structures */
 		aggstate->hash_pergroup = pergroups;
-
-		find_hash_columns(aggstate);
-		build_hash_tables(aggstate);
-		aggstate->table_filled = false;
 	}
 
 	/*
@@ -2878,6 +2874,14 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 		ereport(ERROR,
 				(errcode(ERRCODE_GROUPING_ERROR),
 				 errmsg("aggregate function calls cannot be nested")));
+
+	/* Initialize hash tables for hash aggregates */
+	if (use_hashing)
+	{
+		find_hash_columns(aggstate);
+		build_hash_tables(aggstate);
+		aggstate->table_filled = false;
+	}
 
 	/*
 	 * Build expressions doing all the transition work at once. We build a
