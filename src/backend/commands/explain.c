@@ -19,6 +19,8 @@
 #include "commands/defrem.h"
 #include "commands/prepare.h"
 #include "executor/nodeHash.h"
+#include "executor/nodeFunctionscan.h"
+#include "executor/nodeSRFScan.h"
 #include "foreign/fdwapi.h"
 #include "jit/jit.h"
 #include "nodes/extensible.h"
@@ -1182,6 +1184,9 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		case T_SubqueryScan:
 			pname = sname = "Subquery Scan";
 			break;
+		case T_SRFScanPlan:
+			pname = sname = "SRF Scan";
+			break;
 		case T_FunctionScan:
 			pname = sname = "Function Scan";
 			break;
@@ -1770,6 +1775,31 @@ ExplainNode(PlanState *planstate, List *ancestors,
 				}
 			}
 			break;
+		case T_SRFScanPlan:
+			if (es->analyze)
+			{
+				SRFScanState *sss = (SRFScanState *) planstate;
+
+				if (sss->setexpr)
+				{
+					SetExprState *setexpr = (SetExprState *) sss->setexpr;
+					FunctionCallInfo fcinfo = setexpr->fcinfo;
+					ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
+
+					if (rsinfo)
+					{
+						ExplainPropertyText("SFRM",
+							rsinfo->returnMode == SFRM_ValuePerCall ? "ValuePerCall" :
+								rsinfo->returnMode == SFRM_Materialize ? "Materialize" :
+									"Unknown",
+											es);
+
+						if (rsinfo->returnMode == SFRM_Materialize)
+							ExplainPropertyBool("Donated tuplestore",
+												setexpr->funcResultStoreDonated, es);
+					}
+				}
+			}
 		case T_FunctionScan:
 			if (es->verbose)
 			{
@@ -2002,6 +2032,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		IsA(plan, BitmapAnd) ||
 		IsA(plan, BitmapOr) ||
 		IsA(plan, SubqueryScan) ||
+		IsA(plan, FunctionScan) ||
 		(IsA(planstate, CustomScanState) &&
 		 ((CustomScanState *) planstate)->custom_ps != NIL) ||
 		planstate->subPlan;
@@ -2025,6 +2056,17 @@ ExplainNode(PlanState *planstate, List *ancestors,
 	if (innerPlanState(planstate))
 		ExplainNode(innerPlanState(planstate), ancestors,
 					"Inner", NULL, es);
+
+	/* FunctionScan subnodes */
+	if (IsA(planstate, FunctionScanState))
+		for(int i=0; i<((FunctionScanState *)planstate)->nfuncs; i++)
+		{
+			bool oldverbose = es->verbose;
+			es->verbose = false;
+			ExplainNode(&((FunctionScanState *)planstate)->funcstates[i].scanstate->ps,
+						ancestors, "Function", NULL, es);
+			es->verbose = oldverbose;
+		}
 
 	/* special child plans */
 	switch (nodeTag(plan))
