@@ -4354,7 +4354,8 @@ consider_groupingsets_paths(PlannerInfo *root,
 
 		if (unhashed_rollup)
 		{
-			new_rollups = lappend(new_rollups, unhashed_rollup);
+			/* unhashed rollups always sit before hashed rollups */
+			new_rollups = lcons(unhashed_rollup, new_rollups);
 			strat = AGG_MIXED;
 		}
 		else if (empty_sets)
@@ -4367,7 +4368,8 @@ consider_groupingsets_paths(PlannerInfo *root,
 			rollup->numGroups = list_length(empty_sets);
 			rollup->hashable = false;
 			rollup->is_hashed = false;
-			new_rollups = lappend(new_rollups, rollup);
+			/* unhashed rollups always sit before hashed rollups */
+			new_rollups = lcons(rollup, new_rollups);
 			/*
 			 * The first non-hashed rollup is PLAIN AGG, is_sorted
 			 * should be true.
@@ -4536,7 +4538,8 @@ consider_groupingsets_paths(PlannerInfo *root,
 			rollup->numGroups = gs->numGroups;
 			rollup->hashable = true;
 			rollup->is_hashed = true;
-			rollups = lcons(rollup, rollups);
+			/* non-hashed rollup always sit before hashed rollup */
+			rollups = lappend(rollups, rollup);
 		}
 
 		if (rollups)
