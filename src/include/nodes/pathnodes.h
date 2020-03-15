@@ -687,6 +687,7 @@ typedef struct RelOptInfo
 	PlannerInfo *subroot;		/* if subquery */
 	List	   *subplan_params; /* if subquery */
 	int			rel_parallel_workers;	/* wanted number of parallel workers */
+	Relids		not_null_cols; /* the non null column for this relation, start from 1 */
 
 	/* Information about foreign tables and foreign joins */
 	Oid			serverid;		/* identifies server for the table or join */
@@ -706,6 +707,7 @@ typedef struct RelOptInfo
 	QualCost	baserestrictcost;	/* cost of evaluating the above */
 	Index		baserestrict_min_security;	/* min security_level found in
 											 * baserestrictinfo */
+	List	   *uniquekeys;		/* List of Var groups */
 	List	   *joininfo;		/* RestrictInfo structures for join clauses
 								 * involving this rel */
 	bool		has_eclass_joins;	/* T means joininfo is incomplete */
@@ -1016,6 +1018,31 @@ typedef struct PathKey
 	bool		pk_nulls_first; /* do NULLs come before normal values? */
 } PathKey;
 
+/* UniqueKeySet
+ *
+ * Represents a set of unique keys
+ */
+typedef struct UniqueKeySet
+{
+	NodeTag		type;
+
+	Bitmapset *non_null_keys;	/* indexes of 'keys' proved non-null */
+	List		*keys;	/* list of UniqueKeys */
+} UniqueKeySet;
+
+/*
+ * UniqueKey
+ *
+ * Represents the unique properties held by a RelOptInfo or a Path
+ */
+typedef struct UniqueKey
+{
+	NodeTag		type;
+
+	Oid			uk_collation;	/* collation, if datatypes are collatable */
+	Oid			uk_opfamily;	/* btree opfamily defining the ordering */
+	Expr	   *uk_expr;		/* unique key expression */
+} UniqueKey;
 
 /*
  * PathTarget

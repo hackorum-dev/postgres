@@ -2389,6 +2389,9 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 		add_path(final_rel, path);
 	}
 
+	/* Copy the uniquekeys to final_rel */
+	final_rel->uniquekeys = current_rel->uniquekeys;
+	
 	/*
 	 * Generate partial paths for final_rel, too, if outer query levels might
 	 * be able to make use of them.
@@ -3813,6 +3816,20 @@ create_grouping_paths(PlannerInfo *root,
 	Query	   *parse = root->parse;
 	RelOptInfo *grouped_rel;
 	RelOptInfo *partially_grouped_rel;
+	ListCell	*lc;
+
+	List	*required_unique_keys = get_sortgrouplist_exprs(parse->groupClause,
+															parse->targetList);
+	/*
+	 * If the groupby clauses is unique already,  groupping node is not necessary
+	 * if there is no aggreation functions
+	 */
+	if (required_unique_keys != NIL &&
+		!parse->hasAggs &&
+		!parse->hasWindowFuncs &&
+		parse->havingQual == NULL &&
+		relation_has_uniquekeys_for(root, input_rel, required_unique_keys))
+		return input_rel;
 
 	/*
 	 * Create grouping relation to hold fully aggregated grouping and/or
@@ -3901,6 +3918,19 @@ create_grouping_paths(PlannerInfo *root,
 	}
 
 	set_cheapest(grouped_rel);
+
+	/* Copy the upperrel's uniquekeys to grouped_rel and add the one which caused
+	 * by groupBy clause
+	 */
+	foreach(lc, input_rel->uniquekeys)
+	{
+		List	*uniquekey = lfirst_node(List, lc);
+		if (list_all_members_in(uniquekey, grouped_rel->reltarget->exprs))
+			grouped_rel->uniquekeys = lappend(grouped_rel->uniquekeys, uniquekey);
+	}
+	if (required_unique_keys != NIL)
+		grouped_rel->uniquekeys = lappend(grouped_rel->uniquekeys,
+										  required_unique_keys);
 	return grouped_rel;
 }
 
@@ -4736,6 +4766,12 @@ create_distinct_paths(PlannerInfo *root,
 	bool		allow_hash;
 	Path	   *path;
 	ListCell   *lc;
+	List	   *required_unique_keys =  get_sortgrouplist_exprs(parse->distinctClause,
+																parse->targetList);
+
+	/* If we the result if unqiue already, we just return the input_rel directly */
+	if (relation_has_uniquekeys_for(root, input_rel, required_unique_keys))
+		return input_rel;
 
 	/* For now, do all work in the (DISTINCT, NULL) upperrel */
 	distinct_rel = fetch_upper_rel(root, UPPERREL_DISTINCT, NULL);
@@ -4920,6 +4956,10 @@ create_distinct_paths(PlannerInfo *root,
 	/* Now choose the best path(s) */
 	set_cheapest(distinct_rel);
 
+	/* All the UK before distinct is still valid and we can add one more required_unique_keys */
+	distinct_rel->uniquekeys = list_copy(input_rel->uniquekeys);
+	distinct_rel->uniquekeys = lappend(distinct_rel->uniquekeys,
+											required_unique_keys);
 	return distinct_rel;
 }
 
@@ -5066,6 +5106,9 @@ create_ordered_paths(PlannerInfo *root,
 	 * need us to do it.
 	 */
 	Assert(ordered_rel->pathlist != NIL);
+	
+	/* Copy the unique keys */
+	ordered_rel->uniquekeys = input_rel->uniquekeys;
 
 	return ordered_rel;
 }

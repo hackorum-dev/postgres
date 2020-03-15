@@ -688,6 +688,33 @@ list_member_oid(const List *list, Oid datum)
 	return false;
 }
 
+/* 
+ * Return ture iff there is an equal member in target for every
+ * member in members
+ */
+bool
+list_all_members_in(const List *members, const List *target)
+{
+	const ListCell	*lc1, *lc2;
+	if (target == NIL && members != NIL)
+		return false;
+	foreach(lc1, members)
+	{
+		bool found = false;
+		foreach(lc2, target)
+		{
+			if (equal(lfirst(lc1), lfirst(lc2)))
+			{
+				found = true;
+				break;
+			}
+		}
+		if (!found)
+			return false;
+	}
+	return true;
+}
+
 /*
  * Delete the n'th cell (counting from 0) in list.
  *

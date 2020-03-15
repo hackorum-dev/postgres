@@ -240,4 +240,21 @@ extern PathKey *make_canonical_pathkey(PlannerInfo *root,
 extern void add_paths_to_append_rel(PlannerInfo *root, RelOptInfo *rel,
 									List *live_childrels);
 
+/*
+ * uniquekeys.c
+ *	  Utilities for matching and building unique keys
+ */
+extern void populate_baserel_uniquekeys(PlannerInfo *root,
+										RelOptInfo *baserel);
+extern bool relation_has_uniquekeys_for(PlannerInfo *root,
+										RelOptInfo *rel,
+										List *exprs);
+										
+extern void propagate_unique_keys_to_joinrel(PlannerInfo *root,
+											 RelOptInfo *joinrel,
+											 RelOptInfo *rel1,
+											 RelOptInfo *rel2,
+											 List *restrictlist,
+											 JoinType jointype);
+
 #endif							/* PATHS_H */

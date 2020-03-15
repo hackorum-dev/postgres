@@ -829,7 +829,14 @@ deconstruct_recurse(PlannerInfo *root, Node *jtnode, bool below_outer_join,
 		foreach(l, (List *) f->quals)
 		{
 			Node	   *qual = (Node *) lfirst(l);
-
+			ListCell	*lc;
+			foreach(lc, find_nonnullable_vars(qual))
+			{
+				Var *var = lfirst_node(Var, lc);
+				RelOptInfo *rel = root->simple_rel_array[var->varno];
+				if (var->varattno > InvalidAttrNumber)
+					rel->not_null_cols = bms_add_member(rel->not_null_cols, var->varattno);
+			}
 			distribute_qual_to_rels(root, qual,
 									false, below_outer_join, JOIN_INNER,
 									root->qual_security_level,

@@ -158,6 +158,7 @@ make_one_rel(PlannerInfo *root, List *joinlist)
 	/*
 	 * Construct the all_baserels Relids set.
 	 */
+
 	root->all_baserels = NULL;
 	for (rti = 1; rti < root->simple_rel_array_size; rti++)
 	{
@@ -578,7 +579,9 @@ set_plain_rel_size(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 	 * first since partial unique indexes can affect size estimates.
 	 */
 	check_index_predicates(root, rel);
-
+	
+	populate_baserel_uniquekeys(root, rel);
+	
 	/* Mark rel with estimated output rows, width, etc */
 	set_baserel_size_estimates(root, rel);
 }
@@ -2321,6 +2324,8 @@ set_subquery_pathlist(PlannerInfo *root, RelOptInfo *rel,
 		return;
 	}
 
+	rel->uniquekeys = sub_final_rel->uniquekeys;
+	
 	/*
 	 * Mark rel with estimated output rows, width, etc.  Note that we have to
 	 * do this before generating outer-query paths, else cost_subqueryscan is
