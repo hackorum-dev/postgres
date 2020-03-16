@@ -317,3 +317,30 @@ reset enable_seqscan;
 reset enable_bitmapscan;
 reset enable_indexonlyscan;
 drop table gist_tbl;
+--
+-- Test Index-only plans on GiST indexes when columns needless query.
+--
+create table gist_count_tbl (tsv tsvector);
+insert into gist_count_tbl values (null);
+create index gist_count_tbl_index on gist_count_tbl using gist (tsv);
+vacuum analyze gist_count_tbl;
+set enable_seqscan=off;
+set enable_bitmapscan=off;
+set enable_indexonlyscan=on;
+-- Test that an index-only scan is not chosen,
+-- when the query doesn't use specify columns.
+-- Because the index has not data to return in this case.
+explain (costs off)
+select count(*) from gist_count_tbl;
+            QUERY PLAN            
+----------------------------------
+ Aggregate
+   ->  Seq Scan on gist_count_tbl
+(2 rows)
+
+-- Clean up
+reset enable_seqscan;
+reset enable_bitmapscan;
+reset enable_indexonlyscan;
+drop index gist_count_tbl_index;
+drop table gist_count_tbl;

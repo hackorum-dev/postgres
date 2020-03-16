@@ -1960,8 +1960,12 @@ check_index_only(RelOptInfo *rel, IndexOptInfo *index)
 	index_canreturn_attrs = bms_del_members(index_canreturn_attrs,
 											index_cannotreturn_attrs);
 
-	/* Do we have all the necessary attributes? */
-	result = bms_is_subset(attrs_used, index_canreturn_attrs);
+	if (index_canreturn_attrs == NULL)
+		/* We don't have indexes that can return attributes. */
+		result = false;
+	else
+		/* Do we have all the necessary attributes? */
+		result = bms_is_subset(attrs_used, index_canreturn_attrs);
 
 	bms_free(attrs_used);
 	bms_free(index_canreturn_attrs);
