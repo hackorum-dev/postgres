@@ -188,6 +188,8 @@ static char ExtraOptions[MAXPGPATH];
 static bool Reinit = true;
 static int	SendStop = false;
 
+static Backend		*MyBackend = NULL;
+
 /* still more option variables */
 bool		EnableSSL = false;
 
@@ -363,7 +365,6 @@ static void BackendInitialize(Port *port);
 static void BackendRun(Port *port) pg_attribute_noreturn();
 static void ExitPostmaster(int status) pg_attribute_noreturn();
 static int	ServerLoop(void);
-static int	BackendStartup(Port *port);
 static int	ProcessStartupPacket(Port *port, bool secure_done);
 static void SendNegotiateProtocolVersion(List *unrecognized_protocol_options);
 static void processCancelRequest(Port *port, void *pkt);
@@ -413,7 +414,6 @@ typedef struct
 } win32_deadchild_waitinfo;
 #endif							/* WIN32 */
 
-static pid_t backend_forkexec(Port *port);
 static pid_t internal_forkexec(int argc, char *argv[], Port *port);
 
 /* Type for a socket that can be inherited to a client process */
@@ -520,6 +520,8 @@ int			postmaster_alive_fds[2] = {-1, -1};
 /* Process handle of postmaster used for the same purpose on Windows */
 HANDLE		PostmasterHandle;
 #endif
+
+static Port *ConnProcPort = NULL;
 
 /*
  * Postmaster main entry point
@@ -1680,19 +1682,18 @@ ServerLoop(void)
 					break;
 				if (FD_ISSET(ListenSocket[i], &rmask))
 				{
-					Port	   *port;
+					ConnProcPort = ConnCreate(ListenSocket[i]);
 
-					port = ConnCreate(ListenSocket[i]);
-					if (port)
+					if (ConnProcPort)
 					{
-						BackendStartup(port);
+						StartSubprocess(ClientBackendType);
 
 						/*
 						 * We no longer need the open socket or port structure
 						 * in this process
 						 */
-						StreamClose(port->sock);
-						ConnFree(port);
+						StreamClose(ConnProcPort->sock);
+						ConnFree(ConnProcPort);
 					}
 				}
 			}
@@ -3225,6 +3226,137 @@ reaper(SIGNAL_ARGS)
 }
 
 /*
+ * BackendPrep
+ *
+ * Do all of the pre-fork setup for a new Backend.
+*/
+int
+BackendPrep(int argc, char *argv[])
+{
+	/*
+	 * Create backend data structure.  Better before the fork() so we can
+	 * handle failure cleanly.
+	 */
+	Backend *bn;
+
+	bn = (Backend *) malloc(sizeof(Backend));
+	if (!bn)
+	{
+		ereport(LOG,
+				(errcode(ERRCODE_OUT_OF_MEMORY),
+				 errmsg("out of memory")));
+	}
+
+	/*
+	 * Compute the cancel key that will be assigned to this backend. The
+	 * backend will have its own copy in the forked-off process' value of
+	 * MyCancelKey, so that it can transmit the key to the frontend.
+	 */
+	if (!RandomCancelKey(&MyCancelKey))
+	{
+		free(bn);
+		ereport(LOG,
+				(errcode(ERRCODE_INTERNAL_ERROR),
+				 errmsg("could not generate random cancel key")));
+	}
+
+	bn->cancel_key = MyCancelKey;
+
+	/* Pass down canAcceptConnections state */
+	ConnProcPort->canAcceptConnections = canAcceptConnections(BACKEND_TYPE_NORMAL);
+	bn->dead_end = (ConnProcPort->canAcceptConnections != CAC_OK &&
+						   ConnProcPort->canAcceptConnections != CAC_WAITBACKUP);
+
+	/*
+	 * Unless it's a dead_end child, assign it a child slot number
+	 */
+	if (!bn->dead_end)
+		bn->child_slot = MyPMChildSlot = AssignPostmasterChildSlot();
+	else
+		bn->child_slot = 0;
+
+	/* Hasn't asked to be notified about any bgworkers yet */
+	bn->bgworker_notify = false;
+
+	MyBackend = bn;
+
+	return 0;
+}
+
+/*
+ *	 BackendMain
+ *
+ *	 Child code when forking a Backend.
+ */
+void BackendMain(pg_attribute_unused() int argc, pg_attribute_unused() char *argv[])
+{
+	/*
+	 * Perform additional initialization and collect startup packet.
+	 *
+	 * We want to do this before InitProcess() for a couple of reasons: 1.
+	 * so that we aren't eating up a PGPROC slot while waiting on the
+	 * client. 2. so that if InitProcess() fails due to being out of
+	 * PGPROC slots, we have already initialized libpq and are able to
+	 * report the error to the client.
+	 */
+#ifndef EXEC_BACKEND
+	free(MyBackend);
+	BackendInitialize(ConnProcPort);
+#endif
+
+	/* And run the backend */
+	BackendRun(ConnProcPort);		/* does not return */
+}
+
+/*
+ *	 BackendPostmasterMain
+ *
+ *	 Parent code when forking a Backend.
+ */
+void BackendPostmasterMain(pg_attribute_unused() int argc, pg_attribute_unused() char *argv[])
+{
+	/* in parent, successful fork */
+	ereport(DEBUG2,
+			(errmsg_internal("forked new backend, pid=%d socket=%d",
+							 (int) MyChildProcPid, (int) ConnProcPort->sock)));
+
+	/*
+	 * Everything's been successful, it's safe to add this backend to our list
+	 * of backends.
+	 */
+	MyBackend->pid = MyChildProcPid;
+	MyBackend->bkend_type = BACKEND_TYPE_NORMAL;	/* Can change later to WALSND */
+
+	dlist_push_head(&BackendList, &MyBackend->elem);
+
+#ifdef EXEC_BACKEND
+	if (!MyBackend->dead_end)
+		ShmemBackendArrayAdd(MyBackend);
+#endif
+
+}
+
+/*
+ *	 BackendForkFailure
+ *
+ *	 Backend cleanup in case a failure occurs forking a new Backend.
+ */
+bool
+BackendForkFailure(int child_errno)
+{
+	if (!MyBackend->dead_end)
+		(void) ReleasePostmasterChildSlot(MyBackend->child_slot);
+	free(MyBackend);
+	errno = child_errno;
+	ereport(LOG,
+		(errmsg("could not fork new process for connection: %m")));
+	report_fork_failure_to_client(ConnProcPort, child_errno);
+
+	/* Don't panic */
+	return false;
+}
+
+/*
  * Scan the bgworkers list and see if the given PID (which has just stopped
  * or crashed) is in it.  Handle its shutdown if so, and return true.  If not a
  * bgworker, return false.
@@ -4085,122 +4217,6 @@ TerminateChildren(int signal)
 }
 
 /*
- * BackendStartup -- start backend process
- *
- * returns: STATUS_ERROR if the fork failed, STATUS_OK otherwise.
- *
- * Note: if you change this code, also consider StartAutovacuumWorker.
- */
-static int
-BackendStartup(Port *port)
-{
-	Backend    *bn;				/* for backend cleanup */
-	pid_t		pid;
-
-	/*
-	 * Create backend data structure.  Better before the fork() so we can
-	 * handle failure cleanly.
-	 */
-	bn = (Backend *) malloc(sizeof(Backend));
-	if (!bn)
-	{
-		ereport(LOG,
-				(errcode(ERRCODE_OUT_OF_MEMORY),
-				 errmsg("out of memory")));
-		return STATUS_ERROR;
-	}
-
-	/*
-	 * Compute the cancel key that will be assigned to this backend. The
-	 * backend will have its own copy in the forked-off process' value of
-	 * MyCancelKey, so that it can transmit the key to the frontend.
-	 */
-	if (!RandomCancelKey(&MyCancelKey))
-	{
-		free(bn);
-		ereport(LOG,
-				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errmsg("could not generate random cancel key")));
-		return STATUS_ERROR;
-	}
-
-	bn->cancel_key = MyCancelKey;
-
-	/* Pass down canAcceptConnections state */
-	port->canAcceptConnections = canAcceptConnections(BACKEND_TYPE_NORMAL);
-	bn->dead_end = (port->canAcceptConnections != CAC_OK &&
-					port->canAcceptConnections != CAC_WAITBACKUP);
-
-	/*
-	 * Unless it's a dead_end child, assign it a child slot number
-	 */
-	if (!bn->dead_end)
-		bn->child_slot = MyPMChildSlot = AssignPostmasterChildSlot();
-	else
-		bn->child_slot = 0;
-
-	/* Hasn't asked to be notified about any bgworkers yet */
-	bn->bgworker_notify = false;
-
-#ifdef EXEC_BACKEND
-	pid = backend_forkexec(port);
-#else							/* !EXEC_BACKEND */
-	pid = fork_process();
-	if (pid == 0)				/* child */
-	{
-		free(bn);
-
-		/* Detangle from postmaster */
-		InitPostmasterChild();
-
-		/* Close the postmaster's sockets */
-		ClosePostmasterPorts(false);
-
-		/* Perform additional initialization and collect startup packet */
-		BackendInitialize(port);
-
-		/* And run the backend */
-		BackendRun(port);
-	}
-#endif							/* EXEC_BACKEND */
-
-	if (pid < 0)
-	{
-		/* in parent, fork failed */
-		int			save_errno = errno;
-
-		if (!bn->dead_end)
-			(void) ReleasePostmasterChildSlot(bn->child_slot);
-		free(bn);
-		errno = save_errno;
-		ereport(LOG,
-				(errmsg("could not fork new process for connection: %m")));
-		report_fork_failure_to_client(port, save_errno);
-		return STATUS_ERROR;
-	}
-
-	/* in parent, successful fork */
-	ereport(DEBUG2,
-			(errmsg_internal("forked new backend, pid=%d socket=%d",
-							 (int) pid, (int) port->sock)));
-
-	/*
-	 * Everything's been successful, it's safe to add this backend to our list
-	 * of backends.
-	 */
-	bn->pid = pid;
-	bn->bkend_type = BACKEND_TYPE_NORMAL;	/* Can change later to WALSND */
-	dlist_push_head(&BackendList, &bn->elem);
-
-#ifdef EXEC_BACKEND
-	if (!bn->dead_end)
-		ShmemBackendArrayAdd(bn);
-#endif
-
-	return STATUS_OK;
-}
-
-/*
  * Try to report backend fork() failure to client before we close the
  * connection.  Since we do not care to risk blocking the postmaster on
  * this connection, we set the connection to non-blocking and try only once.
@@ -4492,33 +4508,12 @@ postmaster_forkexec(int argc, char *argv[])
 	Port		port;
 
 	/* This entry point passes dummy values for the Port variables */
-	memset(&port, 0, sizeof(port));
+	if (MyBackendType != B_BACKEND || !ConnProcPort)
+		memset(&port, 0, sizeof(port));
+	else
+		port = *ConnProcPort;
+
 	return internal_forkexec(argc, argv, &port);
-}
-
-/*
- * backend_forkexec -- fork/exec off a backend process
- *
- * Some operating systems (WIN32) don't have fork() so we have to simulate
- * it by storing parameters that need to be passed to the child and
- * then create a new child process.
- *
- * returns the pid of the fork/exec'd process, or -1 on failure
- */
-static pid_t
-backend_forkexec(Port *port)
-{
-	char	   *av[4];
-	int			ac = 0;
-
-	av[ac++] = "postgres";
-	av[ac++] = "--forkbackend";
-	av[ac++] = NULL;			/* filled in by internal_forkexec */
-
-	av[ac] = NULL;
-	Assert(ac < lengthof(av));
-
-	return internal_forkexec(ac, av, port);
 }
 
 #ifndef WIN32
@@ -4857,6 +4852,7 @@ SubPostmasterMain(int argc, char *argv[])
 	/* Read in the variables file */
 	memset(&port, 0, sizeof(Port));
 	read_backend_variables(argv[2], &port);
+	ConnProcPort = &port;
 
 	/* Close the postmaster's sockets (as soon as we know them) */
 	ClosePostmasterPorts(strcmp(argv[1], "--forklog") == 0);
@@ -4898,11 +4894,7 @@ SubPostmasterMain(int argc, char *argv[])
 	 * sometimes impossible to attach to shared memory at the desired address.
 	 * Return the setting to its old value (usually '1' or '2') when finished.
 	 */
-	if (strcmp(argv[1], "--forkbackend") == 0 ||
-		strcmp(argv[1], "--forkavlauncher") == 0 ||
-		strcmp(argv[1], "--forkavworker") == 0 ||
-		strcmp(argv[1], "--forkboot") == 0 ||
-		strncmp(argv[1], "--forkbgworker=", 15) == 0)
+	if (MySubprocess->needs_shmem)
 		PGSharedMemoryReAttach();
 	else
 		PGSharedMemoryNoReAttach();
@@ -4951,11 +4943,23 @@ SubPostmasterMain(int argc, char *argv[])
 	 */
 	process_shared_preload_libraries();
 
-	/* Run backend or appropriate child */
-	if (strcmp(argv[1], "--forkbackend") == 0)
+	if (MySubprocess->needs_aux_proc)
 	{
-		Assert(argc == 3);		/* shouldn't be any more args */
+		/* Restore basic shared memory pointers */
+		InitShmemAccess(UsedShmemSegAddr);
 
+		/* Need a PGPROC to run CreateSharedMemoryAndSemaphores */
+		InitAuxiliaryProcess();
+
+		/* Attach process to shared data structures */
+		CreateSharedMemoryAndSemaphores();
+
+		AuxiliaryProcessMain(argc - 2, argv + 2);	/* does not return */
+	}
+
+	/* Run backend or appropriate child */
+	if (MySubprocessType == ClientBackendType)
+	{
 		/*
 		 * Need to reinitialize the SSL library in the backend, since the
 		 * context structures contain function pointers and cannot be passed
@@ -4989,32 +4993,6 @@ SubPostmasterMain(int argc, char *argv[])
 		 * report the error to the client.
 		 */
 		BackendInitialize(&port);
-
-		/* Restore basic shared memory pointers */
-		InitShmemAccess(UsedShmemSegAddr);
-
-		/* Need a PGPROC to run CreateSharedMemoryAndSemaphores */
-		InitProcess();
-
-		/* Attach process to shared data structures */
-		CreateSharedMemoryAndSemaphores();
-
-		/* And run the backend */
-		BackendRun(&port);		/* does not return */
-	}
-
-	if (MySubprocess->needs_aux_proc)
-	{
-		/* Restore basic shared memory pointers */
-		InitShmemAccess(UsedShmemSegAddr);
-
-		/* Need a PGPROC to run CreateSharedMemoryAndSemaphores */
-		InitAuxiliaryProcess();
-
-		/* Attach process to shared data structures */
-		CreateSharedMemoryAndSemaphores();
-
-		AuxiliaryProcessMain(argc - 2, argv + 2);	/* does not return */
 	}
 
 	if (MySubprocessType == BgWorkerType)
@@ -5035,13 +5013,27 @@ SubPostmasterMain(int argc, char *argv[])
 		CreateSharedMemoryAndSemaphores();
 	}
 
-	if (MySubprocessType == BgWorkerType)
+	switch (MySubprocessType)
 	{
-		/* Fetch MyBgworkerEntry from shared memory */
-		MyBgworkerEntry = BackgroundWorkerEntry(bgworker_shmem_slot);
+		case AutoVacuumLauncherType:
+		case AutoVacuumWorkerType:
+			MySubprocess->entrypoint(argc - 2, argv + 2);
+			break;
+		case BgWorkerType:
+			/* Fetch MyBgworkerEntry from shared memory */
+			MyBgworkerEntry = BackgroundWorkerEntry(bgworker_shmem_slot);
+			/* fallthrough */
+		case PgArchiverType:
+		case PgstatCollectorType:
+		case SysLoggerType:
+		case ClientBackendType:
+			MySubprocess->entrypoint(argc, argv);
+			break;
+		default:
+			ereport(LOG,
+					(errmsg("could not start unknown process type (%d) under postmaster",
+							MySubprocessType)));
 	}
-
-	MySubprocess->entrypoint(argc - 2, argv + 2);
 
 	abort();					/* shouldn't get here */
 }

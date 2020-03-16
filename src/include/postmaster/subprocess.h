@@ -29,6 +29,7 @@ typedef enum
 	PgArchiverType,
 	SysLoggerType,
 	BgWorkerType,
+	ClientBackendType,
 
 	NUMSUBPROCESSTYPES			/* Must be last! */
 } SubprocessType;

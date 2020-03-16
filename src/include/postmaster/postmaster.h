@@ -91,6 +91,12 @@ extern bool PostmasterMarkPIDForWorkerNotify(int);
 
 extern bool RandomCancelKey(int32 *cancel_key);
 
+extern int BackendPrep(int argc, char *argv[]);
+extern void BackendMain(int argc, char *argv[]);
+extern void BackendPostmasterMain(int argc, char *argv[]);
+extern bool BackendForkFailure(int child_errno);
+extern void BackgroundWorkerMain(int argc, char *argv[]);
+
 #ifdef EXEC_BACKEND
 extern pid_t postmaster_forkexec(int argc, char *argv[]);
 extern void SubPostmasterMain(int argc, char *argv[]) pg_attribute_noreturn();

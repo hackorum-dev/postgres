@@ -139,6 +139,17 @@ static PgSubprocess process_types[] = {
 		.entrypoint = BackgroundWorkerMain,
 		.fork_failure = BackgroundWorkerForkFailure,
 		.postmaster_main = BackgroundWorkerPostmasterMain
+	},
+	{
+		.name = "backend",
+		.desc = "backend",
+		.needs_aux_proc = false,
+		.needs_shmem = true,
+		.keep_postmaster_memcontext = true,
+		.fork_prep = BackendPrep,
+		.entrypoint = BackendMain,
+		.fork_failure = BackendForkFailure,
+		.postmaster_main = BackendPostmasterMain
 	}
 };
 
