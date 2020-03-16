@@ -10,6 +10,19 @@ CREATE SEQUENCE sequence_testx INCREMENT BY -1 START 10;
 CREATE SEQUENCE sequence_testx INCREMENT BY 1 START -10;
 CREATE SEQUENCE sequence_testx CACHE 0;
 
+-- SCHEMA changes
+CREATE SCHEMA old_sequence_schema;
+CREATE SCHEMA new_sequence_schema;
+CREATE SEQUENCE old_sequence_schema.sequence_testx;
+ALTER SEQUENCE old_sequence_schema.sequence_testx SET SCHEMA new_sequence_schema;
+SELECT nextval('new_sequence_schema.sequence_testx');
+CREATE SEQUENCE old_sequence_schema.sequence_testx;
+DROP SCHEMA new_sequence_schema CASCADE;
+SELECT nextval('new_sequence_schema.sequence_testx');
+DROP SEQUENCE old_sequence_schema.sequence_testx;
+SELECT nextval('old_sequence_schema.sequence_testx');
+DROP SCHEMA old_sequence_schema;
+
 -- OWNED BY errors
 CREATE SEQUENCE sequence_testx OWNED BY nobody;  -- nonsense word
 CREATE SEQUENCE sequence_testx OWNED BY pg_class_oid_index.oid;  -- not a table
