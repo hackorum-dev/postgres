@@ -24,7 +24,6 @@
 #include "postmaster/walwriter.h"
 #include "replication/walreceiver.h"
 
-SubprocessType		MySubprocessType;
 PgSubprocess	   *MySubprocess;
 
 static PgSubprocess process_types[] = {
@@ -165,9 +164,15 @@ static PgSubprocess process_types[] = {
 };
 
 void
-InitMySubprocess(SubprocessType type)
+SetMySubprocess(BackendType type)
 {
-	MySubprocessType = type;
+	MyBackendType = type;
 	MySubprocess = &process_types[type];
 	MySubprocess->desc = gettext(MySubprocess->desc);
+}
+
+const char *
+GetBackendTypeDesc(BackendType type)
+{
+	return gettext((&process_types[type])->desc);
 }

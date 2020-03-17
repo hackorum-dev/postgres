@@ -74,6 +74,7 @@
 #include "miscadmin.h"
 #include "postmaster/bgworker.h"
 #include "postmaster/postmaster.h"
+#include "postmaster/subprocess.h"
 #include "postmaster/syslogger.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"

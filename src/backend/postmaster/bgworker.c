@@ -795,7 +795,6 @@ BackgroundWorkerMain(pg_attribute_unused() int argc, pg_attribute_unused() char 
 
 	IsBackgroundWorker = true;
 
-	MyBackendType = B_BG_WORKER;
 	init_ps_display(worker->bgw_name);
 
 	/*

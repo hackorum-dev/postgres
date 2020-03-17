@@ -146,9 +146,6 @@ static Backend *ShmemBackendArray;
 BackgroundWorker *MyBgworkerEntry = NULL;
 RegisteredBgWorker *MyRegisteredBgWorker = NULL;
 
-/* Struct containing postmaster subprocess control info */
-SubprocessType		MySubprocessType;
-
 /* The socket number we are listening for connections on */
 int			PostPortNumber;
 
@@ -380,7 +377,7 @@ static void TerminateChildren(int signal);
 static int	CountChildren(int target);
 static void maybe_start_bgworkers(void);
 static bool CreateOptsFile(int argc, char *argv[], char *fullprogname);
-static pid_t StartSubprocess(SubprocessType type);
+static pid_t StartSubprocess(BackendType type);
 static void StartAutovacuumWorker(void);
 static void MaybeStartWalReceiver(void);
 static void InitPostmasterDeathWatchHandle(void);
@@ -466,8 +463,8 @@ typedef struct
 	TimestampTz PgReloadTime;
 	pg_time_t	first_syslogger_file_time;
 
-	SubprocessType		MySubprocessType;
 	int			bgworker_shmem_slot;
+	BackendType	MyBackendType;
 
 	bool		redirection_done;
 #ifdef EXEC_BACKEND
@@ -1046,7 +1043,7 @@ PostmasterMain(int argc, char *argv[])
 	/*
 	 * If enabled, start up syslogger collection subprocess
 	 */
-	SysLoggerPID = StartSubprocess(SysLoggerType);
+	SysLoggerPID = StartSubprocess(B_LOGGER);
 
 	/*
 	 * Reset whereToSendOutput from DestDebug (its starting state) to
@@ -1352,7 +1349,7 @@ PostmasterMain(int argc, char *argv[])
 	/*
 	 * We're ready to rock and roll...
 	 */
-	StartupPID = StartSubprocess(StartupType);
+	StartupPID = StartSubprocess(B_STARTUP);
 	Assert(StartupPID != 0);
 	StartupStatus = STARTUP_RUNNING;
 	pmState = PM_STARTUP;
@@ -1686,7 +1683,7 @@ ServerLoop(void)
 
 					if (ConnProcPort)
 					{
-						StartSubprocess(ClientBackendType);
+						StartSubprocess(B_BACKEND);
 
 						/*
 						 * We no longer need the open socket or port structure
@@ -1701,7 +1698,7 @@ ServerLoop(void)
 
 		/* If we have lost the log collector, try to start a new one */
 		if (SysLoggerPID == 0 && Logging_collector)
-			SysLoggerPID = StartSubprocess(SysLoggerType);
+			SysLoggerPID = StartSubprocess(B_LOGGER);
 
 		/*
 		 * If no background writer process is running, and we are not in a
@@ -1712,9 +1709,9 @@ ServerLoop(void)
 			pmState == PM_HOT_STANDBY)
 		{
 			if (CheckpointerPID == 0)
-				CheckpointerPID = StartSubprocess(CheckpointerType);
+				CheckpointerPID = StartSubprocess(B_CHECKPOINTER);
 			if (BgWriterPID == 0)
-				BgWriterPID = StartSubprocess(BgWriterType);
+				BgWriterPID = StartSubprocess(B_BG_WRITER);
 		}
 
 		/*
@@ -1723,7 +1720,7 @@ ServerLoop(void)
 		 * be writing any new WAL).
 		 */
 		if (WalWriterPID == 0 && pmState == PM_RUN)
-			WalWriterPID = StartSubprocess(WalWriterType);
+			WalWriterPID = StartSubprocess(B_WAL_WRITER);
 
 		/*
 		 * If we have lost the autovacuum launcher, try to start a new one. We
@@ -1735,7 +1732,7 @@ ServerLoop(void)
 			(AutoVacuumingActive() || start_autovac_launcher) &&
 			pmState == PM_RUN)
 		{
-			AutoVacPID = StartSubprocess(AutoVacuumLauncherType);
+			AutoVacPID = StartSubprocess(B_AUTOVAC_LAUNCHER);
 			if (AutoVacPID != 0)
 				start_autovac_launcher = false; /* signal processed */
 		}
@@ -1743,11 +1740,11 @@ ServerLoop(void)
 		/* If we have lost the stats collector, try to start a new one */
 		if (PgStatPID == 0 &&
 			(pmState == PM_RUN || pmState == PM_HOT_STANDBY))
-			PgStatPID = StartSubprocess(PgstatCollectorType);
+			PgStatPID = StartSubprocess(B_STATS_COLLECTOR);
 
 		/* If we have lost the archiver, try to start a new one. */
 		if (PgArchPID == 0 && PgArchStartupAllowed())
-			PgArchPID = StartSubprocess(PgArchiverType);
+			PgArchPID = StartSubprocess(B_ARCHIVER);
 
 		/* If we need to signal the autovacuum launcher, do so now */
 		if (avlauncher_needs_signal)
@@ -2222,9 +2219,9 @@ retry1:
 		port->user_name[NAMEDATALEN - 1] = '\0';
 
 	if (am_walsender)
-		MyBackendType = B_WAL_SENDER;
+		SetMySubprocess(B_WAL_SENDER);
 	else
-		MyBackendType = B_BACKEND;
+		SetMySubprocess(B_BACKEND);
 
 	/*
 	 * Normal walsender backends, e.g. for streaming replication, are not
@@ -3004,22 +3001,22 @@ reaper(SIGNAL_ARGS)
 			 * if this fails, we'll just try again later.
 			 */
 			if (CheckpointerPID == 0)
-				CheckpointerPID = StartSubprocess(CheckpointerType);
+				CheckpointerPID = StartSubprocess(B_CHECKPOINTER);
 			if (BgWriterPID == 0)
-				BgWriterPID = StartSubprocess(BgWriterType);
+				BgWriterPID = StartSubprocess(B_BG_WRITER);
 			if (WalWriterPID == 0)
-				WalWriterPID = StartSubprocess(WalWriterType);
+				WalWriterPID = StartSubprocess(B_WAL_WRITER);
 
 			/*
 			 * Likewise, start other special children as needed.  In a restart
 			 * situation, some of them may be alive already.
 			 */
 			if (!IsBinaryUpgrade && AutoVacuumingActive() && AutoVacPID == 0)
-				AutoVacPID = StartSubprocess(AutoVacuumLauncherType);
+				AutoVacPID = StartSubprocess(B_AUTOVAC_LAUNCHER);
 			if (PgArchStartupAllowed() && PgArchPID == 0)
-				PgArchPID = StartSubprocess(PgArchiverType);
+				PgArchPID = StartSubprocess(B_ARCHIVER);
 			if (PgStatPID == 0)
-				PgStatPID = StartSubprocess(PgstatCollectorType);
+				PgStatPID = StartSubprocess(B_STATS_COLLECTOR);
 
 			/* workers may be scheduled to start now */
 			maybe_start_bgworkers();
@@ -3165,7 +3162,7 @@ reaper(SIGNAL_ARGS)
 				LogChildExit(LOG, _("archiver process"),
 							 pid, exitstatus);
 			if (PgArchStartupAllowed())
-				PgArchPID = StartSubprocess(PgArchiverType);
+				PgArchPID = StartSubprocess(B_ARCHIVER);
 			continue;
 		}
 
@@ -3181,7 +3178,7 @@ reaper(SIGNAL_ARGS)
 				LogChildExit(LOG, _("statistics collector process"),
 							 pid, exitstatus);
 			if (pmState == PM_RUN || pmState == PM_HOT_STANDBY)
-				PgStatPID = StartSubprocess(PgstatCollectorType);
+				PgStatPID = StartSubprocess(B_STATS_COLLECTOR);
 			continue;
 		}
 
@@ -3190,7 +3187,7 @@ reaper(SIGNAL_ARGS)
 		{
 			SysLoggerPID = 0;
 			/* for safety's sake, launch new logger *first* */
-			SysLoggerPID = StartSubprocess(SysLoggerType);
+			SysLoggerPID = StartSubprocess(B_LOGGER);
 			if (!EXIT_STATUS_0(exitstatus))
 				LogChildExit(LOG, _("system logger process"),
 							 pid, exitstatus);
@@ -3953,7 +3950,7 @@ PostmasterStateMachine(void)
 				Assert(Shutdown > NoShutdown);
 				/* Start the checkpointer if not running */
 				if (CheckpointerPID == 0)
-					CheckpointerPID = StartSubprocess(CheckpointerType);
+					CheckpointerPID = StartSubprocess(B_CHECKPOINTER);
 				/* And tell it to shut down */
 				if (CheckpointerPID != 0)
 				{
@@ -4094,7 +4091,7 @@ PostmasterStateMachine(void)
 
 		reset_shared();
 
-		StartupPID = StartSubprocess(StartupType);
+		StartupPID = StartSubprocess(B_STARTUP);
 		Assert(StartupPID != 0);
 		StartupStatus = STARTUP_RUNNING;
 		pmState = PM_STARTUP;
@@ -4181,6 +4178,7 @@ SignalSomeChildren(int signal, int target)
 				(errmsg_internal("sending signal %d to process %d",
 								 signal, (int) bp->pid)));
 		signal_child(bp->pid, signal);
+
 		signaled = true;
 	}
 	return signaled;
@@ -4508,7 +4506,7 @@ postmaster_forkexec(int argc, char *argv[])
 	Port		port;
 
 	/* This entry point passes dummy values for the Port variables */
-	if (MyBackendType != B_BACKEND || !ConnProcPort)
+	if ((MyBackendType != B_BACKEND && MyBackendType != B_WAL_SENDER) || !ConnProcPort)
 		memset(&port, 0, sizeof(port));
 	else
 		port = *ConnProcPort;
@@ -4855,7 +4853,7 @@ SubPostmasterMain(int argc, char *argv[])
 	ConnProcPort = &port;
 
 	/* Close the postmaster's sockets (as soon as we know them) */
-	ClosePostmasterPorts(strcmp(argv[1], "--forklog") == 0);
+	ClosePostmasterPorts(MyBackendType == B_LOGGER);
 
 	/*
 	 * Set reference point for stack-depth checking
@@ -4876,7 +4874,7 @@ SubPostmasterMain(int argc, char *argv[])
 
 	/* We should only be here once per fork */
 	Assert(!MySubprocess);
-	InitMySubprocess(MySubprocessType);
+	SetMySubprocess(MyBackendType);
 
 	/*
 	 * If appropriate, physically re-attach to shared memory segment. We want
@@ -4900,9 +4898,9 @@ SubPostmasterMain(int argc, char *argv[])
 		PGSharedMemoryNoReAttach();
 
 	/* autovacuum needs this set before calling InitProcess */
-	if (strcmp(argv[1], "--forkavlauncher") == 0)
+	if (MyBackendType == B_AUTOVAC_LAUNCHER)
 		AutovacuumLauncherIAm();
-	if (strcmp(argv[1], "--forkavworker") == 0)
+	if (MyBackendType == B_AUTOVAC_WORKER)
 		AutovacuumWorkerIAm();
 
 	/*
@@ -4958,7 +4956,7 @@ SubPostmasterMain(int argc, char *argv[])
 	}
 
 	/* Run backend or appropriate child */
-	if (MySubprocessType == ClientBackendType)
+	if (MyBackendType == B_BACKEND)
 	{
 		/*
 		 * Need to reinitialize the SSL library in the backend, since the
@@ -4995,7 +4993,7 @@ SubPostmasterMain(int argc, char *argv[])
 		BackendInitialize(&port);
 	}
 
-	if (MySubprocessType == BgWorkerType)
+	if (MyBackendType == B_BG_WORKER)
 	{
 		/* do this as early as possible; in particular, before InitProcess() */
 		IsBackgroundWorker = true;
@@ -5013,27 +5011,27 @@ SubPostmasterMain(int argc, char *argv[])
 		CreateSharedMemoryAndSemaphores();
 	}
 
-	switch (MySubprocessType)
+	switch (MyBackendType)
 	{
-		case AutoVacuumLauncherType:
-		case AutoVacuumWorkerType:
+		case B_AUTOVAC_LAUNCHER:
+		case B_AUTOVAC_WORKER:
 			MySubprocess->entrypoint(argc - 2, argv + 2);
 			break;
-		case BgWorkerType:
+		case B_BG_WORKER:
 			/* Fetch MyBgworkerEntry from shared memory */
 			MyBgworkerEntry = BackgroundWorkerEntry(bgworker_shmem_slot);
 			/* fallthrough */
-		case PgArchiverType:
-		case PgstatCollectorType:
-		case SysLoggerType:
-		case ClientBackendType:
-		case WalSenderType:
+		case B_ARCHIVER:
+		case B_STATS_COLLECTOR:
+		case B_LOGGER:
+		case B_BACKEND:
+		case B_WAL_SENDER:
 			MySubprocess->entrypoint(argc, argv);
 			break;
 		default:
 			ereport(LOG,
 					(errmsg("could not start unknown process type (%d) under postmaster",
-							MySubprocessType)));
+							MyBackendType)));
 	}
 
 	abort();					/* shouldn't get here */
@@ -5117,9 +5115,9 @@ sigusr1_handler(SIGNAL_ARGS)
 		 * we'll just try again later.
 		 */
 		Assert(CheckpointerPID == 0);
-		CheckpointerPID = StartSubprocess(CheckpointerType);
+		CheckpointerPID = StartSubprocess(B_CHECKPOINTER);
 		Assert(BgWriterPID == 0);
-		BgWriterPID = StartSubprocess(BgWriterType);
+		BgWriterPID = StartSubprocess(B_BG_WRITER);
 
 		/*
 		 * Start the archiver if we're responsible for (re-)archiving received
@@ -5127,7 +5125,7 @@ sigusr1_handler(SIGNAL_ARGS)
 		 */
 		Assert(PgArchPID == 0);
 		if (XLogArchivingAlways())
-			PgArchPID = StartSubprocess(PgArchiverType);
+			PgArchPID = StartSubprocess(B_ARCHIVER);
 
 		/*
 		 * If we aren't planning to enter hot standby mode later, treat
@@ -5151,7 +5149,7 @@ sigusr1_handler(SIGNAL_ARGS)
 		 * Likewise, start other special children as needed.
 		 */
 		Assert(PgStatPID == 0);
-		PgStatPID = StartSubprocess(PgstatCollectorType);
+		PgStatPID = StartSubprocess(B_STATS_COLLECTOR);
 
 		ereport(LOG,
 				(errmsg("database system is ready to accept read only connections")));
@@ -5356,8 +5354,9 @@ CountChildren(int target)
  * the subprocess cleanup function decides whether or not to panic.
  */
 static pid_t
-StartSubprocess(SubprocessType type)
+StartSubprocess(BackendType type)
 {
+	BackendType	prev_backend_type = MyBackendType;
 	pid_t		pid;
 	char	   *argv[10];
 	int			argc = 0;
@@ -5369,7 +5368,7 @@ StartSubprocess(SubprocessType type)
 	/*
 	 * Get new subprocess data every time we start a new subprocess.
 	 */
-	InitMySubprocess(type);
+	SetMySubprocess(type);
 
 	argv[argc++] = "postgres";
 
@@ -5387,6 +5386,7 @@ StartSubprocess(SubprocessType type)
 	{
 		if (MySubprocess->fork_prep(argc, argv))
 		{
+			SetMySubprocess(prev_backend_type);
 			return 0;
 		}
 	}
@@ -5406,7 +5406,7 @@ StartSubprocess(SubprocessType type)
 		InitPostmasterChild();
 
 		/* Close the postmaster's sockets */
-		ClosePostmasterPorts(MySubprocessType == SysLoggerType);
+		ClosePostmasterPorts(MyBackendType == B_LOGGER);
 
 		/*
 		 * Release postmaster's working memory context if the subprocess doesn't
@@ -5520,7 +5520,7 @@ StartAutovacuumWorker(void)
 			bn->child_slot = MyPMChildSlot = AssignPostmasterChildSlot();
 			bn->bgworker_notify = false;
 
-			bn->pid = StartSubprocess(AutoVacuumWorkerType);
+			bn->pid = StartSubprocess(B_AUTOVAC_WORKER);
 			if (bn->pid > 0)
 			{
 				bn->bkend_type = BACKEND_TYPE_AUTOVAC;
@@ -5581,7 +5581,7 @@ MaybeStartWalReceiver(void)
 		 pmState == PM_HOT_STANDBY || pmState == PM_WAIT_READONLY) &&
 		Shutdown == NoShutdown)
 	{
-		WalReceiverPID = StartSubprocess(WalReceiverType);
+		WalReceiverPID = StartSubprocess(B_WAL_RECEIVER);
 		if (WalReceiverPID != 0)
 			WalReceiverRequested = false;
 		/* else leave the flag set, so we'll try again later */
@@ -5845,7 +5845,7 @@ maybe_start_bgworkers(void)
 			 * function will do that.
 			 */
 			MyRegisteredBgWorker = rw;
-			if (StartSubprocess(BgWorkerType) <= 0)
+			if (StartSubprocess(B_BG_WORKER) <= 0)
 			{
 				StartWorkerNeeded = true;
 				return;
@@ -5963,8 +5963,8 @@ save_backend_variables(BackendParameters *param, Port *port,
 	param->PgReloadTime = PgReloadTime;
 	param->first_syslogger_file_time = first_syslogger_file_time;
 
-	param->MySubprocessType = MySubprocessType;
 	param->bgworker_shmem_slot = bgworker_shmem_slot;
+	param->MyBackendType = MyBackendType;
 
 	param->redirection_done = redirection_done;
 	param->syslogFileNo = syslogFileNo;
@@ -6203,8 +6203,8 @@ restore_backend_variables(BackendParameters *param, Port *port)
 	PgReloadTime = param->PgReloadTime;
 	first_syslogger_file_time = param->first_syslogger_file_time;
 
-	MySubprocessType = param->MySubprocessType;
 	bgworker_shmem_slot = param->bgworker_shmem_slot;
+	MyBackendType = param->MyBackendType;
 
 	redirection_done = param->redirection_done;
 	syslogFileNo = param->syslogFileNo;

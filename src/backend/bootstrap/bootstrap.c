@@ -316,7 +316,7 @@ AuxiliaryProcessMain(int argc, char *argv[])
 	/*
 	 * We've read the arguments and know what backend type we are.
 	 */
-	InitMySubprocess((SubprocessType)MyAuxProcType);
+	SetMySubprocess((BackendType)MyAuxProcType);
 
 	/*
 	 * Identify myself via ps
