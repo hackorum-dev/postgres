@@ -150,6 +150,17 @@ static PgSubprocess process_types[] = {
 		.entrypoint = BackendMain,
 		.fork_failure = BackendForkFailure,
 		.postmaster_main = BackendPostmasterMain
+	},
+	{	/* Wal Sender placeholder */
+		.name = "walsender",
+		.desc = "wal sender",
+		.needs_aux_proc = false,
+		.needs_shmem = true,
+		.keep_postmaster_memcontext = true,
+		.fork_prep = BackendPrep,
+		.entrypoint = BackendMain,
+		.fork_failure = BackendForkFailure,
+		.postmaster_main = BackendPostmasterMain
 	}
 };
 

@@ -31,6 +31,7 @@ typedef enum
 	BgWorkerType,
 	ClientBackendType,
 
+	WalSenderType,				/* placeholder for wal sender so it can be identified in pgstat */
 	NUMSUBPROCESSTYPES			/* Must be last! */
 } SubprocessType;
 

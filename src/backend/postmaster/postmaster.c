@@ -5027,6 +5027,7 @@ SubPostmasterMain(int argc, char *argv[])
 		case PgstatCollectorType:
 		case SysLoggerType:
 		case ClientBackendType:
+		case WalSenderType:
 			MySubprocess->entrypoint(argc, argv);
 			break;
 		default:
