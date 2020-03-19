@@ -517,7 +517,7 @@ initialize_phase(AggState *aggstate, int newphase)
 	 */
 	if (newphase > 0 && newphase < aggstate->numphases - 1)
 	{
-		Sort	   *sortnode = (Sort *)aggstate->phases[newphase + 1].aggnode->sortnode;
+		Sort	   *sortnode = (Sort *) aggstate->phases[newphase + 1].aggnode->sortnode;
 		PlanState  *outerNode = outerPlanState(aggstate);
 		TupleDesc	tupDesc = ExecGetResultType(outerNode);
 
@@ -4681,7 +4681,6 @@ ExecReScanAgg(AggState *node)
 		node->input_done = false;
 		node->projected_set = -1;
 	}
-
 
 	if (outerPlan->chgParam == NULL)
 		ExecReScan(outerPlan);

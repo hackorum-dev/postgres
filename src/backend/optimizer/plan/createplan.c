@@ -2171,10 +2171,9 @@ create_groupingsets_plan(PlannerInfo *root, GroupingSetsPath *best_path)
 
 	/*
 	 * Agg can project, so no need to be terribly picky about child tlist, but
-	 * we do need grouping columns to be available; If the groupingsets need
+	 * we do need grouping columns to be available. If the groupingsets need
 	 * to sort the input, the agg will store the input rows in a tuplesort,
-	 * it therefore behooves us to request a small tlist to avoid wasting
-	 * spaces.
+	 * so we request a small tlist to avoid wasting space.
 	 */
 	if (!best_path->is_sorted)
 		flags = flags | CP_SMALL_TLIST;
@@ -2239,6 +2238,11 @@ create_groupingsets_plan(PlannerInfo *root, GroupingSetsPath *best_path)
 
 			new_grpColIdx = remap_groupColIdx(root, rollup->groupClause);
 
+			/*
+			 * If it's the first rollup using sorted mode, add an explicit sort
+			 * node if the input is not sorted yet, for other rollups using
+			 * sorted mode, always add an explicit sort.
+			 */
 			if (!rollup->is_hashed)
 			{
 				if (!is_first_sort ||
@@ -2297,7 +2301,10 @@ create_groupingsets_plan(PlannerInfo *root, GroupingSetsPath *best_path)
 
 		top_grpColIdx = remap_groupColIdx(root, rollup->groupClause);
 
-		/* the input is not sorted yet */
+		/*
+		 * When the rollup uses sorted mode, and the input is not already sorted,
+		 * add an explicit sort.
+		 */
 		if (!rollup->is_hashed &&
 			!best_path->is_sorted)
 		{

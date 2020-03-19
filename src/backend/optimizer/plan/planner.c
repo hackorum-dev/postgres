@@ -4185,13 +4185,22 @@ create_ordinary_grouping_paths(PlannerInfo *root, RelOptInfo *input_rel,
  * times, so it's important that it not scribble on input.  No result is
  * returned, but any generated paths are added to grouped_rel.
  *
- * - strat:
- *   preferred aggregate strategy to use.
- * 
- * - is_sorted:
- *   Is the input sorted on the groupCols of the first rollup. Caller
- *   must set it correctly if strat is set to AGG_SORTED, the planner
- *   uses it to generate a sortnode.
+ * The caller specifies the preferred aggregate strategy (sorted or hashed) using
+ * the strat aprameter. When the requested strategy is AGG_SORTED, the input path
+ * needs to be sorted accordingly (is_sorted needs to be true).
+ *
+ * Pengzhou: is_sorted is acutally a hint here, the callers prefer to use
+ * AGG_SORTED are not forced to add an explicit sort path before calling
+ * this function now. please see comments in callers
+ *
+ * Ideally, consider_groupingsets_paths() should check whether the input is
+ * sorted or not, however, the callers prefer using AGG_SORTED is forced to
+ * check is_sorted already (to see whether a non-cheapest-path is worth
+ * considering), so consider_groupingsets_paths() don't need to check it again. 
+ * for callers prefer AGG_HASHED, is_sorted is never checked, they only consider
+ * the cheapest path, but the cheapest path can also be already sorted
+ * coincidentally, that's why AGG_MIZED is choosen when strat is specified
+ * to AGG_HASHED.
  */
 static void
 consider_groupingsets_paths(PlannerInfo *root,
@@ -4259,7 +4268,7 @@ consider_groupingsets_paths(PlannerInfo *root,
 			unhashed_rollup = lfirst_node(RollupData, l_start);
 			exclude_groups = unhashed_rollup->numGroups;
 			l_start = lnext(gd->rollups, l_start);
-			/* update is_sorted to true */
+			/* the input is coincidentally sorted usefully, update is_sorted */
 			is_sorted = true;
 		}
 
@@ -4359,7 +4368,10 @@ consider_groupingsets_paths(PlannerInfo *root,
 			rollup->hashable = false;
 			rollup->is_hashed = false;
 			new_rollups = lappend(new_rollups, rollup);
-			/* update is_sorted to true */
+			/*
+			 * The first non-hashed rollup is PLAIN AGG, is_sorted
+			 * should be true.
+			 */
 			is_sorted = true;
 			strat = AGG_MIXED;
 		}
@@ -4394,6 +4406,9 @@ consider_groupingsets_paths(PlannerInfo *root,
 	 *
 	 * can_hash is passed in as false if some obstacle elsewhere (such as
 	 * ordered aggs) means that we shouldn't consider hashing at all.
+	 *
+	 * XXX This comment seems to be broken by the patch, and it's not very
+	 * clear to me what it tries to say.
 	 */
 	if (can_hash && gd->any_hashable)
 	{
@@ -4445,7 +4460,7 @@ consider_groupingsets_paths(PlannerInfo *root,
 
 			/*
 			 * We leave the first rollup out of consideration since it's the
-			 * one that need to be sorted.  We assign indexes "i"
+			 * one that matches the input sort order.  We assign indexes "i"
 			 * to only those entries considered for hashing; the second loop,
 			 * below, must use the same condition.
 			 */
@@ -6419,6 +6434,18 @@ add_paths_to_grouping_rel(PlannerInfo *root, RelOptInfo *input_rel,
 											  path->pathkeys);
 			if (path == cheapest_path || is_sorted)
 			{
+				/* XXX Why do we do it before possibly adding an explicit sort on top? */
+				/*
+				 * Pengzhou: this patch intend to let each sorted aggregate phases
+				 * do their own sorting include the first phase, so in the final
+				 * stage of parallel grouping sets, the tuples is put into temp
+				 * storage of each sorted phase and then each sorted phase do
+				 * its own sorting one by one. 
+				 * Add a explicit sort path underneath the main Agg node will
+				 * make tuples from all groupingsets sorted using the sort key
+				 * of the first phase, it is not right.
+				 *
+				 */
 				if (parse->groupingSets)
 				{
 					/* consider AGG_SORTED strategy */
