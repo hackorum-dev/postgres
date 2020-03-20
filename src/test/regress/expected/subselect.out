@@ -1614,3 +1614,805 @@ select * from x for update;
    Output: subselect_tbl.f1, subselect_tbl.f2, subselect_tbl.f3
 (2 rows)
 
+CREATE TABLE s (u INTEGER NOT NULL, n INTEGER NULL, nn INTEGER NOT NULL, p VARCHAR(128) NULL);
+insert into s (u, n, nn, p)
+    select
+    generate_series(1,3) as u,
+    generate_series(1,3) as n,
+    generate_series(1,3) as nn,
+    'foo' as p;
+insert into s values(1000002, 1000002, 1000002, 'foofoo');
+UPDATE s set n = NULL WHERE n = 3;
+analyze s;
+CREATE TABLE l (u INTEGER NOT NULL, n INTEGER NULL, nn INTEGER NOT NULL, p VARCHAR(128) NULL);
+insert into l (u, n, nn, p)
+    select
+    generate_series(1,10000 ) as u,
+    generate_series(1,10000 ) as n,
+    generate_series(1,10000 ) as nn,
+    'bar' as p;
+UPDATE l set n = NULL WHERE n = 7;
+CREATE TABLE s1 (u INTEGER NOT NULL, n INTEGER NULL, n1 INTEGER NULL, nn INTEGER NOT NULL, p VARCHAR(128) NULL);
+insert into s1 (u, n, n1, nn, p)
+    select
+    generate_series(1,3) as u,
+    generate_series(1,3) as n,
+    generate_series(1,3) as n1,
+    generate_series(1,3) as nn,
+    'foo' as p;
+insert into s1 values(1000003, 1000003, 1000003, 1000003, 'foofoo');
+insert into s1 values(1003, 1003, 1003, 1003, 'foofoo');
+UPDATE s1 set n = NULL WHERE n = 3;
+UPDATE s1 set n1 = NULL WHERE n = 2;
+UPDATE s1 set n1 = NULL WHERE n1 = 3;
+analyze s1;
+CREATE UNIQUE INDEX l_u ON l (u);
+CREATE INDEX l_n ON l (n);
+CREATE INDEX l_nn ON l (nn);
+analyze l;
+CREATE TABLE empty (u INTEGER NOT NULL, n INTEGER NULL, nn INTEGER NOT NULL, p VARCHAR(128) NULL);
+analyze empty;
+-- Recursive CTE
+CREATE TABLE employees (
+  id serial,
+  name varchar(255),
+  manager_id int
+);
+INSERT INTO employees VALUES (1, 'Mark', null);
+INSERT INTO employees VALUES (2, 'John', 1);
+INSERT INTO employees VALUES (3, 'Dan', 2);
+INSERT INTO employees VALUES (4, 'Clark', 1);
+INSERT INTO employees VALUES (5, 'Linda', 2);
+INSERT INTO employees VALUES (6, 'Willy', 2);
+INSERT INTO employees VALUES (7, 'Barack', 2);
+INSERT INTO employees VALUES (8, 'Elen', 2);
+INSERT INTO employees VALUES (9, 'Kate', 3);
+INSERT INTO employees VALUES (10, 'Terry', 4);
+WITH RECURSIVE managertree AS (
+  SELECT id, name, manager_id
+  FROM employees
+  WHERE id = 2
+  UNION ALL
+  SELECT e.id, e.name, e.manager_id
+  FROM employees e
+  INNER JOIN managertree mtree ON mtree.id = e.manager_id
+)
+SELECT *
+FROM managertree;
+ id |  name  | manager_id 
+----+--------+------------
+  2 | John   |          1
+  3 | Dan    |          2
+  5 | Linda  |          2
+  6 | Willy  |          2
+  7 | Barack |          2
+  8 | Elen   |          2
+  9 | Kate   |          3
+(7 rows)
+
+--test corrrelated IN subquery
+explain (costs off) select count(*) from s where s.u in (select l.u from l where l.n = s.n);
+              QUERY PLAN               
+---------------------------------------
+ Aggregate
+   ->  Nested Loop
+         ->  Seq Scan on s
+         ->  Index Scan using l_n on l
+               Index Cond: (n = s.n)
+               Filter: (s.u = u)
+(6 rows)
+
+select count(*) from s where s.u in (select l.u from l where l.n = s.n);
+ count 
+-------
+     2
+(1 row)
+
+set enable_correlated_any_transform = off;
+explain (costs off) select count(*) from s where s.u in (select l.u from l where l.n = s.n);
+               QUERY PLAN                
+-----------------------------------------
+ Aggregate
+   ->  Seq Scan on s
+         Filter: (SubPlan 1)
+         SubPlan 1
+           ->  Index Scan using l_n on l
+                 Index Cond: (n = s.n)
+(6 rows)
+
+--result should match previous result
+select count(*) from s where s.u in (select l.u from l where l.n = s.n);
+ count 
+-------
+     2
+(1 row)
+
+reset enable_correlated_any_transform;
+explain (costs off) select count(*) from s where s.n in (select l.n from l where l.u != s.u);
+              QUERY PLAN               
+---------------------------------------
+ Aggregate
+   ->  Nested Loop Semi Join
+         ->  Seq Scan on s
+         ->  Index Scan using l_n on l
+               Index Cond: (n = s.n)
+               Filter: (u <> s.u)
+(6 rows)
+
+select count(*) from s where s.n in (select l.n from l where l.u != s.u);
+ count 
+-------
+     0
+(1 row)
+
+set enable_correlated_any_transform = off;
+explain (costs off) select count(*) from s where s.n in (select l.n from l where l.u != s.u);
+             QUERY PLAN             
+------------------------------------
+ Aggregate
+   ->  Seq Scan on s
+         Filter: (SubPlan 1)
+         SubPlan 1
+           ->  Seq Scan on l
+                 Filter: (u <> s.u)
+(6 rows)
+
+--result should match previous result
+select count(*) from s where s.n in (select l.n from l where l.u != s.u);
+ count 
+-------
+     0
+(1 row)
+
+reset enable_correlated_any_transform;
+explain (costs off) select count(*) from s where s.n in (select l.n from l where l.u > s.u);
+              QUERY PLAN               
+---------------------------------------
+ Aggregate
+   ->  Nested Loop Semi Join
+         ->  Seq Scan on s
+         ->  Index Scan using l_n on l
+               Index Cond: (n = s.n)
+               Filter: (u > s.u)
+(6 rows)
+
+select count(*) from s where s.n in (select l.n from l where l.u > s.u);
+ count 
+-------
+     0
+(1 row)
+
+set enable_correlated_any_transform = off;
+explain (costs off) select count(*) from s where s.n in (select l.n from l where l.u > s.u);
+               QUERY PLAN                
+-----------------------------------------
+ Aggregate
+   ->  Seq Scan on s
+         Filter: (SubPlan 1)
+         SubPlan 1
+           ->  Index Scan using l_u on l
+                 Index Cond: (u > s.u)
+(6 rows)
+
+--result should match previous result
+select count(*) from s where s.n in (select l.n from l where l.u > s.u);
+ count 
+-------
+     0
+(1 row)
+
+reset enable_correlated_any_transform;
+--test corrrelated NOT IN subquery
+explain (costs off) select count(*) from s where s.u not in (select l.u from l where l.n = s.n);
+               QUERY PLAN                
+-----------------------------------------
+ Aggregate
+   ->  Seq Scan on s
+         Filter: (NOT (SubPlan 1))
+         SubPlan 1
+           ->  Index Scan using l_n on l
+                 Index Cond: (n = s.n)
+(6 rows)
+
+select count(*) from s where s.u not in (select l.u from l where l.n = s.n);
+ count 
+-------
+     2
+(1 row)
+
+set enable_correlated_any_transform = off;
+explain (costs off) select count(*) from s where s.u not in (select l.u from l where l.n = s.n);
+               QUERY PLAN                
+-----------------------------------------
+ Aggregate
+   ->  Seq Scan on s
+         Filter: (NOT (SubPlan 1))
+         SubPlan 1
+           ->  Index Scan using l_n on l
+                 Index Cond: (n = s.n)
+(6 rows)
+
+--result should match previous result
+select count(*) from s where s.u not in (select l.u from l where l.n = s.n);
+ count 
+-------
+     2
+(1 row)
+
+reset enable_correlated_any_transform;
+explain (costs off) select count(*) from s where s.n not in (select l.n from l where l.u != s.u);
+             QUERY PLAN             
+------------------------------------
+ Aggregate
+   ->  Seq Scan on s
+         Filter: (NOT (SubPlan 1))
+         SubPlan 1
+           ->  Seq Scan on l
+                 Filter: (u <> s.u)
+(6 rows)
+
+select count(*) from s where s.n not in (select l.n from l where l.u != s.u);
+ count 
+-------
+     0
+(1 row)
+
+set enable_correlated_any_transform = off;
+explain (costs off) select count(*) from s where s.n not in (select l.n from l where l.u != s.u);
+             QUERY PLAN             
+------------------------------------
+ Aggregate
+   ->  Seq Scan on s
+         Filter: (NOT (SubPlan 1))
+         SubPlan 1
+           ->  Seq Scan on l
+                 Filter: (u <> s.u)
+(6 rows)
+
+--result should match previous result
+select count(*) from s where s.n not in (select l.n from l where l.u != s.u);
+ count 
+-------
+     0
+(1 row)
+
+reset enable_correlated_any_transform;
+explain (costs off) select count(*) from s where s.n not in (select l.n from l where l.u > s.u);
+               QUERY PLAN                
+-----------------------------------------
+ Aggregate
+   ->  Seq Scan on s
+         Filter: (NOT (SubPlan 1))
+         SubPlan 1
+           ->  Index Scan using l_u on l
+                 Index Cond: (u > s.u)
+(6 rows)
+
+select count(*) from s where s.n not in (select l.n from l where l.u > s.u);
+ count 
+-------
+     1
+(1 row)
+
+set enable_correlated_any_transform = off;
+explain (costs off) select count(*) from s where s.n not in (select l.n from l where l.u > s.u);
+               QUERY PLAN                
+-----------------------------------------
+ Aggregate
+   ->  Seq Scan on s
+         Filter: (NOT (SubPlan 1))
+         SubPlan 1
+           ->  Index Scan using l_u on l
+                 Index Cond: (u > s.u)
+(6 rows)
+
+--result should match previous result
+select count(*) from s where s.n not in (select l.n from l where l.u > s.u);
+ count 
+-------
+     1
+(1 row)
+
+reset enable_correlated_any_transform;
+--correlated empty subquery
+explain (costs off) select count(*) from l where n not in (select n from empty where u != l.u);
+             QUERY PLAN             
+------------------------------------
+ Aggregate
+   ->  Seq Scan on l
+         Filter: (NOT (SubPlan 1))
+         SubPlan 1
+           ->  Seq Scan on empty
+                 Filter: (u <> l.u)
+(6 rows)
+
+select count(*) from l where n not in (select n from empty where u != l.u);
+ count 
+-------
+ 10000
+(1 row)
+
+set enable_correlated_any_transform = off;
+explain (costs off) select count(*) from l where n not in (select n from empty where u != l.u);
+             QUERY PLAN             
+------------------------------------
+ Aggregate
+   ->  Seq Scan on l
+         Filter: (NOT (SubPlan 1))
+         SubPlan 1
+           ->  Seq Scan on empty
+                 Filter: (u <> l.u)
+(6 rows)
+
+select count(*) from l where n not in (select n from empty where u != l.u);
+ count 
+-------
+ 10000
+(1 row)
+
+reset enable_correlated_any_transform;
+--nested correlated in, correlated var is two levels deep
+explain (costs off) select * from s where n in (select n from s1 where n in (select n from l where u != s.u));
+                 QUERY PLAN                  
+---------------------------------------------
+ Nested Loop Semi Join
+   ->  Seq Scan on s
+   ->  Subquery Scan on "ANY_subquery"
+         Filter: (s.n = "ANY_subquery".n)
+         ->  Nested Loop Semi Join
+               ->  Seq Scan on s1
+               ->  Index Scan using l_n on l
+                     Index Cond: (n = s1.n)
+                     Filter: (u <> s.u)
+(9 rows)
+
+select * from s where n in (select n from s1 where n in (select n from l where u != s.u));
+ u | n | nn | p 
+---+---+----+---
+(0 rows)
+
+set enable_correlated_any_transform = off;
+explain (costs off) select * from s where n in (select n from s1 where n in (select n from l where u != s.u));
+               QUERY PLAN                
+-----------------------------------------
+ Seq Scan on s
+   Filter: (SubPlan 1)
+   SubPlan 1
+     ->  Nested Loop Semi Join
+           ->  Seq Scan on s1
+           ->  Index Scan using l_n on l
+                 Index Cond: (n = s1.n)
+                 Filter: (u <> s.u)
+(8 rows)
+
+select * from s where n in (select n from s1 where n in (select n from l where u != s.u));
+ u | n | nn | p 
+---+---+----+---
+(0 rows)
+
+reset enable_correlated_any_transform;
+--nested correlated in, correlated var is one level deep
+explain (costs off) select * from s where n in (select n from s1 where n in (select n from l) and u != s.u);
+                    QUERY PLAN                    
+--------------------------------------------------
+ Nested Loop Semi Join
+   ->  Seq Scan on s
+   ->  Subquery Scan on "ANY_subquery"
+         Filter: (s.n = "ANY_subquery".n)
+         ->  Nested Loop Semi Join
+               ->  Seq Scan on s1
+                     Filter: (u <> s.u)
+               ->  Index Only Scan using l_n on l
+                     Index Cond: (n = s1.n)
+(9 rows)
+
+select * from s where n in (select n from s1 where n in (select n from l) and u != s.u);
+ u | n | nn | p 
+---+---+----+---
+(0 rows)
+
+set enable_correlated_any_transform = off;
+explain (costs off) select * from s where n in (select n from s1 where n in (select n from l) and u != s.u);
+                  QUERY PLAN                  
+----------------------------------------------
+ Seq Scan on s
+   Filter: (SubPlan 1)
+   SubPlan 1
+     ->  Nested Loop Semi Join
+           ->  Seq Scan on s1
+                 Filter: (u <> s.u)
+           ->  Index Only Scan using l_n on l
+                 Index Cond: (n = s1.n)
+(8 rows)
+
+select * from s where n in (select n from s1 where n in (select n from l) and u != s.u);
+ u | n | nn | p 
+---+---+----+---
+(0 rows)
+
+reset enable_correlated_any_transform;
+--nested correlated in, correlated var is both one level and two levels deep
+explain (costs off) select * from s where n in (select n from s1 where n in (select n from l where u != s.u) and u != s.u);
+                 QUERY PLAN                  
+---------------------------------------------
+ Nested Loop Semi Join
+   ->  Seq Scan on s
+   ->  Subquery Scan on "ANY_subquery"
+         Filter: (s.n = "ANY_subquery".n)
+         ->  Nested Loop Semi Join
+               ->  Seq Scan on s1
+                     Filter: (u <> s.u)
+               ->  Index Scan using l_n on l
+                     Index Cond: (n = s1.n)
+                     Filter: (u <> s.u)
+(10 rows)
+
+select * from s where n in (select n from s1 where n in (select n from l where u != s.u) and u != s.u);
+ u | n | nn | p 
+---+---+----+---
+(0 rows)
+
+set enable_correlated_any_transform = off;
+explain (costs off) select * from s where n in (select n from s1 where n in (select n from l where u != s.u) and u != s.u);
+               QUERY PLAN                
+-----------------------------------------
+ Seq Scan on s
+   Filter: (SubPlan 1)
+   SubPlan 1
+     ->  Nested Loop Semi Join
+           ->  Seq Scan on s1
+                 Filter: (u <> s.u)
+           ->  Index Scan using l_n on l
+                 Index Cond: (n = s1.n)
+                 Filter: (u <> s.u)
+(9 rows)
+
+select * from s where n in (select n from s1 where n in (select n from l where u != s.u) and u != s.u);
+ u | n | nn | p 
+---+---+----+---
+(0 rows)
+
+reset enable_correlated_any_transform;
+--nested correlated not in, correlated var is both one level and two levels deep
+explain (costs off) select * from s where n not in (select n from s1 where n not in (select n from l where u != s.u) and u != s.u);
+                         QUERY PLAN                          
+-------------------------------------------------------------
+ Seq Scan on s
+   Filter: (NOT (SubPlan 2))
+   SubPlan 2
+     ->  Seq Scan on s1
+           Filter: ((NOT (hashed SubPlan 1)) AND (u <> s.u))
+           SubPlan 1
+             ->  Seq Scan on l
+                   Filter: (u <> s.u)
+(8 rows)
+
+select * from s where n not in (select n from s1 where n not in (select n from l where u != s.u) and u != s.u);
+    u    |    n    |   nn    |   p    
+---------+---------+---------+--------
+       1 |       1 |       1 | foo
+       2 |       2 |       2 | foo
+ 1000002 | 1000002 | 1000002 | foofoo
+       3 |         |       3 | foo
+(4 rows)
+
+set enable_correlated_any_transform = off;
+explain (costs off) select * from s where n not in (select n from s1 where n not in (select n from l where u != s.u) and u != s.u);
+                         QUERY PLAN                          
+-------------------------------------------------------------
+ Seq Scan on s
+   Filter: (NOT (SubPlan 2))
+   SubPlan 2
+     ->  Seq Scan on s1
+           Filter: ((NOT (hashed SubPlan 1)) AND (u <> s.u))
+           SubPlan 1
+             ->  Seq Scan on l
+                   Filter: (u <> s.u)
+(8 rows)
+
+select * from s where n not in (select n from s1 where n not in (select n from l where u != s.u) and u != s.u);
+    u    |    n    |   nn    |   p    
+---------+---------+---------+--------
+       1 |       1 |       1 | foo
+       2 |       2 |       2 | foo
+ 1000002 | 1000002 | 1000002 | foofoo
+       3 |         |       3 | foo
+(4 rows)
+
+reset enable_correlated_any_transform;
+--nested correlated in and not in, correlated var is both one level and two levels deep
+explain (costs off) select * from s where n in (select n from s1 where n not in (select n from l where u != s.u) and u != s.u);
+                      QUERY PLAN                      
+------------------------------------------------------
+ Hash Semi Join
+   Hash Cond: (s.n = s1.n)
+   Join Filter: ((s1.u <> s.u) AND (NOT (SubPlan 1)))
+   ->  Seq Scan on s
+   ->  Hash
+         ->  Seq Scan on s1
+   SubPlan 1
+     ->  Seq Scan on l
+           Filter: (u <> s.u)
+(9 rows)
+
+select * from s where n in (select n from s1 where n not in (select n from l where u != s.u) and u != s.u);
+ u | n | nn | p 
+---+---+----+---
+(0 rows)
+
+set enable_correlated_any_transform = off;
+explain (costs off) select * from s where n in (select n from s1 where n not in (select n from l where u != s.u) and u != s.u);
+                         QUERY PLAN                          
+-------------------------------------------------------------
+ Seq Scan on s
+   Filter: (SubPlan 2)
+   SubPlan 2
+     ->  Seq Scan on s1
+           Filter: ((NOT (hashed SubPlan 1)) AND (u <> s.u))
+           SubPlan 1
+             ->  Seq Scan on l
+                   Filter: (u <> s.u)
+(8 rows)
+
+select * from s where n in (select n from s1 where n not in (select n from l where u != s.u) and u != s.u);
+ u | n | nn | p 
+---+---+----+---
+(0 rows)
+
+reset enable_correlated_any_transform;
+--recursive cte & correlated not in
+EXPLAIN (COSTS FALSE) WITH RECURSIVE managertree AS (
+  SELECT id, name, manager_id
+  FROM employees
+  WHERE id = 2
+  UNION ALL
+  SELECT e.id, e.name, e.manager_id
+  FROM employees e
+  INNER JOIN managertree mtree ON mtree.id = e.manager_id
+)
+SELECT *
+FROM managertree mt WHERE mt.manager_id NOT IN (SELECT id FROM managertree where managertree.name != mt.name);
+                          QUERY PLAN                           
+---------------------------------------------------------------
+ CTE Scan on managertree mt
+   Filter: (NOT (SubPlan 2))
+   CTE managertree
+     ->  Recursive Union
+           ->  Seq Scan on employees
+                 Filter: (id = 2)
+           ->  Hash Join
+                 Hash Cond: (e.manager_id = mtree.id)
+                 ->  Seq Scan on employees e
+                 ->  Hash
+                       ->  WorkTable Scan on managertree mtree
+   SubPlan 2
+     ->  CTE Scan on managertree
+           Filter: ((name)::text <> (mt.name)::text)
+(14 rows)
+
+WITH RECURSIVE managertree AS (
+  SELECT id, name, manager_id
+  FROM employees
+  WHERE id = 2
+  UNION ALL
+  SELECT e.id, e.name, e.manager_id
+  FROM employees e
+  INNER JOIN managertree mtree ON mtree.id = e.manager_id
+)
+SELECT *
+FROM managertree mt WHERE mt.manager_id NOT IN (SELECT id FROM managertree where managertree.name != mt.name);
+ id | name | manager_id 
+----+------+------------
+  2 | John |          1
+(1 row)
+
+set enable_correlated_any_transform = off;
+EXPLAIN (COSTS FALSE) WITH RECURSIVE managertree AS (
+  SELECT id, name, manager_id
+  FROM employees
+  WHERE id = 2
+  UNION ALL
+  SELECT e.id, e.name, e.manager_id
+  FROM employees e
+  INNER JOIN managertree mtree ON mtree.id = e.manager_id
+)
+SELECT *
+FROM managertree mt WHERE mt.manager_id NOT IN (SELECT id FROM managertree where managertree.name != mt.name);
+                          QUERY PLAN                           
+---------------------------------------------------------------
+ CTE Scan on managertree mt
+   Filter: (NOT (SubPlan 2))
+   CTE managertree
+     ->  Recursive Union
+           ->  Seq Scan on employees
+                 Filter: (id = 2)
+           ->  Hash Join
+                 Hash Cond: (e.manager_id = mtree.id)
+                 ->  Seq Scan on employees e
+                 ->  Hash
+                       ->  WorkTable Scan on managertree mtree
+   SubPlan 2
+     ->  CTE Scan on managertree
+           Filter: ((name)::text <> (mt.name)::text)
+(14 rows)
+
+--result should match previous result
+WITH RECURSIVE managertree AS (
+  SELECT id, name, manager_id
+  FROM employees
+  WHERE id = 2
+  UNION ALL
+  SELECT e.id, e.name, e.manager_id
+  FROM employees e
+  INNER JOIN managertree mtree ON mtree.id = e.manager_id
+)
+SELECT *
+FROM managertree mt WHERE mt.manager_id NOT IN (SELECT id FROM managertree where managertree.name != mt.name);
+ id | name | manager_id 
+----+------+------------
+  2 | John |          1
+(1 row)
+
+reset enable_correlated_any_transform;
+--correlated var in select list, disallow transform
+explain (costs off) select count(*) from s where (s.n, s.u) in (select l.n, s.nn from l where l.u != s.u);
+             QUERY PLAN             
+------------------------------------
+ Aggregate
+   ->  Seq Scan on s
+         Filter: (SubPlan 1)
+         SubPlan 1
+           ->  Seq Scan on l
+                 Filter: (u <> s.u)
+(6 rows)
+
+select count(*) from s where (s.n, s.u) in (select l.n, s.nn from l where l.u != s.u);
+ count 
+-------
+     0
+(1 row)
+
+--correlated var in select list and buried in an expression, disallow transform
+explain (costs off) select count(*) from s where s.n in (select l.n * s.nn from l where l.u != s.u);
+             QUERY PLAN             
+------------------------------------
+ Aggregate
+   ->  Seq Scan on s
+         Filter: (SubPlan 1)
+         SubPlan 1
+           ->  Seq Scan on l
+                 Filter: (u <> s.u)
+(6 rows)
+
+select count(*) from s where s.n in (select l.n * s.nn from l where l.u != s.u);
+ count 
+-------
+     2
+(1 row)
+
+--correlated var in join ... on (...), disallow transform
+explain (costs off)  select count(*) from s s1 where s1.n in (select l.n from l left join s s2 on s2.nn*s1.nn = l.nn where s1.u != l.u);
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Aggregate
+   ->  Seq Scan on s s1
+         Filter: (SubPlan 1)
+         SubPlan 1
+           ->  Hash Left Join
+                 Hash Cond: (l.nn = (s2.nn * s1.nn))
+                 ->  Seq Scan on l
+                       Filter: (s1.u <> u)
+                 ->  Hash
+                       ->  Seq Scan on s s2
+(10 rows)
+
+select count(*) from s s1 where s1.n in (select l.n from l left join s s2 on s2.nn*s1.nn = l.nn where s1.u != l.u);
+ count 
+-------
+     0
+(1 row)
+
+--correlated var in order by, disallow transform
+explain (costs off) select count(*) from s where s.n in (select l.n from l where l.u != s.u order by s.nn);
+             QUERY PLAN             
+------------------------------------
+ Aggregate
+   ->  Seq Scan on s
+         Filter: (SubPlan 1)
+         SubPlan 1
+           ->  Seq Scan on l
+                 Filter: (u <> s.u)
+(6 rows)
+
+select count(*) from s where s.n in (select l.n from l where l.u != s.u order by s.nn);
+ count 
+-------
+     0
+(1 row)
+
+explain (costs off) select count(*) from s where s.n in (select l.n from l where l.u != s.u order by s.nn - l.nn);
+                QUERY PLAN                 
+-------------------------------------------
+ Aggregate
+   ->  Seq Scan on s
+         Filter: (SubPlan 1)
+         SubPlan 1
+           ->  Sort
+                 Sort Key: ((s.nn - l.nn))
+                 ->  Seq Scan on l
+                       Filter: (u <> s.u)
+(8 rows)
+
+select count(*) from s where s.n in (select l.n from l where l.u != s.u order by s.nn - l.nn);
+ count 
+-------
+     0
+(1 row)
+
+--correlated var in group by, disallow transfer since correlated var must also be in the select list
+explain (costs off) select count(*) from s where (s.n, s.nn) in (select l.n, s.nn from l where l.u != s.u group by l.n, s.nn);
+                  QUERY PLAN                   
+-----------------------------------------------
+ Aggregate
+   ->  Seq Scan on s
+         Filter: (SubPlan 1)
+         SubPlan 1
+           ->  Group
+                 Group Key: l.n, s.nn
+                 ->  Index Scan using l_n on l
+                       Filter: (u <> s.u)
+(8 rows)
+
+select count(*) from s where (s.n, s.nn) in (select l.n, s.nn from l where l.u != s.u group by l.n, s.nn);
+ count 
+-------
+     0
+(1 row)
+
+explain (costs off) select count(*) from s where (s.n, s.nn) in (select l.n, s.nn from l where l.u != s.u group by l.n, s.nn - l.nn);
+                  QUERY PLAN                   
+-----------------------------------------------
+ Aggregate
+   ->  Seq Scan on s
+         Filter: (SubPlan 1)
+         SubPlan 1
+           ->  HashAggregate
+                 Group Key: l.n, (s.nn - l.nn)
+                 ->  Seq Scan on l
+                       Filter: (u <> s.u)
+(8 rows)
+
+select count(*) from s where (s.n, s.nn) in (select l.n, s.nn from l where l.u != s.u group by l.n, s.nn - l.nn);
+ count 
+-------
+     0
+(1 row)
+
+--correlated var in having clause, disallow transfer sinnce correlated var must also be in the select list
+explain (costs off) select count(*) from s where (s.n, s.nn) in (select l.n, s.nn from l where l.u != s.u group by l.n having s.nn > 3);
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Aggregate
+   ->  Seq Scan on s
+         Filter: (SubPlan 1)
+         SubPlan 1
+           ->  Group
+                 Group Key: l.n
+                 ->  Result
+                       One-Time Filter: (s.nn > 3)
+                       ->  Index Scan using l_n on l
+                             Filter: (u <> s.u)
+(10 rows)
+
+select count(*) from s where (s.n, s.nn) in (select l.n, s.nn from l where l.u != s.u group by l.n having s.nn > 3);
+ count 
+-------
+     0
+(1 row)
+
+-- clean up
+drop table s;
+drop table s1;
+drop table l;
+drop table empty;
+drop table employees;

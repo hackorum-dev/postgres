@@ -1060,6 +1060,16 @@ static struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 	{
+		{"enable_correlated_any_transform", PGC_USERSET, QUERY_TUNING_METHOD,
+			gettext_noop("Enables the planner to transform correlated ANY Sublink (IN/NOT IN subquery) to JOIN when possible."),
+			NULL,
+			GUC_EXPLAIN
+		},
+		&enable_correlated_any_transform,
+		true,
+		NULL, NULL, NULL
+	},
+	{
 		{"enable_gathermerge", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables the planner's use of gather merge plans."),
 			NULL,

@@ -831,3 +831,333 @@ select * from (with x as (select 2 as y) select * from x) ss;
 explain (verbose, costs off)
 with x as (select * from subselect_tbl)
 select * from x for update;
+
+CREATE TABLE s (u INTEGER NOT NULL, n INTEGER NULL, nn INTEGER NOT NULL, p VARCHAR(128) NULL);
+insert into s (u, n, nn, p)
+    select
+    generate_series(1,3) as u,
+    generate_series(1,3) as n,
+    generate_series(1,3) as nn,
+    'foo' as p;
+insert into s values(1000002, 1000002, 1000002, 'foofoo');
+UPDATE s set n = NULL WHERE n = 3;
+analyze s;
+
+CREATE TABLE l (u INTEGER NOT NULL, n INTEGER NULL, nn INTEGER NOT NULL, p VARCHAR(128) NULL);
+insert into l (u, n, nn, p)
+    select
+    generate_series(1,10000 ) as u,
+    generate_series(1,10000 ) as n,
+    generate_series(1,10000 ) as nn,
+    'bar' as p;
+UPDATE l set n = NULL WHERE n = 7;
+
+CREATE TABLE s1 (u INTEGER NOT NULL, n INTEGER NULL, n1 INTEGER NULL, nn INTEGER NOT NULL, p VARCHAR(128) NULL);
+insert into s1 (u, n, n1, nn, p)
+    select
+    generate_series(1,3) as u,
+    generate_series(1,3) as n,
+    generate_series(1,3) as n1,
+    generate_series(1,3) as nn,
+    'foo' as p;
+insert into s1 values(1000003, 1000003, 1000003, 1000003, 'foofoo');
+insert into s1 values(1003, 1003, 1003, 1003, 'foofoo');
+UPDATE s1 set n = NULL WHERE n = 3;
+UPDATE s1 set n1 = NULL WHERE n = 2;
+UPDATE s1 set n1 = NULL WHERE n1 = 3;
+analyze s1;
+
+CREATE UNIQUE INDEX l_u ON l (u);
+CREATE INDEX l_n ON l (n);
+CREATE INDEX l_nn ON l (nn);
+analyze l;
+
+CREATE TABLE empty (u INTEGER NOT NULL, n INTEGER NULL, nn INTEGER NOT NULL, p VARCHAR(128) NULL);
+analyze empty;
+
+-- Recursive CTE
+CREATE TABLE employees (
+  id serial,
+  name varchar(255),
+  manager_id int
+);
+
+INSERT INTO employees VALUES (1, 'Mark', null);
+INSERT INTO employees VALUES (2, 'John', 1);
+INSERT INTO employees VALUES (3, 'Dan', 2);
+INSERT INTO employees VALUES (4, 'Clark', 1);
+INSERT INTO employees VALUES (5, 'Linda', 2);
+INSERT INTO employees VALUES (6, 'Willy', 2);
+INSERT INTO employees VALUES (7, 'Barack', 2);
+INSERT INTO employees VALUES (8, 'Elen', 2);
+INSERT INTO employees VALUES (9, 'Kate', 3);
+INSERT INTO employees VALUES (10, 'Terry', 4);
+
+WITH RECURSIVE managertree AS (
+  SELECT id, name, manager_id
+  FROM employees
+  WHERE id = 2
+  UNION ALL
+  SELECT e.id, e.name, e.manager_id
+  FROM employees e
+  INNER JOIN managertree mtree ON mtree.id = e.manager_id
+)
+SELECT *
+FROM managertree;
+
+--test corrrelated IN subquery
+explain (costs off) select count(*) from s where s.u in (select l.u from l where l.n = s.n);
+
+select count(*) from s where s.u in (select l.u from l where l.n = s.n);
+
+set enable_correlated_any_transform = off;
+
+explain (costs off) select count(*) from s where s.u in (select l.u from l where l.n = s.n);
+
+--result should match previous result
+select count(*) from s where s.u in (select l.u from l where l.n = s.n);
+
+reset enable_correlated_any_transform;
+
+explain (costs off) select count(*) from s where s.n in (select l.n from l where l.u != s.u);
+
+select count(*) from s where s.n in (select l.n from l where l.u != s.u);
+
+set enable_correlated_any_transform = off;
+
+explain (costs off) select count(*) from s where s.n in (select l.n from l where l.u != s.u);
+
+--result should match previous result
+select count(*) from s where s.n in (select l.n from l where l.u != s.u);
+
+reset enable_correlated_any_transform;
+
+explain (costs off) select count(*) from s where s.n in (select l.n from l where l.u > s.u);
+
+select count(*) from s where s.n in (select l.n from l where l.u > s.u);
+
+set enable_correlated_any_transform = off;
+
+explain (costs off) select count(*) from s where s.n in (select l.n from l where l.u > s.u);
+
+--result should match previous result
+select count(*) from s where s.n in (select l.n from l where l.u > s.u);
+
+reset enable_correlated_any_transform;
+
+--test corrrelated NOT IN subquery
+explain (costs off) select count(*) from s where s.u not in (select l.u from l where l.n = s.n);
+
+select count(*) from s where s.u not in (select l.u from l where l.n = s.n);
+
+set enable_correlated_any_transform = off;
+
+explain (costs off) select count(*) from s where s.u not in (select l.u from l where l.n = s.n);
+
+--result should match previous result
+select count(*) from s where s.u not in (select l.u from l where l.n = s.n);
+
+reset enable_correlated_any_transform;
+
+explain (costs off) select count(*) from s where s.n not in (select l.n from l where l.u != s.u);
+
+select count(*) from s where s.n not in (select l.n from l where l.u != s.u);
+
+set enable_correlated_any_transform = off;
+
+explain (costs off) select count(*) from s where s.n not in (select l.n from l where l.u != s.u);
+
+--result should match previous result
+select count(*) from s where s.n not in (select l.n from l where l.u != s.u);
+
+reset enable_correlated_any_transform;
+
+explain (costs off) select count(*) from s where s.n not in (select l.n from l where l.u > s.u);
+
+select count(*) from s where s.n not in (select l.n from l where l.u > s.u);
+
+set enable_correlated_any_transform = off;
+
+explain (costs off) select count(*) from s where s.n not in (select l.n from l where l.u > s.u);
+
+--result should match previous result
+select count(*) from s where s.n not in (select l.n from l where l.u > s.u);
+
+reset enable_correlated_any_transform;
+
+--correlated empty subquery
+explain (costs off) select count(*) from l where n not in (select n from empty where u != l.u);
+
+select count(*) from l where n not in (select n from empty where u != l.u);
+
+set enable_correlated_any_transform = off;
+
+explain (costs off) select count(*) from l where n not in (select n from empty where u != l.u);
+
+select count(*) from l where n not in (select n from empty where u != l.u);
+
+reset enable_correlated_any_transform;
+
+--nested correlated in, correlated var is two levels deep
+explain (costs off) select * from s where n in (select n from s1 where n in (select n from l where u != s.u));
+
+select * from s where n in (select n from s1 where n in (select n from l where u != s.u));
+
+set enable_correlated_any_transform = off;
+
+explain (costs off) select * from s where n in (select n from s1 where n in (select n from l where u != s.u));
+
+select * from s where n in (select n from s1 where n in (select n from l where u != s.u));
+
+reset enable_correlated_any_transform;
+
+--nested correlated in, correlated var is one level deep
+explain (costs off) select * from s where n in (select n from s1 where n in (select n from l) and u != s.u);
+
+select * from s where n in (select n from s1 where n in (select n from l) and u != s.u);
+
+set enable_correlated_any_transform = off;
+
+explain (costs off) select * from s where n in (select n from s1 where n in (select n from l) and u != s.u);
+
+select * from s where n in (select n from s1 where n in (select n from l) and u != s.u);
+
+reset enable_correlated_any_transform;
+
+--nested correlated in, correlated var is both one level and two levels deep
+explain (costs off) select * from s where n in (select n from s1 where n in (select n from l where u != s.u) and u != s.u);
+
+select * from s where n in (select n from s1 where n in (select n from l where u != s.u) and u != s.u);
+
+set enable_correlated_any_transform = off;
+
+explain (costs off) select * from s where n in (select n from s1 where n in (select n from l where u != s.u) and u != s.u);
+
+select * from s where n in (select n from s1 where n in (select n from l where u != s.u) and u != s.u);
+
+reset enable_correlated_any_transform;
+
+--nested correlated not in, correlated var is both one level and two levels deep
+explain (costs off) select * from s where n not in (select n from s1 where n not in (select n from l where u != s.u) and u != s.u);
+
+select * from s where n not in (select n from s1 where n not in (select n from l where u != s.u) and u != s.u);
+
+set enable_correlated_any_transform = off;
+
+explain (costs off) select * from s where n not in (select n from s1 where n not in (select n from l where u != s.u) and u != s.u);
+
+select * from s where n not in (select n from s1 where n not in (select n from l where u != s.u) and u != s.u);
+
+reset enable_correlated_any_transform;
+
+--nested correlated in and not in, correlated var is both one level and two levels deep
+explain (costs off) select * from s where n in (select n from s1 where n not in (select n from l where u != s.u) and u != s.u);
+
+select * from s where n in (select n from s1 where n not in (select n from l where u != s.u) and u != s.u);
+
+set enable_correlated_any_transform = off;
+
+explain (costs off) select * from s where n in (select n from s1 where n not in (select n from l where u != s.u) and u != s.u);
+
+select * from s where n in (select n from s1 where n not in (select n from l where u != s.u) and u != s.u);
+
+reset enable_correlated_any_transform;
+
+--recursive cte & correlated not in
+EXPLAIN (COSTS FALSE) WITH RECURSIVE managertree AS (
+  SELECT id, name, manager_id
+  FROM employees
+  WHERE id = 2
+  UNION ALL
+  SELECT e.id, e.name, e.manager_id
+  FROM employees e
+  INNER JOIN managertree mtree ON mtree.id = e.manager_id
+)
+SELECT *
+FROM managertree mt WHERE mt.manager_id NOT IN (SELECT id FROM managertree where managertree.name != mt.name);
+
+WITH RECURSIVE managertree AS (
+  SELECT id, name, manager_id
+  FROM employees
+  WHERE id = 2
+  UNION ALL
+  SELECT e.id, e.name, e.manager_id
+  FROM employees e
+  INNER JOIN managertree mtree ON mtree.id = e.manager_id
+)
+SELECT *
+FROM managertree mt WHERE mt.manager_id NOT IN (SELECT id FROM managertree where managertree.name != mt.name);
+
+set enable_correlated_any_transform = off;
+
+EXPLAIN (COSTS FALSE) WITH RECURSIVE managertree AS (
+  SELECT id, name, manager_id
+  FROM employees
+  WHERE id = 2
+  UNION ALL
+  SELECT e.id, e.name, e.manager_id
+  FROM employees e
+  INNER JOIN managertree mtree ON mtree.id = e.manager_id
+)
+SELECT *
+FROM managertree mt WHERE mt.manager_id NOT IN (SELECT id FROM managertree where managertree.name != mt.name);
+
+--result should match previous result
+WITH RECURSIVE managertree AS (
+  SELECT id, name, manager_id
+  FROM employees
+  WHERE id = 2
+  UNION ALL
+  SELECT e.id, e.name, e.manager_id
+  FROM employees e
+  INNER JOIN managertree mtree ON mtree.id = e.manager_id
+)
+SELECT *
+FROM managertree mt WHERE mt.manager_id NOT IN (SELECT id FROM managertree where managertree.name != mt.name);
+
+reset enable_correlated_any_transform;
+
+--correlated var in select list, disallow transform
+explain (costs off) select count(*) from s where (s.n, s.u) in (select l.n, s.nn from l where l.u != s.u);
+
+select count(*) from s where (s.n, s.u) in (select l.n, s.nn from l where l.u != s.u);
+
+--correlated var in select list and buried in an expression, disallow transform
+explain (costs off) select count(*) from s where s.n in (select l.n * s.nn from l where l.u != s.u);
+
+select count(*) from s where s.n in (select l.n * s.nn from l where l.u != s.u);
+
+--correlated var in join ... on (...), disallow transform
+explain (costs off)  select count(*) from s s1 where s1.n in (select l.n from l left join s s2 on s2.nn*s1.nn = l.nn where s1.u != l.u);
+
+select count(*) from s s1 where s1.n in (select l.n from l left join s s2 on s2.nn*s1.nn = l.nn where s1.u != l.u);
+
+--correlated var in order by, disallow transform
+explain (costs off) select count(*) from s where s.n in (select l.n from l where l.u != s.u order by s.nn);
+
+select count(*) from s where s.n in (select l.n from l where l.u != s.u order by s.nn);
+
+explain (costs off) select count(*) from s where s.n in (select l.n from l where l.u != s.u order by s.nn - l.nn);
+
+select count(*) from s where s.n in (select l.n from l where l.u != s.u order by s.nn - l.nn);
+
+--correlated var in group by, disallow transfer since correlated var must also be in the select list
+explain (costs off) select count(*) from s where (s.n, s.nn) in (select l.n, s.nn from l where l.u != s.u group by l.n, s.nn);
+
+select count(*) from s where (s.n, s.nn) in (select l.n, s.nn from l where l.u != s.u group by l.n, s.nn);
+
+explain (costs off) select count(*) from s where (s.n, s.nn) in (select l.n, s.nn from l where l.u != s.u group by l.n, s.nn - l.nn);
+
+select count(*) from s where (s.n, s.nn) in (select l.n, s.nn from l where l.u != s.u group by l.n, s.nn - l.nn);
+
+--correlated var in having clause, disallow transfer sinnce correlated var must also be in the select list
+explain (costs off) select count(*) from s where (s.n, s.nn) in (select l.n, s.nn from l where l.u != s.u group by l.n having s.nn > 3);
+
+select count(*) from s where (s.n, s.nn) in (select l.n, s.nn from l where l.u != s.u group by l.n having s.nn > 3);
+
+-- clean up
+drop table s;
+drop table s1;
+drop table l;
+drop table empty;
+drop table employees;

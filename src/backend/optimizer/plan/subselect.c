@@ -39,6 +39,8 @@
 #include "utils/syscache.h"
 
 
+bool enable_correlated_any_transform;
+
 typedef struct convert_testexpr_context
 {
 	PlannerInfo *root;
@@ -1222,16 +1224,31 @@ convert_ANY_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 	RangeTblRef *rtr;
 	List	   *subquery_vars;
 	Node	   *quals;
+	Node       *whereClause;
 	ParseState *pstate;
 
 	Assert(sublink->subLinkType == ANY_SUBLINK);
+
+	whereClause = subselect->jointree->quals;
+	/*
+	 * Separate out the WHERE clause if enable_correlated_any_transform is
+	 * enabled in order to pass the next check.
+	 */
+	if (enable_correlated_any_transform)
+		subselect->jointree->quals = NULL;
 
 	/*
 	 * The sub-select must not refer to any Vars of the parent query. (Vars of
 	 * higher levels should be okay, though.)
 	 */
 	if (contain_vars_of_level((Node *) subselect, 1))
+	{
+		/* Add the whereClause back */
+		subselect->jointree->quals = whereClause;
 		return NULL;
+	}
+
+	subselect->jointree->quals = whereClause;
 
 	/*
 	 * The test expression must contain some Vars of the parent query, else
@@ -1271,6 +1288,16 @@ convert_ANY_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 										   false,
 										   false);
 	rte = nsitem->p_rte;
+
+	/*
+	 * Mark the RTE (of type subselect) as lateral if the whereClause contains
+	 * Var from the immediate containing query block, i.e. we will do a lateral
+	 * join since the whereClause needs access to columns that appear before the
+	 * subselect.
+	 */
+	if (contain_vars_of_level((Node *) whereClause, 1))
+		rte->lateral = true;
+
 	parse->rtable = lappend(parse->rtable, rte);
 	rtindex = list_length(parse->rtable);
 
