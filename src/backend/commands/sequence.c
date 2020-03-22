@@ -1656,7 +1656,7 @@ process_owned_by(Relation seqrel, List *owned_by, bool for_identity)
 			ereport(ERROR,
 					(errcode(ERRCODE_SYNTAX_ERROR),
 					 errmsg("invalid OWNED BY option"),
-					 errhint("Specify OWNED BY table.column or OWNED BY NONE.")));
+					 errhint("Specify OWNED BY [schema.]table.column or OWNED BY NONE.")));
 		tablerel = NULL;
 		attnum = 0;
 	}
