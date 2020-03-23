@@ -2410,25 +2410,25 @@ buildMatViewRefreshDependencies(Archive *fout)
 						 "JOIN pg_class c1 ON c1.oid = d1.objid "
 						 "AND c1.relkind = " CppAsString2(RELKIND_MATVIEW)
 						 " JOIN pg_rewrite r1 ON r1.ev_class = d1.objid "
-						 "JOIN pg_depend d2 ON d2.classid = 'pg_rewrite'::regclass "
+						 "JOIN pg_depend d2 ON d2.classid = 'pg_rewrite'::pg_catalog.regclass "
 						 "AND d2.objid = r1.oid "
 						 "AND d2.refobjid <> d1.objid "
 						 "JOIN pg_class c2 ON c2.oid = d2.refobjid "
 						 "AND c2.relkind IN (" CppAsString2(RELKIND_MATVIEW) ","
 						 CppAsString2(RELKIND_VIEW) ") "
-						 "WHERE d1.classid = 'pg_class'::regclass "
+						 "WHERE d1.classid = 'pg_class'::pg_catalog.regclass "
 						 "UNION "
 						 "SELECT w.objid, d3.refobjid, c3.relkind "
 						 "FROM w "
 						 "JOIN pg_rewrite r3 ON r3.ev_class = w.refobjid "
-						 "JOIN pg_depend d3 ON d3.classid = 'pg_rewrite'::regclass "
+						 "JOIN pg_depend d3 ON d3.classid = 'pg_rewrite'::pg_catalog.regclass "
 						 "AND d3.objid = r3.oid "
 						 "AND d3.refobjid <> w.refobjid "
 						 "JOIN pg_class c3 ON c3.oid = d3.refobjid "
 						 "AND c3.relkind IN (" CppAsString2(RELKIND_MATVIEW) ","
 						 CppAsString2(RELKIND_VIEW) ") "
 						 ") "
-						 "SELECT 'pg_class'::regclass::oid AS classid, objid, refobjid "
+						 "SELECT 'pg_class'::pg_catalog.regclass::pg_catalog.oid AS classid, objid, refobjid "
 						 "FROM w "
 						 "WHERE refrelkind = " CppAsString2(RELKIND_MATVIEW));
 
@@ -3069,10 +3069,10 @@ dumpDatabaseConfig(Archive *AH, PQExpBuffer outbuf,
 	{
 		if (AH->remoteVersion >= 90000)
 			printfPQExpBuffer(buf, "SELECT setconfig[%d] FROM pg_db_role_setting "
-							  "WHERE setrole = 0 AND setdatabase = '%u'::oid",
+							  "WHERE setrole = 0 AND setdatabase = '%u'::pg_catalog.oid",
 							  count, dboid);
 		else
-			printfPQExpBuffer(buf, "SELECT datconfig[%d] FROM pg_database WHERE oid = '%u'::oid", count, dboid);
+			printfPQExpBuffer(buf, "SELECT datconfig[%d] FROM pg_database WHERE oid = '%u'::pg_catalog.oid", count, dboid);
 
 		res = ExecuteSqlQuery(AH, buf->data, PGRES_TUPLES_OK);
 
@@ -3098,7 +3098,7 @@ dumpDatabaseConfig(Archive *AH, PQExpBuffer outbuf,
 		/* Here we can assume we have unnest() */
 		printfPQExpBuffer(buf, "SELECT rolname, unnest(setconfig) "
 						  "FROM pg_db_role_setting s, pg_roles r "
-						  "WHERE setrole = r.oid AND setdatabase = '%u'::oid",
+						  "WHERE setrole = r.oid AND setdatabase = '%u'::pg_catalog.oid",
 						  dboid);
 
 		res = ExecuteSqlQuery(AH, buf->data, PGRES_TUPLES_OK);
@@ -3275,7 +3275,7 @@ getBlobs(Archive *fout)
 						  "FROM pg_largeobject_metadata l "
 						  "LEFT JOIN pg_init_privs pip ON "
 						  "(l.oid = pip.objoid "
-						  "AND pip.classoid = 'pg_largeobject'::regclass "
+						  "AND pip.classoid = 'pg_largeobject'::pg_catalog.regclass "
 						  "AND pip.objsubid = 0) ",
 						  username_subquery,
 						  acl_subquery->data,
@@ -3298,9 +3298,9 @@ getBlobs(Archive *fout)
 	else
 		appendPQExpBufferStr(blobQry,
 							 "SELECT DISTINCT loid AS oid, "
-							 "NULL::name AS rolname, NULL::oid AS lomacl, "
-							 "NULL::oid AS rlomacl, NULL::oid AS initlomacl, "
-							 "NULL::oid AS initrlomacl "
+							 "NULL::name AS rolname, NULL::pg_catalog.oid AS lomacl, "
+							 "NULL::pg_catalog.oid AS rlomacl, NULL::pg_catalog.oid AS initlomacl, "
+							 "NULL::pg_catalog.oid AS initrlomacl "
 							 " FROM pg_largeobject");
 
 	res = ExecuteSqlQuery(fout, blobQry->data, PGRES_TUPLES_OK);
@@ -4623,7 +4623,7 @@ getNamespaces(Archive *fout, int *numNamespaces)
 						  "FROM pg_namespace n "
 						  "LEFT JOIN pg_init_privs pip "
 						  "ON (n.oid = pip.objoid "
-						  "AND pip.classoid = 'pg_namespace'::regclass "
+						  "AND pip.classoid = 'pg_namespace'::pg_catalog.regclass "
 						  "AND pip.objsubid = 0",
 						  username_subquery,
 						  acl_subquery->data,
@@ -4878,7 +4878,7 @@ getTypes(Archive *fout, int *numTypes)
 						  "FROM pg_type t "
 						  "LEFT JOIN pg_init_privs pip ON "
 						  "(t.oid = pip.objoid "
-						  "AND pip.classoid = 'pg_type'::regclass "
+						  "AND pip.classoid = 'pg_type'::pg_catalog.regclass "
 						  "AND pip.objsubid = 0) ",
 						  acl_subquery->data,
 						  racl_subquery->data,
@@ -5084,7 +5084,7 @@ getOperators(Archive *fout, int *numOprs)
 					  "oprnamespace, "
 					  "(%s oprowner) AS rolname, "
 					  "oprkind, "
-					  "oprcode::oid AS oprcode "
+					  "oprcode::pg_catalog.oid AS oprcode "
 					  "FROM pg_operator",
 					  username_subquery);
 
@@ -5580,7 +5580,7 @@ getAggregates(Archive *fout, int *numAggs)
 						  "FROM pg_proc p "
 						  "LEFT JOIN pg_init_privs pip ON "
 						  "(p.oid = pip.objoid "
-						  "AND pip.classoid = 'pg_proc'::regclass "
+						  "AND pip.classoid = 'pg_proc'::pg_catalog.regclass "
 						  "AND pip.objsubid = 0) "
 						  "WHERE %s AND ("
 						  "p.pronamespace != "
@@ -5596,9 +5596,9 @@ getAggregates(Archive *fout, int *numAggs)
 		if (dopt->binary_upgrade)
 			appendPQExpBufferStr(query,
 								 " OR EXISTS(SELECT 1 FROM pg_depend WHERE "
-								 "classid = 'pg_proc'::regclass AND "
+								 "classid = 'pg_proc'::pg_catalog.regclass AND "
 								 "objid = p.oid AND "
-								 "refclassid = 'pg_extension'::regclass AND "
+								 "refclassid = 'pg_extension'::pg_catalog.regclass AND "
 								 "deptype = 'e')");
 		appendPQExpBufferChar(query, ')');
 
@@ -5625,9 +5625,9 @@ getAggregates(Archive *fout, int *numAggs)
 		if (dopt->binary_upgrade && fout->remoteVersion >= 90100)
 			appendPQExpBufferStr(query,
 								 " OR EXISTS(SELECT 1 FROM pg_depend WHERE "
-								 "classid = 'pg_proc'::regclass AND "
+								 "classid = 'pg_proc'::pg_catalog.regclass AND "
 								 "objid = p.oid AND "
-								 "refclassid = 'pg_extension'::regclass AND "
+								 "refclassid = 'pg_extension'::pg_catalog.regclass AND "
 								 "deptype = 'e')");
 		appendPQExpBufferChar(query, ')');
 	}
@@ -5794,11 +5794,11 @@ getFuncs(Archive *fout, int *numFuncs)
 						  "FROM pg_proc p "
 						  "LEFT JOIN pg_init_privs pip ON "
 						  "(p.oid = pip.objoid "
-						  "AND pip.classoid = 'pg_proc'::regclass "
+						  "AND pip.classoid = 'pg_proc'::pg_catalog.regclass "
 						  "AND pip.objsubid = 0) "
 						  "WHERE %s"
 						  "\n  AND NOT EXISTS (SELECT 1 FROM pg_depend "
-						  "WHERE classid = 'pg_proc'::regclass AND "
+						  "WHERE classid = 'pg_proc'::pg_catalog.regclass AND "
 						  "objid = p.oid AND deptype = 'i')"
 						  "\n  AND ("
 						  "\n  pronamespace != "
@@ -5822,9 +5822,9 @@ getFuncs(Archive *fout, int *numFuncs)
 		if (dopt->binary_upgrade)
 			appendPQExpBufferStr(query,
 								 "\n  OR EXISTS(SELECT 1 FROM pg_depend WHERE "
-								 "classid = 'pg_proc'::regclass AND "
+								 "classid = 'pg_proc'::pg_catalog.regclass AND "
 								 "objid = p.oid AND "
-								 "refclassid = 'pg_extension'::regclass AND "
+								 "refclassid = 'pg_extension'::pg_catalog.regclass AND "
 								 "deptype = 'e')");
 		appendPQExpBufferStr(query,
 							 "\n  OR p.proacl IS DISTINCT FROM pip.initprivs");
@@ -5850,7 +5850,7 @@ getFuncs(Archive *fout, int *numFuncs)
 		if (fout->remoteVersion >= 90200)
 			appendPQExpBufferStr(query,
 								 "\n  AND NOT EXISTS (SELECT 1 FROM pg_depend "
-								 "WHERE classid = 'pg_proc'::regclass AND "
+								 "WHERE classid = 'pg_proc'::pg_catalog.regclass AND "
 								 "objid = p.oid AND deptype = 'i')");
 		appendPQExpBuffer(query,
 						  "\n  AND ("
@@ -5858,14 +5858,14 @@ getFuncs(Archive *fout, int *numFuncs)
 						  "(SELECT oid FROM pg_namespace "
 						  "WHERE nspname = 'pg_catalog')"
 						  "\n  OR EXISTS (SELECT 1 FROM pg_cast"
-						  "\n  WHERE pg_cast.oid > '%u'::oid"
+						  "\n  WHERE pg_cast.oid > '%u'::pg_catalog.oid"
 						  "\n  AND p.oid = pg_cast.castfunc)",
 						  g_last_builtin_oid);
 
 		if (fout->remoteVersion >= 90500)
 			appendPQExpBuffer(query,
 							  "\n  OR EXISTS (SELECT 1 FROM pg_transform"
-							  "\n  WHERE pg_transform.oid > '%u'::oid"
+							  "\n  WHERE pg_transform.oid > '%u'::pg_catalog.oid"
 							  "\n  AND (p.oid = pg_transform.trffromsql"
 							  "\n  OR p.oid = pg_transform.trftosql))",
 							  g_last_builtin_oid);
@@ -5873,9 +5873,9 @@ getFuncs(Archive *fout, int *numFuncs)
 		if (dopt->binary_upgrade && fout->remoteVersion >= 90100)
 			appendPQExpBufferStr(query,
 								 "\n  OR EXISTS(SELECT 1 FROM pg_depend WHERE "
-								 "classid = 'pg_proc'::regclass AND "
+								 "classid = 'pg_proc'::pg_catalog.regclass AND "
 								 "objid = p.oid AND "
-								 "refclassid = 'pg_extension'::regclass AND "
+								 "refclassid = 'pg_extension'::pg_catalog.regclass AND "
 								 "deptype = 'e')");
 		appendPQExpBufferChar(query, ')');
 	}
@@ -6103,10 +6103,10 @@ getTables(Archive *fout, int *numTables)
 						  "CASE WHEN 'check_option=local' = ANY (c.reloptions) THEN 'LOCAL'::text "
 						  "WHEN 'check_option=cascaded' = ANY (c.reloptions) THEN 'CASCADED'::text ELSE NULL END AS checkoption, "
 						  "tc.reloptions AS toast_reloptions, "
-						  "c.relkind = '%c' AND EXISTS (SELECT 1 FROM pg_depend WHERE classid = 'pg_class'::regclass AND objid = c.oid AND objsubid = 0 AND refclassid = 'pg_class'::regclass AND deptype = 'i') AS is_identity_sequence, "
+						  "c.relkind = '%c' AND EXISTS (SELECT 1 FROM pg_depend WHERE classid = 'pg_class'::pg_catalog.regclass AND objid = c.oid AND objsubid = 0 AND refclassid = 'pg_class'::pg_catalog.regclass AND deptype = 'i') AS is_identity_sequence, "
 						  "EXISTS (SELECT 1 FROM pg_attribute at LEFT JOIN pg_init_privs pip ON "
 						  "(c.oid = pip.objoid "
-						  "AND pip.classoid = 'pg_class'::regclass "
+						  "AND pip.classoid = 'pg_class'::pg_catalog.regclass "
 						  "AND pip.objsubid = at.attnum)"
 						  "WHERE at.attrelid = c.oid AND ("
 						  "%s IS NOT NULL "
@@ -6128,7 +6128,7 @@ getTables(Archive *fout, int *numTables)
 						  "LEFT JOIN pg_am am ON (c.relam = am.oid) "
 						  "LEFT JOIN pg_init_privs pip ON "
 						  "(c.oid = pip.objoid "
-						  "AND pip.classoid = 'pg_class'::regclass "
+						  "AND pip.classoid = 'pg_class'::pg_catalog.regclass "
 						  "AND pip.objsubid = 0) "
 						  "WHERE c.relkind in ('%c', '%c', '%c', '%c', '%c', '%c', '%c') "
 						  "ORDER BY c.oid",
@@ -7870,7 +7870,7 @@ getEventTriggers(Archive *fout, int *numEventTriggers)
 					  "array_to_string(array("
 					  "select quote_literal(x) "
 					  " from unnest(evttags) as t(x)), ', ') as evttags, "
-					  "e.evtfoid::regproc as evtfname "
+					  "e.evtfoid::pg_catalog.regproc as evtfname "
 					  "FROM pg_event_trigger e "
 					  "ORDER BY e.oid",
 					  username_subquery);
@@ -7974,7 +7974,7 @@ getProcLangs(Archive *fout, int *numProcLangs)
 						  "FROM pg_language l "
 						  "LEFT JOIN pg_init_privs pip ON "
 						  "(l.oid = pip.objoid "
-						  "AND pip.classoid = 'pg_language'::regclass "
+						  "AND pip.classoid = 'pg_language'::pg_catalog.regclass "
 						  "AND pip.objsubid = 0) "
 						  "WHERE l.lanispl "
 						  "ORDER BY l.oid",
@@ -8245,7 +8245,7 @@ getTransforms(Archive *fout, int *numTransforms)
 	query = createPQExpBuffer();
 
 	appendPQExpBufferStr(query, "SELECT tableoid, oid, "
-						 "trftype, trflang, trffromsql::oid, trftosql::oid "
+						 "trftype, trflang, trffromsql::pg_catalog.oid, trftosql::pg_catalog.oid "
 						 "FROM pg_transform "
 						 "ORDER BY 3,4");
 
@@ -8808,8 +8808,8 @@ getTSParsers(Archive *fout, int *numTSParsers)
 	 */
 
 	appendPQExpBufferStr(query, "SELECT tableoid, oid, prsname, prsnamespace, "
-						 "prsstart::oid, prstoken::oid, "
-						 "prsend::oid, prsheadline::oid, prslextype::oid "
+						 "prsstart::pg_catalog.oid, prstoken::pg_catalog.oid, "
+						 "prsend::pg_catalog.oid, prsheadline::pg_catalog.oid, prslextype::pg_catalog.oid "
 						 "FROM pg_ts_parser");
 
 	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
@@ -8975,7 +8975,7 @@ getTSTemplates(Archive *fout, int *numTSTemplates)
 	query = createPQExpBuffer();
 
 	appendPQExpBufferStr(query, "SELECT tableoid, oid, tmplname, "
-						 "tmplnamespace, tmplinit::oid, tmpllexize::oid "
+						 "tmplnamespace, tmplinit::pg_catalog.oid, tmpllexize::pg_catalog.oid "
 						 "FROM pg_ts_template");
 
 	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
@@ -9161,7 +9161,7 @@ getForeignDataWrappers(Archive *fout, int *numForeignDataWrappers)
 						  "FROM pg_foreign_data_wrapper f "
 						  "LEFT JOIN pg_init_privs pip ON "
 						  "(f.oid = pip.objoid "
-						  "AND pip.classoid = 'pg_foreign_data_wrapper'::regclass "
+						  "AND pip.classoid = 'pg_foreign_data_wrapper'::pg_catalog.regclass "
 						  "AND pip.objsubid = 0) ",
 						  username_subquery,
 						  acl_subquery->data,
@@ -9327,7 +9327,7 @@ getForeignServers(Archive *fout, int *numForeignServers)
 						  "FROM pg_foreign_server f "
 						  "LEFT JOIN pg_init_privs pip "
 						  "ON (f.oid = pip.objoid "
-						  "AND pip.classoid = 'pg_foreign_server'::regclass "
+						  "AND pip.classoid = 'pg_foreign_server'::pg_catalog.regclass "
 						  "AND pip.objsubid = 0) ",
 						  username_subquery,
 						  acl_subquery->data,
@@ -9469,7 +9469,7 @@ getDefaultACLs(Archive *fout, int *numDefaultACLs)
 						  "FROM pg_default_acl d "
 						  "LEFT JOIN pg_init_privs pip ON "
 						  "(d.oid = pip.objoid "
-						  "AND pip.classoid = 'pg_default_acl'::regclass "
+						  "AND pip.classoid = 'pg_default_acl'::pg_catalog.regclass "
 						  "AND pip.objsubid = 0) ",
 						  username_subquery,
 						  acl_subquery->data,
@@ -17021,7 +17021,7 @@ dumpSequence(Archive *fout, TableInfo *tbinfo)
 						  "seqmax, seqmin, "
 						  "seqcache, seqcycle "
 						  "FROM pg_catalog.pg_sequence "
-						  "WHERE seqrelid = '%u'::oid",
+						  "WHERE seqrelid = '%u'::pg_catalog.oid",
 						  tbinfo->dobj.catId.oid);
 	}
 	else if (fout->remoteVersion >= 80400)
@@ -17801,7 +17801,7 @@ getExtensionMembership(Archive *fout, ExtensionInfo extinfo[],
 	appendPQExpBufferStr(query, "SELECT "
 						 "classid, objid, refobjid "
 						 "FROM pg_depend "
-						 "WHERE refclassid = 'pg_extension'::regclass "
+						 "WHERE refclassid = 'pg_extension'::pg_catalog.regclass "
 						 "AND deptype = 'e' "
 						 "ORDER BY 3");
 
@@ -17996,8 +17996,8 @@ processExtensionTables(Archive *fout, ExtensionInfo extinfo[],
 					  "FROM pg_constraint "
 					  "JOIN pg_depend ON (objid = confrelid) "
 					  "WHERE contype = 'f' "
-					  "AND refclassid = 'pg_extension'::regclass "
-					  "AND classid = 'pg_class'::regclass;");
+					  "AND refclassid = 'pg_extension'::pg_catalog.regclass "
+					  "AND classid = 'pg_class'::pg_catalog.regclass;");
 
 	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
 	ntups = PQntuples(res);
@@ -18087,19 +18087,19 @@ getDependencies(Archive *fout)
 	if (fout->remoteVersion >= 80300)
 	{
 		appendPQExpBufferStr(query, "UNION ALL\n"
-							 "SELECT 'pg_opfamily'::regclass AS classid, amopfamily AS objid, refclassid, refobjid, deptype "
+							 "SELECT 'pg_opfamily'::pg_catalog.regclass AS classid, amopfamily AS objid, refclassid, refobjid, deptype "
 							 "FROM pg_depend d, pg_amop o "
 							 "WHERE deptype NOT IN ('p', 'e', 'i') AND "
-							 "classid = 'pg_amop'::regclass AND objid = o.oid "
-							 "AND NOT (refclassid = 'pg_opfamily'::regclass AND amopfamily = refobjid)\n");
+							 "classid = 'pg_amop'::pg_catalog.regclass AND objid = o.oid "
+							 "AND NOT (refclassid = 'pg_opfamily'::pg_catalog.regclass AND amopfamily = refobjid)\n");
 
 		/* Likewise for pg_amproc entries */
 		appendPQExpBufferStr(query, "UNION ALL\n"
-							 "SELECT 'pg_opfamily'::regclass AS classid, amprocfamily AS objid, refclassid, refobjid, deptype "
+							 "SELECT 'pg_opfamily'::pg_catalog.regclass AS classid, amprocfamily AS objid, refclassid, refobjid, deptype "
 							 "FROM pg_depend d, pg_amproc p "
 							 "WHERE deptype NOT IN ('p', 'e', 'i') AND "
-							 "classid = 'pg_amproc'::regclass AND objid = p.oid "
-							 "AND NOT (refclassid = 'pg_opfamily'::regclass AND amprocfamily = refobjid)\n");
+							 "classid = 'pg_amproc'::pg_catalog.regclass AND objid = p.oid "
+							 "AND NOT (refclassid = 'pg_opfamily'::pg_catalog.regclass AND amprocfamily = refobjid)\n");
 	}
 
 	/* Sort the output for efficiency below */
