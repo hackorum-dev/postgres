@@ -3303,10 +3303,15 @@ CommitTransactionCommandInternal(void)
 
 			/*
 			 * Here we were in an aborted transaction block and we just got
-			 * the ROLLBACK command from the user, so clean up the
+			 * the ROLLBACK command from the user, so first return blockState
+			 * to TBLOCK_ABORT in case of callXactCallbacks() failure, run any
+			 * callback and restore blockState on success. Now clean up the
 			 * already-aborted transaction and return to the idle state.
 			 */
 		case TBLOCK_ABORT_END:
+			s->blockState = TBLOCK_ABORT;
+			CallXactCallbacks(XACT_EVENT_ABORT);
+			s->blockState = TBLOCK_ABORT_END;
 			CleanupTransaction();
 			s->blockState = TBLOCK_DEFAULT;
 			if (s->chain)
