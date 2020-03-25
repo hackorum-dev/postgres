@@ -117,7 +117,7 @@ writeFragment(PageData *pageData, OffsetNumber offset, OffsetNumber length,
  */
 static void
 computeRegionDelta(PageData *pageData,
-				   const char *curpage, const char *targetpage,
+				   const char *currPage, const char *targetPage,
 				   int targetStart, int targetEnd,
 				   int validStart, int validEnd)
 {
@@ -125,6 +125,13 @@ computeRegionDelta(PageData *pageData,
 				loopEnd,
 				fragmentBegin = -1,
 				fragmentEnd = -1;
+	int64* curpage = (int64*)currPage;
+	int64* targetpage = (int64*)targetPage;
+
+	targetStart >>= 3;
+	validStart >>= 3;
+	targetEnd = (targetEnd + 7) >> 3;
+	validEnd = (validEnd + 7) >> 3;
 
 	/* Deal with any invalid start region by including it in first fragment */
 	if (validStart > targetStart)
@@ -189,11 +196,11 @@ computeRegionDelta(PageData *pageData,
 		 * fragmentEnd value, which is why it's OK that we unconditionally
 		 * assign "fragmentEnd = i" above.
 		 */
-		if (fragmentBegin >= 0 && i - fragmentEnd > MATCH_THRESHOLD)
+		if (fragmentBegin >= 0 && (i - fragmentEnd)*8 > MATCH_THRESHOLD)
 		{
-			writeFragment(pageData, fragmentBegin,
-						  fragmentEnd - fragmentBegin,
-						  targetpage + fragmentBegin);
+			writeFragment(pageData, fragmentBegin*8,
+						  (fragmentEnd - fragmentBegin)*8,
+						  targetPage + fragmentBegin*8);
 			fragmentBegin = -1;
 			fragmentEnd = -1;	/* not really necessary */
 		}
@@ -212,9 +219,9 @@ computeRegionDelta(PageData *pageData,
 	{
 		if (fragmentEnd < 0)
 			fragmentEnd = targetEnd;
-		writeFragment(pageData, fragmentBegin,
-					  fragmentEnd - fragmentBegin,
-					  targetpage + fragmentBegin);
+		writeFragment(pageData, fragmentBegin*8,
+					  (fragmentEnd - fragmentBegin)*8,
+					  targetPage + fragmentBegin*8);
 	}
 }
 
