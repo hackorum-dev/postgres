@@ -836,9 +836,13 @@ extern void ExceptionalCondition(const char *conditionName,
  * The macro StaticAssertDecl() is suitable for use at file scope (outside of
  * any function).
  *
- * Otherwise we fall back on a kluge that assumes the compiler will complain
- * about a negative width for a struct bit-field.  This will not include a
- * helpful error message, but it beats not getting an error at all.
+ * On recent C++ compilers, we can use standard static_assert() for all
+ * types of static assertions.
+ *
+ * Otherwise, for the C and C++ fallback implementations, we fall back on
+ * a kluge that assumes the compiler will complain about a negative width
+ * for a struct bit-field.  This will not include a helpful error message,
+ * but it beats not getting an error at all.
  */
 #ifndef __cplusplus
 #ifdef HAVE__STATIC_ASSERT
