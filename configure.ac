@@ -2598,7 +2598,7 @@ fi
 AC_SUBST(vpath_build)
 
 
-AC_CONFIG_FILES([GNUmakefile src/Makefile.global])
+AC_CONFIG_FILES([GNUmakefile src/Makefile.global src/backend/utils/misc/postgresql.conf.sample])
 
 AC_CONFIG_LINKS([
   src/backend/port/pg_sema.c:${SEMA_IMPLEMENTATION}
