@@ -4931,7 +4931,7 @@ static char *
 int_to_roman(int number)
 {
 	int			len = 0,
-				num = 0;
+				num;
 	char	   *p = NULL,
 			   *result,
 				numstr[12];

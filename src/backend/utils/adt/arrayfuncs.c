@@ -2787,7 +2787,6 @@ array_set_slice(Datum arraydatum,
 				overheadlen,
 				oldoverheadlen,
 				addedbefore,
-				addedafter,
 				lenbefore,
 				lenafter,
 				itemsbefore,
@@ -2865,7 +2864,7 @@ array_set_slice(Datum arraydatum,
 	memcpy(lb, ARR_LBOUND(array), ndim * sizeof(int));
 
 	newhasnulls = (ARR_HASNULL(array) || ARR_HASNULL(srcArray));
-	addedbefore = addedafter = 0;
+	addedbefore = 0;
 
 	/*
 	 * Check subscripts
@@ -2893,8 +2892,7 @@ array_set_slice(Datum arraydatum,
 		{
 			if (lowerIndx[0] > (dim[0] + lb[0]))
 				newhasnulls = true; /* will insert nulls */
-			addedafter = upperIndx[0] - (dim[0] + lb[0]) + 1;
-			dim[0] += addedafter;
+			dim[0] += upperIndx[0] - (dim[0] + lb[0]) + 1;
 		}
 	}
 	else

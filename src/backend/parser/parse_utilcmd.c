@@ -1633,12 +1633,7 @@ generateClonedIndexStmt(RangeVar *heapRel, Relation source_idx,
 		if (AttributeNumberIsValid(attnum))
 		{
 			/* Simple index column */
-			char	   *attname;
-
-			attname = get_attname(indrelid, attnum, false);
-			keycoltype = get_atttype(indrelid, attnum);
-
-			iparam->name = attname;
+			iparam->name = get_attname(indrelid, attnum, false);
 			iparam->expr = NULL;
 		}
 		else

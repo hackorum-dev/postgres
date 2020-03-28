@@ -1710,7 +1710,6 @@ void
 NISortDictionary(IspellDict *Conf)
 {
 	int			i;
-	int			naffix = 0;
 	int			curaffix;
 
 	/* compress affixes */
@@ -1760,6 +1759,8 @@ NISortDictionary(IspellDict *Conf)
 	/* Otherwise fill Conf->AffixData here */
 	else
 	{
+	    int			naffix;
+
 		/* Count the number of different flags used in the dictionary */
 		qsort((void *) Conf->Spell, Conf->nspell, sizeof(SPELL *),
 			  cmpspellaffix);
@@ -1879,7 +1880,6 @@ mkANode(IspellDict *Conf, int low, int high, int level, int type)
 		data->naff = naff;
 		data->aff = (AFFIX **) cpalloc(sizeof(AFFIX *) * naff);
 		memcpy(data->aff, aff, sizeof(AFFIX *) * naff);
-		naff = 0;
 	}
 
 	pfree(aff);
@@ -2124,7 +2124,6 @@ CheckAffix(const char *word, size_t len, AFFIX *Affix, int flagflags, char *neww
 	}
 	else
 	{
-		int			err;
 		pg_wchar   *data;
 		size_t		data_len;
 		int			newword_len;
@@ -2134,7 +2133,7 @@ CheckAffix(const char *word, size_t len, AFFIX *Affix, int flagflags, char *neww
 		data = (pg_wchar *) palloc((newword_len + 1) * sizeof(pg_wchar));
 		data_len = pg_mb2wchar_with_len(newword, data, newword_len);
 
-		if (!(err = pg_regexec(&(Affix->reg.regex), data, data_len, 0, NULL, 0, NULL, 0)))
+		if (!pg_regexec(&(Affix->reg.regex), data, data_len, 0, NULL, 0, NULL, 0))
 		{
 			pfree(data);
 			return newword;

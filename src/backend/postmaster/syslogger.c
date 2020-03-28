@@ -878,7 +878,7 @@ process_pipe_input(char *logbuffer, int *bytes_in_logbuffer)
 {
 	char	   *cursor = logbuffer;
 	int			count = *bytes_in_logbuffer;
-	int			dest = LOG_DESTINATION_STDERR;
+	int			dest;
 
 	/* While we have enough for a header, process data... */
 	while (count >= (int) (offsetof(PipeProtoHeader, data) + 1))

@@ -812,7 +812,6 @@ _bt_bestsplitloc(FindSplitData *state, int perfectpenalty,
 
 		if (penalty <= perfectpenalty)
 		{
-			bestpenalty = penalty;
 			lowsplit = i;
 			break;
 		}

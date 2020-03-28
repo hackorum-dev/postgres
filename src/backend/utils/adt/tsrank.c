@@ -854,7 +854,7 @@ calc_rank_cd(const float4 *arrdata, TSVector txt, TSQuery query, int method)
 	double		invws[lengthof(weights)];
 	double		SumDist = 0.0,
 				PrevExtPos = 0.0,
-				CurExtPos = 0.0;
+				CurExtPos;
 	int			NExtent = 0;
 	QueryRepresentation qr;
 

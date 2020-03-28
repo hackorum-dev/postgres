@@ -736,7 +736,6 @@ expand_tuple(HeapTuple *targetHeapTuple,
 {
 	AttrMissing *attrmiss = NULL;
 	int			attnum;
-	int			firstmissingnum = 0;
 	bool		hasNulls = HeapTupleHasNulls(sourceTuple);
 	HeapTupleHeader targetTHeader;
 	HeapTupleHeader sourceTHeader = sourceTuple->t_data;
@@ -765,6 +764,8 @@ expand_tuple(HeapTuple *targetHeapTuple,
 	if (tupleDesc->constr &&
 		tupleDesc->constr->missing)
 	{
+	    int			firstmissingnum;
+
 		/*
 		 * If there are missing values we want to put them into the tuple.
 		 * Before that we have to compute the extra length for the values

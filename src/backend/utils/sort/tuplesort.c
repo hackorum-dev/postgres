@@ -2565,7 +2565,6 @@ mergeruns(Tuplesortstate *state)
 				svTape,
 				svRuns,
 				svDummy;
-	int			numTapes;
 	int			numInputTapes;
 
 	Assert(state->status == TSS_BUILDRUNS);
@@ -2606,7 +2605,7 @@ mergeruns(Tuplesortstate *state)
 	 * If we had fewer runs than tapes, refund the memory that we imagined we
 	 * would need for the tape buffers of the unused tapes.
 	 *
-	 * numTapes and numInputTapes reflect the actual number of tapes we will
+	 * numInputTapes reflect the actual number of tapes we will
 	 * use.  Note that the output tape's tape number is maxTapes - 1, so the
 	 * tape numbers of the used tapes are not consecutive, and you cannot just
 	 * loop from 0 to numTapes to visit all used tapes!
@@ -2614,13 +2613,11 @@ mergeruns(Tuplesortstate *state)
 	if (state->Level == 1)
 	{
 		numInputTapes = state->currentRun;
-		numTapes = numInputTapes + 1;
-		FREEMEM(state, (state->maxTapes - numTapes) * TAPE_BUFFER_OVERHEAD);
+		FREEMEM(state, (state->maxTapes - numInputTapes + 1) * TAPE_BUFFER_OVERHEAD);
 	}
 	else
 	{
 		numInputTapes = state->tapeRange;
-		numTapes = state->maxTapes;
 	}
 
 	/*

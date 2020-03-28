@@ -10825,7 +10825,6 @@ do_pg_stop_backup(char *labelfile, bool waitforarchive, TimeLineID *stoptli_p)
 	FILE	   *fp;
 	char		ch;
 	int			seconds_before_warning;
-	int			waits = 0;
 	bool		reported_waiting = false;
 	char	   *remaining;
 	char	   *ptr;
@@ -11146,6 +11145,8 @@ do_pg_stop_backup(char *labelfile, bool waitforarchive, TimeLineID *stoptli_p)
 		((!backup_started_in_recovery && XLogArchivingActive()) ||
 		 (backup_started_in_recovery && XLogArchivingAlways())))
 	{
+	    int			waits;
+
 		XLByteToPrevSeg(stoppoint, _logSegNo, wal_segment_size);
 		XLogFileName(lastxlogfilename, stoptli, _logSegNo, wal_segment_size);
 

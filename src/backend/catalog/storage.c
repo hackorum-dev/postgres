@@ -434,7 +434,6 @@ smgrDoPendingDeletes(bool isCommit)
 	PendingRelDelete *prev;
 	PendingRelDelete *next;
 	int			nrels = 0,
-				i = 0,
 				maxrels = 0;
 	SMgrRelation *srels = NULL;
 
@@ -483,6 +482,8 @@ smgrDoPendingDeletes(bool isCommit)
 
 	if (nrels > 0)
 	{
+		int i;
+
 		smgrdounlinkall(srels, nrels, false);
 
 		for (i = 0; i < nrels; i++)

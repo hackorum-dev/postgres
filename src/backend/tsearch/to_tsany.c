@@ -480,13 +480,7 @@ add_to_tsvector(void *_state, char *elem_value, int elem_len)
 static void
 pushval_morph(Datum opaque, TSQueryParserState state, char *strval, int lenval, int16 weight, bool prefix)
 {
-	int32		count = 0;
 	ParsedText	prs;
-	uint32		variant,
-				pos = 0,
-				cntvar = 0,
-				cntpos = 0,
-				cnt = 0;
 	MorphOpaque *data = (MorphOpaque *) DatumGetPointer(opaque);
 
 	prs.lenwords = 4;
@@ -498,6 +492,13 @@ pushval_morph(Datum opaque, TSQueryParserState state, char *strval, int lenval, 
 
 	if (prs.curwords > 0)
 	{
+	    int32	count = 0;
+	    uint32	variant,
+				pos = 0,
+				cntvar = 0,
+				cntpos = 0,
+				cnt = 0;
+
 		while (count < prs.curwords)
 		{
 			/*

@@ -32,7 +32,7 @@
 void
 gistfillbuffer(Page page, IndexTuple *itup, int len, OffsetNumber off)
 {
-	OffsetNumber l = InvalidOffsetNumber;
+	OffsetNumber l;
 	int			i;
 
 	if (off == InvalidOffsetNumber)

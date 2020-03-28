@@ -187,7 +187,6 @@ spg_text_choose(PG_FUNCTION_ARGS)
 	char	   *inStr = VARDATA_ANY(inText);
 	int			inSize = VARSIZE_ANY_EXHDR(inText);
 	char	   *prefixStr = NULL;
-	int			prefixSize = 0;
 	int			commonLen = 0;
 	int16		nodeChar = 0;
 	int			i = 0;
@@ -196,6 +195,7 @@ spg_text_choose(PG_FUNCTION_ARGS)
 	if (in->hasPrefix)
 	{
 		text	   *prefixText = DatumGetTextPP(in->prefixDatum);
+	    int			prefixSize;
 
 		prefixStr = VARDATA_ANY(prefixText);
 		prefixSize = VARSIZE_ANY_EXHDR(prefixText);

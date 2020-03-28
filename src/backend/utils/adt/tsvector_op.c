@@ -1263,7 +1263,7 @@ checkcondition_str(void *checkval, QueryOperand *val, ExecPhraseData *data)
 	WordEntry  *StopLow = chkval->arrb;
 	WordEntry  *StopHigh = chkval->arre;
 	WordEntry  *StopMiddle = StopHigh;
-	int			difference = -1;
+	int			difference;
 	bool		res = false;
 
 	/* Loop invariant: StopLow <= val < StopHigh */

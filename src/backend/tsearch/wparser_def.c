@@ -2133,8 +2133,8 @@ mark_hl_fragments(HeadlineParsedText *prs, TSQuery query, int highlight,
 				maxstretch,
 				posmarker;
 
-	int32		startpos = 0,
-				endpos = 0,
+	int32		startpos,
+				endpos,
 				p = 0,
 				q = 0;
 

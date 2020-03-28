@@ -470,7 +470,7 @@ _hash_readpage(IndexScanDesc scan, Buffer *bufP, ScanDirection dir)
 
 	if (ScanDirectionIsForward(dir))
 	{
-		BlockNumber prev_blkno = InvalidBlockNumber;
+		BlockNumber prev_blkno;
 
 		for (;;)
 		{
