@@ -6451,7 +6451,7 @@ float4_to_char(PG_FUNCTION_ARGS)
 		}
 		else
 		{
-			numstr = orgnum = psprintf("%+.*e", Num.post, value);
+			orgnum = psprintf("%+.*e", Num.post, value);
 
 			/*
 			 * Swap a leading positive sign for a space.
@@ -6555,7 +6555,7 @@ float8_to_char(PG_FUNCTION_ARGS)
 		}
 		else
 		{
-			numstr = orgnum = (char *) psprintf("%+.*e", Num.post, value);
+			orgnum = (char *) psprintf("%+.*e", Num.post, value);
 
 			/*
 			 * Swap a leading positive sign for a space.

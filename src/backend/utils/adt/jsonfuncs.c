@@ -5344,7 +5344,6 @@ transform_json_string_values(text *json, void *action_state,
 	sem->object_end = transform_string_values_object_end;
 	sem->array_start = transform_string_values_array_start;
 	sem->array_end = transform_string_values_array_end;
-	sem->scalar = transform_string_values_scalar;
 	sem->array_element_start = transform_string_values_array_element_start;
 	sem->object_field_start = transform_string_values_object_field_start;
 

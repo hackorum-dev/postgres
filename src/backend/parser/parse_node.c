@@ -418,9 +418,6 @@ transformContainerSubscripts(ParseState *pstate,
 	 * Ready to build the SubscriptingRef node.
 	 */
 	sbsref = (SubscriptingRef *) makeNode(SubscriptingRef);
-	if (assignFrom != NULL)
-		sbsref->refassgnexpr = (Expr *) assignFrom;
-
 	sbsref->refcontainertype = containerType;
 	sbsref->refelemtype = elementType;
 	sbsref->reftypmod = containerTypMod;

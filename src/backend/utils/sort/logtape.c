@@ -962,7 +962,6 @@ LogicalTapeFreeze(LogicalTapeSet *lts, int tapenum, TapeShare *share)
 
 		TapeBlockSetNBytes(lt->buffer, lt->nbytes);
 		ltsWriteBlock(lts, lt->curBlockNumber, (void *) lt->buffer);
-		lt->writing = false;
 	}
 	lt->writing = false;
 	lt->frozen = true;

@@ -819,7 +819,7 @@ pg_listening_channels(PG_FUNCTION_ARGS)
 	if (SRF_IS_FIRSTCALL())
 	{
 		/* create a function context for cross-call persistence */
-		funcctx = SRF_FIRSTCALL_INIT();
+		SRF_FIRSTCALL_INIT();
 	}
 
 	/* stuff done on every call of the function */

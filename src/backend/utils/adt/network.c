@@ -217,7 +217,7 @@ network_recv(StringInfo buf, bool is_cidr)
 				 errmsg("invalid bits in external \"%s\" value",
 						is_cidr ? "cidr" : "inet")));
 	ip_bits(addr) = bits;
-	i = pq_getmsgbyte(buf);		/* ignore is_cidr */
+	pq_getmsgbyte(buf);		/* ignore is_cidr */
 	nb = pq_getmsgbyte(buf);
 	if (nb != ip_addrsize(addr))
 		ereport(ERROR,

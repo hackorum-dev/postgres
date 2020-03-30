@@ -971,11 +971,6 @@ estimate_rel_size(Relation rel, int32 *attr_widths,
 			/* it has storage, ok to call the smgr */
 			curpages = RelationGetNumberOfBlocks(rel);
 
-			/* coerce values in pg_class to more desirable types */
-			relpages = (BlockNumber) rel->rd_rel->relpages;
-			reltuples = (double) rel->rd_rel->reltuples;
-			relallvisible = (BlockNumber) rel->rd_rel->relallvisible;
-
 			/* report estimated # pages */
 			*pages = curpages;
 			/* quick exit if rel is clearly empty */
