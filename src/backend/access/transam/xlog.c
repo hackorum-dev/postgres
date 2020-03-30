@@ -821,7 +821,12 @@ XLogInsertRecord(XLogRecData *rdata,
 
 	/* cross-check on whether we should be here or not */
 	if (!XLogInsertAllowed())
-		elog(ERROR, "cannot make new WAL entries during recovery");
+	{
+		if(RecoveryInProgress())
+			elog(ERROR, "cannot make new WAL entries during recovery");
+		else
+			elog(ERROR, "cannot make new WAL entries during shutdown");
+	}
 
 	/*
 	 * Given that we're not in recovery, InsertTimeLineID is set and can't
