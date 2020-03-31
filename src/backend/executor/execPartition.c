@@ -527,6 +527,12 @@ ExecInitPartitionInfo(ModifyTableState *mtstate, EState *estate,
 					  estate->es_instrument);
 
 	/*
+	 * ri_PartitionRootSlot will be used when converting partition's tuples to
+	 * root format.
+	 */
+	leaf_part_rri->ri_PartitionRootSlot = mtstate->mt_root_tuple_slot;
+
+	/*
 	 * Verify result relation is a valid target for an INSERT.  An UPDATE of a
 	 * partition-key becomes a DELETE+INSERT operation, so this check is still
 	 * required when the operation is CMD_UPDATE.

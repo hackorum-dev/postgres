@@ -2320,8 +2320,14 @@ ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags)
 
 	/* If modifying a partitioned table, initialize the root table info */
 	if (node->rootResultRelIndex >= 0)
+	{
+		Relation	rootrel;
+
 		mtstate->rootResultRelInfo = estate->es_root_result_relations +
 			node->rootResultRelIndex;
+		rootrel = mtstate->rootResultRelInfo->ri_RelationDesc;
+		mtstate->mt_root_tuple_slot = table_slot_create(rootrel, NULL);
+	}
 
 	mtstate->mt_arowmarks = (List **) palloc0(sizeof(List *) * nplans);
 	mtstate->mt_nplans = nplans;
@@ -2403,6 +2409,12 @@ ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags)
 															 eflags);
 		}
 
+		/*
+		 * ri_PartitionRootSlot will be used when converting partition's
+		 * tuples to root format.
+		 */
+		resultRelInfo->ri_PartitionRootSlot = mtstate->mt_root_tuple_slot;
+
 		resultRelInfo++;
 		i++;
 	}
@@ -2445,10 +2457,7 @@ ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags)
 	 * We can skip this setup if it's not a partition key update.
 	 */
 	if (update_tuple_routing_needed)
-	{
 		ExecSetupChildParentMapForSubplan(mtstate);
-		mtstate->mt_root_tuple_slot = table_slot_create(rel, NULL);
-	}
 
 	/*
 	 * Initialize any WITH CHECK OPTION constraints if needed.
@@ -2774,12 +2783,10 @@ ExecEndModifyTable(ModifyTableState *node)
 	 * and release the slot used for tuple routing, if set.
 	 */
 	if (node->mt_partition_tuple_routing)
-	{
 		ExecCleanupTupleRouting(node, node->mt_partition_tuple_routing);
 
-		if (node->mt_root_tuple_slot)
-			ExecDropSingleTupleTableSlot(node->mt_root_tuple_slot);
-	}
+	if (node->mt_root_tuple_slot)
+		ExecDropSingleTupleTableSlot(node->mt_root_tuple_slot);
 
 	/*
 	 * Free the exprcontext

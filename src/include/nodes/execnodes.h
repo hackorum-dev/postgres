@@ -486,6 +486,12 @@ typedef struct ResultRelInfo
 	/* relation descriptor for root partitioned table */
 	Relation	ri_PartitionRoot;
 
+	/*
+	 * Slot initialized with root table descriptor; may be set even if
+	 * ri_PartitionRoot is not.
+	 */
+	TupleTableSlot *ri_PartitionRootSlot;
+
 	/* Additional information specific to partition tuple routing */
 	struct PartitionRoutingInfo *ri_PartitionInfo;
 
