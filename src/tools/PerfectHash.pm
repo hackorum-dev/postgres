@@ -79,19 +79,26 @@ sub generate_hash_function
 	# Try different hash function parameters until we find a set that works
 	# for these keys.  The multipliers are chosen to be primes that are cheap
 	# to calculate via shift-and-add, so don't change them without care.
+	# The largest multipliers in the array below are needed for finicky key
+	# sets such as a large number of short keys with multiple nul bytes.
 	# (Commonly, random seeds are tried, but we want reproducible results
 	# from this program so we don't do that.)
-	my $hash_mult1 = 31;
+	my @HASH_MULTS = (17, 31, 127, 257, 8191);
+	my $hash_mult1;
 	my $hash_mult2;
 	my $hash_seed1;
 	my $hash_seed2;
 	my @subresult;
   FIND_PARAMS:
-	foreach (127, 257, 521, 1033, 2053)
+	# For speed, move on the next pair of multipliers after trying all
+	# the seed2 values. Only start varying seed1 after all previous
+	# combinations have been tried.
+	for ($hash_seed1 = 0; $hash_seed1 < 10; $hash_seed1++)
 	{
-		$hash_mult2 = $_;    # "foreach $hash_mult2" doesn't work
-		for ($hash_seed1 = 0; $hash_seed1 < 10; $hash_seed1++)
+		foreach my $i (0 .. $#HASH_MULTS - 1)
 		{
+			$hash_mult1 = $HASH_MULTS[$i];
+			$hash_mult2 = $HASH_MULTS[$i+1];
 			for ($hash_seed2 = 0; $hash_seed2 < 10; $hash_seed2++)
 			{
 				@subresult = _construct_hash_table(
