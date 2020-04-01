@@ -12472,7 +12472,12 @@ CheckForStandbyTrigger(void)
 			fast_promote = false;
 		}
 
-		ereport(LOG, (errmsg("received promote request")));
+		if (RecoveryIsPaused())
+			ereport(LOG,
+					(errmsg("received promote request while recovery is paused"),
+					 errdetail("The paused state ends and the promotion continues.")));
+		else
+			ereport(LOG, (errmsg("received promote request")));
 
 		ResetPromoteSignaled();
 		SetPromoteIsTriggered();
@@ -12484,8 +12489,14 @@ CheckForStandbyTrigger(void)
 
 	if (stat(PromoteTriggerFile, &stat_buf) == 0)
 	{
-		ereport(LOG,
-				(errmsg("promote trigger file found: %s", PromoteTriggerFile)));
+		if (RecoveryIsPaused())
+			ereport(LOG,
+					(errmsg("promote trigger file found while recovery is paused: %s",
+							PromoteTriggerFile),
+					 errdetail("The paused state ends and the promotion continues.")));
+		else
+			ereport(LOG,
+					(errmsg("promote trigger file found: %s", PromoteTriggerFile)));
 		unlink(PromoteTriggerFile);
 		SetPromoteIsTriggered();
 		fast_promote = true;
