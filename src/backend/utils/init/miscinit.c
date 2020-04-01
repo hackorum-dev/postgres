@@ -221,16 +221,16 @@ GetBackendTypeDesc(BackendType backendType)
 			backendDesc = "startup";
 			break;
 		case B_WAL_RECEIVER:
-			backendDesc = "walreceiver";
+			backendDesc = "wal receiver";
 			break;
 		case B_WAL_SENDER:
-			backendDesc = "walsender";
+			backendDesc = "wal sender";
 			break;
 		case B_WAL_WRITER:
-			backendDesc = "walwriter";
+			backendDesc = "wal writer";
 			break;
 		case B_ARCHIVER:
-			backendDesc = "archiver";
+			backendDesc = "wal archiver";
 			break;
 		case B_STATS_COLLECTOR:
 			backendDesc = "stats collector";
