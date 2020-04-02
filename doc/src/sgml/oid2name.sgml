@@ -216,19 +216,24 @@
      </para>
     </listitem>
    </varlistentry>
+
+   <varlistentry>
+    <term><envar>PG_COLOR</envar></term>
+    <term><envar>PG_COLORS</envar></term>
+
+    <listitem>
+     <para>
+      Specifies whether and how to use color in diagnostic messages (see
+      <xref linkend="color"/> for details).
+     </para>
+    </listitem>
+   </varlistentry>
   </variablelist>
 
   <para>
    This utility, like most other <productname>PostgreSQL</productname>
    utilities, also uses the environment variables supported by
    <application>libpq</application> (see <xref linkend="libpq-envars"/>).
-  </para>
-
-  <para>
-   The environment variable <envar>PG_COLOR</envar> specifies whether to use
-   color in diagnostic messages. Possible values are
-   <literal>always</literal>, <literal>auto</literal> and
-   <literal>never</literal>.
   </para>
  </refsect1>
 
