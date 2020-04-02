@@ -152,6 +152,7 @@ static void *GenerationRealloc(MemoryContext context, void *pointer, Size size);
 static void GenerationReset(MemoryContext context);
 static void GenerationDelete(MemoryContext context);
 static Size GenerationGetChunkSpace(MemoryContext context, void *pointer);
+static Size GenerationGetChunkCapacity(MemoryContext context, void *pointer);
 static bool GenerationIsEmpty(MemoryContext context);
 static void GenerationStats(MemoryContext context,
 							MemoryStatsPrintFunc printfunc, void *passthru,
@@ -171,6 +172,7 @@ static const MemoryContextMethods GenerationMethods = {
 	GenerationReset,
 	GenerationDelete,
 	GenerationGetChunkSpace,
+	GenerationGetChunkCapacity,
 	GenerationIsEmpty,
 	GenerationStats
 #ifdef MEMORY_CONTEXT_CHECKING
@@ -662,6 +664,23 @@ GenerationGetChunkSpace(MemoryContext context, void *pointer)
 
 	VALGRIND_MAKE_MEM_DEFINED(chunk, GENERATIONCHUNK_PRIVATE_LEN);
 	result = chunk->size + Generation_CHUNKHDRSZ;
+	VALGRIND_MAKE_MEM_NOACCESS(chunk, GENERATIONCHUNK_PRIVATE_LEN);
+	return result;
+}
+
+/*
+ * GenerationGetChunkCapacity
+ *		Given a currently-allocated chunk, return the size of the
+ *		usable space in the chunk.
+ */
+static Size
+GenerationGetChunkCapacity(MemoryContext context, void *pointer)
+{
+	GenerationChunk *chunk = GenerationPointerGetChunk(pointer);
+	Size		result;
+
+	VALGRIND_MAKE_MEM_DEFINED(chunk, GENERATIONCHUNK_PRIVATE_LEN);
+	result = chunk->size;
 	VALGRIND_MAKE_MEM_NOACCESS(chunk, GENERATIONCHUNK_PRIVATE_LEN);
 	return result;
 }

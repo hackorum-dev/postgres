@@ -432,6 +432,21 @@ GetMemoryChunkSpace(void *pointer)
 }
 
 /*
+ * GetMemoryChunkCapacity
+ *		Given a currently-allocated chunk, return the size of the
+ *		usable space in the chunk.
+ *
+ * This is useful for measuring the space available for data on the chunk.
+ */
+Size
+GetMemoryChunkCapacity(void *pointer)
+{
+	MemoryContext context = GetMemoryChunkContext(pointer);
+
+	return context->methods->get_chunk_capacity(context, pointer);
+}
+
+/*
  * MemoryContextGetParent
  *		Get the parent context (if any) of the specified context
  */
@@ -823,7 +838,7 @@ MemoryContextAlloc(MemoryContext context, Size size)
 						   size, context->name)));
 	}
 
-	VALGRIND_MEMPOOL_ALLOC(context, ret, size);
+	VALGRIND_MEMPOOL_ALLOC(context, ret, GetMemoryChunkCapacity(ret));
 
 	return ret;
 }
@@ -859,7 +874,7 @@ MemoryContextAllocZero(MemoryContext context, Size size)
 						   size, context->name)));
 	}
 
-	VALGRIND_MEMPOOL_ALLOC(context, ret, size);
+	VALGRIND_MEMPOOL_ALLOC(context, ret, GetMemoryChunkCapacity(ret));
 
 	MemSetAligned(ret, 0, size);
 
@@ -897,7 +912,7 @@ MemoryContextAllocZeroAligned(MemoryContext context, Size size)
 						   size, context->name)));
 	}
 
-	VALGRIND_MEMPOOL_ALLOC(context, ret, size);
+	VALGRIND_MEMPOOL_ALLOC(context, ret, GetMemoryChunkCapacity(ret));
 
 	MemSetLoop(ret, 0, size);
 
@@ -937,7 +952,7 @@ MemoryContextAllocExtended(MemoryContext context, Size size, int flags)
 		return NULL;
 	}
 
-	VALGRIND_MEMPOOL_ALLOC(context, ret, size);
+	VALGRIND_MEMPOOL_ALLOC(context, ret, GetMemoryChunkCapacity(ret));
 
 	if ((flags & MCXT_ALLOC_ZERO) != 0)
 		MemSetAligned(ret, 0, size);
@@ -971,7 +986,7 @@ palloc(Size size)
 						   size, context->name)));
 	}
 
-	VALGRIND_MEMPOOL_ALLOC(context, ret, size);
+	VALGRIND_MEMPOOL_ALLOC(context, ret, GetMemoryChunkCapacity(ret));
 
 	return ret;
 }
@@ -1002,7 +1017,7 @@ palloc0(Size size)
 						   size, context->name)));
 	}
 
-	VALGRIND_MEMPOOL_ALLOC(context, ret, size);
+	VALGRIND_MEMPOOL_ALLOC(context, ret, GetMemoryChunkCapacity(ret));
 
 	MemSetAligned(ret, 0, size);
 
@@ -1040,7 +1055,7 @@ palloc_extended(Size size, int flags)
 		return NULL;
 	}
 
-	VALGRIND_MEMPOOL_ALLOC(context, ret, size);
+	VALGRIND_MEMPOOL_ALLOC(context, ret, GetMemoryChunkCapacity(ret));
 
 	if ((flags & MCXT_ALLOC_ZERO) != 0)
 		MemSetAligned(ret, 0, size);
@@ -1069,7 +1084,10 @@ void *
 repalloc(void *pointer, Size size)
 {
 	MemoryContext context = GetMemoryChunkContext(pointer);
-	void	   *ret;
+	void *ret;
+#ifdef USE_VALGRIND
+	Size prev_capacity;
+#endif
 
 	if (!AllocSizeIsValid(size))
 		elog(ERROR, "invalid memory alloc request size %zu", size);
@@ -1078,6 +1096,10 @@ repalloc(void *pointer, Size size)
 
 	/* isReset must be false already */
 	Assert(!context->isReset);
+
+#ifdef USE_VALGRIND
+	prev_capacity = GetMemoryChunkCapacity(pointer);
+#endif
 
 	ret = context->methods->realloc(context, pointer, size);
 	if (unlikely(ret == NULL))
@@ -1090,7 +1112,12 @@ repalloc(void *pointer, Size size)
 						   size, context->name)));
 	}
 
-	VALGRIND_MEMPOOL_CHANGE(context, pointer, ret, size);
+#ifdef USE_VALGRIND
+	if ((ret != pointer) || (GetMemoryChunkCapacity(ret) != prev_capacity))
+	{
+		VALGRIND_MEMPOOL_CHANGE(context, pointer, ret, GetMemoryChunkCapacity(ret));
+	}
+#endif
 
 	return ret;
 }
@@ -1125,7 +1152,7 @@ MemoryContextAllocHuge(MemoryContext context, Size size)
 						   size, context->name)));
 	}
 
-	VALGRIND_MEMPOOL_ALLOC(context, ret, size);
+	VALGRIND_MEMPOOL_ALLOC(context, ret, GetMemoryChunkCapacity(ret));
 
 	return ret;
 }
@@ -1139,7 +1166,10 @@ void *
 repalloc_huge(void *pointer, Size size)
 {
 	MemoryContext context = GetMemoryChunkContext(pointer);
-	void	   *ret;
+	void *ret;
+#ifdef USE_VALGRIND
+	Size prev_capacity;
+#endif
 
 	if (!AllocHugeSizeIsValid(size))
 		elog(ERROR, "invalid memory alloc request size %zu", size);
@@ -1148,6 +1178,10 @@ repalloc_huge(void *pointer, Size size)
 
 	/* isReset must be false already */
 	Assert(!context->isReset);
+
+#ifdef USE_VALGRIND
+	prev_capacity = GetMemoryChunkCapacity(pointer);
+#endif
 
 	ret = context->methods->realloc(context, pointer, size);
 	if (unlikely(ret == NULL))
@@ -1160,7 +1194,12 @@ repalloc_huge(void *pointer, Size size)
 						   size, context->name)));
 	}
 
-	VALGRIND_MEMPOOL_CHANGE(context, pointer, ret, size);
+#ifdef USE_VALGRIND
+	if ((ret != pointer) || (GetMemoryChunkCapacity(ret) != prev_capacity))
+	{
+		VALGRIND_MEMPOOL_CHANGE(context, pointer, ret, GetMemoryChunkCapacity(ret));
+	}
+#endif
 
 	return ret;
 }

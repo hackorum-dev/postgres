@@ -132,6 +132,7 @@ static void *SlabRealloc(MemoryContext context, void *pointer, Size size);
 static void SlabReset(MemoryContext context);
 static void SlabDelete(MemoryContext context);
 static Size SlabGetChunkSpace(MemoryContext context, void *pointer);
+static Size SlabGetChunkCapacity(MemoryContext context, void *pointer);
 static bool SlabIsEmpty(MemoryContext context);
 static void SlabStats(MemoryContext context,
 					  MemoryStatsPrintFunc printfunc, void *passthru,
@@ -150,6 +151,7 @@ static const MemoryContextMethods SlabMethods = {
 	SlabReset,
 	SlabDelete,
 	SlabGetChunkSpace,
+	SlabGetChunkCapacity,
 	SlabIsEmpty,
 	SlabStats
 #ifdef MEMORY_CONTEXT_CHECKING
@@ -628,6 +630,21 @@ SlabGetChunkSpace(MemoryContext context, void *pointer)
 	Assert(slab);
 
 	return slab->fullChunkSize;
+}
+
+/*
+ * SlabGetChunkCapacity
+ *		Given a currently-allocated chunk, return the size of the
+ *		usable space in the chunk.
+ */
+static Size
+SlabGetChunkCapacity(MemoryContext context, void *pointer)
+{
+	SlabContext *slab = castNode(SlabContext, context);
+
+	Assert(slab);
+
+	return slab->chunkSize;
 }
 
 /*

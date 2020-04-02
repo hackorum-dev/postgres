@@ -272,6 +272,7 @@ static void *AllocSetRealloc(MemoryContext context, void *pointer, Size size);
 static void AllocSetReset(MemoryContext context);
 static void AllocSetDelete(MemoryContext context);
 static Size AllocSetGetChunkSpace(MemoryContext context, void *pointer);
+static Size AllocSetGetChunkCapacity(MemoryContext context, void *pointer);
 static bool AllocSetIsEmpty(MemoryContext context);
 static void AllocSetStats(MemoryContext context,
 						  MemoryStatsPrintFunc printfunc, void *passthru,
@@ -291,6 +292,7 @@ static const MemoryContextMethods AllocSetMethods = {
 	AllocSetReset,
 	AllocSetDelete,
 	AllocSetGetChunkSpace,
+	AllocSetGetChunkCapacity,
 	AllocSetIsEmpty,
 	AllocSetStats
 #ifdef MEMORY_CONTEXT_CHECKING
@@ -1333,6 +1335,23 @@ AllocSetGetChunkSpace(MemoryContext context, void *pointer)
 
 	VALGRIND_MAKE_MEM_DEFINED(chunk, ALLOCCHUNK_PRIVATE_LEN);
 	result = chunk->size + ALLOC_CHUNKHDRSZ;
+	VALGRIND_MAKE_MEM_NOACCESS(chunk, ALLOCCHUNK_PRIVATE_LEN);
+	return result;
+}
+
+/*
+ * AllocSetGetChunkCapacity
+ *		Given a currently-allocated chunk, return the size of the
+ *		usable space in the chunk.
+ */
+static Size
+AllocSetGetChunkCapacity(MemoryContext context, void *pointer)
+{
+	AllocChunk	chunk = AllocPointerGetChunk(pointer);
+	Size		result;
+
+	VALGRIND_MAKE_MEM_DEFINED(chunk, ALLOCCHUNK_PRIVATE_LEN);
+	result = chunk->size;
 	VALGRIND_MAKE_MEM_NOACCESS(chunk, ALLOCCHUNK_PRIVATE_LEN);
 	return result;
 }
