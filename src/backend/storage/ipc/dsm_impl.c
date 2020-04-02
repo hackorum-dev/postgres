@@ -360,7 +360,11 @@ dsm_impl_posix_resize(int fd, off_t size)
 	int			rc;
 
 	/* Truncate (or extend) the file to the requested size. */
-	rc = ftruncate(fd, size);
+	do
+	{
+		rc = ftruncate(fd, size);
+	} while (rc < 0 && errno == EINTR &&
+			 !(ProcDiePending || QueryCancelPending));
 
 	/*
 	 * On Linux, a shm_open fd is backed by a tmpfs file.  After resizing with
@@ -874,11 +878,19 @@ dsm_impl_mmap(dsm_op op, dsm_handle handle, Size request_size,
 		while (success && remaining > 0)
 		{
 			Size		goal = remaining;
+			Size		rc;
 
 			if (goal > ZBUFFER_SIZE)
 				goal = ZBUFFER_SIZE;
 			pgstat_report_wait_start(WAIT_EVENT_DSM_FILL_ZERO_WRITE);
-			if (write(fd, zbuffer, goal) == goal)
+
+			do
+			{
+				rc = write(fd, zbuffer, goal);
+			} while (rc < 0 && errno == EINTR &&
+					 !(ProcDiePending || QueryCancelPending));
+
+			if (rc == goal)
 				remaining -= goal;
 			else
 				success = false;
