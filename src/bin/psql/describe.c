@@ -2947,12 +2947,12 @@ describeOneTableDetails(const char *schemaname,
 						   pset.sversion >= 80300 ?
 						   "t.tgconstraint <> 0 AS tgisinternal" :
 						   "false AS tgisinternal"),
-						  (pset.sversion >= 130000 ?
-						   "(SELECT (NULLIF(a.relid, t.tgrelid))::pg_catalog.regclass"
-						   " FROM pg_catalog.pg_trigger AS u, "
-						   "      pg_catalog.pg_partition_ancestors(t.tgrelid) AS a"
-						   " WHERE u.tgname = t.tgname AND u.tgrelid = a.relid"
-						   "       AND u.tgparentid = 0) AS parent" :
+						  (pset.sversion >= 130000 ? "\n"
+						   "  (SELECT (NULLIF(a.relid, t.tgrelid))::pg_catalog.regclass\n"
+						   "   FROM pg_catalog.pg_trigger AS u,\n"
+						   "   pg_catalog.pg_partition_ancestors(t.tgrelid) AS a\n"
+						   "   WHERE u.tgname = t.tgname AND u.tgrelid = a.relid\n"
+						   "        AND u.tgparentid = 0) AS parent" :
 						   "NULL AS parent"),
 						  oid);
 		if (pset.sversion >= 110000)
@@ -3073,7 +3073,7 @@ describeOneTableDetails(const char *schemaname,
 
 					/* Visually distinguish inherited triggers */
 					if (!PQgetisnull(result, i, 4))
-						appendPQExpBuffer(&buf, ", ON TABLE %s",
+						appendPQExpBuffer(&buf, ", ON TABLE \"%s\"",
 								PQgetvalue(result, i, 4));
 
 					printTableAddFooter(&cont, buf.data);

@@ -1398,7 +1398,7 @@ select tgrelid::regclass::text, tgname, tgfoid::regproc, tgenabled, tgisinternal
 create table trigpart3 (like trigpart);
 create trigger trg1 after insert on trigpart3 for each row execute procedure trigger_nothing();
 \d trigpart3
-alter table trigpart attach partition trigpart3 FOR VALUES FROM (2000) to (3000); -- fail
+alter table trigpart attach partition trigpart3 for values from (2000) to (3000); -- fail
 drop table trigpart3;
 
 drop table trigpart;

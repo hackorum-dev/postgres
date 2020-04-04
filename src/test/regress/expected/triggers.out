@@ -2065,7 +2065,7 @@ create trigger trg1 after insert on trigpart3 for each row execute procedure tri
 Triggers:
     trg1 AFTER INSERT ON trigpart3 FOR EACH ROW EXECUTE FUNCTION trigger_nothing()
 
-alter table trigpart attach partition trigpart3 FOR VALUES FROM (2000) to (3000); -- fail
+alter table trigpart attach partition trigpart3 for values from (2000) to (3000); -- fail
 ERROR:  trigger "trg1" for relation "trigpart3" already exists
 drop table trigpart3;
 drop table trigpart;
