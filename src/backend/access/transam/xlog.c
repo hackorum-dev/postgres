@@ -3777,12 +3777,30 @@ XLogFileReadAnyTLI(XLogSegNo segno, int emode, XLogSource source)
 	foreach(cell, tles)
 	{
 		TimeLineID	tli = ((TimeLineHistoryEntry *) lfirst(cell))->tli;
+		XLogRecPtr	switchpoint = ((TimeLineHistoryEntry *) lfirst(cell))->begin;
 
 		if (tli < curFileTLI)
 			break;				/* don't bother looking at too-old TLIs */
 
 		if (source == XLOG_FROM_ANY || source == XLOG_FROM_ARCHIVE)
 		{
+			/* If current timeline is from the future ...  */
+			if (tli > curFileTLI && switchpoint != InvalidXLogRecPtr)
+			{
+				XLogSegNo	switchSegno;
+
+				XLByteToSeg(switchpoint, switchSegno, wal_segment_size);
+
+				/* ... and requested segno is not the segment with switchpoint, then
+				 * skip current timeline */
+				if (segno < switchSegno)
+				{
+					elog(WARNING, "Skipping timeline: %u, switch segno: %u, current segno: %u", tli, switchSegno, segno);
+					continue;
+				}
+			}
+
+
 			fd = XLogFileRead(segno, emode, tli,
 							  XLOG_FROM_ARCHIVE, true);
 			if (fd != -1)
