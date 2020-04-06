@@ -189,7 +189,7 @@ typedef struct Counters
 	double		blk_write_time; /* time spent writing, in msec */
 	double		usage;			/* usage factor */
 	int64		wal_records;	/* # of WAL records generated */
-	int64		wal_num_fpw;	/* # of WAL full page image records generated */
+	int64		wal_num_fpw;	/* # of WAL full page images generated */
 	uint64		wal_bytes;		/* total amount of WAL bytes generated */
 } Counters;
 
