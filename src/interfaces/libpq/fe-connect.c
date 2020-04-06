@@ -2023,11 +2023,6 @@ connectDBStart(PGconn *conn)
 	 */
 	resetPQExpBuffer(&conn->errorMessage);
 
-#ifdef ENABLE_GSS
-	if (conn->gssencmode[0] == 'd') /* "disable" */
-		conn->try_gss = false;
-#endif
-
 	/*
 	 * Set up to try to connect to the first host.  (Setting whichhost = -1 is
 	 * a bit of a cheat, but PQconnectPoll will advance it to 0 before
@@ -2464,6 +2459,9 @@ keep_going:						/* We will come back to here until there is
 		conn->allow_ssl_try = (conn->sslmode[0] != 'd');	/* "disable" */
 		conn->wait_ssl_try = (conn->sslmode[0] == 'a'); /* "allow" */
 #endif
+#ifdef ENABLE_GSS
+		conn->try_gss = (conn->gssencmode[0] != 'd');	/* disable */
+#endif
 
 		reset_connection_state_machine = false;
 		need_new_connection = true;
@@ -2861,6 +2859,38 @@ keep_going:						/* We will come back to here until there is
 #endif
 				}
 
+#ifdef USE_SSL
+
+				/*
+				 * If SSL is enabled and we haven't already got it running,
+				 * request it instead of sending the startup message.
+				 */
+				if (conn->allow_ssl_try && !conn->wait_ssl_try &&
+					!conn->ssl_in_use)
+				{
+					ProtocolVersion pv;
+
+					/*
+					 * Send the SSL request packet.
+					 *
+					 * Theoretically, this could block, but it really
+					 * shouldn't since we only got here if the socket is
+					 * write-ready.
+					 */
+					pv = pg_hton32(NEGOTIATE_SSL_CODE);
+					if (pqPacketSend(conn, 0, &pv, sizeof(pv)) != STATUS_OK)
+					{
+						appendPQExpBuffer(&conn->errorMessage,
+										  libpq_gettext("could not send SSL negotiation packet: %s\n"),
+										  SOCK_STRERROR(SOCK_ERRNO, sebuf, sizeof(sebuf)));
+						goto error_return;
+					}
+					/* Ok, wait for response */
+					conn->status = CONNECTION_SSL_STARTUP;
+					return PGRES_POLLING_READING;
+				}
+#endif							/* USE_SSL */
+
 #ifdef ENABLE_GSS
 
 				/*
@@ -2896,38 +2926,6 @@ keep_going:						/* We will come back to here until there is
 					goto error_return;
 				}
 #endif
-
-#ifdef USE_SSL
-
-				/*
-				 * If SSL is enabled and we haven't already got it running,
-				 * request it instead of sending the startup message.
-				 */
-				if (conn->allow_ssl_try && !conn->wait_ssl_try &&
-					!conn->ssl_in_use)
-				{
-					ProtocolVersion pv;
-
-					/*
-					 * Send the SSL request packet.
-					 *
-					 * Theoretically, this could block, but it really
-					 * shouldn't since we only got here if the socket is
-					 * write-ready.
-					 */
-					pv = pg_hton32(NEGOTIATE_SSL_CODE);
-					if (pqPacketSend(conn, 0, &pv, sizeof(pv)) != STATUS_OK)
-					{
-						appendPQExpBuffer(&conn->errorMessage,
-										  libpq_gettext("could not send SSL negotiation packet: %s\n"),
-										  SOCK_STRERROR(SOCK_ERRNO, sebuf, sizeof(sebuf)));
-						goto error_return;
-					}
-					/* Ok, wait for response */
-					conn->status = CONNECTION_SSL_STARTUP;
-					return PGRES_POLLING_READING;
-				}
-#endif							/* USE_SSL */
 
 				/*
 				 * Build the startup packet.
@@ -3902,9 +3900,6 @@ makeEmptyPGconn(void)
 	conn->verbosity = PQERRORS_DEFAULT;
 	conn->show_context = PQSHOW_CONTEXT_ERRORS;
 	conn->sock = PGINVALID_SOCKET;
-#ifdef ENABLE_GSS
-	conn->try_gss = true;
-#endif
 
 	/*
 	 * We try to send at least 8K at a time, which is the usual size of pipe
