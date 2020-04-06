@@ -5,7 +5,7 @@ use strict;
 use warnings;
 use PostgresNode;
 use TestLib;
-use Test::More tests => 63;
+use Test::More tests => 65;
 
 
 # Utility routine to create and check a table with corrupted checksums
@@ -177,6 +177,20 @@ command_fails(
 $node->start;
 command_fails([ 'pg_checksums', '--check', '-D', $pgdata ],
 	"fails with online cluster");
+
+# Adjust config so that pg_basebackup can run
+open my $conf, '>>', "$pgdata/postgresql.conf";
+print $conf "max_replication_slots = 10\n";
+print $conf "max_wal_senders = 10\n";
+print $conf "wal_level = replica\n";
+close $conf;
+$node->restart;
+
+# Make a base backup of the cluster and verify checksums in it
+my $pgdata_backup = $pgdata."_backup";
+$node->command_ok(['pg_basebackup', '-D', $pgdata_backup, '-c', 'fast', '-X', 'none']);
+command_ok([ 'pg_checksums', '--check', '-D', $pgdata_backup ],
+        "succeeds with base backup");
 
 # Check corruption of table on default tablespace.
 check_relation_corruption($node, 'corrupt1', 'pg_default');

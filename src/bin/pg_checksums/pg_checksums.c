@@ -35,6 +35,8 @@ static int64 files = 0;
 static int64 blocks = 0;
 static int64 badblocks = 0;
 static ControlFileData *ControlFile;
+static XLogRecPtr checkPointLSN = InvalidXLogRecPtr;
+static XLogRecPtr insertLimitLSN = InvalidXLogRecPtr;
 
 static char *only_filenode = NULL;
 static bool do_sync = true;
@@ -184,6 +186,48 @@ skipfile(const char *fn)
 	return false;
 }
 
+/*
+ * Try to find the latest WAL file, starting from the latest checkpoint's WAL
+ * file. Returns the first XLogRecPtr for the following WAL file as an upper
+ * bound to the WAL insert record pointer. If no WAL files are found at all,
+ * still return the first XLogRecPtr for the WAL file following the checkpoint
+ * WAL segement according to pg_control.
+ */
+static XLogRecPtr
+find_xlog_endptr(const char *basedir)
+{
+	char		fpath[MAXPGPATH];
+	char		xlogfilename[MAXFNAMELEN];
+	struct stat st;
+	TimeLineID	timeline_id;
+	XLogSegNo	segno;
+	uint32		WalSegSz = ControlFile->xlog_seg_size;
+	XLogRecPtr	EndPtr = InvalidXLogRecPtr;
+
+	/* Get timeline ID and WAL segment size from checkpoint data */
+	timeline_id = ControlFile->checkPointCopy.ThisTimeLineID;
+	XLByteToSeg(ControlFile->checkPointCopy.redo, segno, WalSegSz);
+
+	for (;;)
+	{
+		/* Determine WAL file name an assemble its path */
+		XLogFileName(xlogfilename, timeline_id, segno, WalSegSz);
+		snprintf(fpath, MAXPGPATH, "%s/%s/%s", basedir, XLOGDIR, xlogfilename);
+		if (lstat(fpath, &st) < 0)
+		{
+			/*
+			 * No more WAL files, set EndPtr to start of next WAL
+			 * segment.
+			 */
+			XLogSegNoOffsetToRecPtr(segno + 1, 0, WalSegSz, EndPtr);
+			break;
+		}
+		/* Increment WAL segment number */
+		segno++;
+	}
+	return EndPtr;
+}
+
 static void
 scan_file(const char *fn, BlockNumber segmentno)
 {
@@ -236,10 +280,27 @@ scan_file(const char *fn, BlockNumber segmentno)
 		{
 			if (csum != header->pd_checksum)
 			{
-				if (ControlFile->data_checksum_version == PG_DATA_CHECKSUM_VERSION)
-					pg_log_error("checksum verification failed in file \"%s\", block %u: calculated checksum %X but block contains %X",
-								 fn, blockno, csum, header->pd_checksum);
-				badblocks++;
+				/*
+				 * If the pg_control state is `in production', we are dealing
+				 * with a base backup. In this case, if the page's LSN is newer
+				 * than the latest checkpoint but older than the last LSN of
+				 * the last existing WAL file, we are looking at a changed page
+				 * which will be fixed by WAL replay, so ignore this checksum
+				 * failure.
+				 */
+				if (ControlFile->state == DB_IN_PRODUCTION &&
+				   (PageGetLSN(buf.data) > checkPointLSN) &&
+				   (PageGetLSN(buf.data) < insertLimitLSN))
+				{
+					pg_log_info("checksum verification failed in file \"%s\", block %u, but skipping block due to LSN", fn, blockno);
+				}
+				else
+				{
+					if (ControlFile->data_checksum_version == PG_DATA_CHECKSUM_VERSION)
+						pg_log_error("checksum verification failed in file \"%s\", block %u: calculated checksum %X but block contains %X",
+									 fn, blockno, csum, header->pd_checksum);
+					badblocks++;
+				}
 			}
 		}
 		else if (mode == PG_MODE_ENABLE)
@@ -453,6 +514,7 @@ main(int argc, char *argv[])
 	};
 
 	char	   *DataDir = NULL;
+	char		backup_label_path[MAXPGPATH];
 	int			c;
 	int			option_index;
 	bool		crc_ok;
@@ -574,13 +636,30 @@ main(int argc, char *argv[])
 	/*
 	 * Check if cluster is running.  A clean shutdown is required to avoid
 	 * random checksum failures caused by torn pages.  Note that this doesn't
-	 * guard against someone starting the cluster concurrently.
+	 * guard against someone starting the cluster concurrently.  If
+	 * backup_label is present, we are looking at a base backup, so checking
+	 * that is fine.
 	 */
 	if (ControlFile->state != DB_SHUTDOWNED &&
 		ControlFile->state != DB_SHUTDOWNED_IN_RECOVERY)
 	{
-		pg_log_error("cluster must be shut down");
-		exit(1);
+		snprintf(backup_label_path, sizeof(backup_label_path), "%s/%s",
+						 DataDir, "backup_label");
+		if (mode != PG_MODE_CHECK || access(backup_label_path, F_OK) == -1)
+		{
+			pg_log_error("cluster must be shut down");
+			exit(1);
+		}
+		else
+		{
+			pg_log_warning("cluster was not shut down but backup_label exists, assuming a base backup");
+			/*
+			 * Get checkpoint and insert limit LSNs as lower and
+			 * upper bound for base backup WAL records.
+			 */
+			checkPointLSN = ControlFile->checkPoint;
+			insertLimitLSN = find_xlog_endptr(DataDir);
+		}
 	}
 
 	if (ControlFile->data_checksum_version == 0 &&
