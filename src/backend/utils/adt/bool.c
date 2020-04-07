@@ -41,7 +41,7 @@ parse_bool_with_len(const char *value, size_t len, bool *result)
 	{
 		case 't':
 		case 'T':
-			if (pg_strncasecmp(value, "true", len) == 0)
+			if (len == 1 || (len == 4 && pg_strncasecmp(value, "true", len) == 0))
 			{
 				if (result)
 					*result = true;
@@ -50,7 +50,7 @@ parse_bool_with_len(const char *value, size_t len, bool *result)
 			break;
 		case 'f':
 		case 'F':
-			if (pg_strncasecmp(value, "false", len) == 0)
+			if (len == 1 || (len == 5 && pg_strncasecmp(value, "false", len) == 0))
 			{
 				if (result)
 					*result = false;
@@ -59,7 +59,7 @@ parse_bool_with_len(const char *value, size_t len, bool *result)
 			break;
 		case 'y':
 		case 'Y':
-			if (pg_strncasecmp(value, "yes", len) == 0)
+			if (len == 1 || (len == 3 && pg_strncasecmp(value, "yes", len) == 0))
 			{
 				if (result)
 					*result = true;
