@@ -2441,6 +2441,9 @@ errdetail_recovery_conflict(void)
 		case PROCSIG_RECOVERY_CONFLICT_SNAPSHOT:
 			errdetail("User query might have needed to see row versions that must be removed.");
 			break;
+		case PROCSIG_RECOVERY_CONFLICT_INDEXHINT:
+			errdetail("User query might have see index hint bits that are newer.");
+			break;
 		case PROCSIG_RECOVERY_CONFLICT_STARTUP_DEADLOCK:
 			errdetail("User transaction caused buffer deadlock with recovery.");
 			break;
@@ -2909,6 +2912,7 @@ RecoveryConflictInterrupt(ProcSignalReason reason)
 			case PROCSIG_RECOVERY_CONFLICT_LOCK:
 			case PROCSIG_RECOVERY_CONFLICT_TABLESPACE:
 			case PROCSIG_RECOVERY_CONFLICT_SNAPSHOT:
+			case PROCSIG_RECOVERY_CONFLICT_INDEXHINT:
 
 				/*
 				 * If we aren't in a transaction any longer then ignore.

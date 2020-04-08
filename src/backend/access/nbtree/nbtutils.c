@@ -28,6 +28,7 @@
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
+#include "storage/standby.h"
 
 
 typedef struct BTSortArrayContext
@@ -1794,6 +1795,8 @@ _bt_killitems(IndexScanDesc scan)
 	if (killedsomething)
 	{
 		opaque->btpo_flags |= BTP_HAS_GARBAGE;
+
+		LogIndexHintIfNeeded(scan->indexRelation, so->killedItemsXmax);
 		MarkBufferDirtyHint(so->currPos.buf, true);
 	}
 

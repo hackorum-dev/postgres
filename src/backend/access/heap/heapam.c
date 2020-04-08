@@ -1527,7 +1527,7 @@ heap_fetch(Relation relation,
 bool
 heap_hot_search_buffer(ItemPointer tid, Relation relation, Buffer buffer,
 					   Snapshot snapshot, HeapTuple heapTuple,
-					   bool *all_dead, bool first_call)
+					   bool *all_dead, bool first_call, TransactionId *all_dead_xmax)
 {
 	Page		dp = (Page) BufferGetPage(buffer);
 	TransactionId prev_xmax = InvalidTransactionId;
@@ -1539,7 +1539,10 @@ heap_hot_search_buffer(ItemPointer tid, Relation relation, Buffer buffer,
 
 	/* If this is not the first call, previous call returned a (live!) tuple */
 	if (all_dead)
+	{
 		*all_dead = first_call;
+		if (all_dead_xmax) *all_dead_xmax = InvalidTransactionId;
+	}
 
 	blkno = ItemPointerGetBlockNumber(tid);
 	offnum = ItemPointerGetOffsetNumber(tid);
@@ -1553,6 +1556,7 @@ heap_hot_search_buffer(ItemPointer tid, Relation relation, Buffer buffer,
 	for (;;)
 	{
 		ItemId		lp;
+		TransactionId xmax = InvalidTransactionId;
 
 		/* check for bogus TID */
 		if (offnum < FirstOffsetNumber || offnum > PageGetMaxOffsetNumber(dp))
@@ -1570,6 +1574,16 @@ heap_hot_search_buffer(ItemPointer tid, Relation relation, Buffer buffer,
 				offnum = ItemIdGetRedirect(lp);
 				at_chain_start = false;
 				continue;
+			}
+			else if (ItemIdIsDead(lp) && all_dead && all_dead_xmax)
+			{
+				if (ItemIdHasStorage(lp))
+				{
+					Assert((HeapTupleHeader)PageGetItem(dp, lp) != FrozenTransactionId);
+					*all_dead_xmax = HeapTupleHeaderGetXmin((HeapTupleHeader)PageGetItem(dp, lp));
+				}
+				else
+					*all_dead_xmax = InvalidTransactionId;
 			}
 			/* else must be end of chain */
 			break;
@@ -1635,9 +1649,13 @@ heap_hot_search_buffer(ItemPointer tid, Relation relation, Buffer buffer,
 		 * Note: if you change the criterion here for what is "dead", fix the
 		 * planner's get_actual_variable_range() function to match.
 		 */
-		if (all_dead && *all_dead &&
-			!HeapTupleIsSurelyDead(heapTuple, RecentGlobalXmin))
-			*all_dead = false;
+		if (all_dead && *all_dead)
+		{
+			if (!HeapTupleIsSurelyDead(heapTuple, RecentGlobalXmin, &xmax))
+				*all_dead = false;
+			else if (all_dead_xmax && !TransactionIdFollowsOrEquals(*all_dead_xmax, xmax))
+				*all_dead_xmax = xmax;
+		}
 
 		/*
 		 * Check to see if HOT chain continues past this tuple; if so fetch

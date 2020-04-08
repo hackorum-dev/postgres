@@ -266,7 +266,12 @@ btgettuple(IndexScanDesc scan, ScanDirection dir)
 					so->killedItems = (int *)
 						palloc(MaxIndexTuplesPerPage * sizeof(int));
 				if (so->numKilled < MaxIndexTuplesPerPage)
+				{
 					so->killedItems[so->numKilled++] = so->currPos.itemIndex;
+
+					if (!TransactionIdFollowsOrEquals(so->killedItemsXmax, scan->kill_prior_tuple_xmax))
+						so->killedItemsXmax = scan->kill_prior_tuple_xmax;
+				}
 			}
 
 			/*
@@ -372,6 +377,7 @@ btbeginscan(Relation rel, int nkeys, int norderbys)
 	so->arrayContext = NULL;
 
 	so->killedItems = NULL;		/* until needed */
+	so->killedItemsXmax = InvalidTransactionId;
 	so->numKilled = 0;
 
 	/*

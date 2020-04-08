@@ -18,6 +18,7 @@
 #include "access/reloptions.h"
 #include "access/relscan.h"
 #include "storage/buf_internals.h"
+#include "storage/standby.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 
@@ -625,6 +626,7 @@ _hash_kill_items(IndexScanDesc scan)
 	if (killedsomething)
 	{
 		opaque->hasho_flag |= LH_PAGE_HAS_DEAD_TUPLES;
+		LogIndexHintIfNeeded(rel, so->killedItemsXmax);
 		MarkBufferDirtyHint(buf, true);
 	}
 
