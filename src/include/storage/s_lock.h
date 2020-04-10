@@ -337,6 +337,31 @@ tas(volatile slock_t *lock)
 #define S_UNLOCK(lock) __sync_lock_release(lock)
 
 #endif	 /* HAVE_GCC__SYNC_INT32_TAS */
+
+/* Use YIELD only for aarch64, for now. */
+#if defined(__aarch64__) || defined(__aarch64)
+
+#define SPIN_DELAY() spin_delay()
+
+static __inline__ void
+spin_delay(void)
+{
+	/*
+	 * The ARM Architecture Manual recommends the use of YIELD instruction :
+	 * "The YIELD instruction provides a hint that the task performed by a
+	 * thread is of low importance so that it could yield.  This mechanism can
+	 * be used to improve overall performance in a Symmetric Multithreading
+	 * (SMT) or Symmetric Multiprocessing (SMP) system.  Examples of when the
+	 * YIELD instruction might be used include a thread that is sitting in a
+	 * spin-lock, or where the arbitration priority of the snoop bit in an SMP
+	 * system is modified. The YIELD instruction permits binary compatibility
+	 * between SMT and SMP systems.  The YIELD instruction is a NOP hint
+	 * instruction."
+	 */
+	__asm__ __volatile__(
+		" yield			\n");
+}
+#endif	 /* __aarch64__ || __aarch64 */
 #endif	 /* __arm__ || __arm || __aarch64__ || __aarch64 */
 
 
