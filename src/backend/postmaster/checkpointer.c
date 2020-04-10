@@ -151,6 +151,7 @@ double		CheckPointCompletionTarget = 0.5;
  * Private state
  */
 static bool ckpt_active = false;
+static volatile sig_atomic_t demoteRequestPending = false;
 
 /* these values are valid when ckpt_active is true: */
 static pg_time_t ckpt_start_time;
@@ -552,6 +553,21 @@ HandleCheckpointerInterrupts(void)
 		 */
 		UpdateSharedMemoryConfig();
 	}
+	if (demoteRequestPending)
+	{
+		demoteRequestPending = false;
+		/* Close down the database */
+		ShutdownXLOG(0, BoolGetDatum(true));
+		/*
+		 * Exit checkpointer. We could keep it around during demotion, but
+		 * exiting here has multiple benefices:
+		 * - to create a fresh process with clean local vars
+		 *   (eg. LocalRecoveryInProgress)
+		 * - to signal postmaster the demote shutdown checkpoint is done
+		 *   and keep going with next steps of the demotion
+		 */
+		proc_exit(0);
+	}
 	if (ShutdownRequestPending)
 	{
 		/*
@@ -680,6 +696,7 @@ CheckpointWriteDelay(int flags, double progress)
 	 * in which case we just try to catch up as quickly as possible.
 	 */
 	if (!(flags & CHECKPOINT_IMMEDIATE) &&
+		!demoteRequestPending &&
 		!ShutdownRequestPending &&
 		!ImmediateCheckpointRequested() &&
 		IsCheckpointOnSchedule(progress))
@@ -811,6 +828,17 @@ IsCheckpointOnSchedule(double progress)
  *		signal handler routines
  * --------------------------------
  */
+
+/* SIGUSR1: set flag to demote */
+void
+ReqCheckpointDemoteHandler(SIGNAL_ARGS)
+{
+	int			save_errno = errno;
+
+	demoteRequestPending = true;
+
+	errno = save_errno;
+}
 
 /* SIGINT: set flag to run a normal checkpoint right away */
 static void

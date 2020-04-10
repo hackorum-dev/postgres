@@ -3854,6 +3854,9 @@ pgstat_get_wait_ipc(WaitEventIPC w)
 		case WAIT_EVENT_PROMOTE:
 			event_name = "Promote";
 			break;
+		case WAIT_EVENT_DEMOTE:
+			event_name = "Demote";
+			break;
 		case WAIT_EVENT_RECOVERY_CONFLICT_SNAPSHOT:
 			event_name = "RecoveryConflictSnapshot";
 			break;

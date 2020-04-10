@@ -277,12 +277,13 @@ static StartupStatusEnum StartupStatus = STARTUP_NOT_RUNNING;
 #define			ImmediateShutdown	3
 
 static int	Shutdown = NoShutdown;
+static bool DemoteSignal = false; /* true on demote request */
 
 static bool FatalError = false; /* T if recovering from backend crash */
 
 /*
- * We use a simple state machine to control startup, shutdown, and
- * crash recovery (which is rather like shutdown followed by startup).
+ * We use a simple state machine to control startup, shutdown, demote and
+ * crash recovery (both are rather like shutdown followed by startup).
  *
  * After doing all the postmaster initialization work, we enter PM_STARTUP
  * state and the startup process is launched. The startup process begins by
@@ -325,6 +326,7 @@ typedef enum
 {
 	PM_INIT,					/* postmaster starting */
 	PM_STARTUP,					/* waiting for startup subprocess */
+	PM_DEMOTING,				/* waiting for idle or RO backends for demote */
 	PM_RECOVERY,				/* in archive recovery mode */
 	PM_HOT_STANDBY,				/* in hot standby mode */
 	PM_RUN,						/* normal "database is alive" state */
@@ -429,10 +431,14 @@ static bool RandomCancelKey(int32 *cancel_key);
 static void signal_child(pid_t pid, int signal);
 static bool SignalSomeChildren(int signal, int targets);
 static void TerminateChildren(int signal);
+static void RemoveDemoteSignalFiles(void);
+static bool CheckDemoteSignal(void);
+
 
 #define SignalChildren(sig)			   SignalSomeChildren(sig, BACKEND_TYPE_ALL)
 
 static int	CountChildren(int target);
+static int	CountXacts(void);
 static bool assign_backendlist_entry(RegisteredBgWorker *rw);
 static void maybe_start_bgworkers(void);
 static bool CreateOptsFile(int argc, char *argv[], char *fullprogname);
@@ -2319,6 +2325,11 @@ retry1:
 					(errcode(ERRCODE_CANNOT_CONNECT_NOW),
 					 errmsg("the database system is starting up")));
 			break;
+		case CAC_DEMOTE:
+			ereport(FATAL,
+					(errcode(ERRCODE_CANNOT_CONNECT_NOW),
+					 errmsg("the database system is demoting")));
+			break;
 		case CAC_SHUTDOWN:
 			ereport(FATAL,
 					(errcode(ERRCODE_CANNOT_CONNECT_NOW),
@@ -2450,16 +2461,19 @@ canAcceptConnections(int backend_type)
 	CAC_state	result = CAC_OK;
 
 	/*
-	 * Can't start backends when in startup/shutdown/inconsistent recovery
-	 * state.  We treat autovac workers the same as user backends for this
-	 * purpose.  However, bgworkers are excluded from this test; we expect
-	 * bgworker_should_start_now() decided whether the DB state allows them.
+	 * Can't start backends when in startup/demote/shutdown/inconsistent
+	 * recovery state.  We treat autovac workers the same as user backends
+	 * for this purpose.  However, bgworkers are excluded from this test; we
+	 * expect bgworker_should_start_now() decided whether the DB state allows
+	 * them.
 	 */
 	if (pmState != PM_RUN && pmState != PM_HOT_STANDBY &&
 		backend_type != BACKEND_TYPE_BGWORKER)
 	{
 		if (Shutdown > NoShutdown)
 			return CAC_SHUTDOWN;	/* shutdown is pending */
+		else if (DemoteSignal)
+			return CAC_DEMOTE;	/* demote is pending */
 		else if (!FatalError &&
 				 (pmState == PM_STARTUP ||
 				  pmState == PM_RECOVERY))
@@ -3091,7 +3105,18 @@ reaper(SIGNAL_ARGS)
 		if (pid == CheckpointerPID)
 		{
 			CheckpointerPID = 0;
-			if (EXIT_STATUS_0(exitstatus) && pmState == PM_SHUTDOWN)
+			if (EXIT_STATUS_0(exitstatus) &&
+					 DemoteSignal &&
+					 pmState == PM_SHUTDOWN)
+			{
+				/*
+				 * The checkpointer exit signals the demote shutdown checkpoint
+				 * is done. The startup recovery mode can be started from there.
+				 */
+				ereport(DEBUG1,
+						(errmsg_internal("checkpointer shutdown for demote")));
+			}
+			else if (EXIT_STATUS_0(exitstatus) && pmState == PM_SHUTDOWN)
 			{
 				/*
 				 * OK, we saw normal exit of the checkpointer after it's been
@@ -3799,6 +3824,25 @@ PostmasterStateMachine(void)
 		}
 	}
 
+	if (pmState == PM_DEMOTING)
+	{
+		int numXacts = CountXacts();
+
+		/*
+		 * PM_DEMOTING state ends when we have no active transactions
+		 * and all backends set LocalXLogInsertAllowed=0
+		 */
+		if (numXacts == 0)
+		{
+			ereport(LOG, (errmsg("all backends in read only")));
+
+			SendProcSignal(CheckpointerPID, PROCSIG_CHECKPOINTER_DEMOTING, InvalidBackendId);
+			pmState = PM_SHUTDOWN;
+		}
+		else
+			ereport(LOG, (errmsg("waiting for %d transactions to finish", numXacts)));
+	}
+
 	/*
 	 * If we're ready to do so, signal child processes to shut down.  (This
 	 * isn't a persistent state, but treating it as a distinct pmState allows
@@ -4001,6 +4045,20 @@ PostmasterStateMachine(void)
 	if (pmState == PM_NO_CHILDREN &&
 		(StartupStatus == STARTUP_CRASHED || !restart_after_crash))
 		ExitPostmaster(1);
+
+
+	/* Demoting: start the Startup Process */
+	if (DemoteSignal && pmState == PM_SHUTDOWN && CheckpointerPID == 0)
+	{
+		/* stop archiver process if not required during standby */
+		if (!XLogArchivingAlways() && PgArchPID != 0)
+			signal_child(PgArchPID, SIGQUIT);
+
+		StartupPID = StartupDataBase();
+		Assert(StartupPID != 0);
+		StartupStatus = STARTUP_RUNNING;
+		pmState = PM_STARTUP;
+	}
 
 	/*
 	 * If we need to recover from a crash, wait for all non-syslogger children
@@ -5212,8 +5270,12 @@ sigusr1_handler(SIGNAL_ARGS)
 		 * Crank up the background tasks.  It doesn't matter if this fails,
 		 * we'll just try again later.
 		 */
+		if (!DemoteSignal)
+			Assert(PgArchPID == 0);
+
 		Assert(CheckpointerPID == 0);
 		CheckpointerPID = StartCheckpointer();
+
 		Assert(BgWriterPID == 0);
 		BgWriterPID = StartBackgroundWriter();
 
@@ -5221,8 +5283,7 @@ sigusr1_handler(SIGNAL_ARGS)
 		 * Start the archiver if we're responsible for (re-)archiving received
 		 * files.
 		 */
-		Assert(PgArchPID == 0);
-		if (XLogArchivingAlways())
+		if (PgArchPID == 0 && XLogArchivingAlways())
 			PgArchPID = pgarch_start();
 
 		/*
@@ -5233,6 +5294,7 @@ sigusr1_handler(SIGNAL_ARGS)
 		if (!EnableHotStandby)
 		{
 			AddToDataDirLockFile(LOCK_FILE_LINE_PM_STATUS, PM_STATUS_STANDBY);
+			DemoteSignal = false;
 #ifdef USE_SYSTEMD
 			sd_notify(0, "READY=1");
 #endif
@@ -5243,11 +5305,15 @@ sigusr1_handler(SIGNAL_ARGS)
 	if (CheckPostmasterSignal(PMSIGNAL_BEGIN_HOT_STANDBY) &&
 		pmState == PM_RECOVERY && Shutdown == NoShutdown)
 	{
+		dlist_iter	iter;
+
 		/*
 		 * Likewise, start other special children as needed.
 		 */
-		Assert(PgStatPID == 0);
-		PgStatPID = pgstat_start();
+		if (!DemoteSignal)
+			Assert(PgStatPID == 0);
+		if(PgStatPID == 0)
+			PgStatPID = pgstat_start();
 
 		ereport(LOG,
 				(errmsg("database system is ready to accept read only connections")));
@@ -5258,8 +5324,18 @@ sigusr1_handler(SIGNAL_ARGS)
 		sd_notify(0, "READY=1");
 #endif
 
+		if (DemoteSignal)
+			dlist_foreach(iter, &BackendList)
+			{
+				Backend    *bp = dlist_container(Backend, elem, iter.cur);
+
+				if (!bp->dead_end && bp->bkend_type & (BACKEND_TYPE_NORMAL|BACKEND_TYPE_WALSND))
+					SendProcSignal(bp->pid, PROCSIG_DEMOTED, InvalidBackendId);
+			}
+
 		pmState = PM_HOT_STANDBY;
 		connsAllowed = ALLOW_ALL_CONNS;
+		DemoteSignal = false;
 
 		/* Some workers may be scheduled to start now */
 		StartWorkerNeeded = true;
@@ -5350,6 +5426,97 @@ sigusr1_handler(SIGNAL_ARGS)
 		 */
 		signal_child(StartupPID, SIGUSR2);
 	}
+
+	if (CheckDemoteSignal() && pmState != PM_RUN )
+	{
+		DemoteSignal = false;
+		RemoveDemoteSignalFiles();
+		ereport(LOG,
+				(errmsg("ignoring demote signal because already in standby mode")));
+	}
+	/* received demote signal */
+	else if (CheckDemoteSignal())
+	{
+		FILE	   *standby_file;
+		dlist_iter	iter;
+		bool fast_demote;
+		struct stat stat_buf;
+
+		fast_demote = (stat(DEMOTE_FAST_SIGNAL_FILE, &stat_buf) == 0);
+
+		DemoteSignal = true;
+		RemoveDemoteSignalFiles();
+
+		/* create the standby signal file */
+		standby_file = AllocateFile(STANDBY_SIGNAL_FILE, "w");
+		if (!standby_file)
+		{
+			ereport(ERROR,
+					(errcode_for_file_access(),
+					 errmsg("could not create file \"%s\": %m",
+							STANDBY_SIGNAL_FILE)));
+			goto out;
+		}
+
+		if (FreeFile(standby_file))
+		{
+			ereport(ERROR,
+					(errcode_for_file_access(),
+					 errmsg("could not write file \"%s\": %m",
+							STANDBY_SIGNAL_FILE)));
+			unlink(STANDBY_SIGNAL_FILE);
+			goto out;
+		}
+
+		if (fast_demote == 0)
+		{
+			/* smart demote */
+			ereport(LOG, (errmsg("received smart demote request")));
+
+		}
+		else
+		{
+			/* fast demote */
+			ereport(LOG, (errmsg("received fast demote request")));
+		}
+
+		SignalSomeChildren(SIGTERM,
+						   BACKEND_TYPE_AUTOVAC | BACKEND_TYPE_BGWORKER);
+
+		/* and the autovac launcher too */
+		if (AutoVacPID != 0)
+			signal_child(AutoVacPID, SIGTERM);
+		/* and the bgwriter too */
+		if (BgWriterPID != 0)
+			signal_child(BgWriterPID, SIGTERM);
+		/* and the walwriter too */
+		if (WalWriterPID != 0)
+			signal_child(WalWriterPID, SIGTERM);
+
+		dlist_foreach(iter, &BackendList)
+		{
+			Backend    *bp = dlist_container(Backend, elem, iter.cur);
+
+			if (bp->dead_end)
+				continue;
+			/*
+			 * Assign bkend_type for any recently announced WAL Sender
+			 * processes.
+			 */
+			if (bp->bkend_type == BACKEND_TYPE_NORMAL &&
+				! IsPostmasterChildWalSender(bp->child_slot))
+				SendProcSignal(bp->pid,
+							   (fast_demote?PROCSIG_DEMOTING_FAST:PROCSIG_DEMOTING),
+							   InvalidBackendId);
+		}
+
+		pmState = PM_DEMOTING;
+
+		/* Report status */
+		AddToDataDirLockFile(LOCK_FILE_LINE_PM_STATUS, PM_STATUS_DEMOTING);
+	}
+
+out:
 
 #ifdef WIN32
 	PG_SETMASK(&UnBlockSig);
@@ -5444,6 +5611,26 @@ CountChildren(int target)
 
 		cnt++;
 	}
+	return cnt;
+}
+
+
+/*
+ * Count up the number of active transactions
+ */
+static int
+CountXacts(void)
+{
+	int			i;
+	int			cnt = 0;
+
+	for (i = 0; i < ProcGlobal->allProcCount; ++i)
+	{
+		PGPROC   *proc = &ProcGlobal->allProcs[i];
+		if (TransactionIdIsValid(proc->xid))
+			cnt++;
+	}
+
 	return cnt;
 }
 
@@ -5912,6 +6099,7 @@ bgworker_should_start_now(BgWorkerStartTime start_time)
 		case PM_SHUTDOWN:
 		case PM_WAIT_BACKENDS:
 		case PM_STOP_BACKENDS:
+		case PM_DEMOTING:
 			break;
 
 		case PM_RUN:
@@ -6659,4 +6847,29 @@ InitPostmasterDeathWatchHandle(void)
 				(errmsg_internal("could not duplicate postmaster handle: error code %lu",
 								 GetLastError())));
 #endif							/* WIN32 */
+}
+
+/*
+ * Remove the files signaling a demote request.
+ */
+static void
+RemoveDemoteSignalFiles(void)
+{
+	unlink(DEMOTE_SIGNAL_FILE);
+	unlink(DEMOTE_FAST_SIGNAL_FILE);
+}
+
+/*
+ * Check if a demote request appeared.
+ */
+static bool
+CheckDemoteSignal(void)
+{
+	struct stat stat_buf;
+
+	if (stat(DEMOTE_SIGNAL_FILE, &stat_buf) == 0 ||
+		stat(DEMOTE_FAST_SIGNAL_FILE, &stat_buf) == 0)
+		return true;
+
+	return false;
 }

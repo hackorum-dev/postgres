@@ -28,6 +28,7 @@
 #include "storage/shmem.h"
 #include "storage/sinval.h"
 #include "tcop/tcopprot.h"
+#include "postmaster/bgwriter.h"
 
 /*
  * The SIGUSR1 signal is multiplexed to support signaling multiple event
@@ -584,6 +585,35 @@ procsignal_sigusr1_handler(SIGNAL_ARGS)
 
 	if (CheckProcSignal(PROCSIG_RECOVERY_CONFLICT_BUFFERPIN))
 		RecoveryConflictInterrupt(PROCSIG_RECOVERY_CONFLICT_BUFFERPIN);
+
+	/* signal checkpoint process to ignite a demote procedure */
+	if (CheckProcSignal(PROCSIG_CHECKPOINTER_DEMOTING))
+		ReqCheckpointDemoteHandler(PROCSIG_CHECKPOINTER_DEMOTING);
+
+	/*
+	 * ask backends to enter in read only by setting
+	 * LocalXLogInsertAllowed = 0 as soon as their active xact
+	 * finished
+	 */
+	if (CheckProcSignal(PROCSIG_DEMOTING))
+		ReqDemoteHandler(PROCSIG_DEMOTING);
+
+	/*
+	 * ask backends to enter in read only by setting
+	 * LocalXLogInsertAllowed = 0 if they are idle, or
+	 * interrupt their current xact and terminate.
+	 */
+	if (CheckProcSignal(PROCSIG_DEMOTING_FAST))
+		ReqDemoteHandler(PROCSIG_DEMOTING_FAST);
+
+	/*
+	 * demote complete. Ask beckends to rely on
+	 * recovery status for LocalXLogInsertAllowed by
+	 * setting it to -1.
+	 * WAL sender set am_cascading.
+	 */
+	if (CheckProcSignal(PROCSIG_DEMOTED))
+		ReqDemotedHandler(PROCSIG_DEMOTED);
 
 	SetLatch(MyLatch);
 

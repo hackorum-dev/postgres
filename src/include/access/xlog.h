@@ -219,18 +219,20 @@ extern bool XLOG_DEBUG;
 
 /* These directly affect the behavior of CreateCheckPoint and subsidiaries */
 #define CHECKPOINT_IS_SHUTDOWN	0x0001	/* Checkpoint is for shutdown */
-#define CHECKPOINT_END_OF_RECOVERY	0x0002	/* Like shutdown checkpoint, but
+#define CHECKPOINT_IS_DEMOTE	0x0002	/* Like shutdown checkpoint, but
+											 * issued at end of WAL production */
+#define CHECKPOINT_END_OF_RECOVERY	0x0004	/* Like shutdown checkpoint, but
 											 * issued at end of WAL recovery */
-#define CHECKPOINT_IMMEDIATE	0x0004	/* Do it without delays */
-#define CHECKPOINT_FORCE		0x0008	/* Force even if no activity */
-#define CHECKPOINT_FLUSH_ALL	0x0010	/* Flush all pages, including those
+#define CHECKPOINT_IMMEDIATE	0x0008	/* Do it without delays */
+#define CHECKPOINT_FORCE		0x0010	/* Force even if no activity */
+#define CHECKPOINT_FLUSH_ALL	0x0020	/* Flush all pages, including those
 										 * belonging to unlogged tables */
 /* These are important to RequestCheckpoint */
-#define CHECKPOINT_WAIT			0x0020	/* Wait for completion */
-#define CHECKPOINT_REQUESTED	0x0040	/* Checkpoint request has been made */
+#define CHECKPOINT_WAIT			0x0040	/* Wait for completion */
+#define CHECKPOINT_REQUESTED	0x0080	/* Checkpoint request has been made */
 /* These indicate the cause of a checkpoint request */
-#define CHECKPOINT_CAUSE_XLOG	0x0080	/* XLOG consumption */
-#define CHECKPOINT_CAUSE_TIME	0x0100	/* Elapsed time */
+#define CHECKPOINT_CAUSE_XLOG	0x0100	/* XLOG consumption */
+#define CHECKPOINT_CAUSE_TIME	0x0200	/* Elapsed time */
 
 /*
  * Flag bits for the record being inserted, set using XLogSetRecordFlags().
@@ -301,6 +303,7 @@ extern const char *xlog_identify(uint8 info);
 
 extern void issue_xlog_fsync(int fd, XLogSegNo segno);
 
+extern bool SetLocalRecoveryInProgress(void);
 extern bool RecoveryInProgress(void);
 extern RecoveryState GetRecoveryState(void);
 extern bool HotStandbyActive(void);
@@ -396,5 +399,9 @@ extern SessionBackupState get_backup_status(void);
 
 /* files to signal promotion to primary */
 #define PROMOTE_SIGNAL_FILE		"promote"
+
+/* files to signal demotion to standby */
+#define DEMOTE_SIGNAL_FILE		"demote"
+#define DEMOTE_FAST_SIGNAL_FILE	"demote_fast"
 
 #endif							/* XLOG_H */

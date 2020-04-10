@@ -41,5 +41,6 @@ extern Size CheckpointerShmemSize(void);
 extern void CheckpointerShmemInit(void);
 
 extern bool FirstCallSinceLastCheckpoint(void);
+extern void ReqCheckpointDemoteHandler(SIGNAL_ARGS);
 
 #endif							/* _BGWRITER_H */

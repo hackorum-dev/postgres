@@ -67,6 +67,7 @@
 #include "rewrite/rewriteHandler.h"
 #include "storage/bufmgr.h"
 #include "storage/ipc.h"
+#include "storage/pmsignal.h"
 #include "storage/proc.h"
 #include "storage/procsignal.h"
 #include "storage/sinval.h"
@@ -3211,6 +3212,42 @@ ProcessInterrupts(void)
 		HandleParallelMessages();
 }
 
+/* SIGUSR1: set flag to demote */
+void
+ReqDemoteHandler(ProcSignalReason reason)
+{
+	if (MyBackendType != B_BACKEND)
+		return;
+
+	if (TransactionIdIsValid(MyProc->xid))
+	{
+		if (reason == PROCSIG_DEMOTING_FAST)
+		{
+			InterruptPending = true;
+			ProcDiePending = true;
+			SetLatch(MyLatch);
+		}
+		else
+			DemotePending = true;
+	}
+	else
+		LocalSetXLogInsertNotAllowed();
+}
+
+/* SIGUSR1: reset LocalRecoveryInProgress */
+void
+ReqDemotedHandler(ProcSignalReason reason)
+{
+	ereport(LOG,
+				(errmsg("received demote complete signal")));
+
+	SetLocalRecoveryInProgress();
+	LocalSetXLogInsertCheckRecovery();
+
+	if (MyBackendType == B_WAL_SENDER)
+		am_cascading_walsender = true;
+}
+
 
 /*
  * IA64-specific code to fetch the AR.BSP register for stack depth checks.
@@ -4224,6 +4261,12 @@ PostgresMain(int argc, char *argv[],
 				/* Send out notify signals and transmit self-notifies */
 				ProcessCompletedNotifies();
 
+				if (DemotePending) {
+					LocalSetXLogInsertNotAllowed();
+					DemotePending = false;
+					SendPostmasterSignal(PMSIGNAL_ADVANCE_STATE_MACHINE);
+				}
+
 				/*
 				 * Also process incoming notifies, if any.  This is mostly to
 				 * ensure stable behavior in tests: if any notifies were
@@ -4285,6 +4328,7 @@ PostgresMain(int argc, char *argv[],
 		{
 			ConfigReloadPending = false;
 			ProcessConfigFile(PGC_SIGHUP);
+			SetLocalRecoveryInProgress();
 		}
 
 		/*

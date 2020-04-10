@@ -349,6 +349,8 @@ ProcArrayShmemSize(void)
 	size = add_size(size, mul_size(sizeof(int), PROCARRAY_MAXPROCS));
 
 	/*
+	 * FIXME demote: check safe hotStandby related init and snapshot mech.
+	 *
 	 * During Hot Standby processing we have a data structure called
 	 * KnownAssignedXids, created in shared memory. Local data structures are
 	 * also created in various backends during GetSnapshotData(),
