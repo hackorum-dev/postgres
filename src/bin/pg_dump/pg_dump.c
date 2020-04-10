@@ -4715,6 +4715,8 @@ getNamespaces(Archive *fout, int *numNamespaces)
 						  "FROM pg_namespace n "
 						  "LEFT JOIN pg_init_privs pip "
 						  "ON (n.oid = pip.objoid "
+						  "AND (pip.objoid IN (SELECT oid FROM pg_namespace WHERE nspname IN ('public', 'pg_catalog')) "
+						  "OR pip.privtype != 'i') "
 						  "AND pip.classoid = 'pg_namespace'::regclass "
 						  "AND pip.objsubid = 0",
 						  username_subquery,

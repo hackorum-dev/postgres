@@ -268,6 +268,15 @@ my %pgdump_runs = (
 			'postgres',
 		],
 	},
+	renamed_default_schema => {
+		database => 'renamed_default_schema',
+		dump_cmd => [
+			'pg_dump',
+			'--no-sync',
+			"--file=$tempdir/renamed_default_schema.sql",
+			'renamed_default_schema',
+		],
+	},
 	role => {
 		dump_cmd => [
 			'pg_dump',
@@ -3037,6 +3046,14 @@ my %tests = (
 		},
 	},
 
+	'GRANT ALL ON renamed_public_schema TO public' => {
+		database => 'renamed_default_schema',
+		create_order => 100,
+		create_sql => 'ALTER SCHEMA public RENAME TO renamed_public_schema;',
+		regexp => qr/^GRANT ALL ON SCHEMA renamed_public_schema TO PUBLIC;/m,
+		like => { renamed_default_schema => 1, },
+	},
+
 	'GRANT INSERT(col1) ON TABLE test_second_table' => {
 		create_order => 8,
 		create_sql =>
@@ -3322,8 +3339,9 @@ if ($collation_check_stderr !~ /ERROR: /)
 	$collation_support = 1;
 }
 
-# Create a second database for certain tests to work against
+# Create extra databases for certain tests to work against
 $node->psql('postgres', 'create database regress_pg_dump_test;');
+$node->psql('postgres', 'create database renamed_default_schema;');
 
 # Start with number of command_fails_like()*2 tests below (each
 # command_fails_like is actually 2 tests)
