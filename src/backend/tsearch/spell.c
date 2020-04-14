@@ -909,11 +909,25 @@ parse_affentry(char *str, char *mask, char *find, char *repl)
 	char	   *pmask = mask,
 			   *pfind = find,
 			   *prepl = repl;
+	bool		isescaped = false;
 
 	*mask = *find = *repl = '\0';
 
 	while (*str)
 	{
+		if (t_iseq(str, '\\') && !isescaped &&
+			(state == PAE_INFIND || state == PAE_INREPL))
+		{
+			/*
+			 * Next character should be escaped. Currently it is applyed only to
+			 * PAE_INFIND and PAE_INREPL. We expect that <find> can start only
+			 * with '-' and <replace> can start only with an alphabet character.
+			 */
+			isescaped = true;
+			str += pg_mblen(str);
+			continue;
+		}
+
 		if (state == PAE_WAIT_MASK)
 		{
 			if (t_iseq(str, '#'))
@@ -962,7 +976,7 @@ parse_affentry(char *str, char *mask, char *find, char *repl)
 				*pfind = '\0';
 				state = PAE_WAIT_REPL;
 			}
-			else if (t_isalpha(str))
+			else if (t_isalpha(str) || isescaped)
 			{
 				COPYCHAR(pfind, str);
 				pfind += pg_mblen(str);
@@ -996,7 +1010,7 @@ parse_affentry(char *str, char *mask, char *find, char *repl)
 				*prepl = '\0';
 				break;
 			}
-			else if (t_isalpha(str))
+			else if (t_isalpha(str) || isescaped)
 			{
 				COPYCHAR(prepl, str);
 				prepl += pg_mblen(str);
@@ -1009,6 +1023,7 @@ parse_affentry(char *str, char *mask, char *find, char *repl)
 		else
 			elog(ERROR, "unrecognized state in parse_affentry: %d", state);
 
+		isescaped = false;
 		str += pg_mblen(str);
 	}
 

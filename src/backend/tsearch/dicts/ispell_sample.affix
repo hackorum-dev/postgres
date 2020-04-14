@@ -5,6 +5,9 @@ prefixes
 flag *B:
 	.       >   RE      # As in enter > reenter
 
+flag E:
+	.       >   IN\-    # As in law > in-law
+
 flag U:
     .       >   UN      # As in natural > unnatural
 

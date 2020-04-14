@@ -19,6 +19,10 @@ SELECT ts_lexize('ispell', 'unbookings');
 SELECT ts_lexize('ispell', 'unbooking');
 SELECT ts_lexize('ispell', 'unbook');
 
+-- Test for hyphen escaping
+SELECT ts_lexize('ispell', 'in-law');
+SELECT ts_lexize('ispell', 'law');
+
 SELECT ts_lexize('ispell', 'footklubber');
 SELECT ts_lexize('ispell', 'footballklubber');
 SELECT ts_lexize('ispell', 'ballyklubber');

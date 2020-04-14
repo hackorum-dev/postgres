@@ -71,6 +71,19 @@ SELECT ts_lexize('ispell', 'unbook');
  {book}
 (1 row)
 
+-- Test for hyphen escaping
+SELECT ts_lexize('ispell', 'in-law');
+ ts_lexize 
+-----------
+ {law}
+(1 row)
+
+SELECT ts_lexize('ispell', 'law');
+ ts_lexize 
+-----------
+ {law}
+(1 row)
+
 SELECT ts_lexize('ispell', 'footklubber');
    ts_lexize    
 ----------------
