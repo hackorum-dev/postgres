@@ -775,6 +775,10 @@ advance_transition_function(AggState *aggstate,
 
 	newVal = FunctionCallInvoke(fcinfo);
 
+	/* Ensure transfns returning INTERNAL properly set the isnull flag */
+	Assert(pertrans->aggref->aggtranstype != INTERNALOID ||
+		   (DatumGetPointer(newVal) == NULL) == (fcinfo->isnull == true));
+
 	aggstate->curpertrans = NULL;
 
 	/*
