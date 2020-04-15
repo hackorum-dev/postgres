@@ -162,6 +162,8 @@ INIT
 	open my $testlog, '>', $test_logfile
 	  or die "could not open STDOUT to logfile \"$test_logfile\": $!";
 
+	# don't need to  check the result of these dup operations
+	## no critic (RequireCheckedOpen)
 	# Hijack STDOUT and STDERR to the log file
 	open(my $orig_stdout, '>&', \*STDOUT);
 	open(my $orig_stderr, '>&', \*STDERR);
@@ -409,7 +411,7 @@ Return the full contents of the specified file.
 sub slurp_file
 {
 	my ($filename) = @_;
-	local $/;
+	local $/ = undef;
 	my $contents;
 	if ($Config{osname} ne 'MSWin32')
 	{

@@ -67,7 +67,7 @@ sub ParseHeader
 		if (!$is_client_code)
 		{
 			# Strip C-style comments.
-			s;/\*(.|\n)*\*/;;g;
+			s;/\*(?:.|\n)*\*/;;g;
 			if (m;/\*;)
 			{
 
@@ -260,7 +260,9 @@ sub ParseData
 				# We're treating the input line as a piece of Perl, so we
 				# need to use string eval here. Tell perlcritic we know what
 				# we're doing.
-				eval '$hash_ref = ' . $_;   ## no critic (ProhibitStringyEval)
+				## no critic (ProhibitStringyEval)
+				## no critic (RequireCheckingReturnValueOfEval)
+				eval '$hash_ref = ' . $_;
 				if (!ref $hash_ref)
 				{
 					die "$input_file: error parsing line $.:\n$_\n";

@@ -10,7 +10,7 @@ use strict;
 use warnings;
 use File::Basename;
 
-sub _new
+sub _new  ## no critic (ProhibitUnusedPrivateSubroutines)
 {
 	my ($classname, $name, $type, $solution) = @_;
 	my $good_types = {
@@ -278,6 +278,8 @@ sub AddDir
 		my @pieces = split /\s+/, $match;
 		foreach my $fn (@pieces)
 		{
+			# Deliberately ignore errors from ReplaceFile about files not found
+			## no critic (RequireCheckingReturnValueOfEval)
 			if ($top eq "(top_srcdir)")
 			{
 				eval { $self->ReplaceFile($fn, $target) };

@@ -1,3 +1,6 @@
+
+## no critic (ProhibitMultiplePackages,ProhibitUnusedPrivateSubroutines)
+
 package MSBuildProject;
 
 #
@@ -11,7 +14,7 @@ use strict;
 use warnings;
 use base qw(Project);
 
-no warnings qw(redefine);    ## no critic
+no warnings qw(redefine);    ## no critic (ProhibitNoWarnings)
 
 sub _new
 {
@@ -145,8 +148,11 @@ EOF
 	{
 		confess "Bad format filename '$fileNameWithPath'\n"
 		  unless ($fileNameWithPath =~ m!^(.*)/([^/]+)\.(c|cpp|y|l|rc)$!);
+		# perlcritic is a bit stupid here
+		## no critic (ProhibitCaptureWithoutTest)
 		my $dir      = $1;
 		my $fileName = $2;
+		## use critic
 		if ($fileNameWithPath =~ /\.y$/ or $fileNameWithPath =~ /\.l$/)
 		{
 			push @grammarFiles, $fileNameWithPath;
@@ -415,7 +421,7 @@ use strict;
 use warnings;
 use base qw(MSBuildProject);
 
-no warnings qw(redefine);    ## no critic
+no warnings qw(redefine);    ## no critic (ProhibitNoWarnings)
 
 sub new
 {
@@ -440,7 +446,7 @@ use strict;
 use warnings;
 use base qw(MSBuildProject);
 
-no warnings qw(redefine);    ## no critic
+no warnings qw(redefine);    ## no critic  (ProhibitNoWarnings)
 
 sub new
 {
@@ -465,7 +471,7 @@ use strict;
 use warnings;
 use base qw(MSBuildProject);
 
-no warnings qw(redefine);    ## no critic
+no warnings qw(redefine);    ## no critic  (ProhibitNoWarnings)
 
 sub new
 {
@@ -490,7 +496,7 @@ use strict;
 use warnings;
 use base qw(MSBuildProject);
 
-no warnings qw(redefine);    ## no critic
+no warnings qw(redefine);    ## no critic  (ProhibitNoWarnings)
 
 sub new
 {

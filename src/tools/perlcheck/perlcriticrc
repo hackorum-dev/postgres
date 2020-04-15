@@ -22,3 +22,30 @@ verbose = %f: %m at line %l, column %c.  %e.  ([%p] Severity: %s)\n
 # insist on use of the warnings pragma
 [TestingAndDebugging::RequireUseWarnings]
 severity = 5
+
+
+# sev 4
+[-Modules::ProhibitAutomaticExportation]
+[-InputOutput::RequireBriefOpen]
+[-Subroutines::RequireArgUnpacking]
+[Variables::RequireLocalizedPunctuationVars]
+allow = %ENV %SIG
+[-Objects::ProhibitIndirectSyntax]
+[TestingAndDebugging::ProhibitProlongedStrictureOverride]
+statements = 10
+[-BuiltinFunctions::RequireBlockGrep]
+[TestingAndDebugging::ProhibitNoWarnings]
+allow = once
+
+# sev 3
+[-ErrorHandling::RequireCarping]
+[-RegularExpressions::RequireExtendedFormatting]
+[-Variables::ProhibitPackageVars]
+[-ControlStructures::ProhibitCascadingIfElse]
+[-Subroutines::ProhibitExcessComplexity]
+[-ValuesAndExpressions::ProhibitImplicitNewlines]
+[-Subroutines::ProhibitManyArgs]
+[-InputOutput::ProhibitBacktickOperators]
+[-BuiltinFunctions::ProhibitLvalueSubstr]
+[-ValuesAndExpressions::RequireQuotedHeredocTerminator]
+[-RegularExpressions::ProhibitComplexRegexes]

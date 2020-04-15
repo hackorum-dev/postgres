@@ -1,3 +1,6 @@
+
+## no critic (ProhibitMultiplePackages)
+
 package VSObjectFactory;
 
 #
@@ -10,16 +13,15 @@ use Carp;
 use strict;
 use warnings;
 
-use Exporter;
+use Exporter qw(import);
 use Project;
 use Solution;
 use MSBuildProject;
 
-our (@ISA, @EXPORT);
-@ISA    = qw(Exporter);
+our (@EXPORT);
 @EXPORT = qw(CreateSolution CreateProject DetermineVisualStudioVersion);
 
-no warnings qw(redefine);    ## no critic
+no warnings qw(redefine);    ## no critic  (ProhibitNoWarnings)
 
 sub CreateSolution
 {

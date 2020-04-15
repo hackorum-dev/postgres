@@ -385,7 +385,7 @@ sub set_replication_conf
 	$self->host eq $test_pghost
 	  or croak "set_replication_conf only works with the default host";
 
-	open my $hba, '>>', "$pgdata/pg_hba.conf";
+	open my $hba, '>>', "$pgdata/pg_hba.conf" || die;
 	print $hba "\n# Allow replication (set up by PostgresNode.pm)\n";
 	if ($TestLib::windows_os && !$TestLib::use_unix_sockets)
 	{
@@ -439,7 +439,7 @@ sub init
 	TestLib::system_or_bail($ENV{PG_REGRESS}, '--config-auth', $pgdata,
 		@{ $params{auth_extra} });
 
-	open my $conf, '>>', "$pgdata/postgresql.conf";
+	open my $conf, '>>', "$pgdata/postgresql.conf" || die;
 	print $conf "\n# Added by PostgresNode.pm\n";
 	print $conf "fsync = off\n";
 	print $conf "restart_after_crash = off\n";
@@ -1254,7 +1254,7 @@ END
 		$node->clean_node if $exit_code == 0 && TestLib::all_tests_passing();
 	}
 
-	$? = $exit_code;
+	$? = $exit_code;  ## no critic (RequireLocalizedPunctuationVars)
 }
 
 =pod
@@ -1462,8 +1462,8 @@ sub psql
 	# https://metacpan.org/pod/release/ETHER/Try-Tiny-0.24/lib/Try/Tiny.pm
 	do
 	{
-		local $@;
-		eval {
+		local $@ = "";
+		eval { ## no critic (RequireCheckingReturnValueOfEval)
 			my @ipcrun_opts = (\@psql_params, '<', \$sql);
 			push @ipcrun_opts, '>',  $stdout if defined $stdout;
 			push @ipcrun_opts, '2>', $stderr if defined $stderr;
@@ -2074,8 +2074,8 @@ sub pg_recvlogical_upto
 
 	do
 	{
-		local $@;
-		eval {
+		local $@ = "";
+		eval { ## no critic (RequireCheckingReturnValueOfEval)
 			IPC::Run::run(\@cmd, ">", \$stdout, "2>", \$stderr, $timeout);
 			$ret = $?;
 		};

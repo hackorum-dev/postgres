@@ -1,3 +1,6 @@
+
+## no critic (ProhibitMultiplePackages,ProhibitUnusedPrivateSubroutines)
+
 package Solution;
 
 #
@@ -10,7 +13,7 @@ use strict;
 use warnings;
 use VSObjectFactory;
 
-no warnings qw(redefine);    ## no critic
+no warnings qw(redefine);    ## no critic  (ProhibitNoWarnings)
 
 sub _new
 {
@@ -157,20 +160,22 @@ sub GenerateFiles
 	  || confess("Could not open configure.in for reading\n");
 	while (<$c>)
 	{
-		if (/^AC_INIT\(\[([^\]]+)\], \[([^\]]+)\], \[([^\]]+)\], \[([^\]]*)\], \[([^\]]+)\]/)
+		if (/^AC_INIT\(\[([^\]]+)\], \[([^\]]+)\], \[([^\]]+)\], \[(?:[^\]]*)\], \[([^\]]+)\]/)
 		{
 			$ac_init_found = 1;
 
 			$package_name      = $1;
 			$package_version   = $2;
 			$package_bugreport = $3;
-			#$package_tarname   = $4;
-			$package_url       = $5;
+			#$package_tarname   = non-capturing-group;
+			$package_url       = $4;
 
 			if ($package_version !~ /^(\d+)(?:\.(\d+))?/)
 			{
 				confess "Bad format of version: $self->{strver}\n";
 			}
+			# perlcritic is a bit stupid here
+			## no critic (ProhibitCaptureWithoutTest)
 			$majorver = sprintf("%d", $1);
 			$minorver = sprintf("%d", $2 ? $2 : 0);
 		}
@@ -519,7 +524,7 @@ sub GenerateFiles
 		my ($digit1, $digit2, $digit3) = $self->GetOpenSSLVersion();
 
 		# More symbols are needed with OpenSSL 1.1.0 and above.
-		if ($digit1 >= '1' && $digit2 >= '1' && $digit3 >= '0')
+		if ($digit1 >= 1 && $digit2 >= 1 && $digit3 >= 0)
 		{
 			$define{HAVE_ASN1_STRING_GET0_DATA} = 1;
 			$define{HAVE_BIO_GET_DATA}          = 1;
@@ -931,7 +936,7 @@ sub AddProject
 		# changed their library names from:
 		# - libeay to libcrypto
 		# - ssleay to libssl
-		if ($digit1 >= '1' && $digit2 >= '1' && $digit3 >= '0')
+		if ($digit1 >= 1 && $digit2 >= 1 && $digit3 >= 0)
 		{
 			my $dbgsuffix;
 			my $libsslpath;
@@ -1166,7 +1171,7 @@ use strict;
 use warnings;
 use base qw(Solution);
 
-no warnings qw(redefine);    ## no critic
+no warnings qw(redefine);    ## no critic  (ProhibitNoWarnings)
 
 sub new
 {
@@ -1194,7 +1199,7 @@ use strict;
 use warnings;
 use base qw(Solution);
 
-no warnings qw(redefine);    ## no critic
+no warnings qw(redefine);    ## no critic  (ProhibitNoWarnings)
 
 sub new
 {
@@ -1222,7 +1227,7 @@ use strict;
 use warnings;
 use base qw(Solution);
 
-no warnings qw(redefine);    ## no critic
+no warnings qw(redefine);    ## no critic  (ProhibitNoWarnings)
 
 sub new
 {
@@ -1250,7 +1255,7 @@ use strict;
 use warnings;
 use base qw(Solution);
 
-no warnings qw(redefine);    ## no critic
+no warnings qw(redefine);    ## no critic  (ProhibitNoWarnings)
 
 sub new
 {

@@ -14,7 +14,21 @@ PERLCRITIC=${PERLCRITIC:-perlcritic}
 
 . src/tools/perlcheck/find_perl_files
 
-find_perl_files | xargs $PERLCRITIC \
+flist=`mktemp`
+find_perl_files > $flist
+
+pattern='src/test/perl/|src/backend/catalog/Catalog.pm|src/tools/msvc/[^/]*.pm'
+
+# normal sev 5 critic
+egrep -v  "$pattern" < $flist | xargs $PERLCRITIC \
 	  --quiet \
 	  --program-extensions .pl \
 	  --profile=src/tools/perlcheck/perlcriticrc
+
+# more strict sev 3 critic for some library files
+egrep  "$pattern" < $flist | xargs $PERLCRITIC --severity 3 \
+	  --quiet \
+	  --program-extensions .pl \
+	  --profile=src/tools/perlcheck/perlcriticrc
+
+rm -f $flist

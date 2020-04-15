@@ -12,9 +12,8 @@ use File::Basename;
 use File::Copy;
 use File::Find ();
 
-use Exporter;
-our (@ISA, @EXPORT_OK);
-@ISA       = qw(Exporter);
+use Exporter qw(import);
+our (@EXPORT_OK);
 @EXPORT_OK = qw(Install);
 
 my $insttype;
@@ -45,7 +44,7 @@ sub lcopy
 
 sub Install
 {
-	$| = 1;
+	STDOUT->autoflush(1);
 
 	my $target = shift;
 	$insttype = shift;
@@ -56,9 +55,8 @@ sub Install
 	our $config = shift;
 	unless ($config)
 	{
-
 		# suppress warning about harmless redeclaration of $config
-		no warnings 'misc';
+		no warnings 'misc'; ## no critic (ProhibitNoWarnings)
 		do "./config_default.pl";
 		do "./config.pl" if (-f "config.pl");
 	}
@@ -158,7 +156,7 @@ sub Install
 		File::Find::find(
 			{
 				wanted => sub {
-					/^(.*--.*\.sql|.*\.control)\z/s
+					/^(?:.*--.*\.sql|.*\.control)\z/s
 					  && push(@$pl_extension_files, $File::Find::name);
 
 					# Don't find files of in-tree temporary installations.

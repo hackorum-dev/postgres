@@ -18,9 +18,8 @@ use Config;
 use VSObjectFactory;
 use List::Util qw(first);
 
-use Exporter;
-our (@ISA, @EXPORT_OK);
-@ISA       = qw(Exporter);
+use Exporter qw(import);
+our (@EXPORT_OK);
 @EXPORT_OK = qw(Mkvcbuild);
 
 my $solution;
@@ -106,9 +105,9 @@ sub mkvcbuild
 	  sprompt.c strerror.c tar.c thread.c
 	  win32env.c win32error.c win32security.c win32setlocale.c);
 
-	push(@pgportfiles, 'strtof.c') if ($vsVersion < '14.00');
+	push(@pgportfiles, 'strtof.c') if ($vsVersion < 14.00);
 
-	if ($vsVersion >= '9.00')
+	if ($vsVersion >= 9.00)
 	{
 		push(@pgportfiles, 'pg_crc32c_sse42_choose.c');
 		push(@pgportfiles, 'pg_crc32c_sse42.c');
@@ -212,7 +211,7 @@ sub mkvcbuild
 	$snowball->RelocateFiles(
 		'src/backend/snowball/libstemmer',
 		sub {
-			return shift !~ /(dict_snowball.c|win32ver.rc)$/;
+			return shift !~ /(?:dict_snowball.c|win32ver.rc)$/;
 		});
 	$snowball->AddIncludeDir('src/include/snowball');
 	$snowball->AddReference($postgres);
@@ -598,6 +597,7 @@ sub mkvcbuild
 			unlink $source_file;
 			open my $o, '>', $source_file
 			  || croak "Could not write to $source_file";
+			## no critic (ProhibitHardTabs)
 			print $o '
 	/* compare to plperl.h */
 	#define __inline__ __inline
@@ -627,6 +627,7 @@ sub mkvcbuild
 		}
 	}
 ';
+			## use critic
 			close $o;
 
 			# Build $source_file with a given #define, and return a true value
@@ -649,8 +650,7 @@ sub mkvcbuild
 
 					# Some builds exhibit runtime failure through Perl warning
 					# 'Can't spawn "conftest.exe"'; suppress that.
-					no warnings;
-
+					no warnings; ## no critic (ProhibitNoWarnings)
 					no strict 'subs'; ## no critic (ProhibitNoStrict)
 
 					# Disable error dialog boxes like we do in the postmaster.
