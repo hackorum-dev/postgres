@@ -1039,7 +1039,7 @@ grow_memtuples(Tuplesortstate *state)
 	 * both old and new arrays as separate chunks.  But we'll check LACKMEM
 	 * explicitly below just in case.)
 	 */
-	if (state->availMem < (int64) ((newmemtupsize - memtupsize) * sizeof(SortTuple)))
+	if (state->availMem < ((int64)(newmemtupsize - memtupsize) * sizeof(SortTuple)))
 		goto noalloc;
 
 	/* OK, do it */
