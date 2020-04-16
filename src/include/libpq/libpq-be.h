@@ -330,6 +330,7 @@ extern void be_tls_get_peer_serial(Port *port, char *ptr, size_t len);
  */
 extern char *be_tls_get_certificate_hash(Port *port, size_t *len);
 
+#if defined(USE_OPENSSL)
 /* init hook for SSL, the default sets the password callback if appropriate */
 #ifdef USE_OPENSSL
 typedef void (*openssl_tls_init_hook_typ) (SSL_CTX *context, bool isServerStart);
