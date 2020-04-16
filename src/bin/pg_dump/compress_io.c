@@ -645,6 +645,13 @@ cfgets(cfp *fp, char *buf, int len)
 		return fgets(buf, len, fp->uncompressedfp);
 }
 
+/*
+ * cfclose close the stream
+ *
+ * Returns 0 if successfully closed the cfp. Most of errors are reported as -1
+ * and errno is set.  Otherwise the return value is the return value from
+ * gzclose and errno doesn't hold a meangful value.
+ */
 int
 cfclose(cfp *fp)
 {
@@ -665,6 +672,11 @@ cfclose(cfp *fp)
 #endif
 	{
 		result = fclose(fp->uncompressedfp);
+
+		/* normalize error return, just in case EOF is not -1 */
+		if (result != 0)
+			result = -1;
+
 		fp->uncompressedfp = NULL;
 	}
 	free_keep_errno(fp);

@@ -108,6 +108,7 @@ void
 InitArchiveFmt_Directory(ArchiveHandle *AH)
 {
 	lclContext *ctx;
+	int			ret;
 
 	/* Assuming static functions, this can be copied for each format. */
 	AH->ArchiveEntryPtr = _ArchiveEntry;
@@ -218,8 +219,14 @@ InitArchiveFmt_Directory(ArchiveHandle *AH)
 		ReadToc(AH);
 
 		/* Nothing else in the file, so close it again... */
-		if (cfclose(tocFH) != 0)
-			fatal("could not close TOC file: %m");
+		ret = cfclose(tocFH);
+		if (ret < 0)
+		{
+			if (ret == -1)
+				fatal("could not close TOC file: %m");
+			else
+				fatal("could not close TOC file: zlib error (%d)", ret);
+		}
 		ctx->dataFH = NULL;
 	}
 }
@@ -378,6 +385,7 @@ _PrintFileData(ArchiveHandle *AH, char *filename)
 	char	   *buf;
 	size_t		buflen;
 	cfp		   *cfp;
+	int			ret;
 
 	if (!filename)
 		return;
@@ -396,8 +404,15 @@ _PrintFileData(ArchiveHandle *AH, char *filename)
 	}
 
 	free(buf);
-	if (cfclose(cfp) !=0)
-		fatal("could not close data file: %m");
+
+	ret = cfclose(cfp);
+	if (ret < 0)
+	{
+		if (ret == -1)
+			fatal("could not close data file: %m");
+		else
+			fatal("could not close data file: zlib error (%d)", ret);
+	}
 }
 
 /*
@@ -429,6 +444,7 @@ _LoadBlobs(ArchiveHandle *AH)
 	lclContext *ctx = (lclContext *) AH->formatData;
 	char		fname[MAXPGPATH];
 	char		line[MAXPGPATH];
+	int			ret;
 
 	StartRestoreBlobs(AH);
 
@@ -460,9 +476,16 @@ _LoadBlobs(ArchiveHandle *AH)
 		fatal("error reading large object TOC file \"%s\"",
 			  fname);
 
-	if (cfclose(ctx->blobsTocFH) != 0)
-		fatal("could not close large object TOC file \"%s\": %m",
-			  fname);
+	ret = cfclose(ctx->blobsTocFH);
+	if (ret < 0)
+	{
+		if (ret == -1)
+			fatal("could not close large object TOC file \"%s\": %m",
+				  fname);
+		else
+			fatal("could not close large object TOC file \"%s\": zlib error (%d)",
+				  fname, ret);
+	}
 
 	ctx->blobsTocFH = NULL;
 
@@ -555,6 +578,7 @@ _CloseArchive(ArchiveHandle *AH)
 	{
 		cfp		   *tocFH;
 		char		fname[MAXPGPATH];
+		int			ret;
 
 		setFilePath(AH, fname, "toc.dat");
 
@@ -576,8 +600,14 @@ _CloseArchive(ArchiveHandle *AH)
 		WriteHead(AH);
 		AH->format = archDirectory;
 		WriteToc(AH);
-		if (cfclose(tocFH) != 0)
-			fatal("could not close TOC file: %m");
+		ret = cfclose(tocFH);
+		if (ret < 0)
+		{
+			if (ret == -1)
+				fatal("could not close TOC file: %m");
+			else
+				fatal("could not close TOC file: zlib error (%d)", ret);
+		}
 		WriteDataChunks(AH, ctx->pstate);
 
 		ParallelBackupEnd(AH, ctx->pstate);
