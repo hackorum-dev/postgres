@@ -1649,11 +1649,14 @@ _bt_split(Relation rel, Relation heaprel, BTScanInsert itup_key, Buffer buf,
 	else
 	{
 		/* existing item at firstrightoff becomes firstright */
-		itemid = PageGetItemId(origpage, firstrightoff);
-		itemsz = ItemIdGetLength(itemid);
-		firstright = (IndexTuple) PageGetItem(origpage, itemid);
+	    itemid = PageGetItemId(origpage, firstrightoff);
+	    itemsz = ItemIdGetLength(itemid);
 		if (firstrightoff == origpagepostingoff)
 			firstright = nposting;
+		else
+		{
+		    firstright = (IndexTuple) PageGetItem(origpage, itemid);
+		}
 	}
 
 	if (isleaf)
@@ -1673,10 +1676,13 @@ _bt_split(Relation rel, Relation heaprel, BTScanInsert itup_key, Buffer buf,
 			/* existing item before firstrightoff becomes lastleft */
 			lastleftoff = OffsetNumberPrev(firstrightoff);
 			Assert(lastleftoff >= P_FIRSTDATAKEY(oopaque));
-			itemid = PageGetItemId(origpage, lastleftoff);
-			lastleft = (IndexTuple) PageGetItem(origpage, itemid);
 			if (lastleftoff == origpagepostingoff)
 				lastleft = nposting;
+			else
+			{
+			    itemid = PageGetItemId(origpage, lastleftoff);
+			    lastleft = (IndexTuple) PageGetItem(origpage, itemid);
+			}
 		}
 
 		lefthighkey = _bt_truncate(rel, lastleft, firstright, itup_key);
