@@ -141,6 +141,8 @@ $node_publisher->safe_psql('postgres',
 	"UPDATE tab1 SET a = 4 WHERE a = 6");
 $node_publisher->safe_psql('postgres',
 	"UPDATE tab1 SET a = 6 WHERE a = 4");
+$node_publisher->safe_psql('postgres',
+	"UPDATE tab1 SET a = 5 WHERE a = 6");
 
 $node_publisher->wait_for_catchup('sub1');
 $node_publisher->wait_for_catchup('sub2');
@@ -150,15 +152,15 @@ $result = $node_subscriber1->safe_psql('postgres',
 is($result, qq(sub1_tab1|0
 sub1_tab1|2
 sub1_tab1|3
-sub1_tab1|6), 'update of tab1_1, tab1_2 replicated');
+sub1_tab1|5), 'update of tab1_1, tab1_2 replicated');
 
 $result = $node_subscriber1->safe_psql('postgres',
 	"SELECT a FROM tab1_2_1 ORDER BY 1");
-is($result, qq(), 'updates of tab1_2 replicated into tab1_2_1 correctly');
+is($result, qq(5), 'updates of tab1_2 replicated into tab1_2_1 correctly');
 
 $result = $node_subscriber1->safe_psql('postgres',
 	"SELECT a FROM tab1_2_2 ORDER BY 1");
-is($result, qq(6), 'updates of tab1_2 replicated into tab1_2_2 correctly');
+is($result, qq(), 'updates of tab1_2 replicated into tab1_2_2 correctly');
 
 $result = $node_subscriber2->safe_psql('postgres',
 	"SELECT c, a FROM tab1_1 ORDER BY 1, 2");
@@ -167,7 +169,7 @@ sub2_tab1_1|3), 'update of tab1_1 replicated');
 
 $result = $node_subscriber2->safe_psql('postgres',
 	"SELECT c, a FROM tab1_2 ORDER BY 1, 2");
-is($result, qq(sub2_tab1_2|6), 'tab1_2 updated');
+is($result, qq(sub2_tab1_2|5), 'tab1_2 updated');
 
 $result = $node_subscriber2->safe_psql('postgres',
 	"SELECT c, a FROM tab1_def ORDER BY 1");
@@ -187,12 +189,11 @@ $result = $node_subscriber1->safe_psql('postgres',
 is($result, qq(sub1_tab1|2
 sub1_tab1|3
 sub1_tab1|4
-sub1_tab1|6), 'update of tab1 (delete from tab1_def + insert into tab1_1) replicated');
+sub1_tab1|5), 'update of tab1 (delete from tab1_def + insert into tab1_1) replicated');
 
 $result = $node_subscriber1->safe_psql('postgres',
 	"SELECT a FROM tab1_2_2 ORDER BY 1");
-is($result, qq(4
-6), 'updates of tab1 (delete + insert) replicated into tab1_2_2 correctly');
+is($result, qq(4), 'updates of tab1 (delete + insert) replicated into tab1_2_2 correctly');
 
 $result = $node_subscriber2->safe_psql('postgres',
 	"SELECT c, a FROM tab1_1 ORDER BY 1, 2");
@@ -202,7 +203,7 @@ sub2_tab1_1|3), 'tab1_1 unchanged');
 $result = $node_subscriber2->safe_psql('postgres',
 	"SELECT c, a FROM tab1_2 ORDER BY 1, 2");
 is($result, qq(sub2_tab1_2|4
-sub2_tab1_2|6), 'insert into tab1_2 replicated');
+sub2_tab1_2|5), 'insert into tab1_2 replicated');
 
 $result = $node_subscriber2->safe_psql('postgres',
 	"SELECT a FROM tab1_def ORDER BY 1");
@@ -267,6 +268,13 @@ is($result, qq(), 'truncate of tab1 replicated');
 # publisher
 $node_publisher->safe_psql('postgres',
 	"DROP PUBLICATION pub1");
+# make tab1_2's tuple description different from its parent
+$node_publisher->safe_psql('postgres',
+	"ALTER TABLE tab1 DETACH PARTITION tab1_2");
+$node_publisher->safe_psql('postgres',
+	"ALTER TABLE tab1_2 DROP b, ADD b text");
+$node_publisher->safe_psql('postgres',
+	"ALTER TABLE tab1 ATTACH PARTITION tab1_2 FOR VALUES IN (4, 5, 6)");
 $node_publisher->safe_psql('postgres',
 	"CREATE TABLE tab2 (a int PRIMARY KEY, b text) PARTITION BY LIST (a)");
 $node_publisher->safe_psql('postgres',
@@ -554,3 +562,7 @@ is($result, qq(), 'truncate of tab3 replicated');
 $result = $node_subscriber2->safe_psql('postgres',
 	"SELECT a FROM tab3_1");
 is($result, qq(), 'truncate of tab3_1 replicated');
+
+$node_publisher->stop('fast');
+$node_subscriber1->stop('fast');
+$node_subscriber2->stop('fast');
