@@ -592,6 +592,7 @@ read_server_first_message(fe_scram_state *state, char *input)
 	char	   *encoded_salt;
 	char	   *nonce;
 	int			decoded_salt_len;
+	int         client_nonce_len;
 
 	state->server_first_message = strdup(input);
 	if (state->server_first_message == NULL)
@@ -611,8 +612,9 @@ read_server_first_message(fe_scram_state *state, char *input)
 	}
 
 	/* Verify immediately that the server used our part of the nonce */
-	if (strlen(nonce) < strlen(state->client_nonce) ||
-		memcmp(nonce, state->client_nonce, strlen(state->client_nonce)) != 0)
+	client_nonce_len = strlen(state->client_nonce);
+	if (strlen(nonce) < client_nonce_len ||
+		memcmp(nonce, state->client_nonce, client_nonce_len) != 0)
 	{
 		printfPQExpBuffer(&conn->errorMessage,
 						  libpq_gettext("invalid SCRAM response (nonce mismatch)\n"));

@@ -1177,8 +1177,9 @@ CreateLockFile(const char *filename, bool amPostmaster,
 		strlcat(buffer, "\n", sizeof(buffer));
 
 	errno = 0;
+	len = strlen(buffer);
 	pgstat_report_wait_start(WAIT_EVENT_LOCK_FILE_CREATE_WRITE);
-	if (write(fd, buffer, strlen(buffer)) != strlen(buffer))
+	if (write(fd, buffer, len) != len)
 	{
 		int			save_errno = errno;
 

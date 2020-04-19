@@ -566,8 +566,8 @@ substitute_libpath_macro(const char *name)
 	if ((sep_ptr = first_dir_separator(name)) == NULL)
 		sep_ptr = name + strlen(name);
 
-	if (strlen("$libdir") != sep_ptr - name ||
-		strncmp(name, "$libdir", strlen("$libdir")) != 0)
+	if ((sizeof("$libdir") - 1) != sep_ptr - name ||
+		strncmp(name, "$libdir", sizeof("$libdir") - 1) != 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_NAME),
 				 errmsg("invalid macro name in dynamic library path: %s",
@@ -594,7 +594,7 @@ find_in_dynamic_libpath(const char *basename)
 	AssertState(Dynamic_library_path != NULL);
 
 	p = Dynamic_library_path;
-	if (strlen(p) == 0)
+	if (p[0] == '\0')
 		return NULL;
 
 	baselen = strlen(basename);

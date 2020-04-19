@@ -325,6 +325,7 @@ find_other_exec(const char *argv0, const char *target,
 {
 	char		cmd[MAXPGPATH];
 	char		line[MAXPGPATH];
+	int         len;
 
 	if (find_my_exec(argv0, retpath) < 0)
 		return -1;
@@ -334,7 +335,8 @@ find_other_exec(const char *argv0, const char *target,
 	canonicalize_path(retpath);
 
 	/* Now append the other program's name */
-	snprintf(retpath + strlen(retpath), MAXPGPATH - strlen(retpath),
+	len = strlen(retpath);
+	snprintf(retpath + len, MAXPGPATH - len,
 			 "/%s%s", target, EXE);
 
 	if (validate_exec(retpath) != 0)

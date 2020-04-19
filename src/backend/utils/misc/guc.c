@@ -10699,9 +10699,14 @@ GUCArrayDelete(ArrayType *array, const char *name)
 	struct config_generic *record;
 	ArrayType  *newarray;
 	int			i;
+	int         len;
 	int			index;
 
 	Assert(name);
+
+	/* if array is currently null, then surely nothing to delete */
+	if (!array)
+		return NULL;
 
 	/* test if the option is valid and we're allowed to set it */
 	(void) validate_option_array_item(name, NULL, false);
@@ -10711,12 +10716,9 @@ GUCArrayDelete(ArrayType *array, const char *name)
 	if (record)
 		name = record->name;
 
-	/* if array is currently null, then surely nothing to delete */
-	if (!array)
-		return NULL;
-
 	newarray = NULL;
 	index = 1;
+	len = strlen(name);
 
 	for (i = 1; i <= ARR_DIMS(array)[0]; i++)
 	{
@@ -10735,8 +10737,8 @@ GUCArrayDelete(ArrayType *array, const char *name)
 		val = TextDatumGetCString(d);
 
 		/* ignore entry if it's what we want to delete */
-		if (strncmp(val, name, strlen(name)) == 0
-			&& val[strlen(name)] == '=')
+		if (strncmp(val, name, len) == 0
+			&& val[len] == '=')
 			continue;
 
 		/* else add it to the output array */

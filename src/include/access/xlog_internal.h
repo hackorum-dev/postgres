@@ -174,8 +174,8 @@ typedef XLogLongPageHeaderData *XLogLongPageHeader;
  * be complete yet.
  */
 #define IsPartialXLogFileName(fname)	\
-	(strlen(fname) == XLOG_FNAME_LEN + strlen(".partial") &&	\
-	 strspn(fname, "0123456789ABCDEF") == XLOG_FNAME_LEN &&		\
+	(strlen(fname) == XLOG_FNAME_LEN + sizeof(".partial") - 1 &&  \
+	 strspn(fname, "0123456789ABCDEF") == XLOG_FNAME_LEN &&	   	  \
 	 strcmp((fname) + XLOG_FNAME_LEN, ".partial") == 0)
 
 #define XLogFromFileName(fname, tli, logSegNo, wal_segsz_bytes)	\
@@ -195,8 +195,8 @@ typedef XLogLongPageHeaderData *XLogLongPageHeader;
 	snprintf(fname, MAXFNAMELEN, "%08X.history", tli)
 
 #define IsTLHistoryFileName(fname)	\
-	(strlen(fname) == 8 + strlen(".history") &&		\
-	 strspn(fname, "0123456789ABCDEF") == 8 &&		\
+	(strlen(fname) == 8 + sizeof(".history") - 1 &&		\
+	 strspn(fname, "0123456789ABCDEF") == 8 &&		    \
 	 strcmp((fname) + 8, ".history") == 0)
 
 #define TLHistoryFilePath(path, tli)	\
@@ -214,7 +214,7 @@ typedef XLogLongPageHeaderData *XLogLongPageHeader;
 #define IsBackupHistoryFileName(fname) \
 	(strlen(fname) > XLOG_FNAME_LEN && \
 	 strspn(fname, "0123456789ABCDEF") == XLOG_FNAME_LEN && \
-	 strcmp((fname) + strlen(fname) - strlen(".backup"), ".backup") == 0)
+	 strcmp((fname) + strlen(fname) - sizeof(".backup") - 1, ".backup") == 0)
 
 #define BackupHistoryFilePath(path, tli, logSegNo, startpoint, wal_segsz_bytes)	\
 	snprintf(path, MAXPGPATH, XLOGDIR "/%08X%08X%08X.%08X.backup", tli, \

@@ -232,8 +232,11 @@ join_path_components(char *ret_path,
 
 	if (*tail)
 	{
+		int     len;
+
 		/* only separate with slash if head wasn't empty */
-		snprintf(ret_path + strlen(ret_path), MAXPGPATH - strlen(ret_path),
+		len = strlen(ret_path);
+		snprintf(ret_path + len, MAXPGPATH - len,
 				 "%s%s",
 				 (*(skip_drive(head)) != '\0') ? "/" : "",
 				 tail);

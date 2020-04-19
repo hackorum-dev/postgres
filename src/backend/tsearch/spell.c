@@ -1225,35 +1225,35 @@ NIImportOOAffixes(IspellDict *Conf, const char *filename)
 		}
 
 		if (STRNCMP(recoded, "COMPOUNDFLAG") == 0)
-			addCompoundAffixFlagValue(Conf, recoded + strlen("COMPOUNDFLAG"),
+			addCompoundAffixFlagValue(Conf, recoded + sizeof("COMPOUNDFLAG") - 1,
 									  FF_COMPOUNDFLAG);
 		else if (STRNCMP(recoded, "COMPOUNDBEGIN") == 0)
-			addCompoundAffixFlagValue(Conf, recoded + strlen("COMPOUNDBEGIN"),
+			addCompoundAffixFlagValue(Conf, recoded + sizeof("COMPOUNDBEGIN") - 1,
 									  FF_COMPOUNDBEGIN);
 		else if (STRNCMP(recoded, "COMPOUNDLAST") == 0)
-			addCompoundAffixFlagValue(Conf, recoded + strlen("COMPOUNDLAST"),
+			addCompoundAffixFlagValue(Conf, recoded + sizeof("COMPOUNDLAST") - 1,
 									  FF_COMPOUNDLAST);
 		/* COMPOUNDLAST and COMPOUNDEND are synonyms */
 		else if (STRNCMP(recoded, "COMPOUNDEND") == 0)
-			addCompoundAffixFlagValue(Conf, recoded + strlen("COMPOUNDEND"),
+			addCompoundAffixFlagValue(Conf, recoded + sizeof("COMPOUNDEND") - 1,
 									  FF_COMPOUNDLAST);
 		else if (STRNCMP(recoded, "COMPOUNDMIDDLE") == 0)
-			addCompoundAffixFlagValue(Conf, recoded + strlen("COMPOUNDMIDDLE"),
+			addCompoundAffixFlagValue(Conf, recoded + sizeof("COMPOUNDMIDDLE") - 1,
 									  FF_COMPOUNDMIDDLE);
 		else if (STRNCMP(recoded, "ONLYINCOMPOUND") == 0)
-			addCompoundAffixFlagValue(Conf, recoded + strlen("ONLYINCOMPOUND"),
+			addCompoundAffixFlagValue(Conf, recoded + sizeof("ONLYINCOMPOUND") - 1,
 									  FF_COMPOUNDONLY);
 		else if (STRNCMP(recoded, "COMPOUNDPERMITFLAG") == 0)
 			addCompoundAffixFlagValue(Conf,
-									  recoded + strlen("COMPOUNDPERMITFLAG"),
+									  recoded + sizeof("COMPOUNDPERMITFLAG") - 1,
 									  FF_COMPOUNDPERMITFLAG);
 		else if (STRNCMP(recoded, "COMPOUNDFORBIDFLAG") == 0)
 			addCompoundAffixFlagValue(Conf,
-									  recoded + strlen("COMPOUNDFORBIDFLAG"),
+									  recoded + sizeof("COMPOUNDFORBIDFLAG") - 1,
 									  FF_COMPOUNDFORBIDFLAG);
 		else if (STRNCMP(recoded, "FLAG") == 0)
 		{
-			char	   *s = recoded + strlen("FLAG");
+			char	   *s = recoded + sizeof("FLAG") - 1;
 
 			while (*s && t_isspace(s))
 				s += pg_mblen(s);

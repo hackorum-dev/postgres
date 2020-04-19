@@ -2369,11 +2369,12 @@ ChooseIndexColumnNames(List *indexElems)
 
 	foreach(lc, indexElems)
 	{
+		char		buf[NAMEDATALEN];
 		IndexElem  *ielem = (IndexElem *) lfirst(lc);
 		const char *origname;
 		const char *curname;
 		int			i;
-		char		buf[NAMEDATALEN];
+		int         origlen;
 
 		/* Get the preliminary name from the IndexElem */
 		if (ielem->indexcolname)
@@ -2384,6 +2385,7 @@ ChooseIndexColumnNames(List *indexElems)
 			origname = "expr";	/* default name for expression */
 
 		/* If it conflicts with any previous column, tweak it */
+		origlen = strlen(origname);
 		curname = origname;
 		for (i = 1;; i++)
 		{
@@ -2399,11 +2401,11 @@ ChooseIndexColumnNames(List *indexElems)
 			if (lc2 == NULL)
 				break;			/* found nonconflicting name */
 
-			sprintf(nbuf, "%d", i);
+			nlen = sprintf(nbuf, "%d", i);
 
 			/* Ensure generated names are shorter than NAMEDATALEN */
-			nlen = pg_mbcliplen(origname, strlen(origname),
-								NAMEDATALEN - 1 - strlen(nbuf));
+			nlen = pg_mbcliplen(origname, origlen,
+								NAMEDATALEN - 1 - nlen);
 			memcpy(buf, origname, nlen);
 			strcpy(buf + nlen, nbuf);
 			curname = buf;

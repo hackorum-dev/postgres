@@ -320,7 +320,7 @@ fsync_parent_path(const char *fname)
 	 * just a file name (see comments in path.c), so handle that as being the
 	 * current directory.
 	 */
-	if (strlen(parentpath) == 0)
+	if (parentpath[0] == '\0')
 		strlcpy(parentpath, ".", MAXPGPATH);
 
 	if (fsync_fname(parentpath, true) != 0)

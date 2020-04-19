@@ -152,7 +152,7 @@ CreateComments(Oid oid, Oid classoid, int32 subid, const char *comment)
 	int			i;
 
 	/* Reduce empty-string to NULL case */
-	if (comment != NULL && strlen(comment) == 0)
+	if (comment != NULL && comment[0] == '\0')
 		comment = NULL;
 
 	/* Prepare to form or update a tuple, if necessary */
@@ -247,7 +247,7 @@ CreateSharedComments(Oid oid, Oid classoid, const char *comment)
 	int			i;
 
 	/* Reduce empty-string to NULL case */
-	if (comment != NULL && strlen(comment) == 0)
+	if (comment != NULL && comment[0] == '\0')
 		comment = NULL;
 
 	/* Prepare to form or update a tuple, if necessary */

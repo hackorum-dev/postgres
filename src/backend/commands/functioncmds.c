@@ -907,7 +907,7 @@ interpret_AS_clause(Oid languageOid, const char *languageName,
 			 * modicum of backwards compatibility, accept an empty "prosrc"
 			 * value as meaning the supplied SQL function name.
 			 */
-			if (strlen(*prosrc_str_p) == 0)
+			if (**prosrc_str_p == '\0')
 				*prosrc_str_p = funcname;
 		}
 	}

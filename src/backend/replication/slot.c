@@ -174,8 +174,10 @@ bool
 ReplicationSlotValidateName(const char *name, int elevel)
 {
 	const char *cp;
+	int        len;
 
-	if (strlen(name) == 0)
+    len = strlen(name);
+	if (len == 0)
 	{
 		ereport(elevel,
 				(errcode(ERRCODE_INVALID_NAME),
@@ -184,7 +186,7 @@ ReplicationSlotValidateName(const char *name, int elevel)
 		return false;
 	}
 
-	if (strlen(name) >= NAMEDATALEN)
+	if (len >= NAMEDATALEN)
 	{
 		ereport(elevel,
 				(errcode(ERRCODE_NAME_TOO_LONG),

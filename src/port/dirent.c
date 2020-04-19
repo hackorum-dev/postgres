@@ -34,6 +34,7 @@ opendir(const char *dirname)
 {
 	DWORD		attr;
 	DIR		   *d;
+	int         len;
 
 	/* Make sure it is a directory */
 	attr = GetFileAttributes(dirname);
@@ -61,9 +62,9 @@ opendir(const char *dirname)
 		free(d);
 		return NULL;
 	}
-	strcpy(d->dirname, dirname);
-	if (d->dirname[strlen(d->dirname) - 1] != '/' &&
-		d->dirname[strlen(d->dirname) - 1] != '\\')
+	len = sprintf(d->dirname, "%s", dirname);
+	if (d->dirname[len - 1] != '/' &&
+		d->dirname[len - 1] != '\\')
 		strcat(d->dirname, "\\");	/* Append backslash if not already there */
 	strcat(d->dirname, "*");	/* Search for entries named anything */
 	d->handle = INVALID_HANDLE_VALUE;

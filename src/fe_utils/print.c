@@ -246,6 +246,7 @@ format_numeric_locale(const char *my_str)
 	char	   *new_str;
 	int			new_len,
 				int_len,
+				len,
 				leading_digits,
 				i,
 				new_str_pos;
@@ -275,13 +276,14 @@ format_numeric_locale(const char *my_str)
 	}
 
 	/* process integer part of number */
+	len = strlen(thousands_sep);
 	for (i = 0; i < int_len; i++)
 	{
 		/* Time to insert separator? */
 		if (i > 0 && --leading_digits == 0)
 		{
 			strcpy(&new_str[new_str_pos], thousands_sep);
-			new_str_pos += strlen(thousands_sep);
+			new_str_pos += len;
 			leading_digits = groupdigits;
 		}
 		new_str[new_str_pos++] = my_str[i];

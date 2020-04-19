@@ -300,11 +300,11 @@ libpqrcv_get_senderinfo(WalReceiverConn *conn, char **sender_host,
 	Assert(conn->streamConn != NULL);
 
 	ret = PQhost(conn->streamConn);
-	if (ret && strlen(ret) != 0)
+	if (ret && ret[0] != '\0')
 		*sender_host = pstrdup(ret);
 
 	ret = PQport(conn->streamConn);
-	if (ret && strlen(ret) != 0)
+	if (ret && ret[0] != '\0')
 		*sender_port = atoi(ret);
 }
 

@@ -1705,7 +1705,7 @@ connectFailureMessage(PGconn *conn, int errorno)
 		 * looked-up IP address.
 		 */
 		if (conn->connhost[conn->whichhost].type != CHT_HOST_ADDRESS &&
-			strlen(host_addr) > 0 &&
+			host_addr[0] != '\0' &&
 			strcmp(displayed_host, host_addr) != 0)
 			appendPQExpBuffer(&conn->errorMessage,
 							  libpq_gettext("could not connect to server: %s\n"
@@ -2529,7 +2529,7 @@ keep_going:						/* We will come back to here until there is
 					}
 
 					getHostaddr(conn, host_addr, NI_MAXHOST);
-					if (strlen(host_addr) > 0)
+					if (host_addr[0] != '\0')
 						conn->connip = strdup(host_addr);
 
 					/*
@@ -5164,8 +5164,9 @@ parseServiceFile(const char *serviceFile,
 				return 0;
 			}
 
-			if (strncmp(line + 1, service, strlen(service)) == 0 &&
-				line[strlen(service) + 1] == ']')
+            len = strlen(service);
+			if (strncmp(line + 1, service, len) == 0 &&
+				line[len + 1] == ']')
 				*group_found = true;
 			else
 				*group_found = false;
@@ -7129,7 +7130,7 @@ sslVerifyProtocolVersion(const char *version)
 	 * An empty string and a NULL value are considered valid as it is
 	 * equivalent to ignoring the parameter.
 	 */
-	if (!version || strlen(version) == 0)
+	if (!version || version[0] == '\0')
 		return true;
 
 	if (pg_strcasecmp(version, "TLSv1") == 0 ||
@@ -7155,7 +7156,7 @@ sslVerifyProtocolRange(const char *min, const char *max)
 		   sslVerifyProtocolVersion(max));
 
 	/* If at least one of the bounds is not set, the range is valid */
-	if (min == NULL || max == NULL || strlen(min) == 0 || strlen(max) == 0)
+	if (min == NULL || max == NULL || min[0] == '\0' || max[0] == '\0')
 		return true;
 
 	/*

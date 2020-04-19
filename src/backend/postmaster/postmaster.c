@@ -571,6 +571,7 @@ PostmasterMain(int argc, char *argv[])
 	char	   *userDoption = NULL;
 	bool		listen_addr_saved = false;
 	int			i;
+	int         len;
 	char	   *output_config_variable = NULL;
 
 	InitProcessGlobals();
@@ -759,8 +760,9 @@ PostmasterMain(int argc, char *argv[])
 
 			case 'o':
 				/* Other options to pass to the backend on the command line */
-				snprintf(ExtraOptions + strlen(ExtraOptions),
-						 sizeof(ExtraOptions) - strlen(ExtraOptions),
+				len = strlen(ExtraOptions);
+				snprintf(ExtraOptions + len,
+						 sizeof(ExtraOptions) - len,
 						 " %s", optarg);
 				break;
 

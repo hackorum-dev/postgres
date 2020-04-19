@@ -283,11 +283,10 @@ dsm_cleanup_for_mmap(void)
 
 	/* Scan the directory for something with a name of the correct format. */
 	dir = AllocateDir(PG_DYNSHMEM_DIR);
-
 	while ((dent = ReadDir(dir, PG_DYNSHMEM_DIR)) != NULL)
 	{
-		if (strncmp(dent->d_name, PG_DYNSHMEM_MMAP_FILE_PREFIX,
-					strlen(PG_DYNSHMEM_MMAP_FILE_PREFIX)) == 0)
+		if (strncmp(dent->d_name, PG_DYNSHMEM_MMAP_FILE_PREFIX,	
+		       (sizeof(PG_DYNSHMEM_MMAP_FILE_PREFIX) - 1)) == 0)
 		{
 			char		buf[MAXPGPATH + sizeof(PG_DYNSHMEM_DIR)];
 
