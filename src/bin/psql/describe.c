@@ -2936,10 +2936,27 @@ describeOneTableDetails(const char *schemaname,
 		PGresult   *result;
 		int			tuples;
 
-		printfPQExpBuffer(&buf,
+		if (pset.sversion >= 130000)
+		{
+			printfPQExpBuffer(&buf,
+						  "SELECT t.tgname, "
+						  "pg_catalog.pg_get_triggerdef(COALESCE(u.oid, t.oid), true), "
+						  "t.tgenabled, t.tgisinternal, a.relid AS othertable\n"
+						  "FROM pg_catalog.pg_trigger t LEFT JOIN\n"
+						  "pg_catalog.pg_partition_ancestors(t.tgrelid) AS a\n"
+						  "ON true LEFT JOIN\n"
+						  "pg_catalog.pg_trigger AS u ON\n"
+						  "u.tgname = t.tgname AND u.tgrelid = a.relid\n"
+						  "WHERE t.tgrelid = '%s' AND "
+						  "(u.tgparentid = 0 OR a.relid IS NULL) AND \n",
+						  oid);
+		}
+		else
+		{
+			printfPQExpBuffer(&buf,
 						  "SELECT t.tgname, "
 						  "pg_catalog.pg_get_triggerdef(t.oid%s), "
-						  "t.tgenabled, %s, %s\n"
+						  "t.tgenabled, %s, NULL AS parent\n"
 						  "FROM pg_catalog.pg_trigger t\n"
 						  "WHERE t.tgrelid = '%s' AND ",
 						  (pset.sversion >= 90000 ? ", true" : ""),
@@ -2947,14 +2964,9 @@ describeOneTableDetails(const char *schemaname,
 						   pset.sversion >= 80300 ?
 						   "t.tgconstraint <> 0 AS tgisinternal" :
 						   "false AS tgisinternal"),
-						  (pset.sversion >= 130000 ? "\n"
-						   "  (SELECT (NULLIF(a.relid, t.tgrelid))::pg_catalog.regclass\n"
-						   "   FROM pg_catalog.pg_trigger AS u,\n"
-						   "   pg_catalog.pg_partition_ancestors(t.tgrelid) AS a\n"
-						   "   WHERE u.tgname = t.tgname AND u.tgrelid = a.relid\n"
-						   "        AND u.tgparentid = 0) AS parent" :
-						   "NULL AS parent"),
 						  oid);
+		}
+
 		if (pset.sversion >= 110000)
 			appendPQExpBufferStr(&buf, "(NOT t.tgisinternal OR (t.tgisinternal AND t.tgenabled = 'D') \n"
 								 "    OR EXISTS (SELECT 1 FROM pg_catalog.pg_depend WHERE objid = t.oid \n"
@@ -3069,12 +3081,12 @@ describeOneTableDetails(const char *schemaname,
 					if (usingpos)
 						tgdef = usingpos + 9;
 
-					printfPQExpBuffer(&buf, "    %s", tgdef);
-
-					/* Visually distinguish inherited triggers */
-					if (!PQgetisnull(result, i, 4))
-						appendPQExpBuffer(&buf, ", ON TABLE \"%s\"",
-								PQgetvalue(result, i, 4));
+					if (PQgetisnull(result, i, 4))
+						printfPQExpBuffer(&buf, "    %s", tgdef);
+					else
+						/* Visually distinguish inherited triggers */
+						printfPQExpBuffer(&buf, "    TABLE \"%s\" TRIGGER %s",
+								PQgetvalue(result, i, 4), tgdef);
 
 					printTableAddFooter(&cont, buf.data);
 				}
