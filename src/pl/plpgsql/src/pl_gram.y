@@ -527,8 +527,7 @@ decl_statement	: decl_varname decl_const decl_datatype decl_collate decl_notnull
 						}
 
 						var = plpgsql_build_variable($1.name, $1.lineno,
-													 $3, true);
-						var->isconst = $2;
+													 $3, true, $2);
 						var->notnull = $5;
 						var->default_val = $6;
 
@@ -567,7 +566,7 @@ decl_statement	: decl_varname decl_const decl_datatype decl_collate decl_notnull
 																		  -1,
 																		  InvalidOid,
 																		  NULL),
-												   true);
+												   true, false);
 
 						new->cursor_explicit_expr = $7;
 						if ($5 == NULL)
@@ -647,7 +646,7 @@ decl_cursor_arg : decl_varname decl_datatype
 					{
 						$$ = (PLpgSQL_datum *)
 							plpgsql_build_variable($1.name, $1.lineno,
-												   $2, true);
+												   $2, true, false);
 					}
 				;
 
@@ -1545,7 +1544,7 @@ for_control		: for_variable K_IN
 																				  -1,
 																				  InvalidOid,
 																				  NULL),
-														   true);
+														   true, true);
 
 								new = palloc0_object(PLpgSQL_stmt_fori);
 								new->cmd_type = PLPGSQL_STMT_FORI;
@@ -2339,7 +2338,7 @@ exception_sect	:
 																			-1,
 																			plpgsql_curr_compile->fn_input_collation,
 																			NULL),
-													 true);
+													 true, true);
 						var->isconst = true;
 						new->sqlstate_varno = var->dno;
 
@@ -2348,7 +2347,7 @@ exception_sect	:
 																			-1,
 																			plpgsql_curr_compile->fn_input_collation,
 																			NULL),
-													 true);
+													 true, true);
 						var->isconst = true;
 						new->sqlerrm_varno = var->dno;
 
@@ -4226,7 +4225,7 @@ make_case(int location, PLpgSQL_expr *t_expr,
 														  -1,
 														  InvalidOid,
 														  NULL),
-								   true);
+								   true, true);
 		new->t_varno = t_var->dno;
 
 		foreach(l, case_when_list)

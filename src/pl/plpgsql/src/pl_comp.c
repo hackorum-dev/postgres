@@ -340,7 +340,7 @@ plpgsql_compile_callback(FunctionCallInfo fcinfo,
 				argvariable = plpgsql_build_variable((argnames &&
 													  argnames[i][0] != '\0') ?
 													 argnames[i] : buf,
-													 0, argdtype, false);
+													 0, argdtype, false, false);
 
 				if (argvariable->dtype == PLPGSQL_DTYPE_VAR)
 				{
@@ -478,7 +478,7 @@ plpgsql_compile_callback(FunctionCallInfo fcinfo,
 															 -1,
 															 function->fn_input_collation,
 															 NULL),
-											  true);
+											  true, true);
 			}
 
 			ReleaseSysCache(typeTup);
@@ -513,7 +513,7 @@ plpgsql_compile_callback(FunctionCallInfo fcinfo,
 																-1,
 																function->fn_input_collation,
 																NULL),
-										 true);
+										 true, true);
 			Assert(var->dtype == PLPGSQL_DTYPE_VAR);
 			var->dtype = PLPGSQL_DTYPE_PROMISE;
 			((PLpgSQL_var *) var)->promise = PLPGSQL_PROMISE_TG_NAME;
@@ -524,7 +524,7 @@ plpgsql_compile_callback(FunctionCallInfo fcinfo,
 																-1,
 																function->fn_input_collation,
 																NULL),
-										 true);
+										 true, true);
 			Assert(var->dtype == PLPGSQL_DTYPE_VAR);
 			var->dtype = PLPGSQL_DTYPE_PROMISE;
 			((PLpgSQL_var *) var)->promise = PLPGSQL_PROMISE_TG_WHEN;
@@ -535,7 +535,7 @@ plpgsql_compile_callback(FunctionCallInfo fcinfo,
 																-1,
 																function->fn_input_collation,
 																NULL),
-										 true);
+										 true, true);
 			Assert(var->dtype == PLPGSQL_DTYPE_VAR);
 			var->dtype = PLPGSQL_DTYPE_PROMISE;
 			((PLpgSQL_var *) var)->promise = PLPGSQL_PROMISE_TG_LEVEL;
@@ -546,7 +546,7 @@ plpgsql_compile_callback(FunctionCallInfo fcinfo,
 																-1,
 																function->fn_input_collation,
 																NULL),
-										 true);
+										 true, true);
 			Assert(var->dtype == PLPGSQL_DTYPE_VAR);
 			var->dtype = PLPGSQL_DTYPE_PROMISE;
 			((PLpgSQL_var *) var)->promise = PLPGSQL_PROMISE_TG_OP;
@@ -557,7 +557,7 @@ plpgsql_compile_callback(FunctionCallInfo fcinfo,
 																-1,
 																InvalidOid,
 																NULL),
-										 true);
+										 true, true);
 			Assert(var->dtype == PLPGSQL_DTYPE_VAR);
 			var->dtype = PLPGSQL_DTYPE_PROMISE;
 			((PLpgSQL_var *) var)->promise = PLPGSQL_PROMISE_TG_RELID;
@@ -568,7 +568,7 @@ plpgsql_compile_callback(FunctionCallInfo fcinfo,
 																-1,
 																function->fn_input_collation,
 																NULL),
-										 true);
+										 true, true);
 			Assert(var->dtype == PLPGSQL_DTYPE_VAR);
 			var->dtype = PLPGSQL_DTYPE_PROMISE;
 			((PLpgSQL_var *) var)->promise = PLPGSQL_PROMISE_TG_TABLE_NAME;
@@ -579,7 +579,7 @@ plpgsql_compile_callback(FunctionCallInfo fcinfo,
 																-1,
 																function->fn_input_collation,
 																NULL),
-										 true);
+										 true, true);
 			Assert(var->dtype == PLPGSQL_DTYPE_VAR);
 			var->dtype = PLPGSQL_DTYPE_PROMISE;
 			((PLpgSQL_var *) var)->promise = PLPGSQL_PROMISE_TG_TABLE_NAME;
@@ -590,7 +590,7 @@ plpgsql_compile_callback(FunctionCallInfo fcinfo,
 																-1,
 																function->fn_input_collation,
 																NULL),
-										 true);
+										 true, true);
 			Assert(var->dtype == PLPGSQL_DTYPE_VAR);
 			var->dtype = PLPGSQL_DTYPE_PROMISE;
 			((PLpgSQL_var *) var)->promise = PLPGSQL_PROMISE_TG_TABLE_SCHEMA;
@@ -601,7 +601,7 @@ plpgsql_compile_callback(FunctionCallInfo fcinfo,
 																-1,
 																InvalidOid,
 																NULL),
-										 true);
+										 true, true);
 			Assert(var->dtype == PLPGSQL_DTYPE_VAR);
 			var->dtype = PLPGSQL_DTYPE_PROMISE;
 			((PLpgSQL_var *) var)->promise = PLPGSQL_PROMISE_TG_NARGS;
@@ -612,7 +612,7 @@ plpgsql_compile_callback(FunctionCallInfo fcinfo,
 																-1,
 																function->fn_input_collation,
 																NULL),
-										 true);
+										 true, true);
 			Assert(var->dtype == PLPGSQL_DTYPE_VAR);
 			var->dtype = PLPGSQL_DTYPE_PROMISE;
 			((PLpgSQL_var *) var)->promise = PLPGSQL_PROMISE_TG_ARGV;
@@ -638,7 +638,7 @@ plpgsql_compile_callback(FunctionCallInfo fcinfo,
 																-1,
 																function->fn_input_collation,
 																NULL),
-										 true);
+										 true, true);
 			Assert(var->dtype == PLPGSQL_DTYPE_VAR);
 			var->dtype = PLPGSQL_DTYPE_PROMISE;
 			((PLpgSQL_var *) var)->promise = PLPGSQL_PROMISE_TG_EVENT;
@@ -649,7 +649,7 @@ plpgsql_compile_callback(FunctionCallInfo fcinfo,
 																-1,
 																function->fn_input_collation,
 																NULL),
-										 true);
+										 true, true);
 			Assert(var->dtype == PLPGSQL_DTYPE_VAR);
 			var->dtype = PLPGSQL_DTYPE_PROMISE;
 			((PLpgSQL_var *) var)->promise = PLPGSQL_PROMISE_TG_TAG;
@@ -673,7 +673,7 @@ plpgsql_compile_callback(FunctionCallInfo fcinfo,
 														-1,
 														InvalidOid,
 														NULL),
-								 true);
+								 true, true);
 	function->found_varno = var->dno;
 
 	/*
@@ -833,7 +833,7 @@ plpgsql_compile_inline(char *proc_source)
 														-1,
 														InvalidOid,
 														NULL),
-								 true);
+								 true, true);
 	function->found_varno = var->dno;
 
 	/*
@@ -1765,7 +1765,7 @@ plpgsql_parse_cwordrowtype(List *idents)
  */
 PLpgSQL_variable *
 plpgsql_build_variable(const char *refname, int lineno, PLpgSQL_type *dtype,
-					   bool add2namespace)
+					   bool add2namespace, bool isconst)
 {
 	PLpgSQL_variable *result;
 
@@ -1819,6 +1819,8 @@ plpgsql_build_variable(const char *refname, int lineno, PLpgSQL_type *dtype,
 			result = NULL;		/* keep compiler quiet */
 			break;
 	}
+
+	result->isconst = isconst;
 
 	return result;
 }
