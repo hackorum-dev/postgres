@@ -1241,7 +1241,8 @@ extern PGDLLEXPORT PLpgSQL_type *plpgsql_build_datatype(Oid typeOid, int32 typmo
 extern PLpgSQL_type *plpgsql_build_datatype_arrayof(PLpgSQL_type *dtype);
 extern PLpgSQL_variable *plpgsql_build_variable(const char *refname, int lineno,
 												PLpgSQL_type *dtype,
-												bool add2namespace);
+												bool add2namespace,
+												bool isconst);
 extern PLpgSQL_rec *plpgsql_build_record(const char *refname, int lineno,
 										 PLpgSQL_type *dtype, Oid rectypeid,
 										 bool add2namespace);
