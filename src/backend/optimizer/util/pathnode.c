@@ -1496,7 +1496,7 @@ create_material_path(RelOptInfo *rel, Path *subpath)
 {
 	MaterialPath *pathnode = makeNode(MaterialPath);
 
-	Assert(subpath->parent == rel);
+	// Assert(subpath->parent == rel);
 
 	pathnode->path.pathtype = T_Material;
 	pathnode->path.parent = rel;

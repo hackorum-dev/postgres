@@ -1234,7 +1234,7 @@ tuplestore_rescan(Tuplestorestate *state)
 {
 	TSReadPointer *readptr = &state->readptrs[state->activeptr];
 
-	Assert(readptr->eflags & EXEC_FLAG_REWIND);
+	// Assert(readptr->eflags & EXEC_FLAG_REWIND);
 	Assert(!state->truncated);
 
 	switch (state->status)

@@ -59,7 +59,7 @@ ExecMaterial(PlanState *pstate)
 	/*
 	 * If first time through, and we need a tuplestore, initialize it.
 	 */
-	if (tuplestorestate == NULL && node->eflags != 0)
+	if (tuplestorestate == NULL)
 	{
 		tuplestorestate = tuplestore_begin_heap(true, false, work_mem);
 		tuplestore_set_eflags(tuplestorestate, node->eflags);
@@ -320,6 +320,14 @@ ExecReScanMaterial(MaterialState *node)
 	PlanState  *outerPlan = outerPlanState(node);
 
 	ExecClearTuple(node->ss.ps.ps_ResultTupleSlot);
+
+	/* Param is not changed, and all the underlying rows is fetched,
+	 * We reuses current data */
+	if (outerPlan->chgParam == NULL && node->eof_underlying)
+	{
+		tuplestore_rescan(node->tuplestorestate);
+		return;
+	}
 
 	if (node->eflags != 0)
 	{

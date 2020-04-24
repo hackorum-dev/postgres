@@ -288,7 +288,7 @@ ExecScanSubPlan(SubPlanState *node,
 		prm->value = ExecEvalExprSwitchContext((ExprState *) lfirst(pvar),
 											   econtext,
 											   &(prm->isnull));
-		planstate->chgParam = bms_add_member(planstate->chgParam, paramid);
+		// planstate->chgParam = bms_add_member(planstate->chgParam, paramid);
 	}
 
 	/*

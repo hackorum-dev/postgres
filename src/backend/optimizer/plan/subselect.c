@@ -23,6 +23,7 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
+#include "nodes/bitmapset.h"
 #include "optimizer/clauses.h"
 #include "optimizer/cost.h"
 #include "optimizer/optimizer.h"
@@ -231,6 +232,9 @@ make_subplan(PlannerInfo *root, Query *orig_subquery,
 	 */
 	final_rel = fetch_upper_rel(subroot, UPPERREL_FINAL, NULL);
 	best_path = get_cheapest_fractional_path(final_rel, tuple_fraction);
+
+	if (linitial_node(RangeTblEntry, root->parse->rtable)->relid == 25634)
+		best_path = (Path *) create_material_path(final_rel, best_path);
 
 	plan = create_plan(subroot, best_path);
 
