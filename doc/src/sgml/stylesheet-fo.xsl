@@ -10,6 +10,8 @@
 <xsl:import href="http://docbook.sourceforge.net/release/xsl/current/fo/docbook.xsl"/>
 <xsl:include href="stylesheet-common.xsl" />
 
+<xsl:param name="body.font.family">DejaVu Serif</xsl:param>
+
 <xsl:param name="fop1.extensions" select="1"></xsl:param>
 <xsl:param name="tablecolumns.extension" select="0"></xsl:param>
 <xsl:param name="toc.max.depth">3</xsl:param>
