@@ -35,6 +35,7 @@ endif
 ifndef FOP
 FOP = $(missing) fop
 endif
+FOP += -c $(srcdir)/fop.xml
 
 PANDOC = pandoc
 
