@@ -5961,7 +5961,6 @@ make_partial_grouping_target(PlannerInfo *root,
 	 */
 	non_group_exprs = pull_var_clause((Node *) non_group_cols,
 									  PVC_INCLUDE_AGGREGATES |
-									  PVC_RECURSE_WINDOWFUNCS |
 									  PVC_INCLUDE_PLACEHOLDERS);
 
 	add_new_columns_to_pathtarget(partial_target, non_group_exprs);
