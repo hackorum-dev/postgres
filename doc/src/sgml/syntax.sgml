@@ -230,7 +230,7 @@ UPDATE "my_table" SET "a" = 5;
 U&amp;"d\0061t\+000061"
 </programlisting>
     The following less trivial example writes the Russian
-    word <quote>slon</quote> (elephant) in Cyrillic letters:
+    word <quote>слон</quote>/<quote>slon</quote> (elephant) in Cyrillic letters:
 <programlisting>
 U&amp;"\0441\043B\043E\043D"
 </programlisting>
@@ -470,7 +470,7 @@ SELECT 'foo'      'bar';
 U&amp;'d\0061t\+000061'
 </programlisting>
      The following less trivial example writes the Russian
-     word <quote>slon</quote> (elephant) in Cyrillic letters:
+     word <quote>слон</quote>/<quote>slon</quote> (elephant) in Cyrillic letters:
 <programlisting>
 U&amp;'\0441\043B\043E\043D'
 </programlisting>
