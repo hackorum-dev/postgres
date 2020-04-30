@@ -25,11 +25,9 @@
 
 static void make_rels_by_clause_joins(PlannerInfo *root,
 									  RelOptInfo *old_rel,
-									  List *other_rels_list,
 									  ListCell *other_rels);
 static void make_rels_by_clauseless_joins(PlannerInfo *root,
-										  RelOptInfo *old_rel,
-										  List *other_rels);
+										  RelOptInfo *old_rel);
 static bool has_join_restriction(PlannerInfo *root, RelOptInfo *rel);
 static bool has_legal_joinclause(PlannerInfo *root, RelOptInfo *rel);
 static bool restriction_is_constant_false(List *restrictlist,
@@ -106,23 +104,15 @@ join_search_one_level(PlannerInfo *root, int level)
 			 * to each initial rel they don't already include but have a join
 			 * clause or restriction with.
 			 */
-			List	   *other_rels_list;
 			ListCell   *other_rels;
 
 			if (level == 2)		/* consider remaining initial rels */
-			{
-				other_rels_list = joinrels[level - 1];
-				other_rels = lnext(other_rels_list, r);
-			}
+				other_rels = lnext(root->initial_rels, r);
 			else				/* consider all initial rels */
-			{
-				other_rels_list = joinrels[1];
-				other_rels = list_head(other_rels_list);
-			}
+				other_rels = list_head(root->initial_rels);
 
 			make_rels_by_clause_joins(root,
 									  old_rel,
-									  other_rels_list,
 									  other_rels);
 		}
 		else
@@ -140,8 +130,8 @@ join_search_one_level(PlannerInfo *root, int level)
 			 * avoid the duplicated effort.
 			 */
 			make_rels_by_clauseless_joins(root,
-										  old_rel,
-										  joinrels[1]);
+										  old_rel);
+
 		}
 	}
 
@@ -243,8 +233,8 @@ join_search_one_level(PlannerInfo *root, int level)
 			RelOptInfo *old_rel = (RelOptInfo *) lfirst(r);
 
 			make_rels_by_clauseless_joins(root,
-										  old_rel,
-										  joinrels[1]);
+										  old_rel);
+
 		}
 
 		/*----------
@@ -286,8 +276,6 @@ join_search_one_level(PlannerInfo *root, int level)
  * automatically ensures that each new joinrel is only added to the list once.
  *
  * 'old_rel' is the relation entry for the relation to be joined
- * 'other_rels_list': a list containing the other
- * rels to be considered for joining
  * 'other_rels': the first cell to be considered
  *
  * Currently, this is only used with initial rels in other_rels, but it
@@ -296,12 +284,11 @@ join_search_one_level(PlannerInfo *root, int level)
 static void
 make_rels_by_clause_joins(PlannerInfo *root,
 						  RelOptInfo *old_rel,
-						  List *other_rels_list,
 						  ListCell *other_rels)
 {
 	ListCell   *l;
 
-	for_each_cell(l, other_rels_list, other_rels)
+	for_each_cell(l, root->initial_rels, other_rels)
 	{
 		RelOptInfo *other_rel = (RelOptInfo *) lfirst(l);
 
@@ -329,12 +316,11 @@ make_rels_by_clause_joins(PlannerInfo *root,
  */
 static void
 make_rels_by_clauseless_joins(PlannerInfo *root,
-							  RelOptInfo *old_rel,
-							  List *other_rels)
+							  RelOptInfo *old_rel)
 {
 	ListCell   *l;
 
-	foreach(l, other_rels)
+	foreach(l, root->initial_rels)
 	{
 		RelOptInfo *other_rel = (RelOptInfo *) lfirst(l);
 
