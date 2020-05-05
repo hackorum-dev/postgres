@@ -222,7 +222,7 @@ repeat('Pg', 4) <returnvalue>PgPgPgPg</returnvalue>
      <tbody>
       <row>
        <entry>
-        <replaceable>datatype</replaceable> <literal>&lt;</literal> <replaceable>datatype</replaceable>
+        <replaceable>datatype</replaceable> <literal>&lt; </literal> <replaceable>datatype</replaceable>
         <returnvalue>boolean</returnvalue>
        </entry>
        <entry>Less than</entry>
@@ -230,7 +230,7 @@ repeat('Pg', 4) <returnvalue>PgPgPgPg</returnvalue>
 
       <row>
        <entry>
-        <replaceable>datatype</replaceable> <literal>&gt;</literal> <replaceable>datatype</replaceable>
+        <replaceable>datatype</replaceable> <literal>&gt; </literal> <replaceable>datatype</replaceable>
         <returnvalue>boolean</returnvalue>
        </entry>
        <entry>Greater than</entry>
@@ -254,7 +254,7 @@ repeat('Pg', 4) <returnvalue>PgPgPgPg</returnvalue>
 
       <row>
        <entry>
-        <replaceable>datatype</replaceable> <literal>=</literal> <replaceable>datatype</replaceable>
+        <replaceable>datatype</replaceable> <literal>= </literal> <replaceable>datatype</replaceable>
         <returnvalue>boolean</returnvalue>
        </entry>
        <entry>Equal</entry>
