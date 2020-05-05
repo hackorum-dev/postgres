@@ -6,6 +6,23 @@
 <chapter id="catalogs">
  <title>System Catalogs</title>
 
+ <sect1 id="catalogs-overview">
+  <title>Overview</title>
+
+  <para>
+   The term <firstterm>system catalog</firstterm> is a widely used
+   synonym for the schema <firstterm>pg_catalog</firstterm> and
+   its tables. They are listed in <xref linkend="catalog-table"/>
+   with links to more detailed documentation.
+  </para>
+
+  <para>
+   Most system catalogs are copied from the template database during
+   database creation and are thereafter database-specific. A few
+   catalogs are physically shared across all databases in a cluster;
+   these are noted in the descriptions of the individual catalogs.
+  </para>
+
   <para>
    The system catalogs are the place where a relational database
    management system stores schema metadata, such as information about
@@ -21,21 +38,6 @@
    particularly esoteric operations, but many of those have been made
    available as SQL commands over time, and so the need for direct manipulation
    of the system catalogs is ever decreasing.
-  </para>
-
- <sect1 id="catalogs-overview">
-  <title>Overview</title>
-
-  <para>
-   <xref linkend="catalog-table"/> lists the system catalogs.
-   More detailed documentation of each catalog follows below.
-  </para>
-
-  <para>
-   Most system catalogs are copied from the template database during
-   database creation and are thereafter database-specific. A few
-   catalogs are physically shared across all databases in a cluster;
-   these are noted in the descriptions of the individual catalogs.
   </para>
 
   <table id="catalog-table">
