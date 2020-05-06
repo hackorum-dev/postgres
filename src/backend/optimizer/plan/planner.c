@@ -3852,51 +3852,61 @@ create_grouping_paths(PlannerInfo *root,
 		int			flags = 0;
 		GroupPathExtraData extra;
 
-		/*
-		 * Determine whether it's possible to perform sort-based
-		 * implementations of grouping.  (Note that if groupClause is empty,
-		 * grouping_is_sortable() is trivially true, and all the
-		 * pathkeys_contained_in() tests will succeed too, so that we'll
-		 * consider every surviving input path.)
-		 *
-		 * If we have grouping sets, we might be able to sort some but not all
-		 * of them; in this case, we need can_sort to be true as long as we
-		 * must consider any sorted-input plan.
-		 */
-		if ((gd && gd->rollups != NIL)
-			|| grouping_is_sortable(parse->groupClause))
-			flags |= GROUPING_CAN_USE_SORT;
+		if (group_unique_input)
+		{
+			/* In this case we don't need to set other flags */
+			Assert(parse->groupClause != NIL);
+			Assert(gd == NULL);
+			flags |= GROUPING_INPUT_UNIQUE;
+		}
+		else
+		{
+			/*
+			 * Determine whether it's possible to perform sort-based
+			 * implementations of grouping.  (Note that if groupClause is empty,
+			 * grouping_is_sortable() is trivially true, and all the
+			 * pathkeys_contained_in() tests will succeed too, so that we'll
+			 * consider every surviving input path.)
+			 *
+			 * If we have grouping sets, we might be able to sort some but not all
+			 * of them; in this case, we need can_sort to be true as long as we
+			 * must consider any sorted-input plan.
+			 */
+			if ((gd && gd->rollups != NIL)
+				|| grouping_is_sortable(parse->groupClause))
+				flags |= GROUPING_CAN_USE_SORT;
 
-		/*
-		 * Determine whether we should consider hash-based implementations of
-		 * grouping.
-		 *
-		 * Hashed aggregation only applies if we're grouping. If we have
-		 * grouping sets, some groups might be hashable but others not; in
-		 * this case we set can_hash true as long as there is nothing globally
-		 * preventing us from hashing (and we should therefore consider plans
-		 * with hashes).
-		 *
-		 * Executor doesn't support hashed aggregation with DISTINCT or ORDER
-		 * BY aggregates.  (Doing so would imply storing *all* the input
-		 * values in the hash table, and/or running many sorts in parallel,
-		 * either of which seems like a certain loser.)  We similarly don't
-		 * support ordered-set aggregates in hashed aggregation, but that case
-		 * is also included in the numOrderedAggs count.
-		 *
-		 * Note: grouping_is_hashable() is much more expensive to check than
-		 * the other gating conditions, so we want to do it last.
-		 */
-		if ((parse->groupClause != NIL &&
-			 agg_costs->numOrderedAggs == 0 &&
-			 (gd ? gd->any_hashable : grouping_is_hashable(parse->groupClause))))
-			flags |= GROUPING_CAN_USE_HASH;
+			/*
+			 * Determine whether we should consider hash-based implementations of
+			 * grouping.
+			 *
+			 * Hashed aggregation only applies if we're grouping. If we have
+			 * grouping sets, some groups might be hashable but others not; in
+			 * this case we set can_hash true as long as there is nothing globally
+			 * preventing us from hashing (and we should therefore consider plans
+			 * with hashes).
+			 *
+			 * Executor doesn't support hashed aggregation with DISTINCT or ORDER
+			 * BY aggregates.  (Doing so would imply storing *all* the input
+			 * values in the hash table, and/or running many sorts in parallel,
+			 * either of which seems like a certain loser.)  We similarly don't
+			 * support ordered-set aggregates in hashed aggregation, but that case
+			 * is also included in the numOrderedAggs count.
+			 *
+			 * Note: grouping_is_hashable() is much more expensive to check than
+			 * the other gating conditions, so we want to do it last.
+			 */
+			if ((parse->groupClause != NIL &&
+				 agg_costs->numOrderedAggs == 0 &&
+				 (gd ? gd->any_hashable : grouping_is_hashable(parse->groupClause))))
+				flags |= GROUPING_CAN_USE_HASH;
 
-		/*
-		 * Determine whether partial aggregation is possible.
-		 */
-		if (can_partial_agg(root, agg_costs))
-			flags |= GROUPING_CAN_PARTIAL_AGG;
+			/*
+			 * Determine whether partial aggregation is possible.
+			 */
+			if (can_partial_agg(root, agg_costs))
+				flags |= GROUPING_CAN_PARTIAL_AGG;
+		}
 
 		extra.flags = flags;
 		extra.target_parallel_safe = target_parallel_safe;
@@ -6517,9 +6527,40 @@ add_paths_to_grouping_rel(PlannerInfo *root, RelOptInfo *input_rel,
 	ListCell   *lc;
 	bool		can_hash = (extra->flags & GROUPING_CAN_USE_HASH) != 0;
 	bool		can_sort = (extra->flags & GROUPING_CAN_USE_SORT) != 0;
+	bool		group_input_unique = (extra->flags & GROUPING_INPUT_UNIQUE) != 0;
 	List	   *havingQual = (List *) extra->havingQual;
 	AggClauseCosts *agg_final_costs = &extra->agg_final_costs;
 
+	if (group_input_unique)
+	{
+		Path *path = input_rel->cheapest_total_path;
+		add_path(grouped_rel, (Path *) create_agg_path(root,
+													   grouped_rel,
+													   path,
+													   grouped_rel->reltarget,
+													   AGG_UNIQUE,
+													   AGGSPLIT_SIMPLE,
+													   parse->groupClause,
+													   havingQual,
+													   agg_costs,
+													   dNumGroups));
+
+		if (path != input_rel->cheapest_startup_path)
+		{
+			path = input_rel->cheapest_startup_path;
+			add_path(grouped_rel, (Path *) create_agg_path(root,
+														   grouped_rel,
+														   path,
+														   grouped_rel->reltarget,
+														   AGG_UNIQUE,
+														   AGGSPLIT_SIMPLE,
+														   parse->groupClause,
+														   havingQual,
+														   agg_costs,
+														   dNumGroups));
+		}
+		return;
+	}
 	if (can_sort)
 	{
 		/*

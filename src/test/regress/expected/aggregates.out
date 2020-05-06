@@ -2753,6 +2753,46 @@ set work_mem to default;
 ----+----+----
 (0 rows)
 
+create table agg_unique_1(pk int primary key,  b int);
+create table agg_unique_2(a int, unsortable_col xid);
+insert into agg_unique_2 values(1, '1'), (2, '2'), (2, '1');
+explain (costs off, verbose)  select pk, sum(b) from agg_unique_1
+group by pk;
+              QUERY PLAN               
+---------------------------------------
+ GroupAggregate
+   Output: pk, sum(b)
+   Group Key: agg_unique_1.pk
+   Input Unique: true
+   ->  Seq Scan on public.agg_unique_1
+         Output: pk, b
+(6 rows)
+
+explain (costs off, verbose) select unsortable_col, count(*)
+from (select distinct unsortable_col from agg_unique_2) t
+group by unsortable_col;
+                            QUERY PLAN                             
+-------------------------------------------------------------------
+ GroupAggregate
+   Output: agg_unique_2.unsortable_col, count(*)
+   Group Key: agg_unique_2.unsortable_col
+   Input Unique: true
+   ->  HashAggregate
+         Output: agg_unique_2.unsortable_col
+         Group Key: agg_unique_2.unsortable_col
+         ->  Seq Scan on public.agg_unique_2
+               Output: agg_unique_2.a, agg_unique_2.unsortable_col
+(9 rows)
+
+select unsortable_col, count(*)
+from (select distinct unsortable_col from agg_unique_2) t
+group by unsortable_col;
+ unsortable_col | count 
+----------------+-------
+              2 |     1
+              1 |     1
+(2 rows)
+
 drop table agg_group_1;
 drop table agg_group_2;
 drop table agg_group_3;
@@ -2761,3 +2801,5 @@ drop table agg_hash_1;
 drop table agg_hash_2;
 drop table agg_hash_3;
 drop table agg_hash_4;
+drop table agg_unique_1;
+drop table agg_unique_2;

@@ -1216,6 +1216,21 @@ set work_mem to default;
   union all
 (select * from agg_group_4 except select * from agg_hash_4);
 
+create table agg_unique_1(pk int primary key,  b int);
+create table agg_unique_2(a int, unsortable_col xid);
+insert into agg_unique_2 values(1, '1'), (2, '2'), (2, '1');
+
+explain (costs off, verbose)  select pk, sum(b) from agg_unique_1
+group by pk;
+
+explain (costs off, verbose) select unsortable_col, count(*)
+from (select distinct unsortable_col from agg_unique_2) t
+group by unsortable_col;
+
+select unsortable_col, count(*)
+from (select distinct unsortable_col from agg_unique_2) t
+group by unsortable_col;
+
 drop table agg_group_1;
 drop table agg_group_2;
 drop table agg_group_3;
@@ -1224,3 +1239,5 @@ drop table agg_hash_1;
 drop table agg_hash_2;
 drop table agg_hash_3;
 drop table agg_hash_4;
+drop table agg_unique_1;
+drop table agg_unique_2;
