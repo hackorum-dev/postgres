@@ -2169,3 +2169,29 @@ where exists (select 1 from j3
       and t1.unique1 < 1;
 
 drop table j3;
+
+create table m1 (a int primary key,  b int, c int);
+create table m2 (a int primary key,  b int, c int);
+create table m3 (a int primary key,  b int, c int);
+
+explain (verbose, costs off)
+select  t1.a
+from m3 t1
+left join (select m1.a from m1, m2 where m1.b = m2.a) t2
+on (t1.a = t2.a);
+
+explain (verbose, costs off)
+select m1.*
+from m1 left join m2
+on (m1.a = m2.a)
+and m1.b in (select b from m3);
+
+explain (verbose, costs off)
+select m1.*
+from m1 left join m2
+on m1.b = m2.a
+and m2.b in (select b from m3);
+
+drop table m1;
+drop table m2;
+drop table m3;
