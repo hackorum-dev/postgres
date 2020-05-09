@@ -330,7 +330,7 @@ static const JsonPathKeyword keywords[] = {
 
 /* Check if current scanstring value is a keyword */
 static enum yytokentype
-checkKeyword()
+checkKeyword(void)
 {
 	int						res = IDENT_P;
 	int						diff;
