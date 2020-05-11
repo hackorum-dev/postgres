@@ -3812,7 +3812,27 @@ create_grouping_paths(PlannerInfo *root,
 {
 	Query	   *parse = root->parse;
 	RelOptInfo *grouped_rel;
+	bool	group_unique_input = false;
 	RelOptInfo *partially_grouped_rel;
+	List	*groupExprs = NIL;
+
+	if (root->parse->groupingSets == NIL)
+	{
+		groupExprs  = get_sortgrouplist_exprs(parse->groupClause,
+														parse->targetList);
+		/*
+		 * If the groupby clauses is unique already,  groupping node is not necessary
+		 * if there is no aggregation functions.
+		 */
+		group_unique_input = relation_has_uniquekeys_for(root, input_rel,
+														 groupExprs, false);
+		if (group_unique_input &&
+			groupExprs != NIL &&
+			!parse->hasAggs &&
+			!parse->hasWindowFuncs &&
+			parse->havingQual == NULL)
+			return input_rel;
+	}
 
 	/*
 	 * Create grouping relation to hold fully aggregated grouping and/or
@@ -4739,6 +4759,12 @@ create_distinct_paths(PlannerInfo *root,
 	bool		allow_hash;
 	Path	   *path;
 	ListCell   *lc;
+	List	   *distinctExprs =  get_sortgrouplist_exprs(parse->distinctClause,
+														 parse->targetList);
+
+	/* If the result is unique already, we just return the input_rel directly */
+	if (relation_has_uniquekeys_for(root, input_rel, distinctExprs, false))
+		return input_rel;
 
 	/* For now, do all work in the (DISTINCT, NULL) upperrel */
 	distinct_rel = fetch_upper_rel(root, UPPERREL_DISTINCT, NULL);
@@ -4776,10 +4802,6 @@ create_distinct_paths(PlannerInfo *root,
 		/*
 		 * Otherwise, the UNIQUE filter has effects comparable to GROUP BY.
 		 */
-		List	   *distinctExprs;
-
-		distinctExprs = get_sortgrouplist_exprs(parse->distinctClause,
-												parse->targetList);
 		numDistinctRows = estimate_num_groups(root, distinctExprs,
 											  cheapest_input_path->rows,
 											  NULL);

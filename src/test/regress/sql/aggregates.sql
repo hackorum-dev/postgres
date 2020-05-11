@@ -427,13 +427,13 @@ explain (costs off) select * from t1 group by a,b,c,d;
 explain (costs off) select a,c from t1 group by a,c,d;
 
 -- Test removal across multiple relations
-explain (costs off) select *
+explain (costs off) select t2.*
 from t1 inner join t2 on t1.a = t2.x and t1.b = t2.y
-group by t1.a,t1.b,t1.c,t1.d,t2.x,t2.y,t2.z;
+group by t1.a,t1.c,t1.d,t2.x,t2.y,t2.z;
 
 -- Test case where t1 can be optimized but not t2
 explain (costs off) select t1.*,t2.x,t2.z
-from t1 inner join t2 on t1.a = t2.x and t1.b = t2.y
+from t1 right join t2 on t1.a = t2.x and t1.b = t2.y
 group by t1.a,t1.b,t1.c,t1.d,t2.x,t2.z;
 
 -- Cannot optimize when PK is deferrable
