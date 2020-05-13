@@ -5146,7 +5146,6 @@ pgstat_read_statsfiles(Oid onlydb, bool permanent, bool deep)
 	int32		format_id;
 	bool		found;
 	const char *statfile = permanent ? PGSTAT_STAT_PERMANENT_FILENAME : pgstat_stat_filename;
-	int			i;
 
 	/*
 	 * The tables will live in pgStatLocalContext.
@@ -5170,19 +5169,6 @@ pgstat_read_statsfiles(Oid onlydb, bool permanent, bool deep)
 	memset(&globalStats, 0, sizeof(globalStats));
 	memset(&archiverStats, 0, sizeof(archiverStats));
 	memset(&slruStats, 0, sizeof(slruStats));
-
-	/*
-	 * Set the current timestamp (will be kept only in case we can't load an
-	 * existing statsfile).
-	 */
-	globalStats.stat_reset_timestamp = GetCurrentTimestamp();
-	archiverStats.stat_reset_timestamp = globalStats.stat_reset_timestamp;
-
-	/*
-	 * Set the same reset timestamp for all SLRU items too.
-	 */
-	for (i = 0; i < SLRU_NUM_ELEMENTS; i++)
-		slruStats[i].stat_reset_timestamp = globalStats.stat_reset_timestamp;
 
 	/*
 	 * Try to open the stats file. If it doesn't exist, the backends simply
