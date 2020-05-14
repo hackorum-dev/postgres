@@ -8006,11 +8006,8 @@ heap_xlog_delete(XLogReaderState *record)
 	HeapTupleHeader htup;
 	BlockNumber blkno;
 	RelFileNode target_node;
-	ItemPointerData target_tid;
 
 	XLogRecGetBlockTag(record, 0, &target_node, NULL, &blkno);
-	ItemPointerSetBlockNumber(&target_tid, blkno);
-	ItemPointerSetOffsetNumber(&target_tid, xlrec->offnum);
 
 	/*
 	 * The visibility map may need to be fixed even if the heap page is
@@ -8060,7 +8057,7 @@ heap_xlog_delete(XLogReaderState *record)
 		if (xlrec->flags & XLH_DELETE_IS_PARTITION_MOVE)
 			HeapTupleHeaderSetMovedPartitions(htup);
 		else
-			htup->t_ctid = target_tid;
+            ItemPointerSet(&htup->t_ctid, blkno, xlrec->offnum);			
 		PageSetLSN(page, lsn);
 		MarkBufferDirty(buffer);
 	}
@@ -8285,8 +8282,7 @@ heap_xlog_multi_insert(XLogReaderState *record)
 			htup->t_hoff = xlhdr->t_hoff;
 			HeapTupleHeaderSetXmin(htup, XLogRecGetXid(record));
 			HeapTupleHeaderSetCmin(htup, FirstCommandId);
-			ItemPointerSetBlockNumber(&htup->t_ctid, blkno);
-			ItemPointerSetOffsetNumber(&htup->t_ctid, offnum);
+            ItemPointerSet(&htup->t_ctid, blkno, offnum);			
 
 			offnum = PageAddItem(page, (Item) htup, newlen, offnum, true, true);
 			if (offnum == InvalidOffsetNumber)
@@ -8331,11 +8327,11 @@ heap_xlog_update(XLogReaderState *record, bool hot_update)
 	RelFileNode rnode;
 	BlockNumber oldblk;
 	BlockNumber newblk;
-	ItemPointerData newtid;
 	Buffer		obuffer,
 				nbuffer;
 	Page		page;
 	OffsetNumber offnum;
+	OffsetNumber new_offnum;
 	ItemId		lp = NULL;
 	HeapTupleData oldtup;
 	HeapTupleHeader htup;
@@ -8366,7 +8362,7 @@ heap_xlog_update(XLogReaderState *record, bool hot_update)
 	else
 		oldblk = newblk;
 
-	ItemPointerSet(&newtid, newblk, xlrec->new_offnum);
+	new_offnum = xlrec->new_offnum;
 
 	/*
 	 * The visibility map may need to be fixed even if the heap page is
@@ -8422,7 +8418,7 @@ heap_xlog_update(XLogReaderState *record, bool hot_update)
 		HeapTupleHeaderSetXmax(htup, xlrec->old_xmax);
 		HeapTupleHeaderSetCmax(htup, FirstCommandId, false);
 		/* Set forward chain link in t_ctid */
-		htup->t_ctid = newtid;
+        ItemPointerSet(&htup->t_ctid, newblk, new_offnum);
 
 		/* Mark the page as a candidate for pruning */
 		PageSetPrunable(page, XLogRecGetXid(record));
@@ -8556,7 +8552,7 @@ heap_xlog_update(XLogReaderState *record, bool hot_update)
 		HeapTupleHeaderSetCmin(htup, FirstCommandId);
 		HeapTupleHeaderSetXmax(htup, xlrec->new_xmax);
 		/* Make sure there is no forward chain link in t_ctid */
-		htup->t_ctid = newtid;
+        ItemPointerSet(&htup->t_ctid, newblk, new_offnum);
 
 		offnum = PageAddItem(page, (Item) htup, newlen, offnum, true, true);
 		if (offnum == InvalidOffsetNumber)
