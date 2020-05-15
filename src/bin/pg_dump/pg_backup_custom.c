@@ -415,10 +415,13 @@ _PrintTocData(ArchiveHandle *AH, TocEntry *te)
 	lclTocEntry *tctx = (lclTocEntry *) te->formatData;
 	int			blkType;
 	int			id;
+    int         thisPid = getpid();
 
 	if (tctx->dataState == K_OFFSET_NO_DATA)
 		return;
 
+    printf("pid: %d, ctx->hasSeek: %d, tctx->dataState: %d, te->dumpId: %d\n", thisPid,
+            ctx->hasSeek, tctx->dataState, te->dumpId);
 	if (!ctx->hasSeek || tctx->dataState == K_OFFSET_POS_NOT_SET)
 	{
 		/*
@@ -427,6 +430,7 @@ _PrintTocData(ArchiveHandle *AH, TocEntry *te)
 		 * are asked to restore items out-of-order.
 		 */
 		_readBlockHeader(AH, &blkType, &id);
+        printf("initial readBlockHeader: blkType: %d, id: %d, AH->FH: %d\n", blkType, id, ftello(AH->FH));
 
 		while (blkType != EOF && id != te->dumpId)
 		{
@@ -446,6 +450,7 @@ _PrintTocData(ArchiveHandle *AH, TocEntry *te)
 					break;
 			}
 			_readBlockHeader(AH, &blkType, &id);
+            printf("readBlockHeader: blkType: %d, id: %d, AH->FH: %d\n", blkType, id, ftello(AH->FH));
 		}
 	}
 	else
@@ -496,6 +501,7 @@ _PrintTocData(ArchiveHandle *AH, TocEntry *te)
 				  blkType);
 			break;
 	}
+    printf("\n");
 }
 
 /*
@@ -773,6 +779,7 @@ _PrepParallelRestore(ArchiveHandle *AH)
 	TocEntry   *prev_te = NULL;
 	lclTocEntry *prev_tctx = NULL;
 	TocEntry   *te;
+    printf("PrepParallelRestore\n");
 
 	/*
 	 * Knowing that the data items were dumped out in TOC order, we can
@@ -800,6 +807,7 @@ _PrepParallelRestore(ArchiveHandle *AH)
 
 		prev_te = te;
 		prev_tctx = tctx;
+        printf("PrepParallelRestore prev_te: %d, prev_te->dataLength: %d\n", prev_te, prev_te->dataLength);
 	}
 
 	/* If OK to seek, we can determine the length of the last item */
@@ -812,6 +820,7 @@ _PrepParallelRestore(ArchiveHandle *AH)
 		endpos = ftello(AH->FH);
 		if (endpos > prev_tctx->dataPos)
 			prev_te->dataLength = endpos - prev_tctx->dataPos;
+        printf("PrepParallelRestore endpos: %d, prev_te->dataLength: %d\n", endpos, prev_te->dataLength);
 	}
 }
 

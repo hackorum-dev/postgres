@@ -755,6 +755,7 @@ restore_toc_entry(ArchiveHandle *AH, TocEntry *te, bool is_parallel)
 	int			status = WORKER_OK;
 	teReqs		reqs;
 	bool		defnDumped;
+    printf("restore_toc_entry initial AH->FH: %d\n", ftello(AH->FH));
 
 	AH->currentTE = te;
 
@@ -863,6 +864,7 @@ restore_toc_entry(ArchiveHandle *AH, TocEntry *te, bool is_parallel)
 			if (AH->PrintTocDataPtr != NULL)
 			{
 				_printTocEntry(AH, te, true);
+                printf("restore_toc_entry _printTocEntry AH->FH: %d\n", ftello(AH->FH));
 
 				if (strcmp(te->desc, "BLOBS") == 0 ||
 					strcmp(te->desc, "BLOB COMMENTS") == 0)
@@ -870,6 +872,7 @@ restore_toc_entry(ArchiveHandle *AH, TocEntry *te, bool is_parallel)
 					pg_log_info("processing %s", te->desc);
 
 					_selectOutputSchema(AH, "pg_catalog");
+                    printf("restore_toc_entry _selectOutputSchema AH->FH: %d\n", ftello(AH->FH));
 
 					/* Send BLOB COMMENTS data to ExecuteSimpleCommands() */
 					if (strcmp(te->desc, "BLOB COMMENTS") == 0)
