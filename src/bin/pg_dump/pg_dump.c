@@ -16412,7 +16412,8 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 					 ARCHIVE_OPTS(.tag = tbinfo->dobj.name,
 								  .namespace = tbinfo->dobj.namespace->dobj.name,
 								  .tablespace = (tbinfo->relkind == RELKIND_VIEW) ?
-								  NULL : tbinfo->reltablespace,
+								  NULL : (dopt->outputNoTablespaces ?
+										  NULL : tbinfo->reltablespace),
 								  .tableam = tableam,
 								  .owner = tbinfo->rolname,
 								  .description = reltypename,
