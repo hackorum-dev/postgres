@@ -1767,6 +1767,15 @@ _bt_killitems(IndexScanDesc scan)
 		}
 	}
 
+    if (XLogHintBitIsNeeded() && !AutoVacuumingActive())
+    {
+		/*
+		 * If wal_log_hints is enabled, we only want to do this
+		 * with an exclusive lock.
+		 */
+		LockBuffer(so->currPos.buf, BUFFER_LOCK_UNLOCK);
+		LockBuffer(so->currPos.buf, BT_WRITE);
+	}
 	opaque = (BTPageOpaque) PageGetSpecialPointer(page);
 	minoff = P_FIRSTDATAKEY(opaque);
 	maxoff = PageGetMaxOffsetNumber(page);
@@ -1776,6 +1785,7 @@ _bt_killitems(IndexScanDesc scan)
 		int			itemIndex = so->killedItems[i];
 		BTScanPosItem *kitem = &so->currPos.items[itemIndex];
 		OffsetNumber offnum = kitem->indexOffset;
+	    OffsetNumber current_offnum PG_USED_FOR_ASSERTS_ONLY;
 
 		Assert(itemIndex >= so->currPos.firstItem &&
 			   itemIndex <= so->currPos.lastItem);
@@ -1784,9 +1794,19 @@ _bt_killitems(IndexScanDesc scan)
 		while (offnum <= maxoff)
 		{
 			ItemId		iid = PageGetItemId(page, offnum);
-			IndexTuple	ituple = (IndexTuple) PageGetItem(page, iid);
-			bool		killtuple = false;
+			IndexTuple	ituple;
+			bool        killtuple;
 
+            /* Save current offnum and advance to the next, avoiding call twice OffsetNumberNext */
+            current_offnum = offnum;
+		    offnum = OffsetNumberNext(offnum);
+			
+            /* Item already as dead, goes to next */
+            if (ItemIdIsDead(iid))
+				continue;
+
+			killtuple = false;
+			ituple = (IndexTuple) PageGetItem(page, iid);
 			if (BTreeTupleIsPosting(ituple))
 			{
 				int			pi = i + 1;
@@ -1819,7 +1839,7 @@ _bt_killitems(IndexScanDesc scan)
 					 * though only in the common case where the page can't
 					 * have been concurrently modified
 					 */
-					Assert(kitem->indexOffset == offnum || !droppedpin);
+					Assert(kitem->indexOffset == current_offnum || !droppedpin);
 
 					/*
 					 * Read-ahead to later kitems here.
@@ -1862,14 +1882,13 @@ _bt_killitems(IndexScanDesc scan)
 			 * set to WAL (if wal_log_hints or data checksums are enabled),
 			 * which is undesirable.
 			 */
-			if (killtuple && !ItemIdIsDead(iid))
+			if (killtuple)
 			{
 				/* found the item/all posting list items */
 				ItemIdMarkDead(iid);
 				killedsomething = true;
 				break;			/* out of inner search loop */
 			}
-			offnum = OffsetNumberNext(offnum);
 		}
 	}
 
