@@ -41,4 +41,7 @@ extern void expand_tilde(char **filename);
 
 extern bool recognized_connection_string(const char *connstr);
 
+extern bool do_edit(const char *filename_arg, PQExpBuffer query_buf,
+					int lineno, int colno, bool *edited);
+
 #endif							/* COMMON_H */

@@ -148,8 +148,6 @@ static void discard_query_text(PsqlScanState scan_state, ConditionalStack cstack
 static void copy_previous_query(PQExpBuffer query_buf, PQExpBuffer previous_buf);
 static bool do_connect(enum trivalue reuse_previous_specification,
 					   char *dbname, char *user, char *host, char *port);
-static bool do_edit(const char *filename_arg, PQExpBuffer query_buf,
-					int lineno, bool *edited);
 static bool do_shell(const char *command);
 static bool do_watch(PQExpBuffer query_buf, double sleep);
 static bool lookup_object_oid(EditableObjectType obj_type, const char *desc,
@@ -1008,7 +1006,7 @@ exec_command_edit(PsqlScanState scan_state, bool active_branch,
 				/* If query_buf is empty, recall previous query for editing */
 				copy_previous_query(query_buf, previous_buf);
 
-				if (do_edit(fname, query_buf, lineno, NULL))
+				if (do_edit(fname, query_buf, lineno, 0, NULL))
 					status = PSQL_CMD_NEWEDIT;
 				else
 					status = PSQL_CMD_ERROR;
@@ -1131,7 +1129,7 @@ exec_command_ef_ev(PsqlScanState scan_state, bool active_branch,
 		{
 			bool		edited = false;
 
-			if (!do_edit(NULL, query_buf, lineno, &edited))
+			if (!do_edit(NULL, query_buf, lineno, 0, &edited))
 				status = PSQL_CMD_ERROR;
 			else if (!edited)
 				puts(_("No changes"));
@@ -3508,234 +3506,6 @@ UnsyncVariables(void)
 	SetVariable(pset.vars, "ENCODING", NULL);
 	SetVariable(pset.vars, "SERVER_VERSION_NAME", NULL);
 	SetVariable(pset.vars, "SERVER_VERSION_NUM", NULL);
-}
-
-
-/*
- * do_edit -- handler for \e
- *
- * If you do not specify a filename, the current query buffer will be copied
- * into a temporary one.
- */
-static bool
-editFile(const char *fname, int lineno)
-{
-	const char *editorName;
-	const char *editor_lineno_arg = NULL;
-	char	   *sys;
-	int			result;
-
-	Assert(fname != NULL);
-
-	/* Find an editor to use */
-	editorName = getenv("PSQL_EDITOR");
-	if (!editorName)
-		editorName = getenv("EDITOR");
-	if (!editorName)
-		editorName = getenv("VISUAL");
-	if (!editorName)
-		editorName = DEFAULT_EDITOR;
-
-	/* Get line number argument, if we need it. */
-	if (lineno > 0)
-	{
-		editor_lineno_arg = getenv("PSQL_EDITOR_LINENUMBER_ARG");
-#ifdef DEFAULT_EDITOR_LINENUMBER_ARG
-		if (!editor_lineno_arg)
-			editor_lineno_arg = DEFAULT_EDITOR_LINENUMBER_ARG;
-#endif
-		if (!editor_lineno_arg)
-		{
-			pg_log_error("environment variable PSQL_EDITOR_LINENUMBER_ARG must be set to specify a line number");
-			return false;
-		}
-	}
-
-	/*
-	 * On Unix the EDITOR value should *not* be quoted, since it might include
-	 * switches, eg, EDITOR="pico -t"; it's up to the user to put quotes in it
-	 * if necessary.  But this policy is not very workable on Windows, due to
-	 * severe brain damage in their command shell plus the fact that standard
-	 * program paths include spaces.
-	 */
-#ifndef WIN32
-	if (lineno > 0)
-		sys = psprintf("exec %s %s%d '%s'",
-					   editorName, editor_lineno_arg, lineno, fname);
-	else
-		sys = psprintf("exec %s '%s'",
-					   editorName, fname);
-#else
-	if (lineno > 0)
-		sys = psprintf("\"%s\" %s%d \"%s\"",
-					   editorName, editor_lineno_arg, lineno, fname);
-	else
-		sys = psprintf("\"%s\" \"%s\"",
-					   editorName, fname);
-#endif
-	result = system(sys);
-	if (result == -1)
-		pg_log_error("could not start editor \"%s\"", editorName);
-	else if (result == 127)
-		pg_log_error("could not start /bin/sh");
-	free(sys);
-
-	return result == 0;
-}
-
-
-/* call this one */
-static bool
-do_edit(const char *filename_arg, PQExpBuffer query_buf,
-		int lineno, bool *edited)
-{
-	char		fnametmp[MAXPGPATH];
-	FILE	   *stream = NULL;
-	const char *fname;
-	bool		error = false;
-	int			fd;
-
-	struct stat before,
-				after;
-
-	if (filename_arg)
-		fname = filename_arg;
-	else
-	{
-		/* make a temp file to edit */
-#ifndef WIN32
-		const char *tmpdir = getenv("TMPDIR");
-
-		if (!tmpdir)
-			tmpdir = "/tmp";
-#else
-		char		tmpdir[MAXPGPATH];
-		int			ret;
-
-		ret = GetTempPath(MAXPGPATH, tmpdir);
-		if (ret == 0 || ret > MAXPGPATH)
-		{
-			pg_log_error("could not locate temporary directory: %s",
-						 !ret ? strerror(errno) : "");
-			return false;
-		}
-
-		/*
-		 * No canonicalize_path() here. EDIT.EXE run from CMD.EXE prepends the
-		 * current directory to the supplied path unless we use only
-		 * backslashes, so we do that.
-		 */
-#endif
-#ifndef WIN32
-		snprintf(fnametmp, sizeof(fnametmp), "%s%spsql.edit.%d.sql", tmpdir,
-				 "/", (int) getpid());
-#else
-		snprintf(fnametmp, sizeof(fnametmp), "%s%spsql.edit.%d.sql", tmpdir,
-				 "" /* trailing separator already present */ , (int) getpid());
-#endif
-
-		fname = (const char *) fnametmp;
-
-		fd = open(fname, O_WRONLY | O_CREAT | O_EXCL, 0600);
-		if (fd != -1)
-			stream = fdopen(fd, "w");
-
-		if (fd == -1 || !stream)
-		{
-			pg_log_error("could not open temporary file \"%s\": %m", fname);
-			error = true;
-		}
-		else
-		{
-			unsigned int ql = query_buf->len;
-
-			/* force newline-termination of what we send to editor */
-			if (ql > 0 && query_buf->data[ql - 1] != '\n')
-			{
-				appendPQExpBufferChar(query_buf, '\n');
-				ql++;
-			}
-
-			if (fwrite(query_buf->data, 1, ql, stream) != ql)
-			{
-				pg_log_error("%s: %m", fname);
-
-				if (fclose(stream) != 0)
-					pg_log_error("%s: %m", fname);
-
-				if (remove(fname) != 0)
-					pg_log_error("%s: %m", fname);
-
-				error = true;
-			}
-			else if (fclose(stream) != 0)
-			{
-				pg_log_error("%s: %m", fname);
-				if (remove(fname) != 0)
-					pg_log_error("%s: %m", fname);
-				error = true;
-			}
-		}
-	}
-
-	if (!error && stat(fname, &before) != 0)
-	{
-		pg_log_error("%s: %m", fname);
-		error = true;
-	}
-
-	/* call editor */
-	if (!error)
-		error = !editFile(fname, lineno);
-
-	if (!error && stat(fname, &after) != 0)
-	{
-		pg_log_error("%s: %m", fname);
-		error = true;
-	}
-
-	if (!error && before.st_mtime != after.st_mtime)
-	{
-		stream = fopen(fname, PG_BINARY_R);
-		if (!stream)
-		{
-			pg_log_error("%s: %m", fname);
-			error = true;
-		}
-		else
-		{
-			/* read file back into query_buf */
-			char		line[1024];
-
-			resetPQExpBuffer(query_buf);
-			while (fgets(line, sizeof(line), stream) != NULL)
-				appendPQExpBufferStr(query_buf, line);
-
-			if (ferror(stream))
-			{
-				pg_log_error("%s: %m", fname);
-				error = true;
-			}
-			else if (edited)
-			{
-				*edited = true;
-			}
-
-			fclose(stream);
-		}
-	}
-
-	/* remove temp file */
-	if (!filename_arg)
-	{
-		if (remove(fname) == -1)
-		{
-			pg_log_error("%s: %m", fname);
-			error = true;
-		}
-	}
-
-	return !error;
 }
 
 

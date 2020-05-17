@@ -76,6 +76,12 @@
 /* word break characters */
 #define WORD_BREAKS		"\t\n@$><=;|&{() "
 
+#ifdef HAVE_READLINE_READLINE_H
+/* Helpers to define emacs bindings for Control-X */
+#define READLINE_CONTROL_CHARACTER_MASK 0x1f /* 0x20 - 1 */
+#define READLINE_CTRL(c) ((c) & READLINE_CONTROL_CHARACTER_MASK)
+#endif
+
 /*
  * Since readline doesn't let us pass any state through to the tab completion
  * callback, we have to use this global variable to let get_previous_words()
@@ -1138,6 +1144,10 @@ static char **get_previous_words(int point, char **buffer, int *nwords);
 
 static char *get_guctype(const char *varname);
 
+#ifdef HAVE_READLINE_READLINE_H
+static int edit_and_execute_command(int count, int c);
+#endif
+
 #ifdef USE_FILENAME_QUOTING_FUNCTIONS
 static char *quote_file_name(char *fname, int match_type, char *quote_pointer);
 static char *dequote_file_name(char *fname, int quote_char);
@@ -1159,6 +1169,17 @@ initialize_readline(void)
 #endif
 
 	rl_basic_word_break_characters = WORD_BREAKS;
+
+	/*
+	 * Bind 'v' or 'C-xC-e' to invoke vi or emacs and run result as commands.
+	 */
+#ifdef HAVE_READLINE_READLINE_H
+	{
+		rl_add_defun("edit-and-execute-command", edit_and_execute_command, -1);
+		rl_bind_key_if_unbound_in_map(READLINE_CTRL('E'), edit_and_execute_command, emacs_ctlx_keymap);
+		rl_bind_key_if_unbound_in_map('v', edit_and_execute_command, vi_movement_keymap);
+	}
+#endif
 
 	/*
 	 * We should include '"' in rl_completer_quote_characters too, but that
@@ -4813,6 +4834,52 @@ get_guctype(const char *varname)
 
 	return guctype;
 }
+
+
+/*
+ * Edit the current line in vi (or $EDITOR, $VISUAL).
+ */
+#ifdef HAVE_READLINE_READLINE_H
+static int
+edit_and_execute_command(int count, int c)
+{
+	PQExpBuffer buffer = createPQExpBuffer();
+	bool		edited = false;
+	bool 		result;
+	int			point, lineno, colno;
+
+	appendPQExpBufferStr(buffer, rl_line_buffer);
+
+	/* Discover which line and column we are at. */
+	lineno = 1;
+	colno = 0;
+	for(point = rl_point; point >= 1; point--)
+	{
+		if (rl_line_buffer[point] == '\n')
+			lineno++;
+		if (lineno == 1)
+			colno++;
+	}
+
+	result = do_edit(NULL, buffer, lineno, colno, &edited);
+
+	if (result && edited)
+	{
+		rl_clear_visible_line();
+		rl_extend_line_buffer(buffer->len);
+		rl_replace_line(buffer->data, 1);
+		rl_reset_line_state();
+		rl_redisplay();
+
+		/* accept the line */
+		rl_newline(1, c);
+	}
+
+	destroyPQExpBuffer(buffer);
+
+	return result ? 0 : 1;
+}
+#endif
 
 #ifdef USE_FILENAME_QUOTING_FUNCTIONS
 
