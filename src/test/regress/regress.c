@@ -594,8 +594,8 @@ static void
 test_atomic_uint64(void)
 {
 	pg_atomic_uint64 var;
-	uint64		expected;
 	int			i;
+	uint64		expected;
 
 	pg_atomic_init_u64(&var, 0);
 	EXPECT_EQ_U64(pg_atomic_read_u64(&var), 0);
