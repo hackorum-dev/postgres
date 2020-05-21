@@ -1,0 +1,35 @@
+Parsed test spec with 2 sessions
+
+starting permutation: r1 r2 w1 w2 c1 c2
+step r1: 
+  SELECT version FROM t
+   WHERE NOT EXISTS (SELECT 1 FROM t t2
+                      WHERE t.item_id = t2.item_id
+                        AND t.created_at < t2.created_at)
+     AND item_id = 10;
+
+version        
+
+2              
+step r2: 
+  SELECT version FROM t
+   WHERE NOT EXISTS (SELECT 1 FROM t t2
+                      WHERE t.item_id = t2.item_id
+                        AND t.created_at < t2.created_at)
+     AND item_id = 10;
+
+version        
+
+2              
+step w1: 
+  INSERT INTO t (item_id, version, created_at)
+  VALUES (10, 3, now());
+
+step w2: 
+  INSERT INTO t (item_id, version, created_at)
+  VALUES (10, 3, now());
+ <waiting ...>
+step c1: COMMIT;
+step w2: <... completed>
+error in steps c1 w2: ERROR:  duplicate key value violates unique constraint "t_item_id_version_key"
+step c2: COMMIT;
