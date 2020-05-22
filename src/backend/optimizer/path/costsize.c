@@ -105,6 +105,7 @@
 #include "optimizer/plancat.h"
 #include "optimizer/restrictinfo.h"
 #include "parser/parsetree.h"
+#include "utils/float.h"
 #include "utils/lsyscache.h"
 #include "utils/selfuncs.h"
 #include "utils/spccache.h"
@@ -5194,15 +5195,57 @@ cost_qual_eval_walker(Node *node, cost_qual_eval_context *context)
 	else if (IsA(node, AlternativeSubPlan))
 	{
 		/*
-		 * Arbitrarily use the first alternative plan for costing.  (We should
-		 * certainly only include one alternative, and we don't yet have
-		 * enough information to know which one the executor is most likely to
-		 * use.)
+		 * Estimate the cost as some mean of the alternatives.
+		 * It's not uncommon for the alternative costs to be of different
+		 * orders of magnitude, so arithmetic mean would be too biased towards
+		 * the slower one. That's why for per-tuple coefficient we use geometric
+		 * mean.
+		 *
+		 * It's tempting to use geometric mean for startup costs too, but
+		 * one of them can be zero, which will result in substantial
+		 * underestimation. So instead we estimate the cost of returning *first*
+		 * tuple as geometric mean of single-tuple costs for the alternatives.
 		 */
-		AlternativeSubPlan *asplan = (AlternativeSubPlan *) node;
+		List   *subplans = ((AlternativeSubPlan *) node)->subplans;
+		Cost 	per_tuple_mean = 1;
+		Cost 	first_tuple_mean = 1;
+		Cost 	startup_min = get_float8_infinity();
+		Cost 	startup_max = 0;
+		Cost 	startup_mean;
+		ListCell   *lc;
 
-		return cost_qual_eval_walker((Node *) linitial(asplan->subplans),
-									 context);
+		foreach(lc, subplans)
+		{
+			cost_qual_eval_context subplanContext;
+
+			subplanContext.root = context->root;
+			subplanContext.total.startup = 0;
+			subplanContext.total.per_tuple = 0;
+
+			cost_qual_eval_walker((Node *) lfirst(lc), &subplanContext);
+
+			Assert(subplanContext.total.startup >= 0);
+			Assert(subplanContext.total.per_tuple >= 0);
+
+			per_tuple_mean *= subplanContext.total.per_tuple;
+			first_tuple_mean *= subplanContext.total.startup + subplanContext.total.per_tuple;
+			startup_min = float8_min(startup_min, subplanContext.total.startup);
+			startup_max = float8_max(startup_min, subplanContext.total.startup);
+		}
+		per_tuple_mean =
+			pow(per_tuple_mean, 1.0 / list_length(subplans));
+		first_tuple_mean =
+			pow(first_tuple_mean, 1.0 / list_length(subplans));
+		startup_mean = first_tuple_mean - per_tuple_mean;
+		/* make sure this calculation makes a sane value */
+		startup_mean = float8_max(startup_mean, startup_min);
+		startup_mean = float8_min(startup_mean, startup_max);
+
+		context->total.startup += startup_mean;
+		context->total.per_tuple += per_tuple_mean;
+
+		/* We've already recursed into children, skip the generic recursion */
+		return false;
 	}
 	else if (IsA(node, PlaceHolderVar))
 	{
