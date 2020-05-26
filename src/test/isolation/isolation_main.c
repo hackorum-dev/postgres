@@ -42,8 +42,8 @@ isolation_start_test(const char *testname,
 	if (!looked_up_isolation_exec)
 	{
 		/* look for isolationtester binary */
-		if (find_other_exec(saved_argv0, "isolationtester",
-							PG_ISOLATION_VERSIONSTR, isolation_exec) != 0)
+		if (find_other_cmd(saved_argv0, "isolationtester",
+						   PG_ISOLATION_VERSIONSTR, isolation_exec) != 0)
 		{
 			fprintf(stderr, _("could not find proper isolationtester binary\n"));
 			exit(2);
@@ -122,11 +122,11 @@ isolation_init(int argc, char **argv)
 	size_t		argv0_len;
 
 	/*
-	 * We unfortunately cannot do the find_other_exec() lookup to find the
+	 * We unfortunately cannot do the find_other_cmd() lookup to find the
 	 * "isolationtester" binary here.  regression_main() calls the
 	 * initialization functions before parsing the commandline arguments and
 	 * thus hasn't changed the library search path at this point which in turn
-	 * can cause the "isolationtester -V" invocation that find_other_exec()
+	 * can cause the "isolationtester -V" invocation that find_other_cmd()
 	 * does to fail since it's linked to libpq.  So we instead copy argv[0]
 	 * and do the lookup the first time through isolation_start_test().
 	 */

@@ -34,13 +34,13 @@ pg_upgrade: $(OBJS) | submake-libpq submake-libpgport submake-libpgfeutils
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 install: all installdirs
-	$(INSTALL_PROGRAM) pg_upgrade$(X) '$(DESTDIR)$(bindir)/pg_upgrade$(X)'
+	$(INSTALL_PROGRAM) pg_upgrade$(X) '$(DESTDIR)$(libexecdir)/pg_upgrade$(X)'
 
 installdirs:
-	$(MKDIR_P) '$(DESTDIR)$(bindir)'
+	$(MKDIR_P) '$(DESTDIR)$(libexecdir)'
 
 uninstall:
-	rm -f '$(DESTDIR)$(bindir)/pg_upgrade$(X)'
+	rm -f '$(DESTDIR)$(libexecdir)/pg_upgrade$(X)'
 
 clean distclean maintainer-clean:
 	rm -f pg_upgrade$(X) $(OBJS)
@@ -59,7 +59,7 @@ clean distclean maintainer-clean:
 NOTSUBMAKEMAKE=$(MAKE)
 
 check: test.sh all temp-install
-	MAKE=$(NOTSUBMAKEMAKE) $(with_temp_install) bindir=$(abs_top_builddir)/tmp_install/$(bindir) EXTRA_REGRESS_OPTS="$(EXTRA_REGRESS_OPTS)" $(SHELL) $<
+	MAKE=$(NOTSUBMAKEMAKE) $(with_temp_install) bindir=$(abs_top_builddir)/tmp_install/$(bindir) libexecdir=$(abs_top_builddir)/tmp_install/$(libexecdir) EXTRA_REGRESS_OPTS="$(EXTRA_REGRESS_OPTS)" $(SHELL) $<
 
 # installcheck is not supported because there's no meaningful way to test
 # pg_upgrade against a single already-running server

@@ -76,6 +76,7 @@ rm -rf "$temp_root"
 mkdir "$temp_root"
 
 : ${oldbindir=$bindir}
+: ${oldlibexecdir=$libexecdir}
 
 : ${oldsrc=../../..}
 oldsrc=`cd "$oldsrc" && pwd`
@@ -86,13 +87,13 @@ newsrc=`cd ../../.. && pwd`
 # below would try to use psql from the proper installation directory
 # of the target version, which might be outdated or not exist. But
 # don't override anything else that's already in EXTRA_REGRESS_OPTS.
-EXTRA_REGRESS_OPTS="$EXTRA_REGRESS_OPTS --bindir='$oldbindir'"
+EXTRA_REGRESS_OPTS="$EXTRA_REGRESS_OPTS --bindir='$oldbindir' --libexecdir='$oldlibexecdir'"
 export EXTRA_REGRESS_OPTS
 
 # While in normal cases this will already be set up, adding bindir to
 # path allows test.sh to be invoked with different versions as
 # described in ./TESTING
-PATH=$bindir:$PATH
+PATH=$bindir:$libexecdir:$PATH
 export PATH
 
 BASE_PGDATA="$temp_root/data"
@@ -150,8 +151,8 @@ done
 EXTRA_REGRESS_OPTS="$EXTRA_REGRESS_OPTS --port=$PGPORT"
 export EXTRA_REGRESS_OPTS
 
-standard_initdb "$oldbindir"/initdb
-"$oldbindir"/pg_ctl start -l "$logdir/postmaster1.log" -o "$POSTMASTER_OPTS" -w
+standard_initdb "$oldlibexecdir"/initdb
+"$oldlibexecdir"/pg_ctl start -l "$logdir/postmaster1.log" -o "$POSTMASTER_OPTS" -w
 
 # Create databases with names covering the ASCII bytes other than NUL, BEL,
 # LF, or CR.  BEL would ring the terminal bell in the course of this test, and
@@ -204,7 +205,7 @@ if "$MAKE" -C "$oldsrc" installcheck-parallel; then
 else
 	make_installcheck_status=$?
 fi
-"$oldbindir"/pg_ctl -m fast stop
+"$oldlibexecdir"/pg_ctl -m fast stop
 if [ -n "$createdb_status" ]; then
 	exit 1
 fi
@@ -223,7 +224,7 @@ PGDATA="$BASE_PGDATA"
 
 standard_initdb 'initdb'
 
-pg_upgrade $PG_UPGRADE_OPTS -d "${PGDATA}.old" -D "$PGDATA" -b "$oldbindir" -p "$PGPORT" -P "$PGPORT"
+pg_upgrade $PG_UPGRADE_OPTS -d "${PGDATA}.old" -D "$PGDATA" -b "$oldbindir" -l "$oldlibexecdir" -p "$PGPORT" -P "$PGPORT"
 
 # make sure all directories and files have group permissions, on Unix hosts
 # Windows hosts don't support Unix-y permissions.

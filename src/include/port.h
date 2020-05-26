@@ -57,17 +57,20 @@ extern bool path_is_relative_and_below_cwd(const char *path);
 extern bool path_is_prefix_of_path(const char *path1, const char *path2);
 extern char *make_absolute_path(const char *path);
 extern const char *get_progname(const char *argv0);
+extern int trim_path_suffix(const char *path, const char *suffix, char *ret_path);
+extern void get_bin_path(const char *my_rootdir, char *ret_path);
 extern void get_share_path(const char *my_exec_path, char *ret_path);
-extern void get_etc_path(const char *my_exec_path, char *ret_path);
+extern void get_etc_path(const char *my_rootdir, char *ret_path);
 extern void get_include_path(const char *my_exec_path, char *ret_path);
 extern void get_pkginclude_path(const char *my_exec_path, char *ret_path);
-extern void get_includeserver_path(const char *my_exec_path, char *ret_path);
-extern void get_lib_path(const char *my_exec_path, char *ret_path);
+extern void get_includeserver_path(const char *my_rootdir, char *ret_path);
+extern void get_lib_path(const char *my_rootdir, char *ret_path);
+extern void get_libexec_path(const char *my_rootdir, char *ret_path);
 extern void get_pkglib_path(const char *my_exec_path, char *ret_path);
 extern void get_locale_path(const char *my_exec_path, char *ret_path);
-extern void get_doc_path(const char *my_exec_path, char *ret_path);
-extern void get_html_path(const char *my_exec_path, char *ret_path);
-extern void get_man_path(const char *my_exec_path, char *ret_path);
+extern void get_doc_path(const char *my_rootdir, char *ret_path);
+extern void get_html_path(const char *my_rootdir, char *ret_path);
+extern void get_man_path(const char *my_rootdir, char *ret_path);
 extern bool get_home_path(char *ret_path);
 extern void get_parent_directory(char *path);
 
@@ -103,9 +106,14 @@ extern void pgfnames_cleanup(char **filenames);
 extern void set_pglocale_pgservice(const char *argv0, const char *app);
 
 /* Portable way to find and execute binaries (in exec.c) */
+extern int	find_my_rootdir(const char *argv0, char *retpath);
+extern int	find_my_libexecdir(const char *argv0, char *retpath);
+extern int	find_my_bindir(const char *argv0, char *retpath);
 extern int	find_my_exec(const char *argv0, char *retpath);
 extern int	find_other_exec(const char *argv0, const char *target,
 							const char *versionstr, char *retpath);
+extern int	find_other_cmd(const char *argv0, const char *target,
+						   const char *versionstr, char *retpath);
 extern char *pipe_read_line(char *cmd, char *line, int maxsize);
 
 /* Doesn't belong here, but this is used with find_other_exec(), so... */

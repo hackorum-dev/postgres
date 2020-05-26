@@ -7,14 +7,14 @@ use Test::More tests => 17;
 program_help_ok('pg_controldata');
 program_version_ok('pg_controldata');
 program_options_handling_ok('pg_controldata');
-command_fails(['pg_controldata'], 'pg_controldata without arguments fails');
-command_fails([ 'pg_controldata', 'nonexistent' ],
+command_fails([ 'pg', 'controldata'], 'pg_controldata without arguments fails');
+command_fails([ 'pg', 'controldata', 'nonexistent' ],
 	'pg_controldata with nonexistent directory fails');
 
 my $node = get_new_node('main');
 $node->init;
 
-command_like([ 'pg_controldata', $node->data_dir ],
+command_like([ 'pg', 'controldata', $node->data_dir ],
 	qr/checkpoint/, 'pg_controldata produces output');
 
 
@@ -31,7 +31,7 @@ print $fh pack("x[$size]");
 close $fh;
 
 command_checks_all(
-	[ 'pg_controldata', $node->data_dir ],
+	[ 'pg', 'controldata', $node->data_dir ],
 	0,
 	[
 		qr/WARNING: Calculated CRC checksum does not match value stored in file/,

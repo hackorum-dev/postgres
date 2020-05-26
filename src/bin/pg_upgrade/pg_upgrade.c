@@ -165,14 +165,14 @@ main(int argc, char **argv)
 	 */
 	prep_status("Setting next OID for new cluster");
 	exec_prog(UTILITY_LOG_FILE, NULL, true, true,
-			  "\"%s/pg_resetwal\" -o %u \"%s\"",
-			  new_cluster.bindir, old_cluster.controldata.chkpnt_nxtoid,
+			  "\"%s\" -o %u \"%s\"",
+			  new_cluster.pg_resetwal_path, old_cluster.controldata.chkpnt_nxtoid,
 			  new_cluster.pgdata);
 	check_ok();
 
 	prep_status("Sync data directory to disk");
 	exec_prog(UTILITY_LOG_FILE, NULL, true, true,
-			  "\"%s/initdb\" --sync-only \"%s\"", new_cluster.bindir,
+			  "\"%s\" --sync-only \"%s\"", new_cluster.initdb_path,
 			  new_cluster.pgdata);
 	check_ok();
 
@@ -208,11 +208,11 @@ setup(char *argv0, bool *live_check)
 	check_pghost_envvar();
 
 	/*
-	 * In case the user hasn't specified the directory for the new binaries
-	 * with -B, default to using the path of the currently executed pg_upgrade
-	 * binary.
+	 * In case the user hasn't specified the directory for the new commands
+	 * with -L, default to using the path of the currently executed pg_upgrade
+	 * command.
 	 */
-	if (!new_cluster.bindir)
+	if (!new_cluster.libexecdir)
 	{
 		char		exec_path[MAXPGPATH];
 
@@ -221,7 +221,22 @@ setup(char *argv0, bool *live_check)
 		/* Trim off program name and keep just path */
 		*last_dir_separator(exec_path) = '\0';
 		canonicalize_path(exec_path);
-		new_cluster.bindir = pg_strdup(exec_path);
+		new_cluster.libexecdir = pg_strdup(exec_path);
+	}
+
+	/*
+	 * In case the user hasn't specified the directory for the new binaries
+	 * with -B, construct it from the path for libexecdir.
+	 *
+	 * TODO: handle custom bin locations which are not where we expect.
+	 */
+	if (!new_cluster.bindir)
+	{
+		char		tmp[MAXPGPATH * 2];  /* room for relative path change */
+
+		snprintf(tmp, sizeof(tmp), "%s/../bin", new_cluster.libexecdir);
+		canonicalize_path(tmp);
+		new_cluster.bindir = pg_strdup(tmp);
 	}
 
 	verify_directories();
@@ -272,8 +287,8 @@ prepare_new_cluster(void)
 	 */
 	prep_status("Analyzing all rows in the new cluster");
 	exec_prog(UTILITY_LOG_FILE, NULL, true, true,
-			  "\"%s/vacuumdb\" %s --all --analyze %s",
-			  new_cluster.bindir, cluster_conn_opts(&new_cluster),
+			  "\"%s\" %s --all --analyze %s",
+			  new_cluster.vacuumdb_path, cluster_conn_opts(&new_cluster),
 			  log_opts.verbose ? "--verbose" : "");
 	check_ok();
 
@@ -285,8 +300,8 @@ prepare_new_cluster(void)
 	 */
 	prep_status("Freezing all rows in the new cluster");
 	exec_prog(UTILITY_LOG_FILE, NULL, true, true,
-			  "\"%s/vacuumdb\" %s --all --freeze %s",
-			  new_cluster.bindir, cluster_conn_opts(&new_cluster),
+			  "\"%s\" %s --all --freeze %s",
+			  new_cluster.vacuumdb_path, cluster_conn_opts(&new_cluster),
 			  log_opts.verbose ? "--verbose" : "");
 	check_ok();
 }
@@ -306,8 +321,8 @@ prepare_new_globals(void)
 	prep_status("Restoring global objects in the new cluster");
 
 	exec_prog(UTILITY_LOG_FILE, NULL, true, true,
-			  "\"%s/psql\" " EXEC_PSQL_ARGS " %s -f \"%s\"",
-			  new_cluster.bindir, cluster_conn_opts(&new_cluster),
+			  "\"%s\" " EXEC_PSQL_ARGS " %s -f \"%s\"",
+			  new_cluster.psql_path, cluster_conn_opts(&new_cluster),
 			  GLOBALS_DUMP_FILE);
 	check_ok();
 }
@@ -351,9 +366,9 @@ create_new_objects(void)
 				  NULL,
 				  true,
 				  true,
-				  "\"%s/pg_restore\" %s %s --exit-on-error --verbose "
+				  "\"%s\" %s %s --exit-on-error --verbose "
 				  "--dbname postgres \"%s\"",
-				  new_cluster.bindir,
+				  new_cluster.pg_restore_path,
 				  cluster_conn_opts(&new_cluster),
 				  create_opts,
 				  sql_file_name);
@@ -388,9 +403,9 @@ create_new_objects(void)
 
 		parallel_exec_prog(log_file_name,
 						   NULL,
-						   "\"%s/pg_restore\" %s %s --exit-on-error --verbose "
+						   "\"%s\" %s %s --exit-on-error --verbose "
 						   "--dbname template1 \"%s\"",
-						   new_cluster.bindir,
+						   new_cluster.pg_restore_path,
 						   cluster_conn_opts(&new_cluster),
 						   create_opts,
 						   sql_file_name);
@@ -474,17 +489,17 @@ copy_xact_xlog_xid(void)
 	/* set the next transaction id and epoch of the new cluster */
 	prep_status("Setting next transaction ID and epoch for new cluster");
 	exec_prog(UTILITY_LOG_FILE, NULL, true, true,
-			  "\"%s/pg_resetwal\" -f -x %u \"%s\"",
-			  new_cluster.bindir, old_cluster.controldata.chkpnt_nxtxid,
+			  "\"%s\" -f -x %u \"%s\"",
+			  new_cluster.pg_resetwal_path, old_cluster.controldata.chkpnt_nxtxid,
 			  new_cluster.pgdata);
 	exec_prog(UTILITY_LOG_FILE, NULL, true, true,
-			  "\"%s/pg_resetwal\" -f -e %u \"%s\"",
-			  new_cluster.bindir, old_cluster.controldata.chkpnt_nxtepoch,
+			  "\"%s\" -f -e %u \"%s\"",
+			  new_cluster.pg_resetwal_path, old_cluster.controldata.chkpnt_nxtepoch,
 			  new_cluster.pgdata);
 	/* must reset commit timestamp limits also */
 	exec_prog(UTILITY_LOG_FILE, NULL, true, true,
-			  "\"%s/pg_resetwal\" -f -c %u,%u \"%s\"",
-			  new_cluster.bindir,
+			  "\"%s\" -f -c %u,%u \"%s\"",
+			  new_cluster.pg_resetwal_path,
 			  old_cluster.controldata.chkpnt_nxtxid,
 			  old_cluster.controldata.chkpnt_nxtxid,
 			  new_cluster.pgdata);
@@ -509,8 +524,8 @@ copy_xact_xlog_xid(void)
 		 * counters here and the oldest multi present on system.
 		 */
 		exec_prog(UTILITY_LOG_FILE, NULL, true, true,
-				  "\"%s/pg_resetwal\" -O %u -m %u,%u \"%s\"",
-				  new_cluster.bindir,
+				  "\"%s\" -O %u -m %u,%u \"%s\"",
+				  new_cluster.pg_resetwal_path,
 				  old_cluster.controldata.chkpnt_nxtmxoff,
 				  old_cluster.controldata.chkpnt_nxtmulti,
 				  old_cluster.controldata.chkpnt_oldstMulti,
@@ -537,8 +552,8 @@ copy_xact_xlog_xid(void)
 		 * next=MaxMultiXactId, but multixact.c can cope with that just fine.
 		 */
 		exec_prog(UTILITY_LOG_FILE, NULL, true, true,
-				  "\"%s/pg_resetwal\" -m %u,%u \"%s\"",
-				  new_cluster.bindir,
+				  "\"%s\" -m %u,%u \"%s\"",
+				  new_cluster.pg_resetwal_path,
 				  old_cluster.controldata.chkpnt_nxtmulti + 1,
 				  old_cluster.controldata.chkpnt_nxtmulti,
 				  new_cluster.pgdata);
@@ -549,7 +564,7 @@ copy_xact_xlog_xid(void)
 	prep_status("Resetting WAL archives");
 	exec_prog(UTILITY_LOG_FILE, NULL, true, true,
 	/* use timeline 1 to match controldata and no WAL history file */
-			  "\"%s/pg_resetwal\" -l 00000001%s \"%s\"", new_cluster.bindir,
+			  "\"%s\" -l 00000001%s \"%s\"", new_cluster.pg_resetwal_path,
 			  old_cluster.controldata.nextxlogfile + 8,
 			  new_cluster.pgdata);
 	check_ok();

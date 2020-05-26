@@ -15,10 +15,10 @@ program_help_ok('pg_ctl');
 program_version_ok('pg_ctl');
 program_options_handling_ok('pg_ctl');
 
-command_exit_is([ 'pg_ctl', 'start', '-D', "$tempdir/nonexistent" ],
+command_exit_is([ 'pg', 'ctl', 'start', '-D', "$tempdir/nonexistent" ],
 	1, 'pg_ctl start with nonexistent directory');
 
-command_ok([ 'pg_ctl', 'initdb', '-D', "$tempdir/data", '-o', '-N' ],
+command_ok([ 'pg', 'ctl', 'initdb', '-D', "$tempdir/data", '-o', '-N' ],
 	'pg_ctl initdb');
 command_ok([ $ENV{PG_REGRESS}, '--config-auth', "$tempdir/data" ],
 	'configure authentication');
@@ -40,7 +40,7 @@ else
 }
 close $conf;
 my $ctlcmd = [
-	'pg_ctl', 'start', '-D', "$tempdir/data", '-l',
+	'pg', 'ctl', 'start', '-D', "$tempdir/data", '-l',
 	"$TestLib::log_path/001_start_stop_server.log"
 ];
 if ($Config{osname} ne 'msys')
@@ -59,17 +59,17 @@ else
 # postmaster they start.  Waiting more than the 2 seconds slop time allowed
 # by wait_for_postmaster() prevents that mistake.
 sleep 3 if ($windows_os);
-command_fails([ 'pg_ctl', 'start', '-D', "$tempdir/data" ],
+command_fails([ 'pg', 'ctl', 'start', '-D', "$tempdir/data" ],
 	'second pg_ctl start fails');
-command_ok([ 'pg_ctl', 'stop', '-D', "$tempdir/data" ], 'pg_ctl stop');
-command_fails([ 'pg_ctl', 'stop', '-D', "$tempdir/data" ],
+command_ok([ 'pg', 'ctl', 'stop', '-D', "$tempdir/data" ], 'pg_ctl stop');
+command_fails([ 'pg', 'ctl', 'stop', '-D', "$tempdir/data" ],
 	'second pg_ctl stop fails');
 
 # Log file for default permission test.  The permissions won't be checked on
 # Windows but we still want to do the restart test.
 my $logFileName = "$tempdir/data/perm-test-600.log";
 
-command_ok([ 'pg_ctl', 'restart', '-D', "$tempdir/data", '-l', $logFileName ],
+command_ok([ 'pg', 'ctl', 'restart', '-D', "$tempdir/data", '-l', $logFileName ],
 	'pg_ctl restart with server not running');
 
 # Permissions on log file should be default
@@ -89,21 +89,21 @@ SKIP:
 {
 	skip "group access not supported on Windows", 3 if ($windows_os);
 
-	system_or_bail 'pg_ctl', 'stop', '-D', "$tempdir/data";
+	system_or_bail 'pg', 'ctl', 'stop', '-D', "$tempdir/data";
 
 	# Change the data dir mode so log file will be created with group read
 	# privileges on the next start
 	chmod_recursive("$tempdir/data", 0750, 0640);
 
 	command_ok(
-		[ 'pg_ctl', 'start', '-D', "$tempdir/data", '-l', $logFileName ],
+		[ 'pg', 'ctl', 'start', '-D', "$tempdir/data", '-l', $logFileName ],
 		'start server to check group permissions');
 
 	ok(-f $logFileName);
 	ok(check_mode_recursive("$tempdir/data", 0750, 0640));
 }
 
-command_ok([ 'pg_ctl', 'restart', '-D', "$tempdir/data" ],
+command_ok([ 'pg', 'ctl', 'restart', '-D', "$tempdir/data" ],
 	'pg_ctl restart with server running');
 
-system_or_bail 'pg_ctl', 'stop', '-D', "$tempdir/data";
+system_or_bail 'pg', 'ctl', 'stop', '-D', "$tempdir/data";

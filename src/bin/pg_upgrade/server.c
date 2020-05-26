@@ -241,8 +241,8 @@ start_postmaster(ClusterInfo *cluster, bool report_and_exit_on_error)
 	 * win on ext4.
 	 */
 	snprintf(cmd, sizeof(cmd),
-			 "\"%s/pg_ctl\" -w -l \"%s\" -D \"%s\" -o \"-p %d%s%s %s%s\" start",
-			 cluster->bindir, SERVER_LOG_FILE, cluster->pgconfig, cluster->port,
+			 "\"%s\" -w -l \"%s\" -D \"%s\" -o \"-p %d%s%s %s%s\" start",
+			 cluster->pg_ctl_path, SERVER_LOG_FILE, cluster->pgconfig, cluster->port,
 			 (cluster->controldata.cat_ver >=
 			  BINARY_UPGRADE_SERVER_FLAG_CAT_VER) ? " -b" :
 			 " -c autovacuum=off -c autovacuum_freeze_max_age=2000000000",
@@ -336,8 +336,8 @@ stop_postmaster(bool in_atexit)
 		return;					/* no cluster running */
 
 	exec_prog(SERVER_STOP_LOG_FILE, NULL, !in_atexit, !in_atexit,
-			  "\"%s/pg_ctl\" -w -D \"%s\" -o \"%s\" %s stop",
-			  cluster->bindir, cluster->pgconfig,
+			  "\"%s\" -w -D \"%s\" -o \"%s\" %s stop",
+			  cluster->pg_ctl_path, cluster->pgconfig,
 			  cluster->pgopts ? cluster->pgopts : "",
 			  in_atexit ? "-m fast" : "-m smart");
 

@@ -14,7 +14,9 @@ must have done "make install" for both versions.  Then do:
 
 export oldsrc=...somewhere/postgresql	(old version's source tree)
 export oldbindir=...otherversion/bin	(old version's installed bin dir)
+export oldlibexecdir=...otherversion/libexec	(old version's installed libexec dir)
 export bindir=...thisversion/bin	(this version's installed bin dir)
+export libexecdir=...thisversion/libexec	(this version's installed libexec dir)
 export libdir=...thisversion/lib	(this version's installed lib dir)
 sh test.sh
 

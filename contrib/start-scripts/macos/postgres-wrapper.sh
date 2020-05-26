@@ -4,8 +4,10 @@
 
 # edit these as needed:
 
-# directory containing postgres executable:
+# directory containing postgres user executable:
 PGBINDIR="/usr/local/pgsql/bin"
+# directory containing postgres program executables:
+PGLIBEXECDIR="/usr/local/pgsql/libexec"
 # data directory:
 PGDATA="/usr/local/pgsql/data"
 # file to receive postmaster's initial log messages:

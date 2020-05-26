@@ -42,6 +42,7 @@ typedef struct
 
 static const InfoItem info_items[] = {
 	{"--bindir", "BINDIR"},
+	{"--libexecdir", "LIBEXECDIR"},
 	{"--docdir", "DOCDIR"},
 	{"--htmldir", "HTMLDIR"},
 	{"--includedir", "INCLUDEDIR"},
@@ -76,6 +77,7 @@ help(void)
 	printf(_("  %s [OPTION]...\n\n"), progname);
 	printf(_("Options:\n"));
 	printf(_("  --bindir              show location of user executables\n"));
+	printf(_("  --libexecdir          show location of commands\n"));
 	printf(_("  --docdir              show location of documentation files\n"));
 	printf(_("  --htmldir             show location of HTML documentation files\n"));
 	printf(_("  --includedir          show location of C header files of the client\n"
@@ -132,6 +134,7 @@ main(int argc, char **argv)
 	ConfigData *configdata;
 	size_t		configdata_len;
 	char		my_exec_path[MAXPGPATH];
+	char		my_rootdir[MAXPGPATH];
 	int			i;
 	int			j;
 
@@ -147,6 +150,11 @@ main(int argc, char **argv)
 			help();
 			exit(0);
 		}
+		if (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-V") == 0)
+		{
+			puts("pg_config (PostgreSQL) " PG_VERSION);
+			exit(0);
+		}
 	}
 
 	if (find_my_exec(argv[0], my_exec_path) < 0)
@@ -155,7 +163,13 @@ main(int argc, char **argv)
 		exit(1);
 	}
 
-	configdata = get_configdata(my_exec_path, &configdata_len);
+	if (find_my_rootdir(argv[0], my_rootdir) < 0)
+	{
+		fprintf(stderr, _("%s: could not find own root executable\n"), progname);
+		exit(1);
+	}
+
+	configdata = get_configdata(my_exec_path, my_rootdir, &configdata_len);
 	/* no arguments -> print everything */
 	if (argc < 2)
 	{

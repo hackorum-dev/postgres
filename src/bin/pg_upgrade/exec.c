@@ -16,7 +16,7 @@
 static void check_data_dir(ClusterInfo *cluster);
 static void check_bin_dir(ClusterInfo *cluster);
 static void get_bin_version(ClusterInfo *cluster);
-static void validate_exec(const char *dir, const char *cmdName);
+static void validate_exec(ClusterInfo *cluster, char **path, const char *cmdName);
 
 #ifdef WIN32
 static int	win32_check_directory_write_permissions(void);
@@ -37,7 +37,7 @@ get_bin_version(ClusterInfo *cluster)
 	int			v1 = 0,
 				v2 = 0;
 
-	snprintf(cmd, sizeof(cmd), "\"%s/pg_ctl\" --version", cluster->bindir);
+	snprintf(cmd, sizeof(cmd), "\"%s/pg_ctl\" --version", cluster->libexecdir);
 
 	if ((output = popen(cmd, "r")) == NULL ||
 		fgets(cmd_output, sizeof(cmd_output), output) == NULL)
@@ -357,10 +357,9 @@ check_data_dir(ClusterInfo *cluster)
 /*
  * check_bin_dir()
  *
- *	This function searches for the executables that we expect to find
- *	in the binaries directory.  If we find that a required executable
- *	is missing (or secured against us), we display an error message and
- *	exit().
+ *	This function searches for the executables that we expect to find in the
+ *	libexec or binaries directory.  If we find that a required executable is
+ *	missing (or secured against us), we display an error message and exit().
  */
 static void
 check_bin_dir(ClusterInfo *cluster)
@@ -375,9 +374,17 @@ check_bin_dir(ClusterInfo *cluster)
 		report_status(PG_FATAL, "\"%s\" is not a directory\n",
 					  cluster->bindir);
 
-	validate_exec(cluster->bindir, "postgres");
-	validate_exec(cluster->bindir, "pg_controldata");
-	validate_exec(cluster->bindir, "pg_ctl");
+	/*
+	 * libexec will not exist on older clusters, but if it exists, it should
+	 * be a directory.
+	 */
+	if (stat(cluster->libexecdir, &statBuf) == 0 && !S_ISDIR(statBuf.st_mode))
+		report_status(PG_FATAL, "\"%s\" is not a directory\n",
+					  cluster->libexecdir);
+
+	validate_exec(cluster, &cluster->postgres_path, "postgres");
+	validate_exec(cluster, &cluster->pg_controldata_path, "pg_controldata");
+	validate_exec(cluster, &cluster->pg_ctl_path, "pg_ctl");
 
 	/*
 	 * Fetch the binary version after checking for the existence of pg_ctl.
@@ -388,9 +395,9 @@ check_bin_dir(ClusterInfo *cluster)
 
 	/* pg_resetxlog has been renamed to pg_resetwal in version 10 */
 	if (GET_MAJOR_VERSION(cluster->bin_version) < 1000)
-		validate_exec(cluster->bindir, "pg_resetxlog");
+		validate_exec(cluster, &cluster->pg_resetwal_path, "pg_resetxlog");
 	else
-		validate_exec(cluster->bindir, "pg_resetwal");
+		validate_exec(cluster, &cluster->pg_resetwal_path, "pg_resetwal");
 
 	if (cluster == &new_cluster)
 	{
@@ -399,63 +406,81 @@ check_bin_dir(ClusterInfo *cluster)
 		 * pg_dumpall are used to dump the old cluster, but must be of the
 		 * target version.
 		 */
-		validate_exec(cluster->bindir, "initdb");
-		validate_exec(cluster->bindir, "pg_dump");
-		validate_exec(cluster->bindir, "pg_dumpall");
-		validate_exec(cluster->bindir, "pg_restore");
-		validate_exec(cluster->bindir, "psql");
-		validate_exec(cluster->bindir, "vacuumdb");
+		validate_exec(cluster, &cluster->initdb_path, "initdb");
+		validate_exec(cluster, &cluster->pg_dump_path, "pg_dump");
+		validate_exec(cluster, &cluster->pg_dumpall_path, "pg_dumpall");
+		validate_exec(cluster, &cluster->pg_restore_path, "pg_restore");
+		validate_exec(cluster, &cluster->psql_path, "psql");
+		validate_exec(cluster, &cluster->vacuumdb_path, "vacuumdb");
 	}
 }
-
 
 /*
  * validate_exec()
  *
- * validate "path" as an executable file
+ * validate "cmdName" as an executable file, either in the cluster's bindir
+ * or libexecdir (if any), and store the valid location for the command in
+ * "path" for future use.
  */
 static void
-validate_exec(const char *dir, const char *cmdName)
+validate_exec(ClusterInfo *cluster, char **path, const char *cmdName)
 {
-	char		path[MAXPGPATH];
+	int			idx;
 	struct stat buf;
+	const char *dir[] = { cluster->bindir, cluster->libexecdir, NULL };
 
-	snprintf(path, sizeof(path), "%s/%s", dir, cmdName);
+	if (cluster->libexecdir == NULL)
+		pg_fatal("libexecdir is null in validate_exec");
+
+	*path = (char *) pg_malloc0(MAXPGPATH);
+	for (idx = 0; dir[idx]; idx++)
+	{
+		snprintf(*path, MAXPGPATH, "%s/%s", dir[idx], cmdName);
 
 #ifdef WIN32
-	/* Windows requires a .exe suffix for stat() */
-	if (strlen(path) <= strlen(EXE_EXT) ||
-		pg_strcasecmp(path + strlen(path) - strlen(EXE_EXT), EXE_EXT) != 0)
-		strlcat(path, EXE_EXT, sizeof(path));
+		/* Windows requires a .exe suffix for stat() */
+		if (strlen(*path) <= strlen(EXE_EXT) ||
+			pg_strcasecmp(*path + strlen(*path) - strlen(EXE_EXT), EXE_EXT) != 0)
+			strlcat(*path, EXE_EXT, sizeof(*path));
 #endif
 
-	/*
-	 * Ensure that the file exists and is a regular file.
-	 */
-	if (stat(path, &buf) < 0)
-		pg_fatal("check for \"%s\" failed: %s\n",
-				 path, strerror(errno));
-	else if (!S_ISREG(buf.st_mode))
-		pg_fatal("check for \"%s\" failed: not a regular file\n",
-				 path);
+		/*
+		 * Ensure that the file exists and is a regular file.
+		 */
+		if (stat(*path, &buf) < 0)
+		{
+			printf("check for %s failed (dir = %s, cmd = %s)", *path, dir[idx], cmdName);
+			continue;
+		}
+		else if (!S_ISREG(buf.st_mode))
+			pg_fatal("check for \"%s\" failed: not a regular file\n",
+					 *path);
 
-	/*
-	 * Ensure that the file is both executable and readable (required for
-	 * dynamic loading).
-	 */
+		/*
+		 * Ensure that the file is both executable and readable (required for
+		 * dynamic loading).
+		 */
 #ifndef WIN32
-	if (access(path, R_OK) != 0)
+		if (access(*path, R_OK) != 0)
 #else
-	if ((buf.st_mode & S_IRUSR) == 0)
+		if ((buf.st_mode & S_IRUSR) == 0)
 #endif
-		pg_fatal("check for \"%s\" failed: cannot read file (permission denied)\n",
-				 path);
+			pg_fatal("check for \"%s\" failed: cannot read file (permission denied)\n",
+					 *path);
 
 #ifndef WIN32
-	if (access(path, X_OK) != 0)
+		if (access(*path, X_OK) != 0)
 #else
-	if ((buf.st_mode & S_IXUSR) == 0)
+		if ((buf.st_mode & S_IXUSR) == 0)
 #endif
-		pg_fatal("check for \"%s\" failed: cannot execute (permission denied)\n",
-				 path);
+			pg_fatal("check for \"%s\" failed: cannot execute (permission denied)\n",
+					 *path);
+
+		/* If we get here, all checks passed */
+		return;
+	}
+
+	/* If we get here, we failed the stat() call, and errno should be set */
+	pg_fatal("check for \"%s\" failed: %s\n",
+			 *path, strerror(errno));
 }

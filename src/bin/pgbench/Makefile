@@ -32,13 +32,13 @@ exprparse.o: exprscan.c
 distprep: exprparse.c exprscan.c
 
 install: all installdirs
-	$(INSTALL_PROGRAM) pgbench$(X) '$(DESTDIR)$(bindir)/pgbench$(X)'
+	$(INSTALL_PROGRAM) pgbench$(X) '$(DESTDIR)$(libexecdir)/pgbench$(X)'
 
 installdirs:
-	$(MKDIR_P) '$(DESTDIR)$(bindir)'
+	$(MKDIR_P) '$(DESTDIR)$(libexecdir)'
 
 uninstall:
-	rm -f '$(DESTDIR)$(bindir)/pgbench$(X)'
+	rm -f '$(DESTDIR)$(libexecdir)/pgbench$(X)'
 
 clean distclean:
 	rm -f pgbench$(X) $(OBJS)

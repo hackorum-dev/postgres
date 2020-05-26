@@ -161,6 +161,13 @@ InitStandaloneProcess(const char *argv0)
 				 argv0);
 	}
 
+	if (my_rootdir[0] == '\0')
+	{
+		if (find_my_rootdir(argv0, my_rootdir) < 0)
+			elog(FATAL, "%s: could not locate my own installation root",
+				 argv0);
+	}
+
 	if (pkglib_path[0] == '\0')
 		get_pkglib_path(my_exec_path, pkglib_path);
 }

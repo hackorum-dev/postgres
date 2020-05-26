@@ -136,6 +136,7 @@ sub check
 		"../../../$Config/pg_regress/pg_regress",
 		"--dlpath=.",
 		"--bindir=",
+		"--libexecdir=",
 		"--schedule=${schedule}_schedule",
 		"--max-concurrent-tests=20",
 		"--encoding=SQL_ASCII",
@@ -162,6 +163,7 @@ sub ecpgcheck
 	my @args     = (
 		"../../../../$Config/pg_regress_ecpg/pg_regress_ecpg",
 		"--bindir=",
+		"--libexecdir=",
 		"--dbname=ecpg1_regression,ecpg2_regression",
 		"--create-role=regress_ecpg_user1,regress_ecpg_user2",
 		"--schedule=${schedule}_schedule",

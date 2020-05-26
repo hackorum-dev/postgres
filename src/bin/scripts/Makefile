@@ -33,20 +33,20 @@ reindexdb: reindexdb.o common.o scripts_parallel.o $(WIN32RES) | submake-libpq s
 pg_isready: pg_isready.o common.o $(WIN32RES) | submake-libpq submake-libpgport submake-libpgfeutils
 
 install: all installdirs
-	$(INSTALL_PROGRAM) createdb$(X)   '$(DESTDIR)$(bindir)'/createdb$(X)
-	$(INSTALL_PROGRAM) dropdb$(X)     '$(DESTDIR)$(bindir)'/dropdb$(X)
-	$(INSTALL_PROGRAM) createuser$(X) '$(DESTDIR)$(bindir)'/createuser$(X)
-	$(INSTALL_PROGRAM) dropuser$(X)   '$(DESTDIR)$(bindir)'/dropuser$(X)
-	$(INSTALL_PROGRAM) clusterdb$(X)  '$(DESTDIR)$(bindir)'/clusterdb$(X)
-	$(INSTALL_PROGRAM) vacuumdb$(X)   '$(DESTDIR)$(bindir)'/vacuumdb$(X)
-	$(INSTALL_PROGRAM) reindexdb$(X)  '$(DESTDIR)$(bindir)'/reindexdb$(X)
-	$(INSTALL_PROGRAM) pg_isready$(X) '$(DESTDIR)$(bindir)'/pg_isready$(X)
+	$(INSTALL_PROGRAM) createdb$(X)   '$(DESTDIR)$(libexecdir)'/createdb$(X)
+	$(INSTALL_PROGRAM) dropdb$(X)     '$(DESTDIR)$(libexecdir)'/dropdb$(X)
+	$(INSTALL_PROGRAM) createuser$(X) '$(DESTDIR)$(libexecdir)'/createuser$(X)
+	$(INSTALL_PROGRAM) dropuser$(X)   '$(DESTDIR)$(libexecdir)'/dropuser$(X)
+	$(INSTALL_PROGRAM) clusterdb$(X)  '$(DESTDIR)$(libexecdir)'/clusterdb$(X)
+	$(INSTALL_PROGRAM) vacuumdb$(X)   '$(DESTDIR)$(libexecdir)'/vacuumdb$(X)
+	$(INSTALL_PROGRAM) reindexdb$(X)  '$(DESTDIR)$(libexecdir)'/reindexdb$(X)
+	$(INSTALL_PROGRAM) pg_isready$(X) '$(DESTDIR)$(libexecdir)'/pg_isready$(X)
 
 installdirs:
-	$(MKDIR_P) '$(DESTDIR)$(bindir)'
+	$(MKDIR_P) '$(DESTDIR)$(libexecdir)'
 
 uninstall:
-	rm -f $(addprefix '$(DESTDIR)$(bindir)'/, $(addsuffix $(X), $(PROGRAMS)))
+	rm -f $(addprefix '$(DESTDIR)$(libexecdir)'/, $(addsuffix $(X), $(PROGRAMS)))
 
 clean distclean maintainer-clean:
 	rm -f $(addsuffix $(X), $(PROGRAMS)) $(addsuffix .o, $(PROGRAMS))

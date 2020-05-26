@@ -25,13 +25,13 @@ pg_config: $(OBJS) | submake-libpgport
 	$(CC) $(CFLAGS) $(OBJS) $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 install: all installdirs
-	$(INSTALL_SCRIPT) pg_config$(X) '$(DESTDIR)$(bindir)/pg_config$(X)'
+	$(INSTALL_SCRIPT) pg_config$(X) '$(DESTDIR)$(libexecdir)/pg_config$(X)'
 
 installdirs:
-	$(MKDIR_P) '$(DESTDIR)$(bindir)'
+	$(MKDIR_P) '$(DESTDIR)$(libexecdir)'
 
 uninstall:
-	rm -f '$(DESTDIR)$(bindir)/pg_config$(X)'
+	rm -f '$(DESTDIR)$(libexecdir)/pg_config$(X)'
 
 clean distclean maintainer-clean:
 	rm -f pg_config$(X) $(OBJS)

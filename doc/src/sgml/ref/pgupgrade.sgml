@@ -26,6 +26,10 @@ PostgreSQL documentation
    <arg choice="plain"><replaceable>oldbindir</replaceable></arg>
    <arg choice="plain"><option>-B</option></arg>
    <arg choice="plain"><replaceable>newbindir</replaceable></arg>
+   <arg choice="plain"><option>-l</option></arg>
+   <arg choice="plain"><replaceable>oldlibexecdir</replaceable></arg>
+   <arg choice="plain"><option>-L</option></arg>
+   <arg choice="plain"><replaceable>newlibexecdir</replaceable></arg>
    <arg choice="plain"><option>-d</option></arg>
    <arg choice="plain"><replaceable>oldconfigdir</replaceable></arg>
    <arg choice="plain"><option>-D</option></arg>
@@ -92,7 +96,6 @@ PostgreSQL documentation
       <term><option>-B</option> <replaceable>bindir</replaceable></term>
       <term><option>--new-bindir=</option><replaceable>bindir</replaceable></term>
       <listitem><para>the new PostgreSQL executable directory;
-      default is the directory where <application>pg_upgrade</application> resides;
       environment variable <envar>PGBINNEW</envar></para></listitem>
      </varlistentry>
 
@@ -128,6 +131,21 @@ PostgreSQL documentation
       <term><option>--link</option></term>
       <listitem><para>use hard links instead of copying files to the new
       cluster</para></listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-l</option> <replaceable>libexecdir</replaceable></term>
+      <term><option>--old-libexecdir=</option><replaceable>libexecdir</replaceable></term>
+      <listitem><para>the old PostgreSQL command directory;
+      environment variable <envar>PGLIBEXECOLD</envar></para></listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-L</option> <replaceable>libexecdir</replaceable></term>
+      <term><option>--new-libexecdir=</option><replaceable>libexecdir</replaceable></term>
+      <listitem><para>the new PostgreSQL command directory;
+      default is the directory where <application>pg_upgrade</application> resides;
+      environment variable <envar>PGLIBEXECNEW</envar></para></listitem>
      </varlistentry>
 
      <varlistentry>
@@ -418,6 +436,8 @@ pg_upgrade.exe
         --new-datadir "C:/Program Files/PostgreSQL/&majorversion;/data"
         --old-bindir "C:/Program Files/PostgreSQL/9.6/bin"
         --new-bindir "C:/Program Files/PostgreSQL/&majorversion;/bin"
+        --old-libexecdir "C:/Program Files/PostgreSQL/9.6/libexec"
+        --new-libexecdir "C:/Program Files/PostgreSQL/&majorversion;/libexec"
 </programlisting>
 
      Once started, <command>pg_upgrade</command> will verify the two clusters are compatible

@@ -25,6 +25,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "pg_exec_relpath.h"
+
 /*
  * Hacky solution to allow expressing both frontend and backend error reports
  * in one macro call.  First argument of log_error is an errcode() call of
@@ -109,6 +111,66 @@ validate_exec(const char *path)
 	return is_x ? (is_r ? 0 : -2) : -1;
 }
 
+/*
+ * find_my_rootdir -- find an absolute path to the postgres installation
+ *
+ *  argv0 is the name passed on the command line
+ *  retpath is the output area (must be of size MAXPGPATH)
+ *  returns 0 if OK, -1 if error.
+ */
+int
+find_my_rootdir(const char *argv0, char *retpath)
+{
+	char	path[MAXPGPATH * 2];	/* room for relative path changes */
+
+	/*
+	 * Get path to my executable.  This should be somewhere in either
+	 * bindir or libexecdir, depending on who is calling.
+	 */
+	if (find_my_exec(argv0, path))
+		return -1;
+
+	/* Trim off program name and keep just directory */
+	*last_dir_separator(path) = '\0';
+	canonicalize_path(path);
+
+	/*
+	 * If our executable was in bindir or libexecdir, one of these
+	 * two will match and we can return the rootdir, otherwise we
+	 * don't know what the rootdir is and must return error.
+	 */
+	if (trim_path_suffix(path, BIN_SUFFIX, retpath) == 0)
+		return 0;
+	if (trim_path_suffix(path, LIBEXEC_SUFFIX, retpath) == 0)
+		return 0;
+	return -1;
+}
+
+int
+find_my_libexecdir(const char *argv0, char *retpath)
+{
+	/* Get the root directory based on my executable */
+	if (find_my_rootdir(argv0, retpath))
+		return -1;
+
+	/* Append the libexecdir suffix to the root directory */
+	strcpy(retpath + strlen(retpath), LIBEXEC_SUFFIX);
+	canonicalize_path(retpath);
+	return 0;
+}
+
+int
+find_my_bindir(const char *argv0, char *retpath)
+{
+	/* Get the root directory based on my executable */
+	if (find_my_rootdir(argv0, retpath))
+		return -1;
+
+	/* Append the bindir suffix to the root directory */
+	strcpy(retpath + strlen(retpath), BIN_SUFFIX);
+	canonicalize_path(retpath);
+	return 0;
+}
 
 /*
  * find_my_exec -- find an absolute path to a valid executable
@@ -314,6 +376,82 @@ resolve_symlinks(char *path)
 	return 0;
 }
 
+/*
+ * Helper function for find_other_cmd.  We have to change directories
+ * from 'path' to 'path/relpath' if and only if 'path' ends with 'suffix'.
+ * Then we check whether the target exists and is of the right version.
+ */
+static int
+check_cmd(const char *path, const char *suffix, const char *relpath,
+		  const char *target, const char *versionstr, char *retpath)
+{
+	char		cmd[MAXPGPATH];
+	char		line[MAXPGPATH];
+	int			pathlen = strlen(path);
+	int			suffixlen = strlen(suffix);
+
+	/* If our path ends with the given suffix, then we follow the relpath */
+	if (suffixlen <= pathlen && strcmp(path+pathlen-suffixlen, suffix) == 0)
+		snprintf(retpath, MAXPGPATH, "%s%s%s%s", path, relpath, target, EXE);
+	else
+		snprintf(retpath, MAXPGPATH, "%s/%s%s", path, target, EXE);
+
+	if (validate_exec(retpath) == 0)
+	{
+		snprintf(cmd, sizeof(cmd), "\"%s\" -V", retpath);
+		if (pipe_read_line(cmd, line, sizeof(line)))
+		{
+			if (strcmp(line, versionstr) != 0)
+				return -2;	/* wrong version */
+			return 0;
+		}
+	}
+
+	return -1;	/* not found */
+}
+
+
+/*
+ * Find another program and make sure it is the proper version.  Assuming our
+ * directory is either $(libexecdir) or $(bindir), this function will look in
+ * both of those directories, and in that order.  Otherwise, it will look in
+ * our directory.
+ *
+ * 'retpath' should point to memory at least MAXPGPATH in size.
+ */
+int
+find_other_cmd(const char *argv0, const char *target,
+				const char *versionstr, char *retpath)
+{
+	char		path[MAXPGPATH];
+	int			result;
+
+	if (find_my_exec(argv0, path) < 0)
+		return -1;
+
+	/* Trim off program name and keep just directory */
+	*last_dir_separator(path) = '\0';
+	canonicalize_path(path);
+
+	/*
+	 * If we are in neither the libexec nor bin directories, both attempts
+	 * below will check our current directory.  If the command is found in our
+	 * current directory, we return success (or wrong version) after just the
+	 * first attempt, and only on failure make the redundant attempt.  It
+	 * doesn't seem worth optimizing away the second attempt on failure, since
+	 * that should be rare anyway.
+	 */
+
+	/* Check libexec directory, or cwd if we're in some unexpected location */
+	result = check_cmd(path, BIN_SUFFIX, TO_LIBEXEC_RELPATH, target,
+					   versionstr, retpath);
+	if (result != -1)
+		return result;
+
+	/* Check bin directory, or cwd if we're in some unexpected location */
+	return check_cmd(path, LIBEXEC_SUFFIX, TO_BIN_RELPATH, target, versionstr,
+					 retpath);
+}
 
 /*
  * Find another program in our binary's directory,
@@ -435,6 +573,7 @@ set_pglocale_pgservice(const char *argv0, const char *app)
 {
 	char		path[MAXPGPATH];
 	char		my_exec_path[MAXPGPATH];
+	char		my_rootdir[MAXPGPATH];
 	char		env_path[MAXPGPATH + sizeof("PGSYSCONFDIR=")];	/* longer than
 																 * PGLOCALEDIR */
 	char	   *dup_path;
@@ -457,6 +596,8 @@ set_pglocale_pgservice(const char *argv0, const char *app)
 
 	if (find_my_exec(argv0, my_exec_path) < 0)
 		return;
+	if (find_my_rootdir(argv0, my_rootdir) < 0)
+		return;
 
 #ifdef ENABLE_NLS
 	get_locale_path(my_exec_path, path);
@@ -476,7 +617,7 @@ set_pglocale_pgservice(const char *argv0, const char *app)
 
 	if (getenv("PGSYSCONFDIR") == NULL)
 	{
-		get_etc_path(my_exec_path, path);
+		get_etc_path(my_rootdir, path);
 
 		/* set for libpq to use */
 		snprintf(env_path, sizeof(env_path), "PGSYSCONFDIR=%s", path);

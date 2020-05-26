@@ -75,6 +75,7 @@ bool		debug = false;
 char	   *inputdir = ".";
 char	   *outputdir = ".";
 char	   *bindir = PGBINDIR;
+char	   *libexecdir = PGLIBEXECDIR;
 char	   *launcher = NULL;
 static _stringlist *loadextension = NULL;
 static int	max_connections = 0;
@@ -269,8 +270,8 @@ stop_postmaster(void)
 
 		snprintf(buf, sizeof(buf),
 				 "\"%s%spg_ctl\" stop -D \"%s/data\" -s",
-				 bindir ? bindir : "",
-				 bindir ? "/" : "",
+				 libexecdir ? libexecdir : "",
+				 libexecdir ? "/" : "",
 				 temp_instance);
 		r = system(buf);
 		if (r != 0)
@@ -2037,6 +2038,8 @@ help(void)
 	printf(_("Options:\n"));
 	printf(_("      --bindir=BINPATH          use BINPATH for programs that are run;\n"));
 	printf(_("                                if empty, use PATH from the environment\n"));
+	printf(_("      --libexecdir=LIBEXECPATH  use LIBEXECPATH for commands that are run;\n"));
+	printf(_("                                if empty, use PATH from the environment\n"));
 	printf(_("      --config-auth=DATADIR     update authentication settings for DATADIR\n"));
 	printf(_("      --create-role=ROLE        create the specified role before testing\n"));
 	printf(_("      --dbname=DB               use database DB (default \"regression\")\n"));
@@ -2095,12 +2098,13 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 		{"port", required_argument, NULL, 14},
 		{"user", required_argument, NULL, 15},
 		{"bindir", required_argument, NULL, 16},
-		{"dlpath", required_argument, NULL, 17},
-		{"create-role", required_argument, NULL, 18},
-		{"temp-config", required_argument, NULL, 19},
-		{"use-existing", no_argument, NULL, 20},
+		{"libexecdir", required_argument, NULL, 17},
+		{"dlpath", required_argument, NULL, 18},
+		{"create-role", required_argument, NULL, 19},
+		{"temp-config", required_argument, NULL, 20},
+		{"use-existing", no_argument, NULL, 21},
 		{"launcher", required_argument, NULL, 21},
-		{"load-extension", required_argument, NULL, 22},
+		{"load-extension", required_argument, NULL, 23},
 		{"config-auth", required_argument, NULL, 24},
 		{"max-concurrent-tests", required_argument, NULL, 25},
 		{NULL, 0, NULL, 0}
@@ -2209,21 +2213,28 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 					bindir = NULL;
 				break;
 			case 17:
-				dlpath = pg_strdup(optarg);
+				/* "--libexecdir=" means to use PATH */
+				if (strlen(optarg))
+					libexecdir = pg_strdup(optarg);
+				else
+					libexecdir = NULL;
 				break;
 			case 18:
-				split_to_stringlist(optarg, ",", &extraroles);
+				dlpath = pg_strdup(optarg);
 				break;
 			case 19:
-				add_stringlist_item(&temp_configs, optarg);
+				split_to_stringlist(optarg, ",", &extraroles);
 				break;
 			case 20:
-				use_existing = true;
+				add_stringlist_item(&temp_configs, optarg);
 				break;
 			case 21:
-				launcher = pg_strdup(optarg);
+				use_existing = true;
 				break;
 			case 22:
+				launcher = pg_strdup(optarg);
+				break;
+			case 23:
 				add_stringlist_item(&loadextension, optarg);
 				break;
 			case 24:
@@ -2319,8 +2330,8 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 		header(_("initializing database system"));
 		snprintf(buf, sizeof(buf),
 				 "\"%s%sinitdb\" -D \"%s/data\" --no-clean --no-sync%s%s > \"%s/log/initdb.log\" 2>&1",
-				 bindir ? bindir : "",
-				 bindir ? "/" : "",
+				 libexecdir ? libexecdir : "",
+				 libexecdir ? "/" : "",
 				 temp_instance,
 				 debug ? " --debug" : "",
 				 nolocale ? " --no-locale" : "",

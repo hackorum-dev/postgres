@@ -43,6 +43,8 @@ parseCommandLine(int argc, char *argv[])
 		{"new-datadir", required_argument, NULL, 'D'},
 		{"old-bindir", required_argument, NULL, 'b'},
 		{"new-bindir", required_argument, NULL, 'B'},
+		{"old-libexecdir", required_argument, NULL, 'l'},
+		{"new-libexecdir", required_argument, NULL, 'L'},
 		{"old-options", required_argument, NULL, 'o'},
 		{"new-options", required_argument, NULL, 'O'},
 		{"old-port", required_argument, NULL, 'p'},
@@ -101,7 +103,7 @@ parseCommandLine(int argc, char *argv[])
 	if (os_user_effective_id == 0)
 		pg_fatal("%s: cannot be run as root\n", os_info.progname);
 
-	while ((option = getopt_long(argc, argv, "d:D:b:B:cj:ko:O:p:P:rs:U:v",
+	while ((option = getopt_long(argc, argv, "d:D:b:B:cj:kl:L:o:O:p:P:rs:U:v",
 								 long_options, &optindex)) != -1)
 	{
 		switch (option)
@@ -132,6 +134,14 @@ parseCommandLine(int argc, char *argv[])
 
 			case 'k':
 				user_opts.transfer_mode = TRANSFER_MODE_LINK;
+				break;
+
+			case 'l':
+				old_cluster.libexecdir = pg_strdup(optarg);
+				break;
+
+			case 'L':
+				new_cluster.libexecdir = pg_strdup(optarg);
 				break;
 
 			case 'o':
@@ -251,6 +261,10 @@ parseCommandLine(int argc, char *argv[])
 							 "-b", _("old cluster binaries reside"), false);
 	check_required_directory(&new_cluster.bindir, "PGBINNEW", false,
 							 "-B", _("new cluster binaries reside"), true);
+	check_required_directory(&old_cluster.libexecdir, "PGLIBEXECOLD", false,
+							 "-l", _("old cluster commands reside"), false);
+	check_required_directory(&new_cluster.libexecdir, "PGLIBEXECNEW", false,
+							 "-L", _("new cluster commands reside"), true);
 	check_required_directory(&old_cluster.pgdata, "PGDATAOLD", false,
 							 "-d", _("old cluster data resides"), false);
 	check_required_directory(&new_cluster.pgdata, "PGDATANEW", false,
@@ -289,25 +303,27 @@ usage(void)
 	printf(_("Usage:\n"));
 	printf(_("  pg_upgrade [OPTION]...\n\n"));
 	printf(_("Options:\n"));
-	printf(_("  -b, --old-bindir=BINDIR       old cluster executable directory\n"));
-	printf(_("  -B, --new-bindir=BINDIR       new cluster executable directory (default\n"
-			 "                                same directory as pg_upgrade)\n"));
-	printf(_("  -c, --check                   check clusters only, don't change any data\n"));
-	printf(_("  -d, --old-datadir=DATADIR     old cluster data directory\n"));
-	printf(_("  -D, --new-datadir=DATADIR     new cluster data directory\n"));
-	printf(_("  -j, --jobs=NUM                number of simultaneous processes or threads to use\n"));
-	printf(_("  -k, --link                    link instead of copying files to new cluster\n"));
-	printf(_("  -o, --old-options=OPTIONS     old cluster options to pass to the server\n"));
-	printf(_("  -O, --new-options=OPTIONS     new cluster options to pass to the server\n"));
-	printf(_("  -p, --old-port=PORT           old cluster port number (default %d)\n"), old_cluster.port);
-	printf(_("  -P, --new-port=PORT           new cluster port number (default %d)\n"), new_cluster.port);
-	printf(_("  -r, --retain                  retain SQL and log files after success\n"));
-	printf(_("  -s, --socketdir=DIR           socket directory to use (default current dir.)\n"));
-	printf(_("  -U, --username=NAME           cluster superuser (default \"%s\")\n"), os_info.user);
-	printf(_("  -v, --verbose                 enable verbose internal logging\n"));
-	printf(_("  -V, --version                 display version information, then exit\n"));
-	printf(_("  --clone                       clone instead of copying files to new cluster\n"));
-	printf(_("  -?, --help                    show this help, then exit\n"));
+	printf(_("  -b, --old-bindir=BINDIR         old cluster executable directory\n"));
+	printf(_("  -B, --new-bindir=BINDIR         new cluster executable directory (default\n"
+			 "                                  same directory as pg_upgrade)\n"));
+	printf(_("  -l, --old-libexecdir=LIBEXECDIR old cluster command directory\n"));
+	printf(_("  -L, --new-libexecdir=LIBEXECDIR new cluster command directory\n"));
+	printf(_("  -c, --check                     check clusters only, don't change any data\n"));
+	printf(_("  -d, --old-datadir=DATADIR       old cluster data directory\n"));
+	printf(_("  -D, --new-datadir=DATADIR       new cluster data directory\n"));
+	printf(_("  -j, --jobs=NUM                  number of simultaneous processes or threads to use\n"));
+	printf(_("  -k, --link                      link instead of copying files to new cluster\n"));
+	printf(_("  -o, --old-options=OPTIONS       old cluster options to pass to the server\n"));
+	printf(_("  -O, --new-options=OPTIONS       new cluster options to pass to the server\n"));
+	printf(_("  -p, --old-port=PORT             old cluster port number (default %d)\n"), old_cluster.port);
+	printf(_("  -P, --new-port=PORT             new cluster port number (default %d)\n"), new_cluster.port);
+	printf(_("  -r, --retain                    retain SQL and log files after success\n"));
+	printf(_("  -s, --socketdir=DIR             socket directory to use (default current dir.)\n"));
+	printf(_("  -U, --username=NAME             cluster superuser (default \"%s\")\n"), os_info.user);
+	printf(_("  -v, --verbose                   enable verbose internal logging\n"));
+	printf(_("  -V, --version                   display version information, then exit\n"));
+	printf(_("  --clone                         clone instead of copying files to new cluster\n"));
+	printf(_("  -?, --help                      show this help, then exit\n"));
 	printf(_("\n"
 			 "Before running pg_upgrade you must:\n"
 			 "  create a new database cluster (using the new version of initdb)\n"
@@ -318,22 +334,28 @@ usage(void)
 			 "  the data directory for the old cluster  (-d DATADIR)\n"
 			 "  the data directory for the new cluster  (-D DATADIR)\n"
 			 "  the \"bin\" directory for the old version (-b BINDIR)\n"
-			 "  the \"bin\" directory for the new version (-B BINDIR)\n"));
+			 "  the \"bin\" directory for the new version (-B BINDIR)\n"
+			 "  the \"libexec\" directory for the old version (-l LIBEXECDIR)\n"
+			 "  the \"libexec\" directory for the new version (-L LIBEXECDIR)\n"));
 	printf(_("\n"
 			 "For example:\n"
-			 "  pg_upgrade -d oldCluster/data -D newCluster/data -b oldCluster/bin -B newCluster/bin\n"
+			 "  pg_upgrade -d oldCluster/data -D newCluster/data -b oldCluster/bin -B newCluster/bin -l oldCluster/libexec -L newCluster/libexec\n"
 			 "or\n"));
 #ifndef WIN32
 	printf(_("  $ export PGDATAOLD=oldCluster/data\n"
 			 "  $ export PGDATANEW=newCluster/data\n"
 			 "  $ export PGBINOLD=oldCluster/bin\n"
 			 "  $ export PGBINNEW=newCluster/bin\n"
+			 "  $ export PGLIBEXECOLD=oldCluster/libexec\n"
+			 "  $ export PGLIBEXECNEW=newCluster/libexec\n"
 			 "  $ pg_upgrade\n"));
 #else
 	printf(_("  C:\\> set PGDATAOLD=oldCluster/data\n"
 			 "  C:\\> set PGDATANEW=newCluster/data\n"
 			 "  C:\\> set PGBINOLD=oldCluster/bin\n"
 			 "  C:\\> set PGBINNEW=newCluster/bin\n"
+			 "  C:\\> set PGLIBEXECOLD=oldCluster/libexec\n"
+			 "  C:\\> set PGLIBEXECNEW=newCluster/libexec\n"
 			 "  C:\\> pg_upgrade\n"));
 #endif
 	printf(_("\nReport bugs to <%s>.\n"), PACKAGE_BUGREPORT);

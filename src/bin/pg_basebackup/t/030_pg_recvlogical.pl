@@ -23,14 +23,14 @@ log_error_verbosity = verbose
 $node->dump_info;
 $node->start;
 
-$node->command_fails(['pg_recvlogical'], 'pg_recvlogical needs a slot name');
-$node->command_fails([ 'pg_recvlogical', '-S', 'test' ],
+$node->command_fails([ 'pg', 'recvlogical'], 'pg_recvlogical needs a slot name');
+$node->command_fails([ 'pg', 'recvlogical', '-S', 'test' ],
 	'pg_recvlogical needs a database');
-$node->command_fails([ 'pg_recvlogical', '-S', 'test', '-d', 'postgres' ],
+$node->command_fails([ 'pg', 'recvlogical', '-S', 'test', '-d', 'postgres' ],
 	'pg_recvlogical needs an action');
 $node->command_fails(
 	[
-		'pg_recvlogical',           '-S',
+		'pg', 'recvlogical',        '-S',
 		'test',                     '-d',
 		$node->connstr('postgres'), '--start'
 	],

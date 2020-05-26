@@ -17,13 +17,13 @@ pg_archivecleanup: $(OBJS) | submake-libpgport
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 install: all installdirs
-	$(INSTALL_PROGRAM) pg_archivecleanup$(X) '$(DESTDIR)$(bindir)/pg_archivecleanup$(X)'
+	$(INSTALL_PROGRAM) pg_archivecleanup$(X) '$(DESTDIR)$(libexecdir)/pg_archivecleanup$(X)'
 
 installdirs:
-	$(MKDIR_P) '$(DESTDIR)$(bindir)'
+	$(MKDIR_P) '$(DESTDIR)$(libexecdir)'
 
 uninstall:
-	rm -f '$(DESTDIR)$(bindir)/pg_archivecleanup$(X)'
+	rm -f '$(DESTDIR)$(libexecdir)/pg_archivecleanup$(X)'
 
 clean distclean maintainer-clean:
 	rm -f pg_archivecleanup$(X) $(OBJS)

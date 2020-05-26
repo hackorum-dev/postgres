@@ -795,14 +795,14 @@ trap_sigint_during_startup(int sig)
 }
 
 static char *
-find_other_exec_or_die(const char *argv0, const char *target, const char *versionstr)
+find_other_cmd_or_die(const char *argv0, const char *target, const char *versionstr)
 {
 	int			ret;
 	char	   *found_path;
 
 	found_path = pg_malloc(MAXPGPATH);
 
-	if ((ret = find_other_exec(argv0, target, versionstr, found_path)) < 0)
+	if ((ret = find_other_cmd(argv0, target, versionstr, found_path)) < 0)
 	{
 		char		full_path[MAXPGPATH];
 
@@ -831,7 +831,7 @@ do_init(void)
 	char		cmd[MAXPGPATH];
 
 	if (exec_path == NULL)
-		exec_path = find_other_exec_or_die(argv0, "initdb", "initdb (PostgreSQL) " PG_VERSION "\n");
+		exec_path = find_other_cmd_or_die(argv0, "initdb", "initdb (PostgreSQL) " PG_VERSION "\n");
 
 	if (pgdata_opt == NULL)
 		pgdata_opt = "";
@@ -875,7 +875,7 @@ do_start(void)
 		pgdata_opt = "";
 
 	if (exec_path == NULL)
-		exec_path = find_other_exec_or_die(argv0, "postgres", PG_BACKEND_VERSIONSTR);
+		exec_path = find_other_cmd_or_die(argv0, "postgres", PG_BACKEND_VERSIONSTR);
 
 #if defined(HAVE_GETRLIMIT) && defined(RLIMIT_CORE)
 	if (allow_core_files)
@@ -1443,7 +1443,7 @@ pgwin32_CommandLine(bool registration)
 	}
 	else
 	{
-		ret = find_other_exec(argv0, "postgres", PG_BACKEND_VERSIONSTR,
+		ret = find_other_cmd(argv0, "postgres", PG_BACKEND_VERSIONSTR,
 							  cmdPath);
 		if (ret != 0)
 		{
@@ -2208,7 +2208,7 @@ adjust_data_dir(void)
 
 	/* we use a private my_exec_path to avoid interfering with later uses */
 	if (exec_path == NULL)
-		my_exec_path = find_other_exec_or_die(argv0, "postgres", PG_BACKEND_VERSIONSTR);
+		my_exec_path = find_other_cmd_or_die(argv0, "postgres", PG_BACKEND_VERSIONSTR);
 	else
 		my_exec_path = pg_strdup(exec_path);
 

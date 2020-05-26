@@ -99,6 +99,10 @@ OBJS_FRONTEND = \
 OBJS_SHLIB = $(OBJS_FRONTEND:%.o=%_shlib.o)
 OBJS_SRV = $(OBJS_COMMON:%.o=%_srv.o)
 
+# Generate bin and libexec relative paths
+pg_exec_relpath.h: mk_exec_relpath.pl
+	$(PERL) $(srcdir)/$^ '$(DESTDIR)$(bindir)' '$(DESTDIR)$(libexecdir)' > $@
+
 # where to find gen_keywordlist.pl and subsidiary files
 TOOLSDIR = $(top_srcdir)/src/tools
 GEN_KEYWORDLIST = $(PERL) -I $(TOOLSDIR) $(TOOLSDIR)/gen_keywordlist.pl
@@ -107,6 +111,8 @@ GEN_KEYWORDLIST_DEPS = $(TOOLSDIR)/gen_keywordlist.pl $(TOOLSDIR)/PerfectHash.pm
 all: libpgcommon.a libpgcommon_shlib.a libpgcommon_srv.a
 
 distprep: kwlist_d.h
+
+exec.o: pg_exec_relpath.h
 
 # libpgcommon is needed by some contrib
 install: all installdirs
@@ -175,7 +181,7 @@ $(RYU_OBJS): CFLAGS += $(PERMIT_DECLARATION_AFTER_STATEMENT)
 
 # kwlist_d.h is in the distribution tarball, so it is not cleaned here.
 clean distclean:
-	rm -f libpgcommon.a libpgcommon_shlib.a libpgcommon_srv.a
+	rm -f libpgcommon.a libpgcommon_shlib.a libpgcommon_srv.a pg_exec_relpath.h
 	rm -f $(OBJS_FRONTEND) $(OBJS_SHLIB) $(OBJS_SRV)
 
 maintainer-clean: distclean

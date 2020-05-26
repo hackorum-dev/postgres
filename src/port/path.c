@@ -48,6 +48,8 @@ static void make_relative_path(char *ret_path, const char *target_path,
 							   const char *bin_path, const char *my_exec_path);
 static void trim_directory(char *path);
 static void trim_trailing_separator(char *path);
+static void append_path_suffix(char *ret_path, const char *rootpath,
+							   const char *suffix);
 
 
 /*
@@ -588,6 +590,65 @@ no_match:
 	canonicalize_path(ret_path);
 }
 
+void
+append_path_suffix(char *ret_path, const char *rootpath, const char *suffix)
+{
+	char	buffer[MAXPGPATH*2];
+
+	snprintf(buffer, MAXPGPATH*2, "%s/%s", rootpath, suffix);
+	canonicalize_path(buffer);
+	strlcpy(ret_path, buffer, MAXPGPATH);
+}
+
+/*
+ * trim_path_suffix
+ *
+ * If the given suffix matches the end of the path, store the prefix
+ * in ret_path.  Returns zero on success, -1 if the suffix does not match.
+ * Note that matching is done on whole path components, such that
+ * "cd/ef" is a suffix of "ab/cd/ef" but not a suffix of "abcd/ef".
+ *
+ * ret_path must be a buffer at least MAXPGPATH in length.
+ */
+int
+trim_path_suffix(const char *path, const char *suffix, char *ret_path)
+{
+	int		pathlen = strlen(path);
+	int		suffixlen = strlen(suffix);
+	int		tail_start;
+
+	if (suffixlen > pathlen)
+		return -1;
+
+	/*
+	 * We consider a path to be a suffix of itself, though this does
+	 * result in a zero-length prefix in the ret_path.
+	 */
+	if (suffixlen == pathlen)
+	{
+		if (dir_strcmp(path, suffix))
+			return -1;
+		ret_path[0] = '\0';
+		return 0;
+	}
+
+	/*
+	 * Tail match?
+	 */
+	tail_start = pathlen - suffixlen;
+	if ((IS_DIR_SEP(path[tail_start - 1]) ||
+		 (IS_DIR_SEP(path[tail_start]) && IS_DIR_SEP(suffix[0]))) &&
+		dir_strcmp(path + tail_start, suffix) == 0)
+	{
+		strncpy(ret_path, path, tail_start);
+		ret_path[tail_start] = '\0';
+		canonicalize_path(ret_path);
+		return 0;
+	}
+
+	return -1;
+}
+
 
 /*
  * make_absolute_path
@@ -698,6 +759,15 @@ make_absolute_path(const char *path)
 
 
 /*
+ *	get_bin_path
+ */
+void
+get_bin_path(const char *my_rootdir, char *ret_path)
+{
+	append_path_suffix(ret_path, my_rootdir, PGBINDIR);
+}
+
+/*
  *	get_share_path
  */
 void
@@ -710,9 +780,9 @@ get_share_path(const char *my_exec_path, char *ret_path)
  *	get_etc_path
  */
 void
-get_etc_path(const char *my_exec_path, char *ret_path)
+get_etc_path(const char *my_rootdir, char *ret_path)
 {
-	make_relative_path(ret_path, SYSCONFDIR, PGBINDIR, my_exec_path);
+	append_path_suffix(ret_path, my_rootdir, SYSCONFDIR);
 }
 
 /*
@@ -737,18 +807,27 @@ get_pkginclude_path(const char *my_exec_path, char *ret_path)
  *	get_includeserver_path
  */
 void
-get_includeserver_path(const char *my_exec_path, char *ret_path)
+get_includeserver_path(const char *my_rootdir, char *ret_path)
 {
-	make_relative_path(ret_path, INCLUDEDIRSERVER, PGBINDIR, my_exec_path);
+	append_path_suffix(ret_path, my_rootdir, INCLUDEDIRSERVER);
 }
 
 /*
  *	get_lib_path
  */
 void
-get_lib_path(const char *my_exec_path, char *ret_path)
+get_lib_path(const char *my_rootdir, char *ret_path)
 {
-	make_relative_path(ret_path, LIBDIR, PGBINDIR, my_exec_path);
+	append_path_suffix(ret_path, my_rootdir, LIBDIR);
+}
+
+/*
+ *	get_libexec_path
+ */
+void
+get_libexec_path(const char *my_rootdir, char *ret_path)
+{
+	append_path_suffix(ret_path, my_rootdir, PGLIBEXECDIR);
 }
 
 /*
@@ -773,27 +852,27 @@ get_locale_path(const char *my_exec_path, char *ret_path)
  *	get_doc_path
  */
 void
-get_doc_path(const char *my_exec_path, char *ret_path)
+get_doc_path(const char *my_rootdir, char *ret_path)
 {
-	make_relative_path(ret_path, DOCDIR, PGBINDIR, my_exec_path);
+	append_path_suffix(ret_path, my_rootdir, DOCDIR);
 }
 
 /*
  *	get_html_path
  */
 void
-get_html_path(const char *my_exec_path, char *ret_path)
+get_html_path(const char *my_rootdir, char *ret_path)
 {
-	make_relative_path(ret_path, HTMLDIR, PGBINDIR, my_exec_path);
+	append_path_suffix(ret_path, my_rootdir, HTMLDIR);
 }
 
 /*
  *	get_man_path
  */
 void
-get_man_path(const char *my_exec_path, char *ret_path)
+get_man_path(const char *my_rootdir, char *ret_path)
 {
-	make_relative_path(ret_path, MANDIR, PGBINDIR, my_exec_path);
+	append_path_suffix(ret_path, my_rootdir, MANDIR);
 }
 
 

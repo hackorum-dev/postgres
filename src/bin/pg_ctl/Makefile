@@ -34,13 +34,13 @@ pg_ctl: $(OBJS) | submake-libpgport $(SUBMAKE_LIBPQ)
 	$(CC) $(CFLAGS) $(OBJS) $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 install: all installdirs
-	$(INSTALL_PROGRAM) pg_ctl$(X) '$(DESTDIR)$(bindir)/pg_ctl$(X)'
+	$(INSTALL_PROGRAM) pg_ctl$(X) '$(DESTDIR)$(libexecdir)/pg_ctl$(X)'
 
 installdirs:
-	$(MKDIR_P) '$(DESTDIR)$(bindir)'
+	$(MKDIR_P) '$(DESTDIR)$(libexecdir)'
 
 uninstall:
-	rm -f '$(DESTDIR)$(bindir)/pg_ctl$(X)'
+	rm -f '$(DESTDIR)$(libexecdir)/pg_ctl$(X)'
 
 clean distclean maintainer-clean:
 	rm -f pg_ctl$(X) $(OBJS)

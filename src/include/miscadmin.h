@@ -172,6 +172,7 @@ extern int	MyPMChildSlot;
 
 extern char OutputFileName[];
 extern PGDLLIMPORT char my_exec_path[];
+extern PGDLLIMPORT char my_rootdir[];
 extern char pkglib_path[];
 
 #ifdef EXEC_BACKEND

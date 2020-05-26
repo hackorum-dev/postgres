@@ -145,6 +145,7 @@ path_srv.o: path.c pg_config_paths.h
 # available to configure.
 pg_config_paths.h: $(top_builddir)/src/Makefile.global
 	echo "#define PGBINDIR \"$(bindir)\"" >$@
+	echo "#define PGLIBEXECDIR \"$(libexecdir)\"" >>$@
 	echo "#define PGSHAREDIR \"$(datadir)\"" >>$@
 	echo "#define SYSCONFDIR \"$(sysconfdir)\"" >>$@
 	echo "#define INCLUDEDIR \"$(includedir)\"" >>$@

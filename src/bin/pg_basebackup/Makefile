@@ -39,17 +39,17 @@ pg_recvlogical: pg_recvlogical.o $(OBJS) | submake-libpq submake-libpgport subma
 	$(CC) $(CFLAGS) pg_recvlogical.o $(OBJS) $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 install: all installdirs
-	$(INSTALL_PROGRAM) pg_basebackup$(X) '$(DESTDIR)$(bindir)/pg_basebackup$(X)'
-	$(INSTALL_PROGRAM) pg_receivewal$(X) '$(DESTDIR)$(bindir)/pg_receivewal$(X)'
-	$(INSTALL_PROGRAM) pg_recvlogical$(X) '$(DESTDIR)$(bindir)/pg_recvlogical$(X)'
+	$(INSTALL_PROGRAM) pg_basebackup$(X) '$(DESTDIR)$(libexecdir)/pg_basebackup$(X)'
+	$(INSTALL_PROGRAM) pg_receivewal$(X) '$(DESTDIR)$(libexecdir)/pg_receivewal$(X)'
+	$(INSTALL_PROGRAM) pg_recvlogical$(X) '$(DESTDIR)$(libexecdir)/pg_recvlogical$(X)'
 
 installdirs:
-	$(MKDIR_P) '$(DESTDIR)$(bindir)'
+	$(MKDIR_P) '$(DESTDIR)$(libexecdir)'
 
 uninstall:
-	rm -f '$(DESTDIR)$(bindir)/pg_basebackup$(X)'
-	rm -f '$(DESTDIR)$(bindir)/pg_receivewal$(X)'
-	rm -f '$(DESTDIR)$(bindir)/pg_recvlogical$(X)'
+	rm -f '$(DESTDIR)$(libexecdir)/pg_basebackup$(X)'
+	rm -f '$(DESTDIR)$(libexecdir)/pg_receivewal$(X)'
+	rm -f '$(DESTDIR)$(libexecdir)/pg_recvlogical$(X)'
 
 clean distclean maintainer-clean:
 	rm -f pg_basebackup$(X) pg_receivewal$(X) pg_recvlogical$(X) \

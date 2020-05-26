@@ -47,13 +47,13 @@ localtime.c: % : $(top_srcdir)/src/timezone/%
 	rm -f $@ && $(LN_S) $< .
 
 install: all installdirs
-	$(INSTALL_PROGRAM) initdb$(X) '$(DESTDIR)$(bindir)/initdb$(X)'
+	$(INSTALL_PROGRAM) initdb$(X) '$(DESTDIR)$(libexecdir)/initdb$(X)'
 
 installdirs:
-	$(MKDIR_P) '$(DESTDIR)$(bindir)'
+	$(MKDIR_P) '$(DESTDIR)$(libexecdir)'
 
 uninstall:
-	rm -f '$(DESTDIR)$(bindir)/initdb$(X)'
+	rm -f '$(DESTDIR)$(libexecdir)/initdb$(X)'
 
 clean distclean maintainer-clean:
 	rm -f initdb$(X) $(OBJS) localtime.c

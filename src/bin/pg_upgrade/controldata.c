@@ -119,7 +119,7 @@ get_control_data(ClusterInfo *cluster, bool live_check)
 	{
 		/* only pg_controldata outputs the cluster state */
 		snprintf(cmd, sizeof(cmd), "\"%s/pg_controldata\" \"%s\"",
-				 cluster->bindir, cluster->pgdata);
+				 cluster->libexecdir, cluster->pgdata);
 		fflush(stdout);
 		fflush(stderr);
 
@@ -185,7 +185,7 @@ get_control_data(ClusterInfo *cluster, bool live_check)
 	else
 		resetwal_bin = "pg_resetwal\" -n";
 	snprintf(cmd, sizeof(cmd), "\"%s/%s \"%s\"",
-			 cluster->bindir,
+			 cluster->libexecdir,
 			 live_check ? "pg_controldata\"" : resetwal_bin,
 			 cluster->pgdata);
 	fflush(stdout);

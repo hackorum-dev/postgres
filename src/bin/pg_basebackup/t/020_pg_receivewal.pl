@@ -19,27 +19,27 @@ my $stream_dir = $primary->basedir . '/archive_wal';
 mkdir($stream_dir);
 
 # Sanity checks for command line options.
-$primary->command_fails(['pg_receivewal'],
+$primary->command_fails(['pg', 'receivewal'],
 	'pg_receivewal needs target directory specified');
 $primary->command_fails(
-	[ 'pg_receivewal', '-D', $stream_dir, '--create-slot', '--drop-slot' ],
+	[ 'pg', 'receivewal', '-D', $stream_dir, '--create-slot', '--drop-slot' ],
 	'failure if both --create-slot and --drop-slot specified');
 $primary->command_fails(
-	[ 'pg_receivewal', '-D', $stream_dir, '--create-slot' ],
+	[ 'pg', 'receivewal', '-D', $stream_dir, '--create-slot' ],
 	'failure if --create-slot specified without --slot');
 $primary->command_fails(
-	[ 'pg_receivewal', '-D', $stream_dir, '--synchronous', '--no-sync' ],
+	[ 'pg', 'receivewal', '-D', $stream_dir, '--synchronous', '--no-sync' ],
 	'failure if --synchronous specified with --no-sync');
 
 # Slot creation and drop
 my $slot_name = 'test';
 $primary->command_ok(
-	[ 'pg_receivewal', '--slot', $slot_name, '--create-slot' ],
+	[ 'pg', 'receivewal', '--slot', $slot_name, '--create-slot' ],
 	'creating a replication slot');
 my $slot = $primary->slot($slot_name);
 is($slot->{'slot_type'}, 'physical', 'physical replication slot was created');
 is($slot->{'restart_lsn'}, '', 'restart LSN of new slot is null');
-$primary->command_ok([ 'pg_receivewal', '--slot', $slot_name, '--drop-slot' ],
+$primary->command_ok([ 'pg', 'receivewal', '--slot', $slot_name, '--drop-slot' ],
 	'dropping a replication slot');
 is($primary->slot($slot_name)->{'slot_type'},
 	'', 'replication slot was removed');
@@ -58,7 +58,7 @@ $primary->psql('postgres',
 # Stream up to the given position.
 $primary->command_ok(
 	[
-		'pg_receivewal', '-D',     $stream_dir,     '--verbose',
+		'pg', 'receivewal', '-D',     $stream_dir,     '--verbose',
 		'--endpos',      $nextlsn, '--synchronous', '--no-loop'
 	],
 	'streaming some WAL with --synchronous');

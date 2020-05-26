@@ -835,9 +835,9 @@ getRestoreCommand(const char *argv0)
 		return;
 
 	/* find postgres executable */
-	rc = find_other_exec(argv0, "postgres",
-						 PG_BACKEND_VERSIONSTR,
-						 postgres_exec_path);
+	rc = find_other_cmd(argv0, "postgres",
+						PG_BACKEND_VERSIONSTR,
+						postgres_exec_path);
 
 	if (rc < 0)
 	{
@@ -895,9 +895,9 @@ ensureCleanShutdown(const char *argv0)
 	char		cmd[MAXCMDLEN];
 
 	/* locate postgres binary */
-	if ((ret = find_other_exec(argv0, "postgres",
-							   PG_BACKEND_VERSIONSTR,
-							   exec_path)) < 0)
+	if ((ret = find_other_cmd(argv0, "postgres",
+							  PG_BACKEND_VERSIONSTR,
+							  exec_path)) < 0)
 	{
 		char		full_path[MAXPGPATH];
 

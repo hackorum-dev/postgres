@@ -734,6 +734,7 @@ sub GenerateFiles
 		  || confess "Could not open pg_config_paths.h";
 		print $o <<EOF;
 #define PGBINDIR "/bin"
+#define PGLIBEXECDIR "/libexec"
 #define PGSHAREDIR "/share"
 #define SYSCONFDIR "/etc"
 #define INCLUDEDIR "/include"

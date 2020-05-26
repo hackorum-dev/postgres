@@ -30,18 +30,22 @@
  * for pfreeing the result.
  */
 ConfigData *
-get_configdata(const char *my_exec_path, size_t *configdata_len)
+get_configdata(const char *my_exec_path, const char *my_rootdir,
+			   size_t *configdata_len)
 {
 	ConfigData *configdata;
 	char		path[MAXPGPATH];
 	char	   *lastsep;
 	int			i = 0;
 
+	Assert (my_rootdir != NULL);
+	Assert (my_rootdir[0] != '\0');
+
 	/* Adjust this to match the number of items filled below */
-	*configdata_len = 23;
+	*configdata_len = 24;
 	configdata = (ConfigData *) palloc(*configdata_len * sizeof(ConfigData));
 
-	configdata[i].name = pstrdup("BINDIR");
+	configdata[i].name = pstrdup("LIBEXECDIR");
 	strlcpy(path, my_exec_path, sizeof(path));
 	lastsep = strrchr(path, '/');
 	if (lastsep)
@@ -51,13 +55,13 @@ get_configdata(const char *my_exec_path, size_t *configdata_len)
 	i++;
 
 	configdata[i].name = pstrdup("DOCDIR");
-	get_doc_path(my_exec_path, path);
+	get_doc_path(my_rootdir, path);
 	cleanup_path(path);
 	configdata[i].setting = pstrdup(path);
 	i++;
 
 	configdata[i].name = pstrdup("HTMLDIR");
-	get_html_path(my_exec_path, path);
+	get_html_path(my_rootdir, path);
 	cleanup_path(path);
 	configdata[i].setting = pstrdup(path);
 	i++;
@@ -75,13 +79,19 @@ get_configdata(const char *my_exec_path, size_t *configdata_len)
 	i++;
 
 	configdata[i].name = pstrdup("INCLUDEDIR-SERVER");
-	get_includeserver_path(my_exec_path, path);
+	get_includeserver_path(my_rootdir, path);
 	cleanup_path(path);
 	configdata[i].setting = pstrdup(path);
 	i++;
 
 	configdata[i].name = pstrdup("LIBDIR");
-	get_lib_path(my_exec_path, path);
+	get_lib_path(my_rootdir, path);
+	cleanup_path(path);
+	configdata[i].setting = pstrdup(path);
+	i++;
+
+	configdata[i].name = pstrdup("BINDIR");
+	get_bin_path(my_rootdir, path);
 	cleanup_path(path);
 	configdata[i].setting = pstrdup(path);
 	i++;
@@ -99,7 +109,7 @@ get_configdata(const char *my_exec_path, size_t *configdata_len)
 	i++;
 
 	configdata[i].name = pstrdup("MANDIR");
-	get_man_path(my_exec_path, path);
+	get_man_path(my_rootdir, path);
 	cleanup_path(path);
 	configdata[i].setting = pstrdup(path);
 	i++;
@@ -111,7 +121,7 @@ get_configdata(const char *my_exec_path, size_t *configdata_len)
 	i++;
 
 	configdata[i].name = pstrdup("SYSCONFDIR");
-	get_etc_path(my_exec_path, path);
+	get_etc_path(my_rootdir, path);
 	cleanup_path(path);
 	configdata[i].setting = pstrdup(path);
 	i++;

@@ -755,6 +755,7 @@ process_psqlrc(char *argv0)
 	char		home[MAXPGPATH];
 	char		rc_file[MAXPGPATH];
 	char		my_exec_path[MAXPGPATH];
+	char		my_rootdir[MAXPGPATH];
 	char		etc_path[MAXPGPATH];
 	char	   *envrc = getenv("PSQLRC");
 
@@ -764,7 +765,13 @@ process_psqlrc(char *argv0)
 		exit(EXIT_FAILURE);
 	}
 
-	get_etc_path(my_exec_path, etc_path);
+	if (find_my_rootdir(argv0, my_rootdir) < 0)
+	{
+		pg_log_fatal("could not find own program root directory");
+		exit(EXIT_FAILURE);
+	}
+
+	get_etc_path(my_rootdir, etc_path);
 
 	snprintf(rc_file, MAXPGPATH, "%s/%s", etc_path, SYSPSQLRC);
 	process_psqlrc_file(rc_file);

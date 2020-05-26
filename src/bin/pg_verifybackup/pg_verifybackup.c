@@ -285,9 +285,9 @@ main(int argc, char **argv)
 		int			ret;
 
 		pg_waldump_path = pg_malloc(MAXPGPATH);
-		ret = find_other_exec(argv[0], "pg_waldump",
-							  "pg_waldump (PostgreSQL) " PG_VERSION "\n",
-							  pg_waldump_path);
+		ret = find_other_cmd(argv[0], "pg_waldump",
+							 "pg_waldump (PostgreSQL) " PG_VERSION "\n",
+							 pg_waldump_path);
 		if (ret < 0)
 		{
 			char		full_path[MAXPGPATH];

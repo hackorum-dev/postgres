@@ -17,13 +17,13 @@ pg_test_timing: $(OBJS) | submake-libpgport
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 install: all installdirs
-	$(INSTALL_PROGRAM) pg_test_timing$(X) '$(DESTDIR)$(bindir)/pg_test_timing$(X)'
+	$(INSTALL_PROGRAM) pg_test_timing$(X) '$(DESTDIR)$(libexecdir)/pg_test_timing$(X)'
 
 installdirs:
-	$(MKDIR_P) '$(DESTDIR)$(bindir)'
+	$(MKDIR_P) '$(DESTDIR)$(libexecdir)'
 
 uninstall:
-	rm -f '$(DESTDIR)$(bindir)/pg_test_timing$(X)'
+	rm -f '$(DESTDIR)$(libexecdir)/pg_test_timing$(X)'
 
 clean distclean maintainer-clean:
 	rm -f pg_test_timing$(X) $(OBJS)

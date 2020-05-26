@@ -32,7 +32,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 DAEMON="$prefix/bin/postmaster"
 
 # What to use to shut down the postmaster
-PGCTL="$prefix/bin/pg_ctl"
+PGCTL="$prefix/libexec/pg_ctl"
 
 # Only start if we can find the postmaster.
 test -x $DAEMON ||

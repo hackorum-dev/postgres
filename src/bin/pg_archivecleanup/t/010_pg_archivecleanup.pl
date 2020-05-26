@@ -27,27 +27,27 @@ sub create_files
 create_files();
 
 command_fails_like(
-	['pg_archivecleanup'],
+	['pg', 'archivecleanup'],
 	qr/must specify archive location/,
 	'fails if archive location is not specified');
 
 command_fails_like(
-	[ 'pg_archivecleanup', $tempdir ],
+	[ 'pg', 'archivecleanup', $tempdir ],
 	qr/must specify oldest kept WAL file/,
 	'fails if oldest kept WAL file name is not specified');
 
 command_fails_like(
-	[ 'pg_archivecleanup', 'notexist', 'foo' ],
+	[ 'pg', 'archivecleanup', 'notexist', 'foo' ],
 	qr/archive location .* does not exist/,
 	'fails if archive location does not exist');
 
 command_fails_like(
-	[ 'pg_archivecleanup', $tempdir, 'foo', 'bar' ],
+	[ 'pg', 'archivecleanup', $tempdir, 'foo', 'bar' ],
 	qr/too many command-line arguments/,
 	'fails with too many command-line arguments');
 
 command_fails_like(
-	[ 'pg_archivecleanup', $tempdir, 'foo' ],
+	[ 'pg', 'archivecleanup', $tempdir, 'foo' ],
 	qr/invalid file name argument/,
 	'fails with invalid restart file name');
 

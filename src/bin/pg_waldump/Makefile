@@ -33,13 +33,13 @@ $(RMGRDESCSOURCES): % : $(top_srcdir)/src/backend/access/rmgrdesc/%
 	rm -f $@ && $(LN_S) $< .
 
 install: all installdirs
-	$(INSTALL_PROGRAM) pg_waldump$(X) '$(DESTDIR)$(bindir)/pg_waldump$(X)'
+	$(INSTALL_PROGRAM) pg_waldump$(X) '$(DESTDIR)$(libexecdir)/pg_waldump$(X)'
 
 installdirs:
-	$(MKDIR_P) '$(DESTDIR)$(bindir)'
+	$(MKDIR_P) '$(DESTDIR)$(libexecdir)'
 
 uninstall:
-	rm -f '$(DESTDIR)$(bindir)/pg_waldump$(X)'
+	rm -f '$(DESTDIR)$(libexecdir)/pg_waldump$(X)'
 
 clean distclean maintainer-clean:
 	rm -f pg_waldump$(X) $(OBJS) $(RMGRDESCSOURCES) xlogreader.c

@@ -25,13 +25,13 @@ pg_resetwal: $(OBJS) | submake-libpgport
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(LIBS) -o $@$(X)
 
 install: all installdirs
-	$(INSTALL_PROGRAM) pg_resetwal$(X) '$(DESTDIR)$(bindir)/pg_resetwal$(X)'
+	$(INSTALL_PROGRAM) pg_resetwal$(X) '$(DESTDIR)$(libexecdir)/pg_resetwal$(X)'
 
 installdirs:
-	$(MKDIR_P) '$(DESTDIR)$(bindir)'
+	$(MKDIR_P) '$(DESTDIR)$(libexecdir)'
 
 uninstall:
-	rm -f '$(DESTDIR)$(bindir)/pg_resetwal$(X)'
+	rm -f '$(DESTDIR)$(libexecdir)/pg_resetwal$(X)'
 
 clean distclean maintainer-clean:
 	rm -f pg_resetwal$(X) $(OBJS)

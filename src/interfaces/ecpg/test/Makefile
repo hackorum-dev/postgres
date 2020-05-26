@@ -80,14 +80,14 @@ endif
 REGRESS_OPTS = --dbname=ecpg1_regression,ecpg2_regression --create-role=regress_ecpg_user1,regress_ecpg_user2 $(EXTRA_REGRESS_OPTS)
 
 check: all
-	$(with_temp_install) ./pg_regress $(REGRESS_OPTS) --temp-instance=./tmp_check $(TEMP_CONF) --bindir= $(pg_regress_locale_flags) $(THREAD) --schedule=$(srcdir)/ecpg_schedule sql/twophase
+	$(with_temp_install) ./pg_regress $(REGRESS_OPTS) --temp-instance=./tmp_check $(TEMP_CONF) --bindir= --libexecdir= $(pg_regress_locale_flags) $(THREAD) --schedule=$(srcdir)/ecpg_schedule sql/twophase
 
 # Connect to the server using TCP, and add a TCP-specific test.
 checktcp: all | temp-install
-	$(with_temp_install) ./pg_regress $(REGRESS_OPTS) --temp-instance=./tmp_check $(TEMP_CONF) --bindir= $(pg_regress_locale_flags) $(THREAD) --schedule=$(srcdir)/ecpg_schedule --host=localhost sql/twophase connect/test1
+	$(with_temp_install) ./pg_regress $(REGRESS_OPTS) --temp-instance=./tmp_check $(TEMP_CONF) --bindir= --libexecdir= $(pg_regress_locale_flags) $(THREAD) --schedule=$(srcdir)/ecpg_schedule --host=localhost sql/twophase connect/test1
 
 installcheck: all
-	./pg_regress $(REGRESS_OPTS) --bindir='$(bindir)' $(pg_regress_locale_flags) $(THREAD) --schedule=$(srcdir)/ecpg_schedule
+	./pg_regress $(REGRESS_OPTS) --bindir='$(bindir)' --libexecdir='$(libexecdir)'$(pg_regress_locale_flags) $(THREAD) --schedule=$(srcdir)/ecpg_schedule
 
 # Versions of the check tests that include the twophase commit test.
 # It only makes sense to run these if set up to use prepared transactions,
@@ -95,7 +95,7 @@ installcheck: all
 # installcheck case.
 
 installcheck-prepared-txns: all
-	./pg_regress $(REGRESS_OPTS) --bindir='$(bindir)' $(pg_regress_locale_flags) $(THREAD) --schedule=$(srcdir)/ecpg_schedule sql/twophase
+	./pg_regress $(REGRESS_OPTS) --bindir='$(bindir)' --libexecdir='$(libexecdir)'$(pg_regress_locale_flags) $(THREAD) --schedule=$(srcdir)/ecpg_schedule sql/twophase
 
 check-prepared-txns: all | temp-install
-	$(with_temp_install) ./pg_regress $(REGRESS_OPTS) --temp-instance=./tmp_check $(TEMP_CONF) --bindir= $(pg_regress_locale_flags) $(THREAD) --schedule=$(srcdir)/ecpg_schedule sql/twophase
+	$(with_temp_install) ./pg_regress $(REGRESS_OPTS) --temp-instance=./tmp_check $(TEMP_CONF) --bindir= --libexecdir= $(pg_regress_locale_flags) $(THREAD) --schedule=$(srcdir)/ecpg_schedule sql/twophase

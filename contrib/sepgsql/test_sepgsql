@@ -13,6 +13,7 @@
 #
 
 PG_BINDIR=`pg_config --bindir`
+PG_LIBEXECDIR=`pg_config --libexecdir`
 
 # we must move to contrib/sepgsql directory to run pg_regress correctly
 cd `dirname $0`

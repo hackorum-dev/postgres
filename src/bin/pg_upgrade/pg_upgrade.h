@@ -260,6 +260,7 @@ typedef struct
 	char	   *pgconfig;		/* pathname for cluster's config file
 								 * directory */
 	char	   *bindir;			/* pathname for cluster's executable directory */
+	char	   *libexecdir;		/* pathname for cluster's command directory */
 	char	   *pgopts;			/* options to pass to the server, like pg_ctl
 								 * -o */
 	char	   *sockdir;		/* directory for Unix Domain socket, if any */
@@ -268,6 +269,18 @@ typedef struct
 	char		major_version_str[64];	/* string PG_VERSION of cluster */
 	uint32		bin_version;	/* version returned from pg_ctl */
 	const char *tablespace_suffix;	/* directory specification */
+
+	/* Validated paths to named executables */
+	char	   *postgres_path;
+	char	   *pg_controldata_path;
+	char	   *pg_ctl_path;
+	char	   *pg_resetwal_path;
+	char	   *initdb_path;
+	char	   *pg_dump_path;
+	char	   *pg_dumpall_path;
+	char	   *pg_restore_path;
+	char	   *psql_path;
+	char	   *vacuumdb_path;
 } ClusterInfo;
 
 
