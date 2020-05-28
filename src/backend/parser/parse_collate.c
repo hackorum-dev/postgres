@@ -50,12 +50,13 @@
 
 /*
  * Collation strength (the SQL standard calls this "derivation").  Order is
- * chosen to allow comparisons to work usefully.  Note: the standard doesn't
- * seem to distinguish between NONE and CONFLICT.
+ * chosen to allow comparisons to work usefully in context of the SQL standard
+ * clause "Result of data type combinations". COLLATE_CONFLICT corresponds
+ * to the standard's derivation "none".
  */
 typedef enum
 {
-	COLLATE_NONE,				/* expression is of a noncollatable datatype */
+	COLLATE_NA,				    /* expression is of a noncollatable datatype */
 	COLLATE_IMPLICIT,			/* collation was derived implicitly */
 	COLLATE_CONFLICT,			/* we had a conflict of implicit collations */
 	COLLATE_EXPLICIT,			/* collation was derived explicitly */
@@ -67,9 +68,14 @@ typedef struct
 	Oid			collation;		/* OID of current collation, if any */
 	CollateStrength strength;	/* strength of current collation choice */
 	int			location;		/* location of expr that set collation */
-	/* Remaining fields are only valid when strength == COLLATE_CONFLICT */
+	/*
+	 * If two known implicit collations conflict (strength == COLLATE_CONFLICT),
+	 * the following is set for error reporting.
+	 * Note: Implicit collations can also conflict with COLLATE_CONFLICT. In that
+	 * case collation2 == InvalidOid. Additionally, the collation above
+	 * could also be InvalidOid.
+	 */
 	Oid			collation2;		/* OID of conflicting collation */
-	int			location2;		/* location of expr that set collation2 */
 } assign_collations_context;
 
 static bool assign_query_collations_walker(Node *node, ParseState *pstate);
@@ -79,7 +85,6 @@ static void merge_collation_state(Oid collation,
 								  CollateStrength strength,
 								  int location,
 								  Oid collation2,
-								  int location2,
 								  assign_collations_context *context);
 static void assign_aggregate_collations(Aggref *aggref,
 										assign_collations_context *loccontext);
@@ -181,11 +186,44 @@ assign_expr_collations(ParseState *pstate, Node *expr)
 	/* initialize context for tree walk */
 	context.pstate = pstate;
 	context.collation = InvalidOid;
-	context.strength = COLLATE_NONE;
+	context.strength = COLLATE_NA;
 	context.location = -1;
 
 	/* and away we go */
 	(void) assign_collations_walker(expr, &context);
+}
+
+/*
+ * ereport_implicit_collation_mismatch()
+ *		Report mismatch with best available details
+ *
+ * COLLATE_CONFLICT can happen without knowing the conflicting collations (when
+ * it comes from a Var). Thus, the available details for reporting may vary.
+ */
+static void
+ereport_implicit_collation_mismatch(const assign_collations_context* const context)
+{
+	if (context->collation != InvalidOid && context->collation2 != InvalidOid)
+		ereport(ERROR,
+				(errcode(ERRCODE_COLLATION_MISMATCH),
+				 errmsg("collation mismatch between implicit collations \"%s\" and \"%s\"",
+						get_collation_name(context->collation),
+						get_collation_name(context->collation2)),
+				 errhint("You can choose the collation by applying the COLLATE clause to one or both expressions."),
+				 parser_errposition(context->pstate, context->location)));
+	else if (context->collation != InvalidOid)
+		ereport(ERROR,
+				(errcode(ERRCODE_COLLATION_MISMATCH),
+				 errmsg("collation mismatch between implicit collation \"%s\" and unknown collation",
+						get_collation_name(context->collation)),
+				 errhint("You can choose the collation by applying the COLLATE clause to one or both expressions."),
+				 parser_errposition(context->pstate, context->location)));
+	else
+		ereport(ERROR,
+				(errcode(ERRCODE_COLLATION_MISMATCH),
+				 errmsg("collation mismatch between implicit collations"),
+				 errhint("Use the COLLATE clause to set the collation explicitly"),
+				 parser_errposition(context->pstate, context->location)));
 }
 
 /*
@@ -212,7 +250,7 @@ select_common_collation(ParseState *pstate, List *exprs, bool none_ok)
 	/* initialize context for tree walk */
 	context.pstate = pstate;
 	context.collation = InvalidOid;
-	context.strength = COLLATE_NONE;
+	context.strength = COLLATE_NA;
 	context.location = -1;
 
 	/* and away we go */
@@ -223,17 +261,11 @@ select_common_collation(ParseState *pstate, List *exprs, bool none_ok)
 	{
 		if (none_ok)
 			return InvalidOid;
-		ereport(ERROR,
-				(errcode(ERRCODE_COLLATION_MISMATCH),
-				 errmsg("collation mismatch between implicit collations \"%s\" and \"%s\"",
-						get_collation_name(context.collation),
-						get_collation_name(context.collation2)),
-				 errhint("You can choose the collation by applying the COLLATE clause to one or both expressions."),
-				 parser_errposition(context.pstate, context.location2)));
+		ereport_implicit_collation_mismatch(&context);
 	}
 
 	/*
-	 * Note: if strength is still COLLATE_NONE, we'll return InvalidOid, but
+	 * Note: if strength is still COLLATE_NA, we'll return InvalidOid, but
 	 * that's okay because it must mean none of the expressions returned
 	 * collatable datatypes.
 	 */
@@ -257,7 +289,7 @@ assign_collations_walker(Node *node, assign_collations_context *context)
 	assign_collations_context loccontext;
 	Oid			collation;
 	CollateStrength strength;
-	int			location;
+	int			location = -1;
 
 	/* Need do nothing for empty subexpressions */
 	if (node == NULL)
@@ -270,11 +302,8 @@ assign_collations_walker(Node *node, assign_collations_context *context)
 	 */
 	loccontext.pstate = context->pstate;
 	loccontext.collation = InvalidOid;
-	loccontext.strength = COLLATE_NONE;
+	loccontext.strength = COLLATE_NA;
 	loccontext.location = -1;
-	/* Set these fields just to suppress uninitialized-value warnings: */
-	loccontext.collation2 = InvalidOid;
-	loccontext.location2 = -1;
 
 	/*
 	 * Recurse if appropriate, then determine the collation for this node.
@@ -331,7 +360,7 @@ assign_collations_walker(Node *node, assign_collations_context *context)
 				{
 					/* Node's result type isn't collatable. */
 					collation = InvalidOid;
-					strength = COLLATE_NONE;
+					strength = COLLATE_NA;
 					location = -1;	/* won't be used */
 				}
 			}
@@ -427,7 +456,7 @@ assign_collations_walker(Node *node, assign_collations_context *context)
 				{
 					/* Node's result type isn't collatable. */
 					collation = InvalidOid;
-					strength = COLLATE_NONE;
+					strength = COLLATE_NA;
 					location = -1;	/* won't be used */
 				}
 
@@ -470,14 +499,7 @@ assign_collations_walker(Node *node, assign_collations_context *context)
 			 */
 			if (strength == COLLATE_CONFLICT &&
 				((TargetEntry *) node)->ressortgroupref != 0)
-				ereport(ERROR,
-						(errcode(ERRCODE_COLLATION_MISMATCH),
-						 errmsg("collation mismatch between implicit collations \"%s\" and \"%s\"",
-								get_collation_name(loccontext.collation),
-								get_collation_name(loccontext.collation2)),
-						 errhint("You can choose the collation by applying the COLLATE clause to one or both expressions."),
-						 parser_errposition(context->pstate,
-											loccontext.location2)));
+				ereport_implicit_collation_mismatch(&loccontext);
 			break;
 		case T_InferenceElem:
 		case T_RangeTblRef:
@@ -568,8 +590,14 @@ assign_collations_walker(Node *node, assign_collations_context *context)
 
 			if (OidIsValid(collation))
 				strength = COLLATE_IMPLICIT;
+			else if (nodeTag(node) == T_Var && type_is_collatable(exprType(node)))
+				/*
+				 * A Var of a collatable type that has no collation has
+				 * COLLATE_CONFLICT as per SQL standard subclause "<identifier chain>".
+				 */
+				strength = COLLATE_CONFLICT;
 			else
-				strength = COLLATE_NONE;
+				strength = COLLATE_NA;
 			location = exprLocation(node);
 			break;
 
@@ -712,7 +740,7 @@ assign_collations_walker(Node *node, assign_collations_context *context)
 				if (OidIsValid(typcollation))
 				{
 					/* Node's result is collatable; what about its input? */
-					if (loccontext.strength > COLLATE_NONE)
+					if (loccontext.strength > COLLATE_NA)
 					{
 						/* Collation state bubbles up from children. */
 						collation = loccontext.collation;
@@ -736,7 +764,7 @@ assign_collations_walker(Node *node, assign_collations_context *context)
 				{
 					/* Node's result type isn't collatable. */
 					collation = InvalidOid;
-					strength = COLLATE_NONE;
+					strength = COLLATE_NA;
 					location = -1;	/* won't be used */
 				}
 
@@ -769,7 +797,6 @@ assign_collations_walker(Node *node, assign_collations_context *context)
 						  strength,
 						  location,
 						  loccontext.collation2,
-						  loccontext.location2,
 						  context);
 
 	return false;
@@ -783,7 +810,6 @@ merge_collation_state(Oid collation,
 					  CollateStrength strength,
 					  int location,
 					  Oid collation2,
-					  int location2,
 					  assign_collations_context *context)
 {
 	/*
@@ -793,15 +819,24 @@ merge_collation_state(Oid collation,
 	 */
 	if (strength > context->strength)
 	{
-		/* Override previous parent state */
-		context->collation = collation;
 		context->strength = strength;
-		context->location = location;
+
+		/*
+		 * The stronger collation can be COLLATE_CONFLICT without known collation
+		 * (collation == InvalidOid). In that case don't overwrite possibly
+		 * useful reporting details.
+		 */
+		if ( ! (strength == COLLATE_CONFLICT && collation == InvalidOid))
+		{
+			context->collation = collation;
+			context->location = location;
+		}
+
 		/* Bubble up error info if applicable */
 		if (strength == COLLATE_CONFLICT)
 		{
 			context->collation2 = collation2;
-			context->location2 = location2;
+			context->location = location;
 		}
 	}
 	else if (strength == context->strength)
@@ -809,7 +844,7 @@ merge_collation_state(Oid collation,
 		/* Merge, or detect error if there's a collation conflict */
 		switch (strength)
 		{
-			case COLLATE_NONE:
+			case COLLATE_NA:
 				/* Nothing + nothing is still nothing */
 				break;
 			case COLLATE_IMPLICIT:
@@ -822,8 +857,10 @@ merge_collation_state(Oid collation,
 					{
 						/* Override previous parent state */
 						context->collation = collation;
-						context->strength = strength;
 						context->location = location;
+
+						/* It's the same-strength branch, no need to copy */
+						Assert(context->strength == strength);
 					}
 					else if (collation != DEFAULT_COLLATION_OID)
 					{
@@ -836,12 +873,23 @@ merge_collation_state(Oid collation,
 						 */
 						context->strength = COLLATE_CONFLICT;
 						context->collation2 = collation;
-						context->location2 = location;
+
+						// TODO: Uncomment to keep error messages at same place
+						// context->location = location;
 					}
 				}
 				break;
 			case COLLATE_CONFLICT:
-				/* We're still conflicted ... */
+				/*
+				 * We're still conflicted. If there is no collation for error
+				 * reporting yet, take this one.
+				 */
+				if (context->collation == InvalidOid)
+				{
+					context->collation = collation;
+					// TODO: Uncomment to keep error messages at same place
+					// context->location = location;
+				}
 				break;
 			case COLLATE_EXPLICIT:
 				if (collation != context->collation)
@@ -861,6 +909,19 @@ merge_collation_state(Oid collation,
 				}
 				break;
 		}
+	}
+	else if (context->strength == COLLATE_CONFLICT && context->collation == InvalidOid)
+	{
+		/*
+		 * The node is already the result of a conflict between two unknown
+		 * collations. Let's use the children's collation for reporting.
+		 * Note; The children's strength is COLLATE_IMPLICIT or COLLATE_NA,
+		 * the latter case doesn't do any harm so it is not explicitly checked.
+		 */
+		Assert(strength == COLLATE_IMPLICIT || strength == COLLATE_NA);
+		context->collation = collation;
+		// TODO: Uncomment to keep error messages at same place
+		// context->location = location;
 	}
 }
 
@@ -991,25 +1052,15 @@ assign_hypothetical_collations(Aggref *aggref,
 		 */
 		paircontext.pstate = loccontext->pstate;
 		paircontext.collation = InvalidOid;
-		paircontext.strength = COLLATE_NONE;
+		paircontext.strength = COLLATE_NA;
 		paircontext.location = -1;
-		/* Set these fields just to suppress uninitialized-value warnings: */
-		paircontext.collation2 = InvalidOid;
-		paircontext.location2 = -1;
 
 		(void) assign_collations_walker(h_arg, &paircontext);
 		(void) assign_collations_walker((Node *) s_tle->expr, &paircontext);
 
 		/* deal with collation conflict */
 		if (paircontext.strength == COLLATE_CONFLICT)
-			ereport(ERROR,
-					(errcode(ERRCODE_COLLATION_MISMATCH),
-					 errmsg("collation mismatch between implicit collations \"%s\" and \"%s\"",
-							get_collation_name(paircontext.collation),
-							get_collation_name(paircontext.collation2)),
-					 errhint("You can choose the collation by applying the COLLATE clause to one or both expressions."),
-					 parser_errposition(paircontext.pstate,
-										paircontext.location2)));
+			ereport_implicit_collation_mismatch(&paircontext);
 
 		/*
 		 * At this point paircontext.collation can be InvalidOid only if the
@@ -1050,7 +1101,6 @@ assign_hypothetical_collations(Aggref *aggref,
 								  paircontext.strength,
 								  paircontext.location,
 								  paircontext.collation2,
-								  paircontext.location2,
 								  loccontext);
 
 		h_cell = lnext(aggref->aggdirectargs, h_cell);
