@@ -384,7 +384,7 @@ SELECT array_agg(a ORDER BY x COLLATE "C", y COLLATE "POSIX") FROM collate_test1
 SELECT array_agg(a ORDER BY x||y) FROM collate_test10;  -- fail
 ERROR:  collation mismatch between implicit collations "C" and "POSIX"
 LINE 1: SELECT array_agg(a ORDER BY x||y) FROM collate_test10;
-                                       ^
+                                    ^
 HINT:  You can choose the collation by applying the COLLATE clause to one or both expressions.
 SELECT a, b FROM collate_test1 UNION ALL SELECT a, b FROM collate_test1 ORDER BY 2;
  a |  b  
@@ -424,8 +424,10 @@ SELECT a, b FROM collate_test2 EXCEPT SELECT a, b FROM collate_test2 WHERE a < 2
 (3 rows)
 
 SELECT a, b FROM collate_test1 UNION ALL SELECT a, b FROM collate_test2 ORDER BY 2; -- fail
-ERROR:  could not determine which collation to use for string comparison
-HINT:  Use the COLLATE clause to set the collation explicitly.
+ERROR:  collation mismatch between implicit collations
+LINE 1: SELECT a, b FROM collate_test1 UNION ALL SELECT a, b FROM co...
+                  ^
+HINT:  Use the COLLATE clause to set the collation explicitly
 SELECT a, b FROM collate_test1 UNION ALL SELECT a, b FROM collate_test2; -- ok
  a |  b  
 ---+-----
@@ -442,7 +444,7 @@ SELECT a, b FROM collate_test1 UNION ALL SELECT a, b FROM collate_test2; -- ok
 SELECT a, b FROM collate_test1 UNION SELECT a, b FROM collate_test2 ORDER BY 2; -- fail
 ERROR:  collation mismatch between implicit collations "C" and "POSIX"
 LINE 1: SELECT a, b FROM collate_test1 UNION SELECT a, b FROM collat...
-                                                       ^
+                  ^
 HINT:  You can choose the collation by applying the COLLATE clause to one or both expressions.
 SELECT a, b COLLATE "C" FROM collate_test1 UNION SELECT a, b FROM collate_test2 ORDER BY 2; -- ok
  a |  b  
@@ -455,13 +457,13 @@ SELECT a, b COLLATE "C" FROM collate_test1 UNION SELECT a, b FROM collate_test2 
 
 SELECT a, b FROM collate_test1 INTERSECT SELECT a, b FROM collate_test2 ORDER BY 2; -- fail
 ERROR:  collation mismatch between implicit collations "C" and "POSIX"
-LINE 1: ...ELECT a, b FROM collate_test1 INTERSECT SELECT a, b FROM col...
-                                                             ^
+LINE 1: SELECT a, b FROM collate_test1 INTERSECT SELECT a, b FROM co...
+                  ^
 HINT:  You can choose the collation by applying the COLLATE clause to one or both expressions.
 SELECT a, b FROM collate_test1 EXCEPT SELECT a, b FROM collate_test2 ORDER BY 2; -- fail
 ERROR:  collation mismatch between implicit collations "C" and "POSIX"
 LINE 1: SELECT a, b FROM collate_test1 EXCEPT SELECT a, b FROM colla...
-                                                        ^
+                  ^
 HINT:  You can choose the collation by applying the COLLATE clause to one or both expressions.
 CREATE TABLE test_u AS SELECT a, b FROM collate_test1 UNION ALL SELECT a, b FROM collate_test2; -- fail
 ERROR:  no collation was derived for column "b" with collatable type text
@@ -480,7 +482,7 @@ select x || y from collate_test10; -- ok, because || is not collation aware
 select x, y from collate_test10 order by x || y; -- not so ok
 ERROR:  collation mismatch between implicit collations "C" and "POSIX"
 LINE 1: select x, y from collate_test10 order by x || y;
-                                                      ^
+                                                 ^
 HINT:  You can choose the collation by applying the COLLATE clause to one or both expressions.
 -- collation mismatch between recursive and non-recursive term
 WITH RECURSIVE foo(x) AS
@@ -515,6 +517,12 @@ SELECT * FROM collate_test10 WHERE (x, y) NOT IN (SELECT y COLLATE "C", x COLLAT
 ---+---+---
 (0 rows)
 
+-- unknown collation from subquery conflicts with implicit collation in outer query
+SELECT * FROM (select x, x||y xy from collate_test10 ) t  order by xy || x;
+ERROR:  collation mismatch between implicit collation "C" and unknown collation
+LINE 1: ...select x, x||y xy from collate_test10 ) t  order by xy || x;
+                                                               ^
+HINT:  You can choose the collation by applying the COLLATE clause to one or both expressions.
 -- casting
 SELECT CAST('42' AS text COLLATE "C");
 ERROR:  syntax error at or near "COLLATE"
