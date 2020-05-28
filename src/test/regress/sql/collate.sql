@@ -169,6 +169,9 @@ SELECT * FROM collate_test10 WHERE (x, y) NOT IN (SELECT y, x FROM collate_test1
 SELECT * FROM collate_test10 WHERE (x COLLATE "POSIX", y COLLATE "C") NOT IN (SELECT y, x FROM collate_test10);
 SELECT * FROM collate_test10 WHERE (x, y) NOT IN (SELECT y COLLATE "C", x COLLATE "POSIX" FROM collate_test10);
 
+-- unknown collation from subquery conflicts with implicit collation in outer query
+SELECT * FROM (select x, x||y xy from collate_test10) t  order by xy || x; -- fail
+
 -- casting
 
 SELECT CAST('42' AS text COLLATE "C");
