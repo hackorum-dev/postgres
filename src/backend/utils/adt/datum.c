@@ -201,13 +201,15 @@ datumTransfer(Datum value, bool typByVal, int typLen)
 }
 
 /*-------------------------------------------------------------------------
- * datumIsEqual
+ * datumCompare
  *
- * Return true if two datums are equal, false otherwise
+ * Return 0 if two datums are equal, otherwise return a negative number if
+ * value1 is less than value2 and a positive number of value1 is greater than
+ * value2
  *
  * NOTE: XXX!
  * We just compare the bytes of the two values, one by one.
- * This routine will return false if there are 2 different
+ * This routine will return 0 if there are 2 different
  * representations of the same value (something along the lines
  * of say the representation of zero in one's complement arithmetic).
  * Also, it will probably not give the answer you want if either
@@ -218,11 +220,9 @@ datumTransfer(Datum value, bool typByVal, int typLen)
  * context of an aborted transaction.
  *-------------------------------------------------------------------------
  */
-bool
-datumIsEqual(Datum value1, Datum value2, bool typByVal, int typLen)
+int
+datumCompare(Datum value1, Datum value2, bool typByVal, int typLen)
 {
-	bool		res;
-
 	if (typByVal)
 	{
 		/*
@@ -231,7 +231,11 @@ datumIsEqual(Datum value1, Datum value2, bool typByVal, int typLen)
 		 * inside the "Datum".  We assume instead that any given datatype is
 		 * consistent about how it fills extraneous bits in the Datum.
 		 */
-		res = (value1 == value2);
+		if (value1 < value2)
+			return -1;
+		else if (value1 > value2)
+			return +1;
+		return 0;
 	}
 	else
 	{
@@ -246,12 +250,21 @@ datumIsEqual(Datum value1, Datum value2, bool typByVal, int typLen)
 		size1 = datumGetSize(value1, typByVal, typLen);
 		size2 = datumGetSize(value2, typByVal, typLen);
 		if (size1 != size2)
-			return false;
+			return size1 < size2 ? -1 : +1;
 		s1 = (char *) DatumGetPointer(value1);
 		s2 = (char *) DatumGetPointer(value2);
-		res = (memcmp(s1, s2, size1) == 0);
+		return memcmp(s1, s2, size1);
 	}
-	return res;
+}
+
+/*
+ * datumIsEqual
+ *		Returns true if Datums are classed as equal according to datumCompare
+ */
+bool
+datumIsEqual(Datum value1, Datum value2, bool typByVal, int typLen)
+{
+	return datumCompare(value1, value2, typByVal, typLen) == 0;
 }
 
 /*-------------------------------------------------------------------------

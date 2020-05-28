@@ -42,9 +42,10 @@ typedef struct ExtensibleNode
  * It does not need to copy type or extnodename, which are copied by the
  * core system.
  *
- * nodeEqual is a function which performs a deep equality comparison between
- * a and b and returns true or false accordingly.  It does not need to compare
- * type or extnodename, which are compared by the core system.
+ * nodeCompare is a function which performs a deep equality comparison between
+ * a and b and returns < 0 if 'a' is lower than 'b', 0 if 'a' is equal to 'b'
+ * and > 0 if 'a' is greater than 'b'.  It does not need to compare type or
+ * extnodename, which are compared by the core system.
  *
  * nodeOut is a serialization function for the node type.  It should use the
  * output conventions typical for outfuncs.c.  It does not need to output
@@ -63,8 +64,8 @@ typedef struct ExtensibleNodeMethods
 	Size		node_size;
 	void		(*nodeCopy) (struct ExtensibleNode *newnode,
 							 const struct ExtensibleNode *oldnode);
-	bool		(*nodeEqual) (const struct ExtensibleNode *a,
-							  const struct ExtensibleNode *b);
+	int			(*nodeCompare) (const struct ExtensibleNode *a,
+								const struct ExtensibleNode *b);
 	void		(*nodeOut) (struct StringInfoData *str,
 							const struct ExtensibleNode *node);
 	void		(*nodeRead) (struct ExtensibleNode *node);

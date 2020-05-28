@@ -42,43 +42,40 @@
  * named 'a' and 'b'.
  */
 
-/* Compare a simple scalar field (int, float, bool, enum, etc) */
-#define COMPARE_SCALAR_FIELD(fldname) \
-	do { \
-		if (a->fldname != b->fldname) \
-			return false; \
-	} while (0)
-
 /* Compare a field that is a pointer to some kind of Node or Node tree */
 #define COMPARE_NODE_FIELD(fldname) \
 	do { \
-		if (!equal(a->fldname, b->fldname)) \
-			return false; \
+		int retval = equalCompare(a->fldname, b->fldname); \
+		if (retval != 0) \
+			return retval; \
 	} while (0)
 
 /* Compare a field that is a pointer to a Bitmapset */
 #define COMPARE_BITMAPSET_FIELD(fldname) \
 	do { \
-		if (!bms_equal(a->fldname, b->fldname)) \
-			return false; \
+		int retval = bms_compare(a->fldname, b->fldname); \
+		if (retval != 0) \
+			return retval; \
 	} while (0)
 
 /* Compare a field that is a pointer to a C string, or perhaps NULL */
 #define COMPARE_STRING_FIELD(fldname) \
 	do { \
-		if (!equalstr(a->fldname, b->fldname)) \
-			return false; \
+		int	retval = equalstr(a->fldname, b->fldname); \
+		if (retval != 0) \
+			return retval; \
 	} while (0)
 
 /* Macro for comparing string fields that might be NULL */
 #define equalstr(a, b)	\
-	(((a) != NULL && (b) != NULL) ? (strcmp(a, b) == 0) : (a) == (b))
+	((((a) != NULL && (b) != NULL) ? (strcmp(a, b)) : ((a) == NULL) - ((b) == NULL)))
 
 /* Compare a field that is a pointer to a simple palloc'd object of size sz */
 #define COMPARE_POINTER_FIELD(fldname, sz) \
 	do { \
-		if (memcmp(a->fldname, b->fldname, (sz)) != 0) \
-			return false; \
+		int retval = memcmp(a->fldname, b->fldname, (sz)); \
+		if (retval != 0) \
+			return retval; \
 	} while (0)
 
 /* Compare a parse location field (this is a no-op, per note above) */
@@ -89,31 +86,99 @@
 #define COMPARE_COERCIONFORM_FIELD(fldname) \
 	((void) 0)
 
-#define COMPARE_BOOL_FIELD(fldname)				COMPARE_SCALAR_FIELD(fldname)
-#define COMPARE_CHAR_FIELD(fldname)				COMPARE_SCALAR_FIELD(fldname)
-#define COMPARE_INT_FIELD(fldname)				COMPARE_SCALAR_FIELD(fldname)
-#define COMPARE_UINT_FIELD(fldname)				COMPARE_SCALAR_FIELD(fldname)
-#define COMPARE_LONG_FIELD(fldname)				COMPARE_SCALAR_FIELD(fldname)
-#define COMPARE_DOUBLE_FIELD(fldname)			COMPARE_SCALAR_FIELD(fldname)
-#define COMPARE_OID_FIELD(fldname)				COMPARE_SCALAR_FIELD(fldname)
-#define COMPARE_POINTER_VALUE_FIELD(fldname)	COMPARE_SCALAR_FIELD(fldname)
-#define COMPARE_ENUM_FIELD(fldname, enumtype)	COMPARE_SCALAR_FIELD(fldname)
+/* Compare a simple bool field */
+#define COMPARE_BOOL_FIELD(fldname) \
+	do { \
+		int retval = a->fldname - b->fldname; \
+		if (retval != 0) \
+			return retval; \
+	} while (0)
 
+/* Compare a simple char field */
+#define COMPARE_CHAR_FIELD(fldname) \
+	do { \
+		int retval = a->fldname - b->fldname; \
+		if (retval != 0) \
+			return retval; \
+	} while (0)
+
+/* Compare a simple int field */
+#define COMPARE_INT_FIELD(fldname) \
+	do { \
+		if (a->fldname < b->fldname) \
+			return -1; \
+		else if (a->fldname > b->fldname) \
+			return +1; \
+	} while (0)
+
+/* Compare a simple unsigned int field */
+#define COMPARE_UINT_FIELD(fldname) \
+	do { \
+		if (a->fldname < b->fldname) \
+			return -1; \
+		else if (a->fldname > b->fldname) \
+			return +1; \
+	} while (0)
+
+/* Compare a simple long field */
+#define COMPARE_LONG_FIELD(fldname) \
+	do { \
+		if (a->fldname < b->fldname) \
+			return -1; \
+		else if (a->fldname > b->fldname) \
+			return +1; \
+	} while (0)
+
+/* Compare a simple double field */
+#define COMPARE_DOUBLE_FIELD(fldname) \
+	do { \
+		if (a->fldname < b->fldname) \
+			return -1; \
+		else if (a->fldname > b->fldname) \
+			return +1; \
+	} while (0)
+
+/* Compare a simple Oid field */
+#define COMPARE_OID_FIELD(fldname) \
+	do { \
+		if (a->fldname < b->fldname) \
+			return -1; \
+		else if (a->fldname > b->fldname) \
+			return +1; \
+	} while (0)
+
+/* Compare the value of two pointers. */
+#define COMPARE_POINTER_VALUE_FIELD(fldname) \
+	do { \
+		if ((uintptr_t) a->fldname < (uintptr_t) b->fldname) \
+			return -1; \
+		else if ((uintptr_t) a->fldname > (uintptr_t) b->fldname) \
+			return +1; \
+	} while (0)
+
+/* Compare a simple enum field */
+#define COMPARE_ENUM_FIELD(fldname, enumtype) \
+	do { \
+		if (a->fldname < b->fldname) \
+			return -1; \
+		else if (a->fldname > b->fldname) \
+			return +1; \
+	} while (0)
 
 /*
  *	Stuff from primnodes.h
  */
 
-static bool
+static int
 _equalAlias(const Alias *a, const Alias *b)
 {
 	COMPARE_STRING_FIELD(aliasname);
 	COMPARE_NODE_FIELD(colnames);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalRangeVar(const RangeVar *a, const RangeVar *b)
 {
 	COMPARE_STRING_FIELD(catalogname);
@@ -124,10 +189,10 @@ _equalRangeVar(const RangeVar *a, const RangeVar *b)
 	COMPARE_NODE_FIELD(alias);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalTableFunc(const TableFunc *a, const TableFunc *b)
 {
 	COMPARE_NODE_FIELD(ns_uris);
@@ -144,10 +209,10 @@ _equalTableFunc(const TableFunc *a, const TableFunc *b)
 	COMPARE_INT_FIELD(ordinalitycol);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalIntoClause(const IntoClause *a, const IntoClause *b)
 {
 	COMPARE_NODE_FIELD(rel);
@@ -159,7 +224,7 @@ _equalIntoClause(const IntoClause *a, const IntoClause *b)
 	COMPARE_NODE_FIELD(viewQuery);
 	COMPARE_BOOL_FIELD(skipData);
 
-	return true;
+	return 0;
 }
 
 /*
@@ -169,7 +234,7 @@ _equalIntoClause(const IntoClause *a, const IntoClause *b)
  * out comparing the common fields...
  */
 
-static bool
+static int
 _equalVar(const Var *a, const Var *b)
 {
 	COMPARE_UINT_FIELD(varno);
@@ -186,10 +251,10 @@ _equalVar(const Var *a, const Var *b)
 	 */
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalConst(const Const *a, const Const *b)
 {
 	COMPARE_OID_FIELD(consttype);
@@ -205,12 +270,12 @@ _equalConst(const Const *a, const Const *b)
 	 * might need to change?  But datumIsEqual doesn't work on nulls, so...
 	 */
 	if (a->constisnull)
-		return true;
-	return datumIsEqual(a->constvalue, b->constvalue,
+		return 0;
+	return datumCompare(a->constvalue, b->constvalue,
 						a->constbyval, a->constlen);
 }
 
-static bool
+static int
 _equalParam(const Param *a, const Param *b)
 {
 	COMPARE_ENUM_FIELD(paramkind, ParamKind);
@@ -220,10 +285,10 @@ _equalParam(const Param *a, const Param *b)
 	COMPARE_OID_FIELD(paramcollid);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAggref(const Aggref *a, const Aggref *b)
 {
 	COMPARE_OID_FIELD(aggfnoid);
@@ -244,10 +309,10 @@ _equalAggref(const Aggref *a, const Aggref *b)
 	COMPARE_ENUM_FIELD(aggsplit, AggSplit);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalGroupingFunc(const GroupingFunc *a, const GroupingFunc *b)
 {
 	COMPARE_NODE_FIELD(args);
@@ -259,10 +324,10 @@ _equalGroupingFunc(const GroupingFunc *a, const GroupingFunc *b)
 	COMPARE_UINT_FIELD(agglevelsup);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalWindowFunc(const WindowFunc *a, const WindowFunc *b)
 {
 	COMPARE_OID_FIELD(winfnoid);
@@ -276,10 +341,10 @@ _equalWindowFunc(const WindowFunc *a, const WindowFunc *b)
 	COMPARE_BOOL_FIELD(winagg);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalSubscriptingRef(const SubscriptingRef *a, const SubscriptingRef *b)
 {
 	COMPARE_OID_FIELD(refcontainertype);
@@ -291,10 +356,10 @@ _equalSubscriptingRef(const SubscriptingRef *a, const SubscriptingRef *b)
 	COMPARE_NODE_FIELD(refexpr);
 	COMPARE_NODE_FIELD(refassgnexpr);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalFuncExpr(const FuncExpr *a, const FuncExpr *b)
 {
 	COMPARE_OID_FIELD(funcid);
@@ -307,10 +372,10 @@ _equalFuncExpr(const FuncExpr *a, const FuncExpr *b)
 	COMPARE_NODE_FIELD(args);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalNamedArgExpr(const NamedArgExpr *a, const NamedArgExpr *b)
 {
 	COMPARE_NODE_FIELD(arg);
@@ -318,10 +383,10 @@ _equalNamedArgExpr(const NamedArgExpr *a, const NamedArgExpr *b)
 	COMPARE_INT_FIELD(argnumber);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalOpExpr(const OpExpr *a, const OpExpr *b)
 {
 	COMPARE_OID_FIELD(opno);
@@ -335,7 +400,7 @@ _equalOpExpr(const OpExpr *a, const OpExpr *b)
 	if (a->opfuncid != b->opfuncid &&
 		a->opfuncid != 0 &&
 		b->opfuncid != 0)
-		return false;
+		return (a->opfuncid < b->opfuncid) ? -1 : +1;
 
 	COMPARE_OID_FIELD(opresulttype);
 	COMPARE_BOOL_FIELD(opretset);
@@ -344,10 +409,10 @@ _equalOpExpr(const OpExpr *a, const OpExpr *b)
 	COMPARE_NODE_FIELD(args);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalDistinctExpr(const DistinctExpr *a, const DistinctExpr *b)
 {
 	COMPARE_OID_FIELD(opno);
@@ -361,7 +426,7 @@ _equalDistinctExpr(const DistinctExpr *a, const DistinctExpr *b)
 	if (a->opfuncid != b->opfuncid &&
 		a->opfuncid != 0 &&
 		b->opfuncid != 0)
-		return false;
+		return (a->opfuncid < b->opfuncid) ? -1 : +1;
 
 	COMPARE_OID_FIELD(opresulttype);
 	COMPARE_BOOL_FIELD(opretset);
@@ -370,10 +435,10 @@ _equalDistinctExpr(const DistinctExpr *a, const DistinctExpr *b)
 	COMPARE_NODE_FIELD(args);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalNullIfExpr(const NullIfExpr *a, const NullIfExpr *b)
 {
 	COMPARE_OID_FIELD(opno);
@@ -387,7 +452,7 @@ _equalNullIfExpr(const NullIfExpr *a, const NullIfExpr *b)
 	if (a->opfuncid != b->opfuncid &&
 		a->opfuncid != 0 &&
 		b->opfuncid != 0)
-		return false;
+		return (a->opfuncid < b->opfuncid) ? -1 : +1;
 
 	COMPARE_OID_FIELD(opresulttype);
 	COMPARE_BOOL_FIELD(opretset);
@@ -396,10 +461,10 @@ _equalNullIfExpr(const NullIfExpr *a, const NullIfExpr *b)
 	COMPARE_NODE_FIELD(args);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalScalarArrayOpExpr(const ScalarArrayOpExpr *a, const ScalarArrayOpExpr *b)
 {
 	COMPARE_OID_FIELD(opno);
@@ -413,27 +478,27 @@ _equalScalarArrayOpExpr(const ScalarArrayOpExpr *a, const ScalarArrayOpExpr *b)
 	if (a->opfuncid != b->opfuncid &&
 		a->opfuncid != 0 &&
 		b->opfuncid != 0)
-		return false;
+		return (a->opfuncid < b->opfuncid) ? -1 : +1;
 
 	COMPARE_BOOL_FIELD(useOr);
 	COMPARE_OID_FIELD(inputcollid);
 	COMPARE_NODE_FIELD(args);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalBoolExpr(const BoolExpr *a, const BoolExpr *b)
 {
 	COMPARE_ENUM_FIELD(boolop, BoolExprType);
 	COMPARE_NODE_FIELD(args);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalSubLink(const SubLink *a, const SubLink *b)
 {
 	COMPARE_ENUM_FIELD(subLinkType, SubLinkType);
@@ -443,10 +508,10 @@ _equalSubLink(const SubLink *a, const SubLink *b)
 	COMPARE_NODE_FIELD(subselect);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalSubPlan(const SubPlan *a, const SubPlan *b)
 {
 	COMPARE_ENUM_FIELD(subLinkType, SubLinkType);
@@ -466,18 +531,18 @@ _equalSubPlan(const SubPlan *a, const SubPlan *b)
 	COMPARE_DOUBLE_FIELD(startup_cost);
 	COMPARE_DOUBLE_FIELD(per_call_cost);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlternativeSubPlan(const AlternativeSubPlan *a, const AlternativeSubPlan *b)
 {
 	COMPARE_NODE_FIELD(subplans);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalFieldSelect(const FieldSelect *a, const FieldSelect *b)
 {
 	COMPARE_NODE_FIELD(arg);
@@ -486,10 +551,10 @@ _equalFieldSelect(const FieldSelect *a, const FieldSelect *b)
 	COMPARE_INT_FIELD(resulttypmod);
 	COMPARE_OID_FIELD(resultcollid);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalFieldStore(const FieldStore *a, const FieldStore *b)
 {
 	COMPARE_NODE_FIELD(arg);
@@ -497,10 +562,10 @@ _equalFieldStore(const FieldStore *a, const FieldStore *b)
 	COMPARE_NODE_FIELD(fieldnums);
 	COMPARE_OID_FIELD(resulttype);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalRelabelType(const RelabelType *a, const RelabelType *b)
 {
 	COMPARE_NODE_FIELD(arg);
@@ -510,10 +575,10 @@ _equalRelabelType(const RelabelType *a, const RelabelType *b)
 	COMPARE_COERCIONFORM_FIELD(relabelformat);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCoerceViaIO(const CoerceViaIO *a, const CoerceViaIO *b)
 {
 	COMPARE_NODE_FIELD(arg);
@@ -522,10 +587,10 @@ _equalCoerceViaIO(const CoerceViaIO *a, const CoerceViaIO *b)
 	COMPARE_COERCIONFORM_FIELD(coerceformat);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalArrayCoerceExpr(const ArrayCoerceExpr *a, const ArrayCoerceExpr *b)
 {
 	COMPARE_NODE_FIELD(arg);
@@ -536,10 +601,10 @@ _equalArrayCoerceExpr(const ArrayCoerceExpr *a, const ArrayCoerceExpr *b)
 	COMPARE_COERCIONFORM_FIELD(coerceformat);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalConvertRowtypeExpr(const ConvertRowtypeExpr *a, const ConvertRowtypeExpr *b)
 {
 	COMPARE_NODE_FIELD(arg);
@@ -547,20 +612,20 @@ _equalConvertRowtypeExpr(const ConvertRowtypeExpr *a, const ConvertRowtypeExpr *
 	COMPARE_COERCIONFORM_FIELD(convertformat);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCollateExpr(const CollateExpr *a, const CollateExpr *b)
 {
 	COMPARE_NODE_FIELD(arg);
 	COMPARE_OID_FIELD(collOid);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCaseExpr(const CaseExpr *a, const CaseExpr *b)
 {
 	COMPARE_OID_FIELD(casetype);
@@ -570,30 +635,30 @@ _equalCaseExpr(const CaseExpr *a, const CaseExpr *b)
 	COMPARE_NODE_FIELD(defresult);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCaseWhen(const CaseWhen *a, const CaseWhen *b)
 {
 	COMPARE_NODE_FIELD(expr);
 	COMPARE_NODE_FIELD(result);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCaseTestExpr(const CaseTestExpr *a, const CaseTestExpr *b)
 {
 	COMPARE_OID_FIELD(typeId);
 	COMPARE_INT_FIELD(typeMod);
 	COMPARE_OID_FIELD(collation);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalArrayExpr(const ArrayExpr *a, const ArrayExpr *b)
 {
 	COMPARE_OID_FIELD(array_typeid);
@@ -603,10 +668,10 @@ _equalArrayExpr(const ArrayExpr *a, const ArrayExpr *b)
 	COMPARE_BOOL_FIELD(multidims);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalRowExpr(const RowExpr *a, const RowExpr *b)
 {
 	COMPARE_NODE_FIELD(args);
@@ -615,10 +680,10 @@ _equalRowExpr(const RowExpr *a, const RowExpr *b)
 	COMPARE_NODE_FIELD(colnames);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalRowCompareExpr(const RowCompareExpr *a, const RowCompareExpr *b)
 {
 	COMPARE_ENUM_FIELD(rctype, RowCompareType);
@@ -628,10 +693,10 @@ _equalRowCompareExpr(const RowCompareExpr *a, const RowCompareExpr *b)
 	COMPARE_NODE_FIELD(largs);
 	COMPARE_NODE_FIELD(rargs);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCoalesceExpr(const CoalesceExpr *a, const CoalesceExpr *b)
 {
 	COMPARE_OID_FIELD(coalescetype);
@@ -639,10 +704,10 @@ _equalCoalesceExpr(const CoalesceExpr *a, const CoalesceExpr *b)
 	COMPARE_NODE_FIELD(args);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalMinMaxExpr(const MinMaxExpr *a, const MinMaxExpr *b)
 {
 	COMPARE_OID_FIELD(minmaxtype);
@@ -652,10 +717,10 @@ _equalMinMaxExpr(const MinMaxExpr *a, const MinMaxExpr *b)
 	COMPARE_NODE_FIELD(args);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalSQLValueFunction(const SQLValueFunction *a, const SQLValueFunction *b)
 {
 	COMPARE_ENUM_FIELD(op, SQLValueFunctionOp);
@@ -663,10 +728,10 @@ _equalSQLValueFunction(const SQLValueFunction *a, const SQLValueFunction *b)
 	COMPARE_INT_FIELD(typmod);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalXmlExpr(const XmlExpr *a, const XmlExpr *b)
 {
 	COMPARE_ENUM_FIELD(op, XmlExprOp);
@@ -679,10 +744,10 @@ _equalXmlExpr(const XmlExpr *a, const XmlExpr *b)
 	COMPARE_INT_FIELD(typmod);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalNullTest(const NullTest *a, const NullTest *b)
 {
 	COMPARE_NODE_FIELD(arg);
@@ -690,20 +755,20 @@ _equalNullTest(const NullTest *a, const NullTest *b)
 	COMPARE_BOOL_FIELD(argisrow);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalBooleanTest(const BooleanTest *a, const BooleanTest *b)
 {
 	COMPARE_NODE_FIELD(arg);
 	COMPARE_ENUM_FIELD(booltesttype, BoolTestType);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCoerceToDomain(const CoerceToDomain *a, const CoerceToDomain *b)
 {
 	COMPARE_NODE_FIELD(arg);
@@ -713,10 +778,10 @@ _equalCoerceToDomain(const CoerceToDomain *a, const CoerceToDomain *b)
 	COMPARE_COERCIONFORM_FIELD(coercionformat);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCoerceToDomainValue(const CoerceToDomainValue *a, const CoerceToDomainValue *b)
 {
 	COMPARE_OID_FIELD(typeId);
@@ -724,10 +789,10 @@ _equalCoerceToDomainValue(const CoerceToDomainValue *a, const CoerceToDomainValu
 	COMPARE_OID_FIELD(collation);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalSetToDefault(const SetToDefault *a, const SetToDefault *b)
 {
 	COMPARE_OID_FIELD(typeId);
@@ -735,39 +800,39 @@ _equalSetToDefault(const SetToDefault *a, const SetToDefault *b)
 	COMPARE_OID_FIELD(collation);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCurrentOfExpr(const CurrentOfExpr *a, const CurrentOfExpr *b)
 {
 	COMPARE_UINT_FIELD(cvarno);
 	COMPARE_STRING_FIELD(cursor_name);
 	COMPARE_INT_FIELD(cursor_param);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalNextValueExpr(const NextValueExpr *a, const NextValueExpr *b)
 {
 	COMPARE_OID_FIELD(seqid);
 	COMPARE_OID_FIELD(typeId);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalInferenceElem(const InferenceElem *a, const InferenceElem *b)
 {
 	COMPARE_NODE_FIELD(expr);
 	COMPARE_OID_FIELD(infercollid);
 	COMPARE_OID_FIELD(inferopclass);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalTargetEntry(const TargetEntry *a, const TargetEntry *b)
 {
 	COMPARE_NODE_FIELD(expr);
@@ -778,18 +843,18 @@ _equalTargetEntry(const TargetEntry *a, const TargetEntry *b)
 	COMPARE_INT_FIELD(resorigcol);
 	COMPARE_BOOL_FIELD(resjunk);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalRangeTblRef(const RangeTblRef *a, const RangeTblRef *b)
 {
 	COMPARE_INT_FIELD(rtindex);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalJoinExpr(const JoinExpr *a, const JoinExpr *b)
 {
 	COMPARE_ENUM_FIELD(jointype, JoinType);
@@ -801,19 +866,19 @@ _equalJoinExpr(const JoinExpr *a, const JoinExpr *b)
 	COMPARE_NODE_FIELD(alias);
 	COMPARE_INT_FIELD(rtindex);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalFromExpr(const FromExpr *a, const FromExpr *b)
 {
 	COMPARE_NODE_FIELD(fromlist);
 	COMPARE_NODE_FIELD(quals);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalOnConflictExpr(const OnConflictExpr *a, const OnConflictExpr *b)
 {
 	COMPARE_ENUM_FIELD(action, OnConflictAction);
@@ -825,14 +890,14 @@ _equalOnConflictExpr(const OnConflictExpr *a, const OnConflictExpr *b)
 	COMPARE_INT_FIELD(exclRelIndex);
 	COMPARE_NODE_FIELD(exclRelTlist);
 
-	return true;
+	return 0;
 }
 
 /*
  * Stuff from pathnodes.h
  */
 
-static bool
+static int
 _equalPathKey(const PathKey *a, const PathKey *b)
 {
 	/* We assume pointer equality is sufficient to compare the eclasses */
@@ -841,10 +906,10 @@ _equalPathKey(const PathKey *a, const PathKey *b)
 	COMPARE_INT_FIELD(pk_strategy);
 	COMPARE_BOOL_FIELD(pk_nulls_first);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalRestrictInfo(const RestrictInfo *a, const RestrictInfo *b)
 {
 	COMPARE_NODE_FIELD(clause);
@@ -860,10 +925,10 @@ _equalRestrictInfo(const RestrictInfo *a, const RestrictInfo *b)
 	 * should be derivable from the clause anyway.
 	 */
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalPlaceHolderVar(const PlaceHolderVar *a, const PlaceHolderVar *b)
 {
 	/*
@@ -885,10 +950,10 @@ _equalPlaceHolderVar(const PlaceHolderVar *a, const PlaceHolderVar *b)
 	COMPARE_UINT_FIELD(phid);
 	COMPARE_UINT_FIELD(phlevelsup);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalSpecialJoinInfo(const SpecialJoinInfo *a, const SpecialJoinInfo *b)
 {
 	COMPARE_BITMAPSET_FIELD(min_lefthand);
@@ -903,10 +968,10 @@ _equalSpecialJoinInfo(const SpecialJoinInfo *a, const SpecialJoinInfo *b)
 	COMPARE_NODE_FIELD(semi_operators);
 	COMPARE_NODE_FIELD(semi_rhs_exprs);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAppendRelInfo(const AppendRelInfo *a, const AppendRelInfo *b)
 {
 	COMPARE_UINT_FIELD(parent_relid);
@@ -918,10 +983,10 @@ _equalAppendRelInfo(const AppendRelInfo *a, const AppendRelInfo *b)
 	COMPARE_POINTER_FIELD(parent_colnos, a->num_child_cols * sizeof(AttrNumber));
 	COMPARE_OID_FIELD(parent_reloid);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalPlaceHolderInfo(const PlaceHolderInfo *a, const PlaceHolderInfo *b)
 {
 	COMPARE_UINT_FIELD(phid);
@@ -931,34 +996,36 @@ _equalPlaceHolderInfo(const PlaceHolderInfo *a, const PlaceHolderInfo *b)
 	COMPARE_BITMAPSET_FIELD(ph_needed);
 	COMPARE_INT_FIELD(ph_width);
 
-	return true;
+	return 0;
 }
 
 /*
  * Stuff from extensible.h
  */
-static bool
+static int
 _equalExtensibleNode(const ExtensibleNode *a, const ExtensibleNode *b)
 {
 	const ExtensibleNodeMethods *methods;
+	int	retval;
 
 	COMPARE_STRING_FIELD(extnodename);
 
 	/* At this point, we know extnodename is the same for both nodes. */
 	methods = GetExtensibleNodeMethods(a->extnodename, false);
 
+	retval = methods->nodeCompare(a, b);
 	/* compare the private fields */
-	if (!methods->nodeEqual(a, b))
-		return false;
+	if (retval != 0)
+		return retval;
 
-	return true;
+	return 0;
 }
 
 /*
  * Stuff from parsenodes.h
  */
 
-static bool
+static int
 _equalQuery(const Query *a, const Query *b)
 {
 	COMPARE_ENUM_FIELD(commandType, CmdType);
@@ -999,20 +1066,20 @@ _equalQuery(const Query *a, const Query *b)
 	COMPARE_LOCATION_FIELD(stmt_location);
 	COMPARE_INT_FIELD(stmt_len);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalRawStmt(const RawStmt *a, const RawStmt *b)
 {
 	COMPARE_NODE_FIELD(stmt);
 	COMPARE_LOCATION_FIELD(stmt_location);
 	COMPARE_INT_FIELD(stmt_len);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalInsertStmt(const InsertStmt *a, const InsertStmt *b)
 {
 	COMPARE_NODE_FIELD(relation);
@@ -1023,10 +1090,10 @@ _equalInsertStmt(const InsertStmt *a, const InsertStmt *b)
 	COMPARE_NODE_FIELD(withClause);
 	COMPARE_ENUM_FIELD(override, OverridingKind);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalDeleteStmt(const DeleteStmt *a, const DeleteStmt *b)
 {
 	COMPARE_NODE_FIELD(relation);
@@ -1035,10 +1102,10 @@ _equalDeleteStmt(const DeleteStmt *a, const DeleteStmt *b)
 	COMPARE_NODE_FIELD(returningList);
 	COMPARE_NODE_FIELD(withClause);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalUpdateStmt(const UpdateStmt *a, const UpdateStmt *b)
 {
 	COMPARE_NODE_FIELD(relation);
@@ -1048,10 +1115,10 @@ _equalUpdateStmt(const UpdateStmt *a, const UpdateStmt *b)
 	COMPARE_NODE_FIELD(returningList);
 	COMPARE_NODE_FIELD(withClause);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalSelectStmt(const SelectStmt *a, const SelectStmt *b)
 {
 	COMPARE_NODE_FIELD(distinctClause);
@@ -1074,10 +1141,10 @@ _equalSelectStmt(const SelectStmt *a, const SelectStmt *b)
 	COMPARE_NODE_FIELD(larg);
 	COMPARE_NODE_FIELD(rarg);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalSetOperationStmt(const SetOperationStmt *a, const SetOperationStmt *b)
 {
 	COMPARE_ENUM_FIELD(op, SetOperation);
@@ -1089,10 +1156,10 @@ _equalSetOperationStmt(const SetOperationStmt *a, const SetOperationStmt *b)
 	COMPARE_NODE_FIELD(colCollations);
 	COMPARE_NODE_FIELD(groupClauses);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterTableStmt(const AlterTableStmt *a, const AlterTableStmt *b)
 {
 	COMPARE_NODE_FIELD(relation);
@@ -1100,10 +1167,10 @@ _equalAlterTableStmt(const AlterTableStmt *a, const AlterTableStmt *b)
 	COMPARE_ENUM_FIELD(relkind, ObjectType);
 	COMPARE_BOOL_FIELD(missing_ok);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterTableCmd(const AlterTableCmd *a, const AlterTableCmd *b)
 {
 	COMPARE_ENUM_FIELD(subtype, AlterTableType);
@@ -1114,18 +1181,18 @@ _equalAlterTableCmd(const AlterTableCmd *a, const AlterTableCmd *b)
 	COMPARE_ENUM_FIELD(behavior, DropBehavior);
 	COMPARE_BOOL_FIELD(missing_ok);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterCollationStmt(const AlterCollationStmt *a, const AlterCollationStmt *b)
 {
 	COMPARE_NODE_FIELD(collname);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterDomainStmt(const AlterDomainStmt *a, const AlterDomainStmt *b)
 {
 	COMPARE_CHAR_FIELD(subtype);
@@ -1135,10 +1202,10 @@ _equalAlterDomainStmt(const AlterDomainStmt *a, const AlterDomainStmt *b)
 	COMPARE_ENUM_FIELD(behavior, DropBehavior);
 	COMPARE_BOOL_FIELD(missing_ok);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalGrantStmt(const GrantStmt *a, const GrantStmt *b)
 {
 	COMPARE_BOOL_FIELD(is_grant);
@@ -1150,29 +1217,29 @@ _equalGrantStmt(const GrantStmt *a, const GrantStmt *b)
 	COMPARE_BOOL_FIELD(grant_option);
 	COMPARE_ENUM_FIELD(behavior, DropBehavior);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalObjectWithArgs(const ObjectWithArgs *a, const ObjectWithArgs *b)
 {
 	COMPARE_NODE_FIELD(objname);
 	COMPARE_NODE_FIELD(objargs);
 	COMPARE_BOOL_FIELD(args_unspecified);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAccessPriv(const AccessPriv *a, const AccessPriv *b)
 {
 	COMPARE_STRING_FIELD(priv_name);
 	COMPARE_NODE_FIELD(cols);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalGrantRoleStmt(const GrantRoleStmt *a, const GrantRoleStmt *b)
 {
 	COMPARE_NODE_FIELD(granted_roles);
@@ -1182,56 +1249,56 @@ _equalGrantRoleStmt(const GrantRoleStmt *a, const GrantRoleStmt *b)
 	COMPARE_NODE_FIELD(grantor);
 	COMPARE_ENUM_FIELD(behavior, DropBehavior);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterDefaultPrivilegesStmt(const AlterDefaultPrivilegesStmt *a, const AlterDefaultPrivilegesStmt *b)
 {
 	COMPARE_NODE_FIELD(options);
 	COMPARE_NODE_FIELD(action);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalDeclareCursorStmt(const DeclareCursorStmt *a, const DeclareCursorStmt *b)
 {
 	COMPARE_STRING_FIELD(portalname);
 	COMPARE_INT_FIELD(options);
 	COMPARE_NODE_FIELD(query);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalClosePortalStmt(const ClosePortalStmt *a, const ClosePortalStmt *b)
 {
 	COMPARE_STRING_FIELD(portalname);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCallStmt(const CallStmt *a, const CallStmt *b)
 {
 	COMPARE_NODE_FIELD(funccall);
 	COMPARE_NODE_FIELD(funcexpr);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalClusterStmt(const ClusterStmt *a, const ClusterStmt *b)
 {
 	COMPARE_NODE_FIELD(relation);
 	COMPARE_STRING_FIELD(indexname);
 	COMPARE_INT_FIELD(options);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCopyStmt(const CopyStmt *a, const CopyStmt *b)
 {
 	COMPARE_NODE_FIELD(relation);
@@ -1243,10 +1310,10 @@ _equalCopyStmt(const CopyStmt *a, const CopyStmt *b)
 	COMPARE_NODE_FIELD(options);
 	COMPARE_NODE_FIELD(whereClause);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreateStmt(const CreateStmt *a, const CreateStmt *b)
 {
 	COMPARE_NODE_FIELD(relation);
@@ -1262,19 +1329,19 @@ _equalCreateStmt(const CreateStmt *a, const CreateStmt *b)
 	COMPARE_STRING_FIELD(accessMethod);
 	COMPARE_BOOL_FIELD(if_not_exists);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalTableLikeClause(const TableLikeClause *a, const TableLikeClause *b)
 {
 	COMPARE_NODE_FIELD(relation);
 	COMPARE_UINT_FIELD(options);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalDefineStmt(const DefineStmt *a, const DefineStmt *b)
 {
 	COMPARE_ENUM_FIELD(kind, ObjectType);
@@ -1285,10 +1352,10 @@ _equalDefineStmt(const DefineStmt *a, const DefineStmt *b)
 	COMPARE_BOOL_FIELD(if_not_exists);
 	COMPARE_BOOL_FIELD(replace);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalDropStmt(const DropStmt *a, const DropStmt *b)
 {
 	COMPARE_NODE_FIELD(objects);
@@ -1297,30 +1364,30 @@ _equalDropStmt(const DropStmt *a, const DropStmt *b)
 	COMPARE_BOOL_FIELD(missing_ok);
 	COMPARE_BOOL_FIELD(concurrent);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalTruncateStmt(const TruncateStmt *a, const TruncateStmt *b)
 {
 	COMPARE_NODE_FIELD(relations);
 	COMPARE_BOOL_FIELD(restart_seqs);
 	COMPARE_ENUM_FIELD(behavior, DropBehavior);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCommentStmt(const CommentStmt *a, const CommentStmt *b)
 {
 	COMPARE_ENUM_FIELD(objtype, ObjectType);
 	COMPARE_NODE_FIELD(object);
 	COMPARE_STRING_FIELD(comment);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalSecLabelStmt(const SecLabelStmt *a, const SecLabelStmt *b)
 {
 	COMPARE_ENUM_FIELD(objtype, ObjectType);
@@ -1328,10 +1395,10 @@ _equalSecLabelStmt(const SecLabelStmt *a, const SecLabelStmt *b)
 	COMPARE_STRING_FIELD(provider);
 	COMPARE_STRING_FIELD(label);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalFetchStmt(const FetchStmt *a, const FetchStmt *b)
 {
 	COMPARE_ENUM_FIELD(direction, FetchDirection);
@@ -1339,10 +1406,10 @@ _equalFetchStmt(const FetchStmt *a, const FetchStmt *b)
 	COMPARE_STRING_FIELD(portalname);
 	COMPARE_BOOL_FIELD(ismove);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalIndexStmt(const IndexStmt *a, const IndexStmt *b)
 {
 	COMPARE_STRING_FIELD(idxname);
@@ -1369,10 +1436,10 @@ _equalIndexStmt(const IndexStmt *a, const IndexStmt *b)
 	COMPARE_BOOL_FIELD(if_not_exists);
 	COMPARE_BOOL_FIELD(reset_default_tblspc);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreateStatsStmt(const CreateStatsStmt *a, const CreateStatsStmt *b)
 {
 	COMPARE_NODE_FIELD(defnames);
@@ -1382,20 +1449,20 @@ _equalCreateStatsStmt(const CreateStatsStmt *a, const CreateStatsStmt *b)
 	COMPARE_STRING_FIELD(stxcomment);
 	COMPARE_BOOL_FIELD(if_not_exists);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterStatsStmt(const AlterStatsStmt *a, const AlterStatsStmt *b)
 {
 	COMPARE_NODE_FIELD(defnames);
 	COMPARE_INT_FIELD(stxstattarget);
 	COMPARE_BOOL_FIELD(missing_ok);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreateFunctionStmt(const CreateFunctionStmt *a, const CreateFunctionStmt *b)
 {
 	COMPARE_BOOL_FIELD(is_procedure);
@@ -1405,10 +1472,10 @@ _equalCreateFunctionStmt(const CreateFunctionStmt *a, const CreateFunctionStmt *
 	COMPARE_NODE_FIELD(returnType);
 	COMPARE_NODE_FIELD(options);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalFunctionParameter(const FunctionParameter *a, const FunctionParameter *b)
 {
 	COMPARE_STRING_FIELD(name);
@@ -1416,28 +1483,28 @@ _equalFunctionParameter(const FunctionParameter *a, const FunctionParameter *b)
 	COMPARE_ENUM_FIELD(mode, FunctionParameterMode);
 	COMPARE_NODE_FIELD(defexpr);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterFunctionStmt(const AlterFunctionStmt *a, const AlterFunctionStmt *b)
 {
 	COMPARE_ENUM_FIELD(objtype, ObjectType);
 	COMPARE_NODE_FIELD(func);
 	COMPARE_NODE_FIELD(actions);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalDoStmt(const DoStmt *a, const DoStmt *b)
 {
 	COMPARE_NODE_FIELD(args);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalRenameStmt(const RenameStmt *a, const RenameStmt *b)
 {
 	COMPARE_ENUM_FIELD(renameType, ObjectType);
@@ -1449,10 +1516,10 @@ _equalRenameStmt(const RenameStmt *a, const RenameStmt *b)
 	COMPARE_ENUM_FIELD(behavior, DropBehavior);
 	COMPARE_BOOL_FIELD(missing_ok);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterObjectDependsStmt(const AlterObjectDependsStmt *a, const AlterObjectDependsStmt *b)
 {
 	COMPARE_ENUM_FIELD(objectType, ObjectType);
@@ -1461,10 +1528,10 @@ _equalAlterObjectDependsStmt(const AlterObjectDependsStmt *a, const AlterObjectD
 	COMPARE_NODE_FIELD(extname);
 	COMPARE_BOOL_FIELD(remove);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterObjectSchemaStmt(const AlterObjectSchemaStmt *a, const AlterObjectSchemaStmt *b)
 {
 	COMPARE_ENUM_FIELD(objectType, ObjectType);
@@ -1473,10 +1540,10 @@ _equalAlterObjectSchemaStmt(const AlterObjectSchemaStmt *a, const AlterObjectSch
 	COMPARE_STRING_FIELD(newschema);
 	COMPARE_BOOL_FIELD(missing_ok);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterOwnerStmt(const AlterOwnerStmt *a, const AlterOwnerStmt *b)
 {
 	COMPARE_ENUM_FIELD(objectType, ObjectType);
@@ -1484,28 +1551,28 @@ _equalAlterOwnerStmt(const AlterOwnerStmt *a, const AlterOwnerStmt *b)
 	COMPARE_NODE_FIELD(object);
 	COMPARE_NODE_FIELD(newowner);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterOperatorStmt(const AlterOperatorStmt *a, const AlterOperatorStmt *b)
 {
 	COMPARE_NODE_FIELD(opername);
 	COMPARE_NODE_FIELD(options);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterTypeStmt(const AlterTypeStmt *a, const AlterTypeStmt *b)
 {
 	COMPARE_NODE_FIELD(typeName);
 	COMPARE_NODE_FIELD(options);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalRuleStmt(const RuleStmt *a, const RuleStmt *b)
 {
 	COMPARE_NODE_FIELD(relation);
@@ -1516,35 +1583,35 @@ _equalRuleStmt(const RuleStmt *a, const RuleStmt *b)
 	COMPARE_NODE_FIELD(actions);
 	COMPARE_BOOL_FIELD(replace);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalNotifyStmt(const NotifyStmt *a, const NotifyStmt *b)
 {
 	COMPARE_STRING_FIELD(conditionname);
 	COMPARE_STRING_FIELD(payload);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalListenStmt(const ListenStmt *a, const ListenStmt *b)
 {
 	COMPARE_STRING_FIELD(conditionname);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalUnlistenStmt(const UnlistenStmt *a, const UnlistenStmt *b)
 {
 	COMPARE_STRING_FIELD(conditionname);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalTransactionStmt(const TransactionStmt *a, const TransactionStmt *b)
 {
 	COMPARE_ENUM_FIELD(kind, TransactionStmtKind);
@@ -1553,37 +1620,37 @@ _equalTransactionStmt(const TransactionStmt *a, const TransactionStmt *b)
 	COMPARE_STRING_FIELD(gid);
 	COMPARE_BOOL_FIELD(chain);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCompositeTypeStmt(const CompositeTypeStmt *a, const CompositeTypeStmt *b)
 {
 	COMPARE_NODE_FIELD(typevar);
 	COMPARE_NODE_FIELD(coldeflist);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreateEnumStmt(const CreateEnumStmt *a, const CreateEnumStmt *b)
 {
 	COMPARE_NODE_FIELD(typeName);
 	COMPARE_NODE_FIELD(vals);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreateRangeStmt(const CreateRangeStmt *a, const CreateRangeStmt *b)
 {
 	COMPARE_NODE_FIELD(typeName);
 	COMPARE_NODE_FIELD(params);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterEnumStmt(const AlterEnumStmt *a, const AlterEnumStmt *b)
 {
 	COMPARE_NODE_FIELD(typeName);
@@ -1593,10 +1660,10 @@ _equalAlterEnumStmt(const AlterEnumStmt *a, const AlterEnumStmt *b)
 	COMPARE_BOOL_FIELD(newValIsAfter);
 	COMPARE_BOOL_FIELD(skipIfNewValExists);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalViewStmt(const ViewStmt *a, const ViewStmt *b)
 {
 	COMPARE_NODE_FIELD(view);
@@ -1606,18 +1673,18 @@ _equalViewStmt(const ViewStmt *a, const ViewStmt *b)
 	COMPARE_NODE_FIELD(options);
 	COMPARE_ENUM_FIELD(withCheckOption, ViewCheckOption);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalLoadStmt(const LoadStmt *a, const LoadStmt *b)
 {
 	COMPARE_STRING_FIELD(filename);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreateDomainStmt(const CreateDomainStmt *a, const CreateDomainStmt *b)
 {
 	COMPARE_NODE_FIELD(domainname);
@@ -1625,10 +1692,10 @@ _equalCreateDomainStmt(const CreateDomainStmt *a, const CreateDomainStmt *b)
 	COMPARE_NODE_FIELD(collClause);
 	COMPARE_NODE_FIELD(constraints);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreateOpClassStmt(const CreateOpClassStmt *a, const CreateOpClassStmt *b)
 {
 	COMPARE_NODE_FIELD(opclassname);
@@ -1638,10 +1705,10 @@ _equalCreateOpClassStmt(const CreateOpClassStmt *a, const CreateOpClassStmt *b)
 	COMPARE_NODE_FIELD(items);
 	COMPARE_BOOL_FIELD(isDefault);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreateOpClassItem(const CreateOpClassItem *a, const CreateOpClassItem *b)
 {
 	COMPARE_INT_FIELD(itemtype);
@@ -1651,19 +1718,19 @@ _equalCreateOpClassItem(const CreateOpClassItem *a, const CreateOpClassItem *b)
 	COMPARE_NODE_FIELD(class_args);
 	COMPARE_NODE_FIELD(storedtype);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreateOpFamilyStmt(const CreateOpFamilyStmt *a, const CreateOpFamilyStmt *b)
 {
 	COMPARE_NODE_FIELD(opfamilyname);
 	COMPARE_STRING_FIELD(amname);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterOpFamilyStmt(const AlterOpFamilyStmt *a, const AlterOpFamilyStmt *b)
 {
 	COMPARE_NODE_FIELD(opfamilyname);
@@ -1671,76 +1738,76 @@ _equalAlterOpFamilyStmt(const AlterOpFamilyStmt *a, const AlterOpFamilyStmt *b)
 	COMPARE_BOOL_FIELD(isDrop);
 	COMPARE_NODE_FIELD(items);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreatedbStmt(const CreatedbStmt *a, const CreatedbStmt *b)
 {
 	COMPARE_STRING_FIELD(dbname);
 	COMPARE_NODE_FIELD(options);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterDatabaseStmt(const AlterDatabaseStmt *a, const AlterDatabaseStmt *b)
 {
 	COMPARE_STRING_FIELD(dbname);
 	COMPARE_NODE_FIELD(options);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterDatabaseSetStmt(const AlterDatabaseSetStmt *a, const AlterDatabaseSetStmt *b)
 {
 	COMPARE_STRING_FIELD(dbname);
 	COMPARE_NODE_FIELD(setstmt);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalDropdbStmt(const DropdbStmt *a, const DropdbStmt *b)
 {
 	COMPARE_STRING_FIELD(dbname);
 	COMPARE_BOOL_FIELD(missing_ok);
 	COMPARE_NODE_FIELD(options);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalVacuumStmt(const VacuumStmt *a, const VacuumStmt *b)
 {
 	COMPARE_NODE_FIELD(options);
 	COMPARE_NODE_FIELD(rels);
 	COMPARE_BOOL_FIELD(is_vacuumcmd);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalVacuumRelation(const VacuumRelation *a, const VacuumRelation *b)
 {
 	COMPARE_NODE_FIELD(relation);
 	COMPARE_OID_FIELD(oid);
 	COMPARE_NODE_FIELD(va_cols);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalExplainStmt(const ExplainStmt *a, const ExplainStmt *b)
 {
 	COMPARE_NODE_FIELD(query);
 	COMPARE_NODE_FIELD(options);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreateTableAsStmt(const CreateTableAsStmt *a, const CreateTableAsStmt *b)
 {
 	COMPARE_NODE_FIELD(query);
@@ -1749,38 +1816,38 @@ _equalCreateTableAsStmt(const CreateTableAsStmt *a, const CreateTableAsStmt *b)
 	COMPARE_BOOL_FIELD(is_select_into);
 	COMPARE_BOOL_FIELD(if_not_exists);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalRefreshMatViewStmt(const RefreshMatViewStmt *a, const RefreshMatViewStmt *b)
 {
 	COMPARE_BOOL_FIELD(concurrent);
 	COMPARE_BOOL_FIELD(skipData);
 	COMPARE_NODE_FIELD(relation);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalReplicaIdentityStmt(const ReplicaIdentityStmt *a, const ReplicaIdentityStmt *b)
 {
 	COMPARE_CHAR_FIELD(identity_type);
 	COMPARE_STRING_FIELD(name);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterSystemStmt(const AlterSystemStmt *a, const AlterSystemStmt *b)
 {
 	COMPARE_NODE_FIELD(setstmt);
 
-	return true;
+	return 0;
 }
 
 
-static bool
+static int
 _equalCreateSeqStmt(const CreateSeqStmt *a, const CreateSeqStmt *b)
 {
 	COMPARE_NODE_FIELD(sequence);
@@ -1789,10 +1856,10 @@ _equalCreateSeqStmt(const CreateSeqStmt *a, const CreateSeqStmt *b)
 	COMPARE_BOOL_FIELD(for_identity);
 	COMPARE_BOOL_FIELD(if_not_exists);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterSeqStmt(const AlterSeqStmt *a, const AlterSeqStmt *b)
 {
 	COMPARE_NODE_FIELD(sequence);
@@ -1800,10 +1867,10 @@ _equalAlterSeqStmt(const AlterSeqStmt *a, const AlterSeqStmt *b)
 	COMPARE_BOOL_FIELD(for_identity);
 	COMPARE_BOOL_FIELD(missing_ok);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalVariableSetStmt(const VariableSetStmt *a, const VariableSetStmt *b)
 {
 	COMPARE_ENUM_FIELD(kind, VariableSetKind);
@@ -1811,26 +1878,26 @@ _equalVariableSetStmt(const VariableSetStmt *a, const VariableSetStmt *b)
 	COMPARE_NODE_FIELD(args);
 	COMPARE_BOOL_FIELD(is_local);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalVariableShowStmt(const VariableShowStmt *a, const VariableShowStmt *b)
 {
 	COMPARE_STRING_FIELD(name);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalDiscardStmt(const DiscardStmt *a, const DiscardStmt *b)
 {
 	COMPARE_ENUM_FIELD(target, DiscardMode);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreateTableSpaceStmt(const CreateTableSpaceStmt *a, const CreateTableSpaceStmt *b)
 {
 	COMPARE_STRING_FIELD(tablespacename);
@@ -1838,19 +1905,19 @@ _equalCreateTableSpaceStmt(const CreateTableSpaceStmt *a, const CreateTableSpace
 	COMPARE_STRING_FIELD(location);
 	COMPARE_NODE_FIELD(options);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalDropTableSpaceStmt(const DropTableSpaceStmt *a, const DropTableSpaceStmt *b)
 {
 	COMPARE_STRING_FIELD(tablespacename);
 	COMPARE_BOOL_FIELD(missing_ok);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterTableSpaceOptionsStmt(const AlterTableSpaceOptionsStmt *a,
 								 const AlterTableSpaceOptionsStmt *b)
 {
@@ -1858,10 +1925,10 @@ _equalAlterTableSpaceOptionsStmt(const AlterTableSpaceOptionsStmt *a,
 	COMPARE_NODE_FIELD(options);
 	COMPARE_BOOL_FIELD(isReset);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterTableMoveAllStmt(const AlterTableMoveAllStmt *a,
 							const AlterTableMoveAllStmt *b)
 {
@@ -1871,29 +1938,29 @@ _equalAlterTableMoveAllStmt(const AlterTableMoveAllStmt *a,
 	COMPARE_STRING_FIELD(new_tablespacename);
 	COMPARE_BOOL_FIELD(nowait);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreateExtensionStmt(const CreateExtensionStmt *a, const CreateExtensionStmt *b)
 {
 	COMPARE_STRING_FIELD(extname);
 	COMPARE_BOOL_FIELD(if_not_exists);
 	COMPARE_NODE_FIELD(options);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterExtensionStmt(const AlterExtensionStmt *a, const AlterExtensionStmt *b)
 {
 	COMPARE_STRING_FIELD(extname);
 	COMPARE_NODE_FIELD(options);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterExtensionContentsStmt(const AlterExtensionContentsStmt *a, const AlterExtensionContentsStmt *b)
 {
 	COMPARE_STRING_FIELD(extname);
@@ -1901,30 +1968,30 @@ _equalAlterExtensionContentsStmt(const AlterExtensionContentsStmt *a, const Alte
 	COMPARE_ENUM_FIELD(objtype, ObjectType);
 	COMPARE_NODE_FIELD(object);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreateFdwStmt(const CreateFdwStmt *a, const CreateFdwStmt *b)
 {
 	COMPARE_STRING_FIELD(fdwname);
 	COMPARE_NODE_FIELD(func_options);
 	COMPARE_NODE_FIELD(options);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterFdwStmt(const AlterFdwStmt *a, const AlterFdwStmt *b)
 {
 	COMPARE_STRING_FIELD(fdwname);
 	COMPARE_NODE_FIELD(func_options);
 	COMPARE_NODE_FIELD(options);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreateForeignServerStmt(const CreateForeignServerStmt *a, const CreateForeignServerStmt *b)
 {
 	COMPARE_STRING_FIELD(servername);
@@ -1934,10 +2001,10 @@ _equalCreateForeignServerStmt(const CreateForeignServerStmt *a, const CreateFore
 	COMPARE_BOOL_FIELD(if_not_exists);
 	COMPARE_NODE_FIELD(options);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterForeignServerStmt(const AlterForeignServerStmt *a, const AlterForeignServerStmt *b)
 {
 	COMPARE_STRING_FIELD(servername);
@@ -1945,10 +2012,10 @@ _equalAlterForeignServerStmt(const AlterForeignServerStmt *a, const AlterForeign
 	COMPARE_NODE_FIELD(options);
 	COMPARE_BOOL_FIELD(has_version);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreateUserMappingStmt(const CreateUserMappingStmt *a, const CreateUserMappingStmt *b)
 {
 	COMPARE_NODE_FIELD(user);
@@ -1956,42 +2023,43 @@ _equalCreateUserMappingStmt(const CreateUserMappingStmt *a, const CreateUserMapp
 	COMPARE_BOOL_FIELD(if_not_exists);
 	COMPARE_NODE_FIELD(options);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterUserMappingStmt(const AlterUserMappingStmt *a, const AlterUserMappingStmt *b)
 {
 	COMPARE_NODE_FIELD(user);
 	COMPARE_STRING_FIELD(servername);
 	COMPARE_NODE_FIELD(options);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalDropUserMappingStmt(const DropUserMappingStmt *a, const DropUserMappingStmt *b)
 {
 	COMPARE_NODE_FIELD(user);
 	COMPARE_STRING_FIELD(servername);
 	COMPARE_BOOL_FIELD(missing_ok);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreateForeignTableStmt(const CreateForeignTableStmt *a, const CreateForeignTableStmt *b)
 {
-	if (!_equalCreateStmt(&a->base, &b->base))
-		return false;
+	int retval = _equalCreateStmt(&a->base, &b->base);
+	if (retval != 0)
+		return retval;
 
 	COMPARE_STRING_FIELD(servername);
 	COMPARE_NODE_FIELD(options);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalImportForeignSchemaStmt(const ImportForeignSchemaStmt *a, const ImportForeignSchemaStmt *b)
 {
 	COMPARE_STRING_FIELD(server_name);
@@ -2001,10 +2069,10 @@ _equalImportForeignSchemaStmt(const ImportForeignSchemaStmt *a, const ImportFore
 	COMPARE_NODE_FIELD(table_list);
 	COMPARE_NODE_FIELD(options);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreateTransformStmt(const CreateTransformStmt *a, const CreateTransformStmt *b)
 {
 	COMPARE_BOOL_FIELD(replace);
@@ -2013,20 +2081,20 @@ _equalCreateTransformStmt(const CreateTransformStmt *a, const CreateTransformStm
 	COMPARE_NODE_FIELD(fromsql);
 	COMPARE_NODE_FIELD(tosql);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreateAmStmt(const CreateAmStmt *a, const CreateAmStmt *b)
 {
 	COMPARE_STRING_FIELD(amname);
 	COMPARE_NODE_FIELD(handler_name);
 	COMPARE_CHAR_FIELD(amtype);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreateTrigStmt(const CreateTrigStmt *a, const CreateTrigStmt *b)
 {
 	COMPARE_STRING_FIELD(trigname);
@@ -2044,10 +2112,10 @@ _equalCreateTrigStmt(const CreateTrigStmt *a, const CreateTrigStmt *b)
 	COMPARE_BOOL_FIELD(initdeferred);
 	COMPARE_NODE_FIELD(constrrel);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreateEventTrigStmt(const CreateEventTrigStmt *a, const CreateEventTrigStmt *b)
 {
 	COMPARE_STRING_FIELD(trigname);
@@ -2055,19 +2123,19 @@ _equalCreateEventTrigStmt(const CreateEventTrigStmt *a, const CreateEventTrigStm
 	COMPARE_NODE_FIELD(whenclause);
 	COMPARE_NODE_FIELD(funcname);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterEventTrigStmt(const AlterEventTrigStmt *a, const AlterEventTrigStmt *b)
 {
 	COMPARE_STRING_FIELD(trigname);
 	COMPARE_CHAR_FIELD(tgenabled);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreatePLangStmt(const CreatePLangStmt *a, const CreatePLangStmt *b)
 {
 	COMPARE_BOOL_FIELD(replace);
@@ -2077,68 +2145,68 @@ _equalCreatePLangStmt(const CreatePLangStmt *a, const CreatePLangStmt *b)
 	COMPARE_NODE_FIELD(plvalidator);
 	COMPARE_BOOL_FIELD(pltrusted);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreateRoleStmt(const CreateRoleStmt *a, const CreateRoleStmt *b)
 {
 	COMPARE_ENUM_FIELD(stmt_type, RoleStmtType);
 	COMPARE_STRING_FIELD(role);
 	COMPARE_NODE_FIELD(options);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterRoleStmt(const AlterRoleStmt *a, const AlterRoleStmt *b)
 {
 	COMPARE_NODE_FIELD(role);
 	COMPARE_NODE_FIELD(options);
 	COMPARE_INT_FIELD(action);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterRoleSetStmt(const AlterRoleSetStmt *a, const AlterRoleSetStmt *b)
 {
 	COMPARE_NODE_FIELD(role);
 	COMPARE_STRING_FIELD(database);
 	COMPARE_NODE_FIELD(setstmt);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalDropRoleStmt(const DropRoleStmt *a, const DropRoleStmt *b)
 {
 	COMPARE_NODE_FIELD(roles);
 	COMPARE_BOOL_FIELD(missing_ok);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalLockStmt(const LockStmt *a, const LockStmt *b)
 {
 	COMPARE_NODE_FIELD(relations);
 	COMPARE_INT_FIELD(mode);
 	COMPARE_BOOL_FIELD(nowait);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalConstraintsSetStmt(const ConstraintsSetStmt *a, const ConstraintsSetStmt *b)
 {
 	COMPARE_NODE_FIELD(constraints);
 	COMPARE_BOOL_FIELD(deferred);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalReindexStmt(const ReindexStmt *a, const ReindexStmt *b)
 {
 	COMPARE_ENUM_FIELD(kind, ReindexObjectType);
@@ -2147,10 +2215,10 @@ _equalReindexStmt(const ReindexStmt *a, const ReindexStmt *b)
 	COMPARE_INT_FIELD(options);
 	COMPARE_BOOL_FIELD(concurrent);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreateSchemaStmt(const CreateSchemaStmt *a, const CreateSchemaStmt *b)
 {
 	COMPARE_STRING_FIELD(schemaname);
@@ -2158,10 +2226,10 @@ _equalCreateSchemaStmt(const CreateSchemaStmt *a, const CreateSchemaStmt *b)
 	COMPARE_NODE_FIELD(schemaElts);
 	COMPARE_BOOL_FIELD(if_not_exists);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreateConversionStmt(const CreateConversionStmt *a, const CreateConversionStmt *b)
 {
 	COMPARE_NODE_FIELD(conversion_name);
@@ -2170,10 +2238,10 @@ _equalCreateConversionStmt(const CreateConversionStmt *a, const CreateConversion
 	COMPARE_NODE_FIELD(func_name);
 	COMPARE_BOOL_FIELD(def);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreateCastStmt(const CreateCastStmt *a, const CreateCastStmt *b)
 {
 	COMPARE_NODE_FIELD(sourcetype);
@@ -2182,64 +2250,64 @@ _equalCreateCastStmt(const CreateCastStmt *a, const CreateCastStmt *b)
 	COMPARE_ENUM_FIELD(context, CoercionContext);
 	COMPARE_BOOL_FIELD(inout);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalPrepareStmt(const PrepareStmt *a, const PrepareStmt *b)
 {
 	COMPARE_STRING_FIELD(name);
 	COMPARE_NODE_FIELD(argtypes);
 	COMPARE_NODE_FIELD(query);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalExecuteStmt(const ExecuteStmt *a, const ExecuteStmt *b)
 {
 	COMPARE_STRING_FIELD(name);
 	COMPARE_NODE_FIELD(params);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalDeallocateStmt(const DeallocateStmt *a, const DeallocateStmt *b)
 {
 	COMPARE_STRING_FIELD(name);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalDropOwnedStmt(const DropOwnedStmt *a, const DropOwnedStmt *b)
 {
 	COMPARE_NODE_FIELD(roles);
 	COMPARE_ENUM_FIELD(behavior, DropBehavior);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalReassignOwnedStmt(const ReassignOwnedStmt *a, const ReassignOwnedStmt *b)
 {
 	COMPARE_NODE_FIELD(roles);
 	COMPARE_NODE_FIELD(newrole);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterTSDictionaryStmt(const AlterTSDictionaryStmt *a, const AlterTSDictionaryStmt *b)
 {
 	COMPARE_NODE_FIELD(dictname);
 	COMPARE_NODE_FIELD(options);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterTSConfigurationStmt(const AlterTSConfigurationStmt *a,
 							   const AlterTSConfigurationStmt *b)
 {
@@ -2251,10 +2319,10 @@ _equalAlterTSConfigurationStmt(const AlterTSConfigurationStmt *a,
 	COMPARE_BOOL_FIELD(replace);
 	COMPARE_BOOL_FIELD(missing_ok);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreatePublicationStmt(const CreatePublicationStmt *a,
 							const CreatePublicationStmt *b)
 {
@@ -2263,10 +2331,10 @@ _equalCreatePublicationStmt(const CreatePublicationStmt *a,
 	COMPARE_NODE_FIELD(tables);
 	COMPARE_BOOL_FIELD(for_all_tables);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterPublicationStmt(const AlterPublicationStmt *a,
 						   const AlterPublicationStmt *b)
 {
@@ -2276,10 +2344,10 @@ _equalAlterPublicationStmt(const AlterPublicationStmt *a,
 	COMPARE_BOOL_FIELD(for_all_tables);
 	COMPARE_ENUM_FIELD(tableAction, DefElemAction);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreateSubscriptionStmt(const CreateSubscriptionStmt *a,
 							 const CreateSubscriptionStmt *b)
 {
@@ -2288,10 +2356,10 @@ _equalCreateSubscriptionStmt(const CreateSubscriptionStmt *a,
 	COMPARE_NODE_FIELD(publication);
 	COMPARE_NODE_FIELD(options);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterSubscriptionStmt(const AlterSubscriptionStmt *a,
 							const AlterSubscriptionStmt *b)
 {
@@ -2301,10 +2369,10 @@ _equalAlterSubscriptionStmt(const AlterSubscriptionStmt *a,
 	COMPARE_NODE_FIELD(publication);
 	COMPARE_NODE_FIELD(options);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalDropSubscriptionStmt(const DropSubscriptionStmt *a,
 						   const DropSubscriptionStmt *b)
 {
@@ -2312,10 +2380,10 @@ _equalDropSubscriptionStmt(const DropSubscriptionStmt *a,
 	COMPARE_BOOL_FIELD(missing_ok);
 	COMPARE_ENUM_FIELD(behavior, DropBehavior);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCreatePolicyStmt(const CreatePolicyStmt *a, const CreatePolicyStmt *b)
 {
 	COMPARE_STRING_FIELD(policy_name);
@@ -2326,10 +2394,10 @@ _equalCreatePolicyStmt(const CreatePolicyStmt *a, const CreatePolicyStmt *b)
 	COMPARE_NODE_FIELD(qual);
 	COMPARE_NODE_FIELD(with_check);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAlterPolicyStmt(const AlterPolicyStmt *a, const AlterPolicyStmt *b)
 {
 	COMPARE_STRING_FIELD(policy_name);
@@ -2338,10 +2406,10 @@ _equalAlterPolicyStmt(const AlterPolicyStmt *a, const AlterPolicyStmt *b)
 	COMPARE_NODE_FIELD(qual);
 	COMPARE_NODE_FIELD(with_check);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAExpr(const A_Expr *a, const A_Expr *b)
 {
 	COMPARE_ENUM_FIELD(kind, A_Expr_Kind);
@@ -2350,38 +2418,40 @@ _equalAExpr(const A_Expr *a, const A_Expr *b)
 	COMPARE_NODE_FIELD(rexpr);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalColumnRef(const ColumnRef *a, const ColumnRef *b)
 {
 	COMPARE_NODE_FIELD(fields);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalParamRef(const ParamRef *a, const ParamRef *b)
 {
 	COMPARE_INT_FIELD(number);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAConst(const A_Const *a, const A_Const *b)
 {
-	if (!equal(&a->val, &b->val))	/* hack for in-line Value field */
-		return false;
+	/* hack for in-line Value field */
+	int retval = equalCompare(&a->val, &b->val);
+	if (retval != 0)
+		return retval;
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalFuncCall(const FuncCall *a, const FuncCall *b)
 {
 	COMPARE_NODE_FIELD(funcname);
@@ -2395,44 +2465,44 @@ _equalFuncCall(const FuncCall *a, const FuncCall *b)
 	COMPARE_NODE_FIELD(over);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAStar(const A_Star *a, const A_Star *b)
 {
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalAIndices(const A_Indices *a, const A_Indices *b)
 {
 	COMPARE_BOOL_FIELD(is_slice);
 	COMPARE_NODE_FIELD(lidx);
 	COMPARE_NODE_FIELD(uidx);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalA_Indirection(const A_Indirection *a, const A_Indirection *b)
 {
 	COMPARE_NODE_FIELD(arg);
 	COMPARE_NODE_FIELD(indirection);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalA_ArrayExpr(const A_ArrayExpr *a, const A_ArrayExpr *b)
 {
 	COMPARE_NODE_FIELD(elements);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalResTarget(const ResTarget *a, const ResTarget *b)
 {
 	COMPARE_STRING_FIELD(name);
@@ -2440,20 +2510,20 @@ _equalResTarget(const ResTarget *a, const ResTarget *b)
 	COMPARE_NODE_FIELD(val);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalMultiAssignRef(const MultiAssignRef *a, const MultiAssignRef *b)
 {
 	COMPARE_NODE_FIELD(source);
 	COMPARE_INT_FIELD(colno);
 	COMPARE_INT_FIELD(ncolumns);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalTypeName(const TypeName *a, const TypeName *b)
 {
 	COMPARE_NODE_FIELD(names);
@@ -2465,30 +2535,30 @@ _equalTypeName(const TypeName *a, const TypeName *b)
 	COMPARE_NODE_FIELD(arrayBounds);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalTypeCast(const TypeCast *a, const TypeCast *b)
 {
 	COMPARE_NODE_FIELD(arg);
 	COMPARE_NODE_FIELD(typeName);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCollateClause(const CollateClause *a, const CollateClause *b)
 {
 	COMPARE_NODE_FIELD(arg);
 	COMPARE_NODE_FIELD(collname);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalSortBy(const SortBy *a, const SortBy *b)
 {
 	COMPARE_NODE_FIELD(node);
@@ -2497,10 +2567,10 @@ _equalSortBy(const SortBy *a, const SortBy *b)
 	COMPARE_NODE_FIELD(useOp);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalWindowDef(const WindowDef *a, const WindowDef *b)
 {
 	COMPARE_STRING_FIELD(name);
@@ -2512,20 +2582,20 @@ _equalWindowDef(const WindowDef *a, const WindowDef *b)
 	COMPARE_NODE_FIELD(endOffset);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalRangeSubselect(const RangeSubselect *a, const RangeSubselect *b)
 {
 	COMPARE_BOOL_FIELD(lateral);
 	COMPARE_NODE_FIELD(subquery);
 	COMPARE_NODE_FIELD(alias);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalRangeFunction(const RangeFunction *a, const RangeFunction *b)
 {
 	COMPARE_BOOL_FIELD(lateral);
@@ -2535,10 +2605,10 @@ _equalRangeFunction(const RangeFunction *a, const RangeFunction *b)
 	COMPARE_NODE_FIELD(alias);
 	COMPARE_NODE_FIELD(coldeflist);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalRangeTableSample(const RangeTableSample *a, const RangeTableSample *b)
 {
 	COMPARE_NODE_FIELD(relation);
@@ -2547,10 +2617,10 @@ _equalRangeTableSample(const RangeTableSample *a, const RangeTableSample *b)
 	COMPARE_NODE_FIELD(repeatable);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalRangeTableFunc(const RangeTableFunc *a, const RangeTableFunc *b)
 {
 	COMPARE_BOOL_FIELD(lateral);
@@ -2561,10 +2631,10 @@ _equalRangeTableFunc(const RangeTableFunc *a, const RangeTableFunc *b)
 	COMPARE_NODE_FIELD(alias);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalRangeTableFuncCol(const RangeTableFuncCol *a, const RangeTableFuncCol *b)
 {
 	COMPARE_STRING_FIELD(colname);
@@ -2575,11 +2645,11 @@ _equalRangeTableFuncCol(const RangeTableFuncCol *a, const RangeTableFuncCol *b)
 	COMPARE_NODE_FIELD(coldefexpr);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
 
-static bool
+static int
 _equalIndexElem(const IndexElem *a, const IndexElem *b)
 {
 	COMPARE_STRING_FIELD(name);
@@ -2591,10 +2661,10 @@ _equalIndexElem(const IndexElem *a, const IndexElem *b)
 	COMPARE_ENUM_FIELD(ordering, SortByDir);
 	COMPARE_ENUM_FIELD(nulls_ordering, SortByNulls);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalColumnDef(const ColumnDef *a, const ColumnDef *b)
 {
 	COMPARE_STRING_FIELD(colname);
@@ -2615,10 +2685,10 @@ _equalColumnDef(const ColumnDef *a, const ColumnDef *b)
 	COMPARE_NODE_FIELD(fdwoptions);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalConstraint(const Constraint *a, const Constraint *b)
 {
 	COMPARE_ENUM_FIELD(contype, ConstrType);
@@ -2650,10 +2720,10 @@ _equalConstraint(const Constraint *a, const Constraint *b)
 	COMPARE_BOOL_FIELD(skip_validation);
 	COMPARE_BOOL_FIELD(initially_valid);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalDefElem(const DefElem *a, const DefElem *b)
 {
 	COMPARE_STRING_FIELD(defnamespace);
@@ -2662,20 +2732,20 @@ _equalDefElem(const DefElem *a, const DefElem *b)
 	COMPARE_ENUM_FIELD(defaction, DefElemAction);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalLockingClause(const LockingClause *a, const LockingClause *b)
 {
 	COMPARE_NODE_FIELD(lockedRels);
 	COMPARE_ENUM_FIELD(strength, LockClauseStrength);
 	COMPARE_ENUM_FIELD(waitPolicy, LockWaitPolicy);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalRangeTblEntry(const RangeTblEntry *a, const RangeTblEntry *b)
 {
 	COMPARE_ENUM_FIELD(rtekind, RTEKind);
@@ -2715,10 +2785,10 @@ _equalRangeTblEntry(const RangeTblEntry *a, const RangeTblEntry *b)
 	COMPARE_BITMAPSET_FIELD(extraUpdatedCols);
 	COMPARE_NODE_FIELD(securityQuals);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalRangeTblFunction(const RangeTblFunction *a, const RangeTblFunction *b)
 {
 	COMPARE_NODE_FIELD(funcexpr);
@@ -2729,20 +2799,20 @@ _equalRangeTblFunction(const RangeTblFunction *a, const RangeTblFunction *b)
 	COMPARE_NODE_FIELD(funccolcollations);
 	COMPARE_BITMAPSET_FIELD(funcparams);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalTableSampleClause(const TableSampleClause *a, const TableSampleClause *b)
 {
 	COMPARE_OID_FIELD(tsmhandler);
 	COMPARE_NODE_FIELD(args);
 	COMPARE_NODE_FIELD(repeatable);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalWithCheckOption(const WithCheckOption *a, const WithCheckOption *b)
 {
 	COMPARE_ENUM_FIELD(kind, WCOKind);
@@ -2751,10 +2821,10 @@ _equalWithCheckOption(const WithCheckOption *a, const WithCheckOption *b)
 	COMPARE_NODE_FIELD(qual);
 	COMPARE_BOOL_FIELD(cascaded);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalSortGroupClause(const SortGroupClause *a, const SortGroupClause *b)
 {
 	COMPARE_UINT_FIELD(tleSortGroupRef);
@@ -2763,20 +2833,20 @@ _equalSortGroupClause(const SortGroupClause *a, const SortGroupClause *b)
 	COMPARE_BOOL_FIELD(nulls_first);
 	COMPARE_BOOL_FIELD(hashable);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalGroupingSet(const GroupingSet *a, const GroupingSet *b)
 {
 	COMPARE_ENUM_FIELD(kind, GroupingSetKind);
 	COMPARE_NODE_FIELD(content);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalWindowClause(const WindowClause *a, const WindowClause *b)
 {
 	COMPARE_STRING_FIELD(name);
@@ -2794,10 +2864,10 @@ _equalWindowClause(const WindowClause *a, const WindowClause *b)
 	COMPARE_UINT_FIELD(winref);
 	COMPARE_BOOL_FIELD(copiedOrder);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalRowMarkClause(const RowMarkClause *a, const RowMarkClause *b)
 {
 	COMPARE_UINT_FIELD(rti);
@@ -2805,20 +2875,20 @@ _equalRowMarkClause(const RowMarkClause *a, const RowMarkClause *b)
 	COMPARE_ENUM_FIELD(waitPolicy, LockWaitPolicy);
 	COMPARE_BOOL_FIELD(pushedDown);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalWithClause(const WithClause *a, const WithClause *b)
 {
 	COMPARE_NODE_FIELD(ctes);
 	COMPARE_BOOL_FIELD(recursive);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalInferClause(const InferClause *a, const InferClause *b)
 {
 	COMPARE_NODE_FIELD(indexElems);
@@ -2826,10 +2896,10 @@ _equalInferClause(const InferClause *a, const InferClause *b)
 	COMPARE_STRING_FIELD(conname);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalOnConflictClause(const OnConflictClause *a, const OnConflictClause *b)
 {
 	COMPARE_ENUM_FIELD(action, OnConflictAction);
@@ -2838,10 +2908,10 @@ _equalOnConflictClause(const OnConflictClause *a, const OnConflictClause *b)
 	COMPARE_NODE_FIELD(whereClause);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalCommonTableExpr(const CommonTableExpr *a, const CommonTableExpr *b)
 {
 	COMPARE_STRING_FIELD(ctename);
@@ -2856,10 +2926,10 @@ _equalCommonTableExpr(const CommonTableExpr *a, const CommonTableExpr *b)
 	COMPARE_NODE_FIELD(ctecoltypmods);
 	COMPARE_NODE_FIELD(ctecolcollations);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalXmlSerialize(const XmlSerialize *a, const XmlSerialize *b)
 {
 	COMPARE_ENUM_FIELD(xmloption, XmlOptionType);
@@ -2867,30 +2937,30 @@ _equalXmlSerialize(const XmlSerialize *a, const XmlSerialize *b)
 	COMPARE_NODE_FIELD(typeName);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalRoleSpec(const RoleSpec *a, const RoleSpec *b)
 {
 	COMPARE_ENUM_FIELD(roletype, RoleSpecType);
 	COMPARE_STRING_FIELD(rolename);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalTriggerTransition(const TriggerTransition *a, const TriggerTransition *b)
 {
 	COMPARE_STRING_FIELD(name);
 	COMPARE_BOOL_FIELD(isNew);
 	COMPARE_BOOL_FIELD(isTable);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalPartitionElem(const PartitionElem *a, const PartitionElem *b)
 {
 	COMPARE_STRING_FIELD(name);
@@ -2899,20 +2969,20 @@ _equalPartitionElem(const PartitionElem *a, const PartitionElem *b)
 	COMPARE_NODE_FIELD(opclass);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalPartitionSpec(const PartitionSpec *a, const PartitionSpec *b)
 {
 	COMPARE_STRING_FIELD(strategy);
 	COMPARE_NODE_FIELD(partParams);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalPartitionBoundSpec(const PartitionBoundSpec *a, const PartitionBoundSpec *b)
 {
 	COMPARE_CHAR_FIELD(strategy);
@@ -2924,33 +2994,33 @@ _equalPartitionBoundSpec(const PartitionBoundSpec *a, const PartitionBoundSpec *
 	COMPARE_NODE_FIELD(upperdatums);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalPartitionRangeDatum(const PartitionRangeDatum *a, const PartitionRangeDatum *b)
 {
 	COMPARE_ENUM_FIELD(kind, PartitionRangeDatumKind);
 	COMPARE_NODE_FIELD(value);
 	COMPARE_LOCATION_FIELD(location);
 
-	return true;
+	return 0;
 }
 
-static bool
+static int
 _equalPartitionCmd(const PartitionCmd *a, const PartitionCmd *b)
 {
 	COMPARE_NODE_FIELD(name);
 	COMPARE_NODE_FIELD(bound);
 
-	return true;
+	return 0;
 }
 
 /*
  * Stuff from pg_list.h
  */
 
-static bool
+static int
 _equalList(const List *a, const List *b)
 {
 	const ListCell *item_a;
@@ -2972,28 +3042,33 @@ _equalList(const List *a, const List *b)
 		case T_List:
 			forboth(item_a, a, item_b, b)
 			{
-				if (!equal(lfirst(item_a), lfirst(item_b)))
-					return false;
+				int retval = equalCompare(lfirst(item_a), lfirst(item_b));
+				if (retval != 0)
+					return retval;
 			}
 			break;
 		case T_IntList:
 			forboth(item_a, a, item_b, b)
 			{
-				if (lfirst_int(item_a) != lfirst_int(item_b))
-					return false;
+				if (lfirst_int(item_a) < lfirst_int(item_b))
+					return -1;
+				else if (lfirst_int(item_a) > lfirst_int(item_b))
+					return +1;
 			}
 			break;
 		case T_OidList:
 			forboth(item_a, a, item_b, b)
 			{
-				if (lfirst_oid(item_a) != lfirst_oid(item_b))
-					return false;
+				if (lfirst_oid(item_a) < lfirst_oid(item_b))
+					return -1;
+				else if (lfirst_oid(item_a) > lfirst_oid(item_b))
+					return +1;
 			}
 			break;
 		default:
 			elog(ERROR, "unrecognized list node type: %d",
 				 (int) a->type);
-			return false;		/* keep compiler quiet */
+			return -1;		/* keep compiler quiet */
 	}
 
 	/*
@@ -3002,14 +3077,14 @@ _equalList(const List *a, const List *b)
 	Assert(item_a == NULL);
 	Assert(item_b == NULL);
 
-	return true;
+	return 0;
 }
 
 /*
  * Stuff from value.h
  */
 
-static bool
+static int
 _equalValue(const Value *a, const Value *b)
 {
 	COMPARE_ENUM_FIELD(type, NodeTag);
@@ -3032,32 +3107,46 @@ _equalValue(const Value *a, const Value *b)
 			break;
 	}
 
-	return true;
+	return 0;
 }
 
 /*
- * equal
- *	  returns whether two nodes are equal
- */
-bool
-equal(const void *a, const void *b)
+ * equalCompare
+ *	  Sort comparison function for node types.  Returns 0 when both nodes are
+ *	  equal.  Returns a negative number if 'a' is less than 'b' and a positive
+ *	  number if 'a' is greater than 'b'.
+ *
+ * Caution: We're not always strict about what we return in regards to the
+ * sort ordering for certain node types.  For example, for List types, we make
+ * no attempt to determine the true sort order when the list lengths are
+ * unequal.  In this case the ordering is completely defined by the lengths of
+ * the unequal list.  However, we are always consistent that if
+ * equalCompare(a, b) is negative then equalCompare(b, a) is positive and
+ * vice-versa.
+ */
+int
+equalCompare(const void *a, const void *b)
 {
-	bool		retval;
+	int		retval;
 
 	if (a == b)
-		return true;
+		return 0;
 
 	/*
 	 * note that a!=b, so only one of them can be NULL
 	 */
-	if (a == NULL || b == NULL)
-		return false;
+	if (a == NULL)
+		return -1;
+	else if (b == NULL)
+		return +1;
 
 	/*
 	 * are they the same type of nodes?
 	 */
-	if (nodeTag(a) != nodeTag(b))
-		return false;
+	if (nodeTag(a) < nodeTag(b))
+		return -1;
+	else if (nodeTag(a) > nodeTag(b))
+		return +1;
 
 	/* Guard against stack overflow due to overly complex expressions */
 	check_stack_depth();
@@ -3571,7 +3660,7 @@ equal(const void *a, const void *b)
 			retval = _equalReindexStmt(a, b);
 			break;
 		case T_CheckPointStmt:
-			retval = true;
+			retval = 0;
 			break;
 		case T_CreateSchemaStmt:
 			retval = _equalCreateSchemaStmt(a, b);
@@ -3772,9 +3861,19 @@ equal(const void *a, const void *b)
 		default:
 			elog(ERROR, "unrecognized node type: %d",
 				 (int) nodeTag(a));
-			retval = false;		/* keep compiler quiet */
+			retval = -1;		/* keep compiler quiet */
 			break;
 	}
 
 	return retval;
+}
+
+/*
+ * equal
+ *	  returns whether two nodes are equal
+ */
+bool
+equal(const void *a, const void *b)
+{
+	return equalCompare(a, b) == 0;
 }

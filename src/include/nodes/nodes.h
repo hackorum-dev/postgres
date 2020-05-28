@@ -648,6 +648,7 @@ extern void *copyObjectImpl(const void *obj);
 /*
  * nodes/equalfuncs.c
  */
+extern int equalCompare(const void *a, const void *b);
 extern bool equal(const void *a, const void *b);
 
 

@@ -38,10 +38,19 @@ extern Datum datumCopy(Datum value, bool typByVal, int typLen);
 extern Datum datumTransfer(Datum value, bool typByVal, int typLen);
 
 /*
- * datumIsEqual
- * return true if two datums of the same type are equal, false otherwise.
+ * datumCompare
+ * return 0 if two dataums of the same type are equal, otherwise return a
+ * negative number if value1 is less than value2, or if value1 is greater, we
+ * return a positive number.
  *
  * XXX : See comments in the code for restrictions!
+ */
+extern int datumCompare(Datum value1, Datum value2, bool typByVal,
+						int typLen);
+
+/*
+ * datumIsEqual
+ * return true if two datums of the same type are equal, false otherwise.
  */
 extern bool datumIsEqual(Datum value1, Datum value2,
 						 bool typByVal, int typLen);
