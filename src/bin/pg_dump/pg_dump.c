@@ -1525,10 +1525,18 @@ selectDumpableNamespace(NamespaceInfo *nsinfo, Archive *fout)
 	if (table_include_oids.head != NULL)
 		nsinfo->dobj.dump_contains = nsinfo->dobj.dump = DUMP_COMPONENT_NONE;
 	else if (schema_include_oids.head != NULL)
-		nsinfo->dobj.dump_contains = nsinfo->dobj.dump =
-			simple_oid_list_member(&schema_include_oids,
-								   nsinfo->dobj.catId.oid) ?
-			DUMP_COMPONENT_ALL : DUMP_COMPONENT_NONE;
+	{
+		if (strcmp(nsinfo->dobj.name, "public") == 0)
+		{
+			nsinfo->dobj.dump = DUMP_COMPONENT_ACL;
+			nsinfo->dobj.dump_contains = DUMP_COMPONENT_ALL;
+		}
+		else
+			nsinfo->dobj.dump_contains = nsinfo->dobj.dump =
+				simple_oid_list_member(&schema_include_oids,
+									   nsinfo->dobj.catId.oid) ?
+				DUMP_COMPONENT_ALL : DUMP_COMPONENT_NONE;
+	}
 	else if (fout->remoteVersion >= 90600 &&
 			 strcmp(nsinfo->dobj.name, "pg_catalog") == 0)
 	{
