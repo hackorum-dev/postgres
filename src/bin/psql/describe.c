@@ -2415,7 +2415,6 @@ describeOneTableDetails(const char *schemaname,
 			 tableinfo.relkind == RELKIND_MATVIEW ||
 			 tableinfo.relkind == RELKIND_FOREIGN_TABLE ||
 			 tableinfo.relkind == RELKIND_PARTITIONED_TABLE ||
-			 tableinfo.relkind == RELKIND_PARTITIONED_INDEX ||
 			 tableinfo.relkind == RELKIND_TOASTVALUE)
 	{
 		/* Footer information about a table */
