@@ -1692,3 +1692,411 @@ plpgsql_dumptree(PLpgSQL_function *func)
 	printf("\nEnd of execution tree of function %s\n\n", func->fn_signature);
 	fflush(stdout);
 }
+
+/*
+ * PLpgSQL tree walker
+ */
+
+static bool visit_stmts(List *stmts, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_stmt(PLpgSQL_stmt *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_block(PLpgSQL_stmt_block *block, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_assign(PLpgSQL_stmt_assign *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_if(PLpgSQL_stmt_if *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_case(PLpgSQL_stmt_case *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_loop(PLpgSQL_stmt_loop *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_while(PLpgSQL_stmt_while *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_fori(PLpgSQL_stmt_fori *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_fors(PLpgSQL_stmt_fors *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_forc(PLpgSQL_stmt_forc *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_foreach_a(PLpgSQL_stmt_foreach_a *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_exit(PLpgSQL_stmt_exit *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_return(PLpgSQL_stmt_return *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_return_next(PLpgSQL_stmt_return_next *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_return_query(PLpgSQL_stmt_return_query *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_raise(PLpgSQL_stmt_raise *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_assert(PLpgSQL_stmt_assert *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_execsql(PLpgSQL_stmt_execsql *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_dynexecute(PLpgSQL_stmt_dynexecute *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_dynfors(PLpgSQL_stmt_dynfors *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_getdiag(PLpgSQL_stmt_getdiag *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_open(PLpgSQL_stmt_open *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_fetch(PLpgSQL_stmt_fetch *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_close(PLpgSQL_stmt_close *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_perform(PLpgSQL_stmt_perform *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_call(PLpgSQL_stmt_call *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_commit(PLpgSQL_stmt_commit *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_rollback(PLpgSQL_stmt_rollback *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_set(PLpgSQL_stmt_set *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+static bool visit_expr(PLpgSQL_expr *expr, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+
+
+static bool
+visit_stmt(PLpgSQL_stmt *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	if (stmt_visitor != NULL && !stmt_visitor(stmt, ctx))
+		return false;
+
+	switch (stmt->cmd_type)
+	{
+		case PLPGSQL_STMT_BLOCK:
+		    return visit_block((PLpgSQL_stmt_block *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_ASSIGN:
+			return visit_assign((PLpgSQL_stmt_assign *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_IF:
+			return visit_if((PLpgSQL_stmt_if *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_CASE:
+			return visit_case((PLpgSQL_stmt_case *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_LOOP:
+			return visit_loop((PLpgSQL_stmt_loop *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_WHILE:
+			return visit_while((PLpgSQL_stmt_while *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_FORI:
+			return visit_fori((PLpgSQL_stmt_fori *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_FORS:
+			return visit_fors((PLpgSQL_stmt_fors *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_FORC:
+			return visit_forc((PLpgSQL_stmt_forc *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_FOREACH_A:
+			return visit_foreach_a((PLpgSQL_stmt_foreach_a *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_EXIT:
+			return visit_exit((PLpgSQL_stmt_exit *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_RETURN:
+			return visit_return((PLpgSQL_stmt_return *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_RETURN_NEXT:
+			return visit_return_next((PLpgSQL_stmt_return_next *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_RETURN_QUERY:
+			return visit_return_query((PLpgSQL_stmt_return_query *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_RAISE:
+			return visit_raise((PLpgSQL_stmt_raise *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_ASSERT:
+			return visit_assert((PLpgSQL_stmt_assert *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_EXECSQL:
+			return visit_execsql((PLpgSQL_stmt_execsql *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_DYNEXECUTE:
+			return visit_dynexecute((PLpgSQL_stmt_dynexecute *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_DYNFORS:
+			return visit_dynfors((PLpgSQL_stmt_dynfors *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_GETDIAG:
+			return visit_getdiag((PLpgSQL_stmt_getdiag *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_OPEN:
+			return visit_open((PLpgSQL_stmt_open *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_FETCH:
+			return visit_fetch((PLpgSQL_stmt_fetch *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_CLOSE:
+			return visit_close((PLpgSQL_stmt_close *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_PERFORM:
+			return visit_perform((PLpgSQL_stmt_perform *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_CALL:
+			return visit_call((PLpgSQL_stmt_call *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_COMMIT:
+			return visit_commit((PLpgSQL_stmt_commit *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_ROLLBACK:
+			return visit_rollback((PLpgSQL_stmt_rollback *) stmt, stmt_visitor, expr_visitor, ctx);
+		case PLPGSQL_STMT_SET:
+			return visit_set((PLpgSQL_stmt_set *) stmt, stmt_visitor, expr_visitor, ctx);
+		default:
+			elog(ERROR, "unrecognized cmd_type: %d", stmt->cmd_type);
+	}
+	return false;
+}
+
+static bool
+visit_stmts(List *stmts, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	ListCell   *s;
+
+	foreach(s, stmts)
+	{
+		if (!visit_stmt((PLpgSQL_stmt *) lfirst(s), stmt_visitor, expr_visitor, ctx))
+			return false;
+	}
+	return true;
+}
+
+static bool
+visit_block(PLpgSQL_stmt_block *block, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	if (!visit_stmts(block->body, stmt_visitor, expr_visitor, ctx))
+		return false;
+
+	if (block->exceptions)
+	{
+		ListCell   *e;
+
+		foreach(e, block->exceptions->exc_list)
+		{
+			PLpgSQL_exception *exc = (PLpgSQL_exception *) lfirst(e);
+
+			if (!visit_stmts(exc->action, stmt_visitor, expr_visitor, ctx))
+				return false;
+		}
+	}
+	return true;
+}
+
+static bool
+visit_assign(PLpgSQL_stmt_assign *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	return visit_expr(stmt->expr, stmt_visitor, expr_visitor, ctx);
+}
+
+static bool
+visit_if(PLpgSQL_stmt_if *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	ListCell   *l;
+
+	if (!visit_expr(stmt->cond, stmt_visitor, expr_visitor, ctx) ||
+		!visit_stmts(stmt->then_body, stmt_visitor, expr_visitor, ctx))
+		return false;
+
+	foreach(l, stmt->elsif_list)
+	{
+		PLpgSQL_if_elsif *elif = (PLpgSQL_if_elsif *) lfirst(l);
+
+		if (!visit_expr(elif->cond, stmt_visitor, expr_visitor, ctx) ||
+			!visit_stmts(elif->stmts, stmt_visitor, expr_visitor, ctx))
+			return false;
+	}
+	return visit_stmts(stmt->else_body, stmt_visitor, expr_visitor, ctx);
+}
+
+static bool
+visit_case(PLpgSQL_stmt_case *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	ListCell   *l;
+
+	if (!visit_expr(stmt->t_expr, stmt_visitor, expr_visitor, ctx))
+		return false;
+
+	foreach(l, stmt->case_when_list)
+	{
+		PLpgSQL_case_when *cwt = (PLpgSQL_case_when *) lfirst(l);
+
+		if (!visit_expr(cwt->expr, stmt_visitor, expr_visitor, ctx) ||
+			!visit_stmts(cwt->stmts, stmt_visitor, expr_visitor, ctx))
+			return false;
+	}
+	return visit_stmts(stmt->else_stmts, stmt_visitor, expr_visitor, ctx);
+}
+
+static bool
+visit_loop(PLpgSQL_stmt_loop *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	return visit_stmts(stmt->body, stmt_visitor, expr_visitor, ctx);
+}
+
+static bool
+visit_while(PLpgSQL_stmt_while *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	return visit_expr(stmt->cond, stmt_visitor, expr_visitor, ctx)
+		&& visit_stmts(stmt->body, stmt_visitor, expr_visitor, ctx);
+}
+
+static bool
+visit_fori(PLpgSQL_stmt_fori *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	return visit_expr(stmt->lower, stmt_visitor, expr_visitor, ctx)
+		&& visit_expr(stmt->upper, stmt_visitor, expr_visitor, ctx)
+		&& visit_expr(stmt->step, stmt_visitor, expr_visitor, ctx)
+		&& visit_stmts(stmt->body, stmt_visitor, expr_visitor, ctx);
+}
+
+static bool
+visit_fors(PLpgSQL_stmt_fors *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	return visit_stmts(stmt->body, stmt_visitor, expr_visitor, ctx)
+		&& visit_expr(stmt->query, stmt_visitor, expr_visitor, ctx);
+}
+
+static bool
+visit_forc(PLpgSQL_stmt_forc *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	return visit_stmts(stmt->body, stmt_visitor, expr_visitor, ctx)
+		&& visit_expr(stmt->argquery, stmt_visitor, expr_visitor, ctx);
+}
+
+static bool
+visit_foreach_a(PLpgSQL_stmt_foreach_a *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	return visit_expr(stmt->expr, stmt_visitor, expr_visitor, ctx)
+		&& visit_stmts(stmt->body, stmt_visitor, expr_visitor, ctx);
+}
+
+static bool
+visit_open(PLpgSQL_stmt_open *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	ListCell   *lc;
+
+	if (!visit_expr(stmt->argquery, stmt_visitor, expr_visitor, ctx) ||
+		!visit_expr(stmt->query, stmt_visitor, expr_visitor, ctx) ||
+		!visit_expr(stmt->dynquery, stmt_visitor, expr_visitor, ctx))
+		return false;
+
+	foreach(lc, stmt->params)
+	{
+		if (!visit_expr((PLpgSQL_expr *) lfirst(lc), stmt_visitor, expr_visitor, ctx))
+			return false;
+	}
+	return true;
+}
+
+static bool
+visit_fetch(PLpgSQL_stmt_fetch *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	return visit_expr(stmt->expr, stmt_visitor, expr_visitor, ctx);
+}
+
+static bool
+visit_close(PLpgSQL_stmt_close *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	return true;
+}
+
+static bool
+visit_perform(PLpgSQL_stmt_perform *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	return visit_expr(stmt->expr, stmt_visitor, expr_visitor, ctx);
+}
+
+static bool
+visit_call(PLpgSQL_stmt_call *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	return visit_expr(stmt->expr, stmt_visitor, expr_visitor, ctx);
+}
+
+static bool
+visit_commit(PLpgSQL_stmt_commit *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	return true;
+}
+
+static bool
+visit_rollback(PLpgSQL_stmt_rollback *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	return true;
+}
+
+static bool
+visit_set(PLpgSQL_stmt_set *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	return visit_expr(stmt->expr, stmt_visitor, expr_visitor, ctx);
+}
+
+static bool
+visit_exit(PLpgSQL_stmt_exit *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	return visit_expr(stmt->cond, stmt_visitor, expr_visitor, ctx);
+}
+
+static bool
+visit_return(PLpgSQL_stmt_return *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	return visit_expr(stmt->expr, stmt_visitor, expr_visitor, ctx);
+}
+
+static bool
+visit_return_next(PLpgSQL_stmt_return_next *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	return visit_expr(stmt->expr, stmt_visitor, expr_visitor, ctx);
+}
+
+static bool
+visit_return_query(PLpgSQL_stmt_return_query *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	ListCell   *lc;
+
+	if (!visit_expr(stmt->query, stmt_visitor, expr_visitor, ctx) ||
+		!visit_expr(stmt->dynquery, stmt_visitor, expr_visitor, ctx))
+		return false;
+
+	foreach(lc, stmt->params)
+	{
+		if (!visit_expr((PLpgSQL_expr *) lfirst(lc), stmt_visitor, expr_visitor, ctx))
+			return false;
+	}
+	return true;
+}
+
+static bool
+visit_raise(PLpgSQL_stmt_raise *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	ListCell   *lc;
+
+	foreach(lc, stmt->params)
+	{
+		if (!visit_expr((PLpgSQL_expr *) lfirst(lc), stmt_visitor, expr_visitor, ctx))
+			return false;
+	}
+	foreach(lc, stmt->options)
+	{
+		PLpgSQL_raise_option *opt = (PLpgSQL_raise_option *) lfirst(lc);
+
+		if (!visit_expr(opt->expr, stmt_visitor, expr_visitor, ctx))
+			return false;
+	}
+	return true;
+}
+
+static bool
+visit_assert(PLpgSQL_stmt_assert *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	return visit_expr(stmt->cond, stmt_visitor, expr_visitor, ctx)
+		&& visit_expr(stmt->message, stmt_visitor, expr_visitor, ctx);
+}
+
+static bool
+visit_execsql(PLpgSQL_stmt_execsql *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	return visit_expr(stmt->sqlstmt, stmt_visitor, expr_visitor, ctx);
+}
+
+static bool
+visit_dynexecute(PLpgSQL_stmt_dynexecute *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	ListCell   *lc;
+
+	if (!visit_expr(stmt->query, stmt_visitor, expr_visitor, ctx))
+		return false;
+
+	foreach(lc, stmt->params)
+	{
+		if (visit_expr((PLpgSQL_expr *) lfirst(lc), stmt_visitor, expr_visitor, ctx))
+			return false;
+	}
+	return true;
+}
+
+static bool
+visit_dynfors(PLpgSQL_stmt_dynfors *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	ListCell   *lc;
+
+	if (!visit_stmts(stmt->body, stmt_visitor, expr_visitor, ctx) ||
+		!visit_expr(stmt->query, stmt_visitor, expr_visitor, ctx))
+		return false;
+
+	foreach(lc, stmt->params)
+	{
+		if (!visit_expr((PLpgSQL_expr *) lfirst(lc), stmt_visitor, expr_visitor, ctx))
+			return false;
+	}
+	return true;
+}
+
+static bool
+visit_getdiag(PLpgSQL_stmt_getdiag *stmt, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	return true;
+}
+
+static bool
+visit_expr(PLpgSQL_expr *expr, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	return expr_visitor == NULL || expr_visitor(expr, ctx);
+}
+
+bool
+plpgsql_stmts_walker(List* stmts, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx)
+{
+	return visit_stmts(stmts, stmt_visitor, expr_visitor, ctx);
+}
