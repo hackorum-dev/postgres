@@ -1325,6 +1325,10 @@ extern int	plpgsql_latest_lineno(yyscan_t yyscanner);
 extern yyscan_t plpgsql_scanner_init(const char *str);
 extern void plpgsql_scanner_finish(yyscan_t yyscanner);
 
+typedef bool (*PLpgSQL_stmt_visitor)(PLpgSQL_stmt *stmt, void* ctx);
+typedef bool (*PLpgSQL_expr_visitor)(PLpgSQL_expr *expr, void* ctx);
+extern bool plpgsql_stmts_walker(List *stmts, PLpgSQL_stmt_visitor stmt_visitor, PLpgSQL_expr_visitor expr_visitor, void* ctx);
+
 /*
  * Externs in pl_gram.y
  */
