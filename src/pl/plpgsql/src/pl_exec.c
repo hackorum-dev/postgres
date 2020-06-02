@@ -5936,6 +5936,17 @@ exec_run_select(PLpgSQL_execstate *estate,
 }
 
 
+static bool
+contains_transaction_control_stmt(PLpgSQL_stmt *stmt, void* ctx)
+{
+	if (stmt->cmd_type == PLPGSQL_STMT_COMMIT || stmt->cmd_type == PLPGSQL_STMT_ROLLBACK)
+	{
+		*(bool*)ctx = false;
+		return false;
+	}
+	return true;
+}
+
 /*
  * exec_for_query --- execute body of FOR loop for each row from a portal
  *
@@ -5961,6 +5972,9 @@ exec_for_query(PLpgSQL_execstate *estate, PLpgSQL_stmt_forq *stmt,
 	 * execute.
 	 */
 	PinPortal(portal);
+
+	if (prefetch_ok)
+		plpgsql_stmts_walker(stmt->body, contains_transaction_control_stmt, NULL, &prefetch_ok);
 
 	/*
 	 * In a non-atomic context, we dare not prefetch, even if it would
