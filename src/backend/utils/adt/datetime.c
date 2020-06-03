@@ -3979,9 +3979,16 @@ DecodeISO8601Interval(char *str,
 {
 	bool		datepart = true;
 	bool		havefield = false;
+	bool		negative = false;
 
 	*dtype = DTK_DELTA;
 	ClearPgItmIn(itm_in);
+
+	if (str[0] == '-')
+	{
+		negative = true;
+		str++;
+	}
 
 	if (strlen(str) < 2 || str[0] != 'P')
 		return DTERR_BAD_FORMAT;
@@ -4175,6 +4182,19 @@ DecodeISO8601Interval(char *str,
 		}
 
 		havefield = true;
+	}
+
+	if (negative)
+	{
+		tm->tm_sec = -tm->tm_sec;
+		tm->tm_min = -tm->tm_min;
+		tm->tm_hour = -tm->tm_hour;
+		tm->tm_mday = -tm->tm_mday;
+		tm->tm_mon = -tm->tm_mon;
+		tm->tm_year = -tm->tm_year;
+		tm->tm_wday = -tm->tm_wday;
+		tm->tm_yday = -tm->tm_yday;
+		*fsec = -*fsec;
 	}
 
 	return 0;
