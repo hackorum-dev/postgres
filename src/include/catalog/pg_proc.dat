@@ -9720,6 +9720,18 @@
   proname => 'nth_value', prokind => 'w', prorettype => 'anyelement',
   proargtypes => 'anyelement int4', prosrc => 'window_nth_value',
   pronulltreatment => 't' },
+{ oid => '8114', descr => 'fetch the Nth row value',
+  proname => 'nth_value_last', prokind => 'w', prorettype => 'anyelement',
+  proargtypes => 'anyelement int4', prosrc => 'window_nth_value_last',
+  pronulltreatment => 't' },
+{ oid => '8115', descr => 'fetch the Nth row value',
+  proname => 'abs_nth', prokind => 'w', prorettype => 'anyelement',
+  proargtypes => 'anyelement int4', prosrc => 'window_abs_nth',
+  pronulltreatment => 't' },
+{ oid => '8116', descr => 'fetch the Nth row value',
+  proname => 'abs_nth_last', prokind => 'w', prorettype => 'anyelement',
+  proargtypes => 'anyelement int4', prosrc => 'window_abs_nth_last',
+  pronulltreatment => 't' },
 
 # functions for range types
 { oid => '3832', descr => 'I/O',

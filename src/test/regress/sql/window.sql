@@ -1353,6 +1353,29 @@ WINDOW w1 AS (ORDER BY name ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLO
        w2 AS (ORDER BY name ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING)
 ;
 
+-- nth_value_last
+SELECT name,
+       orbit,
+       nth_value_last(orbit, 2) RESPECT NULLS OVER w1,
+       nth_value_last(orbit, 2) IGNORE NULLS OVER w1,
+       nth_value_last(orbit, 2) RESPECT NULLS OVER w2,
+       nth_value_last(orbit, 2) IGNORE NULLS OVER w2
+FROM planets
+WINDOW w1 AS (ORDER BY name ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING),
+       w2 AS (ORDER BY name ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING)
+;
+
+-- abs_nth, abs_nth_last
+SELECT name,
+       orbit,
+       abs_nth(orbit, 3) RESPECT NULLS OVER w,
+       abs_nth(orbit, 3) IGNORE NULLS OVER w,
+       abs_nth_last(orbit, 3) RESPECT NULLS OVER w,
+       abs_nth_last(orbit, 3) IGNORE NULLS OVER w
+FROM planets
+WINDOW w AS (ORDER BY name)
+;
+
 -- last_value
 SELECT name,
        orbit,

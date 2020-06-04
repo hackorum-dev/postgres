@@ -3998,6 +3998,55 @@ WINDOW w1 AS (ORDER BY name ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLO
  xyzzy   |       |      4332 |        88 |       224 |          
 (10 rows)
 
+-- nth_value_last
+SELECT name,
+       orbit,
+       nth_value_last(orbit, 2) RESPECT NULLS OVER w1,
+       nth_value_last(orbit, 2) IGNORE NULLS OVER w1,
+       nth_value_last(orbit, 2) RESPECT NULLS OVER w2,
+       nth_value_last(orbit, 2) IGNORE NULLS OVER w2
+FROM planets
+WINDOW w1 AS (ORDER BY name ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING),
+       w2 AS (ORDER BY name ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING)
+;
+  name   | orbit | nth_value_last | nth_value_last | nth_value_last | nth_value_last 
+---------+-------+----------------+----------------+----------------+----------------
+ earth   |       |            224 |          24491 |           4332 |               
+ jupiter |  4332 |            224 |          24491 |                |           4332
+ mars    |       |            224 |          24491 |             88 |             88
+ mercury |    88 |            224 |          24491 |          60182 |          60182
+ neptune | 60182 |            224 |          24491 |          90560 |          90560
+ pluto   | 90560 |            224 |          24491 |          24491 |          90560
+ saturn  | 24491 |            224 |          24491 |                |          24491
+ uranus  |       |            224 |          24491 |            224 |          24491
+ venus   |   224 |            224 |          24491 |            224 |          24491
+ xyzzy   |       |            224 |          24491 |            224 |               
+(10 rows)
+
+-- abs_nth, abs_nth_last
+SELECT name,
+       orbit,
+       abs_nth(orbit, 3) RESPECT NULLS OVER w,
+       abs_nth(orbit, 3) IGNORE NULLS OVER w,
+       abs_nth_last(orbit, 3) RESPECT NULLS OVER w,
+       abs_nth_last(orbit, 3) IGNORE NULLS OVER w
+FROM planets
+WINDOW w AS (ORDER BY name)
+;
+  name   | orbit | abs_nth | abs_nth | abs_nth_last | abs_nth_last 
+---------+-------+---------+---------+--------------+--------------
+ earth   |       |         |   60182 |              |        90560
+ jupiter |  4332 |         |   60182 |              |        90560
+ mars    |       |         |   60182 |              |        90560
+ mercury |    88 |         |   60182 |              |        90560
+ neptune | 60182 |         |   60182 |              |        90560
+ pluto   | 90560 |         |   60182 |              |        90560
+ saturn  | 24491 |         |   60182 |              |        90560
+ uranus  |       |         |   60182 |              |        90560
+ venus   |   224 |         |   60182 |              |        90560
+ xyzzy   |       |         |   60182 |              |        90560
+(10 rows)
+
 -- last_value
 SELECT name,
        orbit,
