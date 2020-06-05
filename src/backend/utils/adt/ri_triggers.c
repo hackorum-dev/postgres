@@ -2508,6 +2508,13 @@ ri_NullCheck(TupleDesc tupDesc,
 			nonenull = false;
 		else
 			allnull = false;
+
+		/*
+		 * If seen both NULL and non-NULL, the next attributes cannot change
+		 * the result.
+		 */
+		if (!nonenull && !allnull)
+			return RI_KEYS_SOME_NULL;
 	}
 
 	if (allnull)
@@ -2516,7 +2523,8 @@ ri_NullCheck(TupleDesc tupDesc,
 	if (nonenull)
 		return RI_KEYS_NONE_NULL;
 
-	return RI_KEYS_SOME_NULL;
+	/* Should not happen. */
+	Assert(false);
 }
 
 
