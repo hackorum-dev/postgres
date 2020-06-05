@@ -69,15 +69,18 @@
 
 /* RI query type codes */
 /* these queries are executed against the PK (referenced) table: */
-#define RI_PLAN_CHECK_LOOKUPPK			1
-#define RI_PLAN_CHECK_LOOKUPPK_FROM_PK	2
+#define RI_PLAN_CHECK_LOOKUPPK_SINGLE	1	/* check single row  */
+#define RI_PLAN_CHECK_LOOKUPPK_INS		2
+#define RI_PLAN_CHECK_LOOKUPPK_UPD		3
+#define RI_PLAN_CHECK_LOOKUPPK_FROM_PK	4
 #define RI_PLAN_LAST_ON_PK				RI_PLAN_CHECK_LOOKUPPK_FROM_PK
 /* these queries are executed against the FK (referencing) table: */
-#define RI_PLAN_CASCADE_DEL_DODELETE	3
-#define RI_PLAN_CASCADE_UPD_DOUPDATE	4
-#define RI_PLAN_RESTRICT_CHECKREF		5
-#define RI_PLAN_SETNULL_DOUPDATE		6
-#define RI_PLAN_SETDEFAULT_DOUPDATE		7
+#define RI_PLAN_CASCADE_DEL_DODELETE	5
+#define RI_PLAN_CASCADE_UPD_DOUPDATE	6
+#define RI_PLAN_RESTRICT_CHECKREF		7
+#define RI_PLAN_RESTRICT_CHECKREF_NO_ACTION		8
+#define RI_PLAN_SETNULL_DOUPDATE		9
+#define RI_PLAN_SETDEFAULT_DOUPDATE		10
 
 #define MAX_QUOTED_NAME_LEN  (NAMEDATALEN*2+3)
 #define MAX_QUOTED_REL_NAME_LEN  (MAX_QUOTED_NAME_LEN*2)
@@ -130,6 +133,7 @@ typedef struct RI_QueryKey
 {
 	Oid			constr_id;		/* OID of pg_constraint entry */
 	int32		constr_queryno; /* query type ID, see RI_PLAN_XXX above */
+	bool		single_row;		/* Checking a single row? */
 } RI_QueryKey;
 
 /*
@@ -177,6 +181,9 @@ static int	ri_constraint_cache_valid_count = 0;
 /*
  * Local function prototypes
  */
+static char *RI_FKey_check_query(const RI_ConstraintInfo *riinfo,
+								 Relation fk_rel, Relation pk_rel,
+								 bool insert);
 static char *RI_FKey_check_query_single_row(const RI_ConstraintInfo *riinfo,
 											Relation fk_rel, Relation pk_rel,
 											Oid *paramtypes);
@@ -185,18 +192,26 @@ static bool RI_FKey_check_query_required(Trigger *trigger, Relation fk_rel,
 static bool ri_Check_Pk_Match(Relation pk_rel, Relation fk_rel,
 							  TupleTableSlot *oldslot,
 							  const RI_ConstraintInfo *riinfo);
-static Datum ri_restrict(TriggerData *trigdata, bool is_no_action,
-						 TupleTableSlot *oldslot);
+static Datum ri_restrict(TriggerData *trigdata, bool is_no_action);
+static char *ri_restrict_query(const RI_ConstraintInfo *riinfo,
+							   Relation fk_rel, Relation pk_rel,
+							   bool no_action);
 static char *ri_restrict_query_single_row(const RI_ConstraintInfo *riinfo,
 										  Relation fk_rel,
 										  Relation pk_rel, Oid *paramtypes);
+static char *ri_cascade_del_query(const RI_ConstraintInfo *riinfo,
+								  Relation fk_rel, Relation pk_rel);
 static char *ri_cascade_del_query_single_row(const RI_ConstraintInfo *riinfo,
 											 Relation fk_rel, Relation pk_rel,
 											 Oid *paramtypes);
+static char *ri_cascade_upd_query(const RI_ConstraintInfo *riinfo,
+								  Relation fk_rel, Relation pk_rel);
 static char *ri_cascade_upd_query_single_row(const RI_ConstraintInfo *riinfo,
 											 Relation fk_rel, Relation pk_rel,
 											 Oid *paramtypes);
 static Datum ri_set(TriggerData *trigdata, bool is_set_null);
+static char *ri_set_query(const RI_ConstraintInfo *riinfo, Relation fk_rel,
+						  Relation pk_rel, bool is_set_null);
 static char *ri_set_query_single_row(const RI_ConstraintInfo *riinfo,
 									 Relation fk_rel, Relation pk_rel,
 									 Oid *paramtypes, bool is_set_null);
@@ -223,6 +238,9 @@ static void ri_GenerateQual(StringInfo buf, char *sep, int nkeys,
 							const int16 *rattnums, const Oid *eq_oprs,
 							GenQualParams params, Oid *paramtypes);
 
+static void ri_GenerateKeyList(StringInfo buf, int nkeys,
+							   const char *tabname, Relation rel,
+							   const int16 *attnums);
 static void ri_GenerateQualComponent(StringInfo buf,
 									 const char *sep,
 									 const char *leftop, Oid leftoptype,
@@ -234,7 +252,8 @@ static int	ri_NullCheck(TupleDesc tupdesc, TupleTableSlot *slot,
 						 bool ignore_attnums);
 static void ri_BuildQueryKey(RI_QueryKey *key,
 							 const RI_ConstraintInfo *riinfo,
-							 int32 constr_queryno);
+							 int32 constr_queryno,
+							 bool single_row);
 static bool ri_KeysEqual(Relation rel, TupleTableSlot *oldslot, TupleTableSlot *newslot,
 						 const RI_ConstraintInfo *riinfo, bool rel_is_pk);
 static bool ri_AttributesEqual(Oid eq_opr, Oid typeid,
@@ -267,6 +286,10 @@ static void ri_ReportViolation(const RI_ConstraintInfo *riinfo,
 							   Relation pk_rel, Relation fk_rel,
 							   TupleTableSlot *violatorslot, TupleDesc tupdesc,
 							   int queryno, bool partgone) pg_attribute_noreturn();
+static int	ri_register_trigger_data(TriggerData *tdata,
+									 Tuplestorestate *oldtable,
+									 Tuplestorestate *newtable,
+									 TupleDesc desc);
 static Tuplestorestate *get_event_tuplestore(TriggerData *trigdata, int nkeys,
 											 const int16 *attnums, bool old,
 											 TupleDesc tupdesc, Snapshot snapshot);
@@ -280,6 +303,8 @@ static void add_key_values(TupleTableSlot *slot,
 						   Relation rel, ItemPointer ip,
 						   Datum *key_values, bool *key_nulls,
 						   Datum *values, bool *nulls, int first);
+static TupleTableSlot *get_violator_tuple(Relation rel);
+
 
 /*
  * RI_FKey_check -
@@ -293,12 +318,15 @@ RI_FKey_check(TriggerData *trigdata)
 	Relation	fk_rel;
 	Relation	pk_rel;
 	bool		is_insert;
+	int			queryno;
 	RI_QueryKey qkey;
 	SPIPlanPtr	qplan;
 	Tuplestorestate *oldtable = NULL;
 	Tuplestorestate *newtable = NULL;
 	Tuplestorestate *table;
+	bool		single_row;
 	TupleTableSlot *slot = NULL;
+	bool		found;
 
 	riinfo = ri_FetchConstraintInfo(trigdata->tg_trigger,
 									trigdata->tg_relation, false);
@@ -311,24 +339,6 @@ RI_FKey_check(TriggerData *trigdata)
 	 */
 	fk_rel = trigdata->tg_relation;
 	pk_rel = table_open(riinfo->pk_relid, RowShareLock);
-
-	if (SPI_connect() != SPI_OK_CONNECT)
-		elog(ERROR, "SPI_connect failed");
-
-	/* Fetch or prepare a saved plan for the real check */
-	ri_BuildQueryKey(&qkey, riinfo, RI_PLAN_CHECK_LOOKUPPK);
-	if ((qplan = ri_FetchPreparedPlan(&qkey)) == NULL)
-	{
-		char	   *query;
-		Oid			paramtypes[RI_MAX_NUMKEYS];
-
-		query = RI_FKey_check_query_single_row(riinfo, fk_rel, pk_rel,
-											   paramtypes);
-
-		/* Prepare and save the plan */
-		qplan = ri_PlanCheck(query, riinfo->nkeys, paramtypes, &qkey, fk_rel,
-							 pk_rel);
-	}
 
 	/*
 	 * Retrieve the changed rows and put them into the appropriate tuplestore.
@@ -370,22 +380,98 @@ RI_FKey_check(TriggerData *trigdata)
 	}
 
 	/*
-	 * Retrieve and check the inserted / updated rows, one after another.
+	 * The query to check a single row requires parameters, so retrieve them
+	 * now if that's the case.
 	 */
-	slot = riinfo->slot_fk;
-	while (tuplestore_gettupleslot(table, true, false, slot))
+	single_row = tuplestore_tuple_count(table) == 1;
+	if (single_row)
 	{
-		if (!ri_PerformCheck(riinfo, &qkey, qplan,
-							 fk_rel, pk_rel,
-							 slot,
-							 false,
-							 SPI_OK_SELECT))
-			ri_ReportViolation(riinfo,
-							   pk_rel, fk_rel,
-							   slot,
-							   NULL,
-							   qkey.constr_queryno, false);
+		slot = riinfo->slot_fk;
+		tuplestore_gettupleslot(table, true, false, slot);
 	}
+
+	if (SPI_connect() != SPI_OK_CONNECT)
+		elog(ERROR, "SPI_connect failed");
+
+	/*
+	 * Bulk processing needs the appropriate "transient table" to be
+	 * registered.
+	 */
+	if (!single_row &&
+		ri_register_trigger_data(trigdata, oldtable, newtable,
+								 riinfo->slot_fk->tts_tupleDescriptor) !=
+		SPI_OK_TD_REGISTER)
+		elog(ERROR, "ri_register_trigger_data failed");
+
+	if (single_row)
+		queryno = RI_PLAN_CHECK_LOOKUPPK_SINGLE;
+	else if (is_insert)
+		queryno = RI_PLAN_CHECK_LOOKUPPK_INS;
+	else
+		queryno = RI_PLAN_CHECK_LOOKUPPK_UPD;
+	ri_BuildQueryKey(&qkey, riinfo, queryno, single_row);
+
+	/* Fetch or prepare a saved plan for the real check */
+	if ((qplan = ri_FetchPreparedPlan(&qkey)) == NULL)
+	{
+		char	   *query;
+		int			nparams;
+		Oid			paramtypes[RI_MAX_NUMKEYS];
+
+		if (single_row)
+		{
+			query = RI_FKey_check_query_single_row(riinfo, fk_rel, pk_rel,
+												   paramtypes);
+
+			nparams = riinfo->nkeys;
+		}
+		else
+		{
+			query = RI_FKey_check_query(riinfo, fk_rel, pk_rel, is_insert);
+
+			nparams = 0;
+		}
+
+		/* Prepare and save the plan */
+		qplan = ri_PlanCheck(query, nparams, paramtypes, &qkey, fk_rel,
+							 pk_rel);
+	}
+
+	/*
+	 * Now check that foreign key exists in PK table
+	 */
+	found = ri_PerformCheck(riinfo, &qkey, qplan,
+							fk_rel, pk_rel,
+							slot,
+							false,
+							SPI_OK_SELECT);
+
+	/*
+	 * The query for bulk processing returns the first FK row that violates
+	 * the constraint, so use that row to report the violation.
+	 */
+	if (!single_row && found)
+	{
+		TupleTableSlot *violatorslot = get_violator_tuple(fk_rel);
+
+		ri_ReportViolation(riinfo,
+						   pk_rel, fk_rel,
+						   violatorslot,
+						   NULL,
+						   qkey.constr_queryno, false);
+	}
+
+	/*
+	 * In contrast, the query to check a single FK row returns the matching PK
+	 * row. Failure to find that PK row indicates constraint violation and the
+	 * violating row is in "slot".
+	 */
+	else if (single_row && !found)
+		ri_ReportViolation(riinfo,
+						   pk_rel, fk_rel,
+						   slot,
+						   NULL,
+						   qkey.constr_queryno, false);
 
 	if (SPI_finish() != SPI_OK_FINISH)
 		elog(ERROR, "SPI_finish failed");
@@ -393,6 +479,90 @@ RI_FKey_check(TriggerData *trigdata)
 	table_close(pk_rel, RowShareLock);
 
 	return PointerGetDatum(NULL);
+}
+
+/* ----------
+ * Construct the query to check inserted/updated rows of the FK table.
+ *
+ * If "insert" is true, the rows are inserted, otherwise they are updated.
+ *
+ * The query string built is
+ *	SELECT t.fkatt1 [, ...]
+ *		FROM <tgtable> t LEFT JOIN LATERAL
+ *		    (SELECT t.fkatt1 [, ...]
+ *               FROM [ONLY] <pktable> p
+ *		         WHERE t.fkatt1 = p.pkatt1 [AND ...]
+ *		         FOR KEY SHARE OF p) AS m
+ *		     ON t.fkatt1 = m.fkatt1 [AND ...]
+ *		WHERE m.fkatt1 ISNULL
+ *	    LIMIT 1
+ *
+ * where <tgtable> is "tgoldtable" for INSERT and "tgnewtable" for UPDATE
+ * events.
+ *
+ * It returns the first row that violates the constraint.
+ *
+ * "m" returns the new rows that do have matching PK row. It is a subquery
+ * because the FOR KEY SHARE clause cannot reference the nullable side of an
+ * outer join.
+ *
+ * XXX "tgoldtable" looks confusing for insert, but that's where
+ * AfterTriggerExecute() stores tuples whose events don't have
+ * AFTER_TRIGGER_2CTID set. For a non-RI trigger, the inserted tuple would
+ * fall into tg_trigtuple as opposed to tg_newtuple, which seems a similar
+ * problem. It doesn't seem worth any renaming or adding extra tuplestores to
+ * TriggerData.
+ * ----------
+ */
+static char *
+RI_FKey_check_query(const RI_ConstraintInfo *riinfo, Relation fk_rel,
+					Relation pk_rel, bool insert)
+{
+	StringInfo	querybuf = makeStringInfo();
+	StringInfo	subquerybuf = makeStringInfo();
+	char		pkrelname[MAX_QUOTED_REL_NAME_LEN];
+	const char *pk_only;
+	const char *tgtable;
+	char	   *col_test;
+
+	tgtable = insert ? "tgoldtable" : "tgnewtable";
+
+	quoteRelationName(pkrelname, pk_rel);
+
+	/* Construct the subquery. */
+	pk_only = pk_rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE ?
+		"" : "ONLY ";
+	appendStringInfoString(subquerybuf,
+						   "(SELECT ");
+	ri_GenerateKeyList(subquerybuf, riinfo->nkeys, "t", fk_rel,
+					   riinfo->fk_attnums);
+	appendStringInfo(subquerybuf,
+					 " FROM %s%s p WHERE ",
+					 pk_only, pkrelname);
+	ri_GenerateQual(subquerybuf, "AND", riinfo->nkeys,
+					"p", pk_rel, riinfo->pk_attnums,
+					"t", fk_rel, riinfo->fk_attnums,
+					riinfo->pf_eq_oprs,
+					GQ_PARAMS_NONE, NULL);
+	appendStringInfoString(subquerybuf, " FOR KEY SHARE OF p) AS m");
+
+	/* Now the main query. */
+	appendStringInfoString(querybuf, "SELECT ");
+	ri_GenerateKeyList(querybuf, riinfo->nkeys, "t", fk_rel,
+					   riinfo->fk_attnums);
+	appendStringInfo(querybuf,
+					 " FROM %s t LEFT JOIN LATERAL %s ON ",
+					 tgtable, subquerybuf->data);
+	ri_GenerateQual(querybuf, "AND", riinfo->nkeys,
+					"t", fk_rel, riinfo->fk_attnums,
+					"m", fk_rel, riinfo->fk_attnums,
+					riinfo->ff_eq_oprs,
+					GQ_PARAMS_NONE, NULL);
+	col_test = ri_ColNameQuoted("m", RIAttName(fk_rel, riinfo->fk_attnums[0]));
+	appendStringInfo(querybuf, " WHERE %s ISNULL ", col_test);
+	appendStringInfoString(querybuf, " LIMIT 1");
+
+	return querybuf->data;
 }
 
 /* ----------
@@ -576,7 +746,7 @@ ri_Check_Pk_Match(Relation pk_rel, Relation fk_rel,
 	 * Fetch or prepare a saved plan for checking PK table with values coming
 	 * from a PK row
 	 */
-	ri_BuildQueryKey(&qkey, riinfo, RI_PLAN_CHECK_LOOKUPPK_FROM_PK);
+	ri_BuildQueryKey(&qkey, riinfo, RI_PLAN_CHECK_LOOKUPPK_FROM_PK, true);
 
 	if ((qplan = ri_FetchPreparedPlan(&qkey)) == NULL)
 	{
@@ -643,7 +813,7 @@ RI_FKey_noaction_del(PG_FUNCTION_ARGS)
 	ri_CheckTrigger(fcinfo, "RI_FKey_noaction_del", RI_TRIGTYPE_DELETE);
 
 	/* Share code with RESTRICT/UPDATE cases. */
-	return ri_restrict((TriggerData *) fcinfo->context, true, NULL);
+	return ri_restrict((TriggerData *) fcinfo->context, true);
 }
 
 /*
@@ -663,7 +833,7 @@ RI_FKey_restrict_del(PG_FUNCTION_ARGS)
 	ri_CheckTrigger(fcinfo, "RI_FKey_restrict_del", RI_TRIGTYPE_DELETE);
 
 	/* Share code with NO ACTION/UPDATE cases. */
-	return ri_restrict((TriggerData *) fcinfo->context, false, NULL);
+	return ri_restrict((TriggerData *) fcinfo->context, false);
 }
 
 /*
@@ -680,7 +850,7 @@ RI_FKey_noaction_upd(PG_FUNCTION_ARGS)
 	ri_CheckTrigger(fcinfo, "RI_FKey_noaction_upd", RI_TRIGTYPE_UPDATE);
 
 	/* Share code with RESTRICT/DELETE cases. */
-	return ri_restrict((TriggerData *) fcinfo->context, true, NULL);
+	return ri_restrict((TriggerData *) fcinfo->context, true);
 }
 
 /*
@@ -700,7 +870,7 @@ RI_FKey_restrict_upd(PG_FUNCTION_ARGS)
 	ri_CheckTrigger(fcinfo, "RI_FKey_restrict_upd", RI_TRIGTYPE_UPDATE);
 
 	/* Share code with NO ACTION/DELETE cases. */
-	return ri_restrict((TriggerData *) fcinfo->context, false, NULL);
+	return ri_restrict((TriggerData *) fcinfo->context, false);
 }
 
 /*
@@ -708,20 +878,18 @@ RI_FKey_restrict_upd(PG_FUNCTION_ARGS)
  *
  * Common code for ON DELETE RESTRICT, ON DELETE NO ACTION,
  * ON UPDATE RESTRICT, and ON UPDATE NO ACTION.
- *
- * If NULL is passed for oldslot, retrieve the rows from
- * trigdata->ri_tids_old.
  */
 static Datum
-ri_restrict(TriggerData *trigdata, bool is_no_action, TupleTableSlot *oldslot)
+ri_restrict(TriggerData *trigdata, bool is_no_action)
 {
 	const RI_ConstraintInfo *riinfo;
 	Relation	fk_rel;
 	Relation	pk_rel;
 	RI_QueryKey qkey;
 	SPIPlanPtr	qplan;
-	Tuplestorestate *oldtable = NULL;
-	bool		first_tuple;
+	Tuplestorestate *oldtable;
+	bool		single_row;
+	TupleTableSlot *oldslot = NULL;
 
 	riinfo = ri_FetchConstraintInfo(trigdata->tg_trigger,
 									trigdata->tg_relation, true);
@@ -735,46 +903,21 @@ ri_restrict(TriggerData *trigdata, bool is_no_action, TupleTableSlot *oldslot)
 	fk_rel = table_open(riinfo->fk_relid, RowShareLock);
 	pk_rel = trigdata->tg_relation;
 
-	if (SPI_connect() != SPI_OK_CONNECT)
-		elog(ERROR, "SPI_connect failed");
+	oldtable = get_event_tuplestore(trigdata,
+									riinfo->nkeys,
+									riinfo->pk_attnums,
+									true,
+									riinfo->slot_pk->tts_tupleDescriptor,
+									NULL);
 
-	/* Fetch or prepare a saved plan for the real check */
-	ri_BuildQueryKey(&qkey, riinfo, RI_PLAN_RESTRICT_CHECKREF);
-	if ((qplan = ri_FetchPreparedPlan(&qkey)) == NULL)
+	/* Should we use a special query to check a single row? */
+	single_row = tuplestore_tuple_count(oldtable) == 1;
+	if (single_row)
 	{
-		char	   *query;
-		Oid			paramtypes[RI_MAX_NUMKEYS];
-
-		query = ri_restrict_query_single_row(riinfo, fk_rel, pk_rel,
-											 paramtypes);
-
-		/* Prepare and save the plan */
-		qplan = ri_PlanCheck(query, riinfo->nkeys, paramtypes, &qkey,
-							 fk_rel, pk_rel);
-	}
-
-	if (oldslot == NULL)
-	{
-		oldtable = get_event_tuplestore(trigdata,
-										riinfo->nkeys,
-										riinfo->pk_attnums,
-										true,
-										riinfo->slot_pk->tts_tupleDescriptor,
-										NULL);
+		/* The query needs parameters, so retrieve them now. */
 		oldslot = riinfo->slot_pk;
-	}
+		tuplestore_gettupleslot(oldtable, true, false, oldslot);
 
-	first_tuple = true;
-
-	/*
-	 * Retrieve and check the rows, one after another.
-	 *
-	 * One tuple should always be processed: if there's no "oldtable", valid
-	 * "oldslot" should have been passed.
-	 */
-	while ((oldtable && tuplestore_gettupleslot(oldtable, true, false, oldslot))
-		   || first_tuple)
-	{
 		/*
 		 * If another PK row now exists providing the old key values, we
 		 * should not do anything.  However, this check should only be made in
@@ -783,26 +926,103 @@ ri_restrict(TriggerData *trigdata, bool is_no_action, TupleTableSlot *oldslot)
 		 */
 		if (is_no_action &&
 			ri_Check_Pk_Match(pk_rel, fk_rel, oldslot, riinfo))
-			continue;
-
-		if (ri_PerformCheck(riinfo, &qkey, qplan,
-							fk_rel, pk_rel,
-							oldslot,
-							true,	/* must detect new rows */
-							SPI_OK_SELECT))
-			ri_ReportViolation(riinfo,
-							   pk_rel, fk_rel,
-							   oldslot,
-							   NULL,
-							   qkey.constr_queryno, false);
-
-		if (first_tuple)
 		{
-			if (oldtable == NULL)
-				break;
-
-			first_tuple = false;
+			table_close(fk_rel, RowShareLock);
+			return PointerGetDatum(NULL);
 		}
+	}
+
+	if (SPI_connect() != SPI_OK_CONNECT)
+		elog(ERROR, "SPI_connect failed");
+
+	/* Bulk processing needs the "transient table" to be registered. */
+	if (!single_row &&
+		ri_register_trigger_data(trigdata, oldtable, NULL,
+								 riinfo->slot_pk->tts_tupleDescriptor) !=
+		SPI_OK_TD_REGISTER)
+		elog(ERROR, "ri_register_trigger_data failed");
+
+	if (single_row)
+	{
+		ri_BuildQueryKey(&qkey, riinfo, RI_PLAN_RESTRICT_CHECKREF, true);
+
+		if ((qplan = ri_FetchPreparedPlan(&qkey)) == NULL)
+		{
+			char	   *query;
+			Oid			paramtypes[RI_MAX_NUMKEYS];
+
+			query = ri_restrict_query_single_row(riinfo, fk_rel, pk_rel,
+												 paramtypes);
+
+			/* Prepare and save the plan */
+			qplan = ri_PlanCheck(query, riinfo->nkeys, paramtypes, &qkey,
+								 fk_rel, pk_rel);
+		}
+	}
+	else if (!is_no_action)
+	{
+		/*
+		 * Fetch or prepare a saved plan for the restrict lookup (it's the
+		 * same query for delete and update cases)
+		 */
+		ri_BuildQueryKey(&qkey, riinfo, RI_PLAN_RESTRICT_CHECKREF, false);
+
+		if ((qplan = ri_FetchPreparedPlan(&qkey)) == NULL)
+		{
+			char	   *query;
+
+			query = ri_restrict_query(riinfo, fk_rel, pk_rel, false);
+
+			/* Prepare and save the plan */
+			qplan = ri_PlanCheck(query, 0, NULL, &qkey, fk_rel, pk_rel);
+		}
+	}
+	else
+	{
+		/*
+		 * If another PK row now exists providing the old key values, we
+		 * should not do anything.  However, this check should only be made in
+		 * the NO ACTION case; in RESTRICT cases we don't wish to allow
+		 * another row to be substituted.
+		 */
+		ri_BuildQueryKey(&qkey, riinfo, RI_PLAN_RESTRICT_CHECKREF_NO_ACTION,
+						 false);
+
+		if ((qplan = ri_FetchPreparedPlan(&qkey)) == NULL)
+		{
+
+			char	   *query;
+
+			query = ri_restrict_query(riinfo, fk_rel, pk_rel, true);
+
+			/* Prepare and save the plan */
+			qplan = ri_PlanCheck(query, 0, NULL, &qkey, fk_rel, pk_rel);
+		}
+	}
+
+	/*
+	 * We have a plan now. Run it to check for existing references.
+	 */
+	if (ri_PerformCheck(riinfo, &qkey, qplan,
+						fk_rel, pk_rel,
+						oldslot,
+						true,	/* must detect new rows */
+						SPI_OK_SELECT))
+	{
+		TupleTableSlot *violatorslot;
+
+		/*
+		 * For a single row, oldslot contains the violating key. For bulk
+		 * check, the problematic key value should have been returned by the
+		 * query.
+		 */
+		violatorslot = single_row ? oldslot : get_violator_tuple(pk_rel);
+
+		ri_ReportViolation(riinfo,
+						   pk_rel, fk_rel,
+						   violatorslot,
+						   NULL,
+						   qkey.constr_queryno, false);
 	}
 
 	if (SPI_finish() != SPI_OK_FINISH)
@@ -811,6 +1031,79 @@ ri_restrict(TriggerData *trigdata, bool is_no_action, TupleTableSlot *oldslot)
 	table_close(fk_rel, RowShareLock);
 
 	return PointerGetDatum(NULL);
+}
+
+/* ----------
+ * Construct the query to check whether deleted row of the PK table is still
+ * referenced by the FK table.
+ *
+ * If "pk_rel" is NULL, the query string built is
+ *	SELECT o.*
+ *		FROM [ONLY] <fktable> f, tgoldtable o
+ *		WHERE f.fkatt1 = o.pkatt1 [AND ...]
+ *		FOR KEY SHARE OF f
+ *		LIMIT 1
+ *
+ * If no_action is true,also check if the row being deleted was re-inserted
+ * into the PK table (or in case of UPDATE, if row with the old key is there
+ * again):
+ *
+ *	SELECT o.pkatt1 [, ...]
+ *		FROM [ONLY] <fktable> f, tgoldtable o
+ *		WHERE f.fkatt1 = o.pkatt1 [AND ...] AND	NOT EXISTS
+ *			(SELECT 1
+ *			FROM <pktable> p
+ *			WHERE p.pkatt1 = o.pkatt1 [, ...]
+ *			FOR KEY SHARE OF p)
+ *		FOR KEY SHARE OF f
+ *		LIMIT 1
+ *
+ * TODO Is ONLY needed for the the PK table?
+ * ----------
+ */
+static char *
+ri_restrict_query(const RI_ConstraintInfo *riinfo, Relation fk_rel,
+				  Relation pk_rel, bool no_action)
+{
+	StringInfo	querybuf = makeStringInfo();
+	StringInfo	subquerybuf = NULL;
+	char		fkrelname[MAX_QUOTED_REL_NAME_LEN];
+	const char *fk_only;
+
+	if (no_action)
+	{
+		char		pkrelname[MAX_QUOTED_REL_NAME_LEN];
+
+		subquerybuf = makeStringInfo();
+		quoteRelationName(pkrelname, pk_rel);
+		appendStringInfo(subquerybuf,
+						 "(SELECT 1 FROM %s p WHERE ", pkrelname);
+		ri_GenerateQual(subquerybuf, "AND", riinfo->nkeys,
+						"p", pk_rel, riinfo->pk_attnums,
+						"o", pk_rel, riinfo->pk_attnums,
+						riinfo->pp_eq_oprs,
+						GQ_PARAMS_NONE, NULL);
+		appendStringInfoString(subquerybuf, " FOR KEY SHARE OF p)");
+	}
+
+	fk_only = fk_rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE ?
+		"" : "ONLY ";
+	quoteRelationName(fkrelname, fk_rel);
+	appendStringInfoString(querybuf, "SELECT ");
+	ri_GenerateKeyList(querybuf, riinfo->nkeys, "o", pk_rel,
+					   riinfo->pk_attnums);
+	appendStringInfo(querybuf, " FROM %s%s f, tgoldtable o WHERE ",
+					 fk_only, fkrelname);
+	ri_GenerateQual(querybuf, "AND", riinfo->nkeys,
+					"o", pk_rel, riinfo->pk_attnums,
+					"f", fk_rel, riinfo->fk_attnums,
+					riinfo->pf_eq_oprs,
+					GQ_PARAMS_NONE, NULL);
+	if (no_action)
+		appendStringInfo(querybuf, " AND NOT EXISTS %s", subquerybuf->data);
+	appendStringInfoString(querybuf, " FOR KEY SHARE OF f LIMIT 1");
+
+	return querybuf->data;
 }
 
 /*
@@ -867,7 +1160,8 @@ RI_FKey_cascade_del(PG_FUNCTION_ARGS)
 	RI_QueryKey qkey;
 	SPIPlanPtr	qplan;
 	Tuplestorestate *oldtable;
-	TupleTableSlot *oldslot;
+	bool		single_row;
+	TupleTableSlot *oldslot = NULL;
 
 	/* Check that this is a valid trigger call on the right time and event. */
 	ri_CheckTrigger(fcinfo, "RI_FKey_cascade_del", RI_TRIGTYPE_DELETE);
@@ -884,24 +1178,6 @@ RI_FKey_cascade_del(PG_FUNCTION_ARGS)
 	fk_rel = table_open(riinfo->fk_relid, RowExclusiveLock);
 	pk_rel = trigdata->tg_relation;
 
-	if (SPI_connect() != SPI_OK_CONNECT)
-		elog(ERROR, "SPI_connect failed");
-
-	ri_BuildQueryKey(&qkey, riinfo, RI_PLAN_CASCADE_DEL_DODELETE);
-
-	if ((qplan = ri_FetchPreparedPlan(&qkey)) == NULL)
-	{
-		Oid			paramtypes[RI_MAX_NUMKEYS];
-		char	   *query = ri_cascade_del_query_single_row(riinfo,
-															fk_rel,
-															pk_rel,
-															paramtypes);
-
-		/* Prepare and save the plan */
-		qplan = ri_PlanCheck(query, riinfo->nkeys, paramtypes, &qkey,
-							 fk_rel, pk_rel);
-	}
-
 	oldtable = get_event_tuplestore(trigdata,
 									riinfo->nkeys,
 									riinfo->pk_attnums,
@@ -909,20 +1185,59 @@ RI_FKey_cascade_del(PG_FUNCTION_ARGS)
 									riinfo->slot_pk->tts_tupleDescriptor,
 									NULL);
 
-	/* Retrieve and check the rows, one after another. */
-	oldslot = riinfo->slot_pk;
-	while (tuplestore_gettupleslot(oldtable, true, false, oldslot))
+	/* Should we use a special query to check a single row? */
+	single_row = tuplestore_tuple_count(oldtable) == 1;
+
+	if (SPI_connect() != SPI_OK_CONNECT)
+		elog(ERROR, "SPI_connect failed");
+
+	ri_BuildQueryKey(&qkey, riinfo, RI_PLAN_CASCADE_DEL_DODELETE, single_row);
+
+	if (single_row)
 	{
-		/*
-		 * We have a plan now. Build up the arguments from the key values in
-		 * the deleted PK tuple and delete the referencing rows
-		 */
-		ri_PerformCheck(riinfo, &qkey, qplan,
-						fk_rel, pk_rel,
-						oldslot,
-						true,	/* must detect new rows */
-						SPI_OK_DELETE);
+		if ((qplan = ri_FetchPreparedPlan(&qkey)) == NULL)
+		{
+			Oid			paramtypes[RI_MAX_NUMKEYS];
+			char	   *query = ri_cascade_del_query_single_row(riinfo,
+																fk_rel,
+																pk_rel,
+																paramtypes);
+
+			/* Prepare and save the plan */
+			qplan = ri_PlanCheck(query, riinfo->nkeys, paramtypes, &qkey,
+								 fk_rel, pk_rel);
+		}
+
+		/* The query needs parameters, so retrieve them now. */
+		oldslot = riinfo->slot_pk;
+		tuplestore_gettupleslot(oldtable, true, false, oldslot);
 	}
+	else
+	{
+		/* Bulk processing needs the "transient table" to be registered. */
+		if (ri_register_trigger_data(trigdata, oldtable, NULL,
+									 riinfo->slot_pk->tts_tupleDescriptor) !=
+			SPI_OK_TD_REGISTER)
+			elog(ERROR, "ri_register_trigger_data failed");
+
+		if ((qplan = ri_FetchPreparedPlan(&qkey)) == NULL)
+		{
+			char	   *query = ri_cascade_del_query(riinfo, fk_rel, pk_rel);
+
+			/* Prepare and save the plan */
+			qplan = ri_PlanCheck(query, 0, NULL, &qkey, fk_rel, pk_rel);
+		}
+	}
+
+	/*
+	 * We have a plan now. Build up the arguments from the key values in the
+	 * deleted PK tuple and delete the referencing rows
+	 */
+	ri_PerformCheck(riinfo, &qkey, qplan,
+					fk_rel, pk_rel,
+					oldslot,
+					true,		/* must detect new rows */
+					SPI_OK_DELETE);
 
 	if (SPI_finish() != SPI_OK_FINISH)
 		elog(ERROR, "SPI_finish failed");
@@ -930,6 +1245,43 @@ RI_FKey_cascade_del(PG_FUNCTION_ARGS)
 	table_close(fk_rel, RowExclusiveLock);
 
 	return PointerGetDatum(NULL);
+}
+
+static char *
+ri_cascade_del_query(const RI_ConstraintInfo *riinfo, Relation fk_rel,
+					 Relation pk_rel)
+{
+	StringInfo	querybuf = makeStringInfo();
+	StringInfo	subquerybuf = makeStringInfo();
+	char		fkrelname[MAX_QUOTED_REL_NAME_LEN];
+	const char *fk_only;
+
+	/* ----------
+	 * The query string built is
+	 *
+	 *	DELETE FROM [ONLY] <fktable> f
+	 *	    WHERE EXISTS
+	 *			(SELECT 1
+	 *			FROM tgoldtable o
+	 *			WHERE o.pkatt1 = f.fkatt1 [AND ...])
+	 * ----------
+	 */
+	appendStringInfoString(subquerybuf,
+						   "SELECT 1 FROM tgoldtable o WHERE ");
+	ri_GenerateQual(subquerybuf, "AND", riinfo->nkeys,
+					"o", pk_rel, riinfo->pk_attnums,
+					"f", fk_rel, riinfo->fk_attnums,
+					riinfo->pf_eq_oprs,
+					GQ_PARAMS_NONE, NULL);
+
+	fk_only = fk_rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE ?
+		"" : "ONLY ";
+	quoteRelationName(fkrelname, fk_rel);
+	appendStringInfo(querybuf,
+					 "DELETE FROM %s%s f WHERE EXISTS (%s) ",
+					 fk_only, fkrelname, subquerybuf->data);
+
+	return querybuf->data;
 }
 
 static char *
@@ -983,7 +1335,8 @@ RI_FKey_cascade_upd(PG_FUNCTION_ARGS)
 	RI_QueryKey qkey;
 	SPIPlanPtr	qplan;
 	Tuplestorestate *newtable;
-	TupleTableSlot *slot;
+	bool		single_row;
+	TupleTableSlot *newslot = NULL;
 
 	/* Check that this is a valid trigger call on the right time and event. */
 	ri_CheckTrigger(fcinfo, "RI_FKey_cascade_upd", RI_TRIGTYPE_UPDATE);
@@ -1001,43 +1354,65 @@ RI_FKey_cascade_upd(PG_FUNCTION_ARGS)
 	fk_rel = table_open(riinfo->fk_relid, RowExclusiveLock);
 	pk_rel = trigdata->tg_relation;
 
-	if (SPI_connect() != SPI_OK_CONNECT)
-		elog(ERROR, "SPI_connect failed");
-
-	/* Fetch or prepare a saved plan for the cascaded update */
-	ri_BuildQueryKey(&qkey, riinfo, RI_PLAN_CASCADE_UPD_DOUPDATE);
-	if ((qplan = ri_FetchPreparedPlan(&qkey)) == NULL)
-	{
-		Oid			paramtypes[RI_MAX_NUMKEYS * 2];
-		char	   *query = ri_cascade_upd_query_single_row(riinfo,
-															fk_rel,
-															pk_rel,
-															paramtypes);
-
-		/* Prepare and save the plan */
-		qplan = ri_PlanCheck(query, 2 * riinfo->nkeys, paramtypes, &qkey,
-							 fk_rel, pk_rel);
-	}
-
 	/*
-	 * In this case, both old and new values should be in the same tuplestore
+	 * In this case, both new and old values should be in the same tuplestore
 	 * because there's no useful join column.
 	 */
 	newtable = get_event_tuplestore_for_cascade_update(trigdata, riinfo);
 
-	/* Retrieve and check the rows, one after another. */
-	slot = riinfo->slot_both;
-	while (tuplestore_gettupleslot(newtable, true, false, slot))
+	/* Should we use a special query to check a single row? */
+	single_row = tuplestore_tuple_count(newtable) == 1;
+
+	/* Fetch or prepare a saved plan for the cascaded update */
+	ri_BuildQueryKey(&qkey, riinfo, RI_PLAN_CASCADE_UPD_DOUPDATE, single_row);
+
+	if (SPI_connect() != SPI_OK_CONNECT)
+		elog(ERROR, "SPI_connect failed");
+
+	if (single_row)
 	{
-		/*
-		 * We have a plan now. Run it to update the existing references.
-		 */
-		ri_PerformCheck(riinfo, &qkey, qplan,
-						fk_rel, pk_rel,
-						slot,
-						true,	/* must detect new rows */
-						SPI_OK_UPDATE);
+		if ((qplan = ri_FetchPreparedPlan(&qkey)) == NULL)
+		{
+			Oid			paramtypes[RI_MAX_NUMKEYS * 2];
+			char	   *query = ri_cascade_upd_query_single_row(riinfo,
+																fk_rel,
+																pk_rel,
+																paramtypes);
+
+			/* Prepare and save the plan */
+			qplan = ri_PlanCheck(query, 2 * riinfo->nkeys, paramtypes, &qkey,
+								 fk_rel, pk_rel);
+		}
+
+		/* The query needs parameters, so retrieve them now. */
+		newslot = riinfo->slot_both;
+		tuplestore_gettupleslot(newtable, true, false, newslot);
 	}
+	else
+	{
+		/* Here it doesn't matter whether we call the table "old" or "new". */
+		if (ri_register_trigger_data(trigdata, NULL, newtable,
+									 riinfo->slot_both->tts_tupleDescriptor) !=
+			SPI_OK_TD_REGISTER)
+			elog(ERROR, "ri_register_trigger_data failed");
+
+		if ((qplan = ri_FetchPreparedPlan(&qkey)) == NULL)
+		{
+			char	   *query = ri_cascade_upd_query(riinfo, fk_rel, pk_rel);
+
+			/* Prepare and save the plan */
+			qplan = ri_PlanCheck(query, 0, NULL, &qkey, fk_rel, pk_rel);
+		}
+	}
+
+	/*
+	 * We have a plan now. Run it to update the existing references.
+	 */
+	ri_PerformCheck(riinfo, &qkey, qplan,
+					fk_rel, pk_rel,
+					newslot,
+					true,		/* must detect new rows */
+					SPI_OK_UPDATE);
 
 	if (SPI_finish() != SPI_OK_FINISH)
 		elog(ERROR, "SPI_finish failed");
@@ -1045,6 +1420,69 @@ RI_FKey_cascade_upd(PG_FUNCTION_ARGS)
 	table_close(fk_rel, RowExclusiveLock);
 
 	return PointerGetDatum(NULL);
+}
+
+static char *
+ri_cascade_upd_query(const RI_ConstraintInfo *riinfo, Relation fk_rel,
+					 Relation pk_rel)
+{
+	StringInfo	querybuf = makeStringInfo();
+	char		fkrelname[MAX_QUOTED_REL_NAME_LEN];
+	const char *fk_only;
+	int			i;
+
+	/* ----------
+	 * The query string built is
+	 *
+	 * UPDATE [ONLY] <fktable> f
+	 *     SET fkatt1 = n.pkatt1_new [, ...]
+	 *     FROM tgnewtable n
+	 *     WHERE
+	 *         f.fkatt1 = n.pkatt1_old [AND ...]
+	 *
+	 * Note that we are assuming there is an assignment cast from the PK
+	 * to the FK type; else the parser will fail.
+	 * ----------
+	 */
+	fk_only = fk_rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE ?
+		"" : "ONLY ";
+	quoteRelationName(fkrelname, fk_rel);
+	appendStringInfo(querybuf, "UPDATE %s%s f SET ", fk_only, fkrelname);
+
+	for (i = 0; i < riinfo->nkeys; i++)
+	{
+		char	   *latt = ri_ColNameQuoted("", RIAttName(fk_rel, riinfo->fk_attnums[i]));
+		Oid			lcoll = RIAttCollation(fk_rel, riinfo->fk_attnums[i]);
+		char		ratt[NAMEDATALEN];
+		Oid			rcoll = RIAttCollation(pk_rel, riinfo->pk_attnums[i]);
+
+		snprintf(ratt, NAMEDATALEN, "n.pkatt%d_new", i + 1);
+
+		if (i > 0)
+			appendStringInfoString(querybuf, ", ");
+
+		appendStringInfo(querybuf, "%s = %s", latt, ratt);
+
+		if (lcoll != rcoll)
+			ri_GenerateQualCollation(querybuf, lcoll);
+	}
+
+	appendStringInfo(querybuf, " FROM tgnewtable n WHERE");
+
+	for (i = 0; i < riinfo->nkeys; i++)
+	{
+		char	   *fattname;
+
+		if (i > 0)
+			appendStringInfoString(querybuf, " AND");
+
+		fattname =
+			ri_ColNameQuoted("f",
+							 RIAttName(fk_rel, riinfo->fk_attnums[i]));
+		appendStringInfo(querybuf, " %s = n.pkatt%d_old", fattname, i + 1);
+	}
+
+	return querybuf->data;
 }
 
 static char *
@@ -1186,7 +1624,8 @@ ri_set(TriggerData *trigdata, bool is_set_null)
 	RI_QueryKey qkey;
 	SPIPlanPtr	qplan;
 	Tuplestorestate *oldtable;
-	TupleTableSlot *oldslot;
+	bool		single_row;
+	TupleTableSlot *oldslot = NULL;
 
 	riinfo = ri_FetchConstraintInfo(trigdata->tg_trigger,
 									trigdata->tg_relation, true);
@@ -1200,8 +1639,18 @@ ri_set(TriggerData *trigdata, bool is_set_null)
 	fk_rel = table_open(riinfo->fk_relid, RowExclusiveLock);
 	pk_rel = trigdata->tg_relation;
 
+	oldtable = get_event_tuplestore(trigdata,
+									riinfo->nkeys,
+									riinfo->pk_attnums,
+									true,
+									riinfo->slot_pk->tts_tupleDescriptor,
+									NULL);
+
 	if (SPI_connect() != SPI_OK_CONNECT)
 		elog(ERROR, "SPI_connect failed");
+
+	/* Should we use a special query to check a single row? */
+	single_row = tuplestore_tuple_count(oldtable) == 1;
 
 	/*
 	 * Fetch or prepare a saved plan for the set null/default operation (it's
@@ -1210,64 +1659,124 @@ ri_set(TriggerData *trigdata, bool is_set_null)
 	ri_BuildQueryKey(&qkey, riinfo,
 					 (is_set_null
 					  ? RI_PLAN_SETNULL_DOUPDATE
-					  : RI_PLAN_SETDEFAULT_DOUPDATE));
-	if ((qplan = ri_FetchPreparedPlan(&qkey)) == NULL)
+					  : RI_PLAN_SETDEFAULT_DOUPDATE),
+					 single_row);
+
+	if (single_row)
 	{
-		Oid			paramtypes[RI_MAX_NUMKEYS];
-		char	   *query = ri_set_query_single_row(riinfo, fk_rel, pk_rel,
-													paramtypes, is_set_null);
-
-		/* Prepare and save the plan */
-		qplan = ri_PlanCheck(query, riinfo->nkeys, paramtypes, &qkey,
-							 fk_rel, pk_rel);
-	}
-
-	oldtable = get_event_tuplestore(trigdata,
-									riinfo->nkeys,
-									riinfo->pk_attnums,
-									true,
-									riinfo->slot_pk->tts_tupleDescriptor,
-									NULL);
-
-	/* The query needs parameters, so retrieve them now. */
-	oldslot = riinfo->slot_pk;
-	while (tuplestore_gettupleslot(oldtable, true, false, oldslot))
-	{
-		/*
-		 * We have a plan now. Run it to update the existing references.
-		 */
-		ri_PerformCheck(riinfo, &qkey, qplan,
-						fk_rel, pk_rel,
-						oldslot,
-						true,	/* must detect new rows */
-						SPI_OK_UPDATE);
-
-		if (!is_set_null)
+		if ((qplan = ri_FetchPreparedPlan(&qkey)) == NULL)
 		{
-			/*
-			 * If we just deleted or updated the PK row whose key was equal to
-			 * the FK columns' default values, and a referencing row exists in
-			 * the FK table, we would have updated that row to the same values
-			 * it already had --- and RI_FKey_fk_upd_check_required would
-			 * hence believe no check is necessary.  So we need to do another
-			 * lookup now and in case a reference still exists, abort the
-			 * operation.  That is already implemented in the NO ACTION
-			 * trigger, so just run it. (This recheck is only needed in the
-			 * SET DEFAULT case, since CASCADE would remove such rows in case
-			 * of a DELETE operation or would change the FK key values in case
-			 * of an UPDATE, while SET NULL is certain to result in rows that
-			 * satisfy the FK constraint.)
-			 */
-			ri_restrict(trigdata, true, oldslot);
+			Oid			paramtypes[RI_MAX_NUMKEYS];
+			char	   *query = ri_set_query_single_row(riinfo, fk_rel, pk_rel,
+														paramtypes, is_set_null);
+
+			/* Prepare and save the plan */
+			qplan = ri_PlanCheck(query, riinfo->nkeys, paramtypes, &qkey,
+								 fk_rel, pk_rel);
+		}
+
+		/* The query needs parameters, so retrieve them now. */
+		oldslot = riinfo->slot_pk;
+		tuplestore_gettupleslot(oldtable, true, false, oldslot);
+	}
+	else
+	{
+		/* Here it doesn't matter whether we call the table "old" or "new". */
+		if (ri_register_trigger_data(trigdata, oldtable, NULL,
+									 riinfo->slot_pk->tts_tupleDescriptor) !=
+			SPI_OK_TD_REGISTER)
+			elog(ERROR, "ri_register_trigger_data failed");
+
+		if ((qplan = ri_FetchPreparedPlan(&qkey)) == NULL)
+		{
+			char	   *query = ri_set_query(riinfo, fk_rel, pk_rel,
+											 is_set_null);
+
+			/* Prepare and save the plan */
+			qplan = ri_PlanCheck(query, 0, NULL, &qkey, fk_rel, pk_rel);
 		}
 	}
+
+	/*
+	 * We have a plan now. Run it to update the existing references.
+	 */
+	ri_PerformCheck(riinfo, &qkey, qplan,
+					fk_rel, pk_rel,
+					oldslot,
+					true,		/* must detect new rows */
+					SPI_OK_UPDATE);
 
 	if (SPI_finish() != SPI_OK_FINISH)
 		elog(ERROR, "SPI_finish failed");
 
 	table_close(fk_rel, RowExclusiveLock);
 
-	return PointerGetDatum(NULL);
+	if (is_set_null)
+		return PointerGetDatum(NULL);
+	else
+	{
+		/*
+		 * If we just deleted or updated the PK row whose key was equal to the
+		 * FK columns' default values, and a referencing row exists in the FK
+		 * table, we would have updated that row to the same values it already
+		 * had --- and RI_FKey_fk_upd_check_required would hence believe no
+		 * check is necessary.  So we need to do another lookup now and in
+		 * case a reference still exists, abort the operation.  That is
+		 * already implemented in the NO ACTION trigger, so just run it. (This
+		 * recheck is only needed in the SET DEFAULT case, since CASCADE would
+		 * remove such rows in case of a DELETE operation or would change the
+		 * FK key values in case of an UPDATE, while SET NULL is certain to
+		 * result in rows that satisfy the FK constraint.)
+		 */
+		return ri_restrict(trigdata, true);
+	}
+}
+
+static char *
+ri_set_query(const RI_ConstraintInfo *riinfo, Relation fk_rel,
+			 Relation pk_rel, bool is_set_null)
+{
+	StringInfo	querybuf = makeStringInfo();
+	char		fkrelname[MAX_QUOTED_REL_NAME_LEN];
+	const char *querysep;
+	const char *fk_only;
+
+	/* ----------
+	 * The query string built is
+	 *	UPDATE [ONLY] <fktable> f
+	 *	    SET fkatt1 = {NULL|DEFAULT} [, ...]
+	 *	    FROM tgoldtable o
+	 *		WHERE o.pkatt1 = f.fkatt1 [AND ...]
+	 * ----------
+	 */
+	initStringInfo(querybuf);
+	fk_only = fk_rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE ?
+		"" : "ONLY ";
+	quoteRelationName(fkrelname, fk_rel);
+	appendStringInfo(querybuf, "UPDATE %s%s f SET",
+					 fk_only, fkrelname);
+	querysep = "";
+	for (int i = 0; i < riinfo->nkeys; i++)
+	{
+		char		attname[MAX_QUOTED_NAME_LEN];
+
+		quoteOneName(attname,
+					 RIAttName(fk_rel, riinfo->fk_attnums[i]));
+		appendStringInfo(querybuf,
+						 "%s %s = %s",
+						 querysep, attname,
+						 is_set_null ? "NULL" : "DEFAULT");
+		querysep = ",";
+	}
+
+	appendStringInfoString(querybuf, " FROM tgoldtable o WHERE ");
+	ri_GenerateQual(querybuf, "AND", riinfo->nkeys,
+					"o", pk_rel, riinfo->pk_attnums,
+					"f", fk_rel, riinfo->fk_attnums,
+					riinfo->pf_eq_oprs,
+					GQ_PARAMS_NONE, NULL);
+
+	return querybuf->data;
 }
 
 static char *
@@ -1716,7 +2225,7 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 		ri_ReportViolation(&fake_riinfo,
 						   pk_rel, fk_rel,
 						   slot, tupdesc,
-						   RI_PLAN_CHECK_LOOKUPPK, false);
+						   RI_PLAN_CHECK_LOOKUPPK_INS, false);
 
 		ExecDropSingleTupleTableSlot(slot);
 	}
@@ -2042,6 +2551,25 @@ ri_GenerateQualComponent(StringInfo buf,
 }
 
 /*
+ * ri_GenerateKeyList --- generate comma-separated list of key attributes.
+ */
+static void
+ri_GenerateKeyList(StringInfo buf, int nkeys,
+				   const char *tabname, Relation rel,
+				   const int16 *attnums)
+{
+	for (int i = 0; i < nkeys; i++)
+	{
+		char	   *att = ri_ColNameQuoted(tabname, RIAttName(rel, attnums[i]));
+
+		if (i > 0)
+			appendStringInfoString(buf, ", ");
+
+		appendStringInfoString(buf, att);
+	}
+}
+
+/*
  * ri_ColNameQuoted() --- return column name, with both table and column name
  * quoted.
  */
@@ -2169,7 +2697,7 @@ ri_GenerateQualCollation(StringInfo buf, Oid collation)
  */
 static void
 ri_BuildQueryKey(RI_QueryKey *key, const RI_ConstraintInfo *riinfo,
-				 int32 constr_queryno)
+				 int32 constr_queryno, bool single_row)
 {
 	/*
 	 * We assume struct RI_QueryKey contains no padding bytes, else we'd need
@@ -2177,6 +2705,7 @@ ri_BuildQueryKey(RI_QueryKey *key, const RI_ConstraintInfo *riinfo,
 	 */
 	key->constr_id = riinfo->constraint_id;
 	key->constr_queryno = constr_queryno;
+	key->single_row = single_row;
 }
 
 /*
@@ -2620,7 +3149,9 @@ ri_ReportViolation(const RI_ConstraintInfo *riinfo,
 	/*
 	 * Determine which relation to complain about.
 	 */
-	onfk = queryno == RI_PLAN_CHECK_LOOKUPPK;
+	onfk = (queryno == RI_PLAN_CHECK_LOOKUPPK_SINGLE ||
+			queryno == RI_PLAN_CHECK_LOOKUPPK_INS ||
+			queryno == RI_PLAN_CHECK_LOOKUPPK_UPD);
 	if (onfk)
 	{
 		attnums = riinfo->fk_attnums;
@@ -3174,6 +3705,40 @@ RI_FKey_trigger_type(Oid tgfoid)
 }
 
 /*
+ * Wrapper around SPI_register_trigger_data() that lets us register the RI
+ * trigger tuplestores w/o having to set tg_oldtable/tg_newtable and also w/o
+ * having to set tgoldtable/tgnewtable in pg_trigger.
+ *
+ * XXX This is rather a hack, try to invent something better.
+ */
+static int
+ri_register_trigger_data(TriggerData *tdata, Tuplestorestate *oldtable,
+						 Tuplestorestate *newtable, TupleDesc desc)
+{
+	TriggerData *td = (TriggerData *) palloc(sizeof(TriggerData));
+	Trigger    *tg = (Trigger *) palloc(sizeof(Trigger));
+	int			result;
+
+	Assert(tdata->tg_trigger->tgoldtable == NULL &&
+		   tdata->tg_trigger->tgnewtable == NULL);
+
+	*td = *tdata;
+
+	td->tg_oldtable = oldtable;
+	td->tg_newtable = newtable;
+
+	*tg = *tdata->tg_trigger;
+	tg->tgoldtable = pstrdup("tgoldtable");
+	tg->tgnewtable = pstrdup("tgnewtable");
+	td->tg_trigger = tg;
+	td->desc = desc;
+
+	result = SPI_register_trigger_data(td);
+
+	return result;
+}
+
+/*
  * Turn TID array into a tuplestore. If snapshot is passed, only use tuples
  * visible by this snapshot.
  */
@@ -3440,4 +4005,22 @@ add_key_values(TupleTableSlot *slot, const RI_ConstraintInfo *riinfo,
 
 	if (shouldfree)
 		pfree(tuple);
+}
+
+
+/*
+ * Retrieve the row that violates RI constraint and return it in a tuple slot.
+ */
+static TupleTableSlot *
+get_violator_tuple(Relation rel)
+{
+	HeapTuple	tuple;
+	TupleTableSlot *slot;
+
+	Assert(SPI_tuptable && SPI_tuptable->numvals == 1);
+
+	tuple = SPI_tuptable->vals[0];
+	slot = MakeSingleTupleTableSlot(SPI_tuptable->tupdesc, &TTSOpsHeapTuple);
+	ExecStoreHeapTuple(tuple, slot, false);
+	return slot;
 }
