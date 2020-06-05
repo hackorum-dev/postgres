@@ -389,11 +389,16 @@ RI_FKey_check(TriggerData *trigdata)
 	/*
 	 * Now check that foreign key exists in PK table
 	 */
-	ri_PerformCheck(riinfo, &qkey, qplan,
-					fk_rel, pk_rel,
-					NULL, newslot,
-					false,
-					SPI_OK_SELECT);
+	if (!ri_PerformCheck(riinfo, &qkey, qplan,
+						 fk_rel, pk_rel,
+						 NULL, newslot,
+						 false,
+						 SPI_OK_SELECT))
+		ri_ReportViolation(riinfo,
+						   pk_rel, fk_rel,
+						   newslot,
+						   NULL,
+						   qkey.constr_queryno, false);
 
 	if (SPI_finish() != SPI_OK_FINISH)
 		elog(ERROR, "SPI_finish failed");
@@ -708,11 +713,16 @@ ri_restrict(TriggerData *trigdata, bool is_no_action)
 	/*
 	 * We have a plan now. Run it to check for existing references.
 	 */
-	ri_PerformCheck(riinfo, &qkey, qplan,
-					fk_rel, pk_rel,
-					oldslot, NULL,
-					true,		/* must detect new rows */
-					SPI_OK_SELECT);
+	if (ri_PerformCheck(riinfo, &qkey, qplan,
+						fk_rel, pk_rel,
+						oldslot, NULL,
+						true,	/* must detect new rows */
+						SPI_OK_SELECT))
+		ri_ReportViolation(riinfo,
+						   pk_rel, fk_rel,
+						   oldslot,
+						   NULL,
+						   qkey.constr_queryno, false);
 
 	if (SPI_finish() != SPI_OK_FINISH)
 		elog(ERROR, "SPI_finish failed");
@@ -2287,16 +2297,6 @@ ri_PerformCheck(const RI_ConstraintInfo *riinfo,
 						NameStr(riinfo->conname),
 						RelationGetRelationName(fk_rel)),
 				 errhint("This is most likely due to a rule having rewritten the query.")));
-
-	/* XXX wouldn't it be clearer to do this part at the caller? */
-	if (qkey->constr_queryno != RI_PLAN_CHECK_LOOKUPPK_FROM_PK &&
-		expect_OK == SPI_OK_SELECT &&
-		(SPI_processed == 0) == (qkey->constr_queryno == RI_PLAN_CHECK_LOOKUPPK))
-		ri_ReportViolation(riinfo,
-						   pk_rel, fk_rel,
-						   newslot ? newslot : oldslot,
-						   NULL,
-						   qkey->constr_queryno, false);
 
 	return SPI_processed != 0;
 }
