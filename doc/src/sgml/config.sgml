@@ -2486,14 +2486,13 @@ include_dir 'conf.d'
       <listitem>
        <para>
         <varname>wal_level</varname> determines how much information is written to
-        the WAL. The default value is <literal>replica</literal>, which writes enough
-        data to support WAL archiving and replication, including running
-        read-only queries on a standby server. <literal>minimal</literal> removes all
-        logging except the information required to recover from a crash or
-        immediate shutdown.  Finally,
-        <literal>logical</literal> adds information necessary to support logical
-        decoding.  Each level includes the information logged at all lower
-        levels.  This parameter can only be set at server start.
+        the WAL. The default value, <literal>logical</literal>, includes all
+        information necessary to support logical decoding. <literal>replica</literal>
+        writes enough data to support WAL archiving and replication, including running
+        read-only queries on a standby server.  Finally, <literal>minimal</literal>
+        removes all logging except the information required to recover from a crash or
+        immediate shutdown.  Each level includes the information logged at all lower levels.
+        This parameter can only be set at server start.
        </para>
        <para>
         In <literal>minimal</literal> level, no information is logged for
