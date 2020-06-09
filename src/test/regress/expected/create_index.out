@@ -1825,15 +1825,15 @@ SELECT count(*) FROM tenk1
 ---------------------------------------------------------------------------------
  Aggregate
    ->  Bitmap Heap Scan on tenk1
-         Recheck Cond: ((hundred = 42) AND ((thousand = 42) OR (thousand = 99)))
+         Recheck Cond: (((thousand = 42) OR (thousand = 99)) AND (hundred = 42))
          ->  BitmapAnd
-               ->  Bitmap Index Scan on tenk1_hundred
-                     Index Cond: (hundred = 42)
                ->  BitmapOr
                      ->  Bitmap Index Scan on tenk1_thous_tenthous
                            Index Cond: (thousand = 42)
                      ->  Bitmap Index Scan on tenk1_thous_tenthous
                            Index Cond: (thousand = 99)
+               ->  Bitmap Index Scan on tenk1_hundred
+                     Index Cond: (hundred = 42)
 (11 rows)
 
 SELECT count(*) FROM tenk1

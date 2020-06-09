@@ -6061,10 +6061,11 @@ genericcostestimate(PlannerInfo *root,
 		 * The above calculation counts all the tuples visited across all
 		 * scans induced by ScalarArrayOpExpr nodes.  We want to consider the
 		 * average per-indexscan number, so adjust.  This is a handy place to
-		 * round to integer, too.  (If caller supplied tuple estimate, it's
+		 * round to integer (XXX: what is the purpose of round to integer?), 
+		 * too.  (If caller supplied tuple estimate, it's
 		 * responsible for handling these considerations.)
 		 */
-		numIndexTuples = rint(numIndexTuples / num_sa_scans);
+		numIndexTuples = numIndexTuples / num_sa_scans;
 	}
 
 	/*
@@ -6074,8 +6075,6 @@ genericcostestimate(PlannerInfo *root,
 	 */
 	if (numIndexTuples > index->tuples)
 		numIndexTuples = index->tuples;
-	if (numIndexTuples < 1.0)
-		numIndexTuples = 1.0;
 
 	/*
 	 * Estimate the number of index pages that will be retrieved.
@@ -6090,7 +6089,7 @@ genericcostestimate(PlannerInfo *root,
 	 * and leave it to the caller to add a suitable charge if needed.
 	 */
 	if (index->pages > 1 && index->tuples > 1)
-		numIndexPages = ceil(numIndexTuples * index->pages / index->tuples);
+		numIndexPages = numIndexTuples * index->pages / index->tuples;
 	else
 		numIndexPages = 1.0;
 
@@ -6184,8 +6183,8 @@ genericcostestimate(PlannerInfo *root,
 	costs->indexTotalCost = indexTotalCost;
 	costs->indexSelectivity = indexSelectivity;
 	costs->indexCorrelation = indexCorrelation;
-	costs->numIndexPages = numIndexPages;
-	costs->numIndexTuples = numIndexTuples;
+	costs->numIndexPages = ceil(numIndexPages < 1.0 ? 1.0 : numIndexPages);
+	costs->numIndexTuples = ceil(numIndexTuples < 1.0 ? 1.0: numIndexTuples);
 	costs->spc_random_page_cost = spc_random_page_cost;
 	costs->num_sa_scans = num_sa_scans;
 }
@@ -6386,7 +6385,7 @@ btcostestimate(PlannerInfo *root, IndexPath *path, double loop_count,
 		 * ScalarArrayOpExpr quals included in indexBoundQuals, and then round
 		 * to integer.
 		 */
-		numIndexTuples = rint(numIndexTuples / num_sa_scans);
+		numIndexTuples = numIndexTuples / num_sa_scans;
 	}
 
 	/*

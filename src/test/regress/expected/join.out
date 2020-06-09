@@ -3725,9 +3725,10 @@ explain (costs off)
 select a.unique1, b.unique1, c.unique1, coalesce(b.twothousand, a.twothousand)
   from tenk1 a left join tenk1 b on b.thousand = a.unique1                        left join tenk1 c on c.unique2 = coalesce(b.twothousand, a.twothousand)
   where a.unique2 < 10 and coalesce(b.twothousand, a.twothousand) = 44;
-                                         QUERY PLAN                                          
----------------------------------------------------------------------------------------------
+                             QUERY PLAN                              
+---------------------------------------------------------------------
  Nested Loop Left Join
+   Join Filter: (c.unique2 = COALESCE(b.twothousand, a.twothousand))
    ->  Nested Loop Left Join
          Filter: (COALESCE(b.twothousand, a.twothousand) = 44)
          ->  Index Scan using tenk1_unique2 on tenk1 a
@@ -3737,8 +3738,8 @@ select a.unique1, b.unique1, c.unique1, coalesce(b.twothousand, a.twothousand)
                ->  Bitmap Index Scan on tenk1_thous_tenthous
                      Index Cond: (thousand = a.unique1)
    ->  Index Scan using tenk1_unique2 on tenk1 c
-         Index Cond: ((unique2 = COALESCE(b.twothousand, a.twothousand)) AND (unique2 = 44))
-(11 rows)
+         Index Cond: (unique2 = 44)
+(12 rows)
 
 select a.unique1, b.unique1, c.unique1, coalesce(b.twothousand, a.twothousand)
   from tenk1 a left join tenk1 b on b.thousand = a.unique1                        left join tenk1 c on c.unique2 = coalesce(b.twothousand, a.twothousand)
@@ -3763,22 +3764,22 @@ left join
    using (join_key)
   ) foo3
 using (join_key);
-                                QUERY PLAN                                
---------------------------------------------------------------------------
- Nested Loop Left Join
+                             QUERY PLAN                             
+--------------------------------------------------------------------
+ Hash Right Join
    Output: "*VALUES*".column1, i1.f1, (666)
-   Join Filter: ("*VALUES*".column1 = i1.f1)
-   ->  Values Scan on "*VALUES*"
+   Hash Cond: (i1.f1 = "*VALUES*".column1)
+   ->  Nested Loop Left Join
+         Output: i1.f1, 666
+         ->  Seq Scan on public.int4_tbl i1
+               Output: i1.f1
+         ->  Index Only Scan using tenk1_unique2 on public.tenk1 i2
+               Output: i2.unique2
+               Index Cond: (i2.unique2 = i1.f1)
+   ->  Hash
          Output: "*VALUES*".column1
-   ->  Materialize
-         Output: i1.f1, (666)
-         ->  Nested Loop Left Join
-               Output: i1.f1, 666
-               ->  Seq Scan on public.int4_tbl i1
-                     Output: i1.f1
-               ->  Index Only Scan using tenk1_unique2 on public.tenk1 i2
-                     Output: i2.unique2
-                     Index Cond: (i2.unique2 = i1.f1)
+         ->  Values Scan on "*VALUES*"
+               Output: "*VALUES*".column1
 (14 rows)
 
 select foo1.join_key as foo1_id, foo3.join_key AS foo3_id, bug_field from
@@ -6209,10 +6210,9 @@ where j1.id1 % 1000 = 1 and j2.id1 % 1000 = 1 and j2.id1 >= any (array[1,5]);
    Merge Cond: (j1.id1 = j2.id1)
    Join Filter: (j1.id2 = j2.id2)
    ->  Index Scan using j1_id1_idx on j1
-   ->  Index Only Scan using j2_pkey on j2
+   ->  Index Scan using j2_id1_idx on j2
          Index Cond: (id1 >= ANY ('{1,5}'::integer[]))
-         Filter: ((id1 % 1000) = 1)
-(7 rows)
+(6 rows)
 
 select * from j1
 inner join j2 on j1.id1 = j2.id1 and j1.id2 = j2.id2
