@@ -1259,8 +1259,8 @@ msgstr "pemulihan berhenti"
 
 #: access/transam/xlog.c:4669
 #, c-format
-msgid "Execute pg_xlog_replay_resume() to continue."
-msgstr "Menjalankan pg_xlog_replay_resume() untuk melanjutan."
+msgid "Execute pg_wal_replay_resume() to continue."
+msgstr "Menjalankan pg_wal_replay_resume() untuk melanjutan."
 
 #: access/transam/xlog.c:4799
 #, c-format

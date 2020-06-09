@@ -1480,8 +1480,8 @@ msgstr "recuperação está em pausa"
 
 #: access/transam/xlog.c:5699
 #, c-format
-msgid "Execute pg_xlog_replay_resume() to continue."
-msgstr "Execute pg_xlog_replay_resume() para continuar."
+msgid "Execute pg_wal_replay_resume() to continue."
+msgstr "Execute pg_wal_replay_resume() para continuar."
 
 #: access/transam/xlog.c:5914
 #, c-format
