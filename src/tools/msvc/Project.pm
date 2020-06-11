@@ -34,6 +34,7 @@ sub _new
 		disablewarnings       => '4018;4244;4273;4102;4090;4267',
 		disablelinkerwarnings => '',
 		platform              => $solution->{platform},
+		abspath               => '',
 	};
 
 	bless($self, $classname);
@@ -317,19 +318,18 @@ sub AddDirResourceFile
 sub AddResourceFile
 {
 	my ($self, $dir, $desc, $ico) = @_;
-
 	my ($sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst) =
 	  localtime(time);
 	my $d = sprintf("%02d%03d", ($year - 100), $yday);
 
-	if (Solution::IsNewer("$dir/win32ver.rc", 'src/port/win32ver.rc'))
+	if (Solution::IsNewer("$dir/win32ver.rc", "$self->{abspath}src/port/win32ver.rc"))
 	{
 		print "Generating win32ver.rc for $dir\n";
-		open(my $i, '<', 'src/port/win32ver.rc')
+		open(my $i, '<', "$self->{abspath}src/port/win32ver.rc")
 		  || confess "Could not open win32ver.rc";
 		open(my $o, '>', "$dir/win32ver.rc")
 		  || confess "Could not write win32ver.rc";
-		my $icostr = $ico ? "IDI_ICON ICON \"src/port/$ico.ico\"" : "";
+		my $icostr = $ico ? "IDI_ICON ICON \"$self->{abspath}src/port/$ico.ico\"" : "";
 		while (<$i>)
 		{
 			s/FILEDESC/"$desc"/gm;

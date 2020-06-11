@@ -373,7 +373,11 @@ EOF
 	print $f <<EOF;
     </Link>
     <ResourceCompile>
-      <AdditionalIncludeDirectories>src\\include;\%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>
+EOF
+	print $f "$self->{includes}";
+	print $f <<EOF;
+src\\include;\%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
 EOF
 	if ($self->{builddef})
@@ -381,7 +385,7 @@ EOF
 		print $f <<EOF;
     <PreLinkEvent>
       <Message>Generate DEF file</Message>
-      <Command>perl src\\tools\\msvc\\gendef.pl $cfgname\\$self->{name} $self->{platform}</Command>
+      <Command>perl $self->{abspath}src\\tools\\msvc\\gendef.pl $cfgname\\$self->{name} $self->{platform}</Command>
     </PreLinkEvent>
 EOF
 	}
