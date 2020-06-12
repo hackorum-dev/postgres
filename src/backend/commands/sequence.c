@@ -701,13 +701,10 @@ nextval_internal(Oid relid, bool check_permissions)
 					break;		/* stop fetching */
 				if (!cycle)
 				{
-					char		buf[100];
-
-					snprintf(buf, sizeof(buf), INT64_FORMAT, maxv);
 					ereport(ERROR,
 							(errcode(ERRCODE_SEQUENCE_GENERATOR_LIMIT_EXCEEDED),
-							 errmsg("nextval: reached maximum value of sequence \"%s\" (%s)",
-									RelationGetRelationName(seqrel), buf)));
+							 errmsg("nextval: reached maximum value of sequence \"%s\" (%lld)",
+									RelationGetRelationName(seqrel), (long long int) maxv)));
 				}
 				next = minv;
 			}
@@ -724,13 +721,10 @@ nextval_internal(Oid relid, bool check_permissions)
 					break;		/* stop fetching */
 				if (!cycle)
 				{
-					char		buf[100];
-
-					snprintf(buf, sizeof(buf), INT64_FORMAT, minv);
 					ereport(ERROR,
 							(errcode(ERRCODE_SEQUENCE_GENERATOR_LIMIT_EXCEEDED),
-							 errmsg("nextval: reached minimum value of sequence \"%s\" (%s)",
-									RelationGetRelationName(seqrel), buf)));
+							 errmsg("nextval: reached minimum value of sequence \"%s\" (%lld)",
+									RelationGetRelationName(seqrel), (long long int) minv)));
 				}
 				next = maxv;
 			}
