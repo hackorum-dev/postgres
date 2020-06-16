@@ -61,7 +61,7 @@ pgrename(const char *from, const char *to)
 	 * and blocking other backends.
 	 */
 #if defined(WIN32) && !defined(__CYGWIN__)
-	while (!MoveFileEx(from, to, MOVEFILE_REPLACE_EXISTING))
+	while (rename(from, to) != 0 && !MoveFileEx(from, to, MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED))
 #else
 	while (rename(from, to) < 0)
 #endif
