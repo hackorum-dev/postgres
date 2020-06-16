@@ -15,6 +15,7 @@
 
 #include "access/htup_details.h"
 #include "access/relation.h"
+#include "access/tableam.h"
 #include "catalog/catalog.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_authid.h"
@@ -342,7 +343,7 @@ pg_relation_size(PG_FUNCTION_ARGS)
 static int64
 calculate_toast_table_size(Oid toastrelid)
 {
-	int64		size = 0;
+	uint64		size = 0;
 	Relation	toastRel;
 	ForkNumber	forkNum;
 	ListCell   *lc;
@@ -352,8 +353,7 @@ calculate_toast_table_size(Oid toastrelid)
 
 	/* toast heap size, including FSM and VM size */
 	for (forkNum = 0; forkNum <= MAX_FORKNUM; forkNum++)
-		size += calculate_relation_size(&(toastRel->rd_node),
-										toastRel->rd_backend, forkNum);
+		size += table_relation_size(toastRel, forkNum);
 
 	/* toast index size, including FSM and VM size */
 	indexlist = RelationGetIndexList(toastRel);
@@ -374,29 +374,30 @@ calculate_toast_table_size(Oid toastrelid)
 	list_free(indexlist);
 	relation_close(toastRel, AccessShareLock);
 
-	return size;
+	Assert(size < PG_INT64_MAX);
+
+	return (int64)size;
 }
 
 /*
  * Calculate total on-disk size of a given table,
- * including FSM and VM, plus TOAST table if any.
+ * plus TOAST table if any.
  * Indexes other than the TOAST table's index are not included.
  *
- * Note that this also behaves sanely if applied to an index or toast table;
+ * Note that this also behaves sanely if applied to a toast table;
  * those won't have attached toast tables, but they can have multiple forks.
  */
 static int64
 calculate_table_size(Relation rel)
 {
-	int64		size = 0;
+	uint64		size = 0;
 	ForkNumber	forkNum;
 
 	/*
-	 * heap size, including FSM and VM
+	 * table size, including FSM and VM
 	 */
 	for (forkNum = 0; forkNum <= MAX_FORKNUM; forkNum++)
-		size += calculate_relation_size(&(rel->rd_node), rel->rd_backend,
-										forkNum);
+		size += table_relation_size(rel, forkNum);
 
 	/*
 	 * Size of toast relation
@@ -404,7 +405,9 @@ calculate_table_size(Relation rel)
 	if (OidIsValid(rel->rd_rel->reltoastrelid))
 		size += calculate_toast_table_size(rel->rd_rel->reltoastrelid);
 
-	return size;
+	Assert(size < PG_INT64_MAX);
+
+	return (int64)size;
 }
 
 /*
@@ -452,14 +455,17 @@ pg_table_size(PG_FUNCTION_ARGS)
 {
 	Oid			relOid = PG_GETARG_OID(0);
 	Relation	rel;
-	int64		size;
+	int64		size = 0;
 
 	rel = try_relation_open(relOid, AccessShareLock);
 
 	if (rel == NULL)
 		PG_RETURN_NULL();
 
-	size = calculate_table_size(rel);
+	if (RELKIND_HAS_STORAGE(rel->rd_rel->relkind)	&&
+		rel->rd_rel->relkind != RELKIND_INDEX		&&
+		rel->rd_rel->relkind != RELKIND_SEQUENCE)
+		size = calculate_table_size(rel);
 
 	relation_close(rel, AccessShareLock);
 
@@ -487,7 +493,7 @@ pg_indexes_size(PG_FUNCTION_ARGS)
 
 /*
  *	Compute the on-disk size of all files for the relation,
- *	including heap data, index data, toast data, FSM, VM.
+ *	including table data, index data, toast data.
  */
 static int64
 calculate_total_relation_size(Relation rel)
