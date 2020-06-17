@@ -449,23 +449,40 @@ sub subdircheck
 	return;
 }
 
+sub contribmodulecheck
+{
+	my $module = shift;
+	my $mstat = shift;
+
+	# these configuration-based exclusions must match Install.pm
+	next if ($module eq "uuid-ossp"  && !defined($config->{uuid}));
+	next if ($module eq "sslinfo"    && !defined($config->{openssl}));
+	next if ($module eq "xml2"       && !defined($config->{xml}));
+	next if ($module =~ /_plperl$/   && !defined($config->{perl}));
+	next if ($module =~ /_plpython$/ && !defined($config->{python}));
+	next if ($module eq "sepgsql");
+
+	subdircheck($module);
+	my $status = $? >> 8;
+	$$mstat ||= $status;
+}
+
 sub contribcheck
 {
 	chdir "../../../contrib";
 	my $mstat = 0;
-	foreach my $module (glob("*"))
-	{
-		# these configuration-based exclusions must match Install.pm
-		next if ($module eq "uuid-ossp"  && !defined($config->{uuid}));
-		next if ($module eq "sslinfo"    && !defined($config->{openssl}));
-		next if ($module eq "xml2"       && !defined($config->{xml}));
-		next if ($module =~ /_plperl$/   && !defined($config->{perl}));
-		next if ($module =~ /_plpython$/ && !defined($config->{python}));
-		next if ($module eq "sepgsql");
 
-		subdircheck($module);
-		my $status = $? >> 8;
-		$mstat ||= $status;
+	my $module = shift;
+	if ($module ne "" )
+	{
+		contribmodulecheck($module, \$mstat);
+	}
+	else
+	{
+		foreach my $module (glob("*"))
+		{
+			contribmodulecheck($module, \$mstat);
+		}
 	}
 	exit $mstat if $mstat;
 	return;
@@ -757,6 +774,8 @@ sub usage
 	  "  serial         serial mode\n",
 	  "  parallel       parallel mode\n",
 	  "\nOption for <arg>: for taptest\n",
-	  "  TEST_DIR       (required) directory where tests reside\n";
+	  "  TEST_DIR       (required) directory where tests reside\n",
+	  "\nOption for <arg>: for contribcheck\n",
+	  "  module       (optional) module name to be tested only\n";
 	exit(1);
 }
