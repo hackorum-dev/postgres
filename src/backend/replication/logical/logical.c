@@ -1081,8 +1081,14 @@ LogicalConfirmReceivedLocation(XLogRecPtr lsn)
 			SpinLockRelease(&MyReplicationSlot->mutex);
 
 			ReplicationSlotsComputeRequiredXmin(false);
-			ReplicationSlotsComputeRequiredLSN();
 		}
+
+		/*
+		 * Now recompute the minimum required LSN across all slots if
+		 * restart_lsn of the slot has been updated.
+		 */
+		if (updated_restart)
+			ReplicationSlotsComputeRequiredLSN();
 	}
 	else
 	{

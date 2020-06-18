@@ -419,6 +419,12 @@ pg_physical_replication_slot_advance(XLogRecPtr moveto)
 		 * crash, but this makes the data consistent after a clean shutdown.
 		 */
 		ReplicationSlotMarkDirty();
+
+		/*
+		 * Recompute the minimum required LSN across all slots to adjust with
+		 * the advancing done.
+		 */
+		ReplicationSlotsComputeRequiredLSN();
 	}
 
 	return retlsn;
@@ -620,13 +626,6 @@ pg_replication_slot_advance(PG_FUNCTION_ARGS)
 
 	values[0] = NameGetDatum(&MyReplicationSlot->data.name);
 	nulls[0] = false;
-
-	/*
-	 * Recompute the minimum LSN and xmin across all slots to adjust with the
-	 * advancing potentially done.
-	 */
-	ReplicationSlotsComputeRequiredXmin(false);
-	ReplicationSlotsComputeRequiredLSN();
 
 	ReplicationSlotRelease();
 
