@@ -18,6 +18,7 @@
 #include <unistd.h>
 
 #include "access/parallel.h"
+#include "access/walprohibit.h"
 #include "port/pg_bitutils.h"
 #include "commands/async.h"
 #include "miscadmin.h"
@@ -538,6 +539,9 @@ ProcessProcSignalBarrier(void)
 				{
 					case PROCSIGNAL_BARRIER_SMGRRELEASE:
 						processed = ProcessBarrierSmgrRelease();
+						break;
+					case PROCSIGNAL_BARRIER_WALPROHIBIT:
+						processed = ProcessBarrierWALProhibit();
 						break;
 				}
 

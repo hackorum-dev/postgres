@@ -558,12 +558,26 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 					(errmsg("starting archive recovery")));
 	}
 
-	/*
-	 * Take ownership of the wakeup latch if we're going to sleep during
-	 * recovery.
-	 */
 	if (ArchiveRecoveryRequested)
+	{
+		/*
+		 * Take ownership of the wakeup latch if we're going to sleep during
+		 * recovery.
+		 */
 		OwnLatch(&XLogRecoveryCtl->recoveryWakeupLatch);
+
+		/*
+		 * Since archive recovery is requested, we cannot be in a wal prohibited
+		 * state.
+		 */
+		if (ControlFile->wal_prohibited)
+		{
+			/* No need to hold ControlFileLock yet, we aren't up far enough */
+			ControlFile->wal_prohibited = false;
+			ereport(LOG,
+					(errmsg("clearing WAL prohibition because the system is in archive recovery")));
+		}
+	}
 
 	private = palloc0(sizeof(XLogPageReadPrivate));
 	xlogreader =

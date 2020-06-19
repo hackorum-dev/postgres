@@ -896,7 +896,8 @@ SELECT name FROM tab_settings_flags
  transaction_deferrable
  transaction_isolation
  transaction_read_only
-(3 rows)
+ wal_prohibited
+(4 rows)
 
 -- NO_SHOW_ALL implies NOT_IN_SAMPLE.
 SELECT name FROM tab_settings_flags

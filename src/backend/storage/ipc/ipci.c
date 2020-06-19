@@ -22,6 +22,7 @@
 #include "access/subtrans.h"
 #include "access/syncscan.h"
 #include "access/twophase.h"
+#include "access/walprohibit.h"
 #include "access/xlogprefetcher.h"
 #include "access/xlogrecovery.h"
 #include "commands/async.h"
@@ -253,6 +254,12 @@ CreateSharedMemoryAndSemaphores(void)
 	SUBTRANSShmemInit();
 	MultiXactShmemInit();
 	InitBufferPool();
+
+	/*
+	 * Set up shared memory structure need to handle concurrent WAL prohibit
+	 * state change requests.
+	 */
+	WALProhibitStateShmemInit();
 
 	/*
 	 * Set up lock manager

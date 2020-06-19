@@ -80,6 +80,15 @@ typedef enum WalCompression
 	WAL_COMPRESSION_ZSTD
 } WalCompression;
 
+/* State of XLogAcceptWrites() execution */
+typedef enum XLogAcceptWritesState
+{
+	XLOG_ACCEPT_WRITES_NONE = 0,	/* initial state, not started */
+	XLOG_ACCEPT_WRITES_DELAYED,		/* skipped XLogAcceptWrites() for now */
+	XLOG_ACCEPT_WRITES_STARTED,		/* inside XLogAcceptWrites() */
+	XLOG_ACCEPT_WRITES_DONE			/* done with XLogAcceptWrites() */
+} XLogAcceptWritesState;
+
 /* Recovery states */
 typedef enum RecoveryState
 {
@@ -217,6 +226,7 @@ extern void issue_xlog_fsync(int fd, XLogSegNo segno, TimeLineID tli);
 extern bool RecoveryInProgress(void);
 extern RecoveryState GetRecoveryState(void);
 extern bool XLogInsertAllowed(void);
+extern void ResetLocalXLogInsertAllowed(void);
 extern XLogRecPtr GetXLogInsertRecPtr(void);
 extern XLogRecPtr GetXLogWriteRecPtr(void);
 
@@ -230,6 +240,7 @@ extern void BootStrapXLOG(void);
 extern void LocalProcessControlFile(bool reset);
 extern void StartupXLOG(void);
 extern void ShutdownXLOG(int code, Datum arg);
+extern void PerformPendingXLogAcceptWrites(void);
 extern void CreateCheckPoint(int flags);
 extern bool CreateRestartPoint(int flags);
 extern WALAvailability GetWALAvailability(XLogRecPtr targetLSN);
@@ -243,8 +254,10 @@ extern XLogRecPtr GetInsertRecPtr(void);
 extern XLogRecPtr GetFlushRecPtr(TimeLineID *insertTLI);
 extern TimeLineID GetWALInsertionTimeLine(void);
 extern XLogRecPtr GetLastImportantRecPtr(void);
+extern XLogAcceptWritesState GetXLogWriteAllowedState(void);
 
 extern void SetWalWriterSleeping(bool sleeping);
+extern void SetControlFileWALProhibitFlag(bool wal_prohibited);
 
 extern void assign_max_wal_size(int newval, void *extra);
 extern void assign_checkpoint_completion_target(double newval, void *extra);

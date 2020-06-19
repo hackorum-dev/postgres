@@ -2030,23 +2030,27 @@ StartTransaction(void)
 	Assert(s->prevSecContext == 0);
 
 	/*
-	 * Make sure we've reset xact state variables
+	 * Reset xact state variables.
 	 *
-	 * If recovery is still in progress, mark this transaction as read-only.
-	 * We have lower level defences in XLogInsert and elsewhere to stop us
-	 * from modifying data during recovery, but this gives the normal
-	 * indication to the user that the transaction is read-only.
+	 * If it is not currently possible to insert write-ahead log records, either
+	 * because we are still in recovery or because pg_prohibit_wal() function
+	 * has been executed, force this to be a read-only transaction.  We have
+	 * lower level defences in XLogBeginInsert() and elsewhere to stop us from
+	 * modifying data during recovery when !XLogInsertAllowed(), but this gives
+	 * the normal indication to the user that the transaction is read-only.
+	 *
+	 * On the other hand, we only need to set the startedInRecovery flag when
+	 * the transaction started during recovery, and not when WAL is otherwise
+	 * prohibited. This information is used by RelationGetIndexScan() to decide
+	 * whether to permit (1) relying on existing killed-tuple markings and (2)
+	 * further killing of index tuples. Even when WAL is prohibited on the
+	 * master, it's still the master, so the former is OK; and since killing
+	 * index tuples doesn't generate WAL, the latter is also OK.  See comments
+	 * in RelationGetIndexScan() and MarkBufferDirtyHint().
 	 */
-	if (RecoveryInProgress())
-	{
-		s->startedInRecovery = true;
-		XactReadOnly = true;
-	}
-	else
-	{
-		s->startedInRecovery = false;
-		XactReadOnly = DefaultXactReadOnly;
-	}
+	XactReadOnly = DefaultXactReadOnly || !XLogInsertAllowed();
+	s->startedInRecovery = RecoveryInProgress();
+
 	XactDeferrable = DefaultXactDeferrable;
 	XactIsoLevel = DefaultXactIsoLevel;
 	forceSyncCommit = false;
