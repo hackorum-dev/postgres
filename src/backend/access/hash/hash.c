@@ -467,6 +467,10 @@ hashbulkdelete(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 	HashMetaPage metap;
 	HashMetaPage cachedmetap;
 
+	/* Skip if index cleanup is disabled */
+	if (!info->index_cleanup)
+		return NULL;
+
 	tuples_removed = 0;
 	num_index_tuples = 0;
 
@@ -645,7 +649,7 @@ hashvacuumcleanup(IndexVacuumInfo *info, IndexBulkDeleteResult *stats)
 	BlockNumber num_pages;
 
 	/* If hashbulkdelete wasn't called, return NULL signifying no change */
-	/* Note: this covers the analyze_only case too */
+	/* Note: this covers the analyze_only case and disabled index_cleanup case too */
 	if (stats == NULL)
 		return NULL;
 

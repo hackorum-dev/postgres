@@ -59,6 +59,10 @@ IndexBulkDeleteResult *
 gistbulkdelete(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 			   IndexBulkDeleteCallback callback, void *callback_state)
 {
+	/* Skip if index cleanup is disabled */
+	if (!info->index_cleanup)
+		return NULL;
+
 	/* allocate stats if first time through, else re-use existing struct */
 	if (stats == NULL)
 		stats = (IndexBulkDeleteResult *) palloc0(sizeof(IndexBulkDeleteResult));
@@ -74,8 +78,8 @@ gistbulkdelete(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 IndexBulkDeleteResult *
 gistvacuumcleanup(IndexVacuumInfo *info, IndexBulkDeleteResult *stats)
 {
-	/* No-op in ANALYZE ONLY mode */
-	if (info->analyze_only)
+	/* No-op in ANALYZE ONLY mode or index cleanup is disabled */
+	if (info->analyze_only || !info->index_cleanup)
 		return stats;
 
 	/*

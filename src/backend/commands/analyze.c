@@ -679,6 +679,8 @@ do_analyze_rel(Relation onerel, VacuumParams *params,
 			ivinfo.message_level = elevel;
 			ivinfo.num_heap_tuples = onerel->rd_rel->reltuples;
 			ivinfo.strategy = vac_strategy;
+			ivinfo.index_cleanup = true;
+			ivinfo.is_wraparound = false;
 
 			stats = index_vacuum_cleanup(&ivinfo, NULL);
 

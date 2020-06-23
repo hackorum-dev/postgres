@@ -782,6 +782,10 @@ IndexBulkDeleteResult *
 brinbulkdelete(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 			   IndexBulkDeleteCallback callback, void *callback_state)
 {
+	/* Skip if index cleanup is disabled */
+	if (!info->index_cleanup)
+		return NULL;
+
 	/* allocate stats if first time through, else re-use existing struct */
 	if (stats == NULL)
 		stats = (IndexBulkDeleteResult *) palloc0(sizeof(IndexBulkDeleteResult));
@@ -798,8 +802,8 @@ brinvacuumcleanup(IndexVacuumInfo *info, IndexBulkDeleteResult *stats)
 {
 	Relation	heapRel;
 
-	/* No-op in ANALYZE ONLY mode */
-	if (info->analyze_only)
+	/* No-op in ANALYZE ONLY mode or index cleanup is disabled */
+	if (info->analyze_only || !info->index_cleanup)
 		return stats;
 
 	if (!stats)

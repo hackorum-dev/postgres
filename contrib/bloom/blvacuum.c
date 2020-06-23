@@ -45,6 +45,10 @@ blbulkdelete(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 	BloomMetaPageData *metaData;
 	GenericXLogState *gxlogState;
 
+	/* Skip if index cleanup is disabled */
+	if (!info->index_cleanup)
+		return NULL;
+
 	if (stats == NULL)
 		stats = (IndexBulkDeleteResult *) palloc0(sizeof(IndexBulkDeleteResult));
 
@@ -172,7 +176,8 @@ blvacuumcleanup(IndexVacuumInfo *info, IndexBulkDeleteResult *stats)
 	BlockNumber npages,
 				blkno;
 
-	if (info->analyze_only)
+	/* No-op in ANALYZE ONLY mode or index cleanup is disabled */
+	if (info->analyze_only || !info->index_cleanup)
 		return stats;
 
 	if (stats == NULL)

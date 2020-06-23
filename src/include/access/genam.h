@@ -50,6 +50,8 @@ typedef struct IndexVacuumInfo
 	int			message_level;	/* ereport level for progress messages */
 	double		num_heap_tuples;	/* tuples remaining in heap */
 	BufferAccessStrategy strategy;	/* access strategy for reads */
+	bool		index_cleanup;	/* INDEX_CLEANUP option */
+	bool		is_wraparound;	/* is this vacuum a wraparound vacuum? */
 } IndexVacuumInfo;
 
 /*

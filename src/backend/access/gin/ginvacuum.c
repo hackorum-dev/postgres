@@ -571,6 +571,10 @@ ginbulkdelete(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 	BlockNumber rootOfPostingTree[BLCKSZ / (sizeof(IndexTupleData) + sizeof(ItemId))];
 	uint32		nRoot;
 
+	/* Skip if index cleanup is disabled */
+	if (!info->index_cleanup)
+		return NULL;
+
 	gvs.tmpCxt = AllocSetContextCreate(CurrentMemoryContext,
 									   "Gin vacuum temporary context",
 									   ALLOCSET_DEFAULT_SIZES);
@@ -693,6 +697,10 @@ ginvacuumcleanup(IndexVacuumInfo *info, IndexBulkDeleteResult *stats)
 	BlockNumber totFreePages;
 	GinState	ginstate;
 	GinStatsData idxStat;
+
+	/* Skip if index cleanup is disabled */
+	if (!info->index_cleanup)
+		return NULL;
 
 	/*
 	 * In an autovacuum analyze, we want to clean up pending insertions.

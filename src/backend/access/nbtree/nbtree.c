@@ -802,10 +802,20 @@ _bt_vacuum_needs_cleanup(IndexVacuumInfo *info)
 	Page		metapg;
 	BTMetaPageData *metad;
 	bool		result = false;
+	bool		have_recyclable_page;
 
 	metabuf = _bt_getbuf(info->index, BTREE_METAPAGE, BT_READ);
 	metapg = BufferGetPage(metabuf);
 	metad = BTPageGetMeta(metapg);
+
+	/*
+	 * Check if any oldest btpo.xact from a previously deleted page in the index
+	 * is older than RecentGlobalXmin. If true then at least one deleted page can
+	 * be recycled.
+	 */
+	have_recyclable_page = (TransactionIdIsValid(metad->btm_oldest_btpo_xact) &&
+							TransactionIdPrecedes(metad->btm_oldest_btpo_xact,
+												  RecentGlobalXmin));
 
 	if (metad->btm_version < BTREE_NOVAC_VERSION)
 	{
@@ -815,15 +825,20 @@ _bt_vacuum_needs_cleanup(IndexVacuumInfo *info)
 		 */
 		result = true;
 	}
-	else if (TransactionIdIsValid(metad->btm_oldest_btpo_xact) &&
-			 TransactionIdPrecedes(metad->btm_oldest_btpo_xact,
-								   RecentGlobalXmin))
+	else if (!info->index_cleanup)
 	{
 		/*
-		 * If any oldest btpo.xact from a previously deleted page in the index
-		 * is older than RecentGlobalXmin, then at least one deleted page can
-		 * be recycled -- don't skip cleanup.
+		 * INDEX_CLEANUP is false.  But we don't skip cleanup if this vacuum
+		 * is a wraparound vacuum and there is at least one recyclable page.
+		 * Otherwise, we will end up leaving recyclable pages whose btpo.xact
+		 * is older than table's relfrozenxid.
 		 */
+		if (info->is_wraparound && have_recyclable_page)
+			result = true;
+	}
+	else if (have_recyclable_page)
+	{
+		/* If at least one deleted page can be recycled we don't skip cleanup */
 		result = true;
 	}
 	else
@@ -870,6 +885,10 @@ btbulkdelete(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 {
 	Relation	rel = info->index;
 	BTCycleId	cycleid;
+
+	/* Skip if index cleanup is disabled */
+	if (!info->index_cleanup)
+		return NULL;
 
 	/* allocate stats if first time through, else re-use existing struct */
 	if (stats == NULL)

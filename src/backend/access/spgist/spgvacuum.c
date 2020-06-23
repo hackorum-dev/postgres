@@ -903,6 +903,10 @@ spgbulkdelete(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 {
 	spgBulkDeleteState bds;
 
+	/* Skip if index cleanup is disabled */
+	if (!info->index_cleanup)
+		return NULL;
+
 	/* allocate stats if first time through, else re-use existing struct */
 	if (stats == NULL)
 		stats = (IndexBulkDeleteResult *) palloc0(sizeof(IndexBulkDeleteResult));
@@ -933,8 +937,8 @@ spgvacuumcleanup(IndexVacuumInfo *info, IndexBulkDeleteResult *stats)
 {
 	spgBulkDeleteState bds;
 
-	/* No-op in ANALYZE ONLY mode */
-	if (info->analyze_only)
+	/* No-op in ANALYZE ONLY mode or index cleanup is disabled */
+	if (info->analyze_only || !info->index_cleanup)
 		return stats;
 
 	/*
