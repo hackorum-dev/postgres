@@ -1133,11 +1133,11 @@ ProcessCopyOptions(ParseState *pstate,
 						 errmsg("conflicting or redundant options"),
 						 parser_errposition(pstate, defel->location)));
 			format_specified = true;
-			if (strcmp(fmt, "text") == 0)
+			if (pg_strcasecmp(fmt, "text") == 0)
 				 /* default format */ ;
-			else if (strcmp(fmt, "csv") == 0)
+			else if (pg_strcasecmp(fmt, "csv") == 0)
 				cstate->csv_mode = true;
-			else if (strcmp(fmt, "binary") == 0)
+			else if (pg_strcasecmp(fmt, "binary") == 0)
 				cstate->binary = true;
 			else
 				ereport(ERROR,
