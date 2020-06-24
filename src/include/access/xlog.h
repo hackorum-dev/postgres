@@ -354,6 +354,14 @@ extern void XLogRequestWalReceiverReply(void);
 extern void assign_max_wal_size(int newval, void *extra);
 extern void assign_checkpoint_completion_target(double newval, void *extra);
 
+extern bool IsNvwalAvail(void);
+extern XLogRecPtr GetLoadableSizeFromNvwal(XLogRecPtr target,
+										   Size count,
+										   XLogRecPtr *nvwalptr);
+extern bool CopyXLogRecordsFromNVWAL(char *buf,
+									 Size count,
+									 XLogRecPtr startptr);
+
 /*
  * Routines to start, stop, and get status of a base backup.
  */
