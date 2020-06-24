@@ -37,6 +37,7 @@
 #include "access/xloginsert.h"
 #include "access/xlogreader.h"
 #include "access/xlogutils.h"
+#include "access/nv_xlog_buffer.h"
 #include "catalog/catversion.h"
 #include "catalog/pg_control.h"
 #include "catalog/pg_database.h"
@@ -884,6 +885,12 @@ static bool InRedo = false;
 
 /* Have we launched bgwriter during recovery? */
 static bool bgwriterLaunched = false;
+
+/* For non-volatile WAL buffer (NVWAL) */
+char	   *NvwalPath = NULL;	/* a GUC parameter */
+int			NvwalSizeMB = 1024;	/* a direct GUC parameter */
+static Size	NvwalSize = 0;		/* an indirect GUC parameter */
+static bool	NvwalAvail = false;
 
 /* For WALInsertLockAcquire/Release functions */
 static int	MyLockNo = 0;
@@ -5046,6 +5053,76 @@ check_wal_buffers(int *newval, void **extra, GucSource source)
 }
 
 /*
+ * GUC check_hook for nvwal_path.
+ */
+bool
+check_nvwal_path(char **newval, void **extra, GucSource source)
+{
+#ifndef USE_NVWAL
+	Assert(!NvwalAvail);
+
+	if (**newval != '\0')
+	{
+		GUC_check_errcode(ERRCODE_INVALID_PARAMETER_VALUE);
+		GUC_check_errmsg("nvwal_path is invalid parameter without NVWAL");
+		return false;
+	}
+#endif
+
+	return true;
+}
+
+void
+assign_nvwal_path(const char *newval, void *extra)
+{
+	/* true if not empty; false if empty */
+	NvwalAvail = (bool) (*newval != '\0');
+}
+
+/*
+ * GUC check_hook for nvwal_size.
+ *
+ * It checks the boundary only and DOES NOT check if the size is multiple
+ * of wal_segment_size because the segment size (probably stored in the
+ * control file) have not been set properly here yet.
+ *
+ * See XLOGShmemSize for more validation.
+ */
+bool
+check_nvwal_size(int *newval, void **extra, GucSource source)
+{
+#ifdef USE_NVWAL
+	Size		buf_size;
+	int64		npages;
+
+	Assert(*newval > 0);
+
+	buf_size = (Size) (*newval) * 1024 * 1024;
+	npages = (int64) buf_size / XLOG_BLCKSZ;
+	Assert(npages > 0);
+
+	if (npages > INT_MAX)
+	{
+		/* XLOG_BLCKSZ could be so small that npages exceeds INT_MAX */
+		GUC_check_errcode(ERRCODE_INVALID_PARAMETER_VALUE);
+		GUC_check_errmsg("invalid value for nvwal_size (%dMB): "
+						 "the number of WAL pages too large; "
+						 "buf_size %zu; XLOG_BLCKSZ %d",
+						 *newval, buf_size, (int) XLOG_BLCKSZ);
+		return false;
+	}
+#endif
+
+	return true;
+}
+
+void
+assign_nvwal_size(int newval, void *extra)
+{
+	NvwalSize = (Size) newval * 1024 * 1024;
+}
+
+/*
  * Read the control file, set respective GUCs.
  *
  * This is to be called during startup, including a crash recovery cycle,
@@ -5074,12 +5151,48 @@ XLOGShmemSize(void)
 	Size		size;
 
 	/*
+	 * If we use non-volatile WAL buffer, we don't use the given wal_buffers.
+	 * Instead, we set it the value based on the size of the file for the
+	 * buffer. This should be done here because of xlblocks array calculation.
+	 */
+	if (NvwalAvail)
+	{
+		char		buf[32];
+		int64		npages;
+
+		Assert(NvwalSizeMB > 0);
+		Assert(NvwalSize > 0);
+		Assert(wal_segment_size > 0);
+		Assert(wal_segment_size % XLOG_BLCKSZ == 0);
+
+		/*
+		 * At last, we can check if the size of non-volatile WAL buffer
+		 * (nvwal_size) is multiple of WAL segment size.
+		 *
+		 * Note that NvwalSize has already been calculated in assign_nvwal_size.
+		 */
+		if (NvwalSize % wal_segment_size != 0)
+		{
+			elog(PANIC,
+				 "invalid value for nvwal_size (%dMB): "
+				 "it should be multiple of WAL segment size; "
+				 "NvwalSize %zu; wal_segment_size %d",
+				 NvwalSizeMB, NvwalSize, wal_segment_size);
+		}
+
+		npages = (int64) NvwalSize / XLOG_BLCKSZ;
+		Assert(npages > 0 && npages <= INT_MAX);
+
+		snprintf(buf, sizeof(buf), "%d", (int) npages);
+		SetConfigOption("wal_buffers", buf, PGC_POSTMASTER, PGC_S_OVERRIDE);
+	}
+	/*
 	 * If the value of wal_buffers is -1, use the preferred auto-tune value.
 	 * This isn't an amazingly clean place to do this, but we must wait till
 	 * NBuffers has received its final value, and must do it before using the
 	 * value of XLOGbuffers to do anything important.
 	 */
-	if (XLOGbuffers == -1)
+	else if (XLOGbuffers == -1)
 	{
 		char		buf[32];
 
@@ -5095,10 +5208,13 @@ XLOGShmemSize(void)
 	size = add_size(size, mul_size(sizeof(WALInsertLockPadded), NUM_XLOGINSERT_LOCKS + 1));
 	/* xlblocks array */
 	size = add_size(size, mul_size(sizeof(XLogRecPtr), XLOGbuffers));
-	/* extra alignment padding for XLOG I/O buffers */
-	size = add_size(size, XLOG_BLCKSZ);
-	/* and the buffers themselves */
-	size = add_size(size, mul_size(XLOG_BLCKSZ, XLOGbuffers));
+	if (!NvwalAvail)
+	{
+		/* extra alignment padding for XLOG I/O buffers */
+		size = add_size(size, XLOG_BLCKSZ);
+		/* and the buffers themselves */
+		size = add_size(size, mul_size(XLOG_BLCKSZ, XLOGbuffers));
+	}
 
 	/*
 	 * Note: we don't count ControlFileData, it comes out of the "slop factor"
@@ -5192,13 +5308,32 @@ XLOGShmemInit(void)
 	}
 
 	/*
-	 * Align the start of the page buffers to a full xlog block size boundary.
-	 * This simplifies some calculations in XLOG insertion. It is also
-	 * required for O_DIRECT.
+	 * Open and memory-map a file for non-volatile XLOG buffer. The PMDK will
+	 * align the start of the buffer to 2-MiB boundary if the size of the
+	 * buffer is larger than or equal to 4 MiB.
 	 */
-	allocptr = (char *) TYPEALIGN(XLOG_BLCKSZ, allocptr);
-	XLogCtl->pages = allocptr;
-	memset(XLogCtl->pages, 0, (Size) XLOG_BLCKSZ * XLOGbuffers);
+	if (NvwalAvail)
+	{
+		/* Logging and error-handling should be done in the function */
+		XLogCtl->pages = MapNonVolatileXLogBuffer(NvwalPath, NvwalSize);
+
+		/*
+		 * Do not memset non-volatile XLOG buffer (XLogCtl->pages) here
+		 * because it would contain records for recovery. We should do so in
+		 * checkpoint after the recovery completes successfully.
+		 */
+	}
+	else
+	{
+		/*
+		 * Align the start of the page buffers to a full xlog block size
+		 * boundary. This simplifies some calculations in XLOG insertion. It
+		 * is also required for O_DIRECT.
+		 */
+		allocptr = (char *) TYPEALIGN(XLOG_BLCKSZ, allocptr);
+		XLogCtl->pages = allocptr;
+		memset(XLogCtl->pages, 0, (Size) XLOG_BLCKSZ * XLOGbuffers);
+	}
 
 	/*
 	 * Do basic initialization of XLogCtl shared data. (StartupXLOG will fill
@@ -8602,6 +8737,12 @@ ShutdownXLOG(int code, Datum arg)
 
 		CreateCheckPoint(CHECKPOINT_IS_SHUTDOWN | CHECKPOINT_IMMEDIATE);
 	}
+
+	/*
+	 * If we use non-volatile XLOG buffer, unmap it.
+	 */
+	if (NvwalAvail)
+		UnmapNonVolatileXLogBuffer(XLogCtl->pages, NvwalSize);
 }
 
 /*
