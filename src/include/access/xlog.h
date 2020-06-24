@@ -361,6 +361,10 @@ extern XLogRecPtr GetLoadableSizeFromNvwal(XLogRecPtr target,
 extern bool CopyXLogRecordsFromNVWAL(char *buf,
 									 Size count,
 									 XLogRecPtr startptr);
+extern bool CopyXLogRecordsToNVWAL(char *buf,
+								   Size count,
+								   XLogRecPtr startptr);
+extern void SyncNVWAL(void);
 
 /*
  * Routines to start, stop, and get status of a base backup.

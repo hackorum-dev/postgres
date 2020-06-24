@@ -937,6 +937,8 @@ static bool InstallXLogFileSegment(XLogSegNo *segno, char *tmppath,
 static int	XLogFileRead(XLogSegNo segno, int emode, TimeLineID tli,
 						 XLogSource source, bool notfoundOk);
 static int	XLogFileReadAnyTLI(XLogSegNo segno, int emode, XLogSource source);
+static bool CopyXLogRecordsOnNVWAL(char *buf, Size count, XLogRecPtr startptr,
+								   bool store);
 static int	XLogPageRead(XLogReaderState *xlogreader, XLogRecPtr targetPagePtr,
 						 int reqLen, XLogRecPtr targetRecPtr, char *readBuf);
 static bool WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
@@ -12828,6 +12830,21 @@ GetLoadableSizeFromNvwal(XLogRecPtr target, Size count, XLogRecPtr *nvwalptr)
 bool
 CopyXLogRecordsFromNVWAL(char *buf, Size count, XLogRecPtr startptr)
 {
+	return CopyXLogRecordsOnNVWAL(buf, count, startptr, false);
+}
+
+/*
+ * Called by walreceiver.
+ */
+bool
+CopyXLogRecordsToNVWAL(char *buf, Size count, XLogRecPtr startptr)
+{
+	return CopyXLogRecordsOnNVWAL(buf, count, startptr, true);
+}
+
+static bool
+CopyXLogRecordsOnNVWAL(char *buf, Size count, XLogRecPtr startptr, bool store)
+{
 	char	   *p;
 	XLogRecPtr	recptr;
 	Size		nbytes;
@@ -12876,7 +12893,13 @@ CopyXLogRecordsFromNVWAL(char *buf, Size count, XLogRecPtr startptr)
 		max_copy = NvwalSize - off;
 		copybytes = Min(nbytes, max_copy);
 
-		memcpy(p, q, copybytes);
+		if (store)
+		{
+			memcpy(q, p, copybytes);
+			nv_flush(q, copybytes);
+		}
+		else
+			memcpy(p, q, copybytes);
 
 		/* Update state for copy */
 		recptr += copybytes;
@@ -12886,6 +12909,12 @@ CopyXLogRecordsFromNVWAL(char *buf, Size count, XLogRecPtr startptr)
 
 	LWLockRelease(WALBufMappingLock);
 	return true;
+}
+
+void
+SyncNVWAL(void)
+{
+	nv_drain();
 }
 
 static bool
