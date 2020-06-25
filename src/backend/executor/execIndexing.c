@@ -169,6 +169,13 @@ ExecOpenIndices(ResultRelInfo *resultRelInfo, bool speculative)
 	RelationPtr relationDescs;
 	IndexInfo **indexInfoArray;
 
+	/*
+	 * This function can be called only once per ResultRelInfo, otherwise, we
+	 * will leak memory for arrays and also leak index relcache references.
+	 */
+	Assert(!resultRelInfo->ri_IndexRelationDescs);
+	Assert(!resultRelInfo->ri_IndexRelationInfo);
+
 	resultRelInfo->ri_NumIndices = 0;
 
 	/* fast path if no indexes */
