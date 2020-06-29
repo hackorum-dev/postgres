@@ -902,43 +902,9 @@ XLogWalRcvWrite(char *buf, Size nbytes, XLogRecPtr recptr)
 	{
 		int			segbytes;
 
-		if (recvFile < 0 || !XLByteInSeg(recptr, recvSegNo, wal_segment_size))
+		if (recvFile < 0)
 		{
 			bool		use_existent;
-
-			/*
-			 * fsync() and close current file before we switch to next one. We
-			 * would otherwise have to reopen this file to fsync it later
-			 */
-			if (recvFile >= 0)
-			{
-				char		xlogfname[MAXFNAMELEN];
-
-				XLogWalRcvFlush(false);
-
-				XLogFileName(xlogfname, recvFileTLI, recvSegNo, wal_segment_size);
-
-				/*
-				 * XLOG segment files will be re-read by recovery in startup
-				 * process soon, so we don't advise the OS to release cache
-				 * pages associated with the file like XLogFileClose() does.
-				 */
-				if (close(recvFile) != 0)
-					ereport(PANIC,
-							(errcode_for_file_access(),
-							 errmsg("could not close log segment %s: %m",
-									xlogfname)));
-
-				/*
-				 * Create .done file forcibly to prevent the streamed segment
-				 * from being archived later.
-				 */
-				if (XLogArchiveMode != ARCHIVE_MODE_ALWAYS)
-					XLogArchiveForceDone(xlogfname);
-				else
-					XLogArchiveNotify(xlogfname);
-			}
-			recvFile = -1;
 
 			/* Create/use new log file */
 			XLByteToSeg(recptr, recvSegNo, wal_segment_size);
@@ -985,6 +951,47 @@ XLogWalRcvWrite(char *buf, Size nbytes, XLogRecPtr recptr)
 		buf += byteswritten;
 
 		LogstreamResult.Write = recptr;
+
+		/*
+		 * Close the current WAL segment if it is completed then let the file
+		 * be archived if needed.
+		 */
+		if (!XLByteInSeg(recptr, recvSegNo, wal_segment_size))
+		{
+			char		xlogfname[MAXFNAMELEN];
+
+			Assert (recvFile >= 0);
+
+			/*
+			 * fsync() and close current file before we switch to next one. We
+			 * would otherwise have to reopen this file to fsync it later
+			 */
+			XLogWalRcvFlush(false);
+
+			XLogFileName(xlogfname, recvFileTLI, recvSegNo, wal_segment_size);
+
+			/*
+			 * XLOG segment files will be re-read by recovery in startup
+			 * process soon, so we don't advise the OS to release cache
+			 * pages associated with the file like XLogFileClose() does.
+			 */
+			if (close(recvFile) != 0)
+				ereport(PANIC,
+						(errcode_for_file_access(),
+						 errmsg("could not close log segment %s: %m",
+								xlogfname)));
+
+			/*
+			 * Create .done file forcibly to prevent the streamed segment
+			 * from being archived later.
+			 */
+			if (XLogArchiveMode != ARCHIVE_MODE_ALWAYS)
+				XLogArchiveForceDone(xlogfname);
+			else
+				XLogArchiveNotify(xlogfname);
+
+			recvFile = -1;
+		}
 	}
 
 	/* Update shared-memory status */
