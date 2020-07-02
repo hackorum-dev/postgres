@@ -18,7 +18,9 @@
 #include "commands/createas.h"
 #include "commands/defrem.h"
 #include "commands/prepare.h"
+#include "executor/executor.h"
 #include "executor/nodeHash.h"
+#include "executor/nodeModifyTable.h"
 #include "foreign/fdwapi.h"
 #include "jit/jit.h"
 #include "nodes/extensible.h"
@@ -3678,14 +3680,14 @@ show_modifytable_info(ModifyTableState *mtstate, List *ancestors,
 	/* Should we explicitly label target relations? */
 	labeltargets = (mtstate->mt_nplans > 1 ||
 					(mtstate->mt_nplans == 1 &&
-					 mtstate->resultRelInfo->ri_RangeTableIndex != node->nominalRelation));
+					 ExecGetResultRelation(mtstate, 0)->ri_RangeTableIndex != node->nominalRelation));
 
 	if (labeltargets)
 		ExplainOpenGroup("Target Tables", "Target Tables", false, es);
 
 	for (j = 0; j < mtstate->mt_nplans; j++)
 	{
-		ResultRelInfo *resultRelInfo = mtstate->resultRelInfo + j;
+		ResultRelInfo *resultRelInfo = ExecGetResultRelation(mtstate, j);
 		FdwRoutine *fdwroutine = resultRelInfo->ri_FdwRoutine;
 
 		if (labeltargets)

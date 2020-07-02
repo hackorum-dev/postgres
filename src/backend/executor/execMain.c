@@ -1236,6 +1236,7 @@ InitResultRelInfo(ResultRelInfo *resultRelInfo,
 	resultRelInfo->ri_ConstraintExprs = NULL;
 	resultRelInfo->ri_GeneratedExprs = NULL;
 	resultRelInfo->ri_junkFilter = NULL;
+	resultRelInfo->ri_junkFilterValid = false;;
 	resultRelInfo->ri_projectReturning = NULL;
 	resultRelInfo->ri_onConflictArbiterIndexes = NIL;
 	resultRelInfo->ri_onConflict = NULL;
@@ -1247,6 +1248,7 @@ InitResultRelInfo(ResultRelInfo *resultRelInfo,
 													 * ExecInitRoutingInfo */
 	resultRelInfo->ri_PartitionTupleSlot = NULL;	/* ditto */
 	resultRelInfo->ri_ChildToRootMap = NULL;
+	resultRelInfo->ri_ChildToRootMapValid = false;
 	resultRelInfo->ri_CopyMultiInsertBuffer = NULL;
 }
 
@@ -1440,6 +1442,11 @@ ExecCloseResultRelations(EState *estate)
 		ResultRelInfo *resultRelInfo = lfirst(l);
 
 		ExecCloseIndices(resultRelInfo);
+		if (!resultRelInfo->ri_usesFdwDirectModify &&
+			resultRelInfo->ri_FdwRoutine != NULL &&
+			resultRelInfo->ri_FdwRoutine->EndForeignModify != NULL)
+			resultRelInfo->ri_FdwRoutine->EndForeignModify(estate,
+														   resultRelInfo);
 	}
 
 	/* Close any relations that have been opened by ExecGetTriggerResultRel(). */

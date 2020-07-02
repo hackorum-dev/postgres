@@ -52,10 +52,7 @@ explain (costs off) insert into insertconflicttest values(0, 'Crowberry') on con
    Conflict Arbiter Indexes: op_index_key, collation_index_key, both_index_key
    Conflict Filter: (SubPlan 1)
    ->  Result
-   SubPlan 1
-     ->  Index Only Scan using both_index_expr_key on insertconflicttest ii
-           Index Cond: (key = excluded.key)
-(8 rows)
+(5 rows)
 
 -- Neither collation nor operator class specifications are required --
 -- supplying them merely *limits* matches to indexes with matching opclasses

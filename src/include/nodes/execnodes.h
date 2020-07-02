@@ -463,6 +463,7 @@ typedef struct ResultRelInfo
 
 	/* for removing junk attributes from tuples */
 	JunkFilter *ri_junkFilter;
+	bool		ri_junkFilterValid;	/* has the filter been initialized? */
 
 	/* list of RETURNING expressions */
 	List	   *ri_returningList;
@@ -497,6 +498,7 @@ typedef struct ResultRelInfo
 	 * transition tuple capture or update partition row movement is active.
 	 */
 	TupleConversionMap *ri_ChildToRootMap;
+	bool		ri_ChildToRootMapValid;	/* has the map been initialized? */
 
 	/* for use by copy.c when performing multi-inserts */
 	struct CopyMultiInsertBuffer *ri_CopyMultiInsertBuffer;

@@ -22,5 +22,6 @@ extern void ExecComputeStoredGenerated(ResultRelInfo *resultRelInfo,
 extern ModifyTableState *ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags);
 extern void ExecEndModifyTable(ModifyTableState *node);
 extern void ExecReScanModifyTable(ModifyTableState *node);
+extern ResultRelInfo *ExecGetResultRelation(ModifyTableState *mtstate, int whichrel);
 
 #endif							/* NODEMODIFYTABLE_H */
