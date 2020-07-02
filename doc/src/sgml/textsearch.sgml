@@ -401,6 +401,31 @@ SELECT phraseto_tsquery('the cats ate the rats');
     but with more complex situations such as prefix-match patterns, a query
     of this form could be useful.)
    </para>
+
+   <para>
+    Real world example is when you want to search a phrase containing only one particular
+    form of a word. &amp; operator inside phrase operator can select phrases with one but
+    not the other form of a word in the same position. Vice versa, &amp; operator outside
+    phrase one does not consider positions, so results of two queries below differ.
+
+<programlisting>
+SELECT to_tsvector('english_hunspell', 'complete booking complete lunch');
+       to_tsvector
+-----------------------------------------------
+ 'book':2 'booking':2 'complete':1,3 'lunch':4
+
+SELECT to_tsvector('english_hunspell', 'complete booking complete lunch') @@ '(complete <-> (book & !booking))'::tsquery;
+ ?column?
+----------
+ f
+
+SELECT to_tsvector('english_hunspell', 'complete booking complete lunch') @@ '(complete <-> book) & (complete <-> !booking)'::tsquery;
+ ?column?
+----------
+ t
+</programlisting>
+   </para>
+
   </sect2>
 
   <sect2 id="textsearch-intro-configurations">
