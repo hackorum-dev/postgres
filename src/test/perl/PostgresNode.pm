@@ -906,6 +906,31 @@ sub promote
 
 =pod
 
+=item $node->demote()
+
+Wrapper for pg_ctl demote
+
+=cut
+
+sub demote
+{
+	my ($self, $mode) = @_;
+	my $port    = $self->port;
+	my $pgdata  = $self->data_dir;
+	my $logfile = $self->logfile;
+	my $name    = $self->name;
+
+	$mode = 'fast' unless defined $mode;
+
+	print "### Demoting node \"$name\" using mode $mode\n";
+
+	TestLib::system_or_bail('pg_ctl', '-D', $pgdata, '-l', $logfile,
+		'-m', $mode, 'demote');
+	return;
+}
+
+=pod
+
 =item $node->logrotate()
 
 Wrapper for pg_ctl logrotate
