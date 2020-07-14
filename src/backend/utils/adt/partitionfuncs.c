@@ -45,10 +45,23 @@ check_rel_can_be_partition(Oid relid)
 	relispartition = get_rel_relispartition(relid);
 
 	/* Only allow relation types that can appear in partition trees. */
-	if (!relispartition &&
-		relkind != RELKIND_PARTITIONED_TABLE &&
-		relkind != RELKIND_PARTITIONED_INDEX)
-		return false;
+	Assert(RELKIND_IS_VALID((RelKind) relkind));
+	switch ((RelKind) relkind)
+	{
+		case RELKIND_PARTITIONED_TABLE:
+		case RELKIND_PARTITIONED_INDEX:
+			break;
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_RELATION:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+			if (!relispartition)
+				return false;
+	}
 
 	return true;
 }
@@ -143,8 +156,23 @@ pg_partition_tree(PG_FUNCTION_ARGS)
 			nulls[1] = true;
 
 		/* isleaf */
-		values[2] = BoolGetDatum(relkind != RELKIND_PARTITIONED_TABLE &&
-								 relkind != RELKIND_PARTITIONED_INDEX);
+		Assert(RELKIND_IS_VALID((RelKind) relkind));
+		switch ((RelKind) relkind)
+		{
+			case RELKIND_PARTITIONED_TABLE:
+			case RELKIND_PARTITIONED_INDEX:
+				values[2] = BoolGetDatum(false);
+				break;
+			case RELKIND_FOREIGN_TABLE:
+			case RELKIND_RELATION:
+			case RELKIND_COMPOSITE_TYPE:
+			case RELKIND_INDEX:
+			case RELKIND_MATVIEW:
+			case RELKIND_VIEW:
+			case RELKIND_SEQUENCE:
+			case RELKIND_TOASTVALUE:
+				values[2] = BoolGetDatum(true);
+		}
 
 		/* level */
 		if (relid != rootrelid)

@@ -1395,22 +1395,34 @@ doDeletion(const ObjectAddress *object, int flags)
 			{
 				char		relKind = get_rel_relkind(object->objectId);
 
-				if (relKind == RELKIND_INDEX ||
-					relKind == RELKIND_PARTITIONED_INDEX)
+				Assert(RELKIND_IS_VALID((RelKind) relKind));
+				switch ((RelKind) relKind)
 				{
-					bool		concurrent = ((flags & PERFORM_DELETION_CONCURRENTLY) != 0);
-					bool		concurrent_lock_mode = ((flags & PERFORM_DELETION_CONCURRENT_LOCK) != 0);
+					case RELKIND_INDEX:
+					case RELKIND_PARTITIONED_INDEX:
+						{
+							bool		concurrent = ((flags & PERFORM_DELETION_CONCURRENTLY) != 0);
+							bool		concurrent_lock_mode = ((flags & PERFORM_DELETION_CONCURRENT_LOCK) != 0);
 
-					Assert(object->objectSubId == 0);
-					index_drop(object->objectId, concurrent, concurrent_lock_mode);
-				}
-				else
-				{
-					if (object->objectSubId != 0)
-						RemoveAttributeById(object->objectId,
-											object->objectSubId);
-					else
-						heap_drop_with_catalog(object->objectId);
+							Assert(object->objectSubId == 0);
+							index_drop(object->objectId, concurrent, concurrent_lock_mode);
+						}
+						break;
+					case RELKIND_SEQUENCE:
+					case RELKIND_COMPOSITE_TYPE:
+					case RELKIND_FOREIGN_TABLE:
+					case RELKIND_MATVIEW:
+					case RELKIND_PARTITIONED_TABLE:
+					case RELKIND_RELATION:
+					case RELKIND_TOASTVALUE:
+					case RELKIND_VIEW:
+						{
+							if (object->objectSubId != 0)
+								RemoveAttributeById(object->objectId,
+													object->objectSubId);
+							else
+								heap_drop_with_catalog(object->objectId);
+						}
 				}
 
 				/*
@@ -1419,8 +1431,8 @@ doDeletion(const ObjectAddress *object, int flags)
 				 */
 				if (relKind == RELKIND_SEQUENCE)
 					DeleteSequenceTuple(object->objectId);
-				break;
 			}
+			break;
 
 		case OCLASS_PROC:
 			RemoveFunctionById(object->objectId);

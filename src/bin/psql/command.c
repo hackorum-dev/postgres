@@ -4942,21 +4942,28 @@ get_create_object_cmd(EditableObjectType obj_type, Oid oid,
 					 * does not, so editing a matview definition in this way
 					 * is impossible.
 					 */
-					switch (relkind[0])
+					Assert(RELKIND_IS_VALID((RelKind) relkind[0]));
+					switch ((RelKind) relkind[0])
 					{
-#ifdef NOT_USED
-						case RELKIND_MATVIEW:
-							appendPQExpBufferStr(buf, "CREATE OR REPLACE MATERIALIZED VIEW ");
-							break;
-#endif
 						case RELKIND_VIEW:
 							appendPQExpBufferStr(buf, "CREATE OR REPLACE VIEW ");
 							break;
-						default:
+						case RELKIND_MATVIEW:
+#ifdef NOT_USED
+							appendPQExpBufferStr(buf, "CREATE OR REPLACE MATERIALIZED VIEW ");
+							break;
+#endif
+						case RELKIND_PARTITIONED_INDEX:
+						case RELKIND_SEQUENCE:
+						case RELKIND_COMPOSITE_TYPE:
+						case RELKIND_FOREIGN_TABLE:
+						case RELKIND_INDEX:
+						case RELKIND_PARTITIONED_TABLE:
+						case RELKIND_RELATION:
+						case RELKIND_TOASTVALUE:
 							pg_log_error("\"%s.%s\" is not a view",
 										 nspname, relname);
 							result = false;
-							break;
 					}
 					appendPQExpBuffer(buf, "%s.", fmtId(nspname));
 					appendPQExpBufferStr(buf, fmtId(relname));

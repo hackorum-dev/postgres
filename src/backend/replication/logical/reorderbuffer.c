@@ -1639,8 +1639,22 @@ ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 					 * understand, so it doesn't make sense to handle the few
 					 * cases we do.
 					 */
-					if (relation->rd_rel->relkind == RELKIND_SEQUENCE)
-						goto change_done;
+					Assert(RELKIND_IS_VALID((RelKind) relation->rd_rel->relkind));
+					switch ((RelKind) relation->rd_rel->relkind)
+					{
+						case RELKIND_SEQUENCE:
+							goto change_done;
+						case RELKIND_PARTITIONED_INDEX:
+						case RELKIND_COMPOSITE_TYPE:
+						case RELKIND_FOREIGN_TABLE:
+						case RELKIND_INDEX:
+						case RELKIND_MATVIEW:
+						case RELKIND_PARTITIONED_TABLE:
+						case RELKIND_RELATION:
+						case RELKIND_TOASTVALUE:
+						case RELKIND_VIEW:
+							break;
+					}
 
 					/* user-triggered change */
 					if (!IsToastRelation(relation))

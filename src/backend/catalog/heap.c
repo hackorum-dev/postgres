@@ -335,7 +335,8 @@ heap_create(const char *relname,
 	*relminmxid = InvalidMultiXactId;
 
 	/* Handle reltablespace for specific relkinds. */
-	switch (relkind)
+	Assert(RELKIND_IS_VALID((RelKind) relkind));
+	switch ((RelKind) relkind)
 	{
 		case RELKIND_VIEW:
 		case RELKIND_COMPOSITE_TYPE:
@@ -360,7 +361,13 @@ heap_create(const char *relname,
 			 */
 			reltablespace = InvalidOid;
 			break;
-		default:
+
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_PARTITIONED_TABLE:
+		case RELKIND_RELATION:
+		case RELKIND_TOASTVALUE:
 			break;
 	}
 
@@ -415,27 +422,26 @@ heap_create(const char *relname,
 	{
 		RelationOpenSmgr(rel);
 
-		switch (rel->rd_rel->relkind)
+		Assert(RELKIND_IS_VALID((RelKind) rel->rd_rel->relkind));
+		switch ((RelKind) rel->rd_rel->relkind)
 		{
-			case RELKIND_VIEW:
-			case RELKIND_COMPOSITE_TYPE:
-			case RELKIND_FOREIGN_TABLE:
-			case RELKIND_PARTITIONED_TABLE:
-			case RELKIND_PARTITIONED_INDEX:
-				Assert(false);
-				break;
-
 			case RELKIND_INDEX:
 			case RELKIND_SEQUENCE:
 				RelationCreateStorage(rel->rd_node, relpersistence);
 				break;
-
 			case RELKIND_RELATION:
 			case RELKIND_TOASTVALUE:
 			case RELKIND_MATVIEW:
 				table_relation_set_new_filenode(rel, &rel->rd_node,
 												relpersistence,
 												relfrozenxid, relminmxid);
+				break;
+			case RELKIND_VIEW:
+			case RELKIND_COMPOSITE_TYPE:
+			case RELKIND_FOREIGN_TABLE:
+			case RELKIND_PARTITIONED_TABLE:
+			case RELKIND_PARTITIONED_INDEX:
+				Assert(false);
 				break;
 		}
 	}
@@ -506,18 +512,30 @@ CheckAttributeNamesTypes(TupleDesc tupdesc, char relkind,
 	 * Skip this for a view or type relation, since those don't have system
 	 * attributes.
 	 */
-	if (relkind != RELKIND_VIEW && relkind != RELKIND_COMPOSITE_TYPE)
+	Assert(RELKIND_IS_VALID((RelKind) relkind));
+	switch ((RelKind) relkind)
 	{
-		for (i = 0; i < natts; i++)
-		{
-			Form_pg_attribute attr = TupleDescAttr(tupdesc, i);
+		case RELKIND_VIEW:
+		case RELKIND_COMPOSITE_TYPE:
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_PARTITIONED_TABLE:
+		case RELKIND_RELATION:
+		case RELKIND_TOASTVALUE:
+			for (i = 0; i < natts; i++)
+			{
+				Form_pg_attribute attr = TupleDescAttr(tupdesc, i);
 
-			if (SystemAttributeByName(NameStr(attr->attname)) != NULL)
-				ereport(ERROR,
-						(errcode(ERRCODE_DUPLICATE_COLUMN),
-						 errmsg("column name \"%s\" conflicts with a system column name",
-								NameStr(attr->attname))));
-		}
+				if (SystemAttributeByName(NameStr(attr->attname)) != NULL)
+					ereport(ERROR,
+							(errcode(ERRCODE_DUPLICATE_COLUMN),
+							 errmsg("column name \"%s\" conflicts with a system column name",
+									NameStr(attr->attname))));
+			}
 	}
 
 	/*
@@ -836,19 +854,31 @@ AddNewAttributeTuples(Oid new_rel_oid,
 	 * all for a view or type relation.  We don't bother with making datatype
 	 * dependencies here, since presumably all these types are pinned.
 	 */
-	if (relkind != RELKIND_VIEW && relkind != RELKIND_COMPOSITE_TYPE)
+	Assert(RELKIND_IS_VALID((RelKind) relkind));
+	switch ((RelKind) relkind)
 	{
-		for (i = 0; i < (int) lengthof(SysAtt); i++)
-		{
-			FormData_pg_attribute attStruct;
+		case RELKIND_VIEW:
+		case RELKIND_COMPOSITE_TYPE:
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_PARTITIONED_TABLE:
+		case RELKIND_RELATION:
+		case RELKIND_TOASTVALUE:
+			for (i = 0; i < (int) lengthof(SysAtt); i++)
+			{
+				FormData_pg_attribute attStruct;
 
-			memcpy(&attStruct, SysAtt[i], sizeof(FormData_pg_attribute));
+				memcpy(&attStruct, SysAtt[i], sizeof(FormData_pg_attribute));
 
-			/* Fill in the correct relation OID in the copied tuple */
-			attStruct.attrelid = new_rel_oid;
+				/* Fill in the correct relation OID in the copied tuple */
+				attStruct.attrelid = new_rel_oid;
 
-			InsertPgAttributeTuple(rel, &attStruct, (Datum) 0, indstate);
-		}
+				InsertPgAttributeTuple(rel, &attStruct, (Datum) 0, indstate);
+			}
 	}
 
 	/*
@@ -966,7 +996,8 @@ AddNewRelationTuple(Relation pg_class_desc,
 	 */
 	new_rel_reltup = new_rel_desc->rd_rel;
 
-	switch (relkind)
+	Assert(RELKIND_IS_VALID((RelKind) relkind));
+	switch ((RelKind) relkind)
 	{
 		case RELKIND_RELATION:
 		case RELKIND_MATVIEW:
@@ -983,12 +1014,15 @@ AddNewRelationTuple(Relation pg_class_desc,
 			new_rel_reltup->reltuples = 1;
 			new_rel_reltup->relallvisible = 0;
 			break;
-		default:
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_PARTITIONED_TABLE:
+		case RELKIND_VIEW:
 			/* Views, etc, have no disk storage */
 			new_rel_reltup->relpages = 0;
 			new_rel_reltup->reltuples = 0;
 			new_rel_reltup->relallvisible = 0;
-			break;
 	}
 
 	new_rel_reltup->relfrozenxid = relfrozenxid;
@@ -1184,29 +1218,41 @@ heap_create_with_catalog(const char *relname,
 	if (!OidIsValid(relid))
 	{
 		/* Use binary-upgrade override for pg_class.oid/relfilenode? */
-		if (IsBinaryUpgrade &&
-			(relkind == RELKIND_RELATION || relkind == RELKIND_SEQUENCE ||
-			 relkind == RELKIND_VIEW || relkind == RELKIND_MATVIEW ||
-			 relkind == RELKIND_COMPOSITE_TYPE || relkind == RELKIND_FOREIGN_TABLE ||
-			 relkind == RELKIND_PARTITIONED_TABLE))
+		bool	handled = false;
+		switch (relkind)
 		{
-			if (!OidIsValid(binary_upgrade_next_heap_pg_class_oid))
-				ereport(ERROR,
-						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("pg_class heap OID value not set when in binary upgrade mode")));
-
-			relid = binary_upgrade_next_heap_pg_class_oid;
-			binary_upgrade_next_heap_pg_class_oid = InvalidOid;
+			case RELKIND_RELATION:
+			case RELKIND_SEQUENCE:
+			case RELKIND_VIEW:
+			case RELKIND_MATVIEW:
+			case RELKIND_COMPOSITE_TYPE:
+			case RELKIND_FOREIGN_TABLE:
+			case RELKIND_PARTITIONED_TABLE:
+				if (IsBinaryUpgrade)
+				{
+					if (!OidIsValid(binary_upgrade_next_heap_pg_class_oid))
+						ereport(ERROR,
+								(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+								 errmsg("pg_class heap OID value not set when in binary upgrade mode")));
+		
+					relid = binary_upgrade_next_heap_pg_class_oid;
+					binary_upgrade_next_heap_pg_class_oid = InvalidOid;
+					handled = true;
+				}
+				break;
+			case RELKIND_TOASTVALUE:
+				if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_toast_pg_class_oid))
+				{
+					relid = binary_upgrade_next_toast_pg_class_oid;
+					binary_upgrade_next_toast_pg_class_oid = InvalidOid;
+					handled = true;
+				}
+				break;
+			case RELKIND_PARTITIONED_INDEX:
+			case RELKIND_INDEX:
+				break;
 		}
-		/* There might be no TOAST table, so we have to test for it. */
-		else if (IsBinaryUpgrade &&
-				 OidIsValid(binary_upgrade_next_toast_pg_class_oid) &&
-				 relkind == RELKIND_TOASTVALUE)
-		{
-			relid = binary_upgrade_next_toast_pg_class_oid;
-			binary_upgrade_next_toast_pg_class_oid = InvalidOid;
-		}
-		else
+		if (!handled)
 			relid = GetNewRelFileNode(reltablespace, pg_class_desc,
 									  relpersistence);
 	}
@@ -1216,7 +1262,8 @@ heap_create_with_catalog(const char *relname,
 	 */
 	if (use_user_acl)
 	{
-		switch (relkind)
+		Assert(RELKIND_IS_VALID((RelKind) relkind));
+		switch ((RelKind) relkind)
 		{
 			case RELKIND_RELATION:
 			case RELKIND_VIEW:
@@ -1230,9 +1277,11 @@ heap_create_with_catalog(const char *relname,
 				relacl = get_user_default_acl(OBJECT_SEQUENCE, ownerid,
 											  relnamespace);
 				break;
-			default:
+			case RELKIND_PARTITIONED_INDEX:
+			case RELKIND_COMPOSITE_TYPE:
+			case RELKIND_INDEX:
+			case RELKIND_TOASTVALUE:
 				relacl = NULL;
-				break;
 		}
 	}
 	else
@@ -1267,85 +1316,93 @@ heap_create_with_catalog(const char *relname,
 	 * These types are made except where the use of a relation as such is an
 	 * implementation detail: toast tables, sequences and indexes.
 	 */
-	if (!(relkind == RELKIND_SEQUENCE ||
-		  relkind == RELKIND_TOASTVALUE ||
-		  relkind == RELKIND_INDEX ||
-		  relkind == RELKIND_PARTITIONED_INDEX))
+	switch (relkind)
 	{
-		Oid			new_array_oid;
-		ObjectAddress new_type_addr;
-		char	   *relarrayname;
+		case RELKIND_SEQUENCE:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_INDEX:
+		case RELKIND_PARTITIONED_INDEX:
+			/* Caller should not be expecting a type to be created. */
+			Assert(reltypeid == InvalidOid);
+			Assert(typaddress == NULL);
 
-		/*
-		 * We'll make an array over the composite type, too.  For largely
-		 * historical reasons, the array type's OID is assigned first.
-		 */
-		new_array_oid = AssignTypeArrayOid();
+			new_type_oid = InvalidOid;
+			break;
+		case RELKIND_VIEW:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_MATVIEW:
+		case RELKIND_PARTITIONED_TABLE:
+		case RELKIND_RELATION:
+			{
+				Oid			new_array_oid;
+				ObjectAddress new_type_addr;
+				char	   *relarrayname;
 
-		/*
-		 * Make the pg_type entry for the composite type.  The OID of the
-		 * composite type can be preselected by the caller, but if reltypeid
-		 * is InvalidOid, we'll generate a new OID for it.
-		 *
-		 * NOTE: we could get a unique-index failure here, in case someone
-		 * else is creating the same type name in parallel but hadn't
-		 * committed yet when we checked for a duplicate name above.
-		 */
-		new_type_addr = AddNewRelationType(relname,
-										   relnamespace,
-										   relid,
-										   relkind,
-										   ownerid,
-										   reltypeid,
-										   new_array_oid);
-		new_type_oid = new_type_addr.objectId;
-		if (typaddress)
-			*typaddress = new_type_addr;
+				/*
+				 * We'll make an array over the composite type, too.  For largely
+				 * historical reasons, the array type's OID is assigned first.
+				 */
+				new_array_oid = AssignTypeArrayOid();
 
-		/* Now create the array type. */
-		relarrayname = makeArrayTypeName(relname, relnamespace);
+				/*
+				 * Make the pg_type entry for the composite type.  The OID of the
+				 * composite type can be preselected by the caller, but if reltypeid
+				 * is InvalidOid, we'll generate a new OID for it.
+				 *
+				 * NOTE: we could get a unique-index failure here, in case someone
+				 * else is creating the same type name in parallel but hadn't
+				 * committed yet when we checked for a duplicate name above.
+				 */
+				new_type_addr = AddNewRelationType(relname,
+												   relnamespace,
+												   relid,
+												   relkind,
+												   ownerid,
+												   reltypeid,
+												   new_array_oid);
+				new_type_oid = new_type_addr.objectId;
+				if (typaddress)
+					*typaddress = new_type_addr;
 
-		TypeCreate(new_array_oid,	/* force the type's OID to this */
-				   relarrayname,	/* Array type name */
-				   relnamespace,	/* Same namespace as parent */
-				   InvalidOid,	/* Not composite, no relationOid */
-				   0,			/* relkind, also N/A here */
-				   ownerid,		/* owner's ID */
-				   -1,			/* Internal size (varlena) */
-				   TYPTYPE_BASE,	/* Not composite - typelem is */
-				   TYPCATEGORY_ARRAY,	/* type-category (array) */
-				   false,		/* array types are never preferred */
-				   DEFAULT_TYPDELIM,	/* default array delimiter */
-				   F_ARRAY_IN,	/* array input proc */
-				   F_ARRAY_OUT, /* array output proc */
-				   F_ARRAY_RECV,	/* array recv (bin) proc */
-				   F_ARRAY_SEND,	/* array send (bin) proc */
-				   InvalidOid,	/* typmodin procedure - none */
-				   InvalidOid,	/* typmodout procedure - none */
-				   F_ARRAY_TYPANALYZE,	/* array analyze procedure */
-				   new_type_oid,	/* array element type - the rowtype */
-				   true,		/* yes, this is an array type */
-				   InvalidOid,	/* this has no array type */
-				   InvalidOid,	/* domain base type - irrelevant */
-				   NULL,		/* default value - none */
-				   NULL,		/* default binary representation */
-				   false,		/* passed by reference */
-				   TYPALIGN_DOUBLE, /* alignment - must be the largest! */
-				   TYPSTORAGE_EXTENDED, /* fully TOASTable */
-				   -1,			/* typmod */
-				   0,			/* array dimensions for typBaseType */
-				   false,		/* Type NOT NULL */
-				   InvalidOid); /* rowtypes never have a collation */
+				/* Now create the array type. */
+				relarrayname = makeArrayTypeName(relname, relnamespace);
 
-		pfree(relarrayname);
-	}
-	else
-	{
-		/* Caller should not be expecting a type to be created. */
-		Assert(reltypeid == InvalidOid);
-		Assert(typaddress == NULL);
+				TypeCreate(new_array_oid,	/* force the type's OID to this */
+						   relarrayname,	/* Array type name */
+						   relnamespace,	/* Same namespace as parent */
+						   InvalidOid,	/* Not composite, no relationOid */
+						   0,			/* relkind, also N/A here */
+						   ownerid,		/* owner's ID */
+						   -1,			/* Internal size (varlena) */
+						   TYPTYPE_BASE,	/* Not composite - typelem is */
+						   TYPCATEGORY_ARRAY,	/* type-category (array) */
+						   false,		/* array types are never preferred */
+						   DEFAULT_TYPDELIM,	/* default array delimiter */
+						   F_ARRAY_IN,	/* array input proc */
+						   F_ARRAY_OUT, /* array output proc */
+						   F_ARRAY_RECV,	/* array recv (bin) proc */
+						   F_ARRAY_SEND,	/* array send (bin) proc */
+						   InvalidOid,	/* typmodin procedure - none */
+						   InvalidOid,	/* typmodout procedure - none */
+						   F_ARRAY_TYPANALYZE,	/* array analyze procedure */
+						   new_type_oid,	/* array element type - the rowtype */
+						   true,		/* yes, this is an array type */
+						   InvalidOid,	/* this has no array type */
+						   InvalidOid,	/* domain base type - irrelevant */
+						   NULL,		/* default value - none */
+						   NULL,		/* default binary representation */
+						   false,		/* passed by reference */
+						   TYPALIGN_DOUBLE, /* alignment - must be the largest! */
+						   TYPSTORAGE_EXTENDED, /* fully TOASTable */
+						   -1,			/* typmod */
+						   0,			/* array dimensions for typBaseType */
+						   false,		/* Type NOT NULL */
+						   InvalidOid); /* rowtypes never have a collation */
 
-		new_type_oid = InvalidOid;
+				pfree(relarrayname);
+			}
+			break;
 	}
 
 	/*
@@ -1387,51 +1444,65 @@ heap_create_with_catalog(const char *relname,
 	 * Also, skip this in bootstrap mode, since we don't make dependencies
 	 * while bootstrapping.
 	 */
-	if (relkind != RELKIND_COMPOSITE_TYPE &&
-		relkind != RELKIND_TOASTVALUE &&
-		!IsBootstrapProcessingMode())
+	Assert(RELKIND_IS_VALID((RelKind) relkind));
+	switch ((RelKind) relkind)
 	{
-		ObjectAddress myself,
-					referenced;
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_TOASTVALUE:
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_PARTITIONED_TABLE:
+		case RELKIND_RELATION:
+		case RELKIND_VIEW:
+			if (!IsBootstrapProcessingMode())
+			{
+				ObjectAddress myself,
+							referenced;
 
-		myself.classId = RelationRelationId;
-		myself.objectId = relid;
-		myself.objectSubId = 0;
+				myself.classId = RelationRelationId;
+				myself.objectId = relid;
+				myself.objectSubId = 0;
 
-		referenced.classId = NamespaceRelationId;
-		referenced.objectId = relnamespace;
-		referenced.objectSubId = 0;
-		recordDependencyOn(&myself, &referenced, DEPENDENCY_NORMAL);
+				referenced.classId = NamespaceRelationId;
+				referenced.objectId = relnamespace;
+				referenced.objectSubId = 0;
+				recordDependencyOn(&myself, &referenced, DEPENDENCY_NORMAL);
 
-		recordDependencyOnOwner(RelationRelationId, relid, ownerid);
+				recordDependencyOnOwner(RelationRelationId, relid, ownerid);
 
-		recordDependencyOnNewAcl(RelationRelationId, relid, 0, ownerid, relacl);
+				recordDependencyOnNewAcl(RelationRelationId, relid, 0, ownerid, relacl);
 
-		recordDependencyOnCurrentExtension(&myself, false);
+				recordDependencyOnCurrentExtension(&myself, false);
 
-		if (reloftypeid)
-		{
-			referenced.classId = TypeRelationId;
-			referenced.objectId = reloftypeid;
-			referenced.objectSubId = 0;
-			recordDependencyOn(&myself, &referenced, DEPENDENCY_NORMAL);
-		}
+				if (reloftypeid)
+				{
+					referenced.classId = TypeRelationId;
+					referenced.objectId = reloftypeid;
+					referenced.objectSubId = 0;
+					recordDependencyOn(&myself, &referenced, DEPENDENCY_NORMAL);
+				}
 
-		/*
-		 * Make a dependency link to force the relation to be deleted if its
-		 * access method is. Do this only for relation and materialized views.
-		 *
-		 * No need to add an explicit dependency for the toast table, as the
-		 * main table depends on it.
-		 */
-		if (relkind == RELKIND_RELATION ||
-			relkind == RELKIND_MATVIEW)
-		{
-			referenced.classId = AccessMethodRelationId;
-			referenced.objectId = accessmtd;
-			referenced.objectSubId = 0;
-			recordDependencyOn(&myself, &referenced, DEPENDENCY_NORMAL);
-		}
+				/*
+				 * Make a dependency link to force the relation to be deleted
+				 * if its access method is. Do this only for relation and
+				 * materialized views.
+				 *
+				 * No need to add an explicit dependency for the toast table,
+				 * as the main table depends on it.
+				 */
+				if (relkind == RELKIND_RELATION ||
+					relkind == RELKIND_MATVIEW)
+				{
+					referenced.classId = AccessMethodRelationId;
+					referenced.objectId = accessmtd;
+					referenced.objectSubId = 0;
+					recordDependencyOn(&myself, &referenced, DEPENDENCY_NORMAL);
+				}
+			}
 	}
 
 	/* Post creation hook for new relation */
@@ -2390,12 +2461,27 @@ StoreRelCheck(Relation rel, const char *ccname, Node *expr,
 	 * Partitioned tables do not contain any rows themselves, so a NO INHERIT
 	 * constraint makes no sense.
 	 */
-	if (is_no_inherit &&
-		rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
-				 errmsg("cannot add NO INHERIT constraint to partitioned table \"%s\"",
-						RelationGetRelationName(rel))));
+	Assert(RELKIND_IS_VALID((RelKind) rel->rd_rel->relkind));
+	switch ((RelKind) rel->rd_rel->relkind)
+	{
+		case RELKIND_PARTITIONED_TABLE:
+			if (is_no_inherit)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+						 errmsg("cannot add NO INHERIT constraint to partitioned table \"%s\"",
+								RelationGetRelationName(rel))));
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_RELATION:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+			break;
+	}
 
 	/*
 	 * Create the Check Constraint
@@ -3261,8 +3347,22 @@ heap_truncate_one_rel(Relation rel)
 	 * Truncate the relation.  Partitioned tables have no storage, so there is
 	 * nothing to do for them here.
 	 */
-	if (rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
-		return;
+	Assert(RELKIND_IS_VALID((RelKind) rel->rd_rel->relkind));
+	switch ((RelKind) rel->rd_rel->relkind)
+	{
+		case RELKIND_PARTITIONED_TABLE:
+			return;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_RELATION:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+			break;
+	}
 
 	/* Truncate the underlying relation */
 	table_relation_nontransactional_truncate(rel);
@@ -3315,9 +3415,24 @@ heap_truncate_check_FKs(List *relations, bool tempTables)
 	{
 		Relation	rel = lfirst(cell);
 
-		if (rel->rd_rel->relhastriggers ||
-			rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
-			oids = lappend_oid(oids, RelationGetRelid(rel));
+		Assert(RELKIND_IS_VALID((RelKind) rel->rd_rel->relkind));
+		switch ((RelKind) rel->rd_rel->relkind)
+		{
+			case RELKIND_PARTITIONED_INDEX:
+			case RELKIND_SEQUENCE:
+			case RELKIND_COMPOSITE_TYPE:
+			case RELKIND_FOREIGN_TABLE:
+			case RELKIND_INDEX:
+			case RELKIND_MATVIEW:
+			case RELKIND_RELATION:
+			case RELKIND_TOASTVALUE:
+			case RELKIND_VIEW:
+				if (!rel->rd_rel->relhastriggers)
+					break;
+				/* fallthrough */
+			case RELKIND_PARTITIONED_TABLE:
+				oids = lappend_oid(oids, RelationGetRelid(rel));
+		}
 	}
 
 	/*
@@ -3540,7 +3655,23 @@ StorePartitionKey(Relation rel,
 	ObjectAddress myself;
 	ObjectAddress referenced;
 
-	Assert(rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE);
+	Assert(RELKIND_IS_VALID((RelKind) rel->rd_rel->relkind));
+	switch ((RelKind) rel->rd_rel->relkind)
+	{
+		case RELKIND_PARTITIONED_TABLE:
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_RELATION:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+			Assert(false);
+			break;
+	}
 
 	/* Copy the partition attribute numbers, opclass OIDs into arrays */
 	partattrs_vec = buildint2vector(partattrs, partnatts);

@@ -215,10 +215,22 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 			 * Ignore partitioned indexes, since they are not usable for
 			 * queries.
 			 */
-			if (indexRelation->rd_rel->relkind == RELKIND_PARTITIONED_INDEX)
+			Assert(RELKIND_IS_VALID((RelKind) indexRelation->rd_rel->relkind));
+			switch ((RelKind) indexRelation->rd_rel->relkind)
 			{
-				index_close(indexRelation, NoLock);
-				continue;
+				case RELKIND_PARTITIONED_INDEX:
+					index_close(indexRelation, NoLock);
+					continue;
+				case RELKIND_SEQUENCE:
+				case RELKIND_COMPOSITE_TYPE:
+				case RELKIND_FOREIGN_TABLE:
+				case RELKIND_INDEX:
+				case RELKIND_MATVIEW:
+				case RELKIND_PARTITIONED_TABLE:
+				case RELKIND_RELATION:
+				case RELKIND_TOASTVALUE:
+				case RELKIND_VIEW:
+					break;
 			}
 
 			/*
@@ -442,15 +454,24 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 	rel->statlist = get_relation_statistics(rel, relation);
 
 	/* Grab foreign-table info using the relcache, while we have it */
-	if (relation->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
+	Assert(RELKIND_IS_VALID((RelKind) relation->rd_rel->relkind));
+	switch ((RelKind) relation->rd_rel->relkind)
 	{
-		rel->serverid = GetForeignServerIdByRelId(RelationGetRelid(relation));
-		rel->fdwroutine = GetFdwRoutineForRelation(relation, true);
-	}
-	else
-	{
-		rel->serverid = InvalidOid;
-		rel->fdwroutine = NULL;
+		case RELKIND_FOREIGN_TABLE:
+			rel->serverid = GetForeignServerIdByRelId(RelationGetRelid(relation));
+			rel->fdwroutine = GetFdwRoutineForRelation(relation, true);
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_PARTITIONED_TABLE:
+		case RELKIND_RELATION:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+			rel->serverid = InvalidOid;
+			rel->fdwroutine = NULL;
 	}
 
 	/* Collect info about relation's foreign keys, if relevant */
@@ -460,8 +481,24 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 	 * Collect info about relation's partitioning scheme, if any. Only
 	 * inheritance parents may be partitioned.
 	 */
-	if (inhparent && relation->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
-		set_relation_partition_info(root, rel, relation);
+	Assert(RELKIND_IS_VALID((RelKind) relation->rd_rel->relkind));
+	switch ((RelKind) relation->rd_rel->relkind)
+	{
+		case RELKIND_PARTITIONED_TABLE:
+			if (inhparent)
+				set_relation_partition_info(root, rel, relation);
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_RELATION:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+			break;
+	}
 
 	table_close(relation, NoLock);
 
@@ -955,7 +992,8 @@ estimate_rel_size(Relation rel, int32 *attr_widths,
 	BlockNumber relallvisible;
 	double		density;
 
-	switch (rel->rd_rel->relkind)
+	Assert(RELKIND_IS_VALID((RelKind) rel->rd_rel->relkind));
+	switch ((RelKind) rel->rd_rel->relkind)
 	{
 		case RELKIND_RELATION:
 		case RELKIND_MATVIEW:
@@ -1063,12 +1101,14 @@ estimate_rel_size(Relation rel, int32 *attr_widths,
 			*tuples = rel->rd_rel->reltuples;
 			*allvisfrac = 0;
 			break;
-		default:
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_PARTITIONED_TABLE:
+		case RELKIND_VIEW:
 			/* else it has no disk storage; probably shouldn't get here? */
 			*pages = 0;
 			*tuples = 0;
 			*allvisfrac = 0;
-			break;
 	}
 }
 

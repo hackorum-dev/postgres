@@ -111,17 +111,31 @@ pgrowlocks(PG_FUNCTION_ARGS)
 		ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 						errmsg("only heap AM is supported")));
 
-	if (rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("\"%s\" is a partitioned table",
-						RelationGetRelationName(rel)),
-				 errdetail("Partitioned tables do not contain rows.")));
-	else if (rel->rd_rel->relkind != RELKIND_RELATION)
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("\"%s\" is not a table",
-						RelationGetRelationName(rel))));
+	Assert(RELKIND_IS_VALID((RelKind) rel->rd_rel->relkind));
+	switch ((RelKind) rel->rd_rel->relkind)
+	{
+		case RELKIND_RELATION:
+			break;
+		case RELKIND_PARTITIONED_TABLE:
+			ereport(ERROR,
+					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+					 errmsg("\"%s\" is a partitioned table",
+							RelationGetRelationName(rel)),
+					 errdetail("Partitioned tables do not contain rows.")));
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+			ereport(ERROR,
+					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+					 errmsg("\"%s\" is not a table",
+							RelationGetRelationName(rel))));
+	}
 
 	/*
 	 * check permissions: must have SELECT on table or be in

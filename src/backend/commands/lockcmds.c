@@ -56,10 +56,24 @@ LockTableCommand(LockStmt *lockstmt)
 										  RangeVarCallbackForLockTable,
 										  (void *) &lockstmt->mode);
 
-		if (get_rel_relkind(reloid) == RELKIND_VIEW)
-			LockViewRecurse(reloid, lockstmt->mode, lockstmt->nowait, NIL);
-		else if (recurse)
-			LockTableRecurse(reloid, lockstmt->mode, lockstmt->nowait);
+		Assert(RELKIND_IS_VALID((RelKind) get_rel_relkind(reloid)));
+		switch ((RelKind) get_rel_relkind(reloid))
+		{
+			case RELKIND_VIEW:
+				LockViewRecurse(reloid, lockstmt->mode, lockstmt->nowait, NIL);
+				break;
+			case RELKIND_PARTITIONED_INDEX:
+			case RELKIND_SEQUENCE:
+			case RELKIND_COMPOSITE_TYPE:
+			case RELKIND_FOREIGN_TABLE:
+			case RELKIND_INDEX:
+			case RELKIND_MATVIEW:
+			case RELKIND_PARTITIONED_TABLE:
+			case RELKIND_RELATION:
+			case RELKIND_TOASTVALUE:
+				if (recurse)
+					LockTableRecurse(reloid, lockstmt->mode, lockstmt->nowait);
+		}
 	}
 }
 
@@ -84,12 +98,25 @@ RangeVarCallbackForLockTable(const RangeVar *rv, Oid relid, Oid oldrelid,
 								 * check */
 
 	/* Currently, we only allow plain tables or views to be locked */
-	if (relkind != RELKIND_RELATION && relkind != RELKIND_PARTITIONED_TABLE &&
-		relkind != RELKIND_VIEW)
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("\"%s\" is not a table or view",
-						rv->relname)));
+	Assert(RELKIND_IS_VALID((RelKind) relkind));
+	switch ((RelKind) relkind)
+	{
+		case RELKIND_RELATION:
+		case RELKIND_PARTITIONED_TABLE:
+		case RELKIND_VIEW:
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_TOASTVALUE:
+			ereport(ERROR,
+					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+					 errmsg("\"%s\" is not a table or view",
+							rv->relname)));
+	}
 
 	/*
 	 * Make note if a temporary relation has been accessed in this
@@ -201,10 +228,29 @@ LockViewRecurse_walker(Node *node, LockViewRecurse_context *context)
 				 strcmp(rte->eref->aliasname, "new") == 0))
 				continue;
 
-			/* Currently, we only allow plain tables or views to be locked. */
-			if (relkind != RELKIND_RELATION && relkind != RELKIND_PARTITIONED_TABLE &&
-				relkind != RELKIND_VIEW)
+			if (relkind == '\0')
 				continue;
+
+			Assert(RELKIND_IS_VALID((RelKind) relkind));
+			switch ((RelKind) relkind)
+			{
+				/*
+				 * Currently, we only allow plain tables or views to be
+				 * locked.
+				 */
+				case RELKIND_RELATION:
+				case RELKIND_PARTITIONED_TABLE:
+				case RELKIND_VIEW:
+					break;
+				case RELKIND_PARTITIONED_INDEX:
+				case RELKIND_SEQUENCE:
+				case RELKIND_COMPOSITE_TYPE:
+				case RELKIND_FOREIGN_TABLE:
+				case RELKIND_INDEX:
+				case RELKIND_MATVIEW:
+				case RELKIND_TOASTVALUE:
+					continue;
+			}
 
 			/* Check infinite recursion in the view definition. */
 			if (list_member_oid(context->ancestor_views, relid))
@@ -227,10 +273,25 @@ LockViewRecurse_walker(Node *node, LockViewRecurse_context *context)
 						 errmsg("could not obtain lock on relation \"%s\"",
 								relname)));
 
-			if (relkind == RELKIND_VIEW)
-				LockViewRecurse(relid, context->lockmode, context->nowait, context->ancestor_views);
-			else if (rte->inh)
-				LockTableRecurse(relid, context->lockmode, context->nowait);
+			/* We already checked for relkind == '\0', above */
+			Assert(RELKIND_IS_VALID((RelKind) relkind));
+			switch ((RelKind) relkind)
+			{
+				case RELKIND_VIEW:
+					LockViewRecurse(relid, context->lockmode, context->nowait, context->ancestor_views);
+					break;
+				case RELKIND_PARTITIONED_INDEX:
+				case RELKIND_SEQUENCE:
+				case RELKIND_COMPOSITE_TYPE:
+				case RELKIND_FOREIGN_TABLE:
+				case RELKIND_INDEX:
+				case RELKIND_MATVIEW:
+				case RELKIND_PARTITIONED_TABLE:
+				case RELKIND_RELATION:
+				case RELKIND_TOASTVALUE:
+					if (rte->inh)
+						LockTableRecurse(relid, context->lockmode, context->nowait);
+			}
 		}
 
 		return query_tree_walker(query,

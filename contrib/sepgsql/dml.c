@@ -167,10 +167,26 @@ check_relation_privileges(Oid relOid,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("SELinux: hardwired security policy violation")));
 
-		if (relkind == RELKIND_TOASTVALUE)
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("SELinux: hardwired security policy violation")));
+		Assert(RELKIND_IS_VALID((RelKind) relkind));
+		switch ((RelKind) relkind)
+		{
+			case RELKIND_TOASTVALUE:
+				ereport(ERROR,
+						(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+						 errmsg("SELinux: hardwired security policy violation")));
+				break;
+			case RELKIND_PARTITIONED_INDEX:
+			case RELKIND_SEQUENCE:
+			case RELKIND_COMPOSITE_TYPE:
+			case RELKIND_FOREIGN_TABLE:
+			case RELKIND_INDEX:
+			case RELKIND_MATVIEW:
+			case RELKIND_PARTITIONED_TABLE:
+			case RELKIND_RELATION:
+			case RELKIND_VIEW:
+				break;
+		}
+
 	}
 
 	/*
@@ -180,7 +196,8 @@ check_relation_privileges(Oid relOid,
 	object.objectId = relOid;
 	object.objectSubId = 0;
 	audit_name = getObjectIdentity(&object);
-	switch (relkind)
+	Assert(RELKIND_IS_VALID((RelKind) relkind));
+	switch ((RelKind) relkind)
 	{
 		case RELKIND_RELATION:
 		case RELKIND_PARTITIONED_TABLE:
@@ -210,7 +227,12 @@ check_relation_privileges(Oid relOid,
 											 abort_on_violation);
 			break;
 
-		default:
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_TOASTVALUE:
 			/* nothing to be checked */
 			break;
 	}
@@ -219,8 +241,22 @@ check_relation_privileges(Oid relOid,
 	/*
 	 * Only columns owned by relations shall be checked
 	 */
-	if (relkind != RELKIND_RELATION && relkind != RELKIND_PARTITIONED_TABLE)
-		return true;
+	Assert(RELKIND_IS_VALID((RelKind) relkind));
+	switch ((RelKind) relkind)
+	{
+		case RELKIND_RELATION:
+		case RELKIND_PARTITIONED_TABLE:
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+			return true;
+	}
 
 	/*
 	 * Check permissions on the columns

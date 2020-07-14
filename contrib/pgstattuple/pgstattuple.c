@@ -252,7 +252,8 @@ pgstat_relation(Relation rel, FunctionCallInfo fcinfo)
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot access temporary tables of other sessions")));
 
-	switch (rel->rd_rel->relkind)
+	Assert(RELKIND_IS_VALID((RelKind) rel->rd_rel->relkind));
+	switch ((RelKind) rel->rd_rel->relkind)
 	{
 		case RELKIND_RELATION:
 		case RELKIND_MATVIEW:
@@ -282,7 +283,6 @@ pgstat_relation(Relation rel, FunctionCallInfo fcinfo)
 					break;
 				default:
 					err = "unknown index";
-					break;
 			}
 			break;
 		case RELKIND_VIEW:
@@ -299,10 +299,6 @@ pgstat_relation(Relation rel, FunctionCallInfo fcinfo)
 			break;
 		case RELKIND_PARTITIONED_INDEX:
 			err = "partitioned index";
-			break;
-		default:
-			err = "unknown";
-			break;
 	}
 
 	ereport(ERROR,

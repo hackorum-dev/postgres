@@ -1280,10 +1280,23 @@ inheritance_planner(PlannerInfo *root)
 	 */
 	parent_rte = rt_fetch(top_parentRTindex, parse->rtable);
 	Assert(parent_rte->inh);
-	if (parent_rte->relkind == RELKIND_PARTITIONED_TABLE)
+	Assert(RELKIND_IS_VALID((RelKind) parent_rte->relkind));
+	switch ((RelKind) parent_rte->relkind)
 	{
-		nominalRelation = top_parentRTindex;
-		rootRelation = top_parentRTindex;
+		case RELKIND_PARTITIONED_TABLE:
+			nominalRelation = top_parentRTindex;
+			rootRelation = top_parentRTindex;
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_RELATION:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+			break;
 	}
 
 	/*
@@ -2338,11 +2351,23 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 			 * If target is a partition root table, we need to mark the
 			 * ModifyTable node appropriately for that.
 			 */
-			if (rt_fetch(parse->resultRelation, parse->rtable)->relkind ==
-				RELKIND_PARTITIONED_TABLE)
-				rootRelation = parse->resultRelation;
-			else
-				rootRelation = 0;
+			Assert(RELKIND_IS_VALID((RelKind) rt_fetch(parse->resultRelation, parse->rtable)->relkind));
+			switch ((RelKind) rt_fetch(parse->resultRelation, parse->rtable)->relkind)
+			{
+				case RELKIND_PARTITIONED_TABLE:
+					rootRelation = parse->resultRelation;
+					break;
+				case RELKIND_PARTITIONED_INDEX:
+				case RELKIND_SEQUENCE:
+				case RELKIND_COMPOSITE_TYPE:
+				case RELKIND_FOREIGN_TABLE:
+				case RELKIND_INDEX:
+				case RELKIND_MATVIEW:
+				case RELKIND_RELATION:
+				case RELKIND_TOASTVALUE:
+				case RELKIND_VIEW:
+					rootRelation = 0;
+			}
 
 			/*
 			 * Set up the WITH CHECK OPTION and RETURNING lists-of-lists, if
@@ -2765,44 +2790,58 @@ select_rowmark_type(RangeTblEntry *rte, LockClauseStrength strength)
 		/* If it's not a table at all, use ROW_MARK_COPY */
 		return ROW_MARK_COPY;
 	}
-	else if (rte->relkind == RELKIND_FOREIGN_TABLE)
-	{
-		/* Let the FDW select the rowmark type, if it wants to */
-		FdwRoutine *fdwroutine = GetFdwRoutineByRelId(rte->relid);
-
-		if (fdwroutine->GetForeignRowMarkType != NULL)
-			return fdwroutine->GetForeignRowMarkType(rte, strength);
-		/* Otherwise, use ROW_MARK_COPY by default */
-		return ROW_MARK_COPY;
-	}
 	else
 	{
-		/* Regular table, apply the appropriate lock type */
-		switch (strength)
+		Assert(RELKIND_IS_VALID((RelKind) rte->relkind));
+		switch ((RelKind) rte->relkind)
 		{
-			case LCS_NONE:
+			case RELKIND_FOREIGN_TABLE:
+				{
+					/* Let the FDW select the rowmark type, if it wants to */
+					FdwRoutine *fdwroutine = GetFdwRoutineByRelId(rte->relid);
 
-				/*
-				 * We don't need a tuple lock, only the ability to re-fetch
-				 * the row.
-				 */
-				return ROW_MARK_REFERENCE;
+					if (fdwroutine->GetForeignRowMarkType != NULL)
+						return fdwroutine->GetForeignRowMarkType(rte, strength);
+					/* Otherwise, use ROW_MARK_COPY by default */
+					return ROW_MARK_COPY;
+				}
 				break;
-			case LCS_FORKEYSHARE:
-				return ROW_MARK_KEYSHARE;
-				break;
-			case LCS_FORSHARE:
-				return ROW_MARK_SHARE;
-				break;
-			case LCS_FORNOKEYUPDATE:
-				return ROW_MARK_NOKEYEXCLUSIVE;
-				break;
-			case LCS_FORUPDATE:
-				return ROW_MARK_EXCLUSIVE;
-				break;
+			case RELKIND_PARTITIONED_INDEX:
+			case RELKIND_SEQUENCE:
+			case RELKIND_COMPOSITE_TYPE:
+			case RELKIND_INDEX:
+			case RELKIND_MATVIEW:
+			case RELKIND_PARTITIONED_TABLE:
+			case RELKIND_RELATION:
+			case RELKIND_TOASTVALUE:
+			case RELKIND_VIEW:
+				/* Regular table, apply the appropriate lock type */
+				switch (strength)
+				{
+					case LCS_NONE:
+
+						/*
+						 * We don't need a tuple lock, only the ability to
+						 * re-fetch the row.
+						 */
+						return ROW_MARK_REFERENCE;
+						break;
+					case LCS_FORKEYSHARE:
+						return ROW_MARK_KEYSHARE;
+						break;
+					case LCS_FORSHARE:
+						return ROW_MARK_SHARE;
+						break;
+					case LCS_FORNOKEYUPDATE:
+						return ROW_MARK_NOKEYEXCLUSIVE;
+						break;
+					case LCS_FORUPDATE:
+						return ROW_MARK_EXCLUSIVE;
+						break;
+				}
+				elog(ERROR, "unrecognized LockClauseStrength %d", (int) strength);
+				return ROW_MARK_EXCLUSIVE;	/* keep compiler quiet */
 		}
-		elog(ERROR, "unrecognized LockClauseStrength %d", (int) strength);
-		return ROW_MARK_EXCLUSIVE;	/* keep compiler quiet */
 	}
 }
 
@@ -3142,8 +3181,23 @@ remove_useless_groupby_columns(PlannerInfo *root)
 		 * may cause duplicate rows.  This cannot happen with partitioned
 		 * tables, however.
 		 */
-		if (rte->inh && rte->relkind != RELKIND_PARTITIONED_TABLE)
-			continue;
+		Assert(RELKIND_IS_VALID((RelKind) rte->relkind));
+		switch ((RelKind) rte->relkind)
+		{
+			case RELKIND_PARTITIONED_TABLE:
+				break;
+			case RELKIND_FOREIGN_TABLE:
+			case RELKIND_RELATION:
+			case RELKIND_COMPOSITE_TYPE:
+			case RELKIND_INDEX:
+			case RELKIND_PARTITIONED_INDEX:
+			case RELKIND_MATVIEW:
+			case RELKIND_VIEW:
+			case RELKIND_SEQUENCE:
+			case RELKIND_TOASTVALUE:
+				if (rte->inh)
+					continue;
+		}
 
 		/* Nothing to do unless this rel has multiple Vars in GROUP BY */
 		relattnos = groupbyattnos[relid];

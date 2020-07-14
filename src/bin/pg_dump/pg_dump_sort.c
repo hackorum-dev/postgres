@@ -801,8 +801,28 @@ repairMatViewBoundaryMultiLoop(DumpableObject *boundaryobj,
 	{
 		TableInfo  *nextinfo = (TableInfo *) nextobj;
 
-		if (nextinfo->relkind == RELKIND_MATVIEW)
-			nextinfo->postponed_def = true;
+		/*
+		 * Beware that relkind here may be NULL, which is not a valid member
+		 * of enum RelKind.
+		 */
+		Assert(nextinfo->relkind == '\0' ||
+			   RELKIND_IS_VALID((RelKind) nextinfo->relkind));
+		switch ((RelKind) nextinfo->relkind)
+		{
+			case RELKIND_MATVIEW:
+				nextinfo->postponed_def = true;
+				break;
+			case RELKIND_PARTITIONED_INDEX:
+			case RELKIND_SEQUENCE:
+			case RELKIND_COMPOSITE_TYPE:
+			case RELKIND_FOREIGN_TABLE:
+			case RELKIND_INDEX:
+			case RELKIND_PARTITIONED_TABLE:
+			case RELKIND_RELATION:
+			case RELKIND_TOASTVALUE:
+			case RELKIND_VIEW:
+				break;
+		}
 	}
 }
 
@@ -928,30 +948,64 @@ repairDependencyLoop(DumpableObject **loop,
 		return;
 	}
 
-	/* View (including matview) and its ON SELECT rule */
-	if (nLoop == 2 &&
-		loop[0]->objType == DO_TABLE &&
-		loop[1]->objType == DO_RULE &&
-		(((TableInfo *) loop[0])->relkind == RELKIND_VIEW ||
-		 ((TableInfo *) loop[0])->relkind == RELKIND_MATVIEW) &&
-		((RuleInfo *) loop[1])->ev_type == '1' &&
-		((RuleInfo *) loop[1])->is_instead &&
-		((RuleInfo *) loop[1])->ruletable == (TableInfo *) loop[0])
+	/*
+	 * Beware that relkind here is not guaranteed to be a valid member
+	 * of enum RelKind.
+	 */
+	switch ((RelKind) ((TableInfo *) loop[0])->relkind)
 	{
-		repairViewRuleLoop(loop[0], loop[1]);
-		return;
+		case RELKIND_VIEW:
+		case RELKIND_MATVIEW:
+			/* View (including matview) and its ON SELECT rule */
+			if (nLoop == 2 &&
+				loop[0]->objType == DO_TABLE &&
+				loop[1]->objType == DO_RULE &&
+				((RuleInfo *) loop[1])->ev_type == '1' &&
+				((RuleInfo *) loop[1])->is_instead &&
+				((RuleInfo *) loop[1])->ruletable == (TableInfo *) loop[0])
+			{
+				repairViewRuleLoop(loop[0], loop[1]);
+				return;
+			}
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_PARTITIONED_TABLE:
+		case RELKIND_RELATION:
+		case RELKIND_TOASTVALUE:
+			break;
 	}
-	if (nLoop == 2 &&
-		loop[1]->objType == DO_TABLE &&
-		loop[0]->objType == DO_RULE &&
-		(((TableInfo *) loop[1])->relkind == RELKIND_VIEW ||
-		 ((TableInfo *) loop[1])->relkind == RELKIND_MATVIEW) &&
-		((RuleInfo *) loop[0])->ev_type == '1' &&
-		((RuleInfo *) loop[0])->is_instead &&
-		((RuleInfo *) loop[0])->ruletable == (TableInfo *) loop[1])
+	/*
+	 * Beware that relkind here is not guaranteed to be a valid member
+	 * of enum RelKind.
+	 */
+	switch ((RelKind) ((TableInfo *) loop[1])->relkind)
 	{
-		repairViewRuleLoop(loop[1], loop[0]);
-		return;
+		case RELKIND_VIEW:
+		case RELKIND_MATVIEW:
+			if (nLoop == 2 &&
+				loop[1]->objType == DO_TABLE &&
+				loop[0]->objType == DO_RULE &&
+				((RuleInfo *) loop[0])->ev_type == '1' &&
+				((RuleInfo *) loop[0])->is_instead &&
+				((RuleInfo *) loop[0])->ruletable == (TableInfo *) loop[1])
+			{
+				repairViewRuleLoop(loop[1], loop[0]);
+				return;
+			}
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_PARTITIONED_TABLE:
+		case RELKIND_RELATION:
+		case RELKIND_TOASTVALUE:
+			break;
 	}
 
 	/* Indirect loop involving view (but not matview) and ON SELECT rule */
@@ -959,20 +1013,38 @@ repairDependencyLoop(DumpableObject **loop,
 	{
 		for (i = 0; i < nLoop; i++)
 		{
-			if (loop[i]->objType == DO_TABLE &&
-				((TableInfo *) loop[i])->relkind == RELKIND_VIEW)
+			/*
+			 * Beware that relkind here is not guaranteed to be a valid member
+			 * of enum RelKind.
+			 */
+			switch ((RelKind) ((TableInfo *) loop[i])->relkind)
 			{
-				for (j = 0; j < nLoop; j++)
-				{
-					if (loop[j]->objType == DO_RULE &&
-						((RuleInfo *) loop[j])->ev_type == '1' &&
-						((RuleInfo *) loop[j])->is_instead &&
-						((RuleInfo *) loop[j])->ruletable == (TableInfo *) loop[i])
+				case RELKIND_VIEW:
+					if (loop[i]->objType == DO_TABLE)
 					{
-						repairViewRuleMultiLoop(loop[i], loop[j]);
-						return;
+						for (j = 0; j < nLoop; j++)
+						{
+							if (loop[j]->objType == DO_RULE &&
+								((RuleInfo *) loop[j])->ev_type == '1' &&
+								((RuleInfo *) loop[j])->is_instead &&
+								((RuleInfo *) loop[j])->ruletable == (TableInfo *) loop[i])
+							{
+								repairViewRuleMultiLoop(loop[i], loop[j]);
+								return;
+							}
+						}
 					}
-				}
+					break;
+				case RELKIND_PARTITIONED_INDEX:
+				case RELKIND_SEQUENCE:
+				case RELKIND_COMPOSITE_TYPE:
+				case RELKIND_FOREIGN_TABLE:
+				case RELKIND_INDEX:
+				case RELKIND_MATVIEW:
+				case RELKIND_PARTITIONED_TABLE:
+				case RELKIND_RELATION:
+				case RELKIND_TOASTVALUE:
+					break;
 			}
 		}
 	}
@@ -982,20 +1054,38 @@ repairDependencyLoop(DumpableObject **loop,
 	{
 		for (i = 0; i < nLoop; i++)
 		{
-			if (loop[i]->objType == DO_TABLE &&
-				((TableInfo *) loop[i])->relkind == RELKIND_MATVIEW)
+			/*
+			 * Beware that relkind here is not guaranteed to be a valid member
+			 * of enum RelKind.
+			 */
+			switch ((RelKind) ((TableInfo *) loop[i])->relkind)
 			{
-				for (j = 0; j < nLoop; j++)
-				{
-					if (loop[j]->objType == DO_PRE_DATA_BOUNDARY)
+				case RELKIND_MATVIEW:
+					if (loop[i]->objType == DO_TABLE)
 					{
-						DumpableObject *nextobj;
+						for (j = 0; j < nLoop; j++)
+						{
+							if (loop[j]->objType == DO_PRE_DATA_BOUNDARY)
+							{
+								DumpableObject *nextobj;
 
-						nextobj = (j < nLoop - 1) ? loop[j + 1] : loop[0];
-						repairMatViewBoundaryMultiLoop(loop[j], nextobj);
-						return;
+								nextobj = (j < nLoop - 1) ? loop[j + 1] : loop[0];
+								repairMatViewBoundaryMultiLoop(loop[j], nextobj);
+								return;
+							}
+						}
 					}
-				}
+					break;
+				case RELKIND_PARTITIONED_INDEX:
+				case RELKIND_SEQUENCE:
+				case RELKIND_COMPOSITE_TYPE:
+				case RELKIND_FOREIGN_TABLE:
+				case RELKIND_INDEX:
+				case RELKIND_PARTITIONED_TABLE:
+				case RELKIND_RELATION:
+				case RELKIND_TOASTVALUE:
+				case RELKIND_VIEW:
+					break;
 			}
 		}
 	}

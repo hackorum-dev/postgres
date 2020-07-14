@@ -1834,42 +1834,56 @@ BeginCopyTo(ParseState *pstate,
 	bool		pipe = (filename == NULL);
 	MemoryContext oldcontext;
 
-	if (rel != NULL && rel->rd_rel->relkind != RELKIND_RELATION)
+	if (rel != NULL)
 	{
-		if (rel->rd_rel->relkind == RELKIND_VIEW)
-			ereport(ERROR,
-					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("cannot copy from view \"%s\"",
-							RelationGetRelationName(rel)),
-					 errhint("Try the COPY (SELECT ...) TO variant.")));
-		else if (rel->rd_rel->relkind == RELKIND_MATVIEW)
-			ereport(ERROR,
-					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("cannot copy from materialized view \"%s\"",
-							RelationGetRelationName(rel)),
-					 errhint("Try the COPY (SELECT ...) TO variant.")));
-		else if (rel->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
-			ereport(ERROR,
-					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("cannot copy from foreign table \"%s\"",
-							RelationGetRelationName(rel)),
-					 errhint("Try the COPY (SELECT ...) TO variant.")));
-		else if (rel->rd_rel->relkind == RELKIND_SEQUENCE)
-			ereport(ERROR,
-					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("cannot copy from sequence \"%s\"",
-							RelationGetRelationName(rel))));
-		else if (rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
-			ereport(ERROR,
-					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("cannot copy from partitioned table \"%s\"",
-							RelationGetRelationName(rel)),
-					 errhint("Try the COPY (SELECT ...) TO variant.")));
-		else
-			ereport(ERROR,
-					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("cannot copy from non-table relation \"%s\"",
-							RelationGetRelationName(rel))));
+		Assert(RELKIND_IS_VALID((RelKind) rel->rd_rel->relkind));
+		switch ((RelKind) rel->rd_rel->relkind)
+		{
+			case RELKIND_RELATION:
+				break;
+			case RELKIND_SEQUENCE:
+				ereport(ERROR,
+						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+						 errmsg("cannot copy from sequence \"%s\"",
+								RelationGetRelationName(rel))));
+				break;
+			case RELKIND_FOREIGN_TABLE:
+				ereport(ERROR,
+						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+						 errmsg("cannot copy from foreign table \"%s\"",
+								RelationGetRelationName(rel)),
+						 errhint("Try the COPY (SELECT ...) TO variant.")));
+				break;
+			case RELKIND_MATVIEW:
+				ereport(ERROR,
+						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+						 errmsg("cannot copy from materialized view \"%s\"",
+								RelationGetRelationName(rel)),
+						 errhint("Try the COPY (SELECT ...) TO variant.")));
+				break;
+			case RELKIND_PARTITIONED_TABLE:
+				ereport(ERROR,
+						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+						 errmsg("cannot copy from partitioned table \"%s\"",
+								RelationGetRelationName(rel)),
+						 errhint("Try the COPY (SELECT ...) TO variant.")));
+				break;
+			case RELKIND_VIEW:
+				ereport(ERROR,
+						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+						 errmsg("cannot copy from view \"%s\"",
+								RelationGetRelationName(rel)),
+						 errhint("Try the COPY (SELECT ...) TO variant.")));
+				break;
+			case RELKIND_PARTITIONED_INDEX:
+			case RELKIND_COMPOSITE_TYPE:
+			case RELKIND_INDEX:
+			case RELKIND_TOASTVALUE:
+				ereport(ERROR,
+						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+						 errmsg("cannot copy from non-table relation \"%s\"",
+								RelationGetRelationName(rel))));
+		}
 	}
 
 	cstate = BeginCopy(pstate, false, rel, query, queryRelId, attnamelist,
@@ -2393,8 +2407,22 @@ CopyMultiInsertInfoInit(CopyMultiInsertInfo *miinfo, ResultRelInfo *rri,
 	 * Buffers for partitioned tables will just be setup when we need to send
 	 * tuples their way for the first time.
 	 */
-	if (rri->ri_RelationDesc->rd_rel->relkind != RELKIND_PARTITIONED_TABLE)
-		CopyMultiInsertInfoSetupBuffer(miinfo, rri);
+	Assert(RELKIND_IS_VALID((RelKind) rri->ri_RelationDesc->rd_rel->relkind));
+	switch ((RelKind) rri->ri_RelationDesc->rd_rel->relkind)
+	{
+		case RELKIND_PARTITIONED_TABLE:
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_RELATION:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+			CopyMultiInsertInfoSetupBuffer(miinfo, rri);
+	}
 }
 
 /*
@@ -2681,33 +2709,44 @@ CopyFrom(CopyState cstate)
 	 * an INSTEAD OF INSERT row trigger.  (Currently, such triggers are only
 	 * allowed on views, so we only hint about them in the view case.)
 	 */
-	if (cstate->rel->rd_rel->relkind != RELKIND_RELATION &&
-		cstate->rel->rd_rel->relkind != RELKIND_FOREIGN_TABLE &&
-		cstate->rel->rd_rel->relkind != RELKIND_PARTITIONED_TABLE &&
-		!(cstate->rel->trigdesc &&
+	if (!(cstate->rel->trigdesc &&
 		  cstate->rel->trigdesc->trig_insert_instead_row))
 	{
-		if (cstate->rel->rd_rel->relkind == RELKIND_VIEW)
-			ereport(ERROR,
-					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("cannot copy to view \"%s\"",
-							RelationGetRelationName(cstate->rel)),
-					 errhint("To enable copying to a view, provide an INSTEAD OF INSERT trigger.")));
-		else if (cstate->rel->rd_rel->relkind == RELKIND_MATVIEW)
-			ereport(ERROR,
-					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("cannot copy to materialized view \"%s\"",
-							RelationGetRelationName(cstate->rel))));
-		else if (cstate->rel->rd_rel->relkind == RELKIND_SEQUENCE)
-			ereport(ERROR,
-					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("cannot copy to sequence \"%s\"",
-							RelationGetRelationName(cstate->rel))));
-		else
-			ereport(ERROR,
-					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("cannot copy to non-table relation \"%s\"",
-							RelationGetRelationName(cstate->rel))));
+		Assert(RELKIND_IS_VALID((RelKind) cstate->rel->rd_rel->relkind));
+		switch ((RelKind) cstate->rel->rd_rel->relkind)
+		{
+			case RELKIND_RELATION:
+			case RELKIND_FOREIGN_TABLE:
+			case RELKIND_PARTITIONED_TABLE:
+				break;
+			case RELKIND_VIEW:
+				ereport(ERROR,
+						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+						 errmsg("cannot copy to view \"%s\"",
+								RelationGetRelationName(cstate->rel)),
+						 errhint("To enable copying to a view, provide an INSTEAD OF INSERT trigger.")));
+				break;
+			case RELKIND_MATVIEW:
+				ereport(ERROR,
+						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+						 errmsg("cannot copy to materialized view \"%s\"",
+								RelationGetRelationName(cstate->rel))));
+				break;
+			case RELKIND_SEQUENCE:
+				ereport(ERROR,
+						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+						 errmsg("cannot copy to sequence \"%s\"",
+								RelationGetRelationName(cstate->rel))));
+				break;
+			case RELKIND_PARTITIONED_INDEX:
+			case RELKIND_COMPOSITE_TYPE:
+			case RELKIND_INDEX:
+			case RELKIND_TOASTVALUE:
+				ereport(ERROR,
+						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+						 errmsg("cannot copy to non-table relation \"%s\"",
+								RelationGetRelationName(cstate->rel))));
+		}
 	}
 
 	/*
@@ -2742,11 +2781,24 @@ CopyFrom(CopyState cstate)
 		 * tuples to a small number of partitions.  It seems better just to
 		 * raise an ERROR for partitioned tables.
 		 */
-		if (cstate->rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
+		Assert(RELKIND_IS_VALID((RelKind) cstate->rel->rd_rel->relkind));
+		switch ((RelKind) cstate->rel->rd_rel->relkind)
 		{
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("cannot perform COPY FREEZE on a partitioned table")));
+			case RELKIND_PARTITIONED_TABLE:
+				ereport(ERROR,
+						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						 errmsg("cannot perform COPY FREEZE on a partitioned table")));
+				break;
+			case RELKIND_PARTITIONED_INDEX:
+			case RELKIND_SEQUENCE:
+			case RELKIND_COMPOSITE_TYPE:
+			case RELKIND_FOREIGN_TABLE:
+			case RELKIND_INDEX:
+			case RELKIND_MATVIEW:
+			case RELKIND_RELATION:
+			case RELKIND_TOASTVALUE:
+			case RELKIND_VIEW:
+				break;
 		}
 
 		/*
@@ -2831,8 +2883,23 @@ CopyFrom(CopyState cstate)
 	 * If the named relation is a partitioned table, initialize state for
 	 * CopyFrom tuple routing.
 	 */
-	if (cstate->rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
-		proute = ExecSetupPartitionTupleRouting(estate, NULL, cstate->rel);
+	Assert(RELKIND_IS_VALID((RelKind) cstate->rel->rd_rel->relkind));
+	switch ((RelKind) cstate->rel->rd_rel->relkind)
+	{
+		case RELKIND_PARTITIONED_TABLE:
+			proute = ExecSetupPartitionTupleRouting(estate, NULL, cstate->rel);
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_RELATION:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+			break;
+	}
 
 	if (cstate->whereClause)
 		cstate->qualexpr = ExecInitQual(castNode(List, cstate->whereClause),

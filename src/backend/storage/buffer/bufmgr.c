@@ -2819,7 +2819,8 @@ FlushBuffer(BufferDesc *buf, SMgrRelation reln)
 BlockNumber
 RelationGetNumberOfBlocksInFork(Relation relation, ForkNumber forkNum)
 {
-	switch (relation->rd_rel->relkind)
+	Assert(RELKIND_IS_VALID((RelKind) relation->rd_rel->relkind));
+	switch ((RelKind) relation->rd_rel->relkind)
 	{
 		case RELKIND_SEQUENCE:
 		case RELKIND_INDEX:
@@ -2846,13 +2847,16 @@ RelationGetNumberOfBlocksInFork(Relation relation, ForkNumber forkNum)
 				return (szbytes + (BLCKSZ - 1)) / BLCKSZ;
 			}
 		case RELKIND_VIEW:
+			elog(FATAL, "RELKIND_VIEW in RelationGetNumberOfBlocksInFork");
 		case RELKIND_COMPOSITE_TYPE:
+			elog(FATAL, "RELKIND_COMPOSITE_TYPE in RelationGetNumberOfBlocksInFork");
 		case RELKIND_FOREIGN_TABLE:
+			elog(FATAL, "RELKIND_FOREIGN_TABLE in RelationGetNumberOfBlocksInFork");
 		case RELKIND_PARTITIONED_TABLE:
-		default:
-			Assert(false);
-			break;
+			elog(FATAL, "RELKIND_PARTITIONED_TABLE in RelationGetNumberOfBlocksInFork");
 	}
+	elog(FATAL, "Unexpected relkind %d in RelationGetNumberOfBlocksInFork",
+		 (int) relation->rd_rel->relkind);
 
 	return 0;					/* keep compiler quiet */
 }

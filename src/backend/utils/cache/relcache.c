@@ -448,7 +448,8 @@ RelationParseRelOptions(Relation relation, HeapTuple tuple)
 	 * Look up any AM-specific parse function; fall out if relkind should not
 	 * have options.
 	 */
-	switch (relation->rd_rel->relkind)
+	Assert(RELKIND_IS_VALID((RelKind) relation->rd_rel->relkind));
+	switch ((RelKind) relation->rd_rel->relkind)
 	{
 		case RELKIND_RELATION:
 		case RELKIND_TOASTVALUE:
@@ -461,7 +462,9 @@ RelationParseRelOptions(Relation relation, HeapTuple tuple)
 		case RELKIND_PARTITIONED_INDEX:
 			amoptsfn = relation->rd_indam->amoptions;
 			break;
-		default:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
 			return;
 	}
 
@@ -1182,7 +1185,8 @@ RelationBuildDesc(Oid targetRelId, bool insertIt)
 	/*
 	 * initialize access method information
 	 */
-	switch (relation->rd_rel->relkind)
+	Assert(RELKIND_IS_VALID((RelKind) relation->rd_rel->relkind));
+	switch ((RelKind) relation->rd_rel->relkind)
 	{
 		case RELKIND_INDEX:
 		case RELKIND_PARTITIONED_INDEX:
@@ -1747,38 +1751,51 @@ RelationInitTableAccessMethod(Relation relation)
 	HeapTuple	tuple;
 	Form_pg_am	aform;
 
-	if (relation->rd_rel->relkind == RELKIND_SEQUENCE)
+	Assert(RELKIND_IS_VALID((RelKind) relation->rd_rel->relkind));
+	switch ((RelKind) relation->rd_rel->relkind)
 	{
-		/*
-		 * Sequences are currently accessed like heap tables, but it doesn't
-		 * seem prudent to show that in the catalog. So just overwrite it
-		 * here.
-		 */
-		relation->rd_amhandler = HEAP_TABLE_AM_HANDLER_OID;
-	}
-	else if (IsCatalogRelation(relation))
-	{
-		/*
-		 * Avoid doing a syscache lookup for catalog tables.
-		 */
-		Assert(relation->rd_rel->relam == HEAP_TABLE_AM_OID);
-		relation->rd_amhandler = HEAP_TABLE_AM_HANDLER_OID;
-	}
-	else
-	{
-		/*
-		 * Look up the table access method, save the OID of its handler
-		 * function.
-		 */
-		Assert(relation->rd_rel->relam != InvalidOid);
-		tuple = SearchSysCache1(AMOID,
-								ObjectIdGetDatum(relation->rd_rel->relam));
-		if (!HeapTupleIsValid(tuple))
-			elog(ERROR, "cache lookup failed for access method %u",
-				 relation->rd_rel->relam);
-		aform = (Form_pg_am) GETSTRUCT(tuple);
-		relation->rd_amhandler = aform->amhandler;
-		ReleaseSysCache(tuple);
+		case RELKIND_SEQUENCE:
+
+			/*
+			 * Sequences are currently accessed like heap tables, but it
+			 * doesn't seem prudent to show that in the catalog. So just
+			 * overwrite it here.
+			 */
+			relation->rd_amhandler = HEAP_TABLE_AM_HANDLER_OID;
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_PARTITIONED_TABLE:
+		case RELKIND_RELATION:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+			if (IsCatalogRelation(relation))
+			{
+				/*
+				 * Avoid doing a syscache lookup for catalog tables.
+				 */
+				Assert(relation->rd_rel->relam == HEAP_TABLE_AM_OID);
+				relation->rd_amhandler = HEAP_TABLE_AM_HANDLER_OID;
+			}
+			else
+			{
+				/*
+				 * Look up the table access method, save the OID of its
+				 * handler function.
+				 */
+				Assert(relation->rd_rel->relam != InvalidOid);
+				tuple = SearchSysCache1(AMOID,
+										ObjectIdGetDatum(relation->rd_rel->relam));
+				if (!HeapTupleIsValid(tuple))
+					elog(ERROR, "cache lookup failed for access method %u",
+						 relation->rd_rel->relam);
+				aform = (Form_pg_am) GETSTRUCT(tuple);
+				relation->rd_amhandler = aform->amhandler;
+				ReleaseSysCache(tuple);
+			}
 	}
 
 	/*
@@ -2024,11 +2041,23 @@ RelationIdGetRelation(Oid relationId)
 			 * and we don't want to use the full-blown procedure because it's
 			 * a headache for indexes that reload itself depends on.
 			 */
-			if (rd->rd_rel->relkind == RELKIND_INDEX ||
-				rd->rd_rel->relkind == RELKIND_PARTITIONED_INDEX)
-				RelationReloadIndexInfo(rd);
-			else
-				RelationClearRelation(rd, true);
+			Assert(RELKIND_IS_VALID((RelKind) rd->rd_rel->relkind));
+			switch ((RelKind) rd->rd_rel->relkind)
+			{
+				case RELKIND_INDEX:
+				case RELKIND_PARTITIONED_INDEX:
+					RelationReloadIndexInfo(rd);
+					break;
+				case RELKIND_SEQUENCE:
+				case RELKIND_COMPOSITE_TYPE:
+				case RELKIND_FOREIGN_TABLE:
+				case RELKIND_MATVIEW:
+				case RELKIND_PARTITIONED_TABLE:
+				case RELKIND_RELATION:
+				case RELKIND_TOASTVALUE:
+				case RELKIND_VIEW:
+					RelationClearRelation(rd, true);
+			}
 
 			/*
 			 * Normally entries need to be valid here, but before the relcache
@@ -2285,46 +2314,57 @@ RelationReloadNailed(Relation relation)
 	if (!IsTransactionState() || relation->rd_refcnt <= 1)
 		return;
 
-	if (relation->rd_rel->relkind == RELKIND_INDEX)
+	Assert(RELKIND_IS_VALID((RelKind) relation->rd_rel->relkind));
+	switch ((RelKind) relation->rd_rel->relkind)
 	{
-		/*
-		 * If it's a nailed-but-not-mapped index, then we need to re-read the
-		 * pg_class row to see if its relfilenode changed.
-		 */
-		RelationReloadIndexInfo(relation);
-	}
-	else
-	{
-		/*
-		 * Reload a non-index entry.  We can't easily do so if relcaches
-		 * aren't yet built, but that's fine because at that stage the
-		 * attributes that need to be current (like relfrozenxid) aren't yet
-		 * accessed.  To ensure the entry will later be revalidated, we leave
-		 * it in invalid state, but allow use (cf. RelationIdGetRelation()).
-		 */
-		if (criticalRelcachesBuilt)
-		{
-			HeapTuple	pg_class_tuple;
-			Form_pg_class relp;
+		case RELKIND_INDEX:
 
 			/*
-			 * NB: Mark the entry as valid before starting to scan, to avoid
-			 * self-recursion when re-building pg_class.
+			 * If it's a nailed-but-not-mapped index, then we need to re-read
+			 * the pg_class row to see if its relfilenode changed.
 			 */
-			relation->rd_isvalid = true;
-
-			pg_class_tuple = ScanPgRelation(RelationGetRelid(relation),
-											true, false);
-			relp = (Form_pg_class) GETSTRUCT(pg_class_tuple);
-			memcpy(relation->rd_rel, relp, CLASS_TUPLE_SIZE);
-			heap_freetuple(pg_class_tuple);
-
+			RelationReloadIndexInfo(relation);
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_MATVIEW:
+		case RELKIND_PARTITIONED_TABLE:
+		case RELKIND_RELATION:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
 			/*
-			 * Again mark as valid, to protect against concurrently arriving
-			 * invalidations.
+			 * Reload a non-index entry.  We can't easily do so if relcaches
+			 * aren't yet built, but that's fine because at that stage the
+			 * attributes that need to be current (like relfrozenxid) aren't
+			 * yet accessed.  To ensure the entry will later be revalidated,
+			 * we leave it in invalid state, but allow use (cf.
+			 * RelationIdGetRelation()).
 			 */
-			relation->rd_isvalid = true;
-		}
+			if (criticalRelcachesBuilt)
+			{
+				HeapTuple	pg_class_tuple;
+				Form_pg_class relp;
+
+				/*
+				 * NB: Mark the entry as valid before starting to scan, to
+				 * avoid self-recursion when re-building pg_class.
+				 */
+				relation->rd_isvalid = true;
+
+				pg_class_tuple = ScanPgRelation(RelationGetRelid(relation),
+												true, false);
+				relp = (Form_pg_class) GETSTRUCT(pg_class_tuple);
+				memcpy(relation->rd_rel, relp, CLASS_TUPLE_SIZE);
+				heap_freetuple(pg_class_tuple);
+
+				/*
+				 * Again mark as valid, to protect against concurrently
+				 * arriving invalidations.
+				 */
+				relation->rd_isvalid = true;
+			}
 	}
 }
 
@@ -2471,14 +2511,27 @@ RelationClearRelation(Relation relation, bool rebuild)
 	 * re-read the pg_class row to handle possible physical relocation of the
 	 * index, and we check for pg_index updates too.
 	 */
-	if ((relation->rd_rel->relkind == RELKIND_INDEX ||
-		 relation->rd_rel->relkind == RELKIND_PARTITIONED_INDEX) &&
-		relation->rd_refcnt > 0 &&
-		relation->rd_indexcxt != NULL)
+	Assert(RELKIND_IS_VALID((RelKind) relation->rd_rel->relkind));
+	switch ((RelKind) relation->rd_rel->relkind)
 	{
-		if (IsTransactionState())
-			RelationReloadIndexInfo(relation);
-		return;
+		case RELKIND_INDEX:
+		case RELKIND_PARTITIONED_INDEX:
+			if (relation->rd_refcnt > 0 && relation->rd_indexcxt != NULL)
+			{
+				if (IsTransactionState())
+					RelationReloadIndexInfo(relation);
+				return;
+			}
+			break;
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_MATVIEW:
+		case RELKIND_PARTITIONED_TABLE:
+		case RELKIND_RELATION:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+			break;
 	}
 
 	/*
@@ -3479,10 +3532,23 @@ RelationBuildLocalRelation(const char *relname,
 	}
 
 	/* if it's a materialized view, it's not populated initially */
-	if (relkind == RELKIND_MATVIEW)
-		rel->rd_rel->relispopulated = false;
-	else
-		rel->rd_rel->relispopulated = true;
+	Assert(RELKIND_IS_VALID((RelKind) relkind));
+	switch ((RelKind) relkind)
+	{
+		case RELKIND_MATVIEW:
+			rel->rd_rel->relispopulated = false;
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_PARTITIONED_TABLE:
+		case RELKIND_RELATION:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+			rel->rd_rel->relispopulated = true;
+	}
 
 	/* set replica identity -- system catalogs and non-tables don't have one */
 	if (!IsCatalogNamespace(relnamespace) &&
@@ -3522,11 +3588,23 @@ RelationBuildLocalRelation(const char *relname,
 
 	rel->rd_rel->relam = accessmtd;
 
-	if (relkind == RELKIND_RELATION ||
-		relkind == RELKIND_SEQUENCE ||
-		relkind == RELKIND_TOASTVALUE ||
-		relkind == RELKIND_MATVIEW)
-		RelationInitTableAccessMethod(rel);
+	Assert(RELKIND_IS_VALID((RelKind) relkind));
+	switch ((RelKind) relkind)
+	{
+		case RELKIND_RELATION:
+		case RELKIND_SEQUENCE:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_MATVIEW:
+			RelationInitTableAccessMethod(rel);
+			break;
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_PARTITIONED_TABLE:
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_VIEW:
+			break;
+	}
 
 	/*
 	 * Okay to insert into the relcache hash table.
@@ -3619,7 +3697,8 @@ RelationSetNewRelfilenode(Relation relation, char persistence)
 	newrnode = relation->rd_node;
 	newrnode.relNode = newrelfilenode;
 
-	switch (relation->rd_rel->relkind)
+	Assert(RELKIND_IS_VALID((RelKind) relation->rd_rel->relkind));
+	switch ((RelKind) relation->rd_rel->relkind)
 	{
 		case RELKIND_INDEX:
 		case RELKIND_SEQUENCE:
@@ -3631,7 +3710,6 @@ RelationSetNewRelfilenode(Relation relation, char persistence)
 				smgrclose(srel);
 			}
 			break;
-
 		case RELKIND_RELATION:
 		case RELKIND_TOASTVALUE:
 		case RELKIND_MATVIEW:
@@ -3639,12 +3717,14 @@ RelationSetNewRelfilenode(Relation relation, char persistence)
 											persistence,
 											&freezeXid, &minmulti);
 			break;
-
-		default:
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_PARTITIONED_TABLE:
+		case RELKIND_VIEW:
 			/* we shouldn't be called for anything else */
 			elog(ERROR, "relation \"%s\" does not have storage",
 				 RelationGetRelationName(relation));
-			break;
 	}
 
 	/*
@@ -3689,11 +3769,23 @@ RelationSetNewRelfilenode(Relation relation, char persistence)
 		classform->relfilenode = newrelfilenode;
 
 		/* relpages etc. never change for sequences */
-		if (relation->rd_rel->relkind != RELKIND_SEQUENCE)
+		Assert(RELKIND_IS_VALID((RelKind) relation->rd_rel->relkind));
+		switch ((RelKind) relation->rd_rel->relkind)
 		{
-			classform->relpages = 0;	/* it's empty until further notice */
-			classform->reltuples = 0;
-			classform->relallvisible = 0;
+			case RELKIND_SEQUENCE:
+				break;
+			case RELKIND_PARTITIONED_INDEX:
+			case RELKIND_COMPOSITE_TYPE:
+			case RELKIND_FOREIGN_TABLE:
+			case RELKIND_INDEX:
+			case RELKIND_MATVIEW:
+			case RELKIND_PARTITIONED_TABLE:
+			case RELKIND_RELATION:
+			case RELKIND_TOASTVALUE:
+			case RELKIND_VIEW:
+				classform->relpages = 0;	/* it's empty until further notice */
+				classform->reltuples = 0;
+				classform->relallvisible = 0;
 		}
 		classform->relfrozenxid = freezeXid;
 		classform->relminmxid = minmulti;
@@ -4086,16 +4178,28 @@ RelationCacheInitializePhase3(void)
 		}
 
 		/* Reload tableam data if needed */
-		if (relation->rd_tableam == NULL &&
-			(relation->rd_rel->relkind == RELKIND_RELATION ||
-			 relation->rd_rel->relkind == RELKIND_SEQUENCE ||
-			 relation->rd_rel->relkind == RELKIND_TOASTVALUE ||
-			 relation->rd_rel->relkind == RELKIND_MATVIEW))
+		Assert(RELKIND_IS_VALID((RelKind) relation->rd_rel->relkind));
+		switch ((RelKind) relation->rd_rel->relkind)
 		{
-			RelationInitTableAccessMethod(relation);
-			Assert(relation->rd_tableam != NULL);
+			case RELKIND_RELATION:
+			case RELKIND_SEQUENCE:
+			case RELKIND_TOASTVALUE:
+			case RELKIND_MATVIEW:
+				if (relation->rd_tableam == NULL)
+				{
+					RelationInitTableAccessMethod(relation);
+					Assert(relation->rd_tableam != NULL);
 
-			restart = true;
+					restart = true;
+				}
+				break;
+			case RELKIND_PARTITIONED_INDEX:
+			case RELKIND_COMPOSITE_TYPE:
+			case RELKIND_FOREIGN_TABLE:
+			case RELKIND_INDEX:
+			case RELKIND_PARTITIONED_TABLE:
+			case RELKIND_VIEW:
+				break;
 		}
 
 		/* Release hold on the relation */
@@ -5864,11 +5968,23 @@ load_relcache_init_file(bool shared)
 				nailed_rels++;
 
 			/* Load table AM data */
-			if (rel->rd_rel->relkind == RELKIND_RELATION ||
-				rel->rd_rel->relkind == RELKIND_SEQUENCE ||
-				rel->rd_rel->relkind == RELKIND_TOASTVALUE ||
-				rel->rd_rel->relkind == RELKIND_MATVIEW)
-				RelationInitTableAccessMethod(rel);
+			Assert(RELKIND_IS_VALID((RelKind) rel->rd_rel->relkind));
+			switch ((RelKind) rel->rd_rel->relkind)
+			{
+				case RELKIND_RELATION:
+				case RELKIND_SEQUENCE:
+				case RELKIND_TOASTVALUE:
+				case RELKIND_MATVIEW:
+					RelationInitTableAccessMethod(rel);
+					break;
+				case RELKIND_PARTITIONED_INDEX:
+				case RELKIND_COMPOSITE_TYPE:
+				case RELKIND_FOREIGN_TABLE:
+				case RELKIND_INDEX:
+				case RELKIND_PARTITIONED_TABLE:
+				case RELKIND_VIEW:
+					break;
+			}
 
 			Assert(rel->rd_index == NULL);
 			Assert(rel->rd_indextuple == NULL);

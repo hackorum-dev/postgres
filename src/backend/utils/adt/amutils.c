@@ -175,11 +175,22 @@ indexam_property(FunctionCallInfo fcinfo,
 		if (!HeapTupleIsValid(tuple))
 			PG_RETURN_NULL();
 		rd_rel = (Form_pg_class) GETSTRUCT(tuple);
-		if (rd_rel->relkind != RELKIND_INDEX &&
-			rd_rel->relkind != RELKIND_PARTITIONED_INDEX)
+		Assert(RELKIND_IS_VALID((RelKind) rd_rel->relkind));
+		switch ((RelKind) rd_rel->relkind)
 		{
-			ReleaseSysCache(tuple);
-			PG_RETURN_NULL();
+			case RELKIND_INDEX:
+			case RELKIND_PARTITIONED_INDEX:
+				break;
+			case RELKIND_SEQUENCE:
+			case RELKIND_COMPOSITE_TYPE:
+			case RELKIND_FOREIGN_TABLE:
+			case RELKIND_MATVIEW:
+			case RELKIND_PARTITIONED_TABLE:
+			case RELKIND_RELATION:
+			case RELKIND_TOASTVALUE:
+			case RELKIND_VIEW:
+				ReleaseSysCache(tuple);
+				PG_RETURN_NULL();
 		}
 		amoid = rd_rel->relam;
 		natts = rd_rel->relnatts;

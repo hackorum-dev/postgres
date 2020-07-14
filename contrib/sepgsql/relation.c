@@ -59,8 +59,22 @@ sepgsql_attribute_post_create(Oid relOid, AttrNumber attnum)
 	 * Only attributes within regular relations or partition relations have
 	 * individual security labels.
 	 */
-	if (relkind != RELKIND_RELATION && relkind != RELKIND_PARTITIONED_TABLE)
-		return;
+	Assert(RELKIND_IS_VALID((RelKind) relkind));
+	switch ((RelKind) relkind)
+	{
+		case RELKIND_RELATION:
+		case RELKIND_PARTITIONED_TABLE:
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+			return;
+	}
 
 	/*
 	 * Compute a default security label of the new column underlying the
@@ -137,8 +151,22 @@ sepgsql_attribute_drop(Oid relOid, AttrNumber attnum)
 	char	   *audit_name;
 	char		relkind = get_rel_relkind(relOid);
 
-	if (relkind != RELKIND_RELATION && relkind != RELKIND_PARTITIONED_TABLE)
-		return;
+	Assert(RELKIND_IS_VALID((RelKind) relkind));
+	switch ((RelKind) relkind)
+	{
+		case RELKIND_RELATION:
+		case RELKIND_PARTITIONED_TABLE:
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+			return;
+	}
 
 	/*
 	 * check db_column:{drop} permission
@@ -170,10 +198,24 @@ sepgsql_attribute_relabel(Oid relOid, AttrNumber attnum,
 	char	   *audit_name;
 	char		relkind = get_rel_relkind(relOid);
 
-	if (relkind != RELKIND_RELATION && relkind != RELKIND_PARTITIONED_TABLE)
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("cannot set security label on non-regular columns")));
+	Assert(RELKIND_IS_VALID((RelKind) relkind));
+	switch ((RelKind) relkind)
+	{
+		case RELKIND_RELATION:
+		case RELKIND_PARTITIONED_TABLE:
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+			ereport(ERROR,
+					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+					 errmsg("cannot set security label on non-regular columns")));
+	}
 
 	object.classId = RelationRelationId;
 	object.objectId = relOid;
@@ -213,8 +255,24 @@ sepgsql_attribute_setattr(Oid relOid, AttrNumber attnum)
 	char	   *audit_name;
 	char		relkind = get_rel_relkind(relOid);
 
-	if (relkind != RELKIND_RELATION && relkind != RELKIND_PARTITIONED_TABLE)
-		return;
+	Assert(RELKIND_IS_VALID((RelKind) relkind));
+	switch ((RelKind) relkind)
+	{
+		case RELKIND_RELATION:
+		case RELKIND_PARTITIONED_TABLE:
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_PARTITIONED_TABLE:
+		case RELKIND_RELATION:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+			return;
+	}
 
 	/*
 	 * check db_column:{setattr} permission
@@ -275,9 +333,25 @@ sepgsql_relation_post_create(Oid relOid)
 	classForm = (Form_pg_class) GETSTRUCT(tuple);
 
 	/* ignore indexes on toast tables */
-	if (classForm->relkind == RELKIND_INDEX &&
-		classForm->relnamespace == PG_TOAST_NAMESPACE)
-		goto out;
+	Assert(RELKIND_IS_VALID((RelKind) classForm->relkind));
+	switch ((RelKind) classForm->relkind)
+	{
+		case RELKIND_INDEX:
+			if (classForm->relnamespace == PG_TOAST_NAMESPACE)
+				goto out;
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_MATVIEW:
+		case RELKIND_PARTITIONED_TABLE:
+		case RELKIND_RELATION:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+			break;
+	}
+
 
 	/*
 	 * check db_schema:{add_name} permission of the namespace
@@ -291,7 +365,8 @@ sepgsql_relation_post_create(Oid relOid)
 							getObjectIdentity(&object),
 							true);
 
-	switch (classForm->relkind)
+	Assert(RELKIND_IS_VALID((RelKind) classForm->relkind));
+	switch ((RelKind) classForm->relkind)
 	{
 		case RELKIND_RELATION:
 		case RELKIND_PARTITIONED_TABLE:
@@ -307,7 +382,11 @@ sepgsql_relation_post_create(Oid relOid)
 			/* deal with indexes specially; no need for tclass */
 			sepgsql_index_modify(relOid);
 			goto out;
-		default:
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_MATVIEW:
+		case RELKIND_TOASTVALUE:
 			/* ignore other relkinds */
 			goto out;
 	}
@@ -348,59 +427,74 @@ sepgsql_relation_post_create(Oid relOid)
 	/*
 	 * We also assign a default security label on columns of a new table.
 	 */
-	if (classForm->relkind == RELKIND_RELATION ||
-		classForm->relkind == RELKIND_PARTITIONED_TABLE)
+	Assert(RELKIND_IS_VALID((RelKind) classForm->relkind));
+	switch ((RelKind) classForm->relkind)
 	{
-		Relation	arel;
-		ScanKeyData akey;
-		SysScanDesc ascan;
-		HeapTuple	atup;
-		Form_pg_attribute attForm;
+		case RELKIND_RELATION:
+		case RELKIND_PARTITIONED_TABLE:
+			{
+				Relation	arel;
+				ScanKeyData akey;
+				SysScanDesc ascan;
+				HeapTuple	atup;
+				Form_pg_attribute attForm;
 
-		arel = table_open(AttributeRelationId, AccessShareLock);
+				arel = table_open(AttributeRelationId, AccessShareLock);
 
-		ScanKeyInit(&akey,
-					Anum_pg_attribute_attrelid,
-					BTEqualStrategyNumber, F_OIDEQ,
-					ObjectIdGetDatum(relOid));
+				ScanKeyInit(&akey,
+							Anum_pg_attribute_attrelid,
+							BTEqualStrategyNumber, F_OIDEQ,
+							ObjectIdGetDatum(relOid));
 
-		ascan = systable_beginscan(arel, AttributeRelidNumIndexId, true,
-								   SnapshotSelf, 1, &akey);
+				ascan = systable_beginscan(arel, AttributeRelidNumIndexId, true,
+										   SnapshotSelf, 1, &akey);
 
-		while (HeapTupleIsValid(atup = systable_getnext(ascan)))
-		{
-			attForm = (Form_pg_attribute) GETSTRUCT(atup);
+				while (HeapTupleIsValid(atup = systable_getnext(ascan)))
+				{
+					attForm = (Form_pg_attribute) GETSTRUCT(atup);
 
-			resetStringInfo(&audit_name);
-			appendStringInfo(&audit_name, "%s.%s.%s",
-							 quote_identifier(nsp_name),
-							 quote_identifier(NameStr(classForm->relname)),
-							 quote_identifier(NameStr(attForm->attname)));
+					resetStringInfo(&audit_name);
+					appendStringInfo(&audit_name, "%s.%s.%s",
+									 quote_identifier(nsp_name),
+									 quote_identifier(NameStr(classForm->relname)),
+									 quote_identifier(NameStr(attForm->attname)));
 
-			ccontext = sepgsql_compute_create(scontext,
-											  rcontext,
-											  SEPG_CLASS_DB_COLUMN,
-											  NameStr(attForm->attname));
+					ccontext = sepgsql_compute_create(scontext,
+													  rcontext,
+													  SEPG_CLASS_DB_COLUMN,
+													  NameStr(attForm->attname));
 
-			/*
-			 * check db_column:{create} permission
-			 */
-			sepgsql_avc_check_perms_label(ccontext,
-										  SEPG_CLASS_DB_COLUMN,
-										  SEPG_DB_COLUMN__CREATE,
-										  audit_name.data,
-										  true);
+					/*
+					 * check db_column:{create} permission
+					 */
+					sepgsql_avc_check_perms_label(ccontext,
+												  SEPG_CLASS_DB_COLUMN,
+												  SEPG_DB_COLUMN__CREATE,
+												  audit_name.data,
+												  true);
 
-			object.classId = RelationRelationId;
-			object.objectId = relOid;
-			object.objectSubId = attForm->attnum;
-			SetSecurityLabel(&object, SEPGSQL_LABEL_TAG, ccontext);
+					object.classId = RelationRelationId;
+					object.objectId = relOid;
+					object.objectSubId = attForm->attnum;
+					SetSecurityLabel(&object, SEPGSQL_LABEL_TAG, ccontext);
 
-			pfree(ccontext);
-		}
-		systable_endscan(ascan);
-		table_close(arel, AccessShareLock);
+					pfree(ccontext);
+				}
+				systable_endscan(ascan);
+				table_close(arel, AccessShareLock);
+			}
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+			break;
 	}
+
 	pfree(rcontext);
 
 out:
@@ -421,7 +515,8 @@ sepgsql_relation_drop(Oid relOid)
 	uint16_t	tclass = 0;
 	char		relkind = get_rel_relkind(relOid);
 
-	switch (relkind)
+	Assert(RELKIND_IS_VALID((RelKind) relkind));
+	switch ((RelKind) relkind)
 	{
 		case RELKIND_RELATION:
 		case RELKIND_PARTITIONED_TABLE:
@@ -439,7 +534,11 @@ sepgsql_relation_drop(Oid relOid)
 				return;
 			/* other indexes are handled specially below; no need for tclass */
 			break;
-		default:
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_MATVIEW:
+		case RELKIND_TOASTVALUE:
 			/* ignore other relkinds */
 			return;
 	}
@@ -460,10 +559,22 @@ sepgsql_relation_drop(Oid relOid)
 	pfree(audit_name);
 
 	/* deal with indexes specially */
-	if (relkind == RELKIND_INDEX)
+	Assert(RELKIND_IS_VALID((RelKind) relkind));
+	switch ((RelKind) relkind)
 	{
-		sepgsql_index_modify(relOid);
-		return;
+		case RELKIND_INDEX:
+			sepgsql_index_modify(relOid);
+			return;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_MATVIEW:
+		case RELKIND_PARTITIONED_TABLE:
+		case RELKIND_RELATION:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+			break;
 	}
 
 	/*
@@ -484,35 +595,50 @@ sepgsql_relation_drop(Oid relOid)
 	/*
 	 * check db_column:{drop} permission
 	 */
-	if (relkind == RELKIND_RELATION || relkind == RELKIND_PARTITIONED_TABLE)
+	Assert(RELKIND_IS_VALID((RelKind) relkind));
+	switch ((RelKind) relkind)
 	{
-		Form_pg_attribute attForm;
-		CatCList   *attrList;
-		HeapTuple	atttup;
-		int			i;
+		case RELKIND_RELATION:
+		case RELKIND_PARTITIONED_TABLE:
+			{
+				Form_pg_attribute attForm;
+				CatCList   *attrList;
+				HeapTuple	atttup;
+				int			i;
 
-		attrList = SearchSysCacheList1(ATTNUM, ObjectIdGetDatum(relOid));
-		for (i = 0; i < attrList->n_members; i++)
-		{
-			atttup = &attrList->members[i]->tuple;
-			attForm = (Form_pg_attribute) GETSTRUCT(atttup);
+				attrList = SearchSysCacheList1(ATTNUM, ObjectIdGetDatum(relOid));
+				for (i = 0; i < attrList->n_members; i++)
+				{
+					atttup = &attrList->members[i]->tuple;
+					attForm = (Form_pg_attribute) GETSTRUCT(atttup);
 
-			if (attForm->attisdropped)
-				continue;
+					if (attForm->attisdropped)
+						continue;
 
-			object.classId = RelationRelationId;
-			object.objectId = relOid;
-			object.objectSubId = attForm->attnum;
-			audit_name = getObjectIdentity(&object);
+					object.classId = RelationRelationId;
+					object.objectId = relOid;
+					object.objectSubId = attForm->attnum;
+					audit_name = getObjectIdentity(&object);
 
-			sepgsql_avc_check_perms(&object,
-									SEPG_CLASS_DB_COLUMN,
-									SEPG_DB_COLUMN__DROP,
-									audit_name,
-									true);
-			pfree(audit_name);
-		}
-		ReleaseCatCacheList(attrList);
+					sepgsql_avc_check_perms(&object,
+											SEPG_CLASS_DB_COLUMN,
+											SEPG_DB_COLUMN__DROP,
+											audit_name,
+											true);
+					pfree(audit_name);
+				}
+				ReleaseCatCacheList(attrList);
+			}
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+			break;
 	}
 }
 
@@ -529,13 +655,21 @@ sepgsql_relation_truncate(Oid relOid)
 	uint16_t	tclass = 0;
 	char		relkind = get_rel_relkind(relOid);
 
-	switch (relkind)
+	Assert(RELKIND_IS_VALID((RelKind) relkind));
+	switch ((RelKind) relkind)
 	{
 		case RELKIND_RELATION:
 		case RELKIND_PARTITIONED_TABLE:
 			tclass = SEPG_CLASS_DB_TABLE;
 			break;
-		default:
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
 			/* ignore other relkinds */
 			return;
 	}
@@ -569,17 +703,30 @@ sepgsql_relation_relabel(Oid relOid, const char *seclabel)
 	char		relkind = get_rel_relkind(relOid);
 	uint16_t	tclass = 0;
 
-	if (relkind == RELKIND_RELATION || relkind == RELKIND_PARTITIONED_TABLE)
-		tclass = SEPG_CLASS_DB_TABLE;
-	else if (relkind == RELKIND_SEQUENCE)
-		tclass = SEPG_CLASS_DB_SEQUENCE;
-	else if (relkind == RELKIND_VIEW)
-		tclass = SEPG_CLASS_DB_VIEW;
-	else
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("cannot set security labels on relations except "
-						"for tables, sequences or views")));
+	Assert(RELKIND_IS_VALID((RelKind) relkind));
+	switch ((RelKind) relkind)
+	{
+		case RELKIND_RELATION:
+		case RELKIND_PARTITIONED_TABLE:
+			tclass = SEPG_CLASS_DB_TABLE;
+			break;
+		case RELKIND_SEQUENCE:
+			tclass = SEPG_CLASS_DB_SEQUENCE;
+			break;
+		case RELKIND_VIEW:
+			tclass = SEPG_CLASS_DB_VIEW;
+			break;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_TOASTVALUE:
+			ereport(ERROR,
+					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+					 errmsg("cannot set security labels on relations except "
+							"for tables, sequences or views")));
+	}
 
 	object.classId = RelationRelationId;
 	object.objectId = relOid;
@@ -626,7 +773,8 @@ sepgsql_relation_setattr(Oid relOid)
 	char	   *audit_name;
 	uint16_t	tclass;
 
-	switch (get_rel_relkind(relOid))
+	Assert(RELKIND_IS_VALID((RelKind) get_rel_relkind(relOid)));
+	switch ((RelKind) get_rel_relkind(relOid))
 	{
 		case RELKIND_RELATION:
 		case RELKIND_PARTITIONED_TABLE:
@@ -642,7 +790,11 @@ sepgsql_relation_setattr(Oid relOid)
 			/* deal with indexes specially */
 			sepgsql_index_modify(relOid);
 			return;
-		default:
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_MATVIEW:
+		case RELKIND_TOASTVALUE:
 			/* other relkinds don't need additional work */
 			return;
 	}

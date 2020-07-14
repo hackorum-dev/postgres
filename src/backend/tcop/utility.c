@@ -1436,34 +1436,65 @@ ProcessUtilitySlow(ParseState *pstate,
 					 * partitions are something we can put an index on, to
 					 * avoid building some indexes only to fail later.
 					 */
-					if (stmt->relation->inh &&
-						get_rel_relkind(relid) == RELKIND_PARTITIONED_TABLE)
+					Assert(RELKIND_IS_VALID((RelKind) get_rel_relkind(relid)));
+					switch ((RelKind) get_rel_relkind(relid))
 					{
-						ListCell   *lc;
-						List	   *inheritors = NIL;
+						case RELKIND_PARTITIONED_TABLE:
+							if (stmt->relation->inh)
+							{
+								ListCell   *lc;
+								List	   *inheritors = NIL;
 
-						inheritors = find_all_inheritors(relid, lockmode, NULL);
-						foreach(lc, inheritors)
-						{
-							char		relkind = get_rel_relkind(lfirst_oid(lc));
+								inheritors = find_all_inheritors(relid, lockmode, NULL);
+								foreach(lc, inheritors)
+								{
+									char		relkind = get_rel_relkind(lfirst_oid(lc));
 
-							if (relkind != RELKIND_RELATION &&
-								relkind != RELKIND_MATVIEW &&
-								relkind != RELKIND_PARTITIONED_TABLE &&
-								relkind != RELKIND_FOREIGN_TABLE)
-								elog(ERROR, "unexpected relkind \"%c\" on partition \"%s\"",
-									 relkind, stmt->relation->relname);
-
-							if (relkind == RELKIND_FOREIGN_TABLE &&
-								(stmt->unique || stmt->primary))
-								ereport(ERROR,
-										(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-										 errmsg("cannot create unique index on partitioned table \"%s\"",
-												stmt->relation->relname),
-										 errdetail("Table \"%s\" contains partitions that are foreign tables.",
-												   stmt->relation->relname)));
-						}
-						list_free(inheritors);
+									/*
+									 * Beware that relkind here may be NULL, which is not
+									 * a valid member of enum RelKind.
+									 */
+									Assert(relkind == '\0' ||
+										   RELKIND_IS_VALID((RelKind) relkind));
+									switch ((RelKind) relkind)
+									{
+										case RELKIND_RELATION:
+										case RELKIND_MATVIEW:
+										case RELKIND_PARTITIONED_TABLE:
+											continue;
+										case RELKIND_FOREIGN_TABLE:
+											if (stmt->unique || stmt->primary)
+												ereport(ERROR,
+														(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+														 errmsg("cannot create unique index on partitioned table \"%s\"",
+																stmt->relation->relname),
+														 errdetail("Table \"%s\" contains partitions that are foreign tables.",
+																   stmt->relation->relname)));
+											continue;
+										case RELKIND_PARTITIONED_INDEX:
+										case RELKIND_SEQUENCE:
+										case RELKIND_COMPOSITE_TYPE:
+										case RELKIND_INDEX:
+										case RELKIND_TOASTVALUE:
+										case RELKIND_VIEW:
+											break;
+									}
+									elog(ERROR, "unexpected relkind \"%c\" on partition \"%s\"",
+										 relkind, stmt->relation->relname);
+								}
+								list_free(inheritors);
+							}
+							break;
+						case RELKIND_PARTITIONED_INDEX:
+						case RELKIND_SEQUENCE:
+						case RELKIND_COMPOSITE_TYPE:
+						case RELKIND_FOREIGN_TABLE:
+						case RELKIND_INDEX:
+						case RELKIND_MATVIEW:
+						case RELKIND_RELATION:
+						case RELKIND_TOASTVALUE:
+						case RELKIND_VIEW:
+							break;
 					}
 
 					/* Run parse analysis ... */

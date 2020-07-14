@@ -2203,8 +2203,22 @@ index_drop(Oid indexId, bool concurrent, bool concurrent_lock_mode)
 	/*
 	 * Schedule physical removal of the files (if any)
 	 */
-	if (userIndexRelation->rd_rel->relkind != RELKIND_PARTITIONED_INDEX)
-		RelationDropStorage(userIndexRelation);
+	Assert(RELKIND_IS_VALID((RelKind) userIndexRelation->rd_rel->relkind));
+	switch ((RelKind) userIndexRelation->rd_rel->relkind)
+	{
+		case RELKIND_PARTITIONED_INDEX:
+			break;
+		case RELKIND_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_MATVIEW:
+		case RELKIND_PARTITIONED_TABLE:
+		case RELKIND_RELATION:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+			RelationDropStorage(userIndexRelation);
+	}
 
 	/*
 	 * Close and flush the index's relcache entry, to ensure relcache doesn't
@@ -2731,7 +2745,22 @@ index_update_stats(Relation rel,
 	rd_rel = (Form_pg_class) GETSTRUCT(tuple);
 
 	/* Should this be a more comprehensive test? */
-	Assert(rd_rel->relkind != RELKIND_PARTITIONED_INDEX);
+	Assert(RELKIND_IS_VALID((RelKind) rd_rel->relkind));
+	switch ((RelKind) rd_rel->relkind)
+	{
+		case RELKIND_PARTITIONED_INDEX:
+			Assert(false);
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_MATVIEW:
+		case RELKIND_PARTITIONED_TABLE:
+		case RELKIND_RELATION:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+		case RELKIND_INDEX:
+			break;
+	}
 
 	/* Apply required updates, if any, to copied tuple */
 
@@ -2747,10 +2776,23 @@ index_update_stats(Relation rel,
 		BlockNumber relpages = RelationGetNumberOfBlocks(rel);
 		BlockNumber relallvisible;
 
-		if (rd_rel->relkind != RELKIND_INDEX)
-			visibilitymap_count(rel, &relallvisible, NULL);
-		else					/* don't bother for indexes */
-			relallvisible = 0;
+		Assert(RELKIND_IS_VALID((RelKind) rd_rel->relkind));
+		switch ((RelKind) rd_rel->relkind)
+		{
+			case RELKIND_INDEX:
+				relallvisible = 0;
+				break;
+			case RELKIND_PARTITIONED_INDEX:
+			case RELKIND_SEQUENCE:
+			case RELKIND_COMPOSITE_TYPE:
+			case RELKIND_FOREIGN_TABLE:
+			case RELKIND_MATVIEW:
+			case RELKIND_PARTITIONED_TABLE:
+			case RELKIND_RELATION:
+			case RELKIND_TOASTVALUE:
+			case RELKIND_VIEW:
+				visibilitymap_count(rel, &relallvisible, NULL);
+		}
 
 		if (rd_rel->relpages != (int32) relpages)
 		{
@@ -3461,9 +3503,24 @@ reindex_index(Oid indexId, bool skip_constraint_checks, char persistence,
 	 * The case of reindexing partitioned tables and indexes is handled
 	 * differently by upper layers, so this case shouldn't arise.
 	 */
-	if (iRel->rd_rel->relkind == RELKIND_PARTITIONED_INDEX)
-		elog(ERROR, "unsupported relation kind for index \"%s\"",
-			 RelationGetRelationName(iRel));
+	Assert(RELKIND_IS_VALID((RelKind) iRel->rd_rel->relkind));
+	switch ((RelKind) iRel->rd_rel->relkind)
+	{
+		case RELKIND_PARTITIONED_INDEX:
+			elog(ERROR, "unsupported relation kind for index \"%s\"",
+				 RelationGetRelationName(iRel));
+			break;
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_PARTITIONED_TABLE:
+		case RELKIND_RELATION:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+			break;
+	}
 
 	/*
 	 * Don't allow reindex on temp tables of other backends ... their local
@@ -3677,14 +3734,26 @@ reindex_relation(Oid relid, int flags, int options)
 	 * (REINDEX SCHEMA) and happen to come across a partitioned table.  The
 	 * partitions may be reindexed on their own anyway.
 	 */
-	if (rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
+	Assert(RELKIND_IS_VALID((RelKind) rel->rd_rel->relkind));
+	switch ((RelKind) rel->rd_rel->relkind)
 	{
-		ereport(WARNING,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("REINDEX of partitioned tables is not yet implemented, skipping \"%s\"",
-						RelationGetRelationName(rel))));
-		table_close(rel, ShareLock);
-		return false;
+		case RELKIND_PARTITIONED_TABLE:
+			ereport(WARNING,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("REINDEX of partitioned tables is not yet implemented, skipping \"%s\"",
+							RelationGetRelationName(rel))));
+			table_close(rel, ShareLock);
+			return false;
+		case RELKIND_PARTITIONED_INDEX:
+		case RELKIND_SEQUENCE:
+		case RELKIND_COMPOSITE_TYPE:
+		case RELKIND_FOREIGN_TABLE:
+		case RELKIND_INDEX:
+		case RELKIND_MATVIEW:
+		case RELKIND_RELATION:
+		case RELKIND_TOASTVALUE:
+		case RELKIND_VIEW:
+			break;
 	}
 
 	toast_relid = rel->rd_rel->reltoastrelid;
