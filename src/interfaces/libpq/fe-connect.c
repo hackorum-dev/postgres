@@ -5458,7 +5458,9 @@ PQresetPoll(PGconn *conn)
  * buf, buf_len: contents of message.  The given length includes only what
  * is in buf; the message type and message length fields are added here.
  *
- * RETURNS: STATUS_ERROR if the write fails, STATUS_OK otherwise.
+ * RETURNS: STATUS_ERROR if the write fails, STATUS_OK otherwise. Note that the
+ * function may return STATUS_OK even if it failed to write to the underlying
+ * socket. (See pqSendSome comments about how failure should be handled.)
  * SIDE_EFFECTS: may block.
  */
 int
