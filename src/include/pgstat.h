@@ -383,6 +383,7 @@ typedef struct PgStat_MsgVacuum
 	TimestampTz m_vacuumtime;
 	PgStat_Counter m_live_tuples;
 	PgStat_Counter m_dead_tuples;
+	TransactionId m_oldest_xmin;
 } PgStat_MsgVacuum;
 
 
@@ -692,6 +693,8 @@ typedef struct PgStat_StatTabEntry
 	PgStat_Counter analyze_count;
 	TimestampTz autovac_analyze_timestamp;	/* autovacuum initiated */
 	PgStat_Counter autovac_analyze_count;
+
+	TransactionId autovac_oldest_xmin;
 } PgStat_StatTabEntry;
 
 
@@ -1301,7 +1304,8 @@ extern void pgstat_reset_slru_counter(const char *);
 
 extern void pgstat_report_autovac(Oid dboid);
 extern void pgstat_report_vacuum(Oid tableoid, bool shared,
-								 PgStat_Counter livetuples, PgStat_Counter deadtuples);
+								 PgStat_Counter livetuples, PgStat_Counter deadtuples,
+								 TransactionId oldestXmin);
 extern void pgstat_report_analyze(Relation rel,
 								  PgStat_Counter livetuples, PgStat_Counter deadtuples,
 								  bool resetcounter);

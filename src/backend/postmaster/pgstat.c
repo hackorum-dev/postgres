@@ -1461,7 +1461,8 @@ pgstat_report_autovac(Oid dboid)
  */
 void
 pgstat_report_vacuum(Oid tableoid, bool shared,
-					 PgStat_Counter livetuples, PgStat_Counter deadtuples)
+					 PgStat_Counter livetuples, PgStat_Counter deadtuples,
+					 TransactionId oldestXmin)
 {
 	PgStat_MsgVacuum msg;
 
@@ -1475,6 +1476,7 @@ pgstat_report_vacuum(Oid tableoid, bool shared,
 	msg.m_vacuumtime = GetCurrentTimestamp();
 	msg.m_live_tuples = livetuples;
 	msg.m_dead_tuples = deadtuples;
+	msg.m_oldest_xmin = oldestXmin;
 	pgstat_send(&msg, sizeof(msg));
 }
 
@@ -4838,6 +4840,7 @@ pgstat_get_tab_entry(PgStat_StatDBEntry *dbentry, Oid tableoid, bool create)
 		result->analyze_count = 0;
 		result->autovac_analyze_timestamp = 0;
 		result->autovac_analyze_count = 0;
+		result->autovac_oldest_xmin = InvalidTransactionId;
 	}
 
 	return result;
@@ -6007,6 +6010,7 @@ pgstat_recv_tabstat(PgStat_MsgTabstat *msg, int len)
 			tabentry->analyze_count = 0;
 			tabentry->autovac_analyze_timestamp = 0;
 			tabentry->autovac_analyze_count = 0;
+			tabentry->autovac_oldest_xmin = InvalidTransactionId;
 		}
 		else
 		{
@@ -6287,6 +6291,8 @@ pgstat_recv_vacuum(PgStat_MsgVacuum *msg, int len)
 
 	tabentry->n_live_tuples = msg->m_live_tuples;
 	tabentry->n_dead_tuples = msg->m_dead_tuples;
+
+	tabentry->autovac_oldest_xmin = msg->m_oldest_xmin;
 
 	/*
 	 * It is quite possible that a non-aggressive VACUUM ended up skipping

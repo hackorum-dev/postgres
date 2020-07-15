@@ -92,6 +92,7 @@
 #include "storage/lmgr.h"
 #include "storage/pmsignal.h"
 #include "storage/proc.h"
+#include "storage/procarray.h"
 #include "storage/procsignal.h"
 #include "storage/sinvaladt.h"
 #include "storage/smgr.h"
@@ -2992,6 +2993,9 @@ relation_needs_vacanalyze(Oid relid,
 	TransactionId xidForceLimit;
 	MultiXactId multiForceLimit;
 
+	TransactionId oldestXmin = InvalidTransactionId;
+	Relation    rel;
+
 	AssertArg(classForm != NULL);
 	AssertArg(OidIsValid(relid));
 
@@ -3076,6 +3080,20 @@ relation_needs_vacanalyze(Oid relid,
 		instuples = tabentry->inserts_since_vacuum;
 		anltuples = tabentry->changes_since_analyze;
 
+		/*
+		 * We need to calculate oldestXmin for relation in the same way as it is done in vacuum.c
+		 * (see comment in vacuum_set_xid_limits).
+		 * This is why we have to open relation.
+		 */
+		if (ConditionalLockRelationOid(relid, AccessShareLock))
+		{
+			rel = try_relation_open(relid, NoLock);
+			if (rel)
+			{
+				oldestXmin = TransactionIdLimitedForOldSnapshots(GetOldestXmin(rel, PROCARRAY_FLAGS_VACUUM), rel);
+				relation_close(rel, AccessShareLock);
+			}
+		}
 		vacthresh = (float4) vac_base_thresh + vac_scale_factor * reltuples;
 		vacinsthresh = (float4) vac_ins_base_thresh + vac_ins_scale_factor * reltuples;
 		anlthresh = (float4) anl_base_thresh + anl_scale_factor * reltuples;
@@ -3094,10 +3112,24 @@ relation_needs_vacanalyze(Oid relid,
 				 NameStr(classForm->relname),
 				 vactuples, vacthresh, anltuples, anlthresh);
 
-		/* Determine if this table needs vacuum or analyze. */
-		*dovacuum = force_vacuum || (vactuples > vacthresh) ||
-			(vac_ins_base_thresh >= 0 && instuples > vacinsthresh);
-		*doanalyze = (anltuples > anlthresh);
+		/*
+		 * Determine if this table needs vacuum or analyze.
+		 * Do not perform autovacuum if we have already did it with the same oldestXmin.
+		 */
+		if (!TransactionIdIsValid(oldestXmin) || tabentry->autovac_oldest_xmin != oldestXmin)
+		{
+			*dovacuum = force_vacuum || (vactuples > vacthresh) ||
+				(vac_ins_base_thresh >= 0 && instuples > vacinsthresh);
+			*doanalyze = (anltuples > anlthresh);
+			elog(DEBUG1, "Consider relation %d tabentry=%p, tabentry->autovac_oldest_xmin=%d, oldestXmin=%d, dovacuum=%d, doanalyze=%d",
+				 relid, tabentry, tabentry->autovac_oldest_xmin, oldestXmin, *dovacuum, *doanalyze);
+		}
+		else
+		{
+			elog(DEBUG1, "Skip autovacuum of relation %d", relid);
+			*dovacuum = force_vacuum;
+			*doanalyze = false;
+		}
 	}
 	else
 	{

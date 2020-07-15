@@ -607,7 +607,8 @@ heap_vacuum_rel(Relation onerel, VacuumParams *params,
 	pgstat_report_vacuum(RelationGetRelid(onerel),
 						 onerel->rd_rel->relisshared,
 						 new_live_tuples,
-						 vacrelstats->new_dead_tuples);
+						 vacrelstats->new_dead_tuples,
+						 OldestXmin);
 	pgstat_progress_end_command();
 
 	/* and log the action if appropriate */
