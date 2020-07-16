@@ -8340,6 +8340,28 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
       </listitem>
      </varlistentry>
 
+      <varlistentry id="guc-vacuum-tolerate-damage" xreflabel="vacuum_tolerate_damage">
+      <term><varname>vacuum_tolerate_damage</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>vacuum_tolerate_damage</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        When set to off, which is the default, the <command>VACUUM</command> will raise
+        a ERROR-level error if detected a corrupted tuple.  This causes the operation to
+        stop immediately.
+       </para>
+
+       <para>
+        If set to on, the <command>VACUUM</command> will instead emit a WARNING for each
+        such tuple but the operation will continue vacuuming the remaining tuples.  However,
+        this will not do anything to the corrupted tuples and it will also not advance the
+        relfrozenxid and the relminmxid.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="guc-bytea-output" xreflabel="bytea_output">
       <term><varname>bytea_output</varname> (<type>enum</type>)
       <indexterm>

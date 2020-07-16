@@ -237,6 +237,7 @@ extern int	vacuum_freeze_min_age;
 extern int	vacuum_freeze_table_age;
 extern int	vacuum_multixact_freeze_min_age;
 extern int	vacuum_multixact_freeze_table_age;
+extern bool	vacuum_tolerate_damage;
 
 /* Variables for cost-based parallel vacuum */
 extern pg_atomic_uint32 *VacuumSharedCostBalance;

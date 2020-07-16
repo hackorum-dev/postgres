@@ -312,6 +312,7 @@ typedef struct LVRelStats
 	int			num_index_scans;
 	TransactionId latestRemovedXid;
 	bool		lock_waiter_detected;
+	bool		corrupted_tuple_detected;
 
 	/* Used for error callback */
 	char	   *indname;
@@ -497,6 +498,7 @@ heap_vacuum_rel(Relation onerel, VacuumParams *params,
 	vacrelstats->num_index_scans = 0;
 	vacrelstats->pages_removed = 0;
 	vacrelstats->lock_waiter_detected = false;
+	vacrelstats->corrupted_tuple_detected = false;
 
 	/* Open all indexes of the relation */
 	vac_open_indexes(onerel, RowExclusiveLock, &nindexes, &Irel);
@@ -597,8 +599,20 @@ heap_vacuum_rel(Relation onerel, VacuumParams *params,
 	if (new_rel_allvisible > new_rel_pages)
 		new_rel_allvisible = new_rel_pages;
 
-	new_frozen_xid = scanned_all_unfrozen ? FreezeLimit : InvalidTransactionId;
-	new_min_multi = scanned_all_unfrozen ? MultiXactCutoff : InvalidMultiXactId;
+	/*
+	 * Don't advance the relfrozenxid and relminmxid, if we have detected a
+	 * corrupted tuple.
+	 */
+	if (scanned_all_unfrozen && !vacrelstats->corrupted_tuple_detected)
+	{
+		new_frozen_xid = FreezeLimit;
+		new_min_multi = MultiXactCutoff;
+	}
+	else
+	{
+		new_frozen_xid = InvalidTransactionId;
+		new_min_multi = InvalidMultiXactId;
+	}
 
 	vac_update_relstats(onerel,
 						new_rel_pages,
@@ -1460,6 +1474,7 @@ lazy_scan_heap(Relation onerel, VacuumParams *params, LVRelStats *vacrelstats,
 			else
 			{
 				bool		tuple_totally_frozen;
+				bool		found_corruption = false;
 
 				num_tuples += 1;
 				hastup = true;
@@ -1472,8 +1487,13 @@ lazy_scan_heap(Relation onerel, VacuumParams *params, LVRelStats *vacrelstats,
 											  relfrozenxid, relminmxid,
 											  FreezeLimit, MultiXactCutoff,
 											  &frozen[nfrozen],
-											  &tuple_totally_frozen))
+											  &tuple_totally_frozen,
+											  &found_corruption,
+											  vacuum_tolerate_damage ?
+											  WARNING : ERROR))
 					frozen[nfrozen++].offset = offnum;
+				else if (found_corruption)
+					vacrelstats->corrupted_tuple_detected = true;
 
 				if (!tuple_totally_frozen)
 					all_frozen = false;

@@ -2036,6 +2036,15 @@ static struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 
+	{
+		{"vacuum_tolerate_damage", PGC_USERSET, ERROR_HANDLING_OPTIONS,
+			gettext_noop("Whether to continue running vacuum after detecting corrupted tuple."),
+		},
+		&vacuum_tolerate_damage,
+		false,
+		NULL, NULL, NULL
+	},
+
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, false, NULL, NULL, NULL

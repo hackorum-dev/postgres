@@ -671,6 +671,7 @@
 #vacuum_cleanup_index_scale_factor = 0.1	# fraction of total number of tuples
 						# before index cleanup, 0 always performs
 						# index cleanup
+#vacuum_tolerate_damage = false
 #bytea_output = 'hex'			# hex, escape
 #xmlbinary = 'base64'
 #xmloption = 'content'

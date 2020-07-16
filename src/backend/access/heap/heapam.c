@@ -52,6 +52,7 @@
 #include "access/xloginsert.h"
 #include "access/xlogutils.h"
 #include "catalog/catalog.h"
+#include "commands/vacuum.h"
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "port/atomics.h"
@@ -5802,6 +5803,7 @@ heap_inplace_update(Relation relation, HeapTuple tuple)
 #define		FRM_RETURN_IS_XID		0x0004
 #define		FRM_RETURN_IS_MULTI		0x0008
 #define		FRM_MARK_COMMITTED		0x0010
+#define		FRM_FOUND_CORRUPTION	0x0020
 
 /*
  * FreezeMultiXactId
@@ -5823,12 +5825,19 @@ heap_inplace_update(Relation relation, HeapTuple tuple)
  * FRM_RETURN_IS_MULTI
  *		The return value is a new MultiXactId to set as new Xmax.
  *		(caller must obtain proper infomask bits using GetMultiXactIdHintBits)
+ * FRM_FOUND_CORRUPTION
+ *		This flag will be set if a corrupted multi-xact is detected.
+ *		Ideally, in such cases it will report an error but based on the
+ *		vacuum_damage_elevel, it might just complain about the corruption
+ *		and allow vacuum to continue.  So if the flag is set the caller will
+ *		not do anything to this tuple.
+ * vacuum_damage_elevel - Error level for reporting the corrupted tuple.
  */
 static TransactionId
 FreezeMultiXactId(MultiXactId multi, uint16 t_infomask,
 				  TransactionId relfrozenxid, TransactionId relminmxid,
 				  TransactionId cutoff_xid, MultiXactId cutoff_multi,
-				  uint16 *flags)
+				  uint16 *flags, int vacuum_damage_elevel)
 {
 	TransactionId xid = InvalidTransactionId;
 	int			i;
@@ -5854,10 +5863,14 @@ FreezeMultiXactId(MultiXactId multi, uint16 t_infomask,
 		return InvalidTransactionId;
 	}
 	else if (MultiXactIdPrecedes(multi, relminmxid))
-		ereport(ERROR,
+	{
+		ereport(vacuum_damage_elevel,
 				(errcode(ERRCODE_DATA_CORRUPTED),
 				 errmsg_internal("found multixact %u from before relminmxid %u",
 								 multi, relminmxid)));
+		*flags |= FRM_FOUND_CORRUPTION;
+		return InvalidTransactionId;
+	}
 	else if (MultiXactIdPrecedes(multi, cutoff_multi))
 	{
 		/*
@@ -5868,10 +5881,14 @@ FreezeMultiXactId(MultiXactId multi, uint16 t_infomask,
 		 */
 		if (MultiXactIdIsRunning(multi,
 								 HEAP_XMAX_IS_LOCKED_ONLY(t_infomask)))
-			ereport(ERROR,
+		{
+			ereport(vacuum_damage_elevel,
 					(errcode(ERRCODE_DATA_CORRUPTED),
 					 errmsg_internal("multixact %u from before cutoff %u found to be still running",
 									 multi, cutoff_multi)));
+			*flags |= FRM_FOUND_CORRUPTION;
+			return InvalidTransactionId;
+		}
 
 		if (HEAP_XMAX_IS_LOCKED_ONLY(t_infomask))
 		{
@@ -5887,10 +5904,14 @@ FreezeMultiXactId(MultiXactId multi, uint16 t_infomask,
 			Assert(TransactionIdIsValid(xid));
 
 			if (TransactionIdPrecedes(xid, relfrozenxid))
-				ereport(ERROR,
+			{
+				ereport(vacuum_damage_elevel,
 						(errcode(ERRCODE_DATA_CORRUPTED),
 						 errmsg_internal("found update xid %u from before relfrozenxid %u",
 										 xid, relfrozenxid)));
+				*flags |= FRM_FOUND_CORRUPTION;
+				return InvalidTransactionId;
+			}
 
 			/*
 			 * If the xid is older than the cutoff, it has to have aborted,
@@ -5899,9 +5920,13 @@ FreezeMultiXactId(MultiXactId multi, uint16 t_infomask,
 			if (TransactionIdPrecedes(xid, cutoff_xid))
 			{
 				if (TransactionIdDidCommit(xid))
-					ereport(ERROR,
+				{
+					ereport(vacuum_damage_elevel,
 							(errcode(ERRCODE_DATA_CORRUPTED),
 							 errmsg_internal("cannot freeze committed update xid %u", xid)));
+					*flags |= FRM_FOUND_CORRUPTION;
+					return InvalidTransactionId;
+				}
 				*flags |= FRM_INVALIDATE_XMAX;
 				xid = InvalidTransactionId; /* not strictly necessary */
 			}
@@ -5975,10 +6000,15 @@ FreezeMultiXactId(MultiXactId multi, uint16 t_infomask,
 
 			Assert(TransactionIdIsValid(xid));
 			if (TransactionIdPrecedes(xid, relfrozenxid))
-				ereport(ERROR,
+			{
+				ereport(vacuum_damage_elevel,
 						(errcode(ERRCODE_DATA_CORRUPTED),
 						 errmsg_internal("found update xid %u from before relfrozenxid %u",
 										 xid, relfrozenxid)));
+				pfree(members);
+				*flags |= FRM_FOUND_CORRUPTION;
+				return InvalidTransactionId;
+			}
 
 			/*
 			 * It's an update; should we keep it?  If the transaction is known
@@ -6025,10 +6055,15 @@ FreezeMultiXactId(MultiXactId multi, uint16 t_infomask,
 			 */
 			if (TransactionIdIsValid(update_xid) &&
 				TransactionIdPrecedes(update_xid, cutoff_xid))
-				ereport(ERROR,
+			{
+				ereport(vacuum_damage_elevel,
 						(errcode(ERRCODE_DATA_CORRUPTED),
 						 errmsg_internal("found update xid %u from before xid cutoff %u",
 										 update_xid, cutoff_xid)));
+				pfree(members);
+				*flags |= FRM_FOUND_CORRUPTION;
+				return InvalidTransactionId;
+			}
 
 			/*
 			 * If we determined that it's an Xid corresponding to an update
@@ -6110,6 +6145,11 @@ FreezeMultiXactId(MultiXactId multi, uint16 t_infomask,
  * HeapTupleSatisfiesVacuum() and determined that it is not HEAPTUPLE_DEAD
  * (else we should be removing the tuple, not freezing it).
  *
+ * vacuum_damage_elevel - Error level for reporting the corrupted tuple.
+ * found_corruption - Out parameter, must be a valid pointer if the
+ * vacuum_damage_elevel is set to the WARNING.  This will be set to true
+ * if any corrupted tuple is found.
+ *
  * NB: cutoff_xid *must* be <= the current global xmin, to ensure that any
  * XID older than it could neither be running nor seen as running by any
  * open transaction.  This ensures that the replacement will not change
@@ -6128,7 +6168,8 @@ bool
 heap_prepare_freeze_tuple(HeapTupleHeader tuple,
 						  TransactionId relfrozenxid, TransactionId relminmxid,
 						  TransactionId cutoff_xid, TransactionId cutoff_multi,
-						  xl_heap_freeze_tuple *frz, bool *totally_frozen_p)
+						  xl_heap_freeze_tuple *frz, bool *totally_frozen_p,
+						  bool *found_corruption, int vacuum_damage_elevel)
 {
 	bool		changed = false;
 	bool		xmax_already_frozen = false;
@@ -6140,6 +6181,17 @@ heap_prepare_freeze_tuple(HeapTupleHeader tuple,
 	frz->t_infomask2 = tuple->t_infomask2;
 	frz->t_infomask = tuple->t_infomask;
 	frz->xmax = HeapTupleHeaderGetRawXmax(tuple);
+
+	*totally_frozen_p = false;
+
+	/*
+	 * The vacuum_damage_elevel must be set to either ERROR or WARNING and
+	 * if it is set to WARNING then the caller must pass a valid pointer for
+	 * found_corruption.
+	 */
+	Assert((vacuum_damage_elevel == WARNING) ||
+		   (vacuum_damage_elevel == ERROR));
+	Assert((found_corruption != NULL) || (vacuum_damage_elevel == ERROR));
 
 	/*
 	 * Process xmin.  xmin_frozen has two slightly different meanings: in the
@@ -6155,19 +6207,27 @@ heap_prepare_freeze_tuple(HeapTupleHeader tuple,
 	else
 	{
 		if (TransactionIdPrecedes(xid, relfrozenxid))
-			ereport(ERROR,
+		{
+			ereport(vacuum_damage_elevel,
 					(errcode(ERRCODE_DATA_CORRUPTED),
 					 errmsg_internal("found xmin %u from before relfrozenxid %u",
 									 xid, relfrozenxid)));
+			*found_corruption = true;
+			return false;
+		}
 
 		xmin_frozen = TransactionIdPrecedes(xid, cutoff_xid);
 		if (xmin_frozen)
 		{
 			if (!TransactionIdDidCommit(xid))
-				ereport(ERROR,
+			{
+				ereport(vacuum_damage_elevel,
 						(errcode(ERRCODE_DATA_CORRUPTED),
 						 errmsg_internal("uncommitted xmin %u from before xid cutoff %u needs to be frozen",
 										 xid, cutoff_xid)));
+				*found_corruption = true;
+				return false;
+			}
 
 			frz->t_infomask |= HEAP_XMIN_FROZEN;
 			changed = true;
@@ -6192,7 +6252,17 @@ heap_prepare_freeze_tuple(HeapTupleHeader tuple,
 
 		newxmax = FreezeMultiXactId(xid, tuple->t_infomask,
 									relfrozenxid, relminmxid,
-									cutoff_xid, cutoff_multi, &flags);
+									cutoff_xid, cutoff_multi,
+									&flags, vacuum_damage_elevel);
+		/*
+		 * If we have detected a corrupted multi-xact id then just set the
+		 * found_corruption flag and return.
+		 */
+		if (flags & FRM_FOUND_CORRUPTION)
+		{
+			*found_corruption = true;
+			return false;
+		}
 
 		freeze_xmax = (flags & FRM_INVALIDATE_XMAX);
 
@@ -6236,10 +6306,14 @@ heap_prepare_freeze_tuple(HeapTupleHeader tuple,
 	else if (TransactionIdIsNormal(xid))
 	{
 		if (TransactionIdPrecedes(xid, relfrozenxid))
-			ereport(ERROR,
+		{
+			ereport(vacuum_damage_elevel,
 					(errcode(ERRCODE_DATA_CORRUPTED),
 					 errmsg_internal("found xmax %u from before relfrozenxid %u",
 									 xid, relfrozenxid)));
+			*found_corruption = true;
+			return false;
+		}
 
 		if (TransactionIdPrecedes(xid, cutoff_xid))
 		{
@@ -6251,10 +6325,14 @@ heap_prepare_freeze_tuple(HeapTupleHeader tuple,
 			 */
 			if (!HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask) &&
 				TransactionIdDidCommit(xid))
-				ereport(ERROR,
+			{
+				ereport(vacuum_damage_elevel,
 						(errcode(ERRCODE_DATA_CORRUPTED),
 						 errmsg_internal("cannot freeze committed xmax %u",
 										 xid)));
+				*found_corruption = true;
+				return false;
+			}
 			freeze_xmax = true;
 		}
 		else
@@ -6267,10 +6345,14 @@ heap_prepare_freeze_tuple(HeapTupleHeader tuple,
 		xmax_already_frozen = true;
 	}
 	else
-		ereport(ERROR,
+	{
+		ereport(vacuum_damage_elevel,
 				(errcode(ERRCODE_DATA_CORRUPTED),
 				 errmsg_internal("found xmax %u (infomask 0x%04x) not frozen, not multi, not normal",
 								 xid, tuple->t_infomask)));
+		*found_corruption = true;
+		return false;
+	}
 
 	if (freeze_xmax)
 	{
@@ -6386,7 +6468,8 @@ heap_freeze_tuple(HeapTupleHeader tuple,
 	do_freeze = heap_prepare_freeze_tuple(tuple,
 										  relfrozenxid, relminmxid,
 										  cutoff_xid, cutoff_multi,
-										  &frz, &tuple_totally_frozen);
+										  &frz, &tuple_totally_frozen,
+										  NULL, ERROR);
 
 	/*
 	 * Note that because this is not a WAL-logged operation, we don't need to

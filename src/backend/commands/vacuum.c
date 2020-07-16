@@ -63,6 +63,12 @@ int			vacuum_freeze_table_age;
 int			vacuum_multixact_freeze_min_age;
 int			vacuum_multixact_freeze_table_age;
 
+/*
+ * Whether to continue with the vacuuming after detecting a corrupted tuple.
+ * If this flag is set then on detection of a corrupted tuple during a freeze,
+ * it will report each such occurrence with WARNING and continue the vacuum.
+ */
+bool vacuum_tolerate_damage = false;
 
 /* A few variables that don't seem worth passing around as parameters */
 static MemoryContext vac_context = NULL;
