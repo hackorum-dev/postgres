@@ -59,6 +59,20 @@
 #include "pg_getopt.h"
 #include "storage/large_object.h"
 
+#define CLOG_XACTS_PER_BYTE 4
+#define CLOG_XACTS_PER_PAGE (BLCKSZ * CLOG_XACTS_PER_BYTE)
+
+#define TransactionIdToPage(xid)	((xid) / (TransactionId) CLOG_XACTS_PER_PAGE)
+#define TransactionIdToPgIndex(xid) ((xid) % (TransactionId) CLOG_XACTS_PER_PAGE)
+
+#define MULTIXACT_OFFSETS_PER_PAGE (BLCKSZ / sizeof(MultiXactOffset))
+
+#define MultiXactIdToOffsetPage(xid) \
+	((xid) / (MultiXactOffset) MULTIXACT_OFFSETS_PER_PAGE)
+#define MultiXactIdToOffsetEntry(xid) \
+	((xid) % (MultiXactOffset) MULTIXACT_OFFSETS_PER_PAGE)
+
+
 static ControlFileData ControlFile; /* pg_control values */
 static XLogSegNo newXlogSegNo;	/* new XLOG segment # */
 static bool guessed = false;	/* T if we had to guess at any values */
@@ -74,6 +88,9 @@ static uint32 minXlogTli = 0;
 static XLogSegNo minXlogSegNo = 0;
 static int	WalSegSz;
 static int	set_wal_segsize;
+static bool get_unsafe = false;
+static bool testmode = false;
+static bool noupdate = false;
 
 static void CheckDataVersion(void);
 static bool read_controlfile(void);
@@ -86,6 +103,9 @@ static void KillExistingXLOG(void);
 static void KillExistingArchiveStatus(void);
 static void WriteEmptyXLOG(void);
 static void usage(void);
+static void CheckInputXid(TransactionId set_xid);
+static void CheckInputMid(MultiXactId set_mxid);
+static void CheckInputMxoff(MultiXactOffset set_mxoff);
 
 
 int
@@ -96,6 +116,7 @@ main(int argc, char *argv[])
 		{"pgdata", required_argument, NULL, 'D'},
 		{"epoch", required_argument, NULL, 'e'},
 		{"force", no_argument, NULL, 'f'},
+		{"test", no_argument, NULL, 't'},
 		{"next-wal-file", required_argument, NULL, 'l'},
 		{"multixact-ids", required_argument, NULL, 'm'},
 		{"dry-run", no_argument, NULL, 'n'},
@@ -108,7 +129,6 @@ main(int argc, char *argv[])
 
 	int			c;
 	bool		force = false;
-	bool		noupdate = false;
 	MultiXactId set_oldestmxid = 0;
 	char	   *endptr;
 	char	   *endptr2;
@@ -135,7 +155,7 @@ main(int argc, char *argv[])
 	}
 
 
-	while ((c = getopt_long(argc, argv, "c:D:e:fl:m:no:O:x:", long_options, NULL)) != -1)
+	while ((c = getopt_long(argc, argv, "c:D:e:fl:m:no:O:tx:", long_options, NULL)) != -1)
 	{
 		switch (c)
 		{
@@ -145,6 +165,10 @@ main(int argc, char *argv[])
 
 			case 'f':
 				force = true;
+				break;
+
+			case 't':
+				testmode = true;
 				break;
 
 			case 'n':
@@ -430,6 +454,7 @@ main(int argc, char *argv[])
 
 	if (set_xid != 0)
 	{
+		CheckInputXid(set_xid);
 		ControlFile.checkPointCopy.nextFullXid =
 			FullTransactionIdFromEpochAndXid(EpochFromFullTransactionId(ControlFile.checkPointCopy.nextFullXid),
 											 set_xid);
@@ -457,6 +482,7 @@ main(int argc, char *argv[])
 
 	if (set_mxid != 0)
 	{
+		CheckInputMid(set_mxid);
 		ControlFile.checkPointCopy.nextMulti = set_mxid;
 
 		ControlFile.checkPointCopy.oldestMulti = set_oldestmxid;
@@ -466,7 +492,10 @@ main(int argc, char *argv[])
 	}
 
 	if (set_mxoff != -1)
+	{
+		CheckInputMxoff(set_mxoff);
 		ControlFile.checkPointCopy.nextMultiOffset = set_mxoff;
+	}
 
 	if (minXlogTli > ControlFile.checkPointCopy.ThisTimeLineID)
 	{
@@ -878,6 +907,136 @@ PrintNewControlValues(void)
 	}
 }
 
+/*
+ * Only transactions on the same clog page with the nextFullXid transaction
+ * ID record in pg_control or the first transaction ID of a page are allowed.
+ */
+static void
+CheckInputXid(TransactionId set_xid)
+{
+	TransactionId	xid_in_control = InvalidTransactionId;
+
+	/*
+	 * if it's first transaction ID, then nothing wrong and we skip check in a
+	 * testmode.
+	 */
+	if(0 == TransactionIdToPgIndex(set_xid) || testmode)
+	{
+		return;
+	}
+
+	xid_in_control = XidFromFullTransactionId(ControlFile.checkPointCopy.nextFullXid);
+
+	/* It's ok if set a xid in same CLOG page */
+	if(TransactionIdToPage(set_xid) == TransactionIdToPage(xid_in_control))
+	{
+		return;
+	}
+
+	if(noupdate)
+	{
+		/* For UI output */
+		if(!get_unsafe)
+		{
+			printf("\n");
+			get_unsafe = true;
+		}
+		pg_log_warning("unsafe xid number %u pointed by -x", set_xid);
+	}
+	else
+	{
+		pg_log_error("unsafe xid number %u pointed by -x", set_xid);
+		exit(1);
+	}
+}
+
+/*
+ * Only transactions on the same mutixact offset page with the nextMulti
+ * transaction ID record in pg_control or the first transaction ID of a
+ * page are allowed.
+ */
+static void
+CheckInputMid(MultiXactId set_mxid)
+{
+	MultiXactId	mxid_in_control = InvalidMultiXactId;
+
+	/*
+	 * if it's first MultiXact ID in a page, then nothing wrong and we
+	 * skip check in a testmode.
+	 */
+	if(0 == MultiXactIdToOffsetEntry(set_mxid) || testmode)
+	{
+		return;
+	}
+
+	mxid_in_control = ControlFile.checkPointCopy.nextMulti;
+
+	/* It's ok if the mxid in same Mutixact page */
+	if(MultiXactIdToOffsetPage(set_mxid) == MultiXactIdToOffsetPage(mxid_in_control))
+	{
+		return;
+	}
+
+	if(noupdate)
+	{
+		/* For UI output */
+		if(!get_unsafe)
+		{
+			printf("\n");
+			get_unsafe = true;
+		}
+		pg_log_warning("unsafe mxid number %u pointed by -m", set_mxid);
+	}
+	else
+	{
+		pg_log_error("unsafe mxid number %u pointed by -m", set_mxid);
+		exit(1);
+	}
+}
+
+/*
+ * Only offset point on the same mutixact member page with the nextMulti
+ * transaction or the first offset point of a page are allowed.
+ */
+static void
+CheckInputMxoff(MultiXactOffset set_mxoff)
+{
+	MultiXactOffset mxoff_in_control;
+
+	/*
+	 * if it's first place in a mutixact offset page, then nothing wrong and we
+	 * skip check in a testmode.
+	 */
+	if(0 == set_mxoff % BLCKSZ || testmode)
+	{
+		return;
+	}
+
+	mxoff_in_control = ControlFile.checkPointCopy.nextMultiOffset;
+
+	/* It's ok if the mxoff in same Mutixact offset page */
+	if(set_mxoff / BLCKSZ == mxoff_in_control / BLCKSZ)
+	{
+		return;
+	}
+
+	if(noupdate)
+	{
+		/* For UI output */
+		if(!get_unsafe)
+		{
+			printf("\n");
+			get_unsafe = true;
+		}
+		pg_log_warning("unsafe mxoff number %u pointed by -m", set_mxoff);
+	}
+	else
+	{
+		pg_log_error("unsafe mxoff number %u pointed by -m", set_mxoff);
+		exit(1);
+	}
+}
+
 
 /*
  * Write out the new pg_control file.
@@ -1214,6 +1373,7 @@ usage(void)
 	printf(_(" [-D, --pgdata=]DATADIR          data directory\n"));
 	printf(_("  -e, --epoch=XIDEPOCH           set next transaction ID epoch\n"));
 	printf(_("  -f, --force                    force update to be done\n"));
+	printf(_("  -t, --test                     test mode to force -O,-x,-m to be done\n"));
 	printf(_("  -l, --next-wal-file=WALFILE    set minimum starting location for new WAL\n"));
 	printf(_("  -m, --multixact-ids=MXID,MXID  set next and oldest multitransaction ID\n"));
 	printf(_("  -n, --dry-run                  no update, just show what would be done\n"));
