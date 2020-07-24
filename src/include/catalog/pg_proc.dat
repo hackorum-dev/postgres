@@ -1338,7 +1338,7 @@
   proname => 'int4', prorettype => 'int4', proargtypes => 'int8',
   prosrc => 'int84' },
 { oid => '481', descr => 'convert int4 to int8',
-  proname => 'int8', prorettype => 'int8', proargtypes => 'int4',
+  proname => 'int8', proleakproof => 't', prorettype => 'int8', proargtypes => 'int4',
   prosrc => 'int48' },
 { oid => '482', descr => 'convert int8 to float8',
   proname => 'float8', prorettype => 'float8', proargtypes => 'int8',

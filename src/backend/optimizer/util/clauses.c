@@ -61,6 +61,16 @@ typedef struct
 	AggClauseCosts *costs;
 } get_agg_clause_costs_context;
 
+typedef enum
+{
+	/* Ordering is important here! */
+	ece_eval_nothing,			/* be unconditionally safe */
+	ece_eval_leakproof,			/* eval leakproof immutable functions */
+	ece_eval_immutable,			/* eval immutable functions too */
+	ece_eval_stable,			/* eval stable functions too */
+	ece_eval_volatile			/* eval volatile functions too */
+} ece_eval_mode;
+
 typedef struct
 {
 	ParamListInfo boundParams;
@@ -68,6 +78,7 @@ typedef struct
 	List	   *active_fns;
 	Node	   *case_val;
 	bool		estimate;
+	ece_eval_mode eval_mode;
 } eval_const_expressions_context;
 
 typedef struct
@@ -119,6 +130,8 @@ static Node *eval_const_expressions_mutator(Node *node,
 static bool contain_non_const_walker(Node *node, void *context);
 static bool ece_function_is_safe(Oid funcid,
 								 eval_const_expressions_context *context);
+static bool ece_function_form_is_safe(Form_pg_proc func_form,
+									  eval_const_expressions_context *context);
 static Node *apply_const_relabel(Node *arg, Oid rtype,
 								 int32 rtypmod, Oid rcollid,
 								 CoercionForm rformat, int rlocation);
@@ -2264,6 +2277,7 @@ eval_const_expressions(PlannerInfo *root, Node *node)
 	context.active_fns = NIL;	/* nothing being recursively simplified */
 	context.case_val = NULL;	/* no CASE being examined */
 	context.estimate = false;	/* safe transformations only */
+	context.eval_mode = ece_eval_immutable; /* eval immutable functions */
 	return eval_const_expressions_mutator(node, &context);
 }
 
@@ -2280,8 +2294,11 @@ eval_const_expressions(PlannerInfo *root, Node *node)
  *	  available by the caller of planner(), even if the Param isn't marked
  *	  constant.  This effectively means that we plan using the first supplied
  *	  value of the Param.
- * 2. Fold stable, as well as immutable, functions to constants.
+ * 2. Fold stable, as well as immutable, functions to constants.  The risk
+ *	  that the result might change from planning time to execution time is
+ *	  worth taking, as we otherwise couldn't get an estimate at all.
  * 3. Reduce PlaceHolderVar nodes to their contained expressions.
+ * 4. Ignore domain constraints, assuming that CoerceToDomain will succeed.
  *--------------------
  */
 Node *
@@ -2295,6 +2312,7 @@ estimate_expression_value(PlannerInfo *root, Node *node)
 	context.active_fns = NIL;	/* nothing being recursively simplified */
 	context.case_val = NULL;	/* no CASE being examined */
 	context.estimate = true;	/* unsafe transformations OK */
+	context.eval_mode = ece_eval_stable;	/* eval stable functions */
 	return eval_const_expressions_mutator(node, &context);
 }
 
@@ -2961,7 +2979,22 @@ eval_const_expressions_mutator(Node *node,
 				 * opportunity to reduce constant test conditions.  For
 				 * example this allows
 				 *		CASE 0 WHEN 0 THEN 1 ELSE 1/0 END
-				 * to reduce to 1 rather than drawing a divide-by-0 error.
+				 * to reduce to 1 rather than drawing a divide-by-0 error,
+				 * since we'll throw away the ELSE without processing it.
+				 *
+				 * Even in not-all-constant cases, the user might be expecting
+				 * the CASE to prevent run-time errors, for example in
+				 *		CASE WHEN j > 0 THEN 1 ELSE 1/0 END
+				 * Since division is immutable, we'd ordinarily simplify the
+				 * division and hence draw the divide-by-zero error at plan
+				 * time, even if j is never zero at run time.  To avoid that,
+				 * reduce eval_mode to ece_eval_leakproof while processing any
+				 * test condition or result value that will not certainly be
+				 * evaluated at run-time.  We expect that leakproof immutable
+				 * functions will not throw any errors (except perhaps in
+				 * corner cases such as OOM, which we need not guard against
+				 * for this purpose).
+				 *
 				 * Note that when the test expression is constant, we don't
 				 * have to include it in the resulting CASE; for example
 				 *		CASE 0 WHEN x THEN y ELSE z END
@@ -2977,6 +3010,7 @@ eval_const_expressions_mutator(Node *node,
 				 */
 				CaseExpr   *caseexpr = (CaseExpr *) node;
 				CaseExpr   *newcase;
+				ece_eval_mode save_eval_mode = context->eval_mode;
 				Node	   *save_case_val;
 				Node	   *newarg;
 				List	   *newargs;
@@ -3027,6 +3061,16 @@ eval_const_expressions_mutator(Node *node,
 						const_true_cond = true;
 					}
 
+					/*
+					 * Unless the test condition is constant TRUE, we can't be
+					 * sure the result value will be evaluated, so become more
+					 * conservative about which functions to execute.  This
+					 * change will also apply to subsequent test conditions
+					 * and result values.
+					 */
+					if (!const_true_cond)
+						context->eval_mode = ece_eval_leakproof;
+
 					/* Simplify this alternative's result value */
 					caseresult = eval_const_expressions_mutator((Node *) oldcasewhen->result,
 																context);
@@ -3058,6 +3102,7 @@ eval_const_expressions_mutator(Node *node,
 															   context);
 
 				context->case_val = save_case_val;
+				context->eval_mode = save_eval_mode;
 
 				/*
 				 * If no non-FALSE alternatives, CASE reduces to the default
@@ -3113,6 +3158,7 @@ eval_const_expressions_mutator(Node *node,
 			{
 				CoalesceExpr *coalesceexpr = (CoalesceExpr *) node;
 				CoalesceExpr *newcoalesce;
+				ece_eval_mode save_eval_mode = context->eval_mode;
 				List	   *newargs;
 				ListCell   *arg;
 
@@ -3137,12 +3183,24 @@ eval_const_expressions_mutator(Node *node,
 						if (((Const *) e)->constisnull)
 							continue;	/* drop null constant */
 						if (newargs == NIL)
+						{
+							context->eval_mode = save_eval_mode;
 							return e;	/* first expr */
+						}
 						newargs = lappend(newargs, e);
 						break;
 					}
 					newargs = lappend(newargs, e);
+
+					/*
+					 * Arguments following a non-constant argument may or may
+					 * not get evaluated at run-time, so as in CASE, become
+					 * more conservative about which functions to execute.
+					 */
+					context->eval_mode = ece_eval_leakproof;
 				}
+
+				context->eval_mode = save_eval_mode;
 
 				/*
 				 * If all the arguments were constant null, the result is just
@@ -3163,13 +3221,12 @@ eval_const_expressions_mutator(Node *node,
 		case T_SQLValueFunction:
 			{
 				/*
-				 * All variants of SQLValueFunction are stable, so if we are
-				 * estimating the expression's value, we should evaluate the
-				 * current function value.  Otherwise just copy.
+				 * All variants of SQLValueFunction are stable, so evaluate if
+				 * we are evaluating stable functions.  Otherwise just copy.
 				 */
 				SQLValueFunction *svf = (SQLValueFunction *) node;
 
-				if (context->estimate)
+				if (context->eval_mode >= ece_eval_stable)
 					return (Node *) evaluate_expr((Expr *) svf,
 												  svf->type,
 												  svf->typmod,
@@ -3565,20 +3622,42 @@ contain_non_const_walker(Node *node, void *context)
 static bool
 ece_function_is_safe(Oid funcid, eval_const_expressions_context *context)
 {
-	char		provolatile = func_volatile(funcid);
+	bool		result;
+	HeapTuple	tp;
 
-	/*
-	 * Ordinarily we are only allowed to simplify immutable functions. But for
-	 * purposes of estimation, we consider it okay to simplify functions that
-	 * are merely stable; the risk that the result might change from planning
-	 * time to execution time is worth taking in preference to not being able
-	 * to estimate the value at all.
-	 */
-	if (provolatile == PROVOLATILE_IMMUTABLE)
-		return true;
-	if (context->estimate && provolatile == PROVOLATILE_STABLE)
-		return true;
-	return false;
+	tp = SearchSysCache1(PROCOID, ObjectIdGetDatum(funcid));
+	if (!HeapTupleIsValid(tp))
+		elog(ERROR, "cache lookup failed for function %u", funcid);
+
+	result = ece_function_form_is_safe((Form_pg_proc) GETSTRUCT(tp), context);
+	ReleaseSysCache(tp);
+	return result;
+}
+
+/*
+ * Same, when we have the pg_proc entry directly at hand
+ */
+static bool
+ece_function_form_is_safe(Form_pg_proc func_form,
+						  eval_const_expressions_context *context)
+{
+	ece_eval_mode f_mode;
+
+	/* Must map the function properties to an ordered enum */
+	if (func_form->provolatile == PROVOLATILE_IMMUTABLE)
+	{
+		if (func_form->proleakproof)
+			f_mode = ece_eval_leakproof;
+		else
+			f_mode = ece_eval_immutable;
+	}
+	else if (func_form->provolatile == PROVOLATILE_STABLE)
+		f_mode = ece_eval_stable;
+	else
+		f_mode = ece_eval_volatile;
+
+	/* Now, does eval_mode allow evaluation of this function? */
+	return (context->eval_mode >= f_mode);
 }
 
 /*
@@ -4238,9 +4317,8 @@ recheck_cast_function_args(List *args, Oid result_type, HeapTuple func_tuple)
  * evaluate_function: try to pre-evaluate a function call
  *
  * We can do this if the function is strict and has any constant-null inputs
- * (just return a null constant), or if the function is immutable and has all
- * constant inputs (call it and return the result as a Const node).  In
- * estimation mode we are willing to pre-evaluate stable functions too.
+ * (just return a null constant), or if the function is safe to evaluate and
+ * has all constant inputs (call it and return the result as a Const node).
  *
  * Returns a simplified expression if successful, or NULL if cannot
  * simplify the function.
@@ -4293,7 +4371,7 @@ evaluate_function(Oid funcid, Oid result_type, int32 result_typmod,
 	 * If the function is strict and has a constant-NULL input, it will never
 	 * be called at all, so we can replace the call by a NULL constant, even
 	 * if there are other inputs that aren't constant, and even if the
-	 * function is not otherwise immutable.
+	 * function is not otherwise safe to evaluate.
 	 */
 	if (funcform->proisstrict && has_null_input)
 		return (Expr *) makeNullConst(result_type, result_typmod,
@@ -4308,17 +4386,9 @@ evaluate_function(Oid funcid, Oid result_type, int32 result_typmod,
 		return NULL;
 
 	/*
-	 * Ordinarily we are only allowed to simplify immutable functions. But for
-	 * purposes of estimation, we consider it okay to simplify functions that
-	 * are merely stable; the risk that the result might change from planning
-	 * time to execution time is worth taking in preference to not being able
-	 * to estimate the value at all.
+	 * Are we permitted to evaluate this function in the current context?
 	 */
-	if (funcform->provolatile == PROVOLATILE_IMMUTABLE)
-		 /* okay */ ;
-	else if (context->estimate && funcform->provolatile == PROVOLATILE_STABLE)
-		 /* okay */ ;
-	else
+	if (!ece_function_form_is_safe(funcform, context))
 		return NULL;
 
 	/*

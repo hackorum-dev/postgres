@@ -66,10 +66,32 @@ SELECT '7' AS "None",
 -- Constant-expression folding shouldn't evaluate unreachable subexpressions
 SELECT CASE WHEN 1=0 THEN 1/0 WHEN 1=1 THEN 1 ELSE 2/0 END;
 SELECT CASE 1 WHEN 0 THEN 1/0 WHEN 1 THEN 1 ELSE 2/0 END;
-
--- However we do not currently suppress folding of potentially
--- reachable subexpressions
 SELECT CASE WHEN i > 100 THEN 1/0 ELSE 0 END FROM case_tbl;
+
+-- However, that guarantee doesn't extend into sub-selects
+SELECT CASE WHEN i > 100 THEN (select 1/0) ELSE 0 END FROM case_tbl;
+
+-- Inline-ing a SQL function shouldn't cause a failure
+CREATE FUNCTION case_func(double precision, integer)
+RETURNS integer
+LANGUAGE SQL AS $$
+   SELECT CASE WHEN $1 = 42 THEN 1/$2 ELSE NULL END
+$$;
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT case_func(f, 0) FROM case_tbl;
+
+SELECT case_func(f, 0) FROM case_tbl;
+
+DROP FUNCTION case_func(double precision, integer);
+
+-- Subquery flattening shouldn't result in such errors, either
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT f, CASE WHEN f = 42 THEN 1/j ELSE NULL END
+FROM (SELECT f, 0 AS j FROM case_tbl) ss;
+
+SELECT f, CASE WHEN f = 42 THEN 1/j ELSE NULL END
+FROM (SELECT f, 0 AS j FROM case_tbl) ss;
 
 -- Test for cases involving untyped literals in test expression
 SELECT CASE 'a' WHEN 'a' THEN 1 ELSE 2 END;

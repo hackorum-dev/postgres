@@ -93,10 +93,62 @@ SELECT CASE 1 WHEN 0 THEN 1/0 WHEN 1 THEN 1 ELSE 2/0 END;
     1
 (1 row)
 
--- However we do not currently suppress folding of potentially
--- reachable subexpressions
 SELECT CASE WHEN i > 100 THEN 1/0 ELSE 0 END FROM case_tbl;
+ case 
+------
+    0
+    0
+    0
+    0
+(4 rows)
+
+-- However, that guarantee doesn't extend into sub-selects
+SELECT CASE WHEN i > 100 THEN (select 1/0) ELSE 0 END FROM case_tbl;
 ERROR:  division by zero
+-- Inline-ing a SQL function shouldn't cause a failure
+CREATE FUNCTION case_func(double precision, integer)
+RETURNS integer
+LANGUAGE SQL AS $$
+   SELECT CASE WHEN $1 = 42 THEN 1/$2 ELSE NULL END
+$$;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT case_func(f, 0) FROM case_tbl;
+                                      QUERY PLAN                                      
+--------------------------------------------------------------------------------------
+ Seq Scan on public.case_tbl
+   Output: CASE WHEN (f = '42'::double precision) THEN (1 / 0) ELSE NULL::integer END
+(2 rows)
+
+SELECT case_func(f, 0) FROM case_tbl;
+ case_func 
+-----------
+          
+          
+          
+          
+(4 rows)
+
+DROP FUNCTION case_func(double precision, integer);
+-- Subquery flattening shouldn't result in such errors, either
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT f, CASE WHEN f = 42 THEN 1/j ELSE NULL END
+FROM (SELECT f, 0 AS j FROM case_tbl) ss;
+                                                QUERY PLAN                                                 
+-----------------------------------------------------------------------------------------------------------
+ Seq Scan on public.case_tbl
+   Output: case_tbl.f, CASE WHEN (case_tbl.f = '42'::double precision) THEN (1 / 0) ELSE NULL::integer END
+(2 rows)
+
+SELECT f, CASE WHEN f = 42 THEN 1/j ELSE NULL END
+FROM (SELECT f, 0 AS j FROM case_tbl) ss;
+   f   | case 
+-------+------
+  10.1 |     
+  20.2 |     
+ -30.3 |     
+       |     
+(4 rows)
+
 -- Test for cases involving untyped literals in test expression
 SELECT CASE 'a' WHEN 'a' THEN 1 ELSE 2 END;
  case 
