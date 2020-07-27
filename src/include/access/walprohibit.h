@@ -13,6 +13,7 @@
 
 #include "access/xact.h"
 #include "access/xlog.h"
+#include "access/xlogutils.h"
 #include "miscadmin.h"
 #include "nodes/parsenodes.h"
 
@@ -47,6 +48,49 @@ CounterGetWALProhibitState(uint32 wal_prohibit_counter)
 {
 	/* Extract last two bits */
 	return (WALProhibitState) (wal_prohibit_counter & 3);
+}
+
+/* Never reaches when WAL is prohibited. */
+static inline void
+AssertWALPermitted(void)
+{
+	Assert(XLogInsertAllowed());
+
+#ifdef USE_ASSERT_CHECKING
+	walprohibit_checked_state = WALPROHIBIT_CHECKED;
+#endif
+}
+
+/*
+ * XID-bearing transactions are killed off by executing pg_prohibit_wal()
+ * function, so any part of the code that can only be reached with an XID
+ * assigned is never reached when WAL is prohibited.
+ */
+static inline void
+AssertWALPermittedHaveXID(void)
+{
+	/* Must be performing an INSERT, UPDATE or DELETE, so we'll have an XID */
+	Assert(FullTransactionIdIsValid(GetTopFullTransactionIdIfAny()));
+	AssertWALPermitted();
+}
+
+/*
+ * In opposite to the above assertion if a transaction doesn't have valid XID
+ * (e.g. VACUUM) then it won't be killed while changing the system state to WAL
+ * prohibited.  Therefore, we need to explicitly error out before entering into
+ * the critical section.
+ */
+static inline void
+CheckWALPermitted(void)
+{
+	if (!XLogInsertAllowed())
+		ereport(ERROR,
+				(errcode(ERRCODE_READ_ONLY_SQL_TRANSACTION),
+				 errmsg("WAL is now prohibited")));
+
+#ifdef USE_ASSERT_CHECKING
+	walprohibit_checked_state = WALPROHIBIT_CHECKED;
+#endif
 }
 
 extern bool ProcessBarrierWALProhibit(void);

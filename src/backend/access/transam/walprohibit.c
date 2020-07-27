@@ -28,6 +28,16 @@
 #include "utils/fmgrprotos.h"
 
 /*
+ * Assert flag to enforce WAL insert permission check rule before starting a
+ * critical section for the WAL writes.  For this, either of
+ * CheckWALPermitted(), AssertWALPermittedHaveXID(), or AssertWALPermitted()
+ * must be called before starting the critical section.
+ */
+#ifdef USE_ASSERT_CHECKING
+WALProhibitCheckState walprohibit_checked_state = WALPROHIBIT_UNCHECKED;
+#endif
+
+/*
  * Shared-memory WAL prohibit state structure
  */
 typedef struct WALProhibitData

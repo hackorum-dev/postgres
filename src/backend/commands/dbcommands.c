@@ -28,6 +28,7 @@
 #include "access/htup_details.h"
 #include "access/multixact.h"
 #include "access/tableam.h"
+#include "access/walprohibit.h"
 #include "access/xact.h"
 #include "access/xloginsert.h"
 #include "access/xlogutils.h"
@@ -476,6 +477,8 @@ CreateDirAndVersionFile(char *dbpath, Oid dbid, Oid tsid, bool isRedo)
 	{
 		xl_dbase_create_wal_log_rec xlrec;
 		XLogRecPtr	lsn;
+
+		AssertWALPermittedHaveXID();
 
 		START_CRIT_SECTION();
 

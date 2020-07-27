@@ -19,6 +19,7 @@
 
 #include "access/hash.h"
 #include "access/hash_xlog.h"
+#include "access/walprohibit.h"
 #include "access/xloginsert.h"
 #include "miscadmin.h"
 #include "utils/rel.h"
@@ -313,6 +314,8 @@ _hash_addovflpage(Relation rel, Buffer metabuf, Buffer buf, bool retain_pin)
 
 found:
 
+	AssertWALPermittedHaveXID();
+
 	/*
 	 * Do the update.  No ereport(ERROR) until changes are logged. We want to
 	 * log the changes for bitmap page and overflow page together to avoid
@@ -511,6 +514,7 @@ _hash_freeovflpage(Relation rel, Buffer bucketbuf, Buffer ovflbuf,
 	Buffer		prevbuf = InvalidBuffer;
 	Buffer		nextbuf = InvalidBuffer;
 	bool		update_metap = false;
+	bool		needwal;
 
 	/* Get information from the doomed page */
 	_hash_checkpage(rel, ovflbuf, LH_OVERFLOW_PAGE);
@@ -574,9 +578,14 @@ _hash_freeovflpage(Relation rel, Buffer bucketbuf, Buffer ovflbuf,
 	/* Get write-lock on metapage to update firstfree */
 	LockBuffer(metabuf, BUFFER_LOCK_EXCLUSIVE);
 
+	needwal = RelationNeedsWAL(rel);
+
 	/* This operation needs to log multiple tuples, prepare WAL for that */
-	if (RelationNeedsWAL(rel))
+	if (needwal)
+	{
 		XLogEnsureRecordSpace(HASH_XLOG_FREE_OVFL_BUFS, 4 + nitups);
+		CheckWALPermitted();
+	}
 
 	START_CRIT_SECTION();
 
@@ -642,7 +651,7 @@ _hash_freeovflpage(Relation rel, Buffer bucketbuf, Buffer ovflbuf,
 	}
 
 	/* XLOG stuff */
-	if (RelationNeedsWAL(rel))
+	if (needwal)
 	{
 		xl_hash_squeeze_page xlrec;
 		XLogRecPtr	recptr;
@@ -923,14 +932,19 @@ readpage:
 
 				if (nitups > 0)
 				{
+					bool		needwal = RelationNeedsWAL(rel);
+
 					Assert(nitups == ndeletable);
 
 					/*
 					 * This operation needs to log multiple tuples, prepare
 					 * WAL for that.
 					 */
-					if (RelationNeedsWAL(rel))
+					if (needwal)
+					{
 						XLogEnsureRecordSpace(0, 3 + nitups);
+						CheckWALPermitted();
+					}
 
 					START_CRIT_SECTION();
 
@@ -948,7 +962,7 @@ readpage:
 					MarkBufferDirty(rbuf);
 
 					/* XLOG stuff */
-					if (RelationNeedsWAL(rel))
+					if (needwal)
 					{
 						XLogRecPtr	recptr;
 						xl_hash_move_page_contents xlrec;

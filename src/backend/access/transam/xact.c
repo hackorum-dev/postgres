@@ -26,6 +26,7 @@
 #include "access/subtrans.h"
 #include "access/transam.h"
 #include "access/twophase.h"
+#include "access/walprohibit.h"
 #include "access/xact.h"
 #include "access/xlog.h"
 #include "access/xloginsert.h"
@@ -1375,6 +1376,8 @@ RecordTransactionCommit(void)
 		/* Tell bufmgr and smgr to prepare for commit */
 		BufmgrCommit();
 
+		AssertWALPermittedHaveXID();
+
 		/*
 		 * Mark ourselves as within our "commit critical section".  This
 		 * forces any concurrent checkpoint to wait until we've updated
@@ -1740,6 +1743,9 @@ RecordTransactionAbort(bool isSubXact)
 	if (TransactionIdDidCommit(xid))
 		elog(PANIC, "cannot abort transaction %u, it was already committed",
 			 xid);
+
+	/* We'll be reaching here with valid XID only. */
+	AssertWALPermittedHaveXID();
 
 	/* Fetch the data we need for the abort record */
 	nrels = smgrGetPendingDeletes(false, &rels);

@@ -17,6 +17,7 @@
 
 #include "access/hash.h"
 #include "access/hash_xlog.h"
+#include "access/walprohibit.h"
 #include "access/xloginsert.h"
 #include "miscadmin.h"
 #include "storage/buf_internals.h"
@@ -194,6 +195,8 @@ restart_insert:
 	 */
 	LockBuffer(metabuf, BUFFER_LOCK_EXCLUSIVE);
 
+	AssertWALPermittedHaveXID();
+
 	/* Do the update.  No ereport(ERROR) until changes are logged */
 	START_CRIT_SECTION();
 
@@ -361,6 +364,7 @@ _hash_vacuum_one_page(Relation rel, Relation hrel, Buffer metabuf, Buffer buf)
 	if (ndeletable > 0)
 	{
 		TransactionId latestRemovedXid;
+		bool		needwal = RelationNeedsWAL(rel);
 
 		latestRemovedXid =
 			index_compute_xid_horizon_for_tuples(rel, hrel, buf,
@@ -370,6 +374,9 @@ _hash_vacuum_one_page(Relation rel, Relation hrel, Buffer metabuf, Buffer buf)
 		 * Write-lock the meta page so that we can decrement tuple count.
 		 */
 		LockBuffer(metabuf, BUFFER_LOCK_EXCLUSIVE);
+
+		if (needwal)
+			CheckWALPermitted();
 
 		/* No ereport(ERROR) until changes are logged */
 		START_CRIT_SECTION();
@@ -394,7 +401,7 @@ _hash_vacuum_one_page(Relation rel, Relation hrel, Buffer metabuf, Buffer buf)
 		MarkBufferDirty(metabuf);
 
 		/* XLOG stuff */
-		if (RelationNeedsWAL(rel))
+		if (needwal)
 		{
 			xl_hash_vacuum_one_page xlrec;
 			XLogRecPtr	recptr;

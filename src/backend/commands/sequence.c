@@ -20,6 +20,7 @@
 #include "access/relation.h"
 #include "access/table.h"
 #include "access/transam.h"
+#include "access/walprohibit.h"
 #include "access/xact.h"
 #include "access/xlog.h"
 #include "access/xloginsert.h"
@@ -400,6 +401,9 @@ fill_seq_fork_with_data(Relation rel, HeapTuple tuple, ForkNumber forkNum)
 	if (RelationNeedsWAL(rel))
 		GetTopTransactionId();
 
+	/* Cannot have valid XID without WAL permission */
+	AssertWALPermittedHaveXID();
+
 	START_CRIT_SECTION();
 
 	MarkBufferDirty(buf);
@@ -640,6 +644,7 @@ nextval_internal(Oid relid, bool check_permissions)
 				rescnt = 0;
 	bool		cycle;
 	bool		logit = false;
+	bool		needwal;
 
 	/* open and lock sequence */
 	init_sequence(relid, &elm, &seqrel);
@@ -799,8 +804,14 @@ nextval_internal(Oid relid, bool check_permissions)
 	 * to assign xids subxacts, that'll already trigger an appropriate wait.
 	 * (Have to do that here, so we're outside the critical section)
 	 */
-	if (logit && RelationNeedsWAL(seqrel))
+	needwal = logit && RelationNeedsWAL(seqrel);
+	if (needwal)
+	{
 		GetTopTransactionId();
+
+		/* Cannot have valid XID without WAL permission */
+		AssertWALPermittedHaveXID();
+	}
 
 	/* ready to change the on-disk (or really, in-buffer) tuple */
 	START_CRIT_SECTION();
@@ -817,7 +828,7 @@ nextval_internal(Oid relid, bool check_permissions)
 	MarkBufferDirty(buf);
 
 	/* XLOG stuff */
-	if (logit && RelationNeedsWAL(seqrel))
+	if (needwal)
 	{
 		xl_seq_rec	xlrec;
 		XLogRecPtr	recptr;
@@ -951,6 +962,7 @@ do_setval(Oid relid, int64 next, bool iscalled)
 	Form_pg_sequence pgsform;
 	int64		maxv,
 				minv;
+	bool		needwal;
 
 	/* open and lock sequence */
 	init_sequence(relid, &elm, &seqrel);
@@ -1001,8 +1013,14 @@ do_setval(Oid relid, int64 next, bool iscalled)
 	elm->cached = elm->last;
 
 	/* check the comment above nextval_internal()'s equivalent call. */
-	if (RelationNeedsWAL(seqrel))
+	needwal = RelationNeedsWAL(seqrel);
+	if (needwal)
+	{
 		GetTopTransactionId();
+
+		/* Cannot have valid XID without WAL permission */
+		AssertWALPermittedHaveXID();
+	}
 
 	/* ready to change the on-disk (or really, in-buffer) tuple */
 	START_CRIT_SECTION();
@@ -1014,7 +1032,7 @@ do_setval(Oid relid, int64 next, bool iscalled)
 	MarkBufferDirty(buf);
 
 	/* XLOG stuff */
-	if (RelationNeedsWAL(seqrel))
+	if (needwal)
 	{
 		xl_seq_rec	xlrec;
 		XLogRecPtr	recptr;

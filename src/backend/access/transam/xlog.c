@@ -773,7 +773,7 @@ XLogInsertRecord(XLogRecData *rdata,
 
 	/* cross-check on whether we should be here or not */
 	if (!XLogInsertAllowed())
-		elog(ERROR, "cannot make new WAL entries during recovery");
+		elog(ERROR, "cannot make new WAL entries now");
 
 	/*
 	 * Given that we're not in recovery, InsertTimeLineID is set and can't
@@ -2542,9 +2542,11 @@ XLogFlush(XLogRecPtr record)
 	 * trying to flush the WAL, we should update minRecoveryPoint instead. We
 	 * test XLogInsertAllowed(), not InRecovery, because we need checkpointer
 	 * to act this way too, and because when it tries to write the
-	 * end-of-recovery checkpoint, it should indeed flush.
+	 * end-of-recovery checkpoint, it should indeed flush. Also, WAL prohibit
+	 * state should not restrict WAL flushing. Otherwise, the dirty buffer
+	 * cannot be evicted until WAL has been flushed up to the buffer's LSN.
 	 */
-	if (!XLogInsertAllowed())
+	if (!XLogInsertAllowed() && !IsWALProhibited())
 	{
 		UpdateMinRecoveryPoint(record, false);
 		return;
@@ -6759,6 +6761,9 @@ CreateCheckPoint(int flags)
 	if (!shutdown && XLogStandbyInfoActive())
 		LogStandbySnapshot();
 
+	/* Error out if wal writes are disabled. */
+	CheckWALPermitted();
+
 	START_CRIT_SECTION();
 
 	/*
@@ -6922,6 +6927,9 @@ CreateEndOfRecoveryRecord(void)
 	xlrec.PrevTimeLineID = XLogCtl->PrevTimeLineID;
 	WALInsertLockRelease();
 
+	/* Assured that WAL permission has been checked */
+	AssertWALPermitted();
+
 	START_CRIT_SECTION();
 
 	XLogBeginInsert();
@@ -6996,6 +7004,9 @@ CreateOverwriteContrecordRecord(XLogRecPtr aborted_lsn, XLogRecPtr pagePtr,
 	if (recptr != startPos)
 		elog(ERROR, "invalid WAL insert position %X/%X for OVERWRITE_CONTRECORD",
 			 LSN_FORMAT_ARGS(recptr));
+
+	/* Assured that WAL permission has been checked */
+	AssertWALPermitted();
 
 	START_CRIT_SECTION();
 
@@ -7665,7 +7676,7 @@ void
 UpdateFullPageWrites(void)
 {
 	XLogCtlInsert *Insert = &XLogCtl->Insert;
-	bool		recoveryInProgress;
+	bool		WALInsertAllowed;
 
 	/*
 	 * Do nothing if full_page_writes has not been changed.
@@ -7679,10 +7690,10 @@ UpdateFullPageWrites(void)
 
 	/*
 	 * Perform this outside critical section so that the WAL insert
-	 * initialization done by RecoveryInProgress() doesn't trigger an
-	 * assertion failure.
+	 * initialization done by XLogInsertAllowed() doesn't trigger an assertion
+	 * failure.
 	 */
-	recoveryInProgress = RecoveryInProgress();
+	WALInsertAllowed = XLogInsertAllowed();
 
 	START_CRIT_SECTION();
 
@@ -7704,8 +7715,11 @@ UpdateFullPageWrites(void)
 	 * Write an XLOG_FPW_CHANGE record. This allows us to keep track of
 	 * full_page_writes during archive recovery, if required.
 	 */
-	if (XLogStandbyInfoActive() && !recoveryInProgress)
+	if (XLogStandbyInfoActive() && WALInsertAllowed)
 	{
+		/* Assured that WAL permission has been checked */
+		AssertWALPermitted();
+
 		XLogBeginInsert();
 		XLogRegisterData((char *) (&fullPageWrites), sizeof(bool));
 
