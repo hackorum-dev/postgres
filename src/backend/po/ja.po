@@ -10054,7 +10054,7 @@ msgstr "必要ならば手作業でこのディレクトリを削除すること
 #: commands/trigger.c:210 commands/trigger.c:221
 #, c-format
 msgid "\"%s\" is a table"
-msgstr "\"%s\"はテーブルではありません"
+msgstr "\"%s\"はテーブルです"
 
 #: commands/trigger.c:212 commands/trigger.c:223
 #, c-format
