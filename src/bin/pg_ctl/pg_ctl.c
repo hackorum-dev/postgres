@@ -835,10 +835,37 @@ read_post_opts(void)
 				 * Are we at the first option, as defined by space and
 				 * double-quote?
 				 */
-				if ((arg1 = strstr(optline, " \"")) != NULL)
+				if ((arg1 = strstr(optline, "\1\"")) != NULL)
 				{
+					char *pto;
+					char *pfrom;
+
 					*arg1 = '\0';	/* terminate so we get only program name */
 					post_opts = pg_strdup(arg1 + 1);	/* point past whitespace */
+
+					pto = pfrom = post_opts;
+					while (*pfrom)
+					{
+						if (*pfrom != '\1')
+						{
+							*pto++ = *pfrom++;
+							continue;
+						}
+
+						pfrom++;
+
+						/* Remove -D optsion if we have a replacment */
+						if (pgdata_opt && strncmp(pfrom, "\"-D\"", 4) == 0)
+						{
+							/* Skip -D option */
+							while (*pfrom && *pfrom != '\1') pfrom++;
+							continue;
+						}
+
+						/* replace '\1' with a space */
+						*pto++ = ' ';
+					}
+					*pto = 0;
 				}
 				if (exec_path == NULL)
 					exec_path = pg_strdup(optline);
@@ -947,8 +974,8 @@ do_start(void)
 
 	read_post_opts();
 
-	/* No -D or -D already added during server start */
-	if (ctl_command == RESTART_COMMAND || pgdata_opt == NULL)
+	/* Use "" for printf safety */
+	if (pgdata_opt == NULL)
 		pgdata_opt = "";
 
 	if (exec_path == NULL)

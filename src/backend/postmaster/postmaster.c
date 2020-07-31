@@ -491,6 +491,45 @@ int			postmaster_alive_fds[2] = {-1, -1};
 HANDLE		PostmasterHandle;
 #endif
 
+char   *norm_args = NULL;  /* normalized arguments */
+char   *norm_args_tail = NULL;
+int		norm_args_len = 0;
+
+static void
+add_norm_argument(int opt, char *value)
+{
+	int valuelen = 0;
+
+	if (norm_args_len == 0)
+	{
+		norm_args_len = 128;
+		norm_args = malloc(norm_args_len);
+		norm_args_tail = norm_args;
+	}
+
+	if (opt == 0)
+	{
+		*norm_args_tail++ = '\0';   /* terminator */
+		return;
+	}
+
+	if (value)
+		valuelen = strlen(value) + 3;  /* _\"val\"*/
+
+	/* expand buffer as needed */
+	while (norm_args_tail - norm_args + 4 /* \"-x\" */ + valuelen + 1
+		   > norm_args_len)
+		norm_args_len *= 2;
+	norm_args = realloc(norm_args, norm_args_len);
+
+	*norm_args_tail++ = '\1';		/* delimiter */
+
+	if (value != NULL)
+		norm_args_tail += sprintf(norm_args_tail, "\"-%c\" \"%s\"", opt, value);
+	else
+		norm_args_tail += sprintf(norm_args_tail, "\"-%c\"", opt);
+}
+
 /*
  * Postmaster main entry point
  */
@@ -603,6 +642,8 @@ PostmasterMain(int argc, char *argv[])
 	optctx.opterr = 1;
 	while ((opt = pg_getopt_next(&optctx)) != -1)
 	{
+		add_norm_argument(opt, optarg);
+
 		switch (opt)
 		{
 			case 'B':
@@ -771,6 +812,9 @@ PostmasterMain(int argc, char *argv[])
 				ExitPostmaster(1);
 		}
 	}
+
+	/* terminate normalized arguemnt list */
+	add_norm_argument(0, NULL);
 
 	/*
 	 * Postmaster accepts no non-option switch arguments.
@@ -4147,7 +4191,6 @@ static bool
 CreateOptsFile(int argc, char *argv[], char *fullprogname)
 {
 	FILE	   *fp;
-	int			i;
 
 #define OPTS_FILE	"postmaster.opts"
 
@@ -4160,8 +4203,8 @@ CreateOptsFile(int argc, char *argv[], char *fullprogname)
 	}
 
 	fprintf(fp, "%s", fullprogname);
-	for (i = 1; i < argc; i++)
-		fprintf(fp, " \"%s\"", argv[i]);
+	if (norm_args)
+		fprintf(fp, "%s", norm_args);
 	fputs("\n", fp);
 
 	if (fclose(fp))
