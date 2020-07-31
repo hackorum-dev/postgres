@@ -7711,7 +7711,7 @@ StartupXLOG(void)
 	Insert->fullPageWrites = lastFullPageWrites;
 	LocalSetXLogInsertAllowed();
 	UpdateFullPageWrites();
-	LocalXLogInsertAllowed = -1;
+	LocalSetXLogInsertCheckRecovery();
 
 	if (InRecovery)
 	{
@@ -8218,6 +8218,25 @@ LocalSetXLogInsertAllowed(void)
 	/* Initialize as RecoveryInProgress() would do when switching state */
 	InitXLOGAccess();
 }
+
+/*
+ * Make XLogInsertAllowed() return false in the current process only.
+ */
+void
+LocalSetXLogInsertNotAllowed(void)
+{
+	LocalXLogInsertAllowed = 0;
+}
+
+/*
+ * Make XLogInsertCheckRecovery() return false in the current process only.
+ */
+void
+LocalSetXLogInsertCheckRecovery(void)
+{
+	LocalXLogInsertAllowed = -1;
+}
+
 
 /*
  * Subroutine to try to fetch and validate a prior checkpoint record.
@@ -9004,9 +9023,9 @@ CreateCheckPoint(int flags)
 	if (shutdown)
 	{
 		if (flags & CHECKPOINT_END_OF_RECOVERY)
-			LocalXLogInsertAllowed = -1;	/* return to "check" state */
+			LocalSetXLogInsertCheckRecovery(); /* return to "check" state */
 		else
-			LocalXLogInsertAllowed = 0; /* never again write WAL */
+			LocalSetXLogInsertNotAllowed(); /* never again write WAL */
 	}
 
 	/*
@@ -9159,7 +9178,7 @@ CreateEndOfRecoveryRecord(void)
 
 	END_CRIT_SECTION();
 
-	LocalXLogInsertAllowed = -1;	/* return to "check" state */
+	LocalSetXLogInsertCheckRecovery();	/* return to "check" state */
 }
 
 /*
