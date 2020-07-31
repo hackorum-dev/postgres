@@ -831,6 +831,19 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 		{
 			CookedConstraint *cooked;
 
+			/*
+			 * If column has identity sequence but is not marked as identity column,
+			 * then it means that this sequence was created by CREATE TABLE LIKE (see comment in
+			 * transformTableLikeClause). We have to patch default expression, storing new sequence OID.
+			 */
+			if (!colDef->identity && colDef->identitySequence)
+			{
+				FuncExpr* nextval = ((FuncExpr*)colDef->cooked_default)->funcid == F_NEXTVAL_OID
+					? (FuncExpr*)colDef->cooked_default
+					: (FuncExpr*)linitial(((FuncExpr*)colDef->cooked_default)->args);
+				((Const*)linitial(nextval->args))->constvalue = RangeVarGetRelid(colDef->identitySequence,  NoLock, false);
+				colDef->identitySequence = NULL;
+			}
 			cooked = (CookedConstraint *) palloc(sizeof(CookedConstraint));
 			cooked->contype = CONSTR_DEFAULT;
 			cooked->conoid = InvalidOid;	/* until created */
