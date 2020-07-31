@@ -1626,6 +1626,7 @@ distribute_qual_to_rels(PlannerInfo *root, Node *clause,
 	bool		is_pushed_down;
 	bool		outerjoin_delayed;
 	bool		pseudoconstant = false;
+	bool		pseudoconstantfalse = false;
 	bool		maybe_equivalence;
 	bool		maybe_outer_join;
 	Relids		nullable_relids;
@@ -1717,6 +1718,17 @@ distribute_qual_to_rels(PlannerInfo *root, Node *clause,
 						get_relids_in_jointree((Node *) root->parse->jointree,
 											   false);
 					qualscope = bms_copy(relids);
+
+					if (IsA(clause, Const))
+					{
+						Const	   *con = (Const *) clause;
+
+						/* constant NULL is as good as constant FALSE for our purposes */
+						if (con->constisnull)
+							pseudoconstantfalse = true;
+						if (!DatumGetBool(con->constvalue))
+							pseudoconstantfalse = true;
+					}
 				}
 			}
 		}
@@ -1862,6 +1874,27 @@ distribute_qual_to_rels(PlannerInfo *root, Node *clause,
 		 */
 		maybe_outer_join = false;
 	}
+
+	if (pseudoconstantfalse && !outerjoin_delayed &&
+		bms_membership(relids) == BMS_MULTIPLE)
+	{
+		int relid = -1;
+		while ((relid = bms_next_member(relids, relid)) > 0)
+		{
+			restrictinfo = make_restrictinfo((Expr *)clause,
+											 is_pushed_down,
+											 outerjoin_delayed,
+											 pseudoconstant,
+											 security_level,
+											 bms_make_singleton(relid),
+											 outerjoin_nonnullable,
+											 nullable_relids);
+
+			/* Push the const-false clause directly to each base rel */
+			distribute_restrictinfo_to_rels(root, restrictinfo);
+		}
+	}
+
 
 	/*
 	 * Build the RestrictInfo node itself.
