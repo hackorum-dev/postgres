@@ -784,3 +784,97 @@ pg_promote(PG_FUNCTION_ARGS)
 			(errmsg("server did not promote within %d seconds", wait_seconds)));
 	PG_RETURN_BOOL(false);
 }
+
+/*
+ * Demotes a production server.
+ *
+ * A result of "true" means that demotion has been completed if "wait" is
+ * "true", or initiated if "wait" is false.
+ */
+Datum
+pg_demote(PG_FUNCTION_ARGS)
+{
+	bool		fast = PG_GETARG_BOOL(0);
+	bool		wait = PG_GETARG_BOOL(1);
+	int			wait_seconds = PG_GETARG_INT32(2);
+	char		demote_filename[] = "demote_fast";
+	FILE	   *demote_file;
+	int			i;
+
+	if (RecoveryInProgress())
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("recovery in progress"),
+				 errhint("you can not demote while already in recovery.")));
+
+	if (!EnableHotStandby)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("function pg_demote() requires hot_standby parameter to be enabled"),
+				 errhint("The function can not return its status from a non hot_standby-enabled standby")));
+
+	if (wait_seconds <= 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
+				 errmsg("\"wait_seconds\" must not be negative or zero")));
+
+	if (!fast)
+		demote_filename[6] = '\0';
+
+	/* create the demote signal file */
+	demote_file = AllocateFile(demote_filename, "w");
+	if (!demote_file)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not create file \"%s\": %m",
+						demote_filename)));
+
+	if (FreeFile(demote_file))
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not write file \"%s\": %m",
+						demote_filename)));
+
+	/* signal the postmaster */
+	if (kill(PostmasterPid, SIGUSR1) != 0)
+	{
+		ereport(WARNING,
+				(errmsg("failed to send signal to postmaster: %m")));
+		(void) unlink(demote_filename);
+		PG_RETURN_BOOL(false);
+	}
+
+	/* return immediately if waiting was not requested */
+	if (!wait)
+		PG_RETURN_BOOL(true);
+
+	/* wait for the amount of time wanted until demotion */
+#define WAITS_PER_SECOND 10
+	for (i = 0; i < WAITS_PER_SECOND * wait_seconds; i++)
+	{
+		int			rc;
+
+		ResetLatch(MyLatch);
+
+		if (RecoveryInProgress())
+			PG_RETURN_BOOL(true);
+
+		CHECK_FOR_INTERRUPTS();
+
+		rc = WaitLatch(MyLatch,
+					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
+					   1000L / WAITS_PER_SECOND,
+					   WAIT_EVENT_DEMOTE);
+
+		/*
+		 * Emergency bailout if postmaster has died.  This is to avoid the
+		 * necessity for manual cleanup of all postmaster children.
+		 */
+		if (rc & WL_POSTMASTER_DEATH)
+			PG_RETURN_BOOL(false);
+	}
+
+	ereport(WARNING,
+			(errmsg("server did not demote within %d seconds", wait_seconds)));
+	PG_RETURN_BOOL(false);
+}

@@ -1219,6 +1219,11 @@ CREATE OR REPLACE FUNCTION
   RETURNS boolean STRICT VOLATILE LANGUAGE INTERNAL AS 'pg_promote'
   PARALLEL SAFE;
 
+CREATE OR REPLACE FUNCTION
+  pg_demote(fast boolean DEFAULT true, wait boolean DEFAULT true, wait_seconds integer DEFAULT 60)
+  RETURNS boolean STRICT VOLATILE LANGUAGE INTERNAL AS 'pg_demote'
+  PARALLEL SAFE;
+
 -- legacy definition for compatibility with 9.3
 CREATE OR REPLACE FUNCTION
   json_populate_record(base anyelement, from_json json, use_json_as_text boolean DEFAULT false)
@@ -1435,6 +1440,7 @@ REVOKE EXECUTE ON FUNCTION pg_reload_conf() FROM public;
 REVOKE EXECUTE ON FUNCTION pg_current_logfile() FROM public;
 REVOKE EXECUTE ON FUNCTION pg_current_logfile(text) FROM public;
 REVOKE EXECUTE ON FUNCTION pg_promote(boolean, integer) FROM public;
+REVOKE EXECUTE ON FUNCTION pg_demote(boolean, boolean, integer) FROM public;
 
 REVOKE EXECUTE ON FUNCTION pg_stat_reset() FROM public;
 REVOKE EXECUTE ON FUNCTION pg_stat_reset_shared(text) FROM public;
