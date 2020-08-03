@@ -1458,6 +1458,22 @@ SELECT b, char_length(b) FROM test2;
     strings are appropriate for storing text.
    </para>
 
+
+   <para>
+    It is not recommended to use <type>bytea</type> strings whose
+    textual representation exceeds 1GB, as it may not be possible to
+    <command>SELECT</command> them due to output size limitations.
+    Consequently, a table containing such big strings cannot be properly
+    processed by pg_dump, as pg_dump will try to <command>SELECT</command>
+    these values from the table and fail. The exact size limit advised for
+    bytea strings depends on their content, the external format and encoding
+    that you are using, the context in which they will be selected. The
+    general rule is that when you use <command>SELECT</command>, the returned
+    tuple should not exceed 1GB. Although even if <command>SELECT</command>
+    does not work, you can still retrieve big <type>bytea</type> strings
+    using <command>COPY</command> in <literal>binary</literal> format.
+   </para>
+
    <para>
     The <type>bytea</type> type supports two
     formats for input and output: <quote>hex</quote> format
