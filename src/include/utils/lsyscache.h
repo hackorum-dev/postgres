@@ -93,7 +93,10 @@ extern void get_atttypetypmodcoll(Oid relid, AttrNumber attnum,
 								  Oid *typid, int32 *typmod, Oid *collid);
 extern Datum get_attoptions(Oid relid, int16 attnum);
 extern Oid	get_cast_oid(Oid sourcetypeid, Oid targettypeid, bool missing_ok);
+extern Oid get_collation_namespace(Oid colloid);
 extern char *get_collation_name(Oid colloid);
+extern int32 get_collation_encoding(Oid colloid);
+extern Oid get_colloid(const char *collname, int32 collencoding, Oid collnsp);
 extern bool get_collation_isdeterministic(Oid colloid);
 extern char *get_constraint_name(Oid conoid);
 extern char *get_language_name(Oid langoid, bool missing_ok);
@@ -187,6 +190,11 @@ extern Oid	get_index_column_opclass(Oid index_oid, int attno);
 extern bool get_index_isreplident(Oid index_oid);
 extern bool get_index_isvalid(Oid index_oid);
 extern bool get_index_isclustered(Oid index_oid);
+extern char *get_typ_name(Oid typid);
+extern Oid	get_typ_namespace(Oid typid);
+extern Oid get_opnamespace(Oid opno);
+extern Oid get_operid(const char *oprname, Oid oprleft, Oid oprright, Oid oprnsp);
+extern Oid get_typname_typid(const char *typname, Oid typnamespace);
 
 #define type_is_array(typid)  (get_element_type(typid) != InvalidOid)
 /* type_is_array_domain accepts both plain arrays and domains over arrays */

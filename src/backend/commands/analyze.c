@@ -30,6 +30,7 @@
 #include "catalog/catalog.h"
 #include "catalog/index.h"
 #include "catalog/indexing.h"
+#include "catalog/namespace.h"
 #include "catalog/pg_collation.h"
 #include "catalog/pg_inherits.h"
 #include "catalog/pg_namespace.h"
@@ -38,8 +39,10 @@
 #include "commands/progress.h"
 #include "commands/tablecmds.h"
 #include "commands/vacuum.h"
+#include "common/jsonapi.h"
 #include "executor/executor.h"
 #include "foreign/fdwapi.h"
+#include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
 #include "parser/parse_oper.h"
@@ -58,9 +61,11 @@
 #include "utils/datum.h"
 #include "utils/fmgroids.h"
 #include "utils/guc.h"
+#include "utils/json.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/pg_rusage.h"
+#include "utils/regproc.h"
 #include "utils/sampling.h"
 #include "utils/sortsupport.h"
 #include "utils/syscache.h"
@@ -107,6 +112,11 @@ static void update_attstats(Oid relid, bool inh,
 static Datum std_fetch_func(VacAttrStatsP stats, int rownum, bool *isNull);
 static Datum ind_fetch_func(VacAttrStatsP stats, int rownum, bool *isNull);
 
+static const char *relstat_to_json(const char *relname);
+static bool parse_statjson(Relation rel, char *buffer, size_t size,
+						   VacAttrStats **vacattrstats, int *natts,
+						   BlockNumber *relpages, double *reltuples);
+static bool update_foreign_relation_stat(Relation rel);
 
 /*
  *	analyze_rel() -- analyze one relation
@@ -189,6 +199,23 @@ analyze_rel(Oid relid, RangeVar *relation,
 	 */
 	if (RelationGetRelid(onerel) == StatisticRelationId)
 	{
+		relation_close(onerel, ShareUpdateExclusiveLock);
+		return;
+	}
+
+	/*
+	 * Use cheap approach to update foreign relation if user do not explicitly
+	 * mentioned this relation.
+	 * If user wants to ANALYZE this particular relation maybe he probably know
+	 * that foreign statistics are also out of date.
+	 */
+	if (onerel->rd_rel->relkind == RELKIND_FOREIGN_TABLE && relation == NULL &&
+		update_foreign_relation_stat(onerel))
+	{
+		/*
+		 * The foreign relation statistics was updated by existed stat tuple
+		 * from remote server.
+		 */
 		relation_close(onerel, ShareUpdateExclusiveLock);
 		return;
 	}
@@ -1421,6 +1448,773 @@ acquire_inherited_sample_rows(Relation onerel, int elevel,
 	return numrows;
 }
 
+typedef enum
+{
+	JS_EXPECT_STAVER_VALUE,
+	JS_EXPECT_NSPNAME_VALUE,
+	JS_EXPECT_RELNAME_VALUE,
+	JS_EXPECT_SLOTSNUM_VALUE,
+	JS_EXPECT_RELPAGES_VALUE,
+	JS_EXPECT_RELTUPLES_VALUE,
+	JS_EXPECT_ATTNAME_FIELD,
+	JS_EXPECT_ATTNAME_VALUE,
+	JS_EXPECT_INH_VALUE,
+	JS_EXPECT_NULLFRAC_VALUE,
+	JS_EXPECT_WIDTH_VALUE,
+	JS_EXPECT_DISTINCT_VALUE,
+	JS_EXPECT_KIND_VALUE,
+	JS_EXPECT_STAOP_VALUE,
+	JS_EXPECT_STACOLL_VALUE,
+	JS_EXPECT_ARRSIZE_VALUE,
+	JS_EXPECT_NUMBERS_VALUE,
+	JS_EXPECT_VALUES_VALUE,
+	JS_EXPECT_PARAM_FIELD,
+	JS_INVALID_STAT_VERSION
+} JsonStatSemanticState;
+
+typedef struct JsonStatParseState
+{
+	Relation rel;
+	int natts;
+	int state;
+	int arraysize; /* size of the array */
+	int arrayval; /* current position in the array */
+	int numbersN;
+	int valuesN;
+
+	char *nspname;
+	char *relname;
+
+	BlockNumber relpages;
+	double reltuples;
+	VacAttrStats **vas;
+} JsonStatParseState;
+
+static bool skip_attr = false;
+
+static void
+json_stat_object_field_start(void *state, char *fname, bool isnull)
+{
+	JsonStatParseState *parse = (JsonStatParseState *) state;
+	int attnum = parse->natts - 1;
+
+	/* skip processing if incompatible statistic version was detected */
+	if (parse->state == JS_INVALID_STAT_VERSION)
+		return;
+
+	if (skip_attr && strcmp(fname, "attname") != 0)
+		return;
+
+	Assert(parse->state == JS_EXPECT_PARAM_FIELD ||
+		   parse->state == JS_EXPECT_ATTNAME_FIELD);
+	Assert(parse->arrayval < 0);
+	if (strcmp(fname, "version") == 0)
+		parse->state = JS_EXPECT_STAVER_VALUE;
+	else if (strcmp(fname, "namespace") == 0)
+		parse->state = JS_EXPECT_NSPNAME_VALUE;
+	else if (strcmp(fname, "relname") == 0)
+		parse->state = JS_EXPECT_RELNAME_VALUE;
+	else if (strcmp(fname, "sta_num_slots") == 0)
+		parse->state = JS_EXPECT_SLOTSNUM_VALUE;
+	else if (strcmp(fname, "relpages") == 0)
+		parse->state = JS_EXPECT_RELPAGES_VALUE;
+	else if (strcmp(fname, "reltuples") == 0)
+		parse->state = JS_EXPECT_RELTUPLES_VALUE;
+	else if(strcmp(fname, "attrs") == 0)
+		parse->state = JS_EXPECT_ATTNAME_FIELD;
+	else if (strcmp(fname, "attname") == 0)
+	{
+		parse->state = JS_EXPECT_ATTNAME_VALUE;
+		skip_attr = false;
+	}
+	else if (strcmp(fname, "nullfrac") == 0)
+		parse->state = JS_EXPECT_NULLFRAC_VALUE;
+	else if (strcmp(fname, "inh") == 0)
+		parse->state = JS_EXPECT_INH_VALUE;
+		else if (strcmp(fname, "width") == 0)
+		parse->state = JS_EXPECT_WIDTH_VALUE;
+	else if (strcmp(fname, "distinct") == 0)
+		parse->state = JS_EXPECT_DISTINCT_VALUE;
+	else if (strcmp(fname, "nn") == 0)
+	{
+		Assert(parse->arraysize == 0);
+		parse->state = JS_EXPECT_ARRSIZE_VALUE;
+	}
+	else
+	{
+		parse->arrayval = 0;
+		if (strcmp(fname, "stakind") == 0)
+			parse->state = JS_EXPECT_KIND_VALUE;
+		else if (strcmp(fname, "staop") == 0)
+			parse->state = JS_EXPECT_STAOP_VALUE;
+		else if (strcmp(fname, "stacoll") == 0)
+			parse->state = JS_EXPECT_STACOLL_VALUE;
+		else if (strstr(fname, "numbers") != NULL)
+		{
+			parse->numbersN = atoi(&fname[7]);
+			Assert(parse->numbersN > 0 && parse->numbersN <= 5);
+			if (parse->arraysize > 0)
+				parse->vas[attnum]->stanumbers[parse->numbersN-1] =
+							(float4 *) palloc(parse->arraysize * sizeof(float4));
+			else
+				parse->vas[attnum]->stanumbers[parse->numbersN-1] = NULL;
+
+			parse->vas[attnum]->numnumbers[parse->numbersN-1] = parse->arraysize;
+			parse->state = JS_EXPECT_NUMBERS_VALUE;
+		}
+		else if (strstr(fname, "values") != NULL)
+		{
+			parse->valuesN = atoi(&fname[6]);
+			Assert(parse->valuesN > 0 && parse->valuesN <= 5);
+
+			if (parse->arraysize > 0)
+				parse->vas[parse->natts - 1]->stavalues[parse->valuesN-1] =
+							(Datum *) palloc(parse->arraysize * sizeof(Datum));
+			else
+				parse->vas[parse->natts - 1]->stavalues[parse->valuesN-1] = NULL;
+
+			parse->vas[attnum]->numvalues[parse->valuesN-1] = parse->arraysize;
+			parse->state = JS_EXPECT_VALUES_VALUE;
+		}
+		else
+			elog(ERROR, "Unknown stat parameter in JSON string: %s", fname);
+	}
+}
+
+static void
+json_stat_array_end(void *state)
+{
+	JsonStatParseState *parse = (JsonStatParseState *) state;
+
+	/* skip processing if incompatible statistic version was detected */
+	if (parse->state == JS_INVALID_STAT_VERSION)
+		return;
+
+	parse->arrayval = -1;
+	parse->arraysize = 0;
+	parse->numbersN = 0;
+	parse->valuesN = 0;
+}
+
+static void
+json_stat_array_element_end(void *state, bool isnull)
+{
+	JsonStatParseState *parse = (JsonStatParseState *) state;
+
+	/* skip processing if incompatible statistic version was detected */
+	if (parse->state == JS_INVALID_STAT_VERSION)
+		return;
+
+	Assert(!isnull);
+
+	if (parse->arrayval < 0) // Debug
+		return;
+
+	parse->arrayval++;
+}
+
+static void
+json_stat_field_end(void *state, char *fname, bool isnull)
+{
+	JsonStatParseState *parse = (JsonStatParseState *) state;
+
+	/* skip processing if incompatible statistic version was detected */
+	if (parse->state == JS_INVALID_STAT_VERSION)
+		return;
+
+	Assert(!isnull && parse->arrayval < 0);
+	parse->state = JS_EXPECT_PARAM_FIELD;
+}
+
+#include "utils/varlena.h"
+
+#define NSP_OID(name) \
+	(strcmp(name, " ") == 0) ? LookupExplicitNamespace("pg_catalog", false) : \
+		LookupExplicitNamespace(name, false)
+
+static void
+get_string_values(char *str, char **values, int num)
+{
+	int i;
+	int cnt = 0;
+
+	Assert(num > 0);
+
+	values[0] = &str[0];
+	for (i = 1; str[i] != '\0'; i++)
+	{
+		if (str[i] == '.')
+		{
+			Assert(cnt < num - 1);
+		values[++cnt] = &str[i+1];
+			str[i] = '\0';
+		}
+	}
+
+	Assert(cnt == num - 1);
+}
+
+static void
+json_stat_scalar(void *state, char *token, JsonTokenType tokentype)
+{
+	JsonStatParseState *parse = (JsonStatParseState *) state;
+	Datum value;
+	int attnum = parse->natts - 1;
+
+	/* skip processing if incompatible statistic version was detected */
+	if (parse->state == JS_INVALID_STAT_VERSION)
+		return;
+
+	if (skip_attr)
+		return;
+
+	switch (parse->state)
+	{
+	case JS_EXPECT_STAVER_VALUE:
+	{
+		int version;
+		Assert(tokentype == JSON_TOKEN_NUMBER);
+		value = DirectFunctionCall1(int4in, CStringGetDatum(token));
+		version = DatumGetInt32(value);
+		if (version != STATISTIC_VERSION)
+		{
+			parse->state = JS_INVALID_STAT_VERSION;
+			return;
+		}
+	}
+		break;
+
+	case JS_EXPECT_NSPNAME_VALUE:
+		Assert(tokentype == JSON_TOKEN_STRING);
+		parse->nspname = token;
+		break;
+
+	case JS_EXPECT_RELNAME_VALUE:
+		Assert(tokentype == JSON_TOKEN_STRING);
+		parse->relname = token;
+		break;
+
+	case JS_EXPECT_SLOTSNUM_VALUE:
+		Assert(tokentype == JSON_TOKEN_NUMBER);
+		if (strcmp(token, "5") != 0)
+			elog(ERROR, "Incompatible PostgreSQL version");
+		break;
+
+	case JS_EXPECT_RELPAGES_VALUE:
+		Assert(tokentype == JSON_TOKEN_NUMBER);
+		value = DirectFunctionCall1(int4in, CStringGetDatum(token));
+		parse->relpages = DatumGetInt32(value);
+		break;
+
+	case JS_EXPECT_RELTUPLES_VALUE:
+		Assert(tokentype == JSON_TOKEN_NUMBER);
+		value = DirectFunctionCall1(float4in, CStringGetDatum(token));
+		parse->reltuples = DatumGetFloat4(value);
+		break;
+
+	case JS_EXPECT_ATTNAME_FIELD:
+		Assert(0);
+		break;
+
+	case JS_EXPECT_ATTNAME_VALUE:
+	{
+		int i;
+
+		Assert(tokentype == JSON_TOKEN_STRING);
+
+		for (i = 0; i < parse->rel->rd_att->natts; i++)
+		{
+			if (strcmp(NameStr(parse->rel->rd_att->attrs[i].attname), token) == 0)
+				break;
+		}
+
+		if (i == parse->rel->rd_att->natts)
+		{
+			/*
+			 * It is a valid case when a foreign table doesn't have all the
+			 * attributes from the base relation.
+			 */
+			skip_attr = true;
+			parse->state = JS_EXPECT_ATTNAME_FIELD;
+		}
+		else
+		{
+			/* Initialize new storage for the attribute. */
+			parse->natts++;
+			attnum++;
+			parse->vas[attnum] = examine_attribute(parse->rel, i+1, NULL);
+			parse->vas[attnum]->stats_valid = true;
+			Assert(parse->vas[attnum] != NULL);
+		}
+	}
+		break;
+
+	case JS_EXPECT_INH_VALUE:
+		Assert(tokentype == JSON_TOKEN_STRING);
+		/* XXX */
+		break;
+
+	case JS_EXPECT_WIDTH_VALUE:
+		Assert(tokentype == JSON_TOKEN_NUMBER);
+		value = DirectFunctionCall1(int4in, CStringGetDatum(token));
+		parse->vas[attnum]->stawidth = DatumGetInt32(value);
+		break;
+
+	case JS_EXPECT_DISTINCT_VALUE:
+		Assert(tokentype == JSON_TOKEN_NUMBER);
+		value = DirectFunctionCall1(float4in, CStringGetDatum(token));
+		parse->vas[attnum]->stadistinct = DatumGetFloat4(value);
+		break;
+
+	case JS_EXPECT_NULLFRAC_VALUE:
+		Assert(tokentype == JSON_TOKEN_NUMBER);
+		value = DirectFunctionCall1(float4in, CStringGetDatum(token));
+		parse->vas[attnum]->stanullfrac = DatumGetFloat4(value);
+		break;
+
+	case JS_EXPECT_KIND_VALUE:
+		Assert(tokentype == JSON_TOKEN_NUMBER && parse->arrayval >= 0);
+		value = DirectFunctionCall1(int2in, CStringGetDatum(token));
+		parse->vas[attnum]->stakind[parse->arrayval] = DatumGetInt16(value);
+		break;
+
+	case JS_EXPECT_STAOP_VALUE:
+	{
+		char *str;
+		char *values[6];
+		Oid oprleft;
+		Oid oprright;
+
+		Assert(tokentype == JSON_TOKEN_STRING && parse->arrayval >= 0);
+		Assert(strlen(token) > 0);
+
+		if (strcmp(token, " ") == 0)
+		{
+			/* Quick exit on empty field */
+			parse->vas[attnum]->staop[parse->arrayval] = InvalidOid;
+			break;
+		}
+
+		str = pstrdup(token);
+		get_string_values(str, values, 6);
+
+		if (strcmp(values[2], "NDEFINED") == 0)
+			oprleft = InvalidOid;
+		else
+			oprleft = get_typname_typid(values[3], NSP_OID(values[2]));
+
+		if (strcmp(values[4], "NDEFINED") == 0)
+			oprright = InvalidOid;
+		else
+			oprright = get_typname_typid(values[5], NSP_OID(values[4]));
+
+		parse->vas[attnum]->staop[parse->arrayval] = get_operid(values[1],
+																oprleft,
+																oprright,
+																NSP_OID(values[0]));
+		pfree(str);
+	}
+		break;
+
+	case JS_EXPECT_STACOLL_VALUE:
+	{
+		char *str;
+		char *values[3];
+		int32 collencoding;
+		Oid collnsp;
+
+		Assert(tokentype == JSON_TOKEN_STRING && parse->arrayval >= 0);
+		Assert(strlen(token) > 0);
+
+		if (strcmp(token, " ") == 0)
+		{
+			/* Quick exit on empty field */
+			parse->vas[attnum]->stacoll[parse->arrayval] = InvalidOid;
+			break;
+		}
+
+		str = pstrdup(token);
+		get_string_values(str, values, 3);
+
+		collnsp = NSP_OID(values[0]);
+		sscanf(values[2], "%d", &collencoding);
+		parse->vas[attnum]->stacoll[parse->arrayval] =
+								get_colloid(values[1], collencoding, collnsp);
+		pfree(str);
+	}
+		break;
+
+	case JS_EXPECT_ARRSIZE_VALUE:
+		Assert(tokentype == JSON_TOKEN_NUMBER && parse->arrayval < 0);
+		value = DirectFunctionCall1(int4in, CStringGetDatum(token));
+		parse->arraysize = DatumGetInt32(value);
+		Assert(parse->arraysize > 0);
+		break;
+
+	case JS_EXPECT_NUMBERS_VALUE:
+	{
+		int n = parse->numbersN;
+		int m = parse->arrayval;
+
+		Assert(parse->valuesN == 0);
+		Assert(tokentype == JSON_TOKEN_NUMBER && n > 0 && n <= 5);
+		Assert(m >= 0 && m < parse->arraysize);
+
+		value = DirectFunctionCall1(float4in, CStringGetDatum(token));
+		parse->vas[attnum]->stanumbers[n-1][m] = DatumGetFloat4(value);
+	}
+		break;
+
+	case JS_EXPECT_VALUES_VALUE:
+	{
+		int n = parse->valuesN;
+		int m = parse->arrayval;
+		Form_pg_attribute att = parse->vas[attnum]->attr;
+		Oid			typinput;
+		Oid			typioparam;
+
+		Assert(parse->numbersN == 0);
+		Assert(tokentype == JSON_TOKEN_NUMBER && n > 0 && n <= 5);
+		Assert(m >= 0 && m < parse->arraysize);
+
+		getTypeInputInfo(att->atttypid, &typinput, &typioparam);
+		parse->vas[attnum]->stavalues[n-1][m] =
+			OidInputFunctionCall(typinput, token,
+								 typioparam, att->atttypmod);
+	}
+		break;
+
+	default:
+		elog(ERROR, "Unexpected token type: %d. Token: %s. State: %d.",
+			 tokentype, token, parse->state);
+	}
+}
+
+/*
+ * Extract statistics from the JSON string.
+ */
+static bool
+parse_statjson(Relation rel, char *buffer, size_t size,
+			   VacAttrStats **vacattrstats, int *natts,
+			   BlockNumber *relpages, double *reltuples)
+{
+	JsonLexContext *lex;
+	JsonSemAction sem;
+	JsonStatParseState parse;
+
+	/* Set up our private parsing context. */
+	parse.state = JS_EXPECT_PARAM_FIELD;
+	parse.arraysize = -1;
+	parse.arrayval = -1;
+	parse.numbersN = -1;
+	parse.vas = vacattrstats;
+	parse.natts = 0;
+	parse.rel = rel;
+	skip_attr = false;
+
+	/* Create a JSON lexing context. */
+	lex = makeJsonLexContextCstringLen(buffer, size, PG_UTF8, true);
+
+	/* Set up semantic actions. */
+	sem.semstate = &parse;
+	sem.object_start = NULL;
+	sem.object_end = NULL;
+	sem.array_start = NULL;
+	sem.array_end = json_stat_array_end;
+	sem.object_field_start = json_stat_object_field_start;
+	sem.object_field_end = json_stat_field_end;
+	sem.array_element_start = NULL;
+	sem.array_element_end = json_stat_array_element_end;
+	sem.scalar = json_stat_scalar;
+
+	/* Run the actual JSON parser. */
+	pg_parse_json(lex, &sem);
+
+	/* Special case if we can't parse this serialized statistic */
+	if (parse.state == JS_INVALID_STAT_VERSION)
+		return false;
+
+	*natts = parse.natts;
+	*relpages = parse.relpages;
+	*reltuples = parse.reltuples;
+	return true;
+}
+
+static bool
+update_foreign_relation_stat(Relation rel)
+{
+	VacAttrStats **vacattrstats = (VacAttrStats **)
+					palloc0(rel->rd_att->natts * sizeof(VacAttrStats *));
+	char *statstr;
+	int natts = 0;
+	FdwRoutine *fdwroutine;
+	BlockNumber relallvisible;
+	BlockNumber numpages;
+	double numtuples;
+
+	fdwroutine = GetFdwRoutineForRelation(rel, false);
+	Assert(fdwroutine != NULL);
+
+	if (fdwroutine->GetForeignRelStat == NULL || strcmp(NameStr(rel->rd_rel->relname), "ftable") != 0)
+		return false;
+
+	statstr = fdwroutine->GetForeignRelStat(rel);
+
+	if (!statstr || !parse_statjson(rel, statstr, strlen(statstr),
+									vacattrstats, &natts, &numpages,
+									&numtuples))
+		/*
+		 * Return false if we can't get statistics for the relation or can't parse
+		 * it by any reason.
+		 */
+		return false;
+
+	update_attstats(RelationGetRelid(rel), false, natts, vacattrstats);
+
+	visibilitymap_count(rel, &relallvisible, NULL);
+	vac_update_relstats(rel, numpages, numtuples, relallvisible, false,
+						InvalidTransactionId, InvalidMultiXactId, false);
+
+	pfree(vacattrstats);
+	return true;
+}
+
+/*
+ * Get stat tuples for the attributes of relation
+ * See row_to_json()
+ */
+Datum
+extract_relation_statistics(PG_FUNCTION_ARGS)
+{
+	const char *relname = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	const char *json_stat;
+
+	json_stat = relstat_to_json(relname);
+
+	PG_RETURN_TEXT_P(cstring_to_text(json_stat));
+}
+
+static const char *
+nsp_name(Oid oid)
+{
+	const char *nspname;
+
+	if (!OidIsValid(oid))
+		return " ";
+
+	if (isTempNamespace(oid))
+		return "pg_temp";
+
+	nspname = get_namespace_name(oid);
+	if (strcmp(nspname, "pg_catalog") == 0)
+		return " ";
+
+	return nspname;
+}
+/*
+ * relstat_to_json
+ *
+ */
+static const char *
+relstat_to_json(const char *relname)
+{
+	RangeVar	*relvar;
+	Relation	rel;
+	Relation	sd;
+	List		*relname_list;
+	int			attno;
+	StringInfo	str = makeStringInfo();
+	int			attnum = 0;
+
+	relname_list = stringToQualifiedNameList(relname);
+	relvar = makeRangeVarFromNameList(relname_list);
+	rel = relation_openrv(relvar, AccessShareLock);
+
+	if (rel->rd_rel->relkind != RELKIND_RELATION)
+	{
+		relation_close(rel, AccessShareLock);
+		elog(ERROR,
+			 "Can be used for ordinary relation only. Reltype: %c.",
+			 rel->rd_rel->relkind);
+	}
+
+	/* JSON header of overall relation statistics. */
+	appendStringInfoString(str, "{");
+	appendStringInfo(str, "\"version\" : %u, ", STATISTIC_VERSION);
+	appendStringInfo(str, "\"namespace\" : \"%s\", \"relname\" : \"%s\", \"sta_num_slots\" : %d, ",
+					 get_namespace_name(rel->rd_rel->relnamespace),
+					 NameStr(rel->rd_rel->relname), STATISTIC_NUM_SLOTS);
+
+	appendStringInfo(str, "\"relpages\" : %u, \"reltuples\" : %f, ",
+					 rel->rd_rel->relpages,
+					 rel->rd_rel->reltuples);
+
+	appendStringInfo(str, "\"attrs\" : [");
+	sd = table_open(StatisticRelationId, RowExclusiveLock);
+
+	for (attno = 0; attno < rel->rd_att->natts; attno++)
+	{
+		HeapTuple	stup;
+		Datum		values[Natts_pg_statistic];
+		bool		nulls[Natts_pg_statistic];
+		int			i, k;
+
+		stup = SearchSysCache3(STATRELATTINH,
+							   ObjectIdGetDatum(RelationGetRelid(rel)),
+							   Int16GetDatum(rel->rd_att->attrs[attno].attnum),
+							   BoolGetDatum(false));
+
+		if (!HeapTupleIsValid(stup))
+			/* Go to the next attribute, if we haven't statistics for. */
+			continue;
+
+		if (attnum++ > 0)
+			appendStringInfoString(str, ", ");
+
+		heap_deform_tuple(stup, RelationGetDescr(sd), values, nulls);
+
+		/* JSON header of attrribute statistics. */
+		appendStringInfo(str, "{\"attname\" : \"%s\", \"inh\" : \"%s\", \"nullfrac\" : %f, \"width\" : %d, \"distinct\" : %f, ",
+			NameStr(*attnumAttName(rel, rel->rd_att->attrs[attno].attnum)),
+			DatumGetBool(values[Anum_pg_statistic_stainherit - 1]) ? "true" : "false",
+			DatumGetFloat4(values[Anum_pg_statistic_stanullfrac - 1]),
+			DatumGetInt32(values[Anum_pg_statistic_stawidth - 1]),
+			DatumGetFloat4(values[Anum_pg_statistic_stadistinct - 1]));
+
+		appendStringInfoString(str, "\"stakind\" : [");
+		i = Anum_pg_statistic_stakind1 - 1;
+		for (k = 0; k < STATISTIC_NUM_SLOTS; k++)
+		{
+			appendStringInfo(str, "%d", DatumGetInt16(values[i++]));
+			if (k < STATISTIC_NUM_SLOTS - 1)
+				appendStringInfo(str, ",");
+		}
+		appendStringInfoString(str, "], \"staop\" : [");
+
+		i = Anum_pg_statistic_staop1 - 1;
+		for (k = 0; k < STATISTIC_NUM_SLOTS; k++)
+		{
+			Oid opOid = DatumGetObjectId(values[i++]);
+
+			/* Prepare portable representation of the oid */
+			if (OidIsValid(opOid))
+			{
+				Oid lefttype;
+				Oid righttype;
+				const char *ltypname;
+				const char *rtypname;
+
+				op_input_types(opOid, &lefttype, &righttype);
+
+				if (!OidIsValid(lefttype))
+					ltypname = "NDEFINED";
+				else if ((ltypname = get_typ_name(lefttype)) == NULL)
+					elog(ERROR, "Type name search failed for oid %d.", lefttype);
+
+				if (!OidIsValid(righttype))
+					rtypname = "NDEFINED";
+				else if ((rtypname = get_typ_name(righttype)) == NULL)
+					elog(ERROR, "Type name search failed for oid %d.", righttype);
+
+				appendStringInfo(str, "\"%s.%s.%s.%s.%s.%s\"",
+								 nsp_name(get_opnamespace(opOid)),
+								 get_opname(opOid),
+								 nsp_name(get_typ_namespace(lefttype)),
+								 ltypname,
+								 nsp_name(get_typ_namespace(righttype)),
+								 rtypname);
+			}
+			else
+				appendStringInfoString(str, "\" \"");
+
+			if (k < STATISTIC_NUM_SLOTS - 1)
+				appendStringInfoChar(str, ',');
+		}
+		appendStringInfoString(str, "], \"stacoll\" : [");
+
+		i = Anum_pg_statistic_stacoll1 - 1;
+		for (k = 0; k < STATISTIC_NUM_SLOTS; k++)
+		{
+			Oid collOid = DatumGetObjectId(values[i++]);
+
+			/* Prepare portable representation of the collation */
+			if (OidIsValid(collOid))
+				appendStringInfo(str, "\"%s.%s.%d\"",
+								 nsp_name(get_opnamespace(collOid)),
+								 get_collation_name(collOid),
+								  get_collation_encoding(collOid));
+			else
+				appendStringInfoString(str, "\" \"");
+
+			if (k < STATISTIC_NUM_SLOTS - 1)
+				appendStringInfoChar(str, ',');
+		}
+
+		appendStringInfoString(str, "], ");
+
+		for (k = 0; k < STATISTIC_NUM_SLOTS; k++)
+		{
+			bool		isnull;
+			Datum		val;
+
+			val = SysCacheGetAttr(STATRELATTINH, stup,
+							  Anum_pg_statistic_stavalues1 + k,
+							  &isnull);
+
+			if (isnull)
+				appendStringInfo(str, "\"values%d\" : [ ]", k+1);
+			else
+			{
+				ArrayType *v = DatumGetArrayTypeP(val);
+
+				appendStringInfo(str, "\"nn\" : %d, ",
+								 ArrayGetNItems(ARR_NDIM(v), ARR_DIMS(v)));
+				appendStringInfo(str, "\"values%d\" : ", k+1);
+				arr_to_json(val, str);
+			}
+			appendStringInfoString(str, ", ");
+		}
+
+		/* --- Extract numbers --- */
+		for (k = 0; k < STATISTIC_NUM_SLOTS; k++)
+		{
+			bool		isnull;
+			Datum		val;
+
+			if (k > 0)
+				appendStringInfoString(str, ", ");
+
+			val = SysCacheGetAttr(STATRELATTINH, stup,
+							  Anum_pg_statistic_stanumbers1 + k,
+							  &isnull);
+			if (isnull)
+				appendStringInfo(str, "\"numbers%d\" : [ ]", k+1);
+			else
+			{
+				ArrayType *v = DatumGetArrayTypeP(val);
+
+				appendStringInfo(str, "\"nn\" : %d, ",
+								 ArrayGetNItems(ARR_NDIM(v), ARR_DIMS(v)));
+				appendStringInfo(str, "\"numbers%d\" : ", k+1);
+				arr_to_json(val, str);
+			}
+		}
+
+		appendStringInfoString(str, "}");
+		ReleaseSysCache(stup);
+	}
+
+	if (attnum == 0)
+		appendStringInfoString(str, " ]");
+	else
+		appendStringInfoChar(str, ']');
+	appendStringInfoString(str, "}");
+
+	table_close(sd, RowExclusiveLock);
+	relation_close(rel, AccessShareLock);
+
+	return str->data;
+}
 
 /*
  *	update_attstats() -- update attribute statistics for one relation

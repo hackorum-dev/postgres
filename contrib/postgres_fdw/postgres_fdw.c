@@ -391,6 +391,7 @@ static void postgresGetForeignUpperPaths(PlannerInfo *root,
 										 RelOptInfo *input_rel,
 										 RelOptInfo *output_rel,
 										 void *extra);
+static char *postgresGetForeignRelStat(Relation rel);
 
 /*
  * Helper functions
@@ -558,6 +559,7 @@ postgres_fdw_handler(PG_FUNCTION_ARGS)
 	/* Support functions for upper relation push-down */
 	routine->GetForeignUpperPaths = postgresGetForeignUpperPaths;
 
+	routine->GetForeignRelStat = postgresGetForeignRelStat;
 	PG_RETURN_POINTER(routine);
 }
 
@@ -6582,4 +6584,51 @@ find_em_expr_for_input_target(PlannerInfo *root,
 
 	elog(ERROR, "could not find pathkey item to sort");
 	return NULL;				/* keep compiler quiet */
+}
+
+static char *
+postgresGetForeignRelStat(Relation rel)
+{
+	ForeignTable *table;
+	UserMapping *user;
+	PGconn	   *conn;
+	unsigned int cursor_number;
+	StringInfoData sql;
+	PGresult   *volatile res = NULL;
+	char fetch_sql[64];
+	char *json;
+
+	table = GetForeignTable(RelationGetRelid(rel));
+	user = GetUserMapping(rel->rd_rel->relowner, table->serverid);
+	conn = GetConnection(user, false);
+
+	cursor_number = GetCursorNumber(conn);
+	initStringInfo(&sql);
+	appendStringInfo(&sql, "DECLARE c%u CURSOR FOR ", cursor_number);
+	deparseGetStatSql(&sql, rel);
+
+	res = pgfdw_exec_query(conn, sql.data);
+	if (PQresultStatus(res) != PGRES_COMMAND_OK)
+		/*
+		 * TODO: need to process situation of missing statistic serializer at the
+		 * remote end.
+		 */
+		pgfdw_report_error(ERROR, res, conn, false, sql.data);
+
+	PQclear(res);
+
+	snprintf(fetch_sql, sizeof(fetch_sql), "FETCH FROM c%u", cursor_number);
+	res = pgfdw_exec_query(conn, fetch_sql);
+	if (PQresultStatus(res) != PGRES_TUPLES_OK)
+		pgfdw_report_error(ERROR, res, conn, false, sql.data);
+
+	Assert(PQntuples(res) == 1);
+	Assert(PQnfields(res) == 1);
+
+	json = pstrdup(PQgetvalue(res, 0, 0));
+	PQclear(res);
+	close_cursor(conn, cursor_number);
+	ReleaseConnection(conn);
+
+	return json;
 }

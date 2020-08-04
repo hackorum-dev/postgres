@@ -656,6 +656,12 @@ add_json(Datum val, bool is_null, StringInfo result,
 	datum_to_json(val, is_null, result, tcategory, outfuncoid, key_scalar);
 }
 
+void
+arr_to_json(Datum array, StringInfo result)
+{
+	array_to_json_internal(array, result, false);
+}
+
 /*
  * SQL function array_to_json(row)
  */

@@ -2053,6 +2053,14 @@ deparseAnalyzeSizeSql(StringInfo buf, Relation rel)
 	appendStringInfo(buf, "::pg_catalog.regclass) / %d", BLCKSZ);
 }
 
+void
+deparseGetStatSql(StringInfo buf, Relation rel)
+{
+	appendStringInfo(buf, "SELECT * FROM extract_relation_statistics('");
+	deparseRelation(buf, rel);
+	appendStringInfoString(buf, "');");
+}
+
 /*
  * Construct SELECT statement to acquire sample rows of given relation.
  *

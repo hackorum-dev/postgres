@@ -1,0 +1,112 @@
+CREATE TABLE ltable (a int, b real);
+CREATE FOREIGN TABLE ftable (a int) server loopback options (table_name 'ltable');
+VACUUM ANALYZE;
+-- Check statistic interface routine on an empty table.
+SELECT * FROM extract_relation_statistics('ltable');
+                                                        extract_relation_statistics                                                        
+-------------------------------------------------------------------------------------------------------------------------------------------
+ {"version" : 1, "namespace" : "public", "relname" : "ltable", "sta_num_slots" : 5, "relpages" : 0, "reltuples" : 0.000000, "attrs" : [ ]}
+(1 row)
+
+SELECT * FROM extract_relation_statistics('ftable');
+ERROR:  Can be used for ordinary relation only. Reltype: f.
+-- Check statistic interface routine on non-empty tables.
+INSERT INTO ltable (a, b) (SELECT *, 1.01 FROM generate_series(1, 1E4));
+-- hereinafter we don't want to depend on analyze order. If table will be
+-- analyzed before ltable than we got out-of-date statistic.
+ANALYZE ltable;
+ANALYZE;
+SELECT * FROM extract_relation_statistics('ltable');
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          extract_relation_statistics                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ {"version" : 1, "namespace" : "public", "relname" : "ltable", "sta_num_slots" : 5, "relpages" : 45, "reltuples" : 10000.000000, "attrs" : [{"attname" : "a", "inh" : "false", "nullfrac" : 0.000000, "width" : 4, "distinct" : -1.000000, "stakind" : [2,3,0,0,0], "staop" : [" .<. .int4. .int4"," .<. .int4. .int4"," "," "," "], "stacoll" : [" "," "," "," "," "], "nn" : 101, "values1" : [1,100,200,300,400,500,600,700,800,900,1000,1100,1200,1300,1400,1500,1600,1700,1800,1900,2000,2100,2200,2300,2400,2500,2600,2700,2800,2900,3000,3100,3200,3300,3400,3500,3600,3700,3800,3900,4000,4100,4200,4300,4400,4500,4600,4700,4800,4900,5000,5100,5200,5300,5400,5500,5600,5700,5800,5900,6000,6100,6200,6300,6400,6500,6600,6700,6800,6900,7000,7100,7200,7300,7400,7500,7600,7700,7800,7900,8000,8100,8200,8300,8400,8500,8600,8700,8800,8900,9000,9100,9200,9300,9400,9500,9600,9700,9800,9900,10000], "values2" : [ ], "values3" : [ ], "values4" : [ ], "values5" : [ ], "numbers1" : [ ], "nn" : 1, "numbers2" : [1], "numbers3" : [ ], "numbers4" : [ ], "numbers5" : [ ]}, {"attname" : "b", "inh" : "false", "nullfrac" : 0.000000, "width" : 4, "distinct" : 1.000000, "stakind" : [1,3,0,0,0], "staop" : [" .=. .float4. .float4"," .<. .float4. .float4"," "," "," "], "stacoll" : [" "," "," "," "," "], "nn" : 1, "values1" : [1.01], "values2" : [ ], "values3" : [ ], "values4" : [ ], "values5" : [ ], "nn" : 1, "numbers1" : [1], "nn" : 1, "numbers2" : [1], "numbers3" : [ ], "numbers4" : [ ], "numbers5" : [ ]}]}
+(1 row)
+
+-- Check ANALYZE on foreign table
+INSERT INTO ltable (a, b) (SELECT *, 2.01 FROM generate_series(1E4, 2E4));
+ANALYZE ltable;
+EXPLAIN (TIMING OFF, SUMMARY OFF, COSTS ON, ANALYZE) SELECT * FROM ltable;
+                                       QUERY PLAN                                       
+----------------------------------------------------------------------------------------
+ Seq Scan on ltable  (cost=0.00..289.01 rows=20001 width=8) (actual rows=20001 loops=1)
+(1 row)
+
+EXPLAIN (TIMING OFF, SUMMARY OFF, COSTS ON, ANALYZE) SELECT * FROM ftable;
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
+ Foreign Scan on ftable  (cost=100.00..445.00 rows=10000 width=4) (actual rows=20001 loops=1)
+(1 row)
+
+ANALYZE;
+EXPLAIN (TIMING OFF, SUMMARY OFF, COSTS ON, ANALYZE) SELECT * FROM ftable;
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
+ Foreign Scan on ftable  (cost=100.00..789.03 rows=20001 width=4) (actual rows=20001 loops=1)
+(1 row)
+
+-- Check selectivity
+EXPLAIN (TIMING OFF, SUMMARY OFF, COSTS ON, ANALYZE) SELECT * FROM ltable WHERE a > 10;
+                                       QUERY PLAN                                       
+----------------------------------------------------------------------------------------
+ Seq Scan on ltable  (cost=0.00..339.01 rows=19991 width=8) (actual rows=19991 loops=1)
+   Filter: (a > 10)
+   Rows Removed by Filter: 10
+(3 rows)
+
+EXPLAIN (TIMING OFF, SUMMARY OFF, COSTS ON, ANALYZE) SELECT * FROM ftable WHERE a > 10;
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
+ Foreign Scan on ftable  (cost=100.00..838.83 rows=19991 width=4) (actual rows=19991 loops=1)
+(1 row)
+
+-- Check new attribute
+ALTER TABLE ltable ADD COLUMN c int DEFAULT 42;
+ALTER TABLE ftable ADD COLUMN c int;
+EXPLAIN (TIMING OFF, SUMMARY OFF, COSTS ON, ANALYZE) SELECT * FROM ltable WHERE a > 10 AND c < 15;
+                                     QUERY PLAN                                     
+------------------------------------------------------------------------------------
+ Seq Scan on ltable  (cost=0.00..389.01 rows=6664 width=12) (actual rows=0 loops=1)
+   Filter: ((a > 10) AND (c < 15))
+   Rows Removed by Filter: 20001
+(3 rows)
+
+EXPLAIN (TIMING OFF, SUMMARY OFF, COSTS ON, ANALYZE) SELECT * FROM ftable WHERE a > 10 AND c < 15;
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Foreign Scan on ftable  (cost=100.00..622.29 rows=6664 width=8) (actual rows=0 loops=1)
+(1 row)
+
+ANALYZE ltable;
+ANALYZE;
+EXPLAIN (TIMING OFF, SUMMARY OFF, COSTS ON, ANALYZE) SELECT * FROM ltable WHERE a > 10 AND c < 15;
+                                   QUERY PLAN                                    
+---------------------------------------------------------------------------------
+ Seq Scan on ltable  (cost=0.00..389.01 rows=1 width=12) (actual rows=0 loops=1)
+   Filter: ((a > 10) AND (c < 15))
+   Rows Removed by Filter: 20001
+(3 rows)
+
+EXPLAIN (TIMING OFF, SUMMARY OFF, COSTS ON, ANALYZE) SELECT * FROM ftable WHERE a > 10 AND c < 15;
+                                      QUERY PLAN                                      
+--------------------------------------------------------------------------------------
+ Foreign Scan on ftable  (cost=100.00..489.03 rows=1 width=8) (actual rows=0 loops=1)
+(1 row)
+
+-- Test default vacuum analyzes foreign relation
+INSERT INTO ltable (a, b) (SELECT *, 2.01 FROM generate_series(2E4, 3E4));
+ANALYZE ltable;
+VACUUM ANALYZE;
+EXPLAIN (TIMING OFF, SUMMARY OFF, COSTS ON, ANALYZE) SELECT * FROM ltable WHERE a > 100 AND c < 43;
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Seq Scan on ltable  (cost=0.00..593.03 rows=29902 width=12) (actual rows=29902 loops=1)
+   Filter: ((a > 100) AND (c < 43))
+   Rows Removed by Filter: 100
+(3 rows)
+
+EXPLAIN (TIMING OFF, SUMMARY OFF, COSTS ON, ANALYZE) SELECT * FROM ftable WHERE a > 100 AND c < 43;
+                                          QUERY PLAN                                           
+-----------------------------------------------------------------------------------------------
+ Foreign Scan on ftable  (cost=100.00..1291.07 rows=29902 width=8) (actual rows=29902 loops=1)
+(1 row)
+

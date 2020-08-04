@@ -16,7 +16,7 @@ SHLIB_LINK_INTERNAL = $(libpq)
 EXTENSION = postgres_fdw
 DATA = postgres_fdw--1.0.sql
 
-REGRESS = postgres_fdw
+REGRESS = postgres_fdw foreign_stat
 
 ifdef USE_PGXS
 PG_CONFIG = pg_config

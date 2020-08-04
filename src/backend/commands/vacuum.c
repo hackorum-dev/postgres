@@ -882,6 +882,7 @@ get_all_vacuum_rels(int options)
 		 * them.
 		 */
 		if (classForm->relkind != RELKIND_RELATION &&
+			classForm->relkind != RELKIND_FOREIGN_TABLE &&
 			classForm->relkind != RELKIND_MATVIEW &&
 			classForm->relkind != RELKIND_PARTITIONED_TABLE)
 			continue;
@@ -1818,7 +1819,17 @@ vacuum_rel(Oid relid, RangeVar *relation, VacuumParams *params)
 	/*
 	 * Check that it's of a vacuumable relkind.
 	 */
-	if (onerel->rd_rel->relkind != RELKIND_RELATION &&
+	if (onerel->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
+	{
+		relation_close(onerel, lmode);
+		PopActiveSnapshot();
+		CommitTransactionCommand();
+		if (params->options & VACOPT_ANALYZE)
+			return true;
+		else
+			return false;
+	}
+	else if (onerel->rd_rel->relkind != RELKIND_RELATION &&
 		onerel->rd_rel->relkind != RELKIND_MATVIEW &&
 		onerel->rd_rel->relkind != RELKIND_TOASTVALUE &&
 		onerel->rd_rel->relkind != RELKIND_PARTITIONED_TABLE)

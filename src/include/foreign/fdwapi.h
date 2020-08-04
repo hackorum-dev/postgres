@@ -169,6 +169,7 @@ typedef bool (*IsForeignScanParallelSafe_function) (PlannerInfo *root,
 typedef List *(*ReparameterizeForeignPathByChild_function) (PlannerInfo *root,
 															List *fdw_private,
 															RelOptInfo *child_rel);
+typedef char *(*GetForeignRelStat_function) (Relation rel);
 
 /*
  * FdwRoutine is the struct returned by a foreign-data wrapper's handler
@@ -246,6 +247,7 @@ typedef struct FdwRoutine
 
 	/* Support functions for path reparameterization. */
 	ReparameterizeForeignPathByChild_function ReparameterizeForeignPathByChild;
+	GetForeignRelStat_function GetForeignRelStat;
 } FdwRoutine;
 
 
