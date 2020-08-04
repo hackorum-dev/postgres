@@ -52,6 +52,21 @@
 #define BGWORKER_SHMEM_ACCESS						0x0001
 
 /*
+ * If the background worker doesn't need shared memory access, on non-EXEC_BACKEND
+ * cases (such as Unix/Linux platforms) it is fine, since the worker gets all the
+ * backend parameters(See BackendParameters struct) required from the postmaster
+ * by the way the fork() is implemented. However, for EXEC_BACKEND cases, (say on
+ * Windows platforms where fork() doesn't exist) the way postmaster creates a
+ * background worker is different. It is done through SubPostmasterMain and the
+ * backend parameters from the postmaster are shared with the background worker via
+ * shared memory. And having no shared memory access for the worker for EXEC_BACKEND
+ * cases, (in StartBackgroundWorker, the shared memory segments get detached) the
+ * worker fails to receive the backend parameters from the postmaster. Hence the
+ * background worker needs to have BGWORKER_SHMEM_ACCESS flag while registering for
+ * EXEC_BACKEND cases.
+ */
+
+/*
  * This flag means the bgworker requires a database connection.  The connection
  * is not established automatically; the worker must establish it later.
  * It requires that BGWORKER_SHMEM_ACCESS was passed too.
