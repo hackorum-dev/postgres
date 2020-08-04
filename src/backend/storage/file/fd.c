@@ -96,6 +96,7 @@
 #include "portability/mem.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
+#include "storage/pmem.h"
 #include "utils/guc.h"
 #include "utils/resowner_private.h"
 
@@ -233,6 +234,9 @@ static uint64 temporary_files_size = 0;
 typedef enum
 {
 	AllocateDescFile,
+#ifdef USE_LIBPMEM
+	AllocateDescMap,
+#endif
 	AllocateDescPipe,
 	AllocateDescDir,
 	AllocateDescRawFD
@@ -247,6 +251,10 @@ typedef struct
 		FILE	   *file;
 		DIR		   *dir;
 		int			fd;
+#ifdef USE_LIBPMEM
+		size_t		fsize;
+		void	   *addr;
+#endif
 	}			desc;
 } AllocateDesc;
 
@@ -1724,6 +1732,78 @@ OpenTemporaryFileInTablespace(Oid tblspcOid, bool rejectError)
 	return file;
 }
 
+#ifdef USE_LIBPMEM
+/*
+ * Mmap a file with MapTransientFilePerm() and pass default file mode for
+ * the fileMode parameter.
+ */
+int
+MapTransientFile(const char *fileName, int fileFlags, size_t fsize, void **addr)
+{
+	return MapTransientFilePerm(fileName, fileFlags, PG_FILE_MODE_DEFAULT,
+								fsize, addr);
+}
+
+/*
+ * Like AllocateFile, but returns an unbuffered pointer to the mapped area
+ * like mmap(2)
+ */
+int
+MapTransientFilePerm(const char *fileName, int fileFlags, int fileMode,
+					 size_t fsize, void **addr)
+{
+	int			fd;
+
+	DO_DB(elog(LOG, "MapTransientFilePerm: Allocated %d (%s)",
+			   numAllocatedDescs, fileName));
+
+	/* Can we allocate another non-virtual FD? */
+	if (!reserveAllocatedDesc())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_RESOURCES),
+				 errmsg("exceeded maxAllocatedDescs (%d) while trying to open file \"%s\"",
+						maxAllocatedDescs, fileName)));
+
+	/* Close excess kernel FDs. */
+	ReleaseLruFiles();
+
+	if (addr != NULL)
+	{
+		void	   *ret_addr = NULL;
+
+		fd = PmemFileOpenPerm(fileName, fileFlags, fileMode, fsize, &ret_addr);
+		if (ret_addr != NULL)
+		{
+			AllocateDesc *desc = &allocatedDescs[numAllocatedDescs];
+
+			*addr = ret_addr;
+
+			desc->kind = AllocateDescMap;
+			desc->desc.addr = ret_addr;
+			desc->desc.fsize = fsize;
+			desc->create_subid = GetCurrentSubTransactionId();
+			numAllocatedDescs++;
+
+			return fd;
+		}
+	}
+
+	return -1;					/* failure */
+}
+#else
+int
+MapTransientFile(const char *fileName, int fileFlags, size_t fsize, void **addr)
+{
+	return -1;
+}
+
+int
+MapTransientFilePerm(const char *fileName, int fileFlags, int fileMode,
+					 size_t fsize, void **addr)
+{
+	return -1;
+}
+#endif
 
 /*
  * Create a new file.  The directory containing it must already exist.  Files
@@ -2530,6 +2610,11 @@ FreeDesc(AllocateDesc *desc)
 		case AllocateDescRawFD:
 			result = close(desc->desc.fd);
 			break;
+#ifdef USE_LIBPMEM
+		case AllocateDescMap:
+			result = PmemFileClose(desc->desc.addr, desc->desc.fsize);
+			break;
+#endif
 		default:
 			elog(ERROR, "AllocateDesc kind not recognized");
 			result = 0;			/* keep compiler quiet */
@@ -2570,6 +2655,42 @@ FreeFile(FILE *file)
 
 	return fclose(file);
 }
+
+#ifdef USE_LIBPMEM
+/*
+ * Unmap a file returned by MapTransientFile.
+ *
+ * Note we do not check unmap's return value --- it is up to the caller
+ * to handle unmap errors.
+ */
+int
+UnmapTransientFile(void *addr, size_t fsize)
+{
+	int			i;
+
+	DO_DB(elog(LOG, "UnmapTransientFile: Allocated %d", numAllocatedDescs));
+
+	/* Remove fd from list of allocated files, if it's present */
+	for (i = numAllocatedDescs; --i >= 0;)
+	{
+		AllocateDesc *desc = &allocatedDescs[i];
+
+		if (desc->kind == AllocateDescMap && desc->desc.addr == addr)
+			return FreeDesc(desc);
+	}
+
+	/* Only get here if someone passes us a file not in allocatedDescs */
+	elog(WARNING, "fd passed to UnmapTransientFile was not obtained from MapTransientFile");
+
+	return PmemFileClose(addr, fsize);
+}
+#else
+int
+UnmapTransientFile(void *addr, size_t fsize)
+{
+	return -1;
+}
+#endif
 
 /*
  * Close a file returned by OpenTransientFile.

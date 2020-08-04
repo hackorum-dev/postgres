@@ -50,6 +50,12 @@ struct iovec;					/* avoid including port/pg_iovec.h here */
 typedef int File;
 
 
+/*
+ * Default mode for created files, unless something else is specified using
+ * the *Perm() function variants.
+ */
+#define PG_FILE_MODE_DEFAULT	(S_IRUSR | S_IWUSR)
+
 /* GUC parameter */
 extern PGDLLIMPORT int max_files_per_process;
 extern PGDLLIMPORT bool data_sync_retry;
@@ -120,6 +126,13 @@ extern int	FreeDir(DIR *dir);
 extern int	OpenTransientFile(const char *fileName, int fileFlags);
 extern int	OpenTransientFilePerm(const char *fileName, int fileFlags, mode_t fileMode);
 extern int	CloseTransientFile(int fd);
+
+/* Operations to allow use of a memory-mapped file */
+extern int MapTransientFile(const char *fileName, int fileFlags, size_t fsize,
+				 void **addr);
+extern int MapTransientFilePerm(const char *fileName, int fileFlags, int fileMode,
+					 size_t fsize, void **addr);
+extern int	UnmapTransientFile(void *addr, size_t fsize);
 
 /* If you've really really gotta have a plain kernel FD, use this */
 extern int	BasicOpenFile(const char *fileName, int fileFlags);
