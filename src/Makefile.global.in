@@ -446,14 +446,13 @@ ifeq ($(enable_tap_tests),yes)
 
 define prove_installcheck
 rm -rf '$(CURDIR)'/tmp_check
-$(MKDIR_P) '$(CURDIR)'/tmp_check
-cd $(srcdir) && TESTDIR='$(CURDIR)' PATH="$(bindir):$$PATH" PGPORT='6$(DEF_PGPORT)' top_builddir='$(CURDIR)/$(top_builddir)' PG_REGRESS='$(CURDIR)/$(top_builddir)/src/test/regress/pg_regress' REGRESS_SHLIB='$(abs_top_builddir)/src/test/regress/regress$(DLSUFFIX)' $(PROVE) $(PG_PROVE_FLAGS) $(PROVE_FLAGS) $(if $(PROVE_TESTS),$(PROVE_TESTS),t/*.pl)
+cd $(srcdir) && TESTDIR='$(CURDIR)' PATH="$(bindir):$$PATH" PGPORT='6$(DEF_PGPORT)' PG_REGRESS='$(PG_REGRESS_PATH)' REGRESS_SHLIB='$(REGRESS_SHLIB_PATH)' $(PROVE) $(PG_PROVE_FLAGS) $(PROVE_FLAGS) $(if $(PROVE_TESTS),$(PROVE_TESTS),t/*.pl)
 endef
 
 define prove_check
 rm -rf '$(CURDIR)'/tmp_check
 $(MKDIR_P) '$(CURDIR)'/tmp_check
-cd $(srcdir) && TESTDIR='$(CURDIR)' $(with_temp_install) PGPORT='6$(DEF_PGPORT)' PG_REGRESS='$(CURDIR)/$(top_builddir)/src/test/regress/pg_regress' REGRESS_SHLIB='$(abs_top_builddir)/src/test/regress/regress$(DLSUFFIX)' $(PROVE) $(PG_PROVE_FLAGS) $(PROVE_FLAGS) $(if $(PROVE_TESTS),$(PROVE_TESTS),t/*.pl)
+cd $(srcdir) && TESTDIR='$(CURDIR)' $(with_temp_install) PGPORT='6$(DEF_PGPORT)' PG_REGRESS='$(PG_REGRESS_PATH)' REGRESS_SHLIB='$(REGRESS_SHLIB_PATH)' $(PROVE) $(PG_PROVE_FLAGS) $(PROVE_FLAGS) $(if $(PROVE_TESTS),$(PROVE_TESTS),t/*.pl)
 endef
 
 else
@@ -634,6 +633,16 @@ endif
 TEMP_CONF =
 ifdef TEMP_CONFIG
 TEMP_CONF += --temp-config=$(TEMP_CONFIG)
+endif
+
+# Environment variables for tap test.
+# top_builddir is an absolute path of root directory in PGXS.
+ifdef PGXS
+	PG_REGRESS_PATH = '$(top_builddir)/src/test/regress/pg_regress'
+	REGRESS_SHLIB_PATH = '$(top_builddir)/src/test/regress/regress$(DLSUFFIX)'
+else
+	PG_REGRESS_PATH = '$(abs_top_builddir)/src/test/regress/pg_regress'
+	REGRESS_SHLIB_PATH = '$(abs_top_builddir)/src/test/regress/regress$(DLSUFFIX)'
 endif
 
 pg_regress_locale_flags = $(if $(ENCODING),--encoding=$(ENCODING)) $(NOLOCALE)
