@@ -24,17 +24,19 @@
  */
 typedef pg_atomic_uint64 CSN_atomic;
 
-#define InProgressXidCSN	 	UINT64CONST(0x0)
-#define AbortedXidCSN	 		UINT64CONST(0x1)
+#define InProgressXidCSN		UINT64CONST(0x0)
+#define AbortedXidCSN			UINT64CONST(0x1)
 #define FrozenXidCSN		 	UINT64CONST(0x2)
-#define InDoubtXidCSN	 		UINT64CONST(0x3)
-#define FirstNormalXidCSN 		UINT64CONST(0x4)
+#define InDoubtXidCSN			UINT64CONST(0x3)
+#define UnclearCSN				UINT64CONST(0x4)
+#define FirstNormalXidCSN		UINT64CONST(0x5)
 
-#define XidCSNIsInProgress(csn)	((csn) == InProgressXidCSN)
+#define XidCSNIsInProgress(csn)		((csn) == InProgressXidCSN)
 #define XidCSNIsAborted(csn)		((csn) == AbortedXidCSN)
-#define XidCSNIsFrozen(csn)		((csn) == FrozenXidCSN)
+#define XidCSNIsFrozen(csn)			((csn) == FrozenXidCSN)
 #define XidCSNIsInDoubt(csn)		((csn) == InDoubtXidCSN)
-#define XidCSNIsNormal(csn)		((csn) >= FirstNormalXidCSN)
+#define CSNIsUnclear(csn)			((csn) == UnclearCSN)
+#define XidCSNIsNormal(csn)			((csn) >= FirstNormalXidCSN)
 
 
 
