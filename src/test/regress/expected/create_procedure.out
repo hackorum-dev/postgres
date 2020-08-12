@@ -29,8 +29,7 @@ SELECT pg_get_functiondef('ptest1'::regproc);
   LANGUAGE sql                                    +
  AS $procedure$                                   +
  INSERT INTO cp_test VALUES (1, x);               +
- $procedure$                                      +
- 
+ $procedure$
 (1 row)
 
 -- show only normal functions

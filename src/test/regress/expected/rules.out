@@ -3402,8 +3402,7 @@ SELECT pg_get_functiondef('func_with_set_params()'::regprocedure);
   SET work_mem TO '4MB'                                                                                                                                                  +
   SET "DateStyle" TO 'iso, mdy'                                                                                                                                          +
   SET local_preload_libraries TO 'Mixed/Case', 'c:/''a"/path', '', '0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789'+
- AS $function$select 1;$function$                                                                                                                                        +
- 
+ AS $function$select 1;$function$
 (1 row)
 
 -- tests for pg_get_*def with invalid objects

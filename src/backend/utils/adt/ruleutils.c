@@ -2832,8 +2832,6 @@ pg_get_functiondef(PG_FUNCTION_ARGS)
 	appendStringInfoString(&buf, prosrc);
 	appendBinaryStringInfo(&buf, dq.data, dq.len);
 
-	appendStringInfoChar(&buf, '\n');
-
 	ReleaseSysCache(proctup);
 
 	PG_RETURN_TEXT_P(string_to_text(buf.data));
