@@ -1495,10 +1495,10 @@ my %tests = (
 					   RETURNS LANGUAGE_HANDLER AS \'$libdir/plpgsql\',
 					   \'plpgsql_call_handler\' LANGUAGE C;',
 		regexp => qr/^
-			\QCREATE FUNCTION dump_test.pltestlang_call_handler() \E
-			\QRETURNS language_handler\E
+			\QCREATE FUNCTION dump_test.pltestlang_call_handler()\E
+			\n\s+\QRETURNS language_handler\E
 			\n\s+\QLANGUAGE c\E
-			\n\s+AS\ \'\$
+			\n\s*AS\ \'\$
 			\Qlibdir\/plpgsql', 'plpgsql_call_handler';\E
 			/xm,
 		like =>
@@ -1512,9 +1512,10 @@ my %tests = (
 					   RETURNS trigger LANGUAGE plpgsql
 					   AS $$ BEGIN RETURN NULL; END;$$;',
 		regexp => qr/^
-			\QCREATE FUNCTION dump_test.trigger_func() RETURNS trigger\E
+			\QCREATE FUNCTION dump_test.trigger_func()\E
+			\n\s+\QRETURNS trigger\E
 			\n\s+\QLANGUAGE plpgsql\E
-			\n\s+AS\ \$\$
+			\n\s*AS\ \$\$
 			\Q BEGIN RETURN NULL; END;\E
 			\$\$;/xm,
 		like =>
@@ -1528,9 +1529,10 @@ my %tests = (
 					   RETURNS event_trigger LANGUAGE plpgsql
 					   AS $$ BEGIN RETURN; END;$$;',
 		regexp => qr/^
-			\QCREATE FUNCTION dump_test.event_trigger_func() RETURNS event_trigger\E
+			\QCREATE FUNCTION dump_test.event_trigger_func()\E
+			\n\s+\QRETURNS event_trigger\E
 			\n\s+\QLANGUAGE plpgsql\E
-			\n\s+AS\ \$\$
+			\n\s*AS\ \$\$
 			\Q BEGIN RETURN; END;\E
 			\$\$;/xm,
 		like =>
@@ -1838,9 +1840,11 @@ my %tests = (
 					   RETURNS dump_test.int42 AS \'int4in\'
 					   LANGUAGE internal STRICT IMMUTABLE;',
 		regexp => qr/^
-			\QCREATE FUNCTION dump_test.int42_in(cstring) RETURNS dump_test.int42\E
-			\n\s+\QLANGUAGE internal IMMUTABLE STRICT\E
-			\n\s+AS\ \$\$int4in\$\$;
+			\QCREATE FUNCTION dump_test.int42_in(cstring)\E
+			\n\s+\QRETURNS dump_test.int42\E
+			\n\s+\QLANGUAGE internal\E
+			\n\s+\QIMMUTABLE STRICT\E
+			\n\s*AS\ \$\$int4in\$\$;
 			/xm,
 		like =>
 		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },
@@ -1853,9 +1857,11 @@ my %tests = (
 					   RETURNS cstring AS \'int4out\'
 					   LANGUAGE internal STRICT IMMUTABLE;',
 		regexp => qr/^
-			\QCREATE FUNCTION dump_test.int42_out(dump_test.int42) RETURNS cstring\E
-			\n\s+\QLANGUAGE internal IMMUTABLE STRICT\E
-			\n\s+AS\ \$\$int4out\$\$;
+			\QCREATE FUNCTION dump_test.int42_out(dump_test.int42)\E
+			\n\s+\QRETURNS cstring\E
+			\n\s+\QLANGUAGE internal\E
+			\n\s+\QIMMUTABLE STRICT\E
+			\n\s*AS\ \$\$int4out\$\$;
 			/xm,
 		like =>
 		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },
@@ -1867,9 +1873,11 @@ my %tests = (
 		create_sql =>
 		  'CREATE FUNCTION dump_test.func_with_support() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$ SUPPORT varchar_support;',
 		regexp => qr/^
-			\QCREATE FUNCTION dump_test.func_with_support() RETURNS integer\E
-			\n\s+\QLANGUAGE sql SUPPORT varchar_support\E
-			\n\s+AS\ \$\$\Q SELECT 1 \E\$\$;
+			\QCREATE FUNCTION dump_test.func_with_support()\E
+			\n\s+\QRETURNS integer\E
+			\n\s+\QLANGUAGE sql\E
+			\n\s+\QSUPPORT varchar_support\E
+			\n\s*AS\ \$\$\Q SELECT 1 \E\$\$;
 			/xm,
 		like =>
 		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },
@@ -1883,7 +1891,7 @@ my %tests = (
 		regexp => qr/^
 			\QCREATE PROCEDURE dump_test.ptest1(a integer)\E
 			\n\s+\QLANGUAGE sql\E
-			\n\s+AS\ \$\$\Q INSERT INTO dump_test.test_table (col1) VALUES (a) \E\$\$;
+			\n\s*AS\ \$\$\Q INSERT INTO dump_test.test_table (col1) VALUES (a) \E\$\$;
 			/xm,
 		like =>
 		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },

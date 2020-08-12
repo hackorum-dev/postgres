@@ -1204,6 +1204,10 @@ COMMENT ON FUNCTION ts_debug(text) IS
 --
 
 CREATE OR REPLACE FUNCTION
+  pg_get_functiondef(func oid, or_replace boolean DEFAULT true, lavish_quoting boolean DEFAULT true)
+  RETURNS text STRICT STABLE LANGUAGE internal AS 'pg_get_functiondef';
+
+CREATE OR REPLACE FUNCTION
   pg_start_backup(label text, fast boolean DEFAULT false, exclusive boolean DEFAULT true)
   RETURNS pg_lsn STRICT VOLATILE LANGUAGE internal AS 'pg_start_backup'
   PARALLEL RESTRICTED;

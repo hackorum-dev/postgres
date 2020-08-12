@@ -3660,7 +3660,7 @@
   proargtypes => 'text text', prosrc => 'pg_get_serial_sequence' },
 { oid => '2098', descr => 'definition of a function',
   proname => 'pg_get_functiondef', provolatile => 's', prorettype => 'text',
-  proargtypes => 'oid', prosrc => 'pg_get_functiondef' },
+  proargtypes => 'oid bool bool', prosrc => 'pg_get_functiondef' },
 { oid => '2162', descr => 'argument list of a function',
   proname => 'pg_get_function_arguments', provolatile => 's',
   prorettype => 'text', proargtypes => 'oid',

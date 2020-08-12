@@ -11764,6 +11764,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	PQExpBuffer q;
 	PQExpBuffer delqry;
 	PQExpBuffer asPart;
+	bool		use_functiondef;
 	PGresult   *res;
 	char	   *funcsig;		/* identity signature */
 	char	   *funcfullsig = NULL; /* full signature */
@@ -11807,6 +11808,20 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	q = createPQExpBuffer();
 	delqry = createPQExpBuffer();
 	asPart = createPQExpBuffer();
+
+	if (fout->remoteVersion >= 140000)
+	{
+		use_functiondef = true;
+
+		appendPQExpBuffer(query,
+						  "SELECT\n"
+						  "pg_get_functiondef(oid, false, false) AS functiondef,\n"
+						  "prokind,\n"
+						  "pg_catalog.pg_get_function_identity_arguments(oid) AS funciargs\n");
+	}
+	else
+	{
+		use_functiondef = false;
 
 	/* Fetch function-specific details */
 	appendPQExpBuffer(query,
@@ -11886,6 +11901,7 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 	else
 		appendPQExpBuffer(query,
 						  "'-' AS prosupport\n");
+	}
 
 	appendPQExpBuffer(query,
 					  "FROM pg_catalog.pg_proc "
@@ -11894,6 +11910,13 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 
 	res = ExecuteSqlQueryForSingleRow(fout, query->data);
 
+	if (use_functiondef)
+	{
+		funciargs = PQgetvalue(res, 0, PQfnumber(res, "funciargs"));
+		prokind = PQgetvalue(res, 0, PQfnumber(res, "prokind"));
+	}
+	else
+	{
 	proretset = PQgetvalue(res, 0, PQfnumber(res, "proretset"));
 	prosrc = PQgetvalue(res, 0, PQfnumber(res, "prosrc"));
 	probin = PQgetvalue(res, 0, PQfnumber(res, "probin"));
@@ -12022,8 +12045,13 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 			nconfigitems = 0;
 		}
 	}
+	}
 
-	if (funcargs)
+	if (use_functiondef)
+	{
+		funcsig = format_function_arguments(finfo, funciargs, false);
+	}
+	else if (funcargs)
 	{
 		/* 8.4 or later; we rely on server-side code for most of the work */
 		funcfullsig = format_function_arguments(finfo, funcargs, false);
@@ -12047,6 +12075,12 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 					  fmtId(finfo->dobj.namespace->dobj.name),
 					  funcsig);
 
+	if (use_functiondef)
+	{
+		appendPQExpBuffer(q, "%s", PQgetvalue(res, 0, PQfnumber(res, "functiondef")));
+	}
+	else
+	{
 	appendPQExpBuffer(q, "CREATE %s %s.%s",
 					  keyword,
 					  fmtId(finfo->dobj.namespace->dobj.name),
@@ -12198,7 +12232,10 @@ dumpFunc(Archive *fout, FuncInfo *finfo)
 			appendStringLiteralAH(q, pos, fout);
 	}
 
-	appendPQExpBuffer(q, "\n    %s;\n", asPart->data);
+	appendPQExpBuffer(q, "\n    %s", asPart->data);
+	}
+
+	appendPQExpBuffer(q, ";\n");
 
 	append_depends_on_extension(fout, q, &finfo->dobj,
 								"pg_catalog.pg_proc", keyword,

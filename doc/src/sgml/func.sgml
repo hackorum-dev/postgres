@@ -22076,16 +22076,25 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
         <indexterm>
          <primary>pg_get_functiondef</primary>
         </indexterm>
-        <function>pg_get_functiondef</function> ( <parameter>func</parameter> <type>oid</type> )
+        <function>pg_get_functiondef</function> ( <parameter>func</parameter> <type>oid</type> <optional>, <parameter>or_replace</parameter> <type>boolean</type>, <parameter>lavish_quoting</parameter> <type>boolean</type> </optional> )
         <returnvalue>text</returnvalue>
        </para>
        <para>
         Reconstructs the creating command for a function or procedure.
         (This is a decompiled reconstruction, not the original text
         of the command.)
-        The result is a complete <command>CREATE OR REPLACE FUNCTION</command>
-        or <command>CREATE OR REPLACE PROCEDURE</command> statement.
-       </para></entry>
+        The result is a complete <command>CREATE FUNCTION</command>
+        or <command>CREATE PROCEDURE</command> statement.
+       </para>
+       <para>
+        If <parameter>or_replace</parameter> is true (the default), then
+        <literal>CREATE OR REPLACE</literal> commands are generated.  If
+        <parameter>lavish_quoting</parameter> is true (the default), then the
+        created command text will use dollar-quoting in a way that is unlikely
+        to clash with any function body.  This is useful when the fetched
+        command is meant to be edited by the user.  Otherwise, it will try to
+        generate compact quoting adequate for the current function body.
+        </para></entry>
       </row>
 
       <row>

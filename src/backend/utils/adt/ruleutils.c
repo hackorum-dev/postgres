@@ -2590,6 +2590,38 @@ pg_get_serial_sequence(PG_FUNCTION_ARGS)
 }
 
 
+static void
+appendStringLiteralDQ(StringInfo buf, const char *str, const char *dqprefix)
+{
+	static const char suffixes[] = "_XXXXXXX";
+	int			nextchar = 0;
+	StringInfo	delimBuf = makeStringInfo();
+
+	/* start with $ + dqprefix if not NULL */
+	appendStringInfoChar(delimBuf, '$');
+	if (dqprefix)
+		appendStringInfoString(delimBuf, dqprefix);
+
+	/*
+	 * Make sure we choose a delimiter which (without the trailing $) is not
+	 * present in the string being quoted. We don't check with the trailing $
+	 * because a string ending in $foo must not be quoted with $foo$.
+	 */
+	while (strstr(str, delimBuf->data) != NULL)
+	{
+		appendStringInfoChar(delimBuf, suffixes[nextchar++]);
+		nextchar %= sizeof(suffixes) - 1;
+	}
+
+	/* add trailing $ */
+	appendStringInfoChar(delimBuf, '$');
+
+	/* quote it and we are all done */
+	appendStringInfoString(buf, delimBuf->data);
+	appendStringInfoString(buf, str);
+	appendStringInfoString(buf, delimBuf->data);
+}
+
 /*
  * pg_get_functiondef
  *		Returns the complete "CREATE OR REPLACE FUNCTION ..." statement for
@@ -2604,13 +2636,14 @@ Datum
 pg_get_functiondef(PG_FUNCTION_ARGS)
 {
 	Oid			funcid = PG_GETARG_OID(0);
+	bool		or_replace = PG_GETARG_BOOL(1);
+	bool		lavish_quoting = PG_GETARG_BOOL(2);
 	StringInfoData buf;
-	StringInfoData dq;
 	HeapTuple	proctup;
 	Form_pg_proc proc;
 	bool		isfunction;
 	Datum		tmp;
-	bool		isnull;
+	bool		isnull, isnull2;
 	const char *prosrc;
 	const char *name;
 	const char *nsp;
@@ -2639,7 +2672,8 @@ pg_get_functiondef(PG_FUNCTION_ARGS)
 	 * replaced.
 	 */
 	nsp = get_namespace_name(proc->pronamespace);
-	appendStringInfo(&buf, "CREATE OR REPLACE %s %s(",
+	appendStringInfo(&buf, "CREATE %s%s %s(",
+					 or_replace ? "OR REPLACE " : "",
 					 isfunction ? "FUNCTION" : "PROCEDURE",
 					 quote_qualified_identifier(nsp, name));
 	(void) print_function_arguments(&buf, proctup, false, true);
@@ -2809,8 +2843,8 @@ pg_get_functiondef(PG_FUNCTION_ARGS)
 		appendStringInfoString(&buf, ", "); /* assume prosrc isn't null */
 	}
 
-	tmp = SysCacheGetAttr(PROCOID, proctup, Anum_pg_proc_prosrc, &isnull);
-	if (isnull)
+	tmp = SysCacheGetAttr(PROCOID, proctup, Anum_pg_proc_prosrc, &isnull2);
+	if (isnull2)
 		elog(ERROR, "null prosrc");
 	prosrc = TextDatumGetCString(tmp);
 
@@ -2821,16 +2855,15 @@ pg_get_functiondef(PG_FUNCTION_ARGS)
 	 * shouldn't use a short delimiter that he might easily create a conflict
 	 * with.  Hence prefer "$function$"/"$procedure$", but extend if needed.
 	 */
-	initStringInfo(&dq);
-	appendStringInfoChar(&dq, '$');
-	appendStringInfoString(&dq, (isfunction ? "function" : "procedure"));
-	while (strstr(prosrc, dq.data) != NULL)
-		appendStringInfoChar(&dq, 'x');
-	appendStringInfoChar(&dq, '$');
-
-	appendBinaryStringInfo(&buf, dq.data, dq.len);
-	appendStringInfoString(&buf, prosrc);
-	appendBinaryStringInfo(&buf, dq.data, dq.len);
+	if (isnull)
+		appendStringLiteralDQ(&buf, prosrc, (lavish_quoting ? (isfunction ? "function" : "procedure") : NULL));
+	else
+	{
+		if (strchr(prosrc, '\'') == NULL && strchr(prosrc, '\\') == NULL)
+			simple_quote_literal(&buf, prosrc);
+		else
+			appendStringLiteralDQ(&buf, prosrc, NULL);
+	}
 
 	ReleaseSysCache(proctup);
 

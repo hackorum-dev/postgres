@@ -490,7 +490,8 @@ my %tests = (
 
 	'CREATE FUNCTION regress_pg_dump_schema.test_func' => {
 		regexp => qr/^
-            \QCREATE FUNCTION regress_pg_dump_schema.test_func() RETURNS integer\E
+            \QCREATE FUNCTION regress_pg_dump_schema.test_func()\E
+            \n\s+\QRETURNS integer\E
             \n\s+\QLANGUAGE sql\E
             \n/xm,
 		like => { binary_upgrade => 1, },
