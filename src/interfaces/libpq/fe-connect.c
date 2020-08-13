@@ -3394,7 +3394,14 @@ keep_going:						/* We will come back to here until there is
 					}
 #endif
 
-					goto error_return;
+					/*
+					 * This host rejected our connection attempt.  If we have
+					 * more hosts, try the next one.  (But don't consider
+					 * additional addresses for this host; we'd probably just
+					 * end up with confusing duplicate error messages.)
+					 */
+					conn->try_next_host = true;
+					goto keep_going;
 				}
 
 				/* It is an authentication request. */
@@ -3540,7 +3547,15 @@ keep_going:						/* We will come back to here until there is
 						conn->errorMessage.data[conn->errorMessage.len - 1] != '\n')
 						appendPQExpBufferChar(&conn->errorMessage, '\n');
 					PQclear(res);
-					goto error_return;
+
+					/*
+					 * This host rejected our connection attempt.  If we have
+					 * more hosts, try the next one.  (But don't consider
+					 * additional addresses for this host; we'd probably just
+					 * end up with confusing duplicate error messages.)
+					 */
+					conn->try_next_host = true;
+					goto keep_going;
 				}
 
 				/* Fire up post-connection housekeeping if needed */
