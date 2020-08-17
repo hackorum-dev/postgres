@@ -275,6 +275,9 @@ create index cluster_sort on clstr_4 (hundred, thousand, tenthous);
 -- ensure we don't use the index in CLUSTER nor the checking SELECTs
 set enable_indexscan = off;
 
+-- make sure our test will always read blocks from the start of the table
+set synchronize_seqscans = off;
+
 -- Use external sort:
 set maintenance_work_mem = '1MB';
 cluster clstr_4 using cluster_sort;
@@ -284,6 +287,7 @@ select * from
         tenthous, lag(tenthous) over () as ltenthous from clstr_4) ss
 where row(hundred, thousand, tenthous) <= row(lhundred, lthousand, ltenthous);
 
+reset synchronize_seqscans;
 reset enable_indexscan;
 reset maintenance_work_mem;
 
