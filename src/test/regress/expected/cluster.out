@@ -563,6 +563,8 @@ create table clstr_4 as select * from tenk1;
 create index cluster_sort on clstr_4 (hundred, thousand, tenthous);
 -- ensure we don't use the index in CLUSTER nor the checking SELECTs
 set enable_indexscan = off;
+-- make sure our test will always read blocks from the start of the table
+set synchronize_seqscans = off;
 -- Use external sort:
 set maintenance_work_mem = '1MB';
 cluster clstr_4 using cluster_sort;
@@ -575,6 +577,7 @@ where row(hundred, thousand, tenthous) <= row(lhundred, lthousand, ltenthous);
 ---------+----------+----------+-----------+----------+-----------
 (0 rows)
 
+reset synchronize_seqscans;
 reset enable_indexscan;
 reset maintenance_work_mem;
 -- test CLUSTER on expression index
