@@ -376,7 +376,8 @@ ExecInsert(ModifyTableState *mtstate,
 		   TupleTableSlot *slot,
 		   TupleTableSlot *planSlot,
 		   EState *estate,
-		   bool canSetTag)
+		   bool canSetTag,
+		   bool tryBRTrigger)
 {
 	ResultRelInfo *resultRelInfo;
 	Relation	resultRelationDesc;
@@ -404,7 +405,8 @@ ExecInsert(ModifyTableState *mtstate,
 	 * side-effects that we can't cancel by just not inserting the tuple.
 	 */
 	if (resultRelInfo->ri_TrigDesc &&
-		resultRelInfo->ri_TrigDesc->trig_insert_before_row)
+		resultRelInfo->ri_TrigDesc->trig_insert_before_row &&
+		tryBRTrigger)
 	{
 		if (!ExecBRInsertTriggers(estate, resultRelInfo, slot))
 			return NULL;		/* "do nothing" */
@@ -1309,7 +1311,7 @@ lreplace:;
 										   mtstate->rootResultRelInfo, slot);
 
 			ret_slot = ExecInsert(mtstate, slot, planSlot,
-								  estate, canSetTag);
+								  estate, canSetTag, false);
 
 			/* Revert ExecPrepareTupleRouting's node change. */
 			estate->es_result_relation_info = resultRelInfo;
@@ -2244,7 +2246,7 @@ ExecModifyTable(PlanState *pstate)
 					slot = ExecPrepareTupleRouting(node, estate, proute,
 												   resultRelInfo, slot);
 				slot = ExecInsert(node, slot, planSlot,
-								  estate, node->canSetTag);
+								  estate, node->canSetTag, true);
 				/* Revert ExecPrepareTupleRouting's state change. */
 				if (proute)
 					estate->es_result_relation_info = resultRelInfo;
