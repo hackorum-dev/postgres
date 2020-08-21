@@ -396,9 +396,13 @@ static bool
 matches_backtrace_functions(const char *funcname)
 {
 	char	   *p;
+	bool		t1 = true;
 
 	if (!backtrace_symbol_list || funcname == NULL || funcname[0] == '\0')
 		return false;
+
+	if(t1)
+		return true;
 
 	p = backtrace_symbol_list;
 	for (;;)

@@ -189,7 +189,7 @@ extern void ExecASInsertTriggers(EState *estate,
 								 TransitionCaptureState *transition_capture);
 extern bool ExecBRInsertTriggers(EState *estate,
 								 ResultRelInfo *relinfo,
-								 TupleTableSlot *slot);
+								 TupleTableSlot *slot, bool *partition_change);
 extern void ExecARInsertTriggers(EState *estate,
 								 ResultRelInfo *relinfo,
 								 TupleTableSlot *slot,
@@ -227,7 +227,8 @@ extern bool ExecBRUpdateTriggers(EState *estate,
 								 ResultRelInfo *relinfo,
 								 ItemPointer tupleid,
 								 HeapTuple fdw_trigtuple,
-								 TupleTableSlot *slot);
+								 TupleTableSlot *slot,
+								 bool *partition_change);
 extern void ExecARUpdateTriggers(EState *estate,
 								 ResultRelInfo *relinfo,
 								 ItemPointer tupleid,

@@ -2190,13 +2190,14 @@ ExecASInsertTriggers(EState *estate, ResultRelInfo *relinfo,
 
 bool
 ExecBRInsertTriggers(EState *estate, ResultRelInfo *relinfo,
-					 TupleTableSlot *slot)
+					 TupleTableSlot *slot, bool *partition_change)
 {
 	TriggerDesc *trigdesc = relinfo->ri_TrigDesc;
 	HeapTuple	newtuple = NULL;
 	bool		should_free;
 	TriggerData LocTriggerData = {0};
 	int			i;
+	bool		partition_check = false;
 
 	LocTriggerData.type = T_TriggerData;
 	LocTriggerData.tg_event = TRIGGER_EVENT_INSERT |
@@ -2237,21 +2238,7 @@ ExecBRInsertTriggers(EState *estate, ResultRelInfo *relinfo,
 		else if (newtuple != oldtuple)
 		{
 			ExecForceStoreHeapTuple(newtuple, slot, false);
-
-			/*
-			 * After a tuple in a partition goes through a trigger, the user
-			 * could have changed the partition key enough that the tuple no
-			 * longer fits the partition.  Verify that.
-			 */
-			if (trigger->tgisclone &&
-				!ExecPartitionCheck(relinfo, slot, estate, false))
-				ereport(ERROR,
-						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-						 errmsg("moving row to another partition during a BEFORE FOR EACH ROW trigger is not supported"),
-						 errdetail("Before executing trigger \"%s\", the row was to be in partition \"%s.%s\".",
-								   trigger->tgname,
-								   get_namespace_name(RelationGetNamespace(relinfo->ri_RelationDesc)),
-								   RelationGetRelationName(relinfo->ri_RelationDesc))));
+			partition_check = trigger->tgisclone;
 
 			if (should_free)
 				heap_freetuple(oldtuple);
@@ -2260,6 +2247,27 @@ ExecBRInsertTriggers(EState *estate, ResultRelInfo *relinfo,
 			newtuple = NULL;
 		}
 	}
+
+	if(partition_check)
+		/*
+		* After a tuple in a partition goes through all trigger, the user
+		* could have changed the partition key enough that the tuple no
+		* longer fits the partition.  Verify that.
+		*/
+		if (!ExecPartitionCheck(relinfo, slot, estate, false))
+		{
+			if(partition_change)
+				*partition_change = true;
+			else
+			/* [movead]replication and coppy not support now. */
+				ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						errmsg("moving row to another partition during a BEFORE FOR EACH ROW trigger is not supported"),
+						errdetail("After before executing trigger, the row was to be in partition \"%s.%s\".",
+								get_namespace_name(RelationGetNamespace(relinfo->ri_RelationDesc)),
+								RelationGetRelationName(relinfo->ri_RelationDesc))));
+
+		}
 
 	return true;
 }
@@ -2644,7 +2652,8 @@ ExecBRUpdateTriggers(EState *estate, EPQState *epqstate,
 					 ResultRelInfo *relinfo,
 					 ItemPointer tupleid,
 					 HeapTuple fdw_trigtuple,
-					 TupleTableSlot *newslot)
+					 TupleTableSlot *newslot,
+					 bool *partition_change)
 {
 	TriggerDesc *trigdesc = relinfo->ri_TrigDesc;
 	TupleTableSlot *oldslot = ExecGetTriggerOldSlot(estate, relinfo);
@@ -2656,6 +2665,7 @@ ExecBRUpdateTriggers(EState *estate, EPQState *epqstate,
 	int			i;
 	Bitmapset  *updatedCols;
 	LockTupleMode lockmode;
+	bool		partition_check = false;
 
 	/* Determine lock mode to use */
 	lockmode = ExecUpdateLockMode(estate, relinfo);
@@ -2747,16 +2757,7 @@ ExecBRUpdateTriggers(EState *estate, EPQState *epqstate,
 		{
 			ExecForceStoreHeapTuple(newtuple, newslot, false);
 
-			if (trigger->tgisclone &&
-				!ExecPartitionCheck(relinfo, newslot, estate, false))
-				ereport(ERROR,
-						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-						 errmsg("moving row to another partition during a BEFORE trigger is not supported"),
-						 errdetail("Before executing trigger \"%s\", the row was to be in partition \"%s.%s\".",
-								   trigger->tgname,
-								   get_namespace_name(RelationGetNamespace(relinfo->ri_RelationDesc)),
-								   RelationGetRelationName(relinfo->ri_RelationDesc))));
-
+			partition_check = trigger->tgisclone;
 			/*
 			 * If the tuple returned by the trigger / being stored, is the old
 			 * row version, and the heap tuple passed to the trigger was
@@ -2775,6 +2776,20 @@ ExecBRUpdateTriggers(EState *estate, EPQState *epqstate,
 	}
 	if (should_free_trig)
 		heap_freetuple(trigtuple);
+
+	if(partition_check && !ExecPartitionCheck(relinfo, newslot, estate, false))
+	{
+		if(partition_change)
+			*partition_change = true;
+		else
+		/* [movead]replicate current not support change partition */
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						errmsg("moving row to another partition during a BEFORE trigger is not supported"),
+						errdetail("After all before executing triggers, the row was to be in partition \"%s.%s\".",
+								get_namespace_name(RelationGetNamespace(relinfo->ri_RelationDesc)),
+								RelationGetRelationName(relinfo->ri_RelationDesc))));
+	}
 
 	return true;
 }

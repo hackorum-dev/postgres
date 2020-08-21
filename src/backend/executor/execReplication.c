@@ -419,7 +419,7 @@ ExecSimpleRelationInsert(EState *estate, TupleTableSlot *slot)
 	if (resultRelInfo->ri_TrigDesc &&
 		resultRelInfo->ri_TrigDesc->trig_insert_before_row)
 	{
-		if (!ExecBRInsertTriggers(estate, resultRelInfo, slot))
+		if (!ExecBRInsertTriggers(estate, resultRelInfo, slot, NULL))
 			skip_tuple = true;	/* "do nothing" */
 	}
 
@@ -484,7 +484,7 @@ ExecSimpleRelationUpdate(EState *estate, EPQState *epqstate,
 		resultRelInfo->ri_TrigDesc->trig_update_before_row)
 	{
 		if (!ExecBRUpdateTriggers(estate, epqstate, resultRelInfo,
-								  tid, NULL, slot))
+								  tid, NULL, slot, NULL))
 			skip_tuple = true;	/* "do nothing" */
 	}
 

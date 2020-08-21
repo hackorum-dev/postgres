@@ -3200,7 +3200,7 @@ CopyFrom(CopyState cstate)
 		/* BEFORE ROW INSERT Triggers */
 		if (has_before_insert_row_trig)
 		{
-			if (!ExecBRInsertTriggers(estate, resultRelInfo, myslot))
+			if (!ExecBRInsertTriggers(estate, resultRelInfo, myslot, NULL))
 				skip_tuple = true;	/* "do nothing" */
 		}
 
