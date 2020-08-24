@@ -51,7 +51,7 @@ SELECT unnest(reloptions) FROM pg_class WHERE relname = 'dummy_test_idx';
 
 -- Cross-type checks for reloption values
 -- Integer
-ALTER INDEX dummy_test_idx SET (option_int = 3.3); -- ok
+ALTER INDEX dummy_test_idx SET (option_int = 3.3); -- error
 ALTER INDEX dummy_test_idx SET (option_int = true); -- error
 ALTER INDEX dummy_test_idx SET (option_int = 'val3'); -- error
 SELECT unnest(reloptions) FROM pg_class WHERE relname = 'dummy_test_idx';
