@@ -2796,11 +2796,14 @@ parse_int(const char *value, int *result, int flags, const char **hintmsg)
 	 */
 	errno = 0;
 	val = strtol(value, &endptr, 0);
-	if (*endptr == '.' || *endptr == 'e' || *endptr == 'E' ||
-		errno == ERANGE)
+	if (flags & GUC_UNIT)
 	{
-		errno = 0;
-		val = strtod(value, &endptr);
+			if (*endptr == '.' || *endptr == 'e' || *endptr == 'E' ||
+				errno == ERANGE)
+			{
+				errno = 0;
+				val = strtod(value, &endptr);
+			}
 	}
 
 	if (endptr == value || errno == ERANGE)
