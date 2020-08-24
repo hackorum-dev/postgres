@@ -1724,7 +1724,16 @@ ExplainNode(PlanState *planstate, List *ancestors,
 						   "Index Cond", planstate, ancestors, es);
 			break;
 		case T_BitmapHeapScan:
-			show_scan_qual(((BitmapHeapScan *) plan)->bitmapqualorig,
+			/*
+			 * Avoid displaying unnecessary Recheck Cond when there are no
+			 * lossy pages in bitmap. We do this in only in explain analyze
+			 * where the bitmap construction really happens and lossy-ness
+			 * is determined correctly, as opposed to a guess work done in
+			 * non-analyze explains.
+			 */
+			if (!(es->analyze &&
+				((BitmapHeapScanState *) planstate)->lossy_pages == 0))
+				show_scan_qual(((BitmapHeapScan *) plan)->bitmapqualorig,
 						   "Recheck Cond", planstate, ancestors, es);
 			if (((BitmapHeapScan *) plan)->bitmapqualorig)
 				show_instrumentation_count("Rows Removed by Index Recheck", 2,
