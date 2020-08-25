@@ -868,6 +868,9 @@ ReplicationSlotCleanup(bool synced_only)
 
 	Assert(MyReplicationSlot == NULL);
 
+	if (max_replication_slots <= 0)
+		return;
+
 restart:
 	found_valid_logicalslot = false;
 	LWLockAcquire(ReplicationSlotControlLock, LW_SHARED);
@@ -2231,6 +2234,9 @@ InvalidateObsoleteReplicationSlots(uint32 possible_causes,
 	if (max_replication_slots == 0 && max_repack_replication_slots == 0)
 		return invalidated;
 
+	if (max_replication_slots <= 0)
+		return;
+
 	XLogSegNoOffsetToRecPtr(oldestSegno, 0, wal_segment_size, oldestLSN);
 
 restart:
@@ -2323,6 +2329,9 @@ CheckPointReplicationSlots(bool is_shutdown)
 {
 	int			i;
 	bool		last_saved_restart_lsn_updated = false;
+
+	if (max_replication_slots <= 0)
+		return;
 
 	elog(DEBUG1, "performing replication slot checkpoint");
 
