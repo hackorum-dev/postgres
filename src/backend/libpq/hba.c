@@ -1938,6 +1938,7 @@ parse_hba_auth_opt(char *name, char *val, HbaLine *hbaline,
 							val),
 					 errcontext("line %d of configuration file \"%s\"",
 								line_num, HbaFileName)));
+			list_free(parsed_servers);
 			return false;
 		}
 
@@ -1987,6 +1988,7 @@ parse_hba_auth_opt(char *name, char *val, HbaLine *hbaline,
 					 errcontext("line %d of configuration file \"%s\"",
 								line_num, HbaFileName)));
 			*err_msg = psprintf("invalid RADIUS port number: \"%s\"", val);
+			list_free(parsed_ports);
 			return false;
 		}
 
@@ -2000,6 +2002,7 @@ parse_hba_auth_opt(char *name, char *val, HbaLine *hbaline,
 						 errcontext("line %d of configuration file \"%s\"",
 									line_num, HbaFileName)));
 
+			    list_free(parsed_ports);
 				return false;
 			}
 		}
@@ -2022,6 +2025,7 @@ parse_hba_auth_opt(char *name, char *val, HbaLine *hbaline,
 							val),
 					 errcontext("line %d of configuration file \"%s\"",
 								line_num, HbaFileName)));
+			list_free(parsed_secrets);
 			return false;
 		}
 
@@ -2044,6 +2048,7 @@ parse_hba_auth_opt(char *name, char *val, HbaLine *hbaline,
 							val),
 					 errcontext("line %d of configuration file \"%s\"",
 								line_num, HbaFileName)));
+			list_free(parsed_identifiers);
 			return false;
 		}
 
