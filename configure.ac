@@ -1721,6 +1721,7 @@ fi
 AC_REPLACE_FUNCS(m4_normalize([
 	dlopen
 	explicit_bzero
+	explicit_memset
 	fls
 	getopt
 	getpeereid

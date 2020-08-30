@@ -15735,6 +15735,19 @@ esac
 
 fi
 
+ac_fn_c_check_func "$LINENO" "explicit_memset" "ac_cv_func_explicit_memset"
+if test "x$ac_cv_func_explicit_memset" = xyes; then :
+  $as_echo "#define HAVE_EXPLICIT_MEMSET 1" >>confdefs.h
+
+else
+  case " $LIBOBJS " in
+  *" explicit_memset.$ac_objext "* ) ;;
+  *) LIBOBJS="$LIBOBJS explicit_memset.$ac_objext"
+ ;;
+esac
+
+fi
+
 ac_fn_c_check_func "$LINENO" "fls" "ac_cv_func_fls"
 if test "x$ac_cv_func_fls" = xyes; then :
   $as_echo "#define HAVE_FLS 1" >>confdefs.h
