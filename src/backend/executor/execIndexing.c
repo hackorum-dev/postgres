@@ -114,6 +114,7 @@
 #include "executor/executor.h"
 #include "nodes/nodeFuncs.h"
 #include "storage/lmgr.h"
+#include "utils/faultinjector.h"
 #include "utils/snapmgr.h"
 
 /* waitMode argument to check_exclusion_or_unique_constraint() */
@@ -289,6 +290,7 @@ ExecInsertIndexTuples(TupleTableSlot *slot,
 	bool		isnull[INDEX_MAX_KEYS];
 
 	Assert(ItemPointerIsValid(tupleid));
+	SIMPLE_FAULT_INJECTOR("insert_index_tuples");
 
 	/*
 	 * Get information from the result relation info structure.

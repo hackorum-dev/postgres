@@ -1,0 +1,25 @@
+Parsed test spec with 2 sessions
+
+starting permutation: s1_upsert s2_upsert s2_unblock_s1 s1_fault_status s1_select
+inject_fault   
+
+Success:       
+step s1_upsert: INSERT INTO upserttest(key, data) VALUES('k1', 'inserted s1') ON CONFLICT (key) DO UPDATE SET data = upserttest.data || ' with conflict update s1'; <waiting ...>
+step s2_upsert: INSERT INTO upserttest(key, data) VALUES('k1', 'inserted s2') ON CONFLICT (key) DO UPDATE SET data = upserttest.data || ' with conflict update s2';
+step s2_unblock_s1: SELECT * FROM inject_fault('insert_index_tuples', 'resume');
+inject_fault   
+
+Success:       
+step s1_upsert: <... completed>
+step s1_fault_status: SELECT * FROM inject_fault('heap_abort_speculative', 'status');
+inject_fault   
+
+Success: fault name:'heap_abort_speculative' fault type:'skip' database name:'' table name:'' start occurrence:'1' end occurrence:'1' extra arg:'0' fault injection state:'completed' num times hit:'1' 
+
+step s1_select: SELECT * FROM upserttest;
+key            data           
+
+k1             inserted s2 with conflict update s1
+inject_fault   
+
+Success:       

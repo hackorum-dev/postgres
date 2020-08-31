@@ -64,6 +64,7 @@
 #include "storage/spin.h"
 #include "storage/standby.h"
 #include "utils/datum.h"
+#include "utils/faultinjector.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/relcache.h"
@@ -5576,6 +5577,7 @@ heap_abort_speculative(Relation relation, ItemPointer tid)
 	TransactionId prune_xid;
 
 	Assert(ItemPointerIsValid(tid));
+	SIMPLE_FAULT_INJECTOR("heap_abort_speculative");
 
 	block = ItemPointerGetBlockNumber(tid);
 	buffer = ReadBuffer(relation, block);
