@@ -30,6 +30,7 @@ struct Step
 {
 	int			session;
 	bool		used;
+	bool		blocks;
 	char	   *name;
 	char	   *sql;
 	char	   *errormsg;
@@ -37,8 +38,14 @@ struct Step
 
 typedef struct
 {
-	int			nsteps;
-	char	  **stepnames;
+	char	   *name;
+	bool		blocks;
+} PermutationStep;
+
+typedef struct
+{
+	int nsteps;
+	PermutationStep	*steps;
 } Permutation;
 
 typedef struct

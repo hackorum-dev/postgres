@@ -44,8 +44,8 @@ TestSpec		parseresult;			/* result of parsing is left here */
 %type <step> step
 %type <permutation> permutation
 
-%token <str> sqlblock string_literal
-%token PERMUTATION SESSION SETUP STEP TEARDOWN TEST
+%token <str> sqlblock string_literal string_with_blocks
+%token BLOCKING PERMUTATION SESSION SETUP STEP TEARDOWN TEST
 
 %%
 
@@ -143,6 +143,7 @@ step:
 			STEP string_literal sqlblock
 			{
 				$$ = pg_malloc(sizeof(Step));
+				$$->blocks = false;
 				$$->name = $2;
 				$$->sql = $3;
 				$$->used = false;
@@ -183,7 +184,7 @@ permutation:
 			PERMUTATION string_literal_list
 			{
 				$$ = pg_malloc(sizeof(Permutation));
-				$$->stepnames = (char **) $2.elements;
+				$$->steps = (PermutationStep *) $2.elements;
 				$$->nsteps = $2.nelements;
 			}
 		;
@@ -192,15 +193,32 @@ string_literal_list:
 			string_literal_list string_literal
 			{
 				$$.elements = pg_realloc($1.elements,
-										 ($1.nelements + 1) * sizeof(void *));
-				$$.elements[$1.nelements] = $2;
+										 ($1.nelements + 1) * sizeof(PermutationStep));
+				((PermutationStep *) ($$.elements))[$1.nelements].name = $2;
+				((PermutationStep *) ($$.elements))[$1.nelements].blocks = false;
 				$$.nelements = $1.nelements + 1;
 			}
 			| string_literal
 			{
 				$$.nelements = 1;
-				$$.elements = pg_malloc(sizeof(void *));
-				$$.elements[0] = $1;
+				$$.elements = pg_malloc(sizeof(PermutationStep));
+				((PermutationStep *) ($$.elements))[0].name = $1;
+				((PermutationStep *) ($$.elements))[0].blocks = false;
+			}
+			| string_literal_list string_with_blocks
+			{
+				$$.elements = pg_realloc($1.elements,
+										 ($1.nelements + 1) * sizeof(PermutationStep));
+				((PermutationStep *) ($$.elements))[$1.nelements].name = $2;
+				((PermutationStep *) ($$.elements))[$1.nelements].blocks = true;
+				$$.nelements = $1.nelements + 1;
+			}
+			| string_with_blocks
+			{
+				$$.nelements = 1;
+				$$.elements = pg_malloc(sizeof(PermutationStep));
+				((PermutationStep *) ($$.elements))[0].name = $1;
+				((PermutationStep *) ($$.elements))[0].blocks = true;
 			}
 		;
 

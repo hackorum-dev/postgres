@@ -39,6 +39,8 @@ static void addlitchar(char c);
 non_newline		[^\n\r]
 space			[ \t\r\f]
 
+blocks			[&]
+
 comment			("#"{non_newline}*)
 
 %%
@@ -68,6 +70,12 @@ teardown		{ return TEARDOWN; }
 					yylval.str = pg_strdup(litbuf);
 					BEGIN(INITIAL);
 					return(string_literal);
+				}
+<qstr>\"{blocks}		{
+					litbuf[litbufpos] = '\0';
+					yylval.str = pg_strdup(litbuf);
+					BEGIN(INITIAL);
+					return(string_with_blocks);
 				}
 <qstr>.			{ addlitchar(yytext[0]); }
 <qstr>\n		{ yyerror("unexpected newline in quoted string"); }
