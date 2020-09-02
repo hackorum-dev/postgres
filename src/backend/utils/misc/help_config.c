@@ -103,14 +103,14 @@ printMixedStruct(mixedStruct *structToPrint)
 
 		case PGC_INT:
 			printf("INTEGER\t%d\t%d\t%d\t",
-				   structToPrint->integer.reset_val,
+				   structToPrint->integer.boot_val,
 				   structToPrint->integer.min,
 				   structToPrint->integer.max);
 			break;
 
 		case PGC_REAL:
 			printf("REAL\t%g\t%g\t%g\t",
-				   structToPrint->real.reset_val,
+				   structToPrint->real.boot_val,
 				   structToPrint->real.min,
 				   structToPrint->real.max);
 			break;
