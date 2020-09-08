@@ -545,6 +545,8 @@ ExecInsert(ModifyTableState *mtstate,
 					else
 						goto vlock;
 				}
+				/* committed conflict tuple found */
+
 				else
 				{
 					/*
@@ -558,11 +560,17 @@ ExecInsert(ModifyTableState *mtstate,
 					 * type. As there's no conflicting usage of
 					 * ExecGetReturningSlot() in the DO NOTHING case...
 					 */
-					Assert(onconflict == ONCONFLICT_NOTHING);
+					Assert(onconflict == ONCONFLICT_NOTHING || onconflict == ONCONFLICT_SELECT);
 					ExecCheckTIDVisible(estate, resultRelInfo, &conflictTid,
 										ExecGetReturningSlot(estate, resultRelInfo));
 					InstrCountTuples2(&mtstate->ps, 1);
-					return NULL;
+					if (onconflict == ONCONFLICT_SELECT && resultRelInfo->ri_projectReturning)
+					{
+						TupleTableSlot *existing = resultRelInfo->ri_onConflict->oc_Existing;
+						if (table_tuple_fetch_row_version(resultRelInfo->ri_RelationDesc, &conflictTid, SnapshotAny, existing))
+							result = ExecProcessReturning(resultRelInfo, existing, planSlot);
+					}
+					return result;
 				}
 			}
 
@@ -2542,7 +2550,7 @@ ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags)
 	 * If needed, Initialize target list, projection and qual for ON CONFLICT
 	 * DO UPDATE.
 	 */
-	if (node->onConflictAction == ONCONFLICT_UPDATE)
+	if (node->onConflictAction == ONCONFLICT_UPDATE || node->onConflictAction == ONCONFLICT_SELECT)
 	{
 		ExprContext *econtext;
 		TupleDesc	relationDesc;
@@ -2566,35 +2574,37 @@ ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags)
 			table_slot_create(resultRelInfo->ri_RelationDesc,
 							  &mtstate->ps.state->es_tupleTable);
 
-		/*
-		 * Create the tuple slot for the UPDATE SET projection. We want a slot
-		 * of the table's type here, because the slot will be used to insert
-		 * into the table, and for RETURNING processing - which may access
-		 * system attributes.
-		 */
-		tupDesc = ExecTypeFromTL((List *) node->onConflictSet);
-		resultRelInfo->ri_onConflict->oc_ProjSlot =
-			ExecInitExtraTupleSlot(mtstate->ps.state, tupDesc,
-								   table_slot_callbacks(resultRelInfo->ri_RelationDesc));
-
-		/* build UPDATE SET projection state */
-		resultRelInfo->ri_onConflict->oc_ProjInfo =
-			ExecBuildProjectionInfo(node->onConflictSet, econtext,
-									resultRelInfo->ri_onConflict->oc_ProjSlot,
-									&mtstate->ps,
-									relationDesc);
-
-		/* initialize state to evaluate the WHERE clause, if any */
-		if (node->onConflictWhere)
+		if (node->onConflictAction == ONCONFLICT_UPDATE)
 		{
-			ExprState  *qualexpr;
+			/*
+			 * Create the tuple slot for the UPDATE SET projection. We want a slot
+			 * of the table's type here, because the slot will be used to insert
+			 * into the table, and for RETURNING processing - which may access
+			 * system attributes.
+			 */
+			tupDesc = ExecTypeFromTL((List *) node->onConflictSet);
+			resultRelInfo->ri_onConflict->oc_ProjSlot =
+				ExecInitExtraTupleSlot(mtstate->ps.state, tupDesc,
+									   table_slot_callbacks(resultRelInfo->ri_RelationDesc));
 
-			qualexpr = ExecInitQual((List *) node->onConflictWhere,
+			/* build UPDATE SET projection state */
+			resultRelInfo->ri_onConflict->oc_ProjInfo =
+				ExecBuildProjectionInfo(node->onConflictSet, econtext,
+										resultRelInfo->ri_onConflict->oc_ProjSlot,
+										&mtstate->ps,
+										relationDesc);
+
+			/* initialize state to evaluate the WHERE clause, if any */
+			if (node->onConflictWhere)
+			{
+				ExprState  *qualexpr;
+
+				qualexpr = ExecInitQual((List *) node->onConflictWhere,
 									&mtstate->ps);
-			resultRelInfo->ri_onConflict->oc_WhereClause = qualexpr;
+				resultRelInfo->ri_onConflict->oc_WhereClause = qualexpr;
+			}
 		}
 	}
-
 	/*
 	 * If we have any secondary relations in an UPDATE or DELETE, they need to
 	 * be treated like non-locked relations in SELECT FOR UPDATE, ie, the

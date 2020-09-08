@@ -10874,6 +10874,16 @@ opt_on_conflict:
 					$$->whereClause = NULL;
 					$$->location = @1;
 				}
+			|
+			ON CONFLICT opt_conf_expr DO SELECT
+				{
+					$$ = makeNode(OnConflictClause);
+					$$->action = ONCONFLICT_SELECT;
+					$$->infer = $3;
+					$$->targetList = NIL;
+					$$->whereClause = NULL;
+					$$->location = @1;
+				}
 			| /*EMPTY*/
 				{
 					$$ = NULL;

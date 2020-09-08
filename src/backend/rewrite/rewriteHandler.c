@@ -3612,6 +3612,11 @@ RewriteQuery(Query *parsetree, List *rewrite_events)
 										rt_entry_relation,
 										parsetree->resultRelation);
 			}
+			if (parsetree->onConflict &&
+				parsetree->onConflict->action == ONCONFLICT_SELECT)
+			{
+				parsetree->onConflict->onConflictSet =parsetree->targetList;
+			}
 		}
 		else if (event == CMD_UPDATE)
 		{

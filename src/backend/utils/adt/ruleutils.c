@@ -6276,6 +6276,10 @@ get_insert_query_def(Query *query, deparse_context *context)
 		{
 			appendStringInfoString(buf, " DO NOTHING");
 		}
+		else if (confl->action == ONCONFLICT_SELECT)
+		{
+			appendStringInfoString(buf, " DO SELECT");
+		}
 		else
 		{
 			appendStringInfoString(buf, " DO UPDATE SET ");

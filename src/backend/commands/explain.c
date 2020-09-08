@@ -3755,8 +3755,10 @@ show_modifytable_info(ModifyTableState *mtstate, List *ancestors,
 	if (node->onConflictAction != ONCONFLICT_NONE)
 	{
 		ExplainPropertyText("Conflict Resolution",
-							node->onConflictAction == ONCONFLICT_NOTHING ?
-							"NOTHING" : "UPDATE",
+							node->onConflictAction == ONCONFLICT_NOTHING
+							? "NOTHING"
+							: node->onConflictAction == ONCONFLICT_SELECT
+							? "SELECT" : "UPDATE",
 							es);
 
 		/*
