@@ -1683,6 +1683,65 @@ ExecFetchSlotMinimalTuple(TupleTableSlot *slot,
 }
 
 /* --------------------------------
+ *		ExecFetchSlotMinimalTupleData
+ *			Return minimal tuple data, or the data belonging to minimal tuple
+ *			section if it's a heap tuple slot.
+ *
+ *		This function is similar to ExecFetchSlotMinimalTuple(), but it goes a
+ *		step further in trying to avoid redundant tuple copy. It does this by
+ *		returning the in-place minimal tuple data region if it's a heap tuple.
+ *		If the slot is neither a minimal tuple nor heap tuple slot, a minimal
+ *		tuple copy is returned, and should_free is set to true. Callers can use
+ *		this if they only want the underlying minimal tuple data.
+ *		One use is where minimal tuple data is sent through the gather queues.
+ *		The receiver end can then treat the data as a MinimalTupleData, but
+ *		they should update it's t_len field, because the data might have
+ *		originally belonged to a heap tuple rather than minimal tuple.
+ */
+char *
+ExecFetchSlotMinimalTupleData(TupleTableSlot *slot, uint32 *len,
+							  bool *shouldFree)
+{
+	/*
+	 * sanity checks
+	 */
+	Assert(slot != NULL);
+	Assert(!TTS_EMPTY(slot));
+
+	if (slot->tts_ops->get_heap_tuple)
+	{
+		HeapTuple	htuple;
+
+		if (shouldFree)
+			*shouldFree = false;
+		htuple = slot->tts_ops->get_heap_tuple(slot);
+		*len = htuple->t_len - MINIMAL_TUPLE_OFFSET;
+
+		return (char*) htuple->t_data + MINIMAL_TUPLE_OFFSET;
+	}
+	else
+	{
+		MinimalTuple	mtuple;
+
+		if (slot->tts_ops->get_minimal_tuple)
+		{
+			if (shouldFree)
+				*shouldFree = false;
+			mtuple = slot->tts_ops->get_minimal_tuple(slot);
+		}
+		else
+		{
+			if (shouldFree)
+				*shouldFree = true;
+			mtuple = slot->tts_ops->copy_minimal_tuple(slot);
+		}
+		*len = mtuple->t_len;
+
+		return (char *) mtuple;
+	}
+}
+
+/* --------------------------------
  *		ExecFetchSlotHeapTupleDatum
  *			Fetch the slot's tuple as a composite-type Datum.
  *

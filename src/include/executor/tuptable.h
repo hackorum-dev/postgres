@@ -325,6 +325,8 @@ extern void ExecStoreHeapTupleDatum(Datum data, TupleTableSlot *slot);
 extern HeapTuple ExecFetchSlotHeapTuple(TupleTableSlot *slot, bool materialize, bool *shouldFree);
 extern MinimalTuple ExecFetchSlotMinimalTuple(TupleTableSlot *slot,
 											  bool *shouldFree);
+extern char *ExecFetchSlotMinimalTupleData(TupleTableSlot *slot, uint32 *len,
+										   bool *shouldFree);
 extern Datum ExecFetchSlotHeapTupleDatum(TupleTableSlot *slot);
 extern void slot_getmissingattrs(TupleTableSlot *slot, int startAttNum,
 								 int lastAttNum);

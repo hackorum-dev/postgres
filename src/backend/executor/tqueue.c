@@ -54,16 +54,17 @@ static bool
 tqueueReceiveSlot(TupleTableSlot *slot, DestReceiver *self)
 {
 	TQueueDestReceiver *tqueue = (TQueueDestReceiver *) self;
-	MinimalTuple tuple;
+	char	   *minimal_tuple_data;
+	uint32		len;
 	shm_mq_result result;
 	bool		should_free;
 
-	/* Send the tuple itself. */
-	tuple = ExecFetchSlotMinimalTuple(slot, &should_free);
-	result = shm_mq_send(tqueue->queue, tuple->t_len, tuple, false);
+	/* Send the minimal tuple data. */
+	minimal_tuple_data = ExecFetchSlotMinimalTupleData(slot, &len, &should_free);
+	result = shm_mq_send(tqueue->queue, len, minimal_tuple_data, false);
 
 	if (should_free)
-		pfree(tuple);
+		pfree(minimal_tuple_data);
 
 	/* Check for failure. */
 	if (result == SHM_MQ_DETACHED)
@@ -201,10 +202,12 @@ TupleQueueReaderNext(TupleQueueReader *reader, bool nowait, bool *done)
 
 	/*
 	 * Return a pointer to the queue memory directly (which had better be
-	 * sufficiently aligned).
+	 * sufficiently aligned). Also, the sender might not have updated the t_len
+	 * if the data belonged to a heap tuple rather than a minimal tuple. So
+	 * update it now.
 	 */
 	tuple = (MinimalTuple) data;
-	Assert(tuple->t_len == nbytes);
+	tuple->t_len = nbytes;
 
 	return tuple;
 }
