@@ -299,12 +299,21 @@ typedef struct PG_sigjmp_buf
 	sigjmp_buf buf;
 } PG_sigjmp_buf;
 
+/* HACK to show that scan-build does detect escapes from PG_CATCH() */
+typedef struct PG_try_guard_entry
+{
+	const struct PG_try_guard_entry * const previous;
+} PG_try_guard_entry;
+extern const PG_try_guard_entry * pg_try_guard;
+
 #define PG_TRY()  \
 	do { \
 		PG_sigjmp_buf *_save_exception_stack = PG_exception_stack; \
 		ErrorContextCallback *_save_context_stack = error_context_stack; \
 		PG_sigjmp_buf _local_sigjmp_buf; \
 		bool _do_rethrow = false; \
+		const PG_try_guard_entry _this_pg_try_guard = { pg_try_guard }; \
+		pg_try_guard = &_this_pg_try_guard; \
 		if (sigsetjmp(_local_sigjmp_buf.buf, 0) == 0) \
 		{ \
 			PG_exception_stack = &_local_sigjmp_buf
@@ -326,6 +335,7 @@ typedef struct PG_sigjmp_buf
 
 #define PG_END_TRY()  \
 		} \
+		pg_try_guard = _this_pg_try_guard.previous; \
 		if (_do_rethrow) \
 				PG_RE_THROW(); \
 		PG_exception_stack = _save_exception_stack; \
