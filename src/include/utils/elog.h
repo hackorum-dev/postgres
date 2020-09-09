@@ -292,13 +292,20 @@ extern PGDLLIMPORT ErrorContextCallback *error_context_stack;
  * warnings are just about entirely useless for catching such oversights.
  *----------
  */
+
+/* HACK for PoC with scan-build NOT FOR COMMIT */
+typedef struct PG_sigjmp_buf
+{
+	sigjmp_buf buf;
+} PG_sigjmp_buf;
+
 #define PG_TRY()  \
 	do { \
-		sigjmp_buf *_save_exception_stack = PG_exception_stack; \
+		PG_sigjmp_buf *_save_exception_stack = PG_exception_stack; \
 		ErrorContextCallback *_save_context_stack = error_context_stack; \
-		sigjmp_buf _local_sigjmp_buf; \
+		PG_sigjmp_buf _local_sigjmp_buf; \
 		bool _do_rethrow = false; \
-		if (sigsetjmp(_local_sigjmp_buf, 0) == 0) \
+		if (sigsetjmp(_local_sigjmp_buf.buf, 0) == 0) \
 		{ \
 			PG_exception_stack = &_local_sigjmp_buf
 
@@ -337,7 +344,7 @@ extern PGDLLIMPORT ErrorContextCallback *error_context_stack;
 	(pg_re_throw(), pg_unreachable())
 #endif
 
-extern PGDLLIMPORT sigjmp_buf *PG_exception_stack;
+extern PGDLLIMPORT PG_sigjmp_buf *PG_exception_stack;
 
 
 /* Stuff that error handlers might want to use */

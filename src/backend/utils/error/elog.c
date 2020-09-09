@@ -91,7 +91,7 @@
 /* Global variables */
 ErrorContextCallback *error_context_stack = NULL;
 
-sigjmp_buf *PG_exception_stack = NULL;
+PG_sigjmp_buf *PG_exception_stack = NULL;
 
 extern bool redirection_done;
 
@@ -589,6 +589,7 @@ errfinish(const char *filename, int lineno, const char *funcname)
 		 */
 		fflush(stdout);
 		fflush(stderr);
+
 		abort();
 	}
 
@@ -1714,7 +1715,7 @@ pg_re_throw(void)
 {
 	/* If possible, throw the error to the next outer setjmp handler */
 	if (PG_exception_stack != NULL)
-		siglongjmp(*PG_exception_stack, 1);
+		siglongjmp(PG_exception_stack->buf, 1);
 	else
 	{
 		/*
