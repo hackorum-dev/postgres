@@ -45,6 +45,7 @@ struct TupleQueueReader
 	shm_mq_handle *queue;		/* shm_mq to receive from */
 };
 
+extern bool		enable_fix;
 /*
  * Receive a tuple from a query, and send it to the designated shm_mq.
  *
@@ -60,12 +61,23 @@ tqueueReceiveSlot(TupleTableSlot *slot, DestReceiver *self)
 	bool		should_free;
 
 	/* Send the minimal tuple data. */
+	if (enable_fix)
+	{
 	minimal_tuple_data = ExecFetchSlotMinimalTupleData(slot, &len, &should_free);
 	result = shm_mq_send(tqueue->queue, len, minimal_tuple_data, false);
 
 	if (should_free)
 		pfree(minimal_tuple_data);
+	}
+	else
+	{
+	MinimalTuple tuple;
+	tuple = ExecFetchSlotMinimalTuple(slot, &should_free);
+	result = shm_mq_send(tqueue->queue, tuple->t_len, tuple, false);
 
+	if (should_free)
+		pfree(tuple);
+	}
 	/* Check for failure. */
 	if (result == SHM_MQ_DETACHED)
 		return false;

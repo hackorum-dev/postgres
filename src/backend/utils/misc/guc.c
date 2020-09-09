@@ -138,6 +138,8 @@ extern bool trace_syncscan;
 extern bool optimize_bounded_sort;
 #endif
 
+bool		enable_fix = true;
+
 static int	GUC_check_errcode_value;
 
 /* global variables for check hook support */
@@ -2036,6 +2038,16 @@ static struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 
+	{
+		{"enable_fix", PGC_USERSET, RESOURCES_ASYNCHRONOUS,
+			gettext_noop("dummy"),
+			gettext_noop("dummy"),
+			GUC_EXPLAIN
+		},
+		&enable_fix,
+		true,
+		NULL, NULL, NULL
+	},
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, false, NULL, NULL, NULL
