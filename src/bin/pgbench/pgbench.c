@@ -5194,16 +5194,34 @@ printResults(StatsData *total, instr_time total_time,
 			 instr_time conn_total_time, int64 latency_late)
 {
 	double		time_include,
+				time_exclude,
 				tps_include,
 				tps_exclude;
 	int64		ntx = total->cnt - total->skipped;
 
 	time_include = INSTR_TIME_GET_DOUBLE(total_time);
 
+	/*
+	 * conn_total_time is the sum of the time each client took to establish a
+	 * connection. In the multi-threaded case, all clients run on a thread wait
+	 * for all the clients to establish a connection. So the actual total
+	 * connection time of a thread is thread->conn_time * thread->nstate. Thus
+	 * the total time took for connection establishment is:
+	 *
+	 *   sum(thread->conn_time * thread->nstate) / nclients
+	 *
+	 * Assuming clients are distributed equally to threads, the expression is
+	 * approximated as:
+	 *
+	 *   sum(thread->conn_time) * (nclients/nthreads) / nclients
+	 * = conn_total_time / nthreads
+	 */
+	time_exclude = (time_include -
+					(INSTR_TIME_GET_DOUBLE(conn_total_time) / nthreads));
+
 	/* tps is about actually executed transactions */
 	tps_include = ntx / time_include;
-	tps_exclude = ntx /
-		(time_include - (INSTR_TIME_GET_DOUBLE(conn_total_time) / nclients));
+	tps_exclude = ntx / time_exclude;
 
 	/* Report test parameters. */
 	printf("transaction type: %s\n",
@@ -5249,7 +5267,7 @@ printResults(StatsData *total, instr_time total_time,
 	{
 		/* no measurement, show average latency computed from run time */
 		printf("latency average = %.3f ms\n",
-			   1000.0 * time_include * nclients / total->cnt);
+			   1000.0 * time_exclude * nclients / total->cnt);
 	}
 
 	if (throttle_delay)
