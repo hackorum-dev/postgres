@@ -254,6 +254,14 @@ typedef struct BTWriteState
 	BlockNumber btws_pages_alloced; /* # pages allocated */
 	BlockNumber btws_pages_written; /* # pages written out */
 	Page		btws_zeropage;	/* workspace for filling zeroes */
+
+
+	BlockNumber pages_allocated;
+	BlockNumber pages_written;
+
+	int			ready_num_pages;
+	BlockNumber ready_blknos[XLR_MAX_BLOCK_ID];
+	Page		ready_pages[XLR_MAX_BLOCK_ID];
 } BTWriteState;
 
 
@@ -290,7 +298,36 @@ static void _bt_parallel_scan_and_sort(BTSpool *btspool, BTSpool *btspool2,
 									   BTShared *btshared, Sharedsort *sharedsort,
 									   Sharedsort *sharedsort2, int sortmem,
 									   bool progress);
+static void _bt_indexsortbuild_flush_ready_pages(BTWriteState *state);
 
+/*
+ * A bogus LSN value used during index build. Must be smaller than any
+ * real or fake unlogged LSN, so that after an index build finishes, all the
+ * splits are considered completed.
+ */
+#define NBTreeBuildLSN	((XLogRecPtr) 1)
+
+
+static void
+_bt_indexsortbuild_flush_ready_pages(BTWriteState *state)
+{
+	if (state->ready_num_pages == 0)
+		return;
+
+	for (int i = 0; i < state->ready_num_pages; i++)
+	{
+		Page		page = state->ready_pages[i];
+		PageSetLSN(page, NBTreeBuildLSN);
+	}
+
+	log_newpages(&state->index->rd_node, MAIN_FORKNUM, state->ready_num_pages,
+					 state->ready_blknos, state->ready_pages, true);
+
+	for (int i = 0; i < state->ready_num_pages; i++)
+		pfree(state->ready_pages[i]);
+
+	state->ready_num_pages = 0;
+}
 
 /*
  *	btbuild() -- build a new btree index.
@@ -569,6 +606,9 @@ _bt_leafbuild(BTSpool *btspool, BTSpool *btspool2)
 	wstate.btws_pages_alloced = BTREE_METAPAGE + 1;
 	wstate.btws_pages_written = 0;
 	wstate.btws_zeropage = NULL;	/* until needed */
+	wstate.ready_num_pages = 0;
+	wstate.pages_allocated = 0;
+	wstate.pages_written = 0;
 
 	pgstat_progress_update_param(PROGRESS_CREATEIDX_SUBPHASE,
 								 PROGRESS_BTREE_PHASE_LEAF_LOAD);
@@ -643,8 +683,12 @@ _bt_blwritepage(BTWriteState *wstate, Page page, BlockNumber blkno)
 	/* XLOG stuff */
 	if (wstate->btws_use_wal)
 	{
-		/* We use the XLOG_FPI record type for this */
-		log_newpage(&wstate->index->rd_node, MAIN_FORKNUM, blkno, page, true);
+		if (wstate->ready_num_pages == XLR_MAX_BLOCK_ID)
+			_bt_indexsortbuild_flush_ready_pages(wstate);
+
+		wstate->ready_blknos[wstate->ready_num_pages] = blkno;
+		wstate->ready_pages[wstate->ready_num_pages] = page;
+		wstate->ready_num_pages++;
 	}
 
 	/*
@@ -684,8 +728,6 @@ _bt_blwritepage(BTWriteState *wstate, Page page, BlockNumber blkno)
 		smgrwrite(wstate->index->rd_smgr, MAIN_FORKNUM, blkno,
 				  (char *) page, true);
 	}
-
-	pfree(page);
 }
 
 /*
@@ -1171,6 +1213,7 @@ _bt_uppershutdown(BTWriteState *wstate, BTPageState *state)
 	_bt_initmetapage(metapage, rootblkno, rootlevel,
 					 wstate->inskey->allequalimage);
 	_bt_blwritepage(wstate, metapage, BTREE_METAPAGE);
+	_bt_indexsortbuild_flush_ready_pages(wstate);
 }
 
 /*
