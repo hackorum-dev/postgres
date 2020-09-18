@@ -159,6 +159,12 @@ pg_logging_init(const char *argv0)
 			sgr_locus = SGR_LOCUS_DEFAULT;
 		}
 	}
+
+	/*
+	 * isatty() may fail, setting errno to ENOTTY if running for example
+	 * TAP tests that depend on IPC::Run, so reset properly.
+	 */
+	errno = 0;
 }
 
 /*
