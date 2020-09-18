@@ -18187,6 +18187,13 @@ dumpAttrDef(Archive *fout, const AttrDefInfo *adinfo)
 	if (!adinfo->separate)
 		return;
 
+	/*
+	 * Skip if the column isn't local to the table's definition as the attrdef
+	 * will be printed with the inheritance parent table definition
+	 */
+	if (!tbinfo->attislocal[adnum - 1])
+		return;
+
 	q = createPQExpBuffer();
 	delq = createPQExpBuffer();
 
