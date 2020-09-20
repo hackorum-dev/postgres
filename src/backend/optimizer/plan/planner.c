@@ -4097,6 +4097,8 @@ create_grouping_paths(PlannerInfo *root,
 	{
 		int			flags = 0;
 		GroupPathExtraData extra;
+		
+		Assert(gd != NULL);
 
 		/*
 		 * Determine whether it's possible to perform sort-based
