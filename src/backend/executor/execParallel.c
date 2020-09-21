@@ -28,6 +28,7 @@
 #include "executor/nodeAgg.h"
 #include "executor/nodeAppend.h"
 #include "executor/nodeBitmapHeapscan.h"
+#include "executor/nodeBitmapIndexscan.h"
 #include "executor/nodeCustom.h"
 #include "executor/nodeForeignscan.h"
 #include "executor/nodeHash.h"
@@ -272,6 +273,11 @@ ExecParallelEstimate(PlanState *planstate, ExecParallelEstimateContext *e)
 				ExecBitmapHeapEstimate((BitmapHeapScanState *) planstate,
 									   e->pcxt);
 			break;
+		case T_BitmapIndexScanState:
+			if (planstate->plan->parallel_aware)
+				ExecBitmapIndexEstimate((BitmapIndexScanState *)planstate,
+										e->pcxt);
+			break;
 		case T_HashJoinState:
 			if (planstate->plan->parallel_aware)
 				ExecHashJoinEstimate((HashJoinState *) planstate,
@@ -491,6 +497,11 @@ ExecParallelInitializeDSM(PlanState *planstate,
 			if (planstate->plan->parallel_aware)
 				ExecBitmapHeapInitializeDSM((BitmapHeapScanState *) planstate,
 											d->pcxt);
+			break;
+		case T_BitmapIndexScanState:
+			if (planstate->plan->parallel_aware)
+				ExecBitmapIndexInitializeDSM((BitmapIndexScanState *) planstate,
+											 d->pcxt);
 			break;
 		case T_HashJoinState:
 			if (planstate->plan->parallel_aware)
@@ -981,6 +992,11 @@ ExecParallelReInitializeDSM(PlanState *planstate,
 				ExecBitmapHeapReInitializeDSM((BitmapHeapScanState *) planstate,
 											  pcxt);
 			break;
+		case T_BitmapIndexScanState:
+			if (planstate->plan->parallel_aware)
+				ExecBitmapIndexReInitializeDSM((BitmapIndexScanState *) planstate,
+											  pcxt);
+			break;	
 		case T_HashJoinState:
 			if (planstate->plan->parallel_aware)
 				ExecHashJoinReInitializeDSM((HashJoinState *) planstate,
@@ -1326,6 +1342,11 @@ ExecParallelInitializeWorker(PlanState *planstate, ParallelWorkerContext *pwcxt)
 		case T_BitmapHeapScanState:
 			if (planstate->plan->parallel_aware)
 				ExecBitmapHeapInitializeWorker((BitmapHeapScanState *) planstate,
+											   pwcxt);
+			break;
+		case T_BitmapIndexScanState:
+			if (planstate->plan->parallel_aware)
+				ExecBitmapIndexInitializeWorker((BitmapIndexScanState *)planstate,
 											   pwcxt);
 			break;
 		case T_HashJoinState:

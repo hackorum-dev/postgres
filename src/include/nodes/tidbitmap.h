@@ -35,6 +35,7 @@ typedef struct TIDBitmap TIDBitmap;
 /* Likewise, TBMIterator is private */
 typedef struct TBMIterator TBMIterator;
 typedef struct TBMSharedIterator TBMSharedIterator;
+typedef struct TBMSharedData TBMSharedData;
 
 /* Result structure for tbm_iterate */
 typedef struct TBMIterateResult
@@ -63,7 +64,8 @@ extern void tbm_intersect(TIDBitmap *a, const TIDBitmap *b);
 extern bool tbm_is_empty(const TIDBitmap *tbm);
 
 extern TBMIterator *tbm_begin_iterate(TIDBitmap *tbm);
-extern dsa_pointer tbm_prepare_shared_iterate(TIDBitmap *tbm);
+extern dsa_pointer tbm_prepare_shared_iterate(TIDBitmap *tbm, dsa_area *dsa,
+											  dsa_pointer dp_pagetable);
 extern TBMIterateResult *tbm_iterate(TBMIterator *iterator);
 extern TBMIterateResult *tbm_shared_iterate(TBMSharedIterator *iterator);
 extern void tbm_end_iterate(TBMIterator *iterator);
@@ -71,5 +73,7 @@ extern void tbm_end_shared_iterate(TBMSharedIterator *iterator);
 extern TBMSharedIterator *tbm_attach_shared_iterate(dsa_area *dsa,
 													dsa_pointer dp);
 extern long tbm_calculate_entries(double maxbytes);
+extern void tbm_merge(TIDBitmap *tbm, dsa_pointer *dp_tbm,
+							 dsa_pointer *dp_pt);
 
 #endif							/* TIDBITMAP_H */

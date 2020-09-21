@@ -37,6 +37,7 @@
 
 #include <math.h>
 
+#include "access/genam.h"
 #include "access/relscan.h"
 #include "access/tableam.h"
 #include "access/transam.h"
@@ -52,6 +53,11 @@
 #include "utils/snapmgr.h"
 #include "utils/spccache.h"
 
+/* Barrier phases for parallel bitmap heap scan */
+#define PBH_BUILDING 0
+#define PBH_PREPARE_SHARED_ITERATOR 1
+#define PBH_SCANNING 2
+
 static TupleTableSlot *BitmapHeapNext(BitmapHeapScanState *node);
 static inline void BitmapDoneInitializingSharedState(ParallelBitmapHeapState *pstate);
 static inline void BitmapAdjustPrefetchIterator(BitmapHeapScanState *node,
@@ -60,6 +66,73 @@ static inline void BitmapAdjustPrefetchTarget(BitmapHeapScanState *node);
 static inline void BitmapPrefetch(BitmapHeapScanState *node,
 								  TableScanDesc scan);
 static bool BitmapShouldInitializeSharedState(ParallelBitmapHeapState *pstate);
+static void BitmapPrepareSharedIterators(BitmapHeapScanState *node,
+										 ParallelBitmapHeapState *pstate,
+										 TIDBitmap *tbm, dsa_area *dsa);
+static void BitmapAttachToSharedIterators(BitmapHeapScanState *node,
+										  ParallelBitmapHeapState *pstate,
+										  dsa_area *dsa);
+
+
+/* ----------------------------------------------------------------
+ *		BitmapPrepareSharedIterators
+ *
+ *		Helper function to prepare shared iterators.
+ * ----------------------------------------------------------------
+ */
+static void
+BitmapPrepareSharedIterators(BitmapHeapScanState *node,
+							 ParallelBitmapHeapState *pstate, 
+							 TIDBitmap *tbm, dsa_area *dsa)
+{
+	dsa_pointer	pagetable = pstate->pt_shared;
+
+	/*
+	 * Prepare to iterate over the TBM. This will return the
+	 * dsa_pointer of the iterator state which will be used by
+	 * multiple processes to iterate jointly.
+	 */
+	pstate->tbmiterator = tbm_prepare_shared_iterate(tbm, dsa, pagetable);
+
+#ifdef USE_PREFETCH
+	if (node->prefetch_maximum > 0)
+	{
+		pstate->prefetch_iterator =
+						tbm_prepare_shared_iterate(tbm, dsa, pagetable);
+
+		/*
+		 * We don't need the mutex here as only one worker is preparing a
+		 * shared iterator.
+		 */
+		pstate->prefetch_pages = 0;
+		pstate->prefetch_target = -1;
+	}
+#endif
+}
+
+/* ----------------------------------------------------------------
+ *		BitmapAttachToSharedIterators
+ *
+ *		Helper function for attaching to the shared iterators.
+ * ----------------------------------------------------------------
+ */
+static void
+BitmapAttachToSharedIterators(BitmapHeapScanState *node,
+							  ParallelBitmapHeapState *pstate, dsa_area *dsa)
+{
+	/* Allocate a private iterator and attach the shared state to it */
+	node->shared_tbmiterator =
+		tbm_attach_shared_iterate(dsa, pstate->tbmiterator);
+	node->tbmres = NULL;
+
+#ifdef USE_PREFETCH
+	if (node->prefetch_maximum > 0)
+	{
+		node->shared_prefetch_iterator =
+			tbm_attach_shared_iterate(dsa, pstate->prefetch_iterator);
+	}
+#endif							/* USE_PREFETCH */			
+}
 
 
 /* ----------------------------------------------------------------
@@ -128,59 +201,87 @@ BitmapHeapNext(BitmapHeapScanState *node)
 			}
 #endif							/* USE_PREFETCH */
 		}
+		/*
+		 * If underlying node is parallel aware then all the worker will
+		 * do the parallel index scan and prepare the their own local
+		 * bitmap and the bitmap will be merged and a shared common bitmap
+		 * will be created.
+		 */		
+		else if (outerPlanState(node)->plan->parallel_aware)
+		{
+			bool build_iterator = false;
+
+			/* All the workers will attach to the barrier */
+			switch (BarrierAttach(&pstate->barrier))
+			{
+				case PBH_BUILDING:
+					/*
+					 * All the worker will prepared the part of the bitmap and
+					 * merge to the shared bitmap.
+					 */
+					tbm = (TIDBitmap *) MultiExecProcNode(outerPlanState(node));
+					if (!tbm || !IsA(tbm, TIDBitmap))
+						elog(ERROR, "unrecognized result from subplan");
+
+					/* Merge bitmap to a common shared bitmap */
+					LWLockAcquire(&pstate->lock, LW_EXCLUSIVE);
+					tbm_merge(tbm, &pstate->tbm_shared, &pstate->pt_shared);
+					LWLockRelease(&pstate->lock);
+					build_iterator = BarrierArriveAndWait(&pstate->barrier, 0);
+
+					/* Fall through */
+				case PBH_PREPARE_SHARED_ITERATOR:
+					/* Only one worker will prepare the shared iterator */
+					if (build_iterator)
+					{
+						tbm = dsa_get_address(dsa, pstate->tbm_shared);
+
+						/* Prepare the shared iterators */
+						BitmapPrepareSharedIterators(node, pstate, tbm, dsa);
+
+						/* We have initialized the shared state so wake up others. */
+						BitmapDoneInitializingSharedState(pstate);
+					}
+
+					/* Wait for shared state to be prepared */
+					BarrierArriveAndWait(&pstate->barrier, 0);
+
+					/* Fall through */
+				case PBH_SCANNING:
+					/* Scan started so just attach to the shared iterator */
+					BitmapAttachToSharedIterators(node, pstate, dsa);
+					shared_tbmiterator = node->shared_tbmiterator;
+					node->tbmres = tbmres = NULL;
+					break;
+			}
+			BarrierDetach(&pstate->barrier);
+		}
 		else
 		{
 			/*
 			 * The leader will immediately come out of the function, but
-			 * others will be blocked until leader populates the TBM and wakes
-			 * them up.
+			 * others will be blocked until leader initialized the shared
+			 * iterator.
 			 */
 			if (BitmapShouldInitializeSharedState(pstate))
 			{
 				tbm = (TIDBitmap *) MultiExecProcNode(outerPlanState(node));
 				if (!tbm || !IsA(tbm, TIDBitmap))
 					elog(ERROR, "unrecognized result from subplan");
-
 				node->tbm = tbm;
 
-				/*
-				 * Prepare to iterate over the TBM. This will return the
-				 * dsa_pointer of the iterator state which will be used by
-				 * multiple processes to iterate jointly.
-				 */
-				pstate->tbmiterator = tbm_prepare_shared_iterate(tbm);
-#ifdef USE_PREFETCH
-				if (node->prefetch_maximum > 0)
-				{
-					pstate->prefetch_iterator =
-						tbm_prepare_shared_iterate(tbm);
-
-					/*
-					 * We don't need the mutex here as we haven't yet woke up
-					 * others.
-					 */
-					pstate->prefetch_pages = 0;
-					pstate->prefetch_target = -1;
-				}
-#endif
+				/* Prepare the shared iterators */
+				BitmapPrepareSharedIterators(node, pstate, tbm, dsa);
 
 				/* We have initialized the shared state so wake up others. */
 				BitmapDoneInitializingSharedState(pstate);
 			}
 
-			/* Allocate a private iterator and attach the shared state to it */
-			node->shared_tbmiterator = shared_tbmiterator =
-				tbm_attach_shared_iterate(dsa, pstate->tbmiterator);
+			BitmapAttachToSharedIterators(node, pstate, dsa);
+			shared_tbmiterator = node->shared_tbmiterator;
 			node->tbmres = tbmres = NULL;
-
-#ifdef USE_PREFETCH
-			if (node->prefetch_maximum > 0)
-			{
-				node->shared_prefetch_iterator =
-					tbm_attach_shared_iterate(dsa, pstate->prefetch_iterator);
-			}
-#endif							/* USE_PREFETCH */
 		}
+
 		node->initialized = true;
 	}
 
@@ -896,6 +997,8 @@ ExecBitmapHeapInitializeDSM(BitmapHeapScanState *node,
 	pstate->state = BM_INITIAL;
 
 	ConditionVariableInit(&pstate->cv);
+	BarrierInit(&pstate->barrier, 0);
+	LWLockInitialize(&pstate->lock, LWTRANCHE_SHARED_TIDBITMAP_MERGE);
 	SerializeSnapshot(estate->es_snapshot, pstate->phs_snapshot_data);
 
 	shm_toc_insert(pcxt->toc, node->ss.ps.plan->plan_node_id, pstate);
@@ -920,6 +1023,10 @@ ExecBitmapHeapReInitializeDSM(BitmapHeapScanState *node,
 		return;
 
 	pstate->state = BM_INITIAL;
+	pstate->tbm_shared = InvalidDsaPointer;
+	pstate->pt_shared = InvalidDsaPointer;
+	BarrierInit(&pstate->barrier, 0);
+	LWLockInitialize(&pstate->lock, LWTRANCHE_SHARED_TIDBITMAP_MERGE);
 
 	if (DsaPointerIsValid(pstate->tbmiterator))
 		tbm_free_shared_area(dsa, pstate->tbmiterator);

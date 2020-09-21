@@ -102,13 +102,14 @@ static bool eclass_already_used(EquivalenceClass *parent_ec, Relids oldrelids,
 static bool bms_equal_any(Relids relids, List *relids_list);
 static void get_index_paths(PlannerInfo *root, RelOptInfo *rel,
 							IndexOptInfo *index, IndexClauseSet *clauses,
-							List **bitindexpaths);
+							List **bitindexpaths, List **partialbitmapipaths);
 static List *build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 							   IndexOptInfo *index, IndexClauseSet *clauses,
 							   bool useful_predicate,
 							   ScanTypeControl scantype,
 							   bool *skip_nonnative_saop,
-							   bool *skip_lower_saop);
+							   bool *skip_lower_saop,
+							   List **partial_ipath);
 static List *build_paths_for_OR(PlannerInfo *root, RelOptInfo *rel,
 								List *clauses, List *other_clauses);
 static List *generate_bitmap_or_paths(PlannerInfo *root, RelOptInfo *rel,
@@ -232,6 +233,7 @@ create_index_paths(PlannerInfo *root, RelOptInfo *rel)
 {
 	List	   *indexpaths;
 	List	   *bitindexpaths;
+	List	   *partialbitindexpaths = NULL;
 	List	   *bitjoinpaths;
 	List	   *joinorclauses;
 	IndexClauseSet rclauseset;
@@ -274,7 +276,7 @@ create_index_paths(PlannerInfo *root, RelOptInfo *rel)
 		 * bitmap paths are added to bitindexpaths to be handled below.
 		 */
 		get_index_paths(root, rel, index, &rclauseset,
-						&bitindexpaths);
+						&bitindexpaths, &partialbitindexpaths);
 
 		/*
 		 * Identify the join clauses that can match the index.  For the moment
@@ -339,7 +341,22 @@ create_index_paths(PlannerInfo *root, RelOptInfo *rel)
 										rel->lateral_relids, 1.0, 0);
 		add_path(rel, (Path *) bpath);
 
-		/* create a partial bitmap heap path */
+		/* Create a partial bitmap heap path */
+		if (rel->consider_parallel && rel->lateral_relids == NULL)
+			create_partial_bitmap_paths(root, rel, bitmapqual);
+	}
+	/*
+	 * Create parial bitmap heap path with partial bitmap index path
+	 * underneath.
+	 * TODO:  We can consider the partial path for Bitmap Or and Bitmap And
+	 * as well.
+	 */
+	if (partialbitindexpaths != NIL)
+	{
+		Path *bitmapqual;
+
+		bitmapqual = choose_bitmap_and(root, rel, partialbitindexpaths);
+
 		if (rel->consider_parallel && rel->lateral_relids == NULL)
 			create_partial_bitmap_paths(root, rel, bitmapqual);
 	}
@@ -659,7 +676,7 @@ get_join_index_paths(PlannerInfo *root, RelOptInfo *rel,
 	Assert(clauseset.nonempty);
 
 	/* Build index path(s) using the collected set of clauses */
-	get_index_paths(root, rel, index, &clauseset, bitindexpaths);
+	get_index_paths(root, rel, index, &clauseset, bitindexpaths, NULL);
 
 	/*
 	 * Remember we considered paths for this set of relids.
@@ -715,7 +732,8 @@ bms_equal_any(Relids relids, List *relids_list)
  *	  Given an index and a set of index clauses for it, construct IndexPaths.
  *
  * Plain indexpaths are sent directly to add_path, while potential
- * bitmap indexpaths are added to *bitindexpaths for later processing.
+ * bitmap indexpaths and partial bitmap indexpaths are added to *bitindexpaths
+ * and partialbitmapipaths respectively for later processing.
  *
  * This is a fairly simple frontend to build_index_paths().  Its reason for
  * existence is mainly to handle ScalarArrayOpExpr quals properly.  If the
@@ -728,9 +746,10 @@ bms_equal_any(Relids relids, List *relids_list)
 static void
 get_index_paths(PlannerInfo *root, RelOptInfo *rel,
 				IndexOptInfo *index, IndexClauseSet *clauses,
-				List **bitindexpaths)
+				List **bitindexpaths, List **partialbitmapipaths)
 {
 	List	   *indexpaths;
+	List	   *partialindexpaths = NULL;
 	bool		skip_nonnative_saop = false;
 	bool		skip_lower_saop = false;
 	ListCell   *lc;
@@ -746,7 +765,8 @@ get_index_paths(PlannerInfo *root, RelOptInfo *rel,
 								   index->predOK,
 								   ST_ANYSCAN,
 								   &skip_nonnative_saop,
-								   &skip_lower_saop);
+								   &skip_lower_saop,
+								   &partialindexpaths);
 
 	/*
 	 * If we skipped any lower-order ScalarArrayOpExprs on an index with an AM
@@ -761,7 +781,8 @@ get_index_paths(PlannerInfo *root, RelOptInfo *rel,
 												   index->predOK,
 												   ST_ANYSCAN,
 												   &skip_nonnative_saop,
-												   NULL));
+												   NULL,
+												   &partialindexpaths));
 	}
 
 	/*
@@ -788,6 +809,15 @@ get_index_paths(PlannerInfo *root, RelOptInfo *rel,
 			 ipath->indexselectivity < 1.0))
 			*bitindexpaths = lappend(*bitindexpaths, ipath);
 	}
+	foreach (lc, partialindexpaths)
+	{
+		IndexPath *ipath = (IndexPath *) lfirst(lc);
+
+		if (partialbitmapipaths && index->amhasgetbitmap &&
+			(ipath->path.pathkeys == NIL ||
+			 ipath->indexselectivity < 1.0))
+			*partialbitmapipaths = lappend(*partialbitmapipaths, ipath);
+	}
 
 	/*
 	 * If there were ScalarArrayOpExpr clauses that the index can't handle
@@ -800,6 +830,7 @@ get_index_paths(PlannerInfo *root, RelOptInfo *rel,
 									   index, clauses,
 									   false,
 									   ST_BITMAPSCAN,
+									   NULL,
 									   NULL,
 									   NULL);
 		*bitindexpaths = list_concat(*bitindexpaths, indexpaths);
@@ -853,7 +884,8 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 				  bool useful_predicate,
 				  ScanTypeControl scantype,
 				  bool *skip_nonnative_saop,
-				  bool *skip_lower_saop)
+				  bool *skip_lower_saop,
+				  List **partial_ipath)
 {
 	List	   *result = NIL;
 	IndexPath  *ipath;
@@ -1066,7 +1098,10 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 			 * parallel workers, just free it.
 			 */
 			if (ipath->path.parallel_workers > 0)
+			{
 				add_partial_path(rel, (Path *) ipath);
+				*partial_ipath = lappend(*partial_ipath, ipath);
+			}
 			else
 				pfree(ipath);
 		}
@@ -1116,7 +1151,10 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 				 * using parallel workers, just free it.
 				 */
 				if (ipath->path.parallel_workers > 0)
+				{
 					add_partial_path(rel, (Path *) ipath);
+					*partial_ipath = lappend(*partial_ipath, ipath);
+				}
 				else
 					pfree(ipath);
 			}
@@ -1229,6 +1267,7 @@ build_paths_for_OR(PlannerInfo *root, RelOptInfo *rel,
 									   index, &clauseset,
 									   useful_predicate,
 									   ST_BITMAPSCAN,
+									   NULL,
 									   NULL,
 									   NULL);
 		result = list_concat(result, indexpaths);

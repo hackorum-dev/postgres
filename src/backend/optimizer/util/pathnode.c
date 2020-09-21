@@ -822,7 +822,8 @@ add_partial_path(RelOptInfo *parent_rel, Path *new_path)
 		{
 			parent_rel->partial_pathlist =
 				foreach_delete_current(parent_rel->partial_pathlist, p1);
-			pfree(old_path);
+			if (!IsA(old_path, IndexPath))
+				pfree(old_path);
 		}
 		else
 		{
@@ -849,7 +850,8 @@ add_partial_path(RelOptInfo *parent_rel, Path *new_path)
 	else
 	{
 		/* Reject and recycle the new path */
-		pfree(new_path);
+		if (!IsA(new_path, IndexPath))
+			pfree(new_path);
 	}
 }
 

@@ -22,7 +22,9 @@
 #include "nodes/plannodes.h"
 #include "nodes/tidbitmap.h"
 #include "partitioning/partdefs.h"
+#include "storage/barrier.h"
 #include "storage/condition_variable.h"
+#include "storage/lwlock.h"
 #include "utils/hsearch.h"
 #include "utils/queryenvironment.h"
 #include "utils/reltrigger.h"
@@ -1508,6 +1510,7 @@ typedef struct BitmapIndexScanState
 	ExprContext *biss_RuntimeContext;
 	Relation	biss_RelationDesc;
 	struct IndexScanDescData *biss_ScanDesc;
+	Size		biss_PscanLen;
 } BitmapIndexScanState;
 
 /* ----------------
@@ -1534,24 +1537,32 @@ typedef enum
  *	 ParallelBitmapHeapState information
  *		tbmiterator				iterator for scanning current pages
  *		prefetch_iterator		iterator for prefetching ahead of current page
+ *		tbm_shared				shared copy of tidbitmap
+ *		pt_shared				shared copy of pagetable hash
  *		mutex					mutual exclusion for the prefetching variable
  *								and state
  *		prefetch_pages			# pages prefetch iterator is ahead of current
  *		prefetch_target			current target prefetch distance
  *		state					current state of the TIDBitmap
  *		cv						conditional wait variable
- *		phs_snapshot_data		snapshot data shared to workers
+ *		barrier					barrier to wait for workers to create bitmap
+ *		lock					lock to synchronize shared bitmap merge
+ *		phs_snapshot_data		snapshot data shared to worker
  * ----------------
  */
 typedef struct ParallelBitmapHeapState
 {
 	dsa_pointer tbmiterator;
 	dsa_pointer prefetch_iterator;
+	dsa_pointer	tbm_shared;
+	dsa_pointer	pt_shared;
 	slock_t		mutex;
 	int			prefetch_pages;
 	int			prefetch_target;
 	SharedBitmapState state;
 	ConditionVariable cv;
+	Barrier		barrier;
+	LWLock		lock;
 	char		phs_snapshot_data[FLEXIBLE_ARRAY_MEMBER];
 } ParallelBitmapHeapState;
 

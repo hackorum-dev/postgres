@@ -107,6 +107,8 @@
 /* function declarations */
 #define SH_CREATE SH_MAKE_NAME(create)
 #define SH_DESTROY SH_MAKE_NAME(destroy)
+#define	SH_SIZE	SH_MAKE_NAME(size)
+#define	SH_SET_DATA SH_MAKE_NAME(set_data)
 #define SH_RESET SH_MAKE_NAME(reset)
 #define SH_INSERT SH_MAKE_NAME(insert)
 #define SH_INSERT_HASH SH_MAKE_NAME(insert_hash)
@@ -193,6 +195,12 @@ SH_SCOPE	SH_TYPE *SH_CREATE(MemoryContext ctx, uint32 nelements,
 
 /* void <prefix>_destroy(<prefix>_hash *tb) */
 SH_SCOPE void SH_DESTROY(SH_TYPE * tb);
+
+/* void <prefix>_size(<prefix>_hash *tb) */
+SH_SCOPE int SH_SIZE(void);
+
+/* void <prefix>_set_data(<prefix>_hash *tb) */
+SH_SCOPE void SH_SET_DATA(SH_TYPE *src, SH_ELEMENT_TYPE *data, void *private);
 
 /* void <prefix>_reset(<prefix>_hash *tb) */
 SH_SCOPE void SH_RESET(SH_TYPE * tb);
@@ -409,6 +417,19 @@ SH_FREE(SH_TYPE * type, void *pointer)
 }
 
 #endif
+
+SH_SCOPE int
+SH_SIZE()
+{
+	return sizeof(SH_TYPE);
+}
+
+SH_SCOPE void
+SH_SET_DATA(SH_TYPE *src, SH_ELEMENT_TYPE *data, void *private_data)
+{
+	src->private_data = private_data;
+	src->data = data;
+}
 
 /*
  * Create a hash table with enough space for `nelements` distinct members.

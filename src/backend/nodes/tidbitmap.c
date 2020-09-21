@@ -753,6 +753,78 @@ tbm_begin_iterate(TIDBitmap *tbm)
 }
 
 /*
+ * tbm_merge - merged worker's tbm to the shared tbm
+ *
+ * First worker will allocate the memory for the shared tbm and shared
+ * pagetable and copy.  The subsequent workers will merge their tbm to the
+ * shared tbm.
+ */
+void
+tbm_merge(TIDBitmap *tbm, dsa_pointer *dp_tbm, dsa_pointer *dp_pagetable)
+{
+	TIDBitmap	   *stbm;
+	pagetable_hash	*spagetable;
+
+	/* If the tbm is empty then nothing to do */
+	if (tbm_is_empty(tbm))
+		return;
+
+	/*
+	 * If we haven't yet created a shared tbm then allocate the memory for
+	 * the tbm and pagetable hash in DSA so that tthe subsequent workers can
+	 * merge their TBM to this shared TBM.
+	 */
+	if (!DsaPointerIsValid(*dp_tbm))
+	{
+		*dp_tbm = dsa_allocate0(tbm->dsa, sizeof(TIDBitmap));
+		stbm = dsa_get_address(tbm->dsa, *dp_tbm);
+		stbm->dsa = tbm->dsa;
+
+		/* Directly copy TBM to the shared TBM */
+		memcpy(stbm, tbm, sizeof(TIDBitmap));
+		
+		*dp_pagetable = dsa_allocate0(tbm->dsa, pagetable_size());
+		spagetable = dsa_get_address(tbm->dsa, *dp_pagetable);
+
+		/* If the tbm is in one page mode then convert into the shared hash */
+		if (tbm->status == TBM_ONE_PAGE)
+			tbm_create_pagetable(tbm);
+
+		/* Copy pagetable hash to the shared memory */
+		memcpy(spagetable, tbm->pagetable, pagetable_size());
+
+		/*
+		 * We have created a shared tbm and pagetable so free its memory.  We
+		 * can not directly call the tbm_free here otherwise it will free the
+		 * underlying page table data which is already in shared memory.
+		 */
+		pfree(tbm->pagetable);
+		pfree(tbm);
+	}
+	else
+	{
+		PTEntryArray *entry;
+
+		/* Get the shared TBM and pagetable hash */
+		stbm = dsa_get_address(tbm->dsa, *dp_tbm);
+		stbm->dsa = tbm->dsa;
+		spagetable = dsa_get_address(tbm->dsa, *dp_pagetable);
+		stbm->pagetable = spagetable;
+
+		/*
+		 * Get the shared pagetable data address and set its pointer in the
+		 * shared pagetable.
+		 */
+		entry = dsa_get_address(tbm->dsa, stbm->dsapagetable);
+		pagetable_set_data(spagetable, entry->ptentry, (void *) stbm);
+
+		/* Merge our TBM to the shared TBM and release its memory */
+		tbm_union(stbm, tbm);
+		tbm_free(tbm);
+	}
+}
+
+/*
  * tbm_prepare_shared_iterate - prepare shared iteration state for a TIDBitmap.
  *
  * The necessary shared state will be allocated from the DSA passed to
@@ -762,7 +834,8 @@ tbm_begin_iterate(TIDBitmap *tbm)
  * into pagetable array.
  */
 dsa_pointer
-tbm_prepare_shared_iterate(TIDBitmap *tbm)
+tbm_prepare_shared_iterate(TIDBitmap *tbm, dsa_area *dsa,
+						   dsa_pointer dp_pagetable)
 {
 	dsa_pointer dp;
 	TBMSharedIteratorState *istate;
@@ -770,15 +843,14 @@ tbm_prepare_shared_iterate(TIDBitmap *tbm)
 	PTIterationArray *ptpages = NULL;
 	PTIterationArray *ptchunks = NULL;
 
-	Assert(tbm->dsa != NULL);
 	Assert(tbm->iterating != TBM_ITERATING_PRIVATE);
 
 	/*
 	 * Allocate TBMSharedIteratorState from DSA to hold the shared members and
 	 * lock, this will also be used by multiple worker for shared iterate.
 	 */
-	dp = dsa_allocate0(tbm->dsa, sizeof(TBMSharedIteratorState));
-	istate = dsa_get_address(tbm->dsa, dp);
+	dp = dsa_allocate0(dsa, sizeof(TBMSharedIteratorState));
+	istate = dsa_get_address(dsa, dp);
 
 	/*
 	 * If we're not already iterating, create and fill the sorted page lists.
@@ -799,16 +871,16 @@ tbm_prepare_shared_iterate(TIDBitmap *tbm)
 		 */
 		if (tbm->npages)
 		{
-			tbm->ptpages = dsa_allocate(tbm->dsa, sizeof(PTIterationArray) +
+			tbm->ptpages = dsa_allocate(dsa, sizeof(PTIterationArray) +
 										tbm->npages * sizeof(int));
-			ptpages = dsa_get_address(tbm->dsa, tbm->ptpages);
+			ptpages = dsa_get_address(dsa, tbm->ptpages);
 			pg_atomic_init_u32(&ptpages->refcount, 0);
 		}
 		if (tbm->nchunks)
 		{
-			tbm->ptchunks = dsa_allocate(tbm->dsa, sizeof(PTIterationArray) +
+			tbm->ptchunks = dsa_allocate(dsa, sizeof(PTIterationArray) +
 										 tbm->nchunks * sizeof(int));
-			ptchunks = dsa_get_address(tbm->dsa, tbm->ptchunks);
+			ptchunks = dsa_get_address(dsa, tbm->ptchunks);
 			pg_atomic_init_u32(&ptchunks->refcount, 0);
 		}
 
@@ -821,8 +893,18 @@ tbm_prepare_shared_iterate(TIDBitmap *tbm)
 		npages = nchunks = 0;
 		if (tbm->status == TBM_HASH)
 		{
-			ptbase = dsa_get_address(tbm->dsa, tbm->dsapagetable);
+			ptbase = dsa_get_address(dsa, tbm->dsapagetable);
 
+			/*
+			 * If shared page table is valid then set it in the shared tbm
+			 * and also set the shared data to the shared pagetable.
+			 */
+			if (DsaPointerIsValid(dp_pagetable))
+			{
+				tbm->pagetable = dsa_get_address(dsa, dp_pagetable);
+				pagetable_set_data(tbm->pagetable, ptbase->ptentry, NULL);
+			}
+			
 			pagetable_start_iterate(tbm->pagetable, &i);
 			while ((page = pagetable_iterate(tbm->pagetable, &i)) != NULL)
 			{
@@ -843,9 +925,9 @@ tbm_prepare_shared_iterate(TIDBitmap *tbm)
 			 * initialize it, and directly store its index (i.e. 0) in the
 			 * page array.
 			 */
-			tbm->dsapagetable = dsa_allocate(tbm->dsa, sizeof(PTEntryArray) +
+			tbm->dsapagetable = dsa_allocate(dsa, sizeof(PTEntryArray) +
 											 sizeof(PagetableEntry));
-			ptbase = dsa_get_address(tbm->dsa, tbm->dsapagetable);
+			ptbase = dsa_get_address(dsa, tbm->dsapagetable);
 			memcpy(ptbase->ptentry, &tbm->entry1, sizeof(PagetableEntry));
 			ptpages->index[0] = 0;
 		}
@@ -872,9 +954,9 @@ tbm_prepare_shared_iterate(TIDBitmap *tbm)
 	istate->spages = tbm->ptpages;
 	istate->schunks = tbm->ptchunks;
 
-	ptbase = dsa_get_address(tbm->dsa, tbm->dsapagetable);
-	ptpages = dsa_get_address(tbm->dsa, tbm->ptpages);
-	ptchunks = dsa_get_address(tbm->dsa, tbm->ptchunks);
+	ptbase = dsa_get_address(dsa, tbm->dsapagetable);
+	ptpages = dsa_get_address(dsa, tbm->ptpages);
+	ptchunks = dsa_get_address(dsa, tbm->ptchunks);
 
 	/*
 	 * For every shared iterator, referring to pagetable and iterator array,
