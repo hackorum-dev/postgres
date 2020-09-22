@@ -51,6 +51,7 @@ extern void BootstrapToastTable(char *relName,
 /* normal catalogs */
 DECLARE_TOAST(pg_aggregate, 4159, 4160);
 DECLARE_TOAST(pg_attrdef, 2830, 2831);
+DECLARE_TOAST(pg_class, 4179, 4180);
 DECLARE_TOAST(pg_collation, 4161, 4162);
 DECLARE_TOAST(pg_constraint, 2832, 2833);
 DECLARE_TOAST(pg_default_acl, 4143, 4144);
