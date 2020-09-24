@@ -1778,6 +1778,8 @@ set work_mem to default;
   union all
 (select * from agg_group_4 except select * from agg_hash_4);
 
+drop table agg_data_2k;
+drop table agg_data_20k;
 drop table agg_group_1;
 drop table agg_group_2;
 drop table agg_group_3;
