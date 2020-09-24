@@ -3950,6 +3950,8 @@ set work_mem to default;
 ----+----+----
 (0 rows)
 
+drop table agg_data_2k;
+drop table agg_data_20k;
 drop table agg_group_1;
 drop table agg_group_2;
 drop table agg_group_3;
