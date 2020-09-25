@@ -982,28 +982,8 @@ palloc0(Size size)
 {
 	/* duplicates MemoryContextAllocZero to avoid increased overhead */
 	void	   *ret;
-	MemoryContext context = CurrentMemoryContext;
 
-	AssertArg(MemoryContextIsValid(context));
-	AssertNotInCriticalSection(context);
-
-	if (!AllocSizeIsValid(size))
-		elog(ERROR, "invalid memory alloc request size %zu", size);
-
-	context->isReset = false;
-
-	ret = context->methods->alloc(context, size);
-	if (unlikely(ret == NULL))
-	{
-		MemoryContextStats(TopMemoryContext);
-		ereport(ERROR,
-				(errcode(ERRCODE_OUT_OF_MEMORY),
-				 errmsg("out of memory"),
-				 errdetail("Failed on request of size %zu in memory context \"%s\".",
-						   size, context->name)));
-	}
-
-	VALGRIND_MEMPOOL_ALLOC(context, ret, size);
+	ret = palloc(size);
 
 	MemSetAligned(ret, 0, size);
 
