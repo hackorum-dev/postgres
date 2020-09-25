@@ -682,7 +682,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	ORDER ORDINALITY OTHERS OUT_P OUTER_P
 	OVER OVERLAPS OVERLAY OVERRIDING OWNED OWNER
 
-	PARALLEL PARSER PARTIAL PARTITION PASSING PASSWORD PLACING PLANS POLICY
+	PARALLEL PARSER PARTIAL PARTITION PASSING PASSWORD PERCENT PLACING PLANS POLICY
 	POSITION PRECEDING PRECISION PRESERVE PREPARE PREPARED PRIMARY
 	PRIOR PRIVILEGES PROCEDURAL PROCEDURE PROCEDURES PROGRAM PUBLICATION
 
@@ -11560,6 +11560,14 @@ limit_clause:
 					n->limitOption = LIMIT_OPTION_COUNT;
 					$$ = n;
 				}
+			| FETCH first_or_next select_fetch_first_value PERCENT row_or_rows ONLY
+				{
+					SelectLimit *n = (SelectLimit *) palloc(sizeof(SelectLimit));
+					n->limitOffset = NULL;
+					n->limitCount = $3;
+					n->limitOption = LIMIT_OPTION_PERCENT;
+					$$ = n;
+				}
 			| FETCH first_or_next select_fetch_first_value row_or_rows WITH TIES
 				{
 					SelectLimit *n = (SelectLimit *) palloc(sizeof(SelectLimit));
@@ -15209,6 +15217,7 @@ unreserved_keyword:
 			| PARTITION
 			| PASSING
 			| PASSWORD
+			| PERCENT
 			| PLANS
 			| POLICY
 			| PRECEDING
@@ -15780,6 +15789,7 @@ bare_label_keyword:
 			| PARTITION
 			| PASSING
 			| PASSWORD
+			| PERCENT
 			| PLACING
 			| PLANS
 			| POLICY
