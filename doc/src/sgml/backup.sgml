@@ -1496,15 +1496,19 @@ archive_command = 'test ! -f /var/lib/pgsql/backup_in_progress || (test ! -f /va
       following:
 <programlisting>
 touch /var/lib/pgsql/backup_in_progress
-psql -c "select pg_start_backup('hot_backup');"
-tar -cf /var/lib/pgsql/backup.tar /var/lib/pgsql/data/
-psql -c "select pg_stop_backup();"
-rm /var/lib/pgsql/backup_in_progress
-tar -rf /var/lib/pgsql/backup.tar /var/lib/pgsql/archive/
+mkdir /tmp/data
+psql -Atq -c "select pg_start_backup(label => 'hot_backup', exclusive => FALSE);" \
+          -c "\! tar -cf /var/lib/pgsql/backup.tar -C /var/lib/pgsql/ data/" \
+          -c "\o /tmp/data/backup_label" \
+          -c "SELECT labelfile FROM pg_stop_backup(exclusive => FALSE);"
+tar -rf /var/lib/pgsql/backup.tar -C /tmp data/backup_label
+rm -r /var/lib/pgsql/backup_in_progress /tmp/data
+tar -rf /var/lib/pgsql/backup.tar -C /var/lib/pgsql/ archive/
 </programlisting>
       The switch file <filename>/var/lib/pgsql/backup_in_progress</filename> is
       created first, enabling archiving of completed WAL files to occur.
-      After the backup the switch file is removed. Archived WAL files are
+      After the backup the switch file is removed. <filename>backup_label</filename>
+      and archived WAL files are
       then added to the backup so that both base backup and all required
       WAL files are part of the same <application>tar</application> file.
       Please remember to add error handling to your backup scripts.
