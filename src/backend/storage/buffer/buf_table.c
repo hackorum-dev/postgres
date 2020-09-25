@@ -49,7 +49,7 @@ BufTableShmemSize(int size)
  *		size is the desired hash table size (possibly more than NBuffers)
  */
 void
-InitBufTable(int size)
+InitBufTable(long size)
 {
 	HASHCTL		info;
 
