@@ -11576,6 +11576,14 @@ limit_clause:
 					n->limitOption = LIMIT_OPTION_WITH_TIES;
 					$$ = n;
 				}
+			| FETCH first_or_next select_fetch_first_value PERCENT row_or_rows WITH TIES
+				{
+					SelectLimit *n = (SelectLimit *) palloc(sizeof(SelectLimit));
+					n->limitOffset = NULL;
+					n->limitCount = $3;
+					n->limitOption = LIMIT_OPTION_PER_WITH_TIES;
+					$$ = n;
+				}
 			| FETCH first_or_next row_or_rows ONLY
 				{
 					SelectLimit *n = (SelectLimit *) palloc(sizeof(SelectLimit));
@@ -16352,7 +16360,8 @@ insertSelectOptions(SelectStmt *stmt,
 			ereport(ERROR,
 					(errcode(ERRCODE_SYNTAX_ERROR),
 					 errmsg("multiple limit options not allowed")));
-		if (!stmt->sortClause && limitClause->limitOption == LIMIT_OPTION_WITH_TIES)
+		if (!stmt->sortClause && (limitClause->limitOption == LIMIT_OPTION_WITH_TIES
+			|| limitClause->limitOption == LIMIT_OPTION_PER_WITH_TIES))
 			ereport(ERROR,
 					(errcode(ERRCODE_SYNTAX_ERROR),
 					 errmsg("WITH TIES cannot be specified without ORDER BY clause")));

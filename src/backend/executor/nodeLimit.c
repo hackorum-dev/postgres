@@ -193,6 +193,12 @@ ExecLimit(PlanState *pstate)
 					if (!(node->ps.state->es_top_eflags & EXEC_FLAG_BACKWARD))
 						(void) ExecShutdownNode(outerPlan);
 
+					/*
+					 * The only operation from here is backward scan We have
+					 * to move one postion forward to get previous tuple
+					 */
+					tuplestore_advance(node->tupleStore, true);
+
 					return NULL;
 				}
 
@@ -215,26 +221,47 @@ ExecLimit(PlanState *pstate)
 						if (TupIsNull(slot))
 						{
 							node->reachEnd = true;
-							node->lstate = LIMIT_SUBPLANEOF;
+							if (node->limitOption == LIMIT_OPTION_PER_WITH_TIES)
+							{
+								slot = node->subSlot;
+								tuplestore_advance(node->tupleStore, false);
+								if (!tuplestore_gettupleslot_heaptuple(node->tupleStore, true, true, slot))
+								{
+									node->lstate = LIMIT_SUBPLANEOF;
+									tuplestore_advance(node->tupleStore, true);
+									return NULL;
+								}
 
-							/*
-							 * The only operation from here is backward scan
-							 * but there's no API to refetch the tuple at the
-							 * current position. We have to move one tuple
-							 * backward, and then we will scan forward for it
-							 * for the first tuple and precede as usual for
-							 * the rest
-							 */
-							tuplestore_advance(node->tupleStore, false);
-							return NULL;
+								ExecCopySlot(node->last_slot, slot);
+								node->lstate = LIMIT_WINDOWEND_TIES;
+								/* we'll fall through to the next case */
+							}
+							else
+							{
+								node->reachEnd = true;
+								node->lstate = LIMIT_SUBPLANEOF;
+
+								/*
+								 * The only operation from here is backward
+								 * scan but there's no API to refetch the
+								 * tuple at the current position. We have to
+								 * move one postion backward, and then we will
+								 * scan forward for it for the first tuple and
+								 * precede as usual for the rest
+								 */
+								tuplestore_advance(node->tupleStore, true);
+								return NULL;
+							}
 						}
+						if (node->lstate != LIMIT_WINDOWEND_TIES)
+						{
+							tuplestore_puttupleslot(node->tupleStore, slot);
 
-						tuplestore_puttupleslot(node->tupleStore, slot);
+							cnt = tuplestore_tuple_count(node->tupleStore) + node->offset;
 
-						cnt = tuplestore_tuple_count(node->tupleStore) + node->offset;
-
-						node->count = ceil(node->percent * cnt / 100.0);
-					} while (node->position - node->offset >= node->count);
+							node->count = ceil(node->percent * cnt / 100.0);
+						}
+					} while (node->position - node->offset >= node->count && node->lstate != LIMIT_WINDOWEND_TIES);
 				}
 
 				/*
@@ -255,7 +282,7 @@ ExecLimit(PlanState *pstate)
 				 */
 				if (!node->noCount &&
 					node->position - node->offset >= node->count
-					&& !IsPercentOption(node->limitOption))
+					&& !IsPercentOption(node->limitOption) && node->lstate != LIMIT_WINDOWEND_TIES)
 				{
 					if (node->limitOption == LIMIT_OPTION_COUNT)
 					{
@@ -268,49 +295,45 @@ ExecLimit(PlanState *pstate)
 						/* we'll fall through to the next case */
 					}
 				}
-				else
+				else if (IsPercentOption(node->limitOption) && node->lstate != LIMIT_WINDOWEND_TIES)
 				{
-					if (IsPercentOption(node->limitOption))
+					if (tuplestore_gettupleslot_heaptuple(node->tupleStore, true, true, slot))
 					{
-						if (tuplestore_gettupleslot_heaptuple(node->tupleStore, true, true, slot))
-						{
-							node->subSlot = slot;
-							node->position++;
-							break;
-						}
-						else
-						{
-							node->lstate = LIMIT_SUBPLANEOF;
-							return NULL;
-						}
-
-					}
-					else
-					{
-						/*
-						 * Get next tuple from subplan, if any.
-						 */
-						slot = ExecProcNode(outerPlan);
-						if (TupIsNull(slot))
-						{
-							node->lstate = LIMIT_SUBPLANEOF;
-							return NULL;
-						}
-
-						/*
-						 * If WITH TIES is active, and this is the last
-						 * in-window tuple, save it to be used in subsequent
-						 * WINDOWEND_TIES processing.
-						 */
-						if (node->limitOption == LIMIT_OPTION_WITH_TIES &&
-							node->position - node->offset == node->count - 1)
-						{
-							ExecCopySlot(node->last_slot, slot);
-						}
 						node->subSlot = slot;
 						node->position++;
 						break;
 					}
+					else
+					{
+						node->lstate = LIMIT_SUBPLANEOF;
+						return NULL;
+					}
+				}
+				else if (!IsPercentOption(node->limitOption) && node->lstate != LIMIT_WINDOWEND_TIES)
+				{
+					/*
+					 * Get next tuple from subplan, if any.
+					 */
+					slot = ExecProcNode(outerPlan);
+					if (TupIsNull(slot))
+					{
+						node->lstate = LIMIT_SUBPLANEOF;
+						return NULL;
+					}
+
+					/*
+					 * If WITH TIES is active, and this is the last in-window
+					 * tuple, save it to be used in subsequent WINDOWEND_TIES
+					 * processing.
+					 */
+					if (node->limitOption == LIMIT_OPTION_WITH_TIES &&
+						node->position - node->offset == node->count - 1)
+					{
+						ExecCopySlot(node->last_slot, slot);
+					}
+					node->subSlot = slot;
+					node->position++;
+					break;
 				}
 			}
 			else
@@ -359,14 +382,25 @@ ExecLimit(PlanState *pstate)
 			if (ScanDirectionIsForward(direction))
 			{
 				/*
-				 * Advance the subplan until we find the first row with
-				 * different ORDER BY pathkeys.
+				 * Advance the subplan or tuple store until we find the first
+				 * row with different ORDER BY pathkeys.
 				 */
-				slot = ExecProcNode(outerPlan);
-				if (TupIsNull(slot))
+				if (node->limitOption == LIMIT_OPTION_PER_WITH_TIES)
 				{
-					node->lstate = LIMIT_SUBPLANEOF;
-					return NULL;
+					if (!tuplestore_gettupleslot_heaptuple(node->tupleStore, true, true, slot))
+					{
+						node->lstate = LIMIT_SUBPLANEOF;
+						return NULL;
+					}
+				}
+				else
+				{
+					slot = ExecProcNode(outerPlan);
+					if (TupIsNull(slot))
+					{
+						node->lstate = LIMIT_SUBPLANEOF;
+						return NULL;
+					}
 				}
 
 				/*
@@ -399,15 +433,30 @@ ExecLimit(PlanState *pstate)
 				}
 
 				/*
-				 * Get previous tuple from subplan; there should be one! And
-				 * change state-machine status.
+				 * Get previous tuple from subplan or tuple store; there
+				 * should be one! And change state-machine status.
 				 */
-				slot = ExecProcNode(outerPlan);
-				if (TupIsNull(slot))
-					elog(ERROR, "LIMIT subplan failed to run backwards");
-				node->subSlot = slot;
-				node->position--;
-				node->lstate = LIMIT_INWINDOW;
+				if (node->limitOption == LIMIT_OPTION_PER_WITH_TIES)
+				{
+					if (tuplestore_gettupleslot_heaptuple(node->tupleStore, false, true, slot))
+					{
+						node->backwardPosition++;
+						node->position--;
+						node->subSlot = slot;
+						node->lstate = LIMIT_INWINDOW;
+					}
+					else
+						elog(ERROR, "LIMIT subplan failed to run backwards");
+				}
+				else
+				{
+					slot = ExecProcNode(outerPlan);
+					if (TupIsNull(slot))
+						elog(ERROR, "LIMIT subplan failed to run backwards");
+					node->subSlot = slot;
+					node->position--;
+					node->lstate = LIMIT_INWINDOW;
+				}
 			}
 			break;
 
@@ -416,11 +465,12 @@ ExecLimit(PlanState *pstate)
 				return NULL;
 
 			/*
-			 * Scan forward for the first tuple
+			 * Scan forward for the previous tuple. there should be one!  Note
+			 * previous tuple must be in window.
 			 */
 			if (IsPercentOption(node->limitOption))
 			{
-				if (tuplestore_gettupleslot_heaptuple(node->tupleStore, true, true, slot))
+				if (tuplestore_gettupleslot_heaptuple(node->tupleStore, false, true, slot))
 				{
 					node->subSlot = slot;
 					node->lstate = LIMIT_INWINDOW;
@@ -460,6 +510,16 @@ ExecLimit(PlanState *pstate)
 					elog(ERROR, "LIMIT subplan failed to run backwards");
 				node->subSlot = slot;
 				node->lstate = LIMIT_INWINDOW;
+			}
+			if (node->limitOption == LIMIT_OPTION_PER_WITH_TIES)
+			{
+				if (tuplestore_gettupleslot_heaptuple(node->tupleStore, false, true, slot))
+				{
+					node->subSlot = slot;
+					node->lstate = LIMIT_INWINDOW;
+				}
+				else
+					elog(ERROR, "LIMIT subplan failed to run backwards");
 			}
 			else
 			{
@@ -686,7 +746,8 @@ ExecInitLimit(Limit *node, EState *estate, int eflags)
 	/*
 	 * Initialize the equality evaluation, to detect ties.
 	 */
-	if (node->limitOption == LIMIT_OPTION_WITH_TIES)
+	if (node->limitOption == LIMIT_OPTION_WITH_TIES
+		|| node->limitOption == LIMIT_OPTION_PER_WITH_TIES)
 	{
 		TupleDesc	desc;
 		const TupleTableSlotOps *ops;

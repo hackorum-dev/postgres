@@ -105,6 +105,14 @@ fetch backward all in c6;
 fetch backward 1 in c6;
 fetch all in c6;
 
+declare c7 cursor for select * from int8_tbl order by q1 fetch first 15 percent rows with ties;
+fetch all in c7;
+fetch 1 in c7;
+fetch backward 1 in c7;
+fetch backward all in c7;
+fetch backward 1 in c7;
+fetch all in c7;
+
 rollback;
 
 -- Stress test for variable LIMIT in conjunction with bounded-heap sorting
@@ -196,6 +204,27 @@ SELECT  thousand
 SELECT  thousand
 		FROM onek WHERE thousand < 5
 		ORDER BY thousand FETCH FIRST 2 ROW ONLY;
+
+--
+-- FETCH FIRST
+-- Check the PERCENT WITH TIES clause
+--
+
+SELECT  thousand
+		FROM onek WHERE thousand < 5
+		ORDER BY thousand FETCH FIRST 2 PERCENT ROW ONLY;
+
+SELECT  thousand
+		FROM onek WHERE thousand < 5
+		ORDER BY thousand FETCH FIRST 2 PERCENT ROWS WITH TIES;
+
+SELECT  thousand
+		FROM onek WHERE thousand < 5
+		ORDER BY thousand FETCH FIRST 21 PERCENT ROW ONLY;
+
+SELECT  thousand
+		FROM onek WHERE thousand < 5
+		ORDER BY thousand FETCH FIRST 21 PERCENT ROW WITH TIES;
 
 -- should fail
 SELECT ''::text AS two, unique1, unique2, stringu1
