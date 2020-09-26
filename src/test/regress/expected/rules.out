@@ -1321,8 +1321,13 @@ pg_available_extension_versions| SELECT e.name,
 pg_available_extensions| SELECT e.name,
     e.default_version,
     x.extversion AS installed_version,
+    e.superuser,
+    e.trusted,
+    e.relocatable,
+    e.schema,
+    e.requires,
     e.comment
-   FROM (pg_available_extensions() e(name, default_version, comment)
+   FROM (pg_available_extensions() e(name, default_version, superuser, trusted, relocatable, schema, requires, comment)
      LEFT JOIN pg_extension x ON ((e.name = x.extname)));
 pg_backend_memory_contexts| SELECT pg_get_backend_memory_contexts.name,
     pg_get_backend_memory_contexts.ident,

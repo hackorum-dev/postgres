@@ -9678,10 +9678,12 @@
 
 # Extensions
 { oid => '3082', descr => 'list available extensions',
-  proname => 'pg_available_extensions', procost => '10', prorows => '100',
-  proretset => 't', provolatile => 's', prorettype => 'record',
-  proargtypes => '', proallargtypes => '{name,text,text}',
-  proargmodes => '{o,o,o}', proargnames => '{name,default_version,comment}',
+  proname => 'pg_available_extensions', procost => '10',
+  prorows => '100', proretset => 't', provolatile => 's',
+  prorettype => 'record', proargtypes => '',
+  proallargtypes => '{name,text,bool,bool,bool,name,_name,text}',
+  proargmodes => '{o,o,o,o,o,o,o,o}',
+  proargnames => '{name,default_version,superuser,trusted,relocatable,schema,requires,comment}',
   prosrc => 'pg_available_extensions' },
 { oid => '3083', descr => 'list available extension versions',
   proname => 'pg_available_extension_versions', procost => '10',

@@ -311,7 +311,8 @@ CREATE VIEW pg_cursors AS
 
 CREATE VIEW pg_available_extensions AS
     SELECT E.name, E.default_version, X.extversion AS installed_version,
-           E.comment
+           E.superuser, E.trusted, E.relocatable,
+           E.schema, E.requires, E.comment
       FROM pg_available_extensions() AS E
            LEFT JOIN pg_extension AS X ON E.name = X.extname;
 
