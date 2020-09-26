@@ -837,7 +837,7 @@ typedef struct varlena
 	char		vl_dat[FLEXIBLE_ARRAY_MEMBER];	/* Data content is here */
 } varlena;
 
-#define VARHDRSZ		((int32) sizeof(int32))
+#define VARHDRSZ		(sizeof(int32))
 
 /*
  * These widely-used datatypes are just a varlena header and the data bytes.
