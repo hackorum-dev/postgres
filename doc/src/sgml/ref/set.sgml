@@ -50,6 +50,12 @@ SET [ SESSION | LOCAL ] TIME ZONE { <replaceable class="parameter">timezone</rep
   </para>
 
   <para>
+   You can also use <literal>+=</literal> and <literal>-=</literal> to change
+   numeric configuration parameters, such as <varname>cpu_tuple_cost</varname>
+   or <varname>effective_cache_size</varname>.
+  </para>
+
+  <para>
    If <command>SET</command> (or equivalently <command>SET SESSION</command>)
    is issued within a transaction that is later aborted, the effects of the
    <command>SET</command> command disappear when the transaction is rolled

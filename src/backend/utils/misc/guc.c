@@ -7987,6 +7987,108 @@ flatten_set_variable_args(const char *name, List *args)
 }
 
 /*
+ * alter_set_number_args
+ *		Given a parsenode List as emitted by the grammar for SET,
+ *		convert to the flat string representation used by GUC, with the
+ *		args added to or subtracted from the current numeric (integer or
+ *		real) value of the setting, depending on the desired operation
+ *
+ * The result is a palloc'd string.
+ */
+static char *
+alter_set_number_args(struct config_generic *record, VariableSetKind operation,
+					  List *args)
+{
+	StringInfoData value;
+	Node	   *arg = (Node *) linitial(args);
+	NodeTag		tag;
+	A_Const    *con;
+
+	if (!IsA(arg, A_Const))
+		elog(ERROR, "unrecognized node type: %d", (int) nodeTag(arg));
+
+	con = (A_Const *) arg;
+	tag = nodeTag(&con->val);
+
+	/*
+	 * The single constant argument may be an integer, a floating point
+	 * value, or a string representing one of those two things. Once we
+	 * have the desired change (positive or negative), we can just add
+	 * it to the current value.
+	 */
+	if (record->vartype == PGC_INT)
+	{
+		struct config_int *conf = (struct config_int *) record;
+		int64		current = *conf->variable;
+		int			delta = 0;
+
+		if (tag == T_Integer)
+			delta = intVal(&con->val);
+		else if (tag == T_String)
+		{
+			const char *value = strVal(&con->val);
+			const char *hintmsg;
+
+			if (!parse_int(value, &delta, conf->gen.flags, &hintmsg))
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("invalid value for parameter \"%s\": \"%s\"",
+								record->name, value),
+						 hintmsg ? errhint("%s", _(hintmsg)) : 0));
+		}
+		else
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("invalid value for parameter \"%s\"",
+							record->name)));
+
+		delta = operation == VAR_ADD_VALUE ? delta : -delta;
+		if ((delta > 0 && current < PG_INT64_MAX - delta)
+			|| (delta < 0 && current > PG_INT64_MIN - delta))
+			current = current + delta;
+
+		initStringInfo(&value);
+		appendStringInfo(&value, INT64_FORMAT, current);
+	}
+	else if (record->vartype == PGC_REAL)
+	{
+		struct config_real *conf = (struct config_real *) record;
+		double		current = *conf->variable;
+		double		delta = 0;
+
+		if (tag == T_Float)
+			delta = floatVal(&con->val);
+		else if (tag == T_Integer)
+			delta = intVal(&con->val);
+		else if (tag == T_String)
+		{
+			const char *value = strVal(&con->val);
+			const char *hintmsg;
+
+			if (!parse_real(value, &delta, conf->gen.flags, &hintmsg))
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("invalid value for parameter \"%s\": \"%s\"",
+								record->name, value),
+						 hintmsg ? errhint("%s", _(hintmsg)) : 0));
+		}
+		else
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("invalid value for parameter \"%s\"",
+							record->name)));
+
+		delta = operation == VAR_ADD_VALUE ? delta : -delta;
+		current = current + delta;
+
+		initStringInfo(&value);
+		appendStringInfo(&value, "%g", current);
+	}
+
+	return value.data;
+}
+
+/*
  * alter_set_variable_args
  *		Given a parsenode List as emitted by the grammar for SET,
  *		convert to the flat string representation used by GUC, with the
@@ -8016,8 +8118,16 @@ alter_set_variable_args(const char *name, VariableSetKind operation, List *args)
 				 errmsg("unrecognized configuration parameter \"%s\"", name)));
 
 	/*
-	 * At present, this function can operate only on a list represented
-	 * as a comma-separated string.
+	 * If the setting is a number and there's only one argument, we deal
+	 * with it separately.
+	 */
+	if ((record->vartype == PGC_INT || record->vartype == PGC_REAL)
+		&& list_length(args) == 1)
+		return alter_set_number_args(record, operation, args);
+
+	/*
+	 * This function can operate only on a list represented as a
+	 * comma-separated string.
 	 */
 	if (record->vartype != PGC_STRING || (record->flags & GUC_LIST_INPUT) == 0)
 		ereport(ERROR,
