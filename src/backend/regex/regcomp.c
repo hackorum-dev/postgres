@@ -1789,7 +1789,6 @@ optst(struct vars *v,
 	 * just spends effort traversing the tree and doing nothing. We can do
 	 * nothing with less effort.
 	 */
-	return;
 }
 
 /*

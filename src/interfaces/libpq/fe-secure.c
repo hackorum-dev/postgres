@@ -440,7 +440,6 @@ PQgetSSLKeyPassHook_OpenSSL(void)
 void
 PQsetSSLKeyPassHook_OpenSSL(PQsslKeyPassHook_OpenSSL_type hook)
 {
-	return;
 }
 
 int
