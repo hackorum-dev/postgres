@@ -7987,6 +7987,167 @@ flatten_set_variable_args(const char *name, List *args)
 }
 
 /*
+ * alter_set_variable_args
+ *		Given a parsenode List as emitted by the grammar for SET,
+ *		convert to the flat string representation used by GUC, with the
+ *		args added to or removed from the current value of the setting,
+ *		depending on the desired operation
+ *
+ * The result is a palloc'd string.
+ */
+static char *
+alter_set_variable_args(const char *name, VariableSetKind operation, List *args)
+{
+	StringInfoData value;
+	struct config_generic *record;
+	struct config_string *conf;
+	char	   *rawstring;
+	List	   *elemlist;
+	ListCell   *l;
+	char	  **argstrings;
+	bool	   *argswanted;
+	int			cur = 0;
+	int			max;
+
+	record = find_option(name, false, ERROR);
+	if (record == NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("unrecognized configuration parameter \"%s\"", name)));
+
+	/*
+	 * At present, this function can operate only on a list represented
+	 * as a comma-separated string.
+	 */
+	if (record->vartype != PGC_STRING || (record->flags & GUC_LIST_INPUT) == 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("SET %s cannot perform list operations", name)));
+
+	/*
+	 * To determine whether to add or remove each argument, we build an
+	 * array of strings from the List of args, and an array of booleans
+	 * to indicate whether the argument should or should not be present
+	 * in the final return value.
+	 */
+	max = 8;
+	argstrings = guc_malloc(ERROR, max * sizeof(char *));
+	argswanted = guc_malloc(ERROR, max * sizeof(bool));
+	foreach(l, args)
+	{
+		Node	   *arg = (Node *) lfirst(l);
+		A_Const    *con;
+		char	   *val;
+		int			i;
+
+		if (!IsA(arg, A_Const))
+			elog(ERROR, "unrecognized node type: %d", (int) nodeTag(arg));
+
+		con = (A_Const *) arg;
+		if (nodeTag(&con->val) != T_String)
+			elog(ERROR, "unrecognized node type: %d", (int) nodeTag(&con->val));
+
+		val = strVal(&con->val);
+
+		for (i = 0; i < cur; i++)
+			if (pg_strcasecmp(argstrings[i], val) == 0)
+				break;
+
+		if (i < cur)
+			continue;
+
+		argstrings[cur] = val;
+		argswanted[cur] = operation == VAR_ADD_VALUE;
+		if (++cur == max)
+		{
+			max *= 2;
+			argstrings = guc_realloc(ERROR, argstrings, max * sizeof(char *));
+			argswanted = guc_realloc(ERROR, argswanted, max * sizeof(bool));
+		}
+	}
+
+	/*
+	 * Split the current value of the GUC setting into a list, for
+	 * comparison with the argstrings extracted above.
+	 */
+	conf = (struct config_string *) record;
+	rawstring = pstrdup(*conf->variable && **conf->variable ? *conf->variable : "");
+	if (!SplitIdentifierString(rawstring, ',', &elemlist))
+	{
+		list_free(elemlist);
+		pfree(rawstring);
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("SET %s cannot operate on an already-invalid list", name)));
+	}
+
+	initStringInfo(&value);
+
+	/*
+	 * Iterate over the elements in the current value of the setting and
+	 * either suppress them (if operation is SUBTRACT and the element is
+	 * in argstrings) or include them in the final value.
+	 */
+	foreach(l, elemlist)
+	{
+		char	   *tok = (char *) lfirst(l);
+		int			i = 0;
+
+		/*
+		 * Check if tok is in argstrings. If so, we don't need to add it
+		 * later; and if we want to remove it, we must skip this entry.
+		 */
+		for (i = 0; i < cur; i++)
+			if (pg_strcasecmp(argstrings[i], tok) == 0)
+				break;
+
+		if (i < cur)
+		{
+			if (operation == VAR_ADD_VALUE)
+				argswanted[i] = false;
+			else
+				continue;
+		}
+
+		/* Retain this element of the current setting */
+
+		if (value.len > 0)
+			appendStringInfoString(&value, ", ");
+
+		if (record->flags & GUC_LIST_QUOTE)
+			appendStringInfoString(&value, quote_identifier(tok));
+		else
+			appendStringInfoString(&value, tok);
+	}
+
+	pfree(rawstring);
+	list_free(elemlist);
+
+	/*
+	 * Finally, if operation is ADD, we iterate over argstrings and add
+	 * any elements to the output that are still wanted.
+	 */
+	for (int i = 0; i < cur; i++)
+	{
+		if (!argswanted[i])
+			continue;
+
+		if (value.len > 0)
+			appendStringInfoString(&value, ", ");
+
+		if (record->flags & GUC_LIST_QUOTE)
+			appendStringInfoString(&value, quote_identifier(argstrings[i]));
+		else
+			appendStringInfoString(&value, argstrings[i]);
+	}
+
+	free(argstrings);
+	free(argswanted);
+
+	return value.data;
+}
+
+/*
  * Write updated configuration parameter values into a temporary file.
  * This function traverses the list of parameters and quotes the string
  * values before writing them.
@@ -8154,6 +8315,8 @@ AlterSystemSetConfigFile(AlterSystemStmt *altersysstmt)
 	switch (altersysstmt->setstmt->kind)
 	{
 		case VAR_SET_VALUE:
+		case VAR_ADD_VALUE:
+		case VAR_SUBTRACT_VALUE:
 			value = ExtractSetVariableArgs(altersysstmt->setstmt);
 			break;
 
@@ -8361,6 +8524,8 @@ ExecSetVariableStmt(VariableSetStmt *stmt, bool isTopLevel)
 	{
 		case VAR_SET_VALUE:
 		case VAR_SET_CURRENT:
+		case VAR_ADD_VALUE:
+		case VAR_SUBTRACT_VALUE:
 			if (stmt->is_local)
 				WarnNoTransactionBlock(isTopLevel, "SET LOCAL");
 			(void) set_config_option(stmt->name,
@@ -8474,6 +8639,9 @@ ExtractSetVariableArgs(VariableSetStmt *stmt)
 	{
 		case VAR_SET_VALUE:
 			return flatten_set_variable_args(stmt->name, stmt->args);
+		case VAR_ADD_VALUE:
+		case VAR_SUBTRACT_VALUE:
+			return alter_set_variable_args(stmt->name, stmt->kind, stmt->args);
 		case VAR_SET_CURRENT:
 			return GetConfigOptionByName(stmt->name, NULL, false);
 		default:
