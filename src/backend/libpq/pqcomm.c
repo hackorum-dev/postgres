@@ -57,6 +57,8 @@
  *		pq_flush		- flush pending output
  *		pq_flush_if_writable - flush pending output if writable without blocking
  *		pq_getbyte_if_available - get a byte if available without blocking
+ *		pq_getbufinfo           - report libpq buffer state and underlying socket buffering
+ *		                          state if available
  *
  * message-level I/O (and old-style-COPY-OUT cruft):
  *		pq_putmessage	- send a normal message (suppressed in COPY OUT mode)
@@ -78,6 +80,11 @@
 #include <sys/time.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#if defined(__linux__)
+/* For getsockopt SIOCINQ and SIOCOUTQ and struct tcp_info */
+#include <linux/sockios.h>
+#include <sys/ioctl.h>
+#endif
 #ifdef HAVE_NETINET_TCP_H
 #include <netinet/tcp.h>
 #endif
@@ -93,6 +100,7 @@
 #include "storage/ipc.h"
 #include "utils/guc.h"
 #include "utils/memutils.h"
+#include "utils/probes.h"
 
 /*
  * Cope with the various platform-specific ways to spell TCP keepalive socket
@@ -161,6 +169,7 @@ static void socket_putmessage_noblock(char msgtype, const char *s, size_t len);
 static void socket_startcopyout(void);
 static void socket_endcopyout(bool errorAbort);
 static int socket_nbytes_pending(size_t * rxsz, size_t * txsz);
+static int socket_buffer_stats(PQsocketStats* sockstats);
 static int	internal_putbytes(const char *s, size_t len);
 static int	internal_flush(void);
 
@@ -178,7 +187,8 @@ static const PQcommMethods PqCommSocketMethods = {
 	socket_putmessage_noblock,
 	socket_startcopyout,
 	socket_endcopyout,
-	socket_nbytes_pending
+	socket_nbytes_pending,
+	socket_buffer_stats
 };
 
 const PQcommMethods *PqCommMethods = &PqCommSocketMethods;
@@ -1539,6 +1549,209 @@ socket_nbytes_pending(size_t * rxsz, size_t * txsz)
 		*txsz = (PqSendStart < PqSendPointer) ? (PqSendPointer - PqSendStart) : 0;
 	if (rxsz)
 		*rxsz = PqRecvLength - PqRecvPointer;
+
+	return STATUS_OK;
+}
+
+/*
+ * Get data pending sending and/or receiving on the underlying operating system
+ * transport socket.
+ *
+ * Populates the passed PQsocketInfo*.
+ *
+ * The exact data returned depends on the operating system's support for
+ * querying the info.
+ *
+ * Returns 0 on success, STATUS_ERROR on failure of operations expected to
+ * succeed. Not all fields are guaranteed set on 0 return as support varies by
+ * OS and socket type. Check the set_fields flags to see what's valid in the
+ * result.
+ *
+ * On Linux this uses the platform-specific getsockopt options
+ * SIOCINQ, SIOCOUTQ and TCP_INFO. The kernel code at build/net/ipv4/tcp.c is
+ * the main reference for struct tcp_info; check the function tcp_get_info()
+ * and the fields of struct tcp_sock.
+ *
+ * TODO change argument into VLA where we populate only wanted segs.
+ */
+static int
+socket_buffer_stats(PQsocketStats* ss)
+{
+	int res;
+	unsigned int ressz;
+
+	if (MyProcPort == NULL)
+		return STATUS_ERROR;
+
+	ressz = sizeof(res);
+	if (getsockopt(MyProcPort->sock, SOL_SOCKET, SO_RCVBUF,(void *)&res, &ressz) < 0)
+	{
+		elog(ERROR, "getsockopt(%s) failed: %m", "SO_RCVBUF");
+		return STATUS_ERROR;
+	}
+	else
+	{
+		Assert(ressz = sizeof(res));
+		ss->set_fields &= PQ_SOCKSTATS_RX_BUFSZ;
+		ss->sock_rx_bufsz = res;
+	}
+
+	ressz = sizeof(res);
+	if (getsockopt(MyProcPort->sock, SOL_SOCKET, SO_SNDBUF,(void *)&res, &ressz) < 0)
+	{
+		elog(ERROR, "getsockopt(%s) failed: %m", "SO_SNDBUF");
+		return STATUS_ERROR;
+	}
+	else
+	{
+		Assert(ressz = sizeof(res));
+		ss->set_fields &= PQ_SOCKSTATS_TX_BUFSZ;
+		ss->sock_tx_bufsz = res;
+	}
+
+#ifdef __linux__
+	/*
+	 * Trying to read these will be treated as nonfatal for now.
+	 */
+
+	/* data received by kernel but not app */
+	if (ioctl(MyProcPort->sock, SIOCINQ, &res) != 0)
+		elog(ERROR, "ioctl(%s) failed: %m", "SIOCINQ");
+	else
+	{
+		ss->set_fields &= PQ_SOCKSTATS_RX_BUFCONTENTSZ;
+		ss->sock_rx_bufcontentsz = res;
+	}
+
+	/* waiting-to-send or sent-but-unacked data */
+	if (ioctl(MyProcPort->sock, SIOCOUTQ, &res) != 0)
+		elog(ERROR, "ioctl(%s) failed: %m", "SIOCOUTQ");
+	else
+	{
+		ss->set_fields &= PQ_SOCKSTATS_TX_BUFCONTENTSZ;
+		ss->sock_tx_bufcontentsz = res;
+	}
+
+	/* detailed TCP socket info from TCP_INFO */
+	{
+		/*
+		 * We use the 'struct tcp_info' from netinet/tcp.h not the one from
+		 * linux/tcp.h. It's more stable though it tends to lag behind the
+		 * version in the kernel headers so some fields like tcpi_snd_wnd
+		 * may not be available.
+		 */
+		struct tcp_info ti;
+		ressz = sizeof(ti);
+
+		/*
+		 * Guard against older kernel not setting all fields.
+		 *
+		 * TODO: Should check field validity with offsetof(...) against ressz
+		 * too.
+		 */
+		memset(&ti, '\0', sizeof(ti));
+
+		if (getsockopt(MyProcPort->sock, SOL_TCP, TCP_INFO, (void*)&ti, &ressz) < 0)
+			elog(ERROR, "getsockopt(%s) failed: %m", "TCP_INFO");
+		else
+		{
+			/*
+			 * Let systemtap/perf/etc see captured info in full.
+			 *
+			 * Sample script:
+			 *
+			 *    PATH=/path/to/your/postgres/bin:$PATH /usr/local/systemtap/bin/stap -DMAXSTRINGLEN=4096 -v -e 'probe process("postgres").mark("libpq__be__tcp__info") { printf("[%05d] %s\n", pid(), @cast($arg1, "struct tcp_info")$$ ); }'
+			 *
+			 * Samples of output:
+			 *
+			 *     [368266] {.tcpi_state='\001', .tcpi_ca_state='\000', .tcpi_retransmits='\000', .tcpi_probes='\000', .tcpi_backoff='\000', .tcpi_options='\a', .tcpi_snd_wscale=7, .tcpi_rcv_wscale=7, .tcpi_rto=201000, .tcpi_ato=40000, .tcpi_snd_mss=65483, .tcpi_rcv_mss=536, .tcpi_unacked=0, .tcpi_sacked=0, .tcpi_lost=0, .tcpi_retrans=0, .tcpi_fackets=0, .tcpi_last_data_sent=0, .tcpi_last_ack_sent=0, .tcpi_last_data_recv=0, .tcpi_last_ack_recv=0, .tcpi_pmtu=65535, .tcpi_rcv_ssthresh=65483, .tcpi_rtt=65, .tcpi_rttvar=19, .tcpi_snd_ssthresh=33, .tcpi_snd_cwnd=18, .tcpi_advmss=65483, .tcpi_reordering=27, .tcpi_rcv_rtt=267941, .tcpi_rcv_space=87243, .tcpi_total_retrans=82}
+			 *
+			 *     [368266] {.tcpi_state='\001', .tcpi_ca_state='\000', .tcpi_retransmits='\000', .tcpi_probes='\000', .tcpi_backoff='\000', .tcpi_options='\a', .tcpi_snd_wscale=7, .tcpi_rcv_wscale=7, .tcpi_rto=208000, .tcpi_ato=42000, .tcpi_snd_mss=65483, .tcpi_rcv_mss=536, .tcpi_unacked=1, .tcpi_sacked=0, .tcpi_lost=0, .tcpi_retrans=0, .tcpi_fackets=0, .tcpi_last_data_sent=0, .tcpi_last_ack_sent=0, .tcpi_last_data_recv=24, .tcpi_last_ack_recv=25, .tcpi_pmtu=65535, .tcpi_rcv_ssthresh=65483, .tcpi_rtt=7583, .tcpi_rttvar=3093, .tcpi_snd_ssthresh=33, .tcpi_snd_cwnd=18, .tcpi_advmss=65483, .tcpi_reordering=27, .tcpi_rcv_rtt=267941, .tcpi_rcv_space=87243, .tcpi_total_retrans=82}
+			 *
+			 *
+			 */
+			TRACE_POSTGRESQL_LIBPQ_BE_TCP_INFO(&ti, sizeof(ti));
+
+			/*
+			 * Useful tcp_info mappings.
+			 *
+			 *		getsockopt: SIOCINQ
+			 *		tcp.c: tp->rcv_nxt - tp->copied_seq
+			 *			Assuming no urgent-data on socket, data yet to be
+			 *			read from Rx buffer
+			 *
+			 * 		getsockopt: SIOCOUTQ
+			 * 		TCP_INFO: (??) - ti.tcpi_unacked
+			 * 		tcp.c: tp->write_seq - tp->snd_una
+			 * 			Bytes written but not acked. Includes
+			 * 			sent-but-not-acked.
+			 *
+			 * 		getsockopt: SIOCOUTQNSD
+			 * 		TCP_INFO: ti.tcpi_notsent_bytes
+			 *		tcp.c: tp->write_seq - tp->snd_nxt
+			 * 			Bytes Tx buffered but not sent. Does not include
+			 * 			sent-but-not-acked.
+			 *
+			 * 	Other fields of interest in tcp_info:
+			 *
+			 * 		[QUEUE STATES]
+			 * 		tcpi_unacked		(total )
+			 *		tcpi_rcv_space		(receive-queue space?)
+			 *		tcpi_notsent_bytes  (unsent bytes in tx queue)
+			 *
+			 * 		[TIMES AND LATENCIES]
+			 *		tcpi_last_data_sent
+			 *		tcpi_last_data_recv
+			 *		tcpi_last_ack_recv
+			 *		tcpi_rtt 			(round-trip time)
+			 *		tcpi_rttvar			(round-trip time variance?)
+			 *		tcpi_rcv_rtt		(rx estimated rtt)
+			 *		tcpi_delivery_rate
+			 *
+			 * 		[TOTALS AND COUNTERS]
+			 *
+			 *		tcpi_lost
+			 *		tcpi_retrans
+			 *		tcpi_total_retrans
+			 * 		tcpi_bytes_acked
+			 * 		tcpi_delivered
+			 * 		tcpi_bytes_sent
+			 * 		tcpi_bytes_retrans
+			 * 		tcpi_reord_seen
+			 *
+			 * 		[WAIT TRACKING]
+			 * 		tcpi_busy_time
+        	 *		tcpi_rwnd_limited
+        	 * 		tcpi_sndbuf_limited
+			 * 		tcpi_delivery_rate_app_limited [bool]
+			 */
+
+			/* Our TCP congestion window size, scaled. */
+			ss->sock_tx_windowsz = ti.tcpi_snd_cwnd;
+			if ((ti.tcpi_options & TCPI_OPT_WSCALE) == TCPI_OPT_WSCALE)
+				ss->sock_tx_windowsz = ss->sock_tx_windowsz << ti.tcpi_snd_wscale;
+
+			/* RTT info */
+			ss->sock_rtt = ti.tcpi_rtt;
+			ss->sock_rtt_variance = ti.tcpi_rttvar;
+			ss->sock_recv_rtt = ti.tcpi_rcv_rtt;
+			ss->set_fields &= PQ_SOCKSTATS_TCP_INFO;
+
+			/* Packet losses */
+			ss->sock_packets_lost = ti.tcpi_lost;
+			ss->sock_packets_retransmitted = ti.tcpi_retrans;
+
+#if defined(HAVE_TCP_INFO_SND_WND)
+			/*
+			 * If kernel reports it, store advertised receive
+			 * window size from receiver. Value is pre-scaled.
+			 */
+			if (ressz >= offsetof(struct tcp_info, tcpi_snd_wnd) + sizeof(ti.tcpi_snd_wnd))
+				ss->sock_rx_windowsz = ti.tcpi_snd_wnd;
+#endif
+		}
+	}
+#endif
 
 	return STATUS_OK;
 }

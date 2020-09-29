@@ -1334,6 +1334,9 @@ WalSndWriteData(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId xid,
 		/* Try to flush pending output to the client */
 		if (pq_flush_if_writable() != 0)
 			WalSndShutdown();
+
+		/* Update our socket stats. TODO hack hack hack */
+		pq_get_socket_stats(&MyWalSnd->socket_info);
 	}
 
 	/* reactivate latch so WalSndLoop knows to continue */
@@ -1476,6 +1479,9 @@ WalSndWaitForWal(XLogRecPtr loc)
 
 		/* Send keepalive if the time has come */
 		WalSndKeepaliveIfNecessary();
+
+		/* Update our socket stats. TODO hack hack hack */
+		pq_get_socket_stats(&MyWalSnd->socket_info);
 
 		/*
 		 * Sleep until something happens or we time out.  Also wait for the
@@ -2353,6 +2359,9 @@ WalSndLoop(WalSndSendDataCallback send_data)
 
 		/* Send keepalive if the time has come */
 		WalSndKeepaliveIfNecessary();
+
+		/* Update our socket stats. TODO hack hack hack */
+		pq_get_socket_stats(&MyWalSnd->socket_info);
 
 		/*
 		 * Block if we have unsent data.  XXX For logical replication, let
@@ -3265,7 +3274,7 @@ offset_to_interval(TimeOffset offset)
 Datum
 pg_stat_get_wal_senders(PG_FUNCTION_ARGS)
 {
-#define PG_STAT_GET_WAL_SENDERS_COLS	12
+#define PG_STAT_GET_WAL_SENDERS_COLS	23
 	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
 	TupleDesc	tupdesc;
 	Tuplestorestate *tupstore;
@@ -3439,6 +3448,18 @@ pg_stat_get_wal_senders(PG_FUNCTION_ARGS)
 				nulls[11] = true;
 			else
 				values[11] = TimestampTzGetDatum(replyTime);
+
+			values[12] = Int64GetDatum(walsnd->socket_info.sock_tx_bufsz);
+			values[13] = Int64GetDatum(walsnd->socket_info.sock_tx_bufcontentsz);
+			values[14] = Int64GetDatum(walsnd->socket_info.sock_rx_bufsz);
+			values[15] = Int64GetDatum(walsnd->socket_info.sock_rx_bufcontentsz);
+			values[16] = Int64GetDatum(walsnd->socket_info.sock_tx_windowsz);
+			values[17] = Int64GetDatum(walsnd->socket_info.sock_rx_windowsz);
+			values[18] = Int64GetDatum(walsnd->socket_info.sock_rtt);
+			values[19] = Int64GetDatum(walsnd->socket_info.sock_rtt_variance);
+			values[20] = Int64GetDatum(walsnd->socket_info.sock_recv_rtt);
+			values[21] = Int64GetDatum(walsnd->socket_info.sock_packets_lost);
+			values[22] = Int64GetDatum(walsnd->socket_info.sock_packets_retransmitted);
 		}
 
 		tuplestore_putvalues(tupstore, tupdesc, values, nulls);

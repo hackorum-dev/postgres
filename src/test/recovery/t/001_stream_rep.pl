@@ -5,6 +5,11 @@ use PostgresNode;
 use TestLib;
 use Test::More tests => 36;
 
+# Tell PostgresNode to use TCP
+$PostgresNode::use_tcp = 1;
+$PostgresNode::test_pghost = $PostgresNode::test_localhost;
+$ENV{PGHOST}        = $PostgresNode::test_pghost;
+
 # Initialize primary node
 my $node_primary = get_new_node('primary');
 # A specific role is created to perform some tests related to replication,
@@ -64,6 +69,8 @@ is($node_standby_1->psql('postgres', 'INSERT INTO tab_int VALUES (1)'),
 	3, 'read-only queries on standby 1');
 is($node_standby_2->psql('postgres', 'INSERT INTO tab_int VALUES (1)'),
 	3, 'read-only queries on standby 2');
+
+diag $node_primary->safe_psql('postgres', 'SELECT * FROM pg_stat_replication;');
 
 # Tests for connection parameter target_session_attrs
 note "testing connection parameter \"target_session_attrs\"";
@@ -409,3 +416,38 @@ ok( ($phys_restart_lsn_pre cmp $phys_restart_lsn_post) == 0,
 my $primary_data = $node_primary->data_dir;
 ok(!-f "$primary_data/pg_wal/$segment_removed",
 	"WAL segment $segment_removed recycled after physical slot advancing");
+
+# Slam some load onto the primary and see what happens
+my ($scale, $runtime, $clients, $jobs) = (100, 60, 4, 4);
+diag "initing pgbench";
+IPC::Run::run(['pgbench', '-i', '-s', $scale, $node_primary->connstr('postgres')]);
+diag "INIT: " . $node_primary->safe_psql('postgres', 'SELECT * FROM pg_stat_replication;');
+diag "done initing";
+my $bench = IPC::Run::start(['pgbench', '-s', $scale, '-T', $runtime, '-c', $clients, '-j', $jobs, '-P', 1, $node_primary->connstr('postgres')]);
+for my $t (0 .. $runtime)
+{
+    diag "  $runtime: " . $node_primary->safe_psql('postgres', 'SELECT * FROM pg_stat_replication;');
+    sleep(1);
+
+    if ($t == 10)
+    {
+        diag "--- pausing walreceiver ---";
+        my $rxpid = $node_standby_2->safe_psql('postgres', 'SELECT pid FROM pg_stat_wal_receiver');
+        kill 'STOP', $rxpid;
+        my $lag = $node_primary->safe_psql('postgres', 'SELECT pg_wal_lsn_diff(pg_current_wal_insert_lsn(), sent_lsn) FROM pg_stat_replication');
+        diag "\npaused walreceiver $rxpid at lag $lag\n";
+    }
+
+    if ($t == 40)
+    {
+        my $lag = $node_primary->safe_psql('postgres', 'SELECT pg_wal_lsn_diff(pg_current_wal_insert_lsn(), sent_lsn) FROM pg_stat_replication');
+        diag "--- resuming walreceiver with lag $lag---";
+        my $rxpid = $node_standby_2->safe_psql('postgres', 'SELECT pid FROM pg_stat_wal_receiver');
+        kill 'CONT', $rxpid;
+        diag "\nresumed walreceiver $rxpid\n";
+    }
+}
+$bench->signal('INT');
+$bench->finish;
+diag "pgbench output: \"$stdout\" and \"$stderr\"";
+diag "ecode" . $bench->full_result(0);

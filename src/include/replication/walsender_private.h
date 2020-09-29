@@ -19,6 +19,9 @@
 #include "storage/shmem.h"
 #include "storage/spin.h"
 
+/* TODO HACK for PQsocketStats */
+#include "libpq/libpq.h"
+
 typedef enum WalSndState
 {
 	WALSNDSTATE_STARTUP = 0,
@@ -78,6 +81,12 @@ typedef struct WalSnd
 	 * Timestamp of the last message received from standby.
 	 */
 	TimestampTz replyTime;
+
+	/*
+	 * Giant blob of horror socket stats. TODO replace with request/reply
+	 * mechanism.
+	 */
+	PQsocketStats socket_info;
 } WalSnd;
 
 extern WalSnd *MyWalSnd;

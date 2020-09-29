@@ -91,4 +91,8 @@ provider postgresql {
 	probe wal__switch();
 	probe wal__buffer__write__dirty__start();
 	probe wal__buffer__write__dirty__done();
+
+	/* Observe raw getsockopt(..., TCP_INFO, ...) result in libpq_be */
+	probe libpq__be__tcp__info(void * struct_tcp_info_p, int sizeof_struct_tcp_info);
+
 };

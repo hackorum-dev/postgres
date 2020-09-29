@@ -791,7 +791,9 @@ CREATE VIEW pg_stat_replication AS
             W.replay_lag,
             W.sync_priority,
             W.sync_state,
-            W.reply_time
+            W.reply_time,
+            W.sock_tx_bufsz, W.sock_tx_bufcontentsz, W.sock_rx_bufsz, W.sock_rx_bufcontentsz, W.sock_tx_windowsz, W.sock_rx_windowsz,
+            W.sock_rtt, W.sock_rtt_variance, W.sock_recv_rtt, W.sock_packets_lost, W.sock_packets_retransmitted
     FROM pg_stat_get_activity(NULL) AS S
         JOIN pg_stat_get_wal_senders() AS W ON (S.pid = W.pid)
         LEFT JOIN pg_authid AS U ON (S.usesysid = U.oid);

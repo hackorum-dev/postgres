@@ -45,7 +45,8 @@ static const PQcommMethods PqCommMqMethods = {
 	mq_putmessage_noblock,
 	mq_startcopyout,
 	mq_endcopyout,
-	NULL /* TODO nbytes_pending */
+	NULL /* TODO nbytes_pending */,
+	NULL /* buffer_stats doesn't make sense for mq */
 };
 
 /*

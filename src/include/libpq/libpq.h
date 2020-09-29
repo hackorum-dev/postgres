@@ -21,6 +21,8 @@
 #include "storage/latch.h"
 
 
+struct PQsocketStats;
+
 typedef struct
 {
 	void		(*comm_reset) (void);
@@ -32,6 +34,7 @@ typedef struct
 	void		(*startcopyout) (void);
 	void		(*endcopyout) (bool errorAbort);
 	int			(*nbytes_pending) (size_t *rxsz, size_t *txsz);
+	int			(*get_socket_stats) (struct PQsocketStats *ss);
 } PQcommMethods;
 
 extern const PGDLLIMPORT PQcommMethods *PqCommMethods;
@@ -47,6 +50,7 @@ extern const PGDLLIMPORT PQcommMethods *PqCommMethods;
 #define pq_startcopyout() (PqCommMethods->startcopyout())
 #define pq_endcopyout(errorAbort) (PqCommMethods->endcopyout(errorAbort))
 #define pq_nbytes_pending(rxsz, txsz) ( PqCommMethods->nbytes_pending ? PqCommMethods->nbytes_pending((rxsz), (txsz)) : STATUS_ERROR )
+#define pq_get_socket_stats(ss) ( PqCommMethods->get_socket_stats ? PqCommMethods->get_socket_stats((ss)) : STATUS_ERROR )
 
 /*
  * Socket statistics requests.
@@ -59,18 +63,23 @@ extern const PGDLLIMPORT PQcommMethods *PqCommMethods;
 #define PQ_SOCKSTATS_RX_BUFSZ (1<<1)
 #define PQ_SOCKSTATS_TX_BUFCONTENTSZ (1<<2)
 #define PQ_SOCKSTATS_RX_BUFCONTENTSZ (1<<3)
-#define PQ_SOCKSTATS_TX_WINDOWSZ (1<<4)
-#define PQ_SOCKSTATS_RX_WINDOWSZ (1<<5)
+/* Main fields from struct tcp_info */
+#define PQ_SOCKSTATS_TCP_INFO (1<<4)
 
 typedef struct PQsocketStats
 {
 	int32 set_fields;
-	size_t sock_tx_bufsz;				/* SO_SNDBUF */
-	size_t sock_tx_bufcontentsz;		/* SIOCOUTQ */
-	size_t sock_rx_bufsz;				/* SO_RCVBUF */
-	size_t sock_rx_bufcontentsz; 		/* SIOCINQ */
-	size_t sock_tx_windowsz;			/* scaled struct tcp_info.tcpi_snd_cwnd */
-	size_t sock_rx_windowsz;			/* struct tcp_info.tcpi_snd_wnd */
+	int32 sock_tx_bufsz;				/* SO_SNDBUF */
+	int32 sock_tx_bufcontentsz;		/* SIOCOUTQ */
+	int32 sock_rx_bufsz;				/* SO_RCVBUF */
+	int32 sock_rx_bufcontentsz; 		/* SIOCINQ */
+	int32 sock_tx_windowsz;			/* scaled struct tcp_info.tcpi_snd_cwnd */
+	int32 sock_rx_windowsz;			/* struct tcp_info.tcpi_snd_wnd */
+	int32 sock_rtt;
+	int32 sock_rtt_variance;
+	int32 sock_recv_rtt;
+	int32 sock_packets_lost;
+	int32 sock_packets_retransmitted;
 } PQsocketStats;
 
 /*
