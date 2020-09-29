@@ -2313,7 +2313,7 @@ exec_stmt_call(PLpgSQL_execstate *estate, PLpgSQL_stmt_call *stmt)
 		rc = SPI_execute_plan_with_paramlist(expr->plan, paramLI,
 											 estate->readonly_func, 0);
 	}
-	PG_CATCH();
+	PG_FINALLY();
 	{
 		/*
 		 * If we aren't saving the plan, unset the pointer.  Note that it
@@ -2321,12 +2321,8 @@ exec_stmt_call(PLpgSQL_execstate *estate, PLpgSQL_stmt_call *stmt)
 		 */
 		if (expr->plan && !expr->plan->saved)
 			expr->plan = NULL;
-		PG_RE_THROW();
 	}
 	PG_END_TRY();
-
-	if (expr->plan && !expr->plan->saved)
-		expr->plan = NULL;
 
 	if (rc < 0)
 		elog(ERROR, "SPI_execute_plan_with_paramlist failed executing query \"%s\": %s",
