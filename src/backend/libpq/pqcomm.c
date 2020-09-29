@@ -160,6 +160,7 @@ static int	socket_putmessage(char msgtype, const char *s, size_t len);
 static void socket_putmessage_noblock(char msgtype, const char *s, size_t len);
 static void socket_startcopyout(void);
 static void socket_endcopyout(bool errorAbort);
+static int socket_nbytes_pending(size_t * rxsz, size_t * txsz);
 static int	internal_putbytes(const char *s, size_t len);
 static int	internal_flush(void);
 
@@ -176,7 +177,8 @@ static const PQcommMethods PqCommSocketMethods = {
 	socket_putmessage,
 	socket_putmessage_noblock,
 	socket_startcopyout,
-	socket_endcopyout
+	socket_endcopyout,
+	socket_nbytes_pending
 };
 
 const PQcommMethods *PqCommMethods = &PqCommSocketMethods;
@@ -1502,12 +1504,43 @@ socket_flush_if_writable(void)
 
 /* --------------------------------
  *	socket_is_send_pending	- is there any pending data in the output buffer?
+ *
+ * This doesn't report data pending in operating system socket buffers, only in
+ * the in-process libpq send buffer.
  * --------------------------------
  */
 static bool
 socket_is_send_pending(void)
 {
 	return (PqSendStart < PqSendPointer);
+}
+
+/* --------------------------------
+ *		pq_pending_size - report internal libpq buffer content sizes
+ *
+ * Reports size of data waiting to be sent to the OS in the internal libpq send
+ * buffer, if any. Does not include operating system socket buffering. Also
+ * reports libpq receive buffer content size, i.e. data read from OS socket but
+ * not yet consumed by application.
+ *
+ * Use socket_is_send_pending() if you just need to determine if there's data
+ * waiting to send.
+ *
+ * rxsz or txsz may be null if that data isn't required.
+ *
+ * Never fails on TCP sockets. The int return code is so that the wrapper
+ * function pq_nbytes_pending can return STATUS_ERROR for other socket types
+ * that don't support this.
+ */
+static int
+socket_nbytes_pending(size_t * rxsz, size_t * txsz)
+{
+	if (txsz)
+		*txsz = (PqSendStart < PqSendPointer) ? (PqSendPointer - PqSendStart) : 0;
+	if (rxsz)
+		*rxsz = PqRecvLength - PqRecvPointer;
+
+	return STATUS_OK;
 }
 
 /* --------------------------------

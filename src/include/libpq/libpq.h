@@ -31,6 +31,7 @@ typedef struct
 	void		(*putmessage_noblock) (char msgtype, const char *s, size_t len);
 	void		(*startcopyout) (void);
 	void		(*endcopyout) (bool errorAbort);
+	int			(*nbytes_pending) (size_t *rxsz, size_t *txsz);
 } PQcommMethods;
 
 extern const PGDLLIMPORT PQcommMethods *PqCommMethods;
@@ -45,6 +46,32 @@ extern const PGDLLIMPORT PQcommMethods *PqCommMethods;
 	(PqCommMethods->putmessage_noblock(msgtype, s, len))
 #define pq_startcopyout() (PqCommMethods->startcopyout())
 #define pq_endcopyout(errorAbort) (PqCommMethods->endcopyout(errorAbort))
+#define pq_nbytes_pending(rxsz, txsz) ( PqCommMethods->nbytes_pending ? PqCommMethods->nbytes_pending((rxsz), (txsz)) : STATUS_ERROR )
+
+/*
+ * Socket statistics requests.
+ *
+ * TODO: Probably needs to become a VLA where we request the fields we want by
+ * supplying them tagged, and the callee fills in the values. That's very DSA
+ * friendly too.
+ */
+#define PQ_SOCKSTATS_TX_BUFSZ (1<<0)
+#define PQ_SOCKSTATS_RX_BUFSZ (1<<1)
+#define PQ_SOCKSTATS_TX_BUFCONTENTSZ (1<<2)
+#define PQ_SOCKSTATS_RX_BUFCONTENTSZ (1<<3)
+#define PQ_SOCKSTATS_TX_WINDOWSZ (1<<4)
+#define PQ_SOCKSTATS_RX_WINDOWSZ (1<<5)
+
+typedef struct PQsocketStats
+{
+	int32 set_fields;
+	size_t sock_tx_bufsz;				/* SO_SNDBUF */
+	size_t sock_tx_bufcontentsz;		/* SIOCOUTQ */
+	size_t sock_rx_bufsz;				/* SO_RCVBUF */
+	size_t sock_rx_bufcontentsz; 		/* SIOCINQ */
+	size_t sock_tx_windowsz;			/* scaled struct tcp_info.tcpi_snd_cwnd */
+	size_t sock_rx_windowsz;			/* struct tcp_info.tcpi_snd_wnd */
+} PQsocketStats;
 
 /*
  * External functions.

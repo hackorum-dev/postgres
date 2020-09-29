@@ -44,7 +44,8 @@ static const PQcommMethods PqCommMqMethods = {
 	mq_putmessage,
 	mq_putmessage_noblock,
 	mq_startcopyout,
-	mq_endcopyout
+	mq_endcopyout,
+	NULL /* TODO nbytes_pending */
 };
 
 /*
