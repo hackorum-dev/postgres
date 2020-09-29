@@ -4753,8 +4753,13 @@ cost_subplan(PlannerInfo *root, SubPlan *subplan, Plan *plan)
 
 		if (subplan->subLinkType == EXISTS_SUBLINK)
 		{
-			/* we only need to fetch 1 tuple; clamp to avoid zero divide */
-			sp_cost.per_tuple += plan_run_cost / clamp_row_est(plan->plan_rows);
+			/*
+			 * We do only need to fetch 1 tuple, however, finding that 1 tuple
+			 * may not be proportional to plan_run_cost / plan->plan_rows, so we
+			 * play it safe here and assume the subplan will need to incur 50%
+			 * of it's total cost to supply us with the first tuple.
+			 */
+			sp_cost.per_tuple += 0.50 * plan_run_cost;
 		}
 		else if (subplan->subLinkType == ALL_SUBLINK ||
 				 subplan->subLinkType == ANY_SUBLINK)
