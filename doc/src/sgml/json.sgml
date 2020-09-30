@@ -147,22 +147,22 @@
         <entry><type>string</type></entry>
         <entry><type>text</type></entry>
         <entry><literal>\u0000</literal> is disallowed, as are Unicode escapes
-         representing characters not available in the database encoding</entry>
+         representing characters not available in the database encoding.  JSON values are double-quoted.</entry>
        </row>
        <row>
         <entry><type>number</type></entry>
         <entry><type>numeric</type></entry>
-        <entry><literal>NaN</literal> and <literal>infinity</literal> values are disallowed</entry>
+        <entry><literal>NaN</literal> and <literal>infinity</literal> values are disallowed.  JSON values are unquoted.</entry>
        </row>
        <row>
         <entry><type>boolean</type></entry>
         <entry><type>boolean</type></entry>
-        <entry>Only lowercase <literal>true</literal> and <literal>false</literal> spellings are accepted</entry>
+        <entry>Only unquoted lowercase <literal>true</literal> and <literal>false</literal> spellings are accepted</entry>
        </row>
        <row>
         <entry><type>null</type></entry>
         <entry>(none)</entry>
-        <entry>SQL <literal>NULL</literal> is a different concept</entry>
+        <entry>SQL <literal>NULL</literal> is a different concept.  Must be written lowercase and unquoted.</entry>
        </row>
       </tbody>
      </tgroup>
