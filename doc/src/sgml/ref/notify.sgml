@@ -39,11 +39,14 @@ NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable cla
 
   <para>
    <command>NOTIFY</command> provides a simple
-   interprocess communication mechanism for a collection of processes
+   interprocess communication mechanism,
+   in essentially the form of a first-in-first-out (FIFO) queue,
+   for a collection of processes
    accessing the same <productname>PostgreSQL</productname> database.
-   A payload string can be sent along with the notification, and
-   higher-level mechanisms for passing structured data can be built by using
-   tables in the database to pass additional data from notifier to listener(s).
+   While a payload string can be sent along with the notification,
+   higher-level mechanisms for passing structured data
+   from notifier to listener(s) must be built using
+   tables in the database.
   </para>
 
   <para>
@@ -61,12 +64,12 @@ NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable cla
    take a look at it to see what's new</quote>.  But no such association is enforced by
    the <command>NOTIFY</command> and <command>LISTEN</command> commands.  For
    example, a database designer could use several different channel names
-   to signal different sorts of changes to a single table.  Alternatively,
+   to indicate different sorts of changes to a single table.  Alternatively,
    the payload string could be used to differentiate various cases.
   </para>
 
   <para>
-   When <command>NOTIFY</command> is used to signal the occurrence of changes
+   When <command>NOTIFY</command> is used to communicate the occurrence of changes
    to a particular table, a useful programming technique is to put the
    <command>NOTIFY</command> in a statement trigger that is triggered by table updates.
    In this way, notification happens automatically when the table is changed,
@@ -76,40 +79,38 @@ NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable cla
   <para>
    <command>NOTIFY</command> interacts with SQL transactions in some important
    ways.  Firstly, if a <command>NOTIFY</command> is executed inside a
-   transaction, the notify events are not delivered until and unless the
+   transaction, the notification events are not enqueued until and unless the
    transaction is committed.  This is appropriate, since if the transaction
    is aborted, all the commands within it have had no
    effect, including <command>NOTIFY</command>.  But it can be disconcerting if one
-   is expecting the notification events to be delivered immediately.  Secondly, if
-   a listening session receives a notification signal while it is within a transaction,
-   the notification event will not be delivered to its connected client until just
-   after the transaction is completed (either committed or aborted).  Again, the
+   is expecting the notification events to be delivered to client connections immediately.
+   Secondly, a listening session never processes the notification queue events
+   while it is within a transaction.  Again, the
    reasoning is that if a notification were delivered within a transaction that was
    later aborted, one would want the notification to be undone somehow &mdash;
    but
-   the server cannot <quote>take back</quote> a notification once it has sent it to the client.
+   the server cannot <quote>take back</quote> a notification once it has delivered
+   it to the client.
    So notification events are only delivered between transactions.  The upshot of this
-   is that applications using <command>NOTIFY</command> for real-time signaling
-   should try to keep their transactions short.
+   is that applications using <command>NOTIFY</command> should try to keep their
+   transactions short.
   </para>
 
   <para>
-   If the same channel name is signaled multiple times with identical
-   payload strings within the same transaction, only one instance of the
-   notification event is delivered to listeners.
-   On the other hand, notifications with distinct payload strings will
-   always be delivered as distinct notifications. Similarly, notifications from
-   different transactions will never get folded into one notification.
-   Except for dropping later instances of duplicate notifications,
+   If, within the same transaction, a channel name is notified multiple times,
+   with identical payload strings, only the first the notification is enqueued.
+  </para>
+
+  <para>
    <command>NOTIFY</command> guarantees that notifications from the same
-   transaction get delivered in the order they were sent.  It is also
-   guaranteed that messages from different transactions are delivered in
+   transaction get delivered in the order they were issued.  It also
+   guarantees that messages from different transactions are delivered in
    the order in which the transactions committed.
   </para>
 
   <para>
    It is common for a client that executes <command>NOTIFY</command>
-   to be listening on the same notification channel itself.  In that case
+   to be listening on the same notification channel.  In that case
    it will get back a notification event, just like all the other
    listening sessions.  Depending on the application logic, this could
    result in useless work, for example, reading a database table to
@@ -131,7 +132,7 @@ NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable cla
     <term><replaceable class="parameter">channel</replaceable></term>
     <listitem>
      <para>
-      Name of the notification channel to be signaled (any identifier).
+      Name of the notification channel (any identifier).
      </para>
     </listitem>
    </varlistentry>
@@ -154,16 +155,19 @@ NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable cla
   <title>Notes</title>
 
   <para>
-   There is a queue that holds notifications that have been sent but not
-   yet processed by all listening sessions.  If this queue becomes full,
-   transactions calling <command>NOTIFY</command> will fail at commit.
+   The notification FIFO queue contains a single entry per notification event
+   and all listening sessions publish which events they have processed.  Events
+   which have been processed by all sessions are removed.  If a listening session
+   holds a transaction open for a very long time the queue could become full,
+   at which point transactions calling <command>NOTIFY</command> will fail at commit.
+  </para>
+  <para> 
    The queue is quite large (8GB in a standard installation) and should be
-   sufficiently sized for almost every use case. However, no cleanup can take
-   place if a session executes <command>LISTEN</command> and then enters a
-   transaction for a very long time. Once the queue is half full you will see
+   sufficiently sized for almost every use case.  Once the queue is half
+   full you will see
    warnings in the log file pointing you to the session that is preventing
    cleanup. In this case you should make sure that this session ends its
-   current transaction so that cleanup can proceed.
+   current transaction so that events can be removed.
   </para>
   <para>
    The function <function>pg_notification_queue_usage</function> returns the
