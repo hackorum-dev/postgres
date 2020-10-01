@@ -124,8 +124,8 @@ static int	maxPossibleConstraints;
 static DEADLOCK_INFO *deadlockDetails;
 static int	nDeadlockDetails;
 
-/* PGPROC pointer of any blocking autovacuum worker found */
-static PGPROC *blocking_autovacuum_proc = NULL;
+/* PGPROC pointer of any blocking but interruptible process found */
+static PGPROC *blocking_interruptible_proc = NULL;
 
 
 /*
@@ -224,8 +224,8 @@ DeadLockCheck(PGPROC *proc)
 	nPossibleConstraints = 0;
 	nWaitOrders = 0;
 
-	/* Initialize to not blocked by an autovacuum worker */
-	blocking_autovacuum_proc = NULL;
+	/* Initialize to not blocked by an interruptible process */
+	blocking_interruptible_proc = NULL;
 
 	/* Search for deadlocks and possible fixes */
 	if (DeadLockCheckRecurse(proc))
@@ -278,24 +278,24 @@ DeadLockCheck(PGPROC *proc)
 	/* Return code tells caller if we had to escape a deadlock or not */
 	if (nWaitOrders > 0)
 		return DS_SOFT_DEADLOCK;
-	else if (blocking_autovacuum_proc != NULL)
-		return DS_BLOCKED_BY_AUTOVACUUM;
+	else if (blocking_interruptible_proc != NULL)
+		return DS_BLOCKED_BY_INTERRUPTIBLE;
 	else
 		return DS_NO_DEADLOCK;
 }
 
 /*
- * Return the PGPROC of the autovacuum that's blocking a process.
+ * Return the PGPROC of an interruptible process that's blocking a process.
  *
  * We reset the saved pointer as soon as we pass it back.
  */
 PGPROC *
-GetBlockingAutoVacuumPgproc(void)
+GetBlockingInterruptiblePgproc(void)
 {
 	PGPROC	   *ptr;
 
-	ptr = blocking_autovacuum_proc;
-	blocking_autovacuum_proc = NULL;
+	ptr = blocking_interruptible_proc;
+	blocking_interruptible_proc = NULL;
 
 	return ptr;
 }
@@ -606,30 +606,37 @@ FindLockCycleRecurseMember(PGPROC *checkProc,
 					}
 
 					/*
-					 * No deadlock here, but see if this proc is an autovacuum
-					 * that is directly hard-blocking our own proc.  If so,
-					 * report it so that the caller can send a cancel signal
-					 * to it, if appropriate.  If there's more than one such
-					 * proc, it's indeterminate which one will be reported.
+					 * No deadlock here, but see if this proc is an
+					 * interruptible process that is directly hard-blocking
+					 * our own proc.  If so, report it so that the caller can
+					 * send a cancel signal to it, if appropriate.  If there's
+					 * more than one such proc, it's indeterminate which one
+					 * will be reported.
 					 *
-					 * We don't touch autovacuums that are indirectly blocking
+					 * We don't touch processes that are indirectly blocking
 					 * us; it's up to the direct blockee to take action.  This
 					 * rule simplifies understanding the behavior and ensures
-					 * that an autovacuum won't be canceled with less than
-					 * deadlock_timeout grace period.
+					 * such a process won't be canceled with a grace period of
+					 * less than deadlock_timeout.
 					 *
-					 * Note we read vacuumFlags without any locking.  This is
-					 * OK only for checking the PROC_IS_AUTOVACUUM flag,
-					 * because that flag is set at process start and never
-					 * reset.  There is logic elsewhere to avoid canceling an
-					 * autovacuum that is working to prevent XID wraparound
-					 * problems (which needs to read a different vacuumFlag
-					 * bit), but we don't do that here to avoid grabbing
-					 * ProcArrayLock.
+					 * Note we read vacuumFlags without any locking.  That is
+					 * ok because 32bit reads are atomic, because surrounding
+					 * operations provide strong enough memory barriers, and
+					 * because we re-check whether IS_INTERRUPTIBLE is still
+					 * set before actually cancelling the backend.
 					 */
 					if (checkProc == MyProc &&
-						proc->vacuumFlags & PROC_IS_AUTOVACUUM)
-						blocking_autovacuum_proc = proc;
+						proc->vacuumFlags & PROC_IS_INTERRUPTIBLE)
+					{
+						/*
+						 * XXX: At some point there could be more than one
+						 * proc blocking us here. Currently that's not
+						 * possible because of the lock levels used by VACUUM
+						 * / ANALYZE, which are the only ones to set this flag
+						 * currently, but ...
+						 */
+						blocking_interruptible_proc = proc;
+					}
 
 					/* We're done looking at this proclock */
 					break;

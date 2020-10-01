@@ -123,6 +123,8 @@ ExecVacuum(ParseState *pstate, VacuumStmt *vacstmt, bool isTopLevel)
 			verbose = defGetBoolean(opt);
 		else if (strcmp(opt->defname, "skip_locked") == 0)
 			skip_locked = defGetBoolean(opt);
+		else if (strcmp(opt->defname, "interruptible") == 0)
+			params.is_interruptible = defGetBoolean(opt);
 		else if (!vacstmt->is_vacuumcmd)
 			ereport(ERROR,
 					(errcode(ERRCODE_SYNTAX_ERROR),
@@ -1754,19 +1756,21 @@ vacuum_rel(Oid relid, RangeVar *relation, VacuumParams *params)
 		 * contents of other tables is arguably broken, but we won't break it
 		 * here by violating transaction semantics.)
 		 *
-		 * We also set the VACUUM_FOR_WRAPAROUND flag, which is passed down by
-		 * autovacuum; it's used to avoid canceling a vacuum that was invoked
-		 * in an emergency.
+		 * We also set the INTERRUPTIBLE flag when user indicated or when
+		 * started by autovacuum (except for anti-wraparound autovacuum, which
+		 * we do not want to cancel), that governs whether the process may be
+		 * cancelled upon a lock conflict.
 		 *
 		 * Note: these flags remain set until CommitTransaction or
 		 * AbortTransaction.  We don't want to clear them until we reset
 		 * MyProc->xid/xmin, otherwise GetOldestNonRemovableTransactionId()
 		 * might appear to go backwards, which is probably Not Good.
 		 */
+		Assert(!params->is_wraparound || !params->is_interruptible);
 		LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
 		MyProc->vacuumFlags |= PROC_IN_VACUUM;
-		if (params->is_wraparound)
-			MyProc->vacuumFlags |= PROC_VACUUM_FOR_WRAPAROUND;
+		if (params->is_interruptible)
+			MyProc->vacuumFlags |= PROC_IS_INTERRUPTIBLE;
 		ProcGlobal->vacuumFlags[MyProc->pgxactoff] = MyProc->vacuumFlags;
 		LWLockRelease(ProcArrayLock);
 	}

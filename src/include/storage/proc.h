@@ -53,13 +53,14 @@ struct XidCache
  */
 #define		PROC_IS_AUTOVACUUM	0x01	/* is it an autovac worker? */
 #define		PROC_IN_VACUUM		0x02	/* currently running lazy vacuum */
-#define		PROC_VACUUM_FOR_WRAPAROUND	0x08	/* set by autovac only */
+#define		PROC_IS_INTERRUPTIBLE	0x08	/* vacuum / analyze may be interrupted
+										 * when locks conflict */
 #define		PROC_IN_LOGICAL_DECODING	0x10	/* currently doing logical
 												 * decoding outside xact */
 
 /* flags reset at EOXact */
 #define		PROC_VACUUM_STATE_MASK \
-	(PROC_IN_VACUUM | PROC_VACUUM_FOR_WRAPAROUND)
+	(PROC_IN_VACUUM | PROC_IS_INTERRUPTIBLE)
 
 /*
  * We allow a small number of "weak" relation locks (AccessShareLock,

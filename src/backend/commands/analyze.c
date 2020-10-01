@@ -252,6 +252,15 @@ analyze_rel(Oid relid, RangeVar *relation,
 	pgstat_progress_start_command(PROGRESS_COMMAND_ANALYZE,
 								  RelationGetRelid(onerel));
 
+	/* mark us as interruptible if appropriate */
+	if (params->is_interruptible)
+	{
+		LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
+		MyProc->vacuumFlags |= PROC_IS_INTERRUPTIBLE;
+		ProcGlobal->vacuumFlags[MyProc->pgxactoff] = MyProc->vacuumFlags;
+		LWLockRelease(ProcArrayLock);
+	}
+
 	/*
 	 * Do the normal non-recursive ANALYZE.  We can skip this for partitioned
 	 * tables, which don't contain any rows.
@@ -276,6 +285,19 @@ analyze_rel(Oid relid, RangeVar *relation,
 	relation_close(onerel, NoLock);
 
 	pgstat_progress_end_command();
+
+	/*
+	 * Reset flags if we set them. Need to that (in contrast to VACUUM)
+	 * because analyze can be run within a transaction, so we can't rely on
+	 * the end-of-xact code doing this for us.
+	 */
+	if (params->is_interruptible)
+	{
+		LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
+		MyProc->vacuumFlags &= ~PROC_IS_INTERRUPTIBLE;
+		ProcGlobal->vacuumFlags[MyProc->pgxactoff] = MyProc->vacuumFlags;
+		LWLockRelease(ProcArrayLock);
+	}
 }
 
 /*

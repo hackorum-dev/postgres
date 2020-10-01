@@ -28,6 +28,7 @@ ANALYZE [ VERBOSE ] [ <replaceable class="parameter">table_and_columns</replacea
 
     VERBOSE [ <replaceable class="parameter">boolean</replaceable> ]
     SKIP_LOCKED [ <replaceable class="parameter">boolean</replaceable> ]
+    INTERRUPTIBLE [ <replaceable class="parameter">boolean</replaceable> ]
 
 <phrase>and <replaceable class="parameter">table_and_columns</replaceable> is:</phrase>
 
@@ -91,6 +92,21 @@ ANALYZE [ VERBOSE ] [ <replaceable class="parameter">table_and_columns</replacea
       ordinarily processes all partitions of specified partitioned tables,
       this option will cause <command>ANALYZE</command> to skip all
       partitions if there is a conflicting lock on the partitioned table.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>INTERRUPTIBLE</literal></term>
+    <listitem>
+     <para>
+      Specifies whether <command>ANALYZE</command> may be cancelled when
+      another connection needs a lock conflicting with this.
+      <command>ANALYZE</command>. That can be useful to reduce the impact of
+      running <command>ANALYZE</command> in a busy system, by e.g. allowing
+      DDL commands to run before <command>ANALYZE</command> has finished.  If
+      the option is not specified <command>ANALYZE</command> is not
+      interruptible.
      </para>
     </listitem>
    </varlistentry>

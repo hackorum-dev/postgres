@@ -2915,6 +2915,8 @@ table_recheck_autovac(Oid relid, HTAB *table_toast_map,
 		tab->at_params.multixact_freeze_min_age = multixact_freeze_min_age;
 		tab->at_params.multixact_freeze_table_age = multixact_freeze_table_age;
 		tab->at_params.is_wraparound = wraparound;
+		/* Allow interrupting autovacuum unless it's an emergency one */
+		tab->at_params.is_interruptible = !wraparound;
 		tab->at_params.log_min_duration = log_min_duration;
 		tab->at_vacuum_cost_limit = vac_cost_limit;
 		tab->at_vacuum_cost_delay = vac_cost_delay;

@@ -1064,7 +1064,7 @@ ProcSleep(LOCALLOCK *locallock, LockMethod lockMethodTable)
 	PROC_QUEUE *waitQueue = &(lock->waitProcs);
 	LOCKMASK	myHeldLocks = MyProc->heldLocks;
 	bool		early_deadlock = false;
-	bool		allow_autovacuum_cancel = true;
+	bool		allow_interruptible_cancel = true;
 	ProcWaitStatus myWaitStatus;
 	PGPROC	   *proc;
 	PGPROC	   *leader = MyProc->lockGroupLeader;
@@ -1304,23 +1304,21 @@ ProcSleep(LOCALLOCK *locallock, LockMethod lockMethodTable)
 		myWaitStatus = *((volatile ProcWaitStatus *) &MyProc->waitStatus);
 
 		/*
-		 * If we are not deadlocked, but are waiting on an autovacuum-induced
-		 * task, send a signal to interrupt it.
+		 * If we are not deadlocked, but are waiting on an interruptible
+		 * (e.g. autovacuum-induced) task, send a signal to interrupt it.
 		 */
-		if (deadlock_state == DS_BLOCKED_BY_AUTOVACUUM && allow_autovacuum_cancel)
+		if (deadlock_state == DS_BLOCKED_BY_INTERRUPTIBLE && allow_interruptible_cancel)
 		{
-			PGPROC	   *autovac = GetBlockingAutoVacuumPgproc();
+			PGPROC	   *autovac = GetBlockingInterruptiblePgproc();
 			uint8		vacuumFlags;
 
 			LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
 
 			/*
-			 * Only do it if the worker is not working to protect against Xid
-			 * wraparound.
+			 * Only do it if the process is still interruptible.
 			 */
 			vacuumFlags = ProcGlobal->vacuumFlags[autovac->pgxactoff];
-			if ((vacuumFlags & PROC_IS_AUTOVACUUM) &&
-				!(vacuumFlags & PROC_VACUUM_FOR_WRAPAROUND))
+			if (vacuumFlags & PROC_IS_INTERRUPTIBLE)
 			{
 				int			pid = autovac->pid;
 				StringInfoData locktagbuf;
@@ -1340,8 +1338,12 @@ ProcSleep(LOCALLOCK *locallock, LockMethod lockMethodTable)
 				LWLockRelease(ProcArrayLock);
 
 				/* send the autovacuum worker Back to Old Kent Road */
+				/*
+				 * FIXME: do we want to continue to identify autovacuum here?
+				 * Could do so based on PROC_IS_AUTOVACUUM.
+				 */
 				ereport(DEBUG1,
-						(errmsg("sending cancel to blocking autovacuum PID %d",
+						(errmsg("sending cancel to blocking autovacuum|XXX PID %d",
 								pid),
 						 errdetail_log("%s", logbuf.data)));
 
@@ -1370,7 +1372,7 @@ ProcSleep(LOCALLOCK *locallock, LockMethod lockMethodTable)
 				LWLockRelease(ProcArrayLock);
 
 			/* prevent signal from being sent again more than once */
-			allow_autovacuum_cancel = false;
+			allow_interruptible_cancel = false;
 		}
 
 		/*

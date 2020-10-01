@@ -215,6 +215,7 @@ typedef struct VacuumParams
 	int			multixact_freeze_table_age; /* multixact age at which to scan
 											 * whole table */
 	bool		is_wraparound;	/* force a for-wraparound vacuum */
+	bool		is_interruptible;	/* allow cancelling on lock conflict */
 	int			log_min_duration;	/* minimum execution threshold in ms at
 									 * which  verbose logs are activated, -1
 									 * to use default */

@@ -35,6 +35,7 @@ VACUUM [ FULL ] [ FREEZE ] [ VERBOSE ] [ ANALYZE ] [ <replaceable class="paramet
     INDEX_CLEANUP [ <replaceable class="parameter">boolean</replaceable> ]
     TRUNCATE [ <replaceable class="parameter">boolean</replaceable> ]
     PARALLEL <replaceable class="parameter">integer</replaceable>
+    INTERRUPTIBLE [ <replaceable class="parameter">boolean</replaceable> ]
 
 <phrase>and <replaceable class="parameter">table_and_columns</replaceable> is:</phrase>
 
@@ -251,6 +252,22 @@ VACUUM [ FULL ] [ FREEZE ] [ VERBOSE ] [ ANALYZE ] [ <replaceable class="paramet
       before the start of each phase and exit at the end of the phase.  These
       behaviors might change in a future release.  This option can't be used with
       the <literal>FULL</literal> option.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>INTERRUPTIBLE</literal></term>
+    <listitem>
+     <para>
+      Specifies whether <command>VACUUM</command> may be cancelled when
+      another connection needs a lock conflicting with this.
+      <command>VACUUM</command>. That can be useful to reduce the impact of
+      running <command>VACUUM</command> in a busy system, by e.g. allowing DDL
+      commands to run before <command>VACUUM</command> has finished.  This
+      option is currently ignored if the <literal>FULL</literal> option is
+      used. If the option is not specified <command>VACUUM</command> is not
+      interruptible.
      </para>
     </listitem>
    </varlistentry>
