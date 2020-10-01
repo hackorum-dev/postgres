@@ -108,6 +108,19 @@ DefineCollation(ParseState *pstate, List *names, List *parameters, bool if_not_e
 			break;
 		}
 
+		if (*defelp != NULL)
+		{
+			/*
+			 * If the option was previously set, it means that it occurs
+			 * several times in the list, which is not allowed.
+			 */
+			ereport(ERROR,
+					(errcode(ERRCODE_SYNTAX_ERROR),
+					 errmsg("conflicting or redundant options",
+							defel->defname),
+					 parser_errposition(pstate, defel->location)));
+			break;
+		}
 		*defelp = defel;
 	}
 
