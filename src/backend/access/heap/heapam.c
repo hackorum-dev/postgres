@@ -6106,7 +6106,9 @@ FreezeMultiXactId(MultiXactId multi, uint16 t_infomask,
  *
  * It is assumed that the caller has checked the tuple with
  * HeapTupleSatisfiesVacuum() and determined that it is not HEAPTUPLE_DEAD
- * (else we should be removing the tuple, not freezing it).
+ * (else we should be removing the tuple, not freezing it).  But, there is an
+ * exception - if a tuple is HOT-updated then it must only be removed by a prune
+ * operation.  So, we can neither remove the tuple nor freeze the tuple.
  *
  * NB: cutoff_xid *must* be <= the current global xmin, to ensure that any
  * XID older than it could neither be running nor seen as running by any
@@ -6245,15 +6247,18 @@ heap_prepare_freeze_tuple(HeapTupleHeader tuple,
 			 * If we freeze xmax, make absolutely sure that it's not an XID
 			 * that is important.  (Note, a lock-only xmax can be removed
 			 * independent of committedness, since a committed lock holder has
-			 * released the lock).
+			 * released the lock.  Also, if the tuple is HOT-UPDATED, we can
+			 * neither remove it nor freeze it).
 			 */
 			if (!HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask) &&
-				TransactionIdDidCommit(xid))
+				TransactionIdDidCommit(xid) &&
+				!HeapTupleHeaderIsHotUpdated(tuple))
 				ereport(ERROR,
 						(errcode(ERRCODE_DATA_CORRUPTED),
 						 errmsg_internal("cannot freeze committed xmax %u",
 										 xid)));
-			freeze_xmax = true;
+
+			freeze_xmax = HeapTupleHeaderIsHotUpdated(tuple) ? false : true;
 		}
 		else
 			freeze_xmax = false;
