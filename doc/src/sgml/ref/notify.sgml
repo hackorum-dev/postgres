@@ -76,7 +76,7 @@ NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable cla
   <para>
    <command>NOTIFY</command> interacts with SQL transactions in some important
    ways.  Firstly, if a <command>NOTIFY</command> is executed inside a
-   transaction, the notify events are not delivered until and unless the
+   transaction, the notify events are not emitted until and unless the
    transaction is committed.  This is appropriate, since if the transaction
    is aborted, all the commands within it have had no
    effect, including <command>NOTIFY</command>.  But it can be disconcerting if one
@@ -154,8 +154,8 @@ NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable cla
   <title>Notes</title>
 
   <para>
-   There is a queue that holds notifications that have been sent but not
-   yet processed by all listening sessions.  If this queue becomes full,
+   There is a queue that holds emitted notifications that have not been
+   delivered to all connected clients.  If this queue becomes full,
    transactions calling <command>NOTIFY</command> will fail at commit.
    The queue is quite large (8GB in a standard installation) and should be
    sufficiently sized for almost every use case. However, no cleanup can take
