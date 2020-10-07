@@ -6211,6 +6211,8 @@ StartupXLOG(void)
 		ControlFile->state != DB_SHUTDOWNED_IN_RECOVERY)
 	{
 		RemoveTempXlogFiles();
+		ereport(LOG,
+				(errmsg("syncing data directory")));
 		SyncDataDirectory();
 		didCrash = true;
 	}
