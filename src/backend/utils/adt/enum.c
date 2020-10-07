@@ -113,6 +113,7 @@ enum_in(PG_FUNCTION_ARGS)
 	Oid			enumtypoid = PG_GETARG_OID(1);
 	Oid			enumoid;
 	HeapTuple	tup;
+	Form_pg_enum en;
 
 	/* must check length to prevent Assert failure within SearchSysCache */
 	if (strlen(name) >= NAMEDATALEN)
@@ -129,6 +130,15 @@ enum_in(PG_FUNCTION_ARGS)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
 				 errmsg("invalid input value for enum %s: \"%s\"",
+						format_type_be(enumtypoid),
+						name)));
+
+	en = (Form_pg_enum) GETSTRUCT(tup);
+
+	if (en->isdropped)
+		ereport(ERROR,
+			(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
+				errmsg("enum value is dropped %s: \"%s\"",
 						format_type_be(enumtypoid),
 						name)));
 

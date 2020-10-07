@@ -5792,6 +5792,17 @@ AlterEnumStmt:
 				n->skipIfNewValExists = false;
 				$$ = (Node *) n;
 			}
+		 | ALTER TYPE_P any_name DELETE_P VALUE_P Sconst
+		 	{
+				AlterEnumStmt *n = makeNode(AlterEnumStmt);
+				n->typeName = $3;
+				n->oldVal = $6;
+				n->newVal = NULL;
+				n->newValNeighbor = NULL;
+				n->newValIsAfter = false;
+				n->skipIfNewValExists = false;
+				$$ = (Node *) n;
+			 }
 		 ;
 
 opt_if_not_exists: IF_P NOT EXISTS              { $$ = true; }

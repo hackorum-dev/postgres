@@ -1232,13 +1232,17 @@ AlterEnum(AlterEnumStmt *stmt)
 
 	ReleaseSysCache(tup);
 
-	if (stmt->oldVal)
+	if (stmt->oldVal && stmt->newVal)
 	{
 		/* Rename an existing label */
 		RenameEnumLabel(enum_type_oid, stmt->oldVal, stmt->newVal);
 	}
-	else
+	else if (stmt->oldVal)
 	{
+		/* Delete an existing label */
+		RemoveEnumLabel(enum_type_oid, stmt->oldVal);
+	}
+	else {
 		/* Add a new label */
 		AddEnumLabel(enum_type_oid, stmt->newVal,
 					 stmt->newValNeighbor, stmt->newValIsAfter,

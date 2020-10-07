@@ -133,6 +133,7 @@ EnumValuesCreate(Oid enumTypeOid, List *vals)
 		values[Anum_pg_enum_enumsortorder - 1] = Float4GetDatum(elemno + 1);
 		namestrcpy(&enumlabel, lab);
 		values[Anum_pg_enum_enumlabel - 1] = NameGetDatum(&enumlabel);
+		values[Anum_pg_enum_isdropped - 1] = false;
 
 		tup = heap_form_tuple(RelationGetDescr(pg_enum), values, nulls);
 
@@ -485,6 +486,7 @@ restart:
 	values[Anum_pg_enum_enumsortorder - 1] = Float4GetDatum(newelemorder);
 	namestrcpy(&enumlabel, newVal);
 	values[Anum_pg_enum_enumlabel - 1] = NameGetDatum(&enumlabel);
+	values[Anum_pg_enum_isdropped - 1] = false;
 	enum_tup = heap_form_tuple(RelationGetDescr(pg_enum), values, nulls);
 	CatalogTupleInsert(pg_enum, enum_tup);
 	heap_freetuple(enum_tup);
@@ -583,6 +585,73 @@ RenameEnumLabel(Oid enumTypeOid,
 	table_close(pg_enum, RowExclusiveLock);
 }
 
+extern void RemoveEnumLabel(Oid enumTypeOid, const char *val)
+{
+	Relation	pg_enum;
+	HeapTuple	enum_tup;
+	Form_pg_enum en;
+	CatCList   *list;
+	int			nelems;
+	HeapTuple	old_tup;
+	int			i;
+
+	/* check length of new label is ok */
+	if (strlen(val) > (NAMEDATALEN - 1))
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_NAME),
+				 errmsg("invalid enum label \"%s\"", val),
+				 errdetail("Labels must be %d characters or less.",
+						   NAMEDATALEN - 1)));
+
+	/*
+	 * Acquire a lock on the enum type, which we won't release until commit.
+	 * This ensures that two backends aren't concurrently modifying the same
+	 * enum type.  Since we are not changing the type's sort order, this is
+	 * probably not really necessary, but there seems no reason not to take
+	 * the lock to be sure.
+	 */
+	LockDatabaseObject(TypeRelationId, enumTypeOid, 0, ExclusiveLock);
+
+	pg_enum = table_open(EnumRelationId, RowExclusiveLock);
+
+	/* Get the list of existing members of the enum */
+	list = SearchSysCacheList1(ENUMTYPOIDNAME,
+							   ObjectIdGetDatum(enumTypeOid));
+	nelems = list->n_members;
+
+	/*
+	 * Check if the label is in use.  (The unique index on pg_enum would catch that anyway, but we
+	 * prefer a friendlier error message.)
+	 */
+	for (i = 0; i < nelems; i++)
+	{
+		enum_tup = &(list->members[i]->tuple);
+		en = (Form_pg_enum) GETSTRUCT(enum_tup);
+		if (strcmp(NameStr(en->enumlabel), val) == 0)
+		{
+			old_tup = enum_tup;
+			break;
+		}
+	}
+	if (!old_tup)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("\"%s\" is not an existing enum label",
+						val)));
+
+	/* OK, make a writable copy of old tuple */
+	enum_tup = heap_copytuple(old_tup);
+	en = (Form_pg_enum) GETSTRUCT(enum_tup);
+
+	ReleaseCatCacheList(list);
+
+	/* Update the pg_enum entry */
+	en->isdropped = true;
+	CatalogTupleUpdate(pg_enum, &enum_tup->t_self, enum_tup);
+	heap_freetuple(enum_tup);
+
+	table_close(pg_enum, RowExclusiveLock);
+}
 
 /*
  * Test if the given enum value is on the blacklist

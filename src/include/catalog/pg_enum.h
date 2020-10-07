@@ -34,6 +34,7 @@ CATALOG(pg_enum,3501,EnumRelationId)
 	Oid			enumtypid;		/* OID of owning enum type */
 	float4		enumsortorder;	/* sort position of this enum value */
 	NameData	enumlabel;		/* text representation of enum value */
+	bool 		isdropped;		/* is enum value dropped */
 } FormData_pg_enum;
 
 /* ----------------
@@ -53,6 +54,7 @@ extern void AddEnumLabel(Oid enumTypeOid, const char *newVal,
 						 bool skipIfExists);
 extern void RenameEnumLabel(Oid enumTypeOid,
 							const char *oldVal, const char *newVal);
+extern void RemoveEnumLabel(Oid enumTypeOid, const char *val);
 extern bool EnumBlacklisted(Oid enum_id);
 extern Size EstimateEnumBlacklistSpace(void);
 extern void SerializeEnumBlacklist(void *space, Size size);
