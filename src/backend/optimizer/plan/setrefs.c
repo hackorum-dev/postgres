@@ -1000,6 +1000,8 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 			}
 			break;
 		case T_Append:
+			root->glob->append_plans = lappend(root->glob->append_plans,
+											   plan);
 			/* Needs special treatment, see comments below */
 			return set_append_references(root,
 										 (Append *) plan,

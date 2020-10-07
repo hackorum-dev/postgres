@@ -1132,6 +1132,10 @@ create_append_plan(PlannerInfo *root, AppendPath *best_path, int flags)
 	plan->plan.lefttree = NULL;
 	plan->plan.righttree = NULL;
 	plan->apprelids = rel->relids;
+	if (IS_PARTITIONED_REL(rel) && rel->relid > 0)
+		plan->relid = planner_rt_fetch(rel->relid, root)->relid;
+	else
+		plan->relid = InvalidOid;
 
 	if (pathkeys != NIL)
 	{

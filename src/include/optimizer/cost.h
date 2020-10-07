@@ -31,6 +31,13 @@
 
 #define DEFAULT_EFFECTIVE_CACHE_SIZE  524288	/* measured in pages */
 
+/*
+ * Append and MergeAppend nodes are less expensive than some other operations
+ * which use cpu_tuple_cost; instead of adding a separate GUC, estimate the
+ * per-tuple cost as cpu_tuple_cost multiplied by this value.
+ */
+#define APPEND_CPU_COST_MULTIPLIER 0.5
+
 typedef enum
 {
 	CONSTRAINT_EXCLUSION_OFF,	/* do not use c_e */

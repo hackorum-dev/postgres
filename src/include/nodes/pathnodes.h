@@ -147,6 +147,10 @@ typedef struct PlannerGlobal
 	char		maxParallelHazard;	/* worst PROPARALLEL hazard level */
 
 	PartitionDirectory partition_directory; /* partition descriptors */
+
+	List		*flatten_live_parts;
+
+	List	    *append_plans; /* set it on set_plan_refs */
 } PlannerGlobal;
 
 /* macro for fetching the Plan associated with a SubPlan node */
@@ -2512,6 +2516,15 @@ typedef struct
 	int64		count_est;
 	int64		offset_est;
 } FinalPathExtraData;
+
+
+typedef struct
+{
+	NodeTag		tag;
+	Oid		relid;
+	int		lived_count;
+	int	    count;
+} LivePartition;
 
 /*
  * For speed reasons, cost estimation for join paths is performed in two

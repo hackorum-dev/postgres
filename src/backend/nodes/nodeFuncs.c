@@ -1681,6 +1681,19 @@ set_sa_opfuncid(ScalarArrayOpExpr *opexpr)
 		opexpr->opfuncid = get_opcode(opexpr->opno);
 }
 
+LivePartition *
+find_related_liveparts(List *live_parts, Oid relid)
+{
+	ListCell *lc;
+	foreach(lc, live_parts)
+	{
+		LivePartition *live_part = lfirst_node(LivePartition, lc);
+		if (live_part->relid == relid)
+			return live_part;
+	}
+	return NULL;
+}
+
 
 /*
  *	check_functions_in_node -

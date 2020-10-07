@@ -18,6 +18,7 @@
 #include "access/tupdesc.h"
 #include "lib/ilist.h"
 #include "nodes/params.h"
+#include "nodes/pathnodes.h"
 #include "tcop/cmdtag.h"
 #include "utils/queryenvironment.h"
 #include "utils/resowner.h"
@@ -130,6 +131,7 @@ typedef struct CachedPlanSource
 	/* State kept to help decide whether to use custom or generic plans: */
 	double		generic_cost;	/* cost of generic plan, or -1 if not known */
 	double		total_custom_cost;	/* total cost of custom plans so far */
+	List	   *total_lived_parts;
 	int64		num_custom_plans;	/* # of custom plans included in total */
 	int64		num_generic_plans;	/* # of generic plans */
 } CachedPlanSource;

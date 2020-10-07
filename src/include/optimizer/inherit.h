@@ -23,5 +23,5 @@ extern void expand_inherited_rtentry(PlannerInfo *root, RelOptInfo *rel,
 extern bool apply_child_basequals(PlannerInfo *root, RelOptInfo *parentrel,
 								  RelOptInfo *childrel, RangeTblEntry *childRTE,
 								  AppendRelInfo *appinfo);
-
+extern void count_live_partitions(PlannerInfo *root, RelOptInfo *rel);
 #endif							/* INHERIT_H */

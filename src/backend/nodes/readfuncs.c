@@ -1669,6 +1669,7 @@ _readAppend(void)
 	ReadCommonPlan(&local_node->plan);
 
 	READ_BITMAPSET_FIELD(apprelids);
+	READ_UINT_FIELD(relid);
 	READ_NODE_FIELD(appendplans);
 	READ_INT_FIELD(first_partial_plan);
 	READ_NODE_FIELD(part_prune_info);

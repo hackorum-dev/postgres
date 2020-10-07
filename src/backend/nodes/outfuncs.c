@@ -433,6 +433,7 @@ _outAppend(StringInfo str, const Append *node)
 	_outPlanInfo(str, (const Plan *) node);
 
 	WRITE_BITMAPSET_FIELD(apprelids);
+	WRITE_UINT_FIELD(relid);
 	WRITE_NODE_FIELD(appendplans);
 	WRITE_INT_FIELD(first_partial_plan);
 	WRITE_NODE_FIELD(part_prune_info);

@@ -62,6 +62,7 @@
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/optimizer.h"
+#include "optimizer/cost.h"
 #include "parser/analyze.h"
 #include "parser/parsetree.h"
 #include "storage/lmgr.h"
@@ -105,6 +106,8 @@ static CachedPlan *BuildCachedPlan(CachedPlanSource *plansource, List *qlist,
 static bool choose_custom_plan(CachedPlanSource *plansource,
 							   ParamListInfo boundParams);
 static double cached_plan_cost(CachedPlan *plan, bool include_planner);
+static double cost_generic_plan(CachedPlanSource *plansource, List *plist);
+static void merge_live_partitions(List **accumulatedl_live_parts, List *curr_live_parts);
 static Query *QueryListGetPrimaryStmt(List *stmts);
 static void AcquireExecutorLocks(List *stmt_list, bool acquire);
 static void AcquirePlannerLocks(List *stmt_list, bool acquire);
@@ -220,6 +223,7 @@ CreateCachedPlan(RawStmt *raw_parse_tree,
 	plansource->total_custom_cost = 0;
 	plansource->num_generic_plans = 0;
 	plansource->num_custom_plans = 0;
+	plansource->total_lived_parts = NIL;
 
 	MemoryContextSwitchTo(oldcxt);
 
@@ -957,6 +961,15 @@ BuildCachedPlan(CachedPlanSource *plansource, List *qlist,
 		 */
 		MemoryContextSwitchTo(plan_context);
 
+		if (boundParams == NULL)
+		{
+			/*
+			 * Generic plan, PlannedStmt->append_plans is not copied on purpose
+			 * (see comments in find_append_plans), so we must cost_generic_plan
+			 * before copyObject.
+			 **/
+			plansource->generic_cost = cost_generic_plan(plansource, plist);
+		}
 		plist = copyObject(plist);
 	}
 	else
@@ -1066,11 +1079,122 @@ choose_custom_plan(CachedPlanSource *plansource, ParamListInfo boundParams)
 }
 
 /*
+ * append_plan_cost_reduction
+ *	Get append plan cost reduction based on the plan time partition prune from
+ *  custom plan.
+ */
+static double
+append_plan_cost_reduction(Append *aplan, LivePartition *live_parts)
+{
+	double result;
+	double total_child_plans = 0, total_child_cost = 0;
+	double avg_lives, live_part_ratio;
+	ListCell *lc;
+	foreach(lc, aplan->appendplans)
+	{
+		Plan	*plan = lfirst(lc);
+		++total_child_plans;
+		total_child_cost += plan->total_cost;
+	}
+
+	avg_lives = live_parts->lived_count / live_parts->count;
+	if (avg_lives < 1)
+		avg_lives = 1;
+	live_part_ratio = avg_lives / total_child_plans;
+	result = (1 - live_part_ratio) * total_child_cost;
+	result +=
+		cpu_tuple_cost * APPEND_CPU_COST_MULTIPLIER *
+		( 1 - live_part_ratio ) * aplan->plan.plan_rows;
+
+	elog(INFO, "append_plan_cost_reduction %d %f", aplan->plan.plan_node_id, result);
+	/*
+	 * XXX: I assume no need to consider the parallel sine all the plan_rows
+	 * and subplan->total_cost have considered it already.
+	 */
+	return result;
+}
+
+
+/*
+ * find_append_plans
+ *	find append plans from PlannedStmt.
+ */
+static List *
+find_append_plans(PlannedStmt *stmt)
+{
+	/*
+	 * Method 1: with append_plan being gathered at set_plan_refs stage.
+	 * however it might be a big stuff for a partitioned table with
+	 * thousands of partitions and there is no use to CachedPlanSource,
+	 * so I didn't copy it in _copyPlannedStmt on purpose, however coping
+	 * a object partially might a bad practice, so I have method 2 in mind
+	 * but it is not implemented yet.
+	 */
+	return stmt->append_plans;
+
+	/*
+	 * Method 2: writing a plantree_walker(Plan, bool (*walker)(), void *context)
+	 * and go though all the plans in PlannedStmt which is not implemented yet.
+	 */
+}
+
+
+/*
+ * cost_generic_plan
+ *
+ * cost generic plan by guessing how many cost should be reduced at
+ * initial partition prune stage, then reduce such cost from total_cost.
+ */
+static double
+cost_generic_plan(CachedPlanSource *plansource, List *plist)
+{
+	double	result = 0;
+	ListCell	*lc1, *lc2;
+	double init_prune_cost_reduction = 0;
+
+	foreach(lc1, plist)
+	{
+		PlannedStmt *stmt = lfirst_node(PlannedStmt, lc1);
+		if (stmt->commandType == CMD_UTILITY)
+			continue;
+		result += stmt->planTree->total_cost;
+	}
+
+	if (plansource->total_lived_parts != NULL)
+	{
+		Assert(list_length(plansource->total_lived_parts) == list_length(plist));
+		forboth(lc1, plist, lc2, plansource->total_lived_parts)
+		{
+			PlannedStmt *stmt = lfirst_node(PlannedStmt, lc1);
+			List	*lived_parts = lfirst_node(List, lc2);
+			ListCell	*lc3;
+			if (stmt->commandType == CMD_UTILITY)
+				continue;
+			foreach(lc3, find_append_plans(stmt))
+			{
+				Append *aplan = lfirst_node(Append, lc3);
+				LivePartition *live_part;
+				if (!OidIsValid(aplan->relid))
+					continue;
+			   live_part = find_related_liveparts(lived_parts, aplan->relid);
+				if (live_part)
+					init_prune_cost_reduction += append_plan_cost_reduction(aplan, live_part);
+												
+			}
+		}
+	}
+
+	return result - init_prune_cost_reduction;
+}
+
+/*
  * cached_plan_cost: calculate estimated cost of a plan
  *
  * If include_planner is true, also include the estimated cost of constructing
  * the plan.  (We must factor that into the cost of using a custom plan, but
  * we don't count it for a generic plan.)
+ * XXX: can be renamed to custom_plan_cost since the generic plan is cost
+ * int cost_generic_plan.
  */
 static double
 cached_plan_cost(CachedPlan *plan, bool include_planner)
@@ -1118,6 +1242,68 @@ cached_plan_cost(CachedPlan *plan, bool include_planner)
 
 	return result;
 }
+
+
+/*
+ * record_runtime_partition_prunes
+ *	Record the plan time partition pruned information from custom plan to
+ * CachedPlanSource for later use.
+ */
+static void
+record_runtime_partition_prunes(CachedPlanSource *plansource, CachedPlan *cplan)
+{
+	MemoryContext oldCtx;
+
+	oldCtx = MemoryContextSwitchTo(plansource->context);
+	if (plansource->total_lived_parts == NIL)
+	{
+		ListCell	*lc;
+		foreach(lc, cplan->stmt_list)
+		{
+			PlannedStmt *stmt = lfirst_node(PlannedStmt, lc);
+			plansource->total_lived_parts = lappend(plansource->total_lived_parts,
+													copyObject(stmt->flatten_live_parts));
+		}
+	}
+	else
+	{
+		ListCell	*lc1, *lc2;
+		Assert(list_length(plansource->total_lived_parts) == list_length(cplan->stmt_list));
+		forboth(lc1, plansource->total_lived_parts, lc2, cplan->stmt_list)
+		{
+			List	*plansource_live_parts = lfirst_node(List, lc1);
+			List	*stmt_live_parts = lfirst_node(PlannedStmt, lc2)->flatten_live_parts;
+			merge_live_partitions(&plansource_live_parts, stmt_live_parts);
+		}
+	}
+	MemoryContextSwitchTo(oldCtx);
+}
+
+/*
+ * merge_live_partitions
+ */
+static void
+merge_live_partitions(List **accumulatedl_live_parts, List *curr_live_parts)
+{
+	ListCell *lc;
+	foreach(lc, curr_live_parts)
+	{
+		LivePartition *curr_live_part = lfirst_node(LivePartition, lc);
+		LivePartition *accm_live_part = find_related_liveparts(*accumulatedl_live_parts,
+															   curr_live_part->relid);
+		if (accm_live_part)
+		{
+			accm_live_part->lived_count += curr_live_part->lived_count;
+			accm_live_part->count += curr_live_part->count;
+		}
+			
+		else
+			*accumulatedl_live_parts = lappend(*accumulatedl_live_parts,
+												copyObject(curr_live_part));
+	}
+}
+
+
 
 /*
  * GetCachedPlan: get a cached plan from a CachedPlanSource.
@@ -1188,8 +1374,6 @@ GetCachedPlan(CachedPlanSource *plansource, ParamListInfo boundParams,
 				MemoryContextSetParent(plan->context,
 									   MemoryContextGetParent(plansource->context));
 			}
-			/* Update generic_cost whenever we make a new generic plan */
-			plansource->generic_cost = cached_plan_cost(plan, false);
 
 			/*
 			 * If, based on the now-known value of generic_cost, we'd not have
@@ -1217,7 +1401,7 @@ GetCachedPlan(CachedPlanSource *plansource, ParamListInfo boundParams,
 		plan = BuildCachedPlan(plansource, qlist, boundParams, queryEnv);
 		/* Accumulate total costs of custom plans */
 		plansource->total_custom_cost += cached_plan_cost(plan, true);
-
+		record_runtime_partition_prunes(plansource, plan);
 		plansource->num_custom_plans++;
 	}
 	else

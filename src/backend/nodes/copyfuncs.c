@@ -94,6 +94,7 @@ _copyPlannedStmt(const PlannedStmt *from)
 	COPY_NODE_FIELD(rootResultRelations);
 	COPY_NODE_FIELD(appendRelations);
 	COPY_NODE_FIELD(subplans);
+	COPY_NODE_FIELD(flatten_live_parts);
 	COPY_BITMAPSET_FIELD(rewindPlanIDs);
 	COPY_NODE_FIELD(rowMarks);
 	COPY_NODE_FIELD(relationOids);
@@ -243,6 +244,7 @@ _copyAppend(const Append *from)
 	 * copy remainder of node
 	 */
 	COPY_BITMAPSET_FIELD(apprelids);
+	COPY_SCALAR_FIELD(relid);
 	COPY_NODE_FIELD(appendplans);
 	COPY_SCALAR_FIELD(first_partial_plan);
 	COPY_NODE_FIELD(part_prune_info);
@@ -4673,6 +4675,16 @@ _copyPartitionCmd(const PartitionCmd *from)
 	return newnode;
 }
 
+static LivePartition *
+_copyLivePartition(const LivePartition *from)
+{
+	LivePartition *newnode = makeNode(LivePartition);
+	COPY_SCALAR_FIELD(relid);
+	COPY_SCALAR_FIELD(lived_count);
+	COPY_SCALAR_FIELD(count);
+	return newnode;
+}
+
 static CreatePublicationStmt *
 _copyCreatePublicationStmt(const CreatePublicationStmt *from)
 {
@@ -5704,6 +5716,10 @@ copyObjectImpl(const void *from)
 			break;
 		case T_PartitionCmd:
 			retval = _copyPartitionCmd(from);
+			break;
+
+		case T_LivePartition:
+			retval = _copyLivePartition(from);
 			break;
 
 			/*

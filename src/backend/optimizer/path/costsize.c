@@ -100,14 +100,6 @@
 
 #define LOG2(x)  (log(x) / 0.693147180559945)
 
-/*
- * Append and MergeAppend nodes are less expensive than some other operations
- * which use cpu_tuple_cost; instead of adding a separate GUC, estimate the
- * per-tuple cost as cpu_tuple_cost multiplied by this value.
- */
-#define APPEND_CPU_COST_MULTIPLIER 0.5
-
-
 double		seq_page_cost = DEFAULT_SEQ_PAGE_COST;
 double		random_page_cost = DEFAULT_RANDOM_PAGE_COST;
 double		cpu_tuple_cost = DEFAULT_CPU_TUPLE_COST;

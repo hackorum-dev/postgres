@@ -21,6 +21,7 @@
 #include "catalog/pg_type.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
+#include "nodes/nodeFuncs.h"
 #include "optimizer/appendinfo.h"
 #include "optimizer/inherit.h"
 #include "optimizer/optimizer.h"
@@ -38,7 +39,8 @@
 static void expand_partitioned_rtentry(PlannerInfo *root, RelOptInfo *relinfo,
 									   RangeTblEntry *parentrte,
 									   Index parentRTindex, Relation parentrel,
-									   PlanRowMark *top_parentrc, LOCKMODE lockmode);
+									   PlanRowMark *top_parentrc, LOCKMODE lockmode,
+									   bool *any_pruned);
 static void expand_single_inheritance_child(PlannerInfo *root,
 											RangeTblEntry *parentrte,
 											Index parentRTindex, Relation parentrel,
@@ -131,6 +133,7 @@ expand_inherited_rtentry(PlannerInfo *root, RelOptInfo *rel,
 	/* Scan the inheritance set and expand it */
 	if (oldrelation->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
 	{
+		bool any_pruned = false;
 		/*
 		 * Partitioned table, so set up for partitioning.
 		 */
@@ -141,7 +144,9 @@ expand_inherited_rtentry(PlannerInfo *root, RelOptInfo *rel,
 		 * extract the partition key columns of all the partitioned tables.
 		 */
 		expand_partitioned_rtentry(root, rel, rte, rti,
-								   oldrelation, oldrc, lockmode);
+								   oldrelation, oldrc, lockmode, &any_pruned);
+		if (any_pruned)
+			count_live_partitions(root, rel);
 	}
 	else
 	{
@@ -278,13 +283,15 @@ expand_inherited_rtentry(PlannerInfo *root, RelOptInfo *rel,
 
 /*
  * expand_partitioned_rtentry
- *		Recursively expand an RTE for a partitioned table.
+ *		Recursively expand an RTE for a partitioned table. any_pruned is an
+ * out parameter which shows if any partition is pruned at this step.
  */
 static void
 expand_partitioned_rtentry(PlannerInfo *root, RelOptInfo *relinfo,
 						   RangeTblEntry *parentrte,
 						   Index parentRTindex, Relation parentrel,
-						   PlanRowMark *top_parentrc, LOCKMODE lockmode)
+						   PlanRowMark *top_parentrc, LOCKMODE lockmode,
+						   bool *any_pruned)
 {
 	PartitionDesc partdesc;
 	Bitmapset  *live_parts;
@@ -333,6 +340,9 @@ expand_partitioned_rtentry(PlannerInfo *root, RelOptInfo *relinfo,
 	num_live_parts = bms_num_members(live_parts);
 	if (num_live_parts > 0)
 		expand_planner_arrays(root, num_live_parts);
+
+	if (num_live_parts < partdesc->nparts)
+		*any_pruned = true;
 
 	/*
 	 * We also store partition RelOptInfo pointers in the parent relation.
@@ -383,7 +393,8 @@ expand_partitioned_rtentry(PlannerInfo *root, RelOptInfo *relinfo,
 		if (childrel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
 			expand_partitioned_rtentry(root, childrelinfo,
 									   childrte, childRTindex,
-									   childrel, top_parentrc, lockmode);
+									   childrel, top_parentrc, lockmode,
+									   any_pruned);
 
 		/* Close child relation, but keep locks */
 		table_close(childrel, NoLock);
@@ -803,4 +814,46 @@ apply_child_basequals(PlannerInfo *root, RelOptInfo *parentrel,
 	childrel->baserestrict_min_security = cq_min_security;
 
 	return true;
+}
+
+
+/*
+ * See how many child partitions survived for a partitioned relation
+ */
+void
+count_live_partitions(PlannerInfo *root, RelOptInfo *rel)
+{
+	int live_parts = 0, i = -1;
+	RelOptInfo *childrel;
+	LivePartition *live_part_stat;
+	Oid relid;
+
+	Assert(IS_PARTITIONED_REL(rel));
+
+	while((i = bms_next_member(rel->all_partrels, i)) >= 0)
+	{
+		childrel = root->simple_rel_array[i];
+		if (!IS_PARTITIONED_REL(childrel))
+			live_parts += 1;
+		else
+			live_parts += bms_num_members(childrel->all_partrels);
+	}
+
+	relid = planner_rt_fetch(rel->relid, root)->relid;
+	live_part_stat = find_related_liveparts(root->glob->flatten_live_parts, relid);
+
+	if (live_part_stat)
+	{
+		live_part_stat->count++;
+		live_part_stat->lived_count += live_parts;
+	}
+	else
+	{
+		LivePartition *tmp = makeNode(LivePartition);
+		tmp->relid = relid;
+		tmp->lived_count = live_parts;
+		tmp->count = 1;
+		root->glob->flatten_live_parts = lappend(root->glob->flatten_live_parts,
+												 tmp);
+	}
 }

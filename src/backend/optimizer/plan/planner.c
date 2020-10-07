@@ -315,6 +315,8 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 	glob->lastPlanNodeId = 0;
 	glob->transientPlan = false;
 	glob->dependsOnRole = false;
+	glob->flatten_live_parts = NIL;
+	glob->append_plans = NIL;
 
 	/*
 	 * Assess whether it's feasible to use parallel mode for this query. We
@@ -523,6 +525,8 @@ standard_planner(Query *parse, const char *query_string, int cursorOptions,
 	result->rootResultRelations = glob->rootResultRelations;
 	result->appendRelations = glob->appendRelations;
 	result->subplans = glob->subplans;
+	result->flatten_live_parts = glob->flatten_live_parts;
+	result->append_plans = glob->append_plans;
 	result->rewindPlanIDs = glob->rewindPlanIDs;
 	result->rowMarks = glob->finalrowmarks;
 	result->relationOids = glob->relationOids;

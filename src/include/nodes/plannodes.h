@@ -79,6 +79,14 @@ typedef struct PlannedStmt
 	List	   *subplans;		/* Plan trees for SubPlan expressions; note
 								 * that some could be NULL */
 
+	List	   *flatten_live_parts;
+
+	/*
+	 * I didn't copy it on purpose to keep the size small,
+	 * This might be a bad practice ...
+	 */
+	List	   *append_plans;
+
 	Bitmapset  *rewindPlanIDs;	/* indices of subplans that require REWIND */
 
 	List	   *rowMarks;		/* a list of PlanRowMark's */
@@ -252,8 +260,8 @@ typedef struct Append
 {
 	Plan		plan;
 	Bitmapset  *apprelids;		/* RTIs of appendrel(s) formed by this node */
+	Oid			relid;  /* set to relation's oid for partitioned table only */
 	List	   *appendplans;
-
 	/*
 	 * All 'appendplans' preceding this index are non-partial plans. All
 	 * 'appendplans' from this index onwards are partial plans.

@@ -14,6 +14,7 @@
 #define NODEFUNCS_H
 
 #include "nodes/parsenodes.h"
+#include "nodes/pathnodes.h"
 
 
 /* flags bits for query_tree_walker and query_tree_mutator */
@@ -53,6 +54,7 @@ extern int	exprLocation(const Node *expr);
 extern void fix_opfuncids(Node *node);
 extern void set_opfuncid(OpExpr *opexpr);
 extern void set_sa_opfuncid(ScalarArrayOpExpr *opexpr);
+extern LivePartition *find_related_liveparts(List *live_parts, Oid relid);
 
 /* Is clause a FuncExpr clause? */
 static inline bool
