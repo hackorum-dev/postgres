@@ -127,7 +127,7 @@ main(int argc, char *const argv[])
 	bool		verbose = false,
 				header_mode = false;
 	struct _include_path *ip;
-	const char *progname;
+	const char *progname = NULL;
 	char		my_exec_path[MAXPGPATH];
 	char		include_path[MAXPGPATH];
 
@@ -138,7 +138,8 @@ main(int argc, char *const argv[])
 	if (find_my_exec(argv[0], my_exec_path) < 0)
 	{
 		fprintf(stderr, _("%s: could not locate my own executable path\n"), argv[0]);
-		return ILLEGAL_OPTION;
+		ret_value = ILLEGAL_OPTION;
+		goto err;
 	}
 
 	if (argc > 1)
@@ -146,12 +147,14 @@ main(int argc, char *const argv[])
 		if (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-?") == 0)
 		{
 			help(progname);
-			exit(0);
+			ret_value = EXIT_OK;
+			goto err;
 		}
 		if (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-V") == 0)
 		{
 			printf("ecpg (PostgreSQL) %s\n", PG_VERSION);
-			exit(0);
+			ret_value = EXIT_OK;
+			goto err;
 		}
 	}
 
@@ -216,7 +219,8 @@ main(int argc, char *const argv[])
 				else
 				{
 					fprintf(stderr, _("Try \"%s --help\" for more information.\n"), argv[0]);
-					return ILLEGAL_OPTION;
+					ret_value = ILLEGAL_OPTION;
+					goto err;
 				}
 				break;
 			case 'r':
@@ -229,7 +233,8 @@ main(int argc, char *const argv[])
 				else
 				{
 					fprintf(stderr, _("Try \"%s --help\" for more information.\n"), argv[0]);
-					return ILLEGAL_OPTION;
+					ret_value = ILLEGAL_OPTION;
+					goto err;
 				}
 				break;
 			case 'D':
@@ -245,7 +250,8 @@ main(int argc, char *const argv[])
 				break;
 			default:
 				fprintf(stderr, _("Try \"%s --help\" for more information.\n"), argv[0]);
-				return ILLEGAL_OPTION;
+				ret_value = ILLEGAL_OPTION;
+				goto err;
 		}
 	}
 
@@ -264,14 +270,16 @@ main(int argc, char *const argv[])
 		for (ip = include_paths; ip != NULL; ip = ip->next)
 			fprintf(stderr, " %s\n", ip->path);
 		fprintf(stderr, _("end of search list\n"));
-		return 0;
+		ret_value = EXIT_OK;
+		goto err;
 	}
 
 	if (optind >= argc)			/* no files specified */
 	{
 		fprintf(stderr, _("%s: no input files specified\n"), progname);
 		fprintf(stderr, _("Try \"%s --help\" for more information.\n"), argv[0]);
-		return ILLEGAL_OPTION;
+		ret_value = ILLEGAL_OPTION;
+		goto err;
 	}
 	else
 	{
@@ -473,7 +481,7 @@ main(int argc, char *const argv[])
 				/*
 				 * If there was an error, delete the output file.
 				 */
-				if (ret_value != 0)
+				if (ret_value != EXIT_OK)
 				{
 					if (strcmp(output_filename, "-") != 0 && unlink(output_filename) != 0)
 						fprintf(stderr, _("could not remove output file \"%s\"\n"), output_filename);
@@ -489,5 +497,10 @@ main(int argc, char *const argv[])
 			free(input_filename);
 		}
 	}
+
+err:
+	if (progname)
+		free((void*)(progname));
+
 	return ret_value;
 }

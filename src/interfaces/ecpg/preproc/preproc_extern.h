@@ -106,6 +106,7 @@ extern int	filtered_base_yylex(void);
 
 /* return codes */
 
+#define EXIT_OK				0
 #define ILLEGAL_OPTION		1
 #define NO_INCLUDE_FILE		2
 #define PARSE_ERROR			3
