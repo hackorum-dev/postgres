@@ -1524,6 +1524,7 @@ NIImportAffixes(IspellDict *Conf, const char *filename)
 	Conf->usecompound = false;
 	Conf->useFlagAliases = false;
 	Conf->flagMode = FM_CHAR;
+	flag[0] = '\0';
 
 	while ((recoded = tsearch_readline(&trst)) != NULL)
 	{
