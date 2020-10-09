@@ -3,7 +3,7 @@ use strict;
 use warnings;
 use PostgresNode;
 use TestLib;
-use Test::More tests => 9;
+use Test::More tests => 11;
 
 # setup
 
@@ -40,6 +40,18 @@ $node_publisher->safe_psql('postgres',
 
 $node_subscriber->safe_psql('postgres',
 	"CREATE TABLE tab4 (x int PRIMARY KEY, y int REFERENCES tab3)");
+
+$node_publisher->safe_psql('postgres',
+	"CREATE TABLE tab5 (a int PRIMARY KEY)");
+
+$node_subscriber->safe_psql('postgres',
+	"CREATE TABLE tab5 (a int PRIMARY KEY)");
+
+$node_publisher->safe_psql('postgres',
+	"CREATE TABLE tab6 (a int PRIMARY KEY)");
+
+$node_subscriber->safe_psql('postgres',
+	"CREATE TABLE tab6 (a int PRIMARY KEY)");
 
 $node_subscriber->safe_psql('postgres',
 	"CREATE SEQUENCE seq1 OWNED BY tab1.a");
@@ -158,3 +170,34 @@ is($result, qq(0||), 'truncate of multiple tables some not published');
 $result = $node_subscriber->safe_psql('postgres',
 	"SELECT count(*), min(a), max(a) FROM tab2");
 is($result, qq(3|1|3), 'truncate of multiple tables some not published');
+
+# test CREATE SUBSCRIPTION without TRUNCATE option
+$node_subscriber->safe_psql('postgres', "INSERT INTO tab5 VALUES (1),(2),(3)");
+$node_publisher->safe_psql('postgres',
+	"CREATE PUBLICATION pub2 FOR TABLE tab5");
+$node_subscriber->safe_psql('postgres',
+	"CREATE SUBSCRIPTION sub2 CONNECTION '$publisher_connstr' PUBLICATION pub2"
+);
+$node_publisher->safe_psql('postgres', "INSERT INTO tab5 VALUES (4)");
+$node_publisher->wait_for_catchup('sub2');
+
+$result = $node_subscriber->safe_psql('postgres',
+	"SELECT count(*) FROM tab5");
+is($result, qq(4), 'Not specifying TRUNCATE leaves existing table alone');
+
+# same, but with TRUNCATE
+$node_subscriber->safe_psql('postgres', "DROP SUBSCRIPTION sub2");
+$node_publisher->safe_psql('postgres', "DROP PUBLICATION pub2");
+
+$node_subscriber->safe_psql('postgres', "INSERT INTO tab6 VALUES (1),(2),(3)");
+$node_publisher->safe_psql('postgres',
+	"CREATE PUBLICATION pub2 FOR TABLE tab6");
+$node_subscriber->safe_psql('postgres',
+	"CREATE SUBSCRIPTION sub2 CONNECTION '$publisher_connstr' PUBLICATION pub2 WITH (truncate = true)"
+);
+$node_publisher->safe_psql('postgres', "INSERT INTO tab6 VALUES (4)");
+$node_publisher->wait_for_catchup('sub2');
+
+$result = $node_subscriber->safe_psql('postgres',
+	"SELECT count(*) FROM tab6");
+is($result, qq(1), 'with TRUNCATE data is reset');

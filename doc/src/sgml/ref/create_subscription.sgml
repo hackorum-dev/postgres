@@ -108,6 +108,16 @@ CREATE SUBSCRIPTION <replaceable class="parameter">subscription_name</replaceabl
        </varlistentry>
 
        <varlistentry>
+        <term><literal>truncate</literal> (<type>boolean</type>)</term>
+        <listitem>
+         <para>
+          Specifies whether newly subscribed tables should be truncated before
+          copying the initial data.  The default is <literal>false</literal>.
+         </para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
         <term><literal>create_slot</literal> (<type>boolean</type>)</term>
         <listitem>
          <para>

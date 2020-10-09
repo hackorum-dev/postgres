@@ -48,6 +48,8 @@ SET SESSION AUTHORIZATION 'regress_subscription_user';
 -- fail - invalid option combinations
 CREATE SUBSCRIPTION regress_testsub2 CONNECTION 'dbname=regress_doesnotexist' PUBLICATION testpub WITH (connect = false, copy_data = true);
 ERROR:  connect = false and copy_data = true are mutually exclusive options
+CREATE SUBSCRIPTION regress_testsub2 CONNECTION 'dbname=regress_doesnotexist' PUBLICATION testpub WITH (copy_data = false, truncate = true);
+ERROR:  truncate = true can only be specified when copy_data = true
 CREATE SUBSCRIPTION regress_testsub2 CONNECTION 'dbname=regress_doesnotexist' PUBLICATION testpub WITH (connect = false, enabled = true);
 ERROR:  connect = false and enabled = true are mutually exclusive options
 CREATE SUBSCRIPTION regress_testsub2 CONNECTION 'dbname=regress_doesnotexist' PUBLICATION testpub WITH (connect = false, create_slot = true);

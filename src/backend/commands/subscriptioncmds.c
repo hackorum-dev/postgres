@@ -61,6 +61,7 @@ parse_subscription_options(List *options,
 						   bool *create_slot,
 						   bool *slot_name_given, char **slot_name,
 						   bool *copy_data,
+						   bool *truncate,
 						   char **synchronous_commit,
 						   bool *refresh,
 						   bool *binary_given, bool *binary,
@@ -70,6 +71,7 @@ parse_subscription_options(List *options,
 	bool		connect_given = false;
 	bool		create_slot_given = false;
 	bool		copy_data_given = false;
+	bool		truncate_given = false;
 	bool		refresh_given = false;
 
 	/* If connect is specified, the others also need to be. */
@@ -91,6 +93,8 @@ parse_subscription_options(List *options,
 	}
 	if (copy_data)
 		*copy_data = true;
+	if (truncate)
+		*truncate = false;
 	if (synchronous_commit)
 		*synchronous_commit = NULL;
 	if (refresh)
@@ -164,6 +168,16 @@ parse_subscription_options(List *options,
 
 			copy_data_given = true;
 			*copy_data = defGetBoolean(defel);
+		}
+		else if (strcmp(defel->defname, "truncate") == 0 && truncate)
+		{
+			if (truncate_given)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+
+			truncate_given = true;
+			*truncate = defGetBoolean(defel);
 		}
 		else if (strcmp(defel->defname, "synchronous_commit") == 0 &&
 				 synchronous_commit)
@@ -242,6 +256,12 @@ parse_subscription_options(List *options,
 					 errmsg("%s and %s are mutually exclusive options",
 							"connect = false", "copy_data = true")));
 
+		if (truncate && truncate_given && *truncate)
+			ereport(ERROR,
+					(errcode(ERRCODE_SYNTAX_ERROR),
+					 errmsg("%s and %s are mutually exclusive options",
+							"connect = false", "truncate = true")));
+
 		/* Change the defaults of other options. */
 		*enabled = false;
 		*create_slot = false;
@@ -279,6 +299,18 @@ parse_subscription_options(List *options,
 					(errcode(ERRCODE_SYNTAX_ERROR),
 					 errmsg("subscription with %s must also set %s",
 							"slot_name = NONE", "create_slot = false")));
+	}
+
+	/*
+	 * Truncate is only valid when copy_data is true.
+	 */
+
+	if (truncate && *truncate && !*copy_data)
+	{
+			ereport(ERROR,
+					(errcode(ERRCODE_SYNTAX_ERROR),
+					 errmsg("%s can only be specified when %s",
+							"truncate = true", "copy_data = true")));
 	}
 }
 
@@ -353,6 +385,7 @@ CreateSubscription(CreateSubscriptionStmt *stmt, bool isTopLevel)
 	bool		enabled_given;
 	bool		enabled;
 	bool		copy_data;
+	bool		truncate;
 	bool		streaming;
 	bool		streaming_given;
 	char	   *synchronous_commit;
@@ -376,6 +409,7 @@ CreateSubscription(CreateSubscriptionStmt *stmt, bool isTopLevel)
 							   &create_slot,
 							   &slotname_given, &slotname,
 							   &copy_data,
+							   &truncate,
 							   &synchronous_commit,
 							   NULL,	/* no "refresh" */
 							   &binary_given, &binary,
@@ -494,7 +528,10 @@ CreateSubscription(CreateSubscriptionStmt *stmt, bool isTopLevel)
 			 * Set sync state based on if we were asked to do data copy or
 			 * not.
 			 */
-			table_state = copy_data ? SUBREL_STATE_INIT : SUBREL_STATE_READY;
+			if (copy_data)
+				table_state = truncate ? SUBREL_STATE_INIT_TRUNC : SUBREL_STATE_INIT;
+			else
+				table_state = SUBREL_STATE_READY;
 
 			/*
 			 * Get the table list from publisher and build local table status
@@ -557,7 +594,7 @@ CreateSubscription(CreateSubscriptionStmt *stmt, bool isTopLevel)
 }
 
 static void
-AlterSubscription_refresh(Subscription *sub, bool copy_data)
+AlterSubscription_refresh(Subscription *sub, bool copy_data, bool truncate)
 {
 	char	   *err;
 	List	   *pubrel_names;
@@ -626,8 +663,15 @@ AlterSubscription_refresh(Subscription *sub, bool copy_data)
 		if (!bsearch(&relid, subrel_local_oids,
 					 list_length(subrel_states), sizeof(Oid), oid_cmp))
 		{
+			char subrel_state;
+
+			if (copy_data)
+				subrel_state = (truncate ? SUBREL_STATE_INIT_TRUNC : SUBREL_STATE_INIT);
+			else
+				subrel_state = SUBREL_STATE_READY;
+
 			AddSubscriptionRelState(sub->oid, relid,
-									copy_data ? SUBREL_STATE_INIT : SUBREL_STATE_READY,
+									subrel_state,
 									InvalidXLogRecPtr);
 			ereport(DEBUG1,
 					(errmsg("table \"%s.%s\" added to subscription \"%s\"",
@@ -727,6 +771,7 @@ AlterSubscription(AlterSubscriptionStmt *stmt)
 										   NULL,	/* no "create_slot" */
 										   &slotname_given, &slotname,
 										   NULL,	/* no "copy_data" */
+										   NULL,	/* no "truncate" */
 										   &synchronous_commit,
 										   NULL,	/* no "refresh" */
 										   &binary_given, &binary,
@@ -784,6 +829,7 @@ AlterSubscription(AlterSubscriptionStmt *stmt)
 										   NULL,	/* no "create_slot" */
 										   NULL, NULL,	/* no "slot_name" */
 										   NULL,	/* no "copy_data" */
+										   NULL,	/* no "truncate" */
 										   NULL,	/* no "synchronous_commit" */
 										   NULL,	/* no "refresh" */
 										   NULL, NULL,	/* no "binary" */
@@ -821,6 +867,7 @@ AlterSubscription(AlterSubscriptionStmt *stmt)
 		case ALTER_SUBSCRIPTION_PUBLICATION:
 			{
 				bool		copy_data;
+				bool		truncate;
 				bool		refresh;
 
 				parse_subscription_options(stmt->options,
@@ -829,6 +876,7 @@ AlterSubscription(AlterSubscriptionStmt *stmt)
 										   NULL,	/* no "create_slot" */
 										   NULL, NULL,	/* no "slot_name" */
 										   &copy_data,
+										   &truncate,
 										   NULL,	/* no "synchronous_commit" */
 										   &refresh,
 										   NULL, NULL,	/* no "binary" */
@@ -851,7 +899,7 @@ AlterSubscription(AlterSubscriptionStmt *stmt)
 					/* Make sure refresh sees the new list of publications. */
 					sub->publications = stmt->publication;
 
-					AlterSubscription_refresh(sub, copy_data);
+					AlterSubscription_refresh(sub, copy_data, truncate);
 				}
 
 				break;
@@ -860,6 +908,7 @@ AlterSubscription(AlterSubscriptionStmt *stmt)
 		case ALTER_SUBSCRIPTION_REFRESH:
 			{
 				bool		copy_data;
+				bool		truncate;
 
 				if (!sub->enabled)
 					ereport(ERROR,
@@ -872,12 +921,13 @@ AlterSubscription(AlterSubscriptionStmt *stmt)
 										   NULL,	/* no "create_slot" */
 										   NULL, NULL,	/* no "slot_name" */
 										   &copy_data,
+										   &truncate,
 										   NULL,	/* no "synchronous_commit" */
 										   NULL,	/* no "refresh" */
 										   NULL, NULL,	/* no "binary" */
 										   NULL, NULL); /* no "streaming" */
 
-				AlterSubscription_refresh(sub, copy_data);
+				AlterSubscription_refresh(sub, copy_data, truncate);
 
 				break;
 			}

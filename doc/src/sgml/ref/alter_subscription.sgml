@@ -133,6 +133,16 @@ ALTER SUBSCRIPTION <replaceable class="parameter">name</replaceable> RENAME TO <
          </para>
         </listitem>
        </varlistentry>
+       <varlistentry>
+        <term><literal>truncate</literal> (<type>boolean</type>)</term>
+        <listitem>
+         <para>
+          Specifies whether newly subscribed tables should be truncated before
+          copying the initial data.  The default is <literal>false</literal>.
+          (Previously subscribed tables are not truncated.)
+         </para>
+        </listitem>
+       </varlistentry>
       </variablelist></para>
     </listitem>
    </varlistentry>

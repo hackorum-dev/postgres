@@ -90,6 +90,7 @@
 #include "catalog/pg_subscription_rel.h"
 #include "catalog/pg_type.h"
 #include "commands/copy.h"
+#include "commands/tablecmds.h"
 #include "miscadmin.h"
 #include "parser/parse_relation.h"
 #include "pgstat.h"
@@ -858,6 +859,39 @@ LogicalRepSyncTableStart(XLogRecPtr *origin_startpos)
 
 	switch (MyLogicalRepWorker->relstate)
 	{
+		case SUBREL_STATE_INIT_TRUNC:
+			{
+				Relation	rel;
+				List	   *relids = NIL;
+				List	   *rels = NIL;
+
+				SpinLockAcquire(&MyLogicalRepWorker->relmutex);
+				MyLogicalRepWorker->relstate = SUBREL_STATE_INIT;
+				MyLogicalRepWorker->relstate_lsn = InvalidXLogRecPtr;
+				SpinLockRelease(&MyLogicalRepWorker->relmutex);
+
+				/* Simple attempt to truncate the relation itself */
+				StartTransactionCommand();
+				rel = table_open(MyLogicalRepWorker->relid, RowExclusiveLock);
+
+				rels = lappend(rels, rel);
+				relids = lappend_oid(relids, MyLogicalRepWorker->relid);
+
+				ExecuteTruncateGuts(rels, relids, NIL, DROP_RESTRICT, false);
+				CommitTransactionCommand();
+
+				table_close(rel, NoLock);
+
+				/* Update the state and make it visible to others. */
+				StartTransactionCommand();
+				UpdateSubscriptionRelState(MyLogicalRepWorker->subid,
+										   MyLogicalRepWorker->relid,
+										   MyLogicalRepWorker->relstate,
+										   MyLogicalRepWorker->relstate_lsn);
+				CommitTransactionCommand();
+				pgstat_report_stat(false);
+			}
+			/* Fallthrough for data sync */
 		case SUBREL_STATE_INIT:
 		case SUBREL_STATE_DATASYNC:
 			{

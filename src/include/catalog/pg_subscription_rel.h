@@ -56,6 +56,7 @@ typedef FormData_pg_subscription_rel *Form_pg_subscription_rel;
  * ----------------
  */
 #define SUBREL_STATE_INIT		'i' /* initializing (sublsn NULL) */
+#define SUBREL_STATE_INIT_TRUNC	't' /* initializing, but truncate target (sublsn NULL) */
 #define SUBREL_STATE_DATASYNC	'd' /* data is being synchronized (sublsn
 									 * NULL) */
 #define SUBREL_STATE_SYNCDONE	's' /* synchronization finished in front of
