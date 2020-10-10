@@ -257,8 +257,9 @@ CREATE [ OR REPLACE ] FUNCTION
        The name of the language that the function is implemented in.
        It can be <literal>sql</literal>, <literal>c</literal>,
        <literal>internal</literal>, or the name of a user-defined
-       procedural language, e.g., <literal>plpgsql</literal>.  Enclosing the
-       name in single quotes is deprecated and requires matching case.
+       procedural language, e.g., <literal>plpgsql</literal>.  The default is
+       <literal>sql</literal>.  Enclosing the name in single quotes is
+       deprecated and requires matching case.
       </para>
      </listitem>
     </varlistentry>

@@ -14,11 +14,11 @@ SET search_path TO temp_func_test, public;
 --
 -- ARGUMENT and RETURN TYPES
 --
-CREATE FUNCTION functest_A_1(text, date) RETURNS bool LANGUAGE 'sql'
+CREATE FUNCTION functest_A_1(text, date) RETURNS bool LANGUAGE SQL
        AS 'SELECT $1 = ''abcd'' AND $2 > ''2001-01-01''';
 CREATE FUNCTION functest_A_2(text[]) RETURNS int LANGUAGE 'sql'
        AS 'SELECT $1[1]::int';
-CREATE FUNCTION functest_A_3() RETURNS bool LANGUAGE 'sql'
+CREATE FUNCTION functest_A_3() RETURNS bool
        AS 'SELECT false';
 SELECT proname, prorettype::regtype, proargtypes::regtype[] FROM pg_proc
        WHERE oid in ('functest_A_1'::regproc,

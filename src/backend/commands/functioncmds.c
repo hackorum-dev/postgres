@@ -797,17 +797,9 @@ compute_function_attributes(ParseState *pstate,
 		*as = NIL;				/* keep compiler quiet */
 	}
 
+	/* process optional items */
 	if (language_item)
 		*language = strVal(language_item->arg);
-	else
-	{
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_FUNCTION_DEFINITION),
-				 errmsg("no language specified")));
-		*language = NULL;		/* keep compiler quiet */
-	}
-
-	/* process optional items */
 	if (transform_item)
 		*transform = transform_item->arg;
 	if (windowfunc_item)
@@ -962,6 +954,7 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 					   get_namespace_name(namespaceId));
 
 	/* Set default attributes */
+	language = "sql";
 	isWindowFunc = false;
 	isStrict = false;
 	security = false;
