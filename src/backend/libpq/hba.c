@@ -2797,6 +2797,101 @@ parse_ident_line(TokenizedLine *tok_line)
 	return parsedline;
 }
 
+#ifdef ENABLE_SSPI
+
+/*
+ * Get the sid for an account name
+ */
+static PSID
+lookup_account_name(LPCTSTR accountName, LPDWORD accountSidSize, LPDWORD domainNameCharCount, LPDWORD lastError)
+{
+	PSID			accountSid;
+	LPCTSTR			domainName;
+	SID_NAME_USE	sidType;
+	BOOL			lookupResult;
+
+	accountSid = malloc(*accountSidSize);
+
+	if (accountSid == NULL)
+	{
+		ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("out of memory")));
+	}
+
+	domainName = malloc(*domainNameCharCount * sizeof(TCHAR));
+
+	if (domainName == NULL)
+	{
+		ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("out of memory")));
+	}
+
+	lookupResult = LookupAccountName(NULL, accountName, accountSid, accountSidSize, domainName, domainNameCharCount, &sidType);
+	*lastError = GetLastError();
+
+	free(domainName);
+
+	if (!lookupResult && (accountSid != NULL))
+	{
+		free(accountSid);
+
+		accountSid = NULL;
+	}
+
+	return accountSid;
+}
+
+/*
+ * Check if the user (sspiToken) is a member of the specified group
+ */
+static bool
+sspi_user_is_in_group(HANDLE sspiToken, LPCTSTR groupName)
+{
+	BOOL		isMember = FALSE;
+	DWORD		groupSidSize = 1024;
+	DWORD		domainNameCharCount = 1024;
+	PSID		groupSid;
+	DWORD		lastError;
+
+	// try a default buffer size. if this doesn't work, use the returned buffer size
+	groupSid = lookup_account_name(groupName, &groupSidSize, &domainNameCharCount, &lastError);
+
+	if (groupSid == NULL)
+	{
+		if (lastError == 122)
+		{
+			elog(DEBUG2, "larger buffer required to get sid, groupSidSize=%lu, domainNameCharCount=%lu", groupSidSize, domainNameCharCount);
+
+			groupSid = lookup_account_name(groupName, &groupSidSize, &domainNameCharCount, &lastError);
+
+			if (groupSid == NULL)
+			{
+				elog(DEBUG2, "could not get sid on second attempt: error=%lu", lastError);
+			}
+		}
+		else
+		{
+			elog(DEBUG2, "could not get sid on first attempt: error=%lu", lastError);
+		}
+	}
+
+	if (groupSid != NULL)
+	{
+		if (CheckTokenMembership(sspiToken, groupSid, &isMember))
+		{
+			elog(DEBUG4, "check group membership groupName=%s, isMember=%i", groupName, isMember);
+		}
+		else
+		{
+			elog(DEBUG2, "could not check group membership: error=%lu", lastError);
+		}
+
+		free(groupSid);
+	}
+
+	return (isMember == TRUE);
+}
+
+#endif		/* ENABLE_SSPI */
+
 /*
  *	Process one line from the parsed ident config lines.
  *
@@ -2806,7 +2901,8 @@ parse_ident_line(TokenizedLine *tok_line)
 static void
 check_ident_usermap(IdentLine *identLine, const char *usermap_name,
 					const char *pg_role, const char *ident_user,
-					bool case_insensitive, bool *found_p, bool *error_p)
+					bool case_insensitive, bool *found_p, bool *error_p,
+					void *sspi_token)
 {
 	*found_p = false;
 	*error_p = false;
@@ -2906,6 +3002,21 @@ check_ident_usermap(IdentLine *identLine, const char *usermap_name,
 
 		return;
 	}
+#ifdef ENABLE_SSPI
+	else if (identLine->ident_user[0] == '+')
+	{
+		if (case_insensitive)
+		{
+			if (pg_strcasecmp(identLine->pg_role, pg_role) == 0)
+				*found_p = sspi_user_is_in_group(sspi_token, identLine->ident_user + 1);
+		}
+		else
+		{
+			if (strcmp(identLine->pg_role, pg_role) == 0)
+				*found_p = sspi_user_is_in_group(sspi_token, identLine->ident_user + 1);
+		}
+	}
+#endif   /* ENABLE_SSPI */
 	else
 	{
 		/* Not regular expression, so make complete match */
@@ -2942,7 +3053,8 @@ int
 check_usermap(const char *usermap_name,
 			  const char *pg_role,
 			  const char *auth_user,
-			  bool case_insensitive)
+			  bool case_insensitive,
+			  void *sspi_token)
 {
 	bool		found_entry = false,
 				error = false;
@@ -2972,7 +3084,7 @@ check_usermap(const char *usermap_name,
 		{
 			check_ident_usermap(lfirst(line_cell), usermap_name,
 								pg_role, auth_user, case_insensitive,
-								&found_entry, &error);
+								&found_entry, &error, sspi_token);
 			if (found_entry || error)
 				break;
 		}

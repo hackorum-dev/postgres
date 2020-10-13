@@ -1281,7 +1281,7 @@ pg_GSS_checkauth(Port *port)
 	}
 
 	ret = check_usermap(port->hba->usermap, port->user_name, gbuf.value,
-						pg_krb_caseins_users);
+						pg_krb_caseins_users, NULL);
 
 	gss_release_buffer(&lmin_s, &gbuf);
 
@@ -1321,6 +1321,7 @@ pg_SSPI_error(int severity, const char *errmsg, SECURITY_STATUS r)
 static int
 pg_SSPI_recvauth(Port *port)
 {
+	int			retval = STATUS_ERROR;
 	int			mtype;
 	StringInfoData buf;
 	SECURITY_STATUS r;
@@ -1398,7 +1399,7 @@ pg_SSPI_recvauth(Port *port)
 						(errcode(ERRCODE_PROTOCOL_VIOLATION),
 						 errmsg("expected SSPI response, got message type %d",
 								mtype)));
-			return STATUS_ERROR;
+			return retval;
 		}
 
 		/* Get the actual SSPI token */
@@ -1413,7 +1414,7 @@ pg_SSPI_recvauth(Port *port)
 				free(sspictx);
 			}
 			FreeCredentialsHandle(&sspicred);
-			return STATUS_ERROR;
+			return retval;
 		}
 
 		/* Map to SSPI style buffer */
@@ -1563,8 +1564,6 @@ pg_SSPI_recvauth(Port *port)
 				(errmsg_internal("could not get token information: error code %lu",
 								 GetLastError())));
 
-	CloseHandle(token);
-
 	if (!LookupAccountSid(NULL, tokenuser->User.Sid, accountname, &accountnamesize,
 						  domainname, &domainnamesize, &accountnameuse))
 		ereport(ERROR,
@@ -1573,51 +1572,47 @@ pg_SSPI_recvauth(Port *port)
 
 	free(tokenuser);
 
-	if (!port->hba->compat_realm)
+	if (port->hba->compat_realm ||
+		(pg_SSPI_make_upn(accountname, sizeof(accountname), domainname,
+						  sizeof(domainname), port->hba->upn_username) == STATUS_OK))
 	{
-		int			status = pg_SSPI_make_upn(accountname, sizeof(accountname),
-											  domainname, sizeof(domainname),
-											  port->hba->upn_username);
-
-		if (status != STATUS_OK)
-			/* Error already reported from pg_SSPI_make_upn */
-			return status;
-	}
-
-	/*
-	 * Compare realm/domain if requested. In SSPI, always compare case
-	 * insensitive.
-	 */
-	if (port->hba->krb_realm && strlen(port->hba->krb_realm))
-	{
-		if (pg_strcasecmp(port->hba->krb_realm, domainname) != 0)
+		/*
+		 * Compare realm/domain if requested. In SSPI, always compare case
+		 * insensitive.
+		 */
+		if (port->hba->krb_realm && strlen(port->hba->krb_realm) &&
+			(pg_strcasecmp(port->hba->krb_realm, domainname) != 0))
 		{
 			elog(DEBUG2,
-				 "SSPI domain (%s) and configured domain (%s) don't match",
-				 domainname, port->hba->krb_realm);
+					"SSPI domain (%s) and configured domain (%s) don't match",
+					domainname, port->hba->krb_realm);
+		}
+		else
+		{
+			/*
+			 * We have the username (without domain/realm) in accountname, compare to
+			 * the supplied value. In SSPI, always compare case insensitive.
+			 *
+			 * If set to include realm, append it in <username>@<realm> format.
+			 */
+			if (port->hba->include_realm)
+			{
+				char	   *namebuf;
 
-			return STATUS_ERROR;
+				namebuf = psprintf("%s@%s", accountname, domainname);
+				retval = check_usermap(port->hba->usermap, port->user_name, namebuf, true, token);
+				pfree(namebuf);
+			}
+			else
+			{
+				retval = check_usermap(port->hba->usermap, port->user_name, accountname, true, token);
+			}
 		}
 	}
 
-	/*
-	 * We have the username (without domain/realm) in accountname, compare to
-	 * the supplied value. In SSPI, always compare case insensitive.
-	 *
-	 * If set to include realm, append it in <username>@<realm> format.
-	 */
-	if (port->hba->include_realm)
-	{
-		char	   *namebuf;
-		int			retval;
+	CloseHandle(token);
 
-		namebuf = psprintf("%s@%s", accountname, domainname);
-		retval = check_usermap(port->hba->usermap, port->user_name, namebuf, true);
-		pfree(namebuf);
-		return retval;
-	}
-	else
-		return check_usermap(port->hba->usermap, port->user_name, accountname, true);
+	return retval;
 }
 
 /*
@@ -1972,7 +1967,7 @@ ident_inet_done:
 
 	if (ident_return)
 		/* Success! Check the usermap */
-		return check_usermap(port->hba->usermap, port->user_name, ident_user, false);
+		return check_usermap(port->hba->usermap, port->user_name, ident_user, false, NULL);
 	return STATUS_ERROR;
 }
 
@@ -2031,7 +2026,7 @@ auth_peer(hbaPort *port)
 	/* Make a copy of static getpw*() result area. */
 	peer_user = pstrdup(pw->pw_name);
 
-	ret = check_usermap(port->hba->usermap, port->user_name, peer_user, false);
+	ret = check_usermap(port->hba->usermap, port->user_name, peer_user, false, NULL);
 
 	pfree(peer_user);
 
@@ -2883,7 +2878,7 @@ CheckCertAuth(Port *port)
 	}
 
 	/* Just pass the certificate cn to the usermap check */
-	status_check_usermap = check_usermap(port->hba->usermap, port->user_name, port->peer_cn, false);
+	status_check_usermap = check_usermap(port->hba->usermap, port->user_name, port->peer_cn, false, NULL);
 	if (status_check_usermap != STATUS_OK)
 	{
 		/*

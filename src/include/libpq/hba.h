@@ -128,7 +128,7 @@ extern bool load_ident(void);
 extern void hba_getauthmethod(hbaPort *port);
 extern int	check_usermap(const char *usermap_name,
 						  const char *pg_role, const char *auth_user,
-						  bool case_sensitive);
+						  bool case_sensitive, void *sspi_token);
 extern bool pg_isblank(const char c);
 
 #endif							/* HBA_H */
