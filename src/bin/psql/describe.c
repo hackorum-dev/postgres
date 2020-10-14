@@ -26,6 +26,7 @@
 #include "fe_utils/print.h"
 #include "fe_utils/string_utils.h"
 #include "settings.h"
+#include "stringutils.h"
 #include "variables.h"
 
 static bool describeOneTableDetails(const char *schemaname,
@@ -312,7 +313,7 @@ describeTablespaces(const char *pattern, bool verbose)
  * and you can mix and match these in any order.
  */
 bool
-describeFunctions(const char *functypes, const char *pattern, bool verbose, bool showSystem)
+describeFunctions(const char *functypes, const char *pattern, bool verbose, bool showSystem, const char *funcargs)
 {
 	bool		showAggregate = strchr(functypes, 'a') != NULL;
 	bool		showNormal = strchr(functypes, 'n') != NULL;
@@ -625,6 +626,49 @@ describeFunctions(const char *functypes, const char *pattern, bool verbose, bool
 	processSQLNamePattern(pset.db, &buf, pattern, have_where, false,
 						  "n.nspname", "p.proname", NULL,
 						  "pg_catalog.pg_function_is_visible(p.oid)");
+
+	/*
+	 * Check for any additional arguments to narrow down which functions are
+	 * desired
+	 */
+	if (funcargs)
+	{
+
+		int			x = 0;
+		int			argoffset = 0;
+		char	   *functoken;
+
+		while ((functoken = strtokx(x++ ? NULL : funcargs, " \t\n\r", ".,();", "\"", 0, false, true, pset.encoding)))
+		{
+			if (isalpha(functoken[0]))
+			{
+				appendPQExpBuffer(&buf, "  AND p.proargtypes[%d]::regtype::text = LOWER(%s)::text\n",
+								  argoffset++,
+
+				/*
+				 * This is not a comprehensive list - just a little help
+				 */
+								  pg_strcasecmp(functoken, "bool") == 0 ? "'boolean'"
+								  : pg_strcasecmp(functoken, "char") == 0 ? "'character'"
+								  : pg_strcasecmp(functoken, "double") == 0 ? "'double precision'"
+								  : pg_strcasecmp(functoken, "float") == 0 ? "'double precision'"
+								  : pg_strcasecmp(functoken, "int") == 0 ? "'integer'"
+								  : pg_strcasecmp(functoken, "time") == 0 ? "'time without time zone'"
+								  : pg_strcasecmp(functoken, "timetz") == 0 ? "'time with time zone'"
+								  : pg_strcasecmp(functoken, "timestamp") == 0 ? "'timestamp without time zone'"
+								  : pg_strcasecmp(functoken, "timestamptz") == 0 ? "'timestamp with time zone'"
+								  : pg_strcasecmp(functoken, "varbit") == 0 ? "'bit varying'"
+								  : pg_strcasecmp(functoken, "varchar") == 0 ? "'character varying'"
+								  : PQescapeLiteral(pset.db, functoken, strlen(functoken)));
+
+			}
+			else if (functoken[0] == ')' && argoffset)
+			{					/* Force limit the number of args */
+				appendPQExpBuffer(&buf, "  AND p.pronargs = %d\n", argoffset);
+				break;
+			}
+		}
+	}
 
 	if (!showSystem && !pattern)
 		appendPQExpBufferStr(&buf, "      AND n.nspname <> 'pg_catalog'\n"
