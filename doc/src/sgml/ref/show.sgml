@@ -54,62 +54,8 @@ SHOW ALL
       documented in <xref linkend="runtime-config"/> and on the <xref
       linkend="sql-set"/> reference page.  In
       addition, there are a few parameters that can be shown but not
-      set:
-
-      <variablelist>
-       <varlistentry>
-        <term><literal>SERVER_VERSION</literal></term>
-        <listitem>
-         <para>
-          Shows the server's version number.
-         </para>
-        </listitem>
-       </varlistentry>
-
-       <varlistentry>
-        <term><literal>SERVER_ENCODING</literal></term>
-        <listitem>
-         <para>
-          Shows the server-side character set encoding.  At present,
-          this parameter can be shown but not set, because the
-          encoding is determined at database creation time.
-         </para>
-        </listitem>
-       </varlistentry>
-
-       <varlistentry>
-        <term><literal>LC_COLLATE</literal></term>
-        <listitem>
-         <para>
-          Shows the database's locale setting for collation (text
-          ordering).  At present, this parameter can be shown but not
-          set, because the setting is determined at database creation
-          time.
-         </para>
-        </listitem>
-       </varlistentry>
-
-       <varlistentry>
-        <term><literal>LC_CTYPE</literal></term>
-        <listitem>
-         <para>
-          Shows the database's locale setting for character
-          classification.  At present, this parameter can be shown but
-          not set, because the setting is determined at database creation
-          time.
-         </para>
-        </listitem>
-       </varlistentry>
-
-       <varlistentry>
-        <term><literal>IS_SUPERUSER</literal></term>
-        <listitem>
-         <para>
-          True if the current role has superuser privileges.
-         </para>
-        </listitem>
-       </varlistentry>
-      </variablelist></para>
+      set. See <xref linkend="runtime-config-preset"/> for details.
+     </para>
     </listitem>
    </varlistentry>
 
@@ -175,7 +121,7 @@ SHOW ALL;
     .
  xmloption               | content | Sets whether XML data in implicit parsing ...
  zero_damaged_pages      | off     | Continues processing past damaged page headers.
-(196 rows)
+(329 rows)
 </programlisting></para>
  </refsect1>
 

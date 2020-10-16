@@ -9689,6 +9689,19 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
       </listitem>
      </varlistentry>
 
+     <varlistentry id="is-superuser" xreflabel="is_superuser">
+      <term><varname>is_superuser</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>is_superuser</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Reports whether the user name of the current execution context is a superuser.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="guc-lc-collate" xreflabel="lc_collate">
       <term><varname>lc_collate</varname> (<type>string</type>)
       <indexterm>
