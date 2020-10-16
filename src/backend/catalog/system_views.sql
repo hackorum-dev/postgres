@@ -990,7 +990,18 @@ CREATE VIEW pg_stat_bgwriter AS
 
 CREATE VIEW pg_stat_wal AS
     SELECT
+        w.wal_records,
+        w.wal_fpi,
+        w.wal_bytes,
         w.wal_buffers_full,
+        w.wal_file,
+        w.wal_init_file,
+        w.wal_write_backend,
+        w.wal_write_walwriter,
+        w.wal_write_time,
+        w.wal_sync_backend,
+        w.wal_sync_walwriter,
+        w.wal_sync_time,
         w.stats_reset
     FROM pg_stat_get_wal() w;
 

@@ -1703,7 +1703,7 @@ pg_stat_get_buf_alloc(PG_FUNCTION_ARGS)
 Datum
 pg_stat_get_wal(PG_FUNCTION_ARGS)
 {
-#define PG_STAT_GET_WAL_COLS	2
+#define PG_STAT_GET_WAL_COLS	13
 	TupleDesc	tupdesc;
 	Datum		values[PG_STAT_GET_WAL_COLS];
 	bool		nulls[PG_STAT_GET_WAL_COLS];
@@ -1715,9 +1715,31 @@ pg_stat_get_wal(PG_FUNCTION_ARGS)
 
 	/* Initialise attributes information in the tuple descriptor */
 	tupdesc = CreateTemplateTupleDesc(PG_STAT_GET_WAL_COLS);
-	TupleDescInitEntry(tupdesc, (AttrNumber) 1, "wal_buffers_full",
+	TupleDescInitEntry(tupdesc, (AttrNumber) 1, "wal_records",
 					   INT8OID, -1, 0);
-	TupleDescInitEntry(tupdesc, (AttrNumber) 2, "stats_reset",
+	TupleDescInitEntry(tupdesc, (AttrNumber) 2, "wal_fpi",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 3, "wal_bytes",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 4, "wal_buffers_full",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 5, "wal_file",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 6, "wal_init_file",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 7, "wal_write_backend",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 8, "wal_write_walwriter",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 9, "wal_write_time",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 10, "wal_sync_backend",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 11, "wal_sync_walwriter",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 12, "wal_sync_time",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 13, "stats_reset",
 					   TIMESTAMPTZOID, -1, 0);
 
 	BlessTupleDesc(tupdesc);
@@ -1726,8 +1748,19 @@ pg_stat_get_wal(PG_FUNCTION_ARGS)
 	wal_stats = pgstat_fetch_stat_wal();
 
 	/* Fill values and NULLs */
-	values[0] = Int64GetDatum(wal_stats->wal_buffers_full);
-	values[1] = TimestampTzGetDatum(wal_stats->stat_reset_timestamp);
+	values[0] = Int64GetDatum(wal_stats->wal_records);
+	values[1] = Int64GetDatum(wal_stats->wal_fpi);
+	values[2] = Int64GetDatum(wal_stats->wal_bytes);
+	values[3] = Int64GetDatum(wal_stats->wal_buffers_full);
+	values[4] = Int64GetDatum(wal_stats->wal_file);
+	values[5] = Int64GetDatum(wal_stats->wal_init_file);
+	values[6] = Int64GetDatum(wal_stats->wal_write_backend);
+	values[7] = Int64GetDatum(wal_stats->wal_write_walwriter);
+	values[8] = Int64GetDatum(wal_stats->wal_write_time);
+	values[9] = Int64GetDatum(wal_stats->wal_sync_backend);
+	values[10] = Int64GetDatum(wal_stats->wal_sync_walwriter);
+	values[11] = Int64GetDatum(wal_stats->wal_sync_time);
+	values[12] = TimestampTzGetDatum(wal_stats->stat_reset_timestamp);
 
 	/* Returns the record as Datum */
 	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(tupdesc, values, nulls)));

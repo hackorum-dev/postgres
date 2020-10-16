@@ -3408,10 +3408,113 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
     <tbody>
      <row>
       <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>wal_records</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Total number of WAL records generated
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>wal_fpi</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Total number of WAL full page images generated
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>wal_bytes</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Total amount of WAL bytes generated
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>wal_buffers_full</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of times WAL data was written to the disk because WAL buffers got full
+       Total number of WAL data written to the disk because WAL buffers got full
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>wal_file</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Total number of WAL file segment created or opened a pre-existing one
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>wal_init_file</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Total number of WAL file segment created
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>wal_write_backend</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Total number of WAL data written to the disk by backends
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>wal_write_walwriter</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Total number of WAL data written to the disk by walwriter
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>wal_write_time</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Total amount of time that has been spent in the portion of
+       WAL data was written to disk by backend and walwriter, in milliseconds
+       (if <xref linkend="guc-track-io-timing"/> is enabled, otherwise zero)
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>wal_sync_backend</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Total number of WAL data synced to the disk by backends
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>wal_sync_walwriter</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Total number of WAL data synced to the disk by walwriter
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>wal_sync_time</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Total amount of time that has been spent in the portion of
+       WAL data was synced to disk by backend and walwriter, in milliseconds
+       (if <xref linkend="guc-track-io-timing"/> is enabled, otherwise zero)
       </para></entry>
      </row>
 

@@ -6756,7 +6756,18 @@ pgstat_recv_bgwriter(PgStat_MsgBgWriter *msg, int len)
 static void
 pgstat_recv_wal(PgStat_MsgWal *msg, int len)
 {
+	walStats.wal_records += msg->m_wal_records;
+	walStats.wal_fpi += msg->m_wal_fpi;
+	walStats.wal_bytes += msg->m_wal_bytes;
 	walStats.wal_buffers_full += msg->m_wal_buffers_full;
+	walStats.wal_file += msg->m_wal_file;
+	walStats.wal_init_file += msg->m_wal_init_file;
+	walStats.wal_write_backend += msg->m_wal_write_backend;
+	walStats.wal_write_walwriter += msg->m_wal_write_walwriter;
+	walStats.wal_write_time += msg->m_wal_write_time;
+	walStats.wal_sync_backend += msg->m_wal_sync_backend;
+	walStats.wal_sync_walwriter += msg->m_wal_sync_walwriter;
+	walStats.wal_sync_time += msg->m_wal_sync_time;
 }
 
 /* ----------

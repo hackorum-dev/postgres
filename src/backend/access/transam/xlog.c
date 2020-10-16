@@ -1262,6 +1262,10 @@ XLogInsertRecord(XLogRecData *rdata,
 		pgWalUsage.wal_bytes += rechdr->xl_tot_len;
 		pgWalUsage.wal_records++;
 		pgWalUsage.wal_fpi += num_fpi;
+
+		WalStats.m_wal_bytes += rechdr->xl_tot_len;
+		WalStats.m_wal_records++;
+		WalStats.m_wal_fpi += num_fpi;
 	}
 
 	return EndPos;
@@ -2527,6 +2531,8 @@ XLogWrite(XLogwrtRqst WriteRqst, bool flexible)
 			Size		nbytes;
 			Size		nleft;
 			int			written;
+			instr_time	start;
+			instr_time	duration;
 
 			/* OK to write the page(s) */
 			from = XLogCtl->pages + startidx * (Size) XLOG_BLCKSZ;
@@ -2535,9 +2541,28 @@ XLogWrite(XLogwrtRqst WriteRqst, bool flexible)
 			do
 			{
 				errno = 0;
+				if (track_io_timing)
+					INSTR_TIME_SET_CURRENT(start);
+
 				pgstat_report_wait_start(WAIT_EVENT_WAL_WRITE);
 				written = pg_pwrite(openLogFile, from, nleft, startoffset);
 				pgstat_report_wait_end();
+
+				if (track_io_timing)
+				{
+					INSTR_TIME_SET_CURRENT(duration);
+					INSTR_TIME_SUBTRACT(duration, start);
+					WalStats.m_wal_write_time += INSTR_TIME_GET_MILLISEC(duration);
+				}
+
+				if (AmWalWriterProcess()){
+					WalStats.m_wal_write_walwriter++;
+				}
+				else
+				{
+					WalStats.m_wal_write_backend++;
+				}
+
 				if (written <= 0)
 				{
 					char		xlogfname[MAXFNAMELEN];
@@ -3278,7 +3303,10 @@ XLogFileInit(XLogSegNo logsegno, bool *use_existent, bool use_lock)
 						 errmsg("could not open file \"%s\": %m", path)));
 		}
 		else
+		{
+			WalStats.m_wal_file++;
 			return fd;
+		}
 	}
 
 	/*
@@ -3418,6 +3446,8 @@ XLogFileInit(XLogSegNo logsegno, bool *use_existent, bool use_lock)
 				 errmsg("could not open file \"%s\": %m", path)));
 
 	elog(DEBUG2, "done creating and filling new WAL file");
+	WalStats.m_wal_init_file++;
+	WalStats.m_wal_file++;
 
 	return fd;
 }
@@ -10427,7 +10457,12 @@ assign_xlog_sync_method(int new_sync_method, void *extra)
 void
 issue_xlog_fsync(int fd, XLogSegNo segno)
 {
+	instr_time	start;
+	instr_time	duration;
 	char	   *msg = NULL;
+
+	if (track_io_timing)
+		INSTR_TIME_SET_CURRENT(start);
 
 	pgstat_report_wait_start(WAIT_EVENT_WAL_SYNC);
 	switch (sync_method)
@@ -10472,6 +10507,21 @@ issue_xlog_fsync(int fd, XLogSegNo segno)
 	}
 
 	pgstat_report_wait_end();
+
+	if (track_io_timing)
+	{
+		INSTR_TIME_SET_CURRENT(duration);
+		INSTR_TIME_SUBTRACT(duration, start);
+		WalStats.m_wal_sync_time += INSTR_TIME_GET_MICROSEC(duration);
+	}
+
+	if (AmWalWriterProcess()){
+		WalStats.m_wal_sync_walwriter++;
+	}
+	else
+	{
+		WalStats.m_wal_sync_backend++;
+	}
 }
 
 /*

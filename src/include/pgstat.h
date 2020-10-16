@@ -459,7 +459,18 @@ typedef struct PgStat_MsgBgWriter
 typedef struct PgStat_MsgWal
 {
 	PgStat_MsgHdr m_hdr;
+	PgStat_Counter m_wal_records;
+	PgStat_Counter m_wal_fpi;
+	PgStat_Counter m_wal_bytes;
 	PgStat_Counter m_wal_buffers_full;
+	PgStat_Counter m_wal_file;
+	PgStat_Counter m_wal_init_file;
+	PgStat_Counter m_wal_write_backend;
+	PgStat_Counter m_wal_write_walwriter;
+	PgStat_Counter m_wal_write_time;	/* accumulate times in milliseconds */
+	PgStat_Counter m_wal_sync_backend;
+	PgStat_Counter m_wal_sync_walwriter;
+	PgStat_Counter m_wal_sync_time; /* accumulate times in milliseconds */
 } PgStat_MsgWal;
 
 /* ----------
@@ -795,7 +806,19 @@ typedef struct PgStat_GlobalStats
  */
 typedef struct PgStat_WalStats
 {
+	PgStat_Counter wal_records;
+	PgStat_Counter wal_fpi;
+	PgStat_Counter wal_bytes;
 	PgStat_Counter wal_buffers_full;
+	PgStat_Counter wal_file;
+	PgStat_Counter wal_init_file;
+	PgStat_Counter wal_write_backend;
+	PgStat_Counter wal_write_walwriter;
+	PgStat_Counter wal_write_time;
+	PgStat_Counter wal_sync_backend;
+	PgStat_Counter wal_sync_walwriter;
+	PgStat_Counter wal_sync_time;
+
 	TimestampTz stat_reset_timestamp;
 } PgStat_WalStats;
 
