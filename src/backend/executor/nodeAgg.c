@@ -1842,7 +1842,7 @@ hash_agg_set_limits(double hashentrysize, double input_groups, int used_bits,
 	/*
 	 * Don't set the limit below 3/4 of hash_mem. In that case, we are at the
 	 * minimum number of partitions, so we aren't going to dramatically exceed
-	 * work mem anyway.
+	 * hash_mem anyway.
 	 */
 	if (hash_mem_limit > 4 * partition_mem)
 		*mem_limit = hash_mem_limit - partition_mem;
