@@ -1417,12 +1417,6 @@ ParallelWorkerMain(Datum main_arg)
 	PushActiveSnapshot(RestoreSnapshot(asnapspace));
 
 	/*
-	 * We've changed which tuples we can see, and must therefore invalidate
-	 * system caches.
-	 */
-	InvalidateSystemCaches();
-
-	/*
 	 * Restore current role id.  Skip verifying whether session user is
 	 * allowed to become this role and blindly restore the leader's state for
 	 * current role.
@@ -1456,6 +1450,12 @@ ParallelWorkerMain(Datum main_arg)
 
 	/* Attach to the leader's serializable transaction, if SERIALIZABLE. */
 	AttachSerializableXact(fps->serializable_xact_handle);
+
+	/*
+	 * We've changed tuple visibility and relmapper state, so discard all
+	 * provisional state derived from system catalogs.
+	 */
+	InvalidateSystemCaches();
 
 	/*
 	 * We've initialized all of our state now; nothing should change
