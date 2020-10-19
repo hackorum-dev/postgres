@@ -282,7 +282,7 @@ brin_page_items(PG_FUNCTION_ARGS)
 				}
 				appendStringInfoChar(&s, '}');
 
-				values[6] = CStringGetTextDatum(s.data);
+				values[6] = PointerGetDatum(cstring_to_text_with_len(s.data, s.len));
 				pfree(s.data);
 			}
 			else

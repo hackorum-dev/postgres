@@ -2406,7 +2406,7 @@ pg_extension_update_paths(PG_FUNCTION_ARGS)
 					appendStringInfoString(&pathbuf, "--");
 					appendStringInfoString(&pathbuf, versionName);
 				}
-				values[2] = CStringGetTextDatum(pathbuf.data);
+				values[2] = PointerGetDatum(cstring_to_text_with_len(pathbuf.data, pathbuf.len));
 				pfree(pathbuf.data);
 			}
 

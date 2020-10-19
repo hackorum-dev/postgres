@@ -236,8 +236,8 @@ pg_stop_backup_v2(PG_FUNCTION_ARGS)
 		 */
 		stoppoint = do_pg_stop_backup(label_file->data, waitforarchive, NULL);
 
-		values[1] = CStringGetTextDatum(label_file->data);
-		values[2] = CStringGetTextDatum(tblspc_map_file->data);
+		values[1] = PointerGetDatum(cstring_to_text_with_len(label_file->data, label_file->len));
+		values[2] = PointerGetDatum(cstring_to_text_with_len(tblspc_map_file->data, tblspc_map_file->len));
 
 		/* Free structures allocated in TopMemoryContext */
 		pfree(label_file->data);
