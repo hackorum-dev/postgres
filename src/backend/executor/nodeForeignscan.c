@@ -215,24 +215,17 @@ ExecInitForeignScan(ForeignScan *node, EState *estate, int eflags)
 	scanstate->fdwroutine = fdwroutine;
 	scanstate->fdw_state = NULL;
 
-	/*
-	 * For the FDW's convenience, look up the modification target relation's.
-	 * ResultRelInfo.
-	 */
-	if (node->resultRelation > 0)
-		scanstate->resultRelInfo = estate->es_result_relations[node->resultRelation - 1];
-
 	/* Initialize any outer plan. */
 	if (outerPlan(node))
 		outerPlanState(scanstate) =
 			ExecInitNode(outerPlan(node), estate, eflags);
 
 	/*
-	 * Tell the FDW to initialize the scan.
+	 * Tell the FDW to initialize the scan.  For modify operations, it's the
+	 * enclosing ModifyTable node's job to call the FDW after setting up the
+	 * target foreign table's ResultRelInfo.
 	 */
-	if (node->operation != CMD_SELECT)
-		fdwroutine->BeginDirectModify(scanstate, eflags);
-	else
+	if (node->operation == CMD_SELECT)
 		fdwroutine->BeginForeignScan(scanstate, eflags);
 
 	return scanstate;

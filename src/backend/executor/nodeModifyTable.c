@@ -2306,17 +2306,31 @@ ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags)
 								   table_slot_callbacks(resultRelInfo->ri_RelationDesc));
 
 		/* Also let FDWs init themselves for foreign-table result rels */
-		if (!resultRelInfo->ri_usesFdwDirectModify &&
-			resultRelInfo->ri_FdwRoutine != NULL &&
-			resultRelInfo->ri_FdwRoutine->BeginForeignModify != NULL)
+		if (resultRelInfo->ri_FdwRoutine != NULL)
 		{
-			List	   *fdw_private = (List *) list_nth(node->fdwPrivLists, i);
+			if (resultRelInfo->ri_usesFdwDirectModify)
+			{
+				ForeignScanState *fscan = (ForeignScanState *) mtstate->mt_plans[i];
 
-			resultRelInfo->ri_FdwRoutine->BeginForeignModify(mtstate,
-															 resultRelInfo,
-															 fdw_private,
-															 i,
-															 eflags);
+				/*
+				 * For the FDW's convenience, set the ForeignScanState node's
+				 * ResultRelInfo to let the FDW know which result relation it
+				 * is going to work with.
+				 */
+				Assert(IsA(fscan, ForeignScanState));
+				fscan->resultRelInfo = resultRelInfo;
+				resultRelInfo->ri_FdwRoutine->BeginDirectModify(fscan, eflags);
+			}
+			else if (resultRelInfo->ri_FdwRoutine->BeginForeignModify != NULL)
+			{
+				List   *fdw_private = (List *) list_nth(node->fdwPrivLists, i);
+
+				resultRelInfo->ri_FdwRoutine->BeginForeignModify(mtstate,
+																 resultRelInfo,
+																 fdw_private,
+																 i,
+																 eflags);
+			}
 		}
 
 		/*
