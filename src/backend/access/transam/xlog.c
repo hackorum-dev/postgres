@@ -2202,14 +2202,6 @@ AdvanceXLInsertBuffer(XLogRecPtr upto, bool opportunistic)
 	int			npages = 0;
 	bool		is_firstpage;
 
-	if (NvwalAvail)
-		elog(DEBUG1, "XLogCtl->InitializedUpTo %X/%X; upto %X/%X; opportunistic %s",
-			 (uint32) (XLogCtl->InitializedUpTo >> 32),
-			 (uint32) XLogCtl->InitializedUpTo,
-			 (uint32) (upto >> 32),
-			 (uint32) upto,
-			 opportunistic ? "true" : "false");
-
 	LWLockAcquire(WALBufMappingLock, LW_EXCLUSIVE);
 
 	/*
@@ -2277,7 +2269,8 @@ AdvanceXLInsertBuffer(XLogRecPtr upto, bool opportunistic)
 						 * If we use non-volatile WAL buffer, it is a special
 						 * but expected case to write the buffer pages out to
 						 * segment files, and for simplicity, it is done in
-						 * segment by segment.
+						 * segment by segment. Note that this output would
+						 * cause performance degrade, so we log it later.
 						 */
 						XLogRecPtr		OldSegEndPtr;
 
@@ -2294,6 +2287,14 @@ AdvanceXLInsertBuffer(XLogRecPtr upto, bool opportunistic)
 					LWLockRelease(WALWriteLock);
 					WalStats.m_wal_buffers_full++;
 					TRACE_POSTGRESQL_WAL_BUFFER_WRITE_DIRTY_DONE();
+
+					/* Out of critical section, so it's time to log */
+					if (NvwalAvail)
+					{
+						elog(WARNING, "old segment written to file: up to %X/%X",
+							 (uint32) (WriteRqst.Write >> 32),
+							 (uint32) WriteRqst.Write);
+					}
 				}
 				/* Re-acquire WALBufMappingLock and retry */
 				LWLockAcquire(WALBufMappingLock, LW_EXCLUSIVE);
@@ -2392,13 +2393,6 @@ AdvanceXLInsertBuffer(XLogRecPtr upto, bool opportunistic)
 		npages++;
 	}
 	LWLockRelease(WALBufMappingLock);
-
-	if (NvwalAvail)
-		elog(DEBUG1, "ControlFile->discardedUpTo %X/%X; XLogCtl->InitializedUpTo %X/%X",
-			 (uint32) (ControlFile->discardedUpTo >> 32),
-			 (uint32) ControlFile->discardedUpTo,
-			 (uint32) (XLogCtl->InitializedUpTo >> 32),
-			 (uint32) XLogCtl->InitializedUpTo);
 
 #ifdef WAL_DEBUG
 	if (XLOG_DEBUG && npages > 0)
@@ -4229,10 +4223,22 @@ PreallocNonVolatileXlogBuffer(void)
 		return;
 
 	/*
+	 * Logging that we are starting to preallocate. Yes, we know that we are
+	 * still in a critical section of checkpoint, but we log it because
+	 * preallocating might cause performance degrade.
+	 */
+	elog(NOTICE, "preallocate starting: up to %X/%X",
+		 (uint32) (newupto >> 32), (uint32) newupto);
+
+	/*
 	 * Subtracting XLOG_BLCKSZ is important, because AdvanceXLInsertBuffer
 	 * handles the first argument as the beginning of pages, not the end.
 	 */
 	AdvanceXLInsertBuffer(newupto - XLOG_BLCKSZ, false);
+
+	/* Logging that we complete to preallocate */
+	elog(NOTICE, "preallocate complete: up to %X/%X",
+		 (uint32) (newupto >> 32), (uint32) newupto);
 }
 
 /*
