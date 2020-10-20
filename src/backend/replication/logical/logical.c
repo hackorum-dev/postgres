@@ -29,7 +29,6 @@
 #include "postgres.h"
 
 #include "access/xact.h"
-#include "access/xlog_internal.h"
 #include "fmgr.h"
 #include "miscadmin.h"
 #include "pgstat.h"

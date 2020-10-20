@@ -19,7 +19,6 @@
 #include <sys/select.h>
 #endif
 
-#include "access/xlog_internal.h"
 #include "common/fe_memutils.h"
 #include "common/file_perm.h"
 #include "common/logging.h"
