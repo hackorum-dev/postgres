@@ -21,13 +21,12 @@
 
 #include "access/xlogdefs.h"
 #include "access/xlogfname.h"
-#include "access/xlogreader.h"
 #include "access/xlogstartup.h"
 #include "datatype/timestamp.h"
-#include "lib/stringinfo.h"
 #include "storage/block.h"
-#include "storage/relfilenode.h"
 
+typedef struct XLogReaderState XLogReaderState;
+typedef struct StringInfoData StringInfoData;
 
 /*
  * Each page of XLOG file has a header like this:
@@ -156,7 +155,7 @@ typedef struct RmgrData
 {
 	const char *rm_name;
 	void		(*rm_redo) (XLogReaderState *record);
-	void		(*rm_desc) (StringInfo buf, XLogReaderState *record);
+	void		(*rm_desc) (struct StringInfoData *buf, XLogReaderState *record);
 	const char *(*rm_identify) (uint8 info);
 	void		(*rm_startup) (void);
 	void		(*rm_cleanup) (void);
