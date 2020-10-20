@@ -15,10 +15,11 @@
 
 #include "postgres_fe.h"
 
+#include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
 
-#include "access/xlog_internal.h"
+#include "access/xlogfname.h"
 #include "common/archive.h"
 #include "common/logging.h"
 #include "fe_utils/archive.h"

@@ -53,7 +53,7 @@
 #include "access/timeline.h"
 #include "access/transam.h"
 #include "access/xact.h"
-#include "access/xlog_internal.h"
+#include "access/xlogfname.h"
 #include "access/xlogreader.h"
 #include "access/xlogutils.h"
 #include "catalog/pg_authid.h"

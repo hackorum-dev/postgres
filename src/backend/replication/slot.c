@@ -40,7 +40,7 @@
 #include <sys/stat.h>
 
 #include "access/transam.h"
-#include "access/xlog_internal.h"
+#include "access/xlogseg.h"
 #include "common/string.h"
 #include "miscadmin.h"
 #include "pgstat.h"

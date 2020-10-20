@@ -34,7 +34,7 @@
 #include <unistd.h>
 
 #include "access/xlog.h"
-#include "access/xlog_internal.h"
+#include "access/xlogfname.h"
 #include "libpq/pqsignal.h"
 #include "miscadmin.h"
 #include "pgstat.h"

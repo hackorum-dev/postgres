@@ -89,7 +89,7 @@
 #include "access/rewriteheap.h"
 #include "access/transam.h"
 #include "access/xact.h"
-#include "access/xlog_internal.h"
+#include "access/xlogseg.h"
 #include "catalog/catalog.h"
 #include "lib/binaryheap.h"
 #include "miscadmin.h"

@@ -106,4 +106,14 @@ typedef uint16 RepOriginId;
 #define DEFAULT_SYNC_METHOD		SYNC_METHOD_FSYNC
 #endif
 
+/*
+ * Recovery target action.
+ */
+typedef enum
+{
+	RECOVERY_TARGET_ACTION_PAUSE,
+	RECOVERY_TARGET_ACTION_PROMOTE,
+	RECOVERY_TARGET_ACTION_SHUTDOWN
+}			RecoveryTargetAction;
+
 #endif							/* XLOG_DEFS_H */

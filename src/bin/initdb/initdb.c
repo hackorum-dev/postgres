@@ -59,7 +59,7 @@
 #include "sys/mman.h"
 #endif
 
-#include "access/xlog_internal.h"
+#include "access/xlogseg.h"
 #include "catalog/pg_authid_d.h"
 #include "catalog/pg_class_d.h" /* pgrminclude ignore */
 #include "catalog/pg_collation_d.h"
@@ -72,6 +72,7 @@
 #include "fe_utils/string_utils.h"
 #include "getaddrinfo.h"
 #include "getopt_long.h"
+#include "lib/stringinfo.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
 

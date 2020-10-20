@@ -26,7 +26,7 @@
 #include <zlib.h>
 #endif
 
-#include "access/xlog_internal.h"
+#include "access/xlogseg.h"
 #include "common/file_perm.h"
 #include "common/file_utils.h"
 #include "common/logging.h"

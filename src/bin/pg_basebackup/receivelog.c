@@ -20,7 +20,7 @@
 #include <sys/select.h>
 #endif
 
-#include "access/xlog_internal.h"
+#include "access/xlogfname.h"
 #include "common/file_utils.h"
 #include "common/logging.h"
 #include "libpq-fe.h"

@@ -21,7 +21,7 @@
 
 #include "access/timeline.h"
 #include "access/xlog.h"
-#include "access/xlog_internal.h"
+#include "access/xlogfname.h"
 #include "access/xlogutils.h"
 #include "miscadmin.h"
 #include "pgstat.h"

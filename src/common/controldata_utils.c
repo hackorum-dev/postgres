@@ -24,7 +24,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#include "access/xlog_internal.h"
+#include "access/xlogfname.h"
 #include "catalog/pg_control.h"
 #include "common/controldata_utils.h"
 #include "common/file_perm.h"

@@ -19,7 +19,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "access/xlog_internal.h"
+#include "access/xlogfname.h"
 #include "common/file_perm.h"
 #include "common/logging.h"
 #include "getopt_long.h"

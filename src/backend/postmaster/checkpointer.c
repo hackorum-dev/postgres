@@ -40,7 +40,7 @@
 #include <time.h>
 
 #include "access/xlog.h"
-#include "access/xlog_internal.h"
+#include "access/xlogseg.h"
 #include "libpq/pqsignal.h"
 #include "miscadmin.h"
 #include "pgstat.h"

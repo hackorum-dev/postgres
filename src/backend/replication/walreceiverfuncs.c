@@ -22,7 +22,7 @@
 #include <unistd.h>
 #include <signal.h>
 
-#include "access/xlog_internal.h"
+#include "access/xlogseg.h"
 #include "postmaster/startup.h"
 #include "replication/walreceiver.h"
 #include "storage/pmsignal.h"

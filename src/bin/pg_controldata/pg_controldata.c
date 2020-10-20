@@ -22,7 +22,7 @@
 
 #include "access/transam.h"
 #include "access/xlog.h"
-#include "access/xlog_internal.h"
+#include "access/xlogfname.h"
 #include "catalog/pg_control.h"
 #include "common/controldata_utils.h"
 #include "common/logging.h"
