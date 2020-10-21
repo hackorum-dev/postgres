@@ -577,13 +577,7 @@ cfread(void *ptr, int size, cfp *fp)
 	{
 		ret = gzread(fp->compressedfp, ptr, size);
 		if (ret != size && !gzeof(fp->compressedfp))
-		{
-			int			errnum;
-			const char *errmsg = gzerror(fp->compressedfp, &errnum);
-
-			fatal("could not read from input file: %s",
-				  errnum == Z_ERRNO ? strerror(errno) : errmsg);
-		}
+			fatal("could not read from input file: %s", get_cfp_error(fp));
 	}
 	else
 #endif
@@ -618,7 +612,7 @@ cfgetc(cfp *fp)
 		if (ret == EOF)
 		{
 			if (!gzeof(fp->compressedfp))
-				fatal("could not read from input file: %s", strerror(errno));
+				fatal("could not read from input file: %s", get_cfp_error(fp));
 			else
 				fatal("could not read from input file: end of file");
 		}

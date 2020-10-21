@@ -698,7 +698,8 @@ _EndBlob(ArchiveHandle *AH, TocEntry *te, Oid oid)
 	/* register the blob in blobs.toc */
 	len = snprintf(buf, sizeof(buf), "%u blob_%u.dat\n", oid, oid);
 	if (cfwrite(buf, len, ctx->blobsTocFH) != len)
-		fatal("could not write to blobs TOC file");
+		fatal("could not write to blobs TOC file: %s",
+			  get_cfp_error(ctx->blobsTocFH));
 }
 
 /*
