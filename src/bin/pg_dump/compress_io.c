@@ -645,31 +645,59 @@ cfgets(cfp *fp, char *buf, int len)
 		return fgets(buf, len, fp->uncompressedfp);
 }
 
-int
-cfclose(cfp *fp)
+/*
+ * cfclose close the stream
+ *
+ * Returns if successfully closed the cfp.  End the process with fatal() on
+ * error. filedesc is a label that identifies the file type and filename is the
+ * name of the file, both of which are used for error reporting.
+ */
+void
+cfclose(cfp *fp, const char *filedesc, const char *filename)
 {
 	int			result;
 
 	if (fp == NULL)
 	{
 		errno = EBADF;
-		return EOF;
+
+		fatal("could not close %s \"%s\": %m", filedesc, filename);
 	}
 #ifdef HAVE_LIBZ
 	if (fp->compressedfp)
 	{
 		result = gzclose(fp->compressedfp);
 		fp->compressedfp = NULL;
+
+		switch (result)
+		{
+			case Z_OK:
+				break;
+				
+			case Z_STREAM_ERROR:
+				fatal("could not close %s \"%s\": zlib error: invalid parameter",
+					  filedesc, filename);
+			case Z_ERRNO:
+				fatal("could not close %s \"%s\": %m", filedesc, filename);
+			case Z_BUF_ERROR:
+				fatal("could not close %s \"%s\": zlib error: error reading or writing compressed file",
+					  filedesc, filename);
+			default:
+				fatal("could not close %s \"%s\": zlib error: unknown gzclose error: %d",
+					  filedesc, filename, result);
+		}
 	}
 	else
 #endif
 	{
 		result = fclose(fp->uncompressedfp);
 		fp->uncompressedfp = NULL;
-	}
-	free_keep_errno(fp);
 
-	return result;
+		if (result != 0)
+			fatal("could not close %s \"%s\": %m", filedesc, filename);
+	}
+
+	free_keep_errno(fp);
 }
 
 int

@@ -51,8 +51,13 @@ typedef struct
 	char	   *directory;
 
 	cfp		   *dataFH;			/* currently open data file */
+	char		dataFName[MAXPGPATH]; /* file name for dataFH, for error
+									   * message use only */
 
 	cfp		   *blobsTocFH;		/* file handle for blobs.toc */
+	char		blobsTocFName[MAXPGPATH];	/* file name for blobs.toc, for
+											 * error message use only */
+
 	ParallelState *pstate;		/* for parallel backup / restore */
 } lclContext;
 
@@ -207,6 +212,7 @@ InitArchiveFmt_Directory(ArchiveHandle *AH)
 			fatal("could not open input file \"%s\": %m", fname);
 
 		ctx->dataFH = tocFH;
+		strlcpy(ctx->dataFName, fname, MAXPGPATH);
 
 		/*
 		 * The TOC of a directory format dump shares the format code of the
@@ -218,9 +224,9 @@ InitArchiveFmt_Directory(ArchiveHandle *AH)
 		ReadToc(AH);
 
 		/* Nothing else in the file, so close it again... */
-		if (cfclose(tocFH) != 0)
-			fatal("could not close TOC file: %m");
+		cfclose(tocFH, "TOC file", fname);
 		ctx->dataFH = NULL;
+		ctx->dataFName[0] = 0;
 	}
 }
 
@@ -369,9 +375,11 @@ _EndData(ArchiveHandle *AH, TocEntry *te)
 	lclContext *ctx = (lclContext *) AH->formatData;
 
 	/* Close the file */
-	cfclose(ctx->dataFH);
+	Assert(AH->mode == archModeWrite);
+	cfclose(ctx->dataFH, "output file",	ctx->dataFName);
 
 	ctx->dataFH = NULL;
+	ctx->dataFName[0] = 0;
 }
 
 /*
@@ -402,8 +410,8 @@ _PrintFileData(ArchiveHandle *AH, char *filename)
 	}
 
 	free(buf);
-	if (cfclose(cfp) != 0)
-		fatal("could not close data file \"%s\": %m", filename);
+
+	cfclose(cfp, "data file", filename);
 }
 
 /*
@@ -466,11 +474,10 @@ _LoadBlobs(ArchiveHandle *AH)
 		fatal("error reading large object TOC file \"%s\"",
 			  fname);
 
-	if (cfclose(ctx->blobsTocFH) != 0)
-		fatal("could not close large object TOC file \"%s\": %m",
-			  fname);
+	cfclose(ctx->blobsTocFH, "large object TOC file", fname);
 
 	ctx->blobsTocFH = NULL;
+	ctx->blobsTocFName[0] = 0;
 
 	EndRestoreBlobs(AH);
 }
@@ -584,6 +591,7 @@ _CloseArchive(ArchiveHandle *AH)
 		if (tocFH == NULL)
 			fatal("could not open output file \"%s\": %m", fname);
 		ctx->dataFH = tocFH;
+		strlcpy(ctx->dataFName, fname, MAXPGPATH);
 
 		/*
 		 * Write 'tar' in the format field of the toc.dat file. The directory
@@ -594,8 +602,9 @@ _CloseArchive(ArchiveHandle *AH)
 		WriteHead(AH);
 		AH->format = archDirectory;
 		WriteToc(AH);
-		if (cfclose(tocFH) != 0)
-			fatal("could not close TOC file: %m");
+		cfclose(tocFH, "TOC file", fname);
+		ctx->dataFH = NULL;
+		ctx->dataFName[0] = 0;
 		WriteDataChunks(AH, ctx->pstate);
 
 		ParallelBackupEnd(AH, ctx->pstate);
@@ -646,6 +655,8 @@ _StartBlobs(ArchiveHandle *AH, TocEntry *te)
 	ctx->blobsTocFH = cfopen_write(fname, "ab", 0);
 	if (ctx->blobsTocFH == NULL)
 		fatal("could not open output file \"%s\": %m", fname);
+
+	strlcpy(ctx->blobsTocFName, fname, MAXPGPATH);
 }
 
 /*
@@ -680,8 +691,9 @@ _EndBlob(ArchiveHandle *AH, TocEntry *te, Oid oid)
 	int			len;
 
 	/* Close the BLOB data file itself */
-	cfclose(ctx->dataFH);
+	cfclose(ctx->dataFH, "BLOB data file", ctx->dataFName);
 	ctx->dataFH = NULL;
+	ctx->dataFName[0] = 0;
 
 	/* register the blob in blobs.toc */
 	len = snprintf(buf, sizeof(buf), "%u blob_%u.dat\n", oid, oid);
@@ -699,8 +711,9 @@ _EndBlobs(ArchiveHandle *AH, TocEntry *te)
 {
 	lclContext *ctx = (lclContext *) AH->formatData;
 
-	cfclose(ctx->blobsTocFH);
+	cfclose(ctx->blobsTocFH, "large object TOC file", ctx->blobsTocFName);
 	ctx->blobsTocFH = NULL;
+	ctx->blobsTocFName[0] = 0;
 }
 
 /*

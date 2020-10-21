@@ -63,7 +63,7 @@ extern int	cfread(void *ptr, int size, cfp *fp);
 extern int	cfwrite(const void *ptr, int size, cfp *fp);
 extern int	cfgetc(cfp *fp);
 extern char *cfgets(cfp *fp, char *buf, int len);
-extern int	cfclose(cfp *fp);
+extern void	cfclose(cfp *fp, const char *filedesc, const char *filename);
 extern int	cfeof(cfp *fp);
 extern const char *get_cfp_error(cfp *fp);
 
