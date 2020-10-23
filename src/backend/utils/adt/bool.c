@@ -84,7 +84,7 @@ parse_bool_with_len(const char *value, size_t len, bool *result)
 					*result = true;
 				return true;
 			}
-			else if (pg_strncasecmp(value, "off", (len > 2 ? len : 2)) == 0)
+			else if (pg_strncasecmp(value, "off", (len > 3 ? len : 3)) == 0)
 			{
 				if (result)
 					*result = false;
