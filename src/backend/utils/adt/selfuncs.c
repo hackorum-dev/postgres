@@ -6829,6 +6829,12 @@ get_variable_numdistinct(VariableStatData *vardata, bool *isdefault)
 	if (ntuples < DEFAULT_NUM_DISTINCT)
 		return clamp_row_est(ntuples);
 
+	/*
+	 * The stats info shows that it is all NULL.
+	 */
+	if (stanullfrac == 1.0)
+		return 1.0;
+
 	*isdefault = true;
 	return DEFAULT_NUM_DISTINCT;
 }
