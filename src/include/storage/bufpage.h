@@ -420,7 +420,7 @@ do { \
 
 #define PageIsVerified(page, blkno) \
 	PageIsVerifiedExtended(page, blkno, \
-						   PIV_LOG_WARNING | PIV_REPORT_STAT)
+						   (PIV_LOG_WARNING | PIV_REPORT_STAT))
 
 /*
  * Check that BLCKSZ is a multiple of sizeof(size_t).  In
