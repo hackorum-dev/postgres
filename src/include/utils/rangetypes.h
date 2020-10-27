@@ -135,5 +135,8 @@ extern int	range_cmp_bound_values(TypeCacheEntry *typcache, const RangeBound *b1
 extern bool bounds_adjacent(TypeCacheEntry *typcache, RangeBound bound1,
 							RangeBound bound2);
 extern RangeType *make_empty_range(TypeCacheEntry *typcache);
+extern void range_leftover_internal(TypeCacheEntry *typcache, const RangeType *r1,
+									const RangeType *r2, RangeType **output1,
+									RangeType **output2);
 
 #endif							/* RANGETYPES_H */

@@ -21,6 +21,8 @@ test: enum
 test: money
 test: rangetypes
 test: pg_lsn
+test: without_overlaps
+test: for_portion_of
 test: regproc
 test: strings
 test: numerology

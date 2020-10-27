@@ -35,6 +35,7 @@ typedef enum NodeTag
 	T_ProjectionInfo,
 	T_JunkFilter,
 	T_OnConflictSetState,
+	T_ForPortionOfState,
 	T_ResultRelInfo,
 	T_EState,
 	T_TupleTableSlot,
@@ -197,6 +198,7 @@ typedef enum NodeTag
 	T_JoinExpr,
 	T_FromExpr,
 	T_OnConflictExpr,
+	T_ForPortionOfExpr,
 	T_IntoClause,
 
 	/*
@@ -471,6 +473,7 @@ typedef enum NodeTag
 	T_WithClause,
 	T_InferClause,
 	T_OnConflictClause,
+	T_ForPortionOfClause,
 	T_CommonTableExpr,
 	T_RoleSpec,
 	T_TriggerTransition,

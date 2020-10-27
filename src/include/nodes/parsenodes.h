@@ -122,6 +122,8 @@ typedef struct Query
 	int			resultRelation; /* rtable index of target relation for
 								 * INSERT/UPDATE/DELETE; 0 for SELECT */
 
+	ForPortionOfExpr *forPortionOf;	/* FOR PORTION OF clause for UPDATE/DELETE */
+
 	bool		hasAggs;		/* has aggregates in tlist or havingQual */
 	bool		hasWindowFuncs; /* has window functions in tlist */
 	bool		hasTargetSRFs;	/* has set-returning functions in tlist */
@@ -1387,6 +1389,19 @@ typedef struct RowMarkClause
 } RowMarkClause;
 
 /*
+ * ForPortionOfClause
+ *		representation of FOR PORTION OF <period-name> FROM <t1> TO <t2>
+ */
+typedef struct ForPortionOfClause
+{
+	NodeTag		type;
+	char	   *range_name;
+	int			range_name_location;
+	Node	   *target_start;
+	Node	   *target_end;
+} ForPortionOfClause;
+
+/*
  * WithClause -
  *	   representation of WITH clause
  *
@@ -1541,12 +1556,13 @@ typedef struct InsertStmt
  */
 typedef struct DeleteStmt
 {
-	NodeTag		type;
-	RangeVar   *relation;		/* relation to delete from */
-	List	   *usingClause;	/* optional using clause for more tables */
-	Node	   *whereClause;	/* qualifications */
-	List	   *returningList;	/* list of expressions to return */
-	WithClause *withClause;		/* WITH clause */
+	NodeTag				type;
+	RangeVar		   *relation;		/* relation to delete from */
+	ForPortionOfClause *forPortionOf;	/* FOR PORTION OF clause */
+	List			   *usingClause;	/* optional using clause for more tables */
+	Node			   *whereClause;	/* qualifications */
+	List			   *returningList;	/* list of expressions to return */
+	WithClause		   *withClause;		/* WITH clause */
 } DeleteStmt;
 
 /* ----------------------
@@ -1555,13 +1571,14 @@ typedef struct DeleteStmt
  */
 typedef struct UpdateStmt
 {
-	NodeTag		type;
-	RangeVar   *relation;		/* relation to update */
-	List	   *targetList;		/* the target list (of ResTarget) */
-	Node	   *whereClause;	/* qualifications */
-	List	   *fromClause;		/* optional from clause for more tables */
-	List	   *returningList;	/* list of expressions to return */
-	WithClause *withClause;		/* WITH clause */
+	NodeTag				type;
+	RangeVar		   *relation;		/* relation to update */
+	ForPortionOfClause *forPortionOf;	/* FOR PORTION OF clause */
+	List			   *targetList;		/* the target list (of ResTarget) */
+	Node			   *whereClause;	/* qualifications */
+	List			   *fromClause;		/* optional from clause for more tables */
+	List			   *returningList;	/* list of expressions to return */
+	WithClause		   *withClause;		/* WITH clause */
 } UpdateStmt;
 
 /* ----------------------
@@ -2187,13 +2204,18 @@ typedef struct Constraint
 	/* Fields used for FOREIGN KEY constraints: */
 	RangeVar   *pktable;		/* Primary key table */
 	List	   *fk_attrs;		/* Attributes of foreign key */
+	Node	   *fk_period;		/* String node naming Period or range column */
 	List	   *pk_attrs;		/* Corresponding attrs in PK table */
+	Node	   *pk_period;		/* String node naming Period or range column */
 	char		fk_matchtype;	/* FULL, PARTIAL, SIMPLE */
 	char		fk_upd_action;	/* ON UPDATE action */
 	char		fk_del_action;	/* ON DELETE action */
 	List	   *old_conpfeqop;	/* pg_constraint.conpfeqop of my former self */
 	Oid			old_pktable_oid;	/* pg_constraint.confrelid of my former
 									 * self */
+
+  /* Fields used for temporal PRIMARY KEY and FOREIGN KEY constraints: */
+	Node	   *without_overlaps; /* String node naming PERIOD or range column */
 
 	/* Fields used for constraints that allow a NOT VALID specification */
 	bool		skip_validation;	/* skip validation of existing rows? */
@@ -2793,6 +2815,7 @@ typedef struct IndexStmt
 	bool		unique;			/* is index unique? */
 	bool		primary;		/* is index a primary key? */
 	bool		isconstraint;	/* is it for a pkey/unique constraint? */
+	bool		istemporal;		/* is it for a temporal pkey? */
 	bool		deferrable;		/* is the constraint DEFERRABLE? */
 	bool		initdeferred;	/* is the constraint INITIALLY DEFERRED? */
 	bool		transformed;	/* true when transformIndexStmt is finished */

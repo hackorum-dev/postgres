@@ -237,6 +237,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	RangeVar			*range;
 	IntoClause			*into;
 	WithClause			*with;
+	ForPortionOfClause	*forportionof;
 	InferClause			*infer;
 	OnConflictClause	*onconflict;
 	A_Indices			*aind;
@@ -483,10 +484,12 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <node>	TableElement TypedTableElement ConstraintElem TableFuncElement
 %type <node>	columnDef columnOptions
 %type <defelt>	def_elem reloption_elem old_aggr_elem operator_def_elem
-%type <node>	def_arg columnElem where_clause where_or_current_clause
+%type <node>	def_arg columnElem withoutOverlapsClause optionalPeriodName
+				where_clause where_or_current_clause
 				a_expr b_expr c_expr AexprConst indirection_el opt_slice_bound
 				columnref in_expr having_clause func_table xmltable array_expr
 				ExclusionWhereClause operator_def_arg
+%type <list>	opt_column_and_period_list
 %type <list>	rowsfrom_item rowsfrom_list opt_col_def_list
 %type <boolean> opt_ordinality
 %type <list>	ExclusionConstraintList ExclusionConstraintElem
@@ -506,6 +509,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <jexpr>	joined_table
 %type <range>	relation_expr
 %type <range>	relation_expr_opt_alias
+%type <forportionof> for_portion_of_clause
 %type <node>	tablesample_clause opt_repeatable_clause
 %type <target>	target_el set_target insert_column_item
 
@@ -682,8 +686,8 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	ORDER ORDINALITY OTHERS OUT_P OUTER_P
 	OVER OVERLAPS OVERLAY OVERRIDING OWNED OWNER
 
-	PARALLEL PARSER PARTIAL PARTITION PASSING PASSWORD PLACING PLANS POLICY
-	POSITION PRECEDING PRECISION PRESERVE PREPARE PREPARED PRIMARY
+	PARALLEL PARSER PARTIAL PARTITION PASSING PASSWORD PERIOD PLACING PLANS POLICY
+	PORTION POSITION PRECEDING PRECISION PRESERVE PREPARE PREPARED PRIMARY
 	PRIOR PRIVILEGES PROCEDURAL PROCEDURE PROCEDURES PROGRAM PUBLICATION
 
 	QUOTE
@@ -3507,6 +3511,7 @@ ColConstraintElem:
 					n->contype = CONSTR_PRIMARY;
 					n->location = @1;
 					n->keys = NULL;
+					n->without_overlaps = NULL;
 					n->options = $3;
 					n->indexname = NULL;
 					n->indexspace = $4;
@@ -3723,18 +3728,19 @@ ConstraintElem:
 								   NULL, yyscanner);
 					$$ = (Node *)n;
 				}
-			| PRIMARY KEY '(' columnList ')' opt_c_include opt_definition OptConsTableSpace
+			| PRIMARY KEY '(' columnList withoutOverlapsClause ')' opt_c_include opt_definition OptConsTableSpace
 				ConstraintAttributeSpec
 				{
 					Constraint *n = makeNode(Constraint);
 					n->contype = CONSTR_PRIMARY;
 					n->location = @1;
 					n->keys = $4;
-					n->including = $6;
-					n->options = $7;
+					n->without_overlaps = $5;
+					n->including = $7;
+					n->options = $8;
 					n->indexname = NULL;
-					n->indexspace = $8;
-					processCASbits($9, @9, "PRIMARY KEY",
+					n->indexspace = $9;
+					processCASbits($10, @10, "PRIMARY KEY",
 								   &n->deferrable, &n->initdeferred, NULL,
 								   NULL, yyscanner);
 					$$ = (Node *)n;
@@ -3745,6 +3751,7 @@ ConstraintElem:
 					n->contype = CONSTR_PRIMARY;
 					n->location = @1;
 					n->keys = NIL;
+					n->without_overlaps = NULL;
 					n->including = NIL;
 					n->options = NIL;
 					n->indexname = $3;
@@ -3773,19 +3780,21 @@ ConstraintElem:
 								   NULL, yyscanner);
 					$$ = (Node *)n;
 				}
-			| FOREIGN KEY '(' columnList ')' REFERENCES qualified_name
-				opt_column_list key_match key_actions ConstraintAttributeSpec
+			| FOREIGN KEY '(' columnList optionalPeriodName ')' REFERENCES qualified_name
+				opt_column_and_period_list key_match key_actions ConstraintAttributeSpec
 				{
 					Constraint *n = makeNode(Constraint);
 					n->contype = CONSTR_FOREIGN;
 					n->location = @1;
-					n->pktable			= $7;
+					n->pktable			= $8;
 					n->fk_attrs			= $4;
-					n->pk_attrs			= $8;
-					n->fk_matchtype		= $9;
-					n->fk_upd_action	= (char) ($10 >> 8);
-					n->fk_del_action	= (char) ($10 & 0xFF);
-					processCASbits($11, @11, "FOREIGN KEY",
+					n->fk_period		= $5;
+					n->pk_attrs			= linitial($9);
+					n->pk_period		= lsecond($9);
+					n->fk_matchtype		= $10;
+					n->fk_upd_action	= (char) ($11 >> 8);
+					n->fk_del_action	= (char) ($11 & 0xFF);
+					processCASbits($12, @12, "FOREIGN KEY",
 								   &n->deferrable, &n->initdeferred,
 								   &n->skip_validation, NULL,
 								   yyscanner);
@@ -3806,6 +3815,21 @@ opt_column_list:
 columnList:
 			columnElem								{ $$ = list_make1($1); }
 			| columnList ',' columnElem				{ $$ = lappend($1, $3); }
+		;
+
+withoutOverlapsClause:
+			',' columnElem WITHOUT OVERLAPS { $$ = $2; }
+			| /*EMPTY*/               { $$ = NULL; }
+	;
+
+optionalPeriodName:
+			',' PERIOD columnElem { $$ = $3; }
+			| /*EMPTY*/               { $$ = NULL; }
+	;
+
+opt_column_and_period_list:
+			'(' columnList optionalPeriodName ')'			{ $$ = list_make2($2, $3); }
+			| /*EMPTY*/								{ $$ = list_make2(NIL, NULL); }
 		;
 
 columnElem: ColId
@@ -10950,13 +10974,15 @@ returning_clause:
  *****************************************************************************/
 
 DeleteStmt: opt_with_clause DELETE_P FROM relation_expr_opt_alias
+			for_portion_of_clause
 			using_clause where_or_current_clause returning_clause
 				{
 					DeleteStmt *n = makeNode(DeleteStmt);
 					n->relation = $4;
-					n->usingClause = $5;
-					n->whereClause = $6;
-					n->returningList = $7;
+					n->forPortionOf = $5;
+					n->usingClause = $6;
+					n->whereClause = $7;
+					n->returningList = $8;
 					n->withClause = $1;
 					$$ = (Node *)n;
 				}
@@ -11019,6 +11045,7 @@ opt_nowait_or_skip:
  *****************************************************************************/
 
 UpdateStmt: opt_with_clause UPDATE relation_expr_opt_alias
+			for_portion_of_clause
 			SET set_clause_list
 			from_clause
 			where_or_current_clause
@@ -11026,10 +11053,11 @@ UpdateStmt: opt_with_clause UPDATE relation_expr_opt_alias
 				{
 					UpdateStmt *n = makeNode(UpdateStmt);
 					n->relation = $3;
-					n->targetList = $5;
-					n->fromClause = $6;
-					n->whereClause = $7;
-					n->returningList = $8;
+					n->forPortionOf = $4;
+					n->targetList = $6;
+					n->fromClause = $7;
+					n->whereClause = $8;
+					n->returningList = $9;
 					n->withClause = $1;
 					$$ = (Node *)n;
 				}
@@ -12185,6 +12213,20 @@ relation_expr_opt_alias: relation_expr					%prec UMINUS
 					$$ = $1;
 				}
 		;
+
+for_portion_of_clause:
+			FOR PORTION OF ColId FROM Sconst TO Sconst
+				{
+					ForPortionOfClause *n = makeNode(ForPortionOfClause);
+					n->range_name = $4;
+					n->range_name_location = @4;
+					n->target_start = makeStringConst($6, @6);
+					n->target_end = makeStringConst($8, @8);
+					$$ = n;
+				}
+			| /*EMPTY*/					{ $$ = NULL; }
+		;
+
 
 /*
  * TABLESAMPLE decoration in a FROM item
@@ -15242,6 +15284,7 @@ unreserved_keyword:
 			| PASSWORD
 			| PLANS
 			| POLICY
+			| PORTION
 			| PRECEDING
 			| PREPARE
 			| PREPARED
@@ -15523,6 +15566,7 @@ reserved_keyword:
 			| ONLY
 			| OR
 			| ORDER
+			| PERIOD
 			| PLACING
 			| PRIMARY
 			| REFERENCES
@@ -15811,9 +15855,11 @@ bare_label_keyword:
 			| PARTITION
 			| PASSING
 			| PASSWORD
+			| PERIOD
 			| PLACING
 			| PLANS
 			| POLICY
+			| PORTION
 			| POSITION
 			| PRECEDING
 			| PREPARE
