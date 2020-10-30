@@ -342,6 +342,12 @@ REVOKE admins FROM joe;
     is required according to the standard, but <productname>PostgreSQL</productname>
     assumes <literal>RESTRICT</literal> by default.
    </para>
+
+   <para>
+    In the SQL standard, <command>REVOKE</command> only revokes the privilege
+    as granted by the invoking role. In <productname>PostgreSQL</productname>,
+    this will also revoke privileges granted by other roles.
+   </para>
  </refsect1>
 
  <refsect1>
