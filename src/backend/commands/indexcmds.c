@@ -2762,6 +2762,24 @@ ReindexPartitions(Oid relid, int options, bool isTopLevel)
 	}
 
 	/*
+	 * If indexes exist on all of the partitioned table's children, and we
+	 * just reindexed them, then we know they're valid, and so can mark the
+	 * parent index as valid.
+	 * This handles the case of CREATE INDEX CONCURRENTLY.
+	 * See also: validatePartitionedIndex().
+	 */
+	if (get_rel_relkind(relid) == RELKIND_PARTITIONED_INDEX
+			&& !get_index_isvalid(relid))
+	{
+		Oid	tableoid = IndexGetRelation(relid, false);
+		List	*child_tables = find_all_inheritors(tableoid, ShareLock, NULL);
+
+		/* Both lists include their parent relation as well as any intermediate partitioned rels */
+		if (list_length(inhoids) == list_length(child_tables))
+			index_set_state_flags(relid, INDEX_CREATE_SET_VALID);
+	}
+
+	/*
 	 * Clean up working storage --- note we must do this after
 	 * StartTransactionCommand, else we might be trying to delete the active
 	 * context!
