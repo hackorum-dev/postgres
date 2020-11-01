@@ -526,12 +526,8 @@ DefineIndex(Oid relationId,
 	bits16		constr_flags;
 	int			numberOfAttributes;
 	int			numberOfKeyAttributes;
-	TransactionId limitXmin;
 	ObjectAddress address;
-	LockRelId	heaprelid;
-	LOCKTAG		heaplocktag;
 	LOCKMODE	lockmode;
-	Snapshot	snapshot;
 	int			save_nestlevel = -1;
 	int			i;
 
@@ -1109,6 +1105,11 @@ DefineIndex(Oid relationId,
 		if (pd->nparts != 0)
 			flags |= INDEX_CREATE_INVALID;
 	}
+	else if (concurrent)
+	{
+		/* If concurrent, initially build indexes as "invalid" */
+		flags |= INDEX_CREATE_INVALID;
+	}
 
 	if (stmt->deferrable)
 		constr_flags |= INDEX_CONSTR_CREATE_DEFERRABLE;
@@ -1387,11 +1388,9 @@ DefineIndex(Oid relationId,
 		return address;
 	}
 
+	table_close(rel, NoLock);
 	if (!concurrent)
 	{
-		/* Close the heap and we're done, in the non-concurrent case */
-		table_close(rel, NoLock);
-
 		/* If this is the top-level index, we're done. */
 		if (!OidIsValid(parentIndexId))
 			pgstat_progress_end_command();
@@ -1399,185 +1398,13 @@ DefineIndex(Oid relationId,
 		return address;
 	}
 
-	/* save lockrelid and locktag for below, then close rel */
-	heaprelid = rel->rd_lockInfo.lockRelId;
-	SET_LOCKTAG_RELATION(heaplocktag, heaprelid.dbId, heaprelid.relId);
-	table_close(rel, NoLock);
-
-	/*
-	 * For a concurrent build, it's important to make the catalog entries
-	 * visible to other transactions before we start to build the index. That
-	 * will prevent them from making incompatible HOT updates.  The new index
-	 * will be marked not indisready and not indisvalid, so that no one else
-	 * tries to either insert into it or use it for queries.
-	 *
-	 * We must commit our current transaction so that the index becomes
-	 * visible; then start another.  Note that all the data structures we just
-	 * built are lost in the commit.  The only data we keep past here are the
-	 * relation IDs.
-	 *
-	 * Before committing, get a session-level lock on the table, to ensure
-	 * that neither it nor the index can be dropped before we finish. This
-	 * cannot block, even if someone else is waiting for access, because we
-	 * already have the same lock within our transaction.
-	 *
-	 * Note: we don't currently bother with a session lock on the index,
-	 * because there are no operations that could change its state while we
-	 * hold lock on the parent table.  This might need to change later.
-	 */
-	LockRelationIdForSession(&heaprelid, ShareUpdateExclusiveLock);
-
-	PopActiveSnapshot();
-	CommitTransactionCommand();
-	StartTransactionCommand();
-
 	/*
 	 * The index is now visible, so we can report the OID.
 	 */
 	pgstat_progress_update_param(PROGRESS_CREATEIDX_INDEX_OID,
 								 indexRelationId);
 
-	/*
-	 * Phase 2 of concurrent index build (see comments for validate_index()
-	 * for an overview of how this works)
-	 *
-	 * Now we must wait until no running transaction could have the table open
-	 * with the old list of indexes.  Use ShareLock to consider running
-	 * transactions that hold locks that permit writing to the table.  Note we
-	 * do not need to worry about xacts that open the table for writing after
-	 * this point; they will see the new index when they open it.
-	 *
-	 * Note: the reason we use actual lock acquisition here, rather than just
-	 * checking the ProcArray and sleeping, is that deadlock is possible if
-	 * one of the transactions in question is blocked trying to acquire an
-	 * exclusive lock on our table.  The lock code will detect deadlock and
-	 * error out properly.
-	 */
-	pgstat_progress_update_param(PROGRESS_CREATEIDX_PHASE,
-								 PROGRESS_CREATEIDX_PHASE_WAIT_1);
-	WaitForLockers(heaplocktag, ShareLock, true);
-
-	/*
-	 * At this moment we are sure that there are no transactions with the
-	 * table open for write that don't have this new index in their list of
-	 * indexes.  We have waited out all the existing transactions and any new
-	 * transaction will have the new index in its list, but the index is still
-	 * marked as "not-ready-for-inserts".  The index is consulted while
-	 * deciding HOT-safety though.  This arrangement ensures that no new HOT
-	 * chains can be created where the new tuple and the old tuple in the
-	 * chain have different index keys.
-	 *
-	 * We now take a new snapshot, and build the index using all tuples that
-	 * are visible in this snapshot.  We can be sure that any HOT updates to
-	 * these tuples will be compatible with the index, since any updates made
-	 * by transactions that didn't know about the index are now committed or
-	 * rolled back.  Thus, each visible tuple is either the end of its
-	 * HOT-chain or the extension of the chain is HOT-safe for this index.
-	 */
-
-	/* Set ActiveSnapshot since functions in the indexes may need it */
-	PushActiveSnapshot(GetTransactionSnapshot());
-
-	/* Perform concurrent build of index */
-	index_concurrently_build(relationId, indexRelationId);
-
-	/* we can do away with our snapshot */
-	PopActiveSnapshot();
-
-	/*
-	 * Commit this transaction to make the indisready update visible.
-	 */
-	CommitTransactionCommand();
-	StartTransactionCommand();
-
-	/*
-	 * Phase 3 of concurrent index build
-	 *
-	 * We once again wait until no transaction can have the table open with
-	 * the index marked as read-only for updates.
-	 */
-	pgstat_progress_update_param(PROGRESS_CREATEIDX_PHASE,
-								 PROGRESS_CREATEIDX_PHASE_WAIT_2);
-	WaitForLockers(heaplocktag, ShareLock, true);
-
-	/*
-	 * Now take the "reference snapshot" that will be used by validate_index()
-	 * to filter candidate tuples.  Beware!  There might still be snapshots in
-	 * use that treat some transaction as in-progress that our reference
-	 * snapshot treats as committed.  If such a recently-committed transaction
-	 * deleted tuples in the table, we will not include them in the index; yet
-	 * those transactions which see the deleting one as still-in-progress will
-	 * expect such tuples to be there once we mark the index as valid.
-	 *
-	 * We solve this by waiting for all endangered transactions to exit before
-	 * we mark the index as valid.
-	 *
-	 * We also set ActiveSnapshot to this snap, since functions in indexes may
-	 * need a snapshot.
-	 */
-	snapshot = RegisterSnapshot(GetTransactionSnapshot());
-	PushActiveSnapshot(snapshot);
-
-	/*
-	 * Scan the index and the heap, insert any missing index entries.
-	 */
-	validate_index(relationId, indexRelationId, snapshot);
-
-	/*
-	 * Drop the reference snapshot.  We must do this before waiting out other
-	 * snapshot holders, else we will deadlock against other processes also
-	 * doing CREATE INDEX CONCURRENTLY, which would see our snapshot as one
-	 * they must wait for.  But first, save the snapshot's xmin to use as
-	 * limitXmin for GetCurrentVirtualXIDs().
-	 */
-	limitXmin = snapshot->xmin;
-
-	PopActiveSnapshot();
-	UnregisterSnapshot(snapshot);
-
-	/*
-	 * The snapshot subsystem could still contain registered snapshots that
-	 * are holding back our process's advertised xmin; in particular, if
-	 * default_transaction_isolation = serializable, there is a transaction
-	 * snapshot that is still active.  The CatalogSnapshot is likewise a
-	 * hazard.  To ensure no deadlocks, we must commit and start yet another
-	 * transaction, and do our wait before any snapshot has been taken in it.
-	 */
-	CommitTransactionCommand();
-	StartTransactionCommand();
-
-	/* We should now definitely not be advertising any xmin. */
-	Assert(MyProc->xmin == InvalidTransactionId);
-
-	/*
-	 * The index is now valid in the sense that it contains all currently
-	 * interesting tuples.  But since it might not contain tuples deleted just
-	 * before the reference snap was taken, we have to wait out any
-	 * transactions that might have older snapshots.
-	 */
-	pgstat_progress_update_param(PROGRESS_CREATEIDX_PHASE,
-								 PROGRESS_CREATEIDX_PHASE_WAIT_3);
-	WaitForOlderSnapshots(limitXmin, true);
-
-	/*
-	 * Index can now be marked valid -- update its pg_index entry
-	 */
-	index_set_state_flags(indexRelationId, INDEX_CREATE_SET_VALID);
-
-	/*
-	 * The pg_index update will cause backends (including this one) to update
-	 * relcache entries for the index itself, but we should also send a
-	 * relcache inval on the parent table to force replanning of cached plans.
-	 * Otherwise existing sessions might fail to use the new index where it
-	 * would be useful.  (Note that our earlier commits did not create reasons
-	 * to replan; so relcache flush on the index itself was sufficient.)
-	 */
-	CacheInvalidateRelcacheByRelid(heaprelid.relId);
-
-	/*
-	 * Last thing to do is release the session-level lock on the parent table.
-	 */
-	UnlockRelationIdForSession(&heaprelid, ShareUpdateExclusiveLock);
+	ReindexRelationConcurrently(indexRelationId, REINDEXOPT_CONCURRENTLY);
 
 	pgstat_progress_end_command();
 

@@ -1381,12 +1381,13 @@ ERROR:  duplicate key value violates unique constraint "concur_index2"
 DETAIL:  Key (f1)=(b) already exists.
 -- check if constraint is enforced properly at build time
 CREATE UNIQUE INDEX CONCURRENTLY concur_index3 ON concur_heap(f2);
-ERROR:  could not create unique index "concur_index3"
+ERROR:  could not create unique index "concur_index3_ccnew"
 DETAIL:  Key (f2)=(b) is duplicated.
 -- test that expression indexes and partial indexes work concurrently
 CREATE INDEX CONCURRENTLY concur_index4 on concur_heap(f2) WHERE f1='a';
 CREATE INDEX CONCURRENTLY concur_index5 on concur_heap(f2) WHERE f1='x';
 -- here we also check that you can default the index name
+DROP INDEX CONCURRENTLY IF EXISTS "concur_index3_ccnew";
 CREATE INDEX CONCURRENTLY on concur_heap((f2||f1));
 -- You can't do a concurrent index build in a transaction
 BEGIN;
@@ -1467,7 +1468,7 @@ DROP INDEX CONCURRENTLY "concur_index2";				-- works
 DROP INDEX CONCURRENTLY IF EXISTS "concur_index2";		-- notice
 NOTICE:  index "concur_index2" does not exist, skipping
 -- failures
-DROP INDEX CONCURRENTLY "concur_index2", "concur_index3";
+DROP INDEX CONCURRENTLY "concur_index2", "concur_index3_ccnew";
 ERROR:  DROP INDEX CONCURRENTLY does not support dropping multiple objects
 BEGIN;
 DROP INDEX CONCURRENTLY "concur_index5";
@@ -2495,13 +2496,14 @@ CREATE TABLE concur_reindex_tab4 (c1 int);
 INSERT INTO concur_reindex_tab4 VALUES (1), (1), (2);
 -- This trick creates an invalid index.
 CREATE UNIQUE INDEX CONCURRENTLY concur_reindex_ind5 ON concur_reindex_tab4 (c1);
-ERROR:  could not create unique index "concur_reindex_ind5"
+ERROR:  could not create unique index "concur_reindex_ind5_ccnew"
 DETAIL:  Key (c1)=(1) is duplicated.
 -- Reindexing concurrently this index fails with the same failure.
 -- The extra index created is itself invalid, and can be dropped.
 REINDEX INDEX CONCURRENTLY concur_reindex_ind5;
-ERROR:  could not create unique index "concur_reindex_ind5_ccnew"
+ERROR:  could not create unique index "concur_reindex_ind5_ccnew1"
 DETAIL:  Key (c1)=(1) is duplicated.
+DROP INDEX concur_reindex_ind5_ccnew1;
 \d concur_reindex_tab4
         Table "public.concur_reindex_tab4"
  Column |  Type   | Collation | Nullable | Default 

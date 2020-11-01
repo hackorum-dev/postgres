@@ -480,6 +480,7 @@ CREATE UNIQUE INDEX CONCURRENTLY concur_index3 ON concur_heap(f2);
 CREATE INDEX CONCURRENTLY concur_index4 on concur_heap(f2) WHERE f1='a';
 CREATE INDEX CONCURRENTLY concur_index5 on concur_heap(f2) WHERE f1='x';
 -- here we also check that you can default the index name
+DROP INDEX CONCURRENTLY IF EXISTS "concur_index3_ccnew";
 CREATE INDEX CONCURRENTLY on concur_heap((f2||f1));
 
 -- You can't do a concurrent index build in a transaction
@@ -533,7 +534,7 @@ DROP INDEX CONCURRENTLY "concur_index2";				-- works
 DROP INDEX CONCURRENTLY IF EXISTS "concur_index2";		-- notice
 
 -- failures
-DROP INDEX CONCURRENTLY "concur_index2", "concur_index3";
+DROP INDEX CONCURRENTLY "concur_index2", "concur_index3_ccnew";
 BEGIN;
 DROP INDEX CONCURRENTLY "concur_index5";
 ROLLBACK;
@@ -1053,6 +1054,7 @@ CREATE UNIQUE INDEX CONCURRENTLY concur_reindex_ind5 ON concur_reindex_tab4 (c1)
 -- Reindexing concurrently this index fails with the same failure.
 -- The extra index created is itself invalid, and can be dropped.
 REINDEX INDEX CONCURRENTLY concur_reindex_ind5;
+DROP INDEX concur_reindex_ind5_ccnew1;
 \d concur_reindex_tab4
 DROP INDEX concur_reindex_ind5_ccnew;
 -- This makes the previous failure go away, so the index can become valid.
