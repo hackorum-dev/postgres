@@ -305,6 +305,17 @@ typedef struct TableAmRoutine
 									  TupleTableSlot *slot,
 									  bool *call_again, bool *all_dead);
 
+	/*
+	 * Test the visibility of the tid using AM specific visibility mechanism.
+	 * This is used for index-only scans, to skip fetching a tuple from
+	 * underlying relation only to determine visibility.  If it returns true,
+	 * the tid is visible and there is no need to read the underlying table.
+	 * Otherwise, the tuple from the underlying table must be read to
+	 * determine visibility.
+	 */
+	bool		(*tid_visible) (struct IndexFetchTableData *scan,
+								ItemPointer tid,
+								Snapshot snapshot);
 
 	/* ------------------------------------------------------------------------
 	 * Callbacks for non-modifying operations on individual tuples
@@ -1051,6 +1062,17 @@ extern bool table_index_fetch_tuple_check(Relation rel,
 										  Snapshot snapshot,
 										  bool *all_dead);
 
+/*
+ * Used by index-only scan to determine whether the tuple can be served solely
+ * from the index because it's known to be visible to the snapshot.
+ */
+static inline bool
+table_index_tid_visible(struct IndexFetchTableData *scan,
+                       ItemPointer tid,
+                       Snapshot snapshot)
+{
+   return scan->rel->rd_tableam->tid_visible(scan, tid, snapshot);
+}
 
 /* ------------------------------------------------------------------------
  * Functions for non-modifying operations on individual tuples

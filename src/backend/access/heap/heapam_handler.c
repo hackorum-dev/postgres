@@ -27,6 +27,7 @@
 #include "access/syncscan.h"
 #include "access/tableam.h"
 #include "access/tsmapi.h"
+#include "access/visibilitymap.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
 #include "catalog/index.h"
@@ -82,6 +83,7 @@ heapam_index_fetch_begin(Relation rel)
 
 	hscan->xs_base.rel = rel;
 	hscan->xs_cbuf = InvalidBuffer;
+	hscan->xs_vbuf = InvalidBuffer;
 
 	return &hscan->xs_base;
 }
@@ -95,6 +97,11 @@ heapam_index_fetch_reset(IndexFetchTableData *scan)
 	{
 		ReleaseBuffer(hscan->xs_cbuf);
 		hscan->xs_cbuf = InvalidBuffer;
+	}
+	if (BufferIsValid(hscan->xs_vbuf))
+	{
+		ReleaseBuffer(hscan->xs_vbuf);
+		hscan->xs_vbuf = InvalidBuffer;
 	}
 }
 
@@ -170,6 +177,47 @@ heapam_index_fetch_tuple(struct IndexFetchTableData *scan,
 	return got_heap_tuple;
 }
 
+static bool
+heapam_tid_visible(struct IndexFetchTableData *scan,
+									 ItemPointer tid,
+									 Snapshot snapshot)
+{
+	IndexFetchHeapData *hscan = (IndexFetchHeapData *) scan;
+
+	/*
+	 * Note on Memory Ordering Effects: visibilitymap_get_status does not
+	 * lock the visibility map buffer, and therefore the result we read
+	 * here could be slightly stale.  However, it can't be stale enough to
+	 * matter.
+	 *
+	 * We need to detect clearing a VM bit due to an insert right away,
+	 * because the tuple is present in the index page but not visible. The
+	 * reading of the TID by this scan (using a shared lock on the index
+	 * buffer) is serialized with the insert of the TID into the index
+	 * (using an exclusive lock on the index buffer). Because the VM bit
+	 * is cleared before updating the index, and locking/unlocking of the
+	 * index page acts as a full memory barrier, we are sure to see the
+	 * cleared bit if we see a recently-inserted TID.
+	 *
+	 * Deletes do not update the index page (only VACUUM will clear out
+	 * the TID), so the clearing of the VM bit by a delete is not
+	 * serialized with this test below, and we may see a value that is
+	 * significantly stale. However, we don't care about the delete right
+	 * away, because the tuple is still visible until the deleting
+	 * transaction commits or the statement ends (if it's our
+	 * transaction). In either case, the lock on the VM buffer will have
+	 * been released (acting as a write barrier) after clearing the bit.
+	 * And for us to have a snapshot that includes the deleting
+	 * transaction (making the tuple invisible), we must have acquired
+	 * ProcArrayLock after that time, acting as a read barrier.
+	 *
+	 * It's worth going through this complexity to avoid needing to lock
+	 * the VM buffer, which could cause significant contention.
+	 */
+	 return VM_ALL_VISIBLE(hscan->xs_base.rel,
+						   ItemPointerGetBlockNumber(tid),
+						   &hscan->xs_vbuf);
+}
 
 /* ------------------------------------------------------------------------
  * Callbacks for non-modifying operations on individual tuples for heap AM
@@ -2524,6 +2572,7 @@ static const TableAmRoutine heapam_methods = {
 	.index_fetch_reset = heapam_index_fetch_reset,
 	.index_fetch_end = heapam_index_fetch_end,
 	.index_fetch_tuple = heapam_index_fetch_tuple,
+	.tid_visible = heapam_tid_visible,
 
 	.tuple_insert = heapam_tuple_insert,
 	.tuple_insert_speculative = heapam_tuple_insert_speculative,
