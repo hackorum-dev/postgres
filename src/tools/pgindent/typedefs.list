@@ -2612,6 +2612,7 @@ StdAnalyzeData
 StdRdOptIndexCleanup
 StdRdOptions
 Step
+StopEvent
 StopList
 StrategyNumber
 StreamCtl
