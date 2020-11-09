@@ -45,7 +45,7 @@
 	do { \
 		if (!(expr)) \
 			elog(ERROR, \
-				 "%s was unexpectedly false in file \"%s\" line %u", \
+				 "%s was unexpectedly false in file \"%s\" line %d", \
 				 #expr, __FILE__, __LINE__); \
 	} while (0)
 
@@ -55,7 +55,7 @@
 		uint32		expected = (expected_expr); \
 		if (result != expected) \
 			elog(ERROR, \
-				 "%s yielded %u, expected %s in file \"%s\" line %u", \
+				 "%s yielded %u, expected %s in file \"%s\" line %d", \
 				 #result_expr, result, #expected_expr, __FILE__, __LINE__); \
 	} while (0)
 
@@ -65,7 +65,7 @@
 		uint64		expected = (expected_expr); \
 		if (result != expected) \
 			elog(ERROR, \
-				 "%s yielded " UINT64_FORMAT ", expected %s in file \"%s\" line %u", \
+				 "%s yielded " UINT64_FORMAT ", expected %s in file \"%s\" line %d", \
 				 #result_expr, result, #expected_expr, __FILE__, __LINE__); \
 	} while (0)
 

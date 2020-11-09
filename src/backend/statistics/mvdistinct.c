@@ -259,7 +259,7 @@ statext_ndistinct_deserialize(bytea *data)
 
 	/* we expect at least the basic fields of MVNDistinct struct */
 	if (VARSIZE_ANY_EXHDR(data) < SizeOfHeader)
-		elog(ERROR, "invalid MVNDistinct size %zd (expected at least %zd)",
+		elog(ERROR, "invalid MVNDistinct size %lu (expected at least %lu)",
 			 VARSIZE_ANY_EXHDR(data), SizeOfHeader);
 
 	/* initialize pointer to the data part (skip the varlena header) */
@@ -277,7 +277,7 @@ statext_ndistinct_deserialize(bytea *data)
 		elog(ERROR, "invalid ndistinct magic %08x (expected %08x)",
 			 ndist.magic, STATS_NDISTINCT_MAGIC);
 	if (ndist.type != STATS_NDISTINCT_TYPE_BASIC)
-		elog(ERROR, "invalid ndistinct type %d (expected %d)",
+		elog(ERROR, "invalid ndistinct type %u (expected %d)",
 			 ndist.type, STATS_NDISTINCT_TYPE_BASIC);
 	if (ndist.nitems == 0)
 		elog(ERROR, "invalid zero-length item array in MVNDistinct");
@@ -285,7 +285,7 @@ statext_ndistinct_deserialize(bytea *data)
 	/* what minimum bytea size do we expect for those parameters */
 	minimum_size = MinSizeOfItems(ndist.nitems);
 	if (VARSIZE_ANY_EXHDR(data) < minimum_size)
-		elog(ERROR, "invalid MVNDistinct size %zd (expected at least %zd)",
+		elog(ERROR, "invalid MVNDistinct size %lu (expected at least %lu)",
 			 VARSIZE_ANY_EXHDR(data), minimum_size);
 
 	/*

@@ -124,7 +124,7 @@ InternalIpcSemaphoreCreate(IpcSemaphoreKey semKey, int numSems)
 				(errmsg("could not create semaphores: %m"),
 				 errdetail("Failed system call was semget(%lu, %d, 0%o).",
 						   (unsigned long) semKey, numSems,
-						   IPC_CREAT | IPC_EXCL | IPCProtection),
+						   (unsigned int) (IPC_CREAT | IPC_EXCL | IPCProtection)),
 				 (saved_errno == ENOSPC) ?
 				 errhint("This error does *not* mean that you have run out of disk space.  "
 						 "It occurs when either the system limit for the maximum number of "

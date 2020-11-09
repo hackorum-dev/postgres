@@ -167,7 +167,7 @@ spgPageIndexMultiDelete(SpGistState *state, Page page,
 
 		if (PageAddItem(page, (Item) tuple, tuple->size,
 						itemno, false, false) != itemno)
-			elog(ERROR, "failed to add item of size %u to SPGiST index page",
+			elog(ERROR, "failed to add item of size %d to SPGiST index page",
 				 tuple->size);
 
 		if (tupstate == SPGIST_REDIRECT)
@@ -276,7 +276,7 @@ addLeafTuple(Relation index, SpGistState *state, SpGistLeafTuple leafTuple,
 			if (PageAddItem(current->page,
 							(Item) leafTuple, leafTuple->size,
 							current->offnum, false, false) != current->offnum)
-				elog(ERROR, "failed to add item of size %u to SPGiST index page",
+				elog(ERROR, "failed to add item of size %d to SPGiST index page",
 					 leafTuple->size);
 
 			/* WAL replay distinguishes this case by equal offnums */
@@ -1634,7 +1634,7 @@ spgAddNodeAction(Relation index, SpGistState *state,
 		if (PageAddItem(saveCurrent.page, (Item) dt, dt->size,
 						saveCurrent.offnum,
 						false, false) != saveCurrent.offnum)
-			elog(ERROR, "failed to add item of size %u to SPGiST index page",
+			elog(ERROR, "failed to add item of size %d to SPGiST index page",
 				 dt->size);
 
 		if (state->isBuild)

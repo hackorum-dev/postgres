@@ -136,7 +136,7 @@ inet_cidr_ntop_ipv4(const u_char *src, int bits, char *dst, size_t size)
 	/* Format CIDR /width. */
 	if (size <= sizeof "/32")
 		goto emsgsize;
-	dst += SPRINTF((dst, "/%u", bits));
+	dst += SPRINTF((dst, "/%d", bits));
 	return odst;
 
 emsgsize:
@@ -275,13 +275,13 @@ inet_cidr_ntop_ipv6(const u_char *src, int bits, char *dst, size_t size)
 			{
 				if (cp != outbuf)
 					*cp++ = ':';
-				cp += SPRINTF((cp, "%x", *s * 256 + s[1]));
+				cp += SPRINTF((cp, "%x", (unsigned int) (*s * 256 + s[1])));
 				s += 2;
 			}
 		}
 	}
 	/* Format CIDR /width. */
-	(void) SPRINTF((cp, "/%u", bits));
+	(void) SPRINTF((cp, "/%d", bits));
 	if (strlen(outbuf) + 1 > size)
 		goto emsgsize;
 	strcpy(dst, outbuf);

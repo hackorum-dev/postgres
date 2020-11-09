@@ -520,7 +520,7 @@ print_unaligned_vertical(const printTableContent *cont, FILE *fout)
 
 /* draw "line" */
 static void
-_print_horizontal_line(const unsigned int ncolumns, const unsigned int *widths,
+_print_horizontal_line(const unsigned int ncolumns, const int *widths,
 					   unsigned short border, printTextRule pos,
 					   const printTextFormat *format,
 					   FILE *fout)
@@ -576,7 +576,7 @@ print_aligned_text(const printTableContent *cont, FILE *fout, bool is_pager)
 	unsigned int i,
 				j;
 
-	unsigned int *width_header,
+	int		   *width_header,
 			   *max_width,
 			   *width_wrap,
 			   *width_average;
@@ -584,7 +584,7 @@ print_aligned_text(const printTableContent *cont, FILE *fout, bool is_pager)
 			   *curr_nl_line,
 			   *max_bytes;
 	unsigned char **format_buf;
-	unsigned int width_total;
+	int			width_total;
 	unsigned int total_header_width;
 	unsigned int extra_row_output_lines = 0;
 	unsigned int extra_output_lines = 0;
@@ -905,7 +905,7 @@ print_aligned_text(const printTableContent *cont, FILE *fout, bool is_pager)
 				for (i = 0; i < cont->ncolumns; i++)
 				{
 					struct lineptr *this_line = col_lineptrs[i] + curr_nl_line;
-					unsigned int nbspace;
+					int		nbspace;
 
 					if (opt_border != 0 ||
 						(!format->wrap_right_border && i > 0))
@@ -1218,7 +1218,7 @@ print_aligned_vertical(const printTableContent *cont,
 	int			encoding = cont->opt->encoding;
 	unsigned long record = cont->opt->prior_records + 1;
 	const char *const *ptr;
-	unsigned int i,
+	int			i,
 				hwidth = 0,
 				dwidth = 0,
 				hheight = 1,
@@ -1349,7 +1349,7 @@ print_aligned_vertical(const printTableContent *cont,
 	 */
 	if (cont->opt->format == PRINT_WRAPPED)
 	{
-		unsigned int swidth,
+		int			swidth,
 					rwidth = 0,
 					newdwidth;
 
@@ -1578,7 +1578,7 @@ print_aligned_vertical(const printTableContent *cont,
 			}
 			else
 			{
-				unsigned int swidth = hwidth + opt_border;
+				int		swidth = hwidth + opt_border;
 
 				if ((opt_border < 2) &&
 					(hmultiline) &&

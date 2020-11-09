@@ -376,7 +376,7 @@ BackgroundWorkerStateChange(void)
 		rw->rw_worker.bgw_notify_pid = slot->worker.bgw_notify_pid;
 		if (!PostmasterMarkPIDForWorkerNotify(rw->rw_worker.bgw_notify_pid))
 		{
-			elog(DEBUG1, "worker notification PID %lu is not valid",
+			elog(DEBUG1, "worker notification PID %ld is not valid",
 				 (long) rw->rw_worker.bgw_notify_pid);
 			rw->rw_worker.bgw_notify_pid = 0;
 		}

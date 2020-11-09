@@ -330,8 +330,8 @@ RetrieveWalSegSize(PGconn *conn)
 
 	if (!IsValidWalSegSize(WalSegSz))
 	{
-		pg_log_error(ngettext("WAL segment size must be a power of two between 1 MB and 1 GB, but the remote server reported a value of %d byte",
-							  "WAL segment size must be a power of two between 1 MB and 1 GB, but the remote server reported a value of %d bytes",
+		pg_log_error(ngettext("WAL segment size must be a power of two between 1 MB and 1 GB, but the remote server reported a value of %u byte",
+							  "WAL segment size must be a power of two between 1 MB and 1 GB, but the remote server reported a value of %u bytes",
 							  WalSegSz),
 					 WalSegSz);
 		return false;
@@ -355,7 +355,7 @@ static bool
 RetrieveDataDirCreatePerm(PGconn *conn)
 {
 	PGresult   *res;
-	int			data_directory_mode;
+	unsigned int data_directory_mode;
 
 	/* check connection existence */
 	Assert(conn != NULL);

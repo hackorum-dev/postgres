@@ -1495,7 +1495,7 @@ checkXLogConsistency(XLogReaderState *record)
 		if (memcmp(replay_image_masked, primary_image_masked, BLCKSZ) != 0)
 		{
 			elog(FATAL,
-				 "inconsistent page found, rel %u/%u/%u, forknum %u, blkno %u",
+				 "inconsistent page found, rel %u/%u/%u, forknum %d, blkno %u",
 				 rnode.spcNode, rnode.dbNode, rnode.relNode,
 				 forknum, blkno);
 		}
@@ -4034,7 +4034,7 @@ RemoveOldXlogFiles(XLogSegNo segno, XLogRecPtr lastredoptr, XLogRecPtr endptr)
 	 * doesn't matter, we ignore that in the comparison. (During recovery,
 	 * ThisTimeLineID isn't set, so we can't use that.)
 	 */
-	XLogFileName(lastoff, 0, segno, wal_segment_size);
+	XLogFileName(lastoff, 0U, segno, wal_segment_size);
 
 	elog(DEBUG2, "attempting to remove WAL segments older than log file %s",
 		 lastoff);
@@ -4381,7 +4381,7 @@ ReadRecord(XLogReaderState *xlogreader, int emode,
 			XLogFileName(fname, xlogreader->seg.ws_tli, segno,
 						 wal_segment_size);
 			ereport(emode_for_corrupt_record(emode, EndRecPtr),
-					(errmsg("unexpected timeline ID %u in log segment %s, offset %u",
+					(errmsg("unexpected timeline ID %u in log segment %s, offset %d",
 							xlogreader->latestPageTLI,
 							fname,
 							offset)));
@@ -4748,8 +4748,8 @@ ReadControlFile(void)
 	if (ControlFile->pg_control_version != PG_CONTROL_VERSION && ControlFile->pg_control_version % 65536 == 0 && ControlFile->pg_control_version / 65536 != 0)
 		ereport(FATAL,
 				(errmsg("database files are incompatible with server"),
-				 errdetail("The database cluster was initialized with PG_CONTROL_VERSION %d (0x%08x),"
-						   " but the server was compiled with PG_CONTROL_VERSION %d (0x%08x).",
+				 errdetail("The database cluster was initialized with PG_CONTROL_VERSION %u (0x%08x),"
+						   " but the server was compiled with PG_CONTROL_VERSION %u (0x%08x).",
 						   ControlFile->pg_control_version, ControlFile->pg_control_version,
 						   PG_CONTROL_VERSION, PG_CONTROL_VERSION),
 				 errhint("This could be a problem of mismatched byte ordering.  It looks like you need to initdb.")));
@@ -4757,8 +4757,8 @@ ReadControlFile(void)
 	if (ControlFile->pg_control_version != PG_CONTROL_VERSION)
 		ereport(FATAL,
 				(errmsg("database files are incompatible with server"),
-				 errdetail("The database cluster was initialized with PG_CONTROL_VERSION %d,"
-						   " but the server was compiled with PG_CONTROL_VERSION %d.",
+				 errdetail("The database cluster was initialized with PG_CONTROL_VERSION %u,"
+						   " but the server was compiled with PG_CONTROL_VERSION %u.",
 						   ControlFile->pg_control_version, PG_CONTROL_VERSION),
 				 errhint("It looks like you need to initdb.")));
 
@@ -4781,14 +4781,14 @@ ReadControlFile(void)
 	if (ControlFile->catalog_version_no != CATALOG_VERSION_NO)
 		ereport(FATAL,
 				(errmsg("database files are incompatible with server"),
-				 errdetail("The database cluster was initialized with CATALOG_VERSION_NO %d,"
+				 errdetail("The database cluster was initialized with CATALOG_VERSION_NO %u,"
 						   " but the server was compiled with CATALOG_VERSION_NO %d.",
 						   ControlFile->catalog_version_no, CATALOG_VERSION_NO),
 				 errhint("It looks like you need to initdb.")));
 	if (ControlFile->maxAlign != MAXIMUM_ALIGNOF)
 		ereport(FATAL,
 				(errmsg("database files are incompatible with server"),
-				 errdetail("The database cluster was initialized with MAXALIGN %d,"
+				 errdetail("The database cluster was initialized with MAXALIGN %u,"
 						   " but the server was compiled with MAXALIGN %d.",
 						   ControlFile->maxAlign, MAXIMUM_ALIGNOF),
 				 errhint("It looks like you need to initdb.")));
@@ -4800,49 +4800,49 @@ ReadControlFile(void)
 	if (ControlFile->blcksz != BLCKSZ)
 		ereport(FATAL,
 				(errmsg("database files are incompatible with server"),
-				 errdetail("The database cluster was initialized with BLCKSZ %d,"
+				 errdetail("The database cluster was initialized with BLCKSZ %u,"
 						   " but the server was compiled with BLCKSZ %d.",
 						   ControlFile->blcksz, BLCKSZ),
 				 errhint("It looks like you need to recompile or initdb.")));
 	if (ControlFile->relseg_size != RELSEG_SIZE)
 		ereport(FATAL,
 				(errmsg("database files are incompatible with server"),
-				 errdetail("The database cluster was initialized with RELSEG_SIZE %d,"
+				 errdetail("The database cluster was initialized with RELSEG_SIZE %u,"
 						   " but the server was compiled with RELSEG_SIZE %d.",
 						   ControlFile->relseg_size, RELSEG_SIZE),
 				 errhint("It looks like you need to recompile or initdb.")));
 	if (ControlFile->xlog_blcksz != XLOG_BLCKSZ)
 		ereport(FATAL,
 				(errmsg("database files are incompatible with server"),
-				 errdetail("The database cluster was initialized with XLOG_BLCKSZ %d,"
+				 errdetail("The database cluster was initialized with XLOG_BLCKSZ %u,"
 						   " but the server was compiled with XLOG_BLCKSZ %d.",
 						   ControlFile->xlog_blcksz, XLOG_BLCKSZ),
 				 errhint("It looks like you need to recompile or initdb.")));
 	if (ControlFile->nameDataLen != NAMEDATALEN)
 		ereport(FATAL,
 				(errmsg("database files are incompatible with server"),
-				 errdetail("The database cluster was initialized with NAMEDATALEN %d,"
+				 errdetail("The database cluster was initialized with NAMEDATALEN %u,"
 						   " but the server was compiled with NAMEDATALEN %d.",
 						   ControlFile->nameDataLen, NAMEDATALEN),
 				 errhint("It looks like you need to recompile or initdb.")));
 	if (ControlFile->indexMaxKeys != INDEX_MAX_KEYS)
 		ereport(FATAL,
 				(errmsg("database files are incompatible with server"),
-				 errdetail("The database cluster was initialized with INDEX_MAX_KEYS %d,"
+				 errdetail("The database cluster was initialized with INDEX_MAX_KEYS %u,"
 						   " but the server was compiled with INDEX_MAX_KEYS %d.",
 						   ControlFile->indexMaxKeys, INDEX_MAX_KEYS),
 				 errhint("It looks like you need to recompile or initdb.")));
 	if (ControlFile->toast_max_chunk_size != TOAST_MAX_CHUNK_SIZE)
 		ereport(FATAL,
 				(errmsg("database files are incompatible with server"),
-				 errdetail("The database cluster was initialized with TOAST_MAX_CHUNK_SIZE %d,"
+				 errdetail("The database cluster was initialized with TOAST_MAX_CHUNK_SIZE %u,"
 						   " but the server was compiled with TOAST_MAX_CHUNK_SIZE %d.",
 						   ControlFile->toast_max_chunk_size, (int) TOAST_MAX_CHUNK_SIZE),
 				 errhint("It looks like you need to recompile or initdb.")));
 	if (ControlFile->loblksize != LOBLKSIZE)
 		ereport(FATAL,
 				(errmsg("database files are incompatible with server"),
-				 errdetail("The database cluster was initialized with LOBLKSIZE %d,"
+				 errdetail("The database cluster was initialized with LOBLKSIZE %u,"
 						   " but the server was compiled with LOBLKSIZE %d.",
 						   ControlFile->loblksize, (int) LOBLKSIZE),
 				 errhint("It looks like you need to recompile or initdb.")));
@@ -10282,13 +10282,13 @@ xlog_block_info(StringInfo buf, XLogReaderState *record)
 
 		XLogRecGetBlockTag(record, block_id, &rnode, &forknum, &blk);
 		if (forknum != MAIN_FORKNUM)
-			appendStringInfo(buf, "; blkref #%u: rel %u/%u/%u, fork %u, blk %u",
+			appendStringInfo(buf, "; blkref #%d: rel %u/%u/%u, fork %d, blk %u",
 							 block_id,
 							 rnode.spcNode, rnode.dbNode, rnode.relNode,
 							 forknum,
 							 blk);
 		else
-			appendStringInfo(buf, "; blkref #%u: rel %u/%u/%u, blk %u",
+			appendStringInfo(buf, "; blkref #%d: rel %u/%u/%u, blk %u",
 							 block_id,
 							 rnode.spcNode, rnode.dbNode, rnode.relNode,
 							 blk);
@@ -10313,7 +10313,7 @@ xlog_outdesc(StringInfo buf, XLogReaderState *record)
 
 	id = RmgrTable[rmid].rm_identify(info);
 	if (id == NULL)
-		appendStringInfo(buf, "UNKNOWN (%X): ", info & ~XLR_INFO_MASK);
+		appendStringInfo(buf, "UNKNOWN (%X): ", (unsigned) (info & ~XLR_INFO_MASK));
 	else
 		appendStringInfo(buf, "%s: ", id);
 

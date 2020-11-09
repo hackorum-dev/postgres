@@ -75,7 +75,7 @@ verify_hash_page(bytea *raw_page, int flags)
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("page is not a hash page"),
 					 errdetail("Expected %08x, got %08x.",
-							   HASHO_PAGE_ID, pageopaque->hasho_page_id)));
+							   (unsigned) HASHO_PAGE_ID, pageopaque->hasho_page_id)));
 
 		pagetype = pageopaque->hasho_flag & LH_PAGE_TYPE;
 	}
@@ -86,7 +86,7 @@ verify_hash_page(bytea *raw_page, int flags)
 		pagetype != LH_UNUSED_PAGE)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("invalid hash page type %08x", pagetype)));
+				 errmsg("invalid hash page type %08x", (unsigned) pagetype)));
 
 	/* If requested, verify page type. */
 	if (flags != 0 && (pagetype & flags) == 0)
@@ -111,7 +111,7 @@ verify_hash_page(bytea *raw_page, int flags)
 			default:
 				elog(ERROR,
 					 "hash page of type %08x not in mask %08x",
-					 pagetype, flags);
+					 (unsigned) pagetype, (unsigned) flags);
 				break;
 		}
 	}
@@ -128,13 +128,13 @@ verify_hash_page(bytea *raw_page, int flags)
 					(errcode(ERRCODE_INDEX_CORRUPTED),
 					 errmsg("invalid magic number for metadata"),
 					 errdetail("Expected 0x%08x, got 0x%08x.",
-							   HASH_MAGIC, metap->hashm_magic)));
+							   (unsigned) HASH_MAGIC, metap->hashm_magic)));
 
 		if (metap->hashm_version != HASH_VERSION)
 			ereport(ERROR,
 					(errcode(ERRCODE_INDEX_CORRUPTED),
 					 errmsg("invalid version for metadata"),
-					 errdetail("Expected %d, got %d",
+					 errdetail("Expected %d, got %u",
 							   HASH_VERSION, metap->hashm_version)));
 	}
 

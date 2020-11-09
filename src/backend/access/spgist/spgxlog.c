@@ -68,7 +68,7 @@ addOrReplaceTuple(Page page, Item tuple, int size, OffsetNumber offset)
 	Assert(offset <= PageGetMaxOffsetNumber(page) + 1);
 
 	if (PageAddItem(page, tuple, size, offset, false, false) != offset)
-		elog(ERROR, "failed to add item of size %u to SPGiST index page",
+		elog(ERROR, "failed to add item of size %d to SPGiST index page",
 			 size);
 }
 
@@ -133,7 +133,7 @@ spgRedoAddLeaf(XLogReaderState *record)
 			if (PageAddItem(page,
 							(Item) leafTuple, leafTupleHdr.size,
 							xldata->offnumLeaf, false, false) != xldata->offnumLeaf)
-				elog(ERROR, "failed to add item of size %u to SPGiST index page",
+				elog(ERROR, "failed to add item of size %d to SPGiST index page",
 					 leafTupleHdr.size);
 		}
 
@@ -395,7 +395,7 @@ spgRedoAddNode(XLogReaderState *record)
 			if (PageAddItem(page, (Item) dt, dt->size,
 							xldata->offnum,
 							false, false) != xldata->offnum)
-				elog(ERROR, "failed to add item of size %u to SPGiST index page",
+				elog(ERROR, "failed to add item of size %d to SPGiST index page",
 					 dt->size);
 
 			if (state.isBuild)

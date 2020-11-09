@@ -468,7 +468,7 @@ tuple_data_split(PG_FUNCTION_ARGS)
 		if (bits_len != bits_str_len)
 			ereport(ERROR,
 					(errcode(ERRCODE_DATA_CORRUPTED),
-					 errmsg("unexpected length of t_bits string: %u, expected %u",
+					 errmsg("unexpected length of t_bits string: %d, expected %d",
 							bits_str_len, bits_len)));
 
 		/* do the conversion */

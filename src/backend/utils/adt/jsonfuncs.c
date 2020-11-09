@@ -3099,7 +3099,7 @@ populate_record_field(ColumnIOData *col,
 								   jsv, *isnull);
 
 		default:
-			elog(ERROR, "unrecognized type category '%c'", typcat);
+			elog(ERROR, "unrecognized type category '%c'", (int) typcat);
 			return (Datum) 0;
 	}
 }

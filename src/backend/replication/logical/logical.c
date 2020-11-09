@@ -1425,7 +1425,7 @@ LogicalConfirmReceivedLocation(XLogRecPtr lsn)
 		{
 			ReplicationSlotMarkDirty();
 			ReplicationSlotSave();
-			elog(DEBUG1, "updated xmin: %u restart: %u", updated_xmin, updated_restart);
+			elog(DEBUG1, "updated xmin: %d restart: %d", updated_xmin, updated_restart);
 		}
 
 		/*

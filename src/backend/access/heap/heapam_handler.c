@@ -1825,7 +1825,7 @@ heapam_index_validate_scan(Relation heapRelation,
 			if (!OffsetNumberIsValid(root_offnum))
 				ereport(ERROR,
 						(errcode(ERRCODE_DATA_CORRUPTED),
-						 errmsg_internal("failed to find parent tuple for heap-only tuple at (%u,%u) in table \"%s\"",
+						 errmsg_internal("failed to find parent tuple for heap-only tuple at (%u,%d) in table \"%s\"",
 										 ItemPointerGetBlockNumber(heapcursor),
 										 ItemPointerGetOffsetNumber(heapcursor),
 										 RelationGetRelationName(heapRelation))));

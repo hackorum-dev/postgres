@@ -413,13 +413,13 @@ compileTheLexeme(DictThesaurus *d)
 			if (!ptr)
 				ereport(ERROR,
 						(errcode(ERRCODE_CONFIG_FILE_ERROR),
-						 errmsg("thesaurus sample word \"%s\" isn't recognized by subdictionary (rule %d)",
+						 errmsg("thesaurus sample word \"%s\" isn't recognized by subdictionary (rule %u)",
 								d->wrds[i].lexeme,
 								d->wrds[i].entries->idsubst + 1)));
 			else if (!(ptr->lexeme))
 				ereport(ERROR,
 						(errcode(ERRCODE_CONFIG_FILE_ERROR),
-						 errmsg("thesaurus sample word \"%s\" is a stop word (rule %d)",
+						 errmsg("thesaurus sample word \"%s\" is a stop word (rule %u)",
 								d->wrds[i].lexeme,
 								d->wrds[i].entries->idsubst + 1),
 						 errhint("Use \"?\" to represent a stop word within a sample phrase.")));

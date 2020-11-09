@@ -1017,7 +1017,7 @@ CheckSCRAMAuth(Port *port, char *shadow_pass, char **logdetail)
 			/*
 			 * Negotiation generated data to be sent to the client.
 			 */
-			elog(DEBUG4, "sending SASL challenge of length %u", outputlen);
+			elog(DEBUG4, "sending SASL challenge of length %d", outputlen);
 
 			if (result == SASL_EXCHANGE_SUCCESS)
 				sendAuthRequest(port, AUTH_REQ_SASL_FIN, output, outputlen);
@@ -1161,8 +1161,8 @@ pg_GSS_recvauth(Port *port)
 		/* gbuf no longer used */
 		pfree(buf.data);
 
-		elog(DEBUG5, "gss_accept_sec_context major: %d, "
-			 "minor: %d, outlen: %u, outflags: %x",
+		elog(DEBUG5, "gss_accept_sec_context major: %u, "
+			 "minor: %u, outlen: %u, outflags: %x",
 			 maj_stat, min_stat,
 			 (unsigned int) port->gss->outbuf.length, gflags);
 

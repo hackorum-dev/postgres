@@ -925,7 +925,7 @@ ascii(PG_FUNCTION_ARGS)
 Datum
 chr			(PG_FUNCTION_ARGS)
 {
-	uint32		cvalue = PG_GETARG_UINT32(0);
+	uint32		cvalue = PG_GETARG_UINT32(0); // XXX
 	text	   *result;
 	int			encoding = GetDatabaseEncoding();
 
@@ -943,7 +943,7 @@ chr			(PG_FUNCTION_ARGS)
 		if (cvalue > 0x0010ffff)
 			ereport(ERROR,
 					(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
-					 errmsg("requested character too large for encoding: %d",
+					 errmsg("requested character too large for encoding: %u",
 							cvalue)));
 
 		if (cvalue > 0xffff)
@@ -984,7 +984,7 @@ chr			(PG_FUNCTION_ARGS)
 		if (!pg_utf8_islegal(wch, bytes))
 			ereport(ERROR,
 					(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
-					 errmsg("requested character not valid for encoding: %d",
+					 errmsg("requested character not valid for encoding: %u",
 							cvalue)));
 	}
 	else
@@ -1005,7 +1005,7 @@ chr			(PG_FUNCTION_ARGS)
 		if ((is_mb && (cvalue > 127)) || (!is_mb && (cvalue > 255)))
 			ereport(ERROR,
 					(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
-					 errmsg("requested character too large for encoding: %d",
+					 errmsg("requested character too large for encoding: %u",
 							cvalue)));
 
 		result = (text *) palloc(VARHDRSZ + 1);

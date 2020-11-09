@@ -144,10 +144,10 @@ open_walfile(StreamCtl *stream, XLogRecPtr startpoint)
 			/* if write didn't set errno, assume problem is no disk space */
 			if (errno == 0)
 				errno = ENOSPC;
-			pg_log_error(ngettext("write-ahead log file \"%s\" has %d byte, should be 0 or %d",
-								  "write-ahead log file \"%s\" has %d bytes, should be 0 or %d",
+			pg_log_error(ngettext("write-ahead log file \"%s\" has %zd byte, should be 0 or %u",
+								  "write-ahead log file \"%s\" has %zd bytes, should be 0 or %u",
 								  size),
-						 fn, (int) size, WalSegSz);
+						 fn, size, WalSegSz);
 			return false;
 		}
 		/* File existed and was empty, so fall through and open */
@@ -1075,7 +1075,7 @@ ProcessXLogDataMsg(PGconn *conn, StreamCtl *stream, char *copybuf, int len,
 		if (xlogoff != 0)
 		{
 			pg_log_error("received write-ahead log record for offset %u with no file open",
-						 xlogoff);
+						 (unsigned int) xlogoff);
 			return false;
 		}
 	}
@@ -1085,7 +1085,7 @@ ProcessXLogDataMsg(PGconn *conn, StreamCtl *stream, char *copybuf, int len,
 		if (stream->walmethod->get_current_pos(walfile) != xlogoff)
 		{
 			pg_log_error("got WAL data offset %08x, expected %08x",
-						 xlogoff, (int) stream->walmethod->get_current_pos(walfile));
+						 (unsigned int) xlogoff, (unsigned int) stream->walmethod->get_current_pos(walfile));
 			return false;
 		}
 	}
@@ -1118,7 +1118,7 @@ ProcessXLogDataMsg(PGconn *conn, StreamCtl *stream, char *copybuf, int len,
 		if (stream->walmethod->write(walfile, copybuf + hdr_len + bytes_written,
 									 bytes_to_write) != bytes_to_write)
 		{
-			pg_log_error("could not write %u bytes to WAL file \"%s\": %s",
+			pg_log_error("could not write %d bytes to WAL file \"%s\": %s",
 						 bytes_to_write, current_walfile_name,
 						 stream->walmethod->getlasterror());
 			return false;

@@ -901,7 +901,7 @@ XLogWalRcvProcessMsg(unsigned char type, char *buf, Size len)
 static void
 XLogWalRcvWrite(char *buf, Size nbytes, XLogRecPtr recptr)
 {
-	int			startoff;
+	unsigned int startoff;
 	int			byteswritten;
 
 	while (nbytes > 0)

@@ -459,7 +459,7 @@ sub FindDefinedSymbol
 	open(my $find_defined_symbol, '<', $file) || die "$file: $!";
 	while (<$find_defined_symbol>)
 	{
-		if (/^#define\s+\Q$symbol\E\s+(\S+)/)
+		if (/^#define\s+\Q$symbol\E\s+(\d+)/)
 		{
 			$value = $1;
 			last;

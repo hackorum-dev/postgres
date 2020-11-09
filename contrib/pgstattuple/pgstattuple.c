@@ -133,14 +133,14 @@ build_pgstattuple_type(pgstattuple_type *stat, FunctionCallInfo fcinfo)
 	for (i = 0; i < NCOLUMNS; i++)
 		values[i] = values_buf[i];
 	i = 0;
-	snprintf(values[i++], NCHARS, INT64_FORMAT, stat->table_len);
-	snprintf(values[i++], NCHARS, INT64_FORMAT, stat->tuple_count);
-	snprintf(values[i++], NCHARS, INT64_FORMAT, stat->tuple_len);
+	snprintf(values[i++], NCHARS, UINT64_FORMAT, stat->table_len);
+	snprintf(values[i++], NCHARS, UINT64_FORMAT, stat->tuple_count);
+	snprintf(values[i++], NCHARS, UINT64_FORMAT, stat->tuple_len);
 	snprintf(values[i++], NCHARS, "%.2f", tuple_percent);
-	snprintf(values[i++], NCHARS, INT64_FORMAT, stat->dead_tuple_count);
-	snprintf(values[i++], NCHARS, INT64_FORMAT, stat->dead_tuple_len);
+	snprintf(values[i++], NCHARS, UINT64_FORMAT, stat->dead_tuple_count);
+	snprintf(values[i++], NCHARS, UINT64_FORMAT, stat->dead_tuple_len);
 	snprintf(values[i++], NCHARS, "%.2f", dead_tuple_percent);
-	snprintf(values[i++], NCHARS, INT64_FORMAT, stat->free_space);
+	snprintf(values[i++], NCHARS, UINT64_FORMAT, stat->free_space);
 	snprintf(values[i++], NCHARS, "%.2f", free_percent);
 
 	/* build a tuple */

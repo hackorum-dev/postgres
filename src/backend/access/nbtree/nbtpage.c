@@ -155,7 +155,7 @@ _bt_getmeta(Relation rel, Buffer metabuf)
 		metad->btm_version > BTREE_VERSION)
 		ereport(ERROR,
 				(errcode(ERRCODE_INDEX_CORRUPTED),
-				 errmsg("version mismatch in index \"%s\": file version %d, "
+				 errmsg("version mismatch in index \"%s\": file version %u, "
 						"current version %d, minimal supported version %d",
 						RelationGetRelationName(rel),
 						metad->btm_version, BTREE_VERSION, BTREE_MIN_VERSION)));
@@ -543,7 +543,7 @@ _bt_gettrueroot(Relation rel)
 		metad->btm_version > BTREE_VERSION)
 		ereport(ERROR,
 				(errcode(ERRCODE_INDEX_CORRUPTED),
-				 errmsg("version mismatch in index \"%s\": file version %d, "
+				 errmsg("version mismatch in index \"%s\": file version %u, "
 						"current version %d, minimal supported version %d",
 						RelationGetRelationName(rel),
 						metad->btm_version, BTREE_VERSION, BTREE_MIN_VERSION)));

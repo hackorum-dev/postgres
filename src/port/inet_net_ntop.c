@@ -142,7 +142,7 @@ inet_net_ntop_ipv4(const u_char *src, int bits, char *dst, size_t size)
 	{
 		if (size <= sizeof "/32")
 			goto emsgsize;
-		dst += SPRINTF((dst, "/%u", bits));
+		dst += SPRINTF((dst, "/%d", bits));
 	}
 
 	return (odst);
@@ -282,7 +282,7 @@ inet_net_ntop_ipv6(const u_char *src, int bits, char *dst, size_t size)
 	*tp = '\0';
 
 	if (bits != -1 && bits != 128)
-		tp += SPRINTF((tp, "/%u", bits));
+		tp += SPRINTF((tp, "/%d", bits));
 
 	/*
 	 * Check for overflow, copy, and we're done.

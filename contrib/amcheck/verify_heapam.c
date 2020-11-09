@@ -642,7 +642,7 @@ check_tuple_header_and_visibilty(HeapTupleHeader tuphdr, HeapCheckContext *ctx)
 									   expected_hoff, ctx->tuphdr->t_hoff));
 		else if ((infomask & HEAP_HASNULL))
 			report_corruption(ctx,
-							  psprintf("tuple data should begin at byte %u, but actually begins at byte %u (%u attributes, has nulls)",
+							  psprintf("tuple data should begin at byte %u, but actually begins at byte %u (%d attributes, has nulls)",
 									   expected_hoff, ctx->tuphdr->t_hoff, ctx->natts));
 		else if (ctx->natts == 1)
 			report_corruption(ctx,
@@ -650,7 +650,7 @@ check_tuple_header_and_visibilty(HeapTupleHeader tuphdr, HeapCheckContext *ctx)
 									   expected_hoff, ctx->tuphdr->t_hoff));
 		else
 			report_corruption(ctx,
-							  psprintf("tuple data should begin at byte %u, but actually begins at byte %u (%u attributes, no nulls)",
+							  psprintf("tuple data should begin at byte %u, but actually begins at byte %u (%d attributes, no nulls)",
 									   expected_hoff, ctx->tuphdr->t_hoff, ctx->natts));
 		header_garbled = true;
 	}
@@ -886,14 +886,14 @@ check_toast_tuple(HeapTuple toasttup, HeapCheckContext *ctx)
 	if (curchunk != ctx->chunkno)
 	{
 		report_corruption(ctx,
-						  psprintf("toast chunk sequence number %u does not match the expected sequence number %u",
+						  psprintf("toast chunk sequence number %d does not match the expected sequence number %d",
 								   curchunk, ctx->chunkno));
 		return;
 	}
 	if (curchunk > ctx->endchunk)
 	{
 		report_corruption(ctx,
-						  psprintf("toast chunk sequence number %u exceeds the end chunk sequence number %u",
+						  psprintf("toast chunk sequence number %d exceeds the end chunk sequence number %d",
 								   curchunk, ctx->endchunk));
 		return;
 	}
@@ -903,7 +903,7 @@ check_toast_tuple(HeapTuple toasttup, HeapCheckContext *ctx)
 	if (chunksize != expected_size)
 	{
 		report_corruption(ctx,
-						  psprintf("toast chunk size %u differs from the expected size %u",
+						  psprintf("toast chunk size %d differs from the expected size %d",
 								   chunksize, expected_size));
 		return;
 	}
@@ -952,7 +952,7 @@ check_tuple_attribute(HeapCheckContext *ctx)
 	if (ctx->tuphdr->t_hoff + ctx->offset > ctx->lp_len)
 	{
 		report_corruption(ctx,
-						  psprintf("attribute %u with length %u starts at offset %u beyond total tuple length %u",
+						  psprintf("attribute %d with length %d starts at offset %u beyond total tuple length %u",
 								   ctx->attnum,
 								   thisatt->attlen,
 								   ctx->tuphdr->t_hoff + ctx->offset,
@@ -973,7 +973,7 @@ check_tuple_attribute(HeapCheckContext *ctx)
 		if (ctx->tuphdr->t_hoff + ctx->offset > ctx->lp_len)
 		{
 			report_corruption(ctx,
-							  psprintf("attribute %u with length %u ends at offset %u beyond total tuple length %u",
+							  psprintf("attribute %d with length %d ends at offset %u beyond total tuple length %u",
 									   ctx->attnum,
 									   thisatt->attlen,
 									   ctx->tuphdr->t_hoff + ctx->offset,
@@ -1006,7 +1006,7 @@ check_tuple_attribute(HeapCheckContext *ctx)
 		if (va_tag != VARTAG_ONDISK)
 		{
 			report_corruption(ctx,
-							  psprintf("toasted attribute %u has unexpected TOAST tag %u",
+							  psprintf("toasted attribute %d has unexpected TOAST tag %u",
 									   ctx->attnum,
 									   va_tag));
 			/* We can't know where the next attribute begins */
@@ -1021,7 +1021,7 @@ check_tuple_attribute(HeapCheckContext *ctx)
 	if (ctx->tuphdr->t_hoff + ctx->offset > ctx->lp_len)
 	{
 		report_corruption(ctx,
-						  psprintf("attribute %u with length %u ends at offset %u beyond total tuple length %u",
+						  psprintf("attribute %d with length %d ends at offset %u beyond total tuple length %u",
 								   ctx->attnum,
 								   thisatt->attlen,
 								   ctx->tuphdr->t_hoff + ctx->offset,
@@ -1053,7 +1053,7 @@ check_tuple_attribute(HeapCheckContext *ctx)
 	if (!(infomask & HEAP_HASEXTERNAL))
 	{
 		report_corruption(ctx,
-						  psprintf("attribute %u is external but tuple header flag HEAP_HASEXTERNAL not set",
+						  psprintf("attribute %d is external but tuple header flag HEAP_HASEXTERNAL not set",
 								   ctx->attnum));
 		return true;
 	}
@@ -1062,7 +1062,7 @@ check_tuple_attribute(HeapCheckContext *ctx)
 	if (!ctx->rel->rd_rel->reltoastrelid)
 	{
 		report_corruption(ctx,
-						  psprintf("attribute %u is external but relation has no toast relation",
+						  psprintf("attribute %d is external but relation has no toast relation",
 								   ctx->attnum));
 		return true;
 	}
@@ -1109,11 +1109,11 @@ check_tuple_attribute(HeapCheckContext *ctx)
 	}
 	if (ctx->chunkno != (ctx->endchunk + 1))
 		report_corruption(ctx,
-						  psprintf("final toast chunk number %u differs from expected value %u",
+						  psprintf("final toast chunk number %d differs from expected value %d",
 								   ctx->chunkno, (ctx->endchunk + 1)));
 	if (!found_toasttup)
 		report_corruption(ctx,
-						  psprintf("toasted value for attribute %u missing from toast table",
+						  psprintf("toasted value for attribute %d missing from toast table",
 								   ctx->attnum));
 	systable_endscan_ordered(toastscan);
 
@@ -1265,7 +1265,7 @@ check_tuple(HeapCheckContext *ctx)
 	if (RelationGetDescr(ctx->rel)->natts < ctx->natts)
 	{
 		report_corruption(ctx,
-						  psprintf("number of attributes %u exceeds maximum expected for table %u",
+						  psprintf("number of attributes %d exceeds maximum expected for table %d",
 								   ctx->natts,
 								   RelationGetDescr(ctx->rel)->natts));
 		return;

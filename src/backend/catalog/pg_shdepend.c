@@ -245,7 +245,7 @@ shdepChangeDep(Relation sdepRel,
 		if (oldtup)
 			elog(ERROR,
 				 "multiple pg_shdepend entries for object %u/%u/%d deptype %c",
-				 classid, objid, objsubid, deptype);
+				 classid, objid, objsubid, (int) deptype);
 		oldtup = heap_copytuple(scantup);
 	}
 

@@ -191,7 +191,7 @@ handle_args(int argc, char *argv[])
 				if (secs_per_test == 0)
 				{
 					pg_log_error("%s must be in range %u..%u",
-								 "--secs-per-test", 1, UINT_MAX);
+								 "--secs-per-test", 1U, UINT_MAX);
 					exit(1);
 				}
 				break;

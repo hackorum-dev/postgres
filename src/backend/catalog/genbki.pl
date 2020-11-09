@@ -433,10 +433,10 @@ foreach my $catname (@catnames)
 EOM
 
 	# Emit OID macros for catalog's OID and rowtype OID, if wanted
-	printf $def "#define %s %s\n",
+	printf $def "#define %s %sU\n",
 	  $catalog->{relation_oid_macro}, $catalog->{relation_oid}
 	  if $catalog->{relation_oid_macro};
-	printf $def "#define %s %s\n",
+	printf $def "#define %s %sU\n",
 	  $catalog->{rowtype_oid_macro}, $catalog->{rowtype_oid}
 	  if $catalog->{rowtype_oid_macro};
 	print $def "\n";
@@ -613,7 +613,7 @@ EOM
 			  $bki_values{oid_symbol}
 			  if $catname eq 'pg_proc';
 
-			printf $def "#define %s %s\n",
+			printf $def "#define %s %sU\n",
 			  $bki_values{oid_symbol}, $bki_values{oid};
 		}
 	}

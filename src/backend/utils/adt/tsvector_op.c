@@ -2367,9 +2367,9 @@ ts_process_call(FuncCallContext *funcctx)
 		values[0] = palloc(entry->lenlexeme + 1);
 		memcpy(values[0], entry->lexeme, entry->lenlexeme);
 		(values[0])[entry->lenlexeme] = '\0';
-		sprintf(ndoc, "%d", entry->ndoc);
+		sprintf(ndoc, "%u", entry->ndoc);
 		values[1] = ndoc;
-		sprintf(nentry, "%d", entry->nentry);
+		sprintf(nentry, "%u", entry->nentry);
 		values[2] = nentry;
 
 		tuple = BuildTupleFromCStrings(funcctx->attinmeta, values);

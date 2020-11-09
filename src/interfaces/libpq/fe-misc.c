@@ -573,7 +573,7 @@ int
 pqPutMsgEnd(PGconn *conn)
 {
 	if (conn->Pfdebug)
-		fprintf(conn->Pfdebug, "To backend> Msg complete, length %u\n",
+		fprintf(conn->Pfdebug, "To backend> Msg complete, length %d\n",
 				conn->outMsgEnd - conn->outCount);
 
 	/* Fill in length word if needed */

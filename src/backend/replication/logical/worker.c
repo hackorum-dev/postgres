@@ -1955,7 +1955,7 @@ apply_dispatch(StringInfo s)
 
 	ereport(ERROR,
 			(errcode(ERRCODE_PROTOCOL_VIOLATION),
-			 errmsg("invalid logical replication message type \"%c\"", action)));
+			 errmsg("invalid logical replication message type \"%c\"", (char) action)));
 }
 
 /*

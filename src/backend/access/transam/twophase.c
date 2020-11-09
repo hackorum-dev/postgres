@@ -1691,7 +1691,7 @@ void
 CheckPointTwoPhase(XLogRecPtr redo_horizon)
 {
 	int			i;
-	int			serialized_xacts = 0;
+	unsigned int serialized_xacts = 0;
 
 	if (max_prepared_xacts <= 0)
 		return;					/* nothing to do */

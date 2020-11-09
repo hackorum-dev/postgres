@@ -635,8 +635,8 @@ read_controlfile(void)
 		/* return false if WAL segment size is not valid */
 		if (!IsValidWalSegSize(ControlFile.xlog_seg_size))
 		{
-			pg_log_warning(ngettext("pg_control specifies invalid WAL segment size (%d byte); proceed with caution",
-									"pg_control specifies invalid WAL segment size (%d bytes); proceed with caution",
+			pg_log_warning(ngettext("pg_control specifies invalid WAL segment size (%u byte); proceed with caution",
+									"pg_control specifies invalid WAL segment size (%u bytes); proceed with caution",
 									ControlFile.xlog_seg_size),
 						   ControlFile.xlog_seg_size);
 			return false;

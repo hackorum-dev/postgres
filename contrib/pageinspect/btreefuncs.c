@@ -219,16 +219,16 @@ bt_page_stats(PG_FUNCTION_ARGS)
 		elog(ERROR, "return type must be a row type");
 
 	j = 0;
-	values[j++] = psprintf("%d", stat.blkno);
+	values[j++] = psprintf("%u", stat.blkno);
 	values[j++] = psprintf("%c", stat.type);
-	values[j++] = psprintf("%d", stat.live_items);
-	values[j++] = psprintf("%d", stat.dead_items);
-	values[j++] = psprintf("%d", stat.avg_item_size);
-	values[j++] = psprintf("%d", stat.page_size);
-	values[j++] = psprintf("%d", stat.free_size);
-	values[j++] = psprintf("%d", stat.btpo_prev);
-	values[j++] = psprintf("%d", stat.btpo_next);
-	values[j++] = psprintf("%d", (stat.type == 'd') ? stat.btpo.xact : stat.btpo.level);
+	values[j++] = psprintf("%u", stat.live_items);
+	values[j++] = psprintf("%u", stat.dead_items);
+	values[j++] = psprintf("%u", stat.avg_item_size);
+	values[j++] = psprintf("%u", stat.page_size);
+	values[j++] = psprintf("%u", stat.free_size);
+	values[j++] = psprintf("%u", stat.btpo_prev);
+	values[j++] = psprintf("%u", stat.btpo_next);
+	values[j++] = psprintf("%u", (stat.type == 'd') ? stat.btpo.xact : stat.btpo.level);
 	values[j++] = psprintf("%d", stat.btpo_flags);
 
 	tuple = BuildTupleFromCStrings(TupleDescGetAttInMetadata(tupleDesc),
@@ -334,7 +334,7 @@ bt_page_print_tuples(struct user_args *uargs)
 	{
 		if (off > 0)
 			*dump++ = ' ';
-		sprintf(dump, "%02x", *(ptr + off) & 0xff);
+		sprintf(dump, "%02x", (unsigned) (*(ptr + off) & 0xff));
 		dump += 2;
 	}
 	values[j++] = CStringGetTextDatum(datacstring);
@@ -666,8 +666,8 @@ bt_metap(PG_FUNCTION_ARGS)
 				 errhint("To resolve the problem, update the \"pageinspect\" extension to the latest version.")));
 
 	j = 0;
-	values[j++] = psprintf("%d", metad->btm_magic);
-	values[j++] = psprintf("%d", metad->btm_version);
+	values[j++] = psprintf("%u", metad->btm_magic);
+	values[j++] = psprintf("%u", metad->btm_version);
 	values[j++] = psprintf(INT64_FORMAT, (int64) metad->btm_root);
 	values[j++] = psprintf(INT64_FORMAT, (int64) metad->btm_level);
 	values[j++] = psprintf(INT64_FORMAT, (int64) metad->btm_fastroot);

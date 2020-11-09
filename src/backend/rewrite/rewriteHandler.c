@@ -237,7 +237,7 @@ AcquireRewriteLocks(Query *parsetree,
 						{
 							curinputvarno = aliasvar->varno;
 							if (curinputvarno >= rt_index)
-								elog(ERROR, "unexpected varno %d in JOIN RTE %d",
+								elog(ERROR, "unexpected varno %u in JOIN RTE %d",
 									 curinputvarno, rt_index);
 							curinputrte = rt_fetch(curinputvarno,
 												   parsetree->rtable);

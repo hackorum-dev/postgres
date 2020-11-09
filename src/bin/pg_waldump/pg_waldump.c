@@ -364,13 +364,13 @@ WALDumpReadPage(XLogReaderState *state, XLogRecPtr targetPagePtr, int reqLen,
 		if (errinfo.wre_errno != 0)
 		{
 			errno = errinfo.wre_errno;
-			fatal_error("could not read from file %s, offset %u: %m",
+			fatal_error("could not read from file %s, offset %d: %m",
 						fname, errinfo.wre_off);
 		}
 		else
-			fatal_error("could not read from file %s, offset %u: read %d of %zu",
+			fatal_error("could not read from file %s, offset %d: read %d of %d",
 						fname, errinfo.wre_off, errinfo.wre_read,
-						(Size) errinfo.wre_req);
+						errinfo.wre_req);
 	}
 
 	return count;
@@ -472,7 +472,7 @@ XLogDumpDisplayRecord(XLogDumpConfig *config, XLogReaderState *record)
 
 	id = desc->rm_identify(info);
 	if (id == NULL)
-		printf("desc: UNKNOWN (%x) ", info & ~XLR_INFO_MASK);
+		printf("desc: UNKNOWN (%x) ", (unsigned int) info & ~XLR_INFO_MASK);
 	else
 		printf("desc: %s ", id);
 
@@ -491,13 +491,13 @@ XLogDumpDisplayRecord(XLogDumpConfig *config, XLogReaderState *record)
 
 			XLogRecGetBlockTag(record, block_id, &rnode, &forknum, &blk);
 			if (forknum != MAIN_FORKNUM)
-				printf(", blkref #%u: rel %u/%u/%u fork %s blk %u",
+				printf(", blkref #%d: rel %u/%u/%u fork %s blk %u",
 					   block_id,
 					   rnode.spcNode, rnode.dbNode, rnode.relNode,
 					   forkNames[forknum],
 					   blk);
 			else
-				printf(", blkref #%u: rel %u/%u/%u blk %u",
+				printf(", blkref #%d: rel %u/%u/%u blk %u",
 					   block_id,
 					   rnode.spcNode, rnode.dbNode, rnode.relNode,
 					   blk);
@@ -521,7 +521,7 @@ XLogDumpDisplayRecord(XLogDumpConfig *config, XLogReaderState *record)
 				continue;
 
 			XLogRecGetBlockTag(record, block_id, &rnode, &forknum, &blk);
-			printf("\tblkref #%u: rel %u/%u/%u fork %s blk %u",
+			printf("\tblkref #%d: rel %u/%u/%u fork %s blk %u",
 				   block_id,
 				   rnode.spcNode, rnode.dbNode, rnode.relNode,
 				   forkNames[forknum],
@@ -532,7 +532,7 @@ XLogDumpDisplayRecord(XLogDumpConfig *config, XLogReaderState *record)
 					BKPIMAGE_IS_COMPRESSED)
 				{
 					printf(" (FPW%s); hole: offset: %u, length: %u, "
-						   "compression saved: %u",
+						   "compression saved: %d",
 						   XLogRecBlockImageApply(record, block_id) ?
 						   "" : " for WAL verification",
 						   record->blocks[block_id].hole_offset,
@@ -671,7 +671,7 @@ XLogDumpDisplayStats(XLogDumpConfig *config, XLogDumpStats *stats)
 				/* the upper four bits in xl_info are the rmgr's */
 				id = desc->rm_identify(rj << 4);
 				if (id == NULL)
-					id = psprintf("UNKNOWN (%x)", rj << 4);
+					id = psprintf("UNKNOWN (%x)", (unsigned int) (rj << 4));
 
 				XLogDumpStatsRow(psprintf("%s/%s", desc->rm_name, id),
 								 count, total_count, rec_len, total_rec_len,
@@ -888,7 +888,7 @@ main(int argc, char **argv)
 					private.startptr = (uint64) xlogid << 32 | xrecoff;
 				break;
 			case 't':
-				if (sscanf(optarg, "%d", &private.timeline) != 1)
+				if (sscanf(optarg, "%u", &private.timeline) != 1)
 				{
 					pg_log_error("could not parse timeline \"%s\"", optarg);
 					goto bad_argument;

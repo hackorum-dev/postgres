@@ -3330,7 +3330,7 @@ WinGetFuncArgInFrame(WindowObject winobj, int argno,
 					break;
 				default:
 					elog(ERROR, "unrecognized frame option state: 0x%x",
-						 winstate->frameOptions);
+						 (unsigned int) winstate->frameOptions);
 					break;
 			}
 			break;
@@ -3400,7 +3400,7 @@ WinGetFuncArgInFrame(WindowObject winobj, int argno,
 					break;
 				default:
 					elog(ERROR, "unrecognized frame option state: 0x%x",
-						 winstate->frameOptions);
+						 (unsigned int) winstate->frameOptions);
 					mark_pos = 0;	/* keep compiler quiet */
 					break;
 			}

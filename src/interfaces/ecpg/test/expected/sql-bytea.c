@@ -33,7 +33,7 @@ dump_binary(char *buf, int len, int ind)
 
 	printf("len=%d, ind=%d, data=0x", len, ind);
 	for (i = 0; i < len; ++i)
-		printf("%02x", 0xff & buf[i]);
+		printf("%02x", (unsigned) (0xff & buf[i]));
 	printf("\n");
 }
 

@@ -361,7 +361,7 @@ scan_directory(const char *basedir, const char *subdir, bool sizeonly)
 				segmentno = atoi(segmentpath);
 				if (segmentno == 0)
 				{
-					pg_log_error("invalid segment number %d in file name \"%s\"",
+					pg_log_error("invalid segment number %u in file name \"%s\"",
 								 segmentno, fn);
 					exit(1);
 				}
@@ -569,7 +569,7 @@ main(int argc, char *argv[])
 	if (ControlFile->blcksz != BLCKSZ)
 	{
 		pg_log_error("database cluster is not compatible");
-		fprintf(stderr, _("The database cluster was initialized with block size %u, but pg_checksums was compiled with block size %u.\n"),
+		fprintf(stderr, _("The database cluster was initialized with block size %u, but pg_checksums was compiled with block size %d.\n"),
 				ControlFile->blcksz, BLCKSZ);
 		exit(1);
 	}
@@ -635,7 +635,7 @@ main(int argc, char *argv[])
 		if (mode == PG_MODE_CHECK)
 		{
 			printf(_("Bad checksums:  %s\n"), psprintf(INT64_FORMAT, badblocks));
-			printf(_("Data checksum version: %d\n"), ControlFile->data_checksum_version);
+			printf(_("Data checksum version: %u\n"), ControlFile->data_checksum_version);
 
 			if (badblocks > 0)
 				exit(1);
@@ -662,7 +662,7 @@ main(int argc, char *argv[])
 		update_controlfile(DataDir, ControlFile, do_sync);
 
 		if (verbose)
-			printf(_("Data checksum version: %d\n"), ControlFile->data_checksum_version);
+			printf(_("Data checksum version: %u\n"), ControlFile->data_checksum_version);
 		if (mode == PG_MODE_ENABLE)
 			printf(_("Checksums enabled in cluster\n"));
 		else

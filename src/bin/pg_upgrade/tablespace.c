@@ -112,7 +112,7 @@ set_tablespace_directory_suffix(ClusterInfo *cluster)
 		/* This cluster has a version-specific subdirectory */
 
 		/* The leading slash is needed to start a new directory. */
-		cluster->tablespace_suffix = psprintf("/PG_%s_%d",
+		cluster->tablespace_suffix = psprintf("/PG_%s_%u",
 											  cluster->major_version_str,
 											  cluster->controldata.cat_ver);
 	}

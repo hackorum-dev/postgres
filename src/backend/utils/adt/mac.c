@@ -57,7 +57,7 @@ macaddr_in(PG_FUNCTION_ARGS)
 {
 	char	   *str = PG_GETARG_CSTRING(0);
 	macaddr    *result;
-	int			a,
+	unsigned int a,
 				b,
 				c,
 				d,

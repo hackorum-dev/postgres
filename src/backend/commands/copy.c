@@ -699,7 +699,7 @@ CopyGetData(CopyState cstate, void *databuf, int minread, int maxread)
 						default:
 							ereport(ERROR,
 									(errcode(ERRCODE_PROTOCOL_VIOLATION),
-									 errmsg("unexpected message type 0x%02X during COPY from stdin",
+									 errmsg("unexpected message type %d during COPY from stdin",
 											mtype)));
 							break;
 					}

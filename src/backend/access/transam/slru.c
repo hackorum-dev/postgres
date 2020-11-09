@@ -60,7 +60,7 @@
 #include "storage/shmem.h"
 
 #define SlruFileName(ctl, path, seg) \
-	snprintf(path, MAXPGPATH, "%s/%04X", (ctl)->Dir, seg)
+	snprintf(path, MAXPGPATH, "%s/%04X", (ctl)->Dir, (unsigned) (seg))
 
 /*
  * During SimpleLruWriteAll(), we will usually not need to write more than one
@@ -948,7 +948,7 @@ SlruReportIOError(SlruCtl ctl, int pageno, TransactionId xid)
 			ereport(ERROR,
 					(errcode_for_file_access(),
 					 errmsg("could not access status of transaction %u", xid),
-					 errdetail("Could not seek in file \"%s\" to offset %u: %m.",
+					 errdetail("Could not seek in file \"%s\" to offset %d: %m.",
 							   path, offset)));
 			break;
 		case SLRU_READ_FAILED:
@@ -956,24 +956,24 @@ SlruReportIOError(SlruCtl ctl, int pageno, TransactionId xid)
 				ereport(ERROR,
 						(errcode_for_file_access(),
 						 errmsg("could not access status of transaction %u", xid),
-						 errdetail("Could not read from file \"%s\" at offset %u: %m.",
+						 errdetail("Could not read from file \"%s\" at offset %d: %m.",
 								   path, offset)));
 			else
 				ereport(ERROR,
 						(errmsg("could not access status of transaction %u", xid),
-						 errdetail("Could not read from file \"%s\" at offset %u: read too few bytes.", path, offset)));
+						 errdetail("Could not read from file \"%s\" at offset %d: read too few bytes.", path, offset)));
 			break;
 		case SLRU_WRITE_FAILED:
 			if (errno)
 				ereport(ERROR,
 						(errcode_for_file_access(),
 						 errmsg("could not access status of transaction %u", xid),
-						 errdetail("Could not write to file \"%s\" at offset %u: %m.",
+						 errdetail("Could not write to file \"%s\" at offset %d: %m.",
 								   path, offset)));
 			else
 				ereport(ERROR,
 						(errmsg("could not access status of transaction %u", xid),
-						 errdetail("Could not write to file \"%s\" at offset %u: wrote too few bytes.",
+						 errdetail("Could not write to file \"%s\" at offset %d: wrote too few bytes.",
 								   path, offset)));
 			break;
 		case SLRU_FSYNC_FAILED:

@@ -116,7 +116,7 @@ static void SyncRepGetNthLatestSyncRecPtr(XLogRecPtr *writePtr,
 										  SyncRepStandbyData *sync_standbys,
 										  int num_standbys,
 										  uint8 nth);
-static int	SyncRepGetStandbyPriority(void);
+static unsigned int	SyncRepGetStandbyPriority(void);
 static int	standby_priority_comparator(const void *a, const void *b);
 static int	cmp_lsn(const void *a, const void *b);
 
@@ -411,7 +411,7 @@ SyncRepCleanupAtProcExit(void)
 void
 SyncRepInitConfig(void)
 {
-	int			priority;
+	unsigned int priority;
 
 	/*
 	 * Determine if we are a potential sync standby and remember the result
@@ -828,7 +828,7 @@ standby_priority_comparator(const void *a, const void *b)
  * Compare the parameter SyncRepStandbyNames against the application_name
  * for this WALSender, or allow any name if we find a wildcard "*".
  */
-static int
+static unsigned int
 SyncRepGetStandbyPriority(void)
 {
 	const char *standby_name;

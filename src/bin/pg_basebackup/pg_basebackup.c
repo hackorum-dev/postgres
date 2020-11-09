@@ -807,9 +807,9 @@ progress_report(int tablespacenum, const char *filename,
 	 * translatable strings.  And we only test for INT64_FORMAT availability
 	 * in snprintf, not fprintf.
 	 */
-	snprintf(totaldone_str, sizeof(totaldone_str), INT64_FORMAT,
+	snprintf(totaldone_str, sizeof(totaldone_str), UINT64_FORMAT,
 			 totaldone / 1024);
-	snprintf(totalsize_str, sizeof(totalsize_str), INT64_FORMAT, totalsize_kb);
+	snprintf(totalsize_str, sizeof(totalsize_str), UINT64_FORMAT, totalsize_kb);
 
 #define VERBOSE_FILENAME_LENGTH 35
 	if (verbose)
@@ -1865,7 +1865,7 @@ BaseBackup(void)
 	PQescapeStringConn(conn, escaped_label, label, sizeof(escaped_label), &i);
 
 	if (maxrate > 0)
-		maxrate_clause = psprintf("MAX_RATE %u", maxrate);
+		maxrate_clause = psprintf("MAX_RATE %d", maxrate);
 
 	if (manifest)
 	{

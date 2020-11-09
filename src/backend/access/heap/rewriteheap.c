@@ -918,7 +918,7 @@ logical_heap_rewrite_flush_mappings(RewriteState state)
 		if (written != len)
 			ereport(ERROR,
 					(errcode_for_file_access(),
-					 errmsg("could not write to file \"%s\", wrote %d of %d: %m", src->path,
+					 errmsg("could not write to file \"%s\", wrote %d of %u: %m", src->path,
 							written, len)));
 		src->off += len;
 

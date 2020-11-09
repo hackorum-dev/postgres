@@ -105,7 +105,7 @@ typedef struct deparse_expr_cxt
 #define REL_ALIAS_PREFIX	"r"
 /* Handy macro to add relation name qualification */
 #define ADD_REL_QUALIFIER(buf, varno)	\
-		appendStringInfo((buf), "%s%d.", REL_ALIAS_PREFIX, (varno))
+		appendStringInfo((buf), "%s%u.", REL_ALIAS_PREFIX, (varno))
 #define SUBQUERY_REL_ALIAS_PREFIX	"s"
 #define SUBQUERY_COL_ALIAS_PREFIX	"c"
 
@@ -140,7 +140,7 @@ static void deparseReturningList(StringInfo buf, RangeTblEntry *rte,
 								 List *withCheckOptionList,
 								 List *returningList,
 								 List **retrieved_attrs);
-static void deparseColumnRef(StringInfo buf, int varno, int varattno,
+static void deparseColumnRef(StringInfo buf, Index varno, AttrNumber varattno,
 							 RangeTblEntry *rte, bool qualify_col);
 static void deparseRelation(StringInfo buf, Relation rel);
 static void deparseExpr(Expr *expr, deparse_expr_cxt *context);
@@ -1621,7 +1621,7 @@ deparseFromExprForRel(StringInfo buf, PlannerInfo *root, RelOptInfo *foreignrel,
 		 * join.
 		 */
 		if (use_alias)
-			appendStringInfo(buf, " %s%d", REL_ALIAS_PREFIX, foreignrel->relid);
+			appendStringInfo(buf, " %s%u", REL_ALIAS_PREFIX, foreignrel->relid);
 
 		table_close(rel, NoLock);
 	}
@@ -1844,7 +1844,7 @@ deparseDirectUpdateSql(StringInfo buf, PlannerInfo *root,
 	appendStringInfoString(buf, "UPDATE ");
 	deparseRelation(buf, rel);
 	if (foreignrel->reloptkind == RELOPT_JOINREL)
-		appendStringInfo(buf, " %s%d", REL_ALIAS_PREFIX, rtindex);
+		appendStringInfo(buf, " %s%u", REL_ALIAS_PREFIX, rtindex);
 	appendStringInfoString(buf, " SET ");
 
 	/* Make sure any constants in the exprs are printed portably */
@@ -1952,7 +1952,7 @@ deparseDirectDeleteSql(StringInfo buf, PlannerInfo *root,
 	appendStringInfoString(buf, "DELETE FROM ");
 	deparseRelation(buf, rel);
 	if (foreignrel->reloptkind == RELOPT_JOINREL)
-		appendStringInfo(buf, " %s%d", REL_ALIAS_PREFIX, rtindex);
+		appendStringInfo(buf, " %s%u", REL_ALIAS_PREFIX, rtindex);
 
 	if (foreignrel->reloptkind == RELOPT_JOINREL)
 	{
@@ -2121,7 +2121,7 @@ deparseAnalyzeSql(StringInfo buf, Relation rel, List **retrieved_attrs)
  * If qualify_col is true, qualify column name with the alias of relation.
  */
 static void
-deparseColumnRef(StringInfo buf, int varno, int varattno, RangeTblEntry *rte,
+deparseColumnRef(StringInfo buf, Index varno, AttrNumber varattno, RangeTblEntry *rte,
 				 bool qualify_col)
 {
 	/* We support fetching the remote side's CTID and OID. */

@@ -185,9 +185,9 @@ FullTransactionIdAdvance(FullTransactionId *dest)
  * reassigning OIDs that might have been assigned during initdb.
  * ----------
  */
-#define FirstGenbkiObjectId		10000
-#define FirstBootstrapObjectId	12000
-#define FirstNormalObjectId		16384
+#define FirstGenbkiObjectId		10000U
+#define FirstBootstrapObjectId	12000U
+#define FirstNormalObjectId		16384U
 
 /*
  * VariableCache is a data structure in shared memory that is used to track

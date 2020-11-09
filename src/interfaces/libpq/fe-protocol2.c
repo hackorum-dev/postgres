@@ -471,7 +471,7 @@ pqParseInput2(PGconn *conn)
 			{
 				pqInternalNotice(&conn->noticeHooks,
 								 "message type 0x%02x arrived from server while idle",
-								 id);
+								 (unsigned) id);
 				/* Discard the unexpected message; good idea?? */
 				conn->inStart = conn->inEnd;
 				break;
@@ -1528,7 +1528,7 @@ pqFunctionCall2(PGconn *conn, Oid fnid,
 					/* The backend violates the protocol. */
 					printfPQExpBuffer(&conn->errorMessage,
 									  libpq_gettext("protocol error: id=0x%x\n"),
-									  id);
+									  (unsigned) id);
 					pqSaveErrorResult(conn);
 					conn->inStart = conn->inCursor;
 					return pqPrepareAsyncResult(conn);
@@ -1560,7 +1560,7 @@ pqFunctionCall2(PGconn *conn, Oid fnid,
 				/* The backend violates the protocol. */
 				printfPQExpBuffer(&conn->errorMessage,
 								  libpq_gettext("protocol error: id=0x%x\n"),
-								  id);
+								  (unsigned) id);
 				pqSaveErrorResult(conn);
 				conn->inStart = conn->inCursor;
 				return pqPrepareAsyncResult(conn);

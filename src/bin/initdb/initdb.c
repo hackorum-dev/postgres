@@ -1395,7 +1395,7 @@ bootstrap_template1(void)
 	unsetenv("PGCLIENTENCODING");
 
 	snprintf(cmd, sizeof(cmd),
-			 "\"%s\" --boot -x1 -X %u %s %s %s",
+			 "\"%s\" --boot -x1 -X %d %s %s %s",
 			 backend_exec,
 			 wal_segment_size_mb * (1024 * 1024),
 			 data_checksums ? "-k" : "",
@@ -1711,7 +1711,7 @@ setup_privileges(FILE *cmdfd)
 		" (SELECT E'=r/\"$POSTGRES_SUPERUSERNAME\"' as acl "
 		"  UNION SELECT unnest(pg_catalog.acldefault("
 		"    CASE WHEN relkind = " CppAsString2(RELKIND_SEQUENCE) " THEN 's' "
-		"         ELSE 'r' END::\"char\"," CppAsString2(BOOTSTRAP_SUPERUSERID) "::oid))"
+		"         ELSE 'r' END::\"char\",$BOOTSTRAP_SUPERUSERID::oid))"
 		" ) as a) "
 		"  WHERE relkind IN (" CppAsString2(RELKIND_RELATION) ", "
 		CppAsString2(RELKIND_VIEW) ", " CppAsString2(RELKIND_MATVIEW) ", "
@@ -1843,6 +1843,8 @@ setup_privileges(FILE *cmdfd)
 
 	priv_lines = replace_token(privileges_setup, "$POSTGRES_SUPERUSERNAME",
 							   escape_quotes(username));
+	priv_lines = replace_token(priv_lines, "$BOOTSTRAP_SUPERUSERID",
+							   psprintf("%u", BOOTSTRAP_SUPERUSERID));
 	for (line = priv_lines; *line != NULL; line++)
 		PG_CMD_PUTS(*line);
 }

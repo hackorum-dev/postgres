@@ -709,7 +709,7 @@ PageRepairFragmentation(Page page)
 		pd_special != MAXALIGN(pd_special))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
-				 errmsg("corrupted page pointers: lower = %u, upper = %u, special = %u",
+				 errmsg("corrupted page pointers: lower = %d, upper = %d, special = %d",
 						pd_lower, pd_upper, pd_special)));
 
 	/*
@@ -738,7 +738,7 @@ PageRepairFragmentation(Page page)
 							 itemidptr->itemoff >= (int) pd_special))
 					ereport(ERROR,
 							(errcode(ERRCODE_DATA_CORRUPTED),
-							 errmsg("corrupted line pointer: %u",
+							 errmsg("corrupted line pointer: %d",
 									itemidptr->itemoff)));
 				itemidptr->alignedlen = MAXALIGN(ItemIdGetLength(lp));
 				totallen += itemidptr->alignedlen;
@@ -765,7 +765,7 @@ PageRepairFragmentation(Page page)
 		if (totallen > (Size) (pd_special - pd_lower))
 			ereport(ERROR,
 					(errcode(ERRCODE_DATA_CORRUPTED),
-					 errmsg("corrupted item lengths: total %u, available space %u",
+					 errmsg("corrupted item lengths: total %u, available space %d",
 							(unsigned int) totallen, pd_special - pd_lower)));
 
 		compactify_tuples(itemidbase, nstorage, page, presorted);
@@ -1088,7 +1088,7 @@ PageIndexMultiDelete(Page page, OffsetNumber *itemnos, int nitems)
 		pd_special != MAXALIGN(pd_special))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
-				 errmsg("corrupted page pointers: lower = %u, upper = %u, special = %u",
+				 errmsg("corrupted page pointers: lower = %d, upper = %d, special = %d",
 						pd_lower, pd_upper, pd_special)));
 
 	/*
@@ -1146,7 +1146,7 @@ PageIndexMultiDelete(Page page, OffsetNumber *itemnos, int nitems)
 	if (totallen > (Size) (pd_special - pd_lower))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
-				 errmsg("corrupted item lengths: total %u, available space %u",
+				 errmsg("corrupted item lengths: total %u, available space %d",
 						(unsigned int) totallen, pd_special - pd_lower)));
 
 	/*

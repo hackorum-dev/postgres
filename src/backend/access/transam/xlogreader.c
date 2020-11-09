@@ -789,7 +789,7 @@ XLogReaderValidatePageHeader(XLogReaderState *state, XLogRecPtr recptr,
 {
 	XLogRecPtr	recaddr;
 	XLogSegNo	segno;
-	int32		offset;
+	uint32		offset;
 	XLogPageHeader hdr = (XLogPageHeader) phdr;
 
 	Assert((recptr % XLOG_BLCKSZ) == 0);

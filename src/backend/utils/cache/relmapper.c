@@ -1004,7 +1004,7 @@ relmap_redo(XLogReaderState *record)
 		char	   *dbpath;
 
 		if (xlrec->nbytes != sizeof(RelMapFile))
-			elog(PANIC, "relmap_redo: wrong size %u in relmap update record",
+			elog(PANIC, "relmap_redo: wrong size %d in relmap update record",
 				 xlrec->nbytes);
 		memcpy(&newmap, xlrec->data, sizeof(newmap));
 

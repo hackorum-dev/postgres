@@ -396,7 +396,7 @@ cancel_before_shmem_exit(pg_on_exit_callback function, Datum arg)
 		--before_shmem_exit_index;
 	else
 		elog(ERROR, "before_shmem_exit callback (%p,0x%llx) is not the latest entry",
-			 function, (long long) arg);
+			 function, (unsigned long long) arg);
 }
 
 /* ----------------------------------------------------------------

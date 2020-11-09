@@ -6623,7 +6623,7 @@ get_variable(Var *var, int levelsup, bool istoplevel, deparse_context *context)
 	/* Find appropriate nesting depth */
 	netlevelsup = var->varlevelsup + levelsup;
 	if (netlevelsup >= list_length(context->namespaces))
-		elog(ERROR, "bogus varlevelsup: %d offset %d",
+		elog(ERROR, "bogus varlevelsup: %u offset %d",
 			 var->varlevelsup, levelsup);
 	dpns = (deparse_namespace *) list_nth(context->namespaces,
 										  netlevelsup);
@@ -6939,7 +6939,7 @@ resolve_special_varno(Node *node, deparse_context *context,
 		return;
 	}
 	else if (var->varno < 1 || var->varno > list_length(dpns->rtable))
-		elog(ERROR, "bogus varno: %d", var->varno);
+		elog(ERROR, "bogus varno: %u", var->varno);
 
 	/* Not special.  Just invoke the callback. */
 	(*callback) (node, context, callback_arg);
@@ -7026,7 +7026,7 @@ get_name_for_var_field(Var *var, int fieldno,
 	/* Find appropriate nesting depth */
 	netlevelsup = var->varlevelsup + levelsup;
 	if (netlevelsup >= list_length(context->namespaces))
-		elog(ERROR, "bogus varlevelsup: %d offset %d",
+		elog(ERROR, "bogus varlevelsup: %u offset %d",
 			 var->varlevelsup, levelsup);
 	dpns = (deparse_namespace *) list_nth(context->namespaces,
 										  netlevelsup);
@@ -7117,7 +7117,7 @@ get_name_for_var_field(Var *var, int fieldno,
 	}
 	else
 	{
-		elog(ERROR, "bogus varno: %d", varno);
+		elog(ERROR, "bogus varno: %u", varno);
 		return NULL;			/* keep compiler quiet */
 	}
 

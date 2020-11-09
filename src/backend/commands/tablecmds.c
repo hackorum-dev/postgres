@@ -14688,7 +14688,7 @@ ATExecReplicaIdentity(Relation rel, ReplicaIdentityStmt *stmt, LOCKMODE lockmode
 		 /* fallthrough */ ;
 	}
 	else
-		elog(ERROR, "unexpected identity type %u", stmt->identity_type);
+		elog(ERROR, "unexpected identity type %d", stmt->identity_type);
 
 
 	/* Check that the index exists */

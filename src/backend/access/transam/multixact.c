@@ -1117,8 +1117,8 @@ GetNewMultiXactId(int nmembers, MultiXactOffset *offset)
 		ereport(ERROR,
 				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
 				 errmsg("multixact \"members\" limit exceeded"),
-				 errdetail_plural("This command would create a multixact with %u members, but the remaining space is only enough for %u member.",
-								  "This command would create a multixact with %u members, but the remaining space is only enough for %u members.",
+				 errdetail_plural("This command would create a multixact with %d members, but the remaining space is only enough for %u member.",
+								  "This command would create a multixact with %d members, but the remaining space is only enough for %u members.",
 								  MultiXactState->offsetStopLimit - nextOffset - 1,
 								  nmembers,
 								  MultiXactState->offsetStopLimit - nextOffset - 1),
@@ -1153,8 +1153,8 @@ GetNewMultiXactId(int nmembers, MultiXactOffset *offset)
 								 nmembers + MULTIXACT_MEMBERS_PER_PAGE * SLRU_PAGES_PER_SEGMENT * OFFSET_WARN_SEGMENTS))
 		ereport(WARNING,
 				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
-				 errmsg_plural("database with OID %u must be vacuumed before %d more multixact member is used",
-							   "database with OID %u must be vacuumed before %d more multixact members are used",
+				 errmsg_plural("database with OID %u must be vacuumed before %u more multixact member is used",
+							   "database with OID %u must be vacuumed before %u more multixact members are used",
 							   MultiXactState->offsetStopLimit - nextOffset + nmembers,
 							   MultiXactState->oldestMultiXactDB,
 							   MultiXactState->offsetStopLimit - nextOffset + nmembers),
@@ -2896,7 +2896,7 @@ PerformMembersTruncation(MultiXactOffset oldestOffset, MultiXactOffset newOldest
 	 */
 	while (segment != endsegment)
 	{
-		elog(DEBUG2, "truncating multixact members segment %x", segment);
+		elog(DEBUG2, "truncating multixact members segment %x", (unsigned) segment);
 		SlruDeleteSegment(MultiXactMemberCtl, segment);
 
 		/* move to next segment, handling wraparound correctly */

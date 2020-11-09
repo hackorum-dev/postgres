@@ -515,7 +515,7 @@ statext_dependencies_deserialize(bytea *data)
 		return NULL;
 
 	if (VARSIZE_ANY_EXHDR(data) < SizeOfHeader)
-		elog(ERROR, "invalid MVDependencies size %zd (expected at least %zd)",
+		elog(ERROR, "invalid MVDependencies size %lu (expected at least %lu)",
 			 VARSIZE_ANY_EXHDR(data), SizeOfHeader);
 
 	/* read the MVDependencies header */
@@ -533,11 +533,11 @@ statext_dependencies_deserialize(bytea *data)
 	tmp += sizeof(uint32);
 
 	if (dependencies->magic != STATS_DEPS_MAGIC)
-		elog(ERROR, "invalid dependency magic %d (expected %d)",
+		elog(ERROR, "invalid dependency magic %u (expected %u)",
 			 dependencies->magic, STATS_DEPS_MAGIC);
 
 	if (dependencies->type != STATS_DEPS_TYPE_BASIC)
-		elog(ERROR, "invalid dependency type %d (expected %d)",
+		elog(ERROR, "invalid dependency type %u (expected %d)",
 			 dependencies->type, STATS_DEPS_TYPE_BASIC);
 
 	if (dependencies->ndeps == 0)
@@ -547,7 +547,7 @@ statext_dependencies_deserialize(bytea *data)
 	min_expected_size = SizeOfItem(dependencies->ndeps);
 
 	if (VARSIZE_ANY_EXHDR(data) < min_expected_size)
-		elog(ERROR, "invalid dependencies size %zd (expected at least %zd)",
+		elog(ERROR, "invalid dependencies size %lu (expected at least %lu)",
 			 VARSIZE_ANY_EXHDR(data), min_expected_size);
 
 	/* allocate space for the MCV items */

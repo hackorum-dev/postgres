@@ -3932,7 +3932,7 @@ get_mxact_status_for_lock(LockTupleMode mode, bool is_update)
 		retval = tupleLockExtraInfo[mode].lockstatus;
 
 	if (retval == -1)
-		elog(ERROR, "invalid lock tuple mode %d/%s", mode,
+		elog(ERROR, "invalid lock tuple mode %u/%s", mode,
 			 is_update ? "true" : "false");
 
 	return (MultiXactStatus) retval;

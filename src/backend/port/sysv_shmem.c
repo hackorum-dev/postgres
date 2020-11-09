@@ -217,7 +217,7 @@ InternalIpcMemoryCreate(IpcMemoryKey memKey, Size size)
 				(errmsg("could not create shared memory segment: %m"),
 				 errdetail("Failed system call was shmget(key=%lu, size=%zu, 0%o).",
 						   (unsigned long) memKey, size,
-						   IPC_CREAT | IPC_EXCL | IPCProtection),
+						   (unsigned int) (IPC_CREAT | IPC_EXCL | IPCProtection)),
 				 (shmget_errno == EINVAL) ?
 				 errhint("This error usually means that PostgreSQL's request for a shared memory "
 						 "segment exceeded your kernel's SHMMAX parameter, or possibly that "
@@ -249,7 +249,7 @@ InternalIpcMemoryCreate(IpcMemoryKey memKey, Size size)
 
 	if (memAddress == (void *) -1)
 		elog(FATAL, "shmat(id=%d, addr=%p, flags=0x%x) failed: %m",
-			 shmid, requestedAddress, PG_SHMAT_FLAGS);
+			 shmid, requestedAddress, (unsigned int) PG_SHMAT_FLAGS);
 
 	/* Register on-exit routine to detach new segment before deleting */
 	on_shmem_exit(IpcMemoryDetach, PointerGetDatum(memAddress));

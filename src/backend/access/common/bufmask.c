@@ -70,9 +70,9 @@ mask_page_hint_bits(Page page)
 void
 mask_unused_space(Page page)
 {
-	int			pd_lower = ((PageHeader) page)->pd_lower;
-	int			pd_upper = ((PageHeader) page)->pd_upper;
-	int			pd_special = ((PageHeader) page)->pd_special;
+	LocationIndex pd_lower = ((PageHeader) page)->pd_lower;
+	LocationIndex pd_upper = ((PageHeader) page)->pd_upper;
+	LocationIndex pd_special = ((PageHeader) page)->pd_special;
 
 	/* Sanity check */
 	if (pd_lower > pd_upper || pd_special < pd_upper ||

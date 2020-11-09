@@ -1027,11 +1027,11 @@ info_cb(const SSL *ssl, int type, int args)
 			break;
 		case SSL_CB_READ_ALERT:
 			ereport(DEBUG4,
-					(errmsg_internal("SSL: read alert (0x%04x)", args)));
+					(errmsg_internal("SSL: read alert (0x%04x)", (unsigned int) args)));
 			break;
 		case SSL_CB_WRITE_ALERT:
 			ereport(DEBUG4,
-					(errmsg_internal("SSL: write alert (0x%04x)", args)));
+					(errmsg_internal("SSL: write alert (0x%04x)", (unsigned int) args)));
 			break;
 	}
 }

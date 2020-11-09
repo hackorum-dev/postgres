@@ -2106,7 +2106,7 @@ retry1:
 		PG_PROTOCOL_MAJOR(proto) > PG_PROTOCOL_MAJOR(PG_PROTOCOL_LATEST))
 		ereport(FATAL,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("unsupported frontend protocol %u.%u: server supports %u.0 to %u.%u",
+				 errmsg("unsupported frontend protocol %u.%u: server supports %d.0 to %d.%d",
 						PG_PROTOCOL_MAJOR(proto), PG_PROTOCOL_MINOR(proto),
 						PG_PROTOCOL_MAJOR(PG_PROTOCOL_EARLIEST),
 						PG_PROTOCOL_MAJOR(PG_PROTOCOL_LATEST),

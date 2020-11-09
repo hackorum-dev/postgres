@@ -686,9 +686,9 @@ progress_report(bool finished)
 	 * translatable strings.  And we only test for INT64_FORMAT availability
 	 * in snprintf, not fprintf.
 	 */
-	snprintf(fetch_done_str, sizeof(fetch_done_str), INT64_FORMAT,
+	snprintf(fetch_done_str, sizeof(fetch_done_str), UINT64_FORMAT,
 			 fetch_done / 1024);
-	snprintf(fetch_size_str, sizeof(fetch_size_str), INT64_FORMAT,
+	snprintf(fetch_size_str, sizeof(fetch_size_str), UINT64_FORMAT,
 			 fetch_size / 1024);
 
 	fprintf(stderr, _("%*s/%s kB (%d%%) copied"),
@@ -779,7 +779,7 @@ getTimelineHistory(ControlFileData *controlFile, int *nentries)
 			TimeLineHistoryEntry *entry;
 
 			entry = &history[i];
-			pg_log_debug("%d: %X/%X - %X/%X", entry->tli,
+			pg_log_debug("%u: %X/%X - %X/%X", entry->tli,
 						 (uint32) (entry->begin >> 32), (uint32) (entry->begin),
 						 (uint32) (entry->end >> 32), (uint32) (entry->end));
 		}

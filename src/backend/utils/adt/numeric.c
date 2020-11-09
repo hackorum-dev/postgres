@@ -7272,7 +7272,7 @@ make_result_opt_error(const NumericVar *var, bool *have_error)
 		if (!(sign == NUMERIC_NAN ||
 			  sign == NUMERIC_PINF ||
 			  sign == NUMERIC_NINF))
-			elog(ERROR, "invalid numeric sign value 0x%x", sign);
+			elog(ERROR, "invalid numeric sign value 0x%x", (unsigned) sign);
 
 		result = (Numeric) palloc(NUMERIC_HDRSZ_SHORT);
 

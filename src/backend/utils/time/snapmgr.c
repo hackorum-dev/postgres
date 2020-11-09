@@ -1158,7 +1158,7 @@ ExportSnapshot(Snapshot snapshot)
 	 * inside the transaction from 1.
 	 */
 	snprintf(path, sizeof(path), SNAPSHOT_EXPORT_DIR "/%08X-%08X-%d",
-			 MyProc->backendId, MyProc->lxid, list_length(exportedSnapshots) + 1);
+			 (unsigned) MyProc->backendId, MyProc->lxid, list_length(exportedSnapshots) + 1);
 
 	/*
 	 * Copy the snapshot into TopTransactionContext, add it to the
@@ -1207,7 +1207,7 @@ ExportSnapshot(Snapshot snapshot)
 	 */
 	addTopXid = (TransactionIdIsValid(topXid) &&
 				 TransactionIdPrecedes(topXid, snapshot->xmax)) ? 1 : 0;
-	appendStringInfo(&buf, "xcnt:%d\n", snapshot->xcnt + addTopXid);
+	appendStringInfo(&buf, "xcnt:%u\n", snapshot->xcnt + addTopXid);
 	for (i = 0; i < snapshot->xcnt; i++)
 		appendStringInfo(&buf, "xip:%u\n", snapshot->xip[i]);
 	if (addTopXid)
@@ -1229,7 +1229,7 @@ ExportSnapshot(Snapshot snapshot)
 		for (i = 0; i < nchildren; i++)
 			appendStringInfo(&buf, "sxp:%u\n", children[i]);
 	}
-	appendStringInfo(&buf, "rec:%u\n", snapshot->takenDuringRecovery);
+	appendStringInfo(&buf, "rec:%d\n", snapshot->takenDuringRecovery);
 
 	/*
 	 * Now write the text representation into a file.  We first write to a

@@ -275,13 +275,13 @@ pgoutput_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 		if (data->protocol_version > LOGICALREP_PROTO_MAX_VERSION_NUM)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("client sent proto_version=%d but we only support protocol %d or lower",
+					 errmsg("client sent proto_version=%u but we only support protocol %d or lower",
 							data->protocol_version, LOGICALREP_PROTO_MAX_VERSION_NUM)));
 
 		if (data->protocol_version < LOGICALREP_PROTO_MIN_VERSION_NUM)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("client sent proto_version=%d but we only support protocol %d or higher",
+					 errmsg("client sent proto_version=%u but we only support protocol %d or higher",
 							data->protocol_version, LOGICALREP_PROTO_MIN_VERSION_NUM)));
 
 		if (list_length(data->publication_names) < 1)
@@ -300,7 +300,7 @@ pgoutput_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 		else if (data->protocol_version < LOGICALREP_PROTO_STREAM_VERSION_NUM)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					 errmsg("requested proto_version=%d does not support streaming, need %d or higher",
+					 errmsg("requested proto_version=%u does not support streaming, need %d or higher",
 							data->protocol_version, LOGICALREP_PROTO_STREAM_VERSION_NUM)));
 		else if (!ctx->streaming)
 			ereport(ERROR,

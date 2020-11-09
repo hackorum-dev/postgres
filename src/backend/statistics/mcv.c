@@ -1025,7 +1025,7 @@ statext_mcv_deserialize(bytea *data)
 	 * header fields one by one, so we need to ignore struct alignment.
 	 */
 	if (VARSIZE_ANY(data) < MinSizeOfMCVList)
-		elog(ERROR, "invalid MCV size %zd (expected at least %zu)",
+		elog(ERROR, "invalid MCV size %lu (expected at least %zu)",
 			 VARSIZE_ANY(data), MinSizeOfMCVList);
 
 	/* read the MCV list header */
@@ -1054,7 +1054,7 @@ statext_mcv_deserialize(bytea *data)
 			 mcvlist->magic, STATS_MCV_MAGIC);
 
 	if (mcvlist->type != STATS_MCV_TYPE_BASIC)
-		elog(ERROR, "invalid MCV type %u (expected %u)",
+		elog(ERROR, "invalid MCV type %u (expected %d)",
 			 mcvlist->type, STATS_MCV_TYPE_BASIC);
 
 	if (mcvlist->ndimensions == 0)
@@ -1086,7 +1086,7 @@ statext_mcv_deserialize(bytea *data)
 	 * to do this check first, before accessing the dimension info.
 	 */
 	if (VARSIZE_ANY(data) < expected_size)
-		elog(ERROR, "invalid MCV size %zd (expected %zu)",
+		elog(ERROR, "invalid MCV size %lu (expected %zu)",
 			 VARSIZE_ANY(data), expected_size);
 
 	/* Now copy the array of type Oids. */
@@ -1118,7 +1118,7 @@ statext_mcv_deserialize(bytea *data)
 	 * check on size.
 	 */
 	if (VARSIZE_ANY(data) != expected_size)
-		elog(ERROR, "invalid MCV size %zd (expected %zu)",
+		elog(ERROR, "invalid MCV size %lu (expected %zu)",
 			 VARSIZE_ANY(data), expected_size);
 
 	/*

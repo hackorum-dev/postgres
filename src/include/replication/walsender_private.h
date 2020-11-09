@@ -63,7 +63,7 @@ typedef struct WalSnd
 	 * The priority order of the standby managed by this WALSender, as listed
 	 * in synchronous_standby_names, or 0 if not-listed.
 	 */
-	int			sync_standby_priority;
+	unsigned int sync_standby_priority;
 
 	/* Protects shared variables shown above. */
 	slock_t		mutex;

@@ -55,7 +55,7 @@ gin_metapage_info(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("input page is not a GIN metapage"),
 				 errdetail("Flags %04X, expected %04X",
-						   opaq->flags, GIN_META)));
+						   opaq->flags, (unsigned int) GIN_META)));
 
 	/* Build a tuple descriptor for our result type */
 	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
@@ -199,7 +199,7 @@ gin_leafpage_items(PG_FUNCTION_ARGS)
 					 errmsg("input page is not a compressed GIN data leaf page"),
 					 errdetail("Flags %04X, expected %04X",
 							   opaq->flags,
-							   (GIN_DATA | GIN_LEAF | GIN_COMPRESSED))));
+							   (unsigned int) (GIN_DATA | GIN_LEAF | GIN_COMPRESSED))));
 
 		inter_call_data = palloc(sizeof(gin_leafpage_items_state));
 

@@ -88,7 +88,7 @@ handle_args(int argc, char *argv[])
 				if (test_duration == 0)
 				{
 					fprintf(stderr, _("%s: %s must be in range %u..%u\n"),
-							progname, "--duration", 1, UINT_MAX);
+							progname, "--duration", 1U, UINT_MAX);
 					exit(1);
 				}
 				break;

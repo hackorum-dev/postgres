@@ -331,19 +331,19 @@ pgstatindex_impl(Relation rel, FunctionCallInfo fcinfo)
 			elog(ERROR, "return type must be a row type");
 
 		j = 0;
-		values[j++] = psprintf("%d", indexStat.version);
-		values[j++] = psprintf("%d", indexStat.level);
-		values[j++] = psprintf(INT64_FORMAT,
+		values[j++] = psprintf("%u", indexStat.version);
+		values[j++] = psprintf("%u", indexStat.level);
+		values[j++] = psprintf(UINT64_FORMAT,
 							   (1 + /* include the metapage in index_size */
 								indexStat.leaf_pages +
 								indexStat.internal_pages +
 								indexStat.deleted_pages +
 								indexStat.empty_pages) * BLCKSZ);
 		values[j++] = psprintf("%u", indexStat.root_blkno);
-		values[j++] = psprintf(INT64_FORMAT, indexStat.internal_pages);
-		values[j++] = psprintf(INT64_FORMAT, indexStat.leaf_pages);
-		values[j++] = psprintf(INT64_FORMAT, indexStat.empty_pages);
-		values[j++] = psprintf(INT64_FORMAT, indexStat.deleted_pages);
+		values[j++] = psprintf(UINT64_FORMAT, indexStat.internal_pages);
+		values[j++] = psprintf(UINT64_FORMAT, indexStat.leaf_pages);
+		values[j++] = psprintf(UINT64_FORMAT, indexStat.empty_pages);
+		values[j++] = psprintf(UINT64_FORMAT, indexStat.deleted_pages);
 		if (indexStat.max_avail > 0)
 			values[j++] = psprintf("%.2f",
 								   100.0 - (double) indexStat.free_space / (double) indexStat.max_avail * 100.0);

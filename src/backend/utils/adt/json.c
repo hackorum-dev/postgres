@@ -1308,7 +1308,7 @@ escape_json(StringInfo buf, const char *str)
 				break;
 			default:
 				if ((unsigned char) *p < ' ')
-					appendStringInfo(buf, "\\u%04x", (int) *p);
+					appendStringInfo(buf, "\\u%04x", (unsigned int) *p);
 				else
 					appendStringInfoCharMacro(buf, *p);
 				break;

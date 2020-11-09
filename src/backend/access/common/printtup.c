@@ -572,7 +572,7 @@ printtup_destroy(DestReceiver *self)
  * ----------------
  */
 static void
-printatt(unsigned attributeId,
+printatt(int attributeId,
 		 Form_pg_attribute attributeP,
 		 char *value)
 {
@@ -602,7 +602,7 @@ debugStartup(DestReceiver *self, int operation, TupleDesc typeinfo)
 	 * show the return type of the tuples
 	 */
 	for (i = 0; i < natts; ++i)
-		printatt((unsigned) i + 1, TupleDescAttr(typeinfo, i), NULL);
+		printatt(i + 1, TupleDescAttr(typeinfo, i), NULL);
 	printf("\t----\n");
 }
 
@@ -632,7 +632,7 @@ debugtup(TupleTableSlot *slot, DestReceiver *self)
 
 		value = OidOutputFunctionCall(typoutput, attr);
 
-		printatt((unsigned) i + 1, TupleDescAttr(typeinfo, i), value);
+		printatt(i + 1, TupleDescAttr(typeinfo, i), value);
 	}
 	printf("\t----\n");
 

@@ -1140,7 +1140,7 @@ DescribeLockTag(StringInfo buf, const LOCKTAG *tag)
 			break;
 		case LOCKTAG_VIRTUALTRANSACTION:
 			appendStringInfo(buf,
-							 _("virtual transaction %d/%u"),
+							 _("virtual transaction %u/%u"),
 							 tag->locktag_field1,
 							 tag->locktag_field2);
 			break;

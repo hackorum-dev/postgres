@@ -1074,7 +1074,7 @@ bt_target_page_check(BtreeCheckState *state)
 					(errcode(ERRCODE_INDEX_CORRUPTED),
 					 errmsg("wrong number of high key index tuple attributes in index \"%s\"",
 							RelationGetRelationName(state->rel)),
-					 errdetail_internal("Index block=%u natts=%u block type=%s page lsn=%X/%X.",
+					 errdetail_internal("Index block=%u natts=%d block type=%s page lsn=%X/%X.",
 										state->targetblock,
 										BTreeTupleGetNAtts(itup, state->rel),
 										P_ISLEAF(topaque) ? "heap" : "index",
@@ -1117,7 +1117,7 @@ bt_target_page_check(BtreeCheckState *state)
 					(errcode(ERRCODE_INDEX_CORRUPTED),
 					 errmsg("index tuple size does not equal lp_len in index \"%s\"",
 							RelationGetRelationName(state->rel)),
-					 errdetail_internal("Index tid=(%u,%u) tuple size=%zu lp_len=%u page lsn=%X/%X.",
+					 errdetail_internal("Index tid=(%u,%u) tuple size=%zu lp_len=%d page lsn=%X/%X.",
 										state->targetblock, offset,
 										tupsize, ItemIdGetLength(itemid),
 										(uint32) (state->targetlsn >> 32),
@@ -1142,7 +1142,7 @@ bt_target_page_check(BtreeCheckState *state)
 					(errcode(ERRCODE_INDEX_CORRUPTED),
 					 errmsg("wrong number of index tuple attributes in index \"%s\"",
 							RelationGetRelationName(state->rel)),
-					 errdetail_internal("Index tid=%s natts=%u points to %s tid=%s page lsn=%X/%X.",
+					 errdetail_internal("Index tid=%s natts=%d points to %s tid=%s page lsn=%X/%X.",
 										itid,
 										BTreeTupleGetNAtts(itup, state->rel),
 										P_ISLEAF(topaque) ? "heap" : "index",
@@ -1186,7 +1186,7 @@ bt_target_page_check(BtreeCheckState *state)
 					   *htid;
 
 			itid = psprintf("(%u,%u)", state->targetblock, offset);
-			htid = psprintf("(%u,%u)", ItemPointerGetBlockNumber(tid),
+			htid = psprintf("(%u,%d)", ItemPointerGetBlockNumber(tid),
 							ItemPointerGetOffsetNumber(tid));
 
 			ereport(ERROR,
@@ -2487,7 +2487,7 @@ bt_tuple_present_callback(Relation index, ItemPointer tid, Datum *values,
 							IndexTupleSize(norm)))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
-				 errmsg("heap tuple (%u,%u) from table \"%s\" lacks matching index tuple within index \"%s\"",
+				 errmsg("heap tuple (%u,%d) from table \"%s\" lacks matching index tuple within index \"%s\"",
 						ItemPointerGetBlockNumber(&(itup->t_tid)),
 						ItemPointerGetOffsetNumber(&(itup->t_tid)),
 						RelationGetRelationName(state->heaprel),
@@ -2575,7 +2575,7 @@ bt_normalize_tuple(BtreeCheckState *state, IndexTuple itup)
 		if (VARATT_IS_EXTERNAL(DatumGetPointer(normalized[i])))
 			ereport(ERROR,
 					(errcode(ERRCODE_INDEX_CORRUPTED),
-					 errmsg("external varlena datum in tuple that references heap row (%u,%u) in index \"%s\"",
+					 errmsg("external varlena datum in tuple that references heap row (%u,%d) in index \"%s\"",
 							ItemPointerGetBlockNumber(&(itup->t_tid)),
 							ItemPointerGetOffsetNumber(&(itup->t_tid)),
 							RelationGetRelationName(state->rel))));
@@ -2991,7 +2991,7 @@ palloc_btree_page(BtreeCheckState *state, BlockNumber blocknum)
 			metad->btm_version > BTREE_VERSION)
 			ereport(ERROR,
 					(errcode(ERRCODE_INDEX_CORRUPTED),
-					 errmsg("version mismatch in index \"%s\": file version %d, "
+					 errmsg("version mismatch in index \"%s\": file version %u, "
 							"current version %d, minimum supported version %d",
 							RelationGetRelationName(state->rel),
 							metad->btm_version, BTREE_VERSION,
@@ -3041,7 +3041,7 @@ palloc_btree_page(BtreeCheckState *state, BlockNumber blocknum)
 	if (maxoffset > MaxIndexTuplesPerPage)
 		ereport(ERROR,
 				(errcode(ERRCODE_INDEX_CORRUPTED),
-				 errmsg("Number of items on block %u of index \"%s\" exceeds MaxIndexTuplesPerPage (%u)",
+				 errmsg("Number of items on block %u of index \"%s\" exceeds MaxIndexTuplesPerPage (%d)",
 						blocknum, RelationGetRelationName(state->rel),
 						MaxIndexTuplesPerPage)));
 
@@ -3132,7 +3132,7 @@ PageGetItemIdCareful(BtreeCheckState *state, BlockNumber block, Page page,
 				(errcode(ERRCODE_INDEX_CORRUPTED),
 				 errmsg("line pointer points past end of tuple space in index \"%s\"",
 						RelationGetRelationName(state->rel)),
-				 errdetail_internal("Index tid=(%u,%u) lp_off=%u, lp_len=%u lp_flags=%u.",
+				 errdetail_internal("Index tid=(%u,%u) lp_off=%d, lp_len=%d lp_flags=%d.",
 									block, offset, ItemIdGetOffset(itemid),
 									ItemIdGetLength(itemid),
 									ItemIdGetFlags(itemid))));
@@ -3148,7 +3148,7 @@ PageGetItemIdCareful(BtreeCheckState *state, BlockNumber block, Page page,
 				(errcode(ERRCODE_INDEX_CORRUPTED),
 				 errmsg("invalid line pointer storage in index \"%s\"",
 						RelationGetRelationName(state->rel)),
-				 errdetail_internal("Index tid=(%u,%u) lp_off=%u, lp_len=%u lp_flags=%u.",
+				 errdetail_internal("Index tid=(%u,%u) lp_off=%d, lp_len=%d lp_flags=%d.",
 									block, offset, ItemIdGetOffset(itemid),
 									ItemIdGetLength(itemid),
 									ItemIdGetFlags(itemid))));

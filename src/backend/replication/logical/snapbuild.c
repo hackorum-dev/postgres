@@ -1550,7 +1550,7 @@ SnapBuildSerialize(SnapBuild *builder, XLogRecPtr lsn)
 	elog(DEBUG1, "serializing snapshot to %s", path);
 
 	/* to make sure only we will write to this tempfile, include pid */
-	sprintf(tmppath, "pg_logical/snapshots/%X-%X.snap.%u.tmp",
+	sprintf(tmppath, "pg_logical/snapshots/%X-%X.snap.%d.tmp",
 			(uint32) (lsn >> 32), (uint32) lsn, MyProcPid);
 
 	/*
@@ -1752,13 +1752,13 @@ SnapBuildRestore(SnapBuild *builder, XLogRecPtr lsn)
 	if (ondisk.magic != SNAPBUILD_MAGIC)
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
-				 errmsg("snapbuild state file \"%s\" has wrong magic number: %u instead of %u",
+				 errmsg("snapbuild state file \"%s\" has wrong magic number: %u instead of %d",
 						path, ondisk.magic, SNAPBUILD_MAGIC)));
 
 	if (ondisk.version != SNAPBUILD_VERSION)
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
-				 errmsg("snapbuild state file \"%s\" has unsupported version: %u instead of %u",
+				 errmsg("snapbuild state file \"%s\" has unsupported version: %u instead of %d",
 						path, ondisk.version, SNAPBUILD_VERSION)));
 
 	INIT_CRC32C(checksum);

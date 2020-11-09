@@ -1166,7 +1166,7 @@ intervaltypmodout(PG_FUNCTION_ARGS)
 			fieldstr = "";
 			break;
 		default:
-			elog(ERROR, "invalid INTERVAL typmod: 0x%x", typmod);
+			elog(ERROR, "invalid INTERVAL typmod: 0x%x", (unsigned) typmod);
 			fieldstr = "";
 			break;
 	}
@@ -1226,7 +1226,7 @@ intervaltypmodleastfield(int32 typmod)
 		case INTERVAL_FULL_RANGE:
 			return 0;			/* SECOND */
 		default:
-			elog(ERROR, "invalid INTERVAL typmod: 0x%x", typmod);
+			elog(ERROR, "invalid INTERVAL typmod: 0x%x", (unsigned) typmod);
 			break;
 	}
 	return 0;					/* can't get here, but keep compiler quiet */

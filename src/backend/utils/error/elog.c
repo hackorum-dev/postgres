@@ -2433,11 +2433,11 @@ log_line_prefix(StringInfo buf, ErrorData *edata)
 					char		strfbuf[128];
 
 					snprintf(strfbuf, sizeof(strfbuf) - 1, "%lx.%x",
-							 (long) (MyStartTime), MyProcPid);
+							 (unsigned long) (MyStartTime), (unsigned) MyProcPid);
 					appendStringInfo(buf, "%*s", padding, strfbuf);
 				}
 				else
-					appendStringInfo(buf, "%lx.%x", (long) (MyStartTime), MyProcPid);
+					appendStringInfo(buf, "%lx.%x", (unsigned long) (MyStartTime), (unsigned) MyProcPid);
 				break;
 			case 'p':
 				if (padding != 0)
@@ -2734,7 +2734,7 @@ write_csvlog(ErrorData *edata)
 	appendStringInfoChar(&buf, ',');
 
 	/* session id */
-	appendStringInfo(&buf, "%lx.%x", (long) MyStartTime, MyProcPid);
+	appendStringInfo(&buf, "%lx.%x", (unsigned long) MyStartTime, (unsigned) MyProcPid);
 	appendStringInfoChar(&buf, ',');
 
 	/* Line number */

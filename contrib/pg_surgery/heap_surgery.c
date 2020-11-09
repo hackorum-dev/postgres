@@ -185,7 +185,7 @@ heap_force_common(FunctionCallInfo fcinfo, HeapTupleForceOption heap_force_opt)
 			if (ItemIdIsRedirected(itemid))
 			{
 				ereport(NOTICE,
-						errmsg("skipping tid (%u, %u) for relation \"%s\" because it redirects to item %u",
+						errmsg("skipping tid (%u, %u) for relation \"%s\" because it redirects to item %d",
 							   blkno, offno, RelationGetRelationName(rel),
 							   ItemIdGetRedirect(itemid)));
 				continue;

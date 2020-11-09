@@ -517,7 +517,7 @@ MemoryContextStatsDetail(MemoryContext context, int max_children)
 	MemoryContextStatsInternal(context, 0, true, max_children, &grand_totals);
 
 	fprintf(stderr,
-			"Grand total: %zu bytes in %zd blocks; %zu free (%zd chunks); %zu used\n",
+			"Grand total: %zu bytes in %zu blocks; %zu free (%zu chunks); %zu used\n",
 			grand_totals.totalspace, grand_totals.nblocks,
 			grand_totals.freespace, grand_totals.freechunks,
 			grand_totals.totalspace - grand_totals.freespace);
@@ -577,7 +577,7 @@ MemoryContextStatsInternal(MemoryContext context, int level,
 			for (i = 0; i <= level; i++)
 				fprintf(stderr, "  ");
 			fprintf(stderr,
-					"%d more child contexts containing %zu total in %zd blocks; %zu free (%zd chunks); %zu used\n",
+					"%d more child contexts containing %zu total in %zu blocks; %zu free (%zu chunks); %zu used\n",
 					ichild - max_children,
 					local_totals.totalspace,
 					local_totals.nblocks,
