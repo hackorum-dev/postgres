@@ -1369,7 +1369,7 @@ json_typeof(PG_FUNCTION_ARGS)
 			type = "null";
 			break;
 		default:
-			elog(ERROR, "unexpected json token: %d", tok);
+			elog(ERROR, "unexpected json token: %u", tok);
 	}
 
 	PG_RETURN_TEXT_P(cstring_to_text(type));

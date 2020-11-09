@@ -3395,7 +3395,7 @@ printTable(const printTableContent *cont,
 				print_troff_ms_text(cont, fout);
 			break;
 		default:
-			fprintf(stderr, _("invalid output format (internal error): %d"),
+			fprintf(stderr, _("invalid output format (internal error): %u"),
 					cont->opt->format);
 			exit(EXIT_FAILURE);
 	}

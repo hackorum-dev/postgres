@@ -49,7 +49,7 @@ DiscardCommand(DiscardStmt *stmt, bool isTopLevel)
 			break;
 
 		default:
-			elog(ERROR, "unrecognized DISCARD target: %d", stmt->target);
+			elog(ERROR, "unrecognized DISCARD target: %u", stmt->target);
 	}
 }
 

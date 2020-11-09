@@ -753,7 +753,7 @@ rbt_begin_iterate(RBTree *rbt, RBTOrderControl ctrl, RBTreeIterator *iter)
 			iter->iterate = rbt_right_left_iterator;
 			break;
 		default:
-			elog(ERROR, "unrecognized rbtree iteration order: %d", ctrl);
+			elog(ERROR, "unrecognized rbtree iteration order: %u", ctrl);
 	}
 }
 

@@ -99,7 +99,7 @@ ECPG: stmtViewStmt rule
 		if (connection)
 			mmerror(PARSE_ERROR, ET_ERROR, "AT option not allowed in CONNECT statement");
 
-		fprintf(base_yyout, "{ ECPGconnect(__LINE__, %d, %s, %d); ", compat, $1, autocommit);
+		fprintf(base_yyout, "{ ECPGconnect(__LINE__, %u, %s, %d); ", compat, $1, autocommit);
 		reset_variables();
 		whenever_action(2);
 		free($1);
@@ -120,7 +120,7 @@ ECPG: stmtViewStmt rule
 	}
 	| ECPGDescribe
 	{
-		fprintf(base_yyout, "{ ECPGdescribe(__LINE__, %d, %s,", compat, $1);
+		fprintf(base_yyout, "{ ECPGdescribe(__LINE__, %u, %s,", compat, $1);
 		dump_variables(argsresult, 1);
 		fputs("ECPGt_EORT);", base_yyout);
 		fprintf(base_yyout, "}");
@@ -144,11 +144,11 @@ ECPG: stmtViewStmt rule
 		const char *con = connection ? connection : "NULL";
 
 		if (strcmp($1, "all") == 0)
-			fprintf(base_yyout, "{ ECPGdeallocate_all(__LINE__, %d, %s);", compat, con);
+			fprintf(base_yyout, "{ ECPGdeallocate_all(__LINE__, %u, %s);", compat, con);
 		else if ($1[0] == ':')
-			fprintf(base_yyout, "{ ECPGdeallocate(__LINE__, %d, %s, %s);", compat, con, $1+1);
+			fprintf(base_yyout, "{ ECPGdeallocate(__LINE__, %u, %s, %s);", compat, con, $1+1);
 		else
-			fprintf(base_yyout, "{ ECPGdeallocate(__LINE__, %d, %s, \"%s\");", compat, con, $1);
+			fprintf(base_yyout, "{ ECPGdeallocate(__LINE__, %u, %s, \"%s\");", compat, con, $1);
 
 		whenever_action(2);
 		free($1);

@@ -464,7 +464,7 @@ free_stmt(PLpgSQL_stmt *stmt)
 			free_set((PLpgSQL_stmt_set *) stmt);
 			break;
 		default:
-			elog(ERROR, "unrecognized cmd_type: %d", stmt->cmd_type);
+			elog(ERROR, "unrecognized cmd_type: %u", stmt->cmd_type);
 			break;
 	}
 }
@@ -772,7 +772,7 @@ plpgsql_free_function_memory(PLpgSQL_function *func)
 				free_expr(((PLpgSQL_arrayelem *) d)->subscript);
 				break;
 			default:
-				elog(ERROR, "unrecognized data type: %d", d->dtype);
+				elog(ERROR, "unrecognized data type: %u", d->dtype);
 		}
 	}
 	func->ndatums = 0;
@@ -932,7 +932,7 @@ dump_stmt(PLpgSQL_stmt *stmt)
 			dump_set((PLpgSQL_stmt_set *) stmt);
 			break;
 		default:
-			elog(ERROR, "unrecognized cmd_type: %d", stmt->cmd_type);
+			elog(ERROR, "unrecognized cmd_type: %u", stmt->cmd_type);
 			break;
 	}
 }
@@ -1273,7 +1273,7 @@ dump_cursor_direction(PLpgSQL_stmt_fetch *stmt)
 			printf("    RELATIVE ");
 			break;
 		default:
-			printf("??? unknown cursor direction %d", stmt->direction);
+			printf("??? unknown cursor direction %u", stmt->direction);
 	}
 
 	if (stmt->expr)
@@ -1711,7 +1711,7 @@ plpgsql_dumptree(PLpgSQL_function *func)
 				printf("\n");
 				break;
 			default:
-				printf("??? unknown data type %d\n", d->dtype);
+				printf("??? unknown data type %u\n", d->dtype);
 		}
 	}
 	printf("\nFunction's statements:\n");

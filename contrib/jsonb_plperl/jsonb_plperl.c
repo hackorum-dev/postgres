@@ -51,7 +51,7 @@ JsonbValue_to_SV(JsonbValue *jbv)
 			return newSV(0);
 
 		default:
-			elog(ERROR, "unexpected jsonb value type: %d", jbv->type);
+			elog(ERROR, "unexpected jsonb value type: %u", jbv->type);
 			return NULL;
 	}
 }
@@ -77,7 +77,7 @@ Jsonb_to_SV(JsonbContainer *jsonb)
 				if ((r = JsonbIteratorNext(&it, &v, true)) != WJB_ELEM ||
 					(r = JsonbIteratorNext(&it, &tmp, true)) != WJB_END_ARRAY ||
 					(r = JsonbIteratorNext(&it, &tmp, true)) != WJB_DONE)
-					elog(ERROR, "unexpected jsonb token: %d", r);
+					elog(ERROR, "unexpected jsonb token: %u", r);
 
 				return JsonbValue_to_SV(&v);
 			}
@@ -120,7 +120,7 @@ Jsonb_to_SV(JsonbContainer *jsonb)
 			}
 
 		default:
-			elog(ERROR, "unexpected jsonb token: %d", r);
+			elog(ERROR, "unexpected jsonb token: %u", r);
 			return NULL;
 	}
 }

@@ -1692,7 +1692,7 @@ deserialize_deflist(Datum txt)
 				}
 				break;
 			default:
-				elog(ERROR, "unrecognized deserialize_deflist state: %d",
+				elog(ERROR, "unrecognized deserialize_deflist state: %u",
 					 state);
 		}
 	}

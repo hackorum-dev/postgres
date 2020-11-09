@@ -84,7 +84,7 @@ pqSetenvPoll(PGconn *conn)
 
 		default:
 			printfPQExpBuffer(&conn->errorMessage,
-							  libpq_gettext("invalid setenv state %c, probably indicative of memory corruption\n"),
+							  libpq_gettext("invalid setenv state %u, probably indicative of memory corruption\n"),
 							  conn->setenv_state);
 			goto error_return;
 	}
@@ -381,7 +381,7 @@ pqSetenvPoll(PGconn *conn)
 
 			default:
 				printfPQExpBuffer(&conn->errorMessage,
-								  libpq_gettext("invalid state %c, "
+								  libpq_gettext("invalid state %u, "
 												"probably indicative of memory corruption\n"),
 								  conn->setenv_state);
 				goto error_return;

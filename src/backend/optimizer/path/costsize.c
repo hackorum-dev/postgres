@@ -929,7 +929,7 @@ get_indexpath_pages(Path *bitmapqual)
 		result = (double) ipath->indexinfo->pages;
 	}
 	else
-		elog(ERROR, "unrecognized node type: %d", nodeTag(bitmapqual));
+		elog(ERROR, "unrecognized node type: %u", nodeTag(bitmapqual));
 
 	return result;
 }
@@ -1077,7 +1077,7 @@ cost_bitmap_tree_node(Path *path, Cost *cost, Selectivity *selec)
 	}
 	else
 	{
-		elog(ERROR, "unrecognized node type: %d", nodeTag(path));
+		elog(ERROR, "unrecognized node type: %u", nodeTag(path));
 		*cost = *selec = 0;		/* keep compiler quiet */
 	}
 }

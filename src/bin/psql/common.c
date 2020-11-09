@@ -379,7 +379,7 @@ AcceptResult(const PGresult *result)
 
 			default:
 				OK = false;
-				pg_log_error("unexpected PQresultStatus: %d",
+				pg_log_error("unexpected PQresultStatus: %u",
 							 PQresultStatus(result));
 				break;
 		}
@@ -939,7 +939,7 @@ ProcessResult(PGresult **results)
 			default:
 				/* AcceptResult() should have caught anything else. */
 				is_copy = false;
-				pg_log_error("unexpected PQresultStatus: %d", result_status);
+				pg_log_error("unexpected PQresultStatus: %u", result_status);
 				break;
 		}
 
@@ -1156,7 +1156,7 @@ PrintQueryResults(PGresult *results)
 
 		default:
 			success = false;
-			pg_log_error("unexpected PQresultStatus: %d",
+			pg_log_error("unexpected PQresultStatus: %u",
 						 PQresultStatus(results));
 			break;
 	}
@@ -1362,7 +1362,7 @@ SendQuery(const char *query)
 				OK = false;
 				/* PQTRANS_UNKNOWN is expected given a broken connection. */
 				if (transaction_status != PQTRANS_UNKNOWN || ConnectionUp())
-					pg_log_error("unexpected transaction status (%d)",
+					pg_log_error("unexpected transaction status (%u)",
 								 transaction_status);
 				break;
 		}

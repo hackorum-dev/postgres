@@ -57,7 +57,7 @@ print_action(struct when *w)
 			fprintf(base_yyout, "continue;");
 			break;
 		default:
-			fprintf(base_yyout, "{/* %d not implemented yet */}", w->code);
+			fprintf(base_yyout, "{/* %u not implemented yet */}", w->code);
 			break;
 	}
 }
@@ -135,7 +135,7 @@ static char *ecpg_statement_type_name[] = {
 void
 output_statement(char *stmt, int whenever_mode, enum ECPG_statement_type st)
 {
-	fprintf(base_yyout, "{ ECPGdo(__LINE__, %d, %d, %s, %d, ", compat, force_indicator, connection ? connection : "NULL", questionmarks);
+	fprintf(base_yyout, "{ ECPGdo(__LINE__, %u, %d, %s, %d, ", compat, force_indicator, connection ? connection : "NULL", questionmarks);
 
 	if (st == ECPGst_prepnormal && !auto_prepare)
 		st = ECPGst_normal;
@@ -191,12 +191,12 @@ output_deallocate_prepare_statement(char *name)
 
 	if (strcmp(name, "all") != 0)
 	{
-		fprintf(base_yyout, "{ ECPGdeallocate(__LINE__, %d, %s, ", compat, con);
+		fprintf(base_yyout, "{ ECPGdeallocate(__LINE__, %u, %s, ", compat, con);
 		output_escaped_str(name, true);
 		fputs(");", base_yyout);
 	}
 	else
-		fprintf(base_yyout, "{ ECPGdeallocate_all(__LINE__, %d, %s);", compat, con);
+		fprintf(base_yyout, "{ ECPGdeallocate_all(__LINE__, %u, %s);", compat, con);
 
 	whenever_action(2);
 	free(name);

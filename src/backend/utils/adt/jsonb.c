@@ -220,12 +220,12 @@ JsonbTypeName(JsonbValue *jbv)
 				case TIMESTAMPTZOID:
 					return "timestamp with time zone";
 				default:
-					elog(ERROR, "unrecognized jsonb value datetime type: %d",
+					elog(ERROR, "unrecognized jsonb value datetime type: %u",
 						 jbv->val.datetime.typid);
 			}
 			return "unknown";
 		default:
-			elog(ERROR, "unrecognized jsonb value type: %d", jbv->type);
+			elog(ERROR, "unrecognized jsonb value type: %u", jbv->type);
 			return "unknown";
 	}
 }

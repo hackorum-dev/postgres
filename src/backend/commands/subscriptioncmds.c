@@ -883,7 +883,7 @@ AlterSubscription(AlterSubscriptionStmt *stmt)
 			}
 
 		default:
-			elog(ERROR, "unrecognized ALTER SUBSCRIPTION kind %d",
+			elog(ERROR, "unrecognized ALTER SUBSCRIPTION kind %u",
 				 stmt->kind);
 	}
 

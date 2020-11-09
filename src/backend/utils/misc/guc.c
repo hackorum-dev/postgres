@@ -8196,7 +8196,7 @@ AlterSystemSetConfigFile(AlterSystemStmt *altersysstmt)
 			break;
 
 		default:
-			elog(ERROR, "unrecognized alter system stmt type: %d",
+			elog(ERROR, "unrecognized alter system stmt type: %u",
 				 altersysstmt->setstmt->kind);
 			break;
 	}
@@ -9205,7 +9205,7 @@ get_explain_guc_options(int *num)
 				break;
 
 			default:
-				elog(ERROR, "unexpected GUC type: %d", conf->vartype);
+				elog(ERROR, "unexpected GUC type: %u", conf->vartype);
 		}
 
 		if (!modified)

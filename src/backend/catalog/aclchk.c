@@ -259,7 +259,7 @@ restrict_and_check_grant(bool is_grant, AclMode avail_goptions, bool all_privs,
 			whole_mask = ACL_ALL_RIGHTS_TYPE;
 			break;
 		default:
-			elog(ERROR, "unrecognized object type: %d", objtype);
+			elog(ERROR, "unrecognized object type: %u", objtype);
 			/* not reached, but keep compiler quiet */
 			return ACL_NO_RIGHTS;
 	}
@@ -3422,7 +3422,7 @@ aclcheck_error(AclResult aclerr, ObjectType objtype,
 					case OBJECT_TSPARSER:
 					case OBJECT_TSTEMPLATE:
 					case OBJECT_USER_MAPPING:
-						elog(ERROR, "unsupported object type %d", objtype);
+						elog(ERROR, "unsupported object type %u", objtype);
 				}
 
 				ereport(ERROR,
@@ -3558,7 +3558,7 @@ aclcheck_error(AclResult aclerr, ObjectType objtype,
 					case OBJECT_TSPARSER:
 					case OBJECT_TSTEMPLATE:
 					case OBJECT_USER_MAPPING:
-						elog(ERROR, "unsupported object type %d", objtype);
+						elog(ERROR, "unsupported object type %u", objtype);
 				}
 
 				ereport(ERROR,

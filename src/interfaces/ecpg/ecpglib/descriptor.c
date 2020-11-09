@@ -410,7 +410,7 @@ ECPGget_desc(int lineno, const char *desc_name, int index,...)
 					return false;
 				}
 
-				ecpg_log("ECPGget_desc: TYPE = %d\n", ecpg_dynamic_type_DDT(PQftype(ECPGresult, index)));
+				ecpg_log("ECPGget_desc: TYPE = %u\n", ecpg_dynamic_type_DDT(PQftype(ECPGresult, index)));
 				break;
 
 			case ECPGd_cardinality:
@@ -466,7 +466,7 @@ ECPGget_desc(int lineno, const char *desc_name, int index,...)
 				break;
 
 			default:
-				snprintf(type_str, sizeof(type_str), "%d", type);
+				snprintf(type_str, sizeof(type_str), "%u", type);
 				ecpg_raise(lineno, ECPG_UNKNOWN_DESCRIPTOR_ITEM, ECPG_SQLSTATE_ECPG_INTERNAL_ERROR, type_str);
 				va_end(args);
 				return false;
@@ -711,7 +711,7 @@ ECPGset_desc(int lineno, const char *desc_name, int index,...)
 				{
 					char		type_str[20];
 
-					snprintf(type_str, sizeof(type_str), "%d", itemtype);
+					snprintf(type_str, sizeof(type_str), "%u", itemtype);
 					ecpg_raise(lineno, ECPG_UNKNOWN_DESCRIPTOR_ITEM, ECPG_SQLSTATE_ECPG_INTERNAL_ERROR, type_str);
 					ecpg_free(var);
 					va_end(args);

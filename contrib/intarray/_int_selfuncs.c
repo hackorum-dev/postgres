@@ -310,7 +310,7 @@ int_query_opr_selec(ITEM *item, Datum *mcelems, float4 *mcefreqs,
 	}
 	else
 	{
-		elog(ERROR, "unrecognized int query item type: %u", item->type);
+		elog(ERROR, "unrecognized int query item type: %d", item->type);
 		selec = 0;				/* keep compiler quiet */
 	}
 

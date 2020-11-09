@@ -1761,7 +1761,7 @@ find_indexpath_quals(Path *bitmapqual, List **quals, List **preds)
 		*preds = list_concat(*preds, ipath->indexinfo->indpred);
 	}
 	else
-		elog(ERROR, "unrecognized node type: %d", nodeTag(bitmapqual));
+		elog(ERROR, "unrecognized node type: %u", nodeTag(bitmapqual));
 }
 
 

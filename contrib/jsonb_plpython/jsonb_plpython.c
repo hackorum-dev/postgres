@@ -127,7 +127,7 @@ PLyObject_FromJsonbValue(JsonbValue *jsonbValue)
 				Py_RETURN_FALSE;
 
 		default:
-			elog(ERROR, "unexpected jsonb value type: %d", jsonbValue->type);
+			elog(ERROR, "unexpected jsonb value type: %u", jsonbValue->type);
 			return NULL;
 	}
 }
@@ -158,7 +158,7 @@ PLyObject_FromJsonbContainer(JsonbContainer *jsonb)
 				if ((r = JsonbIteratorNext(&it, &v, true)) != WJB_ELEM ||
 					(r = JsonbIteratorNext(&it, &tmp, true)) != WJB_END_ARRAY ||
 					(r = JsonbIteratorNext(&it, &tmp, true)) != WJB_DONE)
-					elog(ERROR, "unexpected jsonb token: %d", r);
+					elog(ERROR, "unexpected jsonb token: %u", r);
 
 				result = PLyObject_FromJsonbValue(&v);
 			}
@@ -219,7 +219,7 @@ PLyObject_FromJsonbContainer(JsonbContainer *jsonb)
 						}
 
 						if ((r = JsonbIteratorNext(&it, &v, true)) != WJB_VALUE)
-							elog(ERROR, "unexpected jsonb token: %d", r);
+							elog(ERROR, "unexpected jsonb token: %u", r);
 
 						val = PLyObject_FromJsonbValue(&v);
 						if (!val)
@@ -253,7 +253,7 @@ PLyObject_FromJsonbContainer(JsonbContainer *jsonb)
 			break;
 
 		default:
-			elog(ERROR, "unexpected jsonb token: %d", r);
+			elog(ERROR, "unexpected jsonb token: %u", r);
 			return NULL;
 	}
 

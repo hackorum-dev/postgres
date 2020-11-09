@@ -863,7 +863,7 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 					relation = NULL;
 					break;
 				default:
-					elog(ERROR, "unrecognized markType: %d", rc->markType);
+					elog(ERROR, "unrecognized markType: %u", rc->markType);
 					relation = NULL;	/* keep compiler quiet */
 					break;
 			}

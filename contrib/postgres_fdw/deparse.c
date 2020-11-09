@@ -1384,7 +1384,7 @@ get_jointype_name(JoinType jointype)
 
 		default:
 			/* Shouldn't come here, but protect from buggy code. */
-			elog(ERROR, "unsupported join type %d", jointype);
+			elog(ERROR, "unsupported join type %u", jointype);
 	}
 
 	/* Keep compiler happy */

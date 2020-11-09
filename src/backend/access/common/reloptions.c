@@ -1659,7 +1659,7 @@ parse_one_reloption(relopt_value *option, char *text_str, int text_len,
 			}
 			break;
 		default:
-			elog(ERROR, "unsupported reloption type %d", option->gen->type);
+			elog(ERROR, "unsupported reloption type %u", option->gen->type);
 			parsed = true;		/* quiet compiler */
 			break;
 	}
@@ -1794,7 +1794,7 @@ fillRelOptions(void *rdopts, Size basesize,
 						}
 						break;
 					default:
-						elog(ERROR, "unsupported reloption type %d",
+						elog(ERROR, "unsupported reloption type %u",
 							 options[i].gen->type);
 						break;
 				}

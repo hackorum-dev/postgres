@@ -1632,7 +1632,7 @@ CreateCast(CreateCastStmt *stmt)
 			castcontext = COERCION_CODE_EXPLICIT;
 			break;
 		default:
-			elog(ERROR, "unrecognized CoercionContext: %d", stmt->context);
+			elog(ERROR, "unrecognized CoercionContext: %u", stmt->context);
 			castcontext = 0;	/* keep compiler quiet */
 			break;
 	}

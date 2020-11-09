@@ -582,7 +582,7 @@ plpgsql_exec_function(PLpgSQL_function *func, FunctionCallInfo fcinfo,
 
 			default:
 				/* Anything else should not be an argument variable */
-				elog(ERROR, "unrecognized dtype: %d", func->datums[i]->dtype);
+				elog(ERROR, "unrecognized dtype: %u", func->datums[i]->dtype);
 		}
 	}
 
@@ -1322,7 +1322,7 @@ copy_plpgsql_datums(PLpgSQL_execstate *estate,
 				break;
 
 			default:
-				elog(ERROR, "unrecognized dtype: %d", indatum->dtype);
+				elog(ERROR, "unrecognized dtype: %u", indatum->dtype);
 				outdatum = NULL;	/* keep compiler quiet */
 				break;
 		}
@@ -1487,7 +1487,7 @@ plpgsql_fulfill_promise(PLpgSQL_execstate *estate,
 			break;
 
 		default:
-			elog(ERROR, "unrecognized promise type: %d", var->promise);
+			elog(ERROR, "unrecognized promise type: %u", var->promise);
 	}
 
 	MemoryContextSwitchTo(oldcontext);
@@ -1709,7 +1709,7 @@ exec_stmt_block(PLpgSQL_execstate *estate, PLpgSQL_stmt_block *block)
 				break;
 
 			default:
-				elog(ERROR, "unrecognized dtype: %d", datum->dtype);
+				elog(ERROR, "unrecognized dtype: %u", datum->dtype);
 		}
 	}
 
@@ -2090,7 +2090,7 @@ exec_stmts(PLpgSQL_execstate *estate, List *stmts)
 			default:
 				/* point err_stmt to parent, since this one seems corrupt */
 				estate->err_stmt = save_estmt;
-				elog(ERROR, "unrecognized cmd_type: %d", stmt->cmd_type);
+				elog(ERROR, "unrecognized cmd_type: %u", stmt->cmd_type);
 				rc = -1;		/* keep compiler quiet */
 		}
 
@@ -2525,7 +2525,7 @@ exec_stmt_getdiag(PLpgSQL_execstate *estate, PLpgSQL_stmt_getdiag *stmt)
 				break;
 
 			default:
-				elog(ERROR, "unrecognized diagnostic item kind: %d",
+				elog(ERROR, "unrecognized diagnostic item kind: %u",
 					 diag_item->kind);
 		}
 	}
@@ -3301,7 +3301,7 @@ exec_stmt_return(PLpgSQL_execstate *estate, PLpgSQL_stmt_return *stmt)
 				break;
 
 			default:
-				elog(ERROR, "unrecognized dtype: %d", retvar->dtype);
+				elog(ERROR, "unrecognized dtype: %u", retvar->dtype);
 		}
 
 		return PLPGSQL_RC_RETURN;
@@ -3470,7 +3470,7 @@ exec_stmt_return_next(PLpgSQL_execstate *estate,
 				break;
 
 			default:
-				elog(ERROR, "unrecognized dtype: %d", retvar->dtype);
+				elog(ERROR, "unrecognized dtype: %u", retvar->dtype);
 				break;
 		}
 	}
@@ -3898,7 +3898,7 @@ exec_stmt_raise(PLpgSQL_execstate *estate, PLpgSQL_stmt_raise *stmt)
 				SET_RAISE_OPTION_TEXT(err_schema, "SCHEMA");
 				break;
 			default:
-				elog(ERROR, "unrecognized raise option: %d", opt->opt_type);
+				elog(ERROR, "unrecognized raise option: %u", opt->opt_type);
 		}
 
 		exec_eval_cleanup(estate);
@@ -5480,7 +5480,7 @@ exec_assign_value(PLpgSQL_execstate *estate,
 			}
 
 		default:
-			elog(ERROR, "unrecognized dtype: %d", target->dtype);
+			elog(ERROR, "unrecognized dtype: %u", target->dtype);
 	}
 }
 
@@ -5642,7 +5642,7 @@ exec_eval_datum(PLpgSQL_execstate *estate,
 			}
 
 		default:
-			elog(ERROR, "unrecognized dtype: %d", datum->dtype);
+			elog(ERROR, "unrecognized dtype: %u", datum->dtype);
 	}
 }
 
@@ -5722,7 +5722,7 @@ plpgsql_exec_get_datum_type(PLpgSQL_execstate *estate,
 			}
 
 		default:
-			elog(ERROR, "unrecognized dtype: %d", datum->dtype);
+			elog(ERROR, "unrecognized dtype: %u", datum->dtype);
 			typeid = InvalidOid;	/* keep compiler quiet */
 			break;
 	}
@@ -5815,7 +5815,7 @@ plpgsql_exec_get_datum_type_info(PLpgSQL_execstate *estate,
 			}
 
 		default:
-			elog(ERROR, "unrecognized dtype: %d", datum->dtype);
+			elog(ERROR, "unrecognized dtype: %u", datum->dtype);
 			*typeId = InvalidOid;	/* keep compiler quiet */
 			*typMod = -1;
 			*collation = InvalidOid;
@@ -7442,7 +7442,7 @@ exec_move_row_from_fields(PLpgSQL_execstate *estate,
 		return;
 	}
 
-	elog(ERROR, "unsupported target type: %d", target->dtype);
+	elog(ERROR, "unsupported target type: %u", target->dtype);
 }
 
 /*

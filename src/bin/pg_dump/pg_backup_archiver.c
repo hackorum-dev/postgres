@@ -2264,7 +2264,7 @@ _allocAH(const char *FileSpec, const ArchiveFormat fmt,
 {
 	ArchiveHandle *AH;
 
-	pg_log_debug("allocating AH for %s, format %d",
+	pg_log_debug("allocating AH for %s, format %u",
 				 FileSpec ? FileSpec : "(stdio)", fmt);
 
 	AH = (ArchiveHandle *) pg_malloc0(sizeof(ArchiveHandle));
@@ -2361,7 +2361,7 @@ _allocAH(const char *FileSpec, const ArchiveFormat fmt,
 			break;
 
 		default:
-			fatal("unrecognized file format \"%d\"", fmt);
+			fatal("unrecognized file format \"%u\"", fmt);
 	}
 
 	return AH;
@@ -3809,7 +3809,7 @@ ReadHead(ArchiveHandle *AH)
 		fmt = AH->ReadBytePtr(AH);
 
 		if (AH->format != fmt)
-			fatal("expected format (%d) differs from format found in file (%d)",
+			fatal("expected format (%u) differs from format found in file (%d)",
 				  AH->format, fmt);
 	}
 

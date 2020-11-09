@@ -784,7 +784,7 @@ transformColumnDefinition(CreateStmtContext *cxt, ColumnDef *column)
 				break;
 
 			default:
-				elog(ERROR, "unrecognized constraint type: %d",
+				elog(ERROR, "unrecognized constraint type: %u",
 					 constraint->contype);
 				break;
 		}
@@ -906,12 +906,12 @@ transformTableConstraint(CreateStmtContext *cxt, Constraint *constraint)
 		case CONSTR_ATTR_NOT_DEFERRABLE:
 		case CONSTR_ATTR_DEFERRED:
 		case CONSTR_ATTR_IMMEDIATE:
-			elog(ERROR, "invalid context for constraint type %d",
+			elog(ERROR, "invalid context for constraint type %u",
 				 constraint->contype);
 			break;
 
 		default:
-			elog(ERROR, "unrecognized constraint type: %d",
+			elog(ERROR, "unrecognized constraint type: %u",
 				 constraint->contype);
 			break;
 	}

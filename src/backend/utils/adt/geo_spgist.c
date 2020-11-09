@@ -541,7 +541,7 @@ spg_box_quad_get_scankey_bbox(ScanKey sk, bool *recheck)
 			return &DatumGetPolygonP(sk->sk_argument)->boundbox;
 
 		default:
-			elog(ERROR, "unrecognized scankey subtype: %d", sk->sk_subtype);
+			elog(ERROR, "unrecognized scankey subtype: %u", sk->sk_subtype);
 			return NULL;
 	}
 }

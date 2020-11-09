@@ -420,7 +420,7 @@ getNextFlagFromString(IspellDict *Conf, char **sflagset, char *sflag)
 				stop = true;
 				break;
 			default:
-				elog(ERROR, "unrecognized type of Conf->flagMode: %d",
+				elog(ERROR, "unrecognized type of Conf->flagMode: %u",
 					 Conf->flagMode);
 		}
 

@@ -1016,7 +1016,7 @@ stmt_getdiag	: K_GET getdiag_area_opt K_DIAGNOSTICS getdiag_list ';'
 								case PLPGSQL_GETDIAG_CONTEXT:
 									break;
 								default:
-									elog(ERROR, "unrecognized diagnostic item kind: %d",
+									elog(ERROR, "unrecognized diagnostic item kind: %u",
 										 ditem->kind);
 									break;
 							}
@@ -3446,7 +3446,7 @@ check_assignable(PLpgSQL_datum *datum, int location)
 							 location);
 			break;
 		default:
-			elog(ERROR, "unrecognized dtype: %d", datum->dtype);
+			elog(ERROR, "unrecognized dtype: %u", datum->dtype);
 			break;
 	}
 }

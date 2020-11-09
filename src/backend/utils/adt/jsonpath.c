@@ -419,7 +419,7 @@ flattenJsonPathParseItem(StringInfo buf, JsonPathParseItem *item,
 		case jpiKeyValue:
 			break;
 		default:
-			elog(ERROR, "unrecognized jsonpath item type: %d", item->type);
+			elog(ERROR, "unrecognized jsonpath item type: %u", item->type);
 	}
 
 	if (item->next)
@@ -707,7 +707,7 @@ printJsonPathItem(StringInfo buf, JsonPathItem *v, bool inKey,
 			appendBinaryStringInfo(buf, ".keyvalue()", 11);
 			break;
 		default:
-			elog(ERROR, "unrecognized jsonpath item type: %d", v->type);
+			elog(ERROR, "unrecognized jsonpath item type: %u", v->type);
 	}
 
 	if (jspGetNext(v, &elem))
@@ -768,7 +768,7 @@ jspOperationName(JsonPathItemType type)
 		case jpiDatetime:
 			return "datetime";
 		default:
-			elog(ERROR, "unrecognized jsonpath item type: %d", type);
+			elog(ERROR, "unrecognized jsonpath item type: %u", type);
 			return NULL;
 	}
 }
@@ -915,7 +915,7 @@ jspInitByBuffer(JsonPathItem *v, char *base, int32 pos)
 			read_int32(v->content.anybounds.last, base, pos);
 			break;
 		default:
-			elog(ERROR, "unrecognized jsonpath item type: %d", v->type);
+			elog(ERROR, "unrecognized jsonpath item type: %u", v->type);
 	}
 }
 

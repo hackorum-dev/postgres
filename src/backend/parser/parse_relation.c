@@ -2362,7 +2362,7 @@ addRangeTableEntryForENR(ParseState *pstate,
 			break;
 
 		default:
-			elog(ERROR, "unexpected enrtype: %d", enrmd->enrtype);
+			elog(ERROR, "unexpected enrtype: %u", enrmd->enrtype);
 			return NULL;		/* for fussy compilers */
 	}
 

@@ -211,7 +211,7 @@ get_type(enum ECPGttype type)
 			return "ECPGt_string";
 			break;
 		default:
-			mmerror(PARSE_ERROR, ET_ERROR, "unrecognized variable type code %d", type);
+			mmerror(PARSE_ERROR, ET_ERROR, "unrecognized variable type code %u", type);
 	}
 
 	return NULL;
@@ -682,7 +682,7 @@ ECPGfree_type(struct ECPGtype *type)
 				ECPGfree_struct_member(type->u.members);
 				break;
 			default:
-				mmerror(PARSE_ERROR, ET_ERROR, "unrecognized variable type code %d", type->type);
+				mmerror(PARSE_ERROR, ET_ERROR, "unrecognized variable type code %u", type->type);
 				break;
 		}
 	}
@@ -741,7 +741,7 @@ get_dtype(enum ECPGdtype type)
 		case ECPGd_cardinality:
 			return "ECPGd_cardinality";
 		default:
-			mmerror(PARSE_ERROR, ET_ERROR, "unrecognized descriptor item code %d", type);
+			mmerror(PARSE_ERROR, ET_ERROR, "unrecognized descriptor item code %u", type);
 	}
 
 	return NULL;

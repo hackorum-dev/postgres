@@ -2678,7 +2678,7 @@ perform_work_item(AutoVacuumWorkItem *workitem)
 									Int64GetDatum((int64) workitem->avw_blockNumber));
 				break;
 			default:
-				elog(WARNING, "unrecognized work item found: type %d",
+				elog(WARNING, "unrecognized work item found: type %u",
 					 workitem->avw_type);
 				break;
 		}

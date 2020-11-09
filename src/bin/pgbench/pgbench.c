@@ -2457,7 +2457,7 @@ evaluateExpr(CState *st, PgBenchExpr *expr, PgBenchValue *retval)
 
 		default:
 			/* internal error which should never occur */
-			pg_log_fatal("unexpected enode type in evaluation: %d", expr->etype);
+			pg_log_fatal("unexpected enode type in evaluation: %u", expr->etype);
 			exit(1);
 	}
 }

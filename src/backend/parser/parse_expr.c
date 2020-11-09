@@ -250,7 +250,7 @@ transformExprRecurse(ParseState *pstate, Node *expr)
 						result = transformExprRecurse(pstate, a->lexpr);
 						break;
 					default:
-						elog(ERROR, "unrecognized A_Expr kind: %d", a->kind);
+						elog(ERROR, "unrecognized A_Expr kind: %u", a->kind);
 						result = NULL;	/* keep compiler quiet */
 						break;
 				}
@@ -1475,7 +1475,7 @@ transformAExprBetween(ParseState *pstate, A_Expr *a)
 			result = (Node *) makeBoolExpr(AND_EXPR, args, a->location);
 			break;
 		default:
-			elog(ERROR, "unrecognized A_Expr kind: %d", a->kind);
+			elog(ERROR, "unrecognized A_Expr kind: %u", a->kind);
 			result = NULL;		/* keep compiler quiet */
 			break;
 	}

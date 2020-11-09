@@ -5234,7 +5234,7 @@ get_rolespec_oid(const RoleSpec *role, bool missing_ok)
 			break;
 
 		default:
-			elog(ERROR, "unexpected role type %d", role->roletype);
+			elog(ERROR, "unexpected role type %u", role->roletype);
 	}
 
 	return oid;
@@ -5281,7 +5281,7 @@ get_rolespec_tuple(const RoleSpec *role)
 			break;
 
 		default:
-			elog(ERROR, "unexpected role type %d", role->roletype);
+			elog(ERROR, "unexpected role type %u", role->roletype);
 	}
 
 	return tuple;

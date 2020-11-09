@@ -1643,7 +1643,7 @@ mxstatus_to_string(MultiXactStatus status)
 		case MultiXactStatusUpdate:
 			return "upd";
 		default:
-			elog(ERROR, "unrecognized multixact status %d", status);
+			elog(ERROR, "unrecognized multixact status %u", status);
 			return "";
 	}
 }

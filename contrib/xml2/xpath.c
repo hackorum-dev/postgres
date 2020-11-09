@@ -502,7 +502,7 @@ pgxml_result_to_text(xmlXPathObjectPtr res,
 			break;
 
 		default:
-			elog(NOTICE, "unsupported XQuery result: %d", res->type);
+			elog(NOTICE, "unsupported XQuery result: %u", res->type);
 			xpresstr = xmlStrdup((const xmlChar *) "<unsupported/>");
 	}
 
@@ -777,7 +777,7 @@ xpath_table(PG_FUNCTION_ARGS)
 									break;
 
 								default:
-									elog(NOTICE, "unsupported XQuery result: %d", res->type);
+									elog(NOTICE, "unsupported XQuery result: %u", res->type);
 									resstr = xmlStrdup((const xmlChar *) "<unsupported/>");
 							}
 

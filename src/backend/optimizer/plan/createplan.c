@@ -3334,7 +3334,7 @@ create_bitmap_subplan(PlannerInfo *root, Path *bitmapqual,
 	}
 	else
 	{
-		elog(ERROR, "unrecognized node type: %d", nodeTag(bitmapqual));
+		elog(ERROR, "unrecognized node type: %u", nodeTag(bitmapqual));
 		plan = NULL;			/* keep compiler quiet */
 	}
 
@@ -5200,7 +5200,7 @@ bitmap_subplan_mark_shared(Plan *plan)
 	else if (IsA(plan, BitmapIndexScan))
 		((BitmapIndexScan *) plan)->isshared = true;
 	else
-		elog(ERROR, "unrecognized node type: %d", nodeTag(plan));
+		elog(ERROR, "unrecognized node type: %u", nodeTag(plan));
 }
 
 /*****************************************************************************

@@ -3339,7 +3339,7 @@ addTargetToSortList(ParseState *pstate, TargetEntry *tle,
 			hashable = op_hashjoinable(eqop, restype);
 			break;
 		default:
-			elog(ERROR, "unrecognized sortby_dir: %d", sortby->sortby_dir);
+			elog(ERROR, "unrecognized sortby_dir: %u", sortby->sortby_dir);
 			sortop = InvalidOid;	/* keep compiler quiet */
 			eqop = InvalidOid;
 			hashable = false;
@@ -3373,7 +3373,7 @@ addTargetToSortList(ParseState *pstate, TargetEntry *tle,
 				sortcl->nulls_first = false;
 				break;
 			default:
-				elog(ERROR, "unrecognized sortby_nulls: %d",
+				elog(ERROR, "unrecognized sortby_nulls: %u",
 					 sortby->sortby_nulls);
 				break;
 		}

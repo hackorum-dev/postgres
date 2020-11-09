@@ -3699,7 +3699,7 @@ XLogFileRead(XLogSegNo segno, int emode, TimeLineID tli,
 			break;
 
 		default:
-			elog(ERROR, "invalid XLogFileRead source %d", source);
+			elog(ERROR, "invalid XLogFileRead source %u", source);
 	}
 
 	/*
@@ -12254,7 +12254,7 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 					break;
 
 				default:
-					elog(ERROR, "unexpected WAL source %d", currentSource);
+					elog(ERROR, "unexpected WAL source %u", currentSource);
 			}
 		}
 		else if (currentSource == XLOG_FROM_PG_WAL)
@@ -12506,7 +12506,7 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 				}
 
 			default:
-				elog(ERROR, "unexpected WAL source %d", currentSource);
+				elog(ERROR, "unexpected WAL source %u", currentSource);
 		}
 
 		/*

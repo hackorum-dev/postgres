@@ -642,7 +642,7 @@ ginPlaceToPage(GinBtree btree, GinBtreeStack *stack,
 	}
 	else
 	{
-		elog(ERROR, "invalid return code from GIN beginPlaceToPage method: %d", rc);
+		elog(ERROR, "invalid return code from GIN beginPlaceToPage method: %u", rc);
 		result = false;			/* keep compiler quiet */
 	}
 

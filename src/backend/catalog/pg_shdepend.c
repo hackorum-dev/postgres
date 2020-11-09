@@ -1215,7 +1215,7 @@ storeObjectDescription(StringInfo descs,
 			break;
 
 		default:
-			elog(ERROR, "unrecognized object type: %d", type);
+			elog(ERROR, "unrecognized object type: %u", type);
 	}
 
 	pfree(objdesc);

@@ -5195,7 +5195,7 @@ foreign_join_ok(PlannerInfo *root, RelOptInfo *joinrel, JoinType jointype,
 
 		default:
 			/* Should not happen, we have just checked this above */
-			elog(ERROR, "unsupported join type %d", jointype);
+			elog(ERROR, "unsupported join type %u", jointype);
 	}
 
 	/*

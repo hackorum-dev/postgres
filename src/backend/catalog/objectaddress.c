@@ -2328,7 +2328,7 @@ pg_get_object_address(PG_FUNCTION_ARGS)
 	}
 
 	if (objnode == NULL)
-		elog(ERROR, "unrecognized object type: %d", type);
+		elog(ERROR, "unrecognized object type: %u", type);
 
 	addr = get_object_address(type, objnode,
 							  &relation, AccessShareLock, false);

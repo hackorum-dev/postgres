@@ -5051,7 +5051,7 @@ get_query_def(Query *query, StringInfo buf, List *parentnamespace,
 			break;
 
 		default:
-			elog(ERROR, "unrecognized query command type: %d",
+			elog(ERROR, "unrecognized query command type: %u",
 				 query->commandType);
 			break;
 	}

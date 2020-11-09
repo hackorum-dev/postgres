@@ -855,7 +855,7 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 				bool		hasNext = jspGetNext(jsp, &elem);
 
 				if (jb->type != jbvBinary)
-					elog(ERROR, "invalid jsonb object type: %d", jb->type);
+					elog(ERROR, "invalid jsonb object type: %u", jb->type);
 
 				return executeAnyItem
 					(cxt, hasNext ? &elem : NULL,
@@ -1106,7 +1106,7 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 			return executeKeyValueMethod(cxt, jsp, jb, found);
 
 		default:
-			elog(ERROR, "unrecognized jsonpath item type: %d", jsp->type);
+			elog(ERROR, "unrecognized jsonpath item type: %u", jsp->type);
 	}
 
 	return res;
@@ -1123,7 +1123,7 @@ executeItemUnwrapTargetArray(JsonPathExecContext *cxt, JsonPathItem *jsp,
 	if (jb->type != jbvBinary)
 	{
 		Assert(jb->type != jbvArray);
-		elog(ERROR, "invalid jsonb array value type: %d", jb->type);
+		elog(ERROR, "invalid jsonb array value type: %u", jb->type);
 	}
 
 	return executeAnyItem
@@ -1342,7 +1342,7 @@ executeBoolItem(JsonPathExecContext *cxt, JsonPathItem *jsp,
 			}
 
 		default:
-			elog(ERROR, "invalid boolean jsonpath item type: %d", jsp->type);
+			elog(ERROR, "invalid boolean jsonpath item type: %u", jsp->type);
 			return jpbUnknown;
 	}
 }
@@ -2328,7 +2328,7 @@ compareItems(int32 op, JsonbValue *jb1, JsonbValue *jb2, bool useTz)
 			return jpbUnknown;	/* non-scalars are not comparable */
 
 		default:
-			elog(ERROR, "invalid jsonb value type %d", jb1->type);
+			elog(ERROR, "invalid jsonb value type %u", jb1->type);
 	}
 
 	switch (op)

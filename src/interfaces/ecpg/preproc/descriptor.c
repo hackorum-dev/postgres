@@ -158,7 +158,7 @@ output_get_descr_header(char *desc_name)
 		if (results->value == ECPGd_count)
 			ECPGnumeric_lvalue(results->variable);
 		else
-			mmerror(PARSE_ERROR, ET_WARNING, "descriptor header item \"%d\" does not exist", results->value);
+			mmerror(PARSE_ERROR, ET_WARNING, "descriptor header item \"%u\" does not exist", results->value);
 	}
 
 	drop_assignments();
@@ -210,7 +210,7 @@ output_set_descr_header(char *desc_name)
 		if (results->value == ECPGd_count)
 			ECPGnumeric_lvalue(results->variable);
 		else
-			mmerror(PARSE_ERROR, ET_WARNING, "descriptor header item \"%d\" does not exist", results->value);
+			mmerror(PARSE_ERROR, ET_WARNING, "descriptor header item \"%u\" does not exist", results->value);
 	}
 
 	drop_assignments();

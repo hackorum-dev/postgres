@@ -3770,7 +3770,7 @@ keep_going:						/* We will come back to here until there is
 
 		default:
 			appendPQExpBuffer(&conn->errorMessage,
-							  libpq_gettext("invalid connection state %d, "
+							  libpq_gettext("invalid connection state %u, "
 											"probably indicative of memory corruption\n"),
 							  conn->status);
 			goto error_return;

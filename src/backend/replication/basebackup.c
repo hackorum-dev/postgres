@@ -1843,7 +1843,7 @@ _tarWriteHeader(const char *filename, const char *linktarget,
 								filename, linktarget)));
 				break;
 			default:
-				elog(ERROR, "unrecognized tar error: %d", rc);
+				elog(ERROR, "unrecognized tar error: %u", rc);
 		}
 
 		pq_putmessage('d', h, sizeof(h));

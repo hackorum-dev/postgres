@@ -1881,7 +1881,7 @@ mcv_get_match_bitmap(PlannerInfo *root, List *clauses,
 			}
 		}
 		else
-			elog(ERROR, "unknown clause type: %d", clause->type);
+			elog(ERROR, "unknown clause type: %u", clause->type);
 	}
 
 	return matches;

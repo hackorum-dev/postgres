@@ -3947,7 +3947,7 @@ xml_xpathobjtoxmlarray(xmlXPathObjectPtr xpathobj,
 			break;
 
 		default:
-			elog(ERROR, "xpath expression result type %d is unsupported",
+			elog(ERROR, "xpath expression result type %u is unsupported",
 				 xpathobj->type);
 			return 0;			/* keep compiler quiet */
 	}

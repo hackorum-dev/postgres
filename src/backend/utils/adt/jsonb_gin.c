@@ -701,7 +701,7 @@ extract_jsp_bool_expr(JsonPathGinContext *cxt, JsonPathGinPath path,
 							scalar_item->content.value.datalen;
 						break;
 					default:
-						elog(ERROR, "invalid scalar jsonpath item type: %d",
+						elog(ERROR, "invalid scalar jsonpath item type: %u",
 							 scalar_item->type);
 						return NULL;
 				}
@@ -839,7 +839,7 @@ execute_jsp_gin_node(JsonPathGinNode *node, void *check, bool ternary)
 			}
 
 		default:
-			elog(ERROR, "invalid jsonpath gin node type: %d", node->type);
+			elog(ERROR, "invalid jsonpath gin node type: %u", node->type);
 			return GIN_FALSE;	/* keep compiler quiet */
 	}
 }
@@ -1401,7 +1401,7 @@ make_scalar_key(const JsonbValue *scalarVal, bool is_key)
 								 scalarVal->val.string.len);
 			break;
 		default:
-			elog(ERROR, "unrecognized jsonb scalar type: %d", scalarVal->type);
+			elog(ERROR, "unrecognized jsonb scalar type: %u", scalarVal->type);
 			item = 0;			/* keep compiler quiet */
 			break;
 	}

@@ -1322,7 +1322,7 @@ resolve_column_ref(ParseState *pstate, PLpgSQL_expr *expr,
 			}
 			break;
 		default:
-			elog(ERROR, "unrecognized plpgsql itemtype: %d", nse->itemtype);
+			elog(ERROR, "unrecognized plpgsql itemtype: %u", nse->itemtype);
 	}
 
 	/* Name format doesn't match the plpgsql variable type */
@@ -1420,7 +1420,7 @@ plpgsql_parse_word(char *word1, const char *yytxt, bool lookup,
 
 				default:
 					/* plpgsql_ns_lookup should never return anything else */
-					elog(ERROR, "unrecognized plpgsql itemtype: %d",
+					elog(ERROR, "unrecognized plpgsql itemtype: %u",
 						 ns->itemtype);
 			}
 		}
@@ -1912,7 +1912,7 @@ plpgsql_build_variable(const char *refname, int lineno, PLpgSQL_type *dtype,
 			result = NULL;		/* keep compiler quiet */
 			break;
 		default:
-			elog(ERROR, "unrecognized ttype: %d", dtype->ttype);
+			elog(ERROR, "unrecognized ttype: %u", dtype->ttype);
 			result = NULL;		/* keep compiler quiet */
 			break;
 	}
@@ -1992,7 +1992,7 @@ build_row_from_vars(PLpgSQL_variable **vars, int numvars)
 				break;
 
 			default:
-				elog(ERROR, "unrecognized dtype: %d", var->dtype);
+				elog(ERROR, "unrecognized dtype: %u", var->dtype);
 				typoid = InvalidOid;	/* keep compiler quiet */
 				typmod = 0;
 				typcoll = InvalidOid;
