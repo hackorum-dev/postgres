@@ -33,6 +33,19 @@ timestamptz_to_time_t(TimestampTz t)
 	return result;
 }
 
+/* copied from timestamp.c */
+TimestampTz
+time_t_to_timestamptz(pg_time_t tm)
+{
+	TimestampTz result;
+
+	result = (TimestampTz) tm -
+		((POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY);
+	result *= USECS_PER_SEC;
+
+	return result;
+}
+
 /*
  * Stopgap implementation of timestamptz_to_str that doesn't depend on backend
  * infrastructure.  This will work for timestamps that are within the range
