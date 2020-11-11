@@ -6524,6 +6524,8 @@ StartupXLOG(void)
 			ereport(DEBUG1,
 					(errmsg("checkpoint record is at %X/%X",
 							(uint32) (checkPointLoc >> 32), (uint32) checkPointLoc)));
+			ereport(DEBUG1,
+					(errmsg("checkpoint time is %s", str_time(checkPoint.time))));
 			InRecovery = true;	/* force recovery even if SHUTDOWNED */
 
 			/*
@@ -6657,6 +6659,8 @@ StartupXLOG(void)
 			ereport(DEBUG1,
 					(errmsg("checkpoint record is at %X/%X",
 							(uint32) (checkPointLoc >> 32), (uint32) checkPointLoc)));
+			ereport(DEBUG1,
+					(errmsg("checkpoint time is %s", str_time(ControlFile->checkPointCopy.time))));
 		}
 		else
 		{
@@ -8033,7 +8037,9 @@ CheckRecoveryConsistency(void)
 		ereport(LOG,
 				(errmsg("consistent recovery state reached at %X/%X",
 						(uint32) (lastReplayedEndRecPtr >> 32),
-						(uint32) lastReplayedEndRecPtr)));
+						(uint32) lastReplayedEndRecPtr),
+				 errdetail("Last completed checkpoint was at log time %s.",
+						   str_time(ControlFile->checkPointCopy.time))));
 	}
 
 	/*
