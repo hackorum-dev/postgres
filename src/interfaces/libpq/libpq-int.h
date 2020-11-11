@@ -820,4 +820,12 @@ extern char *libpq_ngettext(const char *msgid, const char *msgid_plural, unsigne
 #define SOCK_ERRNO_SET(e) (errno = (e))
 #endif
 
+/*
+ * Embed libpq version information symbols. Client code should use
+ * PQlibVersion() and PQlibVersionString() instead. These are here for
+ * debug/trace tooling and diagnostic purposes.
+ */
+extern const char LIBPQ_VERSION_STR[]; /* libpq compile-time PG_VERSION_STR */
+extern const int LIBPQ_VERSION_NUM;    /* libpq compile-time PG_VERSION_NUM */
+
 #endif							/* LIBPQ_INT_H */

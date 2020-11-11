@@ -179,3 +179,6 @@ PQgetgssctx               176
 PQsetSSLKeyPassHook_OpenSSL         177
 PQgetSSLKeyPassHook_OpenSSL         178
 PQdefaultSSLKeyPassHook_OpenSSL     179
+PQlibVersionString                  180
+LIBPQ_VERSION_STR                   181
+LIBPQ_VERSION_NUM                   182

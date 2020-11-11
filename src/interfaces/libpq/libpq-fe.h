@@ -594,8 +594,11 @@ extern int	lo_export(PGconn *conn, Oid lobjId, const char *filename);
 
 /* === in fe-misc.c === */
 
-/* Get the version of the libpq library in use */
+/* Get the version of the libpq library in use (PG_VERSION_NUM) */
 extern int	PQlibVersion(void);
+
+/* Get the postgres version string for this libpq build (PG_VERSION_STR) */
+extern const char * PQlibVersionString(void);
 
 /* Determine length of multibyte encoded char at *s */
 extern int	PQmblen(const char *s, int encoding);

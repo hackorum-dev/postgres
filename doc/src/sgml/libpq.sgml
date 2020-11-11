@@ -6248,6 +6248,55 @@ int PQlibVersion(void);
        on version 9.1 or later.
       </para>
      </note>
+
+     <para>
+      The value returned by <function>PQlibVersion()</function> is also exposed as the
+      exported symbol <varname>LIBPQ_VERSION_NUM</varname> for use by debuggers and
+      trace tooling. Applications should not reference this directly; call the function
+      instead.
+     </para>
+
+    </listitem>
+   </varlistentry>
+
+   <varlistentry id="libpq-PQlibVersionString">
+    <term>
+      <function>PQlibVersionString</function>
+      <indexterm>
+        <primary>PQlibVersionString</primary>
+        <seealso>PQserverVersion</seealso>
+        <seealso>PQlibVersion</seealso>
+      </indexterm>
+    </term>
+
+    <listitem>
+     <para>
+      Return a string describing the PostgreSQL version that the currently loaded
+      <productname>libpq</productname> binary was compiled against.
+<synopsis>
+const char * PQlibVersion(void);
+</synopsis>
+     </para>
+
+     <para>
+      The return value is a statically allocated string. The caller must not free it.
+     </para>
+
+     <para>
+      Applications should prefer to call <function>PQlibVersion()</function>
+      to determine the major and minor versions. Do not parse this version string
+      to get the numeric version information. Use <function>PQlibVersionString</function>
+      when displaying a detailed version in diagnostic output or debug logs where
+      a more detailed identification of the exact libpq binary may be desirable.
+     </para>
+
+     <para>
+      The value returned by <function>PQlibVersionString()</function> is also exposed as the
+      exported symbol <varname>LIBPQ_VERSION_STR</varname> for use by debuggers and
+      trace tooling. Applications should not reference this directly; call the function
+      instead.
+     </para>
+
     </listitem>
    </varlistentry>
 

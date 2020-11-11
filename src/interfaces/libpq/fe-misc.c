@@ -60,14 +60,33 @@ static int	pqSocketCheck(PGconn *conn, int forRead, int forWrite,
 static int	pqSocketPoll(int sock, int forRead, int forWrite, time_t end_time);
 
 /*
+ * Storage for version information. These are deliberately not static, so they
+ * appear in the symbol table where they can be inspected by debuggers and
+ * trace tools in contexts where a function call isn't possible. They aren't
+ * declared as externs in libpq-fe.h because we want programs to use the
+ * function interfaces instead.
+ */
+const char LIBPQ_VERSION_STR[] = PG_VERSION_STR;
+const int LIBPQ_VERSION_NUM = PG_VERSION_NUM;
+
+/*
  * PQlibVersion: return the libpq version number
  */
 int
 PQlibVersion(void)
 {
-	return PG_VERSION_NUM;
+	return LIBPQ_VERSION_NUM;
 }
 
+/*
+ * PQlibVersionString: return the postgres version that this libpq
+ * was compiled against.
+ */
+const char *
+PQlibVersionString(void)
+{
+	return &LIBPQ_VERSION_STR[0];
+}
 
 /*
  * pqGetc: get 1 character from the connection
