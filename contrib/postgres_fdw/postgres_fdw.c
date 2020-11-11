@@ -17,6 +17,7 @@
 #include "access/htup_details.h"
 #include "access/sysattr.h"
 #include "access/table.h"
+#include "access/tableam.h"
 #include "catalog/pg_class.h"
 #include "commands/defrem.h"
 #include "commands/explain.h"
@@ -237,7 +238,6 @@ typedef struct PgFdwAnalyzeState
 	List	   *retrieved_attrs;	/* attr numbers retrieved by query */
 
 	/* collected sample rows */
-	HeapTuple  *rows;			/* array of size targrows */
 	int			targrows;		/* target # of sample rows */
 	int			numrows;		/* # of sample rows collected */
 
@@ -464,12 +464,11 @@ static void process_query_params(ExprContext *econtext,
 								 FmgrInfo *param_flinfo,
 								 List *param_exprs,
 								 const char **param_values);
-static int	postgresAcquireSampleRowsFunc(Relation relation, int elevel,
-										  HeapTuple *rows, int targrows,
-										  double *totalrows,
-										  double *totaldeadrows);
+static void	postgresAcquireSampleRowsFunc(Relation relation, int elevel,
+										  AnalyzeSampleContext *context);
 static void analyze_row_processor(PGresult *res, int row,
-								  PgFdwAnalyzeState *astate);
+								  PgFdwAnalyzeState *astate,
+								  AnalyzeSampleContext *context);
 static HeapTuple make_tuple_from_result_row(PGresult *res,
 											int row,
 											Relation rel,
@@ -4489,11 +4488,9 @@ postgresAnalyzeForeignTable(Relation relation,
  * may be meaningless, but it's OK because we don't use the estimates
  * currently (the planner only pays attention to correlation for indexscans).
  */
-static int
+static void 
 postgresAcquireSampleRowsFunc(Relation relation, int elevel,
-							  HeapTuple *rows, int targrows,
-							  double *totalrows,
-							  double *totaldeadrows)
+							  AnalyzeSampleContext *context)
 {
 	PgFdwAnalyzeState astate;
 	ForeignTable *table;
@@ -4507,13 +4504,11 @@ postgresAcquireSampleRowsFunc(Relation relation, int elevel,
 	/* Initialize workspace state */
 	astate.rel = relation;
 	astate.attinmeta = TupleDescGetAttInMetadata(RelationGetDescr(relation));
-
-	astate.rows = rows;
-	astate.targrows = targrows;
+	astate.targrows = context->targrows;
 	astate.numrows = 0;
 	astate.samplerows = 0;
 	astate.rowstoskip = -1;		/* -1 means not set yet */
-	reservoir_init_selection_state(&astate.rstate, targrows);
+	reservoir_init_selection_state(&astate.rstate, astate.targrows);
 
 	/* Remember ANALYZE context, and create a per-tuple temp context */
 	astate.anl_cxt = CurrentMemoryContext;
@@ -4605,7 +4600,7 @@ postgresAcquireSampleRowsFunc(Relation relation, int elevel,
 			/* Process whatever we got. */
 			numrows = PQntuples(res);
 			for (i = 0; i < numrows; i++)
-				analyze_row_processor(res, i, &astate);
+				analyze_row_processor(res, i, &astate, context);
 
 			PQclear(res);
 			res = NULL;
@@ -4629,10 +4624,13 @@ postgresAcquireSampleRowsFunc(Relation relation, int elevel,
 	ReleaseConnection(conn);
 
 	/* We assume that we have no dead tuple. */
-	*totaldeadrows = 0.0;
+	context->totaldeadrows = 0.0;
 
 	/* We've retrieved all living tuples from foreign server. */
-	*totalrows = astate.samplerows;
+	context->totalrows += astate.samplerows;
+
+	/* Increase the number of sample rows stored in the context */
+	context->totalsampledrows += astate.numrows;
 
 	/*
 	 * Emit some interesting relation info
@@ -4641,8 +4639,6 @@ postgresAcquireSampleRowsFunc(Relation relation, int elevel,
 			(errmsg("\"%s\": table contains %.0f rows, %d rows in sample",
 					RelationGetRelationName(relation),
 					astate.samplerows, astate.numrows)));
-
-	return astate.numrows;
 }
 
 /*
@@ -4651,10 +4647,11 @@ postgresAcquireSampleRowsFunc(Relation relation, int elevel,
  *	 - Subsequently, replace already-sampled tuples randomly.
  */
 static void
-analyze_row_processor(PGresult *res, int row, PgFdwAnalyzeState *astate)
+analyze_row_processor(PGresult *res, int row, PgFdwAnalyzeState *astate, AnalyzeSampleContext *context)
 {
 	int			targrows = astate->targrows;
 	int			pos;			/* array index to store tuple in */
+	bool		replace;
 	MemoryContext oldcontext;
 
 	/* Always increment sample row counter. */
@@ -4668,6 +4665,7 @@ analyze_row_processor(PGresult *res, int row, PgFdwAnalyzeState *astate)
 	{
 		/* First targrows rows are always included into the sample */
 		pos = astate->numrows++;
+		replace = false;
 	}
 	else
 	{
@@ -4684,7 +4682,7 @@ analyze_row_processor(PGresult *res, int row, PgFdwAnalyzeState *astate)
 			/* Choose a random reservoir element to replace. */
 			pos = (int) (targrows * sampler_random_fract(astate->rstate.randstate));
 			Assert(pos >= 0 && pos < targrows);
-			heap_freetuple(astate->rows[pos]);
+			replace = true;
 		}
 		else
 		{
@@ -4697,18 +4695,22 @@ analyze_row_processor(PGresult *res, int row, PgFdwAnalyzeState *astate)
 
 	if (pos >= 0)
 	{
+		HeapTuple		tuple;
 		/*
 		 * Create sample tuple from current result row, and store it in the
 		 * position determined above.  The tuple has to be created in anl_cxt.
 		 */
 		oldcontext = MemoryContextSwitchTo(astate->anl_cxt);
 
-		astate->rows[pos] = make_tuple_from_result_row(res, row,
-													   astate->rel,
-													   astate->attinmeta,
-													   astate->retrieved_attrs,
-													   NULL,
-													   astate->temp_cxt);
+		tuple = make_tuple_from_result_row(res, row,
+										   astate->rel,
+										   astate->attinmeta,
+										   astate->retrieved_attrs,
+										   NULL,
+										   astate->temp_cxt);
+
+		/* Tuple is already created in anl_cxt, we can record it directly */
+		AnalyzeRecordSampleRow(context, NULL, tuple, ANALYZE_SAMPLE_DATA, pos, replace, false);
 
 		MemoryContextSwitchTo(oldcontext);
 	}
