@@ -15,7 +15,6 @@
 #include "storage/block.h"
 #include "utils/relcache.h"
 
-
 /*
  * amproc indexes for inverted indexes.
  */
@@ -53,18 +52,11 @@ typedef struct GinStatsData
  * A ternary value used by tri-consistent functions.
  *
  * This must be of the same size as a bool because some code will cast a
- * pointer to a bool to a pointer to a GinTernaryValue.
+ * pointer to a bool to a pointer to a TSTernaryValue.
  */
-typedef char GinTernaryValue;
-
-#define GIN_FALSE		0		/* item is not present / does not match */
-#define GIN_TRUE		1		/* item is present / matches */
-#define GIN_MAYBE		2		/* don't know if item is present / don't know
-								 * if matches */
-
-#define DatumGetGinTernaryValue(X) ((GinTernaryValue)(X))
-#define GinTernaryValueGetDatum(X) ((Datum)(X))
-#define PG_RETURN_GIN_TERNARY_VALUE(x) return GinTernaryValueGetDatum(x)
+#define DatumGetTSTernaryValue(X) ((TSTernaryValue)(X))
+#define TSTernaryValueGetDatum(X) ((Datum)(X))
+#define PG_RETURN_TERNARY_VALUE(x) return TSTernaryValueGetDatum(x)
 
 /* GUC parameters */
 extern PGDLLIMPORT int GinFuzzySearchLimit;

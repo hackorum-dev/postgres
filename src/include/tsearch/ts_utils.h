@@ -124,13 +124,15 @@ extern text *generateHeadline(HeadlineParsedText *prs);
  * whether a given primitive tsquery value is matched in the data.
  */
 
-/* TS_execute requires ternary logic to handle NOT with phrase matches */
-typedef enum
-{
-	TS_NO,						/* definitely no match */
-	TS_YES,						/* definitely does match */
-	TS_MAYBE					/* can't verify match for lack of pos data */
-} TSTernaryValue;
+/* TS_execute requires ternary logic to handle NOT with phrase matches.
+ * This must be of the same size as a bool because some code will cast a
+ * pointer to a bool to a pointer to a TSTernaryValue
+ */
+typedef char TSTernaryValue;
+
+#define	TS_NO 		0						/* definitely no match */
+#define	TS_YES 		1						/* definitely does match */
+#define	TS_MAYBE 	2						/* can't verify match for lack of pos data */
 
 /*
  * struct ExecPhraseData is passed to a TSExecuteCallback function if we need

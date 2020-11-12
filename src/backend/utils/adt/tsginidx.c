@@ -173,7 +173,7 @@ gin_extract_tsquery(PG_FUNCTION_ARGS)
 typedef struct
 {
 	QueryItem  *first_item;
-	GinTernaryValue *check;
+	TSTernaryValue *check;
 	int		   *map_item_operand;
 	bool	   *need_recheck;
 } GinChkVal;
@@ -201,18 +201,13 @@ checkcondition_gin(void *checkval, QueryOperand *val, ExecPhraseData *data)
 	 * return presence of current entry in indexed value; but TRUE becomes
 	 * MAYBE in the presence of a query requiring recheck
 	 */
-	if (gcv->check[j] == GIN_TRUE)
+	if (gcv->check[j] == TS_YES)
 	{
 		if (val->weight != 0 || data != NULL)
 			return TS_MAYBE;
 	}
 
-	/*
-	 * We rely on GinTernaryValue and TSTernaryValue using equivalent value
-	 * assignments.  We could use a switch statement to map the values if that
-	 * ever stops being true, but it seems unlikely to happen.
-	 */
-	return (TSTernaryValue) gcv->check[j];
+	return gcv->check[j];
 }
 
 Datum
@@ -234,15 +229,14 @@ gin_tsquery_consistent(PG_FUNCTION_ARGS)
 	if (query->size > 0)
 	{
 		GinChkVal	gcv;
-
 		/*
 		 * check-parameter array has one entry for each value (operand) in the
 		 * query.
 		 */
 		gcv.first_item = GETQUERY(query);
-		StaticAssertStmt(sizeof(GinTernaryValue) == sizeof(bool),
-						 "sizes of GinTernaryValue and bool are not equal");
-		gcv.check = (GinTernaryValue *) check;
+		StaticAssertStmt(sizeof(TSTernaryValue) == sizeof(bool),
+						 "sizes of TSTernaryValue and bool are not equal");
+		gcv.check = (TSTernaryValue *) check;
 		gcv.map_item_operand = (int *) (extra_data[0]);
 		gcv.need_recheck = recheck;
 
@@ -258,14 +252,14 @@ gin_tsquery_consistent(PG_FUNCTION_ARGS)
 Datum
 gin_tsquery_triconsistent(PG_FUNCTION_ARGS)
 {
-	GinTernaryValue *check = (GinTernaryValue *) PG_GETARG_POINTER(0);
+	TSTernaryValue *check = (TSTernaryValue *) PG_GETARG_POINTER(0);
 
 	/* StrategyNumber strategy = PG_GETARG_UINT16(1); */
 	TSQuery		query = PG_GETARG_TSQUERY(2);
 
 	/* int32	nkeys = PG_GETARG_INT32(3); */
 	Pointer    *extra_data = (Pointer *) PG_GETARG_POINTER(4);
-	GinTernaryValue res = GIN_FALSE;
+	TSTernaryValue res = TS_NO;
 	bool		recheck;
 
 	/* Initially assume query doesn't require recheck */
@@ -288,10 +282,10 @@ gin_tsquery_triconsistent(PG_FUNCTION_ARGS)
 					   &gcv,
 					   TS_EXEC_PHRASE_NO_POS,
 					   checkcondition_gin))
-			res = recheck ? GIN_MAYBE : GIN_TRUE;
+			res = recheck ? TS_MAYBE : TS_YES;
 	}
 
-	PG_RETURN_GIN_TERNARY_VALUE(res);
+	PG_RETURN_TERNARY_VALUE(res);
 }
 
 /*

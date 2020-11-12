@@ -326,7 +326,7 @@
     </varlistentry>
 
     <varlistentry>
-     <term><function>GinTernaryValue triConsistent(GinTernaryValue check[], StrategyNumber n, Datum query,
+     <term><function>TSTernaryValue triConsistent(TSTernaryValue check[], StrategyNumber n, Datum query,
         int32 nkeys, Pointer extra_data[],
         Datum queryKeys[], bool nullFlags[])</function></term>
      <listitem>
@@ -334,22 +334,22 @@
        <function>triConsistent</function> is similar to <function>consistent</function>,
        but instead of Booleans in the <literal>check</literal> vector, there are
        three possible values for each
-       key: <literal>GIN_TRUE</literal>, <literal>GIN_FALSE</literal> and
-       <literal>GIN_MAYBE</literal>. <literal>GIN_FALSE</literal> and <literal>GIN_TRUE</literal>
+       key: <literal>TS_YES</literal>, <literal>TS_NO</literal> and
+       <literal>TS_MAYBE</literal>. <literal>TS_NO</literal> and <literal>TS_YES</literal>
        have the same meaning as regular Boolean values, while
-       <literal>GIN_MAYBE</literal> means that the presence of that key is not known.
-       When <literal>GIN_MAYBE</literal> values are present, the function should only
-       return <literal>GIN_TRUE</literal> if the item certainly matches whether or
+       <literal>TS_MAYBE</literal> means that the presence of that key is not known.
+       When <literal>TS_MAYBE</literal> values are present, the function should only
+       return <literal>TS_YES</literal> if the item certainly matches whether or
        not the index item contains the corresponding query keys. Likewise, the
-       function must return <literal>GIN_FALSE</literal> only if the item certainly
-       does not match, whether or not it contains the <literal>GIN_MAYBE</literal>
-       keys. If the result depends on the <literal>GIN_MAYBE</literal> entries, i.e.,
+       function must return <literal>TS_NO</literal> only if the item certainly
+       does not match, whether or not it contains the <literal>TS_MAYBE</literal>
+       keys. If the result depends on the <literal>TS_MAYBE</literal> entries, i.e.,
        the match cannot be confirmed or refuted based on the known query keys,
-       the function must return <literal>GIN_MAYBE</literal>.
+       the function must return <literal>TS_MAYBE</literal>.
       </para>
       <para>
-       When there are no <literal>GIN_MAYBE</literal> values in the <literal>check</literal>
-       vector, a <literal>GIN_MAYBE</literal> return value is the equivalent of
+       When there are no <literal>TS_MAYBE</literal> values in the <literal>check</literal>
+       vector, a <literal>TS_MAYBE</literal> return value is the equivalent of
        setting the <literal>recheck</literal> flag in the
        Boolean <function>consistent</function> function.
       </para>

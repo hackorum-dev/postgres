@@ -7,6 +7,7 @@
 #include "access/stratnum.h"
 #include "fmgr.h"
 #include "trgm.h"
+#include "tsearch/ts_utils.h"
 
 PG_FUNCTION_INFO_V1(gin_extract_trgm);
 PG_FUNCTION_INFO_V1(gin_extract_value_trgm);
@@ -257,21 +258,21 @@ gin_trgm_consistent(PG_FUNCTION_ARGS)
 }
 
 /*
- * In all cases, GIN_TRUE is at least as favorable to inclusion as
- * GIN_MAYBE. If no better option is available, simply treat
- * GIN_MAYBE as if it were GIN_TRUE and apply the same test as the binary
+ * In all cases, TS_YES is at least as favorable to inclusion as
+ * TS_MAYBE. If no better option is available, simply treat
+ * TS_MAYBE as if it were TS_YES and apply the same test as the binary
  * consistent function.
  */
 Datum
 gin_trgm_triconsistent(PG_FUNCTION_ARGS)
 {
-	GinTernaryValue *check = (GinTernaryValue *) PG_GETARG_POINTER(0);
+	TSTernaryValue *check = (TSTernaryValue *) PG_GETARG_POINTER(0);
 	StrategyNumber strategy = PG_GETARG_UINT16(1);
 
 	/* text    *query = PG_GETARG_TEXT_PP(2); */
 	int32		nkeys = PG_GETARG_INT32(3);
 	Pointer    *extra_data = (Pointer *) PG_GETARG_POINTER(4);
-	GinTernaryValue res = GIN_MAYBE;
+	TSTernaryValue res = TS_MAYBE;
 	int32		i,
 				ntrue;
 	bool	   *boolcheck;
@@ -288,7 +289,7 @@ gin_trgm_triconsistent(PG_FUNCTION_ARGS)
 			ntrue = 0;
 			for (i = 0; i < nkeys; i++)
 			{
-				if (check[i] != GIN_FALSE)
+				if (check[i] != TS_NO)
 					ntrue++;
 			}
 
@@ -297,8 +298,8 @@ gin_trgm_triconsistent(PG_FUNCTION_ARGS)
 			 * formula
 			 */
 			res = (nkeys == 0)
-				? GIN_FALSE : (((((float4) ntrue) / ((float4) nkeys)) >= nlimit)
-							   ? GIN_MAYBE : GIN_FALSE);
+				? TS_NO : (((((float4) ntrue) / ((float4) nkeys)) >= nlimit)
+							   ? TS_MAYBE : TS_NO);
 			break;
 		case ILikeStrategyNumber:
 #ifndef IGNORECASE
@@ -307,12 +308,12 @@ gin_trgm_triconsistent(PG_FUNCTION_ARGS)
 			/* FALL THRU */
 		case LikeStrategyNumber:
 			/* Check if all extracted trigrams are presented. */
-			res = GIN_MAYBE;
+			res = TS_MAYBE;
 			for (i = 0; i < nkeys; i++)
 			{
-				if (check[i] == GIN_FALSE)
+				if (check[i] == TS_NO)
 				{
-					res = GIN_FALSE;
+					res = TS_NO;
 					break;
 				}
 			}
@@ -326,31 +327,31 @@ gin_trgm_triconsistent(PG_FUNCTION_ARGS)
 			if (nkeys < 1)
 			{
 				/* Regex processing gave no result: do full index scan */
-				res = GIN_MAYBE;
+				res = TS_MAYBE;
 			}
 			else
 			{
 				/*
 				 * As trigramsMatchGraph implements a monotonic boolean
-				 * function, promoting all GIN_MAYBE keys to GIN_TRUE will
+				 * function, promoting all TS_MAYBE keys to TS_YES will
 				 * give a conservative result.
 				 */
 				boolcheck = (bool *) palloc(sizeof(bool) * nkeys);
 				for (i = 0; i < nkeys; i++)
-					boolcheck[i] = (check[i] != GIN_FALSE);
+					boolcheck[i] = (check[i] != TS_NO);
 				if (!trigramsMatchGraph((TrgmPackedGraph *) extra_data[0],
 										boolcheck))
-					res = GIN_FALSE;
+					res = TS_NO;
 				pfree(boolcheck);
 			}
 			break;
 		default:
 			elog(ERROR, "unrecognized strategy number: %d", strategy);
-			res = GIN_FALSE;	/* keep compiler quiet */
+			res = TS_NO;	/* keep compiler quiet */
 			break;
 	}
 
 	/* All cases served by this function are inexact */
-	Assert(res != GIN_TRUE);
-	PG_RETURN_GIN_TERNARY_VALUE(res);
+	Assert(res != TS_YES);
+	PG_RETURN_TERNARY_VALUE(res);
 }

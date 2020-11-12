@@ -18,7 +18,7 @@
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
-
+#include "tsearch/ts_utils.h"
 
 #define GinOverlapStrategy		1
 #define GinContainsStrategy		2
@@ -225,7 +225,7 @@ ginarrayconsistent(PG_FUNCTION_ARGS)
 Datum
 ginarraytriconsistent(PG_FUNCTION_ARGS)
 {
-	GinTernaryValue *check = (GinTernaryValue *) PG_GETARG_POINTER(0);
+	TSTernaryValue *check = (TSTernaryValue *) PG_GETARG_POINTER(0);
 	StrategyNumber strategy = PG_GETARG_UINT16(1);
 
 	/* ArrayType  *query = PG_GETARG_ARRAYTYPE_P(2); */
@@ -234,49 +234,49 @@ ginarraytriconsistent(PG_FUNCTION_ARGS)
 	/* Pointer	   *extra_data = (Pointer *) PG_GETARG_POINTER(4); */
 	/* Datum	   *queryKeys = (Datum *) PG_GETARG_POINTER(5); */
 	bool	   *nullFlags = (bool *) PG_GETARG_POINTER(6);
-	GinTernaryValue res;
+	TSTernaryValue res;
 	int32		i;
 
 	switch (strategy)
 	{
 		case GinOverlapStrategy:
 			/* must have a match for at least one non-null element */
-			res = GIN_FALSE;
+			res = TS_NO;
 			for (i = 0; i < nkeys; i++)
 			{
 				if (!nullFlags[i])
 				{
-					if (check[i] == GIN_TRUE)
+					if (check[i] == TS_YES)
 					{
-						res = GIN_TRUE;
+						res = TS_YES;
 						break;
 					}
-					else if (check[i] == GIN_MAYBE && res == GIN_FALSE)
+					else if (check[i] == TS_MAYBE && res == TS_NO)
 					{
-						res = GIN_MAYBE;
+						res = TS_MAYBE;
 					}
 				}
 			}
 			break;
 		case GinContainsStrategy:
 			/* must have all elements in check[] true, and no nulls */
-			res = GIN_TRUE;
+			res = TS_YES;
 			for (i = 0; i < nkeys; i++)
 			{
-				if (check[i] == GIN_FALSE || nullFlags[i])
+				if (check[i] == TS_NO || nullFlags[i])
 				{
-					res = GIN_FALSE;
+					res = TS_NO;
 					break;
 				}
-				if (check[i] == GIN_MAYBE)
+				if (check[i] == TS_MAYBE)
 				{
-					res = GIN_MAYBE;
+					res = TS_MAYBE;
 				}
 			}
 			break;
 		case GinContainedStrategy:
 			/* can't do anything else useful here */
-			res = GIN_MAYBE;
+			res = TS_MAYBE;
 			break;
 		case GinEqualStrategy:
 
@@ -285,12 +285,12 @@ ginarraytriconsistent(PG_FUNCTION_ARGS)
 			 * against nulls here.  This is because array_contain_compare and
 			 * array_eq handle nulls differently ...
 			 */
-			res = GIN_MAYBE;
+			res = TS_MAYBE;
 			for (i = 0; i < nkeys; i++)
 			{
-				if (check[i] == GIN_FALSE)
+				if (check[i] == TS_NO)
 				{
-					res = GIN_FALSE;
+					res = TS_NO;
 					break;
 				}
 			}
@@ -301,5 +301,5 @@ ginarraytriconsistent(PG_FUNCTION_ARGS)
 			res = false;
 	}
 
-	PG_RETURN_GIN_TERNARY_VALUE(res);
+	PG_RETURN_TERNARY_VALUE(res);
 }

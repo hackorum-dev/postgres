@@ -69,6 +69,7 @@
 #include "utils/jsonb.h"
 #include "utils/jsonpath.h"
 #include "utils/varlena.h"
+#include "tsearch/ts_utils.h"
 
 typedef struct PathHashStack
 {
@@ -428,7 +429,7 @@ jsonb_ops__extract_nodes(JsonPathGinContext *cxt, JsonPathGinPath path,
 		if (scalar->type == jbvString)
 		{
 			JsonPathGinPathItem *last = path.items;
-			GinTernaryValue key_entry;
+			TSTernaryValue key_entry;
 
 			/*
 			 * Assuming that jsonb_ops interprets string array elements as
@@ -439,17 +440,17 @@ jsonb_ops__extract_nodes(JsonPathGinContext *cxt, JsonPathGinPath path,
 			 */
 
 			if (cxt->lax)
-				key_entry = GIN_MAYBE;
+				key_entry = TS_MAYBE;
 			else if (!last)		/* root ($) */
-				key_entry = GIN_FALSE;
+				key_entry = TS_NO;
 			else if (last->type == jpiAnyArray || last->type == jpiIndexArray)
-				key_entry = GIN_TRUE;
+				key_entry = TS_YES;
 			else if (last->type == jpiAny)
-				key_entry = GIN_MAYBE;
+				key_entry = TS_MAYBE;
 			else
-				key_entry = GIN_FALSE;
+				key_entry = TS_NO;
 
-			if (key_entry == GIN_MAYBE)
+			if (key_entry == TS_MAYBE)
 			{
 				JsonPathGinNode *n1 = make_jsp_entry_node_scalar(scalar, true);
 				JsonPathGinNode *n2 = make_jsp_entry_node_scalar(scalar, false);
@@ -459,7 +460,7 @@ jsonb_ops__extract_nodes(JsonPathGinContext *cxt, JsonPathGinPath path,
 			else
 			{
 				node = make_jsp_entry_node_scalar(scalar,
-												  key_entry == GIN_TRUE);
+												  key_entry == TS_YES);
 			}
 		}
 		else
@@ -793,38 +794,38 @@ extract_jsp_query(JsonPath *jp, StrategyNumber strat, bool pathOps,
 
 /*
  * Recursively execute jsonpath expression.
- * 'check' is a bool[] or a GinTernaryValue[] depending on 'ternary' flag.
+ * 'check' is a bool[] or a TSTernaryValue[] depending on 'ternary' flag.
  */
-static GinTernaryValue
+static TSTernaryValue
 execute_jsp_gin_node(JsonPathGinNode *node, void *check, bool ternary)
 {
-	GinTernaryValue res;
-	GinTernaryValue v;
+	TSTernaryValue res;
+	TSTernaryValue v;
 	int			i;
 
 	switch (node->type)
 	{
 		case JSP_GIN_AND:
-			res = GIN_TRUE;
+			res = TS_YES;
 			for (i = 0; i < node->val.nargs; i++)
 			{
 				v = execute_jsp_gin_node(node->args[i], check, ternary);
-				if (v == GIN_FALSE)
-					return GIN_FALSE;
-				else if (v == GIN_MAYBE)
-					res = GIN_MAYBE;
+				if (v == TS_NO)
+					return TS_NO;
+				else if (v == TS_MAYBE)
+					res = TS_MAYBE;
 			}
 			return res;
 
 		case JSP_GIN_OR:
-			res = GIN_FALSE;
+			res = TS_NO;
 			for (i = 0; i < node->val.nargs; i++)
 			{
 				v = execute_jsp_gin_node(node->args[i], check, ternary);
-				if (v == GIN_TRUE)
-					return GIN_TRUE;
-				else if (v == GIN_MAYBE)
-					res = GIN_MAYBE;
+				if (v == TS_YES)
+					return TS_YES;
+				else if (v == TS_MAYBE)
+					res = TS_MAYBE;
 			}
 			return res;
 
@@ -833,14 +834,14 @@ execute_jsp_gin_node(JsonPathGinNode *node, void *check, bool ternary)
 				int			index = node->val.entryIndex;
 
 				if (ternary)
-					return ((GinTernaryValue *) check)[index];
+					return ((TSTernaryValue *) check)[index];
 				else
-					return ((bool *) check)[index] ? GIN_TRUE : GIN_FALSE;
+					return ((bool *) check)[index] ? TS_YES : TS_NO;
 			}
 
 		default:
 			elog(ERROR, "invalid jsonpath gin node type: %d", node->type);
-			return GIN_FALSE;	/* keep compiler quiet */
+			return TS_NO;	/* keep compiler quiet */
 	}
 }
 
@@ -1001,7 +1002,7 @@ gin_consistent_jsonb(PG_FUNCTION_ARGS)
 		{
 			Assert(extra_data && extra_data[0]);
 			res = execute_jsp_gin_node((JsonPathGinNode *) extra_data[0], check,
-									   false) != GIN_FALSE;
+									   false) != TS_NO;
 		}
 	}
 	else
@@ -1013,17 +1014,17 @@ gin_consistent_jsonb(PG_FUNCTION_ARGS)
 Datum
 gin_triconsistent_jsonb(PG_FUNCTION_ARGS)
 {
-	GinTernaryValue *check = (GinTernaryValue *) PG_GETARG_POINTER(0);
+	TSTernaryValue *check = (TSTernaryValue *) PG_GETARG_POINTER(0);
 	StrategyNumber strategy = PG_GETARG_UINT16(1);
 
 	/* Jsonb	   *query = PG_GETARG_JSONB_P(2); */
 	int32		nkeys = PG_GETARG_INT32(3);
 	Pointer    *extra_data = (Pointer *) PG_GETARG_POINTER(4);
-	GinTernaryValue res = GIN_MAYBE;
+	TSTernaryValue res = TS_MAYBE;
 	int32		i;
 
 	/*
-	 * Note that we never return GIN_TRUE, only GIN_MAYBE or GIN_FALSE; this
+	 * Note that we never return TS_YES, only TS_MAYBE or TS_NO; this
 	 * corresponds to always forcing recheck in the regular consistent
 	 * function, for the reasons listed there.
 	 */
@@ -1033,9 +1034,9 @@ gin_triconsistent_jsonb(PG_FUNCTION_ARGS)
 		/* All extracted keys must be present */
 		for (i = 0; i < nkeys; i++)
 		{
-			if (check[i] == GIN_FALSE)
+			if (check[i] == TS_NO)
 			{
-				res = GIN_FALSE;
+				res = TS_NO;
 				break;
 			}
 		}
@@ -1044,13 +1045,13 @@ gin_triconsistent_jsonb(PG_FUNCTION_ARGS)
 			 strategy == JsonbExistsAnyStrategyNumber)
 	{
 		/* At least one extracted key must be present */
-		res = GIN_FALSE;
+		res = TS_NO;
 		for (i = 0; i < nkeys; i++)
 		{
-			if (check[i] == GIN_TRUE ||
-				check[i] == GIN_MAYBE)
+			if (check[i] == TS_YES ||
+				check[i] == TS_MAYBE)
 			{
-				res = GIN_MAYBE;
+				res = TS_MAYBE;
 				break;
 			}
 		}
@@ -1065,14 +1066,14 @@ gin_triconsistent_jsonb(PG_FUNCTION_ARGS)
 									   true);
 
 			/* Should always recheck the result */
-			if (res == GIN_TRUE)
-				res = GIN_MAYBE;
+			if (res == TS_YES)
+				res = TS_MAYBE;
 		}
 	}
 	else
 		elog(ERROR, "unrecognized strategy number: %d", strategy);
 
-	PG_RETURN_GIN_TERNARY_VALUE(res);
+	PG_RETURN_TERNARY_VALUE(res);
 }
 
 /*
@@ -1260,7 +1261,7 @@ gin_consistent_jsonb_path(PG_FUNCTION_ARGS)
 		{
 			Assert(extra_data && extra_data[0]);
 			res = execute_jsp_gin_node((JsonPathGinNode *) extra_data[0], check,
-									   false) != GIN_FALSE;
+									   false) != TS_NO;
 		}
 	}
 	else
@@ -1272,27 +1273,27 @@ gin_consistent_jsonb_path(PG_FUNCTION_ARGS)
 Datum
 gin_triconsistent_jsonb_path(PG_FUNCTION_ARGS)
 {
-	GinTernaryValue *check = (GinTernaryValue *) PG_GETARG_POINTER(0);
+	TSTernaryValue *check = (TSTernaryValue *) PG_GETARG_POINTER(0);
 	StrategyNumber strategy = PG_GETARG_UINT16(1);
 
 	/* Jsonb	   *query = PG_GETARG_JSONB_P(2); */
 	int32		nkeys = PG_GETARG_INT32(3);
 	Pointer    *extra_data = (Pointer *) PG_GETARG_POINTER(4);
-	GinTernaryValue res = GIN_MAYBE;
+	TSTernaryValue res = TS_MAYBE;
 	int32		i;
 
 	if (strategy == JsonbContainsStrategyNumber)
 	{
 		/*
-		 * Note that we never return GIN_TRUE, only GIN_MAYBE or GIN_FALSE;
+		 * Note that we never return TS_YES, only TS_MAYBE or TS_NO;
 		 * this corresponds to always forcing recheck in the regular
 		 * consistent function, for the reasons listed there.
 		 */
 		for (i = 0; i < nkeys; i++)
 		{
-			if (check[i] == GIN_FALSE)
+			if (check[i] == TS_NO)
 			{
-				res = GIN_FALSE;
+				res = TS_NO;
 				break;
 			}
 		}
@@ -1307,14 +1308,14 @@ gin_triconsistent_jsonb_path(PG_FUNCTION_ARGS)
 									   true);
 
 			/* Should always recheck the result */
-			if (res == GIN_TRUE)
-				res = GIN_MAYBE;
+			if (res == TS_YES)
+				res = TS_MAYBE;
 		}
 	}
 	else
 		elog(ERROR, "unrecognized strategy number: %d", strategy);
 
-	PG_RETURN_GIN_TERNARY_VALUE(res);
+	PG_RETURN_TERNARY_VALUE(res);
 }
 
 /*

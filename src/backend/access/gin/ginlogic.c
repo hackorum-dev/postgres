@@ -10,7 +10,7 @@
  *
  * Providing a boolean interface when the opclass implements only the
  * ternary function is straightforward - just call the ternary function
- * with the check-array as is, and map the GIN_TRUE, GIN_FALSE, GIN_MAYBE
+ * with the check-array as is, and map the TS_YES, TS_NO, TS_MAYBE
  * return codes to TRUE, FALSE and TRUE+recheck, respectively.  Providing
  * a ternary interface when the opclass only implements a boolean function
  * is implemented by calling the boolean function many times, with all the
@@ -58,10 +58,10 @@ trueConsistentFn(GinScanKey key)
 	key->recheckCurItem = false;
 	return true;
 }
-static GinTernaryValue
+static TSTernaryValue
 trueTriConsistentFn(GinScanKey key)
 {
-	return GIN_TRUE;
+	return TS_YES;
 }
 
 /*
@@ -91,10 +91,10 @@ directBoolConsistentFn(GinScanKey key)
 /*
  * A helper function for calling a native ternary logic consistent function.
  */
-static GinTernaryValue
+static TSTernaryValue
 directTriConsistentFn(GinScanKey key)
 {
-	return DatumGetGinTernaryValue(FunctionCall7Coll(key->triConsistentFmgrInfo,
+	return DatumGetTSTernaryValue(FunctionCall7Coll(key->triConsistentFmgrInfo,
 													 key->collation,
 													 PointerGetDatum(key->entryRes),
 													 UInt16GetDatum(key->strategy),
@@ -107,15 +107,15 @@ directTriConsistentFn(GinScanKey key)
 
 /*
  * This function implements a binary logic consistency check, using a ternary
- * logic consistent function provided by the opclass. GIN_MAYBE return value
+ * logic consistent function provided by the opclass. TS_MAYBE return value
  * is interpreted as true with recheck flag.
  */
 static bool
 shimBoolConsistentFn(GinScanKey key)
 {
-	GinTernaryValue result;
+	TSTernaryValue result;
 
-	result = DatumGetGinTernaryValue(FunctionCall7Coll(key->triConsistentFmgrInfo,
+	result = DatumGetTSTernaryValue(FunctionCall7Coll(key->triConsistentFmgrInfo,
 													   key->collation,
 													   PointerGetDatum(key->entryRes),
 													   UInt16GetDatum(key->strategy),
@@ -124,7 +124,7 @@ shimBoolConsistentFn(GinScanKey key)
 													   PointerGetDatum(key->extra_data),
 													   PointerGetDatum(key->queryValues),
 													   PointerGetDatum(key->queryCategories)));
-	if (result == GIN_MAYBE)
+	if (result == TS_MAYBE)
 	{
 		key->recheckCurItem = true;
 		return true;
@@ -148,7 +148,7 @@ shimBoolConsistentFn(GinScanKey key)
  *
  * NB: This function modifies the key->entryRes array!
  */
-static GinTernaryValue
+static TSTernaryValue
 shimTriConsistentFn(GinScanKey key)
 {
 	int			nmaybe;
@@ -156,7 +156,7 @@ shimTriConsistentFn(GinScanKey key)
 	int			i;
 	bool		boolResult;
 	bool		recheck = false;
-	GinTernaryValue curResult;
+	TSTernaryValue curResult;
 
 	/*
 	 * Count how many MAYBE inputs there are, and store their indexes in
@@ -166,10 +166,10 @@ shimTriConsistentFn(GinScanKey key)
 	nmaybe = 0;
 	for (i = 0; i < key->nentries; i++)
 	{
-		if (key->entryRes[i] == GIN_MAYBE)
+		if (key->entryRes[i] == TS_MAYBE)
 		{
 			if (nmaybe >= MAX_MAYBE_ENTRIES)
-				return GIN_MAYBE;
+				return TS_MAYBE;
 			maybeEntries[nmaybe++] = i;
 		}
 	}
@@ -183,7 +183,7 @@ shimTriConsistentFn(GinScanKey key)
 
 	/* First call consistent function with all the maybe-inputs set FALSE */
 	for (i = 0; i < nmaybe; i++)
-		key->entryRes[maybeEntries[i]] = GIN_FALSE;
+		key->entryRes[maybeEntries[i]] = TS_NO;
 	curResult = directBoolConsistentFn(key);
 
 	for (;;)
@@ -191,13 +191,13 @@ shimTriConsistentFn(GinScanKey key)
 		/* Twiddle the entries for next combination. */
 		for (i = 0; i < nmaybe; i++)
 		{
-			if (key->entryRes[maybeEntries[i]] == GIN_FALSE)
+			if (key->entryRes[maybeEntries[i]] == TS_NO)
 			{
-				key->entryRes[maybeEntries[i]] = GIN_TRUE;
+				key->entryRes[maybeEntries[i]] = TS_YES;
 				break;
 			}
 			else
-				key->entryRes[maybeEntries[i]] = GIN_FALSE;
+				key->entryRes[maybeEntries[i]] = TS_NO;
 		}
 		if (i == nmaybe)
 			break;
@@ -206,12 +206,12 @@ shimTriConsistentFn(GinScanKey key)
 		recheck |= key->recheckCurItem;
 
 		if (curResult != boolResult)
-			return GIN_MAYBE;
+			return TS_MAYBE;
 	}
 
 	/* TRUE with recheck is taken to mean MAYBE */
-	if (curResult == GIN_TRUE && recheck)
-		curResult = GIN_MAYBE;
+	if (curResult == TS_YES && recheck)
+		curResult = TS_MAYBE;
 
 	return curResult;
 }

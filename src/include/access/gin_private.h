@@ -18,6 +18,7 @@
 #include "fmgr.h"
 #include "lib/rbtree.h"
 #include "storage/bufmgr.h"
+#include "tsearch/ts_utils.h"
 
 /*
  * Storage type for GIN's reloptions
@@ -286,9 +287,9 @@ typedef struct GinScanKeyData
 	int			nadditional;
 
 	/* array of check flags, reported to consistentFn */
-	GinTernaryValue *entryRes;
+	TSTernaryValue *entryRes;
 	bool		(*boolConsistentFn) (GinScanKey key);
-	GinTernaryValue (*triConsistentFn) (GinScanKey key);
+	TSTernaryValue (*triConsistentFn) (GinScanKey key);
 	FmgrInfo   *consistentFmgrInfo;
 	FmgrInfo   *triConsistentFmgrInfo;
 	Oid			collation;

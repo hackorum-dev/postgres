@@ -559,11 +559,11 @@ startScanKey(GinState *ginstate, GinScanOpaque so, GinScanKey key)
 		{
 			/* Pass all entries <= i as FALSE, and the rest as MAYBE */
 			for (j = 0; j <= i; j++)
-				key->entryRes[entryIndexes[j]] = GIN_FALSE;
+				key->entryRes[entryIndexes[j]] = TS_NO;
 			for (j = i + 1; j < key->nentries; j++)
-				key->entryRes[entryIndexes[j]] = GIN_MAYBE;
+				key->entryRes[entryIndexes[j]] = TS_MAYBE;
 
-			if (key->triConsistentFn(key) == GIN_FALSE)
+			if (key->triConsistentFn(key) == TS_NO)
 				break;
 		}
 		/* i is now the last required entry. */
@@ -994,7 +994,7 @@ keyGetItem(GinState *ginstate, MemoryContext tempCtx, GinScanKey key,
 	uint32		i;
 	bool		haveLossyEntry;
 	GinScanEntry entry;
-	GinTernaryValue res;
+	TSTernaryValue res;
 	MemoryContext oldCtx;
 	bool		allFinished;
 
@@ -1167,13 +1167,13 @@ keyGetItem(GinState *ginstate, MemoryContext tempCtx, GinScanKey key,
 			ginCompareItemPointers(&entry->curItem, &curPageLossy) == 0)
 		{
 			if (i < key->nuserentries)
-				key->entryRes[i] = GIN_MAYBE;
+				key->entryRes[i] = TS_MAYBE;
 			else
-				key->entryRes[i] = GIN_TRUE;
+				key->entryRes[i] = TS_YES;
 			haveLossyEntry = true;
 		}
 		else
-			key->entryRes[i] = GIN_FALSE;
+			key->entryRes[i] = TS_NO;
 	}
 
 	/* prepare for calling consistentFn in temp context */
@@ -1184,7 +1184,7 @@ keyGetItem(GinState *ginstate, MemoryContext tempCtx, GinScanKey key,
 		/* Have lossy-page entries, so see if whole page matches */
 		res = key->triConsistentFn(key);
 
-		if (res == GIN_TRUE || res == GIN_MAYBE)
+		if (res == TS_YES || res == TS_MAYBE)
 		{
 			/* Yes, so clean up ... */
 			MemoryContextSwitchTo(oldCtx);
@@ -1212,7 +1212,7 @@ keyGetItem(GinState *ginstate, MemoryContext tempCtx, GinScanKey key,
 	{
 		entry = key->scanEntry[i];
 		if (entry->isFinished)
-			key->entryRes[i] = GIN_FALSE;
+			key->entryRes[i] = TS_NO;
 #if 0
 
 		/*
@@ -1220,30 +1220,30 @@ keyGetItem(GinState *ginstate, MemoryContext tempCtx, GinScanKey key,
 		 * for this item earlier.
 		 */
 		else if (ginCompareItemPointers(&entry->curItem, &advancePast) <= 0)
-			key->entryRes[i] = GIN_MAYBE;
+			key->entryRes[i] = TS_MAYBE;
 #endif
 		else if (ginCompareItemPointers(&entry->curItem, &curPageLossy) == 0)
-			key->entryRes[i] = GIN_MAYBE;
+			key->entryRes[i] = TS_MAYBE;
 		else if (ginCompareItemPointers(&entry->curItem, &minItem) == 0)
-			key->entryRes[i] = GIN_TRUE;
+			key->entryRes[i] = TS_YES;
 		else
-			key->entryRes[i] = GIN_FALSE;
+			key->entryRes[i] = TS_NO;
 	}
 
 	res = key->triConsistentFn(key);
 
 	switch (res)
 	{
-		case GIN_TRUE:
+		case TS_YES:
 			key->curItemMatches = true;
 			/* triConsistentFn set recheckCurItem */
 			break;
 
-		case GIN_FALSE:
+		case TS_NO:
 			key->curItemMatches = false;
 			break;
 
-		case GIN_MAYBE:
+		case TS_MAYBE:
 			key->curItemMatches = true;
 			key->recheckCurItem = true;
 			break;
@@ -1619,7 +1619,7 @@ collectMatchesForHeapRow(IndexScanDesc scan, pendingPosition *pos)
 	{
 		GinScanKey	key = so->keys + i;
 
-		memset(key->entryRes, GIN_FALSE, key->nentries);
+		memset(key->entryRes, TS_NO, key->nentries);
 	}
 	memset(pos->hasMatchKey, false, so->nkeys);
 

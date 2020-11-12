@@ -166,7 +166,7 @@ ginFillScanKey(GinScanOpaque so, OffsetNumber attnum,
 	/* Allocate one extra array slot for possible "hidden" entry */
 	key->scanEntry = (GinScanEntry *) palloc(sizeof(GinScanEntry) *
 											 (nQueryValues + 1));
-	key->entryRes = (GinTernaryValue *) palloc0(sizeof(GinTernaryValue) *
+	key->entryRes = (TSTernaryValue *) palloc0(sizeof(TSTernaryValue) *
 												(nQueryValues + 1));
 
 	key->query = query;
