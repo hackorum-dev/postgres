@@ -357,9 +357,6 @@ struct Sharedsort
 	/* Temporary file space */
 	SharedFileSet fileset;
 
-	/* Size of tapes flexible array */
-	int			nTapes;
-
 	/*
 	 * Tapes array used by workers to report back information needed by the
 	 * leader to concatenate all worker tapes into one for merging
@@ -3258,7 +3255,6 @@ tuplesort_initialize_shared(Sharedsort *shared, int nWorkers, dsm_segment *seg)
 	shared->currentWorker = 0;
 	shared->workersFinished = 0;
 	SharedFileSetInit(&shared->fileset, seg);
-	shared->nTapes = nWorkers;
 	for (i = 0; i < nWorkers; i++)
 	{
 		shared->tapes[i].firstblocknumber = 0L;
