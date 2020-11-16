@@ -2702,6 +2702,7 @@ WaitEventIPC
 WaitEventSet
 WaitEventTimeout
 WaitPMResult
+WaitState
 WalCloseMethod
 WalLevel
 WalRcvData
