@@ -206,7 +206,8 @@ EXPLAIN EXECUTE <replaceable>name</replaceable>(<replaceable>parameter_values</r
   <para>
    You can see all prepared statements available in the session by querying the
    <link linkend="view-pg-prepared-statements"><structname>pg_prepared_statements</structname></link>
-   system view.
+   system view. This view also shows the numbers of generic and custom plans
+   were chosen.
   </para>
  </refsect1>
 
