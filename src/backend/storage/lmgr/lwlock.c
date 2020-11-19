@@ -1727,8 +1727,6 @@ LWLockWaitForVar(LWLock *lock, uint64 *valptr, uint64 oldval, uint64 *newval)
 		/* Now loop back and check the status of the lock again. */
 	}
 
-	TRACE_POSTGRESQL_LWLOCK_ACQUIRE(T_NAME(lock), LW_EXCLUSIVE);
-
 	/*
 	 * Fix the process wait semaphore's count for any absorbed wakeups.
 	 */
