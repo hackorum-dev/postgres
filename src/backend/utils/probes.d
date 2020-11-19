@@ -29,14 +29,22 @@ provider postgresql {
 	probe transaction__commit(LocalTransactionId);
 	probe transaction__abort(LocalTransactionId);
 
+	probe lwlock__acquired(const char *, LWLockMode, LWLock*, int);
+	probe lwlock__acquire__start(const char *, LWLockMode, LWLock*, int);
 	probe lwlock__acquire(const char *, LWLockMode, LWLock*, int);
 	probe lwlock__release(const char *, LWLockMode, LWLock*, int);
 	probe lwlock__wait__start(const char *, LWLockMode, LWLock*, int);
 	probe lwlock__wait__done(const char *, LWLockMode, LWLock*, int);
+	probe lwlock__condacquire__start(const char *, LWLockMode, LWLock*, int);
 	probe lwlock__condacquire(const char *, LWLockMode, LWLock*, int);
 	probe lwlock__condacquire__fail(const char *, LWLockMode, LWLock*, int);
+	probe lwlock__acquire__or__wait__start(const char *, LWLockMode, LWLock*, int);
 	probe lwlock__acquire__or__wait(const char *, LWLockMode, LWLock*, int);
 	probe lwlock__acquire__or__wait__fail(const char *, LWLockMode, LWLock*, int);
+	probe lwlock__waitforvar__start(const char *, LWLock*, int, uint64, uint64, uint64);
+	probe lwlock__waitforvar__done(const char *, LWLock*, int, uint64, uint64, uint64, bool);
+	probe lwlock__updatevar__start(const char *, LWLock*, int, uint64, uint64);
+	probe lwlock__updatevar__done(const char *, LWLock*, int, uint64, uint64);
 
 
 	probe lock__wait__start(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, LOCKMODE);

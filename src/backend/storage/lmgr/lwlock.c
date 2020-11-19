@@ -876,6 +876,9 @@ LWLockAttemptLock(LWLock *lock, LWLockMode mode)
 				if (mode == LW_EXCLUSIVE)
 					lock->owner = MyProc;
 #endif
+				/* All LWLock acquires must hit this tracepoint */
+				TRACE_POSTGRESQL_LWLOCK_ACQUIRED(T_NAME(lock), mode, lock,
+						lock->tranche);
 				return false;
 			}
 			else
@@ -1239,6 +1242,9 @@ LWLockAcquire(LWLock *lock, LWLockMode mode)
 	if (num_held_lwlocks >= MAX_SIMUL_LWLOCKS)
 		elog(ERROR, "too many LWLocks taken");
 
+	TRACE_POSTGRESQL_LWLOCK_ACQUIRE_START(T_NAME(lock), mode, lock,
+			lock->tranche);
+
 	/*
 	 * Lock out cancel/die interrupts until we exit the code section protected
 	 * by the LWLock.  This ensures that interrupts will not interfere with
@@ -1391,6 +1397,9 @@ LWLockConditionalAcquire(LWLock *lock, LWLockMode mode)
 	if (num_held_lwlocks >= MAX_SIMUL_LWLOCKS)
 		elog(ERROR, "too many LWLocks taken");
 
+	TRACE_POSTGRESQL_LWLOCK_CONDACQUIRE_START(T_NAME(lock), mode, lock,
+			lock->tranche);
+
 	/*
 	 * Lock out cancel/die interrupts until we exit the code section protected
 	 * by the LWLock.  This ensures that interrupts will not interfere with
@@ -1454,6 +1463,9 @@ LWLockAcquireOrWait(LWLock *lock, LWLockMode mode)
 	/* Ensure we will have room to remember the lock */
 	if (num_held_lwlocks >= MAX_SIMUL_LWLOCKS)
 		elog(ERROR, "too many LWLocks taken");
+
+	TRACE_POSTGRESQL_LWLOCK_ACQUIRE_OR_WAIT_START(T_NAME(lock), mode, lock,
+			lock->tranche);
 
 	/*
 	 * Lock out cancel/die interrupts until we exit the code section protected
@@ -1637,6 +1649,9 @@ LWLockWaitForVar(LWLock *lock, uint64 *valptr, uint64 oldval, uint64 *newval)
 
 	PRINT_LWDEBUG("LWLockWaitForVar", lock, LW_WAIT_UNTIL_FREE);
 
+	TRACE_POSTGRESQL_LWLOCK_WAITFORVAR_START(T_NAME(lock), lock,
+			lock->tranche, valptr, oldval, *valptr);
+
 	/*
 	 * Lock out cancel/die interrupts while we sleep on the lock.  There is no
 	 * cleanup mechanism to remove us from the wait queue if we got
@@ -1747,6 +1762,9 @@ LWLockWaitForVar(LWLock *lock, uint64 *valptr, uint64 oldval, uint64 *newval)
 	 */
 	RESUME_INTERRUPTS();
 
+	TRACE_POSTGRESQL_LWLOCK_WAITFORVAR_DONE(T_NAME(lock), lock, lock->tranche,
+			valptr, oldval, *newval, result);
+
 	return result;
 }
 
@@ -1768,6 +1786,9 @@ LWLockUpdateVar(LWLock *lock, uint64 *valptr, uint64 val)
 	proclist_mutable_iter iter;
 
 	PRINT_LWDEBUG("LWLockUpdateVar", lock, LW_EXCLUSIVE);
+
+	TRACE_POSTGRESQL_LWLOCK_UPDATEVAR_START(T_NAME(lock), lock, lock->tranche, valptr,
+			val);
 
 	proclist_init(&wakeup);
 
@@ -1809,6 +1830,9 @@ LWLockUpdateVar(LWLock *lock, uint64 *valptr, uint64 val)
 		waiter->lwWaiting = false;
 		PGSemaphoreUnlock(waiter->sem);
 	}
+
+	TRACE_POSTGRESQL_LWLOCK_UPDATEVAR_DONE(T_NAME(lock), lock, lock->tranche,
+			valptr, val);
 }
 
 
