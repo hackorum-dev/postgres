@@ -294,6 +294,85 @@ LOG_LWDEBUG(const char *where, LWLock *lock, const char *msg)
 #define LOG_LWDEBUG(a,b,c) ((void)0)
 #endif							/* LOCK_DEBUG */
 
+#if defined(USE_ASSERT_CHECKING) || defined(LOCK_DEBUG)
+#ifndef LWLOCK_SELF_DEADLOCK_DETECTION
+#define LWLOCK_SELF_DEADLOCK_DETECTION
+#endif
+#endif
+
+#ifdef LWLOCK_SELF_DEADLOCK_DETECTION
+static void
+LWLockReportSelfDeadlock(LWLock *lock, LWLockMode mode, int held_lockno)
+{
+		StringInfoData locklist;
+		int i;
+
+		LOG_LWDEBUG("LWLockReportSelfDeadlock", lock, "acquire self-deadlock detected");
+
+		initStringInfo(&locklist);
+		for (i=0; i < num_held_lwlocks; i++) {
+			appendStringInfo(&locklist, "%s (%p) excl=%d",
+							T_NAME(held_lwlocks[i].lock),
+							held_lwlocks[i].lock,
+							held_lwlocks[i].mode == LW_EXCLUSIVE);
+			if (i > 0)
+				appendStringInfoString(&locklist, ", ");
+		}
+
+
+		/*
+		 * It might be safe to bail out here on a non-cassert build but
+		 * more care is needed before anything like that is enabled.
+		 * LWLockAcquire() doesn't know if it's safe to `elog(FATAL)`
+		 * out from the current callsite. So we PANIC. This introduces some
+		 * risk of buggy code causing a server crash/restart cycle where
+		 * it would've previously just deadlocked a single backend, but
+		 * that's part of why we only enable this for assert builds.
+		 */
+		ereport(PANIC,
+				(errmsg_internal("self-deadlock detected on acquire of lwlock %s (%p) for mode %s: lock already held by this backend in mode %s",
+								 T_NAME(lock), lock,
+								 mode == LW_EXCLUSIVE
+										? "LW_EXCLUSIVE" : "LW_SHARED",
+								 held_lwlocks[held_lockno].mode == LW_EXCLUSIVE
+										? "LW_EXCLUSIVE" : "LW_SHARED"),
+				 errdetail("backend already holds %d lwlocks: %s",
+						   num_held_lwlocks, locklist.data)));
+}
+
+/*
+ * A bug in code that uses this particular LWLock could cause
+ * the lock-holder could be ourselves, in which case we'll
+ * self-deadlock forever as an unkillable process.
+ *
+ * Call this in any LWLock acquire retry loop once the fast-path
+ * acquire has failed.
+ *
+ * held_lockno should be initialized to 0 outside the wait loop
+ * so that this check only runs on the first iteration of any
+ * wait/retry loop.
+ */
+inline static void
+LWLockCheckSelfDeadlock(LWLock *lock, LWLockMode mode, int * const held_lockno)
+{
+	for ( ; *held_lockno < num_held_lwlocks; (*held_lockno)++) {
+		if (unlikely(held_lwlocks[*held_lockno].lock == lock)) {
+			LWLockReportSelfDeadlock(lock, mode, *held_lockno);
+		}
+	}
+}
+#else
+/*
+ * Making LWLockCheckSelfDeadlock an empty static inline instead of a macro
+ * silences compiler whinging about held_lockno being unused while optimising
+ * away without fuss.
+ */
+inline static void
+LWLockCheckSelfDeadlock(LWLock *lock, LWLockMode mode, int * const held_lockno)
+{
+}
+#endif
+
 #ifdef LWLOCK_STATS
 
 static void init_lwlock_stats(void);
@@ -1152,6 +1231,7 @@ LWLockAcquire(LWLock *lock, LWLockMode mode)
 	PGPROC	   *proc = MyProc;
 	bool		result = true;
 	int			extraWaits = 0;
+	int			held_lockno = 0; /* for self-deadlock detection */
 #ifdef LWLOCK_STATS
 	lwlock_stats *lwstats;
 
@@ -1259,6 +1339,9 @@ LWLockAcquire(LWLock *lock, LWLockMode mode)
 #ifdef LWLOCK_STATS
 		lwstats->block_count++;
 #endif
+
+		/* Detect if we're trying to acquire our own lock */
+		LWLockCheckSelfDeadlock(lock, mode, &held_lockno);
 
 		LWLockReportWaitStart(lock);
 		if (TRACE_POSTGRESQL_LWLOCK_WAIT_START_ENABLED())
@@ -1569,6 +1652,7 @@ LWLockWaitForVar(LWLock *lock, pg_atomic_uint64 *valptr, uint64 oldval,
 	PGPROC	   *proc = MyProc;
 	int			extraWaits = 0;
 	bool		result = false;
+	int			held_lockno = 0; /* for self-deadlock detection */
 #ifdef LWLOCK_STATS
 	lwlock_stats *lwstats;
 
@@ -1642,6 +1726,9 @@ LWLockWaitForVar(LWLock *lock, pg_atomic_uint64 *valptr, uint64 oldval,
 #ifdef LWLOCK_STATS
 		lwstats->block_count++;
 #endif
+
+		/* Detect if we're trying to wait on our own lock */
+		LWLockCheckSelfDeadlock(lock, LW_EXCLUSIVE, &held_lockno);
 
 		LWLockReportWaitStart(lock);
 		if (TRACE_POSTGRESQL_LWLOCK_WAIT_START_ENABLED())
