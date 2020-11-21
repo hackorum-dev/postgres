@@ -228,11 +228,17 @@ heap_page_items(PG_FUNCTION_ARGS)
 
 			/* Copy raw tuple data into bytea attribute */
 			tuple_data_len = lp_len - tuphdr->t_hoff;
-			tuple_data_bytea = (bytea *) palloc(tuple_data_len + VARHDRSZ);
-			SET_VARSIZE(tuple_data_bytea, tuple_data_len + VARHDRSZ);
-			memcpy(VARDATA(tuple_data_bytea), (char *) tuphdr + tuphdr->t_hoff,
-				   tuple_data_len);
-			values[13] = PointerGetDatum(tuple_data_bytea);
+			if (tuple_data_len < BLCKSZ)
+			{
+				tuple_data_bytea = (bytea *) palloc(tuple_data_len + VARHDRSZ);
+				SET_VARSIZE(tuple_data_bytea, tuple_data_len + VARHDRSZ);
+				memcpy(VARDATA(tuple_data_bytea), (char *) tuphdr + tuphdr->t_hoff,
+					   tuple_data_len);
+				values[13] = PointerGetDatum(tuple_data_bytea);
+				nulls[13] = false;
+			}
+			else
+				nulls[13] = true;
 
 			/*
 			 * We already checked that the item is completely within the raw
