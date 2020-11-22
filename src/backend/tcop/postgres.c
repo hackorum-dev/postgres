@@ -192,6 +192,14 @@ static void log_disconnections(int code, Datum arg);
 static void enable_statement_timeout(void);
 static void disable_statement_timeout(void);
 
+/*
+ * Hook for plugins to get control at end/start of
+ * start_xact_command/finish_xact_command. The hook
+ * on start_xact_command might be useless as it happens
+ * before UtilityProccess and the Executor* hooks.
+ */
+XactCommandStart_hook_type start_xact_command_hook = NULL;
+XactCommandFinish_hook_type finish_xact_command_hook = NULL;
 
 /* ----------------------------------------------------------------
  *		routines to obtain user input
@@ -2634,6 +2642,7 @@ exec_describe_portal_message(const char *portal_name)
 static void
 start_xact_command(void)
 {
+
 	if (!xact_started)
 	{
 		StartTransactionCommand();
@@ -2649,11 +2658,19 @@ start_xact_command(void)
 	 * not desired, the timeout has to be disabled explicitly.
 	 */
 	enable_statement_timeout();
+
+	if (start_xact_command_hook)
+		(*start_xact_command_hook) ();
+
 }
+
 
 static void
 finish_xact_command(void)
 {
+	if (finish_xact_command_hook)
+		(*finish_xact_command_hook) ();
+
 	/* cancel active statement timeout after each command */
 	disable_statement_timeout();
 
