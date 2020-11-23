@@ -3858,7 +3858,8 @@ WalSndDone(WalSndSendDataCallback send_data)
 	replicatedPtr = XLogRecPtrIsValid(MyWalSnd->flush) ?
 		MyWalSnd->flush : MyWalSnd->write;
 
-	if (WalSndCaughtUp && sentPtr == replicatedPtr &&
+	if (WalSndCaughtUp &&
+		(XLogRecPtrIsInvalid(replicatedPtr) || sentPtr == replicatedPtr) &&
 		!pq_is_send_pending())
 	{
 		QueryCompletion qc;
