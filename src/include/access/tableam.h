@@ -140,6 +140,21 @@ typedef struct TM_FailureData
 /* Follow update chain and lock latest version of tuple */
 #define TUPLE_LOCK_FLAG_FIND_LAST_VERSION		(1 << 1)
 
+/*
+ * No more than this many tuples per multi insert buffer
+ *
+ * Caution: Don't make this too big. We could end up with this many multi
+ * insert buffer items stored as a list. Increasing this can cause quadratic
+ * growth in memory requirements during copies into partitioned tables with a
+ * large number of partitions.
+ */
+#define MAX_MULTI_INSERT_TUPLES        1000
+
+/*
+ * Flush buffers if there are >= this many bytes, as counted by the input
+ * size of the tuples stored.
+ */
+#define MAX_MULTI_INSERT_BUFFERED_BYTES		65535
 
 /* Typedef for callback function for table_index_build_scan */
 typedef void (*IndexBuildCallback) (Relation index,

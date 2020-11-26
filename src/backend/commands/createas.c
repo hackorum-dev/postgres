@@ -61,6 +61,13 @@ typedef struct
 	CommandId	output_cid;		/* cmin to insert in output tuples */
 	int			ti_options;		/* table_tuple_insert performance options */
 	BulkInsertState bistate;	/* bulk insert state */
+	MemoryContext	mi_context;	/* A temporary memory context for multi insert */
+	/* Buffered slots for a multi insert batch. */
+	TupleTableSlot *mi_slots[MAX_MULTI_INSERT_TUPLES];
+	/* Number of current buffered slots for a multi insert batch. */
+	int				mi_slots_num;
+	/* Total tuple size for a multi insert batch. */
+	int				mi_slots_size;
 } DR_intorel;
 
 /* utility functions for CTAS definition creation */
@@ -530,15 +537,33 @@ intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 	myState->reladdr = intoRelationAddr;
 	myState->output_cid = GetCurrentCommandId(true);
 	myState->ti_options = TABLE_INSERT_SKIP_FSM;
+	memset(myState->mi_slots, 0,
+		   sizeof(TupleTableSlot *) * MAX_MULTI_INSERT_TUPLES);
+	myState->mi_slots_num = 0;
+	myState->mi_slots_size = 0;
 
 	/*
 	 * If WITH NO DATA is specified, there is no need to set up the state for
-	 * bulk inserts as there are no tuples to insert.
+	 * bulk inserts and multi inserts memory context as there are no tuples to
+	 * insert.
 	 */
 	if (!into->skipData)
+	{
 		myState->bistate = GetBulkInsertState();
+
+		/*
+		 * Create a temporary memory context so that we can reset once per
+		 * multi insert batch.
+		*/
+		myState->mi_context = AllocSetContextCreate(CurrentMemoryContext,
+											"intorel_multi_insert",
+											ALLOCSET_DEFAULT_SIZES);
+	}
 	else
+	{
 		myState->bistate = NULL;
+		myState->mi_context = NULL;
+	}
 
 	/*
 	 * Valid smgr_targblock implies something already wrote to the relation.
@@ -548,15 +573,72 @@ intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 }
 
 /*
+ * intorel_flush_multi_insert --- insert multiple tuples
+ */
+static void
+intorel_flush_multi_insert(DR_intorel *myState)
+{
+	MemoryContext oldcontext;
+	int           i;
+
+	oldcontext = MemoryContextSwitchTo(myState->mi_context);
+
+	table_multi_insert(myState->rel,
+					   myState->mi_slots,
+					   myState->mi_slots_num,
+					   myState->output_cid,
+					   myState->ti_options,
+					   myState->bistate);
+
+	MemoryContextReset(myState->mi_context);
+	MemoryContextSwitchTo(oldcontext);
+
+	for (i = 0; i < myState->mi_slots_num; i++)
+		ExecClearTuple(myState->mi_slots[i]);
+
+	myState->mi_slots_num = 0;
+	myState->mi_slots_size = 0;
+}
+
+/*
  * intorel_receive --- receive one tuple
  */
 static bool
 intorel_receive(TupleTableSlot *slot, DestReceiver *self)
 {
 	DR_intorel *myState = (DR_intorel *) self;
+	TupleTableSlot  *batchslot;
+	Size            sz = 0;
 
 	/* Nothing to insert if WITH NO DATA is specified. */
-	if (!myState->into->skipData)
+	if (myState->into->skipData)
+		return true;
+
+	if (myState->mi_slots[myState->mi_slots_num] == NULL)
+		myState->mi_slots[myState->mi_slots_num] =
+										table_slot_create(myState->rel, NULL);
+
+	batchslot = myState->mi_slots[myState->mi_slots_num];
+
+	ExecCopySlot(batchslot, slot);
+
+	/*
+	 * Calculate the tuple size after the original slot is copied. Because the
+	 * copied slot type and the tuple size may change.
+	 */
+	sz = GetTupleSize(batchslot, MAX_MULTI_INSERT_BUFFERED_BYTES);
+
+	/* In case the computed tuple size is 0, we go for single inserts. */
+	if (sz != 0)
+	{
+		myState->mi_slots_num++;
+		myState->mi_slots_size += sz;
+
+		if (myState->mi_slots_num >= MAX_MULTI_INSERT_TUPLES ||
+			myState->mi_slots_size >= MAX_MULTI_INSERT_BUFFERED_BYTES)
+			intorel_flush_multi_insert(myState);
+	}
+	else
 	{
 		/*
 		 * Note that the input slot might not be of the type of the target
@@ -585,12 +667,24 @@ static void
 intorel_shutdown(DestReceiver *self)
 {
 	DR_intorel *myState = (DR_intorel *) self;
-	IntoClause *into = myState->into;
 
-	if (!into->skipData)
+	if (!myState->into->skipData)
 	{
+		int                     i;
+
+		if (myState->mi_slots_num != 0)
+			intorel_flush_multi_insert(myState);
+
+		for (i = 0; i < MAX_MULTI_INSERT_TUPLES && myState->mi_slots[i] != NULL; i++)
+			ExecDropSingleTupleTableSlot(myState->mi_slots[i]);
+
 		FreeBulkInsertState(myState->bistate);
 		table_finish_bulk_insert(myState->rel, myState->ti_options);
+
+		if (myState->mi_context)
+			MemoryContextDelete(myState->mi_context);
+
+		myState->mi_context = NULL;
 	}
 
 	/* close rel, but keep lock until commit */
