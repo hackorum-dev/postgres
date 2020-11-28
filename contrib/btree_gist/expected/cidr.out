@@ -23,13 +23,19 @@ SELECT count(*) FROM cidrtmp WHERE a  = '121.111.63.82';
 SELECT count(*) FROM cidrtmp WHERE a >= '121.111.63.82';
  count 
 -------
-   310
+   312
 (1 row)
 
 SELECT count(*) FROM cidrtmp WHERE a >  '121.111.63.82';
  count 
 -------
-   309
+   311
+(1 row)
+
+SELECT count(*) FROM cidrtmp WHERE a >  '255.255.1.0/25';
+ count 
+-------
+     1
 (1 row)
 
 CREATE INDEX cidridx ON cidrtmp USING gist ( a );
@@ -55,12 +61,18 @@ SELECT count(*) FROM cidrtmp WHERE a  = '121.111.63.82'::cidr;
 SELECT count(*) FROM cidrtmp WHERE a >= '121.111.63.82'::cidr;
  count 
 -------
-   310
+   312
 (1 row)
 
 SELECT count(*) FROM cidrtmp WHERE a >  '121.111.63.82'::cidr;
  count 
 -------
-   309
+   311
+(1 row)
+
+SELECT count(*) FROM cidrtmp WHERE a >  '255.255.1.0/25'::cidr;
+ count 
+-------
+     1
 (1 row)
 

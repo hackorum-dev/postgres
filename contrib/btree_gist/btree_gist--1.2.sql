@@ -1516,11 +1516,11 @@ AS 'MODULE_PATHNAME'
 LANGUAGE C IMMUTABLE STRICT;
 
 CREATE FUNCTION gbt_inet_union(internal, internal)
-RETURNS gbtreekey16
+RETURNS gbtreekey_var
 AS 'MODULE_PATHNAME'
 LANGUAGE C IMMUTABLE STRICT;
 
-CREATE FUNCTION gbt_inet_same(gbtreekey16, gbtreekey16, internal)
+CREATE FUNCTION gbt_inet_same(gbtreekey_var, gbtreekey_var, internal)
 RETURNS internal
 AS 'MODULE_PATHNAME'
 LANGUAGE C IMMUTABLE STRICT;
@@ -1537,15 +1537,15 @@ AS
 	FUNCTION	1	gbt_inet_consistent (internal, inet, int2, oid, internal),
 	FUNCTION	2	gbt_inet_union (internal, internal),
 	FUNCTION	3	gbt_inet_compress (internal),
-	FUNCTION	4	gbt_decompress (internal),
+	FUNCTION	4	gbt_var_decompress (internal),
 	FUNCTION	5	gbt_inet_penalty (internal, internal, internal),
 	FUNCTION	6	gbt_inet_picksplit (internal, internal),
-	FUNCTION	7	gbt_inet_same (gbtreekey16, gbtreekey16, internal),
-	STORAGE		gbtreekey16;
+	FUNCTION	7	gbt_inet_same (gbtreekey_var, gbtreekey_var, internal),
+	STORAGE		gbtreekey_var;
 
 ALTER OPERATOR FAMILY gist_inet_ops USING gist ADD
-	OPERATOR	6	<>  (inet, inet) ;
-	-- no fetch support, the compress function is lossy
+	OPERATOR	6	<>  (inet, inet) ,
+	FUNCTION	9 (inet, inet) gbt_var_fetch (internal) ;
 
 -- Create the operator class
 CREATE OPERATOR CLASS gist_cidr_ops
@@ -1559,12 +1559,12 @@ AS
 	FUNCTION	1	gbt_inet_consistent (internal, inet, int2, oid, internal),
 	FUNCTION	2	gbt_inet_union (internal, internal),
 	FUNCTION	3	gbt_inet_compress (internal),
-	FUNCTION	4	gbt_decompress (internal),
+	FUNCTION	4	gbt_var_decompress (internal),
 	FUNCTION	5	gbt_inet_penalty (internal, internal, internal),
 	FUNCTION	6	gbt_inet_picksplit (internal, internal),
-	FUNCTION	7	gbt_inet_same (gbtreekey16, gbtreekey16, internal),
-	STORAGE		gbtreekey16;
+	FUNCTION	7	gbt_inet_same (gbtreekey_var, gbtreekey_var, internal),
+	STORAGE		gbtreekey_var;
 
 ALTER OPERATOR FAMILY gist_cidr_ops USING gist ADD
-	OPERATOR	6	<> (inet, inet) ;
-	-- no fetch support, the compress function is lossy
+	OPERATOR	6	<> (inet, inet) ,
+	FUNCTION	9 (inet, inet) gbt_var_fetch (internal) ;

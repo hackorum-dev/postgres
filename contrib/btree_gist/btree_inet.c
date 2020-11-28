@@ -4,16 +4,10 @@
 #include "postgres.h"
 
 #include "btree_gist.h"
-#include "btree_utils_num.h"
+#include "btree_utils_var.h"
 #include "catalog/pg_type.h"
 #include "utils/builtins.h"
 #include "utils/inet.h"
-
-typedef struct inetkey
-{
-	double		lower;
-	double		upper;
-} inetKEY;
 
 /*
 ** inet ops
@@ -27,54 +21,72 @@ PG_FUNCTION_INFO_V1(gbt_inet_same);
 
 
 static bool
-gbt_inetgt(const void *a, const void *b, FmgrInfo *flinfo)
+gbt_inetgt(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
 {
-	return (*((const double *) a) > *((const double *) b));
+	//ereport(NOTICE, (errmsg("gt")));
+	return DatumGetBool(DirectFunctionCall2(network_gt,
+											PointerGetDatum(a),
+											PointerGetDatum(b)));
 }
+
 static bool
-gbt_inetge(const void *a, const void *b, FmgrInfo *flinfo)
+gbt_inetge(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
 {
-	return (*((const double *) a) >= *((const double *) b));
+	//ereport(NOTICE, (errmsg("ge")));
+	return DatumGetBool(DirectFunctionCall2(network_ge,
+											PointerGetDatum(a),
+											PointerGetDatum(b)));
 }
+
 static bool
-gbt_ineteq(const void *a, const void *b, FmgrInfo *flinfo)
+gbt_ineteq(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
 {
-	return (*((const double *) a) == *((const double *) b));
+	//ereport(NOTICE, (errmsg("eq")));
+	return DatumGetBool(DirectFunctionCall2(network_eq,
+											PointerGetDatum(a),
+											PointerGetDatum(b)));
 }
+
 static bool
-gbt_inetle(const void *a, const void *b, FmgrInfo *flinfo)
+gbt_inetle(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
 {
-	return (*((const double *) a) <= *((const double *) b));
+	//ereport(NOTICE, (errmsg("le")));
+	return DatumGetBool(DirectFunctionCall2(network_le,
+											PointerGetDatum(a),
+											PointerGetDatum(b)));
 }
+
 static bool
-gbt_inetlt(const void *a, const void *b, FmgrInfo *flinfo)
+gbt_inetlt(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
 {
-	return (*((const double *) a) < *((const double *) b));
+	//ereport(NOTICE, (errmsg("lt")));
+	return DatumGetBool(DirectFunctionCall2(network_lt,
+											PointerGetDatum(a),
+											PointerGetDatum(b)));
 }
 
-static int
-gbt_inetkey_cmp(const void *a, const void *b, FmgrInfo *flinfo)
+static int32
+gbt_inetkey_cmp(const void *a, const void *b, Oid collation, FmgrInfo *flinfo)
 {
-	inetKEY    *ia = (inetKEY *) (((const Nsrt *) a)->t);
-	inetKEY    *ib = (inetKEY *) (((const Nsrt *) b)->t);
+	int32 x = DatumGetInt32(DirectFunctionCall2(network_cmp,
+											 PointerGetDatum(a),
+											 PointerGetDatum(b)));
 
-	if (ia->lower == ib->lower)
-	{
-		if (ia->upper == ib->upper)
-			return 0;
+	char *as = DatumGetCString(DirectFunctionCall1(inet_out, PointerGetDatum(a)));
+	char *bs = DatumGetCString(DirectFunctionCall1(inet_out, PointerGetDatum(b)));
 
-		return (ia->upper > ib->upper) ? 1 : -1;
-	}
+	//ereport(NOTICE, (errmsg("cmp %d %s %s", x, as, bs)));
 
-	return (ia->lower > ib->lower) ? 1 : -1;
+	return DatumGetInt32(DirectFunctionCall2(network_cmp,
+											 PointerGetDatum(a),
+											 PointerGetDatum(b)));
 }
 
-
-static const gbtree_ninfo tinfo =
+static const gbtree_vinfo tinfo =
 {
 	gbt_t_inet,
-	sizeof(double),
-	16,							/* sizeof(gbtreekey16) */
+	0,
+	false,
 	gbt_inetgt,
 	gbt_inetge,
 	gbt_ineteq,
@@ -94,25 +106,10 @@ Datum
 gbt_inet_compress(PG_FUNCTION_ARGS)
 {
 	GISTENTRY  *entry = (GISTENTRY *) PG_GETARG_POINTER(0);
-	GISTENTRY  *retval;
 
-	if (entry->leafkey)
-	{
-		inetKEY    *r = (inetKEY *) palloc(sizeof(inetKEY));
-		bool		failure = false;
+	GISTENTRY *e2 = gbt_var_compress(entry, &tinfo);
 
-		retval = palloc(sizeof(GISTENTRY));
-		r->lower = convert_network_to_scalar(entry->key, INETOID, &failure);
-		Assert(!failure);
-		r->upper = r->lower;
-		gistentryinit(*retval, PointerGetDatum(r),
-					  entry->rel, entry->page,
-					  entry->offset, false);
-	}
-	else
-		retval = entry;
-
-	PG_RETURN_POINTER(retval);
+	PG_RETURN_POINTER(gbt_var_compress(entry, &tinfo));
 }
 
 
@@ -120,27 +117,21 @@ Datum
 gbt_inet_consistent(PG_FUNCTION_ARGS)
 {
 	GISTENTRY  *entry = (GISTENTRY *) PG_GETARG_POINTER(0);
-	Datum		dquery = PG_GETARG_DATUM(1);
+	void	   *query = (void *) PG_GETARG_INET_PP(1);
 	StrategyNumber strategy = (StrategyNumber) PG_GETARG_UINT16(2);
 
 	/* Oid		subtype = PG_GETARG_OID(3); */
 	bool	   *recheck = (bool *) PG_GETARG_POINTER(4);
-	inetKEY    *kkk = (inetKEY *) DatumGetPointer(entry->key);
-	GBT_NUMKEY_R key;
-	double		query;
-	bool		failure = false;
+	bool		retval;
+	GBT_VARKEY *key = (GBT_VARKEY *) DatumGetPointer(entry->key);
+	GBT_VARKEY_R r = gbt_var_key_readable(key);
 
-	query = convert_network_to_scalar(dquery, INETOID, &failure);
-	Assert(!failure);
+	/* All cases served by this function are exact */
+	*recheck = false;
 
-	/* All cases served by this function are inexact */
-	*recheck = true;
-
-	key.lower = (GBT_NUMKEY *) &kkk->lower;
-	key.upper = (GBT_NUMKEY *) &kkk->upper;
-
-	PG_RETURN_BOOL(gbt_num_consistent(&key, (void *) &query,
-									  &strategy, GIST_LEAF(entry), &tinfo, fcinfo->flinfo));
+	retval = gbt_var_consistent(&r, query, strategy, PG_GET_COLLATION(),
+								GIST_LEAF(entry), &tinfo, fcinfo->flinfo);
+	PG_RETURN_BOOL(retval);
 }
 
 
@@ -148,41 +139,42 @@ Datum
 gbt_inet_union(PG_FUNCTION_ARGS)
 {
 	GistEntryVector *entryvec = (GistEntryVector *) PG_GETARG_POINTER(0);
-	void	   *out = palloc(sizeof(inetKEY));
+	int32	   *size = (int *) PG_GETARG_POINTER(1);
 
-	*(int *) PG_GETARG_POINTER(1) = sizeof(inetKEY);
-	PG_RETURN_POINTER(gbt_num_union((void *) out, entryvec, &tinfo, fcinfo->flinfo));
+	PG_RETURN_POINTER(gbt_var_union(entryvec, size, PG_GET_COLLATION(),
+									&tinfo, fcinfo->flinfo));
 }
 
 
 Datum
 gbt_inet_penalty(PG_FUNCTION_ARGS)
 {
-	inetKEY    *origentry = (inetKEY *) DatumGetPointer(((GISTENTRY *) PG_GETARG_POINTER(0))->key);
-	inetKEY    *newentry = (inetKEY *) DatumGetPointer(((GISTENTRY *) PG_GETARG_POINTER(1))->key);
+	GISTENTRY  *o = (GISTENTRY *) PG_GETARG_POINTER(0);
+	GISTENTRY  *n = (GISTENTRY *) PG_GETARG_POINTER(1);
 	float	   *result = (float *) PG_GETARG_POINTER(2);
 
-	penalty_num(result, origentry->lower, origentry->upper, newentry->lower, newentry->upper);
-
-	PG_RETURN_POINTER(result);
-
+	PG_RETURN_POINTER(gbt_var_penalty(result, o, n, PG_GET_COLLATION(),
+									  &tinfo, fcinfo->flinfo));
 }
 
 Datum
 gbt_inet_picksplit(PG_FUNCTION_ARGS)
 {
-	PG_RETURN_POINTER(gbt_num_picksplit((GistEntryVector *) PG_GETARG_POINTER(0),
-										(GIST_SPLITVEC *) PG_GETARG_POINTER(1),
-										&tinfo, fcinfo->flinfo));
+	GistEntryVector *entryvec = (GistEntryVector *) PG_GETARG_POINTER(0);
+	GIST_SPLITVEC *v = (GIST_SPLITVEC *) PG_GETARG_POINTER(1);
+
+	gbt_var_picksplit(entryvec, v, PG_GET_COLLATION(),
+					  &tinfo, fcinfo->flinfo);
+	PG_RETURN_POINTER(v);
 }
 
 Datum
 gbt_inet_same(PG_FUNCTION_ARGS)
 {
-	inetKEY    *b1 = (inetKEY *) PG_GETARG_POINTER(0);
-	inetKEY    *b2 = (inetKEY *) PG_GETARG_POINTER(1);
+	Datum		d1 = PG_GETARG_DATUM(0);
+	Datum		d2 = PG_GETARG_DATUM(1);
 	bool	   *result = (bool *) PG_GETARG_POINTER(2);
 
-	*result = gbt_num_same((void *) b1, (void *) b2, &tinfo, fcinfo->flinfo);
+	*result = gbt_var_same(d1, d2, PG_GET_COLLATION(), &tinfo, fcinfo->flinfo);
 	PG_RETURN_POINTER(result);
 }

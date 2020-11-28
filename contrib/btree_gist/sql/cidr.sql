@@ -15,6 +15,8 @@ SELECT count(*) FROM cidrtmp WHERE a >= '121.111.63.82';
 
 SELECT count(*) FROM cidrtmp WHERE a >  '121.111.63.82';
 
+SELECT count(*) FROM cidrtmp WHERE a >  '255.255.1.0/25';
+
 CREATE INDEX cidridx ON cidrtmp USING gist ( a );
 
 SET enable_seqscan=off;
@@ -28,3 +30,5 @@ SELECT count(*) FROM cidrtmp WHERE a  = '121.111.63.82'::cidr;
 SELECT count(*) FROM cidrtmp WHERE a >= '121.111.63.82'::cidr;
 
 SELECT count(*) FROM cidrtmp WHERE a >  '121.111.63.82'::cidr;
+
+SELECT count(*) FROM cidrtmp WHERE a >  '255.255.1.0/25'::cidr;

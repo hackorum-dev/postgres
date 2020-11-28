@@ -167,7 +167,7 @@ ALTER FUNCTION gbt_inet_compress(internal) PARALLEL SAFE;
 ALTER FUNCTION gbt_inet_penalty(internal, internal, internal) PARALLEL SAFE;
 ALTER FUNCTION gbt_inet_picksplit(internal, internal) PARALLEL SAFE;
 ALTER FUNCTION gbt_inet_union(internal, internal) PARALLEL SAFE;
-ALTER FUNCTION gbt_inet_same(gbtreekey16, gbtreekey16, internal) PARALLEL SAFE;
+ALTER FUNCTION gbt_inet_same(gbtreekey_var, gbtreekey_var, internal) PARALLEL SAFE;
 ALTER FUNCTION gbt_uuid_consistent(internal, uuid, smallint, oid, internal) PARALLEL SAFE;
 ALTER FUNCTION gbt_uuid_fetch(internal) PARALLEL SAFE;
 ALTER FUNCTION gbt_uuid_compress(internal) PARALLEL SAFE;
