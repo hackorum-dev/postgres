@@ -751,6 +751,64 @@ GetLWLockIdentifier(uint32 classId, uint16 eventId)
 	return GetLWTrancheName(eventId);
 }
 
+#if defined(__arm__) || defined(__arm) || defined(__aarch64__) || defined(__aarch64)
+
+static bool
+LWLockAttemptExclusiveLock(LWLock *lock)
+{
+	uint32	state, old_state;
+
+	do
+	{
+		old_state = state = (uint32) __builtin_arm_ldrex((volatile uint32 *) &lock->state.value);
+		if ((state & LW_LOCK_MASK) == 0)
+			state += LW_VAL_EXCLUSIVE;
+	} while (__builtin_arm_strex(state, (volatile uint32 *) &lock->state.value));
+
+	return ((old_state & LW_LOCK_MASK) != 0);
+}
+
+static bool
+LWLockAttemptSharedLock(LWLock *lock)
+{
+	uint32	old_state, state;
+
+	do
+	{
+		old_state = state = (uint32) __builtin_arm_ldrex((volatile uint32 *) &lock->state.value);
+		if ((state & LW_VAL_EXCLUSIVE) == 0)
+			state += LW_VAL_SHARED;
+	} while (__builtin_arm_strex(state, (volatile uint32 *) &lock->state.value));
+
+	return ((old_state & LW_VAL_EXCLUSIVE) != 0);
+}
+
+static bool
+LWLockAttemptLock(LWLock *lock, LWLockMode mode)
+{
+	bool	result;
+
+	AssertArg(mode == LW_EXCLUSIVE || mode == LW_SHARED);
+
+	if (mode == LW_EXCLUSIVE)
+		result = LWLockAttemptExclusiveLock(lock);
+	else
+		result = LWLockAttemptSharedLock(lock);
+
+#ifdef LOCK_DEBUG
+	if (!result)
+	{
+		/* Great! Got the lock. */
+		if (mode == LW_EXCLUSIVE)
+			lock->owner = MyProc;
+	}
+#endif
+
+	return result;
+}
+
+#else
+
 /*
  * Internal function that tries to atomically acquire the lwlock in the passed
  * in mode.
@@ -822,6 +880,8 @@ LWLockAttemptLock(LWLock *lock, LWLockMode mode)
 	}
 	pg_unreachable();
 }
+
+#endif
 
 /*
  * Lock the LWLock's wait list against concurrent activity.
