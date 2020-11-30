@@ -3639,8 +3639,8 @@ estimate_path_cost_size(PlannerInfo *root,
 			 */
 			run_cost = fpinfo_i->rel_total_cost - fpinfo_i->rel_startup_cost;
 			run_cost += fpinfo_o->rel_total_cost - fpinfo_o->rel_startup_cost;
-			run_cost += nrows * join_cost.per_tuple;
 			nrows = clamp_row_est(nrows * fpinfo->joinclause_sel);
+			run_cost += nrows * join_cost.per_tuple;
 			run_cost += nrows * remote_conds_cost.per_tuple;
 			run_cost += fpinfo->local_conds_cost.per_tuple * retrieved_rows;
 
