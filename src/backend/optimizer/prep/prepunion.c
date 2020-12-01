@@ -1406,9 +1406,9 @@ plan_union_children(PlannerInfo *root,
 
 	while (pending_rels != NIL)
 	{
-		Node	   *setOp = linitial(pending_rels);
+		Node	   *setOp = llast(pending_rels);
 
-		pending_rels = list_delete_first(pending_rels);
+		pending_rels = list_delete_last(pending_rels);
 
 		if (IsA(setOp, SetOperationStmt))
 		{
@@ -1420,8 +1420,8 @@ plan_union_children(PlannerInfo *root,
 				equal(op->colCollations, top_union->colCollations))
 			{
 				/* Same UNION, so fold children into parent */
-				pending_rels = lcons(op->rarg, pending_rels);
-				pending_rels = lcons(op->larg, pending_rels);
+				pending_rels = lappend(pending_rels, op->rarg);
+				pending_rels = lappend(pending_rels, op->larg);
 				continue;
 			}
 		}
