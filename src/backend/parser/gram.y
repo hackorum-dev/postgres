@@ -136,12 +136,12 @@ typedef struct SelectLimit
 } SelectLimit;
 
 /* ConstraintAttributeSpec yields an integer bitmask of these flags: */
-#define CAS_NOT_DEFERRABLE			0x01
-#define CAS_DEFERRABLE				0x02
-#define CAS_INITIALLY_IMMEDIATE		0x04
-#define CAS_INITIALLY_DEFERRED		0x08
-#define CAS_NOT_VALID				0x10
-#define CAS_NO_INHERIT				0x20
+#define CAS_NOT_DEFERRABLE			(1 << 0)
+#define CAS_DEFERRABLE				(1 << 1)
+#define CAS_INITIALLY_IMMEDIATE		(1 << 2)
+#define CAS_INITIALLY_DEFERRED		(1 << 3)
+#define CAS_NOT_VALID				(1 << 4)
+#define CAS_NO_INHERIT				(1 << 5)
 
 
 #define parser_yyerror(msg)  scanner_yyerror(msg, yyscanner)

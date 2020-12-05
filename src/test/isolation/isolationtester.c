@@ -41,8 +41,8 @@ static void run_all_permutations_recurse(TestSpec *testspec, int nsteps,
 static void run_named_permutations(TestSpec *testspec);
 static void run_permutation(TestSpec *testspec, int nsteps, Step **steps);
 
-#define STEP_NONBLOCK	0x1		/* return 0 as soon as cmd waits for a lock */
-#define STEP_RETRY		0x2		/* this is a retry of a previously-waiting cmd */
+#define STEP_NONBLOCK	(1 << 0)		/* return 0 as soon as cmd waits for a lock */
+#define STEP_RETRY		(1 << 1)		/* this is a retry of a previously-waiting cmd */
 static bool try_complete_step(TestSpec *testspec, Step *step, int flags);
 
 static int	step_qsort_cmp(const void *a, const void *b);

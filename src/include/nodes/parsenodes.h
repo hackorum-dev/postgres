@@ -503,24 +503,24 @@ typedef struct WindowDef
  * The START_foo and END_foo options must come in pairs of adjacent bits for
  * the convenience of gram.y, even though some of them are useless/invalid.
  */
-#define FRAMEOPTION_NONDEFAULT					0x00001 /* any specified? */
-#define FRAMEOPTION_RANGE						0x00002 /* RANGE behavior */
-#define FRAMEOPTION_ROWS						0x00004 /* ROWS behavior */
-#define FRAMEOPTION_GROUPS						0x00008 /* GROUPS behavior */
-#define FRAMEOPTION_BETWEEN						0x00010 /* BETWEEN given? */
-#define FRAMEOPTION_START_UNBOUNDED_PRECEDING	0x00020 /* start is U. P. */
-#define FRAMEOPTION_END_UNBOUNDED_PRECEDING		0x00040 /* (disallowed) */
-#define FRAMEOPTION_START_UNBOUNDED_FOLLOWING	0x00080 /* (disallowed) */
-#define FRAMEOPTION_END_UNBOUNDED_FOLLOWING		0x00100 /* end is U. F. */
-#define FRAMEOPTION_START_CURRENT_ROW			0x00200 /* start is C. R. */
-#define FRAMEOPTION_END_CURRENT_ROW				0x00400 /* end is C. R. */
-#define FRAMEOPTION_START_OFFSET_PRECEDING		0x00800 /* start is O. P. */
-#define FRAMEOPTION_END_OFFSET_PRECEDING		0x01000 /* end is O. P. */
-#define FRAMEOPTION_START_OFFSET_FOLLOWING		0x02000 /* start is O. F. */
-#define FRAMEOPTION_END_OFFSET_FOLLOWING		0x04000 /* end is O. F. */
-#define FRAMEOPTION_EXCLUDE_CURRENT_ROW			0x08000 /* omit C.R. */
-#define FRAMEOPTION_EXCLUDE_GROUP				0x10000 /* omit C.R. & peers */
-#define FRAMEOPTION_EXCLUDE_TIES				0x20000 /* omit C.R.'s peers */
+#define FRAMEOPTION_NONDEFAULT					(1 << 0)	/* any specified? */
+#define FRAMEOPTION_RANGE						(1 << 1)	/* RANGE behavior */
+#define FRAMEOPTION_ROWS						(1 << 2)	/* ROWS behavior */
+#define FRAMEOPTION_GROUPS						(1 << 3)	/* GROUPS behavior */
+#define FRAMEOPTION_BETWEEN						(1 << 4)	/* BETWEEN given? */
+#define FRAMEOPTION_START_UNBOUNDED_PRECEDING	(1 << 5)	/* start is U. P. */
+#define FRAMEOPTION_END_UNBOUNDED_PRECEDING		(1 << 6)	/* (disallowed) */
+#define FRAMEOPTION_START_UNBOUNDED_FOLLOWING	(1 << 7)	/* (disallowed) */
+#define FRAMEOPTION_END_UNBOUNDED_FOLLOWING		(1 << 8)	/* end is U. F. */
+#define FRAMEOPTION_START_CURRENT_ROW			(1 << 9)	/* start is C. R. */
+#define FRAMEOPTION_END_CURRENT_ROW				(1 << 10)	/* end is C. R. */
+#define FRAMEOPTION_START_OFFSET_PRECEDING		(1 << 11)	/* start is O. P. */
+#define FRAMEOPTION_END_OFFSET_PRECEDING		(1 << 12)	/* end is O. P. */
+#define FRAMEOPTION_START_OFFSET_FOLLOWING		(1 << 13)	/* start is O. F. */
+#define FRAMEOPTION_END_OFFSET_FOLLOWING		(1 << 14)	/* end is O. F. */
+#define FRAMEOPTION_EXCLUDE_CURRENT_ROW			(1 << 15)	/* omit C.R. */
+#define FRAMEOPTION_EXCLUDE_GROUP				(1 << 16)	/* omit C.R. & peers */
+#define FRAMEOPTION_EXCLUDE_TIES				(1 << 17)	/* omit C.R.'s peers */
 
 #define FRAMEOPTION_START_OFFSET \
 	(FRAMEOPTION_START_OFFSET_PRECEDING | FRAMEOPTION_START_OFFSET_FOLLOWING)
@@ -2702,16 +2702,16 @@ typedef struct SecLabelStmt
  * of the query are always postponed until execution.
  * ----------------------
  */
-#define CURSOR_OPT_BINARY		0x0001	/* BINARY */
-#define CURSOR_OPT_SCROLL		0x0002	/* SCROLL explicitly given */
-#define CURSOR_OPT_NO_SCROLL	0x0004	/* NO SCROLL explicitly given */
-#define CURSOR_OPT_INSENSITIVE	0x0008	/* INSENSITIVE */
-#define CURSOR_OPT_HOLD			0x0010	/* WITH HOLD */
+#define CURSOR_OPT_BINARY		(1 << 0)	/* BINARY */
+#define CURSOR_OPT_SCROLL		(1 << 1)	/* SCROLL explicitly given */
+#define CURSOR_OPT_NO_SCROLL	(1 << 2)	/* NO SCROLL explicitly given */
+#define CURSOR_OPT_INSENSITIVE	(1 << 3)	/* INSENSITIVE */
+#define CURSOR_OPT_HOLD			(1 << 4)	/* WITH HOLD */
 /* these planner-control flags do not correspond to any SQL grammar: */
-#define CURSOR_OPT_FAST_PLAN	0x0020	/* prefer fast-start plan */
-#define CURSOR_OPT_GENERIC_PLAN 0x0040	/* force use of generic plan */
-#define CURSOR_OPT_CUSTOM_PLAN	0x0080	/* force use of custom plan */
-#define CURSOR_OPT_PARALLEL_OK	0x0100	/* parallel mode OK */
+#define CURSOR_OPT_FAST_PLAN	(1 << 16)	/* prefer fast-start plan */
+#define CURSOR_OPT_GENERIC_PLAN (1 << 17)	/* force use of generic plan */
+#define CURSOR_OPT_CUSTOM_PLAN	(1 << 18)	/* force use of custom plan */
+#define CURSOR_OPT_PARALLEL_OK	(1 << 19)	/* parallel mode OK */
 
 typedef struct DeclareCursorStmt
 {

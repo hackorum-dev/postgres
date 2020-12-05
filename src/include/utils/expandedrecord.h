@@ -49,14 +49,14 @@ typedef struct ExpandedRecordHeader
 
 	/* Assorted flag bits */
 	int			flags;
-#define ER_FLAG_FVALUE_VALID	0x0001	/* fvalue is up to date? */
-#define ER_FLAG_FVALUE_ALLOCED	0x0002	/* fvalue is local storage? */
-#define ER_FLAG_DVALUES_VALID	0x0004	/* dvalues/dnulls are up to date? */
-#define ER_FLAG_DVALUES_ALLOCED	0x0008	/* any field values local storage? */
-#define ER_FLAG_HAVE_EXTERNAL	0x0010	/* any field values are external? */
-#define ER_FLAG_TUPDESC_ALLOCED	0x0020	/* tupdesc is local storage? */
-#define ER_FLAG_IS_DOMAIN		0x0040	/* er_decltypeid is domain? */
-#define ER_FLAG_IS_DUMMY		0x0080	/* this header is dummy (see below) */
+#define ER_FLAG_FVALUE_VALID	(1 << 0)	/* fvalue is up to date? */
+#define ER_FLAG_FVALUE_ALLOCED	(1 << 1)	/* fvalue is local storage? */
+#define ER_FLAG_DVALUES_VALID	(1 << 2)	/* dvalues/dnulls are up to date? */
+#define ER_FLAG_DVALUES_ALLOCED	(1 << 3)	/* any field values local storage? */
+#define ER_FLAG_HAVE_EXTERNAL	(1 << 4)	/* any field values are external? */
+#define ER_FLAG_TUPDESC_ALLOCED	(1 << 5)	/* tupdesc is local storage? */
+#define ER_FLAG_IS_DOMAIN		(1 << 6)	/* er_decltypeid is domain? */
+#define ER_FLAG_IS_DUMMY		(1 << 7)	/* this header is dummy (see below) */
 /* flag bits that are not to be cleared when replacing tuple data: */
 #define ER_FLAGS_NON_DATA \
 	(ER_FLAG_TUPDESC_ALLOCED | ER_FLAG_IS_DOMAIN | ER_FLAG_IS_DUMMY)

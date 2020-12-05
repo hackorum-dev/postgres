@@ -58,10 +58,10 @@ typedef struct ForeignTable
 } ForeignTable;
 
 /* Flags for GetForeignServerExtended */
-#define FSV_MISSING_OK	0x01
+#define FSV_MISSING_OK	(1 << 0)
 
 /* Flags for GetForeignDataWrapperExtended */
-#define FDW_MISSING_OK	0x01
+#define FDW_MISSING_OK	(1 << 0)
 
 
 extern ForeignServer *GetForeignServer(Oid serverid);

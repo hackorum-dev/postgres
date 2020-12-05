@@ -289,13 +289,13 @@ struct DropRelationCallbackState
 };
 
 /* Alter table target-type flags for ATSimplePermissions */
-#define		ATT_TABLE				0x0001
-#define		ATT_VIEW				0x0002
-#define		ATT_MATVIEW				0x0004
-#define		ATT_INDEX				0x0008
-#define		ATT_COMPOSITE_TYPE		0x0010
-#define		ATT_FOREIGN_TABLE		0x0020
-#define		ATT_PARTITIONED_INDEX	0x0040
+#define		ATT_TABLE				(1 << 0)
+#define		ATT_VIEW				(1 << 1)
+#define		ATT_MATVIEW				(1 << 2)
+#define		ATT_INDEX				(1 << 3)
+#define		ATT_COMPOSITE_TYPE		(1 << 4)
+#define		ATT_FOREIGN_TABLE		(1 << 5)
+#define		ATT_PARTITIONED_INDEX	(1 << 6)
 
 /*
  * Partition tables are expected to be dropped when the parent partitioned

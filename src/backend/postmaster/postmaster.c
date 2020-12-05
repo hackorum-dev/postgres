@@ -142,11 +142,11 @@
  * struct bkend, these are OR-able request flag bits for SignalSomeChildren()
  * and CountChildren().
  */
-#define BACKEND_TYPE_NORMAL		0x0001	/* normal backend */
-#define BACKEND_TYPE_AUTOVAC	0x0002	/* autovacuum worker process */
-#define BACKEND_TYPE_WALSND		0x0004	/* walsender process */
-#define BACKEND_TYPE_BGWORKER	0x0008	/* bgworker process */
-#define BACKEND_TYPE_ALL		0x000F	/* OR of all the above */
+#define BACKEND_TYPE_NORMAL		(1 << 0)	/* normal backend */
+#define BACKEND_TYPE_AUTOVAC	(1 << 1)	/* autovacuum worker process */
+#define BACKEND_TYPE_WALSND		(1 << 2)	/* walsender process */
+#define BACKEND_TYPE_BGWORKER	(1 << 3)	/* bgworker process */
+#define BACKEND_TYPE_ALL		(BACKEND_TYPE_NORMAL | BACKEND_TYPE_AUTOVAC | BACKEND_TYPE_WALSND | BACKEND_TYPE_BGWORKER)
 
 /*
  * List of active backends (or child processes anyway; we don't actually

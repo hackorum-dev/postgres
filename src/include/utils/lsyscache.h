@@ -36,8 +36,8 @@ typedef enum IOFuncSelector
 } IOFuncSelector;
 
 /* Flag bits for get_attstatsslot */
-#define ATTSTATSSLOT_VALUES		0x01
-#define ATTSTATSSLOT_NUMBERS	0x02
+#define ATTSTATSSLOT_VALUES		(1 << 0)
+#define ATTSTATSSLOT_NUMBERS	(1 << 1)
 
 /* Result struct for get_attstatsslot */
 typedef struct AttStatsSlot

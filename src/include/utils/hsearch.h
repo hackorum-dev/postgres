@@ -79,19 +79,19 @@ typedef struct HASHCTL
 } HASHCTL;
 
 /* Flags to indicate which parameters are supplied */
-#define HASH_PARTITION	0x0001	/* Hashtable is used w/partitioned locking */
-#define HASH_SEGMENT	0x0002	/* Set segment size */
-#define HASH_DIRSIZE	0x0004	/* Set directory size (initial and max) */
-#define HASH_ELEM		0x0010	/* Set keysize and entrysize */
-#define HASH_BLOBS		0x0020	/* Select support functions for binary keys */
-#define HASH_FUNCTION	0x0040	/* Set user defined hash function */
-#define HASH_COMPARE	0x0080	/* Set user defined comparison function */
-#define HASH_KEYCOPY	0x0100	/* Set user defined key-copying function */
-#define HASH_ALLOC		0x0200	/* Set memory allocator */
-#define HASH_CONTEXT	0x0400	/* Set memory allocation context */
-#define HASH_SHARED_MEM 0x0800	/* Hashtable is in shared memory */
-#define HASH_ATTACH		0x1000	/* Do not initialize hctl */
-#define HASH_FIXED_SIZE 0x2000	/* Initial size is a hard limit */
+#define HASH_PARTITION	(1 << 0)	/* Hashtable is used w/partitioned locking */
+#define HASH_SEGMENT	(1 << 1)	/* Set segment size */
+#define HASH_DIRSIZE	(1 << 2)	/* Set directory size (initial and max) */
+#define HASH_ELEM		(1 << 3)	/* Set keysize and entrysize */
+#define HASH_BLOBS		(1 << 4)	/* Select support functions for binary keys */
+#define HASH_FUNCTION	(1 << 5)	/* Set user defined hash function */
+#define HASH_COMPARE	(1 << 6)	/* Set user defined comparison function */
+#define HASH_KEYCOPY	(1 << 7)	/* Set user defined key-copying function */
+#define HASH_ALLOC		(1 << 8)	/* Set memory allocator */
+#define HASH_CONTEXT	(1 << 9)	/* Set memory allocation context */
+#define HASH_SHARED_MEM (1 << 10)	/* Hashtable is in shared memory */
+#define HASH_ATTACH		(1 << 11)	/* Do not initialize hctl */
+#define HASH_FIXED_SIZE (1 << 12)	/* Initial size is a hard limit */
 
 
 /* max_dsize value to indicate expansible directory */

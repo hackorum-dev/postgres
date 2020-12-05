@@ -27,7 +27,7 @@ typedef struct SharedTuplestoreAccessor SharedTuplestoreAccessor;
  * A flag indicating that the tuplestore will only be scanned once, so backing
  * files can be unlinked early.
  */
-#define SHARED_TUPLESTORE_SINGLE_PASS 0x01
+#define SHARED_TUPLESTORE_SINGLE_PASS (1 << 0)
 
 extern size_t sts_estimate(int participants);
 

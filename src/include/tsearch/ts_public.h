@@ -112,9 +112,9 @@ typedef struct
 } TSLexeme;
 
 /* Flag bits that can appear in TSLexeme.flags */
-#define TSL_ADDPOS		0x01
-#define TSL_PREFIX		0x02
-#define TSL_FILTER		0x04
+#define TSL_ADDPOS		(1 << 0)
+#define TSL_PREFIX		(1 << 1)
+#define TSL_FILTER		(1 << 2)
 
 /*
  * Struct for supporting complex dictionaries like thesaurus.

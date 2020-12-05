@@ -174,14 +174,14 @@ extern SortGroupClause *get_sortgroupref_clause_noerr(Index sortref,
 /* in util/var.c: */
 
 /* Bits that can be OR'd into the flags argument of pull_var_clause() */
-#define PVC_INCLUDE_AGGREGATES	0x0001	/* include Aggrefs in output list */
-#define PVC_RECURSE_AGGREGATES	0x0002	/* recurse into Aggref arguments */
-#define PVC_INCLUDE_WINDOWFUNCS 0x0004	/* include WindowFuncs in output list */
-#define PVC_RECURSE_WINDOWFUNCS 0x0008	/* recurse into WindowFunc arguments */
-#define PVC_INCLUDE_PLACEHOLDERS	0x0010	/* include PlaceHolderVars in
-											 * output list */
-#define PVC_RECURSE_PLACEHOLDERS	0x0020	/* recurse into PlaceHolderVar
-											 * arguments */
+#define PVC_INCLUDE_AGGREGATES		(1 << 0)	/* include Aggrefs in output list */
+#define PVC_RECURSE_AGGREGATES		(1 << 1)	/* recurse into Aggref arguments */
+#define PVC_INCLUDE_WINDOWFUNCS		(1 << 2)	/* include WindowFuncs in output list */
+#define PVC_RECURSE_WINDOWFUNCS		(1 << 3)	/* recurse into WindowFunc arguments */
+#define PVC_INCLUDE_PLACEHOLDERS	(1 << 4)	/* include PlaceHolderVars in
+												 * output list */
+#define PVC_RECURSE_PLACEHOLDERS	(1 << 5)	/* recurse into PlaceHolderVar
+												 * arguments */
 
 extern Bitmapset *pull_varnos(Node *node);
 extern Bitmapset *pull_varnos_of_level(Node *node, int levelsup);

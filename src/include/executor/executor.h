@@ -53,12 +53,12 @@
  * mean that the plan can't queue any AFTER triggers; just that the caller
  * is responsible for there being a trigger context for them to be queued in.
  */
-#define EXEC_FLAG_EXPLAIN_ONLY	0x0001	/* EXPLAIN, no ANALYZE */
-#define EXEC_FLAG_REWIND		0x0002	/* need efficient rescan */
-#define EXEC_FLAG_BACKWARD		0x0004	/* need backward scan */
-#define EXEC_FLAG_MARK			0x0008	/* need mark/restore */
-#define EXEC_FLAG_SKIP_TRIGGERS 0x0010	/* skip AfterTrigger calls */
-#define EXEC_FLAG_WITH_NO_DATA	0x0020	/* rel scannability doesn't matter */
+#define EXEC_FLAG_EXPLAIN_ONLY	(1 << 0)	/* EXPLAIN, no ANALYZE */
+#define EXEC_FLAG_REWIND		(1 << 1)	/* need efficient rescan */
+#define EXEC_FLAG_BACKWARD		(1 << 2)	/* need backward scan */
+#define EXEC_FLAG_MARK			(1 << 3)	/* need mark/restore */
+#define EXEC_FLAG_SKIP_TRIGGERS	(1 << 4)	/* skip AfterTrigger calls */
+#define EXEC_FLAG_WITH_NO_DATA	(1 << 5)	/* rel scannability doesn't matter */
 
 
 /* Hook for plugins to get control in ExecutorStart() */

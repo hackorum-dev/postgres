@@ -167,13 +167,13 @@ typedef struct ReorderBufferChange
 } ReorderBufferChange;
 
 /* ReorderBufferTXN txn_flags */
-#define RBTXN_HAS_CATALOG_CHANGES 0x0001
-#define RBTXN_IS_SUBXACT          0x0002
-#define RBTXN_IS_SERIALIZED       0x0004
-#define RBTXN_IS_SERIALIZED_CLEAR 0x0008
-#define RBTXN_IS_STREAMED         0x0010
-#define RBTXN_HAS_TOAST_INSERT    0x0020
-#define RBTXN_HAS_SPEC_INSERT     0x0040
+#define RBTXN_HAS_CATALOG_CHANGES (1 << 0)
+#define RBTXN_IS_SUBXACT          (1 << 1)
+#define RBTXN_IS_SERIALIZED       (1 << 2)
+#define RBTXN_IS_SERIALIZED_CLEAR (1 << 3)
+#define RBTXN_IS_STREAMED         (1 << 4)
+#define RBTXN_HAS_TOAST_INSERT    (1 << 5)
+#define RBTXN_HAS_SPEC_INSERT     (1 << 6)
 
 /* Does the transaction have catalog changes? */
 #define rbtxn_has_catalog_changes(txn) \

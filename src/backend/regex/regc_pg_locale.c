@@ -79,15 +79,15 @@ static Oid	pg_regex_collation;
 /*
  * Hard-wired character properties for C locale
  */
-#define PG_ISDIGIT	0x01
-#define PG_ISALPHA	0x02
+#define PG_ISDIGIT	(1 << 0)
+#define PG_ISALPHA	(1 << 1)
 #define PG_ISALNUM	(PG_ISDIGIT | PG_ISALPHA)
-#define PG_ISUPPER	0x04
-#define PG_ISLOWER	0x08
-#define PG_ISGRAPH	0x10
-#define PG_ISPRINT	0x20
-#define PG_ISPUNCT	0x40
-#define PG_ISSPACE	0x80
+#define PG_ISUPPER	(1 << 2)
+#define PG_ISLOWER	(1 << 3)
+#define PG_ISGRAPH	(1 << 4)
+#define PG_ISPRINT	(1 << 5)
+#define PG_ISPUNCT	(1 << 6)
+#define PG_ISSPACE	(1 << 7)
 
 static const unsigned char pg_char_properties[128] = {
 	 /* NUL */ 0,

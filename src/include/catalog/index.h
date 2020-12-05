@@ -149,11 +149,11 @@ extern void reindex_index(Oid indexId, bool skip_constraint_checks,
 						  char relpersistence, int options);
 
 /* Flag bits for reindex_relation(): */
-#define REINDEX_REL_PROCESS_TOAST			0x01
-#define REINDEX_REL_SUPPRESS_INDEX_USE		0x02
-#define REINDEX_REL_CHECK_CONSTRAINTS		0x04
-#define REINDEX_REL_FORCE_INDEXES_UNLOGGED	0x08
-#define REINDEX_REL_FORCE_INDEXES_PERMANENT 0x10
+#define REINDEX_REL_PROCESS_TOAST			(1 << 0)
+#define REINDEX_REL_SUPPRESS_INDEX_USE		(1 << 1)
+#define REINDEX_REL_CHECK_CONSTRAINTS		(1 << 2)
+#define REINDEX_REL_FORCE_INDEXES_UNLOGGED	(1 << 3)
+#define REINDEX_REL_FORCE_INDEXES_PERMANENT (1 << 4)
 
 extern bool reindex_relation(Oid relid, int flags, int options);
 

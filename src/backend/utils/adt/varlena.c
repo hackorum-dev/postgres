@@ -5597,7 +5597,7 @@ text_reverse(PG_FUNCTION_ARGS)
 /*
  * Support macros for text_format()
  */
-#define TEXT_FORMAT_FLAG_MINUS	0x0001	/* is minus flag present? */
+#define TEXT_FORMAT_FLAG_MINUS	(1 << 0)	/* is minus flag present? */
 
 #define ADVANCE_PARSE_POINTER(ptr,end_ptr) \
 	do { \

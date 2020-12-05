@@ -87,9 +87,9 @@
 #define PRETTYINDENT_LIMIT		40	/* wrap limit */
 
 /* Pretty flags */
-#define PRETTYFLAG_PAREN		0x0001
-#define PRETTYFLAG_INDENT		0x0002
-#define PRETTYFLAG_SCHEMA		0x0004
+#define PRETTYFLAG_PAREN		(1 << 0)
+#define PRETTYFLAG_INDENT		(1 << 1)
+#define PRETTYFLAG_SCHEMA		(1 << 2)
 
 /* Default line length for pretty-print wrapping: 0 means wrap always */
 #define WRAP_COLUMN_DEFAULT		0

@@ -169,13 +169,13 @@ struct config_generic
 };
 
 /* bit values in status field */
-#define GUC_IS_IN_FILE		0x0001	/* found it in config file */
+#define GUC_IS_IN_FILE		(1 << 0)	/* found it in config file */
 /*
  * Caution: the GUC_IS_IN_FILE bit is transient state for ProcessConfigFile.
  * Do not assume that its value represents useful information elsewhere.
  */
-#define GUC_PENDING_RESTART 0x0002	/* changed value cannot be applied yet */
-#define GUC_NEEDS_REPORT	0x0004	/* new value must be reported to client */
+#define GUC_PENDING_RESTART (1 << 1)	/* changed value cannot be applied yet */
+#define GUC_NEEDS_REPORT	(1 << 2)	/* new value must be reported to client */
 
 
 /* GUC records for specific variable types */

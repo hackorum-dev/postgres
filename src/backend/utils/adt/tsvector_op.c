@@ -1455,9 +1455,9 @@ checkcondition_str(void *checkval, QueryOperand *val, ExecPhraseData *data)
  * Returns TS_YES if any positions were emitted to *data; or if data is NULL,
  * returns TS_YES if any positions would have been emitted.
  */
-#define TSPO_L_ONLY		0x01	/* emit positions appearing only in L */
-#define TSPO_R_ONLY		0x02	/* emit positions appearing only in R */
-#define TSPO_BOTH		0x04	/* emit positions appearing in both L&R */
+#define TSPO_L_ONLY		(1 << 0)	/* emit positions appearing only in L */
+#define TSPO_R_ONLY		(1 << 1)	/* emit positions appearing only in R */
+#define TSPO_BOTH		(1 << 2)	/* emit positions appearing in both L&R */
 
 static TSTernaryValue
 TS_phrase_output(ExecPhraseData *data,

@@ -36,11 +36,11 @@
 #include "utils/typcache.h"
 
 /* Operations available for setPath */
-#define JB_PATH_CREATE					0x0001
-#define JB_PATH_DELETE					0x0002
-#define JB_PATH_REPLACE					0x0004
-#define JB_PATH_INSERT_BEFORE			0x0008
-#define JB_PATH_INSERT_AFTER			0x0010
+#define JB_PATH_CREATE					(1 << 0)
+#define JB_PATH_DELETE					(1 << 1)
+#define JB_PATH_REPLACE					(1 << 2)
+#define JB_PATH_INSERT_BEFORE			(1 << 3)
+#define JB_PATH_INSERT_AFTER			(1 << 4)
 #define JB_PATH_CREATE_OR_INSERT \
 	(JB_PATH_INSERT_BEFORE | JB_PATH_INSERT_AFTER | JB_PATH_CREATE)
 

@@ -16,8 +16,8 @@
 #include "nodes/pg_list.h"
 
 /* Control flags for format_procedure_extended */
-#define FORMAT_PROC_INVALID_AS_NULL	0x01	/* NULL if undefined */
-#define FORMAT_PROC_FORCE_QUALIFY	0x02	/* force qualification */
+#define FORMAT_PROC_INVALID_AS_NULL	(1 << 0)	/* NULL if undefined */
+#define FORMAT_PROC_FORCE_QUALIFY	(1 << 1)	/* force qualification */
 extern char *format_procedure_extended(Oid procedure_oid, bits16 flags);
 
 /* Control flags for format_operator_extended */

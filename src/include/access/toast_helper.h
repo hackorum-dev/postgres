@@ -74,10 +74,10 @@ typedef struct
  * TOAST_NEEDS_CHANGE indicates that a new tuple needs to built; in other
  * words, the toaster did something.
  */
-#define TOAST_NEEDS_DELETE_OLD				0x0001
-#define TOAST_NEEDS_FREE					0x0002
-#define TOAST_HAS_NULLS						0x0004
-#define TOAST_NEEDS_CHANGE					0x0008
+#define TOAST_NEEDS_DELETE_OLD				(1 << 0)
+#define TOAST_NEEDS_FREE					(1 << 1)
+#define TOAST_HAS_NULLS						(1 << 2)
+#define TOAST_NEEDS_CHANGE					(1 << 3)
 
 /*
  * Flags indicating the status of a TOAST operation with respect to a
@@ -97,8 +97,8 @@ typedef struct
  */
 #define TOASTCOL_NEEDS_DELETE_OLD			TOAST_NEEDS_DELETE_OLD
 #define TOASTCOL_NEEDS_FREE					TOAST_NEEDS_FREE
-#define TOASTCOL_IGNORE						0x0010
-#define TOASTCOL_INCOMPRESSIBLE				0x0020
+#define TOASTCOL_IGNORE						(1 << 4)
+#define TOASTCOL_INCOMPRESSIBLE				(1 << 5)
 
 extern void toast_tuple_init(ToastTupleContext *ttc);
 extern int	toast_tuple_find_biggest_attribute(ToastTupleContext *ttc,

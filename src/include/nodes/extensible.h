@@ -78,8 +78,8 @@ extern const ExtensibleNodeMethods *GetExtensibleNodeMethods(const char *name,
  * Flags for custom paths, indicating what capabilities the resulting scan
  * will have.
  */
-#define CUSTOMPATH_SUPPORT_BACKWARD_SCAN	0x0001
-#define CUSTOMPATH_SUPPORT_MARK_RESTORE		0x0002
+#define CUSTOMPATH_SUPPORT_BACKWARD_SCAN	(1 << 0)
+#define CUSTOMPATH_SUPPORT_MARK_RESTORE		(1 << 1)
 
 /*
  * Custom path methods.  Mostly, we just need to know how to convert a

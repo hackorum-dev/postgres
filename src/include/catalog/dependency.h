@@ -131,13 +131,13 @@ typedef enum ObjectClass
 #define LAST_OCLASS		OCLASS_TRANSFORM
 
 /* flag bits for performDeletion/performMultipleDeletions: */
-#define PERFORM_DELETION_INTERNAL			0x0001	/* internal action */
-#define PERFORM_DELETION_CONCURRENTLY		0x0002	/* concurrent drop */
-#define PERFORM_DELETION_QUIETLY			0x0004	/* suppress notices */
-#define PERFORM_DELETION_SKIP_ORIGINAL		0x0008	/* keep original obj */
-#define PERFORM_DELETION_SKIP_EXTENSIONS	0x0010	/* keep extensions */
-#define PERFORM_DELETION_CONCURRENT_LOCK	0x0020	/* normal drop with
-													 * concurrent lock mode */
+#define PERFORM_DELETION_INTERNAL			(1 << 0)	/* internal action */
+#define PERFORM_DELETION_CONCURRENTLY		(1 << 1)	/* concurrent drop */
+#define PERFORM_DELETION_QUIETLY			(1 << 2)	/* suppress notices */
+#define PERFORM_DELETION_SKIP_ORIGINAL		(1 << 3)	/* keep original obj */
+#define PERFORM_DELETION_SKIP_EXTENSIONS	(1 << 4)	/* keep extensions */
+#define PERFORM_DELETION_CONCURRENT_LOCK	(1 << 5)	/* normal drop with
+														 * concurrent lock mode */
 
 
 /* in dependency.c */

@@ -29,9 +29,9 @@ typedef struct EventTriggerData
 	CommandTag	tag;
 } EventTriggerData;
 
-#define AT_REWRITE_ALTER_PERSISTENCE	0x01
-#define AT_REWRITE_DEFAULT_VAL			0x02
-#define AT_REWRITE_COLUMN_REWRITE		0x04
+#define AT_REWRITE_ALTER_PERSISTENCE	(1 << 0)
+#define AT_REWRITE_DEFAULT_VAL			(1 << 1)
+#define AT_REWRITE_COLUMN_REWRITE		(1 << 2)
 
 /*
  * EventTriggerData is the node type that is passed as fmgr "context" info

@@ -65,8 +65,8 @@
 	LocalBufferBlockPointers[-((bufHdr)->buf_id + 2)]
 
 /* Bits in SyncOneBuffer's return value */
-#define BUF_WRITTEN				0x01
-#define BUF_REUSABLE			0x02
+#define BUF_WRITTEN				(1 << 0)
+#define BUF_REUSABLE			(1 << 1)
 
 #define RELS_BSEARCH_THRESHOLD		20
 

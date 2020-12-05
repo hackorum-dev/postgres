@@ -51,14 +51,14 @@ struct XidCache
 /*
  * Flags for PGPROC->statusFlags and PROC_HDR->statusFlags[]
  */
-#define		PROC_IS_AUTOVACUUM	0x01	/* is it an autovac worker? */
-#define		PROC_IN_VACUUM		0x02	/* currently running lazy vacuum */
-#define		PROC_IN_SAFE_IC		0x04	/* currently running CREATE INDEX
-										 * CONCURRENTLY on non-expressional,
-										 * non-partial index */
-#define		PROC_VACUUM_FOR_WRAPAROUND	0x08	/* set by autovac only */
-#define		PROC_IN_LOGICAL_DECODING	0x10	/* currently doing logical
-												 * decoding outside xact */
+#define		PROC_IS_AUTOVACUUM	(1 << 0)	/* is it an autovac worker? */
+#define		PROC_IN_VACUUM		(1 << 1)	/* currently running lazy vacuum */
+#define		PROC_IN_SAFE_IC		(1 << 2)	/* currently running CREATE INDEX
+											 * CONCURRENTLY on non-expressional,
+											 * non-partial index */
+#define		PROC_VACUUM_FOR_WRAPAROUND	(1 << 3)	/* set by autovac only */
+#define		PROC_IN_LOGICAL_DECODING	(1 << 4)	/* currently doing logical
+													 * decoding outside xact */
 
 /* flags reset at EOXact */
 #define		PROC_VACUUM_STATE_MASK \

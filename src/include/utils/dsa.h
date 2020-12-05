@@ -70,9 +70,9 @@ typedef pg_atomic_uint64 dsa_pointer_atomic;
 #endif
 
 /* Flags for dsa_allocate_extended. */
-#define DSA_ALLOC_HUGE		0x01	/* allow huge allocation (> 1 GB) */
-#define DSA_ALLOC_NO_OOM	0x02	/* no failure if out-of-memory */
-#define DSA_ALLOC_ZERO		0x04	/* zero allocated memory */
+#define DSA_ALLOC_HUGE		(1 << 0)	/* allow huge allocation (> 1 GB) */
+#define DSA_ALLOC_NO_OOM	(1 << 1)	/* no failure if out-of-memory */
+#define DSA_ALLOC_ZERO		(1 << 2)	/* zero allocated memory */
 
 /* A sentinel value for dsa_pointer used to indicate failure to allocate. */
 #define InvalidDsaPointer ((dsa_pointer) 0)

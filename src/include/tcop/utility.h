@@ -53,9 +53,9 @@ typedef struct AlterTableUtilityContext
  * recovery. It can't write WAL, nor can it do things that would imperil
  * replay of future WAL received from the primary.
  */
-#define COMMAND_OK_IN_READ_ONLY_TXN	0x0001
-#define COMMAND_OK_IN_PARALLEL_MODE	0x0002
-#define	COMMAND_OK_IN_RECOVERY		0x0004
+#define COMMAND_OK_IN_READ_ONLY_TXN	(1 << 0)
+#define COMMAND_OK_IN_PARALLEL_MODE	(1 << 1)
+#define	COMMAND_OK_IN_RECOVERY		(1 << 2)
 
 /*
  * We say that a command is strictly read-only if it is sufficiently read-only

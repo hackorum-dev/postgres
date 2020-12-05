@@ -993,7 +993,7 @@ contain_context_dependent_node(Node *clause)
 	return contain_context_dependent_node_walker(clause, &flags);
 }
 
-#define CCDN_CASETESTEXPR_OK	0x0001	/* CaseTestExpr okay here? */
+#define CCDN_CASETESTEXPR_OK	(1 << 0)	/* CaseTestExpr okay here? */
 
 static bool
 contain_context_dependent_node_walker(Node *node, int *flags)

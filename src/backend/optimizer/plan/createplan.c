@@ -65,10 +65,10 @@
  * CP_IGNORE_TLIST specifies that the caller plans to replace the targetlist,
  * and therefore it doesn't matter a bit what target list gets generated.
  */
-#define CP_EXACT_TLIST		0x0001	/* Plan must return specified tlist */
-#define CP_SMALL_TLIST		0x0002	/* Prefer narrower tlists */
-#define CP_LABEL_TLIST		0x0004	/* tlist must contain sortgrouprefs */
-#define CP_IGNORE_TLIST		0x0008	/* caller will replace tlist */
+#define CP_EXACT_TLIST		(1 << 0)	/* Plan must return specified tlist */
+#define CP_SMALL_TLIST		(1 << 1)	/* Prefer narrower tlists */
+#define CP_LABEL_TLIST		(1 << 2)	/* tlist must contain sortgrouprefs */
+#define CP_IGNORE_TLIST		(1 << 3)	/* caller will replace tlist */
 
 
 static Plan *create_plan_recurse(PlannerInfo *root, Path *best_path,

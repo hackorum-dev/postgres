@@ -127,22 +127,22 @@ typedef struct TypeCacheEntry
 } TypeCacheEntry;
 
 /* Bit flags to indicate which fields a given caller needs to have set */
-#define TYPECACHE_EQ_OPR			0x0001
-#define TYPECACHE_LT_OPR			0x0002
-#define TYPECACHE_GT_OPR			0x0004
-#define TYPECACHE_CMP_PROC			0x0008
-#define TYPECACHE_HASH_PROC			0x0010
-#define TYPECACHE_EQ_OPR_FINFO		0x0020
-#define TYPECACHE_CMP_PROC_FINFO	0x0040
-#define TYPECACHE_HASH_PROC_FINFO	0x0080
-#define TYPECACHE_TUPDESC			0x0100
-#define TYPECACHE_BTREE_OPFAMILY	0x0200
-#define TYPECACHE_HASH_OPFAMILY		0x0400
-#define TYPECACHE_RANGE_INFO		0x0800
-#define TYPECACHE_DOMAIN_BASE_INFO			0x1000
-#define TYPECACHE_DOMAIN_CONSTR_INFO		0x2000
-#define TYPECACHE_HASH_EXTENDED_PROC		0x4000
-#define TYPECACHE_HASH_EXTENDED_PROC_FINFO	0x8000
+#define TYPECACHE_EQ_OPR					(1 << 0)
+#define TYPECACHE_LT_OPR					(1 << 1)
+#define TYPECACHE_GT_OPR					(1 << 2)
+#define TYPECACHE_CMP_PROC					(1 << 3)
+#define TYPECACHE_HASH_PROC					(1 << 4)
+#define TYPECACHE_EQ_OPR_FINFO				(1 << 5)
+#define TYPECACHE_CMP_PROC_FINFO			(1 << 6)
+#define TYPECACHE_HASH_PROC_FINFO			(1 << 7)
+#define TYPECACHE_TUPDESC					(1 << 8)
+#define TYPECACHE_BTREE_OPFAMILY			(1 << 9)
+#define TYPECACHE_HASH_OPFAMILY				(1 << 10)
+#define TYPECACHE_RANGE_INFO				(1 << 11)
+#define TYPECACHE_DOMAIN_BASE_INFO			(1 << 12)
+#define TYPECACHE_DOMAIN_CONSTR_INFO		(1 << 13)
+#define TYPECACHE_HASH_EXTENDED_PROC		(1 << 14)
+#define TYPECACHE_HASH_EXTENDED_PROC_FINFO	(1 << 15)
 
 /* This value will not equal any valid tupledesc identifier, nor 0 */
 #define INVALID_TUPLEDESC_IDENTIFIER ((uint64) 1)

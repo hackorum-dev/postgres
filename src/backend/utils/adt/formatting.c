@@ -541,11 +541,11 @@ do { \
  * Suffixes (FormatNode.suffix is an OR of these codes)
  * ----------
  */
-#define DCH_S_FM	0x01
-#define DCH_S_TH	0x02
-#define DCH_S_th	0x04
-#define DCH_S_SP	0x08
-#define DCH_S_TM	0x10
+#define DCH_S_FM	(1 << 0)
+#define DCH_S_TH	(1 << 1)
+#define DCH_S_th	(1 << 2)
+#define DCH_S_SP	(1 << 3)
+#define DCH_S_TM	(1 << 4)
 
 /* ----------
  * Suffix tests
@@ -1019,9 +1019,9 @@ typedef struct NUMProc
 } NUMProc;
 
 /* Return flags for DCH_from_char() */
-#define DCH_DATED	0x01
-#define DCH_TIMED	0x02
-#define DCH_ZONED	0x04
+#define DCH_DATED	(1 << 0)
+#define DCH_TIMED	(1 << 1)
+#define DCH_ZONED	(1 << 2)
 
 /* ----------
  * Functions

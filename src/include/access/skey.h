@@ -112,15 +112,15 @@ typedef ScanKeyData *ScanKey;
  * bits should be defined here).  Bits 16-31 are reserved for use within
  * individual index access methods.
  */
-#define SK_ISNULL			0x0001	/* sk_argument is NULL */
-#define SK_UNARY			0x0002	/* unary operator (not supported!) */
-#define SK_ROW_HEADER		0x0004	/* row comparison header (see above) */
-#define SK_ROW_MEMBER		0x0008	/* row comparison member (see above) */
-#define SK_ROW_END			0x0010	/* last row comparison member */
-#define SK_SEARCHARRAY		0x0020	/* scankey represents ScalarArrayOp */
-#define SK_SEARCHNULL		0x0040	/* scankey represents "col IS NULL" */
-#define SK_SEARCHNOTNULL	0x0080	/* scankey represents "col IS NOT NULL" */
-#define SK_ORDER_BY			0x0100	/* scankey is for ORDER BY op */
+#define SK_ISNULL			(1 << 0)	/* sk_argument is NULL */
+#define SK_UNARY			(1 << 1)	/* unary operator (not supported!) */
+#define SK_ROW_HEADER		(1 << 2)	/* row comparison header (see above) */
+#define SK_ROW_MEMBER		(1 << 3)	/* row comparison member (see above) */
+#define SK_ROW_END			(1 << 4)	/* last row comparison member */
+#define SK_SEARCHARRAY		(1 << 5)	/* scankey represents ScalarArrayOp */
+#define SK_SEARCHNULL		(1 << 6)	/* scankey represents "col IS NULL" */
+#define SK_SEARCHNOTNULL	(1 << 7)	/* scankey represents "col IS NOT NULL" */
+#define SK_ORDER_BY			(1 << 8)	/* scankey is for ORDER BY op */
 
 
 /*

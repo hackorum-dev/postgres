@@ -950,8 +950,8 @@ typedef BTScanOpaqueData *BTScanOpaque;
  * to use bits 16-31 (see skey.h).  The uppermost bits are copied from the
  * index's indoption[] array entry for the index attribute.
  */
-#define SK_BT_REQFWD	0x00010000	/* required to continue forward scan */
-#define SK_BT_REQBKWD	0x00020000	/* required to continue backward scan */
+#define SK_BT_REQFWD	(1 << 16)	/* required to continue forward scan */
+#define SK_BT_REQBKWD	(1 << 17)	/* required to continue backward scan */
 #define SK_BT_INDOPTION_SHIFT  24	/* must clear the above bits */
 #define SK_BT_DESC			(INDOPTION_DESC << SK_BT_INDOPTION_SHIFT)
 #define SK_BT_NULLS_FIRST	(INDOPTION_NULLS_FIRST << SK_BT_INDOPTION_SHIFT)
