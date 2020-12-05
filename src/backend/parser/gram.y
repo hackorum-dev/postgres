@@ -1773,7 +1773,14 @@ CheckPointStmt:
 			CHECKPOINT
 				{
 					CheckPointStmt *n = makeNode(CheckPointStmt);
-					$$ = (Node *)n;
+					n->options = NIL;
+					$$ = (Node *) n;
+				}
+			| CHECKPOINT '(' utility_option_list ')'
+				{
+					CheckPointStmt *n = makeNode(CheckPointStmt);
+					n->options = $3;
+					$$ = (Node *) n;
 				}
 		;
 
