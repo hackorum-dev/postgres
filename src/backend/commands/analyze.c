@@ -37,7 +37,6 @@
 #include "commands/dbcommands.h"
 #include "commands/progress.h"
 #include "commands/tablecmds.h"
-#include "commands/vacuum.h"
 #include "executor/executor.h"
 #include "foreign/fdwapi.h"
 #include "miscadmin.h"
@@ -61,7 +60,6 @@
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/pg_rusage.h"
-#include "utils/sampling.h"
 #include "utils/sortsupport.h"
 #include "utils/syscache.h"
 #include "utils/timestamp.h"
@@ -98,7 +96,6 @@ static VacAttrStats *examine_attribute(Relation onerel, int attnum,
 static int	acquire_sample_rows(Relation onerel, int elevel,
 								HeapTuple *rows, int targrows,
 								double *totalrows, double *totaldeadrows);
-static int	compare_rows(const void *a, const void *b);
 static int	acquire_inherited_sample_rows(Relation onerel, int elevel,
 										  HeapTuple *rows, int targrows,
 										  double *totalrows, double *totaldeadrows);
@@ -997,29 +994,9 @@ examine_attribute(Relation onerel, int attnum, Node *index_expr)
  * We also estimate the total numbers of live and dead rows in the table,
  * and return them into *totalrows and *totaldeadrows, respectively.
  *
- * The returned list of tuples is in order by physical position in the table.
- * (We will rely on this later to derive correlation estimates.)
- *
- * As of May 2004 we use a new two-stage method:  Stage one selects up
- * to targrows random blocks (or all blocks, if there aren't so many).
- * Stage two scans these blocks and uses the Vitter algorithm to create
- * a random sample of targrows rows (or less, if there are less in the
- * sample of blocks).  The two stages are executed simultaneously: each
- * block is processed as soon as stage one returns its number and while
- * the rows are read stage two controls which ones are to be inserted
- * into the sample.
- *
- * Although every row has an equal chance of ending up in the final
- * sample, this sampling method is not perfect: not every possible
- * sample has an equal chance of being selected.  For large relations
- * the number of different blocks represented by the sample tends to be
- * too small.  We can live with that for now.  Improvements are welcome.
- *
- * An important property of this sampling method is that because we do
- * look at a statistically unbiased set of blocks, we should get
- * unbiased estimates of the average numbers of live and dead rows per
- * block.  The previous sampling method put too much credence in the row
- * density near the start of the table.
+ * AM acquire sample function MUST return tuples in the order by physical
+ * position in the table. (We will rely on this later to derive correlation
+ * estimates.)
  */
 static int
 acquire_sample_rows(Relation onerel, int elevel,
@@ -1027,167 +1004,15 @@ acquire_sample_rows(Relation onerel, int elevel,
 					double *totalrows, double *totaldeadrows)
 {
 	int			numrows = 0;	/* # rows now in reservoir */
-	double		samplerows = 0; /* total # rows collected */
-	double		liverows = 0;	/* # live rows seen */
-	double		deadrows = 0;	/* # dead rows seen */
-	double		rowstoskip = -1;	/* -1 means not set yet */
-	BlockNumber totalblocks;
-	TransactionId OldestXmin;
-	BlockSamplerData bs;
-	ReservoirStateData rstate;
-	TupleTableSlot *slot;
-	TableScanDesc scan;
-	BlockNumber nblocks;
-	BlockNumber blksdone = 0;
 
 	Assert(targrows > 0);
 
-	totalblocks = RelationGetNumberOfBlocks(onerel);
-
-	/* Need a cutoff xmin for HeapTupleSatisfiesVacuum */
-	OldestXmin = GetOldestNonRemovableTransactionId(onerel);
-
-	/* Prepare for sampling block numbers */
-	nblocks = BlockSampler_Init(&bs, totalblocks, targrows, random());
-
-	/* Report sampling block numbers */
-	pgstat_progress_update_param(PROGRESS_ANALYZE_BLOCKS_TOTAL,
-								 nblocks);
-
-	/* Prepare for sampling rows */
-	reservoir_init_selection_state(&rstate, targrows);
-
-	scan = table_beginscan_analyze(onerel);
-	slot = table_slot_create(onerel, NULL);
-
-	/* Outer loop over blocks to sample */
-	while (BlockSampler_HasMore(&bs))
-	{
-		BlockNumber targblock = BlockSampler_Next(&bs);
-
-		vacuum_delay_point();
-
-		if (!table_scan_analyze_next_block(scan, targblock, vac_strategy))
-			continue;
-
-		while (table_scan_analyze_next_tuple(scan, OldestXmin, &liverows, &deadrows, slot))
-		{
-			/*
-			 * The first targrows sample rows are simply copied into the
-			 * reservoir. Then we start replacing tuples in the sample until
-			 * we reach the end of the relation.  This algorithm is from Jeff
-			 * Vitter's paper (see full citation in utils/misc/sampling.c). It
-			 * works by repeatedly computing the number of tuples to skip
-			 * before selecting a tuple, which replaces a randomly chosen
-			 * element of the reservoir (current set of tuples).  At all times
-			 * the reservoir is a true random sample of the tuples we've
-			 * passed over so far, so when we fall off the end of the relation
-			 * we're done.
-			 */
-			if (numrows < targrows)
-				rows[numrows++] = ExecCopySlotHeapTuple(slot);
-			else
-			{
-				/*
-				 * t in Vitter's paper is the number of records already
-				 * processed.  If we need to compute a new S value, we must
-				 * use the not-yet-incremented value of samplerows as t.
-				 */
-				if (rowstoskip < 0)
-					rowstoskip = reservoir_get_next_S(&rstate, samplerows, targrows);
-
-				if (rowstoskip <= 0)
-				{
-					/*
-					 * Found a suitable tuple, so save it, replacing one old
-					 * tuple at random
-					 */
-					int			k = (int) (targrows * sampler_random_fract(rstate.randstate));
-
-					Assert(k >= 0 && k < targrows);
-					heap_freetuple(rows[k]);
-					rows[k] = ExecCopySlotHeapTuple(slot);
-				}
-
-				rowstoskip -= 1;
-			}
-
-			samplerows += 1;
-		}
-
-		pgstat_progress_update_param(PROGRESS_ANALYZE_BLOCKS_DONE,
-									 ++blksdone);
-	}
-
-	ExecDropSingleTupleTableSlot(slot);
-	table_endscan(scan);
-
-	/*
-	 * If we didn't find as many tuples as we wanted then we're done. No sort
-	 * is needed, since they're already in order.
-	 *
-	 * Otherwise we need to sort the collected tuples by position
-	 * (itempointer). It's not worth worrying about corner cases where the
-	 * tuples are already sorted.
-	 */
-	if (numrows == targrows)
-		qsort((void *) rows, numrows, sizeof(HeapTuple), compare_rows);
-
-	/*
-	 * Estimate total numbers of live and dead rows in relation, extrapolating
-	 * on the assumption that the average tuple density in pages we didn't
-	 * scan is the same as in the pages we did scan.  Since what we scanned is
-	 * a random sample of the pages in the relation, this should be a good
-	 * assumption.
-	 */
-	if (bs.m > 0)
-	{
-		*totalrows = floor((liverows / bs.m) * totalblocks + 0.5);
-		*totaldeadrows = floor((deadrows / bs.m) * totalblocks + 0.5);
-	}
-	else
-	{
-		*totalrows = 0.0;
-		*totaldeadrows = 0.0;
-	}
-
-	/*
-	 * Emit some interesting relation info
-	 */
-	ereport(elevel,
-			(errmsg("\"%s\": scanned %d of %u pages, "
-					"containing %.0f live rows and %.0f dead rows; "
-					"%d rows in sample, %.0f estimated total rows",
-					RelationGetRelationName(onerel),
-					bs.m, totalblocks,
-					liverows, deadrows,
-					numrows, *totalrows)));
+	numrows = table_acquire_sample_rows(onerel, elevel,
+										vac_strategy, rows,
+										targrows, totalrows,
+										totaldeadrows);
 
 	return numrows;
-}
-
-/*
- * qsort comparator for sorting rows[] array
- */
-static int
-compare_rows(const void *a, const void *b)
-{
-	HeapTuple	ha = *(const HeapTuple *) a;
-	HeapTuple	hb = *(const HeapTuple *) b;
-	BlockNumber ba = ItemPointerGetBlockNumber(&ha->t_self);
-	OffsetNumber oa = ItemPointerGetOffsetNumber(&ha->t_self);
-	BlockNumber bb = ItemPointerGetBlockNumber(&hb->t_self);
-	OffsetNumber ob = ItemPointerGetOffsetNumber(&hb->t_self);
-
-	if (ba < bb)
-		return -1;
-	if (ba > bb)
-		return 1;
-	if (oa < ob)
-		return -1;
-	if (oa > ob)
-		return 1;
-	return 0;
 }
 
 
