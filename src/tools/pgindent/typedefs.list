@@ -132,6 +132,7 @@ ArrayIterator
 ArrayMapState
 ArrayMetaState
 ArrayParseState
+ArraySubWorkspace
 ArrayType
 AsyncQueueControl
 AsyncQueueEntry
@@ -604,6 +605,7 @@ ExceptionLabelMap
 ExceptionMap
 ExclusiveBackupState
 ExecAuxRowMark
+ExecEvalBoolSubroutine
 ExecEvalSubroutine
 ExecForeignDelete_function
 ExecForeignInsert_function
@@ -2398,6 +2400,10 @@ SubplanResultRelHashElem
 SubqueryScan
 SubqueryScanPath
 SubqueryScanState
+SubscriptExecSetup
+SubscriptExecSteps
+SubscriptRoutines
+SubscriptTransform
 SubscriptingRef
 SubscriptingRefState
 Subscription
