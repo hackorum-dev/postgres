@@ -44,6 +44,8 @@
 static StringInfo label_file;
 static StringInfo tblspc_map_file;
 
+static bool is_all_ascii(const char *str);
+
 /*
  * pg_start_backup: set up for taking an on-line backup dump
  *
@@ -308,6 +310,16 @@ pg_create_restore_point(PG_FUNCTION_ARGS)
 				 errhint("wal_level must be set to \"replica\" or \"logical\" at server start.")));
 
 	restore_name_str = text_to_cstring(restore_name);
+
+	/*
+	 * The restore point name may be included in a timeline history file. The
+	 * system assumes that the contents are ASCII, so enforce an all-ASCII
+	 * restore point name.
+	 */
+	if (!is_all_ascii(restore_name_str))
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("restore point name must be valid ASCII")));
 
 	if (strlen(restore_name_str) >= MAXFNAMELEN)
 		ereport(ERROR,
@@ -783,4 +795,19 @@ pg_promote(PG_FUNCTION_ARGS)
 	ereport(WARNING,
 			(errmsg("server did not promote within %d seconds", wait_seconds)));
 	PG_RETURN_BOOL(false);
+}
+
+/*
+ * Check a string to see if it is pure ASCII
+ */
+static bool
+is_all_ascii(const char *str)
+{
+	while (*str)
+	{
+		if (IS_HIGHBIT_SET(*str))
+			return false;
+		str++;
+	}
+	return true;
 }
