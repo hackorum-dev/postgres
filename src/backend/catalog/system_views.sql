@@ -1309,7 +1309,7 @@ AS 'pg_create_logical_replication_slot';
 CREATE OR REPLACE FUNCTION
   make_interval(years int4 DEFAULT 0, months int4 DEFAULT 0, weeks int4 DEFAULT 0,
                 days int4 DEFAULT 0, hours int4 DEFAULT 0, mins int4 DEFAULT 0,
-                secs double precision DEFAULT 0.0)
+                secs numeric DEFAULT 0)
 RETURNS interval
 LANGUAGE INTERNAL
 STRICT IMMUTABLE PARALLEL SAFE

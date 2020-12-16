@@ -4186,11 +4186,9 @@ int8_numeric(PG_FUNCTION_ARGS)
 	PG_RETURN_NUMERIC(int64_to_numeric(val));
 }
 
-
-Datum
-numeric_int8(PG_FUNCTION_ARGS)
+int64
+numeric_int8_opt_error(Numeric num, bool *error)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
 	NumericVar	x;
 	int64		result;
 
@@ -4214,7 +4212,15 @@ numeric_int8(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 				 errmsg("bigint out of range")));
 
-	PG_RETURN_INT64(result);
+	return result;
+}
+
+Datum
+numeric_int8(PG_FUNCTION_ARGS)
+{
+	Numeric		num = PG_GETARG_NUMERIC(0);
+
+	PG_RETURN_INT64(numeric_int8_opt_error(num, NULL));
 }
 
 

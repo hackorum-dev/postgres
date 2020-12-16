@@ -31,6 +31,7 @@
 #include "utils/builtins.h"
 #include "utils/date.h"
 #include "utils/datetime.h"
+#include "utils/numeric.h"
 #include "utils/sortsupport.h"
 
 /*
@@ -1266,26 +1267,30 @@ time_overflows(int hour, int min, int sec, fsec_t fsec)
 	return false;
 }
 
-/* float_time_overflows()
- * Same, when we have seconds + fractional seconds as one "double" value.
+/* numeric_time_overflows()
+ * Same, when we have seconds + fractional seconds as one "numeric" value.
  */
 bool
-float_time_overflows(int hour, int min, double sec)
+numeric_time_overflows(int hour, int min, Numeric sec)
 {
+	int32	usec;
+
 	/* Range-check the fields individually. */
 	if (hour < 0 || hour > HOURS_PER_DAY ||
 		min < 0 || min >= MINS_PER_HOUR)
 		return true;
 
 	/*
-	 * "sec", being double, requires extra care.  Cope with NaN, and round off
-	 * before applying the range check to avoid unexpected errors due to
-	 * imprecise input.  (We assume rint() behaves sanely with infinities.)
+	 * "sec", being double, requires extra care.  Cope with NaN and infinity,
+	 * and round off before applying the range check to avoid unexpected
+	 * errors due to imprecise input.
 	 */
-	if (isnan(sec))
+	if (numeric_is_nan(sec))
 		return true;
-	sec = rint(sec * USECS_PER_SEC);
-	if (sec < 0 || sec > SECS_PER_MINUTE * USECS_PER_SEC)
+	if (numeric_is_inf(sec))
+		return true;
+	usec = numeric_int4_opt_error(numeric_mul_opt_error(sec, int64_to_numeric(USECS_PER_SEC), NULL), NULL);
+	if (usec < 0 || usec > SECS_PER_MINUTE * USECS_PER_SEC)
 		return true;
 
 	/*
@@ -1294,7 +1299,7 @@ float_time_overflows(int hour, int min, double sec)
 	 * way that callers will convert the fields to a time.
 	 */
 	if (((((hour * MINS_PER_HOUR + min) * SECS_PER_MINUTE)
-		  * USECS_PER_SEC) + (int64) sec) > USECS_PER_DAY)
+		  * USECS_PER_SEC) + (int64) usec) > USECS_PER_DAY)
 		return true;
 
 	return false;
@@ -1402,19 +1407,20 @@ make_time(PG_FUNCTION_ARGS)
 {
 	int			tm_hour = PG_GETARG_INT32(0);
 	int			tm_min = PG_GETARG_INT32(1);
-	double		sec = PG_GETARG_FLOAT8(2);
+	Numeric		sec = PG_GETARG_NUMERIC(2);
 	TimeADT		time;
 
 	/* Check for time overflow */
-	if (float_time_overflows(tm_hour, tm_min, sec))
+	if (numeric_time_overflows(tm_hour, tm_min, sec))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATETIME_FIELD_OVERFLOW),
-				 errmsg("time field value out of range: %d:%02d:%02g",
-						tm_hour, tm_min, sec)));
+				 errmsg("time field value out of range: %d:%02d:%s",
+						tm_hour, tm_min, numeric_normalize(sec))));
 
 	/* This should match tm2time */
-	time = (((tm_hour * MINS_PER_HOUR + tm_min) * SECS_PER_MINUTE)
-			* USECS_PER_SEC) + (int64) rint(sec * USECS_PER_SEC);
+	time = (((tm_hour * MINS_PER_HOUR + tm_min) * SECS_PER_MINUTE)* USECS_PER_SEC)
+		/* round(sec * USECS_PER_SEC, 0) */
+		+ numeric_int4_opt_error(numeric_mul_opt_error(sec, int64_to_numeric(USECS_PER_SEC), NULL),	NULL);
 
 	PG_RETURN_TIMEADT(time);
 }

@@ -8925,7 +8925,7 @@ SELECT regexp_match('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
          <optional>, <parameter>days</parameter> <type>int</type>
          <optional>, <parameter>hours</parameter> <type>int</type>
          <optional>, <parameter>mins</parameter> <type>int</type>
-         <optional>, <parameter>secs</parameter> <type>double precision</type>
+         <optional>, <parameter>secs</parameter> <type>numeric</type>
          </optional></optional></optional></optional></optional></optional></optional> )
          <returnvalue>interval</returnvalue>
         </para>
@@ -8946,7 +8946,7 @@ SELECT regexp_match('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
          </indexterm>
          <function>make_time</function> ( <parameter>hour</parameter> <type>int</type>,
          <parameter>min</parameter> <type>int</type>,
-         <parameter>sec</parameter> <type>double precision</type> )
+         <parameter>sec</parameter> <type>numeric</type> )
          <returnvalue>time</returnvalue>
         </para>
         <para>
@@ -8968,7 +8968,7 @@ SELECT regexp_match('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
          <parameter>day</parameter> <type>int</type>,
          <parameter>hour</parameter> <type>int</type>,
          <parameter>min</parameter> <type>int</type>,
-         <parameter>sec</parameter> <type>double precision</type> )
+         <parameter>sec</parameter> <type>numeric</type> )
          <returnvalue>timestamp</returnvalue>
         </para>
         <para>
@@ -8991,7 +8991,7 @@ SELECT regexp_match('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
          <parameter>day</parameter> <type>int</type>,
          <parameter>hour</parameter> <type>int</type>,
          <parameter>min</parameter> <type>int</type>,
-         <parameter>sec</parameter> <type>double precision</type>
+         <parameter>sec</parameter> <type>numeric</type>
          <optional>, <parameter>timezone</parameter> <type>text</type> </optional> )
          <returnvalue>timestamp with time zone</returnvalue>
         </para>

@@ -35,6 +35,7 @@
 #include "utils/date.h"
 #include "utils/datetime.h"
 #include "utils/float.h"
+#include "utils/numeric.h"
 
 /*
  * gcc's -ffast-math switch breaks routines that expect exact results from
@@ -550,7 +551,7 @@ parse_sane_timezone(struct pg_tm *tm, text *zone)
  */
 static Timestamp
 make_timestamp_internal(int year, int month, int day,
-						int hour, int min, double sec)
+						int hour, int min, Numeric sec)
 {
 	struct pg_tm tm;
 	TimeOffset	date;
@@ -587,24 +588,25 @@ make_timestamp_internal(int year, int month, int day,
 	date = date2j(tm.tm_year, tm.tm_mon, tm.tm_mday) - POSTGRES_EPOCH_JDATE;
 
 	/* Check for time overflow */
-	if (float_time_overflows(hour, min, sec))
+	if (numeric_time_overflows(hour, min, sec))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATETIME_FIELD_OVERFLOW),
-				 errmsg("time field value out of range: %d:%02d:%02g",
-						hour, min, sec)));
+				 errmsg("time field value out of range: %d:%02d:%s",
+						hour, min, numeric_normalize(sec))));
 
 	/* This should match tm2time */
-	time = (((hour * MINS_PER_HOUR + min) * SECS_PER_MINUTE)
-			* USECS_PER_SEC) + (int64) rint(sec * USECS_PER_SEC);
+	time = (((hour * MINS_PER_HOUR + min) * SECS_PER_MINUTE) * USECS_PER_SEC)
+		/* round(sec * USECS_PER_SEC, 0) */
+		+ numeric_int4_opt_error(numeric_mul_opt_error(sec, int64_to_numeric(USECS_PER_SEC), NULL), NULL);
 
 	result = date * USECS_PER_DAY + time;
 	/* check for major overflow */
 	if ((result - time) / USECS_PER_DAY != date)
 		ereport(ERROR,
 				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
-				 errmsg("timestamp out of range: %d-%02d-%02d %d:%02d:%02g",
+				 errmsg("timestamp out of range: %d-%02d-%02d %d:%02d:%s",
 						year, month, day,
-						hour, min, sec)));
+						hour, min, numeric_normalize(sec))));
 
 	/* check for just-barely overflow (okay except time-of-day wraps) */
 	/* caution: we want to allow 1999-12-31 24:00:00 */
@@ -612,17 +614,17 @@ make_timestamp_internal(int year, int month, int day,
 		(result > 0 && date < -1))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
-				 errmsg("timestamp out of range: %d-%02d-%02d %d:%02d:%02g",
+				 errmsg("timestamp out of range: %d-%02d-%02d %d:%02d:%s",
 						year, month, day,
-						hour, min, sec)));
+						hour, min, numeric_normalize(sec))));
 
 	/* final range check catches just-out-of-range timestamps */
 	if (!IS_VALID_TIMESTAMP(result))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
-				 errmsg("timestamp out of range: %d-%02d-%02d %d:%02d:%02g",
+				 errmsg("timestamp out of range: %d-%02d-%02d %d:%02d:%s",
 						year, month, day,
-						hour, min, sec)));
+						hour, min, numeric_normalize(sec))));
 
 	return result;
 }
@@ -638,7 +640,7 @@ make_timestamp(PG_FUNCTION_ARGS)
 	int32		mday = PG_GETARG_INT32(2);
 	int32		hour = PG_GETARG_INT32(3);
 	int32		min = PG_GETARG_INT32(4);
-	float8		sec = PG_GETARG_FLOAT8(5);
+	Numeric		sec = PG_GETARG_NUMERIC(5);
 	Timestamp	result;
 
 	result = make_timestamp_internal(year, month, mday,
@@ -658,7 +660,7 @@ make_timestamptz(PG_FUNCTION_ARGS)
 	int32		mday = PG_GETARG_INT32(2);
 	int32		hour = PG_GETARG_INT32(3);
 	int32		min = PG_GETARG_INT32(4);
-	float8		sec = PG_GETARG_FLOAT8(5);
+	Numeric		sec = PG_GETARG_NUMERIC(5);
 	Timestamp	result;
 
 	result = make_timestamp_internal(year, month, mday,
@@ -679,7 +681,7 @@ make_timestamptz_at_timezone(PG_FUNCTION_ARGS)
 	int32		mday = PG_GETARG_INT32(2);
 	int32		hour = PG_GETARG_INT32(3);
 	int32		min = PG_GETARG_INT32(4);
-	float8		sec = PG_GETARG_FLOAT8(5);
+	Numeric		sec = PG_GETARG_NUMERIC(5);
 	text	   *zone = PG_GETARG_TEXT_PP(6);
 	TimestampTz result;
 	Timestamp	timestamp;
@@ -1500,14 +1502,14 @@ make_interval(PG_FUNCTION_ARGS)
 	int32		days = PG_GETARG_INT32(3);
 	int32		hours = PG_GETARG_INT32(4);
 	int32		mins = PG_GETARG_INT32(5);
-	double		secs = PG_GETARG_FLOAT8(6);
+	Numeric		secs = PG_GETARG_NUMERIC(6);
 	Interval   *result;
 
 	/*
 	 * Reject out-of-range inputs.  We really ought to check the integer
 	 * inputs as well, but it's not entirely clear what limits to apply.
 	 */
-	if (isinf(secs) || isnan(secs))
+	if (numeric_is_inf(secs) || numeric_is_nan(secs))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
 				 errmsg("interval out of range")));
@@ -1516,10 +1518,10 @@ make_interval(PG_FUNCTION_ARGS)
 	result->month = years * MONTHS_PER_YEAR + months;
 	result->day = weeks * 7 + days;
 
-	secs = rint(secs * USECS_PER_SEC);
 	result->time = hours * ((int64) SECS_PER_HOUR * USECS_PER_SEC) +
 		mins * ((int64) SECS_PER_MINUTE * USECS_PER_SEC) +
-		(int64) secs;
+		/* round(sec * USECS_PER_SEC, 0) */
+		numeric_int8_opt_error(numeric_mul_opt_error(secs, int64_to_numeric(USECS_PER_SEC), NULL), NULL);
 
 	PG_RETURN_INTERVAL_P(result);
 }
