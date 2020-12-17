@@ -620,11 +620,15 @@ StandbyTimeoutHandler(void)
 
 /*
  * StandbyLockTimeoutHandler() will be called if STANDBY_LOCK_TIMEOUT is exceeded.
- * This doesn't need to do anything, simply waking up is enough.
+ * This doesn't set flag, simply waking up is enough.
  */
 void
 StandbyLockTimeoutHandler(void)
 {
+	int			save_errno = errno;
+
+	SetLatch(MyLatch);
+	errno = save_errno;
 }
 
 /*
