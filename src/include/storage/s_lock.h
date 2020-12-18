@@ -336,6 +336,29 @@ tas(volatile slock_t *lock)
 
 #define S_UNLOCK(lock) __sync_lock_release(lock)
 
+#if defined(__aarch64__) || __ARM_ARCH__ >= 7
+
+#define SPIN_LOCK spin_delay
+
+static __inline__ void
+spin_delay(void)
+{
+	/*
+	 * With spin locks, the yield hint
+	 * improves CPU usage and performance
+	 * on ARM hardwares implemented on 64 bits
+	 * but is a NOP on ARM11 for example thus
+	 * enabling this instruction when useful.
+	 */
+	__asm__ __volatile__(
+		"       yield     \n"
+:
+:
+:		"memory");
+
+}
+
+#endif   /* __aarch64__ || __ARM_ARCH__ >= 7 */
 #endif	 /* HAVE_GCC__SYNC_INT32_TAS */
 #endif	 /* __arm__ || __arm || __aarch64__ || __aarch64 */
 
