@@ -70,6 +70,8 @@
 
 #define RELS_BSEARCH_THRESHOLD		20
 
+#define NO_DOUBLE_BUFFER_LOCK   1
+
 typedef struct PrivateRefCountEntry
 {
 	Buffer		buffer;
@@ -197,6 +199,7 @@ static PrivateRefCountEntry *NewPrivateRefCountEntry(Buffer buffer);
 static PrivateRefCountEntry *GetPrivateRefCountEntry(Buffer buffer, bool do_move);
 static inline int32 GetPrivateRefCount(Buffer buffer);
 static void ForgetPrivateRefCountEntry(PrivateRefCountEntry *ref);
+static void InvalidateBuffer(BufferDesc *buf);
 
 /*
  * Ensure that the PrivateRefCountArray has sufficient space to store one more
@@ -1093,12 +1096,22 @@ BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 
 		Assert(BUF_STATE_GET_REFCOUNT(buf_state) == 0);
 
+#if NO_DOUBLE_BUFFER_LOCK
+		if (buf_state & BM_TAG_VALID)
+		{
+			InvalidateBuffer(buf);	/* releases spinlock */
+			continue;
+		}
+#endif
 		/* Must copy buffer flags while we still hold the spinlock */
 		oldFlags = buf_state & BUF_FLAG_MASK;
 
 		/* Pin the buffer and then release the buffer spinlock */
 		PinBuffer_Locked(buf);
 
+#if NO_DOUBLE_BUFFER_LOCK
+		Assert(!(oldFlags & (BM_DIRTY|BM_TAG_VALID)));
+#else
 		/*
 		 * If the buffer was dirty, try to write it out.  There is a race
 		 * condition here, in that someone might dirty it after we released it
@@ -1216,6 +1229,7 @@ BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 			}
 		}
 		else
+#endif
 		{
 			/* if it wasn't valid, we need only the new partition */
 			LWLockAcquire(newPartitionLock, LW_EXCLUSIVE);
