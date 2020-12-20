@@ -409,6 +409,7 @@ ifeq ($(MAKELEVEL),0)
 	$(MKDIR_P) '$(abs_top_builddir)'/tmp_install/log
 	$(MAKE) -C '$(top_builddir)' DESTDIR='$(abs_top_builddir)'/tmp_install install >'$(abs_top_builddir)'/tmp_install/log/install.log 2>&1
 	$(MAKE) -j1 $(if $(CHECKPREP_TOP),-C $(CHECKPREP_TOP),) checkprep >>'$(abs_top_builddir)'/tmp_install/log/install.log 2>&1
+	'$(abs_top_builddir)'/install-vrunner.sh '$(abs_top_builddir)'
 endif
 endif
 endif
