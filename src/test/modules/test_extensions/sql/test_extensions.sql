@@ -15,7 +15,15 @@ CREATE EXTENSION test_ext_cyclic1 CASCADE;
 DROP SCHEMA test_ext CASCADE;
 
 CREATE EXTENSION test_ext6;
+
+-- test if the test_ext6 schema specified in the schema option is created
+-- on CREATE EXTENSION.
+SELECT nspname FROM pg_namespace WHERE nspname = 'test_ext6';
 DROP EXTENSION test_ext6;
+
+-- test if the test_ext6 schema is also dropped.
+SELECT nspname FROM pg_namespace WHERE nspname = 'test_ext6';
+
 CREATE EXTENSION test_ext6;
 
 -- test dropping of member tables that own extensions:

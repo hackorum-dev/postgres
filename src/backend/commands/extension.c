@@ -1386,6 +1386,7 @@ CreateExtensionInternal(char *extensionName,
 	List	   *requiredSchemas;
 	Oid			extensionOid;
 	ObjectAddress address;
+	bool		created_schema = false;
 	ListCell   *lc;
 
 	/*
@@ -1496,6 +1497,7 @@ CreateExtensionInternal(char *extensionName,
 			csstmt->if_not_exists = false;
 			CreateSchemaCommand(csstmt, "(generated CREATE SCHEMA command)",
 								-1, -1);
+			created_schema = true;
 
 			/*
 			 * CreateSchemaCommand includes CommandCounterIncrement, so new
@@ -1576,6 +1578,18 @@ CreateExtensionInternal(char *extensionName,
 								   PointerGetDatum(NULL),
 								   requiredExtensions);
 	extensionOid = address.objectId;
+
+	/*
+	 * Create the dependency between the schema and the extension if the
+	 * schema is newly created.
+	 */
+	if (created_schema)
+	{
+		ObjectAddress schemaAddr;
+
+		ObjectAddressSet(schemaAddr, NamespaceRelationId, schemaOid);
+		recordDependencyOn(&schemaAddr, &address, DEPENDENCY_EXTENSION);
+	}
 
 	/*
 	 * Apply any control-file comment on extension

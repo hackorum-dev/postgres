@@ -36,7 +36,21 @@ drop cascades to extension test_ext2
 drop cascades to extension test_ext4
 drop cascades to extension test_ext1
 CREATE EXTENSION test_ext6;
+-- test if the test_ext6 schema specified in the schema option is created
+-- on CREATE EXTENSION.
+SELECT nspname FROM pg_namespace WHERE nspname = 'test_ext6';
+  nspname  
+-----------
+ test_ext6
+(1 row)
+
 DROP EXTENSION test_ext6;
+-- test if the test_ext6 schema is also dropped.
+SELECT nspname FROM pg_namespace WHERE nspname = 'test_ext6';
+ nspname 
+---------
+(0 rows)
+
 CREATE EXTENSION test_ext6;
 -- test dropping of member tables that own extensions:
 -- this table will be absorbed into test_ext7
