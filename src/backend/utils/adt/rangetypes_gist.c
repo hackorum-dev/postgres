@@ -19,6 +19,7 @@
 #include "utils/datum.h"
 #include "utils/float.h"
 #include "utils/fmgrprotos.h"
+#include "utils/multirangetypes.h"
 #include "utils/rangetypes.h"
 
 /*
@@ -135,12 +136,30 @@ typedef struct
 
 static RangeType *range_super_union(TypeCacheEntry *typcache, RangeType *r1,
 									RangeType *r2);
-static bool range_gist_consistent_int(TypeCacheEntry *typcache,
-									  StrategyNumber strategy, const RangeType *key,
-									  Datum query);
-static bool range_gist_consistent_leaf(TypeCacheEntry *typcache,
-									   StrategyNumber strategy, const RangeType *key,
-									   Datum query);
+static bool range_gist_consistent_int_range(TypeCacheEntry *typcache,
+											StrategyNumber strategy,
+											const RangeType *key,
+											const RangeType *query);
+static bool range_gist_consistent_int_multirange(TypeCacheEntry *typcache,
+												 StrategyNumber strategy,
+												 const RangeType *key,
+												 const MultirangeType *query);
+static bool range_gist_consistent_int_element(TypeCacheEntry *typcache,
+											  StrategyNumber strategy,
+											  const RangeType *key,
+											  Datum query);
+static bool range_gist_consistent_leaf_range(TypeCacheEntry *typcache,
+											 StrategyNumber strategy,
+											 const RangeType *key,
+											 const RangeType *query);
+static bool range_gist_consistent_leaf_multirange(TypeCacheEntry *typcache,
+												  StrategyNumber strategy,
+												  const RangeType *key,
+												  const MultirangeType *query);
+static bool range_gist_consistent_leaf_element(TypeCacheEntry *typcache,
+											   StrategyNumber strategy,
+											   const RangeType *key,
+											   Datum query);
 static void range_gist_fallback_split(TypeCacheEntry *typcache,
 									  GistEntryVector *entryvec,
 									  GIST_SPLITVEC *v);
@@ -174,8 +193,8 @@ range_gist_consistent(PG_FUNCTION_ARGS)
 	GISTENTRY  *entry = (GISTENTRY *) PG_GETARG_POINTER(0);
 	Datum		query = PG_GETARG_DATUM(1);
 	StrategyNumber strategy = (StrategyNumber) PG_GETARG_UINT16(2);
-
-	/* Oid subtype = PG_GETARG_OID(3); */
+	bool		result;
+	Oid			subtype = PG_GETARG_OID(3);
 	bool	   *recheck = (bool *) PG_GETARG_POINTER(4);
 	RangeType  *key = DatumGetRangeTypeP(entry->key);
 	TypeCacheEntry *typcache;
@@ -185,12 +204,37 @@ range_gist_consistent(PG_FUNCTION_ARGS)
 
 	typcache = range_get_typcache(fcinfo, RangeTypeGetOid(key));
 
+	/*
+	 * Perform consistent checking using function corresponding to key type
+	 * (leaf or internal) and query subtype (range, multirange, or element).
+	 * Note that invalid subtype means that query type matches key type
+	 * (range).
+	 */
 	if (GIST_LEAF(entry))
-		PG_RETURN_BOOL(range_gist_consistent_leaf(typcache, strategy,
-												  key, query));
+	{
+		if (!OidIsValid(subtype) || subtype == ANYRANGEOID)
+			result = range_gist_consistent_leaf_range(typcache, strategy, key,
+													  DatumGetRangeTypeP(query));
+		else if (subtype == ANYMULTIRANGEOID)
+			result = range_gist_consistent_leaf_multirange(typcache, strategy, key,
+														   DatumGetMultirangeTypeP(query));
+		else
+			result = range_gist_consistent_leaf_element(typcache, strategy,
+														key, query);
+	}
 	else
-		PG_RETURN_BOOL(range_gist_consistent_int(typcache, strategy,
-												 key, query));
+	{
+		if (!OidIsValid(subtype) || subtype == ANYRANGEOID)
+			result = range_gist_consistent_int_range(typcache, strategy, key,
+													 DatumGetRangeTypeP(query));
+		else if (subtype == ANYMULTIRANGEOID)
+			result = range_gist_consistent_int_multirange(typcache, strategy, key,
+														  DatumGetMultirangeTypeP(query));
+		else
+			result = range_gist_consistent_int_element(typcache, strategy,
+													   key, query);
+	}
+	PG_RETURN_BOOL(result);
 }
 
 /* form union range */
@@ -759,48 +803,42 @@ range_super_union(TypeCacheEntry *typcache, RangeType *r1, RangeType *r2)
 }
 
 /*
- * GiST consistent test on an index internal page
+ * GiST consistent test on an index internal page with range query
  */
 static bool
-range_gist_consistent_int(TypeCacheEntry *typcache, StrategyNumber strategy,
-						  const RangeType *key, Datum query)
+range_gist_consistent_int_range(TypeCacheEntry *typcache,
+								StrategyNumber strategy,
+								const RangeType *key,
+								const RangeType *query)
 {
 	switch (strategy)
 	{
 		case RANGESTRAT_BEFORE:
-			if (RangeIsEmpty(key) || RangeIsEmpty(DatumGetRangeTypeP(query)))
+			if (RangeIsEmpty(key) || RangeIsEmpty(query))
 				return false;
-			return (!range_overright_internal(typcache, key,
-											  DatumGetRangeTypeP(query)));
+			return (!range_overright_internal(typcache, key, query));
 		case RANGESTRAT_OVERLEFT:
-			if (RangeIsEmpty(key) || RangeIsEmpty(DatumGetRangeTypeP(query)))
+			if (RangeIsEmpty(key) || RangeIsEmpty(query))
 				return false;
-			return (!range_after_internal(typcache, key,
-										  DatumGetRangeTypeP(query)));
+			return (!range_after_internal(typcache, key, query));
 		case RANGESTRAT_OVERLAPS:
-			return range_overlaps_internal(typcache, key,
-										   DatumGetRangeTypeP(query));
+			return range_overlaps_internal(typcache, key, query);
 		case RANGESTRAT_OVERRIGHT:
-			if (RangeIsEmpty(key) || RangeIsEmpty(DatumGetRangeTypeP(query)))
+			if (RangeIsEmpty(key) || RangeIsEmpty(query))
 				return false;
-			return (!range_before_internal(typcache, key,
-										   DatumGetRangeTypeP(query)));
+			return (!range_before_internal(typcache, key, query));
 		case RANGESTRAT_AFTER:
-			if (RangeIsEmpty(key) || RangeIsEmpty(DatumGetRangeTypeP(query)))
+			if (RangeIsEmpty(key) || RangeIsEmpty(query))
 				return false;
-			return (!range_overleft_internal(typcache, key,
-											 DatumGetRangeTypeP(query)));
+			return (!range_overleft_internal(typcache, key, query));
 		case RANGESTRAT_ADJACENT:
-			if (RangeIsEmpty(key) || RangeIsEmpty(DatumGetRangeTypeP(query)))
+			if (RangeIsEmpty(key) || RangeIsEmpty(query))
 				return false;
-			if (range_adjacent_internal(typcache, key,
-										DatumGetRangeTypeP(query)))
+			if (range_adjacent_internal(typcache, key, query))
 				return true;
-			return range_overlaps_internal(typcache, key,
-										   DatumGetRangeTypeP(query));
+			return range_overlaps_internal(typcache, key, query);
 		case RANGESTRAT_CONTAINS:
-			return range_contains_internal(typcache, key,
-										   DatumGetRangeTypeP(query));
+			return range_contains_internal(typcache, key, query);
 		case RANGESTRAT_CONTAINED_BY:
 
 			/*
@@ -810,20 +848,16 @@ range_gist_consistent_int(TypeCacheEntry *typcache, StrategyNumber strategy,
 			 */
 			if (RangeIsOrContainsEmpty(key))
 				return true;
-			return range_overlaps_internal(typcache, key,
-										   DatumGetRangeTypeP(query));
-		case RANGESTRAT_CONTAINS_ELEM:
-			return range_contains_elem_internal(typcache, key, query);
+			return range_overlaps_internal(typcache, key, query);
 		case RANGESTRAT_EQ:
 
 			/*
 			 * If query is empty, descend only if the key is or contains any
 			 * empty ranges.  Otherwise, descend if key contains query.
 			 */
-			if (RangeIsEmpty(DatumGetRangeTypeP(query)))
+			if (RangeIsEmpty(query))
 				return RangeIsOrContainsEmpty(key);
-			return range_contains_internal(typcache, key,
-										   DatumGetRangeTypeP(query));
+			return range_contains_internal(typcache, key, query);
 		default:
 			elog(ERROR, "unrecognized range strategy: %d", strategy);
 			return false;		/* keep compiler quiet */
@@ -831,42 +865,158 @@ range_gist_consistent_int(TypeCacheEntry *typcache, StrategyNumber strategy,
 }
 
 /*
- * GiST consistent test on an index leaf page
+ * GiST consistent test on an index internal page with multirange query
  */
 static bool
-range_gist_consistent_leaf(TypeCacheEntry *typcache, StrategyNumber strategy,
-						   const RangeType *key, Datum query)
+range_gist_consistent_int_multirange(TypeCacheEntry *typcache,
+									 StrategyNumber strategy,
+									 const RangeType *key,
+									 const MultirangeType *query)
 {
 	switch (strategy)
 	{
 		case RANGESTRAT_BEFORE:
-			return range_before_internal(typcache, key,
-										 DatumGetRangeTypeP(query));
+			if (RangeIsEmpty(key) || MultirangeIsEmpty(query))
+				return false;
+			return (!range_overright_multirange_internal(typcache, key, query));
 		case RANGESTRAT_OVERLEFT:
-			return range_overleft_internal(typcache, key,
-										   DatumGetRangeTypeP(query));
+			if (RangeIsEmpty(key) || MultirangeIsEmpty(query))
+				return false;
+			return (!range_after_multirange_internal(typcache, key, query));
 		case RANGESTRAT_OVERLAPS:
-			return range_overlaps_internal(typcache, key,
-										   DatumGetRangeTypeP(query));
+			return range_overlaps_multirange_internal(typcache, key, query);
 		case RANGESTRAT_OVERRIGHT:
-			return range_overright_internal(typcache, key,
-											DatumGetRangeTypeP(query));
+			if (RangeIsEmpty(key) || MultirangeIsEmpty(query))
+				return false;
+			return (!range_before_multirange_internal(typcache, key, query));
 		case RANGESTRAT_AFTER:
-			return range_after_internal(typcache, key,
-										DatumGetRangeTypeP(query));
+			if (RangeIsEmpty(key) || MultirangeIsEmpty(query))
+				return false;
+			return (!range_overleft_multirange_internal(typcache, key, query));
 		case RANGESTRAT_ADJACENT:
-			return range_adjacent_internal(typcache, key,
-										   DatumGetRangeTypeP(query));
+			if (RangeIsEmpty(key) || MultirangeIsEmpty(query))
+				return false;
+			if (range_adjacent_multirange_internal(typcache, key, query))
+				return true;
+			return range_overlaps_multirange_internal(typcache, key, query);
 		case RANGESTRAT_CONTAINS:
-			return range_contains_internal(typcache, key,
-										   DatumGetRangeTypeP(query));
+			return range_contains_multirange_internal(typcache, key, query);
 		case RANGESTRAT_CONTAINED_BY:
-			return range_contained_by_internal(typcache, key,
-											   DatumGetRangeTypeP(query));
+
+			/*
+			 * Empty ranges are contained by anything, so if key is or
+			 * contains any empty ranges, we must descend into it.  Otherwise,
+			 * descend only if key overlaps the query.
+			 */
+			if (RangeIsOrContainsEmpty(key))
+				return true;
+			return range_overlaps_multirange_internal(typcache, key, query);
+		default:
+			elog(ERROR, "unrecognized range strategy: %d", strategy);
+			return false;		/* keep compiler quiet */
+	}
+}
+
+/*
+ * GiST consistent test on an index internal page with element query
+ */
+static bool
+range_gist_consistent_int_element(TypeCacheEntry *typcache,
+								  StrategyNumber strategy,
+								  const RangeType *key,
+								  Datum query)
+{
+	switch (strategy)
+	{
 		case RANGESTRAT_CONTAINS_ELEM:
 			return range_contains_elem_internal(typcache, key, query);
+		default:
+			elog(ERROR, "unrecognized range strategy: %d", strategy);
+			return false;		/* keep compiler quiet */
+	}
+}
+
+/*
+ * GiST consistent test on an index leaf page with range query
+ */
+static bool
+range_gist_consistent_leaf_range(TypeCacheEntry *typcache,
+								 StrategyNumber strategy,
+								 const RangeType *key,
+								 const RangeType *query)
+{
+	switch (strategy)
+	{
+		case RANGESTRAT_BEFORE:
+			return range_before_internal(typcache, key, query);
+		case RANGESTRAT_OVERLEFT:
+			return range_overleft_internal(typcache, key, query);
+		case RANGESTRAT_OVERLAPS:
+			return range_overlaps_internal(typcache, key, query);
+		case RANGESTRAT_OVERRIGHT:
+			return range_overright_internal(typcache, key, query);
+		case RANGESTRAT_AFTER:
+			return range_after_internal(typcache, key, query);
+		case RANGESTRAT_ADJACENT:
+			return range_adjacent_internal(typcache, key, query);
+		case RANGESTRAT_CONTAINS:
+			return range_contains_internal(typcache, key, query);
+		case RANGESTRAT_CONTAINED_BY:
+			return range_contained_by_internal(typcache, key, query);
 		case RANGESTRAT_EQ:
-			return range_eq_internal(typcache, key, DatumGetRangeTypeP(query));
+			return range_eq_internal(typcache, key, query);
+		default:
+			elog(ERROR, "unrecognized range strategy: %d", strategy);
+			return false;		/* keep compiler quiet */
+	}
+}
+
+/*
+ * GiST consistent test on an index leaf page with multirange query
+ */
+static bool
+range_gist_consistent_leaf_multirange(TypeCacheEntry *typcache,
+									  StrategyNumber strategy,
+									  const RangeType *key,
+									  const MultirangeType *query)
+{
+	switch (strategy)
+	{
+		case RANGESTRAT_BEFORE:
+			return range_before_multirange_internal(typcache, key, query);
+		case RANGESTRAT_OVERLEFT:
+			return range_overleft_multirange_internal(typcache, key, query);
+		case RANGESTRAT_OVERLAPS:
+			return range_overlaps_multirange_internal(typcache, key, query);
+		case RANGESTRAT_OVERRIGHT:
+			return range_overright_multirange_internal(typcache, key, query);
+		case RANGESTRAT_AFTER:
+			return range_after_multirange_internal(typcache, key, query);
+		case RANGESTRAT_ADJACENT:
+			return range_adjacent_multirange_internal(typcache, key, query);
+		case RANGESTRAT_CONTAINS:
+			return range_contains_multirange_internal(typcache, key, query);
+		case RANGESTRAT_CONTAINED_BY:
+			return multirange_contains_range_internal(typcache, query, key);
+		default:
+			elog(ERROR, "unrecognized range strategy: %d", strategy);
+			return false;		/* keep compiler quiet */
+	}
+}
+
+/*
+ * GiST consistent test on an index leaf page with element query
+ */
+static bool
+range_gist_consistent_leaf_element(TypeCacheEntry *typcache,
+								   StrategyNumber strategy,
+								   const RangeType *key,
+								   Datum query)
+{
+	switch (strategy)
+	{
+		case RANGESTRAT_CONTAINS_ELEM:
+			return range_contains_elem_internal(typcache, key, query);
 		default:
 			elog(ERROR, "unrecognized range strategy: %d", strategy);
 			return false;		/* keep compiler quiet */
