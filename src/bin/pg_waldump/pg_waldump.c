@@ -72,6 +72,8 @@ typedef struct XLogDumpStats
 
 #define fatal_error(...) do { pg_log_fatal(__VA_ARGS__); exit(EXIT_FAILURE); } while(0)
 
+#define FOLLOW_START_LINES 20
+
 static void
 print_rmgr_list(void)
 {
@@ -752,6 +754,10 @@ main(int argc, char **argv)
 	XLogRecPtr	first_record;
 	char	   *waldir = NULL;
 	char	   *errormsg;
+	XLogRecPtr	last_recs[FOLLOW_START_LINES];
+	int			last_idx = 0;
+	bool		storing;
+	bool		rounded;
 
 	static struct option long_options[] = {
 		{"bkp-details", no_argument, NULL, 'b'},
@@ -1065,10 +1071,41 @@ main(int argc, char **argv)
 			   (uint32) (first_record >> 32), (uint32) first_record,
 			   (uint32) (first_record - private.startptr));
 
+	storing = config.follow;
+	rounded = false;
+
 	for (;;)
 	{
 		/* try to read the next record */
 		record = XLogReadRecord(xlogreader_state, &errormsg);
+
+		if (storing)
+		{
+			if (record)
+			{
+				/* remember LSNs of the last FOLLOW_START_LINES records  */
+				last_recs[last_idx++] = xlogreader_state->ReadRecPtr;
+				last_idx = last_idx % FOLLOW_START_LINES;
+				
+				if (last_idx == 0)
+					rounded = true;
+			}
+			else
+			{
+				XLogRecPtr startPtr;
+
+				/* find the first record to show */
+				if (!rounded)
+					startPtr = last_recs[0];
+				else
+					startPtr = last_recs[last_idx];
+
+				XLogFindNextRecord(xlogreader_state, startPtr);
+				storing = false;
+			}
+			continue;
+		}
+
 		if (!record)
 		{
 			if (!config.follow || private.endptr_reached)
