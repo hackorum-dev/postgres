@@ -237,6 +237,88 @@ range_gist_consistent(PG_FUNCTION_ARGS)
 	PG_RETURN_BOOL(result);
 }
 
+/*
+ * GiST compress method for multiranges: multirange is approximated as union
+ * range with no gaps.
+ */
+Datum
+multirange_gist_compress(PG_FUNCTION_ARGS)
+{
+	GISTENTRY  *entry = (GISTENTRY *) PG_GETARG_POINTER(0);
+
+	if (entry->leafkey)
+	{
+		MultirangeType *mr = DatumGetMultirangeTypeP(entry->key);
+		RangeType  *r;
+		TypeCacheEntry *typcache;
+		GISTENTRY  *retval = palloc(sizeof(GISTENTRY));
+
+		typcache = multirange_get_typcache(fcinfo, MultirangeTypeGetOid(mr));
+		r = multirange_get_union_range(typcache->rngtype, mr);
+
+		gistentryinit(*retval, RangeTypePGetDatum(r),
+					  entry->rel, entry->page, entry->offset, false);
+
+		PG_RETURN_POINTER(retval);
+	}
+
+	PG_RETURN_POINTER(entry);
+}
+
+/* GiST query consistency check for multiranges */
+Datum
+multirange_gist_consistent(PG_FUNCTION_ARGS)
+{
+	GISTENTRY  *entry = (GISTENTRY *) PG_GETARG_POINTER(0);
+	Datum		query = PG_GETARG_DATUM(1);
+	StrategyNumber strategy = (StrategyNumber) PG_GETARG_UINT16(2);
+	bool		result;
+	Oid			subtype = PG_GETARG_OID(3);
+	bool	   *recheck = (bool *) PG_GETARG_POINTER(4);
+	RangeType  *key = DatumGetRangeTypeP(entry->key);
+	TypeCacheEntry *typcache;
+
+	/*
+	 * All operators served by this function are inexact because multirange is
+	 * approximated by union range with no gaps.
+	 */
+	*recheck = true;
+
+	typcache = range_get_typcache(fcinfo, RangeTypeGetOid(key));
+
+	/*
+	 * Perform consistent checking using function corresponding to key type
+	 * (leaf or internal) and query subtype (range, multirange, or element).
+	 * Note that invalid subtype means that query type matches key type
+	 * (multirange).
+	 */
+	if (GIST_LEAF(entry))
+	{
+		if (!OidIsValid(subtype) || subtype == ANYMULTIRANGEOID)
+			result = range_gist_consistent_leaf_multirange(typcache, strategy, key,
+														   DatumGetMultirangeTypeP(query));
+		else if (subtype == ANYRANGEOID)
+			result = range_gist_consistent_leaf_range(typcache, strategy, key,
+													  DatumGetRangeTypeP(query));
+		else
+			result = range_gist_consistent_leaf_element(typcache, strategy,
+														key, query);
+	}
+	else
+	{
+		if (!OidIsValid(subtype) || subtype == ANYMULTIRANGEOID)
+			result = range_gist_consistent_int_multirange(typcache, strategy, key,
+														  DatumGetMultirangeTypeP(query));
+		else if (subtype == ANYRANGEOID)
+			result = range_gist_consistent_int_range(typcache, strategy, key,
+													 DatumGetRangeTypeP(query));
+		else
+			result = range_gist_consistent_int_element(typcache, strategy,
+													   key, query);
+	}
+	PG_RETURN_BOOL(result);
+}
+
 /* form union range */
 Datum
 range_gist_union(PG_FUNCTION_ARGS)
@@ -802,6 +884,30 @@ range_super_union(TypeCacheEntry *typcache, RangeType *r1, RangeType *r2)
 	return result;
 }
 
+static bool
+multirange_union_range_equal(TypeCacheEntry *typcache,
+							 const RangeType *r,
+							 const MultirangeType *mr)
+{
+	RangeBound	lower1,
+				upper1,
+				lower2,
+				upper2,
+				tmp;
+	bool		empty;
+
+	if (RangeIsEmpty(r) || MultirangeIsEmpty(mr))
+		return (RangeIsEmpty(r) && MultirangeIsEmpty(mr));
+
+	range_deserialize(typcache, r, &lower1, &upper1, &empty);
+	Assert(!empty);
+	multirange_get_bounds(typcache, mr, 0, &lower2, &tmp);
+	multirange_get_bounds(typcache, mr, mr->rangeCount - 1, &tmp, &upper2);
+
+	return (range_cmp_bounds(typcache, &lower1, &lower2) == 0 &&
+			range_cmp_bounds(typcache, &upper1, &upper2) == 0);
+}
+
 /*
  * GiST consistent test on an index internal page with range query
  */
@@ -911,6 +1017,15 @@ range_gist_consistent_int_multirange(TypeCacheEntry *typcache,
 			if (RangeIsOrContainsEmpty(key))
 				return true;
 			return range_overlaps_multirange_internal(typcache, key, query);
+		case RANGESTRAT_EQ:
+
+			/*
+			 * If query is empty, descend only if the key is or contains any
+			 * empty ranges.  Otherwise, descend if key contains query.
+			 */
+			if (MultirangeIsEmpty(query))
+				return RangeIsOrContainsEmpty(key);
+			return range_contains_multirange_internal(typcache, key, query);
 		default:
 			elog(ERROR, "unrecognized range strategy: %d", strategy);
 			return false;		/* keep compiler quiet */
@@ -998,6 +1113,8 @@ range_gist_consistent_leaf_multirange(TypeCacheEntry *typcache,
 			return range_contains_multirange_internal(typcache, key, query);
 		case RANGESTRAT_CONTAINED_BY:
 			return multirange_contains_range_internal(typcache, query, key);
+		case RANGESTRAT_EQ:
+			return multirange_union_range_equal(typcache, key, query);
 		default:
 			elog(ERROR, "unrecognized range strategy: %d", strategy);
 			return false;		/* keep compiler quiet */
