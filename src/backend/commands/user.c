@@ -293,27 +293,27 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("must be superuser to create superusers")));
 	}
-	else if (isreplication)
+
+	if (isreplication)
 	{
 		if (!superuser())
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("must be superuser to create replication users")));
 	}
-	else if (bypassrls)
+
+	if (bypassrls)
 	{
 		if (!superuser())
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("must be superuser to create bypassrls users")));
 	}
-	else
-	{
-		if (!have_createrole_privilege())
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("permission denied to create role")));
-	}
+
+	if (!have_createrole_privilege())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("permission denied to create role")));
 
 	/*
 	 * Check that the user is not trying to create a role in the reserved
@@ -721,21 +721,24 @@ AlterRole(AlterRoleStmt *stmt)
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("must be superuser to alter superuser roles or change superuser attribute")));
 	}
-	else if (authform->rolreplication || isreplication >= 0)
+
+	if (authform->rolreplication || isreplication >= 0)
 	{
 		if (!superuser())
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("must be superuser to alter replication roles or change replication attribute")));
 	}
-	else if (bypassrls >= 0)
+
+	if (bypassrls >= 0)
 	{
 		if (!superuser())
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("must be superuser to change bypassrls attribute")));
 	}
-	else if (!have_createrole_privilege())
+
+	if (!have_createrole_privilege())
 	{
 		/* We already checked issuper, isreplication, and bypassrls */
 		if (!(inherit < 0 &&
