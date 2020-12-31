@@ -34,6 +34,7 @@
 #include <unistd.h>
 
 #include "access/tableam.h"
+#include "access/hio.h"
 #include "access/xlog.h"
 #include "catalog/catalog.h"
 #include "catalog/storage.h"
@@ -47,6 +48,7 @@
 #include "storage/bufmgr.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"
+#include "storage/lmgr.h"
 #include "storage/smgr.h"
 #include "storage/standby.h"
 #include "utils/memdebug.h"
@@ -824,8 +826,8 @@ ReadBuffer_common(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 		bufBlock = isLocalBuf ? LocalBufHdrGetBlock(bufHdr) : BufHdrGetBlock(bufHdr);
 		if (!PageIsNew((Page) bufBlock))
 			ereport(ERROR,
-					(errmsg("unexpected data beyond EOF in block %u of relation %s",
-							blockNum, relpath(smgr->smgr_rnode, forkNum)),
+					(errmsg("%d unexpected data beyond EOF in block %u of relation %s",
+							MyProcPid, blockNum, relpath(smgr->smgr_rnode, forkNum)),
 					 errhint("This has been seen to occur with buggy kernels; consider updating your system.")));
 
 		/*
@@ -984,6 +986,60 @@ ReadBuffer_common(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 
 	return BufferDescriptorGetBuffer(bufHdr);
 }
+
+void
+ReadBufferExtendBulk(Relation reln, struct BulkInsertStateData* bistate)
+{
+	char relpersistence = reln->rd_rel->relpersistence;
+	SMgrRelation smgr;
+	BufferDesc *bufHdr;
+	BlockNumber	firstBlock,
+				blockNum;
+	Block		bufBlock;
+	bool		found;
+
+	/* Open it at the smgr level if not already done */
+	RelationOpenSmgr(reln);
+	smgr = reln->rd_smgr;
+
+	if (SmgrIsTemp(smgr))
+		elog(ERROR, "Bulk extend for temporary tables not supported");
+
+	LockRelationForExtension(reln, ExclusiveLock);
+	firstBlock = smgrnblocks(smgr, MAIN_FORKNUM);
+	smgrextend_count(smgr, MAIN_FORKNUM, firstBlock, bistate->empty_buffer, false, BULK_INSERT_BATCH_SIZE);
+	UnlockRelationForExtension(reln, ExclusiveLock);
+
+	for (int i=0; i<BULK_INSERT_BATCH_SIZE; ++i)
+	{
+		blockNum = firstBlock + i;
+
+		pgstat_count_buffer_read(reln);
+		/* Make sure we will have room to remember the buffer pin */
+		ResourceOwnerEnlargeBuffers(CurrentResourceOwner);
+		bufHdr = BufferAlloc(smgr, relpersistence, MAIN_FORKNUM, blockNum,
+							 bistate->strategy, &found);
+		pgBufferUsage.shared_blks_written++;
+
+		Assert(!found);
+
+		bufBlock = BufHdrGetBlock(bufHdr);
+
+		/* new buffers are zero-filled */
+		MemSet((char *) bufBlock, 0, BLCKSZ);
+
+		/* Set BM_VALID, terminate IO, and wake up any waiters */
+		TerminateBufferIO(bufHdr, false, BM_VALID);
+		bistate->local_buffers[i] = BufferDescriptorGetBuffer(bufHdr);
+	}
+
+	bistate->local_buffers_idx = 0;
+
+	VacuumPageMiss += BULK_INSERT_BATCH_SIZE;
+	if (VacuumCostActive)
+		VacuumCostBalance += VacuumCostPageMiss * BULK_INSERT_BATCH_SIZE;
+}
+
 
 /*
  * BufferAlloc -- subroutine for ReadBuffer.  Handles lookup of a shared

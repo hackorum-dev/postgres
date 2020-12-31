@@ -60,6 +60,7 @@ struct WritebackContext;
 
 /* forward declared, to avoid including smgr.h here */
 struct SMgrRelationData;
+struct BulkInsertStateData;
 
 /* in globals.c ... this duplicates miscadmin.h */
 extern PGDLLIMPORT int NBuffers;
@@ -180,6 +181,7 @@ extern Buffer ReadBuffer(Relation reln, BlockNumber blockNum);
 extern Buffer ReadBufferExtended(Relation reln, ForkNumber forkNum,
 								 BlockNumber blockNum, ReadBufferMode mode,
 								 BufferAccessStrategy strategy);
+void ReadBufferExtendBulk(Relation reln, struct BulkInsertStateData* bistate);
 extern Buffer ReadBufferWithoutRelcache(RelFileNode rnode,
 										ForkNumber forkNum, BlockNumber blockNum,
 										ReadBufferMode mode, BufferAccessStrategy strategy);

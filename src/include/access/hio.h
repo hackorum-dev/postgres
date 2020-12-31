@@ -26,10 +26,14 @@
  *
  * "typedef struct BulkInsertStateData *BulkInsertState" is in heapam.h
  */
+#define BULK_INSERT_BATCH_SIZE 128
 typedef struct BulkInsertStateData
 {
 	BufferAccessStrategy strategy;	/* our BULKWRITE strategy object */
 	Buffer		current_buf;	/* current insertion target page */
+	int 		local_buffers_idx;
+	Buffer 		local_buffers[BULK_INSERT_BATCH_SIZE];
+	char* 		empty_buffer;
 } BulkInsertStateData;
 
 

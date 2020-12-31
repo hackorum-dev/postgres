@@ -1810,6 +1810,10 @@ GetBulkInsertState(void)
 	bistate = (BulkInsertState) palloc(sizeof(BulkInsertStateData));
 	bistate->strategy = GetAccessStrategy(BAS_BULKWRITE);
 	bistate->current_buf = InvalidBuffer;
+	bistate->local_buffers_idx = BULK_INSERT_BATCH_SIZE;
+	for (int i=0; i<BULK_INSERT_BATCH_SIZE; ++i)
+		bistate->local_buffers[i] = InvalidBuffer;
+	bistate->empty_buffer = palloc0(BULK_INSERT_BATCH_SIZE * BLCKSZ);
 	return bistate;
 }
 
@@ -1821,7 +1825,15 @@ FreeBulkInsertState(BulkInsertState bistate)
 {
 	if (bistate->current_buf != InvalidBuffer)
 		ReleaseBuffer(bistate->current_buf);
+	for (int i=bistate->local_buffers_idx; i<BULK_INSERT_BATCH_SIZE; ++i)
+		if (bistate->local_buffers[i] != InvalidBuffer)
+		{
+			// FSM?
+			//LockBuffer(bistate->local_buffers[i], BUFFER_LOCK_UNLOCK);
+			ReleaseBuffer(bistate->local_buffers[i]);
+		}
 	FreeAccessStrategy(bistate->strategy);
+	pfree(bistate->empty_buffer);
 	pfree(bistate);
 }
 

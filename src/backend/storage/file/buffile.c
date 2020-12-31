@@ -499,7 +499,8 @@ BufFileDumpBuffer(BufFile *file)
 								 file->buffer.data + wpos,
 								 bytestowrite,
 								 file->curOffset,
-								 WAIT_EVENT_BUFFILE_WRITE);
+								 WAIT_EVENT_BUFFILE_WRITE,
+								 false);
 		if (bytestowrite <= 0)
 			ereport(ERROR,
 					(errcode_for_file_access(),

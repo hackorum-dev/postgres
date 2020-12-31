@@ -24,6 +24,7 @@
 #include "storage/lmgr.h"
 #include "storage/smgr.h"
 
+#include "miscadmin.h"
 
 /*
  * RelationPutHeapTuple - place tuple at specified page
@@ -118,9 +119,19 @@ ReadBufferBI(Relation relation, BlockNumber targetBlock,
 		bistate->current_buf = InvalidBuffer;
 	}
 
-	/* Perform a read using the buffer strategy */
-	buffer = ReadBufferExtended(relation, MAIN_FORKNUM, targetBlock,
-								mode, bistate->strategy);
+	if (targetBlock == P_NEW && mode == RBM_ZERO_AND_LOCK && bistate->local_buffers_idx < BULK_INSERT_BATCH_SIZE)
+	{
+		/* If we have a local buffer remaining, use that */
+		buffer = bistate->local_buffers[bistate->local_buffers_idx++];
+		LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
+		Assert(buffer != InvalidBuffer);
+	}
+	else
+	{
+		/* Perform a read using the buffer strategy */
+		buffer = ReadBufferExtended(relation, MAIN_FORKNUM, targetBlock,
+									mode, bistate->strategy);
+	}
 
 	/* Save the selected block as target for future inserts */
 	IncrBufferRefCount(buffer);
@@ -188,90 +199,6 @@ GetVisibilityMapPins(Relation relation, Buffer buffer1, Buffer buffer2,
 }
 
 /*
- * Extend a relation by multiple blocks to avoid future contention on the
- * relation extension lock.  Our goal is to pre-extend the relation by an
- * amount which ramps up as the degree of contention ramps up, but limiting
- * the result to some sane overall value.
- */
-static void
-RelationAddExtraBlocks(Relation relation, BulkInsertState bistate)
-{
-	BlockNumber blockNum,
-				firstBlock = InvalidBlockNumber;
-	int			extraBlocks;
-	int			lockWaiters;
-
-	/* Use the length of the lock wait queue to judge how much to extend. */
-	lockWaiters = RelationExtensionLockWaiterCount(relation);
-	if (lockWaiters <= 0)
-		return;
-
-	/*
-	 * It might seem like multiplying the number of lock waiters by as much as
-	 * 20 is too aggressive, but benchmarking revealed that smaller numbers
-	 * were insufficient.  512 is just an arbitrary cap to prevent
-	 * pathological results.
-	 */
-	extraBlocks = Min(512, lockWaiters * 20);
-
-	do
-	{
-		Buffer		buffer;
-		Page		page;
-		Size		freespace;
-
-		/*
-		 * Extend by one page.  This should generally match the main-line
-		 * extension code in RelationGetBufferForTuple, except that we hold
-		 * the relation extension lock throughout, and we don't immediately
-		 * initialize the page (see below).
-		 */
-		buffer = ReadBufferBI(relation, P_NEW, RBM_ZERO_AND_LOCK, bistate);
-		page = BufferGetPage(buffer);
-
-		if (!PageIsNew(page))
-			elog(ERROR, "page %u of relation \"%s\" should be empty but is not",
-				 BufferGetBlockNumber(buffer),
-				 RelationGetRelationName(relation));
-
-		/*
-		 * Add the page to the FSM without initializing. If we were to
-		 * initialize here, the page would potentially get flushed out to disk
-		 * before we add any useful content. There's no guarantee that that'd
-		 * happen before a potential crash, so we need to deal with
-		 * uninitialized pages anyway, thus avoid the potential for
-		 * unnecessary writes.
-		 */
-
-		/* we'll need this info below */
-		blockNum = BufferGetBlockNumber(buffer);
-		freespace = BufferGetPageSize(buffer) - SizeOfPageHeaderData;
-
-		UnlockReleaseBuffer(buffer);
-
-		/* Remember first block number thus added. */
-		if (firstBlock == InvalidBlockNumber)
-			firstBlock = blockNum;
-
-		/*
-		 * Immediately update the bottom level of the FSM.  This has a good
-		 * chance of making this page visible to other concurrently inserting
-		 * backends, and we want that to happen without delay.
-		 */
-		RecordPageWithFreeSpace(relation, blockNum, freespace);
-	}
-	while (--extraBlocks > 0);
-
-	/*
-	 * Updating the upper levels of the free space map is too expensive to do
-	 * for every block, but it's worth doing once at the end to make sure that
-	 * subsequent insertion activity sees all of those nifty free pages we
-	 * just inserted.
-	 */
-	FreeSpaceMapVacuumRange(relation, firstBlock, blockNum + 1);
-}
-
-/*
  * RelationGetBufferForTuple
  *
  *	Returns pinned and exclusive-locked buffer of a page in given relation
@@ -333,14 +260,14 @@ RelationGetBufferForTuple(Relation relation, Size len,
 						  BulkInsertState bistate,
 						  Buffer *vmbuffer, Buffer *vmbuffer_other)
 {
-	bool		use_fsm = !(options & HEAP_INSERT_SKIP_FSM);
+	bool		use_fsm = false; //!(options & HEAP_INSERT_SKIP_FSM);
 	Buffer		buffer = InvalidBuffer;
 	Page		page;
 	Size		pageFreeSpace = 0,
 				saveFreeSpace = 0;
 	BlockNumber targetBlock,
 				otherBlock;
-	bool		needLock;
+	bool		needLock = false;
 
 	len = MAXALIGN(len);		/* be conservative */
 
@@ -396,19 +323,6 @@ RelationGetBufferForTuple(Relation relation, Size len,
 		 * target.
 		 */
 		targetBlock = GetPageWithFreeSpace(relation, len + saveFreeSpace);
-
-		/*
-		 * If the FSM knows nothing of the rel, try the last page before we
-		 * give up and extend.  This avoids one-tuple-per-page syndrome during
-		 * bootstrapping or in a recently-started system.
-		 */
-		if (targetBlock == InvalidBlockNumber)
-		{
-			BlockNumber nblocks = RelationGetNumberOfBlocks(relation);
-
-			if (nblocks > 0)
-				targetBlock = nblocks - 1;
-		}
 	}
 
 loop:
@@ -541,37 +455,36 @@ loop:
 		 * Update FSM as to condition of this page, and ask for another page
 		 * to try.
 		 */
-		targetBlock = RecordAndGetPageWithFreeSpace(relation,
+		targetBlock = InvalidBlockNumber; 
+		/*RecordAndGetPageWithFreeSpace(relation,
 													targetBlock,
 													pageFreeSpace,
-													len + saveFreeSpace);
+													len + saveFreeSpace);*/
 	}
 
-	/*
-	 * Have to extend the relation.
-	 *
-	 * We have to use a lock to ensure no one else is extending the rel at the
-	 * same time, else we will both try to initialize the same new page.  We
-	 * can skip locking for new or temp relations, however, since no one else
-	 * could be accessing them.
-	 */
-	needLock = !RELATION_IS_LOCAL(relation);
 
-	/*
-	 * If we need the lock but are not able to acquire it immediately, we'll
-	 * consider extending the relation by multiple blocks at a time to manage
-	 * contention on the relation extension lock.  However, this only makes
-	 * sense if we're using the FSM; otherwise, there's no point.
-	 */
-	if (needLock)
+	if (bistate)
 	{
-		if (!use_fsm)
-			LockRelationForExtension(relation, ExclusiveLock);
-		else if (!ConditionalLockRelationForExtension(relation, ExclusiveLock))
-		{
-			/* Couldn't get the lock immediately; wait for it. */
-			LockRelationForExtension(relation, ExclusiveLock);
+		if (bistate->local_buffers_idx == BULK_INSERT_BATCH_SIZE)
+			/* Ran out of local buffers for the bulk state, allocate some more */
+			ReadBufferExtendBulk(relation, bistate);
+	}
+	else
+	{
+		/*
+		 * Have to extend the relation.
+		 *
+		 * We have to use a lock to ensure no one else is extending the rel at the
+		 * same time, else we will both try to initialize the same new page.  We
+		 * can skip locking for new or temp relations, however, since no one else
+		 * could be accessing them.
+		 */
+		needLock = !RELATION_IS_LOCAL(relation);
 
+		if (needLock)
+			LockRelationForExtension(relation, ExclusiveLock);
+		if (use_fsm)
+		{
 			/*
 			 * Check if some other backend has extended a block for us while
 			 * we were waiting on the lock.
@@ -587,21 +500,9 @@ loop:
 				UnlockRelationForExtension(relation, ExclusiveLock);
 				goto loop;
 			}
-
-			/* Time to bulk-extend. */
-			RelationAddExtraBlocks(relation, bistate);
 		}
 	}
 
-	/*
-	 * In addition to whatever extension we performed above, we always add at
-	 * least one block to satisfy our own request.
-	 *
-	 * XXX This does an lseek - rather expensive - but at the moment it is the
-	 * only way to accurately determine how many blocks are in a relation.  Is
-	 * it worth keeping an accurate file length in shared memory someplace,
-	 * rather than relying on the kernel to do it for us?
-	 */
 	buffer = ReadBufferBI(relation, P_NEW, RBM_ZERO_AND_LOCK, bistate);
 
 	/*
@@ -612,7 +513,8 @@ loop:
 	page = BufferGetPage(buffer);
 
 	if (!PageIsNew(page))
-		elog(ERROR, "page %u of relation \"%s\" should be empty but is not",
+		elog(ERROR, "%d page %u of relation \"%s\" should be empty but is not",
+			 MyProcPid,
 			 BufferGetBlockNumber(buffer),
 			 RelationGetRelationName(relation));
 

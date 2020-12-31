@@ -412,10 +412,13 @@ mdunlinkfork(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo)
  */
 void
 mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
-		 char *buffer, bool skipFsync)
+		 char *buffer, bool skipFsync, int count)
 {
 	off_t		seekpos;
+	BlockNumber block_in_seg;
+	BlockNumber count_in_seg;
 	int			nbytes;
+	int			write_size;
 	MdfdVec    *v;
 
 	/* This assert is too expensive to have on normally ... */
@@ -435,31 +438,40 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 						relpath(reln->smgr_rnode, forknum),
 						InvalidBlockNumber)));
 
-	v = _mdfd_getseg(reln, forknum, blocknum, skipFsync, EXTENSION_CREATE);
+	do {
+		v = _mdfd_getseg(reln, forknum, blocknum, skipFsync, EXTENSION_CREATE);
 
-	seekpos = (off_t) BLCKSZ * (blocknum % ((BlockNumber) RELSEG_SIZE));
+		block_in_seg = (blocknum % ((BlockNumber) RELSEG_SIZE));
+		count_in_seg = Min((RELSEG_SIZE - block_in_seg), count);
+		seekpos = (off_t) BLCKSZ * block_in_seg;
+		write_size = BLCKSZ * count_in_seg;
 
-	Assert(seekpos < (off_t) BLCKSZ * RELSEG_SIZE);
+		Assert(seekpos < (off_t) BLCKSZ * RELSEG_SIZE);
 
-	if ((nbytes = FileWrite(v->mdfd_vfd, buffer, BLCKSZ, seekpos, WAIT_EVENT_DATA_FILE_EXTEND)) != BLCKSZ)
-	{
-		if (nbytes < 0)
+		if ((nbytes = FileWrite(v->mdfd_vfd, buffer, write_size, seekpos, WAIT_EVENT_DATA_FILE_EXTEND, true)) != write_size)
+		{
+			if (nbytes < 0)
+				ereport(ERROR,
+						(errcode_for_file_access(),
+						 errmsg("could not extend file \"%s\": %m",
+								FilePathName(v->mdfd_vfd)),
+						 errhint("Check free disk space.")));
+			/* short write: complain appropriately */
 			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not extend file \"%s\": %m",
-							FilePathName(v->mdfd_vfd)),
+					(errcode(ERRCODE_DISK_FULL),
+					 errmsg("could not extend file \"%s\": wrote only %d of %d bytes at block %u",
+							FilePathName(v->mdfd_vfd),
+							nbytes, write_size, blocknum),
 					 errhint("Check free disk space.")));
-		/* short write: complain appropriately */
-		ereport(ERROR,
-				(errcode(ERRCODE_DISK_FULL),
-				 errmsg("could not extend file \"%s\": wrote only %d of %d bytes at block %u",
-						FilePathName(v->mdfd_vfd),
-						nbytes, BLCKSZ, blocknum),
-				 errhint("Check free disk space.")));
-	}
+		}
 
-	if (!skipFsync && !SmgrIsTemp(reln))
-		register_dirty_segment(reln, forknum, v);
+		if (!skipFsync && !SmgrIsTemp(reln))
+			register_dirty_segment(reln, forknum, v);
+
+		count -= count_in_seg;
+		buffer += write_size;
+		blocknum += count_in_seg;
+	} while (count > 0);
 
 	Assert(_mdnblocks(reln, forknum, v) <= ((BlockNumber) RELSEG_SIZE));
 }
@@ -719,7 +731,7 @@ mdwrite(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 
 	Assert(seekpos < (off_t) BLCKSZ * RELSEG_SIZE);
 
-	nbytes = FileWrite(v->mdfd_vfd, buffer, BLCKSZ, seekpos, WAIT_EVENT_DATA_FILE_WRITE);
+	nbytes = FileWrite(v->mdfd_vfd, buffer, BLCKSZ, seekpos, WAIT_EVENT_DATA_FILE_WRITE, false);
 
 	TRACE_POSTGRESQL_SMGR_MD_WRITE_DONE(forknum, blocknum,
 										reln->smgr_rnode.node.spcNode,
@@ -1254,7 +1266,7 @@ _mdfd_getseg(SMgrRelation reln, ForkNumber forknum, BlockNumber blkno,
 
 				mdextend(reln, forknum,
 						 nextsegno * ((BlockNumber) RELSEG_SIZE) - 1,
-						 zerobuf, skipFsync);
+						 zerobuf, skipFsync, 1);
 				pfree(zerobuf);
 			}
 			flags = O_CREAT;

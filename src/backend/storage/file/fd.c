@@ -2058,7 +2058,7 @@ retry:
 
 int
 FileWrite(File file, char *buffer, int amount, off_t offset,
-		  uint32 wait_event_info)
+		  uint32 wait_event_info, bool is_empty)
 {
 	int			returnCode;
 	Vfd		   *vfdP;
@@ -2104,7 +2104,21 @@ FileWrite(File file, char *buffer, int amount, off_t offset,
 retry:
 	errno = 0;
 	pgstat_report_wait_start(wait_event_info);
+#if defined(HAVE_POSIX_FALLOCATE) && defined(__linux__)
+	if (is_empty)
+	{
+		do
+		{
+			returnCode = ftruncate(VfdCache[file].fd, offset + amount);
+			//returnCode = fallocate(VfdCache[file].fd, 0, offset, amount);
+		} while (unlikely(returnCode == EINTR && !(ProcDiePending || QueryCancelPending)));
+		returnCode = amount;
+	}
+	else
+		returnCode = pg_pwrite(VfdCache[file].fd, buffer, amount, offset);
+#else
 	returnCode = pg_pwrite(VfdCache[file].fd, buffer, amount, offset);
+#endif
 	pgstat_report_wait_end();
 
 	/* if write didn't set errno, assume problem is no disk space */

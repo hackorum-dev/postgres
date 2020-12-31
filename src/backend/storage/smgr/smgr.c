@@ -49,7 +49,7 @@ typedef struct f_smgr
 	void		(*smgr_unlink) (RelFileNodeBackend rnode, ForkNumber forknum,
 								bool isRedo);
 	void		(*smgr_extend) (SMgrRelation reln, ForkNumber forknum,
-								BlockNumber blocknum, char *buffer, bool skipFsync);
+								BlockNumber blocknum, char *buffer, bool skipFsync, int count);
 	bool		(*smgr_prefetch) (SMgrRelation reln, ForkNumber forknum,
 								  BlockNumber blocknum);
 	void		(*smgr_read) (SMgrRelation reln, ForkNumber forknum,
@@ -462,16 +462,23 @@ void
 smgrextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 		   char *buffer, bool skipFsync)
 {
+	return smgrextend_count(reln, forknum, blocknum, buffer, skipFsync, 1);
+}
+
+void
+smgrextend_count(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
+		   char *buffer, bool skipFsync, int count)
+{
 	smgrsw[reln->smgr_which].smgr_extend(reln, forknum, blocknum,
-										 buffer, skipFsync);
+										 buffer, skipFsync, count);
 
 	/*
-	 * Normally we expect this to increase nblocks by one, but if the cached
+	 * Normally we expect this to increase nblocks by count, but if the cached
 	 * value isn't as expected, just invalidate it so the next call asks the
 	 * kernel.
 	 */
 	if (reln->smgr_cached_nblocks[forknum] == blocknum)
-		reln->smgr_cached_nblocks[forknum] = blocknum + 1;
+		reln->smgr_cached_nblocks[forknum] = blocknum + count;
 	else
 		reln->smgr_cached_nblocks[forknum] = InvalidBlockNumber;
 }
