@@ -124,7 +124,7 @@ typedef struct buftag
  * NB: NUM_BUFFER_PARTITIONS must be a power of 2!
  */
 #define BufTableHashPartition(hashcode) \
-	((hashcode) % NUM_BUFFER_PARTITIONS)
+	((hashcode >> 7) % NUM_BUFFER_PARTITIONS)
 #define BufMappingPartitionLock(hashcode) \
 	(&MainLWLockArray[BUFFER_MAPPING_LWLOCK_OFFSET + \
 		BufTableHashPartition(hashcode)].lock)

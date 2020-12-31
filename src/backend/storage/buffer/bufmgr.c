@@ -474,6 +474,10 @@ static BufferDesc *BufferAlloc(SMgrRelation smgr,
 							   BlockNumber blockNum,
 							   BufferAccessStrategy strategy,
 							   bool *foundPtr);
+static BufferDesc *BufferAllocExtend(SMgrRelation smgr, 
+			char relpersistence, ForkNumber forkNum,
+			BlockNumber blockNum, BufferAccessStrategy strategy,
+			LWLock** lastPartitionLock);
 static void FlushBuffer(BufferDesc *buf, SMgrRelation reln);
 static void AtProcExit_Buffers(int code, Datum arg);
 static void CheckForBufferLeaks(void);
@@ -996,7 +1000,7 @@ ReadBufferExtendBulk(Relation reln, struct BulkInsertStateData* bistate)
 	BlockNumber	firstBlock,
 				blockNum;
 	Block		bufBlock;
-	bool		found;
+	LWLock*		lastPartitionLock = NULL;
 
 	/* Open it at the smgr level if not already done */
 	RelationOpenSmgr(reln);
@@ -1007,7 +1011,7 @@ ReadBufferExtendBulk(Relation reln, struct BulkInsertStateData* bistate)
 
 	LockRelationForExtension(reln, ExclusiveLock);
 	firstBlock = smgrnblocks(smgr, MAIN_FORKNUM);
-	smgrextend_count(smgr, MAIN_FORKNUM, firstBlock, bistate->empty_buffer, false, BULK_INSERT_BATCH_SIZE);
+	smgrextend_count(smgr, MAIN_FORKNUM, firstBlock, bistate->empty_buffer, true, BULK_INSERT_BATCH_SIZE);
 	UnlockRelationForExtension(reln, ExclusiveLock);
 
 	for (int i=0; i<BULK_INSERT_BATCH_SIZE; ++i)
@@ -1017,11 +1021,9 @@ ReadBufferExtendBulk(Relation reln, struct BulkInsertStateData* bistate)
 		pgstat_count_buffer_read(reln);
 		/* Make sure we will have room to remember the buffer pin */
 		ResourceOwnerEnlargeBuffers(CurrentResourceOwner);
-		bufHdr = BufferAlloc(smgr, relpersistence, MAIN_FORKNUM, blockNum,
-							 bistate->strategy, &found);
+		bufHdr = BufferAllocExtend(smgr, relpersistence, MAIN_FORKNUM, blockNum,
+							 bistate->strategy, &lastPartitionLock);
 		pgBufferUsage.shared_blks_written++;
-
-		Assert(!found);
 
 		bufBlock = BufHdrGetBlock(bufHdr);
 
@@ -1032,6 +1034,9 @@ ReadBufferExtendBulk(Relation reln, struct BulkInsertStateData* bistate)
 		TerminateBufferIO(bufHdr, false, BM_VALID);
 		bistate->local_buffers[i] = BufferDescriptorGetBuffer(bufHdr);
 	}
+
+	Assert(lastPartitionLock);
+	LWLockRelease(lastPartitionLock);
 
 	bistate->local_buffers_idx = 0;
 
@@ -1407,6 +1412,269 @@ BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 
 	return buf;
 }
+
+static BufferDesc *
+BufferAllocExtend(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
+			BlockNumber blockNum, BufferAccessStrategy strategy,
+			LWLock** lastPartitionLock)
+{
+	BufferTag	newTag;			/* identity of requested block */
+	uint32		newHash;		/* hash value for newTag */
+	LWLock	   *newPartitionLock;	/* buffer partition lock for it */
+	BufferTag	oldTag;			/* previous identity of selected buffer */
+	uint32		oldHash;		/* hash value for oldTag */
+	LWLock	   *oldPartitionLock;	/* buffer partition lock for it */
+	uint32		oldFlags;
+	int			buf_id;
+	BufferDesc *buf;
+	uint32		buf_state;
+
+	Assert(lastPartitionLock);
+
+	/* create a tag so we can lookup the buffer */
+	INIT_BUFFERTAG(newTag, smgr->smgr_rnode.node, forkNum, blockNum);
+
+	/* determine its hash code and partition lock ID */
+	newHash = BufTableHashCode(&newTag);
+	newPartitionLock = BufMappingPartitionLock(newHash);
+
+	/* Loop here in case we have to try another victim buffer */
+	for (;;)
+	{
+		/*
+		 * Ensure, while the spinlock's not yet held, that there's a free
+		 * refcount entry.
+		 */
+		ReservePrivateRefCountEntry();
+
+		/*
+		 * Select a victim buffer.  The buffer is returned with its header
+		 * spinlock still held!
+		 */
+		buf = StrategyGetBuffer(strategy, &buf_state);
+
+		Assert(BUF_STATE_GET_REFCOUNT(buf_state) == 0);
+
+		/* Must copy buffer flags while we still hold the spinlock */
+		oldFlags = buf_state & BUF_FLAG_MASK;
+
+		/* Pin the buffer and then release the buffer spinlock */
+		PinBuffer_Locked(buf);
+
+		/*
+		 * If the buffer was dirty, try to write it out.  There is a race
+		 * condition here, in that someone might dirty it after we released it
+		 * above, or even while we are writing it out (since our share-lock
+		 * won't prevent hint-bit updates).  We will recheck the dirty bit
+		 * after re-locking the buffer header.
+		 */
+		if (oldFlags & BM_DIRTY)
+		{
+			/*
+			 * We need a share-lock on the buffer contents to write it out
+			 * (else we might write invalid data, eg because someone else is
+			 * compacting the page contents while we write).  We must use a
+			 * conditional lock acquisition here to avoid deadlock.  Even
+			 * though the buffer was not pinned (and therefore surely not
+			 * locked) when StrategyGetBuffer returned it, someone else could
+			 * have pinned and exclusive-locked it by the time we get here. If
+			 * we try to get the lock unconditionally, we'd block waiting for
+			 * them; if they later block waiting for us, deadlock ensues.
+			 * (This has been observed to happen when two backends are both
+			 * trying to split btree index pages, and the second one just
+			 * happens to be trying to split the page the first one got from
+			 * StrategyGetBuffer.)
+			 */
+			if (LWLockConditionalAcquire(BufferDescriptorGetContentLock(buf),
+										 LW_SHARED))
+			{
+				/*
+				 * If using a nondefault strategy, and writing the buffer
+				 * would require a WAL flush, let the strategy decide whether
+				 * to go ahead and write/reuse the buffer or to choose another
+				 * victim.  We need lock to inspect the page LSN, so this
+				 * can't be done inside StrategyGetBuffer.
+				 */
+				if (strategy != NULL)
+				{
+					XLogRecPtr	lsn;
+
+					/* Read the LSN while holding buffer header lock */
+					buf_state = LockBufHdr(buf);
+					lsn = BufferGetLSN(buf);
+					UnlockBufHdr(buf, buf_state);
+
+					if (XLogNeedsFlush(lsn) &&
+						StrategyRejectBuffer(strategy, buf))
+					{
+						/* Drop lock/pin and loop around for another buffer */
+						LWLockRelease(BufferDescriptorGetContentLock(buf));
+						UnpinBuffer(buf, true);
+						continue;
+					}
+				}
+
+				/* OK, do the I/O */
+				TRACE_POSTGRESQL_BUFFER_WRITE_DIRTY_START(forkNum, blockNum,
+														  smgr->smgr_rnode.node.spcNode,
+														  smgr->smgr_rnode.node.dbNode,
+														  smgr->smgr_rnode.node.relNode);
+
+				FlushBuffer(buf, NULL);
+				LWLockRelease(BufferDescriptorGetContentLock(buf));
+
+				ScheduleBufferTagForWriteback(&BackendWritebackContext,
+											  &buf->tag);
+
+				TRACE_POSTGRESQL_BUFFER_WRITE_DIRTY_DONE(forkNum, blockNum,
+														 smgr->smgr_rnode.node.spcNode,
+														 smgr->smgr_rnode.node.dbNode,
+														 smgr->smgr_rnode.node.relNode);
+			}
+			else
+			{
+				/*
+				 * Someone else has locked the buffer, so give it up and loop
+				 * back to get another one.
+				 */
+				UnpinBuffer(buf, true);
+				continue;
+			}
+		}
+
+		/*
+		 * To change the association of a valid buffer, we'll need to have
+		 * exclusive lock on both the old and new mapping partitions.
+		 */
+		if (oldFlags & BM_TAG_VALID)
+		{
+			/*
+			 * Need to compute the old tag's hashcode and partition lock ID.
+			 * XXX is it worth storing the hashcode in BufferDesc so we need
+			 * not recompute it here?  Probably not.
+			 */
+			oldTag = buf->tag;
+			oldHash = BufTableHashCode(&oldTag);
+			oldPartitionLock = BufMappingPartitionLock(oldHash);
+
+			if (*lastPartitionLock && 
+				(*lastPartitionLock != oldPartitionLock || 
+				 *lastPartitionLock != newPartitionLock))
+			{
+				LWLockRelease(*lastPartitionLock);
+				*lastPartitionLock = NULL;
+			}
+
+			/*
+			 * Must lock the lower-numbered partition first to avoid
+			 * deadlocks.
+			 */
+			if (oldPartitionLock < newPartitionLock)
+			{
+				Assert(*lastPartitionLock == NULL);
+				LWLockAcquire(oldPartitionLock, LW_EXCLUSIVE);
+				LWLockAcquire(newPartitionLock, LW_EXCLUSIVE);
+			}
+			else if (oldPartitionLock > newPartitionLock)
+			{
+				Assert(*lastPartitionLock == NULL);
+				LWLockAcquire(newPartitionLock, LW_EXCLUSIVE);
+				LWLockAcquire(oldPartitionLock, LW_EXCLUSIVE);
+			}
+			else
+			{
+				/* only one partition, only one lock */
+				if (*lastPartitionLock != newPartitionLock)
+					LWLockAcquire(newPartitionLock, LW_EXCLUSIVE);
+			}
+		}
+		else
+		{
+			/* if it wasn't valid, we need only the new partition */
+			if (*lastPartitionLock != newPartitionLock)
+			{
+				if (*lastPartitionLock)
+					LWLockRelease(*lastPartitionLock);
+				LWLockAcquire(newPartitionLock, LW_EXCLUSIVE);
+			}
+
+			/* remember we have no old-partition lock or tag */
+			oldPartitionLock = NULL;
+			/* keep the compiler quiet about uninitialized variables */
+			oldHash = 0;
+		}
+
+		*lastPartitionLock = newPartitionLock;
+
+		/*
+		 * Try to make a hashtable entry for the buffer under its new tag.
+		 * This could fail because while we were writing someone else
+		 * allocated another buffer for the same block we want to read in.
+		 * Note that we have not yet removed the hashtable entry for the old
+		 * tag.
+		 */
+		buf_id = BufTableInsert(&newTag, newHash, buf->buf_id);
+		Assert(buf_id < 0);
+
+		/*
+		 * Need to lock the buffer header too in order to change its tag.
+		 */
+		buf_state = LockBufHdr(buf);
+
+		/*
+		 * Somebody could have pinned or re-dirtied the buffer while we were
+		 * doing the I/O and making the new hashtable entry.  If so, we can't
+		 * recycle this buffer; we must undo everything we've done and start
+		 * over with a new victim buffer.
+		 */
+		oldFlags = buf_state & BUF_FLAG_MASK;
+		if (BUF_STATE_GET_REFCOUNT(buf_state) == 1 && !(oldFlags & BM_DIRTY))
+			break;
+
+		pg_unreachable();
+	}
+
+	/*
+	 * Okay, it's finally safe to rename the buffer.
+	 *
+	 * Clearing BM_VALID here is necessary, clearing the dirtybits is just
+	 * paranoia.  We also reset the usage_count since any recency of use of
+	 * the old content is no longer relevant.  (The usage_count starts out at
+	 * 1 so that the buffer can survive one clock-sweep pass.)
+	 *
+	 * Make sure BM_PERMANENT is set for buffers that must be written at every
+	 * checkpoint.  Unlogged buffers only need to be written at shutdown
+	 * checkpoints, except for their "init" forks, which need to be treated
+	 * just like permanent relations.
+	 */
+	buf->tag = newTag;
+	buf_state &= ~(BM_VALID | BM_DIRTY | BM_JUST_DIRTIED |
+				   BM_CHECKPOINT_NEEDED | BM_IO_ERROR | BM_PERMANENT |
+				   BUF_USAGECOUNT_MASK);
+	if (relpersistence == RELPERSISTENCE_PERMANENT || forkNum == INIT_FORKNUM)
+		buf_state |= BM_TAG_VALID | BM_PERMANENT | BUF_USAGECOUNT_ONE;
+	else
+		buf_state |= BM_TAG_VALID | BUF_USAGECOUNT_ONE;
+
+	UnlockBufHdr(buf, buf_state);
+
+	if (oldPartitionLock != NULL)
+	{
+		BufTableDelete(&oldTag, oldHash);
+		if (oldPartitionLock != newPartitionLock)
+			LWLockRelease(oldPartitionLock);
+	}
+
+	/*
+	 * Buffer contents are currently invalid.  Try to get the io_in_progress
+	 * lock.  If StartBufferIO returns false, then someone else managed to
+	 * read it before we did, so there's nothing left for BufferAlloc() to do.
+	 */
+	StartBufferIO(buf, true);
+
+	return buf;
+}
+
 
 /*
  * InvalidateBuffer -- mark a shared buffer invalid and return it to the
