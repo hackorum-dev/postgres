@@ -954,7 +954,7 @@ CopyTo(CopyToState cstate)
 			CopyOneRowTo(cstate, slot);
 
 			/* Increment amount of processed tuples and update the progress */
-			pgstat_progress_update_param(PROGRESS_COPY_LINES_PROCESSED, ++processed);
+			pgstat_progress_update_param(PROGRESS_COPY_TUPLES_PROCESSED, ++processed);
 		}
 
 		ExecDropSingleTupleTableSlot(slot);
@@ -1321,7 +1321,7 @@ copy_dest_receive(TupleTableSlot *slot, DestReceiver *self)
 	CopyOneRowTo(cstate, slot);
 
 	/* Increment amount of processed tuples and update the progress */
-	pgstat_progress_update_param(PROGRESS_COPY_LINES_PROCESSED, ++myState->processed);
+	pgstat_progress_update_param(PROGRESS_COPY_TUPLES_PROCESSED, ++myState->processed);
 
 	return true;
 }

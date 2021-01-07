@@ -6492,19 +6492,19 @@ SELECT pg_stat_get_backend_pid(s.backendid) AS pid,
 
      <row>
       <entry role="catalog_table_entry"><para role="column_definition">
-       <structfield>lines_processed</structfield> <type>bigint</type>
+       <structfield>tuples_processed</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of lines already processed by <command>COPY</command> command.
+       Number of tuples already processed by <command>COPY</command> command.
       </para></entry>
      </row>
 
      <row>
       <entry role="catalog_table_entry"><para role="column_definition">
-       <structfield>lines_filtered</structfield> <type>bigint</type>
+       <structfield>tuples_filtered</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of lines not processed due to being filtered by the
+       Number of tuples not processed due to being filtered by the
        <command>WHERE</command> clause of the <command>COPY</command> command.
       </para></entry>
      </row>

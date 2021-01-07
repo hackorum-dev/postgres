@@ -871,7 +871,7 @@ CopyFrom(CopyFromState cstate)
 			if (!ExecQual(cstate->qualexpr, econtext))
 			{
 				/* Report that this tuple was filtered out by the WHERE clause */
-				pgstat_progress_update_param(PROGRESS_COPY_LINES_FILTERED, ++filtered);
+				pgstat_progress_update_param(PROGRESS_COPY_TUPLES_FILTERED, ++filtered);
 				continue;
 			}
 		}
@@ -1110,7 +1110,7 @@ CopyFrom(CopyFromState cstate)
 			 * for counting tuples inserted by an INSERT command. Update
 			 * progress of the COPY command as well.
 			 */
-			pgstat_progress_update_param(PROGRESS_COPY_LINES_PROCESSED, ++processed);
+			pgstat_progress_update_param(PROGRESS_COPY_TUPLES_PROCESSED, ++processed);
 		}
 	}
 
