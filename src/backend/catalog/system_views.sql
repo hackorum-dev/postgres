@@ -1124,7 +1124,8 @@ CREATE VIEW pg_stat_progress_copy AS
         S.relid AS relid,
         S.param1 AS bytes_processed,
         S.param2 AS bytes_total,
-        S.param3 AS lines_processed
+        S.param3 AS lines_processed,
+        S.param4 AS lines_filtered
     FROM pg_stat_get_progress_info('COPY') AS S
         LEFT JOIN pg_database D ON S.datid = D.oid;
 

@@ -540,6 +540,7 @@ CopyFrom(CopyFromState cstate)
 	CopyInsertMethod insertMethod;
 	CopyMultiInsertInfo multiInsertInfo = {0};	/* pacify compiler */
 	uint64		processed = 0;
+	uint64		filtered = 0;
 	bool		has_before_insert_row_trig;
 	bool		has_instead_insert_row_trig;
 	bool		leafpart_use_multi_insert = false;
@@ -868,7 +869,11 @@ CopyFrom(CopyFromState cstate)
 			econtext->ecxt_scantuple = myslot;
 			/* Skip items that don't match COPY's WHERE clause */
 			if (!ExecQual(cstate->qualexpr, econtext))
+			{
+				/* Report that this tuple was filtered out by the WHERE clause */
+				pgstat_progress_update_param(PROGRESS_COPY_LINES_FILTERED, ++filtered);
 				continue;
+			}
 		}
 
 		/* Determine the partition to insert the tuple into */
