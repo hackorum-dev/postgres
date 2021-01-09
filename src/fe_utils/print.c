@@ -1346,6 +1346,10 @@ print_aligned_vertical(const printTableContent *cont,
 		{
 			printTableFooter *f;
 
+			/* print title */
+			if (cont->title)
+				fprintf(fout, "%s\n", cont->title);
+
 			for (f = footers; f; f = f->next)
 				fprintf(fout, "%s\n", f->data);
 		}
