@@ -24551,7 +24551,7 @@ SELECT collation for ('foo' COLLATE "de_DE");
         If <parameter>is_local</parameter> is <literal>true</literal>, the new
         value will only apply for the current transaction. If you want the new
         value to apply for the current session, use <literal>false</literal>
-        instead. This function corresponds to the SQL
+        instead. This function corresponds to the <acronym>SQL</acronym>
         command <command>SET</command>.
        </para>
        <para>
