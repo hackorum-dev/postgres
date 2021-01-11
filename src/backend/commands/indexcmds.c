@@ -639,6 +639,8 @@ DefineIndex(ParseState *pstate,
 	{
 		pgstat_progress_start_command(PROGRESS_COMMAND_CREATE_INDEX, tableId);
 		pgstat_progress_update_param(PROGRESS_CREATEIDX_COMMAND,
+									 is_alter_table ?
+									 PROGRESS_CREATEIDX_COMMAND_ALTER_TABLE_ADD :
 									 concurrent ?
 									 PROGRESS_CREATEIDX_COMMAND_CREATE_CONCURRENTLY :
 									 PROGRESS_CREATEIDX_COMMAND_CREATE);
