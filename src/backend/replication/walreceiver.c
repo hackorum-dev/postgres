@@ -555,7 +555,7 @@ WalReceiverMain(void)
 
 						/*
 						 * We didn't receive anything new, for half of
-						 * receiver replication timeout. Ping the server.
+						 * WAL receiver timeout. Ping the server.
 						 */
 						if (!ping_sent)
 						{

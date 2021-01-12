@@ -2237,12 +2237,12 @@ WalSndCheckTimeOut(void)
 	if (wal_sender_timeout > 0 && last_processing >= timeout)
 	{
 		/*
-		 * Since typically expiration of replication timeout means
+		 * Since typically expiration of WAL sender timeout means
 		 * communication problem, we don't send the error message to the
 		 * standby.
 		 */
 		ereport(COMMERROR,
-				(errmsg("terminating walsender process due to replication timeout")));
+				(errmsg("terminating walsender process due to WAL sender timeout")));
 
 		WalSndShutdown();
 	}
@@ -2335,7 +2335,7 @@ WalSndLoop(WalSndSendDataCallback send_data)
 				WalSndDone(send_data);
 		}
 
-		/* Check for replication timeout. */
+		/* Check for WAL sender timeout. */
 		WalSndCheckTimeOut();
 
 		/* Send keepalive if the time has come */
