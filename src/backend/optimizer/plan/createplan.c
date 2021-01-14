@@ -5169,7 +5169,7 @@ label_sort_with_costsize(PlannerInfo *root, Sort *plan, double limit_tuples)
 	 */
 	Assert(IsA(plan, Sort));
 
-	cost_sort(&sort_path, root, NIL,
+	cost_sort(&sort_path, root, plan->numCols,
 			  lefttree->total_cost,
 			  lefttree->plan_rows,
 			  lefttree->plan_width,

@@ -1696,7 +1696,7 @@ static void
 cost_tuplesort(Cost *startup_cost, Cost *run_cost,
 			   double tuples, int width,
 			   Cost comparison_cost, int sort_mem,
-			   double limit_tuples)
+			   double limit_tuples, int numSortCols)
 {
 	double		input_bytes = relation_byte_size(tuples, width);
 	double		output_bytes;
@@ -1710,8 +1710,9 @@ cost_tuplesort(Cost *startup_cost, Cost *run_cost,
 	if (tuples < 2.0)
 		tuples = 2.0;
 
+	Assert(numSortCols);
 	/* Include the default cost-per-comparison */
-	comparison_cost += 2.0 * cpu_operator_cost;
+	comparison_cost += (2.0 * cpu_operator_cost * numSortCols);
 
 	/* Do we have a useful LIMIT? */
 	if (limit_tuples > 0 && limit_tuples < tuples)
@@ -1784,7 +1785,7 @@ cost_tuplesort(Cost *startup_cost, Cost *run_cost,
 
 /*
  * cost_incremental_sort
- * 	Determines and returns the cost of sorting a relation incrementally, when
+ *	Determines and returns the cost of sorting a relation incrementally, when
  *  the input path is presorted by a prefix of the pathkeys.
  *
  * 'presorted_keys' is the number of leading pathkeys by which the input path
@@ -1813,6 +1814,7 @@ cost_incremental_sort(Path *path,
 	ListCell   *l;
 	int			i = 0;
 	bool		unknown_varno = false;
+	int			num_sort_cols = list_length(pathkeys) - presorted_keys;
 
 	Assert(presorted_keys != 0);
 
@@ -1888,7 +1890,7 @@ cost_incremental_sort(Path *path,
 	 */
 	cost_tuplesort(&group_startup_cost, &group_run_cost,
 				   1.5 * group_tuples, width, comparison_cost, sort_mem,
-				   limit_tuples);
+				   limit_tuples, num_sort_cols);
 
 	/*
 	 * Startup cost of incremental sort is the startup cost of its first group
@@ -1935,7 +1937,7 @@ cost_incremental_sort(Path *path,
  */
 void
 cost_sort(Path *path, PlannerInfo *root,
-		  List *pathkeys, Cost input_cost, double tuples, int width,
+		  int numSortCols, Cost input_cost, double tuples, int width,
 		  Cost comparison_cost, int sort_mem,
 		  double limit_tuples)
 
@@ -1946,7 +1948,7 @@ cost_sort(Path *path, PlannerInfo *root,
 	cost_tuplesort(&startup_cost, &run_cost,
 				   tuples, width,
 				   comparison_cost, sort_mem,
-				   limit_tuples);
+				   limit_tuples, numSortCols);
 
 	if (!enable_sort)
 		startup_cost += disable_cost;
@@ -2110,7 +2112,7 @@ cost_append(AppendPath *apath)
 					 */
 					cost_sort(&sort_path,
 							  NULL, /* doesn't currently need root */
-							  pathkeys,
+							  list_length(pathkeys),
 							  subpath->total_cost,
 							  subpath->rows,
 							  subpath->pathtarget->width,
@@ -3072,7 +3074,7 @@ initial_cost_mergejoin(PlannerInfo *root, JoinCostWorkspace *workspace,
 	{
 		cost_sort(&sort_path,
 				  root,
-				  outersortkeys,
+				  list_length(outersortkeys),
 				  outer_path->total_cost,
 				  outer_path_rows,
 				  outer_path->pathtarget->width,
@@ -3098,7 +3100,7 @@ initial_cost_mergejoin(PlannerInfo *root, JoinCostWorkspace *workspace,
 	{
 		cost_sort(&sort_path,
 				  root,
-				  innersortkeys,
+				  list_length(innersortkeys),
 				  inner_path->total_cost,
 				  inner_path_rows,
 				  inner_path->pathtarget->width,
