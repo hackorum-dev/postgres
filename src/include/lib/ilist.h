@@ -418,7 +418,8 @@ dlist_has_prev(dlist_head *head, dlist_node *node)
  * Return the next node in the list (there must be one).
  */
 static inline dlist_node *
-dlist_next_node(dlist_head *head, dlist_node *node)
+dlist_next_node(dlist_head *head PG_USED_FOR_ASSERTS_ONLY,
+				dlist_node *node)
 {
 	Assert(dlist_has_next(head, node));
 	return node->next;
@@ -428,7 +429,8 @@ dlist_next_node(dlist_head *head, dlist_node *node)
  * Return previous node in the list (there must be one).
  */
 static inline dlist_node *
-dlist_prev_node(dlist_head *head, dlist_node *node)
+dlist_prev_node(dlist_head *head PG_USED_FOR_ASSERTS_ONLY,
+				dlist_node *node)
 {
 	Assert(dlist_has_prev(head, node));
 	return node->prev;
@@ -608,7 +610,8 @@ slist_pop_head_node(slist_head *head)
  * Check whether 'node' has a following node.
  */
 static inline bool
-slist_has_next(slist_head *head, slist_node *node)
+slist_has_next(slist_head *head PG_USED_FOR_ASSERTS_ONLY,
+			   slist_node *node)
 {
 	slist_check(head);
 
@@ -619,7 +622,8 @@ slist_has_next(slist_head *head, slist_node *node)
  * Return the next node in the list (there must be one).
  */
 static inline slist_node *
-slist_next_node(slist_head *head, slist_node *node)
+slist_next_node(slist_head *head PG_USED_FOR_ASSERTS_ONLY,
+				slist_node *node)
 {
 	Assert(slist_has_next(head, node));
 	return node->next;

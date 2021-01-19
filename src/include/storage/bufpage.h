@@ -310,7 +310,7 @@ typedef PageHeaderData *PageHeader;
  * specifics from the macro failure within this function.
  */
 static inline bool
-PageValidateSpecialPointer(Page page)
+PageValidateSpecialPointer(Page page PG_USED_FOR_ASSERTS_ONLY)
 {
 	Assert(PageIsValid(page));
 	Assert(((PageHeader) (page))->pd_special <= BLCKSZ);
