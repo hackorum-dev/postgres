@@ -94,7 +94,7 @@ extern int	SPI_connect(void);
 extern int	SPI_connect_ext(int options);
 extern int	SPI_finish(void);
 extern int	SPI_execute(const char *src, bool read_only, long tcount);
-extern int	SPI_execute_plan(SPIPlanPtr plan, Datum *Values, const char *Nulls,
+extern int	SPI_execute_plan(SPIPlanPtr plan, Datum *Values, const bool *Nulls,
 							 bool read_only, long tcount);
 extern int	SPI_execute_plan_with_paramlist(SPIPlanPtr plan,
 											ParamListInfo params,
@@ -104,16 +104,16 @@ extern int	SPI_execute_plan_with_receiver(SPIPlanPtr plan,
 										   bool read_only, long tcount,
 										   DestReceiver *dest);
 extern int	SPI_exec(const char *src, long tcount);
-extern int	SPI_execp(SPIPlanPtr plan, Datum *Values, const char *Nulls,
+extern int	SPI_execp(SPIPlanPtr plan, Datum *Values, const bool *Nulls,
 					  long tcount);
 extern int	SPI_execute_snapshot(SPIPlanPtr plan,
-								 Datum *Values, const char *Nulls,
+								 Datum *Values, const bool *Nulls,
 								 Snapshot snapshot,
 								 Snapshot crosscheck_snapshot,
 								 bool read_only, bool fire_triggers, long tcount);
 extern int	SPI_execute_with_args(const char *src,
 								  int nargs, Oid *argtypes,
-								  Datum *Values, const char *Nulls,
+								  Datum *Values, const bool *Nulls,
 								  bool read_only, long tcount);
 extern int	SPI_execute_with_receiver(const char *src,
 									  ParamListInfo params,
@@ -161,11 +161,11 @@ extern void SPI_freetuple(HeapTuple pointer);
 extern void SPI_freetuptable(SPITupleTable *tuptable);
 
 extern Portal SPI_cursor_open(const char *name, SPIPlanPtr plan,
-							  Datum *Values, const char *Nulls, bool read_only);
+							  Datum *Values, const bool *Nulls, bool read_only);
 extern Portal SPI_cursor_open_with_args(const char *name,
 										const char *src,
 										int nargs, Oid *argtypes,
-										Datum *Values, const char *Nulls,
+										Datum *Values, const bool *Nulls,
 										bool read_only, int cursorOptions);
 extern Portal SPI_cursor_open_with_paramlist(const char *name, SPIPlanPtr plan,
 											 ParamListInfo params, bool read_only);

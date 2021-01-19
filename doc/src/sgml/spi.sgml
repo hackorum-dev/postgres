@@ -649,7 +649,7 @@ int SPI_exec(const char * <parameter>command</parameter>, long <parameter>count<
 <synopsis>
 int SPI_execute_with_args(const char *<parameter>command</parameter>,
                           int <parameter>nargs</parameter>, Oid *<parameter>argtypes</parameter>,
-                          Datum *<parameter>values</parameter>, const char *<parameter>nulls</parameter>,
+                          Datum *<parameter>values</parameter>, const bool *<parameter>nulls</parameter>,
                           bool <parameter>read_only</parameter>, long <parameter>count</parameter>)
 </synopsis>
  </refsynopsisdiv>
@@ -728,7 +728,7 @@ int SPI_execute_with_args(const char *<parameter>command</parameter>,
    </varlistentry>
 
    <varlistentry>
-    <term><literal>const char * <parameter>nulls</parameter></literal></term>
+    <term><literal>const bool * <parameter>nulls</parameter></literal></term>
     <listitem>
      <para>
       an array of length <parameter>nargs</parameter>, describing which
@@ -739,12 +739,10 @@ int SPI_execute_with_args(const char *<parameter>command</parameter>,
       If <parameter>nulls</parameter> is <symbol>NULL</symbol> then
       <function>SPI_execute_with_args</function> assumes that no parameters
       are null.  Otherwise, each entry of the <parameter>nulls</parameter>
-      array should be <literal>'&nbsp;'</literal> if the corresponding parameter
-      value is non-null, or <literal>'n'</literal> if the corresponding parameter
+      array should be <literal>false</literal> if the corresponding parameter
+      value is non-null, or <literal>true</literal> if the corresponding parameter
       value is null.  (In the latter case, the actual value in the
-      corresponding <parameter>values</parameter> entry doesn't matter.)  Note
-      that <parameter>nulls</parameter> is not a text string, just an array:
-      it does not need a <literal>'\0'</literal> terminator.
+      corresponding <parameter>values</parameter> entry doesn't matter.)
      </para>
     </listitem>
    </varlistentry>
@@ -1601,7 +1599,7 @@ bool SPI_is_cursor_plan(SPIPlanPtr <parameter>plan</parameter>)
 
  <refsynopsisdiv>
 <synopsis>
-int SPI_execute_plan(SPIPlanPtr <parameter>plan</parameter>, Datum * <parameter>values</parameter>, const char * <parameter>nulls</parameter>,
+int SPI_execute_plan(SPIPlanPtr <parameter>plan</parameter>, Datum * <parameter>values</parameter>, const bool * <parameter>nulls</parameter>,
                      bool <parameter>read_only</parameter>, long <parameter>count</parameter>)
 </synopsis>
  </refsynopsisdiv>
@@ -1642,7 +1640,7 @@ int SPI_execute_plan(SPIPlanPtr <parameter>plan</parameter>, Datum * <parameter>
    </varlistentry>
 
    <varlistentry>
-    <term><literal>const char * <parameter>nulls</parameter></literal></term>
+    <term><literal>const bool * <parameter>nulls</parameter></literal></term>
     <listitem>
      <para>
       An array describing which parameters are null.  Must have same length as
@@ -1653,12 +1651,10 @@ int SPI_execute_plan(SPIPlanPtr <parameter>plan</parameter>, Datum * <parameter>
       If <parameter>nulls</parameter> is <symbol>NULL</symbol> then
       <function>SPI_execute_plan</function> assumes that no parameters
       are null.  Otherwise, each entry of the <parameter>nulls</parameter>
-      array should be <literal>'&nbsp;'</literal> if the corresponding parameter
-      value is non-null, or <literal>'n'</literal> if the corresponding parameter
+      array should be <literal>false</literal> if the corresponding parameter
+      value is non-null, or <literal>true</literal> if the corresponding parameter
       value is null.  (In the latter case, the actual value in the
-      corresponding <parameter>values</parameter> entry doesn't matter.)  Note
-      that <parameter>nulls</parameter> is not a text string, just an array:
-      it does not need a <literal>'\0'</literal> terminator.
+      corresponding <parameter>values</parameter> entry doesn't matter.)
      </para>
     </listitem>
    </varlistentry>
@@ -1946,7 +1942,7 @@ int SPI_execute_plan_with_receiver(SPIPlanPtr <parameter>plan</parameter>,
 
  <refsynopsisdiv>
 <synopsis>
-int SPI_execp(SPIPlanPtr <parameter>plan</parameter>, Datum * <parameter>values</parameter>, const char * <parameter>nulls</parameter>, long <parameter>count</parameter>)
+int SPI_execp(SPIPlanPtr <parameter>plan</parameter>, Datum * <parameter>values</parameter>, const bool * <parameter>nulls</parameter>, long <parameter>count</parameter>)
 </synopsis>
  </refsynopsisdiv>
 
@@ -1985,7 +1981,7 @@ int SPI_execp(SPIPlanPtr <parameter>plan</parameter>, Datum * <parameter>values<
    </varlistentry>
 
    <varlistentry>
-    <term><literal>const char * <parameter>nulls</parameter></literal></term>
+    <term><literal>const bool * <parameter>nulls</parameter></literal></term>
     <listitem>
      <para>
       An array describing which parameters are null.  Must have same length as
@@ -1996,12 +1992,10 @@ int SPI_execp(SPIPlanPtr <parameter>plan</parameter>, Datum * <parameter>values<
       If <parameter>nulls</parameter> is <symbol>NULL</symbol> then
       <function>SPI_execp</function> assumes that no parameters
       are null.  Otherwise, each entry of the <parameter>nulls</parameter>
-      array should be <literal>'&nbsp;'</literal> if the corresponding parameter
-      value is non-null, or <literal>'n'</literal> if the corresponding parameter
+      array should be <literal>false</literal> if the corresponding parameter
+      value is non-null, or <literal>true</literal> if the corresponding parameter
       value is null.  (In the latter case, the actual value in the
-      corresponding <parameter>values</parameter> entry doesn't matter.)  Note
-      that <parameter>nulls</parameter> is not a text string, just an array:
-      it does not need a <literal>'\0'</literal> terminator.
+      corresponding <parameter>values</parameter> entry doesn't matter.)
      </para>
     </listitem>
    </varlistentry>
@@ -2051,7 +2045,7 @@ int SPI_execp(SPIPlanPtr <parameter>plan</parameter>, Datum * <parameter>values<
  <refsynopsisdiv>
 <synopsis>
 Portal SPI_cursor_open(const char * <parameter>name</parameter>, SPIPlanPtr <parameter>plan</parameter>,
-                       Datum * <parameter>values</parameter>, const char * <parameter>nulls</parameter>,
+                       Datum * <parameter>values</parameter>, const bool * <parameter>nulls</parameter>,
                        bool <parameter>read_only</parameter>)
 </synopsis>
  </refsynopsisdiv>
@@ -2117,7 +2111,7 @@ Portal SPI_cursor_open(const char * <parameter>name</parameter>, SPIPlanPtr <par
    </varlistentry>
 
    <varlistentry>
-    <term><literal>const char * <parameter>nulls</parameter></literal></term>
+    <term><literal>const bool * <parameter>nulls</parameter></literal></term>
     <listitem>
      <para>
       An array describing which parameters are null.  Must have same length as
@@ -2128,12 +2122,10 @@ Portal SPI_cursor_open(const char * <parameter>name</parameter>, SPIPlanPtr <par
       If <parameter>nulls</parameter> is <symbol>NULL</symbol> then
       <function>SPI_cursor_open</function> assumes that no parameters
       are null.  Otherwise, each entry of the <parameter>nulls</parameter>
-      array should be <literal>'&nbsp;'</literal> if the corresponding parameter
-      value is non-null, or <literal>'n'</literal> if the corresponding parameter
+      array should be <literal>false</literal> if the corresponding parameter
+      value is non-null, or <literal>true</literal> if the corresponding parameter
       value is null.  (In the latter case, the actual value in the
-      corresponding <parameter>values</parameter> entry doesn't matter.)  Note
-      that <parameter>nulls</parameter> is not a text string, just an array:
-      it does not need a <literal>'\0'</literal> terminator.
+      corresponding <parameter>values</parameter> entry doesn't matter.)
      </para>
     </listitem>
    </varlistentry>
@@ -2177,7 +2169,7 @@ Portal SPI_cursor_open(const char * <parameter>name</parameter>, SPIPlanPtr <par
 Portal SPI_cursor_open_with_args(const char *<parameter>name</parameter>,
                                  const char *<parameter>command</parameter>,
                                  int <parameter>nargs</parameter>, Oid *<parameter>argtypes</parameter>,
-                                 Datum *<parameter>values</parameter>, const char *<parameter>nulls</parameter>,
+                                 Datum *<parameter>values</parameter>, const bool *<parameter>nulls</parameter>,
                                  bool <parameter>read_only</parameter>, int <parameter>cursorOptions</parameter>)
 </synopsis>
  </refsynopsisdiv>
@@ -2261,7 +2253,7 @@ Portal SPI_cursor_open_with_args(const char *<parameter>name</parameter>,
    </varlistentry>
 
    <varlistentry>
-    <term><literal>const char * <parameter>nulls</parameter></literal></term>
+    <term><literal>const bool * <parameter>nulls</parameter></literal></term>
     <listitem>
      <para>
       an array of length <parameter>nargs</parameter>, describing which
@@ -2272,12 +2264,10 @@ Portal SPI_cursor_open_with_args(const char *<parameter>name</parameter>,
       If <parameter>nulls</parameter> is <symbol>NULL</symbol> then
       <function>SPI_cursor_open_with_args</function> assumes that no parameters
       are null.  Otherwise, each entry of the <parameter>nulls</parameter>
-      array should be <literal>'&nbsp;'</literal> if the corresponding parameter
-      value is non-null, or <literal>'n'</literal> if the corresponding parameter
+      array should be <literal>false</literal> if the corresponding parameter
+      value is non-null, or <literal>true</literal> if the corresponding parameter
       value is null.  (In the latter case, the actual value in the
-      corresponding <parameter>values</parameter> entry doesn't matter.)  Note
-      that <parameter>nulls</parameter> is not a text string, just an array:
-      it does not need a <literal>'\0'</literal> terminator.
+      corresponding <parameter>values</parameter> entry doesn't matter.)
      </para>
     </listitem>
    </varlistentry>

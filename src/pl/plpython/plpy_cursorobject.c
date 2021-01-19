@@ -201,11 +201,11 @@ PLy_cursor_plan(PyObject *ob, PyObject *args)
 	PG_TRY();
 	{
 		Portal		portal;
-		char	   *volatile nulls;
+		bool	   *volatile nulls;
 		volatile int j;
 
 		if (nargs > 0)
-			nulls = palloc(nargs * sizeof(char));
+			nulls = palloc(nargs * sizeof(bool));
 		else
 			nulls = NULL;
 
@@ -220,7 +220,7 @@ PLy_cursor_plan(PyObject *ob, PyObject *args)
 				bool		isnull;
 
 				plan->values[j] = PLy_output_convert(arg, elem, &isnull);
-				nulls[j] = isnull ? 'n' : ' ';
+				nulls[j] = isnull;
 			}
 			PG_FINALLY();
 			{

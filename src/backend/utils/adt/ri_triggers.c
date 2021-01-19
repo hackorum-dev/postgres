@@ -216,7 +216,7 @@ static bool ri_PerformCheck(const RI_ConstraintInfo *riinfo,
 							bool detectNewRows, int expect_OK);
 static void ri_ExtractValues(Relation rel, TupleTableSlot *slot,
 							 const RI_ConstraintInfo *riinfo, bool rel_is_pk,
-							 Datum *vals, char *nulls);
+							 Datum *vals, bool *nulls);
 static void ri_ReportViolation(const RI_ConstraintInfo *riinfo,
 							   Relation pk_rel, Relation fk_rel,
 							   TupleTableSlot *violatorslot, TupleDesc tupdesc,
@@ -2191,7 +2191,7 @@ ri_PerformCheck(const RI_ConstraintInfo *riinfo,
 	Oid			save_userid;
 	int			save_sec_context;
 	Datum		vals[RI_MAX_NUMKEYS * 2];
-	char		nulls[RI_MAX_NUMKEYS * 2];
+	bool		nulls[RI_MAX_NUMKEYS * 2];
 
 	/*
 	 * Use the query type code to determine whether the query is run against
@@ -2314,7 +2314,7 @@ ri_PerformCheck(const RI_ConstraintInfo *riinfo,
 static void
 ri_ExtractValues(Relation rel, TupleTableSlot *slot,
 				 const RI_ConstraintInfo *riinfo, bool rel_is_pk,
-				 Datum *vals, char *nulls)
+				 Datum *vals, bool *nulls)
 {
 	const int16 *attnums;
 	bool		isnull;
@@ -2327,7 +2327,7 @@ ri_ExtractValues(Relation rel, TupleTableSlot *slot,
 	for (int i = 0; i < riinfo->nkeys; i++)
 	{
 		vals[i] = slot_getattr(slot, attnums[i], &isnull);
-		nulls[i] = isnull ? 'n' : ' ';
+		nulls[i] = isnull;
 	}
 }
 

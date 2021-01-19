@@ -531,7 +531,7 @@ static char *
 pg_get_ruledef_worker(Oid ruleoid, int prettyFlags)
 {
 	Datum		args[1];
-	char		nulls[1];
+	bool		nulls[1];
 	int			spirc;
 	HeapTuple	ruletup;
 	TupleDesc	rulettc;
@@ -570,7 +570,7 @@ pg_get_ruledef_worker(Oid ruleoid, int prettyFlags)
 	 * Get the pg_rewrite tuple for this rule
 	 */
 	args[0] = ObjectIdGetDatum(ruleoid);
-	nulls[0] = ' ';
+	nulls[0] = false;
 	spirc = SPI_execute_plan(plan_getrulebyoid, args, nulls, true, 0);
 	if (spirc != SPI_OK_SELECT)
 		elog(ERROR, "failed to get pg_rewrite tuple for rule %u", ruleoid);
@@ -724,7 +724,7 @@ static char *
 pg_get_viewdef_worker(Oid viewoid, int prettyFlags, int wrapColumn)
 {
 	Datum		args[2];
-	char		nulls[2];
+	bool		nulls[2];
 	int			spirc;
 	HeapTuple	ruletup;
 	TupleDesc	rulettc;
@@ -765,8 +765,8 @@ pg_get_viewdef_worker(Oid viewoid, int prettyFlags, int wrapColumn)
 	 */
 	args[0] = ObjectIdGetDatum(viewoid);
 	args[1] = DirectFunctionCall1(namein, CStringGetDatum(ViewSelectRuleName));
-	nulls[0] = ' ';
-	nulls[1] = ' ';
+	nulls[0] = false;
+	nulls[1] = false;
 	spirc = SPI_execute_plan(plan_getviewrule, args, nulls, true, 0);
 	if (spirc != SPI_OK_SELECT)
 		elog(ERROR, "failed to get pg_rewrite tuple for view %u", viewoid);

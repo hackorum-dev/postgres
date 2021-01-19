@@ -273,7 +273,7 @@ ttdummy(PG_FUNCTION_ARGS)
 	Datum		newon,
 				newoff;
 	Datum	   *cvals;			/* column values */
-	char	   *cnulls;			/* column nulls */
+	bool	   *cnulls;			/* column nulls */
 	char	   *relname;		/* triggered relation name */
 	Relation	rel;			/* triggered relation */
 	HeapTuple	trigtuple;
@@ -374,27 +374,27 @@ ttdummy(PG_FUNCTION_ARGS)
 
 	/* Fetch tuple values and nulls */
 	cvals = (Datum *) palloc(natts * sizeof(Datum));
-	cnulls = (char *) palloc(natts * sizeof(char));
+	cnulls = (bool *) palloc(natts * sizeof(bool));
 	for (i = 0; i < natts; i++)
 	{
 		cvals[i] = SPI_getbinval((newtuple != NULL) ? newtuple : trigtuple,
 								 tupdesc, i + 1, &isnull);
-		cnulls[i] = (isnull) ? 'n' : ' ';
+		cnulls[i] = isnull;
 	}
 
 	/* change date column(s) */
 	if (newtuple)				/* UPDATE */
 	{
 		cvals[attnum[0] - 1] = newoff;	/* start_date eq current date */
-		cnulls[attnum[0] - 1] = ' ';
+		cnulls[attnum[0] - 1] = false;
 		cvals[attnum[1] - 1] = TTDUMMY_INFINITY;	/* stop_date eq INFINITY */
-		cnulls[attnum[1] - 1] = ' ';
+		cnulls[attnum[1] - 1] = false;
 	}
 	else
 		/* DELETE */
 	{
 		cvals[attnum[1] - 1] = newoff;	/* stop_date eq current date */
-		cnulls[attnum[1] - 1] = ' ';
+		cnulls[attnum[1] - 1] = false;
 	}
 
 	/* if there is no plan ... */

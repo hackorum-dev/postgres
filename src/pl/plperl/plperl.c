@@ -3806,7 +3806,7 @@ SV *
 plperl_spi_query_prepared(char *query, int argc, SV **argv)
 {
 	int			i;
-	char	   *nulls;
+	bool	   *nulls;
 	Datum	   *argvalues;
 	plperl_query_desc *qdesc;
 	plperl_query_entry *hash_entry;
@@ -3849,7 +3849,7 @@ plperl_spi_query_prepared(char *query, int argc, SV **argv)
 		 ************************************************************/
 		if (argc > 0)
 		{
-			nulls = (char *) palloc(argc);
+			nulls = (bool *) palloc(argc);
 			argvalues = (Datum *) palloc(argc * sizeof(Datum));
 		}
 		else
@@ -3869,7 +3869,7 @@ plperl_spi_query_prepared(char *query, int argc, SV **argv)
 											  &qdesc->arginfuncs[i],
 											  qdesc->argtypioparams[i],
 											  &isnull);
-			nulls[i] = isnull ? 'n' : ' ';
+			nulls[i] = isnull;
 		}
 
 		/************************************************************

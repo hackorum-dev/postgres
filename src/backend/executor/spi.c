@@ -70,7 +70,7 @@ static int	_SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 							  DestReceiver *caller_dest);
 
 static ParamListInfo _SPI_convert_params(int nargs, Oid *argtypes,
-										 Datum *Values, const char *Nulls);
+										 Datum *Values, const bool *Nulls);
 
 static int	_SPI_pquery(QueryDesc *queryDesc, bool fire_triggers, uint64 tcount);
 
@@ -536,7 +536,7 @@ SPI_exec(const char *src, long tcount)
 
 /* Execute a previously prepared plan */
 int
-SPI_execute_plan(SPIPlanPtr plan, Datum *Values, const char *Nulls,
+SPI_execute_plan(SPIPlanPtr plan, Datum *Values, const bool *Nulls,
 				 bool read_only, long tcount)
 {
 	int			res;
@@ -563,7 +563,7 @@ SPI_execute_plan(SPIPlanPtr plan, Datum *Values, const char *Nulls,
 
 /* Obsolete version of SPI_execute_plan */
 int
-SPI_execp(SPIPlanPtr plan, Datum *Values, const char *Nulls, long tcount)
+SPI_execp(SPIPlanPtr plan, Datum *Values, const bool *Nulls, long tcount)
 {
 	return SPI_execute_plan(plan, Values, Nulls, false, tcount);
 }
@@ -634,7 +634,7 @@ SPI_execute_plan_with_receiver(SPIPlanPtr plan,
  */
 int
 SPI_execute_snapshot(SPIPlanPtr plan,
-					 Datum *Values, const char *Nulls,
+					 Datum *Values, const bool *Nulls,
 					 Snapshot snapshot, Snapshot crosscheck_snapshot,
 					 bool read_only, bool fire_triggers, long tcount)
 {
@@ -669,7 +669,7 @@ SPI_execute_snapshot(SPIPlanPtr plan,
 int
 SPI_execute_with_args(const char *src,
 					  int nargs, Oid *argtypes,
-					  Datum *Values, const char *Nulls,
+					  Datum *Values, const bool *Nulls,
 					  bool read_only, long tcount)
 {
 	int			res;
@@ -1339,7 +1339,7 @@ SPI_freetuptable(SPITupleTable *tuptable)
  */
 Portal
 SPI_cursor_open(const char *name, SPIPlanPtr plan,
-				Datum *Values, const char *Nulls,
+				Datum *Values, const bool *Nulls,
 				bool read_only)
 {
 	Portal		portal;
@@ -1368,7 +1368,7 @@ Portal
 SPI_cursor_open_with_args(const char *name,
 						  const char *src,
 						  int nargs, Oid *argtypes,
-						  Datum *Values, const char *Nulls,
+						  Datum *Values, const bool *Nulls,
 						  bool read_only, int cursorOptions)
 {
 	Portal		result;
@@ -2636,7 +2636,7 @@ fail:
  */
 static ParamListInfo
 _SPI_convert_params(int nargs, Oid *argtypes,
-					Datum *Values, const char *Nulls)
+					Datum *Values, const bool *Nulls)
 {
 	ParamListInfo paramLI;
 
@@ -2649,7 +2649,7 @@ _SPI_convert_params(int nargs, Oid *argtypes,
 			ParamExternData *prm = &paramLI->params[i];
 
 			prm->value = Values[i];
-			prm->isnull = (Nulls && Nulls[i] == 'n');
+			prm->isnull = Nulls && Nulls[i];
 			prm->pflags = PARAM_FLAG_CONST;
 			prm->ptype = argtypes[i];
 		}
