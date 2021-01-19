@@ -8692,7 +8692,7 @@ index_delete_sort(TM_IndexDeleteOp *delstate)
 	 * This implementation is fast with array sizes up to ~4500.  This covers
 	 * all supported BLCKSZ values.
 	 */
-	const int	gaps[9] = {1968, 861, 336, 112, 48, 21, 7, 3, 1};
+	static const int	gaps[9] = {1968, 861, 336, 112, 48, 21, 7, 3, 1};
 
 	/* Think carefully before changing anything here -- keep swaps cheap */
 	StaticAssertDecl(sizeof(TM_IndexDelete) <= 8,
