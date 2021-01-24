@@ -184,6 +184,20 @@ commit;
 select * from pg_visibility_map('copyfreeze');
 select * from pg_check_frozen('copyfreeze');
 
+-- test copy freeze
+create table copyfreeze_toast (a int, b text);
+
+-- load all rows via COPY FREEZE and ensure that all pages are set all-visible
+-- and all-frozen.
+begin;
+truncate copyfreeze_toast;
+\copy copyfreeze_toast from 'data/toast.data' with (freeze);
+commit;
+select * from pg_visibility_map('copyfreeze_toast');
+select * from pg_check_frozen('copyfreeze_toast');
+select * from pg_visibility_map((select reltoastrelid from pg_class where relname = 'copyfreeze_toast'));
+select * from pg_check_frozen((select reltoastrelid from pg_class where relname = 'copyfreeze_toast'));
+
 -- cleanup
 drop table test_partitioned;
 drop view test_view;

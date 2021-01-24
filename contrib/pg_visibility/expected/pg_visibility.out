@@ -310,6 +310,40 @@ select * from pg_check_frozen('copyfreeze');
 --------
 (0 rows)
 
+-- test copy freeze
+create table copyfreeze_toast (a int, b text);
+-- load all rows via COPY FREEZE and ensure that all pages are set all-visible
+-- and all-frozen.
+begin;
+truncate copyfreeze_toast;
+\copy copyfreeze_toast from 'data/toast.data' with (freeze);
+commit;
+select * from pg_visibility_map('copyfreeze_toast');
+ blkno | all_visible | all_frozen 
+-------+-------------+------------
+     0 | t           | t
+(1 row)
+
+select * from pg_check_frozen('copyfreeze_toast');
+ t_ctid 
+--------
+(0 rows)
+
+select * from pg_visibility_map((select reltoastrelid from pg_class where relname = 'copyfreeze_toast'));
+ blkno | all_visible | all_frozen 
+-------+-------------+------------
+     0 | t           | t
+     1 | t           | t
+     2 | t           | t
+     3 | t           | t
+     4 | t           | t
+(5 rows)
+
+select * from pg_check_frozen((select reltoastrelid from pg_class where relname = 'copyfreeze_toast'));
+ t_ctid 
+--------
+(0 rows)
+
 -- cleanup
 drop table test_partitioned;
 drop view test_view;
