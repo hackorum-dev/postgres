@@ -13,6 +13,10 @@
 #include "filemap.h"
 
 extern void open_target_file(const char *path, bool trunc);
+#ifdef HAVE_COPY_FILE_RANGE
+extern bool copy_file_range_support;
+extern bool copy_target_range(int srcfd, off_t begin, size_t size);
+#endif
 extern void write_target_range(char *buf, off_t begin, size_t size);
 extern void close_target_file(void);
 extern void remove_target_file(const char *path, bool missing_ok);

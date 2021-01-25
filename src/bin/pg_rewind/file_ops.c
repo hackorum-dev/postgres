@@ -39,6 +39,10 @@ static void remove_target_symlink(const char *path);
 static void recurse_dir(const char *datadir, const char *parentpath,
 						process_file_callback_t callback);
 
+#ifdef HAVE_COPY_FILE_RANGE
+bool copy_file_range_support = true;
+#endif
+
 /*
  * Open a target file for writing. If 'trunc' is true and the file already
  * exists, it will be truncated.
@@ -83,6 +87,56 @@ close_target_file(void)
 
 	dstfd = -1;
 }
+
+#ifdef HAVE_COPY_FILE_RANGE
+/*
+ * Use copy_file_range() for file copy. Return true if succeeds, else return
+ * false.  If copy_file_range() is not allowed between the source and target,
+ * set copy_file_range_support as false to prevent future calling of
+ * copy_file_range() for the source and target.
+ */
+bool
+copy_target_range(int srcfd, off_t begin, size_t size)
+{
+	ssize_t     copylen;
+
+	/* update progress report */
+	fetch_done += size;
+	progress_report(false);
+
+	if (dry_run)
+		return true;
+
+	if (lseek(srcfd, begin, SEEK_SET) == -1)
+		pg_fatal("could not seek in source file: %m");
+
+	if (lseek(dstfd, begin, SEEK_SET) == -1)
+		pg_fatal("could not seek in target file \"%s\": %m", dstpath);
+
+	while (size > 0)
+	{
+		copylen = copy_file_range(srcfd, NULL, dstfd, NULL, size, 0);
+
+		if (copylen <= 0)
+		{
+			/*
+			 * Pre Linux 5.3 does not allow cross-fs copy_file_range() call
+			 * (return EXDEV). Some fs do not support copy_file_range() (return
+			 * ENOTSUP). Here we explicitly disable copy_file_range() for the
+			 * two scenarios. For other failures we still allow subsequent
+			 * copy_file_range() try.
+			 */
+			if (errno == ENOTSUP || errno == EXDEV)
+				copy_file_range_support = false;
+			return false;
+		}
+
+		size -= copylen;
+	}
+
+	return true;
+}
+#endif
 
 void
 write_target_range(char *buf, off_t begin, size_t size)
