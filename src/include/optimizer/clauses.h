@@ -70,4 +70,6 @@ extern bool expression_has_grouping_conflict(Node *expr,
 											 grouping_eqop_callback get_eqop,
 											 void *context);
 
+extern double find_var_dependency(PlannerInfo *root, Index relid, Var *var, Bitmapset *attnums);
+
 #endif							/* CLAUSES_H */
