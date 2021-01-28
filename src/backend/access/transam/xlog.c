@@ -772,6 +772,16 @@ static ControlFileData *ControlFile = NULL;
  */
 #define ConvertToXSegs(x, segsize)	XLogMBVarToSegs((x), (segsize))
 
+/*
+ * Return true if the first wal_level drop which
+ * could cause discontinuity of snapshots happens,
+ * since the latest base backup was taken.
+ */
+#define TestWalLevelGap() \
+	(ControlFile->wal_level_drop == InvalidXLogRecPtr && \
+	 ControlFile->wal_level >= WAL_LEVEL_REPLICA && \
+	 wal_level < WAL_LEVEL_REPLICA)
+
 /* The number of bytes in a WAL segment usable for WAL data. */
 static int	UsableBytesInSegment;
 
@@ -4629,6 +4639,7 @@ InitControlFile(uint64 sysidentifier)
 	ControlFile->max_locks_per_xact = max_locks_per_xact;
 	ControlFile->wal_level = wal_level;
 	ControlFile->wal_log_hints = wal_log_hints;
+	ControlFile->wal_level_drop = InvalidXLogRecPtr;
 	ControlFile->track_commit_timestamp = track_commit_timestamp;
 	ControlFile->data_checksum_version = bootstrap_data_checksum_version;
 }
@@ -4928,6 +4939,19 @@ void
 UpdateControlFile(void)
 {
 	update_controlfile(DataDir, ControlFile, true);
+}
+
+/*
+ * Successful execution of pg_basebackup
+ * needs to reset wal_level_drop in the control file.
+ */
+void
+ResetWalLevelDrop(void)
+{
+	LWLockAcquire(ControlFileLock, LW_EXCLUSIVE);
+	ControlFile->wal_level_drop = InvalidXLogRecPtr;
+	UpdateControlFile();
+	LWLockRelease(ControlFileLock);
 }
 
 /*
@@ -9847,6 +9871,11 @@ XLogRestorePoint(const char *rpName)
 static void
 XLogReportParameters(void)
 {
+	/*
+	 * flag to know whether or not wal_level dropped to minimal from higher level
+	 */
+	bool cause_discontinuity = false;
+
 	if (wal_level != ControlFile->wal_level ||
 		wal_log_hints != ControlFile->wal_log_hints ||
 		MaxConnections != ControlFile->MaxConnections ||
@@ -9876,6 +9905,8 @@ XLogReportParameters(void)
 			xlrec.wal_level = wal_level;
 			xlrec.wal_log_hints = wal_log_hints;
 			xlrec.track_commit_timestamp = track_commit_timestamp;
+			if (TestWalLevelGap())
+				cause_discontinuity = true;
 
 			XLogBeginInsert();
 			XLogRegisterData((char *) &xlrec, sizeof(xlrec));
@@ -9894,6 +9925,8 @@ XLogReportParameters(void)
 		ControlFile->wal_level = wal_level;
 		ControlFile->wal_log_hints = wal_log_hints;
 		ControlFile->track_commit_timestamp = track_commit_timestamp;
+		if (cause_discontinuity)
+			ControlFile->wal_level_drop = GetXLogInsertRecPtr();
 		UpdateControlFile();
 
 		LWLockRelease(ControlFileLock);
@@ -10322,6 +10355,8 @@ xlog_redo(XLogReaderState *record)
 			ControlFile->minRecoveryPoint = lsn;
 			ControlFile->minRecoveryPointTLI = ThisTimeLineID;
 		}
+		if (TestWalLevelGap())
+			ControlFile->wal_level_drop = GetXLogInsertRecPtr();
 
 		CommitTsParameterChange(xlrec.track_commit_timestamp,
 								ControlFile->track_commit_timestamp);
