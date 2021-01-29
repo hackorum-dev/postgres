@@ -3725,9 +3725,14 @@ prepare_foreign_modify(PgFdwModifyState *fmstate)
 	char	   *p_name;
 	PGresult   *res;
 
-	/* Construct name we'll use for the prepared statement. */
-	snprintf(prep_name, sizeof(prep_name), "pgsql_fdw_prep_%u",
-			 GetPrepStmtNumber(fmstate->conn));
+	/* Construct name we'll use for the prepared statement.
+	 *
+	 * Prepend a random number to reduce the likelihood of
+	 * prepared statement collisions when using transaction pooling.
+	 */
+	snprintf(prep_name, sizeof(prep_name), "pgsql_fdw_prep_%u_%u",
+			 GetPrepStmtNumber(fmstate->conn),
+			 rand());
 	p_name = pstrdup(prep_name);
 
 	/*
