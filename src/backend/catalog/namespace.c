@@ -3463,7 +3463,10 @@ LookupExplicitNamespace(const char *nspname, bool missing_ok)
 	if (strcmp(nspname, "pg_temp") == 0)
 	{
 		if (OidIsValid(myTempNamespace))
+		{
+			InvokeNamespaceSearchHook(myTempNamespace, true);
 			return myTempNamespace;
+		}
 
 		/*
 		 * Since this is used only for looking up existing objects, there is
