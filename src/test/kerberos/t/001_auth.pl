@@ -234,7 +234,7 @@ sub test_access
 		}
 
 		# might need to retry if logging collector process is slow...
-		my $max_attempts = 180 * 10;
+		my $max_attempts = 3 * 10;
 		my $first_logfile;
 		for (my $attempts = 0; $attempts < $max_attempts; $attempts++)
 		{
