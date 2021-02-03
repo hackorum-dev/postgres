@@ -29,6 +29,7 @@
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
+#include "utils/lsyscache.h"
 #include "utils/pg_lsn.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
@@ -403,6 +404,35 @@ RemoveSubscriptionRel(Oid subid, Oid relid)
 	scan = table_beginscan_catalog(rel, nkeys, skey);
 	while (HeapTupleIsValid(tup = heap_getnext(scan, ForwardScanDirection)))
 	{
+		Form_pg_subscription_rel subrel;
+
+		subrel = (Form_pg_subscription_rel) GETSTRUCT(tup);
+
+		/*
+		 * We don't allow to drop the relation mapping when the table
+		 * synchronization is in progress unless the caller updates the
+		 * corresponding subscription as well. This is to ensure that we don't
+		 * leave tablesync slots or origins in the system when the
+		 * corresponding table is dropped.
+		 */
+		if (!OidIsValid(subid) && subrel->srsubstate != SUBREL_STATE_READY)
+		{
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_OBJECT),
+					 errmsg("could not drop relation mapping for subscription \"%s\"",
+							get_subscription_name(subrel->srsubid, false)),
+					 errdetail("Table synchronization for relation \"%s\" is in progress and is in state \"%c\".",
+							   get_rel_name(relid), subrel->srsubstate),
+
+			/*
+			 * translator: first %s is a SQL ALTER command and second %s is a
+			 * SQL DROP command
+			 */
+					 errhint("Use %s to enable subscription if not already enabled or use %s to drop the subscription.",
+							 "ALTER SUBSCRIPTION ... ENABLE",
+							 "DROP SUBSCRIPTION ...")));
+		}
+
 		CatalogTupleDelete(rel, &tup->t_self);
 	}
 	table_endscan(scan);
