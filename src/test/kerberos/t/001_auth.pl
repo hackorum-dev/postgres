@@ -182,6 +182,9 @@ $node->safe_psql('postgres', 'CREATE USER test1;');
 
 note "running tests";
 
+my $current_log_name = '';
+my $current_log_position;
+
 # Test connection success or failure, and if success, that query returns true.
 sub test_access
 {
@@ -221,18 +224,37 @@ sub test_access
 		$lfname =~ s/^stderr //;
 		chomp $lfname;
 
+		if ($lfname ne $current_log_name)
+		{
+			$current_log_name = $lfname;
+
+			# Search from the beginning of this new file.
+			$current_log_position = 0;
+			note "current_log_position = $current_log_position";
+		}
+
 		# might need to retry if logging collector process is slow...
 		my $max_attempts = 180 * 10;
 		my $first_logfile;
 		for (my $attempts = 0; $attempts < $max_attempts; $attempts++)
 		{
 			$first_logfile = slurp_file($node->data_dir . '/' . $lfname);
-			last if $first_logfile =~ m/\Q$expect_log_msg\E/;
+
+			# Don't include previously matched text in the search.
+			$first_logfile = substr $first_logfile, $current_log_position;
+			if ($first_logfile =~ m/\Q$expect_log_msg\E/g)
+			{
+				$current_log_position += pos($first_logfile);
+				last;
+			}
+
 			usleep(100_000);
 		}
 
 		like($first_logfile, qr/\Q$expect_log_msg\E/,
 			 'found expected log file content');
+
+		note "current_log_position = $current_log_position";
 	}
 
 	return;
