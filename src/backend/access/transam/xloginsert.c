@@ -981,6 +981,22 @@ XLogSaveBufferForHint(Buffer buffer, bool buffer_std)
 }
 
 /*
+ * On the first hint bit change during a checkpoint, XLogSaveBufferForHint()
+ * writes a full page image to the WAL and returns a new LSN which can be
+ * assigned to the page.  Cluster file encryption needs a new LSN for
+ * every hint bit page write because the LSN is used in the nonce, and
+ * the nonce must be unique.  Therefore, this routine just advances the LSN
+ * so the page can be assigned a new LSN.
+ */
+XLogRecPtr
+XLogLSNForHint(void)
+{
+	XLogBeginInsert();
+
+	return XLogInsert(RM_XLOG_ID, XLOG_HINT_LSN);
+}
+
+/*
  * Write a WAL record containing a full image of a page. Caller is responsible
  * for writing the page to disk after calling this routine.
  *

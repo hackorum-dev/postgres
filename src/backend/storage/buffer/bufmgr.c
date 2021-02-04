@@ -3810,13 +3810,14 @@ MarkBufferDirtyHint(Buffer buffer, bool buffer_std)
 		 * If we need to protect hint bit updates from torn writes, WAL-log a
 		 * full page image of the page. This full page image is only necessary
 		 * if the hint bit update is the first change to the page since the
-		 * last checkpoint.
+		 * last checkpoint.  If cluster file encryption is enabled, we also
+		 * need to generate new page LSNs for non-first-page writes during
+		 * a checkpoint.
 		 *
 		 * We don't check full_page_writes here because that logic is included
 		 * when we call XLogInsert() since the value changes dynamically.
 		 */
-		if (XLogHintBitIsNeeded() &&
-			(pg_atomic_read_u32(&bufHdr->state) & BM_PERMANENT))
+		if (XLogHintBitIsNeeded())
 		{
 			/*
 			 * If we must not write WAL, due to a relfilenode-specific
@@ -3826,35 +3827,67 @@ MarkBufferDirtyHint(Buffer buffer, bool buffer_std)
 			 *
 			 * See src/backend/storage/page/README for longer discussion.
 			 */
-			if (RecoveryInProgress() ||
-				RelFileNodeSkippingWAL(bufHdr->tag.rnode))
+			if (((pg_atomic_read_u32(&bufHdr->state) & BM_PERMANENT)
+				 /* XXX || file_encryption_method != 0 */) &&
+				(RecoveryInProgress() ||
+				 RelFileNodeSkippingWAL(bufHdr->tag.rnode)))
 				return;
 
+			if (pg_atomic_read_u32(&bufHdr->state) & BM_PERMANENT)
+			{
+				/*
+				 * If the block is already dirty because we either made a change
+				 * or set a hint already, then we don't need to write a full page
+				 * image.  Note that aggressive cleaning of blocks dirtied by hint
+				 * bit setting would increase the call rate. Bulk setting of hint
+				 * bits would reduce the call rate...
+				 *
+				 * We must issue the WAL record before we mark the buffer dirty.
+				 * Otherwise we might write the page before we write the WAL. That
+				 * causes a race condition, since a checkpoint might occur between
+				 * writing the WAL record and marking the buffer dirty. We solve
+				 * that with a kluge, but one that is already in use during
+				 * transaction commit to prevent race conditions. Basically, we
+				 * simply prevent the checkpoint WAL record from being written
+				 * until we have marked the buffer dirty. We don't start the
+				 * checkpoint flush until we have marked dirty, so our checkpoint
+				 * must flush the change to disk successfully or the checkpoint
+				 * never gets written, so crash recovery will fix.
+				 *
+				 * It's possible we may enter here without an xid, so it is
+				 * essential that CreateCheckpoint waits for virtual transactions
+				 * rather than full transactionids.
+				 */
+				MyProc->delayChkpt = delayChkpt = true;
+				lsn = XLogSaveBufferForHint(buffer, buffer_std);
+			}
+
 			/*
-			 * If the block is already dirty because we either made a change
-			 * or set a hint already, then we don't need to write a full page
-			 * image.  Note that aggressive cleaning of blocks dirtied by hint
-			 * bit setting would increase the call rate. Bulk setting of hint
-			 * bits would reduce the call rate...
-			 *
-			 * We must issue the WAL record before we mark the buffer dirty.
-			 * Otherwise we might write the page before we write the WAL. That
-			 * causes a race condition, since a checkpoint might occur between
-			 * writing the WAL record and marking the buffer dirty. We solve
-			 * that with a kluge, but one that is already in use during
-			 * transaction commit to prevent race conditions. Basically, we
-			 * simply prevent the checkpoint WAL record from being written
-			 * until we have marked the buffer dirty. We don't start the
-			 * checkpoint flush until we have marked dirty, so our checkpoint
-			 * must flush the change to disk successfully or the checkpoint
-			 * never gets written, so crash recovery will fix.
-			 *
-			 * It's possible we may enter here without an xid, so it is
-			 * essential that CreateCheckpoint waits for virtual transactions
-			 * rather than full transactionids.
+			 * For cluster file encryption, we generate a new page LSN
+			 * for hint-bit non-permanent and non-first page writes.
 			 */
-			MyProc->delayChkpt = delayChkpt = true;
-			lsn = XLogSaveBufferForHint(buffer, buffer_std);
+			if (/* XXX file_encryption_method != 0 && */
+				XLogRecPtrIsInvalid(lsn) &&
+				/* XXX can we check BM_DIRTY without a page lock? */
+				!(pg_atomic_read_u32(&bufHdr->state) & BM_DIRTY))
+			{
+				/*
+				 * If the buffer is clean, and lsn is valid, it must be the
+				 * first hint bit change of the checkpoint (the old page lsn
+				 * is earlier than the RedoRecPtr).  If the page is clean and
+				 * the lsn is invalid, the page must have been already written
+				 * during this checkpoint, and this is a new hint bit change.
+				 * Such page changes usually don't create new page lsns, but we
+				 * need one for cluster file encryption because the lsn is used as
+				 * part of the nonce, and we don't want to reencrypt the page
+				 * with the hint bit changes using the same nonce as the previous
+				 * writes during this checkpoint.  (It would expose the hint bit
+				 * change locations.)  Therefore we create a simple WAL record
+				 * to advance the lsn, which can can then be assigned to the
+				 * page below.
+				 */
+				lsn = XLogLSNForHint();
+			}
 		}
 
 		buf_state = LockBufHdr(bufHdr);

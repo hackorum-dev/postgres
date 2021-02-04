@@ -10260,6 +10260,10 @@ xlog_redo(XLogReaderState *record)
 			UnlockReleaseBuffer(buffer);
 		}
 	}
+	else if (info == XLOG_HINT_LSN)
+	{
+		/* nothing to do here */
+	}
 	else if (info == XLOG_BACKUP_END)
 	{
 		XLogRecPtr	startpoint;
