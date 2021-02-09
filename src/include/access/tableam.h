@@ -403,7 +403,8 @@ typedef struct TableAmRoutine
 									  ItemPointer tid,
 									  Snapshot snapshot,
 									  TupleTableSlot *slot,
-									  bool *call_again, bool *all_dead);
+									  bool *call_again, bool *all_dead,
+									  Relation indrel);
 
 
 	/* ------------------------------------------------------------------------
@@ -495,7 +496,9 @@ typedef struct TableAmRoutine
 								 bool wait,
 								 TM_FailureData *tmfd,
 								 LockTupleMode *lockmode,
-								 bool *update_indexes);
+								 bool *update_all_indexes,
+								 bool *update_modified_indexes,
+								 Bitmapset **modified_attrs);
 
 	/* see table_tuple_lock() for reference about parameters */
 	TM_Result	(*tuple_lock) (Relation rel,
@@ -757,7 +760,7 @@ typedef struct TableAmRoutine
 	 * scan_bitmap_next_tuple need to exist, or neither.
 	 */
 	bool		(*scan_bitmap_next_block) (TableScanDesc scan,
-										   struct TBMIterateResult *tbmres);
+										   struct TBMIterateResult *tbmres, Bitmapset *interesting_attrs);
 
 	/*
 	 * Fetch the next tuple of a bitmap table scan into `slot` and return true
@@ -1124,7 +1127,8 @@ table_index_fetch_tuple(struct IndexFetchTableData *scan,
 						ItemPointer tid,
 						Snapshot snapshot,
 						TupleTableSlot *slot,
-						bool *call_again, bool *all_dead)
+						bool *call_again, bool *all_dead,
+						Relation indrel)
 {
 	/*
 	 * We don't expect direct calls to table_index_fetch_tuple with valid
@@ -1136,7 +1140,7 @@ table_index_fetch_tuple(struct IndexFetchTableData *scan,
 
 	return scan->rel->rd_tableam->index_fetch_tuple(scan, tid, snapshot,
 													slot, call_again,
-													all_dead);
+													all_dead, indrel);
 }
 
 /*
@@ -1148,7 +1152,8 @@ table_index_fetch_tuple(struct IndexFetchTableData *scan,
 extern bool table_index_fetch_tuple_check(Relation rel,
 										  ItemPointer tid,
 										  Snapshot snapshot,
-										  bool *all_dead);
+										  bool *all_dead,
+										  Relation indrel);
 
 
 /* ------------------------------------------------------------------------
@@ -1417,12 +1422,13 @@ static inline TM_Result
 table_tuple_update(Relation rel, ItemPointer otid, TupleTableSlot *slot,
 				   CommandId cid, Snapshot snapshot, Snapshot crosscheck,
 				   bool wait, TM_FailureData *tmfd, LockTupleMode *lockmode,
-				   bool *update_indexes)
+				   bool *update_all_indexes, bool *update_modified_indexes, Bitmapset **modified_attrs)
 {
 	return rel->rd_tableam->tuple_update(rel, otid, slot,
 										 cid, snapshot, crosscheck,
 										 wait, tmfd,
-										 lockmode, update_indexes);
+										 lockmode, update_all_indexes,
+										 update_modified_indexes, modified_attrs);
 }
 
 /*
@@ -1842,7 +1848,7 @@ table_relation_estimate_size(Relation rel, int32 *attr_widths,
  */
 static inline bool
 table_scan_bitmap_next_block(TableScanDesc scan,
-							 struct TBMIterateResult *tbmres)
+							 struct TBMIterateResult *tbmres, Bitmapset *interesting_attrs)
 {
 	/*
 	 * We don't expect direct calls to table_scan_bitmap_next_block with valid
@@ -1853,7 +1859,7 @@ table_scan_bitmap_next_block(TableScanDesc scan,
 		elog(ERROR, "unexpected table_scan_bitmap_next_block call during logical decoding");
 
 	return scan->rs_rd->rd_tableam->scan_bitmap_next_block(scan,
-														   tbmres);
+														   tbmres, interesting_attrs);
 }
 
 /*
@@ -1940,7 +1946,8 @@ extern void simple_table_tuple_delete(Relation rel, ItemPointer tid,
 									  Snapshot snapshot);
 extern void simple_table_tuple_update(Relation rel, ItemPointer otid,
 									  TupleTableSlot *slot, Snapshot snapshot,
-									  bool *update_indexes);
+									  bool *update_all_indexes, bool *update_modified_indexes,
+									  Bitmapset **modified_attrs);
 
 
 /* ----------------------------------------------------------------------------
