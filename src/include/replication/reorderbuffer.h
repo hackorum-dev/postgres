@@ -654,7 +654,7 @@ void		ReorderBufferAbortOld(ReorderBuffer *, TransactionId xid);
 void		ReorderBufferForget(ReorderBuffer *, TransactionId, XLogRecPtr lsn);
 void		ReorderBufferInvalidate(ReorderBuffer *, TransactionId, XLogRecPtr lsn);
 
-void		ReorderBufferSetBaseSnapshot(ReorderBuffer *, TransactionId, XLogRecPtr lsn, struct SnapshotData *snap);
+bool		ReorderBufferSetBaseSnapshot(ReorderBuffer *, TransactionId, XLogRecPtr lsn, struct SnapshotData *snap);
 void		ReorderBufferAddSnapshot(ReorderBuffer *, TransactionId, XLogRecPtr lsn, struct SnapshotData *snap);
 void		ReorderBufferAddNewCommandId(ReorderBuffer *, TransactionId, XLogRecPtr lsn,
 										 CommandId cid);

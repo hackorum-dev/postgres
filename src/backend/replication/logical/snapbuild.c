@@ -750,7 +750,7 @@ SnapBuildProcessChange(SnapBuild *builder, TransactionId xid, XLogRecPtr lsn)
 		 * out to.
 		 */
 		SnapBuildSnapIncRefcount(builder->snapshot);
-		ReorderBufferSetBaseSnapshot(builder->reorder, xid, lsn,
+		return ReorderBufferSetBaseSnapshot(builder->reorder, xid, lsn,
 									 builder->snapshot);
 	}
 
@@ -1071,8 +1071,13 @@ SnapBuildCommitTxn(SnapBuild *builder, XLogRecPtr lsn, TransactionId xid,
 		if (!ReorderBufferXidHasBaseSnapshot(builder->reorder, xid))
 		{
 			SnapBuildSnapIncRefcount(builder->snapshot);
-			ReorderBufferSetBaseSnapshot(builder->reorder, xid, lsn,
-										 builder->snapshot);
+			if (!ReorderBufferSetBaseSnapshot(builder->reorder, xid, lsn,
+										 builder->snapshot))
+		        ereport(FATAL,
+				(errmsg("BaseSnapshot can't be setup at point %X/%X",
+						(uint32) (lsn >> 32), (uint32) lsn),
+				 errdetail("Top transaction is not running.")));
+										 
 		}
 
 		/* refcount of the snapshot builder for the new snapshot */

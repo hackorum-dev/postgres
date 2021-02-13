@@ -2978,7 +2978,7 @@ ReorderBufferAddSnapshot(ReorderBuffer *rb, TransactionId xid,
  * If we know that xid is a subtransaction, set the base snapshot on the
  * top-level transaction instead.
  */
-void
+bool
 ReorderBufferSetBaseSnapshot(ReorderBuffer *rb, TransactionId xid,
 							 XLogRecPtr lsn, Snapshot snap)
 {
@@ -2995,6 +2995,8 @@ ReorderBufferSetBaseSnapshot(ReorderBuffer *rb, TransactionId xid,
 	if (rbtxn_is_known_subxact(txn))
 		txn = ReorderBufferTXNByXid(rb, txn->toplevel_xid, false,
 									NULL, InvalidXLogRecPtr, false);
+	if (txn == NULL)
+		return false;
 	Assert(txn->base_snapshot == NULL);
 
 	txn->base_snapshot = snap;
@@ -3002,6 +3004,8 @@ ReorderBufferSetBaseSnapshot(ReorderBuffer *rb, TransactionId xid,
 	dlist_push_tail(&rb->txns_by_base_snapshot_lsn, &txn->base_snapshot_node);
 
 	AssertTXNLsnOrder(rb);
+
+	return true;
 }
 
 /*
