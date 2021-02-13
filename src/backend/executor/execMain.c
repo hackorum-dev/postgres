@@ -1749,7 +1749,7 @@ ExecPartitionCheckEmitError(ResultRelInfo *resultRelInfo,
 		 */
 		if (map != NULL)
 			slot = execute_attr_map_slot(map, slot,
-										 MakeTupleTableSlot(tupdesc, &TTSOpsVirtual));
+										 MakeSingleTupleTableSlot(tupdesc, &TTSOpsVirtual));
 		modifiedCols = bms_union(ExecGetInsertedCols(rootrel, estate),
 								 ExecGetUpdatedCols(rootrel, estate));
 	}
@@ -1834,7 +1834,7 @@ ExecConstraints(ResultRelInfo *resultRelInfo,
 					 */
 					if (map != NULL)
 						slot = execute_attr_map_slot(map, slot,
-													 MakeTupleTableSlot(tupdesc, &TTSOpsVirtual));
+													 MakeSingleTupleTableSlot(tupdesc, &TTSOpsVirtual));
 					modifiedCols = bms_union(ExecGetInsertedCols(rootrel, estate),
 											 ExecGetUpdatedCols(rootrel, estate));
 					rel = rootrel->ri_RelationDesc;
@@ -1886,7 +1886,7 @@ ExecConstraints(ResultRelInfo *resultRelInfo,
 				 */
 				if (map != NULL)
 					slot = execute_attr_map_slot(map, slot,
-												 MakeTupleTableSlot(tupdesc, &TTSOpsVirtual));
+												 MakeSingleTupleTableSlot(tupdesc, &TTSOpsVirtual));
 				modifiedCols = bms_union(ExecGetInsertedCols(rootrel, estate),
 										 ExecGetUpdatedCols(rootrel, estate));
 				rel = rootrel->ri_RelationDesc;
@@ -1993,7 +1993,7 @@ ExecWithCheckOptions(WCOKind kind, ResultRelInfo *resultRelInfo,
 						 */
 						if (map != NULL)
 							slot = execute_attr_map_slot(map, slot,
-														 MakeTupleTableSlot(tupdesc, &TTSOpsVirtual));
+														 MakeSingleTupleTableSlot(tupdesc, &TTSOpsVirtual));
 
 						modifiedCols = bms_union(ExecGetInsertedCols(rootrel, estate),
 												 ExecGetUpdatedCols(rootrel, estate));
