@@ -5827,6 +5827,12 @@ exec_for_query(PLpgSQL_execstate *estate, PLpgSQL_stmt_forq *stmt,
 	PinPortal(portal);
 
 	/*
+	 * Disable prefetch if procedure contains COMMIT, ROLLBACK or CALL statements
+	 */
+	if (estate->func->fn_xactctrl)
+		prefetch_ok = false;
+
+	/*
 	 * Fetch the initial tuple(s).  If prefetching is allowed then we grab a
 	 * few more rows to avoid multiple trips through executor startup
 	 * overhead.

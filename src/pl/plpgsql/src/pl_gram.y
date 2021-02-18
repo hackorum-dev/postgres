@@ -935,6 +935,8 @@ stmt_perform	: K_PERFORM
 						check_sql_expr(new->expr->query, new->expr->parseMode,
 									   startloc + 1);
 
+						plpgsql_curr_compile->fn_xactctrl = true;
+
 						$$ = (PLpgSQL_stmt *)new;
 					}
 				;
@@ -2249,6 +2251,8 @@ stmt_commit		: K_COMMIT opt_transaction_chain ';'
 						new->stmtid = ++plpgsql_curr_compile->nstatements;
 						new->chain = $2;
 
+						plpgsql_curr_compile->fn_xactctrl = true;
+
 						$$ = (PLpgSQL_stmt *)new;
 					}
 				;
@@ -2262,6 +2266,8 @@ stmt_rollback	: K_ROLLBACK opt_transaction_chain ';'
 						new->lineno = plpgsql_location_to_lineno(@1);
 						new->stmtid = ++plpgsql_curr_compile->nstatements;
 						new->chain = $2;
+
+						plpgsql_curr_compile->fn_xactctrl = true;
 
 						$$ = (PLpgSQL_stmt *)new;
 					}
