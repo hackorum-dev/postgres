@@ -1934,17 +1934,27 @@ static int
 postgresGetForeignModifyBatchSize(ResultRelInfo *resultRelInfo)
 {
 	int	batch_size;
-	PgFdwModifyState *fmstate = resultRelInfo->ri_FdwState ?
-							(PgFdwModifyState *) resultRelInfo->ri_FdwState :
-							NULL;
+	PgFdwModifyState *fmstate;
 
 	/* should be called only once */
 	Assert(resultRelInfo->ri_BatchSize == 0);
 
 	/*
+	 * Disable batching when there is a RETURNING clause or if there are AFTER
+	 * ROW triggers on the relation.
+	 */
+	if (resultRelInfo->ri_projectReturning != NULL ||
+		(resultRelInfo->ri_TrigDesc &&
+		 resultRelInfo->ri_TrigDesc->trig_insert_after_row))
+		return 1;
+
+	/* Otherwise use the batch size specified for server/table. */
+
+	/*
 	 * Should never get called when the insert is being performed as part of
 	 * a row movement operation.
 	 */
+	fmstate = (PgFdwModifyState *) resultRelInfo->ri_FdwState;
 	Assert(fmstate == NULL || fmstate->aux_fmstate == NULL);
 
 	/*
@@ -1956,14 +1966,8 @@ postgresGetForeignModifyBatchSize(ResultRelInfo *resultRelInfo)
 		batch_size = fmstate->batch_size;
 	else
 		batch_size = get_batch_size_option(resultRelInfo->ri_RelationDesc);
+	Assert(batch_size >= 1);
 
-	/* Disable batching when we have to use RETURNING. */
-	if (resultRelInfo->ri_projectReturning != NULL ||
-		(resultRelInfo->ri_TrigDesc &&
-		 resultRelInfo->ri_TrigDesc->trig_insert_after_row))
-		return 1;
-
-	/* Otherwise use the batch size specified for server/table. */
 	return batch_size;
 }
 
@@ -3753,9 +3757,14 @@ create_foreign_modify(EState *estate,
 
 	Assert(fmstate->p_nums <= n_params);
 
-	/* Set batch_size from foreign server/table options. */
+	/*
+	 * Set batch_size from foreign server/table options, although only inserts
+	 * support batching, so disable otherwise.
+	 */
 	if (operation == CMD_INSERT)
 		fmstate->batch_size = get_batch_size_option(rel);
+	else
+		fmstate->batch_size = 1;
 
 	fmstate->num_slots = 1;
 

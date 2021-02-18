@@ -678,7 +678,9 @@ GetForeignModifyBatchSize(ResultRelInfo *rinfo);
      <literal>rinfo</literal> is the <structname>ResultRelInfo</structname> struct describing
      the target foreign table.
      The FDW is expected to provide a foreign server and/or foreign
-     table option for the user to set this value, or some hard-coded value.
+     table option for the user to set this value, or return some hard-coded
+     value.  In any case, the returned value must be &gt;= 1.  Note that a
+     return value of 1 will instruct the core executor to disable batching.
     </para>
 
     <para>
