@@ -12,6 +12,8 @@
 PGFILEDESC = "psql - the PostgreSQL interactive terminal"
 PGAPPICON=win32
 
+override ERROR_LOG_LOCATIONS = $(abs_top_builddir)/$(subdir)/tmp_check/log
+
 subdir = src/bin/psql
 top_builddir = ../../..
 include $(top_builddir)/src/Makefile.global
@@ -83,7 +85,7 @@ clean distclean:
 maintainer-clean: distclean
 	rm -f sql_help.h sql_help.c psqlscanslash.c
 
-check:
+check: set_error_log_locations
 	$(prove_check)
 
 installcheck:

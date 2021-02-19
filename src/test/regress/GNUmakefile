@@ -13,6 +13,8 @@
 PGFILEDESC = "pg_regress - test driver"
 PGAPPICON = win32
 
+override ERROR_LOG_LOCATIONS = $(abs_top_builddir)/$(subdir)/log
+
 subdir = src/test/regress
 top_builddir = ../../..
 include $(top_builddir)/src/Makefile.global
@@ -128,10 +130,10 @@ tablespace-setup:
 
 REGRESS_OPTS = --dlpath=. --max-concurrent-tests=20 $(EXTRA_REGRESS_OPTS)
 
-check: all tablespace-setup
+check: all set_error_log_locations tablespace-setup
 	$(pg_regress_check) $(REGRESS_OPTS) --schedule=$(srcdir)/parallel_schedule $(MAXCONNOPT) $(EXTRA_TESTS)
 
-check-tests: all tablespace-setup | temp-install
+check-tests: all set_error_log_locations tablespace-setup | temp-install
 	$(pg_regress_check) $(REGRESS_OPTS) $(MAXCONNOPT) $(TESTS) $(EXTRA_TESTS)
 
 installcheck: all tablespace-setup
