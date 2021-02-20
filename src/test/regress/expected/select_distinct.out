@@ -306,3 +306,80 @@ SELECT null IS NOT DISTINCT FROM null as "yes";
  t
 (1 row)
 
+CREATE TABLE uqk1(a int, pk int primary key, b int,  c int,  d int);
+CREATE TABLE uqk2(a int, pk int primary key, b int, c int,  d int);
+CREATE UNIQUE INDEX uqk1_ukcd ON uqk1(c, d);
+ANALYZE uqk1;
+ANALYZE uqk2;
+-- Test single table
+EXPLAIN (COSTS OFF) SELECT DISTINCT * FROM uqk1;
+    QUERY PLAN    
+------------------
+ Seq Scan on uqk1
+(1 row)
+
+EXPLAIN (COSTS OFF) SELECT DISTINCT c, d FROM uqk1 WHERE c is NOT NULL;
+           QUERY PLAN            
+---------------------------------
+ HashAggregate
+   Group Key: c, d
+   ->  Seq Scan on uqk1
+         Filter: (c IS NOT NULL)
+(4 rows)
+
+EXPLAIN (COSTS OFF) SELECT DISTINCT c, d FROM uqk1 WHERE c is NOT NULL and d > 1;
+               QUERY PLAN                
+-----------------------------------------
+ Seq Scan on uqk1
+   Filter: ((c IS NOT NULL) AND (d > 1))
+(2 rows)
+
+ALTER TABLE uqk1 ALTER COLUMN d SET NOT NULL;
+EXPLAIN (COSTS OFF) SELECT DISTINCT c, d FROM uqk1 WHERE c is NOT NULL;
+        QUERY PLAN         
+---------------------------
+ Seq Scan on uqk1
+   Filter: (c IS NOT NULL)
+(2 rows)
+
+-- Test reduce-const-exprs.
+EXPLAIN (COSTS OFF) SELECT DISTINCT d FROM uqk1 WHERE c = 1;
+    QUERY PLAN     
+-------------------
+ Seq Scan on uqk1
+   Filter: (c = 1)
+(2 rows)
+
+SET plan_cache_mode TO force_generic_plan ;
+prepare s as select distinct c from uqk1 where d = $1 and c is not null;
+explain (costs off) execute s(1);
+                QUERY PLAN                
+------------------------------------------
+ Seq Scan on uqk1
+   Filter: ((c IS NOT NULL) AND (d = $1))
+(2 rows)
+
+reset plan_cache_mode;
+-- Test onerow uniquekey.
+EXPLAIN (COSTS OFF) SELECT DISTINCT a FROM uqk1 WHERE pk = 1;
+     QUERY PLAN     
+--------------------
+ Seq Scan on uqk1
+   Filter: (pk = 1)
+(2 rows)
+
+-- Test EquivalenceClass
+EXPLAIN (COSTS OFF) SELECT DISTINCT a FROM uqk1 WHERE pk = a;
+     QUERY PLAN     
+--------------------
+ Seq Scan on uqk1
+   Filter: (pk = a)
+(2 rows)
+
+EXPLAIN (COSTS OFF) SELECT DISTINCT a, b FROM uqk1 WHERE a = c AND b = d;
+           QUERY PLAN            
+---------------------------------
+ Seq Scan on uqk1
+   Filter: ((a = c) AND (b = d))
+(2 rows)
+

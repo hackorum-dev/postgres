@@ -262,6 +262,7 @@ typedef enum NodeTag
 	T_EquivalenceMember,
 	T_PathKey,
 	T_PathTarget,
+	T_UniqueKey,
 	T_RestrictInfo,
 	T_IndexClause,
 	T_PlaceHolderVar,

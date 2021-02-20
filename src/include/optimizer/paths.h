@@ -136,6 +136,7 @@ extern EquivalenceClass *get_eclass_for_sort_expr(PlannerInfo *root,
 												  Relids rel,
 												  bool create_it);
 extern Expr *find_em_expr_for_rel(EquivalenceClass *ec, RelOptInfo *rel);
+extern EquivalenceClass *find_ec_for_expr(PlannerInfo* root, Expr *expr, RelOptInfo *rel);
 extern Expr *find_em_expr_usable_for_sorting_rel(PlannerInfo *root,
 												 EquivalenceClass *ec,
 												 RelOptInfo *rel,
@@ -247,5 +248,14 @@ extern PathKey *make_canonical_pathkey(PlannerInfo *root,
 									   int strategy, bool nulls_first);
 extern void add_paths_to_append_rel(PlannerInfo *root, RelOptInfo *rel,
 									List *live_childrels);
+extern void index_keys_walker(IndexOptInfo *indinfo,
+							  bool (*walker) (),
+							  void *context);
+
+extern void populate_baserel_uniquekeys(PlannerInfo *root,
+										RelOptInfo *rel,
+										List *indexlist);
+extern bool relation_has_uniquekeys_for(List *exprs, RelOptInfo *rel,
+										bool allow_multinulls);
 
 #endif							/* PATHS_H */

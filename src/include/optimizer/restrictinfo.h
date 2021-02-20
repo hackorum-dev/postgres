@@ -37,6 +37,9 @@ extern bool restriction_is_securely_promotable(RestrictInfo *restrictinfo,
 extern List *get_actual_clauses(List *restrictinfo_list);
 extern List *extract_actual_clauses(List *restrictinfo_list,
 									bool pseudoconstant);
+extern List *extract_mergable_clauses(List *restrictinfo_list,
+									  bool pseudoconstant,
+									  List **opfamilies);
 extern void extract_actual_join_clauses(List *restrictinfo_list,
 										Relids joinrelids,
 										List **joinquals,

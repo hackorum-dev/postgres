@@ -257,6 +257,7 @@ build_simple_rel(PlannerInfo *root, int relid, RelOptInfo *parent)
 	rel->all_partrels = NULL;
 	rel->partexprs = NULL;
 	rel->nullable_partexprs = NULL;
+	rel->uniquekeys = NIL;
 
 	/*
 	 * Pass assorted information down the inheritance hierarchy.
@@ -2022,4 +2023,27 @@ build_child_join_reltarget(PlannerInfo *root,
 	childrel->reltarget->cost.startup = parentrel->reltarget->cost.startup;
 	childrel->reltarget->cost.per_tuple = parentrel->reltarget->cost.per_tuple;
 	childrel->reltarget->width = parentrel->reltarget->width;
+}
+
+void
+index_keys_walker(IndexOptInfo *indinfo, bool (*walker) (), void *context)
+{
+	int	i = 0;
+	Expr	*expr;
+	ListCell	*ind_expr_pos = list_head(indinfo->indexprs);
+	for (i = 0; i < indinfo->ncolumns; ++i)
+	{
+		int attr = indinfo->indexkeys[i];
+		if (attr > 0)
+			expr = list_nth_node(TargetEntry, indinfo->indextlist, i)->expr;
+		else if (attr == 0)
+		{
+			expr = lfirst(ind_expr_pos);
+			ind_expr_pos = lnext(indinfo->indexprs, ind_expr_pos);
+		}
+		else
+			Assert(false);
+		if (walker(expr, i, context))
+			return;
+	}
 }

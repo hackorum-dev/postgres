@@ -579,6 +579,8 @@ set_plain_rel_size(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 	 */
 	check_index_predicates(root, rel);
 
+	populate_baserel_uniquekeys(root, rel, rel->indexlist);
+
 	/* Mark rel with estimated output rows, width, etc */
 	set_baserel_size_estimates(root, rel);
 }

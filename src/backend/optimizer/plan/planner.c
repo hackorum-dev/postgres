@@ -4749,6 +4749,11 @@ create_distinct_paths(PlannerInfo *root,
 	bool		allow_hash;
 	Path	   *path;
 	ListCell   *lc;
+	List		*distinctExprs = get_sortgrouplist_exprs(parse->distinctClause,
+														 parse->targetList);
+
+	if (relation_has_uniquekeys_for(distinctExprs, input_rel, false))
+		return input_rel;
 
 	/* For now, do all work in the (DISTINCT, NULL) upperrel */
 	distinct_rel = fetch_upper_rel(root, UPPERREL_DISTINCT, NULL);
@@ -4786,10 +4791,6 @@ create_distinct_paths(PlannerInfo *root,
 		/*
 		 * Otherwise, the UNIQUE filter has effects comparable to GROUP BY.
 		 */
-		List	   *distinctExprs;
-
-		distinctExprs = get_sortgrouplist_exprs(parse->distinctClause,
-												parse->targetList);
 		numDistinctRows = estimate_num_groups(root, distinctExprs,
 											  cheapest_input_path->rows,
 											  NULL);

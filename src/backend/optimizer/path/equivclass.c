@@ -798,6 +798,24 @@ find_em_expr_for_rel(EquivalenceClass *ec, RelOptInfo *rel)
 	return NULL;
 }
 
+
+EquivalenceClass *
+find_ec_for_expr(PlannerInfo* root, Expr *expr, RelOptInfo *rel)
+{
+	int i = -1;
+	while ((i = bms_next_member(rel->eclass_indexes, i)) >= 0)
+	{
+		EquivalenceClass *ec = (EquivalenceClass *) list_nth(root->eq_classes, i);
+		ListCell	*lc;
+		foreach(lc, ec->ec_members)
+		{
+			EquivalenceMember *em = lfirst_node(EquivalenceMember, lc);
+			if (equal(expr, em->em_expr))
+				return ec;
+		}
+	}
+	return NULL;
+}
 /*
  * Find an equivalence class member expression that can be safely used to build
  * a sort node using the provided relation. The rules are a subset of those

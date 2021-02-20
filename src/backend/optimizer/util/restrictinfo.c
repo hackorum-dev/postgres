@@ -446,6 +446,30 @@ extract_actual_clauses(List *restrictinfo_list,
 	return result;
 }
 
+
+List *
+extract_mergable_clauses(List *restrictinfo_list,
+						 bool pseudoconstant,
+						 List **opfamilies)
+{
+	List	   *result = NIL;
+	ListCell   *l;
+
+	foreach(l, restrictinfo_list)
+	{
+		RestrictInfo *rinfo = lfirst_node(RestrictInfo, l);
+
+		if (rinfo->mergeopfamilies == NIL)
+			continue;
+		if (rinfo->pseudoconstant == pseudoconstant)
+		{
+			result = lappend(result, rinfo->clause);
+			*opfamilies = lappend(*opfamilies, rinfo->mergeopfamilies);
+		}
+	}
+	return result;
+}
+
 /*
  * extract_actual_join_clauses
  *

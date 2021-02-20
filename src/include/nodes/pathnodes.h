@@ -740,7 +740,7 @@ typedef struct RelOptInfo
 												 * paths? (if partitioned rel) */
 	Relids		top_parent_relids;	/* Relids of topmost parents (if "other"
 									 * rel) */
-
+	List		*uniquekeys;
 	/* used for partitioned relations: */
 	PartitionScheme part_scheme;	/* Partitioning scheme */
 	int			nparts;			/* Number of partitions; -1 if not yet set; in
@@ -1050,6 +1050,12 @@ typedef struct PathKey
 	bool		pk_nulls_first; /* do NULLs come before normal values? */
 } PathKey;
 
+typedef struct UniqueKey
+{
+	NodeTag		type;
+	List	   *exprs;
+	bool		multi_nullvals;
+} UniqueKey;
 
 /*
  * PathTarget

@@ -135,3 +135,31 @@ SELECT 1 IS NOT DISTINCT FROM 2 as "no";
 SELECT 2 IS NOT DISTINCT FROM 2 as "yes";
 SELECT 2 IS NOT DISTINCT FROM null as "no";
 SELECT null IS NOT DISTINCT FROM null as "yes";
+
+
+CREATE TABLE uqk1(a int, pk int primary key, b int,  c int,  d int);
+CREATE TABLE uqk2(a int, pk int primary key, b int, c int,  d int);
+CREATE UNIQUE INDEX uqk1_ukcd ON uqk1(c, d);
+ANALYZE uqk1;
+ANALYZE uqk2;
+
+-- Test single table
+EXPLAIN (COSTS OFF) SELECT DISTINCT * FROM uqk1;
+EXPLAIN (COSTS OFF) SELECT DISTINCT c, d FROM uqk1 WHERE c is NOT NULL;
+EXPLAIN (COSTS OFF) SELECT DISTINCT c, d FROM uqk1 WHERE c is NOT NULL and d > 1;
+ALTER TABLE uqk1 ALTER COLUMN d SET NOT NULL;
+EXPLAIN (COSTS OFF) SELECT DISTINCT c, d FROM uqk1 WHERE c is NOT NULL;
+
+-- Test reduce-const-exprs.
+EXPLAIN (COSTS OFF) SELECT DISTINCT d FROM uqk1 WHERE c = 1;
+SET plan_cache_mode TO force_generic_plan ;
+prepare s as select distinct c from uqk1 where d = $1 and c is not null;
+explain (costs off) execute s(1);
+reset plan_cache_mode;
+
+-- Test onerow uniquekey.
+EXPLAIN (COSTS OFF) SELECT DISTINCT a FROM uqk1 WHERE pk = 1;
+-- Test EquivalenceClass
+EXPLAIN (COSTS OFF) SELECT DISTINCT a FROM uqk1 WHERE pk = a;
+EXPLAIN (COSTS OFF) SELECT DISTINCT a, b FROM uqk1 WHERE a = c AND b = d;
+
