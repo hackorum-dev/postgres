@@ -2016,7 +2016,8 @@ ReorderBufferProcessTXN(ReorderBuffer *rb, ReorderBufferTXN *txn,
 	ReorderBufferBuildTupleCidHash(rb, txn);
 
 	/* setup the initial snapshot */
-	SetupHistoricSnapshot(snapshot_now, txn->tuplecid_hash);
+	if (snapshot_now)
+		SetupHistoricSnapshot(snapshot_now, txn->tuplecid_hash);
 
 	/*
 	 * Decoding needs access to syscaches et al., which in turn use
@@ -2289,6 +2290,8 @@ ReorderBufferProcessTXN(ReorderBuffer *rb, ReorderBufferTXN *txn,
 					break;
 
 				case REORDER_BUFFER_CHANGE_INTERNAL_SNAPSHOT:
+					Assert(snapshot_now);
+
 					/* get rid of the old */
 					TeardownHistoricSnapshot(false);
 
@@ -2321,6 +2324,7 @@ ReorderBufferProcessTXN(ReorderBuffer *rb, ReorderBufferTXN *txn,
 					break;
 
 				case REORDER_BUFFER_CHANGE_INTERNAL_COMMAND_ID:
+					Assert(snapshot_now);
 					Assert(change->data.command_id != InvalidCommandId);
 
 					if (command_id < change->data.command_id)
@@ -2397,8 +2401,11 @@ ReorderBufferProcessTXN(ReorderBuffer *rb, ReorderBufferTXN *txn,
 		 * streaming mode.
 		 */
 		if (streaming)
+		{
+			Assert(snapshot_now);
 			ReorderBufferSaveTXNSnapshot(rb, txn, snapshot_now, command_id);
-		else if (snapshot_now->copied)
+		}
+		else if (snapshot_now && snapshot_now->copied)
 			ReorderBufferFreeSnap(rb, snapshot_now);
 
 		/* cleanup */
@@ -2520,7 +2527,6 @@ ReorderBufferReplay(ReorderBufferTXN *txn,
 					TimestampTz commit_time,
 					RepOriginId origin_id, XLogRecPtr origin_lsn)
 {
-	Snapshot	snapshot_now;
 	CommandId	command_id = FirstCommandId;
 
 	txn->final_lsn = commit_lsn;
@@ -2547,25 +2553,32 @@ ReorderBufferReplay(ReorderBufferTXN *txn,
 	 * If this transaction has no snapshot, it didn't make any changes to the
 	 * database, so there's nothing to decode.  Note that
 	 * ReorderBufferCommitChild will have transferred any snapshots from
-	 * subtransactions if there were any.
+	 * subtransactions if there were any.  This effectively makes empty
+	 * transactions invisible to the output plugin.
+	 *
+	 * An empty two-phase transaction must not be short-circuited in the
+	 * same way, because it carries a gid which may carry useful
+	 * information, even if it is only a sentinel for an uncommitted empty
+	 * transaction.
 	 */
-	if (txn->base_snapshot == NULL)
+	if (txn->base_snapshot == NULL && !rbtxn_prepared(txn))
 	{
 		Assert(txn->ninvalidations == 0);
-
-		/*
-		 * Removing this txn before a commit might result in the computation
-		 * of an incorrect restart_lsn. See SnapBuildProcessRunningXacts.
-		 */
-		if (!rbtxn_prepared(txn))
-			ReorderBufferCleanupTXN(rb, txn);
+		ReorderBufferCleanupTXN(rb, txn);
 		return;
 	}
 
-	snapshot_now = txn->base_snapshot;
-
-	/* Process and send the changes to output plugin. */
-	ReorderBufferProcessTXN(rb, txn, commit_lsn, snapshot_now,
+	/*
+	 * Process and send the changes to output plugin.
+	 *
+	 * Note that for empty transactions, txn->base_snapshot may well be NULL
+	 * in case of an empty two-phase transaction.  The corresponding
+	 * callbacks will still be invoked, as even an empty transaction carries
+	 * information (LSN increments, the gid in case of a two-phase
+	 * transaction).  This is unlike versions prior to 13 which optimized
+	 * away empty transactions.
+	 */
+	ReorderBufferProcessTXN(rb, txn, commit_lsn, txn->base_snapshot,
 							command_id, false);
 }
 
