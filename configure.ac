@@ -205,11 +205,13 @@ if test -z "$GCOV"; then
 fi
 PGAC_PATH_PROGS(LCOV, lcov)
 if test -z "$LCOV"; then
-  AC_MSG_ERROR([lcov not found])
+  AC_MSG_WARN([
+*** Without lcov you will not be able to generate HTML format report.])
 fi
 PGAC_PATH_PROGS(GENHTML, genhtml)
 if test -z "$GENHTML"; then
-  AC_MSG_ERROR([genhtml not found])
+  AC_MSG_WARN([
+*** Without genhtml you will not be able to generate HTML format report.])
 fi])
 AC_SUBST(enable_coverage)
 
