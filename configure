@@ -3472,7 +3472,10 @@ $as_echo "$LCOV" >&6; }
 fi
 
 if test -z "$LCOV"; then
-  as_fn_error $? "lcov not found" "$LINENO" 5
+  { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING:
+*** Without lcov you will not be able to generate HTML format report." >&5
+$as_echo "$as_me: WARNING:
+*** Without lcov you will not be able to generate HTML format report." >&2;}
 fi
 if test -z "$GENHTML"; then
   for ac_prog in genhtml
@@ -3529,7 +3532,10 @@ $as_echo "$GENHTML" >&6; }
 fi
 
 if test -z "$GENHTML"; then
-  as_fn_error $? "genhtml not found" "$LINENO" 5
+  { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING:
+*** Without genhtml you will not be able to generate HTML format report." >&5
+$as_echo "$as_me: WARNING:
+*** Without genhtml you will not be able to generate HTML format report." >&2;}
 fi
       ;;
     no)
