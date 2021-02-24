@@ -1391,6 +1391,28 @@ do_check_index_has_outdated_collation(const ObjectAddress *otherObject,
 }
 
 /*
+ * SQL wrapper around index_has_outdated_dependency.
+ */
+Datum
+pg_index_has_outdated_dependency(PG_FUNCTION_ARGS)
+{
+	Oid			indexOid = PG_GETARG_OID(0);
+	Relation	rel;
+	bool		res;
+
+	rel = try_index_open(indexOid, AccessShareLock);
+
+	if (rel == NULL)
+		PG_RETURN_NULL();
+
+	res = index_has_outdated_dependency(indexOid);
+
+	relation_close(rel, AccessShareLock);
+
+	PG_RETURN_BOOL(res);
+}
+
+/*
  * Check whether the given index has a dependency with an outdated
  * collation version.
  * Caller must hold a suitable lock and make sure that the given Oid belongs to
