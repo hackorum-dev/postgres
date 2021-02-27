@@ -2930,25 +2930,20 @@ BackendStatusShmemSize(void)
 	Size		size;
 
 	/* BackendStatusArray: */
-	size = mul_size(sizeof(PgBackendStatus), NumBackendStatSlots);
+	size = mul_size_and_shmem_align(sizeof(PgBackendStatus), NumBackendStatSlots);
 	/* BackendAppnameBuffer: */
-	size = add_size(size,
-					mul_size(NAMEDATALEN, NumBackendStatSlots));
+	size = add_shmem_aligned_size(size, mul_size(NAMEDATALEN, NumBackendStatSlots));
 	/* BackendClientHostnameBuffer: */
-	size = add_size(size,
-					mul_size(NAMEDATALEN, NumBackendStatSlots));
+	size = add_shmem_aligned_size(size, mul_size(NAMEDATALEN, NumBackendStatSlots));
 	/* BackendActivityBuffer: */
-	size = add_size(size,
-					mul_size(pgstat_track_activity_query_size, NumBackendStatSlots));
+	size = add_shmem_aligned_size(size, mul_size(pgstat_track_activity_query_size, NumBackendStatSlots));
 #ifdef USE_SSL
 	/* BackendSslStatusBuffer: */
-	size = add_size(size,
-					mul_size(sizeof(PgBackendSSLStatus), NumBackendStatSlots));
+	size = add_shmem_aligned_size(size, mul_size(sizeof(PgBackendSSLStatus), NumBackendStatSlots));
 #endif
 #ifdef ENABLE_GSS
 	/* BackendGssStatusBuffer: */
-	size = add_size(size,
-					mul_size(sizeof(PgBackendGSSStatus), NumBackendStatSlots));
+	size = add_shmem_aligned_size(size, mul_size(sizeof(PgBackendGSSStatus), NumBackendStatSlots));
 #endif
 	return size;
 }

@@ -1830,7 +1830,7 @@ MultiXactShmemSize(void)
 	add_size(offsetof(MultiXactStateData, perBackendXactIds) + sizeof(MultiXactId), \
 			 mul_size(sizeof(MultiXactId) * 2, MaxOldestSlot))
 
-	size = SHARED_MULTIXACT_STATE_SIZE;
+	size = CACHELINEALIGN(SHARED_MULTIXACT_STATE_SIZE);
 	size = add_size(size, SimpleLruShmemSize(NUM_MULTIXACTOFFSET_BUFFERS, 0));
 	size = add_size(size, SimpleLruShmemSize(NUM_MULTIXACTMEMBER_BUFFERS, 0));
 

@@ -192,7 +192,7 @@ typedef struct PredXactListData
 typedef struct PredXactListData *PredXactList;
 
 #define PredXactListDataSize \
-		((Size)MAXALIGN(sizeof(PredXactListData)))
+		((Size)CACHELINEALIGN(sizeof(PredXactListData)))
 
 
 /*
@@ -227,7 +227,7 @@ typedef struct RWConflictPoolHeaderData
 typedef struct RWConflictPoolHeaderData *RWConflictPoolHeader;
 
 #define RWConflictPoolHeaderDataSize \
-		((Size)MAXALIGN(sizeof(RWConflictPoolHeaderData)))
+		((Size)CACHELINEALIGN(sizeof(RWConflictPoolHeaderData)))
 
 
 /*

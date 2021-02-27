@@ -159,15 +159,13 @@ BufferShmemSize(void)
 	Size		size = 0;
 
 	/* size of buffer descriptors */
-	size = add_size(size, mul_size(NBuffers, sizeof(BufferDescPadded)));
-	/* to allow aligning buffer descriptors */
-	size = add_size(size, PG_CACHE_LINE_SIZE);
+	size = add_shmem_aligned_size(size, mul_size(NBuffers, sizeof(BufferDescPadded)));
 
 	/* size of data pages */
-	size = add_size(size, mul_size(NBuffers, BLCKSZ));
+	size = add_shmem_aligned_size(size, mul_size(NBuffers, BLCKSZ));
 
 	/* size of stuff controlled by freelist.c */
-	size = add_size(size, StrategyShmemSize());
+	size = add_shmem_aligned_size(size, StrategyShmemSize());
 
 	/*
 	 * It would be nice to include the I/O locks in the BufferDesc, but that
@@ -178,12 +176,10 @@ BufferShmemSize(void)
 	 * locks are not highly contended, we lay out the array with minimal
 	 * padding.
 	 */
-	size = add_size(size, mul_size(NBuffers, sizeof(LWLockMinimallyPadded)));
-	/* to allow aligning the above */
-	size = add_size(size, PG_CACHE_LINE_SIZE);
+	size = add_shmem_aligned_size(size, mul_size(NBuffers, sizeof(LWLockMinimallyPadded)));
 
 	/* size of checkpoint sort array in bufmgr.c */
-	size = add_size(size, mul_size(NBuffers, sizeof(CkptSortItem)));
+	size = add_shmem_aligned_size(size, mul_size(NBuffers, sizeof(CkptSortItem)));
 
 	return size;
 }

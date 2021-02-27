@@ -245,7 +245,7 @@ TwoPhaseShmemSize(void)
 	size = add_size(size, mul_size(max_prepared_xacts,
 								   sizeof(GlobalTransactionData)));
 
-	return size;
+	return (Size) CACHELINEALIGN(size);
 }
 
 void

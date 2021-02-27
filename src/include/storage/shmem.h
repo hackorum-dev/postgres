@@ -45,6 +45,19 @@ extern void *ShmemInitStruct(const char *name, Size size, bool *foundPtr);
 extern Size add_size(Size s1, Size s2);
 extern Size mul_size(Size s1, Size s2);
 
+/*
+ * Macro around add_size and mul_size to account for extra padding as done in
+ * ShmemAlloc().
+ *
+ * add_shmem_aligned_size() will add the padding bytes to the 2nd argument
+ * mul_size_and_shmem_align will return the aligned size
+ */
+#define add_shmem_aligned_size(s1, s2)	add_size((s1), \
+		(Size) CACHELINEALIGN(s2))
+
+#define mul_size_and_shmem_align(s1, s2)	add_shmem_aligned_size(0, \
+		mul_size((s1), (s2)))
+
 /* ipci.c */
 extern void RequestAddinShmemSpace(Size size);
 

@@ -148,7 +148,7 @@ BackgroundWorkerShmemSize(void)
 	size = add_size(size, mul_size(max_worker_processes,
 								   sizeof(BackgroundWorkerSlot)));
 
-	return size;
+	return (Size) CACHELINEALIGN(size);
 }
 
 /*

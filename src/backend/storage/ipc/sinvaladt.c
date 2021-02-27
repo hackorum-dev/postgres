@@ -207,7 +207,7 @@ SInvalShmemSize(void)
 	size = offsetof(SISeg, procState);
 	size = add_size(size, mul_size(sizeof(ProcState), MaxBackends));
 
-	return size;
+	return (Size) CACHELINEALIGN(size);
 }
 
 /*

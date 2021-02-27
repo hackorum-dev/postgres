@@ -168,7 +168,7 @@ SimpleLruShmemSize(int nslots, int nlsns)
 	if (nlsns > 0)
 		sz += MAXALIGN(nslots * nlsns * sizeof(XLogRecPtr));	/* group_lsn[] */
 
-	return BUFFERALIGN(sz) + BLCKSZ * nslots;
+	return (Size) CACHELINEALIGN(BUFFERALIGN(sz) + BLCKSZ * nslots);
 }
 
 /*

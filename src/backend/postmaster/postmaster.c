@@ -6425,7 +6425,7 @@ restore_backend_variables(BackendParameters *param, Port *port)
 Size
 ShmemBackendArraySize(void)
 {
-	return mul_size(MaxLivePostmasterChildren(), sizeof(Backend));
+	return mul_size_and_shmem_align(MaxLivePostmasterChildren(), sizeof(Backend));
 }
 
 void

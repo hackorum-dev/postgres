@@ -41,7 +41,8 @@ static HTAB *SharedBufHash;
 Size
 BufTableShmemSize(int size)
 {
-	return hash_estimate_size(size, sizeof(BufferLookupEnt));
+	return hash_estimate_size_ext(size, sizeof(BufferLookupEnt),
+								  size, true);
 }
 
 /*

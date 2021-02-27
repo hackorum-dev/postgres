@@ -358,6 +358,7 @@ ProcArrayShmemSize(void)
 
 	size = offsetof(ProcArrayStruct, pgprocnos);
 	size = add_size(size, mul_size(sizeof(int), PROCARRAY_MAXPROCS));
+	size = CACHELINEALIGN(size);
 
 	/*
 	 * During Hot Standby processing we have a data structure called
@@ -377,11 +378,8 @@ ProcArrayShmemSize(void)
 
 	if (EnableHotStandby)
 	{
-		size = add_size(size,
-						mul_size(sizeof(TransactionId),
-								 TOTAL_MAX_CACHED_SUBXIDS));
-		size = add_size(size,
-						mul_size(sizeof(bool), TOTAL_MAX_CACHED_SUBXIDS));
+		size = add_shmem_aligned_size(size, mul_size(sizeof(TransactionId), TOTAL_MAX_CACHED_SUBXIDS));
+		size = add_shmem_aligned_size(size, mul_size(sizeof(bool), TOTAL_MAX_CACHED_SUBXIDS));
 	}
 
 	return size;

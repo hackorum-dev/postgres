@@ -54,7 +54,7 @@
 int			max_locks_per_xact; /* set by guc.c */
 
 #define NLOCKENTS() \
-	mul_size(max_locks_per_xact, add_size(MaxBackends, max_prepared_xacts))
+	mul_size_and_shmem_align(max_locks_per_xact, add_size(MaxBackends, max_prepared_xacts))
 
 
 /*
@@ -3527,16 +3527,26 @@ LockShmemSize(void)
 
 	/* lock hash table */
 	max_table_size = NLOCKENTS();
-	size = add_size(size, hash_estimate_size(max_table_size, sizeof(LOCK)));
+	size = add_size(size, hash_estimate_size_ext(max_table_size, sizeof(LOCK),
+												 max_table_size / 2,
+												 true));
 
 	/* proclock hash table */
 	max_table_size *= 2;
-	size = add_size(size, hash_estimate_size(max_table_size, sizeof(PROCLOCK)));
+	size = add_size(size, hash_estimate_size_ext(max_table_size, sizeof(PROCLOCK),
+												 max_table_size / 2,
+												 true));
 
 	/*
 	 * Since NLOCKENTS is only an estimate, add 10% safety margin.
 	 */
 	size = add_size(size, size / 10);
+
+	/*
+	 * Note: we don't count fast-path structure, it comes out of the "slop
+	 * factor" added by CreateSharedMemoryAndSemaphores.  This lets us use this
+	 * routine again below to compute the actual allocation size.
+	 */
 
 	return size;
 }

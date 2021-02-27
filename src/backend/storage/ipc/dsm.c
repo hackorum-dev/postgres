@@ -440,7 +440,7 @@ dsm_set_control_handle(dsm_handle h)
 size_t
 dsm_estimate_size(void)
 {
-	return 1024 * 1024 * (size_t) min_dynamic_shared_memory;
+	return (size_t) CACHELINEALIGN(1024 * 1024 * min_dynamic_shared_memory);
 }
 
 /*

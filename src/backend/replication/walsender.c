@@ -3055,7 +3055,7 @@ WalSndShmemSize(void)
 	size = offsetof(WalSndCtlData, walsnds);
 	size = add_size(size, mul_size(max_wal_senders, sizeof(WalSnd)));
 
-	return size;
+	return (Size) CACHELINEALIGN(size);
 }
 
 /* Allocate and initialize walsender-related shared memory */

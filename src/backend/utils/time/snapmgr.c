@@ -203,7 +203,7 @@ SnapMgrShmemSize(void)
 		size = add_size(size, mul_size(sizeof(TransactionId),
 									   OLD_SNAPSHOT_TIME_MAP_ENTRIES));
 
-	return size;
+	return (Size) CACHELINEALIGN(size);
 }
 
 /*

@@ -124,7 +124,7 @@ ReplicationSlotsShmemSize(void)
 	size = add_size(size,
 					mul_size(max_replication_slots, sizeof(ReplicationSlot)));
 
-	return size;
+	return (Size) CACHELINEALIGN(size);
 }
 
 /*

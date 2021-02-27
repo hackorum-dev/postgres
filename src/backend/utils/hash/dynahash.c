@@ -770,22 +770,42 @@ init_htab(HTAB *hashp, long nelem)
 }
 
 /*
+ * Wrapper around hash_estimate_size for non partitioned hash table and all
+ * entries preallocated.
+ */
+Size
+hash_estimate_size(long num_entries, Size entrysize)
+{
+	return hash_estimate_size_ext(num_entries, entrysize, num_entries, false);
+}
+
+/*
  * Estimate the space needed for a hashtable containing the given number
- * of entries of given size.
+ * of entries of given size, and given it's partitioned or not.
  * NOTE: this is used to estimate the footprint of hashtables in shared
  * memory; therefore it does not count HTAB which is in local memory.
  * NB: assumes that all hash structure parameters have default values!
  */
 Size
-hash_estimate_size(long num_entries, Size entrysize)
+hash_estimate_size_ext(long num_entries, Size entrysize, long init_entries,
+					   bool partitioned)
 {
-	Size		size;
+	Size		size,
+				segmentSize,
+				freelistAllocSize;
 	long		nBuckets,
 				nSegments,
 				nDirEntries,
-				nElementAllocs,
 				elementSize,
-				elementAllocCnt;
+				nelemFreelist;
+	int			nFreelists;
+
+	if (partitioned)
+		nFreelists = NUM_FREELISTS;
+	else
+		nFreelists = 1;
+
+	Assert(init_entries <= num_entries);
 
 	/* estimate number of buckets wanted */
 	nBuckets = next_pow2_long(num_entries);
@@ -797,19 +817,36 @@ hash_estimate_size(long num_entries, Size entrysize)
 		nDirEntries <<= 1;		/* dir_alloc doubles dsize at each call */
 
 	/* fixed control info */
-	size = MAXALIGN(sizeof(HASHHDR));	/* but not HTAB, per above */
+	size = CACHELINEALIGN(sizeof(HASHHDR));	/* but not HTAB, per above */
 	/* directory */
-	size = add_size(size, mul_size(nDirEntries, sizeof(HASHSEGMENT)));
+	size = add_shmem_aligned_size(size, mul_size(nDirEntries, sizeof(HASHSEGMENT)));
 	/* segments */
-	size = add_size(size, mul_size(nSegments,
-								   MAXALIGN(DEF_SEGSIZE * sizeof(HASHBUCKET))));
-	/* elements --- allocated in groups of choose_nelem_alloc() entries */
-	elementAllocCnt = choose_nelem_alloc(entrysize);
-	nElementAllocs = (num_entries - 1) / elementAllocCnt + 1;
+	segmentSize = CACHELINEALIGN(DEF_SEGSIZE * sizeof(HASHBUCKET));
+	size = add_size(size, mul_size(nSegments, segmentSize));
+
 	elementSize = MAXALIGN(sizeof(HASHELEMENT)) + MAXALIGN(entrysize);
-	size = add_size(size,
-					mul_size(nElementAllocs,
-							 mul_size(elementAllocCnt, elementSize)));
+
+	/*
+	 * elements --- allocated in groups of choose_nelem_alloc() entries, except
+	 * for the first init_entries, allocated in num_freelists groups.
+	 */
+	nelemFreelist = init_entries / nFreelists;
+	freelistAllocSize = mul_size_and_shmem_align(nelemFreelist, elementSize);
+
+	size = add_size(size, mul_size(nFreelists, freelistAllocSize));
+
+	if (num_entries > init_entries)
+	{
+		Size	nelem,
+				nAlloc,
+				allocSize;
+
+		nelem = choose_nelem_alloc(entrysize);
+		nAlloc = (num_entries - init_entries - 1) / nelem + 1;
+		allocSize = mul_size_and_shmem_align(nelem, elementSize);
+
+		size = add_size(size, mul_size(nAlloc, allocSize));
+	}
 
 	return size;
 }
@@ -852,7 +889,7 @@ hash_get_shared_size(HASHCTL *info, int flags)
 {
 	Assert(flags & HASH_DIRSIZE);
 	Assert(info->dsize == info->max_dsize);
-	return sizeof(HASHHDR) + info->dsize * sizeof(HASHSEGMENT);
+	return (Size) CACHELINEALIGN(sizeof(HASHHDR) + info->dsize * sizeof(HASHSEGMENT));
 }
 
 

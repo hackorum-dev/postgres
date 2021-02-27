@@ -106,13 +106,13 @@ ProcGlobalShmemSize(void)
 		add_size(MaxBackends, add_size(NUM_AUXILIARY_PROCS, max_prepared_xacts));
 
 	/* ProcGlobal */
-	size = add_size(size, sizeof(PROC_HDR));
-	size = add_size(size, mul_size(TotalProcs, sizeof(PGPROC)));
-	size = add_size(size, sizeof(slock_t));
+	size = add_shmem_aligned_size(size, sizeof(PROC_HDR));
+	size = add_shmem_aligned_size(size, mul_size(TotalProcs, sizeof(PGPROC)));
+	size = add_shmem_aligned_size(size, sizeof(slock_t));
 
-	size = add_size(size, mul_size(TotalProcs, sizeof(*ProcGlobal->xids)));
-	size = add_size(size, mul_size(TotalProcs, sizeof(*ProcGlobal->subxidStates)));
-	size = add_size(size, mul_size(TotalProcs, sizeof(*ProcGlobal->statusFlags)));
+	size = add_shmem_aligned_size(size, mul_size(TotalProcs, sizeof(*ProcGlobal->xids)));
+	size = add_shmem_aligned_size(size, mul_size(TotalProcs, sizeof(*ProcGlobal->subxidStates)));
+	size = add_shmem_aligned_size(size, mul_size(TotalProcs, sizeof(*ProcGlobal->statusFlags)));
 
 	return size;
 }

@@ -3414,7 +3414,8 @@ AutoVacuumShmemSize(void)
 	size = MAXALIGN(size);
 	size = add_size(size, mul_size(autovacuum_max_workers,
 								   sizeof(WorkerInfoData)));
-	return size;
+
+	return (Size) CACHELINEALIGN(size);
 }
 
 /*

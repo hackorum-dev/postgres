@@ -124,7 +124,7 @@ PMSignalShmemSize(void)
 	size = add_size(size, mul_size(MaxLivePostmasterChildren(),
 								   sizeof(sig_atomic_t)));
 
-	return size;
+	return (Size) CACHELINEALIGN(size);
 }
 
 /*

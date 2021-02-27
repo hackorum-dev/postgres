@@ -862,7 +862,7 @@ CheckpointerShmemSize(void)
 	size = offsetof(CheckpointerShmemStruct, requests);
 	size = add_size(size, mul_size(NBuffers, sizeof(CheckpointerRequest)));
 
-	return size;
+	return (Size) CACHELINEALIGN(size);
 }
 
 /*

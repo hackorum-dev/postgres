@@ -125,7 +125,7 @@ static BlockNumber ss_search(RelFileNode relfilenode,
 Size
 SyncScanShmemSize(void)
 {
-	return SizeOfScanLocations(SYNC_SCAN_NELEM);
+	return (Size) CACHELINEALIGN(SizeOfScanLocations(SYNC_SCAN_NELEM));
 }
 
 /*

@@ -5096,7 +5096,7 @@ XLOGShmemSize(void)
 	 * routine again below to compute the actual allocation size.
 	 */
 
-	return size;
+	return (Size) CACHELINEALIGN(size);
 }
 
 void

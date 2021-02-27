@@ -456,7 +456,7 @@ LWLockShmemSize(void)
 	/* Disallow adding any more named tranches. */
 	lock_named_request_allowed = false;
 
-	return size;
+	return (Size) CACHELINEALIGN(size);
 }
 
 /*

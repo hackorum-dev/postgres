@@ -113,7 +113,7 @@ ProcSignalShmemSize(void)
 
 	size = mul_size(NumProcSignalSlots, sizeof(ProcSignalSlot));
 	size = add_size(size, offsetof(ProcSignalHeader, psh_slot));
-	return size;
+	return (Size) CACHELINEALIGN(size);
 }
 
 /*

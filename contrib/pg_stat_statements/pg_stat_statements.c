@@ -1933,7 +1933,7 @@ pgss_memsize(void)
 {
 	Size		size;
 
-	size = MAXALIGN(sizeof(pgssSharedState));
+	size = CACHELINEALIGN(sizeof(pgssSharedState));
 	size = add_size(size, hash_estimate_size(pgss_max, sizeof(pgssEntry)));
 
 	return size;

@@ -513,6 +513,7 @@ AsyncShmemSize(void)
 	/* This had better match AsyncShmemInit */
 	size = mul_size(MaxBackends + 1, sizeof(QueueBackendStatus));
 	size = add_size(size, offsetof(AsyncQueueControl, backend));
+	size = (Size) CACHELINEALIGN(size);
 
 	size = add_size(size, SimpleLruShmemSize(NUM_NOTIFY_BUFFERS, 0));
 

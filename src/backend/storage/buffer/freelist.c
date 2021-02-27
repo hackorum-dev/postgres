@@ -459,7 +459,7 @@ StrategyShmemSize(void)
 	size = add_size(size, BufTableShmemSize(NBuffers + NUM_BUFFER_PARTITIONS));
 
 	/* size of the shared replacement strategy control block */
-	size = add_size(size, MAXALIGN(sizeof(BufferStrategyControl)));
+	size = add_shmem_aligned_size(size, sizeof(BufferStrategyControl));
 
 	return size;
 }

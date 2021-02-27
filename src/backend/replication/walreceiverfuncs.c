@@ -45,7 +45,7 @@ WalRcvShmemSize(void)
 
 	size = add_size(size, sizeof(WalRcvData));
 
-	return size;
+	return (Size) CACHELINEALIGN(size);
 }
 
 /* Allocate and initialize walreceiver-related shared memory */

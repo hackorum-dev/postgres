@@ -1359,13 +1359,17 @@ PredicateLockShmemSize(void)
 
 	/* predicate lock target hash table */
 	max_table_size = NPREDICATELOCKTARGETENTS();
-	size = add_size(size, hash_estimate_size(max_table_size,
-											 sizeof(PREDICATELOCKTARGET)));
+	size = add_size(size, hash_estimate_size_ext(max_table_size,
+												 sizeof(PREDICATELOCKTARGET),
+												 max_table_size,
+												 true));
 
 	/* predicate lock hash table */
 	max_table_size *= 2;
-	size = add_size(size, hash_estimate_size(max_table_size,
-											 sizeof(PREDICATELOCK)));
+	size = add_size(size, hash_estimate_size_ext(max_table_size,
+												 sizeof(PREDICATELOCK),
+												 max_table_size,
+												 true));
 
 	/*
 	 * Since NPREDICATELOCKTARGETENTS is only an estimate, add 10% safety
@@ -1377,8 +1381,7 @@ PredicateLockShmemSize(void)
 	max_table_size = MaxBackends + max_prepared_xacts;
 	max_table_size *= 10;
 	size = add_size(size, PredXactListDataSize);
-	size = add_size(size, mul_size((Size) max_table_size,
-								   PredXactListElementDataSize));
+	size = add_shmem_aligned_size(size, mul_size((Size) max_table_size, PredXactListElementDataSize));
 
 	/* transaction xid table */
 	size = add_size(size, hash_estimate_size(max_table_size,
@@ -1387,14 +1390,13 @@ PredicateLockShmemSize(void)
 	/* rw-conflict pool */
 	max_table_size *= 5;
 	size = add_size(size, RWConflictPoolHeaderDataSize);
-	size = add_size(size, mul_size((Size) max_table_size,
-								   RWConflictDataSize));
+	size = add_shmem_aligned_size(size, mul_size((Size) max_table_size, RWConflictDataSize));
 
 	/* Head for list of finished serializable transactions. */
-	size = add_size(size, sizeof(SHM_QUEUE));
+	size = add_shmem_aligned_size(size, sizeof(SHM_QUEUE));
 
 	/* Shared memory structures for SLRU tracking of old committed xids. */
-	size = add_size(size, sizeof(SerialControlData));
+	size = add_shmem_aligned_size(size, sizeof(SerialControlData));
 	size = add_size(size, SimpleLruShmemSize(NUM_SERIAL_BUFFERS, 0));
 
 	return size;

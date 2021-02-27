@@ -697,7 +697,8 @@ ApplyLauncherShmemSize(void)
 	size = MAXALIGN(size);
 	size = add_size(size, mul_size(max_logical_replication_workers,
 								   sizeof(LogicalRepWorker)));
-	return size;
+
+	return (Size) CACHELINEALIGN(size);
 }
 
 /*

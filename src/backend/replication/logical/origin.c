@@ -503,7 +503,8 @@ ReplicationOriginShmemSize(void)
 
 	size = add_size(size,
 					mul_size(max_replication_slots, sizeof(ReplicationState)));
-	return size;
+
+	return (Size) CACHELINEALIGN(size);
 }
 
 void

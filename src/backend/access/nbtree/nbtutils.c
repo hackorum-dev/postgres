@@ -2066,7 +2066,8 @@ BTreeShmemSize(void)
 
 	size = offsetof(BTVacInfo, vacuums);
 	size = add_size(size, mul_size(MaxBackends, sizeof(BTOneVacInfo)));
-	return size;
+
+	return (Size) CACHELINEALIGN(size);
 }
 
 /*

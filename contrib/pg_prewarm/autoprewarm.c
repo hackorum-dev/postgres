@@ -138,7 +138,7 @@ _PG_init(void)
 
 	EmitWarningsOnPlaceholders("pg_prewarm");
 
-	RequestAddinShmemSpace(MAXALIGN(sizeof(AutoPrewarmSharedState)));
+	RequestAddinShmemSpace(CACHELINEALIGN(sizeof(AutoPrewarmSharedState)));
 
 	/* Register autoprewarm worker, if enabled. */
 	if (autoprewarm)
