@@ -68,11 +68,11 @@ usage(unsigned short int pager)
 	 * Keep this line count in sync with the number of lines printed below!
 	 * Use "psql --help=options | wc" to count correctly.
 	 */
-	output = PageOutput(63, pager ? &(pset.popt.topt) : NULL);
+	output = PageOutput(65, pager ? &(pset.popt.topt) : NULL);
 
 	fprintf(output, _("psql is the PostgreSQL interactive terminal.\n\n"));
 	fprintf(output, _("Usage:\n"));
-	fprintf(output, _("  psql [OPTION]... [DBNAME [USERNAME]]\n\n"));
+	fprintf(output, _("  psql [OPTION]... [service|uri|[DBNAME [USERNAME]]\n\n"));
 
 	fprintf(output, _("General options:\n"));
 	/* Display default database */
@@ -140,6 +140,12 @@ usage(unsigned short int pager)
 	fprintf(output, _("  -U, --username=USERNAME  database user name (default: \"%s\")\n"), env);
 	fprintf(output, _("  -w, --no-password        never prompt for password\n"));
 	fprintf(output, _("  -W, --password           force password prompt (should happen automatically)\n"));
+	/* Display default service file */
+	env = getenv("PGSERVICEFILE");
+	if (!env || !strlen(env))
+		env = "~/.pg_service.conf";
+	fprintf(output, _("  service=name             service as defined in service file (default: \"%s\")\n"), env);
+	fprintf(output, _("  uri                      connection URI (postgresql://...)\n"));
 
 	fprintf(output, _("\nFor more information, type \"\\?\" (for internal commands) or \"\\help\" (for SQL\n"
 					  "commands) from within psql, or consult the psql section in the PostgreSQL\n"
