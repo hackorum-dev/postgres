@@ -3953,6 +3953,9 @@ make_grouping_rel(PlannerInfo *root, RelOptInfo *input_rel,
 	grouped_rel->useridiscurrent = input_rel->useridiscurrent;
 	grouped_rel->fdwroutine = input_rel->fdwroutine;
 
+	/* Copy parallel_workers. */
+	grouped_rel->rel_parallel_workers = input_rel->rel_parallel_workers;
+
 	return grouped_rel;
 }
 
