@@ -212,7 +212,7 @@ extern int	pg_popcount32 (uint32 word);
 extern int	pg_popcount64 (uint64 word);
 
 /* Count the number of one-bits in a byte array */
-extern uint64 pg_popcount(const char *buf, int bytes);
+extern uint64 (*pg_popcount) (const char *buf, int bytes);
 
 /*
  * Rotate the bits of "word" to the right by n bits.

@@ -141,7 +141,7 @@ pg_popcount_available(void)
  * pg_popcount32_asm
  *		Return the number of 1 bits set in word
  */
-static int
+static inline int
 pg_popcount32_asm(uint32 word)
 {
 	uint32		res;
@@ -154,7 +154,7 @@ __asm__ __volatile__(" popcntl %1,%0\n":"=q"(res):"rm"(word):"cc");
  * pg_popcount64_asm
  *		Return the number of 1 bits set in word
  */
-static int
+static inline int
 pg_popcount64_asm(uint64 word)
 {
 	uint64		res;
@@ -163,6 +163,18 @@ __asm__ __volatile__(" popcntq %1,%0\n":"=q"(res):"rm"(word):"cc");
 	return (int) res;
 }
 
+#endif							/* USE_POPCNT_ASM */
+
+static uint64	pg_popcount_slow(const char *buf, int bytes);
+
+#ifdef USE_POPCNT_ASM
+static bool pg_popcount_available(void);
+static uint64	pg_popcount_choose(const char *buf, int bytes);
+static uint64	pg_popcount_asm(const char *buf, int bytes);
+
+uint64 (*pg_popcount) (const char *buf, int bytes) = pg_popcount_choose;
+#else
+uint64 (*pg_popcount) (const char *buf, int bytes) = pg_popcount_slow;
 #endif							/* USE_POPCNT_ASM */
 
 
@@ -216,13 +228,30 @@ pg_popcount64(uint64 word)
 #endif							/* HAVE__BUILTIN_POPCOUNT */
 }
 
+/*
+ * This function gets called on the first call to pg_popcount.
+ * It detects whether we can use the asm implementation, and replace
+ * the function pointer so that subsequent calls are routed directly to
+ * the chosen implementation.
+ */
+static uint64
+pg_popcount_choose(const char *buf, int bytes)
+{
+	if (pg_popcount_available())
+		pg_popcount = pg_popcount_asm;
+	else
+		pg_popcount = pg_popcount_slow;
+
+	return pg_popcount(buf, bytes);
+}
+
 
 /*
- * pg_popcount
+ * pg_popcount_slow
  *		Returns the number of 1-bits in buf
  */
 uint64
-pg_popcount(const char *buf, int bytes)
+pg_popcount_slow(const char *buf, int bytes)
 {
 	uint64		popcnt = 0;
 
@@ -262,3 +291,53 @@ pg_popcount(const char *buf, int bytes)
 
 	return popcnt;
 }
+
+#ifdef USE_POPCNT_ASM
+
+/*
+ * pg_popcount_asm
+ *		Returns the number of 1-bits in buf using POPCNT
+ */
+uint64
+pg_popcount_asm(const char *buf, int bytes)
+{
+	uint64		popcnt = 0;
+
+#if SIZEOF_VOID_P >= 8
+	/* Process in 64-bit chunks if the buffer is aligned. */
+	if (buf == (const char *) TYPEALIGN(8, buf))
+	{
+		const uint64 *words = (const uint64 *) buf;
+
+		while (bytes >= 8)
+		{
+			popcnt += pg_popcount64_asm(*words++);
+			bytes -= 8;
+		}
+
+		buf = (const char *) words;
+	}
+#else
+	/* Process in 32-bit chunks if the buffer is aligned. */
+	if (buf == (const char *) TYPEALIGN(4, buf))
+	{
+		const uint32 *words = (const uint32 *) buf;
+
+		while (bytes >= 4)
+		{
+			popcnt += pg_popcount32_asm(*words++);
+			bytes -= 4;
+		}
+
+		buf = (const char *) words;
+	}
+#endif
+
+	/* Process any remaining bytes */
+	while (bytes--)
+		popcnt += pg_number_of_ones[(unsigned char) *buf++];
+
+	return popcnt;
+}
+
+#endif							/* USE_POPCNT_ASM */
