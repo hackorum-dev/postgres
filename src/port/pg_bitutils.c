@@ -137,32 +137,6 @@ pg_popcount_available(void)
 	return (exx[2] & (1 << 23)) != 0;	/* POPCNT */
 }
 
-/*
- * pg_popcount32_asm
- *		Return the number of 1 bits set in word
- */
-static inline int
-pg_popcount32_asm(uint32 word)
-{
-	uint32		res;
-
-__asm__ __volatile__(" popcntl %1,%0\n":"=q"(res):"rm"(word):"cc");
-	return (int) res;
-}
-
-/*
- * pg_popcount64_asm
- *		Return the number of 1 bits set in word
- */
-static inline int
-pg_popcount64_asm(uint64 word)
-{
-	uint64		res;
-
-__asm__ __volatile__(" popcntq %1,%0\n":"=q"(res):"rm"(word):"cc");
-	return (int) res;
-}
-
 #endif							/* USE_POPCNT_ASM */
 
 static uint64	pg_popcount_slow(const char *buf, int bytes);
@@ -308,10 +282,39 @@ pg_popcount_asm(const char *buf, int bytes)
 	if (buf == (const char *) TYPEALIGN(8, buf))
 	{
 		const uint64 *words = (const uint64 *) buf;
+		uint64		cum[4] = {0};
+
+		/*
+		 * Manually unroll the loop, since the compiler won't do it for us.
+		 * This is in hand-written assembly to prevent some compilers from
+		 * inserting useless instructions to work around a False Data
+		 * Dependency in the POPCNT instruction.
+		 *
+		 * Based on code found at http://danluu.com/assembly-intrinsics/
+		 */
+		while (bytes >= 4 * 8)
+		{
+__asm__ __volatile__(
+			"popcnt %4, %4  \n\t"
+			"add %4, %0     \n\t"
+			"popcnt %5, %5  \n\t"
+			"add %5, %1     \n\t"
+			"popcnt %6, %6  \n\t"
+			"add %6, %2     \n\t"
+			"popcnt %7, %7  \n\t"
+			"add %7, %3     \n\t"
+			: "+r"  (cum[0]), "+r"  (cum[1]), "+r"  (cum[2]), "+r"  (cum[3])
+			: "r" (words[0]), "r" (words[1]), "r" (words[2]), "r" (words[3]));
+
+			bytes -= 4 * 8;
+			words += 4;
+		}
+
+		popcnt += cum[0] + cum[1] + cum[2] + cum[3];
 
 		while (bytes >= 8)
 		{
-			popcnt += pg_popcount64_asm(*words++);
+			popcnt += pg_popcount64(*words++);
 			bytes -= 8;
 		}
 
@@ -325,7 +328,7 @@ pg_popcount_asm(const char *buf, int bytes)
 
 		while (bytes >= 4)
 		{
-			popcnt += pg_popcount32_asm(*words++);
+			popcnt += pg_popcount32(*words++);
 			bytes -= 4;
 		}
 
