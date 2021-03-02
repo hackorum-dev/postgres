@@ -116,23 +116,6 @@ const uint8 pg_number_of_ones[256] = {
 #endif
 #endif
 
-static int	pg_popcount32_slow(uint32 word);
-static int	pg_popcount64_slow(uint64 word);
-
-#ifdef USE_POPCNT_ASM
-static bool pg_popcount_available(void);
-static int	pg_popcount32_choose(uint32 word);
-static int	pg_popcount64_choose(uint64 word);
-static int	pg_popcount32_asm(uint32 word);
-static int	pg_popcount64_asm(uint64 word);
-
-int			(*pg_popcount32) (uint32 word) = pg_popcount32_choose;
-int			(*pg_popcount64) (uint64 word) = pg_popcount64_choose;
-#else
-int			(*pg_popcount32) (uint32 word) = pg_popcount32_slow;
-int			(*pg_popcount64) (uint64 word) = pg_popcount64_slow;
-#endif							/* USE_POPCNT_ASM */
-
 #ifdef USE_POPCNT_ASM
 
 /*
@@ -152,46 +135,6 @@ pg_popcount_available(void)
 #endif
 
 	return (exx[2] & (1 << 23)) != 0;	/* POPCNT */
-}
-
-/*
- * These functions get called on the first call to pg_popcount32 etc.
- * They detect whether we can use the asm implementations, and replace
- * the function pointers so that subsequent calls are routed directly to
- * the chosen implementation.
- */
-static int
-pg_popcount32_choose(uint32 word)
-{
-	if (pg_popcount_available())
-	{
-		pg_popcount32 = pg_popcount32_asm;
-		pg_popcount64 = pg_popcount64_asm;
-	}
-	else
-	{
-		pg_popcount32 = pg_popcount32_slow;
-		pg_popcount64 = pg_popcount64_slow;
-	}
-
-	return pg_popcount32(word);
-}
-
-static int
-pg_popcount64_choose(uint64 word)
-{
-	if (pg_popcount_available())
-	{
-		pg_popcount32 = pg_popcount32_asm;
-		pg_popcount64 = pg_popcount64_asm;
-	}
-	else
-	{
-		pg_popcount32 = pg_popcount32_slow;
-		pg_popcount64 = pg_popcount64_slow;
-	}
-
-	return pg_popcount64(word);
 }
 
 /*
@@ -224,11 +167,11 @@ __asm__ __volatile__(" popcntq %1,%0\n":"=q"(res):"rm"(word):"cc");
 
 
 /*
- * pg_popcount32_slow
+ * pg_popcount32
  *		Return the number of 1 bits set in word
  */
-static int
-pg_popcount32_slow(uint32 word)
+int
+pg_popcount32(uint32 word)
 {
 #ifdef HAVE__BUILTIN_POPCOUNT
 	return __builtin_popcount(word);
@@ -246,11 +189,11 @@ pg_popcount32_slow(uint32 word)
 }
 
 /*
- * pg_popcount64_slow
+ * pg_popcount64
  *		Return the number of 1 bits set in word
  */
-static int
-pg_popcount64_slow(uint64 word)
+int
+pg_popcount64(uint64 word)
 {
 #ifdef HAVE__BUILTIN_POPCOUNT
 #if defined(HAVE_LONG_INT_64)

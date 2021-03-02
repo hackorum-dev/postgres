@@ -208,8 +208,8 @@ pg_ceil_log2_64(uint64 num)
 }
 
 /* Count the number of one-bits in a uint32 or uint64 */
-extern int	(*pg_popcount32) (uint32 word);
-extern int	(*pg_popcount64) (uint64 word);
+extern int	pg_popcount32 (uint32 word);
+extern int	pg_popcount64 (uint64 word);
 
 /* Count the number of one-bits in a byte array */
 extern uint64 pg_popcount(const char *buf, int bytes);
