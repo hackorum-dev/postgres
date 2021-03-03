@@ -344,3 +344,25 @@ __asm__ __volatile__(
 }
 
 #endif							/* USE_POPCNT_ASM */
+
+/*
+ * pg_popcount_mask64
+ *		Returns the number of 1-bits in buf after applying the mask
+ *
+ * Note: We currently only need a 64-bit version for the visibility map.
+ */
+uint64
+pg_popcount_mask64(const uint64 *buf, int bytes, uint64 mask)
+{
+	uint64		popcnt = 0;
+
+	Assert(bytes % sizeof(uint64) == 0);
+
+	while (bytes >= 8)
+	{
+		popcnt += pg_popcount64(*words++ & mask);
+		bytes -= 8;
+	}
+
+	return popcnt;
+}

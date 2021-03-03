@@ -409,17 +409,11 @@ visibilitymap_count(Relation rel, BlockNumber *all_visible, BlockNumber *all_fro
 		StaticAssertStmt(MAPSIZE % sizeof(uint64) == 0,
 						 "unsupported MAPSIZE");
 		if (all_frozen == NULL)
-		{
-			for (i = 0; i < MAPSIZE / sizeof(uint64); i++)
-				nvisible += pg_popcount64(map[i] & VISIBLE_MASK64);
-		}
+			nvisible = pg_popcount_mask64(map, MAPSIZE, VISIBLE_MASK64);
 		else
 		{
-			for (i = 0; i < MAPSIZE / sizeof(uint64); i++)
-			{
-				nvisible += pg_popcount64(map[i] & VISIBLE_MASK64);
-				nfrozen += pg_popcount64(map[i] & FROZEN_MASK64);
-			}
+			nvisible = pg_popcount_mask64(map, MAPSIZE, VISIBLE_MASK64);
+			nfrozen = pg_popcount_mask64(map, MAPSIZE, FROZEN_MASK64);
 		}
 
 		ReleaseBuffer(mapBuffer);
