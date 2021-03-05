@@ -2370,6 +2370,7 @@ AtEOXact_PgStat(bool isCommit, bool parallel)
 					/* forget live/dead stats seen by backend thus far */
 					tabstat->t_counts.t_delta_live_tuples = 0;
 					tabstat->t_counts.t_delta_dead_tuples = 0;
+					tabstat->t_counts.t_changed_tuples = 0;
 				}
 				/* insert adds a live tuple, delete removes one */
 				tabstat->t_counts.t_delta_live_tuples +=
@@ -2605,6 +2606,7 @@ pgstat_twophase_postcommit(TransactionId xid, uint16 info,
 		/* forget live/dead stats seen by backend thus far */
 		pgstat_info->t_counts.t_delta_live_tuples = 0;
 		pgstat_info->t_counts.t_delta_dead_tuples = 0;
+		pgstat_info->t_counts.t_changed_tuples = 0;
 	}
 	pgstat_info->t_counts.t_delta_live_tuples +=
 		rec->tuples_inserted - rec->tuples_deleted;
@@ -6455,6 +6457,7 @@ pgstat_recv_tabstat(PgStat_MsgTabstat *msg, int len)
 			{
 				tabentry->n_live_tuples = 0;
 				tabentry->n_dead_tuples = 0;
+				tabentry->changes_since_analyze = 0;
 				tabentry->inserts_since_vacuum = 0;
 			}
 			tabentry->n_live_tuples += tabmsg->t_counts.t_delta_live_tuples;

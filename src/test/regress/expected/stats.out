@@ -77,7 +77,7 @@ begin
     extract(epoch from clock_timestamp() - start_time);
 end
 $$ language plpgsql;
--- test effects of TRUNCATE on n_live_tup/n_dead_tup counters
+-- test effects of TRUNCATE on n_live_tup/n_dead_tup/n_mod_since_analyze counters
 CREATE TABLE trunc_stats_test(id serial);
 CREATE TABLE trunc_stats_test1(id serial, stuff text);
 CREATE TABLE trunc_stats_test2(id serial);
@@ -160,16 +160,16 @@ SELECT wait_for_stats();
 (1 row)
 
 -- check effects
-SELECT relname, n_tup_ins, n_tup_upd, n_tup_del, n_live_tup, n_dead_tup
+SELECT relname, n_tup_ins, n_tup_upd, n_tup_del, n_live_tup, n_dead_tup, n_mod_since_analyze
   FROM pg_stat_user_tables
  WHERE relname like 'trunc_stats_test%' order by relname;
-      relname      | n_tup_ins | n_tup_upd | n_tup_del | n_live_tup | n_dead_tup 
--------------------+-----------+-----------+-----------+------------+------------
- trunc_stats_test  |         3 |         0 |         0 |          0 |          0
- trunc_stats_test1 |         4 |         2 |         1 |          1 |          0
- trunc_stats_test2 |         1 |         0 |         0 |          1 |          0
- trunc_stats_test3 |         4 |         0 |         0 |          2 |          2
- trunc_stats_test4 |         2 |         0 |         0 |          0 |          2
+      relname      | n_tup_ins | n_tup_upd | n_tup_del | n_live_tup | n_dead_tup | n_mod_since_analyze 
+-------------------+-----------+-----------+-----------+------------+------------+---------------------
+ trunc_stats_test  |         3 |         0 |         0 |          0 |          0 |                   0
+ trunc_stats_test1 |         4 |         2 |         1 |          1 |          0 |                   1
+ trunc_stats_test2 |         1 |         0 |         0 |          1 |          0 |                   1
+ trunc_stats_test3 |         4 |         0 |         0 |          2 |          2 |                   2
+ trunc_stats_test4 |         2 |         0 |         0 |          0 |          2 |                   0
 (5 rows)
 
 SELECT st.seq_scan >= pr.seq_scan + 1,

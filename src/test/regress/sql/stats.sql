@@ -77,7 +77,7 @@ begin
 end
 $$ language plpgsql;
 
--- test effects of TRUNCATE on n_live_tup/n_dead_tup counters
+-- test effects of TRUNCATE on n_live_tup/n_dead_tup/n_mod_since_analyze counters
 CREATE TABLE trunc_stats_test(id serial);
 CREATE TABLE trunc_stats_test1(id serial, stuff text);
 CREATE TABLE trunc_stats_test2(id serial);
@@ -155,7 +155,7 @@ RESET enable_bitmapscan;
 SELECT wait_for_stats();
 
 -- check effects
-SELECT relname, n_tup_ins, n_tup_upd, n_tup_del, n_live_tup, n_dead_tup
+SELECT relname, n_tup_ins, n_tup_upd, n_tup_del, n_live_tup, n_dead_tup, n_mod_since_analyze
   FROM pg_stat_user_tables
  WHERE relname like 'trunc_stats_test%' order by relname;
 
