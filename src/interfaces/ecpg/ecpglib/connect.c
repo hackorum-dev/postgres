@@ -295,9 +295,44 @@ parse_newstyle(int lineno, char *buf, char **host, char **dbname, char **port, c
 	start = buf + prefix_len + strlen("postgresql://");
 	p = start;
 
-	/* Look ahead for possible user credentials designator */
-	while (*p && *p != ':' && *p != '/' && *p != '?')
-		++p;
+
+	/*
+	 * Look for IPv6 address.
+	 */
+	if (*p == '[')
+	{
+		start = ++p;
+		while (*p && *p != ']')
+			++p;
+		if (!*p)
+		{
+			ecpg_log("end of string reached when looking for matching \"]\" in IPv6 host address: \"%s\"\n", buf);
+			return -1;
+		}
+		if (p == start)
+		{
+			ecpg_log("IPv6 host address may not be empty: \"%s\"\n", buf);
+			return -1;
+		}
+		/* Cut off the bracket and advance */
+		*(p++) = '\0';
+
+		/*
+		 * The address may be followed by a port specifier or a slash or a
+		 * query.
+		 */
+		if (*p && *p != ':' && *p != '/' && *p != '?')
+		{
+			ecpg_log("unexpected character \"%c\" at position %d (expected \":\", \"/\" or \"?\"): \"%s]%s\"\n", *p, (int) (p - buf + 1), buf, p);
+			return -1;
+		}
+	}
+	else
+	{
+		/* Look ahead for possible user credentials designator */
+		while (*p && *p != ':' && *p != '/' && *p != '?')
+			++p;
+	}
 
 	/* Save the hostname terminator before we null it */
 	prevchar = *p;
@@ -328,7 +363,8 @@ parse_newstyle(int lineno, char *buf, char **host, char **dbname, char **port, c
 		*port = ecpg_strdup(start, lineno);
 		if (!(*port))
 		{
-			ecpg_free(*host);
+			if (!is_unix)
+				ecpg_free(*host);
 			return -1;
 		}
 		connect_params++;
@@ -352,7 +388,8 @@ parse_newstyle(int lineno, char *buf, char **host, char **dbname, char **port, c
 			*dbname = ecpg_strdup(start, lineno);
 			if (!(*dbname))
 			{
-				ecpg_free(*host);
+				if (!is_unix)
+					ecpg_free(*host);
 				ecpg_free(*port);
 				return -1;
 			}
@@ -368,7 +405,8 @@ parse_newstyle(int lineno, char *buf, char **host, char **dbname, char **port, c
 			*options = ecpg_strdup(start, lineno);
 			if (!(*options))
 			{
-				ecpg_free(*host);
+				if (!is_unix)
+					ecpg_free(*host);
 				ecpg_free(*port);
 				ecpg_free(*dbname);
 				return -1;
@@ -379,12 +417,13 @@ parse_newstyle(int lineno, char *buf, char **host, char **dbname, char **port, c
 	if (is_unix)
 	{
 		if (strcmp(*host, "localhost") &&
-			strcmp(*host, "127.0.0.1"))
+			strcmp(*host, "127.0.0.1") &&
+			strcmp(*host, "::1"))
 		{
 			/*
 			 * The alternative of using "127.0.0.1" here is deprecated
 			 * and undocumented; we'll keep it for backward
-			 * compatibility's sake, but not extend it to allow IPv6.
+			 * compatibility's sake.
 			 */
 			ecpg_log("ECPGconnect: non-localhost access via sockets on line %d\n", lineno);
 			ecpg_raise(lineno, ECPG_CONNECT, ECPG_SQLSTATE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION, *dbname ? *dbname : ecpg_gettext("<DEFAULT>"));
@@ -435,8 +474,43 @@ parse_oldstyle(int lineno, char *buf, char **host, char **dbname, char **port)
 	{
 		/* hostname is found */
 		start = ++p;
-		while(*p && *p != ':')
-			++p;
+		/*
+		 * Look for IPv6 address.
+		 */
+		if (*p == '[')
+		{
+			start = ++p;
+			while (*p && *p != ']')
+				++p;
+			if (!*p)
+			{
+				ecpg_log("end of string reached when looking for matching \"]\" in IPv6 host address: \"%s\"\n", buf);
+				return -1;
+			}
+			if (p == start)
+			{
+				ecpg_log("IPv6 host address may not be empty: \"%s\"\n", buf);
+				return -1;
+			}
+			/* Cut off the bracket and advance */
+			*(p++) = '\0';
+
+			/*
+			* The address may be followed by a port specifier or a slash or a
+			* query.
+			*/
+			if (*p && *p != ':')
+			{
+				ecpg_log("unexpected character \"%c\": \"%s]%s\"\n", *p, buf, p);
+				return -1;
+			}
+		}
+		else
+		{
+			while(*p && *p != ':')
+				++p;
+
+		}
 		prevchar = *p;
 		*p = '\0';
 		if (strcmp(start, "localhost") && strcmp(start, "127.0.0.1"))
