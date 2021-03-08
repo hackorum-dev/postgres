@@ -20,9 +20,11 @@
 #include "access/htup_details.h"
 #include "catalog/pg_type.h"
 #include "common/hashfn.h"
+#include "executor/spi.h"
 #include "funcapi.h"
 #include "libpq/pqformat.h"
 #include "miscadmin.h"
+#include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/datum.h"
 #include "utils/lsyscache.h"
@@ -67,6 +69,15 @@ typedef struct RecordCompareData
 	ColumnCompareData columns[FLEXIBLE_ARRAY_MEMBER];
 } RecordCompareData;
 
+/*
+ * Structure used for list of keys
+ */
+typedef struct
+{
+	ArrayBuildState *astate;
+	Tuplestorestate *tupstore;
+	TupleDesc	tupdesc;
+} RecordKeysOutputData;
 
 /*
  * record_in		- input routine for any composite type.
@@ -2014,4 +2025,361 @@ hash_record_extended(PG_FUNCTION_ARGS)
 	PG_FREE_IF_COPY(record, 0);
 
 	PG_RETURN_UINT64(result);
+}
+
+/*
+ * Few simple functions and operators for work with record type.
+ */
+
+/*
+ * Returns true, if record has a field on top level.
+ */
+Datum
+record_exists(PG_FUNCTION_ARGS)
+{
+	HeapTupleHeader rec = PG_GETARG_HEAPTUPLEHEADER(0);
+	char	   *fname = text_to_cstring(PG_GETARG_TEXT_PP(1));
+	Oid			tupType;
+	int32		tupTypmod;
+	TupleDesc	tupdesc;
+	bool		result = false;
+	int		i;
+
+	/* Extract type info from the tuple itself */
+	tupType = HeapTupleHeaderGetTypeId(rec);
+	tupTypmod = HeapTupleHeaderGetTypMod(rec);
+	tupdesc = lookup_rowtype_tupdesc(tupType, tupTypmod);
+
+	for (i = 0; i < tupdesc->natts; i++)
+	{
+		Form_pg_attribute att = TupleDescAttr(tupdesc, i);
+		char	   *attname;
+
+		if (att->attisdropped)
+			continue;
+
+		attname = NameStr(att->attname);
+
+		if (strcmp(fname, attname) == 0)
+		{
+			result = true;
+			break;
+		}
+	}
+
+	ReleaseTupleDesc(tupdesc);
+
+	PG_RETURN_BOOL(result);
+}
+
+/*
+ * Returns text value of record field. Raise an error when required
+ * key doesn't exists
+ */
+Datum
+record_field_text(PG_FUNCTION_ARGS)
+{
+	HeapTupleHeader rec = PG_GETARG_HEAPTUPLEHEADER(0);
+	char	   *fname = text_to_cstring(PG_GETARG_TEXT_P(1));
+	HeapTupleData	tuple;
+	Oid			tupType;
+	int32		tupTypmod;
+	TupleDesc	tupdesc;
+	int			fno;
+	bool		isnull = true;
+	char	   *outstr = NULL;
+
+	/* Extract type info from the tuple itself */
+	tupType = HeapTupleHeaderGetTypeId(rec);
+	tupTypmod = HeapTupleHeaderGetTypMod(rec);
+	tupdesc = lookup_rowtype_tupdesc(tupType, tupTypmod);
+
+	/* Build a temporary HeapTuple control structure */
+	tuple.t_len = HeapTupleHeaderGetDatumLength(rec);
+	ItemPointerSetInvalid(&(tuple.t_self));
+	tuple.t_tableOid = InvalidOid;
+	tuple.t_data = rec;
+
+	fno = SPI_fnumber(tupdesc, fname);
+	if (fno != SPI_ERROR_NOATTRIBUTE)
+	{
+		Datum	value = SPI_getbinval(&tuple, tupdesc, fno, &isnull);
+
+		if (!isnull)
+		{
+			bool	typIsVarlena;
+			Oid		typoutput;
+			FmgrInfo		proc;
+			Oid	typeid;
+
+			typeid = SPI_gettypeid(tupdesc, fno);
+			getTypeOutputInfo(typeid, &typoutput, &typIsVarlena);
+			fmgr_info(typoutput, &proc);
+			outstr = OutputFunctionCall(&proc, value);
+		}
+	}
+
+	ReleaseTupleDesc(tupdesc);
+
+	if (!isnull)
+	{
+		Assert(outstr);
+
+		PG_RETURN_TEXT_P(cstring_to_text(outstr));
+	}
+
+	PG_RETURN_NULL();
+}
+
+/*
+ * Returns set of composite type (key text, value text, type text) of all
+ * fields in record.
+ */
+Datum
+record_each_text(PG_FUNCTION_ARGS)
+{
+	HeapTupleHeader rec = PG_GETARG_HEAPTUPLEHEADER(0);
+	HeapTupleData	tuple;
+	Oid			tupType;
+	int32		tupTypmod;
+	TupleDesc	tupdesc;
+	int			natts;
+	Datum 		*values;
+	bool  		*nulls;
+	int			i;
+
+	ReturnSetInfo *rsi = (ReturnSetInfo *) fcinfo->resultinfo;
+	Tuplestorestate *rstupstore;
+	HeapTuple	rstuple;
+	TupleDesc	rstupdesc;
+	Datum		rsvalues[3];
+	bool		rsnulls[3] = {false, false, false};
+
+	MemoryContext old_cxt;
+
+	/* Extract type info from the tuple itself */
+	tupType = HeapTupleHeaderGetTypeId(rec);
+	tupTypmod = HeapTupleHeaderGetTypMod(rec);
+	tupdesc = lookup_rowtype_tupdesc(tupType, tupTypmod);
+	natts = tupdesc->natts;
+
+	/* check to see if caller supports us returning a tuplestore */
+	if (rsi == NULL || !IsA(rsi, ReturnSetInfo))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("set-valued function called in context that cannot accept a set")));
+	if (!(rsi->allowedModes & SFRM_Materialize))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("materialize mode required, but it is not allowed in this context")));
+
+	if (!rsi || !IsA(rsi, ReturnSetInfo) ||
+		(rsi->allowedModes & SFRM_Materialize) == 0 ||
+		rsi->expectedDesc == NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("set-valued function called in context that "
+						"cannot accept a set")));
+
+	/* OK, prepare tuplestore in per-query memory */
+	old_cxt = MemoryContextSwitchTo(rsi->econtext->ecxt_per_query_memory);
+
+	rstupdesc = CreateTupleDescCopy(rsi->expectedDesc);
+	rstupstore = tuplestore_begin_heap(true, false, work_mem);
+
+	MemoryContextSwitchTo(old_cxt);
+
+	/* Build a temporary HeapTuple control structure */
+	tuple.t_len = HeapTupleHeaderGetDatumLength(rec);
+	ItemPointerSetInvalid(&(tuple.t_self));
+	tuple.t_tableOid = InvalidOid;
+	tuple.t_data = rec;
+
+	values = (Datum *) palloc(natts * sizeof(Datum));
+	nulls = (bool *) palloc(natts * sizeof(bool));
+
+	/* Break down the tuple into fields */
+	heap_deform_tuple(&tuple, tupdesc, values, nulls);
+
+	for (i = 0; i < natts; i++)
+	{
+		Form_pg_attribute att = TupleDescAttr(tupdesc, i);
+		Oid		typ = att->atttypid;
+		int32	typmod = att->atttypmod;
+
+		/* Ignore dropped columns */
+		if (att->attisdropped)
+			continue;
+
+		rsvalues[0] = CStringGetTextDatum(NameStr(att->attname));
+		rsvalues[2] = CStringGetTextDatum(format_type_with_typemod(typ, typmod));
+
+		if (!nulls[i])
+		{
+			char *outstr;
+			bool		typIsVarlena;
+			Oid		typoutput;
+			FmgrInfo		proc;
+
+			getTypeOutputInfo(typ, &typoutput, &typIsVarlena);
+			fmgr_info_cxt(typoutput, &proc, old_cxt);
+			outstr = OutputFunctionCall(&proc, values[i]);
+
+			rsvalues[1] = CStringGetTextDatum(outstr);
+			rsnulls[1] = false;
+		}
+		else
+			rsnulls[1] = true;
+
+		rstuple = heap_form_tuple(rstupdesc, rsvalues, rsnulls);
+
+		tuplestore_puttuple(rstupstore, rstuple);
+	}
+
+	ReleaseTupleDesc(tupdesc);
+
+	/* clean up and return the tuplestore */
+	tuplestore_donestoring(rstupstore);
+
+	rsi->returnMode = SFRM_Materialize;
+	rsi->setResult = rstupstore;
+	rsi->setDesc = rstupdesc;
+
+	pfree(values);
+	pfree(nulls);
+
+	return (Datum) 0;
+}
+
+/*
+ * Add field name to result (table or array)
+ */
+static void
+record_keys_accum_result(RecordKeysOutputData *rkstate, text *fname_value)
+{
+	if (rkstate->tupstore)
+	{
+		Datum       values[1];
+		bool        nulls[1];
+
+		values[0] = PointerGetDatum(fname_value);
+		nulls[0] = false;
+
+		tuplestore_putvalues(rkstate->tupstore,
+							 rkstate->tupdesc,
+							 values,
+							 nulls);
+	}
+	else
+	{
+		rkstate->astate = accumArrayResult(rkstate->astate,
+										   PointerGetDatum(fname_value),
+										   false,
+										   TEXTOID,
+										   CurrentMemoryContext);
+	}
+}
+
+/*
+ * Prepares result of record_keys and record_keys_array functions.
+ * rkstate should be initialized before.
+ */
+static void
+record_keys_internal(FunctionCallInfo fcinfo, RecordKeysOutputData *rkstate)
+{
+	HeapTupleHeader rec = PG_GETARG_HEAPTUPLEHEADER(0);
+	Oid			tupType;
+	int32		tupTypmod;
+	TupleDesc	tupdesc;
+	int		i;
+
+	/* Extract type info from the tuple itself */
+	tupType = HeapTupleHeaderGetTypeId(rec);
+	tupTypmod = HeapTupleHeaderGetTypMod(rec);
+	tupdesc = lookup_rowtype_tupdesc(tupType, tupTypmod);
+
+	for (i = 0; i < tupdesc->natts; i++)
+	{
+		Form_pg_attribute att = TupleDescAttr(tupdesc, i);
+		char	   *attname;
+
+		if (att->attisdropped)
+			continue;
+
+		attname = NameStr(att->attname);
+
+		record_keys_accum_result(rkstate, cstring_to_text(attname));
+	}
+
+	ReleaseTupleDesc(tupdesc);
+}
+
+/*
+ * Returns an array of keys of record on top level
+ */
+Datum
+record_keys(PG_FUNCTION_ARGS)
+{
+	RecordKeysOutputData rkstate;
+	ReturnSetInfo *rsi;
+	MemoryContext old_cxt;
+
+	rsi = (ReturnSetInfo *) fcinfo->resultinfo;
+
+	/* check to see if caller supports us returning a tuplestore */
+	if (rsi == NULL || !IsA(rsi, ReturnSetInfo))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("set-valued function called in context that cannot accept a set")));
+	if (!(rsi->allowedModes & SFRM_Materialize))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("materialize mode required, but it is not allowed in this context")));
+
+	if (!rsi || !IsA(rsi, ReturnSetInfo) ||
+		(rsi->allowedModes & SFRM_Materialize) == 0 ||
+		rsi->expectedDesc == NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("set-valued function called in context that "
+						"cannot accept a set")));
+
+	/* OK, prepare tuplestore in per-query memory */
+	old_cxt = MemoryContextSwitchTo(rsi->econtext->ecxt_per_query_memory);
+
+	rkstate.astate = NULL;
+	rkstate.tupdesc = CreateTupleDescCopy(rsi->expectedDesc);
+	rkstate.tupstore = tuplestore_begin_heap(true, false, work_mem);
+
+	MemoryContextSwitchTo(old_cxt);
+
+	record_keys_internal(fcinfo, &rkstate);
+
+	tuplestore_donestoring(rkstate.tupstore);
+
+	rsi->returnMode = SFRM_Materialize;
+	rsi->setResult = rkstate.tupstore;
+	rsi->setDesc = rkstate.tupdesc;
+
+	return (Datum) 0;
+}
+
+/*
+ * Returns an array of keys of record on top level
+ */
+Datum
+record_keys_array(PG_FUNCTION_ARGS)
+{
+	RecordKeysOutputData rkstate;
+
+	/* For array output, rkstate should start as all zeroes */
+	memset(&rkstate, 0, sizeof(rkstate));
+
+	record_keys_internal(fcinfo, &rkstate);
+
+	if (rkstate.astate == NULL)
+		PG_RETURN_ARRAYTYPE_P(construct_empty_array(TEXTOID));
+
+	PG_RETURN_ARRAYTYPE_P(makeArrayResult(rkstate.astate,
+										  CurrentMemoryContext));
 }

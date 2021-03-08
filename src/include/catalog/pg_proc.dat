@@ -11402,4 +11402,27 @@
   proname => 'is_normalized', prorettype => 'bool', proargtypes => 'text text',
   prosrc => 'unicode_is_normalized' },
 
+# utility functions for record type
+{ oid => '9330',
+  proname => 'record_exists', prorettype => 'bool',
+  proargtypes => 'record text', prosrc => 'record_exists' },
+
+{ oid => '9331',
+  proname => 'record_field_text', prorettype => 'text',
+  proargtypes => 'record text', prosrc => 'record_field_text' },
+
+{ oid => '9332', descr => 'key value pairs of a record',
+  proname => 'record_each_text', prorows => '100', proretset => 't',
+  prorettype => 'record', proargtypes => 'record',
+  proallargtypes => '{record,text,text,text}', proargmodes => '{i,o,o,o}',
+  proargnames => '{from_record,key,value,type}', prosrc => 'record_each_text' },
+
+{ oid => '9333', descr => 'returns keys of record on top level',
+  proname => 'record_keys', prorows => '100', proretset => 't',
+  prorettype => 'text',  proargtypes => 'record', prosrc => 'record_keys' },
+
+{ oid => '9334', descr => 'returns an array of keys of record on top level',
+  proname => 'record_keys_array', prorettype => '_text',
+  proargtypes => 'record', prosrc => 'record_keys_array' }
+
 ]

@@ -3473,4 +3473,10 @@
   oprcode => 'multirange_after_multirange', oprrest => 'multirangesel',
   oprjoin => 'scalargtjoinsel' },
 
+{ oid => '9335', descr => 'key exists',
+  oprname => '?', oprleft => 'record', oprright => 'text', oprresult => 'bool',
+  oprcode => 'record_exists' },
+{ oid => '9336', descr => 'get record field as text',
+  oprname => '->>', oprleft => 'record', oprright => 'text', oprresult => 'text',
+  oprcode => 'record_field_text' },
 ]

@@ -791,3 +791,56 @@ table two_int8s_tab;
  (42,42)
 (1 row)
 
+-- tests of basic helper functions for record type
+do $$
+declare
+  r record;
+  k text; v text; t text;
+begin
+  select oid, relname, relnamespace, reltype from pg_class limit 1 into r;
+  if not r ? 'xxx' then
+    raise notice 'pg_class has not column xxx';
+  end if;
+
+  if r ? 'relname' then
+    raise notice 'pg_class has column relname';
+  end if;
+
+  foreach k in array record_keys_array(r)
+  loop
+    raise notice '% => %', k, r->>k;
+  end loop;
+
+  raise notice '---';
+
+  -- second (slower) variant
+  for k in select * from record_keys(r)
+  loop
+    raise notice '% => %', k, r->>k;
+  end loop;
+
+  raise notice '---';
+
+  -- complete unpacking
+  for k, v, t in select * from record_each_text(r)
+  loop
+    raise notice '% => %(%)', k, v, t;
+  end loop;
+end;
+$$;
+NOTICE:  pg_class has not column xxx
+NOTICE:  pg_class has column relname
+NOTICE:  oid => 16385
+NOTICE:  relname => complex
+NOTICE:  relnamespace => 2200
+NOTICE:  reltype => 16387
+NOTICE:  ---
+NOTICE:  oid => 16385
+NOTICE:  relname => complex
+NOTICE:  relnamespace => 2200
+NOTICE:  reltype => 16387
+NOTICE:  ---
+NOTICE:  oid => 16385(oid)
+NOTICE:  relname => complex(name)
+NOTICE:  relnamespace => 2200(oid)
+NOTICE:  reltype => 16387(oid)

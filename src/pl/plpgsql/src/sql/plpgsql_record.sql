@@ -518,3 +518,42 @@ insert into two_int8s_tab values (compresult(42));
 -- reconnect so we lose any local knowledge of anonymous record types
 \c -
 table two_int8s_tab;
+
+-- tests of basic helper functions for record type
+do $$
+declare
+  r record;
+  k text; v text; t text;
+begin
+  select oid, relname, relnamespace, reltype from pg_class limit 1 into r;
+  if not r ? 'xxx' then
+    raise notice 'pg_class has not column xxx';
+  end if;
+
+  if r ? 'relname' then
+    raise notice 'pg_class has column relname';
+  end if;
+
+  foreach k in array record_keys_array(r)
+  loop
+    raise notice '% => %', k, r->>k;
+  end loop;
+
+  raise notice '---';
+
+  -- second (slower) variant
+  for k in select * from record_keys(r)
+  loop
+    raise notice '% => %', k, r->>k;
+  end loop;
+
+  raise notice '---';
+
+  -- complete unpacking
+  for k, v, t in select * from record_each_text(r)
+  loop
+    raise notice '% => %(%)', k, v, t;
+  end loop;
+end;
+$$;
+
