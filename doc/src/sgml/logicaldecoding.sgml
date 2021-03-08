@@ -468,9 +468,9 @@ typedef void (*LogicalOutputPluginInit) (struct OutputPluginCallbacks *cb);
      An output plugin may also define functions to support streaming of large,
      in-progress transactions. The <function>stream_start_cb</function>,
      <function>stream_stop_cb</function>, <function>stream_abort_cb</function>,
-     <function>stream_commit_cb</function>, <function>stream_change_cb</function>,
-     and <function>stream_prepare_cb</function>
-     are required, while <function>stream_message_cb</function> and
+     <function>stream_commit_cb</function>, and <function>stream_change_cb</function>,
+     are required, while <function>stream_prepare_cb</function>,
+     <function>stream_message_cb</function> and
      <function>stream_truncate_cb</function> are optional.
     </para>
 
@@ -478,9 +478,9 @@ typedef void (*LogicalOutputPluginInit) (struct OutputPluginCallbacks *cb);
     An output plugin may also define functions to support two-phase commits,
     which allows actions to be decoded on the <command>PREPARE TRANSACTION</command>.
     The <function>begin_prepare_cb</function>, <function>prepare_cb</function>, 
-    <function>stream_prepare_cb</function>,
     <function>commit_prepared_cb</function> and <function>rollback_prepared_cb</function>
-    callbacks are required, while <function>filter_prepare_cb</function> is optional.
+    callbacks are required, while <function>stream_prepare_cb</function> and
+    <function>filter_prepare_cb</function> are optional.
     </para>
    </sect2>
 
@@ -1195,9 +1195,9 @@ stream_commit_cb(...);  &lt;-- commit of the streamed transaction
     provide additional callbacks. There are multiple two-phase commit callbacks
     that are required, (<function>begin_prepare_cb</function>,
     <function>prepare_cb</function>, <function>commit_prepared_cb</function>, 
-    <function>rollback_prepared_cb</function> and
-    <function>stream_prepare_cb</function>) and an optional callback
-    (<function>filter_prepare_cb</function>).
+    <function>rollback_prepared_cb</function>) and
+    optional callbacks, (<function>stream_prepare_cb</function> and
+    <function>filter_prepare_cb</function>).
    </para>
 
    <para>

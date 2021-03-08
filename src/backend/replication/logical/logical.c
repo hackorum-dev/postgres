@@ -1326,6 +1326,9 @@ stream_prepare_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
 	Assert(ctx->streaming);
 	Assert(ctx->twophase);
 
+	if (ctx->callbacks.stream_prepare_cb == NULL)
+		return;
+
 	/* Push callback + info on the error context stack */
 	state.ctx = ctx;
 	state.callback_name = "stream_prepare";
@@ -1339,12 +1342,6 @@ stream_prepare_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
 	ctx->accept_writes = true;
 	ctx->write_xid = txn->xid;
 	ctx->write_location = txn->end_lsn;
-
-	/* in streaming mode with two-phase commits, stream_prepare_cb is required */
-	if (ctx->callbacks.stream_prepare_cb == NULL)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("logical streaming at prepare time requires a stream_prepare_cb callback")));
 
 	ctx->callbacks.stream_prepare_cb(ctx, txn, prepare_lsn);
 
