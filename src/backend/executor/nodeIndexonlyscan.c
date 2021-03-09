@@ -101,7 +101,9 @@ IndexOnlyNext(IndexOnlyScanState *node)
 
 		/* Set it up for index-only scan */
 		node->ioss_ScanDesc->xs_want_itup = true;
-		node->ioss_VMBuffer = InvalidBuffer;
+
+		for (int i = 0; i < VMBUF_SIZE; i++)
+			node->ioss_VMBuffer[i] = InvalidBuffer;
 
 		/*
 		 * If no run-time keys to calculate or they are ready, go ahead and
@@ -121,6 +123,7 @@ IndexOnlyNext(IndexOnlyScanState *node)
 	while ((tid = index_getnext_tid(scandesc, direction)) != NULL)
 	{
 		bool		tuple_from_heap = false;
+		Buffer		*vm_buf;
 
 		CHECK_FOR_INTERRUPTS();
 
@@ -158,9 +161,11 @@ IndexOnlyNext(IndexOnlyScanState *node)
 		 * It's worth going through this complexity to avoid needing to lock
 		 * the VM buffer, which could cause significant contention.
 		 */
+		vm_buf = &node->ioss_VMBuffer[HEAPBLK_TO_MAPBLOCK(
+				ItemPointerGetBlockNumber(tid)) % VMBUF_SIZE];
 		if (!VM_ALL_VISIBLE(scandesc->heapRelation,
 							ItemPointerGetBlockNumber(tid),
-							&node->ioss_VMBuffer))
+							vm_buf))
 		{
 			/*
 			 * Rats, we have to visit the heap to check visibility.
@@ -377,11 +382,14 @@ ExecEndIndexOnlyScan(IndexOnlyScanState *node)
 	indexRelationDesc = node->ioss_RelationDesc;
 	indexScanDesc = node->ioss_ScanDesc;
 
-	/* Release VM buffer pin, if any. */
-	if (node->ioss_VMBuffer != InvalidBuffer)
+	/* Release VM buffer pins, if any. */
+	for (int i = 0; i < VMBUF_SIZE; i++)
 	{
-		ReleaseBuffer(node->ioss_VMBuffer);
-		node->ioss_VMBuffer = InvalidBuffer;
+		if (node->ioss_VMBuffer[i] != InvalidBuffer)
+		{
+			ReleaseBuffer(node->ioss_VMBuffer[i]);
+			node->ioss_VMBuffer[i] = InvalidBuffer;
+		}
 	}
 
 	/*
@@ -680,7 +688,8 @@ ExecIndexOnlyScanInitializeDSM(IndexOnlyScanState *node,
 								 node->ioss_NumOrderByKeys,
 								 piscan);
 	node->ioss_ScanDesc->xs_want_itup = true;
-	node->ioss_VMBuffer = InvalidBuffer;
+	for (int i = 0; i < VMBUF_SIZE; i++)
+		node->ioss_VMBuffer[i] = InvalidBuffer;
 
 	/*
 	 * If no run-time keys to calculate or they are ready, go ahead and pass

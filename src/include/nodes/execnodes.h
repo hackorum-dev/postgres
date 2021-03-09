@@ -1439,6 +1439,8 @@ typedef struct IndexScanState
 	Size		iss_PscanLen;
 } IndexScanState;
 
+#define VMBUF_SIZE 64
+
 /* ----------------
  *	 IndexOnlyScanState information
  *
@@ -1473,7 +1475,7 @@ typedef struct IndexOnlyScanState
 	Relation	ioss_RelationDesc;
 	struct IndexScanDescData *ioss_ScanDesc;
 	TupleTableSlot *ioss_TableSlot;
-	Buffer		ioss_VMBuffer;
+	Buffer		ioss_VMBuffer[VMBUF_SIZE];
 	Size		ioss_PscanLen;
 } IndexOnlyScanState;
 
