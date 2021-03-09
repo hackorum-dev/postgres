@@ -3332,7 +3332,7 @@ getBlobs(Archive *fout)
 	BlobInfo   *binfo;
 	DumpableObject *bdata;
 	PGresult   *res;
-	int			ntups;
+	int			ntups, total = 0;
 	int			i;
 	int			i_oid;
 	int			i_lomowner;
@@ -3340,8 +3340,11 @@ getBlobs(Archive *fout)
 	int			i_rlomacl;
 	int			i_initlomacl;
 	int			i_initrlomacl;
+	const char		*blobFetchQry = "FETCH 1000 IN blob";
 
 	pg_log_info("reading large objects");
+
+	appendPQExpBuffer(blobQry, "DECLARE blob CURSOR FOR ");
 
 	/* Fetch BLOB OIDs, and owner/ACL data if >= 9.0 */
 	if (fout->remoteVersion >= 90600)
@@ -3392,58 +3395,66 @@ getBlobs(Archive *fout)
 							 "NULL::oid AS initrlomacl "
 							 " FROM pg_largeobject");
 
-	res = ExecuteSqlQuery(fout, blobQry->data, PGRES_TUPLES_OK);
+	ExecuteSqlStatement(fout, blobQry->data);
+	destroyPQExpBuffer(blobQry);
 
-	i_oid = PQfnumber(res, "oid");
-	i_lomowner = PQfnumber(res, "rolname");
-	i_lomacl = PQfnumber(res, "lomacl");
-	i_rlomacl = PQfnumber(res, "rlomacl");
-	i_initlomacl = PQfnumber(res, "initlomacl");
-	i_initrlomacl = PQfnumber(res, "initrlomacl");
+	do {
+		res = ExecuteSqlQuery(fout, blobFetchQry, PGRES_TUPLES_OK);
 
-	ntups = PQntuples(res);
+		i_oid = PQfnumber(res, "oid");
+		i_lomowner = PQfnumber(res, "rolname");
+		i_lomacl = PQfnumber(res, "lomacl");
+		i_rlomacl = PQfnumber(res, "rlomacl");
+		i_initlomacl = PQfnumber(res, "initlomacl");
+		i_initrlomacl = PQfnumber(res, "initrlomacl");
 
-	/*
-	 * Each large object has its own BLOB archive entry.
-	 */
-	binfo = (BlobInfo *) pg_malloc(ntups * sizeof(BlobInfo));
-
-	for (i = 0; i < ntups; i++)
-	{
-		binfo[i].dobj.objType = DO_BLOB;
-		binfo[i].dobj.catId.tableoid = LargeObjectRelationId;
-		binfo[i].dobj.catId.oid = atooid(PQgetvalue(res, i, i_oid));
-		AssignDumpId(&binfo[i].dobj);
-
-		binfo[i].dobj.name = pg_strdup(PQgetvalue(res, i, i_oid));
-		binfo[i].rolname = pg_strdup(PQgetvalue(res, i, i_lomowner));
-		binfo[i].blobacl = pg_strdup(PQgetvalue(res, i, i_lomacl));
-		binfo[i].rblobacl = pg_strdup(PQgetvalue(res, i, i_rlomacl));
-		binfo[i].initblobacl = pg_strdup(PQgetvalue(res, i, i_initlomacl));
-		binfo[i].initrblobacl = pg_strdup(PQgetvalue(res, i, i_initrlomacl));
-
-		if (PQgetisnull(res, i, i_lomacl) &&
-			PQgetisnull(res, i, i_rlomacl) &&
-			PQgetisnull(res, i, i_initlomacl) &&
-			PQgetisnull(res, i, i_initrlomacl))
-			binfo[i].dobj.dump &= ~DUMP_COMPONENT_ACL;
+		ntups = PQntuples(res);
+		total += ntups;
 
 		/*
-		 * In binary-upgrade mode for blobs, we do *not* dump out the blob
-		 * data, as it will be copied by pg_upgrade, which simply copies the
-		 * pg_largeobject table. We *do* however dump out anything but the
-		 * data, as pg_upgrade copies just pg_largeobject, but not
-		 * pg_largeobject_metadata, after the dump is restored.
+		 * Each large object has its own BLOB archive entry.
 		 */
-		if (dopt->binary_upgrade)
-			binfo[i].dobj.dump &= ~DUMP_COMPONENT_DATA;
-	}
+		binfo = (BlobInfo *) pg_malloc(ntups * sizeof(BlobInfo));
+
+		for (i = 0; i < ntups; i++)
+		{
+			binfo[i].dobj.objType = DO_BLOB;
+			binfo[i].dobj.catId.tableoid = LargeObjectRelationId;
+			binfo[i].dobj.catId.oid = atooid(PQgetvalue(res, i, i_oid));
+			AssignDumpId(&binfo[i].dobj);
+
+			binfo[i].dobj.name = pg_strdup(PQgetvalue(res, i, i_oid));
+			binfo[i].rolname = pg_strdup(PQgetvalue(res, i, i_lomowner));
+			binfo[i].blobacl = pg_strdup(PQgetvalue(res, i, i_lomacl));
+			binfo[i].rblobacl = pg_strdup(PQgetvalue(res, i, i_rlomacl));
+			binfo[i].initblobacl = pg_strdup(PQgetvalue(res, i, i_initlomacl));
+			binfo[i].initrblobacl = pg_strdup(PQgetvalue(res, i, i_initrlomacl));
+
+			if (PQgetisnull(res, i, i_lomacl) &&
+				PQgetisnull(res, i, i_rlomacl) &&
+				PQgetisnull(res, i, i_initlomacl) &&
+				PQgetisnull(res, i, i_initrlomacl))
+				binfo[i].dobj.dump &= ~DUMP_COMPONENT_ACL;
+
+			/*
+			 * In binary-upgrade mode for blobs, we do *not* dump out the blob
+			 * data, as it will be copied by pg_upgrade, which simply copies the
+			 * pg_largeobject table. We *do* however dump out anything but the
+			 * data, as pg_upgrade copies just pg_largeobject, but not
+			 * pg_largeobject_metadata, after the dump is restored.
+			 */
+			if (dopt->binary_upgrade)
+				binfo[i].dobj.dump &= ~DUMP_COMPONENT_DATA;
+		}
+
+		PQclear(res);
+	} while (ntups != 0);
 
 	/*
 	 * If we have any large objects, a "BLOBS" archive entry is needed. This
 	 * is just a placeholder for sorting; it carries no data now.
 	 */
-	if (ntups > 0)
+	if (total > 0)
 	{
 		bdata = (DumpableObject *) pg_malloc(sizeof(DumpableObject));
 		bdata->objType = DO_BLOB_DATA;
@@ -3451,9 +3462,6 @@ getBlobs(Archive *fout)
 		AssignDumpId(bdata);
 		bdata->name = pg_strdup("BLOBS");
 	}
-
-	PQclear(res);
-	destroyPQExpBuffer(blobQry);
 }
 
 /*
