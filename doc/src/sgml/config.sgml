@@ -3161,7 +3161,7 @@ include_dir 'conf.d'
      </varlistentry>
 
      <varlistentry id="guc-wal-compression" xreflabel="wal_compression">
-      <term><varname>wal_compression</varname> (<type>enum</type>)
+      <term><varname>wal_compression</varname> (<type>string</type>)
       <indexterm>
        <primary><varname>wal_compression</varname> configuration parameter</primary>
       </indexterm>
@@ -3169,7 +3169,7 @@ include_dir 'conf.d'
       <listitem>
        <para>
         This parameter enables compression of WAL using the specified
-        compression method.
+        compression method and optional compression level.
         When enabled, the <productname>PostgreSQL</productname>
         server compresses full page images written to WAL when
         <xref linkend="guc-full-page-writes"/> is on or during a base backup.
@@ -3179,6 +3179,8 @@ include_dir 'conf.d'
         was compiled with <option>--with-lz4</option>) and
         <literal>zstd</literal> (if <productname>PostgreSQL</productname>
         was compiled with <option>--with-zstd</option>).
+        A compression level may optionally be specified, by appending the level
+        number after a colon (<literal>:</literal>)
         The default value is <literal>off</literal>.
         Only superusers and users with the appropriate <literal>SET</literal>
         privilege can change this setting.

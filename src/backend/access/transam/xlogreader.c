@@ -17,7 +17,9 @@
  */
 #include "postgres.h"
 
+#include <limits.h>
 #include <unistd.h>
+
 #ifdef USE_LZ4
 #include <lz4.h>
 #endif
@@ -30,6 +32,7 @@
 #include "access/xlogreader.h"
 #include "access/xlogrecord.h"
 #include "catalog/pg_control.h"
+#include "common/compression.h"
 #include "common/pg_lzcompress.h"
 #include "replication/origin.h"
 
@@ -55,6 +58,30 @@ static bool ValidXLogRecord(XLogReaderState *state, XLogRecord *record,
 static void ResetDecoder(XLogReaderState *state);
 static void WALOpenSegmentInit(WALOpenSegment *seg, WALSegmentContext *segcxt,
 							   int segsize, const char *waldir);
+
+static const struct {
+	char *name;
+	enum WalCompression compress_id; /* The internal ID */
+} wal_compression_options[] = {
+	{"pglz", WAL_COMPRESSION_PGLZ},
+
+#ifdef USE_LZ4
+	{"lz4", WAL_COMPRESSION_LZ4},
+#endif
+
+#ifdef USE_ZSTD
+	{"zstd", WAL_COMPRESSION_ZSTD},
+#endif
+
+	{"on", WAL_COMPRESSION_PGLZ},
+	{"off", WAL_COMPRESSION_NONE},
+	{"true", WAL_COMPRESSION_PGLZ},
+	{"false", WAL_COMPRESSION_NONE},
+	{"yes", WAL_COMPRESSION_PGLZ},
+	{"no", WAL_COMPRESSION_NONE},
+	{"1", WAL_COMPRESSION_PGLZ},
+	{"0", WAL_COMPRESSION_NONE},
+};
 
 /* size of the buffer allocated for error message. */
 #define MAX_ERRORMSG_LEN 1000
@@ -2033,6 +2060,103 @@ XLogRecGetBlockData(XLogReaderState *record, uint8 block_id, Size *len)
 			*len = bkpb->data_len;
 		return bkpb->data;
 	}
+}
+
+/*
+ * Return the wal compression ID, or -1 if the input is
+ * invalid/unrecognized/unsupported.
+ * The compression level is stored in *level.
+ */
+int
+get_compression_level(const char *in, int *level)
+{
+	pg_compress_algorithm alg;
+	pg_compress_specification algdetail;
+	char *algorithm, *detail;
+	char *error_detail;
+	int compress_id = -1;
+
+	/* Parse the algorithm and any detail suffix */
+	parse_compress_options(in, &algorithm, &detail);
+
+	/* Try to find the WAL_COMPRESSION_* value for the algorithm */
+	for (int idx = 0; idx < lengthof(wal_compression_options); ++idx)
+	{
+		if (strcmp(wal_compression_options[idx].name, algorithm) == 0)
+			compress_id = wal_compression_options[idx].compress_id;
+	}
+
+	if (!parse_compress_algorithm(algorithm, &alg))
+	{
+		/*
+		 * The compression algorithm wasn't a commonly-used algorithm name, but
+		 * may be a supported wal_compression: pglz/on/off/etc.
+		 */
+
+		if (compress_id >= 0 && detail != NULL)
+		{
+			/*
+			 * Algorithms which aren't known by the generic parser don't
+			 * support compression level or other options.
+			 */
+#ifndef FRONTEND
+			GUC_check_errdetail("Compression algorithm does not support options: %s",
+					algorithm);
+#endif
+			return -1;
+		}
+
+		*level = 0; /* ignored */
+		return compress_id;
+	}
+	else
+	{
+		/* Show a useful error if the wal compression is known, but not supported */
+		if ((alg == PG_COMPRESSION_ZSTD || alg != PG_COMPRESSION_LZ4) &&
+			compress_id == -1)
+
+		{
+#ifndef FRONTEND
+			GUC_check_errdetail("Compression algorithm is not supported by this build: %s",
+					algorithm);
+#endif
+			return -1;
+		}
+
+		/*
+		 * If the algorithm *is* known, then parse its compression level.  Note
+		 * that "none" is a supported compression algorithm, but not a valid
+		 * option for wal_compression
+		 */
+		parse_compress_specification(alg, detail, &algdetail);
+		error_detail = validate_compress_specification(&algdetail);
+		if (error_detail != NULL)
+		{
+#ifndef FRONTEND
+			GUC_check_errdetail("Could not parse compression detail: %s",
+					error_detail);
+#endif
+			return -1;
+		}
+
+		*level = algdetail.level;
+		if (algdetail.options != 0)
+		{
+#ifndef FRONTEND
+			GUC_check_errdetail("Compression options other than level= are not supported by wal_compression: %s",
+					detail);
+#endif
+			return -1;
+		}
+	}
+
+	return compress_id;
+
+	/*
+	 * gzip or anything parsed by the generic parser which isn't a valid
+	 * wal_compression value will get here.
+	 */
+	return -1;
 }
 
 /*

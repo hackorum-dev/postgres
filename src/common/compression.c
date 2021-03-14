@@ -357,8 +357,6 @@ validate_compress_specification(pg_compress_specification *spec)
 	return NULL;
 }
 
-#ifdef FRONTEND
-
 /*
  * Basic parsing of a value specified through a command-line option, commonly
  * -Z/--compress.
@@ -418,4 +416,3 @@ parse_compress_options(const char *option, char **algorithm, char **detail)
 		*detail = pstrdup(sep + 1);
 	}
 }
-#endif							/* FRONTEND */

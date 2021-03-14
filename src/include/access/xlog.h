@@ -16,6 +16,8 @@
 #include "datatype/timestamp.h"
 #include "lib/stringinfo.h"
 #include "nodes/pg_list.h"
+#include "storage/fd.h"
+#include "utils/guc.h"
 
 
 /* Sync methods */
@@ -53,6 +55,10 @@ extern PGDLLIMPORT bool track_wal_io_timing;
 extern PGDLLIMPORT int wal_decode_buffer_size;
 
 extern PGDLLIMPORT int CheckPointSegments;
+
+extern PGDLLIMPORT char *wal_compression_string;
+extern PGDLLIMPORT int wal_compression;
+extern PGDLLIMPORT int wal_compression_level;
 
 /* Archive modes */
 typedef enum ArchiveMode

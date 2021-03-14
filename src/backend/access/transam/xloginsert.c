@@ -930,8 +930,8 @@ XLogCompressBackupBlock(char *page, uint16 hole_offset, uint16 hole_length,
 
 		case WAL_COMPRESSION_LZ4:
 #ifdef USE_LZ4
-			len = LZ4_compress_default(source, dest, orig_len,
-									   COMPRESS_BUFSIZE);
+			len = LZ4_compress_fast(source, dest, orig_len,
+									   COMPRESS_BUFSIZE, wal_compression_level);
 			if (len <= 0)
 				len = -1;		/* failure */
 #else
@@ -942,7 +942,7 @@ XLogCompressBackupBlock(char *page, uint16 hole_offset, uint16 hole_length,
 		case WAL_COMPRESSION_ZSTD:
 #ifdef USE_ZSTD
 			len = ZSTD_compress(dest, COMPRESS_BUFSIZE, source, orig_len,
-								ZSTD_CLEVEL_DEFAULT);
+								wal_compression_level);
 			if (ZSTD_isError(len))
 				len = -1;		/* failure */
 #else

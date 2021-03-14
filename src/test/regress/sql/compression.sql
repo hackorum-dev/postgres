@@ -151,3 +151,13 @@ ALTER TABLE badcompresstbl ALTER a SET COMPRESSION I_Do_Not_Exist_Compression; -
 DROP TABLE badcompresstbl;
 
 \set HIDE_TOAST_COMPRESSION true
+
+-- pglz doesn't accept a compression level:
+SET wal_compression = 'pglz:1';
+-- none and gzip aren't supported wal_compression algorithms:
+SET wal_compression = 'none';
+SET wal_compression = 'gzip';
+SET wal_compression = 'gzip:1';
+-- wrong spelling with a dash instead of a colon:
+SET wal_compression = 'zstd-1';
+SET wal_compression = 'lz4-1';

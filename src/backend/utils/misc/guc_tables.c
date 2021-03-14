@@ -433,25 +433,6 @@ static const struct config_enum_entry default_toast_compression_options[] = {
 	{NULL, 0, false}
 };
 
-static const struct config_enum_entry wal_compression_options[] = {
-	{"pglz", WAL_COMPRESSION_PGLZ, false},
-#ifdef USE_LZ4
-	{"lz4", WAL_COMPRESSION_LZ4, false},
-#endif
-#ifdef USE_ZSTD
-	{"zstd", WAL_COMPRESSION_ZSTD, false},
-#endif
-	{"on", WAL_COMPRESSION_PGLZ, false},
-	{"off", WAL_COMPRESSION_NONE, false},
-	{"true", WAL_COMPRESSION_PGLZ, true},
-	{"false", WAL_COMPRESSION_NONE, true},
-	{"yes", WAL_COMPRESSION_PGLZ, true},
-	{"no", WAL_COMPRESSION_NONE, true},
-	{"1", WAL_COMPRESSION_PGLZ, true},
-	{"0", WAL_COMPRESSION_NONE, true},
-	{NULL, 0, false}
-};
-
 /*
  * Options for enum values stored in other modules
  */
@@ -4492,6 +4473,16 @@ struct config_string ConfigureNamesString[] =
 	},
 
 	{
+		{"wal_compression", PGC_SUSET, WAL_SETTINGS,
+			gettext_noop("Compresses full-page writes written in WAL file with specified method."),
+			NULL
+		},
+		&wal_compression_string,
+		"no",
+		check_wal_compression, assign_wal_compression, NULL
+	},
+
+	{
 		{"jit_provider", PGC_POSTMASTER, CLIENT_CONN_PRELOAD,
 			gettext_noop("JIT provider to use."),
 			NULL,
@@ -4746,16 +4737,6 @@ struct config_enum ConfigureNamesEnum[] =
 		},
 		&pgstat_fetch_consistency,
 		PGSTAT_FETCH_CONSISTENCY_CACHE, stats_fetch_consistency,
-		NULL, NULL, NULL
-	},
-
-	{
-		{"wal_compression", PGC_SUSET, WAL_SETTINGS,
-			gettext_noop("Compresses full-page writes written in WAL file with specified method."),
-			NULL
-		},
-		&wal_compression,
-		WAL_COMPRESSION_NONE, wal_compression_options,
 		NULL, NULL, NULL
 	},
 

@@ -440,4 +440,6 @@ extern bool XLogRecGetBlockTagExtended(XLogReaderState *record, uint8 block_id,
 									   BlockNumber *blknum,
 									   Buffer *prefetch_buffer);
 
+extern int get_compression_level(const char *in, int *level);
+
 #endif							/* XLOGREADER_H */
