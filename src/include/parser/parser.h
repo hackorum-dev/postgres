@@ -55,9 +55,13 @@ typedef enum
 /* GUC variable in scan.l */
 extern PGDLLIMPORT int backslash_quote;
 
+/* Hook for plugins to get control in raw_parser() */
+typedef List *(*parser_hook_type) (const char *str, RawParseMode mode);;
+extern PGDLLIMPORT parser_hook_type parser_hook;
 
 /* Primary entry point for the raw parsing functions */
 extern List *raw_parser(const char *str, RawParseMode mode);
+extern List *standard_raw_parser(const char *str, RawParseMode mode);
 
 /* Utility functions exported by gram.y (perhaps these should be elsewhere) */
 extern List *SystemFuncName(char *name);
