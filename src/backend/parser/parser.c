@@ -26,6 +26,9 @@
 #include "parser/parser.h"
 #include "parser/scansup.h"
 
+/* Hook for plugins to get control in raw_parser() */
+parser_hook_type parser_hook = NULL;
+
 static bool check_uescapechar(unsigned char escape);
 static char *str_udeescape(const char *str, char escape,
 						   int position, core_yyscan_t yyscanner);
@@ -40,6 +43,18 @@ static char *str_udeescape(const char *str, char escape,
  */
 List *
 raw_parser(const char *str, RawParseMode mode)
+{
+	List *result;
+
+	if (parser_hook)
+		result = (*parser_hook) (str, mode);
+	else
+		result = standard_raw_parser(str, mode);
+	return result;
+}
+
+List *
+standard_raw_parser(const char *str, RawParseMode mode)
 {
 	core_yyscan_t yyscanner;
 	base_yy_extra_type yyextra;
