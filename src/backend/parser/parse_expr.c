@@ -45,6 +45,8 @@
 /* GUC parameters */
 bool		Transform_null_equals = false;
 
+/* Hook for plugins to get control in transformExprRecurse() */
+parse_expr_hook_type parse_expr_hook = NULL;
 
 static Node *transformExprRecurse(ParseState *pstate, Node *expr);
 static Node *transformParamRef(ParseState *pstate, ParamRef *pref);
@@ -374,9 +376,14 @@ transformExprRecurse(ParseState *pstate, Node *expr)
 			break;
 
 		default:
-			/* should not reach here */
-			elog(ERROR, "unrecognized node type: %d", (int) nodeTag(expr));
-			result = NULL;		/* keep compiler quiet */
+			if (parse_expr_hook)
+				result = (*parse_expr_hook) (pstate, expr);
+			else
+			{
+				/* should not reach here */
+				elog(ERROR, "unrecognized node type: %d", (int) nodeTag(expr));
+				result = NULL;		/* keep compiler quiet */
+			}
 			break;
 	}
 
