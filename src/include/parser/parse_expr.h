@@ -15,6 +15,10 @@
 
 #include "parser/parse_node.h"
 
+/* Hook for plugins to get control in transformExprRecurse() */
+typedef Node *(*parse_expr_hook_type) (ParseState *pstate, Node *expr);
+extern PGDLLIMPORT parse_expr_hook_type parse_expr_hook;
+
 /* GUC parameters */
 extern PGDLLIMPORT bool Transform_null_equals;
 
