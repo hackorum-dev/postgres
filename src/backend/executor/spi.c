@@ -69,7 +69,8 @@ static int	_SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 							  bool read_only, bool no_snapshots,
 							  bool fire_triggers, uint64 tcount,
 							  DestReceiver *caller_dest,
-							  ResourceOwner plan_owner);
+							  ResourceOwner plan_owner,
+							  bool no_CCI);
 
 static ParamListInfo _SPI_convert_params(int nargs, Oid *argtypes,
 										 Datum *Values, const char *Nulls);
@@ -525,7 +526,7 @@ SPI_execute(const char *src, bool read_only, long tcount)
 							InvalidSnapshot, InvalidSnapshot,
 							read_only, false,
 							true, tcount,
-							NULL, NULL);
+							NULL, NULL, false);
 
 	_SPI_end_call(true);
 	return res;
@@ -569,7 +570,7 @@ SPI_execute_extended(const char *src,
 							InvalidSnapshot, InvalidSnapshot,
 							options->read_only, options->no_snapshots,
 							true, options->tcount,
-							options->dest, options->owner);
+							options->dest, options->owner, false);
 
 	_SPI_end_call(true);
 	return res;
@@ -598,7 +599,7 @@ SPI_execute_plan(SPIPlanPtr plan, Datum *Values, const char *Nulls,
 							InvalidSnapshot, InvalidSnapshot,
 							read_only, false,
 							true, tcount,
-							NULL, NULL);
+							NULL, NULL, false);
 
 	_SPI_end_call(true);
 	return res;
@@ -629,7 +630,7 @@ SPI_execute_plan_extended(SPIPlanPtr plan,
 							InvalidSnapshot, InvalidSnapshot,
 							options->read_only, options->no_snapshots,
 							true, options->tcount,
-							options->dest, options->owner);
+							options->dest, options->owner, false);
 
 	_SPI_end_call(true);
 	return res;
@@ -653,7 +654,7 @@ SPI_execute_plan_with_paramlist(SPIPlanPtr plan, ParamListInfo params,
 							InvalidSnapshot, InvalidSnapshot,
 							read_only, false,
 							true, tcount,
-							NULL, NULL);
+							NULL, NULL, false);
 
 	_SPI_end_call(true);
 	return res;
@@ -676,7 +677,8 @@ int
 SPI_execute_snapshot(SPIPlanPtr plan,
 					 Datum *Values, const char *Nulls,
 					 Snapshot snapshot, Snapshot crosscheck_snapshot,
-					 bool read_only, bool fire_triggers, long tcount)
+					 bool read_only, bool fire_triggers, long tcount,
+					 bool no_CCI)
 {
 	int			res;
 
@@ -696,7 +698,7 @@ SPI_execute_snapshot(SPIPlanPtr plan,
 							snapshot, crosscheck_snapshot,
 							read_only, false,
 							fire_triggers, tcount,
-							NULL, NULL);
+							NULL, NULL, no_CCI);
 
 	_SPI_end_call(true);
 	return res;
@@ -746,7 +748,7 @@ SPI_execute_with_args(const char *src,
 							InvalidSnapshot, InvalidSnapshot,
 							read_only, false,
 							true, tcount,
-							NULL, NULL);
+							NULL, NULL, false);
 
 	_SPI_end_call(true);
 	return res;
@@ -2271,13 +2273,15 @@ _SPI_prepare_oneshot_plan(const char *src, SPIPlanPtr plan)
  * caller_dest: DestReceiver to receive output, or NULL for normal SPI output
  * plan_owner: ResourceOwner that will be used to hold refcount on plan;
  *		if NULL, CurrentResourceOwner is used (ignored for non-saved plan)
+ * no_CCI: true to skip CommandCounterIncrement even if read_only is false
  */
 static int
 _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 				  Snapshot snapshot, Snapshot crosscheck_snapshot,
 				  bool read_only, bool no_snapshots,
 				  bool fire_triggers, uint64 tcount,
-				  DestReceiver *caller_dest, ResourceOwner plan_owner)
+				  DestReceiver *caller_dest, ResourceOwner plan_owner,
+				  bool no_CCI)
 {
 	int			my_res = 0;
 	uint64		my_processed = 0;
@@ -2464,7 +2468,7 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 			 * If not read-only mode, advance the command counter before each
 			 * command and update the snapshot.
 			 */
-			if (!read_only && !no_snapshots)
+			if (!no_CCI && !read_only && !no_snapshots)
 			{
 				CommandCounterIncrement();
 				UpdateActiveSnapshotCommandId();
@@ -2608,7 +2612,7 @@ _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 		 * command.  This ensures that its effects are visible, in case it was
 		 * DDL that would affect the next CachedPlanSource.
 		 */
-		if (!read_only)
+		if (!no_CCI && !read_only)
 			CommandCounterIncrement();
 	}
 

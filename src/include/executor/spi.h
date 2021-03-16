@@ -129,7 +129,8 @@ extern int	SPI_execute_snapshot(SPIPlanPtr plan,
 								 Datum *Values, const char *Nulls,
 								 Snapshot snapshot,
 								 Snapshot crosscheck_snapshot,
-								 bool read_only, bool fire_triggers, long tcount);
+								 bool read_only, bool fire_triggers, long tcount,
+								 bool no_CCI);
 extern int	SPI_execute_with_args(const char *src,
 								  int nargs, Oid *argtypes,
 								  Datum *Values, const char *Nulls,

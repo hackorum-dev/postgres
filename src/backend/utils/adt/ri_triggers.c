@@ -217,7 +217,7 @@ static bool ri_PerformCheck(const RI_ConstraintInfo *riinfo,
 							RI_QueryKey *qkey, SPIPlanPtr qplan,
 							Relation fk_rel, Relation pk_rel,
 							TupleTableSlot *oldslot, TupleTableSlot *newslot,
-							bool detectNewRows, int expect_OK);
+							bool detectNewRows, int expect_OK, bool modifypk);
 static void ri_ExtractValues(Relation rel, TupleTableSlot *slot,
 							 const RI_ConstraintInfo *riinfo, bool rel_is_pk,
 							 Datum *vals, char *nulls);
@@ -233,7 +233,7 @@ static void ri_ReportViolation(const RI_ConstraintInfo *riinfo,
  * Check foreign key existence (combined for INSERT and UPDATE).
  */
 static Datum
-RI_FKey_check(TriggerData *trigdata)
+RI_FKey_check(TriggerData *trigdata, bool modifypk)
 {
 	const RI_ConstraintInfo *riinfo;
 	Relation	fk_rel;
@@ -397,7 +397,8 @@ RI_FKey_check(TriggerData *trigdata)
 					fk_rel, pk_rel,
 					NULL, newslot,
 					false,
-					SPI_OK_SELECT);
+					SPI_OK_SELECT,
+					modifypk);
 
 	if (SPI_finish() != SPI_OK_FINISH)
 		elog(ERROR, "SPI_finish failed");
@@ -416,11 +417,25 @@ RI_FKey_check(TriggerData *trigdata)
 Datum
 RI_FKey_check_ins(PG_FUNCTION_ARGS)
 {
+	bool modifypk = true;
+
 	/* Check that this is a valid trigger call on the right time and event. */
 	ri_CheckTrigger(fcinfo, "RI_FKey_check_ins", RI_TRIGTYPE_INSERT);
 
+	/*
+	 * We do not allow parallel insert if the pk relation could be modified
+	 * during INSERT command, because it needs to call CommandCounterIncrement
+	 * to let the modifications on pk relation visible for the RI check which
+	 * is not support in parallel worker.
+	 *
+	 * (Note: Once we support CCI in parallel worker, this dependency is no
+	 * longer needed).
+	 */
+	if (IsInParallelMode())
+		modifypk = false;
+
 	/* Share code with UPDATE case. */
-	return RI_FKey_check((TriggerData *) fcinfo->context);
+	return RI_FKey_check((TriggerData *) fcinfo->context, modifypk);
 }
 
 
@@ -436,7 +451,7 @@ RI_FKey_check_upd(PG_FUNCTION_ARGS)
 	ri_CheckTrigger(fcinfo, "RI_FKey_check_upd", RI_TRIGTYPE_UPDATE);
 
 	/* Share code with INSERT case. */
-	return RI_FKey_check((TriggerData *) fcinfo->context);
+	return RI_FKey_check((TriggerData *) fcinfo->context, true);
 }
 
 
@@ -524,7 +539,8 @@ ri_Check_Pk_Match(Relation pk_rel, Relation fk_rel,
 							 fk_rel, pk_rel,
 							 oldslot, NULL,
 							 true,	/* treat like update */
-							 SPI_OK_SELECT);
+							 SPI_OK_SELECT,
+							 true);
 
 	if (SPI_finish() != SPI_OK_FINISH)
 		elog(ERROR, "SPI_finish failed");
@@ -716,7 +732,8 @@ ri_restrict(TriggerData *trigdata, bool is_no_action)
 					fk_rel, pk_rel,
 					oldslot, NULL,
 					true,		/* must detect new rows */
-					SPI_OK_SELECT);
+					SPI_OK_SELECT,
+					true);
 
 	if (SPI_finish() != SPI_OK_FINISH)
 		elog(ERROR, "SPI_finish failed");
@@ -822,7 +839,8 @@ RI_FKey_cascade_del(PG_FUNCTION_ARGS)
 					fk_rel, pk_rel,
 					oldslot, NULL,
 					true,		/* must detect new rows */
-					SPI_OK_DELETE);
+					SPI_OK_DELETE,
+					true);
 
 	if (SPI_finish() != SPI_OK_FINISH)
 		elog(ERROR, "SPI_finish failed");
@@ -943,7 +961,8 @@ RI_FKey_cascade_upd(PG_FUNCTION_ARGS)
 					fk_rel, pk_rel,
 					oldslot, newslot,
 					true,		/* must detect new rows */
-					SPI_OK_UPDATE);
+					SPI_OK_UPDATE,
+					true);
 
 	if (SPI_finish() != SPI_OK_FINISH)
 		elog(ERROR, "SPI_finish failed");
@@ -1122,7 +1141,8 @@ ri_set(TriggerData *trigdata, bool is_set_null)
 					fk_rel, pk_rel,
 					oldslot, NULL,
 					true,		/* must detect new rows */
-					SPI_OK_UPDATE);
+					SPI_OK_UPDATE,
+					true);
 
 	if (SPI_finish() != SPI_OK_FINISH)
 		elog(ERROR, "SPI_finish failed");
@@ -1496,7 +1516,7 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 									  NULL, NULL,
 									  GetLatestSnapshot(),
 									  InvalidSnapshot,
-									  true, false, 1);
+									  true, false, 1, false);
 
 	/* Check result */
 	if (spi_result != SPI_OK_SELECT)
@@ -1736,7 +1756,7 @@ RI_PartitionRemove_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 									  NULL, NULL,
 									  GetLatestSnapshot(),
 									  InvalidSnapshot,
-									  true, false, 1);
+									  true, false, 1, false);
 
 	/* Check result */
 	if (spi_result != SPI_OK_SELECT)
@@ -2238,7 +2258,7 @@ ri_PerformCheck(const RI_ConstraintInfo *riinfo,
 				RI_QueryKey *qkey, SPIPlanPtr qplan,
 				Relation fk_rel, Relation pk_rel,
 				TupleTableSlot *oldslot, TupleTableSlot *newslot,
-				bool detectNewRows, int expect_OK)
+				bool detectNewRows, int expect_OK, bool modifypk)
 {
 	Relation	query_rel,
 				source_rel;
@@ -2336,7 +2356,7 @@ ri_PerformCheck(const RI_ConstraintInfo *riinfo,
 	spi_result = SPI_execute_snapshot(qplan,
 									  vals, nulls,
 									  test_snapshot, crosscheck_snapshot,
-									  false, false, limit);
+									  false, false, limit, !modifypk);
 
 	/* Restore UID and security context */
 	SetUserIdAndSecContext(save_userid, save_sec_context);
