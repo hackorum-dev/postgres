@@ -138,7 +138,7 @@ alter table para_insert_p1 set (parallel_insert_enabled = on);
 
 --
 -- Test INSERT with underlying query.
--- (should create plan with parallel SELECT, Gather parent node)
+-- (should create plan with parallel INSERT+SELECT, Gather parent node)
 --
 explain (costs off) insert into para_insert_p1 select unique1, stringu1 from tenk1;
 insert into para_insert_p1 select unique1, stringu1 from tenk1;
@@ -149,7 +149,7 @@ select count(*) from (select distinct cmin,xmin from para_insert_p1) as dt;
 
 --
 -- Test INSERT with ordered underlying query.
--- (should create plan with parallel SELECT, GatherMerge parent node)
+-- (should create plan with INSERT + parallel SELECT, GatherMerge parent node)
 --
 truncate para_insert_p1 cascade;
 explain (costs off) insert into para_insert_p1 select unique1, stringu1 from tenk1 order by unique1;
@@ -161,7 +161,7 @@ select count(*) from (select distinct cmin,xmin from para_insert_p1) as dt;
 
 --
 -- Test INSERT with RETURNING clause.
--- (should create plan with parallel SELECT, Gather parent node)
+-- (should create plan with parallel INSERT+SELECT, Gather parent node)
 --
 create table test_data1(like test_data);
 explain (costs off) insert into test_data1 select * from test_data where a = 10 returning a as data;
@@ -297,14 +297,14 @@ explain (costs off) insert into names4 select * from names;
 
 --
 -- Test INSERT with underlying query - and RETURNING (no projection)
--- (should create a parallel plan; parallel SELECT)
+-- (should create a parallel plan; parallel INSERT+SELECT)
 --
 create table names5 (like names);
 explain (costs off) insert into names5 select * from names returning *;
 
 --
 -- Test INSERT with underlying ordered query - and RETURNING (no projection)
--- (should create a parallel plan; parallel SELECT)
+-- (should create a parallel plan; INSERT + parallel SELECT)
 --
 create table names6 (like names);
 explain (costs off) insert into names6 select * from names order by last_name returning *;
@@ -312,7 +312,7 @@ insert into names6 select * from names order by last_name returning *;
 
 --
 -- Test INSERT with underlying ordered query - and RETURNING (with projection)
--- (should create a parallel plan; parallel SELECT)
+-- (should create a parallel plan; INSERT + parallel SELECT)
 --
 create table names7 (like names);
 explain (costs off) insert into names7 select * from names order by last_name returning last_name || ', ' || first_name as last_name_then_first_name;
@@ -364,7 +364,7 @@ insert into temp_names select * from names;
 --
 
 --
--- No column defaults, should use parallel SELECT
+-- No column defaults, should use parallel INSERT+SELECT
 --
 explain (costs off) insert into testdef(a,b,c,d) select a,a*2,a*4,a*8 from test_data;
 insert into testdef(a,b,c,d) select a,a*2,a*4,a*8 from test_data;
@@ -377,7 +377,7 @@ truncate testdef;
 explain (costs off) insert into testdef(a,c,d) select a,a*4,a*8 from test_data;
 
 --
--- Parallel restricted column default, should use parallel SELECT
+-- Parallel restricted column default, should use INSERT + parallel SELECT
 --
 explain (costs off) insert into testdef(a,b,d) select a,a*2,a*8 from test_data;
 insert into testdef(a,b,d) select a,a*2,a*8 from test_data;
@@ -385,7 +385,7 @@ select * from testdef order by a;
 truncate testdef;
 
 --
--- Parallel safe column default, should use parallel SELECT
+-- Parallel safe column default, should use parallel INSERT+SELECT
 --
 explain (costs off) insert into testdef(a,b,c) select a,a*2,a*4 from test_data;
 insert into testdef(a,b,c) select a,a*2,a*4 from test_data;
@@ -479,7 +479,8 @@ explain (costs off) insert into table_check_b(a,b,c) select unique1, unique2, st
 
 --
 -- Test INSERT into table with parallel-safe before+after stmt-level triggers
--- (should create a parallel SELECT plan; triggers should fire)
+-- (should create a parallel INSERT+SELECT plan;
+--  stmt-level before+after triggers should fire)
 --
 create table names_with_safe_trigger (like names);
 create or replace function insert_before_trigger_safe() returns trigger as $$
@@ -503,7 +504,8 @@ insert into names_with_safe_trigger select * from names;
 
 --
 -- Test INSERT into table with parallel-unsafe before+after stmt-level triggers
--- (should not create a parallel plan; triggers should fire)
+-- (should not create a parallel plan;
+--  stmt-level before+after triggers should fire)
 --
 create table names_with_unsafe_trigger (like names);
 create or replace function insert_before_trigger_unsafe() returns trigger as $$
@@ -527,7 +529,7 @@ insert into names_with_unsafe_trigger select * from names;
 
 --
 -- Test INSERT into table with parallel-restricted before+after stmt-level trigger
--- (should create a parallel plan with parallel SELECT;
+-- (should create a parallel plan with INSERT + parallel SELECT;
 --  stmt-level before+after triggers should fire)
 --
 create table names_with_restricted_trigger (like names);
@@ -573,7 +575,7 @@ create table rp1 partition of rp for values from (minvalue) to (0);
 create table rp2 partition of rp for values from (0) to (maxvalue);
 create table foo (a) as select unique1 from tenk1;
 prepare q as insert into rp select * from foo where a%2 = 0;
--- should create a parallel plan
+-- should create a plan with parallel INSERT+SELECT
 explain (costs off) execute q;
 
 create or replace function make_table_bar () returns trigger language
