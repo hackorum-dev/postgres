@@ -319,3 +319,37 @@ pg_popcount(const char *buf, int bytes)
 
 	return popcnt;
 }
+
+/*
+ * pg_xorcount
+ *		Count the number of 1-bits in the result of xor operation.
+ */
+uint64
+pg_xorcount_long(const char *a, const char *b, int bytes)
+{
+	uint64		popcnt = 0;
+
+#if SIZEOF_VOID_P >= 8
+	/* Process in 64-bit chunks if both are aligned. */
+	if (PointerIsAligned(a, uint64) && PointerIsAligned(b, uint64))
+	{
+		const uint64 *a_words = (const uint64 *) a;
+		const uint64 *b_words = (const uint64 *) b;
+
+		while (bytes >= 8)
+		{
+			popcnt += pg_popcount64(*a_words++ ^ *b_words++);
+			bytes -= 8;
+		}
+
+		a = (const char *) a_words;
+		b = (const char *) b_words;
+	}
+#endif
+
+	/* Process any remaining bytes */
+	while (bytes--)
+		popcnt += pg_number_of_ones[(unsigned char) (*a++ ^ *b++)];
+
+	return popcnt;
+}

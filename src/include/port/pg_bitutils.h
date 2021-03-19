@@ -214,6 +214,23 @@ extern int	(*pg_popcount64) (uint64 word);
 /* Count the number of one-bits in a byte array */
 extern uint64 pg_popcount(const char *buf, int bytes);
 
+/* Count the number of 1-bits in the result of xor operation */
+extern uint64 pg_xorcount_long(const char *a, const char *b, int bytes);
+static inline uint64 pg_xorcount(const char *a, const char *b, int bytes)
+{
+	/* For smaller lengths, do simple byte-by-byte traversal */
+	if (bytes <= 32)
+	{
+		uint64		popcnt = 0;
+
+		while (bytes--)
+			popcnt += pg_number_of_ones[(unsigned char) (*a++ ^ *b++)];
+		return popcnt;
+	}
+	else
+		return pg_xorcount_long(a, b, bytes);
+}
+
 /*
  * Rotate the bits of "word" to the right by n bits.
  */
