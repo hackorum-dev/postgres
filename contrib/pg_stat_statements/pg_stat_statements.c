@@ -2745,7 +2745,18 @@ entry_reset(Oid userid, Oid dbid, int64 queryid, bool minmax_only)
 
 	/* All entries are removed? */
 	if (num_entries != num_remove)
+	{
+		if (num_remove)
+		{
+			/* Increment the number of times entries are deallocated */
+			volatile pgssSharedState *s = (volatile pgssSharedState *) pgss;
+
+			SpinLockAcquire(&s->mutex);
+			s->stats.dealloc += 1;
+			SpinLockRelease(&s->mutex);
+		}
 		goto release_lock;
+	}
 
 	/*
 	 * Reset global statistics for pg_stat_statements since all entries are
