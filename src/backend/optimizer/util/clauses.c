@@ -100,6 +100,7 @@ typedef struct
 	RangeTblEntry *target_rte;	/* query's target relation if any */
 	CmdType		command_type;	/* query's command type */
 	PlannerGlobal *planner_global;	/* global info for planner invocation */
+	List	   *pk_rels;		/* OIDs of relations referenced by target relation */
 } max_parallel_hazard_context;
 
 static bool contain_agg_clause_walker(Node *node, void *context);
@@ -582,6 +583,7 @@ max_parallel_hazard(Query *parse, PlannerGlobal *glob)
 		rt_fetch(parse->resultRelation, parse->rtable) : NULL;
 	context.command_type = parse->commandType;
 	context.planner_global = glob;
+	context.pk_rels = NIL;
 	(void) max_parallel_hazard_walker((Node *) parse, &context);
 
 	return context.max_hazard;
@@ -618,6 +620,7 @@ is_parallel_safe(PlannerInfo *root, Node *node)
 	context.target_rte = NULL;
 	context.command_type = CMD_UNKNOWN;
 	context.planner_global = NULL;
+	context.pk_rels = NIL;
 
 	/*
 	 * The params that refer to the same or parent query level are considered
@@ -873,7 +876,7 @@ static bool
 target_rel_max_parallel_hazard(max_parallel_hazard_context *context)
 {
 	bool		max_hazard_found;
-
+	ListCell   *lc;
 	Relation	targetRel;
 
 	/*
@@ -884,6 +887,36 @@ target_rel_max_parallel_hazard(max_parallel_hazard_context *context)
 	max_hazard_found = target_rel_max_parallel_hazard_recurse(targetRel,
 															  context->command_type,
 															  context);
+
+	/*
+	 * Check if target relation is one of PK relations.
+	 */
+	if (!max_hazard_found && context->max_hazard == PROPARALLEL_SAFE)
+	{
+		if (list_member_oid(context->pk_rels, context->target_rte->relid))
+		{
+			max_hazard_found = max_parallel_hazard_test(PROPARALLEL_RESTRICTED,
+														context);
+		}
+	}
+
+	/*
+	 * check if any pk relation is partition of the target table.
+	 */
+	if (context->max_hazard == PROPARALLEL_SAFE)
+	{
+		foreach(lc, context->pk_rels)
+		{
+			if (list_member_oid(context->planner_global->partitionOids,
+							   lfirst_oid(lc)))
+			{
+				max_hazard_found = max_parallel_hazard_test(PROPARALLEL_RESTRICTED,
+															context);
+				break;
+			}
+		}
+	}
+
 	table_close(targetRel, NoLock);
 
 	return max_hazard_found;
@@ -971,10 +1004,60 @@ target_rel_trigger_max_parallel_hazard(Relation rel,
 	 */
 	for (i = 0; i < rel->trigdesc->numtriggers; i++)
 	{
+		int			trigtype;
 		Oid			tgfoid = rel->trigdesc->triggers[i].tgfoid;
 
 		if (max_parallel_hazard_test(func_parallel(tgfoid), context))
 			return true;
+
+		/*
+		 * If the trigger type is RI_TRIGGER_FK, this indicates a FK exists in
+		 * the relation, this should result in creation of new CommandIds if
+		 * PK relation is modified.
+		 *
+		 * However, creation of new CommandIds is not supported in a
+		 * parallel worker(but is safe in the parallel leader). So, treat all
+		 * scenarios that may modify PK relation as parallel-restricted.
+		 */
+		trigtype = RI_FKey_trigger_type(tgfoid);
+		if (trigtype == RI_TRIGGER_FK)
+		{
+			HeapTuple	tup;
+			Form_pg_constraint conForm;
+			Oid constraintOid;
+
+			constraintOid = rel->trigdesc->triggers[i].tgconstraint;
+
+			/*
+			 * Fetch the pg_constraint row so we can fill in the entry.
+			 */
+			tup = SearchSysCache1(CONSTROID, ObjectIdGetDatum(constraintOid));
+			if (!HeapTupleIsValid(tup)) /* should not happen */
+				elog(ERROR, "cache lookup failed for constraint %u",
+					constraintOid);
+
+			conForm = (Form_pg_constraint) GETSTRUCT(tup);
+			if (conForm->contype != CONSTRAINT_FOREIGN) /* should not happen */
+				elog(ERROR, "constraint %u is not a foreign key constraint",
+					constraintOid);
+
+			/*
+			 * If FK relation and PK relation are not the same,
+			 * they could be partitions of the same table.
+			 * Remember Oids of PK relation for the later check.
+			 */
+			if (conForm->confrelid != conForm->conrelid)
+				context->pk_rels = lappend_oid(context->pk_rels, conForm->confrelid);
+
+			/*
+			 * If FK relation and PK relation are the same, the PK relation
+			 * could be modfied.
+			 */
+			else if (max_parallel_hazard_test(PROPARALLEL_RESTRICTED, context))
+				return true;
+
+			ReleaseSysCache(tup);
+		}
 	}
 
 	return false;
