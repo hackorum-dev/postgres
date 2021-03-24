@@ -769,6 +769,8 @@ InitCatCache(int id,
 {
 	CatCache   *cp;
 	MemoryContext oldcxt;
+	MemoryContext mycxt;
+	char		name[32];
 	size_t		sz;
 	int			i;
 
@@ -792,7 +794,12 @@ InitCatCache(int id,
 	if (!CacheMemoryContext)
 		CreateCacheMemoryContext();
 
-	oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
+	mycxt = AllocSetContextCreate(CacheMemoryContext, "catcache",
+								  ALLOCSET_DEFAULT_SIZES);
+
+	snprintf(name, sizeof(name), "catcache id %d", id);
+	oldcxt = MemoryContextSwitchTo(mycxt);
+	MemoryContextSetIdentifier(mycxt, (const char *)pstrdup(name));
 
 	/*
 	 * if first time through, initialize the cache group header
@@ -833,6 +840,7 @@ InitCatCache(int id,
 	cp->cc_nkeys = nkeys;
 	for (i = 0; i < nkeys; ++i)
 		cp->cc_keyno[i] = key[i];
+	cp->cc_mcxt = mycxt;
 
 	/*
 	 * new cache is initialized as far as we can go for now. print some
@@ -932,12 +940,12 @@ CatalogCacheInitializeCache(CatCache *cache)
 	relation = table_open(cache->cc_reloid, AccessShareLock);
 
 	/*
-	 * switch to the cache context so our allocations do not vanish at the end
-	 * of a transaction
+	 * switch to our own context under the cache context so our allocations do
+	 * not vanish at the end of a transaction
 	 */
-	Assert(CacheMemoryContext != NULL);
+	Assert(CacheMemoryContext != NULL && cache->cc_mcxt != NULL);
 
-	oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
+	oldcxt = MemoryContextSwitchTo(cache->cc_mcxt);
 
 	/*
 	 * copy the relcache's tuple descriptor to permanent cache storage
@@ -998,7 +1006,7 @@ CatalogCacheInitializeCache(CatCache *cache)
 		 */
 		fmgr_info_cxt(eqfunc,
 					  &cache->cc_skey[i].sk_func,
-					  CacheMemoryContext);
+					  cache->cc_mcxt);
 
 		/* Initialize sk_attno suitably for HeapKeyTest() and heap scans */
 		cache->cc_skey[i].sk_attno = cache->cc_keyno[i];
@@ -1697,7 +1705,7 @@ SearchCatCacheList(CatCache *cache,
 		table_close(relation, AccessShareLock);
 
 		/* Now we can build the CatCList entry. */
-		oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
+		oldcxt = MemoryContextSwitchTo(cache->cc_mcxt);
 		nmembers = list_length(ctlist);
 		cl = (CatCList *)
 			palloc(offsetof(CatCList, members) + nmembers * sizeof(CatCTup *));
@@ -1830,7 +1838,7 @@ CatalogCacheCreateEntry(CatCache *cache, HeapTuple ntp, Datum *arguments,
 			dtp = ntp;
 
 		/* Allocate memory for CatCTup and the cached tuple in one go */
-		oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
+		oldcxt = MemoryContextSwitchTo(cache->cc_mcxt);
 
 		ct = (CatCTup *) palloc(sizeof(CatCTup) +
 								MAXIMUM_ALIGNOF + dtp->t_len);
@@ -1865,7 +1873,7 @@ CatalogCacheCreateEntry(CatCache *cache, HeapTuple ntp, Datum *arguments,
 	else
 	{
 		Assert(negative);
-		oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
+		oldcxt = MemoryContextSwitchTo(cache->cc_mcxt);
 		ct = (CatCTup *) palloc(sizeof(CatCTup));
 
 		/*
