@@ -1631,7 +1631,10 @@ include_dir 'conf.d'
 
        <para>
         The default is <literal>TLSv1.2</literal>, which satisfies industry
-        best practices as of this writing.
+        best practices as of 
+        <ulink url="https://tools.ietf.org/html/rfc8996">RFC 8996</ulink>
+        which deprecates <literal>TLSv1</literal> and
+        <literal>TLSv1.1</literal>.
        </para>
 
        <para>
