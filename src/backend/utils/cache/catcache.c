@@ -763,6 +763,7 @@ CatCache *
 InitCatCache(int id,
 			 Oid reloid,
 			 Oid indexoid,
+			 char *idstr,
 			 int nkeys,
 			 const int *key,
 			 int nbuckets)
@@ -770,7 +771,6 @@ InitCatCache(int id,
 	CatCache   *cp;
 	MemoryContext oldcxt;
 	MemoryContext mycxt;
-	char		name[32];
 	size_t		sz;
 	int			i;
 
@@ -797,9 +797,10 @@ InitCatCache(int id,
 	mycxt = AllocSetContextCreate(CacheMemoryContext, "catcache",
 								  ALLOCSET_DEFAULT_SIZES);
 
-	snprintf(name, sizeof(name), "catcache id %d", id);
 	oldcxt = MemoryContextSwitchTo(mycxt);
-	MemoryContextSetIdentifier(mycxt, (const char *)pstrdup(name));
+
+	/* we can use idstr without copying since the caller gave us a const */
+	MemoryContextSetIdentifier(mycxt, idstr);
 
 	/*
 	 * if first time through, initialize the cache group header

@@ -192,7 +192,7 @@ extern PGDLLIMPORT MemoryContext CacheMemoryContext;
 
 extern void CreateCacheMemoryContext(void);
 
-extern CatCache *InitCatCache(int id, Oid reloid, Oid indexoid,
+extern CatCache *InitCatCache(int id, Oid reloid, Oid indexoid, char* idstr,
 							  int nkeys, const int *key,
 							  int nbuckets);
 extern void InitCatCachePhase2(CatCache *cache, bool touch_index);
