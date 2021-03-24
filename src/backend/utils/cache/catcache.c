@@ -771,6 +771,7 @@ InitCatCache(int id,
 	CatCache   *cp;
 	MemoryContext oldcxt;
 	MemoryContext mycxt;
+	char		buf[32];
 	size_t		sz;
 	int			i;
 
@@ -799,8 +800,8 @@ InitCatCache(int id,
 
 	oldcxt = MemoryContextSwitchTo(mycxt);
 
-	/* we can use idstr without copying since the caller gave us a const */
-	MemoryContextSetIdentifier(mycxt, idstr);
+	snprintf(buf, 32, "%s[%d]", idstr, id);
+	MemoryContextSetIdentifier(mycxt, (const char *) pstrdup(buf));
 
 	/*
 	 * if first time through, initialize the cache group header
