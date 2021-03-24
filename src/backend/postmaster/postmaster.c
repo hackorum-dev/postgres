@@ -401,7 +401,6 @@ static void SIGHUP_handler(SIGNAL_ARGS);
 static void pmdie(SIGNAL_ARGS);
 static void reaper(SIGNAL_ARGS);
 static void sigusr1_handler(SIGNAL_ARGS);
-static void process_startup_packet_die(SIGNAL_ARGS);
 static void dummy_handler(SIGNAL_ARGS);
 static void StartupPacketTimeoutHandler(void);
 static void CleanupBackend(int pid, int exitstatus);
@@ -3085,7 +3084,7 @@ reaper(SIGNAL_ARGS)
 				 * nothing left for it to do.
 				 */
 				if (PgStatPID != 0)
-					signal_child(PgStatPID, SIGQUIT);
+					signal_child(PgStatPID, SIGUSR2);
 			}
 			else
 			{
@@ -4320,8 +4319,14 @@ BackendInitialize(Port *port)
 	 * Exiting with _exit(1) is only possible because we have not yet touched
 	 * shared memory; therefore no outside-the-process state needs to get
 	 * cleaned up.
+	 *
+	 * One might be tempted to try to send a message, or log one, indicating
+	 * why we are disconnecting.  However, that would be quite unsafe in
+	 * itself. Also, it seems undesirable to provide clues about the
+	 * database's state to a client that has not yet completed authentication,
+	 * or even sent us a startup packet.
 	 */
-	pqsignal(SIGTERM, process_startup_packet_die);
+	pqsignal(SIGTERM, SignalHandlerForNonCrashExit);
 	/* SIGQUIT handler was already set up by InitPostmasterChild */
 	InitializeTimeouts();		/* establishes SIGALRM handler */
 	PG_SETMASK(&StartupBlockSig);
@@ -5275,25 +5280,6 @@ sigusr1_handler(SIGNAL_ARGS)
 }
 
 /*
- * SIGTERM while processing startup packet.
- *
- * Running proc_exit() from a signal handler would be quite unsafe.
- * However, since we have not yet touched shared memory, we can just
- * pull the plug and exit without running any atexit handlers.
- *
- * One might be tempted to try to send a message, or log one, indicating
- * why we are disconnecting.  However, that would be quite unsafe in itself.
- * Also, it seems undesirable to provide clues about the database's state
- * to a client that has not yet completed authentication, or even sent us
- * a startup packet.
- */
-static void
-process_startup_packet_die(SIGNAL_ARGS)
-{
-	_exit(1);
-}
-
-/*
  * Dummy signal handler
  *
  * We use this for signals that we don't actually use in the postmaster,
@@ -5309,7 +5295,7 @@ dummy_handler(SIGNAL_ARGS)
 
 /*
  * Timeout while processing startup packet.
- * As for process_startup_packet_die(), we exit via _exit(1).
+ * As for SignalHandlerForNonCrashExit(), we exit via _exit(1).
  */
 static void
 StartupPacketTimeoutHandler(void)

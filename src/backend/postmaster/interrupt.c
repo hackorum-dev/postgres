@@ -64,9 +64,28 @@ SignalHandlerForConfigReload(SIGNAL_ARGS)
 }
 
 /*
- * Simple signal handler for exiting quickly as if due to a crash.
+ * Simple signal handler for processes which have not yet touched or do not
+ * touch shared memory to exit quickly.
  *
- * Normally, this would be used for handling SIGQUIT.
+ * Note that if processes already touched shared memory, use
+ * SignalHandlerForCrashExit() instead and force the postmaster into
+ * a system reset cycle because shared memory may be corrupted.
+ */
+void
+SignalHandlerForNonCrashExit(SIGNAL_ARGS)
+{
+	/*
+	 * Since we don't touch shared memory, we can just pull the plug and exit
+	 * without running any atexit handlers.
+	 */
+	_exit(1);
+}
+
+/*
+ * Simple signal handler for processes which have touched shared memory to
+ * exit quickly.
+ *
+ * Normally, this would be used for handling SIGQUIT as if due to a crash.
  */
 void
 SignalHandlerForCrashExit(SIGNAL_ARGS)
@@ -93,9 +112,8 @@ SignalHandlerForCrashExit(SIGNAL_ARGS)
  * shut down and exit.
  *
  * Typically, this handler would be used for SIGTERM, but some processes use
- * other signals. In particular, the checkpointer exits on SIGUSR2, the
- * stats collector on SIGQUIT, and the WAL writer exits on either SIGINT
- * or SIGTERM.
+ * other signals. In particular, the checkpointer and the stats collector exit
+ * on SIGUSR2, and the WAL writer exits on either SIGINT or SIGTERM.
  *
  * ShutdownRequestPending should be checked at a convenient place within the
  * main loop, or else the main loop should call HandleMainLoopInterrupts.

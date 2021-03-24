@@ -1,7 +1,23 @@
 /* ----------
  * pgstat.c
  *
- *	All the statistics collector stuff hacked up in one big, ugly file.
+ * All the statistics collector stuff hacked up in one big, ugly file.
+ *
+ * The statistics collector is started by the postmaster as soon as the
+ * startup subprocess finishes, or as soon as the postmaster is ready
+ * to accept read only connections during archive recovery.  It remains
+ * alive until the postmaster commands it to terminate.  Normal
+ * termination is by SIGUSR2 after the checkpointer must exit(0),
+ * which instructs the statistics collector to save the final statistics
+ * to reuse at next startup and then exit(0).
+ * Emergency termination is by SIGQUIT; like any backend, the statistics
+ * collector will exit quickly without saving the final statistics.  It's
+ * ok because the startup process will remove all statistics at next
+ * startup after emergency termination.
+ *
+ * Because the statistics collector doesn't touch shared memory, even if
+ * the statistics collector exits unexpectedly, the postmaster doesn't
+ * treat it as a crash.  The postmaster will just try to restart a new one.
  *
  *	TODO:	- Separate collector, postmaster and backend stuff
  *			  into different files.
@@ -724,6 +740,7 @@ pgstat_reset_remove_files(const char *directory)
 
 		snprintf(fname, sizeof(fname), "%s/%s", directory,
 				 entry->d_name);
+		elog(DEBUG2, "removing stats file \"%s\"", fname);
 		unlink(fname);
 	}
 	FreeDir(dir);
@@ -4821,17 +4838,31 @@ PgstatCollectorMain(int argc, char *argv[])
 
 	/*
 	 * Ignore all signals usually bound to some action in the postmaster,
-	 * except SIGHUP and SIGQUIT.  Note we don't need a SIGUSR1 handler to
-	 * support latch operations, because we only use a local latch.
+	 * except SIGHUP, SIGQUIT and SIGUSR2.  Note we don't need a SIGUSR1
+	 * handler to support latch operations, because we only use a local latch.
+	 *
+	 * We deliberately ignore SIGTERM and exit in correct order because we
+	 * want to collect the stats sent during the shutdown from all processes.
+	 * SIGTERM will be received during a standard Unix system shutdown cycle
+	 * because init will SIGTERM all processes at once, and the postmaster
+	 * will SIGTERM all processes at once when recovery_target_action=shutdown
+	 * and the startup process exits after reaching the recovery target.  We
+	 * want to wait for the checkpointer, which is the process sends the stats
+	 * finally, to exit, whereupon the postmaster will tell us it's okay to
+	 * shut down (via SIGUSR2)
+	 *
+	 * If SIGQUIT is received, exit quickly without doing any additional work,
+	 * for example writing stats files.  We arrange to do _exit(1) because the
+	 * stats collector doesn't touch shared memory.
 	 */
 	pqsignal(SIGHUP, SignalHandlerForConfigReload);
 	pqsignal(SIGINT, SIG_IGN);
 	pqsignal(SIGTERM, SIG_IGN);
-	pqsignal(SIGQUIT, SignalHandlerForShutdownRequest);
+	pqsignal(SIGQUIT, SignalHandlerForNonCrashExit);
 	pqsignal(SIGALRM, SIG_IGN);
 	pqsignal(SIGPIPE, SIG_IGN);
 	pqsignal(SIGUSR1, SIG_IGN);
-	pqsignal(SIGUSR2, SIG_IGN);
+	pqsignal(SIGUSR2, SignalHandlerForShutdownRequest);
 	/* Reset some signals that are accepted by postmaster but not here */
 	pqsignal(SIGCHLD, SIG_DFL);
 	PG_SETMASK(&UnBlockSig);
@@ -4852,8 +4883,8 @@ PgstatCollectorMain(int argc, char *argv[])
 	AddWaitEventToSet(wes, WL_SOCKET_READABLE, pgStatSock, NULL, NULL);
 
 	/*
-	 * Loop to process messages until we get SIGQUIT or detect ungraceful
-	 * death of our parent postmaster.
+	 * Loop to process messages until we get SIGUSR2, SIGQUIT or detect
+	 * ungraceful death of our parent postmaster.
 	 *
 	 * For performance reasons, we don't want to do ResetLatch/WaitLatch after
 	 * every message; instead, do that only after a recv() fails to obtain a
@@ -4871,7 +4902,7 @@ PgstatCollectorMain(int argc, char *argv[])
 		ResetLatch(MyLatch);
 
 		/*
-		 * Quit if we get SIGQUIT from the postmaster.
+		 * Quit if we get SIGUSR2 from the postmaster.
 		 */
 		if (ShutdownRequestPending)
 			break;
