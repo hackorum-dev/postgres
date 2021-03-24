@@ -3662,6 +3662,9 @@ printTable(const printTableContent *cont,
 	if (cont->opt->format == PRINT_NOTHING)
 		return;
 
+	/* Clear any prior error indicator */
+	clearerr(fout);
+
 	/* print_aligned_*() handle the pager themselves */
 	if (!is_pager &&
 		cont->opt->format != PRINT_ALIGNED &&
