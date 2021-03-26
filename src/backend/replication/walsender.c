@@ -3625,9 +3625,18 @@ retry:
 				 &errinfo))
 		WALReadRaiseError(&errinfo);
 
-	/* See logical_read_xlog_page(). */
-	XLByteToSeg(startptr, segno, xlogreader->segcxt.ws_segsize);
-	CheckXLogRemoved(segno, xlogreader->seg.ws_tli);
+	/*
+	 * See logical_read_xlog_page().  However, there's a case where we're
+	 * reading the segment which is removed/recycled by shutdown checkpoint.
+	 * We continue to read it in that case because 1) It's safe because no wal
+	 * activity happens after shutdown checkpoint completes, 2) We need to do
+	 * our best to send WAL up to the shutdown checkpoint record.
+	 */
+	if (MyWalSnd->state < WALSNDSTATE_STOPPING)
+	{
+		XLByteToSeg(startptr, segno, xlogreader->segcxt.ws_segsize);
+		CheckXLogRemoved(segno, xlogreader->seg.ws_tli);
+	}
 
 	/*
 	 * During recovery, the currently-open WAL file might be replaced with the
