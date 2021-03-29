@@ -11647,24 +11647,16 @@ void
 generate_operator_clause(StringInfo buf,
 						 const char *leftop, Oid leftoptype,
 						 Oid opoid,
-						 const char *rightop, Oid rightoptype,
-						 char fkreftype)
+						 const char *rightop, Oid rightoptype)
 {
 	HeapTuple	opertup;
 	Form_pg_operator operform;
 	char	   *oprname;
 	char	   *nspname;
-	Oid			oproid;
 
-	/* Override operator with <<@ in case of FK array */
-	if(fkreftype == FKCONSTR_REF_EACH_ELEMENT)
-		oproid = OID_ARRAY_ELEMCONTAINED_OP;
-	else
-		oproid = opoid;
-
-	opertup = SearchSysCache1(OPEROID, ObjectIdGetDatum(oproid));
+	opertup = SearchSysCache1(OPEROID, ObjectIdGetDatum(opoid));
 	if (!HeapTupleIsValid(opertup))
-		elog(ERROR, "cache lookup failed for operator %u", oproid);
+		elog(ERROR, "cache lookup failed for operator %u", opoid);
 	operform = (Form_pg_operator) GETSTRUCT(opertup);
 	Assert(operform->oprkind == 'b');
 	oprname = NameStr(operform->oprname);

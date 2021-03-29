@@ -111,7 +111,6 @@ typedef struct RI_ConstraintInfo
 	char		confupdtype;	/* foreign key's ON UPDATE action */
 	char		confdeltype;	/* foreign key's ON DELETE action */
 	char		confmatchtype;	/* foreign key's match type */
-	bool		has_array;		/* true if any reftype is EACH_ELEMENT */
 	int			nkeys;			/* number of key columns */
 	int16		pk_attnums[RI_MAX_NUMKEYS]; /* attnums of referenced cols */
 	int16		fk_attnums[RI_MAX_NUMKEYS]; /* attnums of referencing cols */
@@ -189,8 +188,7 @@ static void ri_GenerateQual(StringInfo buf,
 							const char *sep,
 							const char *leftop, Oid leftoptype,
 							Oid opoid,
-							const char *rightop, Oid rightoptype,
-							char fkreftype);
+							const char *rightop, Oid rightoptype);
 static void ri_GenerateQualCollation(StringInfo buf, Oid collation);
 static int	ri_NullCheck(TupleDesc tupdesc, TupleTableSlot *slot,
 						 const RI_ConstraintInfo *riinfo, bool rel_is_pk);
@@ -349,89 +347,107 @@ RI_FKey_check(TriggerData *trigdata)
 	if ((qplan = ri_FetchPreparedPlan(&qkey)) == NULL)
 	{
 		StringInfoData querybuf;
-		StringInfoData countbuf;
 		char		pkrelname[MAX_QUOTED_REL_NAME_LEN];
 		char		attname[MAX_QUOTED_NAME_LEN];
 		char		paramname[16];
 		const char *querysep;
 		Oid			queryoids[RI_MAX_NUMKEYS];
 		const char *pk_only;
+		int			each_elem;
 
-		/* ----------
-		 * The query string built is
-		 *	SELECT 1 FROM [ONLY] <pktable> x WHERE pkatt1 = $1 [AND ...]
-		 *		   FOR KEY SHARE OF x
-		 * The type id's for the $ parameters are those of the
-		 * corresponding FK attributes.
-		 *
-		 * In case of an array ELEMENT foreign key, the previous query is used
-		 * to count the number of matching rows and see if every combination
-		 * is actually referenced.
-		 * The wrapping query is
-		 *	SELECT 1 WHERE
-		 *	  (SELECT count(DISTINCT y) FROM unnest($1) y)
-		 *	  = (SELECT count(*) FROM (<QUERY>) z)
-		 * ----------
-		 */
-		initStringInfo(&querybuf);
-		pk_only = pk_rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE ?
-			"" : "ONLY ";
-		quoteRelationName(pkrelname, pk_rel);
-		appendStringInfo(&querybuf, "SELECT 1 FROM %s%s x",
-						 pk_only, pkrelname);
-		querysep = "WHERE";
+		for (each_elem = 0; each_elem < riinfo->nkeys; each_elem++)
+			if (riinfo->fk_reftypes[each_elem] == FKCONSTR_REF_EACH_ELEMENT)
+				break;
 
-		if (riinfo->has_array)
+		if (each_elem < riinfo->nkeys)
 		{
-			initStringInfo(&countbuf);
-			appendStringInfo(&countbuf, "SELECT 1 WHERE ");
-		}
-
-		for (int i = 0; i < riinfo->nkeys; i++)
-		{
-			Oid			pk_type = RIAttType(pk_rel, riinfo->pk_attnums[i]);
-			Oid			fk_type = RIAttType(fk_rel, riinfo->fk_attnums[i]);
-
-			quoteOneName(attname,
-						 RIAttName(pk_rel, riinfo->pk_attnums[i]));
-			sprintf(paramname, "$%d", i + 1);
-
 			/*
-			 * In case of an array ELEMENT foreign key, we check that each
-			 * distinct non-null value in the array is present in the PK
-			 * table.
+			 * The query string built is:
+			 *
+			 * SELECT 1 WHERE NOT EXISTS
+			 * (
+			 *   SELECT 1 FROM pg_catalog.unnest($1)
+			 *   WHERE unnest IS NOT NULL AND NOT EXISTS
+			 *   (
+			 *     SELECT 1 FROM [ONLY] pktable x WHERE pkatt1 = [$2 | unnest] [AND ...]
+			 *     FOR KEY SHARE OF x
+			 *   )
+			 * )
+			 *
+			 * The type ids for the $ parameters are those of the
+			 * corresponding FK attributes.
 			 */
-			if (riinfo->fk_reftypes[i] == FKCONSTR_REF_EACH_ELEMENT)
-				appendStringInfo(&countbuf,
-								 "(SELECT pg_catalog.count(DISTINCT y) FROM pg_catalog.unnest(%s) y)",
-								 paramname);
+			initStringInfo(&querybuf);
+			pk_only = pk_rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE ?
+				"" : "ONLY ";
+			quoteRelationName(pkrelname, pk_rel);
+			appendStringInfo(&querybuf, "SELECT 1 WHERE NOT EXISTS ("
+							 "SELECT 1 FROM pg_catalog.unnest($%d) WHERE unnest IS NOT NULL"
+							 " AND NOT EXISTS (SELECT 1 FROM %s%s x",
+							 each_elem + 1, pk_only, pkrelname);
+			querysep = "WHERE";
+			for (int i = 0; i < riinfo->nkeys; i++)
+			{
+				Oid			pk_type = RIAttType(pk_rel, riinfo->pk_attnums[i]);
+				Oid			fk_type = RIAttType(fk_rel, riinfo->fk_attnums[i]);
 
-			ri_GenerateQual(&querybuf, querysep,
-							attname, pk_type,
-							riinfo->pf_eq_oprs[i],
-							paramname, fk_type,
-							riinfo->fk_reftypes[i]);
-			querysep = "AND";
-			queryoids[i] = fk_type;
-		}
-		appendStringInfoString(&querybuf, " FOR KEY SHARE OF x");
+				quoteOneName(attname,
+							 RIAttName(pk_rel, riinfo->pk_attnums[i]));
+				if (riinfo->fk_reftypes[i] == FKCONSTR_REF_EACH_ELEMENT)
+					sprintf(paramname, "unnest");
+				else
+					sprintf(paramname, "$%d", i + 1);
+				ri_GenerateQual(&querybuf, querysep,
+					attname, pk_type,
+					riinfo->pf_eq_oprs[i],
+					paramname, fk_type);
+				querysep = "AND";
+				queryoids[i] = fk_type;
+			}
+			appendStringInfoString(&querybuf, " FOR KEY SHARE OF x))");
 
-		if (riinfo->has_array)
-		{
-			appendStringInfo(&countbuf,
-							 " OPERATOR(pg_catalog.=) (SELECT pg_catalog.count(*) FROM (%s) z)",
-							 querybuf.data);
-
-			/* Prepare and save the plan for Array Element Foreign Keys */
-			qplan = ri_PlanCheck(countbuf.data, riinfo->nkeys, queryoids,
+			/* Prepare and save the plan */
+			qplan = ri_PlanCheck(querybuf.data, riinfo->nkeys, queryoids,
 								 &qkey, fk_rel, pk_rel);
 		}
 		else
 		{
+			/*
+			 * The query string built is:
+			 *
+			 *	SELECT 1 FROM [ONLY] <pktable> x WHERE pkatt1 = $1 [AND ...]
+			 *		   FOR KEY SHARE OF x
+			 *
+			 * The type ids for the $ parameters are those of the
+			 * corresponding FK attributes.
+			 */
+			initStringInfo(&querybuf);
+			pk_only = pk_rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE ?
+				"" : "ONLY ";
+			quoteRelationName(pkrelname, pk_rel);
+			appendStringInfo(&querybuf, "SELECT 1 FROM %s%s x",
+							 pk_only, pkrelname);
+			querysep = "WHERE";
+			for (int i = 0; i < riinfo->nkeys; i++)
+			{
+				Oid			pk_type = RIAttType(pk_rel, riinfo->pk_attnums[i]);
+				Oid			fk_type = RIAttType(fk_rel, riinfo->fk_attnums[i]);
+
+				quoteOneName(attname,
+							 RIAttName(pk_rel, riinfo->pk_attnums[i]));
+				sprintf(paramname, "$%d", i + 1);
+				ri_GenerateQual(&querybuf, querysep,
+								attname, pk_type,
+								riinfo->pf_eq_oprs[i],
+								paramname, fk_type);
+				querysep = "AND";
+				queryoids[i] = fk_type;
+			}
+			appendStringInfoString(&querybuf, " FOR KEY SHARE OF x");
+
 			/* Prepare and save the plan */
 			qplan = ri_PlanCheck(querybuf.data, riinfo->nkeys, queryoids,
-								&qkey, fk_rel, pk_rel);
-
+								 &qkey, fk_rel, pk_rel);
 		}
 	}
 
@@ -555,8 +571,7 @@ ri_Check_Pk_Match(Relation pk_rel, Relation fk_rel,
 			ri_GenerateQual(&querybuf, querysep,
 							attname, pk_type,
 							riinfo->pp_eq_oprs[i],
-							paramname, pk_type,
-							FKCONSTR_REF_PLAIN);
+							paramname, pk_type);
 			querysep = "AND";
 			queryoids[i] = pk_type;
 		}
@@ -745,9 +760,8 @@ ri_restrict(TriggerData *trigdata, bool is_no_action)
 			sprintf(paramname, "$%d", i + 1);
 			ri_GenerateQual(&querybuf, querysep,
 							paramname, pk_type,
-							riinfo->pf_eq_oprs[i],
-							attname, fk_type,
-							riinfo->fk_reftypes[i]);
+							riinfo->fk_reftypes[i] == FKCONSTR_REF_EACH_ELEMENT ? OID_ARRAY_ELEMCONTAINED_OP : riinfo->pf_eq_oprs[i], // XXX
+							attname, fk_type);
 			if (pk_coll != fk_coll && !get_collation_isdeterministic(pk_coll))
 				ri_GenerateQualCollation(&querybuf, pk_coll);
 			querysep = "AND";
@@ -852,9 +866,8 @@ RI_FKey_cascade_del(PG_FUNCTION_ARGS)
 			sprintf(paramname, "$%d", i + 1);
 			ri_GenerateQual(&querybuf, querysep,
 							paramname, pk_type,
-							riinfo->pf_eq_oprs[i],
-							attname, fk_type,
-							riinfo->fk_reftypes[i]);
+							riinfo->fk_reftypes[i] == FKCONSTR_REF_EACH_ELEMENT ? OID_ARRAY_ELEMCONTAINED_OP : riinfo->pf_eq_oprs[i], // XXX
+							attname, fk_type);
 			if (pk_coll != fk_coll && !get_collation_isdeterministic(pk_coll))
 				ri_GenerateQualCollation(&querybuf, pk_coll);
 			querysep = "AND";
@@ -972,9 +985,8 @@ RI_FKey_cascade_upd(PG_FUNCTION_ARGS)
 			sprintf(paramname, "$%d", j + 1);
 			ri_GenerateQual(&qualbuf, qualsep,
 							paramname, pk_type,
-							riinfo->pf_eq_oprs[i],
-							attname, fk_type,
-							riinfo->fk_reftypes[i]);
+							riinfo->fk_reftypes[i] == FKCONSTR_REF_EACH_ELEMENT ? OID_ARRAY_ELEMCONTAINED_OP : riinfo->pf_eq_oprs[i], // XXX
+							attname, fk_type);
 			if (pk_coll != fk_coll && !get_collation_isdeterministic(pk_coll))
 				ri_GenerateQualCollation(&querybuf, pk_coll);
 			querysep = ",";
@@ -1153,9 +1165,8 @@ ri_set(TriggerData *trigdata, bool is_set_null)
 			sprintf(paramname, "$%d", i + 1);
 			ri_GenerateQual(&qualbuf, qualsep,
 							paramname, pk_type,
-							riinfo->pf_eq_oprs[i],
-							attname, fk_type,
-							riinfo->fk_reftypes[i]);
+							riinfo->fk_reftypes[i] == FKCONSTR_REF_EACH_ELEMENT ? OID_ARRAY_ELEMCONTAINED_OP : riinfo->pf_eq_oprs[i], // XXX
+							attname, fk_type);
 			if (pk_coll != fk_coll && !get_collation_isdeterministic(pk_coll))
 				ri_GenerateQualCollation(&querybuf, pk_coll);
 			querysep = ",";
@@ -1367,6 +1378,7 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 	char		workmembuf[32];
 	int			spi_result;
 	SPIPlanPtr	qplan;
+	int 		each_elem;
 
 	riinfo = ri_FetchConstraintInfo(trigger, fk_rel, false);
 
@@ -1454,30 +1466,25 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 	quoteRelationName(pkrelname, pk_rel);
 	quoteRelationName(fkrelname, fk_rel);
 
-	if (riinfo->has_array)
-	{
-		appendStringInfo(&querybuf, " FROM ONLY %s fk", fkrelname);
-		for (int i = 0; i < riinfo->nkeys; i++)
-		{
-			if (riinfo->fk_reftypes[i] != FKCONSTR_REF_EACH_ELEMENT)
-				continue;
+	fk_only = fk_rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE ?
+		"" : "ONLY ";
+	pk_only = pk_rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE ?
+		"" : "ONLY ";
 
-			quoteOneName(fkattname,
-						 RIAttName(fk_rel, riinfo->fk_attnums[i]));
-			appendStringInfo(&querybuf,
-							 " CROSS JOIN LATERAL pg_catalog.unnest(fk.%s) a (e)",
-							 fkattname);
-		}
-		appendStringInfo(&querybuf,
-						 " LEFT OUTER JOIN ONLY %s pk ON",
-						 pkrelname);
+	for (each_elem = 0; each_elem < riinfo->nkeys; each_elem++)
+		if (riinfo->fk_reftypes[each_elem] == FKCONSTR_REF_EACH_ELEMENT)
+			break;
+
+	if (each_elem < riinfo->nkeys)
+	{
+		quoteOneName(fkattname, RIAttName(fk_rel, riinfo->fk_attnums[each_elem]));
+		appendStringInfo(&querybuf, " FROM %s%s fk"
+						 " CROSS JOIN LATERAL pg_catalog.unnest(fk.%s)"
+						 " LEFT OUTER JOIN %s%s pk ON",
+						 fk_only, fkrelname, fkattname, pk_only, pkrelname);
 	}
 	else
 	{
-		fk_only = fk_rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE ?
-			"" : "ONLY ";
-		pk_only = pk_rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE ?
-			"" : "ONLY ";
 		appendStringInfo(&querybuf,
 						" FROM %s%s fk LEFT OUTER JOIN %s%s pk ON",
 						fk_only, fkrelname, pk_only, pkrelname);
@@ -1497,7 +1504,7 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 		quoteOneName(pkattname + 3,
 					 RIAttName(pk_rel, riinfo->pk_attnums[i]));
 		if (riinfo->fk_reftypes[i] == FKCONSTR_REF_EACH_ELEMENT)
-			tmp = "a.e";
+			tmp = "unnest";
 		else
 		{
 			quoteOneName(fkattname + 3,
@@ -1507,8 +1514,7 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 		ri_GenerateQual(&querybuf, sep,
 						pkattname, pk_type,
 						riinfo->pf_eq_oprs[i],
-						tmp, fk_type,
-						FKCONSTR_REF_PLAIN);
+						tmp, fk_type);
 		if (pk_coll != fk_coll)
 			ri_GenerateQualCollation(&querybuf, pk_coll);
 		sep = "AND";
@@ -1525,7 +1531,7 @@ RI_Initial_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 	for (int i = 0; i < riinfo->nkeys; i++)
 	{
 		if (riinfo->fk_reftypes[i] == FKCONSTR_REF_EACH_ELEMENT)
-			appendStringInfo(&querybuf, "%sa.e IS NOT NULL", sep);
+			appendStringInfo(&querybuf, "%sunnest IS NOT NULL", sep);
 		else
 		{
 			quoteOneName(fkattname, RIAttName(fk_rel, riinfo->fk_attnums[i]));
@@ -1747,9 +1753,8 @@ RI_PartitionRemove_Check(Trigger *trigger, Relation fk_rel, Relation pk_rel)
 					 RIAttName(fk_rel, riinfo->fk_attnums[i]));
 		ri_GenerateQual(&querybuf, sep,
 						pkattname, pk_type,
-						riinfo->pf_eq_oprs[i],
-						fkattname, fk_type,
-						riinfo->fk_reftypes[i]);
+						riinfo->fk_reftypes[i] == FKCONSTR_REF_EACH_ELEMENT ? OID_ARRAY_ELEMCONTAINED_OP : riinfo->pf_eq_oprs[i], // XXX
+						fkattname, fk_type);
 		if (pk_coll != fk_coll)
 			ri_GenerateQualCollation(&querybuf, pk_coll);
 		sep = "AND";
@@ -1934,12 +1939,11 @@ ri_GenerateQual(StringInfo buf,
 				const char *sep,
 				const char *leftop, Oid leftoptype,
 				Oid opoid,
-				const char *rightop, Oid rightoptype,
-				char fkreftype)
+				const char *rightop, Oid rightoptype)
 {
 	appendStringInfo(buf, " %s ", sep);
 	generate_operator_clause(buf, leftop, leftoptype, opoid,
-							 rightop, rightoptype, fkreftype);
+							 rightop, rightoptype);
 }
 
 /*
@@ -2195,24 +2199,6 @@ ri_LoadConstraintInfo(Oid constraintOid)
 							   riinfo->pp_eq_oprs,
 							   riinfo->ff_eq_oprs,
 							   riinfo->fk_reftypes);
-
-	/*
-	 * Fix up some stuff for Array Element Foreign Keys.  We need a has_array
-	 * flag indicating whether there's an array foreign key, and we want to
-	 * set ff_eq_oprs[i] to array_eq() for array columns, because that's what
-	 * makes sense for ri_KeysEqual, and we have no other use for ff_eq_oprs
-	 * in this module.  (If we did, substituting the array comparator at the
-	 * call point in ri_KeysEqual might be more appropriate.)
-	 */
-	riinfo->has_array = false;
-	for (int i = 0; i < riinfo->nkeys; i++)
-	{
-		if (riinfo->fk_reftypes[i] == FKCONSTR_REF_EACH_ELEMENT)
-		{
-			riinfo->has_array = true;
-			riinfo->ff_eq_oprs[i] = ARRAY_EQ_OP;
-		}
-	}
 
 	ReleaseSysCache(tup);
 

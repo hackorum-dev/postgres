@@ -1256,16 +1256,32 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
       considerably enhances the performance. Also concerning coercion while using the 
       GIN index:
         
-      <programlisting>
-       CREATE TABLE pktableforarray ( ptest1 int2 PRIMARY KEY, ptest2 text );
-       CREATE TABLE fktableforarray ( ftest1 int4[], FOREIGN KEY (EACH ELEMENT OF ftest1) REFERENCES PKTABLEFORARRAY, ftest2 int );
-      </programlisting>
+<programlisting>
+CREATE TABLE pktableforarray (
+    ptest1 int2 PRIMARY KEY,
+    ptest2 text
+);
+
+CREATE TABLE fktableforarray (
+    ftest1 int4[],
+    FOREIGN KEY (EACH ELEMENT OF ftest1) REFERENCES pktableforarray,
+    ftest2 int
+);
+</programlisting>
       This syntax is fine since it will cast ptest1 to int4 upon RI checks,        
 
-      <programlisting>
-       CREATE TABLE pktableforarray ( ptest1 int4 PRIMARY KEY, ptest2 text );
-       CREATE TABLE fktableforarray ( ftest1 int2[], FOREIGN KEY (EACH ELEMENT OF ftest1) REFERENCES PKTABLEFORARRAY, ftest2 int );        
-      </programlisting>
+<programlisting>
+CREATE TABLE pktableforarray (
+    ptest1 int4 PRIMARY KEY,
+    ptest2 text
+);
+
+CREATE TABLE fktableforarray (
+    ftest1 int2[],
+    FOREIGN KEY (EACH ELEMENT OF ftest1) REFERENCES pktableforarray,
+    ftest2 int
+);        
+</programlisting>
        however, this syntax will cast ftest1 to int4 upon RI checks, thus defeating the
        purpose of the index.
      </para>

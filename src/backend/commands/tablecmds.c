@@ -40,6 +40,7 @@
 #include "catalog/pg_inherits.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
+#include "catalog/pg_operator.h"
 #include "catalog/pg_tablespace.h"
 #include "catalog/pg_statistic_ext.h"
 #include "catalog/pg_trigger.h"
@@ -8685,7 +8686,7 @@ ATAddForeignKeyConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	int			numfks,
 				numpks;
 	Oid			indexOid;
-	bool		has_array;
+	bool		has_each_element;
 	bool		old_check_ok;
 	ObjectAddress address;
 	ListCell   *old_pfeqop_item = list_head(fkconstraint->old_conpfeqop);
@@ -8791,7 +8792,7 @@ ATAddForeignKeyConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	 * format to pass to CreateConstraintEntry.
 	 */
 	Assert(list_length(fkconstraint->fk_reftypes) == numfks);
-	has_array = false;
+	has_each_element = false;
 	i = 0;
 	foreach(lc, fkconstraint->fk_reftypes)
 	{
@@ -8804,12 +8805,12 @@ ATAddForeignKeyConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 				break;
 			case FKCONSTR_REF_EACH_ELEMENT:
 				/* At most one FK column can be an array reference */
-				if (has_array)
+				if (has_each_element)
 					ereport(ERROR,
 							(errcode(ERRCODE_INVALID_FOREIGN_KEY),
 							 errmsg("foreign keys support only one array column")));
 
-				has_array = true;
+				has_each_element = true;
 				break;
 			default:
 				elog(ERROR, "invalid fk_reftype: %d", (int) reftype);
@@ -8823,7 +8824,7 @@ ATAddForeignKeyConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	* Array foreign keys support only UPDATE/DELETE NO ACTION, UPDATE/DELETE
 	* RESTRICT
 	*/
-	if (has_array)
+	if (has_each_element)
 	{
 		if ((fkconstraint->fk_upd_action != FKCONSTR_ACTION_NOACTION &&
 			 fkconstraint->fk_upd_action != FKCONSTR_ACTION_RESTRICT) ||
@@ -8953,8 +8954,6 @@ ATAddForeignKeyConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 		 */
 		if (fkreftypes[i] == FKCONSTR_REF_EACH_ELEMENT)
 		{
-			Oid			elemopclass;
-
 			/* We check if the array element type exists and is of valid Oid */
 			fktype = get_base_element_type(fktype);
 			if (!OidIsValid(fktype))
@@ -8978,45 +8977,6 @@ ATAddForeignKeyConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 					errdetail("Unssupported relation between %s and %s.",
 							format_type_be(fktypoid[i]),
 							format_type_be(pktype))));
-
-			/*
-			 * For the moment, we must also insist that the array's element
-			 * type have a default btree opclass that is in the index's
-			 * opfamily.  This is necessary because ri_triggers.c relies on
-			 * COUNT(DISTINCT x) on the element type, as well as on array_eq()
-			 * on the array type, and we need those operations to have the
-			 * same notion of equality that we're using otherwise.
-			 *
-			 * XXX this restriction is pretty annoying, considering the effort
-			 * that's been put into the rest of the RI mechanisms to make them
-			 * work with nondefault equality operators.  In particular, it
-			 * means that the cast-to-PK-datatype code path isn't useful for
-			 * array-to-scalar references.
-			 */
-			elemopclass = GetDefaultOpClass(fktype, BTREE_AM_OID);
-			if (!OidIsValid(elemopclass) ||
-				get_opclass_family(elemopclass) != opfamily)
-			{
-				/* Get the index opclass's name for the error message. */
-				char	   *opcname;
-
-				cla_ht = SearchSysCache1(CLAOID,
-										 ObjectIdGetDatum(opclasses[i]));
-				if (!HeapTupleIsValid(cla_ht))
-					elog(ERROR, "cache lookup failed for opclass %u",
-						 opclasses[i]);
-				cla_tup = (Form_pg_opclass) GETSTRUCT(cla_ht);
-				opcname = pstrdup(NameStr(cla_tup->opcname));
-				ReleaseSysCache(cla_ht);
-				ereport(ERROR,
-						(errcode(ERRCODE_DATATYPE_MISMATCH),
-						 errmsg("foreign key constraint \"%s\" cannot be implemented",
-								fkconstraint->conname),
-						 errdetail("Key column \"%s\" has element type %s which does not have a default btree operator class that's compatible with class \"%s\".",
-								   strVal(list_nth(fkconstraint->fk_attrs, i)),
-								   format_type_be(fktype),
-								   opcname)));
-			}
 		}
 
 		/*
@@ -9050,6 +9010,10 @@ ATAddForeignKeyConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 			pfeqop_right = InvalidOid;
 			ffeqop = InvalidOid;
 		}
+
+		// XXX: Fix logic for selecting operators
+		if (fkreftypes[i] == FKCONSTR_REF_EACH_ELEMENT)
+			ffeqop = ARRAY_EQ_OP;
 
 		if (!(OidIsValid(pfeqop) && OidIsValid(ffeqop)))
 		{
