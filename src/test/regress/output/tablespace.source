@@ -132,7 +132,7 @@ CREATE TABLE testschema.part1 PARTITION OF testschema.part FOR VALUES IN (1);
 CREATE INDEX part_a_idx ON testschema.part (a) TABLESPACE regress_tblspace;
 CREATE TABLE testschema.part2 PARTITION OF testschema.part FOR VALUES IN (2);
 SELECT relname, spcname FROM pg_catalog.pg_tablespace t, pg_catalog.pg_class c
-    where c.reltablespace = t.oid AND c.relname LIKE 'part%_idx';
+    where c.reltablespace = t.oid AND c.relname LIKE 'part%_idx' ORDER BY 1;
    relname   |     spcname      
 -------------+------------------
  part1_a_idx | regress_tblspace
