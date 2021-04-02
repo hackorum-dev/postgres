@@ -16,7 +16,7 @@
 #include "c.h"
 
 /*
- * Escape (by doubling) any single quotes or backslashes in given string
+ * Escape (by doubling) any single quotes, backslashes or newlines in given string
  *
  * Note: this is used to process postgresql.conf entries and to quote
  * string literals in pg_basebackup for writing the recovery configuration.
@@ -43,8 +43,20 @@ escape_single_quotes_ascii(const char *src)
 	for (i = 0, j = 0; i < len; i++)
 	{
 		if (SQL_STR_DOUBLE(src[i], true))
+    {
 			result[j++] = src[i];
-		result[j++] = src[i];
+			result[j++] = src[i];
+    }
+    else if (src[i] == '\n')
+    {
+			result[j++] = '\\';
+			result[j++] = 'n';
+    }
+    else
+    {
+  		result[j++] = src[i];
+    }
+
 	}
 	result[j] = '\0';
 	return result;
