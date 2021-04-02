@@ -635,6 +635,7 @@ static char *recovery_target_string;
 static char *recovery_target_xid_string;
 static char *recovery_target_name_string;
 static char *recovery_target_lsn_string;
+static char *motd_string;
 
 
 /* should be static, but commands/variable.c needs to get at this */
@@ -4251,6 +4252,16 @@ static struct config_string ConfigureNamesString[] =
 	},
 
 	{
+		{"motd", PGC_USERSET, CLIENT_CONN_LOCALE,
+			gettext_noop("Sets the message of the day."),
+			NULL
+		},
+		&motd_string,
+		NULL,
+		NULL, NULL, NULL
+	},
+
+	{
 		{"unix_socket_group", PGC_POSTMASTER, CONN_AUTH_SETTINGS,
 			gettext_noop("Sets the owning group of the Unix-domain socket."),
 			gettext_noop("The owning user of the socket is always the user "
@@ -6396,6 +6407,14 @@ BeginReportingGUCOptions(void)
 	}
 
 	report_needed = false;
+
+	char			*motd;
+	motd = GetConfigOptionByName("motd", NULL, false);
+	if (motd && strcmp(motd, "") != 0)
+	{
+		ereport(NOTICE,
+				(errmsg("%s", motd)));
+	}
 }
 
 /*
@@ -8463,16 +8482,6 @@ AlterSystemSetConfigFile(AlterSystemStmt *altersysstmt)
 				free(newval.stringval);
 			if (newextra)
 				free(newextra);
-
-			/*
-			 * We must also reject values containing newlines, because the
-			 * grammar for config files doesn't support embedded newlines in
-			 * string literals.
-			 */
-			if (strchr(value, '\n'))
-				ereport(ERROR,
-						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("parameter value for ALTER SYSTEM must not contain a newline")));
 		}
 	}
 
