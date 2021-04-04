@@ -90,6 +90,20 @@ SELECT reloptions FROM pg_class WHERE oid =
 ALTER TABLE reloptions_test RESET (vacuum_truncate);
 SELECT reloptions FROM pg_class WHERE oid = 'reloptions_test'::regclass;
 INSERT INTO reloptions_test VALUES (1, NULL), (NULL, NULL);
+do $$
+declare
+  my_xid bigint;
+  oldest_xmin bigint;
+begin
+  my_xid := txid_current();
+  while true loop
+    oldest_xmin := min(backend_xmin::text::bigint) from pg_stat_activity where pid != pg_backend_pid();
+    exit when oldest_xmin is null or oldest_xmin >= my_xid;
+    perform pg_sleep(0.1);
+    perform pg_stat_clear_snapshot();
+  end loop;
+end
+$$;
 -- Do an aggressive vacuum to prevent page-skipping.
 VACUUM (FREEZE, DISABLE_PAGE_SKIPPING) reloptions_test;
 SELECT pg_relation_size('reloptions_test') = 0;
