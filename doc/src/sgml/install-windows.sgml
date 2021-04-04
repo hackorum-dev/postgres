@@ -230,7 +230,7 @@ $ENV{MSBFLAGS}="/m";
      <para>
       Both <productname>Bison</productname> and <productname>Flex</productname>
       are included in the <productname>msys</productname> tool suite, available
-      from <ulink url="http://www.mingw.org/wiki/MSYS"></ulink> as part of the
+      from <ulink url="https://mingw.osdn.io"></ulink> as part of the
       <productname>MinGW</productname> compiler suite.
      </para>
 

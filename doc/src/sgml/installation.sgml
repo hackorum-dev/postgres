@@ -982,7 +982,7 @@ build-postgresql:
          <filename>configure</filename> will check for the required
          header files and libraries to make sure that your
          <productname>OpenSSL</productname> installation is sufficient
-         before proceeding. 
+         before proceeding.
         </para>
        </listitem>
       </varlistentry>
@@ -2455,14 +2455,14 @@ xcrun --show-sdk-path
     those).  MinGW, the Unix-like build tools, and MSYS, a collection
     of Unix tools required to run shell scripts
     like <command>configure</command>, can be downloaded
-    from <ulink url="http://www.mingw.org/"></ulink>.  Neither is
+    from <ulink url="https://mingw.osdn.io"></ulink>.  Neither is
     required to run the resulting binaries; they are needed only for
     creating the binaries.
    </para>
 
    <para>
      To build 64 bit binaries using MinGW, install the 64 bit tool set
-     from <ulink url="https://mingw-w64.org/"></ulink>, put its bin
+     from <ulink url="http://mingw-w64.org"></ulink>, put its bin
      directory in the <envar>PATH</envar>, and run
      <command>configure</command> with the
      <command>--host=x86_64-w64-mingw32</command> option.
