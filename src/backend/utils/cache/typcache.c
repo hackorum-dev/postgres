@@ -921,7 +921,6 @@ lookup_type_cache(Oid type_id, int flags)
 	 * If it's a composite type (row type), get tupdesc if requested
 	 */
 	if ((flags & TYPECACHE_TUPDESC) &&
-		typentry->tupDesc == NULL &&
 		typentry->typtype == TYPTYPE_COMPOSITE)
 	{
 		load_typcache_tupdesc(typentry);
@@ -996,21 +995,25 @@ load_typcache_tupdesc(TypeCacheEntry *typentry)
 
 	/*
 	 * Link to the tupdesc and increment its refcount (we assert it's a
-	 * refcounted descriptor).  We don't use IncrTupleDescRefCount() for this,
-	 * because the reference mustn't be entered in the current resource owner;
+	 * refcounted descriptor), do this only if it was not populated previously.
+	 * We don't use IncrTupleDescRefCount() for this, because the reference
+	 * mustn't be entered in the current resource owner;
 	 * it can outlive the current query.
 	 */
-	typentry->tupDesc = RelationGetDescr(rel);
+	if (typentry->tupDesc == NULL)
+	{
+		typentry->tupDesc = RelationGetDescr(rel);
 
-	Assert(typentry->tupDesc->tdrefcount > 0);
-	typentry->tupDesc->tdrefcount++;
+		Assert(typentry->tupDesc->tdrefcount > 0);
+		typentry->tupDesc->tdrefcount++;
 
-	/*
-	 * In future, we could take some pains to not change tupDesc_identifier if
-	 * the tupdesc didn't really change; but for now it's not worth it.
-	 */
-	typentry->tupDesc_identifier = ++tupledesc_id_counter;
+		/*
+		 * In future, we could take some pains to not change tupDesc_identifier if
+		 * the tupdesc didn't really change; but for now it's not worth it.
+		 */
+		typentry->tupDesc_identifier = ++tupledesc_id_counter;
 
+	}
 	relation_close(rel, AccessShareLock);
 }
 
@@ -1668,9 +1671,8 @@ cache_record_field_properties(TypeCacheEntry *typentry)
 		int			newflags;
 		int			i;
 
-		/* Fetch composite type's tupdesc if we don't have it already */
-		if (typentry->tupDesc == NULL)
-			load_typcache_tupdesc(typentry);
+		/* Fetch composite type's tupdesc */
+		load_typcache_tupdesc(typentry);
 		tupdesc = typentry->tupDesc;
 
 		/* Must bump the refcount while we do additional catalog lookups */

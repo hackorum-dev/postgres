@@ -256,6 +256,21 @@ select * from temp_inh_oncommit_test;
 select relname from pg_class where relname ~ '^temp_inh_oncommit_test';
 drop table temp_inh_oncommit_test;
 
+-- Test for accessing cached temporary table in a prepared transaction.
+-- These cases should fail with "cannot PREPARE a transaction that has
+-- operated on temporary objects" ERROR.
+CREATE TEMP TABLE temp_tbl (first TEXT, last TEXT);
+BEGIN;
+CREATE FUNCTION longname(temp_tbl) RETURNS TEXT LANGUAGE SQL
+AS $$SELECT $1.first || ' ' || $1.last$$;
+PREPARE TRANSACTION 'temp_tbl_access';
+
+BEGIN;
+CREATE FUNCTION longname(temp_tbl) RETURNS TEXT LANGUAGE SQL
+AS $$SELECT $1.first || ' ' || $1.last$$;
+PREPARE TRANSACTION 'temp_tbl_access';
+
+DROP TABLE temp_tbl;
 -- Tests with two-phase commit
 -- Transactions creating objects in a temporary namespace cannot be used
 -- with two-phase commit.
