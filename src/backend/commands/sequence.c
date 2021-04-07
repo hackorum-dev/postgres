@@ -354,7 +354,7 @@ fill_seq_with_data(Relation rel, HeapTuple tuple)
 
 	page = BufferGetPage(buf);
 
-	PageInit(page, BufferGetPageSize(buf), sizeof(sequence_magic));
+	PageInit(page, BufferGetPageSize(buf), MAXALIGN(sizeof(sequence_magic)));
 	sm = (sequence_magic *) PageGetSpecialPointer(page);
 	sm->magic = SEQ_MAGIC;
 
@@ -1908,7 +1908,7 @@ seq_redo(XLogReaderState *record)
 	 */
 	localpage = (Page) palloc(BufferGetPageSize(buffer));
 
-	PageInit(localpage, BufferGetPageSize(buffer), sizeof(sequence_magic));
+	PageInit(localpage, BufferGetPageSize(buffer), MAXALIGN(sizeof(sequence_magic)));
 	sm = (sequence_magic *) PageGetSpecialPointer(localpage);
 	sm->magic = SEQ_MAGIC;
 

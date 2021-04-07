@@ -36,15 +36,17 @@ bool		ignore_checksum_failure = false;
  * PageInit
  *		Initializes the contents of a page.
  *		Note that we don't calculate an initial checksum here; that's not done
- *		until it's time to write.
+ *		until it's time to write. Caller should care specialSize is
+ *		MAXALIGNed.
  */
 void
 PageInit(Page page, Size pageSize, Size specialSize)
 {
 	PageHeader	p = (PageHeader) page;
 
-	specialSize = MAXALIGN(specialSize);
+	Assert(specialSize == MAXALIGN(specialSize));
 
+	Assert(SizeOfPageHeaderData == MAXALIGN(SizeOfPageHeaderData));
 	Assert(pageSize == BLCKSZ);
 	Assert(pageSize > specialSize + SizeOfPageHeaderData);
 
