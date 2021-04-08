@@ -2997,6 +2997,7 @@ keep_going:						/* We will come back to here until there is
 		conn->try_next_addr = false;
 	}
 
+keep_going2:
 	/* Time to advance to next connhost[] entry? */
 	if (conn->try_next_host)
 	{
@@ -3837,6 +3838,10 @@ keep_going:						/* We will come back to here until there is
 						 */
 						libpq_append_conn_error(conn, "server sent an error response during SSL exchange");
 						goto error_return;
+					}
+					else if (SSLok == '\0')
+					{
+						goto keep_going2;
 					}
 					else
 					{
