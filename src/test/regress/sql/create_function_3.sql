@@ -277,9 +277,9 @@ SELECT r0.routine_name, r1.routine_name
   FROM information_schema.routine_routine_usage rru
        JOIN information_schema.routines r0 ON r0.specific_name = rru.specific_name
        JOIN information_schema.routines r1 ON r1.specific_name = rru.routine_name;
-SELECT routine_name, sequence_name FROM information_schema.routine_sequence_usage;
-SELECT routine_name, table_name, column_name FROM information_schema.routine_column_usage;
-SELECT routine_name, table_name FROM information_schema.routine_table_usage;
+SELECT routine_name, sequence_name FROM information_schema.routine_sequence_usage ORDER BY 1;
+SELECT routine_name, table_name, column_name FROM information_schema.routine_column_usage ORDER BY 1;
+SELECT routine_name, table_name FROM information_schema.routine_table_usage ORDER BY 1;
 
 DROP FUNCTION functest_IS_4a CASCADE;
 DROP SEQUENCE functest1 CASCADE;
@@ -312,7 +312,7 @@ AS '
     VALUES (1), (2), (3);
 ';
 
-SELECT * FROM functest_sri1();
+SELECT * FROM functest_sri1() ORDER BY 1;
 EXPLAIN (verbose, costs off) SELECT * FROM functest_sri1();
 
 CREATE FUNCTION functest_sri2() RETURNS SETOF int
@@ -349,7 +349,7 @@ CREATE FUNCTION voidtest4(a int) RETURNS VOID LANGUAGE SQL AS
 $$ INSERT INTO sometable VALUES(a - 1) RETURNING f1 $$;
 SELECT voidtest4(39);
 
-TABLE sometable;
+SELECT * FROM sometable ORDER BY 1;
 
 CREATE FUNCTION voidtest5(a int) RETURNS SETOF VOID LANGUAGE SQL AS
 $$ SELECT generate_series(1, a) $$ STABLE;
