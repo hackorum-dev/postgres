@@ -1950,13 +1950,30 @@ ExecConstraints(ResultRelInfo *resultRelInfo,
  */
 void
 ExecWithCheckOptions(WCOKind kind, ResultRelInfo *resultRelInfo,
-					 TupleTableSlot *slot, EState *estate)
+					 TupleTableSlot *slot, EState *estate,
+					 PlanState *parent)
 {
 	Relation	rel = resultRelInfo->ri_RelationDesc;
 	TupleDesc	tupdesc = RelationGetDescr(rel);
 	ExprContext *econtext;
 	ListCell   *l1,
 			   *l2;
+
+	/* Initialize the quals if not already done. */
+	if (resultRelInfo->ri_WithCheckOptionExprs == NIL)
+	{
+		List   *wcoExprs = NIL;
+
+		foreach(l1, resultRelInfo->ri_WithCheckOptions)
+		{
+			WithCheckOption *wco = (WithCheckOption *) lfirst(l1);
+			ExprState  *wcoExpr = ExecInitQual((List *) wco->qual,
+											   parent);
+
+			wcoExprs = lappend(wcoExprs, wcoExpr);
+		}
+		resultRelInfo->ri_WithCheckOptionExprs = wcoExprs;
+	}
 
 	/*
 	 * We will use the EState's per-tuple context for evaluating constraint

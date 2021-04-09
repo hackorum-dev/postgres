@@ -211,7 +211,8 @@ extern bool ExecPartitionCheck(ResultRelInfo *resultRelInfo,
 extern void ExecPartitionCheckEmitError(ResultRelInfo *resultRelInfo,
 										TupleTableSlot *slot, EState *estate);
 extern void ExecWithCheckOptions(WCOKind kind, ResultRelInfo *resultRelInfo,
-								 TupleTableSlot *slot, EState *estate);
+								 TupleTableSlot *slot, EState *estate,
+								 PlanState *parent);
 extern LockTupleMode ExecUpdateLockMode(EState *estate, ResultRelInfo *relinfo);
 extern ExecRowMark *ExecFindRowMark(EState *estate, Index rti, bool missing_ok);
 extern ExecAuxRowMark *ExecBuildAuxRowMark(ExecRowMark *erm, List *targetlist);

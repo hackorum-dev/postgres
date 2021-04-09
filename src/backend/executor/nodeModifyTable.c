@@ -154,12 +154,37 @@ ExecCheckPlanOutput(Relation resultRel, List *targetList)
 				 errdetail("Query has too few columns.")));
 }
 
+/* Initializes the RETURNING projection for given result relation. */
+static void
+ExecInitReturningProjection(ResultRelInfo *resultRelInfo,
+							ModifyTableState *mtstate)
+{
+	TupleTableSlot *slot;
+	ExprContext *econtext;
+
+	/* should not get called twice */
+	Assert(resultRelInfo->ri_projectReturning == NULL);
+
+	/* ExecInitModifyTable() should've initialized these. */
+	Assert(mtstate->ps.ps_ExprContext != NULL);
+	econtext = mtstate->ps.ps_ExprContext;
+	Assert(mtstate->ps.ps_ResultTupleSlot != NULL);
+	slot = mtstate->ps.ps_ResultTupleSlot;
+
+	Assert(resultRelInfo->ri_returningList != NIL);
+	resultRelInfo->ri_projectReturning =
+		ExecBuildProjectionInfo(resultRelInfo->ri_returningList,
+								econtext, slot, &mtstate->ps,
+								resultRelInfo->ri_RelationDesc->rd_att);
+}
+
 /*
  * ExecProcessReturning --- evaluate a RETURNING list
  *
  * resultRelInfo: current result rel
  * tupleSlot: slot holding tuple actually inserted/updated/deleted
  * planSlot: slot holding tuple returned by top subplan node
+ * mtstate: query's plan state
  *
  * Note: If tupleSlot is NULL, the FDW should have already provided econtext's
  * scan tuple.
@@ -169,10 +194,18 @@ ExecCheckPlanOutput(Relation resultRel, List *targetList)
 static TupleTableSlot *
 ExecProcessReturning(ResultRelInfo *resultRelInfo,
 					 TupleTableSlot *tupleSlot,
-					 TupleTableSlot *planSlot)
+					 TupleTableSlot *planSlot,
+					 ModifyTableState *mtstate)
 {
-	ProjectionInfo *projectReturning = resultRelInfo->ri_projectReturning;
-	ExprContext *econtext = projectReturning->pi_exprContext;
+	ProjectionInfo *projectReturning;
+	ExprContext *econtext;
+
+	/* Initialize the projection if not already done. */
+	if (resultRelInfo->ri_projectReturning == NULL)
+		ExecInitReturningProjection(resultRelInfo, mtstate);
+
+	projectReturning = resultRelInfo->ri_projectReturning;
+	econtext = projectReturning->pi_exprContext;
 
 	/* Make tuple and any needed join variables available to ExecProject */
 	if (tupleSlot)
@@ -767,7 +800,8 @@ ExecInsert(ModifyTableState *mtstate,
 		 * we are looking for at this point.
 		 */
 		if (resultRelInfo->ri_WithCheckOptions != NIL)
-			ExecWithCheckOptions(wco_kind, resultRelInfo, slot, estate);
+			ExecWithCheckOptions(wco_kind, resultRelInfo, slot, estate,
+								 &mtstate->ps);
 
 		/*
 		 * Check the constraints of the tuple.
@@ -962,11 +996,12 @@ ExecInsert(ModifyTableState *mtstate,
 	 * are looking for at this point.
 	 */
 	if (resultRelInfo->ri_WithCheckOptions != NIL)
-		ExecWithCheckOptions(WCO_VIEW_CHECK, resultRelInfo, slot, estate);
+		ExecWithCheckOptions(WCO_VIEW_CHECK, resultRelInfo, slot, estate,
+							 &mtstate->ps);
 
 	/* Process RETURNING if present */
-	if (resultRelInfo->ri_projectReturning)
-		result = ExecProcessReturning(resultRelInfo, slot, planSlot);
+	if (resultRelInfo->ri_returningList)
+		result = ExecProcessReturning(resultRelInfo, slot, planSlot, mtstate);
 
 	return result;
 }
@@ -1022,7 +1057,8 @@ ExecBatchInsert(ModifyTableState *mtstate,
 		 * comment in ExecInsert.
 		 */
 		if (resultRelInfo->ri_WithCheckOptions != NIL)
-			ExecWithCheckOptions(WCO_VIEW_CHECK, resultRelInfo, slot, estate);
+			ExecWithCheckOptions(WCO_VIEW_CHECK, resultRelInfo, slot, estate,
+								 &mtstate->ps);
 	}
 
 	if (canSetTag && numInserted > 0)
@@ -1345,7 +1381,7 @@ ldelete:;
 						 ar_delete_trig_tcs);
 
 	/* Process RETURNING if present and if requested */
-	if (processReturning && resultRelInfo->ri_projectReturning)
+	if (processReturning && resultRelInfo->ri_returningList)
 	{
 		/*
 		 * We have to put the target tuple into a slot, which means first we
@@ -1373,7 +1409,7 @@ ldelete:;
 			}
 		}
 
-		rslot = ExecProcessReturning(resultRelInfo, slot, planSlot);
+		rslot = ExecProcessReturning(resultRelInfo, slot, planSlot, mtstate);
 
 		/*
 		 * Before releasing the target tuple again, make sure rslot has a
@@ -1707,7 +1743,8 @@ lreplace:;
 			 * kind we are looking for at this point.
 			 */
 			ExecWithCheckOptions(WCO_RLS_UPDATE_CHECK,
-								 resultRelInfo, slot, estate);
+								 resultRelInfo, slot, estate,
+								 &mtstate->ps);
 		}
 
 		/*
@@ -1934,11 +1971,12 @@ lreplace:;
 	 * are looking for at this point.
 	 */
 	if (resultRelInfo->ri_WithCheckOptions != NIL)
-		ExecWithCheckOptions(WCO_VIEW_CHECK, resultRelInfo, slot, estate);
+		ExecWithCheckOptions(WCO_VIEW_CHECK, resultRelInfo, slot, estate,
+							 &mtstate->ps);
 
 	/* Process RETURNING if present */
-	if (resultRelInfo->ri_projectReturning)
-		return ExecProcessReturning(resultRelInfo, slot, planSlot);
+	if (resultRelInfo->ri_returningList)
+		return ExecProcessReturning(resultRelInfo, slot, planSlot, mtstate);
 
 	return NULL;
 }
@@ -2132,7 +2170,8 @@ ExecOnConflictUpdate(ModifyTableState *mtstate,
 		 */
 		ExecWithCheckOptions(WCO_RLS_CONFLICT_CHECK, resultRelInfo,
 							 existing,
-							 mtstate->ps.state);
+							 mtstate->ps.state,
+							 &mtstate->ps);
 	}
 
 	/* Project the new tuple version */
@@ -2439,7 +2478,7 @@ ExecModifyTable(PlanState *pstate)
 			 * ExecProcessReturning by IterateDirectModify, so no need to
 			 * provide it here.
 			 */
-			slot = ExecProcessReturning(resultRelInfo, NULL, planSlot);
+			slot = ExecProcessReturning(resultRelInfo, NULL, planSlot, node);
 
 			return slot;
 		}
@@ -2749,6 +2788,33 @@ ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags)
 		ExecSetupTransitionCaptureState(mtstate, estate);
 
 	/*
+	 * Initialize result tuple slot and assign its rowtype using the first
+	 * RETURNING list.  We assume the rest will look the same.
+	 */
+	if (node->returningLists)
+	{
+		mtstate->ps.plan->targetlist = (List *) linitial(node->returningLists);
+
+		/* Set up a slot for the output of the RETURNING projection(s) */
+		ExecInitResultTupleSlotTL(&mtstate->ps, &TTSOpsVirtual);
+
+		/* Need an econtext too */
+		if (mtstate->ps.ps_ExprContext == NULL)
+			ExecAssignExprContext(estate, &mtstate->ps);
+	}
+	else
+	{
+		/*
+		 * We still must construct a dummy result tuple type, because InitPlan
+		 * expects one (maybe should change that?).
+		 */
+		mtstate->ps.plan->targetlist = NIL;
+		ExecInitResultTypeTL(&mtstate->ps);
+
+		mtstate->ps.ps_ExprContext = NULL;
+	}
+
+	/*
 	 * Open all the result relations and initialize the ResultRelInfo structs.
 	 * (But root relation was initialized above, if it's part of the array.)
 	 * We must do this before initializing the subplan, because direct-modify
@@ -2856,6 +2922,44 @@ ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags)
 					elog(ERROR, "could not find junk wholerow column");
 			}
 		}
+
+		/*
+		 * Initialize any WITH CHECK OPTION constraints if needed.
+		 */
+		if (node->withCheckOptionLists)
+		{
+			List   *wcoList = (List *) list_nth(node->withCheckOptionLists, i);
+
+			resultRelInfo->ri_WithCheckOptions = wcoList;
+			/*
+			 * ri_WithCheckOptionExprs is built the first time it needs to be
+			 * used (see ExecWithCheckOptions()).
+			 */
+		}
+
+		/*
+		 * Initialize RETURNING projections if needed.
+		 */
+		if (node->returningLists)
+		{
+			List  *rlist = (List *) list_nth(node->returningLists, i);
+
+			resultRelInfo->ri_returningList = rlist;
+
+			/*
+			 * ri_projectReturning is built the first time it needs to be used
+			 * (see ExecProcessReturning()), unless the relation is to be
+			 * "directly modified", in that case, IterateDirectModify()
+			 * expects ri_projectReturning to be valid.  Because the child
+			 * relations (their ResultRelInfos) that are directly modified are
+			 * accessed from their corresponding ForeignScanState nodes,
+			 * they can get switched without the control returning to the top-
+			 * level ModifyTable, so there's no better way than initializing
+			 * the projection for all such result relations here.
+			 */
+			if (resultRelInfo->ri_usesFdwDirectModify)
+				ExecInitReturningProjection(resultRelInfo, mtstate);
+		}
 	}
 
 	/*
@@ -2882,80 +2986,6 @@ ExecInitModifyTable(ModifyTable *node, EState *estate, int eflags)
 		operation == CMD_INSERT)
 		mtstate->mt_partition_tuple_routing =
 			ExecSetupPartitionTupleRouting(estate, rel);
-
-	/*
-	 * Initialize any WITH CHECK OPTION constraints if needed.
-	 */
-	resultRelInfo = mtstate->resultRelInfo;
-	foreach(l, node->withCheckOptionLists)
-	{
-		List	   *wcoList = (List *) lfirst(l);
-		List	   *wcoExprs = NIL;
-		ListCell   *ll;
-
-		foreach(ll, wcoList)
-		{
-			WithCheckOption *wco = (WithCheckOption *) lfirst(ll);
-			ExprState  *wcoExpr = ExecInitQual((List *) wco->qual,
-											   &mtstate->ps);
-
-			wcoExprs = lappend(wcoExprs, wcoExpr);
-		}
-
-		resultRelInfo->ri_WithCheckOptions = wcoList;
-		resultRelInfo->ri_WithCheckOptionExprs = wcoExprs;
-		resultRelInfo++;
-	}
-
-	/*
-	 * Initialize RETURNING projections if needed.
-	 */
-	if (node->returningLists)
-	{
-		TupleTableSlot *slot;
-		ExprContext *econtext;
-
-		/*
-		 * Initialize result tuple slot and assign its rowtype using the first
-		 * RETURNING list.  We assume the rest will look the same.
-		 */
-		mtstate->ps.plan->targetlist = (List *) linitial(node->returningLists);
-
-		/* Set up a slot for the output of the RETURNING projection(s) */
-		ExecInitResultTupleSlotTL(&mtstate->ps, &TTSOpsVirtual);
-		slot = mtstate->ps.ps_ResultTupleSlot;
-
-		/* Need an econtext too */
-		if (mtstate->ps.ps_ExprContext == NULL)
-			ExecAssignExprContext(estate, &mtstate->ps);
-		econtext = mtstate->ps.ps_ExprContext;
-
-		/*
-		 * Build a projection for each result rel.
-		 */
-		resultRelInfo = mtstate->resultRelInfo;
-		foreach(l, node->returningLists)
-		{
-			List	   *rlist = (List *) lfirst(l);
-
-			resultRelInfo->ri_returningList = rlist;
-			resultRelInfo->ri_projectReturning =
-				ExecBuildProjectionInfo(rlist, econtext, slot, &mtstate->ps,
-										resultRelInfo->ri_RelationDesc->rd_att);
-			resultRelInfo++;
-		}
-	}
-	else
-	{
-		/*
-		 * We still must construct a dummy result tuple type, because InitPlan
-		 * expects one (maybe should change that?).
-		 */
-		mtstate->ps.plan->targetlist = NIL;
-		ExecInitResultTypeTL(&mtstate->ps);
-
-		mtstate->ps.ps_ExprContext = NULL;
-	}
 
 	/* Set the list of arbiter indexes if needed for ON CONFLICT */
 	resultRelInfo = mtstate->resultRelInfo;

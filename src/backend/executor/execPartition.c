@@ -543,8 +543,6 @@ ExecInitPartitionInfo(ModifyTableState *mtstate, EState *estate,
 	if (node && node->withCheckOptionLists != NIL)
 	{
 		List	   *wcoList;
-		List	   *wcoExprs = NIL;
-		ListCell   *ll;
 
 		/*
 		 * In the case of INSERT on a partitioned table, there is only one
@@ -582,18 +580,11 @@ ExecInitPartitionInfo(ModifyTableState *mtstate, EState *estate,
 								RelationGetForm(partrel)->reltype,
 								&found_whole_row);
 		/* We ignore the value of found_whole_row. */
-
-		foreach(ll, wcoList)
-		{
-			WithCheckOption *wco = castNode(WithCheckOption, lfirst(ll));
-			ExprState  *wcoExpr = ExecInitQual(castNode(List, wco->qual),
-											   &mtstate->ps);
-
-			wcoExprs = lappend(wcoExprs, wcoExpr);
-		}
-
 		leaf_part_rri->ri_WithCheckOptions = wcoList;
-		leaf_part_rri->ri_WithCheckOptionExprs = wcoExprs;
+		/*
+		 * ri_WithCheckOptionExprs is built the first time it needs to be
+		 * used (see ExecWithCheckOptions()).
+		 */
 	}
 
 	/*
@@ -605,8 +596,6 @@ ExecInitPartitionInfo(ModifyTableState *mtstate, EState *estate,
 	 */
 	if (node && node->returningLists != NIL)
 	{
-		TupleTableSlot *slot;
-		ExprContext *econtext;
 		List	   *returningList;
 
 		/* See the comment above for WCO lists. */
@@ -641,20 +630,10 @@ ExecInitPartitionInfo(ModifyTableState *mtstate, EState *estate,
 		/* We ignore the value of found_whole_row. */
 
 		leaf_part_rri->ri_returningList = returningList;
-
 		/*
-		 * Initialize the projection itself.
-		 *
-		 * Use the slot and the expression context that would have been set up
-		 * in ExecInitModifyTable() for projection's output.
+		 * ri_projectReturning is built the first time it needs to be
+		 * used (see ExecProcessReturning()).
 		 */
-		Assert(mtstate->ps.ps_ResultTupleSlot != NULL);
-		slot = mtstate->ps.ps_ResultTupleSlot;
-		Assert(mtstate->ps.ps_ExprContext != NULL);
-		econtext = mtstate->ps.ps_ExprContext;
-		leaf_part_rri->ri_projectReturning =
-			ExecBuildProjectionInfo(returningList, econtext, slot,
-									&mtstate->ps, RelationGetDescr(partrel));
 	}
 
 	/* Set up information needed for routing tuples to the partition. */
