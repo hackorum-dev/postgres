@@ -654,6 +654,7 @@ _bt_compare(Relation rel,
 	int			ncmpkey;
 	int			ntupatts;
 	int32		result;
+	IAttrIterStateData iter;
 
 	Assert(_bt_check_natts(rel, key->heapkeyspace, page, offnum));
 	Assert(key->keysz <= IndexRelationGetNumberOfKeyAttributes(rel));
@@ -685,23 +686,25 @@ _bt_compare(Relation rel,
 	Assert(key->heapkeyspace || ncmpkey == key->keysz);
 	Assert(!BTreeTupleIsPosting(itup) || key->allequalimage);
 	scankey = key->scankeys;
+
+	index_attiterinit(itup, 1, itupdesc, &iter);
+
 	for (int i = 1; i <= ncmpkey; i++)
 	{
 		Datum		datum;
-		bool		isNull;
 
-		datum = index_getattr(itup, scankey->sk_attno, itupdesc, &isNull);
+		datum = index_attiternext(itup, scankey->sk_attno, itupdesc, &iter);
 
 		if (scankey->sk_flags & SK_ISNULL)	/* key is NULL */
 		{
-			if (isNull)
+			if (iter.isNull)
 				result = 0;		/* NULL "=" NULL */
 			else if (scankey->sk_flags & SK_BT_NULLS_FIRST)
 				result = -1;	/* NULL "<" NOT_NULL */
 			else
 				result = 1;		/* NULL ">" NOT_NULL */
 		}
-		else if (isNull)		/* key is NOT_NULL and item is NULL */
+		else if (iter.isNull)		/* key is NOT_NULL and item is NULL */
 		{
 			if (scankey->sk_flags & SK_BT_NULLS_FIRST)
 				result = 1;		/* NOT_NULL ">" NULL */
