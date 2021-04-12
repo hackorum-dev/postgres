@@ -763,8 +763,15 @@ typedef struct RelOptInfo
 	struct RelOptInfo **part_rels;	/* Array of RelOptInfos of partitions,
 									 * stored in the same order as bounds */
 	Relids		all_partrels;	/* Relids set of all partition relids */
-	List	  **partexprs;		/* Non-nullable partition key expressions */
-	List	  **nullable_partexprs; /* Nullable partition key expressions */
+	List	  **partexprs;		/* Non-nullable partition key expressions,
+								 * Base Relations have a single expression per key,
+								 */
+	List	  **nullable_partexprs; /* Nullable partition key expressions,
+									 * Base Relations doesn't have such exprs
+									 * since no outer join is involved.
+									 * Check set_baserel_partition_key_exprs for
+									 * more information.
+									 */
 } RelOptInfo;
 
 /*
