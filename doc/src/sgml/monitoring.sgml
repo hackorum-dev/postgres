@@ -695,7 +695,7 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
        <structfield>datid</structfield> <type>oid</type>
       </para>
       <para>
-       OID of the database this backend is connected to
+       OID of the database this backend is connected to.
       </para></entry>
      </row>
 
@@ -704,7 +704,7 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
        <structfield>datname</structfield> <type>name</type>
       </para>
       <para>
-       Name of the database this backend is connected to
+       Name of the database this backend is connected to.
       </para></entry>
      </row>
 
@@ -713,7 +713,7 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
        <structfield>pid</structfield> <type>integer</type>
       </para>
       <para>
-       Process ID of this backend
+       Process ID of this backend.
       </para></entry>
      </row>
 
@@ -733,7 +733,7 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
        <structfield>usesysid</structfield> <type>oid</type>
       </para>
       <para>
-       OID of the user logged into this backend
+       OID of the user logged into this backend.
       </para></entry>
      </row>
 
@@ -742,7 +742,7 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
        <structfield>usename</structfield> <type>name</type>
       </para>
       <para>
-       Name of the user logged into this backend
+       Name of the user logged into this backend.
       </para></entry>
      </row>
 
@@ -752,7 +752,7 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
       </para>
       <para>
        Name of the application that is connected
-       to this backend
+       to this backend.
       </para></entry>
      </row>
 
@@ -819,7 +819,7 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
       <para>
        Time when the currently active query was started, or if
        <structfield>state</structfield> is not <literal>active</literal>, when the last query
-       was started
+       was started.
       </para></entry>
      </row>
 
@@ -828,7 +828,7 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
        <structfield>state_change</structfield> <type>timestamp with time zone</type>
       </para>
       <para>
-       Time when the <structfield>state</structfield> was last changed
+       Time when the <structfield>state</structfield> was last changed.
       </para></entry>
      </row>
 
@@ -2302,7 +2302,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>pid</structfield> <type>integer</type>
       </para>
       <para>
-       Process ID of a WAL sender process
+       Process ID of a WAL sender process.
       </para></entry>
      </row>
 
@@ -2311,7 +2311,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>usesysid</structfield> <type>oid</type>
       </para>
       <para>
-       OID of the user logged into this WAL sender process
+       OID of the user logged into this WAL sender process.
       </para></entry>
      </row>
 
@@ -2320,7 +2320,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>usename</structfield> <type>name</type>
       </para>
       <para>
-       Name of the user logged into this WAL sender process
+       Name of the user logged into this WAL sender process.
       </para></entry>
      </row>
 
@@ -2330,7 +2330,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Name of the application that is connected
-       to this WAL sender
+       to this WAL sender.
       </para></entry>
      </row>
 
@@ -2362,7 +2362,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        TCP port number that the client is using for communication
-       with this WAL sender, or <literal>-1</literal> if a Unix socket is used
+       with this WAL sender, or <literal>-1</literal> if a Unix socket is used.
       </para></entry>
      </row>
 
@@ -2372,7 +2372,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Time when this process was started, i.e., when the
-       client connected to this WAL sender
+       client connected to this WAL sender.
       </para></entry>
      </row>
 
@@ -2430,7 +2430,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>sent_lsn</structfield> <type>pg_lsn</type>
       </para>
       <para>
-       Last write-ahead log location sent on this connection
+       Last write-ahead log location sent on this connection.
       </para></entry>
      </row>
 
@@ -2440,7 +2440,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Last write-ahead log location written to disk by this standby
-       server
+       server.
       </para></entry>
      </row>
 
@@ -2450,7 +2450,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Last write-ahead log location flushed to disk by this standby
-       server
+       server.
       </para></entry>
      </row>
 
@@ -2460,7 +2460,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Last write-ahead log location replayed into the database on this
-       standby server
+       standby server.
       </para></entry>
      </row>
 
@@ -2557,7 +2557,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>reply_time</structfield> <type>timestamp with time zone</type>
       </para>
       <para>
-       Send time of last reply message received from standby server
+       Send time of last reply message received from standby server.
       </para></entry>
      </row>
     </tbody>
@@ -2637,7 +2637,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
         <structfield>slot_name</structfield> <type>text</type>
        </para>
        <para>
-        A unique, cluster-wide identifier for the replication slot
+        A unique, cluster-wide identifier for the replication slot.
       </para></entry>
      </row>
 
@@ -2721,7 +2721,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
         <structfield>stats_reset</structfield> <type>timestamp with time zone</type>
        </para>
        <para>
-        Time at which these statistics were last reset
+        Time at which these statistics were last reset.
        </para></entry>
      </row>
     </tbody>
@@ -2763,7 +2763,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>pid</structfield> <type>integer</type>
       </para>
       <para>
-       Process ID of the WAL receiver process
+       Process ID of the WAL receiver process.
       </para></entry>
      </row>
 
@@ -2772,7 +2772,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>status</structfield> <type>text</type>
       </para>
       <para>
-       Activity status of the WAL receiver process
+       Activity status of the WAL receiver process.
       </para></entry>
      </row>
 
@@ -2782,7 +2782,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        First write-ahead log location used when WAL receiver is
-       started
+       started.
       </para></entry>
      </row>
 
@@ -2791,7 +2791,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>receive_start_tli</structfield> <type>integer</type>
       </para>
       <para>
-       First timeline number used when WAL receiver is started
+       First timeline number used when WAL receiver is started.
       </para></entry>
      </row>
 
@@ -2812,7 +2812,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       <para>
        Last write-ahead log location already received and flushed to
        disk, the initial value of this field being the first log location used
-       when WAL receiver is started
+       when WAL receiver is started.
       </para></entry>
      </row>
 
@@ -2823,7 +2823,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       <para>
        Timeline number of last write-ahead log location received and
        flushed to disk, the initial value of this field being the timeline
-       number of the first log location used when WAL receiver is started
+       number of the first log location used when WAL receiver is started.
       </para></entry>
      </row>
 
@@ -2832,7 +2832,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>last_msg_send_time</structfield> <type>timestamp with time zone</type>
       </para>
       <para>
-       Send time of last message received from origin WAL sender
+       Send time of last message received from origin WAL sender.
       </para></entry>
      </row>
 
@@ -2841,7 +2841,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>last_msg_receipt_time</structfield> <type>timestamp with time zone</type>
       </para>
       <para>
-       Receipt time of last message received from origin WAL sender
+       Receipt time of last message received from origin WAL sender.
       </para></entry>
      </row>
 
@@ -2850,7 +2850,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>latest_end_lsn</structfield> <type>pg_lsn</type>
       </para>
       <para>
-       Last write-ahead log location reported to origin WAL sender
+       Last write-ahead log location reported to origin WAL sender.
       </para></entry>
      </row>
 
@@ -2859,7 +2859,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>latest_end_time</structfield> <type>timestamp with time zone</type>
       </para>
       <para>
-       Time of last write-ahead log location reported to origin WAL sender
+       Time of last write-ahead log location reported to origin WAL sender.
       </para></entry>
      </row>
 
@@ -2868,7 +2868,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>slot_name</structfield> <type>text</type>
       </para>
       <para>
-       Replication slot name used by this WAL receiver
+       Replication slot name used by this WAL receiver.
       </para></entry>
      </row>
 
@@ -2939,17 +2939,17 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
     <row>
      <entry><structfield>prefetch</structfield></entry>
      <entry><type>bigint</type></entry>
-     <entry>Number of blocks prefetched because they were not in the buffer pool</entry>
+     <entry>Number of blocks prefetched because they were not in the buffer pool.</entry>
     </row>
     <row>
      <entry><structfield>skip_hit</structfield></entry>
      <entry><type>bigint</type></entry>
-     <entry>Number of blocks not prefetched because they were already in the buffer pool</entry>
+     <entry>Number of blocks not prefetched because they were already in the buffer pool.</entry>
     </row>
     <row>
      <entry><structfield>skip_new</structfield></entry>
      <entry><type>bigint</type></entry>
-     <entry>Number of blocks not prefetched because they were new (usually relation extension)</entry>
+     <entry>Number of blocks not prefetched because they were new (usually relation extension).</entry>
     </row>
     <row>
      <entry><structfield>skip_fpw</structfield></entry>
@@ -2959,27 +2959,27 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
     <row>
      <entry><structfield>skip_seq</structfield></entry>
      <entry><type>bigint</type></entry>
-     <entry>Number of blocks not prefetched because of repeated access</entry>
+     <entry>Number of blocks not prefetched because of repeated access.</entry>
     </row>
     <row>
      <entry><structfield>distance</structfield></entry>
      <entry><type>integer</type></entry>
-     <entry>How far ahead of recovery the prefetcher is currently reading, in bytes</entry>
+     <entry>How far ahead of recovery the prefetcher is currently reading, in bytes.</entry>
     </row>
     <row>
      <entry><structfield>queue_depth</structfield></entry>
      <entry><type>integer</type></entry>
-     <entry>How many prefetches have been initiated but are not yet known to have completed</entry>
+     <entry>How many prefetches have been initiated but are not yet known to have completed.</entry>
     </row>
     <row>
      <entry><structfield>avg_distance</structfield></entry>
      <entry><type>float4</type></entry>
-     <entry>How far ahead of recovery the prefetcher is on average, while recovery is not idle</entry>
+     <entry>How far ahead of recovery the prefetcher is on average, while recovery is not idle.</entry>
     </row>
     <row>
      <entry><structfield>avg_queue_depth</structfield></entry>
      <entry><type>float4</type></entry>
-     <entry>Average number of prefetches in flight while recovery is not idle</entry>
+     <entry>Average number of prefetches in flight while recovery is not idle.</entry>
     </row>
     </tbody>
    </tgroup>
@@ -3016,7 +3016,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>subid</structfield> <type>oid</type>
       </para>
       <para>
-       OID of the subscription
+       OID of the subscription.
       </para></entry>
      </row>
 
@@ -3025,7 +3025,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>subname</structfield> <type>name</type>
       </para>
       <para>
-       Name of the subscription
+       Name of the subscription.
       </para></entry>
      </row>
 
@@ -3034,7 +3034,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>pid</structfield> <type>integer</type>
       </para>
       <para>
-       Process ID of the subscription worker process
+       Process ID of the subscription worker process.
       </para></entry>
      </row>
 
@@ -3044,7 +3044,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        OID of the relation that the worker is synchronizing; null for the
-       main apply worker
+       main apply worker.
       </para></entry>
      </row>
 
@@ -3054,7 +3054,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Last write-ahead log location received, the initial value of
-       this field being 0
+       this field being 0.
       </para></entry>
      </row>
 
@@ -3063,7 +3063,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>last_msg_send_time</structfield> <type>timestamp with time zone</type>
       </para>
       <para>
-       Send time of last message received from origin WAL sender
+       Send time of last message received from origin WAL sender.
       </para></entry>
      </row>
 
@@ -3072,7 +3072,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>last_msg_receipt_time</structfield> <type>timestamp with time zone</type>
       </para>
       <para>
-       Receipt time of last message received from origin WAL sender
+       Receipt time of last message received from origin WAL sender.
       </para></entry>
      </row>
 
@@ -3081,7 +3081,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>latest_end_lsn</structfield> <type>pg_lsn</type>
       </para>
       <para>
-       Last write-ahead log location reported to origin WAL sender
+       Last write-ahead log location reported to origin WAL sender.
       </para></entry>
      </row>
 
@@ -3091,7 +3091,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Time of last write-ahead log location reported to origin WAL
-       sender
+       sender.
       </para></entry>
      </row>
     </tbody>
@@ -3136,7 +3136,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>pid</structfield> <type>integer</type>
       </para>
       <para>
-       Process ID of a backend or WAL sender process
+       Process ID of a backend or WAL sender process.
       </para></entry>
      </row>
 
@@ -3145,7 +3145,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>ssl</structfield> <type>boolean</type>
       </para>
       <para>
-       True if SSL is used on this connection
+       True if SSL is used on this connection.
       </para></entry>
      </row>
 
@@ -3155,7 +3155,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Version of SSL in use, or NULL if SSL is not in use
-       on this connection
+       on this connection.
       </para></entry>
      </row>
 
@@ -3165,7 +3165,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Name of SSL cipher in use, or NULL if SSL is not in use
-       on this connection
+       on this connection.
       </para></entry>
      </row>
 
@@ -3175,7 +3175,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Number of bits in the encryption algorithm used, or NULL
-       if SSL is not used on this connection
+       if SSL is not used on this connection.
       </para></entry>
      </row>
 
@@ -3257,7 +3257,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>pid</structfield> <type>integer</type>
       </para>
       <para>
-       Process ID of a backend
+       Process ID of a backend.
       </para></entry>
      </row>
 
@@ -3266,7 +3266,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>gss_authenticated</structfield> <type>boolean</type>
       </para>
       <para>
-       True if GSSAPI authentication was used for this connection
+       True if GSSAPI authentication was used for this connection.
       </para></entry>
      </row>
 
@@ -3287,7 +3287,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>encrypted</structfield> <type>boolean</type>
       </para>
       <para>
-       True if GSSAPI encryption is in use on this connection
+       True if GSSAPI encryption is in use on this connection.
       </para></entry>
      </row>
     </tbody>
@@ -3328,7 +3328,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>archived_count</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of WAL files that have been successfully archived
+       Number of WAL files that have been successfully archived.
       </para></entry>
      </row>
 
@@ -3337,7 +3337,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>last_archived_wal</structfield> <type>text</type>
       </para>
       <para>
-       Name of the last WAL file successfully archived
+       Name of the last WAL file successfully archived.
       </para></entry>
      </row>
 
@@ -3346,7 +3346,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>last_archived_time</structfield> <type>timestamp with time zone</type>
       </para>
       <para>
-       Time of the last successful archive operation
+       Time of the last successful archive operation.
       </para></entry>
      </row>
 
@@ -3355,7 +3355,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>failed_count</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of failed attempts for archiving WAL files
+       Number of failed attempts for archiving WAL files.
       </para></entry>
      </row>
 
@@ -3364,7 +3364,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>last_failed_wal</structfield> <type>text</type>
       </para>
       <para>
-       Name of the WAL file of the last failed archival operation
+       Name of the WAL file of the last failed archival operation.
       </para></entry>
      </row>
 
@@ -3373,7 +3373,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>last_failed_time</structfield> <type>timestamp with time zone</type>
       </para>
       <para>
-       Time of the last failed archival operation
+       Time of the last failed archival operation.
       </para></entry>
      </row>
 
@@ -3382,7 +3382,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>stats_reset</structfield> <type>timestamp with time zone</type>
       </para>
       <para>
-       Time at which these statistics were last reset
+       Time at which these statistics were last reset.
       </para></entry>
      </row>
     </tbody>
@@ -3423,7 +3423,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>checkpoints_timed</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of scheduled checkpoints that have been performed
+       Number of scheduled checkpoints that have been performed.
       </para></entry>
      </row>
 
@@ -3432,7 +3432,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>checkpoints_req</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of requested checkpoints that have been performed
+       Number of requested checkpoints that have been performed.
       </para></entry>
      </row>
 
@@ -3442,7 +3442,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Total amount of time that has been spent in the portion of
-       checkpoint processing where files are written to disk, in milliseconds
+       checkpoint processing where files are written to disk, in milliseconds.
       </para></entry>
      </row>
 
@@ -3453,7 +3453,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       <para>
        Total amount of time that has been spent in the portion of
        checkpoint processing where files are synchronized to disk, in
-       milliseconds
+       milliseconds.
       </para></entry>
      </row>
 
@@ -3462,7 +3462,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>buffers_checkpoint</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of buffers written during checkpoints
+       Number of buffers written during checkpoints.
       </para></entry>
      </row>
 
@@ -3471,7 +3471,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>buffers_clean</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of buffers written by the background writer
+       Number of buffers written by the background writer.
       </para></entry>
      </row>
 
@@ -3481,7 +3481,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Number of times the background writer stopped a cleaning
-       scan because it had written too many buffers
+       scan because it had written too many buffers.
       </para></entry>
      </row>
 
@@ -3490,7 +3490,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>buffers_backend</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of buffers written directly by a backend
+       Number of buffers written directly by a backend.
       </para></entry>
      </row>
 
@@ -3501,7 +3501,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       <para>
        Number of times a backend had to execute its own
        <function>fsync</function> call (normally the background writer handles those
-       even when the backend does its own write)
+       even when the backend does its own write).
       </para></entry>
      </row>
 
@@ -3510,7 +3510,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>buffers_alloc</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of buffers allocated
+       Number of buffers allocated.
       </para></entry>
      </row>
 
@@ -3519,7 +3519,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>stats_reset</structfield> <type>timestamp with time zone</type>
       </para>
       <para>
-       Time at which these statistics were last reset
+       Time at which these statistics were last reset.
       </para></entry>
      </row>
     </tbody>
@@ -3560,7 +3560,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>wal_records</structfield> <type>bigint</type>
       </para>
       <para>
-       Total number of WAL records generated
+       Total number of WAL records generated.
       </para></entry>
      </row>
 
@@ -3569,7 +3569,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>wal_fpi</structfield> <type>bigint</type>
       </para>
       <para>
-       Total number of WAL full page images generated
+       Total number of WAL full page images generated.
       </para></entry>
      </row>
 
@@ -3578,7 +3578,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>wal_bytes</structfield> <type>numeric</type>
       </para>
       <para>
-       Total amount of WAL generated in bytes
+       Total amount of WAL generated in bytes.
       </para></entry>
      </row>
 
@@ -3587,7 +3587,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>wal_buffers_full</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of times WAL data was written to disk because WAL buffers became full
+       Number of times WAL data was written to disk because WAL buffers became full.
       </para></entry>
      </row>
 
@@ -3653,7 +3653,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>stats_reset</structfield> <type>timestamp with time zone</type>
       </para>
       <para>
-       Time at which these statistics were last reset
+       Time at which these statistics were last reset.
       </para></entry>
      </row>
      </tbody>
@@ -3696,7 +3696,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        OID of this database, or 0 for objects belonging to a shared
-       relation
+       relation.
       </para></entry>
      </row>
 
@@ -3728,7 +3728,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Number of transactions in this database that have been
-       committed
+       committed.
       </para></entry>
      </row>
 
@@ -3738,7 +3738,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Number of transactions in this database that have been
-       rolled back
+       rolled back.
       </para></entry>
      </row>
 
@@ -3747,7 +3747,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>blks_read</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of disk blocks read in this database
+       Number of disk blocks read in this database.
       </para></entry>
      </row>
 
@@ -3758,7 +3758,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       <para>
        Number of times disk blocks were found already in the buffer
        cache, so that a read was not necessary (this only includes hits in the
-       PostgreSQL buffer cache, not the operating system's file system cache)
+       PostgreSQL buffer cache, not the operating system's file system cache).
       </para></entry>
      </row>
 
@@ -3767,7 +3767,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>tup_returned</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of rows returned by queries in this database
+       Number of rows returned by queries in this database.
       </para></entry>
      </row>
 
@@ -3776,7 +3776,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>tup_fetched</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of rows fetched by queries in this database
+       Number of rows fetched by queries in this database.
       </para></entry>
      </row>
 
@@ -3785,7 +3785,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>tup_inserted</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of rows inserted by queries in this database
+       Number of rows inserted by queries in this database.
       </para></entry>
      </row>
 
@@ -3794,7 +3794,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>tup_updated</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of rows updated by queries in this database
+       Number of rows updated by queries in this database.
       </para></entry>
      </row>
 
@@ -3803,7 +3803,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>tup_deleted</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of rows deleted by queries in this database
+       Number of rows deleted by queries in this database.
       </para></entry>
      </row>
 
@@ -3848,7 +3848,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>deadlocks</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of deadlocks detected in this database
+       Number of deadlocks detected in this database.
       </para></entry>
      </row>
 
@@ -3881,7 +3881,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       <para>
        Time spent reading data file blocks by backends in this database,
        in milliseconds (if <xref linkend="guc-track-io-timing"/> is enabled,
-       otherwise zero)
+       otherwise zero).
       </para></entry>
      </row>
 
@@ -3892,7 +3892,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       <para>
        Time spent writing data file blocks by backends in this database,
        in milliseconds (if <xref linkend="guc-track-io-timing"/> is enabled,
-       otherwise zero)
+       otherwise zero).
       </para></entry>
      </row>
 
@@ -3904,7 +3904,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        Time spent by database sessions in this database, in milliseconds
        (note that statistics are only updated when the state of a session
        changes, so if sessions have been idle for a long time, this idle time
-       won't be included)
+       won't be included).
       </para></entry>
      </row>
 
@@ -3917,7 +3917,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        (this corresponds to the states <literal>active</literal> and
        <literal>fastpath function call</literal> in
        <link linkend="monitoring-pg-stat-activity-view">
-       <structname>pg_stat_activity</structname></link>)
+       <structname>pg_stat_activity</structname></link>).
       </para></entry>
      </row>
 
@@ -3930,7 +3930,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        (this corresponds to the states <literal>idle in transaction</literal> and
        <literal>idle in transaction (aborted)</literal> in
        <link linkend="monitoring-pg-stat-activity-view">
-       <structname>pg_stat_activity</structname></link>)
+       <structname>pg_stat_activity</structname></link>).
       </para></entry>
      </row>
 
@@ -3939,7 +3939,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>sessions</structfield> <type>bigint</type>
       </para>
       <para>
-       Total number of sessions established to this database
+       Total number of sessions established to this database.
       </para></entry>
      </row>
 
@@ -3949,7 +3949,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Number of database sessions to this database that were terminated
-       because connection to the client was lost
+       because connection to the client was lost.
       </para></entry>
      </row>
 
@@ -3959,7 +3959,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Number of database sessions to this database that were terminated
-       by fatal errors
+       by fatal errors.
       </para></entry>
      </row>
 
@@ -3969,7 +3969,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Number of database sessions to this database that were terminated
-       by operator intervention
+       by operator intervention.
       </para></entry>
      </row>
 
@@ -3978,7 +3978,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>stats_reset</structfield> <type>timestamp with time zone</type>
       </para>
       <para>
-       Time at which these statistics were last reset
+       Time at which these statistics were last reset.
       </para></entry>
      </row>
     </tbody>
@@ -4022,7 +4022,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>datid</structfield> <type>oid</type>
       </para>
       <para>
-       OID of a database
+       OID of a database.
       </para></entry>
      </row>
 
@@ -4031,7 +4031,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>datname</structfield> <type>name</type>
       </para>
       <para>
-       Name of this database
+       Name of this database.
       </para></entry>
      </row>
 
@@ -4041,7 +4041,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Number of queries in this database that have been canceled due to
-       dropped tablespaces
+       dropped tablespaces.
       </para></entry>
      </row>
 
@@ -4051,7 +4051,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Number of queries in this database that have been canceled due to
-       lock timeouts
+       lock timeouts.
       </para></entry>
      </row>
 
@@ -4061,7 +4061,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Number of queries in this database that have been canceled due to
-       old snapshots
+       old snapshots.
       </para></entry>
      </row>
 
@@ -4071,7 +4071,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Number of queries in this database that have been canceled due to
-       pinned buffers
+       pinned buffers.
       </para></entry>
      </row>
 
@@ -4081,7 +4081,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Number of queries in this database that have been canceled due to
-       deadlocks
+       deadlocks.
       </para></entry>
      </row>
     </tbody>
@@ -4127,7 +4127,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>relid</structfield> <type>oid</type>
       </para>
       <para>
-       OID of a table
+       OID of a table.
       </para></entry>
      </row>
 
@@ -4136,7 +4136,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>schemaname</structfield> <type>name</type>
       </para>
       <para>
-       Name of the schema that this table is in
+       Name of the schema that this table is in.
       </para></entry>
      </row>
 
@@ -4145,7 +4145,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>relname</structfield> <type>name</type>
       </para>
       <para>
-       Name of this table
+       Name of this table.
       </para></entry>
      </row>
 
@@ -4154,7 +4154,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>seq_scan</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of sequential scans initiated on this table
+       Number of sequential scans initiated on this table.
       </para></entry>
      </row>
 
@@ -4163,7 +4163,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>seq_tup_read</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of live rows fetched by sequential scans
+       Number of live rows fetched by sequential scans.
       </para></entry>
      </row>
 
@@ -4172,7 +4172,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>idx_scan</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of index scans initiated on this table
+       Number of index scans initiated on this table.
       </para></entry>
      </row>
 
@@ -4181,7 +4181,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>idx_tup_fetch</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of live rows fetched by index scans
+       Number of live rows fetched by index scans.
       </para></entry>
      </row>
 
@@ -4190,7 +4190,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>n_tup_ins</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of rows inserted
+       Number of rows inserted.
       </para></entry>
      </row>
 
@@ -4199,7 +4199,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>n_tup_upd</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of rows updated (includes HOT updated rows)
+       Number of rows updated (includes HOT updated rows).
       </para></entry>
      </row>
 
@@ -4208,7 +4208,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>n_tup_del</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of rows deleted
+       Number of rows deleted.
       </para></entry>
      </row>
 
@@ -4218,7 +4218,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Number of rows HOT updated (i.e., with no separate index
-       update required)
+       update required).
       </para></entry>
      </row>
 
@@ -4227,7 +4227,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>n_live_tup</structfield> <type>bigint</type>
       </para>
       <para>
-       Estimated number of live rows
+       Estimated number of live rows.
       </para></entry>
      </row>
 
@@ -4236,7 +4236,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>n_dead_tup</structfield> <type>bigint</type>
       </para>
       <para>
-       Estimated number of dead rows
+       Estimated number of dead rows.
       </para></entry>
      </row>
 
@@ -4245,7 +4245,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>n_mod_since_analyze</structfield> <type>bigint</type>
       </para>
       <para>
-       Estimated number of rows modified since this table was last analyzed
+       Estimated number of rows modified since this table was last analyzed.
       </para></entry>
      </row>
 
@@ -4254,7 +4254,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>n_ins_since_vacuum</structfield> <type>bigint</type>
       </para>
       <para>
-       Estimated number of rows inserted since this table was last vacuumed
+       Estimated number of rows inserted since this table was last vacuumed.
       </para></entry>
      </row>
 
@@ -4264,7 +4264,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Last time at which this table was manually vacuumed
-       (not counting <command>VACUUM FULL</command>)
+       (not counting <command>VACUUM FULL</command>).
       </para></entry>
      </row>
 
@@ -4274,7 +4274,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Last time at which this table was vacuumed by the autovacuum
-       daemon
+       daemon.
       </para></entry>
      </row>
 
@@ -4283,7 +4283,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>last_analyze</structfield> <type>timestamp with time zone</type>
       </para>
       <para>
-       Last time at which this table was manually analyzed
+       Last time at which this table was manually analyzed.
       </para></entry>
      </row>
 
@@ -4293,7 +4293,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Last time at which this table was analyzed by the autovacuum
-       daemon
+       daemon.
       </para></entry>
      </row>
 
@@ -4303,7 +4303,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Number of times this table has been manually vacuumed
-       (not counting <command>VACUUM FULL</command>)
+       (not counting <command>VACUUM FULL</command>).
       </para></entry>
      </row>
 
@@ -4313,7 +4313,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Number of times this table has been vacuumed by the autovacuum
-       daemon
+       daemon.
       </para></entry>
      </row>
 
@@ -4322,7 +4322,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>analyze_count</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of times this table has been manually analyzed
+       Number of times this table has been manually analyzed.
       </para></entry>
      </row>
 
@@ -4332,7 +4332,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Number of times this table has been analyzed by the autovacuum
-       daemon
+       daemon.
       </para></entry>
      </row>
     </tbody>
@@ -4378,7 +4378,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>relid</structfield> <type>oid</type>
       </para>
       <para>
-       OID of the table for this index
+       OID of the table for this index.
       </para></entry>
      </row>
 
@@ -4387,7 +4387,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>indexrelid</structfield> <type>oid</type>
       </para>
       <para>
-       OID of this index
+       OID of this index.
       </para></entry>
      </row>
 
@@ -4396,7 +4396,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>schemaname</structfield> <type>name</type>
       </para>
       <para>
-       Name of the schema this index is in
+       Name of the schema this index is in.
       </para></entry>
      </row>
 
@@ -4405,7 +4405,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>relname</structfield> <type>name</type>
       </para>
       <para>
-       Name of the table for this index
+       Name of the table for this index.
       </para></entry>
      </row>
 
@@ -4414,7 +4414,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>indexrelname</structfield> <type>name</type>
       </para>
       <para>
-       Name of this index
+       Name of this index.
       </para></entry>
      </row>
 
@@ -4423,7 +4423,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>idx_scan</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of index scans initiated on this index
+       Number of index scans initiated on this index.
       </para></entry>
      </row>
 
@@ -4432,7 +4432,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>idx_tup_read</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of index entries returned by scans on this index
+       Number of index entries returned by scans on this index.
       </para></entry>
      </row>
 
@@ -4442,7 +4442,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Number of live table rows fetched by simple index scans using this
-       index
+       index.
       </para></entry>
      </row>
     </tbody>
@@ -4517,7 +4517,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>relid</structfield> <type>oid</type>
       </para>
       <para>
-       OID of a table
+       OID of a table.
       </para></entry>
      </row>
 
@@ -4526,7 +4526,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>schemaname</structfield> <type>name</type>
       </para>
       <para>
-       Name of the schema that this table is in
+       Name of the schema that this table is in.
       </para></entry>
      </row>
 
@@ -4535,7 +4535,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>relname</structfield> <type>name</type>
       </para>
       <para>
-       Name of this table
+       Name of this table.
       </para></entry>
      </row>
 
@@ -4544,7 +4544,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>heap_blks_read</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of disk blocks read from this table
+       Number of disk blocks read from this table.
       </para></entry>
      </row>
 
@@ -4553,7 +4553,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>heap_blks_hit</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of buffer hits in this table
+       Number of buffer hits in this table.
       </para></entry>
      </row>
 
@@ -4562,7 +4562,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>idx_blks_read</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of disk blocks read from all indexes on this table
+       Number of disk blocks read from all indexes on this table.
       </para></entry>
      </row>
 
@@ -4571,7 +4571,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>idx_blks_hit</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of buffer hits in all indexes on this table
+       Number of buffer hits in all indexes on this table.
       </para></entry>
      </row>
 
@@ -4580,7 +4580,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>toast_blks_read</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of disk blocks read from this table's TOAST table (if any)
+       Number of disk blocks read from this table's TOAST table (if any).
       </para></entry>
      </row>
 
@@ -4589,7 +4589,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>toast_blks_hit</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of buffer hits in this table's TOAST table (if any)
+       Number of buffer hits in this table's TOAST table (if any).
       </para></entry>
      </row>
 
@@ -4598,7 +4598,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>tidx_blks_read</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of disk blocks read from this table's TOAST table indexes (if any)
+       Number of disk blocks read from this table's TOAST table indexes (if any).
       </para></entry>
      </row>
 
@@ -4607,7 +4607,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>tidx_blks_hit</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of buffer hits in this table's TOAST table indexes (if any)
+       Number of buffer hits in this table's TOAST table indexes (if any).
       </para></entry>
      </row>
     </tbody>
@@ -4653,7 +4653,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>relid</structfield> <type>oid</type>
       </para>
       <para>
-       OID of the table for this index
+       OID of the table for this index.
       </para></entry>
      </row>
 
@@ -4662,7 +4662,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>indexrelid</structfield> <type>oid</type>
       </para>
       <para>
-       OID of this index
+       OID of this index.
       </para></entry>
      </row>
 
@@ -4671,7 +4671,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>schemaname</structfield> <type>name</type>
       </para>
       <para>
-       Name of the schema this index is in
+       Name of the schema this index is in.
       </para></entry>
      </row>
 
@@ -4680,7 +4680,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>relname</structfield> <type>name</type>
       </para>
       <para>
-       Name of the table for this index
+       Name of the table for this index.
       </para></entry>
      </row>
 
@@ -4689,7 +4689,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>indexrelname</structfield> <type>name</type>
       </para>
       <para>
-       Name of this index
+       Name of this index.
       </para></entry>
      </row>
 
@@ -4698,7 +4698,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>idx_blks_read</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of disk blocks read from this index
+       Number of disk blocks read from this index.
       </para></entry>
      </row>
 
@@ -4707,7 +4707,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>idx_blks_hit</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of buffer hits in this index
+       Number of buffer hits in this index.
       </para></entry>
      </row>
     </tbody>
@@ -4749,7 +4749,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>relid</structfield> <type>oid</type>
       </para>
       <para>
-       OID of a sequence
+       OID of a sequence.
       </para></entry>
      </row>
 
@@ -4758,7 +4758,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>schemaname</structfield> <type>name</type>
       </para>
       <para>
-       Name of the schema this sequence is in
+       Name of the schema this sequence is in.
       </para></entry>
      </row>
 
@@ -4767,7 +4767,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>relname</structfield> <type>name</type>
       </para>
       <para>
-       Name of this sequence
+       Name of this sequence.
       </para></entry>
      </row>
 
@@ -4776,7 +4776,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>blks_read</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of disk blocks read from this sequence
+       Number of disk blocks read from this sequence.
       </para></entry>
      </row>
 
@@ -4785,7 +4785,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>blks_hit</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of buffer hits in this sequence
+       Number of buffer hits in this sequence.
       </para></entry>
      </row>
     </tbody>
@@ -4828,7 +4828,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>funcid</structfield> <type>oid</type>
       </para>
       <para>
-       OID of a function
+       OID of a function.
       </para></entry>
      </row>
 
@@ -4837,7 +4837,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>schemaname</structfield> <type>name</type>
       </para>
       <para>
-       Name of the schema this function is in
+       Name of the schema this function is in.
       </para></entry>
      </row>
 
@@ -4846,7 +4846,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>funcname</structfield> <type>name</type>
       </para>
       <para>
-       Name of this function
+       Name of this function.
       </para></entry>
      </row>
 
@@ -4855,7 +4855,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>calls</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of times this function has been called
+       Number of times this function has been called.
       </para></entry>
      </row>
 
@@ -4865,7 +4865,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Total time spent in this function and all other functions
-       called by it, in milliseconds
+       called by it, in milliseconds.
       </para></entry>
      </row>
 
@@ -4875,7 +4875,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       </para>
       <para>
        Total time spent in this function itself, not including
-       other functions called by it, in milliseconds
+       other functions called by it, in milliseconds.
       </para></entry>
      </row>
     </tbody>
@@ -4923,7 +4923,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>name</structfield> <type>text</type>
       </para>
       <para>
-       Name of the SLRU
+       Name of the SLRU.
       </para></entry>
      </row>
 
@@ -4932,7 +4932,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>blks_zeroed</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of blocks zeroed during initializations
+       Number of blocks zeroed during initializations.
       </para></entry>
      </row>
 
@@ -4943,7 +4943,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
       <para>
        Number of times disk blocks were found already in the SLRU,
        so that a read was not necessary (this only includes hits in the
-       SLRU, not the operating system's file system cache)
+       SLRU, not the operating system's file system cache).
       </para></entry>
      </row>
 
@@ -4952,7 +4952,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>blks_read</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of disk blocks read for this SLRU
+       Number of disk blocks read for this SLRU.
       </para></entry>
      </row>
 
@@ -4961,7 +4961,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>blks_written</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of disk blocks written for this SLRU
+       Number of disk blocks written for this SLRU.
       </para></entry>
      </row>
 
@@ -4970,7 +4970,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>blks_exists</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of blocks checked for existence for this SLRU
+       Number of blocks checked for existence for this SLRU.
       </para></entry>
      </row>
 
@@ -4979,7 +4979,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>flushes</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of flushes of dirty data for this SLRU
+       Number of flushes of dirty data for this SLRU.
       </para></entry>
      </row>
 
@@ -4988,7 +4988,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>truncates</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of truncates for this SLRU
+       Number of truncates for this SLRU.
       </para></entry>
      </row>
 
@@ -4997,7 +4997,7 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
        <structfield>stats_reset</structfield> <type>timestamp with time zone</type>
       </para>
       <para>
-       Time at which these statistics were last reset
+       Time at which these statistics were last reset.
       </para></entry>
      </row>
     </tbody>
