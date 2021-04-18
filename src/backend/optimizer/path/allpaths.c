@@ -1178,7 +1178,15 @@ set_append_rel_size(PlannerInfo *root, RelOptInfo *rel,
 		int			i;
 
 		Assert(parent_rows > 0);
-		rel->rows = parent_rows;
+		if (rel->tuples > 0)
+			rel->rows = clamp_row_est(rel->tuples * clauselist_selectivity(root,
+															 rel->baserestrictinfo,
+															 rel->relid,
+															 JOIN_INNER,
+																		   NULL));
+		else
+			rel->rows = parent_rows;
+
 		rel->reltarget->width = rint(parent_size / parent_rows);
 		for (i = 0; i < nattrs; i++)
 			rel->attr_widths[i] = rint(parent_attrsizes[i] / parent_rows);
@@ -1187,7 +1195,8 @@ set_append_rel_size(PlannerInfo *root, RelOptInfo *rel,
 		 * Set "raw tuples" count equal to "rows" for the appendrel; needed
 		 * because some places assume rel->tuples is valid for any baserel.
 		 */
-		rel->tuples = parent_rows;
+		if (rel->tuples == 0)
+			rel->tuples = parent_rows;
 
 		/*
 		 * Note that we leave rel->pages as zero; this is important to avoid

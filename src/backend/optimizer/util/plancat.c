@@ -143,13 +143,10 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 		palloc0((rel->max_attr - rel->min_attr + 1) * sizeof(int32));
 
 	/*
-	 * Estimate relation size --- unless it's an inheritance parent, in which
-	 * case the size we want is not the rel's own size but the size of its
-	 * inheritance tree.  That will be computed in set_append_rel_size().
+	 * Estimate relation size.
 	 */
-	if (!inhparent)
-		estimate_rel_size(relation, rel->attr_widths - rel->min_attr,
-						  &rel->pages, &rel->tuples, &rel->allvisfrac);
+	estimate_rel_size(relation, rel->attr_widths - rel->min_attr,
+					  &rel->pages, &rel->tuples, &rel->allvisfrac);
 
 	/* Retrieve the parallel_workers reloption, or -1 if not set. */
 	rel->rel_parallel_workers = RelationGetParallelWorkers(relation, -1);
@@ -1078,6 +1075,9 @@ estimate_rel_size(Relation rel, int32 *attr_widths,
 			*pages = rel->rd_rel->relpages;
 			*tuples = rel->rd_rel->reltuples;
 			*allvisfrac = 0;
+			break;
+	    case RELKIND_PARTITIONED_TABLE:
+			*tuples = rel->rd_rel->reltuples;
 			break;
 		default:
 			/* else it has no disk storage; probably shouldn't get here? */
