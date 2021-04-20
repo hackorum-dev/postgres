@@ -529,6 +529,8 @@ struct pg_conn
 #ifdef ENABLE_GSS
 	gss_ctx_id_t gctx;			/* GSS context */
 	gss_name_t	gtarg_nam;		/* GSS target name */
+	char		*ccache_name;		/* Location of credential cache */
+
 
 	/* The following are encryption-only */
 	bool		try_gss;		/* GSS attempting permitted */

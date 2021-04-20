@@ -345,6 +345,12 @@ static const internalPQconninfoOption PQconninfoOptions[] = {
 		"Target-Session-Attrs", "", 15, /* sizeof("prefer-standby") = 15 */
 	offsetof(struct pg_conn, target_session_attrs)},
 
+#ifdef ENABLE_GSS
+	{"ccache_name", NULL, NULL, NULL,
+		"Credential-cache-name", "", 64,
+	offsetof(struct pg_conn, ccache_name)},
+#endif
+
 	/* Terminating entry --- MUST BE LAST */
 	{NULL, NULL, NULL, NULL,
 	NULL, NULL, 0}
@@ -2888,7 +2894,7 @@ keep_going:						/* We will come back to here until there is
 				 * regular startup below).
 				 */
 				if (conn->try_gss && !conn->gctx)
-					conn->try_gss = pg_GSS_have_cred_cache(&conn->gcred);
+					conn->try_gss = pg_GSS_have_cred_cache(&conn->gcred, conn->ccache_name);
 				if (conn->try_gss && !conn->gctx)
 				{
 					ProtocolVersion pv = pg_hton32(NEGOTIATE_GSS_CODE);
@@ -4128,6 +4134,11 @@ freePGconn(PGconn *conn)
 		free(conn->target_session_attrs);
 	termPQExpBuffer(&conn->errorMessage);
 	termPQExpBuffer(&conn->workBuffer);
+
+#ifdef ENABLE_GSS
+	if (conn->ccache_name)
+		free(conn->ccache_name);
+#endif
 
 	free(conn);
 }

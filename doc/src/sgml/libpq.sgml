@@ -1974,6 +1974,20 @@ postgresql://%2Fvar%2Flib%2Fpostgresql/dbname
        </para>
       </listitem>
      </varlistentry>
+
+     <varlistentry id="libpq-connect-ccache-name" xreflabel="ccache_name">
+      <term><literal>ccache_name</literal></term>
+      <listitem>
+       <para>
+        Location of credential cache for GSSAPI authentication, which will be passed on to the
+        GSSAPI library via a <literal>gss_krb5_ccache_name</literal> call.
+        If no name is specified, the <literal>gss_krb5_ccache_name</literal> call will not be
+        made and the location of the credential cache will be left for the system GSSAPI library
+        to determine.
+       </para>
+      </listitem>
+     </varlistentry>
+
     </variablelist>
    </para>
   </sect2>

@@ -57,11 +57,15 @@ pg_GSS_error(const char *mprefix, PGconn *conn,
  * Check if we can acquire credentials at all (and yield them if so).
  */
 bool
-pg_GSS_have_cred_cache(gss_cred_id_t *cred_out)
+pg_GSS_have_cred_cache(gss_cred_id_t *cred_out, const char *ccache_name)
 {
 	OM_uint32	major,
 				minor;
 	gss_cred_id_t cred = GSS_C_NO_CREDENTIAL;
+
+	if (ccache_name != NULL) {
+		gss_krb5_ccache_name(&minor, ccache_name, NULL);
+	}
 
 	major = gss_acquire_cred(&minor, GSS_C_NO_NAME, 0, GSS_C_NO_OID_SET,
 							 GSS_C_INITIATE, &cred, NULL, NULL);
