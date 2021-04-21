@@ -406,22 +406,23 @@ GRANT SELECT ON character_sets TO PUBLIC;
  */
 
 CREATE VIEW check_constraint_routine_usage AS
-    SELECT DISTINCT
-           CAST(current_database() AS sql_identifier) AS constraint_catalog,
+    SELECT CAST(current_database() AS sql_identifier) AS constraint_catalog,
            CAST(nc.nspname AS sql_identifier) AS constraint_schema,
            CAST(c.conname AS sql_identifier) AS constraint_name,
            CAST(current_database() AS sql_identifier) AS specific_catalog,
            CAST(np.nspname AS sql_identifier) AS specific_schema,
            CAST(nameconcatoid(p.proname, p.oid) AS sql_identifier) AS specific_name
-    FROM pg_namespace nc, pg_constraint c, pg_depend d, pg_proc p, pg_namespace np
+    FROM pg_namespace nc, pg_constraint c, pg_proc p, pg_namespace np
     WHERE nc.oid = c.connamespace
       AND c.contype = 'c'
-      AND c.oid = d.objid
-      AND d.classid = 'pg_catalog.pg_constraint'::regclass
-      AND d.refobjid = p.oid
-      AND d.refclassid = 'pg_catalog.pg_proc'::regclass
       AND p.pronamespace = np.oid
-      AND pg_has_role(p.proowner, 'USAGE');
+      AND pg_has_role(p.proowner, 'USAGE')
+      AND EXISTS (SELECT 1
+                  FROM pg_depend d
+                  WHERE c.oid = d.objid
+                    AND d.classid = 'pg_catalog.pg_constraint'::regclass
+                    AND d.refobjid = p.oid
+                    AND d.refclassid = 'pg_catalog.pg_proc'::regclass);
 
 GRANT SELECT ON check_constraint_routine_usage TO PUBLIC;
 
@@ -506,27 +507,28 @@ GRANT SELECT ON collation_character_set_applicability TO PUBLIC;
  */
 
 CREATE VIEW column_column_usage AS
-    SELECT DISTINCT
-           CAST(current_database() AS sql_identifier) AS table_catalog,
+    SELECT CAST(current_database() AS sql_identifier) AS table_catalog,
            CAST(n.nspname AS sql_identifier) AS table_schema,
            CAST(c.relname AS sql_identifier) AS table_name,
            CAST(ac.attname AS sql_identifier) AS column_name,
            CAST(ad.attname AS sql_identifier) AS dependent_column
 
-    FROM pg_namespace n, pg_class c, pg_depend d,
+    FROM pg_namespace n, pg_class c,
          pg_attribute ac, pg_attribute ad
 
     WHERE n.oid = c.relnamespace
           AND c.oid = ac.attrelid
           AND c.oid = ad.attrelid
-          AND d.classid = 'pg_catalog.pg_class'::regclass
-          AND d.refclassid = 'pg_catalog.pg_class'::regclass
-          AND d.objid = d.refobjid
-          AND c.oid = d.objid
-          AND d.objsubid = ad.attnum
-          AND d.refobjsubid = ac.attnum
           AND ad.attgenerated <> ''
-          AND pg_has_role(c.relowner, 'USAGE');
+          AND pg_has_role(c.relowner, 'USAGE')
+          AND EXISTS (SELECT 1
+                      FROM pg_depend d
+                      WHERE d.classid = 'pg_catalog.pg_class'::regclass
+                        AND d.refclassid = 'pg_catalog.pg_class'::regclass
+                        AND d.objid = d.refobjid
+                        AND c.oid = d.objid
+                        AND d.objsubid = ad.attnum
+                        AND d.refobjsubid = ac.attnum);
 
 GRANT SELECT ON column_column_usage TO PUBLIC;
 
@@ -810,19 +812,21 @@ CREATE VIEW constraint_column_usage AS
 
     FROM (
         /* check constraints */
-        SELECT DISTINCT nr.nspname, r.relname, r.relowner, a.attname, nc.nspname, c.conname
-          FROM pg_namespace nr, pg_class r, pg_attribute a, pg_depend d, pg_namespace nc, pg_constraint c
+        SELECT nr.nspname, r.relname, r.relowner, a.attname, nc.nspname, c.conname
+          FROM pg_namespace nr, pg_class r, pg_attribute a, pg_namespace nc, pg_constraint c
           WHERE nr.oid = r.relnamespace
             AND r.oid = a.attrelid
-            AND d.refclassid = 'pg_catalog.pg_class'::regclass
-            AND d.refobjid = r.oid
-            AND d.refobjsubid = a.attnum
-            AND d.classid = 'pg_catalog.pg_constraint'::regclass
-            AND d.objid = c.oid
             AND c.connamespace = nc.oid
             AND c.contype = 'c'
             AND r.relkind IN ('r', 'p')
             AND NOT a.attisdropped
+            AND EXISTS (SELECT 1
+                        FROM pg_depend d
+                        WHERE d.refclassid = 'pg_catalog.pg_class'::regclass
+                          AND d.refobjid = r.oid
+                          AND d.refobjsubid = a.attnum
+                          AND d.classid = 'pg_catalog.pg_constraint'::regclass
+                          AND d.objid = c.oid)
 
         UNION ALL
 
@@ -1327,8 +1331,7 @@ GRANT SELECT ON role_column_grants TO PUBLIC;
  */
 
 CREATE VIEW routine_column_usage AS
-    SELECT DISTINCT
-           CAST(current_database() AS sql_identifier) AS specific_catalog,
+    SELECT CAST(current_database() AS sql_identifier) AS specific_catalog,
            CAST(np.nspname AS sql_identifier) AS specific_schema,
            CAST(nameconcatoid(p.proname, p.oid) AS sql_identifier) AS specific_name,
            CAST(current_database() AS sql_identifier) AS routine_catalog,
@@ -1339,19 +1342,21 @@ CREATE VIEW routine_column_usage AS
            CAST(t.relname AS sql_identifier) AS table_name,
            CAST(a.attname AS sql_identifier) AS column_name
 
-    FROM pg_namespace np, pg_proc p, pg_depend d,
+    FROM pg_namespace np, pg_proc p,
          pg_class t, pg_namespace nt, pg_attribute a
 
     WHERE np.oid = p.pronamespace
-          AND p.oid = d.objid
-          AND d.classid = 'pg_catalog.pg_proc'::regclass
-          AND d.refobjid = t.oid
-          AND d.refclassid = 'pg_catalog.pg_class'::regclass
           AND t.relnamespace = nt.oid
           AND t.relkind IN ('r', 'v', 'f', 'p')
           AND t.oid = a.attrelid
-          AND d.refobjsubid = a.attnum
-          AND pg_has_role(t.relowner, 'USAGE');
+          AND pg_has_role(t.relowner, 'USAGE')
+          AND EXISTS (SELECT 1
+                      FROM pg_depend d
+                      WHERE p.oid = d.objid
+                        AND d.classid = 'pg_catalog.pg_proc'::regclass
+                        AND d.refobjid = t.oid
+                        AND d.refclassid = 'pg_catalog.pg_class'::regclass
+                        AND d.refobjsubid = a.attnum);
 
 GRANT SELECT ON routine_column_usage TO PUBLIC;
 
@@ -1437,25 +1442,26 @@ GRANT SELECT ON role_routine_grants TO PUBLIC;
  */
 
 CREATE VIEW routine_routine_usage AS
-    SELECT DISTINCT
-           CAST(current_database() AS sql_identifier) AS specific_catalog,
+    SELECT CAST(current_database() AS sql_identifier) AS specific_catalog,
            CAST(np.nspname AS sql_identifier) AS specific_schema,
            CAST(nameconcatoid(p.proname, p.oid) AS sql_identifier) AS specific_name,
            CAST(current_database() AS sql_identifier) AS routine_catalog,
            CAST(np1.nspname AS sql_identifier) AS routine_schema,
            CAST(nameconcatoid(p1.proname, p1.oid) AS sql_identifier) AS routine_name
 
-    FROM pg_namespace np, pg_proc p, pg_depend d,
+    FROM pg_namespace np, pg_proc p,
          pg_proc p1, pg_namespace np1
 
     WHERE np.oid = p.pronamespace
-          AND p.oid = d.objid
-          AND d.classid = 'pg_catalog.pg_proc'::regclass
-          AND d.refobjid = p1.oid
-          AND d.refclassid = 'pg_catalog.pg_proc'::regclass
           AND p1.pronamespace = np1.oid
           AND p.prokind IN ('f', 'p') AND p1.prokind IN ('f', 'p')
-          AND pg_has_role(p1.proowner, 'USAGE');
+          AND pg_has_role(p1.proowner, 'USAGE')
+          AND EXISTS (SELECT 1
+                      FROM pg_depend d
+                      WHERE p.oid = d.objid
+                        AND d.classid = 'pg_catalog.pg_proc'::regclass
+                        AND d.refobjid = p1.oid
+                        AND d.refclassid = 'pg_catalog.pg_proc'::regclass);
 
 GRANT SELECT ON routine_routine_usage TO PUBLIC;
 
@@ -1466,8 +1472,7 @@ GRANT SELECT ON routine_routine_usage TO PUBLIC;
  */
 
 CREATE VIEW routine_sequence_usage AS
-    SELECT DISTINCT
-           CAST(current_database() AS sql_identifier) AS specific_catalog,
+    SELECT CAST(current_database() AS sql_identifier) AS specific_catalog,
            CAST(np.nspname AS sql_identifier) AS specific_schema,
            CAST(nameconcatoid(p.proname, p.oid) AS sql_identifier) AS specific_name,
            CAST(current_database() AS sql_identifier) AS routine_catalog,
@@ -1477,17 +1482,19 @@ CREATE VIEW routine_sequence_usage AS
            CAST(ns.nspname AS sql_identifier) AS sequence_schema,
            CAST(s.relname AS sql_identifier) AS sequence_name
 
-    FROM pg_namespace np, pg_proc p, pg_depend d,
+    FROM pg_namespace np, pg_proc p,
          pg_class s, pg_namespace ns
 
     WHERE np.oid = p.pronamespace
-          AND p.oid = d.objid
-          AND d.classid = 'pg_catalog.pg_proc'::regclass
-          AND d.refobjid = s.oid
-          AND d.refclassid = 'pg_catalog.pg_class'::regclass
           AND s.relnamespace = ns.oid
           AND s.relkind = 'S'
-          AND pg_has_role(s.relowner, 'USAGE');
+          AND pg_has_role(s.relowner, 'USAGE')
+          AND EXISTS (SELECT 1
+                      FROM pg_depend d
+                      WHERE p.oid = d.objid
+                        AND d.classid = 'pg_catalog.pg_proc'::regclass
+                        AND d.refobjid = s.oid
+                        AND d.refclassid = 'pg_catalog.pg_class'::regclass);
 
 GRANT SELECT ON routine_sequence_usage TO PUBLIC;
 
@@ -1498,8 +1505,7 @@ GRANT SELECT ON routine_sequence_usage TO PUBLIC;
  */
 
 CREATE VIEW routine_table_usage AS
-    SELECT DISTINCT
-           CAST(current_database() AS sql_identifier) AS specific_catalog,
+    SELECT CAST(current_database() AS sql_identifier) AS specific_catalog,
            CAST(np.nspname AS sql_identifier) AS specific_schema,
            CAST(nameconcatoid(p.proname, p.oid) AS sql_identifier) AS specific_name,
            CAST(current_database() AS sql_identifier) AS routine_catalog,
@@ -1509,17 +1515,19 @@ CREATE VIEW routine_table_usage AS
            CAST(nt.nspname AS sql_identifier) AS table_schema,
            CAST(t.relname AS sql_identifier) AS table_name
 
-    FROM pg_namespace np, pg_proc p, pg_depend d,
+    FROM pg_namespace np, pg_proc p,
          pg_class t, pg_namespace nt
 
     WHERE np.oid = p.pronamespace
-          AND p.oid = d.objid
-          AND d.classid = 'pg_catalog.pg_proc'::regclass
-          AND d.refobjid = t.oid
-          AND d.refclassid = 'pg_catalog.pg_class'::regclass
           AND t.relnamespace = nt.oid
           AND t.relkind IN ('r', 'v', 'f', 'p')
-          AND pg_has_role(t.relowner, 'USAGE');
+          AND pg_has_role(t.relowner, 'USAGE')
+          AND EXISTS (SELECT 1
+                      FROM pg_depend d
+                      WHERE p.oid = d.objid
+                        AND d.classid = 'pg_catalog.pg_proc'::regclass
+                        AND d.refobjid = t.oid
+                        AND d.refclassid = 'pg_catalog.pg_class'::regclass);
 
 GRANT SELECT ON routine_table_usage TO PUBLIC;
 
@@ -2503,8 +2511,7 @@ GRANT SELECT ON user_defined_types TO PUBLIC;
  */
 
 CREATE VIEW view_column_usage AS
-    SELECT DISTINCT
-           CAST(current_database() AS sql_identifier) AS view_catalog,
+    SELECT CAST(current_database() AS sql_identifier) AS view_catalog,
            CAST(nv.nspname AS sql_identifier) AS view_schema,
            CAST(v.relname AS sql_identifier) AS view_name,
            CAST(current_database() AS sql_identifier) AS table_catalog,
@@ -2512,26 +2519,28 @@ CREATE VIEW view_column_usage AS
            CAST(t.relname AS sql_identifier) AS table_name,
            CAST(a.attname AS sql_identifier) AS column_name
 
-    FROM pg_namespace nv, pg_class v, pg_depend dv,
-         pg_depend dt, pg_class t, pg_namespace nt,
+    FROM pg_namespace nv, pg_class v,
+         pg_class t, pg_namespace nt,
          pg_attribute a
 
     WHERE nv.oid = v.relnamespace
           AND v.relkind = 'v'
-          AND v.oid = dv.refobjid
-          AND dv.refclassid = 'pg_catalog.pg_class'::regclass
-          AND dv.classid = 'pg_catalog.pg_rewrite'::regclass
-          AND dv.deptype = 'i'
-          AND dv.objid = dt.objid
-          AND dv.refobjid <> dt.refobjid
-          AND dt.classid = 'pg_catalog.pg_rewrite'::regclass
-          AND dt.refclassid = 'pg_catalog.pg_class'::regclass
-          AND dt.refobjid = t.oid
           AND t.relnamespace = nt.oid
           AND t.relkind IN ('r', 'v', 'f', 'p')
           AND t.oid = a.attrelid
-          AND dt.refobjsubid = a.attnum
-          AND pg_has_role(t.relowner, 'USAGE');
+          AND pg_has_role(t.relowner, 'USAGE')
+          AND EXISTS (SELECT 1
+                      FROM pg_depend dv
+                      INNER JOIN pg_depend dt ON dv.objid = dt.objid
+                      WHERE v.oid = dv.refobjid
+                        AND dv.refclassid = 'pg_catalog.pg_class'::regclass
+                        AND dv.classid = 'pg_catalog.pg_rewrite'::regclass
+                        AND dv.deptype = 'i'
+                        AND dv.refobjid <> dt.refobjid
+                        AND dt.classid = 'pg_catalog.pg_rewrite'::regclass
+                        AND dt.refclassid = 'pg_catalog.pg_class'::regclass
+                        AND dt.refobjid = t.oid
+                        AND dt.refobjsubid = a.attnum);
 
 GRANT SELECT ON view_column_usage TO PUBLIC;
 
@@ -2550,29 +2559,30 @@ GRANT SELECT ON view_column_usage TO PUBLIC;
  */
 
 CREATE VIEW view_routine_usage AS
-    SELECT DISTINCT
-           CAST(current_database() AS sql_identifier) AS table_catalog,
+    SELECT CAST(current_database() AS sql_identifier) AS table_catalog,
            CAST(nv.nspname AS sql_identifier) AS table_schema,
            CAST(v.relname AS sql_identifier) AS table_name,
            CAST(current_database() AS sql_identifier) AS specific_catalog,
            CAST(np.nspname AS sql_identifier) AS specific_schema,
            CAST(nameconcatoid(p.proname, p.oid) AS sql_identifier) AS specific_name
 
-    FROM pg_namespace nv, pg_class v, pg_depend dv,
-         pg_depend dp, pg_proc p, pg_namespace np
+    FROM pg_namespace nv, pg_class v,
+         pg_proc p, pg_namespace np
 
     WHERE nv.oid = v.relnamespace
           AND v.relkind = 'v'
-          AND v.oid = dv.refobjid
-          AND dv.refclassid = 'pg_catalog.pg_class'::regclass
-          AND dv.classid = 'pg_catalog.pg_rewrite'::regclass
-          AND dv.deptype = 'i'
-          AND dv.objid = dp.objid
-          AND dp.classid = 'pg_catalog.pg_rewrite'::regclass
-          AND dp.refclassid = 'pg_catalog.pg_proc'::regclass
-          AND dp.refobjid = p.oid
           AND p.pronamespace = np.oid
-          AND pg_has_role(p.proowner, 'USAGE');
+          AND pg_has_role(p.proowner, 'USAGE')
+          AND EXISTS (SELECT 1
+                      FROM pg_depend dv
+                      INNER JOIN pg_depend dp ON dv.objid = dp.objid
+                      WHERE v.oid = dv.refobjid
+                        AND dv.refclassid = 'pg_catalog.pg_class'::regclass
+                        AND dv.classid = 'pg_catalog.pg_rewrite'::regclass
+                        AND dv.deptype = 'i'
+                        AND dp.classid = 'pg_catalog.pg_rewrite'::regclass
+                        AND dp.refclassid = 'pg_catalog.pg_proc'::regclass
+                        AND dp.refobjid = p.oid);
 
 GRANT SELECT ON view_routine_usage TO PUBLIC;
 
@@ -2583,31 +2593,32 @@ GRANT SELECT ON view_routine_usage TO PUBLIC;
  */
 
 CREATE VIEW view_table_usage AS
-    SELECT DISTINCT
-           CAST(current_database() AS sql_identifier) AS view_catalog,
+    SELECT CAST(current_database() AS sql_identifier) AS view_catalog,
            CAST(nv.nspname AS sql_identifier) AS view_schema,
            CAST(v.relname AS sql_identifier) AS view_name,
            CAST(current_database() AS sql_identifier) AS table_catalog,
            CAST(nt.nspname AS sql_identifier) AS table_schema,
            CAST(t.relname AS sql_identifier) AS table_name
 
-    FROM pg_namespace nv, pg_class v, pg_depend dv,
-         pg_depend dt, pg_class t, pg_namespace nt
+    FROM pg_namespace nv, pg_class v,
+         pg_class t, pg_namespace nt
 
     WHERE nv.oid = v.relnamespace
           AND v.relkind = 'v'
-          AND v.oid = dv.refobjid
-          AND dv.refclassid = 'pg_catalog.pg_class'::regclass
-          AND dv.classid = 'pg_catalog.pg_rewrite'::regclass
-          AND dv.deptype = 'i'
-          AND dv.objid = dt.objid
-          AND dv.refobjid <> dt.refobjid
-          AND dt.classid = 'pg_catalog.pg_rewrite'::regclass
-          AND dt.refclassid = 'pg_catalog.pg_class'::regclass
-          AND dt.refobjid = t.oid
           AND t.relnamespace = nt.oid
           AND t.relkind IN ('r', 'v', 'f', 'p')
-          AND pg_has_role(t.relowner, 'USAGE');
+          AND pg_has_role(t.relowner, 'USAGE')
+          AND EXISTS (SELECT 1
+                      FROM pg_depend dv
+                      INNER JOIN pg_depend dt ON dv.objid = dt.objid
+                      WHERE v.oid = dv.refobjid
+                        AND dv.refclassid = 'pg_catalog.pg_class'::regclass
+                        AND dv.classid = 'pg_catalog.pg_rewrite'::regclass
+                        AND dv.deptype = 'i'
+                        AND dv.refobjid <> dt.refobjid
+                        AND dt.classid = 'pg_catalog.pg_rewrite'::regclass
+                        AND dt.refclassid = 'pg_catalog.pg_class'::regclass
+                        AND dt.refobjid = t.oid);
 
 GRANT SELECT ON view_table_usage TO PUBLIC;
 
