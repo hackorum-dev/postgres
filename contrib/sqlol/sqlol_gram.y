@@ -20,6 +20,7 @@
 
 #include "catalog/namespace.h"
 #include "nodes/makefuncs.h"
+#include "catalog/pg_class_d.h"
 
 #include "sqlol_gramparse.h"
 
@@ -105,10 +106,10 @@ static List *check_indirection(List *indirection, sqlol_yyscan_t yyscanner);
 	ResTarget			*target;
 }
 
-%type <node>	stmt toplevel_stmt GimmehStmt simple_gimmeh columnref
+%type <node>	stmt toplevel_stmt GimmehStmt MaekStmt simple_gimmeh columnref
 				indirection_el
 
-%type <list>	parse_toplevel stmtmulti gimmeh_list indirection
+%type <list>	parse_toplevel rawstmt gimmeh_list indirection
 
 %type <range>	qualified_name
 
@@ -133,22 +134,19 @@ static List *check_indirection(List *indirection, sqlol_yyscan_t yyscanner);
  */
 
 /* ordinary key words in alphabetical order */
-%token <keyword> A GIMMEH HAI HAS I KTHXBYE
-
+%token <keyword> A GIMMEH HAI HAS I KTHXBYE MAEK
 
 %%
 
 /*
  *	The target production for the whole parse.
- *
- * Ordinarily we parse a list of statements, but if we see one of the
- * special MODE_XXX symbols as first token, we parse something else.
- * The options here correspond to enum RawParseMode, which see for details.
  */
 parse_toplevel:
-			stmtmulti
+			rawstmt
 			{
 				pg_yyget_extra(yyscanner)->parsetree = $1;
+
+				YYACCEPT;
 			}
 		;
 
@@ -162,24 +160,11 @@ parse_toplevel:
  * we'd get -1 for the location in such cases.
  * We also take care to discard empty statements entirely.
  */
-stmtmulti:	stmtmulti KTHXBYE toplevel_stmt
+rawstmt:	toplevel_stmt KTHXBYE
 				{
-					if ($1 != NIL)
-					{
-						/* update length of previous stmt */
-						updateRawStmtEnd(llast_node(RawStmt, $1), @2);
-					}
-					if ($3 != NULL)
-						$$ = lappend($1, makeRawStmt($3, @2 + 1));
-					else
-						$$ = $1;
-				}
-			| toplevel_stmt
-				{
-					if ($1 != NULL)
-						$$ = list_make1(makeRawStmt($1, 0));
-					else
-						$$ = NIL;
+					RawStmt *raw = makeRawStmt($1, 0);
+					updateRawStmtEnd(raw, @2 + 7);
+					$$ = list_make1(raw);
 				}
 		;
 
@@ -188,13 +173,12 @@ stmtmulti:	stmtmulti KTHXBYE toplevel_stmt
  * those words have different meanings in function bodys.
  */
 toplevel_stmt:
-			stmt
+			HAI FCONST stmt { $$ = $3; }
 		;
 
 stmt:
 			GimmehStmt
-			| /*EMPTY*/
-				{ $$ = NULL; }
+			| MaekStmt
 		;
 
 /*****************************************************************************
@@ -208,12 +192,11 @@ GimmehStmt:
 		;
 
 simple_gimmeh:
-			HAI FCONST I HAS A qualified_name
-			GIMMEH gimmeh_list
+			I HAS A qualified_name GIMMEH gimmeh_list
 				{
 					SelectStmt *n = makeNode(SelectStmt);
-					n->targetList = $8;
-					n->fromClause = list_make1($6);
+					n->targetList = $6;
+					n->fromClause = list_make1($4);
 					$$ = (Node *)n;
 				}
 		;
@@ -230,6 +213,20 @@ gimmeh_el:
 				$$->indirection = NIL;
 				$$->val = (Node *)$1;
 				$$->location = @1;
+			}
+
+MaekStmt:
+		MAEK GimmehStmt A qualified_name
+			{
+				ViewStmt *n = makeNode(ViewStmt);
+				n->view = $4;
+				n->view->relpersistence = RELPERSISTENCE_PERMANENT;
+				n->aliases = NIL;
+				n->query = $2;
+				n->replace = false;
+				n->options = NIL;
+				n->withCheckOption = false;
+				$$ = (Node *) n;
 			}
 
 qualified_name:

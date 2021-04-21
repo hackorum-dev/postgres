@@ -108,7 +108,8 @@ extern PGDLLIMPORT const uint16 sqlol_ScanKeywordTokens[];
 extern sqlol_yyscan_t sqlol_scanner_init(const char *str,
 								  sqlol_yy_extra_type *yyext,
 								  const sqlol_ScanKeyword *keywords,
-								  int num_keywords);
+								  int num_keywords,
+								  int offset);
 extern void sqlol_scanner_finish(sqlol_yyscan_t yyscanner);
 extern int	sqlol_yylex(sqlol_YYSTYPE *lvalp, YYLTYPE *llocp,
 					   sqlol_yyscan_t yyscanner);

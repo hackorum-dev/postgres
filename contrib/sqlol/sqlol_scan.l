@@ -412,8 +412,10 @@ sqlol_yyscan_t
 sqlol_scanner_init(const char *str,
 			 sqlol_yy_extra_type *yyext,
 			 const sqlol_ScanKeyword *keywords,
-			 int num_keywords)
+			 int num_keywords,
+			 int offset)
 {
+	YY_BUFFER_STATE state;
 	Size		slen = strlen(str);
 	yyscan_t	scanner;
 
@@ -432,12 +434,19 @@ sqlol_scanner_init(const char *str,
 	yyext->scanbuflen = slen;
 	memcpy(yyext->scanbuf, str, slen);
 	yyext->scanbuf[slen] = yyext->scanbuf[slen + 1] = YY_END_OF_BUFFER_CHAR;
-	yy_scan_buffer(yyext->scanbuf, slen + 2, scanner);
+	state = yy_scan_buffer(yyext->scanbuf, slen + 2, scanner);
 
 	/* initialize literal buffer to a reasonable but expansible size */
 	yyext->literalalloc = 1024;
 	yyext->literalbuf = (char *) palloc(yyext->literalalloc);
 	yyext->literallen = 0;
+
+	/*
+	 * Adjust the offset in the input string.  This is required in single-query
+	 * mode, as we need to register the same token locations as we would have
+	 * in normal mode with multi-statement query string.
+	 */
+	state->yy_buf_pos += offset;
 
 	return scanner;
 }

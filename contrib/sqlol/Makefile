@@ -6,6 +6,8 @@ OBJS = \
 	sqlol.o sqlol_gram.o sqlol_scan.o sqlol_keywords.o
 PGFILEDESC = "sqlol - Toy alternative grammar based on LOLCODE"
 
+REGRESS = 01_sqlol
+
 sqlol_gram.h: sqlol_gram.c
 	touch $@
 
