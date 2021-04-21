@@ -45,7 +45,8 @@ typedef enum
 extern PGDLLIMPORT int log_statement;
 
 /* Hook for plugins to get control in pg_parse_query() */
-typedef List *(*parser_hook_type) (const char *str, RawParseMode mode);
+typedef List *(*parser_hook_type) (const char *str, RawParseMode mode,
+								   int offset, bool *error);
 extern PGDLLIMPORT parser_hook_type parser_hook;
 
 extern List *pg_parse_query(const char *query_string);

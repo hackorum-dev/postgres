@@ -113,6 +113,9 @@ typedef struct core_yy_extra_type
 	/* state variables for literal-lexing warnings */
 	bool		warn_on_first_escape;
 	bool		saw_non_ascii;
+
+	/* state variable for returning an EOF token in single query mode */
+	bool		return_eof;
 } core_yy_extra_type;
 
 /*
@@ -136,7 +139,8 @@ extern PGDLLIMPORT const uint16 ScanKeywordTokens[];
 extern core_yyscan_t scanner_init(const char *str,
 								  core_yy_extra_type *yyext,
 								  const ScanKeywordList *keywordlist,
-								  const uint16 *keyword_tokens);
+								  const uint16 *keyword_tokens,
+								  int offset);
 extern void scanner_finish(core_yyscan_t yyscanner);
 extern int	core_yylex(core_YYSTYPE *lvalp, YYLTYPE *llocp,
 					   core_yyscan_t yyscanner);
