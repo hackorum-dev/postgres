@@ -99,6 +99,9 @@ int			log_statement = LOGSTMT_NONE;
 /* GUC variable for maximum stack depth (measured in kilobytes) */
 int			max_stack_depth = 100;
 
+/* Hook for plugins to get control in pg_parse_query() */
+parser_hook_type parser_hook = NULL;
+
 /* wait N seconds to allow attach from a debugger */
 int			PostAuthDelay = 0;
 
@@ -589,18 +592,27 @@ ProcessClientWriteInterrupt(bool blocked)
  * database tables.  So, we rely on the raw parser to determine whether
  * we've seen a COMMIT or ABORT command; when we are in abort state, other
  * commands are not processed any further than the raw parse stage.
+ *
+ * To support loadable plugins that monitor the parsing or implements SQL
+ * syntactic sugar we provide a hook variable that lets a plugin get control
+ * before and after the standard parsing process.  If the plugin only implement
+ * a subset of postgres supported syntax, it's its duty to call raw_parser (or
+ * the previous hook if any) for the statements it doesn't understand.
  */
 List *
 pg_parse_query(const char *query_string)
 {
-	List	   *raw_parsetree_list;
+	List	   *raw_parsetree_list = NIL;
 
 	TRACE_POSTGRESQL_QUERY_PARSE_START(query_string);
 
 	if (log_parser_stats)
 		ResetUsage();
 
-	raw_parsetree_list = raw_parser(query_string, RAW_PARSE_DEFAULT);
+	if (parser_hook)
+		raw_parsetree_list = (*parser_hook) (query_string, RAW_PARSE_DEFAULT);
+	else
+		raw_parsetree_list = raw_parser(query_string, RAW_PARSE_DEFAULT);
 
 	if (log_parser_stats)
 		ShowUsage("PARSER STATISTICS");
