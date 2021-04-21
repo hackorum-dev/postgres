@@ -183,7 +183,7 @@ ANALYZE vactst, does_not_exist, vacparted;
 ANALYZE vactst (i), vacparted (does_not_exist);
 ANALYZE vactst, vactst;
 BEGIN;  -- ANALYZE behaves differently inside a transaction block
-ANALYZE vactst, vactst;
+ANALYZE vactst (i), vactst (i);
 COMMIT;
 
 -- parenthesized syntax for ANALYZE

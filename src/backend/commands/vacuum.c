@@ -438,6 +438,7 @@ vacuum(List *relations, VacuumParams *params,
 	PG_TRY();
 	{
 		ListCell   *cur;
+		List	*relids = NULL;
 
 		in_vacuum = true;
 		VacuumCostActive = (VacuumCostDelay > 0);
@@ -455,6 +456,16 @@ vacuum(List *relations, VacuumParams *params,
 		foreach(cur, relations)
 		{
 			VacuumRelation *vrel = lfirst_node(VacuumRelation, cur);
+
+			/*
+			 * Skip VACUUM/ANALYZE of repeated relations. We do this only when
+			 * no explicit columns are specified, for instance, "VACUUM/ANALYZE
+			 * foo, foo;". When columns are specified along with relations
+			 * i.e. "VACUUM/ANALYZE foo(col1), foo(col2);", we don't want to
+			 * further optimize the cases when col1 = col2.
+			 */
+			if (vrel->va_cols == NULL && list_member_oid(relids, vrel->oid))
+				continue;
 
 			if (params->options & VACOPT_VACUUM)
 			{
@@ -488,11 +499,18 @@ vacuum(List *relations, VacuumParams *params,
 					/*
 					 * If we're not using separate xacts, better separate the
 					 * ANALYZE actions with CCIs.  This avoids trouble if user
-					 * says "ANALYZE t, t".
+					 * says "ANALYZE t(col1), t(col2)".
 					 */
 					CommandCounterIncrement();
 				}
 			}
+
+			/*
+			 * Remember the VACUUMed/ANALYZEed relation only when no explicit
+			 * columns are specified.
+			 */
+			if (vrel->va_cols == NULL)
+				relids = lappend_oid(relids, vrel->oid);
 		}
 	}
 	PG_FINALLY();

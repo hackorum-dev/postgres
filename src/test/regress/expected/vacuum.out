@@ -218,7 +218,7 @@ ANALYZE vactst (i), vacparted (does_not_exist);
 ERROR:  column "does_not_exist" of relation "vacparted" does not exist
 ANALYZE vactst, vactst;
 BEGIN;  -- ANALYZE behaves differently inside a transaction block
-ANALYZE vactst, vactst;
+ANALYZE vactst (i), vactst (i);
 COMMIT;
 -- parenthesized syntax for ANALYZE
 ANALYZE (VERBOSE) does_not_exist;
