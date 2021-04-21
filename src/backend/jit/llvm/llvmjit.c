@@ -820,6 +820,35 @@ llvm_compile_module(LLVMJitContext *context)
 }
 
 /*
+ * For the systemz target, LLVM uses a different datalayout for z13 and newer
+ * CPUs than it does for older CPUs.  This can cause a mismatch in datalayouts
+ * in the case where the llvm_types_module is compiled with a pre-z13 CPU
+ * and the JIT is running on z13 or newer.
+ * See computeDataLayout() function in
+ * llvm/lib/Target/SystemZ/SystemZTargetMachine.cpp for information on the
+ * datalayout differences.
+ */
+static bool
+needs_systemz_workaround(void)
+{
+	bool ret = false;
+	LLVMContextRef llvm_context;
+	LLVMTypeRef vec_type;
+	LLVMTargetDataRef llvm_layoutref;
+	if (strncmp(LLVMGetTargetName(llvm_targetref), "systemz", strlen("systemz")))
+	{
+		return false;
+	}
+
+	llvm_context = LLVMGetModuleContext(llvm_types_module);
+	vec_type = LLVMVectorType(LLVMIntTypeInContext(llvm_context, 32), 4);
+	llvm_layoutref = LLVMCreateTargetData(llvm_layout);
+	ret = (LLVMABIAlignmentOfType(llvm_layoutref, vec_type) == 16);
+	LLVMDisposeTargetData(llvm_layoutref);
+	return ret;
+}
+
+/*
  * Per session initialization.
  */
 static void
@@ -828,6 +857,7 @@ llvm_session_initialize(void)
 	MemoryContext oldcontext;
 	char	   *error = NULL;
 	char	   *cpu = NULL;
+	char       *host_features = NULL;
 	char	   *features = NULL;
 	LLVMTargetMachineRef opt0_tm;
 	LLVMTargetMachineRef opt3_tm;
@@ -872,9 +902,16 @@ llvm_session_initialize(void)
 	 * features not all CPUs have (weird, huh).
 	 */
 	cpu = LLVMGetHostCPUName();
-	features = LLVMGetHostCPUFeatures();
+	features = host_features = LLVMGetHostCPUFeatures();
 	elog(DEBUG2, "LLVMJIT detected CPU \"%s\", with features \"%s\"",
 		 cpu, features);
+
+	if (needs_systemz_workaround())
+	{
+		const char *no_vector =",-vector";
+		features = malloc(sizeof(char) * (strlen(host_features) + strlen(no_vector) + 1));
+		sprintf(features, "%s%s", host_features, no_vector);
+	}
 
 	opt0_tm =
 		LLVMCreateTargetMachine(llvm_targetref, llvm_triple, cpu, features,
@@ -889,8 +926,13 @@ llvm_session_initialize(void)
 
 	LLVMDisposeMessage(cpu);
 	cpu = NULL;
-	LLVMDisposeMessage(features);
+	if (features != host_features)
+	{
+		free(features);
+	}
 	features = NULL;
+	LLVMDisposeMessage(host_features);
+	host_features = NULL;
 
 	/* force symbols in main binary to be loaded */
 	LLVMLoadLibraryPermanently(NULL);
