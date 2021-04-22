@@ -1029,7 +1029,7 @@ static const VersionedQuery Query_for_list_of_subscriptions[] = {
 };
 
 /*
- * This is a list of all "things" in Pgsql, which can show up after CREATE or
+ * This is a list of all "things" in pgsql, which can show up after CREATE or
  * DROP; and there is also a query to get a list of them.
  */
 
@@ -4466,7 +4466,7 @@ _complete_from_query(const char *simple_query,
 			 */
 			if (strcmp(schema_query->catname,
 					   "pg_catalog.pg_class c") == 0 &&
-				strncmp(text, "pg_", 3) != 0)
+				pg_strncasecmp(text, "pg_", 3) != 0)
 			{
 				appendPQExpBufferStr(&query_buffer,
 									 " AND c.relnamespace <> (SELECT oid FROM"
