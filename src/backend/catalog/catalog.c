@@ -377,7 +377,7 @@ GetNewOidWithIndex(Relation relation, Oid indexId, AttrNumber oidcolumn)
 			ereport(LOG,
 					(errmsg("still finding an unused OID within relation \"%s\"",
 							RelationGetRelationName(relation)),
-					 errdetail("OID candidates were checked \"%llu\"  times, but no unused OID is yet found.",
+					 errdetail("OID candidates were checked %llu times, but no unused OID is yet found.",
 							   (unsigned long long) retries)));
 
 			/*
@@ -400,7 +400,7 @@ GetNewOidWithIndex(Relation relation, Oid indexId, AttrNumber oidcolumn)
 	if (retries > GETNEWOID_LOG_THRESHOLD)
 	{
 		ereport(LOG,
-				(errmsg("new OID has been assigned in relation \"%s\" after \"%llu\" retries",
+				(errmsg("new OID has been assigned in relation \"%s\" after %llu retries",
 						RelationGetRelationName(relation), (unsigned long long) retries)));
 	}
 
