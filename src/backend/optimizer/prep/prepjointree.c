@@ -660,6 +660,7 @@ preprocess_function_rtes(PlannerInfo *root)
 				rte->rtekind = RTE_SUBQUERY;
 				rte->subquery = funcquery;
 				rte->security_barrier = false;
+				rte->rtoffset = -1;
 				/* Clear fields that should not be set in a subquery RTE */
 				rte->functions = NIL;
 				rte->funcordinality = false;
@@ -917,6 +918,8 @@ pull_up_simple_subquery(PlannerInfo *root, Node *jtnode, RangeTblEntry *rte,
 	subroot->planner_cxt = CurrentMemoryContext;
 	subroot->init_plans = NIL;
 	subroot->cte_plan_ids = NIL;
+	subroot->cte_rel_restrictinfos = NIL;
+	subroot->use_cte_rel_restrictinfos = NIL;
 	subroot->multiexpr_params = NIL;
 	subroot->eq_classes = NIL;
 	subroot->ec_merging_done = false;
@@ -1014,6 +1017,12 @@ pull_up_simple_subquery(PlannerInfo *root, Node *jtnode, RangeTblEntry *rte,
 	 * well.
 	 */
 	rtoffset = list_length(parse->rtable);
+
+	/*
+	 * save rtoffset in RTE to be able to map rte->subquery varnos back to
+	 * root varnos
+	 */
+	rte->rtoffset = rtoffset;
 	OffsetVarNodes((Node *) subquery, rtoffset, 0);
 	OffsetVarNodes((Node *) subroot->append_rel_list, rtoffset, 0);
 

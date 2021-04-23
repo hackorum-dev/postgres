@@ -1590,6 +1590,7 @@ addRangeTableEntryForSubquery(ParseState *pstate,
 	rte->rtekind = RTE_SUBQUERY;
 	rte->subquery = subquery;
 	rte->alias = alias;
+	rte->rtoffset = -1;
 
 	eref = copyObject(alias);
 	numaliases = list_length(eref->colnames);

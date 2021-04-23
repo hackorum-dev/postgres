@@ -242,6 +242,13 @@ struct PlannerInfo
 
 	List	   *cte_plan_ids;	/* per-CTE-item list of subplan IDs */
 
+	List	   *cte_rel_restrictinfos;	/* per-CTE list of RelRestrictInfos to
+										 * push down, NIL by default */
+
+	List	   *use_cte_rel_restrictinfos;	/* per-CTE flag to allow pushing
+											 * corresponding RestrictInfo,
+											 * true by default */
+
 	List	   *multiexpr_params;	/* List of Lists of Params for MULTIEXPR
 									 * subquery outputs */
 
@@ -2114,6 +2121,20 @@ typedef struct RestrictInfo
 	/* hash equality operator used for result cache, else InvalidOid */
 	Oid			hasheqoperator;
 } RestrictInfo;
+
+/*
+ * Extracted clauses for one RTE, mentioning CTE
+ * (root, relid) pair is a key in a list of RelRestrictInfos
+ */
+typedef struct RelRestrictInfos
+{
+	NodeTag		type;
+
+	PlannerInfo *root;
+	int			relid;
+
+	List	   *restrictinfos;
+}			RelRestrictInfos;
 
 /*
  * This macro embodies the correct way to test whether a RestrictInfo is

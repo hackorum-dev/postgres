@@ -864,6 +864,16 @@ _equalRestrictInfo(const RestrictInfo *a, const RestrictInfo *b)
 }
 
 static bool
+_equalRelRestrictInfos(const RelRestrictInfos * a, const RelRestrictInfos * b)
+{
+	COMPARE_SCALAR_FIELD(root);
+	COMPARE_SCALAR_FIELD(relid);
+	COMPARE_NODE_FIELD(restrictinfos);
+
+	return true;
+}
+
+static bool
 _equalPlaceHolderVar(const PlaceHolderVar *a, const PlaceHolderVar *b)
 {
 	/*
@@ -2715,6 +2725,7 @@ _equalRangeTblEntry(const RangeTblEntry *a, const RangeTblEntry *b)
 	COMPARE_NODE_FIELD(tablesample);
 	COMPARE_NODE_FIELD(subquery);
 	COMPARE_SCALAR_FIELD(security_barrier);
+	COMPARE_SCALAR_FIELD(rtoffset);
 	COMPARE_SCALAR_FIELD(jointype);
 	COMPARE_SCALAR_FIELD(joinmergedcols);
 	COMPARE_NODE_FIELD(joinaliasvars);
@@ -3291,6 +3302,9 @@ equal(const void *a, const void *b)
 			break;
 		case T_RestrictInfo:
 			retval = _equalRestrictInfo(a, b);
+			break;
+		case T_RelRestrictInfos:
+			retval = _equalRelRestrictInfos(a, b);
 			break;
 		case T_PlaceHolderVar:
 			retval = _equalPlaceHolderVar(a, b);

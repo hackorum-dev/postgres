@@ -1029,6 +1029,7 @@ typedef struct RangeTblEntry
 	 */
 	Query	   *subquery;		/* the sub-query */
 	bool		security_barrier;	/* is from security_barrier view? */
+	int	rtoffset;	/* rtoffset when subquery is pulled up */
 
 	/*
 	 * Fields valid for a join RTE (else NULL/zero):

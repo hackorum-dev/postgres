@@ -30,7 +30,9 @@
 #include "optimizer/planner.h"
 #include "optimizer/prep.h"
 #include "optimizer/restrictinfo.h"
+#include "optimizer/subselect.h"
 #include "parser/analyze.h"
+#include "parser/parsetree.h"
 #include "rewrite/rewriteManip.h"
 #include "utils/lsyscache.h"
 #include "utils/typcache.h"
@@ -46,6 +48,17 @@ typedef struct PostponedQual
 	Node	   *qual;			/* a qual clause waiting to be processed */
 	Relids		relids;			/* the set of baserels it references */
 } PostponedQual;
+
+typedef struct
+{
+	bool		safe;
+}			restrictinfo_safe_context;
+
+typedef struct
+{
+	int			old_varno;
+	int			new_varno;
+}			replace_varno_context;
 
 
 static void extract_lateral_references(PlannerInfo *root, RelOptInfo *brel,
@@ -79,6 +92,10 @@ static bool check_redundant_nullability_qual(PlannerInfo *root, Node *clause);
 static void check_mergejoinable(RestrictInfo *restrictinfo);
 static void check_hashjoinable(RestrictInfo *restrictinfo);
 static void check_resultcacheable(RestrictInfo *restrictinfo);
+
+static void add_cte_restrictinfo(PlannerInfo *root, RestrictInfo *restrictinfo, RelOptInfo *rel);
+static void distribute_baserestrictinfo_to_childs(PlannerInfo *root, RelOptInfo *rel);
+
 
 
 /*****************************************************************************
@@ -2165,6 +2182,234 @@ check_redundant_nullability_qual(PlannerInfo *root, Node *clause)
 }
 
 /*
+ * find_cte
+ * 		Find cte, corresponding to rel at root or upper level
+ */
+static PlannerInfo *
+find_cte(PlannerInfo *root, RelOptInfo *rel, int *cteindex)
+{
+	RangeTblEntry *rte;
+	Index		levelsup;
+	PlannerInfo *cteroot;
+	ListCell   *lc;
+	int			ind;
+
+	cteroot = NULL;
+	*cteindex = -1;
+	if (IS_SIMPLE_REL(rel))
+	{
+		rte = planner_rt_fetch(rel->relid, root);
+
+		Assert(rte->rtekind == RTE_CTE);
+		if (rte->self_reference)
+			/* Can't pushdown quals to recursive CTE */
+			return NULL;
+
+		levelsup = rte->ctelevelsup;
+		cteroot = root;
+
+		while (levelsup-- > 0)
+		{
+			cteroot = cteroot->parent_root;
+			if (!cteroot)		/* shouldn't happen */
+				elog(ERROR, "bad levelsup for CTE \"%s\"", rte->ctename);
+		}
+
+		ind = 0;
+		foreach(lc, cteroot->parse->cteList)
+		{
+			CommonTableExpr *cte = (CommonTableExpr *) lfirst(lc);
+
+			if (strcmp(cte->ctename, rte->ctename) == 0)
+				break;
+			ind++;
+		}
+		if (lc == NULL)			/* shouldn't happen */
+			elog(ERROR, "could not find CTE \"%s\"", rte->ctename);
+		*cteindex = ind;
+	}
+	return cteroot;
+}
+
+static bool
+is_safe_restrictinfo_walker(Node *node, restrictinfo_safe_context * context)
+{
+	if (node == NULL)
+		return false;
+	if (IsA(node, Var))
+	{
+		Var		   *var = (Var *) node;
+
+		if (IS_SPECIAL_VARNO(var->varno))
+			context->safe = false;
+		/* Don't support whole-tuple reference yet */
+		if (var->varattno == InvalidAttrNumber)
+			context->safe = false;
+
+		return false;
+	}
+	if (IsA(node, PlaceHolderVar))
+	{
+		context->safe = false;
+		return false;
+	}
+	if (IsA(node, Query))
+	{
+		/* is it possible ? */
+		context->safe = false;
+		return false;
+	}
+	return expression_tree_walker(node, is_safe_restrictinfo_walker, context);
+}
+
+/*
+ * is_safe_restrictinfo
+ * 		RestrictInfo is safe if it contains non-volatile functions,
+ * 		non-special vars or constants
+ */
+static bool
+is_safe_restrictinfo(RestrictInfo *restrictinfo)
+{
+	Node	   *clause;
+	restrictinfo_safe_context context;
+
+	clause = (Node *) restrictinfo->clause;
+	if (contain_volatile_functions(clause))
+		return false;
+
+	context.safe = true;
+
+	is_safe_restrictinfo_walker(clause, &context);
+
+	return context.safe;
+}
+
+/*
+ * replace_varno_walker
+ * 		Replaces varnos based on given value
+ */
+static bool
+replace_varno_walker(Node *node, replace_varno_context * context)
+{
+	if (node == NULL)
+		return false;
+	if (IsA(node, Var))
+	{
+		Var		   *var = (Var *) node;
+
+		if (var->varno == context->old_varno)
+			var->varno = context->new_varno;
+
+		return false;
+	}
+	if (IsA(node, Query))
+	{
+		return query_tree_walker((Query *) node, replace_varno_walker, context, 0);
+	}
+	return expression_tree_walker(node, replace_varno_walker, context);
+}
+
+/*
+ * add_restrictinfo_to_rel_restrictinfos
+ * 		Find RelRestrictInfo for root and rel, add restrictinfo there
+ */
+static void
+add_restrictinfo_to_rel_restrictinfos(List **relrestrictinfos, PlannerInfo *root, int relid, RestrictInfo *restrictinfo)
+{
+	ListCell   *lc;
+	RelRestrictInfos *rri = NULL;
+
+	foreach(lc, *relrestrictinfos)
+	{
+		RelRestrictInfos *cur_ri = (RelRestrictInfos *) lfirst(lc);
+
+		if (cur_ri->root == root && cur_ri->relid == relid)
+		{
+			rri = cur_ri;
+			break;
+		}
+	}
+
+	if (rri == NULL)
+	{
+		rri = makeNode(RelRestrictInfos);
+		rri->root = root;
+		rri->relid = relid;
+		*relrestrictinfos = lappend(*relrestrictinfos, rri);
+	}
+
+	rri->restrictinfos = lappend(rri->restrictinfos, restrictinfo);
+
+}
+
+/*
+ * add_cte_restrictinfo
+ * 		Find cte, corresponding to rel and add restrict info to its root's cte_rel_restrictinfos
+ */
+static void
+add_cte_restrictinfo(PlannerInfo *root, RestrictInfo *restrictinfo, RelOptInfo *rel)
+{
+	int			cteindex;
+	PlannerInfo *cteroot;
+
+	cteroot = find_cte(root, rel, &cteindex);
+
+	if (cteroot != NULL && cteindex >= 0)
+	{
+		CommonTableExpr *cte;
+		ListCell   *lc;
+
+		bool		restrictinfo_usage_safe = false;
+
+		restrictinfo_usage_safe = list_nth_int(cteroot->use_cte_rel_restrictinfos, cteindex);
+
+		if (!restrictinfo_usage_safe)
+			return;
+
+		restrictinfo_usage_safe = is_safe_restrictinfo(restrictinfo);
+
+		if (!restrictinfo_usage_safe)
+		{
+			lc = list_nth_cell(cteroot->use_cte_rel_restrictinfos, cteindex);
+			lc->int_value = false;
+			return;
+		}
+
+		cte = list_nth(cteroot->parse->cteList, cteindex);
+
+		/*
+		 * Shouldn't depend on restrictinfo here to avoid different decisions
+		 * for different clauses
+		 */
+		if (cte->ctematerialized == CTEMaterializeDefault &&
+			cte->cterefcount > 1 &&
+			!cte->cterecursive &&
+			((Query *) cte->ctequery)->commandType == CMD_SELECT &&
+			!contain_dml(cte->ctequery))
+		{
+
+			RestrictInfo *restrictinfo_copy;
+			replace_varno_context rvcontext;
+
+			restrictinfo_copy = copyObject(restrictinfo);
+
+			/*
+			 * All varnos in restrictinfo should reference CTE targetlist. We
+			 * never use varno later, so just change varno corresponding to
+			 * rel to 0.
+			 */
+			rvcontext.old_varno = rel->relid;
+			rvcontext.new_varno = 0;
+			replace_varno_walker((Node *) (restrictinfo_copy->clause), &rvcontext);
+
+			lc = list_nth_cell(cteroot->cte_rel_restrictinfos, cteindex);
+			add_restrictinfo_to_rel_restrictinfos((List **) &(lc->ptr_value), root, rel->relid, restrictinfo_copy);
+		}
+
+	}
+}
+
+/*
  * distribute_restrictinfo_to_rels
  *	  Push a completed RestrictInfo into the proper restriction or join
  *	  clause list(s).
@@ -2196,6 +2441,9 @@ distribute_restrictinfo_to_rels(PlannerInfo *root,
 			/* Update security level info */
 			rel->baserestrict_min_security = Min(rel->baserestrict_min_security,
 												 restrictinfo->security_level);
+
+			if (rel->rtekind == RTE_CTE)
+				add_cte_restrictinfo(root, restrictinfo, rel);
 			break;
 		case BMS_MULTIPLE:
 
@@ -2230,6 +2478,98 @@ distribute_restrictinfo_to_rels(PlannerInfo *root,
 			 */
 			elog(ERROR, "cannot cope with variable-free clause");
 			break;
+	}
+}
+
+/*
+ * replan_distribute_restrictinfo_to_rels
+ *	  Push a completed RestrictInfo into the proper restriction or join
+ *	  clause list(s).
+ *
+ * This function is used on cte replan stage.
+ * It doesn't extract CTE restrictions and also distributes RestrictInfo
+ * to childs.
+ */
+void
+replan_distribute_restrictinfo_to_rels(PlannerInfo *root,
+									   RestrictInfo *restrictinfo)
+{
+	Relids		relids = restrictinfo->required_relids;
+	RelOptInfo *rel;
+
+	switch (bms_membership(relids))
+	{
+		case BMS_SINGLETON:
+
+			/*
+			 * There is only one relation participating in the clause, so it
+			 * is a restriction clause for that relation.
+			 */
+			rel = find_base_rel(root, bms_singleton_member(relids));
+
+			/* Add clause to rel's restriction list */
+			rel->baserestrictinfo = lappend(rel->baserestrictinfo,
+											restrictinfo);
+			/* Update security level info */
+			rel->baserestrict_min_security = Min(rel->baserestrict_min_security,
+												 restrictinfo->security_level);
+
+			if ((rel->rtekind == RTE_RELATION) && (rel->nparts > 0))
+				distribute_baserestrictinfo_to_childs(root, rel);
+			break;
+		case BMS_MULTIPLE:
+			/* How should we handle partitions in this case? */
+
+			/*
+			 * The clause is a join clause, since there is more than one rel
+			 * in its relid set.
+			 */
+
+			/*
+			 * Check for hashjoinable operators.  (We don't bother setting the
+			 * hashjoin info except in true join clauses.)
+			 */
+			check_hashjoinable(restrictinfo);
+
+			/*
+			 * Add clause to the join lists of all the relevant relations.
+			 */
+			add_join_clause_to_rels(root, restrictinfo, relids);
+			break;
+		default:				/* BMS_EMPTY_SET */
+
+			/*
+			 * Can get here, if after targetlist substitution get no
+			 * references to rels. Just do nothing in such case for now.
+			 */
+			elog(DEBUG1, "got rel-free clause on CTE replan stage");
+			break;
+	}
+}
+
+static void
+distribute_baserestrictinfo_to_childs(PlannerInfo *root, RelOptInfo *rel)
+{
+	int			part;
+	RangeTblEntry *rte;
+
+	for (part = 0; part < rel->nparts; part++)
+	{
+		RelOptInfo *child_rel = rel->part_rels[part];
+
+		if (child_rel->rtekind == RTE_RELATION)
+		{
+			int			childRTindex = child_rel->relid;
+			AppendRelInfo *appinfo = root->append_rel_array[childRTindex];
+
+			Assert(appinfo != NULL);
+
+			rte = root->simple_rte_array[childRTindex];
+
+			apply_child_basequals(root, rel, child_rel, rte, appinfo);
+			/* How can we process dummy relations */
+		}
+
 	}
 }
 

@@ -31,8 +31,10 @@
 #include "optimizer/planmain.h"
 #include "optimizer/planner.h"
 #include "optimizer/prep.h"
+#include "optimizer/restrictinfo.h"
 #include "optimizer/subselect.h"
 #include "parser/parse_relation.h"
+#include "parser/parsetree.h"
 #include "rewrite/rewriteManip.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -85,7 +87,6 @@ static bool subpath_is_hashable(Path *path);
 static bool testexpr_is_hashable(Node *testexpr, List *param_ids);
 static bool test_opexpr_is_hashable(OpExpr *testexpr, List *param_ids);
 static bool hash_ok_operator(OpExpr *expr);
-static bool contain_dml(Node *node);
 static bool contain_dml_walker(Node *node, void *context);
 static bool contain_outer_selfref(Node *node);
 static bool contain_outer_selfref_walker(Node *node, Index *depth);
@@ -104,6 +105,7 @@ static Bitmapset *finalize_plan(PlannerInfo *root,
 								Bitmapset *scan_params);
 static bool finalize_primnode(Node *node, finalize_primnode_context *context);
 static bool finalize_agg_primnode(Node *node, finalize_primnode_context *context);
+static Node *replan_ctes_replace_variables_callback(Var *var, replace_rte_variables_context *context);
 
 
 /*
@@ -896,6 +898,8 @@ SS_process_ctes(PlannerInfo *root)
 	ListCell   *lc;
 
 	Assert(root->cte_plan_ids == NIL);
+	Assert(root->cte_rel_restrictinfos == NIL);
+	Assert(root->use_cte_rel_restrictinfos == NIL);
 
 	foreach(lc, root->parse->cteList)
 	{
@@ -908,6 +912,11 @@ SS_process_ctes(PlannerInfo *root)
 		Plan	   *plan;
 		SubPlan    *splan;
 		int			paramid;
+
+		/* Add empty list of RelRestrictInfos lists for this cte */
+		root->cte_rel_restrictinfos = lappend(root->cte_rel_restrictinfos, NIL);
+		/* Mark cte_rel_restrictinfos safe to use if present */
+		root->use_cte_rel_restrictinfos = lappend_int(root->use_cte_rel_restrictinfos, true);
 
 		/*
 		 * Ignore SELECT CTEs that are not actually referenced anywhere.
@@ -1063,11 +1072,249 @@ SS_process_ctes(PlannerInfo *root)
 }
 
 /*
+ * SS_replan_ctes: replan ctes if cte_rel_restrictinfos has additional quals
+ */
+void
+SS_replan_ctes(PlannerInfo *root)
+{
+	ListCell   *lc1,
+			   *lc2;
+	int			ind;
+	RestrictInfo *restrictinfo;
+	CommonTableExpr *cte;
+	Query	   *query;
+	int			planid;
+	Plan	   *plan;
+	PlannerInfo *subroot;
+	RelOptInfo *final_rel;
+	Path	   *best_path;
+
+	ind = -1;
+	foreach(lc1, root->use_cte_rel_restrictinfos)
+	{
+		ind++;
+
+		if (lfirst_int(lc1))
+		{
+			List	   *rel_restrictinfos;
+
+			rel_restrictinfos = list_nth(root->cte_rel_restrictinfos, ind);
+
+			cte = (CommonTableExpr *) list_nth(root->parse->cteList, ind);
+
+			Assert(cte != NULL);
+
+			/*
+			 * We can restrict cte only when all queries, referencing it,
+			 * restrict it in some way.
+			 */
+			if (rel_restrictinfos != NULL && cte->cterefcount == list_length(rel_restrictinfos))
+			{
+				List	   *exprs,
+						   *orlist = NIL;
+				ListCell   *lc_rris;
+				ListCell   *lc_restrictinfo;
+				bool		replan_needed = false;
+				Expr	   *resexp = NULL;
+				Index		security_level = UINT_MAX;
+
+				planid = list_nth_int(root->cte_plan_ids, ind);
+				Assert(planid != -1);
+				subroot = (PlannerInfo *) list_nth(root->glob->subroots, ind);
+				Assert(subroot != NULL);
+
+				query = (Query *) cte->ctequery;
+
+				foreach(lc_rris, rel_restrictinfos)
+				{
+					Expr	   *andexp = NULL;
+					List	   *andlist = NIL;
+
+					RelRestrictInfos *rri = (RelRestrictInfos *) lfirst(lc_rris);
+
+					foreach(lc_restrictinfo, rri->restrictinfos)
+					{
+						RestrictInfo *ri = (RestrictInfo *) lfirst(lc_restrictinfo);
+
+						andlist = lappend(andlist, ri->clause);
+
+						if (ri->security_level < security_level)
+							security_level = ri->security_level;
+					}
+
+					Assert(list_length(andlist) > 0);
+
+					if (list_length(andlist) > 1)
+						andexp = makeBoolExpr(AND_EXPR, andlist, -1);
+					else
+						andexp = linitial(andlist);
+
+					orlist = lappend(orlist, andexp);
+				}
+
+				Assert(list_length(orlist) > 0);
+
+				if (list_length(orlist) > 1)
+					resexp = makeBoolExpr(OR_EXPR, orlist, -1);
+				else
+					resexp = linitial(orlist);
+
+				resexp = canonicalize_qual(resexp, false);
+				/*
+				 * We already know that all expressions refrence only one
+				 * table. We can't just create restrictinfo from the clause
+				 * and push it down, as it can be an and expression. So we
+				 * decompose it first and check that we can push down every
+				 * clause.
+				 */
+				exprs = make_ands_implicit(resexp);
+
+				if (exprs == NIL)
+				{
+					/* Got explicit true, avoid pushing anything */
+					elog(DEBUG1, "clause seems to be always true, refusing to push down qual to CTE \"%s\"", cte->ctename);
+					continue;
+				}
+
+				foreach(lc2, exprs)
+				{
+					Expr	   *expr = (Expr *) lfirst(lc2);
+					Relids		relids;
+					int			relid;
+
+					relids = pull_varnos(NULL, (Node *) expr);
+
+					if (bms_membership(relids) != BMS_SINGLETON)
+					{
+						elog(DEBUG1, "The clause seems to be unsafe, refusing to push down qual to CTE \"%s\"", cte->ctename);
+						continue;
+					}
+
+					relid = bms_singleton_member(relids);
+
+					/* usable expression doesn't have sublinks */
+					expr = (Expr *) replace_rte_variables((Node *) expr, relid, 0, replan_ctes_replace_variables_callback,
+														  query->targetList, false);
+
+					/*
+					 * After replacing relids we should again check that
+					 * expression refer only to one rel
+					 */
+					relids = pull_varnos(NULL, (Node *) expr);
+					if (bms_membership(relids) != BMS_SINGLETON)
+					{
+						elog(DEBUG1, "The clause seems to be unsafe, refusing to push down qual to CTE \"%s\"", cte->ctename);
+						continue;
+					}
+
+					if (contain_volatile_functions((Node *) expr))
+					{
+						elog(DEBUG1, "The clause seems to be unsafe, refusing to push down qual to CTE \"%s\"", cte->ctename);
+						continue;
+					}
+
+					relid = bms_singleton_member(relids);
+					if (relid < 0 || relid > subroot->simple_rel_array_size)
+					{
+						elog(DEBUG1, "The clause seems to be unsafe, refusing to push down qual to CTE \"%s\"", cte->ctename);
+						continue;
+					}
+
+					/*
+					 * Try to push down qual after subquery pull up
+					 */
+					if (subroot->simple_rel_array[relid] == NULL)
+					{
+						RangeTblEntry *rte = subroot->simple_rte_array[relid];
+
+						if ((rte != NULL) && rte->rtekind == RTE_SUBQUERY && rte->rtoffset >= 0 && rte->subquery != NULL && rte->subquery->targetList != NULL)
+						{
+							Query	   *subquery;
+
+							subquery = copyObject(rte->subquery);
+
+							OffsetVarNodes((Node *) subquery->targetList, rte->rtoffset, 0);
+
+							expr = (Expr *) replace_rte_variables((Node *) expr, relid, 0, replan_ctes_replace_variables_callback,
+																  subquery->targetList, false);
+
+							relids = pull_varnos(NULL, (Node *) expr);
+							if (bms_membership(relids) != BMS_SINGLETON)
+							{
+								elog(DEBUG1, "The clause seems to be unsafe, refusing to push down qual to CTE \"%s\"", cte->ctename);
+								continue;
+							}
+
+							if (contain_volatile_functions((Node *) expr))
+							{
+								elog(DEBUG1, "The clause seems to be unsafe, refusing to push down qual to CTE \"%s\"", cte->ctename);
+								continue;
+							}
+						}
+						else
+						{
+							elog(DEBUG1, "The clause seems to be unsafe, refusing to push down qual to CTE \"%s\"", cte->ctename);
+							continue;
+						}
+					}
+
+					/* If we are here, we have to rebuild plan */
+					replan_needed = true;
+
+					restrictinfo = make_restrictinfo(subroot, expr, true, false, false, security_level, NULL, NULL, NULL);
+
+					/* Push restrictinfo */
+					replan_distribute_restrictinfo_to_rels(subroot, restrictinfo);
+
+				}
+
+				/* replan */
+				if (replan_needed)
+				{
+					final_rel = fetch_upper_rel(subroot, UPPERREL_FINAL, NULL);
+					best_path = final_rel->cheapest_total_path;
+					plan = create_plan(subroot, best_path);
+
+					/* Save plan instead of old one */
+					lc2 = list_nth_cell(root->glob->subplans, ind);
+					lfirst(lc2) = plan;
+					/* Should we somehow clean up old plan ? */
+				}
+			}
+		}
+	}
+}
+
+static Node *
+replan_ctes_replace_variables_callback(Var *var,
+									   replace_rte_variables_context *context)
+{
+	Node	   *newnode;
+	List	   *tlist = (List *) context->callback_arg;
+	int			varattno = var->varattno;
+	TargetEntry *tle;
+
+	tle = get_tle_by_resno(tlist, varattno);
+
+	if (tle == NULL)			/* shouldn't happen */
+		elog(ERROR, "could not find attribute %d in CTE subquery targetlist",
+			 varattno);
+
+	newnode = (Node *) copyObject(tle->expr);
+
+	/*
+	 * Should we do something with var->varlevelsup or call
+	 * IncrementVarSublevelsUp(node)?
+	 */
+	return newnode;
+}
+
+/*
  * contain_dml: is any subquery not a plain SELECT?
  *
  * We reject SELECT FOR UPDATE/SHARE as well as INSERT etc.
  */
-static bool
+bool
 contain_dml(Node *node)
 {
 	return contain_dml_walker(node, NULL);
@@ -1218,6 +1465,7 @@ inline_cte_walker(Node *node, inline_cte_walker_context *context)
 			rte->rtekind = RTE_SUBQUERY;
 			rte->subquery = newquery;
 			rte->security_barrier = false;
+			rte->rtoffset = -1;
 
 			/* Zero out CTE-specific fields */
 			rte->ctename = NULL;

@@ -2374,6 +2374,22 @@ _copyRestrictInfo(const RestrictInfo *from)
 }
 
 /*
+ * _copyRelRestrictInfos
+ */
+static RelRestrictInfos *
+_copyRelRestrictInfos(const RelRestrictInfos * from)
+{
+	RelRestrictInfos *newnode = makeNode(RelRestrictInfos);
+
+	/* root is used only as address */
+	COPY_SCALAR_FIELD(root);
+	COPY_SCALAR_FIELD(relid);
+	COPY_NODE_FIELD(restrictinfos);
+
+	return newnode;
+}
+
+/*
  * _copyPlaceHolderVar
  */
 static PlaceHolderVar *
@@ -2467,6 +2483,7 @@ _copyRangeTblEntry(const RangeTblEntry *from)
 	COPY_NODE_FIELD(tablesample);
 	COPY_NODE_FIELD(subquery);
 	COPY_SCALAR_FIELD(security_barrier);
+	COPY_SCALAR_FIELD(rtoffset);
 	COPY_SCALAR_FIELD(jointype);
 	COPY_SCALAR_FIELD(joinmergedcols);
 	COPY_NODE_FIELD(joinaliasvars);
@@ -5285,6 +5302,9 @@ copyObjectImpl(const void *from)
 			break;
 		case T_RestrictInfo:
 			retval = _copyRestrictInfo(from);
+			break;
+		case T_RelRestrictInfos:
+			retval = _copyRelRestrictInfos(from);
 			break;
 		case T_PlaceHolderVar:
 			retval = _copyPlaceHolderVar(from);

@@ -100,6 +100,11 @@ static void outChar(StringInfo str, char c);
 #define WRITE_LOCATION_FIELD(fldname) \
 	appendStringInfo(str, " :" CppAsString(fldname) " %d", node->fldname)
 
+/* Write a field as an address */
+#define WRITE_ADDR_FIELD(fldname) \
+	appendStringInfo(str, " :" CppAsString(fldname) " %p", \
+					 (void*) node->fldname)
+
 /* Write a Node field */
 #define WRITE_NODE_FIELD(fldname) \
 	(appendStringInfoString(str, " :" CppAsString(fldname) " "), \
@@ -2284,6 +2289,8 @@ _outPlannerInfo(StringInfo str, const PlannerInfo *node)
 	WRITE_INT_FIELD(join_cur_level);
 	WRITE_NODE_FIELD(init_plans);
 	WRITE_NODE_FIELD(cte_plan_ids);
+	WRITE_NODE_FIELD(cte_rel_restrictinfos);
+	WRITE_NODE_FIELD(use_cte_rel_restrictinfos);
 	WRITE_NODE_FIELD(multiexpr_params);
 	WRITE_NODE_FIELD(eq_classes);
 	WRITE_BOOL_FIELD(ec_merging_done);
@@ -2553,6 +2560,16 @@ _outRestrictInfo(StringInfo str, const RestrictInfo *node)
 	WRITE_BOOL_FIELD(outer_is_left);
 	WRITE_OID_FIELD(hashjoinoperator);
 	WRITE_OID_FIELD(hasheqoperator);
+}
+
+static void
+_outRelRestrictInfos(StringInfo str, const RelRestrictInfos * node)
+{
+	WRITE_NODE_TYPE("RELRESTRICTINFOS");
+
+	WRITE_ADDR_FIELD(root);
+	WRITE_INT_FIELD(relid);
+	WRITE_NODE_FIELD(restrictinfos);
 }
 
 static void
@@ -3242,6 +3259,7 @@ _outRangeTblEntry(StringInfo str, const RangeTblEntry *node)
 		case RTE_SUBQUERY:
 			WRITE_NODE_FIELD(subquery);
 			WRITE_BOOL_FIELD(security_barrier);
+			WRITE_INT_FIELD(rtoffset);
 			break;
 		case RTE_JOIN:
 			WRITE_ENUM_FIELD(jointype, JoinType);
@@ -4283,6 +4301,9 @@ outNode(StringInfo str, const void *obj)
 				break;
 			case T_RestrictInfo:
 				_outRestrictInfo(str, obj);
+				break;
+			case T_RelRestrictInfos:
+				_outRelRestrictInfos(str, obj);
 				break;
 			case T_IndexClause:
 				_outIndexClause(str, obj);

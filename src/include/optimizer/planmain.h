@@ -77,6 +77,8 @@ extern void create_lateral_join_info(PlannerInfo *root);
 extern List *deconstruct_jointree(PlannerInfo *root);
 extern void distribute_restrictinfo_to_rels(PlannerInfo *root,
 											RestrictInfo *restrictinfo);
+extern void replan_distribute_restrictinfo_to_rels(PlannerInfo *root,
+											RestrictInfo *restrictinfo);
 extern RestrictInfo *process_implied_equality(PlannerInfo *root,
 											  Oid opno,
 											  Oid collation,

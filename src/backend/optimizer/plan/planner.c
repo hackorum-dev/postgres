@@ -610,6 +610,8 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 	root->planner_cxt = CurrentMemoryContext;
 	root->init_plans = NIL;
 	root->cte_plan_ids = NIL;
+	root->cte_rel_restrictinfos = NIL;
+	root->use_cte_rel_restrictinfos = NIL;
 	root->multiexpr_params = NIL;
 	root->eq_classes = NIL;
 	root->ec_merging_done = false;
@@ -1017,6 +1019,10 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 	 * Do the main planning.
 	 */
 	grouping_planner(root, tuple_fraction);
+
+	if (parse->cteList)
+		SS_replan_ctes(root);
+
 
 	/*
 	 * Capture the set of outer-level param IDs we have access to, for use in

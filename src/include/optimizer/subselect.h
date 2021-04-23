@@ -16,7 +16,9 @@
 #include "nodes/pathnodes.h"
 #include "nodes/plannodes.h"
 
+extern bool contain_dml(Node *node);
 extern void SS_process_ctes(PlannerInfo *root);
+extern void SS_replan_ctes(PlannerInfo *root);
 extern JoinExpr *convert_ANY_sublink_to_join(PlannerInfo *root,
 											 SubLink *sublink,
 											 Relids available_rels);

@@ -1964,6 +1964,7 @@ tlist_coercion_finished:
 		rte = makeNode(RangeTblEntry);
 		rte->rtekind = RTE_SUBQUERY;
 		rte->subquery = parse;
+		rte->rtoffset = -1;
 		rte->eref = rte->alias = makeAlias("*SELECT*", colnames);
 		rte->lateral = false;
 		rte->inh = false;
