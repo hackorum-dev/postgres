@@ -1568,7 +1568,11 @@ repeat('Pg', 4) <returnvalue>PgPgPgPg</returnvalue>
         <returnvalue>double precision</returnvalue>
        </para>
        <para>
-        Rounds to nearest integer
+        Rounds to nearest integer.  For <type>numeric</type>, ties are
+        broken by rounding away from 0.  For <type>double precision</type>,
+        the tie breaking behavior is architecture dependent, but
+        <quote>round to nearest even</quote> in accordance with IEEE-754
+        is the most common rule.
        </para>
        <para>
         <literal>round(42.4)</literal>
@@ -1583,7 +1587,7 @@ repeat('Pg', 4) <returnvalue>PgPgPgPg</returnvalue>
        </para>
        <para>
         Rounds <parameter>v</parameter> to <parameter>s</parameter> decimal
-        places
+        places.  Ties are broken by rounding away from 0.
        </para>
        <para>
         <literal>round(42.4382, 2)</literal>
