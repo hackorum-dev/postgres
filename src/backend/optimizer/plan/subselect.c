@@ -1272,6 +1272,16 @@ SS_replan_ctes(PlannerInfo *root)
 				if (replan_needed)
 				{
 					final_rel = fetch_upper_rel(subroot, UPPERREL_FINAL, NULL);
+
+					/*
+					 * Forget about any partial paths and clear consider_parallel, too;
+					 * they're not usable if we attached an initPlan (all CTEs are).
+					 */
+					final_rel->partial_pathlist = NIL;
+					final_rel->consider_parallel = false;
+
+					set_cheapest(final_rel);
+
 					best_path = final_rel->cheapest_total_path;
 					plan = create_plan(subroot, best_path);
 

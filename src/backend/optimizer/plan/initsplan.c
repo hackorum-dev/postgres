@@ -33,6 +33,7 @@
 #include "optimizer/subselect.h"
 #include "parser/analyze.h"
 #include "parser/parsetree.h"
+#include "partitioning/partprune.h"
 #include "rewrite/rewriteManip.h"
 #include "utils/lsyscache.h"
 #include "utils/typcache.h"
@@ -2551,11 +2552,25 @@ static void
 distribute_baserestrictinfo_to_childs(PlannerInfo *root, RelOptInfo *rel)
 {
 	int			part;
+	bool set_dummy = false;
 	RangeTblEntry *rte;
+	Bitmapset  *live_parts;
+	List       *live_childrels = NIL;
+
+	live_parts = prune_append_rel_partitions(rel);
 
 	for (part = 0; part < rel->nparts; part++)
 	{
-		RelOptInfo *child_rel = rel->part_rels[part];
+		RelOptInfo *child_rel;
+
+		child_rel = rel->part_rels[part];
+
+		if (!bms_is_member(part ,live_parts))
+		{
+			mark_dummy_rel(child_rel);
+			set_dummy = true;
+			continue;
+		}
 
 		if (child_rel->rtekind == RTE_RELATION)
 		{
@@ -2566,10 +2581,32 @@ distribute_baserestrictinfo_to_childs(PlannerInfo *root, RelOptInfo *rel)
 
 			rte = root->simple_rte_array[childRTindex];
 
-			apply_child_basequals(root, rel, child_rel, rte, appinfo);
-			/* How can we process dummy relations */
+			if (!apply_child_basequals(root, rel, child_rel, rte, appinfo))
+			{
+				mark_dummy_rel(child_rel);
+				set_dummy = true;
+				continue;
+			}
 		}
 
+		child_rel->partial_pathlist = NIL;
+		child_rel->consider_parallel = false;
+
+		/* Relation is not dummy */
+		live_childrels = lappend(live_childrels, child_rel);
+
+	}
+
+	if (set_dummy)
+	{
+		/* Partial paths are harmful for initplans */
+		rel->consider_parallel = false;
+
+		add_paths_to_append_rel(root, rel, live_childrels);
+
+		rel->partial_pathlist = NIL;
+
+		set_cheapest(rel);
 	}
 }
 
