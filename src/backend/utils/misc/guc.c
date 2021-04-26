@@ -3787,6 +3787,17 @@ static struct config_real ConfigureNamesReal[] =
 		NULL, NULL, NULL
 	},
 
+	{
+		{"resultcache_cost_factor", PGC_SUSET, QUERY_TUNING_COST,
+			gettext_noop("Controls the aggressiveness of result cache."),
+			gettext_noop("This factor will be multiplied by the cost of "
+						 "the Result Cache node.")
+		},
+		&resultcache_cost_factor,
+		DEFAULT_RESULTCACHE_COST_FACTOR, 0.0, DBL_MAX,
+		NULL, NULL, NULL
+	},
+
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, 0.0, 0.0, 0.0, NULL, NULL, NULL

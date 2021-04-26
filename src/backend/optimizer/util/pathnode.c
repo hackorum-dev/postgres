@@ -1618,9 +1618,14 @@ create_resultcache_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	 * Add a small additional charge for caching the first entry.  All the
 	 * harder calculations for rescans are performed in
 	 * cost_resultcache_rescan().
+	 *
+	 * We multiply the costs by resultcache_cost_factor to control the
+	 * aggressiveness of result cache.
 	 */
-	pathnode->path.startup_cost = subpath->startup_cost + cpu_tuple_cost;
-	pathnode->path.total_cost = subpath->total_cost + cpu_tuple_cost;
+	pathnode->path.startup_cost =
+		(subpath->startup_cost + cpu_tuple_cost) * resultcache_cost_factor;
+	pathnode->path.total_cost =
+		(subpath->total_cost + cpu_tuple_cost) * resultcache_cost_factor;
 	pathnode->path.rows = subpath->rows;
 
 	return pathnode;

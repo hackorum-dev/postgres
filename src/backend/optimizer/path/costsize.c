@@ -123,6 +123,7 @@ double		cpu_index_tuple_cost = DEFAULT_CPU_INDEX_TUPLE_COST;
 double		cpu_operator_cost = DEFAULT_CPU_OPERATOR_COST;
 double		parallel_tuple_cost = DEFAULT_PARALLEL_TUPLE_COST;
 double		parallel_setup_cost = DEFAULT_PARALLEL_SETUP_COST;
+double		resultcache_cost_factor = DEFAULT_RESULTCACHE_COST_FACTOR;
 
 int			effective_cache_size = DEFAULT_EFFECTIVE_CACHE_SIZE;
 
@@ -2540,6 +2541,13 @@ cost_resultcache_rescan(PlannerInfo *root, ResultCachePath *rcpath,
 	 * which we'll do regardless of whether it was a cache hit or not.
 	 */
 	startup_cost += cpu_tuple_cost;
+
+	/*
+	 * We multiply the costs by resultcache_cost_factor to control the
+	 * aggressiveness of result cache.
+	 */
+	startup_cost *= resultcache_cost_factor;
+	total_cost *= resultcache_cost_factor;
 
 	*rescan_startup_cost = startup_cost;
 	*rescan_total_cost = total_cost;

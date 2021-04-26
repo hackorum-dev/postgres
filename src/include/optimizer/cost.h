@@ -28,6 +28,7 @@
 #define DEFAULT_CPU_OPERATOR_COST  0.0025
 #define DEFAULT_PARALLEL_TUPLE_COST 0.1
 #define DEFAULT_PARALLEL_SETUP_COST  1000.0
+#define DEFAULT_RESULTCACHE_COST_FACTOR 1.0
 
 #define DEFAULT_EFFECTIVE_CACHE_SIZE  524288	/* measured in pages */
 
@@ -47,6 +48,7 @@ typedef enum
 /* parameter variables and flags (see also optimizer.h) */
 extern PGDLLIMPORT Cost disable_cost;
 extern PGDLLIMPORT int max_parallel_workers_per_gather;
+extern PGDLLIMPORT double resultcache_cost_factor;
 extern PGDLLIMPORT bool enable_seqscan;
 extern PGDLLIMPORT bool enable_indexscan;
 extern PGDLLIMPORT bool enable_indexonlyscan;
