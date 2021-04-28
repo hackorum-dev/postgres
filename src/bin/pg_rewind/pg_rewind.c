@@ -47,6 +47,8 @@ static void sanityChecks(void);
 static void findCommonAncestorTimeline(XLogRecPtr *recptr, int *tliIndex);
 static void ensureCleanShutdown(const char *argv0);
 static void disconnect_atexit(void);
+static void adjust_data_dir(const char *argv0);
+static char *find_other_exec_or_die(const char *argv0, const char *target, const char *versionstr);
 
 static ControlFileData ControlFile_target;
 static ControlFileData ControlFile_source;
@@ -57,6 +59,7 @@ int			WalSegSz;
 
 /* Configuration options */
 char	   *datadir_target = NULL;
+char	   *config_target = NULL;
 char	   *datadir_source = NULL;
 char	   *connstr_source = NULL;
 char	   *restore_command = NULL;
@@ -191,6 +194,7 @@ main(int argc, char **argv)
 
 			case 'D':			/* -D or --target-pgdata */
 				datadir_target = pg_strdup(optarg);
+				config_target = pg_strdup(optarg);
 				break;
 
 			case 1:				/* --source-pgdata */
@@ -227,6 +231,9 @@ main(int argc, char **argv)
 		fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
 		exit(1);
 	}
+
+	/* -D might point at config-only directory; if so find the real PGDATA */
+	adjust_data_dir(argv[0]);
 
 	if (writerecoveryconf && connstr_source == NULL)
 	{
@@ -1125,7 +1132,7 @@ ensureCleanShutdown(const char *argv0)
 	 * is synced at the end anyway.
 	 */
 	snprintf(cmd, MAXCMDLEN, "\"%s\" --single -F -D \"%s\" template1 < \"%s\"",
-			 exec_path, datadir_target, DEVNULL);
+			 exec_path, config_target, DEVNULL);
 
 	if (system(cmd) != 0)
 	{
@@ -1140,3 +1147,96 @@ disconnect_atexit(void)
 	if (conn != NULL)
 		PQfinish(conn);
 }
+
+/*
+ * adjust_data_dir
+ *
+ * If a configuration-only directory was specified, find the real data dir.
+ */
+static void
+adjust_data_dir(const char *argv0)
+{
+	char	   *pgdata_opt;
+	char		cmd[MAXPGPATH],
+				filename[MAXPGPATH],
+			   *my_exec_path;
+	FILE	   *fd;
+
+	/* do nothing if we're working without knowledge of data dir */
+	if (config_target == NULL)
+		return;
+
+	canonicalize_path(config_target);
+	pgdata_opt = psprintf("-D \"%s\" ", config_target);
+
+	/* If there is no postgresql.conf, it can't be a config-only dir */
+	snprintf(filename, sizeof(filename), "%s/postgresql.conf", config_target);
+	if ((fd = fopen(filename, "r")) == NULL)
+		return;
+	fclose(fd);
+
+	/* If PG_VERSION exists, it can't be a config-only dir */
+	snprintf(filename, sizeof(filename), "%s/PG_VERSION", config_target);
+	if ((fd = fopen(filename, "r")) != NULL)
+	{
+		fclose(fd);
+		return;
+	}
+
+	/* Must be a configuration directory, so find the data directory */
+
+	/* we use a private my_exec_path to avoid interfering with later uses */
+	my_exec_path = find_other_exec_or_die(argv0, "postgres", PG_BACKEND_VERSIONSTR);
+
+	/* it's important for -C to be the first option, see main.c */
+	snprintf(cmd, MAXPGPATH, "\"%s\" -C data_directory %s",
+			 my_exec_path,
+			 pgdata_opt ? pgdata_opt : "");
+
+	fd = popen(cmd, "r");
+	if (fd == NULL || fgets(filename, sizeof(filename), fd) == NULL)
+	{
+		pg_log_error(_("%s: could not determine the data directory using command \"%s\"\n"), progname, cmd);
+		exit(1);
+	}
+	pclose(fd);
+	free(my_exec_path);
+
+	/* strip trailing newline and carriage return */
+	(void) pg_strip_crlf(filename);
+
+	datadir_target = pg_strdup(filename);
+	canonicalize_path(datadir_target);
+}
+
+static char *
+find_other_exec_or_die(const char *argv0, const char *target, const char *versionstr)
+{
+	int			ret;
+	char	   *found_path;
+
+	found_path = pg_malloc(MAXPGPATH);
+
+	if ((ret = find_other_exec(argv0, target, versionstr, found_path)) < 0)
+	{
+		char		full_path[MAXPGPATH];
+
+		if (find_my_exec(argv0, full_path) < 0)
+			strlcpy(full_path, progname, sizeof(full_path));
+
+		if (ret == -1)
+			pg_log_error(_("The program \"%s\" is needed by %s but was not found in the\n"
+						   "same directory as \"%s\".\n"
+						   "Check your installation.\n"),
+						 target, progname, full_path);
+		else
+			pg_log_error(_("The program \"%s\" was found by \"%s\"\n"
+						   "but was not the same version as %s.\n"
+						   "Check your installation.\n"),
+						 target, full_path, progname);
+		exit(1);
+	}
+
+	return found_path;
+}
+
