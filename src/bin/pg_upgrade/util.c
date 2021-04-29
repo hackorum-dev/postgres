@@ -310,7 +310,7 @@ quote_identifier(const char *s)
 		s++;
 	}
 	*r++ = '"';
-	*r++ = '\0';
+	*r = '\0';
 
 	return result;
 }
