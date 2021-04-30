@@ -340,7 +340,8 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
      <row>
       <entry><structname>pg_stat_prefetch_recovery</structname><indexterm><primary>pg_stat_prefetch_recovery</primary></indexterm></entry>
       <entry>Only one row, showing statistics about blocks prefetched during recovery.
-       See <xref linkend="pg-stat-prefetch-recovery-view"/> for details.
+       See <link linkend="monitoring-pg-stat-prefetch-recovery-view">
+       <structname>pg_stat_prefetch_recovery</structname></link> for details.
       </entry>
      </row>
 
@@ -2634,6 +2635,15 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
     <tbody>
      <row>
       <entry role="catalog_table_entry"><para role="column_definition">
+        <structfield>stats_reset</structfield> <type>timestamp with time zone</type>
+       </para>
+       <para>
+        Time at which these statistics were last reset
+       </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
         <structfield>slot_name</structfield> <type>text</type>
        </para>
        <para>
@@ -2935,6 +2945,125 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
 
  </sect2>
 
+ <sect2 id="monitoring-pg-stat-prefetch-recovery-view">
+  <title><structname>pg_stat_prefetch_recovery</structname></title>
+
+  <indexterm>
+   <primary>pg_stat_prefetch_recovery</primary>
+  </indexterm>
+
+  <para>
+   The <structname>pg_stat_prefetch_recovery</structname> view will contain only
+   one row.  It is filled with nulls if recovery is not running or WAL
+   prefetching is not enabled.  See <xref linkend="guc-recovery-prefetch"/>
+   for more information.  The counters in this view are reset whenever the
+   <xref linkend="guc-recovery-prefetch"/>,
+   <xref linkend="guc-recovery-prefetch-fpw"/> or
+   <xref linkend="guc-maintenance-io-concurrency"/> setting is changed and
+   the server configuration is reloaded.
+  </para>
+
+  <table id="pg-stat-prefetch-recovery" xreflabel="pg_stat_prefetch_recovery">
+   <title><structname>pg_stat_prefetch_recovery</structname> View</title>
+   <tgroup cols="1">
+    <thead>
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       Column Type
+      </para>
+      <para>
+       Description
+      </para></entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>prefetch</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Number of blocks prefetched because they were not in the buffer pool
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>skip_hit</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Number of blocks not prefetched because they were already in the buffer pool
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>skip_new</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Number of blocks not prefetched because they were new (usually relation extension)
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>skip_fpw</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Number of blocks not prefetched because a full page image was included in the WAL and <xref linkend="guc-recovery-prefetch-fpw"/> was set to <literal>off</literal>
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>skip_seq</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Number of blocks not prefetched because of repeated access
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>distance</structfield> <type>integer</type>
+      </para>
+      <para>
+       How far ahead of recovery the prefetcher is currently reading, in bytes
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>queue_depth</structfield> <type>integer</type>
+      </para>
+      <para>
+       How many prefetches have been initiated but are not yet known to have completed
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>avg_distance</structfield> <type>float4</type>
+      </para>
+      <para>
+       How far ahead of recovery the prefetcher is on average, while recovery is not idle
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>avg_queue_depth</structfield> <type>float4</type>
+      </para>
+      <para>
+       Average number of prefetches in flight while recovery is not idle
+      </para></entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+ </sect2>
+
  <sect2 id="monitoring-pg-stat-subscription">
   <title><structname>pg_stat_subscription</structname></title>
 
@@ -2947,78 +3076,6 @@ SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event i
    row per subscription for main worker (with null PID if the worker is
    not running), and additional rows for workers handling the initial data
    copy of the subscribed tables.
-  </para>
-
-  <table id="pg-stat-prefetch-recovery-view" xreflabel="pg_stat_prefetch_recovery">
-   <title><structname>pg_stat_prefetch_recovery</structname> View</title>
-   <tgroup cols="3">
-    <thead>
-    <row>
-      <entry>Column</entry>
-      <entry>Type</entry>
-      <entry>Description</entry>
-     </row>
-    </thead>
-
-   <tbody>
-    <row>
-     <entry><structfield>prefetch</structfield></entry>
-     <entry><type>bigint</type></entry>
-     <entry>Number of blocks prefetched because they were not in the buffer pool</entry>
-    </row>
-    <row>
-     <entry><structfield>skip_hit</structfield></entry>
-     <entry><type>bigint</type></entry>
-     <entry>Number of blocks not prefetched because they were already in the buffer pool</entry>
-    </row>
-    <row>
-     <entry><structfield>skip_new</structfield></entry>
-     <entry><type>bigint</type></entry>
-     <entry>Number of blocks not prefetched because they were new (usually relation extension)</entry>
-    </row>
-    <row>
-     <entry><structfield>skip_fpw</structfield></entry>
-     <entry><type>bigint</type></entry>
-     <entry>Number of blocks not prefetched because a full page image was included in the WAL and <xref linkend="guc-recovery-prefetch-fpw"/> was set to <literal>off</literal></entry>
-    </row>
-    <row>
-     <entry><structfield>skip_seq</structfield></entry>
-     <entry><type>bigint</type></entry>
-     <entry>Number of blocks not prefetched because of repeated access</entry>
-    </row>
-    <row>
-     <entry><structfield>distance</structfield></entry>
-     <entry><type>integer</type></entry>
-     <entry>How far ahead of recovery the prefetcher is currently reading, in bytes</entry>
-    </row>
-    <row>
-     <entry><structfield>queue_depth</structfield></entry>
-     <entry><type>integer</type></entry>
-     <entry>How many prefetches have been initiated but are not yet known to have completed</entry>
-    </row>
-    <row>
-     <entry><structfield>avg_distance</structfield></entry>
-     <entry><type>float4</type></entry>
-     <entry>How far ahead of recovery the prefetcher is on average, while recovery is not idle</entry>
-    </row>
-    <row>
-     <entry><structfield>avg_queue_depth</structfield></entry>
-     <entry><type>float4</type></entry>
-     <entry>Average number of prefetches in flight while recovery is not idle</entry>
-    </row>
-    </tbody>
-   </tgroup>
-  </table>
-
-  <para>
-   The <structname>pg_stat_prefetch_recovery</structname> view will contain only
-   one row.  It is filled with nulls if recovery is not running or WAL
-   prefetching is not enabled.  See <xref linkend="guc-recovery-prefetch"/>
-   for more information.  The counters in this view are reset whenever the
-   <xref linkend="guc-recovery-prefetch"/>,
-   <xref linkend="guc-recovery-prefetch-fpw"/> or
-   <xref linkend="guc-maintenance-io-concurrency"/> setting is changed and
-   the server configuration is reloaded.
   </para>
 
   <table id="pg-stat-subscription" xreflabel="pg_stat_subscription">
