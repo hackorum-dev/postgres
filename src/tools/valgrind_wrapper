@@ -1,0 +1,242 @@
+#!/bin/bash
+#
+# Wrapper to run targeted executables under the control of valgrind during
+# regression test runs by intercepting them on the PATH.
+#
+# Example usage for a memory-error checking run on the Pg backend:
+#
+#	PGVG_ONLY_CMD="postmaster postgres" PGVG_IGNORE_INITDB=1 VALGRIND_OPTS="--tool=memcheck --memcheck:leak-check=no" make USE_VALGRIND=1 check
+#
+# Note that options for this script must be specified as environment variables
+# (written before the "make" command, or "export"ed separately). They will NOT
+# work if passed as make command-line arguments.
+#
+# Sensitive to env vars:
+#
+#   VALGRIND_OPTS
+#	   Additional command-line arguments to Valgrind. Options are also
+#      read from .valgrindrc.
+#
+#   PG_VALGRIND_SUPPRESSIONS="/path/to/valgrind.supp"
+#	   Path to valgrind suppressions file for postgres,
+#	   src/tools/valgrind.supp . Required. Set automatically
+#	   if the script is invoked via make USE_VALGRIND=1
+#
+#   PGVG_LOG
+#	   Path to store valgrind logs in. By default uses subdirs
+#	   under the workdir.
+#
+#   PGVG_IGNORE_CMDS="psql pgbench"
+#	   Space-separated list of command names for which the wrapper should be
+#	   skipped and the target command exec'd directly.
+#
+#   PGVG_ONLY_CMDS="postgres"
+#	    Space-separated list of command names that should be run under the
+#	    wrapper. This is the inverse of PGVG_IGNORE_CMDS; only the listed
+#	    commands will be traced. Pretty nonsensical to combine with
+#	    PGVG_IGNORE_CMDS.
+#
+#   PGVG_IGNORE_INITDB=1
+#	   Do not wrap initdb or any of the postgres --boot subcommands that
+#	   are invoked by initdb during bootstrap. Saves on startup time.
+#
+#   PGVG_{CMDNAME}_EXTRA_ARGS
+#	   Additional arguments to inject for all invocations of a given command.
+#	   Shell-expanded, so if you want to preserve grouping of arguments with
+#	   spaces or prevent expansion of shell metachars you must incorporate
+#	   literal quotes in the args string. E.g. to force no-sync mode and debug
+#	   output for initdb, you might set PGVG_INITDB_EXTRA_ARGS="-d -v"
+#
+#   PGVG_VERBOSE=1
+#	   Set PGVG_VERBOSE=1 to get some info about wrapper actions on stderr.
+#	   This may upset TAP tests that check stderr, so it's off by default.
+#
+#   PGVG_ARGS
+#	   Additional args to valgrind can be appended here instead of VALGRIND_OPTS.
+#	   This is generally pointless unless you wish to use
+#      PGVG_ARGS="--cmdline-only --my-args-here" - the cmdline-only flag tells
+#	   valgrind to ignore the rcfile and VALGRIND_OPTS env-var.
+#
+# RATIONALE:
+#
+# We don't really want to have to run make itself, and all its shell child
+# processes etc under valgrind, as that's slow, annoying, and produces
+# excessive irrelevant output. But teaching each individual tool like
+# pg_regress, the TAP tests, etc to wrap every possible command invocation in
+# valgrind is awkward and intrusive. So instead this script can be put on the
+# PATH before the real target executable ("postgres", "psql", etc) and named
+# the same as the target executable in order to inject a valgrind wrapper
+# around the executable automatically.
+#
+# Newer valgrind versions suppoprt the args
+#
+#    --trace-children-skip=pattern --trace-children-skip-by-arg=pattern
+#
+# which can do simple filtering, so we could probably teach pg_regress,
+# PostgresNode.pm, etc how to invoke postgres using a wrapper. But these tools
+# invoke children via a shell. And valgrind doesn't currently support a
+# child-following mode where it can follow forks of filtered-out children
+# without otherwise instrumenting them in order to fully instrument their own
+# children, so each intermediate shell is fully traced by valgrind. That's ugly
+# and produces excess log spam. Additionally, there are a great many places
+# where we run commands in the various test harness tools, so it's easy to miss
+# some, while unnecessarily wrapping other non-postgres-related commands. Using
+# executable wrapping ensures guaranteed targeting.
+#
+# Plus this approach can be used with minimal modifications to apply other
+# wrappers since it doesn't rely on tracing execution in order to follow and
+# intercept fork() and exec().
+#
+# Copyright (c) 2021, PostgreSQL Global Development Group
+
+set -e -u
+
+mycmd="$(basename $0)"
+mydir="$(dirname $0)"
+
+##########################################################
+# Look along path for next executable with same name as us
+
+NEXT_EXEC=$(type -pafP $mycmd |  awk '{ if (NR == 2) { print; exit; } }')
+
+if [ -z "${NEXT_EXEC}" ]; then
+    echo "ERROR: could not find a second ${mycmd} on PATH=$PATH"
+    exit 1
+fi
+
+if [ "${NEXT_EXEC}" -ef "$0" ]; then
+    echo "ERROR: attempt to execute self. NEXT_EXEC ${NEXT_EXEC} is identical file to invoked command ${0}. Problem with PATH?"
+    exit 1
+fi
+
+##########################################################
+# Check if any extra args should be injected for this
+# executable.
+
+extra_args_var="PGVG_${mycmd^^*}_EXTRA_ARGS"
+if [ -n "${!extra_args_var:-}" ]; then
+    set -- "$@" ${!extra_args_var}
+fi
+
+##########################################################
+# Decide if we should wrap the command or not, and exec it
+# directly if not.
+
+PGVG_IGNORE_CMDS=${PGVG_IGNORE_CMDS:-}
+PGVG_ONLY_CMDS=${PGVG_ONLY_CMDS:-}
+PGVG_IGNORE_INITDB=${PGVG_IGNORE_INITDB:-}
+
+# we might default to skip if a parent process was skipped, like
+# if we're skipping everything run by initdb.
+skip=${PGVG_SKIP_CHILDREN:-0}
+
+# You'll often want to avoid watching client commands like psql
+if [ -n "${PGVG_IGNORE_CMDS}" ]; then
+    if [[ " ${PGVG_IGNORE_CMDS} " = *" ${mycmd} "* ]]; then
+	   skip=1
+    fi
+fi
+
+# or only target specific procs like "postgres"
+if [ -n "${PGVG_ONLY_CMDS}" ]; then
+    if ! [[ " ${PGVG_ONLY_CMDS} " = *" ${mycmd} "* ]]; then
+	   skip=1
+    fi
+fi
+
+# Optionally skip initdb to make setup for tests (much) faster.  This isn't
+# just done with PGVG_IGNORE_CMDS=initdb because we want to filter out the
+# single-user bootstrap postgres instances that do most of the work, too.
+#
+if [ "${PGVG_IGNORE_INITDB:-0}" -eq 1 -a "${mycmd}" == "initdb" ]; then
+    skip=1
+    # Tell the wrapper to auto-skip child procs like postgres --single and
+    # postgres --boot
+    export PGVG_SKIP_CHILDREN=1
+fi
+
+if [ "${skip}" -eq 1 ]; then
+    if [ "${PGVG_VERBOSE:-0}" -eq 1 ]; then
+	   echo "skipping valgrind wrapper for ${mycmd} $@" 1>&2
+    fi
+    #
+    # Make the exec'd command think it's really our wrapper script, so
+    # tools like find_other_exec look in the wrapper dir for child commands
+    # to exec. This allows us to do things like trace the children of
+    # initdb without tracing initdb itself.
+    #
+    exec -a "$0" "$NEXT_EXEC" "$@"
+fi
+
+##########################################################
+# Set up the valgrind run
+#
+# User may set PGVG_LOG to preferred log path.
+#
+# Any configuration in ~/.valgrindrc, the env var VALGRIND_OPTS or any
+# ./.valgrindrc in the CWD are read too, per the Valgrind manual.
+#
+# See https://valgrind.org/docs/manual/manual-core.html#opt.log-file for patterns
+# supported.
+#
+# Valgrind doesn't give us a way to add the backend role to the filename
+# without hacking the postmaster to set an environment variable before
+# fork()ing, so it's just a pile of files by pid. We should add VALGRIND_PRINTF
+# commands to backends to get them to identfy themselves on startup to help
+# with this.
+#
+
+if [ -z "${PGVG_LOG:-}" ]; then
+    PGVG_LOG="./valgrind-logs-$$/${mycmd}-%n-%p.log"
+fi
+
+if [ -n "$(dirname "${PGVG_LOG}")" ]; then
+    mkdir -p "$(dirname "${PGVG_LOG}")"
+fi
+
+if [ -z "${PG_VALGRIND_SUPPRESSIONS:-}" ]; then
+    echo "PG_VALGRIND_SUPPRESSIONS must be set" 1>&2
+    exit 1
+fi
+
+# We don't want to --trace-children in valgrind; we try to intercept every exec()'d
+# process of interest ourselves anyway, and valgrind will trace into fork()
+# with out exec() without --trace-children.
+#
+# Pg uses 0x7f for memclobber so we'll use 8f for newly malloc'd and 9f for free'd
+#
+PGVG_ARGS="--log-file=${PGVG_LOG} --trace-children=no --time-stamp=yes --read-var-info=yes --show-error-list=yes --suppressions=${PG_VALGRIND_SUPPRESSIONS} --gen-suppressions=all --memcheck:track-origins=yes --memcheck:num-callers=30 --memcheck:malloc-fill=8f --memcheck:free-fill=9f ${PGVG_ARGS:-}"
+
+# Don't generate any stdout from the wrapper or we'll confuse find_other_exec's
+# --version check. Emitting stderr might be a problem for TAP tests etc, so
+# no output at all is generated by default.
+if [ "${PGVG_VERBOSE:-0}" -eq 1 ]; then
+    echo "Running ${NEXT_EXEC} under Valgrind with logs at ${PGVG_LOG}" 1>&2
+fi
+
+# Valgrind does not provide a way for us to set the target executable's argv[0]
+# which postgres, initdb, etc use via find_other_exec() to locate "peer"
+# commands in the same directory as itself. The various commands don't support
+# explicitly specifying a bindir to look in either; there's no way to override
+# find_my_exec(). find_my_exec() doesn't care about the command's basename so
+# we could use some kind of ${mycmd}.real redirection, but unfortunately Pg
+# likes to resolve symlinks in find_my_exec(). So the only options left until
+# valgrind can be taught to pass a custom argv0 are:
+#
+#   - Re-exec ourselves under valgrind, then "exec -a" the real target. Ugly,
+#	  and means we still have to --trace-children=yes, which defeats half the
+#	  point of this wrapper; or
+#   - Make a hardlink to the target executable and exec that under valgrind.
+#
+# So we'll do that. Ick. Hopefully a future valgrind will gain the ability to
+# set the command's argv[0] directly.
+#
+
+if ! [ "${0}.real" -ef "${NEXT_EXEC}" ]; then
+    rm -f "${0}.real"
+    ln "${NEXT_EXEC}" "${0}.real"
+fi
+
+exec valgrind $PGVG_ARGS "${0}.real" "$@"
+
+# vim: ts=4 sw=4 noet ai

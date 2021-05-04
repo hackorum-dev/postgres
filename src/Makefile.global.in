@@ -390,6 +390,14 @@ endif
 endif
 
 
+# GNU make doesn't provide a sensible built-in way to include an escaped
+# newline in generated rules, so add one. Use the $(newline) variable when you
+# want a literal newline in a rule's output.
+define newline
+
+
+endef
+
 # Testing
 
 # In much the same way as above, these rules ensure that we build a temp
@@ -399,7 +407,6 @@ endif
 check: temp-install
 
 .PHONY: temp-install
-
 temp-install: | submake-generated-headers
 ifndef NO_TEMP_INSTALL
 ifneq ($(abs_top_builddir),)
@@ -408,6 +415,13 @@ ifeq ($(MAKELEVEL),0)
 	$(MKDIR_P) '$(abs_top_builddir)'/tmp_install/log
 	$(MAKE) -C '$(top_builddir)' DESTDIR='$(abs_top_builddir)'/tmp_install install >'$(abs_top_builddir)'/tmp_install/log/install.log 2>&1
 	$(MAKE) -j1 $(if $(CHECKPREP_TOP),-C $(CHECKPREP_TOP),) checkprep >>'$(abs_top_builddir)'/tmp_install/log/install.log 2>&1
+ifeq ($(USE_VALGRIND),1)
+	mkdir -p $(temp_install_use_valgrind_path)
+	$(foreach binfile,$(wildcard $(abs_top_builddir)/tmp_install$(bindir)/*),\
+		cp $(abs_top_srcdir)/src/tools/valgrind_wrapper $(temp_install_use_valgrind_path)/$(notdir $(binfile)) >>'$(abs_top_builddir)'/tmp_install/log/install.log 2>&1; $(newline) \
+	)
+endif
+
 endif
 endif
 endif
@@ -438,9 +452,30 @@ ld_library_path_var = LD_LIBRARY_PATH
 # need something more here. If not defined then the expansion does
 # nothing.
 with_temp_install = \
-	PATH="$(abs_top_builddir)/tmp_install$(bindir):$$PATH" \
+	PATH="$(temp_install_use_valgrind_path):$(abs_top_builddir)/tmp_install$(bindir):$$PATH" \
 	$(call add_to_path,$(strip $(ld_library_path_var)),$(abs_top_builddir)/tmp_install$(libdir)) \
 	$(with_temp_install_extra)
+
+# Any test that uses a temp-install can have postgres, initdb, psql, etc
+# wrapped in valgrind automatically by setting USE_VALGRIND=1
+#
+# This should be paired with a build that sets the macro USE_VALGRIND=1 in
+# src/include/pg_config_manual.h or CFLAGS/CPPFLAGS for best results.
+# The Makefile will add these flags if USE_VALGRIND=1 is set, but it cannot
+# check that USE_VALGRIND=1 was set for both the compilation and test runtime
+# phases.
+#
+# The directory at temp_install_use_valgrind_path gets created and populated
+# with symlinks to the valgrind wrapper script by the temp-install target.
+#
+temp_install_use_valgrind_path=
+USE_VALGRIND?=0
+ifeq ($(USE_VALGRIND),1)
+CFLAGS += -DUSE_VALGRIND
+temp_install_use_valgrind_path=$(abs_top_builddir)/tmp_install$(bindir)_valgrind_wrapper
+PG_VALGRIND_SUPPRESSIONS=$(abs_top_srcdir)/src/tools/valgrind.supp
+export PG_VALGRIND_SUPPRESSIONS
+endif
 
 ifeq ($(enable_tap_tests),yes)
 
