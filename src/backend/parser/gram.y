@@ -2475,6 +2475,14 @@ alter_table_cmd:
 					n->name = NULL;
 					$$ = (Node *)n;
 				}
+			/* ALTER TABLE <name> SET ACCESS METHOD <tablespacename> */
+			| SET ACCESS METHOD name
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_SetAccessMethod;
+					n->name = $4;
+					$$ = (Node *)n;
+				}
 			/* ALTER TABLE <name> SET LOGGED */
 			| SET LOGGED
 				{

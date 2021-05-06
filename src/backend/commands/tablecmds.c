@@ -177,6 +177,7 @@ typedef struct AlteredTableInfo
 	List	   *afterStmts;		/* List of utility command parsetrees */
 	bool		verify_new_notnull; /* T if we should recheck NOT NULL */
 	int			rewrite;		/* Reason for forced rewrite, if any */
+	Oid			newAccessMethod;	/* new access method; 0 means no change */
 	Oid			newTableSpace;	/* new tablespace; 0 means no change */
 	bool		chgPersistence; /* T if SET LOGGED/UNLOGGED is used */
 	char		newrelpersistence;	/* if above is true */
@@ -540,6 +541,7 @@ static void change_owner_recurse_to_sequences(Oid relationOid,
 static ObjectAddress ATExecClusterOn(Relation rel, const char *indexName,
 									 LOCKMODE lockmode);
 static void ATExecDropCluster(Relation rel, LOCKMODE lockmode);
+static void ATPrepSetAccessMethod(AlteredTableInfo *tab, Relation rel, const char *amname);
 static bool ATPrepChangePersistence(Relation rel, bool toLogged);
 static void ATPrepSetTableSpace(AlteredTableInfo *tab, Relation rel,
 								const char *tablespacename, LOCKMODE lockmode);
@@ -4287,6 +4289,7 @@ AlterTableGetLockLevel(List *cmds)
 				cmd_lockmode = ShareUpdateExclusiveLock;
 				break;
 
+			case AT_SetAccessMethod:
 			case AT_SetLogged:
 			case AT_SetUnLogged:
 				cmd_lockmode = AccessExclusiveLock;
@@ -4607,6 +4610,15 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			ATSimplePermissions(rel, ATT_TABLE | ATT_MATVIEW);
 			/* These commands never recurse */
 			/* No command-specific prep needed */
+			pass = AT_PASS_MISC;
+			break;
+		case AT_SetAccessMethod:	/* SET ACCESS METHOD */
+			ATSimplePermissions(rel, ATT_TABLE | ATT_MATVIEW);
+			if (tab->newAccessMethod)
+				ereport(ERROR,
+						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						 errmsg("cannot change access method setting twice")));
+			ATPrepSetAccessMethod(tab, rel, cmd->name);
 			pass = AT_PASS_MISC;
 			break;
 		case AT_SetLogged:		/* SET LOGGED */
@@ -5012,6 +5024,8 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab,
 		case AT_DropCluster:	/* SET WITHOUT CLUSTER */
 			ATExecDropCluster(rel, lockmode);
 			break;
+		case AT_SetAccessMethod:	/* SET ACCESS METHOD */
+			break;
 		case AT_SetLogged:		/* SET LOGGED */
 		case AT_SetUnLogged:	/* SET UNLOGGED */
 			break;
@@ -5365,6 +5379,7 @@ ATRewriteTables(AlterTableStmt *parsetree, List **wqueue, LOCKMODE lockmode,
 			Relation	OldHeap;
 			Oid			OIDNewHeap;
 			Oid			NewTableSpace;
+			Oid			accessmethod;
 			char		persistence;
 
 			OldHeap = table_open(tab->relid, NoLock);
@@ -5411,6 +5426,13 @@ ATRewriteTables(AlterTableStmt *parsetree, List **wqueue, LOCKMODE lockmode,
 			persistence = tab->chgPersistence ?
 				tab->newrelpersistence : OldHeap->rd_rel->relpersistence;
 
+			/*
+			 * Select access method of transient table (same as original
+			 * unless user requested a change)
+			 */
+			accessmethod = OidIsValid(tab->newAccessMethod) ?
+				tab->newAccessMethod : OldHeap->rd_rel->relam;
+
 			table_close(OldHeap, NoLock);
 
 			/*
@@ -5443,8 +5465,8 @@ ATRewriteTables(AlterTableStmt *parsetree, List **wqueue, LOCKMODE lockmode,
 			 * persistence. That wouldn't work for pg_class, but that can't be
 			 * unlogged anyway.
 			 */
-			OIDNewHeap = make_new_heap(tab->relid, NewTableSpace, persistence,
-									   lockmode);
+			OIDNewHeap = make_new_heap(tab->relid, NewTableSpace, accessmethod,
+									   persistence, lockmode);
 
 			/*
 			 * Copy the heap data into the new table with the desired
@@ -15692,6 +15714,34 @@ ATExecSetCompression(AlteredTableInfo *tab,
 	ObjectAddressSubSet(address, RelationRelationId,
 						RelationGetRelid(rel), attnum);
 	return address;
+}
+
+
+/*
+ * Preparation phase for SET TABLESPACE
+ *
+ * Check that access method exists. If it's the same as the table's current
+ * access method, it's a no-op. Otherwise, a table rewrite is necessary.
+ */
+static void
+ATPrepSetAccessMethod(AlteredTableInfo *tab, Relation rel, const char *amname)
+{
+	Oid			amoid;
+
+	/* Check that the table access method exists */
+	amoid = get_table_am_oid(amname, false);
+
+	if (rel->rd_rel->relam == amoid)
+		return;
+
+	/* Save info for Phase 3 to do the real work */
+	if (OidIsValid(tab->newAccessMethod))
+		ereport(ERROR,
+				(errcode(ERRCODE_SYNTAX_ERROR),
+				 errmsg("cannot have multiple SET ACCESS METHOD subcommands")));
+
+	tab->rewrite |= AT_REWRITE_ACCESS_METHOD;
+	tab->newAccessMethod = amoid;
 }
 
 

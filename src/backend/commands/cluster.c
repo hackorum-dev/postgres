@@ -597,6 +597,7 @@ rebuild_relation(Relation OldHeap, Oid indexOid, bool verbose)
 
 	/* Create the transient table that will receive the re-ordered data */
 	OIDNewHeap = make_new_heap(tableOid, tableSpace,
+							   OldHeap->rd_rel->relam,
 							   relpersistence,
 							   AccessExclusiveLock);
 
@@ -626,8 +627,8 @@ rebuild_relation(Relation OldHeap, Oid indexOid, bool verbose)
  * data, then call finish_heap_swap to complete the operation.
  */
 Oid
-make_new_heap(Oid OIDOldHeap, Oid NewTableSpace, char relpersistence,
-			  LOCKMODE lockmode)
+make_new_heap(Oid OIDOldHeap, Oid NewTableSpace, Oid NewAccessMethod,
+			  char relpersistence, LOCKMODE lockmode)
 {
 	TupleDesc	OldHeapDesc;
 	char		NewHeapName[NAMEDATALEN];
@@ -686,7 +687,7 @@ make_new_heap(Oid OIDOldHeap, Oid NewTableSpace, char relpersistence,
 										  InvalidOid,
 										  InvalidOid,
 										  OldHeap->rd_rel->relowner,
-										  OldHeap->rd_rel->relam,
+										  NewAccessMethod,
 										  OldHeapDesc,
 										  NIL,
 										  RELKIND_RELATION,
@@ -1035,6 +1036,10 @@ swap_relation_files(Oid r1, Oid r2, bool target_is_pg_class,
 		swaptemp = relform1->reltablespace;
 		relform1->reltablespace = relform2->reltablespace;
 		relform2->reltablespace = swaptemp;
+
+		swaptemp = relform1->relam;
+		relform1->relam = relform2->relam;
+		relform2->relam = swaptemp;
 
 		swptmpchr = relform1->relpersistence;
 		relform1->relpersistence = relform2->relpersistence;
