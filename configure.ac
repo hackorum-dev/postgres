@@ -248,6 +248,8 @@ PGAC_ARG_BOOL(enable, tap-tests, no,
               [enable TAP tests (requires Perl and IPC::Run)])
 AC_SUBST(enable_tap_tests)
 
+AC_CACHE_SAVE
+
 #
 # Block size
 #
@@ -713,6 +715,7 @@ done
 IFS=$ac_save_IFS
 AC_SUBST(INCLUDES)
 
+AC_CACHE_SAVE
 
 #
 # Library directories
@@ -1011,6 +1014,8 @@ if test "$with_lz4" = yes; then
   done
 fi
 
+AC_CACHE_SAVE
+
 #
 # Assignments
 #
@@ -1194,6 +1199,8 @@ Use --without-readline to disable readline support.])
   fi
 fi
 
+AC_CACHE_SAVE
+
 if test "$with_zlib" = yes; then
   AC_CHECK_LIB(z, inflate, [],
                [AC_MSG_ERROR([zlib library not found
@@ -1224,6 +1231,8 @@ if test "$with_gssapi" = yes ; then
     LIBS="$LIBS -lgssapi32"
   fi
 fi
+
+AC_CACHE_SAVE
 
 #
 # SSL Library
@@ -1284,6 +1293,8 @@ fi
 if test "$with_lz4" = yes ; then
   AC_CHECK_LIB(lz4, LZ4_compress_default, [], [AC_MSG_ERROR([library 'lz4' is required for LZ4 support])])
 fi
+
+AC_CACHE_SAVE
 
 # Note: We can test for libldap_r only after we know PTHREAD_LIBS
 if test "$with_ldap" = yes ; then
@@ -1432,6 +1443,8 @@ Use --without-readline to disable libedit support.])])])])
                 [AC_CHECK_HEADERS(readline/history.h)])])
 fi
 
+AC_CACHE_SAVE
+
 if test "$with_zlib" = yes; then
   AC_CHECK_HEADER(zlib.h, [], [AC_MSG_ERROR([zlib header not found
 If you have zlib already installed, see config.log for details on the
@@ -1498,6 +1511,8 @@ dnl people to try to use the avahi implementation, which does not work.
 dnl If you want to use Apple's own Bonjour code on another platform,
 dnl just add -ldns_sd to LIBS manually.
 fi
+
+AC_CACHE_SAVE
 
 # for contrib/uuid-ossp
 if test "$with_uuid" = bsd ; then
@@ -2231,6 +2246,7 @@ if test x"$MEMSET_LOOP_LIMIT" = x"" ; then
 fi
 AC_DEFINE_UNQUOTED(MEMSET_LOOP_LIMIT, ${MEMSET_LOOP_LIMIT}, [Define bytes to use libc memset().])
 
+AC_CACHE_SAVE
 
 if test "$enable_nls" = yes ; then
   PGAC_CHECK_GETTEXT
@@ -2252,6 +2268,8 @@ Use --without-tcl to disable building PL/Tcl.])
     AC_CHECK_HEADER(tcl.h, [], [AC_MSG_ERROR([header file <tcl.h> is required for Tcl])])
     CPPFLAGS=$ac_save_CPPFLAGS
 fi
+
+AC_CACHE_SAVE
 
 # check for <perl.h>
 if test "$with_perl" = yes; then
