@@ -39,7 +39,7 @@
 
    <para>
     Examples in this section are drawn from the regression test database
-    after doing a <command>VACUUM ANALYZE</command>, using 9.3 development sources.
+    after doing a <command>VACUUM ANALYZE</command>, using &version; development sources.
     You should be able to get similar results if you try the examples
     yourself, but your estimated costs and row counts might vary slightly
     because <command>ANALYZE</command>'s statistics are random samples rather
