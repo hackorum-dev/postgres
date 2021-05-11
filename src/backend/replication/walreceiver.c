@@ -865,16 +865,38 @@ XLogWalRcvProcessMsg(unsigned char type, char *buf, Size len)
 
 /*
  * Write XLOG data to disk.
+ *
+ * This is a bit more complicated than immediately obvious: WAL files are
+ * recycled, which means they can contain almost arbitrary data. To ensure
+ * that we can reliably detect the end of the WAL, we need to pad partial
+ * pages with zeroes. If we didn't do so, the data beyond the end of the WAL
+ * is interpreted as a record header - while we can do some checks on the
+ * record, they are not bulletproof. Particularly because the record's CRC
+ * checksum can only be validated once the entire record has been read.
+ *
+ * There is no corresponding risk at the start of a page, because
+ * XLogPageHeader.xlp_pageaddr inside recycled segment data will always differ
+ * from the expected pageaddr.
+ *
+ * We cannot just pad 'buf' by whatever amount is necessary, as it is
+ * allocated outside of our control, preventing us from resizing it to be big
+ * enough. Copying the entire incoming data into a temporary buffer would be a
+ * noticeable overhead. Instead we separately write pages that need to be
+ * padded, and copy just that partial data to the temporary buffer (padbuf).
  */
 static void
 XLogWalRcvWrite(char *buf, Size nbytes, XLogRecPtr recptr)
 {
 	int			startoff;
 	int			byteswritten;
+	XLogRecPtr	orig_recptr = recptr PG_USED_FOR_ASSERTS_ONLY;
+	Size		orig_nbytes = nbytes PG_USED_FOR_ASSERTS_ONLY;
+	PGAlignedXLogBlock padbuf;
 
 	while (nbytes > 0)
 	{
-		int			segbytes;
+		int			segbytes; /* write amount, valid WAL data only */
+		int			writebytes; /* write amount, including padding */
 
 		if (recvFile < 0 || !XLByteInSeg(recptr, recvSegNo, wal_segment_size))
 		{
@@ -925,41 +947,94 @@ XLogWalRcvWrite(char *buf, Size nbytes, XLogRecPtr recptr)
 		startoff = XLogSegmentOffset(recptr, wal_segment_size);
 
 		if (startoff + nbytes > wal_segment_size)
-			segbytes = wal_segment_size - startoff;
-		else
-			segbytes = nbytes;
-
-		/* OK to write the logs */
-		errno = 0;
-
-		byteswritten = pg_pwrite(recvFile, buf, segbytes, (off_t) startoff);
-		if (byteswritten <= 0)
 		{
-			char		xlogfname[MAXFNAMELEN];
-			int			save_errno;
+			/* only write bytes in the current segment */
+			segbytes = wal_segment_size - startoff;
+			writebytes = segbytes;
+		}
+		else if (recptr / XLOG_BLCKSZ == (recptr + nbytes) / XLOG_BLCKSZ &&
+				 (recptr % XLOG_BLCKSZ) == 0)
+		{
+			/*
+			 * Writing a partial page. As explained in the function header, we
+			 * need to pad the trailing space with zeroes.
+			 */
+			Assert(nbytes <= XLOG_BLCKSZ);
 
-			/* if write didn't set errno, assume no disk space */
-			if (errno == 0)
-				errno = ENOSPC;
+			segbytes = nbytes;
+			writebytes = XLOG_BLCKSZ;
 
-			save_errno = errno;
-			XLogFileName(xlogfname, recvFileTLI, recvSegNo, wal_segment_size);
-			errno = save_errno;
-			ereport(PANIC,
-					(errcode_for_file_access(),
-					 errmsg("could not write to log segment %s "
-							"at offset %u, length %lu: %m",
-							xlogfname, startoff, (unsigned long) segbytes)));
+			memcpy(padbuf.data, buf, nbytes);
+			memset(padbuf.data + nbytes, 0, XLOG_BLCKSZ - nbytes);
+			buf = padbuf.data;
+		}
+		else if (recptr / XLOG_BLCKSZ != (recptr + nbytes) / XLOG_BLCKSZ &&
+				 (recptr + nbytes) % XLOG_BLCKSZ != 0)
+		{
+			/*
+			 * Write partial pages separately from the rest, to allow to pad,
+			 * without needing to reallocate the whole, potentially large,
+			 * incoming buffer.
+			 */
+			segbytes = nbytes - (recptr + nbytes) % XLOG_BLCKSZ;
+			writebytes = segbytes;
+		}
+		else
+		{
+			segbytes = nbytes;
+			writebytes = segbytes;
 		}
 
-		/* Update state for write */
-		recptr += byteswritten;
+		/* OK to write the logs */
+		while (writebytes > 0)
+		{
+			errno = 0;
 
-		nbytes -= byteswritten;
-		buf += byteswritten;
+			byteswritten = pg_pwrite(recvFile, buf, writebytes, (off_t) startoff);
+			if (byteswritten <= 0)
+			{
+				char		xlogfname[MAXFNAMELEN];
+				int			save_errno;
+
+				/* if write didn't set errno, assume no disk space */
+				if (errno == 0)
+					errno = ENOSPC;
+
+				save_errno = errno;
+				XLogFileName(xlogfname, recvFileTLI, recvSegNo, wal_segment_size);
+				errno = save_errno;
+				ereport(PANIC,
+						(errcode_for_file_access(),
+						 errmsg("could not write to log segment %s "
+								"at offset %u, length %lu: %m",
+								xlogfname, startoff, (unsigned long) writebytes)));
+			}
+
+			/* XXX: Useful for testing partial writes */
+#if 0
+			if (byteswritten > 1023)
+				byteswritten = 1023;
+#endif
+
+			/* Update state for write */
+
+			writebytes -= byteswritten;
+			buf += byteswritten;
+			startoff += byteswritten;
+
+			/* the recptr / nbytes may not include padded data */
+			if (byteswritten > segbytes)
+				byteswritten = segbytes;
+
+			segbytes -= byteswritten;
+			recptr += byteswritten;
+			nbytes -= byteswritten;
+		}
 
 		LogstreamResult.Write = recptr;
 	}
+
+	Assert(LogstreamResult.Write == orig_recptr + orig_nbytes);
 
 	/* Update shared-memory status */
 	pg_atomic_write_u64(&WalRcv->writtenUpto, LogstreamResult.Write);
