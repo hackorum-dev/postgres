@@ -4830,7 +4830,7 @@ ANY <replaceable class="parameter">num_sync</replaceable> ( <replaceable class="
    </sect1>
 
    <sect1 id="runtime-config-query">
-    <title>Query Planning</title>
+    <title>Query Tuning</title>
 
     <sect2 id="runtime-config-query-enable">
      <title>Planner Method Configuration</title>

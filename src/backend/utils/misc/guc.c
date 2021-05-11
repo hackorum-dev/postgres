@@ -1679,10 +1679,12 @@ static struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 	{
+		/* Not for general use --- used by START TRANSACTION ISOLATION LEVEL */
 		{"transaction_read_only", PGC_USERSET, CLIENT_CONN_STATEMENT,
 			gettext_noop("Sets the current transaction's read-only status."),
 			NULL,
-			GUC_NO_RESET_ALL | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
+			GUC_NO_SHOW_ALL | GUC_NO_RESET_ALL | GUC_NOT_IN_SAMPLE |
+			GUC_DISALLOW_IN_FILE
 		},
 		&XactReadOnly,
 		false,
@@ -1698,10 +1700,12 @@ static struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 	{
+		/* Not for general use --- used by START TRANSACTION ISOLATION LEVEL */
 		{"transaction_deferrable", PGC_USERSET, CLIENT_CONN_STATEMENT,
 			gettext_noop("Whether to defer a read-only serializable transaction until it can be executed with no possible serialization failures."),
 			NULL,
-			GUC_NO_RESET_ALL | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
+			GUC_NO_SHOW_ALL | GUC_NO_RESET_ALL | GUC_NOT_IN_SAMPLE |
+			GUC_DISALLOW_IN_FILE
 		},
 		&XactDeferrable,
 		false,
@@ -4652,10 +4656,12 @@ static struct config_enum ConfigureNamesEnum[] =
 	},
 
 	{
+		/* Not for general use --- used by START TRANSACTION ISOLATION LEVEL */
 		{"transaction_isolation", PGC_USERSET, CLIENT_CONN_STATEMENT,
 			gettext_noop("Sets the current transaction's isolation level."),
 			NULL,
-			GUC_NO_RESET_ALL | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
+			GUC_NO_SHOW_ALL | GUC_NO_RESET_ALL | GUC_NOT_IN_SAMPLE |
+			GUC_DISALLOW_IN_FILE
 		},
 		&XactIsoLevel,
 		XACT_READ_COMMITTED, isolation_level_options,
