@@ -65,10 +65,11 @@ typedef struct
 enum RoleRecurseType
 {
 	ROLERECURSE_PRIVS = 0,		/* recurse if rolinherit */
-	ROLERECURSE_MEMBERS = 1		/* recurse unconditionally */
+	ROLERECURSE_MEMBERS = 1,	/* recurse unconditionally */
+	ROLERECURSE_DIRECT = 2		/* do not recurse */
 };
-static Oid	cached_role[] = {InvalidOid, InvalidOid};
-static List *cached_roles[] = {NIL, NIL};
+static Oid	cached_role[] = {InvalidOid, InvalidOid, InvalidOid};
+static List *cached_roles[] = {NIL, NIL, NIL};
 static uint32 cached_db_hash;
 
 
@@ -4687,6 +4688,7 @@ RoleMembershipCacheCallback(Datum arg, int cacheid, uint32 hashvalue)
 	/* Force membership caches to be recomputed on next use */
 	cached_role[ROLERECURSE_PRIVS] = InvalidOid;
 	cached_role[ROLERECURSE_MEMBERS] = InvalidOid;
+	cached_role[ROLERECURSE_DIRECT] = InvalidOid;
 }
 
 
@@ -4711,7 +4713,8 @@ has_rolinherit(Oid roleid)
  * Get a list of roles that the specified roleid is a member of
  *
  * Type ROLERECURSE_PRIVS recurses only through roles that have rolinherit
- * set, while ROLERECURSE_MEMBERS recurses through all roles.  This sets
+ * set, ROLERECURSE_MEMBERS recurses through all roles, and ROLERECURSE_DIRECT
+ * only retrieves roles that roleid has direct membership in.  This sets
  * *is_admin==true if and only if role "roleid" has an ADMIN OPTION membership
  * in role "admin_of".
  *
@@ -4809,6 +4812,10 @@ roles_is_member_of(Oid roleid, enum RoleRecurseType type,
 		if (memberid == dba && OidIsValid(dba))
 			roles_list = list_append_unique_oid(roles_list,
 												ROLE_PG_DATABASE_OWNER);
+
+		/* if we are only interested in direct membership, we're done */
+		if (type == ROLERECURSE_DIRECT)
+			break;
 	}
 
 	/*
@@ -4897,6 +4904,28 @@ check_is_member_of_role(Oid member, Oid role)
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("must be member of role \"%s\"",
 						GetUserNameFromId(role, false))));
+}
+
+/*
+ * Is member a direct member of role, not considering superuserness?
+ *
+ * This is identical to is_member_of_role_nosuper except we do not check for
+ * indirect membership in the target role.
+ */
+bool
+is_direct_member_of_role_nosuper(Oid member, Oid role)
+{
+	/* Fast path for simple case */
+	if (member == role)
+		return true;
+
+	/*
+	 * Find all the roles that member is a member of, but do not recurse, then
+	 * see if target role is any one of them.
+	 */
+	return list_member_oid(roles_is_member_of(member, ROLERECURSE_DIRECT,
+											  InvalidOid, NULL),
+							role);
 }
 
 /*

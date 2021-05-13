@@ -581,7 +581,7 @@ tokenize_file(const char *filename, FILE *file, List **tok_lines, int elevel)
  * We check to see if it is a member of the specified role name.
  */
 static bool
-is_member(Oid userid, const char *role)
+is_member(Oid userid, const char *role, bool only_direct)
 {
 	Oid			roleid;
 
@@ -594,11 +594,14 @@ is_member(Oid userid, const char *role)
 		return false;			/* if target role not exist, say "no" */
 
 	/*
-	 * See if user is directly or indirectly a member of role. For this
-	 * purpose, a superuser is not considered to be automatically a member of
-	 * the role, so group auth only applies to explicit membership.
+	 * See if user is a member of role. For this purpose, a superuser is not
+	 * considered to be automatically a member of the role, so group auth only
+	 * applies to explicit membership.
 	 */
-	return is_member_of_role_nosuper(userid, roleid);
+	if (only_direct)
+		return is_direct_member_of_role_nosuper(userid, roleid);
+	else
+		return is_member_of_role_nosuper(userid, roleid);
 }
 
 /*
@@ -615,7 +618,12 @@ check_role(const char *role, Oid roleid, List *tokens)
 		tok = lfirst(cell);
 		if (!tok->quoted && tok->string[0] == '+')
 		{
-			if (is_member(roleid, tok->string + 1))
+			if (is_member(roleid, tok->string + 1, false))
+				return true;
+		}
+		else if (!tok->quoted && tok->string[0] == '&')
+		{
+			if (is_member(roleid, tok->string + 1, true))
 				return true;
 		}
 		else if (token_matches(tok, role) ||
@@ -656,7 +664,7 @@ check_db(const char *dbname, const char *role, Oid roleid, List *tokens)
 		else if (token_is_keyword(tok, "samegroup") ||
 				 token_is_keyword(tok, "samerole"))
 		{
-			if (is_member(roleid, dbname))
+			if (is_member(roleid, dbname, false))
 				return true;
 		}
 		else if (token_is_keyword(tok, "replication"))

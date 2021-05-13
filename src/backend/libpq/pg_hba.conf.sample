@@ -31,10 +31,12 @@
 # keyword does not match "replication". Access to replication
 # must be enabled in a separate record (see example below).
 #
-# USER can be "all", a user name, a group name prefixed with "+", or a
-# comma-separated list thereof.  In both the DATABASE and USER fields
-# you can also write a file name prefixed with "@" to include names
-# from a separate file.
+# USER can be "all", a user name, a group name prefixed with "+" or
+# "&", or a comma-separated list thereof.  Group names prefixed with
+# "+" match both direct and indirect members while group names
+# prefixed with "&" only match direct members.  In both the DATABASE
+# and USER fields you can also write a file name prefixed with "@" to
+# include names from a separate file.
 #
 # ADDRESS specifies the set of hosts the record matches.  It can be a
 # host name, or it is made up of an IP address and a CIDR mask that is

@@ -249,18 +249,21 @@ hostnogssenc  <replaceable>database</replaceable>  <replaceable>user</replaceabl
        Specifies which database user name(s) this record
        matches. The value <literal>all</literal> specifies that it
        matches all users.  Otherwise, this is either the name of a specific
-       database user, or a group name preceded by <literal>+</literal>.
-       (Recall that there is no real distinction between users and groups
-       in <productname>PostgreSQL</productname>; a <literal>+</literal> mark really means
-       <quote>match any of the roles that are directly or indirectly members
-       of this role</quote>, while a name without a <literal>+</literal> mark matches
-       only that specific role.) For this purpose, a superuser is only
+       database user, or a group name preceded by <literal>+</literal> or
+       <literal>&amp;</literal>.  Group names preceded by <literal>+</literal> match
+       roles that are directly or indirectly members of this role, and group
+       names preceded by <literal>&amp;</literal> only match roles that are directly
+       members of this role.  (Recall that there is no real distinction between
+       users and groups in <productname>PostgreSQL</productname>; a
+       <literal>+</literal> or <literal>&amp;</literal> mark really means
+       <quote>match any of the roles that are members of this role</quote>,
+       while a name without a <literal>+</literal> or <literal>&amp;</literal> mark
+       matches only that specific role.)  For this purpose, a superuser is only
        considered to be a member of a role if they are explicitly a member
-       of the role, directly or indirectly, and not just by virtue of
-       being a superuser.
-       Multiple user names can be supplied by separating them with commas.
-       A separate file containing user names can be specified by preceding the
-       file name with <literal>@</literal>.
+       of the role and not just by virtue of being a superuser.  Multiple user
+       names can be supplied by separating them with commas.  A separate file
+       containing user names can be specified by preceding the file name with
+       <literal>@</literal>.
       </para>
      </listitem>
     </varlistentry>
@@ -799,6 +802,10 @@ local   all             +support                                md5
 
 # The last two lines above can be combined into a single line:
 local   all             @admins,+support                        md5
+
+# Group names can also be specified using "&amp;" to indicate that only direct
+# membership should be considered
+local   all             &amp;support                                md5
 
 # The database column can also use lists and file names:
 local   db1,db2,@demodbs  all                                   md5
