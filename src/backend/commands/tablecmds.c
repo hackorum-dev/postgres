@@ -14505,8 +14505,8 @@ MergeAttributesIntoExisting(Relation child_rel, Relation parent_rel)
 			{
 				TupleConstr *child_constr = child_rel->rd_att->constr;
 				TupleConstr *parent_constr = parent_rel->rd_att->constr;
-				char	   *child_expr = NULL;
-				char	   *parent_expr = NULL;
+				const char   *child_expr = "";
+				const char   *parent_expr = "0";
 
 				Assert(child_constr != NULL);
 				Assert(parent_constr != NULL);
@@ -14522,7 +14522,6 @@ MergeAttributesIntoExisting(Relation child_rel, Relation parent_rel)
 						break;
 					}
 				}
-				Assert(child_expr != NULL);
 
 				for (int i = 0; i < parent_constr->num_defval; i++)
 				{
@@ -14535,7 +14534,6 @@ MergeAttributesIntoExisting(Relation child_rel, Relation parent_rel)
 						break;
 					}
 				}
-				Assert(parent_expr != NULL);
 
 				if (strcmp(child_expr, parent_expr) != 0)
 					ereport(ERROR,
