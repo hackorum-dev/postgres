@@ -12345,3 +12345,371 @@ SELECT CASE WHEN closed IS NOT false THEN 1 ELSE 0 END
 -- Clean up
 \set VERBOSITY default
 RESET debug_discard_caches;
+-- ===================================================================
+-- test function scan pushdown
+-- ===================================================================
+CREATE TABLE base_tbl (a int, b int);
+CREATE FOREIGN TABLE remote_tbl (a int, b int)
+  SERVER loopback OPTIONS (table_name 'base_tbl');
+ALTER FOREIGN TABLE remote_tbl OPTIONS (use_remote_estimate 'true');
+CREATE TABLE base_tbl1 (c int, d text);
+CREATE FOREIGN TABLE remote_tbl1 (c int, d text)
+  SERVER loopback OPTIONS (table_name 'base_tbl1');
+ALTER FOREIGN TABLE remote_tbl1 OPTIONS (use_remote_estimate 'true');
+INSERT INTO remote_tbl SELECT g, g*2 from  generate_series(1,1000) g;
+INSERT INTO remote_tbl1 SELECT g, 'text'|| g from  generate_series(1,500) g;
+ANALYZE base_tbl;
+ANALYZE base_tbl1;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM remote_tbl r, unnest(array[2,3,4]) n WHERE r.a = n;
+                                                              QUERY PLAN                                                              
+--------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: r.a, r.b, n.n
+   Relations: (public.remote_tbl r) INNER JOIN (pg_catalog.unnest() n)
+   Remote SQL: SELECT r1.a, r1.b, r2.n FROM (public.base_tbl r1 INNER JOIN unnest('{2,3,4}'::integer[]) r2 (n)  ON (((r1.a = r2.n))))
+(4 rows)
+
+SELECT * FROM remote_tbl r, unnest(array[2,3,4]) n WHERE r.a = n
+ORDER BY r.a;
+ a | b | n 
+---+---+---
+ 2 | 4 | 2
+ 3 | 6 | 3
+ 4 | 8 | 4
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM unnest(array[2,3,4]) n, remote_tbl r WHERE r.a = n;
+                                                              QUERY PLAN                                                              
+--------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: n.n, r.a, r.b
+   Relations: (public.remote_tbl r) INNER JOIN (pg_catalog.unnest() n)
+   Remote SQL: SELECT r1.n, r2.a, r2.b FROM (public.base_tbl r2 INNER JOIN unnest('{2,3,4}'::integer[]) r1 (n)  ON (((r2.a = r1.n))))
+(4 rows)
+
+SELECT * FROM unnest(array[2,3,4]) n, remote_tbl r WHERE r.a = n
+ORDER BY r.a;
+ n | a | b 
+---+---+---
+ 2 | 2 | 4
+ 3 | 3 | 6
+ 4 | 4 | 8
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM remote_tbl r, remote_tbl1 r1, unnest(array[3,4]) n
+WHERE r.a = n AND r1.c = r.a;
+                                                                                              QUERY PLAN                                                                                              
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: r.a, r.b, r1.c, r1.d, n.n
+   Relations: ((public.remote_tbl r) INNER JOIN (public.remote_tbl1 r1)) INNER JOIN (pg_catalog.unnest() n)
+   Remote SQL: SELECT r1.a, r1.b, r2.c, r2.d, r3.n FROM ((public.base_tbl r1 INNER JOIN public.base_tbl1 r2 ON (((r1.a = r2.c)))) INNER JOIN unnest('{3,4}'::integer[]) r3 (n)  ON (((r1.a = r3.n))))
+(4 rows)
+
+SELECT * FROM remote_tbl r, remote_tbl1 r1, unnest(array[3,4]) n
+WHERE r.a = n AND r1.c = r.a
+ORDER BY r.a;
+ a | b | c |   d   | n 
+---+---+---+-------+---
+ 3 | 6 | 3 | text3 | 3
+ 4 | 8 | 4 | text4 | 4
+(2 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT r.*,n from remote_tbl r, remote_tbl1 r1, unnest(array[3,4]) n
+WHERE r.a = n AND r1.c = r.a and n > 3;
+                                                                                                QUERY PLAN                                                                                                 
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: r.a, r.b, n.n
+   Relations: ((public.remote_tbl r) INNER JOIN (public.remote_tbl1 r1)) INNER JOIN (pg_catalog.unnest() n)
+   Remote SQL: SELECT r1.a, r1.b, r3.n FROM ((public.base_tbl r1 INNER JOIN public.base_tbl1 r2 ON (((r1.a = r2.c)))) INNER JOIN unnest('{3,4}'::integer[]) r3 (n)  ON (((r1.a = r3.n)) AND ((r3.n > 3))))
+(4 rows)
+
+SELECT * from remote_tbl r, remote_tbl1 r1, unnest(array[3,4]) n
+WHERE r.a = n AND r1.c = r.a and n > 3;
+ a | b | c |   d   | n 
+---+---+---+-------+---
+ 4 | 8 | 4 | text4 | 4
+(1 row)
+
+CREATE OR REPLACE FUNCTION get_constant_texts()
+RETURNS TABLE (text_value text) AS $$
+BEGIN
+    RETURN QUERY VALUES
+        ('text1'),
+        ('text4');
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+ALTER EXTENSION postgres_fdw ADD FUNCTION get_constant_texts();
+ALTER SERVER loopback OPTIONS (extensions 'postgres_fdw');
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT r.*, t.n from remote_tbl1 r, ROWS FROM (unnest(array[3,4]), get_constant_texts()) t (n, txt)
+WHERE r.c =  t.n AND r.d = t.txt;
+                                                                                               QUERY PLAN                                                                                               
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: r.c, r.d, t.n
+   Relations: (public.remote_tbl1 r) INNER JOIN (ROWS FROM(pg_catalog.unnest(), public.get_constant_texts()) t)
+   Remote SQL: SELECT r1.c, r1.d, r2.n FROM (public.base_tbl1 r1 INNER JOIN ROWS FROM (unnest('{3,4}'::integer[]), public.get_constant_texts()) r2 (n,txt)  ON (((r1.c = r2.n)) AND ((r2.txt = r1.d))))
+(4 rows)
+
+SELECT r.*, t.txt from remote_tbl1 r, ROWS FROM (unnest(array[3,4]), get_constant_texts()) t (n, txt)
+WHERE r.c =  t.n AND r.d = t.txt;
+ c |   d   |  txt  
+---+-------+-------
+ 4 | text4 | text4
+(1 row)
+
+-- Complex types
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM remote_tbl r JOIN UNNEST(array[box '((2,3),(-2,-3))']) as t(bx) ON a = area(bx);
+                                                                    QUERY PLAN                                                                     
+---------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: r.a, r.b, t.bx
+   Relations: (public.remote_tbl r) INNER JOIN (pg_catalog.unnest() t)
+   Remote SQL: SELECT r1.a, r1.b, r2.bx FROM (public.base_tbl r1 INNER JOIN unnest('{(2,3),(-2,-3)}'::box[]) r2 (bx)  ON (((r1.a = area(r2.bx)))))
+(4 rows)
+
+SELECT * FROM remote_tbl r JOIN UNNEST(array[box '((2,3),(-2,-3))']) as t(bx) ON a = area(bx)
+ORDER BY r.a;
+ a  | b  |      bx       
+----+----+---------------
+ 24 | 48 | (2,3),(-2,-3)
+(1 row)
+
+-- DML
+EXPLAIN (VERBOSE, COSTS OFF)
+UPDATE remote_tbl r SET b=5 FROM UNNEST(array[box '((2,3),(-2,-3))']) AS t (bx) WHERE r.a = area(t.bx)
+RETURNING a,b;
+                                                                        QUERY PLAN                                                                        
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+ Update on public.remote_tbl r
+   Output: r.a, r.b
+   ->  Foreign Update
+         Remote SQL: UPDATE public.base_tbl r1 SET b = 5 FROM unnest('{(2,3),(-2,-3)}'::box[]) r2 (bx)  WHERE ((r1.a = area(r2.bx))) RETURNING r1.a, r1.b
+(4 rows)
+
+UPDATE remote_tbl r SET b=5 FROM UNNEST(array[box '((2,3),(-2,-3))']) AS t (bx) WHERE r.a = area(t.bx)
+RETURNING a,b;
+ a  | b 
+----+---
+ 24 | 5
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+UPDATE remote_tbl r SET b=CASE WHEN random()>=0 THEN 5 ELSE 0 END FROM UNNEST(array[box '((2,3),(-2,-3))']) AS t (bx) WHERE r.a = area(t.bx)
+RETURNING a,b;
+                                                                                                                                     QUERY PLAN                                                                                                                                      
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Update on public.remote_tbl r
+   Output: r.a, r.b
+   Remote SQL: UPDATE public.base_tbl SET b = $2 WHERE ctid = $1 RETURNING a, b
+   ->  Foreign Scan
+         Output: CASE WHEN (random() >= '0'::double precision) THEN 5 ELSE 0 END, r.ctid, r.*, t.*
+         Relations: (public.remote_tbl r) INNER JOIN (pg_catalog.unnest() t)
+         Remote SQL: SELECT r1.ctid, CASE WHEN (r1.*)::text IS NOT NULL THEN ROW(r1.a, r1.b) END, CASE WHEN (r2.*)::text IS NOT NULL THEN ROW(r2.bx) END FROM (public.base_tbl r1 INNER JOIN unnest('{(2,3),(-2,-3)}'::box[]) r2 (bx)  ON (((r1.a = area(r2.bx))))) FOR UPDATE OF r1
+         ->  Hash Join
+               Output: r.ctid, r.*, t.*
+               Hash Cond: ((r.a)::double precision = area(t.bx))
+               ->  Foreign Scan on public.remote_tbl r
+                     Output: r.ctid, r.*, r.a
+                     Remote SQL: SELECT a, b, ctid FROM public.base_tbl FOR UPDATE
+               ->  Hash
+                     Output: t.*, t.bx
+                     ->  Function Scan on pg_catalog.unnest t
+                           Output: t.*, t.bx
+                           Function Call: unnest('{(2,3),(-2,-3)}'::box[])
+(18 rows)
+
+UPDATE remote_tbl r SET b=CASE WHEN random()>=0 THEN 5 ELSE 0 END FROM UNNEST(array[box '((2,3),(-2,-3))']) AS t (bx) WHERE r.a = area(t.bx)
+RETURNING a,b;
+ a  | b 
+----+---
+ 24 | 5
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+UPDATE remote_tbl r SET b=5 FROM UNNEST(array[10,20], array[box '((2,3),(-2,-4))', box '((1,2),(-2,-3))']) AS t (l, bx) WHERE r.a between l and area(t.bx)
+RETURNING a,b;
+                                                                                                                QUERY PLAN                                                                                                                
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Update on public.remote_tbl r
+   Output: r.a, r.b
+   ->  Foreign Update
+         Remote SQL: UPDATE public.base_tbl r1 SET b = 5 FROM ROWS FROM (unnest('{10,20}'::integer[]), unnest('{(2,3),(-2,-4);(1,2),(-2,-3)}'::box[])) r2 (l,bx)  WHERE ((r1.a >= r2.l)) AND ((r1.a <= area(r2.bx))) RETURNING r1.a, r1.b
+(4 rows)
+
+UPDATE remote_tbl r SET b=5 FROM UNNEST(array[10,20], array[box '((2,3),(-2,-4))', box '((1,2),(-2,-3))']) AS t (l, bx) WHERE r.a between l and area(t.bx)
+RETURNING a,b;
+ a  | b 
+----+---
+ 10 | 5
+ 11 | 5
+ 12 | 5
+ 13 | 5
+ 14 | 5
+ 15 | 5
+ 16 | 5
+ 17 | 5
+ 18 | 5
+ 19 | 5
+ 20 | 5
+ 21 | 5
+ 22 | 5
+ 23 | 5
+ 25 | 5
+ 26 | 5
+ 27 | 5
+ 28 | 5
+ 24 | 5
+(19 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+UPDATE remote_tbl r SET b=CASE WHEN random()>=0 THEN 5 ELSE 0 END FROM UNNEST(array[10,20], array[box '((2,3),(-2,-4))', box '((1,2),(-2,-3))']) AS t (l, bx) WHERE r.a between l and area(t.bx)
+RETURNING a,b;
+                                                                                                                                                                                QUERY PLAN                                                                                                                                                                                
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Update on public.remote_tbl r
+   Output: r.a, r.b
+   Remote SQL: UPDATE public.base_tbl SET b = $2 WHERE ctid = $1 RETURNING a, b
+   ->  Foreign Scan
+         Output: CASE WHEN (random() >= '0'::double precision) THEN 5 ELSE 0 END, r.ctid, r.*, t.*
+         Relations: (public.remote_tbl r) INNER JOIN (ROWS FROM(pg_catalog.unnest(), pg_catalog.unnest()) t)
+         Remote SQL: SELECT r1.ctid, CASE WHEN (r1.*)::text IS NOT NULL THEN ROW(r1.a, r1.b) END, CASE WHEN (r2.*)::text IS NOT NULL THEN ROW(r2.l,r2.bx) END FROM (public.base_tbl r1 INNER JOIN ROWS FROM (unnest('{10,20}'::integer[]), unnest('{(2,3),(-2,-4);(1,2),(-2,-3)}'::box[])) r2 (l,bx)  ON (((r1.a >= r2.l)) AND ((r1.a <= area(r2.bx))))) FOR UPDATE OF r1
+         ->  Nested Loop
+               Output: r.ctid, r.*, t.*
+               Join Filter: ((r.a >= t.l) AND ((r.a)::double precision <= area(t.bx)))
+               ->  Foreign Scan on public.remote_tbl r
+                     Output: r.ctid, r.*, r.a
+                     Remote SQL: SELECT a, b, ctid FROM public.base_tbl FOR UPDATE
+               ->  Function Scan on t
+                     Output: t.*, t.l, t.bx
+                     Function Call: unnest('{10,20}'::integer[]), unnest('{(2,3),(-2,-4);(1,2),(-2,-3)}'::box[])
+(16 rows)
+
+UPDATE remote_tbl r SET b=CASE WHEN random()>=0 THEN 5 ELSE 0 END FROM UNNEST(array[10,20], array[box '((2,3),(-2,-4))', box '((1,2),(-2,-3))']) AS t (l, bx) WHERE r.a between l and area(t.bx)
+RETURNING a,b;
+ a  | b 
+----+---
+ 10 | 5
+ 11 | 5
+ 12 | 5
+ 13 | 5
+ 14 | 5
+ 15 | 5
+ 16 | 5
+ 17 | 5
+ 18 | 5
+ 19 | 5
+ 20 | 5
+ 21 | 5
+ 22 | 5
+ 23 | 5
+ 25 | 5
+ 26 | 5
+ 27 | 5
+ 28 | 5
+ 24 | 5
+(19 rows)
+
+-- Test that local functions are not pushed down
+CREATE OR REPLACE FUNCTION f(INTEGER)
+RETURNS SETOF INTEGER
+LANGUAGE sql AS 'select generate_series(1,$1);' IMMUTABLE;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM remote_tbl r, f(10) n
+WHERE r.a = n;
+                      QUERY PLAN                      
+------------------------------------------------------
+ Hash Join
+   Output: r.a, r.b, (generate_series(1, 10))
+   Hash Cond: (r.a = (generate_series(1, 10)))
+   ->  Foreign Scan on public.remote_tbl r
+         Output: r.a, r.b
+         Remote SQL: SELECT a, b FROM public.base_tbl
+   ->  Hash
+         Output: (generate_series(1, 10))
+         ->  ProjectSet
+               Output: generate_series(1, 10)
+               ->  Result
+(11 rows)
+
+SELECT * FROM remote_tbl r, remote_tbl1 r1, unnest(array[3,4]) n
+WHERE r.a = n AND r1.c = r.a AND n > 3;
+ a | b | c |   d   | n 
+---+---+---+-------+---
+ 4 | 8 | 4 | text4 | 4
+(1 row)
+
+-- Test that a function that returns a record is not pushed down
+CREATE OR REPLACE FUNCTION f_ret_record() RETURNS record AS $$ SELECT (1,2)::record $$ language SQL IMMUTABLE;
+ALTER EXTENSION postgres_fdw ADD function f_ret_record();
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT s FROM remote_tbl rt, f_ret_record() AS s(a int, b int)
+WHERE s.a = rt.a;
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ Nested Loop
+   Output: s.*
+   ->  Function Scan on public.f_ret_record s
+         Output: s.*, s.a
+         Function Call: f_ret_record()
+   ->  Foreign Scan on public.remote_tbl rt
+         Output: rt.a, rt.b
+         Remote SQL: SELECT a FROM public.base_tbl WHERE ((a = $1::integer))
+(8 rows)
+
+SELECT s FROM remote_tbl rt, f_ret_record() AS s(a int, b int)
+WHERE s.a = rt.a;
+   s   
+-------
+ (1,2)
+(1 row)
+
+DROP FUNCTION f(INTEGER);
+ALTER EXTENSION postgres_fdw DROP FUNCTION get_constant_texts();
+ALTER EXTENSION postgres_fdw DROP FUNCTION f_ret_record();
+DROP FUNCTION get_constant_texts();
+DROP FUNCTION f_ret_record();
+DROP TABLE base_tbl, base_tbl1;
+DROP FOREIGN TABLE remote_tbl, remote_tbl1;
+-- Test that function WITH ORDINALITY is not pushed down
+CREATE TABLE base_tbl (a int, b int);
+CREATE FOREIGN TABLE remote_tbl (a int, b int) SERVER loopback OPTIONS (table_name 'base_tbl');
+INSERT INTO remote_tbl VALUES (1, 2), (2, 3), (3, 4), (5, 6);
+ANALYZE remote_tbl;
+SET enable_mergejoin TO false;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM remote_tbl, unnest(ARRAY[1, 2]) WITH ORDINALITY
+WHERE a=unnest;
+                               QUERY PLAN                               
+------------------------------------------------------------------------
+ Hash Join
+   Output: remote_tbl.a, remote_tbl.b, unnest.unnest, unnest.ordinality
+   Hash Cond: (remote_tbl.a = unnest.unnest)
+   ->  Foreign Scan on public.remote_tbl
+         Output: remote_tbl.a, remote_tbl.b
+         Remote SQL: SELECT a, b FROM public.base_tbl
+   ->  Hash
+         Output: unnest.unnest, unnest.ordinality
+         ->  Function Scan on pg_catalog.unnest
+               Output: unnest.unnest, unnest.ordinality
+               Function Call: unnest('{1,2}'::integer[])
+(11 rows)
+
+SELECT * FROM remote_tbl, unnest(ARRAY[1, 2]) WITH ORDINALITY
+WHERE a=unnest;
+ a | b | unnest | ordinality 
+---+---+--------+------------
+ 1 | 2 |      1 |          1
+ 2 | 3 |      2 |          2
+(2 rows)
+
+DROP TABLE base_tbl;
+DROP FOREIGN TABLE remote_tbl;
+RESET enable_mergejoin;

@@ -153,6 +153,7 @@ static void deparseConst(Const *node, deparse_expr_cxt *context, int showtype);
 static void deparseParam(Param *node, deparse_expr_cxt *context);
 static void deparseSubscriptingRef(SubscriptingRef *node, deparse_expr_cxt *context);
 static void deparseFuncExpr(FuncExpr *node, deparse_expr_cxt *context);
+static void deparseFuncColnames(StringInfo buf, int varno, RangeTblEntry *rte, bool qualify_col);
 static void deparseOpExpr(OpExpr *node, deparse_expr_cxt *context);
 static bool isPlainForeignVar(Expr *node, deparse_expr_cxt *context);
 static void deparseOperatorName(StringInfo buf, Form_pg_operator opform);
@@ -1977,13 +1978,54 @@ deparseFromExprForRel(StringInfo buf, PlannerInfo *root, RelOptInfo *foreignrel,
 	{
 		RangeTblEntry *rte = planner_rt_fetch(foreignrel->relid, root);
 
-		/*
-		 * Core code already has some lock on each rel being planned, so we
-		 * can use NoLock here.
-		 */
-		Relation	rel = table_open(rte->relid, NoLock);
+		Assert(rte->rtekind == RTE_RELATION || rte->rtekind == RTE_FUNCTION);
+		if (rte->rtekind == RTE_RELATION)
+		{
+			/*
+			 * Core code already has some lock on each rel being planned, so
+			 * we can use NoLock here.
+			 */
+			Relation	rel = table_open(rte->relid, NoLock);
 
-		deparseRelation(buf, rel);
+			deparseRelation(buf, rel);
+
+			table_close(rel, NoLock);
+		}
+		else if (rte->rtekind == RTE_FUNCTION)
+		{
+			RangeTblFunction *rtfunc;
+			deparse_expr_cxt context;
+			ListCell   *lc;
+			bool		first = true;
+			int			n;
+
+			n = list_length(rte->functions);
+			Assert(n >= 1);
+
+			if (n > 1)
+				appendStringInfoString(buf, "ROWS FROM (");
+
+			foreach(lc, rte->functions)
+			{
+				if (!first)
+					appendStringInfoString(buf, ", ");
+				else
+					first = false;
+
+				rtfunc = (RangeTblFunction *) lfirst(lc);
+
+				context.root = root;
+				context.foreignrel = foreignrel;
+				context.scanrel = foreignrel;
+				context.buf = buf;
+				context.params_list = params_list;
+
+				deparseExpr((Expr *) rtfunc->funcexpr, &context);
+			}
+
+			if (n > 1)
+				appendStringInfoString(buf, ")");
+		}
 
 		/*
 		 * Add a unique alias to avoid any conflict in relation names due to
@@ -1991,9 +2033,43 @@ deparseFromExprForRel(StringInfo buf, PlannerInfo *root, RelOptInfo *foreignrel,
 		 * join.
 		 */
 		if (use_alias)
+		{
 			appendStringInfo(buf, " %s%d", REL_ALIAS_PREFIX, foreignrel->relid);
+			if (rte->rtekind == RTE_FUNCTION)
+			{
+				appendStringInfo(buf, " (");
+				deparseFuncColnames(buf, 0, rte, false);
+				appendStringInfo(buf, ") ");
+			}
+		}
+	}
+}
 
-		table_close(rel, NoLock);
+/*
+ * Deparse function columns alias list
+ */
+static void
+deparseFuncColnames(StringInfo buf, int varno, RangeTblEntry *rte, bool qualify_col)
+{
+	bool		first = true;
+	ListCell   *lc;
+
+	Assert(rte);
+	Assert(rte->rtekind == RTE_FUNCTION);
+	Assert(rte->eref);
+
+	foreach(lc, rte->eref->colnames)
+	{
+		char	   *colname = strVal(lfirst(lc));
+
+		if (colname[0] == '\0')
+			continue;
+		if (!first)
+			appendStringInfoString(buf, ",");
+		if (qualify_col)
+			ADD_REL_QUALIFIER(buf, varno);
+		appendStringInfoString(buf, quote_identifier(colname));
+		first = false;
 	}
 }
 
@@ -2718,23 +2794,6 @@ deparseColumnRef(StringInfo buf, int varno, int varattno, RangeTblEntry *rte,
 		List	   *retrieved_attrs;
 
 		/*
-		 * The lock on the relation will be held by upper callers, so it's
-		 * fine to open it with no lock here.
-		 */
-		rel = table_open(rte->relid, NoLock);
-
-		/*
-		 * The local name of the foreign table can not be recognized by the
-		 * foreign server and the table it references on foreign server might
-		 * have different column ordering or different columns than those
-		 * declared locally. Hence we have to deparse whole-row reference as
-		 * ROW(columns referenced locally). Construct this by deparsing a
-		 * "whole row" attribute.
-		 */
-		attrs_used = bms_add_member(NULL,
-									0 - FirstLowInvalidHeapAttributeNumber);
-
-		/*
 		 * In case the whole-row reference is under an outer join then it has
 		 * to go NULL whenever the rest of the row goes NULL. Deparsing a join
 		 * query would always involve multiple relations, thus qualify_col
@@ -2748,16 +2807,43 @@ deparseColumnRef(StringInfo buf, int varno, int varattno, RangeTblEntry *rte,
 		}
 
 		appendStringInfoString(buf, "ROW(");
-		deparseTargetList(buf, rte, varno, rel, false, attrs_used, qualify_col,
-						  &retrieved_attrs);
+		if (rte->rtekind == RTE_RELATION)
+		{
+			/*
+			 * The local name of the foreign table can not be recognized by
+			 * the foreign server and the table it references on foreign
+			 * server might have different column ordering or different
+			 * columns than those declared locally. Hence we have to deparse
+			 * whole-row reference as ROW(columns referenced locally).
+			 * Construct this by deparsing a "whole row" attribute.
+			 */
+			attrs_used = bms_add_member(NULL,
+										0 - FirstLowInvalidHeapAttributeNumber);
+
+			/*
+			 * The lock on the relation will be held by upper callers, so it's
+			 * fine to open it with no lock here.
+			 */
+			rel = table_open(rte->relid, NoLock);
+			deparseTargetList(buf, rte, varno, rel, false, attrs_used, qualify_col,
+							  &retrieved_attrs);
+			table_close(rel, NoLock);
+			bms_free(attrs_used);
+		}
+		else if (rte->rtekind == RTE_FUNCTION)
+		{
+			/*
+			 * Function call is translated as-is, function returns the same
+			 * columns in the same order as on local server
+			 */
+			deparseFuncColnames(buf, varno, rte, qualify_col);
+		}
 		appendStringInfoChar(buf, ')');
 
 		/* Complete the CASE WHEN statement started above. */
 		if (qualify_col)
 			appendStringInfoString(buf, " END");
 
-		table_close(rel, NoLock);
-		bms_free(attrs_used);
 	}
 	else
 	{
@@ -2772,29 +2858,40 @@ deparseColumnRef(StringInfo buf, int varno, int varattno, RangeTblEntry *rte,
 		 * If it's a column of a foreign table, and it has the column_name FDW
 		 * option, use that value.
 		 */
-		options = GetForeignColumnOptions(rte->relid, varattno);
-		foreach(lc, options)
+		if (rte->rtekind == RTE_RELATION)
 		{
-			DefElem    *def = (DefElem *) lfirst(lc);
-
-			if (strcmp(def->defname, "column_name") == 0)
+			options = GetForeignColumnOptions(rte->relid, varattno);
+			foreach(lc, options)
 			{
-				colname = defGetString(def);
-				break;
+				DefElem    *def = (DefElem *) lfirst(lc);
+
+				if (strcmp(def->defname, "column_name") == 0)
+				{
+					colname = defGetString(def);
+					break;
+				}
 			}
+
+			/*
+			 * If it's a column of a regular table or it doesn't have
+			 * column_name FDW option, use attribute name.
+			 */
+			if (colname == NULL)
+				colname = get_attname(rte->relid, varattno, false);
+
+			if (qualify_col)
+				ADD_REL_QUALIFIER(buf, varno);
+
+			appendStringInfoString(buf, quote_identifier(colname));
 		}
+		else if (rte->rtekind == RTE_FUNCTION)
+		{
+			colname = get_rte_attribute_name(rte, varattno);
 
-		/*
-		 * If it's a column of a regular table or it doesn't have column_name
-		 * FDW option, use attribute name.
-		 */
-		if (colname == NULL)
-			colname = get_attname(rte->relid, varattno, false);
-
-		if (qualify_col)
-			ADD_REL_QUALIFIER(buf, varno);
-
-		appendStringInfoString(buf, quote_identifier(colname));
+			if (qualify_col)
+				ADD_REL_QUALIFIER(buf, varno);
+			appendStringInfoString(buf, quote_identifier(colname));
+		}
 	}
 }
 

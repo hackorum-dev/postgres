@@ -4278,3 +4278,151 @@ SELECT CASE WHEN closed IS NOT false THEN 1 ELSE 0 END
 -- Clean up
 \set VERBOSITY default
 RESET debug_discard_caches;
+
+-- ===================================================================
+-- test function scan pushdown
+-- ===================================================================
+CREATE TABLE base_tbl (a int, b int);
+CREATE FOREIGN TABLE remote_tbl (a int, b int)
+  SERVER loopback OPTIONS (table_name 'base_tbl');
+ALTER FOREIGN TABLE remote_tbl OPTIONS (use_remote_estimate 'true');
+CREATE TABLE base_tbl1 (c int, d text);
+CREATE FOREIGN TABLE remote_tbl1 (c int, d text)
+  SERVER loopback OPTIONS (table_name 'base_tbl1');
+ALTER FOREIGN TABLE remote_tbl1 OPTIONS (use_remote_estimate 'true');
+
+INSERT INTO remote_tbl SELECT g, g*2 from  generate_series(1,1000) g;
+INSERT INTO remote_tbl1 SELECT g, 'text'|| g from  generate_series(1,500) g;
+ANALYZE base_tbl;
+ANALYZE base_tbl1;
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM remote_tbl r, unnest(array[2,3,4]) n WHERE r.a = n;
+
+SELECT * FROM remote_tbl r, unnest(array[2,3,4]) n WHERE r.a = n
+ORDER BY r.a;
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM unnest(array[2,3,4]) n, remote_tbl r WHERE r.a = n;
+
+SELECT * FROM unnest(array[2,3,4]) n, remote_tbl r WHERE r.a = n
+ORDER BY r.a;
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM remote_tbl r, remote_tbl1 r1, unnest(array[3,4]) n
+WHERE r.a = n AND r1.c = r.a;
+
+SELECT * FROM remote_tbl r, remote_tbl1 r1, unnest(array[3,4]) n
+WHERE r.a = n AND r1.c = r.a
+ORDER BY r.a;
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT r.*,n from remote_tbl r, remote_tbl1 r1, unnest(array[3,4]) n
+WHERE r.a = n AND r1.c = r.a and n > 3;
+
+SELECT * from remote_tbl r, remote_tbl1 r1, unnest(array[3,4]) n
+WHERE r.a = n AND r1.c = r.a and n > 3;
+
+CREATE OR REPLACE FUNCTION get_constant_texts()
+RETURNS TABLE (text_value text) AS $$
+BEGIN
+    RETURN QUERY VALUES
+        ('text1'),
+        ('text4');
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+ALTER EXTENSION postgres_fdw ADD FUNCTION get_constant_texts();
+ALTER SERVER loopback OPTIONS (extensions 'postgres_fdw');
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT r.*, t.n from remote_tbl1 r, ROWS FROM (unnest(array[3,4]), get_constant_texts()) t (n, txt)
+WHERE r.c =  t.n AND r.d = t.txt;
+
+SELECT r.*, t.txt from remote_tbl1 r, ROWS FROM (unnest(array[3,4]), get_constant_texts()) t (n, txt)
+WHERE r.c =  t.n AND r.d = t.txt;
+
+-- Complex types
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM remote_tbl r JOIN UNNEST(array[box '((2,3),(-2,-3))']) as t(bx) ON a = area(bx);
+
+SELECT * FROM remote_tbl r JOIN UNNEST(array[box '((2,3),(-2,-3))']) as t(bx) ON a = area(bx)
+ORDER BY r.a;
+
+-- DML
+EXPLAIN (VERBOSE, COSTS OFF)
+UPDATE remote_tbl r SET b=5 FROM UNNEST(array[box '((2,3),(-2,-3))']) AS t (bx) WHERE r.a = area(t.bx)
+RETURNING a,b;
+
+UPDATE remote_tbl r SET b=5 FROM UNNEST(array[box '((2,3),(-2,-3))']) AS t (bx) WHERE r.a = area(t.bx)
+RETURNING a,b;
+
+EXPLAIN (VERBOSE, COSTS OFF)
+UPDATE remote_tbl r SET b=CASE WHEN random()>=0 THEN 5 ELSE 0 END FROM UNNEST(array[box '((2,3),(-2,-3))']) AS t (bx) WHERE r.a = area(t.bx)
+RETURNING a,b;
+
+UPDATE remote_tbl r SET b=CASE WHEN random()>=0 THEN 5 ELSE 0 END FROM UNNEST(array[box '((2,3),(-2,-3))']) AS t (bx) WHERE r.a = area(t.bx)
+RETURNING a,b;
+
+EXPLAIN (VERBOSE, COSTS OFF)
+UPDATE remote_tbl r SET b=5 FROM UNNEST(array[10,20], array[box '((2,3),(-2,-4))', box '((1,2),(-2,-3))']) AS t (l, bx) WHERE r.a between l and area(t.bx)
+RETURNING a,b;
+
+UPDATE remote_tbl r SET b=5 FROM UNNEST(array[10,20], array[box '((2,3),(-2,-4))', box '((1,2),(-2,-3))']) AS t (l, bx) WHERE r.a between l and area(t.bx)
+RETURNING a,b;
+
+EXPLAIN (VERBOSE, COSTS OFF)
+UPDATE remote_tbl r SET b=CASE WHEN random()>=0 THEN 5 ELSE 0 END FROM UNNEST(array[10,20], array[box '((2,3),(-2,-4))', box '((1,2),(-2,-3))']) AS t (l, bx) WHERE r.a between l and area(t.bx)
+RETURNING a,b;
+
+UPDATE remote_tbl r SET b=CASE WHEN random()>=0 THEN 5 ELSE 0 END FROM UNNEST(array[10,20], array[box '((2,3),(-2,-4))', box '((1,2),(-2,-3))']) AS t (l, bx) WHERE r.a between l and area(t.bx)
+RETURNING a,b;
+
+-- Test that local functions are not pushed down
+CREATE OR REPLACE FUNCTION f(INTEGER)
+RETURNS SETOF INTEGER
+LANGUAGE sql AS 'select generate_series(1,$1);' IMMUTABLE;
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM remote_tbl r, f(10) n
+WHERE r.a = n;
+
+SELECT * FROM remote_tbl r, remote_tbl1 r1, unnest(array[3,4]) n
+WHERE r.a = n AND r1.c = r.a AND n > 3;
+
+-- Test that a function that returns a record is not pushed down
+CREATE OR REPLACE FUNCTION f_ret_record() RETURNS record AS $$ SELECT (1,2)::record $$ language SQL IMMUTABLE;
+ALTER EXTENSION postgres_fdw ADD function f_ret_record();
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT s FROM remote_tbl rt, f_ret_record() AS s(a int, b int)
+WHERE s.a = rt.a;
+
+SELECT s FROM remote_tbl rt, f_ret_record() AS s(a int, b int)
+WHERE s.a = rt.a;
+
+DROP FUNCTION f(INTEGER);
+ALTER EXTENSION postgres_fdw DROP FUNCTION get_constant_texts();
+ALTER EXTENSION postgres_fdw DROP FUNCTION f_ret_record();
+DROP FUNCTION get_constant_texts();
+DROP FUNCTION f_ret_record();
+DROP TABLE base_tbl, base_tbl1;
+DROP FOREIGN TABLE remote_tbl, remote_tbl1;
+
+-- Test that function WITH ORDINALITY is not pushed down
+CREATE TABLE base_tbl (a int, b int);
+CREATE FOREIGN TABLE remote_tbl (a int, b int) SERVER loopback OPTIONS (table_name 'base_tbl');
+INSERT INTO remote_tbl VALUES (1, 2), (2, 3), (3, 4), (5, 6);
+ANALYZE remote_tbl;
+SET enable_mergejoin TO false;
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM remote_tbl, unnest(ARRAY[1, 2]) WITH ORDINALITY
+WHERE a=unnest;
+
+SELECT * FROM remote_tbl, unnest(ARRAY[1, 2]) WITH ORDINALITY
+WHERE a=unnest;
+
+DROP TABLE base_tbl;
+DROP FOREIGN TABLE remote_tbl;
+RESET enable_mergejoin;

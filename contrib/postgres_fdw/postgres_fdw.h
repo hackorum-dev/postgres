@@ -52,6 +52,12 @@ typedef struct PgFdwRelationInfo
 	/* True means that the query_pathkeys is safe to push down */
 	bool		qp_is_pushdown_safe;
 
+	/*
+	 * True means that PgFdwRelationInfo is not extracted from catalogs, but
+	 * generated
+	 */
+	bool		is_generated;
+
 	/* Cost and selectivity of local_conds. */
 	QualCost	local_conds_cost;
 	Selectivity local_conds_sel;

@@ -552,7 +552,6 @@ add_rte_to_flat_rtable(PlannerGlobal *glob, List *rteperminfos,
 	newrte->joinleftcols = NIL;
 	newrte->joinrightcols = NIL;
 	newrte->join_using_alias = NULL;
-	newrte->functions = NIL;
 	newrte->tablefunc = NULL;
 	newrte->values_lists = NIL;
 	newrte->coltypes = NIL;

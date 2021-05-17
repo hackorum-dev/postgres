@@ -36,6 +36,7 @@
 #include "optimizer/prep.h"
 #include "optimizer/restrictinfo.h"
 #include "optimizer/tlist.h"
+#include "optimizer/clauses.h"
 #include "parser/parsetree.h"
 #include "postgres_fdw.h"
 #include "storage/latch.h"
@@ -406,6 +407,14 @@ static void postgresGetForeignJoinPaths(PlannerInfo *root,
 										RelOptInfo *innerrel,
 										JoinType jointype,
 										JoinPathExtraData *extra);
+
+static void postgresTryShippableJoinPaths(PlannerInfo *root,
+										  RelOptInfo *joinrel,
+										  RelOptInfo *outerrel,
+										  RelOptInfo *innerrel,
+										  JoinType jointype,
+										  JoinPathExtraData *extra);
+
 static bool postgresRecheckForeignScan(ForeignScanState *node,
 									   TupleTableSlot *slot);
 static void postgresGetForeignUpperPaths(PlannerInfo *root,
@@ -476,7 +485,7 @@ static void store_returning_result(PgFdwModifyState *fmstate,
 static void finish_foreign_modify(PgFdwModifyState *fmstate);
 static void deallocate_query(PgFdwModifyState *fmstate);
 static List *build_remote_returning(Index rtindex, Relation rel,
-									List *returningList);
+									List *returningList, Var *tid);
 static void rebuild_fdw_scan_tlist(ForeignScan *fscan, List *tlist);
 static void execute_dml_stmt(ForeignScanState *node);
 static TupleTableSlot *get_returning_data(ForeignScanState *node);
@@ -542,6 +551,11 @@ static void merge_fdw_options(PgFdwRelationInfo *fpinfo,
 							  const PgFdwRelationInfo *fpinfo_i);
 static int	get_batch_size_option(Relation rel);
 
+static bool is_nonrel_relinfo_ok(PlannerInfo *root, RelOptInfo *foreignrel);
+static void init_fpinfo(PlannerInfo *root,
+						RelOptInfo *baserel,
+						Oid foreigntableid,
+						PgFdwRelationInfo *existing_fpinfo);
 
 /*
  * Foreign-data wrapper handler function: return a struct with pointers
@@ -597,6 +611,7 @@ postgres_fdw_handler(PG_FUNCTION_ARGS)
 
 	/* Support functions for join push-down */
 	routine->GetForeignJoinPaths = postgresGetForeignJoinPaths;
+	routine->TryShippableJoinPaths = postgresTryShippableJoinPaths;
 
 	/* Support functions for upper relation push-down */
 	routine->GetForeignUpperPaths = postgresGetForeignUpperPaths;
@@ -622,8 +637,30 @@ postgresGetForeignRelSize(PlannerInfo *root,
 						  RelOptInfo *baserel,
 						  Oid foreigntableid)
 {
+	init_fpinfo(root, baserel, foreigntableid, NULL);
+}
+
+/*
+ * init_fpinfo
+ *
+ * Either initialize fpinfo based on foreign table or generate one, based on
+ * existing fpinfo.
+ * Also estimate # of rows and width of the result of the scan.
+ *
+ * We should consider the effect of all baserestrictinfo clauses here, but
+ * not any join clauses.
+ */
+static void
+init_fpinfo(PlannerInfo *root,
+			RelOptInfo *baserel,
+			Oid foreigntableid,
+			PgFdwRelationInfo *existing_fpinfo)
+{
 	PgFdwRelationInfo *fpinfo;
 	ListCell   *lc;
+
+	Assert(existing_fpinfo || foreigntableid != InvalidOid);
+	Assert(existing_fpinfo == NULL || foreigntableid == InvalidOid);
 
 	/*
 	 * We use PgFdwRelationInfo to pass various information to subsequent
@@ -635,40 +672,64 @@ postgresGetForeignRelSize(PlannerInfo *root,
 	/* Base foreign tables need to be pushed down always. */
 	fpinfo->pushdown_safe = true;
 
-	/* Look up foreign-table catalog info. */
-	fpinfo->table = GetForeignTable(foreigntableid);
-	fpinfo->server = GetForeignServer(fpinfo->table->serverid);
-
-	/*
-	 * Extract user-settable option values.  Note that per-table settings of
-	 * use_remote_estimate, fetch_size and async_capable override per-server
-	 * settings of them, respectively.
-	 */
-	fpinfo->use_remote_estimate = false;
-	fpinfo->fdw_startup_cost = DEFAULT_FDW_STARTUP_COST;
-	fpinfo->fdw_tuple_cost = DEFAULT_FDW_TUPLE_COST;
-	fpinfo->shippable_extensions = NIL;
-	fpinfo->fetch_size = 100;
-	fpinfo->async_capable = false;
-
-	apply_server_options(fpinfo);
-	apply_table_options(fpinfo);
-
-	/*
-	 * If the table or the server is configured to use remote estimates,
-	 * identify which user to do remote access as during planning.  This
-	 * should match what ExecCheckPermissions() does.  If we fail due to lack
-	 * of permissions, the query would have failed at runtime anyway.
-	 */
-	if (fpinfo->use_remote_estimate)
+	if (existing_fpinfo)
 	{
-		Oid			userid;
-
-		userid = OidIsValid(baserel->userid) ? baserel->userid : GetUserId();
-		fpinfo->user = GetUserMapping(userid, fpinfo->server->serverid);
+		/* We don't have any table, related to query */
+		fpinfo->table = NULL;
+		fpinfo->server = existing_fpinfo->server;
 	}
 	else
-		fpinfo->user = NULL;
+	{
+		/* Look up foreign-table catalog info. */
+		fpinfo->table = GetForeignTable(foreigntableid);
+		fpinfo->server = GetForeignServer(fpinfo->table->serverid);
+	}
+
+	if (existing_fpinfo)
+	{
+		merge_fdw_options(fpinfo, existing_fpinfo, NULL);
+		fpinfo->user = existing_fpinfo->user;
+
+		/*
+		 * Don't try to execute anything on remote server for
+		 * non-relation-based query
+		 */
+		fpinfo->use_remote_estimate = false;
+	}
+	else
+	{
+		/*
+		 * Extract user-settable option values.  Note that per-table settings
+		 * of use_remote_estimate, fetch_size and async_capable override
+		 * per-server settings of them, respectively.
+		 */
+		fpinfo->use_remote_estimate = false;
+		fpinfo->fdw_startup_cost = DEFAULT_FDW_STARTUP_COST;
+		fpinfo->fdw_tuple_cost = DEFAULT_FDW_TUPLE_COST;
+		fpinfo->shippable_extensions = NIL;
+		fpinfo->fetch_size = 100;
+		fpinfo->async_capable = false;
+		fpinfo->is_generated = false;
+
+		apply_server_options(fpinfo);
+		apply_table_options(fpinfo);
+
+		/*
+		 * If the table or the server is configured to use remote estimates,
+		 * identify which user to do remote access as during planning.  This
+		 * should match what ExecCheckPermissions() does.  If we fail due to lack
+		 * of permissions, the query would have failed at runtime anyway.
+		 */
+		if (fpinfo->use_remote_estimate)
+		{
+			Oid			userid;
+
+			userid = OidIsValid(baserel->userid) ? baserel->userid : GetUserId();
+			fpinfo->user = GetUserMapping(userid, fpinfo->server->serverid);
+		}
+		else
+			fpinfo->user = NULL;
+	}
 
 	/*
 	 * Identify which baserestrictinfo clauses can be sent to the remote
@@ -783,6 +844,9 @@ postgresGetForeignRelSize(PlannerInfo *root,
 	fpinfo->hidden_subquery_rels = NULL;
 	/* Set the relation index. */
 	fpinfo->relation_index = baserel->relid;
+	if (existing_fpinfo)
+		/* Mark fpinfo generated */
+		fpinfo->is_generated = true;
 }
 
 /*
@@ -1476,13 +1540,72 @@ get_tupdesc_for_join_scan_tuples(ForeignScanState *node)
 		if (!IsA(var, Var) || var->varattno != 0)
 			continue;
 		rte = list_nth(estate->es_range_table, var->varno - 1);
-		if (rte->rtekind != RTE_RELATION)
-			continue;
-		reltype = get_rel_type_id(rte->relid);
-		if (!OidIsValid(reltype))
-			continue;
-		att->atttypid = reltype;
-		/* shouldn't need to change anything else */
+		if (rte->rtekind == RTE_RELATION)
+		{
+			reltype = get_rel_type_id(rte->relid);
+			if (!OidIsValid(reltype))
+				continue;
+			att->atttypid = reltype;
+			/* shouldn't need to change anything else */
+		}
+		else if (rte->rtekind == RTE_FUNCTION)
+		{
+			RangeTblFunction *rtfunc;
+			TupleDesc	td;
+			Oid			funcrettype;
+			int			num_funcs,
+						attnum;
+			ListCell   *lc,
+					   *lctype,
+					   *lcname;
+			bool		functype_OK = true;
+			List	   *functypes = NIL;
+
+			if (rte->funcordinality)
+				continue;
+
+			num_funcs = list_length(rte->functions);
+			Assert(num_funcs >= 0);
+
+			foreach(lc, rte->functions)
+			{
+				rtfunc = (RangeTblFunction *) lfirst(lc);
+				get_expr_result_type(rtfunc->funcexpr, &funcrettype, NULL);
+				if (!OidIsValid(funcrettype) || funcrettype == RECORDOID)
+				{
+					functype_OK = false;
+					break;
+				}
+				functypes = lappend_oid(functypes, funcrettype);
+			}
+			if (!functype_OK)
+				continue;
+			td = CreateTemplateTupleDesc(num_funcs);
+
+			/*
+			 * funcrettype != RECORD, so we have only one return attribute per
+			 * function
+			 */
+			Assert(list_length(rte->eref->colnames) == num_funcs);
+			attnum = 1;
+			forthree(lc, rte->functions, lctype, functypes, lcname, rte->eref->colnames)
+			{
+				char	   *colname;
+
+				rtfunc = (RangeTblFunction *) lfirst(lc);
+				funcrettype = lfirst_oid(lctype);
+				colname = strVal(lfirst(lcname));
+
+				TupleDescInitEntry(td, (AttrNumber) attnum, colname,
+								   funcrettype, -1, 0);
+				TupleDescInitEntryCollation(td, (AttrNumber) attnum,
+											exprCollation(rtfunc->funcexpr));
+				attnum++;
+			}
+
+			assign_record_type_typmod(td);
+			att->atttypmod = td->tdtypmod;
+		}
 	}
 	return tupdesc;
 }
@@ -1518,14 +1641,26 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags)
 
 	/*
 	 * Identify which user to do the remote access as.  This should match what
-	 * ExecCheckPermissions() does.
+	 * ExecCheckPermissions() does.  In case of a join or aggregate, scan RTEs
+	 * until RTE_RELATION is found. We would get the same result from any.
 	 */
 	userid = OidIsValid(fsplan->checkAsUser) ? fsplan->checkAsUser : GetUserId();
 	if (fsplan->scan.scanrelid > 0)
+	{
 		rtindex = fsplan->scan.scanrelid;
+		rte = exec_rt_fetch(rtindex, estate);
+	}
 	else
-		rtindex = bms_next_member(fsplan->fs_base_relids, -1);
-	rte = exec_rt_fetch(rtindex, estate);
+	{
+		rtindex = -1;
+		while ((rtindex = bms_next_member(fsplan->fs_base_relids, rtindex)) >= 0)
+		{
+			rte = exec_rt_fetch(rtindex, estate);
+			if (rte && rte->rtekind == RTE_RELATION)
+				break;
+		}
+		Assert(rte && rte->rtekind == RTE_RELATION);
+	}
 
 	/* Get info about foreign table. */
 	table = GetForeignTable(rte->relid);
@@ -2566,8 +2701,30 @@ postgresPlanDirectModify(PlannerInfo *root,
 		 * node below.
 		 */
 		if (fscan->scan.scanrelid == 0)
+		{
+			ListCell   *lc;
+			Var		   *tid_var = NULL;
+
+			/*
+			 * We should explicitly add tableoid to returning list if it's
+			 * requested
+			 */
+			foreach(lc, processed_tlist)
+			{
+				TargetEntry *tle = lfirst_node(TargetEntry, lc);
+				Var		   *var = (Var *) tle->expr;
+
+				if (IsA(var, Var) && (var->varattno == TableOidAttributeNumber) && (strcmp(tle->resname, "tableoid") == 0))
+				{
+					tid_var = var;
+					break;
+				}
+
+			}
+
 			returningList = build_remote_returning(resultRelation, rel,
-												   returningList);
+												   returningList, tid_var);
+		}
 	}
 
 	/*
@@ -2889,21 +3046,66 @@ postgresExplainForeignScan(ForeignScanState *node, ExplainState *es)
 				rti += rtoffset;
 				Assert(bms_is_member(rti, plan->fs_base_relids));
 				rte = rt_fetch(rti, es->rtable);
-				Assert(rte->rtekind == RTE_RELATION);
 				/* This logic should agree with explain.c's ExplainTargetRel */
-				relname = get_rel_name(rte->relid);
-				if (es->verbose)
+				if (rte->rtekind == RTE_RELATION)
 				{
-					char	   *namespace;
+					// Note: relname may be uninitialized.
+					relname = get_rel_name(rte->relid);
+					if (es->verbose)
+					{
+						char	   *namespace;
 
-					namespace = get_namespace_name_or_temp(get_rel_namespace(rte->relid));
-					appendStringInfo(relations, "%s.%s",
-									 quote_identifier(namespace),
-									 quote_identifier(relname));
+						namespace = get_namespace_name_or_temp(get_rel_namespace(rte->relid));
+						appendStringInfo(relations, "%s.%s",
+										 quote_identifier(namespace),
+										 quote_identifier(relname));
+					}
+					else
+						appendStringInfoString(relations,
+											   quote_identifier(relname));
 				}
-				else
-					appendStringInfoString(relations,
-										   quote_identifier(relname));
+				else if (rte->rtekind == RTE_FUNCTION)
+				{
+					ListCell   *lc;
+					int			n;
+					bool		first = true;
+
+
+					n = list_length(rte->functions);
+
+					if (n > 1)
+						appendStringInfo(relations, "ROWS FROM(");
+					foreach(lc, rte->functions)
+					{
+						RangeTblFunction *rtfunc = (RangeTblFunction *) lfirst(lc);
+
+						if (!first)
+							appendStringInfoString(relations, ", ");
+						else
+							first = false;
+
+						if (IsA(rtfunc->funcexpr, FuncExpr))
+						{
+							FuncExpr   *funcexpr = (FuncExpr *) rtfunc->funcexpr;
+							Oid			funcid = funcexpr->funcid;
+
+							relname = get_func_name(funcid);
+							if (es->verbose)
+							{
+								char	   *namespace;
+
+								namespace = get_namespace_name(get_func_namespace(funcid));
+								appendStringInfo(relations, "%s.%s()",
+												 quote_identifier(namespace),
+												 quote_identifier(relname));
+							}
+							else
+								appendStringInfo(relations, "%s()", quote_identifier(relname));
+						}
+					}
+					if (n > 1)
+						appendStringInfo(relations, ")");
+				}
 				refname = (char *) list_nth(es->rtable_names, rti - 1);
 				if (refname == NULL)
 					refname = rte->eref->aliasname;
@@ -4427,7 +4629,7 @@ deallocate_query(PgFdwModifyState *fmstate)
  *		UPDATE/DELETE .. RETURNING on a join directly
  */
 static List *
-build_remote_returning(Index rtindex, Relation rel, List *returningList)
+build_remote_returning(Index rtindex, Relation rel, List *returningList, Var *tid)
 {
 	bool		have_wholerow = false;
 	List	   *tlist = NIL;
@@ -4435,6 +4637,19 @@ build_remote_returning(Index rtindex, Relation rel, List *returningList)
 	ListCell   *lc;
 
 	Assert(returningList);
+
+	/*
+	 * If tid is requested, add it to the returning list
+	 */
+	if (tid)
+	{
+		tlist = lappend(tlist,
+						makeTargetEntry((Expr *) tid,
+										list_length(tlist) + 1,
+										NULL,
+										false));
+
+	}
 
 	vars = pull_var_clause((Node *) returningList, PVC_INCLUDE_PLACEHOLDERS);
 
@@ -4727,11 +4942,13 @@ init_returning_filter(PgFdwDirectModifyState *dmstate,
 			if (attrno < 0)
 			{
 				/*
-				 * We don't retrieve system columns other than ctid and oid.
+				 * We don't retrieve system columns other than ctid and oid,
+				 * but locally-generated tableoid can appear in returning
+				 * list.
 				 */
 				if (attrno == SelfItemPointerAttributeNumber)
 					dmstate->ctidAttno = i;
-				else
+				else if (attrno != TableOidAttributeNumber)
 					Assert(false);
 				dmstate->hasSystemCols = true;
 			}
@@ -5746,6 +5963,63 @@ postgresImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 }
 
 /*
+ * Determine if foreignrel, not backed by foreign
+ * table, is fine to push down.
+ */
+static bool
+is_nonrel_relinfo_ok(PlannerInfo *root, RelOptInfo *foreignrel)
+{
+	RangeTblEntry *rte;
+	RangeTblFunction *rtfunc;
+	TupleDesc tupdesc;
+	Oid funcrettype;
+
+	rte = planner_rt_fetch(foreignrel->relid, root);
+
+	if (!rte)
+		return false;
+
+	Assert(foreignrel->fdw_private);
+
+	if (rte->rtekind == RTE_FUNCTION)
+	{
+		ListCell   *lc;
+
+		/*
+		 * WITH ORDINALITY pushdown is not implemented yet.
+		 */
+		if (rte->funcordinality)
+			return false;
+
+		Assert(list_length(rte->functions) >= 1);
+		foreach(lc, rte->functions)
+		{
+			rtfunc = (RangeTblFunction *) lfirst(lc);
+
+			get_expr_result_type(rtfunc->funcexpr, &funcrettype, &tupdesc);
+
+			/*
+			 * Remote server requires a well defined return type for a
+			 * function pushdown.
+			 */
+			if (!OidIsValid(funcrettype) || funcrettype == RECORDOID || funcrettype == VOIDOID)
+				return false;
+
+			if (contain_var_clause(rtfunc->funcexpr) ||
+				contain_mutable_functions(rtfunc->funcexpr) ||
+				contain_subplans(rtfunc->funcexpr))
+				return false;
+			if (!is_foreign_expr(root, foreignrel, (Expr *) rtfunc->funcexpr))
+				return false;
+		}
+
+		return true;
+	}
+
+	return false;
+}
+
+/*
  * Check if reltarget is safe enough to push down semi-join.  Reltarget is not
  * safe, if it contains references to inner rel relids, which do not belong to
  * outer rel.
@@ -6475,6 +6749,43 @@ postgresGetForeignJoinPaths(PlannerInfo *root,
 									extra->restrictlist);
 
 	/* XXX Consider parameterized paths for the join relation */
+}
+
+/*
+ * postgresTryShippableJoinPaths
+ *
+ * Try to add foreign join of foreign relation with shippable RTE.
+ */
+static void
+postgresTryShippableJoinPaths(PlannerInfo *root,
+							  RelOptInfo *joinrel,
+							  RelOptInfo *outerrel,
+							  RelOptInfo *innerrel,
+							  JoinType jointype,
+							  JoinPathExtraData *extra)
+{
+	PgFdwRelationInfo *fpinfo_o = (PgFdwRelationInfo *) outerrel->fdw_private;
+	PgFdwRelationInfo *fpinfo_i = (PgFdwRelationInfo *) innerrel->fdw_private;
+
+	if (fpinfo_o == NULL)
+		/* Outer path is not foreign relation or foreign JOIN. */
+		return;
+
+	if (joinrel->fdwroutine != NULL || innerrel->reloptkind != RELOPT_BASEREL)
+		return;
+
+	if (fpinfo_i == NULL || fpinfo_i->is_generated)
+		init_fpinfo(root, innerrel, InvalidOid, fpinfo_o);
+
+	if (!is_nonrel_relinfo_ok(root, innerrel))
+		return;
+
+	joinrel->serverid = outerrel->serverid;
+	joinrel->userid = outerrel->userid;
+	joinrel->useridiscurrent = outerrel->useridiscurrent;
+	joinrel->fdwroutine = outerrel->fdwroutine;
+
+	postgresGetForeignJoinPaths(root, joinrel, outerrel, innerrel, jointype, extra);
 }
 
 /*

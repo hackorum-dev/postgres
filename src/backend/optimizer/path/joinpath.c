@@ -334,6 +334,17 @@ add_paths_to_joinrel(PlannerInfo *root,
 												 jointype, &extra);
 
 	/*
+	 * If push down of join is not possible we can try to join foreign
+	 * relation with shippable RTE. In this case we have a chance to push down
+	 * this join yet.
+	 */
+	else if (outerrel->fdwroutine &&
+			 outerrel->fdwroutine->TryShippableJoinPaths)
+		outerrel->fdwroutine->TryShippableJoinPaths(root, joinrel,
+													outerrel, innerrel,
+													jointype, &extra);
+
+	/*
 	 * 6. Finally, give extensions a chance to manipulate the path list.  They
 	 * could add new paths (such as CustomPaths) by calling add_path(), or
 	 * add_partial_path() if parallel aware.  They could also delete or modify

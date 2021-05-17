@@ -221,6 +221,7 @@ typedef struct FdwRoutine
 
 	/* Functions for remote-join planning */
 	GetForeignJoinPaths_function GetForeignJoinPaths;
+	GetForeignJoinPaths_function TryShippableJoinPaths;
 
 	/* Functions for remote upper-relation (post scan/join) planning */
 	GetForeignUpperPaths_function GetForeignUpperPaths;

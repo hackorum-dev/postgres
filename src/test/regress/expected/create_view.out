@@ -1681,10 +1681,10 @@ select pg_get_viewdef('tt14v', true);
 
 -- ... and you can even EXPLAIN it ...
 explain (verbose, costs off) select * from tt14v;
-               QUERY PLAN               
-----------------------------------------
+                 QUERY PLAN                 
+--------------------------------------------
  Function Scan on testviewschm2.tt14f t
-   Output: t.f1, t.f3, t.f4
+   Output: t.f1, t."?dropped?column?", t.f4
    Function Call: tt14f()
 (3 rows)
 
