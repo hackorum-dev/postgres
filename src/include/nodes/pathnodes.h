@@ -2342,7 +2342,7 @@ typedef struct AppendRelInfo
 /*
  * Information about a row-identity "resjunk" column in UPDATE/DELETE.
  *
- * In partitioned UPDATE/DELETE it's important for child partitions to share
+ * In an inherited UPDATE/DELETE it's important for child tables to share
  * row-identity columns whenever possible, so as not to chew up too many
  * targetlist columns.  We use these structs to track which identity columns
  * have been requested.  In the finished plan, each of these will give rise
@@ -2353,7 +2353,7 @@ typedef struct AppendRelInfo
  * final plan, with the varno of the generating rel.
  *
  * Outside this list, a Var with varno ROWID_VAR and varattno k is a reference
- * to the k-th element of the row_identity_vars list (k counting from 1).
+ * to the k-th element of the root->row_identity_vars list (k counting from 1).
  * We add such a reference to root->processed_tlist when creating the entry,
  * and it propagates into the plan tree from there.
  */
