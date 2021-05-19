@@ -176,6 +176,10 @@ TRUNCATE [ TABLE ] [ ONLY ] <replaceable class="parameter">name</replaceable> [ 
    supported by the foreign data wrapper, for instance,
    see <xref linkend="postgres-fdw"/>.
   </para>
+
+  <para>
+    <command>TRUNCATE</command> on user_catalog_table is not supported.
+  </para>
  </refsect1>
 
  <refsect1>
