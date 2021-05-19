@@ -27,6 +27,7 @@
 #include "catalog/pg_collation.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_publication.h"
 #include "catalog/pg_ts_config.h"
 #include "catalog/pg_ts_dict.h"
 #include "catalog/pg_type.h"
@@ -1226,6 +1227,131 @@ regcollationrecv(PG_FUNCTION_ARGS)
  */
 Datum
 regcollationsend(PG_FUNCTION_ARGS)
+{
+	/* Exactly the same as oidsend, so share code */
+	return oidsend(fcinfo);
+}
+
+/*
+ * regpublicationin		- converts "publicationname" to publication OID
+ *
+ * We also accept a numeric OID, for symmetry with the output routine.
+ *
+ * '-' signifies unknown (OID 0).  In all other cases, the input must
+ * match an existing pg_publication entry.
+ */
+Datum
+regpublicationin(PG_FUNCTION_ARGS)
+{
+	char	   *publication_name_or_oid = PG_GETARG_CSTRING(0);
+	Oid			result = InvalidOid;
+	List	   *names;
+
+	/* '-' ? */
+	if (strcmp(publication_name_or_oid, "-") == 0)
+		PG_RETURN_OID(InvalidOid);
+
+	/* Numeric OID? */
+	if (publication_name_or_oid[0] >= '0' &&
+		publication_name_or_oid[0] <= '9' &&
+		strspn(publication_name_or_oid, "0123456789") == strlen(publication_name_or_oid))
+	{
+		result = DatumGetObjectId(DirectFunctionCall1(oidin,
+													  CStringGetDatum(publication_name_or_oid)));
+		PG_RETURN_OID(result);
+	}
+
+	/* The rest of this wouldn't work in bootstrap mode */
+	if (IsBootstrapProcessingMode())
+		elog(ERROR, "regpublication values must be OIDs in bootstrap mode");
+
+	/*
+	 * Normal case: parse the name into components and see if it matches any
+	 * pg_publication entries in the current search path.
+	 */
+	names = stringToQualifiedNameList(publication_name_or_oid);
+	if (list_length(names) != 1)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_NAME),
+				 errmsg("invalid name syntax")));
+
+	result = get_publication_oid(strVal(linitial(names)), false);
+
+	PG_RETURN_OID(result);
+}
+
+/*
+ * to_regpublication		- converts "publicationname" to publication OID
+ *
+ * If the name is not found, we return NULL.
+ */
+Datum
+to_regpublication(PG_FUNCTION_ARGS)
+{
+	char	   *publication_name = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	Oid			result;
+	List	   *names;
+
+	names = stringToQualifiedNameList(publication_name);
+	if (list_length(names) != 1)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_NAME),
+				 errmsg("invalid name syntax")));
+
+	result = get_publication_oid(strVal(linitial(names)), true);
+
+	if (OidIsValid(result))
+		PG_RETURN_OID(result);
+	else
+		PG_RETURN_NULL();
+}
+
+/*
+ * regpublicationout		- converts publication OID to "publication_name"
+ */
+Datum
+regpublicationout(PG_FUNCTION_ARGS)
+{
+	Oid			publicationid = PG_GETARG_OID(0);
+	char	   *result;
+
+	if (publicationid == InvalidOid)
+	{
+		result = pstrdup("-");
+		PG_RETURN_CSTRING(result);
+	}
+
+	result = get_publication_name(publicationid, true);
+	if (result)
+	{
+		/* pstrdup is not really necessary, but it avoids a compiler warning */
+		result = pstrdup(quote_identifier(result));
+	}
+	else
+	{
+		/* If OID doesn't match any publication, return it numerically */
+		result = (char *) palloc(NAMEDATALEN);
+		snprintf(result, NAMEDATALEN, "%u", publicationid);
+	}
+
+	PG_RETURN_CSTRING(result);
+}
+
+/*
+ *		regpublicationrecv			- converts external binary format to regpublication
+ */
+Datum
+regpublicationrecv(PG_FUNCTION_ARGS)
+{
+	/* Exactly the same as oidrecv, so share code */
+	return oidrecv(fcinfo);
+}
+
+/*
+ *		regpublicationsend			- converts regpublication to binary format
+ */
+Datum
+regpublicationsend(PG_FUNCTION_ARGS)
 {
 	/* Exactly the same as oidsend, so share code */
 	return oidsend(fcinfo);

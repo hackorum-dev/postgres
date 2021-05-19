@@ -3,6 +3,10 @@
 --
 /* If objects exist, return oids */
 CREATE ROLE regress_regrole_test;
+-- suppress warning that depends on wal_level
+SET client_min_messages = 'ERROR';
+CREATE PUBLICATION regress_testpub;
+RESET client_min_messages;
 -- without schemaname
 SELECT regoper('||/');
  regoper 
@@ -192,6 +196,18 @@ SELECT regnamespace('"pg_catalog"');
  pg_catalog
 (1 row)
 
+SELECT regpublication('regress_testpub');
+ regpublication  
+-----------------
+ regress_testpub
+(1 row)
+
+SELECT regpublication('"regress_testpub"');
+ regpublication  
+-----------------
+ regress_testpub
+(1 row)
+
 SELECT to_regrole('regress_regrole_test');
       to_regrole      
 ----------------------
@@ -216,8 +232,21 @@ SELECT to_regnamespace('"pg_catalog"');
  pg_catalog
 (1 row)
 
+SELECT to_regpublication('regress_testpub');
+ to_regpublication 
+-------------------
+ regress_testpub
+(1 row)
+
+SELECT to_regpublication('"regress_testpub"');
+ to_regpublication 
+-------------------
+ regress_testpub
+(1 row)
+
 /* If objects don't exist, raise errors. */
 DROP ROLE regress_regrole_test;
+DROP PUBLICATION regress_testpub;
 -- without schemaname
 SELECT regoper('||//');
 ERROR:  operator does not exist: ||//
@@ -305,6 +334,18 @@ SELECT regnamespace('foo.bar');
 ERROR:  invalid name syntax
 LINE 1: SELECT regnamespace('foo.bar');
                             ^
+SELECT regpublication('Nonexistent');
+ERROR:  publication "nonexistent" does not exist
+LINE 1: SELECT regpublication('Nonexistent');
+                              ^
+SELECT regpublication('"Nonexistent"');
+ERROR:  publication "Nonexistent" does not exist
+LINE 1: SELECT regpublication('"Nonexistent"');
+                              ^
+SELECT regpublication('foo.bar');
+ERROR:  invalid name syntax
+LINE 1: SELECT regpublication('foo.bar');
+                              ^
 /* If objects don't exist, return NULL with no error. */
 -- without schemaname
 SELECT to_regoper('||//');
@@ -434,4 +475,18 @@ SELECT to_regnamespace('"Nonexistent"');
 (1 row)
 
 SELECT to_regnamespace('foo.bar');
+ERROR:  invalid name syntax
+SELECT to_regpublication('Nonexistent');
+ to_regpublication 
+-------------------
+ 
+(1 row)
+
+SELECT to_regpublication('"Nonexistent"');
+ to_regpublication 
+-------------------
+ 
+(1 row)
+
+SELECT to_regpublication('foo.bar');
 ERROR:  invalid name syntax

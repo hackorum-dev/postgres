@@ -4604,6 +4604,10 @@ INSERT INTO mytable VALUES(-1);  -- fails
    </indexterm>
 
    <indexterm zone="datatype-oid">
+    <primary>regpublication</primary>
+   </indexterm>
+
+   <indexterm zone="datatype-oid">
     <primary>regrole</primary>
    </indexterm>
 
@@ -4761,6 +4765,13 @@ SELECT * FROM pg_attribute
         <entry><structname>pg_proc</structname></entry>
         <entry>function with argument types</entry>
         <entry><literal>sum(int4)</literal></entry>
+       </row>
+
+       <row>
+        <entry><type>regpublication</type></entry>
+        <entry><structname>pg_publication</structname></entry>
+        <entry>publication name</entry>
+        <entry><literal>testpub</literal></entry>
        </row>
 
        <row>

@@ -785,6 +785,7 @@ psql --username=postgres --file=script.sql postgres
     <member><type>regoperator</type></member>
     <member><type>regproc</type></member>
     <member><type>regprocedure</type></member>
+    <member><type>regpublication</type></member>
    </simplelist>
    (<type>regclass</type>, <type>regrole</type>, and <type>regtype</type> can be upgraded.)
   </para>
