@@ -67,8 +67,25 @@ open_target_file(const char *path, bool trunc)
 		mode |= O_TRUNC;
 	dstfd = open(dstpath, mode, pg_file_create_mode);
 	if (dstfd < 0)
-		pg_fatal("could not open target file \"%s\": %m",
-				 dstpath);
+	{
+		if (errno == EACCES)
+		{
+			struct stat buf;
+
+			/* For read-only file, open() needs the write permission on the file. */
+			if (stat(dstpath, &buf) == 0 &&
+				!(buf.st_mode & S_IWUSR) &&
+				chmod(dstpath, buf.st_mode | S_IWUSR) == 0)
+			{
+				dstfd = open(dstpath, mode, pg_file_create_mode);
+				if (chmod(dstpath, buf.st_mode) != 0)
+					pg_fatal("could not chmod target file \"%s\": %m", dstpath);
+			}
+		}
+
+		if (dstfd < 0)
+			pg_fatal("could not open target file \"%s\": %m", dstpath);
+	}
 }
 
 /*
