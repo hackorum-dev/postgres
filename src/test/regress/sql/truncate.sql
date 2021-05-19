@@ -327,3 +327,8 @@ SELECT a as "from table ref_c" FROM ref_c;
 SELECT a as "from table trunc_a" FROM trunc_a ORDER BY a;
 
 DROP TABLE trunc_a, ref_c;
+
+-- truncate an user_catalog_table
+CREATE TABLE my_user_catalog_table (col integer) WITH (user_catalog_table = true);
+TRUNCATE my_user_catalog_table; -- should fail
+DROP TABLE my_user_catalog_table;
