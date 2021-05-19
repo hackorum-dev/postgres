@@ -592,3 +592,8 @@ SELECT a as "from table trunc_a" FROM trunc_a ORDER BY a;
 (3 rows)
 
 DROP TABLE trunc_a, ref_c;
+-- truncate an user_catalog_table
+CREATE TABLE my_user_catalog_table (col integer) WITH (user_catalog_table = true);
+TRUNCATE my_user_catalog_table; -- should fail
+ERROR:  cannot TRUNCATE an user_catalog_table
+DROP TABLE my_user_catalog_table;
