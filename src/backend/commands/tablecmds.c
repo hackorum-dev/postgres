@@ -2443,6 +2443,7 @@ static void
 truncate_check_rel(Oid relid, Form_pg_class reltuple)
 {
 	char	   *relname = NameStr(reltuple->relname);
+	Relation	relation = NULL;
 
 	/*
 	 * Only allow truncate on regular tables, foreign tables using foreign
@@ -2485,6 +2486,18 @@ truncate_check_rel(Oid relid, Form_pg_class reltuple)
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("permission denied: \"%s\" is a system catalog",
 						relname)));
+
+	/*
+	 * Disallow truncate on user_catalog_table, with attention to the deadlock
+	 * scenario that output plugin takes an lock on it in synchronous mode of
+	 * logical replication.
+	 */
+	relation = RelationIdGetRelation(relid);
+	if (RelationIsUsedAsCatalogTable(relation))
+		ereport(ERROR,
+				errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				errmsg("cannot TRUNCATE an user_catalog_table"));
+	RelationClose(relation);
 
 	InvokeObjectTruncateHook(relid);
 }
