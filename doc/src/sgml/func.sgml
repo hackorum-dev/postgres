@@ -23617,6 +23617,24 @@ SELECT collation for ('foo' COLLATE "de_DE");
       <row>
        <entry role="func_table_entry"><para role="func_signature">
         <indexterm>
+         <primary>to_regsubscription</primary>
+        </indexterm>
+        <function>to_regsubscription</function> ( <type>text</type> )
+        <returnvalue>regsubscritpion</returnvalue>
+       </para>
+       <para>
+        Translates a textual subscription name to its OID.  A similar result is
+        obtained by casting the string to type <type>regsubscription</type> (see
+        <xref linkend="datatype-oid"/>); however, this function will return
+        <literal>NULL</literal> rather than throwing an error if the name is
+        not found.  Also unlike the cast, this does not accept
+        a numeric OID as input.
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
          <primary>to_regrole</primary>
         </indexterm>
         <function>to_regrole</function> ( <type>text</type> )

@@ -6,6 +6,7 @@ CREATE ROLE regress_regrole_test;
 -- suppress warning that depends on wal_level
 SET client_min_messages = 'ERROR';
 CREATE PUBLICATION regress_testpub;
+CREATE SUBSCRIPTION regress_testsub CONNECTION 'dbname=regress_doesnotexist' PUBLICATION testpub WITH (connect = false);
 RESET client_min_messages;
 -- without schemaname
 SELECT regoper('||/');
@@ -208,6 +209,18 @@ SELECT regpublication('"regress_testpub"');
  regress_testpub
 (1 row)
 
+SELECT regsubscription('regress_testsub');
+ regsubscription 
+-----------------
+ regress_testsub
+(1 row)
+
+SELECT regsubscription('"regress_testsub"');
+ regsubscription 
+-----------------
+ regress_testsub
+(1 row)
+
 SELECT to_regrole('regress_regrole_test');
       to_regrole      
 ----------------------
@@ -244,9 +257,23 @@ SELECT to_regpublication('"regress_testpub"');
  regress_testpub
 (1 row)
 
+SELECT to_regsubscription('regress_testsub');
+ to_regsubscription 
+--------------------
+ regress_testsub
+(1 row)
+
+SELECT to_regsubscription('"regress_testsub"');
+ to_regsubscription 
+--------------------
+ regress_testsub
+(1 row)
+
 /* If objects don't exist, raise errors. */
 DROP ROLE regress_regrole_test;
 DROP PUBLICATION regress_testpub;
+ALTER SUBSCRIPTION regress_testsub SET (slot_name = NONE);
+DROP SUBSCRIPTION regress_testsub;
 -- without schemaname
 SELECT regoper('||//');
 ERROR:  operator does not exist: ||//
@@ -346,6 +373,18 @@ SELECT regpublication('foo.bar');
 ERROR:  invalid name syntax
 LINE 1: SELECT regpublication('foo.bar');
                               ^
+SELECT regsubscription('Nonexistent');
+ERROR:  subscription "nonexistent" does not exist
+LINE 1: SELECT regsubscription('Nonexistent');
+                               ^
+SELECT regsubscription('"Nonexistent"');
+ERROR:  subscription "Nonexistent" does not exist
+LINE 1: SELECT regsubscription('"Nonexistent"');
+                               ^
+SELECT regsubscription('foo.bar');
+ERROR:  invalid name syntax
+LINE 1: SELECT regsubscription('foo.bar');
+                               ^
 /* If objects don't exist, return NULL with no error. */
 -- without schemaname
 SELECT to_regoper('||//');
@@ -489,4 +528,18 @@ SELECT to_regpublication('"Nonexistent"');
 (1 row)
 
 SELECT to_regpublication('foo.bar');
+ERROR:  invalid name syntax
+SELECT to_regsubscription('Nonexistent');
+ to_regsubscription 
+--------------------
+ 
+(1 row)
+
+SELECT to_regsubscription('"Nonexistent"');
+ to_regsubscription 
+--------------------
+ 
+(1 row)
+
+SELECT to_regsubscription('foo.bar');
 ERROR:  invalid name syntax

@@ -9,6 +9,7 @@ CREATE ROLE regress_regrole_test;
 -- suppress warning that depends on wal_level
 SET client_min_messages = 'ERROR';
 CREATE PUBLICATION regress_testpub;
+CREATE SUBSCRIPTION regress_testsub CONNECTION 'dbname=regress_doesnotexist' PUBLICATION testpub WITH (connect = false);
 RESET client_min_messages;
 
 -- without schemaname
@@ -54,6 +55,8 @@ SELECT regnamespace('pg_catalog');
 SELECT regnamespace('"pg_catalog"');
 SELECT regpublication('regress_testpub');
 SELECT regpublication('"regress_testpub"');
+SELECT regsubscription('regress_testsub');
+SELECT regsubscription('"regress_testsub"');
 
 SELECT to_regrole('regress_regrole_test');
 SELECT to_regrole('"regress_regrole_test"');
@@ -61,11 +64,15 @@ SELECT to_regnamespace('pg_catalog');
 SELECT to_regnamespace('"pg_catalog"');
 SELECT to_regpublication('regress_testpub');
 SELECT to_regpublication('"regress_testpub"');
+SELECT to_regsubscription('regress_testsub');
+SELECT to_regsubscription('"regress_testsub"');
 
 /* If objects don't exist, raise errors. */
 
 DROP ROLE regress_regrole_test;
 DROP PUBLICATION regress_testpub;
+ALTER SUBSCRIPTION regress_testsub SET (slot_name = NONE);
+DROP SUBSCRIPTION regress_testsub;
 
 -- without schemaname
 
@@ -99,6 +106,9 @@ SELECT regnamespace('foo.bar');
 SELECT regpublication('Nonexistent');
 SELECT regpublication('"Nonexistent"');
 SELECT regpublication('foo.bar');
+SELECT regsubscription('Nonexistent');
+SELECT regsubscription('"Nonexistent"');
+SELECT regsubscription('foo.bar');
 
 /* If objects don't exist, return NULL with no error. */
 
@@ -136,3 +146,6 @@ SELECT to_regnamespace('foo.bar');
 SELECT to_regpublication('Nonexistent');
 SELECT to_regpublication('"Nonexistent"');
 SELECT to_regpublication('foo.bar');
+SELECT to_regsubscription('Nonexistent');
+SELECT to_regsubscription('"Nonexistent"');
+SELECT to_regsubscription('foo.bar');

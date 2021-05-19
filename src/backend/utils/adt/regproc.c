@@ -28,6 +28,7 @@
 #include "catalog/pg_operator.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_publication.h"
+#include "catalog/pg_subscription.h"
 #include "catalog/pg_ts_config.h"
 #include "catalog/pg_ts_dict.h"
 #include "catalog/pg_type.h"
@@ -1357,6 +1358,130 @@ regpublicationsend(PG_FUNCTION_ARGS)
 	return oidsend(fcinfo);
 }
 
+/*
+ * regsubscriptionin		- converts "subscriptionname" to subscription OID
+ *
+ * We also accept a numeric OID, for symmetry with the output routine.
+ *
+ * '-' signifies unknown (OID 0).  In all other cases, the input must
+ * match an existing pg_subscription entry.
+ */
+Datum
+regsubscriptionin(PG_FUNCTION_ARGS)
+{
+	char	   *subscription_name_or_oid = PG_GETARG_CSTRING(0);
+	Oid			result = InvalidOid;
+	List	   *names;
+
+	/* '-' ? */
+	if (strcmp(subscription_name_or_oid, "-") == 0)
+		PG_RETURN_OID(InvalidOid);
+
+	/* Numeric OID? */
+	if (subscription_name_or_oid[0] >= '0' &&
+		subscription_name_or_oid[0] <= '9' &&
+		strspn(subscription_name_or_oid, "0123456789") == strlen(subscription_name_or_oid))
+	{
+		result = DatumGetObjectId(DirectFunctionCall1(oidin,
+													  CStringGetDatum(subscription_name_or_oid)));
+		PG_RETURN_OID(result);
+	}
+
+	/* The rest of this wouldn't work in bootstrap mode */
+	if (IsBootstrapProcessingMode())
+		elog(ERROR, "regsubscription values must be OIDs in bootstrap mode");
+
+	/*
+	 * Normal case: parse the name into components and see if it matches any
+	 * pg_subscription entries in the current search path.
+	 */
+	names = stringToQualifiedNameList(subscription_name_or_oid);
+	if (list_length(names) != 1)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_NAME),
+				 errmsg("invalid name syntax")));
+
+	result = get_subscription_oid(strVal(linitial(names)), false);
+
+	PG_RETURN_OID(result);
+}
+
+/*
+ * to_regsubscription		- converts "subscriptionname" to subscription OID
+ *
+ * If the name is not found, we return NULL.
+ */
+Datum
+to_regsubscription(PG_FUNCTION_ARGS)
+{
+	char	   *subscription_name = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	Oid			result;
+	List	   *names;
+
+	names = stringToQualifiedNameList(subscription_name);
+	if (list_length(names) != 1)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_NAME),
+				 errmsg("invalid name syntax")));
+
+	result = get_subscription_oid(strVal(linitial(names)), true);
+
+	if (OidIsValid(result))
+		PG_RETURN_OID(result);
+	else
+		PG_RETURN_NULL();
+}
+
+/*
+ * regsubscriptionout		- converts subscription OID to "subscription_name"
+ */
+Datum
+regsubscriptionout(PG_FUNCTION_ARGS)
+{
+	Oid			subscriptionid = PG_GETARG_OID(0);
+	char	   *result;
+
+	if (subscriptionid == InvalidOid)
+	{
+		result = pstrdup("-");
+		PG_RETURN_CSTRING(result);
+	}
+
+	result = get_subscription_name(subscriptionid, true);
+	if (result)
+	{
+		/* pstrdup is not really necessary, but it avoids a compiler warning */
+		result = pstrdup(quote_identifier(result));
+	}
+	else
+	{
+		/* If OID doesn't match any subscription, return it numerically */
+		result = (char *) palloc(NAMEDATALEN);
+		snprintf(result, NAMEDATALEN, "%u", subscriptionid);
+	}
+
+	PG_RETURN_CSTRING(result);
+}
+
+/*
+ *		regsubscriptionrecv			- converts external binary format to regsubscription
+ */
+Datum
+regsubscriptionrecv(PG_FUNCTION_ARGS)
+{
+	/* Exactly the same as oidrecv, so share code */
+	return oidrecv(fcinfo);
+}
+
+/*
+ *		regsubscriptionsend			- converts regsubscription to binary format
+ */
+Datum
+regsubscriptionsend(PG_FUNCTION_ARGS)
+{
+	/* Exactly the same as oidsend, so share code */
+	return oidsend(fcinfo);
+}
 
 /*
  * regtypein		- converts "typename" to type OID

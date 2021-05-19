@@ -4608,6 +4608,10 @@ INSERT INTO mytable VALUES(-1);  -- fails
    </indexterm>
 
    <indexterm zone="datatype-oid">
+    <primary>regsubscription</primary>
+   </indexterm>
+
+   <indexterm zone="datatype-oid">
     <primary>regrole</primary>
    </indexterm>
 
@@ -4772,6 +4776,13 @@ SELECT * FROM pg_attribute
         <entry><structname>pg_publication</structname></entry>
         <entry>publication name</entry>
         <entry><literal>testpub</literal></entry>
+       </row>
+
+       <row>
+        <entry><type>regsubscription</type></entry>
+        <entry><structname>pg_subscription</structname></entry>
+        <entry>subscription name</entry>
+        <entry><literal>testsub</literal></entry>
        </row>
 
        <row>

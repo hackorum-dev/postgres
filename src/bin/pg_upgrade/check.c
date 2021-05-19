@@ -1142,7 +1142,8 @@ check_for_reg_data_type_usage(ClusterInfo *cluster)
 									   "           'regoperator', "
 									   "           'regproc', "
 									   "           'regprocedure', "
-									   "		   'regpublication' "
+									   "		   'regpublication', "
+									   "		   'regsubscription' "
 	/* pg_authid.oid is preserved, so 'regrole' is OK */
 	/* pg_type.oid is (mostly) preserved, so 'regtype' is OK */
 									   "         )",
