@@ -554,9 +554,9 @@ DROP ROLE doomed_role;
       <row>
        <entry>pg_monitor</entry>
        <entry>Read/execute various monitoring views and functions.
-       This role is a member of <literal>pg_read_all_settings</literal>,
-       <literal>pg_read_all_stats</literal> and
-       <literal>pg_stat_scan_tables</literal>.</entry>
+       The roles <literal>pg_read_all_settings</literal>,
+       <literal>pg_read_all_stats</literal> and <literal>pg_stat_scan_tables</literal>
+       are members of this role.</entry>
       </row>
       <row>
        <entry>pg_database_owner</entry>
