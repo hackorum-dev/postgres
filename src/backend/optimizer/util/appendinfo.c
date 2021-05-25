@@ -298,8 +298,8 @@ adjust_appendrel_attrs_mutator(Node *node,
 					List	   *fields;
 					RangeTblEntry *rte;
 
-					rte = rt_fetch(appinfo->parent_relid,
-								   context->root->parse->rtable);
+					rte = planner_rt_fetch(appinfo->parent_relid,
+										   context->root);
 					fields = copyObject(appinfo->translated_vars);
 					rowexpr = makeNode(RowExpr);
 					rowexpr->args = fields;

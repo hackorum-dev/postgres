@@ -641,7 +641,7 @@ infer_arbiter_indexes(PlannerInfo *root)
 	 * the rewriter or when expand_inherited_rtentry() added it to the query's
 	 * rangetable.
 	 */
-	rte = rt_fetch(root->parse->resultRelation, root->parse->rtable);
+	rte = planner_rt_fetch(root->parse->resultRelation, root);
 
 	relation = table_open(rte->relid, NoLock);
 
