@@ -4272,10 +4272,7 @@ inline_function(Oid funcid, Oid result_type, Oid result_collid,
 	inline_error_callback_arg callback_arg;
 	ErrorContextCallback sqlerrcontext;
 	FuncExpr   *fexpr;
-	SQLFunctionParseInfoPtr pinfo;
 	TupleDesc	rettupdesc;
-	ParseState *pstate;
-	List	   *raw_parsetree_list;
 	List	   *querytree_list;
 	Query	   *querytree;
 	Node	   *newexpr;
@@ -4338,6 +4335,26 @@ inline_function(Oid funcid, Oid result_type, Oid result_collid,
 	sqlerrcontext.previous = error_context_stack;
 	error_context_stack = &sqlerrcontext;
 
+	/*
+	 * Create a dummy FuncExpr node containing the already-simplified
+	 * arguments to pass to prepare_sql_fn_parse_info.
+	 */
+	fexpr = makeNode(FuncExpr);
+	fexpr->funcid = funcid;
+	fexpr->funcresulttype = result_type;
+	fexpr->funcretset = false;
+	fexpr->funcvariadic = funcvariadic;
+	fexpr->funcformat = COERCE_EXPLICIT_CALL;	/* doesn't matter */
+	fexpr->funccollid = result_collid;	/* doesn't matter */
+	fexpr->inputcollid = input_collid;
+	fexpr->args = args;
+	fexpr->location = -1;
+
+	/* fexpr also provides a convenient way to resolve a composite result */
+	(void) get_expr_result_type((Node *) fexpr,
+								NULL,
+								&rettupdesc);
+
 	/* If we have prosqlbody, pay attention to that not prosrc */
 	tmp = SysCacheGetAttr(PROCOID,
 						  func_tuple,
@@ -4346,7 +4363,6 @@ inline_function(Oid funcid, Oid result_type, Oid result_collid,
 	if (!isNull)
 	{
 		Node	   *n;
-		List	   *querytree_list;
 
 		n = stringToNode(TextDatumGetCString(tmp));
 		if (IsA(n, List))
@@ -4359,31 +4375,15 @@ inline_function(Oid funcid, Oid result_type, Oid result_collid,
 	}
 	else
 	{
-		/*
-		 * Set up to handle parameters while parsing the function body.  We
-		 * need a dummy FuncExpr node containing the already-simplified
-		 * arguments to pass to prepare_sql_fn_parse_info.  (In some cases we
-		 * don't really need that, but for simplicity we always build it.)
-		 */
-		fexpr = makeNode(FuncExpr);
-		fexpr->funcid = funcid;
-		fexpr->funcresulttype = result_type;
-		fexpr->funcretset = false;
-		fexpr->funcvariadic = funcvariadic;
-		fexpr->funcformat = COERCE_EXPLICIT_CALL;	/* doesn't matter */
-		fexpr->funccollid = result_collid;	/* doesn't matter */
-		fexpr->inputcollid = input_collid;
-		fexpr->args = args;
-		fexpr->location = -1;
+	    SQLFunctionParseInfoPtr pinfo;
+	    ParseState *pstate;
 
+	    /*
+	    * Set up to handle parameters while parsing the function body.
+	    */
 		pinfo = prepare_sql_fn_parse_info(func_tuple,
 										  (Node *) fexpr,
 										  input_collid);
-
-		/* fexpr also provides a convenient way to resolve a composite result */
-		(void) get_expr_result_type((Node *) fexpr,
-									NULL,
-									&rettupdesc);
 
 		/*
 		 * We just do parsing and parse analysis, not rewriting, because
@@ -4391,15 +4391,15 @@ inline_function(Oid funcid, Oid result_type, Oid result_collid,
 		 * all that we care about.  Also, we can punt as soon as we detect
 		 * more than one command in the function body.
 		 */
-		raw_parsetree_list = pg_parse_query(src);
-		if (list_length(raw_parsetree_list) != 1)
+		querytree_list = pg_parse_query(src);
+		if (list_length(querytree_list) != 1)
 			goto fail;
 
 		pstate = make_parsestate(NULL);
 		pstate->p_sourcetext = src;
 		sql_fn_parser_setup(pstate, pinfo);
 
-		querytree = transformTopLevelStmt(pstate, linitial(raw_parsetree_list));
+		querytree = transformTopLevelStmt(pstate, linitial(querytree_list));
 
 		free_parsestate(pstate);
 	}
