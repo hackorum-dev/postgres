@@ -4969,7 +4969,7 @@ l3:
 				 */
 				if (!HeapTupleHeaderIsOnlyLocked(tuple->t_data) &&
 					((tuple->t_data->t_infomask2 & HEAP_KEYS_UPDATED) ||
-					 !updated))
+					 (!updated && follow_updates)))
 					goto l3;
 
 				/* Things look okay, so we can skip sleeping */
