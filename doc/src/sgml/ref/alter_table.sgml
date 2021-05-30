@@ -315,6 +315,14 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
       column is not a generated column, no error is thrown.  In this case a
       notice is issued instead.
      </para>
+
+     <note>
+      <para>
+       Turning a column into generated or changing the generation expression
+       is currently not supported.  To do that, use <command>DROP COLUMN</command>
+       and <command>CREATE COLUMN</command> with <command>GENERATED ALWAYS AS ( generation_expr ) STORED</command>.
+      </para>
+     </note>
     </listitem>
    </varlistentry>
 
