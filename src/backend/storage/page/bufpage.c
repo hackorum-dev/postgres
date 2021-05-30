@@ -689,6 +689,17 @@ compactify_tuples(itemIdCompact itemidbase, int nitems, Page page, bool presorte
 }
 
 /*
+ * Clean up space between pd_lower and pd_upper for better page compression.
+ */
+static void
+memset_hole(Page page, LocationIndex old_pd_upper)
+{
+	PageHeader	phdr = (PageHeader) page;
+	if (phdr->pd_upper > old_pd_upper)
+		MemSet((char *)page + old_pd_upper, 0, phdr->pd_upper - old_pd_upper);
+}
+
+/*
  * PageRepairFragmentation
  *
  * Frees fragmented space on a heap page following pruning.
@@ -800,6 +811,7 @@ PageRepairFragmentation(Page page)
 
 		compactify_tuples(itemidbase, nstorage, page, presorted);
 	}
+	memset_hole(page, pd_upper);
 
 	if (finalusedlp != nline)
 	{
@@ -1130,6 +1142,7 @@ PageIndexTupleDelete(Page page, OffsetNumber offnum)
 
 	if (offset > phdr->pd_upper)
 		memmove(addr + size, addr, offset - phdr->pd_upper);
+	MemSet(addr, 0, size);
 
 	/* adjust free space boundary pointers */
 	phdr->pd_upper += size;
@@ -1287,6 +1300,7 @@ PageIndexMultiDelete(Page page, OffsetNumber *itemnos, int nitems)
 		compactify_tuples(itemidbase, nused, page, presorted);
 	else
 		phdr->pd_upper = pd_special;
+	memset_hole(page, pd_upper);
 }
 
 
@@ -1367,6 +1381,7 @@ PageIndexTupleDeleteNoCompact(Page page, OffsetNumber offnum)
 
 	if (offset > phdr->pd_upper)
 		memmove(addr + size, addr, offset - phdr->pd_upper);
+	MemSet(addr, 0, size);
 
 	/* adjust free space boundary pointer */
 	phdr->pd_upper += size;
