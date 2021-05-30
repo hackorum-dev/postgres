@@ -200,8 +200,8 @@ gistMakeUnionItVec(GISTSTATE *giststate, IndexTuple *itvec, int len,
 			}
 
 			/* Make union and store in attr array */
-			attr[i] = FunctionCall2Coll(&giststate->unionFn[i],
-										giststate->supportCollation[i],
+			attr[i] = FunctionCall2Coll(&giststate->column_state[i].unionFn,
+										giststate->column_state[i].supportCollation,
 										PointerGetDatum(evec),
 										PointerGetDatum(&attrsize));
 
@@ -269,8 +269,8 @@ gistMakeUnionKey(GISTSTATE *giststate, int attno,
 		}
 
 		*dstisnull = false;
-		*dst = FunctionCall2Coll(&giststate->unionFn[attno],
-								 giststate->supportCollation[attno],
+		*dst = FunctionCall2Coll(&giststate->column_state[attno].unionFn,
+								 giststate->column_state[attno].supportCollation,
 								 PointerGetDatum(evec),
 								 PointerGetDatum(&dstsize));
 	}
@@ -281,8 +281,8 @@ gistKeyIsEQ(GISTSTATE *giststate, int attno, Datum a, Datum b)
 {
 	bool		result;
 
-	FunctionCall3Coll(&giststate->equalFn[attno],
-					  giststate->supportCollation[attno],
+	FunctionCall3Coll(&giststate->column_state[attno].equalFn,
+					  giststate->column_state[attno].supportCollation,
 					  a, b,
 					  PointerGetDatum(&result));
 	return result;
@@ -554,12 +554,12 @@ gistdentryinit(GISTSTATE *giststate, int nkey, GISTENTRY *e,
 		gistentryinit(*e, k, r, pg, o, l);
 
 		/* there may not be a decompress function in opclass */
-		if (!OidIsValid(giststate->decompressFn[nkey].fn_oid))
+		if (!OidIsValid(giststate->column_state[nkey].decompressFn.fn_oid))
 			return;
 
 		dep = (GISTENTRY *)
-			DatumGetPointer(FunctionCall1Coll(&giststate->decompressFn[nkey],
-											  giststate->supportCollation[nkey],
+			DatumGetPointer(FunctionCall1Coll(&giststate->column_state[nkey].decompressFn,
+											  giststate->column_state[nkey].supportCollation,
 											  PointerGetDatum(e)));
 		/* decompressFn may just return the given pointer */
 		if (dep != e)
@@ -612,10 +612,10 @@ gistCompressValues(GISTSTATE *giststate, Relation r,
 			gistentryinit(centry, attdata[i], r, NULL, (OffsetNumber) 0,
 						  isleaf);
 			/* there may not be a compress function in opclass */
-			if (OidIsValid(giststate->compressFn[i].fn_oid))
+			if (OidIsValid(giststate->column_state[i].compressFn.fn_oid))
 				cep = (GISTENTRY *)
-					DatumGetPointer(FunctionCall1Coll(&giststate->compressFn[i],
-													  giststate->supportCollation[i],
+					DatumGetPointer(FunctionCall1Coll(&giststate->column_state[i].compressFn,
+													  giststate->column_state[i].supportCollation,
 													  PointerGetDatum(&centry)));
 			else
 				cep = &centry;
@@ -650,8 +650,8 @@ gistFetchAtt(GISTSTATE *giststate, int nkey, Datum k, Relation r)
 	gistentryinit(fentry, k, r, NULL, (OffsetNumber) 0, false);
 
 	fep = (GISTENTRY *)
-		DatumGetPointer(FunctionCall1Coll(&giststate->fetchFn[nkey],
-										  giststate->supportCollation[nkey],
+		DatumGetPointer(FunctionCall1Coll(&giststate->column_state[nkey].fetchFn,
+										  giststate->column_state[nkey].supportCollation,
 										  PointerGetDatum(&fentry)));
 
 	/* fetchFn set 'key', return it to the caller */
@@ -676,14 +676,14 @@ gistFetchTuple(GISTSTATE *giststate, Relation r, IndexTuple tuple)
 
 		datum = index_getattr(tuple, i + 1, giststate->leafTupdesc, &isnull[i]);
 
-		if (giststate->fetchFn[i].fn_oid != InvalidOid)
+		if (giststate->column_state[i].fetchFn.fn_oid != InvalidOid)
 		{
 			if (!isnull[i])
 				fetchatt[i] = gistFetchAtt(giststate, i, datum, r);
 			else
 				fetchatt[i] = (Datum) 0;
 		}
-		else if (giststate->compressFn[i].fn_oid == InvalidOid)
+		else if (giststate->column_state[i].compressFn.fn_oid == InvalidOid)
 		{
 			/*
 			 * If opclass does not provide compress method that could change
@@ -726,11 +726,11 @@ gistpenalty(GISTSTATE *giststate, int attno,
 {
 	float		penalty = 0.0;
 
-	if (giststate->penaltyFn[attno].fn_strict == false ||
+	if (giststate->column_state[attno].penaltyFn.fn_strict == false ||
 		(isNullOrig == false && isNullAdd == false))
 	{
-		FunctionCall3Coll(&giststate->penaltyFn[attno],
-						  giststate->supportCollation[attno],
+		FunctionCall3Coll(&giststate->column_state[attno].penaltyFn,
+						  giststate->column_state[attno].supportCollation,
 						  PointerGetDatum(orig),
 						  PointerGetDatum(add),
 						  PointerGetDatum(&penalty));

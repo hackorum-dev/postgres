@@ -258,7 +258,7 @@ gistrescan(IndexScanDesc scan, ScanKey key, int nkeys,
 			 * of function implementing filtering operator.
 			 */
 			fmgr_info_copy(&(skey->sk_func),
-						   &(so->giststate->consistentFn[skey->sk_attno - 1]),
+						   &(so->giststate->column_state[skey->sk_attno - 1].consistentFn),
 						   so->giststate->scanCxt);
 
 			/* Restore prior fn_extra pointers, if not first time */
@@ -304,7 +304,7 @@ gistrescan(IndexScanDesc scan, ScanKey key, int nkeys,
 		for (i = 0; i < scan->numberOfOrderBys; i++)
 		{
 			ScanKey		skey = scan->orderByData + i;
-			FmgrInfo   *finfo = &(so->giststate->distanceFn[skey->sk_attno - 1]);
+			FmgrInfo   *finfo = &(so->giststate->column_state[skey->sk_attno - 1].distanceFn);
 
 			/* Check we actually have a distance function ... */
 			if (!OidIsValid(finfo->fn_oid))

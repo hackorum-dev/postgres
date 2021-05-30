@@ -59,6 +59,22 @@ typedef struct
 #define PAGE_NO_SPACE(nbp, itup) (PAGE_FREE_SPACE(nbp) < \
 										MAXALIGN(IndexTupleSize(itup)))
 
+typedef struct GIST_COL_STATE
+{
+	FmgrInfo	consistentFn;
+	FmgrInfo	unionFn;
+	FmgrInfo	compressFn;
+	FmgrInfo	decompressFn;
+	FmgrInfo	penaltyFn;
+	FmgrInfo	picksplitFn;
+	FmgrInfo	equalFn;
+	FmgrInfo	distanceFn;
+	FmgrInfo	fetchFn;
+
+	/* Collations to pass to the support functions */
+	Oid			supportCollation;
+} GIST_COL_STATE;
+
 /*
  * GISTSTATE: information needed for any GiST index operation
  *
@@ -83,18 +99,7 @@ typedef struct GISTSTATE
 	TupleDesc	fetchTupdesc;	/* tuple descriptor for tuples returned in an
 								 * index-only scan */
 
-	FmgrInfo	consistentFn[INDEX_MAX_KEYS];
-	FmgrInfo	unionFn[INDEX_MAX_KEYS];
-	FmgrInfo	compressFn[INDEX_MAX_KEYS];
-	FmgrInfo	decompressFn[INDEX_MAX_KEYS];
-	FmgrInfo	penaltyFn[INDEX_MAX_KEYS];
-	FmgrInfo	picksplitFn[INDEX_MAX_KEYS];
-	FmgrInfo	equalFn[INDEX_MAX_KEYS];
-	FmgrInfo	distanceFn[INDEX_MAX_KEYS];
-	FmgrInfo	fetchFn[INDEX_MAX_KEYS];
-
-	/* Collations to pass to the support functions */
-	Oid			supportCollation[INDEX_MAX_KEYS];
+	GIST_COL_STATE column_state[FLEXIBLE_ARRAY_MEMBER];
 } GISTSTATE;
 
 

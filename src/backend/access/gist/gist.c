@@ -1507,11 +1507,6 @@ initGISTstate(Relation index)
 	MemoryContext oldCxt;
 	int			i;
 
-	/* safety check to protect fixed-size arrays in GISTSTATE */
-	if (index->rd_att->natts > INDEX_MAX_KEYS)
-		elog(ERROR, "numberOfAttributes %d > %d",
-			 index->rd_att->natts, INDEX_MAX_KEYS);
-
 	/* Create the memory context that will hold the GISTSTATE */
 	scanCxt = AllocSetContextCreate(CurrentMemoryContext,
 									"GiST scan context",
@@ -1519,7 +1514,8 @@ initGISTstate(Relation index)
 	oldCxt = MemoryContextSwitchTo(scanCxt);
 
 	/* Create and fill in the GISTSTATE */
-	giststate = (GISTSTATE *) palloc(sizeof(GISTSTATE));
+	giststate = (GISTSTATE *) palloc(offsetof(GISTSTATE, column_state) +
+									 sizeof(GIST_COL_STATE) * index->rd_att->natts);
 
 	giststate->scanCxt = scanCxt;
 	giststate->tempCxt = scanCxt;	/* caller must change this if needed */
@@ -1541,54 +1537,54 @@ initGISTstate(Relation index)
 
 	for (i = 0; i < IndexRelationGetNumberOfKeyAttributes(index); i++)
 	{
-		fmgr_info_copy(&(giststate->consistentFn[i]),
+		fmgr_info_copy(&(giststate->column_state[i].consistentFn),
 					   index_getprocinfo(index, i + 1, GIST_CONSISTENT_PROC),
 					   scanCxt);
-		fmgr_info_copy(&(giststate->unionFn[i]),
+		fmgr_info_copy(&(giststate->column_state[i].unionFn),
 					   index_getprocinfo(index, i + 1, GIST_UNION_PROC),
 					   scanCxt);
 
 		/* opclasses are not required to provide a Compress method */
 		if (OidIsValid(index_getprocid(index, i + 1, GIST_COMPRESS_PROC)))
-			fmgr_info_copy(&(giststate->compressFn[i]),
+			fmgr_info_copy(&(giststate->column_state[i].compressFn),
 						   index_getprocinfo(index, i + 1, GIST_COMPRESS_PROC),
 						   scanCxt);
 		else
-			giststate->compressFn[i].fn_oid = InvalidOid;
+			giststate->column_state[i].compressFn.fn_oid = InvalidOid;
 
 		/* opclasses are not required to provide a Decompress method */
 		if (OidIsValid(index_getprocid(index, i + 1, GIST_DECOMPRESS_PROC)))
-			fmgr_info_copy(&(giststate->decompressFn[i]),
+			fmgr_info_copy(&(giststate->column_state[i].decompressFn),
 						   index_getprocinfo(index, i + 1, GIST_DECOMPRESS_PROC),
 						   scanCxt);
 		else
-			giststate->decompressFn[i].fn_oid = InvalidOid;
+			giststate->column_state[i].decompressFn.fn_oid = InvalidOid;
 
-		fmgr_info_copy(&(giststate->penaltyFn[i]),
+		fmgr_info_copy(&(giststate->column_state[i].penaltyFn),
 					   index_getprocinfo(index, i + 1, GIST_PENALTY_PROC),
 					   scanCxt);
-		fmgr_info_copy(&(giststate->picksplitFn[i]),
+		fmgr_info_copy(&(giststate->column_state[i].picksplitFn),
 					   index_getprocinfo(index, i + 1, GIST_PICKSPLIT_PROC),
 					   scanCxt);
-		fmgr_info_copy(&(giststate->equalFn[i]),
+		fmgr_info_copy(&(giststate->column_state[i].equalFn),
 					   index_getprocinfo(index, i + 1, GIST_EQUAL_PROC),
 					   scanCxt);
 
 		/* opclasses are not required to provide a Distance method */
 		if (OidIsValid(index_getprocid(index, i + 1, GIST_DISTANCE_PROC)))
-			fmgr_info_copy(&(giststate->distanceFn[i]),
+			fmgr_info_copy(&(giststate->column_state[i].distanceFn),
 						   index_getprocinfo(index, i + 1, GIST_DISTANCE_PROC),
 						   scanCxt);
 		else
-			giststate->distanceFn[i].fn_oid = InvalidOid;
+			giststate->column_state[i].distanceFn.fn_oid = InvalidOid;
 
 		/* opclasses are not required to provide a Fetch method */
 		if (OidIsValid(index_getprocid(index, i + 1, GIST_FETCH_PROC)))
-			fmgr_info_copy(&(giststate->fetchFn[i]),
+			fmgr_info_copy(&(giststate->column_state[i].fetchFn),
 						   index_getprocinfo(index, i + 1, GIST_FETCH_PROC),
 						   scanCxt);
 		else
-			giststate->fetchFn[i].fn_oid = InvalidOid;
+			giststate->column_state[i].fetchFn.fn_oid = InvalidOid;
 
 		/*
 		 * If the index column has a specified collation, we should honor that
@@ -1602,24 +1598,24 @@ initGISTstate(Relation index)
 		 * any cases where a GiST storage type has a nondefault collation.)
 		 */
 		if (OidIsValid(index->rd_indcollation[i]))
-			giststate->supportCollation[i] = index->rd_indcollation[i];
+			giststate->column_state[i].supportCollation = index->rd_indcollation[i];
 		else
-			giststate->supportCollation[i] = DEFAULT_COLLATION_OID;
+			giststate->column_state[i].supportCollation = DEFAULT_COLLATION_OID;
 	}
 
 	/* No opclass information for INCLUDE attributes */
 	for (; i < index->rd_att->natts; i++)
 	{
-		giststate->consistentFn[i].fn_oid = InvalidOid;
-		giststate->unionFn[i].fn_oid = InvalidOid;
-		giststate->compressFn[i].fn_oid = InvalidOid;
-		giststate->decompressFn[i].fn_oid = InvalidOid;
-		giststate->penaltyFn[i].fn_oid = InvalidOid;
-		giststate->picksplitFn[i].fn_oid = InvalidOid;
-		giststate->equalFn[i].fn_oid = InvalidOid;
-		giststate->distanceFn[i].fn_oid = InvalidOid;
-		giststate->fetchFn[i].fn_oid = InvalidOid;
-		giststate->supportCollation[i] = InvalidOid;
+		giststate->column_state[i].consistentFn.fn_oid = InvalidOid;
+		giststate->column_state[i].unionFn.fn_oid = InvalidOid;
+		giststate->column_state[i].compressFn.fn_oid = InvalidOid;
+		giststate->column_state[i].decompressFn.fn_oid = InvalidOid;
+		giststate->column_state[i].penaltyFn.fn_oid = InvalidOid;
+		giststate->column_state[i].picksplitFn.fn_oid = InvalidOid;
+		giststate->column_state[i].equalFn.fn_oid = InvalidOid;
+		giststate->column_state[i].distanceFn.fn_oid = InvalidOid;
+		giststate->column_state[i].fetchFn.fn_oid = InvalidOid;
+		giststate->column_state[i].supportCollation = InvalidOid;
 	}
 
 	MemoryContextSwitchTo(oldCxt);
