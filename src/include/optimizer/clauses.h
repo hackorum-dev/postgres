@@ -53,4 +53,6 @@ extern void CommuteOpExpr(OpExpr *clause);
 extern Query *inline_set_returning_function(PlannerInfo *root,
 											RangeTblEntry *rte);
 
+extern bool is_parallel_allowed_for_modify(Query *parse);
+
 #endif							/* CLAUSES_H */
