@@ -637,6 +637,7 @@ pq_lockingcallback(int mode, int n, const char *file, int line)
 int
 pgtls_init(PGconn *conn, bool do_ssl, bool do_crypto)
 {
+	int			error;
 #ifdef ENABLE_THREAD_SAFETY
 #ifdef WIN32
 	/* Also see similar code in fe-connect.c, default_threadlock() */
@@ -646,8 +647,8 @@ pgtls_init(PGconn *conn, bool do_ssl, bool do_crypto)
 			 /* loop, another thread own the lock */ ;
 		if (ssl_config_mutex == NULL)
 		{
-			if (pthread_mutex_init(&ssl_config_mutex, NULL))
-				return -1;
+			if ((error = pthread_mutex_init(&ssl_config_mutex, NULL)) != 0)
+				return error;
 		}
 		InterlockedExchange(&win32_ssl_create_mutex, 0);
 	}
@@ -674,12 +675,12 @@ pgtls_init(PGconn *conn, bool do_ssl, bool do_crypto)
 			}
 			for (i = 0; i < CRYPTO_num_locks(); i++)
 			{
-				if (pthread_mutex_init(&pq_lockarray[i], NULL))
+				if ((error = pthread_mutex_init(&pq_lockarray[i], NULL)) != 0)
 				{
 					free(pq_lockarray);
 					pq_lockarray = NULL;
 					pthread_mutex_unlock(&ssl_config_mutex);
-					return -1;
+					return error;
 				}
 			}
 		}
