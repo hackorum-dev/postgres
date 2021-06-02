@@ -1460,7 +1460,7 @@ CreateExtensionInternal(char *extensionName,
 	if (schemaName)
 	{
 		/* If the user is giving us the schema name, it must exist already. */
-		schemaOid = get_namespace_oid(schemaName, false);
+		schemaOid = get_namespace_oid(schemaName, InvalidOid, false);
 	}
 
 	if (control->schema != NULL)
@@ -1484,7 +1484,7 @@ CreateExtensionInternal(char *extensionName,
 		schemaName = control->schema;
 
 		/* Find or create the schema in case it does not exist. */
-		schemaOid = get_namespace_oid(schemaName, true);
+		schemaOid = get_namespace_oid(schemaName, InvalidOid, true);
 
 		if (!OidIsValid(schemaOid))
 		{
@@ -1501,7 +1501,7 @@ CreateExtensionInternal(char *extensionName,
 			 * CreateSchemaCommand includes CommandCounterIncrement, so new
 			 * schema is now visible.
 			 */
-			schemaOid = get_namespace_oid(schemaName, false);
+			schemaOid = get_namespace_oid(schemaName, InvalidOid, false);
 		}
 	}
 	else if (!OidIsValid(schemaOid))

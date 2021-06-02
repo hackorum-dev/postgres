@@ -473,7 +473,7 @@ RangeVarGetCreationNamespace(const RangeVar *newRelation)
 			return myTempNamespace;
 		}
 		/* use exact schema given */
-		namespaceId = get_namespace_oid(newRelation->schemaname, false);
+		namespaceId = get_namespace_oid(newRelation->schemaname, InvalidOid, false);
 		/* we do not check for USAGE rights here! */
 	}
 	else if (newRelation->relpersistence == RELPERSISTENCE_TEMP)
@@ -945,9 +945,11 @@ FuncnameGetCandidates(List *names, int nargs, List *argnames,
 {
 	FuncCandidateList resultList = NULL;
 	bool		any_special = false;
-	char	   *schemaname;
+	char	   *nspname;
+	char	   *modulename;
 	char	   *funcname;
 	Oid			namespaceId;
+	Oid			moduleId;
 	CatCList   *catlist;
 	int			i;
 
@@ -955,19 +957,31 @@ FuncnameGetCandidates(List *names, int nargs, List *argnames,
 	Assert(nargs >= 0 || !(expand_variadic | expand_defaults));
 
 	/* deconstruct the name list */
-	DeconstructQualifiedName(names, &schemaname, &funcname);
+	DeconstructQualifiedName(names, &nspname, &modulename, &funcname, true);
 
-	if (schemaname)
+	if (nspname && modulename)
 	{
 		/* use exact schema given */
-		namespaceId = LookupExplicitNamespace(schemaname, missing_ok);
+		namespaceId = LookupExplicitNamespace(nspname, missing_ok);
 		if (!OidIsValid(namespaceId))
 			return NULL;
+
+		moduleId = get_namespace_oid(modulename, namespaceId, true);
+		if (!OidIsValid(moduleId))
+			return NULL;
+	}
+	else if (nspname)
+	{
+		moduleId = InvalidOid;
+		namespaceId = LookupExplicitNamespace(nspname, true);
+		if (!OidIsValid(namespaceId))
+			recomputeNamespacePath();
 	}
 	else
 	{
 		/* flag to indicate we need namespace search */
 		namespaceId = InvalidOid;
+		moduleId = InvalidOid;
 		recomputeNamespacePath();
 	}
 
@@ -987,9 +1001,15 @@ FuncnameGetCandidates(List *names, int nargs, List *argnames,
 		int		   *argnumbers = NULL;
 		FuncCandidateList newResult;
 
-		if (OidIsValid(namespaceId))
+		if (OidIsValid(moduleId))
 		{
-			/* Consider only procs in specified namespace */
+			/* Consider only procs in specified module */
+			if (procform->pronamespace != moduleId)
+				continue;
+		}
+		else if (OidIsValid(namespaceId))
+		{
+			/* Consider only procs in specified schema */
 			if (procform->pronamespace != namespaceId)
 				continue;
 		}
@@ -1003,7 +1023,16 @@ FuncnameGetCandidates(List *names, int nargs, List *argnames,
 
 			foreach(nsp, activeSearchPath)
 			{
-				if (procform->pronamespace == lfirst_oid(nsp) &&
+				/* check if there is a module in the schema */
+				if (nspname)
+				{
+					moduleId = get_namespace_oid(nspname, lfirst_oid(nsp), true);
+					if (OidIsValid(moduleId))
+						if (procform->pronamespace == moduleId &&
+							procform->pronamespace != myTempNamespace)
+							break;
+				}
+				else if (procform->pronamespace == lfirst_oid(nsp) &&
 					procform->pronamespace != myTempNamespace)
 					break;
 				pathpos++;
@@ -1449,7 +1478,6 @@ FunctionIsVisible(Oid funcid)
 
 		clist = FuncnameGetCandidates(list_make1(makeString(proname)),
 									  nargs, NIL, false, false, false);
-
 		for (; clist; clist = clist->next)
 		{
 			if (memcmp(clist->args, procform->proargtypes.values,
@@ -1488,7 +1516,7 @@ OpernameGetOprid(List *names, Oid oprleft, Oid oprright)
 	ListCell   *l;
 
 	/* deconstruct the name list */
-	DeconstructQualifiedName(names, &schemaname, &opername);
+	DeconstructQualifiedName(names, &schemaname, NULL, &opername, false);
 
 	if (schemaname)
 	{
@@ -1595,7 +1623,7 @@ OpernameGetCandidates(List *names, char oprkind, bool missing_schema_ok)
 	int			i;
 
 	/* deconstruct the name list */
-	DeconstructQualifiedName(names, &schemaname, &opername);
+	DeconstructQualifiedName(names, &schemaname, NULL, &opername, false);
 
 	if (schemaname)
 	{
@@ -2183,7 +2211,7 @@ get_statistics_object_oid(List *names, bool missing_ok)
 	ListCell   *l;
 
 	/* deconstruct the name list */
-	DeconstructQualifiedName(names, &schemaname, &stats_name);
+	DeconstructQualifiedName(names, &schemaname, NULL, &stats_name, false);
 
 	if (schemaname)
 	{
@@ -2222,6 +2250,60 @@ get_statistics_object_oid(List *names, bool missing_ok)
 						NameListToString(names))));
 
 	return stats_oid;
+}
+
+/*
+ * get_module_oid - find a module by possibly qualified name
+ *
+ * If not found, returns InvalidOid if missing_ok, else throws error
+ */
+Oid
+get_module_oid(List *names, bool missing_ok)
+{
+	char	   *schemaname;
+	char	   *modulename;
+	Oid			namespaceId;
+	Oid			moduleId = InvalidOid;
+	ListCell   *l;
+
+	/* deconstruct the name list */
+	DeconstructQualifiedName(names, &schemaname, NULL, &modulename, false);
+
+	if (schemaname)
+	{
+		/* use exact schema given */
+		namespaceId = LookupExplicitNamespace(schemaname, missing_ok);
+		if (missing_ok && !OidIsValid(namespaceId))
+			moduleId = InvalidOid;
+		else
+			moduleId = GetSysCacheOid2(NAMESPACENAME, Anum_pg_namespace_oid,
+						  CStringGetDatum(modulename), ObjectIdGetDatum(namespaceId));
+	}
+	else
+	{
+		/* search for it in search path */
+		recomputeNamespacePath();
+
+		foreach(l, activeSearchPath)
+		{
+			namespaceId = lfirst_oid(l);
+
+			if (namespaceId == myTempNamespace)
+				continue;		/* do not look in temp namespace */
+			moduleId = GetSysCacheOid2(NAMESPACENAME, Anum_pg_namespace_oid,
+						  CStringGetDatum(modulename), ObjectIdGetDatum(namespaceId));
+			if (OidIsValid(moduleId))
+				break;
+		}
+	}
+
+	if (!OidIsValid(moduleId) && !missing_ok)
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("module \"%s\" does not exist",
+						NameListToString(names))));
+
+	return moduleId;
 }
 
 /*
@@ -2305,7 +2387,7 @@ get_ts_parser_oid(List *names, bool missing_ok)
 	ListCell   *l;
 
 	/* deconstruct the name list */
-	DeconstructQualifiedName(names, &schemaname, &parser_name);
+	DeconstructQualifiedName(names, &schemaname, NULL, &parser_name, false);
 
 	if (schemaname)
 	{
@@ -2431,7 +2513,7 @@ get_ts_dict_oid(List *names, bool missing_ok)
 	ListCell   *l;
 
 	/* deconstruct the name list */
-	DeconstructQualifiedName(names, &schemaname, &dict_name);
+	DeconstructQualifiedName(names, &schemaname, NULL, &dict_name, false);
 
 	if (schemaname)
 	{
@@ -2558,7 +2640,7 @@ get_ts_template_oid(List *names, bool missing_ok)
 	ListCell   *l;
 
 	/* deconstruct the name list */
-	DeconstructQualifiedName(names, &schemaname, &template_name);
+	DeconstructQualifiedName(names, &schemaname, NULL, &template_name, false);
 
 	if (schemaname)
 	{
@@ -2684,7 +2766,7 @@ get_ts_config_oid(List *names, bool missing_ok)
 	ListCell   *l;
 
 	/* deconstruct the name list */
-	DeconstructQualifiedName(names, &schemaname, &config_name);
+	DeconstructQualifiedName(names, &schemaname, NULL, &config_name, false);
 
 	if (schemaname)
 	{
@@ -2800,17 +2882,21 @@ TSConfigIsVisible(Oid cfgid)
 /*
  * DeconstructQualifiedName
  *		Given a possibly-qualified name expressed as a list of String nodes,
- *		extract the schema name and object name.
+ *		extract the schema name, module name and object name.
  *
  * *nspname_p is set to NULL if there is no explicit schema name.
+ * *modname_p is set to NULL if there is no explicit module name.
  */
 void
 DeconstructQualifiedName(List *names,
 						 char **nspname_p,
-						 char **objname_p)
+						 char **modname_p,
+						 char **objname_p,
+						 bool check_module)
 {
 	char	   *catalogname;
-	char	   *schemaname = NULL;
+	char	   *nspname = NULL;
+	char	   *modulename = NULL;
 	char	   *objname = NULL;
 
 	switch (list_length(names))
@@ -2819,22 +2905,70 @@ DeconstructQualifiedName(List *names,
 			objname = strVal(linitial(names));
 			break;
 		case 2:
-			schemaname = strVal(linitial(names));
+			nspname = strVal(linitial(names));
 			objname = strVal(lsecond(names));
 			break;
 		case 3:
-			catalogname = strVal(linitial(names));
-			schemaname = strVal(lsecond(names));
-			objname = strVal(lthird(names));
+			if (check_module)
+			{
+				/*
+				 * Since we don't allow cross-database references, check if the
+				 * first element is the current catalog and if is different assume
+				 * the first element is a schema
+				 */
+				if (strcmp(strVal(linitial(names)), get_database_name(MyDatabaseId)) != 0)
+				{
+					nspname = strVal(linitial(names));
+					modulename = strVal(lsecond(names));
+				}
+				else
+				{
+					catalogname = strVal(linitial(names));
+					nspname = strVal(lsecond(names));
+				}
 
-			/*
-			 * We check the catalog name and then ignore it.
-			 */
-			if (strcmp(catalogname, get_database_name(MyDatabaseId)) != 0)
+				objname = strVal(lthird(names));
+			}
+			else
+			{
+				catalogname = strVal(linitial(names));
+				nspname = strVal(lsecond(names));
+				objname = strVal(lthird(names));
+
+				/*
+				 * We check the catalog name and then ignore it.
+				 */
+				if (strcmp(catalogname, get_database_name(MyDatabaseId)) != 0)
+					ereport(ERROR,
+							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							 errmsg("cross-database references are not implemented: %s",
+									NameListToString(names))));
+				}
+			break;
+		case 4:
+			if (check_module)
+			{
+				catalogname = strVal(linitial(names));
+				nspname = strVal(lsecond(names));
+				modulename = strVal(lthird(names));
+				objname = strVal(lfourth(names));
+
+				/*
+				 * We check the catalog name and then ignore it.
+				 */
+				if (strcmp(catalogname, get_database_name(MyDatabaseId)) != 0)
+					ereport(ERROR,
+							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							 errmsg("cross-database references are not implemented: %s",
+									NameListToString(names))));
+			}
+			else
+			{
 				ereport(ERROR,
-						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-						 errmsg("cross-database references are not implemented: %s",
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("improper qualified name (too many dotted names): %s",
 								NameListToString(names))));
+			}
 			break;
 		default:
 			ereport(ERROR,
@@ -2844,7 +2978,9 @@ DeconstructQualifiedName(List *names,
 			break;
 	}
 
-	*nspname_p = schemaname;
+	*nspname_p = nspname;
+	if (modname_p)
+		*modname_p = modulename;
 	*objname_p = objname;
 }
 
@@ -2878,7 +3014,7 @@ LookupNamespaceNoError(const char *nspname)
 		return InvalidOid;
 	}
 
-	return get_namespace_oid(nspname, true);
+	return get_namespace_oid(nspname, InvalidOid, true);
 }
 
 /*
@@ -2907,7 +3043,7 @@ LookupExplicitNamespace(const char *nspname, bool missing_ok)
 		 */
 	}
 
-	namespaceId = get_namespace_oid(nspname, missing_ok);
+	namespaceId = get_namespace_oid(nspname, InvalidOid, missing_ok);
 	if (missing_ok && !OidIsValid(namespaceId))
 		return InvalidOid;
 
@@ -2945,7 +3081,7 @@ LookupCreationNamespace(const char *nspname)
 		return myTempNamespace;
 	}
 
-	namespaceId = get_namespace_oid(nspname, false);
+	namespaceId = get_namespace_oid(nspname, InvalidOid, false);
 
 	aclresult = pg_namespace_aclcheck(namespaceId, GetUserId(), ACL_CREATE);
 	if (aclresult != ACLCHECK_OK)
@@ -2991,25 +3127,34 @@ CheckSetNamespace(Oid oldNspOid, Oid nspOid)
  * if we have to create or clean out the temp namespace.
  */
 Oid
-QualifiedNameGetCreationNamespace(List *names, char **objname_p)
+QualifiedNameGetCreationNamespace(List *names, char **objname_p, bool check_module)
 {
-	char	   *schemaname;
+	char	   *nspname = NULL;
+	char	   *modulename = NULL;
+	Oid			nspparent;
 	Oid			namespaceId;
 
 	/* deconstruct the name list */
-	DeconstructQualifiedName(names, &schemaname, objname_p);
+	DeconstructQualifiedName(names, &nspname, &modulename, objname_p, check_module);
 
-	if (schemaname)
+	if (nspname && modulename)
+	{
+		/* use exact schema given */
+		nspparent = LookupExplicitNamespace(nspname, false);
+
+		namespaceId = get_namespace_oid(modulename, nspparent, false);
+	}
+	else if (nspname)
 	{
 		/* check for pg_temp alias */
-		if (strcmp(schemaname, "pg_temp") == 0)
+		if (strcmp(nspname, "pg_temp") == 0)
 		{
 			/* Initialize temp namespace */
 			AccessTempTableNamespace(false);
 			return myTempNamespace;
 		}
 		/* use exact schema given */
-		namespaceId = get_namespace_oid(schemaname, false);
+		namespaceId = get_namespace_oid(nspname, InvalidOid, false);
 		/* we do not check for USAGE rights here! */
 	}
 	else
@@ -3039,12 +3184,12 @@ QualifiedNameGetCreationNamespace(List *names, char **objname_p)
  * true, just return InvalidOid.
  */
 Oid
-get_namespace_oid(const char *nspname, bool missing_ok)
+get_namespace_oid(const char *nspname, Oid nspnamespace, bool missing_ok)
 {
 	Oid			oid;
 
-	oid = GetSysCacheOid1(NAMESPACENAME, Anum_pg_namespace_oid,
-						  CStringGetDatum(nspname));
+	oid = GetSysCacheOid2(NAMESPACENAME, Anum_pg_namespace_oid,
+						  CStringGetDatum(nspname), ObjectIdGetDatum(nspnamespace));
 	if (!OidIsValid(oid) && !missing_ok)
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_SCHEMA),
@@ -3607,7 +3752,7 @@ get_collation_oid(List *name, bool missing_ok)
 	ListCell   *l;
 
 	/* deconstruct the name list */
-	DeconstructQualifiedName(name, &schemaname, &collation_name);
+	DeconstructQualifiedName(name, &schemaname, NULL, &collation_name, false);
 
 	if (schemaname)
 	{
@@ -3660,7 +3805,7 @@ get_conversion_oid(List *name, bool missing_ok)
 	ListCell   *l;
 
 	/* deconstruct the name list */
-	DeconstructQualifiedName(name, &schemaname, &conversion_name);
+	DeconstructQualifiedName(name, &schemaname, NULL, &conversion_name, false);
 
 	if (schemaname)
 	{
@@ -3789,7 +3934,7 @@ recomputeNamespacePath(void)
 				char	   *rname;
 
 				rname = NameStr(((Form_pg_authid) GETSTRUCT(tuple))->rolname);
-				namespaceId = get_namespace_oid(rname, true);
+				namespaceId = get_namespace_oid(rname, InvalidOid, true);
 				ReleaseSysCache(tuple);
 				if (OidIsValid(namespaceId) &&
 					!list_member_oid(oidlist, namespaceId) &&
@@ -3818,7 +3963,7 @@ recomputeNamespacePath(void)
 		else
 		{
 			/* normal namespace reference */
-			namespaceId = get_namespace_oid(curname, true);
+			namespaceId = get_namespace_oid(curname, InvalidOid, true);
 			if (OidIsValid(namespaceId) &&
 				!list_member_oid(oidlist, namespaceId) &&
 				pg_namespace_aclcheck(namespaceId, roleid,
@@ -3987,7 +4132,7 @@ InitTempTableNamespace(void)
 
 	snprintf(namespaceName, sizeof(namespaceName), "pg_temp_%d", MyBackendId);
 
-	namespaceId = get_namespace_oid(namespaceName, true);
+	namespaceId = get_namespace_oid(namespaceName, InvalidOid, true);
 	if (!OidIsValid(namespaceId))
 	{
 		/*
@@ -3998,8 +4143,8 @@ InitTempTableNamespace(void)
 		 * temp tables.  This works because the places that access the temp
 		 * namespace for my own backend skip permissions checks on it.
 		 */
-		namespaceId = NamespaceCreate(namespaceName, BOOTSTRAP_SUPERUSERID,
-									  true);
+		namespaceId = NamespaceCreate(namespaceName, InvalidOid, NSPKIND_SCHEMA,
+									  BOOTSTRAP_SUPERUSERID, true);
 		/* Advance command counter to make namespace visible */
 		CommandCounterIncrement();
 	}
@@ -4020,11 +4165,11 @@ InitTempTableNamespace(void)
 	snprintf(namespaceName, sizeof(namespaceName), "pg_toast_temp_%d",
 			 MyBackendId);
 
-	toastspaceId = get_namespace_oid(namespaceName, true);
+	toastspaceId = get_namespace_oid(namespaceName, InvalidOid, true);
 	if (!OidIsValid(toastspaceId))
 	{
-		toastspaceId = NamespaceCreate(namespaceName, BOOTSTRAP_SUPERUSERID,
-									   true);
+		toastspaceId = NamespaceCreate(namespaceName, InvalidOid, NSPKIND_SCHEMA,
+									   BOOTSTRAP_SUPERUSERID, true);
 		/* Advance command counter to make namespace visible */
 		CommandCounterIncrement();
 	}

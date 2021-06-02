@@ -1762,7 +1762,7 @@ regnamespacein(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_INVALID_NAME),
 				 errmsg("invalid name syntax")));
 
-	result = get_namespace_oid(strVal(linitial(names)), false);
+	result = get_namespace_oid(strVal(linitial(names)), InvalidOid, false);
 
 	PG_RETURN_OID(result);
 }
@@ -1786,7 +1786,7 @@ to_regnamespace(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_INVALID_NAME),
 				 errmsg("invalid name syntax")));
 
-	result = get_namespace_oid(strVal(linitial(names)), true);
+	result = get_namespace_oid(strVal(linitial(names)), InvalidOid, true);
 
 	if (OidIsValid(result))
 		PG_RETURN_OID(result);
