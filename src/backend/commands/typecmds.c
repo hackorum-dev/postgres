@@ -217,7 +217,7 @@ DefineType(ParseState *pstate, List *names, List *parameters)
 				 errmsg("must be superuser to create a base type")));
 
 	/* Convert list of names to a name and namespace */
-	typeNamespace = QualifiedNameGetCreationNamespace(names, &typeName);
+	typeNamespace = QualifiedNameGetCreationNamespace(names, &typeName, false);
 
 #ifdef NOT_USED
 	/* XXX this is unnecessary given the superuser check above */
@@ -733,7 +733,7 @@ DefineDomain(CreateDomainStmt *stmt)
 
 	/* Convert list of names to a name and namespace */
 	domainNamespace = QualifiedNameGetCreationNamespace(stmt->domainname,
-														&domainName);
+														&domainName, false);
 
 	/* Check we have creation rights in target namespace */
 	aclresult = pg_namespace_aclcheck(domainNamespace, GetUserId(),
@@ -1149,7 +1149,7 @@ DefineEnum(CreateEnumStmt *stmt)
 
 	/* Convert list of names to a name and namespace */
 	enumNamespace = QualifiedNameGetCreationNamespace(stmt->typeName,
-													  &enumName);
+													  &enumName, false);
 
 	/* Check we have creation rights in target namespace */
 	aclresult = pg_namespace_aclcheck(enumNamespace, GetUserId(), ACL_CREATE);
@@ -1369,7 +1369,7 @@ DefineRange(CreateRangeStmt *stmt)
 
 	/* Convert list of names to a name and namespace */
 	typeNamespace = QualifiedNameGetCreationNamespace(stmt->typeName,
-													  &typeName);
+													  &typeName, false);
 
 	/* Check we have creation rights in target namespace */
 	aclresult = pg_namespace_aclcheck(typeNamespace, GetUserId(), ACL_CREATE);
@@ -1457,7 +1457,7 @@ DefineRange(CreateRangeStmt *stmt)
 						 errmsg("conflicting or redundant options")));
 			/* we can look up the subtype name immediately */
 			multirangeNamespace = QualifiedNameGetCreationNamespace(defGetQualifiedName(defel),
-																	&multirangeTypeName);
+																	&multirangeTypeName, false);
 		}
 		else
 			ereport(ERROR,

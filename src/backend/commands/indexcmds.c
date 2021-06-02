@@ -2039,7 +2039,7 @@ ResolveOpClass(List *opclass, Oid attrType,
 	 */
 
 	/* deconstruct the name list */
-	DeconstructQualifiedName(opclass, &schemaname, &opcname);
+	DeconstructQualifiedName(opclass, &schemaname, NULL, &opcname, false);
 
 	if (schemaname)
 	{
@@ -2787,7 +2787,7 @@ ReindexMultipleTables(const char *objectName, ReindexObjectType objectKind,
 	 */
 	if (objectKind == REINDEX_OBJECT_SCHEMA)
 	{
-		objectOid = get_namespace_oid(objectName, false);
+		objectOid = get_namespace_oid(objectName, InvalidOid, false);
 
 		if (!pg_namespace_ownercheck(objectOid, GetUserId()))
 			aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_SCHEMA,

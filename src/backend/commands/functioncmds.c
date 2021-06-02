@@ -148,7 +148,7 @@ compute_return_type(TypeName *returnType, Oid languageOid,
 				 errmsg("type \"%s\" is not yet defined", typnam),
 				 errdetail("Creating a shell type definition.")));
 		namespaceId = QualifiedNameGetCreationNamespace(returnType->names,
-														&typname);
+														&typname, false);
 		aclresult = pg_namespace_aclcheck(namespaceId, GetUserId(),
 										  ACL_CREATE);
 		if (aclresult != ACLCHECK_OK)
@@ -1050,7 +1050,7 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 
 	/* Convert list of names to a name and namespace */
 	namespaceId = QualifiedNameGetCreationNamespace(stmt->funcname,
-													&funcname);
+													&funcname, true);
 
 	/* Check we have creation rights in target namespace */
 	aclresult = pg_namespace_aclcheck(namespaceId, GetUserId(), ACL_CREATE);

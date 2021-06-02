@@ -163,7 +163,7 @@ CreateStatistics(CreateStatsStmt *stmt)
 	 */
 	if (stmt->defnames)
 		namespaceId = QualifiedNameGetCreationNamespace(stmt->defnames,
-														&namestr);
+														&namestr, false);
 	else
 	{
 		namespaceId = RelationGetNamespace(rel);
@@ -630,7 +630,7 @@ AlterStatistics(AlterStatsStmt *stmt)
 
 		Assert(stmt->missing_ok);
 
-		DeconstructQualifiedName(stmt->defnames, &schemaname, &statname);
+		DeconstructQualifiedName(stmt->defnames, &schemaname, NULL, &statname, false);
 
 		if (schemaname)
 			ereport(NOTICE,
