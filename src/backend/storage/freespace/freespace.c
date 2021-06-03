@@ -200,7 +200,7 @@ RecordPageWithFreeSpace(Relation rel, BlockNumber heapBlk, Size spaceAvail)
 	/* Get the location of the FSM byte representing the heap block */
 	addr = fsm_get_location(heapBlk, &slot);
 
-	fsm_set_and_search(rel, addr, slot, new_cat, 0);
+	(void) fsm_set_and_search(rel, addr, slot, new_cat, 0);
 }
 
 /*
@@ -786,7 +786,7 @@ fsm_search(Relation rel, uint8 min_cat)
 			 * rarely, and will be fixed by the next vacuum.
 			 */
 			parent = fsm_get_parent(addr, &parentslot);
-			fsm_set_and_search(rel, parent, parentslot, max_avail, 0);
+			(void) fsm_set_and_search(rel, parent, parentslot, max_avail, 0);
 
 			/*
 			 * If the upper pages are badly out of date, we might need to loop
