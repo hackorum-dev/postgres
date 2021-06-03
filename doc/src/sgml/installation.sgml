@@ -35,21 +35,28 @@ documentation.  See standalone-profile.xsl for details.
   <title>Short Version</title>
 
   <para>
+   The recipe below will work on some Unix platforms. It needs to be adapted
+   to local requirements on your platform.
+  </para>
+
+  <para>
 <synopsis>
 ./configure
 make
 su
+# The following commands will be executed as root
 make install
 adduser postgres
 mkdir /usr/local/pgsql/data
 chown postgres /usr/local/pgsql/data
 su - postgres
+# The following commands will be executed as postgres
 /usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data
 /usr/local/pgsql/bin/pg_ctl -D /usr/local/pgsql/data -l logfile start
 /usr/local/pgsql/bin/createdb test
 /usr/local/pgsql/bin/psql test
 </synopsis>
-   The long version is the rest of this
+   For more detail see the rest of this
    <phrase>chapter</phrase>.
   </para>
  </sect1>
