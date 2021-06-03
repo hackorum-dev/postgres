@@ -235,9 +235,8 @@ preprocess_targetlist(PlannerInfo *root)
 		char		resname[32];
 		TargetEntry *tle;
 
-		/* child rels use the same junk attrs as their parents */
-		if (rc->rti != rc->prti)
-			continue;
+		/* No child row marks yet. */
+		Assert (rc->rti == rc->prti);
 
 		if (rc->allMarkTypes & ~(1 << ROW_MARK_COPY))
 		{
