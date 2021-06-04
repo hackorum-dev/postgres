@@ -1412,15 +1412,15 @@ pg_stats_ext_mcvlist_items(PG_FUNCTION_ARGS)
 				bool		isvarlena;
 				Oid			outfunc;
 				FmgrInfo	fmgrinfo;
-				Datum		val;
+				char	   *val;
 				text	   *txt;
 
 				/* lookup output func for the type */
 				getTypeOutputInfo(mcvlist->types[i], &outfunc, &isvarlena);
 				fmgr_info(outfunc, &fmgrinfo);
 
-				val = FunctionCall1(&fmgrinfo, item->values[i]);
-				txt = cstring_to_text(DatumGetPointer(val));
+				val = OutputFunctionCall(&fmgrinfo, item->values[i]);
+				txt = cstring_to_text(val);
 
 				astate_values = accumArrayResult(astate_values,
 												 PointerGetDatum(txt),
