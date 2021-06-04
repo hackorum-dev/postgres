@@ -6653,7 +6653,12 @@ write_relcache_init_file(bool shared)
 				 DatabasePath, RELCACHE_INIT_FILENAME);
 	}
 
-	unlink(tempfilename);		/* in case it exists w/wrong permissions */
+	/*
+	 * In case the temp file exists w/wrong permissions, call unlink() to remove it.
+	 * We don't check return value from unlink() because if unlink fails, the subsequent
+	 * AllocateFile() would fail to overwrite the file.
+	 */
+	unlink(tempfilename);
 
 	fp = AllocateFile(tempfilename, PG_BINARY_W);
 	if (fp == NULL)
