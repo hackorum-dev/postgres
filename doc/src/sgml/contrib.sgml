@@ -179,6 +179,7 @@ CREATE EXTENSION <replaceable>extension_name</replaceable>;
  &unaccent;
  &uuid-ossp;
  &xml2;
+ &zson;
 
 </appendix>
 
