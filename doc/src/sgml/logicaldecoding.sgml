@@ -1125,7 +1125,7 @@ OutputPluginWrite(ctx, true);
     When streaming an in-progress transaction, the changes (and messages) are
     streamed in blocks demarcated by <function>stream_start_cb</function>
     and <function>stream_stop_cb</function> callbacks. Once all the decoded
-    changes are transmitted, the transaction can be committed using the
+    changes are transmitted, the transaction can be committed using
     the <function>stream_commit_cb</function> callback
     (or possibly aborted using the <function>stream_abort_cb</function> callback).
     If two-phase commits are supported, the transaction can be prepared using the
@@ -1222,7 +1222,7 @@ stream_commit_cb(...);  &lt;-- commit of the streamed transaction
    </para>
 
    <para>
-    When a prepared transaction is rolled back using the
+    When a prepared transaction is rolled back using
     <command>ROLLBACK PREPARED</command>, then the
     <function>rollback_prepared_cb</function> callback is invoked and when the
     prepared transaction is committed using <command>COMMIT PREPARED</command>,
@@ -1251,7 +1251,7 @@ stream_commit_cb(...);  &lt;-- commit of the streamed transaction
 
      <listitem>
       <para>
-       The logical replication solution that builds distributed two phase commit
+       The logical replication solution that builds distributed two-phase commit
        using this feature can deadlock if the prepared transaction has locked
        [user] catalog tables exclusively. They need to inform users to not have
        locks on catalog tables (via explicit <command>LOCK</command> command) in
