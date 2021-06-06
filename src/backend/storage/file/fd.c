@@ -99,6 +99,7 @@
 #include "storage/fd.h"
 #include "storage/ipc.h"
 #include "utils/guc.h"
+#include "utils/ps_status.h"
 #include "utils/resowner_private.h"
 
 /* Define PG_FLUSH_DATA_WORKS if we have an implementation for pg_flush_data */
@@ -3374,6 +3375,8 @@ SyncDataDirectory(void)
 		 * directories.
 		 */
 
+		set_ps_display("syncing data directory (syncfs)");
+
 		/* Sync the top level pgdata directory. */
 		do_syncfs(".");
 		/* If any tablespaces are configured, sync each of those. */
@@ -3392,10 +3395,13 @@ SyncDataDirectory(void)
 		/* If pg_wal is a symlink, process that too. */
 		if (xlog_is_symlink)
 			do_syncfs("pg_wal");
+
+		set_ps_display("");
 		return;
 	}
 #endif							/* !HAVE_SYNCFS */
 
+	set_ps_display("syncing data directory (fsync)");
 	/*
 	 * If possible, hint to the kernel that we're soon going to fsync the data
 	 * directory and its contents.  Errors in this step are even less
@@ -3421,6 +3427,8 @@ SyncDataDirectory(void)
 	if (xlog_is_symlink)
 		walkdir("pg_wal", datadir_fsync_fname, false, LOG);
 	walkdir("pg_tblspc", datadir_fsync_fname, true, LOG);
+
+	set_ps_display("");
 }
 
 /*
