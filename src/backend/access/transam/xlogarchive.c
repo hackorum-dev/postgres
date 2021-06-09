@@ -52,6 +52,7 @@
  * when we are not yet sure how far back we need the WAL.
  */
 bool
+
 RestoreArchivedFile(char *path, const char *xlogfname,
 					const char *recovername, off_t expectedSize,
 					bool cleanupEnabled)
@@ -360,6 +361,7 @@ KeepFileRestoredFromArchive(const char *path, const char *xlogfname)
 {
 	char		xlogfpath[MAXPGPATH];
 	bool		reload = false;
+	bool		already_archived = false;
 	struct stat statbuf;
 
 	snprintf(xlogfpath, MAXPGPATH, XLOGDIR "/%s", xlogfname);
@@ -367,6 +369,7 @@ KeepFileRestoredFromArchive(const char *path, const char *xlogfname)
 	if (stat(xlogfpath, &statbuf) == 0)
 	{
 		char		oldpath[MAXPGPATH];
+		size_t		flen = statbuf.st_size;
 
 #ifdef WIN32
 		static unsigned int deletedcounter = 1;
@@ -394,6 +397,76 @@ KeepFileRestoredFromArchive(const char *path, const char *xlogfname)
 		/* same-size buffers, so this never truncates */
 		strlcpy(oldpath, xlogfpath, MAXPGPATH);
 #endif
+		/*
+		 * On a standby with archive_mode=always, there's a case where the same
+		 * file is archived more than once. If the archive_command rejects
+		 * overwriting, WAL-archiving won't go further than the file forever.
+		 * Avoid duplicate archiving attempts when the file with the same
+		 * content is known to have been already archived or notified.
+		 */
+		if (XLogArchiveMode == ARCHIVE_MODE_ALWAYS &&
+			XLogArchiveIsReadyOrDone(xlogfname) &&
+			stat(path, &statbuf) == 0 && statbuf.st_size == flen)
+		{
+			int fd1;
+			int fd2 = -1;
+
+			fd1 = BasicOpenFile(path, O_RDONLY | PG_BINARY);
+			if (fd1 >= 0)
+				fd2 = BasicOpenFile(oldpath, O_RDONLY | PG_BINARY);
+
+			if (fd1 < 0 || fd2 < 0)
+			{
+				ereport(WARNING,
+						(errcode_for_file_access(),
+						 errmsg("could not open file \"%s\", skip duplicate check: %m",
+								fd1 < 0 ? path : oldpath)));
+				if (fd1 >= 0)
+					close(fd1);
+			}
+			else
+			{
+				unsigned char srcbuf[XLOG_BLCKSZ];
+				unsigned char dstbuf[XLOG_BLCKSZ];
+				size_t rlen;
+				uint32 i;
+				int r;
+
+				/*
+				 * Compare the two files' contents.  We don't bother
+				 * completing if something's wrong meanwhile.
+				 */
+				rlen = 0;
+				r = XLOG_BLCKSZ;
+				for (i = 0 ; r == XLOG_BLCKSZ ; i++)
+				{
+					
+					if ((r = read(fd1, srcbuf, XLOG_BLCKSZ)) == 0)
+						break;
+
+					if (read(fd2, dstbuf, XLOG_BLCKSZ) != r)
+						break;
+
+					if (memcmp(srcbuf, dstbuf, r) != 0)
+						break;
+
+					rlen += r;
+				}
+
+				close(fd1);
+				close(fd2);
+
+				if (rlen == flen)
+				{
+					already_archived = true;
+
+					ereport(LOG,
+							(errmsg("log file \"%s\" have been already archived, skip archiving",
+									xlogfname)));
+				}
+			}
+		}
+
 		if (unlink(oldpath) != 0)
 			ereport(FATAL,
 					(errcode_for_file_access(),
@@ -410,7 +483,7 @@ KeepFileRestoredFromArchive(const char *path, const char *xlogfname)
 	 */
 	if (XLogArchiveMode != ARCHIVE_MODE_ALWAYS)
 		XLogArchiveForceDone(xlogfname);
-	else
+	else if (!already_archived)
 		XLogArchiveNotify(xlogfname);
 
 	/*
