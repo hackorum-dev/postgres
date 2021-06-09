@@ -238,11 +238,19 @@ static const char *const days_short[] = {
 #define a_d_STR		"a.d."
 #define AD_STR		"AD"
 #define ad_STR		"ad"
+#define C_E_STR		"C.E."
+#define c_e_STR		"c.e."
+#define CE_STR		"CE"
+#define ce_STR		"ce"
 
 #define B_C_STR		"B.C."
 #define b_c_STR		"b.c."
 #define BC_STR		"BC"
 #define bc_STR		"bc"
+#define B_C_E_STR	"B.C.E."
+#define b_c_e_STR	"b.c.e."
+#define BCE_STR		"BCE"
+#define bce_STR		"bce"
 
 /*
  * AD / BC strings for seq_search.
@@ -254,8 +262,8 @@ static const char *const days_short[] = {
  * matches for BC have an odd index.  So the boolean value for BC is given by
  * taking the array index of the match, modulo 2.
  */
-static const char *const adbc_strings[] = {ad_STR, bc_STR, AD_STR, BC_STR, NULL};
-static const char *const adbc_strings_long[] = {a_d_STR, b_c_STR, A_D_STR, B_C_STR, NULL};
+static const char *const adbc_strings[] = {ad_STR, bc_STR, AD_STR, BC_STR, CE_STR, BCE_STR, NULL};
+static const char *const adbc_strings_long[] = {a_d_STR, b_c_STR, A_D_STR, B_C_STR, c_e_STR, b_c_e_STR, C_E_STR, B_C_E_STR, NULL};
 
 /* ----------
  * AM / PM
@@ -643,9 +651,13 @@ typedef enum
 	DCH_A_M,
 	DCH_AD,
 	DCH_AM,
+	DCH_B_C_E,
 	DCH_B_C,
+	DCH_BCE,
 	DCH_BC,
 	DCH_CC,
+	DCH_CE,
+	DCH_C_E,
 	DCH_DAY,
 	DCH_DDD,
 	DCH_DD,
@@ -701,9 +713,13 @@ typedef enum
 	DCH_a_m,
 	DCH_ad,
 	DCH_am,
+	DCH_b_c_e,
 	DCH_b_c,
+	DCH_bce,
 	DCH_bc,
 	DCH_cc,
+	DCH_c_e,
+	DCH_ce,
 	DCH_day,
 	DCH_ddd,
 	DCH_dd,
@@ -809,9 +825,13 @@ static const KeyWord DCH_keywords[] = {
 	{"A.M.", 4, DCH_A_M, false, FROM_CHAR_DATE_NONE},
 	{"AD", 2, DCH_AD, false, FROM_CHAR_DATE_NONE},
 	{"AM", 2, DCH_AM, false, FROM_CHAR_DATE_NONE},
-	{"B.C.", 4, DCH_B_C, false, FROM_CHAR_DATE_NONE},	/* B */
+	{"B.C.E.", 6, DCH_B_C_E, false, FROM_CHAR_DATE_NONE},	/* B */
+	{"B.C.", 4, DCH_B_C, false, FROM_CHAR_DATE_NONE},
+	{"BCE", 3, DCH_BCE, false, FROM_CHAR_DATE_NONE},
 	{"BC", 2, DCH_BC, false, FROM_CHAR_DATE_NONE},
-	{"CC", 2, DCH_CC, true, FROM_CHAR_DATE_NONE},	/* C */
+	{"CC", 2, DCH_CC, true, FROM_CHAR_DATE_NONE},		/* C */
+	{"CE", 2, DCH_CE, false, FROM_CHAR_DATE_NONE},
+	{"C.E.", 4, DCH_CE, false, FROM_CHAR_DATE_NONE},
 	{"DAY", 3, DCH_DAY, false, FROM_CHAR_DATE_NONE},	/* D */
 	{"DDD", 3, DCH_DDD, true, FROM_CHAR_DATE_GREGORIAN},
 	{"DD", 2, DCH_DD, true, FROM_CHAR_DATE_GREGORIAN},
@@ -867,9 +887,13 @@ static const KeyWord DCH_keywords[] = {
 	{"a.m.", 4, DCH_a_m, false, FROM_CHAR_DATE_NONE},
 	{"ad", 2, DCH_ad, false, FROM_CHAR_DATE_NONE},
 	{"am", 2, DCH_am, false, FROM_CHAR_DATE_NONE},
-	{"b.c.", 4, DCH_b_c, false, FROM_CHAR_DATE_NONE},	/* b */
+	{"b.c.e.", 6, DCH_b_c_e, false, FROM_CHAR_DATE_NONE},	/* b */
+	{"b.c.", 4, DCH_b_c, false, FROM_CHAR_DATE_NONE},
+	{"bce", 3, DCH_bce, false, FROM_CHAR_DATE_NONE},
 	{"bc", 2, DCH_bc, false, FROM_CHAR_DATE_NONE},
-	{"cc", 2, DCH_CC, true, FROM_CHAR_DATE_NONE},	/* c */
+	{"cc", 2, DCH_cc, true, FROM_CHAR_DATE_NONE},		/* c */
+	{"c.e.", 4, DCH_c_e, true, FROM_CHAR_DATE_NONE},
+	{"ce", 2, DCH_ce, true, FROM_CHAR_DATE_NONE},
 	{"day", 3, DCH_day, false, FROM_CHAR_DATE_NONE},	/* d */
 	{"ddd", 3, DCH_DDD, true, FROM_CHAR_DATE_GREGORIAN},
 	{"dd", 2, DCH_DD, true, FROM_CHAR_DATE_GREGORIAN},
@@ -985,10 +1009,10 @@ static const int DCH_index[KeyWord_INDEX_SIZE] = {
 	-1, -1, -1, -1, -1, -1, -1, -1,
 	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
 	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, DCH_A_D, DCH_B_C, DCH_CC, DCH_DAY, -1,
+	-1, -1, -1, -1, -1, DCH_A_D, DCH_B_C_E, DCH_CC, DCH_DAY, -1,
 	DCH_FF1, -1, DCH_HH24, DCH_IDDD, DCH_J, -1, -1, DCH_MI, -1, DCH_OF,
 	DCH_P_M, DCH_Q, DCH_RM, DCH_SSSSS, DCH_TZH, DCH_US, -1, DCH_WW, -1, DCH_Y_YYY,
-	-1, -1, -1, -1, -1, -1, -1, DCH_a_d, DCH_b_c, DCH_cc,
+	-1, -1, -1, -1, -1, -1, -1, DCH_a_d, DCH_b_c_e, DCH_cc,
 	DCH_day, -1, DCH_ff1, -1, DCH_hh24, DCH_iddd, DCH_j, -1, -1, DCH_mi,
 	-1, DCH_of, DCH_p_m, DCH_q, DCH_rm, DCH_sssss, DCH_tzh, DCH_us, -1, DCH_ww,
 	-1, DCH_y_yyy, -1, -1, -1, -1
@@ -2865,6 +2889,30 @@ DCH_to_char(FormatNode *node, bool is_interval, TmToChar *in, char *out, Oid col
 				strcpy(s, (tm->tm_year <= 0 ? bc_STR : ad_STR));
 				s += strlen(s);
 				break;
+			case DCH_C_E:
+			case DCH_B_C_E:
+				INVALID_FOR_INTERVAL;
+				strcpy(s, (tm->tm_year <= 0 ? B_C_E_STR : C_E_STR));
+				s += strlen(s);
+				break;
+			case DCH_CE:
+			case DCH_BCE:
+				INVALID_FOR_INTERVAL;
+				strcpy(s, (tm->tm_year <= 0 ? BCE_STR : CE_STR));
+				s += strlen(s);
+				break;
+			case DCH_c_e:
+			case DCH_b_c_e:
+				INVALID_FOR_INTERVAL;
+				strcpy(s, (tm->tm_year <= 0 ? b_c_e_STR : c_e_STR));
+				s += strlen(s);
+				break;
+			case DCH_ce:
+			case DCH_bce:
+				INVALID_FOR_INTERVAL;
+				strcpy(s, (tm->tm_year <= 0 ? bce_STR : ce_STR));
+				s += strlen(s);
+				break;
 			case DCH_MONTH:
 				INVALID_FOR_INTERVAL;
 				if (!tm->tm_mon)
@@ -3570,8 +3618,12 @@ DCH_from_char(FormatNode *node, const char *in, TmFromChar *out,
 				break;
 			case DCH_A_D:
 			case DCH_B_C:
+			case DCH_B_C_E:
+			case DCH_C_E:
 			case DCH_a_d:
 			case DCH_b_c:
+			case DCH_b_c_e:
+			case DCH_c_e:
 				from_char_seq_search(&value, &s, adbc_strings_long,
 									 NULL, InvalidOid,
 									 n, have_error);
@@ -3581,8 +3633,12 @@ DCH_from_char(FormatNode *node, const char *in, TmFromChar *out,
 				break;
 			case DCH_AD:
 			case DCH_BC:
+			case DCH_BCE:
+			case DCH_CE:
 			case DCH_ad:
 			case DCH_bc:
+			case DCH_bce:
+			case DCH_ce:
 				from_char_seq_search(&value, &s, adbc_strings,
 									 NULL, InvalidOid,
 									 n, have_error);
@@ -3886,12 +3942,20 @@ DCH_datetime_type(FormatNode *node, bool *have_error)
 				break;
 			case DCH_A_D:
 			case DCH_B_C:
+			case DCH_B_C_E:
+			case DCH_C_E:
 			case DCH_a_d:
 			case DCH_b_c:
+			case DCH_b_c_e:
+			case DCH_c_e:
 			case DCH_AD:
 			case DCH_BC:
+			case DCH_BCE:
+			case DCH_CE:
 			case DCH_ad:
 			case DCH_bc:
+			case DCH_bce:
+			case DCH_ce:
 			case DCH_MONTH:
 			case DCH_Month:
 			case DCH_month:

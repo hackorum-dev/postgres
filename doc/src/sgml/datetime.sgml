@@ -167,8 +167,8 @@
 
       <tip>
        <para>
-        Gregorian years AD 1&ndash;99 can be entered by using 4 digits with leading
-        zeros (e.g., <literal>0099</literal> is AD 99).
+        Gregorian years AD/CE 1&ndash;99 can be entered by using 4 digits with leading
+        zeros (e.g., <literal>0099</literal> is AD/CE 99).
        </para>
       </tip>
      </para>

@@ -1740,24 +1740,24 @@ SELECT 'abc \153\154\155 \052\251\124'::bytea;
         <entry><type>timestamp [ (<replaceable>p</replaceable>) ] [ without time zone ]</type></entry>
         <entry>8 bytes</entry>
         <entry>both date and time (no time zone)</entry>
-        <entry>4713 BC</entry>
-        <entry>294276 AD</entry>
+        <entry>4713 BC[E]</entry>
+        <entry>294276 AD/CE</entry>
         <entry>1 microsecond</entry>
        </row>
        <row>
         <entry><type>timestamp [ (<replaceable>p</replaceable>) ] with time zone</type></entry>
         <entry>8 bytes</entry>
         <entry>both date and time, with time zone</entry>
-        <entry>4713 BC</entry>
-        <entry>294276 AD</entry>
+        <entry>4713 BC[E]</entry>
+        <entry>294276 AD/CE</entry>
         <entry>1 microsecond</entry>
        </row>
        <row>
         <entry><type>date</type></entry>
         <entry>4 bytes</entry>
         <entry>date (no time of day)</entry>
-        <entry>4713 BC</entry>
-        <entry>5874897 AD</entry>
+        <entry>4713 BC[E]</entry>
+        <entry>5874897 AD/CE</entry>
         <entry>1 day</entry>
        </row>
        <row>
@@ -2168,23 +2168,24 @@ MINUTE TO SECOND
      <para>
       Valid input for the time stamp types consists of the concatenation
       of a date and a time, followed by an optional time zone,
-      followed by an optional <literal>AD</literal> or <literal>BC</literal>.
-      (Alternatively, <literal>AD</literal>/<literal>BC</literal> can appear
-      before the time zone, but this is not the preferred ordering.)
+      followed by an optional <literal>AD</literal>, <literal>CE</literal>,
+      <literal>BC</literal>, or <literal>BCE</literal>
+      (Alternatively, <literal>AD</literal>/<literal>CE</literal>/<literal>BC</literal>/<literal>BCE</literal>
+      can appear before the time zone, but this is not the preferred ordering.)
       Thus:
 
 <programlisting>
-1999-01-08 04:05:06
+2021-01-08 04:05:06
 </programlisting>
       and:
 <programlisting>
-1999-01-08 04:05:06 -8:00
+2021-01-08 04:05:06 -8:00
 </programlisting>
 
       are valid values, which follow the <acronym>ISO</acronym> 8601
       standard.  In addition, the common format:
 <programlisting>
-January 8 04:05:06 1999 PST
+January 8 04:05:06 2021 PST
 </programlisting>
       is supported.
      </para>

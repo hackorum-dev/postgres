@@ -7864,13 +7864,13 @@ SELECT regexp_match('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
         <entry>last digit of ISO 8601 week-numbering year</entry>
        </row>
        <row>
-        <entry><literal>BC</literal>, <literal>bc</literal>,
-        <literal>AD</literal> or <literal>ad</literal></entry>
+        <entry><literal>BC</literal>, <literal>bc</literal>, <literal>BCE</literal>, <literal>bce</literal>
+        <literal>AD</literal>, <literal>ad</literal>, <literal>CE</literal>, <literal>ce</literal></entry>
         <entry>era indicator (without periods)</entry>
        </row>
        <row>
-        <entry><literal>B.C.</literal>, <literal>b.c.</literal>,
-        <literal>A.D.</literal> or <literal>a.d.</literal></entry>
+        <entry><literal>B.C.</literal>, <literal>b.c.</literal>, <literal>B.C.E.</literal>, <literal>b.c.e.</literal>
+        <literal>A.D.</literal>, <literal>a.d.</literal>, <literal>C.E.</literal>, or <literal>c.e.</literal></entry>
         <entry>era indicator (with periods)</entry>
        </row>
        <row>
@@ -9849,13 +9849,15 @@ SELECT EXTRACT(CENTURY FROM TIMESTAMP '2001-02-16 20:38:40');
 </screen>
 
        <para>
-        The first century starts at 0001-01-01 00:00:00 AD, although
-        they did not know it at the time. This definition applies to all
+        The first century starts at 0001-01-01 00:00:00 AD/CE, although
+        the calendar did not exist at the time. This definition applies to all
         Gregorian calendar countries. There is no century number 0,
         you go from -1 century to 1 century.
 
         If you disagree with this, please write your complaint to:
-        Pope, Cathedral Saint-Peter of Roma, Vatican.
+        His Holiness, Pope Francis
+        Apostolic Palace
+        00120 Vatican City
        </para>
       </listitem>
      </varlistentry>
