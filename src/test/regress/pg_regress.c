@@ -1738,7 +1738,7 @@ run_schedule(const char *schedule, test_start_function startfunc,
 
 		if (num_tests == 1)
 		{
-			status(_("test %-28s ... "), tests[0]);
+			status(_("test %-32s ... "), tests[0]);
 			pids[0] = (startfunc) (tests[0], &resultfiles[0], &expectfiles[0], &tags[0]);
 			INSTR_TIME_SET_CURRENT(starttimes[0]);
 			wait_for_tests(pids, statuses, stoptimes, NULL, 1);
@@ -1794,7 +1794,7 @@ run_schedule(const char *schedule, test_start_function startfunc,
 			bool		differ = false;
 
 			if (num_tests > 1)
-				status(_("     %-28s ... "), tests[i]);
+				status(_("     %-32s ... "), tests[i]);
 
 			/*
 			 * Advance over all three lists simultaneously.
@@ -1893,7 +1893,7 @@ run_single_test(const char *test, test_start_function startfunc,
 			   *tl;
 	bool		differ = false;
 
-	status(_("test %-28s ... "), test);
+	status(_("test %-32s ... "), test);
 	pid = (startfunc) (test, &resultfiles, &expectfiles, &tags);
 	INSTR_TIME_SET_CURRENT(starttime);
 	wait_for_tests(&pid, &exit_status, &stoptime, NULL, 1);
