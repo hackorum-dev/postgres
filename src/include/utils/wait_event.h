@@ -10,6 +10,8 @@
 #ifndef WAIT_EVENT_H
 #define WAIT_EVENT_H
 
+#include "utils/memutils.h"
+#include "portability/instr_time.h"
 
 /* ----------
  * Wait Classes
@@ -24,6 +26,40 @@
 #define PG_WAIT_IPC					0x08000000U
 #define PG_WAIT_TIMEOUT				0x09000000U
 #define PG_WAIT_IO					0x0A000000U
+
+/* ----------
+ * WaitAccumEntry	Entry in backend/background's per-wait_event_info hash table
+ * ----------
+ */
+typedef struct WaitAccumEntry
+{
+	uint32		wait_event_info;
+	uint64		calls;
+	instr_time	times;
+} WaitAccumEntry;
+
+typedef struct WaitEvents
+{
+	uint32		num_events;
+	WaitAccumEntry *events;
+	WaitAccumEntry *wa_lwlock;
+	WaitAccumEntry *wa_lock;
+	WaitAccumEntry *wa_buffer_pin;
+	WaitAccumEntry *wa_activity;
+	WaitAccumEntry *wa_client;
+	// FIXME WaitAccumEntry *wa_extension;
+	WaitAccumEntry *wa_ipc;
+	WaitAccumEntry *wa_timeout;
+	WaitAccumEntry *wa_io;
+} WaitEvents;
+
+extern WaitEvents wa_events;
+
+/*
+ * There's only one entry in PG_WAIT_BUFFER_PIN class:
+ * PG_WAIT_BUFFER_PIN itself
+ */
+#define PG_WAIT_BUFFER_PIN_NUM 1
 
 /* ----------
  * Wait Events - Activity
@@ -50,6 +86,9 @@ typedef enum
 	WAIT_EVENT_WAL_WRITER_MAIN
 } WaitEventActivity;
 
+#define	PG_WAIT_ACTIVITY_LAST_TYPE	WAIT_EVENT_WAL_WRITER_MAIN
+#define	PG_WAIT_ACTIVITY_NUM ( WAIT_EVENT_WAL_WRITER_MAIN - PG_WAIT_ACTIVITY )
+
 /* ----------
  * Wait Events - Client
  *
@@ -69,6 +108,9 @@ typedef enum
 	WAIT_EVENT_WAL_SENDER_WAIT_WAL,
 	WAIT_EVENT_WAL_SENDER_WRITE_DATA,
 } WaitEventClient;
+
+#define	PG_WAIT_CLIENT_LAST_TYPE	WAIT_EVENT_WAL_SENDER_WRITE_DATA
+#define	PG_WAIT_CLIENT_NUM ( PG_WAIT_CLIENT_LAST_TYPE - PG_WAIT_CLIENT )
 
 /* ----------
  * Wait Events - IPC
@@ -128,6 +170,9 @@ typedef enum
 	WAIT_EVENT_XACT_GROUP_UPDATE
 } WaitEventIPC;
 
+#define	PG_WAIT_IPC_LAST_TYPE	WAIT_EVENT_XACT_GROUP_UPDATE
+#define	PG_WAIT_IPC_NUM ( PG_WAIT_IPC_LAST_TYPE - PG_WAIT_IPC )
+
 /* ----------
  * Wait Events - Timeout
  *
@@ -142,6 +187,9 @@ typedef enum
 	WAIT_EVENT_RECOVERY_RETRIEVE_RETRY_INTERVAL,
 	WAIT_EVENT_VACUUM_DELAY
 } WaitEventTimeout;
+
+#define	PG_WAIT_TIMEOUT_LAST_TYPE	WAIT_EVENT_VACUUM_DELAY
+#define	PG_WAIT_TIMEOUT_NUM ( PG_WAIT_TIMEOUT_LAST_TYPE - PG_WAIT_TIMEOUT )
 
 /* ----------
  * Wait Events - IO
@@ -227,13 +275,29 @@ typedef enum
 	WAIT_EVENT_LOGICAL_SUBXACT_WRITE
 } WaitEventIO;
 
+#define	PG_WAIT_IO_LAST_TYPE	WAIT_EVENT_LOGICAL_SUBXACT_WRITE
+#define	PG_WAIT_IO_NUM ( PG_WAIT_IO_LAST_TYPE - PG_WAIT_IO )
+
+/* track start time of current wait event */
+extern instr_time waitEventStart;
+
+void pgstat_init_waitaccums(void);
 
 extern const char *pgstat_get_wait_event(uint32 wait_event_info);
 extern const char *pgstat_get_wait_event_type(uint32 wait_event_info);
 static inline void pgstat_report_wait_start(uint32 wait_event_info);
+static inline void standard_pgstat_report_wait_start(uint32 wait_event_info);
 static inline void pgstat_report_wait_end(void);
+static inline void standard_pgstat_report_wait_end(void);
+extern void pgstat_set_report_waits(void);
+extern void pgstat_reset_report_waits(void);
 extern void pgstat_set_wait_event_storage(uint32 *wait_event_info);
 extern void pgstat_reset_wait_event_storage(void);
+
+typedef void (*report_wait_start_function) (uint32 wait_event_info);
+extern PGDLLIMPORT report_wait_start_function my_pgstat_report_wait_start;
+typedef void (*report_wait_end_function) ();
+extern PGDLLIMPORT report_wait_end_function my_pgstat_report_wait_end;
 
 extern PGDLLIMPORT uint32 *my_wait_event_info;
 
@@ -260,6 +324,12 @@ extern PGDLLIMPORT uint32 *my_wait_event_info;
 static inline void
 pgstat_report_wait_start(uint32 wait_event_info)
 {
+	(*my_pgstat_report_wait_start)(wait_event_info);
+}
+
+static inline void
+standard_pgstat_report_wait_start(uint32 wait_event_info)
+{
 	/*
 	 * Since this is a four-byte field which is always read and written as
 	 * four-bytes, updates are atomic.
@@ -275,6 +345,13 @@ pgstat_report_wait_start(uint32 wait_event_info)
  */
 static inline void
 pgstat_report_wait_end(void)
+{
+	(*my_pgstat_report_wait_end)();
+}
+
+
+static inline void
+standard_pgstat_report_wait_end(void)
 {
 	/* see pgstat_report_wait_start() */
 	*(volatile uint32 *) my_wait_event_info = 0;

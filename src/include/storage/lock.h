@@ -152,6 +152,7 @@ typedef enum LockTagType
 } LockTagType;
 
 #define LOCKTAG_LAST_TYPE	LOCKTAG_ADVISORY
+#define	LOCKTAG_NUM 		LOCKTAG_LAST_TYPE
 
 extern const char *const LockTagTypeNames[];
 

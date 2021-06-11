@@ -635,6 +635,25 @@ LWLockNewTrancheId(void)
 }
 
 /*
+ * Get a last tranche ID.
+ */
+int
+LWLockGetLastTrancheId(void)
+{
+	int			result;
+	int		   *LWLockCounter;
+
+	Assert(!lock_named_request_allowed);
+
+	LWLockCounter = (int *) ((char *) MainLWLockArray - sizeof(int));
+	SpinLockAcquire(ShmemLock);
+	result = *LWLockCounter;
+	SpinLockRelease(ShmemLock);
+
+	return result;
+}
+
+/*
  * Register a dynamic tranche name in the lookup table of the current process.
  *
  * This routine will save a pointer to the tranche name passed as an argument,

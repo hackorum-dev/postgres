@@ -32,11 +32,127 @@ static const char *pgstat_get_wait_client(WaitEventClient w);
 static const char *pgstat_get_wait_ipc(WaitEventIPC w);
 static const char *pgstat_get_wait_timeout(WaitEventTimeout w);
 static const char *pgstat_get_wait_io(WaitEventIO w);
+static inline void accum_pgstat_report_wait_start();
+static inline void accum_pgstat_report_wait_end();
 
 
 static uint32 local_my_wait_event_info;
 uint32	   *my_wait_event_info = &local_my_wait_event_info;
 
+WaitEvents wa_events;
+instr_time waitEventStart;
+report_wait_start_function	my_pgstat_report_wait_start = standard_pgstat_report_wait_start;
+report_wait_end_function	my_pgstat_report_wait_end = standard_pgstat_report_wait_end;
+
+static WaitAccumEntry *
+pgstat_get_wait_entry(uint32 wait_event_info)
+{
+	uint32		classId;
+	uint16		eventId;
+	WaitAccumEntry *entry = NULL;
+
+	/* report process as not waiting. */
+	if (wait_event_info == 0)
+		return NULL;
+
+	classId = wait_event_info & 0xFF000000;
+	eventId = wait_event_info & 0x0000FFFF;
+
+	switch (classId)
+	{
+		case PG_WAIT_LWLOCK:
+			entry = wa_events.wa_lwlock + eventId;
+			break;
+		case PG_WAIT_LOCK:
+			entry = wa_events.wa_lock + eventId;
+			break;
+		case PG_WAIT_BUFFER_PIN:
+			entry = wa_events.wa_buffer_pin + eventId;
+			break;
+		case PG_WAIT_ACTIVITY:
+			entry = wa_events.wa_activity + eventId;
+			break;
+		case PG_WAIT_CLIENT:
+			entry = wa_events.wa_client + eventId;
+			break;
+		// FIXME
+		//  case PG_WAIT_EXTENSION:
+		//  	break;
+		case PG_WAIT_IPC:
+			entry = wa_events.wa_ipc + eventId;
+			break;
+		case PG_WAIT_TIMEOUT:
+			entry = wa_events.wa_timeout + eventId;
+			break;
+		case PG_WAIT_IO:
+			entry = wa_events.wa_io + eventId;
+			break;
+		default:
+			break;
+	}
+
+	return entry;
+}
+
+void
+pgstat_init_waitaccums(void)
+{
+	WaitAccumEntry *event;
+	int num_lwlocks;
+	int i;
+
+	num_lwlocks = LWLockGetLastTrancheId() +1;
+	wa_events.num_events = num_lwlocks
+		 + PG_WAIT_ACTIVITY_NUM
+		 + PG_WAIT_CLIENT_NUM
+		 + PG_WAIT_IPC_NUM
+		 + PG_WAIT_TIMEOUT_NUM
+		 + PG_WAIT_IO_NUM
+		 + LOCKTAG_NUM
+		 + PG_WAIT_BUFFER_PIN_NUM;
+
+	wa_events.events = MemoryContextAllocZero(TopMemoryContext,
+						  wa_events.num_events
+						  * sizeof(WaitAccumEntry));
+
+	event = wa_events.events;
+
+	// FIXME: support extensions
+
+	wa_events.wa_lwlock = event;
+	for (i = 0; i < num_lwlocks; i++, event++)
+		event->wait_event_info = PG_WAIT_LWLOCK|i;
+
+	wa_events.wa_lock = event;
+	for (i = 0; i < LOCKTAG_NUM; i++, event++)
+		event->wait_event_info = PG_WAIT_LOCK|i;
+
+	wa_events.wa_buffer_pin = event;
+	for (i = 0; i < PG_WAIT_BUFFER_PIN_NUM; i++, event++)
+		event->wait_event_info = PG_WAIT_BUFFER_PIN|i;
+
+	wa_events.wa_activity = event;
+	for (i = 0; i < PG_WAIT_ACTIVITY_NUM; i++, event++)
+		event->wait_event_info = PG_WAIT_ACTIVITY|i;
+
+	wa_events.wa_client = event;
+	for (i = 0; i < PG_WAIT_CLIENT_NUM; i++, event++)
+		event->wait_event_info = PG_WAIT_CLIENT|i;
+
+	wa_events.wa_ipc = event;
+	for (i = 0; i < PG_WAIT_IPC_NUM; i++, event++)
+		event->wait_event_info = PG_WAIT_IPC|i;
+
+	wa_events.wa_timeout = event;
+	for (i = 0; i < PG_WAIT_TIMEOUT_NUM; i++, event++)
+		event->wait_event_info = PG_WAIT_TIMEOUT|i;
+
+	wa_events.wa_io = event;
+	for (i = 0; i < PG_WAIT_IO_NUM; i++, event++)
+		event->wait_event_info = PG_WAIT_IO|i;
+
+	pgstat_reset_report_waits();
+}
 
 /*
  * Configure wait event reporting to report wait events to *wait_event_info.
@@ -731,4 +847,46 @@ pgstat_get_wait_io(WaitEventIO w)
 	}
 
 	return event_name;
+}
+
+static inline void
+accum_pgstat_report_wait_start(uint32 wait_event_info)
+{
+	standard_pgstat_report_wait_start(wait_event_info);
+
+	INSTR_TIME_SET_CURRENT(waitEventStart);
+}
+
+static inline void
+accum_pgstat_report_wait_end(void)
+{
+	WaitAccumEntry *entry;
+	instr_time  diff;
+
+	INSTR_TIME_SET_CURRENT(diff);
+	INSTR_TIME_SUBTRACT(diff, waitEventStart);
+
+	entry = pgstat_get_wait_entry(*my_wait_event_info);
+
+	if (entry)
+	{
+		entry->calls++;
+		INSTR_TIME_ADD(entry->times, diff);
+	}
+
+	standard_pgstat_report_wait_end();
+}
+
+void
+pgstat_set_report_waits(void)
+{
+	my_pgstat_report_wait_start = accum_pgstat_report_wait_start;
+	my_pgstat_report_wait_end = accum_pgstat_report_wait_end;
+}
+
+void
+pgstat_reset_report_waits(void)
+{
+	my_pgstat_report_wait_start = standard_pgstat_report_wait_start;
+	my_pgstat_report_wait_end = standard_pgstat_report_wait_end;
 }

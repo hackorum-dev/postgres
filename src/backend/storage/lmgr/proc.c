@@ -450,6 +450,8 @@ InitProcess(void)
 
 	/* now that we have a proc, report wait events to shared memory */
 	pgstat_set_wait_event_storage(&MyProc->wait_event_info);
+	/* init wait event tracking structure*/
+	pgstat_init_waitaccums();
 
 	/*
 	 * We might be reusing a semaphore that belonged to a failed process. So
