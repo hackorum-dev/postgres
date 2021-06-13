@@ -13082,6 +13082,9 @@ dumpAccessMethod(Archive *fout, const AccessMethodInfo *aminfo)
 
 	switch (aminfo->amtype)
 	{
+		case AMTYPE_INTERFACE:
+			appendPQExpBufferStr(q, "TYPE INTERFACE ");
+			break;
 		case AMTYPE_INDEX:
 			appendPQExpBufferStr(q, "TYPE INDEX ");
 			break;

@@ -57,6 +57,7 @@ DECLARE_UNIQUE_INDEX_PKEY(pg_am_oid_index, 2652, on pg_am using btree(oid oid_op
 /*
  * Allowed values for amtype
  */
+#define AMTYPE_INTERFACE				'n' /* interface access method */
 #define AMTYPE_INDEX					'i' /* index access method */
 #define AMTYPE_TABLE					't' /* table access method */
 
