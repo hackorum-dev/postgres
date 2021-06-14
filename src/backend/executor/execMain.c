@@ -1534,6 +1534,12 @@ ExecutePlan(EState *estate,
 		use_parallel_mode = false;
 
 	estate->es_use_parallel_mode = use_parallel_mode;
+
+#if 0
+	elog(NOTICE, "ExecutePlan calling with use_parallel_mode %d. execute_once: %d, nestinglevel: %d, IsParallelWorker: %d, IsParallelMode: %d",
+		use_parallel_mode, execute_once, GetCurrentTransactionNestLevel(), IsParallelWorker(), IsInParallelMode());
+#endif
+
 	if (use_parallel_mode)
 		EnterParallelMode();
 

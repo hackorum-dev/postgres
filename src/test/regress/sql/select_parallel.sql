@@ -455,4 +455,67 @@ EXPLAIN (COSTS OFF)
 SELECT 1 FROM tenk1_vw_sec
   WHERE (SELECT sum(f1) FROM int4_tbl WHERE f1 < unique1) < 100;
 
+-- test sub-transactions inside a parallel worker
+CREATE TABLE subtrans_tab(id int);
+INSERT INTO subtrans_tab(id) SELECT generate_series(1, 1000000, 1);
+CREATE FUNCTION subtrans_func_2(inp int) RETURNS int AS
+$$
+DECLARE
+    ret int = -1;
+    err bool = false;
+BEGIN
+    SELECT id INTO ret FROM subtrans_tab WHERE id = inp;
+	delete from tab ; -- Should fail since we are inside worker
+	RAISE NOTICE 'delete successful'; -- Should not reach here if inside worker
+    RETURN ret;
+EXCEPTION
+    WHEN division_by_zero THEN err = true;
+    WHEN others THEN
+        err = true;
+    RETURN ret;
+END
+$$ language plpgsql parallel safe;
+
+CREATE FUNCTION subtrans_func(inp int) RETURNS int AS
+$$
+    DECLARE
+        tempint int;
+        ret int = -1;
+BEGIN
+    BEGIN
+        BEGIN
+            -- Force division_by_zero for some inputs
+            tempint = 1/(inp%5);
+            -- This tries to generate new xid in yet another sub-transaction
+            tempint = subtrans_func_2(inp);
+            IF tempint <> inp THEN
+                RAISE NOTICE 'returned % from subtrans_tab did not match inp %', ret, inp;
+            END IF;
+            -- Even after func2() has failed in it's own sub-transaction, we
+            -- should be able to access tables from worker
+            SELECT id INTO ret FROM subtrans_tab WHERE id = inp;
+            IF ret <> inp THEN
+                RAISE NOTICE 'returned % from subtrans_tab did not match inp %', ret, inp;
+            END IF;
+
+        EXCEPTION WHEN division_by_zero THEN
+            ret = -1;
+        END;
+
+        -- Even after a divide-by-zero EXCEPTION above, we should be able to
+        -- access tables from worker
+        SELECT id INTO ret FROM subtrans_tab WHERE id = inp;
+        IF ret <> inp THEN
+            RAISE NOTICE 'returned % from subtrans_tab did not match inp %', ret, inp;
+        END IF;
+
+    EXCEPTION WHEN division_by_zero THEN -- Just for sake of more nest levels
+        RAISE NOTICE 'division_by_zero EXCEPTION caught';
+    END;
+
+    RETURN ret; -- If all goes as expected above, ret should be equal to inp
+END $$ language plpgsql parallel safe;
+
+SELECT subtrans_func(id) FROM subtrans_tab WHERE id % 50000 = 0 order by 1;
+
 rollback;
