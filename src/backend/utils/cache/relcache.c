@@ -559,6 +559,15 @@ RelationBuildTupleDesc(Relation relation)
 			elog(ERROR, "invalid attribute number %d for relation \"%s\"",
 				 attp->attnum, RelationGetRelationName(relation));
 
+		/*
+		 * Fix atthasmissing flag - it's only for RELKIND relations. Others
+		 * should not have missing values set, but there may be some left from
+		 * before when we placed that check, so this code defensively ignores
+		 * such values.
+		 */
+		if (relation->rd_rel->relkind != RELKIND_RELATION)
+			attp->atthasmissing = false;
+
 		memcpy(TupleDescAttr(relation->rd_att, attnum - 1),
 			   attp,
 			   ATTRIBUTE_FIXED_PART_SIZE);
