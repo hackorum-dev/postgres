@@ -2641,25 +2641,31 @@ regression_main(int argc, char *argv[],
 	 */
 	if (fail_count == 0 && fail_ignore_count == 0)
 		snprintf(buf, sizeof(buf),
-				 _(" All %d tests passed. "),
-				 success_count);
+				 _(" %s %d test%s passed. "),
+				 success_count == 1 ? "The" : "All",
+				 success_count,
+				 success_count == 1 ? "" : "s");
 	else if (fail_count == 0)	/* fail_count=0, fail_ignore_count>0 */
 		snprintf(buf, sizeof(buf),
-				 _(" %d of %d tests passed, %d failed test(s) ignored. "),
+				 _(" %d of %d test%s passed, %d failed test%s ignored. "),
 				 success_count,
 				 success_count + fail_ignore_count,
-				 fail_ignore_count);
+				 success_count == 1 ? "" : "s",
+				 fail_ignore_count,
+				 fail_ignore_count == 1 ? "" : "s");
 	else if (fail_ignore_count == 0)	/* fail_count>0 && fail_ignore_count=0 */
 		snprintf(buf, sizeof(buf),
-				 _(" %d of %d tests failed. "),
+				 _(" %d of %d test%s failed. "),
 				 fail_count,
-				 success_count + fail_count);
+				 success_count + fail_count,
+				 fail_count == 1 ? "" : "s");
 	else
 		/* fail_count>0 && fail_ignore_count>0 */
 		snprintf(buf, sizeof(buf),
-				 _(" %d of %d tests failed, %d of these failures ignored. "),
+				 _(" %d of %d test%s failed, %d of these failures ignored. "),
 				 fail_count + fail_ignore_count,
 				 success_count + fail_count + fail_ignore_count,
+				 fail_count + fail_ignore_count == 1 ? "" : "s",
 				 fail_ignore_count);
 
 	putchar('\n');
