@@ -66,6 +66,7 @@
 #include "utils/spccache.h"
 #include "utils/syscache.h"
 #include "utils/timestamp.h"
+#include "utils/typcache.h"
 
 
 /* Per-index data for ANALYZE */
@@ -2370,6 +2371,75 @@ compute_distinct_stats(VacAttrStatsP stats,
 
 
 /*
+ * depth 8 and width 128 is sufficient for relative error ~1.5% with a
+ * probability of approximately 99.6%
+ */
+#define	CM_SKETCH_DEPTH	8
+#define	CM_SKETCH_WIDTH	128
+
+/* hard-coded seeds to create CM_SKETCH_DEPTH hash functions */
+static int64 coun_min_sketch_seeds[] = {460301880, 158177425, 666659290, 607370179,
+										282915002, 235039873, 62050793, 177805379};
+
+typedef struct count_min_sketch {
+	int	nvalues;
+	int	depth;
+	int	width;
+	int	counters[FLEXIBLE_ARRAY_MEMBER];
+} count_min_sketch;
+
+static count_min_sketch *
+count_min_sketch_alloc(void)
+{
+	count_min_sketch *sketch;
+
+	sketch = palloc0(offsetof(count_min_sketch, counters) +
+					 sizeof(int) * CM_SKETCH_DEPTH * CM_SKETCH_WIDTH);
+
+	sketch->depth = CM_SKETCH_DEPTH;
+	sketch->width = CM_SKETCH_WIDTH;
+
+	return sketch;
+}
+
+static void
+count_min_sketch_add(count_min_sketch *sketch,
+					 TypeCacheEntry *typentry, Oid collation, Datum value)
+{
+	int	i;
+
+	if (!sketch)
+		return;
+
+	sketch->nvalues++;
+
+	for (i = 0; i < CM_SKETCH_DEPTH; i++)
+	{
+		LOCAL_FCINFO(locfcinfo, 2);
+		uint64	hash_value;
+		uint64	index;
+
+		InitFunctionCallInfoData(*locfcinfo, &typentry->hash_extended_proc_finfo, 2,
+								 collation, NULL, NULL);
+		locfcinfo->args[0].value = value;
+		locfcinfo->args[0].isnull = false;
+
+		locfcinfo->args[1].value = Int64GetDatum(coun_min_sketch_seeds[i]);
+		locfcinfo->args[0].isnull = false;
+
+		hash_value = DatumGetUInt64(FunctionCallInvoke(locfcinfo));
+
+		/* We don't expect hash support functions to return null */
+		Assert(!locfcinfo->isnull);
+
+		/* update the right counter */
+		index = i * CM_SKETCH_WIDTH + (hash_value % CM_SKETCH_WIDTH);
+
+		sketch->counters[index] += 1;
+	}
+}
+
+/*
  *	compute_scalar_stats() -- compute column statistics
  *
  *	We use this when we can find "=" and "<" operators for the datatype.
@@ -2407,6 +2477,10 @@ compute_scalar_stats(VacAttrStatsP stats,
 	int			num_bins = stats->attr->attstattarget;
 	StdAnalyzeData *mystats = (StdAnalyzeData *) stats->extra_data;
 
+	/* count-min sketch build info */
+	TypeCacheEntry *typentry;
+	count_min_sketch *sketch = NULL;
+
 	values = (ScalarItem *) palloc(samplerows * sizeof(ScalarItem));
 	tupnoLink = (int *) palloc(samplerows * sizeof(int));
 	track = (ScalarMCVItem *) palloc(num_mcv * sizeof(ScalarMCVItem));
@@ -2415,6 +2489,14 @@ compute_scalar_stats(VacAttrStatsP stats,
 	ssup.ssup_cxt = CurrentMemoryContext;
 	ssup.ssup_collation = stats->attrcollid;
 	ssup.ssup_nulls_first = false;
+
+	/* hashing for count-min sketch */
+	typentry = lookup_type_cache(stats->attrtype->oid, TYPECACHE_HASH_EXTENDED_PROC_FINFO);
+
+	if (OidIsValid(typentry->hash_extended_proc_finfo.fn_oid))
+		sketch = count_min_sketch_alloc();
+	else
+		elog(WARNING, "no hash_extended_proc found for type %d", stats->attrtype->oid);
 
 	/*
 	 * For now, don't perform abbreviated key conversion, because full values
@@ -2442,6 +2524,8 @@ compute_scalar_stats(VacAttrStatsP stats,
 			continue;
 		}
 		nonnull_cnt++;
+
+		count_min_sketch_add(sketch, typentry, stats->attrcollid, value);
 
 		/*
 		 * If it's a variable-width field, add up widths for average width
@@ -2871,6 +2955,45 @@ compute_scalar_stats(VacAttrStatsP stats,
 			stats->numnumbers[slot_idx] = 1;
 			slot_idx++;
 		}
+
+		/*
+		 * Finally store the count-min sketch (if built) as a simple sequence
+		 * of float4 values
+		 */
+		if (sketch)
+		{
+			int			i;
+			int			nvalues;
+			float4	   *values;
+			MemoryContext old_context;
+
+			nvalues = 3 + CM_SKETCH_DEPTH * CM_SKETCH_WIDTH;
+
+			/* Must copy the target values into anl_context */
+			old_context = MemoryContextSwitchTo(stats->anl_context);
+			values = (float4 *) palloc(nvalues * sizeof(float4));
+			MemoryContextSwitchTo(old_context);
+
+			values[0] = sketch->nvalues;
+			values[1] = sketch->depth;
+			values[2] = sketch->width;
+
+			for (i = 0; i < CM_SKETCH_DEPTH * CM_SKETCH_WIDTH; i++)
+				values[3+i] = sketch->counters[i];
+
+			stats->stakind[slot_idx] = STATISTIC_KIND_COUNT_MIN_SKETCH;
+			stats->staop[slot_idx] = mystats->eqopr;
+			stats->stacoll[slot_idx] = stats->attrcollid;
+			stats->stanumbers[slot_idx] = values;
+			stats->numnumbers[slot_idx] = nvalues;
+
+			/*
+			 * Accept the defaults for stats->statypid and others. They have
+			 * been set before we were called (see vacuum.h)
+			 */
+			slot_idx++;
+		}
+
 	}
 	else if (nonnull_cnt > 0)
 	{

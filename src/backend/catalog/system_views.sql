@@ -201,6 +201,7 @@ CREATE VIEW pg_stats WITH (security_barrier) AS
             WHEN stakind3 = 1 THEN stavalues3
             WHEN stakind4 = 1 THEN stavalues4
             WHEN stakind5 = 1 THEN stavalues5
+            WHEN stakind6 = 1 THEN stavalues6
         END AS most_common_vals,
         CASE
             WHEN stakind1 = 1 THEN stanumbers1
@@ -208,6 +209,7 @@ CREATE VIEW pg_stats WITH (security_barrier) AS
             WHEN stakind3 = 1 THEN stanumbers3
             WHEN stakind4 = 1 THEN stanumbers4
             WHEN stakind5 = 1 THEN stanumbers5
+            WHEN stakind6 = 1 THEN stanumbers6
         END AS most_common_freqs,
         CASE
             WHEN stakind1 = 2 THEN stavalues1
@@ -215,6 +217,7 @@ CREATE VIEW pg_stats WITH (security_barrier) AS
             WHEN stakind3 = 2 THEN stavalues3
             WHEN stakind4 = 2 THEN stavalues4
             WHEN stakind5 = 2 THEN stavalues5
+            WHEN stakind6 = 2 THEN stavalues6
         END AS histogram_bounds,
         CASE
             WHEN stakind1 = 3 THEN stanumbers1[1]
@@ -222,6 +225,7 @@ CREATE VIEW pg_stats WITH (security_barrier) AS
             WHEN stakind3 = 3 THEN stanumbers3[1]
             WHEN stakind4 = 3 THEN stanumbers4[1]
             WHEN stakind5 = 3 THEN stanumbers5[1]
+            WHEN stakind6 = 3 THEN stanumbers6[1]
         END AS correlation,
         CASE
             WHEN stakind1 = 4 THEN stavalues1
@@ -229,6 +233,7 @@ CREATE VIEW pg_stats WITH (security_barrier) AS
             WHEN stakind3 = 4 THEN stavalues3
             WHEN stakind4 = 4 THEN stavalues4
             WHEN stakind5 = 4 THEN stavalues5
+            WHEN stakind6 = 4 THEN stavalues6
         END AS most_common_elems,
         CASE
             WHEN stakind1 = 4 THEN stanumbers1
@@ -236,6 +241,7 @@ CREATE VIEW pg_stats WITH (security_barrier) AS
             WHEN stakind3 = 4 THEN stanumbers3
             WHEN stakind4 = 4 THEN stanumbers4
             WHEN stakind5 = 4 THEN stanumbers5
+            WHEN stakind6 = 4 THEN stanumbers6
         END AS most_common_elem_freqs,
         CASE
             WHEN stakind1 = 5 THEN stanumbers1
@@ -243,7 +249,16 @@ CREATE VIEW pg_stats WITH (security_barrier) AS
             WHEN stakind3 = 5 THEN stanumbers3
             WHEN stakind4 = 5 THEN stanumbers4
             WHEN stakind5 = 5 THEN stanumbers5
-        END AS elem_count_histogram
+            WHEN stakind6 = 5 THEN stanumbers6
+        END AS elem_count_histogram,
+        CASE
+            WHEN stakind1 = 8 THEN stanumbers1
+            WHEN stakind2 = 8 THEN stanumbers2
+            WHEN stakind3 = 8 THEN stanumbers3
+            WHEN stakind4 = 8 THEN stanumbers4
+            WHEN stakind5 = 8 THEN stanumbers5
+            WHEN stakind6 = 8 THEN stanumbers6
+        END AS count_min_sketch
     FROM pg_statistic s JOIN pg_class c ON (c.oid = s.starelid)
          JOIN pg_attribute a ON (c.oid = attrelid AND attnum = s.staattnum)
          LEFT JOIN pg_namespace n ON (n.oid = c.relnamespace)

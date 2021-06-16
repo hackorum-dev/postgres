@@ -133,6 +133,8 @@ typedef struct
 	double		num_sa_scans;	/* # indexscans from ScalarArrayOpExprs */
 } GenericCosts;
 
+extern bool use_count_min_sketch;
+
 /* Hooks for plugins to get control when we ask for stats */
 typedef bool (*get_relation_stats_hook_type) (PlannerInfo *root,
 											  RangeTblEntry *rte,

@@ -103,6 +103,7 @@
 #include "utils/ps_status.h"
 #include "utils/queryjumble.h"
 #include "utils/rls.h"
+#include "utils/selfuncs.h"
 #include "utils/snapmgr.h"
 #include "utils/tzparser.h"
 #include "utils/inval.h"
@@ -2106,6 +2107,15 @@ static struct config_bool ConfigureNamesBool[] =
 		},
 		&wal_receiver_create_temp_slot,
 		false,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"use_count_min_sketch", PGC_SUSET, DEVELOPER_OPTIONS,
+			gettext_noop("use Count-Min sketch for join estimates"),
+		},
+		&use_count_min_sketch,
+		true,
 		NULL, NULL, NULL
 	},
 

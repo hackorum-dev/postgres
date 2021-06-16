@@ -151,7 +151,8 @@ static double eqjoinsel_inner(Oid opfuncoid, Oid collation,
 							  bool isdefault1, bool isdefault2,
 							  AttStatsSlot *sslot1, AttStatsSlot *sslot2,
 							  Form_pg_statistic stats1, Form_pg_statistic stats2,
-							  bool have_mcvs1, bool have_mcvs2);
+							  bool have_mcvs1, bool have_mcvs2,
+							  bool have_cms1, bool have_cms2);
 static double eqjoinsel_semi(Oid opfuncoid, Oid collation,
 							 VariableStatData *vardata1, VariableStatData *vardata2,
 							 double nd1, double nd2,
@@ -211,6 +212,8 @@ static bool get_actual_variable_endpoint(Relation heapRel,
 										 Datum *endpointDatum);
 static RelOptInfo *find_join_input_rel(PlannerInfo *root, Relids relids);
 
+
+bool use_count_min_sketch = true;
 
 /*
  *		eqsel			- Selectivity of "=" for any data types.
@@ -2260,6 +2263,8 @@ eqjoinsel(PG_FUNCTION_ARGS)
 	Form_pg_statistic stats2 = NULL;
 	bool		have_mcvs1 = false;
 	bool		have_mcvs2 = false;
+	bool		have_cms1 = false;
+	bool		have_cms2 = false;
 	bool		join_is_reversed;
 	RelOptInfo *inner_rel;
 
@@ -2279,9 +2284,14 @@ eqjoinsel(PG_FUNCTION_ARGS)
 		/* note we allow use of nullfrac regardless of security check */
 		stats1 = (Form_pg_statistic) GETSTRUCT(vardata1.statsTuple);
 		if (statistic_proc_security_check(&vardata1, opfuncoid))
+		{
 			have_mcvs1 = get_attstatsslot(&sslot1, vardata1.statsTuple,
 										  STATISTIC_KIND_MCV, InvalidOid,
 										  ATTSTATSSLOT_VALUES | ATTSTATSSLOT_NUMBERS);
+			have_cms1 = get_attstatsslot(&sslot1, vardata1.statsTuple,
+										  STATISTIC_KIND_COUNT_MIN_SKETCH, InvalidOid,
+										  ATTSTATSSLOT_NUMBERS);
+		}
 	}
 
 	if (HeapTupleIsValid(vardata2.statsTuple))
@@ -2289,9 +2299,14 @@ eqjoinsel(PG_FUNCTION_ARGS)
 		/* note we allow use of nullfrac regardless of security check */
 		stats2 = (Form_pg_statistic) GETSTRUCT(vardata2.statsTuple);
 		if (statistic_proc_security_check(&vardata2, opfuncoid))
+		{
 			have_mcvs2 = get_attstatsslot(&sslot2, vardata2.statsTuple,
 										  STATISTIC_KIND_MCV, InvalidOid,
 										  ATTSTATSSLOT_VALUES | ATTSTATSSLOT_NUMBERS);
+			have_cms2 = get_attstatsslot(&sslot2, vardata2.statsTuple,
+										  STATISTIC_KIND_COUNT_MIN_SKETCH, InvalidOid,
+										  ATTSTATSSLOT_NUMBERS);
+		}
 	}
 
 	/* We need to compute the inner-join selectivity in all cases */
@@ -2301,7 +2316,8 @@ eqjoinsel(PG_FUNCTION_ARGS)
 								  isdefault1, isdefault2,
 								  &sslot1, &sslot2,
 								  stats1, stats2,
-								  have_mcvs1, have_mcvs2);
+								  have_mcvs1, have_mcvs2,
+								  have_cms1, have_cms2);
 
 	switch (sjinfo->jointype)
 	{
@@ -2389,11 +2405,90 @@ eqjoinsel_inner(Oid opfuncoid, Oid collation,
 				bool isdefault1, bool isdefault2,
 				AttStatsSlot *sslot1, AttStatsSlot *sslot2,
 				Form_pg_statistic stats1, Form_pg_statistic stats2,
-				bool have_mcvs1, bool have_mcvs2)
+				bool have_mcvs1, bool have_mcvs2,
+				bool have_cms1, bool have_cms2)
 {
 	double		selec;
 
-	if (have_mcvs1 && have_mcvs2)
+	if (have_cms1 && have_cms2 && use_count_min_sketch)
+	{
+		int	i;
+		int	num1 = sslot1->numbers[0];
+		int	num2 = sslot2->numbers[0];
+		double	cross_size = (double) num1 * num2;
+		double	estimate = 0;
+
+//		double	error_frac, error, certainty;
+
+		/*
+		 * This is wrong, because the ndistinct esimates are for the whole
+		 * data set, not just for the sample (which is what the sketch is
+		 * calculated from)
+		 */
+//		double	nd1_per_bucket = nd1 / sslot1->numbers[2];
+//		double	nd2_per_bucket = nd2 / sslot2->numbers[2];
+
+/* keep the same values as in analyze.c */
+#define	CM_SKETCH_DEPTH	8
+#define	CM_SKETCH_WIDTH	128
+
+		Assert(sslot1->numbers[1] == sslot2->numbers[1]);
+		Assert(sslot1->numbers[2] == sslot2->numbers[2]);
+
+		Assert(sslot1->numbers[1] == CM_SKETCH_DEPTH);
+		Assert(sslot1->numbers[2] == CM_SKETCH_WIDTH);
+
+//		error_frac = 2.0 / sslot1->numbers[2];
+//		error = error_frac * sslot1->numbers[0] * sslot2->numbers[0];
+//		certainty = 1 - pow(0.5, sslot1->numbers[1]);
+
+// elog(WARNING, "relative error = %f (%f)", error_frac, error);
+// elog(WARNING, "certainty = %f", certainty);
+
+		for (i = 0; i < CM_SKETCH_DEPTH; i++)
+		{
+			int j;
+			double sum = 0;
+			for (j = 0; j < CM_SKETCH_WIDTH; j++)
+			{
+				double count1 = sslot1->numbers[3 + i * CM_SKETCH_WIDTH + j];
+				double count2 = sslot2->numbers[3 + i * CM_SKETCH_WIDTH + j];
+
+				/* Assume all groups in the bucket are of equal size */
+				// double count1_avg = (count1 / nd1_per_bucket);
+				// double count2_avg = (count2 / nd2_per_bucket);
+
+				/*
+				 * Geometric mean between average and "single group" in the
+				 * bucket - models somewhat skewed distribution with smaller
+				 * and larger groups.
+				 */
+				// double count1_avg = sqrt(count1 * (count1 / nd1_per_bucket));
+				// double count2_avg = sqrt(count2 * (count2 / nd2_per_bucket));
+
+				/*
+				 * Correction coefficient - number of groups to consider, we pick
+				 * minimum because if there are A and B items, (A < B) then we
+				 * can't join more than A groups.
+				 */
+				// double nd_min = Min(count1 / count1_avg, count2 / count2_avg);
+				// sum += count1_avg * count2_avg * nd_min;
+
+				/*
+				 * This is what the paper does (more or less considers the
+				 * whole bucket at a single group, matching everything from
+				 * the other side.
+				 */
+				sum += count1 * count2;
+			}
+
+			if ((i == 0) || (sum < estimate))
+				estimate = sum;
+		}
+
+		selec = estimate / cross_size;
+	}
+	else if (have_mcvs1 && have_mcvs2)
 	{
 		/*
 		 * We have most-common-value lists for both relations.  Run through
