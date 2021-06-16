@@ -932,16 +932,27 @@ XLogReaderValidatePageHeader(XLogReaderState *state, XLogRecPtr recptr,
  *
  * This positions the reader, like XLogBeginRead(), so that the next call to
  * XLogReadRecord() will read the next valid record.
+ *
+ * If the page_read callback fails to read the requested data,
+ * InvalidXLogRecPtr is returned.  The callback is expected to have reported
+ * the error; errormsg is set to NULL.
+ *
+ * If the reading fails for some other reason, InvalidXLogRecPtr is also
+ * returned, and *errormsg is set to a string with details of the failure.
+ *
+ * The returned pointer (or *errormsg) points to an internal buffer that's
+ * valid until the next call to XLogFindNextRecord or XLogReadRecord.
  */
 XLogRecPtr
-XLogFindNextRecord(XLogReaderState *state, XLogRecPtr RecPtr)
+XLogFindNextRecord(XLogReaderState *state, XLogRecPtr RecPtr, char **errormsg)
 {
 	XLogRecPtr	tmpRecPtr;
 	XLogRecPtr	found = InvalidXLogRecPtr;
 	XLogPageHeader header;
-	char	   *errormsg;
 
 	Assert(!XLogRecPtrIsInvalid(RecPtr));
+
+	*errormsg = NULL;
 
 	/*
 	 * skip over potential continuation data, keeping in mind that it may span
@@ -1021,7 +1032,7 @@ XLogFindNextRecord(XLogReaderState *state, XLogRecPtr RecPtr)
 	 * or we just jumped over the remaining data of a continuation.
 	 */
 	XLogBeginRead(state, tmpRecPtr);
-	while (XLogReadRecord(state, &errormsg) != NULL)
+	while (XLogReadRecord(state, errormsg) != NULL)
 	{
 		/* past the record we've found, break out */
 		if (RecPtr <= state->ReadRecPtr)
@@ -1035,6 +1046,9 @@ XLogFindNextRecord(XLogReaderState *state, XLogRecPtr RecPtr)
 
 err:
 	XLogReaderInvalReadState(state);
+
+	if (state->errormsg_buf[0] != '\0')
+		*errormsg = state->errormsg_buf;
 
 	return InvalidXLogRecPtr;
 }

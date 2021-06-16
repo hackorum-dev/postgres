@@ -267,7 +267,8 @@ extern void XLogReaderFree(XLogReaderState *state);
 /* Position the XLogReader to given record */
 extern void XLogBeginRead(XLogReaderState *state, XLogRecPtr RecPtr);
 #ifdef FRONTEND
-extern XLogRecPtr XLogFindNextRecord(XLogReaderState *state, XLogRecPtr RecPtr);
+extern XLogRecPtr XLogFindNextRecord(XLogReaderState *state, XLogRecPtr RecPtr,
+									 char **errormsg);
 #endif							/* FRONTEND */
 
 /* Read the next XLog record. Returns NULL on end-of-WAL or failure */

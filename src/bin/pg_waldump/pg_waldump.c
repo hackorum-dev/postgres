@@ -1051,11 +1051,17 @@ main(int argc, char **argv)
 		fatal_error("out of memory");
 
 	/* first find a valid recptr to start from */
-	first_record = XLogFindNextRecord(xlogreader_state, private.startptr);
+	first_record = XLogFindNextRecord(xlogreader_state, private.startptr,
+									  &errormsg);
 
 	if (first_record == InvalidXLogRecPtr)
-		fatal_error("could not find a valid record after %X/%X",
-					LSN_FORMAT_ARGS(private.startptr));
+	{
+		/* XLogFindNextRecord must return errormsg on error */
+		Assert (errormsg);
+		fatal_error("could not find a valid record after %X/%X: %s",
+					LSN_FORMAT_ARGS(xlogreader_state->ReadRecPtr),
+					errormsg);
+	}
 
 	/*
 	 * Display a message that we're skipping data if `from` wasn't a pointer
