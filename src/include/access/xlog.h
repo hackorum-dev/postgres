@@ -97,11 +97,11 @@ typedef enum
 	RECOVERY_TARGET_TIMELINE_NUMERIC
 } RecoveryTargetTimeLineGoal;
 
-extern XLogRecPtr ProcLastRecPtr;
-extern XLogRecPtr XactLastRecEnd;
+extern PGDLLIMPORT XLogRecPtr ProcLastRecPtr;
+extern PGDLLIMPORT XLogRecPtr XactLastRecEnd;
 extern PGDLLIMPORT XLogRecPtr XactLastCommitEnd;
 
-extern bool reachedConsistency;
+extern PGDLLIMPORT bool reachedConsistency;
 
 /* these variables are GUC parameters related to XLOG */
 extern int	wal_segment_size;
