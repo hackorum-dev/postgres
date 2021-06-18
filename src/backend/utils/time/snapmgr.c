@@ -1690,7 +1690,8 @@ SnapshotTooOldMagicForTest(void)
 {
 	TimestampTz ts = GetSnapshotCurrentTimestamp();
 
-	Assert(old_snapshot_threshold == 0);
+	if (old_snapshot_threshold != 0)
+	    return;
 
 	ts -= 5 * USECS_PER_SEC;
 
@@ -1863,7 +1864,8 @@ MaintainOldSnapshotTimeMapping(TimestampTz whenTaken, TransactionId xmin)
 	bool		map_update_required = false;
 
 	/* Never call this function when old snapshot checking is disabled. */
-	Assert(old_snapshot_threshold >= 0);
+	if (old_snapshot_threshold < 0)
+		return;
 
 	ts = AlignTimestampToMinuteBoundary(whenTaken);
 
