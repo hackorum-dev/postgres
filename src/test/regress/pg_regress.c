@@ -88,6 +88,7 @@ static char *temp_instance = NULL;
 static _stringlist *temp_configs = NULL;
 static bool nolocale = false;
 static bool use_existing = false;
+static bool ignore_errors = false;
 static char *hostname = NULL;
 static int	port = -1;
 static bool port_specified_by_user = false;
@@ -1849,12 +1850,17 @@ run_schedule(const char *schedule, test_start_function startfunc,
 				bool		ignore = false;
 				_stringlist *sl;
 
-				for (sl = ignorelist; sl != NULL; sl = sl->next)
+				if (ignore_errors)
+					ignore = true;
+				else
 				{
-					if (strcmp(tests[i], sl->str) == 0)
+					for (sl = ignorelist; sl != NULL; sl = sl->next)
 					{
-						ignore = true;
-						break;
+						if (strcmp(tests[i], sl->str) == 0)
+						{
+							ignore = true;
+							break;
+						}
 					}
 				}
 				if (ignore)
@@ -1948,8 +1954,16 @@ run_single_test(const char *test, test_start_function startfunc,
 
 	if (differ)
 	{
-		status(_("FAILED"));
-		fail_count++;
+		if (ignore_errors)
+		{
+			status(_("failed (ignored)"));
+			fail_ignore_count++;
+		}
+		else
+		{
+			status(_("FAILED"));
+			fail_count++;
+		}
 	}
 	else
 	{
@@ -2102,6 +2116,7 @@ help(void)
 	printf(_("                                (can be used multiple times to concatenate)\n"));
 	printf(_("      --temp-instance=DIR       create a temporary instance in DIR\n"));
 	printf(_("      --use-existing            use an existing installation\n"));
+	printf(_("      --ignore-errors           ignore all errors during the tests\n"));
 	printf(_("  -V, --version                 output version information, then exit\n"));
 	printf(_("\n"));
 	printf(_("Options for \"temp-instance\" mode:\n"));
@@ -2152,6 +2167,7 @@ regression_main(int argc, char *argv[],
 		{"config-auth", required_argument, NULL, 24},
 		{"max-concurrent-tests", required_argument, NULL, 25},
 		{"make-testtablespace-dir", no_argument, NULL, 26},
+		{"ignore-errors", required_argument, NULL, 27},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -2284,6 +2300,9 @@ regression_main(int argc, char *argv[],
 				break;
 			case 26:
 				make_testtablespace_dir = true;
+				break;
+			case 27: /* Set ignore all errors parameter to true */
+				ignore_errors = true;
 				break;
 			default:
 				/* getopt_long already emitted a complaint */
