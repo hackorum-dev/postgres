@@ -104,7 +104,10 @@ exec sql end declare section;
 		printf("name[%d]=%8.8s\tamount[%d]=%d\tletter[%d]=%c\n", i, n, i, a, i, l);
 	}
 
+	exec sql create table newt as execute f(2);
+
 	exec sql deallocate f;
+	exec sql drop table newt;
 	exec sql drop table test;
 	exec sql commit;
 	exec sql disconnect;

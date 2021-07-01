@@ -302,29 +302,42 @@ if (sqlca.sqlcode < 0) sqlprint();}
 		printf("name[%d]=%8.8s\tamount[%d]=%d\tletter[%d]=%c\n", i, n, i, a, i, l);
 	}
 
-	{ ECPGdeallocate(__LINE__, 0, NULL, "f");
+	{ ECPGdo(__LINE__, 0, 1, NULL, 0, ECPGst_normal, "create table newt as execute \"f\" ( 2 )", ECPGt_EOIT, ECPGt_EORT);
 #line 107 "execute.pgc"
 
 if (sqlca.sqlcode < 0) sqlprint();}
 #line 107 "execute.pgc"
+
+
+	{ ECPGdeallocate(__LINE__, 0, NULL, "f");
+#line 109 "execute.pgc"
+
+if (sqlca.sqlcode < 0) sqlprint();}
+#line 109 "execute.pgc"
+
+	{ ECPGdo(__LINE__, 0, 1, NULL, 0, ECPGst_normal, "drop table newt", ECPGt_EOIT, ECPGt_EORT);
+#line 110 "execute.pgc"
+
+if (sqlca.sqlcode < 0) sqlprint();}
+#line 110 "execute.pgc"
 
 	{ ECPGdo(__LINE__, 0, 1, NULL, 0, ECPGst_normal, "drop table test", ECPGt_EOIT, ECPGt_EORT);
-#line 108 "execute.pgc"
+#line 111 "execute.pgc"
 
 if (sqlca.sqlcode < 0) sqlprint();}
-#line 108 "execute.pgc"
+#line 111 "execute.pgc"
 
 	{ ECPGtrans(__LINE__, NULL, "commit");
-#line 109 "execute.pgc"
+#line 112 "execute.pgc"
 
 if (sqlca.sqlcode < 0) sqlprint();}
-#line 109 "execute.pgc"
+#line 112 "execute.pgc"
 
 	{ ECPGdisconnect(__LINE__, "CURRENT");
-#line 110 "execute.pgc"
+#line 113 "execute.pgc"
 
 if (sqlca.sqlcode < 0) sqlprint();}
-#line 110 "execute.pgc"
+#line 113 "execute.pgc"
 
 
 	return 0;
