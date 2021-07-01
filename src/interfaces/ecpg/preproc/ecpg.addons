@@ -34,7 +34,9 @@ ECPG: stmtUpdateStmt block
 ECPG: stmtExecuteStmt block
 	{
 		check_declared_list($1.name);
-		if ($1.type == NULL || strlen($1.type) == 0)
+		if ($1.type == NULL)
+			output_statement($1.name, 1, ECPGst_normal);
+		else if (strlen($1.type) == 0)
 			output_statement($1.name, 1, ECPGst_execute);
 		else
 		{
@@ -362,14 +364,18 @@ ECPG: ExecuteStmtEXECUTEprepared_nameexecute_param_clauseexecute_rest block
 	{
 		$$.name = $2;
 		$$.type = $3;
+		if ($$.type == NULL)
+		   $$.type = "";
 	}
 ECPG: ExecuteStmtCREATEOptTempTABLEcreate_as_targetASEXECUTEprepared_nameexecute_param_clauseopt_with_dataexecute_rest block
 	{
 		$$.name = cat_str(8,mm_strdup("create"),$2,mm_strdup("table"),$4,mm_strdup("as execute"),$7,$8,$9);
+		$$.type = NULL;
 	}
 ECPG: ExecuteStmtCREATEOptTempTABLEIF_PNOTEXISTScreate_as_targetASEXECUTEprepared_nameexecute_param_clauseopt_with_dataexecute_rest block
 	{
 		$$.name = cat_str(8,mm_strdup("create"),$2,mm_strdup("table if not exists"),$7,mm_strdup("as execute"),$10,$11,$12);
+		$$.type = NULL;
 	}
 ECPG: DeclareCursorStmtDECLAREcursor_namecursor_optionsCURSORopt_holdFORSelectStmt block
 	{
