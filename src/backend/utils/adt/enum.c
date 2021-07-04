@@ -77,8 +77,7 @@ check_safe_enum_use(HeapTuple enumval_tup)
 	 * into syscache; but just in case not, let's check the xmin directly.
 	 */
 	xmin = HeapTupleHeaderGetXmin(enumval_tup->t_data);
-	if (!TransactionIdIsInProgress(xmin) &&
-		TransactionIdDidCommit(xmin))
+	if (TransactionIdDidCommit(xmin))
 		return;
 
 	/*
