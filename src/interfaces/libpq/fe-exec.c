@@ -3115,7 +3115,7 @@ PQsendFlushRequest(PGconn *conn)
 	{
 		appendPQExpBufferStr(&conn->errorMessage,
 							 libpq_gettext("another command is already in progress\n"));
-		return false;
+		return 0;
 	}
 
 	if (pqPutMsgStart('H', conn) < 0 ||
