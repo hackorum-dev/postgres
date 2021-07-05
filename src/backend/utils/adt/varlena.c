@@ -1151,7 +1151,6 @@ text_position_next_internal(char *start_ptr, TextPositionState *state)
 {
 	int			haystack_len = state->len1;
 	int			needle_len = state->len2;
-	int			skiptablemask = state->skiptablemask;
 	const char *haystack = state->str1;
 	const char *needle = state->str2;
 	const char *haystack_end = &haystack[haystack_len];
@@ -1241,6 +1240,7 @@ text_position_next_internal(char *start_ptr, TextPositionState *state)
 	else
 	{
 		const char *needle_last = &needle[needle_len - 1];
+		int			skiptablemask = state->skiptablemask;
 
 		/* Start at startpos plus the length of the needle */
 		hptr = start_ptr + needle_len - 1;
@@ -1272,7 +1272,7 @@ text_position_next_internal(char *start_ptr, TextPositionState *state)
 		}
 	}
 
-	return 0;					/* not found */
+	return NULL;					/* not found */
 }
 
 /*
