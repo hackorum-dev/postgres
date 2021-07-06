@@ -1008,7 +1008,6 @@ explain (verbose, costs off)
 select c2, array_agg(c2) over (partition by c2%2 order by c2 range between current row and unbounded following) from ft1 where c2 < 10 group by c2 order by 1;
 select c2, array_agg(c2) over (partition by c2%2 order by c2 range between current row and unbounded following) from ft1 where c2 < 10 group by c2 order by 1;
 
-
 -- ===================================================================
 -- parameterized queries
 -- ===================================================================
@@ -1361,6 +1360,21 @@ SELECT * FROM ft1 ORDER BY c6 DESC NULLS FIRST, c1 OFFSET 15 LIMIT 10;
 -- ORDER BY ASC NULLS FIRST options
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 ORDER BY c6 ASC NULLS FIRST, c1 OFFSET 15 LIMIT 10;
 SELECT * FROM ft1 ORDER BY c6 ASC NULLS FIRST, c1 OFFSET 15 LIMIT 10;
+
+-- CASE clause push down
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT sum(CASE WHEN mod(c1, 4) = 0 THEN 1 ELSE 2 END) FROM ft1;
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM ft1 WHERE c1 > (CASE WHEN mod(c1, 4) = 0 THEN 1 ELSE 100 END);
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM ft1 WHERE c1 > (CASE mod(c1, 4) WHEN 0 THEN 1 WHEN 2 THEN 50 ELSE 100 END);
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM ft1 WHERE c1 > (CASE WHEN mod(c1, 4) = 0 THEN 1 WHEN mod(c1, 6) = 0 THEN 50 ELSE 100 END);
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM ft1 WHERE substr(c3, 6) = (CASE WHEN mod(c1, 4) = 0 THEN '_trig_update' ELSE '_update' END);
+PREPARE pre_case_select AS SELECT * FROM ft1 WHERE substr(c3, 6) = (CASE WHEN mod(c1, 4) = 0 THEN $1 ELSE $2 END);
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE pre_case_select('_trig_update', '_update');
+DEALLOCATE pre_case_select;
 
 -- ===================================================================
 -- test check constraints

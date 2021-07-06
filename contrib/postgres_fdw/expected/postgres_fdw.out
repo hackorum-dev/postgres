@@ -6153,6 +6153,63 @@ SELECT * FROM ft1 ORDER BY c6 ASC NULLS FIRST, c1 OFFSET 15 LIMIT 10;
    40 |  42 | 00040_trig_update | Tue Feb 10 00:00:00 1970 PST | Tue Feb 10 00:00:00 1970 | 0    | 0          | foo
 (10 rows)
 
+-- CASE clause push down
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT sum(CASE WHEN mod(c1, 4) = 0 THEN 1 ELSE 2 END) FROM ft1;
+                                         QUERY PLAN                                         
+--------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: (sum(CASE WHEN (mod(c1, 4) = 0) THEN 1 ELSE 2 END))
+   Relations: Aggregate on (public.ft1)
+   Remote SQL: SELECT sum(CASE WHEN (mod("C 1", 4) = 0) THEN 1 ELSE 2 END) FROM "S 1"."T 1"
+(4 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM ft1 WHERE c1 > (CASE WHEN mod(c1, 4) = 0 THEN 1 ELSE 100 END);
+                                                                 QUERY PLAN                                                                  
+---------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT "C 1", c2, c3, c4, c5, c6, c7, c8 FROM "S 1"."T 1" WHERE (("C 1" > CASE WHEN (mod("C 1", 4) = 0) THEN 1 ELSE 100 END))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM ft1 WHERE c1 > (CASE mod(c1, 4) WHEN 0 THEN 1 WHEN 2 THEN 50 ELSE 100 END);
+                                                                       QUERY PLAN                                                                       
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT "C 1", c2, c3, c4, c5, c6, c7, c8 FROM "S 1"."T 1" WHERE (("C 1" > CASE mod("C 1", 4) WHEN 0 THEN 1 WHEN 2 THEN 50 ELSE 100 END))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM ft1 WHERE c1 > (CASE WHEN mod(c1, 4) = 0 THEN 1 WHEN mod(c1, 6) = 0 THEN 50 ELSE 100 END);
+                                                                                  QUERY PLAN                                                                                  
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT "C 1", c2, c3, c4, c5, c6, c7, c8 FROM "S 1"."T 1" WHERE (("C 1" > CASE WHEN (mod("C 1", 4) = 0) THEN 1 WHEN (mod("C 1", 6) = 0) THEN 50 ELSE 100 END))
+(3 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT * FROM ft1 WHERE substr(c3, 6) = (CASE WHEN mod(c1, 4) = 0 THEN '_trig_update' ELSE '_update' END);
+                                                                                     QUERY PLAN                                                                                     
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT "C 1", c2, c3, c4, c5, c6, c7, c8 FROM "S 1"."T 1" WHERE ((substr(c3, 6) = CASE WHEN (mod("C 1", 4) = 0) THEN '_trig_update'::text ELSE '_update'::text END))
+(3 rows)
+
+PREPARE pre_case_select AS SELECT * FROM ft1 WHERE substr(c3, 6) = (CASE WHEN mod(c1, 4) = 0 THEN $1 ELSE $2 END);
+EXPLAIN (VERBOSE, COSTS OFF) EXECUTE pre_case_select('_trig_update', '_update');
+                                                                                     QUERY PLAN                                                                                     
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8
+   Remote SQL: SELECT "C 1", c2, c3, c4, c5, c6, c7, c8 FROM "S 1"."T 1" WHERE ((substr(c3, 6) = CASE WHEN (mod("C 1", 4) = 0) THEN '_trig_update'::text ELSE '_update'::text END))
+(3 rows)
+
+DEALLOCATE pre_case_select;
 -- ===================================================================
 -- test check constraints
 -- ===================================================================
