@@ -879,6 +879,9 @@ typedef struct PartitionSpec
 	PartitionStrategy strategy;
 	List	   *partParams;		/* List of PartitionElems */
 	int			location;		/* token location, or -1 if unknown */
+
+	Node		*autopart;	/* PartitionBoundAutoSpec -
+							 * spec to generate bounds automatically */
 } PartitionSpec;
 
 /*
@@ -906,6 +909,26 @@ struct PartitionBoundSpec
 	List	   *upperdatums;	/* List of PartitionRangeDatums */
 
 	int			location;		/* token location, or -1 if unknown */
+};
+
+/*
+ * PartitionBoundAutoSpec - a partition bound specification
+ * 							for auto generated partitions.
+ *
+ * This represents the rule of generating partition bounds
+ */
+struct PartitionBoundAutoSpec
+{
+	NodeTag		type;
+
+	char		strategy;		/* see PARTITION_STRATEGY codes above */
+
+	/* Partitioning info for HASH strategy: */
+	int			modulus;
+
+	/* Partitioning info for LIST strategy: */
+	List	   *listdatumsList;		/* List of lists of Consts (or A_Consts in raw tree) */
+	RangeVar   *default_partition_rv; /* Name of default list partition */
 };
 
 /*
