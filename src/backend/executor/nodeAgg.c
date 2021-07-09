@@ -1582,12 +1582,16 @@ find_hash_columns(AggState *aggstate)
 	aggstate->max_colno_needed = 0;
 	aggstate->all_cols_needed = true;
 
-	for (int i = 0; i < scanDesc->natts; i++)
+	for (int i = scanDesc->natts-1;
+		 i >= 0 && (aggstate->all_cols_needed || aggstate->max_colno_needed == 0);
+		 i--)
 	{
-		int			colno = i + 1;
-
+		int colno = i + 1;
 		if (bms_is_member(colno, aggstate->colnos_needed))
-			aggstate->max_colno_needed = colno;
+		{
+			if (aggstate->max_colno_needed == 0)
+				aggstate->max_colno_needed = colno;
+		}
 		else
 			aggstate->all_cols_needed = false;
 	}
