@@ -28,6 +28,10 @@ elsif (-e "./buildenv.pl")
 {
 	do "./buildenv.pl";
 }
+elsif (-e "src/tools/msvc/buildenv_default.pl")
+{
+	do "src/tools/msvc/buildenv_default.pl";
+}
 
 # set up the project
 our $config;

@@ -6,15 +6,28 @@ use strict;
 use warnings;
 
 use File::Basename;
+use Cwd;
 
 # silence flex bleatings about file path style
 $ENV{CYGWIN} = 'nodosfilewarning';
 
-# assume we are in the postgres source root
+if (-e 'src/tools/msvc/buildenv.pl') {
+	do './src/tools/msvc/buildenv.pl';
+} elsif (-e './src/tools/msvc/buildenv_default.pl') {
+	do './src/tools/msvc/buildenv_default.pl';
+} else {
+	die 'Could not find src/tools/msvc/buildenv.pl or ./src/tools/msvc/buildenv_default.pl. Run pgflex from the build root, not src/test/msvc';
+}
 
-do './src/tools/msvc/buildenv.pl' if -e 'src/tools/msvc/buildenv.pl';
+our $flex;
+if (! $flex) {
+	$flex = 'flex';
+}
 
-my ($flexver) = `flex -V`;    # grab first line
+my ($flexver) = `"$flex" -V`;    # grab first line
+if ($? ne 0) {
+	die "flex (\"$flex\") died with $?, see stderr output above. Check PATH and buildenv.pl";
+}
 $flexver = (split(/\s+/, $flexver))[1];
 $flexver =~ s/[^0-9.]//g;
 my @verparts = split(/\./, $flexver);
@@ -27,6 +40,10 @@ unless ($verparts[0] == 2
 }
 
 my $input = shift;
+if (!defined($input)) {
+	print STDERR "Using flex from ${flex}\n";
+	die "usage: src/test/msvc/pgflex.pl inputfile.l [...]";
+}
 if ($input !~ /\.l$/)
 {
 	print "Input must be a .l file\n";
@@ -50,7 +67,7 @@ close($mf);
 my $basetarg = basename($output);
 my $flexflags = ($make =~ /^$basetarg:\s*FLEXFLAGS\s*=\s*(\S.*)/m ? $1 : '');
 
-system("flex $flexflags -o$output $input");
+system("\"$flex\" $flexflags -o$output $input");
 if ($? == 0)
 {
 
