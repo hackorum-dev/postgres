@@ -1,4 +1,7 @@
 # Configuration arguments for vcbuild.
+#
+# Overridden by any values set in config.pl if it exists.
+#
 use strict;
 use warnings;
 
@@ -21,7 +24,11 @@ our $config = {
 	xml       => undef,    # --with-libxml=<path>
 	xslt      => undef,    # --with-libxslt=<path>
 	iconv     => undef,    # (not in configure, path to iconv)
-	zlib      => undef     # --with-zlib=<path>
+	zlib      => undef,     # --with-zlib=<path>
+	# extra preprocessor definitions in "DEFNAME" or "DEFNAME=VALUE" form.
+	# Does not accept arbitrary compiler flags. e.g.
+	#     ["WINVER=0x0601", "_WIN32_WINNT=0x0601"]
+	defines	  => []
 };
 
 1;

@@ -1045,6 +1045,15 @@ sub AddProject
 		$proj->AddIncludeDir($self->{options}->{uuid} . '\include');
 		$proj->AddLibrary($self->{options}->{uuid} . '\lib\uuid.lib');
 	}
+	if ($self->{options}->{defines}) {
+		if (ref $self->{options}->{defines} eq "ARRAY") {
+			foreach my $definition (@{$self->{options}->{defines}}) {
+				$proj->AddDefine($definition);
+			}
+		} else {
+			die "Key 'defines' in config.pl must have an array value like [\"def1\", \"def2=val\"]."
+		}
+	}
 	return $proj;
 }
 
