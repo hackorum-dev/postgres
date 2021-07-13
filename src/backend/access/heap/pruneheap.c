@@ -488,17 +488,15 @@ heap_prune_satisfies_vacuum(PruneState *prstate, HeapTuple tup, Buffer buffer)
  * the HOT chain is pruned by removing all DEAD tuples at the start of the HOT
  * chain.  We also prune any RECENTLY_DEAD tuples preceding a DEAD tuple.
  * This is OK because a RECENTLY_DEAD tuple preceding a DEAD tuple is really
- * DEAD, the OldestXmin test is just too coarse to detect it.
+ * DEAD, heap_prune_satisfies_vacuum() is just too coarse to detect it.
  *
  * The root line pointer is redirected to the tuple immediately after the
  * latest DEAD tuple.  If all tuples in the chain are DEAD, the root line
  * pointer is marked LP_DEAD.  (This includes the case of a DEAD simple
  * tuple, which we treat as a chain of length 1.)
  *
- * OldestXmin is the cutoff XID used to identify dead tuples.
- *
  * We don't actually change the page here, except perhaps for hint-bit updates
- * caused by HeapTupleSatisfiesVacuum.  We just add entries to the arrays in
+ * caused by HeapTupleSatisfiesVacuumHorizon.  We just add entries to the arrays in
  * prstate showing the changes to be made.  Items to be redirected are added
  * to the redirected[] array (two entries per redirection); items to be set to
  * LP_DEAD state are added to nowdead[]; and items to be set to LP_UNUSED
@@ -680,7 +678,7 @@ heap_prune_chain(Buffer buffer, OffsetNumber rootoffnum, PruneState *prstate)
 				break;
 
 			default:
-				elog(ERROR, "unexpected HeapTupleSatisfiesVacuum result");
+				elog(ERROR, "unexpected result from heap_prune_satisfies_vacuum");
 				break;
 		}
 
