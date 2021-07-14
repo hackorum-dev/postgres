@@ -803,6 +803,7 @@ fmgr_internal_validator(PG_FUNCTION_ARGS)
 						prosrc)));
 
 	ReleaseSysCache(tuple);
+	pfree(prosrc);
 
 	PG_RETURN_VOID();
 }
