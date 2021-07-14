@@ -536,6 +536,19 @@ secure_open_gssapi(Port *port)
 		}
 	}
 
+	/*
+	 * Acquire default credential with GSS_C_BOTH. Comprare to using
+	 * GSS_C_NO_CREDENTIAL, this allows us to also acquire a proxy
+	 * credential, which can be used in postgres_fdw as for delegation.
+	 */
+	major = gss_acquire_cred(&minor, GSS_C_NO_NAME, 0,
+			NULL, GSS_C_BOTH, &port->gss->cred, NULL, NULL);
+	if (major != GSS_S_COMPLETE)
+	{
+		pg_GSS_error(_("gss_acquire_cred failed"), major, minor);
+		return -1;
+	}
+
 	while (true)
 	{
 		ssize_t		ret;
@@ -585,10 +598,10 @@ secure_open_gssapi(Port *port)
 
 		/* Process incoming data.  (The client sends first.) */
 		major = gss_accept_sec_context(&minor, &port->gss->ctx,
-									   GSS_C_NO_CREDENTIAL, &input,
+									   port->gss->cred, &input,
 									   GSS_C_NO_CHANNEL_BINDINGS,
 									   &port->gss->name, NULL, &output, NULL,
-									   NULL, NULL);
+									   NULL, &port->gss->proxy);
 		if (GSS_ERROR(major))
 		{
 			pg_GSS_error(_("could not accept GSSAPI security context"),

@@ -333,6 +333,9 @@ make_new_connection(ConnCacheEntry *entry, UserMapping *user)
 		 entry->conn, server->servername, user->umid, user->userid);
 }
 
+extern char* get_gss_proxy_cred();
+extern bool has_gss_proxy_cred();
+
 /*
  * Connect to remote server using specified server and user mapping properties.
  */
@@ -349,14 +352,16 @@ connect_pg_server(ForeignServer *server, UserMapping *user)
 		const char **keywords;
 		const char **values;
 		int			n;
+		char *gss_proxy_cred_addr;
 
 		/*
 		 * Construct connection params from generic options of ForeignServer
 		 * and UserMapping.  (Some of them might not be libpq options, in
-		 * which case we'll just waste a few array slots.)  Add 3 extra slots
-		 * for fallback_application_name, client_encoding, end marker.
+		 * which case we'll just waste a few array slots.)  Add 4 extra slots
+		 * for fallback_application_name, client_encoding, end marker,
+		 * gss_proxy_cred.
 		 */
-		n = list_length(server->options) + list_length(user->options) + 3;
+		n = list_length(server->options) + list_length(user->options) + 4;
 		keywords = (const char **) palloc(n * sizeof(char *));
 		values = (const char **) palloc(n * sizeof(char *));
 
@@ -375,6 +380,14 @@ connect_pg_server(ForeignServer *server, UserMapping *user)
 		keywords[n] = "client_encoding";
 		values[n] = GetDatabaseEncodingName();
 		n++;
+
+		gss_proxy_cred_addr = get_gss_proxy_cred();
+		if (gss_proxy_cred_addr != NULL)
+		{
+			keywords[n] = "gss_proxy_cred";
+			values[n] = gss_proxy_cred_addr;
+			n++;
+		}
 
 		keywords[n] = values[n] = NULL;
 
@@ -475,6 +488,9 @@ static bool
 UserMappingPasswordRequired(UserMapping *user)
 {
 	ListCell   *cell;
+
+	if (has_gss_proxy_cred())
+		return false;
 
 	foreach(cell, user->options)
 	{

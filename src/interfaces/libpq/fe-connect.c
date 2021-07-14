@@ -335,6 +335,10 @@ static const internalPQconninfoOption PQconninfoOptions[] = {
 		"GSS-library", "", 7,	/* sizeof("gssapi") == 7 */
 	offsetof(struct pg_conn, gsslib)},
 
+	{"gss_proxy_cred", "PGGSSPROXYCRED", NULL, NULL,
+		"GSS proxy credential", "", 19, /* sizeof("0x0123456789abcdef") */
+	offsetof(struct pg_conn, gssproxycred)},
+
 	{"replication", NULL, NULL, NULL,
 		"Replication", "D", 5,
 	offsetof(struct pg_conn, replication)},
@@ -4116,6 +4120,8 @@ freePGconn(PGconn *conn)
 		free(conn->krbsrvname);
 	if (conn->gsslib)
 		free(conn->gsslib);
+	if (conn->gssproxycred)
+		free(conn->gssproxycred);
 	if (conn->connip)
 		free(conn->connip);
 	/* Note that conn->Pfdebug is not ours to close or free */

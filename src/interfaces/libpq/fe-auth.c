@@ -62,6 +62,7 @@ pg_GSS_continue(PGconn *conn, int payloadlen)
 				lmin_s;
 	gss_buffer_desc ginbuf;
 	gss_buffer_desc goutbuf;
+	gss_cred_id_t proxy;
 
 	/*
 	 * On first call, there's no input token. On subsequent calls, read the
@@ -93,9 +94,15 @@ pg_GSS_continue(PGconn *conn, int payloadlen)
 		ginbuf.length = 0;
 		ginbuf.value = NULL;
 	}
+	proxy = GSS_C_NO_CREDENTIAL;
+	if (conn->gssproxycred)
+	{
+		if (1 != sscanf(conn->gssproxycred, "%p", &proxy))
+			proxy = GSS_C_NO_CREDENTIAL;
+	}
 
 	maj_stat = gss_init_sec_context(&min_stat,
-									GSS_C_NO_CREDENTIAL,
+									proxy,
 									&conn->gctx,
 									conn->gtarg_nam,
 									GSS_C_NO_OID,

@@ -95,6 +95,8 @@ typedef struct
 								 * GSSAPI auth was not used */
 	bool		auth;			/* GSSAPI Authentication used */
 	bool		enc;			/* GSSAPI encryption in use */
+
+	gss_cred_id_t proxy;
 #endif
 } pg_gssinfo;
 #endif

@@ -935,12 +935,17 @@ pg_GSS_recvauth(Port *port)
 	}
 
 	/*
-	 * We accept any service principal that's present in our keytab. This
-	 * increases interoperability between kerberos implementations that see
-	 * for example case sensitivity differently, while not really opening up
-	 * any vector of attack.
+	 * Acquire default credential with GSS_C_BOTH. Comprare to using
+	 * GSS_C_NO_CREDENTIAL, this allows us to also acquire a proxy
+	 * credential, which can be used in postgres_fdw as for delegation.
 	 */
-	port->gss->cred = GSS_C_NO_CREDENTIAL;
+	maj_stat = gss_acquire_cred(&min_stat, GSS_C_NO_NAME, 0,
+			NULL, GSS_C_BOTH, &port->gss->cred, NULL, NULL);
+	if (maj_stat != GSS_S_COMPLETE)
+	{
+		pg_GSS_error(_("gss_acquire_cred failed"), maj_stat, min_stat);
+		return STATUS_ERROR;
+	}
 
 	/*
 	 * Initialize sequence with an empty context
@@ -997,7 +1002,7 @@ pg_GSS_recvauth(Port *port)
 										  &port->gss->outbuf,
 										  &gflags,
 										  NULL,
-										  NULL);
+										  &port->gss->proxy);
 
 		/* gbuf no longer used */
 		pfree(buf.data);
