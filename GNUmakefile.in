@@ -114,6 +114,8 @@ distdir:
 	cp $(distdir)/doc/src/sgml/INSTALL $(distdir)/
 	$(MAKE) -C $(distdir) distclean
 	rm -f $(distdir)/README.git
+	git rev-parse HEAD > $(distdir)/.gitrevision
+	if test -n "`git status --untracked-files=no --porcelain`"; then sed -i "s/$$/ (modified)/" $(distdir)/.gitrevision ; fi
 
 distcheck: dist
 	rm -rf $(dummy)
