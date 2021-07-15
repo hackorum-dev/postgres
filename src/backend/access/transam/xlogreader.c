@@ -33,6 +33,7 @@
 #ifndef FRONTEND
 #include "miscadmin.h"
 #include "pgstat.h"
+#include "access/xlog.h"
 #include "utils/memutils.h"
 #endif
 
@@ -1054,9 +1055,6 @@ err:
  *
  * Returns true if succeeded, false if an error occurs, in which case
  * 'errinfo' receives error details.
- *
- * XXX probably this should be improved to suck data directly from the
- * WAL buffers when possible.
  */
 bool
 WALRead(XLogReaderState *state,
@@ -1066,6 +1064,14 @@ WALRead(XLogReaderState *state,
 	char	   *p;
 	XLogRecPtr	recptr;
 	Size		nbytes;
+
+#ifndef FRONTEND
+	/*
+	 * If the data we want seems to be in one page, we first try to read from WAL buffer
+	 */
+	if (count <= (Size) XLOG_BLCKSZ && XLogReadBuffer(buf, startptr, count, tli))
+			return true;
+#endif
 
 	p = buf;
 	recptr = startptr;

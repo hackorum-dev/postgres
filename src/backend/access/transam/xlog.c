@@ -12989,3 +12989,46 @@ XLogRequestWalReceiverReply(void)
 {
 	doRequestWalReceiverReply = true;
 }
+
+/*
+ * Read the data from WAL buffer
+ * If the page we want is already recycled, return false
+ */
+bool
+XLogReadBuffer(char *buf, XLogRecPtr startptr, Size count, TimeLineID tli)
+{
+	int			idx;
+	uint32		offset;
+	XLogPageHeader	TargetPage;
+
+	/*
+	 * First, we should prevent AdvanceXLInsertBuffer
+	 */
+	LWLockAcquire(WALBufMappingLock, LW_SHARED);
+
+	/*
+	 * Check wheter the page we want is still on WAL buffer
+	 */
+	idx = XLogRecPtrToBufIdx(startptr);
+	TargetPage = (XLogPageHeader) (XLogCtl->pages + idx * (Size) XLOG_BLCKSZ);
+
+	if (TargetPage->xlp_tli != tli || TargetPage->xlp_pageaddr > startptr
+			|| TargetPage->xlp_pageaddr + (Size) XLOG_BLCKSZ < startptr + count)
+	{
+		LWLockRelease(WALBufMappingLock);
+		return false;
+	}
+
+	offset = startptr % XLOG_BLCKSZ;
+
+	/*
+	 * Acquire lock to prevent the other process from write WAL buffer anymore,
+	 * then read
+	 */
+	WALInsertLockAcquireExclusive();
+	memcpy(buf, TargetPage + offset, count);
+	WALInsertLockRelease();
+
+	LWLockRelease(WALBufMappingLock);
+	return true;
+}
