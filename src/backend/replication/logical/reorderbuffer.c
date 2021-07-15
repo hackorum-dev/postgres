@@ -4064,7 +4064,11 @@ ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 			char		path[MAXPGPATH];
 
 			if (fd != -1)
-				CloseTransientFile(fd);
+				if (CloseTransientFile(fd))
+					ereport(ERROR,
+							(errcode_for_file_access(),
+							 errmsg("could not close file: %m")));
+
 
 			XLByteToSeg(change->lsn, curOpenSegNo, wal_segment_size);
 
@@ -4114,7 +4118,10 @@ ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 	txn->txn_flags |= RBTXN_IS_SERIALIZED;
 
 	if (fd != -1)
-		CloseTransientFile(fd);
+		if (CloseTransientFile(fd))
+			ereport(ERROR,
+					(errcode_for_file_access(),
+					 errmsg("could not close file: %m")));
 }
 
 /*
@@ -4309,7 +4316,7 @@ ReorderBufferSerializeChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 	{
 		int			save_errno = errno;
 
-		CloseTransientFile(fd);
+		(void) CloseTransientFile(fd);	/* no error checking */
 
 		/* if write didn't set errno, assume problem is no disk space */
 		errno = save_errno ? save_errno : ENOSPC;
