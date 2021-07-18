@@ -2257,7 +2257,7 @@ expand_tilde(char **filename)
 			strlcpy(home, pw->pw_dir, sizeof(home));	/* ~user */
 
 		*p = oldp;
-		if (strlen(home) != 0)
+		if (home[0] != '\0')
 		{
 			char	   *newfn;
 

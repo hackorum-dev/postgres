@@ -373,7 +373,7 @@ check_pghost_envvar(void)
 		{
 			const char *value = getenv(option->envvar);
 
-			if (value && strlen(value) > 0 &&
+			if (value && value[0] != '\0' &&
 			/* check for 'local' host values */
 				(strcmp(value, "localhost") != 0 && strcmp(value, "127.0.0.1") != 0 &&
 				 strcmp(value, "::1") != 0 && value[0] != '/'))

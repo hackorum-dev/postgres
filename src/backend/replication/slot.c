@@ -173,7 +173,7 @@ ReplicationSlotValidateName(const char *name, int elevel)
 {
 	const char *cp;
 
-	if (strlen(name) == 0)
+	if (name[0] == '\0')
 	{
 		ereport(elevel,
 				(errcode(ERRCODE_INVALID_NAME),

@@ -74,14 +74,14 @@ buildACLCommands(const char *name, const char *subname, const char *nspname,
 				secondsql;
 	bool		found_owner_privs = false;
 
-	if (strlen(acls) == 0 && strlen(racls) == 0)
+	if (acls[0] == '\0' && racls[0] == '\0')
 		return true;			/* object has default permissions */
 
 	/* treat empty-string owner same as NULL */
 	if (owner && *owner == '\0')
 		owner = NULL;
 
-	if (strlen(acls) != 0)
+	if (acls[0] != '\0')
 	{
 		if (!parsePGArray(acls, &aclitems, &naclitems))
 		{
@@ -91,7 +91,7 @@ buildACLCommands(const char *name, const char *subname, const char *nspname,
 		}
 	}
 
-	if (strlen(racls) != 0)
+	if (racls[0] != '\0')
 	{
 		if (!parsePGArray(racls, &raclitems, &nraclitems))
 		{
@@ -403,7 +403,7 @@ buildDefaultACLCommands(const char *type, const char *nspname,
 	if (nspname)
 		appendPQExpBuffer(prefix, "IN SCHEMA %s ", fmtId(nspname));
 
-	if (strlen(initacls) != 0 || strlen(initracls) != 0)
+	if (initacls[0] != '\0' || initracls[0] != '\0')
 	{
 		appendPQExpBufferStr(sql, "SELECT pg_catalog.binary_upgrade_set_record_init_privs(true);\n");
 		if (!buildACLCommands("", NULL, NULL, type,

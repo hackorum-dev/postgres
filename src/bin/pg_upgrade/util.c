@@ -75,7 +75,7 @@ prep_status(const char *fmt,...)
 	vsnprintf(message, sizeof(message), fmt, args);
 	va_end(args);
 
-	if (strlen(message) > 0 && message[strlen(message) - 1] == '\n')
+	if (message[0] != '\0' && message[strlen(message) - 1] == '\n')
 		pg_log(PG_REPORT, "%s", message);
 	else
 		/* trim strings that don't end in a newline */

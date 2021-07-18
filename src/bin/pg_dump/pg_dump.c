@@ -2983,24 +2983,24 @@ dumpDatabase(Archive *fout)
 	 */
 	appendPQExpBuffer(creaQry, "CREATE DATABASE %s WITH TEMPLATE = template0",
 					  qdatname);
-	if (strlen(encoding) > 0)
+	if (encoding[0] != '\0')
 	{
 		appendPQExpBufferStr(creaQry, " ENCODING = ");
 		appendStringLiteralAH(creaQry, encoding, fout);
 	}
-	if (strlen(collate) > 0 && strcmp(collate, ctype) == 0)
+	if (collate[0] != '\0' && strcmp(collate, ctype) == 0)
 	{
 		appendPQExpBufferStr(creaQry, " LOCALE = ");
 		appendStringLiteralAH(creaQry, collate, fout);
 	}
 	else
 	{
-		if (strlen(collate) > 0)
+		if (collate[0] != '\0')
 		{
 			appendPQExpBufferStr(creaQry, " LC_COLLATE = ");
 			appendStringLiteralAH(creaQry, collate, fout);
 		}
-		if (strlen(ctype) > 0)
+		if (ctype[0] != '\0')
 		{
 			appendPQExpBufferStr(creaQry, " LC_CTYPE = ");
 			appendStringLiteralAH(creaQry, ctype, fout);
@@ -3015,7 +3015,7 @@ dumpDatabase(Archive *fout)
 	 * tablespace selection logic work ... but CREATE DATABASE doesn't pay
 	 * attention to default_tablespace, so that won't work.
 	 */
-	if (strlen(tablespace) > 0 && strcmp(tablespace, "pg_default") != 0 &&
+	if (tablespace[0] != '\0' && strcmp(tablespace, "pg_default") != 0 &&
 		!dopt->outputNoTablespaces)
 		appendPQExpBuffer(creaQry, " TABLESPACE = %s",
 						  fmtId(tablespace));
@@ -3121,7 +3121,7 @@ dumpDatabase(Archive *fout)
 	resetPQExpBuffer(creaQry);
 	resetPQExpBuffer(delQry);
 
-	if (strlen(datconnlimit) > 0 && strcmp(datconnlimit, "-1") != 0)
+	if (datconnlimit[0] != '\0' && strcmp(datconnlimit, "-1") != 0)
 		appendPQExpBuffer(creaQry, "ALTER DATABASE %s CONNECTION LIMIT = %s;\n",
 						  qdatname, datconnlimit);
 
@@ -4050,7 +4050,7 @@ getPublications(Archive *fout, int *numPublications)
 		pubinfo[i].pubviaroot =
 			(strcmp(PQgetvalue(res, i, i_pubviaroot), "t") == 0);
 
-		if (strlen(pubinfo[i].rolname) == 0)
+		if (pubinfo[i].rolname[0] == '\0')
 			pg_log_warning("owner of publication \"%s\" appears to be invalid",
 						   pubinfo[i].dobj.name);
 
@@ -4424,7 +4424,7 @@ getSubscriptions(Archive *fout)
 		subinfo[i].subtwophasestate =
 			pg_strdup(PQgetvalue(res, i, i_subtwophasestate));
 
-		if (strlen(subinfo[i].rolname) == 0)
+		if (subinfo[i].rolname[0] == '\0')
 			pg_log_warning("owner of subscription \"%s\" appears to be invalid",
 						   subinfo[i].dobj.name);
 
@@ -4980,7 +4980,7 @@ getNamespaces(Archive *fout, int *numNamespaces)
 			PQgetisnull(res, i, i_initrnspacl))
 			nsinfo[i].dobj.dump &= ~DUMP_COMPONENT_ACL;
 
-		if (strlen(nsinfo[i].rolname) == 0)
+		if (nsinfo[i].rolname[0] == '\0')
 			pg_log_warning("owner of schema \"%s\" appears to be invalid",
 						   nsinfo[i].dobj.name);
 	}
@@ -5332,7 +5332,7 @@ getTypes(Archive *fout, int *numTypes)
 			stinfo->dobj.dump = DUMP_COMPONENT_NONE;
 		}
 
-		if (strlen(tyinfo[i].rolname) == 0)
+		if (tyinfo[i].rolname[0] == '\0')
 			pg_log_warning("owner of data type \"%s\" appears to be invalid",
 						   tyinfo[i].dobj.name);
 	}
@@ -5416,7 +5416,7 @@ getOperators(Archive *fout, int *numOprs)
 		/* Operators do not currently have ACLs. */
 		oprinfo[i].dobj.dump &= ~DUMP_COMPONENT_ACL;
 
-		if (strlen(oprinfo[i].rolname) == 0)
+		if (oprinfo[i].rolname[0] == '\0')
 			pg_log_warning("owner of operator \"%s\" appears to be invalid",
 						   oprinfo[i].dobj.name);
 	}
@@ -5715,7 +5715,7 @@ getOpclasses(Archive *fout, int *numOpclasses)
 		/* Op Classes do not currently have ACLs. */
 		opcinfo[i].dobj.dump &= ~DUMP_COMPONENT_ACL;
 
-		if (strlen(opcinfo[i].rolname) == 0)
+		if (opcinfo[i].rolname[0] == '\0')
 			pg_log_warning("owner of operator class \"%s\" appears to be invalid",
 						   opcinfo[i].dobj.name);
 	}
@@ -5798,7 +5798,7 @@ getOpfamilies(Archive *fout, int *numOpfamilies)
 		/* Extensions do not currently have ACLs. */
 		opfinfo[i].dobj.dump &= ~DUMP_COMPONENT_ACL;
 
-		if (strlen(opfinfo[i].rolname) == 0)
+		if (opfinfo[i].rolname[0] == '\0')
 			pg_log_warning("owner of operator family \"%s\" appears to be invalid",
 						   opfinfo[i].dobj.name);
 	}
@@ -5966,7 +5966,7 @@ getAggregates(Archive *fout, int *numAggs)
 		agginfo[i].aggfn.dobj.namespace =
 			findNamespace(atooid(PQgetvalue(res, i, i_aggnamespace)));
 		agginfo[i].aggfn.rolname = pg_strdup(PQgetvalue(res, i, i_rolname));
-		if (strlen(agginfo[i].aggfn.rolname) == 0)
+		if (agginfo[i].aggfn.rolname[0] == '\0')
 			pg_log_warning("owner of aggregate function \"%s\" appears to be invalid",
 						   agginfo[i].aggfn.dobj.name);
 		agginfo[i].aggfn.lang = InvalidOid; /* not currently interesting */
@@ -6225,7 +6225,7 @@ getFuncs(Archive *fout, int *numFuncs)
 			PQgetisnull(res, i, i_initrproacl))
 			finfo[i].dobj.dump &= ~DUMP_COMPONENT_ACL;
 
-		if (strlen(finfo[i].rolname) == 0)
+		if (finfo[i].rolname[0] == '\0')
 			pg_log_warning("owner of function \"%s\" appears to be invalid",
 						   finfo[i].dobj.name);
 	}
@@ -7053,7 +7053,7 @@ getTables(Archive *fout, int *numTables)
 		}
 
 		/* Emit notice if join for owner failed */
-		if (strlen(tblinfo[i].rolname) == 0)
+		if (tblinfo[i].rolname[0] == '\0')
 			pg_log_warning("owner of table \"%s\" appears to be invalid",
 						   tblinfo[i].dobj.name);
 	}
@@ -13402,7 +13402,7 @@ dumpOpclass(Archive *fout, const OpclassInfo *opcinfo)
 	appendPQExpBuffer(q, "FOR TYPE %s USING %s",
 					  opcintype,
 					  fmtId(amname));
-	if (strlen(opcfamilyname) > 0)
+	if (opcfamilyname[0] != '\0')
 	{
 		appendPQExpBufferStr(q, " FAMILY ");
 		appendPQExpBuffer(q, "%s.", fmtId(opcfamilynsp));
@@ -13520,7 +13520,7 @@ dumpOpclass(Archive *fout, const OpclassInfo *opcinfo)
 		appendPQExpBuffer(q, "OPERATOR %s %s",
 						  amopstrategy, amopopr);
 
-		if (strlen(sortfamily) > 0)
+		if (sortfamily[0] != '\0')
 		{
 			appendPQExpBufferStr(q, " FOR ORDER BY ");
 			appendPQExpBuffer(q, "%s.", fmtId(sortfamilynsp));
@@ -13840,7 +13840,7 @@ dumpOpfamily(Archive *fout, const OpfamilyInfo *opfinfo)
 			appendPQExpBuffer(q, "OPERATOR %s %s",
 							  amopstrategy, amopopr);
 
-			if (strlen(sortfamily) > 0)
+			if (sortfamily[0] != '\0')
 			{
 				appendPQExpBufferStr(q, " FOR ORDER BY ");
 				appendPQExpBuffer(q, "%s.", fmtId(sortfamilynsp));
@@ -14918,7 +14918,7 @@ dumpForeignDataWrapper(Archive *fout, const FdwInfo *fdwinfo)
 	if (strcmp(fdwinfo->fdwvalidator, "-") != 0)
 		appendPQExpBuffer(q, " VALIDATOR %s", fdwinfo->fdwvalidator);
 
-	if (strlen(fdwinfo->fdwoptions) > 0)
+	if (fdwinfo->fdwoptions[0] != '\0')
 		appendPQExpBuffer(q, " OPTIONS (\n    %s\n)", fdwinfo->fdwoptions);
 
 	appendPQExpBufferStr(q, ";\n");
@@ -14994,12 +14994,12 @@ dumpForeignServer(Archive *fout, const ForeignServerInfo *srvinfo)
 	fdwname = PQgetvalue(res, 0, 0);
 
 	appendPQExpBuffer(q, "CREATE SERVER %s", qsrvname);
-	if (srvinfo->srvtype && strlen(srvinfo->srvtype) > 0)
+	if (srvinfo->srvtype && srvinfo->srvtype[0] != '\0')
 	{
 		appendPQExpBufferStr(q, " TYPE ");
 		appendStringLiteralAH(q, srvinfo->srvtype, fout);
 	}
-	if (srvinfo->srvversion && strlen(srvinfo->srvversion) > 0)
+	if (srvinfo->srvversion && srvinfo->srvversion[0] != '\0')
 	{
 		appendPQExpBufferStr(q, " VERSION ");
 		appendStringLiteralAH(q, srvinfo->srvversion, fout);
@@ -15008,7 +15008,7 @@ dumpForeignServer(Archive *fout, const ForeignServerInfo *srvinfo)
 	appendPQExpBufferStr(q, " FOREIGN DATA WRAPPER ");
 	appendPQExpBufferStr(q, fmtId(fdwname));
 
-	if (srvinfo->srvoptions && strlen(srvinfo->srvoptions) > 0)
+	if (srvinfo->srvoptions && srvinfo->srvoptions[0] != '\0')
 		appendPQExpBuffer(q, " OPTIONS (\n    %s\n)", srvinfo->srvoptions);
 
 	appendPQExpBufferStr(q, ";\n");
@@ -15124,7 +15124,7 @@ dumpUserMappings(Archive *fout,
 		appendPQExpBuffer(q, "CREATE USER MAPPING FOR %s", fmtId(usename));
 		appendPQExpBuffer(q, " SERVER %s", fmtId(servername));
 
-		if (umoptions && strlen(umoptions) > 0)
+		if (umoptions && umoptions[0] != '\0')
 			appendPQExpBuffer(q, " OPTIONS (\n    %s\n)", umoptions);
 
 		appendPQExpBufferStr(q, ";\n");
@@ -15289,7 +15289,7 @@ dumpACL(Archive *fout, DumpId objDumpId, DumpId altDumpId,
 	 * are to be recorded by calling binary_upgrade_set_record_init_privs()
 	 * before and after.
 	 */
-	if (strlen(initacls) != 0 || strlen(initracls) != 0)
+	if (initacls[0] != '\0' || initracls[0] != '\0')
 	{
 		appendPQExpBufferStr(sql, "SELECT pg_catalog.binary_upgrade_set_record_init_privs(true);\n");
 		if (!buildACLCommands(name, subname, nspname, type,
@@ -16849,7 +16849,7 @@ dumpIndex(Archive *fout, const IndxInfo *indxinfo)
 		 * If the index has any statistics on some of its columns, generate
 		 * the associated ALTER INDEX queries.
 		 */
-		if (strlen(indstatcols) != 0 || strlen(indstatvals) != 0)
+		if (indstatcols[0] != '\0' || indstatvals[0] != '\0')
 		{
 			int			j;
 
@@ -18344,7 +18344,7 @@ processExtensionTables(Archive *fout, ExtensionInfo extinfo[],
 									curext->dobj.catId.oid))
 			continue;
 
-		if (strlen(extconfig) != 0 || strlen(extcondition) != 0)
+		if (extconfig[0] != '\0' || extcondition[0] != '\0')
 		{
 			int			j;
 

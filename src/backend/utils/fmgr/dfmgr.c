@@ -594,7 +594,7 @@ find_in_dynamic_libpath(const char *basename)
 	AssertState(Dynamic_library_path != NULL);
 
 	p = Dynamic_library_path;
-	if (strlen(p) == 0)
+	if (p[0] == '\0')
 		return NULL;
 
 	baselen = strlen(basename);

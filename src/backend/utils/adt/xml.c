@@ -2631,13 +2631,13 @@ xmldata_root_element_start(StringInfo result, const char *eltname,
 	if (top_level)
 	{
 		appendStringInfoString(result, " xmlns:xsi=\"" NAMESPACE_XSI "\"");
-		if (strlen(targetns) > 0)
+		if (targetns[0] != '\0')
 			appendStringInfo(result, " xmlns=\"%s\"", targetns);
 	}
 	if (xmlschema)
 	{
 		/* FIXME: better targets */
-		if (strlen(targetns) > 0)
+		if (targetns[0] != '\0')
 			appendStringInfo(result, " xsi:schemaLocation=\"%s #\"", targetns);
 		else
 			appendStringInfoString(result, " xsi:noNamespaceSchemaLocation=\"#\"");
@@ -2900,7 +2900,7 @@ xsd_schema_element_start(StringInfo result, const char *targetns)
 	appendStringInfoString(result,
 						   "<xsd:schema\n"
 						   "    xmlns:xsd=\"" NAMESPACE_XSD "\"");
-	if (strlen(targetns) > 0)
+	if (targetns[0] != '\0')
 		appendStringInfo(result,
 						 "\n"
 						 "    targetNamespace=\"%s\"\n"

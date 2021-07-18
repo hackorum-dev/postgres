@@ -411,7 +411,7 @@ pg_get_encoding_from_locale(const char *ctype, bool write_message)
 	 * Current macOS has many locales that report an empty string for CODESET,
 	 * but they all seem to actually use UTF-8.
 	 */
-	if (strlen(sys) == 0)
+	if (sys[0] == '\0')
 	{
 		free(sys);
 		return PG_UTF8;

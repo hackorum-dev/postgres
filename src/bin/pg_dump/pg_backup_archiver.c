@@ -765,9 +765,9 @@ restore_toc_entry(ArchiveHandle *AH, TocEntry *te, bool is_parallel)
 	/* Dump any relevant dump warnings to stderr */
 	if (!ropt->suppressDumpWarnings && strcmp(te->desc, "WARNING") == 0)
 	{
-		if (!ropt->dataOnly && te->defn != NULL && strlen(te->defn) != 0)
+		if (!ropt->dataOnly && te->defn != NULL && te->defn[0] != '\0')
 			pg_log_warning("warning from original dump file: %s", te->defn);
-		else if (te->copyStmt != NULL && strlen(te->copyStmt) != 0)
+		else if (te->copyStmt != NULL && te->copyStmt[0] != '\0')
 			pg_log_warning("warning from original dump file: %s", te->copyStmt);
 	}
 
@@ -916,7 +916,7 @@ restore_toc_entry(ArchiveHandle *AH, TocEntry *te, bool is_parallel)
 					/*
 					 * If we have a copy statement, use it.
 					 */
-					if (te->copyStmt && strlen(te->copyStmt) > 0)
+					if (te->copyStmt && te->copyStmt[0] != '\0')
 					{
 						ahprintf(AH, "%s", te->copyStmt);
 						AH->outputKind = OUTPUT_COPYDATA;
@@ -3519,7 +3519,7 @@ _printTocEntry(ArchiveHandle *AH, TocEntry *te, bool isData)
 		free(sanitized_schema);
 		free(sanitized_owner);
 
-		if (te->tablespace && strlen(te->tablespace) > 0 && !ropt->noTablespace)
+		if (te->tablespace && te->tablespace[0] != '\0' && !ropt->noTablespace)
 		{
 			char	   *sanitized_tablespace;
 
@@ -3549,7 +3549,7 @@ _printTocEntry(ArchiveHandle *AH, TocEntry *te, bool isData)
 	}
 	else
 	{
-		if (te->defn && strlen(te->defn) > 0)
+		if (te->defn && te->defn[0] != '\0')
 			ahprintf(AH, "%s\n\n", te->defn);
 	}
 
@@ -3565,8 +3565,8 @@ _printTocEntry(ArchiveHandle *AH, TocEntry *te, bool isData)
 		(!ropt->use_setsessauth ||
 		 (strcmp(te->desc, "SCHEMA") == 0 &&
 		  strncmp(te->defn, "--", 2) == 0)) &&
-		te->owner && strlen(te->owner) > 0 &&
-		te->dropStmt && strlen(te->dropStmt) > 0)
+		te->owner && te->owner[0] != '\0' &&
+		te->dropStmt && te->dropStmt[0] != '\0')
 	{
 		if (strcmp(te->desc, "AGGREGATE") == 0 ||
 			strcmp(te->desc, "BLOB") == 0 ||

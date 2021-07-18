@@ -530,7 +530,7 @@ helpSQL(const char *topic, unsigned short int pager)
 {
 #define VALUE_OR_NULL(a) ((a) ? (a) : "")
 
-	if (!topic || strlen(topic) == 0)
+	if (!topic || topic[0] == '\0')
 	{
 		/* Print all the available command names */
 		int			screen_width;

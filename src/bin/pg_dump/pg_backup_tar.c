@@ -289,7 +289,7 @@ _ReadExtraToc(ArchiveHandle *AH, TocEntry *te)
 	}
 
 	ctx->filename = ReadStr(AH);
-	if (strlen(ctx->filename) == 0)
+	if (ctx->filename[0] == '\0')
 	{
 		free(ctx->filename);
 		ctx->filename = NULL;

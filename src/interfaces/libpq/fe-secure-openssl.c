@@ -802,11 +802,11 @@ initialize_SSL(PGconn *conn)
 	 * defaulted.  If pqGetHomeDirectory fails, act as though none of the
 	 * files could be found.
 	 */
-	if (!(conn->sslcert && strlen(conn->sslcert) > 0) ||
-		!(conn->sslkey && strlen(conn->sslkey) > 0) ||
-		!(conn->sslrootcert && strlen(conn->sslrootcert) > 0) ||
-		!((conn->sslcrl && strlen(conn->sslcrl) > 0) ||
-		  (conn->sslcrldir && strlen(conn->sslcrldir) > 0)))
+	if (!(conn->sslcert && conn->sslcert[0] != '\0') ||
+		!(conn->sslkey && conn->sslkey[0] != '\0') ||
+		!(conn->sslrootcert && conn->sslrootcert[0] != '\0') ||
+		!((conn->sslcrl && conn->sslcrl[0] != '\0') ||
+		  (conn->sslcrldir && conn->sslcrldir[0] != '\0')))
 		have_homedir = pqGetHomeDirectory(homedir, sizeof(homedir));
 	else						/* won't need it */
 		have_homedir = false;
@@ -843,7 +843,7 @@ initialize_SSL(PGconn *conn)
 	 * harmless.
 	 */
 	if (PQsslKeyPassHook
-		|| (conn->sslpassword && strlen(conn->sslpassword) > 0))
+		|| (conn->sslpassword && conn->sslpassword[0] != '\0'))
 	{
 		SSL_CTX_set_default_passwd_cb(SSL_context, PQssl_passwd_cb);
 		SSL_CTX_set_default_passwd_cb_userdata(SSL_context, conn);
@@ -854,7 +854,7 @@ initialize_SSL(PGconn *conn)
 
 	/* Set the minimum and maximum protocol versions if necessary */
 	if (conn->ssl_min_protocol_version &&
-		strlen(conn->ssl_min_protocol_version) != 0)
+		conn->ssl_min_protocol_version[0] != '\0')
 	{
 		int			ssl_min_ver;
 
@@ -883,7 +883,7 @@ initialize_SSL(PGconn *conn)
 	}
 
 	if (conn->ssl_max_protocol_version &&
-		strlen(conn->ssl_max_protocol_version) != 0)
+		conn->ssl_max_protocol_version[0] != '\0')
 	{
 		int			ssl_max_ver;
 
@@ -922,7 +922,7 @@ initialize_SSL(PGconn *conn)
 	 * verification. If sslmode is "verify-full" we will also do further
 	 * verification after the connection has been completed.
 	 */
-	if (conn->sslrootcert && strlen(conn->sslrootcert) > 0)
+	if (conn->sslrootcert && conn->sslrootcert[0] != '\0')
 		strlcpy(fnbuf, conn->sslrootcert, sizeof(fnbuf));
 	else if (have_homedir)
 		snprintf(fnbuf, sizeof(fnbuf), "%s/%s", homedir, ROOT_CERT_FILE);
@@ -951,9 +951,9 @@ initialize_SSL(PGconn *conn)
 			char	   *fname = NULL;
 			char	   *dname = NULL;
 
-			if (conn->sslcrl && strlen(conn->sslcrl) > 0)
+			if (conn->sslcrl && conn->sslcrl[0] != '\0')
 				fname = conn->sslcrl;
-			if (conn->sslcrldir && strlen(conn->sslcrldir) > 0)
+			if (conn->sslcrldir && conn->sslcrldir[0] != '\0')
 				dname = conn->sslcrldir;
 
 			/* defaults to use the default CRL file */
@@ -1005,7 +1005,7 @@ initialize_SSL(PGconn *conn)
 	}
 
 	/* Read the client certificate file */
-	if (conn->sslcert && strlen(conn->sslcert) > 0)
+	if (conn->sslcert && conn->sslcert[0] != '\0')
 		strlcpy(fnbuf, conn->sslcert, sizeof(fnbuf));
 	else if (have_homedir)
 		snprintf(fnbuf, sizeof(fnbuf), "%s/%s", homedir, USER_CERT_FILE);
@@ -1119,7 +1119,7 @@ initialize_SSL(PGconn *conn)
 	 * colon in the name. The exception is if the second character is a colon,
 	 * in which case it can be a Windows filename with drive specification.
 	 */
-	if (have_cert && conn->sslkey && strlen(conn->sslkey) > 0)
+	if (have_cert && conn->sslkey && conn->sslkey[0] != '\0')
 	{
 #ifdef USE_SSL_ENGINE
 		if (strchr(conn->sslkey, ':')

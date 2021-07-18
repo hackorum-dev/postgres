@@ -446,7 +446,7 @@ ECPGconnect(int lineno, int c, const char *name, const char *user, const char *p
 				*tmp = '\0';
 			}
 
-			if (strlen(dbname) > 0)
+			if (dbname[0] != '\0')
 			{
 				realname = ecpg_strdup(dbname, lineno);
 				connect_params++;
@@ -486,7 +486,7 @@ ECPGconnect(int lineno, int c, const char *name, const char *user, const char *p
 			 host ? host : "<DEFAULT>",
 			 port ? (ecpg_internal_regression_mode ? "<REGRESSION_PORT>" : port) : "<DEFAULT>",
 			 options ? "with options " : "", options ? options : "",
-			 (user && strlen(user) > 0) ? "for user " : "", user ? user : "");
+			 (user && user[0] != '\0') ? "for user " : "", user ? user : "");
 
 	/* count options (this may produce an overestimate, it's ok) */
 	if (options)
@@ -494,9 +494,9 @@ ECPGconnect(int lineno, int c, const char *name, const char *user, const char *p
 			if (options[i] == '=')
 				connect_params++;
 
-	if (user && strlen(user) > 0)
+	if (user && user[0] != '\0')
 		connect_params++;
-	if (passwd && strlen(passwd) > 0)
+	if (passwd && passwd[0] != '\0')
 		connect_params++;
 
 	/* allocate enough space for all connection parameters */
@@ -541,13 +541,13 @@ ECPGconnect(int lineno, int c, const char *name, const char *user, const char *p
 		conn_values[i] = port;
 		i++;
 	}
-	if (user && strlen(user) > 0)
+	if (user && user[0] != '\0')
 	{
 		conn_keywords[i] = "user";
 		conn_values[i] = user;
 		i++;
 	}
-	if (passwd && strlen(passwd) > 0)
+	if (passwd && passwd[0] != '\0')
 	{
 		conn_keywords[i] = "password";
 		conn_values[i] = passwd;

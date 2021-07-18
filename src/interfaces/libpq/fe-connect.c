@@ -7151,7 +7151,7 @@ sslVerifyProtocolVersion(const char *version)
 	 * An empty string and a NULL value are considered valid as it is
 	 * equivalent to ignoring the parameter.
 	 */
-	if (!version || strlen(version) == 0)
+	if (!version || version[0] == '\0')
 		return true;
 
 	if (pg_strcasecmp(version, "TLSv1") == 0 ||
@@ -7177,7 +7177,7 @@ sslVerifyProtocolRange(const char *min, const char *max)
 		   sslVerifyProtocolVersion(max));
 
 	/* If at least one of the bounds is not set, the range is valid */
-	if (min == NULL || max == NULL || strlen(min) == 0 || strlen(max) == 0)
+	if (min == NULL || max == NULL || min[0] == '\0' || max[0] == '\0')
 		return true;
 
 	/*

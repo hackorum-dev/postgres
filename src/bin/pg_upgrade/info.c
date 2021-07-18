@@ -168,7 +168,7 @@ create_rel_filename_map(const char *old_data, const char *new_data,
 						FileNameMap *map)
 {
 	/* In case old/new tablespaces don't match, do them separately. */
-	if (strlen(old_rel->tablespace) == 0)
+	if (old_rel->tablespace[0] == '\0')
 	{
 		/*
 		 * relation belongs to the default tablespace, hence relfiles should
@@ -185,7 +185,7 @@ create_rel_filename_map(const char *old_data, const char *new_data,
 	}
 
 	/* Do the same for new tablespaces */
-	if (strlen(new_rel->tablespace) == 0)
+	if (new_rel->tablespace[0] == '\0')
 	{
 		map->new_tablespace = new_data;
 		map->new_tablespace_suffix = "/base";

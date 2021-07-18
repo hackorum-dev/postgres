@@ -589,7 +589,7 @@ create_script_for_old_cluster_deletion(char **deletion_script_file_name)
 		 * Do the old cluster's per-database directories share a directory
 		 * with a new version-specific tablespace?
 		 */
-		if (strlen(old_cluster.tablespace_suffix) == 0)
+		if (old_cluster.tablespace_suffix[0] == '\0')
 		{
 			/* delete per-database directories */
 			int			dbnum;

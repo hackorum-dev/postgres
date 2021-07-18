@@ -790,7 +790,7 @@ process_psqlrc(char *argv0)
 	snprintf(rc_file, MAXPGPATH, "%s/%s", etc_path, SYSPSQLRC);
 	process_psqlrc_file(rc_file);
 
-	if (envrc != NULL && strlen(envrc) > 0)
+	if (envrc != NULL && envrc[0] != '\0')
 	{
 		/* might need to free() this */
 		char	   *envrc_alloc = pstrdup(envrc);

@@ -1108,7 +1108,7 @@ pg_GSS_checkauth(Port *port)
 			*cp = '\0';
 		cp++;
 
-		if (port->hba->krb_realm != NULL && strlen(port->hba->krb_realm))
+		if (port->hba->krb_realm != NULL && port->hba->krb_realm[0] != '\0')
 		{
 			/*
 			 * Match the realm part of the name first
@@ -1129,7 +1129,7 @@ pg_GSS_checkauth(Port *port)
 			}
 		}
 	}
-	else if (port->hba->krb_realm && strlen(port->hba->krb_realm))
+	else if (port->hba->krb_realm && port->hba->krb_realm[0] != '\0')
 	{
 		elog(DEBUG2,
 			 "GSSAPI did not return realm but realm matching was requested");
@@ -1453,7 +1453,7 @@ pg_SSPI_recvauth(Port *port)
 	 * Compare realm/domain if requested. In SSPI, always compare case
 	 * insensitive.
 	 */
-	if (port->hba->krb_realm && strlen(port->hba->krb_realm))
+	if (port->hba->krb_realm && port->hba->krb_realm[0] != '\0')
 	{
 		if (pg_strcasecmp(port->hba->krb_realm, domainname) != 0)
 		{
@@ -1968,7 +1968,7 @@ pam_passwd_conv_proc(int num_msg, const struct pam_message **msg,
 		switch (msg[i]->msg_style)
 		{
 			case PAM_PROMPT_ECHO_OFF:
-				if (strlen(passwd) == 0)
+				if (passwd[0] == '\0')
 				{
 					/*
 					 * Password wasn't passed to PAM the first time around -
@@ -2766,7 +2766,7 @@ CheckCertAuth(Port *port)
 
 	/* Make sure we have received a username in the certificate */
 	if (peer_username == NULL ||
-		strlen(peer_username) <= 0)
+		peer_username[0] == '\0')
 	{
 		ereport(LOG,
 				(errmsg("certificate authentication failed for user \"%s\": client certificate contains no user name",

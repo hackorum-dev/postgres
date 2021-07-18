@@ -727,7 +727,7 @@ pg_backup_start_time(PG_FUNCTION_ARGS)
 				(errcode_for_file_access(),
 				 errmsg("could not close file \"%s\": %m", BACKUP_LABEL_FILE)));
 
-	if (strlen(backup_start_time) == 0)
+	if (backup_start_time[0] == '\0')
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				 errmsg("invalid data in file \"%s\"", BACKUP_LABEL_FILE)));

@@ -368,7 +368,7 @@ initializeInput(int flags)
 			char	   *envhist;
 
 			envhist = getenv("PSQL_HISTORY");
-			if (envhist != NULL && strlen(envhist) > 0)
+			if (envhist != NULL && envhist[0] != '\0')
 				histfile = envhist;
 		}
 

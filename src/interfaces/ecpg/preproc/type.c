@@ -565,7 +565,7 @@ ECPGdump_a_simple(FILE *o, const char *name, enum ECPGttype type,
 		 * If size i.e. the size of structure of which this variable is part
 		 * of, that gives the offset to the next element, if required
 		 */
-		if (size == NULL || strlen(size) == 0)
+		if (size == NULL || size[0] == '\0')
 			fprintf(o, "\n\t%s,%s,(long)%s,(long)%s,%s, ", get_type(type), variable, varcharsize, arrsize, offset);
 		else
 			fprintf(o, "\n\t%s,%s,(long)%s,(long)%s,%s, ", get_type(type), variable, varcharsize, arrsize, size);

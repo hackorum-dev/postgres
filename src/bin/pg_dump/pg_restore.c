@@ -172,11 +172,11 @@ main(int argc, char **argv)
 				opts->filename = pg_strdup(optarg);
 				break;
 			case 'F':
-				if (strlen(optarg) != 0)
+				if (optarg[0] != '\0')
 					opts->formatName = pg_strdup(optarg);
 				break;
 			case 'h':
-				if (strlen(optarg) != 0)
+				if (optarg[0] != '\0')
 					opts->cparams.pghost = pg_strdup(optarg);
 				break;
 
@@ -205,7 +205,7 @@ main(int argc, char **argv)
 				break;
 
 			case 'p':
-				if (strlen(optarg) != 0)
+				if (optarg[0] != '\0')
 					opts->cparams.pgport = pg_strdup(optarg);
 				break;
 			case 'R':
@@ -230,7 +230,7 @@ main(int argc, char **argv)
 				opts->schemaOnly = 1;
 				break;
 			case 'S':			/* Superuser username */
-				if (strlen(optarg) != 0)
+				if (optarg[0] != '\0')
 					opts->superuser = pg_strdup(optarg);
 				break;
 			case 't':			/* Dump specified table(s) only */

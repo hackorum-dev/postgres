@@ -360,7 +360,7 @@ _metaphone(char *word,			/* IN */
 		elog(ERROR, "metaphone: Requested output length must be > 0");
 
 	/* Empty/null string is meaningless */
-	if ((word == NULL) || !(strlen(word) > 0))
+	if (word == NULL || word[0] == '\0')
 		/* internal error */
 		elog(ERROR, "metaphone: Input string length must be > 0");
 

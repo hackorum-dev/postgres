@@ -360,7 +360,7 @@ check_required_directory(char **dirpath, const char *envVarName, bool useCwd,
 						 const char *cmdLineOption, const char *description,
 						 bool missingOk)
 {
-	if (*dirpath == NULL || strlen(*dirpath) == 0)
+	if (*dirpath == NULL || **dirpath == '\0')
 	{
 		const char *envVar;
 
