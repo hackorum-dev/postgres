@@ -221,6 +221,8 @@ handle_args(int argc, char *argv[])
 	printf(_("O_DIRECT supported on this platform for open_datasync and open_sync.\n"));
 #elif defined(F_NOCACHE)
 	printf(_("F_NOCACHE supported on this platform for open_datasync and open_sync.\n"));
+#elif defined(DIRECTIO_ON)
+	printf(_("DIRECTIO_ON supported on this platform for open_datasync and open_sync.\n"));
 #else
 	printf(_("Direct I/O is not supported on this platform.\n"));
 #endif
@@ -271,14 +273,27 @@ open_direct(const char *path, int flags, mode_t mode)
 
 	fd = open(path, flags, mode);
 
-#if !defined(O_DIRECT) && defined(F_NOCACHE)
-	if (fd >= 0 && fcntl(fd, F_NOCACHE, 1) < 0)
+#if !defined(O_DIRECT) && \
+	(defined(F_NOCACHE) || \
+	 defined(DIRECTIO_ON))
+	if (fd >= 0)
 	{
-		int			save_errno = errno;
+		int			rc;
 
-		close(fd);
-		errno = save_errno;
-		return -1;
+#if defined(F_NOCACHE)
+		rc = fcntl(fd, F_NOCACHE, 1);
+#endif
+#if defined(DIRECTIO_ON)
+		rc = directio(fd, DIRECTIO_ON);
+#endif
+		if (rc < 0)
+		{
+			int			save_errno = errno;
+
+			close(fd);
+			errno = save_errno;
+			return -1;
+		}
 	}
 #endif
 

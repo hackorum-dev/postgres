@@ -1057,11 +1057,13 @@ BasicOpenFilePerm(const char *fileName, int fileFlags, mode_t fileMode)
 	int			fd;
 
 tryAgain:
-#ifdef PG_O_DIRECT_USE_F_NOCACHE
+#if defined(PG_O_DIRECT_USE_F_NOCACHE) || \
+	defined(PG_O_DIRECT_USE_DIRECTIO_ON)
 
 	/*
 	 * The value we defined to stand in for O_DIRECT when simulating it with
-	 * F_NOCACHE had better not collide with any of the standard flags.
+	 * an extra system call had better not collide with any of the standard
+	 * flags.
 	 */
 	StaticAssertStmt((PG_O_DIRECT &
 					  (O_APPEND |
@@ -1089,10 +1091,19 @@ tryAgain:
 
 	if (fd >= 0)
 	{
-#ifdef PG_O_DIRECT_USE_F_NOCACHE
+#if defined(PG_O_DIRECT_USE_F_NOCACHE) || \
+	defined(PG_O_DIRECT_USE_DIRECTIO_ON)
 		if (fileFlags & PG_O_DIRECT)
 		{
-			if (fcntl(fd, F_NOCACHE, 1) < 0)
+			int			rc;
+
+#if defined(PG_O_DIRECT_USE_F_NOCACHE)
+			rc = fcntl(fd, F_NOCACHE, 1);
+#endif
+#if defined(PG_O_DIRECT_USE_DIRECTIO_ON)
+			rc = directio(fd, DIRECTIO_ON);
+#endif
+			if (rc < 0)
 			{
 				int			save_errno = errno;
 
