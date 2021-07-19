@@ -79,6 +79,8 @@ extern int	max_safe_fds;
 #define FILE_POSSIBLY_DELETED(err)	((err) == ENOENT || (err) == EACCES)
 #endif
 
+#undef O_DIRECT					/* HACK: make Illumos behave like Solaris */
+
 /*
  * O_DIRECT is not standard, but almost every Unix has it.  We translate it
  * to the appropriate Windows flag in src/port/open.c.  We simulate it with

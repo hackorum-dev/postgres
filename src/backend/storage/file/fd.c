@@ -1098,9 +1098,11 @@ tryAgain:
 			int			rc;
 
 #if defined(PG_O_DIRECT_USE_F_NOCACHE)
+			elog(LOG, "XXX F_NOCACHE"); /* HACK */
 			rc = fcntl(fd, F_NOCACHE, 1);
 #endif
 #if defined(PG_O_DIRECT_USE_DIRECTIO_ON)
+			elog(LOG, "XXX DIRECTIO_ON");	/* HACK */
 			rc = directio(fd, DIRECTIO_ON);
 #endif
 			if (rc < 0)

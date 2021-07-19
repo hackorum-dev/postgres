@@ -17,6 +17,8 @@
 #include "common/logging.h"
 #include "getopt_long.h"
 
+#undef O_DIRECT					/* HACK: make Illumos behave like Solaris */
+
 /*
  * put the temp files in the local directory
  * unless the user specifies otherwise
