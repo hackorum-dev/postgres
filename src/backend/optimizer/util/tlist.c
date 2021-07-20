@@ -663,6 +663,37 @@ copy_pathtarget(PathTarget *src)
 }
 
 /*
+ * Check wether a tlist is a subset of another tlist.
+ * That subset can be in a different order, or not.
+ */
+bool
+pathtarget_is_subset(PathTarget *target1, PathTarget *target2)
+{
+	ListCell   *lc1;
+
+	foreach(lc1, target1->exprs)
+	{
+		Expr *expr1 = (Expr*) lfirst(lc1);
+		ListCell   *lc2;
+		bool            found = false;
+
+		foreach(lc2, target2->exprs)
+		{
+			Expr *expr2 = (Expr*) lfirst(lc2);
+
+			if (equal(expr1, expr2))
+			{
+				found = true;
+				break;
+			}
+		}
+		if (!found)
+			return false;
+	}
+	return true;
+}
+
+/*
  * create_empty_pathtarget
  *	  Create an empty (zero columns, zero cost) PathTarget.
  */

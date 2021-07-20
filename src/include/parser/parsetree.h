@@ -50,6 +50,7 @@ extern bool get_rte_attribute_is_dropped(RangeTblEntry *rte,
  */
 
 extern TargetEntry *get_tle_by_resno(List *tlist, AttrNumber resno);
+extern bool tlist_is_subset(List* tlist1, List *tlist2);
 
 /* ----------------
  *		FOR UPDATE/SHARE info

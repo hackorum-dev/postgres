@@ -2116,6 +2116,11 @@ create_sort_plan(PlannerInfo *root, SortPath *best_path, int flags)
 								   best_path->path.parent->relids : NULL);
 
 	copy_generic_path_info(&plan->plan, (Path *) best_path);
+	/*
+	 * XXX: This should probably be passed as an arg to make_sort_from_pathkeys
+	 * ?
+	 */
+	plan->plan.targetlist = make_tlist_from_pathtarget(best_path->path.pathtarget);
 
 	return plan;
 }
@@ -4230,13 +4235,13 @@ create_nestloop_plan(PlannerInfo *root,
 	Relids		saveOuterRels = root->curOuterRels;
 
 	/* NestLoop can project, so no need to be picky about child tlists */
-	outer_plan = create_plan_recurse(root, best_path->outerjoinpath, 0);
+	outer_plan = create_plan_recurse(root, best_path->outerjoinpath, CP_EXACT_TLIST);
 
 	/* For a nestloop, include outer relids in curOuterRels for inner side */
 	root->curOuterRels = bms_union(root->curOuterRels,
 								   best_path->outerjoinpath->parent->relids);
 
-	inner_plan = create_plan_recurse(root, best_path->innerjoinpath, 0);
+	inner_plan = create_plan_recurse(root, best_path->innerjoinpath, CP_EXACT_TLIST);
 
 	/* Restore curOuterRels */
 	bms_free(root->curOuterRels);

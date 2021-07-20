@@ -24,6 +24,7 @@ extern List *add_to_flat_tlist(List *tlist, List *exprs);
 extern List *get_tlist_exprs(List *tlist, bool includeJunk);
 
 extern bool tlist_same_exprs(List *tlist1, List *tlist2);
+extern bool tlist_is_subset(List* tlist1, List *tlist2);
 
 extern bool tlist_same_datatypes(List *tlist, List *colTypes, bool junkOK);
 extern bool tlist_same_collations(List *tlist, List *colCollations, bool junkOK);
@@ -39,6 +40,7 @@ extern bool grouping_is_hashable(List *groupClause);
 extern PathTarget *make_pathtarget_from_tlist(List *tlist);
 extern List *make_tlist_from_pathtarget(PathTarget *target);
 extern PathTarget *copy_pathtarget(PathTarget *src);
+extern bool pathtarget_is_subset(PathTarget *target1, PathTarget *target2);
 extern PathTarget *create_empty_pathtarget(void);
 extern void add_column_to_pathtarget(PathTarget *target,
 									 Expr *expr, Index sortgroupref);

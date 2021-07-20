@@ -2323,8 +2323,7 @@ static void
 show_sort_keys(SortState *sortstate, List *ancestors, ExplainState *es)
 {
 	Sort	   *plan = (Sort *) sortstate->ss.ps.plan;
-
-	show_sort_group_keys((PlanState *) sortstate, "Sort Key",
+	show_sort_group_keys((PlanState *) outerPlanState(sortstate), "Sort Key",
 						 plan->numCols, 0, plan->sortColIdx,
 						 plan->sortOperators, plan->collations,
 						 plan->nullsFirst,

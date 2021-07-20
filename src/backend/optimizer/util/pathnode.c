@@ -2709,6 +2709,7 @@ create_projection_path(PlannerInfo *root,
 	return pathnode;
 }
 
+
 /*
  * apply_projection_to_path
  *	  Add a projection step, or just apply the target directly to given path.
@@ -2789,12 +2790,27 @@ apply_projection_to_path(PlannerInfo *root,
 		else
 		{
 			GatherMergePath *gmpath = (GatherMergePath *) path;
-
+			ListCell *lc;
+			List *sp_tlist = make_tlist_from_pathtarget(target);
+			List *old_tlist = make_tlist_from_pathtarget(gmpath->subpath->pathtarget);
+			PathTarget *sp_target;
+			/* In the GatherMerge path, we must be careful to not discard the
+			 * pathkeys from the subpath.
+			 * XXX: maybe this should be computed from the pathkeys directly
+			 * instead of relying on ressortgroupref ?
+			 */
+			foreach(lc, old_tlist)
+			{
+				TargetEntry * tle = lfirst_node(TargetEntry, lc);
+				if (tle->ressortgroupref && !tlist_member(tle->expr, sp_tlist))
+					sp_tlist = lappend(sp_tlist, tle);
+			}
+			sp_target = make_pathtarget_from_tlist(sp_tlist);
 			gmpath->subpath = (Path *)
 				create_projection_path(root,
 									   gmpath->subpath->parent,
 									   gmpath->subpath,
-									   target);
+									   sp_target);
 		}
 	}
 	else if (path->parallel_safe &&
