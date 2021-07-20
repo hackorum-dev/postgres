@@ -46,7 +46,7 @@ extern ForeignScan *make_foreignscan(List *qptlist, List *qpqual,
 extern Plan *change_plan_targetlist(Plan *subplan, List *tlist,
 									bool tlist_parallel_safe);
 extern Plan *materialize_finished_plan(Plan *subplan);
-extern bool is_projection_capable_path(Path *path);
+extern bool is_projection_capable_path(Path *path, PathTarget *target);
 extern bool is_projection_capable_plan(Plan *plan);
 
 /* External use of these functions is deprecated: */

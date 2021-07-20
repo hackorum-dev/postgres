@@ -522,6 +522,22 @@ ExecGetResultSlotOps(PlanState *planstate, bool *isfixed)
 }
 
 
+bool
+ExecCanUseJunkFilter(PlanState *planstate)
+{
+	Plan * outerPlan= outerPlan(planstate->plan);
+	return outerPlan && tlist_is_subset(planstate->plan->targetlist, outerPlan->targetlist);
+}
+
+void
+ExecAssignJunkProjection(PlanState *planstate)
+{
+	/* The caller should have checked it first */
+	planstate->ps_junkFilter = ExecInitDiffJunkFilter(outerPlan(planstate->plan)->targetlist,
+											   planstate->plan->targetlist,
+											   planstate->ps_ResultTupleSlot);
+}
+
 /* ----------------
  *		ExecAssignProjectionInfo
  *

@@ -770,6 +770,8 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 
 		case T_Material:
 		case T_Sort:
+			set_upper_references(root, plan, rtoffset);
+			break;
 		case T_IncrementalSort:
 		case T_Unique:
 		case T_SetOp:

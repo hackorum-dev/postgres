@@ -4519,8 +4519,15 @@ create_ordered_paths(PlannerInfo *root,
 														limit_tuples);
 				/* Add projection step if needed */
 				if (sorted_path->pathtarget != target)
+				{
+					/* In our case, we should raise the target cost by the
+					 * previous cost, since all previous columns are also
+					 * required before the sort.
+					 */
+					target->cost.per_tuple += sorted_path->pathtarget->cost.per_tuple;
 					sorted_path = apply_projection_to_path(root, ordered_rel,
 														   sorted_path, target);
+				}
 
 				add_path(ordered_rel, sorted_path);
 			}

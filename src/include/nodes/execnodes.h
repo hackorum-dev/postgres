@@ -1004,6 +1004,7 @@ typedef struct PlanState
 	TupleTableSlot *ps_ResultTupleSlot; /* slot for my result tuples */
 	ExprContext *ps_ExprContext;	/* node's expression-evaluation context */
 	ProjectionInfo *ps_ProjInfo;	/* info for doing tuple projection */
+	JunkFilter *ps_junkFilter;
 
 	bool		async_capable;	/* true if node is async-capable */
 
@@ -2151,6 +2152,7 @@ typedef struct SortState
 	int64		bound_Done;		/* value of bound we did the sort with */
 	void	   *tuplesortstate; /* private state of tuplesort.c */
 	bool		am_worker;		/* are we a worker? */
+	TupleTableSlot *outsortTupleSlot;
 	SharedSortInfo *shared_info;	/* one entry per worker */
 } SortState;
 

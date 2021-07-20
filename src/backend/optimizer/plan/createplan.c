@@ -1963,7 +1963,7 @@ create_projection_plan(PlannerInfo *root, ProjectionPath *best_path, int flags)
 			apply_pathtarget_labeling_to_tlist(tlist,
 											   best_path->path.pathtarget);
 	}
-	else if (is_projection_capable_path(best_path->subpath))
+	else if (is_projection_capable_path(best_path->subpath, NULL))
 	{
 		/*
 		 * Our caller requires that we return the exact tlist, but no separate
@@ -7028,17 +7028,20 @@ make_modifytable(PlannerInfo *root, Plan *subplan,
 /*
  * is_projection_capable_path
  *		Check whether a given Path node is able to do projection.
+ *		If the target argument is NULL, the node must be able to perform any
+ *		projection, otherwise we check that the given projection is possible.
  */
 bool
-is_projection_capable_path(Path *path)
+is_projection_capable_path(Path *path, PathTarget *target)
 {
 	/* Most plan types can project, so just list the ones that can't */
 	switch (path->pathtype)
 	{
+		case T_Sort:
+			return target && pathtarget_is_subset(target, path->pathtarget);
 		case T_Hash:
 		case T_Material:
 		case T_Memoize:
-		case T_Sort:
 		case T_IncrementalSort:
 		case T_Unique:
 		case T_SetOp:

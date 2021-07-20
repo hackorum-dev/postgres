@@ -159,6 +159,9 @@ extern JunkFilter *ExecInitJunkFilter(List *targetList,
 extern JunkFilter *ExecInitJunkFilterConversion(List *targetList,
 												TupleDesc cleanTupType,
 												TupleTableSlot *slot);
+extern JunkFilter *ExecInitDiffJunkFilter(List *inputTargetList,
+										  List *outputTargetList,
+										  TupleTableSlot *slot);
 extern AttrNumber ExecFindJunkAttribute(JunkFilter *junkfilter,
 										const char *attrName);
 extern AttrNumber ExecFindJunkAttributeInTlist(List *targetlist,
@@ -551,6 +554,8 @@ extern const TupleTableSlotOps *ExecGetResultSlotOps(PlanState *planstate,
 													 bool *isfixed);
 extern void ExecAssignProjectionInfo(PlanState *planstate,
 									 TupleDesc inputDesc);
+extern bool ExecCanUseJunkFilter(PlanState *planstate);
+extern void ExecAssignJunkProjection(PlanState *planstate);
 extern void ExecConditionalAssignProjectionInfo(PlanState *planstate,
 												TupleDesc inputDesc, Index varno);
 extern void ExecFreeExprContext(PlanState *planstate);

@@ -149,10 +149,12 @@ ExecSort(PlanState *pstate)
 	 * tuples.  Note that we only rely on slot tuple remaining valid until the
 	 * next fetch from the tuplesort.
 	 */
-	slot = node->ss.ps.ps_ResultTupleSlot;
+	slot = node->outsortTupleSlot;
 	(void) tuplesort_gettupleslot(tuplesortstate,
 								  ScanDirectionIsForward(dir),
 								  false, slot, NULL);
+	if (!TTS_EMPTY(slot) && node->ss.ps.ps_junkFilter)
+		slot = ExecFilterJunk(node->ss.ps.ps_junkFilter, slot);
 	return slot;
 }
 
@@ -221,6 +223,18 @@ ExecInitSort(Sort *node, EState *estate, int eflags)
 	ExecInitResultTupleSlotTL(&sortstate->ss.ps, &TTSOpsMinimalTuple);
 	sortstate->ss.ps.ps_ProjInfo = NULL;
 
+	/* Initialize the junkfilter if any is needed.
+	 */
+	sortstate->ss.ps.ps_junkFilter = ExecInitDiffJunkFilter(outerPlan(sortstate->ss.ps.plan)->targetlist,
+											   sortstate->ss.ps.plan->targetlist,
+											   sortstate->ss.ps.ps_ResultTupleSlot);
+	if (sortstate->ss.ps.ps_junkFilter)
+		sortstate->outsortTupleSlot = ExecInitExtraTupleSlot(estate, sortstate->ss.ss_ScanTupleSlot->tts_tupleDescriptor, &TTSOpsMinimalTuple);
+	else
+		sortstate->outsortTupleSlot = sortstate->ss.ps.ps_ResultTupleSlot;
+
+
+
 	SO1_printf("ExecInitSort: %s\n",
 			   "sort node initialized");
 
@@ -243,6 +257,7 @@ ExecEndSort(SortState *node)
 	ExecClearTuple(node->ss.ss_ScanTupleSlot);
 	/* must drop pointer to sort result tuple */
 	ExecClearTuple(node->ss.ps.ps_ResultTupleSlot);
+	ExecClearTuple(node->outsortTupleSlot);
 
 	/*
 	 * Release tuplesort resources

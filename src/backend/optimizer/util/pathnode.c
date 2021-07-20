@@ -2673,7 +2673,7 @@ create_projection_path(PlannerInfo *root,
 	 * conclusion; see comments therein.
 	 */
 	oldtarget = subpath->pathtarget;
-	if (is_projection_capable_path(subpath) ||
+	if (is_projection_capable_path(subpath, target) ||
 		equal(oldtarget->exprs, target->exprs))
 	{
 		/* No separate Result node needed */
@@ -2744,7 +2744,7 @@ apply_projection_to_path(PlannerInfo *root,
 	 * If given path can't project, we might need a Result node, so make a
 	 * separate ProjectionPath.
 	 */
-	if (!is_projection_capable_path(path))
+	if (!is_projection_capable_path(path, target))
 		return (Path *) create_projection_path(root, rel, path, target);
 
 	/*

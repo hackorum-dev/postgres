@@ -2323,7 +2323,9 @@ static void
 show_sort_keys(SortState *sortstate, List *ancestors, ExplainState *es)
 {
 	Sort	   *plan = (Sort *) sortstate->ss.ps.plan;
-	show_sort_group_keys((PlanState *) outerPlanState(sortstate), "Sort Key",
+	/* Sort target list does not necessarily contain the keys, use them from the
+	 * outer plan*/
+	show_sort_group_keys(outerPlanState(sortstate), "Sort Key",
 						 plan->numCols, 0, plan->sortColIdx,
 						 plan->sortOperators, plan->collations,
 						 plan->nullsFirst,

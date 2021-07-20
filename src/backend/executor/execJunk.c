@@ -15,6 +15,7 @@
 #include "postgres.h"
 
 #include "executor/executor.h"
+#include "optimizer/tlist.h"
 
 /*-------------------------------------------------------------------------
  *		XXX this stuff should be rewritten to take advantage
@@ -198,6 +199,64 @@ ExecInitJunkFilterConversion(List *targetList,
 	junkfilter->jf_resultSlot = slot;
 
 	return junkfilter;
+}
+
+JunkFilter *
+ExecInitDiffJunkFilter(List *inputTargetList, List *outputTargetList, TupleTableSlot *slot)
+{
+	JunkFilter * junkfilter;
+	int			cleanLength;
+	AttrNumber *cleanMap;
+	ListCell   *t;
+	int			i;
+	TupleDesc  cleanTupType = ExecTypeFromTL(outputTargetList);
+
+	if (equal(inputTargetList, outputTargetList))
+		return NULL;
+
+	/*
+	 * Use the given slot, or make a new slot if we weren't given one.
+	 */
+	if (!slot)
+		slot = MakeSingleTupleTableSlot(cleanTupType, &TTSOpsVirtual);
+
+	cleanLength = cleanTupType->natts;
+	if (cleanLength > 0)
+	{
+		cleanMap = (AttrNumber *) palloc0(cleanLength * sizeof(AttrNumber));
+		i = 0;
+		foreach(t, outputTargetList)
+		{
+			int j;
+			TargetEntry *outTle = lfirst_node(TargetEntry, t);
+			TargetEntry * inTle;
+			switch (outTle->expr->type)
+			{
+				/* Const are kept as-is, so look it up underneath */
+				case T_Const:
+					inTle = tlist_member(outTle->expr, inputTargetList);
+					j = inTle->resno;
+					break;
+				case T_Var:
+					j = ((Var*) (outTle->expr))->varattno;
+					break;
+				default:
+					elog(ERROR, "Unsupported node type: %d", outTle->expr->type);
+			}
+			cleanMap[i] = j;
+			i++;
+		}
+	} else
+		cleanMap = NULL;
+	junkfilter = makeNode(JunkFilter);
+
+	junkfilter->jf_targetList = outputTargetList;
+	junkfilter->jf_cleanTupType = cleanTupType;
+	junkfilter->jf_cleanMap = cleanMap;
+	junkfilter->jf_resultSlot = slot;
+
+	return junkfilter;
+
 }
 
 /*

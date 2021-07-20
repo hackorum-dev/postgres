@@ -132,8 +132,15 @@ ExecResult(PlanState *pstate)
 			node->rs_done = true;
 		}
 
-		/* form the result tuple using ExecProject(), and return it */
-		return ExecProject(node->ps.ps_ProjInfo);
+		/* form the result tuple using ExecProject() or ExecFilterJunk(), and return it
+		 * Only one of ps_junkFilter or ps_ProjInfo must be set at a time
+		 */
+		Assert((node->ps.ps_junkFilter == NULL && node->ps.ps_ProjInfo != NULL) ||
+			   (node->ps.ps_junkFilter != NULL && node->ps.ps_ProjInfo == NULL));
+		if (node->ps.ps_junkFilter != NULL)
+			return ExecFilterJunk(node->ps.ps_junkFilter, econtext->ecxt_outertuple);
+		else
+			return ExecProject(node->ps.ps_ProjInfo);
 	}
 
 	return NULL;
@@ -218,7 +225,14 @@ ExecInitResult(Result *node, EState *estate, int eflags)
 	 * Initialize result slot, type and projection.
 	 */
 	ExecInitResultTupleSlotTL(&resstate->ps, &TTSOpsVirtual);
-	ExecAssignProjectionInfo(&resstate->ps, NULL);
+	/*
+	 * If a real projection is needed, assign a projection info.
+	 * If we only need a subset of the column, assign a resjunkfilter
+	 */
+	if (ExecCanUseJunkFilter(&resstate->ps))
+		ExecAssignJunkProjection(&resstate->ps);
+	else
+		ExecAssignProjectionInfo(&resstate->ps, NULL);
 
 	/*
 	 * initialize child expressions
