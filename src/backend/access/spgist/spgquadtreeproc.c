@@ -176,17 +176,18 @@ spg_quad_picksplit(PG_FUNCTION_ARGS)
 #ifdef USE_MEDIAN
 	/* Use the median values of x and y as the centroid point */
 	Point	  **sorted;
+	int			median;
 
 	sorted = palloc(sizeof(*sorted) * in->nTuples);
 	for (i = 0; i < in->nTuples; i++)
 		sorted[i] = DatumGetPointP(in->datums[i]);
 
 	centroid = palloc(sizeof(*centroid));
-
-	qsort(sorted, in->nTuples, sizeof(*sorted), x_cmp);
-	centroid->x = sorted[in->nTuples >> 1]->x;
-	qsort(sorted, in->nTuples, sizeof(*sorted), y_cmp);
-	centroid->y = sorted[in->nTuples >> 1]->y;
+	median = in->nTuples >> 1;
+	qselect(sorted, in->nTuples, median, sizeof(*sorted), x_cmp);
+	centroid->x = sorted[median]->x;
+	qselect(sorted, in->nTuples, median, sizeof(*sorted), y_cmp);
+	centroid->y = sorted[median]->y;
 #else
 	/* Use the average values of x and y as the centroid point */
 	centroid = palloc0(sizeof(*centroid));

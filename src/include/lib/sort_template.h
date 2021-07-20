@@ -15,6 +15,7 @@
  *
  *	  - ST_SORT - the name of a sort function to be generated
  *	  - ST_ELEMENT_TYPE - type of the referenced elements
+ *	  - ST_TOP_K - if defined the sort will stop when find the top nth element
  *	  - ST_DECLARE - if defined the functions and types are declared
  *	  - ST_DEFINE - if defined the functions and types are defined
  *	  - ST_SCOPE - scope (e.g. extern, static inline) for functions
@@ -172,6 +173,24 @@
 #define ST_SORT_INVOKE_ARG
 #endif
 
+/*
+ * If the user only want to get the top k element, we can stop the sort once we
+ * found the target.
+ */
+#ifdef ST_TOP_K
+#define ST_TOP_K_IN_RIGHT(a_) a_ > target
+#define ST_TOP_K_IN_LEFT(a_) a_ <= target
+#define ST_RESET_TOP_K(a_) target = target - (a_)
+#define ST_SORT_PROTO_NTH , size_t target
+#define ST_SORT_INVOKE_NTH , target
+#else
+#define ST_TOP_K_IN_RIGHT(a_) true
+#define ST_TOP_K_IN_LEFT(a_) true
+#define ST_RESET_TOP_K(a_)
+#define ST_SORT_PROTO_NTH
+#define ST_SORT_INVOKE_NTH
+#endif
+
 #ifdef ST_DECLARE
 
 #ifdef ST_COMPARE_RUNTIME_POINTER
@@ -181,6 +200,7 @@ typedef int (*ST_COMPARATOR_TYPE_NAME) (const ST_ELEMENT_TYPE *,
 
 /* Declare the sort function.  Note optional arguments at end. */
 ST_SCOPE void ST_SORT(ST_ELEMENT_TYPE * first, size_t n
+					  ST_SORT_PROTO_NTH
 					  ST_SORT_PROTO_ELEMENT_SIZE
 					  ST_SORT_PROTO_COMPARE
 					  ST_SORT_PROTO_ARG);
@@ -218,6 +238,7 @@ ST_SCOPE void ST_SORT(ST_ELEMENT_TYPE * first, size_t n
 			ST_SORT_INVOKE_ARG)
 #define DO_SORT(a_, n_)													\
 	ST_SORT((a_), (n_)													\
+			ST_SORT_INVOKE_NTH											\
 			ST_SORT_INVOKE_ELEMENT_SIZE									\
 			ST_SORT_INVOKE_COMPARE										\
 			ST_SORT_INVOKE_ARG)
@@ -277,6 +298,7 @@ ST_SWAPN(ST_POINTER_TYPE * a, ST_POINTER_TYPE * b, size_t n)
  */
 ST_SCOPE void
 ST_SORT(ST_ELEMENT_TYPE * data, size_t n
+		ST_SORT_PROTO_NTH
 		ST_SORT_PROTO_ELEMENT_SIZE
 		ST_SORT_PROTO_COMPARE
 		ST_SORT_PROTO_ARG)
@@ -290,7 +312,9 @@ ST_SORT(ST_ELEMENT_TYPE * data, size_t n
 			   *pm,
 			   *pn;
 	size_t		d1,
-				d2;
+				d2,
+				nd1,
+				nd2;
 	int			r,
 				presorted;
 
@@ -371,30 +395,38 @@ loop:
 	DO_SWAPN(pb, pn - d1, d1);
 	d1 = pb - pa;
 	d2 = pd - pc;
+
+	nd1 = d1 / ST_POINTER_STEP;
+	nd2 = d2 / ST_POINTER_STEP;
+
 	if (d1 <= d2)
 	{
 		/* Recurse on left partition, then iterate on right partition */
-		if (d1 > ST_POINTER_STEP)
-			DO_SORT(a, d1 / ST_POINTER_STEP);
-		if (d2 > ST_POINTER_STEP)
+		if (d1 > ST_POINTER_STEP && ST_TOP_K_IN_RIGHT(nd1))
+			DO_SORT(a, nd1);
+		if (d2 > ST_POINTER_STEP && ST_TOP_K_IN_LEFT(n - nd2))
 		{
 			/* Iterate rather than recurse to save stack space */
 			/* DO_SORT(pn - d2, d2 / ST_POINTER_STEP) */
+			ST_RESET_TOP_K(n - nd2);
 			a = pn - d2;
-			n = d2 / ST_POINTER_STEP;
+			n = nd2;
 			goto loop;
 		}
 	}
 	else
 	{
 		/* Recurse on right partition, then iterate on left partition */
-		if (d2 > ST_POINTER_STEP)
-			DO_SORT(pn - d2, d2 / ST_POINTER_STEP);
-		if (d1 > ST_POINTER_STEP)
+		if (d2 > ST_POINTER_STEP && ST_TOP_K_IN_LEFT(n - nd2))
+		{
+			ST_RESET_TOP_K(n - nd2);
+			DO_SORT(pn - d2, nd2);
+		}
+		if (d1 > ST_POINTER_STEP && ST_TOP_K_IN_RIGHT(nd1))
 		{
 			/* Iterate rather than recurse to save stack space */
 			/* DO_SORT(a, d1 / ST_POINTER_STEP) */
-			n = d1 / ST_POINTER_STEP;
+			n = nd1;
 			goto loop;
 		}
 	}
@@ -429,3 +461,9 @@ loop:
 #undef ST_SORT_PROTO_ELEMENT_SIZE
 #undef ST_SWAP
 #undef ST_SWAPN
+#undef ST_TOP_K
+#undef ST_TOP_K_IN_RIGHT
+#undef ST_TOP_K_IN_LEFT
+#undef ST_RESET_TOP_K
+#undef ST_SORT_PROTO_NTH
+#undef ST_SORT_INVOKE_NTH

@@ -54,6 +54,7 @@ OBJS = \
 	pgstrcasecmp.o \
 	pgstrsignal.o \
 	pqsignal.o \
+	qselect.o \
 	qsort.o \
 	qsort_arg.o \
 	quotes.o \

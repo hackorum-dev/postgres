@@ -508,6 +508,11 @@ typedef int (*qsort_arg_comparator) (const void *a, const void *b, void *arg);
 extern void qsort_arg(void *base, size_t nel, size_t elsize,
 					  qsort_arg_comparator cmp, void *arg);
 
+extern void qselect_arg(void *base, size_t nel, size_t target, size_t elsize,
+					  qsort_arg_comparator cmp, void *arg);
+extern void qselect(void *base, size_t nel, size_t target, size_t elsize,
+					int (*cmp) (const void *, const void *));
+
 extern void *bsearch_arg(const void *key, const void *base,
 						 size_t nmemb, size_t size,
 						 int (*compar) (const void *, const void *, void *),

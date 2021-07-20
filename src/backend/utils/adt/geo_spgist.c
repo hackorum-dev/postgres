@@ -461,12 +461,12 @@ spg_box_quad_picksplit(PG_FUNCTION_ARGS)
 		highYs[i] = box->high.y;
 	}
 
-	qsort(lowXs, in->nTuples, sizeof(float8), compareDoubles);
-	qsort(highXs, in->nTuples, sizeof(float8), compareDoubles);
-	qsort(lowYs, in->nTuples, sizeof(float8), compareDoubles);
-	qsort(highYs, in->nTuples, sizeof(float8), compareDoubles);
-
 	median = in->nTuples / 2;
+
+	qselect(lowXs, in->nTuples, median, sizeof(float8), compareDoubles);
+	qselect(highXs, in->nTuples, median, sizeof(float8), compareDoubles);
+	qselect(lowYs, in->nTuples, median, sizeof(float8), compareDoubles);
+	qselect(highYs, in->nTuples, median, sizeof(float8), compareDoubles);
 
 	centroid = palloc(sizeof(BOX));
 

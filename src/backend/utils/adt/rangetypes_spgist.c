@@ -204,6 +204,7 @@ spg_range_quad_picksplit(PG_FUNCTION_ARGS)
 	int			i;
 	int			j;
 	int			nonEmptyCount;
+	int			median;
 	RangeType  *centroid;
 	bool		empty;
 	TypeCacheEntry *typcache;
@@ -257,15 +258,16 @@ spg_range_quad_picksplit(PG_FUNCTION_ARGS)
 		PG_RETURN_VOID();
 	}
 
+	median = nonEmptyCount / 2;
 	/* Sort range bounds in order to find medians */
-	qsort_arg(lowerBounds, nonEmptyCount, sizeof(RangeBound),
-			  bound_cmp, typcache);
-	qsort_arg(upperBounds, nonEmptyCount, sizeof(RangeBound),
-			  bound_cmp, typcache);
+	qselect_arg(lowerBounds, nonEmptyCount, median, sizeof(RangeBound),
+			bound_cmp, typcache);
+	qselect_arg(upperBounds, nonEmptyCount, median, sizeof(RangeBound),
+			bound_cmp, typcache);
 
 	/* Construct "centroid" range from medians of lower and upper bounds */
-	centroid = range_serialize(typcache, &lowerBounds[nonEmptyCount / 2],
-							   &upperBounds[nonEmptyCount / 2], false);
+	centroid = range_serialize(typcache, &lowerBounds[median],
+							   &upperBounds[median], false);
 	out->hasPrefix = true;
 	out->prefixDatum = RangeTypePGetDatum(centroid);
 
