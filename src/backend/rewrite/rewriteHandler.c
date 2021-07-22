@@ -556,6 +556,9 @@ rewriteRuleAction(Query *parsetree,
 		/* OK, it's safe to combine the CTE lists */
 		sub_action->cteList = list_concat(sub_action->cteList,
 										  copyObject(parsetree->cteList));
+
+		/* record if any of the CTEs were modifying CTEs */
+		sub_action->hasModifyingCTE |= parsetree->hasModifyingCTE;
 	}
 
 	/*
