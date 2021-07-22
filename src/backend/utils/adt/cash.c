@@ -313,6 +313,7 @@ cash_out(PG_FUNCTION_ARGS)
 	char	   *result;
 	char		buf[128];
 	char	   *bufptr;
+	size_t		len;
 	int			digit_pos;
 	int			points,
 				mon_group;
@@ -378,6 +379,7 @@ cash_out(PG_FUNCTION_ARGS)
 	 * current digit position, with zero as the digit just left of the decimal
 	 * point, increasing to the right.
 	 */
+	len = strlen(ssymbol);
 	digit_pos = points;
 	do
 	{
@@ -389,8 +391,8 @@ cash_out(PG_FUNCTION_ARGS)
 		else if (digit_pos < 0 && (digit_pos % mon_group) == 0)
 		{
 			/* insert thousands sep, but only to left of radix point */
-			bufptr -= strlen(ssymbol);
-			memcpy(bufptr, ssymbol, strlen(ssymbol));
+			bufptr -= len;
+			memcpy(bufptr, ssymbol, len);
 		}
 
 		*(--bufptr) = ((uint64) value % 10) + '0';

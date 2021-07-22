@@ -11163,6 +11163,7 @@ GUCArrayDelete(ArrayType *array, const char *name)
 {
 	struct config_generic *record;
 	ArrayType  *newarray;
+	size_t      namelen;
 	int			i;
 	int			index;
 
@@ -11182,6 +11183,7 @@ GUCArrayDelete(ArrayType *array, const char *name)
 
 	newarray = NULL;
 	index = 1;
+	namelen = strlen(name);
 
 	for (i = 1; i <= ARR_DIMS(array)[0]; i++)
 	{
@@ -11200,8 +11202,8 @@ GUCArrayDelete(ArrayType *array, const char *name)
 		val = TextDatumGetCString(d);
 
 		/* ignore entry if it's what we want to delete */
-		if (strncmp(val, name, strlen(name)) == 0
-			&& val[strlen(name)] == '=')
+		if (strncmp(val, name, namelen) == 0
+			&& val[namelen] == '=')
 			continue;
 
 		/* else add it to the output array */
@@ -12098,15 +12100,16 @@ assign_pgstat_temp_directory(const char *newval, void *extra)
 	char	   *dname;
 	char	   *tname;
 	char	   *fname;
+	size_t		newvallen = strlen(newval);
 
 	/* directory */
-	dname = guc_malloc(ERROR, strlen(newval) + 1);	/* runtime dir */
+	dname = guc_malloc(ERROR, newvallen + 1);	/* runtime dir */
 	sprintf(dname, "%s", newval);
 
 	/* global stats */
-	tname = guc_malloc(ERROR, strlen(newval) + 12); /* /global.tmp */
+	tname = guc_malloc(ERROR, newvallen + 12); /* /global.tmp */
 	sprintf(tname, "%s/global.tmp", newval);
-	fname = guc_malloc(ERROR, strlen(newval) + 13); /* /global.stat */
+	fname = guc_malloc(ERROR, newvallen + 13); /* /global.stat */
 	sprintf(fname, "%s/global.stat", newval);
 
 	if (pgstat_stat_directory)

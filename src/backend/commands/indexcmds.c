@@ -2443,11 +2443,11 @@ ChooseIndexColumnNames(List *indexElems)
 			if (lc2 == NULL)
 				break;			/* found nonconflicting name */
 
-			sprintf(nbuf, "%d", i);
+			nlen = sprintf(nbuf, "%d", i);
 
 			/* Ensure generated names are shorter than NAMEDATALEN */
 			nlen = pg_mbcliplen(origname, strlen(origname),
-								NAMEDATALEN - 1 - strlen(nbuf));
+								NAMEDATALEN - 1 - nlen);
 			memcpy(buf, origname, nlen);
 			strcpy(buf + nlen, nbuf);
 			curname = buf;

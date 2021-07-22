@@ -268,6 +268,8 @@ ResetUnloggedRelationsInDbspaceDir(const char *dbspacedirname, int op)
 	 */
 	if ((op & UNLOGGED_RELATION_INIT) != 0)
 	{
+		size_t namelen = strlen(forkNames[INIT_FORKNUM]);
+
 		/* Scan the directory. */
 		dbspace_dir = AllocateDir(dbspacedirname);
 		while ((de = ReadDir(dbspace_dir, dbspacedirname)) != NULL)
@@ -296,7 +298,7 @@ ResetUnloggedRelationsInDbspaceDir(const char *dbspacedirname, int op)
 			oidbuf[oidchars] = '\0';
 			snprintf(dstpath, sizeof(dstpath), "%s/%s%s",
 					 dbspacedirname, oidbuf, de->d_name + oidchars + 1 +
-					 strlen(forkNames[INIT_FORKNUM]));
+					 namelen);
 
 			/* OK, we're ready to perform the actual copy. */
 			elog(DEBUG2, "copying %s to %s", srcpath, dstpath);
@@ -334,7 +336,7 @@ ResetUnloggedRelationsInDbspaceDir(const char *dbspacedirname, int op)
 			oidbuf[oidchars] = '\0';
 			snprintf(mainpath, sizeof(mainpath), "%s/%s%s",
 					 dbspacedirname, oidbuf, de->d_name + oidchars + 1 +
-					 strlen(forkNames[INIT_FORKNUM]));
+					 namelen);
 
 			fsync_fname(mainpath, false);
 		}

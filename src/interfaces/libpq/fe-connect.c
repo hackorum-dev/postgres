@@ -5153,6 +5153,7 @@ parseServiceFile(const char *serviceFile,
 				 PQExpBuffer errorMessage,
 				 bool *group_found)
 {
+	size_t		servicelen;
 	int			result = 0,
 				linenr = 0,
 				i;
@@ -5170,13 +5171,15 @@ parseServiceFile(const char *serviceFile,
 		return 1;
 	}
 
+	servicelen = strlen(service);
 	while ((line = fgets(buf, sizeof(buf), f)) != NULL)
 	{
 		int			len;
 
 		linenr++;
 
-		if (strlen(line) >= sizeof(buf) - 1)
+		len = strlen(line);
+		if (len >= sizeof(buf) - 1)
 		{
 			appendPQExpBuffer(errorMessage,
 							  libpq_gettext("line %d too long in service file \"%s\"\n"),
@@ -5187,7 +5190,6 @@ parseServiceFile(const char *serviceFile,
 		}
 
 		/* ignore whitespace at end of line, especially the newline */
-		len = strlen(line);
 		while (len > 0 && isspace((unsigned char) line[len - 1]))
 			line[--len] = '\0';
 
@@ -5208,8 +5210,8 @@ parseServiceFile(const char *serviceFile,
 				goto exit;
 			}
 
-			if (strncmp(line + 1, service, strlen(service)) == 0 &&
-				line[strlen(service) + 1] == ']')
+			if (strncmp(line + 1, service, servicelen) == 0 &&
+				line[servicelen + 1] == ']')
 				*group_found = true;
 			else
 				*group_found = false;

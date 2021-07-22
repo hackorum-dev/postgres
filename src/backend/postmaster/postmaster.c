@@ -4277,12 +4277,14 @@ static void
 report_fork_failure_to_client(Port *port, int errnum)
 {
 	char		buffer[1000];
+	size_t		buflen;
 	int			rc;
 
 	/* Format the error message packet (always V2 protocol) */
 	snprintf(buffer, sizeof(buffer), "E%s%s\n",
 			 _("could not fork new process for connection: "),
 			 strerror(errnum));
+	buflen = strlen(buffer);
 
 	/* Set port to non-blocking.  Don't do send() if this fails */
 	if (!pg_set_noblock(port->sock))
@@ -4291,7 +4293,7 @@ report_fork_failure_to_client(Port *port, int errnum)
 	/* We'll retry after EINTR, but ignore all other failures */
 	do
 	{
-		rc = send(port->sock, buffer, strlen(buffer) + 1, 0);
+		rc = send(port->sock, buffer, buflen + 1, 0);
 	} while (rc < 0 && errno == EINTR);
 }
 

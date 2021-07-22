@@ -953,10 +953,11 @@ static void
 send_int8_string(StringInfoData *buf, int64 intval)
 {
 	char		is[32];
+	size_t		islen;
 
-	sprintf(is, INT64_FORMAT, intval);
-	pq_sendint32(buf, strlen(is));
-	pq_sendbytes(buf, is, strlen(is));
+	islen = sprintf(is, INT64_FORMAT, intval);
+	pq_sendint32(buf, islen);
+	pq_sendbytes(buf, is, islen);
 }
 
 static void
