@@ -1805,16 +1805,31 @@ CacheInvalidateRelmap(Oid databaseId)
  * Yes, there's a possibility of a false match to zero, but it doesn't seem
  * worth troubling over, especially since most of the current callees just
  * flush all cached state anyway.
+ * Each callback\arg will we called only once, even if it was registered
+ * many times.
  */
 void
 CacheRegisterSyscacheCallback(SysCacheIdentifier cacheid,
 							  SyscacheCallbackFunction func,
 							  Datum arg)
 {
+	int i;
 	if (cacheid < 0 || cacheid >= SysCacheSize)
 		elog(FATAL, "invalid cache ID: %d", cacheid);
 	if (syscache_callback_count >= MAX_SYSCACHE_CALLBACKS)
 		elog(FATAL, "out of syscache_callback_list slots");
+
+	for (i = 0; i < syscache_callback_count; i++)
+	{
+		if (syscache_callback_list[i].id == cacheid &&
+			syscache_callback_list[i].function == func &&
+			syscache_callback_list[i].arg == arg)
+			{
+				elog(DEBUG1, "Duplicate registartion of syscache callback");
+				/* Already registered */
+				return;
+			}
+	}
 
 	if (syscache_callback_links[cacheid] == 0)
 	{
@@ -1847,13 +1862,27 @@ CacheRegisterSyscacheCallback(SysCacheIdentifier cacheid,
  *
  * NOTE: InvalidOid will be passed if a cache reset request is received.
  * In this case the called routines should flush all cached state.
+ * Each callback\arg will we called only once, even if it was registered
+ * many times.
  */
 void
 CacheRegisterRelcacheCallback(RelcacheCallbackFunction func,
 							  Datum arg)
 {
+	int i;
 	if (relcache_callback_count >= MAX_RELCACHE_CALLBACKS)
 		elog(FATAL, "out of relcache_callback_list slots");
+
+	for (i = 0; i < relcache_callback_count; i++)
+	{
+		if (relcache_callback_list[i].function == func &&
+			relcache_callback_list[i].arg == arg)
+			{
+				/* Already registered */
+				elog(DEBUG1, "Duplicate registartion of relcache callback");
+				return;
+			}
+	}
 
 	relcache_callback_list[relcache_callback_count].function = func;
 	relcache_callback_list[relcache_callback_count].arg = arg;
