@@ -431,7 +431,7 @@ SetVariableHooks(VariableSpace space, const char *name,
 }
 
 /*
- * Return true iff the named variable has substitute and/or assign hook
+ * Return true if the named variable has substitute and/or assign hook
  * functions.
  */
 bool
