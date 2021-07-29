@@ -46,7 +46,7 @@ ALTER SUBSCRIPTION <replaceable class="parameter">name</replaceable> RENAME TO <
   <para>
    You must own the subscription to use <command>ALTER SUBSCRIPTION</command>.
    To alter the owner, you must also be a direct or indirect member of the
-   new owning role. The new owner has to be a superuser.
+   new owning role.
   </para>
   
   <para>

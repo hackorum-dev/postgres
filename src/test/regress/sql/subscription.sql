@@ -99,16 +99,13 @@ ALTER SUBSCRIPTION regress_testsub_foo SET (synchronous_commit = foobar);
 -- rename back to keep the rest simple
 ALTER SUBSCRIPTION regress_testsub_foo RENAME TO regress_testsub;
 
--- fail - new owner must be superuser
+-- superuser can assign the ownership to a non-superuser
 ALTER SUBSCRIPTION regress_testsub OWNER TO regress_subscription_user2;
-ALTER ROLE regress_subscription_user2 SUPERUSER;
--- now it works
-ALTER SUBSCRIPTION regress_testsub OWNER TO regress_subscription_user2;
-
--- revoke superuser from new owner
-ALTER ROLE regress_subscription_user2 NOSUPERUSER;
 
 SET SESSION AUTHORIZATION regress_subscription_user2;
+
+-- fail - not a member of the target role
+ALTER SUBSCRIPTION regress_testsub OWNER TO regress_subscription_user;
 
 -- fail - non-superuser owner cannot change connection parameter
 ALTER SUBSCRIPTION regress_testsub CONNECTION 'dbname=somethingelse';
