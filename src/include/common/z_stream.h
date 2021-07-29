@@ -22,12 +22,17 @@ typedef struct ZStream ZStream;
 #endif
 
 /*
- * Create compression stream with rx/tx function for reading/sending compressed data.
+ * Create compression stream for sending compressed data.
  * c_alg_impl: index of chosen compression algorithm
  * c_level: compression c_level
+ */
+extern ZStream * zs_create_compressor(unsigned int c_alg_impl, int c_level);
+
+/*
+ * Create decompression stream for reading compressed data.
  * d_alg_impl: index of chosen decompression algorithm
  */
-extern ZStream * zs_create(int c_alg_impl, int c_level, int d_alg_impl);
+extern ZStream * zs_create_decompressor(unsigned int d_alg_impl);
 
 /*
  * Read up to "size" raw (decompressed) bytes.
@@ -57,22 +62,27 @@ extern char const *zs_compress_error(ZStream * zs);
 /*
  * Return true if non-flushed data might left in internal rx decompression buffer.
  */
-extern bool zs_buffered_rx(ZStream * zs);
+extern bool zs_buffered(ZStream * zs);
 
 /*
  * Return true if non-flushed data might left in internal tx compression buffer.
  */
-extern bool zs_buffered_tx(ZStream * zs);
+extern bool zs_buffered(ZStream * zs);
 
 /*
  * End the compression stream.
  */
-extern ssize_t zs_end(ZStream * zs, void *dst, size_t dst_size, size_t *dst_processed);
+extern ssize_t zs_end_compression(ZStream * zs, void *dst, size_t dst_size, size_t *dst_processed);
 
 /*
- * Free stream created by zs_create function.
+ * Free stream created by zs_create_compressor function.
  */
-extern void zs_free(ZStream * zs);
+extern void zs_compressor_free(ZStream * zs);
+
+/*
+ * Free stream created by zs_create_decompressor function.
+ */
+extern void zs_decompressor_free(ZStream * zs);
 
 /*
  * Get the name of chosen compression algorithm.
@@ -88,3 +98,8 @@ extern char const *zs_decompress_algorithm_name(ZStream * zs);
   Returns zero terminated array with compression algorithms names
 */
 extern char **zs_get_supported_algorithms(void);
+
+/*
+  Returns true if provided id is a valid compression algorithm id, otherwise returns false
+*/
+extern bool zs_is_valid_impl_id(unsigned int id);

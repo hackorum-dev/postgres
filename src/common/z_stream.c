@@ -84,14 +84,9 @@ typedef struct
 
 struct ZStream
 {
-	ZAlgorithm const *c_algorithm;
-	void	   *c_stream;
-
-	ZAlgorithm const *d_algorithm;
-	void	   *d_stream;
-
-	bool		rx_not_flushed;
-	bool		tx_not_flushed;
+	ZAlgorithm const *algorithm;
+	void	   *stream;
+	bool		not_flushed;
 };
 
 #if HAVE_LIBZSTD
@@ -107,25 +102,32 @@ struct ZStream
 #define ZSTD_WINDOWLOG_LIMIT 23 /* set max window size to 8MB */
 
 
-typedef struct ZPQ_ZSTD_CStream
+typedef struct ZS_ZSTD_CStream
 {
 	ZSTD_CStream *stream;
 	char const *error;			/* error message */
-}			ZPQ_ZSTD_CStream;
+}			ZS_ZSTD_CStream;
 
-typedef struct ZPQ_ZSTD_DStream
+typedef struct ZS_ZSTD_DStream
 {
 	ZSTD_DStream *stream;
 	char const *error;			/* error message */
-}			ZPQ_ZSTD_DStream;
+}			ZS_ZSTD_DStream;
 
 static void *
 zstd_create_compressor(int level)
 {
-	ZPQ_ZSTD_CStream *c_stream = (ZPQ_ZSTD_CStream *) malloc(sizeof(ZPQ_ZSTD_CStream));
+	size_t		rc;
+	ZS_ZSTD_CStream *c_stream = (ZS_ZSTD_CStream *) malloc(sizeof(ZS_ZSTD_CStream));
 
 	c_stream->stream = ZSTD_createCStream();
-	ZSTD_initCStream(c_stream->stream, level);
+	rc = ZSTD_initCStream(c_stream->stream, level);
+	if (ZSTD_isError(rc))
+	{
+		ZSTD_freeCStream(c_stream->stream);
+		free(c_stream);
+		return NULL;
+	}
 #if ZSTD_VERSION_MAJOR > 1 || ZSTD_VERSION_MINOR > 3
 	ZSTD_CCtx_setParameter(c_stream->stream, ZSTD_c_windowLog, ZSTD_WINDOWLOG_LIMIT);
 #endif
@@ -136,10 +138,17 @@ zstd_create_compressor(int level)
 static void *
 zstd_create_decompressor()
 {
-	ZPQ_ZSTD_DStream *d_stream = (ZPQ_ZSTD_DStream *) malloc(sizeof(ZPQ_ZSTD_DStream));
+	size_t		rc;
+	ZS_ZSTD_DStream *d_stream = (ZS_ZSTD_DStream *) malloc(sizeof(ZS_ZSTD_DStream));
 
 	d_stream->stream = ZSTD_createDStream();
-	ZSTD_initDStream(d_stream->stream);
+	rc = ZSTD_initDStream(d_stream->stream);
+	if (ZSTD_isError(rc))
+	{
+		ZSTD_freeDStream(d_stream->stream);
+		free(d_stream);
+		return NULL;
+	}
 #if ZSTD_VERSION_MAJOR > 1 || ZSTD_VERSION_MINOR > 3
 	ZSTD_DCtx_setParameter(d_stream->stream, ZSTD_d_windowLogMax, ZSTD_WINDOWLOG_LIMIT);
 #endif
@@ -150,7 +159,7 @@ zstd_create_decompressor()
 static ssize_t
 zstd_decompress(void *d_stream, void const *src, size_t src_size, size_t *src_processed, void *dst, size_t dst_size, size_t *dst_processed)
 {
-	ZPQ_ZSTD_DStream *ds = (ZPQ_ZSTD_DStream *) d_stream;
+	ZS_ZSTD_DStream *ds = (ZS_ZSTD_DStream *) d_stream;
 	ZSTD_inBuffer in;
 	ZSTD_outBuffer out;
 	size_t		rc;
@@ -192,7 +201,7 @@ zstd_decompress(void *d_stream, void const *src, size_t src_size, size_t *src_pr
 static ssize_t
 zstd_compress(void *c_stream, void const *src, size_t src_size, size_t *src_processed, void *dst, size_t dst_size, size_t *dst_processed)
 {
-	ZPQ_ZSTD_CStream *cs = (ZPQ_ZSTD_CStream *) c_stream;
+	ZS_ZSTD_CStream *cs = (ZS_ZSTD_CStream *) c_stream;
 	ZSTD_inBuffer in;
 	ZSTD_outBuffer out;
 
@@ -236,7 +245,7 @@ static ssize_t
 zstd_end(void *c_stream, void *dst, size_t dst_size, size_t *dst_processed)
 {
 	size_t		tx_not_flushed;
-	ZPQ_ZSTD_CStream *cs = (ZPQ_ZSTD_CStream *) c_stream;
+	ZS_ZSTD_CStream *cs = (ZS_ZSTD_CStream *) c_stream;
 	ZSTD_outBuffer output;
 
 	output.dst = dst;
@@ -260,7 +269,7 @@ zstd_end(void *c_stream, void *dst, size_t dst_size, size_t *dst_processed)
 static void
 zstd_free_compressor(void *c_stream)
 {
-	ZPQ_ZSTD_CStream *cs = (ZPQ_ZSTD_CStream *) c_stream;
+	ZS_ZSTD_CStream *cs = (ZS_ZSTD_CStream *) c_stream;
 
 	if (cs != NULL)
 	{
@@ -272,7 +281,7 @@ zstd_free_compressor(void *c_stream)
 static void
 zstd_free_decompressor(void *d_stream)
 {
-	ZPQ_ZSTD_DStream *ds = (ZPQ_ZSTD_DStream *) d_stream;
+	ZS_ZSTD_DStream *ds = (ZS_ZSTD_DStream *) d_stream;
 
 	if (ds != NULL)
 	{
@@ -284,7 +293,7 @@ zstd_free_decompressor(void *d_stream)
 static char const *
 zstd_compress_error(void *c_stream)
 {
-	ZPQ_ZSTD_CStream *cs = (ZPQ_ZSTD_CStream *) c_stream;
+	ZS_ZSTD_CStream *cs = (ZS_ZSTD_CStream *) c_stream;
 
 	return cs->error;
 }
@@ -292,7 +301,7 @@ zstd_compress_error(void *c_stream)
 static char const *
 zstd_decompress_error(void *d_stream)
 {
-	ZPQ_ZSTD_DStream *ds = (ZPQ_ZSTD_DStream *) d_stream;
+	ZS_ZSTD_DStream *ds = (ZS_ZSTD_DStream *) d_stream;
 
 	return ds->error;
 }
@@ -469,7 +478,7 @@ no_compression_name(void)
 /*
  * Array with all supported compression algorithms.
  */
-static ZAlgorithm const zpq_algorithms[] =
+static ZAlgorithm const zs_algorithms[] =
 {
 #if HAVE_LIBZSTD
 	{zstd_name, zstd_create_compressor, zstd_create_decompressor, zstd_decompress, zstd_compress, zstd_free_compressor, zstd_free_decompressor, zstd_compress_error, zstd_decompress_error, zstd_end},
@@ -480,12 +489,22 @@ static ZAlgorithm const zpq_algorithms[] =
 	{no_compression_name}
 };
 
-static ssize_t
-zpq_init_compressor(ZStream * zs, int c_alg_impl, int c_level)
+inline bool
+zs_is_valid_impl_id(unsigned int id)
 {
-	zs->c_algorithm = &zpq_algorithms[c_alg_impl];
-	zs->c_stream = zpq_algorithms[c_alg_impl].create_compressor(c_level);
-	if (zs->c_stream == NULL)
+	return id >= 0 && id < (sizeof(zs_algorithms) / sizeof(*zs_algorithms));
+}
+
+static ssize_t
+zs_init_compressor(ZStream * zs, unsigned int c_alg_impl, int c_level)
+{
+	if (!zs_is_valid_impl_id(c_alg_impl))
+	{
+		return -1;
+	}
+	zs->algorithm = &zs_algorithms[c_alg_impl];
+	zs->stream = zs->algorithm->create_compressor(c_level);
+	if (zs->stream == NULL)
 	{
 		return -1;
 	}
@@ -493,11 +512,15 @@ zpq_init_compressor(ZStream * zs, int c_alg_impl, int c_level)
 }
 
 static ssize_t
-zpq_init_decompressor(ZStream * zs, int d_alg_impl)
+zs_init_decompressor(ZStream * zs, unsigned int d_alg_impl)
 {
-	zs->d_algorithm = &zpq_algorithms[d_alg_impl];
-	zs->d_stream = zpq_algorithms[d_alg_impl].create_decompressor();
-	if (zs->d_stream == NULL)
+	if (!zs_is_valid_impl_id(d_alg_impl))
+	{
+		return -1;
+	}
+	zs->algorithm = &zs_algorithms[d_alg_impl];
+	zs->stream = zs->algorithm->create_decompressor();
+	if (zs->stream == NULL)
 	{
 		return -1;
 	}
@@ -505,17 +528,32 @@ zpq_init_decompressor(ZStream * zs, int d_alg_impl)
 }
 
 /*
- * Index of used compression algorithm in zpq_algorithms array.
+ * Index of used compression algorithm in zs_algorithms array.
  */
 ZStream *
-zs_create(int c_alg_impl, int c_level, int d_alg_impl)
+zs_create_compressor(unsigned int c_alg_impl, int c_level)
 {
 	ZStream    *zs = (ZStream *) malloc(sizeof(ZStream));
 
-	zs->tx_not_flushed = false;
-	zs->rx_not_flushed = false;
+	zs->not_flushed = false;
 
-	if (zpq_init_compressor(zs, c_alg_impl, c_level) || zpq_init_decompressor(zs, d_alg_impl))
+	if (zs_init_compressor(zs, c_alg_impl, c_level))
+	{
+		free(zs);
+		return NULL;
+	}
+
+	return zs;
+}
+
+ZStream *
+zs_create_decompressor(unsigned int d_alg_impl)
+{
+	ZStream    *zs = (ZStream *) malloc(sizeof(ZStream));
+
+	zs->not_flushed = false;
+
+	if (zs_init_decompressor(zs, d_alg_impl))
 	{
 		free(zs);
 		return NULL;
@@ -528,17 +566,18 @@ ssize_t
 zs_read(ZStream * zs, void const *src, size_t src_size, size_t *src_processed, void *dst, size_t dst_size, size_t *dst_processed)
 {
 	ssize_t		rc;
+
 	*src_processed = 0;
 	*dst_processed = 0;
 
-	rc = zs->d_algorithm->decompress(zs->d_stream,
-									 src, src_size, src_processed,
-									 dst, dst_size, dst_processed);
+	rc = zs->algorithm->decompress(zs->stream,
+								   src, src_size, src_processed,
+								   dst, dst_size, dst_processed);
 
-	zs->rx_not_flushed = false;
+	zs->not_flushed = false;
 	if (rc == ZS_DATA_PENDING)
 	{
-		zs->rx_not_flushed = true;
+		zs->not_flushed = true;
 		return ZS_OK;
 	}
 
@@ -554,17 +593,18 @@ ssize_t
 zs_write(ZStream * zs, void const *buf, size_t size, size_t *processed, void *dst, size_t dst_size, size_t *dst_processed)
 {
 	ssize_t		rc;
+
 	*processed = 0;
 	*dst_processed = 0;
 
-	rc = zs->c_algorithm->compress(zs->c_stream,
-								   buf, size, processed,
-								   dst, dst_size, dst_processed);
+	rc = zs->algorithm->compress(zs->stream,
+								 buf, size, processed,
+								 dst, dst_size, dst_processed);
 
-	zs->tx_not_flushed = false;
+	zs->not_flushed = false;
 	if (rc == ZS_DATA_PENDING)
 	{
-		zs->tx_not_flushed = true;
+		zs->not_flushed = true;
 		return ZS_OK;
 	}
 	if (rc != ZS_OK)
@@ -576,34 +616,50 @@ zs_write(ZStream * zs, void const *buf, size_t size, size_t *processed, void *ds
 }
 
 void
-zs_free(ZStream * zs)
+zs_compressor_free(ZStream * zs)
 {
-	if (zs)
+	if (zs == NULL)
 	{
-		if (zs->c_stream)
-		{
-			zs->c_algorithm->free_compressor(zs->c_stream);
-		}
-		if (zs->d_stream)
-		{
-			zs->d_algorithm->free_decompressor(zs->d_stream);
-		}
-		free(zs);
+		return;
 	}
+
+	if (zs->stream)
+	{
+		zs->algorithm->free_compressor(zs->stream);
+	}
+
+	free(zs);
+}
+
+void
+zs_decompressor_free(ZStream * zs)
+{
+	if (zs == NULL)
+	{
+		return;
+	}
+
+	if (zs->stream)
+	{
+		zs->algorithm->free_decompressor(zs->stream);
+	}
+
+	free(zs);
 }
 
 ssize_t
-zs_end(ZStream * zs, void *dst, size_t dst_size, size_t *dst_processed)
+zs_end_compression(ZStream * zs, void *dst, size_t dst_size, size_t *dst_processed)
 {
 	ssize_t		rc;
+
 	*dst_processed = 0;
 
-	rc = zs->c_algorithm->end_compression(zs->c_stream, dst, dst_size, dst_processed);
+	rc = zs->algorithm->end_compression(zs->stream, dst, dst_size, dst_processed);
 
-	zs->tx_not_flushed = false;
+	zs->not_flushed = false;
 	if (rc == ZS_DATA_PENDING)
 	{
-		zs->tx_not_flushed = true;
+		zs->not_flushed = true;
 		return ZS_OK;
 	}
 	if (rc != ZS_OK)
@@ -617,26 +673,21 @@ zs_end(ZStream * zs, void *dst, size_t dst_size, size_t *dst_processed)
 char const *
 zs_compress_error(ZStream * zs)
 {
-	return zs->c_algorithm->compress_error(zs->c_stream);
+	return zs->algorithm->compress_error(zs->stream);
 }
 
 char const *
 zs_decompress_error(ZStream * zs)
 {
-	return zs->d_algorithm->decompress_error(zs->d_stream);
+	return zs->algorithm->decompress_error(zs->stream);
 }
 
 bool
-zs_buffered_rx(ZStream * zs)
+zs_buffered(ZStream * zs)
 {
-	return zs ? zs->rx_not_flushed : 0;
+	return zs ? zs->not_flushed : 0;
 }
 
-bool
-zs_buffered_tx(ZStream * zs)
-{
-	return zs ? zs->tx_not_flushed : 0;
-}
 
 /*
  * Get list of the supported algorithms.
@@ -644,12 +695,12 @@ zs_buffered_tx(ZStream * zs)
 char	  **
 zs_get_supported_algorithms(void)
 {
-	size_t		n_algorithms = sizeof(zpq_algorithms) / sizeof(*zpq_algorithms);
+	size_t		n_algorithms = sizeof(zs_algorithms) / sizeof(*zs_algorithms);
 	char	  **algorithm_names = malloc(n_algorithms * sizeof(char *));
 
 	for (size_t i = 0; i < n_algorithms; i++)
 	{
-		algorithm_names[i] = (char *) zpq_algorithms[i].name();
+		algorithm_names[i] = (char *) zs_algorithms[i].name();
 	}
 
 	return algorithm_names;
@@ -658,11 +709,11 @@ zs_get_supported_algorithms(void)
 char const *
 zs_compress_algorithm_name(ZStream * zs)
 {
-	return zs ? zs->c_algorithm->name() : NULL;
+	return zs ? zs->algorithm->name() : NULL;
 }
 
 char const *
 zs_decompress_algorithm_name(ZStream * zs)
 {
-	return zs ? zs->d_algorithm->name() : NULL;
+	return zs ? zs->algorithm->name() : NULL;
 }
