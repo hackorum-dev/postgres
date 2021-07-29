@@ -150,6 +150,27 @@ alter event trigger regress_event_trigger owner to regress_evt_user;
 alter role regress_evt_user superuser;
 alter event trigger regress_event_trigger owner to regress_evt_user;
 
+-- revoke superuser from new owner
+alter role regress_evt_user nosuperuser;
+
+create role regress_evt_user2;
+set session authorization regress_evt_user;
+
+-- fail - not a member of the target role
+alter event trigger regress_event_trigger owner to regress_evt_user2;
+
+reset session authorization;
+grant regress_evt_user2 to regress_evt_user;
+set session authorization regress_evt_user;
+
+-- OK
+alter event trigger regress_event_trigger owner to regress_evt_user2;
+
+reset session authorization;
+
+alter event trigger regress_event_trigger owner to regress_evt_user;
+drop role regress_evt_user2;
+
 -- should fail, name collision
 alter event trigger regress_event_trigger rename to regress_event_trigger2;
 
