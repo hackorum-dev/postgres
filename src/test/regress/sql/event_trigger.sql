@@ -29,6 +29,27 @@ create event trigger regress_event_trigger on elephant_bootstrap
 create event trigger regress_event_trigger on ddl_command_start
    execute procedure test_event_trigger();
 
+create role test_evt_role1 nosuperuser;
+create role test_evt_role2 nosuperuser;
+
+alter event trigger regress_event_trigger owner to test_evt_role1;
+
+set session authorization test_evt_role1;
+-- OK, should fire test_event_trigger
+create table test_evt_table1 (col text);
+reset session authorization;
+
+set session authorization test_evt_role2;
+-- OK, should bypass test_event_trigger
+create table test_evt_table2 (col text);
+
+grant test_evt_role2 to test_evt_role1;
+-- Ok, should fire test_event_trigger now
+create table test_evt_table3 (col text);
+
+reset session authorization;
+alter event trigger regress_event_trigger owner to current_user;
+
 -- OK
 create event trigger regress_event_trigger_end on ddl_command_end
    execute function test_event_trigger();

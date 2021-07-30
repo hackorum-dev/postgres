@@ -612,8 +612,13 @@ EventTriggerCommonSetup(Node *parsetree,
 
 		if (filter_event_trigger(tag, item))
 		{
-			/* We must plan to fire this trigger. */
-			runlist = lappend_oid(runlist, item->fnoid);
+			/*
+			 * We must plan to fire this trigger only if the event trigger
+			 * owner is a member of the current role, else the trigger owner
+			 * can execute with privilege it could not do directly.
+			 */
+			if (is_member_of_role(item->fnowner, GetUserId()))
+				runlist = lappend_oid(runlist, item->fnoid);
 		}
 	}
 
