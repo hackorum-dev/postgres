@@ -3493,6 +3493,7 @@ rm_detail_t
 role_auth_extra
 row_security_policy_hook_type
 rsv_callback
+safety_object
 saophash_hash
 save_buffer
 scram_state
