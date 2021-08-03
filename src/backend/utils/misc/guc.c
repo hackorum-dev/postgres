@@ -2442,7 +2442,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"min_dynamic_shared_memory", PGC_POSTMASTER, RESOURCES_MEM,
 			gettext_noop("Amount of dynamic shared memory reserved at startup."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_HOST_RESOURCE_SETTINGS,
 			GUC_UNIT_MB
 		},
 		&min_dynamic_shared_memory,
@@ -2458,7 +2458,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"shared_buffers", PGC_POSTMASTER, RESOURCES_MEM,
 			gettext_noop("Sets the number of shared memory buffers used by the server."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_HOST_RESOURCE_SETTINGS,
 			GUC_UNIT_BLOCKS
 		},
 		&NBuffers,
@@ -2470,7 +2470,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"temp_buffers", PGC_USERSET, RESOURCES_MEM,
 			gettext_noop("Sets the maximum number of temporary buffers used by each session."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_HOST_RESOURCE_SETTINGS,
 			GUC_UNIT_BLOCKS | GUC_EXPLAIN
 		},
 		&num_temp_buffers,
@@ -2542,7 +2542,7 @@ static struct config_int ConfigureNamesInt[] =
 			gettext_noop("This much memory can be used by each internal "
 						 "sort operation and hash table before switching to "
 						 "temporary disk files."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_HOST_RESOURCE_SETTINGS,
 			GUC_UNIT_KB | GUC_EXPLAIN
 		},
 		&work_mem,
@@ -2554,7 +2554,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"maintenance_work_mem", PGC_USERSET, RESOURCES_MEM,
 			gettext_noop("Sets the maximum memory to be used for maintenance operations."),
 			gettext_noop("This includes operations such as VACUUM and CREATE INDEX."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_HOST_RESOURCE_SETTINGS,
 			GUC_UNIT_KB
 		},
 		&maintenance_work_mem,
@@ -2567,7 +2567,7 @@ static struct config_int ConfigureNamesInt[] =
 			gettext_noop("Sets the maximum memory to be used for logical decoding."),
 			gettext_noop("This much memory can be used by each internal "
 						 "reorder buffer before spilling to disk."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_HOST_RESOURCE_SETTINGS,
 			GUC_UNIT_KB
 		},
 		&logical_decoding_work_mem,
@@ -2584,7 +2584,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"max_stack_depth", PGC_SUSET, RESOURCES_MEM,
 			gettext_noop("Sets the maximum stack depth, in kilobytes."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_HOST_RESOURCE_SETTINGS,
 			GUC_UNIT_KB
 		},
 		&max_stack_depth,
@@ -2596,7 +2596,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"temp_file_limit", PGC_SUSET, RESOURCES_DISK,
 			gettext_noop("Limits the total size of all temporary files used by each process."),
 			gettext_noop("-1 means no limit."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_HOST_RESOURCE_SETTINGS,
 			GUC_UNIT_KB
 		},
 		&temp_file_limit,
@@ -2663,7 +2663,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"max_files_per_process", PGC_POSTMASTER, RESOURCES_KERNEL,
 			gettext_noop("Sets the maximum number of simultaneously open files for each server process."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_HOST_RESOURCE_SETTINGS
 		},
 		&max_files_per_process,
 		1000, 64, INT_MAX,
@@ -2677,7 +2677,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"max_prepared_transactions", PGC_POSTMASTER, RESOURCES_MEM,
 			gettext_noop("Sets the maximum number of simultaneously prepared transactions."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_HOST_RESOURCE_SETTINGS
 		},
 		&max_prepared_xacts,
 		0, 0, MAX_BACKENDS,
@@ -2841,7 +2841,7 @@ static struct config_int ConfigureNamesInt[] =
 			gettext_noop("The shared lock table is sized on the assumption that "
 						 "at most max_locks_per_transaction * max_connections distinct "
 						 "objects will need to be locked at any one time."),
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_HOST_RESOURCE_SETTINGS
 		},
 		&max_locks_per_xact,
 		64, 10, INT_MAX,
@@ -2854,7 +2854,7 @@ static struct config_int ConfigureNamesInt[] =
 			gettext_noop("The shared predicate lock table is sized on the assumption that "
 						 "at most max_pred_locks_per_transaction * max_connections distinct "
 						 "objects will need to be locked at any one time."),
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_HOST_RESOURCE_SETTINGS
 		},
 		&max_predicate_locks_per_xact,
 		64, 10, INT_MAX,
@@ -2866,7 +2866,7 @@ static struct config_int ConfigureNamesInt[] =
 			gettext_noop("Sets the maximum number of predicate-locked pages and tuples per relation."),
 			gettext_noop("If more than this total of pages and tuples in the same relation are locked "
 						 "by a connection, those locks are replaced by a relation-level lock."),
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_HOST_RESOURCE_SETTINGS
 		},
 		&max_predicate_locks_per_relation,
 		-2, INT_MIN, INT_MAX,
@@ -2878,7 +2878,7 @@ static struct config_int ConfigureNamesInt[] =
 			gettext_noop("Sets the maximum number of predicate-locked tuples per page."),
 			gettext_noop("If more than this number of tuples on the same page are locked "
 						 "by a connection, those locks are replaced by a page-level lock."),
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_HOST_RESOURCE_SETTINGS
 		},
 		&max_predicate_locks_per_page,
 		2, 0, INT_MAX,
@@ -3264,7 +3264,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"backend_flush_after", PGC_USERSET, RESOURCES_ASYNCHRONOUS,
 			gettext_noop("Number of pages after which previously performed writes are flushed to disk."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_HOST_RESOURCE_SETTINGS,
 			GUC_UNIT_BLOCKS
 		},
 		&backend_flush_after,
@@ -3278,7 +3278,7 @@ static struct config_int ConfigureNamesInt[] =
 			RESOURCES_ASYNCHRONOUS,
 			gettext_noop("Maximum number of concurrent worker processes."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_HOST_RESOURCE_SETTINGS
 		},
 		&max_worker_processes,
 		8, 0, MAX_BACKENDS,
@@ -3518,7 +3518,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"max_parallel_maintenance_workers", PGC_USERSET, RESOURCES_ASYNCHRONOUS,
 			gettext_noop("Sets the maximum number of parallel processes per maintenance operation."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_HOST_RESOURCE_SETTINGS
 		},
 		&max_parallel_maintenance_workers,
 		2, 0, 1024,
@@ -3529,7 +3529,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"max_parallel_workers_per_gather", PGC_USERSET, RESOURCES_ASYNCHRONOUS,
 			gettext_noop("Sets the maximum number of parallel processes per executor node."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_HOST_RESOURCE_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&max_parallel_workers_per_gather,
@@ -3541,7 +3541,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"max_parallel_workers", PGC_USERSET, RESOURCES_ASYNCHRONOUS,
 			gettext_noop("Sets the maximum number of parallel workers that can be active at one time."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_HOST_RESOURCE_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&max_parallel_workers,
@@ -3553,7 +3553,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"autovacuum_work_mem", PGC_SIGHUP, RESOURCES_MEM,
 			gettext_noop("Sets the maximum memory to be used by each autovacuum worker process."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_HOST_RESOURCE_SETTINGS,
 			GUC_UNIT_KB
 		},
 		&autovacuum_work_mem,
@@ -3736,7 +3736,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"huge_page_size", PGC_POSTMASTER, RESOURCES_MEM,
 			gettext_noop("The size of huge page that should be requested."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_HOST_RESOURCE_SETTINGS,
 			GUC_UNIT_KB
 		},
 		&huge_page_size,
@@ -3951,7 +3951,7 @@ static struct config_real ConfigureNamesReal[] =
 		{"hash_mem_multiplier", PGC_USERSET, RESOURCES_MEM,
 			gettext_noop("Multiple of work_mem to use for hash tables."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_HOST_RESOURCE_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&hash_mem_multiplier,
@@ -5183,7 +5183,7 @@ static struct config_enum ConfigureNamesEnum[] =
 		{"dynamic_shared_memory_type", PGC_POSTMASTER, RESOURCES_MEM,
 			gettext_noop("Selects the dynamic shared memory implementation used."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_HOST_RESOURCE_SETTINGS
 		},
 		&dynamic_shared_memory_type,
 		DEFAULT_DYNAMIC_SHARED_MEMORY_TYPE, dynamic_shared_memory_options,
@@ -5194,7 +5194,7 @@ static struct config_enum ConfigureNamesEnum[] =
 		{"shared_memory_type", PGC_POSTMASTER, RESOURCES_MEM,
 			gettext_noop("Selects the shared memory implementation used for the main shared memory region."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_HOST_RESOURCE_SETTINGS
 		},
 		&shared_memory_type,
 		DEFAULT_SHARED_MEMORY_TYPE, shared_memory_options,
@@ -5239,7 +5239,7 @@ static struct config_enum ConfigureNamesEnum[] =
 		{"huge_pages", PGC_POSTMASTER, RESOURCES_MEM,
 			gettext_noop("Use of huge pages on Linux or Windows."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_HOST_RESOURCE_SETTINGS
 		},
 		&huge_pages,
 		HUGE_PAGES_TRY, huge_pages_options,
@@ -7605,7 +7605,11 @@ role_has_privileges(Oid roleid, int privileges)
 	if (privileges & GUC_SUPERUSER_ONLY)
 		return superuser_arg(roleid);
 
-	return false;
+	if ((privileges & GUC_MANAGE_HOST_RESOURCE_SETTINGS) &&
+		! has_privs_of_role(roleid, ROLE_PG_MANAGE_HOST_RESOURCE_SETTINGS))
+		return false;
+
+	return true;
 }
 
 

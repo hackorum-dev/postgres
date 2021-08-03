@@ -1,1030 +1,674 @@
 -- Superuser DBA
-CREATE ROLE admin SUPERUSER;
--- Perform all operations as user 'admin' --
-SET SESSION AUTHORIZATION admin;
+CREATE ROLE regress_admin SUPERUSER;
+-- Perform all operations as user 'regress_admin' --
+SET SESSION AUTHORIZATION regress_admin;
 -- PGC_BACKEND / DEVELOPER_OPTIONS
 SET ignore_system_indexes = OFF;  -- fail, cannot be set after connection start
-ERROR:  parameter "ignore_system_indexes" cannot be set after connection start
 RESET ignore_system_indexes;  -- fail, cannot be set after connection start
-ERROR:  parameter "ignore_system_indexes" cannot be set after connection start
 ALTER SYSTEM SET ignore_system_indexes = OFF;  -- ok
 ALTER SYSTEM RESET ignore_system_indexes;  -- ok
 SET post_auth_delay = 50;  -- fail, cannot be set after connection start
-ERROR:  parameter "post_auth_delay" cannot be set after connection start
 RESET post_auth_delay;  -- fail, cannot be set after connection start
-ERROR:  parameter "post_auth_delay" cannot be set after connection start
 ALTER SYSTEM SET post_auth_delay = 50;  -- ok
 ALTER SYSTEM RESET post_auth_delay;  -- ok
 -- PGC_INTERNAL / PRESET_OPTIONS
 SET block_size = 50;  -- fail, cannot be changed
-ERROR:  parameter "block_size" cannot be changed
 RESET block_size;  -- fail, cannot be changed
-ERROR:  parameter "block_size" cannot be changed
 ALTER SYSTEM SET block_size = 50;  -- fail, cannot be changed
-ERROR:  parameter "block_size" cannot be changed
 ALTER SYSTEM RESET block_size;  -- fail, cannot be changed
-ERROR:  parameter "block_size" cannot be changed
 SET data_checksums = OFF;  -- fail, cannot be changed
-ERROR:  parameter "data_checksums" cannot be changed
 RESET data_checksums;  -- fail, cannot be changed
-ERROR:  parameter "data_checksums" cannot be changed
 ALTER SYSTEM SET data_checksums = OFF;  -- fail, cannot be changed
-ERROR:  parameter "data_checksums" cannot be changed
 ALTER SYSTEM RESET data_checksums;  -- fail, cannot be changed
-ERROR:  parameter "data_checksums" cannot be changed
 SET data_directory_mode = 50;  -- fail, cannot be changed
-ERROR:  parameter "data_directory_mode" cannot be changed
 RESET data_directory_mode;  -- fail, cannot be changed
-ERROR:  parameter "data_directory_mode" cannot be changed
 ALTER SYSTEM SET data_directory_mode = 50;  -- fail, cannot be changed
-ERROR:  parameter "data_directory_mode" cannot be changed
 ALTER SYSTEM RESET data_directory_mode;  -- fail, cannot be changed
-ERROR:  parameter "data_directory_mode" cannot be changed
 SET debug_assertions = OFF;  -- fail, cannot be changed
-ERROR:  parameter "debug_assertions" cannot be changed
 RESET debug_assertions;  -- fail, cannot be changed
-ERROR:  parameter "debug_assertions" cannot be changed
 ALTER SYSTEM SET debug_assertions = OFF;  -- fail, cannot be changed
-ERROR:  parameter "debug_assertions" cannot be changed
 ALTER SYSTEM RESET debug_assertions;  -- fail, cannot be changed
-ERROR:  parameter "debug_assertions" cannot be changed
 SET in_hot_standby = OFF;  -- fail, cannot be changed
-ERROR:  parameter "in_hot_standby" cannot be changed
 RESET in_hot_standby;  -- fail, cannot be changed
-ERROR:  parameter "in_hot_standby" cannot be changed
 ALTER SYSTEM SET in_hot_standby = OFF;  -- fail, cannot be changed
-ERROR:  parameter "in_hot_standby" cannot be changed
 ALTER SYSTEM RESET in_hot_standby;  -- fail, cannot be changed
-ERROR:  parameter "in_hot_standby" cannot be changed
 SET integer_datetimes = OFF;  -- fail, cannot be changed
-ERROR:  parameter "integer_datetimes" cannot be changed
 RESET integer_datetimes;  -- fail, cannot be changed
-ERROR:  parameter "integer_datetimes" cannot be changed
 ALTER SYSTEM SET integer_datetimes = OFF;  -- fail, cannot be changed
-ERROR:  parameter "integer_datetimes" cannot be changed
 ALTER SYSTEM RESET integer_datetimes;  -- fail, cannot be changed
-ERROR:  parameter "integer_datetimes" cannot be changed
 SET lc_collate = 'en_US.UTF-8';  -- fail, cannot be changed
-ERROR:  parameter "lc_collate" cannot be changed
 RESET lc_collate;  -- fail, cannot be changed
-ERROR:  parameter "lc_collate" cannot be changed
 ALTER SYSTEM SET lc_collate = 'en_US.UTF-8';  -- fail, cannot be changed
-ERROR:  parameter "lc_collate" cannot be changed
 ALTER SYSTEM RESET lc_collate;  -- fail, cannot be changed
-ERROR:  parameter "lc_collate" cannot be changed
 SET lc_ctype = 'en_US.UTF-8';  -- fail, cannot be changed
-ERROR:  parameter "lc_ctype" cannot be changed
 RESET lc_ctype;  -- fail, cannot be changed
-ERROR:  parameter "lc_ctype" cannot be changed
 ALTER SYSTEM SET lc_ctype = 'en_US.UTF-8';  -- fail, cannot be changed
-ERROR:  parameter "lc_ctype" cannot be changed
 ALTER SYSTEM RESET lc_ctype;  -- fail, cannot be changed
-ERROR:  parameter "lc_ctype" cannot be changed
 SET max_function_args = 50;  -- fail, cannot be changed
-ERROR:  parameter "max_function_args" cannot be changed
 RESET max_function_args;  -- fail, cannot be changed
-ERROR:  parameter "max_function_args" cannot be changed
 ALTER SYSTEM SET max_function_args = 50;  -- fail, cannot be changed
-ERROR:  parameter "max_function_args" cannot be changed
 ALTER SYSTEM RESET max_function_args;  -- fail, cannot be changed
-ERROR:  parameter "max_function_args" cannot be changed
 SET max_identifier_length = 50;  -- fail, cannot be changed
-ERROR:  parameter "max_identifier_length" cannot be changed
 RESET max_identifier_length;  -- fail, cannot be changed
-ERROR:  parameter "max_identifier_length" cannot be changed
 ALTER SYSTEM SET max_identifier_length = 50;  -- fail, cannot be changed
-ERROR:  parameter "max_identifier_length" cannot be changed
 ALTER SYSTEM RESET max_identifier_length;  -- fail, cannot be changed
-ERROR:  parameter "max_identifier_length" cannot be changed
 SET max_index_keys = 50;  -- fail, cannot be changed
-ERROR:  parameter "max_index_keys" cannot be changed
 RESET max_index_keys;  -- fail, cannot be changed
-ERROR:  parameter "max_index_keys" cannot be changed
 ALTER SYSTEM SET max_index_keys = 50;  -- fail, cannot be changed
-ERROR:  parameter "max_index_keys" cannot be changed
 ALTER SYSTEM RESET max_index_keys;  -- fail, cannot be changed
-ERROR:  parameter "max_index_keys" cannot be changed
 SET segment_size = 50;  -- fail, cannot be changed
-ERROR:  parameter "segment_size" cannot be changed
 RESET segment_size;  -- fail, cannot be changed
-ERROR:  parameter "segment_size" cannot be changed
 ALTER SYSTEM SET segment_size = 50;  -- fail, cannot be changed
-ERROR:  parameter "segment_size" cannot be changed
 ALTER SYSTEM RESET segment_size;  -- fail, cannot be changed
-ERROR:  parameter "segment_size" cannot be changed
 SET server_encoding = 'UTF8';  -- fail, cannot be changed
-ERROR:  parameter "server_encoding" cannot be changed
 RESET server_encoding;  -- fail, cannot be changed
-ERROR:  parameter "server_encoding" cannot be changed
 ALTER SYSTEM SET server_encoding = 'UTF8';  -- fail, cannot be changed
-ERROR:  parameter "server_encoding" cannot be changed
 ALTER SYSTEM RESET server_encoding;  -- fail, cannot be changed
-ERROR:  parameter "server_encoding" cannot be changed
 SET server_version = '9.1';  -- fail, cannot be changed
-ERROR:  parameter "server_version" cannot be changed
 RESET server_version;  -- fail, cannot be changed
-ERROR:  parameter "server_version" cannot be changed
 ALTER SYSTEM SET server_version = '9.1';  -- fail, cannot be changed
-ERROR:  parameter "server_version" cannot be changed
 ALTER SYSTEM RESET server_version;  -- fail, cannot be changed
-ERROR:  parameter "server_version" cannot be changed
 SET server_version_num = 50;  -- fail, cannot be changed
-ERROR:  parameter "server_version_num" cannot be changed
 RESET server_version_num;  -- fail, cannot be changed
-ERROR:  parameter "server_version_num" cannot be changed
 ALTER SYSTEM SET server_version_num = 50;  -- fail, cannot be changed
-ERROR:  parameter "server_version_num" cannot be changed
 ALTER SYSTEM RESET server_version_num;  -- fail, cannot be changed
-ERROR:  parameter "server_version_num" cannot be changed
 SET ssl_library = 'OpenSSL';  -- fail, cannot be changed
-ERROR:  parameter "ssl_library" cannot be changed
 RESET ssl_library;  -- fail, cannot be changed
-ERROR:  parameter "ssl_library" cannot be changed
 ALTER SYSTEM SET ssl_library = 'OpenSSL';  -- fail, cannot be changed
-ERROR:  parameter "ssl_library" cannot be changed
 ALTER SYSTEM RESET ssl_library;  -- fail, cannot be changed
-ERROR:  parameter "ssl_library" cannot be changed
 SET wal_block_size = 50;  -- fail, cannot be changed
-ERROR:  parameter "wal_block_size" cannot be changed
 RESET wal_block_size;  -- fail, cannot be changed
-ERROR:  parameter "wal_block_size" cannot be changed
 ALTER SYSTEM SET wal_block_size = 50;  -- fail, cannot be changed
-ERROR:  parameter "wal_block_size" cannot be changed
 ALTER SYSTEM RESET wal_block_size;  -- fail, cannot be changed
-ERROR:  parameter "wal_block_size" cannot be changed
 SET wal_segment_size = 50;  -- fail, cannot be changed
-ERROR:  parameter "wal_segment_size" cannot be changed
 RESET wal_segment_size;  -- fail, cannot be changed
-ERROR:  parameter "wal_segment_size" cannot be changed
 ALTER SYSTEM SET wal_segment_size = 50;  -- fail, cannot be changed
-ERROR:  parameter "wal_segment_size" cannot be changed
 ALTER SYSTEM RESET wal_segment_size;  -- fail, cannot be changed
-ERROR:  parameter "wal_segment_size" cannot be changed
 -- PGC_INTERNAL / UNGROUPED
 SET is_superuser = OFF;  -- fail, cannot be changed
-ERROR:  parameter "is_superuser" cannot be changed
 RESET is_superuser;  -- fail, cannot be changed
-ERROR:  parameter "is_superuser" cannot be changed
 ALTER SYSTEM SET is_superuser = OFF;  -- fail, cannot be changed
-ERROR:  parameter "is_superuser" cannot be changed
 ALTER SYSTEM RESET is_superuser;  -- fail, cannot be changed
-ERROR:  parameter "is_superuser" cannot be changed
 -- PGC_POSTMASTER / AUTOVACUUM
 SET autovacuum_freeze_max_age = 1000050000;  -- fail, requires restart
-ERROR:  parameter "autovacuum_freeze_max_age" cannot be changed without restarting the server
 RESET autovacuum_freeze_max_age;  -- fail, requires restart
-ERROR:  parameter "autovacuum_freeze_max_age" cannot be changed without restarting the server
 ALTER SYSTEM SET autovacuum_freeze_max_age = 1000050000;  -- ok
 ALTER SYSTEM RESET autovacuum_freeze_max_age;  -- ok
 SET autovacuum_max_workers = 50;  -- fail, requires restart
-ERROR:  parameter "autovacuum_max_workers" cannot be changed without restarting the server
 RESET autovacuum_max_workers;  -- fail, requires restart
-ERROR:  parameter "autovacuum_max_workers" cannot be changed without restarting the server
 ALTER SYSTEM SET autovacuum_max_workers = 50;  -- ok
 ALTER SYSTEM RESET autovacuum_max_workers;  -- ok
 SET autovacuum_multixact_freeze_max_age = 1000005000;  -- fail, requires restart
-ERROR:  parameter "autovacuum_multixact_freeze_max_age" cannot be changed without restarting the server
 RESET autovacuum_multixact_freeze_max_age;  -- fail, requires restart
-ERROR:  parameter "autovacuum_multixact_freeze_max_age" cannot be changed without restarting the server
 ALTER SYSTEM SET autovacuum_multixact_freeze_max_age = 1000005000;  -- ok
 ALTER SYSTEM RESET autovacuum_multixact_freeze_max_age;  -- ok
 -- PGC_POSTMASTER / CLIENT_CONN_PRELOAD
 SET jit_provider = 'llvmjit';  -- fail, requires restart
-ERROR:  parameter "jit_provider" cannot be changed without restarting the server
 RESET jit_provider;  -- fail, requires restart
-ERROR:  parameter "jit_provider" cannot be changed without restarting the server
 ALTER SYSTEM SET jit_provider = 'llvmjit';  -- ok
 ALTER SYSTEM RESET jit_provider;  -- ok
 SET shared_preload_libraries = 'iconv, pcre';  -- fail, requires restart
-ERROR:  parameter "shared_preload_libraries" cannot be changed without restarting the server
 RESET shared_preload_libraries;  -- fail, requires restart
-ERROR:  parameter "shared_preload_libraries" cannot be changed without restarting the server
 ALTER SYSTEM SET shared_preload_libraries = 'iconv, pcre';  -- ok
 ALTER SYSTEM RESET shared_preload_libraries;  -- ok
 -- PGC_POSTMASTER / CONN_AUTH_SETTINGS
 SET bonjour = OFF;  -- fail, requires restart
-ERROR:  parameter "bonjour" cannot be changed without restarting the server
 RESET bonjour;  -- fail, requires restart
-ERROR:  parameter "bonjour" cannot be changed without restarting the server
 ALTER SYSTEM SET bonjour = OFF;  -- ok
 ALTER SYSTEM RESET bonjour;  -- ok
 SET bonjour_name = 'BonneNuit';  -- fail, requires restart
-ERROR:  parameter "bonjour_name" cannot be changed without restarting the server
 RESET bonjour_name;  -- fail, requires restart
-ERROR:  parameter "bonjour_name" cannot be changed without restarting the server
 ALTER SYSTEM SET bonjour_name = 'BonneNuit';  -- ok
 ALTER SYSTEM RESET bonjour_name;  -- ok
 SET listen_addresses = 'localhost';  -- fail, requires restart
-ERROR:  parameter "listen_addresses" cannot be changed without restarting the server
 RESET listen_addresses;  -- fail, requires restart
-ERROR:  parameter "listen_addresses" cannot be changed without restarting the server
 ALTER SYSTEM SET listen_addresses = 'localhost';  -- ok
 ALTER SYSTEM RESET listen_addresses;  -- ok
 SET max_connections = 50;  -- fail, requires restart
-ERROR:  parameter "max_connections" cannot be changed without restarting the server
 RESET max_connections;  -- fail, requires restart
-ERROR:  parameter "max_connections" cannot be changed without restarting the server
 ALTER SYSTEM SET max_connections = 50;  -- ok
 ALTER SYSTEM RESET max_connections;  -- ok
 SET port = 50;  -- fail, requires restart
-ERROR:  parameter "port" cannot be changed without restarting the server
 RESET port;  -- fail, requires restart
-ERROR:  parameter "port" cannot be changed without restarting the server
 ALTER SYSTEM SET port = 50;  -- ok
 ALTER SYSTEM RESET port;  -- ok
 SET superuser_reserved_connections = 50;  -- fail, requires restart
-ERROR:  parameter "superuser_reserved_connections" cannot be changed without restarting the server
 RESET superuser_reserved_connections;  -- fail, requires restart
-ERROR:  parameter "superuser_reserved_connections" cannot be changed without restarting the server
 ALTER SYSTEM SET superuser_reserved_connections = 50;  -- ok
 ALTER SYSTEM RESET superuser_reserved_connections;  -- ok
 SET unix_socket_directories = '/tmp';  -- fail, requires restart
-ERROR:  parameter "unix_socket_directories" cannot be changed without restarting the server
 RESET unix_socket_directories;  -- fail, requires restart
-ERROR:  parameter "unix_socket_directories" cannot be changed without restarting the server
 ALTER SYSTEM SET unix_socket_directories = '/tmp';  -- ok
 ALTER SYSTEM RESET unix_socket_directories;  -- ok
 SET unix_socket_group = 'tenant';  -- fail, requires restart
-ERROR:  parameter "unix_socket_group" cannot be changed without restarting the server
 RESET unix_socket_group;  -- fail, requires restart
-ERROR:  parameter "unix_socket_group" cannot be changed without restarting the server
 ALTER SYSTEM SET unix_socket_group = 'tenant';  -- ok
 ALTER SYSTEM RESET unix_socket_group;  -- ok
 SET unix_socket_permissions = 50;  -- fail, requires restart
-ERROR:  parameter "unix_socket_permissions" cannot be changed without restarting the server
 RESET unix_socket_permissions;  -- fail, requires restart
-ERROR:  parameter "unix_socket_permissions" cannot be changed without restarting the server
 ALTER SYSTEM SET unix_socket_permissions = 50;  -- ok
 ALTER SYSTEM RESET unix_socket_permissions;  -- ok
 -- PGC_POSTMASTER / DEVELOPER_OPTIONS
 SET ignore_invalid_pages = OFF;  -- fail, requires restart
-ERROR:  parameter "ignore_invalid_pages" cannot be changed without restarting the server
 RESET ignore_invalid_pages;  -- fail, requires restart
-ERROR:  parameter "ignore_invalid_pages" cannot be changed without restarting the server
 ALTER SYSTEM SET ignore_invalid_pages = OFF;  -- ok
 ALTER SYSTEM RESET ignore_invalid_pages;  -- ok
 -- PGC_POSTMASTER / ERROR_HANDLING_OPTIONS
 SET data_sync_retry = OFF;  -- fail, requires restart
-ERROR:  parameter "data_sync_retry" cannot be changed without restarting the server
 RESET data_sync_retry;  -- fail, requires restart
-ERROR:  parameter "data_sync_retry" cannot be changed without restarting the server
 ALTER SYSTEM SET data_sync_retry = OFF;  -- ok
 ALTER SYSTEM RESET data_sync_retry;  -- ok
 -- PGC_POSTMASTER / FILE_LOCATIONS
 SET config_file = '/usr/local/data/postgresql.conf';  -- fail, requires restart
-ERROR:  parameter "config_file" cannot be changed without restarting the server
 RESET config_file;  -- fail, requires restart
-ERROR:  parameter "config_file" cannot be changed without restarting the server
 ALTER SYSTEM SET config_file = '/usr/local/data/postgresql.conf';  -- fail, cannot be changed
-ERROR:  parameter "config_file" cannot be changed
 ALTER SYSTEM RESET config_file;  -- fail, cannot be changed
-ERROR:  parameter "config_file" cannot be changed
 SET data_directory = '/usr/local/data';  -- fail, requires restart
-ERROR:  parameter "data_directory" cannot be changed without restarting the server
 RESET data_directory;  -- fail, requires restart
-ERROR:  parameter "data_directory" cannot be changed without restarting the server
 ALTER SYSTEM SET data_directory = '/usr/local/data';  -- fail, cannot be changed
-ERROR:  parameter "data_directory" cannot be changed
 ALTER SYSTEM RESET data_directory;  -- fail, cannot be changed
-ERROR:  parameter "data_directory" cannot be changed
 SET external_pid_file = '/var/postgres/master.pid';  -- fail, requires restart
-ERROR:  parameter "external_pid_file" cannot be changed without restarting the server
 RESET external_pid_file;  -- fail, requires restart
-ERROR:  parameter "external_pid_file" cannot be changed without restarting the server
 ALTER SYSTEM SET external_pid_file = '/var/postgres/master.pid';  -- ok
 ALTER SYSTEM RESET external_pid_file;  -- ok
 -- PGC_POSTMASTER / LOCK_MANAGEMENT
 SET max_locks_per_transaction = 50;  -- fail, requires restart
-ERROR:  parameter "max_locks_per_transaction" cannot be changed without restarting the server
 RESET max_locks_per_transaction;  -- fail, requires restart
-ERROR:  parameter "max_locks_per_transaction" cannot be changed without restarting the server
 ALTER SYSTEM SET max_locks_per_transaction = 50;  -- ok
 ALTER SYSTEM RESET max_locks_per_transaction;  -- ok
 SET max_pred_locks_per_transaction = 50;  -- fail, requires restart
-ERROR:  parameter "max_pred_locks_per_transaction" cannot be changed without restarting the server
 RESET max_pred_locks_per_transaction;  -- fail, requires restart
-ERROR:  parameter "max_pred_locks_per_transaction" cannot be changed without restarting the server
 ALTER SYSTEM SET max_pred_locks_per_transaction = 50;  -- ok
 ALTER SYSTEM RESET max_pred_locks_per_transaction;  -- ok
 -- PGC_POSTMASTER / LOGGING_WHERE
 SET event_source = 'PostgreSQL';  -- fail, requires restart
-ERROR:  parameter "event_source" cannot be changed without restarting the server
 RESET event_source;  -- fail, requires restart
-ERROR:  parameter "event_source" cannot be changed without restarting the server
 ALTER SYSTEM SET event_source = 'PostgreSQL';  -- ok
 ALTER SYSTEM RESET event_source;  -- ok
 SET logging_collector = OFF;  -- fail, requires restart
-ERROR:  parameter "logging_collector" cannot be changed without restarting the server
 RESET logging_collector;  -- fail, requires restart
-ERROR:  parameter "logging_collector" cannot be changed without restarting the server
 ALTER SYSTEM SET logging_collector = OFF;  -- ok
 ALTER SYSTEM RESET logging_collector;  -- ok
 -- PGC_POSTMASTER / PROCESS_TITLE
 SET cluster_name = 'BonCluster';  -- fail, requires restart
-ERROR:  parameter "cluster_name" cannot be changed without restarting the server
 RESET cluster_name;  -- fail, requires restart
-ERROR:  parameter "cluster_name" cannot be changed without restarting the server
 ALTER SYSTEM SET cluster_name = 'BonCluster';  -- ok
 ALTER SYSTEM RESET cluster_name;  -- ok
 -- PGC_POSTMASTER / REPLICATION_SENDING
 SET max_replication_slots = 50;  -- fail, requires restart
-ERROR:  parameter "max_replication_slots" cannot be changed without restarting the server
 RESET max_replication_slots;  -- fail, requires restart
-ERROR:  parameter "max_replication_slots" cannot be changed without restarting the server
 ALTER SYSTEM SET max_replication_slots = 50;  -- ok
 ALTER SYSTEM RESET max_replication_slots;  -- ok
 SET max_wal_senders = 50;  -- fail, requires restart
-ERROR:  parameter "max_wal_senders" cannot be changed without restarting the server
 RESET max_wal_senders;  -- fail, requires restart
-ERROR:  parameter "max_wal_senders" cannot be changed without restarting the server
 ALTER SYSTEM SET max_wal_senders = 50;  -- ok
 ALTER SYSTEM RESET max_wal_senders;  -- ok
 SET track_commit_timestamp = OFF;  -- fail, requires restart
-ERROR:  parameter "track_commit_timestamp" cannot be changed without restarting the server
 RESET track_commit_timestamp;  -- fail, requires restart
-ERROR:  parameter "track_commit_timestamp" cannot be changed without restarting the server
 ALTER SYSTEM SET track_commit_timestamp = OFF;  -- ok
 ALTER SYSTEM RESET track_commit_timestamp;  -- ok
 -- PGC_POSTMASTER / REPLICATION_STANDBY
 SET hot_standby = OFF;  -- fail, requires restart
-ERROR:  parameter "hot_standby" cannot be changed without restarting the server
 RESET hot_standby;  -- fail, requires restart
-ERROR:  parameter "hot_standby" cannot be changed without restarting the server
 ALTER SYSTEM SET hot_standby = OFF;  -- ok
 ALTER SYSTEM RESET hot_standby;  -- ok
 -- PGC_POSTMASTER / REPLICATION_SUBSCRIBERS
 SET max_logical_replication_workers = 50;  -- fail, requires restart
-ERROR:  parameter "max_logical_replication_workers" cannot be changed without restarting the server
 RESET max_logical_replication_workers;  -- fail, requires restart
-ERROR:  parameter "max_logical_replication_workers" cannot be changed without restarting the server
 ALTER SYSTEM SET max_logical_replication_workers = 50;  -- ok
 ALTER SYSTEM RESET max_logical_replication_workers;  -- ok
 -- PGC_POSTMASTER / RESOURCES_ASYNCHRONOUS
 SET max_worker_processes = 50;  -- fail, requires restart
-ERROR:  parameter "max_worker_processes" cannot be changed without restarting the server
 RESET max_worker_processes;  -- fail, requires restart
-ERROR:  parameter "max_worker_processes" cannot be changed without restarting the server
 ALTER SYSTEM SET max_worker_processes = 50;  -- ok
 ALTER SYSTEM RESET max_worker_processes;  -- ok
 SET old_snapshot_threshold = 50;  -- fail, requires restart
-ERROR:  parameter "old_snapshot_threshold" cannot be changed without restarting the server
 RESET old_snapshot_threshold;  -- fail, requires restart
-ERROR:  parameter "old_snapshot_threshold" cannot be changed without restarting the server
 ALTER SYSTEM SET old_snapshot_threshold = 50;  -- ok
 ALTER SYSTEM RESET old_snapshot_threshold;  -- ok
 -- PGC_POSTMASTER / RESOURCES_KERNEL
 SET max_files_per_process = 1073741855;  -- fail, requires restart
-ERROR:  parameter "max_files_per_process" cannot be changed without restarting the server
 RESET max_files_per_process;  -- fail, requires restart
-ERROR:  parameter "max_files_per_process" cannot be changed without restarting the server
 ALTER SYSTEM SET max_files_per_process = 1073741855;  -- ok
 ALTER SYSTEM RESET max_files_per_process;  -- ok
 -- PGC_POSTMASTER / RESOURCES_MEM
 SET dynamic_shared_memory_type = 'posix';  -- fail, requires restart
-ERROR:  parameter "dynamic_shared_memory_type" cannot be changed without restarting the server
 RESET dynamic_shared_memory_type;  -- fail, requires restart
-ERROR:  parameter "dynamic_shared_memory_type" cannot be changed without restarting the server
 ALTER SYSTEM SET dynamic_shared_memory_type = 'posix';  -- ok
 ALTER SYSTEM RESET dynamic_shared_memory_type;  -- ok
 SET huge_pages = 'try';  -- fail, requires restart
-ERROR:  parameter "huge_pages" cannot be changed without restarting the server
 RESET huge_pages;  -- fail, requires restart
-ERROR:  parameter "huge_pages" cannot be changed without restarting the server
 ALTER SYSTEM SET huge_pages = 'try';  -- ok
 ALTER SYSTEM RESET huge_pages;  -- ok
 SET max_prepared_transactions = 50;  -- fail, requires restart
-ERROR:  parameter "max_prepared_transactions" cannot be changed without restarting the server
 RESET max_prepared_transactions;  -- fail, requires restart
-ERROR:  parameter "max_prepared_transactions" cannot be changed without restarting the server
 ALTER SYSTEM SET max_prepared_transactions = 50;  -- ok
 ALTER SYSTEM RESET max_prepared_transactions;  -- ok
 SET min_dynamic_shared_memory = 50;  -- fail, requires restart
-ERROR:  parameter "min_dynamic_shared_memory" cannot be changed without restarting the server
 RESET min_dynamic_shared_memory;  -- fail, requires restart
-ERROR:  parameter "min_dynamic_shared_memory" cannot be changed without restarting the server
 ALTER SYSTEM SET min_dynamic_shared_memory = 50;  -- ok
 ALTER SYSTEM RESET min_dynamic_shared_memory;  -- ok
 SET shared_buffers = 50;  -- fail, requires restart
-ERROR:  parameter "shared_buffers" cannot be changed without restarting the server
 RESET shared_buffers;  -- fail, requires restart
-ERROR:  parameter "shared_buffers" cannot be changed without restarting the server
 ALTER SYSTEM SET shared_buffers = 50;  -- ok
 ALTER SYSTEM RESET shared_buffers;  -- ok
 SET shared_memory_type = 'mmap';  -- fail, requires restart
-ERROR:  parameter "shared_memory_type" cannot be changed without restarting the server
 RESET shared_memory_type;  -- fail, requires restart
-ERROR:  parameter "shared_memory_type" cannot be changed without restarting the server
 ALTER SYSTEM SET shared_memory_type = 'mmap';  -- ok
 ALTER SYSTEM RESET shared_memory_type;  -- ok
 -- PGC_POSTMASTER / STATS_COLLECTOR
 SET track_activity_query_size = 524338;  -- fail, requires restart
-ERROR:  parameter "track_activity_query_size" cannot be changed without restarting the server
 RESET track_activity_query_size;  -- fail, requires restart
-ERROR:  parameter "track_activity_query_size" cannot be changed without restarting the server
 ALTER SYSTEM SET track_activity_query_size = 524338;  -- ok
 ALTER SYSTEM RESET track_activity_query_size;  -- ok
 -- PGC_POSTMASTER / WAL_ARCHIVING
 SET archive_mode = 'off';  -- fail, requires restart
-ERROR:  parameter "archive_mode" cannot be changed without restarting the server
 RESET archive_mode;  -- fail, requires restart
-ERROR:  parameter "archive_mode" cannot be changed without restarting the server
 ALTER SYSTEM SET archive_mode = 'off';  -- ok
 ALTER SYSTEM RESET archive_mode;  -- ok
 -- PGC_POSTMASTER / WAL_RECOVERY_TARGET
 SET recovery_target_action = 'pause';  -- fail, requires restart
-ERROR:  parameter "recovery_target_action" cannot be changed without restarting the server
 RESET recovery_target_action;  -- fail, requires restart
-ERROR:  parameter "recovery_target_action" cannot be changed without restarting the server
 ALTER SYSTEM SET recovery_target_action = 'pause';  -- ok
 ALTER SYSTEM RESET recovery_target_action;  -- ok
 SET recovery_target_inclusive = OFF;  -- fail, requires restart
-ERROR:  parameter "recovery_target_inclusive" cannot be changed without restarting the server
 RESET recovery_target_inclusive;  -- fail, requires restart
-ERROR:  parameter "recovery_target_inclusive" cannot be changed without restarting the server
 ALTER SYSTEM SET recovery_target_inclusive = OFF;  -- ok
 ALTER SYSTEM RESET recovery_target_inclusive;  -- ok
 SET recovery_target_lsn = '16/B374D848';  -- fail, requires restart
-ERROR:  parameter "recovery_target_lsn" cannot be changed without restarting the server
 RESET recovery_target_lsn;  -- fail, requires restart
-ERROR:  parameter "recovery_target_lsn" cannot be changed without restarting the server
 ALTER SYSTEM SET recovery_target_lsn = '16/B374D848';  -- ok
 ALTER SYSTEM RESET recovery_target_lsn;  -- ok
 SET recovery_target_name = 'BonPoint';  -- fail, requires restart
-ERROR:  parameter "recovery_target_name" cannot be changed without restarting the server
 RESET recovery_target_name;  -- fail, requires restart
-ERROR:  parameter "recovery_target_name" cannot be changed without restarting the server
 ALTER SYSTEM SET recovery_target_name = 'BonPoint';  -- ok
 ALTER SYSTEM RESET recovery_target_name;  -- ok
 SET recovery_target_time = '2001-02-03 04:05:06.789 Europe/Helsinki';  -- fail, requires restart
-ERROR:  parameter "recovery_target_time" cannot be changed without restarting the server
 RESET recovery_target_time;  -- fail, requires restart
-ERROR:  parameter "recovery_target_time" cannot be changed without restarting the server
 ALTER SYSTEM SET recovery_target_time = '2001-02-03 04:05:06.789 Europe/Helsinki';  -- ok
 ALTER SYSTEM RESET recovery_target_time;  -- ok
 SET recovery_target_timeline = 'latest';  -- fail, requires restart
-ERROR:  parameter "recovery_target_timeline" cannot be changed without restarting the server
 RESET recovery_target_timeline;  -- fail, requires restart
-ERROR:  parameter "recovery_target_timeline" cannot be changed without restarting the server
 ALTER SYSTEM SET recovery_target_timeline = 'latest';  -- ok
 ALTER SYSTEM RESET recovery_target_timeline;  -- ok
 SET recovery_target_xid = '12345678';  -- fail, requires restart
-ERROR:  parameter "recovery_target_xid" cannot be changed without restarting the server
 RESET recovery_target_xid;  -- fail, requires restart
-ERROR:  parameter "recovery_target_xid" cannot be changed without restarting the server
 ALTER SYSTEM SET recovery_target_xid = '12345678';  -- ok
 ALTER SYSTEM RESET recovery_target_xid;  -- ok
 -- PGC_POSTMASTER / WAL_SETTINGS
 SET wal_buffers = 50;  -- fail, requires restart
-ERROR:  parameter "wal_buffers" cannot be changed without restarting the server
 RESET wal_buffers;  -- fail, requires restart
-ERROR:  parameter "wal_buffers" cannot be changed without restarting the server
 ALTER SYSTEM SET wal_buffers = 50;  -- ok
 ALTER SYSTEM RESET wal_buffers;  -- ok
 SET wal_level = 'replica';  -- fail, requires restart
-ERROR:  parameter "wal_level" cannot be changed without restarting the server
 RESET wal_level;  -- fail, requires restart
-ERROR:  parameter "wal_level" cannot be changed without restarting the server
 ALTER SYSTEM SET wal_level = 'replica';  -- ok
 ALTER SYSTEM RESET wal_level;  -- ok
 SET wal_log_hints = OFF;  -- fail, requires restart
-ERROR:  parameter "wal_log_hints" cannot be changed without restarting the server
 RESET wal_log_hints;  -- fail, requires restart
-ERROR:  parameter "wal_log_hints" cannot be changed without restarting the server
 ALTER SYSTEM SET wal_log_hints = OFF;  -- ok
 ALTER SYSTEM RESET wal_log_hints;  -- ok
 -- PGC_SIGHUP / AUTOVACUUM
 SET autovacuum = OFF;  -- fail, requires reload
-ERROR:  parameter "autovacuum" cannot be changed now
 RESET autovacuum;  -- fail, requires reload
-ERROR:  parameter "autovacuum" cannot be changed now
 ALTER SYSTEM SET autovacuum = OFF;  -- ok
 ALTER SYSTEM RESET autovacuum;  -- ok
 SET autovacuum_analyze_scale_factor = 50;  -- fail, requires reload
-ERROR:  parameter "autovacuum_analyze_scale_factor" cannot be changed now
 RESET autovacuum_analyze_scale_factor;  -- fail, requires reload
-ERROR:  parameter "autovacuum_analyze_scale_factor" cannot be changed now
 ALTER SYSTEM SET autovacuum_analyze_scale_factor = 50;  -- ok
 ALTER SYSTEM RESET autovacuum_analyze_scale_factor;  -- ok
 SET autovacuum_analyze_threshold = 50;  -- fail, requires reload
-ERROR:  parameter "autovacuum_analyze_threshold" cannot be changed now
 RESET autovacuum_analyze_threshold;  -- fail, requires reload
-ERROR:  parameter "autovacuum_analyze_threshold" cannot be changed now
 ALTER SYSTEM SET autovacuum_analyze_threshold = 50;  -- ok
 ALTER SYSTEM RESET autovacuum_analyze_threshold;  -- ok
 SET autovacuum_naptime = 50;  -- fail, requires reload
-ERROR:  parameter "autovacuum_naptime" cannot be changed now
 RESET autovacuum_naptime;  -- fail, requires reload
-ERROR:  parameter "autovacuum_naptime" cannot be changed now
 ALTER SYSTEM SET autovacuum_naptime = 50;  -- ok
 ALTER SYSTEM RESET autovacuum_naptime;  -- ok
 SET autovacuum_vacuum_cost_delay = 50;  -- fail, requires reload
-ERROR:  parameter "autovacuum_vacuum_cost_delay" cannot be changed now
 RESET autovacuum_vacuum_cost_delay;  -- fail, requires reload
-ERROR:  parameter "autovacuum_vacuum_cost_delay" cannot be changed now
 ALTER SYSTEM SET autovacuum_vacuum_cost_delay = 50;  -- ok
 ALTER SYSTEM RESET autovacuum_vacuum_cost_delay;  -- ok
 SET autovacuum_vacuum_cost_limit = 50;  -- fail, requires reload
-ERROR:  parameter "autovacuum_vacuum_cost_limit" cannot be changed now
 RESET autovacuum_vacuum_cost_limit;  -- fail, requires reload
-ERROR:  parameter "autovacuum_vacuum_cost_limit" cannot be changed now
 ALTER SYSTEM SET autovacuum_vacuum_cost_limit = 50;  -- ok
 ALTER SYSTEM RESET autovacuum_vacuum_cost_limit;  -- ok
 SET autovacuum_vacuum_insert_scale_factor = 50;  -- fail, requires reload
-ERROR:  parameter "autovacuum_vacuum_insert_scale_factor" cannot be changed now
 RESET autovacuum_vacuum_insert_scale_factor;  -- fail, requires reload
-ERROR:  parameter "autovacuum_vacuum_insert_scale_factor" cannot be changed now
 ALTER SYSTEM SET autovacuum_vacuum_insert_scale_factor = 50;  -- ok
 ALTER SYSTEM RESET autovacuum_vacuum_insert_scale_factor;  -- ok
 SET autovacuum_vacuum_insert_threshold = 50;  -- fail, requires reload
-ERROR:  parameter "autovacuum_vacuum_insert_threshold" cannot be changed now
 RESET autovacuum_vacuum_insert_threshold;  -- fail, requires reload
-ERROR:  parameter "autovacuum_vacuum_insert_threshold" cannot be changed now
 ALTER SYSTEM SET autovacuum_vacuum_insert_threshold = 50;  -- ok
 ALTER SYSTEM RESET autovacuum_vacuum_insert_threshold;  -- ok
 SET autovacuum_vacuum_scale_factor = 50;  -- fail, requires reload
-ERROR:  parameter "autovacuum_vacuum_scale_factor" cannot be changed now
 RESET autovacuum_vacuum_scale_factor;  -- fail, requires reload
-ERROR:  parameter "autovacuum_vacuum_scale_factor" cannot be changed now
 ALTER SYSTEM SET autovacuum_vacuum_scale_factor = 50;  -- ok
 ALTER SYSTEM RESET autovacuum_vacuum_scale_factor;  -- ok
 SET autovacuum_vacuum_threshold = 50;  -- fail, requires reload
-ERROR:  parameter "autovacuum_vacuum_threshold" cannot be changed now
 RESET autovacuum_vacuum_threshold;  -- fail, requires reload
-ERROR:  parameter "autovacuum_vacuum_threshold" cannot be changed now
 ALTER SYSTEM SET autovacuum_vacuum_threshold = 50;  -- ok
 ALTER SYSTEM RESET autovacuum_vacuum_threshold;  -- ok
 -- PGC_SIGHUP / CONN_AUTH_AUTH
 SET authentication_timeout = 50;  -- fail, requires reload
-ERROR:  parameter "authentication_timeout" cannot be changed now
 RESET authentication_timeout;  -- fail, requires reload
-ERROR:  parameter "authentication_timeout" cannot be changed now
 ALTER SYSTEM SET authentication_timeout = 50;  -- ok
 ALTER SYSTEM RESET authentication_timeout;  -- ok
 SET db_user_namespace = OFF;  -- fail, requires reload
-ERROR:  parameter "db_user_namespace" cannot be changed now
 RESET db_user_namespace;  -- fail, requires reload
-ERROR:  parameter "db_user_namespace" cannot be changed now
 ALTER SYSTEM SET db_user_namespace = OFF;  -- ok
 ALTER SYSTEM RESET db_user_namespace;  -- ok
 SET krb_caseins_users = OFF;  -- fail, requires reload
-ERROR:  parameter "krb_caseins_users" cannot be changed now
 RESET krb_caseins_users;  -- fail, requires reload
-ERROR:  parameter "krb_caseins_users" cannot be changed now
 ALTER SYSTEM SET krb_caseins_users = OFF;  -- ok
 ALTER SYSTEM RESET krb_caseins_users;  -- ok
 SET krb_server_keyfile = 'krb/server.key';  -- fail, requires reload
-ERROR:  parameter "krb_server_keyfile" cannot be changed now
 RESET krb_server_keyfile;  -- fail, requires reload
-ERROR:  parameter "krb_server_keyfile" cannot be changed now
 ALTER SYSTEM SET krb_server_keyfile = 'krb/server.key';  -- ok
 ALTER SYSTEM RESET krb_server_keyfile;  -- ok
 -- PGC_SIGHUP / CONN_AUTH_SSL
 SET ssl_ca_file = 'ca/server.ca';  -- fail, requires reload
-ERROR:  parameter "ssl_ca_file" cannot be changed now
 RESET ssl_ca_file;  -- fail, requires reload
-ERROR:  parameter "ssl_ca_file" cannot be changed now
 ALTER SYSTEM SET ssl_ca_file = 'ca/server.ca';  -- ok
 ALTER SYSTEM RESET ssl_ca_file;  -- ok
 SET ssl_cert_file = 'crt/server.crt';  -- fail, requires reload
-ERROR:  parameter "ssl_cert_file" cannot be changed now
 RESET ssl_cert_file;  -- fail, requires reload
-ERROR:  parameter "ssl_cert_file" cannot be changed now
 ALTER SYSTEM SET ssl_cert_file = 'crt/server.crt';  -- ok
 ALTER SYSTEM RESET ssl_cert_file;  -- ok
 SET ssl_ciphers = 'none';  -- fail, requires reload
-ERROR:  parameter "ssl_ciphers" cannot be changed now
 RESET ssl_ciphers;  -- fail, requires reload
-ERROR:  parameter "ssl_ciphers" cannot be changed now
 ALTER SYSTEM SET ssl_ciphers = 'none';  -- ok
 ALTER SYSTEM RESET ssl_ciphers;  -- ok
 SET ssl_crl_dir = 'crl/';  -- fail, requires reload
-ERROR:  parameter "ssl_crl_dir" cannot be changed now
 RESET ssl_crl_dir;  -- fail, requires reload
-ERROR:  parameter "ssl_crl_dir" cannot be changed now
 ALTER SYSTEM SET ssl_crl_dir = 'crl/';  -- ok
 ALTER SYSTEM RESET ssl_crl_dir;  -- ok
 SET ssl_crl_file = 'crl/server.crl';  -- fail, requires reload
-ERROR:  parameter "ssl_crl_file" cannot be changed now
 RESET ssl_crl_file;  -- fail, requires reload
-ERROR:  parameter "ssl_crl_file" cannot be changed now
 ALTER SYSTEM SET ssl_crl_file = 'crl/server.crl';  -- ok
 ALTER SYSTEM RESET ssl_crl_file;  -- ok
 SET ssl_dh_params_file = 'ssl/params';  -- fail, requires reload
-ERROR:  parameter "ssl_dh_params_file" cannot be changed now
 RESET ssl_dh_params_file;  -- fail, requires reload
-ERROR:  parameter "ssl_dh_params_file" cannot be changed now
 ALTER SYSTEM SET ssl_dh_params_file = 'ssl/params';  -- ok
 ALTER SYSTEM RESET ssl_dh_params_file;  -- ok
 SET ssl_ecdh_curve = 'none';  -- fail, requires reload
-ERROR:  parameter "ssl_ecdh_curve" cannot be changed now
 RESET ssl_ecdh_curve;  -- fail, requires reload
-ERROR:  parameter "ssl_ecdh_curve" cannot be changed now
 ALTER SYSTEM SET ssl_ecdh_curve = 'none';  -- ok
 ALTER SYSTEM RESET ssl_ecdh_curve;  -- ok
 SET ssl_key_file = 'crl/server.key';  -- fail, requires reload
-ERROR:  parameter "ssl_key_file" cannot be changed now
 RESET ssl_key_file;  -- fail, requires reload
-ERROR:  parameter "ssl_key_file" cannot be changed now
 ALTER SYSTEM SET ssl_key_file = 'crl/server.key';  -- ok
 ALTER SYSTEM RESET ssl_key_file;  -- ok
 SET ssl_min_protocol_version = 'TLSv1.2';  -- fail, requires reload
-ERROR:  parameter "ssl_min_protocol_version" cannot be changed now
 RESET ssl_min_protocol_version;  -- fail, requires reload
-ERROR:  parameter "ssl_min_protocol_version" cannot be changed now
 ALTER SYSTEM SET ssl_min_protocol_version = 'TLSv1.2';  -- ok
 ALTER SYSTEM RESET ssl_min_protocol_version;  -- ok
 SET ssl_passphrase_command = '/bin/passphrase';  -- fail, requires reload
-ERROR:  parameter "ssl_passphrase_command" cannot be changed now
 RESET ssl_passphrase_command;  -- fail, requires reload
-ERROR:  parameter "ssl_passphrase_command" cannot be changed now
 ALTER SYSTEM SET ssl_passphrase_command = '/bin/passphrase';  -- ok
 ALTER SYSTEM RESET ssl_passphrase_command;  -- ok
 SET ssl_passphrase_command_supports_reload = OFF;  -- fail, requires reload
-ERROR:  parameter "ssl_passphrase_command_supports_reload" cannot be changed now
 RESET ssl_passphrase_command_supports_reload;  -- fail, requires reload
-ERROR:  parameter "ssl_passphrase_command_supports_reload" cannot be changed now
 ALTER SYSTEM SET ssl_passphrase_command_supports_reload = OFF;  -- ok
 ALTER SYSTEM RESET ssl_passphrase_command_supports_reload;  -- ok
 SET ssl_prefer_server_ciphers = OFF;  -- fail, requires reload
-ERROR:  parameter "ssl_prefer_server_ciphers" cannot be changed now
 RESET ssl_prefer_server_ciphers;  -- fail, requires reload
-ERROR:  parameter "ssl_prefer_server_ciphers" cannot be changed now
 ALTER SYSTEM SET ssl_prefer_server_ciphers = OFF;  -- ok
 ALTER SYSTEM RESET ssl_prefer_server_ciphers;  -- ok
 -- PGC_SIGHUP / DEVELOPER_OPTIONS
 SET pre_auth_delay = 50;  -- fail, requires reload
-ERROR:  parameter "pre_auth_delay" cannot be changed now
 RESET pre_auth_delay;  -- fail, requires reload
-ERROR:  parameter "pre_auth_delay" cannot be changed now
 ALTER SYSTEM SET pre_auth_delay = 50;  -- ok
 ALTER SYSTEM RESET pre_auth_delay;  -- ok
 SET remove_temp_files_after_crash = OFF;  -- fail, requires reload
-ERROR:  parameter "remove_temp_files_after_crash" cannot be changed now
 RESET remove_temp_files_after_crash;  -- fail, requires reload
-ERROR:  parameter "remove_temp_files_after_crash" cannot be changed now
 ALTER SYSTEM SET remove_temp_files_after_crash = OFF;  -- ok
 ALTER SYSTEM RESET remove_temp_files_after_crash;  -- ok
 SET trace_recovery_messages = 'log';  -- fail, requires reload
-ERROR:  parameter "trace_recovery_messages" cannot be changed now
 RESET trace_recovery_messages;  -- fail, requires reload
-ERROR:  parameter "trace_recovery_messages" cannot be changed now
 ALTER SYSTEM SET trace_recovery_messages = 'log';  -- ok
 ALTER SYSTEM RESET trace_recovery_messages;  -- ok
 -- PGC_SIGHUP / ERROR_HANDLING_OPTIONS
 SET recovery_init_sync_method = 'fsync';  -- fail, requires reload
-ERROR:  parameter "recovery_init_sync_method" cannot be changed now
 RESET recovery_init_sync_method;  -- fail, requires reload
-ERROR:  parameter "recovery_init_sync_method" cannot be changed now
 ALTER SYSTEM SET recovery_init_sync_method = 'fsync';  -- ok
 ALTER SYSTEM RESET recovery_init_sync_method;  -- ok
 SET restart_after_crash = OFF;  -- fail, requires reload
-ERROR:  parameter "restart_after_crash" cannot be changed now
 RESET restart_after_crash;  -- fail, requires reload
-ERROR:  parameter "restart_after_crash" cannot be changed now
 ALTER SYSTEM SET restart_after_crash = OFF;  -- ok
 ALTER SYSTEM RESET restart_after_crash;  -- ok
 -- PGC_SIGHUP / LOCK_MANAGEMENT
 SET max_pred_locks_per_page = 50;  -- fail, requires reload
-ERROR:  parameter "max_pred_locks_per_page" cannot be changed now
 RESET max_pred_locks_per_page;  -- fail, requires reload
-ERROR:  parameter "max_pred_locks_per_page" cannot be changed now
 ALTER SYSTEM SET max_pred_locks_per_page = 50;  -- ok
 ALTER SYSTEM RESET max_pred_locks_per_page;  -- ok
 SET max_pred_locks_per_relation = 50;  -- fail, requires reload
-ERROR:  parameter "max_pred_locks_per_relation" cannot be changed now
 RESET max_pred_locks_per_relation;  -- fail, requires reload
-ERROR:  parameter "max_pred_locks_per_relation" cannot be changed now
 ALTER SYSTEM SET max_pred_locks_per_relation = 50;  -- ok
 ALTER SYSTEM RESET max_pred_locks_per_relation;  -- ok
 -- PGC_SIGHUP / LOGGING_WHAT
 SET log_autovacuum_min_duration = 50;  -- fail, requires reload
-ERROR:  parameter "log_autovacuum_min_duration" cannot be changed now
 RESET log_autovacuum_min_duration;  -- fail, requires reload
-ERROR:  parameter "log_autovacuum_min_duration" cannot be changed now
 ALTER SYSTEM SET log_autovacuum_min_duration = 50;  -- ok
 ALTER SYSTEM RESET log_autovacuum_min_duration;  -- ok
 SET log_checkpoints = OFF;  -- fail, requires reload
-ERROR:  parameter "log_checkpoints" cannot be changed now
 RESET log_checkpoints;  -- fail, requires reload
-ERROR:  parameter "log_checkpoints" cannot be changed now
 ALTER SYSTEM SET log_checkpoints = OFF;  -- ok
 ALTER SYSTEM RESET log_checkpoints;  -- ok
 SET log_hostname = OFF;  -- fail, requires reload
-ERROR:  parameter "log_hostname" cannot be changed now
 RESET log_hostname;  -- fail, requires reload
-ERROR:  parameter "log_hostname" cannot be changed now
 ALTER SYSTEM SET log_hostname = OFF;  -- ok
 ALTER SYSTEM RESET log_hostname;  -- ok
 SET log_line_prefix = '%m [%p] ';  -- fail, requires reload
-ERROR:  parameter "log_line_prefix" cannot be changed now
 RESET log_line_prefix;  -- fail, requires reload
-ERROR:  parameter "log_line_prefix" cannot be changed now
 ALTER SYSTEM SET log_line_prefix = '%m [%p] ';  -- ok
 ALTER SYSTEM RESET log_line_prefix;  -- ok
 SET log_recovery_conflict_waits = OFF;  -- fail, requires reload
-ERROR:  parameter "log_recovery_conflict_waits" cannot be changed now
 RESET log_recovery_conflict_waits;  -- fail, requires reload
-ERROR:  parameter "log_recovery_conflict_waits" cannot be changed now
 ALTER SYSTEM SET log_recovery_conflict_waits = OFF;  -- ok
 ALTER SYSTEM RESET log_recovery_conflict_waits;  -- ok
 SET log_timezone = 'Europe/Helsinki';  -- fail, requires reload
-ERROR:  parameter "log_timezone" cannot be changed now
 RESET log_timezone;  -- fail, requires reload
-ERROR:  parameter "log_timezone" cannot be changed now
 ALTER SYSTEM SET log_timezone = 'Europe/Helsinki';  -- ok
 ALTER SYSTEM RESET log_timezone;  -- ok
 -- PGC_SIGHUP / LOGGING_WHERE
 SET log_directory = 'log';  -- fail, requires reload
-ERROR:  parameter "log_directory" cannot be changed now
 RESET log_directory;  -- fail, requires reload
-ERROR:  parameter "log_directory" cannot be changed now
 ALTER SYSTEM SET log_directory = 'log';  -- ok
 ALTER SYSTEM RESET log_directory;  -- ok
 SET log_file_mode = 50;  -- fail, requires reload
-ERROR:  parameter "log_file_mode" cannot be changed now
 RESET log_file_mode;  -- fail, requires reload
-ERROR:  parameter "log_file_mode" cannot be changed now
 ALTER SYSTEM SET log_file_mode = 50;  -- ok
 ALTER SYSTEM RESET log_file_mode;  -- ok
 SET log_filename = 'postgresql-%Y-%m-%d_%H%M%S.log';  -- fail, requires reload
-ERROR:  parameter "log_filename" cannot be changed now
 RESET log_filename;  -- fail, requires reload
-ERROR:  parameter "log_filename" cannot be changed now
 ALTER SYSTEM SET log_filename = 'postgresql-%Y-%m-%d_%H%M%S.log';  -- ok
 ALTER SYSTEM RESET log_filename;  -- ok
 SET log_rotation_age = 50;  -- fail, requires reload
-ERROR:  parameter "log_rotation_age" cannot be changed now
 RESET log_rotation_age;  -- fail, requires reload
-ERROR:  parameter "log_rotation_age" cannot be changed now
 ALTER SYSTEM SET log_rotation_age = 50;  -- ok
 ALTER SYSTEM RESET log_rotation_age;  -- ok
 SET log_rotation_size = 50;  -- fail, requires reload
-ERROR:  parameter "log_rotation_size" cannot be changed now
 RESET log_rotation_size;  -- fail, requires reload
-ERROR:  parameter "log_rotation_size" cannot be changed now
 ALTER SYSTEM SET log_rotation_size = 50;  -- ok
 ALTER SYSTEM RESET log_rotation_size;  -- ok
 SET log_truncate_on_rotation = OFF;  -- fail, requires reload
-ERROR:  parameter "log_truncate_on_rotation" cannot be changed now
 RESET log_truncate_on_rotation;  -- fail, requires reload
-ERROR:  parameter "log_truncate_on_rotation" cannot be changed now
 ALTER SYSTEM SET log_truncate_on_rotation = OFF;  -- ok
 ALTER SYSTEM RESET log_truncate_on_rotation;  -- ok
 SET syslog_ident = 'postgres';  -- fail, requires reload
-ERROR:  parameter "syslog_ident" cannot be changed now
 RESET syslog_ident;  -- fail, requires reload
-ERROR:  parameter "syslog_ident" cannot be changed now
 ALTER SYSTEM SET syslog_ident = 'postgres';  -- ok
 ALTER SYSTEM RESET syslog_ident;  -- ok
 SET syslog_sequence_numbers = OFF;  -- fail, requires reload
-ERROR:  parameter "syslog_sequence_numbers" cannot be changed now
 RESET syslog_sequence_numbers;  -- fail, requires reload
-ERROR:  parameter "syslog_sequence_numbers" cannot be changed now
 ALTER SYSTEM SET syslog_sequence_numbers = OFF;  -- ok
 ALTER SYSTEM RESET syslog_sequence_numbers;  -- ok
 SET syslog_split_messages = OFF;  -- fail, requires reload
-ERROR:  parameter "syslog_split_messages" cannot be changed now
 RESET syslog_split_messages;  -- fail, requires reload
-ERROR:  parameter "syslog_split_messages" cannot be changed now
 ALTER SYSTEM SET syslog_split_messages = OFF;  -- ok
 ALTER SYSTEM RESET syslog_split_messages;  -- ok
 -- PGC_SIGHUP / REPLICATION_PRIMARY
 SET synchronous_standby_names = 'fee, fi, fo, fum';  -- fail, requires reload
-ERROR:  parameter "synchronous_standby_names" cannot be changed now
 RESET synchronous_standby_names;  -- fail, requires reload
-ERROR:  parameter "synchronous_standby_names" cannot be changed now
 ALTER SYSTEM SET synchronous_standby_names = 'fee, fi, fo, fum';  -- ok
 ALTER SYSTEM RESET synchronous_standby_names;  -- ok
 SET vacuum_defer_cleanup_age = 50;  -- fail, requires reload
-ERROR:  parameter "vacuum_defer_cleanup_age" cannot be changed now
 RESET vacuum_defer_cleanup_age;  -- fail, requires reload
-ERROR:  parameter "vacuum_defer_cleanup_age" cannot be changed now
 ALTER SYSTEM SET vacuum_defer_cleanup_age = 50;  -- ok
 ALTER SYSTEM RESET vacuum_defer_cleanup_age;  -- ok
 -- PGC_SIGHUP / REPLICATION_SENDING
 SET max_slot_wal_keep_size = 50;  -- fail, requires reload
-ERROR:  parameter "max_slot_wal_keep_size" cannot be changed now
 RESET max_slot_wal_keep_size;  -- fail, requires reload
-ERROR:  parameter "max_slot_wal_keep_size" cannot be changed now
 ALTER SYSTEM SET max_slot_wal_keep_size = 50;  -- ok
 ALTER SYSTEM RESET max_slot_wal_keep_size;  -- ok
 SET wal_keep_size = 50;  -- fail, requires reload
-ERROR:  parameter "wal_keep_size" cannot be changed now
 RESET wal_keep_size;  -- fail, requires reload
-ERROR:  parameter "wal_keep_size" cannot be changed now
 ALTER SYSTEM SET wal_keep_size = 50;  -- ok
 ALTER SYSTEM RESET wal_keep_size;  -- ok
 -- PGC_SIGHUP / REPLICATION_STANDBY
 SET hot_standby_feedback = OFF;  -- fail, requires reload
-ERROR:  parameter "hot_standby_feedback" cannot be changed now
 RESET hot_standby_feedback;  -- fail, requires reload
-ERROR:  parameter "hot_standby_feedback" cannot be changed now
 ALTER SYSTEM SET hot_standby_feedback = OFF;  -- ok
 ALTER SYSTEM RESET hot_standby_feedback;  -- ok
 SET max_standby_archive_delay = 50;  -- fail, requires reload
-ERROR:  parameter "max_standby_archive_delay" cannot be changed now
 RESET max_standby_archive_delay;  -- fail, requires reload
-ERROR:  parameter "max_standby_archive_delay" cannot be changed now
 ALTER SYSTEM SET max_standby_archive_delay = 50;  -- ok
 ALTER SYSTEM RESET max_standby_archive_delay;  -- ok
 SET max_standby_streaming_delay = 50;  -- fail, requires reload
-ERROR:  parameter "max_standby_streaming_delay" cannot be changed now
 RESET max_standby_streaming_delay;  -- fail, requires reload
-ERROR:  parameter "max_standby_streaming_delay" cannot be changed now
 ALTER SYSTEM SET max_standby_streaming_delay = 50;  -- ok
 ALTER SYSTEM RESET max_standby_streaming_delay;  -- ok
 SET primary_conninfo = 'postgresql://other@localhost/otherdb?connect_timeout=10&application_name=myapp';  -- fail, requires reload
-ERROR:  parameter "primary_conninfo" cannot be changed now
 RESET primary_conninfo;  -- fail, requires reload
-ERROR:  parameter "primary_conninfo" cannot be changed now
 ALTER SYSTEM SET primary_conninfo = 'postgresql://other@localhost/otherdb?connect_timeout=10&application_name=myapp';  -- ok
 ALTER SYSTEM RESET primary_conninfo;  -- ok
 SET primary_slot_name = 'bonne_fente';  -- fail, requires reload
-ERROR:  parameter "primary_slot_name" cannot be changed now
 RESET primary_slot_name;  -- fail, requires reload
-ERROR:  parameter "primary_slot_name" cannot be changed now
 ALTER SYSTEM SET primary_slot_name = 'bonne_fente';  -- ok
 ALTER SYSTEM RESET primary_slot_name;  -- ok
 SET promote_trigger_file = 'promote.trigger';  -- fail, requires reload
-ERROR:  parameter "promote_trigger_file" cannot be changed now
 RESET promote_trigger_file;  -- fail, requires reload
-ERROR:  parameter "promote_trigger_file" cannot be changed now
 ALTER SYSTEM SET promote_trigger_file = 'promote.trigger';  -- ok
 ALTER SYSTEM RESET promote_trigger_file;  -- ok
 SET recovery_min_apply_delay = 50;  -- fail, requires reload
-ERROR:  parameter "recovery_min_apply_delay" cannot be changed now
 RESET recovery_min_apply_delay;  -- fail, requires reload
-ERROR:  parameter "recovery_min_apply_delay" cannot be changed now
 ALTER SYSTEM SET recovery_min_apply_delay = 50;  -- ok
 ALTER SYSTEM RESET recovery_min_apply_delay;  -- ok
 SET wal_receiver_create_temp_slot = OFF;  -- fail, requires reload
-ERROR:  parameter "wal_receiver_create_temp_slot" cannot be changed now
 RESET wal_receiver_create_temp_slot;  -- fail, requires reload
-ERROR:  parameter "wal_receiver_create_temp_slot" cannot be changed now
 ALTER SYSTEM SET wal_receiver_create_temp_slot = OFF;  -- ok
 ALTER SYSTEM RESET wal_receiver_create_temp_slot;  -- ok
 SET wal_receiver_status_interval = 50;  -- fail, requires reload
-ERROR:  parameter "wal_receiver_status_interval" cannot be changed now
 RESET wal_receiver_status_interval;  -- fail, requires reload
-ERROR:  parameter "wal_receiver_status_interval" cannot be changed now
 ALTER SYSTEM SET wal_receiver_status_interval = 50;  -- ok
 ALTER SYSTEM RESET wal_receiver_status_interval;  -- ok
 SET wal_receiver_timeout = 50;  -- fail, requires reload
-ERROR:  parameter "wal_receiver_timeout" cannot be changed now
 RESET wal_receiver_timeout;  -- fail, requires reload
-ERROR:  parameter "wal_receiver_timeout" cannot be changed now
 ALTER SYSTEM SET wal_receiver_timeout = 50;  -- ok
 ALTER SYSTEM RESET wal_receiver_timeout;  -- ok
 SET wal_retrieve_retry_interval = 50;  -- fail, requires reload
-ERROR:  parameter "wal_retrieve_retry_interval" cannot be changed now
 RESET wal_retrieve_retry_interval;  -- fail, requires reload
-ERROR:  parameter "wal_retrieve_retry_interval" cannot be changed now
 ALTER SYSTEM SET wal_retrieve_retry_interval = 50;  -- ok
 ALTER SYSTEM RESET wal_retrieve_retry_interval;  -- ok
 -- PGC_SIGHUP / REPLICATION_SUBSCRIBERS
 SET max_sync_workers_per_subscription = 50;  -- fail, requires reload
-ERROR:  parameter "max_sync_workers_per_subscription" cannot be changed now
 RESET max_sync_workers_per_subscription;  -- fail, requires reload
-ERROR:  parameter "max_sync_workers_per_subscription" cannot be changed now
 ALTER SYSTEM SET max_sync_workers_per_subscription = 50;  -- ok
 ALTER SYSTEM RESET max_sync_workers_per_subscription;  -- ok
 -- PGC_SIGHUP / RESOURCES_BGWRITER
 SET bgwriter_delay = 50;  -- fail, requires reload
-ERROR:  parameter "bgwriter_delay" cannot be changed now
 RESET bgwriter_delay;  -- fail, requires reload
-ERROR:  parameter "bgwriter_delay" cannot be changed now
 ALTER SYSTEM SET bgwriter_delay = 50;  -- ok
 ALTER SYSTEM RESET bgwriter_delay;  -- ok
 SET bgwriter_flush_after = 50;  -- fail, requires reload
-ERROR:  parameter "bgwriter_flush_after" cannot be changed now
 RESET bgwriter_flush_after;  -- fail, requires reload
-ERROR:  parameter "bgwriter_flush_after" cannot be changed now
 ALTER SYSTEM SET bgwriter_flush_after = 50;  -- ok
 ALTER SYSTEM RESET bgwriter_flush_after;  -- ok
 SET bgwriter_lru_maxpages = 50;  -- fail, requires reload
-ERROR:  parameter "bgwriter_lru_maxpages" cannot be changed now
 RESET bgwriter_lru_maxpages;  -- fail, requires reload
-ERROR:  parameter "bgwriter_lru_maxpages" cannot be changed now
 ALTER SYSTEM SET bgwriter_lru_maxpages = 50;  -- ok
 ALTER SYSTEM RESET bgwriter_lru_maxpages;  -- ok
 SET bgwriter_lru_multiplier = 5;  -- fail, requires reload
-ERROR:  parameter "bgwriter_lru_multiplier" cannot be changed now
 RESET bgwriter_lru_multiplier;  -- fail, requires reload
-ERROR:  parameter "bgwriter_lru_multiplier" cannot be changed now
 ALTER SYSTEM SET bgwriter_lru_multiplier = 5;  -- ok
 ALTER SYSTEM RESET bgwriter_lru_multiplier;  -- ok
 -- PGC_SIGHUP / RESOURCES_MEM
 SET autovacuum_work_mem = 50;  -- fail, requires reload
-ERROR:  parameter "autovacuum_work_mem" cannot be changed now
 RESET autovacuum_work_mem;  -- fail, requires reload
-ERROR:  parameter "autovacuum_work_mem" cannot be changed now
 ALTER SYSTEM SET autovacuum_work_mem = 50;  -- ok
 ALTER SYSTEM RESET autovacuum_work_mem;  -- ok
 -- PGC_SIGHUP / STATS_COLLECTOR
 SET stats_temp_directory = 'pg_stat_tmp';  -- fail, requires reload
-ERROR:  parameter "stats_temp_directory" cannot be changed now
 RESET stats_temp_directory;  -- fail, requires reload
-ERROR:  parameter "stats_temp_directory" cannot be changed now
 ALTER SYSTEM SET stats_temp_directory = 'pg_stat_tmp';  -- ok
 ALTER SYSTEM RESET stats_temp_directory;  -- ok
 -- PGC_SIGHUP / WAL_ARCHIVE_RECOVERY
 SET archive_cleanup_command = '/bin/cleanup my stuff';  -- fail, requires reload
-ERROR:  parameter "archive_cleanup_command" cannot be changed now
 RESET archive_cleanup_command;  -- fail, requires reload
-ERROR:  parameter "archive_cleanup_command" cannot be changed now
 ALTER SYSTEM SET archive_cleanup_command = '/bin/cleanup my stuff';  -- ok
 ALTER SYSTEM RESET archive_cleanup_command;  -- ok
 SET recovery_end_command = '/bin/recover my stuff';  -- fail, requires reload
-ERROR:  parameter "recovery_end_command" cannot be changed now
 RESET recovery_end_command;  -- fail, requires reload
-ERROR:  parameter "recovery_end_command" cannot be changed now
 ALTER SYSTEM SET recovery_end_command = '/bin/recover my stuff';  -- ok
 ALTER SYSTEM RESET recovery_end_command;  -- ok
 SET restore_command = '/bin/restore my stuff';  -- fail, requires reload
-ERROR:  parameter "restore_command" cannot be changed now
 RESET restore_command;  -- fail, requires reload
-ERROR:  parameter "restore_command" cannot be changed now
 ALTER SYSTEM SET restore_command = '/bin/restore my stuff';  -- ok
 ALTER SYSTEM RESET restore_command;  -- ok
 -- PGC_SIGHUP / WAL_ARCHIVING
 SET archive_command = '/bin/archive my stuff';  -- fail, requires reload
-ERROR:  parameter "archive_command" cannot be changed now
 RESET archive_command;  -- fail, requires reload
-ERROR:  parameter "archive_command" cannot be changed now
 ALTER SYSTEM SET archive_command = '/bin/archive my stuff';  -- ok
 ALTER SYSTEM RESET archive_command;  -- ok
 SET archive_timeout = 50;  -- fail, requires reload
-ERROR:  parameter "archive_timeout" cannot be changed now
 RESET archive_timeout;  -- fail, requires reload
-ERROR:  parameter "archive_timeout" cannot be changed now
 ALTER SYSTEM SET archive_timeout = 50;  -- ok
 ALTER SYSTEM RESET archive_timeout;  -- ok
 -- PGC_SIGHUP / WAL_CHECKPOINTS
 SET checkpoint_completion_target = 0;  -- fail, requires reload
-ERROR:  parameter "checkpoint_completion_target" cannot be changed now
 RESET checkpoint_completion_target;  -- fail, requires reload
-ERROR:  parameter "checkpoint_completion_target" cannot be changed now
 ALTER SYSTEM SET checkpoint_completion_target = 0;  -- ok
 ALTER SYSTEM RESET checkpoint_completion_target;  -- ok
 SET checkpoint_flush_after = 50;  -- fail, requires reload
-ERROR:  parameter "checkpoint_flush_after" cannot be changed now
 RESET checkpoint_flush_after;  -- fail, requires reload
-ERROR:  parameter "checkpoint_flush_after" cannot be changed now
 ALTER SYSTEM SET checkpoint_flush_after = 50;  -- ok
 ALTER SYSTEM RESET checkpoint_flush_after;  -- ok
 SET checkpoint_timeout = 50;  -- fail, requires reload
-ERROR:  parameter "checkpoint_timeout" cannot be changed now
 RESET checkpoint_timeout;  -- fail, requires reload
-ERROR:  parameter "checkpoint_timeout" cannot be changed now
 ALTER SYSTEM SET checkpoint_timeout = 50;  -- ok
 ALTER SYSTEM RESET checkpoint_timeout;  -- ok
 SET checkpoint_warning = 50;  -- fail, requires reload
-ERROR:  parameter "checkpoint_warning" cannot be changed now
 RESET checkpoint_warning;  -- fail, requires reload
-ERROR:  parameter "checkpoint_warning" cannot be changed now
 ALTER SYSTEM SET checkpoint_warning = 50;  -- ok
 ALTER SYSTEM RESET checkpoint_warning;  -- ok
 SET max_wal_size = 50;  -- fail, requires reload
-ERROR:  parameter "max_wal_size" cannot be changed now
 RESET max_wal_size;  -- fail, requires reload
-ERROR:  parameter "max_wal_size" cannot be changed now
 ALTER SYSTEM SET max_wal_size = 50;  -- ok
 ALTER SYSTEM RESET max_wal_size;  -- ok
 SET min_wal_size = 50;  -- fail, requires reload
-ERROR:  parameter "min_wal_size" cannot be changed now
 RESET min_wal_size;  -- fail, requires reload
-ERROR:  parameter "min_wal_size" cannot be changed now
 ALTER SYSTEM SET min_wal_size = 50;  -- ok
 ALTER SYSTEM RESET min_wal_size;  -- ok
 -- PGC_SIGHUP / WAL_SETTINGS
 SET fsync = OFF;  -- fail, requires reload
-ERROR:  parameter "fsync" cannot be changed now
 RESET fsync;  -- fail, requires reload
-ERROR:  parameter "fsync" cannot be changed now
 ALTER SYSTEM SET fsync = OFF;  -- ok
 ALTER SYSTEM RESET fsync;  -- ok
 SET full_page_writes = OFF;  -- fail, requires reload
-ERROR:  parameter "full_page_writes" cannot be changed now
 RESET full_page_writes;  -- fail, requires reload
-ERROR:  parameter "full_page_writes" cannot be changed now
 ALTER SYSTEM SET full_page_writes = OFF;  -- ok
 ALTER SYSTEM RESET full_page_writes;  -- ok
 SET wal_sync_method = 'open_datasync';  -- fail, requires reload
-ERROR:  parameter "wal_sync_method" cannot be changed now
 RESET wal_sync_method;  -- fail, requires reload
-ERROR:  parameter "wal_sync_method" cannot be changed now
 ALTER SYSTEM SET wal_sync_method = 'open_datasync';  -- ok
 ALTER SYSTEM RESET wal_sync_method;  -- ok
 SET wal_writer_delay = 50;  -- fail, requires reload
-ERROR:  parameter "wal_writer_delay" cannot be changed now
 RESET wal_writer_delay;  -- fail, requires reload
-ERROR:  parameter "wal_writer_delay" cannot be changed now
 ALTER SYSTEM SET wal_writer_delay = 50;  -- ok
 ALTER SYSTEM RESET wal_writer_delay;  -- ok
 SET wal_writer_flush_after = 50;  -- fail, requires reload
-ERROR:  parameter "wal_writer_flush_after" cannot be changed now
 RESET wal_writer_flush_after;  -- fail, requires reload
-ERROR:  parameter "wal_writer_flush_after" cannot be changed now
 ALTER SYSTEM SET wal_writer_flush_after = 50;  -- ok
 ALTER SYSTEM RESET wal_writer_flush_after;  -- ok
 -- PGC_SUSET / CLIENT_CONN_LOCALE
@@ -1216,28 +860,20 @@ ALTER SYSTEM SET wal_recycle = OFF;  -- ok
 ALTER SYSTEM RESET wal_recycle;  -- ok
 -- PGC_SU_BACKEND / DEVELOPER_OPTIONS
 SET jit_debugging_support = OFF;  -- fail, cannot be set after connection start
-ERROR:  parameter "jit_debugging_support" cannot be set after connection start
 RESET jit_debugging_support;  -- fail, cannot be set after connection start
-ERROR:  parameter "jit_debugging_support" cannot be set after connection start
 ALTER SYSTEM SET jit_debugging_support = OFF;  -- ok
 ALTER SYSTEM RESET jit_debugging_support;  -- ok
 SET jit_profiling_support = OFF;  -- fail, cannot be set after connection start
-ERROR:  parameter "jit_profiling_support" cannot be set after connection start
 RESET jit_profiling_support;  -- fail, cannot be set after connection start
-ERROR:  parameter "jit_profiling_support" cannot be set after connection start
 ALTER SYSTEM SET jit_profiling_support = OFF;  -- ok
 ALTER SYSTEM RESET jit_profiling_support;  -- ok
 -- PGC_SU_BACKEND / LOGGING_WHAT
 SET log_connections = OFF;  -- fail, cannot be set after connection start
-ERROR:  parameter "log_connections" cannot be set after connection start
 RESET log_connections;  -- fail, cannot be set after connection start
-ERROR:  parameter "log_connections" cannot be set after connection start
 ALTER SYSTEM SET log_connections = OFF;  -- ok
 ALTER SYSTEM RESET log_connections;  -- ok
 SET log_disconnections = OFF;  -- fail, cannot be set after connection start
-ERROR:  parameter "log_disconnections" cannot be set after connection start
 RESET log_disconnections;  -- fail, cannot be set after connection start
-ERROR:  parameter "log_disconnections" cannot be set after connection start
 ALTER SYSTEM SET log_disconnections = OFF;  -- ok
 ALTER SYSTEM RESET log_disconnections;  -- ok
 -- PGC_USERSET / CLIENT_CONN_LOCALE
@@ -1355,15 +991,11 @@ ALTER SYSTEM RESET statement_timeout;  -- ok
 SET transaction_deferrable = OFF;  -- ok
 RESET transaction_deferrable;  -- ok
 ALTER SYSTEM SET transaction_deferrable = OFF;  -- fail, cannot be changed
-ERROR:  parameter "transaction_deferrable" cannot be changed
 ALTER SYSTEM RESET transaction_deferrable;  -- fail, cannot be changed
-ERROR:  parameter "transaction_deferrable" cannot be changed
 SET transaction_read_only = OFF;  -- ok
 RESET transaction_read_only;  -- ok
 ALTER SYSTEM SET transaction_read_only = OFF;  -- fail, cannot be changed
-ERROR:  parameter "transaction_read_only" cannot be changed
 ALTER SYSTEM RESET transaction_read_only;  -- fail, cannot be changed
-ERROR:  parameter "transaction_read_only" cannot be changed
 SET vacuum_failsafe_age = 50;  -- ok
 RESET vacuum_failsafe_age;  -- ok
 ALTER SYSTEM SET vacuum_failsafe_age = 50;  -- ok
@@ -1447,9 +1079,7 @@ ALTER SYSTEM RESET tcp_user_timeout;  -- ok
 SET ssl_renegotiation_limit = 0;  -- ok
 RESET ssl_renegotiation_limit;  -- ok
 ALTER SYSTEM SET ssl_renegotiation_limit = 0;  -- fail, cannot be changed
-ERROR:  parameter "ssl_renegotiation_limit" cannot be changed
 ALTER SYSTEM RESET ssl_renegotiation_limit;  -- fail, cannot be changed
-ERROR:  parameter "ssl_renegotiation_limit" cannot be changed
 -- PGC_USERSET / DEVELOPER_OPTIONS
 SET force_parallel_mode = 'off';  -- ok
 RESET force_parallel_mode;  -- ok
@@ -1773,9 +1403,7 @@ ALTER SYSTEM RESET vacuum_cost_page_miss;  -- ok
 SET seed = 0;  -- ok
 RESET seed;  -- ok
 ALTER SYSTEM SET seed = 0;  -- fail, cannot be changed
-ERROR:  parameter "seed" cannot be changed
 ALTER SYSTEM RESET seed;  -- fail, cannot be changed
-ERROR:  parameter "seed" cannot be changed
 -- PGC_USERSET / WAL_SETTINGS
 SET commit_siblings = 50;  -- ok
 RESET commit_siblings;  -- ok
@@ -1791,4 +1419,4 @@ ALTER SYSTEM SET wal_skip_threshold = 50;  -- ok
 ALTER SYSTEM RESET wal_skip_threshold;  -- ok
 RESET statement_timeout;
 RESET SESSION AUTHORIZATION;
-DROP ROLE admin;
+DROP ROLE regress_admin;
