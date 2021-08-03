@@ -333,31 +333,31 @@ static void pgstat_setup_memcxt(void);
 static void pgstat_setheader(PgStat_MsgHdr *hdr, StatMsgType mtype);
 static void pgstat_send(void *msg, int len);
 
-static void pgstat_recv_inquiry(PgStat_MsgInquiry *msg, int len);
-static void pgstat_recv_tabstat(PgStat_MsgTabstat *msg, int len);
-static void pgstat_recv_tabpurge(PgStat_MsgTabpurge *msg, int len);
-static void pgstat_recv_dropdb(PgStat_MsgDropdb *msg, int len);
-static void pgstat_recv_resetcounter(PgStat_MsgResetcounter *msg, int len);
-static void pgstat_recv_resetsharedcounter(PgStat_MsgResetsharedcounter *msg, int len);
-static void pgstat_recv_resetsinglecounter(PgStat_MsgResetsinglecounter *msg, int len);
-static void pgstat_recv_resetslrucounter(PgStat_MsgResetslrucounter *msg, int len);
-static void pgstat_recv_resetreplslotcounter(PgStat_MsgResetreplslotcounter *msg, int len);
-static void pgstat_recv_autovac(PgStat_MsgAutovacStart *msg, int len);
-static void pgstat_recv_vacuum(PgStat_MsgVacuum *msg, int len);
-static void pgstat_recv_analyze(PgStat_MsgAnalyze *msg, int len);
-static void pgstat_recv_anl_ancestors(PgStat_MsgAnlAncestors *msg, int len);
-static void pgstat_recv_archiver(PgStat_MsgArchiver *msg, int len);
-static void pgstat_recv_bgwriter(PgStat_MsgBgWriter *msg, int len);
-static void pgstat_recv_wal(PgStat_MsgWal *msg, int len);
-static void pgstat_recv_slru(PgStat_MsgSLRU *msg, int len);
-static void pgstat_recv_funcstat(PgStat_MsgFuncstat *msg, int len);
-static void pgstat_recv_funcpurge(PgStat_MsgFuncpurge *msg, int len);
-static void pgstat_recv_recoveryconflict(PgStat_MsgRecoveryConflict *msg, int len);
-static void pgstat_recv_deadlock(PgStat_MsgDeadlock *msg, int len);
-static void pgstat_recv_checksum_failure(PgStat_MsgChecksumFailure *msg, int len);
-static void pgstat_recv_connstat(PgStat_MsgConn *msg, int len);
-static void pgstat_recv_replslot(PgStat_MsgReplSlot *msg, int len);
-static void pgstat_recv_tempfile(PgStat_MsgTempFile *msg, int len);
+static void pgstat_recv_inquiry(PgStat_MsgInquiry *msg);
+static void pgstat_recv_tabstat(PgStat_MsgTabstat *msg);
+static void pgstat_recv_tabpurge(PgStat_MsgTabpurge *msg);
+static void pgstat_recv_dropdb(PgStat_MsgDropdb *msg);
+static void pgstat_recv_resetcounter(PgStat_MsgResetcounter *msg);
+static void pgstat_recv_resetsharedcounter(PgStat_MsgResetsharedcounter *msg);
+static void pgstat_recv_resetsinglecounter(PgStat_MsgResetsinglecounter *msg);
+static void pgstat_recv_resetslrucounter(PgStat_MsgResetslrucounter *msg);
+static void pgstat_recv_resetreplslotcounter(PgStat_MsgResetreplslotcounter *msg);
+static void pgstat_recv_autovac(PgStat_MsgAutovacStart *msg);
+static void pgstat_recv_vacuum(PgStat_MsgVacuum *msg);
+static void pgstat_recv_analyze(PgStat_MsgAnalyze *msg);
+static void pgstat_recv_anl_ancestors(PgStat_MsgAnlAncestors *msg);
+static void pgstat_recv_archiver(PgStat_MsgArchiver *msg);
+static void pgstat_recv_bgwriter(PgStat_MsgBgWriter *msg);
+static void pgstat_recv_wal(PgStat_MsgWal *msg);
+static void pgstat_recv_slru(PgStat_MsgSLRU *msg);
+static void pgstat_recv_funcstat(PgStat_MsgFuncstat *msg);
+static void pgstat_recv_funcpurge(PgStat_MsgFuncpurge *msg);
+static void pgstat_recv_recoveryconflict(PgStat_MsgRecoveryConflict *msg);
+static void pgstat_recv_deadlock(PgStat_MsgDeadlock *msg);
+static void pgstat_recv_checksum_failure(PgStat_MsgChecksumFailure *msg);
+static void pgstat_recv_connstat(PgStat_MsgConn *msg);
+static void pgstat_recv_replslot(PgStat_MsgReplSlot *msg);
+static void pgstat_recv_tempfile(PgStat_MsgTempFile *msg);
 
 /* ------------------------------------------------------------
  * Public functions called from postmaster follow
@@ -3319,109 +3319,103 @@ PgstatCollectorMain(int argc, char *argv[])
 					break;
 
 				case PGSTAT_MTYPE_INQUIRY:
-					pgstat_recv_inquiry(&msg.msg_inquiry, len);
+					pgstat_recv_inquiry(&msg.msg_inquiry);
 					break;
 
 				case PGSTAT_MTYPE_TABSTAT:
-					pgstat_recv_tabstat(&msg.msg_tabstat, len);
+					pgstat_recv_tabstat(&msg.msg_tabstat);
 					break;
 
 				case PGSTAT_MTYPE_TABPURGE:
-					pgstat_recv_tabpurge(&msg.msg_tabpurge, len);
+					pgstat_recv_tabpurge(&msg.msg_tabpurge);
 					break;
 
 				case PGSTAT_MTYPE_DROPDB:
-					pgstat_recv_dropdb(&msg.msg_dropdb, len);
+					pgstat_recv_dropdb(&msg.msg_dropdb);
 					break;
 
 				case PGSTAT_MTYPE_RESETCOUNTER:
-					pgstat_recv_resetcounter(&msg.msg_resetcounter, len);
+					pgstat_recv_resetcounter(&msg.msg_resetcounter);
 					break;
 
 				case PGSTAT_MTYPE_RESETSHAREDCOUNTER:
-					pgstat_recv_resetsharedcounter(&msg.msg_resetsharedcounter,
-												   len);
+					pgstat_recv_resetsharedcounter(&msg.msg_resetsharedcounter);
 					break;
 
 				case PGSTAT_MTYPE_RESETSINGLECOUNTER:
-					pgstat_recv_resetsinglecounter(&msg.msg_resetsinglecounter,
-												   len);
+					pgstat_recv_resetsinglecounter(&msg.msg_resetsinglecounter);
 					break;
 
 				case PGSTAT_MTYPE_RESETSLRUCOUNTER:
-					pgstat_recv_resetslrucounter(&msg.msg_resetslrucounter,
-												 len);
+					pgstat_recv_resetslrucounter(&msg.msg_resetslrucounter);
 					break;
 
 				case PGSTAT_MTYPE_RESETREPLSLOTCOUNTER:
-					pgstat_recv_resetreplslotcounter(&msg.msg_resetreplslotcounter,
-													 len);
+					pgstat_recv_resetreplslotcounter(&msg.msg_resetreplslotcounter);
 					break;
 
 				case PGSTAT_MTYPE_AUTOVAC_START:
-					pgstat_recv_autovac(&msg.msg_autovacuum_start, len);
+					pgstat_recv_autovac(&msg.msg_autovacuum_start);
 					break;
 
 				case PGSTAT_MTYPE_VACUUM:
-					pgstat_recv_vacuum(&msg.msg_vacuum, len);
+					pgstat_recv_vacuum(&msg.msg_vacuum);
 					break;
 
 				case PGSTAT_MTYPE_ANALYZE:
-					pgstat_recv_analyze(&msg.msg_analyze, len);
+					pgstat_recv_analyze(&msg.msg_analyze);
 					break;
 
 				case PGSTAT_MTYPE_ANL_ANCESTORS:
-					pgstat_recv_anl_ancestors(&msg.msg_anl_ancestors, len);
+					pgstat_recv_anl_ancestors(&msg.msg_anl_ancestors);
 					break;
 
 				case PGSTAT_MTYPE_ARCHIVER:
-					pgstat_recv_archiver(&msg.msg_archiver, len);
+					pgstat_recv_archiver(&msg.msg_archiver);
 					break;
 
 				case PGSTAT_MTYPE_BGWRITER:
-					pgstat_recv_bgwriter(&msg.msg_bgwriter, len);
+					pgstat_recv_bgwriter(&msg.msg_bgwriter);
 					break;
 
 				case PGSTAT_MTYPE_WAL:
-					pgstat_recv_wal(&msg.msg_wal, len);
+					pgstat_recv_wal(&msg.msg_wal);
 					break;
 
 				case PGSTAT_MTYPE_SLRU:
-					pgstat_recv_slru(&msg.msg_slru, len);
+					pgstat_recv_slru(&msg.msg_slru);
 					break;
 
 				case PGSTAT_MTYPE_FUNCSTAT:
-					pgstat_recv_funcstat(&msg.msg_funcstat, len);
+					pgstat_recv_funcstat(&msg.msg_funcstat);
 					break;
 
 				case PGSTAT_MTYPE_FUNCPURGE:
-					pgstat_recv_funcpurge(&msg.msg_funcpurge, len);
+					pgstat_recv_funcpurge(&msg.msg_funcpurge);
 					break;
 
 				case PGSTAT_MTYPE_RECOVERYCONFLICT:
-					pgstat_recv_recoveryconflict(&msg.msg_recoveryconflict,
-												 len);
+					pgstat_recv_recoveryconflict(&msg.msg_recoveryconflict);
 					break;
 
 				case PGSTAT_MTYPE_DEADLOCK:
-					pgstat_recv_deadlock(&msg.msg_deadlock, len);
+					pgstat_recv_deadlock(&msg.msg_deadlock);
 					break;
 
 				case PGSTAT_MTYPE_TEMPFILE:
-					pgstat_recv_tempfile(&msg.msg_tempfile, len);
+					pgstat_recv_tempfile(&msg.msg_tempfile);
 					break;
 
 				case PGSTAT_MTYPE_CHECKSUMFAILURE:
-					pgstat_recv_checksum_failure(&msg.msg_checksumfailure,
-												 len);
+					pgstat_recv_checksum_failure(&msg.msg_checksumfailure);
 					break;
 
 				case PGSTAT_MTYPE_REPLSLOT:
-					pgstat_recv_replslot(&msg.msg_replslot, len);
+					pgstat_recv_replslot(&msg.msg_replslot);
 					break;
 
 				case PGSTAT_MTYPE_CONNECTION:
-					pgstat_recv_connstat(&msg.msg_conn, len);
+					pgstat_recv_connstat(&msg.msg_conn);
 					break;
 
 				default:
@@ -4733,7 +4727,7 @@ pgstat_clear_snapshot(void)
  * ----------
  */
 static void
-pgstat_recv_inquiry(PgStat_MsgInquiry *msg, int len)
+pgstat_recv_inquiry(PgStat_MsgInquiry *msg)
 {
 	PgStat_StatDBEntry *dbentry;
 
@@ -4826,7 +4820,7 @@ pgstat_recv_inquiry(PgStat_MsgInquiry *msg, int len)
  * ----------
  */
 static void
-pgstat_recv_tabstat(PgStat_MsgTabstat *msg, int len)
+pgstat_recv_tabstat(PgStat_MsgTabstat *msg)
 {
 	PgStat_StatDBEntry *dbentry;
 	PgStat_StatTabEntry *tabentry;
@@ -4937,7 +4931,7 @@ pgstat_recv_tabstat(PgStat_MsgTabstat *msg, int len)
  * ----------
  */
 static void
-pgstat_recv_tabpurge(PgStat_MsgTabpurge *msg, int len)
+pgstat_recv_tabpurge(PgStat_MsgTabpurge *msg)
 {
 	PgStat_StatDBEntry *dbentry;
 	int			i;
@@ -4970,7 +4964,7 @@ pgstat_recv_tabpurge(PgStat_MsgTabpurge *msg, int len)
  * ----------
  */
 static void
-pgstat_recv_dropdb(PgStat_MsgDropdb *msg, int len)
+pgstat_recv_dropdb(PgStat_MsgDropdb *msg)
 {
 	Oid			dbid = msg->m_databaseid;
 	PgStat_StatDBEntry *dbentry;
@@ -5013,7 +5007,7 @@ pgstat_recv_dropdb(PgStat_MsgDropdb *msg, int len)
  * ----------
  */
 static void
-pgstat_recv_resetcounter(PgStat_MsgResetcounter *msg, int len)
+pgstat_recv_resetcounter(PgStat_MsgResetcounter *msg)
 {
 	PgStat_StatDBEntry *dbentry;
 
@@ -5051,7 +5045,7 @@ pgstat_recv_resetcounter(PgStat_MsgResetcounter *msg, int len)
  * ----------
  */
 static void
-pgstat_recv_resetsharedcounter(PgStat_MsgResetsharedcounter *msg, int len)
+pgstat_recv_resetsharedcounter(PgStat_MsgResetsharedcounter *msg)
 {
 	if (msg->m_resettarget == RESET_BGWRITER)
 	{
@@ -5085,7 +5079,7 @@ pgstat_recv_resetsharedcounter(PgStat_MsgResetsharedcounter *msg, int len)
  * ----------
  */
 static void
-pgstat_recv_resetsinglecounter(PgStat_MsgResetsinglecounter *msg, int len)
+pgstat_recv_resetsinglecounter(PgStat_MsgResetsinglecounter *msg)
 {
 	PgStat_StatDBEntry *dbentry;
 
@@ -5113,7 +5107,7 @@ pgstat_recv_resetsinglecounter(PgStat_MsgResetsinglecounter *msg, int len)
  * ----------
  */
 static void
-pgstat_recv_resetslrucounter(PgStat_MsgResetslrucounter *msg, int len)
+pgstat_recv_resetslrucounter(PgStat_MsgResetslrucounter *msg)
 {
 	int			i;
 	TimestampTz ts = GetCurrentTimestamp();
@@ -5136,8 +5130,7 @@ pgstat_recv_resetslrucounter(PgStat_MsgResetslrucounter *msg, int len)
  * ----------
  */
 static void
-pgstat_recv_resetreplslotcounter(PgStat_MsgResetreplslotcounter *msg,
-								 int len)
+pgstat_recv_resetreplslotcounter(PgStat_MsgResetreplslotcounter *msg)
 {
 	PgStat_StatReplSlotEntry *slotent;
 	TimestampTz ts;
@@ -5182,7 +5175,7 @@ pgstat_recv_resetreplslotcounter(PgStat_MsgResetreplslotcounter *msg,
  * ----------
  */
 static void
-pgstat_recv_autovac(PgStat_MsgAutovacStart *msg, int len)
+pgstat_recv_autovac(PgStat_MsgAutovacStart *msg)
 {
 	PgStat_StatDBEntry *dbentry;
 
@@ -5201,7 +5194,7 @@ pgstat_recv_autovac(PgStat_MsgAutovacStart *msg, int len)
  * ----------
  */
 static void
-pgstat_recv_vacuum(PgStat_MsgVacuum *msg, int len)
+pgstat_recv_vacuum(PgStat_MsgVacuum *msg)
 {
 	PgStat_StatDBEntry *dbentry;
 	PgStat_StatTabEntry *tabentry;
@@ -5247,7 +5240,7 @@ pgstat_recv_vacuum(PgStat_MsgVacuum *msg, int len)
  * ----------
  */
 static void
-pgstat_recv_analyze(PgStat_MsgAnalyze *msg, int len)
+pgstat_recv_analyze(PgStat_MsgAnalyze *msg)
 {
 	PgStat_StatDBEntry *dbentry;
 	PgStat_StatTabEntry *tabentry;
@@ -5286,7 +5279,7 @@ pgstat_recv_analyze(PgStat_MsgAnalyze *msg, int len)
 }
 
 static void
-pgstat_recv_anl_ancestors(PgStat_MsgAnlAncestors *msg, int len)
+pgstat_recv_anl_ancestors(PgStat_MsgAnlAncestors *msg)
 {
 	PgStat_StatDBEntry *dbentry;
 	PgStat_StatTabEntry *tabentry;
@@ -5316,7 +5309,7 @@ pgstat_recv_anl_ancestors(PgStat_MsgAnlAncestors *msg, int len)
  * ----------
  */
 static void
-pgstat_recv_archiver(PgStat_MsgArchiver *msg, int len)
+pgstat_recv_archiver(PgStat_MsgArchiver *msg)
 {
 	if (msg->m_failed)
 	{
@@ -5343,7 +5336,7 @@ pgstat_recv_archiver(PgStat_MsgArchiver *msg, int len)
  * ----------
  */
 static void
-pgstat_recv_bgwriter(PgStat_MsgBgWriter *msg, int len)
+pgstat_recv_bgwriter(PgStat_MsgBgWriter *msg)
 {
 	globalStats.timed_checkpoints += msg->m_timed_checkpoints;
 	globalStats.requested_checkpoints += msg->m_requested_checkpoints;
@@ -5364,7 +5357,7 @@ pgstat_recv_bgwriter(PgStat_MsgBgWriter *msg, int len)
  * ----------
  */
 static void
-pgstat_recv_wal(PgStat_MsgWal *msg, int len)
+pgstat_recv_wal(PgStat_MsgWal *msg)
 {
 	walStats.wal_records += msg->m_wal_records;
 	walStats.wal_fpi += msg->m_wal_fpi;
@@ -5383,7 +5376,7 @@ pgstat_recv_wal(PgStat_MsgWal *msg, int len)
  * ----------
  */
 static void
-pgstat_recv_slru(PgStat_MsgSLRU *msg, int len)
+pgstat_recv_slru(PgStat_MsgSLRU *msg)
 {
 	slruStats[msg->m_index].blocks_zeroed += msg->m_blocks_zeroed;
 	slruStats[msg->m_index].blocks_hit += msg->m_blocks_hit;
@@ -5401,7 +5394,7 @@ pgstat_recv_slru(PgStat_MsgSLRU *msg, int len)
  * ----------
  */
 static void
-pgstat_recv_recoveryconflict(PgStat_MsgRecoveryConflict *msg, int len)
+pgstat_recv_recoveryconflict(PgStat_MsgRecoveryConflict *msg)
 {
 	PgStat_StatDBEntry *dbentry;
 
@@ -5441,7 +5434,7 @@ pgstat_recv_recoveryconflict(PgStat_MsgRecoveryConflict *msg, int len)
  * ----------
  */
 static void
-pgstat_recv_deadlock(PgStat_MsgDeadlock *msg, int len)
+pgstat_recv_deadlock(PgStat_MsgDeadlock *msg)
 {
 	PgStat_StatDBEntry *dbentry;
 
@@ -5457,7 +5450,7 @@ pgstat_recv_deadlock(PgStat_MsgDeadlock *msg, int len)
  * ----------
  */
 static void
-pgstat_recv_checksum_failure(PgStat_MsgChecksumFailure *msg, int len)
+pgstat_recv_checksum_failure(PgStat_MsgChecksumFailure *msg)
 {
 	PgStat_StatDBEntry *dbentry;
 
@@ -5474,7 +5467,7 @@ pgstat_recv_checksum_failure(PgStat_MsgChecksumFailure *msg, int len)
  * ----------
  */
 static void
-pgstat_recv_replslot(PgStat_MsgReplSlot *msg, int len)
+pgstat_recv_replslot(PgStat_MsgReplSlot *msg)
 {
 	if (msg->m_drop)
 	{
@@ -5525,7 +5518,7 @@ pgstat_recv_replslot(PgStat_MsgReplSlot *msg, int len)
  * ----------
  */
 static void
-pgstat_recv_connstat(PgStat_MsgConn *msg, int len)
+pgstat_recv_connstat(PgStat_MsgConn *msg)
 {
 	PgStat_StatDBEntry *dbentry;
 
@@ -5560,7 +5553,7 @@ pgstat_recv_connstat(PgStat_MsgConn *msg, int len)
  * ----------
  */
 static void
-pgstat_recv_tempfile(PgStat_MsgTempFile *msg, int len)
+pgstat_recv_tempfile(PgStat_MsgTempFile *msg)
 {
 	PgStat_StatDBEntry *dbentry;
 
@@ -5577,7 +5570,7 @@ pgstat_recv_tempfile(PgStat_MsgTempFile *msg, int len)
  * ----------
  */
 static void
-pgstat_recv_funcstat(PgStat_MsgFuncstat *msg, int len)
+pgstat_recv_funcstat(PgStat_MsgFuncstat *msg)
 {
 	PgStat_FunctionEntry *funcmsg = &(msg->m_entry[0]);
 	PgStat_StatDBEntry *dbentry;
@@ -5625,7 +5618,7 @@ pgstat_recv_funcstat(PgStat_MsgFuncstat *msg, int len)
  * ----------
  */
 static void
-pgstat_recv_funcpurge(PgStat_MsgFuncpurge *msg, int len)
+pgstat_recv_funcpurge(PgStat_MsgFuncpurge *msg)
 {
 	PgStat_StatDBEntry *dbentry;
 	int			i;
