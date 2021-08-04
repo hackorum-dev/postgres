@@ -3222,7 +3222,7 @@ psql_completion(const char *text, int start, int end)
  */
 	else if (Matches("EXPLAIN"))
 		COMPLETE_WITH("SELECT", "INSERT INTO", "DELETE FROM", "UPDATE", "DECLARE",
-					  "ANALYZE", "VERBOSE");
+					  "EXECUTE", "ANALYZE", "VERBOSE");
 	else if (HeadMatches("EXPLAIN", "(*") &&
 			 !HeadMatches("EXPLAIN", "(*)"))
 	{
@@ -3241,11 +3241,12 @@ psql_completion(const char *text, int start, int end)
 	}
 	else if (Matches("EXPLAIN", "ANALYZE"))
 		COMPLETE_WITH("SELECT", "INSERT INTO", "DELETE FROM", "UPDATE", "DECLARE",
-					  "VERBOSE");
+					  "EXECUTE", "VERBOSE");
 	else if (Matches("EXPLAIN", "(*)") ||
 			 Matches("EXPLAIN", "VERBOSE") ||
 			 Matches("EXPLAIN", "ANALYZE", "VERBOSE"))
-		COMPLETE_WITH("SELECT", "INSERT INTO", "DELETE FROM", "UPDATE", "DECLARE");
+		COMPLETE_WITH("SELECT", "INSERT INTO", "DELETE FROM", "UPDATE", "DECLARE",
+					  "EXECUTE");
 
 /* FETCH && MOVE */
 
