@@ -2177,18 +2177,21 @@ select tableoid::regclass, * FROM utrtest;
 select tableoid::regclass, * FROM remp;
 select tableoid::regclass, * FROM locp;
 
--- It's not allowed to move a row from a partition that is foreign to another
-update utrtest set a = 2 where b = 'foo' returning *;
+-- Moving a row from a foreign partition to local with partition key as qual
+update utrtest set a = 1 where a = 2 returning *;
 
--- But the reverse is allowed
-update utrtest set a = 1 where b = 'qux' returning *;
+-- From local to foreign with partition key as qual
+update utrtest set a = 2 where a = 1 and b = 'foo' returning *;
+
+-- Doesn't work without partition key in qual
+update utrtest set a = 1 where b = 'foo' returning *;
 
 select tableoid::regclass, * FROM utrtest;
 select tableoid::regclass, * FROM remp;
 select tableoid::regclass, * FROM locp;
 
 -- The executor should not let unexercised FDWs shut down
-update utrtest set a = 1 where b = 'foo';
+update utrtest set a = 1 where b = 'qux';
 
 -- Test that remote triggers work with update tuple routing
 create trigger loct_br_insert_trigger before insert on loct

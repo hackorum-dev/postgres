@@ -113,6 +113,12 @@ typedef void (*BeginForeignInsert_function) (ModifyTableState *mtstate,
 typedef void (*EndForeignInsert_function) (EState *estate,
 										   ResultRelInfo *rinfo);
 
+typedef void (*BeginForeignDelete_function) (ModifyTableState *mtstate,
+											 ResultRelInfo *rinfo);
+
+typedef void (*EndForeignDelete_function) (EState *estate,
+										   ResultRelInfo *rinfo);
+
 typedef int (*IsForeignRelUpdatable_function) (Relation rel);
 
 typedef bool (*PlanDirectModify_function) (PlannerInfo *root,
@@ -237,6 +243,8 @@ typedef struct FdwRoutine
 	EndForeignModify_function EndForeignModify;
 	BeginForeignInsert_function BeginForeignInsert;
 	EndForeignInsert_function EndForeignInsert;
+	BeginForeignDelete_function BeginForeignDelete;
+	EndForeignDelete_function EndForeignDelete;
 	IsForeignRelUpdatable_function IsForeignRelUpdatable;
 	PlanDirectModify_function PlanDirectModify;
 	BeginDirectModify_function BeginDirectModify;

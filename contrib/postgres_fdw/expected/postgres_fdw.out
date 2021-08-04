@@ -8122,35 +8122,44 @@ select tableoid::regclass, * FROM locp;
  locp     | 2 | qux
 (1 row)
 
--- It's not allowed to move a row from a partition that is foreign to another
-update utrtest set a = 2 where b = 'foo' returning *;
-ERROR:  new row for relation "loct" violates check constraint "loct_a_check"
-DETAIL:  Failing row contains (2, foo).
-CONTEXT:  remote SQL command: UPDATE public.loct SET a = 2 WHERE ((b = 'foo'::text)) RETURNING a, b
--- But the reverse is allowed
-update utrtest set a = 1 where b = 'qux' returning *;
+-- Moving a row from a foreign partition to local with partition key as qual
+update utrtest set a = 1 where a = 2 returning *;
+ a |  b  
+---+-----
+ 1 | qux
+(1 row)
+
+-- From local to foreign with partition key as qual
+update utrtest set a = 2 where a = 1 and b = 'foo' returning *;
+ a |  b  
+---+-----
+ 2 | foo
+(1 row)
+
+-- Doesn't work without partition key in qual
+update utrtest set a = 1 where b = 'foo' returning *;
 ERROR:  cannot route tuples into foreign table to be updated "remp"
 select tableoid::regclass, * FROM utrtest;
  tableoid | a |  b  
 ----------+---+-----
- remp     | 1 | foo
- locp     | 2 | qux
+ remp     | 1 | qux
+ locp     | 2 | foo
 (2 rows)
 
 select tableoid::regclass, * FROM remp;
  tableoid | a |  b  
 ----------+---+-----
- remp     | 1 | foo
+ remp     | 1 | qux
 (1 row)
 
 select tableoid::regclass, * FROM locp;
  tableoid | a |  b  
 ----------+---+-----
- locp     | 2 | qux
+ locp     | 2 | foo
 (1 row)
 
 -- The executor should not let unexercised FDWs shut down
-update utrtest set a = 1 where b = 'foo';
+update utrtest set a = 1 where b = 'qux';
 -- Test that remote triggers work with update tuple routing
 create trigger loct_br_insert_trigger before insert on loct
 	for each row execute procedure br_insert_trigfunc();
@@ -8159,19 +8168,21 @@ insert into utrtest values (2, 'qux');
 -- Check case where the foreign partition is a subplan target rel
 explain (verbose, costs off)
 update utrtest set a = 1 where a = 1 or a = 2 returning *;
-                                             QUERY PLAN                                             
-----------------------------------------------------------------------------------------------------
+                                              QUERY PLAN                                              
+------------------------------------------------------------------------------------------------------
  Update on public.utrtest
    Output: utrtest_1.a, utrtest_1.b
    Foreign Update on public.remp utrtest_1
+     Remote SQL: UPDATE public.loct SET a = $2 WHERE ctid = $1 RETURNING a, b
    Update on public.locp utrtest_2
    ->  Append
-         ->  Foreign Update on public.remp utrtest_1
-               Remote SQL: UPDATE public.loct SET a = 1 WHERE (((a = 1) OR (a = 2))) RETURNING a, b
+         ->  Foreign Scan on public.remp utrtest_1
+               Output: 1, utrtest_1.tableoid, utrtest_1.ctid, utrtest_1.*
+               Remote SQL: SELECT a, b, ctid FROM public.loct WHERE (((a = 1) OR (a = 2))) FOR UPDATE
          ->  Seq Scan on public.locp utrtest_2
                Output: 1, utrtest_2.tableoid, utrtest_2.ctid, NULL::record
                Filter: ((utrtest_2.a = 1) OR (utrtest_2.a = 2))
-(10 rows)
+(12 rows)
 
 -- The new values are concatenated with ' triggered !'
 update utrtest set a = 1 where a = 1 or a = 2 returning *;
@@ -8208,18 +8219,20 @@ insert into utrtest values (2, 'qux');
 -- with a direct modification plan
 explain (verbose, costs off)
 update utrtest set a = 1 returning *;
-                                QUERY PLAN                                 
----------------------------------------------------------------------------
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
  Update on public.utrtest
    Output: utrtest_1.a, utrtest_1.b
    Foreign Update on public.remp utrtest_1
+     Remote SQL: UPDATE public.loct SET a = $2 WHERE ctid = $1 RETURNING a, b
    Update on public.locp utrtest_2
    ->  Append
-         ->  Foreign Update on public.remp utrtest_1
-               Remote SQL: UPDATE public.loct SET a = 1 RETURNING a, b
+         ->  Foreign Scan on public.remp utrtest_1
+               Output: 1, utrtest_1.tableoid, utrtest_1.ctid, utrtest_1.*
+               Remote SQL: SELECT a, b, ctid FROM public.loct FOR UPDATE
          ->  Seq Scan on public.locp utrtest_2
                Output: 1, utrtest_2.tableoid, utrtest_2.ctid, NULL::record
-(9 rows)
+(11 rows)
 
 update utrtest set a = 1 returning *;
 ERROR:  cannot route tuples into foreign table to be updated "remp"
@@ -8268,18 +8281,20 @@ insert into utrtest values (3, 'xyzzy');
 -- with a direct modification plan
 explain (verbose, costs off)
 update utrtest set a = 3 returning *;
-                                QUERY PLAN                                 
----------------------------------------------------------------------------
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
  Update on public.utrtest
    Output: utrtest_1.a, utrtest_1.b
    Update on public.locp utrtest_1
    Foreign Update on public.remp utrtest_2
+     Remote SQL: UPDATE public.loct SET a = $2 WHERE ctid = $1 RETURNING a, b
    ->  Append
          ->  Seq Scan on public.locp utrtest_1
                Output: 3, utrtest_1.tableoid, utrtest_1.ctid, NULL::record
-         ->  Foreign Update on public.remp utrtest_2
-               Remote SQL: UPDATE public.loct SET a = 3 RETURNING a, b
-(9 rows)
+         ->  Foreign Scan on public.remp utrtest_2
+               Output: 3, utrtest_2.tableoid, utrtest_2.ctid, utrtest_2.*
+               Remote SQL: SELECT a, b, ctid FROM public.loct FOR UPDATE
+(11 rows)
 
 update utrtest set a = 3 returning *; -- ERROR
 ERROR:  cannot route tuples into foreign table to be updated "remp"

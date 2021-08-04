@@ -209,6 +209,12 @@ typedef struct PgFdwModifyState
 	/* for update row movement if subplan result rel */
 	struct PgFdwModifyState *aux_fmstate;	/* foreign-insert state, if
 											 * created */
+	struct PgFdwModifyState *aux_delete_fmstate;	/* foreign delete state.
+													 * normally used when
+													 * tuple routing with
+													 * foreign delete takes
+													 * place and fmstate is
+													 * already taken. */
 } PgFdwModifyState;
 
 /*
@@ -374,6 +380,10 @@ static void postgresEndForeignModify(EState *estate,
 static void postgresBeginForeignInsert(ModifyTableState *mtstate,
 									   ResultRelInfo *resultRelInfo);
 static void postgresEndForeignInsert(EState *estate,
+									 ResultRelInfo *resultRelInfo);
+static void postgresBeginForeignDelete(ModifyTableState *mtstate,
+									   ResultRelInfo *resultRelInfo);
+static void postgresEndForeignDelete(EState *estate,
 									 ResultRelInfo *resultRelInfo);
 static int	postgresIsForeignRelUpdatable(Relation rel);
 static bool postgresPlanDirectModify(PlannerInfo *root,
@@ -571,6 +581,8 @@ postgres_fdw_handler(PG_FUNCTION_ARGS)
 	routine->EndForeignModify = postgresEndForeignModify;
 	routine->BeginForeignInsert = postgresBeginForeignInsert;
 	routine->EndForeignInsert = postgresEndForeignInsert;
+	routine->BeginForeignDelete = postgresBeginForeignDelete;
+	routine->EndForeignDelete = postgresEndForeignDelete;
 	routine->IsForeignRelUpdatable = postgresIsForeignRelUpdatable;
 	routine->PlanDirectModify = postgresPlanDirectModify;
 	routine->BeginDirectModify = postgresBeginDirectModify;
@@ -2078,11 +2090,18 @@ postgresExecForeignDelete(EState *estate,
 						  TupleTableSlot *slot,
 						  TupleTableSlot *planSlot)
 {
+	PgFdwModifyState *fmstate = resultRelInfo->ri_FdwState;
 	TupleTableSlot **rslot;
 	int			numSlots = 1;
 
+	if (fmstate->aux_delete_fmstate)
+		resultRelInfo->ri_FdwState = fmstate->aux_delete_fmstate;
+
 	rslot = execute_foreign_modify(estate, resultRelInfo, CMD_DELETE,
 								   &slot, &planSlot, &numSlots);
+
+	if (fmstate->aux_delete_fmstate)
+		resultRelInfo->ri_FdwState = fmstate;
 
 	return rslot ? rslot[0] : NULL;
 }
@@ -2260,6 +2279,106 @@ postgresEndForeignInsert(EState *estate,
 }
 
 /*
+ * postgresBeginForeignDelete
+ *     Setup state for delete on foreign table.
+ *     Primarily needed when tuple routing from a foreign table is required.
+ *     Sets up state in aux_delete_state if necessary
+ */
+static void
+postgresBeginForeignDelete(ModifyTableState *mtstate,
+						   ResultRelInfo *resultRelInfo)
+{
+	ModifyTable *plan = castNode(ModifyTable, mtstate->ps.plan);
+	EState	   *estate = mtstate->ps.state;
+	PgFdwModifyState *fmstate;
+	StringInfoData sql;
+	Index		resultRelation;
+	Relation	rel = resultRelInfo->ri_RelationDesc;
+	RangeTblEntry *rte;
+	List	   *retrievedAttrs;
+
+	initStringInfo(&sql);
+
+	/*
+	 * If the foreign table is a partition that doesn't have a corresponding
+	 * RTE entry, we need to create a new RTE describing the foreign table for
+	 * use by deparseDeleteSql and create_foreign_modify() below, after first
+	 * copying the parent's RTE and modifying some fields to describe the
+	 * foreign partition to work on. However, if this is invoked by UPDATE,
+	 * the existing RTE may already correspond to this partition if it is one
+	 * of the UPDATE subplan target rels; in that case, we can just use the
+	 * existing RTE as-is.
+	 */
+	if (resultRelInfo->ri_RangeTableIndex == 0)
+	{
+		ResultRelInfo *rootResultRelInfo = resultRelInfo->ri_RootResultRelInfo;
+
+		rte = exec_rt_fetch(rootResultRelInfo->ri_RangeTableIndex, estate);
+		rte = copyObject(rte);
+		rte->relid = RelationGetRelid(rel);
+		rte->relkind = RELKIND_FOREIGN_TABLE;
+
+		/*
+		 * For UPDATE, we must use the RT index of the first subplan target
+		 * rel's RTE, because the core code would have built expressions for
+		 * the partition, such as RETURNING, using that RT index as varno of
+		 * Vars contained in those expressions.
+		 */
+		if (plan && plan->operation == CMD_UPDATE &&
+			rootResultRelInfo->ri_RangeTableIndex == plan->rootRelation)
+			resultRelation = mtstate->resultRelInfo[0].ri_RangeTableIndex;
+		else
+			resultRelation = rootResultRelInfo->ri_RangeTableIndex;
+	}
+	else
+	{
+		resultRelation = resultRelInfo->ri_RangeTableIndex;
+		rte = exec_rt_fetch(resultRelation, estate);
+	}
+
+	deparseDeleteSql(&sql, rte, resultRelation, rel, NIL, &retrievedAttrs);
+
+	fmstate = create_foreign_modify(mtstate->ps.state,
+									rte,
+									resultRelInfo,
+									CMD_DELETE,
+									outerPlanState(mtstate)->plan,
+									sql.data,
+									NIL,
+									0,
+									false,
+									NIL);
+
+	if (resultRelInfo->ri_FdwState)
+	{
+		Assert(plan && plan->operation == CMD_UPDATE);
+		Assert(resultRelInfo->ri_usesFdwDirectModify == false);
+		((PgFdwModifyState *) resultRelInfo->ri_FdwState)->aux_delete_fmstate = fmstate;
+	}
+	else
+		resultRelInfo->ri_FdwState = fmstate;
+}
+
+/*
+ * postgresEndForeignDelete
+ *     Tears down state for delete on foreign table
+ */
+static void
+postgresEndForeignDelete(EState *estate,
+						 ResultRelInfo *resultRelInfo)
+{
+	PgFdwModifyState *fmstate = (PgFdwModifyState *) resultRelInfo->ri_FdwState;
+
+	Assert(fmstate != NULL);
+
+	if (fmstate->aux_delete_fmstate)
+		fmstate = fmstate->aux_delete_fmstate;
+
+	/* Destroy the execution state */
+	finish_foreign_modify(fmstate);
+}
+
+/*
  * postgresIsForeignRelUpdatable
  *		Determine whether a foreign table supports INSERT, UPDATE and/or
  *		DELETE.
@@ -2426,8 +2545,11 @@ postgresPlanDirectModify(PlannerInfo *root,
 
 	/*
 	 * The table modification must be an UPDATE or DELETE.
+	 * Partition column update might involve tuple routing,
+	 * which is implemented in ModifyTable, hence direct modification
+	 * should be forbidden in this case.
 	 */
-	if (operation != CMD_UPDATE && operation != CMD_DELETE)
+	if (plan->partColsUpdated || (operation != CMD_UPDATE && operation != CMD_DELETE))
 		return false;
 
 	/*
@@ -4031,6 +4153,7 @@ create_foreign_modify(EState *estate,
 
 	/* Initialize auxiliary state */
 	fmstate->aux_fmstate = NULL;
+	fmstate->aux_delete_fmstate = NULL;
 
 	return fmstate;
 }

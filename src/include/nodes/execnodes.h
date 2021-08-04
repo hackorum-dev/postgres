@@ -460,6 +460,8 @@ typedef struct ResultRelInfo
 	/* true when modifying foreign table directly */
 	bool		ri_usesFdwDirectModify;
 
+	bool		ri_usesFdwForeignDelete;
+
 	/* batch insert stuff */
 	int			ri_NumSlots;	/* number of slots in the array */
 	int			ri_NumSlotsInitialized; /* number of initialized slots */

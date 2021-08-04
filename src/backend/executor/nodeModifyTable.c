@@ -1484,6 +1484,14 @@ ExecCrossPartitionUpdate(ModifyTableState *mtstate,
 		MemoryContextSwitchTo(oldcxt);
 	}
 
+	if (!resultRelInfo->ri_usesFdwDirectModify &&
+		resultRelInfo->ri_FdwRoutine != NULL &&
+		resultRelInfo->ri_FdwRoutine->BeginForeignDelete != NULL)
+	{
+		resultRelInfo->ri_usesFdwForeignDelete = true;
+		resultRelInfo->ri_FdwRoutine->BeginForeignDelete(mtstate, resultRelInfo);
+	}
+
 	/*
 	 * Row movement, part 1.  Delete the tuple, but skip RETURNING processing.
 	 * We want to return rows from INSERT.
@@ -1612,6 +1620,7 @@ ExecUpdate(ModifyTableState *mtstate,
 	TM_Result	result;
 	TM_FailureData tmfd;
 	List	   *recheckIndexes = NIL;
+	bool		partition_constraint_failed;
 
 	/*
 	 * abort the operation if not running transactions
@@ -1638,6 +1647,10 @@ ExecUpdate(ModifyTableState *mtstate,
 			return NULL;		/* "do nothing" */
 	}
 
+	ExecMaterializeSlot(slot);
+	partition_constraint_failed = resultRelationDesc->rd_rel->relispartition &&
+		!ExecPartitionCheck(resultRelInfo, slot, estate, false);
+
 	/* INSTEAD OF ROW UPDATE Triggers */
 	if (resultRelInfo->ri_TrigDesc &&
 		resultRelInfo->ri_TrigDesc->trig_update_instead_row)
@@ -1646,7 +1659,14 @@ ExecUpdate(ModifyTableState *mtstate,
 								  oldtuple, slot))
 			return NULL;		/* "do nothing" */
 	}
-	else if (resultRelInfo->ri_FdwRoutine)
+
+	/*
+	 * if no tuple routing from remote source is required or if it's not
+	 * supported by FDW
+	 */
+	else if (resultRelInfo->ri_FdwRoutine &&
+			 (!partition_constraint_failed ||
+			  resultRelInfo->ri_FdwRoutine->BeginForeignDelete == NULL))
 	{
 		/*
 		 * GENERATED expressions might reference the tableoid column, so
@@ -1683,7 +1703,6 @@ ExecUpdate(ModifyTableState *mtstate,
 	else
 	{
 		LockTupleMode lockmode;
-		bool		partition_constraint_failed;
 		bool		update_indexes;
 
 		/*
@@ -3182,6 +3201,12 @@ ExecEndModifyTable(ModifyTableState *node)
 			resultRelInfo->ri_FdwRoutine != NULL &&
 			resultRelInfo->ri_FdwRoutine->EndForeignModify != NULL)
 			resultRelInfo->ri_FdwRoutine->EndForeignModify(node->ps.state,
+														   resultRelInfo);
+
+		if (resultRelInfo->ri_usesFdwForeignDelete &&
+			resultRelInfo->ri_FdwRoutine != NULL &&
+			resultRelInfo->ri_FdwRoutine->EndForeignDelete != NULL)
+			resultRelInfo->ri_FdwRoutine->EndForeignDelete(node->ps.state,
 														   resultRelInfo);
 
 		/*
