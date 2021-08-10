@@ -200,6 +200,8 @@ static void log_disconnections(int code, Datum arg);
 static void enable_statement_timeout(void);
 static void disable_statement_timeout(void);
 
+/* Hooks for plugins to get control at end of start_xact_command() */
+XactCommandStart_hook_type start_xact_command_hook = NULL;
 
 /* ----------------------------------------------------------------
  *		infrastructure for valgrind debugging
@@ -1064,6 +1066,13 @@ exec_simple_query(const char *query_string)
 	start_xact_command();
 
 	/*
+	 * Now give loadable modules a chance to execute code
+	 * before a transaction command is processed.
+	 */
+	if (start_xact_command_hook)
+		(*start_xact_command_hook) ();
+
+	/*
 	 * Zap any pre-existing unnamed statement.  (While not strictly necessary,
 	 * it seems best to define simple-Query mode as if it used the unnamed
 	 * statement and portal; this ensures we recover any storage used by prior
@@ -1164,6 +1173,13 @@ exec_simple_query(const char *query_string)
 
 		/* Make sure we are in a transaction command */
 		start_xact_command();
+
+		/*
+		 * Now give loadable modules a chance to execute code
+		 * before a transaction command is processed.
+		 */
+		if (start_xact_command_hook)
+			(*start_xact_command_hook) ();
 
 		/*
 		 * If using an implicit transaction block, and we're not already in a
@@ -1459,6 +1475,13 @@ exec_parse_message(const char *query_string,	/* string to execute */
 	start_xact_command();
 
 	/*
+	 * Now give loadable modules a chance to execute code
+	 * before a transaction command is processed.
+	 */
+	if (start_xact_command_hook)
+		(*start_xact_command_hook) ();
+
+	/*
 	 * Switch to appropriate context for constructing parsetrees.
 	 *
 	 * We have two strategies depending on whether the prepared statement is
@@ -1739,6 +1762,13 @@ exec_bind_message(StringInfo input_message)
 	 * necessary.
 	 */
 	start_xact_command();
+
+	/*
+	 * Now give loadable modules a chance to execute code
+	 * before a transaction command is processed.
+	 */
+	if (start_xact_command_hook)
+		(*start_xact_command_hook) ();
 
 	/* Switch back to message context */
 	MemoryContextSwitchTo(MessageContext);
@@ -2260,6 +2290,13 @@ exec_execute_message(const char *portal_name, long max_rows)
 	start_xact_command();
 
 	/*
+	 * Now give loadable modules a chance to execute code
+	 * before a transaction command is processed.
+	 */
+	if (start_xact_command_hook)
+		(*start_xact_command_hook) ();
+
+	/*
 	 * If we re-issue an Execute protocol request against an existing portal,
 	 * then we are only fetching more rows rather than completely re-executing
 	 * the query from the start. atStart is never reset for a v3 portal, so we
@@ -2738,6 +2775,13 @@ exec_describe_statement_message(const char *stmt_name)
 	 */
 	start_xact_command();
 
+	/*
+	 * Now give loadable modules a chance to execute code
+	 * before a transaction command is processed.
+	 */
+	if (start_xact_command_hook)
+		(*start_xact_command_hook) ();
+
 	/* Switch back to message context */
 	MemoryContextSwitchTo(MessageContext);
 
@@ -2829,6 +2873,13 @@ exec_describe_portal_message(const char *portal_name)
 	 * current memory context.) Nothing happens if we are already in one.
 	 */
 	start_xact_command();
+
+	/*
+	 * Now give loadable modules a chance to execute code
+	 * before a transaction command is processed.
+	 */
+	if (start_xact_command_hook)
+		(*start_xact_command_hook) ();
 
 	/* Switch back to message context */
 	MemoryContextSwitchTo(MessageContext);
@@ -5028,6 +5079,13 @@ PostgresMain(const char *dbname, const char *username)
 
 				/* start an xact for this function invocation */
 				start_xact_command();
+
+				/*
+				 * Now give loadable modules a chance to execute code
+				 * before a transaction command is processed.
+				 */
+				if (start_xact_command_hook)
+					(*start_xact_command_hook) ();
 
 				/*
 				 * Note: we may at this point be inside an aborted
