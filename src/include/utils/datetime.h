@@ -22,6 +22,7 @@
 /* this struct is declared in utils/tzparser.h: */
 struct tzEntry;
 
+extern bool    default_timestamp_with_timezone;
 
 /* ----------------------------------------------------------------
  *				time types + support macros

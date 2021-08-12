@@ -2099,6 +2099,15 @@ static struct config_bool ConfigureNamesBool[] =
 	},
 
 	{
+		{"default_timestamp_with_timezone", PGC_USERSET, CLIENT_CONN_STATEMENT,
+			gettext_noop("Whether to take TIMESTAMP to mean TIMESTAMP WITH TIME ZONE, or not."),
+		},
+		&default_timestamp_with_timezone,
+		false,
+		NULL, NULL, NULL
+	},
+
+	{
 		{"data_sync_retry", PGC_POSTMASTER, ERROR_HANDLING_OPTIONS,
 			gettext_noop("Whether to continue running after a failure to sync data files."),
 		},

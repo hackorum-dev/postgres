@@ -551,3 +551,12 @@ insert into tmptz values ('2017-01-18 00:00+00');
 explain (costs off)
 select * from tmptz where f1 at time zone 'utc' = '2017-01-18 00:00';
 select * from tmptz where f1 at time zone 'utc' = '2017-01-18 00:00';
+
+BEGIN;
+CREATE TABLE tzz_test (col1 TIMESTAMP);
+\d tzz_test
+DROP TABLE tzz_test;
+SET LOCAL default_timestamp_with_timezone = true;
+CREATE TABLE tzz_test (col1 TIMESTAMP);
+\d tzz_test
+ROLLBACK;

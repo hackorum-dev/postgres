@@ -2929,3 +2929,21 @@ select * from tmptz where f1 at time zone 'utc' = '2017-01-18 00:00';
  Tue Jan 17 16:00:00 2017 PST
 (1 row)
 
+BEGIN;
+CREATE TABLE tzz_test (col1 TIMESTAMP);
+\d tzz_test
+                        Table "public.tzz_test"
+ Column |            Type             | Collation | Nullable | Default 
+--------+-----------------------------+-----------+----------+---------
+ col1   | timestamp without time zone |           |          | 
+
+DROP TABLE tzz_test;
+SET LOCAL default_timestamp_with_timezone = true;
+CREATE TABLE tzz_test (col1 TIMESTAMP);
+\d tzz_test
+                      Table "public.tzz_test"
+ Column |           Type           | Collation | Nullable | Default 
+--------+--------------------------+-----------+----------+---------
+ col1   | timestamp with time zone |           |          | 
+
+ROLLBACK;

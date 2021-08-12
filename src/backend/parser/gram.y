@@ -13148,7 +13148,7 @@ ConstInterval:
 opt_timezone:
 			WITH_LA TIME ZONE						{ $$ = true; }
 			| WITHOUT TIME ZONE						{ $$ = false; }
-			| /*EMPTY*/								{ $$ = false; }
+			| /*EMPTY*/								{ $$ = default_timestamp_with_timezone; }
 		;
 
 opt_interval:

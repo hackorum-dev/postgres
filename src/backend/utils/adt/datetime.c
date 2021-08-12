@@ -31,6 +31,8 @@
 #include "utils/memutils.h"
 #include "utils/tzparser.h"
 
+bool	default_timestamp_with_timezone = false;
+
 static int	DecodeNumber(int flen, char *field, bool haveTextMonth,
 						 int fmask, int *tmask,
 						 struct pg_tm *tm, fsec_t *fsec, bool *is2digits);
