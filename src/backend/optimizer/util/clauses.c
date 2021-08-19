@@ -188,7 +188,7 @@ static Node *substitute_actual_srf_parameters_mutator(Node *node,
 													  substitute_actual_srf_parameters_context *context);
 static bool max_parallel_hazard_test(char proparallel, max_parallel_hazard_context *context);
 static safety_object *make_safety_object(Oid objid, Oid classid, char proparallel);
-
+static char max_parallel_dml_hazard(Query *parse, max_parallel_hazard_context *context);
 
 /*****************************************************************************
  *		Aggregate-function clause manipulation
@@ -655,7 +655,6 @@ contain_volatile_functions_not_nextval_walker(Node *node, void *context)
 char
 max_parallel_hazard(Query *parse)
 {
-	bool max_hazard_found;
 	max_parallel_hazard_context context;
 
 	context.max_hazard = PROPARALLEL_SAFE;
@@ -665,28 +664,73 @@ max_parallel_hazard(Query *parse)
 	context.objects = NIL;
 	context.partition_directory = NULL;
 
-	max_hazard_found = max_parallel_hazard_walker((Node *) parse, &context);
-
-	if (!max_hazard_found &&
-		IsModifySupportedInParallelMode(parse->commandType))
-	{
-		RangeTblEntry *rte;
-		Relation target_rel;
-
-		rte = rt_fetch(parse->resultRelation, parse->rtable);
-
-		/*
-		 * The target table is already locked by the caller (this is done in the
-		 * parse/analyze phase), and remains locked until end-of-transaction.
-		 */
-		target_rel = table_open(rte->relid, NoLock);
-
-		(void) max_parallel_hazard_test(target_rel->rd_rel->relparalleldml,
-										&context);
-		table_close(target_rel, NoLock);
-	}
+	if(!max_parallel_hazard_walker((Node *) parse, &context))
+		(void) max_parallel_dml_hazard(parse, &context);
 
 	return context.max_hazard;
+}
+
+/* Check the safety of parallel data modification */
+static char
+max_parallel_dml_hazard(Query *parse,
+						max_parallel_hazard_context *context)
+{
+	RangeTblEntry  *rte;
+	Relation		target_rel;
+	char			hazard;
+
+	if (!IsModifySupportedInParallelMode(parse->commandType))
+		return context->max_hazard;
+
+	/*
+	 * The target table is already locked by the caller (this is done in the
+	 * parse/analyze phase), and remains locked until end-of-transaction.
+	 */
+	rte = rt_fetch(parse->resultRelation, parse->rtable);
+	target_rel = table_open(rte->relid, NoLock);
+
+	/*
+	 * If user set specific parallel dml safety safe/restricted/unsafe, we
+	 * respect what user has set. If not set, for non-partitioned table, check
+	 * the safety automatically, for partitioned table, consider it as unsafe.
+	 */
+	hazard = target_rel->rd_rel->relparalleldml;
+	if (target_rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE &&
+		hazard == PROPARALLEL_DEFAULT)
+		hazard = PROPARALLEL_UNSAFE;
+
+	if (hazard != PROPARALLEL_DEFAULT)
+		(void) max_parallel_hazard_test(hazard, context);
+
+	/* Do parallel safety check for the target relation */
+	else if (!target_rel->rd_paralleldml)
+	{
+		bool max_hazard_found;
+		char pre_max_hazard = context->max_hazard;
+		context->max_hazard = PROPARALLEL_SAFE;
+
+		max_hazard_found = target_rel_parallel_hazard_recurse(target_rel,
+															  context,
+															  false,
+															  false);
+
+		/* Cache the parallel dml safety of this relation */
+		target_rel->rd_paralleldml = context->max_hazard;
+
+		if (!max_hazard_found)
+			(void) max_parallel_hazard_test(pre_max_hazard, context);
+	}
+
+	/*
+	 * If we already cached the parallel dml safety of this relation, we don't
+	 * need to check it again.
+	 */
+	else
+		(void) max_parallel_hazard_test(target_rel->rd_paralleldml, context);
+
+	table_close(target_rel, NoLock);
+
+	return context->max_hazard;
 }
 
 /*

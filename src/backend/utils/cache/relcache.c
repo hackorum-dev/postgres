@@ -2935,6 +2935,25 @@ RelationCacheInvalidate(void)
 }
 
 /*
+ * ParallelDMLInvalidate
+ *	 Invalidate all the relcache's parallel dml flag.
+ */
+void
+ParallelDMLInvalidate(void)
+{
+	HASH_SEQ_STATUS status;
+	RelIdCacheEnt *idhentry;
+	Relation	relation;
+
+	hash_seq_init(&status, RelationIdCache);
+
+	while ((idhentry = (RelIdCacheEnt *) hash_seq_search(&status)) != NULL)
+	{
+		relation = idhentry->reldesc;
+		relation->rd_paralleldml = 0;
+	}
+}
+/*
  * RelationCloseSmgrByOid - close a relcache entry's smgr link
  *
  * Needed in some cases where we are changing a relation's physical mapping.

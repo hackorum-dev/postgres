@@ -128,6 +128,8 @@ extern void RelationCacheInvalidate(void);
 
 extern void RelationCloseSmgrByOid(Oid relationId);
 
+extern void ParallelDMLInvalidate(void);
+
 #ifdef USE_ASSERT_CHECKING
 extern void AssertPendingSyncs_RelationCache(void);
 #else
