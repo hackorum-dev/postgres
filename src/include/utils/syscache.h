@@ -130,7 +130,11 @@ extern HeapTuple SearchSysCache2(int cacheId,
 								 Datum key1, Datum key2);
 extern HeapTuple SearchSysCache3(int cacheId,
 								 Datum key1, Datum key2, Datum key3);
-extern HeapTuple SearchSysCache4(int cacheId,
+extern HeapTuple SearchSysCacheAMOPSTRATEGY(
+								 Datum key1, Datum key2, Datum key3, Datum key4);
+extern HeapTuple SearchSysCacheAMPROCNUM(
+								 Datum key1, Datum key2, Datum key3, Datum key4);
+extern HeapTuple SearchSysCacheOPERNAMENSP(
 								 Datum key1, Datum key2, Datum key3, Datum key4);
 
 extern void ReleaseSysCache(HeapTuple tuple);

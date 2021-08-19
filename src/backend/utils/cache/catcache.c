@@ -1186,12 +1186,55 @@ SearchCatCache3(CatCache *cache,
 }
 
 
-HeapTuple
-SearchCatCache4(CatCache *cache,
-				Datum v1, Datum v2, Datum v3, Datum v4)
-{
-	return SearchCatCacheInternal(cache, 4, v1, v2, v3, v4);
-}
+/* 4-key search functions */
+
+#define CC_SEARCH SearchCatCacheOidOidOidInt16
+#define CC_NKEYS 4
+#define FASTEQFUNC1 int4eqfast
+#define FASTEQFUNC2 int4eqfast
+#define FASTEQFUNC3 int4eqfast
+#define FASTEQFUNC4 int2eqfast
+#define HASHFUNC1 int4hashfast
+#define HASHFUNC2 int4hashfast
+#define HASHFUNC3 int4hashfast
+#define HASHFUNC4 int2hashfast
+
+#include "utils/catcache_search_template.h"
+
+#undef CC_SEARCH
+#undef CC_NKEYS
+#undef FASTEQFUNC1
+#undef FASTEQFUNC2
+#undef FASTEQFUNC3
+#undef FASTEQFUNC4
+#undef HASHFUNC1
+#undef HASHFUNC2
+#undef HASHFUNC3
+#undef HASHFUNC4
+
+#define CC_SEARCH SearchCatCacheNameOidOidOid
+#define CC_NKEYS 4
+#define FASTEQFUNC1 nameeqfast
+#define FASTEQFUNC2 int4eqfast
+#define FASTEQFUNC3 int4eqfast
+#define FASTEQFUNC4 int4eqfast
+#define HASHFUNC1 namehashfast
+#define HASHFUNC2 int4hashfast
+#define HASHFUNC3 int4hashfast
+#define HASHFUNC4 int4hashfast
+
+#include "utils/catcache_search_template.h"
+
+#undef CC_SEARCH
+#undef CC_NKEYS
+#undef FASTEQFUNC1
+#undef FASTEQFUNC2
+#undef FASTEQFUNC3
+#undef FASTEQFUNC4
+#undef HASHFUNC1
+#undef HASHFUNC2
+#undef HASHFUNC3
+#undef HASHFUNC4
 
 /*
  * Work-horse for SearchCatCache/SearchCatCacheN.

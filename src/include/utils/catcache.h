@@ -204,7 +204,9 @@ extern HeapTuple SearchCatCache2(CatCache *cache,
 								 Datum v1, Datum v2);
 extern HeapTuple SearchCatCache3(CatCache *cache,
 								 Datum v1, Datum v2, Datum v3);
-extern HeapTuple SearchCatCache4(CatCache *cache,
+extern HeapTuple SearchCatCacheOidOidOidInt16(CatCache *cache,
+								 Datum v1, Datum v2, Datum v3, Datum v4);
+extern HeapTuple SearchCatCacheNameOidOidOid(CatCache *cache,
 								 Datum v1, Datum v2, Datum v3, Datum v4);
 extern void ReleaseCatCache(HeapTuple tuple);
 

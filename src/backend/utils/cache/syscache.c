@@ -1157,14 +1157,33 @@ SearchSysCache3(int cacheId,
 }
 
 HeapTuple
-SearchSysCache4(int cacheId,
+SearchSysCacheAMOPSTRATEGY(
 				Datum key1, Datum key2, Datum key3, Datum key4)
 {
-	Assert(cacheId >= 0 && cacheId < SysCacheSize &&
-		   PointerIsValid(SysCache[cacheId]));
-	Assert(SysCache[cacheId]->cc_nkeys == 4);
+	Assert(PointerIsValid(SysCache[AMOPSTRATEGY]));
+	Assert(SysCache[AMOPSTRATEGY]->cc_nkeys == 4);
 
-	return SearchCatCache4(SysCache[cacheId], key1, key2, key3, key4);
+	return SearchCatCacheOidOidOidInt16(SysCache[AMOPSTRATEGY], key1, key2, key3, key4);
+}
+
+HeapTuple
+SearchSysCacheAMPROCNUM(
+				Datum key1, Datum key2, Datum key3, Datum key4)
+{
+	Assert(PointerIsValid(SysCache[AMPROCNUM]));
+	Assert(SysCache[AMPROCNUM]->cc_nkeys == 4);
+
+	return SearchCatCacheOidOidOidInt16(SysCache[AMPROCNUM], key1, key2, key3, key4);
+}
+
+HeapTuple
+SearchSysCacheOPERNAMENSP(
+				Datum key1, Datum key2, Datum key3, Datum key4)
+{
+	Assert(PointerIsValid(SysCache[OPERNAMENSP]));
+	Assert(SysCache[OPERNAMENSP]->cc_nkeys == 4);
+
+	return SearchCatCacheNameOidOidOid(SysCache[OPERNAMENSP], key1, key2, key3, key4);
 }
 
 /*

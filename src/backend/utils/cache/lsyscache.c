@@ -168,7 +168,7 @@ get_opfamily_member(Oid opfamily, Oid lefttype, Oid righttype,
 	Form_pg_amop amop_tup;
 	Oid			result;
 
-	tp = SearchSysCache4(AMOPSTRATEGY,
+	tp = SearchSysCacheAMOPSTRATEGY(
 						 ObjectIdGetDatum(opfamily),
 						 ObjectIdGetDatum(lefttype),
 						 ObjectIdGetDatum(righttype),
@@ -797,7 +797,7 @@ get_opfamily_proc(Oid opfamily, Oid lefttype, Oid righttype, int16 procnum)
 	Form_pg_amproc amproc_tup;
 	RegProcedure result;
 
-	tp = SearchSysCache4(AMPROCNUM,
+	tp = SearchSysCacheAMPROCNUM(
 						 ObjectIdGetDatum(opfamily),
 						 ObjectIdGetDatum(lefttype),
 						 ObjectIdGetDatum(righttype),

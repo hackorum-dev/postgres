@@ -1545,7 +1545,7 @@ OpernameGetOprid(List *names, Oid oprleft, Oid oprright)
 		{
 			HeapTuple	opertup;
 
-			opertup = SearchSysCache4(OPERNAMENSP,
+			opertup = SearchSysCacheOPERNAMENSP(
 									  CStringGetDatum(opername),
 									  ObjectIdGetDatum(oprleft),
 									  ObjectIdGetDatum(oprright),

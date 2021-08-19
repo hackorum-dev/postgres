@@ -1751,7 +1751,7 @@ get_object_address_opf_member(ObjectType objtype,
 				ObjectAddressSet(address, AccessMethodOperatorRelationId,
 								 InvalidOid);
 
-				tp = SearchSysCache4(AMOPSTRATEGY,
+				tp = SearchSysCacheAMOPSTRATEGY(
 									 ObjectIdGetDatum(famaddr.objectId),
 									 ObjectIdGetDatum(typeoids[0]),
 									 ObjectIdGetDatum(typeoids[1]),
@@ -1782,7 +1782,7 @@ get_object_address_opf_member(ObjectType objtype,
 				ObjectAddressSet(address, AccessMethodProcedureRelationId,
 								 InvalidOid);
 
-				tp = SearchSysCache4(AMPROCNUM,
+				tp = SearchSysCacheAMPROCNUM(
 									 ObjectIdGetDatum(famaddr.objectId),
 									 ObjectIdGetDatum(typeoids[0]),
 									 ObjectIdGetDatum(typeoids[1]),
