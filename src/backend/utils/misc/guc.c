@@ -2258,6 +2258,17 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
+		{"max_standby_client_write_delay", PGC_SIGHUP, REPLICATION_STANDBY,
+			gettext_noop("Sets the maximum delay for query which is waiting for client write and is supposed to be canceled on a hot standby server."),
+			NULL,
+			GUC_UNIT_MS
+		},
+		&max_standby_client_write_delay,
+		30 * 1000, -1, INT_MAX,
+		NULL, NULL, NULL
+	},
+
+	{
 		{"recovery_min_apply_delay", PGC_SIGHUP, REPLICATION_STANDBY,
 			gettext_noop("Sets the minimum delay for applying changes during recovery."),
 			NULL,

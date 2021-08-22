@@ -121,6 +121,7 @@ extern char *SSLECDHCurve;
 extern bool SSLPreferServerCiphers;
 extern int	ssl_min_protocol_version;
 extern int	ssl_max_protocol_version;
+extern int	max_standby_client_write_delay;
 
 enum ssl_protocol_versions
 {

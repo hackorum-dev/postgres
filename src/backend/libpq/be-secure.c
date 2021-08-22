@@ -36,6 +36,7 @@
 #include "storage/proc.h"
 #include "tcop/tcopprot.h"
 #include "utils/memutils.h"
+#include "utils/timestamp.h"
 
 char	   *ssl_library;
 char	   *ssl_cert_file;
@@ -62,6 +63,9 @@ bool		SSLPreferServerCiphers;
 
 int			ssl_min_protocol_version;
 int			ssl_max_protocol_version;
+
+/* GUC variable: Max client write delay for a standby query which is supposed to be canceled */
+int			max_standby_client_write_delay = 30 * 1000;
 
 /* ------------------------------------------------------------ */
 /*			 Procedures common to all secure sessions			*/
@@ -261,6 +265,7 @@ secure_write(Port *port, void *ptr, size_t len)
 {
 	ssize_t		n;
 	int			waitfor;
+	TimestampTz waitstart = GetCurrentTimestamp();
 
 	/* Deal with any already-pending interrupt condition. */
 	ProcessClientWriteInterrupt(false);
@@ -287,6 +292,9 @@ retry:
 		waitfor = WL_SOCKET_WRITEABLE;
 	}
 
+	if (n >= 0)
+		waitstart = GetCurrentTimestamp();
+
 	if (n < 0 && !port->noblock && (errno == EWOULDBLOCK || errno == EAGAIN))
 	{
 		WaitEvent	event;
@@ -297,6 +305,17 @@ retry:
 
 		WaitEventSetWait(FeBeWaitSet, -1 /* no timeout */ , &event, 1,
 						 WAIT_EVENT_CLIENT_WRITE);
+
+		/* 
+	 	 * if current query is supposed to be canceled,
+	 	 * and the time delayed by a client exceeds max_standby_client_write_delay, then set
+	 	 * ProcDiePending as true to handle interrupt, avoid being delayed indefinitely by a stuck client
+	 	 */
+		if (!ProcDiePending &&
+			QueryCancelPending &&
+			(max_standby_client_write_delay >= 0) &&
+			TimestampDifferenceExceeds(waitstart, GetCurrentTimestamp(), max_standby_client_write_delay))
+			ProcDiePending = true;
 
 		/* See comments in secure_read. */
 		if (event.events & WL_POSTMASTER_DEATH)
