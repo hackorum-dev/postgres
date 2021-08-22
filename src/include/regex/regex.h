@@ -143,20 +143,21 @@ typedef struct
 #define REG_ECTYPE	 4			/* invalid character class */
 #define REG_EESCAPE  5			/* invalid escape \ sequence */
 #define REG_ESUBREG  6			/* invalid backreference number */
-#define REG_EBRACK	 7			/* brackets [] not balanced */
-#define REG_EPAREN	 8			/* parentheses () not balanced */
-#define REG_EBRACE	 9			/* braces {} not balanced */
-#define REG_BADBR	10			/* invalid repetition count(s) */
-#define REG_ERANGE	11			/* invalid character range */
-#define REG_ESPACE	12			/* out of memory */
-#define REG_BADRPT	13			/* quantifier operand invalid */
-#define REG_ASSERT	15			/* "can't happen" -- you found a bug */
-#define REG_INVARG	16			/* invalid argument to regex function */
-#define REG_MIXED	17			/* character widths of regex and string differ */
-#define REG_BADOPT	18			/* invalid embedded option */
-#define REG_ETOOBIG 19			/* regular expression is too complex */
-#define REG_ECOLORS 20			/* too many colors */
-#define REG_CANCEL	21			/* operation cancelled */
+#define REG_ENOBREF	 7			/* backreference in lookaround assertion */
+#define REG_EBRACK 	 8 			/* brackets [] not balanced */
+#define REG_EPAREN 	 9 			/* parentheses () not balanced */
+#define REG_EBRACE  10 			/* braces {} not balanced */
+#define REG_BADBR  	11 			/* invalid repetition count(s) */
+#define REG_ERANGE 	12 			/* invalid character range */
+#define REG_ESPACE 	13 			/* out of memory */
+#define REG_BADRPT 	15 			/* quantifier operand invalid */
+#define REG_ASSERT 	16 			/* "can't happen" -- you found a bug */
+#define REG_INVARG	17			/* invalid argument to regex function */
+#define REG_MIXED	18			/* character widths of regex and string differ */
+#define REG_BADOPT	19			/* invalid embedded option */
+#define REG_ETOOBIG 20			/* regular expression is too complex */
+#define REG_ECOLORS 21			/* too many colors */
+#define REG_CANCEL	22			/* operation cancelled */
 /* two specials for debugging and testing */
 #define REG_ATOI	101			/* convert error-code name to number */
 #define REG_ITOA	102			/* convert error-code number to name */

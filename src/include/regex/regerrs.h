@@ -31,6 +31,10 @@
 },
 
 {
+	REG_ENOBREF, "REG_ENOBREF", "backreference in lookaround assertion"
+},
+
+{
 	REG_EBRACK, "REG_EBRACK", "brackets [] not balanced"
 },
 

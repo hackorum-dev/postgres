@@ -606,8 +606,8 @@ select regexp_match('foo', '(?:.|){99}');
 
 -- Error conditions
 select 'xyz' ~ 'x(\w)(?=\1)';  -- no backrefs in LACONs
-ERROR:  invalid regular expression: invalid backreference number
+ERROR:  invalid regular expression: backreference in lookaround assertion
 select 'xyz' ~ 'x(\w)(?=(\1))';
-ERROR:  invalid regular expression: invalid backreference number
+ERROR:  invalid regular expression: backreference in lookaround assertion
 select 'a' ~ '\x7fffffff';  -- invalid chr code
 ERROR:  invalid regular expression: invalid escape \ sequence

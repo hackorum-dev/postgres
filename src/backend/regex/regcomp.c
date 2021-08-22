@@ -1013,7 +1013,7 @@ parseqatom(struct vars *v,
 			/* postpone everything else pending possible {0} */
 			break;
 		case BACKREF:			/* the Feature From The Black Lagoon */
-			INSIST(type != LACON, REG_ESUBREG);
+			INSIST(type != LACON, REG_ENOBREF);
 			subno = v->nextvalue;
 			assert(subno > 0);
 			INSIST(subno < v->nsubs, REG_ESUBREG);
