@@ -2800,7 +2800,7 @@ do_parallel_vacuum_or_cleanup(LVRelState *vacrel, int nworkers)
 		WaitForParallelWorkersToFinish(lps->pcxt);
 
 		for (int i = 0; i < lps->pcxt->nworkers_launched; i++)
-			InstrAccumParallelQuery(&lps->buffer_usage[i], &lps->wal_usage[i]);
+			InstrAccumParallelQuery(&lps->buffer_usage[i], &lps->wal_usage[i], NULL);
 	}
 
 	/*
@@ -4243,7 +4243,8 @@ parallel_vacuum_main(dsm_segment *seg, shm_toc *toc)
 	buffer_usage = shm_toc_lookup(toc, PARALLEL_VACUUM_KEY_BUFFER_USAGE, false);
 	wal_usage = shm_toc_lookup(toc, PARALLEL_VACUUM_KEY_WAL_USAGE, false);
 	InstrEndParallelQuery(&buffer_usage[ParallelWorkerNumber],
-						  &wal_usage[ParallelWorkerNumber]);
+						  &wal_usage[ParallelWorkerNumber],
+						  NULL);
 
 	/* Pop the error context stack */
 	error_context_stack = errcallback.previous;

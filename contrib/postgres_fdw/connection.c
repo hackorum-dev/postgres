@@ -571,10 +571,22 @@ void
 do_sql_command(PGconn *conn, const char *sql)
 {
 	PGresult   *res;
+	instr_time start, duration;
+
+	if (track_fdw_wait_timing)
+		INSTR_TIME_SET_CURRENT(start);
 
 	if (!PQsendQuery(conn, sql))
 		pgfdw_report_error(ERROR, NULL, conn, false, sql);
 	res = pgfdw_get_result(conn, sql);
+
+	if (track_fdw_wait_timing)
+	{
+		INSTR_TIME_SET_CURRENT(duration);
+		INSTR_TIME_SUBTRACT(duration, start);
+		INSTR_TIME_ADD(pgNetUsage.fdw_wait_time, duration);
+	}
+
 	if (PQresultStatus(res) != PGRES_COMMAND_OK)
 		pgfdw_report_error(ERROR, res, conn, true, sql);
 	PQclear(res);
@@ -684,10 +696,14 @@ GetPrepStmtNumber(PGconn *conn)
 PGresult *
 pgfdw_exec_query(PGconn *conn, const char *query, PgFdwConnState *state)
 {
+	PGresult *res;
+	instr_time start, duration;
 	/* First, process a pending asynchronous request, if any. */
 	if (state && state->pendingAreq)
 		process_pending_request(state->pendingAreq);
 
+	if (track_fdw_wait_timing)
+		INSTR_TIME_SET_CURRENT(start);
 	/*
 	 * Submit a query.  Since we don't use non-blocking mode, this also can
 	 * block.  But its risk is relatively small, so we ignore that for now.
@@ -696,7 +712,14 @@ pgfdw_exec_query(PGconn *conn, const char *query, PgFdwConnState *state)
 		pgfdw_report_error(ERROR, NULL, conn, false, query);
 
 	/* Wait for the result. */
-	return pgfdw_get_result(conn, query);
+	res = pgfdw_get_result(conn, query);
+	if (track_fdw_wait_timing)
+	{
+		INSTR_TIME_SET_CURRENT(duration);
+		INSTR_TIME_SUBTRACT(duration, start);
+		INSTR_TIME_ADD(pgNetUsage.fdw_wait_time, duration);
+	}
+	return res;
 }
 
 /*
@@ -717,6 +740,10 @@ pgfdw_get_result(PGconn *conn, const char *query)
 	/* In what follows, do not leak any PGresults on an error. */
 	PG_TRY();
 	{
+		instr_time start, duration;
+		if (track_fdw_wait_timing)
+			INSTR_TIME_SET_CURRENT(start);
+
 		for (;;)
 		{
 			PGresult   *res;
@@ -749,6 +776,13 @@ pgfdw_get_result(PGconn *conn, const char *query)
 
 			PQclear(last_res);
 			last_res = res;
+		}
+
+		if (track_fdw_wait_timing)
+		{
+			INSTR_TIME_SET_CURRENT(duration);
+			INSTR_TIME_SUBTRACT(duration, start);
+			INSTR_TIME_ADD(pgNetUsage.fdw_wait_time, duration);
 		}
 	}
 	PG_CATCH();
@@ -893,7 +927,18 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 					 */
 					if (entry->have_prep_stmt && entry->have_error)
 					{
+						instr_time start, duration;
+						if (track_fdw_wait_timing)
+							INSTR_TIME_SET_CURRENT(start);
+
 						res = PQexec(entry->conn, "DEALLOCATE ALL");
+
+						if (track_fdw_wait_timing)
+						{
+							INSTR_TIME_SET_CURRENT(duration);
+							INSTR_TIME_SUBTRACT(duration, start);
+							INSTR_TIME_ADD(pgNetUsage.fdw_wait_time, duration);
+						}
 						PQclear(res);
 					}
 					entry->have_prep_stmt = false;
@@ -1329,6 +1374,10 @@ pgfdw_get_cleanup_result(PGconn *conn, TimestampTz endtime, PGresult **result)
 	/* In what follows, do not leak any PGresults on an error. */
 	PG_TRY();
 	{
+		instr_time start, duration;
+		if (track_fdw_wait_timing)
+			INSTR_TIME_SET_CURRENT(start);
+
 		for (;;)
 		{
 			PGresult   *res;
@@ -1377,6 +1426,12 @@ pgfdw_get_cleanup_result(PGconn *conn, TimestampTz endtime, PGresult **result)
 			last_res = res;
 		}
 exit:	;
+		if (track_fdw_wait_timing)
+		{
+			INSTR_TIME_SET_CURRENT(duration);
+			INSTR_TIME_SUBTRACT(duration, start);
+			INSTR_TIME_ADD(pgNetUsage.fdw_wait_time, duration);
+		}
 	}
 	PG_CATCH();
 	{

@@ -224,6 +224,8 @@ pqsecure_read(PGconn *conn, void *ptr, size_t len)
 	{
 		n = pqsecure_raw_read(conn, ptr, len);
 	}
+	if (PQnetworkStats_hook)
+		PQnetworkStats_hook(0, n);
 
 	return n;
 }
@@ -307,6 +309,8 @@ pqsecure_write(PGconn *conn, const void *ptr, size_t len)
 		n = pqsecure_raw_write(conn, ptr, len);
 	}
 
+	if (PQnetworkStats_hook)
+		PQnetworkStats_hook(n, 0);
 	return n;
 }
 

@@ -51,6 +51,13 @@ typedef struct WalUsage
 	uint64		wal_bytes;		/* size of WAL records produced */
 } WalUsage;
 
+typedef struct NetworkUsage
+{
+	uint64		fdw_recv_bytes;		/* Bytes received from foreign source */
+	uint64		fdw_sent_bytes;		/* Bytes sent to foreign targets */
+	instr_time  fdw_wait_time; /* Time spent waiting for response from foreign source. */
+}			NetworkUsage;
+
 /* Flag bits included in InstrAlloc's instrument_options bitmask */
 typedef enum InstrumentOption
 {
@@ -58,6 +65,7 @@ typedef enum InstrumentOption
 	INSTRUMENT_BUFFERS = 1 << 1,	/* needs buffer usage */
 	INSTRUMENT_ROWS = 1 << 2,	/* needs row count */
 	INSTRUMENT_WAL = 1 << 3,	/* needs WAL usage */
+	INSTRUMENT_NETWORK = 1 << 4,	/* needs network usage */
 	INSTRUMENT_ALL = PG_INT32_MAX
 } InstrumentOption;
 
@@ -67,6 +75,7 @@ typedef struct Instrumentation
 	bool		need_timer;		/* true if we need timer data */
 	bool		need_bufusage;	/* true if we need buffer usage data */
 	bool		need_walusage;	/* true if we need WAL usage data */
+	bool		need_netusage;	/* true if we need network usage data */
 	bool		async_mode;		/* true if node is in async mode */
 	/* Info about current plan cycle: */
 	bool		running;		/* true if we've completed first tuple */
@@ -76,6 +85,7 @@ typedef struct Instrumentation
 	double		tuplecount;		/* # of tuples emitted so far this cycle */
 	BufferUsage bufusage_start; /* buffer usage at start */
 	WalUsage	walusage_start; /* WAL usage at start */
+	NetworkUsage netusage_start;	/* network usage at start */
 	/* Accumulated statistics across all completed cycles: */
 	double		startup;		/* total startup time (in seconds) */
 	double		total;			/* total time (in seconds) */
@@ -86,6 +96,7 @@ typedef struct Instrumentation
 	double		nfiltered2;		/* # of tuples removed by "other" quals */
 	BufferUsage bufusage;		/* total buffer usage */
 	WalUsage	walusage;		/* total WAL usage */
+	NetworkUsage netusage;		/* total network usage */
 } Instrumentation;
 
 typedef struct WorkerInstrumentation
@@ -96,6 +107,9 @@ typedef struct WorkerInstrumentation
 
 extern PGDLLIMPORT BufferUsage pgBufferUsage;
 extern PGDLLIMPORT WalUsage pgWalUsage;
+extern PGDLLIMPORT NetworkUsage pgNetUsage;
+
+extern PGDLLIMPORT bool track_fdw_wait_timing;
 
 extern Instrumentation *InstrAlloc(int n, int instrument_options,
 								   bool async_mode);
@@ -106,11 +120,12 @@ extern void InstrUpdateTupleCount(Instrumentation *instr, double nTuples);
 extern void InstrEndLoop(Instrumentation *instr);
 extern void InstrAggNode(Instrumentation *dst, Instrumentation *add);
 extern void InstrStartParallelQuery(void);
-extern void InstrEndParallelQuery(BufferUsage *bufusage, WalUsage *walusage);
-extern void InstrAccumParallelQuery(BufferUsage *bufusage, WalUsage *walusage);
-extern void BufferUsageAccumDiff(BufferUsage *dst,
-								 const BufferUsage *add, const BufferUsage *sub);
+extern void InstrEndParallelQuery(BufferUsage *bufusage, WalUsage *walusage, NetworkUsage *netusage);
+extern void InstrAccumParallelQuery(BufferUsage *bufusage, WalUsage *walusage, NetworkUsage *netusage);
+extern void BufferUsageAccumDiff(BufferUsage *dst, const BufferUsage *add,
+								 const BufferUsage *sub);
 extern void WalUsageAccumDiff(WalUsage *dst, const WalUsage *add,
 							  const WalUsage *sub);
-
+extern void NetUsageAccumDiff(NetworkUsage *dst, const NetworkUsage *add,
+							  const NetworkUsage *sub);
 #endif							/* INSTRUMENT_H */

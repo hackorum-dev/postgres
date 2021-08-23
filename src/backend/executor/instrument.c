@@ -21,10 +21,14 @@ BufferUsage pgBufferUsage;
 static BufferUsage save_pgBufferUsage;
 WalUsage	pgWalUsage;
 static WalUsage save_pgWalUsage;
+NetworkUsage pgNetUsage;
+static NetworkUsage save_pgNetUsage;
+
+bool track_fdw_wait_timing;
 
 static void BufferUsageAdd(BufferUsage *dst, const BufferUsage *add);
 static void WalUsageAdd(WalUsage *dst, WalUsage *add);
-
+static void NetUsageAdd(NetworkUsage *dst, const NetworkUsage *add);
 
 /* Allocate new instrumentation structure(s) */
 Instrumentation *
@@ -34,11 +38,13 @@ InstrAlloc(int n, int instrument_options, bool async_mode)
 
 	/* initialize all fields to zeroes, then modify as needed */
 	instr = palloc0(n * sizeof(Instrumentation));
-	if (instrument_options & (INSTRUMENT_BUFFERS | INSTRUMENT_TIMER | INSTRUMENT_WAL))
+	if (instrument_options & (INSTRUMENT_BUFFERS | INSTRUMENT_TIMER |
+							  INSTRUMENT_WAL | INSTRUMENT_NETWORK))
 	{
 		bool		need_buffers = (instrument_options & INSTRUMENT_BUFFERS) != 0;
 		bool		need_wal = (instrument_options & INSTRUMENT_WAL) != 0;
 		bool		need_timer = (instrument_options & INSTRUMENT_TIMER) != 0;
+		bool		need_network = (instrument_options & INSTRUMENT_NETWORK) != 0;
 		int			i;
 
 		for (i = 0; i < n; i++)
@@ -46,6 +52,7 @@ InstrAlloc(int n, int instrument_options, bool async_mode)
 			instr[i].need_bufusage = need_buffers;
 			instr[i].need_walusage = need_wal;
 			instr[i].need_timer = need_timer;
+			instr[i].need_netusage = need_network;
 			instr[i].async_mode = async_mode;
 		}
 	}
@@ -61,6 +68,7 @@ InstrInit(Instrumentation *instr, int instrument_options)
 	instr->need_bufusage = (instrument_options & INSTRUMENT_BUFFERS) != 0;
 	instr->need_walusage = (instrument_options & INSTRUMENT_WAL) != 0;
 	instr->need_timer = (instrument_options & INSTRUMENT_TIMER) != 0;
+	instr->need_netusage = (instrument_options & INSTRUMENT_NETWORK) != 0;
 }
 
 /* Entry to a plan node */
@@ -77,6 +85,9 @@ InstrStartNode(Instrumentation *instr)
 
 	if (instr->need_walusage)
 		instr->walusage_start = pgWalUsage;
+
+	if (instr->need_netusage)
+		instr->netusage_start = pgNetUsage;
 }
 
 /* Exit from a plan node */
@@ -103,12 +114,14 @@ InstrStopNode(Instrumentation *instr, double nTuples)
 
 	/* Add delta of buffer usage since entry to node's totals */
 	if (instr->need_bufusage)
-		BufferUsageAccumDiff(&instr->bufusage,
-							 &pgBufferUsage, &instr->bufusage_start);
+		BufferUsageAccumDiff(&instr->bufusage, &pgBufferUsage,
+							 &instr->bufusage_start);
 
 	if (instr->need_walusage)
-		WalUsageAccumDiff(&instr->walusage,
-						  &pgWalUsage, &instr->walusage_start);
+		WalUsageAccumDiff(&instr->walusage, &pgWalUsage, &instr->walusage_start);
+
+	if (instr->need_netusage)
+		NetUsageAccumDiff(&instr->netusage, &pgNetUsage, &instr->netusage_start);
 
 	/* Is this the first tuple of this cycle? */
 	if (!instr->running)
@@ -193,6 +206,9 @@ InstrAggNode(Instrumentation *dst, Instrumentation *add)
 
 	if (dst->need_walusage)
 		WalUsageAdd(&dst->walusage, &add->walusage);
+
+	if (dst->need_netusage)
+		NetUsageAdd(&dst->netusage, &add->netusage);
 }
 
 /* note current values during parallel executor startup */
@@ -201,24 +217,32 @@ InstrStartParallelQuery(void)
 {
 	save_pgBufferUsage = pgBufferUsage;
 	save_pgWalUsage = pgWalUsage;
+	save_pgNetUsage = pgNetUsage;
 }
 
 /* report usage after parallel executor shutdown */
 void
-InstrEndParallelQuery(BufferUsage *bufusage, WalUsage *walusage)
+InstrEndParallelQuery(BufferUsage *bufusage, WalUsage *walusage, NetworkUsage *netusage)
 {
 	memset(bufusage, 0, sizeof(BufferUsage));
 	BufferUsageAccumDiff(bufusage, &pgBufferUsage, &save_pgBufferUsage);
 	memset(walusage, 0, sizeof(WalUsage));
 	WalUsageAccumDiff(walusage, &pgWalUsage, &save_pgWalUsage);
+	if (netusage != NULL)
+	{
+		memset(netusage, 0, sizeof(NetworkUsage));
+		NetUsageAccumDiff(netusage, &pgNetUsage, &save_pgNetUsage);
+	}
 }
 
 /* accumulate work done by workers in leader's stats */
 void
-InstrAccumParallelQuery(BufferUsage *bufusage, WalUsage *walusage)
+InstrAccumParallelQuery(BufferUsage *bufusage, WalUsage *walusage, NetworkUsage *netusage)
 {
 	BufferUsageAdd(&pgBufferUsage, bufusage);
 	WalUsageAdd(&pgWalUsage, walusage);
+	if (netusage != NULL)
+		NetUsageAdd(&pgNetUsage, netusage);
 }
 
 /* dst += add */
@@ -276,4 +300,21 @@ WalUsageAccumDiff(WalUsage *dst, const WalUsage *add, const WalUsage *sub)
 	dst->wal_bytes += add->wal_bytes - sub->wal_bytes;
 	dst->wal_records += add->wal_records - sub->wal_records;
 	dst->wal_fpi += add->wal_fpi - sub->wal_fpi;
+}
+
+void
+NetUsageAccumDiff(NetworkUsage * dst, const NetworkUsage * add,
+				  const NetworkUsage * sub)
+{
+	dst->fdw_recv_bytes += add->fdw_recv_bytes - sub->fdw_recv_bytes;
+	dst->fdw_sent_bytes += add->fdw_sent_bytes - sub->fdw_sent_bytes;
+	INSTR_TIME_ACCUM_DIFF(dst->fdw_wait_time, add->fdw_wait_time, sub->fdw_wait_time);
+}
+
+static void
+NetUsageAdd(NetworkUsage * dst, const NetworkUsage * add)
+{
+	dst->fdw_recv_bytes += add->fdw_recv_bytes;
+	dst->fdw_sent_bytes += add->fdw_sent_bytes;
+	INSTR_TIME_ADD(dst->fdw_wait_time, add->fdw_wait_time);
 }

@@ -1663,11 +1663,11 @@ _bt_end_parallel(BTLeader *btleader)
 	WaitForParallelWorkersToFinish(btleader->pcxt);
 
 	/*
-	 * Next, accumulate WAL usage.  (This must wait for the workers to finish,
-	 * or we might get incomplete data.)
+	 * Next, accumulate WAL and buffer usage.  (This must wait for the workers
+	 * to finish, or we might get incomplete data.)
 	 */
 	for (i = 0; i < btleader->pcxt->nworkers_launched; i++)
-		InstrAccumParallelQuery(&btleader->bufferusage[i], &btleader->walusage[i]);
+		InstrAccumParallelQuery(&btleader->bufferusage[i], &btleader->walusage[i], NULL);
 
 	/* Free last reference to MVCC snapshot, if one was used */
 	if (IsMVCCSnapshot(btleader->snapshot))
@@ -1870,11 +1870,15 @@ _bt_parallel_build_main(dsm_segment *seg, shm_toc *toc)
 	_bt_parallel_scan_and_sort(btspool, btspool2, btshared, sharedsort,
 							   sharedsort2, sortmem, false);
 
-	/* Report WAL/buffer usage during parallel execution */
+	/*
+	 * Report WAL/buffer usage during parallel execution. No need to report
+	 * network
+	 */
 	bufferusage = shm_toc_lookup(toc, PARALLEL_KEY_BUFFER_USAGE, false);
 	walusage = shm_toc_lookup(toc, PARALLEL_KEY_WAL_USAGE, false);
 	InstrEndParallelQuery(&bufferusage[ParallelWorkerNumber],
-						  &walusage[ParallelWorkerNumber]);
+						  &walusage[ParallelWorkerNumber],
+						  NULL);
 
 #ifdef BTREE_BUILD_STATS
 	if (log_btree_build_stats)

@@ -53,6 +53,8 @@
 #include "pg_config_paths.h"
 #include "port/pg_bswap.h"
 
+PQnetworkStats_hook_type PQnetworkStats_hook = NULL;
+
 static int	pqPutMsgBytes(const void *buf, size_t len, PGconn *conn);
 static int	pqSendSome(PGconn *conn, int len);
 static int	pqSocketCheck(PGconn *conn, int forRead, int forWrite,

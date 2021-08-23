@@ -12,7 +12,7 @@
  * workers and ensuring that their state generally matches that of the
  * leader; see src/backend/access/transam/README.parallel for details.
  * However, we must save and restore relevant executor state, such as
- * any ParamListInfo associated with the query, buffer/WAL usage info, and
+ * any ParamListInfo associated with the query, buffer/WAL/network usage info, and
  * the actual plan to be passed down to the worker.
  *
  * IDENTIFICATION
@@ -66,6 +66,7 @@
 #define PARALLEL_KEY_QUERY_TEXT		UINT64CONST(0xE000000000000008)
 #define PARALLEL_KEY_JIT_INSTRUMENTATION UINT64CONST(0xE000000000000009)
 #define PARALLEL_KEY_WAL_USAGE			UINT64CONST(0xE00000000000000A)
+#define PARALLEL_KEY_NETWORK_USAGE UINT64CONST(0xE00000000000000B)
 
 #define PARALLEL_TUPLE_QUEUE_SIZE		65536
 
@@ -599,6 +600,7 @@ ExecInitParallelPlan(PlanState *planstate, EState *estate,
 	char	   *paramlistinfo_space;
 	BufferUsage *bufusage_space;
 	WalUsage   *walusage_space;
+	NetworkUsage *netusage_space;
 	SharedExecutorInstrumentation *instrumentation = NULL;
 	SharedJitInstrumentation *jit_instrumentation = NULL;
 	int			pstmt_len;
@@ -677,6 +679,11 @@ ExecInitParallelPlan(PlanState *planstate, EState *estate,
 	 */
 	shm_toc_estimate_chunk(&pcxt->estimator,
 						   mul_size(sizeof(WalUsage), pcxt->nworkers));
+	shm_toc_estimate_keys(&pcxt->estimator, 1);
+
+	/* Same for network */
+	shm_toc_estimate_chunk(&pcxt->estimator,
+						   mul_size(sizeof(NetworkUsage), pcxt->nworkers));
 	shm_toc_estimate_keys(&pcxt->estimator, 1);
 
 	/* Estimate space for tuple queues. */
@@ -766,6 +773,12 @@ ExecInitParallelPlan(PlanState *planstate, EState *estate,
 									  mul_size(sizeof(WalUsage), pcxt->nworkers));
 	shm_toc_insert(pcxt->toc, PARALLEL_KEY_WAL_USAGE, walusage_space);
 	pei->wal_usage = walusage_space;
+
+	/* Same for network */
+	netusage_space = shm_toc_allocate(pcxt->toc,
+									  mul_size(sizeof(NetworkUsage), pcxt->nworkers));
+	shm_toc_insert(pcxt->toc, PARALLEL_KEY_NETWORK_USAGE, netusage_space);
+	pei->net_usage = netusage_space;
 
 	/* Set up the tuple queues that the workers will write into. */
 	pei->tqueue = ExecParallelSetupTupleQueues(pcxt, false);
@@ -1159,11 +1172,11 @@ ExecParallelFinish(ParallelExecutorInfo *pei)
 	WaitForParallelWorkersToFinish(pei->pcxt);
 
 	/*
-	 * Next, accumulate buffer/WAL usage.  (This must wait for the workers to
-	 * finish, or we might get incomplete data.)
+	 * Next, accumulate buffer/WAL/network usage.  (This must wait for the
+	 * workers to finish, or we might get incomplete data.)
 	 */
 	for (i = 0; i < nworkers; i++)
-		InstrAccumParallelQuery(&pei->buffer_usage[i], &pei->wal_usage[i]);
+		InstrAccumParallelQuery(&pei->buffer_usage[i], &pei->wal_usage[i], &pei->net_usage[i]);
 
 	pei->finished = true;
 }
@@ -1396,6 +1409,7 @@ ParallelQueryMain(dsm_segment *seg, shm_toc *toc)
 	FixedParallelExecutorState *fpes;
 	BufferUsage *buffer_usage;
 	WalUsage   *wal_usage;
+	NetworkUsage *net_usage;
 	DestReceiver *receiver;
 	QueryDesc  *queryDesc;
 	SharedExecutorInstrumentation *instrumentation;
@@ -1469,11 +1483,13 @@ ParallelQueryMain(dsm_segment *seg, shm_toc *toc)
 	/* Shut down the executor */
 	ExecutorFinish(queryDesc);
 
-	/* Report buffer/WAL usage during parallel execution. */
+	/* Report buffer/WAL/network usage during parallel execution. */
 	buffer_usage = shm_toc_lookup(toc, PARALLEL_KEY_BUFFER_USAGE, false);
 	wal_usage = shm_toc_lookup(toc, PARALLEL_KEY_WAL_USAGE, false);
+	net_usage = shm_toc_lookup(toc, PARALLEL_KEY_NETWORK_USAGE, false);
 	InstrEndParallelQuery(&buffer_usage[ParallelWorkerNumber],
-						  &wal_usage[ParallelWorkerNumber]);
+						  &wal_usage[ParallelWorkerNumber],
+						  &net_usage[ParallelWorkerNumber]);
 
 	/* Report instrumentation data if any instrumentation options are set. */
 	if (instrumentation != NULL)

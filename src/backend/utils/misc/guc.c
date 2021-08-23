@@ -1552,7 +1552,15 @@ static struct config_bool ConfigureNamesBool[] =
 		false,
 		NULL, NULL, NULL
 	},
-
+	{
+		{"track_fdw_wait_timing", PGC_SUSET, STATS_COLLECTOR,
+			gettext_noop("Collects statistics for foreign source waiting time."),
+			NULL
+		},
+		&track_fdw_wait_timing,
+		false,
+		NULL, NULL, NULL
+	},
 	{
 		{"update_process_title", PGC_SUSET, PROCESS_TITLE,
 			gettext_noop("Updates the process title to show the active SQL command."),

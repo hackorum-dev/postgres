@@ -122,6 +122,7 @@ static const char *explain_get_index_name(Oid indexId);
 static void show_buffer_usage(ExplainState *es, const BufferUsage *usage,
 							  bool planning);
 static void show_wal_usage(ExplainState *es, const WalUsage *usage);
+static void show_net_usage(ExplainState *es, const NetworkUsage * usage);
 static void ExplainIndexScanDetails(Oid indexid, ScanDirection indexorderdir,
 									ExplainState *es);
 static void ExplainScanTarget(Scan *plan, ExplainState *es);
@@ -188,6 +189,8 @@ ExplainQuery(ParseState *pstate, ExplainStmt *stmt,
 			es->buffers = defGetBoolean(opt);
 		else if (strcmp(opt->defname, "wal") == 0)
 			es->wal = defGetBoolean(opt);
+		else if (strcmp(opt->defname, "network") == 0)
+			es->network = defGetBoolean(opt);
 		else if (strcmp(opt->defname, "settings") == 0)
 			es->settings = defGetBoolean(opt);
 		else if (strcmp(opt->defname, "timing") == 0)
@@ -231,6 +234,12 @@ ExplainQuery(ParseState *pstate, ExplainStmt *stmt,
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("EXPLAIN option WAL requires ANALYZE")));
+
+	if (es->network && !es->analyze)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("EXPLAIN option NETWORK requires ANALYZE")));
+
 
 	/* if the timing was not set explicitly, set default value */
 	es->timing = (timing_set) ? es->timing : es->analyze;
@@ -538,6 +547,8 @@ ExplainOnePlan(PlannedStmt *plannedstmt, IntoClause *into, ExplainState *es,
 		instrument_option |= INSTRUMENT_BUFFERS;
 	if (es->wal)
 		instrument_option |= INSTRUMENT_WAL;
+	if (es->network)
+		instrument_option |= INSTRUMENT_NETWORK;
 
 	/*
 	 * We always collect timing for the entire statement, even when node-level
@@ -2048,6 +2059,8 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		show_buffer_usage(es, &planstate->instrument->bufusage, false);
 	if (es->wal && planstate->instrument)
 		show_wal_usage(es, &planstate->instrument->walusage);
+	if (es->network && planstate->instrument)
+		show_net_usage(es, &planstate->instrument->netusage);
 
 	/* Prepare per-worker buffer/WAL usage */
 	if (es->workers_state && (es->buffers || es->wal) && es->verbose)
@@ -3612,6 +3625,55 @@ show_buffer_usage(ExplainState *es, const BufferUsage *usage, bool planning)
 								 3, es);
 			ExplainPropertyFloat("I/O Write Time", "ms",
 								 INSTR_TIME_GET_MILLISEC(usage->blk_write_time),
+								 3, es);
+		}
+	}
+}
+
+/*
+ * Show network usage details.
+ */
+static void
+show_net_usage(ExplainState *es, const NetworkUsage * usage)
+{
+	if (es->format == EXPLAIN_FORMAT_TEXT)
+	{
+		bool		has_data = (usage->fdw_recv_bytes > 0) || (usage->fdw_sent_bytes > 0);
+		bool		has_timing = !INSTR_TIME_IS_ZERO(usage->fdw_wait_time);
+
+		/* Show only positive counter values. */
+		if (has_data)
+		{
+			ExplainIndentText(es);
+			appendStringInfoString(es->str, "Network: FDW bytes");
+
+			if (usage->fdw_sent_bytes > 0)
+				appendStringInfo(es->str, " sent=" UINT64_FORMAT,
+								 usage->fdw_sent_bytes);
+			if (usage->fdw_recv_bytes > 0)
+				appendStringInfo(es->str, " received=" UINT64_FORMAT,
+								 usage->fdw_recv_bytes);
+		}
+		if (has_timing)
+		{
+			appendStringInfo(es->str, ", wait_time=%0.3f",
+							 INSTR_TIME_GET_MILLISEC(usage->fdw_wait_time));
+		}
+		if (has_data || has_timing)
+		{
+			appendStringInfoChar(es->str, '\n');
+		}
+	}
+	else
+	{
+		ExplainPropertyInteger("FDW Bytes Sent", NULL,
+							   usage->fdw_sent_bytes, es);
+		ExplainPropertyInteger("FDW Bytes Received", NULL,
+							   usage->fdw_recv_bytes, es);
+		if (track_fdw_wait_timing)
+		{
+			ExplainPropertyFloat("FDW Wait Time", NULL,
+								 INSTR_TIME_GET_MILLISEC(usage->fdw_wait_time),
 								 3, es);
 		}
 	}

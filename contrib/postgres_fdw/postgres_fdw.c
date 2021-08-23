@@ -60,6 +60,7 @@ PG_MODULE_MAGIC;
 /* If no remote estimates, assume a sort costs 20% extra */
 #define DEFAULT_FDW_SORT_MULTIPLIER 1.2
 
+PQnetworkStats_hook_type prev_PQnetworkStats;
 /*
  * Indexes of FDW-private information stored in fdw_private lists.
  *
@@ -312,6 +313,14 @@ typedef struct
 	Expr	   *current;		/* current expr, or NULL if not yet found */
 	List	   *already_used;	/* expressions already dealt with */
 } ec_member_foreign_arg;
+
+void		_PG_init(void);
+void _PG_fini(void);
+
+/*
+ * Hooks
+ */
+static void PostgresFdw_PQnetworkStats(ssize_t bytesReceived, ssize_t bytesSent);
 
 /*
  * SQL functions
@@ -7437,4 +7446,23 @@ get_batch_size_option(Relation rel)
 	}
 
 	return batch_size;
+}
+static void
+PostgresFdw_PQnetworkStats(ssize_t bytesSent, ssize_t bytesReceived)
+{
+	pgNetUsage.fdw_recv_bytes += bytesReceived;
+	pgNetUsage.fdw_sent_bytes += bytesSent;
+}
+
+void
+_PG_init(void)
+{
+	prev_PQnetworkStats = PQnetworkStats_hook;
+	PQnetworkStats_hook = PostgresFdw_PQnetworkStats;
+}
+
+void
+_PG_fini(void)
+{
+	PQnetworkStats_hook = prev_PQnetworkStats;
 }

@@ -27,7 +27,7 @@ extern "C"
  * such as Oid.
  */
 #include "postgres_ext.h"
-
+#include "c.h"
 /*
  * These symbols may be used in compile-time #ifdef tests for the availability
  * of newer libpq features.
@@ -645,6 +645,9 @@ extern int	PQdsplen(const char *s, int encoding);
 
 /* Get encoding id from environment variable PGCLIENTENCODING */
 extern int	PQenv2encoding(void);
+
+typedef void (*PQnetworkStats_hook_type) (ssize_t bytesSent, ssize_t bytesReceived);
+extern PGDLLEXPORT PQnetworkStats_hook_type PQnetworkStats_hook;
 
 /* === in fe-auth.c === */
 
