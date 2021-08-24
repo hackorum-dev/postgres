@@ -258,7 +258,7 @@ select 1 = all (select (select 1));
             QUERY PLAN             
 -----------------------------------
  Result
-   Output: (SubPlan 2)
+   Output: (1 = ALL (SubPlan 2))
    SubPlan 2
      ->  Materialize
            Output: ($0)
@@ -308,7 +308,7 @@ select * from int4_tbl o where exists
               QUERY PLAN              
 --------------------------------------
  Seq Scan on int4_tbl o
-   Filter: (SubPlan 1)
+   Filter: EXISTS (SubPlan 1)
    SubPlan 1
      ->  Limit
            ->  Seq Scan on int4_tbl i
@@ -771,10 +771,10 @@ select * from outer_text where (f1, f2) not in (select * from inner_text);
 --
 explain (verbose, costs off)
 select 'foo'::text in (select 'bar'::name union all select 'bar'::name);
-             QUERY PLAN              
--------------------------------------
+                  QUERY PLAN                   
+-----------------------------------------------
  Result
-   Output: (hashed SubPlan 1)
+   Output: ('foo'::text IN (hashed SubPlan 1))
    SubPlan 1
      ->  Append
            ->  Result
@@ -815,10 +815,10 @@ language sql as 'select $1::text = $2';
 create operator = (procedure=bogus_int8_text_eq, leftarg=int8, rightarg=text);
 explain (costs off)
 select * from int8_tbl where q1 in (select c1 from inner_text);
-           QUERY PLAN           
---------------------------------
+                  QUERY PLAN                  
+----------------------------------------------
  Seq Scan on int8_tbl
-   Filter: (hashed SubPlan 1)
+   Filter: ((q1)::text IN (hashed SubPlan 1))
    SubPlan 1
      ->  Seq Scan on inner_text
 (4 rows)
@@ -836,10 +836,10 @@ create or replace function bogus_int8_text_eq(int8, text) returns boolean
 language sql as 'select $1::text = $2 and $1::text = $2';
 explain (costs off)
 select * from int8_tbl where q1 in (select c1 from inner_text);
-           QUERY PLAN           
---------------------------------
+                         QUERY PLAN                         
+------------------------------------------------------------
  Seq Scan on int8_tbl
-   Filter: (hashed SubPlan 1)
+   Filter: (((q1)::text, (q1)::text) IN (hashed SubPlan 1))
    SubPlan 1
      ->  Seq Scan on inner_text
 (4 rows)
@@ -860,7 +860,7 @@ select * from int8_tbl where q1 in (select c1 from inner_text);
               QUERY PLAN              
 --------------------------------------
  Seq Scan on int8_tbl
-   Filter: (SubPlan 1)
+   Filter: ($0 IN (SubPlan 1))
    SubPlan 1
      ->  Materialize
            ->  Seq Scan on inner_text
@@ -880,11 +880,11 @@ rollback;  -- to get rid of the bogus operator
 explain (costs off)
 select count(*) from tenk1 t
 where (exists(select 1 from tenk1 k where k.unique1 = t.unique2) or ten < 0);
-                          QUERY PLAN                          
---------------------------------------------------------------
+                           QUERY PLAN                           
+----------------------------------------------------------------
  Aggregate
    ->  Seq Scan on tenk1 t
-         Filter: ((hashed SubPlan 2) OR (ten < 0))
+         Filter: ((unique2 IN (hashed SubPlan 2)) OR (ten < 0))
          SubPlan 2
            ->  Index Only Scan using tenk1_unique1 on tenk1 k
 (5 rows)
@@ -905,7 +905,7 @@ where (exists(select 1 from tenk1 k where k.unique1 = t.unique2) or ten < 0)
  Aggregate
    ->  Bitmap Heap Scan on tenk1 t
          Recheck Cond: (thousand = 1)
-         Filter: ((SubPlan 1) OR (ten < 0))
+         Filter: (EXISTS (SubPlan 1) OR (ten < 0))
          ->  Bitmap Index Scan on tenk1_thous_tenthous
                Index Cond: (thousand = 1)
          SubPlan 1
@@ -1011,14 +1011,14 @@ where o.ten = 0;
                                                                                          QUERY PLAN                                                                                          
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Aggregate
-   Output: sum((((hashed SubPlan 1)))::integer)
+   Output: sum((((i.ten IN (hashed SubPlan 1))))::integer)
    ->  Nested Loop
-         Output: ((hashed SubPlan 1))
+         Output: ((i.ten IN (hashed SubPlan 1)))
          ->  Seq Scan on public.onek o
                Output: o.unique1, o.unique2, o.two, o.four, o.ten, o.twenty, o.hundred, o.thousand, o.twothousand, o.fivethous, o.tenthous, o.odd, o.even, o.stringu1, o.stringu2, o.string4
                Filter: (o.ten = 0)
          ->  Index Scan using onek_unique1 on public.onek i
-               Output: (hashed SubPlan 1), random()
+               Output: (i.ten IN (hashed SubPlan 1)), random()
                Index Cond: (i.unique1 = o.unique1)
                SubPlan 1
                  ->  Seq Scan on public.int4_tbl
@@ -1213,7 +1213,7 @@ select * from int4_tbl where
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Nested Loop Semi Join
    Output: int4_tbl.f1
-   Join Filter: (CASE WHEN (hashed SubPlan 1) THEN int4_tbl.f1 ELSE NULL::integer END = b.ten)
+   Join Filter: (CASE WHEN (int4_tbl.f1 IN (hashed SubPlan 1)) THEN int4_tbl.f1 ELSE NULL::integer END = b.ten)
    ->  Seq Scan on public.int4_tbl
          Output: int4_tbl.f1
    ->  Seq Scan on public.tenk1 b

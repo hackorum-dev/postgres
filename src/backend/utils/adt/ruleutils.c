@@ -455,7 +455,10 @@ static void get_const_expr(Const *constval, deparse_context *context,
 						   int showtype);
 static void get_const_collation(Const *constval, deparse_context *context);
 static void simple_quote_literal(StringInfo buf, const char *val);
+static void get_subplan_expr(SubPlan *subplan, deparse_context *context);
 static void get_sublink_expr(SubLink *sublink, deparse_context *context);
+static bool get_subselect_expr(SubLinkType subLinkType, Node *testexpr,
+							   deparse_context *context);
 static void get_tablefunc(TableFunc *tf, deparse_context *context,
 						  bool showimplicit);
 static void get_from_clause(Query *query, const char *prefix,
@@ -8536,20 +8539,7 @@ get_rule_expr(Node *node, deparse_context *context,
 			break;
 
 		case T_SubPlan:
-			{
-				SubPlan    *subplan = (SubPlan *) node;
-
-				/*
-				 * We cannot see an already-planned subplan in rule deparsing,
-				 * only while EXPLAINing a query plan.  We don't try to
-				 * reconstruct the original SQL, just reference the subplan
-				 * that appears elsewhere in EXPLAIN's result.
-				 */
-				if (subplan->useHashTable)
-					appendStringInfo(buf, "(hashed %s)", subplan->plan_name);
-				else
-					appendStringInfo(buf, "(%s)", subplan->plan_name);
-			}
+			get_subplan_expr((SubPlan *) node, context);
 			break;
 
 		case T_AlternativeSubPlan:
@@ -10358,6 +10348,31 @@ simple_quote_literal(StringInfo buf, const char *val)
 }
 
 
+static void
+get_subplan_expr(SubPlan *subplan, deparse_context *context)
+{
+	StringInfo	buf = context->buf;
+
+	if (subplan->testexpr)
+		appendStringInfoChar(buf, '(');
+
+	(void) get_subselect_expr(subplan->subLinkType, subplan->testexpr, context);
+
+	/*
+	 * We cannot see an already-planned subplan in rule deparsing,
+	 * only while EXPLAINing a query plan.  We don't try to
+	 * reconstruct the original SQL, just reference the subplan
+	 * that appears elsewhere in EXPLAIN's result.
+	 */
+	if (subplan->useHashTable)
+		appendStringInfo(buf, "(hashed %s)", subplan->plan_name);
+	else
+		appendStringInfo(buf, "(%s)", subplan->plan_name);
+
+	if (subplan->testexpr)
+		appendStringInfoChar(buf, ')');
+}
+
 /* ----------
  * get_sublink_expr			- Parse back a sublink
  * ----------
@@ -10367,13 +10382,34 @@ get_sublink_expr(SubLink *sublink, deparse_context *context)
 {
 	StringInfo	buf = context->buf;
 	Query	   *query = (Query *) (sublink->subselect);
-	char	   *opname = NULL;
-	bool		need_paren;
+	bool		need_paren = true;
 
 	if (sublink->subLinkType == ARRAY_SUBLINK)
 		appendStringInfoString(buf, "ARRAY(");
 	else
 		appendStringInfoChar(buf, '(');
+
+	need_paren = get_subselect_expr(sublink->subLinkType, sublink->testexpr, context);
+
+	if (need_paren)
+		appendStringInfoChar(buf, '(');
+
+	get_query_def(query, buf, context->namespaces, NULL,
+				  context->prettyFlags, context->wrapColumn,
+				  context->indentLevel);
+
+	if (need_paren)
+		appendStringInfoString(buf, "))");
+	else if (query)
+		appendStringInfoChar(buf, ')');
+}
+
+static bool
+get_subselect_expr(SubLinkType subLinkType, Node *testexpr, deparse_context *context)
+{
+	StringInfo	buf = context->buf;
+	char	   *opname = NULL;
+	bool		need_paren;
 
 	/*
 	 * Note that we print the name of only the first operator, when there are
@@ -10382,19 +10418,19 @@ get_sublink_expr(SubLink *sublink, deparse_context *context)
 	 * operators, etc) but there is not a whole lot we can do about it, since
 	 * the syntax allows only one operator to be shown.
 	 */
-	if (sublink->testexpr)
+	if (testexpr)
 	{
-		if (IsA(sublink->testexpr, OpExpr))
+		if (IsA(testexpr, OpExpr))
 		{
 			/* single combining operator */
-			OpExpr	   *opexpr = (OpExpr *) sublink->testexpr;
+			OpExpr	   *opexpr = (OpExpr *) testexpr;
 
 			get_rule_expr(linitial(opexpr->args), context, true);
 			opname = generate_operator_name(opexpr->opno,
 											exprType(linitial(opexpr->args)),
 											exprType(lsecond(opexpr->args)));
 		}
-		else if (IsA(sublink->testexpr, BoolExpr))
+		else if (IsA(testexpr, BoolExpr))
 		{
 			/* multiple combining operators, = or <> cases */
 			char	   *sep;
@@ -10402,7 +10438,7 @@ get_sublink_expr(SubLink *sublink, deparse_context *context)
 
 			appendStringInfoChar(buf, '(');
 			sep = "";
-			foreach(l, ((BoolExpr *) sublink->testexpr)->args)
+			foreach(l, ((BoolExpr *) testexpr)->args)
 			{
 				OpExpr	   *opexpr = lfirst_node(OpExpr, l);
 
@@ -10416,10 +10452,10 @@ get_sublink_expr(SubLink *sublink, deparse_context *context)
 			}
 			appendStringInfoChar(buf, ')');
 		}
-		else if (IsA(sublink->testexpr, RowCompareExpr))
+		else if (IsA(testexpr, RowCompareExpr))
 		{
 			/* multiple combining operators, < <= > >= cases */
-			RowCompareExpr *rcexpr = (RowCompareExpr *) sublink->testexpr;
+			RowCompareExpr *rcexpr = (RowCompareExpr *) testexpr;
 
 			appendStringInfoChar(buf, '(');
 			get_rule_expr((Node *) rcexpr->largs, context, true);
@@ -10430,12 +10466,12 @@ get_sublink_expr(SubLink *sublink, deparse_context *context)
 		}
 		else
 			elog(ERROR, "unrecognized testexpr type: %d",
-				 (int) nodeTag(sublink->testexpr));
+				 (int) nodeTag(testexpr));
 	}
 
 	need_paren = true;
 
-	switch (sublink->subLinkType)
+	switch (subLinkType)
 	{
 		case EXISTS_SUBLINK:
 			appendStringInfoString(buf, "EXISTS ");
@@ -10465,21 +10501,10 @@ get_sublink_expr(SubLink *sublink, deparse_context *context)
 		case CTE_SUBLINK:		/* shouldn't occur in a SubLink */
 		default:
 			elog(ERROR, "unrecognized sublink type: %d",
-				 (int) sublink->subLinkType);
+				 (int) subLinkType);
 			break;
 	}
-
-	if (need_paren)
-		appendStringInfoChar(buf, '(');
-
-	get_query_def(query, buf, context->namespaces, NULL,
-				  context->prettyFlags, context->wrapColumn,
-				  context->indentLevel);
-
-	if (need_paren)
-		appendStringInfoString(buf, "))");
-	else
-		appendStringInfoChar(buf, ')');
+	return need_paren;
 }
 
 

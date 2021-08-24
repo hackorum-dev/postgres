@@ -5899,7 +5899,7 @@ lateral (select * from int8_tbl t1,
                Filter: (t1.q1 = ss2.q2)
                ->  Seq Scan on public.int8_tbl t2
                      Output: t2.q1, t2.q2
-                     Filter: (SubPlan 3)
+                     Filter: (t2.q1 IN (SubPlan 3))
                      SubPlan 3
                        ->  Result
                              Output: t3.q2
