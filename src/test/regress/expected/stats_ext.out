@@ -1997,31 +1997,31 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE a = a');
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE a != a');
  estimated | actual 
 -----------+--------
-      4975 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE a <= a');
  estimated | actual 
 -----------+--------
-      1667 |   5000
+      5000 |   5000
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE a < a');
  estimated | actual 
 -----------+--------
-      1667 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE a > a');
  estimated | actual 
 -----------+--------
-      1667 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE a >= a');
  estimated | actual 
 -----------+--------
-      1667 |   5000
+      5000 |   5000
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE a = c');
@@ -2216,31 +2216,31 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE a = a');
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE a != a');
  estimated | actual 
 -----------+--------
-      4975 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE a <= a');
  estimated | actual 
 -----------+--------
-      1667 |   5000
+      5000 |   5000
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE a < a');
  estimated | actual 
 -----------+--------
-      1667 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE a > a');
  estimated | actual 
 -----------+--------
-      1667 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE a >= a');
  estimated | actual 
 -----------+--------
-      1667 |   5000
+      5000 |   5000
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE a = c');
@@ -2697,13 +2697,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d');
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d AND a > a');
  estimated | actual 
 -----------+--------
-         8 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d AND a < a');
  estimated | actual 
 -----------+--------
-         8 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d AND a = a');
@@ -2715,31 +2715,31 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d AND a = 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d AND NOT a = a');
  estimated | actual 
 -----------+--------
-        25 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d OR a > a');
  estimated | actual 
 -----------+--------
-      1683 |   2500
+        25 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d OR a < a');
  estimated | actual 
 -----------+--------
-      1683 |   2500
+        25 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d OR a = a');
  estimated | actual 
 -----------+--------
-        50 |   2500
+        25 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d OR NOT a = a');
  estimated | actual 
 -----------+--------
-      4975 |   2500
+        25 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d');
@@ -2751,13 +2751,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d');
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d AND a > a');
  estimated | actual 
 -----------+--------
-      1658 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d AND a < a');
  estimated | actual 
 -----------+--------
-      1658 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d AND a = a');
@@ -2769,19 +2769,19 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d AND a =
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d AND NOT a = a');
  estimated | actual 
 -----------+--------
-      4950 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d OR a > a');
  estimated | actual 
 -----------+--------
-      4983 |      0
+      4975 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d OR a < a');
  estimated | actual 
 -----------+--------
-      4983 |      0
+      4975 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d OR a = a');
@@ -2793,7 +2793,7 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d OR a = 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d OR NOT a = a');
  estimated | actual 
 -----------+--------
-      5000 |      0
+      4975 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d');
@@ -2805,13 +2805,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d');
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d AND a > a');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d AND a < a');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d AND a = a');
@@ -2823,31 +2823,31 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d AND a = 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d AND NOT a = a');
  estimated | actual 
 -----------+--------
-      1658 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d OR a > a');
  estimated | actual 
 -----------+--------
-      2778 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d OR a < a');
  estimated | actual 
 -----------+--------
-      2778 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d OR a = a');
  estimated | actual 
 -----------+--------
-      1683 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d OR NOT a = a');
  estimated | actual 
 -----------+--------
-      4983 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d');
@@ -2859,13 +2859,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d');
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d AND a > a');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d AND a < a');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d AND a = a');
@@ -2877,31 +2877,31 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d AND a =
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d AND NOT a = a');
  estimated | actual 
 -----------+--------
-      1658 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d OR a > a');
  estimated | actual 
 -----------+--------
-      2778 |   2500
+      1667 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d OR a < a');
  estimated | actual 
 -----------+--------
-      2778 |   2500
+      1667 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d OR a = a');
  estimated | actual 
 -----------+--------
-      1683 |   2500
+      1667 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d OR NOT a = a');
  estimated | actual 
 -----------+--------
-      4983 |   2500
+      1667 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d');
@@ -2913,13 +2913,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d');
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d AND a > a');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d AND a < a');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d AND a = a');
@@ -2931,31 +2931,31 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d AND a = 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d AND NOT a = a');
  estimated | actual 
 -----------+--------
-      1658 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d OR a > a');
  estimated | actual 
 -----------+--------
-      2778 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d OR a < a');
  estimated | actual 
 -----------+--------
-      2778 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d OR a = a');
  estimated | actual 
 -----------+--------
-      1683 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d OR NOT a = a');
  estimated | actual 
 -----------+--------
-      4983 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d');
@@ -2967,13 +2967,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d');
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d AND a > a');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d AND a < a');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d AND a = a');
@@ -2985,43 +2985,43 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d AND a =
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d AND NOT a = a');
  estimated | actual 
 -----------+--------
-      1658 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d OR a > a');
  estimated | actual 
 -----------+--------
-      2778 |   2500
+      1667 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d OR a < a');
  estimated | actual 
 -----------+--------
-      2778 |   2500
+      1667 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d OR a = a');
  estimated | actual 
 -----------+--------
-      1683 |   2500
+      1667 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d OR NOT a = a');
  estimated | actual 
 -----------+--------
-      4983 |   2500
+      1667 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d AND c > c');
  estimated | actual 
 -----------+--------
-         8 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d AND c < c');
  estimated | actual 
 -----------+--------
-         8 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d AND c = c');
@@ -3033,31 +3033,31 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d AND c = 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d AND NOT c = c');
  estimated | actual 
 -----------+--------
-        25 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d OR c > c');
  estimated | actual 
 -----------+--------
-      1683 |   2500
+        25 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d OR c < c');
  estimated | actual 
 -----------+--------
-      1683 |   2500
+        25 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d OR c = c');
  estimated | actual 
 -----------+--------
-        50 |   2500
+      2513 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d OR NOT c = c');
  estimated | actual 
 -----------+--------
-      4975 |   2500
+        25 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d');
@@ -3069,13 +3069,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d');
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d AND c > c');
  estimated | actual 
 -----------+--------
-      1658 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d AND c < c');
  estimated | actual 
 -----------+--------
-      1658 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d AND c = c');
@@ -3087,31 +3087,31 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d AND c =
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d AND NOT c = c');
  estimated | actual 
 -----------+--------
-      4950 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d OR c > c');
  estimated | actual 
 -----------+--------
-      4983 |      0
+      4975 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d OR c < c');
  estimated | actual 
 -----------+--------
-      4983 |      0
+      4975 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d OR c = c');
  estimated | actual 
 -----------+--------
-      4975 |   2500
+      4988 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d OR NOT c = c');
  estimated | actual 
 -----------+--------
-      5000 |      0
+      4975 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d');
@@ -3123,13 +3123,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d');
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d AND c > c');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d AND c < c');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d AND c = c');
@@ -3141,31 +3141,31 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d AND c = 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d AND NOT c = c');
  estimated | actual 
 -----------+--------
-      1658 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d OR c > c');
  estimated | actual 
 -----------+--------
-      2778 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d OR c < c');
  estimated | actual 
 -----------+--------
-      2778 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d OR c = c');
  estimated | actual 
 -----------+--------
-      1683 |   2500
+      3333 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d OR NOT c = c');
  estimated | actual 
 -----------+--------
-      4983 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d');
@@ -3177,13 +3177,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d');
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d AND c > c');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d AND c < c');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d AND c = c');
@@ -3195,31 +3195,31 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d AND c =
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d AND NOT c = c');
  estimated | actual 
 -----------+--------
-      1658 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d OR c > c');
  estimated | actual 
 -----------+--------
-      2778 |   2500
+      1667 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d OR c < c');
  estimated | actual 
 -----------+--------
-      2778 |   2500
+      1667 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d OR c = c');
  estimated | actual 
 -----------+--------
-      1683 |   2500
+      3333 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d OR NOT c = c');
  estimated | actual 
 -----------+--------
-      4983 |   2500
+      1667 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d');
@@ -3231,13 +3231,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d');
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d AND c > c');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d AND c < c');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d AND c = c');
@@ -3249,31 +3249,31 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d AND c = 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d AND NOT c = c');
  estimated | actual 
 -----------+--------
-      1658 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d OR c > c');
  estimated | actual 
 -----------+--------
-      2778 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d OR c < c');
  estimated | actual 
 -----------+--------
-      2778 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d OR c = c');
  estimated | actual 
 -----------+--------
-      1683 |   2500
+      3333 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d OR NOT c = c');
  estimated | actual 
 -----------+--------
-      4983 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d');
@@ -3285,13 +3285,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d');
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d AND c > c');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d AND c < c');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d AND c = c');
@@ -3303,31 +3303,31 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d AND c =
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d AND NOT c = c');
  estimated | actual 
 -----------+--------
-      1658 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d OR c > c');
  estimated | actual 
 -----------+--------
-      2778 |   2500
+      1667 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d OR c < c');
  estimated | actual 
 -----------+--------
-      2778 |   2500
+      1667 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d OR c = c');
  estimated | actual 
 -----------+--------
-      1683 |   2500
+      3333 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d OR NOT c = c');
  estimated | actual 
 -----------+--------
-      4983 |   2500
+      1667 |   2500
 (1 row)
 
 -- create statistics
@@ -3372,13 +3372,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d');
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d AND a > a');
  estimated | actual 
 -----------+--------
-         8 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d AND a < a');
  estimated | actual 
 -----------+--------
-         8 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d AND a = a');
@@ -3390,31 +3390,31 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d AND a = 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d AND NOT a = a');
  estimated | actual 
 -----------+--------
-        25 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d OR a > a');
  estimated | actual 
 -----------+--------
-      1683 |   2500
+        25 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d OR a < a');
  estimated | actual 
 -----------+--------
-      1683 |   2500
+        25 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d OR a = a');
  estimated | actual 
 -----------+--------
-        50 |   2500
+        25 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d OR NOT a = a');
  estimated | actual 
 -----------+--------
-      4975 |   2500
+        25 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d');
@@ -3426,13 +3426,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d');
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d AND a > a');
  estimated | actual 
 -----------+--------
-      1658 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d AND a < a');
  estimated | actual 
 -----------+--------
-      1658 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d AND a = a');
@@ -3444,19 +3444,19 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d AND a =
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d AND NOT a = a');
  estimated | actual 
 -----------+--------
-      4950 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d OR a > a');
  estimated | actual 
 -----------+--------
-      4983 |      0
+      4975 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d OR a < a');
  estimated | actual 
 -----------+--------
-      4983 |      0
+      4975 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d OR a = a');
@@ -3468,7 +3468,7 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d OR a = 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d OR NOT a = a');
  estimated | actual 
 -----------+--------
-      5000 |      0
+      4975 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d');
@@ -3480,13 +3480,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d');
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d AND a > a');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d AND a < a');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d AND a = a');
@@ -3498,31 +3498,31 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d AND a = 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d AND NOT a = a');
  estimated | actual 
 -----------+--------
-      1658 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d OR a > a');
  estimated | actual 
 -----------+--------
-      2778 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d OR a < a');
  estimated | actual 
 -----------+--------
-      2778 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d OR a = a');
  estimated | actual 
 -----------+--------
-      1683 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d OR NOT a = a');
  estimated | actual 
 -----------+--------
-      4983 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d');
@@ -3534,13 +3534,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d');
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d AND a > a');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d AND a < a');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d AND a = a');
@@ -3552,31 +3552,31 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d AND a =
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d AND NOT a = a');
  estimated | actual 
 -----------+--------
-      1658 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d OR a > a');
  estimated | actual 
 -----------+--------
-      2778 |   2500
+      1667 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d OR a < a');
  estimated | actual 
 -----------+--------
-      2778 |   2500
+      1667 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d OR a = a');
  estimated | actual 
 -----------+--------
-      1683 |   2500
+      1667 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d OR NOT a = a');
  estimated | actual 
 -----------+--------
-      4983 |   2500
+      1667 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d');
@@ -3588,13 +3588,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d');
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d AND a > a');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d AND a < a');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d AND a = a');
@@ -3606,31 +3606,31 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d AND a = 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d AND NOT a = a');
  estimated | actual 
 -----------+--------
-      1658 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d OR a > a');
  estimated | actual 
 -----------+--------
-      2778 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d OR a < a');
  estimated | actual 
 -----------+--------
-      2778 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d OR a = a');
  estimated | actual 
 -----------+--------
-      1683 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d OR NOT a = a');
  estimated | actual 
 -----------+--------
-      4983 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d');
@@ -3642,13 +3642,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d');
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d AND a > a');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d AND a < a');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d AND a = a');
@@ -3660,43 +3660,43 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d AND a =
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d AND NOT a = a');
  estimated | actual 
 -----------+--------
-      1658 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d OR a > a');
  estimated | actual 
 -----------+--------
-      2778 |   2500
+      1667 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d OR a < a');
  estimated | actual 
 -----------+--------
-      2778 |   2500
+      1667 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d OR a = a');
  estimated | actual 
 -----------+--------
-      1683 |   2500
+      1667 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d OR NOT a = a');
  estimated | actual 
 -----------+--------
-      4983 |   2500
+      1667 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d AND c > c');
  estimated | actual 
 -----------+--------
-         8 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d AND c < c');
  estimated | actual 
 -----------+--------
-         8 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d AND c = c');
@@ -3708,31 +3708,31 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d AND c = 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d AND NOT c = c');
  estimated | actual 
 -----------+--------
-        25 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d OR c > c');
  estimated | actual 
 -----------+--------
-      1683 |   2500
+        25 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d OR c < c');
  estimated | actual 
 -----------+--------
-      1683 |   2500
+        25 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d OR c = c');
  estimated | actual 
 -----------+--------
-        50 |   2500
+      2513 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b = d OR NOT c = c');
  estimated | actual 
 -----------+--------
-      4975 |   2500
+        25 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d');
@@ -3744,13 +3744,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d');
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d AND c > c');
  estimated | actual 
 -----------+--------
-      1658 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d AND c < c');
  estimated | actual 
 -----------+--------
-      1658 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d AND c = c');
@@ -3762,31 +3762,31 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d AND c =
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d AND NOT c = c');
  estimated | actual 
 -----------+--------
-      4950 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d OR c > c');
  estimated | actual 
 -----------+--------
-      4983 |      0
+      4975 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d OR c < c');
  estimated | actual 
 -----------+--------
-      4983 |      0
+      4975 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d OR c = c');
  estimated | actual 
 -----------+--------
-      4975 |   2500
+      4988 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b != d OR NOT c = c');
  estimated | actual 
 -----------+--------
-      5000 |      0
+      4975 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d');
@@ -3798,13 +3798,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d');
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d AND c > c');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d AND c < c');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d AND c = c');
@@ -3816,31 +3816,31 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d AND c = 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d AND NOT c = c');
  estimated | actual 
 -----------+--------
-      1658 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d OR c > c');
  estimated | actual 
 -----------+--------
-      2778 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d OR c < c');
  estimated | actual 
 -----------+--------
-      2778 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d OR c = c');
  estimated | actual 
 -----------+--------
-      1683 |   2500
+      3333 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b < d OR NOT c = c');
  estimated | actual 
 -----------+--------
-      4983 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d');
@@ -3852,13 +3852,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d');
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d AND c > c');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d AND c < c');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d AND c = c');
@@ -3870,31 +3870,31 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d AND c =
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d AND NOT c = c');
  estimated | actual 
 -----------+--------
-      1658 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d OR c > c');
  estimated | actual 
 -----------+--------
-      2778 |   2500
+      1667 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d OR c < c');
  estimated | actual 
 -----------+--------
-      2778 |   2500
+      1667 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d OR c = c');
  estimated | actual 
 -----------+--------
-      1683 |   2500
+      3333 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b <= d OR NOT c = c');
  estimated | actual 
 -----------+--------
-      4983 |   2500
+      1667 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d');
@@ -3906,13 +3906,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d');
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d AND c > c');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d AND c < c');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d AND c = c');
@@ -3924,31 +3924,31 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d AND c = 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d AND NOT c = c');
  estimated | actual 
 -----------+--------
-      1658 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d OR c > c');
  estimated | actual 
 -----------+--------
-      2778 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d OR c < c');
  estimated | actual 
 -----------+--------
-      2778 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d OR c = c');
  estimated | actual 
 -----------+--------
-      1683 |   2500
+      3333 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b > d OR NOT c = c');
  estimated | actual 
 -----------+--------
-      4983 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d');
@@ -3960,13 +3960,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d');
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d AND c > c');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d AND c < c');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d AND c = c');
@@ -3978,31 +3978,31 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d AND c =
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d AND NOT c = c');
  estimated | actual 
 -----------+--------
-      1658 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d OR c > c');
  estimated | actual 
 -----------+--------
-      2778 |   2500
+      1667 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d OR c < c');
  estimated | actual 
 -----------+--------
-      2778 |   2500
+      1667 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d OR c = c');
  estimated | actual 
 -----------+--------
-      1683 |   2500
+      3333 |   2500
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists WHERE b >= d OR NOT c = c');
  estimated | actual 
 -----------+--------
-      4983 |   2500
+      1667 |   2500
 (1 row)
 
 -- mcv with pass-by-ref fixlen types, e.g. uuid
@@ -4102,7 +4102,7 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a AND
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a = a');
  estimated | actual 
 -----------+--------
-      9950 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a != a');
@@ -4114,25 +4114,25 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a != 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a < a');
  estimated | actual 
 -----------+--------
-      3333 |  10000
+     10000 |  10000
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a <= a');
  estimated | actual 
 -----------+--------
-      3333 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a > a');
  estimated | actual 
 -----------+--------
-      3333 |  10000
+     10000 |  10000
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a >= a');
  estimated | actual 
 -----------+--------
-      3333 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a = b');
@@ -4174,37 +4174,37 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a >= 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a = a AND b = b');
  estimated | actual 
 -----------+--------
-      9950 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a != a AND b != b');
  estimated | actual 
 -----------+--------
-      9950 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a < a AND b < b');
  estimated | actual 
 -----------+--------
-      1111 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a <= a AND b <= b');
  estimated | actual 
 -----------+--------
-      1111 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a > a AND b > b');
  estimated | actual 
 -----------+--------
-      1111 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a >= a AND b >= b');
  estimated | actual 
 -----------+--------
-      1111 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a = b AND b = c');
@@ -4252,31 +4252,31 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a = c
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a != c AND b != b');
  estimated | actual 
 -----------+--------
-        50 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a < c AND b < b');
  estimated | actual 
 -----------+--------
-      1111 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a <= a AND b <= c');
  estimated | actual 
 -----------+--------
-      1111 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a > a AND b > c');
  estimated | actual 
 -----------+--------
-      1111 |   1250
+      3333 |   1250
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a >= a AND b >= c');
  estimated | actual 
 -----------+--------
-      1111 |      0
+         1 |      0
 (1 row)
 
 CREATE STATISTICS mcv_lists_bool_stats (mcv) ON a, b, c
@@ -4309,7 +4309,7 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a AND
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a = a');
  estimated | actual 
 -----------+--------
-      9950 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a != a');
@@ -4321,25 +4321,25 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a != 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a < a');
  estimated | actual 
 -----------+--------
-      3333 |  10000
+     10000 |  10000
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a <= a');
  estimated | actual 
 -----------+--------
-      3333 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a > a');
  estimated | actual 
 -----------+--------
-      3333 |  10000
+     10000 |  10000
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a >= a');
  estimated | actual 
 -----------+--------
-      3333 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a = b');
@@ -4381,37 +4381,37 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a >= 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a = a AND b = b');
  estimated | actual 
 -----------+--------
-      9950 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a != a AND b != b');
  estimated | actual 
 -----------+--------
-      9950 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a < a AND b < b');
  estimated | actual 
 -----------+--------
-      1111 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a <= a AND b <= b');
  estimated | actual 
 -----------+--------
-      1111 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a > a AND b > b');
  estimated | actual 
 -----------+--------
-      1111 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a >= a AND b >= b');
  estimated | actual 
 -----------+--------
-      1111 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a = b AND b = c');
@@ -4459,31 +4459,31 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a = c
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a != c AND b != b');
  estimated | actual 
 -----------+--------
-        50 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a < c AND b < b');
  estimated | actual 
 -----------+--------
-      1111 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a <= a AND b <= c');
  estimated | actual 
 -----------+--------
-      1111 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a > a AND b > c');
  estimated | actual 
 -----------+--------
-      1111 |   1250
+      3333 |   1250
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_bool WHERE NOT a >= a AND b >= c');
  estimated | actual 
 -----------+--------
-      1111 |      0
+         1 |      0
 (1 row)
 
 -- mcv covering just a small fraction of data
@@ -4742,13 +4742,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_multi WHERE a = a AN
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_multi WHERE a != b AND c != c');
  estimated | actual 
 -----------+--------
-      4950 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_multi WHERE a < a AND c > d');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_multi WHERE a <= b AND d >= c');
@@ -4760,19 +4760,19 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_multi WHERE a <= b A
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_multi WHERE a = a OR c = d');
  estimated | actual 
 -----------+--------
-        50 |   5000
+      5000 |   5000
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_multi WHERE a != b OR c != c');
  estimated | actual 
 -----------+--------
-      5000 |      0
+      4975 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_multi WHERE a < a OR c > d');
  estimated | actual 
 -----------+--------
-      2778 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_multi WHERE a <= b OR d >= c');
@@ -4908,13 +4908,13 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_multi WHERE a = a AN
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_multi WHERE a != b AND c != c');
  estimated | actual 
 -----------+--------
-      4950 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_multi WHERE a < a AND c > d');
  estimated | actual 
 -----------+--------
-       556 |      0
+         1 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_multi WHERE a <= b AND d >= c');
@@ -4926,19 +4926,19 @@ SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_multi WHERE a <= b A
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_multi WHERE a = a OR c = d');
  estimated | actual 
 -----------+--------
-        50 |   5000
+      5000 |   5000
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_multi WHERE a != b OR c != c');
  estimated | actual 
 -----------+--------
-      5000 |      0
+      4975 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_multi WHERE a < a OR c > d');
  estimated | actual 
 -----------+--------
-      2778 |      0
+      1667 |      0
 (1 row)
 
 SELECT * FROM check_estimated_rows('SELECT * FROM mcv_lists_multi WHERE a <= b OR d >= c');
