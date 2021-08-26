@@ -105,6 +105,41 @@ ALTER ROLE regress_subscription_user2 SUPERUSER;
 -- now it works
 ALTER SUBSCRIPTION regress_testsub OWNER TO regress_subscription_user2;
 
+-- revoke superuser from new owner
+ALTER ROLE regress_subscription_user2 NOSUPERUSER;
+
+SET SESSION AUTHORIZATION regress_subscription_user2;
+
+-- fail - non-superuser owner cannot change connection parameter
+ALTER SUBSCRIPTION regress_testsub CONNECTION 'dbname=somethingelse';
+
+-- fail - non-superuser owner cannot alter the publications list
+ALTER SUBSCRIPTION regress_testsub ADD PUBLICATION somepub;
+ALTER SUBSCRIPTION regress_testsub DROP PUBLICATION otherpub;
+ALTER SUBSCRIPTION regress_testsub SET PUBLICATION somepub, otherpub;
+
+-- fail - non-superuser owner cannot change subscription parameters
+ALTER SUBSCRIPTION regress_testsub SET (copy_data = true);
+ALTER SUBSCRIPTION regress_testsub SET (copy_data = false);
+ALTER SUBSCRIPTION regress_testsub SET (create_slot = true);
+ALTER SUBSCRIPTION regress_testsub SET (create_slot = false);
+ALTER SUBSCRIPTION regress_testsub SET (slot_name = 'somethingelse');
+ALTER SUBSCRIPTION regress_testsub SET (synchronous_commit = on);
+ALTER SUBSCRIPTION regress_testsub SET (synchronous_commit = off);
+ALTER SUBSCRIPTION regress_testsub SET (synchronous_commit = local);
+ALTER SUBSCRIPTION regress_testsub SET (synchronous_commit = remote_write);
+ALTER SUBSCRIPTION regress_testsub SET (synchronous_commit = remote_apply);
+ALTER SUBSCRIPTION regress_testsub SET (binary = on);
+ALTER SUBSCRIPTION regress_testsub SET (binary = off);
+ALTER SUBSCRIPTION regress_testsub SET (connect = on);
+ALTER SUBSCRIPTION regress_testsub SET (connect = off);
+ALTER SUBSCRIPTION regress_testsub SET (streaming = on);
+ALTER SUBSCRIPTION regress_testsub SET (streaming = off);
+ALTER SUBSCRIPTION regress_testsub SET (two_phase = on);
+ALTER SUBSCRIPTION regress_testsub SET (two_phase = off);
+
+SET SESSION AUTHORIZATION 'regress_subscription_user';
+
 -- fail - cannot do DROP SUBSCRIPTION inside transaction block with slot name
 BEGIN;
 DROP SUBSCRIPTION regress_testsub;
