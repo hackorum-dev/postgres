@@ -693,7 +693,7 @@ AlterRole(ParseState *pstate, AlterRoleStmt *stmt)
 			  !rolemembers &&
 			  !validUntil &&
 			  dpassword &&
-			  roleid == GetUserId()))
+			  !pg_role_ownercheck(roleid, GetUserId())))
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("permission denied")));
@@ -894,7 +894,8 @@ AlterRoleSet(AlterRoleSetStmt *stmt)
 		}
 		else
 		{
-			if (!have_createrole_privilege() && roleid != GetUserId())
+			if (!have_createrole_privilege() &&
+				!pg_role_ownercheck(roleid, GetUserId()))
 				ereport(ERROR,
 						(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 						 errmsg("permission denied")));
@@ -945,11 +946,6 @@ DropRole(DropRoleStmt *stmt)
 	Relation	pg_authid_rel,
 				pg_auth_members_rel;
 	ListCell   *item;
-
-	if (!have_createrole_privilege())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied to drop role")));
 
 	/*
 	 * Scan the pg_authid relation to find the Oid of the role(s) to be
@@ -1021,6 +1017,12 @@ DropRole(DropRoleStmt *stmt)
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("must be superuser to drop superusers")));
+
+		if (!have_createrole_privilege() &&
+			!pg_role_ownercheck(roleid, GetUserId()))
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("permission denied to drop role")));
 
 		/* DROP hook for the role being removed */
 		InvokeObjectDropHook(AuthIdRelationId, roleid, 0);
