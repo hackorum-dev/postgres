@@ -179,6 +179,7 @@
 #include "storage/proc.h"
 #include "storage/procarray.h"
 #include "tcop/tcopprot.h"
+#include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/catcache.h"
 #include "utils/dynahash.h"
@@ -1572,6 +1573,7 @@ apply_handle_insert(StringInfo s)
 	LogicalRepRelMapEntry *rel;
 	LogicalRepTupleData newtup;
 	LogicalRepRelId relid;
+	AclResult	aclresult;
 	ApplyExecutionData *edata;
 	EState	   *estate;
 	TupleTableSlot *remoteslot;
@@ -1594,6 +1596,12 @@ apply_handle_insert(StringInfo s)
 		end_replication_step();
 		return;
 	}
+	aclresult = pg_class_aclcheck(RelationGetRelid(rel->localrel), GetUserId(),
+								  ACL_INSERT);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult,
+					   get_relkind_objtype(rel->localrel->rd_rel->relkind),
+					   get_rel_name(rel->localreloid));
 
 	/* Set relation for error callback */
 	apply_error_callback_arg.rel = rel;
@@ -1694,6 +1702,7 @@ apply_handle_update(StringInfo s)
 {
 	LogicalRepRelMapEntry *rel;
 	LogicalRepRelId relid;
+	AclResult	aclresult;
 	ApplyExecutionData *edata;
 	EState	   *estate;
 	LogicalRepTupleData oldtup;
@@ -1721,6 +1730,12 @@ apply_handle_update(StringInfo s)
 		end_replication_step();
 		return;
 	}
+	aclresult = pg_class_aclcheck(RelationGetRelid(rel->localrel), GetUserId(),
+								  ACL_UPDATE);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult,
+					   get_relkind_objtype(rel->localrel->rd_rel->relkind),
+					   get_rel_name(rel->localreloid));
 
 	/* Set relation for error callback */
 	apply_error_callback_arg.rel = rel;
@@ -1861,6 +1876,7 @@ apply_handle_delete(StringInfo s)
 	LogicalRepRelMapEntry *rel;
 	LogicalRepTupleData oldtup;
 	LogicalRepRelId relid;
+	AclResult	aclresult;
 	ApplyExecutionData *edata;
 	EState	   *estate;
 	TupleTableSlot *remoteslot;
@@ -1883,6 +1899,12 @@ apply_handle_delete(StringInfo s)
 		end_replication_step();
 		return;
 	}
+	aclresult = pg_class_aclcheck(RelationGetRelid(rel->localrel), GetUserId(),
+								  ACL_DELETE);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult,
+					   get_relkind_objtype(rel->localrel->rd_rel->relkind),
+					   get_rel_name(rel->localreloid));
 
 	/* Set relation for error callback */
 	apply_error_callback_arg.rel = rel;
@@ -2255,6 +2277,7 @@ apply_handle_truncate(StringInfo s)
 	{
 		LogicalRepRelId relid = lfirst_oid(lc);
 		LogicalRepRelMapEntry *rel;
+		AclResult	aclresult;
 
 		rel = logicalrep_rel_open(relid, lockmode);
 		if (!should_apply_changes_for_rel(rel))
@@ -2266,6 +2289,12 @@ apply_handle_truncate(StringInfo s)
 			logicalrep_rel_close(rel, lockmode);
 			continue;
 		}
+		aclresult = pg_class_aclcheck(RelationGetRelid(rel->localrel),
+									  GetUserId(), ACL_TRUNCATE);
+		if (aclresult != ACLCHECK_OK)
+			aclcheck_error(aclresult,
+						   get_relkind_objtype(rel->localrel->rd_rel->relkind),
+						   get_rel_name(rel->localreloid));
 
 		remote_rels = lappend(remote_rels, rel);
 		rels = lappend(rels, rel->localrel);
