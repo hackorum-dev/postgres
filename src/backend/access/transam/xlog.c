@@ -3127,6 +3127,16 @@ XLogBackgroundFlush(void)
 		flexible = false;		/* ensure it all gets written */
 	}
 
+	/* if we have flushed that far, consider segment boundaries */
+	if (WriteRqst.Write <= LogwrtResult.Flush)
+	{
+		SpinLockAcquire(&XLogCtl->segtrack_lck);
+		if (XLogCtl->earliestSegBoundary != MaxXLogSegNo)
+			WriteRqst.Write = XLogCtl->earliestSegBoundaryEndPtr;
+		SpinLockRelease(&XLogCtl->segtrack_lck);
+		Assert(!flexible);
+	}
+
 	/*
 	 * If already known flushed, we're done. Just need to check if we are
 	 * holding an open file handle to a logfile that's no longer in use,

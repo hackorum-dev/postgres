@@ -253,7 +253,8 @@ WalWriterMain(void)
 		 * here to handle a race condition where WAL is flushed to disk prior
 		 * to registering the segment boundary.
 		 */
-		NotifySegmentsReadyForArchive(GetFlushRecPtr());
+		if (XLogArchivingActive())
+			NotifySegmentsReadyForArchive(GetFlushRecPtr());
 
 		/*
 		 * Do what we're here for; then, if XLogBackgroundFlush() found useful
