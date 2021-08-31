@@ -1227,7 +1227,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"track_commit_timestamp", PGC_POSTMASTER, REPLICATION_SENDING,
 			gettext_noop("Collects transaction commit time."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_REPLICATION_SETTINGS
 		},
 		&track_commit_timestamp,
 		false,
@@ -1996,7 +1996,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"hot_standby", PGC_POSTMASTER, REPLICATION_STANDBY,
 			gettext_noop("Allows connections and queries during recovery."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_REPLICATION_SETTINGS
 		},
 		&EnableHotStandby,
 		true,
@@ -2007,7 +2007,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"hot_standby_feedback", PGC_SIGHUP, REPLICATION_STANDBY,
 			gettext_noop("Allows feedback from a hot standby to the primary that will avoid query conflicts."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_REPLICATION_SETTINGS
 		},
 		&hot_standby_feedback,
 		false,
@@ -2219,7 +2219,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"wal_receiver_create_temp_slot", PGC_SIGHUP, REPLICATION_STANDBY,
 			gettext_noop("Sets whether a WAL receiver should create a temporary replication slot if no permanent slot is configured."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_REPLICATION_SETTINGS
 		},
 		&wal_receiver_create_temp_slot,
 		false,
@@ -2359,7 +2359,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"max_standby_archive_delay", PGC_SIGHUP, REPLICATION_STANDBY,
 			gettext_noop("Sets the maximum delay before canceling queries when a hot standby server is processing archived WAL data."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_REPLICATION_SETTINGS,
 			GUC_UNIT_MS
 		},
 		&max_standby_archive_delay,
@@ -2371,7 +2371,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"max_standby_streaming_delay", PGC_SIGHUP, REPLICATION_STANDBY,
 			gettext_noop("Sets the maximum delay before canceling queries when a hot standby server is processing streamed WAL data."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_REPLICATION_SETTINGS,
 			GUC_UNIT_MS
 		},
 		&max_standby_streaming_delay,
@@ -2383,7 +2383,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"recovery_min_apply_delay", PGC_SIGHUP, REPLICATION_STANDBY,
 			gettext_noop("Sets the minimum delay for applying changes during recovery."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_REPLICATION_SETTINGS,
 			GUC_UNIT_MS
 		},
 		&recovery_min_apply_delay,
@@ -2395,7 +2395,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"wal_receiver_status_interval", PGC_SIGHUP, REPLICATION_STANDBY,
 			gettext_noop("Sets the maximum interval between WAL receiver status reports to the sending server."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_REPLICATION_SETTINGS,
 			GUC_UNIT_S
 		},
 		&wal_receiver_status_interval,
@@ -2407,7 +2407,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"wal_receiver_timeout", PGC_SIGHUP, REPLICATION_STANDBY,
 			gettext_noop("Sets the maximum wait time to receive data from the sending server."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_REPLICATION_SETTINGS,
 			GUC_UNIT_MS
 		},
 		&wal_receiver_timeout,
@@ -2805,7 +2805,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"vacuum_defer_cleanup_age", PGC_SIGHUP, REPLICATION_PRIMARY,
 			gettext_noop("Number of transactions by which VACUUM and HOT cleanup should be deferred, if any."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_REPLICATION_SETTINGS
 		},
 		&vacuum_defer_cleanup_age,
 		0, 0, 1000000,			/* see ComputeXidHorizons */
@@ -2914,7 +2914,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"wal_keep_size", PGC_SIGHUP, REPLICATION_SENDING,
 			gettext_noop("Sets the size of WAL files held for standby servers."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_REPLICATION_SETTINGS,
 			GUC_UNIT_MB
 		},
 		&wal_keep_size_mb,
@@ -3039,7 +3039,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"max_wal_senders", PGC_POSTMASTER, REPLICATION_SENDING,
 			gettext_noop("Sets the maximum number of simultaneously running WAL sender processes."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_REPLICATION_SETTINGS
 		},
 		&max_wal_senders,
 		10, 0, MAX_BACKENDS,
@@ -3051,7 +3051,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"max_replication_slots", PGC_POSTMASTER, REPLICATION_SENDING,
 			gettext_noop("Sets the maximum number of simultaneously defined replication slots."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_REPLICATION_SETTINGS
 		},
 		&max_replication_slots,
 		10, 0, MAX_BACKENDS /* XXX? */ ,
@@ -3064,7 +3064,7 @@ static struct config_int ConfigureNamesInt[] =
 			gettext_noop("Replication slots will be marked as failed, and segments released "
 						 "for deletion or recycling, if this much space is occupied by WAL "
 						 "on disk."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_REPLICATION_SETTINGS,
 			GUC_UNIT_MB
 		},
 		&max_slot_wal_keep_size_mb,
@@ -3076,7 +3076,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"wal_sender_timeout", PGC_USERSET, REPLICATION_SENDING,
 			gettext_noop("Sets the maximum time to wait for WAL replication."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_REPLICATION_SETTINGS,
 			GUC_UNIT_MS
 		},
 		&wal_sender_timeout,
@@ -3291,7 +3291,7 @@ static struct config_int ConfigureNamesInt[] =
 			REPLICATION_SUBSCRIBERS,
 			gettext_noop("Maximum number of logical replication worker processes."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_REPLICATION_SETTINGS
 		},
 		&max_logical_replication_workers,
 		4, 0, MAX_BACKENDS,
@@ -3304,7 +3304,7 @@ static struct config_int ConfigureNamesInt[] =
 			REPLICATION_SUBSCRIBERS,
 			gettext_noop("Maximum number of table synchronization workers per subscription."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_REPLICATION_SETTINGS
 		},
 		&max_sync_workers_per_subscription,
 		2, 0, MAX_BACKENDS,
@@ -3412,7 +3412,7 @@ static struct config_int ConfigureNamesInt[] =
 			gettext_noop("Sets the time to wait before retrying to retrieve WAL "
 						 "after a failed attempt."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_REPLICATION_SETTINGS,
 			GUC_UNIT_MS
 		},
 		&wal_retrieve_retry_interval,
@@ -4192,7 +4192,7 @@ static struct config_string ConfigureNamesString[] =
 		{"promote_trigger_file", PGC_SIGHUP, REPLICATION_STANDBY,
 			gettext_noop("Specifies a file name whose presence ends recovery in the standby."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_REPLICATION_SETTINGS
 		},
 		&PromoteTriggerFile,
 		"",
@@ -4203,7 +4203,7 @@ static struct config_string ConfigureNamesString[] =
 		{"primary_conninfo", PGC_SIGHUP, REPLICATION_STANDBY,
 			gettext_noop("Sets the connection string to be used to connect to the sending server."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_REPLICATION_SETTINGS
 		},
 		&PrimaryConnInfo,
 		"",
@@ -4214,7 +4214,7 @@ static struct config_string ConfigureNamesString[] =
 		{"primary_slot_name", PGC_SIGHUP, REPLICATION_STANDBY,
 			gettext_noop("Sets the name of the replication slot to use on the sending server."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_REPLICATION_SETTINGS
 		},
 		&PrimarySlotName,
 		"",
@@ -4780,7 +4780,7 @@ static struct config_string ConfigureNamesString[] =
 		{"synchronous_standby_names", PGC_SIGHUP, REPLICATION_PRIMARY,
 			gettext_noop("Number of synchronous standbys and list of names of potential synchronous ones."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_REPLICATION_SETTINGS,
 			GUC_LIST_INPUT
 		},
 		&SyncRepStandbyNames,
@@ -7622,6 +7622,10 @@ role_has_privileges(Oid roleid, int privileges)
 
 	if ((privileges & GUC_WRITE_SERVER_FILES) &&
 		! has_privs_of_role(roleid, ROLE_PG_WRITE_SERVER_FILES))
+		return false;
+
+	if ((privileges & GUC_MANAGE_REPLICATION_SETTINGS) &&
+		! has_privs_of_role(roleid, ROLE_PG_MANAGE_REPLICATION_SETTINGS))
 		return false;
 
 	return true;
