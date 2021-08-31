@@ -1270,7 +1270,7 @@ static struct config_bool ConfigureNamesBool[] =
 						 "sure that updates are physically written to disk. This insures "
 						 "that a database cluster will recover to a consistent state after "
 						 "an operating system or hardware crash."),
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_WAL_SETTINGS
 		},
 		&enableFsync,
 		true,
@@ -1335,7 +1335,7 @@ static struct config_bool ConfigureNamesBool[] =
 						 "stored in WAL are not enough to recover.  This option writes "
 						 "pages when first modified after a checkpoint to WAL so full recovery "
 						 "is possible."),
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_WAL_SETTINGS
 		},
 		&fullPageWrites,
 		true,
@@ -1346,7 +1346,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"wal_log_hints", PGC_POSTMASTER, WAL_SETTINGS,
 			gettext_noop("Writes full pages to WAL when first modified after a checkpoint, even for a non-critical modification."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_WAL_SETTINGS
 		},
 		&wal_log_hints,
 		false,
@@ -1357,7 +1357,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"wal_init_zero", PGC_SUSET, WAL_SETTINGS,
 			gettext_noop("Writes zeroes to new WAL files before first use."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_WAL_SETTINGS
 		},
 		&wal_init_zero,
 		true,
@@ -1368,7 +1368,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"wal_recycle", PGC_SUSET, WAL_SETTINGS,
 			gettext_noop("Recycles WAL files by renaming them."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_WAL_SETTINGS
 		},
 		&wal_recycle,
 		true,
@@ -1915,7 +1915,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"wal_debug", PGC_SUSET, DEVELOPER_OPTIONS,
 			gettext_noop("Emit WAL-related debugging output."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_WAL_SETTINGS,
 			GUC_NOT_IN_SAMPLE
 		},
 		&XLOG_DEBUG,
@@ -1985,7 +1985,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"recovery_target_inclusive", PGC_POSTMASTER, WAL_RECOVERY_TARGET,
 			gettext_noop("Sets whether to include or exclude transaction with recovery target."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_WAL_SETTINGS
 		},
 		&recoveryTargetInclusive,
 		true,
@@ -2240,7 +2240,7 @@ static struct config_int ConfigureNamesInt[] =
 			gettext_noop("Forces a switch to the next WAL file if a "
 						 "new file has not been started within N seconds."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_WAL_SETTINGS,
 			GUC_UNIT_S
 		},
 		&XLogArchiveTimeout,
@@ -2926,7 +2926,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"min_wal_size", PGC_SIGHUP, WAL_CHECKPOINTS,
 			gettext_noop("Sets the minimum size to shrink the WAL to."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_WAL_SETTINGS,
 			GUC_UNIT_MB
 		},
 		&min_wal_size_mb,
@@ -2939,7 +2939,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"max_wal_size", PGC_SIGHUP, WAL_CHECKPOINTS,
 			gettext_noop("Sets the WAL size that triggers a checkpoint."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_WAL_SETTINGS,
 			GUC_UNIT_MB
 		},
 		&max_wal_size_mb,
@@ -2952,7 +2952,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"checkpoint_timeout", PGC_SIGHUP, WAL_CHECKPOINTS,
 			gettext_noop("Sets the maximum time between automatic WAL checkpoints."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_WAL_SETTINGS,
 			GUC_UNIT_S
 		},
 		&CheckPointTimeout,
@@ -2979,7 +2979,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"checkpoint_flush_after", PGC_SIGHUP, WAL_CHECKPOINTS,
 			gettext_noop("Number of pages after which previously performed writes are flushed to disk."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_WAL_SETTINGS,
 			GUC_UNIT_BLOCKS
 		},
 		&checkpoint_flush_after,
@@ -2991,7 +2991,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"wal_buffers", PGC_POSTMASTER, WAL_SETTINGS,
 			gettext_noop("Sets the number of disk-page buffers in shared memory for WAL."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_WAL_SETTINGS,
 			GUC_UNIT_XBLOCKS
 		},
 		&XLOGbuffers,
@@ -3003,7 +3003,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"wal_writer_delay", PGC_SIGHUP, WAL_SETTINGS,
 			gettext_noop("Time between WAL flushes performed in the WAL writer."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_WAL_SETTINGS,
 			GUC_UNIT_MS
 		},
 		&WalWriterDelay,
@@ -3015,7 +3015,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"wal_writer_flush_after", PGC_SIGHUP, WAL_SETTINGS,
 			gettext_noop("Amount of WAL written out by WAL writer that triggers a flush."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_WAL_SETTINGS,
 			GUC_UNIT_XBLOCKS
 		},
 		&WalWriterFlushAfter,
@@ -3027,7 +3027,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"wal_skip_threshold", PGC_USERSET, WAL_SETTINGS,
 			gettext_noop("Minimum size of new file to fsync instead of writing WAL."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_WAL_SETTINGS,
 			GUC_UNIT_KB
 		},
 		&wal_skip_threshold,
@@ -3089,7 +3089,7 @@ static struct config_int ConfigureNamesInt[] =
 			gettext_noop("Sets the delay in microseconds between transaction commit and "
 						 "flushing WAL to disk."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_WAL_SETTINGS
 			/* we have no microseconds designation, so can't supply units here */
 		},
 		&CommitDelay,
@@ -3102,7 +3102,7 @@ static struct config_int ConfigureNamesInt[] =
 			gettext_noop("Sets the minimum concurrent open transactions before performing "
 						 "commit_delay."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_WAL_SETTINGS
 		},
 		&CommitSiblings,
 		5, 0, 1000,
@@ -4043,7 +4043,7 @@ static struct config_real ConfigureNamesReal[] =
 		{"checkpoint_completion_target", PGC_SIGHUP, WAL_CHECKPOINTS,
 			gettext_noop("Time spent flushing dirty buffers during checkpoint, as fraction of checkpoint interval."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_WAL_SETTINGS
 		},
 		&CheckPointCompletionTarget,
 		0.9, 0.0, 1.0,
@@ -4086,7 +4086,7 @@ static struct config_string ConfigureNamesString[] =
 		{"archive_command", PGC_SIGHUP, WAL_ARCHIVING,
 			gettext_noop("Sets the shell command that will be called to archive a WAL file."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_WAL_SETTINGS
 		},
 		&XLogArchiveCommand,
 		"",
@@ -4097,7 +4097,7 @@ static struct config_string ConfigureNamesString[] =
 		{"restore_command", PGC_SIGHUP, WAL_ARCHIVE_RECOVERY,
 			gettext_noop("Sets the shell command that will be called to retrieve an archived WAL file."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_WAL_SETTINGS
 		},
 		&recoveryRestoreCommand,
 		"",
@@ -4108,7 +4108,7 @@ static struct config_string ConfigureNamesString[] =
 		{"archive_cleanup_command", PGC_SIGHUP, WAL_ARCHIVE_RECOVERY,
 			gettext_noop("Sets the shell command that will be executed at every restart point."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_WAL_SETTINGS
 		},
 		&archiveCleanupCommand,
 		"",
@@ -4119,7 +4119,7 @@ static struct config_string ConfigureNamesString[] =
 		{"recovery_end_command", PGC_SIGHUP, WAL_ARCHIVE_RECOVERY,
 			gettext_noop("Sets the shell command that will be executed once at the end of recovery."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_WAL_SETTINGS
 		},
 		&recoveryEndCommand,
 		"",
@@ -4130,7 +4130,7 @@ static struct config_string ConfigureNamesString[] =
 		{"recovery_target_timeline", PGC_POSTMASTER, WAL_RECOVERY_TARGET,
 			gettext_noop("Specifies the timeline to recover into."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_WAL_SETTINGS
 		},
 		&recovery_target_timeline_string,
 		"latest",
@@ -4141,7 +4141,7 @@ static struct config_string ConfigureNamesString[] =
 		{"recovery_target", PGC_POSTMASTER, WAL_RECOVERY_TARGET,
 			gettext_noop("Set to \"immediate\" to end recovery as soon as a consistent state is reached."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_WAL_SETTINGS
 		},
 		&recovery_target_string,
 		"",
@@ -4151,7 +4151,7 @@ static struct config_string ConfigureNamesString[] =
 		{"recovery_target_xid", PGC_POSTMASTER, WAL_RECOVERY_TARGET,
 			gettext_noop("Sets the transaction ID up to which recovery will proceed."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_WAL_SETTINGS
 		},
 		&recovery_target_xid_string,
 		"",
@@ -4161,7 +4161,7 @@ static struct config_string ConfigureNamesString[] =
 		{"recovery_target_time", PGC_POSTMASTER, WAL_RECOVERY_TARGET,
 			gettext_noop("Sets the time stamp up to which recovery will proceed."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_WAL_SETTINGS
 		},
 		&recovery_target_time_string,
 		"",
@@ -4171,7 +4171,7 @@ static struct config_string ConfigureNamesString[] =
 		{"recovery_target_name", PGC_POSTMASTER, WAL_RECOVERY_TARGET,
 			gettext_noop("Sets the named restore point up to which recovery will proceed."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_WAL_SETTINGS
 		},
 		&recovery_target_name_string,
 		"",
@@ -4181,7 +4181,7 @@ static struct config_string ConfigureNamesString[] =
 		{"recovery_target_lsn", PGC_POSTMASTER, WAL_RECOVERY_TARGET,
 			gettext_noop("Sets the LSN of the write-ahead log location up to which recovery will proceed."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_WAL_SETTINGS
 		},
 		&recovery_target_lsn_string,
 		"",
@@ -5100,7 +5100,7 @@ static struct config_enum ConfigureNamesEnum[] =
 		{"synchronous_commit", PGC_USERSET, WAL_SETTINGS,
 			gettext_noop("Sets the current transaction's synchronization level."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_WAL_SETTINGS
 		},
 		&synchronous_commit,
 		SYNCHRONOUS_COMMIT_ON, synchronous_commit_options,
@@ -5111,7 +5111,7 @@ static struct config_enum ConfigureNamesEnum[] =
 		{"archive_mode", PGC_POSTMASTER, WAL_ARCHIVING,
 			gettext_noop("Allows archiving of WAL files using archive_command."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_WAL_SETTINGS
 		},
 		&XLogArchiveMode,
 		ARCHIVE_MODE_OFF, archive_mode_options,
@@ -5122,7 +5122,7 @@ static struct config_enum ConfigureNamesEnum[] =
 		{"recovery_target_action", PGC_POSTMASTER, WAL_RECOVERY_TARGET,
 			gettext_noop("Sets the action to perform upon reaching the recovery target."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_WAL_SETTINGS
 		},
 		&recoveryTargetAction,
 		RECOVERY_TARGET_ACTION_PAUSE, recovery_target_action_options,
@@ -5161,7 +5161,7 @@ static struct config_enum ConfigureNamesEnum[] =
 		{"wal_compression", PGC_SUSET, WAL_SETTINGS,
 			gettext_noop("Compresses full-page writes written in WAL file with specified method."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_WAL_SETTINGS
 		},
 		&wal_compression,
 		WAL_COMPRESSION_NONE, wal_compression_options,
@@ -5172,7 +5172,7 @@ static struct config_enum ConfigureNamesEnum[] =
 		{"wal_level", PGC_POSTMASTER, WAL_SETTINGS,
 			gettext_noop("Sets the level of information written to the WAL."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_WAL_SETTINGS
 		},
 		&wal_level,
 		WAL_LEVEL_REPLICA, wal_level_options, NULL, NULL, NULL
@@ -5204,7 +5204,7 @@ static struct config_enum ConfigureNamesEnum[] =
 		{"wal_sync_method", PGC_SIGHUP, WAL_SETTINGS,
 			gettext_noop("Selects the method used for forcing WAL updates to disk."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_WAL_SETTINGS
 		},
 		&sync_method,
 		DEFAULT_SYNC_METHOD, sync_method_options,
@@ -7630,6 +7630,10 @@ role_has_privileges(Oid roleid, int privileges)
 
 	if ((privileges & GUC_MANAGE_CONNECTION_SETTINGS) &&
 		! has_privs_of_role(roleid, ROLE_PG_MANAGE_CONNECTION_SETTINGS))
+		return false;
+
+	if ((privileges & GUC_MANAGE_WAL_SETTINGS) &&
+		! has_privs_of_role(roleid, ROLE_PG_MANAGE_WAL_SETTINGS))
 		return false;
 
 	return true;
