@@ -1573,7 +1573,7 @@ static struct config_bool ConfigureNamesBool[] =
 			gettext_noop("Enables the collection of information on the currently "
 						 "executing command of each session, along with "
 						 "the time at which that command began execution."),
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_STATS_SETTINGS
 		},
 		&pgstat_track_activities,
 		true,
@@ -1583,7 +1583,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"track_counts", PGC_SUSET, STATS_COLLECTOR,
 			gettext_noop("Collects statistics on database activity."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_STATS_SETTINGS
 		},
 		&pgstat_track_counts,
 		true,
@@ -1593,7 +1593,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"track_io_timing", PGC_SUSET, STATS_COLLECTOR,
 			gettext_noop("Collects timing statistics for database I/O activity."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_STATS_SETTINGS
 		},
 		&track_io_timing,
 		false,
@@ -1603,7 +1603,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"track_wal_io_timing", PGC_SUSET, STATS_COLLECTOR,
 			gettext_noop("Collects timing statistics for WAL I/O activity."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_STATS_SETTINGS
 		},
 		&track_wal_io_timing,
 		false,
@@ -3700,7 +3700,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"track_activity_query_size", PGC_POSTMASTER, STATS_COLLECTOR,
 			gettext_noop("Sets the size reserved for pg_stat_activity.query, in bytes."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_STATS_SETTINGS,
 			GUC_UNIT_BYTE
 		},
 		&pgstat_track_activity_query_size,
@@ -4769,7 +4769,7 @@ static struct config_string ConfigureNamesString[] =
 		{"stats_temp_directory", PGC_SIGHUP, STATS_COLLECTOR,
 			gettext_noop("Writes temporary statistics files to the specified directory."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_STATS_SETTINGS | GUC_WRITE_SERVER_FILES
 		},
 		&pgstat_temp_directory,
 		PG_STAT_TMP_DIR,
@@ -4956,7 +4956,7 @@ static struct config_enum ConfigureNamesEnum[] =
 		{"compute_query_id", PGC_SUSET, STATS_MONITORING,
 			gettext_noop("Compute query identifiers."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_STATS_SETTINGS
 		},
 		&compute_query_id,
 		COMPUTE_QUERY_ID_AUTO, compute_query_id_options,
@@ -5150,7 +5150,7 @@ static struct config_enum ConfigureNamesEnum[] =
 		{"track_functions", PGC_SUSET, STATS_COLLECTOR,
 			gettext_noop("Collects function-level statistics on database activity."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_STATS_SETTINGS
 		},
 		&pgstat_track_functions,
 		TRACK_FUNC_OFF, track_function_options,
@@ -7638,6 +7638,10 @@ role_has_privileges(Oid roleid, int privileges)
 
 	if ((privileges & GUC_MANAGE_QUERY_TUNING_SETTINGS) &&
 		! has_privs_of_role(roleid, ROLE_PG_MANAGE_QUERY_TUNING_SETTINGS))
+		return false;
+
+	if ((privileges & GUC_MANAGE_STATS_SETTINGS) &&
+		! has_privs_of_role(roleid, ROLE_PG_MANAGE_STATS_SETTINGS))
 		return false;
 
 	return true;

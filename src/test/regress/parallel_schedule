@@ -91,7 +91,7 @@ test: create_table_like alter_generic alter_operator misc async dbsize misc_func
 # ----------
 # Another group of parallel tests (GUC management roles related)
 # ----------
-test: admin host_resource_settings vacuum_settings autovacuum_settings logging_settings replication_settings connection_settings wal_settings query_tuning_settings
+test: admin host_resource_settings vacuum_settings autovacuum_settings logging_settings replication_settings connection_settings wal_settings query_tuning_settings stats_settings
 
 # rules cannot run concurrently with any test that creates
 # a view or rule in the public schema
