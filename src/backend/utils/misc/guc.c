@@ -1435,7 +1435,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"exit_on_error", PGC_USERSET, ERROR_HANDLING_OPTIONS,
 			gettext_noop("Terminate session on any error."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_ERROR_HANDLING_SETTINGS
 		},
 		&ExitOnAnyError,
 		false,
@@ -2208,7 +2208,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"data_sync_retry", PGC_POSTMASTER, ERROR_HANDLING_OPTIONS,
 			gettext_noop("Whether to continue running after a failure to sync data files."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_ERROR_HANDLING_SETTINGS
 		},
 		&data_sync_retry,
 		false,
@@ -7646,6 +7646,10 @@ role_has_privileges(Oid roleid, int privileges)
 
 	if ((privileges & GUC_MANAGE_RECOVERY_SETTINGS) &&
 		! has_privs_of_role(roleid, ROLE_PG_MANAGE_RECOVERY_SETTINGS))
+		return false;
+
+	if ((privileges & GUC_MANAGE_ERROR_HANDLING_SETTINGS) &&
+		! has_privs_of_role(roleid, ROLE_PG_MANAGE_ERROR_HANDLING_SETTINGS))
 		return false;
 
 	return true;
