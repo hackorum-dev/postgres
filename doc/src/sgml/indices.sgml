@@ -1212,8 +1212,9 @@ SELECT x FROM tab WHERE x = 'key' AND z &lt; 42;
    problem.  <productname>PostgreSQL</productname> tracks, for each page in
    a table's heap, whether all rows stored in that page are old enough to be
    visible to all current and future transactions.  This information is
-   stored in a bit in the table's <firstterm>visibility map</firstterm>.  An
-   index-only scan, after finding a candidate index entry, checks the
+   stored in a bit in the table's
+   <link linkend="storage-vm"><firstterm>visibility map</firstterm></link>.
+   An index-only scan, after finding a candidate index entry, checks the
    visibility map bit for the corresponding heap page.  If it's set, the row
    is known visible and so the data can be returned with no further work.
    If it's not set, the heap entry must be visited to find out whether it's
@@ -1231,6 +1232,14 @@ SELECT x FROM tab WHERE x = 'key' AND z &lt; 42;
    table's heap pages have their all-visible map bits set.  But tables in
    which a large fraction of the rows are unchanging are common enough to
    make this type of scan very useful in practice.
+  </para>
+
+  <para>
+   To make sure that index-only scans are efficient, it can be a good idea
+   to see that the table is <command>VACUUM</command>ed often enough.  This
+   can be done by lowering <xref linkend="reloption-autovacuum-vacuum-scale-factor"/>
+   on that table and setting <xref linkend="reloption-vacuum-index-cleanup"/>
+   to <literal>auto</literal>.
   </para>
 
   <para>
