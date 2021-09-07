@@ -346,6 +346,8 @@ $logstart = get_log_size($node_primary3);
 # freeze walsender and walreceiver. Slot will still be active, but walreceiver
 # won't get anything anymore.
 kill 'STOP', $senderpid, $receiverpid;
+wait_to_stop($senderpid, $receiverpid);
+
 advance_wal($node_primary3, 2);
 
 my $max_attempts = 180;
@@ -425,4 +427,31 @@ sub find_in_log
 	$log = substr($log, $off);
 
 	return $log =~ m/$pat/;
+}
+
+sub wait_to_stop
+{
+	my (@pids) = @_;
+	my $max_attempts = 180;
+
+	# Haven't found the means to do the same on Windows
+	return if $TestLib::windows_os;
+
+	while ($max_attempts-- >= 0)
+	{
+		my ($all_stopped) = 1;
+
+		foreach my $pid (@pids)
+		{
+			if (`ps -p $pid -o pid,state | tail -1` !~ /^ *\d+ +T/)
+			{
+				$all_stopped = 0;
+				last;
+			}
+		}
+
+		last if ($all_stopped);
+
+		sleep 1;
+	}
 }
