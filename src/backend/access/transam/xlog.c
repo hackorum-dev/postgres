@@ -7393,6 +7393,27 @@ StartupXLOG(void)
 				HandleStartupProcInterrupts();
 
 				/*
+				 * In standby mode, create an archive notification file of a
+				 * WAL segment if it includes an XLOG_SWITCH record and its
+				 * notification file has not been created yet. This is
+				 * necessary to handle the corner case that walreceiver may
+				 * fail to create such notification file if it exits after it
+				 * receives XLOG_SWITCH record but while it's receiving the
+				 * remaining bytes in the segment. Without this handling, WAL
+				 * archiving of the segment will be delayed until subsequent
+				 * checkpoint creates its notification file when removing it
+				 * even though it can be archived soon.
+				 */
+				if (StandbyMode && record->xl_rmid == RM_XLOG_ID &&
+					(record->xl_info & ~XLR_INFO_MASK) == XLOG_SWITCH)
+				{
+					char		xlogfilename[MAXFNAMELEN];
+
+					XLogFileName(xlogfilename, curFileTLI, readSegNo, wal_segment_size);
+					XLogArchiveCheckDone(xlogfilename);
+				}
+
+				/*
 				 * Pause WAL replay, if requested by a hot-standby session via
 				 * SetRecoveryPause().
 				 *
