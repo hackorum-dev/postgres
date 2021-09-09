@@ -844,6 +844,36 @@ sub start
 
 =pod
 
+=item $node->find_child(process_name)
+Find child process base on process name
+
+=cut
+
+sub find_child
+{
+	my ($self, $process_name) = @_;
+	my $pid=0;
+	my @childs=`ps -o pid,cmd --ppid $self->{_pid}` or die "can't run ps! $! \n";
+
+	foreach my $child (@childs)
+	{
+		$child =~ s/^\s+|\s+$//g;
+		my $pos = index($child, $process_name);
+		if ($pos > 0)
+		{
+			$pos = index($child, ' ');
+			$pid = substr($child, 0, $pos);
+			$pid =~ s/^\s+|\s+$//g;
+			print "### Killing child process \"$pid\", \"$child\" using signal 9\n";
+			last;
+		}
+	}
+
+	return $pid;
+}
+
+=pod
+
 =item $node->kill9()
 
 Send SIGKILL (signal 9) to the postmaster.

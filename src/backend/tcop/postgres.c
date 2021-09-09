@@ -206,6 +206,7 @@ static void drop_unnamed_stmt(void);
 static void log_disconnections(int code, Datum arg);
 static void enable_statement_timeout(void);
 static void disable_statement_timeout(void);
+static void ProcessClientReadWriteCancelInterrupt(void);
 
 
 /* ----------------------------------------------------------------
@@ -493,6 +494,9 @@ ProcessClientReadInterrupt(bool blocked)
 {
 	int			save_errno = errno;
 
+	/* Process cancel query interrupts */
+	ProcessClientReadWriteCancelInterrupt();
+
 	if (DoingCommandRead)
 	{
 		/* Check for general interrupts that arrived before/while reading */
@@ -538,6 +542,9 @@ void
 ProcessClientWriteInterrupt(bool blocked)
 {
 	int			save_errno = errno;
+
+	/* Process cancel query interrupts */
+	ProcessClientReadWriteCancelInterrupt();
 
 	if (ProcDiePending)
 	{
@@ -4957,4 +4964,34 @@ disable_statement_timeout(void)
 {
 	if (get_timeout_active(STATEMENT_TIMEOUT))
 		disable_timeout(STATEMENT_TIMEOUT, false);
+}
+
+/* 
+ * process cancel query request during client read/write
+ * in original way, cancel query requests are all ignored during client read/write,
+ * which is not appropriate. for example, if a query which generated recovery conflict 
+ * can't be canceled when it is reading from/writing to client, the recovery process of 
+ * startup will be delay infinitely by a stuck client. Improve it in this way:
+ * 1) if cancel query request is from db itself, then we handle it right now, and cancel request
+ * is treated as a terminate request, connection will be terminated;
+ * 2) if cancel query request is from client, then we ignore it as original way, client needs
+ * to send a termiante request to cancel it truly.
+ */
+static void
+ProcessClientReadWriteCancelInterrupt(void)
+{
+	bool		handle_cancel_request = false;
+	bool		stmt_timeout_occurred;
+	bool		lock_timeout_occurred;
+
+	lock_timeout_occurred = get_timeout_indicator(LOCK_TIMEOUT, true);
+	stmt_timeout_occurred = get_timeout_indicator(STATEMENT_TIMEOUT, true);
+	
+	/* cancel request need to be handled */
+	if (lock_timeout_occurred || stmt_timeout_occurred || RecoveryConflictPending)
+		handle_cancel_request = true;
+
+	/* treat cancel request as terminate request */
+	if (!ProcDiePending && QueryCancelPending && handle_cancel_request)
+		ProcDiePending = true;
 }
