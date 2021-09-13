@@ -42,6 +42,12 @@
 #include "utils/snapmgr.h"
 #include "tcop/utility.h"
 
+#include "nodes/makefuncs.h"
+#include "nodes/nodes.h"
+#include "nodes/pg_list.h"
+#include "parser/parse_func.h"
+#include "commands/defrem.h"
+
 PG_MODULE_MAGIC;
 
 PG_FUNCTION_INFO_V1(worker_spi_launch);
@@ -59,6 +65,7 @@ typedef struct worktable
 {
 	const char *schema;
 	const char *name;
+	const char *proc;
 } worktable;
 
 /*
@@ -108,8 +115,20 @@ initialize_worker_spi(worktable *table)
 						 "		type text CHECK (type IN ('total', 'delta')), "
 						 "		value	integer)"
 						 "CREATE UNIQUE INDEX \"%s_unique_total\" ON \"%s\" (type) "
-						 "WHERE type = 'total'",
-						 table->schema, table->name, table->name, table->name);
+						 "WHERE type = 'total'; "
+						 "CREATE PROCEDURE \"%s\".\"%s\"() AS $$ "
+						 "DECLARE "
+						 "  i INTEGER; "
+						 "BEGIN "
+						 "  FOR i IN 1..10 "
+						 "  LOOP "
+						 "    INSERT INTO \"%s\".\"%s\" VALUES ('delta', i); "
+						 "    COMMIT; "
+						 "  END LOOP; "
+						 "END; "
+						 "$$ LANGUAGE plpgsql; ",
+						 table->schema, table->name, table->name, table->name,
+						 table->schema, table->proc, table->schema, table->name);
 
 		/* set statement start time */
 		SetCurrentStatementStartTimestamp();
@@ -137,11 +156,16 @@ worker_spi_main(Datum main_arg)
 	worktable  *table;
 	StringInfoData buf;
 	char		name[20];
+	FuncExpr 	*funcexpr;
+	Oid 		proc;
+	ObjectWithArgs *object;
+	MemoryContext oldcontext = CurrentMemoryContext;
 
 	table = palloc(sizeof(worktable));
 	sprintf(name, "schema%d", index);
 	table->schema = pstrdup(name);
 	table->name = pstrdup("counted");
+	table->proc = pstrdup("counted_proc");
 
 	/* Establish signal handlers before unblocking signals. */
 	pqsignal(SIGHUP, SignalHandlerForConfigReload);
@@ -157,6 +181,27 @@ worker_spi_main(Datum main_arg)
 		 MyBgworkerEntry->bgw_name, table->schema, table->name);
 	initialize_worker_spi(table);
 
+	StartTransactionCommand();
+
+	/* build a function expression call */
+	object = makeNode(ObjectWithArgs);
+	object->objname = list_make2(makeString((char *)table->schema),
+								 makeString((char *)table->proc));
+	proc = LookupFuncWithArgs(OBJECT_ROUTINE, object, false);
+
+	CommitTransactionCommand();
+
+	MemoryContextSwitchTo(oldcontext);
+
+	funcexpr = makeFuncExpr(proc,
+							VOIDOID,
+							NIL,
+							InvalidOid,
+							InvalidOid,
+							COERCE_EXPLICIT_CALL);
+
+	MemoryContextSwitchTo(oldcontext);
+
 	/*
 	 * Quote identifiers passed to us.  Note that this must be done after
 	 * initialize_worker_spi, because that routine assumes the names are not
@@ -166,22 +211,10 @@ worker_spi_main(Datum main_arg)
 	 */
 	table->schema = quote_identifier(table->schema);
 	table->name = quote_identifier(table->name);
+	table->proc = quote_identifier(table->proc);
 
 	initStringInfo(&buf);
-	appendStringInfo(&buf,
-					 "WITH deleted AS (DELETE "
-					 "FROM %s.%s "
-					 "WHERE type = 'delta' RETURNING value), "
-					 "total AS (SELECT coalesce(sum(value), 0) as sum "
-					 "FROM deleted) "
-					 "UPDATE %s.%s "
-					 "SET value = %s.value + total.sum "
-					 "FROM total WHERE type = 'total' "
-					 "RETURNING %s.value",
-					 table->schema, table->name,
-					 table->schema, table->name,
-					 table->name,
-					 table->name);
+	appendStringInfo(&buf, "CALL %s.%s()", table->schema, table->proc);
 
 	/*
 	 * Main loop: do this until SIGTERM is received and processed by
@@ -189,7 +222,8 @@ worker_spi_main(Datum main_arg)
 	 */
 	for (;;)
 	{
-		int			ret;
+		CallStmt 		*call;
+		DestReceiver 	*dest;
 
 		/*
 		 * Background workers mustn't call usleep() or any direct equivalent:
@@ -232,39 +266,19 @@ worker_spi_main(Datum main_arg)
 		 */
 		SetCurrentStatementStartTimestamp();
 		StartTransactionCommand();
-		SPI_connect();
 		PushActiveSnapshot(GetTransactionSnapshot());
-		debug_query_string = buf.data;
 		pgstat_report_activity(STATE_RUNNING, buf.data);
 
-		/* We can now execute queries via SPI */
-		ret = SPI_execute(buf.data, false, 0);
-
-		if (ret != SPI_OK_UPDATE_RETURNING)
-			elog(FATAL, "cannot select from table %s.%s: error code %d",
-				 table->schema, table->name, ret);
-
-		if (SPI_processed > 0)
-		{
-			bool		isnull;
-			int32		val;
-
-			val = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0],
-											  SPI_tuptable->tupdesc,
-											  1, &isnull));
-			if (!isnull)
-				elog(LOG, "%s: count in %s.%s is now %d",
-					 MyBgworkerEntry->bgw_name,
-					 table->schema, table->name, val);
-		}
+		call = makeNode(CallStmt);
+		call->funcexpr = funcexpr;
+		dest = CreateDestReceiver(DestNone);
+		ExecuteCallStmt(call, NULL, false, dest);
 
 		/*
 		 * And finish our transaction.
 		 */
-		SPI_finish();
 		PopActiveSnapshot();
 		CommitTransactionCommand();
-		debug_query_string = NULL;
 		pgstat_report_stat(false);
 		pgstat_report_activity(STATE_IDLE, NULL);
 	}
