@@ -10321,6 +10321,31 @@ SELECT date_bin('15 minutes', TIMESTAMP '2020-02-11 15:44:17', TIMESTAMP '2001-0
     The <parameter>stride</parameter> interval must be greater than zero and
     cannot contain units of month or larger.
    </para>
+
+   <para>
+    When the <replaceable>source</replaceable> and <replaceable>origin</replaceable>
+    are separated by a daylight savings time boundary, the change will be reflected in
+    the result, as in the second query:
+
+<screen>
+SET TIMEZONE TO 'America/New_York';
+SELECT date_bin('1 day', '2021-11-01 00:00 +00'::timestamptz, '2021-09-01 00:00 -04'::timestamptz);
+<lineannotation>Result: </lineannotation><computeroutput>2021-10-31 00:00:00-04</computeroutput>
+
+SELECT date_bin('1 day', '2021-11-10 00:00 +00'::timestamptz, '2021-09-01 00:00 -04'::timestamptz);
+<lineannotation>Result: </lineannotation><computeroutput>2021-11-08 23:00:00-05</computeroutput>
+</screen>
+
+    It is possible to force the result to align to local midnight by casting the
+    <replaceable>source</replaceable> and <replaceable>origin</replaceable> to
+    <type>timestamp</type>:
+
+<screen>
+SET TIMEZONE TO 'America/New_York';
+SELECT date_bin('1 day', '2021-11-10 00:00 +00'::timestamptz::timestamp, '2021-09-01 00:00 -04'::timestamptz::timestamp);
+<lineannotation>Result: </lineannotation><computeroutput>2021-11-09 00:00:00</computeroutput>
+</screen>
+   </para>
   </sect2>
 
   <sect2 id="functions-datetime-zoneconvert">
