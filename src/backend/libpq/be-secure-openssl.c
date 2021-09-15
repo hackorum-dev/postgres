@@ -2373,11 +2373,13 @@ X509_NAME_to_cstring(const X509_NAME *name)
 		v = X509_NAME_ENTRY_get_data(e);
 		field_name = OBJ_nid2sn(nid);
 		if (field_name == NULL)
+		{
 			field_name = OBJ_nid2ln(nid);
-		if (field_name == NULL)
-			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					 errmsg("could not convert NID %d to an ASN1_OBJECT structure", nid)));
+			if (field_name == NULL)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("could not convert NID %d to an ASN1_OBJECT structure", nid)));
+		}
 		BIO_printf(membuf, "/%s=", field_name);
 		ASN1_STRING_print_ex(membuf, v,
 							 ((ASN1_STRFLGS_RFC2253 & ~ASN1_STRFLGS_ESC_MSB)
