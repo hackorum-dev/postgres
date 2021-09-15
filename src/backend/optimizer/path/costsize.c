@@ -4113,6 +4113,21 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 	path->jpath.path.total_cost = startup_cost + run_cost;
 }
 
+void
+cost_redistribute(RedistributePath *path)
+{
+	Cost	run_cost;
+	double	rows = path->path.rows;
+
+	/* hash cost */
+	run_cost = cpu_operator_cost * list_length(path->hashClause) * rows;
+
+	/* communication cost */
+	run_cost += parallel_tuple_cost * (rows - rows / (path->path.parallel_workers+1));
+
+	path->path.startup_cost = path->subpath->startup_cost;
+	path->path.total_cost = path->subpath->total_cost + run_cost;
+}
 
 /*
  * cost_subplan
