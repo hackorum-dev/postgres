@@ -1122,6 +1122,7 @@ resolve_column_ref(ParseState *pstate, PLpgSQL_expr *expr,
 				Node	   *field1 = (Node *) linitial(cref->fields);
 
 				name1 = strVal(field1);
+				colname = name1;
 				nnames_scalar = 1;
 				nnames_wholerow = 1;
 				break;
