@@ -2512,7 +2512,7 @@ psql_completion(const char *text, int start, int end)
 	}
 
 	/* CREATE DATABASE */
-	else if (Matches("CREATE", "DATABASE", MatchAny))
+	else if (Matches("CREATE", "DATABASE", MatchAny) && !(ends_with(prev_wd, ';')))
 		COMPLETE_WITH("OWNER", "TEMPLATE", "ENCODING", "TABLESPACE",
 					  "IS_TEMPLATE",
 					  "ALLOW_CONNECTIONS", "CONNECTION LIMIT",
@@ -3185,7 +3185,7 @@ psql_completion(const char *text, int start, int end)
 		COMPLETE_WITH_FUNCTION_ARG(prev2_wd);
 	else if (Matches("DROP", "FOREIGN"))
 		COMPLETE_WITH("DATA WRAPPER", "TABLE");
-	else if (Matches("DROP", "DATABASE", MatchAny))
+	else if (Matches("DROP", "DATABASE", MatchAny) && (!ends_with(prev_wd, ';')))
 		COMPLETE_WITH("WITH (");
 	else if (HeadMatches("DROP", "DATABASE") && (ends_with(prev_wd, '(')))
 		COMPLETE_WITH("FORCE");
