@@ -1325,7 +1325,7 @@ BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 		 * Note that we have not yet removed the hashtable entry for the old
 		 * tag.
 		 */
-		buf_id = BufTableInsert(&newTag, newHash, buf->buf_id);
+		buf_id = BufTableLookup(&newTag, newHash);
 
 		if (buf_id >= 0)
 		{
@@ -1391,7 +1391,6 @@ BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 			break;
 
 		UnlockBufHdr(buf, buf_state);
-		BufTableDelete(&newTag, newHash);
 		if (oldPartitionLock != NULL &&
 			oldPartitionLock != newPartitionLock)
 			LWLockRelease(oldPartitionLock);
@@ -1425,9 +1424,13 @@ BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 
 	if (oldPartitionLock != NULL)
 	{
-		BufTableDelete(&oldTag, oldHash);
+		BufTableMove(&oldTag, oldHash, &newTag, newHash, buf->buf_id);
 		if (oldPartitionLock != newPartitionLock)
 			LWLockRelease(oldPartitionLock);
+	}
+	else
+	{
+		BufTableInsert(&newTag, newHash, buf->buf_id);
 	}
 
 	LWLockRelease(newPartitionLock);

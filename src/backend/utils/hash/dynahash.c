@@ -1289,6 +1289,196 @@ hash_update_hash_key(HTAB *hashp,
 }
 
 /*
+ * hash_update_hash_key_nocheck -- change the hash key of an existing table
+ * entry without check for duplicate.
+ *
+ * Caller should be sure there is no conflicting entry.
+ */
+void *
+hash_update_hash_key_with_hash_nocheck(HTAB *hashp,
+									   const void *oldKeyPtr,
+									   uint32 oldhashvalue,
+									   const void *newKeyPtr,
+									   uint32 newhashvalue)
+{
+	HASHHDR    *hctl = hashp->hctl;
+	Size		keysize;
+	uint32		bucket;
+	uint32		newbucket;
+	long		segment_num;
+	long		segment_ndx;
+	HASHSEGMENT segp;
+	HASHBUCKET	currBucket;
+	HASHBUCKET *prevBucketPtr;
+	HASHBUCKET *oldPrevPtr;
+	HashCompareFunc match;
+
+#if HASH_STATISTICS
+	hash_accesses++;
+	hctl->accesses++;
+#endif
+
+	/* disallow updates if frozen */
+	if (hashp->frozen)
+		elog(ERROR, "cannot update in frozen hashtable \"%s\"",
+			 hashp->tabname);
+
+	/*
+	 * Lookup the existing element using its saved hash value.  We need to do
+	 * this to be able to unlink it from its hash chain, but as a side benefit
+	 * we can verify the validity of the passed existingEntry pointer.
+	 */
+	bucket = calc_bucket(hctl, oldhashvalue);
+
+	segment_num = bucket >> hashp->sshift;
+	segment_ndx = MOD(bucket, hashp->ssize);
+
+	segp = hashp->dir[segment_num];
+
+	if (segp == NULL)
+		hash_corrupted(hashp);
+
+	prevBucketPtr = &segp[segment_ndx];
+	currBucket = *prevBucketPtr;
+
+	match = hashp->match;		/* save one fetch in inner loop */
+	keysize = hashp->keysize;	/* ditto */
+
+	while (currBucket != NULL)
+	{
+		if (currBucket->hashvalue == oldhashvalue &&
+			match(ELEMENTKEY(currBucket), oldKeyPtr, keysize) == 0)
+			break;
+		prevBucketPtr = &(currBucket->link);
+		currBucket = *prevBucketPtr;
+	}
+
+	if (currBucket == NULL)
+		elog(ERROR, "hash_update_hash_key argument is not in hashtable \"%s\"",
+			 hashp->tabname);
+
+	oldPrevPtr = prevBucketPtr;
+
+	/*
+	 * Now perform the simplified insertion operation: - to locate the hash
+	 * chain we want to put the entry into, - put into beginning without
+	 * search for duplicate.
+	 */
+	newbucket = calc_bucket(hctl, newhashvalue);
+
+	segment_num = newbucket >> hashp->sshift;
+	segment_ndx = MOD(newbucket, hashp->ssize);
+
+	segp = hashp->dir[segment_num];
+
+	if (segp == NULL)
+		hash_corrupted(hashp);
+
+	prevBucketPtr = &segp[segment_ndx];
+
+	/* copy new key into record */
+	currBucket->hashvalue = newhashvalue;
+	hashp->keycopy(ELEMENTKEY(currBucket), newKeyPtr, keysize);
+
+	/*
+	 * If old and new hash values belong to the same bucket, we need not
+	 * change any chain links, and indeed should not since this simplistic
+	 * update will corrupt the list if currBucket is the last element.  (We
+	 * cannot fall out earlier, however, since we need to scan the bucket to
+	 * check for duplicate keys.)
+	 */
+	if (bucket != newbucket)
+	{
+		/* OK to remove record from old hash bucket's chain. */
+		*oldPrevPtr = currBucket->link;
+
+		/* link into new hashbucket chain */
+		currBucket->link = *prevBucketPtr;
+		*prevBucketPtr = currBucket;
+	}
+	/* no memory barrier in `else` part because bucket is locked */
+
+	return (void *) ELEMENTKEY(currBucket);
+}
+
+/*
+ * hash_insert_with_hash_nocheck - inserts new entry into bucket without
+ * checking for duplicates.
+ *
+ * Caller should be sure there is no conflicting entry.
+ */
+void *
+hash_insert_with_hash_nocheck(HTAB *hashp,
+							  const void *keyPtr,
+							  uint32 hashvalue)
+{
+	HASHHDR    *hctl = hashp->hctl;
+	int			freelist_idx = FREELIST_IDX(hctl, hashvalue);
+	uint32		bucket;
+	long		segment_num;
+	long		segment_ndx;
+	HASHSEGMENT segp;
+	HASHBUCKET	currBucket;
+	HASHBUCKET *prevBucketPtr;
+
+#if HASH_STATISTICS
+	hash_accesses++;
+	hctl->accesses++;
+#endif
+
+	/* disallow updates if frozen */
+	if (hashp->frozen)
+		elog(ERROR, "cannot update in frozen hashtable \"%s\"",
+			 hashp->tabname);
+
+	if (!IS_PARTITIONED(hctl) &&
+		hctl->freeList[0].nentries > (long) hctl->max_bucket &&
+		!has_seq_scans(hashp))
+		(void) expand_table(hashp);
+
+	/*
+	 * Lookup the existing element using its saved hash value.  We need to do
+	 * this to be able to unlink it from its hash chain, but as a side benefit
+	 * we can verify the validity of the passed existingEntry pointer.
+	 */
+	bucket = calc_bucket(hctl, hashvalue);
+
+	segment_num = bucket >> hashp->sshift;
+	segment_ndx = MOD(bucket, hashp->ssize);
+
+	segp = hashp->dir[segment_num];
+
+	if (segp == NULL)
+		hash_corrupted(hashp);
+
+	prevBucketPtr = &segp[segment_ndx];
+
+	currBucket = get_hash_entry(hashp, freelist_idx);
+
+	if (currBucket == NULL)
+	{
+		/* report a generic message */
+		if (hashp->isshared)
+			ereport(ERROR,
+					(errcode(ERRCODE_OUT_OF_MEMORY),
+					 errmsg("out of shared memory")));
+		else
+			ereport(ERROR,
+					(errcode(ERRCODE_OUT_OF_MEMORY),
+					 errmsg("out of memory")));
+	}
+
+	/* copy key into record */
+	currBucket->hashvalue = hashvalue;
+	currBucket->link = *prevBucketPtr;
+	hashp->keycopy(ELEMENTKEY(currBucket), keyPtr, hashp->keysize);
+
+	*prevBucketPtr = currBucket;
+
+	return (void *) ELEMENTKEY(currBucket);
+}
+
+/*
  * Allocate a new hashtable entry if possible; return NULL if out of memory.
  * (Or, if the underlying space allocator throws error for out-of-memory,
  * we won't return at all.)

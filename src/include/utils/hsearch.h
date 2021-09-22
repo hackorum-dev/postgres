@@ -139,6 +139,14 @@ extern void *hash_search_with_hash_value(HTAB *hashp, const void *keyPtr,
 										 bool *foundPtr);
 extern bool hash_update_hash_key(HTAB *hashp, void *existingEntry,
 								 const void *newKeyPtr);
+extern void *hash_update_hash_key_with_hash_nocheck(HTAB *hashp,
+													const void *oldKeyPtr,
+													uint32 oldhashvalue,
+													const void *newKeyPtr,
+													uint32 newhashvalue);
+extern void *hash_insert_with_hash_nocheck(HTAB *hashp,
+										   const void *keyPtr,
+										   uint32 hashvalue);
 extern long hash_get_num_entries(HTAB *hashp);
 extern void hash_seq_init(HASH_SEQ_STATUS *status, HTAB *hashp);
 extern void *hash_seq_search(HASH_SEQ_STATUS *status);

@@ -107,36 +107,42 @@ BufTableLookup(BufferTag *tagPtr, uint32 hashcode)
 
 /*
  * BufTableInsert
- *		Insert a hashtable entry for given tag and buffer ID,
- *		unless an entry already exists for that tag
- *
- * Returns -1 on successful insertion.  If a conflicting entry exists
- * already, returns the buffer ID in that entry.
+ *		Insert a hashtable entry for given tag and buffer ID.
+ *		Caller should be sure there is no conflicting entry.
  *
  * Caller must hold exclusive lock on BufMappingLock for tag's partition
+ * and call BufTableLookup to check for conflicting entry.
  */
-int
+void
 BufTableInsert(BufferTag *tagPtr, uint32 hashcode, int buf_id)
 {
 	BufferLookupEnt *result;
-	bool		found;
 
 	Assert(buf_id >= 0);		/* -1 is reserved for not-in-table */
 	Assert(tagPtr->blockNum != P_NEW);	/* invalid tag */
 
 	result = (BufferLookupEnt *)
-		hash_search_with_hash_value(SharedBufHash,
-									(void *) tagPtr,
-									hashcode,
-									HASH_ENTER,
-									&found);
-
-	if (found)					/* found something already in the table */
-		return result->id;
+		hash_insert_with_hash_nocheck(SharedBufHash,
+									  (void *) tagPtr,
+									  hashcode);
 
 	result->id = buf_id;
+}
 
-	return -1;
+void
+BufTableMove(BufferTag *oldTagPtr, uint32 oldHash,
+			 BufferTag *newTagPtr, uint32 newHash,
+			 int buf_id)
+{
+	BufferLookupEnt *result PG_USED_FOR_ASSERTS_ONLY;
+
+	result = (BufferLookupEnt *)
+		hash_update_hash_key_with_hash_nocheck(SharedBufHash,
+											   (void *) oldTagPtr,
+											   oldHash,
+											   (void *) newTagPtr,
+											   newHash);
+	Assert(result->id == buf_id);
 }
 
 /*
