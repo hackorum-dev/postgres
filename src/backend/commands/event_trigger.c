@@ -476,13 +476,8 @@ AlterEventTriggerOwner_internal(Relation rel, HeapTuple tup, Oid newOwnerId)
 		aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_EVENT_TRIGGER,
 					   NameStr(form->evtname));
 
-	/* New owner must be a superuser */
-	if (!superuser_arg(newOwnerId))
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied to change owner of event trigger \"%s\"",
-						NameStr(form->evtname)),
-				 errhint("The owner of an event trigger must be a superuser.")));
+	/* Must be able to assign ownership to the target role */
+	check_is_member_of_role(GetUserId(), newOwnerId);
 
 	form->evtowner = newOwnerId;
 	CatalogTupleUpdate(rel, &tup->t_self, tup);
