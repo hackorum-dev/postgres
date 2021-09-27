@@ -114,18 +114,6 @@ CreateEventTrigger(CreateEventTrigStmt *stmt)
 	ListCell   *lc;
 	List	   *tags = NULL;
 
-	/*
-	 * It would be nice to allow database owners or even regular users to do
-	 * this, but there are obvious privilege escalation risks which would have
-	 * to somehow be plugged first.
-	 */
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied to create event trigger \"%s\"",
-						stmt->trigname),
-				 errhint("Must be superuser to create an event trigger.")));
-
 	/* Validate event name. */
 	if (strcmp(stmt->eventname, "ddl_command_start") != 0 &&
 		strcmp(stmt->eventname, "ddl_command_end") != 0 &&
@@ -612,8 +600,13 @@ EventTriggerCommonSetup(Node *parsetree,
 
 		if (filter_event_trigger(tag, item))
 		{
-			/* We must plan to fire this trigger. */
-			runlist = lappend_oid(runlist, item->fnoid);
+			/*
+			 * We must plan to fire this trigger only if the event trigger
+			 * owner is a member of the current role, else the trigger owner
+			 * can execute with privilege it could not do directly.
+			 */
+			if (is_member_of_role(item->fnowner, GetUserId()))
+				runlist = lappend_oid(runlist, item->fnoid);
 		}
 	}
 
