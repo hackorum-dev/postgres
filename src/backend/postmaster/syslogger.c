@@ -50,6 +50,7 @@
 #include "storage/pg_shmem.h"
 #include "tcop/tcopprot.h"
 #include "utils/guc.h"
+#include "utils/int8.h"
 #include "utils/ps_status.h"
 #include "utils/timestamp.h"
 
@@ -759,8 +760,8 @@ syslogger_forkexec(void)
 		strcpy(filenobuf, "-1");
 #else							/* WIN32 */
 	if (syslogFile != NULL)
-		snprintf(filenobuf, sizeof(filenobuf), "%ld",
-				 (long) _get_osfhandle(_fileno(syslogFile)));
+		snprintf(filenobuf, sizeof(filenobuf), INT64_FORMAT,
+				 (int64) _get_osfhandle(_fileno(syslogFile)));
 	else
 		strcpy(filenobuf, "0");
 #endif							/* WIN32 */
@@ -774,8 +775,8 @@ syslogger_forkexec(void)
 		strcpy(csvfilenobuf, "-1");
 #else							/* WIN32 */
 	if (csvlogFile != NULL)
-		snprintf(csvfilenobuf, sizeof(csvfilenobuf), "%ld",
-				 (long) _get_osfhandle(_fileno(csvlogFile)));
+		snprintf(csvfilenobuf, sizeof(csvfilenobuf), INT64_FORMAT,
+				 (int64) _get_osfhandle(_fileno(csvlogFile)));
 	else
 		strcpy(csvfilenobuf, "0");
 #endif							/* WIN32 */
@@ -795,7 +796,11 @@ syslogger_forkexec(void)
 static void
 syslogger_parseArgs(int argc, char *argv[])
 {
+#ifndef WIN32
 	int			fd;
+#else
+	intptr_t	handle;
+#endif
 
 	Assert(argc == 5);
 	argv += 3;
@@ -821,20 +826,24 @@ syslogger_parseArgs(int argc, char *argv[])
 		setvbuf(csvlogFile, NULL, PG_IOLBF, 0);
 	}
 #else							/* WIN32 */
-	fd = atoi(*argv++);
-	if (fd != 0)
+	(void) scanint8(*argv++, false, (int64 *) &handle);
+	if (handle != 0)
 	{
-		fd = _open_osfhandle(fd, _O_APPEND | _O_TEXT);
+		int		fd;
+
+		fd = _open_osfhandle(handle, _O_APPEND | _O_TEXT);
 		if (fd > 0)
 		{
 			syslogFile = fdopen(fd, "a");
 			setvbuf(syslogFile, NULL, PG_IOLBF, 0);
 		}
 	}
-	fd = atoi(*argv++);
-	if (fd != 0)
+	(void) scanint8(*argv++, false, (int64 *) &handle);
+	if (handle != 0)
 	{
-		fd = _open_osfhandle(fd, _O_APPEND | _O_TEXT);
+		int		fd;
+
+		fd = _open_osfhandle(handle, _O_APPEND | _O_TEXT);
 		if (fd > 0)
 		{
 			csvlogFile = fdopen(fd, "a");
