@@ -2912,9 +2912,6 @@ start_xact_command(void)
 static void
 finish_xact_command(void)
 {
-	/* cancel active statement timeout after each command */
-	disable_statement_timeout();
-
 	if (xact_started)
 	{
 		CommitTransactionCommand();
@@ -2932,6 +2929,9 @@ finish_xact_command(void)
 
 		xact_started = false;
 	}
+
+	/* cancel active statement timeout after each command */
+	disable_statement_timeout();
 }
 
 
