@@ -105,6 +105,9 @@
  */
 #define MAX_SEND_SIZE (XLOG_BLCKSZ * 16)
 
+/* Minimum idle time for sending an idle-time keepalive in milliseconds */
+#define KEEPALIVE_TIMEOUT 250
+
 /* Array of WalSnds in shared memory */
 WalSndCtlData *WalSndCtl = NULL;
 
@@ -244,7 +247,7 @@ static void WalSndKeepalive(bool requestReply);
 static void WalSndKeepaliveIfNecessary(void);
 static void WalSndCheckTimeOut(void);
 static long WalSndComputeSleeptime(TimestampTz now);
-static void WalSndWait(uint32 socket_events, long timeout, uint32 wait_event);
+static int WalSndWait(uint32 socket_events, long timeout, uint32 wait_event);
 static void WalSndPrepareWrite(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId xid, bool last_write);
 static void WalSndWriteData(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId xid, bool last_write);
 static void WalSndUpdateProgress(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId xid);
@@ -1436,19 +1439,6 @@ WalSndWaitForWal(XLogRecPtr loc)
 		if (got_STOPPING)
 			break;
 
-		/*
-		 * We only send regular messages to the client for full decoded
-		 * transactions, but a synchronous replication and walsender shutdown
-		 * possibly are waiting for a later location. So, before sleeping, we
-		 * send a ping containing the flush location. If the receiver is
-		 * otherwise idle, this keepalive will trigger a reply. Processing the
-		 * reply will update these MyWalSnd locations.
-		 */
-		if (MyWalSnd->flush < sentPtr &&
-			MyWalSnd->write < sentPtr &&
-			!waiting_for_ping_response)
-			WalSndKeepalive(false);
-
 		/* check whether we're done */
 		if (loc <= RecentFlushPtr)
 			break;
@@ -1491,6 +1481,41 @@ WalSndWaitForWal(XLogRecPtr loc)
 		if (pq_is_send_pending())
 			wakeEvents |= WL_SOCKET_WRITEABLE;
 
+		/*
+		 * We only send regular messages to the client for full decoded
+		 * transactions, but a synchronous replication and walsender shutdown
+		 * possibly are waiting for a later location. So, before sleeping, we
+		 * send a ping containing the flush location. If the receiver is
+		 * otherwise idle, this keepalive will trigger a reply. Processing the
+		 * reply will update these MyWalSnd locations. To prevent too-frequent
+		 * keepalives, wait KEEPALIVE_TIMEOUT milliseconds before sending a
+		 * keepalive. If sleeptime is less than KEEPALIVE_TIMEOUT, instead
+		 * WalSndKeepaliveIfNecessary will work if needed.
+		 */
+		if (MyWalSnd->flush < sentPtr &&
+			MyWalSnd->write < sentPtr &&
+			!waiting_for_ping_response &&
+			sleeptime > KEEPALIVE_TIMEOUT)
+		{
+			int r;
+			
+			r = WalSndWait(wakeEvents, KEEPALIVE_TIMEOUT,
+						   WAIT_EVENT_WAL_SENDER_WAIT_WAL);
+
+			/*
+			 * If some event happens before the timeout expires, go ahead
+			 * without sending keepalive.
+			 */
+			if (r != 0)
+				continue;
+
+			sleeptime -= KEEPALIVE_TIMEOUT;
+
+			WalSndKeepalive(false);
+			if (pq_flush_if_writable() != 0)
+				WalSndShutdown();
+		}
+		
 		WalSndWait(wakeEvents, sleeptime, WAIT_EVENT_WAL_SENDER_WAIT_WAL);
 	}
 
@@ -3144,15 +3169,18 @@ WalSndWakeup(void)
  * composed of optional WL_SOCKET_WRITEABLE and WL_SOCKET_READABLE flags.  Exit
  * on postmaster death.
  */
-static void
+static int
 WalSndWait(uint32 socket_events, long timeout, uint32 wait_event)
 {
 	WaitEvent	event;
+	int			ret;
 
 	ModifyWaitEvent(FeBeWaitSet, FeBeWaitSetSocketPos, socket_events, NULL);
-	if (WaitEventSetWait(FeBeWaitSet, timeout, &event, 1, wait_event) == 1 &&
-		(event.events & WL_POSTMASTER_DEATH))
+	ret = WaitEventSetWait(FeBeWaitSet, timeout, &event, 1, wait_event);
+	if (ret == 1 && (event.events & WL_POSTMASTER_DEATH))
 		proc_exit(1);
+
+	return ret;
 }
 
 /*
