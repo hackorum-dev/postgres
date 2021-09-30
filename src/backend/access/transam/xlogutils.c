@@ -706,8 +706,7 @@ XLogTruncateRelation(RelFileNode rnode, ForkNumber forkNum,
 void
 XLogReadDetermineTimeline(XLogReaderState *state, XLogRecPtr wantPage, uint32 wantLength)
 {
-	const XLogRecPtr lastReadPage = state->seg.ws_segno *
-	state->segcxt.ws_segsize + state->readLen;
+	const XLogRecPtr lastReadPage = state->readPagePtr;
 
 	Assert(wantPage != InvalidXLogRecPtr && wantPage % XLOG_BLCKSZ == 0);
 	Assert(wantLength <= XLOG_BLCKSZ);
@@ -722,7 +721,7 @@ XLogReadDetermineTimeline(XLogReaderState *state, XLogRecPtr wantPage, uint32 wa
 	 * current TLI has since become historical.
 	 */
 	if (lastReadPage == wantPage &&
-		state->readLen != 0 &&
+		state->page_verified &&
 		lastReadPage + state->readLen >= wantPage + Min(wantLength, XLOG_BLCKSZ - 1))
 		return;
 
@@ -808,6 +807,7 @@ wal_segment_open(XLogReaderState *state, XLogSegNo nextSegNo,
 	char		path[MAXPGPATH];
 
 	XLogFilePath(path, tli, nextSegNo, state->segcxt.ws_segsize);
+	elog(LOG, "HOGE: %lu, %d => %s", nextSegNo, tli, path);
 	state->seg.ws_file = BasicOpenFile(path, O_RDONLY | PG_BINARY);
 	if (state->seg.ws_file >= 0)
 		return;
@@ -845,9 +845,11 @@ wal_segment_close(XLogReaderState *state)
  * loop for now.
  */
 bool
-read_local_xlog_page(XLogReaderState *state, XLogRecPtr targetPagePtr,
-					 int reqLen, XLogRecPtr targetRecPtr, char *cur_page)
+read_local_xlog_page(XLogReaderState *state)
 {
+	XLogRecPtr	targetPagePtr = state->readPagePtr;
+	int			reqLen		  = state->readLen;
+	char	   *cur_page	  = state->readBuf;
 	XLogRecPtr	read_upto,
 				loc;
 	TimeLineID	tli;
@@ -960,11 +962,12 @@ read_local_xlog_page(XLogReaderState *state, XLogRecPtr targetPagePtr,
 	 * as 'count', read the whole page anyway. It's guaranteed to be
 	 * zero-padded up to the page boundary if it's incomplete.
 	 */
-	if (!WALRead(state, cur_page, targetPagePtr, XLOG_BLCKSZ, tli,
-				 &errinfo))
+	if (!WALRead(state, wal_segment_open, wal_segment_close,
+				 cur_page, targetPagePtr, XLOG_BLCKSZ, tli, &errinfo))
 		WALReadRaiseError(&errinfo);
 
 	/* number of valid bytes in the buffer */
+	state->readPagePtr = targetPagePtr;
 	state->readLen = count;
 	return true;
 }
