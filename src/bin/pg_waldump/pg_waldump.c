@@ -332,7 +332,7 @@ WALDumpCloseSegment(XLogReaderState *state)
 }
 
 /* pg_waldump's XLogReaderRoutine->page_read callback */
-static int
+static bool
 WALDumpReadPage(XLogReaderState *state, XLogRecPtr targetPagePtr, int reqLen,
 				XLogRecPtr targetPtr, char *readBuff)
 {
@@ -349,7 +349,8 @@ WALDumpReadPage(XLogReaderState *state, XLogRecPtr targetPagePtr, int reqLen,
 		else
 		{
 			private->endptr_reached = true;
-			return -1;
+			state->readLen = -1;
+			return false;
 		}
 	}
 
@@ -374,7 +375,8 @@ WALDumpReadPage(XLogReaderState *state, XLogRecPtr targetPagePtr, int reqLen,
 						errinfo.wre_req);
 	}
 
-	return count;
+	state->readLen = count;
+	return true;
 }
 
 /*
