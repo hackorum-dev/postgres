@@ -665,6 +665,10 @@ static void UpdateLastRemovedPtr(char *filename);
 static void ValidateXLOGDirectoryStructure(void);
 static void CleanupBackupHistory(void);
 static void UpdateMinRecoveryPoint(XLogRecPtr lsn, bool force);
+static bool XLogAcceptWrites(bool performedWalRecovery, TimeLineID newTLI,
+							 TimeLineID EndOfLogTLI, XLogRecPtr EndOfLog,
+							 XLogRecPtr abortedRecPtr,
+							 XLogRecPtr missingContrecPtr);
 static bool PerformRecoveryXLogAction(void);
 static void InitControlFile(uint64 sysidentifier);
 static void WriteControlFile(void);
@@ -5527,45 +5531,9 @@ StartupXLOG(void)
 	/* Shut down xlogreader */
 	ShutdownWalRecovery();
 
-	/* Enable WAL writes for this backend only. */
-	LocalSetXLogInsertAllowed();
-
-	/* If necessary, write overwrite-contrecord before doing anything else */
-	if (!XLogRecPtrIsInvalid(abortedRecPtr))
-	{
-		Assert(!XLogRecPtrIsInvalid(missingContrecPtr));
-		CreateOverwriteContrecordRecord(abortedRecPtr, missingContrecPtr, newTLI);
-	}
-
-	/*
-	 * Update full_page_writes in shared memory and write an XLOG_FPW_CHANGE
-	 * record before resource manager writes cleanup WAL records or checkpoint
-	 * record is written.
-	 */
-	Insert->fullPageWrites = lastFullPageWrites;
-	UpdateFullPageWrites();
-
-	/*
-	 * Emit checkpoint or end-of-recovery record in XLOG, if required.
-	 */
-	if (performedWalRecovery)
-		promoted = PerformRecoveryXLogAction();
-
-	/*
-	 * If any of the critical GUCs have changed, log them before we allow
-	 * backends to write WAL.
-	 */
-	XLogReportParameters();
-
-	/* If this is archive recovery, perform post-recovery cleanup actions. */
-	if (ArchiveRecoveryRequested)
-		CleanupAfterArchiveRecovery(EndOfLogTLI, EndOfLog, newTLI);
-
-	/*
-	 * Local WAL inserts enabled, so it's time to finish initialization of
-	 * commit timestamp.
-	 */
-	CompleteCommitTsInitialization();
+	/* Prepare to accept WAL writes. */
+	promoted = XLogAcceptWrites(performedWalRecovery, newTLI, EndOfLogTLI,
+								EndOfLog, abortedRecPtr, missingContrecPtr);
 
 	/*
 	 * All done with end-of-recovery actions.
@@ -5618,6 +5586,60 @@ StartupXLOG(void)
 	 */
 	if (promoted)
 		RequestCheckpoint(CHECKPOINT_FORCE);
+}
+
+/*
+ * Prepare to accept WAL writes.
+ */
+static bool
+XLogAcceptWrites(bool performedWalRecovery, TimeLineID newTLI,
+				 TimeLineID EndOfLogTLI, XLogRecPtr EndOfLog,
+				 XLogRecPtr abortedRecPtr, XLogRecPtr missingContrecPtr)
+{
+	bool		promoted = false;
+	XLogCtlInsert *Insert = &XLogCtl->Insert;
+
+	/* Enable WAL writes for this backend only. */
+	LocalSetXLogInsertAllowed();
+
+	/* If necessary, write overwrite-contrecord before doing anything else */
+	if (!XLogRecPtrIsInvalid(abortedRecPtr))
+	{
+		Assert(!XLogRecPtrIsInvalid(missingContrecPtr));
+		CreateOverwriteContrecordRecord(abortedRecPtr, missingContrecPtr, newTLI);
+	}
+
+	/*
+	 * Update full_page_writes in shared memory and write an XLOG_FPW_CHANGE
+	 * record before resource manager writes cleanup WAL records or checkpoint
+	 * record is written.
+	 */
+	Insert->fullPageWrites = lastFullPageWrites;
+	UpdateFullPageWrites();
+
+	/*
+	 * Emit checkpoint or end-of-recovery record in XLOG, if required.
+	 */
+	if (performedWalRecovery)
+		promoted = PerformRecoveryXLogAction();
+
+	/*
+	 * If any of the critical GUCs have changed, log them before we allow
+	 * backends to write WAL.
+	 */
+	XLogReportParameters();
+
+	/* If this is archive recovery, perform post-recovery cleanup actions. */
+	if (ArchiveRecoveryRequested)
+		CleanupAfterArchiveRecovery(EndOfLogTLI, EndOfLog, newTLI);
+
+	/*
+	 * Local WAL inserts enabled, so it's time to finish initialization of
+	 * commit timestamp.
+	 */
+	CompleteCommitTsInitialization();
+
+	return promoted;
 }
 
 /*
