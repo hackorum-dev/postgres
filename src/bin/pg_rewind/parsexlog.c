@@ -263,6 +263,8 @@ SimpleXLogPageRead(XLogReaderState *xlogreader, const char *datadir,
 	XLogSegNo	targetSegNo;
 	int			r;
 
+	Assert(xlogreader->reqLen <= XLOG_BLCKSZ);
+
 	XLByteToSeg(targetPagePtr, targetSegNo, WalSegSz);
 	XLogSegNoOffsetToRecPtr(targetSegNo + 1, 0, WalSegSz, targetSegEnd);
 	targetPageOff = XLogSegmentOffset(targetPagePtr, WalSegSz);
@@ -313,7 +315,7 @@ SimpleXLogPageRead(XLogReaderState *xlogreader, const char *datadir,
 			if (restoreCommand == NULL)
 			{
 				pg_log_error("could not open file \"%s\": %m", xlogfpath);
-				xlogreader->readLen = -1;
+				XLogReaderNotifySize(xlogreader, -1);
 				return false;
 			}
 
@@ -328,7 +330,7 @@ SimpleXLogPageRead(XLogReaderState *xlogreader, const char *datadir,
 
 			if (xlogreadfd < 0)
 			{
-				xlogreader->readLen = -1;
+				XLogReaderNotifySize(xlogreader, -1);
 				return false;
 			}
 			else
@@ -346,7 +348,7 @@ SimpleXLogPageRead(XLogReaderState *xlogreader, const char *datadir,
 	if (lseek(xlogreadfd, (off_t) targetPageOff, SEEK_SET) < 0)
 	{
 		pg_log_error("could not seek in file \"%s\": %m", xlogfpath);
-		xlogreader->readLen = -1;
+		XLogReaderNotifySize(xlogreader, -1);
 		return false;
 	}
 
@@ -360,14 +362,14 @@ SimpleXLogPageRead(XLogReaderState *xlogreader, const char *datadir,
 			pg_log_error("could not read file \"%s\": read %d of %zu",
 						 xlogfpath, r, (Size) XLOG_BLCKSZ);
 
-		xlogreader->readLen = -1;
+		XLogReaderNotifySize(xlogreader, -1);
 		return false;
 	}
 
 	Assert(targetSegNo == xlogreadsegno);
 
 	xlogreader->seg.ws_tli = targetHistory[*tliIndex].tli;
-	xlogreader->readLen = XLOG_BLCKSZ;
+	XLogReaderNotifySize(xlogreader, XLOG_BLCKSZ);
 	return true;
 }
 
