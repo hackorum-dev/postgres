@@ -511,7 +511,8 @@ RemovePublicationRelById(Oid proid)
 	 * publish the child tables when the parent table is published.
 	 */
 	relids = GetPubPartitionOptionRelations(relids, PUBLICATION_PART_ALL,
-											pubrel->prrelid);
+											pubrel->prrelid,
+											ShareUpdateExclusiveLock);
 
 	InvalidatePublicationRels(relids);
 

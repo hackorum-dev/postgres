@@ -140,15 +140,19 @@ pg_relation_is_publishable(PG_FUNCTION_ARGS)
 /*
  * Gets the relations based on the publication partition option for a specified
  * relation.
+ *
+ * This also locks the partitions, presumably with the same lockmode as one
+ * with which the original relation (given by 'relid') would have already been
+ * locked by the caller.
  */
 List *
 GetPubPartitionOptionRelations(List *result, PublicationPartOpt pub_partopt,
-							   Oid relid)
+							   Oid relid, int lockmode)
 {
 	if (get_rel_relkind(relid) == RELKIND_PARTITIONED_TABLE &&
 		pub_partopt != PUBLICATION_PART_ROOT)
 	{
-		List	   *all_parts = find_all_inheritors(relid, NoLock,
+		List	   *all_parts = find_all_inheritors(relid, lockmode,
 													NULL);
 
 		if (pub_partopt == PUBLICATION_PART_ALL)
@@ -255,7 +259,7 @@ publication_add_relation(Oid pubid, PublicationRelInfo *targetrel,
 	 * publish the child tables when the parent table is published.
 	 */
 	relids = GetPubPartitionOptionRelations(relids, PUBLICATION_PART_ALL,
-											relid);
+											relid, ShareUpdateExclusiveLock);
 
 	InvalidatePublicationRels(relids);
 
@@ -318,8 +322,14 @@ GetPublicationRelations(Oid pubid, PublicationPartOpt pub_partopt)
 		Form_pg_publication_rel pubrel;
 
 		pubrel = (Form_pg_publication_rel) GETSTRUCT(tup);
+
+		/*
+		 * No need to lock the partitions (if any) either because it is
+		 * unnecessary or the caller does its own locking.
+		 */
 		result = GetPubPartitionOptionRelations(result, pub_partopt,
-												pubrel->prrelid);
+												pubrel->prrelid,
+												NoLock);
 	}
 
 	systable_endscan(scan);
