@@ -396,15 +396,6 @@ amvacuumcleanup (IndexVacuumInfo *info,
   </para>
 
   <para>
-   <function>amvacuumcleanup</function> will also be called at completion of an
-   <command>ANALYZE</command> operation.  In this case <literal>stats</literal> is always
-   NULL and any return value will be ignored.  This case can be distinguished
-   by checking <literal>info-&gt;analyze_only</literal>.  It is recommended
-   that the access method do nothing except post-insert cleanup in such a
-   call, and that only in an autovacuum worker process.
-  </para>
-
-  <para>
 <programlisting>
 bool
 amcanreturn (Relation indexRelation, int attno);

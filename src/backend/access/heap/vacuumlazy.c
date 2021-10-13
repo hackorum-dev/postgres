@@ -3023,7 +3023,6 @@ lazy_vacuum_one_index(Relation indrel, IndexBulkDeleteResult *istat,
 	pg_rusage_init(&ru0);
 
 	ivinfo.index = indrel;
-	ivinfo.analyze_only = false;
 	ivinfo.report_progress = false;
 	ivinfo.estimated_count = true;
 	ivinfo.message_level = elevel;
@@ -3079,7 +3078,6 @@ lazy_cleanup_one_index(Relation indrel, IndexBulkDeleteResult *istat,
 	pg_rusage_init(&ru0);
 
 	ivinfo.index = indrel;
-	ivinfo.analyze_only = false;
 	ivinfo.report_progress = false;
 	ivinfo.estimated_count = estimated_count;
 	ivinfo.message_level = elevel;

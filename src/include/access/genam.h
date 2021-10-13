@@ -44,7 +44,6 @@ typedef struct IndexBuildResult
 typedef struct IndexVacuumInfo
 {
 	Relation	index;			/* the index being vacuumed */
-	bool		analyze_only;	/* ANALYZE (without any actual vacuum) */
 	bool		report_progress;	/* emit progress.h status reports */
 	bool		estimated_count;	/* num_heap_tuples is an estimate */
 	int			message_level;	/* ereport level for progress messages */

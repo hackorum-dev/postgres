@@ -696,20 +696,6 @@ ginvacuumcleanup(IndexVacuumInfo *info, IndexBulkDeleteResult *stats)
 	GinStatsData idxStat;
 
 	/*
-	 * In an autovacuum analyze, we want to clean up pending insertions.
-	 * Otherwise, an ANALYZE-only call is a no-op.
-	 */
-	if (info->analyze_only)
-	{
-		if (IsAutoVacuumWorkerProcess())
-		{
-			initGinState(&ginstate, index);
-			ginInsertCleanup(&ginstate, false, true, true, stats);
-		}
-		return stats;
-	}
-
-	/*
 	 * Set up all-zero stats and cleanup pending inserts if ginbulkdelete
 	 * wasn't called
 	 */

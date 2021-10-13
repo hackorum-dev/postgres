@@ -815,10 +815,6 @@ btvacuumcleanup(IndexVacuumInfo *info, IndexBulkDeleteResult *stats)
 {
 	BlockNumber num_delpages;
 
-	/* No-op in ANALYZE ONLY mode */
-	if (info->analyze_only)
-		return stats;
-
 	/*
 	 * If btbulkdelete was called, we need not do anything (we just maintain
 	 * the information used within _bt_vacuum_needs_cleanup() by calling

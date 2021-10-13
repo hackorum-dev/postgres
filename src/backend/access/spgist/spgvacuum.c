@@ -938,10 +938,6 @@ spgvacuumcleanup(IndexVacuumInfo *info, IndexBulkDeleteResult *stats)
 {
 	spgBulkDeleteState bds;
 
-	/* No-op in ANALYZE ONLY mode */
-	if (info->analyze_only)
-		return stats;
-
 	/*
 	 * We don't need to scan the index if there was a preceding bulkdelete
 	 * pass.  Otherwise, make a pass that won't delete any live tuples, but

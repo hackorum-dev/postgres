@@ -940,10 +940,6 @@ brinvacuumcleanup(IndexVacuumInfo *info, IndexBulkDeleteResult *stats)
 {
 	Relation	heapRel;
 
-	/* No-op in ANALYZE ONLY mode */
-	if (info->analyze_only)
-		return stats;
-
 	if (!stats)
 		stats = (IndexBulkDeleteResult *) palloc0(sizeof(IndexBulkDeleteResult));
 	stats->num_pages = RelationGetNumberOfBlocks(info->index);

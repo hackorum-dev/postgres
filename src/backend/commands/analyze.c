@@ -681,6 +681,9 @@ do_analyze_rel(Relation onerel, VacuumParams *params,
 							in_outer_xact);
 	}
 
+	/* Done with indexes */
+	vac_close_indexes(nindexes, Irel, NoLock);
+
 	/*
 	 * Now report ANALYZE to the stats collector.  For regular tables, we do
 	 * it only if not doing inherited stats.  For partitioned tables, we only
@@ -695,37 +698,6 @@ do_analyze_rel(Relation onerel, VacuumParams *params,
 							  (va_cols == NIL));
 	else if (onerel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
 		pgstat_report_analyze(onerel, 0, 0, (va_cols == NIL));
-
-	/*
-	 * If this isn't part of VACUUM ANALYZE, let index AMs do cleanup.
-	 *
-	 * Note that most index AMs perform a no-op as a matter of policy for
-	 * amvacuumcleanup() when called in ANALYZE-only mode.  The only exception
-	 * among core index AMs is GIN/ginvacuumcleanup().
-	 */
-	if (!(params->options & VACOPT_VACUUM))
-	{
-		for (ind = 0; ind < nindexes; ind++)
-		{
-			IndexBulkDeleteResult *stats;
-			IndexVacuumInfo ivinfo;
-
-			ivinfo.index = Irel[ind];
-			ivinfo.analyze_only = true;
-			ivinfo.estimated_count = true;
-			ivinfo.message_level = elevel;
-			ivinfo.num_heap_tuples = onerel->rd_rel->reltuples;
-			ivinfo.strategy = vac_strategy;
-
-			stats = index_vacuum_cleanup(&ivinfo, NULL);
-
-			if (stats)
-				pfree(stats);
-		}
-	}
-
-	/* Done with indexes */
-	vac_close_indexes(nindexes, Irel, NoLock);
 
 	/* Log the action if appropriate */
 	if (IsAutoVacuumWorkerProcess() && params->log_min_duration >= 0)

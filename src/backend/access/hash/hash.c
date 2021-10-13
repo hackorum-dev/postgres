@@ -647,7 +647,6 @@ hashvacuumcleanup(IndexVacuumInfo *info, IndexBulkDeleteResult *stats)
 	BlockNumber num_pages;
 
 	/* If hashbulkdelete wasn't called, return NULL signifying no change */
-	/* Note: this covers the analyze_only case too */
 	if (stats == NULL)
 		return NULL;
 

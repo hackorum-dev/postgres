@@ -74,10 +74,6 @@ gistbulkdelete(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 IndexBulkDeleteResult *
 gistvacuumcleanup(IndexVacuumInfo *info, IndexBulkDeleteResult *stats)
 {
-	/* No-op in ANALYZE ONLY mode */
-	if (info->analyze_only)
-		return stats;
-
 	/*
 	 * If gistbulkdelete was called, we need not do anything, just return the
 	 * stats from the latest gistbulkdelete call.  If it wasn't called, we

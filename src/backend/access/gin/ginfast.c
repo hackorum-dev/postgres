@@ -801,8 +801,8 @@ ginInsertCleanup(GinState *ginstate, bool full_clean,
 	if (forceCleanup)
 	{
 		/*
-		 * We are called from [auto]vacuum/analyze or gin_clean_pending_list()
-		 * and we would like to wait concurrent cleanup to finish.
+		 * We are called from [auto]vacuum or gin_clean_pending_list() and we
+		 * would like to wait for concurrent cleanup to finish
 		 */
 		LockPage(index, GIN_METAPAGE_BLKNO, ExclusiveLock);
 		workMemory =

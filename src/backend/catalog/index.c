@@ -3299,7 +3299,6 @@ validate_index(Oid heapId, Oid indexId, Snapshot snapshot)
 	 * Scan the index and gather up all the TIDs into a tuplesort object.
 	 */
 	ivinfo.index = indexRelation;
-	ivinfo.analyze_only = false;
 	ivinfo.report_progress = true;
 	ivinfo.estimated_count = true;
 	ivinfo.message_level = DEBUG2;
