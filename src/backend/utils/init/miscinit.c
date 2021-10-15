@@ -828,6 +828,8 @@ InitializeSessionUserIdStandalone(void)
 void
 SetSessionAuthorization(Oid userid, bool is_superuser)
 {
+	volatile PgBackendStatus *beentry = MyBEEntry;
+
 	/* Must have authenticated already, else can't make permission check */
 	AssertState(OidIsValid(AuthenticatedUserId));
 
@@ -838,6 +840,9 @@ SetSessionAuthorization(Oid userid, bool is_superuser)
 				 errmsg("permission denied to set session authorization")));
 
 	SetSessionUserId(userid, is_superuser);
+
+	/* Report changes in the PgBackendStatus array. */
+	beentry->st_userid = userid;
 
 	SetConfigOption("is_superuser",
 					is_superuser ? "on" : "off",
