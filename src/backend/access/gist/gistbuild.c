@@ -215,6 +215,7 @@ gistbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 			buildstate.buildMode = GIST_BUFFERING_DISABLED;
 		else					/* must be "auto" */
 			buildstate.buildMode = GIST_BUFFERING_AUTO;
+//elog(WARNING, "biffering_mode = %i", options->buffering_mode);
 	}
 	else
 	{

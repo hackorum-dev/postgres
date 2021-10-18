@@ -17,7 +17,7 @@
 
 #include "access/amvalidate.h"
 #include "access/htup_details.h"
-#include "access/reloptions.h"
+#include "access/options.h"
 #include "access/spgist_private.h"
 #include "access/toast_compression.h"
 #include "access/transam.h"
@@ -72,7 +72,6 @@ spghandler(PG_FUNCTION_ARGS)
 	amroutine->amvacuumcleanup = spgvacuumcleanup;
 	amroutine->amcanreturn = spgcanreturn;
 	amroutine->amcostestimate = spgcostestimate;
-	amroutine->amoptions = spgoptions;
 	amroutine->amproperty = spgproperty;
 	amroutine->ambuildphasename = NULL;
 	amroutine->amvalidate = spgvalidate;
@@ -87,6 +86,7 @@ spghandler(PG_FUNCTION_ARGS)
 	amroutine->amestimateparallelscan = NULL;
 	amroutine->aminitparallelscan = NULL;
 	amroutine->amparallelrescan = NULL;
+	amroutine->amreloptspecset = spggetreloptspecset;
 
 	PG_RETURN_POINTER(amroutine);
 }
@@ -550,6 +550,7 @@ SpGistGetBuffer(Relation index, int flags, int needSpace, bool *isNew)
 	 * related to the ones already on it.  But fillfactor mustn't cause an
 	 * error for requests that would otherwise be legal.
 	 */
+//elog(WARNING, "fillfactor = %i", SpGistGetFillFactor(index));
 	needSpace += SpGistGetTargetPageFreeSpace(index);
 	needSpace = Min(needSpace, SPGIST_PAGE_CAPACITY);
 
@@ -718,23 +719,6 @@ SpGistInitMetapage(Page page)
 	 */
 	((PageHeader) page)->pd_lower =
 		((char *) metadata + sizeof(SpGistMetaPageData)) - (char *) page;
-}
-
-/*
- * reloptions processing for SPGiST
- */
-bytea *
-spgoptions(Datum reloptions, bool validate)
-{
-	static const relopt_parse_elt tab[] = {
-		{"fillfactor", RELOPT_TYPE_INT, offsetof(SpGistOptions, fillfactor)},
-	};
-
-	return (bytea *) build_reloptions(reloptions, validate,
-									  RELOPT_KIND_SPGIST,
-									  sizeof(SpGistOptions),
-									  tab, lengthof(tab));
-
 }
 
 /*
@@ -1335,4 +1319,26 @@ spgproperty(Oid index_oid, int attno,
 	*isnull = false;
 
 	return true;
+}
+
+static options_spec_set *spgist_relopt_specset = NULL;
+
+void *
+spggetreloptspecset(void)
+{
+	if (!spgist_relopt_specset)
+	{
+		spgist_relopt_specset = allocateOptionsSpecSet(NULL,
+												sizeof(SpGistOptions), 1);
+
+		optionsSpecSetAddInt(spgist_relopt_specset, "fillfactor",
+						  "Packs spgist index pages only to this percentage",
+								 ShareUpdateExclusiveLock,		/* since it applies only
+																 * to later inserts */
+								 0,
+								 offsetof(SpGistOptions, fillfactor),
+								 SPGIST_DEFAULT_FILLFACTOR,
+								 SPGIST_MIN_FILLFACTOR, 100);
+	}
+	return spgist_relopt_specset;
 }

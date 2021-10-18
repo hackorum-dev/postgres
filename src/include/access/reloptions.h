@@ -22,6 +22,7 @@
 #include "access/amapi.h"
 #include "access/htup.h"
 #include "access/tupdesc.h"
+#include "access/options.h"
 #include "nodes/pg_list.h"
 #include "storage/lock.h"
 
@@ -110,20 +111,10 @@ typedef struct relopt_real
 	double		max;
 } relopt_real;
 
-/*
- * relopt_enum_elt_def -- One member of the array of acceptable values
- * of an enum reloption.
- */
-typedef struct relopt_enum_elt_def
-{
-	const char *string_val;
-	int			symbol_val;
-} relopt_enum_elt_def;
-
 typedef struct relopt_enum
 {
 	relopt_gen	gen;
-	relopt_enum_elt_def *members;
+	opt_enum_elt_def *members;
 	int			default_val;
 	const char *detailmsg;
 	/* null-terminated array of members */
@@ -167,6 +158,7 @@ typedef struct local_relopts
 	List	   *options;		/* list of local_relopt definitions */
 	List	   *validators;		/* list of relopts_validator callbacks */
 	Size		relopt_struct_size; /* size of parsed bytea structure */
+	options_spec_set * spec_set; /* FIXME */
 } local_relopts;
 
 /*
@@ -179,21 +171,6 @@ typedef struct local_relopts
 	((optstruct)->member == 0 ? NULL : \
 	 (char *)(optstruct) + (optstruct)->member)
 
-extern relopt_kind add_reloption_kind(void);
-extern void add_bool_reloption(bits32 kinds, const char *name, const char *desc,
-							   bool default_val, LOCKMODE lockmode);
-extern void add_int_reloption(bits32 kinds, const char *name, const char *desc,
-							  int default_val, int min_val, int max_val,
-							  LOCKMODE lockmode);
-extern void add_real_reloption(bits32 kinds, const char *name, const char *desc,
-							   double default_val, double min_val, double max_val,
-							   LOCKMODE lockmode);
-extern void add_enum_reloption(bits32 kinds, const char *name, const char *desc,
-							   relopt_enum_elt_def *members, int default_val,
-							   const char *detailmsg, LOCKMODE lockmode);
-extern void add_string_reloption(bits32 kinds, const char *name, const char *desc,
-								 const char *default_val, validate_string_relopt validator,
-								 LOCKMODE lockmode);
 
 extern void init_local_reloptions(local_relopts *opts, Size relopt_struct_size);
 extern void register_reloptions_validator(local_relopts *opts,
@@ -210,7 +187,7 @@ extern void add_local_real_reloption(local_relopts *opts, const char *name,
 									 int offset);
 extern void add_local_enum_reloption(local_relopts *relopts,
 									 const char *name, const char *desc,
-									 relopt_enum_elt_def *members,
+									 opt_enum_elt_def *members,
 									 int default_val, const char *detailmsg,
 									 int offset);
 extern void add_local_string_reloption(local_relopts *opts, const char *name,
@@ -219,29 +196,17 @@ extern void add_local_string_reloption(local_relopts *opts, const char *name,
 									   validate_string_relopt validator,
 									   fill_string_relopt filler, int offset);
 
-extern Datum transformRelOptions(Datum oldOptions, List *defList,
-								 const char *namspace, char *validnsps[],
-								 bool acceptOidsOff, bool isReset);
-extern List *untransformRelOptions(Datum options);
 extern bytea *extractRelOptions(HeapTuple tuple, TupleDesc tupdesc,
-								amoptions_function amoptions);
-extern void *build_reloptions(Datum reloptions, bool validate,
-							  relopt_kind kind,
-							  Size relopt_struct_size,
-							  const relopt_parse_elt *relopt_elems,
-							  int num_relopt_elems);
+								amreloptspecset_function amoptions_def_set);
 extern void *build_local_reloptions(local_relopts *relopts, Datum options,
 									bool validate);
 
-extern bytea *default_reloptions(Datum reloptions, bool validate,
-								 relopt_kind kind);
-extern bytea *heap_reloptions(char relkind, Datum reloptions, bool validate);
-extern bytea *view_reloptions(Datum reloptions, bool validate);
-extern bytea *partitioned_table_reloptions(Datum reloptions, bool validate);
-extern bytea *index_reloptions(amoptions_function amoptions, Datum reloptions,
-							   bool validate);
-extern bytea *attribute_reloptions(Datum reloptions, bool validate);
-extern bytea *tablespace_reloptions(Datum reloptions, bool validate);
-extern LOCKMODE AlterTableGetRelOptionsLockLevel(List *defList);
+options_spec_set *get_heap_relopt_spec_set(void);
+options_spec_set *get_toast_relopt_spec_set(void);
+options_spec_set *get_partitioned_relopt_spec_set(void);
+options_spec_set *get_view_relopt_spec_set(void);
+options_spec_set *get_attribute_options_spec_set(void);
+options_spec_set *get_tablespace_options_spec_set(void);
+extern LOCKMODE AlterTableGetRelOptionsLockLevel(Relation rel, List *defList);
 
 #endif							/* RELOPTIONS_H */

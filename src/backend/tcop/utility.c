@@ -1155,6 +1155,7 @@ ProcessUtilitySlow(ParseState *pstate,
 							CreateStmt *cstmt = (CreateStmt *) stmt;
 							Datum		toast_options;
 							static char *validnsps[] = HEAP_RELOPT_NAMESPACES;
+							List	   *toastDefList;
 
 							/* Remember transformed RangeVar for LIKE */
 							table_rv = cstmt->relation;
@@ -1178,15 +1179,17 @@ ProcessUtilitySlow(ParseState *pstate,
 							 * parse and validate reloptions for the toast
 							 * table
 							 */
-							toast_options = transformRelOptions((Datum) 0,
-																cstmt->options,
-																"toast",
-																validnsps,
-																true,
-																false);
-							(void) heap_reloptions(RELKIND_TOASTVALUE,
-												   toast_options,
-												   true);
+
+							optionsDefListValdateNamespaces(
+											  ((CreateStmt *) stmt)->options,
+															validnsps);
+
+							toastDefList = optionsDefListFilterNamespaces(
+									((CreateStmt *) stmt)->options, "toast");
+
+							toast_options = transformOptions(
+									   get_toast_relopt_spec_set(), (Datum) 0,
+															 toastDefList, 0);
 
 							NewRelationCreateToastTable(address.objectId,
 														toast_options);
@@ -1295,9 +1298,12 @@ ProcessUtilitySlow(ParseState *pstate,
 					 * lock on (for example) a relation on which we have no
 					 * permissions.
 					 */
-					lockmode = AlterTableGetLockLevel(atstmt->cmds);
-					relid = AlterTableLookupRelation(atstmt, lockmode);
-
+					relid = AlterTableLookupRelation(atstmt, NoLock); // FIXME!
+					if (OidIsValid(relid))
+					{
+						lockmode = AlterTableGetLockLevel(relid, atstmt->cmds);
+						relid = AlterTableLookupRelation(atstmt, lockmode);
+					}
 					if (OidIsValid(relid))
 					{
 						AlterTableUtilityContext atcontext;

@@ -512,6 +512,8 @@ gininsert(Relation index, Datum *values, bool *isnull,
 
 	oldCtx = MemoryContextSwitchTo(insertCtx);
 
+// elog(WARNING, "GinGetUseFastUpdate = %i", GinGetUseFastUpdate(index));
+
 	if (GinGetUseFastUpdate(index))
 	{
 		GinTupleCollector collector;

@@ -420,6 +420,9 @@ brin_doinsert(Relation idxrel, BlockNumber pagesPerRange,
 		freespace = br_page_get_freespace(page);
 
 	ItemPointerSet(&tid, blk, off);
+
+//elog(WARNING, "pages_per_range = %i", pagesPerRange);
+
 	brinSetHeapBlockItemptr(revmapbuf, pagesPerRange, heapBlk, tid);
 	MarkBufferDirty(revmapbuf);
 
