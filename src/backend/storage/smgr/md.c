@@ -450,13 +450,14 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 					 errmsg("could not extend file \"%s\": %m",
 							FilePathName(v->mdfd_vfd)),
 					 errhint("Check free disk space.")));
-		/* short write: complain appropriately */
-		ereport(ERROR,
-				(errcode(ERRCODE_DISK_FULL),
-				 errmsg("could not extend file \"%s\": wrote only %d of %d bytes at block %u",
-						FilePathName(v->mdfd_vfd),
-						nbytes, BLCKSZ, blocknum),
-				 errhint("Check free disk space.")));
+		else
+			/* short write: complain appropriately */
+			ereport(ERROR,
+					(errcode(ERRCODE_DISK_FULL),
+					 errmsg("could not extend file \"%s\": wrote only %d of %d bytes at block %u",
+							FilePathName(v->mdfd_vfd),
+							nbytes, BLCKSZ, blocknum),
+					 errhint("Check free disk space.")));
 	}
 
 	if (!skipFsync && !SmgrIsTemp(reln))
@@ -737,14 +738,15 @@ mdwrite(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 					(errcode_for_file_access(),
 					 errmsg("could not write block %u in file \"%s\": %m",
 							blocknum, FilePathName(v->mdfd_vfd))));
-		/* short write: complain appropriately */
-		ereport(ERROR,
-				(errcode(ERRCODE_DISK_FULL),
-				 errmsg("could not write block %u in file \"%s\": wrote only %d of %d bytes",
-						blocknum,
-						FilePathName(v->mdfd_vfd),
-						nbytes, BLCKSZ),
-				 errhint("Check free disk space.")));
+		else
+			/* short write: complain appropriately */
+			ereport(ERROR,
+					(errcode(ERRCODE_DISK_FULL),
+					 errmsg("could not write block %u in file \"%s\": wrote only %d of %d bytes",
+							blocknum,
+							FilePathName(v->mdfd_vfd),
+							nbytes, BLCKSZ),
+					 errhint("Check free disk space.")));
 	}
 
 	if (!skipFsync && !SmgrIsTemp(reln))
