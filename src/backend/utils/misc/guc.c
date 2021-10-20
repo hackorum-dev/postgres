@@ -1381,7 +1381,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"log_checkpoints", PGC_SIGHUP, LOGGING_WHAT,
 			gettext_noop("Logs each checkpoint."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS
 		},
 		&log_checkpoints,
 		false,
@@ -1391,7 +1391,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"log_connections", PGC_SU_BACKEND, LOGGING_WHAT,
 			gettext_noop("Logs each successful connection."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS
 		},
 		&Log_connections,
 		false,
@@ -1401,7 +1401,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"log_disconnections", PGC_SU_BACKEND, LOGGING_WHAT,
 			gettext_noop("Logs end of a session, including duration."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS
 		},
 		&Log_disconnections,
 		false,
@@ -1411,7 +1411,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"log_replication_commands", PGC_SUSET, LOGGING_WHAT,
 			gettext_noop("Logs each replication command."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS
 		},
 		&log_replication_commands,
 		false,
@@ -1469,7 +1469,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"log_duration", PGC_SUSET, LOGGING_WHAT,
 			gettext_noop("Logs the duration of each completed SQL statement."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS
 		},
 		&log_duration,
 		false,
@@ -1479,7 +1479,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"debug_print_parse", PGC_USERSET, LOGGING_WHAT,
 			gettext_noop("Logs each query's parse tree."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS
 		},
 		&Debug_print_parse,
 		false,
@@ -1489,7 +1489,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"debug_print_rewritten", PGC_USERSET, LOGGING_WHAT,
 			gettext_noop("Logs each query's rewritten parse tree."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS
 		},
 		&Debug_print_rewritten,
 		false,
@@ -1499,7 +1499,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"debug_print_plan", PGC_USERSET, LOGGING_WHAT,
 			gettext_noop("Logs each query's execution plan."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS
 		},
 		&Debug_print_plan,
 		false,
@@ -1509,7 +1509,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"debug_pretty_print", PGC_USERSET, LOGGING_WHAT,
 			gettext_noop("Indents parse and plan tree displays."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS
 		},
 		&Debug_pretty_print,
 		true,
@@ -1519,7 +1519,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"log_parser_stats", PGC_SUSET, STATS_MONITORING,
 			gettext_noop("Writes parser performance statistics to the server log."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS
 		},
 		&log_parser_stats,
 		false,
@@ -1529,7 +1529,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"log_planner_stats", PGC_SUSET, STATS_MONITORING,
 			gettext_noop("Writes planner performance statistics to the server log."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS
 		},
 		&log_planner_stats,
 		false,
@@ -1539,7 +1539,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"log_executor_stats", PGC_SUSET, STATS_MONITORING,
 			gettext_noop("Writes executor performance statistics to the server log."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS
 		},
 		&log_executor_stats,
 		false,
@@ -1549,7 +1549,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"log_statement_stats", PGC_SUSET, STATS_MONITORING,
 			gettext_noop("Writes cumulative performance statistics to the server log."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS
 		},
 		&log_statement_stats,
 		false,
@@ -1642,7 +1642,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"trace_notify", PGC_USERSET, DEVELOPER_OPTIONS,
 			gettext_noop("Generates debugging output for LISTEN and NOTIFY."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_LOGGING_SETTINGS,
 			GUC_NOT_IN_SAMPLE
 		},
 		&Trace_notify,
@@ -1655,7 +1655,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"trace_locks", PGC_SUSET, DEVELOPER_OPTIONS,
 			gettext_noop("Emits information about lock usage."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_LOGGING_SETTINGS,
 			GUC_NOT_IN_SAMPLE
 		},
 		&Trace_locks,
@@ -1666,7 +1666,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"trace_userlocks", PGC_SUSET, DEVELOPER_OPTIONS,
 			gettext_noop("Emits information about user lock usage."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_LOGGING_SETTINGS,
 			GUC_NOT_IN_SAMPLE
 		},
 		&Trace_userlocks,
@@ -1677,7 +1677,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"trace_lwlocks", PGC_SUSET, DEVELOPER_OPTIONS,
 			gettext_noop("Emits information about lightweight lock usage."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_LOGGING_SETTINGS,
 			GUC_NOT_IN_SAMPLE
 		},
 		&Trace_lwlocks,
@@ -1701,7 +1701,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"log_lock_waits", PGC_SUSET, LOGGING_WHAT,
 			gettext_noop("Logs long lock waits."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS
 		},
 		&log_lock_waits,
 		false,
@@ -1711,7 +1711,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"log_recovery_conflict_waits", PGC_SIGHUP, LOGGING_WHAT,
 			gettext_noop("Logs standby recovery conflict waits."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS
 		},
 		&log_recovery_conflict_waits,
 		false,
@@ -1724,7 +1724,7 @@ static struct config_bool ConfigureNamesBool[] =
 						 "of the connecting host. If you want them to show the host name you "
 						 "can turn this on, but depending on your host name resolution "
 						 "setup it might impose a non-negligible performance penalty."),
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS
 		},
 		&log_hostname,
 		false,
@@ -1850,7 +1850,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"logging_collector", PGC_POSTMASTER, LOGGING_WHERE,
 			gettext_noop("Start a subprocess to capture stderr output and/or csvlogs into log files."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS | GUC_WRITE_SERVER_FILES
 		},
 		&Logging_collector,
 		false,
@@ -1860,7 +1860,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"log_truncate_on_rotation", PGC_SIGHUP, LOGGING_WHERE,
 			gettext_noop("Truncate existing log files of same name during log rotation."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS | GUC_WRITE_SERVER_FILES
 		},
 		&Log_truncate_on_rotation,
 		false,
@@ -1872,7 +1872,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"trace_sort", PGC_USERSET, DEVELOPER_OPTIONS,
 			gettext_noop("Emit information about resource usage in sorting."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_LOGGING_SETTINGS,
 			GUC_NOT_IN_SAMPLE
 		},
 		&trace_sort,
@@ -1887,7 +1887,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"trace_syncscan", PGC_USERSET, DEVELOPER_OPTIONS,
 			gettext_noop("Generate debugging output for synchronized scanning."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_LOGGING_SETTINGS,
 			GUC_NOT_IN_SAMPLE
 		},
 		&trace_syncscan,
@@ -1953,7 +1953,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"escape_string_warning", PGC_USERSET, COMPAT_OPTIONS_PREVIOUS,
 			gettext_noop("Warn about backslash escapes in ordinary string literals."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS
 		},
 		&escape_string_warning,
 		true,
@@ -2092,7 +2092,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"syslog_sequence_numbers", PGC_SIGHUP, LOGGING_WHERE,
 			gettext_noop("Add sequence number to syslog messages to avoid duplicate suppression."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS | GUC_WRITE_SERVER_FILES
 		},
 		&syslog_sequence_numbers,
 		true,
@@ -2103,7 +2103,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"syslog_split_messages", PGC_SIGHUP, LOGGING_WHERE,
 			gettext_noop("Split messages sent to syslog by lines and to fit into 1024 bytes."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS | GUC_WRITE_SERVER_FILES
 		},
 		&syslog_split_messages,
 		true,
@@ -2539,7 +2539,7 @@ static struct config_int ConfigureNamesInt[] =
 						 "accepted by the chmod and umask system calls. "
 						 "(To use the customary octal format the number must "
 						 "start with a 0 (zero).)"),
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS | GUC_WRITE_SERVER_FILES
 		},
 		&Log_file_mode,
 		0600, 0000, 0777,
@@ -2715,7 +2715,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"trace_lock_oidmin", PGC_SUSET, DEVELOPER_OPTIONS,
 			gettext_noop("Sets the minimum OID of tables for tracking locks."),
 			gettext_noop("Is used to avoid output on system tables."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_LOGGING_SETTINGS,
 			GUC_NOT_IN_SAMPLE
 		},
 		&Trace_lock_oidmin,
@@ -2726,7 +2726,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"trace_lock_table", PGC_SUSET, DEVELOPER_OPTIONS,
 			gettext_noop("Sets the OID of the table with unconditionally lock tracing."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_LOGGING_SETTINGS,
 			GUC_NOT_IN_SAMPLE
 		},
 		&Trace_lock_table,
@@ -2993,7 +2993,7 @@ static struct config_int ConfigureNamesInt[] =
 			gettext_noop("Write a message to the server log if checkpoints "
 						 "caused by the filling of checkpoint segment files happens more "
 						 "frequently than this number of seconds. Zero turns off the warning."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_LOGGING_SETTINGS,
 			GUC_UNIT_S
 		},
 		&CheckPointWarning,
@@ -3155,7 +3155,7 @@ static struct config_int ConfigureNamesInt[] =
 						 "a sample of statements will be logged."
 						 " Sampling is determined by log_statement_sample_rate."),
 			gettext_noop("Zero logs a sample of all queries. -1 turns this feature off."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_LOGGING_SETTINGS,
 			GUC_UNIT_MS
 		},
 		&log_min_duration_sample,
@@ -3168,7 +3168,7 @@ static struct config_int ConfigureNamesInt[] =
 			gettext_noop("Sets the minimum execution time above which "
 						 "all statements will be logged."),
 			gettext_noop("Zero prints all queries. -1 turns this feature off."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_LOGGING_SETTINGS,
 			GUC_UNIT_MS
 		},
 		&log_min_duration_statement,
@@ -3181,7 +3181,7 @@ static struct config_int ConfigureNamesInt[] =
 			gettext_noop("Sets the minimum execution time above which "
 						 "autovacuum actions will be logged."),
 			gettext_noop("Zero prints all actions. -1 turns autovacuum logging off."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_LOGGING_SETTINGS,
 			GUC_UNIT_MS
 		},
 		&Log_autovacuum_min_duration,
@@ -3193,7 +3193,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"log_parameter_max_length", PGC_SUSET, LOGGING_WHAT,
 			gettext_noop("When logging statements, limit logged parameter values to first N bytes."),
 			gettext_noop("-1 to print values in full."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_LOGGING_SETTINGS,
 			GUC_UNIT_BYTE
 		},
 		&log_parameter_max_length,
@@ -3205,7 +3205,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"log_parameter_max_length_on_error", PGC_USERSET, LOGGING_WHAT,
 			gettext_noop("When reporting an error, limit logged parameter values to first N bytes."),
 			gettext_noop("-1 to print values in full."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_LOGGING_SETTINGS,
 			GUC_UNIT_BYTE
 		},
 		&log_parameter_max_length_on_error,
@@ -3341,7 +3341,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"log_rotation_age", PGC_SIGHUP, LOGGING_WHERE,
 			gettext_noop("Automatic log file rotation will occur after N minutes."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_LOGGING_SETTINGS | GUC_WRITE_SERVER_FILES,
 			GUC_UNIT_MIN
 		},
 		&Log_RotationAge,
@@ -3353,7 +3353,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"log_rotation_size", PGC_SIGHUP, LOGGING_WHERE,
 			gettext_noop("Automatic log file rotation will occur after N kilobytes."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_LOGGING_SETTINGS | GUC_WRITE_SERVER_FILES,
 			GUC_UNIT_KB
 		},
 		&Log_RotationSize,
@@ -3714,7 +3714,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"log_temp_files", PGC_SUSET, LOGGING_WHAT,
 			gettext_noop("Log the use of temporary files larger than this number of kilobytes."),
 			gettext_noop("Zero logs all files. The default is -1 (turning this feature off)."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_LOGGING_SETTINGS,
 			GUC_UNIT_KB
 		},
 		&log_temp_files,
@@ -4080,7 +4080,7 @@ static struct config_real ConfigureNamesReal[] =
 		{"log_statement_sample_rate", PGC_SUSET, LOGGING_WHEN,
 			gettext_noop("Fraction of statements exceeding log_min_duration_sample to be logged."),
 			gettext_noop("Use a value between 0.0 (never log) and 1.0 (always log)."),
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS
 		},
 		&log_statement_sample_rate,
 		1.0, 0.0, 1.0,
@@ -4092,7 +4092,7 @@ static struct config_real ConfigureNamesReal[] =
 			gettext_noop("Sets the fraction of transactions from which to log all statements."),
 			gettext_noop("Use a value between 0.0 (never log) and 1.0 (log all "
 						 "statements for all transactions)."),
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS
 		},
 		&log_xact_sample_rate,
 		0.0, 0.0, 1.0,
@@ -4263,7 +4263,7 @@ static struct config_string ConfigureNamesString[] =
 		{"log_line_prefix", PGC_SIGHUP, LOGGING_WHAT,
 			gettext_noop("Controls information prefixed to each log line."),
 			gettext_noop("If blank, no prefix is used."),
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS
 		},
 		&Log_line_prefix,
 		"%m [%p] ",
@@ -4274,7 +4274,7 @@ static struct config_string ConfigureNamesString[] =
 		{"log_timezone", PGC_SIGHUP, LOGGING_WHAT,
 			gettext_noop("Sets the time zone to use in log messages."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS
 		},
 		&log_timezone_string,
 		"GMT",
@@ -4542,7 +4542,7 @@ static struct config_string ConfigureNamesString[] =
 			gettext_noop("Valid values are combinations of \"stderr\", "
 						 "\"syslog\", \"csvlog\", and \"eventlog\", "
 						 "depending on the platform."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_LOGGING_SETTINGS | GUC_WRITE_SERVER_FILES,
 			GUC_LIST_INPUT
 		},
 		&Log_destination_string,
@@ -4554,7 +4554,7 @@ static struct config_string ConfigureNamesString[] =
 			gettext_noop("Sets the destination directory for log files."),
 			gettext_noop("Can be specified as relative to the data directory "
 						 "or as absolute path."),
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS | GUC_WRITE_SERVER_FILES
 		},
 		&Log_directory,
 		"log",
@@ -4588,7 +4588,7 @@ static struct config_string ConfigureNamesString[] =
 			gettext_noop("Sets the application name used to identify "
 						 "PostgreSQL messages in the event log."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS | GUC_WRITE_SERVER_FILES
 		},
 		&event_source,
 		DEFAULT_EVENT_SOURCE,
@@ -4879,7 +4879,7 @@ static struct config_string ConfigureNamesString[] =
 		{"application_name", PGC_USERSET, LOGGING_WHAT,
 			gettext_noop("Sets the application name to be reported in statistics and logs."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_LOGGING_SETTINGS,
 			GUC_IS_NAME | GUC_REPORT | GUC_NOT_IN_SAMPLE
 		},
 		&application_name,
@@ -4926,7 +4926,7 @@ static struct config_string ConfigureNamesString[] =
 		{"backtrace_functions", PGC_SUSET, DEVELOPER_OPTIONS,
 			gettext_noop("Log backtrace for errors in these functions."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_LOGGING_SETTINGS,
 			GUC_NOT_IN_SAMPLE
 		},
 		&backtrace_functions,
@@ -5052,7 +5052,7 @@ static struct config_enum ConfigureNamesEnum[] =
 		{"log_error_verbosity", PGC_SUSET, LOGGING_WHAT,
 			gettext_noop("Sets the verbosity of logged messages."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS
 		},
 		&Log_error_verbosity,
 		PGERROR_DEFAULT, log_error_verbosity_options,
@@ -5064,7 +5064,7 @@ static struct config_enum ConfigureNamesEnum[] =
 			gettext_noop("Sets the message levels that are logged."),
 			gettext_noop("Each level includes all the levels that follow it. The later"
 						 " the level, the fewer messages are sent."),
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS
 		},
 		&log_min_messages,
 		WARNING, server_message_level_options,
@@ -5076,7 +5076,7 @@ static struct config_enum ConfigureNamesEnum[] =
 			gettext_noop("Causes all statements generating error at or above this level to be logged."),
 			gettext_noop("Each level includes all the levels that follow it. The later"
 						 " the level, the fewer messages are sent."),
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS
 		},
 		&log_min_error_statement,
 		ERROR, server_message_level_options,
@@ -5087,7 +5087,7 @@ static struct config_enum ConfigureNamesEnum[] =
 		{"log_statement", PGC_SUSET, LOGGING_WHAT,
 			gettext_noop("Sets the type of statements logged."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS
 		},
 		&log_statement,
 		LOGSTMT_NONE, log_statement_options,
@@ -5098,7 +5098,7 @@ static struct config_enum ConfigureNamesEnum[] =
 		{"syslog_facility", PGC_SIGHUP, LOGGING_WHERE,
 			gettext_noop("Sets the syslog \"facility\" to be used when syslog enabled."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS | GUC_WRITE_SERVER_FILES
 		},
 		&syslog_facility,
 #ifdef HAVE_SYSLOG
@@ -5159,7 +5159,7 @@ static struct config_enum ConfigureNamesEnum[] =
 			gettext_noop("Enables logging of recovery-related debugging information."),
 			gettext_noop("Each level includes all the levels that follow it. The later"
 						 " the level, the fewer messages are sent."),
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS
 		},
 		&trace_recovery_messages,
 
@@ -5324,7 +5324,7 @@ static struct config_enum ConfigureNamesEnum[] =
 		{"ssl_max_protocol_version", PGC_SIGHUP, CONN_AUTH_SSL,
 			gettext_noop("Sets the maximum SSL/TLS protocol version to use."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_LOGGING_SETTINGS | GUC_WRITE_SERVER_FILES,
 			GUC_SUPERUSER_ONLY
 		},
 		&ssl_max_protocol_version,
@@ -5337,7 +5337,7 @@ static struct config_enum ConfigureNamesEnum[] =
 		{"recovery_init_sync_method", PGC_SIGHUP, ERROR_HANDLING_OPTIONS,
 			gettext_noop("Sets the method for synchronizing the data directory before crash recovery."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_LOGGING_SETTINGS | GUC_WRITE_SERVER_FILES
 		},
 		&recovery_init_sync_method,
 		RECOVERY_INIT_SYNC_METHOD_FSYNC, recovery_init_sync_method_options,
@@ -7637,6 +7637,14 @@ role_has_privileges(Oid roleid, int privileges)
 
 	if ((privileges & GUC_MANAGE_AUTOVACUUM_SETTINGS) &&
 		! has_privs_of_role(roleid, ROLE_PG_MANAGE_AUTOVACUUM_SETTINGS))
+		return false;
+
+	if ((privileges & GUC_MANAGE_LOGGING_SETTINGS) &&
+		! has_privs_of_role(roleid, ROLE_PG_MANAGE_LOGGING_SETTINGS))
+		return false;
+
+	if ((privileges & GUC_WRITE_SERVER_FILES) &&
+		! has_privs_of_role(roleid, ROLE_PG_WRITE_SERVER_FILES))
 		return false;
 
 	return true;
