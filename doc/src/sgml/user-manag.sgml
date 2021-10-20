@@ -618,6 +618,10 @@ DROP ROLE doomed_role;
        <entry>pg_manage_stats_settings</entry>
        <entry>Allow changing settings which control collection of statistics.</entry>
       </row>
+      <row>
+       <entry>pg_manage_recovery_settings</entry>
+       <entry>Allow changing settings which control or are generally used for recovery.</entry>
+      </row>
      </tbody>
     </tgroup>
    </table>
@@ -670,10 +674,11 @@ DROP ROLE doomed_role;
   <literal>pg_manage_replication_settings</literal>,
   <literal>pg_manage_connection_settings</literal>,
   <literal>pg_manage_wal_settings</literal>,
-  <literal>pg_manage_query_tuning_settings</literal> and
-  <literal>pg_manage_stats_settings</literal> roles are intended to
-  allow administrators to have trusted, but non-superuser, roles to configure
-  the server.
+  <literal>pg_manage_query_tuning_settings</literal>,
+  <literal>pg_manage_stats_settings</literal> and
+  <literal>pg_manage_recovery_settings</literal> roles are intended to allow
+  administrators to have trusted, but non-superuser, roles to configure the
+  server.
   </para>
 
   <para>

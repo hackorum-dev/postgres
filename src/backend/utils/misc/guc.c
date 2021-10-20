@@ -1287,7 +1287,7 @@ static struct config_bool ConfigureNamesBool[] =
 						 "(but still report a warning), and continue processing. This "
 						 "behavior could cause crashes or other serious problems. Only "
 						 "has an effect if checksums are enabled."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_RECOVERY_SETTINGS,
 			GUC_NOT_IN_SAMPLE
 		},
 		&ignore_checksum_failure,
@@ -1302,7 +1302,7 @@ static struct config_bool ConfigureNamesBool[] =
 						 "zero_damaged_pages to true causes the system to instead report a "
 						 "warning, zero out the damaged page, and continue processing. This "
 						 "behavior will destroy data, namely all the rows on the damaged page."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_RECOVERY_SETTINGS,
 			GUC_NOT_IN_SAMPLE
 		},
 		&zero_damaged_pages,
@@ -1322,7 +1322,7 @@ static struct config_bool ConfigureNamesBool[] =
 						 "crashes, data loss, propagate or hide corruption, "
 						 "or other serious problems. Only has an effect "
 						 "during recovery or in standby mode."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_RECOVERY_SETTINGS,
 			GUC_NOT_IN_SAMPLE
 		},
 		&ignore_invalid_pages,
@@ -1447,7 +1447,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"restart_after_crash", PGC_SIGHUP, ERROR_HANDLING_OPTIONS,
 			gettext_noop("Reinitialize server after backend crash."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_RECOVERY_SETTINGS
 		},
 		&restart_after_crash,
 		true,
@@ -1457,7 +1457,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"remove_temp_files_after_crash", PGC_SIGHUP, DEVELOPER_OPTIONS,
 			gettext_noop("Remove temporary files after backend crash."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_RECOVERY_SETTINGS,
 			GUC_NOT_IN_SAMPLE
 		},
 		&remove_temp_files_after_crash,
@@ -2032,7 +2032,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"allow_system_table_mods", PGC_SUSET, DEVELOPER_OPTIONS,
 			gettext_noop("Allows modifications of the structure of system tables."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_RECOVERY_SETTINGS,
 			GUC_NOT_IN_SAMPLE
 		},
 		&allowSystemTableMods,
@@ -2045,7 +2045,7 @@ static struct config_bool ConfigureNamesBool[] =
 			gettext_noop("Disables reading from system indexes."),
 			gettext_noop("It does not prevent updating the indexes, so it is safe "
 						 "to use.  The worst consequence is slowness."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_RECOVERY_SETTINGS,
 			GUC_NOT_IN_SAMPLE
 		},
 		&IgnoreSystemIndexes,
@@ -5337,7 +5337,7 @@ static struct config_enum ConfigureNamesEnum[] =
 		{"recovery_init_sync_method", PGC_SIGHUP, ERROR_HANDLING_OPTIONS,
 			gettext_noop("Sets the method for synchronizing the data directory before crash recovery."),
 			NULL,
-			GUC_MANAGE_LOGGING_SETTINGS | GUC_WRITE_SERVER_FILES
+			GUC_MANAGE_RECOVERY_SETTINGS
 		},
 		&recovery_init_sync_method,
 		RECOVERY_INIT_SYNC_METHOD_FSYNC, recovery_init_sync_method_options,
@@ -7665,6 +7665,10 @@ role_has_privileges(Oid roleid, int privileges)
 
 	if ((privileges & GUC_MANAGE_STATS_SETTINGS) &&
 		! has_privs_of_role(roleid, ROLE_PG_MANAGE_STATS_SETTINGS))
+		return false;
+
+	if ((privileges & GUC_MANAGE_RECOVERY_SETTINGS) &&
+		! has_privs_of_role(roleid, ROLE_PG_MANAGE_RECOVERY_SETTINGS))
 		return false;
 
 	return true;
