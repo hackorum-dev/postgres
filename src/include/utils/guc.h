@@ -203,6 +203,7 @@ typedef enum
  */
 #define GUC_MANAGE_HOST_RESOURCE_SETTINGS	0x0001
 #define GUC_MANAGE_VACUUM_SETTINGS			0x0002
+#define GUC_MANAGE_AUTOVACUUM_SETTINGS		0x0004
 
 /*
  * bit values in "flags" of a GUC variable

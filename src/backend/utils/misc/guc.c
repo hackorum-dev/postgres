@@ -1631,7 +1631,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"autovacuum", PGC_SIGHUP, AUTOVACUUM,
 			gettext_noop("Starts the autovacuum subprocess."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_AUTOVACUUM_SETTINGS
 		},
 		&autovacuum_start_daemon,
 		true,
@@ -2678,7 +2678,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"autovacuum_vacuum_cost_limit", PGC_SIGHUP, AUTOVACUUM,
 			gettext_noop("Vacuum cost amount available before napping, for autovacuum."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_AUTOVACUUM_SETTINGS
 		},
 		&autovacuum_vac_cost_limit,
 		-1, -1, 10000,
@@ -3464,7 +3464,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"autovacuum_naptime", PGC_SIGHUP, AUTOVACUUM,
 			gettext_noop("Time to sleep between autovacuum runs."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_AUTOVACUUM_SETTINGS,
 			GUC_UNIT_S
 		},
 		&autovacuum_naptime,
@@ -3475,7 +3475,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"autovacuum_vacuum_threshold", PGC_SIGHUP, AUTOVACUUM,
 			gettext_noop("Minimum number of tuple updates or deletes prior to vacuum."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_AUTOVACUUM_SETTINGS
 		},
 		&autovacuum_vac_thresh,
 		50, 0, INT_MAX,
@@ -3485,7 +3485,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"autovacuum_vacuum_insert_threshold", PGC_SIGHUP, AUTOVACUUM,
 			gettext_noop("Minimum number of tuple inserts prior to vacuum, or -1 to disable insert vacuums."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_AUTOVACUUM_SETTINGS
 		},
 		&autovacuum_vac_ins_thresh,
 		1000, -1, INT_MAX,
@@ -3495,7 +3495,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"autovacuum_analyze_threshold", PGC_SIGHUP, AUTOVACUUM,
 			gettext_noop("Minimum number of tuple inserts, updates, or deletes prior to analyze."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_AUTOVACUUM_SETTINGS
 		},
 		&autovacuum_anl_thresh,
 		50, 0, INT_MAX,
@@ -3506,7 +3506,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"autovacuum_freeze_max_age", PGC_POSTMASTER, AUTOVACUUM,
 			gettext_noop("Age at which to autovacuum a table to prevent transaction ID wraparound."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_AUTOVACUUM_SETTINGS
 		},
 		&autovacuum_freeze_max_age,
 
@@ -3522,7 +3522,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"autovacuum_multixact_freeze_max_age", PGC_POSTMASTER, AUTOVACUUM,
 			gettext_noop("Multixact age at which to autovacuum a table to prevent multixact wraparound."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_AUTOVACUUM_SETTINGS
 		},
 		&autovacuum_multixact_freeze_max_age,
 		400000000, 10000, 2000000000,
@@ -3533,7 +3533,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"autovacuum_max_workers", PGC_POSTMASTER, AUTOVACUUM,
 			gettext_noop("Sets the maximum number of simultaneously running autovacuum worker processes."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_AUTOVACUUM_SETTINGS
 		},
 		&autovacuum_max_workers,
 		3, 1, MAX_BACKENDS,
@@ -4024,7 +4024,7 @@ static struct config_real ConfigureNamesReal[] =
 		{"autovacuum_vacuum_cost_delay", PGC_SIGHUP, AUTOVACUUM,
 			gettext_noop("Vacuum cost delay in milliseconds, for autovacuum."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_AUTOVACUUM_SETTINGS,
 			GUC_UNIT_MS
 		},
 		&autovacuum_vac_cost_delay,
@@ -4036,7 +4036,7 @@ static struct config_real ConfigureNamesReal[] =
 		{"autovacuum_vacuum_scale_factor", PGC_SIGHUP, AUTOVACUUM,
 			gettext_noop("Number of tuple updates or deletes prior to vacuum as a fraction of reltuples."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_AUTOVACUUM_SETTINGS
 		},
 		&autovacuum_vac_scale,
 		0.2, 0.0, 100.0,
@@ -4047,7 +4047,7 @@ static struct config_real ConfigureNamesReal[] =
 		{"autovacuum_vacuum_insert_scale_factor", PGC_SIGHUP, AUTOVACUUM,
 			gettext_noop("Number of tuple inserts prior to vacuum as a fraction of reltuples."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_AUTOVACUUM_SETTINGS
 		},
 		&autovacuum_vac_ins_scale,
 		0.2, 0.0, 100.0,
@@ -4058,7 +4058,7 @@ static struct config_real ConfigureNamesReal[] =
 		{"autovacuum_analyze_scale_factor", PGC_SIGHUP, AUTOVACUUM,
 			gettext_noop("Number of tuple inserts, updates, or deletes prior to analyze as a fraction of reltuples."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_AUTOVACUUM_SETTINGS
 		},
 		&autovacuum_anl_scale,
 		0.1, 0.0, 100.0,
@@ -7633,6 +7633,10 @@ role_has_privileges(Oid roleid, int privileges)
 
 	if ((privileges & GUC_MANAGE_VACUUM_SETTINGS) &&
 		! has_privs_of_role(roleid, ROLE_PG_MANAGE_VACUUM_SETTINGS))
+		return false;
+
+	if ((privileges & GUC_MANAGE_AUTOVACUUM_SETTINGS) &&
+		! has_privs_of_role(roleid, ROLE_PG_MANAGE_AUTOVACUUM_SETTINGS))
 		return false;
 
 	return true;
