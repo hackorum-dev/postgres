@@ -2634,7 +2634,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"vacuum_cost_page_hit", PGC_USERSET, RESOURCES_VACUUM_DELAY,
 			gettext_noop("Vacuum cost for a page found in the buffer cache."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_VACUUM_SETTINGS
 		},
 		&VacuumCostPageHit,
 		1, 0, 10000,
@@ -2645,7 +2645,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"vacuum_cost_page_miss", PGC_USERSET, RESOURCES_VACUUM_DELAY,
 			gettext_noop("Vacuum cost for a page not found in the buffer cache."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_VACUUM_SETTINGS
 		},
 		&VacuumCostPageMiss,
 		2, 0, 10000,
@@ -2656,7 +2656,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"vacuum_cost_page_dirty", PGC_USERSET, RESOURCES_VACUUM_DELAY,
 			gettext_noop("Vacuum cost for a page dirtied by vacuum."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_VACUUM_SETTINGS
 		},
 		&VacuumCostPageDirty,
 		20, 0, 10000,
@@ -2667,7 +2667,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"vacuum_cost_limit", PGC_USERSET, RESOURCES_VACUUM_DELAY,
 			gettext_noop("Vacuum cost amount available before napping."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_VACUUM_SETTINGS
 		},
 		&VacuumCostLimit,
 		200, 1, 10000,
@@ -2787,7 +2787,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"vacuum_freeze_min_age", PGC_USERSET, CLIENT_CONN_STATEMENT,
 			gettext_noop("Minimum age at which VACUUM should freeze a table row."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_VACUUM_SETTINGS
 		},
 		&vacuum_freeze_min_age,
 		50000000, 0, 1000000000,
@@ -2798,7 +2798,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"vacuum_freeze_table_age", PGC_USERSET, CLIENT_CONN_STATEMENT,
 			gettext_noop("Age at which VACUUM should scan whole table to freeze tuples."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_VACUUM_SETTINGS
 		},
 		&vacuum_freeze_table_age,
 		150000000, 0, 2000000000,
@@ -2809,7 +2809,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"vacuum_multixact_freeze_min_age", PGC_USERSET, CLIENT_CONN_STATEMENT,
 			gettext_noop("Minimum age at which VACUUM should freeze a MultiXactId in a table row."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_VACUUM_SETTINGS
 		},
 		&vacuum_multixact_freeze_min_age,
 		5000000, 0, 1000000000,
@@ -2820,7 +2820,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"vacuum_multixact_freeze_table_age", PGC_USERSET, CLIENT_CONN_STATEMENT,
 			gettext_noop("Multixact age at which VACUUM should scan whole table to freeze tuples."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_VACUUM_SETTINGS
 		},
 		&vacuum_multixact_freeze_table_age,
 		150000000, 0, 2000000000,
@@ -2841,7 +2841,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"vacuum_failsafe_age", PGC_USERSET, CLIENT_CONN_STATEMENT,
 			gettext_noop("Age at which VACUUM should trigger failsafe to avoid a wraparound outage."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_VACUUM_SETTINGS
 		},
 		&vacuum_failsafe_age,
 		1600000000, 0, 2100000000,
@@ -2851,7 +2851,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"vacuum_multixact_failsafe_age", PGC_USERSET, CLIENT_CONN_STATEMENT,
 			gettext_noop("Multixact age at which VACUUM should trigger failsafe to avoid a wraparound outage."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_VACUUM_SETTINGS
 		},
 		&vacuum_multixact_failsafe_age,
 		1600000000, 0, 2100000000,
@@ -4012,7 +4012,7 @@ static struct config_real ConfigureNamesReal[] =
 		{"vacuum_cost_delay", PGC_USERSET, RESOURCES_VACUUM_DELAY,
 			gettext_noop("Vacuum cost delay in milliseconds."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_VACUUM_SETTINGS,
 			GUC_UNIT_MS
 		},
 		&VacuumCostDelay,
@@ -7629,6 +7629,10 @@ static bool
 role_has_privileges(Oid roleid, int privileges)
 {
 	if ((privileges & GUC_SUPERUSER_ONLY) && !superuser_arg(roleid))
+		return false;
+
+	if ((privileges & GUC_MANAGE_VACUUM_SETTINGS) &&
+		! has_privs_of_role(roleid, ROLE_PG_MANAGE_VACUUM_SETTINGS))
 		return false;
 
 	return true;
