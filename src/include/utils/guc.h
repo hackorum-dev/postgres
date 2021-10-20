@@ -201,6 +201,7 @@ typedef enum
 /*
  * privilege bits required to modify a GUC variable
  */
+#define GUC_MANAGE_HOST_RESOURCE_SETTINGS	0x0001
 
 /*
  * bit values in "flags" of a GUC variable
