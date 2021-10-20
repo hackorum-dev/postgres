@@ -199,6 +199,10 @@ typedef enum
 #define GUC_QUALIFIER_SEPARATOR '.'
 
 /*
+ * privilege bits required to modify a GUC variable
+ */
+
+/*
  * bit values in "flags" of a GUC variable
  */
 #define GUC_LIST_INPUT			0x0001	/* input can be list format */
@@ -300,6 +304,7 @@ extern void DefineCustomBoolVariable(const char *name,
 									 bool *valueAddr,
 									 bool bootValue,
 									 GucContext context,
+									 int privileges,
 									 int flags,
 									 GucBoolCheckHook check_hook,
 									 GucBoolAssignHook assign_hook,
@@ -313,6 +318,7 @@ extern void DefineCustomIntVariable(const char *name,
 									int minValue,
 									int maxValue,
 									GucContext context,
+									int privileges,
 									int flags,
 									GucIntCheckHook check_hook,
 									GucIntAssignHook assign_hook,
@@ -326,6 +332,7 @@ extern void DefineCustomRealVariable(const char *name,
 									 double minValue,
 									 double maxValue,
 									 GucContext context,
+									 int privileges,
 									 int flags,
 									 GucRealCheckHook check_hook,
 									 GucRealAssignHook assign_hook,
@@ -337,6 +344,7 @@ extern void DefineCustomStringVariable(const char *name,
 									   char **valueAddr,
 									   const char *bootValue,
 									   GucContext context,
+									   int privileges,
 									   int flags,
 									   GucStringCheckHook check_hook,
 									   GucStringAssignHook assign_hook,
@@ -349,6 +357,7 @@ extern void DefineCustomEnumVariable(const char *name,
 									 int bootValue,
 									 const struct config_enum_entry *options,
 									 GucContext context,
+									 int privileges,
 									 int flags,
 									 GucEnumCheckHook check_hook,
 									 GucEnumAssignHook assign_hook,

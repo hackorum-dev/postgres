@@ -292,6 +292,7 @@ _PG_init(void)
 							1,
 							INT_MAX,
 							PGC_SIGHUP,
+							GUC_SUPERUSER_ONLY,
 							0,
 							NULL,
 							NULL,
@@ -308,6 +309,7 @@ _PG_init(void)
 							1,
 							100,
 							PGC_POSTMASTER,
+							GUC_SUPERUSER_ONLY,
 							0,
 							NULL,
 							NULL,
@@ -319,6 +321,7 @@ _PG_init(void)
 							   &worker_spi_database,
 							   "postgres",
 							   PGC_POSTMASTER,
+							   GUC_SUPERUSER_ONLY,
 							   0,
 							   NULL, NULL, NULL);
 

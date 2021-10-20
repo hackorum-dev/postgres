@@ -463,6 +463,7 @@ _PG_init(void)
 							   &pgfdw_application_name,
 							   NULL,
 							   PGC_USERSET,
+							   GUC_SUPERUSER_ONLY,
 							   0,
 							   NULL,
 							   NULL,
