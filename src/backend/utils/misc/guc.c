@@ -1219,7 +1219,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"bonjour", PGC_POSTMASTER, CONN_AUTH_SETTINGS,
 			gettext_noop("Enables advertising the server via Bonjour."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_CONNECTION_SETTINGS
 		},
 		&enable_bonjour,
 		false,
@@ -1239,7 +1239,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"ssl", PGC_SIGHUP, CONN_AUTH_SSL,
 			gettext_noop("Enables SSL connections."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_CONNECTION_SETTINGS
 		},
 		&EnableSSL,
 		false,
@@ -1249,7 +1249,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"ssl_passphrase_command_supports_reload", PGC_SIGHUP, CONN_AUTH_SSL,
 			gettext_noop("Also use ssl_passphrase_command during server reload."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_CONNECTION_SETTINGS
 		},
 		&ssl_passphrase_command_supports_reload,
 		false,
@@ -1259,7 +1259,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"ssl_prefer_server_ciphers", PGC_SIGHUP, CONN_AUTH_SSL,
 			gettext_noop("Give priority to server ciphersuite order."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_CONNECTION_SETTINGS
 		},
 		&SSLPreferServerCiphers,
 		true,
@@ -1748,7 +1748,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"db_user_namespace", PGC_SIGHUP, CONN_AUTH_AUTH,
 			gettext_noop("Enables per-database user names."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_CONNECTION_SETTINGS
 		},
 		&Db_user_namespace,
 		false,
@@ -1942,7 +1942,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"krb_caseins_users", PGC_SIGHUP, CONN_AUTH_AUTH,
 			gettext_noop("Sets whether Kerberos and GSSAPI user names should be treated as case-insensitive."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_CONNECTION_SETTINGS
 		},
 		&pg_krb_caseins_users,
 		false,
@@ -2421,7 +2421,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"max_connections", PGC_POSTMASTER, CONN_AUTH_SETTINGS,
 			gettext_noop("Sets the maximum number of concurrent connections."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_CONNECTION_SETTINGS
 		},
 		&MaxConnections,
 		100, 1, MAX_BACKENDS,
@@ -2433,7 +2433,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"superuser_reserved_connections", PGC_POSTMASTER, CONN_AUTH_SETTINGS,
 			gettext_noop("Sets the number of connection slots reserved for superusers."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_CONNECTION_SETTINGS
 		},
 		&ReservedBackends,
 		3, 0, MAX_BACKENDS,
@@ -2508,7 +2508,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"port", PGC_POSTMASTER, CONN_AUTH_SETTINGS,
 			gettext_noop("Sets the TCP port the server listens on."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_CONNECTION_SETTINGS
 		},
 		&PostPortNumber,
 		DEF_PGPORT, 1, 65535,
@@ -2524,7 +2524,7 @@ static struct config_int ConfigureNamesInt[] =
 						 "accepted by the chmod and umask system calls. "
 						 "(To use the customary octal format the number must "
 						 "start with a 0 (zero).)"),
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_CONNECTION_SETTINGS
 		},
 		&Unix_socket_permissions,
 		0777, 0000, 0777,
@@ -2915,7 +2915,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"authentication_timeout", PGC_SIGHUP, CONN_AUTH_AUTH,
 			gettext_noop("Sets the maximum allowed time to complete client authentication."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_CONNECTION_SETTINGS,
 			GUC_UNIT_S
 		},
 		&AuthenticationTimeout,
@@ -3603,7 +3603,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"tcp_keepalives_idle", PGC_USERSET, CONN_AUTH_SETTINGS,
 			gettext_noop("Time between issuing TCP keepalives."),
 			gettext_noop("A value of 0 uses the system default."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_CONNECTION_SETTINGS,
 			GUC_UNIT_S
 		},
 		&tcp_keepalives_idle,
@@ -3615,7 +3615,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"tcp_keepalives_interval", PGC_USERSET, CONN_AUTH_SETTINGS,
 			gettext_noop("Time between TCP keepalive retransmits."),
 			gettext_noop("A value of 0 uses the system default."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_CONNECTION_SETTINGS,
 			GUC_UNIT_S
 		},
 		&tcp_keepalives_interval,
@@ -3627,7 +3627,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"ssl_renegotiation_limit", PGC_USERSET, CONN_AUTH_SSL,
 			gettext_noop("SSL renegotiation is no longer supported; this can only be 0."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_CONNECTION_SETTINGS,
 			GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE,
 		},
 		&ssl_renegotiation_limit,
@@ -3641,7 +3641,7 @@ static struct config_int ConfigureNamesInt[] =
 			gettext_noop("This controls the number of consecutive keepalive retransmits that can be "
 						 "lost before a connection is considered dead. A value of 0 uses the "
 						 "system default."),
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_CONNECTION_SETTINGS
 		},
 		&tcp_keepalives_count,
 		0, 0, INT_MAX,
@@ -3750,7 +3750,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"tcp_user_timeout", PGC_USERSET, CONN_AUTH_SETTINGS,
 			gettext_noop("TCP user timeout."),
 			gettext_noop("A value of 0 uses the system default."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_CONNECTION_SETTINGS,
 			GUC_UNIT_MS
 		},
 		&tcp_user_timeout,
@@ -3798,7 +3798,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"client_connection_check_interval", PGC_USERSET, CONN_AUTH_SETTINGS,
 			gettext_noop("Sets the time interval between checks for disconnection while running queries."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_CONNECTION_SETTINGS,
 			GUC_UNIT_MS
 		},
 		&client_connection_check_interval,
@@ -4348,7 +4348,7 @@ static struct config_string ConfigureNamesString[] =
 		{"krb_server_keyfile", PGC_SIGHUP, CONN_AUTH_AUTH,
 			gettext_noop("Sets the location of the Kerberos server key file."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_CONNECTION_SETTINGS
 		},
 		&pg_krb_server_keyfile,
 		PG_KRB_SRVTAB,
@@ -4359,7 +4359,7 @@ static struct config_string ConfigureNamesString[] =
 		{"bonjour_name", PGC_POSTMASTER, CONN_AUTH_SETTINGS,
 			gettext_noop("Sets the Bonjour service name."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_CONNECTION_SETTINGS
 		},
 		&bonjour_name,
 		"",
@@ -4622,7 +4622,7 @@ static struct config_string ConfigureNamesString[] =
 			gettext_noop("Sets the owning group of the Unix-domain socket."),
 			gettext_noop("The owning user of the socket is always the user "
 						 "that starts the server."),
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_CONNECTION_SETTINGS
 		},
 		&Unix_socket_group,
 		"",
@@ -4633,7 +4633,7 @@ static struct config_string ConfigureNamesString[] =
 		{"unix_socket_directories", PGC_POSTMASTER, CONN_AUTH_SETTINGS,
 			gettext_noop("Sets the directories where Unix-domain sockets will be created."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_CONNECTION_SETTINGS,
 			GUC_LIST_INPUT | GUC_LIST_QUOTE | GUC_SUPERUSER_ONLY
 		},
 		&Unix_socket_directories,
@@ -4649,7 +4649,7 @@ static struct config_string ConfigureNamesString[] =
 		{"listen_addresses", PGC_POSTMASTER, CONN_AUTH_SETTINGS,
 			gettext_noop("Sets the host name or IP address(es) to listen to."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_CONNECTION_SETTINGS,
 			GUC_LIST_INPUT
 		},
 		&ListenAddresses,
@@ -4738,7 +4738,7 @@ static struct config_string ConfigureNamesString[] =
 		{"ssl_cert_file", PGC_SIGHUP, CONN_AUTH_SSL,
 			gettext_noop("Location of the SSL server certificate file."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_CONNECTION_SETTINGS
 		},
 		&ssl_cert_file,
 		"server.crt",
@@ -4749,7 +4749,7 @@ static struct config_string ConfigureNamesString[] =
 		{"ssl_key_file", PGC_SIGHUP, CONN_AUTH_SSL,
 			gettext_noop("Location of the SSL server private key file."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_CONNECTION_SETTINGS
 		},
 		&ssl_key_file,
 		"server.key",
@@ -4760,7 +4760,7 @@ static struct config_string ConfigureNamesString[] =
 		{"ssl_ca_file", PGC_SIGHUP, CONN_AUTH_SSL,
 			gettext_noop("Location of the SSL certificate authority file."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_CONNECTION_SETTINGS
 		},
 		&ssl_ca_file,
 		"",
@@ -4771,7 +4771,7 @@ static struct config_string ConfigureNamesString[] =
 		{"ssl_crl_file", PGC_SIGHUP, CONN_AUTH_SSL,
 			gettext_noop("Location of the SSL certificate revocation list file."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_CONNECTION_SETTINGS
 		},
 		&ssl_crl_file,
 		"",
@@ -4782,7 +4782,7 @@ static struct config_string ConfigureNamesString[] =
 		{"ssl_crl_dir", PGC_SIGHUP, CONN_AUTH_SSL,
 			gettext_noop("Location of the SSL certificate revocation list directory."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_CONNECTION_SETTINGS
 		},
 		&ssl_crl_dir,
 		"",
@@ -4827,7 +4827,7 @@ static struct config_string ConfigureNamesString[] =
 		{"ssl_ciphers", PGC_SIGHUP, CONN_AUTH_SSL,
 			gettext_noop("Sets the list of allowed SSL ciphers."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_CONNECTION_SETTINGS
 		},
 		&SSLCipherSuites,
 #ifdef USE_OPENSSL
@@ -4842,7 +4842,7 @@ static struct config_string ConfigureNamesString[] =
 		{"ssl_ecdh_curve", PGC_SIGHUP, CONN_AUTH_SSL,
 			gettext_noop("Sets the curve to use for ECDH."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_CONNECTION_SETTINGS
 		},
 		&SSLECDHCurve,
 #ifdef USE_SSL
@@ -4857,7 +4857,7 @@ static struct config_string ConfigureNamesString[] =
 		{"ssl_dh_params_file", PGC_SIGHUP, CONN_AUTH_SSL,
 			gettext_noop("Location of the SSL DH parameters file."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_CONNECTION_SETTINGS
 		},
 		&ssl_dh_params_file,
 		"",
@@ -4868,7 +4868,7 @@ static struct config_string ConfigureNamesString[] =
 		{"ssl_passphrase_command", PGC_SIGHUP, CONN_AUTH_SSL,
 			gettext_noop("Command to obtain passphrases for SSL."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_CONNECTION_SETTINGS
 		},
 		&ssl_passphrase_command,
 		"",
@@ -5287,7 +5287,7 @@ static struct config_enum ConfigureNamesEnum[] =
 		{"password_encryption", PGC_USERSET, CONN_AUTH_AUTH,
 			gettext_noop("Chooses the algorithm for encrypting passwords."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_CONNECTION_SETTINGS
 		},
 		&Password_encryption,
 		PASSWORD_TYPE_SCRAM_SHA_256, password_encryption_options,
@@ -5312,7 +5312,7 @@ static struct config_enum ConfigureNamesEnum[] =
 		{"ssl_min_protocol_version", PGC_SIGHUP, CONN_AUTH_SSL,
 			gettext_noop("Sets the minimum SSL/TLS protocol version to use."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_CONNECTION_SETTINGS
 		},
 		&ssl_min_protocol_version,
 		PG_TLS1_2_VERSION,
@@ -5324,7 +5324,7 @@ static struct config_enum ConfigureNamesEnum[] =
 		{"ssl_max_protocol_version", PGC_SIGHUP, CONN_AUTH_SSL,
 			gettext_noop("Sets the maximum SSL/TLS protocol version to use."),
 			NULL,
-			GUC_MANAGE_LOGGING_SETTINGS | GUC_WRITE_SERVER_FILES,
+			GUC_MANAGE_CONNECTION_SETTINGS,
 			GUC_SUPERUSER_ONLY
 		},
 		&ssl_max_protocol_version,
@@ -7649,6 +7649,10 @@ role_has_privileges(Oid roleid, int privileges)
 
 	if ((privileges & GUC_MANAGE_REPLICATION_SETTINGS) &&
 		! has_privs_of_role(roleid, ROLE_PG_MANAGE_REPLICATION_SETTINGS))
+		return false;
+
+	if ((privileges & GUC_MANAGE_CONNECTION_SETTINGS) &&
+		! has_privs_of_role(roleid, ROLE_PG_MANAGE_CONNECTION_SETTINGS))
 		return false;
 
 	return true;

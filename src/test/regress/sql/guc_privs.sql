@@ -385,3 +385,58 @@ ALTER SYSTEM RESET wal_sender_timeout;  -- ok
 RESET statement_timeout;
 RESET SESSION AUTHORIZATION;
 DROP ROLE regress_replication_admin;
+-- Test role pg_manage_connection_settings
+-- Non-superuser with privileges to configure connections and authentication
+CREATE ROLE regress_connection_admin NOSUPERUSER;
+GRANT pg_manage_connection_settings TO regress_connection_admin;
+-- Perform all operations as user 'regress_connection_admin' --
+SET SESSION AUTHORIZATION regress_connection_admin;
+-- PGC_BACKEND
+SET ignore_system_indexes = OFF;  -- fail, cannot be set after connection start
+RESET ignore_system_indexes;  -- fail, cannot be set after connection start
+ALTER SYSTEM SET ignore_system_indexes = OFF;  -- fail, regress_connection_admin has insufficient privileges
+ALTER SYSTEM RESET ignore_system_indexes;  -- fail, regress_connection_admin has insufficient privileges
+-- PGC_INTERNAL
+SET block_size = 50;  -- fail, cannot be changed
+RESET block_size;  -- fail, cannot be changed
+ALTER SYSTEM SET block_size = 50;  -- fail, cannot be changed
+ALTER SYSTEM RESET block_size;  -- fail, cannot be changed
+-- PGC_POSTMASTER
+SET autovacuum_freeze_max_age = 1000050000;  -- fail, requires restart
+RESET autovacuum_freeze_max_age;  -- fail, requires restart
+ALTER SYSTEM SET autovacuum_freeze_max_age = 1000050000;  -- fail, regress_connection_admin has insufficient privileges
+ALTER SYSTEM RESET autovacuum_freeze_max_age;  -- fail, regress_connection_admin has insufficient privileges
+ALTER SYSTEM SET bonjour = OFF;  -- ok
+ALTER SYSTEM RESET bonjour;  -- ok
+ALTER SYSTEM SET config_file = '/usr/local/data/postgresql.conf';  -- fail, cannot be changed
+ALTER SYSTEM RESET config_file;  -- fail, cannot be changed
+-- PGC_SIGHUP
+SET autovacuum = OFF;  -- fail, requires reload
+RESET autovacuum;  -- fail, requires reload
+ALTER SYSTEM SET autovacuum = OFF;  -- fail, regress_connection_admin has insufficient privileges
+ALTER SYSTEM RESET autovacuum;  -- fail, regress_connection_admin has insufficient privileges
+ALTER SYSTEM SET authentication_timeout = 50;  -- ok
+ALTER SYSTEM RESET authentication_timeout;  -- ok
+-- PGC_SUSET
+SET lc_messages = 'en_US.UTF-8';  -- fail, regress_connection_admin has insufficient privileges
+RESET lc_messages;  -- fail, regress_connection_admin has insufficient privileges
+ALTER SYSTEM SET lc_messages = 'en_US.UTF-8';  -- fail, regress_connection_admin has insufficient privileges
+ALTER SYSTEM RESET lc_messages;  -- fail, regress_connection_admin has insufficient privileges
+-- PGC_SU_BACKEND
+SET jit_debugging_support = OFF;  -- fail, cannot be set after connection start
+RESET jit_debugging_support;  -- fail, cannot be set after connection start
+ALTER SYSTEM SET jit_debugging_support = OFF;  -- fail, regress_connection_admin has insufficient privileges
+ALTER SYSTEM RESET jit_debugging_support;  -- fail, regress_connection_admin has insufficient privileges
+-- PGC_USERSET
+SET DateStyle = 'ISO, MDY';  -- ok
+RESET DateStyle;  -- ok
+ALTER SYSTEM SET DateStyle = 'ISO, MDY';  -- fail, regress_connection_admin has insufficient privileges
+ALTER SYSTEM RESET DateStyle;  -- fail, regress_connection_admin has insufficient privileges
+ALTER SYSTEM SET password_encryption = 'scram-sha-256';  -- ok
+ALTER SYSTEM RESET password_encryption;  -- ok
+ALTER SYSTEM SET ssl_renegotiation_limit = 0;  -- fail, cannot be changed
+ALTER SYSTEM RESET ssl_renegotiation_limit;  -- fail, cannot be changed
+-- Finished testing role pg_manage_connection_settings
+RESET statement_timeout;
+RESET SESSION AUTHORIZATION;
+DROP ROLE regress_connection_admin;

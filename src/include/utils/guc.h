@@ -207,6 +207,7 @@ typedef enum
 #define GUC_MANAGE_LOGGING_SETTINGS			0x0008
 #define GUC_WRITE_SERVER_FILES				0x0010
 #define GUC_MANAGE_REPLICATION_SETTINGS		0x0020
+#define GUC_MANAGE_CONNECTION_SETTINGS		0x0040
 
 /*
  * bit values in "flags" of a GUC variable
