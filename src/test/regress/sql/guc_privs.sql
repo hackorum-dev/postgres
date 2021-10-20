@@ -330,3 +330,58 @@ ALTER SYSTEM RESET ssl_renegotiation_limit;  -- fail, cannot be changed
 RESET statement_timeout;
 RESET SESSION AUTHORIZATION;
 DROP ROLE regress_log_full_admin;
+-- Test role pg_manage_replication_settings
+-- Non-superuser with privileges to configure replication settings
+CREATE ROLE regress_replication_admin NOSUPERUSER;
+GRANT pg_manage_replication_settings TO regress_replication_admin;
+-- Perform all operations as user 'regress_replication_admin' --
+SET SESSION AUTHORIZATION regress_replication_admin;
+-- PGC_BACKEND
+SET ignore_system_indexes = OFF;  -- fail, cannot be set after connection start
+RESET ignore_system_indexes;  -- fail, cannot be set after connection start
+ALTER SYSTEM SET ignore_system_indexes = OFF;  -- fail, regress_replication_admin has insufficient privileges
+ALTER SYSTEM RESET ignore_system_indexes;  -- fail, regress_replication_admin has insufficient privileges
+-- PGC_INTERNAL
+SET block_size = 50;  -- fail, cannot be changed
+RESET block_size;  -- fail, cannot be changed
+ALTER SYSTEM SET block_size = 50;  -- fail, cannot be changed
+ALTER SYSTEM RESET block_size;  -- fail, cannot be changed
+-- PGC_POSTMASTER
+SET autovacuum_freeze_max_age = 1000050000;  -- fail, requires restart
+RESET autovacuum_freeze_max_age;  -- fail, requires restart
+ALTER SYSTEM SET autovacuum_freeze_max_age = 1000050000;  -- fail, regress_replication_admin has insufficient privileges
+ALTER SYSTEM RESET autovacuum_freeze_max_age;  -- fail, regress_replication_admin has insufficient privileges
+ALTER SYSTEM SET config_file = '/usr/local/data/postgresql.conf';  -- fail, cannot be changed
+ALTER SYSTEM RESET config_file;  -- fail, cannot be changed
+ALTER SYSTEM SET max_replication_slots = 50;  -- ok
+ALTER SYSTEM RESET max_replication_slots;  -- ok
+-- PGC_SIGHUP
+SET autovacuum = OFF;  -- fail, requires reload
+RESET autovacuum;  -- fail, requires reload
+ALTER SYSTEM SET autovacuum = OFF;  -- fail, regress_replication_admin has insufficient privileges
+ALTER SYSTEM RESET autovacuum;  -- fail, regress_replication_admin has insufficient privileges
+ALTER SYSTEM SET synchronous_standby_names = 'fee, fi, fo, fum';  -- ok
+ALTER SYSTEM RESET synchronous_standby_names;  -- ok
+-- PGC_SUSET
+SET lc_messages = 'en_US.UTF-8';  -- fail, regress_replication_admin has insufficient privileges
+RESET lc_messages;  -- fail, regress_replication_admin has insufficient privileges
+ALTER SYSTEM SET lc_messages = 'en_US.UTF-8';  -- fail, regress_replication_admin has insufficient privileges
+ALTER SYSTEM RESET lc_messages;  -- fail, regress_replication_admin has insufficient privileges
+-- PGC_SU_BACKEND
+SET jit_debugging_support = OFF;  -- fail, cannot be set after connection start
+RESET jit_debugging_support;  -- fail, cannot be set after connection start
+ALTER SYSTEM SET jit_debugging_support = OFF;  -- fail, regress_replication_admin has insufficient privileges
+ALTER SYSTEM RESET jit_debugging_support;  -- fail, regress_replication_admin has insufficient privileges
+-- PGC_USERSET
+SET DateStyle = 'ISO, MDY';  -- ok
+RESET DateStyle;  -- ok
+ALTER SYSTEM SET DateStyle = 'ISO, MDY';  -- fail, regress_replication_admin has insufficient privileges
+ALTER SYSTEM RESET DateStyle;  -- fail, regress_replication_admin has insufficient privileges
+ALTER SYSTEM SET ssl_renegotiation_limit = 0;  -- fail, cannot be changed
+ALTER SYSTEM RESET ssl_renegotiation_limit;  -- fail, cannot be changed
+ALTER SYSTEM SET wal_sender_timeout = 50;  -- ok
+ALTER SYSTEM RESET wal_sender_timeout;  -- ok
+-- Finished testing role pg_manage_replication_settings
+RESET statement_timeout;
+RESET SESSION AUTHORIZATION;
+DROP ROLE regress_replication_admin;
