@@ -550,3 +550,116 @@ ALTER SYSTEM RESET cpu_index_tuple_cost;  -- ok
 RESET statement_timeout;
 RESET SESSION AUTHORIZATION;
 DROP ROLE regress_query_tuning_admin;
+-- Test role pg_manage_stats_settings
+-- Non-superuser with privileges to configure stats collection
+CREATE ROLE regress_stats_collation_admin NOSUPERUSER;
+GRANT pg_manage_stats_settings TO regress_stats_collation_admin;
+-- Perform all operations as user 'regress_stats_collation_admin' --
+SET SESSION AUTHORIZATION regress_stats_collation_admin;
+-- PGC_BACKEND
+SET ignore_system_indexes = OFF;  -- fail, cannot be set after connection start
+RESET ignore_system_indexes;  -- fail, cannot be set after connection start
+ALTER SYSTEM SET ignore_system_indexes = OFF;  -- fail, regress_stats_collation_admin has insufficient privileges
+ALTER SYSTEM RESET ignore_system_indexes;  -- fail, regress_stats_collation_admin has insufficient privileges
+-- PGC_INTERNAL
+SET block_size = 50;  -- fail, cannot be changed
+RESET block_size;  -- fail, cannot be changed
+ALTER SYSTEM SET block_size = 50;  -- fail, cannot be changed
+ALTER SYSTEM RESET block_size;  -- fail, cannot be changed
+-- PGC_POSTMASTER
+SET autovacuum_freeze_max_age = 1000050000;  -- fail, requires restart
+RESET autovacuum_freeze_max_age;  -- fail, requires restart
+ALTER SYSTEM SET autovacuum_freeze_max_age = 1000050000;  -- fail, regress_stats_collation_admin has insufficient privileges
+ALTER SYSTEM RESET autovacuum_freeze_max_age;  -- fail, regress_stats_collation_admin has insufficient privileges
+ALTER SYSTEM SET config_file = '/usr/local/data/postgresql.conf';  -- fail, cannot be changed
+ALTER SYSTEM RESET config_file;  -- fail, cannot be changed
+ALTER SYSTEM SET track_activity_query_size = 524338;  -- ok
+ALTER SYSTEM RESET track_activity_query_size;  -- ok
+-- PGC_SIGHUP
+SET autovacuum = OFF;  -- fail, requires reload
+RESET autovacuum;  -- fail, requires reload
+ALTER SYSTEM SET autovacuum = OFF;  -- fail, regress_stats_collation_admin has insufficient privileges
+ALTER SYSTEM RESET autovacuum;  -- fail, regress_stats_collation_admin has insufficient privileges
+-- PGC_SUSET
+SET lc_messages = 'en_US.UTF-8';  -- fail, regress_stats_collation_admin has insufficient privileges
+RESET lc_messages;  -- fail, regress_stats_collation_admin has insufficient privileges
+ALTER SYSTEM SET lc_messages = 'en_US.UTF-8';  -- fail, regress_stats_collation_admin has insufficient privileges
+ALTER SYSTEM RESET lc_messages;  -- fail, regress_stats_collation_admin has insufficient privileges
+SET track_activities = OFF;  -- ok
+RESET track_activities;  -- ok
+ALTER SYSTEM SET track_activities = OFF;  -- ok
+ALTER SYSTEM RESET track_activities;  -- ok
+-- PGC_SU_BACKEND
+SET jit_debugging_support = OFF;  -- fail, cannot be set after connection start
+RESET jit_debugging_support;  -- fail, cannot be set after connection start
+ALTER SYSTEM SET jit_debugging_support = OFF;  -- fail, regress_stats_collation_admin has insufficient privileges
+ALTER SYSTEM RESET jit_debugging_support;  -- fail, regress_stats_collation_admin has insufficient privileges
+-- PGC_USERSET
+SET DateStyle = 'ISO, MDY';  -- ok
+RESET DateStyle;  -- ok
+ALTER SYSTEM SET DateStyle = 'ISO, MDY';  -- fail, regress_stats_collation_admin has insufficient privileges
+ALTER SYSTEM RESET DateStyle;  -- fail, regress_stats_collation_admin has insufficient privileges
+ALTER SYSTEM SET ssl_renegotiation_limit = 0;  -- fail, cannot be changed
+ALTER SYSTEM RESET ssl_renegotiation_limit;  -- fail, cannot be changed
+-- Finished testing role pg_manage_stats_settings
+RESET statement_timeout;
+RESET SESSION AUTHORIZATION;
+DROP ROLE regress_stats_collation_admin;
+-- Test combination of roles pg_manage_stats_settings and pg_write_server_files
+-- Non-superuser with privileges to configure stats collection and recording
+CREATE ROLE regress_stats_full_admin NOSUPERUSER;
+GRANT pg_manage_stats_settings TO regress_stats_full_admin;
+GRANT pg_write_server_files TO regress_stats_full_admin;
+-- Perform all operations as user 'regress_stats_full_admin' --
+SET SESSION AUTHORIZATION regress_stats_full_admin;
+-- PGC_BACKEND
+SET ignore_system_indexes = OFF;  -- fail, cannot be set after connection start
+RESET ignore_system_indexes;  -- fail, cannot be set after connection start
+ALTER SYSTEM SET ignore_system_indexes = OFF;  -- fail, regress_stats_full_admin has insufficient privileges
+ALTER SYSTEM RESET ignore_system_indexes;  -- fail, regress_stats_full_admin has insufficient privileges
+-- PGC_INTERNAL
+SET block_size = 50;  -- fail, cannot be changed
+RESET block_size;  -- fail, cannot be changed
+ALTER SYSTEM SET block_size = 50;  -- fail, cannot be changed
+ALTER SYSTEM RESET block_size;  -- fail, cannot be changed
+-- PGC_POSTMASTER
+SET autovacuum_freeze_max_age = 1000050000;  -- fail, requires restart
+RESET autovacuum_freeze_max_age;  -- fail, requires restart
+ALTER SYSTEM SET autovacuum_freeze_max_age = 1000050000;  -- fail, regress_stats_full_admin has insufficient privileges
+ALTER SYSTEM RESET autovacuum_freeze_max_age;  -- fail, regress_stats_full_admin has insufficient privileges
+ALTER SYSTEM SET config_file = '/usr/local/data/postgresql.conf';  -- fail, cannot be changed
+ALTER SYSTEM RESET config_file;  -- fail, cannot be changed
+ALTER SYSTEM SET track_activity_query_size = 524338;  -- ok
+ALTER SYSTEM RESET track_activity_query_size;  -- ok
+-- PGC_SIGHUP
+SET autovacuum = OFF;  -- fail, requires reload
+RESET autovacuum;  -- fail, requires reload
+ALTER SYSTEM SET autovacuum = OFF;  -- fail, regress_stats_full_admin has insufficient privileges
+ALTER SYSTEM RESET autovacuum;  -- fail, regress_stats_full_admin has insufficient privileges
+ALTER SYSTEM SET stats_temp_directory = 'pg_stat_tmp';  -- ok
+ALTER SYSTEM RESET stats_temp_directory;  -- ok
+-- PGC_SUSET
+SET lc_messages = 'en_US.UTF-8';  -- fail, regress_stats_full_admin has insufficient privileges
+RESET lc_messages;  -- fail, regress_stats_full_admin has insufficient privileges
+ALTER SYSTEM SET lc_messages = 'en_US.UTF-8';  -- fail, regress_stats_full_admin has insufficient privileges
+ALTER SYSTEM RESET lc_messages;  -- fail, regress_stats_full_admin has insufficient privileges
+SET track_activities = OFF;  -- ok
+RESET track_activities;  -- ok
+ALTER SYSTEM SET track_activities = OFF;  -- ok
+ALTER SYSTEM RESET track_activities;  -- ok
+-- PGC_SU_BACKEND
+SET jit_debugging_support = OFF;  -- fail, cannot be set after connection start
+RESET jit_debugging_support;  -- fail, cannot be set after connection start
+ALTER SYSTEM SET jit_debugging_support = OFF;  -- fail, regress_stats_full_admin has insufficient privileges
+ALTER SYSTEM RESET jit_debugging_support;  -- fail, regress_stats_full_admin has insufficient privileges
+-- PGC_USERSET
+SET DateStyle = 'ISO, MDY';  -- ok
+RESET DateStyle;  -- ok
+ALTER SYSTEM SET DateStyle = 'ISO, MDY';  -- fail, regress_stats_full_admin has insufficient privileges
+ALTER SYSTEM RESET DateStyle;  -- fail, regress_stats_full_admin has insufficient privileges
+ALTER SYSTEM SET ssl_renegotiation_limit = 0;  -- fail, cannot be changed
+ALTER SYSTEM RESET ssl_renegotiation_limit;  -- fail, cannot be changed
+-- Finished testing combination of roles pg_manage_stats_settings and pg_write_server_files
+RESET statement_timeout;
+RESET SESSION AUTHORIZATION;
+DROP ROLE regress_stats_full_admin;
