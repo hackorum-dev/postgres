@@ -212,6 +212,7 @@ typedef enum
 #define GUC_MANAGE_QUERY_TUNING_SETTINGS	0x0200	/* 0x0100 = superuser */
 #define GUC_MANAGE_STATS_SETTINGS			0x0400
 #define GUC_MANAGE_RECOVERY_SETTINGS		0x0800
+#define GUC_MANAGE_ERROR_HANDLING_SETTINGS	0x1000
 
 /*
  * bit values in "flags" of a GUC variable
