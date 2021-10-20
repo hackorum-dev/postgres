@@ -974,7 +974,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"enable_seqscan", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables the planner's use of sequential-scan plans."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&enable_seqscan,
@@ -985,7 +985,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"enable_indexscan", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables the planner's use of index-scan plans."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&enable_indexscan,
@@ -996,7 +996,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"enable_indexonlyscan", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables the planner's use of index-only-scan plans."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&enable_indexonlyscan,
@@ -1007,7 +1007,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"enable_bitmapscan", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables the planner's use of bitmap-scan plans."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&enable_bitmapscan,
@@ -1018,7 +1018,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"enable_tidscan", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables the planner's use of TID scan plans."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&enable_tidscan,
@@ -1029,7 +1029,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"enable_sort", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables the planner's use of explicit sort steps."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&enable_sort,
@@ -1040,7 +1040,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"enable_incremental_sort", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables the planner's use of incremental sort steps."),
 			NULL,
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_QUERY_TUNING_SETTINGS
 		},
 		&enable_incremental_sort,
 		true,
@@ -1050,7 +1050,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"enable_hashagg", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables the planner's use of hashed aggregation plans."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&enable_hashagg,
@@ -1061,7 +1061,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"enable_material", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables the planner's use of materialization."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&enable_material,
@@ -1072,7 +1072,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"enable_memoize", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables the planner's use of memoization."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&enable_memoize,
@@ -1083,7 +1083,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"enable_nestloop", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables the planner's use of nested-loop join plans."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&enable_nestloop,
@@ -1094,7 +1094,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"enable_mergejoin", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables the planner's use of merge join plans."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&enable_mergejoin,
@@ -1105,7 +1105,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"enable_hashjoin", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables the planner's use of hash join plans."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&enable_hashjoin,
@@ -1116,7 +1116,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"enable_gathermerge", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables the planner's use of gather merge plans."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&enable_gathermerge,
@@ -1127,7 +1127,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"enable_partitionwise_join", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables partitionwise join."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&enable_partitionwise_join,
@@ -1138,7 +1138,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"enable_partitionwise_aggregate", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables partitionwise aggregation and grouping."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&enable_partitionwise_aggregate,
@@ -1149,7 +1149,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"enable_parallel_append", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables the planner's use of parallel append plans."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&enable_parallel_append,
@@ -1160,7 +1160,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"enable_parallel_hash", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables the planner's use of parallel hash plans."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&enable_parallel_hash,
@@ -1173,7 +1173,7 @@ static struct config_bool ConfigureNamesBool[] =
 			gettext_noop("Allows the query planner and executor to compare partition "
 						 "bounds to conditions in the query to determine which "
 						 "partitions must be scanned."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&enable_partition_pruning,
@@ -1184,7 +1184,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"enable_async_append", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables the planner's use of async append plans."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&enable_async_append,
@@ -1196,7 +1196,7 @@ static struct config_bool ConfigureNamesBool[] =
 			gettext_noop("Enables genetic query optimization."),
 			gettext_noop("This algorithm attempts to do planning without "
 						 "exhaustive searching."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&enable_geqo,
@@ -1903,7 +1903,7 @@ static struct config_bool ConfigureNamesBool[] =
 			"optimize_bounded_sort", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enable bounded sorting using heap sort."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_NOT_IN_SAMPLE | GUC_EXPLAIN
 		},
 		&optimize_bounded_sort,
@@ -2126,7 +2126,7 @@ static struct config_bool ConfigureNamesBool[] =
 		{"jit", PGC_USERSET, QUERY_TUNING_OTHER,
 			gettext_noop("Allow JIT compilation."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&jit_enabled,
@@ -2265,7 +2265,7 @@ static struct config_int ConfigureNamesInt[] =
 			gettext_noop("Sets the default statistics target."),
 			gettext_noop("This applies to table columns that have not had a "
 						 "column-specific target set via ALTER TABLE SET STATISTICS."),
-			GUC_SUPERUSER_ONLY
+			GUC_MANAGE_QUERY_TUNING_SETTINGS
 		},
 		&default_statistics_target,
 		100, 1, 10000,
@@ -2278,7 +2278,7 @@ static struct config_int ConfigureNamesInt[] =
 			gettext_noop("The planner will merge subqueries into upper "
 						 "queries if the resulting FROM list would have no more than "
 						 "this many items."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&from_collapse_limit,
@@ -2292,7 +2292,7 @@ static struct config_int ConfigureNamesInt[] =
 			gettext_noop("The planner will flatten explicit JOIN "
 						 "constructs into lists of FROM items whenever a "
 						 "list of no more than this many items would result."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&join_collapse_limit,
@@ -2303,7 +2303,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"geqo_threshold", PGC_USERSET, QUERY_TUNING_GEQO,
 			gettext_noop("Sets the threshold of FROM items beyond which GEQO is used."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&geqo_threshold,
@@ -2314,7 +2314,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"geqo_effort", PGC_USERSET, QUERY_TUNING_GEQO,
 			gettext_noop("GEQO: effort is used to set the default for other GEQO parameters."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&Geqo_effort,
@@ -2325,7 +2325,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"geqo_pool_size", PGC_USERSET, QUERY_TUNING_GEQO,
 			gettext_noop("GEQO: number of individuals in the population."),
 			gettext_noop("Zero selects a suitable default value."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&Geqo_pool_size,
@@ -2336,7 +2336,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"geqo_generations", PGC_USERSET, QUERY_TUNING_GEQO,
 			gettext_noop("GEQO: number of iterations of the algorithm."),
 			gettext_noop("Zero selects a suitable default value."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&Geqo_generations,
@@ -3254,7 +3254,7 @@ static struct config_int ConfigureNamesInt[] =
 			RESOURCES_ASYNCHRONOUS,
 			gettext_noop("Number of simultaneous requests that can be handled efficiently by the disk subsystem."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&effective_io_concurrency,
@@ -3273,7 +3273,7 @@ static struct config_int ConfigureNamesInt[] =
 			RESOURCES_ASYNCHRONOUS,
 			gettext_noop("A variant of effective_io_concurrency that is used for maintenance work."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&maintenance_io_concurrency,
@@ -3665,7 +3665,7 @@ static struct config_int ConfigureNamesInt[] =
 			gettext_noop("Sets the planner's assumption about the total size of the data caches."),
 			gettext_noop("That is, the total size of the caches (kernel cache and shared buffers) used for PostgreSQL data files. "
 						 "This is measured in disk pages, which are normally 8 kB each."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_UNIT_BLOCKS | GUC_EXPLAIN,
 		},
 		&effective_cache_size,
@@ -3677,7 +3677,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"min_parallel_table_scan_size", PGC_USERSET, QUERY_TUNING_COST,
 			gettext_noop("Sets the minimum amount of table data for a parallel scan."),
 			gettext_noop("If the planner estimates that it will read a number of table pages too small to reach this limit, a parallel scan will not be considered."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_UNIT_BLOCKS | GUC_EXPLAIN,
 		},
 		&min_parallel_table_scan_size,
@@ -3689,7 +3689,7 @@ static struct config_int ConfigureNamesInt[] =
 		{"min_parallel_index_scan_size", PGC_USERSET, QUERY_TUNING_COST,
 			gettext_noop("Sets the minimum amount of index data for a parallel scan."),
 			gettext_noop("If the planner estimates that it will read a number of index pages too small to reach this limit, a parallel scan will not be considered."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_UNIT_BLOCKS | GUC_EXPLAIN,
 		},
 		&min_parallel_index_scan_size,
@@ -3820,7 +3820,7 @@ static struct config_real ConfigureNamesReal[] =
 			gettext_noop("Sets the planner's estimate of the cost of a "
 						 "sequentially fetched disk page."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&seq_page_cost,
@@ -3832,7 +3832,7 @@ static struct config_real ConfigureNamesReal[] =
 			gettext_noop("Sets the planner's estimate of the cost of a "
 						 "nonsequentially fetched disk page."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&random_page_cost,
@@ -3844,7 +3844,7 @@ static struct config_real ConfigureNamesReal[] =
 			gettext_noop("Sets the planner's estimate of the cost of "
 						 "processing each tuple (row)."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&cpu_tuple_cost,
@@ -3856,7 +3856,7 @@ static struct config_real ConfigureNamesReal[] =
 			gettext_noop("Sets the planner's estimate of the cost of "
 						 "processing each index entry during an index scan."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&cpu_index_tuple_cost,
@@ -3868,7 +3868,7 @@ static struct config_real ConfigureNamesReal[] =
 			gettext_noop("Sets the planner's estimate of the cost of "
 						 "processing each operator or function call."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&cpu_operator_cost,
@@ -3880,7 +3880,7 @@ static struct config_real ConfigureNamesReal[] =
 			gettext_noop("Sets the planner's estimate of the cost of "
 						 "passing each tuple (row) from worker to leader backend."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&parallel_tuple_cost,
@@ -3892,7 +3892,7 @@ static struct config_real ConfigureNamesReal[] =
 			gettext_noop("Sets the planner's estimate of the cost of "
 						 "starting up worker processes for parallel query."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&parallel_setup_cost,
@@ -3904,7 +3904,7 @@ static struct config_real ConfigureNamesReal[] =
 		{"jit_above_cost", PGC_USERSET, QUERY_TUNING_COST,
 			gettext_noop("Perform JIT compilation if query is more expensive."),
 			gettext_noop("-1 disables JIT compilation."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&jit_above_cost,
@@ -3916,7 +3916,7 @@ static struct config_real ConfigureNamesReal[] =
 		{"jit_optimize_above_cost", PGC_USERSET, QUERY_TUNING_COST,
 			gettext_noop("Optimize JIT-compiled functions if query is more expensive."),
 			gettext_noop("-1 disables optimization."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&jit_optimize_above_cost,
@@ -3928,7 +3928,7 @@ static struct config_real ConfigureNamesReal[] =
 		{"jit_inline_above_cost", PGC_USERSET, QUERY_TUNING_COST,
 			gettext_noop("Perform JIT inlining if query is more expensive."),
 			gettext_noop("-1 disables inlining."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&jit_inline_above_cost,
@@ -3941,7 +3941,7 @@ static struct config_real ConfigureNamesReal[] =
 			gettext_noop("Sets the planner's estimate of the fraction of "
 						 "a cursor's rows that will be retrieved."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&cursor_tuple_fraction,
@@ -3953,7 +3953,7 @@ static struct config_real ConfigureNamesReal[] =
 		{"geqo_selection_bias", PGC_USERSET, QUERY_TUNING_GEQO,
 			gettext_noop("GEQO: selective pressure within the population."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&Geqo_selection_bias,
@@ -3965,7 +3965,7 @@ static struct config_real ConfigureNamesReal[] =
 		{"geqo_seed", PGC_USERSET, QUERY_TUNING_GEQO,
 			gettext_noop("GEQO: seed for random path selection."),
 			NULL,
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&Geqo_seed,
@@ -4993,7 +4993,7 @@ static struct config_enum ConfigureNamesEnum[] =
 			gettext_noop("Enables the planner to use constraints to optimize queries."),
 			gettext_noop("Table scans will be skipped if their constraints"
 						 " guarantee that no rows match the query."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&constraint_exclusion,
@@ -5300,7 +5300,7 @@ static struct config_enum ConfigureNamesEnum[] =
 			gettext_noop("Prepared statements can have custom and generic plans, and the planner "
 						 "will attempt to choose which is better.  This can be set to override "
 						 "the default behavior."),
-			GUC_SUPERUSER_ONLY,
+			GUC_MANAGE_QUERY_TUNING_SETTINGS,
 			GUC_EXPLAIN
 		},
 		&plan_cache_mode,
@@ -7657,6 +7657,10 @@ role_has_privileges(Oid roleid, int privileges)
 
 	if ((privileges & GUC_MANAGE_WAL_SETTINGS) &&
 		! has_privs_of_role(roleid, ROLE_PG_MANAGE_WAL_SETTINGS))
+		return false;
+
+	if ((privileges & GUC_MANAGE_QUERY_TUNING_SETTINGS) &&
+		! has_privs_of_role(roleid, ROLE_PG_MANAGE_QUERY_TUNING_SETTINGS))
 		return false;
 
 	return true;
