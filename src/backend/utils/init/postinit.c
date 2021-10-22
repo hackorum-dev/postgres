@@ -40,6 +40,7 @@
 #include "pgstat.h"
 #include "postmaster/autovacuum.h"
 #include "postmaster/postmaster.h"
+#include "replication/slot.h"
 #include "replication/walsender.h"
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
@@ -530,6 +531,12 @@ BaseInit(void)
 	 * can).
 	 */
 	pgstat_initialize();
+
+	/*
+	 * Initialize replication slot. This must be after pgstat_initialize() so
+	 * that the cleanup happens before the shutdown of pgstat facility.
+	 */
+	ReplicationSlotInit();
 
 	/* Do local initialization of storage and buffer managers */
 	InitSync();

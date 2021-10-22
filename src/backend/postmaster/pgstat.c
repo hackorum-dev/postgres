@@ -306,6 +306,8 @@ static bool pgstat_is_initialized = false;
 static bool pgstat_is_shutdown = false;
 #endif
 
+/* per-backend variable for assertion */
+bool pgstat_initialized PG_USED_FOR_ASSERTS_ONLY = false;
 
 /* ----------
  * Local function forward declarations
@@ -3036,6 +3038,7 @@ pgstat_initialize(void)
 
 	/* Set up a process-exit hook to clean up */
 	before_shmem_exit(pgstat_shutdown_hook, 0);
+	pgstat_initialized = true;
 
 #ifdef USE_ASSERT_CHECKING
 	pgstat_is_initialized = true;

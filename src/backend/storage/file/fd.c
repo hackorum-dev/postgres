@@ -917,6 +917,7 @@ InitTemporaryFileAccess(void)
 	 * Register before-shmem-exit hook to ensure temp files are dropped while
 	 * we can still report stats.
 	 */
+	assert_pgstat_initialized();	/* the callback requires pgstat */
 	before_shmem_exit(BeforeShmemExit_Files, 0);
 
 #ifdef USE_ASSERT_CHECKING

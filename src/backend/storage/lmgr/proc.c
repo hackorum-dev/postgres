@@ -41,7 +41,6 @@
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "postmaster/autovacuum.h"
-#include "replication/slot.h"
 #include "replication/syncrep.h"
 #include "replication/walsender.h"
 #include "storage/condition_variable.h"
@@ -846,13 +845,6 @@ ProcKill(int code, Datum arg)
 
 	/* Cancel any pending condition variable sleep, too */
 	ConditionVariableCancelSleep();
-
-	/* Make sure active replication slots are released */
-	if (MyReplicationSlot != NULL)
-		ReplicationSlotRelease();
-
-	/* Also cleanup all the temporary slots. */
-	ReplicationSlotCleanup();
 
 	/*
 	 * Detach from any lock group of which we are a member.  If the leader

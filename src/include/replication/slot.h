@@ -193,6 +193,9 @@ extern PGDLLIMPORT int max_replication_slots;
 extern Size ReplicationSlotsShmemSize(void);
 extern void ReplicationSlotsShmemInit(void);
 
+/* per-backend initialization */
+extern void ReplicationSlotInit(void);
+
 /* management of individual slots */
 extern void ReplicationSlotCreate(const char *name, bool db_specific,
 								  ReplicationSlotPersistency p, bool two_phase);

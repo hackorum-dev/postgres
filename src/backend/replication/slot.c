@@ -46,6 +46,7 @@
 #include "pgstat.h"
 #include "replication/slot.h"
 #include "storage/fd.h"
+#include "storage/ipc.h"
 #include "storage/proc.h"
 #include "storage/procarray.h"
 #include "utils/builtins.h"
@@ -158,6 +159,33 @@ ReplicationSlotsShmemInit(void)
 			ConditionVariableInit(&slot->active_cv);
 		}
 	}
+}
+
+/*
+ * Exit hook to cleanup replication slots.
+ */
+static void
+ReplicationSlotShutdown(int code, Datum arg)
+{
+	/* Make sure active replication slots are released */
+	if (MyReplicationSlot != NULL)
+		ReplicationSlotRelease();
+
+	/* Also cleanup all the temporary slots. */
+	ReplicationSlotCleanup();
+}
+
+/*
+ * Initialize replication slot facility per backend.
+ */
+void
+ReplicationSlotInit(void)
+{
+	if (max_replication_slots < 1)
+		return;
+
+	assert_pgstat_initialized();	/* the callback requires pgstat */
+	before_shmem_exit(ReplicationSlotShutdown, (Datum) 0);
 }
 
 /*

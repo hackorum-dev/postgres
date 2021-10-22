@@ -992,6 +992,15 @@ extern PgStat_Counter pgStatTransactionIdleTime;
  */
 extern SessionEndType pgStatSessionEndCause;
 
+/*
+ * Modules that require pgstat (at process exit) should install their
+ * before-shmem hook after pgstat. This variable is used to make sure of that
+ * prerequisite.
+ */
+extern bool pgstat_initialized;
+#define assert_pgstat_initialized() Assert (pgstat_initialized);
+
+
 /* ----------
  * Functions called from postmaster
  * ----------
