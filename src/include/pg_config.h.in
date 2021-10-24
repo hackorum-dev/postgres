@@ -367,6 +367,9 @@
 /* Define to 1 if you have the `link' function. */
 #undef HAVE_LINK
 
+/* Define to 1 if you have the <linux/futex.h> header file. */
+#undef HAVE_LINUX_FUTEX_H
+
 /* Define to 1 if the system has the type `locale_t'. */
 #undef HAVE_LOCALE_T
 
@@ -623,6 +626,9 @@
 /* Define to 1 if you have the <sys/event.h> header file. */
 #undef HAVE_SYS_EVENT_H
 
+/* Define to 1 if you have the <sys/futex.h> header file. */
+#undef HAVE_SYS_FUTEX_H
+
 /* Define to 1 if you have the <sys/ipc.h> header file. */
 #undef HAVE_SYS_IPC_H
 
@@ -664,6 +670,9 @@
 
 /* Define to 1 if you have the <sys/uio.h> header file. */
 #undef HAVE_SYS_UIO_H
+
+/* Define to 1 if you have the <sys/umtx.h> header file. */
+#undef HAVE_SYS_UMTX_H
 
 /* Define to 1 if you have the <sys/un.h> header file. */
 #undef HAVE_SYS_UN_H
@@ -778,6 +787,9 @@
 
 /* Define to 1 if you have the `__strtoull' function. */
 #undef HAVE___STRTOULL
+
+/* Define to 1 if you have the `__ulock_wait' function. */
+#undef HAVE___ULOCK_WAIT
 
 /* Define to the appropriate printf length modifier for 64-bit ints. */
 #undef INT64_MODIFIER

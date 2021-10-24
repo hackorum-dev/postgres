@@ -1363,10 +1363,12 @@ AC_CHECK_HEADERS(m4_normalize([
 	getopt.h
 	ifaddrs.h
 	langinfo.h
+	linux/futex.h
 	mbarrier.h
 	poll.h
 	sys/epoll.h
 	sys/event.h
+	sys/futex.h
 	sys/ipc.h
 	sys/prctl.h
 	sys/procctl.h
@@ -1378,6 +1380,7 @@ AC_CHECK_HEADERS(m4_normalize([
 	sys/sockio.h
 	sys/tas.h
 	sys/uio.h
+	sys/umtx.h
 	sys/un.h
 	termios.h
 	ucred.h
@@ -1698,6 +1701,7 @@ LIBS_including_readline="$LIBS"
 LIBS=`echo "$LIBS" | sed -e 's/-ledit//g' -e 's/-lreadline//g'`
 
 AC_CHECK_FUNCS(m4_normalize([
+	__ulock_wait
 	backtrace_symbols
 	clock_gettime
 	copyfile
