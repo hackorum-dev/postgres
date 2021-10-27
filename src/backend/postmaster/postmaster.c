@@ -1024,6 +1024,7 @@ PostmasterMain(int argc, char *argv[])
 	 * process any libraries that should be preloaded at postmaster start
 	 */
 	process_shared_preload_libraries();
+	process_archive_library();
 
 	/*
 	 * Initialize SSL library, if specified.
@@ -5011,6 +5012,7 @@ SubPostmasterMain(int argc, char *argv[])
 	 * non-EXEC_BACKEND behavior.
 	 */
 	process_shared_preload_libraries();
+	process_archive_library();
 
 	/* Run backend or appropriate child */
 	if (strcmp(argv[1], "--forkbackend") == 0)

@@ -38,6 +38,7 @@
 #include "pgstat.h"
 #include "postmaster/autovacuum.h"
 #include "postmaster/interrupt.h"
+#include "postmaster/pgarch.h"
 #include "postmaster/postmaster.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
@@ -1614,6 +1615,9 @@ char	   *local_preload_libraries_string = NULL;
 /* Flag telling that we are loading shared_preload_libraries */
 bool		process_shared_preload_libraries_in_progress = false;
 
+/* Flag telling that we are loading archive_library */
+bool		process_archive_library_in_progress = false;
+
 /*
  * load the shared libraries listed in 'libraries'
  *
@@ -1694,6 +1698,29 @@ process_session_preload_libraries(void)
 	load_libraries(local_preload_libraries_string,
 				   "local_preload_libraries",
 				   true);
+}
+
+/*
+ * process the archive library
+ */
+void
+process_archive_library(void)
+{
+	process_archive_library_in_progress = true;
+
+	/*
+	 * The shell archiving code is in the core server, so there's nothing
+	 * to load for that.
+	 */
+	if (!ShellArchivingEnabled())
+	{
+		load_file(XLogArchiveLibrary, false);
+		ereport(DEBUG1,
+				(errmsg_internal("loaded archive library \"%s\"",
+								 XLogArchiveLibrary)));
+	}
+
+	process_archive_library_in_progress = false;
 }
 
 void

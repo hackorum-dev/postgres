@@ -25,18 +25,12 @@
  */
 #include "postgres.h"
 
-#include <fcntl.h>
-#include <signal.h>
-#include <time.h>
 #include <sys/stat.h>
-#include <sys/time.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 #include "access/xlog.h"
 #include "access/xlog_internal.h"
 #include "libpq/pqsignal.h"
-#include "miscadmin.h"
 #include "pgstat.h"
 #include "postmaster/interrupt.h"
 #include "postmaster/pgarch.h"
@@ -78,6 +72,8 @@ typedef struct PgArchData
 	int			pgprocno;		/* pgprocno of archiver process */
 } PgArchData;
 
+char *XLogArchiveLibrary = "";
+
 
 /* ----------
  * Local data
@@ -85,6 +81,8 @@ typedef struct PgArchData
  */
 static time_t last_sigterm_time = 0;
 static PgArchData *PgArch = NULL;
+static ArchiveModuleCallbacks *ArchiveContext = NULL;
+
 
 /*
  * Flags set by interrupt handlers for later service in the main loop.
@@ -103,6 +101,7 @@ static bool pgarch_readyXlog(char *xlog);
 static void pgarch_archiveDone(char *xlog);
 static void pgarch_die(int code, Datum arg);
 static void HandlePgArchInterrupts(void);
+static void LoadArchiveLibrary(void);
 
 /* Report shared memory space needed by PgArchShmemInit */
 Size
@@ -197,6 +196,11 @@ PgArchiverMain(void)
 	 * while we're sleeping.
 	 */
 	PgArch->pgprocno = MyProc->pgprocno;
+
+	/*
+	 * Load the archive_library.
+	 */
+	LoadArchiveLibrary();
 
 	pgarch_MainLoop();
 
@@ -358,11 +362,11 @@ pgarch_ArchiverCopyLoop(void)
 			 */
 			HandlePgArchInterrupts();
 
-			/* can't do anything if no command ... */
-			if (!XLogArchiveCommandSet())
+			/* can't do anything if not configured ... */
+			if (!ArchiveContext->check_configured_cb())
 			{
 				ereport(WARNING,
-						(errmsg("archive_mode enabled, yet archive_command is not set")));
+						(errmsg("archive_mode enabled, yet archiving is not configured")));
 				return;
 			}
 
@@ -443,136 +447,31 @@ pgarch_ArchiverCopyLoop(void)
 /*
  * pgarch_archiveXlog
  *
- * Invokes system(3) to copy one archive file to wherever it should go
+ * Invokes archive_file_cb to copy one archive file to wherever it should go
  *
  * Returns true if successful
  */
 static bool
 pgarch_archiveXlog(char *xlog)
 {
-	char		xlogarchcmd[MAXPGPATH];
 	char		pathname[MAXPGPATH];
 	char		activitymsg[MAXFNAMELEN + 16];
-	char	   *dp;
-	char	   *endp;
-	const char *sp;
-	int			rc;
+	bool		ret;
 
 	snprintf(pathname, MAXPGPATH, XLOGDIR "/%s", xlog);
-
-	/*
-	 * construct the command to be executed
-	 */
-	dp = xlogarchcmd;
-	endp = xlogarchcmd + MAXPGPATH - 1;
-	*endp = '\0';
-
-	for (sp = XLogArchiveCommand; *sp; sp++)
-	{
-		if (*sp == '%')
-		{
-			switch (sp[1])
-			{
-				case 'p':
-					/* %p: relative path of source file */
-					sp++;
-					strlcpy(dp, pathname, endp - dp);
-					make_native_path(dp);
-					dp += strlen(dp);
-					break;
-				case 'f':
-					/* %f: filename of source file */
-					sp++;
-					strlcpy(dp, xlog, endp - dp);
-					dp += strlen(dp);
-					break;
-				case '%':
-					/* convert %% to a single % */
-					sp++;
-					if (dp < endp)
-						*dp++ = *sp;
-					break;
-				default:
-					/* otherwise treat the % as not special */
-					if (dp < endp)
-						*dp++ = *sp;
-					break;
-			}
-		}
-		else
-		{
-			if (dp < endp)
-				*dp++ = *sp;
-		}
-	}
-	*dp = '\0';
-
-	ereport(DEBUG3,
-			(errmsg_internal("executing archive command \"%s\"",
-							 xlogarchcmd)));
 
 	/* Report archive activity in PS display */
 	snprintf(activitymsg, sizeof(activitymsg), "archiving %s", xlog);
 	set_ps_display(activitymsg);
 
-	rc = system(xlogarchcmd);
-	if (rc != 0)
-	{
-		/*
-		 * If either the shell itself, or a called command, died on a signal,
-		 * abort the archiver.  We do this because system() ignores SIGINT and
-		 * SIGQUIT while waiting; so a signal is very likely something that
-		 * should have interrupted us too.  Also die if the shell got a hard
-		 * "command not found" type of error.  If we overreact it's no big
-		 * deal, the postmaster will just start the archiver again.
-		 */
-		int			lev = wait_result_is_any_signal(rc, true) ? FATAL : LOG;
-
-		if (WIFEXITED(rc))
-		{
-			ereport(lev,
-					(errmsg("archive command failed with exit code %d",
-							WEXITSTATUS(rc)),
-					 errdetail("The failed archive command was: %s",
-							   xlogarchcmd)));
-		}
-		else if (WIFSIGNALED(rc))
-		{
-#if defined(WIN32)
-			ereport(lev,
-					(errmsg("archive command was terminated by exception 0x%X",
-							WTERMSIG(rc)),
-					 errhint("See C include file \"ntstatus.h\" for a description of the hexadecimal value."),
-					 errdetail("The failed archive command was: %s",
-							   xlogarchcmd)));
-#else
-			ereport(lev,
-					(errmsg("archive command was terminated by signal %d: %s",
-							WTERMSIG(rc), pg_strsignal(WTERMSIG(rc))),
-					 errdetail("The failed archive command was: %s",
-							   xlogarchcmd)));
-#endif
-		}
-		else
-		{
-			ereport(lev,
-					(errmsg("archive command exited with unrecognized status %d",
-							rc),
-					 errdetail("The failed archive command was: %s",
-							   xlogarchcmd)));
-		}
-
+	ret = ArchiveContext->archive_file_cb(xlog, pathname);
+	if (ret)
+		snprintf(activitymsg, sizeof(activitymsg), "last was %s", xlog);
+	else
 		snprintf(activitymsg, sizeof(activitymsg), "failed on %s", xlog);
-		set_ps_display(activitymsg);
-
-		return false;
-	}
-	elog(DEBUG1, "archived write-ahead log file \"%s\"", xlog);
-
-	snprintf(activitymsg, sizeof(activitymsg), "last was %s", xlog);
 	set_ps_display(activitymsg);
 
-	return true;
+	return ret;
 }
 
 /*
@@ -715,4 +614,45 @@ HandlePgArchInterrupts(void)
 		ConfigReloadPending = false;
 		ProcessConfigFile(PGC_SIGHUP);
 	}
+}
+
+/*
+ * LoadArchiveLibrary
+ *
+ * Loads the archiving callbacks into our local ArchiveContext.
+ */
+static void
+LoadArchiveLibrary(void)
+{
+	ArchiveContext = palloc0(sizeof(ArchiveModuleCallbacks));
+
+	/*
+	 * If shell archiving is enabled, use our special initialization
+	 * function.  Otherwise, load the library and call its
+	 * _PG_archive_module_init().
+	 */
+	if (ShellArchivingEnabled())
+		shell_archive_init(ArchiveContext);
+	else
+	{
+		ArchiveModuleInit archive_init;
+
+		archive_init = (ArchiveModuleInit)
+			load_external_function(XLogArchiveLibrary,
+								   "_PG_archive_module_init", false, NULL);
+
+		if (archive_init == NULL)
+			ereport(ERROR,
+					(errmsg("archive modules have to declare the "
+							"_PG_archive_module_init symbol")));
+
+		archive_init(ArchiveContext);
+	}
+
+	if (ArchiveContext->check_configured_cb == NULL)
+		ereport(ERROR,
+				(errmsg("archive modules must register a check callback")));
+	if (ArchiveContext->archive_file_cb == NULL)
+		ereport(ERROR,
+				(errmsg("archive modules must register an archive callback")));
 }
