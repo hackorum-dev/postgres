@@ -6800,8 +6800,8 @@ local0.*    /var/log/postgresql
         Causes each attempted connection to the server to be logged,
         as well as successful completion of both client authentication (if
         necessary) and authorization.
-        Only superusers can change this parameter at session start,
-        and it cannot be changed at all within a session.
+        This parameter can only be set in the <filename>postgresql.conf</filename>
+        file or on the server command line.
         The default is <literal>off</literal>.
        </para>
 
@@ -6827,8 +6827,8 @@ local0.*    /var/log/postgresql
         Causes session terminations to be logged.  The log output
         provides information similar to <varname>log_connections</varname>,
         plus the duration of the session.
-        Only superusers can change this parameter at session start,
-        and it cannot be changed at all within a session.
+        This parameter can only be set in the <filename>postgresql.conf</filename>
+        file or on the server command line.
         The default is <literal>off</literal>.
        </para>
       </listitem>

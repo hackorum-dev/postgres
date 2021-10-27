@@ -1353,7 +1353,7 @@ static struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 	{
-		{"log_connections", PGC_SU_BACKEND, LOGGING_WHAT,
+		{"log_connections", PGC_SIGHUP, LOGGING_WHAT,
 			gettext_noop("Logs each successful connection."),
 			NULL
 		},
@@ -1362,7 +1362,7 @@ static struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 	{
-		{"log_disconnections", PGC_SU_BACKEND, LOGGING_WHAT,
+		{"log_disconnections", PGC_SIGHUP, LOGGING_WHAT,
 			gettext_noop("Logs end of a session, including duration."),
 			NULL
 		},
