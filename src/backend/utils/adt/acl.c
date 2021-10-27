@@ -72,6 +72,7 @@ static List *cached_roles[] = {NIL, NIL};
 static uint32 cached_db_hash;
 
 
+static bool is_member_of_role(Oid member, Oid role);
 static const char *getid(const char *s, char *n);
 static void putid(char *p, const char *s);
 static Acl *allocacl(int n);
@@ -4859,11 +4860,25 @@ has_privs_of_role(Oid member, Oid role)
 						   role);
 }
 
+/*
+ * can_set_role
+ *
+ * Identical to is_member_of_role but exported for the sole use by check_role()
+ * for checking SET ROLE
+ *
+ */
+bool
+can_set_role(Oid member, Oid role)
+{
+	return is_member_of_role(member, role);
+}
 
 /*
  * Is member a member of role (directly or indirectly)?
  *
  * This is defined to recurse through roles regardless of rolinherit.
+ *
+ * Do not use this for privilege checking, instead use has_privs_of_role()
  */
 bool
 is_member_of_role(Oid member, Oid role)
@@ -4904,6 +4919,8 @@ check_is_member_of_role(Oid member, Oid role)
  *
  * This is identical to is_member_of_role except we ignore superuser
  * status.
+ *
+ * Do not use this for privilege checking, instead use has_privs_of_role()
  */
 bool
 is_member_of_role_nosuper(Oid member, Oid role)
