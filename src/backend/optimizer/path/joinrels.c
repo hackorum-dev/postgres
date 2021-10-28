@@ -1794,7 +1794,8 @@ try_partitionwise_join(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2,
 												 joinrel, child_restrictlist,
 												 child_sjinfo, nappinfos, appinfos);
 			joinrel->part_rels[cnt_parts] = child_joinrel;
-			joinrel->live_parts = bms_add_member(joinrel->live_parts, cnt_parts);
+			if (!IS_DUMMY_REL(child_joinrel))
+				joinrel->live_parts = bms_add_member(joinrel->live_parts, cnt_parts);
 			joinrel->all_partrels = bms_add_members(joinrel->all_partrels,
 													child_joinrel->relids);
 		}
