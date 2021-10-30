@@ -25,7 +25,7 @@
 #include "commands/sequence.h"
 #include "commands/tablespace.h"
 #include "replication/decode.h"
-#include "replication/message.h"
+#include "replication/logical_xlog.h"
 #include "replication/origin.h"
 #include "storage/standby.h"
 #include "utils/relmapper.h"
