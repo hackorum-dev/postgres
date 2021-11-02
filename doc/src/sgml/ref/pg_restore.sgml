@@ -810,6 +810,11 @@ PostgreSQL documentation
         logging in directly as a superuser, and use of this option allows
         restores to be performed without violating the policy.
        </para>
+       <para>
+        This option cannot be used together with
+        <option>--use-set-session-authorization</option> since that option
+        requires the originally authenticated user to be a superuser.
+       </para>
       </listitem>
      </varlistentry>
 
