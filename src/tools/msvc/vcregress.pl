@@ -39,6 +39,14 @@ if (-e "src/tools/msvc/buildenv.pl")
 	do "./src/tools/msvc/buildenv.pl";
 }
 
+my %settings;
+
+while (@ARGV && $ARGV[0] =~ /([A-Za-z]\w*)=(.*)/)
+{
+	$settings{$1}={$2};
+	shift;
+}
+
 my $what = shift || "";
 if ($what =~
 	/^(check|installcheck|plcheck|contribcheck|modulescheck|ecpgcheck|isolationcheck|upgradecheck|bincheck|recoverycheck|taptest)$/i
@@ -411,10 +419,12 @@ sub plcheck
 		print
 		  "============================================================\n";
 		print "Checking $lang\n";
+		my $dbname =  "pl_regression";
+		$dbname = "pl_regression_$lang" if $settings{USE_MODULE_DB};
 		my @args = (
 			"$topdir/$Config/pg_regress/pg_regress",
 			"--bindir=$topdir/$Config/psql",
-			"--dbname=pl_regression", @lang_args, @tests);
+			"--dbname=$dbname", @lang_args, @tests);
 		system(@args);
 		my $status = $? >> 8;
 		exit $status if $status;
@@ -691,6 +701,12 @@ sub fetchRegressOpts
 	if ($m =~ /^\s*NO_LOCALE\s*=\s*\S+/m)
 	{
 		push @opts, "--no-locale";
+	}
+	if ($settings{USE_MODULE_DB} && $m =~ /^\s*MODULE(?:S|_big)\s*=\s*(\S+)/m)
+	{
+		my $dbname = $1;
+		$dbname =~ s/plpython.*/plpython/;
+		push @opts, "--dbname=contrib_regression_$dbname";
 	}
 	return @opts;
 }
