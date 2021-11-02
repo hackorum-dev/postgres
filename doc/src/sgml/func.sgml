@@ -7353,25 +7353,11 @@ SELECT regexp_match('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
 <!-- end re_syntax.n man page -->
 
    <sect3 id="posix-vs-xquery">
-   <title>Differences from XQuery (<literal>LIKE_REGEX</literal>)</title>
-
-   <indexterm zone="posix-vs-xquery">
-    <primary><literal>LIKE_REGEX</literal></primary>
-   </indexterm>
+   <title>Differences from XQuery</title>
 
    <indexterm zone="posix-vs-xquery">
     <primary>XQuery regular expressions</primary>
    </indexterm>
-
-    <para>
-     Since SQL:2008, the SQL standard includes
-     a <literal>LIKE_REGEX</literal> operator that performs pattern
-     matching according to the XQuery regular expression
-     standard.  <productname>PostgreSQL</productname> does not yet
-     implement this operator, but you can get very similar behavior using
-     the <function>regexp_match()</function> function, since XQuery
-     regular expressions are quite close to the ARE syntax described above.
-    </para>
 
     <para>
      Notable differences between the existing POSIX-based
@@ -17456,11 +17442,11 @@ $[*] ? (@ like_regex "^[aeiou]" flag "i")
     <para>
      The SQL/JSON standard borrows its definition for regular expressions
      from the <literal>LIKE_REGEX</literal> operator, which in turn uses the
-     XQuery standard.  PostgreSQL does not currently support the
-     <literal>LIKE_REGEX</literal> operator.  Therefore,
-     the <literal>like_regex</literal> filter is implemented using the
-     POSIX regular expression engine described in
-     <xref linkend="functions-posix-regexp"/>.  This leads to various minor
+     XQuery standard.  PostgreSQL supports the <literal>REGEX_LIKE</literal>
+     operator which is the equivalent minus some differences described in
+     <xref linkend="posix-vs-xquery"/>. The <literal>like_regex</literal>
+     filter is implemented using the POSIX regular expression engine, see
+     <xref linkend="functions-posix-regexp"/>. This leads to various minor
      discrepancies from standard SQL/JSON behavior, which are cataloged in
      <xref linkend="posix-vs-xquery"/>.
      Note, however, that the flag-letter incompatibilities described there
