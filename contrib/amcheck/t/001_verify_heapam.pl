@@ -5,7 +5,6 @@ use strict;
 use warnings;
 
 use PostgreSQL::Test::Cluster;
-use PostgreSQL::Test::Utils;
 
 use Fcntl qw(:seek);
 use Test::More tests => 272;

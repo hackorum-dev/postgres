@@ -6,7 +6,6 @@
 use strict;
 use warnings;
 
-use PostgreSQL::Test::Utils;
 use Test::More tests => 4;
 use PostgreSQL::Test::Cluster;
 

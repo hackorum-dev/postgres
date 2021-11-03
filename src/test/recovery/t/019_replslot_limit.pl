@@ -7,7 +7,6 @@
 use strict;
 use warnings;
 
-use PostgreSQL::Test::Utils;
 use PostgreSQL::Test::Cluster;
 
 use File::Path qw(rmtree);

@@ -6,7 +6,6 @@
 use strict;
 use warnings;
 use PostgreSQL::Test::Cluster;
-use PostgreSQL::Test::Utils;
 use Test::More;
 
 if ($ENV{with_icu} eq 'yes')

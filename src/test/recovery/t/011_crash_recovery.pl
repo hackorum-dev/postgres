@@ -7,7 +7,6 @@
 use strict;
 use warnings;
 use PostgreSQL::Test::Cluster;
-use PostgreSQL::Test::Utils;
 use Test::More;
 use Config;
 

@@ -7,7 +7,6 @@
 use strict;
 use warnings;
 use PostgreSQL::Test::Cluster;
-use PostgreSQL::Test::Utils;
 use Test::More tests => 5;
 
 my $node = PostgreSQL::Test::Cluster->new('test');

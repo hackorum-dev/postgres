@@ -5,7 +5,6 @@ use strict;
 use warnings;
 
 use PostgreSQL::Test::Cluster;
-use PostgreSQL::Test::Utils;
 use Test::More;
 use IPC::Run qw(pump finish timer);
 use Data::Dumper;
