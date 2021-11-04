@@ -411,6 +411,49 @@ ExecRenameStmt(RenameStmt *stmt)
 		case OBJECT_TYPE:
 			return RenameType(stmt);
 
+		case OBJECT_STATISTIC_EXT:
+			{
+				ObjectAddress address;
+				Relation	catalog;
+				Relation	relation = NULL;
+
+				address = get_object_address(stmt->renameType,
+											 stmt->object,
+											 &relation,
+											 AccessExclusiveLock,
+											 stmt->missing_ok);
+				Assert(relation == NULL);
+
+				if (OidIsValid(address.objectId))
+				{
+					catalog = table_open(address.classId, RowExclusiveLock);
+					AlterObjectRename_internal(catalog,
+											   address.objectId,
+											   stmt->newname);
+					table_close(catalog, RowExclusiveLock);
+				}
+				else
+				{
+					char	   *schemaname;
+					char	   *statname;
+
+					Assert(stmt->missing_ok);
+
+					DeconstructQualifiedName(castNode(List, stmt->object), &schemaname, &statname);
+
+					if (schemaname)
+						ereport(NOTICE,
+								(errmsg("statistics object \"%s.%s\" does not exist, skipping",
+										schemaname, statname)));
+					else
+						ereport(NOTICE,
+								(errmsg("statistics object \"%s\" does not exist, skipping",
+										statname)));
+				}
+
+				return address;
+			}
+
 		case OBJECT_AGGREGATE:
 		case OBJECT_COLLATION:
 		case OBJECT_CONVERSION:
@@ -423,7 +466,6 @@ ExecRenameStmt(RenameStmt *stmt)
 		case OBJECT_LANGUAGE:
 		case OBJECT_PROCEDURE:
 		case OBJECT_ROUTINE:
-		case OBJECT_STATISTIC_EXT:
 		case OBJECT_TSCONFIGURATION:
 		case OBJECT_TSDICTIONARY:
 		case OBJECT_TSPARSER:
@@ -556,6 +598,51 @@ ExecAlterObjectSchemaStmt(AlterObjectSchemaStmt *stmt,
 										 oldSchemaAddr ? &oldNspOid : NULL);
 			break;
 
+		case OBJECT_STATISTIC_EXT:
+			{
+				Relation	catalog;
+				Relation	relation;
+				Oid			classId;
+				Oid			nspOid;
+
+				address = get_object_address(stmt->objectType,
+											 stmt->object,
+											 &relation,
+											 AccessExclusiveLock,
+											 stmt->missing_ok);
+
+				if (OidIsValid(address.objectId))
+				{
+					Assert(relation == NULL);
+					classId = address.classId;
+					catalog = table_open(classId, RowExclusiveLock);
+					nspOid = LookupCreationNamespace(stmt->newschema);
+
+					oldNspOid = AlterObjectNamespace_internal(catalog, address.objectId,
+															  nspOid);
+					table_close(catalog, RowExclusiveLock);
+				}
+				else
+				{
+					char	   *schemaname;
+					char	   *statname;
+
+					Assert(stmt->missing_ok);
+
+					DeconstructQualifiedName(castNode(List, stmt->object), &schemaname, &statname);
+
+					if (schemaname)
+						ereport(NOTICE,
+								(errmsg("statistics object \"%s.%s\" does not exist, skipping",
+										schemaname, statname)));
+					else
+						ereport(NOTICE,
+								(errmsg("statistics object \"%s\" does not exist, skipping",
+										statname)));
+				}
+			}
+			break;
+
 			/* generic code path */
 		case OBJECT_AGGREGATE:
 		case OBJECT_COLLATION:
@@ -566,7 +653,6 @@ ExecAlterObjectSchemaStmt(AlterObjectSchemaStmt *stmt,
 		case OBJECT_OPFAMILY:
 		case OBJECT_PROCEDURE:
 		case OBJECT_ROUTINE:
-		case OBJECT_STATISTIC_EXT:
 		case OBJECT_TSCONFIGURATION:
 		case OBJECT_TSDICTIONARY:
 		case OBJECT_TSPARSER:
