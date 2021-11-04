@@ -10529,6 +10529,15 @@ RenameStmt: ALTER AGGREGATE aggregate_with_argtypes RENAME TO name
 					n->missing_ok = false;
 					$$ = (Node *) n;
 				}
+			| ALTER STATISTICS IF_P EXISTS any_name RENAME TO name
+				{
+					RenameStmt *n = makeNode(RenameStmt);
+					n->renameType = OBJECT_STATISTIC_EXT;
+					n->object = (Node *) $5;
+					n->newname = $8;
+					n->missing_ok = true;
+					$$ = (Node *)n;
+				}
 			| ALTER TEXT_P SEARCH PARSER any_name RENAME TO name
 				{
 					RenameStmt *n = makeNode(RenameStmt);
@@ -10842,6 +10851,15 @@ AlterObjectSchemaStmt:
 					n->newschema = $6;
 					n->missing_ok = false;
 					$$ = (Node *) n;
+				}
+			| ALTER STATISTICS IF_P EXISTS any_name SET SCHEMA name
+				{
+					AlterObjectSchemaStmt *n = makeNode(AlterObjectSchemaStmt);
+					n->objectType = OBJECT_STATISTIC_EXT;
+					n->object = (Node *) $5;
+					n->newschema = $8;
+					n->missing_ok = true;
+					$$ = (Node *)n;
 				}
 			| ALTER TEXT_P SEARCH PARSER any_name SET SCHEMA name
 				{
