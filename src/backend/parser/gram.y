@@ -478,7 +478,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 %type <node>	fetch_args select_limit_value
 				offset_clause select_offset_value
-				select_fetch_first_value I_or_F_const
+				select_fetch_first_value I_or_F_const I_or_BIGI_const
 %type <ival>	row_or_rows first_or_next
 
 %type <list>	OptSeqOptList SeqOptList OptParenthesizedSeqOptList
@@ -623,9 +623,9 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
  * DOT_DOT is unused in the core SQL grammar, and so will always provoke
  * parse errors.  It is needed by PL/pgSQL.
  */
-%token <str>	IDENT UIDENT FCONST SCONST USCONST BCONST XCONST Op
+%token <str>	IDENT UIDENT FCONST SCONST USCONST BCONST XCONST Op BIGICONST
 %token <ival>	ICONST PARAM
-%token			TYPECAST DOT_DOT COLON_EQUALS EQUALS_GREATER
+%token			TYPECAST SQRT DOT_DOT COLON_EQUALS EQUALS_GREATER
 %token			LESS_EQUALS GREATER_EQUALS NOT_EQUALS
 
 /*
@@ -804,6 +804,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %left		'[' ']'
 %left		'(' ')'
 %left		TYPECAST
+%left		SQRT
 %left		'.'
 /*
  * These might seem to be low-precedence, but actually they are not part
@@ -4452,8 +4453,15 @@ opt_by:		BY
 
 NumericOnly:
 			FCONST								{ $$ = makeFloat($1); }
+			| BIGICONST							{ $$ = makeFloat($1); }
 			| '+' FCONST						{ $$ = makeFloat($2); }
+			| '+' BIGICONST						{ $$ = makeFloat($2); }
 			| '-' FCONST
+				{
+					$$ = makeFloat($2);
+					doNegateFloat($$);
+				}
+			| '-' BIGICONST
 				{
 					$$ = makeFloat($2);
 					doNegateFloat($$);
@@ -5530,6 +5538,7 @@ TriggerFuncArg:
 					$$ = makeString(psprintf("%d", $1));
 				}
 			| FCONST								{ $$ = makeString($1); }
+			| BIGICONST								{ $$ = makeString($1); }
 			| Sconst								{ $$ = makeString($1); }
 			| ColLabel								{ $$ = makeString($1); }
 		;
@@ -11894,6 +11903,11 @@ I_or_F_const:
 			| FCONST								{ $$ = makeFloatConst($1,@1); }
 		;
 
+I_or_BIGI_const:
+			Iconst									{ $$ = makeIntConst($1,@1); }
+			| BIGICONST								{ $$ = makeFloatConst($1,@1); }
+		;
+
 /* noise words */
 row_or_rows: ROW									{ $$ = 0; }
 			| ROWS									{ $$ = 0; }
@@ -13274,6 +13288,13 @@ a_expr:		c_expr									{ $$ = $1; }
 				{ $$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "+", NULL, $2, @1); }
 			| '-' a_expr					%prec UMINUS
 				{ $$ = doNegate($2, @1); }
+			| SQRT I_or_BIGI_const			%prec SQRT
+				{
+					$$ = (Node *) makeFuncCall(SystemFuncName("sqrt"),
+											   list_make1($2),
+											   COERCE_SQL_SYNTAX,
+											   @2);
+				}
 			| a_expr '+' a_expr
 				{ $$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "+", $1, $3, @2); }
 			| a_expr '-' a_expr
@@ -13703,6 +13724,13 @@ b_expr:		c_expr
 				{ $$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "+", NULL, $2, @1); }
 			| '-' b_expr					%prec UMINUS
 				{ $$ = doNegate($2, @1); }
+			| SQRT I_or_BIGI_const			%prec SQRT
+				{
+					$$ = (Node *) makeFuncCall(SystemFuncName("sqrt"),
+											   list_make1($2),
+											   COERCE_SQL_SYNTAX,
+											   @2);
+				}
 			| b_expr '+' b_expr
 				{ $$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "+", $1, $3, @2); }
 			| b_expr '-' b_expr
@@ -15146,6 +15174,10 @@ AexprConst: Iconst
 					$$ = makeIntConst($1, @1);
 				}
 			| FCONST
+				{
+					$$ = makeFloatConst($1, @1);
+				}
+			| BIGICONST
 				{
 					$$ = makeFloatConst($1, @1);
 				}

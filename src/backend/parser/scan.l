@@ -124,6 +124,7 @@ static void addlitchar(unsigned char ychar, core_yyscan_t yyscanner);
 static char *litbufdup(core_yyscan_t yyscanner);
 static unsigned char unescape_single_char(unsigned char c, core_yyscan_t yyscanner);
 static int	process_integer_literal(const char *token, YYSTYPE *lval);
+static int	process_integer_bigint_literal(const char *token, YYSTYPE *lval);
 static void addunicode(pg_wchar c, yyscan_t yyscanner);
 
 #define yyerror(msg)  scanner_yyerror(msg, yyscanner)
@@ -348,6 +349,7 @@ identifier		{ident_start}{ident_cont}*
 
 /* Assorted special-case operators and operator-like tokens */
 typecast		"::"
+sqrt			"√"
 dot_dot			\.\.
 colon_equals	":="
 
@@ -816,6 +818,11 @@ other			.
 					return TYPECAST;
 				}
 
+{sqrt}		{
+					SET_YYLLOC();
+					return SQRT;
+				}
+
 {dot_dot}		{
 					SET_YYLLOC();
 					return DOT_DOT;
@@ -974,8 +981,9 @@ other			.
 
 {integer}		{
 					SET_YYLLOC();
-					return process_integer_literal(yytext, yylval);
+					return process_integer_bigint_literal(yytext, yylval);
 				}
+				
 {decimal}		{
 					SET_YYLLOC();
 					yylval->str = pstrdup(yytext);
@@ -1314,6 +1322,24 @@ process_integer_literal(const char *token, YYSTYPE *lval)
 		/* integer too large (or contains decimal pt), treat it as a float */
 		lval->str = pstrdup(token);
 		return FCONST;
+	}
+	lval->ival = val;
+	return ICONST;
+}
+
+static int
+process_integer_bigint_literal(const char *token, YYSTYPE *lval)
+{
+	int			val;
+	char	   *endptr;
+
+	errno = 0;
+	val = strtoint(token, &endptr, 10);
+	if (*endptr != '\0' || errno == ERANGE)
+	{
+		/* integer too large (or contains decimal pt), treat it as a float */
+		lval->str = pstrdup(token);
+		return BIGICONST;
 	}
 	lval->ival = val;
 	return ICONST;
