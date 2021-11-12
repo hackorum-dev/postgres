@@ -286,7 +286,8 @@
 				# (change requires restart)
 #recovery_target_action = 'pause'	# 'pause', 'promote', 'shutdown'
 				# (change requires restart)
-
+#recovery_end_before_target_action = 'shutdown'	# 'promote', 'shutdown'
+				# (change requires restart)
 
 #------------------------------------------------------------------------------
 # REPLICATION

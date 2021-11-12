@@ -288,6 +288,15 @@ typedef enum
 }			RecoveryTargetAction;
 
 /*
+ * Recovery end before target action.
+ */
+typedef enum
+{
+	RECOVERY_END_BEFORE_TARGET_ACTION_SHUTDOWN,
+	RECOVERY_END_BEFORE_TARGET_ACTION_PROMOTE
+}			RecoveryEndBeforeTargetAction;
+
+/*
  * Method table for resource managers.
  *
  * This struct must be kept in sync with the PG_RMGR definition in

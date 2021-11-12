@@ -4017,8 +4017,32 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
        </para>
        <para>
         In any case, if a recovery target is configured but the archive
-        recovery ends before the target is reached, the server will shut down
-        with a fatal error.
+        recovery ends before the target is reached, the server, depending on
+        <xref linkend="guc-recovery-end-before-target-action"/> parameter, will
+        either shutdown with a fatal error or emit a warning and promote.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-recovery-end-before-target-action"
+                   xreflabel="recovery_end_before_target_action">
+      <term><varname>recovery_end_before_target_action</varname> (<type>enum</type>)
+      <indexterm>
+        <primary><varname>recovery_end_before_target_action</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Specifies what action the server should take when the recovery target is
+        not reached. The default is <literal>shutdown</literal>, which will stop
+        the server. <literal>promote</literal> means the recovery process will
+        finish and the server will start to accept connections. This parameter
+        has no effect if no recovery target is set.
+       </para>
+       <para>
+        The intended use of the <literal>promote</literal> setting is to allow
+        user to have the server available at least.
+       </para>
        </para>
       </listitem>
      </varlistentry>

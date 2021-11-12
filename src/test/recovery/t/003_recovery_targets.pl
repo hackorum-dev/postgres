@@ -6,7 +6,7 @@ use strict;
 use warnings;
 use PostgreSQL::Test::Cluster;
 use PostgreSQL::Test::Utils;
-use Test::More tests => 9;
+use Test::More tests => 11;
 use Time::HiRes qw(usleep);
 
 # Create and test a standby from given backup, with a certain recovery target.
@@ -182,3 +182,51 @@ $logfile = slurp_file($node_standby->logfile());
 ok( $logfile =~
 	  qr/FATAL: .* recovery ended before configured recovery target was reached/,
 	'recovery end before target reached is a fatal error');
+
+# Check for a pattern in the logs associated to one format.
+sub check_server_logs
+{
+	local $Test::Builder::Level = $Test::Builder::Level + 1;
+
+	my $node      = shift;
+	my $pattern   = shift;
+	my $test_name = shift;
+
+	my $max_attempts = 180 * 10;
+
+	my $logcontents;
+	for (my $attempts = 0; $attempts < $max_attempts; $attempts++)
+	{
+		$logcontents = slurp_file($node->logfile());
+		last if $logcontents =~ m/$pattern/;
+		usleep(100_000);
+	}
+
+	like($logcontents, qr/$pattern/, "check server log for $test_name");
+	return;
+}
+
+# Check behavior when recovery ends before target is reached but
+# recovery_end_before_target_action is set to 'promote'
+
+$node_standby = PostgreSQL::Test::Cluster->new('standby_9');
+$node_standby->init_from_backup(
+	$node_primary, 'my_backup',
+	has_restoring => 1,
+	standby       => 0);
+$node_standby->append_conf('postgresql.conf',
+	"recovery_target_name = 'does_not_exist'
+	 recovery_end_before_target_action = 'promote'");
+
+$node_standby->start;
+
+my $msg = 'WARNING: .* recovery ended before configured recovery target was reached, but promoting the server as parameter "recovery_end_before_target_action" is set to "promote"';
+my $test_name = 'recovery ended before message with recovery_end_before_target_action set to promote';
+check_server_logs($node_standby, $msg, $test_name);
+
+$msg = 'LOG: .* database system is ready to accept connections';
+$test_name = 'database system is ready to accept connections message with recovery_end_before_target_action set to promote';
+check_server_logs($node_standby, $msg, $test_name);
+
+# Stop standby node
+$node_standby->teardown_node;

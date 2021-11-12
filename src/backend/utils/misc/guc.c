@@ -563,6 +563,7 @@ static const struct config_enum_entry wal_compression_options[] = {
 extern const struct config_enum_entry wal_level_options[];
 extern const struct config_enum_entry archive_mode_options[];
 extern const struct config_enum_entry recovery_target_action_options[];
+extern const struct config_enum_entry recovery_end_before_target_action_options[];
 extern const struct config_enum_entry sync_method_options[];
 extern const struct config_enum_entry dynamic_shared_memory_options[];
 
@@ -4830,6 +4831,16 @@ static struct config_enum ConfigureNamesEnum[] =
 		},
 		&recoveryTargetAction,
 		RECOVERY_TARGET_ACTION_PAUSE, recovery_target_action_options,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"recovery_end_before_target_action", PGC_POSTMASTER, WAL_RECOVERY_TARGET,
+			gettext_noop("Sets the action to perform when the recovery target is not reached."),
+			NULL
+		},
+		&recoveryEndBeforeTargetAction,
+		RECOVERY_END_BEFORE_TARGET_ACTION_SHUTDOWN, recovery_end_before_target_action_options,
 		NULL, NULL, NULL
 	},
 

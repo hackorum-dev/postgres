@@ -184,6 +184,12 @@ const struct config_enum_entry recovery_target_action_options[] = {
 	{NULL, 0, false}
 };
 
+const struct config_enum_entry recovery_end_before_target_action_options[] = {
+	{"shutdown", RECOVERY_END_BEFORE_TARGET_ACTION_SHUTDOWN, false},
+	{"promote", RECOVERY_END_BEFORE_TARGET_ACTION_PROMOTE, false},
+	{NULL, 0, false}
+};
+
 /*
  * Statistics for current checkpoint are collected in this global struct.
  * Because only the checkpointer or a stand-alone backend can perform
@@ -273,6 +279,7 @@ char	   *archiveCleanupCommand = NULL;
 RecoveryTargetType recoveryTarget = RECOVERY_TARGET_UNSET;
 bool		recoveryTargetInclusive = true;
 int			recoveryTargetAction = RECOVERY_TARGET_ACTION_PAUSE;
+int			recoveryEndBeforeTargetAction = RECOVERY_END_BEFORE_TARGET_ACTION_SHUTDOWN;
 TransactionId recoveryTargetXid;
 char	   *recovery_target_time_string;
 static TimestampTz recoveryTargetTime;
@@ -7852,8 +7859,27 @@ StartupXLOG(void)
 		if (ArchiveRecoveryRequested &&
 			recoveryTarget != RECOVERY_TARGET_UNSET &&
 			!reachedRecoveryTarget)
-			ereport(FATAL,
-					(errmsg("recovery ended before configured recovery target was reached")));
+		{
+			switch (recoveryEndBeforeTargetAction)
+			{
+				case RECOVERY_END_BEFORE_TARGET_ACTION_SHUTDOWN:
+					ereport(FATAL,
+							(errmsg("recovery ended before configured recovery target was reached")));
+					break;
+				case RECOVERY_END_BEFORE_TARGET_ACTION_PROMOTE:
+					/*
+					 * Do not shutdown the server but issue a warning and
+					 * promote so that the user can have it available at least.
+					 * Note that it is the behaviour chosen by the user and the
+					 * server is not guaranteed to be in a consistent state
+					 * though.
+					 */
+					ereport(WARNING,
+							(errmsg("recovery ended before configured recovery target was reached, but promoting the server as parameter \"%s\" is set to \"%s\"",
+							"recovery_end_before_target_action", "promote")));
+					break;
+			}
+		}
 	}
 
 	/*
