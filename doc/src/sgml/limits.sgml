@@ -69,6 +69,12 @@
     </row>
 
     <row>
+     <entry>query string length</entry>
+     <entry>1 GB</entry>
+     <entry></entry>
+    </row>
+    
+    <row>
      <entry>identifier length</entry>
      <entry>63 bytes</entry>
      <entry>can be increased by recompiling <productname>PostgreSQL</productname></entry>
@@ -111,6 +117,11 @@
   stored inside the heap tuple.
  </para>
 
+ <para>
+  Both the field size and the query string length are limited to 1GB as that
+  is the maximum size of a string representation.
+ </para>
+ 
  <para>
   Columns that have been dropped from the table also contribute to the maximum
   column limit.  Moreover, although the dropped column values for newly
