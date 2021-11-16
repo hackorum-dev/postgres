@@ -1796,7 +1796,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			show_scan_qual(((IndexScan *) plan)->indexorderbyorig,
 						   "Order By", planstate, ancestors, es);
 			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
-			if (plan->qual)
+			if (plan->qual && es->machine)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
 			break;
@@ -1809,7 +1809,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			show_scan_qual(((IndexOnlyScan *) plan)->indexorderby,
 						   "Order By", planstate, ancestors, es);
 			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
-			if (plan->qual)
+			if (plan->qual && es->machine)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
 			if (es->analyze && es->machine)
@@ -1827,7 +1827,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 				show_instrumentation_count("Rows Removed by Index Recheck", 2,
 										   planstate, es);
 			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
-			if (plan->qual)
+			if (plan->qual && es->machine)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
 			if (es->analyze)
@@ -1845,7 +1845,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		case T_WorkTableScan:
 		case T_SubqueryScan:
 			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
-			if (plan->qual)
+			if (plan->qual && es->machine)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
 			break;
@@ -1854,7 +1854,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 				Gather	   *gather = (Gather *) plan;
 
 				show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
-				if (plan->qual)
+				if (plan->qual && es->machine)
 					show_instrumentation_count("Rows Removed by Filter", 1,
 											   planstate, es);
 				ExplainPropertyInteger("Workers Planned", NULL,
@@ -1882,7 +1882,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 				GatherMerge *gm = (GatherMerge *) plan;
 
 				show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
-				if (plan->qual)
+				if (plan->qual && es->machine)
 					show_instrumentation_count("Rows Removed by Filter", 1,
 											   planstate, es);
 				ExplainPropertyInteger("Workers Planned", NULL,
@@ -1920,7 +1920,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 								es->verbose, es);
 			}
 			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
-			if (plan->qual)
+			if (plan->qual && es->machine)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
 			break;
@@ -1934,7 +1934,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 								es->verbose, es);
 			}
 			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
-			if (plan->qual)
+			if (plan->qual && es->machine)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
 			break;
@@ -1950,7 +1950,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 					tidquals = list_make1(make_orclause(tidquals));
 				show_scan_qual(tidquals, "TID Cond", planstate, ancestors, es);
 				show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
-				if (plan->qual)
+				if (plan->qual && es->machine)
 					show_instrumentation_count("Rows Removed by Filter", 1,
 											   planstate, es);
 			}
@@ -1967,14 +1967,14 @@ ExplainNode(PlanState *planstate, List *ancestors,
 					tidquals = list_make1(make_andclause(tidquals));
 				show_scan_qual(tidquals, "TID Cond", planstate, ancestors, es);
 				show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
-				if (plan->qual)
+				if (plan->qual && es->machine)
 					show_instrumentation_count("Rows Removed by Filter", 1,
 											   planstate, es);
 			}
 			break;
 		case T_ForeignScan:
 			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
-			if (plan->qual)
+			if (plan->qual && es->machine)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
 			show_foreignscan_info((ForeignScanState *) planstate, es);
@@ -1984,7 +1984,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 				CustomScanState *css = (CustomScanState *) planstate;
 
 				show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
-				if (plan->qual)
+				if (plan->qual && es->machine)
 					show_instrumentation_count("Rows Removed by Filter", 1,
 											   planstate, es);
 				if (css->methods->ExplainCustomScan)
@@ -1998,7 +1998,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 				show_instrumentation_count("Rows Removed by Join Filter", 1,
 										   planstate, es);
 			show_upper_qual(plan->qual, "Filter", planstate, ancestors, es);
-			if (plan->qual)
+			if (plan->qual && es->machine)
 				show_instrumentation_count("Rows Removed by Filter", 2,
 										   planstate, es);
 			break;
@@ -2011,7 +2011,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 				show_instrumentation_count("Rows Removed by Join Filter", 1,
 										   planstate, es);
 			show_upper_qual(plan->qual, "Filter", planstate, ancestors, es);
-			if (plan->qual)
+			if (plan->qual && es->machine)
 				show_instrumentation_count("Rows Removed by Filter", 2,
 										   planstate, es);
 			break;
@@ -2024,7 +2024,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 				show_instrumentation_count("Rows Removed by Join Filter", 1,
 										   planstate, es);
 			show_upper_qual(plan->qual, "Filter", planstate, ancestors, es);
-			if (plan->qual)
+			if (plan->qual && es->machine)
 				show_instrumentation_count("Rows Removed by Filter", 2,
 										   planstate, es);
 			break;
@@ -2032,7 +2032,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			show_agg_keys(castNode(AggState, planstate), ancestors, es);
 			show_upper_qual(plan->qual, "Filter", planstate, ancestors, es);
 			show_hashagg_info((AggState *) planstate, es);
-			if (plan->qual)
+			if (plan->qual && es->machine)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
 			break;
@@ -2047,7 +2047,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		case T_Group:
 			show_group_keys(castNode(GroupState, planstate), ancestors, es);
 			show_upper_qual(plan->qual, "Filter", planstate, ancestors, es);
-			if (plan->qual)
+			if (plan->qual && es->machine)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
 			break;
@@ -2069,7 +2069,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			show_upper_qual((List *) ((Result *) plan)->resconstantqual,
 							"One-Time Filter", planstate, ancestors, es);
 			show_upper_qual(plan->qual, "Filter", planstate, ancestors, es);
-			if (plan->qual)
+			if (plan->qual && es->machine)
 				show_instrumentation_count("Rows Removed by Filter", 1,
 										   planstate, es);
 			break;
