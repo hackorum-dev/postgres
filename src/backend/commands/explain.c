@@ -1676,6 +1676,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 								 " (actual time=%.3f..%.3f rows=%.0f loops=%.0f)",
 								 startup_ms, total_ms, rows, nloops);
 			else
+				/* This is always shown for nonparallel output */
 				appendStringInfo(es->str,
 								 " (actual rows=%.0f loops=%.0f)",
 								 rows, nloops);
@@ -1704,8 +1705,12 @@ ExplainNode(PlanState *planstate, List *ancestors,
 				ExplainPropertyFloat("Actual Startup Time", "ms", 0.0, 3, es);
 				ExplainPropertyFloat("Actual Total Time", "ms", 0.0, 3, es);
 			}
-			ExplainPropertyFloat("Actual Rows", NULL, 0.0, 0, es);
-			ExplainPropertyFloat("Actual Loops", NULL, 0.0, 0, es);
+
+			if (es->machine)
+			{
+				ExplainPropertyFloat("Actual Rows", NULL, 0.0, 0, es);
+				ExplainPropertyFloat("Actual Loops", NULL, 0.0, 0, es);
+			}
 		}
 	}
 
@@ -1741,7 +1746,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 					appendStringInfo(es->str,
 									 "actual time=%.3f..%.3f rows=%.0f loops=%.0f\n",
 									 startup_ms, total_ms, rows, nloops);
-				else
+				else if (es->machine)
 					appendStringInfo(es->str,
 									 "actual rows=%.0f loops=%.0f\n",
 									 rows, nloops);
@@ -1755,7 +1760,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 					ExplainPropertyFloat("Actual Total Time", "ms",
 										 total_ms, 3, es);
 				}
-				ExplainPropertyFloat("Actual Rows", NULL, rows, 0, es);
+				ExplainPropertyFloat("Actual Rows", NULL, rows, 0, es); //
 				ExplainPropertyFloat("Actual Loops", NULL, nloops, 0, es);
 			}
 
