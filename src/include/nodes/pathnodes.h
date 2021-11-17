@@ -2103,8 +2103,8 @@ typedef struct RestrictInfo
 
 	/* valid if clause is mergejoinable, else NIL */
 	List	   *mergeopfamilies;	/* opfamilies containing clause operator */
-	List	   *rangeleftopfamilies;
-	List	   *rangerightopfamilies;
+	List	   *rangeleftopfamilies;	/* comment? */
+	List	   *rangerightopfamilies;	/* comment? */
 
 	/* cache space for mergeclause processing; NULL if not yet set */
 	EquivalenceClass *left_ec;	/* EquivalenceClass containing lefthand */

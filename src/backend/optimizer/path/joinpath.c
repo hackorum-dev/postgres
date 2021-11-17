@@ -222,6 +222,7 @@ add_paths_to_joinrel(PlannerInfo *root,
 														  jointype,
 														  &mergejoin_allowed);
 
+		/* XXX Why only for inner/left joins? */
 		if (jointype == JOIN_INNER || jointype == JOIN_LEFT)
 			extra.rangeclause_list = select_rangejoin_clauses(outerrel,
 															  innerrel,
@@ -1238,6 +1239,9 @@ sort_inner_and_outer(PlannerInfo *root,
 	 * The pathkey order returned by select_outer_pathkeys_for_merge() has
 	 * some heuristics behind it (see that function), so be sure to try it
 	 * exactly as-is as well as making variants.
+	 *
+	 * XXX This comment probably needs updating? The patch significantly
+	 * reworks the following code ...
 	 */
 
 	range_pathkeys = select_outer_pathkeys_for_range(root,
@@ -1368,6 +1372,7 @@ sort_inner_and_outer(PlannerInfo *root,
 									   jointype,
 									   extra);
 
+		/* XXX comments? */
 		foreach(l, range_pathkeys)
 		{
 			PathKey		*range_outer_pathkey = (PathKey *) lfirst(l);
@@ -2442,6 +2447,8 @@ select_mergejoin_clauses(PlannerInfo *root,
 
 /*
  * range_clause_order
+ *
+ * XXX And what does this do?
  */
 static int
 range_clause_order(RestrictInfo *first,
@@ -2514,6 +2521,8 @@ range_clause_order(RestrictInfo *first,
 
 /*
  * select_rangejoin_clauses
+ *
+ * XXX And what does this do?
  */
 static List *
 select_rangejoin_clauses(RelOptInfo *outerrel,

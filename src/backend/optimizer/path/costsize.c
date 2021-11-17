@@ -3436,12 +3436,12 @@ final_cost_mergejoin(PlannerInfo *root, MergePath *path,
 				rescannedtuples;
 	double		rescanratio;
 
+	/* XXX ??? */
 	allclauses = list_concat(list_copy(mergeclauses), path->path_rangeclause);
 
-
-    /* Protect some assumptions below that rowcounts aren't zero */
-    if (inner_path_rows <= 0)
-        inner_path_rows = 1;
+	/* Protect some assumptions below that rowcounts aren't zero */
+	if (inner_path_rows <= 0)
+		inner_path_rows = 1;
 
 	/* Mark the path with the correct row estimate */
 	if (path->jpath.path.param_info)

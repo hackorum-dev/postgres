@@ -391,6 +391,8 @@ get_mergejoin_opfamilies(Oid opno)
 
 /*
  * get_rangejoin_opfamilies
+ *
+ * XXX and what does this do?
  */
 List *
 get_rangejoin_opfamilies(Oid opno)

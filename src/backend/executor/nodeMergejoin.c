@@ -145,7 +145,9 @@ typedef struct MergeJoinClauseData
 }			MergeJoinClauseData;
 
 /*
- * Runtime data for the range clause
+ * Runtime data for the range clause.
+ *
+ * XXX This really needs some comments, explaining what the fields are for.
  */
 typedef struct RangeJoinData
 {
@@ -153,7 +155,6 @@ typedef struct RangeJoinData
 	ExprState *endClause;
 	ExprState *rangeExpr;
 	ExprState *elemExpr;
-
 }			RangeJoinData;
 
 /* Result type for MJEvalOuterValues and MJEvalInnerValues */
@@ -294,10 +295,14 @@ MJCreateRangeData(List *rangeclause,
 {
 	RangeData data;
 
-	Assert(list_length(node->rangeclause) < 3);
+	/* XXX how come this does not crash anything? */
+	Assert(false);
+	// FIXME, there's no 'node' variable
+	// Assert(list_length(node->rangeclause) < 3);
 
 	data = (RangeData) palloc0(sizeof(RangeJoinData));
 
+	/* XXX useless, thanks to the palloc0 */
 	data->startClause = NULL;
 	data->endClause = NULL;
 	data->rangeExpr = NULL;
@@ -518,6 +523,10 @@ MJCompare(MergeJoinState *mergestate)
  * Compare the rangejoinable values of the current two input tuples
  * and return 0 if they are equal (ie, the outer interval contains the inner),
  * >0 if outer > inner, <0 if outer < inner.
+ *
+ * XXX So this is essentially a simple comparator function, except that it
+ * also deals with ranges. That'd deserve explanation how clauses with ranges
+ * works, I guess.
  */
 static int
 MJCompareRange(MergeJoinState *mergestate)
@@ -1028,6 +1037,9 @@ ExecMergeJoin(PlanState *pstate)
 						compareResult = MJCompare(node);
 						MJ_DEBUG_COMPARE(compareResult);
 
+						/*
+						 * XXX Incomprehensible. Maybe add some comments?
+						 */
 						if(compareResult == 0)
 						{
 							if(isRangeJoin)
@@ -1237,6 +1249,9 @@ ExecMergeJoin(PlanState *pstate)
 						/* we need not do MJEvalInnerValues again */
 					}
 
+					/*
+					 * Comments?
+					 */
 					if(isRangeJoin)
 					{
 						compareRangeResult = MJCompareRange(node);
@@ -1348,6 +1363,9 @@ ExecMergeJoin(PlanState *pstate)
 
 				if (compareResult == 0)
 				{
+					/*
+					 * XXX Comments?
+					 */
 					if(isRangeJoin)
 					{
 						compareRangeResult = MJCompareRange(node);

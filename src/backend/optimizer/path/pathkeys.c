@@ -1217,6 +1217,8 @@ initialize_mergeclause_eclasses(PlannerInfo *root, RestrictInfo *restrictinfo)
 
 /*
  * initialize_rangeclause_eclasses
+ *
+ * XXX And what does this do?
  */
 void
 initialize_rangeclause_eclasses(PlannerInfo *root,
@@ -1404,6 +1406,8 @@ find_mergeclauses_for_outer_pathkeys(PlannerInfo *root,
 
 /*
  * find_rangeclauses_for_outer_pathkeys
+ *
+ * XXX And what does this do?
  */
 List *
 find_rangeclauses_for_outer_pathkeys(PlannerInfo *root,
@@ -1637,6 +1641,8 @@ select_outer_pathkeys_for_merge(PlannerInfo *root,
 
 /*
  * select_outer_pathkeys_for_range
+ *
+ * XXX And what does this do?
  */
 List *
 select_outer_pathkeys_for_range(PlannerInfo *root,
@@ -1767,6 +1773,8 @@ make_inner_pathkeys_for_merge(PlannerInfo *root,
 
 /*
  * make_inner_pathkey_for_range
+ *
+ * XXX And what does this do?
  */
 PathKey *
 make_inner_pathkey_for_range(PlannerInfo *root,

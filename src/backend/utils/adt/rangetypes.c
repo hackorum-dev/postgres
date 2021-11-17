@@ -2509,6 +2509,8 @@ range_contains_elem_internal(TypeCacheEntry *typcache, const RangeType *r, Datum
 
 /*
  * Test whether range r is right of a specific element value.
+ *
+ * XXX naming seems a bit strange, all other functions here start with range_
  */
 bool
 elem_before_range_internal(TypeCacheEntry *typcache, Datum val, const RangeType *r)
@@ -2539,6 +2541,8 @@ elem_before_range_internal(TypeCacheEntry *typcache, Datum val, const RangeType 
 
 /*
  * Test whether range r is left of a specific element value.
+ *
+ * XXX naming seems a bit strange, all other functions here start with range_
  */
 bool
 elem_after_range_internal(TypeCacheEntry *typcache, Datum val, const RangeType *r)

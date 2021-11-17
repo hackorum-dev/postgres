@@ -44,6 +44,7 @@ lib*.pc
 /tmp_install/
 
 # Thomas
+# XXX Shouldn't be in the patch.
 /data/
 /server/
 .idea/

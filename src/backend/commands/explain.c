@@ -1206,6 +1206,11 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			pname = sname = "Nested Loop";
 			break;
 		case T_MergeJoin:
+			/*
+			 * XXX Not sure we want to add another top-level node (Merge vs. Range Merge).
+			 *
+			 * I'd use Merge for both and just differentiate them using Range Cond.
+			 */
 			if(((MergeJoin *) plan)->rangeclause)
 			{
 				pname = "Range Merge";	/* "Join" gets added by jointype switch */
