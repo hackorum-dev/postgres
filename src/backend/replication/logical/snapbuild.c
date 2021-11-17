@@ -120,6 +120,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "access/csn_log.h"
 #include "access/heapam_xlog.h"
 #include "access/transam.h"
 #include "access/xact.h"
@@ -488,6 +489,9 @@ SnapBuildBuildSnapshot(SnapBuild *builder)
 
 	snapshot->xmin = builder->xmin;
 	snapshot->xmax = builder->xmax;
+
+	snapshot->snapshot_csn = FrozenCSN;
+	snapshot->imported_csn = false;
 
 	/* store all transactions to be treated as committed by this snapshot */
 	snapshot->xip =
