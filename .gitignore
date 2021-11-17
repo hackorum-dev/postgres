@@ -42,3 +42,14 @@ lib*.pc
 /Debug/
 /Release/
 /tmp_install/
+
+# Thomas
+/data/
+/server/
+.idea/
+.settings/
+.cproject
+.project
+logfile
+src/backend/catalog/postgres.*
+*.patch
