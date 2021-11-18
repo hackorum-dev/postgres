@@ -217,4 +217,17 @@ extern Node *flatten_join_alias_for_parser(Query *query, Node *node,
 										   int sublevels_up);
 extern Node *flatten_group_exprs(PlannerInfo *root, Query *query, Node *node);
 
+/* Hooks for external selectivity estimation */
+typedef bool (*clauselist_selectivity_hook_type) (
+						   PlannerInfo *root,
+						   List *clauses,
+						   int varRelid,
+						   JoinType jointype,
+						   SpecialJoinInfo *sjinfo,
+						   bool use_extended_stats,
+						   Selectivity *s);
+
+extern PGDLLIMPORT clauselist_selectivity_hook_type clauselist_selectivity_hook;
+
+
 #endif							/* OPTIMIZER_H */
