@@ -24,6 +24,9 @@
 #include "utils/lsyscache.h"
 #include "utils/selfuncs.h"
 
+/* Hooks for plugins to get control when we ask for selectivity */
+clauselist_selectivity_hook_type clauselist_selectivity_hook = NULL;
+
 /*
  * Data structure for accumulating info about possible range-query
  * clause pairs in clauselist_selectivity.
@@ -128,6 +131,18 @@ clauselist_selectivity_ext(PlannerInfo *root,
 	ListCell   *l;
 	int			listidx;
 
+	/*
+	* If we have a hook for selectivity estimation and it returns True, then go for it.
+	*/
+	if (clauselist_selectivity_hook && 
+		(*clauselist_selectivity_hook) (root, clauses, varRelid, jointype, sjinfo, use_extended_stats, &s1))
+		{
+			/*
+			* The hook takes control of estimating the selectivity
+			* and saves the estimated selectivity to s1.
+			*/
+			return s1;
+		}
 	/*
 	 * If there's exactly one clause, just go directly to
 	 * clause_selectivity_ext(). None of what we might do below is relevant.
@@ -368,7 +383,19 @@ clauselist_selectivity_or(PlannerInfo *root,
 	Bitmapset  *estimatedclauses = NULL;
 	ListCell   *lc;
 	int			listidx;
-
+	
+	/*
+	 * If we have a hook for selectivity estimation and it returns True, then go for it.
+	 */
+	if (clauselist_selectivity_hook && 
+		(*clauselist_selectivity_hook) (root, clauses, varRelid, jointype, sjinfo, use_extended_stats, &s1))
+		{
+			/*
+			* The hook takes control of estimating the selectivity
+			* and saves the estimated selectivity to s1.
+			*/
+			return s1;
+		}
 	/*
 	 * Determine if these clauses reference a single relation.  If so, and if
 	 * it has extended statistics, try to apply those.
