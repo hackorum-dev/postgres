@@ -430,6 +430,9 @@ BufFileLoadBuffer(BufFile *file)
 {
 	File		thisfile;
 
+	/* the offset of the buffile is aligned with BLCKSZ */
+	Assert(file->curOffset % BLCKSZ == 0);
+
 	/*
 	 * Advance to next component file if necessary and possible.
 	 */
@@ -437,7 +440,7 @@ BufFileLoadBuffer(BufFile *file)
 		file->curFile + 1 < file->numFiles)
 	{
 		file->curFile++;
-		file->curOffset = 0L;
+		file->curOffset -= MAX_PHYSICAL_FILESIZE;
 	}
 
 	/*
@@ -506,6 +509,9 @@ BufFileDumpBuffer(BufFile *file)
 		if ((off_t) bytestowrite > availbytes)
 			bytestowrite = (int) availbytes;
 
+		/* and the buffer is aligned with BLCKSZ */
+		Assert(file->curOffset % BLCKSZ == 0);
+
 		thisfile = file->files[file->curFile];
 		bytestowrite = FileWrite(thisfile,
 								 file->buffer.data + wpos,
@@ -564,11 +570,17 @@ BufFileRead(BufFile *file, void *ptr, size_t size)
 		if (file->pos >= file->nbytes)
 		{
 			/* Try to load more data into buffer. */
-			file->curOffset += file->pos;
-			file->pos = 0;
+			int offsetInBlock = file->curOffset % BLCKSZ;
 			file->nbytes = 0;
+			file->pos += offsetInBlock;
+			file->curOffset -= offsetInBlock;
+
+			/* pos out of current block, move to next block */
+			if (file->pos >= BLCKSZ)
+				file->pos -= BLCKSZ, file->curOffset += BLCKSZ;
+
 			BufFileLoadBuffer(file);
-			if (file->nbytes <= 0)
+			if (file->nbytes <= 0 || (file->nbytes == file->pos && file->nbytes != BLCKSZ))
 				break;			/* no more data available */
 		}
 
