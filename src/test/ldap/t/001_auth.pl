@@ -9,7 +9,7 @@ use Test::More;
 
 if ($ENV{with_ldap} eq 'yes')
 {
-	plan tests => 28;
+	plan tests => 51;
 }
 else
 {
@@ -75,6 +75,7 @@ append_to_file(
 include $ldap_schema_dir/cosine.schema
 include $ldap_schema_dir/nis.schema
 include $ldap_schema_dir/inetorgperson.schema
+include postgresuser.schema
 
 pidfile $slapd_pidfile
 logfile $slapd_logfile
@@ -113,33 +114,59 @@ system_or_bail "openssl", "x509", "-req", "-in", "$slapd_certs/server.csr",
   "-CA", "$slapd_certs/ca.crt", "-CAkey", "$slapd_certs/ca.key",
   "-CAcreateserial", "-out", "$slapd_certs/server.crt";
 
-system_or_bail $slapd, '-f', $slapd_conf, '-h', "$ldap_url $ldaps_url";
+sub start_slapd
+{
+	system_or_bail $slapd, '-f', $slapd_conf, '-h', "$ldap_url $ldaps_url";
+}
+
+sub wait_for_slapd
+{
+	my ($url) = @_;
+
+	# wait until slapd accepts requests
+	my $retries = 0;
+	while (1)
+	{
+		last
+		  if (
+			system_log(
+				"ldapsearch", "-sbase",
+				"-H",         $url,
+				"-b",         $ldap_basedn,
+				"-D",         $ldap_rootdn,
+				"-y",         $ldap_pwfile,
+				"-n",         "'objectclass=*'") == 0);
+		die "cannot connect to slapd" if ++$retries >= 300;
+		note "waiting for slapd to accept requests...";
+		Time::HiRes::usleep(1000000);
+	}
+}
+
+sub stop_slapd
+{
+	kill 'INT', `cat $slapd_pidfile` if -f $slapd_pidfile;
+}
+
+sub restart_slapd
+{
+	my ($url) = @_;
+
+	stop_slapd();
+	start_slapd();
+	wait_for_slapd($url);
+}
+
+start_slapd();
 
 END
 {
-	kill 'INT', `cat $slapd_pidfile` if -f $slapd_pidfile;
+	stop_slapd();
 }
 
 append_to_file($ldap_pwfile, $ldap_rootpw);
 chmod 0600, $ldap_pwfile or die;
 
-# wait until slapd accepts requests
-my $retries = 0;
-while (1)
-{
-	last
-	  if (
-		system_log(
-			"ldapsearch", "-sbase",
-			"-H",         $ldap_url,
-			"-b",         $ldap_basedn,
-			"-D",         $ldap_rootdn,
-			"-y",         $ldap_pwfile,
-			"-n",         "'objectclass=*'") == 0);
-	die "cannot connect to slapd" if ++$retries >= 300;
-	note "waiting for slapd to accept requests...";
-	Time::HiRes::usleep(1000000);
-}
+wait_for_slapd($ldap_url);
 
 $ENV{'LDAPURI'}    = $ldap_url;
 $ENV{'LDAPBINDDN'} = $ldap_rootdn;
@@ -163,6 +190,12 @@ $node->start;
 $node->safe_psql('postgres', 'CREATE USER test0;');
 $node->safe_psql('postgres', 'CREATE USER test1;');
 $node->safe_psql('postgres', 'CREATE USER "test2@example.net";');
+
+my @databases = ( 'anon', 'noattrs', 'badmap', 'starttls', 'bindpw' );
+foreach my $db (@databases)
+{
+	$node->safe_psql('postgres', "CREATE DATABASE $db");
+}
 
 note "running tests";
 
@@ -367,3 +400,174 @@ $node->restart;
 
 $ENV{"PGPASSWORD"} = 'secret1';
 test_access($node, 'test1', 2, 'bad combination of LDAPS and StartTLS');
+
+note 'LDAP attribute ident mapping';
+
+delete $ENV{"PGPASSWORD"};
+
+# We'll use cert auth for mapping. Reuse the LDAP CA we already have for
+# simplicity (this is a nonsensical setup in practice).
+system_or_bail "openssl", "req", "-new", "-nodes",
+  "-keyout", "$slapd_certs/test1-client.key",
+  "-out", "$slapd_certs/test1-client.csr",
+  "-subj", "/DC=net/DC=example/CN=test1";
+system_or_bail "openssl", "x509", "-req",
+  "-in", "$slapd_certs/test1-client.csr",
+  "-CA", "$slapd_certs/ca.crt", "-CAkey", "$slapd_certs/ca.key",
+  "-CAcreateserial", "-out", "$slapd_certs/test1-client.crt";
+system_or_bail "openssl", "req", "-new", "-nodes",
+  "-keyout", "$slapd_certs/test2-client.key",
+  "-out", "$slapd_certs/test2-client.csr",
+  "-subj", "/DC=net/DC=example/CN=test2";
+system_or_bail "openssl", "x509", "-req",
+  "-in", "$slapd_certs/test2-client.csr",
+  "-CA", "$slapd_certs/ca.crt", "-CAkey", "$slapd_certs/ca.key",
+  "-CAcreateserial", "-out", "$slapd_certs/test2-client.crt";
+
+my $SERVERHOSTADDR = '127.0.0.1';
+
+$node->append_conf('postgresql.conf', qq{
+listen_addresses = '$SERVERHOSTADDR'
+ssl = on
+ssl_ca_file = '$slapd_certs/ca.crt'
+ssl_cert_file = '$slapd_certs/server.crt'
+ssl_key_file = '$slapd_certs/server.key'
+});
+
+# XXX check the other SSL tests' security mitigations for hostssl
+unlink($node->data_dir . '/pg_hba.conf');
+$node->append_conf('pg_hba.conf',
+	qq{
+# TYPE   DATABASE  USER  ADDRESS  METHOD  OPTIONS
+hostssl  anon      all   all      cert    ldapmap=ldap
+hostssl  noattrs   all   all      cert    ldapmap=noattrs
+hostssl  badmap    all   all      cert    ldapmap=badmap
+hostssl  starttls  all   all      cert    ldapmap=ldap ldaptls=1
+hostssl  bindpw    all   all      cert    ldapmap=ldap ldaptls=1 ldapbinddn="$ldap_rootdn" ldapbindpasswd="$ldap_rootpw"
+});
+
+unlink($node->data_dir . '/pg_ident.conf');
+$node->append_conf('pg_ident.conf',
+	qq{
+# This query matches only postgresUser entries, and returns their postgresRole
+# attributes.
+ldap    /^(.*)\$ "$ldap_url/$ldap_basedn?postgresRole?sub?(&(objectClass=postgresUser)(uid=\\1))"
+
+# This query matches any object with the given uid, so it can return entries
+# with no attribute values.
+noattrs /^(.*)\$ "$ldap_url/$ldap_basedn?postgresRole?sub?(&(objectClass=*)(uid=\\1))"
+
+# This query matches multiple DNs and should fail.
+badmap  /^       "$ldap_url/$ldap_basedn?postgresRole?sub?(objectClass=inetOrgPerson)"
+});
+
+$node->restart;
+
+my $common_connstr =
+	"host=server hostaddr=$SERVERHOSTADDR sslmode=verify-full " .
+	"sslrootcert='$slapd_certs/ca.crt' " .
+	"sslcert='$slapd_certs/test2-client.crt' " .
+	"sslkey='$slapd_certs/test2-client.key'";
+
+$node->connect_ok(
+	"$common_connstr dbname=anon user=test0",
+    "ldapmap succeeds with role attribute");
+
+$node->connect_fails(
+	"$common_connstr dbname=anon user=test1",
+	"ldapmap fails without matching role attribute",
+	log_like => [
+		qr/no match in ldapmap "ldap" for user "test1" authenticated as ".*"/,
+	]);
+
+$node->connect_ok(
+	"$common_connstr dbname=anon user='test2\@example.net'",
+	"ldapmap succeeds with another role attribute");
+
+$node->connect_fails(
+	"$common_connstr dbname=badmap user=test0",
+	"ldapmap fails if query matches multiple DNs",
+	log_like => [
+		qr/query matched multiple DNs/,
+		qr/no match in ldapmap "badmap" for user "test0" authenticated as ".*"/,
+	]);
+
+# Switch to the test1 client cert, which does not have a corresponding
+# postgresUser in the LDAP tree.
+$common_connstr =
+	"host=server hostaddr=$SERVERHOSTADDR sslmode=verify-full " .
+	"sslrootcert='$slapd_certs/ca.crt' " .
+	"sslcert='$slapd_certs/test1-client.crt' " .
+	"sslkey='$slapd_certs/test1-client.key'";
+
+$node->connect_fails(
+	"$common_connstr dbname=anon user=test1",
+	"ldapmap fails if query matches no DNs",
+	log_like => [
+		qr/query returned no entries/,
+		qr/no match in ldapmap "ldap" for user "test1" authenticated as ".*"/,
+	]);
+
+$node->connect_fails(
+	"$common_connstr dbname=noattrs user=test1",
+	"ldapmap fails if entry has no attributes",
+	log_like => [
+		qr/entry had no role attributes/,
+		qr/no match in ldapmap "noattrs" for user "test1" authenticated as ".*"/,
+	]);
+
+note 'LDAP ident mapping with StartTLS';
+
+# Force the use of TLS for connections from this point onward.
+append_to_file(
+	$slapd_conf,
+	qq{
+security tls=128
+});
+
+restart_slapd($ldaps_url);
+
+$common_connstr =
+	"host=server hostaddr=$SERVERHOSTADDR sslmode=verify-full " .
+	"sslrootcert='$slapd_certs/ca.crt' " .
+	"sslcert='$slapd_certs/test2-client.crt' " .
+	"sslkey='$slapd_certs/test2-client.key'";
+
+$node->connect_fails(
+	"$common_connstr dbname=anon user=test0",
+	"anonymous ldapmap binding fails with StartTLS enforcement",
+	log_like => [
+		qr/connection authenticated:/,
+		qr/LDAP role search failed on server .*: Confidentiality required/,
+		qr/no match in ldapmap "ldap" for user "test0" authenticated as ".*"/,
+	]);
+
+$node->connect_ok(
+	"$common_connstr dbname=starttls user=test0",
+	"ldapmap works with StartTLS");
+
+note 'LDAP ident mapping with bind password';
+
+# Force the use of authenticated connections from this point onward.
+append_to_file(
+	$slapd_conf,
+	qq{require authc
+});
+
+restart_slapd($ldaps_url);
+
+$node->connect_fails(
+	"$common_connstr dbname=starttls user=test0",
+	"anonymous ldapmap binding fails",
+	log_like => [
+		qr/connection authenticated:/,
+		qr/LDAP diagnostics: authentication required/,
+		qr/no match in ldapmap "ldap" for user "test0" authenticated as ".*"/,
+	]);
+
+$node->connect_ok(
+	"$common_connstr dbname=bindpw user=test0",
+	"ldapmap works with bind password");
+
+note 'LDAP group ident mapping';
+# TODO

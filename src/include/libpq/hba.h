@@ -92,6 +92,7 @@ typedef struct HbaLine
 	char	   *hostname;
 	UserAuth	auth_method;
 	char	   *usermap;
+	char	   *ldapmap; /* alternative to usermap; queries LDAP directly */
 	char	   *pamservice;
 	bool		pam_use_hostname;
 	bool		ldaptls;
@@ -139,8 +140,8 @@ extern bool load_hba(void);
 extern bool load_ident(void);
 extern const char *hba_authname(UserAuth auth_method);
 extern void hba_getauthmethod(hbaPort *port);
-extern int	check_usermap(const char *usermap_name,
-						  const char *pg_role, const char *auth_user,
+extern int	check_usermap(const hbaPort *port,
+						  const char *auth_user,
 						  bool case_sensitive);
 extern bool pg_isblank(const char c);
 

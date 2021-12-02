@@ -1137,8 +1137,7 @@ pg_GSS_checkauth(Port *port)
 		return STATUS_ERROR;
 	}
 
-	ret = check_usermap(port->hba->usermap, port->user_name, princ,
-						pg_krb_caseins_users);
+	ret = check_usermap(port, princ, pg_krb_caseins_users);
 
 	pfree(princ);
 
@@ -1477,12 +1476,12 @@ pg_SSPI_recvauth(Port *port)
 		int			retval;
 
 		namebuf = psprintf("%s@%s", accountname, domainname);
-		retval = check_usermap(port->hba->usermap, port->user_name, namebuf, true);
+		retval = check_usermap(port, namebuf, true);
 		pfree(namebuf);
 		return retval;
 	}
 	else
-		return check_usermap(port->hba->usermap, port->user_name, accountname, true);
+		return check_usermap(port, accountname, true);
 }
 
 /*
@@ -1843,7 +1842,7 @@ ident_inet_done:
 		 * usermap, because at this point authentication has succeeded.
 		 */
 		set_authn_id(port, ident_user);
-		return check_usermap(port->hba->usermap, port->user_name, ident_user, false);
+		return check_usermap(port, ident_user, false);
 	}
 	return STATUS_ERROR;
 }
@@ -1906,7 +1905,7 @@ auth_peer(hbaPort *port)
 	 */
 	set_authn_id(port, pw->pw_name);
 
-	ret = check_usermap(port->hba->usermap, port->user_name, port->authn_id, false);
+	ret = check_usermap(port, port->authn_id, false);
 
 	return ret;
 #else
@@ -2799,7 +2798,7 @@ CheckCertAuth(Port *port)
 	}
 
 	/* Just pass the certificate cn/dn to the usermap check */
-	status_check_usermap = check_usermap(port->hba->usermap, port->user_name, peer_username, false);
+	status_check_usermap = check_usermap(port, peer_username, false);
 	if (status_check_usermap != STATUS_OK)
 	{
 		/*

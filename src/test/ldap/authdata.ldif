@@ -21,6 +21,7 @@ mail: test1@example.net
 dn: uid=test2,dc=example,dc=net
 objectClass: inetOrgPerson
 objectClass: posixAccount
+objectClass: postgresUser
 uid: test2
 sn: Lastname
 givenName: Firstname
@@ -30,3 +31,5 @@ uidNumber: 102
 gidNumber: 100
 homeDirectory: /home/test2
 mail: test2@example.net
+postgresRole: test0
+postgresRole: test2@example.net

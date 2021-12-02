@@ -49,6 +49,7 @@
 #ifdef WIN32
 #include <winldap.h>
 #else
+#define LDAP_DEPRECATED 1
 #include <ldap.h>
 #endif
 #endif
@@ -1679,6 +1680,53 @@ parse_hba_line(TokenizedLine *tok_line, int elevel)
 		}
 	}
 
+	/* Final sanity checks on options. */
+	if (parsedline->usermap && parsedline->ldapmap)
+	{
+		ereport(elevel,
+				(errcode(ERRCODE_CONFIG_FILE_ERROR),
+				 errmsg("cannot use map together with ldapmap"),
+				 errcontext("line %d of configuration file \"%s\"",
+							line_num, HbaFileName)));
+		*err_msg = "cannot use map together with ldapmap";
+		return NULL;
+	}
+
+	if ((parsedline->auth_method != uaLDAP) && !parsedline->ldapmap)
+	{
+		/*
+		 * Some options are allowed to be set for the LDAP auth method and/or an
+		 * LDAP user mapping, but if neither is in use then we should complain.
+		 */
+		const char *badopt = NULL;
+
+		if (parsedline->ldaptls)
+		{
+			badopt = "ldaptls";
+		}
+		else if (parsedline->ldapbinddn)
+		{
+			badopt = "ldapbinddn";
+		}
+		else if (parsedline->ldapbindpasswd)
+		{
+			badopt = "ldapbindpasswd";
+		}
+
+		if (badopt)
+		{
+			ereport(elevel, \
+					(errcode(ERRCODE_CONFIG_FILE_ERROR), \
+					 errmsg("authentication option \"%s\" is only valid for the \"ldap\" authentication method or an \"ldapmap\" user mapping", \
+							badopt), \
+					 errcontext("line %d of configuration file \"%s\"", \
+							line_num, HbaFileName))); \
+			*err_msg = psprintf("authentication option \"%s\" is only valid for the \"ldap\" authentication method or an \"ldapmap\" user mapping", \
+								badopt); \
+			return NULL;
+		}
+	}
+
 	/*
 	 * Enforce any parameters implied by other settings.
 	 */
@@ -1752,15 +1800,23 @@ parse_hba_auth_opt(char *name, char *val, HbaLine *hbaline,
 	hbaline->ldapscope = LDAP_SCOPE_SUBTREE;
 #endif
 
-	if (strcmp(name, "map") == 0)
+	if (strcmp(name, "map") == 0 || strcmp(name, "ldapmap") == 0)
 	{
 		if (hbaline->auth_method != uaIdent &&
 			hbaline->auth_method != uaPeer &&
 			hbaline->auth_method != uaGSS &&
 			hbaline->auth_method != uaSSPI &&
 			hbaline->auth_method != uaCert)
-			INVALID_AUTH_OPTION("map", gettext_noop("ident, peer, gssapi, sspi, and cert"));
-		hbaline->usermap = pstrdup(val);
+			INVALID_AUTH_OPTION(name, gettext_noop("ident, peer, gssapi, sspi, and cert"));
+
+		if (name[0] == 'l') /* ldapmap */
+		{
+			hbaline->ldapmap = pstrdup(val);
+		}
+		else /* map */
+		{
+			hbaline->usermap = pstrdup(val);
+		}
 	}
 	else if (strcmp(name, "clientcert") == 0)
 	{
@@ -1904,7 +1960,6 @@ parse_hba_auth_opt(char *name, char *val, HbaLine *hbaline,
 	}
 	else if (strcmp(name, "ldaptls") == 0)
 	{
-		REQUIRE_AUTH_OPTION(uaLDAP, "ldaptls", "ldap");
 		if (strcmp(val, "1") == 0)
 			hbaline->ldaptls = true;
 		else
@@ -1943,12 +1998,10 @@ parse_hba_auth_opt(char *name, char *val, HbaLine *hbaline,
 	}
 	else if (strcmp(name, "ldapbinddn") == 0)
 	{
-		REQUIRE_AUTH_OPTION(uaLDAP, "ldapbinddn", "ldap");
 		hbaline->ldapbinddn = pstrdup(val);
 	}
 	else if (strcmp(name, "ldapbindpasswd") == 0)
 	{
-		REQUIRE_AUTH_OPTION(uaLDAP, "ldapbindpasswd", "ldap");
 		hbaline->ldapbindpasswd = pstrdup(val);
 	}
 	else if (strcmp(name, "ldapsearchattribute") == 0)
@@ -3001,12 +3054,410 @@ check_ident_usermap(IdentLine *identLine, const char *usermap_name,
 	}
 }
 
+#ifdef LDAP_API_FEATURE_X_OPENLDAP
+
+static bool query_ldap_roles(const Port *port, LDAPURLDesc *ldapurl, List **roles);
+
+/*
+ *	Process one line from the parsed ident config lines.
+ *
+ *	Compare input parsed ident line to the needed map and ident_user. If it
+ *	matches, perform an LDAP query (using the Port's settings) to obtain the
+ *	allowed set of roles and make sure pg_role is one of them. *found_p and
+ *	*error_p are set according to our results.
+ *
+ *	TODO: each ident line has its own URL, implying that we could query separate
+ *	servers with a map
+ *
+ *	    ldap /.*@example.com ldaps://ldap.example.com/...
+ *	    ldap /.*@example.net ldap://ldap2.example.net/...
+ *
+ *	But the use of the Port means that all those servers have to share certain
+ *	settings (like credentials and the StartTLS setting). So either those
+ *	settings need to be set per ident line, or we should defer to the HBA for
+ *	scheme, host, and port too, and just allow exactly one LDAP server to be
+ *	contacted.
+ *
+ *	TODO: consolidate logic with check_ident_usermap()
+ */
+static void
+check_ldap_usermap(IdentLine *identLine, const char *ldapmap_name,
+				   const Port *port, const char *pg_role,
+				   const char *ident_user, bool *found_p, bool *error_p)
+{
+	char	   *ldapurl = NULL;
+	int			rc;
+	LDAPURLDesc *urldata;
+	List	   *roles;
+	ListCell   *role;
+
+	*found_p = false;
+	*error_p = false;
+
+	if (strcmp(identLine->usermap, ldapmap_name) != 0)
+		/* Line does not match the map name we're looking for, so just abort */
+		return;
+
+	/* Match? */
+	if (identLine->ident_user[0] == '/')
+	{
+		/*
+		 * When system username starts with a slash, treat it as a regular
+		 * expression. In this case, we process the system username as a
+		 * regular expression that returns exactly one match. This is replaced
+		 * for \1 in the LDAP query URI, if present.
+		 */
+		int			r;
+		regmatch_t	matches[2];
+		pg_wchar   *wstr;
+		int			wlen;
+		char	   *ofs;
+
+		wstr = palloc((strlen(ident_user) + 1) * sizeof(pg_wchar));
+		wlen = pg_mb2wchar_with_len(ident_user, wstr, strlen(ident_user));
+
+		r = pg_regexec(&identLine->re, wstr, wlen, 0, NULL, 2, matches, 0);
+		if (r)
+		{
+			char		errstr[100];
+
+			if (r != REG_NOMATCH)
+			{
+				/* REG_NOMATCH is not an error, everything else is */
+				pg_regerror(r, &identLine->re, errstr, sizeof(errstr));
+				ereport(LOG,
+						(errcode(ERRCODE_INVALID_REGULAR_EXPRESSION),
+						 errmsg("regular expression match for \"%s\" failed: %s",
+								identLine->ident_user + 1, errstr)));
+				*error_p = true;
+			}
+
+			pfree(wstr);
+			return;
+		}
+		pfree(wstr);
+
+		if ((ofs = strstr(identLine->pg_role, "\\1")) != NULL)
+		{
+			static const char *unreserved =
+				"abcdefghijklmnopqrstuvwxyz"
+				"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+				"0123456789-._~";
+
+			regoff_t	matchlen;
+			int			offset;
+
+			/* substitution of the first argument requested */
+			if (matches[1].rm_so < 0)
+			{
+				ereport(LOG,
+						(errcode(ERRCODE_INVALID_REGULAR_EXPRESSION),
+						 errmsg("regular expression \"%s\" has no subexpressions as requested by backreference in \"%s\"",
+								identLine->ident_user + 1, identLine->pg_role)));
+				*error_p = true;
+				return;
+			}
+
+			/*
+			 * Sanity check the substitution.
+			 *
+			 * We're inserting into an LDAP query URL, so we need to prevent
+			 * injection. As a simple solution, limit the characters that can be
+			 * substituted to the URL-unreserved set:
+			 *
+			 *     unreserved  = ALPHA / DIGIT / "-" / "." / "_" / "~"
+			 *
+			 * Note that this is stricter than the preconditions for
+			 * FormatSearchFilter().
+			 *
+			 * XXX This restriction probably indicates that either we should
+			 * break the URL up first and substitute then, or allow the DBA to
+			 * provide the separate pieces instead of a URL, or URL-escape
+			 * before substituting, or...
+			 */
+			matchlen = matches[1].rm_eo - matches[1].rm_so;
+			if (strspn(ident_user + matches[1].rm_so, unreserved) < matchlen)
+			{
+				ereport(LOG,
+						(errmsg("invalid character in matched substitution for LDAP mapping")));
+				*error_p = true;
+				return;
+			}
+
+			/*
+			 * length: original length minus length of \1 plus length of match
+			 * plus null terminator
+			 */
+			ldapurl = palloc0(strlen(identLine->pg_role) - 2 + matchlen + 1);
+			offset = ofs - identLine->pg_role;
+			memcpy(ldapurl, identLine->pg_role, offset);
+			memcpy(ldapurl + offset,
+				   ident_user + matches[1].rm_so,
+				   matchlen);
+			strcat(ldapurl, ofs + 2);
+		}
+		else
+		{
+			/* no substitution, so copy the match */
+			ldapurl = pstrdup(identLine->pg_role);
+		}
+	}
+	else
+	{
+		/* Not regular expression, so use the ident entries as-is */
+		if (strcmp(identLine->ident_user, ident_user) != 0)
+			return;
+
+		ldapurl = pstrdup(identLine->pg_role);
+	}
+
+	/*
+	 * At this point, we know that this ident line matches our map and system
+	 * user, and we've constructed the LDAP URL to use for a role query.
+	 */
+	rc = ldap_url_parse(ldapurl, &urldata);
+	if (rc != LDAP_SUCCESS)
+	{
+		ereport(LOG,
+				(errcode(ERRCODE_CONFIG_FILE_ERROR),
+				 errmsg("could not parse LDAP mapping URL \"%s\": %s",
+						ldapurl, ldap_url_err2string(rc))));
+		*error_p = true;
+
+		pfree(ldapurl);
+		return;
+	}
+
+	if (!query_ldap_roles(port, urldata, &roles))
+	{
+		/* Error message already logged */
+		list_free_deep(roles);
+		pfree(ldapurl);
+		return;
+	}
+
+	foreach(role, roles)
+	{
+		const char *allowed_role = lfirst(role);
+
+		if (strcmp(allowed_role, pg_role) == 0)
+		{
+			*found_p = true;
+			break;
+		}
+	}
+
+	list_free_deep(roles);
+	pfree(ldapurl);
+}
+
+/*
+ * Add a detail error message text to the current error if one can be
+ * constructed from the LDAP 'diagnostic message'.
+ *
+ * XXX copied from auth.c
+ */
+static int
+errdetail_for_ldap(LDAP *ldap)
+{
+	char	   *message;
+	int			rc;
+
+	rc = ldap_get_option(ldap, LDAP_OPT_DIAGNOSTIC_MESSAGE, &message);
+	if (rc == LDAP_SUCCESS && message != NULL)
+	{
+		errdetail("LDAP diagnostics: %s", message);
+		ldap_memfree(message);
+	}
+
+	return 0;
+}
+
+/*
+ * Returns a palloc'd list of pointers to role names returned by the LDAP query
+ * contained in ldapurl. Callers must list_free_deep() the return value even if
+ * the function fails.
+ */
+static bool
+query_ldap_roles(const Port *port, LDAPURLDesc *ldapurl, List **roles)
+{
+	char	   *server;
+	LDAP	   *ldap = NULL;
+	int			rc;
+	const int	ldapversion = LDAP_VERSION3;
+	bool		success = false;
+	LDAPMessage *search_message = NULL;
+	LDAPMessage *entry;
+	int			count;
+	struct berval **values = NULL;
+
+	/*
+	 * For now we query for only one attribute (the first).
+	 * TODO: maybe open up this restriction
+	 */
+	char	   *attributes[] = {ldapurl->lud_attrs[0], NULL};
+
+	*roles = NIL;
+
+	/*
+	 * TODO: why does other code prevent ldapi:// connections? Should we do so
+	 * here?
+	 */
+	server = psprintf("%s://%s:%d",
+					  ldapurl->lud_scheme, ldapurl->lud_host, ldapurl->lud_port);
+
+	/*
+	 * TODO: reuse the InitializeLDAPConnection() logic
+	 */
+	rc = ldap_initialize(&ldap, server);
+	if (rc != LDAP_SUCCESS)
+	{
+		ereport(LOG,
+				(errmsg("could not initialize LDAP: %s", ldap_err2string(rc))));
+		goto cleanup;
+	}
+
+	rc = ldap_set_option(ldap, LDAP_OPT_PROTOCOL_VERSION, &ldapversion);
+	if (rc != LDAP_SUCCESS)
+	{
+		ereport(LOG,
+				(errmsg("could not set LDAP protocol version: %s",
+						ldap_err2string(rc)),
+				 errdetail_for_ldap(ldap)));
+		goto cleanup;
+	}
+
+	if (port->hba->ldaptls)
+	{
+		if ((rc = ldap_start_tls_s(ldap, NULL, NULL)) != LDAP_SUCCESS)
+		{
+			ereport(LOG,
+					(errmsg("could not start LDAP TLS session: %s",
+							ldap_err2string(rc)),
+					 errdetail_for_ldap(ldap)));
+			goto cleanup;
+		}
+	}
+
+	rc = ldap_simple_bind_s(ldap,
+							port->hba->ldapbinddn ? port->hba->ldapbinddn : "",
+							port->hba->ldapbindpasswd ? port->hba->ldapbindpasswd : "");
+	if (rc != LDAP_SUCCESS)
+	{
+		ereport(LOG,
+				(errmsg("could not perform initial LDAP bind for ldapbinddn \"%s\" on server \"%s\": %s",
+						port->hba->ldapbinddn ? port->hba->ldapbinddn : "",
+						server,
+						ldap_err2string(rc)),
+				 errdetail_for_ldap(ldap)));
+		goto cleanup;
+	}
+
+	rc = ldap_search_s(ldap,
+					   ldapurl->lud_dn,
+					   ldapurl->lud_scope,
+					   ldapurl->lud_filter,
+					   attributes,
+					   0,
+					   &search_message);
+
+	if (rc != LDAP_SUCCESS)
+	{
+		ereport(LOG,
+				(errmsg("LDAP role search failed on server \"%s\": %s",
+						server, ldap_err2string(rc)),
+				 errdetail_for_ldap(ldap)));
+		goto cleanup;
+	}
+
+	count = ldap_count_entries(ldap, search_message);
+	if (count == 1)
+	{
+		int i = 0;
+
+		/*
+		 * Loop over the returned attributes and add them to our list. Note that
+		 * there doesn't seem to be a way to differentiate between "no
+		 * attributes" and an actual lookup error.
+		 *
+		 * TODO: save off matching DN for later auditing
+		 */
+		entry = ldap_first_entry(ldap, search_message);
+		values = ldap_get_values_len(ldap, entry, ldapurl->lud_attrs[0]);
+		if (values)
+		{
+			for (i = 0; values[i]; ++i)
+			{
+				char   *role = values[i]->bv_val;
+
+				if (strlen(role) != values[i]->bv_len)
+				{
+					ereport(LOG,
+							(errmsg("server returned LDAP role attribute with embedded NULL")));
+					goto cleanup;
+				}
+
+				*roles = lappend(*roles, pstrdup(role));
+			}
+		}
+
+		if (i == 0)
+		{
+			ereport(LOG,
+					(errmsg("matching LDAP entry had no role attributes")));
+		}
+	}
+	else if (count == 0)
+	{
+		/* Not an error condition; this ident line just doesn't "match". */
+		ereport(LOG,
+				(errmsg("LDAP mapping query returned no entries")));
+	}
+	else
+	{
+		/*
+		 * This, however, is an error. The query is malformed if it returns more
+		 * than one matching entry.
+		 */
+		ereport(LOG,
+				(errmsg("LDAP mapping query matched multiple DNs")));
+		goto cleanup;
+	}
+
+	success = true;
+
+cleanup:
+	if (values)
+		ldap_value_free_len(values);
+	if (search_message)
+		ldap_msgfree(search_message);
+	if (ldap)
+	{
+		rc = ldap_unbind(ldap);
+		if (rc != LDAP_SUCCESS)
+		{
+			ereport(LOG,
+					(errmsg("could not unbind from server \"%s\": %s",
+							server, ldap_err2string(rc)),
+					 errdetail_for_ldap(ldap)));
+			success = false;
+		}
+	}
+	pfree(server);
+
+	return success;
+}
+
+#endif /* LDAP_API_FEATURE_X_OPENLDAP */
 
 /*
  *	Scan the (pre-parsed) ident usermap file line by line, looking for a match
  *
  *	See if the user with ident username "auth_user" is allowed to act
  *	as Postgres user "pg_role" according to usermap "usermap_name".
+ *
+ *	If the HBA has specified an ldapmap instead, the LDAP server will be queried
+ *	here to determine the allowed roles.
  *
  *	Special case: Usermap NULL, equivalent to what was previously called
  *	"sameuser" or "samerole", means don't look in the usermap file.
@@ -3016,15 +3467,51 @@ check_ident_usermap(IdentLine *identLine, const char *usermap_name,
  *	Iff authorized, return STATUS_OK, otherwise return STATUS_ERROR.
  */
 int
-check_usermap(const char *usermap_name,
-			  const char *pg_role,
+check_usermap(const Port *port,
 			  const char *auth_user,
 			  bool case_insensitive)
 {
 	bool		found_entry = false,
 				error = false;
+	const char *usermap_name = port->hba->usermap;
+	const char *ldapmap_name = port->hba->ldapmap;
+	const char *pg_role = port->user_name;
+	const char *maptype = "usermap";
 
-	if (usermap_name == NULL || usermap_name[0] == '\0')
+	/*
+	 * Note that parse_hba_line() prevents cases where both usermap and
+	 * ldapmap are set simultaneously.
+	 */
+	if (usermap_name && usermap_name[0])
+	{
+		ListCell   *line_cell;
+
+		foreach(line_cell, parsed_ident_lines)
+		{
+			check_ident_usermap(lfirst(line_cell), usermap_name,
+								pg_role, auth_user, case_insensitive,
+								&found_entry, &error);
+			if (found_entry || error)
+				break;
+		}
+	}
+	else if (ldapmap_name && ldapmap_name[0])
+	{
+		ListCell   *line_cell;
+
+		maptype = "ldapmap";
+
+		foreach(line_cell, parsed_ident_lines)
+		{
+			/* TODO: currently we ignore case-insensitivity; how should LDAP
+			 * handle that? */
+			check_ldap_usermap(lfirst(line_cell), ldapmap_name, port,
+							   pg_role, auth_user, &found_entry, &error);
+			if (found_entry || error)
+				break;
+		}
+	}
+	else
 	{
 		if (case_insensitive)
 		{
@@ -3041,24 +3528,14 @@ check_usermap(const char *usermap_name,
 						pg_role, auth_user)));
 		return STATUS_ERROR;
 	}
-	else
-	{
-		ListCell   *line_cell;
 
-		foreach(line_cell, parsed_ident_lines)
-		{
-			check_ident_usermap(lfirst(line_cell), usermap_name,
-								pg_role, auth_user, case_insensitive,
-								&found_entry, &error);
-			if (found_entry || error)
-				break;
-		}
-	}
 	if (!found_entry && !error)
 	{
 		ereport(LOG,
-				(errmsg("no match in usermap \"%s\" for user \"%s\" authenticated as \"%s\"",
-						usermap_name, pg_role, auth_user)));
+				(errmsg("no match in %s \"%s\" for user \"%s\" authenticated as \"%s\"",
+						maptype,
+						(maptype[0] == 'u') ? usermap_name : ldapmap_name,
+						pg_role, auth_user)));
 	}
 	return found_entry ? STATUS_OK : STATUS_ERROR;
 }

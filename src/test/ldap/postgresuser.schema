@@ -1,0 +1,30 @@
+# PostgresUser
+#
+# A mix-in class that attaches authorized Postgres role names to an LDAP object.
+
+# Well-known OID classes
+objectIdentifier directoryString 1.3.6.1.4.1.1466.115.121.1.15
+objectIdentifier jointUUID 2.25
+
+# The 'postgres' OID is equivalent to
+#
+#     oid:/UUID/b13db941-195e-329e-91fc-adba1a8b6619
+#
+# where {b13db941-195e-329e-91fc-adba1a8b6619} is the UUIDv3 corresponding to
+# the 'postgresql.org' DNS name. That should hopefully be enough to prevent
+# collisions with any other schemas, though since this is test-only it probably
+# doesn't matter in practice.
+objectIdentifier postgres jointUUID:235593842765758976291531166600911349273
+objectIdentifier postgresAttribute postgres:1
+objectIdentifier postgresObject    postgres:2
+
+attributetype ( postgresAttribute:1
+	NAME 'postgresRole'
+	DESC 'Authorized database role'
+	SYNTAX directoryString )
+
+objectclass ( postgresObject:1
+	NAME 'postgresUser'
+	DESC 'PostgreSQL user'
+	AUXILIARY
+	MAY postgresRole )
