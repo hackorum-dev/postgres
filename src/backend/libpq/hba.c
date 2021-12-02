@@ -1691,6 +1691,51 @@ parse_hba_line(TokenizedLine *tok_line, int elevel)
 }
 
 
+#ifdef LDAP_API_FEATURE_X_OPENLDAP
+
+/*
+ * OpenLDAP's ldap_err2string() doesn't work on the return value of
+ * ldap_url_parse(). Provide a helper to do so.
+ */
+static const char *
+ldap_url_err2string(int errcode)
+{
+	switch (errcode)
+	{
+		case LDAP_URL_SUCCESS:
+			return "success";
+
+		/* internal/developer errors */
+		case LDAP_URL_ERR_MEM:
+			return "out of memory";
+		case LDAP_URL_ERR_PARAM:
+			return "invalid parameter";
+
+		/* user errors */
+		case LDAP_URL_ERR_BADSCHEME:
+			return "unsupported scheme";
+		case LDAP_URL_ERR_BADENCLOSURE:
+			return "missing closing bracket";
+		case LDAP_URL_ERR_BADURL:
+			return "malformed URL";
+		case LDAP_URL_ERR_BADHOST:
+			return "bad host/port";
+		case LDAP_URL_ERR_BADATTRS:
+			return "bad/missing attributes";
+		case LDAP_URL_ERR_BADSCOPE:
+			return "bad/missing scope";
+		case LDAP_URL_ERR_BADFILTER:
+			return "bad/missing filter";
+		case LDAP_URL_ERR_BADEXTS:
+			return "bad/missing extensions";
+	}
+
+	return psprintf("unknown error: %d", errcode);
+}
+
+#endif /* LDAP_API_FEATURE_X_OPENLDAP */
+
+
 /*
  * Parse one name-value pair as an authentication option into the given
  * HbaLine.  Return true if we successfully parse the option, false if we
@@ -1818,9 +1863,9 @@ parse_hba_auth_opt(char *name, char *val, HbaLine *hbaline,
 		{
 			ereport(elevel,
 					(errcode(ERRCODE_CONFIG_FILE_ERROR),
-					 errmsg("could not parse LDAP URL \"%s\": %s", val, ldap_err2string(rc))));
+					 errmsg("could not parse LDAP URL \"%s\": %s", val, ldap_url_err2string(rc))));
 			*err_msg = psprintf("could not parse LDAP URL \"%s\": %s",
-								val, ldap_err2string(rc));
+								val, ldap_url_err2string(rc));
 			return false;
 		}
 
