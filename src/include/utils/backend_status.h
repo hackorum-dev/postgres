@@ -258,6 +258,16 @@ typedef struct LocalPgBackendStatus
 	 * not.
 	 */
 	TransactionId backend_xmin;
+
+	/*
+	 * Number of active subtransaction in the current session.
+	 */
+	int	subxact_count;
+
+	/*
+	 * Whether subxid count overflowed in the current session.
+	 */
+	bool subxact_overflowed;
 } LocalPgBackendStatus;
 
 
