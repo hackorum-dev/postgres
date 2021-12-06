@@ -25,6 +25,7 @@
 #include "pgstat.h"
 #include "postmaster/custodian.h"
 #include "postmaster/interrupt.h"
+#include "replication/snapbuild.h"
 #include "storage/bufmgr.h"
 #include "storage/condition_variable.h"
 #include "storage/fd.h"
@@ -70,6 +71,7 @@ struct cust_task_funcs_entry
  * whether the task is already enqueued.
  */
 static const struct cust_task_funcs_entry cust_task_functions[] = {
+	{CUSTODIAN_REMOVE_SERIALIZED_SNAPSHOTS, RemoveOldSerializedSnapshots, NULL},
 	{INVALID_CUSTODIAN_TASK, NULL, NULL}	/* must be last */
 };
 

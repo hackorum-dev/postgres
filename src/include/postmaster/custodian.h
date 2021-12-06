@@ -18,7 +18,7 @@
  */
 typedef enum CustodianTask
 {
-	FAKE_TASK,						/* placeholder until we have a real task */
+	CUSTODIAN_REMOVE_SERIALIZED_SNAPSHOTS,
 
 	NUM_CUSTODIAN_TASKS,			/* new tasks go above */
 	INVALID_CUSTODIAN_TASK
