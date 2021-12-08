@@ -57,15 +57,13 @@ CREATE PUBLICATION testpub_foralltables FOR ALL TABLES WITH (publish = 'insert')
 RESET client_min_messages;
 ALTER PUBLICATION testpub_foralltables SET (publish = 'insert, update');
 CREATE TABLE testpub_tbl2 (id serial primary key, data text);
--- fail - can't add to for all tables publication
+-- fail - tables can't be added, dropped or set to FOR ALL TABLES publications
 ALTER PUBLICATION testpub_foralltables ADD TABLE testpub_tbl2;
 ERROR:  publication "testpub_foralltables" is defined as FOR ALL TABLES
 DETAIL:  Tables cannot be added to or dropped from FOR ALL TABLES publications.
--- fail - can't drop from all tables publication
 ALTER PUBLICATION testpub_foralltables DROP TABLE testpub_tbl2;
 ERROR:  publication "testpub_foralltables" is defined as FOR ALL TABLES
 DETAIL:  Tables cannot be added to or dropped from FOR ALL TABLES publications.
--- fail - can't add to for all tables publication
 ALTER PUBLICATION testpub_foralltables SET TABLE pub_test.testpub_nopk;
 ERROR:  publication "testpub_foralltables" is defined as FOR ALL TABLES
 DETAIL:  Tables cannot be added to or dropped from FOR ALL TABLES publications.
@@ -280,7 +278,7 @@ RESET client_min_messages;
 -- fail - already added
 ALTER PUBLICATION testpub_fortbl ADD TABLE testpub_tbl1;
 ERROR:  relation "testpub_tbl1" is already member of publication "testpub_fortbl"
--- fail - already added
+-- fail - already existing publication
 CREATE PUBLICATION testpub_fortbl FOR TABLE testpub_tbl1;
 ERROR:  publication "testpub_fortbl" already exists
 \dRp+ testpub_fortbl

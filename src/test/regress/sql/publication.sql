@@ -44,11 +44,9 @@ RESET client_min_messages;
 ALTER PUBLICATION testpub_foralltables SET (publish = 'insert, update');
 
 CREATE TABLE testpub_tbl2 (id serial primary key, data text);
--- fail - can't add to for all tables publication
+-- fail - tables can't be added, dropped or set to FOR ALL TABLES publications
 ALTER PUBLICATION testpub_foralltables ADD TABLE testpub_tbl2;
--- fail - can't drop from all tables publication
 ALTER PUBLICATION testpub_foralltables DROP TABLE testpub_tbl2;
--- fail - can't add to for all tables publication
 ALTER PUBLICATION testpub_foralltables SET TABLE pub_test.testpub_nopk;
 
 -- fail - can't add schema to 'FOR ALL TABLES' publication
@@ -169,7 +167,7 @@ CREATE PUBLICATION testpub_fortbl FOR TABLE testpub_tbl1, pub_test.testpub_nopk;
 RESET client_min_messages;
 -- fail - already added
 ALTER PUBLICATION testpub_fortbl ADD TABLE testpub_tbl1;
--- fail - already added
+-- fail - already existing publication
 CREATE PUBLICATION testpub_fortbl FOR TABLE testpub_tbl1;
 
 \dRp+ testpub_fortbl
