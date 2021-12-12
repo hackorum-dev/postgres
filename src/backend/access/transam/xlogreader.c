@@ -650,14 +650,22 @@ ReadPageInternal(XLogReaderState *state, XLogRecPtr pageptr, int reqLen)
 										   state->currRecPtr,
 										   state->readBuf);
 		if (readLen < 0)
+		{
+			report_invalid_record(state,
+								  "attempt to read page of next segment failed at %X/%X",
+								  LSN_FORMAT_ARGS(targetSegmentPtr));
 			goto err;
+		}
 
 		/* we can be sure to have enough WAL available, we scrolled back */
 		Assert(readLen == XLOG_BLCKSZ);
 
 		if (!XLogReaderValidatePageHeader(state, targetSegmentPtr,
 										  state->readBuf))
+		{
+			/* XLogReaderValidatePageHeader sets errormsg_buf */
 			goto err;
+		}
 	}
 
 	/*
@@ -668,13 +676,18 @@ ReadPageInternal(XLogReaderState *state, XLogRecPtr pageptr, int reqLen)
 									   state->currRecPtr,
 									   state->readBuf);
 	if (readLen < 0)
-		goto err;
+		goto err;	/* XXX errmsg? */
 
 	Assert(readLen <= XLOG_BLCKSZ);
 
 	/* Do we have enough data to check the header length? */
 	if (readLen <= SizeOfXLogShortPHD)
+	{
+		report_invalid_record(state,
+							  "unable to read short header of %d bytes at %X/%X",
+							  readLen, LSN_FORMAT_ARGS(pageptr));
 		goto err;
+	}
 
 	Assert(readLen >= reqLen);
 
@@ -687,14 +700,17 @@ ReadPageInternal(XLogReaderState *state, XLogRecPtr pageptr, int reqLen)
 										   state->currRecPtr,
 										   state->readBuf);
 		if (readLen < 0)
-			goto err;
+			goto err;	/* XXX errmsg */
 	}
 
 	/*
 	 * Now that we know we have the full header, validate it.
 	 */
 	if (!XLogReaderValidatePageHeader(state, pageptr, (char *) hdr))
+	{
+		/* XLogReaderValidatePageHeader sets errormsg_buf */
 		goto err;
+	}
 
 	/* update read state information */
 	state->seg.ws_segno = targetSegNo;

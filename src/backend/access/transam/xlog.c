@@ -12467,6 +12467,7 @@ retry:
 										 private->replayTLI,
 										 xlogreader->EndRecPtr))
 		{
+			/* XXX should this path set errormsg_buf? */
 			if (readFile >= 0)
 				close(readFile);
 			readFile = -1;
@@ -12598,7 +12599,10 @@ next_record_is_invalid:
 	if (StandbyMode)
 		goto retry;
 	else
+	{
+		/* XXX should set errormsg_buf here */
 		return -1;
+	}
 }
 
 /*
