@@ -9,7 +9,7 @@ use Test::More;
 
 if ($ENV{with_ldap} eq 'yes')
 {
-	plan tests => 51;
+	plan tests => 56;
 }
 else
 {
@@ -79,6 +79,7 @@ include postgresuser.schema
 
 pidfile $slapd_pidfile
 logfile $slapd_logfile
+loglevel conns filter stats
 
 access to *
         by * read
@@ -568,6 +569,45 @@ $node->connect_fails(
 $node->connect_ok(
 	"$common_connstr dbname=bindpw user=test0",
 	"ldapmap works with bind password");
+
+note 'LDAP ident mapping with client certificate';
+
+# Set up a certificate for the root user.
+system_or_bail "openssl", "req", "-new", "-nodes",
+  "-keyout", "$slapd_certs/root-client.key",
+  "-out", "$slapd_certs/root-client.csr",
+  "-subj", "/DC=net/DC=example/CN=Manager";
+system_or_bail "openssl", "x509", "-req", "-in", "$slapd_certs/root-client.csr",
+  "-CA", "$slapd_certs/ca.crt", "-CAkey", "$slapd_certs/ca.key",
+  "-CAcreateserial", "-out", "$slapd_certs/root-client.crt";
+
+$ENV{'LDAPTLS_CERT'} = "$slapd_certs/root-client.crt";
+$ENV{'LDAPTLS_KEY'}  = "$slapd_certs/root-client.key";
+
+# Force the use of client certificates from this point onward.
+append_to_file(
+	$slapd_conf,
+	qq{TLSVerifyClient demand
+});
+
+restart_slapd($ldaps_url);
+
+$node->connect_fails(
+	"$common_connstr dbname=bindpw user=test0",
+	"ldapmap with bind password fails without client certificate",
+	log_like => [
+		qr/connection authenticated:/,
+		qr/could not perform initial LDAP bind for ldapbinddn "cn=Manager,dc=example,dc=net" on server ".*": Can't contact LDAP server/,
+		qr/no match in ldapmap "ldap" for user "test0" authenticated as ".*"/,
+	]);
+
+# The server needs to be restarted to pick up all the above LDAPTLS_* settings
+# from the environment.
+$node->restart;
+
+$node->connect_ok(
+	"$common_connstr dbname=bindpw user=test0",
+	"ldapmap works with bind certificate");
 
 note 'LDAP group ident mapping';
 # TODO
