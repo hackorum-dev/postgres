@@ -21,6 +21,7 @@
  */
 #include "postgres.h"
 
+#include "access/rewriteheap.h"
 #include "libpq/pqsignal.h"
 #include "pgstat.h"
 #include "postmaster/custodian.h"
@@ -33,11 +34,13 @@
 #include "storage/procsignal.h"
 #include "storage/smgr.h"
 #include "utils/memutils.h"
+#include "utils/pg_lsn.h"
 
 static void DoCustodianTasks(void);
 static CustodianTask CustodianGetNextTask(void);
 static void CustodianEnqueueTask(CustodianTask task);
 static const struct cust_task_funcs_entry *LookupCustodianFunctions(CustodianTask task);
+static void CustodianSetLogicalRewriteCutoff(Datum arg);
 
 typedef struct
 {
@@ -45,6 +48,8 @@ typedef struct
 
 	CustodianTask task_queue_elems[NUM_CUSTODIAN_TASKS];
 	int			task_queue_head;
+
+	XLogRecPtr  logical_rewrite_mappings_cutoff;    /* can remove older mappings */
 } CustodianShmemStruct;
 
 static CustodianShmemStruct *CustodianShmem;
@@ -72,6 +77,7 @@ struct cust_task_funcs_entry
  */
 static const struct cust_task_funcs_entry cust_task_functions[] = {
 	{CUSTODIAN_REMOVE_SERIALIZED_SNAPSHOTS, RemoveOldSerializedSnapshots, NULL},
+	{CUSTODIAN_REMOVE_REWRITE_MAPPINGS, RemoveOldLogicalRewriteMappings, CustodianSetLogicalRewriteCutoff},
 	{INVALID_CUSTODIAN_TASK, NULL, NULL}	/* must be last */
 };
 
@@ -376,4 +382,41 @@ LookupCustodianFunctions(CustodianTask task)
 	/* All tasks must have an entry. */
 	elog(ERROR, "could not lookup functions for custodian task %d", task);
 	pg_unreachable();
+}
+
+/*
+ * Stores the provided cutoff LSN in the custodian's shared memory.
+ *
+ * It's okay if the cutoff LSN is updated before a previously set cutoff has
+ * been used for cleaning up files.  If that happens, it just means that the
+ * next invocation of RemoveOldLogicalRewriteMappings() will use a more accurate
+ * cutoff.
+ */
+static void
+CustodianSetLogicalRewriteCutoff(Datum arg)
+{
+	SpinLockAcquire(&CustodianShmem->cust_lck);
+	CustodianShmem->logical_rewrite_mappings_cutoff = DatumGetLSN(arg);
+	SpinLockRelease(&CustodianShmem->cust_lck);
+
+	/* if pass-by-ref, free Datum memory */
+#ifndef USE_FLOAT8_BYVAL
+	pfree(DatumGetPointer(arg));
+#endif
+}
+
+/*
+ * Used by the custodian to determine which logical rewrite mapping files it can
+ * remove.
+ */
+XLogRecPtr
+CustodianGetLogicalRewriteCutoff(void)
+{
+	XLogRecPtr  cutoff;
+
+	SpinLockAcquire(&CustodianShmem->cust_lck);
+	cutoff = CustodianShmem->logical_rewrite_mappings_cutoff;
+	SpinLockRelease(&CustodianShmem->cust_lck);
+
+	return cutoff;
 }
