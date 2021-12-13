@@ -33,3 +33,10 @@ homeDirectory: /home/test2
 mail: test2@example.net
 postgresRole: test0
 postgresRole: test2@example.net
+
+# For SCRAM auth only; the rootpw should take care of the rest.
+dn: cn=Manager,dc=example,dc=net
+objectClass: inetOrgPerson
+uid: Manager
+sn: Lastname
+cn: Manager

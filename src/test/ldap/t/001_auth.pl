@@ -9,7 +9,7 @@ use Test::More;
 
 if ($ENV{with_ldap} eq 'yes')
 {
-	plan tests => 56;
+	plan tests => 61;
 }
 else
 {
@@ -192,7 +192,7 @@ $node->safe_psql('postgres', 'CREATE USER test0;');
 $node->safe_psql('postgres', 'CREATE USER test1;');
 $node->safe_psql('postgres', 'CREATE USER "test2@example.net";');
 
-my @databases = ( 'anon', 'noattrs', 'badmap', 'starttls', 'bindpw' );
+my @databases = ( 'anon', 'noattrs', 'badmap', 'starttls', 'bindpw', 'bindscram', 'bindcert' );
 foreach my $db (@databases)
 {
 	$node->safe_psql('postgres', "CREATE DATABASE $db");
@@ -445,6 +445,8 @@ hostssl  noattrs   all   all      cert    ldapmap=noattrs
 hostssl  badmap    all   all      cert    ldapmap=badmap
 hostssl  starttls  all   all      cert    ldapmap=ldap ldaptls=1
 hostssl  bindpw    all   all      cert    ldapmap=ldap ldaptls=1 ldapbinddn="$ldap_rootdn" ldapbindpasswd="$ldap_rootpw"
+hostssl  bindscram all   all      cert    ldapmap=ldap ldaptls=1 ldapsaslmechs=scram-sha-1 ldapbinddn=Manager ldapbindpasswd="$ldap_rootpw"
+hostssl  bindcert  all   all      cert    ldapmap=ldap ldaptls=1 ldapsaslmechs=external
 });
 
 unlink($node->data_dir . '/pg_ident.conf');
@@ -570,6 +572,31 @@ $node->connect_ok(
 	"$common_connstr dbname=bindpw user=test0",
 	"ldapmap works with bind password");
 
+note 'LDAP ident mapping with SCRAM binding';
+
+$node->connect_fails(
+	"$common_connstr dbname=bindscram user=test0",
+	"ldapmap can't perform SCRAM authentication without server setup",
+	log_like => [
+		qr/could not perform SASL bind on server .*: Invalid credentials/,
+		qr/user not found: no secret in database/,
+	]);
+
+# Map the SCRAM-specific authentication DN to our root user.
+append_to_file(
+	$slapd_conf,
+	qq{
+authz-regexp
+	uid=Manager,cn=SCRAM-SHA-1,cn=auth
+	cn=Manager,dc=example,dc=net
+});
+
+restart_slapd($ldaps_url);
+
+$node->connect_ok(
+	"$common_connstr dbname=bindscram user=test0",
+	"ldapmap works with SCRAM authentication to LDAP server");
+
 note 'LDAP ident mapping with client certificate';
 
 # Set up a certificate for the root user.
@@ -608,6 +635,10 @@ $node->restart;
 $node->connect_ok(
 	"$common_connstr dbname=bindpw user=test0",
 	"ldapmap works with bind certificate");
+
+$node->connect_ok(
+	"$common_connstr dbname=bindcert user=test0",
+	"ldapmap works with client certificate authentication");
 
 note 'LDAP group ident mapping';
 # TODO

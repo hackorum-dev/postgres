@@ -51,6 +51,9 @@
 #else
 #define LDAP_DEPRECATED 1
 #include <ldap.h>
+#if HAVE_SASL_SASL_H
+#include <sasl/sasl.h> /* header-only dependency for sasl_interact_t */
+#endif
 #endif
 #endif
 
@@ -1712,6 +1715,10 @@ parse_hba_line(TokenizedLine *tok_line, int elevel)
 		{
 			badopt = "ldapbindpasswd";
 		}
+		else if (parsedline->ldapsaslmechs)
+		{
+			badopt = "ldapsaslmechs";
+		}
 
 		if (badopt)
 		{
@@ -2003,6 +2010,10 @@ parse_hba_auth_opt(char *name, char *val, HbaLine *hbaline,
 	else if (strcmp(name, "ldapbindpasswd") == 0)
 	{
 		hbaline->ldapbindpasswd = pstrdup(val);
+	}
+	else if (strcmp(name, "ldapsaslmechs") == 0)
+	{
+		hbaline->ldapsaslmechs = pstrdup(val);
 	}
 	else if (strcmp(name, "ldapsearchattribute") == 0)
 	{
@@ -3273,6 +3284,146 @@ errdetail_for_ldap(LDAP *ldap)
 	return 0;
 }
 
+#if HAVE_SASL_SASL_H
+
+struct sasl_ctx
+{
+	const HbaLine  *hba;
+};
+
+/*
+ * Callback for ldap_sasl_interactive_bind_s(). libsasl asks us for various
+ * authentication parameters, and we fill them in.
+ */
+static int
+sasl_interaction(LDAP *ldap, unsigned flags, void *vctx, void *sasl_interact)
+{
+	struct sasl_ctx *ctx = vctx;
+	sasl_interact_t *prompt = sasl_interact;
+
+	while (true)
+	{
+		switch (prompt->id)
+		{
+			case SASL_CB_LIST_END:
+				return LDAP_SUCCESS;
+
+			case SASL_CB_USER:
+				/*
+				 * This is the authzid; we leave it empty/default.
+				 */
+				prompt->result = prompt->defresult;
+				break;
+
+			case SASL_CB_AUTHNAME:
+				/*
+				 * The username for the authentication; this is our bind DN.
+				 */
+				if (!ctx->hba->ldapbinddn)
+				{
+					ereport(LOG,
+							errmsg("SASL mechanism requires ldapbinddn"));
+					return LDAP_LOCAL_ERROR;
+				}
+
+				prompt->result = ctx->hba->ldapbinddn;
+				prompt->len = strlen(prompt->result);
+
+				break;
+
+			case SASL_CB_PASS:
+				/*
+				 * The password.
+				 */
+				if (!ctx->hba->ldapbindpasswd)
+				{
+					ereport(LOG,
+							errmsg("SASL mechanism requires ldapbindpasswd"));
+					return LDAP_LOCAL_ERROR;
+				}
+
+				prompt->result = ctx->hba->ldapbindpasswd;
+				prompt->len = strlen(prompt->result);
+
+				break;
+
+			default:
+				ereport(LOG,
+						errmsg("SASL interaction type 0x%lX (%s) is unimplemented",
+							   prompt->id, prompt->challenge));
+				return LDAP_LOCAL_ERROR;
+		}
+
+		++prompt;
+	}
+
+	/* unreachable */
+	return LDAP_LOCAL_ERROR;
+}
+
+#endif /* HAVE_SASL_SASL_H */
+
+/*
+ * Performs either a simple or a SASL bind over the LDAP connection, depending
+ * on the HBA settings.
+ */
+static bool
+bind_ldap(const HbaLine *hba, LDAP *ldap, const char *server_name)
+{
+	int			rc;
+#if HAVE_SASL_SASL_H
+	struct sasl_ctx ctx = {0};
+#endif
+
+	if (!(hba->ldapsaslmechs && hba->ldapsaslmechs[0]))
+	{
+		/* Use a simple bind. */
+		rc = ldap_simple_bind_s(ldap,
+								hba->ldapbinddn ? hba->ldapbinddn : "",
+								hba->ldapbindpasswd ? hba->ldapbindpasswd : "");
+		if (rc != LDAP_SUCCESS)
+		{
+			ereport(LOG,
+					(errmsg("could not perform initial LDAP bind for ldapbinddn \"%s\" on server \"%s\": %s",
+							hba->ldapbinddn ? hba->ldapbinddn : "",
+							server_name,
+							ldap_err2string(rc)),
+					 errdetail_for_ldap(ldap)));
+		}
+
+		return (rc == LDAP_SUCCESS);
+	}
+
+#if HAVE_SASL_SASL_H
+	/* DBA has asked for a SASL bind. */
+	ctx.hba = hba;
+
+	rc = ldap_sasl_interactive_bind_s(ldap,
+									  NULL, /* DN is ignored for SASL */
+									  hba->ldapsaslmechs,
+									  NULL, NULL, /* server/client controls */
+									  LDAP_SASL_QUIET, /* don't prompt */
+									  sasl_interaction,
+									  &ctx);
+	if (rc != LDAP_SUCCESS)
+	{
+		ereport(LOG,
+				(errmsg("could not perform SASL bind on server \"%s\": %s",
+						server_name,
+						ldap_err2string(rc)),
+				 errdetail_for_ldap(ldap)));
+	}
+
+	return (rc == LDAP_SUCCESS);
+
+#else
+	ereport(LOG,
+			(errmsg("this build does not support LDAP SASL binding")));
+	return false;
+
+#endif /* HAVE_SASL_SASL_H */
+}
+
 /*
  * Returns a palloc'd list of pointers to role names returned by the LDAP query
  * contained in ldapurl. Callers must list_free_deep() the return value even if
@@ -3339,19 +3490,9 @@ query_ldap_roles(const Port *port, LDAPURLDesc *ldapurl, List **roles)
 		}
 	}
 
-	rc = ldap_simple_bind_s(ldap,
-							port->hba->ldapbinddn ? port->hba->ldapbinddn : "",
-							port->hba->ldapbindpasswd ? port->hba->ldapbindpasswd : "");
-	if (rc != LDAP_SUCCESS)
-	{
-		ereport(LOG,
-				(errmsg("could not perform initial LDAP bind for ldapbinddn \"%s\" on server \"%s\": %s",
-						port->hba->ldapbinddn ? port->hba->ldapbinddn : "",
-						server,
-						ldap_err2string(rc)),
-				 errdetail_for_ldap(ldap)));
+	/* Bind using our HBA settings. */
+	if (!bind_ldap(port->hba, ldap, server))
 		goto cleanup;
-	}
 
 	rc = ldap_search_s(ldap,
 					   ldapurl->lud_dn,

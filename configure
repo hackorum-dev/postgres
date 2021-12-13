@@ -13995,6 +13995,18 @@ fi
 
 done
 
+     for ac_header in sasl/sasl.h
+do :
+  ac_fn_c_check_header_mongrel "$LINENO" "sasl/sasl.h" "ac_cv_header_sasl_sasl_h" "$ac_includes_default"
+if test "x$ac_cv_header_sasl_sasl_h" = xyes; then :
+  cat >>confdefs.h <<_ACEOF
+#define HAVE_SASL_SASL_H 1
+_ACEOF
+
+fi
+
+done
+
      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for compatible LDAP implementation" >&5
 $as_echo_n "checking for compatible LDAP implementation... " >&6; }
 if ${pgac_cv_ldap_safe+:} false; then :

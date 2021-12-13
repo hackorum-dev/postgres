@@ -1523,6 +1523,7 @@ if test "$with_ldap" = yes ; then
   if test "$PORTNAME" != "win32"; then
      AC_CHECK_HEADERS(ldap.h, [],
                       [AC_MSG_ERROR([header file <ldap.h> is required for LDAP])])
+     AC_CHECK_HEADERS(sasl/sasl.h)
      PGAC_LDAP_SAFE
   else
      AC_CHECK_HEADERS(winldap.h, [],
