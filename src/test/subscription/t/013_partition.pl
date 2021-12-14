@@ -6,7 +6,7 @@ use strict;
 use warnings;
 use PostgreSQL::Test::Cluster;
 use PostgreSQL::Test::Utils;
-use Test::More tests => 63;
+use Test::More tests => 66;
 
 # setup
 
@@ -347,6 +347,33 @@ $result =
   $node_subscriber2->safe_psql('postgres', "SELECT a FROM tab1 ORDER BY 1");
 is($result, qq(), 'truncate of tab1 replicated');
 
+# check the replication after attaching to or detaching from a published
+# partitioned table
+$node_publisher->safe_psql('postgres',
+	"ALTER TABLE tab1 DETACH PARTITION tab1_2");
+
+# the change on tab1_2 won't be replicated after detaching tab1_2
+# from the partitioned table.
+$node_publisher->safe_psql('postgres',
+	"INSERT INTO tab1_2 (a) VALUES (4)");
+
+$node_publisher->safe_psql('postgres',
+	"ALTER TABLE tab1 ATTACH PARTITION tab1_2 FOR VALUES IN (4, 5, 6)");
+
+# the change on tab1_2 will be replicated after attaching tab1_2 to
+# the partitioned table
+$node_publisher->safe_psql('postgres',
+	"INSERT INTO tab1_2 (a) VALUES (5)");
+
+$node_publisher->wait_for_catchup('sub1');
+
+$result =
+  $node_subscriber1->safe_psql('postgres', "SELECT a FROM tab1_2 ORDER BY 1");
+is($result, qq(5), 'insert into tab1_2 replicated');
+
+# clean the data
+$node_publisher->safe_psql('postgres', "TRUNCATE tab1_2");
+
 # Check that subscriber handles cases where update/delete target tuple
 # is missing.  We have to look for the DEBUG1 log messages about that,
 # so temporarily bump up the log verbosity.
@@ -455,6 +482,9 @@ $node_subscriber2->safe_psql('postgres',
 );
 $node_subscriber2->safe_psql('postgres',
 	"CREATE TABLE tab2 (a int PRIMARY KEY, c text DEFAULT 'sub2_tab2', b text)"
+);
+$node_subscriber2->safe_psql('postgres',
+	"CREATE TABLE tab2_2 (a int PRIMARY KEY, c text DEFAULT 'sub2_tab2_2', b text)"
 );
 $node_subscriber2->safe_psql('postgres',
 	"CREATE TABLE tab3 (a int PRIMARY KEY, c text DEFAULT 'sub2_tab3', b text)"
@@ -706,6 +736,45 @@ is( $result, qq(pub_tab2|1|xxx
 pub_tab2|3|yyy
 pub_tab2|5|zzz
 xxx_c|6|aaa), 'inserts into tab2 replicated');
+
+# check the replication after attaching to or detaching from a published
+# partitioned table
+$node_publisher->safe_psql('postgres',
+	"ALTER TABLE tab2 DETACH PARTITION tab2_2"
+);
+
+# the change on tab2_2 won't be replicated to sub_viaroot after detaching tab2_2
+# from the partitioned table
+$node_publisher->safe_psql('postgres',
+	"INSERT INTO tab2_2 VALUES (7, 'bbb')");
+
+$node_publisher->safe_psql('postgres',
+	"ALTER TABLE tab2 ATTACH PARTITION tab2_2 FOR VALUES IN (5, 6, 7, 8)"
+);
+
+# the change on tab2_2 will be replicated to sub_viaroot again after
+# attaching tab2_2 to the partitioned table
+$node_publisher->safe_psql('postgres',
+	"INSERT INTO tab2_2 (a, b) VALUES (8, 'aaa')");
+
+$node_publisher->wait_for_catchup('sub_viaroot');
+$node_publisher->wait_for_catchup('sub2');
+
+$result = $node_subscriber1->safe_psql('postgres',
+	"SELECT c, a, b FROM tab2 ORDER BY 1, 2");
+is( $result, qq(pub_tab2|1|xxx
+pub_tab2|3|yyy
+pub_tab2|5|zzz
+pub_tab2|8|aaa
+xxx_c|6|aaa), 'insert values (8, aaa) replicated');
+
+$result = $node_subscriber2->safe_psql('postgres',
+	"SELECT c, a, b FROM tab2 ORDER BY 1, 2");
+is( $result, qq(pub_tab2|1|xxx
+pub_tab2|3|yyy
+pub_tab2|5|zzz
+pub_tab2|8|aaa
+xxx_c|6|aaa), 'insert values (8, aaa) replicated');
 
 # Check that subscriber handles cases where update/delete target tuple
 # is missing.  We have to look for the DEBUG1 log messages about that,

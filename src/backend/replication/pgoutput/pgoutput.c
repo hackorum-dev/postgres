@@ -1337,6 +1337,11 @@ rel_sync_cache_relation_cb(Datum arg, Oid relid)
 	/*
 	 * Reset schema sent status as the relation definition may have changed.
 	 * Also free any objects that depended on the earlier definition.
+	 *
+	 * Besides, it's possible that the relation was ATTACHed to or DETACHed
+	 * from a published partitioned table, in which case the publication
+	 * actions of this relation would become invalid. So, we also need to
+	 * invalidate the publication actions here.
 	 */
 	if (entry != NULL)
 	{
@@ -1354,6 +1359,12 @@ rel_sync_cache_relation_cb(Datum arg, Oid relid)
 			free_conversion_map(entry->map);
 		}
 		entry->map = NULL;
+
+		entry->replicate_valid = false;
+		entry->pubactions.pubinsert = false;
+		entry->pubactions.pubupdate = false;
+		entry->pubactions.pubdelete = false;
+		entry->pubactions.pubtruncate = false;
 	}
 }
 
