@@ -11207,6 +11207,7 @@ returning_clause:
 
 DeleteStmt: opt_with_clause DELETE_P FROM relation_expr_opt_alias
 			using_clause where_or_current_clause returning_clause
+			opt_sort_clause opt_select_limit
 				{
 					DeleteStmt *n = makeNode(DeleteStmt);
 					n->relation = $4;
@@ -11214,6 +11215,20 @@ DeleteStmt: opt_with_clause DELETE_P FROM relation_expr_opt_alias
 					n->whereClause = $6;
 					n->returningList = $7;
 					n->withClause = $1;
+
+					n->sortClause = $8;
+					if ($9)
+					{
+						n->limitOffset = $9->limitOffset;
+						n->limitCount = $9->limitCount;
+						if (!n->sortClause &&
+							$9->limitOption == LIMIT_OPTION_WITH_TIES)
+							ereport(ERROR,
+									(errcode(ERRCODE_SYNTAX_ERROR),
+									 errmsg("WITH TIES cannot be specified without ORDER BY clause")));
+						n->limitOption = $9->limitOption;
+					}
+
 					$$ = (Node *)n;
 				}
 		;

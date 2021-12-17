@@ -3241,6 +3241,11 @@ _copyDeleteStmt(const DeleteStmt *from)
 	COPY_NODE_FIELD(returningList);
 	COPY_NODE_FIELD(withClause);
 
+	COPY_NODE_FIELD(sortClause);
+	COPY_NODE_FIELD(limitOffset);
+	COPY_NODE_FIELD(limitCount);
+	COPY_SCALAR_FIELD(limitOption);
+
 	return newnode;
 }
 

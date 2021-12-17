@@ -471,6 +471,12 @@ transformDeleteStmt(ParseState *pstate, DeleteStmt *stmt)
 	qual = transformWhereClause(pstate, stmt->whereClause,
 								EXPR_KIND_WHERE, "WHERE");
 
+	qry->sortClause = transformSortClause(pstate,
+										  stmt->sortClause,
+										  &qry->targetList,
+										  EXPR_KIND_ORDER_BY,
+										  false /* allow SQL92 rules */ );
+
 	qry->returningList = transformReturningList(pstate, stmt->returningList);
 
 	/* done building the range table and jointree */
@@ -481,6 +487,15 @@ transformDeleteStmt(ParseState *pstate, DeleteStmt *stmt)
 	qry->hasWindowFuncs = pstate->p_hasWindowFuncs;
 	qry->hasTargetSRFs = pstate->p_hasTargetSRFs;
 	qry->hasAggs = pstate->p_hasAggs;
+
+	/* transform LIMIT */
+	qry->limitOffset = transformLimitClause(pstate, stmt->limitOffset,
+											EXPR_KIND_OFFSET, "OFFSET",
+											stmt->limitOption);
+	qry->limitCount = transformLimitClause(pstate, stmt->limitCount,
+										   EXPR_KIND_LIMIT, "LIMIT",
+										   stmt->limitOption);
+	qry->limitOption = stmt->limitOption;
 
 	assign_query_collations(pstate, qry);
 

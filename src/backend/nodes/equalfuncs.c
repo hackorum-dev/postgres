@@ -1050,6 +1050,11 @@ _equalDeleteStmt(const DeleteStmt *a, const DeleteStmt *b)
 	COMPARE_NODE_FIELD(returningList);
 	COMPARE_NODE_FIELD(withClause);
 
+	COMPARE_NODE_FIELD(sortClause);
+	COMPARE_NODE_FIELD(limitOffset);
+	COMPARE_NODE_FIELD(limitCount);
+	COMPARE_SCALAR_FIELD(limitOption);
+
 	return true;
 }
 

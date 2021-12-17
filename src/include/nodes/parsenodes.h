@@ -1610,6 +1610,11 @@ typedef struct DeleteStmt
 	Node	   *whereClause;	/* qualifications */
 	List	   *returningList;	/* list of expressions to return */
 	WithClause *withClause;		/* WITH clause */
+
+	List	   *sortClause;		/* sort clause (a list of SortBy's) */
+	Node	   *limitOffset;	/* # of result tuples to skip */
+	Node	   *limitCount;		/* # of result tuples to return */
+	LimitOption limitOption;	/* limit type */
 } DeleteStmt;
 
 /* ----------------------
