@@ -1460,6 +1460,9 @@ create_append_path(PlannerInfo *root,
 			cost_append(pathnode, root);
 		/* Must do this last, else cost_append complains */
 		pathnode->path.pathkeys = child->pathkeys;
+		pathnode->path.parallel_aware = child->parallel_aware;
+		pathnode->path.parallel_safe = child->parallel_safe;
+		pathnode->path.parallel_workers = child->parallel_workers;
 	}
 	else
 		cost_append(pathnode, root);
