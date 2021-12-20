@@ -493,7 +493,7 @@ cost_gather_merge(GatherMergePath *path, PlannerInfo *root,
 	 * be overgenerous since the leader will do less work than other workers
 	 * in typical cases, but we'll go with it for now.
 	 */
-	Assert(path->num_workers > 0);
+	Assert(path->num_workers >= 0);
 	N = (double) path->num_workers + 1;
 	logN = LOG2(N);
 
