@@ -646,7 +646,6 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	ListCell   *listptr;
 	AttrNumber	attnum;
 	bool		partitioned;
-	static char *validnsps[] = HEAP_RELOPT_NAMESPACES;
 	Oid			ofTypeId;
 	ObjectAddress address;
 	LOCKMODE	parentLockmode;
@@ -794,8 +793,8 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	/*
 	 * Parse and validate reloptions, if any.
 	 */
-	reloptions = transformRelOptions((Datum) 0, stmt->options, NULL, validnsps,
-									 true, false);
+	reloptions = transformRelOptions((Datum) 0, stmt->options, NULL,
+									 reloptNsps(relkind), true, false);
 
 	switch (relkind)
 	{
@@ -13836,7 +13835,6 @@ ATExecSetRelOptions(Relation rel, List *defList, AlterTableType operation,
 	Datum		repl_val[Natts_pg_class];
 	bool		repl_null[Natts_pg_class];
 	bool		repl_repl[Natts_pg_class];
-	static char *validnsps[] = HEAP_RELOPT_NAMESPACES;
 
 	if (defList == NIL && operation != AT_ReplaceRelOptions)
 		return;					/* nothing to do */
@@ -13867,8 +13865,9 @@ ATExecSetRelOptions(Relation rel, List *defList, AlterTableType operation,
 
 	/* Generate new proposed reloptions (text array) */
 	newOptions = transformRelOptions(isnull ? (Datum) 0 : datum,
-									 defList, NULL, validnsps, false,
-									 operation == AT_ResetRelOptions);
+									 defList, NULL,
+									 reloptNsps(rel->rd_rel->relkind),
+									 false, operation == AT_ResetRelOptions);
 
 	/* Validate */
 	switch (rel->rd_rel->relkind)
@@ -13986,7 +13985,9 @@ ATExecSetRelOptions(Relation rel, List *defList, AlterTableType operation,
 		}
 
 		newOptions = transformRelOptions(isnull ? (Datum) 0 : datum,
-										 defList, "toast", validnsps, false,
+										 defList, "toast",
+										 reloptNsps(RELKIND_TOASTVALUE),
+										 false,
 										 operation == AT_ResetRelOptions);
 
 		(void) heap_reloptions(RELKIND_TOASTVALUE, newOptions, true);
