@@ -21,6 +21,14 @@
 /*
  * prototypes for pathnode.c
  */
+typedef enum
+{
+	PATHS_EQUAL = 0,			/* paths compare (potentially fuzzily) equal */
+	PATHS_BETTER1 = 1,			/* path1 is better on interesting dimensions */
+	PATHS_BETTER2 = 2,			/* path2 is better on interesting dimensions */
+	PATHS_DIFFERENT = 3			/* no path is better on all dimensions */
+} PathComparison;
+
 extern int	compare_path_costs(Path *path1, Path *path2,
 							   CostSelector criterion);
 extern int	compare_fractional_path_costs(Path *path1, Path *path2,
