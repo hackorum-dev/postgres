@@ -19,6 +19,8 @@
 #include "common/pg_prng.h"
 #include "executor/instrument.h"
 #include "jit/jit.h"
+#include "storage/ipc.h"
+#include "storage/fd.h"
 #include "utils/guc.h"
 
 PG_MODULE_MAGIC;
@@ -36,6 +38,7 @@ static int	auto_explain_log_format = EXPLAIN_FORMAT_TEXT;
 static int	auto_explain_log_level = LOG;
 static bool auto_explain_log_nested_statements = false;
 static double auto_explain_sample_rate = 1;
+static char *auto_explain_logfile = NULL;
 
 static const struct config_enum_entry format_options[] = {
 	{"text", EXPLAIN_FORMAT_TEXT, false},
@@ -62,6 +65,9 @@ static const struct config_enum_entry loglevel_options[] = {
 /* Current nesting depth of ExecutorRun calls */
 static int	nesting_level = 0;
 
+/* Descriptor for open logfile */
+static int ae_logfile = 0;
+
 /* Is the current top-level query to be sampled? */
 static bool current_query_sampled = false;
 
@@ -71,6 +77,7 @@ static bool current_query_sampled = false;
 	 current_query_sampled)
 
 /* Saved hook values in case of unload */
+static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 static ExecutorStart_hook_type prev_ExecutorStart = NULL;
 static ExecutorRun_hook_type prev_ExecutorRun = NULL;
 static ExecutorFinish_hook_type prev_ExecutorFinish = NULL;
@@ -86,6 +93,27 @@ static void explain_ExecutorRun(QueryDesc *queryDesc,
 static void explain_ExecutorFinish(QueryDesc *queryDesc);
 static void explain_ExecutorEnd(QueryDesc *queryDesc);
 
+static void explain_shmem_startup_hook(void);
+
+static void explain_proc_exit(int code, Datum arg);
+
+/* Try to open logfile then value is assigned to auto_explain_logfile, in case of failure -- block assigning */
+static bool explain_guc_open_logfile_check(char **newval, void **extra, GucSource source);
+
+//todo: rotate log
+
+static void close_logfile() {
+	if (ae_logfile <= 0)
+		return;
+	if (pg_fsync(ae_logfile) != 0)
+		ereport(WARNING, (errcode_for_file_access(),
+				errmsg("auto_explain could not fsync it's logfile :\"%s\"", auto_explain_logfile)));
+	if (close(ae_logfile) != 0)
+		ereport(WARNING, (errcode_for_file_access(),
+				errmsg("auto_explain could not close it's logfile :\"%s\"", auto_explain_logfile)));
+	ae_logfile = 0;
+	SetConfigOption("auto_explain.logfile", NULL, PGC_INTERNAL, PGC_S_OVERRIDE)
+}
 
 /*
  * Module load callback
@@ -231,9 +259,21 @@ _PG_init(void)
 							 NULL,
 							 NULL);
 
+	DefineCustomStringVariable("auto_explain.logfile",
+							   "File to log explained queries",
+							   "If set extension will store explained queries in this file, otherwise in syslog",
+							   &auto_explain_logfile,
+							   NULL,
+							   PGC_SUSET,
+							   0,
+							   explain_guc_logfile_open_check,
+							   NULL, NULL);
+
 	EmitWarningsOnPlaceholders("auto_explain");
 
 	/* Install hooks. */
+	prev_shmem_startup_hook = shmem_startup_hook;
+	shmem_startup_hook = explain_shmem_startup_hook;
 	prev_ExecutorStart = ExecutorStart_hook;
 	ExecutorStart_hook = explain_ExecutorStart;
 	prev_ExecutorRun = ExecutorRun_hook;
@@ -251,11 +291,45 @@ void
 _PG_fini(void)
 {
 	/* Uninstall hooks. */
+	shmem_startup_hook = prev_shmem_startup_hook;
 	ExecutorStart_hook = prev_ExecutorStart;
 	ExecutorRun_hook = prev_ExecutorRun;
 	ExecutorFinish_hook = prev_ExecutorFinish;
 	ExecutorEnd_hook = prev_ExecutorEnd;
 }
+
+/*
+ * shmem_startup_hook: set on_proc_exit
+ */
+static void
+explain_shmem_startup_hook(void) {
+	if (prev_shmem_startup_hook)
+		prev_shmem_startup_hook();
+
+	on_proc_exit(explain_proc_exit, 0);
+}
+
+static bool
+explain_guc_open_logfile_check(char **newval, void **extra, GucSource source) {
+	if (newval) {
+		if (ae_logfile > 0) {
+			close_logfile();
+		}
+		ae_logfile = BasicOpenFile(*newval, O_WRONLY | O_APPEND | O_CREAT | O_BINARY);
+		if (ae_logfile < 0) {
+			GUC_check_errcode(errcode_for_file_access());
+			GUC_check_errmsg("auto_explain could not access file \"%s\", continue logging to syslog", *newval);
+			GUC_check_errdetail("continue logging to syslog");
+			return false;
+		}
+		return true;
+	}
+}
+
+static void
+explain_proc_exit(int code, Datum arg) {
+	close_logfile();
+};
 
 /*
  * ExecutorStart hook: start up logging if needed
@@ -427,10 +501,30 @@ explain_ExecutorEnd(QueryDesc *queryDesc)
 			 * reported.  This isn't ideal but trying to do it here would
 			 * often result in duplication.
 			 */
-			ereport(auto_explain_log_level,
-					(errmsg("duration: %.3f ms  plan:\n%s",
-							msec, es->str->data),
-					 errhidestmt(true)));
+			StringInfoData buf;
+			initStringInfo(&buf);
+			appendStringInfo(&buf, "duration: %.3f ms  plan:\n", msec);
+
+			if (ae_logfile > 0) {
+				if (write(ae_logfile, buf.data, buf.len) != buf.len) {
+					ereport(WARNING, (errcode_for_file_access(),
+							errmsg("auto_explain cannot write to it's logfile: \"%s\",\n redirecting to syslog"),
+							auto_explain_logfile));
+					ereport(auto_explain_log_level, (errmsg(buf.data)));
+					ereport(auto_explain_log_level, (errmsg(es->str->data), errhidestmt(true)));
+					close_logfile();
+				} else if (write(ae_logfile, es->str->data, es->str->len) != es->str->len) {
+					ereport(WARNING,
+							errmsg("auto_explain cannot write to it's logfile: \"%s\",\n redirecting to syslog"),
+							auto_explain_logfile);
+					ereport(auto_explain_log_level, (errmsg(buf.data)));
+					ereport(auto_explain_log_level, (errmsg(es->str->data), errhidestmt(true)));
+					close_logfile();
+				}
+			} else {
+				ereport(auto_explain_log_level, (errmsg(buf.data)));
+				ereport(auto_explain_log_level, (errmsg(es->str->data), errhidestmt(true)));
+			}
 		}
 
 		MemoryContextSwitchTo(oldcxt);
