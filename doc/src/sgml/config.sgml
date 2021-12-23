@@ -7998,9 +7998,11 @@ local0.*    /var/log/postgresql
       <listitem>
        <para>
         Causes checkpoints and restartpoints to be logged in the server log.
-        Some statistics are included in the log messages, including the number
-        of buffers written and the time spent writing them.
-        This parameter can only be set in the <filename>postgresql.conf</filename>
+        The log messages include checkpoint or restartpoint kind, statistics
+        such as the number of buffers written, relations synced and the time
+        spent writing/syncing those files, the WAL files added, removed and
+        recycled and the estimated distance between checkpoints or restartpoints
+        in bytes. This parameter can only be set in the <filename>postgresql.conf</filename>
         file or on the server command line. The default is on.
        </para>
       </listitem>
