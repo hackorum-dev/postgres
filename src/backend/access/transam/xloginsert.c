@@ -128,6 +128,9 @@ static XLogRecData *XLogRecordAssemble(RmgrId rmid, uint8 info,
 static bool XLogCompressBackupBlock(char *page, uint16 hole_offset,
 									uint16 hole_length, char *dest, uint16 *dlen);
 
+/* Hook for plugins to get control in xlog_insert() */
+xlog_insert_hook_type xlog_insert_hook = NULL;
+
 /*
  * Begin constructing a WAL record. This must be called before the
  * XLogRegister* functions and XLogInsert().
@@ -455,6 +458,12 @@ XLogInsert(RmgrId rmid, uint8 info)
 		EndPos = SizeOfXLogLongPHD; /* start of 1st chkpt record */
 		return EndPos;
 	}
+
+	/*
+	 * Allow a plugin to take action on inserting a new WAL record.
+	 */
+	if (xlog_insert_hook)
+		(*xlog_insert_hook)();
 
 	do
 	{

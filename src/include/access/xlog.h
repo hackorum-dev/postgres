@@ -299,6 +299,7 @@ extern void BootStrapXLOG(void);
 extern void LocalProcessControlFile(bool reset);
 extern void StartupXLOG(void);
 extern void ShutdownXLOG(int code, Datum arg);
+extern void InitXLOGAccess(void);
 extern void CreateCheckPoint(int flags);
 extern bool CreateRestartPoint(int flags);
 extern WALAvailability GetWALAvailability(XLogRecPtr targetLSN);
@@ -366,5 +367,9 @@ extern SessionBackupState get_backup_status(void);
 
 /* files to signal promotion to primary */
 #define PROMOTE_SIGNAL_FILE		"promote"
+
+/* hook for plugins to get control in XlogInsert */
+typedef void (*xlog_insert_hook_type) (void);
+extern PGDLLIMPORT xlog_insert_hook_type xlog_insert_hook;
 
 #endif							/* XLOG_H */
