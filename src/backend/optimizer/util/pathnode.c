@@ -42,6 +42,8 @@ typedef enum
 	CONTINUE					/* compare with next path */
 } AddPathDecision;
 
+path_compare_hook_type path_compare_hook = NULL;
+
 /*
  * STD_FUZZ_FACTOR is the normal fuzz factor for compare_path_costs_fuzzily.
  * XXX is it worth making this user-controllable?  It provides a tradeoff
@@ -507,6 +509,14 @@ path_compare(Path *path1, Path *path2)
 	if (cmp == PATHS_DIFFERENT)
 		return cmp;
 
+	if (unlikely(path_compare_hook))
+	{
+		/* since we combine a result form an extension use a safe combine */
+		cmp = path_comparison_combine(cmp, path_compare_hook(path1, path2));
+		if (cmp == PATHS_DIFFERENT)
+			return cmp;
+	}
+
 	/* Keep compatibility with the original decision tree from add_path */
 	if (cmp != PATHS_EQUAL)
 	{
@@ -745,6 +755,20 @@ add_path_precheck(RelOptInfo *parent_rel,
 	List	   *new_path_pathkeys;
 	bool		consider_startup;
 	ListCell   *p1;
+
+	if (path_compare_hook)
+	{
+		/*
+		 * When an extension has installed a hook for comparing paths we can't
+		 * perform any precheck to quickly decline a hypothetical path. If we
+		 * would reject a path based on the parameters passed in we don't
+		 * allow extensions to make a differentiation on alternative
+		 * dimensions.
+		 *
+		 * Instead we return early and allow the path to be created.
+		 */
+		return true;
+	}
 
 	/* Pretend parameterized paths have no pathkeys, per add_path policy */
 	new_path_pathkeys = required_outer ? NIL : pathkeys;
