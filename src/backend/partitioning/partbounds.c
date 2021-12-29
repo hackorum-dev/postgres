@@ -106,7 +106,8 @@ static PartitionBoundInfo create_list_bounds(PartitionBoundSpec **boundspecs,
 											 int nparts, PartitionKey key, int **mapping);
 static PartitionBoundInfo create_range_bounds(PartitionBoundSpec **boundspecs,
 											  int nparts, PartitionKey key, int **mapping);
-static PartitionBoundInfo merge_list_bounds(FmgrInfo *partsupfunc,
+static PartitionBoundInfo merge_list_bounds(int partnatts,
+											FmgrInfo *partsupfunc,
 											Oid *collations,
 											RelOptInfo *outer_rel,
 											RelOptInfo *inner_rel,
@@ -147,15 +148,14 @@ static int	process_inner_partition(PartitionMap *outer_map,
 									JoinType jointype,
 									int *next_index,
 									int *default_index);
-static void merge_null_partitions(PartitionMap *outer_map,
+static int	merge_null_partitions(PartitionMap *outer_map,
 								  PartitionMap *inner_map,
-								  bool outer_has_null,
-								  bool inner_has_null,
+								  bool consider_outer_null,
+								  bool consider_inner_null,
 								  int outer_null,
 								  int inner_null,
 								  JoinType jointype,
-								  int *next_index,
-								  int *null_index);
+								  int *next_index);
 static void merge_default_partitions(PartitionMap *outer_map,
 									 PartitionMap *inner_map,
 									 bool outer_has_default,
@@ -371,7 +371,6 @@ create_hash_bounds(PartitionBoundSpec **boundspecs, int nparts,
 		palloc0(sizeof(PartitionBoundInfoData));
 	boundinfo->strategy = key->strategy;
 	/* No special hash partitions. */
-	boundinfo->null_index = -1;
 	boundinfo->isnulls = NULL;
 	boundinfo->default_index = -1;
 
@@ -444,6 +443,34 @@ create_hash_bounds(PartitionBoundSpec **boundspecs, int nparts,
 }
 
 /*
+ * partition_bound_accepts_nulls
+ *
+ * Returns TRUE if any of the partition bounds contains a NULL value,
+ * FALSE otherwise.
+ */
+bool
+partition_bound_accepts_nulls(PartitionBoundInfo boundinfo, int partnatts)
+{
+	int			i;
+
+	if (!boundinfo->isnulls)
+		return false;
+
+	for (i = 0; i < boundinfo->ndatums; i++)
+	{
+		int			j;
+
+		for (j = 0; j < partnatts; j++)
+		{
+			if (boundinfo->isnulls[i][j])
+				return true;
+		}
+	}
+
+	return false;
+}
+
+/*
  * get_list_datum_count
  * 		Returns the total number of datums in all the partitions.
  */
@@ -474,7 +501,6 @@ create_list_bounds(PartitionBoundSpec **boundspecs, int nparts,
 	int			ndatums;
 	int			next_index = 0;
 	int			default_index = -1;
-	int			null_index = -1;
 	Datum	   *boundDatums;
 	bool	   *boundIsNulls;
 
@@ -482,7 +508,6 @@ create_list_bounds(PartitionBoundSpec **boundspecs, int nparts,
 		palloc0(sizeof(PartitionBoundInfoData));
 	boundinfo->strategy = key->strategy;
 	/* Will be set correctly below. */
-	boundinfo->null_index = -1;
 	boundinfo->default_index = -1;
 
 	ndatums = get_list_datum_count(boundspecs, nparts);
@@ -526,10 +551,7 @@ create_list_bounds(PartitionBoundSpec **boundspecs, int nparts,
 				if (!val->constisnull)
 					all_values[j].values[k] = val->constvalue;
 				else
-				{
-					null_index = i;
 					all_values[j].isnulls[k] = true;
-				}
 
 				k++;
 			}
@@ -592,22 +614,6 @@ create_list_bounds(PartitionBoundSpec **boundspecs, int nparts,
 	}
 
 	pfree(all_values);
-
-	/*
-	 * Set the canonical value for null_index, if any.
-	 *
-	 * It is possible that the null-accepting partition has not been assigned
-	 * an index yet, which could happen if such partition accepts only null
-	 * and hence not handled in the above loop which only looked at non-null
-	 * values.
-	 */
-	if (null_index != -1)
-	{
-		Assert(null_index >= 0);
-		if ((*mapping)[null_index] == -1)
-			(*mapping)[null_index] = next_index++;
-		boundinfo->null_index = (*mapping)[null_index];
-	}
 
 	/* Set the canonical value for default_index, if any. */
 	if (default_index != -1)
@@ -704,8 +710,6 @@ create_range_bounds(PartitionBoundSpec **boundspecs, int nparts,
 	boundinfo = (PartitionBoundInfoData *)
 		palloc0(sizeof(PartitionBoundInfoData));
 	boundinfo->strategy = key->strategy;
-	/* There is no special null-accepting range partition. */
-	boundinfo->null_index = -1;
 	boundinfo->isnulls = NULL;
 	/* Will be set correctly below. */
 	boundinfo->default_index = -1;
@@ -1135,7 +1139,6 @@ partition_bounds_copy(PartitionBoundInfo src,
 	dest->indexes = (int *) palloc(sizeof(int) * nindexes);
 	memcpy(dest->indexes, src->indexes, sizeof(int) * nindexes);
 
-	dest->null_index = src->null_index;
 	dest->default_index = src->default_index;
 
 	return dest;
@@ -1195,7 +1198,8 @@ partition_bounds_merge(int partnatts,
 			return NULL;
 
 		case PARTITION_STRATEGY_LIST:
-			return merge_list_bounds(partsupfunc,
+			return merge_list_bounds(partnatts,
+									 partsupfunc,
 									 partcollation,
 									 outer_rel,
 									 inner_rel,
@@ -1239,7 +1243,8 @@ partition_bounds_merge(int partnatts,
  * join can't handle.
  */
 static PartitionBoundInfo
-merge_list_bounds(FmgrInfo *partsupfunc, Oid *partcollation,
+merge_list_bounds(int partnatts,
+				  FmgrInfo *partsupfunc, Oid *partcollation,
 				  RelOptInfo *outer_rel, RelOptInfo *inner_rel,
 				  JoinType jointype,
 				  List **outer_parts, List **inner_parts)
@@ -1251,8 +1256,6 @@ merge_list_bounds(FmgrInfo *partsupfunc, Oid *partcollation,
 	bool		inner_has_default = partition_bound_has_default(inner_bi);
 	int			outer_default = outer_bi->default_index;
 	int			inner_default = inner_bi->default_index;
-	bool		outer_has_null = partition_bound_accepts_nulls(outer_bi);
-	bool		inner_has_null = partition_bound_accepts_nulls(inner_bi);
 	PartitionMap outer_map;
 	PartitionMap inner_map;
 	int			outer_pos;
@@ -1303,6 +1306,11 @@ merge_list_bounds(FmgrInfo *partsupfunc, Oid *partcollation,
 		bool	   *outer_isnull = NULL;
 		bool	   *inner_isnull = NULL;
 		bool	   *merged_isnull = NULL;
+		bool		consider_outer_null = false;
+		bool		consider_inner_null = false;
+		bool		outer_has_null = false;
+		bool		inner_has_null = false;
+		int			i;
 
 		if (outer_bi->isnulls && outer_pos < outer_bi->ndatums)
 			outer_isnull = outer_bi->isnulls[outer_pos];
@@ -1337,23 +1345,37 @@ merge_list_bounds(FmgrInfo *partsupfunc, Oid *partcollation,
 			}
 		}
 
-		if (outer_isnull && outer_isnull[0])
-		{
-			outer_pos++;
-			continue;
-		}
-
-		if (inner_isnull && inner_isnull[0])
-		{
-			inner_pos++;
-			continue;
-		}
-
 		/* Get the list values. */
 		outer_datums = outer_pos < outer_bi->ndatums ?
 			outer_bi->datums[outer_pos] : NULL;
 		inner_datums = inner_pos < inner_bi->ndatums ?
 			inner_bi->datums[inner_pos] : NULL;
+
+		for (i = 0; i < partnatts; i++)
+		{
+			if (outer_isnull && outer_isnull[i])
+			{
+				outer_has_null = true;
+				if (outer_map.merged_indexes[outer_index] == -1)
+				{
+					consider_outer_null = true;
+					break;
+				}
+			}
+		}
+
+		for (i = 0; i < partnatts; i++)
+		{
+			if (inner_isnull && inner_isnull[i])
+			{
+				inner_has_null = true;
+				if (inner_map.merged_indexes[inner_index] == -1)
+				{
+					consider_inner_null = true;
+					break;
+				}
+			}
+		}
 
 		/*
 		 * We run this loop till both sides finish.  This allows us to avoid
@@ -1371,10 +1393,10 @@ merge_list_bounds(FmgrInfo *partsupfunc, Oid *partcollation,
 		else
 		{
 			Assert(outer_datums != NULL && inner_datums != NULL);
-			cmpval = DatumGetInt32(FunctionCall2Coll(&partsupfunc[0],
-													 partcollation[0],
-													 outer_datums[0],
-													 inner_datums[0]));
+			cmpval = partition_lbound_datum_cmp(partsupfunc, partcollation,
+												outer_datums, outer_isnull,
+												inner_datums, inner_isnull,
+												partnatts);
 		}
 
 		if (cmpval == 0)
@@ -1385,15 +1407,31 @@ merge_list_bounds(FmgrInfo *partsupfunc, Oid *partcollation,
 			Assert(outer_index >= 0);
 			Assert(inner_index >= 0);
 
-			/*
-			 * Try merging both partitions.  If successful, add the list value
-			 * and index of the merged partition below.
-			 */
-			merged_index = merge_matching_partitions(&outer_map, &inner_map,
+			if (outer_has_null && inner_has_null)
+			{
+				/* Merge the NULL partitions. */
+				merged_index = merge_null_partitions(&outer_map, &inner_map,
+													 consider_outer_null,
+													 consider_inner_null,
 													 outer_index, inner_index,
-													 &next_index);
-			if (merged_index == -1)
-				goto cleanup;
+													 jointype, &next_index);
+
+				if (merged_index == -1)
+					goto cleanup;
+			}
+			else
+			{
+				/*
+				 * Try merging both partitions.  If successful, add the list
+				 * value and index of the merged partition below.
+				 */
+				merged_index = merge_matching_partitions(&outer_map, &inner_map,
+														 outer_index, inner_index,
+														 &next_index);
+
+				if (merged_index == -1)
+					goto cleanup;
+			}
 
 			merged_datum = outer_datums;
 			merged_isnull = outer_isnull;
@@ -1407,14 +1445,30 @@ merge_list_bounds(FmgrInfo *partsupfunc, Oid *partcollation,
 			/* A list value missing from the inner side. */
 			Assert(outer_pos < outer_bi->ndatums);
 
-			/*
-			 * If the inner side has the default partition, or this is an
-			 * outer join, try to assign a merged partition to the outer
-			 * partition (see process_outer_partition()).  Otherwise, the
-			 * outer partition will not contribute to the result.
-			 */
-			if (inner_has_default || IS_OUTER_JOIN(jointype))
+			if (inner_has_null)
 			{
+				if (consider_inner_null)
+				{
+					/* Merge the NULL partitions. */
+					merged_index = merge_null_partitions(&outer_map, &inner_map,
+														 consider_outer_null,
+														 consider_inner_null,
+														 outer_index, inner_index,
+														 jointype, &next_index);
+
+					if (merged_index == -1)
+						goto cleanup;
+				}
+			}
+			else if (inner_has_default || IS_OUTER_JOIN(jointype))
+			{
+				/*
+				 * If the inner side has the default partition, or this is an
+				 * outer join, try to assign a merged partition to the outer
+				 * partition (see process_outer_partition()).  Otherwise, the
+				 * outer partition will not contribute to the result.
+				 */
+
 				/* Get the outer partition. */
 				outer_index = outer_bi->indexes[outer_pos];
 				Assert(outer_index >= 0);
@@ -1429,9 +1483,10 @@ merge_list_bounds(FmgrInfo *partsupfunc, Oid *partcollation,
 													   &default_index);
 				if (merged_index == -1)
 					goto cleanup;
-				merged_datum = outer_datums;
-				merged_isnull = outer_isnull;
 			}
+
+			merged_datum = outer_datums;
+			merged_isnull = outer_isnull;
 
 			/* Move to the next list value on the outer side. */
 			outer_pos++;
@@ -1442,14 +1497,30 @@ merge_list_bounds(FmgrInfo *partsupfunc, Oid *partcollation,
 			Assert(cmpval > 0);
 			Assert(inner_pos < inner_bi->ndatums);
 
-			/*
-			 * If the outer side has the default partition, or this is a FULL
-			 * join, try to assign a merged partition to the inner partition
-			 * (see process_inner_partition()).  Otherwise, the inner
-			 * partition will not contribute to the result.
-			 */
-			if (outer_has_default || jointype == JOIN_FULL)
+			if (outer_has_null || inner_has_null)
 			{
+				if (consider_outer_null || consider_inner_null)
+				{
+					/* Merge the NULL partitions. */
+					merged_index = merge_null_partitions(&outer_map, &inner_map,
+														 consider_outer_null,
+														 consider_inner_null,
+														 outer_index, inner_index,
+														 jointype, &next_index);
+
+					if (merged_index == -1)
+						goto cleanup;
+				}
+			}
+			else if (outer_has_default || jointype == JOIN_FULL)
+			{
+				/*
+				 * If the outer side has the default partition, or this is a
+				 * FULL join, try to assign a merged partition to the inner
+				 * partition (see process_inner_partition()).  Otherwise, the
+				 * innerpartition will not contribute to the result.
+				 */
+
 				/* Get the inner partition. */
 				inner_index = inner_bi->indexes[inner_pos];
 				Assert(inner_index >= 0);
@@ -1464,9 +1535,10 @@ merge_list_bounds(FmgrInfo *partsupfunc, Oid *partcollation,
 													   &default_index);
 				if (merged_index == -1)
 					goto cleanup;
-				merged_datum = inner_datums;
-				merged_isnull = inner_isnull;
 			}
+
+			merged_datum = inner_datums;
+			merged_isnull = inner_isnull;
 
 			/* Move to the next list value on the inner side. */
 			inner_pos++;
@@ -1483,26 +1555,6 @@ merge_list_bounds(FmgrInfo *partsupfunc, Oid *partcollation,
 			merged_isnulls = lappend(merged_isnulls, merged_isnull);
 		}
 	}
-
-	/*
-	 * If the NULL partitions (if any) have been proven empty, deem them
-	 * non-existent.
-	 */
-	if (outer_has_null &&
-		is_dummy_partition(outer_rel, outer_bi->null_index))
-		outer_has_null = false;
-	if (inner_has_null &&
-		is_dummy_partition(inner_rel, inner_bi->null_index))
-		inner_has_null = false;
-
-	/* Merge the NULL partitions if any. */
-	if (outer_has_null || inner_has_null)
-		merge_null_partitions(&outer_map, &inner_map,
-							  outer_has_null, inner_has_null,
-							  outer_bi->null_index, inner_bi->null_index,
-							  jointype, &next_index, &null_index);
-	else
-		Assert(null_index == -1);
 
 	/* Merge the default partitions if any. */
 	if (outer_has_default || inner_has_default)
@@ -2216,48 +2268,24 @@ process_inner_partition(PartitionMap *outer_map,
  * be mergejoinable, and we currently assume that mergejoinable operators are
  * strict (see MJEvalOuterValues()/MJEvalInnerValues()).
  */
-static void
+static int
 merge_null_partitions(PartitionMap *outer_map,
 					  PartitionMap *inner_map,
-					  bool outer_has_null,
-					  bool inner_has_null,
+					  bool consider_outer_null,
+					  bool consider_inner_null,
 					  int outer_null,
 					  int inner_null,
 					  JoinType jointype,
-					  int *next_index,
-					  int *null_index)
+					  int *next_index)
 {
-	bool		consider_outer_null = false;
-	bool		consider_inner_null = false;
-
-	Assert(outer_has_null || inner_has_null);
-	Assert(*null_index == -1);
-
-	/*
-	 * Check whether the NULL partitions have already been merged and if so,
-	 * set the consider_outer_null/consider_inner_null flags.
-	 */
-	if (outer_has_null)
-	{
-		Assert(outer_null >= 0 && outer_null < outer_map->nparts);
-		if (outer_map->merged_indexes[outer_null] == -1)
-			consider_outer_null = true;
-	}
-	if (inner_has_null)
-	{
-		Assert(inner_null >= 0 && inner_null < inner_map->nparts);
-		if (inner_map->merged_indexes[inner_null] == -1)
-			consider_inner_null = true;
-	}
+	int			merged_index = *next_index;
 
 	/* If both flags are set false, we don't need to do anything. */
 	if (!consider_outer_null && !consider_inner_null)
-		return;
+		return merged_index;
 
 	if (consider_outer_null && !consider_inner_null)
 	{
-		Assert(outer_has_null);
-
 		/*
 		 * If this is an outer join, the NULL partition on the outer side has
 		 * to be scanned all the way anyway; merge the NULL partition with a
@@ -2269,14 +2297,12 @@ merge_null_partitions(PartitionMap *outer_map,
 		if (IS_OUTER_JOIN(jointype))
 		{
 			Assert(jointype != JOIN_RIGHT);
-			*null_index = merge_partition_with_dummy(outer_map, outer_null,
-													 next_index);
+			merged_index = merge_partition_with_dummy(outer_map, outer_null,
+													  next_index);
 		}
 	}
 	else if (!consider_outer_null && consider_inner_null)
 	{
-		Assert(inner_has_null);
-
 		/*
 		 * If this is a FULL join, the NULL partition on the inner side has to
 		 * be scanned all the way anyway; merge the NULL partition with a
@@ -2286,14 +2312,12 @@ merge_null_partitions(PartitionMap *outer_map,
 		 * treat it as the NULL partition of the join relation.
 		 */
 		if (jointype == JOIN_FULL)
-			*null_index = merge_partition_with_dummy(inner_map, inner_null,
-													 next_index);
+			merged_index = merge_partition_with_dummy(inner_map, inner_null,
+													  next_index);
 	}
 	else
 	{
 		Assert(consider_outer_null && consider_inner_null);
-		Assert(outer_has_null);
-		Assert(inner_has_null);
 
 		/*
 		 * If this is an outer join, the NULL partition on the outer side (and
@@ -2311,12 +2335,13 @@ merge_null_partitions(PartitionMap *outer_map,
 		if (IS_OUTER_JOIN(jointype))
 		{
 			Assert(jointype != JOIN_RIGHT);
-			*null_index = merge_matching_partitions(outer_map, inner_map,
-													outer_null, inner_null,
-													next_index);
-			Assert(*null_index >= 0);
+			merged_index = merge_matching_partitions(outer_map, inner_map,
+													 outer_null, inner_null,
+													 next_index);
 		}
 	}
+
+	return merged_index;
 }
 
 /*
@@ -2649,7 +2674,6 @@ build_merged_partition_bounds(char strategy, List *merged_datums,
 	foreach(lc, merged_indexes)
 		merged_bounds->indexes[pos++] = lfirst_int(lc);
 
-	merged_bounds->null_index = null_index;
 	merged_bounds->default_index = default_index;
 
 	return merged_bounds;
@@ -3144,7 +3168,7 @@ check_new_partition_bound(char *relname, Relation parent,
 					Assert(boundinfo &&
 						   boundinfo->strategy == PARTITION_STRATEGY_LIST &&
 						   (boundinfo->ndatums > 0 ||
-							partition_bound_accepts_nulls(boundinfo) ||
+							partition_bound_accepts_nulls(boundinfo, key->partnatts) ||
 							partition_bound_has_default(boundinfo)));
 
 					foreach(cell, spec->listdatums)
@@ -4364,7 +4388,8 @@ get_qual_for_list(Relation parent, PartitionBoundSpec *spec)
 		 * If default is the only partition, there need not be any partition
 		 * constraint on it.
 		 */
-		if (ndatums == 0 && !partition_bound_accepts_nulls(boundinfo))
+		if (ndatums == 0 &&
+			!partition_bound_accepts_nulls(boundinfo, key->partnatts))
 			return NIL;
 
 	}

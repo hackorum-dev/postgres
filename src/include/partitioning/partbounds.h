@@ -91,14 +91,13 @@ typedef struct PartitionBoundInfoData
 									 * only set for LIST partitioned tables */
 	int			nindexes;		/* Length of the indexes[] array */
 	int		   *indexes;		/* Partition indexes */
-	int			null_index;		/* Index of the null-accepting partition; -1
-								 * if there isn't one */
 	int			default_index;	/* Index of the default partition; -1 if there
 								 * isn't one */
 } PartitionBoundInfoData;
 
-#define partition_bound_accepts_nulls(bi) ((bi)->null_index != -1)
 #define partition_bound_has_default(bi) ((bi)->default_index != -1)
+
+extern bool partition_bound_accepts_nulls(PartitionBoundInfo boundinfo, int partnatts);
 
 extern int	get_hash_partition_greatest_modulus(PartitionBoundInfo b);
 extern uint64 compute_partition_hash_value(int partnatts, FmgrInfo *partsupfunc,
