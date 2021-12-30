@@ -602,6 +602,7 @@ AutoVacLauncherMain(int argc, char *argv[])
 	SetConfigOption("lock_timeout", "0", PGC_SUSET, PGC_S_OVERRIDE);
 	SetConfigOption("idle_in_transaction_session_timeout", "0",
 					PGC_SUSET, PGC_S_OVERRIDE);
+	SetConfigOption("idle_session_timeout", "0", PGC_SUSET, PGC_S_OVERRIDE);
 
 	/*
 	 * Force default_transaction_isolation to READ COMMITTED.  We don't want
@@ -1624,6 +1625,7 @@ AutoVacWorkerMain(int argc, char *argv[])
 	SetConfigOption("lock_timeout", "0", PGC_SUSET, PGC_S_OVERRIDE);
 	SetConfigOption("idle_in_transaction_session_timeout", "0",
 					PGC_SUSET, PGC_S_OVERRIDE);
+	SetConfigOption("idle_session_timeout", "0", PGC_SUSET, PGC_S_OVERRIDE);
 
 	/*
 	 * Force default_transaction_isolation to READ COMMITTED.  We don't want
