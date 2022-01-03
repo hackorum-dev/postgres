@@ -1226,7 +1226,7 @@ numeric_support(PG_FUNCTION_ARGS)
  *	scale of the attribute have to be applied on the value.
  */
 Datum
-numeric		(PG_FUNCTION_ARGS)
+numeric(PG_FUNCTION_ARGS)
 {
 	Numeric		num = PG_GETARG_NUMERIC(0);
 	int32		typmod = PG_GETARG_INT32(1);
