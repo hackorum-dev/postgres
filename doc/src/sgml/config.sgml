@@ -11491,6 +11491,7 @@ SET XML OPTION { DOCUMENT | CONTENT };
         double quotes if you need to include whitespace or commas in the name.
         This parameter can only be set at server start.  If a specified
         library is not found, the server will fail to start.
+        Libraries are loaded in the order in which they appear in the list.
        </para>
 
        <para>
