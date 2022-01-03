@@ -320,8 +320,11 @@ static void create_partial_unique_paths(PlannerInfo *root, RelOptInfo *input_rel
  * after the standard planning process.  The plugin would normally call
  * standard_planner().
  *
- * Note to plugin authors: standard_planner() scribbles on its Query input,
- * so you'd better copy that data structure if you want to plan more than once.
+ * Notes to plugin authors:
+ * 1. standard_planner() scribbles on its Query input, so you'd better copy that
+ * data structure if you want to plan more than once.
+ * 2. If your extension implements some planning activity, write in the extension
+ * docs a requirement to set the extension at the begining of shared libraries list.
  *
  *****************************************************************************/
 PlannedStmt *
