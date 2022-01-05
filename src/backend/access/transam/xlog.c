@@ -7490,7 +7490,7 @@ CreateCheckPoint(int flags)
 		if (last_important_lsn == ControlFile->checkPoint)
 		{
 			END_CRIT_SECTION();
-			ereport(DEBUG1,
+			ereport((log_checkpoints ? LOG : DEBUG1),
 					(errmsg_internal("checkpoint skipped because system is idle")));
 			return false;
 		}
