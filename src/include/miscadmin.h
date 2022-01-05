@@ -335,7 +335,7 @@ typedef enum BackendType
 	B_WAL_WRITER,
 	B_ARCHIVER,
 	B_STATS_COLLECTOR,
-	B_LOGGER,
+	B_LOGGER
 } BackendType;
 
 extern BackendType MyBackendType;

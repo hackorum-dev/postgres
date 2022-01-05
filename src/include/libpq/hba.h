@@ -61,7 +61,7 @@ typedef enum ConnType
 	ctHostSSL,
 	ctHostNoSSL,
 	ctHostGSS,
-	ctHostNoGSS,
+	ctHostNoGSS
 } ConnType;
 
 typedef enum ClientCertMode

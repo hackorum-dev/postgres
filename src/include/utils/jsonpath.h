@@ -84,7 +84,7 @@ typedef enum JsonPathItemType
 	jpiSubscript,				/* array subscript: 'expr' or 'expr TO expr' */
 	jpiLast,					/* LAST array subscript */
 	jpiStartsWith,				/* STARTS WITH predicate */
-	jpiLikeRegex,				/* LIKE_REGEX predicate */
+	jpiLikeRegex				/* LIKE_REGEX predicate */
 } JsonPathItemType;
 
 /* XQuery regex mode flags for LIKE_REGEX predicate */
