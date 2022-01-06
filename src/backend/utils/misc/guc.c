@@ -684,6 +684,7 @@ static char *recovery_target_lsn_string;
 /* should be static, but commands/variable.c needs to get at this */
 char	   *role_string;
 
+bool lazy_process_sublink = true;
 
 /*
  * Displayable names for context types (enum GucContext)
@@ -973,6 +974,17 @@ static const unit_conversion time_unit_conversion_table[] =
 
 static struct config_bool ConfigureNamesBool[] =
 {
+	{
+		{"lazy_process_sublink", PGC_USERSET, QUERY_TUNING_METHOD,
+			gettext_noop("enable lazy process sublink."),
+			NULL,
+			GUC_EXPLAIN
+		},
+		&lazy_process_sublink,
+		true,
+		NULL, NULL, NULL
+	},
+
 	{
 		{"enable_seqscan", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables the planner's use of sequential-scan plans."),

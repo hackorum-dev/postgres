@@ -64,6 +64,7 @@
 #include "utils/rel.h"
 #include "utils/selfuncs.h"
 #include "utils/syscache.h"
+#include "utils/guc.h"
 
 /* GUC parameters */
 double		cursor_tuple_fraction = DEFAULT_CURSOR_TUPLE_FRACTION;
@@ -128,8 +129,9 @@ typedef struct
 
 /* Local functions */
 static Node *preprocess_expression(PlannerInfo *root, Node *expr, int kind);
-static void preprocess_qual_conditions(PlannerInfo *root, Node *jtnode);
+static void preprocess_qual_conditions(PlannerInfo *root, Node *jtnode, bool istop);
 static void grouping_planner(PlannerInfo *root, double tuple_fraction);
+static Node *preprocess_expression_ext(PlannerInfo *root, Node *expr, int kind, bool process_sublink);
 static grouping_sets_data *preprocess_grouping_sets(PlannerInfo *root);
 static List *remap_to_groupclause_idx(List *groupClause, List *gsets,
 									  int *tleref_to_colnum_map);
@@ -641,6 +643,8 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 		root->wt_param_id = -1;
 	root->non_recursive_path = NULL;
 	root->partColsUpdated = false;
+	root->unexpanded_sublink_counter = 0;
+	root->unexpanded_sublink_expr_list = NIL;
 
 	/*
 	 * If there is a WITH list, process each WITH query and either convert it
@@ -784,8 +788,8 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 	 * part of the targetlist.
 	 */
 	parse->targetList = (List *)
-		preprocess_expression(root, (Node *) parse->targetList,
-							  EXPRKIND_TARGET);
+		preprocess_expression_ext(root, (Node *) parse->targetList,
+							  EXPRKIND_TARGET, false);
 
 	/* Constant-folding might have removed all set-returning functions */
 	if (parse->hasTargetSRFs)
@@ -807,7 +811,7 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 		preprocess_expression(root, (Node *) parse->returningList,
 							  EXPRKIND_TARGET);
 
-	preprocess_qual_conditions(root, (Node *) parse->jointree);
+	preprocess_qual_conditions(root, (Node *) parse->jointree, true);
 
 	parse->havingQual = preprocess_expression(root, parse->havingQual,
 											  EXPRKIND_QUAL);
@@ -1049,14 +1053,24 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 	return root;
 }
 
+static Node *
+preprocess_expression(PlannerInfo *root, Node *expr, int kind)
+{
+	return preprocess_expression_ext(root, expr, kind, true);
+}
+
 /*
  * preprocess_expression
  *		Do subquery_planner's preprocessing work for an expression,
  *		which can be a targetlist, a WHERE clause (including JOIN/ON
  *		conditions), a HAVING clause, or a few other things.
+ *
+ * if process_sublink = false
+ * 		This means that sublink in an expression will try to defer processing.
+ *		see lazy_process_sublinks()
  */
 static Node *
-preprocess_expression(PlannerInfo *root, Node *expr, int kind)
+preprocess_expression_ext(PlannerInfo *root, Node *expr, int kind, bool process_sublink)
 {
 	/*
 	 * Fall out quickly if expression is empty.  This occurs often enough to
@@ -1129,7 +1143,7 @@ preprocess_expression(PlannerInfo *root, Node *expr, int kind)
 
 	/* Expand SubLinks to SubPlans */
 	if (root->parse->hasSubLinks)
-		expr = SS_process_sublinks(root, expr, (kind == EXPRKIND_QUAL));
+		expr = SS_process_sublinks(root, expr, (kind == EXPRKIND_QUAL), false, process_sublink);
 
 	/*
 	 * XXX do not insert anything here unless you have grokked the comments in
@@ -1158,7 +1172,7 @@ preprocess_expression(PlannerInfo *root, Node *expr, int kind)
  *		preprocessing work on each qual condition found therein.
  */
 static void
-preprocess_qual_conditions(PlannerInfo *root, Node *jtnode)
+preprocess_qual_conditions(PlannerInfo *root, Node *jtnode, bool istop)
 {
 	if (jtnode == NULL)
 		return;
@@ -1172,17 +1186,21 @@ preprocess_qual_conditions(PlannerInfo *root, Node *jtnode)
 		ListCell   *l;
 
 		foreach(l, f->fromlist)
-			preprocess_qual_conditions(root, lfirst(l));
+			preprocess_qual_conditions(root, lfirst(l), false);
 
-		f->quals = preprocess_expression(root, f->quals, EXPRKIND_QUAL);
+		/*
+		 * istop = true means that this is qual in the WHERE clause
+		 * istop = false means that this is the join qual on the Join on clause
+		 * For now, only sublink on the WHERE clause can be deferred,
+		 */
+		f->quals = preprocess_expression_ext(root, f->quals, EXPRKIND_QUAL, !istop);
 	}
 	else if (IsA(jtnode, JoinExpr))
 	{
 		JoinExpr   *j = (JoinExpr *) jtnode;
 
-		preprocess_qual_conditions(root, j->larg);
-		preprocess_qual_conditions(root, j->rarg);
-
+		preprocess_qual_conditions(root, j->larg, false);
+		preprocess_qual_conditions(root, j->rarg, false);
 		j->quals = preprocess_expression(root, j->quals, EXPRKIND_QUAL);
 	}
 	else
@@ -1384,11 +1402,11 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		 * pathtargets, else some copies of the Aggref nodes might escape
 		 * being marked.
 		 */
-		if (parse->hasAggs)
-		{
+		if (parse->hasAggs && !has_unexpanded_sublink(root))
 			preprocess_aggrefs(root, (Node *) root->processed_tlist);
+
+		if (parse->hasAggs)
 			preprocess_aggrefs(root, (Node *) parse->havingQual);
-		}
 
 		/*
 		 * Locate any window functions in the tlist.  (We don't need to look
@@ -1412,8 +1430,8 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		 * that is needed in MIN/MAX-optimizable cases will have to be
 		 * duplicated in planagg.c.
 		 */
-		if (parse->hasAggs)
-			preprocess_minmax_aggregates(root);
+		if (parse->hasAggs && !has_unexpanded_sublink(root))
+			preprocess_minmax_aggregates(root, false);
 
 		/*
 		 * Figure out whether there's a hard limit on the number of rows that

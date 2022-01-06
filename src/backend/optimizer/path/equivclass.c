@@ -388,6 +388,7 @@ process_equivalence(PlannerInfo *root,
 								   restrictinfo->security_level);
 		ec1->ec_max_security = Max(ec1->ec_max_security,
 								   restrictinfo->security_level);
+		ec1->ec_processed = false;
 		/* mark the RI as associated with this eclass */
 		restrictinfo->left_ec = ec1;
 		restrictinfo->right_ec = ec1;
@@ -450,6 +451,7 @@ process_equivalence(PlannerInfo *root,
 		ec->ec_min_security = restrictinfo->security_level;
 		ec->ec_max_security = restrictinfo->security_level;
 		ec->ec_merged = NULL;
+		ec->ec_processed = false;
 		em1 = add_eq_member(ec, item1, item1_relids, item1_nullable_relids,
 							false, item1_type);
 		em2 = add_eq_member(ec, item2, item2_relids, item2_nullable_relids,
@@ -574,6 +576,7 @@ add_eq_member(EquivalenceClass *ec, Expr *expr, Relids relids,
 		ec->ec_relids = bms_add_members(ec->ec_relids, relids);
 	}
 	ec->ec_members = lappend(ec->ec_members, em);
+	ec->ec_processed = false;
 
 	return em;
 }
@@ -711,6 +714,7 @@ get_eclass_for_sort_expr(PlannerInfo *root,
 	newec->ec_min_security = UINT_MAX;
 	newec->ec_max_security = 0;
 	newec->ec_merged = NULL;
+	newec->ec_processed = false;
 
 	if (newec->ec_has_volatile && sortref == 0) /* should not happen */
 		elog(ERROR, "volatile EquivalenceClass has no sortref");
@@ -1114,6 +1118,11 @@ generate_base_implied_equalities(PlannerInfo *root)
 		 * Single-member ECs won't generate any deductions, either here or at
 		 * the join level.
 		 */
+		if (ec->ec_processed)
+		{
+			ec_index++;
+			continue;
+		}
 		if (list_length(ec->ec_members) > 1)
 		{
 			if (ec->ec_has_const)
@@ -1151,6 +1160,7 @@ generate_base_implied_equalities(PlannerInfo *root)
 				rel->has_eclass_joins = true;
 		}
 
+		ec->ec_processed = true;
 		ec_index++;
 	}
 }

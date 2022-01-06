@@ -40,8 +40,10 @@
 #include "optimizer/paths.h"
 #include "optimizer/plancat.h"
 #include "optimizer/planner.h"
+#include "optimizer/planmain.h"
 #include "optimizer/restrictinfo.h"
 #include "optimizer/tlist.h"
+#include "optimizer/subselect.h"
 #include "parser/parse_clause.h"
 #include "parser/parsetree.h"
 #include "partitioning/partbounds.h"
@@ -3895,6 +3897,68 @@ generate_partitionwise_join_paths(PlannerInfo *root, RelOptInfo *rel)
 	list_free(live_children);
 }
 
+bool
+try_push_outer_qual_to_sublink_query(PlannerInfo *parent, Query *subquery, List *conditions)
+{
+	pushdown_safety_info safetyInfo;
+	ListCell	*lc1;
+	bool		found = false;
+	bool		query_is_pushdown_safe = false;
+
+	if (conditions == NIL)
+		return false;
+
+	memset(&safetyInfo, 0, sizeof(safetyInfo));
+	safetyInfo.unsafeColumns = (bool *)
+		palloc0((list_length(subquery->targetList) + 1) * sizeof(bool));
+
+	/* Check whether pushdown qual to sublink query is safe. */
+	query_is_pushdown_safe = subquery_is_pushdown_safe(subquery, subquery, &safetyInfo);
+	pfree(safetyInfo.unsafeColumns);
+	if (!query_is_pushdown_safe)
+		return false;
+
+	/*
+	 * Currently, we have some conditional expressions in sublink (out var = local var)
+	 * Now, the outer query looks for related equivalent expressions that have been generated (outer var = const).
+	 * If out var = local var and outer var = const, then we get local var = const and push it down to sublink
+	 */
+	foreach(lc1, conditions)
+	{
+		pushdown_expr_info *expr_info = (pushdown_expr_info *) lfirst(lc1);
+		Index		levelsup = 0;
+		RelOptInfo	*rel;
+		ListCell	*lc2;
+		PlannerInfo *tmproot = parent;
+
+		/* The outer var could exist in any of the upper-level queries so find these roots */
+		for (levelsup = expr_info->outer->varlevelsup - 1; levelsup > 0; levelsup--)
+			tmproot = tmproot->parent_root;
+
+		/* Flatten varLevelsup, for find conditions from BaserestrictInfo. */
+		expr_info->outer->varlevelsup = 0;
+
+		/* Find if there is an available qual in relation of this var from root */
+		rel = find_base_rel(tmproot, expr_info->outer->varno);
+		if (rel == NULL || rel->baserestrictinfo == NULL)
+			continue;
+
+		foreach(lc2, rel->baserestrictinfo)
+		{
+			RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc2);
+
+			/* Make sure that qual in restrictInfo  that is var = const and can safely pushdown */
+			if (condition_is_safe_pushdown_to_sublink(rinfo, expr_info->outer))
+			{
+				/* replace qual expr from outer var = const to var = const and push down to sublink query */
+				sublink_query_push_qual(subquery, (Node *)copyObject(rinfo->clause), expr_info->outer, expr_info->inner);
+				found = true;
+			}
+		}
+	}
+
+	return found;
+}
 
 /*****************************************************************************
  *			DEBUG SUPPORT

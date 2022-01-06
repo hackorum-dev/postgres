@@ -22,6 +22,7 @@
 #include "optimizer/placeholder.h"
 #include "optimizer/planmain.h"
 #include "utils/lsyscache.h"
+#include "rewrite/rewriteManip.h"
 
 /* Local functions */
 static void find_placeholders_recurse(PlannerInfo *root, Node *jtnode);
@@ -86,6 +87,10 @@ find_placeholder_info(PlannerInfo *root, PlaceHolderVar *phv,
 	/* Not found, so create it */
 	if (!create_new_ph)
 		elog(ERROR, "too late to create a new PlaceHolderInfo");
+
+	/* Unprocessed sublink is not accepted, it needs to go through SS_process_sublinks first */
+	if (checkExprHasSubLink((Node *)phv))
+		elog(ERROR, "can not add sublink to placeholder_list");
 
 	phinfo = makeNode(PlaceHolderInfo);
 

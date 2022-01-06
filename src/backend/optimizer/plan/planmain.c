@@ -102,6 +102,8 @@ query_planner(PlannerInfo *root,
 			Assert(rte != NULL);
 			if (rte->rtekind == RTE_RESULT)
 			{
+				lazy_process_sublinks(root, true);
+
 				/* Make the RelOptInfo for it directly */
 				final_rel = build_simple_rel(root, varno, NULL);
 
@@ -196,6 +198,8 @@ query_planner(PlannerInfo *root,
 	 * later.)
 	 */
 	generate_base_implied_equalities(root);
+
+	lazy_process_sublinks(root, false);
 
 	/*
 	 * We have completed merging equivalence sets, so it's now possible to

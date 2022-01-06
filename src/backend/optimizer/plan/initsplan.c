@@ -30,10 +30,12 @@
 #include "optimizer/planner.h"
 #include "optimizer/prep.h"
 #include "optimizer/restrictinfo.h"
+#include "optimizer/subselect.h"
 #include "parser/analyze.h"
 #include "rewrite/rewriteManip.h"
 #include "utils/lsyscache.h"
 #include "utils/typcache.h"
+#include "utils/guc.h"
 
 /* These parameters are set by GUC */
 int			from_collapse_limit;
@@ -80,6 +82,16 @@ static void check_mergejoinable(RestrictInfo *restrictinfo);
 static void check_hashjoinable(RestrictInfo *restrictinfo);
 static void check_memoizable(RestrictInfo *restrictinfo);
 
+static void remember_qual_info_for_lazy_process_sublink(PlannerInfo *root,
+						Node *clause,
+						bool below_outer_join,
+						JoinType jointype,
+						Index security_level,
+						Relids qualscope,
+						Relids ojscope,
+						Relids outerjoin_nonnullable,
+						List *postponed_qual_list);
+static void *search_sublink_from_lazy_process_list(PlannerInfo *root, Node *node);
 
 /*****************************************************************************
  *
@@ -262,7 +274,16 @@ add_vars_to_targetlist(PlannerInfo *root, List *vars,
 		else if (IsA(node, PlaceHolderVar))
 		{
 			PlaceHolderVar *phv = (PlaceHolderVar *) node;
-			PlaceHolderInfo *phinfo = find_placeholder_info(root, phv,
+			PlaceHolderInfo *phinfo = NULL;
+
+			/*
+			 * If there is an unexpanded sublink in the targetList,
+			 * we'll skip it for now. Don't worry let lazy_process_sublinks do it later.
+			 */
+			if (has_unexpanded_sublink(root) && checkExprHasSubLink(node))
+				continue;
+
+			phinfo = find_placeholder_info(root, phv,
 															create_new_ph);
 
 			phinfo->ph_needed = bms_add_members(phinfo->ph_needed,
@@ -1621,6 +1642,17 @@ distribute_qual_to_rels(PlannerInfo *root, Node *clause,
 	Relids		nullable_relids;
 	RestrictInfo *restrictinfo;
 
+	/* Before lazy transform sublink has not been converted, so backup it */
+	if (checkExprHasSubLink(clause))
+	{
+		remember_qual_info_for_lazy_process_sublink(root, clause, below_outer_join, jointype, security_level,
+					qualscope, ojscope, outerjoin_nonnullable, *postponed_qual_list);
+
+		relids = pull_varnos(root, clause);
+		Assert(bms_is_subset(relids, qualscope));
+		return;
+	}
+
 	/*
 	 * Retrieve all relids mentioned within the clause.
 	 */
@@ -2749,4 +2781,185 @@ check_memoizable(RestrictInfo *restrictinfo)
 
 	if (OidIsValid(typentry->hash_proc) && OidIsValid(typentry->eq_opr))
 		restrictinfo->right_hasheqoperator = typentry->eq_opr;
+}
+
+/*
+ * query at this level has sublink and It is safe to try lazy process and pushdown qual.
+ * Use a switch to control it. This is a minimal subset, then try to support more scenarios.
+ */
+bool
+query_has_sublink_try_pushdown_qual(PlannerInfo *root)
+{
+	Query *parse = root->parse;
+
+	if (!parse->hasSubLinks)
+		return false;
+
+	if (parse->commandType != CMD_SELECT ||
+		parse->hasWindowFuncs ||
+		parse->hasTargetSRFs ||
+		parse->hasRecursive ||
+		parse->hasModifyingCTE ||
+		parse->hasForUpdate ||
+		parse->hasRowSecurity ||
+		parse->setOperations ||
+		parse->havingQual ||
+		parse->cteList != NIL)
+		return false;
+
+	return lazy_process_sublink;
+}
+
+/*
+ * Handle sublink that is not expanded.
+ * Convert these sublinks to subplans and handles the associated targetList expr and equivalence classes.
+ */
+void
+lazy_process_sublinks(PlannerInfo *root, bool single_result_rte)
+{
+	Query		*parse = root->parse;
+	List		*tlist_vars;
+
+	/* Exit the function if no unprocessed sublink is recorded. */
+	if (!has_unexpanded_sublink(root))
+		return;
+
+	/* process sublink in targetlist */
+	root->processed_tlist = (List *)SS_process_sublinks(root, (Node *)root->processed_tlist, false, true, true);
+	if (root->query_level > 1)
+		root->processed_tlist = (List *)SS_replace_correlation_vars(root, (Node *)root->processed_tlist);
+
+	/* process sublink in where clause */
+	if (parse->jointree && parse->jointree->quals)
+	{
+		FromExpr	*f = parse->jointree;
+		List		*newquals = NIL;
+		ListCell	*l;
+
+		Assert(IsA(f->quals, List));
+		foreach(l, (List *) f->quals)
+		{
+			Node	   *qual = (Node *) lfirst(l);
+
+			if (checkExprHasSubLink(qual))
+				qual = lazy_process_sublink_qual(root, qual);
+
+			newquals = lappend(newquals, qual);
+		}
+
+		f->quals = (Node *)newquals;
+	}
+
+	/* process agg functions */
+	if(parse->hasAggs)
+	{
+		preprocess_aggrefs(root, (Node *) root->processed_tlist);
+		preprocess_minmax_aggregates(root, true);
+	}
+
+	/* empty from clause no need prcess targetlist or from  clause */
+	if (!single_result_rte)
+	{
+		/* Put the mutated sublink info into the targetList */
+		tlist_vars = pull_var_clause((Node *) root->processed_tlist,
+									 PVC_RECURSE_AGGREGATES |
+									 PVC_RECURSE_WINDOWFUNCS |
+									 PVC_INCLUDE_PLACEHOLDERS);
+
+		if (tlist_vars != NIL)
+		{
+			add_vars_to_targetlist(root, tlist_vars, bms_make_singleton(0), true);
+			list_free(tlist_vars);
+		}
+
+		generate_base_implied_equalities(root);
+	}
+
+	/* Make sure all sublinks are processed. */
+	if (has_unexpanded_sublink(root))
+		elog(ERROR, "sublink is not fully expanded yet");
+
+	return;
+}
+
+typedef struct sublink_node
+{
+	Node *expr;
+	bool below_outer_join;
+	JoinType jointype;
+	Index security_level;
+	Relids qualscope;
+	Relids ojscope;
+	Relids outerjoin_nonnullable;
+	List *postponed_qual_list;
+} sublink_node;
+
+/* Log unexpanded sublink for future do distribute_qual_to_rels in lazy process sublink */
+static void
+remember_qual_info_for_lazy_process_sublink(PlannerInfo *root,
+						Node *clause,
+						bool below_outer_join,
+						JoinType jointype,
+						Index security_level,
+						Relids qualscope,
+						Relids ojscope,
+						Relids outerjoin_nonnullable,
+						List *postponed_qual_list)
+{
+	sublink_node	*sublink_info = palloc0(sizeof(sublink_node));
+
+	sublink_info->expr= copyObject(clause);
+	sublink_info->below_outer_join = below_outer_join;
+	sublink_info->jointype = jointype;
+	sublink_info->security_level = security_level;
+	sublink_info->qualscope = bms_copy(qualscope);
+	sublink_info->ojscope = bms_copy(ojscope);
+	sublink_info->outerjoin_nonnullable = bms_copy(outerjoin_nonnullable);
+	sublink_info->postponed_qual_list = list_copy_deep(postponed_qual_list);
+
+	root->unexpanded_sublink_expr_list = lappend(root->unexpanded_sublink_expr_list, sublink_info);
+
+	return;
+}
+
+Node *
+lazy_process_sublink_qual(PlannerInfo *root, Node *node)
+{
+	Node			*qual = NULL;
+	sublink_node	*sublink_info = NULL;
+
+	qual = SS_process_sublinks(root, node, true, true, true);
+	sublink_info = (sublink_node *)search_sublink_from_lazy_process_list(root, node);
+	if (sublink_info)
+	{
+		List 	*postponed_qual_list = NIL;
+		distribute_qual_to_rels(root, qual, sublink_info->below_outer_join, sublink_info->jointype, sublink_info->security_level,
+						sublink_info->qualscope, sublink_info->ojscope, sublink_info->outerjoin_nonnullable,
+						&postponed_qual_list);
+
+		Assert(postponed_qual_list == NIL);
+		root->unexpanded_sublink_expr_list = list_delete(root->unexpanded_sublink_expr_list, sublink_info);
+	}
+
+	return qual;
+}
+
+static void *
+search_sublink_from_lazy_process_list(PlannerInfo *root, Node *node)
+{
+	ListCell		*lc = NULL;
+	sublink_node	*sublink_info = NULL;
+
+	foreach(lc, root->unexpanded_sublink_expr_list)
+	{
+		sublink_node *tmp = lfirst(lc);
+		Assert(tmp->expr);
+		if (equal(tmp->expr, node))
+		{
+			sublink_info = tmp;
+			break;
+		}
+	}
+
+	return (void *)sublink_info;
 }

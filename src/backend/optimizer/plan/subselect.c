@@ -32,11 +32,13 @@
 #include "optimizer/planner.h"
 #include "optimizer/prep.h"
 #include "optimizer/subselect.h"
+#include "optimizer/paths.h"
 #include "parser/parse_relation.h"
 #include "rewrite/rewriteManip.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
+#include "utils/ruleutils.h"
 
 
 typedef struct convert_testexpr_context
@@ -49,6 +51,8 @@ typedef struct process_sublinks_context
 {
 	PlannerInfo *root;
 	bool		isTopQual;
+	bool		lazy_process;
+	bool		force_process;
 } process_sublinks_context;
 
 typedef struct finalize_primnode_context
@@ -65,6 +69,13 @@ typedef struct inline_cte_walker_context
 	Query	   *ctequery;		/* query to substitute */
 } inline_cte_walker_context;
 
+typedef struct equal_expr_info_context
+{
+	bool	has_unexpected_expr;
+	bool	has_const;
+	Var		*outer_var;
+	Var		*inner_var;
+} equal_expr_info_context;
 
 static Node *build_subplan(PlannerInfo *root, Plan *plan, PlannerInfo *subroot,
 						   List *plan_params,
@@ -104,6 +115,11 @@ static Bitmapset *finalize_plan(PlannerInfo *root,
 								Bitmapset *scan_params);
 static bool finalize_primnode(Node *node, finalize_primnode_context *context);
 static bool finalize_agg_primnode(Node *node, finalize_primnode_context *context);
+
+static Node *replace_vars_mutator(Node *node, void *context);
+static List *find_equal_conditions_contain_uplevelvar_in_sublink_query(Query *orig_subquery);
+static bool equal_expr_analyze_walker(Node *node, void *context);
+static bool equal_expr_safety_check(Node *node, equal_expr_info_context *context);
 
 
 /*
@@ -162,7 +178,7 @@ get_first_col_type(Plan *plan, Oid *coltype, int32 *coltypmod,
 static Node *
 make_subplan(PlannerInfo *root, Query *orig_subquery,
 			 SubLinkType subLinkType, int subLinkId,
-			 Node *testexpr, bool isTopQual)
+			 Node *testexpr, bool isTopQual, bool lazy_process)
 {
 	Query	   *subquery;
 	bool		simple_exists = false;
@@ -173,6 +189,8 @@ make_subplan(PlannerInfo *root, Query *orig_subquery,
 	Plan	   *plan;
 	List	   *plan_params;
 	Node	   *result;
+	Query	   *optimized_subquery = NULL;
+	Query	   *optimized_subquery_copy = NULL;
 
 	/*
 	 * Copy the source Query node.  This is a quick and dirty kluge to resolve
@@ -218,8 +236,32 @@ make_subplan(PlannerInfo *root, Query *orig_subquery,
 	/* plan_params should not be in use in current query level */
 	Assert(root->plan_params == NIL);
 
+	if (lazy_process)
+	{
+		List		*conditions = NIL;
+		Query		*subquery_copy = copyObject(orig_subquery);
+
+		/*
+		 * Search sublink query.
+		 * If the query contains an outer condition equivalent expression,
+		 * this means that there may be external conditions that can be pushed down to optimize the subquery.
+		 */
+		conditions = find_equal_conditions_contain_uplevelvar_in_sublink_query(subquery_copy);
+		if (conditions)
+		{
+			/* Search outer queries, and if relevant equivalent expressions are found, push them down into subqueries. */
+			if (try_push_outer_qual_to_sublink_query(root, subquery_copy, conditions))
+			{
+				optimized_subquery = subquery_copy;
+				optimized_subquery_copy = copyObject(optimized_subquery);
+			}
+			list_free(conditions);
+		}
+	}
+
 	/* Generate Paths for the subquery */
-	subroot = subquery_planner(root->glob, subquery,
+	subroot = subquery_planner(root->glob,
+							   (optimized_subquery != NULL) ? optimized_subquery : subquery,
 							   root,
 							   false, tuple_fraction);
 
@@ -256,7 +298,7 @@ make_subplan(PlannerInfo *root, Query *orig_subquery,
 		List	   *paramIds;
 
 		/* Make a second copy of the original subquery */
-		subquery = copyObject(orig_subquery);
+		subquery = copyObject((optimized_subquery_copy != NULL) ? optimized_subquery_copy : orig_subquery);
 		/* and re-simplify */
 		simple_exists = simplify_EXISTS_query(root, subquery);
 		Assert(simple_exists);
@@ -365,7 +407,7 @@ build_subplan(PlannerInfo *root, Plan *plan, PlannerInfo *subroot,
 		 */
 		if (IsA(arg, PlaceHolderVar) ||
 			IsA(arg, Aggref))
-			arg = SS_process_sublinks(root, arg, false);
+			arg = SS_process_sublinks(root, arg, false, false, true);
 
 		splan->parParam = lappend_int(splan->parParam, pitem->paramId);
 		splan->args = lappend(splan->args, arg);
@@ -1915,12 +1957,14 @@ replace_correlation_vars_mutator(Node *node, PlannerInfo *root)
  * not distinguish FALSE from UNKNOWN return values.
  */
 Node *
-SS_process_sublinks(PlannerInfo *root, Node *expr, bool isQual)
+SS_process_sublinks(PlannerInfo *root, Node *expr, bool isQual, bool lazy_process, bool force_process)
 {
 	process_sublinks_context context;
 
 	context.root = root;
 	context.isTopQual = isQual;
+	context.lazy_process = lazy_process;
+	context.force_process = force_process;
 	return process_sublinks_mutator(expr, &context);
 }
 
@@ -1930,20 +1974,34 @@ process_sublinks_mutator(Node *node, process_sublinks_context *context)
 	process_sublinks_context locContext;
 
 	locContext.root = context->root;
+	locContext.lazy_process = context->lazy_process;
+	locContext.force_process = context->force_process;
 
 	if (node == NULL)
 		return NULL;
 	if (IsA(node, SubLink))
 	{
 		SubLink    *sublink = (SubLink *) node;
-		Node	   *testexpr;
 
 		/*
 		 * First, recursively process the lefthand-side expressions, if any.
 		 * They're not top-level anymore.
 		 */
 		locContext.isTopQual = false;
-		testexpr = process_sublinks_mutator(sublink->testexpr, &locContext);
+		locContext.lazy_process = context->lazy_process;
+		locContext.force_process = context->force_process;
+		sublink->testexpr = process_sublinks_mutator(sublink->testexpr, &locContext);
+
+		if (!context->force_process &&
+			query_has_sublink_try_pushdown_qual(context->root))
+		{
+			Assert(context->lazy_process == false);
+			context->root->unexpanded_sublink_counter++;
+			return node;
+		}
+
+		if (context->lazy_process)
+			context->root->unexpanded_sublink_counter--;
 
 		/*
 		 * Now build the SubPlan node and make the expr to return.
@@ -1952,8 +2010,8 @@ process_sublinks_mutator(Node *node, process_sublinks_context *context)
 							(Query *) sublink->subselect,
 							sublink->subLinkType,
 							sublink->subLinkId,
-							testexpr,
-							context->isTopQual);
+							sublink->testexpr,
+							context->isTopQual, locContext.lazy_process);
 	}
 
 	/*
@@ -1978,8 +2036,8 @@ process_sublinks_mutator(Node *node, process_sublinks_context *context)
 	 * the very routine that creates 'em to begin with).  We shouldn't find
 	 * ourselves invoked directly on a Query, either.
 	 */
-	Assert(!IsA(node, SubPlan));
-	Assert(!IsA(node, AlternativeSubPlan));
+	Assert(!IsA(node, SubPlan) || context->lazy_process);
+	Assert(!IsA(node, AlternativeSubPlan) || context->lazy_process);
 	Assert(!IsA(node, Query));
 
 	/*
@@ -2003,6 +2061,8 @@ process_sublinks_mutator(Node *node, process_sublinks_context *context)
 
 		/* Still at qual top-level */
 		locContext.isTopQual = context->isTopQual;
+		locContext.lazy_process = context->lazy_process;
+		locContext.force_process = context->force_process;
 
 		foreach(l, ((BoolExpr *) node)->args)
 		{
@@ -2024,6 +2084,8 @@ process_sublinks_mutator(Node *node, process_sublinks_context *context)
 
 		/* Still at qual top-level */
 		locContext.isTopQual = context->isTopQual;
+		locContext.lazy_process = context->lazy_process;
+		locContext.force_process = context->force_process;
 
 		foreach(l, ((BoolExpr *) node)->args)
 		{
@@ -2988,4 +3050,185 @@ SS_make_initplan_from_plan(PlannerInfo *root,
 
 	/* Set costs of SubPlan using info from the plan tree */
 	cost_subplan(subroot, node, plan);
+}
+
+void
+sublink_query_push_qual(Query *subquery, Node *qual, Var *outer, Var *inner)
+{
+	pushdown_expr_info	context;
+	Node				*new_qual;
+
+	context.outer = outer;
+	context.inner = inner;
+
+	new_qual = expression_tree_mutator(qual, replace_vars_mutator, (void *)&context);
+	subquery->jointree->quals = make_and_qual(subquery->jointree->quals, new_qual);
+}
+
+static Node *
+replace_vars_mutator(Node *node, void *context)
+{
+	pushdown_expr_info *info = (pushdown_expr_info *) context;
+
+	if (IsA(node, Var) && equal(node, (Node *)info->outer))
+	{
+		node = copyObject((Node *)info->inner);
+		return node;
+	}
+
+	return expression_tree_mutator(node,  replace_vars_mutator, context);
+}
+
+/* condition has to be (var = const value) */
+bool
+condition_is_safe_pushdown_to_sublink(RestrictInfo *rinfo, Var *var)
+{
+	Node	   *clause = (Node *) rinfo->clause;
+	equal_expr_info_context context;
+
+	if (clause == NULL)
+		return false;
+
+	if (rinfo->pseudoconstant)
+		return false;
+
+	if (contain_leaked_vars(clause))
+		return false;
+
+	memset(&context, 0, sizeof(equal_expr_info_context));
+	if (equal_expr_safety_check(clause, &context))
+	{
+		/*
+		 * RestrictInfo clause must be like inner var = const.
+		 * It cannot contain any out var and references the same columns as var.
+		 * Finally, system columns are not supported for now.
+		 */
+		if (context.inner_var &&
+			context.outer_var == NULL &&
+			!context.has_unexpected_expr &&
+			context.has_const &&
+			context.inner_var->varattno > 0 &&
+			equal(context.inner_var, var))
+			return true;
+	}
+
+	return false;
+}
+
+static List *
+find_equal_conditions_contain_uplevelvar_in_sublink_query(Query *orig_subquery)
+{
+	Node		*quals;
+	ListCell	*lc;
+	List		*conditions = NIL;
+
+	if (orig_subquery->jointree == NULL ||
+		orig_subquery->jointree->quals == NULL)
+		return NIL;
+
+	quals = copyObject(orig_subquery->jointree->quals);
+	quals = (Node *) canonicalize_qual((Expr *) quals, false);
+	quals = (Node *) make_ands_implicit((Expr *) quals);
+
+	foreach(lc, (List *)quals)
+	{
+		Node		*node = (Node *) lfirst(lc);
+		equal_expr_info_context context;
+		pushdown_expr_info *expr_info = NULL;
+
+		memset(&context, 0, sizeof(equal_expr_info_context));
+		if (equal_expr_safety_check(node, &context))
+		{
+			/* It needs to be something like outer var = inner var */
+			if (context.inner_var &&
+				context.outer_var &&
+				!context.has_unexpected_expr &&
+				!context.has_const)
+			{
+				expr_info = palloc0(sizeof(pushdown_expr_info));
+				expr_info->inner = context.inner_var;
+				expr_info->outer = context.outer_var;
+				conditions = lappend(conditions, expr_info);
+			}
+		}
+	}
+
+	return conditions;
+}
+
+static bool
+equal_expr_safety_check(Node *node, equal_expr_info_context *context)
+{
+	const char *op;
+
+	if (!IsA(node, OpExpr))
+		return false;
+
+	op = get_simple_binary_op_name((OpExpr *) node);
+	if (op == NULL || strcmp(op, "=") != 0)
+		return false;
+
+	if (contain_volatile_functions(node) ||
+		contain_mutable_functions(node) ||
+		contain_nonstrict_functions(node))
+		return false;
+
+	equal_expr_analyze_walker(node, context);
+
+	return true;
+}
+
+static bool
+equal_expr_analyze_walker(Node *node, void *context)
+{
+	equal_expr_info_context *info = (equal_expr_info_context *)context;
+
+	if (node == NULL)
+		return false;
+
+	switch (nodeTag(node))
+	{
+		case T_Var:
+		{
+			if (((Var *) node)->varlevelsup > 0)
+			{
+				if (info->outer_var)
+					info->has_unexpected_expr = true;
+				else
+					info->outer_var = (Var *)copyObject(node);
+
+				return info->has_unexpected_expr;
+			}
+			else
+			{
+				if (info->inner_var)
+					info->has_unexpected_expr = true;
+				else
+					info->inner_var = (Var *)copyObject(node);
+
+				return info->has_unexpected_expr;
+			}
+		}
+		break;
+
+		case T_Const:
+		{
+			info->has_const = true;
+			return false;
+		}
+		break;
+
+		case T_Param:
+		case T_FuncExpr:
+		{
+			info->has_unexpected_expr = true;
+			return true;
+		}
+		break;
+
+		default:
+		break;
+	}
+
+	return expression_tree_walker(node, equal_expr_analyze_walker, context);
 }

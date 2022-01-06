@@ -377,6 +377,9 @@ struct PlannerInfo
 
 	/* Does this query modify any partition key columns? */
 	bool		partColsUpdated;
+
+	int			unexpanded_sublink_counter;
+	List		*unexpanded_sublink_expr_list;
 };
 
 
@@ -995,6 +998,7 @@ typedef struct EquivalenceClass
 	bool		ec_has_volatile;	/* the (sole) member is a volatile expr */
 	bool		ec_below_outer_join;	/* equivalence applies below an OJ */
 	bool		ec_broken;		/* failed to generate needed clauses? */
+	bool		ec_processed;
 	Index		ec_sortref;		/* originating sortclause label, or 0 */
 	Index		ec_min_security;	/* minimum security_level in ec_sources */
 	Index		ec_max_security;	/* maximum security_level in ec_sources */

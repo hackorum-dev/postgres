@@ -288,6 +288,8 @@ extern int	tcp_user_timeout;
 extern bool trace_sort;
 #endif
 
+extern bool lazy_process_sublink;
+
 /*
  * Functions exported by guc.c
  */

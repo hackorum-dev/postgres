@@ -926,9 +926,9 @@ WHERE
            ->  Result
                  Output: (hjtest_1.b * 5)
    ->  Hash
-         Output: hjtest_2.a, hjtest_2.tableoid, hjtest_2.id, hjtest_2.c, hjtest_2.b
+         Output: hjtest_2.a, hjtest_2.tableoid, hjtest_2.b, hjtest_2.id, hjtest_2.c
          ->  Seq Scan on public.hjtest_2
-               Output: hjtest_2.a, hjtest_2.tableoid, hjtest_2.id, hjtest_2.c, hjtest_2.b
+               Output: hjtest_2.a, hjtest_2.tableoid, hjtest_2.b, hjtest_2.id, hjtest_2.c
                Filter: ((SubPlan 5) < 55)
                SubPlan 5
                  ->  Result
@@ -974,7 +974,7 @@ WHERE
    Hash Cond: (((SubPlan 1) = hjtest_1.id) AND ((SubPlan 3) = (SubPlan 2)))
    Join Filter: (hjtest_1.a <> hjtest_2.b)
    ->  Seq Scan on public.hjtest_2
-         Output: hjtest_2.a, hjtest_2.tableoid, hjtest_2.id, hjtest_2.c, hjtest_2.b
+         Output: hjtest_2.a, hjtest_2.tableoid, hjtest_2.b, hjtest_2.id, hjtest_2.c
          Filter: ((SubPlan 5) < 55)
          SubPlan 5
            ->  Result

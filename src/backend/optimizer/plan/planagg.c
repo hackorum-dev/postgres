@@ -49,7 +49,7 @@
 
 static bool can_minmax_aggs(PlannerInfo *root, List **context);
 static bool build_minmax_path(PlannerInfo *root, MinMaxAggInfo *mminfo,
-							  Oid eqop, Oid sortop, bool nulls_first);
+							  Oid eqop, Oid sortop, bool nulls_first, bool lazy_process_sublink);
 static void minmax_qp_callback(PlannerInfo *root, void *extra);
 static Oid	fetch_agg_sort_op(Oid aggfnoid);
 
@@ -70,7 +70,7 @@ static Oid	fetch_agg_sort_op(Oid aggfnoid);
  * root->agginfos, so preprocess_aggrefs() must have been called already, too.
  */
 void
-preprocess_minmax_aggregates(PlannerInfo *root)
+preprocess_minmax_aggregates(PlannerInfo *root, bool lazy_process_sublink)
 {
 	Query	   *parse = root->parse;
 	FromExpr   *jtnode;
@@ -173,9 +173,9 @@ preprocess_minmax_aggregates(PlannerInfo *root)
 		 * FIRST is more likely to be available if the operator is a
 		 * reverse-sort operator, so try that first if reverse.
 		 */
-		if (build_minmax_path(root, mminfo, eqop, mminfo->aggsortop, reverse))
+		if (build_minmax_path(root, mminfo, eqop, mminfo->aggsortop, reverse, lazy_process_sublink))
 			continue;
-		if (build_minmax_path(root, mminfo, eqop, mminfo->aggsortop, !reverse))
+		if (build_minmax_path(root, mminfo, eqop, mminfo->aggsortop, !reverse, lazy_process_sublink))
 			continue;
 
 		/* No indexable path for this aggregate, so fail */
@@ -315,7 +315,7 @@ can_minmax_aggs(PlannerInfo *root, List **context)
  */
 static bool
 build_minmax_path(PlannerInfo *root, MinMaxAggInfo *mminfo,
-				  Oid eqop, Oid sortop, bool nulls_first)
+				  Oid eqop, Oid sortop, bool nulls_first, bool lazy_process_sublink)
 {
 	PlannerInfo *subroot;
 	Query	   *parse;
@@ -352,12 +352,23 @@ build_minmax_path(PlannerInfo *root, MinMaxAggInfo *mminfo,
 	/* append_rel_list might contain outer Vars? */
 	subroot->append_rel_list = copyObject(root->append_rel_list);
 	IncrementVarSublevelsUp((Node *) subroot->append_rel_list, 1, 1);
-	/* There shouldn't be any OJ info to translate, as yet */
-	Assert(subroot->join_info_list == NIL);
-	/* and we haven't made equivalence classes, either */
-	Assert(subroot->eq_classes == NIL);
-	/* and we haven't created PlaceHolderInfos, either */
-	Assert(subroot->placeholder_list == NIL);
+
+	if (lazy_process_sublink)
+	{
+		/* under lazy process sublink, parent root may have some data that child does not need, so set it to NIL */
+		subroot->join_info_list = NIL;
+		subroot->eq_classes = NIL;
+		subroot->placeholder_list = NIL;
+	}
+	else
+	{
+		/* There shouldn't be any OJ info to translate, as yet */
+		Assert(subroot->join_info_list == NIL);
+		/* and we haven't made equivalence classes, either */
+		Assert(subroot->eq_classes == NIL);
+		/* and we haven't created PlaceHolderInfos, either */
+		Assert(subroot->placeholder_list == NIL);
+	}
 
 	/*----------
 	 * Generate modified query of the form

@@ -1,0 +1,221 @@
+CREATE SCHEMA IF NOT EXISTS test_push_qual_to_sublink;
+SET search_path=test_push_qual_to_sublink,sys;
+show lazy_process_sublink;
+ lazy_process_sublink 
+----------------------
+ on
+(1 row)
+
+create table ab (a int not null, b int not null) partition by list (a);
+create table ab_a2 partition of ab for values in(2) partition by list (b);
+create table ab_a2_b1 partition of ab_a2 for values in (1);
+create table ab_a2_b2 partition of ab_a2 for values in (2);
+create table ab_a2_b3 partition of ab_a2 for values in (3);
+create table ab_a1 partition of ab for values in(1) partition by list (b);
+create table ab_a1_b1 partition of ab_a1 for values in (1);
+create table ab_a1_b2 partition of ab_a1 for values in (2);
+create table ab_a1_b3 partition of ab_a1 for values in (3);
+INSERT INTO ab VALUES (1,1);
+INSERT INTO ab VALUES (1,2);
+INSERT INTO ab VALUES (1,3);
+INSERT INTO ab VALUES (2,1);
+INSERT INTO ab VALUES (2,2);
+INSERT INTO ab VALUES (2,3);
+--1 sublink in select clause can do pushdown qual(a=1 and b=1)
+EXPLAIN (VERBOSE, COSTS OFF) SELECT 
+y.a, (SELECT x.b FROM ab x WHERE y.a=x.a AND y.b=x.b) AS b
+FROM ab y WHERE a = 1 AND b = 1;
+                           QUERY PLAN                           
+----------------------------------------------------------------
+ Seq Scan on test_push_qual_to_sublink.ab_a1_b1 y
+   Output: y.a, (SubPlan 1)
+   Filter: ((y.a = 1) AND (y.b = 1))
+   SubPlan 1
+     ->  Result
+           Output: x.b
+           One-Time Filter: ((y.b = 1) AND (y.a = 1))
+           ->  Seq Scan on test_push_qual_to_sublink.ab_a1_b1 x
+                 Output: x.b
+                 Filter: ((x.b = 1) AND (x.a = 1))
+(10 rows)
+
+SELECT
+y.a, (SELECT x.b FROM ab x WHERE y.a=x.a AND y.b=x.b) AS b
+FROM ab y WHERE a = 1 AND b = 1;
+ a | b 
+---+---
+ 1 | 1
+(1 row)
+
+--2 sublink in where clause can do pushdown qual(a=1 and b=1)
+EXPLAIN (VERBOSE, COSTS OFF) SELECT y.a FROM ab y
+WHERE a = 1 AND b = 1 AND a in (SELECT x.b FROM ab x WHERE y.a=x.a AND y.b=x.b);
+                           QUERY PLAN                           
+----------------------------------------------------------------
+ Seq Scan on test_push_qual_to_sublink.ab_a1_b1 y
+   Output: y.a
+   Filter: ((y.a = 1) AND (y.b = 1) AND (SubPlan 1))
+   SubPlan 1
+     ->  Result
+           Output: x.b
+           One-Time Filter: ((y.b = 1) AND (y.a = 1))
+           ->  Seq Scan on test_push_qual_to_sublink.ab_a1_b1 x
+                 Output: x.b
+                 Filter: ((x.b = 1) AND (x.a = 1))
+(10 rows)
+
+SELECT y.a FROM ab y
+WHERE a = 1 AND b = 1 AND a in (SELECT x.b FROM ab x WHERE y.a=x.a AND y.b=x.b);
+ a 
+---
+ 1
+(1 row)
+
+--3 Nested sublink also supports pushdown qual 
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a.a, a.b,
+(SELECT max(b.a) AS max
+      FROM ab b, ab c
+      WHERE b.a=c.a AND b.b=c.b AND b.a=a.a AND b.b=a.b AND
+	(EXISTS 
+	 (SELECT a1.a
+	  FROM ab a1
+	  WHERE
+	  a1.a = a.a AND --from uplevel 1
+	  a1.b = b.b AND --frem uplevel 2
+	  clock_timestamp() > '2020-12-11' --Keep sublink not eliminated
+	 )
+	)
+) AS c
+FROM ab a WHERE a.a=1 AND a.b=1;
+                                                                            QUERY PLAN                                                                            
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Seq Scan on test_push_qual_to_sublink.ab_a1_b1 a
+   Output: a.a, a.b, (SubPlan 2)
+   Filter: ((a.a = 1) AND (a.b = 1))
+   SubPlan 2
+     ->  Aggregate
+           Output: max(b.a)
+           ->  Result
+                 Output: b.a
+                 One-Time Filter: ((a.b = 1) AND (a.a = 1))
+                 ->  Nested Loop
+                       Output: b.a
+                       ->  Seq Scan on test_push_qual_to_sublink.ab_a1_b1 b
+                             Output: b.a, b.b
+                             Filter: ((b.b = 1) AND (b.a = 1) AND (SubPlan 1))
+                             SubPlan 1
+                               ->  Result
+                                     Output: a1.a
+                                     One-Time Filter: ((b.b = 1) AND (a.a = 1))
+                                     ->  Seq Scan on test_push_qual_to_sublink.ab_a1_b1 a1
+                                           Output: a1.a
+                                           Filter: ((a1.b = 1) AND (a1.a = 1) AND (clock_timestamp() > 'Fri Dec 11 00:00:00 2020 PST'::timestamp with time zone))
+                       ->  Seq Scan on test_push_qual_to_sublink.ab_a1_b1 c
+                             Output: c.a, c.b
+                             Filter: ((c.b = 1) AND (c.a = 1))
+(24 rows)
+
+--4 This feature does not conflict with pullUp sublink
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a.a, a.b
+FROM ab a
+WHERE EXISTS (SELECT b.a
+      FROM ab b, ab c
+      WHERE b.a=c.a AND b.b=c.b AND b.a=a.a AND b.b=a.b AND
+	(EXISTS
+	 (SELECT a1.a
+	  FROM ab a1
+	  WHERE a1.a = b.a AND a1.b = b.b
+	 )
+	)
+) AND
+a.a=1 AND a.b=1;
+                             QUERY PLAN                             
+--------------------------------------------------------------------
+ Nested Loop Semi Join
+   Output: a.a, a.b
+   ->  Seq Scan on test_push_qual_to_sublink.ab_a1_b1 a
+         Output: a.a, a.b
+         Filter: ((a.a = 1) AND (a.b = 1))
+   ->  Nested Loop Semi Join
+         Output: b.a, b.b
+         ->  Nested Loop
+               Output: b.a, b.b
+               ->  Seq Scan on test_push_qual_to_sublink.ab_a1_b1 b
+                     Output: b.a, b.b
+                     Filter: ((b.b = 1) AND (b.a = 1))
+               ->  Seq Scan on test_push_qual_to_sublink.ab_a1_b1 c
+                     Output: c.a, c.b
+                     Filter: ((c.b = 1) AND (c.a = 1))
+         ->  Seq Scan on test_push_qual_to_sublink.ab_a1_b1 a1
+               Output: a1.a, a1.b
+               Filter: ((a1.b = 1) AND (a1.a = 1))
+(18 rows)
+
+--5 aggrefs with multiple agglevelsup
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT 
+	(SELECT 
+	 (SELECT sum(foo.a + bar.b) FROM ab jazz WHERE jazz.a=foo.a AND jazz.b=foo.b)
+	 FROM ab bar WHERE bar.a=foo.a AND bar.b=foo.b
+	) FROM ab foo WHERE foo.a=1 AND foo.b=1 GROUP BY a, b;
+                                QUERY PLAN                                 
+---------------------------------------------------------------------------
+ Group
+   Output: (SubPlan 2), foo.a, foo.b
+   Group Key: foo.a, foo.b
+   ->  Seq Scan on test_push_qual_to_sublink.ab_a1_b1 foo
+         Output: foo.a, foo.b
+         Filter: ((foo.a = 1) AND (foo.b = 1))
+   SubPlan 2
+     ->  Aggregate
+           Output: (SubPlan 1)
+           ->  Result
+                 Output: bar.b
+                 One-Time Filter: ((foo.b = 1) AND (foo.a = 1))
+                 ->  Seq Scan on test_push_qual_to_sublink.ab_a1_b1 bar
+                       Output: bar.b
+                       Filter: ((bar.b = 1) AND (bar.a = 1))
+           SubPlan 1
+             ->  Result
+                   Output: sum((foo.a + bar.b))
+                   One-Time Filter: ((foo.b = 1) AND (foo.a = 1))
+                   ->  Seq Scan on test_push_qual_to_sublink.ab_a1_b1 jazz
+                         Filter: ((jazz.b = 1) AND (jazz.a = 1))
+(21 rows)
+
+--6 sublink in join on clause can not do pushdown
+EXPLAIN (VERBOSE, COSTS OFF) SELECT y.a
+FROM ab y JOIN ab z on ((y.a=z.a) AND (y.b=z.b) AND exists (SELECT count(*) FROM ab x WHERE x.a=y.a AND x.b=y.b))
+WHERE y.a = 1 AND y.b = 1;
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
+ Nested Loop
+   Output: y.a
+   ->  Seq Scan on test_push_qual_to_sublink.ab_a1_b1 y
+         Output: y.a, y.b
+         Filter: ((y.b = 1) AND (y.a = 1) AND (SubPlan 1))
+         SubPlan 1
+           ->  Aggregate
+                 Output: count(*)
+                 ->  Append
+                       ->  Seq Scan on test_push_qual_to_sublink.ab_a1_b1 x_1
+                             Filter: ((x_1.a = y.a) AND (x_1.b = y.b))
+                       ->  Seq Scan on test_push_qual_to_sublink.ab_a1_b2 x_2
+                             Filter: ((x_2.a = y.a) AND (x_2.b = y.b))
+                       ->  Seq Scan on test_push_qual_to_sublink.ab_a1_b3 x_3
+                             Filter: ((x_3.a = y.a) AND (x_3.b = y.b))
+                       ->  Seq Scan on test_push_qual_to_sublink.ab_a2_b1 x_4
+                             Filter: ((x_4.a = y.a) AND (x_4.b = y.b))
+                       ->  Seq Scan on test_push_qual_to_sublink.ab_a2_b2 x_5
+                             Filter: ((x_5.a = y.a) AND (x_5.b = y.b))
+                       ->  Seq Scan on test_push_qual_to_sublink.ab_a2_b3 x_6
+                             Filter: ((x_6.a = y.a) AND (x_6.b = y.b))
+   ->  Seq Scan on test_push_qual_to_sublink.ab_a1_b1 z
+         Output: z.a, z.b
+         Filter: ((z.b = 1) AND (z.a = 1))
+(24 rows)
+
+DROP SCHEMA test_push_qual_to_sublink CASCADE;
+NOTICE:  drop cascades to table ab

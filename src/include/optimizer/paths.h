@@ -25,6 +25,12 @@ extern PGDLLIMPORT int geqo_threshold;
 extern PGDLLIMPORT int min_parallel_table_scan_size;
 extern PGDLLIMPORT int min_parallel_index_scan_size;
 
+typedef struct pushdown_expr_info
+{
+	Var		*outer;
+	Var		*inner;
+} pushdown_expr_info;
+
 /* Hook for plugins to get control in set_rel_pathlist() */
 typedef void (*set_rel_pathlist_hook_type) (PlannerInfo *root,
 											RelOptInfo *rel,
@@ -62,7 +68,7 @@ extern void create_partial_bitmap_paths(PlannerInfo *root, RelOptInfo *rel,
 										Path *bitmapqual);
 extern void generate_partitionwise_join_paths(PlannerInfo *root,
 											  RelOptInfo *rel);
-
+extern bool try_push_outer_qual_to_sublink_query(PlannerInfo *parent, Query *subquery, List *conditions);
 #ifdef OPTIMIZER_DEBUG
 extern void debug_print_rel(PlannerInfo *root, RelOptInfo *rel);
 #endif

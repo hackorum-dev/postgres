@@ -429,7 +429,6 @@ static void resolve_special_varno(Node *node, deparse_context *context,
 static Node *find_param_referent(Param *param, deparse_context *context,
 								 deparse_namespace **dpns_p, ListCell **ancestor_cell_p);
 static void get_parameter(Param *param, deparse_context *context);
-static const char *get_simple_binary_op_name(OpExpr *expr);
 static bool isSimpleNode(Node *node, Node *parentNode, int prettyFlags);
 static void appendContextKeyword(deparse_context *context, const char *str,
 								 int indentBefore, int indentAfter, int indentPlus);
@@ -7983,7 +7982,7 @@ get_parameter(Param *param, deparse_context *context)
  * helper function for isSimpleNode
  * will return single char binary operator name, or NULL if it's not
  */
-static const char *
+const char *
 get_simple_binary_op_name(OpExpr *expr)
 {
 	List	   *args = expr->args;

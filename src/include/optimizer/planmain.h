@@ -28,12 +28,13 @@ typedef void (*query_pathkeys_callback) (PlannerInfo *root, void *extra);
  * prototypes for plan/planmain.c
  */
 extern RelOptInfo *query_planner(PlannerInfo *root,
-								 query_pathkeys_callback qp_callback, void *qp_extra);
+								 query_pathkeys_callback qp_callback,
+								 void *qp_extra);
 
 /*
  * prototypes for plan/planagg.c
  */
-extern void preprocess_minmax_aggregates(PlannerInfo *root);
+extern void preprocess_minmax_aggregates(PlannerInfo *root, bool lazy_process_sublink);
 
 /*
  * prototypes for plan/createplan.c
@@ -67,6 +68,8 @@ extern Limit *make_limit(Plan *lefttree, Node *limitOffset, Node *limitCount,
 extern int	from_collapse_limit;
 extern int	join_collapse_limit;
 
+#define has_unexpanded_sublink(root)		((root)->unexpanded_sublink_counter != 0)
+
 extern void add_base_rels_to_query(PlannerInfo *root, Node *jtnode);
 extern void add_other_rels_to_query(PlannerInfo *root);
 extern void build_base_rel_tlists(PlannerInfo *root, List *final_tlist);
@@ -96,6 +99,9 @@ extern RestrictInfo *build_implied_join_equality(PlannerInfo *root,
 												 Relids nullable_relids,
 												 Index security_level);
 extern void match_foreign_keys_to_quals(PlannerInfo *root);
+extern void lazy_process_sublinks(PlannerInfo *root, bool single_result_rte);
+extern bool query_has_sublink_try_pushdown_qual(PlannerInfo *root);
+extern Node *lazy_process_sublink_qual(PlannerInfo *root, Node *node);
 
 /*
  * prototypes for plan/analyzejoins.c

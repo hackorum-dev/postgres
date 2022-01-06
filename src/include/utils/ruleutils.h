@@ -42,5 +42,6 @@ extern char *generate_opclass_name(Oid opclass);
 extern char *get_range_partbound_string(List *bound_datums);
 
 extern char *pg_get_statisticsobjdef_string(Oid statextid);
+extern const char *get_simple_binary_op_name(OpExpr *expr);
 
 #endif							/* RULEUTILS_H */
