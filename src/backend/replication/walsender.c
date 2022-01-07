@@ -1977,8 +1977,11 @@ PhysicalConfirmReceivedLocation(XLogRecPtr lsn)
 
 	if (changed)
 	{
+		XLogRecPtr	min_required;
+
 		ReplicationSlotMarkDirty();
-		ReplicationSlotsComputeRequiredLSN();
+		min_required = ReplicationSlotsComputeRequiredLSN(false);
+		XLogSetReplicationSlotMinimumLSN(min_required);
 	}
 
 	/*

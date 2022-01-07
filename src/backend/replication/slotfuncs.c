@@ -608,6 +608,7 @@ pg_replication_slot_advance(PG_FUNCTION_ARGS)
 	bool		nulls[2];
 	HeapTuple	tuple;
 	Datum		result;
+	XLogRecPtr	min_required;
 
 	Assert(!MyReplicationSlot);
 
@@ -672,7 +673,8 @@ pg_replication_slot_advance(PG_FUNCTION_ARGS)
 	 * advancing potentially done.
 	 */
 	ReplicationSlotsComputeRequiredXmin(false);
-	ReplicationSlotsComputeRequiredLSN();
+	min_required = ReplicationSlotsComputeRequiredLSN(false);
+	XLogSetReplicationSlotMinimumLSN(min_required);
 
 	ReplicationSlotRelease();
 
@@ -816,6 +818,7 @@ copy_replication_slot(FunctionCallInfo fcinfo, bool logical_slot)
 		XLogRecPtr	copy_confirmed_flush;
 		bool		copy_islogical;
 		char	   *copy_name;
+		XLogRecPtr	min_required;
 
 		/* Copy data of source slot again */
 		SpinLockAcquire(&src->mutex);
@@ -873,7 +876,8 @@ copy_replication_slot(FunctionCallInfo fcinfo, bool logical_slot)
 
 		ReplicationSlotMarkDirty();
 		ReplicationSlotsComputeRequiredXmin(false);
-		ReplicationSlotsComputeRequiredLSN();
+		min_required = ReplicationSlotsComputeRequiredLSN(false);
+		XLogSetReplicationSlotMinimumLSN(min_required);
 		ReplicationSlotSave();
 
 #ifdef USE_ASSERT_CHECKING

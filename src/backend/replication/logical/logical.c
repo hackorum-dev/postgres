@@ -1771,12 +1771,15 @@ LogicalConfirmReceivedLocation(XLogRecPtr lsn)
 		 */
 		if (updated_xmin)
 		{
+			XLogRecPtr	min_required;
+
 			SpinLockAcquire(&MyReplicationSlot->mutex);
 			MyReplicationSlot->effective_catalog_xmin = MyReplicationSlot->data.catalog_xmin;
 			SpinLockRelease(&MyReplicationSlot->mutex);
 
 			ReplicationSlotsComputeRequiredXmin(false);
-			ReplicationSlotsComputeRequiredLSN();
+			min_required = ReplicationSlotsComputeRequiredLSN(false);
+			XLogSetReplicationSlotMinimumLSN(min_required);
 		}
 	}
 	else

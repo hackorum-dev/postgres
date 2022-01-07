@@ -1935,7 +1935,7 @@ CheckPointSnapBuild(void)
 	redo = GetRedoRecPtr();
 
 	/* now check for the restart ptrs from existing slots */
-	cutoff = ReplicationSlotsComputeLogicalRestartLSN();
+	cutoff = ReplicationSlotsComputeRequiredLSN(true);
 
 	/* don't start earlier than the restart lsn */
 	if (redo < cutoff)

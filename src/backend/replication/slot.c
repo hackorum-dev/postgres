@@ -594,6 +594,7 @@ ReplicationSlotDropPtr(ReplicationSlot *slot)
 {
 	char		path[MAXPGPATH];
 	char		tmppath[MAXPGPATH];
+	XLogRecPtr	min_required;
 
 	/*
 	 * If some other backend ran this code concurrently with us, we might try
@@ -665,7 +666,8 @@ ReplicationSlotDropPtr(ReplicationSlot *slot)
 	 * limits.
 	 */
 	ReplicationSlotsComputeRequiredXmin(false);
-	ReplicationSlotsComputeRequiredLSN();
+	min_required = ReplicationSlotsComputeRequiredLSN(false);
+	XLogSetReplicationSlotMinimumLSN(min_required);
 
 	/*
 	 * If removing the directory fails, the worst thing that will happen is
@@ -807,17 +809,22 @@ ReplicationSlotsComputeRequiredXmin(bool already_locked)
 }
 
 /*
- * Compute the oldest restart LSN across all slots and inform xlog module.
+ * Compute the oldest restart LSN of replication slots
+ *
+ * When only_logical is true, compute for logical decoding slots only.
  *
  * Note: while max_slot_wal_keep_size is theoretically relevant for this
  * purpose, we don't try to account for that, because this module doesn't
  * know what to compare against.
  */
-void
-ReplicationSlotsComputeRequiredLSN(void)
+XLogRecPtr
+ReplicationSlotsComputeRequiredLSN(bool only_logical)
 {
 	int			i;
 	XLogRecPtr	min_required = InvalidXLogRecPtr;
+
+	if (max_replication_slots <= 0)
+		return InvalidXLogRecPtr;
 
 	Assert(ReplicationSlotCtl != NULL);
 
@@ -830,59 +837,9 @@ ReplicationSlotsComputeRequiredLSN(void)
 		if (!s->in_use)
 			continue;
 
-		SpinLockAcquire(&s->mutex);
-		restart_lsn = s->data.restart_lsn;
-		SpinLockRelease(&s->mutex);
-
-		if (restart_lsn != InvalidXLogRecPtr &&
-			(min_required == InvalidXLogRecPtr ||
-			 restart_lsn < min_required))
-			min_required = restart_lsn;
-	}
-	LWLockRelease(ReplicationSlotControlLock);
-
-	XLogSetReplicationSlotMinimumLSN(min_required);
-}
-
-/*
- * Compute the oldest WAL LSN required by *logical* decoding slots..
- *
- * Returns InvalidXLogRecPtr if logical decoding is disabled or no logical
- * slots exist.
- *
- * NB: this returns a value >= ReplicationSlotsComputeRequiredLSN(), since it
- * ignores physical replication slots.
- *
- * The results aren't required frequently, so we don't maintain a precomputed
- * value like we do for ComputeRequiredLSN() and ComputeRequiredXmin().
- */
-XLogRecPtr
-ReplicationSlotsComputeLogicalRestartLSN(void)
-{
-	XLogRecPtr	result = InvalidXLogRecPtr;
-	int			i;
-
-	if (max_replication_slots <= 0)
-		return InvalidXLogRecPtr;
-
-	LWLockAcquire(ReplicationSlotControlLock, LW_SHARED);
-
-	for (i = 0; i < max_replication_slots; i++)
-	{
-		ReplicationSlot *s;
-		XLogRecPtr	restart_lsn;
-
-		s = &ReplicationSlotCtl->replication_slots[i];
-
-		/* cannot change while ReplicationSlotCtlLock is held */
-		if (!s->in_use)
+		if (only_logical && !SlotIsLogical(s))
 			continue;
 
-		/* we're only interested in logical slots */
-		if (!SlotIsLogical(s))
-			continue;
-
-		/* read once, it's ok if it increases while we're checking */
 		SpinLockAcquire(&s->mutex);
 		restart_lsn = s->data.restart_lsn;
 		SpinLockRelease(&s->mutex);
@@ -890,14 +847,13 @@ ReplicationSlotsComputeLogicalRestartLSN(void)
 		if (restart_lsn == InvalidXLogRecPtr)
 			continue;
 
-		if (result == InvalidXLogRecPtr ||
-			restart_lsn < result)
-			result = restart_lsn;
+		if (min_required == InvalidXLogRecPtr ||
+			restart_lsn < min_required)
+			min_required = restart_lsn;
 	}
-
 	LWLockRelease(ReplicationSlotControlLock);
 
-	return result;
+	return min_required;
 }
 
 /*
@@ -1096,6 +1052,7 @@ ReplicationSlotReserveWal(void)
 	{
 		XLogSegNo	segno;
 		XLogRecPtr	restart_lsn;
+		XLogRecPtr	min_required;
 
 		/*
 		 * For logical slots log a standby snapshot and start logical decoding
@@ -1133,7 +1090,8 @@ ReplicationSlotReserveWal(void)
 		}
 
 		/* prevent WAL removal as fast as possible */
-		ReplicationSlotsComputeRequiredLSN();
+		min_required = ReplicationSlotsComputeRequiredLSN(false);
+		XLogSetReplicationSlotMinimumLSN(min_required);
 
 		/*
 		 * If all required WAL is still there, great, otherwise retry. The
@@ -1343,8 +1301,11 @@ restart:
 	 */
 	if (invalidated)
 	{
+		XLogRecPtr	min_required;
+
 		ReplicationSlotsComputeRequiredXmin(false);
-		ReplicationSlotsComputeRequiredLSN();
+		min_required = ReplicationSlotsComputeRequiredLSN(false);
+		XLogSetReplicationSlotMinimumLSN(min_required);
 	}
 
 	return invalidated;
@@ -1396,6 +1357,7 @@ StartupReplicationSlots(void)
 {
 	DIR		   *replication_dir;
 	struct dirent *replication_de;
+	XLogRecPtr	min_required;
 
 	elog(DEBUG1, "starting up replication slots");
 
@@ -1441,7 +1403,8 @@ StartupReplicationSlots(void)
 
 	/* Now that we have recovered all the data, compute replication xmin */
 	ReplicationSlotsComputeRequiredXmin(false);
-	ReplicationSlotsComputeRequiredLSN();
+	min_required = ReplicationSlotsComputeRequiredLSN(false);
+	XLogSetReplicationSlotMinimumLSN(min_required);
 }
 
 /* ----
