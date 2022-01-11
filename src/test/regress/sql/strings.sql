@@ -452,6 +452,18 @@ SELECT 'be_r' NOT LIKE 'b_e__r' ESCAPE '_' AS "false";
 SELECT 'be_r' LIKE '__e__r' ESCAPE '_' AS "false";
 SELECT 'be_r' NOT LIKE '__e__r' ESCAPE '_' AS "true";
 
+-- boyer-moore-horspool
+SELECT 'abcd' LIKE '%ab%' as "true";
+SELECT 'abcd' LIKE '%bc%' as "true";
+SELECT 'abcd' LIKE '%cd%' as "true";
+SELECT 'a%cd' LIKE '%a\%c%' as "true";
+SELECT 'a_cd' LIKE '%a\_c%' as "true";
+
+SELECT 'abcd' NOT LIKE '%ab%' as "false";
+SELECT 'abcd' NOT LIKE '%bc%' as "false";
+SELECT 'abcd' NOT LIKE '%cd%' as "false";
+SELECT 'a%cd' NOT LIKE '%a\%c%' as "false";
+SELECT 'a_cd' NOT LIKE '%a\_c%' as "false";
 
 --
 -- test ILIKE (case-insensitive LIKE)

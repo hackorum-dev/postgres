@@ -45,7 +45,7 @@ static int	UTF8_MatchText(const char *t, int tlen, const char *p, int plen,
 static int	SB_IMatchText(const char *t, int tlen, const char *p, int plen,
 						  pg_locale_t locale, bool locale_is_c);
 
-static int	GenericMatchText(const char *s, int slen, const char *p, int plen, Oid collation);
+static int	GenericMatchText(const char *s, int slen, const char *p, int plen);
 static int	Generic_Text_IC_like(text *str, text *pat, Oid collation);
 
 /*--------------------
@@ -146,9 +146,9 @@ SB_lower_char(unsigned char c, pg_locale_t locale, bool locale_is_c)
 
 #include "like_match.c"
 
-/* Generic for all cases not requiring inline case-folding */
-static inline int
-GenericMatchText(const char *s, int slen, const char *p, int plen, Oid collation)
+/* Check collation for like search */
+static void
+CheckCollationForLike(Oid collation)
 {
 	if (collation && !lc_ctype_is_c(collation) && collation != DEFAULT_COLLATION_OID)
 	{
@@ -159,7 +159,12 @@ GenericMatchText(const char *s, int slen, const char *p, int plen, Oid collation
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("nondeterministic collations are not supported for LIKE")));
 	}
+}
 
+/* Generic for all cases not requiring inline case-folding */
+static inline int
+GenericMatchText(const char *s, int slen, const char *p, int plen)
+{
 	if (pg_database_encoding_max_length() == 1)
 		return SB_MatchText(s, slen, p, plen, 0, true);
 	else if (GetDatabaseEncoding() == PG_UTF8)
@@ -234,6 +239,157 @@ Generic_Text_IC_like(text *str, text *pat, Oid collation)
 	}
 }
 
+/*--------------------
+ * Support routines for Boyer-Moore-Horspool(B-M-H) search algorithm.
+ *--------------------
+ */
+#define BMH_SKIP_TABLE_SIZE	256
+typedef struct {
+	bool	is_bmh_available;
+	int		skip_table[BMH_SKIP_TABLE_SIZE];
+	int		pat_len;
+	char	pat[FLEXIBLE_ARRAY_MEMBER];
+} BMHState;
+
+/*
+ * Check whether B-M-H in LIKE search is available for the pattern string.
+ * B-M-H in LIKE search is available if pattern string such as
+ * ... LIKE '%WORD%' are specified.
+ */
+static bool CheckBMHAvailable(const char *p, int plen, FmgrInfo *flinfo)
+{
+	int		i;
+
+	/*
+	 * B-M-H in LIKE search supports only single byte character set and UTF8.
+	 * Multibyte character set does not support, because it may contain another
+	 * character in the byte sequence. For UTF-8, that works fine, because in
+	 * UTF-8 the byte sequence of one character cannot contain another character.
+	 */
+	if(pg_database_encoding_max_length() != 1 &&
+		GetDatabaseEncoding() != PG_UTF8) return false;
+
+	/*
+	 * The pattern string should be stable param, because B-M-H needs to keep
+	 * the skip table generated from the pattern string during the execution
+	 * of the query.
+	 */
+	if(!get_fn_expr_arg_stable(flinfo, 1)) return false;
+
+	/*
+	 * The pattern string should be at least 4 characters.
+	 * For example, '%AB%' can use B-M-H.
+	 */
+	if(plen < 4) return false;
+
+	/*
+	 * The first and last character of the pattern string should be '%'.
+	 */
+	if(p[0] != '%' || p[plen - 1] != '%') return false;
+
+	/*
+	 * Characters other than the first and last of the pattern string
+	 * should not be '%', '_'.  However, escaped characters such as
+	 * '\%', '\_' are available for B-M-H.
+	 */
+	for(i = 1; i < plen - 1; i++) {
+		if(p[i] == '%' || p[i] == '_') return false;
+		if(p[i] == '\\') {
+			i++;
+		}
+	}
+
+	/*
+	 * B-M-H is available for the pattern string.
+	 */
+	return true;
+}
+
+/*
+ * Initialize data for B-M-H.
+ */
+static void InitBMHState(const char *p, int plen, FmgrInfo *flinfo)
+{
+	BMHState   *state;
+	bool		is_bmh_available;
+	int			i;
+	int			alloc_size;
+
+	is_bmh_available = CheckBMHAvailable(p, plen, flinfo);
+
+	if(is_bmh_available) {
+		alloc_size = sizeof(BMHState) + (plen * sizeof(char));
+		state = (BMHState *)MemoryContextAlloc(flinfo->fn_mcxt, alloc_size);
+		state->is_bmh_available = is_bmh_available;
+
+		/*
+		 * Copy the pattern string, removing the first and last '%'.
+		 * And also removes the escape character.
+		 * For example, "%A\_B%" becomes "A_B".
+		 */
+		state->pat_len = 0;
+		for(i = 1; i < plen - 1; i++) {
+			if(p[i] == '\\') {
+				i++;
+			}
+			state->pat[state->pat_len] = p[i];
+			state->pat_len++;
+		}
+		state->pat[state->pat_len] = '\0';
+
+		/*
+		 * Initialyze skip table for B-M-H.
+		 */
+		for(i = 0; i < BMH_SKIP_TABLE_SIZE; i++) {
+			state->skip_table[i] = state->pat_len;
+		}
+		for(i = 0; i < state->pat_len - 1; i++) {
+			unsigned char c = (unsigned char)state->pat[i];
+			state->skip_table[c] = state->pat_len - i - 1;
+		}
+	} else {
+		/*
+		 * Mark that B-M-H is unavailable.
+		 */
+		alloc_size = sizeof(BMHState);
+		state = (BMHState *)MemoryContextAlloc(flinfo->fn_mcxt, alloc_size);
+		state->is_bmh_available = is_bmh_available;
+	}
+
+	flinfo->fn_extra = state;
+}
+
+/*
+ * Perform a LIKE search using B-M-H.
+ */
+static int BMHSearch(const char *str, int str_len, const BMHState *state)
+{
+	const int  *skip_table = state->skip_table;
+	const char *pat = state->pat;
+	const char *p_last = state->pat + state->pat_len - 1;
+	int			j = state->pat_len - 1;
+
+	/*
+	 * B-M-H checks the string match from the end of the pattern string.
+	 * For example, the pattern string is "ABC", check in the order of 'C', 'B', 'A'.
+	 */
+	while(j <= (str_len - 1)) {
+		const char	   *p = p_last;
+		const char	   *s = str + j;
+		unsigned char	c = (unsigned char)*s;
+
+		while(*p == *s) {
+			if(p == pat) return LIKE_TRUE;
+			p--;
+			s--;
+		}
+
+		j += skip_table[c];
+	}
+
+	return LIKE_FALSE;
+}
+
 /*
  *	interface routines called by the function manager
  */
@@ -248,13 +404,27 @@ namelike(PG_FUNCTION_ARGS)
 			   *p;
 	int			slen,
 				plen;
+	FmgrInfo   *flinfo;
+	BMHState   *state;
 
 	s = NameStr(*str);
 	slen = strlen(s);
 	p = VARDATA_ANY(pat);
 	plen = VARSIZE_ANY_EXHDR(pat);
 
-	result = (GenericMatchText(s, slen, p, plen, PG_GET_COLLATION()) == LIKE_TRUE);
+	flinfo = fcinfo->flinfo;
+	if(flinfo->fn_extra == NULL) {
+		CheckCollationForLike(PG_GET_COLLATION());
+		InitBMHState(p, plen, flinfo);
+	}
+
+	state = (BMHState *)flinfo->fn_extra;
+
+	if(state->is_bmh_available) {
+		result = (BMHSearch(s, slen, state) == LIKE_TRUE);
+	} else {
+		result = (GenericMatchText(s, slen, p, plen) == LIKE_TRUE);
+	}
 
 	PG_RETURN_BOOL(result);
 }
@@ -269,13 +439,27 @@ namenlike(PG_FUNCTION_ARGS)
 			   *p;
 	int			slen,
 				plen;
+	FmgrInfo   *flinfo;
+	BMHState   *state;
 
 	s = NameStr(*str);
 	slen = strlen(s);
 	p = VARDATA_ANY(pat);
 	plen = VARSIZE_ANY_EXHDR(pat);
 
-	result = (GenericMatchText(s, slen, p, plen, PG_GET_COLLATION()) != LIKE_TRUE);
+	flinfo = fcinfo->flinfo;
+	if(flinfo->fn_extra == NULL) {
+		CheckCollationForLike(PG_GET_COLLATION());
+		InitBMHState(p, plen, flinfo);
+	}
+
+	state = (BMHState *)flinfo->fn_extra;
+
+	if(state->is_bmh_available) {
+		result = (BMHSearch(s, slen, state) != LIKE_TRUE);
+	} else {
+		result = (GenericMatchText(s, slen, p, plen) != LIKE_TRUE);
+	}
 
 	PG_RETURN_BOOL(result);
 }
@@ -290,13 +474,27 @@ textlike(PG_FUNCTION_ARGS)
 			   *p;
 	int			slen,
 				plen;
+	FmgrInfo   *flinfo;
+	BMHState   *state;
 
 	s = VARDATA_ANY(str);
 	slen = VARSIZE_ANY_EXHDR(str);
 	p = VARDATA_ANY(pat);
 	plen = VARSIZE_ANY_EXHDR(pat);
 
-	result = (GenericMatchText(s, slen, p, plen, PG_GET_COLLATION()) == LIKE_TRUE);
+	flinfo = fcinfo->flinfo;
+	if(flinfo->fn_extra == NULL) {
+		CheckCollationForLike(PG_GET_COLLATION());
+		InitBMHState(p, plen, flinfo);
+	}
+
+	state = (BMHState *)flinfo->fn_extra;
+
+	if(state->is_bmh_available) {
+		result = (BMHSearch(s, slen, state) == LIKE_TRUE);
+	} else {
+		result = (GenericMatchText(s, slen, p, plen) == LIKE_TRUE);
+	}
 
 	PG_RETURN_BOOL(result);
 }
@@ -311,13 +509,27 @@ textnlike(PG_FUNCTION_ARGS)
 			   *p;
 	int			slen,
 				plen;
+	FmgrInfo   *flinfo;
+	BMHState   *state;
 
 	s = VARDATA_ANY(str);
 	slen = VARSIZE_ANY_EXHDR(str);
 	p = VARDATA_ANY(pat);
 	plen = VARSIZE_ANY_EXHDR(pat);
 
-	result = (GenericMatchText(s, slen, p, plen, PG_GET_COLLATION()) != LIKE_TRUE);
+	flinfo = fcinfo->flinfo;
+	if(flinfo->fn_extra == NULL) {
+		CheckCollationForLike(PG_GET_COLLATION());
+		InitBMHState(p, plen, flinfo);
+	}
+
+	state = (BMHState *)flinfo->fn_extra;
+
+	if(state->is_bmh_available) {
+		result = (BMHSearch(s, slen, state) != LIKE_TRUE);
+	} else {
+		result = (GenericMatchText(s, slen, p, plen) != LIKE_TRUE);
+	}
 
 	PG_RETURN_BOOL(result);
 }

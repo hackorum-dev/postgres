@@ -1645,6 +1645,67 @@ SELECT 'be_r' NOT LIKE '__e__r' ESCAPE '_' AS "true";
  t
 (1 row)
 
+-- boyer-moore-horspool
+SELECT 'abcd' LIKE '%ab%' as "true";
+ true 
+------
+ t
+(1 row)
+
+SELECT 'abcd' LIKE '%bc%' as "true";
+ true 
+------
+ t
+(1 row)
+
+SELECT 'abcd' LIKE '%cd%' as "true";
+ true 
+------
+ t
+(1 row)
+
+SELECT 'a%cd' LIKE '%a\%c%' as "true";
+ true 
+------
+ t
+(1 row)
+
+SELECT 'a_cd' LIKE '%a\_c%' as "true";
+ true 
+------
+ t
+(1 row)
+
+SELECT 'abcd' NOT LIKE '%ab%' as "false";
+ false 
+-------
+ f
+(1 row)
+
+SELECT 'abcd' NOT LIKE '%bc%' as "false";
+ false 
+-------
+ f
+(1 row)
+
+SELECT 'abcd' NOT LIKE '%cd%' as "false";
+ false 
+-------
+ f
+(1 row)
+
+SELECT 'a%cd' NOT LIKE '%a\%c%' as "false";
+ false 
+-------
+ f
+(1 row)
+
+SELECT 'a_cd' NOT LIKE '%a\_c%' as "false";
+ false 
+-------
+ f
+(1 row)
+
 --
 -- test ILIKE (case-insensitive LIKE)
 -- Be sure to form every test as an ILIKE/NOT ILIKE pair.
