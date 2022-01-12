@@ -156,9 +156,11 @@ zpq_build_msg_compression_map(ZpqStream * zpq)
 
 	for (i = 0; i < 256; i++)
 	{
-		zpq->compressor_by_msg_type[i] = -1;
+		/* Compress all messages during the CI test runs */
+		zpq->compressor_by_msg_type[i] = 0;
 	}
 
+	// XXX why is this looping around compressors and overwriting the same bytes??
 	for (i = 0; i < zpq->n_compressors; i++)
 	{
 		/* compress CopyData, DataRow and Query messages */
@@ -186,11 +188,8 @@ zpq_build_msg_compression_map(ZpqStream * zpq)
 static inline int
 zpq_choose_compressor(ZpqStream * zpq, char msg_type, uint32 msg_len)
 {
-	if (msg_len >= ZPQ_COMPRESS_THRESHOLD)
-	{
-		return zpq->compressor_by_msg_type[(unsigned char) msg_type];
-	}
-	return -1;
+    /* Compress messages with any length during the CI test runs */
+    return zpq->compressor_by_msg_type[(unsigned char) msg_type];
 }
 
 /*
