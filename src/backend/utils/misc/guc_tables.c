@@ -4448,6 +4448,16 @@ struct config_string ConfigureNamesString[] =
 	},
 
 	{
+		{"libpq_compression", PGC_SIGHUP, CLIENT_CONN_OTHER,
+			gettext_noop("Sets the list of allowed libpq compression algorithms."),
+			NULL
+		},
+		&libpq_compress_algorithms,
+		"off",
+		check_libpq_compression, NULL, NULL
+	},
+
+	{
 		{"backtrace_functions", PGC_SUSET, DEVELOPER_OPTIONS,
 			gettext_noop("Log backtrace for errors in these functions."),
 			NULL,

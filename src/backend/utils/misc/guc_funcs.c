@@ -1049,3 +1049,24 @@ show_all_file_settings(PG_FUNCTION_ARGS)
 
 	return (Datum) 0;
 }
+
+
+#include "common/zpq_stream.h"
+static bool check_libpq_compression(char **newval, void **extra, GucSource source);
+
+static bool
+check_libpq_compression(char **newval, void **extra, GucSource source)
+{
+	zpq_compressor *compressors;
+	size_t		n_compressors;
+
+	if (!zpq_parse_compression_setting(*newval, &compressors, &n_compressors))
+	{
+		GUC_check_errdetail("Cannot parse the libpq_compression setting.");
+		return false;
+	}
+
+	free(compressors);
+	return true;
+}
+
