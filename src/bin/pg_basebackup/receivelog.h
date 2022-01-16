@@ -40,8 +40,14 @@ typedef struct StreamCtl
 
 	stream_stop_callback stream_stop;	/* Stop streaming when returns true */
 
+#ifndef WIN32
 	pgsocket	stop_socket;	/* if valid, watch for input on this socket
 								 * and check stream_stop() when there is any */
+#else
+	HANDLE	   *stop_event;		/* on windows, check an event instead */
+
+	HANDLE	   *net_event;		/* event to wait for network IO */
+#endif
 
 	WalWriteMethod *walmethod;	/* How to write the WAL */
 	char	   *partial_suffix; /* Suffix appended to partially received files */

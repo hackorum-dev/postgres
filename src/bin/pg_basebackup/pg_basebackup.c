@@ -169,6 +169,8 @@ static const char *progress_filename;
 /* Pipe to communicate with background wal receiver process */
 #ifndef WIN32
 static int	bgpipe[2] = {-1, -1};
+#else
+HANDLE	   *bgevent = NULL;
 #endif
 
 /* Handle to child process */
@@ -506,7 +508,14 @@ reached_end_position(XLogRecPtr segendpos, uint32 timeline,
 	/*
 	 * At this point we have an end pointer, so compare it to the current
 	 * position to figure out if it's time to stop.
+	 *
+	 * On windows we need to reset the event used to wake up the streaming
+	 * thread, otherwise CopyStreamPoll() will start to immediately return.
 	 */
+#ifdef WIN32
+	ResetEvent(bgevent);
+#endif
+
 	if (segendpos >= xlogendptr)
 		return true;
 
@@ -541,7 +550,7 @@ LogStreamerMain(logstreamer_param *param)
 #ifndef WIN32
 	stream.stop_socket = bgpipe[0];
 #else
-	stream.stop_socket = PGINVALID_SOCKET;
+	stream.stop_event = bgevent;
 #endif
 	stream.standby_message_timeout = standby_message_timeout;
 	stream.synchronous = false;
@@ -625,6 +634,14 @@ StartLogStreamer(char *startpos, uint32 timeline, char *sysidentifier)
 	if (pipe(bgpipe) < 0)
 	{
 		pg_log_error("could not create pipe for background process: %m");
+		exit(1);
+	}
+#else
+	bgevent = CreateEvent(NULL, TRUE, FALSE, NULL);
+	if (bgevent == NULL)
+	{
+		pg_log_error("could not create event for background thread: %lu",
+					 GetLastError());
 		exit(1);
 	}
 #endif
@@ -2216,7 +2233,9 @@ BaseBackup(void)
 		/*
 		 * On Windows, since we are in the same process, we can just store the
 		 * value directly in the variable, and then set the flag that says
-		 * it's there.
+		 * it's there. To interrupt the thread while it's waiting for network
+		 * IO, we set an event (which the thread waits on in addition to the
+		 * socket).
 		 */
 		if (sscanf(xlogend, "%X/%X", &hi, &lo) != 2)
 		{
@@ -2226,6 +2245,7 @@ BaseBackup(void)
 		}
 		xlogendptr = ((uint64) hi) << 32 | lo;
 		InterlockedIncrement(&has_xlogendptr);
+		SetEvent(bgevent);
 
 		/* First wait for the thread to exit */
 		if (WaitForSingleObjectEx((HANDLE) bgchild_handle, INFINITE, FALSE) !=

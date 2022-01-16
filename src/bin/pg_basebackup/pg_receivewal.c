@@ -618,7 +618,11 @@ StreamLog(void)
 					stream.timeline);
 
 	stream.stream_stop = stop_streaming;
+#ifndef WIN32
 	stream.stop_socket = PGINVALID_SOCKET;
+#else
+	stream.stop_event = NULL;
+#endif
 	stream.standby_message_timeout = standby_message_timeout;
 	stream.synchronous = synchronous;
 	stream.do_sync = do_sync;
