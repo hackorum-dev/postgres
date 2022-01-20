@@ -314,6 +314,12 @@ pgtls_write(PGconn *conn, const void *ptr, size_t len)
 			n = 0;
 			break;
 		case SSL_ERROR_SYSCALL:
+			/*
+			 * OpenSSL 1.1.1 and older versions return nothing on
+			 * an unexpected EOF, and errno may not be set.  Note that
+			 * in OpenSSL 3.0, an unexpected EOF would result in
+			 * SSL_ERROR_SSL with a meaningful error set on the stack.
+			 */
 			if (n < 0)
 			{
 				result_errno = SOCK_ERRNO;
@@ -322,11 +328,14 @@ pgtls_write(PGconn *conn, const void *ptr, size_t len)
 										 libpq_gettext("server closed the connection unexpectedly\n"
 													   "\tThis probably means the server terminated abnormally\n"
 													   "\tbefore or while processing the request.\n"));
-				else
+				else if (result_errno != 0)
 					appendPQExpBuffer(&conn->errorMessage,
 									  libpq_gettext("SSL SYSCALL error: %s\n"),
 									  SOCK_STRERROR(result_errno,
 													sebuf, sizeof(sebuf)));
+				else
+					appendPQExpBuffer(&conn->errorMessage,
+									  libpq_gettext("SSL SYSCALL error: internal failure\n"));
 			}
 			else
 			{

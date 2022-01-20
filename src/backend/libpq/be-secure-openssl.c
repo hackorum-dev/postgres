@@ -493,7 +493,13 @@ aloop:
 										 WAIT_EVENT_SSL_OPEN_SERVER);
 				goto aloop;
 			case SSL_ERROR_SYSCALL:
-				if (r < 0)
+				/*
+				 * OpenSSL 1.1.1 and older versions return nothing on
+				 * an unexpected EOF, and errno may not be set.  Note that
+				 * in OpenSSL 3.0, an unexpected EOF would result in
+				 * SSL_ERROR_SSL with a meaningful error set on the stack.
+				 */
+				if (r < 0 && errno != 0)
 					ereport(COMMERROR,
 							(errcode_for_socket_access(),
 							 errmsg("could not accept SSL connection: %m")));
