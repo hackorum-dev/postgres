@@ -5524,25 +5524,29 @@ RelationGetExclusionInfo(Relation indexRelation,
 /*
  * Get publication actions for the given relation.
  */
-struct PublicationActions *
-GetRelationPublicationActions(Relation relation)
+void
+GetRelationPublicationActions(Relation relation, PublicationActions *pubactions)
 {
 	List	   *puboids;
 	ListCell   *lc;
 	MemoryContext oldcxt;
 	Oid			schemaid;
-	PublicationActions *pubactions = palloc0(sizeof(PublicationActions));
 
 	/*
 	 * If not publishable, it publishes no actions.  (pgoutput_change() will
 	 * ignore it.)
 	 */
 	if (!is_publishable_relation(relation))
-		return pubactions;
+	{
+		memset(pubactions, 0, sizeof(*pubactions));
+		return;
+	}
 
 	if (relation->rd_pubactions)
-		return memcpy(pubactions, relation->rd_pubactions,
-					  sizeof(PublicationActions));
+	{
+		*pubactions = *relation->rd_pubactions;
+		return;
+	}
 
 	/* Fetch the publication membership info. */
 	puboids = GetRelationPublications(RelationGetRelid(relation));
@@ -5568,6 +5572,7 @@ GetRelationPublicationActions(Relation relation)
 	}
 	puboids = list_concat_unique_oid(puboids, GetAllTablesPublications());
 
+	memset(pubactions, 0, sizeof(*pubactions));
 	foreach(lc, puboids)
 	{
 		Oid			pubid = lfirst_oid(lc);
@@ -5606,10 +5611,8 @@ GetRelationPublicationActions(Relation relation)
 	/* Now save copy of the actions in the relcache entry. */
 	oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
 	relation->rd_pubactions = palloc(sizeof(PublicationActions));
-	memcpy(relation->rd_pubactions, pubactions, sizeof(PublicationActions));
+	*relation->rd_pubactions = *pubactions;
 	MemoryContextSwitchTo(oldcxt);
-
-	return pubactions;
 }
 
 /*
