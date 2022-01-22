@@ -520,6 +520,7 @@ DR_sqlfunction
 DR_transientrel
 DSA
 DWORD
+DataCompressionMethod
 DataDumperPtr
 DataPageDeleteStack
 DatabaseInfo
@@ -2863,7 +2864,6 @@ WaitEventTimeout
 WaitPMResult
 WalCloseMethod
 WalCompression
-WalCompressionMethod
 WalLevel
 WalRcvData
 WalRcvExecResult

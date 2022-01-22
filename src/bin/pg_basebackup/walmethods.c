@@ -49,7 +49,7 @@
 typedef struct DirectoryMethodData
 {
 	char	   *basedir;
-	WalCompressionMethod compression_method;
+	DataCompressionMethod compression_method;
 	int			compression_level;
 	bool		sync;
 	const char *lasterrstring;	/* if set, takes precedence over lasterrno */
@@ -561,7 +561,7 @@ dir_get_file_size(const char *pathname)
 	return statbuf.st_size;
 }
 
-static WalCompressionMethod
+static DataCompressionMethod
 dir_compression_method(void)
 {
 	return dir_data->compression_method;
@@ -608,7 +608,7 @@ dir_finish(void)
 
 WalWriteMethod *
 CreateWalDirectoryMethod(const char *basedir,
-						 WalCompressionMethod compression_method,
+						 DataCompressionMethod compression_method,
 						 int compression_level, bool sync)
 {
 	WalWriteMethod *method;
@@ -662,7 +662,7 @@ typedef struct TarMethodData
 {
 	char	   *tarfilename;
 	int			fd;
-	WalCompressionMethod compression_method;
+	DataCompressionMethod compression_method;
 	int			compression_level;
 	bool		sync;
 	TarMethodFile *currentfile;
@@ -983,7 +983,7 @@ tar_get_file_size(const char *pathname)
 	return -1;
 }
 
-static WalCompressionMethod
+static DataCompressionMethod
 tar_compression_method(void)
 {
 	return tar_data->compression_method;
@@ -1322,7 +1322,7 @@ tar_finish(void)
  */
 WalWriteMethod *
 CreateWalTarMethod(const char *tarbase,
-				   WalCompressionMethod compression_method,
+				   DataCompressionMethod compression_method,
 				   int compression_level, bool sync)
 {
 	WalWriteMethod *method;

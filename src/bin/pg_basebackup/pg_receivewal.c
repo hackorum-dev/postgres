@@ -52,7 +52,7 @@ static bool do_drop_slot = false;
 static bool do_sync = true;
 static bool synchronous = false;
 static char *replication_slot = NULL;
-static WalCompressionMethod compression_method = COMPRESSION_NONE;
+static DataCompressionMethod compression_method = COMPRESSION_NONE;
 static XLogRecPtr endpos = InvalidXLogRecPtr;
 
 
@@ -114,7 +114,7 @@ usage(void)
  */
 static bool
 is_xlogfilename(const char *filename, bool *ispartial,
-				WalCompressionMethod *wal_compression_method)
+				DataCompressionMethod *wal_compression_method)
 {
 	size_t		fname_len = strlen(filename);
 	size_t		xlog_pattern_len = strspn(filename, "0123456789ABCDEF");
@@ -285,7 +285,7 @@ FindStreamingStart(uint32 *tli)
 	{
 		uint32		tli;
 		XLogSegNo	segno;
-		WalCompressionMethod wal_compression_method;
+		DataCompressionMethod wal_compression_method;
 		bool		ispartial;
 
 		if (!is_xlogfilename(dirent->d_name,

@@ -29,6 +29,7 @@
 
 #include "access/xlog_internal.h"
 #include "bbstreamer.h"
+#include "common.h"
 #include "common/file_perm.h"
 #include "common/file_utils.h"
 #include "common/logging.h"
@@ -123,7 +124,7 @@ static bool showprogress = false;
 static bool estimatesize = true;
 static int	verbose = 0;
 static int	compresslevel = 0;
-static WalCompressionMethod compressmethod = COMPRESSION_NONE;
+static DataCompressionMethod compressmethod = COMPRESSION_NONE;
 static IncludeWal includewal = STREAM_WAL;
 static bool fastcheckpoint = false;
 static bool writerecoveryconf = false;
@@ -943,7 +944,7 @@ parse_max_rate(char *src)
  * from the parsed results.
  */
 static void
-parse_compress_options(char *src, WalCompressionMethod *methodres,
+parse_compress_options(char *src, DataCompressionMethod *methodres,
 					   int *levelres)
 {
 	char	   *sep;
