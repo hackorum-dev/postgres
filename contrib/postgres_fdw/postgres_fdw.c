@@ -5950,7 +5950,8 @@ postgresGetForeignJoinPaths(PlannerInfo *root,
 							JoinType jointype,
 							JoinPathExtraData *extra)
 {
-	PgFdwRelationInfo *fpinfo;
+	PgFdwRelationInfo *fpinfo,
+			   *oldfpinfo;
 	ForeignPath *joinpath;
 	double		rows;
 	int			width;
@@ -5960,9 +5961,11 @@ postgresGetForeignJoinPaths(PlannerInfo *root,
 								 * EvalPlanQual gets triggered. */
 
 	/*
-	 * Skip if this join combination has been considered already.
+	 * Skip if this join combination has been considered already and rejected
+	 * or if this join uses remote estimates.
 	 */
-	if (joinrel->fdw_private)
+	oldfpinfo = (PgFdwRelationInfo *) joinrel->fdw_private;
+	if (oldfpinfo && (!oldfpinfo->pushdown_safe || oldfpinfo->use_remote_estimate))
 		return;
 
 	/*
@@ -6002,6 +6005,12 @@ postgresGetForeignJoinPaths(PlannerInfo *root,
 		epq_path = GetExistingLocalJoinPath(joinrel);
 		if (!epq_path)
 		{
+			if (oldfpinfo)
+			{
+				joinrel->fdw_private = oldfpinfo;
+				pfree(fpinfo);
+			}
+
 			elog(DEBUG3, "could not push down foreign join because a local path suitable for EPQ checks was not found");
 			return;
 		}
@@ -6011,6 +6020,12 @@ postgresGetForeignJoinPaths(PlannerInfo *root,
 
 	if (!foreign_join_ok(root, joinrel, jointype, outerrel, innerrel, extra))
 	{
+		if (oldfpinfo)
+		{
+			joinrel->fdw_private = oldfpinfo;
+			pfree(fpinfo);
+		}
+
 		/* Free path required for EPQ if we copied one; we don't need it now */
 		if (epq_path)
 			pfree(epq_path);
@@ -6044,13 +6059,36 @@ postgresGetForeignJoinPaths(PlannerInfo *root,
 	/* Estimate costs for bare join relation */
 	estimate_path_cost_size(root, joinrel, NIL, NIL, NULL,
 							&rows, &width, &startup_cost, &total_cost);
-	/* Now update this information in the joinrel */
-	joinrel->rows = rows;
-	joinrel->reltarget->width = width;
+
 	fpinfo->rows = rows;
 	fpinfo->width = width;
 	fpinfo->startup_cost = startup_cost;
 	fpinfo->total_cost = total_cost;
+
+	if (oldfpinfo)
+	{
+		/* If this path is not cheaper, ignore it */
+		if (startup_cost >= oldfpinfo->startup_cost && total_cost >= oldfpinfo->total_cost)
+		{
+			joinrel->fdw_private = oldfpinfo;
+			pfree(fpinfo);
+			return;
+		}
+		else
+		{
+			/*
+			 * We don't know which path is selected - old or new one, but
+			 * let's be optimistic.
+			 */
+			fpinfo->startup_cost = Min(oldfpinfo->startup_cost, startup_cost);
+			fpinfo->total_cost = Min(oldfpinfo->total_cost, total_cost);
+			pfree(oldfpinfo);
+		}
+	}
+
+	/* Now update this information in the joinrel */
+	joinrel->rows = rows;
+	joinrel->reltarget->width = width;
 
 	/*
 	 * Create a new join path and add it to the joinrel which represents a
