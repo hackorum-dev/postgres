@@ -16593,6 +16593,71 @@ table2-mapping
         <returnvalue>t</returnvalue>
        </para></entry>
       </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary>jsonb_exists</primary>
+        </indexterm>
+        <function>jsonb_exists</function> ( <type>jsonb</type> )
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        Checks if the text string exists as a top-level key or array element within the JSON value.
+        (This is functionally equivalent to the jsonb <literal>?</literal>
+        operator, but may be useful to call as a function in some cases, like when working with JDBC protocol.)
+       </para>
+       <para>
+        <literal>jsonb_exists('{"a":1, "b":2}'::jsonb, 'b')</literal>
+        <returnvalue>t</returnvalue>
+       </para>
+       <para>
+        <literal>jsonb_exists('["a","b"]'::jsonb, 'b')</literal>
+        <returnvalue>t</returnvalue>
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary>jsonb_exists_any</primary>
+        </indexterm>
+        <function>jsonb_exists_any</function> ( <type>jsonb</type> )
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        Checks if any of the strings in the text array exist as top-level keys or array elements within the 
+        JSON value. (This is functionally equivalent to the jsonb <literal>?|</literal>
+        operator, but may be useful to call as a function in some cases, like when working with JDBC protocol.)
+       </para>
+       <para>
+        <literal>jsonb_exists_any('{"a":1, "b":2, "c":3}'::jsonb, array['b', 'd'])</literal>
+        <returnvalue>t</returnvalue>
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary>jsonb_exists_all</primary>
+        </indexterm>
+        <function>jsonb_exists_all</function> ( <type>jsonb</type> )
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        Checks if all of the strings in the text array exist as top-level keys or array elements within the 
+        JSON value. (This is functionally equivalent to the jsonb <literal>?&amp;</literal>
+        operator, but may be useful to call as a function in some cases, like when working with JDBC protocol.)
+       </para>
+       <para>
+        <literal>jsonb_exists_all('{"a":1, "b":2, "c":3}'::jsonb, array['b', 'd'])</literal>
+        <returnvalue>f</returnvalue>
+       </para>
+       <para>
+        <literal>jsonb_exists_all('{"a":1, "b":2, "c":3}'::jsonb, array['b', 'c'])</literal>
+        <returnvalue>t</returnvalue>
+       </para></entry>
+      </row>
      </tbody>
     </tgroup>
    </table>
