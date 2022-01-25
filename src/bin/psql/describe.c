@@ -3518,6 +3518,12 @@ describeRoles(const char *pattern, bool verbose, bool showSystem)
 		appendPQExpBufferStr(&buf, "\n, r.rolbypassrls");
 	}
 
+	if (pset.sversion >= 150000)
+	{
+		appendPQExpBufferStr(&buf, "\n, r.rolowner");
+		ncols++;
+	}
+
 	appendPQExpBufferStr(&buf, "\nFROM pg_catalog.pg_roles r\n");
 
 	if (!showSystem && !pattern)
@@ -3538,6 +3544,8 @@ describeRoles(const char *pattern, bool verbose, bool showSystem)
 	printTableInit(&cont, &myopt, _("List of roles"), ncols, nrows);
 
 	printTableAddHeader(&cont, gettext_noop("Role name"), true, align);
+	if (pset.sversion >= 150000)
+		printTableAddHeader(&cont, gettext_noop("Owner"), true, align);
 	printTableAddHeader(&cont, gettext_noop("Attributes"), true, align);
 	/* ignores implicit memberships from superuser & pg_database_owner */
 	printTableAddHeader(&cont, gettext_noop("Member of"), true, align);
@@ -3548,6 +3556,10 @@ describeRoles(const char *pattern, bool verbose, bool showSystem)
 	for (i = 0; i < nrows; i++)
 	{
 		printTableAddCell(&cont, PQgetvalue(res, i, 0), false, false);
+
+		if (pset.sversion >= 150000)
+			printTableAddCell(&cont, PQgetvalue(res, i, (verbose ? 12 : 11)),
+							  false, false);
 
 		resetPQExpBuffer(&buf);
 		if (strcmp(PQgetvalue(res, i, 1), "t") == 0)

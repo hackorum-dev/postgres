@@ -17,6 +17,7 @@
 CREATE VIEW pg_roles AS
     SELECT
         rolname,
+        pg_get_userbyid(rolowner) AS rolowner,
         rolsuper,
         rolinherit,
         rolcreaterole,

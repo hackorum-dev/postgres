@@ -209,6 +209,7 @@ extern bool has_privs_of_role(Oid member, Oid role);
 extern bool is_member_of_role(Oid member, Oid role);
 extern bool is_member_of_role_nosuper(Oid member, Oid role);
 extern bool is_admin_of_role(Oid member, Oid role);
+extern bool is_owner_of_role_nosuper(Oid owner, Oid role);
 extern void check_is_member_of_role(Oid member, Oid role);
 extern Oid	get_role_oid(const char *rolename, bool missing_ok);
 extern Oid	get_role_oid_or_public(const char *rolename);
@@ -316,6 +317,7 @@ extern bool pg_extension_ownercheck(Oid ext_oid, Oid roleid);
 extern bool pg_publication_ownercheck(Oid pub_oid, Oid roleid);
 extern bool pg_subscription_ownercheck(Oid sub_oid, Oid roleid);
 extern bool pg_statistics_object_ownercheck(Oid stat_oid, Oid roleid);
+extern bool pg_role_ownercheck(Oid owned_role_oid, Oid owner_roleid);
 extern bool has_createrole_privilege(Oid roleid);
 extern bool has_bypassrls_privilege(Oid roleid);
 

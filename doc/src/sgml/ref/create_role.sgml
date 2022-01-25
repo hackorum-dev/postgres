@@ -21,9 +21,16 @@ PostgreSQL documentation
 
  <refsynopsisdiv>
 <synopsis>
-CREATE ROLE <replaceable class="parameter">name</replaceable> [ [ WITH ] <replaceable class="parameter">option</replaceable> [ ... ] ]
+CREATE ROLE <replaceable class="parameter">name</replaceable> [ AUTHORIZATION <replaceable class="parameter">role_specification</replaceable> ] [ [ WITH ] <replaceable class="parameter">option</replaceable> [ ... ] ]
 
-<phrase>where <replaceable class="parameter">option</replaceable> can be:</phrase>
+<phrase>where <replaceable class="parameter">role_specification</replaceable> can be:</phrase>
+
+    <replaceable class="parameter">user_name</replaceable>
+    | CURRENT_ROLE
+    | CURRENT_USER
+    | SESSION_USER
+
+<phrase>and <replaceable class="parameter">option</replaceable> can be:</phrase>
 
       SUPERUSER | NOSUPERUSER
     | CREATEDB | NOCREATEDB
@@ -79,6 +86,18 @@ in sync when changing the above synopsis!
       <listitem>
        <para>
         The name of the new role.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">user_name</replaceable></term>
+      <listitem>
+       <para>
+        The role name of the user who will own the new role.  If omitted,
+        defaults to the user executing the command.  To create a role
+        owned by another role, you must be a direct or indirect member of
+        that role, directly or indirectly own that role, or be a superuser.
        </para>
       </listitem>
      </varlistentry>

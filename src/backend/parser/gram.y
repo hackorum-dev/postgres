@@ -1077,7 +1077,18 @@ CreateRoleStmt:
 					CreateRoleStmt *n = makeNode(CreateRoleStmt);
 					n->stmt_type = ROLESTMT_ROLE;
 					n->role = $3;
+					n->authrole = NULL;
 					n->options = $5;
+					$$ = (Node *)n;
+				}
+			|
+			CREATE ROLE RoleId AUTHORIZATION RoleSpec opt_with OptRoleList
+				{
+					CreateRoleStmt *n = makeNode(CreateRoleStmt);
+					n->stmt_type = ROLESTMT_ROLE;
+					n->role = $3;
+					n->authrole = $5;
+					n->options = $7;
 					$$ = (Node *)n;
 				}
 		;
@@ -9582,6 +9593,14 @@ AlterOwnerStmt: ALTER AGGREGATE aggregate_with_argtypes OWNER TO RoleSpec
 					AlterOwnerStmt *n = makeNode(AlterOwnerStmt);
 					n->objectType = OBJECT_PROCEDURE;
 					n->object = (Node *) $3;
+					n->newowner = $6;
+					$$ = (Node *)n;
+				}
+			| ALTER ROLE name OWNER TO RoleSpec
+				{
+					AlterOwnerStmt *n = makeNode(AlterOwnerStmt);
+					n->objectType = OBJECT_ROLE;
+					n->object = (Node *) makeString($3);
 					n->newowner = $6;
 					$$ = (Node *)n;
 				}

@@ -61,6 +61,7 @@
 #include "commands/tablecmds.h"
 #include "commands/tablespace.h"
 #include "commands/typecmds.h"
+#include "commands/user.h"
 #include "miscadmin.h"
 #include "storage/lmgr.h"
 #include "utils/acl.h"
@@ -1576,6 +1577,10 @@ shdepReassignOwned(List *roleids, Oid newrole)
 
 				case SubscriptionRelationId:
 					AlterSubscriptionOwner_oid(sdepForm->objid, newrole);
+					break;
+
+				case AuthIdRelationId:
+					AlterRoleOwner_oid(sdepForm->objid, newrole);
 					break;
 
 					/* Generic alter owner cases */

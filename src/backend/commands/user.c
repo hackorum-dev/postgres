@@ -55,6 +55,8 @@ static void AddRoleMems(const char *rolename, Oid roleid,
 static void DelRoleMems(const char *rolename, Oid roleid,
 						List *memberSpecs, List *memberIds,
 						bool admin_opt);
+static void AlterRoleOwner_internal(HeapTuple tup, Relation rel,
+									Oid newOwnerId);
 
 
 /* Check if current user has createrole privileges */
@@ -77,6 +79,9 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 	Datum		new_record[Natts_pg_authid];
 	bool		new_record_nulls[Natts_pg_authid];
 	Oid			roleid;
+	Oid			owner_uid;
+	Oid			saved_uid;
+	int			save_sec_context;
 	ListCell   *item;
 	ListCell   *option;
 	char	   *password = NULL;	/* user password */
@@ -107,6 +112,19 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 	DefElem    *dadminmembers = NULL;
 	DefElem    *dvalidUntil = NULL;
 	DefElem    *dbypassRLS = NULL;
+
+	GetUserIdAndSecContext(&saved_uid, &save_sec_context);
+
+	/*
+	 * Who is supposed to own the new role?
+	 */
+	if (stmt->authrole)
+	{
+		owner_uid = get_rolespec_oid(stmt->authrole, false);
+		check_is_member_of_role(saved_uid, owner_uid);
+	}
+	else
+		owner_uid = saved_uid;
 
 	/* The defaults can vary depending on the original statement type */
 	switch (stmt->stmt_type)
@@ -254,6 +272,10 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("must be superuser to create superusers")));
+		if (!superuser_arg(owner_uid))
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("must be superuser to own superusers")));
 	}
 	else if (isreplication)
 	{
@@ -310,6 +332,19 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 				 errmsg("role \"%s\" already exists",
 						stmt->role)));
 
+	/*
+	 * If the requested authorization is different from the current user,
+	 * temporarily set the current user so that the object(s) will be created
+	 * with the correct ownership.
+	 *
+	 * (The setting will be restored at the end of this routine, or in case of
+	 * error, transaction abort will clean things up.)
+	 */
+	if (saved_uid != owner_uid)
+		SetUserIdAndSecContext(owner_uid,
+							   save_sec_context | SECURITY_LOCAL_USERID_CHANGE);
+
+
 	/* Convert validuntil to internal form */
 	if (validUntil)
 	{
@@ -345,6 +380,7 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 		DirectFunctionCall1(namein, CStringGetDatum(stmt->role));
 
 	new_record[Anum_pg_authid_rolsuper - 1] = BoolGetDatum(issuper);
+	new_record[Anum_pg_authid_rolowner - 1] = ObjectIdGetDatum(owner_uid);
 	new_record[Anum_pg_authid_rolinherit - 1] = BoolGetDatum(inherit);
 	new_record[Anum_pg_authid_rolcreaterole - 1] = BoolGetDatum(createrole);
 	new_record[Anum_pg_authid_rolcreatedb - 1] = BoolGetDatum(createdb);
@@ -422,6 +458,8 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 	 */
 	CatalogTupleInsert(pg_authid_rel, tuple);
 
+	recordDependencyOnOwner(AuthIdRelationId, roleid, owner_uid);
+
 	/*
 	 * Advance command counter so we can see new record; else tests in
 	 * AddRoleMems may fail.
@@ -477,6 +515,9 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 	 * Close pg_authid, but keep lock till commit.
 	 */
 	table_close(pg_authid_rel, NoLock);
+
+	/* Reset current user and security context */
+	SetUserIdAndSecContext(saved_uid, save_sec_context);
 
 	return roleid;
 }
@@ -655,7 +696,8 @@ AlterRole(ParseState *pstate, AlterRoleStmt *stmt)
 	{
 		/* check the rest */
 		if (dinherit || dcreaterole || dcreatedb || dcanlogin || dconnlimit ||
-			drolemembers || dvalidUntil || !dpassword || roleid != GetUserId())
+			drolemembers || dvalidUntil || !dpassword ||
+			!pg_role_ownercheck(roleid, GetUserId()))
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("permission denied")));
@@ -860,7 +902,8 @@ AlterRoleSet(AlterRoleSetStmt *stmt)
 		}
 		else
 		{
-			if (!have_createrole_privilege() && roleid != GetUserId())
+			if (!have_createrole_privilege() &&
+				!pg_role_ownercheck(roleid, GetUserId()))
 				ereport(ERROR,
 						(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 						 errmsg("permission denied")));
@@ -911,11 +954,6 @@ DropRole(DropRoleStmt *stmt)
 	Relation	pg_authid_rel,
 				pg_auth_members_rel;
 	ListCell   *item;
-
-	if (!have_createrole_privilege())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied to drop role")));
 
 	/*
 	 * Scan the pg_authid relation to find the Oid of the role(s) to be
@@ -988,6 +1026,12 @@ DropRole(DropRoleStmt *stmt)
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("must be superuser to drop superusers")));
 
+		if (!have_createrole_privilege() &&
+			!pg_role_ownercheck(roleid, GetUserId()))
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("permission denied to drop role")));
+
 		/* DROP hook for the role being removed */
 		InvokeObjectDropHook(AuthIdRelationId, roleid, 0);
 
@@ -1051,8 +1095,9 @@ DropRole(DropRoleStmt *stmt)
 		systable_endscan(sscan);
 
 		/*
-		 * Remove any comments or security labels on this role.
+		 * Remove any dependencies, comments or security labels on this role.
 		 */
+		deleteSharedDependencyRecordsFor(AuthIdRelationId, roleid, 0);
 		DeleteSharedComments(roleid, AuthIdRelationId);
 		DeleteSharedSecurityLabel(roleid, AuthIdRelationId);
 
@@ -1647,4 +1692,123 @@ DelRoleMems(const char *rolename, Oid roleid,
 	 * Close pg_authmem, but keep lock till commit.
 	 */
 	table_close(pg_authmem_rel, NoLock);
+}
+
+/*
+ * Change role owner
+ */
+ObjectAddress
+AlterRoleOwner(const char *name, Oid newOwnerId)
+{
+	Oid                     roleid;
+	HeapTuple       tup;
+	Relation        rel;
+	ObjectAddress address;
+	Form_pg_authid authform;
+
+	rel = table_open(AuthIdRelationId, RowExclusiveLock);
+
+	tup = SearchSysCache1(AUTHNAME, CStringGetDatum(name));
+	if (!HeapTupleIsValid(tup))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("role \"%s\" does not exist", name)));
+
+	authform = (Form_pg_authid) GETSTRUCT(tup);
+	roleid = authform->oid;
+
+	AlterRoleOwner_internal(tup, rel, newOwnerId);
+
+	ObjectAddressSet(address, AuthIdRelationId, roleid);
+
+	ReleaseSysCache(tup);
+
+	table_close(rel, RowExclusiveLock);
+
+	return address;
+}
+
+void
+AlterRoleOwner_oid(Oid roleOid, Oid newOwnerId)
+{
+	HeapTuple	tup;
+	Relation	rel;
+
+	rel = table_open(AuthIdRelationId, RowExclusiveLock);
+
+	tup = SearchSysCache1(AUTHOID, ObjectIdGetDatum(roleOid));
+	if (!HeapTupleIsValid(tup))
+		elog(ERROR, "cache lookup failed for role %u", roleOid);
+
+	AlterRoleOwner_internal(tup, rel, newOwnerId);
+
+	ReleaseSysCache(tup);
+
+	table_close(rel, RowExclusiveLock);
+}
+
+static void
+AlterRoleOwner_internal(HeapTuple tup, Relation rel, Oid newOwnerId)
+{
+	Form_pg_authid authForm;
+
+	Assert(tup->t_tableOid == AuthIdRelationId);
+	Assert(RelationGetRelid(rel) == AuthIdRelationId);
+
+	authForm = (Form_pg_authid) GETSTRUCT(tup);
+
+	/*
+	 * If the new owner is the same as the existing owner, consider the
+	 * command to have succeeded.  This is for dump restoration purposes.
+	 */
+	if (authForm->rolowner != newOwnerId)
+	{
+		/* Otherwise, must be owner of the existing object */
+		if (!pg_role_ownercheck(authForm->oid, GetUserId()))
+			aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_ROLE,
+						   NameStr(authForm->rolname));
+
+		/* Must be able to become new owner */
+		check_is_member_of_role(GetUserId(), newOwnerId);
+
+		/*
+		 * must have CREATEROLE rights
+		 *
+		 * NOTE: Alter-role and alter-schema are different from other
+		 * alter-owner checks in that the current user is checked for create
+		 * privileges instead of the destination owner.  Alter-role is
+		 * consistent with the CREATE case for roles.  Because superusers will
+		 * always have this right, we need no special case for them.
+		 */
+		if (!have_createrole_privilege())
+			aclcheck_error(ACLCHECK_NO_PRIV, OBJECT_ROLE,
+						   NameStr(authForm->rolname));
+
+		/* Only the bootstrap superuser is allowed to own itself. */
+		if (newOwnerId != BOOTSTRAP_SUPERUSERID && authForm->oid == newOwnerId)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("role may not own itself")));
+
+		/*
+		 * Must not create cycles in the role ownership hierarchy.  If this
+		 * role owns (directly or indirectly) the proposed new owner, disallow
+		 * the ownership transfer.
+		 */
+		if (is_owner_of_role_nosuper(authForm->oid, newOwnerId))
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("role \"%s\" may not both own and be owned by role \"%s\"",
+							NameStr(authForm->rolname),
+							GetUserNameFromId(newOwnerId, false))));
+
+		authForm->rolowner = newOwnerId;
+		CatalogTupleUpdate(rel, &tup->t_self, tup);
+
+		/* Update owner dependency reference */
+		changeDependencyOnOwner(AuthIdRelationId, authForm->oid, newOwnerId);
+	}
+
+	InvokeObjectPostAlterHook(AuthIdRelationId,
+							  authForm->oid, 0);
 }

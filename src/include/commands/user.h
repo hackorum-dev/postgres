@@ -33,5 +33,7 @@ extern ObjectAddress RenameRole(const char *oldname, const char *newname);
 extern void DropOwnedObjects(DropOwnedStmt *stmt);
 extern void ReassignOwnedObjects(ReassignOwnedStmt *stmt);
 extern List *roleSpecsToIds(List *memberNames);
+extern ObjectAddress AlterRoleOwner(const char *name, Oid newOwnerId);
+extern void AlterRoleOwner_oid(Oid roleOid, Oid newOwnerId);
 
 #endif							/* USER_H */

@@ -3385,6 +3385,9 @@ aclcheck_error(AclResult aclerr, ObjectType objtype,
 					case OBJECT_PUBLICATION:
 						msg = gettext_noop("permission denied for publication %s");
 						break;
+					case OBJECT_ROLE:
+						msg = gettext_noop("permission denied for role %s");
+						break;
 					case OBJECT_ROUTINE:
 						msg = gettext_noop("permission denied for routine %s");
 						break;
@@ -3429,7 +3432,6 @@ aclcheck_error(AclResult aclerr, ObjectType objtype,
 					case OBJECT_DOMCONSTRAINT:
 					case OBJECT_PUBLICATION_NAMESPACE:
 					case OBJECT_PUBLICATION_REL:
-					case OBJECT_ROLE:
 					case OBJECT_RULE:
 					case OBJECT_TABCONSTRAINT:
 					case OBJECT_TRANSFORM:
@@ -3511,6 +3513,9 @@ aclcheck_error(AclResult aclerr, ObjectType objtype,
 					case OBJECT_PUBLICATION:
 						msg = gettext_noop("must be owner of publication %s");
 						break;
+					case OBJECT_ROLE:
+						msg = gettext_noop("must be owner of role %s");
+						break;
 					case OBJECT_ROUTINE:
 						msg = gettext_noop("must be owner of routine %s");
 						break;
@@ -3569,7 +3574,6 @@ aclcheck_error(AclResult aclerr, ObjectType objtype,
 					case OBJECT_DOMCONSTRAINT:
 					case OBJECT_PUBLICATION_NAMESPACE:
 					case OBJECT_PUBLICATION_REL:
-					case OBJECT_ROLE:
 					case OBJECT_TRANSFORM:
 					case OBJECT_TSPARSER:
 					case OBJECT_TSTEMPLATE:
@@ -5431,15 +5435,21 @@ pg_statistics_object_ownercheck(Oid stat_oid, Oid roleid)
 }
 
 /*
+ * Ownership check for a role (specified by OID)
+ */
+bool
+pg_role_ownercheck(Oid owned_role_oid, Oid owner_roleid)
+{
+	/* Superusers bypass all permission checking. */
+	if (superuser_arg(owner_roleid))
+		return true;
+
+	/* Otherwise, check the role ownership hierarchy */
+	return is_owner_of_role_nosuper(owner_roleid, owned_role_oid);
+}
+
+/*
  * Check whether specified role has CREATEROLE privilege (or is a superuser)
- *
- * Note: roles do not have owners per se; instead we use this test in
- * places where an ownership-like permissions test is needed for a role.
- * Be sure to apply it to the role trying to do the operation, not the
- * role being operated on!	Also note that this generally should not be
- * considered enough privilege if the target role is a superuser.
- * (We don't handle that consideration here because we want to give a
- * separate error message for such cases, so the caller has to deal with it.)
  */
 bool
 has_createrole_privilege(Oid roleid)

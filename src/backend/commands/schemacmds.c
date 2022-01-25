@@ -363,11 +363,11 @@ AlterSchemaOwner_internal(HeapTuple tup, Relation rel, Oid newOwnerId)
 		/*
 		 * must have create-schema rights
 		 *
-		 * NOTE: This is different from other alter-owner checks in that the
-		 * current user is checked for create privileges instead of the
-		 * destination owner.  This is consistent with the CREATE case for
-		 * schemas.  Because superusers will always have this right, we need
-		 * no special case for them.
+		 * NOTE: alter-schema and alter-role are different from other
+		 * alter-owner checks in that the current user is checked for create
+		 * privileges instead of the destination owner.  Alter-schema is
+		 * consistent with the CREATE case for schemas.  Because superusers
+		 * will always have this right, we need no special case for them.
 		 */
 		aclresult = pg_database_aclcheck(MyDatabaseId, GetUserId(),
 										 ACL_CREATE);

@@ -30,8 +30,10 @@ CREATE USER regress_priv_user3;
 CREATE USER regress_priv_user4;
 CREATE USER regress_priv_user5;
 CREATE USER regress_priv_user5;	-- duplicate
-CREATE USER regress_priv_user6;
+CREATE USER regress_priv_user6 CREATEROLE;
+SET SESSION AUTHORIZATION regress_priv_user6;
 CREATE USER regress_priv_user7;
+RESET SESSION AUTHORIZATION;
 CREATE USER regress_priv_user8;
 CREATE USER regress_priv_user9;
 CREATE USER regress_priv_user10;
@@ -1426,8 +1428,14 @@ DROP USER regress_priv_user2;
 DROP USER regress_priv_user3;
 DROP USER regress_priv_user4;
 DROP USER regress_priv_user5;
+
 DROP USER regress_priv_user6;
+
+SET SESSION AUTHORIZATION regress_priv_user6;
 DROP USER regress_priv_user7;
+RESET SESSION AUTHORIZATION;
+
+DROP USER regress_priv_user6;
 DROP USER regress_priv_user8; -- does not exist
 
 

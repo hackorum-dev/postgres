@@ -840,6 +840,9 @@ ExecAlterOwnerStmt(AlterOwnerStmt *stmt)
 		case OBJECT_DATABASE:
 			return AlterDatabaseOwner(strVal(stmt->object), newowner);
 
+		case OBJECT_ROLE:
+			return AlterRoleOwner(strVal(stmt->object), newowner);
+
 		case OBJECT_SCHEMA:
 			return AlterSchemaOwner(strVal(stmt->object), newowner);
 

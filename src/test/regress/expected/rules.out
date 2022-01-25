@@ -1482,6 +1482,7 @@ pg_replication_slots| SELECT l.slot_name,
    FROM (pg_get_replication_slots() l(slot_name, plugin, slot_type, datoid, temporary, active, active_pid, xmin, catalog_xmin, restart_lsn, confirmed_flush_lsn, wal_status, safe_wal_size, two_phase)
      LEFT JOIN pg_database d ON ((l.datoid = d.oid)));
 pg_roles| SELECT pg_authid.rolname,
+    pg_get_userbyid(pg_authid.rolowner) AS rolowner,
     pg_authid.rolsuper,
     pg_authid.rolinherit,
     pg_authid.rolcreaterole,

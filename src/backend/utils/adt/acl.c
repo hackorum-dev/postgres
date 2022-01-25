@@ -4833,6 +4833,111 @@ roles_is_member_of(Oid roleid, enum RoleRecurseType type,
 
 
 /*
+ * Get a list of roles which own the given role, directly or indirectly.
+ *
+ * Each role has only one direct owner.  The returned list contains the given
+ * role's owner, that role's owner, etc., up to the top of the ownership
+ * hierarchy, which is always the bootstrap superuser.
+ *
+ * Raises an error if any role ownership invariant is violated.  Returns NIL if
+ * the given roleid is invalid.
+ */
+static List *
+roles_is_owned_by(Oid roleid)
+{
+	List	   *owners_list = NIL;
+	Oid			role_oid = roleid;
+
+	/*
+	 * Start with the current role and follow the ownership chain upwards until
+	 * we reach the bootstrap superuser.  To defend against getting into an
+	 * infinite loop, we must check for ownership cycles.  We choose to perform
+	 * other corruption checks on the ownership structure while iterating, too.
+	 */
+	while (OidIsValid(role_oid))
+	{
+		HeapTuple		tuple;
+		Form_pg_authid	authform;
+		Oid				owner_oid;
+
+		/* Find the owner of the current iteration's role */
+		tuple = SearchSysCache1(AUTHOID, ObjectIdGetDatum(role_oid));
+		if (!HeapTupleIsValid(tuple))
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_OBJECT),
+					 errmsg("role with OID %u does not exist", role_oid)));
+
+		authform = (Form_pg_authid) GETSTRUCT(tuple);
+		owner_oid = authform->rolowner;
+
+		/*
+		 * Roles must necessarily have owners.  Even the bootstrap user has an
+		 * owner.  (It owns itself).
+		 */
+		if (!OidIsValid(owner_oid))
+			ereport(ERROR,
+					(errcode(ERRCODE_DATA_CORRUPTED),
+					 errmsg("role \"%s\" with OID %u has invalid owner",
+							NameStr(authform->rolname), authform->oid)));
+
+		/* The bootstrap user must own itself */
+		if (authform->oid == BOOTSTRAP_SUPERUSERID &&
+			owner_oid != BOOTSTRAP_SUPERUSERID)
+			ereport(ERROR,
+					(errcode(ERRCODE_DATA_CORRUPTED),
+					 errmsg("role \"%s\" with OID %u owned by role with OID %u",
+							NameStr(authform->rolname), authform->oid,
+							authform->rolowner)));
+
+		/*
+		 * Roles other than the bootstrap user must not be their own direct
+		 * owners.
+		 */
+		if (authform->oid != BOOTSTRAP_SUPERUSERID &&
+			authform->oid == owner_oid)
+			ereport(ERROR,
+					(errcode(ERRCODE_DATA_CORRUPTED),
+					 errmsg("role \"%s\" with OID %u owns itself",
+							NameStr(authform->rolname), authform->oid)));
+
+		ReleaseSysCache(tuple);
+
+		/* If we have reached the bootstrap user, we're done. */
+		if (role_oid == BOOTSTRAP_SUPERUSERID)
+		{
+			if (!owners_list)
+				owners_list = lappend_oid(owners_list, owner_oid);
+			break;
+		}
+
+		/*
+		 * For all other users, check they do not own themselves indirectly
+		 * through an ownership cycle.
+		 *
+		 * Scanning the list each time through this loop results in overall
+		 * quadratic work in the depth of the ownership chain, but we're
+		 * not on a critical performance path, nor do we expect ownership
+		 * hierarchies to be deep.
+		 */
+		if (owners_list && list_member_oid(owners_list,
+										   ObjectIdGetDatum(owner_oid)))
+			ereport(ERROR,
+					(errcode(ERRCODE_DATA_CORRUPTED),
+					 errmsg("role \"%s\" with OID %u indirectly owns itself",
+							GetUserNameFromId(owner_oid, false),
+							owner_oid)));
+
+		/* Done with sanity checks.  Add this owner to the list. */
+		owners_list = lappend_oid(owners_list, owner_oid);
+
+		/* Otherwise, iterate on this iteration's owner_oid. */
+		role_oid = owner_oid;
+	}
+
+	return owners_list;
+}
+
+/*
  * Does member have the privileges of role (directly or indirectly)?
  *
  * This is defined not to recurse through roles that don't have rolinherit
@@ -4848,6 +4953,10 @@ has_privs_of_role(Oid member, Oid role)
 
 	/* Superusers have every privilege, so are part of every role */
 	if (superuser_arg(member))
+		return true;
+
+	/* Owners of roles have every privilege the owned role has */
+	if (pg_role_ownercheck(role, member))
 		return true;
 
 	/*
@@ -4921,6 +5030,15 @@ is_member_of_role_nosuper(Oid member, Oid role)
 						   role);
 }
 
+/*
+ * Is owner a direct or indirect owner of the role, not considering
+ * superuserness?
+ */
+bool
+is_owner_of_role_nosuper(Oid owner, Oid role)
+{
+	return list_member_oid(roles_is_owned_by(role), owner);
+}
 
 /*
  * Is member an admin of role?	That is, is member the role itself (subject to

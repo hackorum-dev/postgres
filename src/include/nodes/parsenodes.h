@@ -2623,6 +2623,7 @@ typedef struct CreateRoleStmt
 	NodeTag		type;
 	RoleStmtType stmt_type;		/* ROLE/USER/GROUP */
 	char	   *role;			/* role name */
+	RoleSpec   *authrole;		/* the owner of the created role */
 	List	   *options;		/* List of DefElem nodes */
 } CreateRoleStmt;
 
