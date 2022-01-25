@@ -58,15 +58,6 @@ static void DelRoleMems(const char *rolename, Oid roleid,
 static void AlterRoleOwner_internal(HeapTuple tup, Relation rel,
 									Oid newOwnerId);
 
-
-/* Check if current user has createrole privileges */
-static bool
-have_createrole_privilege(void)
-{
-	return has_createrole_privilege(GetUserId());
-}
-
-
 /*
  * CREATE ROLE
  */
@@ -279,24 +270,32 @@ CreateRole(ParseState *pstate, CreateRoleStmt *stmt)
 	}
 	else if (isreplication)
 	{
-		if (!superuser())
+		if (!has_replication_privilege(GetUserId()))
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("must be superuser to create replication users")));
+					 errmsg("must have replication privilege to create replication users")));
 	}
 	else if (bypassrls)
 	{
-		if (!superuser())
+		if (!has_bypassrls_privilege(GetUserId()))
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("must be superuser to create bypassrls users")));
+					 errmsg("must have bypassrls privilege to create bypassrls users")));
 	}
-	else
+	else if (!superuser())
 	{
-		if (!have_createrole_privilege())
+		if (!has_createrole_privilege(GetUserId()))
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("permission denied to create role")));
+		if (createdb && !has_createdb_privilege(GetUserId()))
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("must have createdb privilege to create createdb users")));
+		if (canlogin && !has_login_privilege(GetUserId()))
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("must have login privilege to create login users")));
 	}
 
 	/*
@@ -692,7 +691,7 @@ AlterRole(ParseState *pstate, AlterRoleStmt *stmt)
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("must be superuser to change bypassrls attribute")));
 	}
-	else if (!have_createrole_privilege())
+	else if (!superuser())
 	{
 		/* check the rest */
 		if (dinherit || dcreaterole || dcreatedb || dcanlogin || dconnlimit ||
@@ -891,7 +890,7 @@ AlterRoleSet(AlterRoleSetStmt *stmt)
 
 		/*
 		 * To mess with a superuser you gotta be superuser; else you need
-		 * createrole, or just want to change your own settings
+		 * to own the role, or just want to change your own settings
 		 */
 		if (roleform->rolsuper)
 		{
@@ -902,8 +901,7 @@ AlterRoleSet(AlterRoleSetStmt *stmt)
 		}
 		else
 		{
-			if (!have_createrole_privilege() &&
-				!pg_role_ownercheck(roleid, GetUserId()))
+			if (!pg_role_ownercheck(roleid, GetUserId()))
 				ereport(ERROR,
 						(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 						 errmsg("permission denied")));
@@ -1016,18 +1014,12 @@ DropRole(DropRoleStmt *stmt)
 					(errcode(ERRCODE_OBJECT_IN_USE),
 					 errmsg("session user cannot be dropped")));
 
-		/*
-		 * For safety's sake, we allow createrole holders to drop ordinary
-		 * roles but not superuser roles.  This is mainly to avoid the
-		 * scenario where you accidentally drop the last superuser.
-		 */
 		if (roleform->rolsuper && !superuser())
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("must be superuser to drop superusers")));
 
-		if (!have_createrole_privilege() &&
-			!pg_role_ownercheck(roleid, GetUserId()))
+		if (!pg_role_ownercheck(roleid, GetUserId()))
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("permission denied to drop role")));
@@ -1208,7 +1200,7 @@ RenameRole(const char *oldname, const char *newname)
 				 errmsg("role \"%s\" already exists", newname)));
 
 	/*
-	 * createrole is enough privilege unless you want to mess with a superuser
+	 * role ownership is enough privilege unless you want to mess with a superuser
 	 */
 	if (((Form_pg_authid) GETSTRUCT(oldtuple))->rolsuper)
 	{
@@ -1219,7 +1211,7 @@ RenameRole(const char *oldname, const char *newname)
 	}
 	else
 	{
-		if (!have_createrole_privilege())
+		if (!pg_role_ownercheck(roleid, GetUserId()))
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("permission denied to rename role")));
@@ -1434,7 +1426,7 @@ AddRoleMems(const char *rolename, Oid roleid,
 		return;
 
 	/*
-	 * Check permissions: must have createrole or admin option on the role to
+	 * Check permissions: must be owner or have admin option on the role to
 	 * be changed.  To mess with a superuser role, you gotta be superuser.
 	 */
 	if (superuser_arg(roleid))
@@ -1444,9 +1436,9 @@ AddRoleMems(const char *rolename, Oid roleid,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("must be superuser to alter superusers")));
 	}
-	else
+	else if (!superuser())
 	{
-		if (!have_createrole_privilege() &&
+		if (!pg_role_ownercheck(roleid, grantorId) &&
 			!is_admin_of_role(grantorId, roleid))
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
@@ -1622,9 +1614,9 @@ DelRoleMems(const char *rolename, Oid roleid,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("must be superuser to alter superusers")));
 	}
-	else
+	else if (!superuser())
 	{
-		if (!have_createrole_privilege() &&
+		if (!pg_role_ownercheck(roleid, GetUserId()) &&
 			!is_admin_of_role(GetUserId(), roleid))
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
@@ -1780,7 +1772,7 @@ AlterRoleOwner_internal(HeapTuple tup, Relation rel, Oid newOwnerId)
 		 * consistent with the CREATE case for roles.  Because superusers will
 		 * always have this right, we need no special case for them.
 		 */
-		if (!have_createrole_privilege())
+		if (!has_createrole_privilege(GetUserId()))
 			aclcheck_error(ACLCHECK_NO_PRIV, OBJECT_ROLE,
 						   NameStr(authForm->rolname));
 

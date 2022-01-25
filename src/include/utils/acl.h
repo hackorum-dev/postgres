@@ -320,5 +320,10 @@ extern bool pg_statistics_object_ownercheck(Oid stat_oid, Oid roleid);
 extern bool pg_role_ownercheck(Oid owned_role_oid, Oid owner_roleid);
 extern bool has_createrole_privilege(Oid roleid);
 extern bool has_bypassrls_privilege(Oid roleid);
+extern bool has_inherit_privilege(Oid roleid);
+extern bool has_createdb_privilege(Oid roleid);
+extern bool has_login_privilege(Oid roleid);
+extern bool has_replication_privilege(Oid roleid);
+extern int32 role_connection_limit(Oid roleid);
 
 #endif							/* ACL_H */

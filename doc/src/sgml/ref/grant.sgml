@@ -254,8 +254,8 @@ GRANT <replaceable class="parameter">role_name</replaceable> [, ...] TO <replace
    OPTION</literal> on itself, but it may grant or revoke membership in
    itself from a database session where the session user matches the
    role.  Database superusers can grant or revoke membership in any role
-   to anyone.  Roles having <literal>CREATEROLE</literal> privilege can grant
-   or revoke membership in any role that is not a superuser.
+   to anyone.  Roles can revoke membership in any role they own, and 
+   may grant membership in any role they own to any role they own.
   </para>
 
   <para>

@@ -126,8 +126,10 @@ in sync when changing the above synopsis!
         <literal>CREATEDB</literal> is specified, the role being
         defined will be allowed to create new databases. Specifying
         <literal>NOCREATEDB</literal> will deny a role the ability to
-        create databases. If not specified,
-        <literal>NOCREATEDB</literal> is the default.
+        create databases. Only roles with the <literal>CREATEDB</literal>
+        attribute may create roles with the <literal>CREATEDB</literal>
+        attribute. If not specified, <literal>NOCREATEDB</literal> is the
+        default.
        </para>
       </listitem>
      </varlistentry>
@@ -139,8 +141,6 @@ in sync when changing the above synopsis!
        <para>
         These clauses determine whether a role will be permitted to
         create new roles (that is, execute <command>CREATE ROLE</command>).
-        A role with <literal>CREATEROLE</literal> privilege can also alter
-        and drop other roles.
         If not specified,
         <literal>NOCREATEROLE</literal> is the default.
        </para>
@@ -182,6 +182,8 @@ in sync when changing the above synopsis!
         <literal>NOLOGIN</literal> is the default, except when
         <command>CREATE ROLE</command> is invoked through its alternative spelling
         <link linkend="sql-createuser"><command>CREATE USER</command></link>.
+        You must have the <literal>LOGIN</literal> attribute to create a new role
+        with the <literal>LOGIN</literal> attribute.
        </para>
       </listitem>
      </varlistentry>
@@ -213,8 +215,8 @@ in sync when changing the above synopsis!
        <para>
         These clauses determine whether a role bypasses every row-level
         security (RLS) policy.  <literal>NOBYPASSRLS</literal> is the default.
-        You must be a superuser to create a new role having
-        the <literal>BYPASSRLS</literal> attribute.
+        You must have the <literal>BYPASSRLS</literal> attribute to create a
+        new role having the <literal>BYPASSRLS</literal> attribute.
        </para>
 
        <para>
@@ -300,6 +302,10 @@ in sync when changing the above synopsis!
         member.  (Note that there is no option to add the new role as an
         administrator; use a separate <command>GRANT</command> command to do that.)
        </para>
+       <para>
+        If not a superuser, the creating role must either own or have admin
+        privilege on each listed role.
+       </para>
       </listitem>
      </varlistentry>
 
@@ -320,6 +326,10 @@ in sync when changing the above synopsis!
         roles which are automatically added as members of the new role.
         (This in effect makes the new role a <quote>group</quote>.)
        </para>
+       <para>
+        If not a superuser, the creating role must either own or have admin
+        privilege on each listed role.
+       </para>
       </listitem>
      </varlistentry>
 
@@ -331,6 +341,10 @@ in sync when changing the above synopsis!
         but the named roles are added to the new role <literal>WITH ADMIN
         OPTION</literal>, giving them the right to grant membership in this role
         to others.
+       </para>
+       <para>
+        If not a superuser, the creating role must either own or have admin
+        privilege on each listed role.
        </para>
       </listitem>
      </varlistentry>

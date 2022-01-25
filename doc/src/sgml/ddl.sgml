@@ -3132,9 +3132,7 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
            doesn't preserve that DROP.
 
            A database owner can attack the database's users via "CREATE SCHEMA
-           trojan; ALTER DATABASE $mydb SET search_path = trojan, public;".  A
-           CREATEROLE user can issue "GRANT $dbowner TO $me" and then use the
-           database owner attack. -->
+           trojan; ALTER DATABASE $mydb SET search_path = trojan, public;". -->
       <para>
        Constrain ordinary users to user-private schemas.  To implement this,
        first issue <literal>REVOKE CREATE ON SCHEMA public FROM
@@ -3146,9 +3144,8 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
        pattern in a database where untrusted users had already logged in,
        consider auditing the public schema for objects named like objects in
        schema <literal>pg_catalog</literal>.  This pattern is a secure schema
-       usage pattern unless an untrusted user is the database owner or holds
-       the <literal>CREATEROLE</literal> privilege, in which case no secure
-       schema usage pattern exists.
+       usage pattern unless an untrusted user is the database owner, in which
+       case no secure schema usage pattern exists.
       </para>
       <para>
        If the database originated in an upgrade
@@ -3170,8 +3167,7 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
        schema <link linkend="typeconv-func">will be unsafe or
        unreliable</link>.  If you create functions or extensions in the public
        schema, use the first pattern instead.  Otherwise, like the first
-       pattern, this is secure unless an untrusted user is the database owner
-       or holds the <literal>CREATEROLE</literal> privilege.
+       pattern, this is secure unless an untrusted user is the database owner.
       </para>
      </listitem>
 

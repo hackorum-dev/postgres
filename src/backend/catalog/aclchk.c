@@ -5470,6 +5470,9 @@ has_createrole_privilege(Oid roleid)
 	return result;
 }
 
+/*
+ * Check whether specified role has BYPASSRLS privilege (or is a superuser)
+ */
 bool
 has_bypassrls_privilege(Oid roleid)
 {
@@ -5484,6 +5487,114 @@ has_bypassrls_privilege(Oid roleid)
 	if (HeapTupleIsValid(utup))
 	{
 		result = ((Form_pg_authid) GETSTRUCT(utup))->rolbypassrls;
+		ReleaseSysCache(utup);
+	}
+	return result;
+}
+
+/*
+ * Check whether specified role has INHERIT privilege (or is a superuser)
+ */
+bool
+has_inherit_privilege(Oid roleid)
+{
+	bool		result = false;
+	HeapTuple	utup;
+
+	/* Superusers bypass all permission checking. */
+	if (superuser_arg(roleid))
+		return true;
+
+	utup = SearchSysCache1(AUTHOID, ObjectIdGetDatum(roleid));
+	if (HeapTupleIsValid(utup))
+	{
+		result = ((Form_pg_authid) GETSTRUCT(utup))->rolinherit;
+		ReleaseSysCache(utup);
+	}
+	return result;
+}
+
+/*
+ * Check whether specified role has CREATEDB privilege (or is a superuser)
+ */
+bool
+has_createdb_privilege(Oid roleid)
+{
+	bool		result = false;
+	HeapTuple	utup;
+
+	/* Superusers bypass all permission checking. */
+	if (superuser_arg(roleid))
+		return true;
+
+	utup = SearchSysCache1(AUTHOID, ObjectIdGetDatum(roleid));
+	if (HeapTupleIsValid(utup))
+	{
+		result = ((Form_pg_authid) GETSTRUCT(utup))->rolcreatedb;
+		ReleaseSysCache(utup);
+	}
+	return result;
+}
+
+/*
+ * Check whether specified role has LOGIN privilege (or is a superuser)
+ */
+bool
+has_login_privilege(Oid roleid)
+{
+	bool		result = false;
+	HeapTuple	utup;
+
+	/* Superusers bypass all permission checking. */
+	if (superuser_arg(roleid))
+		return true;
+
+	utup = SearchSysCache1(AUTHOID, ObjectIdGetDatum(roleid));
+	if (HeapTupleIsValid(utup))
+	{
+		result = ((Form_pg_authid) GETSTRUCT(utup))->rolcanlogin;
+		ReleaseSysCache(utup);
+	}
+	return result;
+}
+
+/*
+ * Check whether specified role has REPLICATION privilege (or is a superuser)
+ */
+bool
+has_replication_privilege(Oid roleid)
+{
+	bool		result = false;
+	HeapTuple	utup;
+
+	/* Superusers bypass all permission checking. */
+	if (superuser_arg(roleid))
+		return true;
+
+	utup = SearchSysCache1(AUTHOID, ObjectIdGetDatum(roleid));
+	if (HeapTupleIsValid(utup))
+	{
+		result = ((Form_pg_authid) GETSTRUCT(utup))->rolreplication;
+		ReleaseSysCache(utup);
+	}
+	return result;
+}
+
+/*
+ * Get the connection limit for the specified role.
+ *
+ * Returns -1 if the role has no connection limit.
+ */
+int32
+role_connection_limit(Oid roleid)
+{
+	int32		result = -1;
+	HeapTuple	utup;
+
+	utup = SearchSysCache1(AUTHOID, ObjectIdGetDatum(roleid));
+	if (HeapTupleIsValid(utup))
+	{
+		result = ((Form_pg_authid) GETSTRUCT(utup))->rolconnlimit;
 		ReleaseSysCache(utup);
 	}
 	return result;

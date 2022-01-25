@@ -4656,7 +4656,7 @@ initialize_acl(void)
 		/*
 		 * In normal mode, set a callback on any syscache invalidation of rows
 		 * of pg_auth_members (for roles_is_member_of()), pg_authid (for
-		 * has_rolinherit()), or pg_database (for roles_is_member_of())
+		 * has_inherit_privilege()), or pg_database (for roles_is_member_of())
 		 */
 		CacheRegisterSyscacheCallback(AUTHMEMROLEMEM,
 									  RoleMembershipCacheCallback,
@@ -4687,23 +4687,6 @@ RoleMembershipCacheCallback(Datum arg, int cacheid, uint32 hashvalue)
 	/* Force membership caches to be recomputed on next use */
 	cached_role[ROLERECURSE_PRIVS] = InvalidOid;
 	cached_role[ROLERECURSE_MEMBERS] = InvalidOid;
-}
-
-
-/* Check if specified role has rolinherit set */
-static bool
-has_rolinherit(Oid roleid)
-{
-	bool		result = false;
-	HeapTuple	utup;
-
-	utup = SearchSysCache1(AUTHOID, ObjectIdGetDatum(roleid));
-	if (HeapTupleIsValid(utup))
-	{
-		result = ((Form_pg_authid) GETSTRUCT(utup))->rolinherit;
-		ReleaseSysCache(utup);
-	}
-	return result;
 }
 
 
@@ -4776,7 +4759,7 @@ roles_is_member_of(Oid roleid, enum RoleRecurseType type,
 		CatCList   *memlist;
 		int			i;
 
-		if (type == ROLERECURSE_PRIVS && !has_rolinherit(memberid))
+		if (type == ROLERECURSE_PRIVS && !has_inherit_privilege(memberid))
 			continue;			/* ignore non-inheriting roles */
 
 		/* Find roles that memberid is directly a member of */

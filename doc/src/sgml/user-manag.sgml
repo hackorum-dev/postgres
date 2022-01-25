@@ -198,9 +198,10 @@ CREATE USER <replaceable>name</replaceable>;
         (except for superusers, since those bypass all permission
         checks). To create such a role, use <literal>CREATE ROLE
         <replaceable>name</replaceable> CREATEROLE</literal>.
-        A role with <literal>CREATEROLE</literal> privilege can alter and drop
-        other roles, too, as well as grant or revoke membership in them.
-        However, to create, alter, drop, or change membership of a
+        A role which creates a new role becomes the new role's owner, able to
+        alter or drop that new role, and sharing ownership of any additional
+        objects (including additional roles) that new role creates.
+        To create, alter, drop, or change membership of a
         superuser role, superuser status is required;
         <literal>CREATEROLE</literal> is insufficient for that.
        </para>
@@ -246,11 +247,14 @@ CREATE USER <replaceable>name</replaceable>;
 
   <tip>
    <para>
-    It is good practice to create a role that has the <literal>CREATEDB</literal>
-    and <literal>CREATEROLE</literal> privileges, but is not a superuser, and then
+    It is good practice to create a role that has the
+    <literal>CREATEDB</literal>, <literal>LOGIN</literal> and
+    <literal>CREATEROLE</literal> privileges, but is not a superuser, and then
     use this role for all routine management of databases and roles.  This
-    approach avoids the dangers of operating as a superuser for tasks that
-    do not really require it.
+    approach avoids the dangers of operating as a superuser for tasks that do
+    not really require it.  This role must also have
+    <literal>REPLICATION</literal> if it will create replication users, and
+    must have <literal>BYPASSRLS</literal> if it will create bypassrls users.
    </para>
   </tip>
 
@@ -387,15 +391,22 @@ RESET ROLE;
 
   <para>
    The role attributes <literal>LOGIN</literal>, <literal>SUPERUSER</literal>,
-   <literal>CREATEDB</literal>, and <literal>CREATEROLE</literal> can be thought of as
-   special privileges, but they are never inherited as ordinary privileges
-   on database objects are.  You must actually <command>SET ROLE</command> to a
-   specific role having one of these attributes in order to make use of
-   the attribute.  Continuing the above example, we might choose to
+   <literal>CREATEDB</literal>, <literal>REPLICATION</literal>,
+   <literal>BYPASSRLS</literal>, and <literal>CREATEROLE</literal> can be
+   thought of as special privileges, but they are never inherited as ordinary
+   privileges on database objects are.  You must actually <command>SET
+   ROLE</command> to a specific role having one of these attributes in order to
+   make use of the attribute.  Continuing the above example, we might choose to
    grant <literal>CREATEDB</literal> and <literal>CREATEROLE</literal> to the
-   <literal>admin</literal> role.  Then a session connecting as role <literal>joe</literal>
-   would not have these privileges immediately, only after doing
-   <command>SET ROLE admin</command>.
+   <literal>admin</literal> role.  Then a session connecting as role
+   <literal>joe</literal> would not have these privileges immediately, only
+   after doing <command>SET ROLE admin</command>.  Roles with these attributes
+   may only be created by roles which themselves have these attributes.
+   Superusers may always do so, but non-superuser roles with
+   <literal>CREATEROLE</literal> may only create new roles with
+   <literal>LOGIN</literal>, <literal>CREATEDB</literal>,
+   <literal>REPLICATION</literal>, or <literal>BYPASSRLS</literal> if they
+   themselves have the same attribute.
   </para>
 
   <para>
@@ -493,8 +504,7 @@ DROP ROLE doomed_role;
   <para>
    <productname>PostgreSQL</productname> provides a set of predefined roles
    that provide access to certain, commonly needed, privileged capabilities
-   and information.  Administrators (including roles that have the
-   <literal>CREATEROLE</literal> privilege) can <command>GRANT</command> these
+   and information.  Administrators can <command>GRANT</command> these
    roles to users and/or other roles in their environment, providing those
    users with access to the specified capabilities and information.
   </para>

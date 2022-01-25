@@ -35,9 +35,9 @@ PostgreSQL documentation
   <para>
    <application>dropuser</application> removes an existing
    <productname>PostgreSQL</productname> user.
-   Only superusers and users with the <literal>CREATEROLE</literal> privilege can
-   remove <productname>PostgreSQL</productname> users.  (To remove a
-   superuser, you must yourself be a superuser.)
+   A <productname>PostgreSQL</productname> user may only be removed by its
+   owner or by a superuser.  (To remove a superuser, you must yourself be a
+   superuser.)
   </para>
 
   <para>

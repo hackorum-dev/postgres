@@ -70,18 +70,18 @@ ALTER ROLE { <replaceable class="parameter">role_specification</replaceable> | A
    <link linkend="sql-revoke"><command>REVOKE</command></link> for that.)
    Attributes not mentioned in the command retain their previous settings.
    Database superusers can change any of these settings for any role.
-   Roles having <literal>CREATEROLE</literal> privilege can change any of these
-   settings except <literal>SUPERUSER</literal>, <literal>REPLICATION</literal>,
-   and <literal>BYPASSRLS</literal>; but only for non-superuser and
-   non-replication roles.
-   Ordinary roles can only change their own password.
+   Role owners can change any of these settings on roles they directly or
+   indirectly own except <literal>SUPERUSER</literal>,
+   <literal>REPLICATION</literal>, and <literal>BYPASSRLS</literal>; but only
+   for non-superuser and non-replication roles, and only if the role owner does
+   not alter the target role to have a privilege which the role owner itself
+   lacks.  Ordinary roles can only change their own password.
   </para>
 
   <para>
    The second variant changes the name of the role.
    Database superusers can rename any role.
-   Roles having <literal>CREATEROLE</literal> privilege can rename non-superuser
-   roles.
+   Roles can rename non-superuser roles they directly or indirectly own.
    The current session user cannot be renamed.
    (Connect as a different user if you need to do that.)
    Because <literal>MD5</literal>-encrypted passwords use the role name as
@@ -114,9 +114,9 @@ ALTER ROLE { <replaceable class="parameter">role_specification</replaceable> | A
   </para>
 
   <para>
-   Superusers can change anyone's session defaults. Roles having
-   <literal>CREATEROLE</literal> privilege can change defaults for non-superuser
-   roles. Ordinary roles can only set defaults for themselves.
+   Superusers can change anyone's session defaults. Roles may change
+   privilege for non-superuser roles they directly or indirectly own. Ordinary roles can only set
+   defaults for themselves.
    Certain configuration variables cannot be set this way, or can only be
    set if a superuser issues the command.  Only superusers can change a setting
    for all roles in all databases.
