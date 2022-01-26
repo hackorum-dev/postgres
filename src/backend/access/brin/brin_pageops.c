@@ -190,6 +190,8 @@ brin_doupdate(Relation idxrel, BlockNumber pagesPerRange,
 
 			xlrec.offnum = oldoff;
 
+			maybe_crash_on_wal("SAMEPAGE_UPDATE");
+
 			XLogBeginInsert();
 			XLogRegisterData((char *) &xlrec, SizeOfBrinSamepageUpdate);
 

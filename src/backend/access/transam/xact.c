@@ -84,6 +84,8 @@ bool		XactDeferrable;
 
 int			synchronous_commit = SYNCHRONOUS_COMMIT_ON;
 
+char	   *crash_on_wal_message;
+
 /*
  * CheckXidAlive is a xid value pointing to a possibly ongoing (sub)
  * transaction.  Currently, it is used in logical decoding.  It's possible
@@ -6157,3 +6159,17 @@ xact_redo(XLogReaderState *record)
 	else
 		elog(PANIC, "xact_redo: unknown op code %u", info);
 }
+
+void
+maybe_crash_on_wal(char *msg)
+{
+	/* GUC not set or not the right message */
+	if (strcmp(crash_on_wal_message, msg) != 0)
+		return;
+
+	/* flush whatever was generated in this xact so far */
+	XLogFlush(XactLastRecEnd);
+
+	elog(PANIC, "crashing before '%s' WAL message", msg);
+}
+

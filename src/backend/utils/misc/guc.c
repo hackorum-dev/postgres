@@ -139,6 +139,7 @@ extern char *temp_tablespaces;
 extern bool ignore_checksum_failure;
 extern bool ignore_invalid_pages;
 extern bool synchronize_seqscans;
+extern char *crash_on_wal_message;
 
 #ifdef TRACE_SYNCSCAN
 extern bool trace_syncscan;
@@ -4068,6 +4069,17 @@ static struct config_string ConfigureNamesString[] =
 		&default_tablespace,
 		"",
 		check_default_tablespace, NULL, NULL
+	},
+
+	{
+		{"crash_on_wal_message", PGC_USERSET, CLIENT_CONN_STATEMENT,
+			gettext_noop("crash on this WAL message"),
+			NULL,
+			GUC_IS_NAME
+		},
+		&crash_on_wal_message,
+		"",
+		NULL, NULL, NULL
 	},
 
 	{

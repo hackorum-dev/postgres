@@ -487,4 +487,6 @@ extern void CancelBackup(void);
 /* in executor/nodeHash.c */
 extern size_t get_hash_memory_limit(void);
 
+extern void maybe_crash_on_wal(char *msg);
+
 #endif							/* MISCADMIN_H */
