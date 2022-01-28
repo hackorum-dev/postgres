@@ -345,14 +345,6 @@ SELECT has_function_privilege('regress_log_memory',
  t
 (1 row)
 
-SET ROLE regress_log_memory;
-SELECT pg_log_backend_memory_contexts(pg_backend_pid());
- pg_log_backend_memory_contexts 
---------------------------------
- t
-(1 row)
-
-RESET ROLE;
 REVOKE EXECUTE ON FUNCTION pg_log_backend_memory_contexts(integer)
   FROM regress_log_memory;
 DROP ROLE regress_log_memory;
