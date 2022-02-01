@@ -11561,9 +11561,9 @@
 { oid => '3441',
   descr => 'pg_controldata general state information as a function',
   proname => 'pg_control_system', provolatile => 'v', prorettype => 'record',
-  proargtypes => '', proallargtypes => '{int4,int4,int8,timestamptz}',
-  proargmodes => '{o,o,o,o}',
-  proargnames => '{pg_control_version,catalog_version_no,system_identifier,pg_control_last_modified}',
+  proargtypes => '', proallargtypes => '{int4,int4,int8,timestamptz,text}',
+  proargmodes => '{o,o,o,o,o}',
+  proargnames => '{pg_control_version,catalog_version_no,system_identifier,pg_control_last_modified,database_cluster_state}',
   prosrc => 'pg_control_system' },
 
 { oid => '3442',

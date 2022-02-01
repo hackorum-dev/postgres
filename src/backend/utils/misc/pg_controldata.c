@@ -31,8 +31,8 @@
 Datum
 pg_control_system(PG_FUNCTION_ARGS)
 {
-	Datum		values[4];
-	bool		nulls[4];
+	Datum		values[5];
+	bool		nulls[5];
 	TupleDesc	tupdesc;
 	HeapTuple	htup;
 	ControlFileData *ControlFile;
@@ -42,7 +42,7 @@ pg_control_system(PG_FUNCTION_ARGS)
 	 * Construct a tuple descriptor for the result row.  This must match this
 	 * function's pg_proc entry!
 	 */
-	tupdesc = CreateTemplateTupleDesc(4);
+	tupdesc = CreateTemplateTupleDesc(5);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 1, "pg_control_version",
 					   INT4OID, -1, 0);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 2, "catalog_version_no",
@@ -51,6 +51,8 @@ pg_control_system(PG_FUNCTION_ARGS)
 					   INT8OID, -1, 0);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 4, "pg_control_last_modified",
 					   TIMESTAMPTZOID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 5, "database_cluster_state",
+					   TEXTOID, -1, 0);
 	tupdesc = BlessTupleDesc(tupdesc);
 
 	/* read the control file */
@@ -70,6 +72,9 @@ pg_control_system(PG_FUNCTION_ARGS)
 
 	values[3] = TimestampTzGetDatum(time_t_to_timestamptz(ControlFile->time));
 	nulls[3] = false;
+
+	values[4] = CStringGetTextDatum(get_dbstate(ControlFile->state));
+	nulls[4] = false;
 
 	htup = heap_form_tuple(tupdesc, values, nulls);
 

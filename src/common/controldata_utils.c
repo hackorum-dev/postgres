@@ -265,3 +265,31 @@ update_controlfile(const char *DataDir,
 #endif
 	}
 }
+
+/*
+ * get_dbstate()
+ *
+ * Get the database cluster state.
+ */
+const char *
+get_dbstate(DBState state)
+{
+	switch (state)
+	{
+		case DB_STARTUP:
+			return _("starting up");
+		case DB_SHUTDOWNED:
+			return _("shut down");
+		case DB_SHUTDOWNED_IN_RECOVERY:
+			return _("shut down in recovery");
+		case DB_SHUTDOWNING:
+			return _("shutting down");
+		case DB_IN_CRASH_RECOVERY:
+			return _("in crash recovery");
+		case DB_IN_ARCHIVE_RECOVERY:
+			return _("in archive recovery");
+		case DB_IN_PRODUCTION:
+			return _("in production");
+	}
+	return _("unrecognized status code");
+}

@@ -25166,6 +25166,11 @@ SELECT collation for ('foo' COLLATE "de_DE");
        <entry><type>timestamp with time zone</type></entry>
       </row>
 
+      <row>
+       <entry><structfield>database_cluster_state</structfield></entry>
+       <entry><type>text</type></entry>
+      </row>
+
      </tbody>
     </tgroup>
    </table>

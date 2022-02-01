@@ -45,30 +45,6 @@ usage(const char *progname)
 	printf(_("%s home page: <%s>\n"), PACKAGE_NAME, PACKAGE_URL);
 }
 
-
-static const char *
-dbState(DBState state)
-{
-	switch (state)
-	{
-		case DB_STARTUP:
-			return _("starting up");
-		case DB_SHUTDOWNED:
-			return _("shut down");
-		case DB_SHUTDOWNED_IN_RECOVERY:
-			return _("shut down in recovery");
-		case DB_SHUTDOWNING:
-			return _("shutting down");
-		case DB_IN_CRASH_RECOVERY:
-			return _("in crash recovery");
-		case DB_IN_ARCHIVE_RECOVERY:
-			return _("in archive recovery");
-		case DB_IN_PRODUCTION:
-			return _("in production");
-	}
-	return _("unrecognized status code");
-}
-
 static const char *
 wal_level_str(WalLevel wal_level)
 {
@@ -232,7 +208,7 @@ main(int argc, char *argv[])
 	printf(_("Database system identifier:           %llu\n"),
 		   (unsigned long long) ControlFile->system_identifier);
 	printf(_("Database cluster state:               %s\n"),
-		   dbState(ControlFile->state));
+		   get_dbstate(ControlFile->state));
 	printf(_("pg_control last modified:             %s\n"),
 		   pgctime_str);
 	printf(_("Latest checkpoint location:           %X/%X\n"),
