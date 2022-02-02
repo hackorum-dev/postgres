@@ -2058,7 +2058,7 @@ expression_tree_walker(Node *node,
 			{
 				SubPlan    *subplan = (SubPlan *) node;
 
-				/* recurse into the testexpr, but not into the Plan */
+				/* recurse into the testexpr */
 				if (walker(subplan->testexpr, context))
 					return true;
 				/* also examine args list */
@@ -2852,7 +2852,6 @@ expression_tree_mutator(Node *node,
 				MUTATE(newnode->testexpr, subplan->testexpr, Node *);
 				/* transform args list (params to be passed to subplan) */
 				MUTATE(newnode->args, subplan->args, List *);
-				/* but not the sub-Plan itself, which is referenced as-is */
 				return (Node *) newnode;
 			}
 			break;
