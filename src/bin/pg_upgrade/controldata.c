@@ -11,6 +11,7 @@
 
 #include <ctype.h>
 
+#include "catalog/pg_control.h"
 #include "pg_upgrade.h"
 
 /*
@@ -228,7 +229,7 @@ get_control_data(ClusterInfo *cluster, bool live_check)
 			p++;				/* remove ':' char */
 			cluster->controldata.cat_ver = str2uint(p);
 		}
-		else if ((p = strstr(bufin, "Latest checkpoint's TimeLineID:")) != NULL)
+		else if ((p = strstr(bufin, PG_CONTROL_FIELD_CHECKPOINT_TLI)) != NULL)
 		{
 			p = strchr(p, ':');
 

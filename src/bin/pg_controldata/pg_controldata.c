@@ -237,11 +237,14 @@ main(int argc, char *argv[])
 		   pgctime_str);
 	printf(_("Latest checkpoint location:           %X/%X\n"),
 		   LSN_FORMAT_ARGS(ControlFile->checkPoint));
-	printf(_("Latest checkpoint's REDO location:    %X/%X\n"),
+	printf(_("%s    %X/%X\n"),
+		   PG_CONTROL_FIELD_CHECKPOINT_REDO_LOC,
 		   LSN_FORMAT_ARGS(ControlFile->checkPointCopy.redo));
-	printf(_("Latest checkpoint's REDO WAL file:    %s\n"),
+	printf(_("%s    %s\n"),
+		   PG_CONTROL_FIELD_CHECKPOINT_REDO_WAL_FILE,
 		   xlogfilename);
-	printf(_("Latest checkpoint's TimeLineID:       %u\n"),
+	printf(_("%s       %u\n"),
+		   PG_CONTROL_FIELD_CHECKPOINT_TLI,
 		   ControlFile->checkPointCopy.ThisTimeLineID);
 	printf(_("Latest checkpoint's PrevTimeLineID:   %u\n"),
 		   ControlFile->checkPointCopy.PrevTimeLineID);

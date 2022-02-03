@@ -768,7 +768,8 @@ PrintControlValues(bool guessed)
 		   ControlFile.catalog_version_no);
 	printf(_("Database system identifier:           %llu\n"),
 		   (unsigned long long) ControlFile.system_identifier);
-	printf(_("Latest checkpoint's TimeLineID:       %u\n"),
+	printf(_("%s       %u\n"),
+		   PG_CONTROL_FIELD_CHECKPOINT_TLI,
 		   ControlFile.checkPointCopy.ThisTimeLineID);
 	printf(_("Latest checkpoint's full_page_writes: %s\n"),
 		   ControlFile.checkPointCopy.fullPageWrites ? _("on") : _("off"));

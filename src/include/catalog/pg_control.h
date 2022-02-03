@@ -27,6 +27,10 @@
 /* Nonce key length, see below */
 #define MOCK_AUTH_NONCE_LEN		32
 
+#define PG_CONTROL_FIELD_CHECKPOINT_REDO_LOC "Latest checkpoint's REDO location:"
+#define PG_CONTROL_FIELD_CHECKPOINT_REDO_WAL_FILE "Latest checkpoint's REDO WAL file:"
+#define PG_CONTROL_FIELD_CHECKPOINT_TLI "Latest checkpoint's TimeLineID:"
+
 /*
  * Body of CheckPoint XLOG records.  This is declared here because we keep
  * a copy of the latest one in pg_control for possible disaster recovery.
