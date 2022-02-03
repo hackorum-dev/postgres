@@ -773,6 +773,10 @@ acldefault(ObjectType objtype, Oid ownerId)
 			world_default = ACL_NO_RIGHTS;
 			owner_default = ACL_ALL_RIGHTS_LARGEOBJECT;
 			break;
+		case OBJECT_MODULE:
+			world_default = ACL_NO_RIGHTS;
+			owner_default = ACL_ALL_RIGHTS_MODULE;
+			break;
 		case OBJECT_SCHEMA:
 			world_default = ACL_NO_RIGHTS;
 			owner_default = ACL_ALL_RIGHTS_SCHEMA;

@@ -136,16 +136,23 @@ extern bool TSTemplateIsVisible(Oid tmplId);
 extern Oid	get_ts_config_oid(List *names, bool missing_ok);
 extern bool TSConfigIsVisible(Oid cfgid);
 
-extern void DeconstructQualifiedName(List *names,
-									 char **nspname_p,
-									 char **objname_p);
+extern void DeconstructQualifiedNameNoModule(List *names,
+											char **nspname_p,
+											char **objname_p);
+extern void DeconstructQualifiedNameWithModule(List *names,
+											char **nspname_p,
+											char **modname_p,
+											char **objname_p);
 extern Oid	LookupNamespaceNoError(const char *nspname);
 extern Oid	LookupExplicitNamespace(const char *nspname, bool missing_ok);
 extern Oid	get_namespace_oid(const char *nspname, bool missing_ok);
+extern Oid	get_module_oid(List *names, bool missing_ok);
+extern Oid	get_module_oid_from_name(Oid nspoid, const char *modname, bool missing_ok);
 
 extern Oid	LookupCreationNamespace(const char *nspname);
 extern void CheckSetNamespace(Oid oldNspOid, Oid nspOid);
 extern Oid	QualifiedNameGetCreationNamespace(List *names, char **objname_p);
+extern Oid	QualifiedNameWithModuleGetCreationNamespace(List *names, Oid *moduleId, char **objname_p);
 extern RangeVar *makeRangeVarFromNameList(List *names);
 extern char *NameListToString(List *names);
 extern char *NameListToQuotedString(List *names);

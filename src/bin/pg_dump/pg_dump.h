@@ -82,7 +82,8 @@ typedef enum
 	DO_PUBLICATION,
 	DO_PUBLICATION_REL,
 	DO_PUBLICATION_TABLE_IN_SCHEMA,
-	DO_SUBSCRIPTION
+	DO_SUBSCRIPTION,
+	DO_MODULE
 } DumpableObjectType;
 
 /*
@@ -136,6 +137,7 @@ typedef struct _dumpableObject
 	DumpId		dumpId;			/* assigned by AssignDumpId() */
 	char	   *name;			/* object name (should never be NULL) */
 	struct _namespaceInfo *namespace;	/* containing namespace, or NULL */
+	struct _moduleInfo *module;	/* containing module, or NULL */
 	DumpComponents dump;		/* bitmask of components requested to dump */
 	DumpComponents dump_contains;	/* as above, but for contained objects */
 	DumpComponents components;	/* bitmask of components available to dump */
@@ -174,6 +176,16 @@ typedef struct _namespaceInfo
 	Oid			nspowner;		/* OID of owner */
 	const char *rolname;		/* name of owner */
 } NamespaceInfo;
+
+typedef struct _moduleInfo
+{
+	DumpableObject dobj;
+	DumpableAcl dacl;
+	bool		create;			/* CREATE MODULE, or just set owner? */
+	Oid			nspoid; 		/* OID of schema */
+	Oid			modowner;		/* OID of owner */
+	const char *rolname;		/* name of owner */
+} ModuleInfo;
 
 typedef struct _extensionInfo
 {
@@ -681,6 +693,7 @@ extern FuncInfo *findFuncByOid(Oid oid);
 extern OprInfo *findOprByOid(Oid oid);
 extern CollInfo *findCollationByOid(Oid oid);
 extern NamespaceInfo *findNamespaceByOid(Oid oid);
+extern ModuleInfo *findModuleByOid(Oid oid);
 extern ExtensionInfo *findExtensionByOid(Oid oid);
 extern PublicationInfo *findPublicationByOid(Oid oid);
 
@@ -697,6 +710,7 @@ extern void sortDumpableObjectsByTypeName(DumpableObject **objs, int numObjs);
  * version specific routines
  */
 extern NamespaceInfo *getNamespaces(Archive *fout, int *numNamespaces);
+extern ModuleInfo *getModules(Archive *fout, int *numModules);
 extern ExtensionInfo *getExtensions(Archive *fout, int *numExtensions);
 extern TypeInfo *getTypes(Archive *fout, int *numTypes);
 extern FuncInfo *getFuncs(Archive *fout, int *numFuncs);

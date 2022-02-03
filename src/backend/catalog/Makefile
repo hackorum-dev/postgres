@@ -35,6 +35,7 @@ OBJS = \
 	pg_enum.o \
 	pg_inherits.o \
 	pg_largeobject.o \
+	pg_module.o \
 	pg_namespace.o \
 	pg_operator.o \
 	pg_proc.o \
@@ -59,7 +60,7 @@ CATALOG_HEADERS := \
 	pg_language.h pg_largeobject_metadata.h pg_largeobject.h pg_aggregate.h \
 	pg_statistic.h pg_statistic_ext.h pg_statistic_ext_data.h \
 	pg_rewrite.h pg_trigger.h pg_event_trigger.h pg_description.h \
-	pg_cast.h pg_enum.h pg_namespace.h pg_conversion.h pg_depend.h \
+	pg_cast.h pg_enum.h pg_module.h pg_namespace.h pg_conversion.h pg_depend.h \
 	pg_database.h pg_db_role_setting.h pg_tablespace.h \
 	pg_authid.h pg_auth_members.h pg_shdepend.h pg_shdescription.h \
 	pg_ts_config.h pg_ts_config_map.h pg_ts_dict.h \
@@ -79,7 +80,7 @@ POSTGRES_BKI_SRCS := $(addprefix $(top_srcdir)/src/include/catalog/, $(CATALOG_H
 POSTGRES_BKI_DATA = $(addprefix $(top_srcdir)/src/include/catalog/,\
 	pg_aggregate.dat pg_am.dat pg_amop.dat pg_amproc.dat pg_authid.dat \
 	pg_cast.dat pg_class.dat pg_collation.dat pg_conversion.dat \
-	pg_database.dat pg_language.dat \
+	pg_database.dat pg_language.dat pg_module.dat \
 	pg_namespace.dat pg_opclass.dat pg_operator.dat pg_opfamily.dat \
 	pg_proc.dat pg_range.dat pg_tablespace.dat \
 	pg_ts_config.dat pg_ts_config_map.dat pg_ts_dict.dat pg_ts_parser.dat \

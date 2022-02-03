@@ -44,6 +44,7 @@
 #include "catalog/pg_language.h"
 #include "catalog/pg_largeobject.h"
 #include "catalog/pg_largeobject_metadata.h"
+#include "catalog/pg_module.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_operator.h"
@@ -109,6 +110,7 @@ static void ExecGrant_ForeignServer(InternalGrant *grantStmt);
 static void ExecGrant_Function(InternalGrant *grantStmt);
 static void ExecGrant_Language(InternalGrant *grantStmt);
 static void ExecGrant_Largeobject(InternalGrant *grantStmt);
+static void ExecGrant_Module(InternalGrant *grantStmt);
 static void ExecGrant_Namespace(InternalGrant *grantStmt);
 static void ExecGrant_Tablespace(InternalGrant *grantStmt);
 static void ExecGrant_Type(InternalGrant *grantStmt);
@@ -118,6 +120,7 @@ static void SetDefaultACL(InternalDefaultACL *iacls);
 
 static List *objectNamesToOids(ObjectType objtype, List *objnames);
 static List *objectsInSchemaToOids(ObjectType objtype, List *nspnames);
+static List *objectsInModuleToOids(ObjectType objtype, List *objnames);
 static List *getRelationsInNamespace(Oid namespaceId, char relkind);
 static void expand_col_privileges(List *colnames, Oid table_oid,
 								  AclMode this_privileges,
@@ -239,6 +242,9 @@ restrict_and_check_grant(bool is_grant, AclMode avail_goptions, bool all_privs,
 			break;
 		case OBJECT_LARGEOBJECT:
 			whole_mask = ACL_ALL_RIGHTS_LARGEOBJECT;
+			break;
+		case OBJECT_MODULE:
+			whole_mask = ACL_ALL_RIGHTS_MODULE;
 			break;
 		case OBJECT_SCHEMA:
 			whole_mask = ACL_ALL_RIGHTS_SCHEMA;
@@ -395,6 +401,11 @@ ExecuteGrantStmt(GrantStmt *stmt)
 		case ACL_TARGET_ALL_IN_SCHEMA:
 			istmt.objects = objectsInSchemaToOids(stmt->objtype, stmt->objects);
 			break;
+		case ACL_TARGET_ALL_IN_MODULE:
+			/* For execute privilege on a module. Create privilege on a module
+			   will go to ACL_TARGET_OBJECT case */
+			istmt.objects = objectsInModuleToOids(stmt->objtype, stmt->objects);
+			break;
 			/* ACL_TARGET_DEFAULTS should not be seen here */
 		default:
 			elog(ERROR, "unrecognized GrantStmt.targtype: %d",
@@ -498,6 +509,10 @@ ExecuteGrantStmt(GrantStmt *stmt)
 			all_privileges = ACL_ALL_RIGHTS_FOREIGN_SERVER;
 			errormsg = gettext_noop("invalid privilege type %s for foreign server");
 			break;
+		case OBJECT_MODULE:
+			all_privileges = ACL_ALL_RIGHTS_MODULE;
+			errormsg = gettext_noop("invalid privilege type %s for module");
+			break;
 		default:
 			elog(ERROR, "unrecognized GrantStmt.objtype: %d",
 				 (int) stmt->objtype);
@@ -596,6 +611,9 @@ ExecGrantStmt_oids(InternalGrant *istmt)
 			break;
 		case OBJECT_SCHEMA:
 			ExecGrant_Namespace(istmt);
+			break;
+		case OBJECT_MODULE:
+			ExecGrant_Module(istmt);
 			break;
 		case OBJECT_TABLESPACE:
 			ExecGrant_Tablespace(istmt);
@@ -699,6 +717,19 @@ objectNamesToOids(ObjectType objtype, List *objnames)
 									lobjOid)));
 
 				objects = lappend_oid(objects, lobjOid);
+			}
+			break;
+		case OBJECT_MODULE:
+			foreach(cell, objnames)
+			{
+				Oid        namespaceId;
+				Oid        moduleId;
+				char       *moduleName = NULL;
+				List       *modNameList = (List *) lfirst(cell);
+				namespaceId = QualifiedNameWithModuleGetCreationNamespace(modNameList,
+															  &moduleId, &moduleName);
+				moduleId = get_module_oid_from_name(namespaceId, moduleName, true);
+				objects = lappend_oid(objects, moduleId);
 			}
 			break;
 		case OBJECT_SCHEMA:
@@ -856,6 +887,78 @@ objectsInSchemaToOids(ObjectType objtype, List *nspnames)
 	}
 
 	return objects;
+}
+
+/*
+ * objectsInModuleToOids
+ *
+ * Find all objects of a given type in a specified module, and return a list
+ * of their Oids.
+ */
+static List *
+objectsInModuleToOids(ObjectType objtype, List *moduleNames)
+{
+	List	   *objectOids = NIL;
+	ListCell   *cell;
+
+	if ((objtype != OBJECT_FUNCTION) && (objtype != OBJECT_PROCEDURE) && (objtype != OBJECT_ROUTINE))
+				/* should not happen */
+				elog(ERROR, "unrecognized objtype in GrantStmt on modules: %d",
+					 (int) objtype);
+
+	foreach(cell, moduleNames)
+	{
+		List	   *moduleNameList = (List *) lfirst(cell);
+		char       *moduleName = NULL;
+		Oid     	namespaceId;
+		Oid     	moduleId;
+		ScanKeyData key[3];
+		Relation	rel;
+		TableScanDesc scan;
+		HeapTuple	tuple;
+		int         keycount = 3;
+
+		/* Convert qualified names List of module to a name and namespace */
+		namespaceId = QualifiedNameWithModuleGetCreationNamespace(moduleNameList,
+															  &moduleId, &moduleName);
+		moduleId = get_module_oid_from_name(namespaceId, moduleName, true);
+
+		ScanKeyInit(&key[0],
+					Anum_pg_proc_pronamespace,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(namespaceId));
+
+		ScanKeyInit(&key[1],
+					Anum_pg_proc_promodule,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(moduleId));
+
+		if (objtype == OBJECT_FUNCTION)
+			/* includes aggregates and window functions */
+			ScanKeyInit(&key[2],
+						Anum_pg_proc_prokind,
+						BTEqualStrategyNumber, F_CHARNE,
+						CharGetDatum(PROKIND_PROCEDURE));
+		else if (objtype == OBJECT_PROCEDURE)
+			ScanKeyInit(&key[2],
+						Anum_pg_proc_prokind,
+						BTEqualStrategyNumber, F_CHAREQ,
+						CharGetDatum(PROKIND_PROCEDURE));
+
+		rel = table_open(ProcedureRelationId, AccessShareLock);
+		scan = table_beginscan_catalog(rel, keycount, key);
+
+		while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
+		{
+			Oid	oid = ((Form_pg_proc) GETSTRUCT(tuple))->oid;
+			objectOids = lappend_oid(objectOids, oid);
+		}
+
+		table_endscan(scan);
+		table_close(rel, AccessShareLock);
+	}
+
+	return objectOids;
 }
 
 /*
@@ -2845,6 +2948,130 @@ ExecGrant_Largeobject(InternalGrant *istmt)
 }
 
 static void
+ExecGrant_Module(InternalGrant *istmt)
+{
+	Relation	relation;
+	ListCell   *cell;
+
+	if (istmt->all_privs && istmt->privileges == ACL_NO_RIGHTS)
+		istmt->privileges = ACL_ALL_RIGHTS_MODULE;
+
+	relation = table_open(ModuleRelationId, RowExclusiveLock);
+
+	foreach(cell, istmt->objects)
+	{
+		Oid	modid = lfirst_oid(cell);
+		Form_pg_module pg_mod_tuple;
+		Datum aclDatum;
+		bool isNull;
+		AclMode	avail_goptions;
+		AclMode	this_privileges;
+		Acl *old_acl;
+		Acl	*new_acl;
+		Oid	grantorId;
+		Oid	ownerId;
+		HeapTuple tuple;
+		HeapTuple newtuple;
+		Datum values[Natts_pg_module];
+		bool nulls[Natts_pg_module];
+		bool replaces[Natts_pg_module];
+		int	noldmembers;
+		int	nnewmembers;
+		Oid *oldmembers;
+		Oid *newmembers;
+
+		tuple = SearchSysCache1(MODULEOID, ObjectIdGetDatum(modid));
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for module %u", modid);
+
+		pg_mod_tuple = (Form_pg_module) GETSTRUCT(tuple);
+
+		/*
+		 * Get owner ID and working copy of existing ACL. If there's no ACL,
+		 * substitute the proper default.
+		 */
+		ownerId = pg_mod_tuple->modowner;
+		aclDatum = SysCacheGetAttr(MODULENAME, tuple,
+								   Anum_pg_module_modacl,
+								   &isNull);
+		if (isNull)
+		{
+			old_acl = acldefault(OBJECT_MODULE, ownerId);
+			/* There are no old member roles according to the catalogs */
+			noldmembers = 0;
+			oldmembers = NULL;
+		}
+		else
+		{
+			old_acl = DatumGetAclPCopy(aclDatum);
+			/* Get the roles mentioned in the existing ACL */
+			noldmembers = aclmembers(old_acl, &oldmembers);
+		}
+
+		/* Determine ID to do the grant as, and available grant options */
+		select_best_grantor(GetUserId(), istmt->privileges,
+							old_acl, ownerId,
+							&grantorId, &avail_goptions);
+
+		/*
+		 * Restrict the privileges to what we can actually grant, and emit the
+		 * standards-mandated warning and error messages.
+		 */
+		this_privileges =
+			restrict_and_check_grant(istmt->is_grant, avail_goptions,
+									 istmt->all_privs, istmt->privileges,
+									 modid, grantorId, OBJECT_MODULE,
+									 NameStr(pg_mod_tuple->modname),
+									 0, NULL);
+
+		/*
+		 * Generate new ACL.
+		 */
+		new_acl = merge_acl_with_grant(old_acl, istmt->is_grant,
+									   istmt->grant_option, istmt->behavior,
+									   istmt->grantees, this_privileges,
+									   grantorId, ownerId);
+
+		/*
+		 * We need the members of both old and new ACLs so we can correct the
+		 * shared dependency information.
+		 */
+		nnewmembers = aclmembers(new_acl, &newmembers);
+
+		/* finished building new ACL value, now insert it */
+		MemSet(values, 0, sizeof(values));
+		MemSet(nulls, false, sizeof(nulls));
+		MemSet(replaces, false, sizeof(replaces));
+
+		replaces[Anum_pg_module_modacl - 1] = true;
+		values[Anum_pg_module_modacl - 1] = PointerGetDatum(new_acl);
+
+		newtuple = heap_modify_tuple(tuple, RelationGetDescr(relation), values,
+									 nulls, replaces);
+
+		CatalogTupleUpdate(relation, &newtuple->t_self, newtuple);
+
+		/* Update initial privileges for extensions */
+		recordExtensionInitPriv(modid, ModuleRelationId, 0, new_acl);
+
+		/* Update the shared dependency ACL info */
+		updateAclDependencies(ModuleRelationId, pg_mod_tuple->oid, 0,
+							  ownerId,
+							  noldmembers, oldmembers,
+							  nnewmembers, newmembers);
+
+		ReleaseSysCache(tuple);
+
+		pfree(new_acl);
+
+		/* prevent error when processing duplicate objects */
+		CommandCounterIncrement();
+	}
+
+	table_close(relation, RowExclusiveLock);
+}
+
+static void
 ExecGrant_Namespace(InternalGrant *istmt)
 {
 	Relation	relation;
@@ -3367,6 +3594,9 @@ aclcheck_error(AclResult aclerr, ObjectType objtype,
 					case OBJECT_MATVIEW:
 						msg = gettext_noop("permission denied for materialized view %s");
 						break;
+					case OBJECT_MODULE:
+						msg = gettext_noop("permission denied for module %s");
+						break;
 					case OBJECT_OPCLASS:
 						msg = gettext_noop("permission denied for operator class %s");
 						break;
@@ -3495,6 +3725,9 @@ aclcheck_error(AclResult aclerr, ObjectType objtype,
 						break;
 					case OBJECT_MATVIEW:
 						msg = gettext_noop("must be owner of materialized view %s");
+						break;
+					case OBJECT_MODULE:
+						msg = gettext_noop("must be owner of module %s");
 						break;
 					case OBJECT_OPCLASS:
 						msg = gettext_noop("must be owner of operator class %s");
@@ -3655,6 +3888,8 @@ pg_aclmask(ObjectType objtype, Oid table_oid, AttrNumber attnum, Oid roleid,
 												   mask, how, NULL);
 		case OBJECT_SCHEMA:
 			return pg_namespace_aclmask(table_oid, roleid, mask, how);
+		case OBJECT_MODULE:
+			return pg_module_aclmask(table_oid, roleid, mask, how);
 		case OBJECT_STATISTIC_EXT:
 			elog(ERROR, "grantable rights not supported for statistics objects");
 			/* not reached, but keep compiler quiet */
@@ -4283,6 +4518,59 @@ pg_namespace_aclmask(Oid nsp_oid, Oid roleid,
 }
 
 /*
+ * Exported routine for examining a user's privileges for a module
+ */
+AclMode
+pg_module_aclmask(Oid mod_oid, Oid roleid, AclMode mask, AclMaskHow how)
+{
+	AclMode	result;
+	HeapTuple tuple;
+	Datum aclDatum;
+	bool isNull;
+	Acl *acl;
+	Oid ownerId;
+
+	/* Superusers bypass all permission checking. */
+	if (superuser_arg(roleid))
+		return mask;
+
+	/*
+	 * Get the module's ACL from pg_module
+	 */
+	tuple = SearchSysCache1(MODULEOID, ObjectIdGetDatum(mod_oid));
+	if (!HeapTupleIsValid(tuple))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_MODULE),
+				 errmsg("module with OID %u does not exist", mod_oid)));
+
+	ownerId = ((Form_pg_module) GETSTRUCT(tuple))->modowner;
+
+	aclDatum = SysCacheGetAttr(MODULEOID, tuple, Anum_pg_module_modacl,
+							   &isNull);
+	if (isNull)
+	{
+		/* No ACL, so build default ACL */
+		acl = acldefault(OBJECT_MODULE, ownerId);
+		aclDatum = (Datum) 0;
+	}
+	else
+	{
+		/* detoast ACL if necessary */
+		acl = DatumGetAclP(aclDatum);
+	}
+
+	result = aclmask(acl, roleid, ownerId, mask, how);
+
+	/* if we have a detoasted copy, free it */
+	if (acl && (Pointer) acl != DatumGetPointer(aclDatum))
+		pfree(acl);
+
+	ReleaseSysCache(tuple);
+
+	return result;
+}
+
+/*
  * Exported routine for examining a user's privileges for a tablespace
  */
 AclMode
@@ -4764,6 +5052,18 @@ pg_namespace_aclcheck(Oid nsp_oid, Oid roleid, AclMode mode)
 }
 
 /*
+ * Exported routine for checking a user's access privileges to a module
+ */
+AclResult
+pg_module_aclcheck(Oid mod_oid, Oid roleid, AclMode mode)
+{
+	if (pg_module_aclmask(mod_oid, roleid, mode, ACLMASK_ANY) != 0)
+		return ACLCHECK_OK;
+	else
+		return ACLCHECK_NO_PRIV;
+}
+
+/*
  * Exported routine for checking a user's access privileges to a tablespace
  */
 AclResult
@@ -5009,6 +5309,31 @@ pg_namespace_ownercheck(Oid nsp_oid, Oid roleid)
 				 errmsg("schema with OID %u does not exist", nsp_oid)));
 
 	ownerId = ((Form_pg_namespace) GETSTRUCT(tuple))->nspowner;
+
+	ReleaseSysCache(tuple);
+
+	return has_privs_of_role(roleid, ownerId);
+}
+
+/*
+ * Ownership check for a module (specified by OID).
+ */
+bool
+pg_module_ownercheck(Oid mod_oid, Oid roleid)
+{
+	HeapTuple tuple;
+	Oid ownerId;
+
+	/* Superusers bypass all permission checking. */
+	if (superuser_arg(roleid))
+		return true;
+
+	tuple = SearchSysCache1(MODULEOID, ObjectIdGetDatum(mod_oid));
+	if (!HeapTupleIsValid(tuple))
+		ereport(ERROR, (errcode(ERRCODE_UNDEFINED_MODULE),
+						errmsg("module with OID %u does not exist", mod_oid)));
+
+	ownerId = ((Form_pg_module) GETSTRUCT(tuple))->modowner;
 
 	ReleaseSysCache(tuple);
 

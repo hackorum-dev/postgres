@@ -1,0 +1,191 @@
+<!--
+doc/src/sgml/ref/create_module.sgml
+PostgreSQL documentation
+-->
+
+<refentry id="sql-createmodule">
+ <indexterm zone="sql-createmodule">
+  <primary>CREATE MODULE</primary>
+ </indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE MODULE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>SQL - Language Statements</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE MODULE</refname>
+  <refpurpose>define a new module</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>
+CREATE MODULE module_name [ OWNER <replaceable class="parameter">role_specification</replaceable> ] [ <replaceable class="parameter">module_element</replaceable> [ ... ] ]
+CREATE MODULE IF NOT EXISTS module_name [ OWNER <replaceable class="parameter">role_specification</replaceable> ]
+
+<phrase>where <replaceable class="parameter">role_specification</replaceable> can be:</phrase>
+
+    <replaceable class="parameter">user_name</replaceable>
+  | CURRENT_ROLE
+  | CURRENT_USER
+  | SESSION_USER
+</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Description</title>
+
+  <para>
+   <command>CREATE MODULE</command> adds a new module
+   into the current schema.
+   The module name must be distinct from the name of any existing module
+   in the current schema.
+  </para>
+
+  <para>
+   A module is a grouping:
+   it contains named objects (functions, and procedures)
+   whose names can duplicate those of other objects existing in other
+   modules.  Named objects are accessed by <quote>qualifying</quote>
+   their names with the module name as a prefix.
+  </para>
+
+  <para>
+   Optionally, <command>CREATE MODULE</command> can include subcommands
+   to create objects (functions, and procedures) within the new module.
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>Parameters</title>
+
+    <variablelist>
+     <varlistentry>
+      <term><replaceable class="parameter">module_name</replaceable></term>
+      <listitem>
+       <para>
+        The name of a module to be created.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">user_name</replaceable></term>
+      <listitem>
+       <para>
+        The role name of the user who will own the new module.  If omitted,
+        defaults to the user executing the command.  To create a schema
+        owned by another role, you must be a direct or indirect member of
+        that role, or be a superuser.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">module_element</replaceable></term>
+      <listitem>
+       <para>
+        An SQL statement defining an object to be created within the
+        schema. Currently, only <command>CREATE
+        FUNCTION</command> and <command>CREATE PROCEDURE</command> are accepted as clauses
+        within <command>CREATE MODULE</command>.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>IF NOT EXISTS</literal></term>
+      <listitem>
+       <para>
+        Do nothing (except issuing a notice) if a module with the same name
+        already exists in the current schema.
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Notes</title>
+
+  <para>
+   To create a module, the invoking user, if not a superuser, must have the
+   <literal>CREATE</literal> privilege for the current schema.
+   If the invoking user is a superuser, this check is bypassed.
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>Examples</title>
+
+  <para>
+   Create a module:
+<programlisting>
+CREATE MODULE mymodule;
+</programlisting>
+  </para>
+
+  <para>
+   Create a module named <literal>test</literal> that will be owned by user
+   <literal>jill</literal>, unless there already is a module named <literal>test</literal>
+   in the current schema.
+   (It does not matter whether <literal>joe</literal> owns the pre-existing module.)
+<programlisting>
+CREATE SCHEMA IF NOT EXISTS test OWNER jill;
+</programlisting>
+  </para>
+
+  <para>
+   Create a module and create a procedure and function within it:
+<programlisting>
+CREATE TABLE cm_test (a int, b text);
+
+CREATE MODULE mtest1
+  CREATE PROCEDURE m2testa(x text)
+     LANGUAGE SQL
+     AS $$
+     INSERT INTO cm_test VALUES (1, x);
+     $$
+  CREATE FUNCTION m1testa() RETURNS text
+     LANGUAGE sql
+     RETURN '1x';
+</programlisting>
+   Notice that the individual subcommands do not end with semicolons.
+  </para>
+
+  <para>
+   The following is an equivalent way of accomplishing the same result:
+<programlisting>
+CREATE MODULE mtest1;
+CREATE PROCEDURE mtest1.m2testa(x text)
+     LANGUAGE SQL
+     AS $$
+     INSERT INTO cm_test VALUES (1, x);
+     $$;
+CREATE FUNCTION mtest1.m1testa() RETURNS text
+     LANGUAGE sql
+     RETURN '1x';
+</programlisting></para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Compatibility</title>
+
+  <para>
+   The <literal>IF NOT EXISTS</literal> option is a
+   <productname>PostgreSQL</productname> extension.
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>See Also</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alterschema"/></member>
+   <member><xref linkend="sql-dropschema"/></member>
+ </simplelist>
+ </refsect1>
+
+</refentry>

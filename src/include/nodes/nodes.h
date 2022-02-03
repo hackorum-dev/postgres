@@ -383,6 +383,8 @@ typedef enum NodeTag
 	T_DeclareCursorStmt,
 	T_CreateTableSpaceStmt,
 	T_DropTableSpaceStmt,
+	T_AlterModuleOwnerStmt,
+	T_AlterModuleRenameStmt,
 	T_AlterObjectDependsStmt,
 	T_AlterObjectSchemaStmt,
 	T_AlterOwnerStmt,
@@ -429,6 +431,9 @@ typedef enum NodeTag
 	T_AlterCollationStmt,
 	T_CallStmt,
 	T_AlterStatsStmt,
+	T_CreateModuleStmt,
+	T_AlterModuleAlterFuncStmt,
+	T_AlterModuleCreateReplaceFuncStmt,
 
 	/*
 	 * TAGS FOR PARSE TREE NODES (parsenodes.h)

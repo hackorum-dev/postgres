@@ -1,0 +1,119 @@
+<!--
+doc/src/sgml/ref/alter_module.sgml
+PostgreSQL documentation
+-->
+
+<refentry id="sql-altermodule">
+ <indexterm zone="sql-altermodule">
+  <primary>ALTER MODULE</primary>
+ </indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER MODULE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>SQL - Language Statements</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER MODULE</refname>
+  <refpurpose>change the definition of a module</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>
+ALTER MODULE <replaceable>name</replaceable> RENAME TO <replaceable>new_name</replaceable>
+ALTER MODULE <replaceable>name</replaceable> OWNER TO { <replaceable>new_owner</replaceable> | CURRENT_ROLE | CURRENT_USER | SESSION_USER }
+ALTER MODULE <replaceable>module_name</replaceable> CREATE [ OR REPLACE ] FUNCTION
+    <replaceable class="parameter">function_name</replaceable> ( [ [ <replaceable class="parameter">argmode</replaceable> ] [ <replaceable class="parameter">argname</replaceable> ] <replaceable class="parameter">argtype</replaceable> [ { DEFAULT | = } <replaceable class="parameter">default_expr</replaceable> ] [, ...] ] )
+    [ RETURNS <replaceable class="parameter">rettype</replaceable>
+      | RETURNS TABLE ( <replaceable class="parameter">column_name</replaceable> <replaceable class="parameter">column_type</replaceable> [, ...] ) ]
+  { LANGUAGE <replaceable class="parameter">lang_name</replaceable>
+    | TRANSFORM { FOR TYPE <replaceable class="parameter">type_name</replaceable> } [, ... ]
+    | WINDOW
+    | { IMMUTABLE | STABLE | VOLATILE }
+    | [ NOT ] LEAKPROOF
+    | { CALLED ON NULL INPUT | RETURNS NULL ON NULL INPUT | STRICT }
+    | { [ EXTERNAL ] SECURITY INVOKER | [ EXTERNAL ] SECURITY DEFINER }
+    | PARALLEL { UNSAFE | RESTRICTED | SAFE }
+    | COST <replaceable class="parameter">execution_cost</replaceable>
+    | ROWS <replaceable class="parameter">result_rows</replaceable>
+    | SUPPORT <replaceable class="parameter">support_function</replaceable>
+    | SET <replaceable class="parameter">configuration_parameter</replaceable> { TO <replaceable class="parameter">value</replaceable> | = <replaceable class="parameter">value</replaceable> | FROM CURRENT }
+    | AS '<replaceable class="parameter">definition</replaceable>'
+    | AS '<replaceable class="parameter">obj_file</replaceable>', '<replaceable class="parameter">link_symbol</replaceable>'
+    | <replaceable class="parameter">sql_body</replaceable>
+  } ...
+</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Description</title>
+
+  <para>
+   <command>ALTER MODULE</command> changes the definition of a module.
+  </para>
+
+  <para>
+   You must own the module to use <command>ALTER MODULE</command>.
+  </para>
+
+  <para>
+   <command>CREATE FUNCTION</command> defines a new function in the module.
+   <command>CREATE OR REPLACE FUNCTION</command> will either create a
+   new function, or replace an existing definition in the module.
+   To be able to define a function, the user must have the
+   <literal>CREATE</literal> privilege on the module.
+  </para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Parameters</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable>name</replaceable></term>
+    <listitem>
+     <para>
+      The name of an existing module.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable>new_name</replaceable></term>
+    <listitem>
+     <para>
+      The new name of the module.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">new_owner</replaceable></term>
+    <listitem>
+     <para>
+      The new owner of the module.
+     </para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  For parameters to ALTER MODULE module_name CREATE [ OR REPLACE ] FUNCTION ..., see
+  <xref linkend="sql-createfunction"/>.
+  For parameters to ALTER MODULE module_name CREATE [ OR REPLACE ] PROCEDURE ..., see
+  <xref linkend="sql-createprocedure"/>.
+ </refsect1>
+
+ <refsect1>
+  <title>See Also</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createmodule"/></member>
+   <member><xref linkend="sql-dropmodule"/></member>
+   <member><xref linkend="sql-createfunction"/></member>
+   <member><xref linkend="sql-createprocedure"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

@@ -202,6 +202,7 @@ static int	findSecLabels(Oid classoid, Oid objoid, SecLabelItem **items);
 static void collectSecLabels(Archive *fout);
 static void dumpDumpableObject(Archive *fout, DumpableObject *dobj);
 static void dumpNamespace(Archive *fout, const NamespaceInfo *nspinfo);
+static void dumpModule(Archive *fout, const ModuleInfo *modinfo);
 static void dumpExtension(Archive *fout, const ExtensionInfo *extinfo);
 static void dumpType(Archive *fout, const TypeInfo *tyinfo);
 static void dumpBaseType(Archive *fout, const TypeInfo *tyinfo);
@@ -4908,6 +4909,85 @@ getNamespaces(Archive *fout, int *numNamespaces)
 }
 
 /*
+ * getModules:
+ *	read all modulees in the system catalogs and return them in the
+ * ModuleInfo* structure
+ *
+ *	numModules is set to the number of moduless read in
+ */
+ModuleInfo *
+getModules(Archive *fout, int *numModules)
+{
+	PGresult *res;
+	int ntups;
+	int	i;
+	PQExpBuffer query;
+	ModuleInfo *modinfo;
+	int i_oid;
+	int i_modname;
+	int i_nspoid;
+	int i_modowner;
+	int i_modacl;
+	int i_acldefault;
+
+	query = createPQExpBuffer();
+
+	/*
+	 * we fetch all modules in pg_module
+	 */
+	appendPQExpBuffer(query, "SELECT n.oid, n.modname, "
+					  "n.nspoid, "
+					  "n.modowner, "
+					  "n.modacl, "
+					  "acldefault('n', n.modowner) AS acldefault "
+					  "FROM pg_module n");
+
+	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+
+	ntups = PQntuples(res);
+
+	modinfo = (ModuleInfo *) pg_malloc(ntups * sizeof(ModuleInfo));
+
+	i_oid = PQfnumber(res, "oid");
+	i_modname = PQfnumber(res, "modname");
+	i_nspoid = PQfnumber(res, "nspoid");
+	i_modowner = PQfnumber(res, "modowner");
+	i_modacl = PQfnumber(res, "modacl");
+	i_acldefault = PQfnumber(res, "acldefault");
+
+	for (i = 0; i < ntups; i++)
+	{
+		const char *modowner;
+		const char *nspoid;
+
+		modinfo[i].dobj.objType = DO_MODULE;
+		modinfo[i].dobj.catId.oid = atooid(PQgetvalue(res, i, i_oid));
+		AssignDumpId(&modinfo[i].dobj);
+		modinfo[i].dobj.name = pg_strdup(PQgetvalue(res, i, i_modname));
+		modinfo[i].dacl.acl = pg_strdup(PQgetvalue(res, i, i_modacl));
+		modinfo[i].dacl.acldefault = pg_strdup(PQgetvalue(res, i, i_acldefault));
+		modinfo[i].dacl.privtype = 0;
+		modinfo[i].dacl.initprivs = NULL;
+		nspoid = PQgetvalue(res, i, i_nspoid);
+		modinfo[i].nspoid = atooid(nspoid);
+		modowner = PQgetvalue(res, i, i_modowner);
+		modinfo[i].modowner = atooid(modowner);
+		modinfo[i].rolname = getRoleName(modowner);
+
+		/* Mark whether module has an ACL */
+		if (!PQgetisnull(res, i, i_modacl))
+			modinfo[i].dobj.components |= DUMP_COMPONENT_ACL;
+	}
+
+	PQclear(res);
+	destroyPQExpBuffer(query);
+
+	*numModules = ntups;
+
+	return modinfo;
+}
+
+/*
  * findNamespace:
  *		given a namespace OID, look up the info read by getNamespaces
  */
@@ -4920,6 +5000,21 @@ findNamespace(Oid nsoid)
 	if (nsinfo == NULL)
 		fatal("schema with OID %u does not exist", nsoid);
 	return nsinfo;
+}
+
+/*
+ * findModule:
+ *		given a module OID, look up the info read by getModules
+ */
+static ModuleInfo *
+findModule(Oid modoid)
+{
+	ModuleInfo *modinfo;
+
+	modinfo = findModuleByOid(modoid);
+	if (modinfo == NULL)
+		fatal("module with OID %u does not exist", modoid);
+	return modinfo;
 }
 
 /*
@@ -5748,6 +5843,7 @@ getFuncs(Archive *fout, int *numFuncs)
 	int			i_oid;
 	int			i_proname;
 	int			i_pronamespace;
+	int			i_promodule;
 	int			i_proowner;
 	int			i_prolang;
 	int			i_pronargs;
@@ -5790,6 +5886,7 @@ getFuncs(Archive *fout, int *numFuncs)
 						  "p.proacl, "
 						  "acldefault('f', p.proowner) AS acldefault, "
 						  "p.pronamespace, "
+						  "p.pronmodule, "
 						  "p.proowner "
 						  "FROM pg_proc p "
 						  "LEFT JOIN pg_init_privs pip ON "
@@ -5832,6 +5929,7 @@ getFuncs(Archive *fout, int *numFuncs)
 						  "pronargs, proargtypes, prorettype, proacl, "
 						  "acldefault('f', proowner) AS acldefault, "
 						  "pronamespace, "
+						  "promodule, "
 						  "proowner "
 						  "FROM pg_proc p "
 						  "WHERE NOT proisagg"
@@ -5877,6 +5975,7 @@ getFuncs(Archive *fout, int *numFuncs)
 	i_oid = PQfnumber(res, "oid");
 	i_proname = PQfnumber(res, "proname");
 	i_pronamespace = PQfnumber(res, "pronamespace");
+	i_promodule = PQfnumber(res, "promodule");
 	i_proowner = PQfnumber(res, "proowner");
 	i_prolang = PQfnumber(res, "prolang");
 	i_pronargs = PQfnumber(res, "pronargs");
@@ -5894,6 +5993,8 @@ getFuncs(Archive *fout, int *numFuncs)
 		finfo[i].dobj.name = pg_strdup(PQgetvalue(res, i, i_proname));
 		finfo[i].dobj.namespace =
 			findNamespace(atooid(PQgetvalue(res, i, i_pronamespace)));
+		finfo[i].dobj.module =
+			findModule(atooid(PQgetvalue(res, i, i_promodule)));
 		finfo[i].dacl.acl = pg_strdup(PQgetvalue(res, i, i_proacl));
 		finfo[i].dacl.acldefault = pg_strdup(PQgetvalue(res, i, i_acldefault));
 		finfo[i].dacl.privtype = 0;
@@ -9615,6 +9716,9 @@ dumpDumpableObject(Archive *fout, DumpableObject *dobj)
 		case DO_NAMESPACE:
 			dumpNamespace(fout, (const NamespaceInfo *) dobj);
 			break;
+		case DO_MODULE:
+			dumpModule(fout, (const ModuleInfo *) dobj);
+			break;
 		case DO_EXTENSION:
 			dumpExtension(fout, (const ExtensionInfo *) dobj);
 			break;
@@ -9848,6 +9952,44 @@ dumpNamespace(Archive *fout, const NamespaceInfo *nspinfo)
 				nspinfo->rolname, &nspinfo->dacl);
 
 	free(qnspname);
+
+	destroyPQExpBuffer(q);
+	destroyPQExpBuffer(delq);
+}
+
+/*
+ * dumpModule
+ *	  writes out to fout the queries to recreate a user-defined module
+ *	  Functions and procedures will be added to the module when those
+ *	  functions and procedures are created, with ALTER MODULE.
+ */
+static void
+dumpModule(Archive *fout, const ModuleInfo *modinfo)
+{
+	DumpOptions *dopt = fout->dopt;
+	PQExpBuffer q;
+	PQExpBuffer delq;
+	char	   *qmodname;
+
+	/* Do nothing in data-only dump */
+	if (dopt->dataOnly)
+		return;
+
+	q = createPQExpBuffer();
+	delq = createPQExpBuffer();
+
+	qmodname = pg_strdup(fmtId(modinfo->dobj.name));
+
+	appendPQExpBuffer(delq, "DROP IF EXISTS MODULE %s;\n", qmodname);
+	appendPQExpBuffer(q, "CREATE MODULE %s;\n", qmodname);
+
+
+	if (modinfo->dobj.dump & DUMP_COMPONENT_ACL)
+		dumpACL(fout, modinfo->dobj.dumpId, InvalidDumpId, "MODULE",
+				qmodname, NULL, NULL,
+				modinfo->rolname, &modinfo->dacl);
+
+	free(qmodname);
 
 	destroyPQExpBuffer(q);
 	destroyPQExpBuffer(delq);
@@ -11539,11 +11681,23 @@ dumpFunc(Archive *fout, const FuncInfo *finfo)
 	appendPQExpBuffer(delqry, "DROP %s %s;\n",
 					  keyword, qual_funcsig);
 
-	appendPQExpBuffer(q, "CREATE %s %s.%s",
-					  keyword,
-					  fmtId(finfo->dobj.namespace->dobj.name),
-					  funcfullsig ? funcfullsig :
-					  funcsig);
+	if (finfo->dobj.module == NULL)
+	{
+		appendPQExpBuffer(q, "CREATE %s %s.%s",
+						  keyword,
+						  fmtId(finfo->dobj.namespace->dobj.name),
+						  funcfullsig ? funcfullsig :
+						  funcsig);
+	}
+	else
+	{
+		appendPQExpBuffer(q, "ALTER MODULE %s CREATE %s %s.%s",
+						  fmtId(finfo->dobj.module->dobj.name),
+						  keyword,
+						  fmtId(finfo->dobj.namespace->dobj.name),
+						  funcfullsig ? funcfullsig :
+						  funcsig);
+	}
 
 	if (prokind[0] == PROKIND_PROCEDURE)
 		 /* no result type to output */ ;
@@ -17647,6 +17801,7 @@ addBoundaryDependencies(DumpableObject **dobjs, int numObjs,
 		switch (dobj->objType)
 		{
 			case DO_NAMESPACE:
+			case DO_MODULE:
 			case DO_EXTENSION:
 			case DO_TYPE:
 			case DO_SHELL_TYPE:

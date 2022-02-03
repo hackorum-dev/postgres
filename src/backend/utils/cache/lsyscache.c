@@ -27,6 +27,7 @@
 #include "catalog/pg_collation.h"
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_language.h"
+#include "catalog/pg_module.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_operator.h"
@@ -3302,6 +3303,31 @@ free_attstatsslot(AttStatsSlot *sslot)
 		pfree(sslot->values_arr);
 	if (sslot->numbers_arr)
 		pfree(sslot->numbers_arr);
+}
+
+/*				---------- PG_MODULE CACHE ----------				 */
+
+/*
+ * get_module_name
+ *		Returns the name of a given module or NULL if no such module
+ */
+char *
+get_module_name(Oid modid)
+{
+	HeapTuple	tp;
+
+	tp = SearchSysCache1(MODULEOID, ObjectIdGetDatum(modid));
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_module modtup = (Form_pg_module) GETSTRUCT(tp);
+		char	   *result;
+
+		result = pstrdup(NameStr(modtup->modname));
+		ReleaseSysCache(tp);
+		return result;
+	}
+	else
+		return NULL;
 }
 
 /*				---------- PG_NAMESPACE CACHE ----------				 */

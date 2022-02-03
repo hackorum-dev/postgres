@@ -43,6 +43,7 @@
 #include "catalog/pg_foreign_server.h"
 #include "catalog/pg_foreign_table.h"
 #include "catalog/pg_language.h"
+#include "catalog/pg_module.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_operator.h"
@@ -508,6 +509,28 @@ static const struct cachedesc cacheinfo[] = {
 		},
 		4
 	},
+	{ModuleRelationId,		/* MODULENAME */
+		ModuleNameIndexId,
+		2,
+		{
+			Anum_pg_module_modname,
+			Anum_pg_module_nspoid,
+			0,
+			0
+		},
+		16
+	},
+	{ModuleRelationId,		/* MODULEOID */
+		ModuleOidIndexId,
+		1,
+		{
+			Anum_pg_module_oid,
+			0,
+			0,
+			0
+		},
+		16
+	},
 	{NamespaceRelationId,		/* NAMESPACENAME */
 		NamespaceNameIndexId,
 		1,
@@ -586,13 +609,13 @@ static const struct cachedesc cacheinfo[] = {
 		32
 	},
 	{ProcedureRelationId,		/* PROCNAMEARGSNSP */
-		ProcedureNameArgsNspIndexId,
-		3,
+		ProcedureNameArgsNspModIndexId,
+		4,
 		{
 			Anum_pg_proc_proname,
 			Anum_pg_proc_proargtypes,
 			Anum_pg_proc_pronamespace,
-			0
+			Anum_pg_proc_promodule
 		},
 		128
 	},
@@ -1268,13 +1291,18 @@ GetSysCacheOid(int cacheId,
 	Oid			result;
 
 	tuple = SearchSysCache(cacheId, key1, key2, key3, key4);
+
 	if (!HeapTupleIsValid(tuple))
 		return InvalidOid;
+
 	result = heap_getattr(tuple, oidcol,
 						  SysCache[cacheId]->cc_tupdesc,
 						  &isNull);
+
 	Assert(!isNull);			/* columns used as oids should never be NULL */
+
 	ReleaseSysCache(tuple);
+
 	return result;
 }
 

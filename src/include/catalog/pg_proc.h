@@ -37,6 +37,9 @@ CATALOG(pg_proc,1255,ProcedureRelationId) BKI_BOOTSTRAP BKI_ROWTYPE_OID(81,Proce
 	/* OID of namespace containing this proc */
 	Oid			pronamespace BKI_DEFAULT(pg_catalog) BKI_LOOKUP(pg_namespace);
 
+	/* OID of module containing this proc, or 0 if none */
+	Oid			promodule BKI_DEFAULT(0);
+
 	/* procedure owner */
 	Oid			proowner BKI_DEFAULT(POSTGRES) BKI_LOOKUP(pg_authid);
 
@@ -138,7 +141,7 @@ typedef FormData_pg_proc *Form_pg_proc;
 DECLARE_TOAST(pg_proc, 2836, 2837);
 
 DECLARE_UNIQUE_INDEX_PKEY(pg_proc_oid_index, 2690, ProcedureOidIndexId, on pg_proc using btree(oid oid_ops));
-DECLARE_UNIQUE_INDEX(pg_proc_proname_args_nsp_index, 2691, ProcedureNameArgsNspIndexId, on pg_proc using btree(proname name_ops, proargtypes oidvector_ops, pronamespace oid_ops));
+DECLARE_UNIQUE_INDEX(pg_proc_proname_args_nsp_index, 2691, ProcedureNameArgsNspModIndexId, on pg_proc using btree(proname name_ops, proargtypes oidvector_ops, pronamespace oid_ops, promodule oid_ops));
 
 #ifdef EXPOSE_TO_CLIENT_CODE
 
@@ -187,6 +190,7 @@ DECLARE_UNIQUE_INDEX(pg_proc_proname_args_nsp_index, 2691, ProcedureNameArgsNspI
 
 extern ObjectAddress ProcedureCreate(const char *procedureName,
 									 Oid procNamespace,
+									 Oid procModule,
 									 bool replace,
 									 bool returnsSet,
 									 Oid returnType,

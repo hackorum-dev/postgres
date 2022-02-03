@@ -111,7 +111,7 @@
 #define YYMALLOC palloc
 #define YYFREE   pfree
 
-/* Private struct for the result of privilege_target production */
+/* Private struct for the result of privilege_target and module_privilege_target production */
 typedef struct PrivTarget
 {
 	GrantTargetType targtype;
@@ -282,10 +282,11 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	struct KeyAction	*keyaction;
 }
 
-%type <node>	stmt toplevel_stmt schema_stmt routine_body_stmt
+%type <node>	stmt toplevel_stmt schema_stmt routine_body_stmt module_stmt
 		AlterEventTrigStmt AlterCollationStmt
 		AlterDatabaseStmt AlterDatabaseSetStmt AlterDomainStmt AlterEnumStmt
-		AlterFdwStmt AlterForeignServerStmt AlterGroupStmt
+		AlterFdwStmt AlterForeignServerStmt AlterGroupStmt AlterModuleAlterFuncStmt
+		AlterModuleCreateReplaceFuncStmt
 		AlterObjectDependsStmt AlterObjectSchemaStmt AlterOwnerStmt
 		AlterOperatorStmt AlterTypeStmt AlterSeqStmt AlterSystemStmt AlterTableStmt
 		AlterTblSpcStmt AlterExtensionStmt AlterExtensionContentsStmt
@@ -321,6 +322,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 		CreateMatViewStmt RefreshMatViewStmt CreateAmStmt
 		CreatePublicationStmt AlterPublicationStmt
 		CreateSubscriptionStmt AlterSubscriptionStmt DropSubscriptionStmt
+		CreateModuleStmt
 
 %type <node>	select_no_parens select_with_parens select_clause
 				simple_select values_clause
@@ -364,7 +366,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <str>		opt_in_database
 
 %type <str>		OptSchemaName
-%type <list>	OptSchemaEltList
+%type <list>	OptSchemaEltList OptModuleEltList
 
 %type <chr>		am_type
 
@@ -388,7 +390,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 %type <list>	func_name handler_name qual_Op qual_all_Op subquery_Op
 				opt_class opt_inline_handler opt_validator validator_clause
-				opt_collate
+				opt_collate module_name
 
 %type <range>	qualified_name insert_target OptConstrFromTable
 
@@ -404,7 +406,10 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <list>	grantee_list
 %type <accesspriv> privilege
 %type <list>	privileges privilege_list
-%type <privtarget> privilege_target
+ //%type <accesspriv> module_privilege
+ //%type <list>	module_privileges
+ //%type <list>    module_privilege_list
+%type <privtarget> privilege_target module_privilege_target privilege_target_proc
 %type <objwithargs> function_with_argtypes aggregate_with_argtypes operator_with_argtypes
 %type <list>	function_with_argtypes_list aggregate_with_argtypes_list operator_with_argtypes_list
 %type <ival>	defacl_privilege_target
@@ -704,7 +709,8 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	LEADING LEAKPROOF LEAST LEFT LEVEL LIKE LIMIT LISTEN LOAD LOCAL
 	LOCALTIME LOCALTIMESTAMP LOCATION LOCK_P LOCKED LOGGED
 
-	MAPPING MATCH MATERIALIZED MAXVALUE METHOD MINUTE_P MINVALUE MODE MONTH_P MOVE
+	MAPPING MATCH MATERIALIZED MAXVALUE METHOD MINUTE_P MINVALUE MODE MODULE
+	MONTH_P MOVE
 
 	NAME_P NAMES NATIONAL NATURAL NCHAR NEW NEXT NFC NFD NFKC NFKD NO NONE
 	NORMALIZE NORMALIZED
@@ -937,6 +943,8 @@ stmt:
 			| AlterForeignServerStmt
 			| AlterFunctionStmt
 			| AlterGroupStmt
+			| AlterModuleAlterFuncStmt
+			| AlterModuleCreateReplaceFuncStmt
 			| AlterObjectDependsStmt
 			| AlterObjectSchemaStmt
 			| AlterOwnerStmt
@@ -977,6 +985,7 @@ stmt:
 			| CreateFunctionStmt
 			| CreateGroupStmt
 			| CreateMatViewStmt
+			| CreateModuleStmt
 			| CreateOpClassStmt
 			| CreateOpFamilyStmt
 			| CreatePublicationStmt
@@ -1487,6 +1496,143 @@ schema_stmt:
 			| CreateTrigStmt
 			| GrantStmt
 			| ViewStmt
+		;
+
+/*****************************************************************************
+ *
+ * Manipulate a module
+ *
+ *****************************************************************************/
+
+CreateModuleStmt:
+			CREATE MODULE module_name OptModuleEltList
+				{
+					CreateModuleStmt *n = makeNode(CreateModuleStmt);
+					n->modulename = $3;
+					n->authrole = NULL;
+					n->moduleElts = $4;
+					n->if_not_exists = false;
+					$$ = (Node *)n;
+				}
+			| CREATE MODULE module_name OWNER RoleSpec OptModuleEltList
+				{
+					CreateModuleStmt *n = makeNode(CreateModuleStmt);
+					n->modulename = $3;
+					n->authrole = $5;
+					n->moduleElts = $6;
+					n->if_not_exists = false;
+					$$ = (Node *)n;
+				}
+			| CREATE MODULE IF_P NOT EXISTS module_name OptModuleEltList
+				{
+					CreateModuleStmt *n = makeNode(CreateModuleStmt);
+					n->modulename = $6;
+					n->authrole = NULL;
+					if ($7 != NIL)
+						ereport(ERROR,
+								(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+								 errmsg("CREATE MODULE IF NOT EXISTS cannot include module elements"),
+								 parser_errposition(@7)));
+					n->moduleElts = $7;
+					n->if_not_exists = true;
+					$$ = (Node *)n;
+				}
+			| CREATE MODULE IF_P NOT EXISTS module_name OWNER RoleSpec OptModuleEltList
+				{
+					CreateModuleStmt *n = makeNode(CreateModuleStmt);
+					n->modulename = $6;
+					n->authrole = $8;
+					if ($9 != NIL)
+						ereport(ERROR,
+								(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+								 errmsg("CREATE MODULE IF NOT EXISTS cannot include module elements"),
+								 parser_errposition(@9)));
+					n->moduleElts = $9;
+					n->if_not_exists = true;
+					$$ = (Node *)n;
+				}
+		;
+
+module_name:
+			name						{ $$ = list_make1(makeString($1)); }
+			| name attrs				{ $$ = lcons(makeString($1), $2); }
+		;
+
+OptModuleEltList:
+			OptModuleEltList module_stmt
+				{
+					if (@$ < 0)			/* see comments for YYLLOC_DEFAULT */
+						@$ = @2;
+					$$ = lappend($1, $2);
+				}
+			| /* EMPTY */
+				{ $$ = NIL; }
+		;
+
+/*
+ *	module_stmt are the ones that can show up inside a CREATE MODULE statement.
+ */
+module_stmt:
+			CreateFunctionStmt
+			;
+
+/*****************************************************************************
+ *
+ * ALTER MODULE name CREATE/REPLACE FUNCTION/PROCEDURE/ROUTINE
+ *
+ *****************************************************************************/
+AlterModuleCreateReplaceFuncStmt:
+			ALTER MODULE module_name module_stmt
+				{
+					AlterModuleCreateReplaceFuncStmt *m;
+					//CreateFunctionStmt *n = makeNode(CreateFunctionStmt);
+					//n = $4;
+					//n->objtype = OBJECT_FUNCTION;
+					m = makeNode(AlterModuleCreateReplaceFuncStmt);
+					m->modulename = $3;
+					m->createreplacefunction = $4;
+					//n->func->objname = list_concat_copy(m->modulename, n->func->objname);
+					$$ = (Node *) m;
+				}
+		;
+
+
+/*****************************************************************************
+ *
+ * ALTER MODULE name ALTER FUNCTION/PROCEDURE/ROUTINE
+ *
+ *****************************************************************************/
+AlterModuleAlterFuncStmt:
+			ALTER MODULE module_name ALTER FUNCTION function_with_argtypes alterfunc_opt_list opt_restrict
+				{
+					AlterModuleAlterFuncStmt *m;
+					AlterFunctionStmt *n = makeNode(AlterFunctionStmt);
+					n->objtype = OBJECT_FUNCTION;
+					n->func = $6;
+					n->actions = $7;
+					m = makeNode(AlterModuleAlterFuncStmt);
+					m->objtype = OBJECT_MODULE;
+					m->modulename = $3;
+					/* add m->modulename to front of  n->func->objname to make the qualified name for the function */
+					n->func->objname = list_concat_copy(m->modulename, n->func->objname);
+					m->alterfuncstmt = n;
+					$$ = (Node *) m;
+				}
+			| ALTER MODULE module_name ALTER PROCEDURE function_with_argtypes alterfunc_opt_list opt_restrict
+				{
+					AlterModuleAlterFuncStmt *m;
+					AlterFunctionStmt *n = makeNode(AlterFunctionStmt);
+					n->objtype = OBJECT_PROCEDURE;
+					n->func = $6;
+					n->actions = $7;
+					m = makeNode(AlterModuleAlterFuncStmt);
+					m->objtype = OBJECT_MODULE;
+					m->modulename = $3;
+					/* add m->modulename to front of n->func->objname to make the qualified name for the function */
+					n->func->objname = list_concat(m->modulename, n->func->objname);
+					m->alterfuncstmt = n;
+					$$ = (Node *) m;
+				}
 		;
 
 
@@ -6413,6 +6559,26 @@ DropStmt:	DROP object_type_any_name IF_P EXISTS any_name_list opt_drop_behavior
 					n->concurrent = true;
 					$$ = (Node *)n;
 				}
+			| DROP MODULE any_name_list opt_drop_behavior
+				{
+					DropStmt *n = makeNode(DropStmt);
+					n->removeType = OBJECT_MODULE;
+					n->objects = $3;
+					n->behavior = $4;
+					n->missing_ok = false;
+					n->concurrent = false;
+					$$ = (Node *)n;
+				}
+			| DROP MODULE IF_P EXISTS any_name_list opt_drop_behavior
+				{
+					DropStmt *n = makeNode(DropStmt);
+					n->removeType = OBJECT_MODULE;
+					n->objects = $5;
+					n->behavior = $6;
+					n->missing_ok = true;
+					n->concurrent = false;
+					$$ = (Node *)n;
+				}
 		;
 
 /* object types taking any_name/any_name_list */
@@ -6958,7 +7124,7 @@ opt_from_in:	from_in
  *
  *****************************************************************************/
 
-GrantStmt:	GRANT privileges ON privilege_target TO grantee_list
+GrantStmt:  GRANT privileges ON privilege_target TO grantee_list
 			opt_grant_grant_option opt_granted_by
 				{
 					GrantStmt *n = makeNode(GrantStmt);
@@ -6970,6 +7136,121 @@ GrantStmt:	GRANT privileges ON privilege_target TO grantee_list
 					n->grantees = $6;
 					n->grant_option = $7;
 					n->grantor = $8;
+					$$ = (Node*)n;
+				}
+			| GRANT ON MODULE module_name REFERENCES ON module_privilege_target TO grantee_list
+			opt_grant_grant_option opt_granted_by
+				{
+					GrantStmt *n;
+					List *moduleName;
+					ListCell *cell;
+					ObjectWithArgs *func;
+					n = makeNode(GrantStmt);
+					moduleName = $4;
+					n->is_grant = true;
+
+					AccessPriv *p = makeNode(AccessPriv);
+					p->priv_name = "execute";
+					n->privileges = list_make1(p);
+
+					n->targtype = ($7)->targtype;
+					n->objtype = ($7)->objtype;
+					n->objects =  ($7)->objs;
+					foreach(cell, n->objects)
+					{
+						func = (ObjectWithArgs *) lfirst(cell);
+
+						/* func is a pointer, so the following modifies the list element itself and not a copy of it
+						 * add moduleName to the front of func->objname to make the qualified name for the function */
+						func->objname = list_concat_copy(moduleName, func->objname);
+					}
+					n->grantees = $9;
+					n->grant_option = $10;
+					n->grantor = $11;
+					$$ = (Node*)n;
+				}
+			| GRANT ON MODULE module_name CREATE TO grantee_list opt_grant_grant_option opt_granted_by
+				{
+					GrantStmt *n;
+					List *moduleName;
+
+					n = makeNode(GrantStmt);
+					moduleName = $4;
+					n->is_grant = true;
+
+					AccessPriv *p = makeNode(AccessPriv);
+					p->priv_name = "create";
+					n->privileges = list_make1(p);
+
+					//n->targtype = ACL_TARGET_ALL_IN_MODULE;
+					n->objtype = OBJECT_MODULE;
+					n->objects = list_make1(moduleName);
+					n->grantees = $7;
+					n->grant_option = $8;
+					n->grantor = $9;
+					$$ = (Node*)n;
+				}
+			| GRANT ON MODULE module_name REFERENCES ON ALL FUNCTIONS TO grantee_list opt_grant_grant_option opt_granted_by
+				{
+					GrantStmt *n;
+					List *moduleName;
+
+					n = makeNode(GrantStmt);
+					moduleName = $4;
+					n->is_grant = true;
+
+					AccessPriv *p = makeNode(AccessPriv);
+					p->priv_name = "execute";
+					n->privileges = list_make1(p);
+
+					n->targtype = ACL_TARGET_ALL_IN_MODULE;
+					n->objtype = OBJECT_FUNCTION; // OBJECT_PROCEDURE  OBJECT_ROUTINE
+					n->objects = list_make1(moduleName);
+					n->grantees = $10;
+					n->grant_option = $11;
+					n->grantor = $12;
+					$$ = (Node*)n;
+				}
+			| GRANT ON MODULE module_name REFERENCES ON ALL PROCEDURES TO grantee_list opt_grant_grant_option opt_granted_by
+				{
+					GrantStmt *n;
+					List *moduleName;
+
+					n = makeNode(GrantStmt);
+					moduleName = $4;
+					n->is_grant = true;
+
+					AccessPriv *p = makeNode(AccessPriv);
+					p->priv_name = "execute";
+					n->privileges = list_make1(p);
+
+					n->targtype = ACL_TARGET_ALL_IN_MODULE;
+					n->objtype = OBJECT_PROCEDURE;
+					n->objects = list_make1(moduleName);
+					n->grantees = $10;
+					n->grant_option = $11;
+					n->grantor = $12;
+					$$ = (Node*)n;
+				}
+			| GRANT ON MODULE module_name REFERENCES ON ALL ROUTINES TO grantee_list opt_grant_grant_option opt_granted_by
+				{
+					GrantStmt *n;
+					List *moduleName;
+
+					n = makeNode(GrantStmt);
+					moduleName = $4;
+					n->is_grant = true;
+
+					AccessPriv *p = makeNode(AccessPriv);
+					p->priv_name = "execute";
+					n->privileges = list_make1(p);
+
+					n->targtype = ACL_TARGET_ALL_IN_MODULE;
+					n->objtype = OBJECT_ROUTINE;
+					n->objects = list_make1(moduleName);
+					n->grantees = $10;
+					n->grant_option = $11;
+					n->grantor = $12;
 					$$ = (Node*)n;
 				}
 		;
@@ -7005,8 +7286,153 @@ RevokeStmt:
 					n->behavior = $11;
 					$$ = (Node *)n;
 				}
-		;
+			| REVOKE ON MODULE module_name CREATE FROM grantee_list opt_grant_grant_option opt_granted_by
+				{
+					GrantStmt *n;
+					List *moduleName;
 
+					n = makeNode(GrantStmt);
+					moduleName = $4;
+					n->is_grant = false;
+
+					AccessPriv *p = makeNode(AccessPriv);
+					p->priv_name = "create";
+					n->privileges = list_make1(p);
+
+					//n->targtype = ACL_TARGET_ALL_IN_MODULE;
+					n->objtype = OBJECT_MODULE;
+					n->objects = list_make1(moduleName);
+					n->grantees = $7;
+					n->grant_option = $8;
+					n->grantor = $9;
+					$$ = (Node*)n;
+				}
+			| REVOKE ON MODULE module_name REFERENCES ON module_privilege_target
+			FROM grantee_list opt_granted_by opt_drop_behavior
+				{
+					GrantStmt *n;
+					List *moduleName;
+					ListCell *cell;
+					ObjectWithArgs *func;
+					n = makeNode(GrantStmt);
+					moduleName = $4;
+					n->is_grant = false;
+					n->grant_option = false;
+
+					AccessPriv *p = makeNode(AccessPriv);
+					p->priv_name = "execute";
+					n->privileges = list_make1(p);
+
+					n->targtype = ($7)->targtype;
+					n->objtype = ($7)->objtype;
+					n->objects = ($7)->objs;
+					foreach(cell, n->objects)
+					{
+						func = (ObjectWithArgs *) lfirst(cell);
+						/* func is a pointer, so the following modifies the list element itself and not a copy of it
+						 * add moduleName to the front of func->objname to make the qualified name for the function */
+						func->objname = list_concat_copy(moduleName, func->objname);
+					}
+					n->grantees = $9;
+					n->grantor = $10;
+					n->behavior = $11;
+					$$ = (Node *)n;
+				}
+			| REVOKE ON MODULE module_name GRANT OPTION FOR REFERENCES ON module_privilege_target
+			FROM grantee_list opt_granted_by opt_drop_behavior
+				{
+					GrantStmt *n;
+					List *moduleName;
+					ListCell *cell;
+					ObjectWithArgs *func;
+					n = makeNode(GrantStmt);
+					moduleName = $4;
+					n->is_grant = false;
+					n->grant_option = true;
+
+					AccessPriv *p = makeNode(AccessPriv);
+					p->priv_name = "execute";
+					n->privileges = list_make1(p);
+
+					n->targtype = ($10)->targtype;
+					n->objtype = ($10)->objtype;
+					n->objects = ($10)->objs;
+					foreach(cell, n->objects)
+					{
+						func = (ObjectWithArgs *) lfirst(cell);
+						/* func is a pointer, so the following modifies the list element itself and not a copy of it
+						 * add moduleName to the front of func->objname to make the qualified name for the function */
+						func->objname = list_concat_copy(moduleName, func->objname);
+					}
+					n->grantees = $12;
+					n->grantor = $13;
+					n->behavior = $14;
+					$$ = (Node *)n;
+				}
+			| REVOKE ON MODULE module_name REFERENCES ON ALL FUNCTIONS FROM grantee_list opt_grant_grant_option opt_granted_by
+				{
+					GrantStmt *n;
+					List *moduleName;
+
+					n = makeNode(GrantStmt);
+					moduleName = $4;
+					n->is_grant = false;
+
+					AccessPriv *p = makeNode(AccessPriv);
+					p->priv_name = "execute";
+					n->privileges = list_make1(p);
+
+					n->targtype = ACL_TARGET_ALL_IN_MODULE;
+					n->objtype = OBJECT_FUNCTION;
+					n->objects = list_make1(moduleName);
+					n->grantees = $10;
+					n->grant_option = $11;
+					n->grantor = $12;
+					$$ = (Node*)n;
+				}
+			| REVOKE ON MODULE module_name REFERENCES ON ALL PROCEDURES FROM grantee_list opt_grant_grant_option opt_granted_by
+				{
+					GrantStmt *n;
+					List *moduleName;
+
+					n = makeNode(GrantStmt);
+					moduleName = $4;
+					n->is_grant = false;
+
+					AccessPriv *p = makeNode(AccessPriv);
+					p->priv_name = "execute";
+					n->privileges = list_make1(p);
+
+					n->targtype = ACL_TARGET_ALL_IN_MODULE;
+					n->objtype = OBJECT_PROCEDURE;
+					n->objects = list_make1(moduleName);
+					n->grantees = $10;
+					n->grant_option = $11;
+					n->grantor = $12;
+					$$ = (Node*)n;
+				}
+			| REVOKE ON MODULE module_name REFERENCES ON ALL ROUTINES FROM grantee_list opt_grant_grant_option opt_granted_by
+				{
+					GrantStmt *n;
+					List *moduleName;
+
+					n = makeNode(GrantStmt);
+					moduleName = $4;
+					n->is_grant = false;
+
+					AccessPriv *p = makeNode(AccessPriv);
+					p->priv_name = "execute";
+					n->privileges = list_make1(p);
+
+					n->targtype = ACL_TARGET_ALL_IN_MODULE;
+					n->objtype = OBJECT_ROUTINE;
+					n->objects = list_make1(moduleName);
+					n->grantees = $10;
+					n->grant_option = $11;
+					n->grantor = $12;
+					$$ = (Node*)n;
+				}
+		;
 
 /*
  * Privilege names are represented as strings; the validity of the privilege
@@ -7073,7 +7499,6 @@ privilege:	SELECT opt_column_list
 			}
 		;
 
-
 /* Don't bother trying to fold the first two rules into one using
  * opt_table.  You're going to get conflicts.
  */
@@ -7118,30 +7543,7 @@ privilege_target:
 					n->objs = $3;
 					$$ = n;
 				}
-			| FUNCTION function_with_argtypes_list
-				{
-					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
-					n->targtype = ACL_TARGET_OBJECT;
-					n->objtype = OBJECT_FUNCTION;
-					n->objs = $2;
-					$$ = n;
-				}
-			| PROCEDURE function_with_argtypes_list
-				{
-					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
-					n->targtype = ACL_TARGET_OBJECT;
-					n->objtype = OBJECT_PROCEDURE;
-					n->objs = $2;
-					$$ = n;
-				}
-			| ROUTINE function_with_argtypes_list
-				{
-					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
-					n->targtype = ACL_TARGET_OBJECT;
-					n->objtype = OBJECT_ROUTINE;
-					n->objs = $2;
-					$$ = n;
-				}
+			| privilege_target_proc
 			| DATABASE name_list
 				{
 					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
@@ -7238,8 +7640,61 @@ privilege_target:
 					n->objs = $5;
 					$$ = n;
 				}
+			| ALL FUNCTIONS IN_P MODULE name_list
+				{
+					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
+					n->targtype = ACL_TARGET_ALL_IN_MODULE;
+					n->objtype = OBJECT_FUNCTION;
+					n->objs = $5;
+					$$ = n;
+				}
+			| ALL PROCEDURES IN_P MODULE name_list
+				{
+					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
+					n->targtype = ACL_TARGET_ALL_IN_MODULE;
+					n->objtype = OBJECT_PROCEDURE;
+					n->objs = $5;
+					$$ = n;
+				}
+			| ALL ROUTINES IN_P MODULE name_list
+				{
+					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
+					n->targtype = ACL_TARGET_ALL_IN_MODULE;
+					n->objtype = OBJECT_ROUTINE;
+					n->objs = $5;
+					$$ = n;
+				}
 		;
 
+module_privilege_target: privilege_target_proc
+		;
+
+privilege_target_proc:
+			FUNCTION function_with_argtypes_list
+				{
+					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
+					n->targtype = ACL_TARGET_OBJECT;
+					n->objtype = OBJECT_FUNCTION;
+					n->objs = $2;
+					$$ = n;
+				}
+			| PROCEDURE function_with_argtypes_list
+				{
+					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
+					n->targtype = ACL_TARGET_OBJECT;
+					n->objtype = OBJECT_PROCEDURE;
+					n->objs = $2;
+					$$ = n;
+				}
+			| ROUTINE function_with_argtypes_list
+				{
+					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
+					n->targtype = ACL_TARGET_OBJECT;
+					n->objtype = OBJECT_ROUTINE;
+					n->objs = $2;
+					$$ = n;
+				}
+		;
 
 grantee_list:
 			grantee									{ $$ = list_make1($1); }
@@ -8650,6 +9105,14 @@ RenameStmt: ALTER AGGREGATE aggregate_with_argtypes RENAME TO name
 					n->missing_ok = false;
 					$$ = (Node *)n;
 				}
+			| ALTER MODULE module_name RENAME TO name
+				{
+					AlterModuleRenameStmt *n = makeNode(AlterModuleRenameStmt);
+					n->modulename = $3;
+					n->newname = $6;
+					n->missing_ok = false;
+					$$ = (Node *)n;
+				}
 			| ALTER opt_procedural LANGUAGE name RENAME TO name
 				{
 					RenameStmt *n = makeNode(RenameStmt);
@@ -9551,6 +10014,13 @@ AlterOwnerStmt: ALTER AGGREGATE aggregate_with_argtypes OWNER TO RoleSpec
 					n->objectType = OBJECT_LARGEOBJECT;
 					n->object = (Node *) $4;
 					n->newowner = $7;
+					$$ = (Node *)n;
+				}
+			| ALTER MODULE module_name OWNER TO RoleSpec
+				{
+					AlterModuleOwnerStmt *n = makeNode(AlterModuleOwnerStmt);
+					n->modulename = $3;
+					n->newowner = $6;
 					$$ = (Node *)n;
 				}
 			| ALTER OPERATOR operator_with_argtypes OWNER TO RoleSpec
@@ -15785,6 +16255,7 @@ unreserved_keyword:
 			| MINUTE_P
 			| MINVALUE
 			| MODE
+			| MODULE
 			| MONTH_P
 			| MOVE
 			| NAME_P
@@ -16351,6 +16822,7 @@ bare_label_keyword:
 			| METHOD
 			| MINVALUE
 			| MODE
+			| MODULE
 			| MOVE
 			| NAME_P
 			| NAMES

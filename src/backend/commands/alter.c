@@ -47,6 +47,7 @@
 #include "commands/defrem.h"
 #include "commands/event_trigger.h"
 #include "commands/extension.h"
+#include "commands/modulecmds.h"
 #include "commands/policy.h"
 #include "commands/proclang.h"
 #include "commands/publicationcmds.h"
@@ -384,6 +385,7 @@ ExecRenameStmt(RenameStmt *stmt)
 		case OBJECT_OPCLASS:
 		case OBJECT_OPFAMILY:
 		case OBJECT_LANGUAGE:
+		case OBJECT_MODULE:
 		case OBJECT_PROCEDURE:
 		case OBJECT_ROUTINE:
 		case OBJECT_STATISTIC_EXT:
@@ -664,6 +666,7 @@ AlterObjectNamespace_oid(Oid classId, Oid objid, Oid nspOid,
 		case OCLASS_PUBLICATION_REL:
 		case OCLASS_SUBSCRIPTION:
 		case OCLASS_TRANSFORM:
+		case OCLASS_MODULE:
 			/* ignore object types that don't have schema-qualified names */
 			break;
 

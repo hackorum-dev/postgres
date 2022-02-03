@@ -82,11 +82,18 @@ extern void ProcessUtility(PlannedStmt *pstmt, const char *queryString,
 						   ProcessUtilityContext context, ParamListInfo params,
 						   QueryEnvironment *queryEnv,
 						   DestReceiver *dest, QueryCompletion *qc);
+extern void ProcessUtilityUsingModule(PlannedStmt *pstmt, const char *queryString,
+									  bool readOnlyTree,
+									  ProcessUtilityContext context, ParamListInfo params,
+									  QueryEnvironment *queryEnv,
+									  DestReceiver *dest, QueryCompletion *qc,
+									  Oid namespaceId, Oid moduleId);
 extern void standard_ProcessUtility(PlannedStmt *pstmt, const char *queryString,
 									bool readOnlyTree,
 									ProcessUtilityContext context, ParamListInfo params,
 									QueryEnvironment *queryEnv,
-									DestReceiver *dest, QueryCompletion *qc);
+									DestReceiver *dest, QueryCompletion *qc,
+									Oid namespaceId, Oid moduleId);
 
 extern void ProcessUtilityForAlterTable(Node *stmt,
 										AlterTableUtilityContext *context);

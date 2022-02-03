@@ -21,6 +21,7 @@
 #include "catalog/pg_collation_d.h"
 #include "catalog/pg_extension_d.h"
 #include "catalog/pg_namespace_d.h"
+#include "catalog/pg_module_d.h"
 #include "catalog/pg_operator_d.h"
 #include "catalog/pg_proc_d.h"
 #include "catalog/pg_publication_d.h"
@@ -105,6 +106,7 @@ getSchemaData(Archive *fout, int *numTablesPtr)
 	int			numOperators;
 	int			numCollations;
 	int			numNamespaces;
+	int			numModules;
 	int			numExtensions;
 	int			numPublications;
 	int			numAggregates;
@@ -150,6 +152,9 @@ getSchemaData(Archive *fout, int *numTablesPtr)
 	tblinfo = getTables(fout, &numTables);
 
 	getOwnedSeqs(fout, tblinfo, numTables);
+
+	pg_log_info("reading modules");
+	(void) getModules(fout, &numModules);
 
 	pg_log_info("reading user-defined functions");
 	(void) getFuncs(fout, &numFuncs);
@@ -883,6 +888,24 @@ findNamespaceByOid(Oid oid)
 	dobj = findObjectByCatalogId(catId);
 	Assert(dobj == NULL || dobj->objType == DO_NAMESPACE);
 	return (NamespaceInfo *) dobj;
+}
+
+/*
+ * findModuleByOid
+ *	  finds the DumpableObject for the module with the given oid
+ *	  returns NULL if not found
+ */
+ModuleInfo *
+findModuleByOid(Oid oid)
+{
+	CatalogId	catId;
+	DumpableObject *dobj;
+
+	catId.tableoid = ModuleRelationId;
+	catId.oid = oid;
+	dobj = findObjectByCatalogId(catId);
+	Assert(dobj == NULL || dobj->objType == DO_MODULE);
+	return (ModuleInfo *) dobj;
 }
 
 /*

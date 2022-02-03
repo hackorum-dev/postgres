@@ -22,6 +22,7 @@ Complete list of usable sgml source files in this directory.
 <!ENTITY alterLanguage      SYSTEM "alter_language.sgml">
 <!ENTITY alterLargeObject   SYSTEM "alter_large_object.sgml">
 <!ENTITY alterMaterializedView SYSTEM "alter_materialized_view.sgml">
+<!ENTITY alterModule        SYSTEM "alter_module.sgml">
 <!ENTITY alterOperator      SYSTEM "alter_operator.sgml">
 <!ENTITY alterOperatorClass SYSTEM "alter_opclass.sgml">
 <!ENTITY alterOperatorFamily SYSTEM "alter_opfamily.sgml">
@@ -83,6 +84,7 @@ Complete list of usable sgml source files in this directory.
 <!ENTITY createRole         SYSTEM "create_role.sgml">
 <!ENTITY createRule         SYSTEM "create_rule.sgml">
 <!ENTITY createSchema       SYSTEM "create_schema.sgml">
+<!ENTITY createModule       SYSTEM "create_module.sgml">
 <!ENTITY createSequence     SYSTEM "create_sequence.sgml">
 <!ENTITY createServer       SYSTEM "create_server.sgml">
 <!ENTITY createStatistics   SYSTEM "create_statistics.sgml">
@@ -132,6 +134,7 @@ Complete list of usable sgml source files in this directory.
 <!ENTITY dropRoutine        SYSTEM "drop_routine.sgml">
 <!ENTITY dropRule           SYSTEM "drop_rule.sgml">
 <!ENTITY dropSchema         SYSTEM "drop_schema.sgml">
+<!ENTITY dropModule         SYSTEM "drop_module.sgml">
 <!ENTITY dropSequence       SYSTEM "drop_sequence.sgml">
 <!ENTITY dropServer         SYSTEM "drop_server.sgml">
 <!ENTITY dropStatistics     SYSTEM "drop_statistics.sgml">

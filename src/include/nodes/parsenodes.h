@@ -1811,6 +1811,7 @@ typedef enum ObjectType
 	OBJECT_LANGUAGE,
 	OBJECT_LARGEOBJECT,
 	OBJECT_MATVIEW,
+	OBJECT_MODULE,
 	OBJECT_OPCLASS,
 	OBJECT_OPERATOR,
 	OBJECT_OPFAMILY,
@@ -2019,6 +2020,7 @@ typedef enum GrantTargetType
 {
 	ACL_TARGET_OBJECT,			/* grant on specific named object(s) */
 	ACL_TARGET_ALL_IN_SCHEMA,	/* grant on all objects in given schema(s) */
+	ACL_TARGET_ALL_IN_MODULE,	/* grant on all objects in given module */
 	ACL_TARGET_DEFAULTS			/* ALTER DEFAULT PRIVILEGES */
 } GrantTargetType;
 
@@ -3004,6 +3006,40 @@ typedef struct AlterFunctionStmt
 	List	   *actions;		/* list of DefElem */
 } AlterFunctionStmt;
 
+typedef enum AlterModuleAlterFuncMode
+{
+	ALTER_MODULE_ALTER_FUNCTION,
+	ALTER_MODULE_ALTER_PROCEDURE,
+	ALTER_MODULE_ALTER_ROUTINE
+} AlterModuleAlterFuncMode;
+
+typedef struct AlterModuleAlterFuncStmt
+{
+	NodeTag		type;
+	ObjectType	objtype;
+	List *modulename;
+	AlterModuleAlterFuncMode altermodulemode;
+	AlterFunctionStmt *alterfuncstmt;
+} AlterModuleAlterFuncStmt;
+
+/* ----------------------
+ *		Create Module Statement
+ *
+ * NOTE: the moduleElts list contains raw parsetrees for component statements
+ * of the module, such as CREATE FUNCTION, CREATE PROCEDURE, etc.  These are
+ * analyzed and executed after the module itself is created.
+ * ----------------------
+ */
+typedef struct CreateModuleStmt
+{
+	Node	   Tagtype;
+	List	   *modulename;		/* the name of the module to create */
+	RoleSpec   *authrole;		/* the owner of the created module */
+	List	   *moduleElts;		/* module components (list of parsenodes) */
+	bool	   if_not_exists;	/* just do nothing if module already exists? */
+} CreateModuleStmt;
+
+
 /* ----------------------
  *		DO Statement
  *
@@ -3049,7 +3085,7 @@ typedef struct CallContext
 } CallContext;
 
 /* ----------------------
- *		Alter Object Rename Statement
+ *		ALTER MODULE RENAME Statement
  * ----------------------
  */
 typedef struct RenameStmt
@@ -3065,6 +3101,30 @@ typedef struct RenameStmt
 	DropBehavior behavior;		/* RESTRICT or CASCADE behavior */
 	bool		missing_ok;		/* skip error if missing? */
 } RenameStmt;
+
+/* ----------------------
+ *		ALTER MODULE RENAME Statement
+ * ----------------------
+ */
+typedef struct AlterModuleRenameStmt
+{
+	NodeTag	type;
+	List *modulename;
+	char *newname;
+	bool missing_ok;	/* skip error if missing */
+} AlterModuleRenameStmt;
+
+/* ----------------------
+ *		ALTER MODULE CREATE [OR REPLACE] FUNCTION|PROCEDURE Statement
+ * ----------------------
+ */
+typedef struct AlterModuleCreateReplaceFuncStmt
+{
+	NodeTag	type;
+	List *modulename;
+	Node *createreplacefunction;
+	bool missing_ok;	/* skip error if missing */
+} AlterModuleCreateReplaceFuncStmt;
 
 /* ----------------------
  * ALTER object DEPENDS ON EXTENSION extname
@@ -3106,6 +3166,17 @@ typedef struct AlterOwnerStmt
 	Node	   *object;			/* in case it's some other object */
 	RoleSpec   *newowner;		/* the new owner */
 } AlterOwnerStmt;
+
+/* ----------------------
+ *		Alter Module Owner Statement
+ * ----------------------
+ */
+typedef struct AlterModuleOwnerStmt
+{
+	NodeTag	type;
+	List *modulename;
+	RoleSpec *newowner;		/* the new owner */
+} AlterModuleOwnerStmt;
 
 /* ----------------------
  *		Alter Operator Set ( this-n-that )

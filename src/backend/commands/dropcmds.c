@@ -104,6 +104,7 @@ RemoveObjects(DropStmt *stmt)
 
 		/* Check permissions. */
 		namespaceId = get_object_namespace(&address);
+
 		if (!OidIsValid(namespaceId) ||
 			!pg_namespace_ownercheck(namespaceId, GetUserId()))
 			check_object_ownership(GetUserId(), stmt->removeType, address,
@@ -282,6 +283,10 @@ does_not_exist_skipping(ObjectType objtype, Node *object)
 				msg = gettext_noop("conversion \"%s\" does not exist, skipping");
 				name = NameListToString(castNode(List, object));
 			}
+			break;
+		case OBJECT_MODULE:
+			msg = gettext_noop("module \"%s\" does not exist, skipping");
+			name = strVal(object);
 			break;
 		case OBJECT_SCHEMA:
 			msg = gettext_noop("schema \"%s\" does not exist, skipping");

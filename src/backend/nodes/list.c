@@ -578,21 +578,17 @@ list_concat_copy(const List *list1, const List *list2)
 {
 	List	   *result;
 	int			new_len;
-
 	if (list1 == NIL)
 		return list_copy(list2);
 	if (list2 == NIL)
 		return list_copy(list1);
-
 	Assert(list1->type == list2->type);
-
 	new_len = list1->length + list2->length;
 	result = new_list(list1->type, new_len);
 	memcpy(result->elements, list1->elements,
 		   list1->length * sizeof(ListCell));
 	memcpy(result->elements + list1->length, list2->elements,
 		   list2->length * sizeof(ListCell));
-
 	check_list_invariants(result);
 	return result;
 }

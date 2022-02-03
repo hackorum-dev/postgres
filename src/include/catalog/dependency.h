@@ -105,6 +105,7 @@ typedef enum ObjectClass
 	OCLASS_AMPROC,				/* pg_amproc */
 	OCLASS_REWRITE,				/* pg_rewrite */
 	OCLASS_TRIGGER,				/* pg_trigger */
+	OCLASS_MODULE,				/* pg_module */
 	OCLASS_SCHEMA,				/* pg_namespace */
 	OCLASS_STATISTIC_EXT,		/* pg_statistic_ext */
 	OCLASS_TSPARSER,			/* pg_ts_parser */

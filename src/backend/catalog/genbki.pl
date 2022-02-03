@@ -246,6 +246,13 @@ foreach my $row (@{ $catalog_data{pg_namespace} })
 	$namespaceoids{ $row->{nspname} } = $row->{oid};
 }
 
+# module OID lookup
+my %moduleoids;
+foreach my $row (@{ $catalog_data{pg_module} })
+{
+	$moduleoids{ $row->{modname} } = $row->{oid};
+}
+
 # opclass OID lookup
 my %opcoids;
 foreach my $row (@{ $catalog_data{pg_opclass} })
@@ -393,6 +400,7 @@ my %lookup_kind = (
 	pg_collation   => \%collationoids,
 	pg_language    => \%langoids,
 	pg_namespace   => \%namespaceoids,
+	pg_module      => \%moduleoids,
 	pg_opclass     => \%opcoids,
 	pg_operator    => \%operoids,
 	pg_opfamily    => \%opfoids,

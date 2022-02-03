@@ -1751,6 +1751,7 @@ makeRangeConstructors(const char *name, Oid namespace,
 
 		myself = ProcedureCreate(name,	/* name: same as range type */
 								 namespace, /* namespace */
+								 InvalidOid, /* no module oid */
 								 false, /* replace */
 								 false, /* returns set */
 								 rangeOid,	/* return type */
@@ -1816,6 +1817,7 @@ makeMultirangeConstructors(const char *name, Oid namespace,
 	argtypes = buildoidvector(NULL, 0);
 	myself = ProcedureCreate(name,	/* name: same as multirange type */
 							 namespace,
+							 InvalidOid, /* no module oid */
 							 false, /* replace */
 							 false, /* returns set */
 							 multirangeOid, /* return type */
@@ -1860,6 +1862,7 @@ makeMultirangeConstructors(const char *name, Oid namespace,
 	argtypes = buildoidvector(&rangeOid, 1);
 	myself = ProcedureCreate(name,	/* name: same as multirange type */
 							 namespace,
+							 InvalidOid, /* no module oid */
 							 false, /* replace */
 							 false, /* returns set */
 							 multirangeOid, /* return type */
@@ -1901,6 +1904,7 @@ makeMultirangeConstructors(const char *name, Oid namespace,
 									 1, true, 'c');
 	myself = ProcedureCreate(name,	/* name: same as multirange type */
 							 namespace,
+							 InvalidOid, /* no module oid */
 							 false, /* replace */
 							 false, /* returns set */
 							 multirangeOid, /* return type */

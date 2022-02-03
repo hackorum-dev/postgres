@@ -41,6 +41,7 @@
 #include "catalog/pg_language.h"
 #include "catalog/pg_largeobject.h"
 #include "catalog/pg_largeobject_metadata.h"
+#include "catalog/pg_module.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_operator.h"
@@ -414,6 +415,20 @@ static const ObjectPropertyType ObjectProperty[] =
 		true
 	},
 	{
+		"module",
+		ModuleRelationId,
+		ModuleOidIndexId,
+		MODULEOID,
+		MODULENAME,
+		Anum_pg_module_oid,
+		Anum_pg_module_modname,
+		Anum_pg_module_nspoid,
+		Anum_pg_module_modowner,
+		Anum_pg_module_modacl,
+		OBJECT_MODULE,
+		true
+	},
+	{
 		"relation",
 		RelationRelationId,
 		ClassOidIndexId,
@@ -766,6 +781,10 @@ static const struct object_type_map
 	{
 		"schema", OBJECT_SCHEMA
 	},
+	/* OCLASS_MODULE */
+	{
+		"module", OBJECT_MODULE
+	},
 	/* OCLASS_TSPARSER */
 	{
 		"text search parser", OBJECT_TSPARSER
@@ -943,7 +962,6 @@ get_object_address(ObjectType objtype, Node *object,
 
 	/* Some kind of lock must be taken. */
 	Assert(lockmode != NoLock);
-
 	for (;;)
 	{
 		/*
@@ -1137,6 +1155,11 @@ get_object_address(ObjectType objtype, Node *object,
 				address.classId = StatisticExtRelationId;
 				address.objectId = get_statistics_object_oid(castNode(List, object),
 															 missing_ok);
+				address.objectSubId = 0;
+				break;
+			case OBJECT_MODULE:
+				address.classId = ModuleRelationId;
+				address.objectId = get_module_oid(castNode(List, object), missing_ok);
 				address.objectSubId = 0;
 				break;
 			default:
@@ -2322,6 +2345,7 @@ pg_get_object_address(PG_FUNCTION_ARGS)
 		case OBJECT_TABCONSTRAINT:
 		case OBJECT_OPCLASS:
 		case OBJECT_OPFAMILY:
+		case OBJECT_MODULE:
 			objnode = (Node *) name;
 			break;
 		case OBJECT_ACCESS_METHOD:
@@ -2488,6 +2512,11 @@ check_object_ownership(Oid roleid, ObjectType objtype, ObjectAddress address,
 			break;
 		case OBJECT_SCHEMA:
 			if (!pg_namespace_ownercheck(address.objectId, roleid))
+				aclcheck_error(ACLCHECK_NOT_OWNER, objtype,
+							   strVal(object));
+			break;
+		case OBJECT_MODULE:
+			if (!pg_module_ownercheck(address.objectId, roleid))
 				aclcheck_error(ACLCHECK_NOT_OWNER, objtype,
 							   strVal(object));
 			break;
@@ -2968,6 +2997,34 @@ getObjectDescription(const ObjectAddress *object, bool missing_ok)
 
 	switch (getObjectClass(object))
 	{
+		case OCLASS_MODULE:
+			{
+				Relation	modRel;
+				HeapTuple	tup;
+				Form_pg_module modForm;
+
+				modRel = table_open(ModuleRelationId, AccessShareLock);
+
+				tup = get_catalog_object_by_oid(modRel, Anum_pg_module_oid,
+												object->objectId);
+
+				if (!HeapTupleIsValid(tup))
+				{
+					if (!missing_ok)
+						elog(ERROR, "could not find tuple for module %u",
+							 object->objectId);
+
+					table_close(modRel, AccessShareLock);
+					break;
+				}
+
+				modForm = (Form_pg_module) GETSTRUCT(tup);
+
+				appendStringInfo(&buffer, _("module %s"), (modForm->modname).data);
+
+				table_close(modRel, AccessShareLock);
+				break;
+			}
 		case OCLASS_CLASS:
 			if (object->objectSubId == 0)
 				getRelationDescription(&buffer, object->objectId, missing_ok);
@@ -4530,6 +4587,10 @@ getObjectTypeDescription(const ObjectAddress *object, bool missing_ok)
 			appendStringInfoString(&buffer, "schema");
 			break;
 
+		case OCLASS_MODULE:
+			appendStringInfoString(&buffer, "module");
+			break;
+
 		case OCLASS_STATISTIC_EXT:
 			appendStringInfoString(&buffer, "statistics object");
 			break;
@@ -4847,6 +4908,35 @@ getObjectIdentityParts(const ObjectAddress *object,
 				if (objname)
 					format_procedure_parts(object->objectId, objname, objargs,
 										   missing_ok);
+				break;
+			}
+
+		case OCLASS_MODULE:
+			{
+				Relation	modRel;
+				HeapTuple	tup;
+				Form_pg_module modForm;
+
+				modRel = table_open(ModuleRelationId, AccessShareLock);
+
+				tup = get_catalog_object_by_oid(modRel, Anum_pg_module_oid,
+												object->objectId);
+
+				if (!HeapTupleIsValid(tup))
+				{
+					if (!missing_ok)
+						elog(ERROR, "could not find tuple for module %u",
+							 object->objectId);
+
+					table_close(modRel, AccessShareLock);
+					break;
+				}
+
+				modForm = (Form_pg_module) GETSTRUCT(tup);
+
+				appendStringInfo(&buffer, "module %s", (modForm->modname).data);
+
+				table_close(modRel, AccessShareLock);
 				break;
 			}
 

@@ -614,6 +614,7 @@ AggregateCreate(const char *aggName,
 
 	myself = ProcedureCreate(aggName,
 							 aggNamespace,
+							 InvalidOid, /* not in a module */
 							 replace,	/* maybe replacement */
 							 false, /* doesn't return a set */
 							 finaltype, /* returnType */

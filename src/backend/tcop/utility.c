@@ -43,6 +43,7 @@
 #include "commands/extension.h"
 #include "commands/lockcmds.h"
 #include "commands/matview.h"
+#include "commands/modulecmds.h"
 #include "commands/policy.h"
 #include "commands/portalcmds.h"
 #include "commands/prepare.h"
@@ -85,7 +86,9 @@ static void ProcessUtilitySlow(ParseState *pstate,
 							   ParamListInfo params,
 							   QueryEnvironment *queryEnv,
 							   DestReceiver *dest,
-							   QueryCompletion *qc);
+							   QueryCompletion *qc,
+							   Oid namespaceIdWhenCreatingInModule,
+							   Oid moduleIdWhenCreatingInModule);
 static void ExecDropStmt(DropStmt *stmt, bool isTopLevel);
 
 /*
@@ -147,6 +150,8 @@ ClassifyUtilityCommandAsReadOnly(Node *parsetree)
 		case T_AlterFdwStmt:
 		case T_AlterForeignServerStmt:
 		case T_AlterFunctionStmt:
+		case T_AlterModuleAlterFuncStmt:
+		case T_AlterModuleCreateReplaceFuncStmt:
 		case T_AlterObjectDependsStmt:
 		case T_AlterObjectSchemaStmt:
 		case T_AlterOpFamilyStmt:
@@ -179,6 +184,7 @@ ClassifyUtilityCommandAsReadOnly(Node *parsetree)
 		case T_CreateForeignServerStmt:
 		case T_CreateForeignTableStmt:
 		case T_CreateFunctionStmt:
+		case T_CreateModuleStmt:
 		case T_CreateOpClassStmt:
 		case T_CreateOpFamilyStmt:
 		case T_CreatePLangStmt:
@@ -212,6 +218,8 @@ ClassifyUtilityCommandAsReadOnly(Node *parsetree)
 		case T_ReassignOwnedStmt:
 		case T_RefreshMatViewStmt:
 		case T_RenameStmt:
+		case T_AlterModuleRenameStmt:
+		case T_AlterModuleOwnerStmt:
 		case T_RuleStmt:
 		case T_SecLabelStmt:
 		case T_TruncateStmt:
@@ -525,9 +533,76 @@ ProcessUtility(PlannedStmt *pstmt,
 								context, params, queryEnv,
 								dest, qc);
 	else
+	{
 		standard_ProcessUtility(pstmt, queryString, readOnlyTree,
 								context, params, queryEnv,
+								dest, qc, InvalidOid, InvalidOid /* not in module */);
+	}
+}
+
+/*
+ * ProcessUtilityUsingModule
+ *		similar to ProcessUtility but for when using modules
+ *
+ *	pstmt: PlannedStmt wrapper for the utility statement
+ *	queryString: original source text of command
+ *	readOnlyTree: if true, pstmt's node tree must not be modified
+ *	context: identifies source of statement (toplevel client command,
+ *		non-toplevel client command, subcommand of a larger utility command)
+ *	params: parameters to use during execution
+ *	queryEnv: environment for parse through execution (e.g., ephemeral named
+ *		tables like trigger transition tables).  May be NULL.
+ *	dest: where to send results
+ *	qc: where to store command completion status data.  May be NULL,
+ *		but if not, then caller must have initialized it.
+ *	namespaceId: oid of the schema that the enclosing module for the stmt is in.
+ *	moduleId: oid of the module the stmt is being called in.
+ *
+ * Caller MUST supply a queryString; it is not allowed to pass NULL.
+ * If you really don't have source text, you can pass a constant string,
+ * perhaps "(query not available)".
+ *
+ * Note for users of ProcessUtility_hook: the same queryString may be passed
+ * to multiple invocations of ProcessUtility when processing a query string
+ * containing multiple semicolon-separated statements.  One should use
+ * pstmt->stmt_location and pstmt->stmt_len to identify the substring
+ * containing the current statement.  Keep in mind also that some utility
+ * statements that CREATE MODULE will recurse to ProcessUtility to process
+ * sub-statements to define functions and procedures passing down the same
+ * queryString, stmt_location, and stmt_len that were given for the whole statement.
+ */
+void
+ProcessUtilityUsingModule(PlannedStmt *pstmt,
+						  const char *queryString,
+						  bool readOnlyTree,
+						  ProcessUtilityContext context,
+						  ParamListInfo params,
+						  QueryEnvironment *queryEnv,
+						  DestReceiver *dest,
+						  QueryCompletion *qc,
+						  Oid namespaceId,
+						  Oid moduleId)
+{
+	Assert(IsA(pstmt, PlannedStmt));
+	Assert(pstmt->commandType == CMD_UTILITY);
+	Assert(queryString != NULL);	/* required as of 8.4 */
+	Assert(qc == NULL || qc->commandTag == CMDTAG_UNKNOWN);
+
+	/*
+	 * We provide a function hook variable that lets loadable plugins get
+	 * control when ProcessUtility is called.  Such a plugin would normally
+	 * call standard_ProcessUtility().
+	 */
+	if (ProcessUtility_hook)
+		(*ProcessUtility_hook) (pstmt, queryString, readOnlyTree,
+								context, params, queryEnv,
 								dest, qc);
+	else
+	{
+		standard_ProcessUtility(pstmt, queryString, readOnlyTree,
+										   context, params, queryEnv,
+										   dest, qc, namespaceId, moduleId);
+	}
 }
 
 /*
@@ -549,7 +624,9 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 						ParamListInfo params,
 						QueryEnvironment *queryEnv,
 						DestReceiver *dest,
-						QueryCompletion *qc)
+						QueryCompletion *qc,
+						Oid namespaceIdWhenCreatingInModule,
+						Oid moduleIdWhenCreatingInModule)
 {
 	Node	   *parsetree;
 	bool		isTopLevel = (context == PROCESS_UTILITY_TOPLEVEL);
@@ -965,7 +1042,9 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 				if (EventTriggerSupportsObjectType(stmt->objtype))
 					ProcessUtilitySlow(pstate, pstmt, queryString,
 									   context, params, queryEnv,
-									   dest, qc);
+									   dest, qc,
+									   namespaceIdWhenCreatingInModule,
+									   moduleIdWhenCreatingInModule);
 				else
 					ExecuteGrantStmt(stmt);
 			}
@@ -978,7 +1057,9 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 				if (EventTriggerSupportsObjectType(stmt->removeType))
 					ProcessUtilitySlow(pstate, pstmt, queryString,
 									   context, params, queryEnv,
-									   dest, qc);
+									   dest, qc,
+									   namespaceIdWhenCreatingInModule,
+									   moduleIdWhenCreatingInModule);
 				else
 					ExecDropStmt(stmt, isTopLevel);
 			}
@@ -991,7 +1072,9 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 				if (EventTriggerSupportsObjectType(stmt->renameType))
 					ProcessUtilitySlow(pstate, pstmt, queryString,
 									   context, params, queryEnv,
-									   dest, qc);
+									   dest, qc,
+									   namespaceIdWhenCreatingInModule,
+									   moduleIdWhenCreatingInModule);
 				else
 					ExecRenameStmt(stmt);
 			}
@@ -1004,7 +1087,9 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 				if (EventTriggerSupportsObjectType(stmt->objectType))
 					ProcessUtilitySlow(pstate, pstmt, queryString,
 									   context, params, queryEnv,
-									   dest, qc);
+									   dest, qc,
+									   namespaceIdWhenCreatingInModule,
+									   moduleIdWhenCreatingInModule);
 				else
 					ExecAlterObjectDependsStmt(stmt, NULL);
 			}
@@ -1017,7 +1102,9 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 				if (EventTriggerSupportsObjectType(stmt->objectType))
 					ProcessUtilitySlow(pstate, pstmt, queryString,
 									   context, params, queryEnv,
-									   dest, qc);
+									   dest, qc,
+									   namespaceIdWhenCreatingInModule,
+									   moduleIdWhenCreatingInModule);
 				else
 					ExecAlterObjectSchemaStmt(stmt, NULL);
 			}
@@ -1030,7 +1117,9 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 				if (EventTriggerSupportsObjectType(stmt->objectType))
 					ProcessUtilitySlow(pstate, pstmt, queryString,
 									   context, params, queryEnv,
-									   dest, qc);
+									   dest, qc,
+									   namespaceIdWhenCreatingInModule,
+									   moduleIdWhenCreatingInModule);
 				else
 					ExecAlterOwnerStmt(stmt);
 			}
@@ -1043,7 +1132,9 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 				if (EventTriggerSupportsObjectType(stmt->objtype))
 					ProcessUtilitySlow(pstate, pstmt, queryString,
 									   context, params, queryEnv,
-									   dest, qc);
+									   dest, qc,
+									   namespaceIdWhenCreatingInModule,
+									   moduleIdWhenCreatingInModule);
 				else
 					CommentObject(stmt);
 				break;
@@ -1056,7 +1147,9 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 				if (EventTriggerSupportsObjectType(stmt->objtype))
 					ProcessUtilitySlow(pstate, pstmt, queryString,
 									   context, params, queryEnv,
-									   dest, qc);
+									   dest, qc,
+									   namespaceIdWhenCreatingInModule,
+									   moduleIdWhenCreatingInModule);
 				else
 					ExecSecLabelStmt(stmt);
 				break;
@@ -1066,7 +1159,9 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 			/* All other statement types have event trigger support */
 			ProcessUtilitySlow(pstate, pstmt, queryString,
 							   context, params, queryEnv,
-							   dest, qc);
+							   dest, qc,
+							   namespaceIdWhenCreatingInModule,
+							   moduleIdWhenCreatingInModule);
 			break;
 	}
 
@@ -1093,7 +1188,9 @@ ProcessUtilitySlow(ParseState *pstate,
 				   ParamListInfo params,
 				   QueryEnvironment *queryEnv,
 				   DestReceiver *dest,
-				   QueryCompletion *qc)
+				   QueryCompletion *qc,
+				   Oid namespaceIdWhenCreatingInModule,
+				   Oid moduleIdWhenCreatingInModule)
 {
 	Node	   *parsetree = pstmt->utilityStmt;
 	bool		isTopLevel = (context == PROCESS_UTILITY_TOPLEVEL);
@@ -1126,6 +1223,18 @@ ProcessUtilitySlow(ParseState *pstate,
 				/*
 				 * EventTriggerCollectSimpleCommand called by
 				 * CreateSchemaCommand
+				 */
+				commandCollected = true;
+				break;
+
+			case T_CreateModuleStmt:	/* CREATE Module */
+				CreateModuleCommand((CreateModuleStmt *) parsetree,
+									queryString,
+									pstmt->stmt_location,
+									pstmt->stmt_len);
+				/*
+				 * EventTriggerCollectSimpleCommand called by
+				 * CreateModuleCommand
 				 */
 				commandCollected = true;
 				break;
@@ -1264,6 +1373,14 @@ ProcessUtilitySlow(ParseState *pstate,
 					commandCollected = true;
 				}
 				break;
+
+			case T_AlterModuleCreateReplaceFuncStmt:
+				AlterModuleCreateReplaceFunction((AlterModuleCreateReplaceFuncStmt *) parsetree,
+									queryString,
+									pstmt->stmt_location,
+									pstmt->stmt_len);
+				break;
+
 
 			case T_AlterTableStmt:
 				{
@@ -1638,11 +1755,20 @@ ProcessUtilitySlow(ParseState *pstate,
 				break;
 
 			case T_CreateFunctionStmt:	/* CREATE FUNCTION */
-				address = CreateFunction(pstate, (CreateFunctionStmt *) parsetree);
+				if (OidIsValid(moduleIdWhenCreatingInModule))
+					address = CreateFunctionInModule(pstate, (CreateFunctionStmt *) parsetree,
+													 namespaceIdWhenCreatingInModule,
+													 moduleIdWhenCreatingInModule);
+				else
+					address = CreateFunction(pstate, (CreateFunctionStmt *) parsetree);
 				break;
 
 			case T_AlterFunctionStmt:	/* ALTER FUNCTION */
 				address = AlterFunction(pstate, (AlterFunctionStmt *) parsetree);
+				break;
+
+			case T_AlterModuleAlterFuncStmt: /* ALTER MODULE CONTENTS */
+				address = AlterModuleAlterFunction(pstate, (AlterModuleAlterFuncStmt *) parsetree);
 				break;
 
 			case T_RuleStmt:	/* CREATE RULE */
@@ -1757,6 +1883,10 @@ ProcessUtilitySlow(ParseState *pstate,
 				address = ExecRenameStmt((RenameStmt *) parsetree);
 				break;
 
+			case T_AlterModuleRenameStmt:
+				address = AlterModuleRename((AlterModuleRenameStmt *) parsetree);
+				break;
+
 			case T_AlterObjectDependsStmt:
 				address =
 					ExecAlterObjectDependsStmt((AlterObjectDependsStmt *) parsetree,
@@ -1771,6 +1901,10 @@ ProcessUtilitySlow(ParseState *pstate,
 
 			case T_AlterOwnerStmt:
 				address = ExecAlterOwnerStmt((AlterOwnerStmt *) parsetree);
+				break;
+
+			case T_AlterModuleOwnerStmt:
+				address = AlterModuleOwner((AlterModuleOwnerStmt *) parsetree);
 				break;
 
 			case T_AlterOperatorStmt:
@@ -2621,6 +2755,9 @@ CreateCommandTag(Node *parsetree)
 				case OBJECT_STATISTIC_EXT:
 					tag = CMDTAG_DROP_STATISTICS;
 					break;
+				case OBJECT_MODULE:
+					tag = CMDTAG_DROP_MODULE;
+					break;
 				default:
 					tag = CMDTAG_UNKNOWN;
 			}
@@ -2640,6 +2777,22 @@ CreateCommandTag(Node *parsetree)
 
 		case T_CopyStmt:
 			tag = CMDTAG_COPY;
+			break;
+
+		case T_AlterModuleRenameStmt:
+			tag = CMDTAG_ALTER_MODULE_RENAME;
+			break;
+
+		case T_AlterModuleOwnerStmt:
+			tag = CMDTAG_ALTER_MODULE_OWNER;
+			break;
+
+		case T_AlterModuleCreateReplaceFuncStmt:
+			tag = CMDTAG_ALTER_MODULE_CREATE_REPLACE_FUNC;
+			break;
+
+		case T_AlterModuleAlterFuncStmt:
+			tag = CMDTAG_ALTER_MODULE_ALTER_FUNCTION;
 			break;
 
 		case T_RenameStmt:
@@ -2774,6 +2927,10 @@ CreateCommandTag(Node *parsetree)
 				tag = CMDTAG_CREATE_PROCEDURE;
 			else
 				tag = CMDTAG_CREATE_FUNCTION;
+			break;
+
+		case T_CreateModuleStmt:
+			tag = CMDTAG_CREATE_MODULE;
 			break;
 
 		case T_IndexStmt:
@@ -3416,6 +3573,10 @@ GetCommandLogLevel(Node *parsetree)
 			break;
 
 		case T_AlterFunctionStmt:
+			lev = LOGSTMT_DDL;
+			break;
+
+		case T_CreateModuleStmt:
 			lev = LOGSTMT_DDL;
 			break;
 

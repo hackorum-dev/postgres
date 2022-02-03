@@ -149,8 +149,7 @@ compute_return_type(TypeName *returnType, Oid languageOid,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("type \"%s\" is not yet defined", typnam),
 				 errdetail("Creating a shell type definition.")));
-		namespaceId = QualifiedNameGetCreationNamespace(returnType->names,
-														&typname);
+		namespaceId = QualifiedNameGetCreationNamespace(returnType->names, &typname);
 		aclresult = pg_namespace_aclcheck(namespaceId, GetUserId(),
 										  ACL_CREATE);
 		if (aclresult != ACLCHECK_OK)
@@ -1011,6 +1010,9 @@ interpret_AS_clause(Oid languageOid, const char *languageName,
 	}
 }
 
+ObjectAddress
+CreateFunctionHelper(ParseState *pstate, CreateFunctionStmt *stmt, Oid namespaceId,
+					 Oid moduleId, char *funcname);
 
 /*
  * CreateFunction
@@ -1018,6 +1020,25 @@ interpret_AS_clause(Oid languageOid, const char *languageName,
  */
 ObjectAddress
 CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
+{
+	char	   *funcname;
+	Oid			namespaceId;
+
+	/* Convert list of names to a name and namespace */
+	namespaceId = QualifiedNameGetCreationNamespace(stmt->funcname, &funcname);
+
+	return CreateFunctionHelper(pstate, stmt, namespaceId,
+								InvalidOid /* not in a  module */, funcname);
+}
+
+/*
+ * CreateFunctionHelper
+ *	 All the work of executing a CREATE FUNCTION (or CREATE PROCEDURE) utility statement.
+ *   This is common to functions/procedures in a module as well as those not in a module.
+ */
+ObjectAddress
+CreateFunctionHelper(ParseState *pstate, CreateFunctionStmt *stmt, Oid namespaceId,
+					 Oid moduleId, char *funcname)
 {
 	char	   *probin_str;
 	char	   *prosrc_str;
@@ -1028,8 +1049,6 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 	Oid			languageOid;
 	Oid			languageValidator;
 	Node	   *transformDefElem = NULL;
-	char	   *funcname;
-	Oid			namespaceId;
 	AclResult	aclresult;
 	oidvector  *parameterTypes;
 	List	   *parameterTypes_list = NIL;
@@ -1055,10 +1074,6 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 	Form_pg_language languageStruct;
 	List	   *as_clause;
 	char		parallel;
-
-	/* Convert list of names to a name and namespace */
-	namespaceId = QualifiedNameGetCreationNamespace(stmt->funcname,
-													&funcname);
 
 	/* Check we have creation rights in target namespace */
 	aclresult = pg_namespace_aclcheck(namespaceId, GetUserId(), ACL_CREATE);
@@ -1268,6 +1283,7 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 	 */
 	return ProcedureCreate(funcname,
 						   namespaceId,
+						   moduleId,
 						   stmt->replace,
 						   returnsSet,
 						   prorettype,
@@ -1293,6 +1309,27 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 						   prosupport,
 						   procost,
 						   prorows);
+}
+
+/*
+ * CreateFunction
+ *	 Execute a CREATE FUNCTION (or CREATE PROCEDURE) utility statement in a module
+ */
+ObjectAddress
+CreateFunctionInModule(ParseState *pstate, CreateFunctionStmt *stmt, Oid namespaceId, Oid moduleId)
+{
+	char* funcname;
+	AclResult	aclresult;
+
+	/* Convert list of names to a name */
+	QualifiedNameGetCreationNamespace(stmt->funcname, &funcname);
+
+	/* Permission check: must have create permission on module */
+	aclresult = pg_module_aclcheck(moduleId, GetUserId(), ACL_CREATE);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult, OBJECT_MODULE, get_module_name(moduleId));
+
+	return CreateFunctionHelper(pstate, stmt, namespaceId, moduleId, funcname);
 }
 
 /*

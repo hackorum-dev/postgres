@@ -363,6 +363,7 @@ Section: Class 42 - Syntax Error or Access Rule Violation
 42883    E    ERRCODE_UNDEFINED_FUNCTION                                     undefined_function
 26000    E    ERRCODE_UNDEFINED_PSTATEMENT
 3F000    E    ERRCODE_UNDEFINED_SCHEMA
+42P00    E    ERRCODE_UNDEFINED_MODULE                                       undefined_module
 42P01    E    ERRCODE_UNDEFINED_TABLE                                        undefined_table
 42P02    E    ERRCODE_UNDEFINED_PARAMETER                                    undefined_parameter
 42704    E    ERRCODE_UNDEFINED_OBJECT                                       undefined_object
@@ -373,6 +374,7 @@ Section: Class 42 - Syntax Error or Access Rule Violation
 42P05    E    ERRCODE_DUPLICATE_PSTATEMENT                                   duplicate_prepared_statement
 42P06    E    ERRCODE_DUPLICATE_SCHEMA                                       duplicate_schema
 42P07    E    ERRCODE_DUPLICATE_TABLE                                        duplicate_table
+42P08    E    ERRCODE_DUPLICATE_MODULE                                       duplicate_module
 42712    E    ERRCODE_DUPLICATE_ALIAS                                        duplicate_alias
 42710    E    ERRCODE_DUPLICATE_OBJECT                                       duplicate_object
 42702    E    ERRCODE_AMBIGUOUS_COLUMN                                       ambiguous_column
@@ -388,6 +390,7 @@ Section: Class 42 - Syntax Error or Access Rule Violation
 42P15    E    ERRCODE_INVALID_SCHEMA_DEFINITION                              invalid_schema_definition
 42P16    E    ERRCODE_INVALID_TABLE_DEFINITION                               invalid_table_definition
 42P17    E    ERRCODE_INVALID_OBJECT_DEFINITION                              invalid_object_definition
+42P18    E    ERRCODE_INVALID_MODULE_DEFINITION                              invalid_module_definition
 
 Section: Class 44 - WITH CHECK OPTION Violation
 

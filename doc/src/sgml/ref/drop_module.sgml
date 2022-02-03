@@ -1,0 +1,110 @@
+<!--
+doc/src/sgml/ref/drop_module.sgml
+PostgreSQL documentation
+-->
+
+<refentry id="sql-dropmodule">
+ <indexterm zone="sql-dropmodule">
+  <primary>DROP MODULE</primary>
+ </indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP MODULE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>SQL - Language Statements</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP MODULE</refname>
+  <refpurpose>remove a module</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>
+DROP MODULE [ IF EXISTS ] <replaceable class="parameter">name</replaceable> [, ...] [ CASCADE | RESTRICT ]
+</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Description</title>
+
+  <para>
+   <command>DROP MODULE</command> removes modules from the database.
+  </para>
+
+  <para>
+   A module can only be dropped by its owner or a superuser.  Note that
+   the owner can drop the module (and thereby all contained objects)
+   even if they do not own some of the objects within the module.
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>Parameters</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>IF EXISTS</literal></term>
+    <listitem>
+     <para>
+      Do not throw an error if the module does not exist. A notice is issued
+      in this case.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">name</replaceable></term>
+    <listitem>
+     <para>
+      The name of a module.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CASCADE</literal></term>
+    <listitem>
+     <para>
+      Automatically drop objects (procedures, functions) that are
+      contained in the module,
+      and in turn all objects that depend on those objects
+      (see <xref linkend="ddl-depend"/>).
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RESTRICT</literal></term>
+    <listitem>
+     <para>
+      Refuse to drop the module if it contains any objects.  This is
+      the default.
+     </para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Examples</title>
+
+  <para>
+   To remove module <literal>mymodule</literal> from the database,
+   along with all functions and procedures it contains:
+
+<programlisting>
+DROP MODULE mymoule CASCADE;
+</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>See Also</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-altermodule"/></member>
+   <member><xref linkend="sql-createmodule"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

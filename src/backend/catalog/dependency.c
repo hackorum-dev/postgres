@@ -42,6 +42,7 @@
 #include "catalog/pg_init_privs.h"
 #include "catalog/pg_language.h"
 #include "catalog/pg_largeobject.h"
+#include "catalog/pg_module.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_operator.h"
@@ -163,6 +164,7 @@ static const Oid object_classes[] = {
 	AccessMethodProcedureRelationId,	/* OCLASS_AMPROC */
 	RewriteRelationId,			/* OCLASS_REWRITE */
 	TriggerRelationId,			/* OCLASS_TRIGGER */
+	ModuleRelationId,			/* OCLASS_MODULE */
 	NamespaceRelationId,		/* OCLASS_SCHEMA */
 	StatisticExtRelationId,		/* OCLASS_STATISTIC_EXT */
 	TSParserRelationId,			/* OCLASS_TSPARSER */
@@ -1488,6 +1490,7 @@ doDeletion(const ObjectAddress *object, int flags)
 		case OCLASS_AM:
 		case OCLASS_AMOP:
 		case OCLASS_AMPROC:
+		case OCLASS_MODULE:
 		case OCLASS_SCHEMA:
 		case OCLASS_TSPARSER:
 		case OCLASS_TSDICT:
@@ -2816,6 +2819,9 @@ getObjectClass(const ObjectAddress *object)
 
 		case TriggerRelationId:
 			return OCLASS_TRIGGER;
+
+		case ModuleRelationId:
+			return OCLASS_MODULE;
 
 		case NamespaceRelationId:
 			return OCLASS_SCHEMA;

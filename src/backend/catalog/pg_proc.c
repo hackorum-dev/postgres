@@ -22,6 +22,7 @@
 #include "catalog/indexing.h"
 #include "catalog/objectaccess.h"
 #include "catalog/pg_language.h"
+#include "catalog/pg_module.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_transform.h"
@@ -70,6 +71,7 @@ static bool match_prosrc_to_literal(const char *prosrc, const char *literal,
 ObjectAddress
 ProcedureCreate(const char *procedureName,
 				Oid procNamespace,
+				Oid procModule,
 				bool replace,
 				bool returnsSet,
 				Oid returnType,
@@ -300,6 +302,7 @@ ProcedureCreate(const char *procedureName,
 	namestrcpy(&procname, procedureName);
 	values[Anum_pg_proc_proname - 1] = NameGetDatum(&procname);
 	values[Anum_pg_proc_pronamespace - 1] = ObjectIdGetDatum(procNamespace);
+	values[Anum_pg_proc_promodule - 1] = ObjectIdGetDatum(procModule);
 	values[Anum_pg_proc_proowner - 1] = ObjectIdGetDatum(proowner);
 	values[Anum_pg_proc_prolang - 1] = ObjectIdGetDatum(languageObjectId);
 	values[Anum_pg_proc_procost - 1] = Float4GetDatum(procost);
@@ -356,10 +359,11 @@ ProcedureCreate(const char *procedureName,
 	tupDesc = RelationGetDescr(rel);
 
 	/* Check for pre-existing definition */
-	oldtup = SearchSysCache3(PROCNAMEARGSNSP,
+	oldtup = SearchSysCache4(PROCNAMEARGSNSP,
 							 PointerGetDatum(procedureName),
 							 PointerGetDatum(parameterTypes),
-							 ObjectIdGetDatum(procNamespace));
+							 ObjectIdGetDatum(procNamespace),
+							 ObjectIdGetDatum(procModule));
 
 	if (HeapTupleIsValid(oldtup))
 	{
@@ -374,6 +378,7 @@ ProcedureCreate(const char *procedureName,
 					(errcode(ERRCODE_DUPLICATE_FUNCTION),
 					 errmsg("function \"%s\" already exists with same argument types",
 							procedureName)));
+
 		if (!pg_proc_ownercheck(oldproc->oid, proowner))
 			aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_FUNCTION,
 						   procedureName);
@@ -602,6 +607,10 @@ ProcedureCreate(const char *procedureName,
 
 	/* dependency on namespace */
 	ObjectAddressSet(referenced, NamespaceRelationId, procNamespace);
+	add_exact_object_address(&referenced, addrs);
+
+	/* dependency on module */
+	ObjectAddressSet(referenced, ModuleRelationId, procModule);
 	add_exact_object_address(&referenced, addrs);
 
 	/* dependency on implementation language */

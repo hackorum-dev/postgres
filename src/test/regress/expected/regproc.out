@@ -253,11 +253,11 @@ ERROR:  operator does not exist: ng_catalog.+(int4,int4)
 LINE 1: SELECT regoperator('ng_catalog.+(int4,int4)');
                            ^
 SELECT regproc('ng_catalog.now');
-ERROR:  schema "ng_catalog" does not exist
+ERROR:  function "ng_catalog.now" does not exist
 LINE 1: SELECT regproc('ng_catalog.now');
                        ^
 SELECT regprocedure('ng_catalog.abs(numeric)');
-ERROR:  schema "ng_catalog" does not exist
+ERROR:  function "ng_catalog.abs(numeric)" does not exist
 LINE 1: SELECT regprocedure('ng_catalog.abs(numeric)');
                             ^
 SELECT regclass('ng_catalog.pg_class');

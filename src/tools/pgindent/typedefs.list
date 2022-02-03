@@ -74,6 +74,7 @@ AlterExtensionStmt
 AlterFdwStmt
 AlterForeignServerStmt
 AlterFunctionStmt
+AlterModuleAlterFuncStmt
 AlterObjectDependsStmt
 AlterObjectSchemaStmt
 AlterOpFamilyStmt
@@ -1461,6 +1462,8 @@ MinmaxOpaque
 ModifyTable
 ModifyTablePath
 ModifyTableState
+ModuleGrantStmt
+ModuleRevokeStmt
 MorphOpaque
 MsgType
 MultiAssignRef
@@ -1490,6 +1493,7 @@ NamedLWLockTrancheRequest
 NamedTuplestoreScan
 NamedTuplestoreScanState
 NamespaceInfo
+ModuleInfo
 NestLoop
 NestLoopParam
 NestLoopState

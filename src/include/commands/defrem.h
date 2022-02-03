@@ -50,6 +50,8 @@ extern Oid	ResolveOpClass(List *opclass, Oid attrType,
 
 /* commands/functioncmds.c */
 extern ObjectAddress CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt);
+extern ObjectAddress CreateFunctionInModule(ParseState *pstate, CreateFunctionStmt *stmt,
+									Oid namespaceId, Oid moduleId);
 extern void RemoveFunctionById(Oid funcOid);
 extern ObjectAddress AlterFunction(ParseState *pstate, AlterFunctionStmt *stmt);
 extern ObjectAddress CreateCast(CreateCastStmt *stmt);
@@ -73,6 +75,9 @@ extern void interpret_function_parameter_list(ParseState *pstate,
 											  List **parameterDefaults,
 											  Oid *variadicArgType,
 											  Oid *requiredResultType);
+
+/* commands/modulecmds.c */
+extern ObjectAddress AlterModuleAlterFunction(ParseState *pstate, AlterModuleAlterFuncStmt *stmt);
 
 /* commands/operatorcmds.c */
 extern ObjectAddress DefineOperator(List *names, List *parameters);
