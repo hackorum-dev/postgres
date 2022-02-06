@@ -2178,6 +2178,8 @@ _copyCurrentOfExpr(const CurrentOfExpr *from)
 	COPY_SCALAR_FIELD(cvarno);
 	COPY_STRING_FIELD(cursor_name);
 	COPY_SCALAR_FIELD(cursor_param);
+	COPY_SCALAR_FIELD(cursor_offset);
+	COPY_SCALAR_FIELD(cursor_is_offsetof);
 
 	return newnode;
 }
