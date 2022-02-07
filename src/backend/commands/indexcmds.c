@@ -1647,8 +1647,6 @@ reindex_invalid_child_indexes(Oid indexRelationId)
 	 * CIC needs to mark a partitioned index as VALID, which itself
 	 * requires setting READY, which is unset for CIC (even though
 	 * it's meaningless for an index without storage).
-	 * This must be done only while holding a lock which precludes adding
-	 * partitions.
 	 */
 	CommandCounterIncrement();
 	index_set_state_flags(indexRelationId, INDEX_CREATE_SET_READY);
@@ -1658,9 +1656,6 @@ reindex_invalid_child_indexes(Oid indexRelationId)
 	 * this commits and then starts a new transaction immediately.
 	 */
 	ReindexPartitions(indexRelationId, &params, true);
-
-	CommandCounterIncrement();
-	index_set_state_flags(indexRelationId, INDEX_CREATE_SET_VALID);
 }
 
 /*
@@ -3104,6 +3099,24 @@ ReindexPartitions(Oid relid, ReindexParams *params, bool isTopLevel)
 	 * this commits and then starts a new transaction immediately.
 	 */
 	ReindexMultipleInternal(partitions, params, npart);
+
+	/*
+	 * If indexes exist on all of the partitioned table's children, and we
+	 * just reindexed them, then we know they're valid, and so can mark the
+	 * parent index as valid.
+	 * This handles the case of CREATE INDEX CONCURRENTLY.
+	 * See also: validatePartitionedIndex().
+	 */
+	if (get_rel_relkind(relid) == RELKIND_PARTITIONED_INDEX
+			&& !get_index_isvalid(relid))
+	{
+		Oid	tableoid = IndexGetRelation(relid, false);
+		List	*child_tables = find_all_inheritors(tableoid, ShareLock, NULL);
+
+		/* Both lists include their parent relation as well as any intermediate partitioned rels */
+		if (list_length(inhoids) == list_length(child_tables))
+			index_set_state_flags(relid, INDEX_CREATE_SET_VALID);
+	}
 
 	/*
 	 * Clean up working storage --- note we must do this after
