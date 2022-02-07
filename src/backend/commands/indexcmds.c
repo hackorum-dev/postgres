@@ -1631,49 +1631,16 @@ DefineIndex(Oid relationId,
 	return address;
 }
 
-/* Reindex invalid child indexes created earlier */
+/*
+ * Reindex invalid child indexes created earlier thereby validating
+ * the parent index.
+ */
 static void
 reindex_invalid_child_indexes(Oid indexRelationId)
 {
-	ListCell *lc;
-	int		npart = 0;
 	ReindexParams params = {
-		.options = REINDEXOPT_CONCURRENTLY
+		.options = REINDEXOPT_CONCURRENTLY | REINDEXOPT_SKIPVALID
 	};
-
-	MemoryContext	ind_context = AllocSetContextCreate(PortalContext, "CREATE INDEX",
-			ALLOCSET_DEFAULT_SIZES);
-	MemoryContext	oldcontext;
-	List		*childs = find_inheritance_children(indexRelationId, ShareLock);
-	List		*partitions = NIL;
-
-	PreventInTransactionBlock(true, "REINDEX INDEX");
-
-	foreach (lc, childs)
-	{
-		Oid			partoid = lfirst_oid(lc);
-
-		/* XXX: need to retrofit progress reporting into it */
-		// pgstat_progress_update_param(PROGRESS_CREATEIDX_PARTITIONS_DONE,
-									 // npart++);
-
-		if (get_index_isvalid(partoid) ||
-				!RELKIND_HAS_STORAGE(get_rel_relkind(partoid)))
-			continue;
-
-		/* Save partition OID */
-		oldcontext = MemoryContextSwitchTo(ind_context);
-		partitions = lappend_oid(partitions, partoid);
-		MemoryContextSwitchTo(oldcontext);
-	}
-
-	/*
-	 * Process each partition listed in a separate transaction.  Note that
-	 * this commits and then starts a new transaction immediately.
-	 * XXX: since this is done in 2*N transactions, it could just as well
-	 * call ReindexRelationConcurrently directly
-	 */
-	ReindexMultipleInternal(partitions, &params);
 
 	/*
 	 * CIC needs to mark a partitioned index as VALID, which itself
@@ -1681,9 +1648,16 @@ reindex_invalid_child_indexes(Oid indexRelationId)
 	 * it's meaningless for an index without storage).
 	 * This must be done only while holding a lock which precludes adding
 	 * partitions.
-	 * See also: validatePartitionedIndex().
 	 */
+	CommandCounterIncrement();
 	index_set_state_flags(indexRelationId, INDEX_CREATE_SET_READY);
+
+	/*
+	 * Process each partition listed in a separate transaction.  Note that
+	 * this commits and then starts a new transaction immediately.
+	 */
+	ReindexPartitions(indexRelationId, &params, true);
+
 	CommandCounterIncrement();
 	index_set_state_flags(indexRelationId, INDEX_CREATE_SET_VALID);
 }
@@ -3103,6 +3077,11 @@ ReindexPartitions(Oid relid, ReindexParams *params, bool isTopLevel)
 		 * tables.
 		 */
 		if (!RELKIND_HAS_STORAGE(partkind))
+			continue;
+
+		/* Skip valid indexes, if requested */
+		if ((params->options & REINDEXOPT_SKIPVALID) != 0 &&
+				get_index_isvalid(partoid))
 			continue;
 
 		Assert(partkind == RELKIND_INDEX ||
