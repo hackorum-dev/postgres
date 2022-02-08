@@ -99,7 +99,7 @@ static void reindex_error_callback(void *args);
 static void ReindexPartitions(Oid relid, ReindexParams *params,
 							  bool isTopLevel);
 static void ReindexMultipleInternal(List *relids,
-									ReindexParams *params);
+									ReindexParams *paramsm, int npart);
 static bool ReindexRelationConcurrently(Oid relationOid,
 										ReindexParams *params);
 static void update_relispartition(Oid relationId, bool newval);
@@ -1184,6 +1184,7 @@ DefineIndex(Oid relationId,
 			Oid		   *opfamOids;
 			char		*relname;
 
+
 			pgstat_progress_update_param(PROGRESS_CREATEIDX_PARTITIONS_TOTAL,
 										 nparts);
 
@@ -1639,7 +1640,7 @@ static void
 reindex_invalid_child_indexes(Oid indexRelationId)
 {
 	ReindexParams params = {
-		.options = REINDEXOPT_CONCURRENTLY | REINDEXOPT_SKIPVALID
+		.options = REINDEXOPT_CONCURRENTLY | REINDEXOPT_SKIPVALID | REINDEXOPT_REPORT_PART
 	};
 
 	/*
@@ -2986,7 +2987,7 @@ ReindexMultipleTables(const char *objectName, ReindexObjectType objectKind,
 	 * Process each relation listed in a separate transaction.  Note that this
 	 * commits and then starts a new transaction immediately.
 	 */
-	ReindexMultipleInternal(relids, params);
+	ReindexMultipleInternal(relids, params, 0);
 
 	MemoryContextDelete(private_context);
 }
@@ -3022,6 +3023,7 @@ ReindexPartitions(Oid relid, ReindexParams *params, bool isTopLevel)
 	char		relkind = get_rel_relkind(relid);
 	char	   *relname = get_rel_name(relid);
 	char	   *relnamespace = get_namespace_name(get_rel_namespace(relid));
+	int			npart = 1;
 	MemoryContext reindex_context;
 	List	   *inhoids;
 	ListCell   *lc;
@@ -3082,7 +3084,11 @@ ReindexPartitions(Oid relid, ReindexParams *params, bool isTopLevel)
 		/* Skip valid indexes, if requested */
 		if ((params->options & REINDEXOPT_SKIPVALID) != 0 &&
 				get_index_isvalid(partoid))
+		{
+			if (params->options & REINDEXOPT_REPORT_PART)
+				pgstat_progress_update_param(PROGRESS_CREATEIDX_PARTITIONS_DONE, npart++);
 			continue;
+		}
 
 		Assert(partkind == RELKIND_INDEX ||
 			   partkind == RELKIND_RELATION);
@@ -3097,7 +3103,7 @@ ReindexPartitions(Oid relid, ReindexParams *params, bool isTopLevel)
 	 * Process each partition listed in a separate transaction.  Note that
 	 * this commits and then starts a new transaction immediately.
 	 */
-	ReindexMultipleInternal(partitions, params);
+	ReindexMultipleInternal(partitions, params, npart);
 
 	/*
 	 * Clean up working storage --- note we must do this after
@@ -3115,7 +3121,7 @@ ReindexPartitions(Oid relid, ReindexParams *params, bool isTopLevel)
  * and starts a new transaction when finished.
  */
 static void
-ReindexMultipleInternal(List *relids, ReindexParams *params)
+ReindexMultipleInternal(List *relids, ReindexParams *params, int npart)
 {
 	ListCell   *l;
 
@@ -3209,6 +3215,9 @@ ReindexMultipleInternal(List *relids, ReindexParams *params)
 		}
 
 		CommitTransactionCommand();
+
+		if (params->options & REINDEXOPT_REPORT_PART)
+			pgstat_progress_update_param(PROGRESS_CREATEIDX_PARTITIONS_DONE, npart++);
 	}
 
 	StartTransactionCommand();
@@ -3591,14 +3600,18 @@ ReindexRelationConcurrently(Oid relationOid, ReindexParams *params)
 		if (indexRel->rd_rel->relpersistence == RELPERSISTENCE_TEMP)
 			elog(ERROR, "cannot reindex a temporary table concurrently");
 
-		pgstat_progress_start_command(PROGRESS_COMMAND_CREATE_INDEX,
+		/* Don't overwrite CREATE INDEX progress */
+		if (!(params->options & REINDEXOPT_REPORT_PART))
+		{
+			pgstat_progress_start_command(PROGRESS_COMMAND_CREATE_INDEX,
 									  idx->tableId);
 
-		progress_vals[0] = PROGRESS_CREATEIDX_COMMAND_REINDEX_CONCURRENTLY;
-		progress_vals[1] = 0;	/* initializing */
-		progress_vals[2] = idx->indexId;
-		progress_vals[3] = idx->amId;
-		pgstat_progress_update_multi_param(4, progress_index, progress_vals);
+			progress_vals[0] = PROGRESS_CREATEIDX_COMMAND_REINDEX_CONCURRENTLY;
+			progress_vals[1] = 0;	/* initializing */
+			progress_vals[2] = idx->indexId;
+			progress_vals[3] = idx->amId;
+			pgstat_progress_update_multi_param(4, progress_index, progress_vals);
+		}
 
 		/* Choose a temporary relation name for the new index */
 		concurrentName = ChooseRelationName(get_rel_name(idx->indexId),
@@ -3716,7 +3729,9 @@ ReindexRelationConcurrently(Oid relationOid, ReindexParams *params)
 	 * DefineIndex() for more details.
 	 */
 
-	pgstat_progress_update_param(PROGRESS_CREATEIDX_PHASE,
+	/* Don't overwrite CREATE INDEX progress */
+	if (!(params->options & REINDEXOPT_REPORT_PART))
+		pgstat_progress_update_param(PROGRESS_CREATEIDX_PHASE,
 								 PROGRESS_CREATEIDX_PHASE_WAIT_1);
 	WaitForLockersMultiple(lockTags, ShareLock, true);
 	CommitTransactionCommand();
@@ -3744,14 +3759,17 @@ ReindexRelationConcurrently(Oid relationOid, ReindexParams *params)
 
 		/*
 		 * Update progress for the index to build, with the correct parent
-		 * table involved.
+		 * table involved.  Don't overwrite CREATE INDEX progress.
 		 */
-		pgstat_progress_start_command(PROGRESS_COMMAND_CREATE_INDEX, newidx->tableId);
-		progress_vals[0] = PROGRESS_CREATEIDX_COMMAND_REINDEX_CONCURRENTLY;
-		progress_vals[1] = PROGRESS_CREATEIDX_PHASE_BUILD;
-		progress_vals[2] = newidx->indexId;
-		progress_vals[3] = newidx->amId;
-		pgstat_progress_update_multi_param(4, progress_index, progress_vals);
+		if (!(params->options & REINDEXOPT_REPORT_PART))
+		{
+			pgstat_progress_start_command(PROGRESS_COMMAND_CREATE_INDEX, newidx->tableId);
+			progress_vals[0] = PROGRESS_CREATEIDX_COMMAND_REINDEX_CONCURRENTLY;
+			progress_vals[1] = PROGRESS_CREATEIDX_PHASE_BUILD;
+			progress_vals[2] = newidx->indexId;
+			progress_vals[3] = newidx->amId;
+			pgstat_progress_update_multi_param(4, progress_index, progress_vals);
+		}
 
 		/* Perform concurrent build of new index */
 		index_concurrently_build(newidx->tableId, newidx->indexId);
@@ -3772,10 +3790,11 @@ ReindexRelationConcurrently(Oid relationOid, ReindexParams *params)
 	 *
 	 * During this phase the old indexes catch up with any new tuples that
 	 * were created during the previous phase.  See "phase 3" in DefineIndex()
-	 * for more details.
+	 * for more details. Don't overwrite CREATE INDEX progress.
 	 */
 
-	pgstat_progress_update_param(PROGRESS_CREATEIDX_PHASE,
+	if (!(params->options & REINDEXOPT_REPORT_PART))
+		pgstat_progress_update_param(PROGRESS_CREATEIDX_PHASE,
 								 PROGRESS_CREATEIDX_PHASE_WAIT_2);
 	WaitForLockersMultiple(lockTags, ShareLock, true);
 	CommitTransactionCommand();
@@ -3810,13 +3829,16 @@ ReindexRelationConcurrently(Oid relationOid, ReindexParams *params)
 		 * Update progress for the index to build, with the correct parent
 		 * table involved.
 		 */
-		pgstat_progress_start_command(PROGRESS_COMMAND_CREATE_INDEX,
+		if (!(params->options & REINDEXOPT_REPORT_PART))
+		{
+			pgstat_progress_start_command(PROGRESS_COMMAND_CREATE_INDEX,
 									  newidx->tableId);
-		progress_vals[0] = PROGRESS_CREATEIDX_COMMAND_REINDEX_CONCURRENTLY;
-		progress_vals[1] = PROGRESS_CREATEIDX_PHASE_VALIDATE_IDXSCAN;
-		progress_vals[2] = newidx->indexId;
-		progress_vals[3] = newidx->amId;
-		pgstat_progress_update_multi_param(4, progress_index, progress_vals);
+			progress_vals[0] = PROGRESS_CREATEIDX_COMMAND_REINDEX_CONCURRENTLY;
+			progress_vals[1] = PROGRESS_CREATEIDX_PHASE_VALIDATE_IDXSCAN;
+			progress_vals[2] = newidx->indexId;
+			progress_vals[3] = newidx->amId;
+			pgstat_progress_update_multi_param(4, progress_index, progress_vals);
+		}
 
 		validate_index(newidx->tableId, newidx->indexId, snapshot);
 
@@ -3845,8 +3867,10 @@ ReindexRelationConcurrently(Oid relationOid, ReindexParams *params)
 		 *
 		 * Because we don't take a snapshot or Xid in this transaction,
 		 * there's no need to set the PROC_IN_SAFE_IC flag here.
+		 * Don't overwrite CREATE INDEX progress.
 		 */
-		pgstat_progress_update_param(PROGRESS_CREATEIDX_PHASE,
+		if (!(params->options & REINDEXOPT_REPORT_PART))
+			pgstat_progress_update_param(PROGRESS_CREATEIDX_PHASE,
 									 PROGRESS_CREATEIDX_PHASE_WAIT_3);
 		WaitForOlderSnapshots(limitXmin, true);
 
@@ -3932,9 +3956,11 @@ ReindexRelationConcurrently(Oid relationOid, ReindexParams *params)
 	 * Mark the old indexes as dead.  First we must wait until no running
 	 * transaction could be using the index for a query.  See also
 	 * index_drop() for more details.
+	 * Don't overwrite CREATE INDEX progress.
 	 */
 
-	pgstat_progress_update_param(PROGRESS_CREATEIDX_PHASE,
+	if (!(params->options & REINDEXOPT_REPORT_PART))
+		pgstat_progress_update_param(PROGRESS_CREATEIDX_PHASE,
 								 PROGRESS_CREATEIDX_PHASE_WAIT_4);
 	WaitForLockersMultiple(lockTags, AccessExclusiveLock, true);
 
@@ -3965,10 +3991,11 @@ ReindexRelationConcurrently(Oid relationOid, ReindexParams *params)
 	/*
 	 * Phase 6 of REINDEX CONCURRENTLY
 	 *
-	 * Drop the old indexes.
+	 * Drop the old indexes. Don't overwrite CREATE INDEX progress.
 	 */
 
-	pgstat_progress_update_param(PROGRESS_CREATEIDX_PHASE,
+	if (!(params->options & REINDEXOPT_REPORT_PART))
+		pgstat_progress_update_param(PROGRESS_CREATEIDX_PHASE,
 								 PROGRESS_CREATEIDX_PHASE_WAIT_5);
 	WaitForLockersMultiple(lockTags, AccessExclusiveLock, true);
 
@@ -4046,7 +4073,9 @@ ReindexRelationConcurrently(Oid relationOid, ReindexParams *params)
 
 	MemoryContextDelete(private_context);
 
-	pgstat_progress_end_command();
+	/* Don't overwrite CREATE INDEX progress. */
+	if (!(params->options & REINDEXOPT_REPORT_PART))
+		pgstat_progress_end_command();
 
 	return true;
 }
