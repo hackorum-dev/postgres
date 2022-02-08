@@ -2172,11 +2172,13 @@ BufferSync(int flags)
 		}
 
 		/*
-		 * Sleep to throttle our I/O rate.
+		 * Sleep to throttle our I/O rate. Do nothing if checkpoint is being
+		 * executed by non-checkpointer process.
 		 *
 		 * (This will check for barrier events even if it doesn't sleep.)
 		 */
-		CheckpointWriteDelay(flags, (double) num_processed / num_to_scan);
+		if (AmCheckpointerProcess())
+			CheckpointWriteDelay(flags, (double) num_processed / num_to_scan);
 	}
 
 	/* issue all pending flushes */

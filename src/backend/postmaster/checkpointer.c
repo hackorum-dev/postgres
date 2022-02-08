@@ -162,7 +162,6 @@ static pg_time_t last_xlog_switch_time;
 static void HandleCheckpointerInterrupts(void);
 static void CheckArchiveTimeout(void);
 static bool IsCheckpointOnSchedule(double progress);
-static bool ImmediateCheckpointRequested(void);
 static bool CompactCheckpointerRequestQueue(void);
 static void UpdateSharedMemoryConfig(void);
 
@@ -652,25 +651,6 @@ CheckArchiveTimeout(void)
 }
 
 /*
- * Returns true if an immediate checkpoint request is pending.  (Note that
- * this does not check the *current* checkpoint's IMMEDIATE flag, but whether
- * there is one pending behind it.)
- */
-static bool
-ImmediateCheckpointRequested(void)
-{
-	volatile CheckpointerShmemStruct *cps = CheckpointerShmem;
-
-	/*
-	 * We don't need to acquire the ckpt_lck in this case because we're only
-	 * looking at a single flag bit.
-	 */
-	if (cps->ckpt_flags & CHECKPOINT_IMMEDIATE)
-		return true;
-	return false;
-}
-
-/*
  * CheckpointWriteDelay -- control rate of checkpoint
  *
  * This function is called after each page write performed by BufferSync().
@@ -688,17 +668,19 @@ CheckpointWriteDelay(int flags, double progress)
 {
 	static int	absorb_counter = WRITES_PER_ABSORB;
 
-	/* Do nothing if checkpoint is being executed by non-checkpointer process */
-	if (!AmCheckpointerProcess())
-		return;
-
 	/*
-	 * Perform the usual duties and take a nap, unless we're behind schedule,
-	 * in which case we just try to catch up as quickly as possible.
+	 * Perform the usual duties and take a nap, unless we're behind schedule or
+	 * an immediate checkpoint request is pending, in which case we just try to
+	 * catch up as quickly as possible.
+	 *
+	 * We don't need to acquire the ckpt_lck while reading ckpt_flags from
+	 * checkpointer shared memory, because we're only looking at a single flag
+	 * bit.
 	 */
 	if (!(flags & CHECKPOINT_IMMEDIATE) &&
 		!ShutdownRequestPending &&
-		!ImmediateCheckpointRequested() &&
+		!(((volatile CheckpointerShmemStruct *) CheckpointerShmem)->ckpt_flags &
+		  CHECKPOINT_IMMEDIATE) &&
 		IsCheckpointOnSchedule(progress))
 	{
 		if (ConfigReloadPending)
