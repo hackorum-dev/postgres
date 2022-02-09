@@ -326,11 +326,12 @@ toast_delete_external(Relation rel, Datum *values, bool *isnull,
 	{
 		if (TupleDescAttr(tupleDesc, i)->attlen == -1)
 		{
-			Datum		value = values[i];
-
 			if (isnull[i])
 				continue;
-			else if (VARATT_IS_EXTERNAL_ONDISK(PointerGetDatum(value)))
+
+			Datum		value = values[i];
+
+			if (VARATT_IS_EXTERNAL_ONDISK(PointerGetDatum(value)))
 				toast_delete_datum(rel, value, is_speculative);
 		}
 	}
