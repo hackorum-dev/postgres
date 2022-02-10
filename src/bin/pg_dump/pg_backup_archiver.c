@@ -2040,21 +2040,22 @@ WriteStr(ArchiveHandle *AH, const char *c)
 char *
 ReadStr(ArchiveHandle *AH)
 {
-	char	   *buf;
 	int			l;
 
 	l = ReadInt(AH);
-	if (l < 0)
-		buf = NULL;
-	else
+	if (l > 0)
 	{
+		char	   *buf;
+
 		buf = (char *) pg_malloc(l + 1);
 		AH->ReadBufPtr(AH, (void *) buf, l);
 
 		buf[l] = '\0';
+		
+		return buf;
 	}
 
-	return buf;
+	return NULL;
 }
 
 static int
@@ -2494,7 +2495,6 @@ ReadToc(ArchiveHandle *AH)
 	int			depIdx;
 	int			depSize;
 	TocEntry   *te;
-	bool		is_supported;
 
 	AH->tocCount = ReadInt(AH);
 	AH->maxDumpId = 0;
@@ -2517,14 +2517,24 @@ ReadToc(ArchiveHandle *AH)
 		if (AH->version >= K_VERS_1_8)
 		{
 			tmp = ReadStr(AH);
-			sscanf(tmp, "%u", &te->catalogId.tableoid);
-			free(tmp);
+			if (tmp)
+			{
+				sscanf(tmp, "%u", &te->catalogId.tableoid);
+				free(tmp);
+			}
+			else
+				fatal("table OID out of range  -- perhaps a corrupt TOC");
 		}
 		else
 			te->catalogId.tableoid = InvalidOid;
 		tmp = ReadStr(AH);
-		sscanf(tmp, "%u", &te->catalogId.oid);
-		free(tmp);
+		if (tmp)
+		{
+			sscanf(tmp, "%u", &te->catalogId.oid);
+			free(tmp);
+		}
+		else
+			te->catalogId.oid = InvalidOid;
 
 		te->tag = ReadStr(AH);
 		te->desc = ReadStr(AH);
@@ -2575,21 +2585,22 @@ ReadToc(ArchiveHandle *AH)
 			te->tableam = ReadStr(AH);
 
 		te->owner = ReadStr(AH);
-		is_supported = true;
 		if (AH->version < K_VERS_1_9)
-			is_supported = false;
-		else
 		{
-				tmp = ReadStr(AH);
+			bool		is_supported;
 
-				if (strcmp(tmp, "true") == 0)
-					is_supported = false;
-
+			tmp = ReadStr(AH);
+			if (tmp)
+			{
+				is_supported = (strcmp(tmp, "true") != 0);
 				free(tmp);
-		}
+			}
+			else
+				is_supported = false;
 
-		if (!is_supported)
-			pg_log_warning("restoring tables WITH OIDS is not supported anymore");
+			if (!is_supported)
+				pg_log_warning("restoring tables WITH OIDS is not supported anymore");
+		}
 
 		/* Read TOC entry dependencies */
 		if (AH->version >= K_VERS_1_5)
