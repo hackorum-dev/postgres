@@ -5598,6 +5598,10 @@ GetRelationPublicationActions(Relation relation)
 			break;
 	}
 
+	/*
+	 * The rd_pubactions is probably still NULL, but just in case something
+	 * already made it valid, avoid leaking memory.
+	 */
 	if (relation->rd_pubactions)
 	{
 		pfree(relation->rd_pubactions);
