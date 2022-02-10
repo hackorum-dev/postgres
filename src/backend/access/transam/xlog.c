@@ -10707,11 +10707,14 @@ xlog_block_info(StringInfo buf, XLogReaderState *record)
 		RelFileNode rnode;
 		ForkNumber	forknum;
 		BlockNumber blk;
+		bool	blk_ref_exists;
 
-		if (!XLogRecHasBlockRef(record, block_id))
+		blk_ref_exists = XLogRecGetBlockTag(record, block_id, &rnode,
+											&forknum, &blk);
+
+		if (!blk_ref_exists)
 			continue;
 
-		XLogRecGetBlockTag(record, block_id, &rnode, &forknum, &blk);
 		if (forknum != MAIN_FORKNUM)
 			appendStringInfo(buf, "; blkref #%d: rel %u/%u/%u, fork %u, blk %u",
 							 block_id,

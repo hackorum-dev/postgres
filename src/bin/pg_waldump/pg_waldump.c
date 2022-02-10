@@ -513,10 +513,14 @@ XLogDumpDisplayRecord(XLogDumpConfig *config, XLogReaderState *record)
 		/* print block references (short format) */
 		for (block_id = 0; block_id <= record->max_block_id; block_id++)
 		{
-			if (!XLogRecHasBlockRef(record, block_id))
+			bool blk_ref_exists;
+
+			blk_ref_exists = XLogRecGetBlockTag(record, block_id, &rnode,
+												&forknum, &blk);
+
+			if (!blk_ref_exists)
 				continue;
 
-			XLogRecGetBlockTag(record, block_id, &rnode, &forknum, &blk);
 			if (forknum != MAIN_FORKNUM)
 				printf(", blkref #%d: rel %u/%u/%u fork %s blk %u",
 					   block_id,
@@ -544,10 +548,14 @@ XLogDumpDisplayRecord(XLogDumpConfig *config, XLogReaderState *record)
 		putchar('\n');
 		for (block_id = 0; block_id <= record->max_block_id; block_id++)
 		{
-			if (!XLogRecHasBlockRef(record, block_id))
+			bool    blk_ref_exists;
+
+			blk_ref_exists = XLogRecGetBlockTag(record, block_id, &rnode,
+												&forknum, &blk);
+
+			if (!blk_ref_exists)
 				continue;
 
-			XLogRecGetBlockTag(record, block_id, &rnode, &forknum, &blk);
 			printf("\tblkref #%d: rel %u/%u/%u fork %s blk %u",
 				   block_id,
 				   rnode.spcNode, rnode.dbNode, rnode.relNode,

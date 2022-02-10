@@ -1533,7 +1533,7 @@ XLogRecGetBlockTag(XLogReaderState *record, uint8 block_id,
 {
 	DecodedBkpBlock *bkpb;
 
-	if (!record->blocks[block_id].in_use)
+	if (!XLogRecHasBlockRef(record, block_id))
 		return false;
 
 	bkpb = &record->blocks[block_id];
@@ -1556,7 +1556,7 @@ XLogRecGetBlockData(XLogReaderState *record, uint8 block_id, Size *len)
 {
 	DecodedBkpBlock *bkpb;
 
-	if (!record->blocks[block_id].in_use)
+	if (!XLogRecHasBlockRef(record, block_id))
 		return NULL;
 
 	bkpb = &record->blocks[block_id];
@@ -1587,9 +1587,9 @@ RestoreBlockImage(XLogReaderState *record, uint8 block_id, char *page)
 	char	   *ptr;
 	PGAlignedBlock tmp;
 
-	if (!record->blocks[block_id].in_use)
+	if (!XLogRecHasBlockRef(record, block_id))
 		return false;
-	if (!record->blocks[block_id].has_image)
+	if (!XLogRecHasBlockImage(record, block_id))
 		return false;
 
 	bkpb = &record->blocks[block_id];
