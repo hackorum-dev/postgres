@@ -49,6 +49,9 @@
 #ifndef OPENSSL_NO_ECDH
 #include <openssl/ec.h>
 #endif
+#ifdef WIN32
+#undef X509_NAME
+#endif
 #include <openssl/x509v3.h>
 
 
