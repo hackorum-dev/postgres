@@ -154,7 +154,7 @@ dir_open_for_write(WalWriteMethod *wwmethod, const char *pathname,
 #ifdef HAVE_LIBZ
 	if (wwmethod->compression_algorithm == PG_COMPRESSION_GZIP)
 	{
-		gzfp = gzdopen(fd, "wb");
+		gzfp = gzopen(tmppath, "wb");
 		if (gzfp == NULL)
 		{
 			wwmethod->lasterrno = errno;
