@@ -45,6 +45,7 @@ $node->safe_psql('postgres',
 	  . "CREATE TABLE mytab246 (f1 int, f2 text);\n"
 	  . "CREATE TABLE \"mixedName\" (f1 int, f2 text);\n"
 	  . "CREATE TYPE enum1 AS ENUM ('foo', 'bar', 'baz', 'BLACK');\n"
+	  . "CREATE INDEX idx_tab1_c1 ON tab1(c1);\n"
 	  . "CREATE PUBLICATION some_publication;\n");
 
 # Developers would not appreciate this test adding a bunch of junk to
@@ -379,6 +380,97 @@ check_completion(
 	"CREATE TABLE mytab\t\t",
 	qr/mytab123 +mytab246/,
 	"check words_after_create");
+
+clear_query();
+
+check_completion(
+	"CREATE OR REPLACE \t\t",
+	qr/AGGREGATE +LANGUAGE +RULE +TRIGGER +\r\nFUNCTION +PROCEDURE +TRANSFORM +VIEW/,
+	"check create or replace");
+
+clear_query();
+
+check_completion(
+	"ALTER FOREIGN \t\t",
+	qr/DATA WRAPPER +TABLE/ ,
+	"check alter foreign");
+
+clear_query();
+
+check_completion(
+	"ALTER INDEX \t\t",
+	qr/ALL IN TABLESPACE +information_schema. +tab1_pkey\r\nidx_tab1_c1/,
+	"check alter index");
+
+clear_query();
+
+check_completion(
+	"ALTER INDEX idx_tab1_c1 \t\t",
+	qr/ALTER COLUMN +NO DEPENDS ON EXTENSION +RESET\r\nATTACH PARTITION +OWNER TO +SET\r\nDEPENDS ON EXTENSION +RENAME TO/,
+	"check alter index <name>");
+
+clear_query();
+
+check_completion(
+	"ALTER INDEX idx_tab1_c1 ATTACH \t\t",
+	qr/PARTITION/,
+	"check alter index <name> attach");
+
+clear_query();
+
+check_completion(
+	"ALTER INDEX idx_tab1_c1 ATTACH PARTITION \t\t",
+	qr/idx_tab1_c1 +public. +\r\ninformation_schema. +tab1_pkey/,
+	"check alter index <name> ATTACH PARTITION");
+
+clear_query();
+
+check_completion(
+	"ALTER INDEX idx_tab1_c1 ALTER \t\t",
+	qr/COLUMN/,
+	"check alter index <name> alter");
+
+clear_query();
+
+check_completion(
+	"ALTER INDEX idx_tab1_c1 ALTER COLUMN \t\t",
+	qr/1 +SET +STATISTICS/,
+	"check alter index <name> alter column");
+
+clear_query();
+
+check_completion(
+	"ALTER INDEX idx_tab1_c1 ALTER COLUMN 1 SET \t\t",
+	qr/STATISTICS/,
+	"check alter index <name> alter column <column> set");
+
+clear_query();
+
+check_completion(
+	"ALTER INDEX idx_tab1_c1 SET \t\t",
+	qr/\( +TABLESPACE/,
+	"check alter index <name> set");
+
+clear_query();
+
+check_completion(
+	"ALTER INDEX idx_tab1_c1 RESET \t\t",
+	qr/\( +\a/,
+	"check alter index <name> reset");
+
+clear_query();
+
+check_completion(
+	"ALTER INDEX idx_tab1_c1 NO DEPENDS \t\t",
+	qr/ON EXTENSION/,
+	"check alter index <name> no depends");
+
+clear_query();
+
+check_completion(
+	"ALTER INDEX idx_tab1_c1 DEPENDS \t\t",
+	qr/ON EXTENSION/,
+	"check alter index <name> depends");
 
 clear_query();
 
