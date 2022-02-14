@@ -1429,8 +1429,7 @@ deparseLockingClause(deparse_expr_cxt *context)
 				 * For now, just ignore any [NO] KEY specification, since (a)
 				 * it's not clear what that means for a remote table that we
 				 * don't have complete information about, and (b) it wouldn't
-				 * work anyway on older remote servers.  Likewise, we don't
-				 * worry about NOWAIT.
+				 * work anyway on older remote servers.
 				 */
 				switch (rc->strength)
 				{
@@ -1451,6 +1450,15 @@ deparseLockingClause(deparse_expr_cxt *context)
 				if (bms_membership(rel->relids) == BMS_MULTIPLE &&
 					rc->strength != LCS_NONE)
 					appendStringInfo(buf, " OF %s%d", REL_ALIAS_PREFIX, relid);
+
+				/* Lock behavior */
+				if (fpinfo->deparse_wait_policy && rc->strength != LCS_NONE)
+				{
+					if (rc->waitPolicy == LockWaitSkip)
+						appendStringInfoString(buf, " SKIP LOCKED");
+					else if (rc->waitPolicy == LockWaitError)
+						appendStringInfoString(buf, " NOWAIT");
+				}
 			}
 		}
 	}

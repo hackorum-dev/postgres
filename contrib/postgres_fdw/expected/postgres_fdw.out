@@ -389,6 +389,35 @@ SELECT * FROM ft1 t1 WHERE c1 = 102 FOR SHARE;
  102 |  2 | 00102 | Sat Jan 03 00:00:00 1970 PST | Sat Jan 03 00:00:00 1970 | 2  | 2          | foo
 (1 row)
 
+-- test wait policy specification
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 = 101 FOR UPDATE NOWAIT;
+                                                   QUERY PLAN                                                    
+-----------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8, t1.*
+   Remote SQL: SELECT "C 1", c2, c3, c4, c5, c6, c7, c8 FROM "S 1"."T 1" WHERE (("C 1" = 101)) FOR UPDATE NOWAIT
+(3 rows)
+
+SELECT * FROM ft1 t1 WHERE c1 = 101 FOR UPDATE NOWAIT;
+ c1  | c2 |  c3   |              c4              |            c5            | c6 |     c7     | c8  
+-----+----+-------+------------------------------+--------------------------+----+------------+-----
+ 101 |  1 | 00101 | Fri Jan 02 00:00:00 1970 PST | Fri Jan 02 00:00:00 1970 | 1  | 1          | foo
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 = 102 FOR SHARE SKIP LOCKED;
+                                                     QUERY PLAN                                                      
+---------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.ft1 t1
+   Output: c1, c2, c3, c4, c5, c6, c7, c8, t1.*
+   Remote SQL: SELECT "C 1", c2, c3, c4, c5, c6, c7, c8 FROM "S 1"."T 1" WHERE (("C 1" = 102)) FOR SHARE SKIP LOCKED
+(3 rows)
+
+SELECT * FROM ft1 t1 WHERE c1 = 102 FOR SHARE SKIP LOCKED;
+ c1  | c2 |  c3   |              c4              |            c5            | c6 |     c7     | c8  
+-----+----+-------+------------------------------+--------------------------+----+------------+-----
+ 102 |  2 | 00102 | Sat Jan 03 00:00:00 1970 PST | Sat Jan 03 00:00:00 1970 | 2  | 2          | foo
+(1 row)
+
 -- aggregate
 SELECT COUNT(*) FROM ft1 t1;
  count 
@@ -1862,6 +1891,59 @@ SELECT t1.c1, t2.c1 FROM ft1 t1 JOIN ft2 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c3, t
  110 | 110
 (10 rows)
 
+-- test wait policy specification
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT t1.c1, t2.c1 FROM ft1 t1 JOIN ft2 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c3, t1.c1 OFFSET 100 LIMIT 10 FOR UPDATE SKIP LOCKED;
+                                                                                                                                                                                                                                                QUERY PLAN                                                                                                                                                                                                                                                
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: t1.c1, t2.c1, t1.c3, t1.*, t2.*
+   Relations: (public.ft1 t1) INNER JOIN (public.ft2 t2)
+   Remote SQL: SELECT r1."C 1", r2."C 1", r1.c3, CASE WHEN (r1.*)::text IS NOT NULL THEN ROW(r1."C 1", r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8) END, CASE WHEN (r2.*)::text IS NOT NULL THEN ROW(r2."C 1", r2.c2, r2.c3, r2.c4, r2.c5, r2.c6, r2.c7, r2.c8) END FROM ("S 1"."T 1" r1 INNER JOIN "S 1"."T 1" r2 ON (((r1."C 1" = r2."C 1")))) ORDER BY r1.c3 ASC NULLS LAST, r1."C 1" ASC NULLS LAST LIMIT 10::bigint OFFSET 100::bigint FOR UPDATE OF r1 SKIP LOCKED FOR UPDATE OF r2 SKIP LOCKED
+(4 rows)
+
+SELECT t1.c1, t2.c1 FROM ft1 t1 JOIN ft2 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c3, t1.c1 OFFSET 100 LIMIT 10 FOR UPDATE SKIP LOCKED;
+ c1  | c1  
+-----+-----
+ 101 | 101
+ 102 | 102
+ 103 | 103
+ 104 | 104
+ 105 | 105
+ 106 | 106
+ 107 | 107
+ 108 | 108
+ 109 | 109
+ 110 | 110
+(10 rows)
+
+ALTER SERVER loopback OPTIONS (ADD deparse_wait_policy 'false');
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT t1.c1, t2.c1 FROM ft1 t1 JOIN ft2 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c3, t1.c1 OFFSET 100 LIMIT 10 FOR UPDATE SKIP LOCKED;
+                                                                                                                                                                                                                                    QUERY PLAN                                                                                                                                                                                                                                    
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: t1.c1, t2.c1, t1.c3, t1.*, t2.*
+   Relations: (public.ft1 t1) INNER JOIN (public.ft2 t2)
+   Remote SQL: SELECT r1."C 1", r2."C 1", r1.c3, CASE WHEN (r1.*)::text IS NOT NULL THEN ROW(r1."C 1", r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8) END, CASE WHEN (r2.*)::text IS NOT NULL THEN ROW(r2."C 1", r2.c2, r2.c3, r2.c4, r2.c5, r2.c6, r2.c7, r2.c8) END FROM ("S 1"."T 1" r1 INNER JOIN "S 1"."T 1" r2 ON (((r1."C 1" = r2."C 1")))) ORDER BY r1.c3 ASC NULLS LAST, r1."C 1" ASC NULLS LAST LIMIT 10::bigint OFFSET 100::bigint FOR UPDATE OF r1 FOR UPDATE OF r2
+(4 rows)
+
+SELECT t1.c1, t2.c1 FROM ft1 t1 JOIN ft2 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c3, t1.c1 OFFSET 100 LIMIT 10 FOR UPDATE SKIP LOCKED;
+ c1  | c1  
+-----+-----
+ 101 | 101
+ 102 | 102
+ 103 | 103
+ 104 | 104
+ 105 | 105
+ 106 | 106
+ 107 | 107
+ 108 | 108
+ 109 | 109
+ 110 | 110
+(10 rows)
+
+ALTER SERVER loopback OPTIONS (DROP deparse_wait_policy);
 -- join two tables with FOR SHARE clause
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT t1.c1, t2.c1 FROM ft1 t1 JOIN ft2 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c3, t1.c1 OFFSET 100 LIMIT 10 FOR SHARE OF t1;
@@ -1899,6 +1981,32 @@ SELECT t1.c1, t2.c1 FROM ft1 t1 JOIN ft2 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c3, t
 (4 rows)
 
 SELECT t1.c1, t2.c1 FROM ft1 t1 JOIN ft2 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c3, t1.c1 OFFSET 100 LIMIT 10 FOR SHARE;
+ c1  | c1  
+-----+-----
+ 101 | 101
+ 102 | 102
+ 103 | 103
+ 104 | 104
+ 105 | 105
+ 106 | 106
+ 107 | 107
+ 108 | 108
+ 109 | 109
+ 110 | 110
+(10 rows)
+
+-- test wait policy specification
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT t1.c1, t2.c1 FROM ft1 t1 JOIN ft2 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c3, t1.c1 OFFSET 100 LIMIT 10 FOR UPDATE NOWAIT;
+                                                                                                                                                                                                                                           QUERY PLAN                                                                                                                                                                                                                                           
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan
+   Output: t1.c1, t2.c1, t1.c3, t1.*, t2.*
+   Relations: (public.ft1 t1) INNER JOIN (public.ft2 t2)
+   Remote SQL: SELECT r1."C 1", r2."C 1", r1.c3, CASE WHEN (r1.*)::text IS NOT NULL THEN ROW(r1."C 1", r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8) END, CASE WHEN (r2.*)::text IS NOT NULL THEN ROW(r2."C 1", r2.c2, r2.c3, r2.c4, r2.c5, r2.c6, r2.c7, r2.c8) END FROM ("S 1"."T 1" r1 INNER JOIN "S 1"."T 1" r2 ON (((r1."C 1" = r2."C 1")))) ORDER BY r1.c3 ASC NULLS LAST, r1."C 1" ASC NULLS LAST LIMIT 10::bigint OFFSET 100::bigint FOR UPDATE OF r1 NOWAIT FOR UPDATE OF r2 NOWAIT
+(4 rows)
+
+SELECT t1.c1, t2.c1 FROM ft1 t1 JOIN ft2 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c3, t1.c1 OFFSET 100 LIMIT 10 FOR UPDATE NOWAIT;
  c1  | c1  
 -----+-----
  101 | 101
@@ -9509,7 +9617,7 @@ DO $d$
     END;
 $d$;
 ERROR:  invalid option "password"
-HINT:  Valid options in this context are: service, passfile, channel_binding, connect_timeout, dbname, host, hostaddr, port, options, application_name, keepalives, keepalives_idle, keepalives_interval, keepalives_count, tcp_user_timeout, sslmode, sslcompression, sslcert, sslkey, sslrootcert, sslcrl, sslcrldir, sslsni, requirepeer, ssl_min_protocol_version, ssl_max_protocol_version, gssencmode, krbsrvname, gsslib, target_session_attrs, use_remote_estimate, fdw_startup_cost, fdw_tuple_cost, extensions, updatable, truncatable, fetch_size, batch_size, async_capable, keep_connections
+HINT:  Valid options in this context are: service, passfile, channel_binding, connect_timeout, dbname, host, hostaddr, port, options, application_name, keepalives, keepalives_idle, keepalives_interval, keepalives_count, tcp_user_timeout, sslmode, sslcompression, sslcert, sslkey, sslrootcert, sslcrl, sslcrldir, sslsni, requirepeer, ssl_min_protocol_version, ssl_max_protocol_version, gssencmode, krbsrvname, gsslib, target_session_attrs, use_remote_estimate, fdw_startup_cost, fdw_tuple_cost, extensions, updatable, truncatable, fetch_size, batch_size, async_capable, deparse_wait_policy, keep_connections
 CONTEXT:  SQL statement "ALTER SERVER loopback_nopw OPTIONS (ADD password 'dummypw')"
 PL/pgSQL function inline_code_block line 3 at EXECUTE
 -- If we add a password for our user mapping instead, we should get a different

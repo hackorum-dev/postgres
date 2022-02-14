@@ -650,6 +650,7 @@ postgresGetForeignRelSize(PlannerInfo *root,
 	fpinfo->shippable_extensions = NIL;
 	fpinfo->fetch_size = 100;
 	fpinfo->async_capable = false;
+	fpinfo->deparse_wait_policy = true;
 
 	apply_server_options(fpinfo);
 	apply_table_options(fpinfo);
@@ -5858,6 +5859,8 @@ apply_server_options(PgFdwRelationInfo *fpinfo)
 			(void) parse_int(defGetString(def), &fpinfo->fetch_size, 0, NULL);
 		else if (strcmp(def->defname, "async_capable") == 0)
 			fpinfo->async_capable = defGetBoolean(def);
+		else if (strcmp(def->defname, "deparse_wait_policy") == 0)
+			fpinfo->deparse_wait_policy = defGetBoolean(def);
 	}
 }
 
@@ -5916,6 +5919,7 @@ merge_fdw_options(PgFdwRelationInfo *fpinfo,
 	fpinfo->use_remote_estimate = fpinfo_o->use_remote_estimate;
 	fpinfo->fetch_size = fpinfo_o->fetch_size;
 	fpinfo->async_capable = fpinfo_o->async_capable;
+	fpinfo->deparse_wait_policy = fpinfo_o->deparse_wait_policy;
 
 	/* Merge the table level options from either side of the join. */
 	if (fpinfo_i)

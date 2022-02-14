@@ -341,6 +341,22 @@ OPTIONS (ADD password_required 'false');
    </para>
 
    <variablelist>
+    <varlistentry>
+     <term><literal>deparse_wait_policy</literal> (<type>bool</type>)</term>
+     <listitem>
+      <para>
+       This option determines if <literal>SKIP LOCKED</literal> or 
+       <literal>NOWAIT</literal> policy specified in 
+       <command>SELECT FOR UPDATE</command> or <command>SELECT FOR SHARE</command>
+       queries should be passed to the remote server.
+       This option can only be specified for foreign servers, not per-table.
+      </para>
+      <para>
+       By default it's true. Note that such statements are not supported
+       by old <productname>PostgreSQL</productname> versions.
+      </para>
+     </listitem>
+    </varlistentry>
 
     <varlistentry>
      <term><literal>extensions</literal> (<type>string</type>)</term>
