@@ -61,6 +61,17 @@ pg_lsn_in_internal(const char *str, bool *have_error)
 }
 
 Datum
+numeric_pg_lsn(PG_FUNCTION_ARGS)
+{
+	Numeric		num = PG_GETARG_NUMERIC(0);
+	XLogRecPtr	result;
+
+	result = (XLogRecPtr) numeric_to_uint64_type(num, "pg_lsn");
+
+	PG_RETURN_LSN(result);
+}
+
+Datum
 pg_lsn_in(PG_FUNCTION_ARGS)
 {
 	char	   *str = PG_GETARG_CSTRING(0);
