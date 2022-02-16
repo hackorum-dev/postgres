@@ -237,11 +237,11 @@ static const char *const subdirs[] = {
 static char bin_path[MAXPGPATH];
 static char backend_exec[MAXPGPATH];
 
-static char **replace_token(char **lines,
+static void replace_token(char **lines,
 							const char *token, const char *replacement);
 
 #ifndef HAVE_UNIX_SOCKETS
-static char **filter_lines_with_token(char **lines, const char *token);
+static void remove_lines_with_token(char **lines, const char *token);
 #endif
 static char **readfile(const char *path);
 static void writefile(char *path, char **lines);
@@ -363,43 +363,33 @@ escape_quotes_bki(const char *src)
 }
 
 /*
- * make a copy of the array of lines, with token replaced by replacement
+ * Modify an array of malloc'd strings, replacing token by replacement
  * the first time it occurs on each line.
  *
  * This does most of what sed was used for in the shell script, but
  * doesn't need any regexp stuff.
  */
-static char **
+static void
 replace_token(char **lines, const char *token, const char *replacement)
 {
-	int			numlines = 1;
 	int			i;
-	char	  **result;
 	int			toklen,
 				replen,
 				diff;
-
-	for (i = 0; lines[i]; i++)
-		numlines++;
-
-	result = (char **) pg_malloc(numlines * sizeof(char *));
 
 	toklen = strlen(token);
 	replen = strlen(replacement);
 	diff = replen - toklen;
 
-	for (i = 0; i < numlines; i++)
+	for (i = 0; lines[i]; i++)
 	{
 		char	   *where;
 		char	   *newline;
 		int			pre;
 
-		/* just copy pointer if NULL or no change needed */
-		if (lines[i] == NULL || (where = strstr(lines[i], token)) == NULL)
-		{
-			result[i] = lines[i];
+		/* no work if no change needed */
+		if ((where = strstr(lines[i], token)) == NULL)
 			continue;
-		}
 
 		/* if we get here a change is needed - set up new line */
 
@@ -413,39 +403,31 @@ replace_token(char **lines, const char *token, const char *replacement)
 
 		strcpy(newline + pre + replen, lines[i] + pre + toklen);
 
-		result[i] = newline;
+		free(lines[i]);
+		lines[i] = newline;
 	}
-
-	return result;
 }
 
 /*
- * make a copy of lines without any that contain the token
+ * remove strings from lines[] if they contain the token
  *
  * a sort of poor man's grep -v
  */
 #ifndef HAVE_UNIX_SOCKETS
-static char **
-filter_lines_with_token(char **lines, const char *token)
+static void
+remove_lines_with_token(char **lines, const char *token)
 {
-	int			numlines = 1;
-	int			i,
-				src,
+	int			src,
 				dst;
-	char	  **result;
 
-	for (i = 0; lines[i]; i++)
-		numlines++;
-
-	result = (char **) pg_malloc(numlines * sizeof(char *));
-
-	for (src = 0, dst = 0; src < numlines; src++)
+	for (src = 0, dst = 0; lines[src]; src++)
 	{
-		if (lines[src] == NULL || strstr(lines[src], token) == NULL)
-			result[dst++] = lines[src];
+		if (strstr(lines[src], token) == NULL)
+			lines[dst++] = lines[src];
+		else
+			free(lines[src]);
 	}
-
-	return result;
+	lines[dst] = NULL;
 }
 #endif
 
@@ -1066,7 +1048,7 @@ setup_config(void)
 	conflines = readfile(conf_file);
 
 	snprintf(repltok, sizeof(repltok), "max_connections = %d", n_connections);
-	conflines = replace_token(conflines, "#max_connections = 100", repltok);
+	replace_token(conflines, "#max_connections = 100", repltok);
 
 	if ((n_buffers * (BLCKSZ / 1024)) % 1024 == 0)
 		snprintf(repltok, sizeof(repltok), "shared_buffers = %dMB",
@@ -1074,7 +1056,7 @@ setup_config(void)
 	else
 		snprintf(repltok, sizeof(repltok), "shared_buffers = %dkB",
 				 n_buffers * (BLCKSZ / 1024));
-	conflines = replace_token(conflines, "#shared_buffers = 128MB", repltok);
+	replace_token(conflines, "#shared_buffers = 128MB", repltok);
 
 #ifdef HAVE_UNIX_SOCKETS
 	snprintf(repltok, sizeof(repltok), "#unix_socket_directories = '%s'",
@@ -1082,38 +1064,38 @@ setup_config(void)
 #else
 	snprintf(repltok, sizeof(repltok), "#unix_socket_directories = ''");
 #endif
-	conflines = replace_token(conflines, "#unix_socket_directories = '/tmp'",
+	replace_token(conflines, "#unix_socket_directories = '/tmp'",
 							  repltok);
 
 #if DEF_PGPORT != 5432
 	snprintf(repltok, sizeof(repltok), "#port = %d", DEF_PGPORT);
-	conflines = replace_token(conflines, "#port = 5432", repltok);
+	replace_token(conflines, "#port = 5432", repltok);
 #endif
 
 	/* set default max_wal_size and min_wal_size */
 	snprintf(repltok, sizeof(repltok), "min_wal_size = %s",
 			 pretty_wal_size(DEFAULT_MIN_WAL_SEGS));
-	conflines = replace_token(conflines, "#min_wal_size = 80MB", repltok);
+	replace_token(conflines, "#min_wal_size = 80MB", repltok);
 
 	snprintf(repltok, sizeof(repltok), "max_wal_size = %s",
 			 pretty_wal_size(DEFAULT_MAX_WAL_SEGS));
-	conflines = replace_token(conflines, "#max_wal_size = 1GB", repltok);
+	replace_token(conflines, "#max_wal_size = 1GB", repltok);
 
 	snprintf(repltok, sizeof(repltok), "lc_messages = '%s'",
 			 escape_quotes(lc_messages));
-	conflines = replace_token(conflines, "#lc_messages = 'C'", repltok);
+	replace_token(conflines, "#lc_messages = 'C'", repltok);
 
 	snprintf(repltok, sizeof(repltok), "lc_monetary = '%s'",
 			 escape_quotes(lc_monetary));
-	conflines = replace_token(conflines, "#lc_monetary = 'C'", repltok);
+	replace_token(conflines, "#lc_monetary = 'C'", repltok);
 
 	snprintf(repltok, sizeof(repltok), "lc_numeric = '%s'",
 			 escape_quotes(lc_numeric));
-	conflines = replace_token(conflines, "#lc_numeric = 'C'", repltok);
+	replace_token(conflines, "#lc_numeric = 'C'", repltok);
 
 	snprintf(repltok, sizeof(repltok), "lc_time = '%s'",
 			 escape_quotes(lc_time));
-	conflines = replace_token(conflines, "#lc_time = 'C'", repltok);
+	replace_token(conflines, "#lc_time = 'C'", repltok);
 
 	switch (locale_date_order(lc_time))
 	{
@@ -1128,12 +1110,12 @@ setup_config(void)
 			strcpy(repltok, "datestyle = 'iso, mdy'");
 			break;
 	}
-	conflines = replace_token(conflines, "#datestyle = 'iso, mdy'", repltok);
+	replace_token(conflines, "#datestyle = 'iso, mdy'", repltok);
 
 	snprintf(repltok, sizeof(repltok),
 			 "default_text_search_config = 'pg_catalog.%s'",
 			 escape_quotes(default_text_search_config));
-	conflines = replace_token(conflines,
+	replace_token(conflines,
 							  "#default_text_search_config = 'pg_catalog.simple'",
 							  repltok);
 
@@ -1141,46 +1123,46 @@ setup_config(void)
 	{
 		snprintf(repltok, sizeof(repltok), "timezone = '%s'",
 				 escape_quotes(default_timezone));
-		conflines = replace_token(conflines, "#timezone = 'GMT'", repltok);
+		replace_token(conflines, "#timezone = 'GMT'", repltok);
 		snprintf(repltok, sizeof(repltok), "log_timezone = '%s'",
 				 escape_quotes(default_timezone));
-		conflines = replace_token(conflines, "#log_timezone = 'GMT'", repltok);
+		replace_token(conflines, "#log_timezone = 'GMT'", repltok);
 	}
 
 	snprintf(repltok, sizeof(repltok), "dynamic_shared_memory_type = %s",
 			 dynamic_shared_memory_type);
-	conflines = replace_token(conflines, "#dynamic_shared_memory_type = posix",
+	replace_token(conflines, "#dynamic_shared_memory_type = posix",
 							  repltok);
 
 #if DEFAULT_BACKEND_FLUSH_AFTER > 0
 	snprintf(repltok, sizeof(repltok), "#backend_flush_after = %dkB",
 			 DEFAULT_BACKEND_FLUSH_AFTER * (BLCKSZ / 1024));
-	conflines = replace_token(conflines, "#backend_flush_after = 0",
+	replace_token(conflines, "#backend_flush_after = 0",
 							  repltok);
 #endif
 
 #if DEFAULT_BGWRITER_FLUSH_AFTER > 0
 	snprintf(repltok, sizeof(repltok), "#bgwriter_flush_after = %dkB",
 			 DEFAULT_BGWRITER_FLUSH_AFTER * (BLCKSZ / 1024));
-	conflines = replace_token(conflines, "#bgwriter_flush_after = 0",
+	replace_token(conflines, "#bgwriter_flush_after = 0",
 							  repltok);
 #endif
 
 #if DEFAULT_CHECKPOINT_FLUSH_AFTER > 0
 	snprintf(repltok, sizeof(repltok), "#checkpoint_flush_after = %dkB",
 			 DEFAULT_CHECKPOINT_FLUSH_AFTER * (BLCKSZ / 1024));
-	conflines = replace_token(conflines, "#checkpoint_flush_after = 0",
+	replace_token(conflines, "#checkpoint_flush_after = 0",
 							  repltok);
 #endif
 
 #ifndef USE_PREFETCH
-	conflines = replace_token(conflines,
+	replace_token(conflines,
 							  "#effective_io_concurrency = 1",
 							  "#effective_io_concurrency = 0");
 #endif
 
 #ifdef WIN32
-	conflines = replace_token(conflines,
+	replace_token(conflines,
 							  "#update_process_title = on",
 							  "#update_process_title = off");
 #endif
@@ -1194,7 +1176,7 @@ setup_config(void)
 		(strcmp(authmethodhost, "md5") == 0 &&
 		 strcmp(authmethodlocal, "scram-sha-256") != 0))
 	{
-		conflines = replace_token(conflines,
+		replace_token(conflines,
 								  "#password_encryption = scram-sha-256",
 								  "password_encryption = md5");
 	}
@@ -1207,7 +1189,7 @@ setup_config(void)
 	 */
 	if (pg_dir_create_mode == PG_DIR_MODE_GROUP)
 	{
-		conflines = replace_token(conflines,
+		replace_token(conflines,
 								  "#log_file_mode = 0600",
 								  "log_file_mode = 0640");
 	}
@@ -1248,9 +1230,9 @@ setup_config(void)
 	conflines = readfile(hba_file);
 
 #ifndef HAVE_UNIX_SOCKETS
-	conflines = filter_lines_with_token(conflines, "@remove-line-for-nolocal@");
+	remove_lines_with_token(conflines, "@remove-line-for-nolocal@");
 #else
-	conflines = replace_token(conflines, "@remove-line-for-nolocal@", "");
+	replace_token(conflines, "@remove-line-for-nolocal@", "");
 #endif
 
 #ifdef HAVE_IPV6
@@ -1287,33 +1269,33 @@ setup_config(void)
 		if (err != 0 ||
 			getaddrinfo("::1", NULL, &hints, &gai_result) != 0)
 		{
-			conflines = replace_token(conflines,
+			replace_token(conflines,
 									  "host    all             all             ::1",
 									  "#host    all             all             ::1");
-			conflines = replace_token(conflines,
+			replace_token(conflines,
 									  "host    replication     all             ::1",
 									  "#host    replication     all             ::1");
 		}
 	}
 #else							/* !HAVE_IPV6 */
 	/* If we didn't compile IPV6 support at all, always comment it out */
-	conflines = replace_token(conflines,
+	replace_token(conflines,
 							  "host    all             all             ::1",
 							  "#host    all             all             ::1");
-	conflines = replace_token(conflines,
+	replace_token(conflines,
 							  "host    replication     all             ::1",
 							  "#host    replication     all             ::1");
 #endif							/* HAVE_IPV6 */
 
 	/* Replace default authentication methods */
-	conflines = replace_token(conflines,
+	replace_token(conflines,
 							  "@authmethodhost@",
 							  authmethodhost);
-	conflines = replace_token(conflines,
+	replace_token(conflines,
 							  "@authmethodlocal@",
 							  authmethodlocal);
 
-	conflines = replace_token(conflines,
+	replace_token(conflines,
 							  "@authcomment@",
 							  (strcmp(authmethodlocal, "trust") == 0 || strcmp(authmethodhost, "trust") == 0) ? AUTHTRUST_WARNING : "");
 
@@ -1382,27 +1364,27 @@ bootstrap_template1(void)
 	/* Substitute for various symbols used in the BKI file */
 
 	sprintf(buf, "%d", NAMEDATALEN);
-	bki_lines = replace_token(bki_lines, "NAMEDATALEN", buf);
+	replace_token(bki_lines, "NAMEDATALEN", buf);
 
 	sprintf(buf, "%d", (int) sizeof(Pointer));
-	bki_lines = replace_token(bki_lines, "SIZEOF_POINTER", buf);
+	replace_token(bki_lines, "SIZEOF_POINTER", buf);
 
-	bki_lines = replace_token(bki_lines, "ALIGNOF_POINTER",
+	replace_token(bki_lines, "ALIGNOF_POINTER",
 							  (sizeof(Pointer) == 4) ? "i" : "d");
 
-	bki_lines = replace_token(bki_lines, "FLOAT8PASSBYVAL",
+	replace_token(bki_lines, "FLOAT8PASSBYVAL",
 							  FLOAT8PASSBYVAL ? "true" : "false");
 
-	bki_lines = replace_token(bki_lines, "POSTGRES",
+	replace_token(bki_lines, "POSTGRES",
 							  escape_quotes_bki(username));
 
-	bki_lines = replace_token(bki_lines, "ENCODING",
+	replace_token(bki_lines, "ENCODING",
 							  encodingid_to_string(encodingid));
 
-	bki_lines = replace_token(bki_lines, "LC_COLLATE",
+	replace_token(bki_lines, "LC_COLLATE",
 							  escape_quotes_bki(lc_collate));
 
-	bki_lines = replace_token(bki_lines, "LC_CTYPE",
+	replace_token(bki_lines, "LC_CTYPE",
 							  escape_quotes_bki(lc_ctype));
 
 	/* Also ensure backend isn't confused by this environment var: */
@@ -1624,7 +1606,8 @@ setup_privileges(FILE *cmdfd)
 {
 	char	  **line;
 	char	  **priv_lines;
-	static char *privileges_setup[] = {
+	int i;
+	static const char * const privileges_setup[] = {
 		"UPDATE pg_class "
 		"  SET relacl = (SELECT array_agg(a.acl) FROM "
 		" (SELECT E'=r/\"$POSTGRES_SUPERUSERNAME\"' as acl "
@@ -1759,10 +1742,19 @@ setup_privileges(FILE *cmdfd)
 		NULL
 	};
 
-	priv_lines = replace_token(privileges_setup, "$POSTGRES_SUPERUSERNAME",
+	priv_lines = (char**) pg_malloc(lengthof(privileges_setup) * sizeof(char*));
+	for (i = 0; privileges_setup[i]; i++)
+		priv_lines[i] = pg_strdup(privileges_setup[i]);
+	priv_lines[i] = NULL;
+
+	replace_token(priv_lines, "$POSTGRES_SUPERUSERNAME",
 							   escape_quotes(username));
 	for (line = priv_lines; *line != NULL; line++)
+	{
 		PG_CMD_PUTS(*line);
+		free(*line);
+	}
+	free(priv_lines);
 }
 
 /*
