@@ -184,6 +184,10 @@ commit;
 select * from pg_visibility_map('copyfreeze');
 select * from pg_check_frozen('copyfreeze');
 
+create table vacuum_test as select 42 i;
+vacuum (disable_page_skipping) vacuum_test;
+select count(*) > 0 from pg_check_visible('vacuum_test');
+
 -- cleanup
 drop table test_partitioned;
 drop view test_view;
@@ -194,3 +198,4 @@ drop foreign data wrapper dummy;
 drop materialized view matview_visibility_test;
 drop table regular_table;
 drop table copyfreeze;
+drop table vacuum_test;
