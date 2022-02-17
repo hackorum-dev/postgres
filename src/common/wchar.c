@@ -2186,7 +2186,7 @@ pg_encoding_verifymbstr(int encoding, const char *mbstr, int len)
 int
 pg_encoding_max_length(int encoding)
 {
-	Assert(PG_VALID_ENCODING(encoding));
-
-	return pg_wchar_table[encoding].maxmblen;
+	return (PG_VALID_ENCODING(encoding) ?
+			pg_wchar_table[encoding].maxmblen :
+			pg_wchar_table[PG_SQL_ASCII].maxmblen);
 }
