@@ -273,7 +273,7 @@ $node->safe_psql('postgres',
 $node->safe_psql('postgres',
 	    "CREATE TABLE test1 (a int) TABLESPACE tblspc1;"
 	  . "INSERT INTO test1 VALUES (1234);");
-$node->backup('tarbackup2', backup_options => ['-Ft']);
+$node->backup('tarbackup2', backup_options => ['-Ft', '--progress']);
 # empty test1, just so that it's different from the to-be-restored data
 $node->safe_psql('postgres', "TRUNCATE TABLE test1;");
 
@@ -359,6 +359,7 @@ $node->command_ok(
 		@pg_basebackup_defs, '-D',
 		"$tempdir/backup1",  '-Fp',
 		"-T$realTsDir=$real_tempdir/tbackup/tblspc1",
+		'--progress', '--verbose'
 	],
 	'plain format with tablespaces succeeds with tablespace mapping');
 ok(-d "$tempdir/tbackup/tblspc1", 'tablespace was relocated');
@@ -516,6 +517,9 @@ $node->command_fails_like(
 $node->command_ok(
 	[ @pg_basebackup_defs, '--target', 'blackhole', '-X', 'none' ],
 	'backup target blackhole');
+$node->command_ok(
+	[ @pg_basebackup_defs, '--target', 'blackhole', '-X', 'none', '--progress', '--verbose' ],
+	'backup target blackhole with verbose progress');
 $node->command_ok(
 	[ @pg_basebackup_defs, '--target', "server:$real_tempdir/backuponserver", '-X', 'none' ],
 	'backup target server');
