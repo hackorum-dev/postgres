@@ -265,13 +265,13 @@ static void setup_privileges(FILE *cmdfd);
 static void set_info_version(void);
 static void setup_schema(FILE *cmdfd);
 static void load_plpgsql(FILE *cmdfd);
+static void set_remaining_details(FILE *cmdfd);
 static void vacuum_db(FILE *cmdfd);
 static void make_template0(FILE *cmdfd);
 static void make_postgres(FILE *cmdfd);
 static void trapsig(int signum);
 static void check_ok(void);
 static char *escape_quotes(const char *src);
-static char *escape_quotes_bki(const char *src);
 static int	locale_date_order(const char *locale);
 static void check_locale_name(int category, const char *locale,
 							  char **canonname);
@@ -333,32 +333,6 @@ escape_quotes(const char *src)
 		pg_log_error("out of memory");
 		exit(1);
 	}
-	return result;
-}
-
-/*
- * Escape a field value to be inserted into the BKI data.
- * Run the value through escape_quotes (which will be inverted
- * by the backend's DeescapeQuotedString() function), then wrap
- * the value in single quotes, even if that isn't strictly necessary.
- */
-static char *
-escape_quotes_bki(const char *src)
-{
-	char	   *result;
-	char	   *data = escape_quotes(src);
-	char	   *resultp;
-	char	   *datap;
-
-	result = (char *) pg_malloc(strlen(data) + 3);
-	resultp = result;
-	*resultp++ = '\'';
-	for (datap = data; *datap; datap++)
-		*resultp++ = *datap;
-	*resultp++ = '\'';
-	*resultp = '\0';
-
-	free(data);
 	return result;
 }
 
@@ -1363,7 +1337,6 @@ bootstrap_template1(void)
 	char	  **line;
 	char	  **bki_lines;
 	char		headerline[MAXPGPATH];
-	char		buf[64];
 
 	printf(_("running bootstrap script ... "));
 	fflush(stdout);
@@ -1384,32 +1357,6 @@ bootstrap_template1(void)
 				  "using the option -L.\n"));
 		exit(1);
 	}
-
-	/* Substitute for various symbols used in the BKI file */
-
-	sprintf(buf, "%d", NAMEDATALEN);
-	bki_lines = replace_token(bki_lines, "NAMEDATALEN", buf);
-
-	sprintf(buf, "%d", (int) sizeof(Pointer));
-	bki_lines = replace_token(bki_lines, "SIZEOF_POINTER", buf);
-
-	bki_lines = replace_token(bki_lines, "ALIGNOF_POINTER",
-							  (sizeof(Pointer) == 4) ? "i" : "d");
-
-	bki_lines = replace_token(bki_lines, "FLOAT8PASSBYVAL",
-							  FLOAT8PASSBYVAL ? "true" : "false");
-
-	bki_lines = replace_token(bki_lines, "POSTGRES",
-							  escape_quotes_bki(username));
-
-	bki_lines = replace_token(bki_lines, "ENCODING",
-							  encodingid_to_string(encodingid));
-
-	bki_lines = replace_token(bki_lines, "LC_COLLATE",
-							  escape_quotes_bki(lc_collate));
-
-	bki_lines = replace_token(bki_lines, "LC_CTYPE",
-							  escape_quotes_bki(lc_ctype));
 
 	/* Also ensure backend isn't confused by this environment var: */
 	unsetenv("PGCLIENTENCODING");
@@ -1628,12 +1575,11 @@ setup_collation(FILE *cmdfd)
 static void
 setup_privileges(FILE *cmdfd)
 {
-	char	  **line;
-	char	  **priv_lines;
-	static char *privileges_setup[] = {
+	const char *const *line;
+	static const char *const privileges_setup[] = {
 		"UPDATE pg_class "
 		"  SET relacl = (SELECT array_agg(a.acl) FROM "
-		" (SELECT E'=r/\"$POSTGRES_SUPERUSERNAME\"' as acl "
+		" (SELECT '=r/\"POSTGRES\"' as acl "
 		"  UNION SELECT unnest(pg_catalog.acldefault("
 		"    CASE WHEN relkind = " CppAsString2(RELKIND_SEQUENCE) " THEN 's' "
 		"         ELSE 'r' END::\"char\"," CppAsString2(BOOTSTRAP_SUPERUSERID) "::oid))"
@@ -1765,9 +1711,7 @@ setup_privileges(FILE *cmdfd)
 		NULL
 	};
 
-	priv_lines = replace_token(privileges_setup, "$POSTGRES_SUPERUSERNAME",
-							   escape_quotes(username));
-	for (line = priv_lines; *line != NULL; line++)
+	for (line = privileges_setup; *line != NULL; line++)
 		PG_CMD_PUTS(*line);
 }
 
@@ -1826,6 +1770,48 @@ static void
 load_plpgsql(FILE *cmdfd)
 {
 	PG_CMD_PUTS("CREATE EXTENSION plpgsql;\n\n");
+}
+
+/*
+ * Set some remaining details that aren't known when postgres.bki is made.
+ *
+ * Up to now, the bootstrap superuser has been named "POSTGRES".
+ * Replace that with the user-specified name (often "postgres").
+ * Also, insert the desired locale and encoding details in pg_database.
+ *
+ * Note: this must run after setup_privileges(), which expects the superuser
+ * name to still be "POSTGRES".
+ */
+static void
+set_remaining_details(FILE *cmdfd)
+{
+	char	  **line;
+	char	  **detail_lines;
+
+	/*
+	 * Ideally we'd change the superuser name with ALTER USER, but the backend
+	 * will reject that with "session user cannot be renamed", so we must
+	 * cheat.  (In any case, we'd need a function to escape an identifier, not
+	 * a string literal.)  Likewise, we can't change template1's
+	 * locale/encoding without cheating.
+	 */
+	static char *final_details[] = {
+		"UPDATE pg_authid SET rolname = E'SUPERUSER_NAME' WHERE rolname = 'POSTGRES';\n\n",
+		"UPDATE pg_database SET encoding = E'ENCODING', datcollate = E'LC_COLLATE', datctype = E'LC_CTYPE';\n\n",
+		NULL
+	};
+
+	detail_lines = replace_token(final_details, "SUPERUSER_NAME",
+								 escape_quotes(username));
+	detail_lines = replace_token(detail_lines, "ENCODING",
+								 encodingid_to_string(encodingid));
+	detail_lines = replace_token(detail_lines, "LC_COLLATE",
+								 escape_quotes(lc_collate));
+	detail_lines = replace_token(detail_lines, "LC_CTYPE",
+								 escape_quotes(lc_ctype));
+
+	for (line = detail_lines; *line != NULL; line++)
+		PG_CMD_PUTS(*line);
 }
 
 /*
@@ -2856,6 +2842,8 @@ initialize_data_directory(void)
 	setup_schema(cmdfd);
 
 	load_plpgsql(cmdfd);
+
+	set_remaining_details(cmdfd);
 
 	vacuum_db(cmdfd);
 

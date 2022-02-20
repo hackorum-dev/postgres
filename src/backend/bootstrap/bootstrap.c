@@ -635,6 +635,8 @@ InsertOneTuple(void)
 
 /* ----------------
  *		InsertOneValue
+ *
+ * Fill the i'th column of the current tuple with the given value.
  * ----------------
  */
 void
@@ -653,6 +655,21 @@ InsertOneValue(char *value, int i)
 
 	elog(DEBUG4, "inserting column %d value \"%s\"", i, value);
 
+	/*
+	 * In order to make the contents of postgres.bki architecture-independent,
+	 * certain values in it are represented symbolically, and we perform the
+	 * necessary replacements here.
+	 */
+	if (strcmp(value, "NAMEDATALEN") == 0)
+		value = CppAsString2(NAMEDATALEN);
+	else if (strcmp(value, "SIZEOF_POINTER") == 0)
+		value = CppAsString2(SIZEOF_VOID_P);
+	else if (strcmp(value, "ALIGNOF_POINTER") == 0)
+		value = (SIZEOF_VOID_P == 4) ? "i" : "d";
+	else if (strcmp(value, "FLOAT8PASSBYVAL") == 0)
+		value = FLOAT8PASSBYVAL ? "true" : "false";
+
+	/* Now convert the value to internal form */
 	typoid = TupleDescAttr(boot_reldesc->rd_att, i)->atttypid;
 
 	boot_get_type_io_data(typoid,

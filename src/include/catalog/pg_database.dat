@@ -12,11 +12,14 @@
 
 [
 
+# We initialize template1's encoding as PG_SQL_ASCII and its locales as C.
+# initdb will change that during database initialization.
+
 { oid => '1', oid_symbol => 'TemplateDbOid',
   descr => 'default template for new databases',
-  datname => 'template1', encoding => 'ENCODING', datistemplate => 't',
+  datname => 'template1', encoding => '0', datistemplate => 't',
   datallowconn => 't', datconnlimit => '-1', datfrozenxid => '0',
-  datminmxid => '1', dattablespace => 'pg_default', datcollate => 'LC_COLLATE',
-  datctype => 'LC_CTYPE', datacl => '_null_' },
+  datminmxid => '1', dattablespace => 'pg_default', datcollate => 'C',
+  datctype => 'C', datacl => '_null_' },
 
 ]
