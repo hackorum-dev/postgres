@@ -1314,6 +1314,18 @@ exec_simple_query(const char *query_string)
 	debug_query_string = NULL;
 }
 
+/* just for bootstrap */
+void
+exec_simple_query_bootstrap(const char *query_string)
+{
+	MemoryContextSwitchTo(MessageContext);
+	SetCurrentStatementStartTimestamp();
+
+	exec_simple_query(query_string);
+
+	MemoryContextReset(MessageContext);
+}
+
 /*
  * exec_parse_message
  *

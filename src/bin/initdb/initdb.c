@@ -76,6 +76,7 @@
 #include "getopt_long.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
+#include "portability/instr_time.h"
 
 
 /* Ideally this would be in a .h file, but it hardly seems worth the trouble */
@@ -158,12 +159,7 @@ static char *bki_file;
 static char *hba_file;
 static char *ident_file;
 static char *conf_file;
-static char *dictionary_file;
-static char *info_schema_file;
 static char *features_file;
-static char *system_constraints_file;
-static char *system_functions_file;
-static char *system_views_file;
 static bool success = false;
 static bool made_new_pgdata = false;
 static bool found_existing_pgdata = false;
@@ -201,8 +197,7 @@ static bool authwarning = false;
  * but here it is more convenient to pass it as an environment variable
  * (no quoting to worry about).
  */
-static const char *boot_options = "-F -c log_checkpoints=false";
-static const char *backend_options = "--single -F -O -j -c search_path=pg_catalog -c exit_on_error=true -c log_checkpoints=false";
+static const char *boot_options = " -F -c allow_system_table_mods=true -c search_path=pg_catalog -c exit_on_error=true";
 
 /* Additional switches to pass to backend (either boot or standalone) */
 static char *extra_options = "";
@@ -254,21 +249,10 @@ static void write_version_file(const char *extrapath);
 static void set_null_conf(void);
 static void test_config_settings(void);
 static void setup_config(void);
-static void bootstrap_template1(void);
-static void setup_auth(FILE *cmdfd);
 static void get_su_pwd(void);
-static void setup_depend(FILE *cmdfd);
-static void setup_run_file(FILE *cmdfd, const char *filename);
-static void setup_description(FILE *cmdfd);
-static void setup_collation(FILE *cmdfd);
-static void setup_privileges(FILE *cmdfd);
 static void set_info_version(void);
 static void setup_schema(FILE *cmdfd);
-static void load_plpgsql(FILE *cmdfd);
 static void set_remaining_details(FILE *cmdfd);
-static void vacuum_db(FILE *cmdfd);
-static void make_template0(FILE *cmdfd);
-static void make_postgres(FILE *cmdfd);
 static void trapsig(int signum);
 static void check_ok(void);
 static char *escape_quotes(const char *src);
@@ -1326,89 +1310,6 @@ setup_config(void)
 	check_ok();
 }
 
-
-/*
- * run the BKI script in bootstrap mode to create template1
- */
-static void
-bootstrap_template1(void)
-{
-	PG_CMD_DECL;
-	char	  **line;
-	char	  **bki_lines;
-	char		headerline[MAXPGPATH];
-
-	printf(_("running bootstrap script ... "));
-	fflush(stdout);
-
-	bki_lines = readfile(bki_file);
-
-	/* Check that bki file appears to be of the right version */
-
-	snprintf(headerline, sizeof(headerline), "# PostgreSQL %s\n",
-			 PG_MAJORVERSION);
-
-	if (strcmp(headerline, *bki_lines) != 0)
-	{
-		pg_log_error("input file \"%s\" does not belong to PostgreSQL %s",
-					 bki_file, PG_VERSION);
-		fprintf(stderr,
-				_("Check your installation or specify the correct path "
-				  "using the option -L.\n"));
-		exit(1);
-	}
-
-	/* Also ensure backend isn't confused by this environment var: */
-	unsetenv("PGCLIENTENCODING");
-
-	snprintf(cmd, sizeof(cmd),
-			 "\"%s\" --boot -X %d %s %s %s %s",
-			 backend_exec,
-			 wal_segment_size_mb * (1024 * 1024),
-			 data_checksums ? "-k" : "",
-			 boot_options, extra_options,
-			 debug ? "-d 5" : "");
-
-
-	PG_CMD_OPEN;
-
-	for (line = bki_lines; *line != NULL; line++)
-	{
-		PG_CMD_PUTS(*line);
-		free(*line);
-	}
-
-	PG_CMD_CLOSE;
-
-	free(bki_lines);
-
-	check_ok();
-}
-
-/*
- * set up the shadow password table
- */
-static void
-setup_auth(FILE *cmdfd)
-{
-	const char *const *line;
-	static const char *const pg_authid_setup[] = {
-		/*
-		 * The authid table shouldn't be readable except through views, to
-		 * ensure passwords are not publicly visible.
-		 */
-		"REVOKE ALL ON pg_authid FROM public;\n\n",
-		NULL
-	};
-
-	for (line = pg_authid_setup; *line != NULL; line++)
-		PG_CMD_PUTS(*line);
-
-	if (superuser_password)
-		PG_CMD_PRINTF("ALTER USER \"%s\" WITH PASSWORD E'%s';\n\n",
-					  username, escape_quotes(superuser_password));
-}
-
 /*
  * get the superuser password if required
  */
@@ -1473,249 +1374,6 @@ get_su_pwd(void)
 }
 
 /*
- * set up pg_depend
- */
-static void
-setup_depend(FILE *cmdfd)
-{
-	const char *const *line;
-	static const char *const pg_depend_setup[] = {
-		/*
-		 * Advance the OID counter so that subsequently-created objects aren't
-		 * pinned.
-		 */
-		"SELECT pg_stop_making_pinned_objects();\n\n",
-		NULL
-	};
-
-	for (line = pg_depend_setup; *line != NULL; line++)
-		PG_CMD_PUTS(*line);
-}
-
-/*
- * Run external file
- */
-static void
-setup_run_file(FILE *cmdfd, const char *filename)
-{
-	char	  **lines;
-
-	lines = readfile(filename);
-
-	for (char **line = lines; *line != NULL; line++)
-	{
-		PG_CMD_PUTS(*line);
-		free(*line);
-	}
-
-	PG_CMD_PUTS("\n\n");
-
-	free(lines);
-}
-
-/*
- * fill in extra description data
- */
-static void
-setup_description(FILE *cmdfd)
-{
-	/* Create default descriptions for operator implementation functions */
-	PG_CMD_PUTS("WITH funcdescs AS ( "
-				"SELECT p.oid as p_oid, o.oid as o_oid, oprname "
-				"FROM pg_proc p JOIN pg_operator o ON oprcode = p.oid ) "
-				"INSERT INTO pg_description "
-				"  SELECT p_oid, 'pg_proc'::regclass, 0, "
-				"    'implementation of ' || oprname || ' operator' "
-				"  FROM funcdescs "
-				"  WHERE NOT EXISTS (SELECT 1 FROM pg_description "
-				"   WHERE objoid = p_oid AND classoid = 'pg_proc'::regclass) "
-				"  AND NOT EXISTS (SELECT 1 FROM pg_description "
-				"   WHERE objoid = o_oid AND classoid = 'pg_operator'::regclass"
-				"         AND description LIKE 'deprecated%');\n\n");
-}
-
-/*
- * populate pg_collation
- */
-static void
-setup_collation(FILE *cmdfd)
-{
-	/*
-	 * Add an SQL-standard name.  We don't want to pin this, so it doesn't go
-	 * in pg_collation.h.  But add it before reading system collations, so
-	 * that it wins if libc defines a locale named ucs_basic.
-	 */
-	PG_CMD_PRINTF("INSERT INTO pg_collation (oid, collname, collnamespace, collowner, collprovider, collisdeterministic, collencoding, collcollate, collctype)"
-				  "VALUES (pg_nextoid('pg_catalog.pg_collation', 'oid', 'pg_catalog.pg_collation_oid_index'), 'ucs_basic', 'pg_catalog'::regnamespace, %u, '%c', true, %d, 'C', 'C');\n\n",
-				  BOOTSTRAP_SUPERUSERID, COLLPROVIDER_LIBC, PG_UTF8);
-
-	/* Now import all collations we can find in the operating system */
-	PG_CMD_PUTS("SELECT pg_import_system_collations('pg_catalog');\n\n");
-}
-
-/*
- * Set up privileges
- *
- * We mark most system catalogs as world-readable.  We don't currently have
- * to touch functions, languages, or databases, because their default
- * permissions are OK.
- *
- * Some objects may require different permissions by default, so we
- * make sure we don't overwrite privilege sets that have already been
- * set (NOT NULL).
- *
- * Also populate pg_init_privs to save what the privileges are at init
- * time.  This is used by pg_dump to allow users to change privileges
- * on catalog objects and to have those privilege changes preserved
- * across dump/reload and pg_upgrade.
- *
- * Note that pg_init_privs is only for per-database objects and therefore
- * we don't include databases or tablespaces.
- */
-static void
-setup_privileges(FILE *cmdfd)
-{
-	const char *const *line;
-	static const char *const privileges_setup[] = {
-		"UPDATE pg_class "
-		"  SET relacl = (SELECT array_agg(a.acl) FROM "
-		" (SELECT '=r/\"POSTGRES\"' as acl "
-		"  UNION SELECT unnest(pg_catalog.acldefault("
-		"    CASE WHEN relkind = " CppAsString2(RELKIND_SEQUENCE) " THEN 's' "
-		"         ELSE 'r' END::\"char\"," CppAsString2(BOOTSTRAP_SUPERUSERID) "::oid))"
-		" ) as a) "
-		"  WHERE relkind IN (" CppAsString2(RELKIND_RELATION) ", "
-		CppAsString2(RELKIND_VIEW) ", " CppAsString2(RELKIND_MATVIEW) ", "
-		CppAsString2(RELKIND_SEQUENCE) ")"
-		"  AND relacl IS NULL;\n\n",
-		"GRANT USAGE ON SCHEMA pg_catalog, public TO PUBLIC;\n\n",
-		"REVOKE ALL ON pg_largeobject FROM PUBLIC;\n\n",
-		"INSERT INTO pg_init_privs "
-		"  (objoid, classoid, objsubid, initprivs, privtype)"
-		"    SELECT"
-		"        oid,"
-		"        (SELECT oid FROM pg_class WHERE relname = 'pg_class'),"
-		"        0,"
-		"        relacl,"
-		"        'i'"
-		"    FROM"
-		"        pg_class"
-		"    WHERE"
-		"        relacl IS NOT NULL"
-		"        AND relkind IN (" CppAsString2(RELKIND_RELATION) ", "
-		CppAsString2(RELKIND_VIEW) ", " CppAsString2(RELKIND_MATVIEW) ", "
-		CppAsString2(RELKIND_SEQUENCE) ");\n\n",
-		"INSERT INTO pg_init_privs "
-		"  (objoid, classoid, objsubid, initprivs, privtype)"
-		"    SELECT"
-		"        pg_class.oid,"
-		"        (SELECT oid FROM pg_class WHERE relname = 'pg_class'),"
-		"        pg_attribute.attnum,"
-		"        pg_attribute.attacl,"
-		"        'i'"
-		"    FROM"
-		"        pg_class"
-		"        JOIN pg_attribute ON (pg_class.oid = pg_attribute.attrelid)"
-		"    WHERE"
-		"        pg_attribute.attacl IS NOT NULL"
-		"        AND pg_class.relkind IN (" CppAsString2(RELKIND_RELATION) ", "
-		CppAsString2(RELKIND_VIEW) ", " CppAsString2(RELKIND_MATVIEW) ", "
-		CppAsString2(RELKIND_SEQUENCE) ");\n\n",
-		"INSERT INTO pg_init_privs "
-		"  (objoid, classoid, objsubid, initprivs, privtype)"
-		"    SELECT"
-		"        oid,"
-		"        (SELECT oid FROM pg_class WHERE relname = 'pg_proc'),"
-		"        0,"
-		"        proacl,"
-		"        'i'"
-		"    FROM"
-		"        pg_proc"
-		"    WHERE"
-		"        proacl IS NOT NULL;\n\n",
-		"INSERT INTO pg_init_privs "
-		"  (objoid, classoid, objsubid, initprivs, privtype)"
-		"    SELECT"
-		"        oid,"
-		"        (SELECT oid FROM pg_class WHERE relname = 'pg_type'),"
-		"        0,"
-		"        typacl,"
-		"        'i'"
-		"    FROM"
-		"        pg_type"
-		"    WHERE"
-		"        typacl IS NOT NULL;\n\n",
-		"INSERT INTO pg_init_privs "
-		"  (objoid, classoid, objsubid, initprivs, privtype)"
-		"    SELECT"
-		"        oid,"
-		"        (SELECT oid FROM pg_class WHERE relname = 'pg_language'),"
-		"        0,"
-		"        lanacl,"
-		"        'i'"
-		"    FROM"
-		"        pg_language"
-		"    WHERE"
-		"        lanacl IS NOT NULL;\n\n",
-		"INSERT INTO pg_init_privs "
-		"  (objoid, classoid, objsubid, initprivs, privtype)"
-		"    SELECT"
-		"        oid,"
-		"        (SELECT oid FROM pg_class WHERE "
-		"         relname = 'pg_largeobject_metadata'),"
-		"        0,"
-		"        lomacl,"
-		"        'i'"
-		"    FROM"
-		"        pg_largeobject_metadata"
-		"    WHERE"
-		"        lomacl IS NOT NULL;\n\n",
-		"INSERT INTO pg_init_privs "
-		"  (objoid, classoid, objsubid, initprivs, privtype)"
-		"    SELECT"
-		"        oid,"
-		"        (SELECT oid FROM pg_class WHERE relname = 'pg_namespace'),"
-		"        0,"
-		"        nspacl,"
-		"        'i'"
-		"    FROM"
-		"        pg_namespace"
-		"    WHERE"
-		"        nspacl IS NOT NULL;\n\n",
-		"INSERT INTO pg_init_privs "
-		"  (objoid, classoid, objsubid, initprivs, privtype)"
-		"    SELECT"
-		"        oid,"
-		"        (SELECT oid FROM pg_class WHERE "
-		"         relname = 'pg_foreign_data_wrapper'),"
-		"        0,"
-		"        fdwacl,"
-		"        'i'"
-		"    FROM"
-		"        pg_foreign_data_wrapper"
-		"    WHERE"
-		"        fdwacl IS NOT NULL;\n\n",
-		"INSERT INTO pg_init_privs "
-		"  (objoid, classoid, objsubid, initprivs, privtype)"
-		"    SELECT"
-		"        oid,"
-		"        (SELECT oid FROM pg_class "
-		"         WHERE relname = 'pg_foreign_server'),"
-		"        0,"
-		"        srvacl,"
-		"        'i'"
-		"    FROM"
-		"        pg_foreign_server"
-		"    WHERE"
-		"        srvacl IS NOT NULL;\n\n",
-		NULL
-	};
-
-	for (line = privileges_setup; *line != NULL; line++)
-		PG_CMD_PUTS(*line);
-}
-
-/*
  * extract the strange version of version required for information schema
  * (09.08.0007abc)
  */
@@ -1749,27 +1407,16 @@ set_info_version(void)
 static void
 setup_schema(FILE *cmdfd)
 {
-	setup_run_file(cmdfd, info_schema_file);
-
 	PG_CMD_PRINTF("UPDATE information_schema.sql_implementation_info "
 				  "  SET character_value = '%s' "
-				  "  WHERE implementation_info_name = 'DBMS VERSION';\n\n",
+				  "  WHERE implementation_info_name = 'DBMS VERSION';\n",
 				  infoversion);
 
 	PG_CMD_PRINTF("COPY information_schema.sql_features "
 				  "  (feature_id, feature_name, sub_feature_id, "
 				  "  sub_feature_name, is_supported, comments) "
-				  " FROM E'%s';\n\n",
+				  " FROM E'%s';\n",
 				  escape_quotes(features_file));
-}
-
-/*
- * load PL/pgSQL server-side language
- */
-static void
-load_plpgsql(FILE *cmdfd)
-{
-	PG_CMD_PUTS("CREATE EXTENSION plpgsql;\n\n");
 }
 
 /*
@@ -1796,8 +1443,8 @@ set_remaining_details(FILE *cmdfd)
 	 * locale/encoding without cheating.
 	 */
 	static char *final_details[] = {
-		"UPDATE pg_authid SET rolname = E'SUPERUSER_NAME' WHERE rolname = 'POSTGRES';\n\n",
-		"UPDATE pg_database SET encoding = E'ENCODING', datcollate = E'LC_COLLATE', datctype = E'LC_CTYPE';\n\n",
+		"UPDATE pg_authid SET rolname = E'SUPERUSER_NAME' WHERE rolname = 'POSTGRES';\n",
+		"UPDATE pg_database SET encoding = E'ENCODING', datcollate = E'LC_COLLATE', datctype = E'LC_CTYPE';\n",
 		NULL
 	};
 
@@ -1811,93 +1458,6 @@ set_remaining_details(FILE *cmdfd)
 								 escape_quotes(lc_ctype));
 
 	for (line = detail_lines; *line != NULL; line++)
-		PG_CMD_PUTS(*line);
-}
-
-/*
- * clean everything up in template1
- */
-static void
-vacuum_db(FILE *cmdfd)
-{
-	/* Run analyze before VACUUM so the statistics are frozen. */
-	PG_CMD_PUTS("ANALYZE;\n\nVACUUM FREEZE;\n\n");
-}
-
-/*
- * copy template1 to template0
- */
-static void
-make_template0(FILE *cmdfd)
-{
-	const char *const *line;
-
-	/*
-	 * pg_upgrade tries to preserve database OIDs across upgrades. It's smart
-	 * enough to drop and recreate a conflicting database with the same name,
-	 * but if the same OID were used for one system-created database in the
-	 * old cluster and a different system-created database in the new cluster,
-	 * it would fail. To avoid that, assign a fixed OID to template0 rather
-	 * than letting the server choose one.
-	 *
-	 * (Note that, while the user could have dropped and recreated these
-	 * objects in the old cluster, the problem scenario only exists if the OID
-	 * that is in use in the old cluster is also used in the new cluster - and
-	 * the new cluster should be the result of a fresh initdb.)
-	 */
-	static const char *const template0_setup[] = {
-		"CREATE DATABASE template0 IS_TEMPLATE = true ALLOW_CONNECTIONS = false OID = "
-		CppAsString2(Template0ObjectId) ";\n\n",
-
-		/*
-		 * template0 shouldn't have any collation-dependent objects, so unset
-		 * the collation version.  This disables collation version checks when
-		 * making a new database from it.
-		 */
-		"UPDATE pg_database SET datcollversion = NULL WHERE datname = 'template0';\n\n",
-
-		/*
-		 * While we are here, do set the collation version on template1.
-		 */
-		"UPDATE pg_database SET datcollversion = pg_database_collation_actual_version(oid) WHERE datname = 'template1';\n\n",
-
-		/*
-		 * Explicitly revoke public create-schema and create-temp-table
-		 * privileges in template1 and template0; else the latter would be on
-		 * by default
-		 */
-		"REVOKE CREATE,TEMPORARY ON DATABASE template1 FROM public;\n\n",
-		"REVOKE CREATE,TEMPORARY ON DATABASE template0 FROM public;\n\n",
-
-		"COMMENT ON DATABASE template0 IS 'unmodifiable empty database';\n\n",
-
-		/*
-		 * Finally vacuum to clean up dead rows in pg_database
-		 */
-		"VACUUM pg_database;\n\n",
-		NULL
-	};
-
-	for (line = template0_setup; *line; line++)
-		PG_CMD_PUTS(*line);
-}
-
-/*
- * copy template1 to postgres
- */
-static void
-make_postgres(FILE *cmdfd)
-{
-	const char *const *line;
-
-	/* Assign a fixed OID to postgres, for the same reasons as template0 */
-	static const char *const postgres_setup[] = {
-		"CREATE DATABASE postgres OID = " CppAsString2(PostgresObjectId) ";\n\n",
-		"COMMENT ON DATABASE postgres IS 'default administrative connection database';\n\n",
-		NULL
-	};
-
-	for (line = postgres_setup; *line; line++)
 		PG_CMD_PUTS(*line);
 }
 
@@ -2446,16 +2006,10 @@ setup_locale_encoding(void)
 void
 setup_data_file_paths(void)
 {
-	set_input(&bki_file, "postgres.bki");
 	set_input(&hba_file, "pg_hba.conf.sample");
 	set_input(&ident_file, "pg_ident.conf.sample");
 	set_input(&conf_file, "postgresql.conf.sample");
-	set_input(&dictionary_file, "snowball_create.sql");
-	set_input(&info_schema_file, "information_schema.sql");
 	set_input(&features_file, "sql_features.txt");
-	set_input(&system_constraints_file, "system_constraints.sql");
-	set_input(&system_functions_file, "system_functions.sql");
-	set_input(&system_views_file, "system_views.sql");
 
 	if (show_setting || debug)
 	{
@@ -2474,16 +2028,9 @@ setup_data_file_paths(void)
 			exit(0);
 	}
 
-	check_input(bki_file);
 	check_input(hba_file);
 	check_input(ident_file);
 	check_input(conf_file);
-	check_input(dictionary_file);
-	check_input(info_schema_file);
-	check_input(features_file);
-	check_input(system_constraints_file);
-	check_input(system_functions_file);
-	check_input(system_views_file);
 }
 
 
@@ -2744,6 +2291,7 @@ initialize_data_directory(void)
 {
 	PG_CMD_DECL;
 	int			i;
+	instr_time	last_ts, cur_ts;
 
 	setup_signals();
 
@@ -2788,68 +2336,46 @@ initialize_data_directory(void)
 	write_version_file(NULL);
 
 	/* Select suitable configuration settings */
+	INSTR_TIME_SET_CURRENT(last_ts);
 	set_null_conf();
 	test_config_settings();
+	INSTR_TIME_SET_CURRENT(cur_ts);
+	fprintf(stderr, "config determination in %.3f ms\n",
+			(INSTR_TIME_GET_DOUBLE(cur_ts) - INSTR_TIME_GET_DOUBLE(last_ts)) * 1000);
 
 	/* Now create all the text config files */
 	setup_config();
 
-	/* Bootstrap template1 */
-	bootstrap_template1();
-
 	/*
 	 * Make the per-database PG_VERSION for template1 only after init'ing it
+	 *
+	 * FIXME: move to server
 	 */
 	write_version_file("base/1");
 
-	/*
-	 * Create the stuff we don't need to use bootstrap mode for, using a
-	 * backend running in simple standalone mode.
-	 */
-	fputs(_("performing post-bootstrap initialization ... "), stdout);
-	fflush(stdout);
-
 	snprintf(cmd, sizeof(cmd),
-			 "\"%s\" %s %s template1 >%s",
-			 backend_exec, backend_options, extra_options,
+			 "\"%s\" --boot -s \"%s\" -X %d %s %s %s %s >%s 2>&1",
+			 backend_exec,
+			 share_path,
+			 wal_segment_size_mb * (1024 * 1024),
+			 data_checksums ? "-k" : "",
+			 boot_options, extra_options,
+			 debug ? "-d 5" : "",
 			 DEVNULL);
+
+	/* Also ensure backend isn't confused by this environment var: */
+	unsetenv("PGCLIENTENCODING");
+
+	printf(_("running database bootstrap ... "));
 
 	PG_CMD_OPEN;
 
-	setup_auth(cmdfd);
-
-	setup_run_file(cmdfd, system_constraints_file);
-
-	setup_run_file(cmdfd, system_functions_file);
-
-	setup_depend(cmdfd);
-
-	/*
-	 * Note that no objects created after setup_depend() will be "pinned".
-	 * They are all droppable at the whim of the DBA.
-	 */
-
-	setup_run_file(cmdfd, system_views_file);
-
-	setup_description(cmdfd);
-
-	setup_collation(cmdfd);
-
-	setup_run_file(cmdfd, dictionary_file);
-
-	setup_privileges(cmdfd);
-
 	setup_schema(cmdfd);
-
-	load_plpgsql(cmdfd);
-
 	set_remaining_details(cmdfd);
 
-	vacuum_db(cmdfd);
-
-	make_template0(cmdfd);
-
-	make_postgres(cmdfd);
+	if (superuser_password)
+		PG_CMD_PRINTF("ALTER USER \"%s\" WITH PASSWORD E'%s';\n",
+					  username, escape_quotes(superuser_password));
 
 	PG_CMD_CLOSE;
 
@@ -3178,7 +2704,7 @@ main(int argc, char *argv[])
 	else
 		printf(_("\nSync to disk skipped.\nThe data directory might become corrupt if the operating system crashes.\n"));
 
-	if (authwarning)
+	if (authwarning && false)
 	{
 		printf("\n");
 		pg_log_warning("enabling \"trust\" authentication for local connections");

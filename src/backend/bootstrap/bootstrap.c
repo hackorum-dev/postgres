@@ -2,7 +2,10 @@
  *
  * bootstrap.c
  *	  routines to support running postgres in 'bootstrap' mode
- *	bootstrap mode is used to create the initial template database
+ *
+ * bootstrap mode is used to create the initial template1 database, perform
+ * additional initialization it via SQL scripts, and then create template0,
+ * postgres from template1.
  *
  * Portions Copyright (c) 1996-2022, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
@@ -26,10 +29,14 @@
 #include "access/xlog_internal.h"
 #include "bootstrap/bootstrap.h"
 #include "catalog/index.h"
+#include "catalog/pg_authid_d.h"
 #include "catalog/pg_collation.h"
 #include "catalog/pg_type.h"
+#include "commands/extension.h"
 #include "common/link-canary.h"
+#include "common/string.h"
 #include "libpq/pqsignal.h"
+#include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "pg_getopt.h"
@@ -41,6 +48,7 @@
 #include "tcop/tcopprot.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
+#include "utils/inval.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
 #include "utils/relmapper.h"
@@ -54,6 +62,12 @@ static Form_pg_attribute AllocateAttribute(void);
 static void populate_typ_list(void);
 static Oid	gettype(char *type);
 static void cleanup(void);
+
+static void bootstrap_load_nonbki(const char *share_path);
+static void bootstrap_create_databases(void);
+
+static void exec_sql(const char *share_path, const char *str);
+static void exec_sql_file(const char *share_path, const char *str);
 
 /* ----------------
  *		global variables
@@ -206,6 +220,7 @@ BootstrapModeMain(int argc, char *argv[], bool check_only)
 	char	   *progname = argv[0];
 	int			flag;
 	char	   *userDoption = NULL;
+	char	   *share_path = NULL;
 
 	Assert(!IsUnderPostmaster);
 
@@ -221,7 +236,12 @@ BootstrapModeMain(int argc, char *argv[], bool check_only)
 	argv++;
 	argc--;
 
-	while ((flag = getopt(argc, argv, "B:c:d:D:Fkr:X:-:")) != -1)
+	/*
+	 * XXX: -s for share_path is probably a bad choice, it conflicts with a
+	 * normal postgres option. Also, should probably just determine share path
+	 * ourselves.
+	 */
+	while ((flag = getopt(argc, argv, "B:c:d:D:s:Fkr:X:-:")) != -1)
 	{
 		switch (flag)
 		{
@@ -246,6 +266,9 @@ BootstrapModeMain(int argc, char *argv[], bool check_only)
 				break;
 			case 'F':
 				SetConfigOption("fsync", "false", PGC_POSTMASTER, PGC_S_ARGV);
+				break;
+			case 's':
+			    share_path = optarg;
 				break;
 			case 'k':
 				bootstrap_data_checksum_version = PG_DATA_CHECKSUM_VERSION;
@@ -338,6 +361,12 @@ BootstrapModeMain(int argc, char *argv[], bool check_only)
 		abort();
 	}
 
+	if (share_path == NULL)
+	{
+		write_stderr("%s: -s is required in --boot mode\n", progname);
+		proc_exit(1);
+	}
+
 	/*
 	 * Do backend-like initialization for bootstrap mode
 	 */
@@ -365,11 +394,34 @@ BootstrapModeMain(int argc, char *argv[], bool check_only)
 	}
 
 	/*
-	 * Process bootstrap input.
+	 * Process bootstrap file to create initial template1 contents.
 	 */
-	StartTransactionCommand();
-	boot_yyparse();
-	CommitTransactionCommand();
+	{
+		char bootstrap_file[MAXPGPATH];
+		FILE *boot;
+		instr_time start_ts, boot_ts;
+
+		INSTR_TIME_SET_CURRENT(start_ts);
+
+		sprintf(bootstrap_file, "%s/%s", share_path, "postgres.bki");
+
+		boot = fopen(bootstrap_file, "r");
+		if (boot == NULL)
+			elog(ERROR, "could not open bootstrap file \"%s\": %m",
+				 bootstrap_file);
+		boot_input(boot);
+
+		StartTransactionCommand();
+		boot_yyparse();
+		CommitTransactionCommand();
+
+		fclose(boot);
+
+		INSTR_TIME_SET_CURRENT(boot_ts);
+
+		elog(LOG, "boot in %.3f ms",
+			 (INSTR_TIME_GET_DOUBLE(boot_ts) - INSTR_TIME_GET_DOUBLE(start_ts)) * 1000);
+	}
 
 	/*
 	 * We should now know about all mapped relations, so it's okay to write
@@ -377,9 +429,249 @@ BootstrapModeMain(int argc, char *argv[], bool check_only)
 	 */
 	RelationMapFinishBootstrap();
 
-	/* Clean up and exit */
+	/* Clean up and exit FIXME */
 	cleanup();
+
+	/*
+	 * Now that the catalog is populated with crucial contents, bring up
+	 * system caches into a fully valid state.
+	 */
+
+	SetProcessingMode(InitProcessing);
+
+	IgnoreSystemIndexes = false;
+
+	StartTransactionCommand();
+	/* Seeing odd "row is too big:" failures without */
+	InvalidateSystemCaches();
+	/* FIXME: speechless-making API */
+	RelationCacheInitializePhase3b(true);
+	CommitTransactionCommand();
+
+	/*
+	 * Load further catalog contents by running a bunch of SQL commands.
+	 */
+	SetProcessingMode(NormalProcessing);
+
+	bootstrap_load_nonbki(share_path);
+
+	bootstrap_create_databases();
+
 	proc_exit(0);
+}
+
+/*
+ * Create template0 and postgres from template1.
+ *
+ * XXX: Several of the statements contain commands that cannot be executed in
+ * a transaction (VACUUM, CREATE DATABASE) and thus require a fairly
+ * complicated dance to maintain correct state. The easiest is to just rely on
+ * exec_simple_query() (via a wrapper) for that. Don't want to do that for
+ * everything else, because it's considerably faster to use exec_sql().
+ */
+static void
+bootstrap_create_databases(void)
+{
+	/*
+	 * pg_upgrade tries to preserve database OIDs across upgrades. It's smart
+	 * enough to drop and recreate a conflicting database with the same name,
+	 * but if the same OID were used for one system-created database in the
+	 * old cluster and a different system-created database in the new cluster,
+	 * it would fail. To avoid that, assign a fixed OID to template0 rather
+	 * than letting the server choose one.
+	 *
+	 * (Note that, while the user could have dropped and recreated these
+	 * objects in the old cluster, the problem scenario only exists if the OID
+	 * that is in use in the old cluster is also used in the new cluster - and
+	 * the new cluster should be the result of a fresh initdb.)
+	 */
+	static const char *const template0_setup[] = {
+		"CREATE DATABASE template0 IS_TEMPLATE = true ALLOW_CONNECTIONS = false OID = "
+		CppAsString2(Template0ObjectId) ";\n",
+
+		/*
+		 * template0 shouldn't have any collation-dependent objects, so unset
+		 * the collation version.  This disables collation version checks when
+		 * making a new database from it.
+		 */
+		"UPDATE pg_database SET datcollversion = NULL WHERE datname = 'template0';\n",
+
+		/*
+		 * While we are here, do set the collation version on template1.
+		 */
+		"UPDATE pg_database SET datcollversion = pg_database_collation_actual_version(oid) WHERE datname = 'template1';\n",
+
+		/*
+		 * Explicitly revoke public create-schema and create-temp-table
+		 * privileges in template1 and template0; else the latter would be on
+		 * by default
+		 */
+		"REVOKE CREATE,TEMPORARY ON DATABASE template1 FROM public;\n",
+		"REVOKE CREATE,TEMPORARY ON DATABASE template0 FROM public;\n",
+
+		"COMMENT ON DATABASE template0 IS 'unmodifiable empty database';\n",
+		NULL
+	};
+
+	/* Assign a fixed OID to postgres, for the same reasons as template0 */
+	static const char *const postgres_setup[] = {
+		"CREATE DATABASE postgres OID = " CppAsString2(PostgresObjectId) ";\n",
+		"COMMENT ON DATABASE postgres IS 'default administrative connection database';\n",
+		NULL
+	};
+	instr_time start_ts, created_ts;
+
+	INSTR_TIME_SET_CURRENT(start_ts);
+
+
+	MessageContext = AllocSetContextCreate(TopMemoryContext,
+										   "MessageContext",
+										   ALLOCSET_DEFAULT_SIZES);
+
+	/*
+	 * clean everything up in template1
+	 */
+	exec_simple_query_bootstrap("VACUUM FREEZE");
+
+	/*
+	 * copy template1 to template0
+	 */
+	for (const char *const *line = template0_setup; *line; line++)
+		exec_simple_query_bootstrap(*line);
+
+	/*
+	 * copy template1 to postgres
+	 */
+	for (const char *const *line = postgres_setup; *line; line++)
+		exec_simple_query_bootstrap(*line);
+
+	/*
+	 * Finally vacuum to clean up dead rows in pg_database
+	 */
+	exec_simple_query_bootstrap("VACUUM pg_database");
+
+	MemoryContextDelete(MessageContext);
+	MessageContext = NULL;
+
+	INSTR_TIME_SET_CURRENT(created_ts);
+
+	elog(LOG, "created template0 and postgres in %.3f ms",
+		 (INSTR_TIME_GET_DOUBLE(created_ts) - INSTR_TIME_GET_DOUBLE(start_ts)) * 1000);
+}
+
+static void
+bootstrap_load_nonbki(const char *share_path)
+{
+	StringInfoData sql;
+
+	initStringInfo(&sql);
+
+	StartTransactionCommand();
+	PushActiveSnapshot(GetTransactionSnapshot());
+
+	exec_sql_file(share_path, "system_constraints.sql");
+	exec_sql_file(share_path, "system_functions.sql");
+
+	/*
+	 * set up the shadow password table
+	 */
+	exec_sql("pg_authid", "REVOKE ALL ON pg_authid FROM public;");
+
+	/*
+	 * Advance the OID counter so that subsequently-created objects aren't
+	 * pinned. Subsequent objects are all droppable at the whim of the DBA.
+	 */
+	StopGeneratingPinnedObjectIds();
+
+	exec_sql_file(share_path, "system_views.sql");
+
+	exec_sql_file(share_path, "description.sql");
+
+	/* populate pg_collation */
+	{
+		/*
+		 * Add an SQL-standard name.  We don't want to pin this, so it doesn't go
+		 * in pg_collation.h.  But add it before reading system collations, so
+		 * that it wins if libc defines a locale named ucs_basic.
+		 */
+		appendStringInfo(&sql,
+						 "INSERT INTO pg_collation (oid, collname, "
+						 "    collnamespace, collowner, "
+						 "    collprovider, collisdeterministic, collencoding, "
+						 "    collcollate, collctype) "
+						 "VALUES ("
+						 "    pg_nextoid('pg_catalog.pg_collation', 'oid', "
+						 "        'pg_catalog.pg_collation_oid_index'), "
+						 "    'ucs_basic', 'pg_catalog'::regnamespace, %u, "
+						 "    '%c', true, %d, 'C', 'C');",
+						 BOOTSTRAP_SUPERUSERID, COLLPROVIDER_LIBC, PG_UTF8);
+		exec_sql("pg_collation", sql.data);
+		resetStringInfo(&sql);
+
+		/* Now import all collations we can find in the operating system */
+		exec_sql("import collations",
+				 "SELECT pg_import_system_collations('pg_catalog');");
+	}
+
+	exec_sql_file(share_path, "snowball_create.sql");
+
+	exec_sql_file(share_path, "privileges.sql");
+
+	exec_sql_file(share_path, "information_schema.sql");
+
+	exec_sql("plpgsql", "CREATE EXTENSION plpgsql;");
+
+	/*
+	 * Process SQL coming from initdb. This includes things like setting
+	 * up passwords, which would be a bit of pain to move to the backend.
+	 */
+	while (true)
+	{
+		if (!pg_get_line_buf(stdin, &sql))
+			break;
+
+		/* XXX: better descriptor than more */
+		exec_sql("more", sql.data);
+		resetStringInfo(&sql);
+	}
+
+	/* Run analyze before VACUUM so the statistics are frozen. */
+	exec_sql("analyze", "ANALYZE");
+
+	PopActiveSnapshot();
+	CommitTransactionCommand();
+}
+
+static void
+exec_sql(const char *name, const char *sql)
+{
+	instr_time start_ts, exec_ts;
+
+	INSTR_TIME_SET_CURRENT(start_ts);
+
+	execute_sql_string(sql);
+
+	INSTR_TIME_SET_CURRENT(exec_ts);
+
+	elog(LOG, "exec %s in %.3f ms",
+		 name,
+		 (INSTR_TIME_GET_DOUBLE(exec_ts) - INSTR_TIME_GET_DOUBLE(start_ts)) * 1000);
+}
+
+static void
+exec_sql_file(const char *share_path, const char *filename)
+{
+	int length;
+	char *str;
+	char filepath[MAXPGPATH];
+
+	sprintf(filepath, "%s/%s", share_path, filename);
+
+	str = read_whole_file(filepath, &length);
+
+	exec_sql(filename, str);
+
+	pfree(str);
 }
 
 

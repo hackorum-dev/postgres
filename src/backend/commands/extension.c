@@ -127,7 +127,6 @@ static void ApplyExtensionUpdates(Oid extensionOid,
 								  char *origSchemaName,
 								  bool cascade,
 								  bool is_create);
-static char *read_whole_file(const char *filename, int *length);
 
 
 /*
@@ -716,7 +715,7 @@ read_extension_script_file(const ExtensionControlFile *control,
  * on printing the whole string as errcontext in case of any error, and that
  * could be very long.
  */
-static void
+void
 execute_sql_string(const char *sql)
 {
 	List	   *raw_parsetree_list;
@@ -3429,7 +3428,7 @@ ExecAlterExtensionContentsStmt(AlterExtensionContentsStmt *stmt,
  * The file contents are returned as a single palloc'd chunk. For convenience
  * of the callers, an extra \0 byte is added to the end.
  */
-static char *
+char *
 read_whole_file(const char *filename, int *length)
 {
 	char	   *buf;

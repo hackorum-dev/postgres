@@ -3949,8 +3949,6 @@ RelationCacheInitializePhase2(void)
 void
 RelationCacheInitializePhase3(void)
 {
-	HASH_SEQ_STATUS status;
-	RelIdCacheEnt *idhentry;
 	MemoryContext oldcxt;
 	bool		needNewCacheFile = !criticalSharedRelcachesBuilt;
 
@@ -3991,6 +3989,15 @@ RelationCacheInitializePhase3(void)
 	/* In bootstrap mode, the faked-up formrdesc info is all we'll have */
 	if (IsBootstrapProcessingMode())
 		return;
+
+	RelationCacheInitializePhase3b(needNewCacheFile);
+}
+
+void
+RelationCacheInitializePhase3b(bool needNewCacheFile)
+{
+	HASH_SEQ_STATUS status;
+	RelIdCacheEnt *idhentry;
 
 	/*
 	 * If we didn't get the critical system indexes loaded into relcache, do

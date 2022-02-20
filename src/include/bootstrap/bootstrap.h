@@ -54,6 +54,7 @@ extern void boot_get_type_io_data(Oid typid,
 								  Oid *typinput,
 								  Oid *typoutput);
 
+extern void boot_input(FILE *file);
 extern int	boot_yyparse(void);
 
 extern int	boot_yylex(void);

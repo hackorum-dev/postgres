@@ -125,3 +125,9 @@ yyerror(const char *message)
 {
 	elog(ERROR, "%s at line %d", message, yyline);
 }
+
+void
+boot_input(FILE *file)
+{
+	yyin = file;
+}
