@@ -1138,7 +1138,9 @@ heap_create_with_catalog(const char *relname,
 	/*
 	 * sanity checks
 	 */
-	Assert(IsNormalProcessingMode() || IsBootstrapProcessingMode());
+	Assert(IsNormalProcessingMode() ||
+		   IsBootstrapProcessingMode() ||
+		   IsLateBootstrapProcessingMode());
 
 	/*
 	 * Validate proposed tupdesc for the desired relkind.  If

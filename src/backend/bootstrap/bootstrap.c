@@ -451,7 +451,7 @@ BootstrapModeMain(int argc, char *argv[], bool check_only)
 	/*
 	 * Load further catalog contents by running a bunch of SQL commands.
 	 */
-	SetProcessingMode(NormalProcessing);
+	SetProcessingMode(LateBootstrapProcessing);
 
 	bootstrap_load_nonbki(share_path);
 

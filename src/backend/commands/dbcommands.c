@@ -676,9 +676,15 @@ createdb(ParseState *pstate, const CreatedbStmt *stmt)
 	 * happened while we're copying files, a file might be deleted just when
 	 * we're about to copy it, causing the lstat() call in copydir() to fail
 	 * with ENOENT.
+	 *
+	 * In bootstrap mode FlushDatabaseBuffers() suffices because there are
+	 * unlink requests.
 	 */
-	RequestCheckpoint(CHECKPOINT_IMMEDIATE | CHECKPOINT_FORCE | CHECKPOINT_WAIT
-					  | CHECKPOINT_FLUSH_ALL);
+	if (IsBootstrapProcessingMode() || IsLateBootstrapProcessingMode())
+		FlushDatabaseBuffers(src_dboid);
+	else
+		RequestCheckpoint(CHECKPOINT_IMMEDIATE | CHECKPOINT_FORCE | CHECKPOINT_WAIT
+						  | CHECKPOINT_FLUSH_ALL);
 
 	/*
 	 * Once we start copying subdirectories, we need to be able to clean 'em
@@ -782,8 +788,12 @@ createdb(ParseState *pstate, const CreatedbStmt *stmt)
 		 *
 		 * Perhaps if we ever implement CREATE DATABASE in a less cheesy way,
 		 * we can avoid this.
+		 *
+		 * We do not need this checkpoint in bootstrap mode - if we fail, the
+		 * cluster won't be valid anyway.
 		 */
-		RequestCheckpoint(CHECKPOINT_IMMEDIATE | CHECKPOINT_FORCE | CHECKPOINT_WAIT);
+		if (!IsBootstrapProcessingMode() && !IsLateBootstrapProcessingMode())
+			RequestCheckpoint(CHECKPOINT_IMMEDIATE | CHECKPOINT_FORCE | CHECKPOINT_WAIT);
 
 		/*
 		 * Close pg_database, but keep lock till commit.

@@ -446,14 +446,20 @@ XLogInsert(RmgrId rmid, uint8 info)
 	TRACE_POSTGRESQL_WAL_INSERT(rmid, info);
 
 	/*
-	 * In bootstrap mode, we don't actually log anything but XLOG resources;
-	 * return a phony record pointer.
+	 * In bootstrap mode, we don't actually log anything but shutdown
+	 * checkpoint records; return a phony record pointer.
 	 */
-	if (IsBootstrapProcessingMode() && rmid != RM_XLOG_ID)
+	if (IsBootstrapProcessingMode() || IsLateBootstrapProcessingMode())
 	{
-		XLogResetInsertion();
-		EndPos = SizeOfXLogLongPHD; /* start of 1st chkpt record */
-		return EndPos;
+		uint8		rectype = info & ~XLR_INFO_MASK;
+
+		if (rmid != RM_XLOG_ID ||
+			rectype != XLOG_CHECKPOINT_SHUTDOWN)
+		{
+			XLogResetInsertion();
+			EndPos = SizeOfXLogLongPHD; /* start of 1st chkpt record */
+			return EndPos;
+		}
 	}
 
 	do
