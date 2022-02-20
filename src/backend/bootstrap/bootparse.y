@@ -62,11 +62,17 @@ do_start(void)
 static void
 do_end(void)
 {
+	static int isatty_cached = -1;
+
 	/* Reclaim memory allocated while processing this line */
 	MemoryContextSwitchTo(CurTransactionContext);
 	MemoryContextReset(per_line_ctx);
 	CHECK_FOR_INTERRUPTS();		/* allow SIGINT to kill bootstrap run */
-	if (isatty(0))
+
+	if (isatty_cached == -1)
+		isatty_cached = isatty(0);
+
+	if (isatty_cached)
 	{
 		printf("bootstrap> ");
 		fflush(stdout);
