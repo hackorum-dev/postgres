@@ -102,7 +102,8 @@ static void show_sort_group_keys(PlanState *planstate, const char *qlabel,
 								 Oid *sortOperators, Oid *collations, bool *nullsFirst,
 								 List *ancestors, ExplainState *es);
 static void show_sortorder_options(StringInfo buf, Node *sortexpr,
-								   Oid sortOperator, Oid collation, bool nullsFirst);
+								   Oid sortOperator, Oid collation, bool nullsFirst,
+								   ExplainState *es);
 static void show_tablesample(TableSampleClause *tsc, PlanState *planstate,
 							 List *ancestors, ExplainState *es);
 static void show_sort_info(SortState *sortstate, ExplainState *es);
@@ -2567,7 +2568,7 @@ show_sort_group_keys(PlanState *planstate, const char *qlabel,
 								   (Node *) target->expr,
 								   sortOperators[keyno],
 								   collations[keyno],
-								   nullsFirst[keyno]);
+								   nullsFirst[keyno], es);
 		/* Emit one property-list item per sort key */
 		result = lappend(result, pstrdup(sortkeybuf.data));
 		if (keyno < nPresortedKeys)
@@ -2585,7 +2586,8 @@ show_sort_group_keys(PlanState *planstate, const char *qlabel,
  */
 static void
 show_sortorder_options(StringInfo buf, Node *sortexpr,
-					   Oid sortOperator, Oid collation, bool nullsFirst)
+					   Oid sortOperator, Oid collation,
+					   bool nullsFirst, ExplainState *es)
 {
 	Oid			sortcoltype = exprType(sortexpr);
 	bool		reverse = false;
@@ -2604,10 +2606,21 @@ show_sortorder_options(StringInfo buf, Node *sortexpr,
 	if (OidIsValid(collation) && collation != get_typcollation(sortcoltype))
 	{
 		char	   *collname = get_collation_name(collation);
+		char	   *namespace = NULL;
 
 		if (collname == NULL)
 			elog(ERROR, "cache lookup failed for collation %u", collation);
-		appendStringInfo(buf, " COLLATE %s", quote_identifier(collname));
+
+		if (es->verbose)
+			namespace = get_namespace_name_or_temp(
+										get_collation_namespace(collation));
+
+		if (namespace == NULL)
+			appendStringInfo(buf, " COLLATE %s", quote_identifier(collname));
+		else
+			appendStringInfo(buf, " COLLATE %s.%s",
+							 quote_identifier(namespace),
+							 quote_identifier(collname));
 	}
 
 	/* Print direction if not ASC, or USING if non-default sort operator */

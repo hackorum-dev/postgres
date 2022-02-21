@@ -631,14 +631,16 @@ RESET enable_seqscan;
 RESET enable_hashjoin;
 RESET enable_nestloop;
 -- EXPLAIN
-EXPLAIN (COSTS OFF)
+EXPLAIN (COSTS OFF, VERBOSE ON)
   SELECT * FROM collate_test10 ORDER BY x, y;
-                  QUERY PLAN                  
-----------------------------------------------
+                                            QUERY PLAN                                            
+--------------------------------------------------------------------------------------------------
  Sort
-   Sort Key: x COLLATE "C", y COLLATE "POSIX"
-   ->  Seq Scan on collate_test10
-(3 rows)
+   Output: a, x, y
+   Sort Key: collate_test10.x COLLATE pg_catalog."C", collate_test10.y COLLATE pg_catalog."POSIX"
+   ->  Seq Scan on collate_tests.collate_test10
+         Output: a, x, y
+(5 rows)
 
 EXPLAIN (COSTS OFF)
   SELECT * FROM collate_test10 ORDER BY x DESC, y COLLATE "C" ASC NULLS FIRST;

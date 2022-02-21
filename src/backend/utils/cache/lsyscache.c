@@ -1075,6 +1075,30 @@ get_collation_name(Oid colloid)
 		return NULL;
 }
 
+/*
+ * get_collation_namespace
+ *
+ *		Returns the pg_namespace OID associated with a given collation.
+ */
+Oid
+get_collation_namespace(Oid colloid)
+{
+	HeapTuple	tp;
+
+	tp = SearchSysCache1(COLLOID, ObjectIdGetDatum(colloid));
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_collation colltup = (Form_pg_collation) GETSTRUCT(tp);
+		Oid			result;
+
+		result = colltup->collnamespace;
+		ReleaseSysCache(tp);
+		return result;
+	}
+	else
+		return InvalidOid;
+}
+
 bool
 get_collation_isdeterministic(Oid colloid)
 {

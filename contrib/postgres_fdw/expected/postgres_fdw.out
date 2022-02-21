@@ -913,7 +913,7 @@ EXPLAIN (VERBOSE, COSTS OFF)
 -------------------------------------------------------------------------------
  Sort
    Output: c1, c2, c3, c4, c5, c6, c7, c8, ((c3)::text)
-   Sort Key: ft2.c1, ft2.c3 COLLATE "C"
+   Sort Key: ft2.c1, ft2.c3 COLLATE pg_catalog."C"
    ->  Foreign Scan on public.ft2
          Output: c1, c2, c3, c4, c5, c6, c7, c8, c3
          Remote SQL: SELECT "C 1", c2, c3, c4, c5, c6, c7, c8 FROM "S 1"."T 1"
