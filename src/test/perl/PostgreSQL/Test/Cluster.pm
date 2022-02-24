@@ -2473,14 +2473,16 @@ sub issues_sql_like
 
 	my ($self, $cmd, $expected_sql, $test_name) = @_;
 
-	local %ENV = $self->_get_env();
+	subtest $test_name => sub {
+		local %ENV = $self->_get_env();
 
-	my $log_location = -s $self->logfile;
+		my $log_location = -s $self->logfile;
 
-	my $result = PostgreSQL::Test::Utils::run_log($cmd);
-	ok($result, "@$cmd exit code 0");
-	my $log = PostgreSQL::Test::Utils::slurp_file($self->logfile, $log_location);
-	like($log, $expected_sql, "$test_name: SQL found in server log");
+		my $result = PostgreSQL::Test::Utils::run_log($cmd);
+		ok($result, "@$cmd exit code 0");
+		my $log = PostgreSQL::Test::Utils::slurp_file($self->logfile, $log_location);
+		like($log, $expected_sql, "SQL found in server log");
+	};
 	return;
 }
 

@@ -792,13 +792,15 @@ sub program_help_ok
 {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd) = @_;
-	my ($stdout, $stderr);
-	print("# Running: $cmd --help\n");
-	my $result = IPC::Run::run [ $cmd, '--help' ], '>', \$stdout, '2>',
-	  \$stderr;
-	ok($result, "$cmd --help exit code 0");
-	isnt($stdout, '', "$cmd --help goes to stdout");
-	is($stderr, '', "$cmd --help nothing to stderr");
+	subtest "$cmd --help" => sub {
+		my ($stdout, $stderr);
+		print("# Running: $cmd --help\n");
+		my $result = IPC::Run::run [ $cmd, '--help' ], '>', \$stdout, '2>',
+		  \$stderr;
+		ok($result, "exit code 0");
+		isnt($stdout, '', "goes to stdout");
+		is($stderr, '', "nothing to stderr");
+	};
 	return;
 }
 
@@ -814,13 +816,15 @@ sub program_version_ok
 {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd) = @_;
-	my ($stdout, $stderr);
-	print("# Running: $cmd --version\n");
-	my $result = IPC::Run::run [ $cmd, '--version' ], '>', \$stdout, '2>',
-	  \$stderr;
-	ok($result, "$cmd --version exit code 0");
-	isnt($stdout, '', "$cmd --version goes to stdout");
-	is($stderr, '', "$cmd --version nothing to stderr");
+	subtest "$cmd --version" => sub {
+		my ($stdout, $stderr);
+		print("# Running: $cmd --version\n");
+		my $result = IPC::Run::run [ $cmd, '--version' ], '>', \$stdout, '2>',
+		  \$stderr;
+		ok($result, "exit code 0");
+		isnt($stdout, '', "goes to stdout");
+		is($stderr, '', "nothing to stderr");
+	};
 	return;
 }
 
@@ -837,13 +841,15 @@ sub program_options_handling_ok
 {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd) = @_;
-	my ($stdout, $stderr);
-	print("# Running: $cmd --not-a-valid-option\n");
-	my $result = IPC::Run::run [ $cmd, '--not-a-valid-option' ], '>',
-	  \$stdout,
-	  '2>', \$stderr;
-	ok(!$result, "$cmd with invalid option nonzero exit code");
-	isnt($stderr, '', "$cmd with invalid option prints error message");
+	subtest "$cmd options handling" => sub {
+		my ($stdout, $stderr);
+		print("# Running: $cmd --not-a-valid-option\n");
+		my $result = IPC::Run::run [ $cmd, '--not-a-valid-option' ], '>',
+		  \$stdout,
+		  '2>', \$stderr;
+		ok(!$result, "invalid option nonzero exit code");
+		isnt($stderr, '', "invalid option prints error message");
+	};
 	return;
 }
 
@@ -860,12 +866,14 @@ sub command_like
 {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
 	my ($cmd, $expected_stdout, $test_name) = @_;
-	my ($stdout, $stderr);
-	print("# Running: " . join(" ", @{$cmd}) . "\n");
-	my $result = IPC::Run::run $cmd, '>', \$stdout, '2>', \$stderr;
-	ok($result, "$test_name: exit code 0");
-	is($stderr, '', "$test_name: no stderr");
-	like($stdout, $expected_stdout, "$test_name: matches");
+	subtest $test_name => sub {
+		my ($stdout, $stderr);
+		print("# Running: " . join(" ", @{$cmd}) . "\n");
+		my $result = IPC::Run::run $cmd, '>', \$stdout, '2>', \$stderr;
+		ok($result, "exit code 0");
+		is($stderr, '', "no stderr");
+		like($stdout, $expected_stdout, "stdout matches");
+	};
 	return;
 }
 
