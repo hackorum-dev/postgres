@@ -4045,6 +4045,7 @@ _copyCreatedbStmt(const CreatedbStmt *from)
 
 	COPY_STRING_FIELD(dbname);
 	COPY_NODE_FIELD(options);
+	COPY_SCALAR_FIELD(if_not_exists);
 
 	return newnode;
 }

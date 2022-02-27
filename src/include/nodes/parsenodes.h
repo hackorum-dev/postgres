@@ -3295,6 +3295,7 @@ typedef struct CreatedbStmt
 	NodeTag		type;
 	char	   *dbname;			/* name of database to create */
 	List	   *options;		/* List of DefElem nodes */
+	bool        if_not_exists;  /* just do nothing if it already exists? */
 } CreatedbStmt;
 
 /* ----------------------

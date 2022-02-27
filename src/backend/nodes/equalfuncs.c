@@ -1722,6 +1722,7 @@ _equalCreatedbStmt(const CreatedbStmt *a, const CreatedbStmt *b)
 {
 	COMPARE_STRING_FIELD(dbname);
 	COMPARE_NODE_FIELD(options);
+	COMPARE_SCALAR_FIELD(if_not_exists);
 
 	return true;
 }
