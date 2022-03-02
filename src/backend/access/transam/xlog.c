@@ -6044,7 +6044,7 @@ LogCheckpointStart(int flags, bool restartpoint)
 	if (restartpoint)
 		ereport(LOG,
 		/* translator: the placeholders show checkpoint options */
-				(errmsg("restartpoint starting:%s%s%s%s%s%s%s%s",
+				(errmsg("restartpoint starting:%s%s%s%s%s%s%s%s%s",
 						(flags & CHECKPOINT_IS_SHUTDOWN) ? " shutdown" : "",
 						(flags & CHECKPOINT_END_OF_RECOVERY) ? " end-of-recovery" : "",
 						(flags & CHECKPOINT_IMMEDIATE) ? " immediate" : "",
@@ -6052,11 +6052,12 @@ LogCheckpointStart(int flags, bool restartpoint)
 						(flags & CHECKPOINT_WAIT) ? " wait" : "",
 						(flags & CHECKPOINT_CAUSE_XLOG) ? " wal" : "",
 						(flags & CHECKPOINT_CAUSE_TIME) ? " time" : "",
-						(flags & CHECKPOINT_FLUSH_ALL) ? " flush-all" : "")));
+						(flags & CHECKPOINT_FLUSH_ALL) ? " flush-all" : "",
+						(flags & CHECKPOINT_REQUESTED) ? " requested" : "")));
 	else
 		ereport(LOG,
 		/* translator: the placeholders show checkpoint options */
-				(errmsg("checkpoint starting:%s%s%s%s%s%s%s%s",
+				(errmsg("checkpoint starting:%s%s%s%s%s%s%s%s%s",
 						(flags & CHECKPOINT_IS_SHUTDOWN) ? " shutdown" : "",
 						(flags & CHECKPOINT_END_OF_RECOVERY) ? " end-of-recovery" : "",
 						(flags & CHECKPOINT_IMMEDIATE) ? " immediate" : "",
@@ -6064,7 +6065,8 @@ LogCheckpointStart(int flags, bool restartpoint)
 						(flags & CHECKPOINT_WAIT) ? " wait" : "",
 						(flags & CHECKPOINT_CAUSE_XLOG) ? " wal" : "",
 						(flags & CHECKPOINT_CAUSE_TIME) ? " time" : "",
-						(flags & CHECKPOINT_FLUSH_ALL) ? " flush-all" : "")));
+						(flags & CHECKPOINT_FLUSH_ALL) ? " flush-all" : "",
+						(flags & CHECKPOINT_REQUESTED) ? " requested" : "")));
 }
 
 /*
