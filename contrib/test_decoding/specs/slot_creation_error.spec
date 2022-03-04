@@ -13,7 +13,7 @@ step s1_cancel_s2 {
 }
 
 step s1_terminate_s2 {
-    SELECT pg_terminate_backend(pid)
+    SELECT pg_terminate_backend(pid, 180000)
     FROM pg_stat_activity
     WHERE application_name = 'isolation/slot_creation_error/s2';
 }

@@ -47,7 +47,7 @@ step s1_discard_temp {
 }
 
 step s1_exit {
-    SELECT pg_terminate_backend(pg_backend_pid());
+    SELECT pg_terminate_backend(pg_backend_pid(), 180000);
 }
 
 
