@@ -719,7 +719,7 @@ PostgreSQL documentation
    is also unwise to send <literal>SIGKILL</literal> to a server
    process &mdash; the main <command>postgres</command> process will
    interpret this as a crash and will force all the sibling processes
-   to quit as part of its standard crash-recovery procedure.
+   to quit as part of its standard crash recovery procedure.
   </para>
  </refsect1>
 

@@ -194,7 +194,7 @@ PostgreSQL documentation
    rolled back and clients are forcibly disconnected, then the
    server is shut down.  <quote>Immediate</quote> mode will abort
    all server processes immediately, without a clean shutdown.  This choice
-   will lead to a crash-recovery cycle during the next server start.
+   will lead to a crash recovery cycle during the next server start.
   </para>
 
   <para>

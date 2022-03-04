@@ -6598,7 +6598,7 @@ RelationCacheInitFilePostInvalidate(void)
  * Remove the init files during postmaster startup.
  *
  * We used to keep the init files across restarts, but that is unsafe in PITR
- * scenarios, and even in simple crash-recovery cases there are windows for
+ * scenarios, and even in simple crash recovery cases there are windows for
  * the init files to become out-of-sync with the database.  So now we just
  * remove them during startup and expect the first backend launch to rebuild
  * them.  Of course, this has to happen in each database of the cluster.
