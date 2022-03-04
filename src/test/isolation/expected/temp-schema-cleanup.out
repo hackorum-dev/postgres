@@ -87,7 +87,7 @@ exec
 s1: NOTICE:  function "uses_a_temp_type" will be effectively temporary
 DETAIL:  It depends on temporary type just_give_me_a_type.
 step s1_exit: 
-    SELECT pg_terminate_backend(pg_backend_pid());
+    SELECT pg_terminate_backend(pg_backend_pid(), 180000);
 
 FATAL:  terminating connection due to administrator command
 server closed the connection unexpectedly
