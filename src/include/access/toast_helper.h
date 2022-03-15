@@ -106,8 +106,10 @@ extern int	toast_tuple_find_biggest_attribute(ToastTupleContext *ttc,
 											   bool for_compression,
 											   bool check_main);
 extern void toast_tuple_try_compression(ToastTupleContext *ttc, int attribute);
-extern void toast_tuple_externalize(ToastTupleContext *ttc, int attribute,
-									int options);
+extern void toast_tuple_externalize_wrapper(ToastTupleContext *ttc,
+											int attribute, int options,
+											Datum old_toast_value,
+											ToastAttrInfo *old_toast_attr);
 extern void toast_tuple_cleanup(ToastTupleContext *ttc);
 
 extern void toast_delete_external(Relation rel, Datum *values, bool *isnull,

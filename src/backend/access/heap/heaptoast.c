@@ -106,8 +106,10 @@ heap_toast_insert_or_update(Relation rel, HeapTuple newtup, HeapTuple oldtup,
 	bool		toast_isnull[MaxHeapAttributeNumber];
 	bool		toast_oldisnull[MaxHeapAttributeNumber];
 	Datum		toast_values[MaxHeapAttributeNumber];
+	Datum		toast_values_copy[MaxHeapAttributeNumber];
 	Datum		toast_oldvalues[MaxHeapAttributeNumber];
 	ToastAttrInfo toast_attr[MaxHeapAttributeNumber];
+	ToastAttrInfo toast_attr_copy[MaxHeapAttributeNumber];
 	ToastTupleContext ttc;
 
 	/*
@@ -177,6 +179,15 @@ heap_toast_insert_or_update(Relation rel, HeapTuple newtup, HeapTuple oldtup,
 	maxDataLen = RelationGetToastTupleTarget(rel, TOAST_TUPLE_TARGET) - hoff;
 
 	/*
+	 * Preserve references to the original uncompressed data before attempting
+	 * the compression.  So that during externalize if we decide not to store
+	 * the compressed data then we have the original data with us.  For more
+	 * details refer to comments atop toast_tuple_opt_externalize.
+	 */
+	memcpy(toast_attr_copy, toast_attr, sizeof(toast_attr));
+	memcpy(toast_values_copy, toast_values, sizeof(toast_values));
+
+	/*
 	 * Look for attributes with attstorage EXTENDED to compress.  Also find
 	 * large attributes with attstorage EXTENDED or EXTERNAL, and store them
 	 * external.
@@ -214,7 +225,9 @@ heap_toast_insert_or_update(Relation rel, HeapTuple newtup, HeapTuple oldtup,
 		 */
 		if (toast_attr[biggest_attno].tai_size > maxDataLen &&
 			rel->rd_rel->reltoastrelid != InvalidOid)
-			toast_tuple_externalize(&ttc, biggest_attno, options);
+			toast_tuple_externalize_wrapper(&ttc, biggest_attno, options,
+										toast_values_copy[biggest_attno],
+										&toast_attr_copy[biggest_attno]);
 	}
 
 	/*
@@ -231,7 +244,9 @@ heap_toast_insert_or_update(Relation rel, HeapTuple newtup, HeapTuple oldtup,
 		biggest_attno = toast_tuple_find_biggest_attribute(&ttc, false, false);
 		if (biggest_attno < 0)
 			break;
-		toast_tuple_externalize(&ttc, biggest_attno, options);
+		toast_tuple_externalize_wrapper(&ttc, biggest_attno, options,
+									toast_values_copy[biggest_attno],
+									&toast_attr_copy[biggest_attno]);
 	}
 
 	/*
@@ -267,7 +282,9 @@ heap_toast_insert_or_update(Relation rel, HeapTuple newtup, HeapTuple oldtup,
 		if (biggest_attno < 0)
 			break;
 
-		toast_tuple_externalize(&ttc, biggest_attno, options);
+		toast_tuple_externalize_wrapper(&ttc, biggest_attno, options,
+									toast_values_copy[biggest_attno],
+									&toast_attr_copy[biggest_attno]);
 	}
 
 	/*

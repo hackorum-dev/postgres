@@ -15,6 +15,7 @@
 #include "postgres.h"
 
 #include "access/detoast.h"
+#include "access/heaptoast.h"
 #include "access/table.h"
 #include "access/toast_helper.h"
 #include "access/toast_internals.h"
@@ -235,8 +236,6 @@ toast_tuple_try_compression(ToastTupleContext *ttc, int attribute)
 	if (DatumGetPointer(new_value) != NULL)
 	{
 		/* successful compression */
-		if ((attr->tai_colflags & TOASTCOL_NEEDS_FREE) != 0)
-			pfree(DatumGetPointer(*value));
 		*value = new_value;
 		attr->tai_colflags |= TOASTCOL_NEEDS_FREE;
 		attr->tai_size = VARSIZE(DatumGetPointer(*value));
@@ -252,7 +251,7 @@ toast_tuple_try_compression(ToastTupleContext *ttc, int attribute)
 /*
  * Move an attribute to external storage.
  */
-void
+static void
 toast_tuple_externalize(ToastTupleContext *ttc, int attribute, int options)
 {
 	Datum	   *value = &ttc->ttc_values[attribute];
@@ -266,6 +265,62 @@ toast_tuple_externalize(ToastTupleContext *ttc, int attribute, int options)
 		pfree(DatumGetPointer(old_value));
 	attr->tai_colflags |= TOASTCOL_NEEDS_FREE;
 	ttc->ttc_flags |= (TOAST_NEEDS_CHANGE | TOAST_NEEDS_FREE);
+}
+
+/*
+ * Wrapper function for the external TOAST storage.
+ *
+ * TOAST the compressed value only if we are saving at least 1 chunk
+ * (2KB default) of disk storage else use the uncompressed one. In this way, we
+ * will save decompression costs everytime fetching that data without losing
+ * much on storage.
+ */
+void
+toast_tuple_externalize_wrapper(ToastTupleContext *ttc, int attribute, int options,
+							Datum orig_toast_value, ToastAttrInfo *orig_attr)
+{
+	Datum	   *value = &ttc->ttc_values[attribute];
+	ToastAttrInfo *attr = &ttc->ttc_attr[attribute];
+
+	/*
+	 * We are applying this optimization only if the data is compressed
+	 * recently, In the case, data is uncompressed or data was already
+	 * compressed even before TOAST-ing we can proceed as usual.
+	 */
+	if (*value == orig_toast_value)
+		toast_tuple_externalize(ttc, attribute, options);
+	else
+	{
+		/*
+		 * Here we decides whether to store compressed form or not by checking
+		 * if number of chunks is reduced. However we made an exception when
+		 * data size is small.
+		 * Experiments show that we are not gaining much by storing uncompressed
+		 * values where uncompressed form size < 2 * TOAST_MAX_CHUNK_SIZE, in
+		 * some cases we end up using significantly more disk space by storing
+		 * uncompressed data, to avoid this we are going with compressed data
+		 * for such cases.
+		 */
+		if (orig_attr->tai_size < 2 * TOAST_MAX_CHUNK_SIZE ||
+			(attr->tai_size / TOAST_MAX_CHUNK_SIZE <
+			 orig_attr->tai_size / TOAST_MAX_CHUNK_SIZE))
+		{
+			if ((orig_attr->tai_colflags & TOASTCOL_NEEDS_FREE) != 0)
+				pfree(DatumGetPointer(orig_toast_value));
+			toast_tuple_externalize(ttc, attribute, options);
+		}
+		else
+		{
+			/*
+			 * Using the uncompressed data instead, release memory for the
+			 * compressed data.
+			 */
+			pfree(DatumGetPointer(*value));
+			*value = orig_toast_value;
+			*attr = *orig_attr;
+			toast_tuple_externalize(ttc, attribute, options);
+		}
+	}
 }
 
 /*
