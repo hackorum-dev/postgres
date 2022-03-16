@@ -1216,3 +1216,12 @@ binary_coercible(PG_FUNCTION_ARGS)
 
 	PG_RETURN_BOOL(IsBinaryCoercible(srctype, targettype));
 }
+
+PG_FUNCTION_INFO_V1(chaos_sigsegv);
+Datum
+chaos_sigsegv(PG_FUNCTION_ARGS)
+{
+    char        *p = NULL;
+    *p = 0;
+    PG_RETURN_VOID();
+}

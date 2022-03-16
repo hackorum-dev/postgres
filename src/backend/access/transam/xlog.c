@@ -5723,12 +5723,14 @@ PerformRecoveryXLogAction(void)
 		 * checkpoint later anyway, just for safety.
 		 */
 		CreateEndOfRecoveryRecord();
+        ereport(WARNING, errmsg("TEST: fast promoted"));
 	}
 	else
 	{
 		RequestCheckpoint(CHECKPOINT_END_OF_RECOVERY |
 						  CHECKPOINT_IMMEDIATE |
 						  CHECKPOINT_WAIT);
+        ereport(WARNING, errmsg("TEST: normal promoted"));
 	}
 
 	return promoted;
@@ -6991,6 +6993,12 @@ CreateRestartPoint(int flags)
 	 */
 	PriorRedoPtr = ControlFile->checkPointCopy.redo;
 
+    /*
+     * Sleep to increase chance state become DB_IN_PRODUCTION when promoted.
+     */
+    ereport(WARNING, errmsg("TEST: restartpoint sleep before check state"));
+    pg_usleep(5000000L);
+    ereport(WARNING, errmsg("TEST: restartpoint state=%d", ControlFile->state));
 	/*
 	 * Update pg_control, using current time.  Check that it still shows
 	 * DB_IN_ARCHIVE_RECOVERY state and an older checkpoint, else do nothing;
@@ -7076,7 +7084,7 @@ CreateRestartPoint(int flags)
 	 */
 	if (!RecoveryInProgress())
 		replayTLI = XLogCtl->InsertTimeLineID;
-
+ 
 	RemoveOldXlogFiles(_logSegNo, RedoRecPtr, endptr, replayTLI);
 
 	/*
