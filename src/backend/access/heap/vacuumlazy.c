@@ -1308,19 +1308,18 @@ lazy_scan_heap(LVRelState *vacrel, int nworkers)
 		/*
 		 * If the all-visible page is all-frozen but not marked as such yet,
 		 * mark it as all-frozen.  Note that all_frozen is only valid if
-		 * all_visible is true, so we must check both.
+		 * all_visible is true, so we must check both.  We must also set both
+		 * on the page.
 		 */
 		else if (all_visible_according_to_vm && prunestate.all_visible &&
 				 prunestate.all_frozen &&
 				 !VM_ALL_FROZEN(vacrel->rel, blkno, &vmbuffer))
 		{
-			/*
-			 * We can pass InvalidTransactionId as the cutoff XID here,
-			 * because setting the all-frozen bit doesn't cause recovery
-			 * conflicts.
-			 */
+			PageSetAllVisible(page);
+			MarkBufferDirty(buf);
 			visibilitymap_set(vacrel->rel, blkno, buf, InvalidXLogRecPtr,
-							  vmbuffer, InvalidTransactionId,
+							  vmbuffer, prunestate.visibility_cutoff_xid,
+							  VISIBILITYMAP_ALL_VISIBLE |
 							  VISIBILITYMAP_ALL_FROZEN);
 		}
 
@@ -2584,7 +2583,7 @@ lazy_vacuum_heap_page(LVRelState *vacrel, BlockNumber blkno, Buffer buffer,
 		if ((vm_status & VISIBILITYMAP_ALL_VISIBLE) == 0)
 			flags |= VISIBILITYMAP_ALL_VISIBLE;
 		if ((vm_status & VISIBILITYMAP_ALL_FROZEN) == 0 && all_frozen)
-			flags |= VISIBILITYMAP_ALL_FROZEN;
+			flags |= (VISIBILITYMAP_ALL_VISIBLE | VISIBILITYMAP_ALL_FROZEN);
 
 		Assert(BufferIsValid(*vmbuffer));
 		if (flags != 0)
