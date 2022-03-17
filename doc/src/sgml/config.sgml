@@ -4247,6 +4247,28 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-async-standbys-wait-for-sync_replication" xreflabel="async_standbys_wait_for_sync_replication">
+      <term><varname>async_standbys_wait_for_sync_replication</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>async_standbys_wait_for_sync_replication</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        When set, asynchronous standbys will wait until synchronous standbys
+        (that are either in quorum or priority based) receive WAL, flush and
+        acknowledge primary with the flush LSN. This behvaiour is particularly
+        important in the event of failover as it avoids manual steps required
+        on the asynchronous standbys that might go ahead of the synchronous
+        standbys.
+       </para>
+       <para>
+        This parameter can only be set in the <filename>postgresql.conf</filename>
+        file or on the server command line.
+       </para>
+      </listitem>
+     </varlistentry>
+
      </variablelist>
     </sect2>
 

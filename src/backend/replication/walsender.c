@@ -125,6 +125,8 @@ int			wal_sender_timeout = 60 * 1000; /* maximum time to send one WAL
 											 * data message */
 bool		log_replication_commands = false;
 
+bool		async_standbys_wait_for_sync_replication = true;
+
 /*
  * State for WalSndWakeupRequest
  */
@@ -258,6 +260,8 @@ static bool TransactionIdInRecentPast(TransactionId xid, uint32 epoch);
 static void WalSndSegmentOpen(XLogReaderState *state, XLogSegNo nextSegNo,
 							  TimeLineID *tli_p);
 
+/* called by wal sender serving asynchronous standby */
+static void AsynWalSndWaitForSyncRepLSN(XLogRecPtr lsn);
 
 /* Initialize walsender process before entering the main command loop */
 void
@@ -2771,6 +2775,8 @@ XLogSendPhysical(void)
 		SendRqstPtr = GetFlushRecPtr(NULL);
 	}
 
+	AsynWalSndWaitForSyncRepLSN(SendRqstPtr);
+
 	/*
 	 * Record the current system time as an approximation of the time at which
 	 * this WAL location was written for the purposes of lag tracking.
@@ -2995,6 +3001,22 @@ XLogSendLogical(void)
 
 	if (record != NULL)
 	{
+		/*
+		 * At this point, we do not know whether the current LSN (ReadRecPtr)
+		 * is required by any of the logical decoding output plugins which is
+		 * only known at the plugin level. If we were to decide whether to wait
+		 * or not for the synchronous standbys flush LSN at the plugin level,
+		 * we might have to pass extra information to it which doesn't sound an
+		 * elegant way.
+		 *
+		 * Another way the output plugins can wait there before sending the WAL
+		 * is by reading the flush LSN from the logical replication slots.
+		 *
+		 * Waiting here i.e. before even the logical decoding kicks in, makes
+		 * the code clean.
+		 */
+		AsynWalSndWaitForSyncRepLSN(logical_decoding_ctx->reader->ReadRecPtr);
+
 		/*
 		 * Note the lack of any call to LagTrackerWrite() which is handled by
 		 * WalSndUpdateProgress which is called by output plugin through
@@ -3788,4 +3810,139 @@ LagTrackerRead(int head, XLogRecPtr lsn, TimestampTz now)
 	/* Return the elapsed time since local flush time in microseconds. */
 	Assert(time != 0);
 	return now - time;
+}
+
+/*
+ * This function is similar to SyncRepWaitForLSN() in syncrep.c. Only
+ * difference is in the way it waits with WalSndWait and exits when
+ * got_STOPPING or got_SIGUSR2 is set.
+ */
+void
+AsynWalSndWaitForSyncRepLSN(XLogRecPtr lsn)
+{
+	int			mode;
+
+	/*
+	 * Fast exit in case we are told to not wait.
+	 */
+	if (!async_standbys_wait_for_sync_replication)
+		return;
+
+	/*
+	 * Fast exit in case the wal sender is serving synchronous standby at the
+	 * moment as it has no business here.
+	 */
+	if (MyWalSnd->sync_standby_priority > 0)
+		return;
+
+	/*
+	 * Fast exit if user has not requested sync replication, or there are no
+	 * sync replication standby names defined.
+	 *
+	 * Since this routine gets called every commit time, it's important to
+	 * exit quickly if sync replication is not requested. So we check
+	 * WalSndCtl->sync_standbys_defined flag without the lock and exit
+	 * immediately if it's false. If it's true, we need to check it again
+	 * later while holding the lock, to check the flag and operate the sync
+	 * rep queue atomically. This is necessary to avoid the race condition
+	 * described in SyncRepUpdateSyncStandbysDefined(). On the other hand, if
+	 * it's false, the lock is not necessary because we don't touch the queue.
+	 */
+	if (!SyncRepRequested() ||
+		!((volatile WalSndCtlData *) WalSndCtl)->sync_standbys_defined)
+		return;
+
+	mode = SYNC_REP_WAIT_FLUSH;
+
+	Assert(SHMQueueIsDetached(&(MyProc->syncRepLinks)));
+	Assert(WalSndCtl != NULL);
+
+	LWLockAcquire(SyncRepLock, LW_EXCLUSIVE);
+	Assert(MyProc->syncRepState == SYNC_REP_NOT_WAITING);
+
+	/*
+	 * We don't wait for sync rep if WalSndCtl->sync_standbys_defined is not
+	 * set.  See SyncRepUpdateSyncStandbysDefined.
+	 *
+	 * Also check that the standby hasn't already replied. Unlikely race
+	 * condition but we'll be fetching that cache line anyway so it's likely
+	 * to be a low cost check.
+	 */
+	if (!WalSndCtl->sync_standbys_defined ||
+		lsn <= WalSndCtl->lsn[mode])
+	{
+		LWLockRelease(SyncRepLock);
+		return;
+	}
+
+	/*
+	 * Set our waitLSN so WALSender will know when to wake us, and add
+	 * ourselves to the queue.
+	 */
+	MyProc->waitLSN = lsn;
+	MyProc->syncRepState = SYNC_REP_WAITING;
+	SyncRepQueueInsert(mode);
+	Assert(SyncRepQueueIsOrderedByLSN(mode));
+	LWLockRelease(SyncRepLock);
+
+	/*
+	 * Wait for specified LSN to be confirmed.
+	 *
+	 * Each proc has its own wait latch, so we perform a normal latch
+	 * check/wait loop here.
+	 */
+	for (;;)
+	{
+		/* Must reset the latch before testing state. */
+		ResetLatch(MyLatch);
+
+		CHECK_FOR_INTERRUPTS();
+
+		/* Process any requests or signals received recently */
+		if (ConfigReloadPending)
+		{
+			ConfigReloadPending = false;
+			ProcessConfigFile(PGC_SIGHUP);
+			SyncRepInitConfig();
+		}
+
+		if (!async_standbys_wait_for_sync_replication)
+			break;
+
+		if (MyWalSnd->sync_standby_priority > 0)
+			break;
+
+		/*
+		 * Acquiring the lock is not needed, the latch ensures proper
+		 * barriers. If it looks like we're done, we must really be done,
+		 * because once walsender changes the state to SYNC_REP_WAIT_COMPLETE,
+		 * it will never update it again, so we can't be seeing a stale value
+		 * in that case.
+		 */
+		if (MyProc->syncRepState == SYNC_REP_WAIT_COMPLETE)
+			break;
+
+		/* Sleep until something happens or we time out */
+		WalSndWait(WL_SOCKET_WRITEABLE | WL_SOCKET_READABLE, -1,
+				   WAIT_EVENT_SYNC_REP);
+
+		if (got_STOPPING || got_SIGUSR2)
+		{
+			SyncRepCancelWait();
+			break;
+		}
+	}
+
+	/*
+	 * WalSender has checked our LSN and has removed us from queue. Clean up
+	 * state and leave.  It's OK to reset these shared memory fields without
+	 * holding SyncRepLock, because any walsenders will ignore us anyway when
+	 * we're not on the queue.  We need a read barrier to make sure we see the
+	 * changes to the queue link (this might be unnecessary without
+	 * assertions, but better safe than sorry).
+	 */
+	pg_read_barrier();
+	Assert(SHMQueueIsDetached(&(MyProc->syncRepLinks)));
+	MyProc->syncRepState = SYNC_REP_NOT_WAITING;
+	MyProc->waitLSN = 0;
 }

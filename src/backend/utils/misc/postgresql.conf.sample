@@ -308,6 +308,9 @@
 #wal_sender_timeout = 60s	# in milliseconds; 0 disables
 #track_commit_timestamp = off	# collect timestamp of transaction commit
 				# (change requires restart)
+#async_standbys_wait_for_sync_replication = on # Specifies whether asynchronous
+				# standbys should wait until synchronous standbys receive and
+				# flush WAL
 
 # - Primary Server -
 

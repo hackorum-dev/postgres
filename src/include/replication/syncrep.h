@@ -90,6 +90,13 @@ extern void SyncRepCleanupAtProcExit(void);
 /* called by wal sender */
 extern void SyncRepInitConfig(void);
 extern void SyncRepReleaseWaiters(void);
+extern void SyncRepQueueInsert(int mode);
+extern void SyncRepCancelWait(void);
+
+#ifdef USE_ASSERT_CHECKING
+extern bool SyncRepQueueIsOrderedByLSN(int mode);
+#endif
+
 
 /* called by wal sender and user backend */
 extern int	SyncRepGetCandidateStandbys(SyncRepStandbyData **standbys);

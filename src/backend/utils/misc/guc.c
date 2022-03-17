@@ -1389,6 +1389,15 @@ static struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 	{
+		{"async_standbys_wait_for_sync_replication", PGC_SIGHUP, REPLICATION_SENDING,
+			gettext_noop("Sets whether asynchronous standbys should wait until synchronous standbys receive and flush WAL."),
+			NULL
+		},
+		&async_standbys_wait_for_sync_replication,
+		true,
+		NULL, NULL, NULL
+	},
+	{
 		{"debug_assertions", PGC_INTERNAL, PRESET_OPTIONS,
 			gettext_noop("Shows whether the running server has assertion checks enabled."),
 			NULL,

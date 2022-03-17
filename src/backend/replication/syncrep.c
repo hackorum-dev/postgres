@@ -97,8 +97,6 @@ static bool announce_next_takeover = true;
 SyncRepConfigData *SyncRepConfig = NULL;
 static int	SyncRepWaitMode = SYNC_REP_NO_WAIT;
 
-static void SyncRepQueueInsert(int mode);
-static void SyncRepCancelWait(void);
 static int	SyncRepWakeQueue(bool all, int mode);
 
 static bool SyncRepGetSyncRecPtr(XLogRecPtr *writePtr,
@@ -120,9 +118,6 @@ static int	SyncRepGetStandbyPriority(void);
 static int	standby_priority_comparator(const void *a, const void *b);
 static int	cmp_lsn(const void *a, const void *b);
 
-#ifdef USE_ASSERT_CHECKING
-static bool SyncRepQueueIsOrderedByLSN(int mode);
-#endif
 
 /*
  * ===========================================================
@@ -335,7 +330,7 @@ SyncRepWaitForLSN(XLogRecPtr lsn, bool commit)
  * Usually we will go at tail of queue, though it's possible that we arrive
  * here out of order, so start at tail and work back to insertion point.
  */
-static void
+void
 SyncRepQueueInsert(int mode)
 {
 	PGPROC	   *proc;
@@ -368,7 +363,7 @@ SyncRepQueueInsert(int mode)
 /*
  * Acquire SyncRepLock and cancel any wait currently in progress.
  */
-static void
+void
 SyncRepCancelWait(void)
 {
 	LWLockAcquire(SyncRepLock, LW_EXCLUSIVE);
@@ -979,7 +974,7 @@ SyncRepUpdateSyncStandbysDefined(void)
 }
 
 #ifdef USE_ASSERT_CHECKING
-static bool
+bool
 SyncRepQueueIsOrderedByLSN(int mode)
 {
 	PGPROC	   *proc = NULL;
