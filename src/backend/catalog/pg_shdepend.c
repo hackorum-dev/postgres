@@ -810,7 +810,7 @@ checkSharedDependencies(Oid classId, Oid objectId,
 	pfree(objects);
 	list_free_deep(remDeps);
 
-	if (descs.len == 0)
+	if (isEmptyStringInfo(&descs))
 	{
 		pfree(descs.data);
 		pfree(alldescs.data);

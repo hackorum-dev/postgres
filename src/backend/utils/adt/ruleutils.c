@@ -607,7 +607,7 @@ pg_get_ruledef_worker(Oid ruleoid, int prettyFlags)
 	if (SPI_finish() != SPI_OK_FINISH)
 		elog(ERROR, "SPI_finish failed");
 
-	if (buf.len == 0)
+	if (isEmptyStringInfo(&buf))
 		return NULL;
 
 	return buf.data;
@@ -803,7 +803,7 @@ pg_get_viewdef_worker(Oid viewoid, int prettyFlags, int wrapColumn)
 	if (SPI_finish() != SPI_OK_FINISH)
 		elog(ERROR, "SPI_finish failed");
 
-	if (buf.len == 0)
+	if (isEmptyStringInfo(&buf))
 		return NULL;
 
 	return buf.data;

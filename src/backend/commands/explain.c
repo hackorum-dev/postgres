@@ -4174,7 +4174,7 @@ ExplainOpenWorker(int n, ExplainState *es)
 	 */
 	if (es->format == EXPLAIN_FORMAT_TEXT)
 	{
-		if (es->str->len == 0)
+		if (isEmptyStringInfo(es->str))
 		{
 			ExplainIndentText(es);
 			appendStringInfo(es->str, "Worker %d:  ", n);
@@ -4870,7 +4870,7 @@ static void
 ExplainIndentText(ExplainState *es)
 {
 	Assert(es->format == EXPLAIN_FORMAT_TEXT);
-	if (es->str->len == 0 || es->str->data[es->str->len - 1] == '\n')
+	if (isEmptyStringInfo(es->str) || es->str->data[es->str->len - 1] == '\n')
 		appendStringInfoSpaces(es->str, es->indent * 2);
 }
 

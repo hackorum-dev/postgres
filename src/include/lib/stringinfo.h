@@ -158,4 +158,14 @@ extern void appendBinaryStringInfoNT(StringInfo str,
  */
 extern void enlargeStringInfo(StringInfo str, int needed);
 
+/*------------------------
+ * isEmptyStringInfo
+ * Returns true if the given StringInfo does not have any data in it. False
+ * otherwise.
+ */
+static inline isEmptyStringInfo(StringInfo str)
+{
+	return str->len == 0;
+}
+
 #endif							/* STRINGINFO_H */

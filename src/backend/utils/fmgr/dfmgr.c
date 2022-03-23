@@ -382,7 +382,7 @@ incompatible_module_error(const char *libname,
 	}
 	if (module_magic_data->float8byval != magic_data.float8byval)
 	{
-		if (details.len)
+		if (!isEmptyStringInfo(&details))
 			appendStringInfoChar(&details, '\n');
 		appendStringInfo(&details,
 						 _("Server has FLOAT8PASSBYVAL = %s, library has %s."),
@@ -390,7 +390,7 @@ incompatible_module_error(const char *libname,
 						 module_magic_data->float8byval ? "true" : "false");
 	}
 
-	if (details.len == 0)
+	if (isEmptyStringInfo(&details))
 		appendStringInfoString(&details,
 							   _("Magic block has unexpected length or padding difference."));
 

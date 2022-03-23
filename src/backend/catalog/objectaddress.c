@@ -4066,7 +4066,7 @@ getObjectDescription(const ObjectAddress *object, bool missing_ok)
 	}
 
 	/* an empty buffer is equivalent to no object found */
-	if (buffer.len == 0)
+	if (isEmptyStringInfo(&buffer))
 		return NULL;
 
 	return buffer.data;
@@ -5938,7 +5938,7 @@ getObjectIdentityParts(const ObjectAddress *object,
 	else
 	{
 		/* an empty buffer is equivalent to no object found */
-		if (buffer.len == 0)
+		if (isEmptyStringInfo(&buffer))
 		{
 			Assert((objname == NULL || *objname == NIL) &&
 				   (objargs == NULL || *objargs == NIL));

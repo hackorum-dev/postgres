@@ -156,7 +156,7 @@ static void
 SendCopyEnd(CopyToState cstate)
 {
 	/* Shouldn't have any unsent data */
-	Assert(cstate->fe_msgbuf->len == 0);
+	Assert(isEmptyStringInfo(&(cstate->fe_msgbuf));
 	/* Send Copy Done message */
 	pq_putemptymessage('c');
 }

@@ -776,7 +776,7 @@ NextCopyFromRawFields(CopyFromState cstate, char ***fields, int *nfields)
 	 * characters, we act as though it was newline followed by EOF, ie,
 	 * process the line and then exit loop on next iteration.
 	 */
-	if (done && cstate->line_buf.len == 0)
+	if (done && isEmptyStringInfo(&(cstate->line_buf))
 		return false;
 
 	/* Parse the line into de-escaped field values */
