@@ -736,7 +736,7 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 
 		case T_CopyStmt:
 			{
-				uint64		processed;
+				unsigned long long processed;
 
 				DoCopy(pstate, (CopyStmt *) parsetree,
 					   pstmt->stmt_location, pstmt->stmt_len,

@@ -63,7 +63,7 @@
 void
 DoCopy(ParseState *pstate, const CopyStmt *stmt,
 	   int stmt_location, int stmt_len,
-	   uint64 *processed)
+	   unsigned long long *processed)
 {
 	bool		is_from = stmt->is_from;
 	bool		pipe = (stmt->filename == NULL);

@@ -33,11 +33,11 @@
 #include "storage/checksum_impl.h"
 
 
-static int64 files_scanned = 0;
-static int64 files_written = 0;
-static int64 blocks_scanned = 0;
-static int64 blocks_written = 0;
-static int64 badblocks = 0;
+static long long files_scanned = 0;
+static long long files_written = 0;
+static long long blocks_scanned = 0;
+static long long blocks_written = 0;
+static long long badblocks = 0;
 static ControlFileData *ControlFile;
 
 static char *only_filenode = NULL;
@@ -69,8 +69,8 @@ static const char *progname;
 /*
  * Progress status information.
  */
-int64		total_size = 0;
-int64		current_size = 0;
+long long	total_size = 0;
+long long	current_size = 0;
 static pg_time_t last_progress_report = 0;
 
 static void
@@ -151,8 +151,8 @@ progress_report(bool finished)
 	percent = total_size ? (int) ((current_size) * 100 / total_size) : 0;
 
 	fprintf(stderr, _("%lld/%lld MB (%d%%) computed"),
-			(long long) (current_size / (1024 * 1024)),
-			(long long) (total_size / (1024 * 1024)),
+			current_size / (1024 * 1024),
+			total_size / (1024 * 1024),
 			percent);
 
 	/*
@@ -188,7 +188,7 @@ scan_file(const char *fn, int segmentno)
 	int			f;
 	BlockNumber blockno;
 	int			flags;
-	int64		blocks_written_in_file = 0;
+	long long	blocks_written_in_file = 0;
 
 	Assert(mode == PG_MODE_ENABLE ||
 		   mode == PG_MODE_CHECK);
@@ -646,11 +646,11 @@ main(int argc, char *argv[])
 			progress_report(true);
 
 		printf(_("Checksum operation completed\n"));
-		printf(_("Files scanned:   %lld\n"), (long long) files_scanned);
-		printf(_("Blocks scanned:  %lld\n"), (long long) blocks_scanned);
+		printf(_("Files scanned:   %lld\n"), files_scanned);
+		printf(_("Blocks scanned:  %lld\n"), blocks_scanned);
 		if (mode == PG_MODE_CHECK)
 		{
-			printf(_("Bad checksums:  %lld\n"), (long long) badblocks);
+			printf(_("Bad checksums:  %lld\n"), badblocks);
 			printf(_("Data checksum version: %u\n"), ControlFile->data_checksum_version);
 
 			if (badblocks > 0)
@@ -658,8 +658,8 @@ main(int argc, char *argv[])
 		}
 		else if (mode == PG_MODE_ENABLE)
 		{
-			printf(_("Files written:  %lld\n"), (long long) files_written);
-			printf(_("Blocks written: %lld\n"), (long long) blocks_written);
+			printf(_("Files written:  %lld\n"), files_written);
+			printf(_("Blocks written: %lld\n"), blocks_written);
 		}
 	}
 

@@ -80,7 +80,7 @@ typedef struct CopyMultiInsertBuffer
 	ResultRelInfo *resultRelInfo;	/* ResultRelInfo for 'relid' */
 	BulkInsertState bistate;	/* BulkInsertState for this rel */
 	int			nused;			/* number of 'slots' containing tuples */
-	uint64		linenos[MAX_BUFFERED_TUPLES];	/* Line # of tuple in copy
+	unsigned long long linenos[MAX_BUFFERED_TUPLES];	/* Line # of tuple in copy
 												 * stream */
 } CopyMultiInsertBuffer;
 
@@ -122,12 +122,12 @@ CopyFromErrorCallback(void *arg)
 		if (cstate->cur_attname)
 			errcontext("COPY %s, line %llu, column %s",
 					   cstate->cur_relname,
-					   (unsigned long long) cstate->cur_lineno,
+					   cstate->cur_lineno,
 					   cstate->cur_attname);
 		else
 			errcontext("COPY %s, line %llu",
 					   cstate->cur_relname,
-					   (unsigned long long) cstate->cur_lineno);
+					   cstate->cur_lineno);
 	}
 	else
 	{
@@ -139,7 +139,7 @@ CopyFromErrorCallback(void *arg)
 			attval = limit_printout_length(cstate->cur_attval);
 			errcontext("COPY %s, line %llu, column %s: \"%s\"",
 					   cstate->cur_relname,
-					   (unsigned long long) cstate->cur_lineno,
+					   cstate->cur_lineno,
 					   cstate->cur_attname,
 					   attval);
 			pfree(attval);
@@ -149,7 +149,7 @@ CopyFromErrorCallback(void *arg)
 			/* error is relevant to a particular column, value is NULL */
 			errcontext("COPY %s, line %llu, column %s: null input",
 					   cstate->cur_relname,
-					   (unsigned long long) cstate->cur_lineno,
+					   cstate->cur_lineno,
 					   cstate->cur_attname);
 		}
 		else
@@ -166,14 +166,14 @@ CopyFromErrorCallback(void *arg)
 				lineval = limit_printout_length(cstate->line_buf.data);
 				errcontext("COPY %s, line %llu: \"%s\"",
 						   cstate->cur_relname,
-						   (unsigned long long) cstate->cur_lineno, lineval);
+						   cstate->cur_lineno, lineval);
 				pfree(lineval);
 			}
 			else
 			{
 				errcontext("COPY %s, line %llu",
 						   cstate->cur_relname,
-						   (unsigned long long) cstate->cur_lineno);
+						   cstate->cur_lineno);
 			}
 		}
 	}
@@ -303,7 +303,7 @@ CopyMultiInsertBufferFlush(CopyMultiInsertInfo *miinfo,
 {
 	MemoryContext oldcontext;
 	int			i;
-	uint64		save_cur_lineno;
+	unsigned long long save_cur_lineno;
 	CopyFromState cstate = miinfo->cstate;
 	EState	   *estate = miinfo->estate;
 	CommandId	mycid = miinfo->mycid;
@@ -503,7 +503,7 @@ CopyMultiInsertInfoNextFreeSlot(CopyMultiInsertInfo *miinfo,
  */
 static inline void
 CopyMultiInsertInfoStore(CopyMultiInsertInfo *miinfo, ResultRelInfo *rri,
-						 TupleTableSlot *slot, int tuplen, uint64 lineno)
+						 TupleTableSlot *slot, int tuplen, unsigned long long lineno)
 {
 	CopyMultiInsertBuffer *buffer = rri->ri_CopyMultiInsertBuffer;
 
@@ -524,7 +524,7 @@ CopyMultiInsertInfoStore(CopyMultiInsertInfo *miinfo, ResultRelInfo *rri,
 /*
  * Copy FROM file to relation.
  */
-uint64
+unsigned long long
 CopyFrom(CopyFromState cstate)
 {
 	ResultRelInfo *resultRelInfo;

@@ -58,7 +58,7 @@ typedef int (*copy_data_source_cb) (void *outbuf, int minread, int maxread);
 
 extern void DoCopy(ParseState *state, const CopyStmt *stmt,
 				   int stmt_location, int stmt_len,
-				   uint64 *processed);
+				   unsigned long long *processed);
 
 extern void ProcessCopyOptions(ParseState *pstate, CopyFormatOptions *ops_out, bool is_from, List *options);
 extern CopyFromState BeginCopyFrom(ParseState *pstate, Relation rel, Node *whereClause,
@@ -71,7 +71,7 @@ extern bool NextCopyFromRawFields(CopyFromState cstate,
 								  char ***fields, int *nfields);
 extern void CopyFromErrorCallback(void *arg);
 
-extern uint64 CopyFrom(CopyFromState cstate);
+extern unsigned long long CopyFrom(CopyFromState cstate);
 
 extern DestReceiver *CreateCopyDestReceiver(void);
 
@@ -82,7 +82,7 @@ extern CopyToState BeginCopyTo(ParseState *pstate, Relation rel, RawStmt *query,
 							   Oid queryRelId, const char *filename, bool is_program,
 							   List *attnamelist, List *options);
 extern void EndCopyTo(CopyToState cstate);
-extern uint64 DoCopyTo(CopyToState cstate);
+extern unsigned long long DoCopyTo(CopyToState cstate);
 extern List *CopyGetAttnums(TupleDesc tupDesc, Relation rel,
 							List *attnamelist);
 

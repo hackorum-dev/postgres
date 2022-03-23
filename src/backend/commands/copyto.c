@@ -767,7 +767,7 @@ EndCopyTo(CopyToState cstate)
 /*
  * Copy from relation or query TO file.
  */
-uint64
+unsigned long long
 DoCopyTo(CopyToState cstate)
 {
 	bool		pipe = (cstate->filename == NULL);
