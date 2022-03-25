@@ -272,6 +272,32 @@ CREATE OR REPLACE FUNCTION pg_relation_size(regclass)
  PARALLEL SAFE STRICT COST 1
 RETURN pg_relation_size($1, 'main');
 
+CREATE OR REPLACE FUNCTION pg_partition_relation_size(regclass, text default 'main')
+RETURNS bigint
+LANGUAGE sql
+PARALLEL SAFE STRICT COST 1
+BEGIN ATOMIC
+    SELECT
+        sum(pg_relation_size(i.inhrelid, $2))
+    FROM
+        pg_class c JOIN pg_inherits i ON c.oid = i.inhparent
+    WHERE
+        oid = $1;
+END;
+
+CREATE OR REPLACE FUNCTION pg_partition_table_size(regclass)
+RETURNS bigint
+LANGUAGE sql
+PARALLEL SAFE STRICT COST 1
+BEGIN ATOMIC
+    SELECT
+        sum(pg_table_size(i.inhrelid))
+    FROM
+        pg_class c JOIN pg_inherits i ON c.oid = i.inhparent
+    WHERE
+        oid = $1;
+END;
+
 CREATE OR REPLACE FUNCTION obj_description(oid, name)
  RETURNS text
  LANGUAGE sql
