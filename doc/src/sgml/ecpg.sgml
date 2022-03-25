@@ -220,10 +220,18 @@ EXEC SQL CONNECT TO <replaceable>target</replaceable> <optional>AS <replaceable>
   <para>
    The <replaceable>connection-name</replaceable> is used to handle
    multiple connections in one program.  It can be omitted if a
-   program uses only one connection.  The most recently opened
-   connection becomes the current connection, which is used by default
-   when an SQL statement is to be executed (see later in this
-   chapter).
+   program uses only one connection.
+  </para>
+
+  <para>
+   The most recently opened connection becomes the current connection.
+   If your application uses multiple threads, each thread has its own
+   current connection, and it is the most recently opened connection
+   in each thread.  Threads that have not yet opened the current
+   connection treat the most recently opened connection in the
+   application as the current connection.  The current connection is
+   used by default when an SQL statement is to be executed (see later
+   in this chapter).
   </para>
 
   <para>
@@ -274,9 +282,8 @@ EXEC SQL CONNECT TO :target USER :user USING :passwd;
 
   <para>
    SQL statements in embedded SQL programs are by default executed on
-   the current connection, that is, the most recently opened one.  If
-   an application needs to manage multiple connections, then there are
-   three ways to handle this.
+   the current connection.  If an application needs to manage multiple
+   connections, then there are three ways to handle this.
   </para>
 
   <para>
@@ -428,9 +435,23 @@ EXEC SQL DISCONNECT <optional><replaceable>connection</replaceable></optional>;
   </para>
 
   <para>
+   Disconnecting changes the current connection to another opened
+   connection if the closed connection was the current connection.
+  </para>
+
+  <para>
    It is good style that an application always explicitly disconnect
    from every connection it opened.
   </para>
+
+  <note>
+    <para>
+     Connections are shared among all threads.  Be careful not to
+     disconnect a connection that is to be used in another thread.
+     In particular, the behavior is undefined if a connection treated as
+     the current connection in one thread is closed by another thread.
+    </para>
+  </note>
   </sect2>
 
  </sect1>
