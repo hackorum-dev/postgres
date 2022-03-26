@@ -346,18 +346,6 @@ GetWalRcvFlushRecPtr(XLogRecPtr *latestChunkStart, TimeLineID *receiveTLI)
 }
 
 /*
- * Returns the last+1 byte position that walreceiver has written.
- * This returns a recently written value without taking a lock.
- */
-XLogRecPtr
-GetWalRcvWriteRecPtr(void)
-{
-	WalRcvData *walrcv = WalRcv;
-
-	return pg_atomic_read_u64(&walrcv->writtenUpto);
-}
-
-/*
  * Returns the replication apply delay in ms or -1
  * if the apply delay info is not available
  */
