@@ -23,6 +23,7 @@ typedef enum pg_compress_algorithm
 } pg_compress_algorithm;
 
 #define PG_COMPRESSION_OPTION_WORKERS		(1 << 0)
+#define PG_COMPRESSION_OPTION_LONG_DISTANCE	(1 << 1)
 
 typedef struct pg_compress_specification
 {
@@ -30,6 +31,7 @@ typedef struct pg_compress_specification
 	unsigned	options;		/* OR of PG_COMPRESSION_OPTION constants */
 	int			level;
 	int			workers;
+	int			long_distance;
 	char	   *parse_error;	/* NULL if parsing was OK, else message */
 } pg_compress_specification;
 
