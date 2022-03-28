@@ -1997,10 +1997,10 @@ insert into toasttest values(repeat('1234567890',10000));
 SELECT substr(f1, -1, 5) from toasttest;
  substr 
 --------
- 123
- 123
- 123
- 123
+ 12345
+ 12345
+ 12345
+ 12345
 (4 rows)
 
 -- If the length is less than zero, an ERROR is thrown.

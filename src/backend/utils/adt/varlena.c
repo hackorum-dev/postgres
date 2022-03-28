@@ -612,7 +612,7 @@ text_substring(Datum str, int32 start, int32 length, bool length_not_specified)
 					 errmsg("negative substring length not allowed")));
 			L1 = -1;			/* silence stupider compilers */
 		}
-		else if (pg_add_s32_overflow(S, length, &E))
+		else if (pg_add_s32_overflow(S1, length, &E))
 		{
 			/*
 			 * L could be large enough for S + L to overflow, in which case
@@ -676,7 +676,7 @@ text_substring(Datum str, int32 start, int32 length, bool length_not_specified)
 					 errmsg("negative substring length not allowed")));
 			E = slice_size = L1 = -1;	/* silence stupider compilers */
 		}
-		else if (pg_add_s32_overflow(S, length, &E))
+		else if (pg_add_s32_overflow(S1, length, &E))
 		{
 			/*
 			 * L could be large enough for S + L to overflow, in which case
