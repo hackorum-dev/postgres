@@ -38,28 +38,64 @@
 #define JSONB_MAX_ELEMS (Min(MaxAllocSize / sizeof(JsonbValue), JB_CMASK))
 #define JSONB_MAX_PAIRS (Min(MaxAllocSize / sizeof(JsonbPair), JB_CMASK))
 
-static void fillJsonbValue(JsonbContainer *container, int index,
+/* Conversion state used when parsing Jsonb from text, or for type coercion */
+struct JsonbParseState
+{
+	JsonbValue	contVal;
+	Size		size;
+	struct JsonbParseState *next;
+};
+
+struct JsonbIterator
+{
+	/* Container being iterated */
+	const JsonbContainer *container;
+	uint32		nElems;			/* Number of elements in children array (will
+								 * be nPairs for objects) */
+	bool		isScalar;		/* Pseudo-array scalar value? */
+	const JEntry *children;		/* JEntrys for child nodes */
+	/* Data proper.  This points to the beginning of the variable-length data */
+	char	   *dataProper;
+
+	/* Current item in buffer (up to nElems) */
+	int			curIndex;
+
+	/* Data offset corresponding to current item */
+	uint32		curDataOffset;
+
+	/*
+	 * If the container is an object, we want to return keys and values
+	 * alternately; so curDataOffset points to the current key, and
+	 * curValueOffset points to the current value.
+	 */
+	uint32		curValueOffset;
+
+	/* Private state */
+	JsonbIterState state;
+
+	struct JsonbIterator *parent;
+};
+
+static void fillJsonbValue(const JsonbContainer *container, int index,
 						   char *base_addr, uint32 offset,
 						   JsonbValue *result);
-static bool equalsJsonbScalarValue(JsonbValue *a, JsonbValue *b);
-static int	compareJsonbScalarValue(JsonbValue *a, JsonbValue *b);
-static Jsonb *convertToJsonb(JsonbValue *val);
-static void convertJsonbValue(StringInfo buffer, JEntry *header, JsonbValue *val, int level);
-static void convertJsonbArray(StringInfo buffer, JEntry *header, JsonbValue *val, int level);
-static void convertJsonbObject(StringInfo buffer, JEntry *header, JsonbValue *val, int level);
-static void convertJsonbScalar(StringInfo buffer, JEntry *header, JsonbValue *scalarVal);
+static bool equalsJsonbScalarValue(const JsonbValue *a, const JsonbValue *b);
+static int	compareJsonbScalarValue(const JsonbValue *a, const JsonbValue *b);
+static Jsonb *convertToJsonb(const JsonbValue *val);
+static void convertJsonbValue(StringInfo buffer, JEntry *header, const JsonbValue *val, int level);
+static void convertJsonbArray(StringInfo buffer, JEntry *header, const JsonbValue *val, int level);
+static void convertJsonbObject(StringInfo buffer, JEntry *header, const JsonbValue *val, int level);
+static void convertJsonbScalar(StringInfo buffer, JEntry *header, const JsonbValue *scalarVal);
 
-static int	reserveFromBuffer(StringInfo buffer, int len);
-static void appendToBuffer(StringInfo buffer, const char *data, int len);
 static void copyToBuffer(StringInfo buffer, int offset, const char *data, int len);
 static short padBufferToInt(StringInfo buffer);
 
 static JsonbIterator *iteratorFromContainer(JsonbContainer *container, JsonbIterator *parent);
 static JsonbIterator *freeAndGetParent(JsonbIterator *it);
 static JsonbParseState *pushState(JsonbParseState **pstate);
-static void appendKey(JsonbParseState *pstate, JsonbValue *scalarVal);
-static void appendValue(JsonbParseState *pstate, JsonbValue *scalarVal);
-static void appendElement(JsonbParseState *pstate, JsonbValue *scalarVal);
+static void appendKey(JsonbParseState *pstate, const JsonbValue *scalarVal);
+static void appendValue(JsonbParseState *pstate, const JsonbValue *scalarVal);
+static void appendElement(JsonbParseState *pstate, const JsonbValue *scalarVal);
 static int	lengthCompareJsonbStringValue(const void *a, const void *b);
 static int	lengthCompareJsonbString(const char *val1, int len1,
 									 const char *val2, int len2);
@@ -67,7 +103,9 @@ static int	lengthCompareJsonbPair(const void *a, const void *b, void *arg);
 static void uniqueifyJsonbObject(JsonbValue *object);
 static JsonbValue *pushJsonbValueScalar(JsonbParseState **pstate,
 										JsonbIteratorToken seq,
-										JsonbValue *scalarVal);
+										const JsonbValue *scalarVal);
+static JsonbValue *pushSingleScalarJsonbValue(JsonbParseState **pstate,
+											  const JsonbValue *jbval);
 
 void
 JsonbToJsonbValue(Jsonb *jsonb, JsonbValue *val)
@@ -98,17 +136,7 @@ JsonbValueToJsonb(JsonbValue *val)
 	{
 		/* Scalar value */
 		JsonbParseState *pstate = NULL;
-		JsonbValue *res;
-		JsonbValue	scalarArray;
-
-		scalarArray.type = jbvArray;
-		scalarArray.val.array.rawScalar = true;
-		scalarArray.val.array.nElems = 1;
-
-		pushJsonbValue(&pstate, WJB_BEGIN_ARRAY, &scalarArray);
-		pushJsonbValue(&pstate, WJB_ELEM, val);
-		res = pushJsonbValue(&pstate, WJB_END_ARRAY, NULL);
-
+		JsonbValue *res = pushSingleScalarJsonbValue(&pstate, val);
 		out = convertToJsonb(res);
 	}
 	else if (val->type == jbvObject || val->type == jbvArray)
@@ -131,7 +159,7 @@ JsonbValueToJsonb(JsonbValue *val)
  * the variable-length-data part of its container.  The node is identified
  * by index within the container's JEntry array.
  */
-uint32
+static uint32
 getJsonbOffset(const JsonbContainer *jc, int index)
 {
 	uint32		offset = 0;
@@ -156,7 +184,7 @@ getJsonbOffset(const JsonbContainer *jc, int index)
  * Get the length of the variable-length portion of a Jsonb node.
  * The node is identified by index within the container's JEntry array.
  */
-uint32
+static uint32
 getJsonbLength(const JsonbContainer *jc, int index)
 {
 	uint32		off;
@@ -315,6 +343,85 @@ compareJsonbContainers(JsonbContainer *a, JsonbContainer *b)
 	return res;
 }
 
+static JsonbValue *
+jsonbFindKeyInObject(const JsonbContainer *container, const JsonbValue *key)
+{
+	return getKeyJsonValueFromContainer(container, key->val.string.val,
+										key->val.string.len, NULL);
+}
+
+typedef struct JsonbArrayIterator
+{
+	const JsonbContainer *container;
+	char			   *base_addr;
+	int					index;
+	int					count;
+	uint32				offset;
+} JsonbArrayIterator;
+
+static void
+JsonbArrayIteratorInit(JsonbArrayIterator *it, const JsonbContainer *container)
+{
+	it->container = container;
+	it->index = 0;
+	it->count = (container->header & JB_CMASK);
+	it->offset = 0;
+	it->base_addr = (char *) (container->children + it->count);
+}
+
+static bool
+JsonbArrayIteratorNext(JsonbArrayIterator *it, JsonbValue *result)
+{
+	if (it->index >= it->count)
+		return false;
+
+	fillJsonbValue(it->container, it->index, it->base_addr, it->offset, result);
+
+	JBE_ADVANCE_OFFSET(it->offset, it->container->children[it->index]);
+
+	it->index++;
+
+	return true;
+}
+
+static JsonbValue *
+JsonbArrayIteratorGetIth(JsonbArrayIterator *it, uint32 i)
+{
+	JsonbValue *result;
+
+	if (i >= it->count)
+		return NULL;
+
+	result = palloc(sizeof(JsonbValue));
+
+	fillJsonbValue(it->container, i, it->base_addr,
+				   getJsonbOffset(it->container, i),
+				   result);
+
+	return result;
+}
+
+static JsonbValue *
+jsonbFindValueInArray(const JsonbContainer *container, const JsonbValue *key)
+{
+	JsonbArrayIterator	it;
+	JsonbValue		   *result = palloc(sizeof(JsonbValue));
+
+	JsonbArrayIteratorInit(&it, container);
+
+	while (JsonbArrayIteratorNext(&it, result))
+	{
+		if (key->type == result->type)
+		{
+			if (equalsJsonbScalarValue(key, result))
+				return result;
+		}
+	}
+
+	pfree(result);
+	return NULL;
+}
+
 /*
  * Find value in object (i.e. the "value" part of some key/value pair in an
  * object), or find a matching element if we're looking through an array.  Do
@@ -342,10 +449,9 @@ compareJsonbContainers(JsonbContainer *a, JsonbContainer *b)
  * return NULL.  Otherwise, return palloc()'d copy of value.
  */
 JsonbValue *
-findJsonbValueFromContainer(JsonbContainer *container, uint32 flags,
+findJsonbValueFromContainer(const JsonbContainer *container, uint32 flags,
 							JsonbValue *key)
 {
-	JEntry	   *children = container->children;
 	int			count = JsonContainerSize(container);
 
 	Assert((flags & ~(JB_FARRAY | JB_FOBJECT)) == 0);
@@ -355,27 +461,7 @@ findJsonbValueFromContainer(JsonbContainer *container, uint32 flags,
 		return NULL;
 
 	if ((flags & JB_FARRAY) && JsonContainerIsArray(container))
-	{
-		JsonbValue *result = palloc(sizeof(JsonbValue));
-		char	   *base_addr = (char *) (children + count);
-		uint32		offset = 0;
-		int			i;
-
-		for (i = 0; i < count; i++)
-		{
-			fillJsonbValue(container, i, base_addr, offset, result);
-
-			if (key->type == result->type)
-			{
-				if (equalsJsonbScalarValue(key, result))
-					return result;
-			}
-
-			JBE_ADVANCE_OFFSET(offset, children[i]);
-		}
-
-		pfree(result);
-	}
+		return jsonbFindValueInArray(container, key);
 	else if ((flags & JB_FOBJECT) && JsonContainerIsObject(container))
 	{
 		/* Object key passed by caller must be a string */
@@ -396,10 +482,10 @@ findJsonbValueFromContainer(JsonbContainer *container, uint32 flags,
  * 'res' can be passed in as NULL, in which case it's newly palloc'ed here.
  */
 JsonbValue *
-getKeyJsonValueFromContainer(JsonbContainer *container,
+getKeyJsonValueFromContainer(const JsonbContainer *container,
 							 const char *keyVal, int keyLen, JsonbValue *res)
 {
-	JEntry	   *children = container->children;
+	const JEntry *children = container->children;
 	int			count = JsonContainerSize(container);
 	char	   *baseAddr;
 	uint32		stopLow,
@@ -466,28 +552,16 @@ getKeyJsonValueFromContainer(JsonbContainer *container,
  * Returns palloc()'d copy of the value, or NULL if it does not exist.
  */
 JsonbValue *
-getIthJsonbValueFromContainer(JsonbContainer *container, uint32 i)
+getIthJsonbValueFromContainer(const JsonbContainer *container, uint32 i)
 {
-	JsonbValue *result;
-	char	   *base_addr;
-	uint32		nelements;
+	JsonbArrayIterator	it;
 
 	if (!JsonContainerIsArray(container))
 		elog(ERROR, "not a jsonb array");
 
-	nelements = JsonContainerSize(container);
-	base_addr = (char *) &container->children[nelements];
+	JsonbArrayIteratorInit(&it, container);
 
-	if (i >= nelements)
-		return NULL;
-
-	result = palloc(sizeof(JsonbValue));
-
-	fillJsonbValue(container, i, base_addr,
-				   getJsonbOffset(container, i),
-				   result);
-
-	return result;
+	return JsonbArrayIteratorGetIth(&it, i);
 }
 
 /*
@@ -503,7 +577,7 @@ getIthJsonbValueFromContainer(JsonbContainer *container, uint32 i)
  * expanded.
  */
 static void
-fillJsonbValue(JsonbContainer *container, int index,
+fillJsonbValue(const JsonbContainer *container, int index,
 			   char *base_addr, uint32 offset,
 			   JsonbValue *result)
 {
@@ -547,6 +621,32 @@ fillJsonbValue(JsonbContainer *container, int index,
 }
 
 /*
+ * shallow clone of a parse state, suitable for use in aggregate
+ * final functions that will only append to the values rather than
+ * change them.
+ */
+JsonbParseState *
+JsonbParseStateClone(JsonbParseState *state)
+{
+	JsonbParseState	   *result,
+					   *icursor,
+					   *ocursor,
+					  **pocursor = &result;
+
+	for (icursor = state; icursor; icursor = icursor->next)
+	{
+		*pocursor = ocursor = palloc(sizeof(JsonbParseState));
+		ocursor->contVal = icursor->contVal;
+		ocursor->size = icursor->size;
+		pocursor = &ocursor->next;
+	}
+
+	*pocursor = NULL;
+
+	return result;
+}
+
+/*
  * Push JsonbValue into JsonbParseState.
  *
  * Used when parsing JSON tokens to form Jsonb, or when converting an in-memory
@@ -565,7 +665,7 @@ fillJsonbValue(JsonbContainer *container, int index,
  */
 JsonbValue *
 pushJsonbValue(JsonbParseState **pstate, JsonbIteratorToken seq,
-			   JsonbValue *jbval)
+			   const JsonbValue *jbval)
 {
 	JsonbIterator *it;
 	JsonbValue *res = NULL;
@@ -637,9 +737,9 @@ pushJsonbValue(JsonbParseState **pstate, JsonbIteratorToken seq,
  * Do the actual pushing, with only scalar or pseudo-scalar-array values
  * accepted.
  */
-static JsonbValue *
+JsonbValue *
 pushJsonbValueScalar(JsonbParseState **pstate, JsonbIteratorToken seq,
-					 JsonbValue *scalarVal)
+					 const JsonbValue *scalarVal)
 {
 	JsonbValue *result = NULL;
 
@@ -723,6 +823,47 @@ pushJsonbValueScalar(JsonbParseState **pstate, JsonbIteratorToken seq,
 	return result;
 }
 
+static JsonbValue *
+pushSingleScalarJsonbValue(JsonbParseState **pstate, const JsonbValue *jbval)
+{
+	/* single root scalar */
+	JsonbValue	va;
+
+	va.type = jbvArray;
+	va.val.array.rawScalar = true;
+	va.val.array.nElems = 1;
+
+	pushJsonbValue(pstate, WJB_BEGIN_ARRAY, &va);
+	pushJsonbValue(pstate, WJB_ELEM, jbval);
+	return pushJsonbValue(pstate, WJB_END_ARRAY, NULL);
+}
+
+static JsonbValue *
+pushNestedScalarJsonbValue(JsonbParseState **pstate, const JsonbValue *jbval,
+						   bool isKey)
+{
+	switch ((*pstate)->contVal.type)
+	{
+		case jbvArray:
+			return pushJsonbValue(pstate, WJB_ELEM, jbval);
+		case jbvObject:
+			return pushJsonbValue(pstate, isKey ? WJB_KEY : WJB_VALUE, jbval);
+		default:
+			elog(ERROR, "unexpected parent of nested structure");
+			return NULL;
+	}
+}
+
+JsonbValue *
+pushScalarJsonbValue(JsonbParseState **pstate, const JsonbValue *jbval,
+					 bool isKey)
+{
+	return *pstate == NULL
+				? pushSingleScalarJsonbValue(pstate, jbval)
+				: pushNestedScalarJsonbValue(pstate, jbval, isKey);
+
+}
+
 /*
  * pushJsonbValue() worker:  Iteration-like forming of Jsonb
  */
@@ -739,7 +880,7 @@ pushState(JsonbParseState **pstate)
  * pushJsonbValue() worker:  Append a pair key to state when generating a Jsonb
  */
 static void
-appendKey(JsonbParseState *pstate, JsonbValue *string)
+appendKey(JsonbParseState *pstate, const JsonbValue *string)
 {
 	JsonbValue *object = &pstate->contVal;
 
@@ -768,7 +909,7 @@ appendKey(JsonbParseState *pstate, JsonbValue *string)
  * Jsonb
  */
 static void
-appendValue(JsonbParseState *pstate, JsonbValue *scalarVal)
+appendValue(JsonbParseState *pstate, const JsonbValue *scalarVal)
 {
 	JsonbValue *object = &pstate->contVal;
 
@@ -781,7 +922,7 @@ appendValue(JsonbParseState *pstate, JsonbValue *scalarVal)
  * pushJsonbValue() worker:  Append an element to state when generating a Jsonb
  */
 static void
-appendElement(JsonbParseState *pstate, JsonbValue *scalarVal)
+appendElement(JsonbParseState *pstate, const JsonbValue *scalarVal)
 {
 	JsonbValue *array = &pstate->contVal;
 
@@ -1394,7 +1535,7 @@ JsonbHashScalarValueExtended(const JsonbValue *scalarVal, uint64 *hash,
  * Are two scalar JsonbValues of the same type a and b equal?
  */
 static bool
-equalsJsonbScalarValue(JsonbValue *aScalar, JsonbValue *bScalar)
+equalsJsonbScalarValue(const JsonbValue *aScalar, const JsonbValue *bScalar)
 {
 	if (aScalar->type == bScalar->type)
 	{
@@ -1426,7 +1567,7 @@ equalsJsonbScalarValue(JsonbValue *aScalar, JsonbValue *bScalar)
  * operators, where a lexical sort order is generally expected.
  */
 static int
-compareJsonbScalarValue(JsonbValue *aScalar, JsonbValue *bScalar)
+compareJsonbScalarValue(const JsonbValue *aScalar, const JsonbValue *bScalar)
 {
 	if (aScalar->type == bScalar->type)
 	{
@@ -1470,7 +1611,7 @@ compareJsonbScalarValue(JsonbValue *aScalar, JsonbValue *bScalar)
  * Returns the offset to the reserved area. The caller is expected to fill
  * the reserved area later with copyToBuffer().
  */
-static int
+int
 reserveFromBuffer(StringInfo buffer, int len)
 {
 	int			offset;
@@ -1505,7 +1646,7 @@ copyToBuffer(StringInfo buffer, int offset, const char *data, int len)
 /*
  * A shorthand for reserveFromBuffer + copyToBuffer.
  */
-static void
+void
 appendToBuffer(StringInfo buffer, const char *data, int len)
 {
 	int			offset;
@@ -1541,7 +1682,7 @@ padBufferToInt(StringInfo buffer)
  * Given a JsonbValue, convert to Jsonb. The result is palloc'd.
  */
 static Jsonb *
-convertToJsonb(JsonbValue *val)
+convertToJsonb(const JsonbValue *val)
 {
 	StringInfoData buffer;
 	JEntry		jentry;
@@ -1583,7 +1724,7 @@ convertToJsonb(JsonbValue *val)
  * for debugging purposes.
  */
 static void
-convertJsonbValue(StringInfo buffer, JEntry *header, JsonbValue *val, int level)
+convertJsonbValue(StringInfo buffer, JEntry *header, const JsonbValue *val, int level)
 {
 	check_stack_depth();
 
@@ -1608,7 +1749,7 @@ convertJsonbValue(StringInfo buffer, JEntry *header, JsonbValue *val, int level)
 }
 
 static void
-convertJsonbArray(StringInfo buffer, JEntry *pheader, JsonbValue *val, int level)
+convertJsonbArray(StringInfo buffer, JEntry *pheader, const JsonbValue *val, int level)
 {
 	int			base_offset;
 	int			jentry_offset;
@@ -1692,7 +1833,7 @@ convertJsonbArray(StringInfo buffer, JEntry *pheader, JsonbValue *val, int level
 }
 
 static void
-convertJsonbObject(StringInfo buffer, JEntry *pheader, JsonbValue *val, int level)
+convertJsonbObject(StringInfo buffer, JEntry *pheader, const JsonbValue *val, int level)
 {
 	int			base_offset;
 	int			jentry_offset;
@@ -1808,7 +1949,7 @@ convertJsonbObject(StringInfo buffer, JEntry *pheader, JsonbValue *val, int leve
 }
 
 static void
-convertJsonbScalar(StringInfo buffer, JEntry *jentry, JsonbValue *scalarVal)
+convertJsonbScalar(StringInfo buffer, JEntry *jentry, const JsonbValue *scalarVal)
 {
 	int			numlen;
 	short		padlen;
@@ -1820,7 +1961,15 @@ convertJsonbScalar(StringInfo buffer, JEntry *jentry, JsonbValue *scalarVal)
 			break;
 
 		case jbvString:
-			appendToBuffer(buffer, scalarVal->val.string.val, scalarVal->val.string.len);
+			if (scalarVal->val.string.len > JENTRY_OFFLENMASK)
+					ereport(ERROR,
+							(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
+							 errmsg("string too long to represent as jsonb string"),
+							 errdetail("Due to an implementation restriction, jsonb strings cannot exceed %d bytes.",
+									   JENTRY_OFFLENMASK)));
+
+			appendToBuffer(buffer, scalarVal->val.string.val,
+							scalarVal->val.string.len);
 
 			*jentry = scalarVal->val.string.len;
 			break;

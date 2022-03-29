@@ -62,7 +62,6 @@ typedef struct JsonbAggState
 } JsonbAggState;
 
 static inline Datum jsonb_from_cstring(char *json, int len);
-static size_t checkStringLen(size_t len);
 static void jsonb_in_object_start(void *pstate);
 static void jsonb_in_object_end(void *pstate);
 static void jsonb_in_array_start(void *pstate);
@@ -86,7 +85,6 @@ static void datum_to_jsonb(Datum val, bool is_null, JsonbInState *result,
 						   bool key_scalar);
 static void add_jsonb(Datum val, bool is_null, JsonbInState *result,
 					  Oid val_type, bool key_scalar);
-static JsonbParseState *clone_parse_state(JsonbParseState *state);
 static char *JsonbToCStringWorker(StringInfo out, JsonbContainer *in, int estimated_len, bool indent);
 static void add_indent(StringInfo out, bool indent, int level);
 
@@ -134,7 +132,7 @@ jsonb_out(PG_FUNCTION_ARGS)
 	Jsonb	   *jb = PG_GETARG_JSONB_P(0);
 	char	   *out;
 
-	out = JsonbToCString(NULL, &jb->root, VARSIZE(jb));
+	out = JsonbToCString(NULL, JsonbRoot(jb), JsonbGetSize(jb));
 
 	PG_RETURN_CSTRING(out);
 }
@@ -152,7 +150,7 @@ jsonb_send(PG_FUNCTION_ARGS)
 	StringInfo	jtext = makeStringInfo();
 	int			version = 1;
 
-	(void) JsonbToCString(jtext, &jb->root, VARSIZE(jb));
+	(void) JsonbToCString(jtext, JsonbRoot(jb), JsonbGetSize(jb));
 
 	pq_begintypsend(&buf);
 	pq_sendint8(&buf, version);
@@ -245,15 +243,8 @@ jsonb_typeof(PG_FUNCTION_ARGS)
 	PG_RETURN_TEXT_P(cstring_to_text(result));
 }
 
-/*
- * jsonb_from_cstring
- *
- * Turns json string into a jsonb Datum.
- *
- * Uses the json parser (with hooks) to construct a jsonb.
- */
-static inline Datum
-jsonb_from_cstring(char *json, int len)
+static JsonbValue *
+JsonValueFromCString(char *json, int len)
 {
 	JsonLexContext *lex;
 	JsonbInState state;
@@ -275,20 +266,20 @@ jsonb_from_cstring(char *json, int len)
 	pg_parse_json_or_ereport(lex, &sem);
 
 	/* after parsing, the item member has the composed jsonb structure */
-	PG_RETURN_POINTER(JsonbValueToJsonb(state.res));
+	return state.res;
 }
 
-static size_t
-checkStringLen(size_t len)
+/*
+ * jsonb_from_cstring
+ *
+ * Turns json string into a jsonb Datum.
+ *
+ * Uses the json parser (with hooks) to construct a jsonb.
+ */
+static inline Datum
+jsonb_from_cstring(char *json, int len)
 {
-	if (len > JENTRY_OFFLENMASK)
-		ereport(ERROR,
-				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
-				 errmsg("string too long to represent as jsonb string"),
-				 errdetail("Due to an implementation restriction, jsonb strings cannot exceed %d bytes.",
-						   JENTRY_OFFLENMASK)));
-
-	return len;
+	PG_RETURN_JSONB_P(JsonbValueToJsonb(JsonValueFromCString(json, len)));
 }
 
 static void
@@ -331,7 +322,7 @@ jsonb_in_object_field_start(void *pstate, char *fname, bool isnull)
 
 	Assert(fname != NULL);
 	v.type = jbvString;
-	v.val.string.len = checkStringLen(strlen(fname));
+	v.val.string.len = strlen(fname);
 	v.val.string.val = fname;
 
 	_state->res = pushJsonbValue(&_state->parseState, WJB_KEY, &v);
@@ -364,6 +355,7 @@ jsonb_put_escaped_value(StringInfo out, JsonbValue *scalarVal)
 	}
 }
 
+
 /*
  * For jsonb we always want the de-escaped value - that's what's in token
  */
@@ -380,7 +372,7 @@ jsonb_in_scalar(void *pstate, char *token, JsonTokenType tokentype)
 		case JSON_TOKEN_STRING:
 			Assert(token != NULL);
 			v.type = jbvString;
-			v.val.string.len = checkStringLen(strlen(token));
+			v.val.string.len = strlen(token);
 			v.val.string.val = token;
 			break;
 		case JSON_TOKEN_NUMBER:
@@ -414,35 +406,7 @@ jsonb_in_scalar(void *pstate, char *token, JsonTokenType tokentype)
 			break;
 	}
 
-	if (_state->parseState == NULL)
-	{
-		/* single scalar */
-		JsonbValue	va;
-
-		va.type = jbvArray;
-		va.val.array.rawScalar = true;
-		va.val.array.nElems = 1;
-
-		_state->res = pushJsonbValue(&_state->parseState, WJB_BEGIN_ARRAY, &va);
-		_state->res = pushJsonbValue(&_state->parseState, WJB_ELEM, &v);
-		_state->res = pushJsonbValue(&_state->parseState, WJB_END_ARRAY, NULL);
-	}
-	else
-	{
-		JsonbValue *o = &_state->parseState->contVal;
-
-		switch (o->type)
-		{
-			case jbvArray:
-				_state->res = pushJsonbValue(&_state->parseState, WJB_ELEM, &v);
-				break;
-			case jbvObject:
-				_state->res = pushJsonbValue(&_state->parseState, WJB_VALUE, &v);
-				break;
-			default:
-				elog(ERROR, "unexpected parent of nested structure");
-		}
-	}
+	_state->res = pushScalarJsonbValue(&_state->parseState, &v, false);
 }
 
 /*
@@ -899,7 +863,7 @@ datum_to_jsonb(Datum val, bool is_null, JsonbInState *result,
 			default:
 				outputstr = OidOutputFunctionCall(outfuncoid, val);
 				jb.type = jbvString;
-				jb.val.string.len = checkStringLen(strlen(outputstr));
+				jb.val.string.len = strlen(outputstr);
 				jb.val.string.val = outputstr;
 				break;
 		}
@@ -912,37 +876,8 @@ datum_to_jsonb(Datum val, bool is_null, JsonbInState *result,
 		/* work has been done recursively */
 		return;
 	}
-	else if (result->parseState == NULL)
-	{
-		/* single root scalar */
-		JsonbValue	va;
 
-		va.type = jbvArray;
-		va.val.array.rawScalar = true;
-		va.val.array.nElems = 1;
-
-		result->res = pushJsonbValue(&result->parseState, WJB_BEGIN_ARRAY, &va);
-		result->res = pushJsonbValue(&result->parseState, WJB_ELEM, &jb);
-		result->res = pushJsonbValue(&result->parseState, WJB_END_ARRAY, NULL);
-	}
-	else
-	{
-		JsonbValue *o = &result->parseState->contVal;
-
-		switch (o->type)
-		{
-			case jbvArray:
-				result->res = pushJsonbValue(&result->parseState, WJB_ELEM, &jb);
-				break;
-			case jbvObject:
-				result->res = pushJsonbValue(&result->parseState,
-											 key_scalar ? WJB_KEY : WJB_VALUE,
-											 &jb);
-				break;
-			default:
-				elog(ERROR, "unexpected parent of nested structure");
-		}
-	}
+	result->res = pushScalarJsonbValue(&result->parseState, &jb, key_scalar);
 }
 
 /*
@@ -1150,7 +1085,7 @@ to_jsonb(PG_FUNCTION_ARGS)
 
 	datum_to_jsonb(val, false, &result, tcategory, outfuncoid, false);
 
-	PG_RETURN_POINTER(JsonbValueToJsonb(result.res));
+	PG_RETURN_JSONB_P(JsonbValueToJsonb(result.res));
 }
 
 /*
@@ -1200,7 +1135,7 @@ jsonb_build_object(PG_FUNCTION_ARGS)
 
 	result.res = pushJsonbValue(&result.parseState, WJB_END_OBJECT, NULL);
 
-	PG_RETURN_POINTER(JsonbValueToJsonb(result.res));
+	PG_RETURN_JSONB_P(JsonbValueToJsonb(result.res));
 }
 
 /*
@@ -1216,7 +1151,7 @@ jsonb_build_object_noargs(PG_FUNCTION_ARGS)
 	(void) pushJsonbValue(&result.parseState, WJB_BEGIN_OBJECT, NULL);
 	result.res = pushJsonbValue(&result.parseState, WJB_END_OBJECT, NULL);
 
-	PG_RETURN_POINTER(JsonbValueToJsonb(result.res));
+	PG_RETURN_JSONB_P(JsonbValueToJsonb(result.res));
 }
 
 /*
@@ -1247,7 +1182,7 @@ jsonb_build_array(PG_FUNCTION_ARGS)
 
 	result.res = pushJsonbValue(&result.parseState, WJB_END_ARRAY, NULL);
 
-	PG_RETURN_POINTER(JsonbValueToJsonb(result.res));
+	PG_RETURN_JSONB_P(JsonbValueToJsonb(result.res));
 }
 
 /*
@@ -1263,7 +1198,7 @@ jsonb_build_array_noargs(PG_FUNCTION_ARGS)
 	(void) pushJsonbValue(&result.parseState, WJB_BEGIN_ARRAY, NULL);
 	result.res = pushJsonbValue(&result.parseState, WJB_END_ARRAY, NULL);
 
-	PG_RETURN_POINTER(JsonbValueToJsonb(result.res));
+	PG_RETURN_JSONB_P(JsonbValueToJsonb(result.res));
 }
 
 
@@ -1367,7 +1302,7 @@ jsonb_object(PG_FUNCTION_ARGS)
 close_object:
 	result.res = pushJsonbValue(&result.parseState, WJB_END_OBJECT, NULL);
 
-	PG_RETURN_POINTER(JsonbValueToJsonb(result.res));
+	PG_RETURN_JSONB_P(JsonbValueToJsonb(result.res));
 }
 
 /*
@@ -1464,41 +1399,7 @@ jsonb_object_two_arg(PG_FUNCTION_ARGS)
 close_object:
 	result.res = pushJsonbValue(&result.parseState, WJB_END_OBJECT, NULL);
 
-	PG_RETURN_POINTER(JsonbValueToJsonb(result.res));
-}
-
-
-/*
- * shallow clone of a parse state, suitable for use in aggregate
- * final functions that will only append to the values rather than
- * change them.
- */
-static JsonbParseState *
-clone_parse_state(JsonbParseState *state)
-{
-	JsonbParseState *result,
-			   *icursor,
-			   *ocursor;
-
-	if (state == NULL)
-		return NULL;
-
-	result = palloc(sizeof(JsonbParseState));
-	icursor = state;
-	ocursor = result;
-	for (;;)
-	{
-		ocursor->contVal = icursor->contVal;
-		ocursor->size = icursor->size;
-		icursor = icursor->next;
-		if (icursor == NULL)
-			break;
-		ocursor->next = palloc(sizeof(JsonbParseState));
-		ocursor = ocursor->next;
-	}
-	ocursor->next = NULL;
-
-	return result;
+	PG_RETURN_JSONB_P(JsonbValueToJsonb(result.res));
 }
 
 
@@ -1645,14 +1546,14 @@ jsonb_agg_finalfn(PG_FUNCTION_ARGS)
 	 * values, just add the final array end marker.
 	 */
 
-	result.parseState = clone_parse_state(arg->res->parseState);
+	result.parseState = JsonbParseStateClone(arg->res->parseState);
 
 	result.res = pushJsonbValue(&result.parseState,
 								WJB_END_ARRAY, NULL);
 
 	out = JsonbValueToJsonb(result.res);
 
-	PG_RETURN_POINTER(out);
+	PG_RETURN_JSONB_P(out);
 }
 
 /*
@@ -1877,14 +1778,14 @@ jsonb_object_agg_finalfn(PG_FUNCTION_ARGS)
 	 * marker.
 	 */
 
-	result.parseState = clone_parse_state(arg->res->parseState);
+	result.parseState = JsonbParseStateClone(arg->res->parseState);
 
 	result.res = pushJsonbValue(&result.parseState,
 								WJB_END_OBJECT, NULL);
 
 	out = JsonbValueToJsonb(result.res);
 
-	PG_RETURN_POINTER(out);
+	PG_RETURN_JSONB_P(out);
 }
 
 

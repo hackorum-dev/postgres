@@ -73,7 +73,10 @@ typedef enum
 #define JsonbPGetDatum(p)	PointerGetDatum(p)
 #define PG_GETARG_JSONB_P(x)	DatumGetJsonbP(PG_GETARG_DATUM(x))
 #define PG_GETARG_JSONB_P_COPY(x)	DatumGetJsonbPCopy(PG_GETARG_DATUM(x))
-#define PG_RETURN_JSONB_P(x)	PG_RETURN_POINTER(x)
+#define PG_RETURN_JSONB_P(x)	PG_RETURN_DATUM(JsonbPGetDatum(x))
+
+#define JsonbRoot(jsonb)	(&(jsonb)->root)
+#define JsonbGetSize(jsonb)	VARSIZE(jsonb)
 
 typedef struct JsonbPair JsonbPair;
 typedef struct JsonbValue JsonbValue;
@@ -324,12 +327,7 @@ struct JsonbPair
 };
 
 /* Conversion state used when parsing Jsonb from text, or for type coercion */
-typedef struct JsonbParseState
-{
-	JsonbValue	contVal;
-	Size		size;
-	struct JsonbParseState *next;
-} JsonbParseState;
+typedef struct JsonbParseState JsonbParseState;
 
 /*
  * JsonbIterator holds details of the type for each iteration. It also stores a
@@ -344,51 +342,25 @@ typedef enum
 	JBI_OBJECT_VALUE
 } JsonbIterState;
 
-typedef struct JsonbIterator
-{
-	/* Container being iterated */
-	JsonbContainer *container;
-	uint32		nElems;			/* Number of elements in children array (will
-								 * be nPairs for objects) */
-	bool		isScalar;		/* Pseudo-array scalar value? */
-	JEntry	   *children;		/* JEntrys for child nodes */
-	/* Data proper.  This points to the beginning of the variable-length data */
-	char	   *dataProper;
-
-	/* Current item in buffer (up to nElems) */
-	int			curIndex;
-
-	/* Data offset corresponding to current item */
-	uint32		curDataOffset;
-
-	/*
-	 * If the container is an object, we want to return keys and values
-	 * alternately; so curDataOffset points to the current key, and
-	 * curValueOffset points to the current value.
-	 */
-	uint32		curValueOffset;
-
-	/* Private state */
-	JsonbIterState state;
-
-	struct JsonbIterator *parent;
-} JsonbIterator;
+typedef struct JsonbIterator JsonbIterator;
 
 
 /* Support functions */
-extern uint32 getJsonbOffset(const JsonbContainer *jc, int index);
-extern uint32 getJsonbLength(const JsonbContainer *jc, int index);
 extern int	compareJsonbContainers(JsonbContainer *a, JsonbContainer *b);
-extern JsonbValue *findJsonbValueFromContainer(JsonbContainer *sheader,
+extern JsonbValue *findJsonbValueFromContainer(const JsonbContainer *sheader,
 											   uint32 flags,
 											   JsonbValue *key);
-extern JsonbValue *getKeyJsonValueFromContainer(JsonbContainer *container,
+extern JsonbValue *getKeyJsonValueFromContainer(const JsonbContainer *container,
 												const char *keyVal, int keyLen,
 												JsonbValue *res);
-extern JsonbValue *getIthJsonbValueFromContainer(JsonbContainer *sheader,
+extern JsonbValue *getIthJsonbValueFromContainer(const JsonbContainer *sheader,
 												 uint32 i);
 extern JsonbValue *pushJsonbValue(JsonbParseState **pstate,
-								  JsonbIteratorToken seq, JsonbValue *jbval);
+								  JsonbIteratorToken seq, 
+								  const JsonbValue *jbval);
+extern JsonbValue *pushScalarJsonbValue(JsonbParseState **pstate,
+										const JsonbValue *jbval, bool isKey);
+extern JsonbParseState *JsonbParseStateClone(JsonbParseState *state);
 extern JsonbIterator *JsonbIteratorInit(JsonbContainer *container);
 extern JsonbIteratorToken JsonbIteratorNext(JsonbIterator **it, JsonbValue *val,
 											bool skipNested);
@@ -400,6 +372,8 @@ extern void JsonbHashScalarValue(const JsonbValue *scalarVal, uint32 *hash);
 extern void JsonbHashScalarValueExtended(const JsonbValue *scalarVal,
 										 uint64 *hash, uint64 seed);
 
+extern int reserveFromBuffer(StringInfo buffer, int len);
+extern void appendToBuffer(StringInfo buffer, const char *data, int len);
 /* jsonb.c support functions */
 extern char *JsonbToCString(StringInfo out, JsonbContainer *in,
 							int estimated_len);
