@@ -422,13 +422,13 @@ static bool check_for_column_name_collision(Relation rel, const char *colname,
 static void add_column_datatype_dependency(Oid relid, int32 attnum, Oid typid);
 static void add_column_collation_dependency(Oid relid, int32 attnum, Oid collid);
 static void ATPrepDropNotNull(Relation rel, bool recurse, bool recursing);
-static ObjectAddress ATExecDropNotNull(Relation rel, const char *colName, LOCKMODE lockmode);
+static ObjectAddress ATExecDropNotNull(Relation rel, const char *colName, bool missing_ok, LOCKMODE lockmode);
 static void ATPrepSetNotNull(List **wqueue, Relation rel,
 							 AlterTableCmd *cmd, bool recurse, bool recursing,
 							 LOCKMODE lockmode,
 							 AlterTableUtilityContext *context);
 static ObjectAddress ATExecSetNotNull(AlteredTableInfo *tab, Relation rel,
-									  const char *colName, LOCKMODE lockmode);
+									  const char *colName, bool missing_ok, LOCKMODE lockmode);
 static void ATExecCheckNotNull(AlteredTableInfo *tab, Relation rel,
 							   const char *colName, LOCKMODE lockmode);
 static bool NotNullImpliedByRelConstraints(Relation rel, Form_pg_attribute attr);
@@ -4915,10 +4915,10 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab,
 			address = ATExecDropIdentity(rel, cmd->name, cmd->missing_ok, lockmode);
 			break;
 		case AT_DropNotNull:	/* ALTER COLUMN DROP NOT NULL */
-			address = ATExecDropNotNull(rel, cmd->name, lockmode);
+			address = ATExecDropNotNull(rel, cmd->name, cmd->missing_ok, lockmode);
 			break;
 		case AT_SetNotNull:		/* ALTER COLUMN SET NOT NULL */
-			address = ATExecSetNotNull(tab, rel, cmd->name, lockmode);
+			address = ATExecSetNotNull(tab, rel, cmd->name, cmd->missing_ok, lockmode);
 			break;
 		case AT_CheckNotNull:	/* check column is already marked NOT NULL */
 			ATExecCheckNotNull(tab, rel, cmd->name, lockmode);
@@ -7128,7 +7128,7 @@ ATPrepDropNotNull(Relation rel, bool recurse, bool recursing)
  * nullable, InvalidObjectAddress is returned.
  */
 static ObjectAddress
-ATExecDropNotNull(Relation rel, const char *colName, LOCKMODE lockmode)
+ATExecDropNotNull(Relation rel, const char *colName, bool missing_ok, LOCKMODE lockmode)
 {
 	HeapTuple	tuple;
 	Form_pg_attribute attTup;
@@ -7145,10 +7145,21 @@ ATExecDropNotNull(Relation rel, const char *colName, LOCKMODE lockmode)
 
 	tuple = SearchSysCacheCopyAttName(RelationGetRelid(rel), colName);
 	if (!HeapTupleIsValid(tuple))
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_COLUMN),
-				 errmsg("column \"%s\" of relation \"%s\" does not exist",
-						colName, RelationGetRelationName(rel))));
+	{
+		if (!missing_ok)
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_COLUMN),
+					errmsg("column \"%s\" of relation \"%s\" does not exist",
+							colName, RelationGetRelationName(rel))));
+		else
+		{
+			ereport(NOTICE,
+					(errmsg("column \"%s\" of relation \"%s\" does not exist, skipping",
+							colName, RelationGetRelationName(rel))));
+			table_close(attr_rel, RowExclusiveLock);
+			return InvalidObjectAddress;
+		}
+	}
 	attTup = (Form_pg_attribute) GETSTRUCT(tuple);
 	attnum = attTup->attnum;
 
@@ -7336,7 +7347,7 @@ ATPrepSetNotNull(List **wqueue, Relation rel,
  */
 static ObjectAddress
 ATExecSetNotNull(AlteredTableInfo *tab, Relation rel,
-				 const char *colName, LOCKMODE lockmode)
+				 const char *colName, bool missing_ok, LOCKMODE lockmode)
 {
 	HeapTuple	tuple;
 	AttrNumber	attnum;
@@ -7351,10 +7362,21 @@ ATExecSetNotNull(AlteredTableInfo *tab, Relation rel,
 	tuple = SearchSysCacheCopyAttName(RelationGetRelid(rel), colName);
 
 	if (!HeapTupleIsValid(tuple))
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_COLUMN),
-				 errmsg("column \"%s\" of relation \"%s\" does not exist",
-						colName, RelationGetRelationName(rel))));
+	{
+		if (!missing_ok)
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_COLUMN),
+					errmsg("column \"%s\" of relation \"%s\" does not exist",
+							colName, RelationGetRelationName(rel))));
+		else
+		{
+			ereport(NOTICE,
+					(errmsg("column \"%s\" of relation \"%s\" does not exist, skipping",
+							colName, RelationGetRelationName(rel))));
+			table_close(attr_rel, RowExclusiveLock);
+			return InvalidObjectAddress;
+		}
+	}
 
 	attnum = ((Form_pg_attribute) GETSTRUCT(tuple))->attnum;
 

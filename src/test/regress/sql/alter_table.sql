@@ -1271,6 +1271,16 @@ create table dropColumnExists ();
 alter table dropColumnExists drop column non_existing; --fail
 alter table dropColumnExists drop column if exists non_existing; --succeed
 
+-- ALTER TABLE ... ALTER COLUMN IF EXISTS ... SET NOT NULL test
+create table setNotNullColumnExists ();
+alter table setNotNullColumnExists alter column non_existing set not null; --fail
+alter table setNotNullColumnExists alter column if exists non_existing set not null; --succeed
+
+-- ALTER TABLE ... ALTER COLUMN IF EXISTS ... DROP NOT NULL test
+create table dropNotNullColumnExists ();
+alter table dropNotNullColumnExists alter column non_existing drop not null; --fail
+alter table dropNotNullColumnExists alter column if exists non_existing drop not null; --succeed
+
 select relname, attname, attinhcount, attislocal
 from pg_class join pg_attribute on (pg_class.oid = pg_attribute.attrelid)
 where relname in ('p1','p2','c1','gc1') and attnum > 0 and not attisdropped
