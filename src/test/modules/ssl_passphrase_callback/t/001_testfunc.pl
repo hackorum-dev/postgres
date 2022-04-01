@@ -40,7 +40,7 @@ $node->start;
 # if the server is running we must have successfully transformed the passphrase
 ok(-e "$ddir/postmaster.pid", "postgres started");
 
-$node->stop('fast');
+$node->stop('slow');
 
 # should get a warning if ssl_passphrase_command is set
 my $log = $node->rotate_logfile();
@@ -50,7 +50,7 @@ $node->append_conf('postgresql.conf',
 
 $node->start;
 
-$node->stop('fast');
+$node->stop('slow');
 
 my $log_contents = slurp_file($log);
 
@@ -72,6 +72,6 @@ ok($ret,                       "pg_ctl fails with bad passphrase");
 ok(!-e "$ddir/postmaster.pid", "postgres not started with bad passphrase");
 
 # just in case
-$node->stop('fast');
+$node->stop('slow');
 
 done_testing();

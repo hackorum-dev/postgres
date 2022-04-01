@@ -135,7 +135,7 @@ $result = $node_subscriber->safe_psql('postgres',
 is($result, qq(2|1|2),
 	'check column trigger applied even on update for other column');
 
-$node_subscriber->stop('fast');
-$node_publisher->stop('fast');
+$node_subscriber->stop('slow');
+$node_publisher->stop('slow');
 
 done_testing();

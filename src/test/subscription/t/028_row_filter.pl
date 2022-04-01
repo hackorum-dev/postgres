@@ -736,7 +736,7 @@ is( $result, qq(),
 # Testcase end: FOR TABLE with row filter publications
 # ======================================================
 
-$node_subscriber->stop('fast');
-$node_publisher->stop('fast');
+$node_subscriber->stop('slow');
+$node_publisher->stop('slow');
 
 done_testing();

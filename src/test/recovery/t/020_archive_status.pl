@@ -70,7 +70,7 @@ is( $primary->safe_psql(
 
 # Crash the cluster for the next test in charge of checking that non-archived
 # WAL segments are not removed.
-$primary->stop('immediate');
+$primary->stop('crappy');
 
 # Recovery tests for the archiving with a standby partially check
 # the recovery behavior when restoring a backup taken using a
@@ -201,7 +201,7 @@ $standby2->safe_psql('postgres', q{SELECT pg_stat_reset_shared('archiver')});
 # Now crash the cluster to check that recovery step does not
 # remove non-archived WAL segments on a standby where archiving
 # is enabled.
-$standby2->stop('immediate');
+$standby2->stop('crappy');
 $standby2->start;
 
 ok( -f "$standby2_data/$segment_path_1_ready",

@@ -5,8 +5,8 @@
 #
 # These tests exercise code that once violated the mandate described in
 # src/backend/access/transam/README section "Skipping WAL for New
-# RelFileNode".  The tests work by committing some transactions, initiating an
-# immediate shutdown, and confirming that the expected data survives recovery.
+# RelFileNode".  The tests work by committing some transactions, initiating a
+# crappy shutdown, and confirming that the expected data survives recovery.
 # For many years, individual commands made the decision to skip WAL, hence the
 # frequent appearance of COPY in these tests.
 use strict;
@@ -74,7 +74,7 @@ wal_skip_threshold = 0
 		INSERT INTO originated VALUES (1);
 		CREATE UNIQUE INDEX ON originated(id) TABLESPACE other;
 		COMMIT;");
-	$node->stop('immediate');
+	$node->stop('crappy');
 	$node->start;
 	$result = $node->safe_psql('postgres', "SELECT count(*) FROM moved;");
 	is($result, qq(1), "wal_level = $wal_level, CREATE+SET TABLESPACE");
@@ -93,7 +93,7 @@ wal_skip_threshold = 0
 		CREATE TABLE trunc (id serial PRIMARY KEY);
 		TRUNCATE trunc;
 		COMMIT;");
-	$node->stop('immediate');
+	$node->stop('crappy');
 	$node->start;
 	$result = $node->safe_psql('postgres', "SELECT count(*) FROM trunc;");
 	is($result, qq(0), "wal_level = $wal_level, TRUNCATE with empty table");
@@ -108,7 +108,7 @@ wal_skip_threshold = 0
 		TRUNCATE trunc_ins;
 		INSERT INTO trunc_ins VALUES (DEFAULT);
 		COMMIT;");
-	$node->stop('immediate');
+	$node->stop('crappy');
 	$node->start;
 	$result = $node->safe_psql('postgres',
 		"SELECT count(*), min(id) FROM trunc_ins;");
@@ -125,7 +125,7 @@ wal_skip_threshold = 0
 		INSERT INTO twophase VALUES (DEFAULT);
 		PREPARE TRANSACTION 't';
 		COMMIT PREPARED 't';");
-	$node->stop('immediate');
+	$node->stop('crappy');
 	$node->start;
 	$result = $node->safe_psql('postgres',
 		"SELECT count(*), min(id) FROM trunc_ins;");
@@ -139,7 +139,7 @@ wal_skip_threshold = 0
 		CREATE TABLE noskip (id serial PRIMARY KEY);
 		INSERT INTO noskip (SELECT FROM generate_series(1, 20000) a) ;
 		COMMIT;");
-	$node->stop('immediate');
+	$node->stop('crappy');
 	$node->start;
 	$result = $node->safe_psql('postgres', "SELECT count(*) FROM noskip;");
 	is($result, qq(20000), "wal_level = $wal_level, end-of-xact WAL");
@@ -164,7 +164,7 @@ wal_skip_threshold = 0
 		COPY ins_trunc FROM '$copy_file' DELIMITER ',';
 		INSERT INTO ins_trunc (id, id2) VALUES (DEFAULT, 10000);
 		COMMIT;");
-	$node->stop('immediate');
+	$node->stop('crappy');
 	$node->start;
 	$result = $node->safe_psql('postgres', "SELECT count(*) FROM ins_trunc;");
 	is($result, qq(5), "wal_level = $wal_level, TRUNCATE COPY INSERT");
@@ -179,7 +179,7 @@ wal_skip_threshold = 0
 		TRUNCATE trunc_copy;
 		COPY trunc_copy FROM '$copy_file' DELIMITER ',';
 		COMMIT;");
-	$node->stop('immediate');
+	$node->stop('crappy');
 	$node->start;
 	$result =
 	  $node->safe_psql('postgres', "SELECT count(*) FROM trunc_copy;");
@@ -196,7 +196,7 @@ wal_skip_threshold = 0
 		  ALTER TABLE spc_abort SET TABLESPACE other; ROLLBACK TO s;
 		COPY spc_abort FROM '$copy_file' DELIMITER ',';
 		COMMIT;");
-	$node->stop('immediate');
+	$node->stop('crappy');
 	$node->start;
 	$result = $node->safe_psql('postgres', "SELECT count(*) FROM spc_abort;");
 	is($result, qq(3),
@@ -212,7 +212,7 @@ wal_skip_threshold = 0
 		SAVEPOINT s; ALTER TABLE spc_commit SET TABLESPACE other; RELEASE s;
 		COPY spc_commit FROM '$copy_file' DELIMITER ',';
 		COMMIT;");
-	$node->stop('immediate');
+	$node->stop('crappy');
 	$node->start;
 	$result =
 	  $node->safe_psql('postgres', "SELECT count(*) FROM spc_commit;");
@@ -236,7 +236,7 @@ wal_skip_threshold = 0
 		ROLLBACK TO s;
 		COPY spc_nest FROM '$copy_file' DELIMITER ',';
 		COMMIT;");
-	$node->stop('immediate');
+	$node->stop('crappy');
 	$node->start;
 	$result = $node->safe_psql('postgres', "SELECT count(*) FROM spc_nest;");
 	is($result, qq(3),
@@ -252,7 +252,7 @@ wal_skip_threshold = 0
 		SELECT * FROM spc_hint;  -- set hint bit
 		INSERT INTO spc_hint VALUES (2);
 		COMMIT;");
-	$node->stop('immediate');
+	$node->stop('crappy');
 	$node->start;
 	$result = $node->safe_psql('postgres', "SELECT count(*) FROM spc_hint;");
 	is($result, qq(2), "wal_level = $wal_level, SET TABLESPACE, hint bit");
@@ -266,7 +266,7 @@ wal_skip_threshold = 0
 		INSERT INTO idx_hint VALUES (1);  -- set index hint bit
 		INSERT INTO idx_hint VALUES (2);
 		COMMIT;");
-	$node->stop('immediate');
+	$node->stop('crappy');
 	$node->start;
 	$result = $node->psql('postgres',);
 	my ($ret, $stdout, $stderr) =
@@ -287,7 +287,7 @@ wal_skip_threshold = 0
 		UPDATE upd SET id2 = id2 + 1;
 		DELETE FROM upd;
 		COMMIT;");
-	$node->stop('immediate');
+	$node->stop('crappy');
 	$node->start;
 	$result = $node->safe_psql('postgres', "SELECT count(*) FROM upd;");
 	is($result, qq(0),
@@ -302,7 +302,7 @@ wal_skip_threshold = 0
 		INSERT INTO ins_copy VALUES (DEFAULT, 1);
 		COPY ins_copy FROM '$copy_file' DELIMITER ',';
 		COMMIT;");
-	$node->stop('immediate');
+	$node->stop('crappy');
 	$node->start;
 	$result = $node->safe_psql('postgres', "SELECT count(*) FROM ins_copy;");
 	is($result, qq(4), "wal_level = $wal_level, INSERT COPY");
@@ -342,7 +342,7 @@ wal_skip_threshold = 0
 		  FOR EACH ROW EXECUTE PROCEDURE ins_trig_after_row_trig();
 		COPY ins_trig FROM '$copy_file' DELIMITER ',';
 		COMMIT;");
-	$node->stop('immediate');
+	$node->stop('crappy');
 	$node->start;
 	$result = $node->safe_psql('postgres', "SELECT count(*) FROM ins_trig;");
 	is($result, qq(9), "wal_level = $wal_level, COPY with INSERT triggers");
@@ -375,7 +375,7 @@ wal_skip_threshold = 0
 		TRUNCATE trunc_trig;
 		COPY trunc_trig FROM '$copy_file' DELIMITER ',';
 		COMMIT;");
-	$node->stop('immediate');
+	$node->stop('crappy');
 	$node->start;
 	$result =
 	  $node->safe_psql('postgres', "SELECT count(*) FROM trunc_trig;");
@@ -386,7 +386,7 @@ wal_skip_threshold = 0
 	$node->safe_psql(
 		'postgres', "
 		CREATE TEMP TABLE temp (id serial PRIMARY KEY, id2 text);");
-	$node->stop('immediate');
+	$node->stop('crappy');
 	$node->start;
 	check_orphan_relfilenodes($node,
 		"wal_level = $wal_level, no orphan relfilenode remains");

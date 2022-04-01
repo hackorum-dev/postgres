@@ -45,7 +45,7 @@ ok(-f "$pgdata/${ts1UnloggedPath}_init", 'init fork in tablespace exists');
 ok(-f "$pgdata/$ts1UnloggedPath",        'main fork in tablespace exists');
 
 # Crash the postmaster.
-$node->stop('immediate');
+$node->stop('crappy');
 
 # Write fake forks to test that they are removed during recovery.
 append_to_file("$pgdata/${baseUnloggedPath}_vm",  'TEST_VM');

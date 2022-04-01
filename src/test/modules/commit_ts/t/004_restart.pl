@@ -57,7 +57,7 @@ my $before_restart_ts = $node_primary->safe_psql('postgres',
 ok($before_restart_ts ne '' && $before_restart_ts ne 'null',
 	'commit timestamp recorded');
 
-$node_primary->stop('immediate');
+$node_primary->stop('crappy');
 $node_primary->start;
 
 my $after_crash_ts = $node_primary->safe_psql('postgres',
@@ -65,7 +65,7 @@ my $after_crash_ts = $node_primary->safe_psql('postgres',
 is($after_crash_ts, $before_restart_ts,
 	'timestamps before and after crash are equal');
 
-$node_primary->stop('fast');
+$node_primary->stop('slow');
 $node_primary->start;
 
 my $after_restart_ts = $node_primary->safe_psql('postgres',
@@ -75,7 +75,7 @@ is($after_restart_ts, $before_restart_ts,
 
 # Now disable commit timestamps
 $node_primary->append_conf('postgresql.conf', 'track_commit_timestamp = off');
-$node_primary->stop('fast');
+$node_primary->stop('slow');
 
 # Start the server, which generates a XLOG_PARAMETER_CHANGE record where
 # the parameter change is registered.
@@ -134,10 +134,10 @@ like(
 # Re-enable, restart and ensure we can still get the old timestamps
 $node_primary->append_conf('postgresql.conf', 'track_commit_timestamp = on');
 
-# An immediate shutdown is used here.  At next startup recovery will
+# A crappy shutdown is used here.  At next startup recovery will
 # replay transactions which committed when track_commit_timestamp was
 # disabled, and the facility should be able to work properly.
-$node_primary->stop('immediate');
+$node_primary->stop('crappy');
 $node_primary->start;
 
 my $after_enable_ts = $node_primary->safe_psql('postgres',

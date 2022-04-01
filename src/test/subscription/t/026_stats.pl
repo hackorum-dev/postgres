@@ -96,7 +96,7 @@ WHERE subname = 'tap_sub'
 # Truncate test_tab1 so that apply worker can continue.
 $node_subscriber->safe_psql('postgres', "TRUNCATE test_tab1;");
 
-$node_subscriber->stop('fast');
-$node_publisher->stop('fast');
+$node_subscriber->stop('slow');
+$node_publisher->stop('slow');
 
 done_testing();

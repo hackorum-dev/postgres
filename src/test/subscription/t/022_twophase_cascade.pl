@@ -391,8 +391,8 @@ $result = $node_A->safe_psql('postgres', "SELECT count(*) FROM pg_replication_sl
 is($result, qq(0), 'check replication slot was dropped on publisher node A');
 
 # shutdown
-$node_C->stop('fast');
-$node_B->stop('fast');
-$node_A->stop('fast');
+$node_C->stop('slow');
+$node_B->stop('slow');
+$node_A->stop('slow');
 
 done_testing();

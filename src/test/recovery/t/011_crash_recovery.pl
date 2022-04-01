@@ -46,7 +46,7 @@ is($node->safe_psql('postgres', qq[SELECT pg_xact_status('$xid');]),
 	'in progress', 'own xid is in-progress');
 
 # Crash and restart the postmaster
-$node->stop('immediate');
+$node->stop('crappy');
 $node->start;
 
 # Make sure we really got a new xid

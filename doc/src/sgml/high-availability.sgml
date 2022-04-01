@@ -1176,7 +1176,7 @@ primary_slot_name = 'node_a_slot'
    </para>
 
    <para>
-    Users will stop waiting if a fast shutdown is requested.  However, as
+    Users will stop waiting if a slow shutdown is requested.  However, as
     when using asynchronous replication, the server will not fully
     shutdown until all outstanding WAL records are transferred to the currently
     connected standby servers.

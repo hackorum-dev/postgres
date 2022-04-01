@@ -1125,7 +1125,7 @@ is($node_subscriber->safe_psql('postgres',"SELECT * FROM t ORDER BY a, b, c"),
    'publication containing both parent and child relation');
 
 
-$node_subscriber->stop('fast');
-$node_publisher->stop('fast');
+$node_subscriber->stop('slow');
+$node_publisher->stop('slow');
 
 done_testing();

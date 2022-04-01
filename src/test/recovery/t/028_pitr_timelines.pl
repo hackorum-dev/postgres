@@ -78,7 +78,7 @@ is($result, qq{2}, "check table contents after archive recovery");
 
 # Kill the old primary, before it archives the most recent WAL segment that
 # contains all the INSERTs.
-$node_primary->stop('immediate');
+$node_primary->stop('crappy');
 
 # Promote the standby, and switch WAL so that it archives a WAL segment
 # that contains all the INSERTs, on a new timeline.

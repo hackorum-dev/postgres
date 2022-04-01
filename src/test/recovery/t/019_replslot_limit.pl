@@ -362,10 +362,10 @@ while (1)
 	# unlikely that the problem would resolve after 15s, so give up at point
 	if ($i++ == 150)
 	{
-		# An immediate shutdown may hide evidence of a locking bug. If
-		# retrying didn't resolve the issue, shut down in fast mode.
-		$node_primary3->stop('fast');
-		$node_standby3->stop('fast');
+		# A crappy shutdown may hide evidence of a locking bug. If
+		# retrying didn't resolve the issue, shut down in slow mode.
+		$node_primary3->stop('slow');
+		$node_standby3->stop('slow');
 		die "could not determine walsender pid, can't continue";
 	}
 

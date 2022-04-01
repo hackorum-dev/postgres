@@ -133,8 +133,8 @@ $node_publisher->safe_psql('postgres', "
     INSERT INTO tab_full VALUES (13);
     PREPARE TRANSACTION 'test_prepared_tab';");
 
-$node_subscriber->stop('immediate');
-$node_publisher->stop('immediate');
+$node_subscriber->stop('crappy');
+$node_publisher->stop('crappy');
 
 $node_publisher->start;
 $node_subscriber->start;
@@ -158,8 +158,8 @@ $node_publisher->safe_psql('postgres', "
     INSERT INTO tab_full VALUES (13);
     PREPARE TRANSACTION 'test_prepared_tab';");
 
-$node_subscriber->stop('immediate');
-$node_publisher->stop('immediate');
+$node_subscriber->stop('crappy');
+$node_publisher->stop('crappy');
 
 $node_publisher->start;
 $node_subscriber->start;
@@ -183,7 +183,7 @@ $node_publisher->safe_psql('postgres', "
     INSERT INTO tab_full VALUES (15);
     PREPARE TRANSACTION 'test_prepared_tab';");
 
-$node_subscriber->stop('immediate');
+$node_subscriber->stop('crappy');
 $node_subscriber->start;
 
 # commit post the restart
@@ -205,7 +205,7 @@ $node_publisher->safe_psql('postgres', "
     INSERT INTO tab_full VALUES (17);
     PREPARE TRANSACTION 'test_prepared_tab';");
 
-$node_publisher->stop('immediate');
+$node_publisher->stop('crappy');
 $node_publisher->start;
 
 # commit post the restart
@@ -357,7 +357,7 @@ is($result, qq(0), 'check subscription relation status was dropped on subscriber
 $result = $node_subscriber->safe_psql('postgres', "SELECT count(*) FROM pg_replication_origin");
 is($result, qq(0), 'check replication origin was dropped on subscriber');
 
-$node_subscriber->stop('fast');
-$node_publisher->stop('fast');
+$node_subscriber->stop('slow');
+$node_publisher->stop('slow');
 
 done_testing();

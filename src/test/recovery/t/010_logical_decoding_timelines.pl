@@ -136,7 +136,7 @@ $node_primary->safe_psql('postgres', 'CHECKPOINT');
 $node_primary->wait_for_catchup($node_replica, 'write');
 
 # Boom, crash
-$node_primary->stop('immediate');
+$node_primary->stop('crappy');
 
 $node_replica->promote;
 

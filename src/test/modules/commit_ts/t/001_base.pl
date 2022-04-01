@@ -27,7 +27,7 @@ my $ts = $node->safe_psql('postgres',
 );
 
 # Verify that we read the same TS after crash recovery
-$node->stop('immediate');
+$node->stop('crappy');
 $node->start;
 
 my $recovered_ts = $node->safe_psql('postgres',

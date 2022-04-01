@@ -107,7 +107,7 @@ $node_c->safe_psql('postgres',
 my $node_c_pgdata = $node_c->data_dir;
 
 # Stop the node and be ready to perform the rewind.
-$node_c->stop('fast');
+$node_c->stop('slow');
 
 # Keep a temporary postgresql.conf or it would be overwritten during the rewind.
 copy(

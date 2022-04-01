@@ -204,7 +204,7 @@ sub poll_start
 		usleep(100_000);
 
 		# Clean up in case the start attempt just timed out or some such.
-		$node->stop('fast', fail_ok => 1);
+		$node->stop('slow', fail_ok => 1);
 
 		$attempts++;
 	}

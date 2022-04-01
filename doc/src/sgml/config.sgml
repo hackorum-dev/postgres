@@ -2753,7 +2753,7 @@ include_dir 'conf.d'
         data to support WAL archiving and replication, including running
         read-only queries on a standby server. <literal>minimal</literal> removes all
         logging except the information required to recover from a crash or
-        immediate shutdown.  Finally,
+        a crappy shutdown.  Finally,
         <literal>logical</literal> adds information necessary to support logical
         decoding.  Each level includes the information logged at all lower
         levels.  This parameter can only be set at server start.
@@ -4032,7 +4032,7 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
        <para>
         Note that because <filename>recovery.signal</filename> will not be
         removed when <varname>recovery_target_action</varname> is set to <literal>shutdown</literal>,
-        any subsequent start will end with immediate shutdown unless the
+        any subsequent start will end with a crappy shutdown unless the
         configuration is changed or the <filename>recovery.signal</filename>
         file is removed manually.
        </para>

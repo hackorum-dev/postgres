@@ -310,6 +310,6 @@ ok( $output =~
 	'updated partition constraint for default partition quuux_default1');
 run_sql_command('DROP TABLE quuux;');
 
-$node->stop('fast');
+$node->stop('slow');
 
 done_testing();

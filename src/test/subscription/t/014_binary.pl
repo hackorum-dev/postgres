@@ -133,7 +133,7 @@ is( $result, '{1,2,3}|{42,1.2,1.3}|
 {2,3,1}|{1.2,1.3,1.1}|{two,three,one}
 {3,1,2}|{42,1.1,1.2}|', 'check replicated data on subscriber');
 
-$node_subscriber->stop('fast');
-$node_publisher->stop('fast');
+$node_subscriber->stop('slow');
+$node_publisher->stop('slow');
 
 done_testing();

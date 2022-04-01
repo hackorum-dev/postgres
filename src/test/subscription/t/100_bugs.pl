@@ -69,8 +69,8 @@ $node_publisher->wait_for_catchup('sub1');
 
 pass('index predicates do not cause crash');
 
-$node_publisher->stop('fast');
-$node_subscriber->stop('fast');
+$node_publisher->stop('slow');
+$node_subscriber->stop('slow');
 
 
 # Handling of temporary and unlogged tables with FOR ALL TABLES publications
@@ -102,7 +102,7 @@ is( $node_publisher->psql(
 	'update to unlogged table without replica identity with FOR ALL TABLES publication'
 );
 
-$node_publisher->stop('fast');
+$node_publisher->stop('slow');
 
 # Bug #16643 - https://postgr.es/m/16643-eaadeb2a1a58d28c@postgresql.org
 #
@@ -221,9 +221,9 @@ $node_pub->safe_psql('postgres', "DROP TABLE tab1");
 $node_pub_sub->safe_psql('postgres', "DROP TABLE tab1");
 $node_sub->safe_psql('postgres', "DROP TABLE tab1");
 
-$node_pub->stop('fast');
-$node_pub_sub->stop('fast');
-$node_sub->stop('fast');
+$node_pub->stop('slow');
+$node_pub_sub->stop('slow');
+$node_sub->stop('slow');
 
 # https://postgr.es/m/OS0PR01MB61133CA11630DAE45BC6AD95FB939%40OS0PR01MB6113.jpnprd01.prod.outlook.com
 
@@ -304,7 +304,7 @@ is( $node_subscriber->safe_psql(
 	qq(-1|1),
 	"update works with REPLICA IDENTITY");
 
-$node_publisher->stop('fast');
-$node_subscriber->stop('fast');
+$node_publisher->stop('slow');
+$node_subscriber->stop('slow');
 
 done_testing();

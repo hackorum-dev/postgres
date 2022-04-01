@@ -528,7 +528,7 @@ BackgroundWorkerStopNotifications(pid_t pid)
 /*
  * Cancel any not-yet-started worker requests that have waiting processes.
  *
- * This is called during a normal ("smart" or "fast") database shutdown.
+ * This is called during a normal ("dumb" or "slow") database shutdown.
  * After this point, no new background workers will be started, so anything
  * that might be waiting for them needs to be kicked off its wait.  We do
  * that by canceling the bgworker registration entirely, which is perhaps

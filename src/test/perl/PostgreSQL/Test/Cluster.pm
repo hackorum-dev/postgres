@@ -67,7 +67,7 @@ PostgreSQL::Test::Cluster - class representing PostgreSQL server instance
   $other_node->start;
 
   # Stop the server
-  $node->stop('fast');
+  $node->stop('slow');
 
   # Find a free, unprivileged TCP port to bind some other service to
   my $port = PostgreSQL::Test::Cluster::get_free_port();
@@ -937,7 +937,7 @@ sub stop
 
 	local %ENV = $self->_get_env();
 
-	$mode = 'fast' unless defined $mode;
+	$mode = 'slow' unless defined $mode;
 	return 1 unless defined $self->{_pid};
 
 	print "### Stopping node \"$name\" using mode $mode\n";
@@ -1596,7 +1596,7 @@ END
 
 =item $node->teardown_node()
 
-Do an immediate stop of the node
+Do a crappy stop of the node
 
 =cut
 
@@ -1604,7 +1604,7 @@ sub teardown_node
 {
 	my $self = shift;
 
-	$self->stop('immediate');
+	$self->stop('crappy');
 	return;
 }
 

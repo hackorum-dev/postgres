@@ -564,7 +564,7 @@ $result =
 	"SELECT sum(a) FROM tst_dom_constr");
 is($result, '21', 'sql-function constraint on domain');
 
-$node_subscriber->stop('fast');
-$node_publisher->stop('fast');
+$node_subscriber->stop('slow');
+$node_publisher->stop('slow');
 
 done_testing();

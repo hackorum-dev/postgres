@@ -335,7 +335,7 @@ stop_postmaster(bool in_atexit)
 			  "\"%s/pg_ctl\" -w -D \"%s\" -o \"%s\" %s stop",
 			  cluster->bindir, cluster->pgconfig,
 			  cluster->pgopts ? cluster->pgopts : "",
-			  in_atexit ? "-m fast" : "-m smart");
+			  in_atexit ? "-m slow" : "-m dumb");
 
 	os_info.running_cluster = NULL;
 }

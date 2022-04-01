@@ -236,7 +236,7 @@ sub run_pg_rewind
 		# Stop the primary and be ready to perform the rewind.  The cluster
 		# needs recovery to finish once, and pg_rewind makes sure that it
 		# happens automatically.
-		$node_primary->stop('immediate');
+		$node_primary->stop('crappy');
 	}
 
 	# At this point, the rewind processing is ready to run.

@@ -74,7 +74,7 @@ $node_1->wait_for_catchup('node_3');
 #
 # Swap the roles of node_1 and node_3, so that node_1 follows node_3.
 #
-$node_1->stop('fast');
+$node_1->stop('slow');
 $node_3->promote;
 # Force a checkpoint after the promotion. pg_rewind looks at the control
 # file to determine what timeline the server is on, and that isn't updated
@@ -138,8 +138,8 @@ $node_2->poll_query_until('postgres',
 
 # At this point node_2 will shut down without a shutdown checkpoint,
 # but with WAL entries beyond the preceding shutdown checkpoint.
-$node_2->stop('fast');
-$node_3->stop('fast');
+$node_2->stop('slow');
+$node_3->stop('slow');
 
 my $node_2_pgdata  = $node_2->data_dir;
 my $node_1_connstr = $node_1->connstr;

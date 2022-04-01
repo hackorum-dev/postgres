@@ -28,7 +28,7 @@ $node->safe_psql("postgres", "SELECT * FROM pg_proc;");
 $node->safe_psql("postgres",
 	"SELECT * FROM pg_class WHERE relname = 'pg_class';");
 
-$node->stop('fast');
+$node->stop('slow');
 
 my $log = $node->logfile();
 

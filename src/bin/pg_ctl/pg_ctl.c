@@ -41,9 +41,9 @@ typedef long pgpid_t;
 
 typedef enum
 {
-	SMART_MODE,
-	FAST_MODE,
-	IMMEDIATE_MODE
+	DUMB_MODE,
+	SLOW_MODE,
+	CRAPPY_MODE
 } ShutdownMode;
 
 typedef enum
@@ -80,7 +80,7 @@ static bool do_wait = true;
 static int	wait_seconds = DEFAULT_WAIT;
 static bool wait_seconds_arg = false;
 static bool silent_mode = false;
-static ShutdownMode shutdown_mode = FAST_MODE;
+static ShutdownMode shutdown_mode = SLOW_MODE;
 static int	sig = SIGINT;		/* default */
 static CtlCommand ctl_command = NO_COMMAND;
 static char *pg_data = NULL;
@@ -1060,11 +1060,11 @@ do_stop(void)
 	{
 		/*
 		 * If backup_label exists, an online backup is running. Warn the user
-		 * that smart shutdown will wait for it to finish. However, if the
+		 * that dumb shutdown will wait for it to finish. However, if the
 		 * server is in archive recovery, we're recovering from an online
 		 * backup instead of performing one.
 		 */
-		if (shutdown_mode == SMART_MODE &&
+		if (shutdown_mode == DUMB_MODE &&
 			stat(backup_file, &statbuf) == 0 &&
 			get_control_dbstate() != DB_IN_ARCHIVE_RECOVERY)
 		{
@@ -1079,7 +1079,7 @@ do_stop(void)
 			print_msg(_(" failed\n"));
 
 			write_stderr(_("%s: server does not shut down\n"), progname);
-			if (shutdown_mode == SMART_MODE)
+			if (shutdown_mode == DUMB_MODE)
 				write_stderr(_("HINT: The \"-m fast\" option immediately disconnects sessions rather than\n"
 							   "waiting for session-initiated disconnection.\n"));
 			exit(1);
@@ -1136,11 +1136,11 @@ do_restart(void)
 
 		/*
 		 * If backup_label exists, an online backup is running. Warn the user
-		 * that smart shutdown will wait for it to finish. However, if the
+		 * that dumb shutdown will wait for it to finish. However, if the
 		 * server is in archive recovery, we're recovering from an online
 		 * backup instead of performing one.
 		 */
-		if (shutdown_mode == SMART_MODE &&
+		if (shutdown_mode == DUMB_MODE &&
 			stat(backup_file, &statbuf) == 0 &&
 			get_control_dbstate() != DB_IN_ARCHIVE_RECOVERY)
 		{
@@ -1156,7 +1156,7 @@ do_restart(void)
 			print_msg(_(" failed\n"));
 
 			write_stderr(_("%s: server does not shut down\n"), progname);
-			if (shutdown_mode == SMART_MODE)
+			if (shutdown_mode == DUMB_MODE)
 				write_stderr(_("HINT: The \"-m fast\" option immediately disconnects sessions rather than\n"
 							   "waiting for session-initiated disconnection.\n"));
 			exit(1);
@@ -2135,12 +2135,12 @@ do_help(void)
 			 "                         (PostgreSQL server executable) or initdb\n"));
 	printf(_("  -p PATH-TO-POSTGRES    normally not necessary\n"));
 	printf(_("\nOptions for stop or restart:\n"));
-	printf(_("  -m, --mode=MODE        MODE can be \"smart\", \"fast\", or \"immediate\"\n"));
+	printf(_("  -m, --mode=MODE        MODE can be \"dumb\", \"slow\", or \"crappy\"\n"));
 
 	printf(_("\nShutdown modes are:\n"));
-	printf(_("  smart       quit after all clients have disconnected\n"));
-	printf(_("  fast        quit directly, with proper shutdown (default)\n"));
-	printf(_("  immediate   quit without complete shutdown; will lead to recovery on restart\n"));
+	printf(_("  dumb        quit after all clients have disconnected, if you're lucky\n"));
+	printf(_("  slow        quit eventually, with proper shutdown (default)\n"));
+	printf(_("  crappy      quit without complete shutdown; will lead to recovery on restart\n"));
 
 	printf(_("\nAllowed signal names for kill:\n"));
 	printf("  ABRT HUP INT KILL QUIT TERM USR1 USR2\n");
@@ -2166,19 +2166,19 @@ do_help(void)
 static void
 set_mode(char *modeopt)
 {
-	if (strcmp(modeopt, "s") == 0 || strcmp(modeopt, "smart") == 0)
+	if (strcmp(modeopt, "d") == 0 || strcmp(modeopt, "dumb") == 0)
 	{
-		shutdown_mode = SMART_MODE;
+		shutdown_mode = DUMB_MODE;
 		sig = SIGTERM;
 	}
-	else if (strcmp(modeopt, "f") == 0 || strcmp(modeopt, "fast") == 0)
+	else if (strcmp(modeopt, "s") == 0 || strcmp(modeopt, "slow") == 0)
 	{
-		shutdown_mode = FAST_MODE;
+		shutdown_mode = SLOW_MODE;
 		sig = SIGINT;
 	}
-	else if (strcmp(modeopt, "i") == 0 || strcmp(modeopt, "immediate") == 0)
+	else if (strcmp(modeopt, "c") == 0 || strcmp(modeopt, "crappy") == 0)
 	{
-		shutdown_mode = IMMEDIATE_MODE;
+		shutdown_mode = CRAPPY_MODE;
 		sig = SIGQUIT;
 	}
 	else

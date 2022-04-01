@@ -311,9 +311,9 @@ PostgreSQL documentation
       <listitem>
        <para>
         Specifies the shutdown mode.  <replaceable>mode</replaceable>
-        can be <literal>smart</literal>, <literal>fast</literal>, or
-        <literal>immediate</literal>, or the first letter of one of
-        these three.  If this option is omitted, <literal>fast</literal> is
+        can be <literal>dumb</literal>, <literal>slow</literal>, or
+        <literal>crappy</literal>, or the first letter of one of
+        these three.  If this option is omitted, <literal>slow</literal> is
         the default.
        </para>
       </listitem>
@@ -657,7 +657,7 @@ PostgreSQL documentation
     The <option>-m</option> option allows control over
     <emphasis>how</emphasis> the server shuts down:
 <screen>
-<prompt>$</prompt> <userinput>pg_ctl stop -m smart</userinput>
+<prompt>$</prompt> <userinput>pg_ctl stop -m dumb</userinput>
 </screen></para>
   </refsect2>
 

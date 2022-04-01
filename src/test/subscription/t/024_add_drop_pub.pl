@@ -94,7 +94,7 @@ $result = $node_subscriber->safe_psql('postgres',
 is($result, qq(20|1|10), 'check initial data is copied to subscriber');
 
 # shutdown
-$node_subscriber->stop('fast');
-$node_publisher->stop('fast');
+$node_subscriber->stop('slow');
+$node_publisher->stop('slow');
 
 done_testing();

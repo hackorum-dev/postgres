@@ -110,8 +110,8 @@ $standby->safe_psql('postgres', 'CHECKPOINT;');
 # process does not flush any pages on its side.  The standby is
 # cleanly stopped, which makes the checkpointer update minRecoveryPoint
 # with the restart point created at shutdown.
-$primary->stop('immediate');
-$standby->stop('fast');
+$primary->stop('crappy');
+$standby->stop('slow');
 
 # Check the data consistency of the instance while offline.  This is
 # done by directly scanning the on-disk relation blocks and what

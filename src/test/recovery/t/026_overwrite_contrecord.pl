@@ -63,10 +63,10 @@ my $endfile = $node->safe_psql('postgres',
 	'SELECT pg_walfile_name(pg_current_wal_insert_lsn())');
 ok($initfile ne $endfile, "$initfile differs from $endfile");
 
-# Now stop abruptly, to avoid a stop checkpoint.  We can remove the tail file
+# Now stop crappily, to avoid a stop checkpoint.  We can remove the tail file
 # afterwards, and on startup the large message should be overwritten with new
 # contents
-$node->stop('immediate');
+$node->stop('crappy');
 
 unlink $node->basedir . "/pgdata/pg_wal/$endfile"
   or die "could not unlink " . $node->basedir . "/pgdata/pg_wal/$endfile: $!";

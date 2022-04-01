@@ -176,7 +176,7 @@ $result = $node_publisher->safe_psql('postgres',
 is($result, qq(0),
 	'DROP SUBSCRIPTION during error can clean up the slots on the publisher');
 
-$node_subscriber->stop('fast');
-$node_publisher->stop('fast');
+$node_subscriber->stop('slow');
+$node_publisher->stop('slow');
 
 done_testing();

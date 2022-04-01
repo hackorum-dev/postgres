@@ -271,9 +271,9 @@ static StartupStatusEnum StartupStatus = STARTUP_NOT_RUNNING;
 
 /* Startup/shutdown state */
 #define			NoShutdown		0
-#define			SmartShutdown	1
-#define			FastShutdown	2
-#define			ImmediateShutdown	3
+#define			DumbShutdown	1
+#define			SlowShutdown	2
+#define			CrappyShutdown	3
 
 static int	Shutdown = NoShutdown;
 
@@ -340,7 +340,7 @@ typedef enum
 static PMState pmState = PM_INIT;
 
 /*
- * While performing a "smart shutdown", we restrict new connections but stay
+ * While performing a dumb shutdown, we restrict new connections but stay
  * in PM_RUN or PM_HOT_STANDBY state until all the client backends are gone.
  * connsAllowed is a sub-state indicator showing the active restriction.
  * It is of no interest unless pmState is PM_RUN or PM_HOT_STANDBY.
@@ -1904,7 +1904,7 @@ ServerLoop(void)
 		 *
 		 * Note we also do this during recovery from a process crash.
 		 */
-		if ((Shutdown >= ImmediateShutdown || (FatalError && !SendStop)) &&
+		if ((Shutdown >= CrappyShutdown || (FatalError && !SendStop)) &&
 			AbortStartTime != 0 &&
 			(now - AbortStartTime) >= SIGKILL_CHILDREN_AFTER_SECS)
 		{
@@ -1931,7 +1931,7 @@ ServerLoop(void)
 			if (!RecheckDataDirLockFile())
 			{
 				ereport(LOG,
-						(errmsg("performing immediate shutdown because data directory lock file is invalid")));
+						(errmsg("performing crappy shutdown because data directory lock file is invalid")));
 				kill(MyProcPid, SIGQUIT);
 			}
 			last_lockfile_recheck_time = now;
@@ -2769,7 +2769,7 @@ SIGHUP_handler(SIGNAL_ARGS)
 	PG_SETMASK(&BlockSig);
 #endif
 
-	if (Shutdown <= SmartShutdown)
+	if (Shutdown <= DumbShutdown)
 	{
 		ereport(LOG,
 				(errmsg("received SIGHUP, reloading configuration files")));
@@ -2864,11 +2864,11 @@ pmdie(SIGNAL_ARGS)
 			 *
 			 * Wait for children to end their work, then shut down.
 			 */
-			if (Shutdown >= SmartShutdown)
+			if (Shutdown >= DumbShutdown)
 				break;
-			Shutdown = SmartShutdown;
+			Shutdown = DumbShutdown;
 			ereport(LOG,
-					(errmsg("received smart shutdown request")));
+					(errmsg("received dumb shutdown request")));
 
 			/* Report status */
 			AddToDataDirLockFile(LOCK_FILE_LINE_PM_STATUS, PM_STATUS_STOPPING);
@@ -2905,16 +2905,16 @@ pmdie(SIGNAL_ARGS)
 		case SIGINT:
 
 			/*
-			 * Fast Shutdown:
+			 * Slow Shutdown:
 			 *
 			 * Abort all children with SIGTERM (rollback active transactions
 			 * and exit) and shut down when they are gone.
 			 */
-			if (Shutdown >= FastShutdown)
+			if (Shutdown >= SlowShutdown)
 				break;
-			Shutdown = FastShutdown;
+			Shutdown = SlowShutdown;
 			ereport(LOG,
-					(errmsg("received fast shutdown request")));
+					(errmsg("received slow shutdown request")));
 
 			/* Report status */
 			AddToDataDirLockFile(LOCK_FILE_LINE_PM_STATUS, PM_STATUS_STOPPING);
@@ -2946,17 +2946,17 @@ pmdie(SIGNAL_ARGS)
 		case SIGQUIT:
 
 			/*
-			 * Immediate Shutdown:
+			 * Crappy Shutdown:
 			 *
 			 * abort all children with SIGQUIT, wait for them to exit,
 			 * terminate remaining ones with SIGKILL, then exit without
 			 * attempt to properly shut down the data base system.
 			 */
-			if (Shutdown >= ImmediateShutdown)
+			if (Shutdown >= CrappyShutdown)
 				break;
-			Shutdown = ImmediateShutdown;
+			Shutdown = CrappyShutdown;
 			ereport(LOG,
-					(errmsg("received immediate shutdown request")));
+					(errmsg("received crappy shutdown request")));
 
 			/* Report status */
 			AddToDataDirLockFile(LOCK_FILE_LINE_PM_STATUS, PM_STATUS_STOPPING);
@@ -3035,7 +3035,7 @@ reaper(SIGNAL_ARGS)
 				ereport(LOG,
 						(errmsg("shutdown at recovery target")));
 				StartupStatus = STARTUP_NOT_RUNNING;
-				Shutdown = Max(Shutdown, SmartShutdown);
+				Shutdown = Max(Shutdown, DumbShutdown);
 				TerminateChildren(SIGTERM);
 				pmState = PM_WAIT_BACKENDS;
 				/* PostmasterStateMachine logic does the rest */
@@ -3528,12 +3528,12 @@ HandleChildCrash(int pid, int exitstatus, const char *procname)
 
 	/*
 	 * We only log messages and send signals if this is the first process
-	 * crash and we're not doing an immediate shutdown; otherwise, we're only
+	 * crash and we're not doing a crappy shutdown; otherwise, we're only
 	 * here to update postmaster's idea of live processes.  If we have already
 	 * signaled children, nonzero exit status is to be expected, so don't
 	 * clutter log.
 	 */
-	take_action = !FatalError && Shutdown != ImmediateShutdown;
+	take_action = !FatalError && Shutdown != CrappyShutdown;
 
 	if (take_action)
 	{
@@ -3749,7 +3749,7 @@ HandleChildCrash(int pid, int exitstatus, const char *procname)
 
 	/* We do NOT restart the syslogger */
 
-	if (Shutdown != ImmediateShutdown)
+	if (Shutdown != CrappyShutdown)
 		FatalError = true;
 
 	/* We now transit into a state of waiting for children to die */
@@ -3839,7 +3839,7 @@ LogChildExit(int lev, const char *procname, int pid, int exitstatus)
 static void
 PostmasterStateMachine(void)
 {
-	/* If we're doing a smart shutdown, try to advance that state. */
+	/* If we're doing a dumb shutdown, try to advance that state. */
 	if (pmState == PM_RUN || pmState == PM_HOT_STANDBY)
 	{
 		if (connsAllowed == ALLOW_SUPERUSER_CONNS)
@@ -3910,7 +3910,7 @@ PostmasterStateMachine(void)
 		 * PM_WAIT_BACKENDS state ends when we have no regular backends
 		 * (including autovac workers), no bgworkers (including unconnected
 		 * ones), and no walwriter, autovac launcher or bgwriter.  If we are
-		 * doing crash recovery or an immediate shutdown then we expect the
+		 * doing crash recovery or a crappy shutdown then we expect the
 		 * checkpointer to exit as well, otherwise not. The stats and
 		 * syslogger processes are disregarded since they are not connected to
 		 * shared memory; we also disregard dead_end children here. Walsenders
@@ -3922,11 +3922,11 @@ PostmasterStateMachine(void)
 			WalReceiverPID == 0 &&
 			BgWriterPID == 0 &&
 			(CheckpointerPID == 0 ||
-			 (!FatalError && Shutdown < ImmediateShutdown)) &&
+			 (!FatalError && Shutdown < CrappyShutdown)) &&
 			WalWriterPID == 0 &&
 			AutoVacPID == 0)
 		{
-			if (Shutdown >= ImmediateShutdown || FatalError)
+			if (Shutdown >= CrappyShutdown || FatalError)
 			{
 				/*
 				 * Start waiting for dead_end children to die.  This state
@@ -3936,7 +3936,7 @@ PostmasterStateMachine(void)
 
 				/*
 				 * We already SIGQUIT'd the archiver and stats processes, if
-				 * any, when we started immediate shutdown or entered
+				 * any, when we started a crappy shutdown or entered
 				 * FatalError state.
 				 */
 			}
@@ -4046,7 +4046,7 @@ PostmasterStateMachine(void)
 		{
 			/*
 			 * Terminate exclusive backup mode to avoid recovery after a clean
-			 * fast shutdown.  Since an exclusive backup can only be taken
+			 * slow shutdown.  Since an exclusive backup can only be taken
 			 * during normal running (and not, for example, while running
 			 * under Hot Standby) it only makes sense to do this if we reached
 			 * normal running. If we're still in recovery, the backup file is
@@ -4443,7 +4443,7 @@ BackendInitialize(Port *port)
 	/*
 	 * We arrange to do _exit(1) if we receive SIGTERM or timeout while trying
 	 * to collect the startup packet; while SIGQUIT results in _exit(2).
-	 * Otherwise the postmaster cannot shutdown the database FAST or IMMED
+	 * Otherwise the postmaster cannot shutdown the database SLOW or CRAPPY
 	 * cleanly if a buggy client fails to send the packet promptly.
 	 *
 	 * Exiting with _exit(1) is only possible because we have not yet touched
@@ -5319,7 +5319,7 @@ sigusr1_handler(SIGNAL_ARGS)
 	}
 
 	if (CheckPostmasterSignal(PMSIGNAL_START_AUTOVAC_LAUNCHER) &&
-		Shutdown <= SmartShutdown && pmState < PM_STOP_BACKENDS)
+		Shutdown <= DumbShutdown && pmState < PM_STOP_BACKENDS)
 	{
 		/*
 		 * Start one iteration of the autovacuum daemon, even if autovacuuming
@@ -5334,7 +5334,7 @@ sigusr1_handler(SIGNAL_ARGS)
 	}
 
 	if (CheckPostmasterSignal(PMSIGNAL_START_AUTOVAC_WORKER) &&
-		Shutdown <= SmartShutdown && pmState < PM_STOP_BACKENDS)
+		Shutdown <= DumbShutdown && pmState < PM_STOP_BACKENDS)
 	{
 		/* The autovacuum launcher wants us to start a worker process. */
 		StartAutovacuumWorker();
@@ -5691,7 +5691,7 @@ MaybeStartWalReceiver(void)
 	if (WalReceiverPID == 0 &&
 		(pmState == PM_STARTUP || pmState == PM_RECOVERY ||
 		 pmState == PM_HOT_STANDBY) &&
-		Shutdown <= SmartShutdown)
+		Shutdown <= DumbShutdown)
 	{
 		WalReceiverPID = StartWalReceiver();
 		if (WalReceiverPID != 0)

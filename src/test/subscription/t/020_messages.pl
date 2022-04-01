@@ -143,7 +143,7 @@ is( $result, qq(77|0
 77|0),
 	'non-transactional message on slot from aborted transaction is M');
 
-$node_subscriber->stop('fast');
-$node_publisher->stop('fast');
+$node_subscriber->stop('slow');
+$node_publisher->stop('slow');
 
 done_testing();

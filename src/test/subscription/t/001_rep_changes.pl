@@ -445,7 +445,7 @@ $node_publisher->safe_psql('postgres', "DELETE FROM tab_rep");
 
 # Restart the publisher and check the state of the subscriber which
 # should be in a streaming state after catching up.
-$node_publisher->stop('fast');
+$node_publisher->stop('slow');
 $node_publisher->start;
 
 $node_publisher->wait_for_catchup('tap_sub');
@@ -545,8 +545,8 @@ $result = $node_subscriber->safe_psql('postgres',
 	"SELECT count(*) FROM pg_replication_origin");
 is($result, qq(0), 'check replication origin was dropped on subscriber');
 
-$node_subscriber->stop('fast');
-$node_publisher->stop('fast');
+$node_subscriber->stop('slow');
+$node_publisher->stop('slow');
 
 # CREATE PUBLICATION while wal_level=minimal should succeed, with a WARNING
 $node_publisher->append_conf(

@@ -77,7 +77,7 @@ $bravo->safe_psql('postgres',
 # Now crash-stop the promoted standby and restart.  This makes sure that
 # replay does not see invalid page references because of an invalid
 # minimum consistent recovery point.
-$bravo->stop('immediate');
+$bravo->stop('crappy');
 $bravo->start;
 
 # Check state of the table after full crash recovery.  All its data should

@@ -57,7 +57,7 @@ for my $testname (@tests)
 	}
 }
 
-$node->stop('fast');
+$node->stop('slow');
 
 done_testing();
 

@@ -85,7 +85,7 @@ CHECKPOINT;
 
 # Enforce recovery, the checkpoint record generated previously should
 # still be found.
-$node_pitr->stop('immediate');
+$node_pitr->stop('crappy');
 $node_pitr->start;
 
 done_testing();
