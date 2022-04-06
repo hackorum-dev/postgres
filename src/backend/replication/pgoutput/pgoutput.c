@@ -13,6 +13,7 @@
 #include "postgres.h"
 
 #include "access/tupconvert.h"
+#include "catalog/dependency.h"
 #include "catalog/partition.h"
 #include "catalog/pg_publication.h"
 #include "catalog/pg_publication_namespace.h"
@@ -2202,6 +2203,23 @@ get_rel_sync_entry(PGOutputData *data, Relation relation)
 						{
 							pub_relid = ancestor;
 							ancestor_level = level;
+						}
+					}
+				}
+
+				if (relation->rd_rel->relkind == RELKIND_SEQUENCE)
+				{
+					Oid			tableId;
+					int32		colId;
+
+					if (sequenceIsOwned(relid, DEPENDENCY_INTERNAL, &tableId, &colId))
+					{
+						if (GetRelationPublications(tableId) ||
+							GetSchemaPublications(get_rel_namespace(tableId),
+												  PUB_OBJTYPE_TABLE) ||
+							pub->alltables)
+						{
+							ancestor_published = true;
 						}
 					}
 				}

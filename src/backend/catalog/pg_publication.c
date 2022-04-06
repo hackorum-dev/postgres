@@ -1392,6 +1392,7 @@ pg_get_publication_sequences(PG_FUNCTION_ARGS)
 		{
 			List	   *relids,
 					   *schemarelids;
+			ListCell   *lc;
 
 			relids = GetPublicationRelations(publication->oid,
 											 PUB_OBJTYPE_SEQUENCE,
@@ -1404,6 +1405,15 @@ pg_get_publication_sequences(PG_FUNCTION_ARGS)
 															PUBLICATION_PART_ROOT :
 															PUBLICATION_PART_LEAF);
 			sequences = list_concat_unique_oid(relids, schemarelids);
+
+			foreach(lc, GetPublicationRelations(publication->oid,
+												PUB_OBJTYPE_TABLE,
+												publication->pubviaroot ? PUBLICATION_PART_ROOT : PUBLICATION_PART_LEAF))
+			{
+				Oid			relid = lfirst_oid(lc);
+
+				sequences = list_concat_unique_oid(sequences, getOwnedSequences(relid));
+			}
 		}
 
 		funcctx->user_fctx = (void *) sequences;
