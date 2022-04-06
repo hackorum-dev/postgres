@@ -130,7 +130,10 @@ static TimeLineID curFileTLI;
  * currently performing crash recovery using only XLOG files in pg_wal, but
  * will switch to using offline XLOG archives as soon as we reach the end of
  * WAL in pg_wal.
-*/
+ *
+ * NB: ArchiveRecoveryRequested is exported into shared memory as well to share
+ * with other backends through ArchiveRecoveryIsRequested().
+ */
 bool		ArchiveRecoveryRequested = false;
 bool		InArchiveRecovery = false;
 
@@ -144,6 +147,7 @@ static bool StandbyModeRequested = false;
 bool		StandbyMode = false;
 
 /* was a signal file present at startup? */
+
 static bool standby_signal_file_found = false;
 static bool recovery_signal_file_found = false;
 
@@ -311,6 +315,13 @@ typedef struct XLogRecoveryCtlData
 	 * triggered.  Protected by info_lck.
 	 */
 	bool		SharedPromoteIsTriggered;
+
+	/*
+	 * SharedArchiveRecoveryRequested exports the value of the
+	 * ArchiveRecoveryRequested flag to be share which is otherwise valid only
+	 * in the startup process.
+	 */
+	bool		SharedArchiveRecoveryRequested;
 
 	/*
 	 * recoveryWakeupLatch is used to wake up the startup process to continue
@@ -1042,6 +1053,11 @@ readRecoverySignalFile(void)
 		ereport(FATAL,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("standby mode is not supported by single-user servers")));
+
+	/*
+	 * Remember archive recovery request in shared memory state.
+	 */
+	XLogRecoveryCtl->SharedArchiveRecoveryRequested = ArchiveRecoveryRequested;
 }
 
 static void
@@ -4235,6 +4251,24 @@ StartupRequestWalReceiverRestart(void)
 	}
 }
 
+/*
+ * Reads ArchiveRecoveryRequested value from the shared memory.
+ *
+ * ArchiveRecoveryRequested is only valid in the backend that reads the signal
+ * files, and whenever it needs to access this value from other backends, should
+ * use this function.
+ */
+bool
+ArchiveRecoveryIsRequested(void)
+{
+	/*
+	 * Use volatile pointer to make sure we make a fresh read of the
+	 * shared variable.
+	 */
+	volatile XLogRecoveryCtlData *xlogrecoveryctl = XLogRecoveryCtl;
+
+	return xlogrecoveryctl->SharedArchiveRecoveryRequested;
+}
 
 /*
  * Has a standby promotion already been triggered?

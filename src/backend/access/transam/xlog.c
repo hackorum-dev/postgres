@@ -552,6 +552,24 @@ typedef struct XLogCtlData
 	 */
 	XLogRecPtr	lastFpwDisableRecPtr;
 
+	/*
+	 * SharedAbortedRecPtr exports abortedRecPtr to be shared with another
+	 * process to write OVERWRITE_CONTRECORD message, if WAL writes are not
+	 * permitted in the current process which reads that. For the same reason
+	 * SharedMissingContrecPtr exports missingContrecPtr.
+	 */
+	XLogRecPtr	SharedAbortedRecPtr;
+	XLogRecPtr	SharedMissingContrecPtr;
+
+	/*
+	 * Determines an endpoint that we consider a valid portion of WAL when
+	 * server startup.  It is invalid during recovery and does not change once
+	 * set.
+	 */
+	XLogRecPtr	endOfLog;
+	TimeLineID	endOfLogTLI;
+
+
 	slock_t		info_lck;		/* locks shared variables shown above */
 } XLogCtlData;
 
@@ -634,9 +652,7 @@ static bool holdingAllLocks = false;
 static MemoryContext walDebugCxt = NULL;
 #endif
 
-static void CleanupAfterArchiveRecovery(TimeLineID EndOfLogTLI,
-										XLogRecPtr EndOfLog,
-										TimeLineID newTLI);
+static void CleanupAfterArchiveRecovery();
 static void CheckRequiredParameterValues(void);
 static void XLogReportParameters(void);
 static int	LocalSetXLogInsertAllowed(void);
@@ -665,10 +681,7 @@ static void UpdateLastRemovedPtr(char *filename);
 static void ValidateXLOGDirectoryStructure(void);
 static void CleanupBackupHistory(void);
 static void UpdateMinRecoveryPoint(XLogRecPtr lsn, bool force);
-static bool XLogAcceptWrites(bool performedWalRecovery, TimeLineID newTLI,
-							 TimeLineID EndOfLogTLI, XLogRecPtr EndOfLog,
-							 XLogRecPtr abortedRecPtr,
-							 XLogRecPtr missingContrecPtr);
+static bool XLogAcceptWrites(void);
 static bool PerformRecoveryXLogAction(void);
 static void InitControlFile(uint64 sysidentifier);
 static void WriteControlFile(void);
@@ -4746,9 +4759,17 @@ XLogInitNewTimeline(TimeLineID endTLI, XLogRecPtr endOfLog, TimeLineID newTLI)
  * Perform cleanup actions at the conclusion of archive recovery.
  */
 static void
-CleanupAfterArchiveRecovery(TimeLineID EndOfLogTLI, XLogRecPtr EndOfLog,
-							TimeLineID newTLI)
+CleanupAfterArchiveRecovery()
 {
+	/*
+	 * Use volatile pointer to make sure we make a fresh read of the
+	 * shared variable.
+	 */
+	volatile XLogCtlData *xlogctl = XLogCtl;
+
+	XLogRecPtr	EndOfLog = xlogctl->endOfLog;
+	TimeLineID	EndOfLogTLI = xlogctl->endOfLogTLI;
+
 	/*
 	 * Execute the recovery_end_command, if any.
 	 */
@@ -4766,7 +4787,7 @@ CleanupAfterArchiveRecovery(TimeLineID EndOfLogTLI, XLogRecPtr EndOfLog,
 	 * pre-allocated files containing garbage. In any case, they are not part
 	 * of the new timeline's history so we don't need them.
 	 */
-	RemoveNonParentXlogFiles(EndOfLog, newTLI);
+	RemoveNonParentXlogFiles(EndOfLog, xlogctl->InsertTimeLineID);
 
 	/*
 	 * If the switch happened in the middle of a segment, what to do with the
@@ -4889,7 +4910,6 @@ StartupXLOG(void)
 	XLogRecPtr	EndOfLog;
 	TimeLineID	EndOfLogTLI;
 	TimeLineID	newTLI;
-	bool		performedWalRecovery;
 	EndOfWalRecoveryInfo *endOfRecoveryInfo;
 	XLogRecPtr	abortedRecPtr;
 	XLogRecPtr	missingContrecPtr;
@@ -5293,10 +5313,24 @@ StartupXLOG(void)
 		 * We're all set for replaying the WAL now. Do it.
 		 */
 		PerformWalRecovery();
-		performedWalRecovery = true;
+
+		/*
+		 * Redo apply position will be checked to find out whether we entered
+		 * wal recovery performed or not because it will be a valid LSN if and
+		 * only if we entered recovery. Even if we ultimately replayed no WAL
+		 * records, it will have been initialized based on where the replay was
+		 * due to start.
+		 */
+		Assert(!XLogRecPtrIsInvalid(GetXLogReplayRecPtr(NULL)));
 	}
 	else
-		performedWalRecovery = false;
+	{
+		/*
+		 * Redo apply position will be an invalid LSN if we haven't entered
+		 * recovery.
+		 */
+		Assert(XLogRecPtrIsInvalid(GetXLogReplayRecPtr(NULL)));
+	}
 
 	/*
 	 * Finish WAL recovery.
@@ -5441,6 +5475,15 @@ StartupXLOG(void)
 	{
 		Assert(!XLogRecPtrIsInvalid(abortedRecPtr));
 		EndOfLog = missingContrecPtr;
+
+		/*
+		 * Remember broken record pointer in shared memory state. This process
+		 * might unable to write an OVERWRITE_CONTRECORD message because of WAL
+		 * write restriction.  Storing in shared memory helps that get written
+		 * later by another process as soon as WAL writing is enabled.
+		 */
+		XLogCtl->SharedAbortedRecPtr = abortedRecPtr;
+		XLogCtl->SharedMissingContrecPtr = missingContrecPtr;
 	}
 
 	/*
@@ -5506,6 +5549,13 @@ StartupXLOG(void)
 	XLogCtl->lastSegSwitchTime = (pg_time_t) time(NULL);
 	XLogCtl->lastSegSwitchLSN = EndOfLog;
 
+	/*
+	 * Store EndOfLog and EndOfLogTLI into shared memory to share with other
+	 * processes.
+	 */
+	XLogCtl->endOfLog = EndOfLog;
+	XLogCtl->endOfLogTLI = EndOfLogTLI;
+
 	/* also initialize latestCompletedXid, to nextXid - 1 */
 	LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
 	ShmemVariableCache->latestCompletedXid = ShmemVariableCache->nextXid;
@@ -5531,9 +5581,15 @@ StartupXLOG(void)
 	/* Shut down xlogreader */
 	ShutdownWalRecovery();
 
+	/*
+	 * Update full_page_writes in shared memory, and later whenever wal write
+	 * permitted, write an XLOG_FPW_CHANGE record before resource manager writes
+	 * cleanup WAL records or checkpoint record is written.
+	 */
+	Insert->fullPageWrites = lastFullPageWrites;
+
 	/* Prepare to accept WAL writes. */
-	promoted = XLogAcceptWrites(performedWalRecovery, newTLI, EndOfLogTLI,
-								EndOfLog, abortedRecPtr, missingContrecPtr);
+	promoted = XLogAcceptWrites();
 
 	/*
 	 * All done with end-of-recovery actions.
@@ -5592,35 +5648,39 @@ StartupXLOG(void)
  * Prepare to accept WAL writes.
  */
 static bool
-XLogAcceptWrites(bool performedWalRecovery, TimeLineID newTLI,
-				 TimeLineID EndOfLogTLI, XLogRecPtr EndOfLog,
-				 XLogRecPtr abortedRecPtr, XLogRecPtr missingContrecPtr)
+XLogAcceptWrites(void)
 {
 	bool		promoted = false;
-	XLogCtlInsert *Insert = &XLogCtl->Insert;
+
+	/*
+	 * Use volatile pointer to make sure we make a fresh read of the
+	 * shared variable.
+	 */
+	volatile XLogCtlData *xlogctl = XLogCtl;
 
 	/* Enable WAL writes for this backend only. */
 	LocalSetXLogInsertAllowed();
 
 	/* If necessary, write overwrite-contrecord before doing anything else */
-	if (!XLogRecPtrIsInvalid(abortedRecPtr))
+	if (!XLogRecPtrIsInvalid(xlogctl->SharedAbortedRecPtr))
 	{
-		Assert(!XLogRecPtrIsInvalid(missingContrecPtr));
-		CreateOverwriteContrecordRecord(abortedRecPtr, missingContrecPtr, newTLI);
+		Assert(!XLogRecPtrIsInvalid(xlogctl->SharedMissingContrecPtr));
+		CreateOverwriteContrecordRecord(xlogctl->SharedAbortedRecPtr,
+										xlogctl->SharedMissingContrecPtr,
+										xlogctl->InsertTimeLineID);
 	}
 
-	/*
-	 * Update full_page_writes in shared memory and write an XLOG_FPW_CHANGE
-	 * record before resource manager writes cleanup WAL records or checkpoint
-	 * record is written.
-	 */
-	Insert->fullPageWrites = lastFullPageWrites;
+	/* Write an XLOG_FPW_CHANGE record */
 	UpdateFullPageWrites();
 
 	/*
 	 * Emit checkpoint or end-of-recovery record in XLOG, if required.
+	 *
+	 * Redo apply position will be a valid LSN if and only if we entered
+	 * recovery, see comment for assert on same condition in StartupXLOG()
+	 * for more detail.
 	 */
-	if (performedWalRecovery)
+	if (!XLogRecPtrIsInvalid(GetXLogReplayRecPtr(NULL)))
 		promoted = PerformRecoveryXLogAction();
 
 	/*
@@ -5630,8 +5690,8 @@ XLogAcceptWrites(bool performedWalRecovery, TimeLineID newTLI,
 	XLogReportParameters();
 
 	/* If this is archive recovery, perform post-recovery cleanup actions. */
-	if (ArchiveRecoveryRequested)
-		CleanupAfterArchiveRecovery(EndOfLogTLI, EndOfLog, newTLI);
+	if (ArchiveRecoveryIsRequested())
+		CleanupAfterArchiveRecovery();
 
 	/*
 	 * Local WAL inserts enabled, so it's time to finish initialization of
@@ -5739,7 +5799,7 @@ PerformRecoveryXLogAction(void)
 	 * of a full checkpoint. A checkpoint is requested later, after we're
 	 * fully out of recovery mode and already accepting queries.
 	 */
-	if (ArchiveRecoveryRequested && IsUnderPostmaster &&
+	if (ArchiveRecoveryIsRequested() && IsUnderPostmaster &&
 		PromoteIsTriggered())
 	{
 		promoted = true;
