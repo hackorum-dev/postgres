@@ -2921,6 +2921,8 @@ XLogFileInitInternal(XLogSegNo logsegno, TimeLineID logtli,
 	XLogSegNo	installed_segno;
 	XLogSegNo	max_segno;
 	int			fd;
+	int			prealloc_segs;
+	bool		found_prealloc = false;
 
 	Assert(logtli != 0);
 
@@ -2942,15 +2944,45 @@ XLogFileInitInternal(XLogSegNo logsegno, TimeLineID logtli,
 		return fd;
 
 	/*
-	 * Initialize an empty (all zeroes) segment.  NOTE: it is possible that
-	 * another process is doing the same thing.  If so, we will end up
-	 * pre-creating an extra log segment.  That seems OK, and better than
-	 * holding the lock throughout this lengthy process.
+	 * Try to use a pre-allocated segment, if one exists.  If none are
+	 * available, we fall back to creating a new segment on our own.
+	 *
+	 * Note that we still look for a pre-allocated segment even if the pre-
+	 * allocation functionality is disabled via the GUCs.  This ensures that any
+	 * pre-allocated segments left over after turning off the pre-allocation
+	 * functionality are still eligible for use.
 	 */
-	elog(DEBUG2, "creating and filling new WAL file");
+	LWLockAcquire(WALPreallocationLock, LW_EXCLUSIVE);
+	prealloc_segs = GetNumPreallocatedWalSegs();
+	if (prealloc_segs > 0)
+	{
+		elog(DEBUG2, "using pre-allocated WAL file");
 
-	snprintf(tmppath, MAXPGPATH, XLOGDIR "/xlogtemp.%d", (int) getpid());
-	CreateEmptyWalSegment(tmppath);
+		found_prealloc = true;
+		prealloc_segs--;
+		SetNumPreallocatedWalSegs(prealloc_segs);
+		snprintf(tmppath, MAXPGPATH, "%s/preallocated_segments/xlogtemp.%d",
+				 XLOGDIR, prealloc_segs);
+	}
+	else
+	{
+		/*
+		 * We're not using a pre-allocated segment, so there's no need to keep
+		 * holding the WALPreallocationLock.
+		 */
+		LWLockRelease(WALPreallocationLock);
+
+		/*
+		 * Initialize an empty (all zeroes) segment.  NOTE: it is possible that
+		 * another process is doing the same thing.  If so, we will end up
+		 * pre-creating an extra log segment.  That seems OK, and better than
+		 * holding the lock throughout this lengthy process.
+		 */
+		elog(DEBUG2, "creating and filling new WAL file");
+
+		snprintf(tmppath, MAXPGPATH, XLOGDIR "/xlogtemp.%d", (int) getpid());
+		CreateEmptyWalSegment(tmppath, ERROR);
+	}
 
 	/*
 	 * Now move the segment into place with its final name.  Cope with
@@ -2973,7 +3005,7 @@ XLogFileInitInternal(XLogSegNo logsegno, TimeLineID logtli,
 							   logtli))
 	{
 		*added = true;
-		elog(DEBUG2, "done creating and filling new WAL file");
+		elog(DEBUG2, "done installing new WAL file");
 	}
 	else
 	{
@@ -2985,6 +3017,18 @@ XLogFileInitInternal(XLogSegNo logsegno, TimeLineID logtli,
 		unlink(tmppath);
 		elog(DEBUG2, "abandoned new WAL file");
 	}
+
+	/*
+	 * If we are using a pre-allocated segment, we've been holding onto the
+	 * WALPreallocationLock all this time so that the checkpointer process can't
+	 * overwrite the file before we've installed it.
+	 *
+	 * While we're at it, also nudge the checkpointer process so that it pre-
+	 * allocates new segments if possible.
+	 */
+	if (found_prealloc)
+		LWLockRelease(WALPreallocationLock);
+	RequestWalPreallocation();
 
 	return -1;
 }

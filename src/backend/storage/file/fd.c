@@ -3898,8 +3898,8 @@ pg_pwritev_with_retry(int fd, const struct iovec *iov, int iovcnt, off_t offset)
  * Create a new file that can be used as a new WAL segment.  The caller is
  * responsible for installing the new file in pg_wal.
  */
-void
-CreateEmptyWalSegment(const char *path)
+bool
+CreateEmptyWalSegment(const char *path, int elevel)
 {
 	PGAlignedXLogBlock zbuffer;
 	int			fd;
@@ -3910,9 +3910,12 @@ CreateEmptyWalSegment(const char *path)
 	/* do not use get_sync_bit() here --- want to fsync only at end of fill */
 	fd = BasicOpenFile(path, O_RDWR | O_CREAT | O_EXCL | PG_BINARY);
 	if (fd < 0)
-		ereport(ERROR,
+	{
+		ereport(elevel,
 				(errcode_for_file_access(),
 				 errmsg("could not create file \"%s\": %m", path)));
+		return false;
+	}
 
 	memset(zbuffer.data, 0, XLOG_BLCKSZ);
 
@@ -3982,9 +3985,10 @@ CreateEmptyWalSegment(const char *path)
 
 		errno = save_errno;
 
-		ereport(ERROR,
+		ereport(elevel,
 				(errcode_for_file_access(),
 				 errmsg("could not write to file \"%s\": %m", path)));
+		return false;
 	}
 
 	pgstat_report_wait_start(WAIT_EVENT_WAL_INIT_SYNC);
@@ -3994,14 +3998,20 @@ CreateEmptyWalSegment(const char *path)
 
 		close(fd);
 		errno = save_errno;
-		ereport(ERROR,
+		ereport(elevel,
 				(errcode_for_file_access(),
 				 errmsg("could not fsync file \"%s\": %m", path)));
+		return false;
 	}
 	pgstat_report_wait_end();
 
 	if (close(fd) != 0)
-		ereport(ERROR,
+	{
+		ereport(elevel,
 				(errcode_for_file_access(),
 				 errmsg("could not close file \"%s\": %m", path)));
+		return false;
+	}
+
+	return true;
 }
