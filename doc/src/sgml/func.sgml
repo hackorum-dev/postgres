@@ -28442,6 +28442,14 @@ postgres=# SELECT * FROM pg_walfile_name_offset((pg_backup_stop()).lsn);
     needs to be archived.
    </para>
 
+   <para>
+    Both <function>pg_walfile_name_offset</function> and <function>pg_walfile_name</function>
+    use a timeline ID internally to the extract write-ahead log file name. When
+    not in recovery, they use the timeline ID with which new write-ahead log
+    records are being inserted and flushed. When in recovery, they use the
+    timeline ID of the last successfully replayed write-ahead log record.
+   </para>
+
   </sect2>
 
   <sect2 id="functions-recovery-control">

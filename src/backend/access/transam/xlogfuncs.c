@@ -44,6 +44,8 @@
 static StringInfo label_file;
 static StringInfo tblspc_map_file;
 
+static TimeLineID GetTLIForWALFileNameComputation(void);
+
 /*
  * pg_backup_start: set up for taking an on-line backup dump
  *
@@ -317,6 +319,30 @@ pg_last_wal_replay_lsn(PG_FUNCTION_ARGS)
 }
 
 /*
+ * Get timeLine ID for computing WAL file name.
+ *
+ * When not in recovery, it returns the timeline into which new WAL is being
+ * inserted and flushed.
+ *
+ * When in crash/archive/standby recovery, it returns the timeline of the last
+ * WAL record that is successfully replayed.
+ */
+static TimeLineID
+GetTLIForWALFileNameComputation(void)
+{
+	TimeLineID	tli;
+
+	if (RecoveryInProgress())
+		(void) GetXLogReplayRecPtr(&tli);
+	else
+		tli = GetWALInsertionTimeLine();
+
+	Assert(tli > 0);
+
+	return tli;
+}
+
+/*
  * Compute an xlog file name and decimal byte offset given a WAL location,
  * such as is returned by pg_backup_stop() or pg_switch_wal().
  *
@@ -336,13 +362,9 @@ pg_walfile_name_offset(PG_FUNCTION_ARGS)
 	TupleDesc	resultTupleDesc;
 	HeapTuple	resultHeapTuple;
 	Datum		result;
+	TimeLineID	tli;
 
-	if (RecoveryInProgress())
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("recovery is in progress"),
-				 errhint("%s cannot be executed during recovery.",
-						 "pg_walfile_name_offset()")));
+	tli = GetTLIForWALFileNameComputation();
 
 	/*
 	 * Construct a tuple descriptor for the result row.  This must match this
@@ -360,8 +382,7 @@ pg_walfile_name_offset(PG_FUNCTION_ARGS)
 	 * xlogfilename
 	 */
 	XLByteToPrevSeg(locationpoint, xlogsegno, wal_segment_size);
-	XLogFileName(xlogfilename, GetWALInsertionTimeLine(), xlogsegno,
-				 wal_segment_size);
+	XLogFileName(xlogfilename, tli, xlogsegno, wal_segment_size);
 
 	values[0] = CStringGetTextDatum(xlogfilename);
 	isnull[0] = false;
@@ -394,17 +415,12 @@ pg_walfile_name(PG_FUNCTION_ARGS)
 	XLogSegNo	xlogsegno;
 	XLogRecPtr	locationpoint = PG_GETARG_LSN(0);
 	char		xlogfilename[MAXFNAMELEN];
+	TimeLineID	tli;
 
-	if (RecoveryInProgress())
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("recovery is in progress"),
-				 errhint("%s cannot be executed during recovery.",
-						 "pg_walfile_name()")));
+	tli = GetTLIForWALFileNameComputation();
 
 	XLByteToPrevSeg(locationpoint, xlogsegno, wal_segment_size);
-	XLogFileName(xlogfilename, GetWALInsertionTimeLine(), xlogsegno,
-				 wal_segment_size);
+	XLogFileName(xlogfilename, tli, xlogsegno, wal_segment_size);
 
 	PG_RETURN_TEXT_P(cstring_to_text(xlogfilename));
 }
