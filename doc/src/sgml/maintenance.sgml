@@ -423,77 +423,32 @@
     </indexterm>
 
    <para>
-    <productname>PostgreSQL</productname>'s
-    <link linkend="mvcc-intro">MVCC</link> transaction semantics
-    depend on being able to compare transaction ID (<acronym>XID</acronym>)
-    numbers: a row version with an insertion XID greater than the current
-    transaction's XID is <quote>in the future</quote> and should not be visible
-    to the current transaction.  But since transaction IDs have limited size
-    (32 bits) a cluster that runs for a long time (more
-    than 4 billion transactions) would suffer <firstterm>transaction ID
-    wraparound</firstterm>: the XID counter wraps around to zero, and all of a sudden
-    transactions that were in the past appear to be in the future &mdash; which
-    means their output become invisible.  In short, catastrophic data loss.
-    (Actually the data is still there, but that's cold comfort if you cannot
-    get at it.)  To avoid this, it is necessary to vacuum every table
-    in every database at least once every two billion transactions.
+    This vacuum responsibility is necessary due to the fact that transaction ID (xid) numbers
+    are assigned serially and stored in a unsiged 32bit integer: incrementing INT_MAX causes
+    a wraparound such that the value becomes INT_MIN.  Because of this, the id space is
+    circular, and the shortest path between two transactions either goes backward or forward,
+    representing visible and not visible respectively.  This results in a situation where,
+    without maintenance, a transaction (or, more precisely, the rows created by that transaction,
+    the xid being stored in xmin) that was reached going backward from the current transaction
+    will have a shorter path going forward for some future transaction. Thus vacuum will
+    periodically flag older transactions as being "frozen", such that they are considered visible
+    to every "current" transaction without using the shortest path logic.
+   </para>
+   
+   <para>
+    While vacuum will not touch a row's xmin while updating its frozen status, two reserved xid
+    values may seen. <literal>BootstreapTransactionId</literal> (1) may be seen on system catalog
+    tables to indicate records inserted during initdb. <literal>FronzenTransactionID</literal> (2)
+    may be seen on any table and also indicates that the row is frozen.  This was the mechanism
+    used in versions prior to 9.4, when it was decided to keep the xmin unchanged for forensic use.
    </para>
 
    <para>
-    The reason that periodic vacuuming solves the problem is that
-    <command>VACUUM</command> will mark rows as <emphasis>frozen</emphasis>, indicating that
-    they were inserted by a transaction that committed sufficiently far in
-    the past that the effects of the inserting transaction are certain to be
-    visible to all current and future transactions.
-    Normal XIDs are
-    compared using modulo-2<superscript>32</superscript> arithmetic. This means
-    that for every normal XID, there are two billion XIDs that are
-    <quote>older</quote> and two billion that are <quote>newer</quote>; another
-    way to say it is that the normal XID space is circular with no
-    endpoint. Therefore, once a row version has been created with a particular
-    normal XID, the row version will appear to be <quote>in the past</quote> for
-    the next two billion transactions, no matter which normal XID we are
-    talking about. If the row version still exists after more than two billion
-    transactions, it will suddenly appear to be in the future. To
-    prevent this, <productname>PostgreSQL</productname> reserves a special XID,
-    <literal>FrozenTransactionId</literal>, which does not follow the normal XID
-    comparison rules and is always considered older
-    than every normal XID.
-    Frozen row versions are treated as if the inserting XID were
-    <literal>FrozenTransactionId</literal>, so that they will appear to be
-    <quote>in the past</quote> to all normal transactions regardless of wraparound
-    issues, and so such row versions will be valid until deleted, no matter
-    how long that is.
-   </para>
-
-   <note>
-    <para>
-     In <productname>PostgreSQL</productname> versions before 9.4, freezing was
-     implemented by actually replacing a row's insertion XID
-     with <literal>FrozenTransactionId</literal>, which was visible in the
-     row's <structname>xmin</structname> system column.  Newer versions just set a flag
-     bit, preserving the row's original <structname>xmin</structname> for possible
-     forensic use.  However, rows with <structname>xmin</structname> equal
-     to <literal>FrozenTransactionId</literal> (2) may still be found
-     in databases <application>pg_upgrade</application>'d from pre-9.4 versions.
-    </para>
-    <para>
-     Also, system catalogs may contain rows with <structname>xmin</structname> equal
-     to <literal>BootstrapTransactionId</literal> (1), indicating that they were
-     inserted during the first phase of <application>initdb</application>.
-     Like <literal>FrozenTransactionId</literal>, this special XID is treated as
-     older than every normal XID.
-    </para>
-   </note>
-
-   <para>
-    <xref linkend="guc-vacuum-freeze-min-age"/>
-    controls how old an XID value has to be before rows bearing that XID will be
-    frozen.  Increasing this setting may avoid unnecessary work if the
-    rows that would otherwise be frozen will soon be modified again,
-    but decreasing this setting increases
-    the number of transactions that can elapse before the table must be
-    vacuumed again.
+    The shortest path mechanism on the circular 32bit space results in a 2 billion transaction
+    window.  While a row can be frozen anytime while in that window doing so too soon will be
+    wasted effort if the row becomes dead long before it would have left the window.
+    The <xref linkend="guc-vacuum-freeze-min-age"/> setting controls how old a row has to be
+    before it is eligible for freezing.
    </para>
 
    <para>
