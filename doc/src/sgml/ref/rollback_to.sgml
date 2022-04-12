@@ -89,6 +89,12 @@ ROLLBACK [ WORK | TRANSACTION ] TO [ SAVEPOINT ] <replaceable>savepoint_name</re
    cannot-execute state, so while the transaction can be restored using
    <command>ROLLBACK TO SAVEPOINT</command>, the cursor can no longer be used.
   </para>
+
+  <para>
+   If multiple savepoints have the same name, only the one that was most
+   recently defined is released.
+  </para>
+
  </refsect1>
 
  <refsect1>
