@@ -2105,7 +2105,7 @@ exec_command_password(PsqlScanState scan_state, bool active_branch)
 		}
 		else if (strcmp(pw1, pw2) != 0)
 		{
-			pg_log_error("Passwords didn't match.");
+			pg_log_error("passwords didn't match");
 			success = false;
 		}
 		else
@@ -3171,7 +3171,7 @@ do_connect(enum trivalue reuse_previous_specification,
 	/* Complain if we have additional arguments after a connection string. */
 	if (has_connection_string && (user || host || port))
 	{
-		pg_log_error("Do not give user, host, or port separately when using a connection string");
+		pg_log_error("do not give user, host, or port separately when using a connection string");
 		return false;
 	}
 
@@ -3206,7 +3206,7 @@ do_connect(enum trivalue reuse_previous_specification,
 		else
 		{
 			/* This is reachable after a non-interactive \connect failure */
-			pg_log_error("No database connection exists to re-use parameters from");
+			pg_log_error("no database connection exists to re-use parameters from");
 			return false;
 		}
 	}

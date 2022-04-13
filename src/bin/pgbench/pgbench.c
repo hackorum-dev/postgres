@@ -7279,7 +7279,7 @@ main(int argc, char **argv)
 	THREAD_BARRIER_DESTROY(&barrier);
 
 	if (exit_code != 0)
-		pg_log_error("Run was aborted; the above results are incomplete.");
+		pg_log_error("run was aborted; the above results are incomplete");
 
 	return exit_code;
 }

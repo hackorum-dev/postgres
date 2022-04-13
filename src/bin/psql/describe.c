@@ -139,7 +139,7 @@ describeAccessMethods(const char *pattern, bool verbose)
 	{
 		char		sverbuf[32];
 
-		pg_log_error("The server (version %s) does not support access methods.",
+		pg_log_error("the server (version %s) does not support access methods",
 					 formatPGVersionNumber(pset.sversion, false,
 										   sverbuf, sizeof(sverbuf)));
 		return true;
@@ -1400,10 +1400,10 @@ describeTableDetails(const char *pattern, bool verbose, bool showSystem)
 		if (!pset.quiet)
 		{
 			if (pattern)
-				pg_log_error("Did not find any relation named \"%s\".",
+				pg_log_error("did not find any relation named \"%s\"",
 							 pattern);
 			else
-				pg_log_error("Did not find any relations.");
+				pg_log_error("did not find any relations");
 		}
 		PQclear(res);
 		return false;
@@ -1599,7 +1599,7 @@ describeOneTableDetails(const char *schemaname,
 	if (PQntuples(res) == 0)
 	{
 		if (!pset.quiet)
-			pg_log_error("Did not find any relation with OID %s.", oid);
+			pg_log_error("did not find any relation with OID %s", oid);
 		goto error_return;
 	}
 
@@ -3718,13 +3718,13 @@ listDbRoleSettings(const char *pattern, const char *pattern2)
 	if (PQntuples(res) == 0 && !pset.quiet)
 	{
 		if (pattern && pattern2)
-			pg_log_error("Did not find any settings for role \"%s\" and database \"%s\".",
+			pg_log_error("did not find any settings for role \"%s\" and database \"%s\"",
 						 pattern, pattern2);
 		else if (pattern)
-			pg_log_error("Did not find any settings for role \"%s\".",
+			pg_log_error("did not find any settings for role \"%s\"",
 						 pattern);
 		else
-			pg_log_error("Did not find any settings.");
+			pg_log_error("did not find any settings");
 	}
 	else
 	{
@@ -3913,10 +3913,10 @@ listTables(const char *tabtypes, const char *pattern, bool verbose, bool showSys
 	if (PQntuples(res) == 0 && !pset.quiet)
 	{
 		if (pattern)
-			pg_log_error("Did not find any relation named \"%s\".",
+			pg_log_error("did not find any relation named \"%s\"",
 						 pattern);
 		else
-			pg_log_error("Did not find any relations.");
+			pg_log_error("did not find any relations");
 	}
 	else
 	{
@@ -3969,7 +3969,7 @@ listPartitionedTables(const char *reltypes, const char *pattern, bool verbose)
 	{
 		char		sverbuf[32];
 
-		pg_log_error("The server (version %s) does not support declarative table partitioning.",
+		pg_log_error("the server (version %s) does not support declarative table partitioning",
 					 formatPGVersionNumber(pset.sversion, false,
 										   sverbuf, sizeof(sverbuf)));
 		return true;
@@ -4450,7 +4450,7 @@ listEventTriggers(const char *pattern, bool verbose)
 	{
 		char		sverbuf[32];
 
-		pg_log_error("The server (version %s) does not support event triggers.",
+		pg_log_error("the server (version %s) does not support event triggers",
 					 formatPGVersionNumber(pset.sversion, false,
 										   sverbuf, sizeof(sverbuf)));
 		return true;
@@ -4524,7 +4524,7 @@ listExtendedStats(const char *pattern)
 	{
 		char		sverbuf[32];
 
-		pg_log_error("The server (version %s) does not support extended statistics.",
+		pg_log_error("the server (version %s) does not support extended statistics",
 					 formatPGVersionNumber(pset.sversion, false,
 										   sverbuf, sizeof(sverbuf)));
 		return true;
@@ -5017,10 +5017,10 @@ listTSParsersVerbose(const char *pattern)
 		if (!pset.quiet)
 		{
 			if (pattern)
-				pg_log_error("Did not find any text search parser named \"%s\".",
+				pg_log_error("did not find any text search parser named \"%s\"",
 							 pattern);
 			else
-				pg_log_error("Did not find any text search parsers.");
+				pg_log_error("did not find any text search parsers");
 		}
 		PQclear(res);
 		return false;
@@ -5377,10 +5377,10 @@ listTSConfigsVerbose(const char *pattern)
 		if (!pset.quiet)
 		{
 			if (pattern)
-				pg_log_error("Did not find any text search configuration named \"%s\".",
+				pg_log_error("did not find any text search configuration named \"%s\"",
 							 pattern);
 			else
-				pg_log_error("Did not find any text search configurations.");
+				pg_log_error("did not find any text search configurations");
 		}
 		PQclear(res);
 		return false;
@@ -5825,10 +5825,10 @@ listExtensionContents(const char *pattern)
 		if (!pset.quiet)
 		{
 			if (pattern)
-				pg_log_error("Did not find any extension named \"%s\".",
+				pg_log_error("did not find any extension named \"%s\"",
 							 pattern);
 			else
-				pg_log_error("Did not find any extensions.");
+				pg_log_error("did not find any extensions");
 		}
 		PQclear(res);
 		return false;
@@ -5911,7 +5911,7 @@ listPublications(const char *pattern)
 	{
 		char		sverbuf[32];
 
-		pg_log_error("The server (version %s) does not support publications.",
+		pg_log_error("the server (version %s) does not support publications",
 					 formatPGVersionNumber(pset.sversion, false,
 										   sverbuf, sizeof(sverbuf)));
 		return true;
@@ -6033,7 +6033,7 @@ describePublications(const char *pattern)
 	{
 		char		sverbuf[32];
 
-		pg_log_error("The server (version %s) does not support publications.",
+		pg_log_error("the server (version %s) does not support publications",
 					 formatPGVersionNumber(pset.sversion, false,
 										   sverbuf, sizeof(sverbuf)));
 		return true;
@@ -6075,10 +6075,10 @@ describePublications(const char *pattern)
 		if (!pset.quiet)
 		{
 			if (pattern)
-				pg_log_error("Did not find any publication named \"%s\".",
+				pg_log_error("did not find any publication named \"%s\"",
 							 pattern);
 			else
-				pg_log_error("Did not find any publications.");
+				pg_log_error("did not find any publications");
 		}
 
 		termPQExpBuffer(&buf);
@@ -6211,7 +6211,7 @@ describeSubscriptions(const char *pattern, bool verbose)
 	{
 		char		sverbuf[32];
 
-		pg_log_error("The server (version %s) does not support subscriptions.",
+		pg_log_error("the server (version %s) does not support subscriptions",
 					 formatPGVersionNumber(pset.sversion, false,
 										   sverbuf, sizeof(sverbuf)));
 		return true;

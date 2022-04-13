@@ -559,7 +559,7 @@ PSQLexec(const char *query)
 
 	if (!pset.db)
 	{
-		pg_log_error("You are currently not connected to a database.");
+		pg_log_error("you are currently not connected to a database");
 		return NULL;
 	}
 
@@ -616,7 +616,7 @@ PSQLexecWatch(const char *query, const printQueryOpt *opt, FILE *printQueryFout)
 
 	if (!pset.db)
 	{
-		pg_log_error("You are currently not connected to a database.");
+		pg_log_error("you are currently not connected to a database");
 		return 0;
 	}
 
@@ -1121,7 +1121,7 @@ SendQuery(const char *query)
 
 	if (!pset.db)
 	{
-		pg_log_error("You are currently not connected to a database.");
+		pg_log_error("you are currently not connected to a database");
 		goto sendquery_cleanup;
 	}
 

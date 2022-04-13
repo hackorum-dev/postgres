@@ -51,7 +51,7 @@ _check_database_version(ArchiveHandle *AH)
 			remoteversion > AH->public.maxRemoteVersion))
 	{
 		pg_log_error("aborting because of server version mismatch");
-		pg_log_error_detail("server version: %s; %s version: %s",
+		pg_log_error_detail("Server version: %s; %s version: %s",
 							remoteversion_str, progname, PG_VERSION);
 		exit(1);
 	}

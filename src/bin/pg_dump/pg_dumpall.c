@@ -1634,7 +1634,7 @@ connectDatabase(const char *dbname, const char *connection_string,
 			(server_version / 100) > (my_version / 100)))
 	{
 		pg_log_error("aborting because of server version mismatch");
-		pg_log_error_detail("server version: %s; %s version: %s",
+		pg_log_error_detail("Server version: %s; %s version: %s",
 							remoteversion_str, progname, PG_VERSION);
 		exit_nicely(1);
 	}

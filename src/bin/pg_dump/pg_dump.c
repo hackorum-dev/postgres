@@ -2026,7 +2026,7 @@ dumpTableData_copy(Archive *fout, const void *dcontext)
 	if (ret == -2)
 	{
 		/* copy data transfer failed */
-		pg_log_error("Dumping the contents of table \"%s\" failed: PQgetCopyData() failed.", classname);
+		pg_log_error("dumping the contents of table \"%s\" failed: PQgetCopyData() failed", classname);
 		pg_log_error_detail("Error message from server: %s", PQerrorMessage(conn));
 		pg_log_error_detail("Command was: %s", q->data);
 		exit_nicely(1);
@@ -2036,7 +2036,7 @@ dumpTableData_copy(Archive *fout, const void *dcontext)
 	res = PQgetResult(conn);
 	if (PQresultStatus(res) != PGRES_COMMAND_OK)
 	{
-		pg_log_error("Dumping the contents of table \"%s\" failed: PQgetResult() failed.", classname);
+		pg_log_error("dumping the contents of table \"%s\" failed: PQgetResult() failed", classname);
 		pg_log_error_detail("Error message from server: %s", PQerrorMessage(conn));
 		pg_log_error_detail("Command was: %s", q->data);
 		exit_nicely(1);
