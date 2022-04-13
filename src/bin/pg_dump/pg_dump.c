@@ -11701,8 +11701,8 @@ dumpFunc(Archive *fout, const FuncInfo *finfo)
 		else if (provolatile[0] == PROVOLATILE_STABLE)
 			appendPQExpBufferStr(q, " STABLE");
 		else if (provolatile[0] != PROVOLATILE_VOLATILE)
-			pg_fatal("unrecognized provolatile value for function \"%s\"",
-					 finfo->dobj.name);
+			pg_fatal("unrecognized %s value for function \"%s\"",
+					 "provolatile", finfo->dobj.name);
 	}
 
 	if (proisstrict[0] == 't')
@@ -11751,8 +11751,8 @@ dumpFunc(Archive *fout, const FuncInfo *finfo)
 		else if (proparallel[0] == PROPARALLEL_RESTRICTED)
 			appendPQExpBufferStr(q, " PARALLEL RESTRICTED");
 		else if (proparallel[0] != PROPARALLEL_UNSAFE)
-			pg_fatal("unrecognized proparallel value for function \"%s\"",
-					 finfo->dobj.name);
+			pg_fatal("unrecognized %s value for function \"%s\"",
+					 "proparallel", finfo->dobj.name);
 	}
 
 	for (i = 0; i < nconfigitems; i++)
@@ -13461,8 +13461,8 @@ dumpAgg(Archive *fout, const AggInfo *agginfo)
 					appendPQExpBufferStr(details, ",\n    FINALFUNC_MODIFY = READ_WRITE");
 					break;
 				default:
-					pg_fatal("unrecognized aggfinalmodify value for aggregate \"%s\"",
-							 agginfo->aggfn.dobj.name);
+					pg_fatal("unrecognized %s value for aggregate \"%s\"",
+							 "aggfinalmodify", agginfo->aggfn.dobj.name);
 					break;
 			}
 		}
@@ -13517,8 +13517,8 @@ dumpAgg(Archive *fout, const AggInfo *agginfo)
 					appendPQExpBufferStr(details, ",\n    MFINALFUNC_MODIFY = READ_WRITE");
 					break;
 				default:
-					pg_fatal("unrecognized aggmfinalmodify value for aggregate \"%s\"",
-							 agginfo->aggfn.dobj.name);
+					pg_fatal("unrecognized %s value for aggregate \"%s\"",
+							 "aggmfinalmodify", agginfo->aggfn.dobj.name);
 					break;
 			}
 		}
@@ -13542,8 +13542,8 @@ dumpAgg(Archive *fout, const AggInfo *agginfo)
 		else if (proparallel[0] == PROPARALLEL_RESTRICTED)
 			appendPQExpBufferStr(details, ",\n    PARALLEL = restricted");
 		else if (proparallel[0] != PROPARALLEL_UNSAFE)
-			pg_fatal("unrecognized proparallel value for function \"%s\"",
-					 agginfo->aggfn.dobj.name);
+			pg_fatal("unrecognized %s value for function \"%s\"",
+					 "proparallel", agginfo->aggfn.dobj.name);
 	}
 
 	appendPQExpBuffer(delq, "DROP AGGREGATE %s.%s;\n",
