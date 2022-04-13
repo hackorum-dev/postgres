@@ -167,7 +167,7 @@ ConnectDatabase(Archive *AHX,
 		AH->connection = PQconnectdbParams(keywords, values, true);
 
 		if (!AH->connection)
-			pg_fatal("could not connect to database");
+			pg_fatal("could not connect to database \"%s\"", cparams->dbname);
 
 		if (PQstatus(AH->connection) == CONNECTION_BAD &&
 			PQconnectionNeedsPassword(AH->connection) &&

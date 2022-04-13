@@ -2280,7 +2280,7 @@ setup_pgdata(void)
 	 * have embedded spaces.
 	 */
 	if (setenv("PGDATA", pg_data, 1) != 0)
-		pg_fatal("could not set environment");
+		pg_fatal("could not set PGDATA environment variable");
 }
 
 
