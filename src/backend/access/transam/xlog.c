@@ -2221,7 +2221,7 @@ XLogWrite(XLogwrtRqst WriteRqst, TimeLineID tli, bool flexible)
 					errno = save_errno;
 					ereport(PANIC,
 							(errcode_for_file_access(),
-							 errmsg("could not write to log file %s "
+							 errmsg("could not write to log file \"%s\" "
 									"at offset %u, length %zu: %m",
 									xlogfname, startoffset, nleft)));
 				}
@@ -3572,7 +3572,7 @@ RemoveOldXlogFiles(XLogSegNo segno, XLogRecPtr lastredoptr, XLogRecPtr endptr,
 	 */
 	XLogFileName(lastoff, 0, segno, wal_segment_size);
 
-	elog(DEBUG2, "attempting to remove WAL segments older than log file %s",
+	elog(DEBUG2, "attempting to remove WAL segments older than log file \"%s\"",
 		 lastoff);
 
 	xldir = AllocateDir(XLOGDIR);
@@ -3649,7 +3649,7 @@ RemoveNonParentXlogFiles(XLogRecPtr switchpoint, TimeLineID newTLI)
 	 */
 	XLogFileName(switchseg, newTLI, switchLogSegNo, wal_segment_size);
 
-	elog(DEBUG2, "attempting to remove WAL segments newer than log file %s",
+	elog(DEBUG2, "attempting to remove WAL segments newer than log file \"%s\"",
 		 switchseg);
 
 	xldir = AllocateDir(XLOGDIR);

@@ -88,7 +88,7 @@ connectDatabase(const ConnParams *cparams, const char *progname,
 		conn = PQconnectdbParams(keywords, values, true);
 
 		if (!conn)
-			pg_fatal("could not connect to database %s: out of memory",
+			pg_fatal("could not connect to database \"%s\": out of memory",
 					 cparams->dbname);
 
 		/*

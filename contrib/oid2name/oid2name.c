@@ -329,7 +329,7 @@ sql_conn(struct options *my_opts)
 		conn = PQconnectdbParams(keywords, values, true);
 
 		if (!conn)
-			pg_fatal("could not connect to database %s",
+			pg_fatal("could not connect to database \"%s\"",
 					 my_opts->dbname);
 
 		if (PQstatus(conn) == CONNECTION_BAD &&
