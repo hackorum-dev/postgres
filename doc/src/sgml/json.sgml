@@ -13,8 +13,9 @@
 
  <para>
   JSON data types are for storing JSON (JavaScript Object Notation)
-  data, as specified in <ulink url="https://tools.ietf.org/html/rfc7159">RFC
-  7159</ulink>. Such data can also be stored as <type>text</type>, but
+  data, as specified in <ulink url="https://tools.ietf.org/html/rfc8259">RFC
+  8259</ulink>, which supercedes the earlier <acronym>RFC</acronym> 7159.
+  Such data can also be stored as <type>text</type>, but
   the JSON data types have the advantage of enforcing that each
   stored value is valid according to the JSON rules.  There are also
   assorted JSON-specific functions and operators available for data stored
@@ -61,7 +62,7 @@
  </para>
 
  <para>
-  <acronym>RFC</acronym> 7159 specifies that JSON strings should be encoded in UTF8.
+  <acronym>RFC</acronym> 8259 specifies that JSON strings should be encoded in UTF8.
   It is therefore not possible for the JSON
   types to conform rigidly to the JSON specification unless the database
   encoding is UTF8. Attempts to directly include characters that
@@ -71,7 +72,7 @@
  </para>
 
  <para>
-  <acronym>RFC</acronym> 7159 permits JSON strings to contain Unicode escape sequences
+  <acronym>RFC</acronym> 8259 permits JSON strings to contain Unicode escape sequences
   denoted by <literal>\u<replaceable>XXXX</replaceable></literal>.  In the input
   function for the <type>json</type> type, Unicode escapes are allowed
   regardless of the database encoding, and are checked only for syntactic
@@ -103,7 +104,7 @@
 
  <para>
   When converting textual JSON input into <type>jsonb</type>, the primitive
-  types described by <acronym>RFC</acronym> 7159 are effectively mapped onto
+  types described by <acronym>RFC</acronym> 8259 are effectively mapped onto
   native <productname>PostgreSQL</productname> types, as shown
   in <xref linkend="json-type-mapping-table"/>.
   Therefore, there are some minor additional constraints on what
@@ -113,11 +114,11 @@
   Notably, <type>jsonb</type> will reject numbers that are outside the
   range of the <productname>PostgreSQL</productname> <type>numeric</type> data
   type, while <type>json</type> will not.  Such implementation-defined
-  restrictions are permitted by <acronym>RFC</acronym> 7159.  However, in
+  restrictions are permitted by <acronym>RFC</acronym> 8259.  However, in
   practice such problems are far more likely to occur in other
   implementations, as it is common to represent JSON's <type>number</type>
   primitive type as IEEE 754 double precision floating point
-  (which <acronym>RFC</acronym> 7159 explicitly anticipates and allows for).
+  (which <acronym>RFC</acronym> 8259 explicitly anticipates and allows for).
   When using JSON as an interchange format with such systems, the danger
   of losing numeric precision compared to data originally stored
   by <productname>PostgreSQL</productname> should be considered.
@@ -172,7 +173,7 @@
   <title>JSON Input and Output Syntax</title>
   <para>
    The input/output syntax for the JSON data types is as specified in
-   <acronym>RFC</acronym> 7159.
+   <acronym>RFC</acronym> 8259.
   </para>
   <para>
    The following are all valid <type>json</type> (or <type>jsonb</type>) expressions:
