@@ -142,7 +142,9 @@ open_walfile(StreamCtl *stream, XLogRecPtr startpoint)
 			{
 				pg_log_error("could not fsync existing write-ahead log file \"%s\": %s",
 							 fn, stream->walmethod->getlasterror());
-				stream->walmethod->close(f, CLOSE_UNLINK);
+				if (stream->walmethod->close(f, CLOSE_UNLINK) != 0)
+					 pg_log_error("could not delete write-ahead log file \"%s\": %s",
+					 fn, stream->walmethod->getlasterror());
 				exit(1);
 			}
 
@@ -207,7 +209,9 @@ close_walfile(StreamCtl *stream, XLogRecPtr pos)
 	{
 		pg_log_error("could not determine seek position in file \"%s\": %s",
 					 fn, stream->walmethod->getlasterror());
-		stream->walmethod->close(walfile, CLOSE_UNLINK);
+		if (stream->walmethod->close(walfile, CLOSE_UNLINK) != 0)
+			pg_log_error("could not delete file \"%s\": %s",
+						 fn, stream->walmethod->getlasterror());
 		walfile = NULL;
 
 		pg_free(fn);
@@ -313,7 +317,9 @@ writeTimeLineHistoryFile(StreamCtl *stream, char *filename, char *content)
 		/*
 		 * If we fail to make the file, delete it to release disk space
 		 */
-		stream->walmethod->close(f, CLOSE_UNLINK);
+		if (stream->walmethod->close(f, CLOSE_UNLINK) != 0)
+			pg_log_error("could not delete timeline history file \"%s\": %s",
+						 histfname, stream->walmethod->getlasterror());
 
 		return false;
 	}
