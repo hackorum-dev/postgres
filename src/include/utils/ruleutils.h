@@ -24,17 +24,11 @@ struct PlannedStmt;
 
 extern char *pg_get_indexdef_string(Oid indexrelid);
 extern char *pg_get_indexdef_columns(Oid indexrelid, bool pretty);
-extern void pg_get_indexdef_detailed(Oid indexrelid,
-                        char **index_am,
-                        char **definition,
-                        char **reloptions,
-                        char **tablespace,
-                        char **whereClause);
 extern char *pg_get_trigger_whenclause(Form_pg_trigger trigrec,
 									   Node *whenClause, bool pretty);
 extern char *pg_get_constraintdef_string(Oid constraintId, bool fullCommand);
 extern char *pg_get_constraintdef_command(Oid constraintId);
-extern void pg_get_ruledef_details(Datum ev_qual, Datum ev_action,
+extern void pg_get_ruledef_detailed(Datum ev_qual, Datum ev_action,
 								   char **whereClause, List **actions);
 extern char *pg_get_viewdef_internal(Oid viewoid);
 extern char *pg_get_createtableas_def(Query *query);
@@ -53,13 +47,10 @@ extern List *set_deparse_context_plan(List *dpcontext,
 									  struct Plan *plan, List *ancestors);
 extern List *select_rtable_names_for_explain(List *rtable,
 											 Bitmapset *rels_used);
+extern void get_opclass_name(Oid opclass, Oid actual_datatype,
+							 StringInfo buf);
 extern char *generate_collation_name(Oid collid);
-extern List *FunctionGetDefaults(text *proargdefaults);
-
-extern char *RelationGetColumnDefault(Relation rel, AttrNumber attno,
-                        List *dpcontext);
-
-extern char *DomainGetDefault(HeapTuple domTup);
+extern char *flatten_reloptions(Oid relid);
 extern char *generate_opclass_name(Oid opclass);
 extern char *get_range_partbound_string(List *bound_datums);
 

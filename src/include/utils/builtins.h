@@ -121,10 +121,6 @@ extern char *format_type_be_qualified(Oid type_oid);
 extern char *format_type_with_typemod(Oid type_oid, int32 typemod);
 
 extern int32 type_maximum_size(Oid type_oid, int32 typemod);
-extern void format_type_detailed(Oid type_oid, int32 typemod,
-                    Oid *nspid, char **typname,
-                    char **typemodstr, bool *is_array);
-
 
 /* quote.c */
 extern char *quote_literal_cstr(const char *rawstr);
