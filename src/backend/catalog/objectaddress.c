@@ -2980,7 +2980,7 @@ getObjectDescription(const ObjectAddress *object, bool missing_ok)
 			{
 				bits16		flags = FORMAT_PROC_INVALID_AS_NULL;
 				char	   *proname = format_procedure_extended(object->objectId,
-																flags);
+																flags, false);
 
 				if (proname == NULL)
 					break;
@@ -4826,7 +4826,7 @@ getObjectIdentityParts(const ObjectAddress *object,
 			{
 				bits16		flags = FORMAT_PROC_FORCE_QUALIFY | FORMAT_PROC_INVALID_AS_NULL;
 				char	   *proname = format_procedure_extended(object->objectId,
-																flags);
+																flags, false);
 
 				if (proname == NULL)
 					break;
