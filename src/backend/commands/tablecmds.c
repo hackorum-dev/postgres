@@ -8692,7 +8692,7 @@ ATExecAddIndexConstraint(AlteredTableInfo *tab, Relation rel,
 
 	indexRel = index_open(index_oid, AccessShareLock);
 
-	indexName = pstrdup(RelationGetRelationName(indexRel));
+	indexName = stmt->idxname;
 
 	indexInfo = BuildIndexInfo(indexRel);
 
@@ -8707,7 +8707,7 @@ ATExecAddIndexConstraint(AlteredTableInfo *tab, Relation rel,
 	 * explicitly gives some other name for the constraint, rename the index
 	 * to match.
 	 */
-	constraintName = stmt->idxname;
+	constraintName = stmt->conname;
 	if (constraintName == NULL)
 		constraintName = indexName;
 	else if (strcmp(constraintName, indexName) != 0)

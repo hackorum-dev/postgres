@@ -1740,6 +1740,7 @@ static bool
 _equalIndexStmt(const IndexStmt *a, const IndexStmt *b)
 {
 	COMPARE_STRING_FIELD(idxname);
+	COMPARE_STRING_FIELD(conname);
 	COMPARE_NODE_FIELD(relation);
 	COMPARE_STRING_FIELD(accessMethod);
 	COMPARE_STRING_FIELD(tableSpace);

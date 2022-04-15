@@ -2128,6 +2128,10 @@ transformIndexConstraints(CreateStmtContext *cxt)
 				 */
 				if (priorindex->idxname == NULL)
 					priorindex->idxname = index->idxname;
+
+				if (priorindex->conname == NULL)
+					priorindex->conname = index->conname;
+
 				keep = false;
 				break;
 			}
@@ -2186,10 +2190,17 @@ transformIndexConstraint(Constraint *constraint, CreateStmtContext *cxt)
 	index->deferrable = constraint->deferrable;
 	index->initdeferred = constraint->initdeferred;
 
+	index->idxname = NULL; /* by default, DefineIndex will choose name */
+
 	if (constraint->conname != NULL)
-		index->idxname = pstrdup(constraint->conname);
+	{
+		index->conname = pstrdup(constraint->conname);
+
+		if (constraint->indexname == NULL)
+			index->idxname = pstrdup(constraint->conname);
+	}
 	else
-		index->idxname = NULL;	/* DefineIndex will choose name */
+		index->conname = NULL;
 
 	index->relation = cxt->relation;
 	index->accessMethod = constraint->access_method ? constraint->access_method : DEFAULT_INDEX_TYPE;
@@ -2384,6 +2395,7 @@ transformIndexConstraint(Constraint *constraint, CreateStmtContext *cxt)
 		relation_close(index_rel, NoLock);
 
 		index->indexOid = index_oid;
+		index->idxname = pstrdup(index_name);
 	}
 
 	/*

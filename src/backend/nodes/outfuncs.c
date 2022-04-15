@@ -2909,6 +2909,7 @@ _outIndexStmt(StringInfo str, const IndexStmt *node)
 	WRITE_NODE_TYPE("INDEXSTMT");
 
 	WRITE_STRING_FIELD(idxname);
+	WRITE_STRING_FIELD(conname);
 	WRITE_NODE_FIELD(relation);
 	WRITE_STRING_FIELD(accessMethod);
 	WRITE_STRING_FIELD(tableSpace);

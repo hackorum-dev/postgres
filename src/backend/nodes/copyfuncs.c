@@ -4182,6 +4182,7 @@ _copyIndexStmt(const IndexStmt *from)
 	IndexStmt  *newnode = makeNode(IndexStmt);
 
 	COPY_STRING_FIELD(idxname);
+	COPY_STRING_FIELD(conname);
 	COPY_NODE_FIELD(relation);
 	COPY_STRING_FIELD(accessMethod);
 	COPY_STRING_FIELD(tableSpace);
