@@ -291,6 +291,7 @@
    &pgtestfsync;
    &pgtesttiming;
    &pgupgrade;
+   &pgwalcleaner;
    &pgwaldump;
    &pgwalsummary;
    &postgres;
