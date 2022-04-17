@@ -30,6 +30,7 @@ SUBDIRS = \
 	pg_test_timing \
 	pg_upgrade \
 	pg_verifybackup \
+	pg_walcleaner \
 	pg_waldump \
 	pg_walsummary \
 	pgbench \
