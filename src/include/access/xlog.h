@@ -132,8 +132,7 @@ extern PGDLLIMPORT bool XLOG_DEBUG;
 
 /* These directly affect the behavior of CreateCheckPoint and subsidiaries */
 #define CHECKPOINT_IS_SHUTDOWN	0x0001	/* Checkpoint is for shutdown */
-#define CHECKPOINT_END_OF_RECOVERY	0x0002	/* Like shutdown checkpoint, but
-											 * issued at end of WAL recovery */
+/* 0x0002 was CHECKPOINT_END_OF_RECOVERY, now unused */
 #define CHECKPOINT_IMMEDIATE	0x0004	/* Do it without delays */
 #define CHECKPOINT_FORCE		0x0008	/* Force even if no activity */
 #define CHECKPOINT_FLUSH_ALL	0x0010	/* Flush all pages, including those

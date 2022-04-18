@@ -665,7 +665,6 @@ static void UpdateLastRemovedPtr(char *filename);
 static void ValidateXLOGDirectoryStructure(void);
 static void CleanupBackupHistory(void);
 static void UpdateMinRecoveryPoint(XLogRecPtr lsn, bool force);
-static bool PerformRecoveryXLogAction(void);
 static void InitControlFile(uint64 sysidentifier);
 static void WriteControlFile(void);
 static void ReadControlFile(void);
@@ -2516,8 +2515,7 @@ XLogFlush(XLogRecPtr record)
 	 * During REDO, we are reading not writing WAL.  Therefore, instead of
 	 * trying to flush the WAL, we should update minRecoveryPoint instead. We
 	 * test XLogInsertAllowed(), not InRecovery, because we need checkpointer
-	 * to act this way too, and because when it tries to write the
-	 * end-of-recovery checkpoint, it should indeed flush.
+	 * to act this way too.
 	 */
 	if (!XLogInsertAllowed())
 	{
@@ -2654,10 +2652,7 @@ XLogFlush(XLogRecPtr record)
 	 * the bad page is encountered again during recovery then we would be
 	 * unable to restart the database at all!  (This scenario actually
 	 * happened in the field several times with 7.1 releases.)	As of 8.4, bad
-	 * LSNs encountered during recovery are UpdateMinRecoveryPoint's problem;
-	 * the only time we can reach here during recovery is while flushing the
-	 * end-of-recovery checkpoint record, and we don't expect that to have a
-	 * bad LSN.
+	 * LSNs encountered during recovery are UpdateMinRecoveryPoint's problem.
 	 *
 	 * Note that for calls from xact.c, the ERROR will be promoted to PANIC
 	 * since xact.c calls this routine inside a critical section.  However,
@@ -4495,6 +4490,7 @@ BootStrapXLOG(void)
 	uint64		sysidentifier;
 	struct timeval tv;
 	pg_crc32c	crc;
+	FullTransactionId	starting_fxid;
 
 	/* allow ordinary WAL segment creation, like StartupXLOG() would */
 	LWLockAcquire(ControlFileLock, LW_EXCLUSIVE);
@@ -4524,6 +4520,17 @@ BootStrapXLOG(void)
 	memset(page, 0, XLOG_BLCKSZ);
 
 	/*
+	 * We set nextXid to FirstNormalTransactionId + 1, because when restarting
+	 * we'll set latestCompletedXid to nextXid - 1, and we want that to be a
+	 * normal XID in all cases. If it isn't, a number of functions, including
+	 * GetRunningTransactionData() and ProcArrayApplyRecoveryInfo(), will
+	 * fail assertions.
+	 */
+	starting_fxid =
+		FullTransactionIdFromEpochAndXid(0, FirstNormalTransactionId);
+	FullTransactionIdAdvance(&starting_fxid);
+
+	/*
 	 * Set up information for the initial checkpoint record
 	 *
 	 * The initial checkpoint record is written to the beginning of the WAL
@@ -4534,8 +4541,7 @@ BootStrapXLOG(void)
 	checkPoint.ThisTimeLineID = BootstrapTimeLineID;
 	checkPoint.PrevTimeLineID = BootstrapTimeLineID;
 	checkPoint.fullPageWrites = fullPageWrites;
-	checkPoint.nextXid =
-		FullTransactionIdFromEpochAndXid(0, FirstNormalTransactionId);
+	checkPoint.nextXid = starting_fxid;
 	checkPoint.nextOid = FirstGenbkiObjectId;
 	checkPoint.nextMulti = FirstMultiXactId;
 	checkPoint.nextMultiOffset = 0;
@@ -4890,7 +4896,6 @@ StartupXLOG(void)
 	XLogRecPtr	abortedRecPtr;
 	XLogRecPtr	missingContrecPtr;
 	TransactionId oldestActiveXID;
-	bool		promoted = false;
 
 	/*
 	 * We should have an aux process resource owner to use, and we should not
@@ -5546,10 +5551,10 @@ StartupXLOG(void)
 	UpdateFullPageWrites();
 
 	/*
-	 * Emit checkpoint or end-of-recovery record in XLOG, if required.
+	 * Emit end-of-recovery record in XLOG, if required.
 	 */
 	if (performedWalRecovery)
-		promoted = PerformRecoveryXLogAction();
+		CreateEndOfRecoveryRecord();
 
 	/*
 	 * If any of the critical GUCs have changed, log them before we allow
@@ -5611,12 +5616,12 @@ StartupXLOG(void)
 	WalSndWakeup();
 
 	/*
-	 * If this was a promotion, request an (online) checkpoint now. This isn't
-	 * required for consistency, but the last restartpoint might be far back,
-	 * and in case of a crash, recovering from it might take a longer than is
-	 * appropriate now that we're not in standby mode anymore.
+	 * If we performed recovery, request an (online) checkpoint now. This
+	 * isn't required for consistency, but the last restartpoint might be far
+	 * back, and in case of a crash, recovering from it might take a longer
+	 * than is appropriate now that we're not in standby mode anymore.
 	 */
-	if (promoted)
+	if (performedWalRecovery)
 		RequestCheckpoint(CHECKPOINT_FORCE);
 }
 
@@ -5687,60 +5692,6 @@ ReachedEndOfBackup(XLogRecPtr EndRecPtr, TimeLineID tli)
 	UpdateControlFile();
 
 	LWLockRelease(ControlFileLock);
-}
-
-/*
- * Perform whatever XLOG actions are necessary at end of REDO.
- *
- * The goal here is to make sure that we'll be able to recover properly if
- * we crash again. If we choose to write a checkpoint, we'll write a shutdown
- * checkpoint rather than an on-line one. This is not particularly critical,
- * but since we may be assigning a new TLI, using a shutdown checkpoint allows
- * us to have the rule that TLI only changes in shutdown checkpoints, which
- * allows some extra error checking in xlog_redo.
- */
-static bool
-PerformRecoveryXLogAction(void)
-{
-	bool		promoted = false;
-
-	/*
-	 * Perform a checkpoint to update all our recovery activity to disk.
-	 *
-	 * Note that we write a shutdown checkpoint rather than an on-line one.
-	 * This is not particularly critical, but since we may be assigning a new
-	 * TLI, using a shutdown checkpoint allows us to have the rule that TLI
-	 * only changes in shutdown checkpoints, which allows some extra error
-	 * checking in xlog_redo.
-	 *
-	 * In promotion, only create a lightweight end-of-recovery record instead
-	 * of a full checkpoint. A checkpoint is requested later, after we're
-	 * fully out of recovery mode and already accepting queries.
-	 */
-	if (ArchiveRecoveryRequested && IsUnderPostmaster &&
-		PromoteIsTriggered())
-	{
-		promoted = true;
-
-		/*
-		 * Insert a special WAL record to mark the end of recovery, since we
-		 * aren't doing a checkpoint. That means that the checkpointer process
-		 * may likely be in the middle of a time-smoothed restartpoint and
-		 * could continue to be for minutes after this.  That sounds strange,
-		 * but the effect is roughly the same and it would be stranger to try
-		 * to come out of the restartpoint and then checkpoint. We request a
-		 * checkpoint later anyway, just for safety.
-		 */
-		CreateEndOfRecoveryRecord();
-	}
-	else
-	{
-		RequestCheckpoint(CHECKPOINT_END_OF_RECOVERY |
-						  CHECKPOINT_IMMEDIATE |
-						  CHECKPOINT_WAIT);
-	}
-
-	return promoted;
 }
 
 /*
@@ -6053,9 +6004,8 @@ LogCheckpointStart(int flags, bool restartpoint)
 	if (restartpoint)
 		ereport(LOG,
 		/* translator: the placeholders show checkpoint options */
-				(errmsg("restartpoint starting:%s%s%s%s%s%s%s%s",
+				(errmsg("restartpoint starting:%s%s%s%s%s%s%s",
 						(flags & CHECKPOINT_IS_SHUTDOWN) ? " shutdown" : "",
-						(flags & CHECKPOINT_END_OF_RECOVERY) ? " end-of-recovery" : "",
 						(flags & CHECKPOINT_IMMEDIATE) ? " immediate" : "",
 						(flags & CHECKPOINT_FORCE) ? " force" : "",
 						(flags & CHECKPOINT_WAIT) ? " wait" : "",
@@ -6065,9 +6015,8 @@ LogCheckpointStart(int flags, bool restartpoint)
 	else
 		ereport(LOG,
 		/* translator: the placeholders show checkpoint options */
-				(errmsg("checkpoint starting:%s%s%s%s%s%s%s%s",
+				(errmsg("checkpoint starting:%s%s%s%s%s%s%s",
 						(flags & CHECKPOINT_IS_SHUTDOWN) ? " shutdown" : "",
-						(flags & CHECKPOINT_END_OF_RECOVERY) ? " end-of-recovery" : "",
 						(flags & CHECKPOINT_IMMEDIATE) ? " immediate" : "",
 						(flags & CHECKPOINT_FORCE) ? " force" : "",
 						(flags & CHECKPOINT_WAIT) ? " wait" : "",
@@ -6219,7 +6168,7 @@ update_checkpoint_display(int flags, bool restartpoint, bool reset)
 	 * pg_stat_activity to see the status of the checkpointer or the startup
 	 * process.
 	 */
-	if ((flags & (CHECKPOINT_END_OF_RECOVERY | CHECKPOINT_IS_SHUTDOWN)) == 0)
+	if ((flags & CHECKPOINT_IS_SHUTDOWN) == 0)
 		return;
 
 	if (reset)
@@ -6228,8 +6177,7 @@ update_checkpoint_display(int flags, bool restartpoint, bool reset)
 	{
 		char		activitymsg[128];
 
-		snprintf(activitymsg, sizeof(activitymsg), "performing %s%s%s",
-				 (flags & CHECKPOINT_END_OF_RECOVERY) ? "end-of-recovery " : "",
+		snprintf(activitymsg, sizeof(activitymsg), "performing %s%s",
 				 (flags & CHECKPOINT_IS_SHUTDOWN) ? "shutdown " : "",
 				 restartpoint ? "restartpoint" : "checkpoint");
 		set_ps_display(activitymsg);
@@ -6242,12 +6190,10 @@ update_checkpoint_display(int flags, bool restartpoint, bool reset)
  *
  * flags is a bitwise OR of the following:
  *	CHECKPOINT_IS_SHUTDOWN: checkpoint is for database shutdown.
- *	CHECKPOINT_END_OF_RECOVERY: checkpoint is for end of WAL recovery.
  *	CHECKPOINT_IMMEDIATE: finish the checkpoint ASAP,
  *		ignoring checkpoint_completion_target parameter.
  *	CHECKPOINT_FORCE: force a checkpoint even if no XLOG activity has occurred
- *		since the last one (implied by CHECKPOINT_IS_SHUTDOWN or
- *		CHECKPOINT_END_OF_RECOVERY).
+ *		since the last one (implied by CHECKPOINT_IS_SHUTDOWN).
  *	CHECKPOINT_FLUSH_ALL: also flush buffers of unlogged tables.
  *
  * Note: flags contains other bits, of interest here only for logging purposes.
@@ -6269,7 +6215,7 @@ update_checkpoint_display(int flags, bool restartpoint, bool reset)
 void
 CreateCheckPoint(int flags)
 {
-	bool		shutdown;
+	bool		shutdown = (flags & CHECKPOINT_IS_SHUTDOWN) != 0;
 	CheckPoint	checkPoint;
 	XLogRecPtr	recptr;
 	XLogSegNo	_logSegNo;
@@ -6280,19 +6226,9 @@ CreateCheckPoint(int flags)
 	XLogRecPtr	last_important_lsn;
 	VirtualTransactionId *vxids;
 	int			nvxids;
-	int			oldXLogAllowed = 0;
-
-	/*
-	 * An end-of-recovery checkpoint is really a shutdown checkpoint, just
-	 * issued at a different time.
-	 */
-	if (flags & (CHECKPOINT_IS_SHUTDOWN | CHECKPOINT_END_OF_RECOVERY))
-		shutdown = true;
-	else
-		shutdown = false;
 
 	/* sanity check */
-	if (RecoveryInProgress() && (flags & CHECKPOINT_END_OF_RECOVERY) == 0)
+	if (RecoveryInProgress())
 		elog(ERROR, "can't create a checkpoint during recovery");
 
 	/*
@@ -6358,8 +6294,7 @@ CreateCheckPoint(int flags)
 	 * WAL activity requiring a checkpoint, skip it.  The idea here is to
 	 * avoid inserting duplicate checkpoints when the system is idle.
 	 */
-	if ((flags & (CHECKPOINT_IS_SHUTDOWN | CHECKPOINT_END_OF_RECOVERY |
-				  CHECKPOINT_FORCE)) == 0)
+	if ((flags & (CHECKPOINT_IS_SHUTDOWN | CHECKPOINT_FORCE)) == 0)
 	{
 		if (last_important_lsn == ControlFile->checkPoint)
 		{
@@ -6371,19 +6306,8 @@ CreateCheckPoint(int flags)
 		}
 	}
 
-	/*
-	 * An end-of-recovery checkpoint is created before anyone is allowed to
-	 * write WAL. To allow us to write the checkpoint record, temporarily
-	 * enable XLogInsertAllowed.
-	 */
-	if (flags & CHECKPOINT_END_OF_RECOVERY)
-		oldXLogAllowed = LocalSetXLogInsertAllowed();
-
 	checkPoint.ThisTimeLineID = XLogCtl->InsertTimeLineID;
-	if (flags & CHECKPOINT_END_OF_RECOVERY)
-		checkPoint.PrevTimeLineID = XLogCtl->PrevTimeLineID;
-	else
-		checkPoint.PrevTimeLineID = checkPoint.ThisTimeLineID;
+	checkPoint.PrevTimeLineID = checkPoint.ThisTimeLineID;
 
 	checkPoint.fullPageWrites = Insert->fullPageWrites;
 
@@ -6540,8 +6464,7 @@ CreateCheckPoint(int flags)
 	 * allows us to reconstruct the state of running transactions during
 	 * archive recovery, if required. Skip, if this info disabled.
 	 *
-	 * If we are shutting down, or Startup process is completing crash
-	 * recovery we don't need to write running xact data.
+	 * If we are shutting down, we don't need to write running xact data.
 	 */
 	if (!shutdown && XLogStandbyInfoActive())
 		LogStandbySnapshot();
@@ -6562,17 +6485,10 @@ CreateCheckPoint(int flags)
 	/*
 	 * We mustn't write any new WAL after a shutdown checkpoint, or it will be
 	 * overwritten at next startup.  No-one should even try, this just allows
-	 * sanity-checking.  In the case of an end-of-recovery checkpoint, we want
-	 * to just temporarily disable writing until the system has exited
-	 * recovery.
+	 * sanity-checking.
 	 */
 	if (shutdown)
-	{
-		if (flags & CHECKPOINT_END_OF_RECOVERY)
-			LocalXLogInsertAllowed = oldXLogAllowed;
-		else
-			LocalXLogInsertAllowed = 0; /* never again write WAL */
-	}
+		LocalXLogInsertAllowed = 0; /* never again write WAL */
 
 	/*
 	 * We now have ProcLastRecPtr = start of actual checkpoint record, recptr
@@ -7017,7 +6933,7 @@ CreateRestartPoint(int flags)
 	 * Update pg_control, using current time.  Check that it still shows
 	 * DB_IN_ARCHIVE_RECOVERY state and an older checkpoint, else do nothing;
 	 * this is a quick hack to make sure nothing really bad happens if somehow
-	 * we get here after the end-of-recovery checkpoint.
+	 * we get here after end of recovery.
 	 */
 	LWLockAcquire(ControlFileLock, LW_EXCLUSIVE);
 	if (ControlFile->state == DB_IN_ARCHIVE_RECOVERY &&

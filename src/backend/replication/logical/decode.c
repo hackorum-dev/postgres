@@ -349,10 +349,10 @@ standby_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 				 * Abort all transactions that we keep track of, that are
 				 * older than the record's oldestRunningXid. This is the most
 				 * convenient spot for doing so since, in contrast to shutdown
-				 * or end-of-recovery checkpoints, we have information about
-				 * all running transactions which includes prepared ones,
-				 * while shutdown checkpoints just know that no non-prepared
-				 * transactions are in progress.
+				 * recovery checkpoints, we have information about all running
+				 * transactions which includes prepared ones, while shutdown
+				 * checkpoints just know that no non-prepared transactions are
+				 * in progress.
 				 */
 				ReorderBufferAbortOld(ctx->reorder, running->oldestRunningXid);
 			}

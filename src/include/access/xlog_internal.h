@@ -258,7 +258,7 @@ typedef struct xl_overwrite_contrecord
 	TimestampTz overwrite_time;
 } xl_overwrite_contrecord;
 
-/* End of recovery mark, when we don't do an END_OF_RECOVERY checkpoint */
+/* End of recovery mark, and possible TLI change */
 typedef struct xl_end_of_recovery
 {
 	TimestampTz end_time;
