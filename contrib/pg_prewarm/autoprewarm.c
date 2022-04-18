@@ -299,7 +299,7 @@ apw_load_buffers(void)
 	 * Open the block dump file.  Exit quietly if it doesn't exist, but report
 	 * any other error.
 	 */
-	file = AllocateFile(AUTOPREWARM_FILE, "r");
+	file = AllocateFile(AUTOPREWARM_FILE, PG_BINARY_R);
 	if (!file)
 	{
 		if (errno == ENOENT)
@@ -628,7 +628,7 @@ apw_dump_now(bool is_bgworker, bool dump_unlogged)
 	}
 
 	snprintf(transient_dump_file_path, MAXPGPATH, "%s.tmp", AUTOPREWARM_FILE);
-	file = AllocateFile(transient_dump_file_path, "w");
+	file = AllocateFile(transient_dump_file_path, PG_BINARY_W);
 	if (!file)
 		ereport(ERROR,
 				(errcode_for_file_access(),

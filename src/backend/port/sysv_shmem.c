@@ -496,7 +496,7 @@ GetHugePageSize(Size *hugepagesize, int *mmap_flags)
 #ifdef __linux__
 
 	{
-		FILE	   *fp = AllocateFile("/proc/meminfo", "r");
+		FILE	   *fp = AllocateFile("/proc/meminfo", PG_BINARY_R);
 		char		buf[128];
 		unsigned int sz;
 		char		ch;

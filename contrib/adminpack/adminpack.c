@@ -184,10 +184,10 @@ pg_file_write_internal(text *file, text *data, bool replace)
 					(errcode(ERRCODE_DUPLICATE_FILE),
 					 errmsg("file \"%s\" exists", filename)));
 
-		f = AllocateFile(filename, "wb");
+		f = AllocateFile(filename, PG_BINARY_W);
 	}
 	else
-		f = AllocateFile(filename, "ab");
+		f = AllocateFile(filename, PG_BINARY_A);
 
 	if (!f)
 		ereport(ERROR,

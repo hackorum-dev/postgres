@@ -622,7 +622,7 @@ ParseConfigFile(const char *config_file, bool strict,
 		return false;
 	}
 
-	fp = AllocateFile(abs_path, "r");
+	fp = AllocateFile(abs_path, PG_BINARY_R);
 	if (!fp)
 	{
 		if (strict)

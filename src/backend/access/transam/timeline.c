@@ -102,7 +102,7 @@ readTimeLineHistory(TimeLineID targetTLI)
 	else
 		TLHistoryFilePath(path, targetTLI);
 
-	fd = AllocateFile(path, "r");
+	fd = AllocateFile(path, PG_BINARY_R);
 	if (fd == NULL)
 	{
 		if (errno != ENOENT)
@@ -237,7 +237,7 @@ existsTimeLineHistory(TimeLineID probeTLI)
 	else
 		TLHistoryFilePath(path, probeTLI);
 
-	fd = AllocateFile(path, "r");
+	fd = AllocateFile(path, PG_BINARY_R);
 	if (fd != NULL)
 	{
 		FreeFile(fd);

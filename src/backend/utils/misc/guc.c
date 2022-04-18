@@ -8916,7 +8916,7 @@ AlterSystemSetConfigFile(AlterSystemStmt *altersysstmt)
 			/* open old file PG_AUTOCONF_FILENAME */
 			FILE	   *infile;
 
-			infile = AllocateFile(AutoConfFileName, "r");
+			infile = AllocateFile(AutoConfFileName, PG_BINARY_R);
 			if (infile == NULL)
 				ereport(ERROR,
 						(errcode_for_file_access(),
@@ -10647,7 +10647,7 @@ write_nondefault_variables(GucContext context)
 	/*
 	 * Open file
 	 */
-	fp = AllocateFile(CONFIG_EXEC_PARAMS_NEW, "w");
+	fp = AllocateFile(CONFIG_EXEC_PARAMS_NEW, PG_BINARY_W);
 	if (!fp)
 	{
 		ereport(elevel,
@@ -10730,7 +10730,7 @@ read_nondefault_variables(void)
 	/*
 	 * Open file
 	 */
-	fp = AllocateFile(CONFIG_EXEC_PARAMS, "r");
+	fp = AllocateFile(CONFIG_EXEC_PARAMS, PG_BINARY_R);
 	if (!fp)
 	{
 		/* File not found is fine */

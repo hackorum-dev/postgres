@@ -587,7 +587,7 @@ pg_promote(PG_FUNCTION_ARGS)
 				 errmsg("\"wait_seconds\" must not be negative or zero")));
 
 	/* create the promote signal file */
-	promote_file = AllocateFile(PROMOTE_SIGNAL_FILE, "w");
+	promote_file = AllocateFile(PROMOTE_SIGNAL_FILE, PG_BINARY_W);
 	if (!promote_file)
 		ereport(ERROR,
 				(errcode_for_file_access(),

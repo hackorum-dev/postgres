@@ -964,7 +964,7 @@ load_dh_file(char *filename, bool isServerStart)
 	int			codes;
 
 	/* attempt to open file.  It's not an error if it doesn't exist. */
-	if ((fp = AllocateFile(filename, "r")) == NULL)
+	if ((fp = AllocateFile(filename, PG_BINARY_R)) == NULL)
 	{
 		ereport(isServerStart ? FATAL : LOG,
 				(errcode_for_file_access(),

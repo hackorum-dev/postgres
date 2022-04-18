@@ -485,7 +485,7 @@ parse_extension_control_file(ExtensionControlFile *control,
 	else
 		filename = get_extension_control_filename(control->name);
 
-	if ((file = AllocateFile(filename, "r")) == NULL)
+	if ((file = AllocateFile(filename, PG_BINARY_R)) == NULL)
 	{
 		if (errno == ENOENT)
 		{

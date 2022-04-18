@@ -369,7 +369,7 @@ fill_hba_view(Tuplestorestate *tuple_store, TupleDesc tupdesc)
 	 * (Most other error conditions should result in a message in a view
 	 * entry.)
 	 */
-	file = AllocateFile(HbaFileName, "r");
+	file = AllocateFile(HbaFileName, PG_BINARY_R);
 	if (file == NULL)
 		ereport(ERROR,
 				(errcode_for_file_access(),
@@ -505,7 +505,7 @@ fill_ident_view(Tuplestorestate *tuple_store, TupleDesc tupdesc)
 	 * (Most other error conditions should result in a message in a view
 	 * entry.)
 	 */
-	file = AllocateFile(IdentFileName, "r");
+	file = AllocateFile(IdentFileName, PG_BINARY_R);
 	if (file == NULL)
 		ereport(ERROR,
 				(errcode_for_file_access(),

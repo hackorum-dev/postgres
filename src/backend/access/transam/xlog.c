@@ -8616,7 +8616,7 @@ do_pg_backup_stop(char *labelfile, bool waitforarchive, TimeLineID *stoptli_p)
 		XLByteToSeg(startpoint, _logSegNo, wal_segment_size);
 		BackupHistoryFilePath(histfilepath, stoptli, _logSegNo,
 							  startpoint, wal_segment_size);
-		fp = AllocateFile(histfilepath, "w");
+		fp = AllocateFile(histfilepath, PG_BINARY_W);
 		if (!fp)
 			ereport(ERROR,
 					(errcode_for_file_access(),

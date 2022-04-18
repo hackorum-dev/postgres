@@ -854,7 +854,7 @@ pg_current_logfile(PG_FUNCTION_ARGS)
 					 errhint("The supported log formats are \"stderr\", \"csvlog\", and \"jsonlog\".")));
 	}
 
-	fd = AllocateFile(LOG_METAINFO_DATAFILE, "r");
+	fd = AllocateFile(LOG_METAINFO_DATAFILE, PG_BINARY_R);
 	if (fd == NULL)
 	{
 		if (errno != ENOENT)

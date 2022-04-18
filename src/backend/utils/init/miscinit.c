@@ -1556,7 +1556,7 @@ ValidatePgVersion(const char *path)
 
 	snprintf(full_path, sizeof(full_path), "%s/PG_VERSION", path);
 
-	file = AllocateFile(full_path, "r");
+	file = AllocateFile(full_path, PG_BINARY_R);
 	if (!file)
 	{
 		if (errno == ENOENT)

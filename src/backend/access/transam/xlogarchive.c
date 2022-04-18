@@ -478,7 +478,7 @@ XLogArchiveNotify(const char *xlog)
 
 	/* insert an otherwise empty file called <XLOG>.ready */
 	StatusFilePath(archiveStatusPath, xlog, ".ready");
-	fd = AllocateFile(archiveStatusPath, "w");
+	fd = AllocateFile(archiveStatusPath, PG_BINARY_W);
 	if (fd == NULL)
 	{
 		ereport(LOG,
@@ -558,7 +558,7 @@ XLogArchiveForceDone(const char *xlog)
 	}
 
 	/* insert an otherwise empty file called <XLOG>.done */
-	fd = AllocateFile(archiveDone, "w");
+	fd = AllocateFile(archiveDone, PG_BINARY_W);
 	if (fd == NULL)
 	{
 		ereport(LOG,

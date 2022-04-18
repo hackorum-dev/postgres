@@ -125,7 +125,7 @@ bool
 tsearch_readline_begin(tsearch_readline_state *stp,
 					   const char *filename)
 {
-	if ((stp->fp = AllocateFile(filename, "r")) == NULL)
+	if ((stp->fp = AllocateFile(filename, PG_BINARY_R)) == NULL)
 		return false;
 	stp->filename = filename;
 	stp->lineno = 0;

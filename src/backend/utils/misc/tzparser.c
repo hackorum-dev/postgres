@@ -318,7 +318,7 @@ ParseTzFile(const char *filename, int depth,
 	get_share_path(my_exec_path, share_path);
 	snprintf(file_path, sizeof(file_path), "%s/timezonesets/%s",
 			 share_path, filename);
-	tzFile = AllocateFile(file_path, "r");
+	tzFile = AllocateFile(file_path, PG_BINARY_R);
 	if (!tzFile)
 	{
 		/*

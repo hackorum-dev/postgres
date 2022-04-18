@@ -1168,7 +1168,7 @@ read_backup_label(XLogRecPtr *checkPointLoc, TimeLineID *backupLabelTLI,
 	/*
 	 * See if label file is present
 	 */
-	lfp = AllocateFile(BACKUP_LABEL_FILE, "r");
+	lfp = AllocateFile(BACKUP_LABEL_FILE, PG_BINARY_R);
 	if (!lfp)
 	{
 		if (errno != ENOENT)
@@ -1297,7 +1297,7 @@ read_tablespace_map(List **tablespaces)
 	/*
 	 * See if tablespace_map file is present
 	 */
-	lfp = AllocateFile(TABLESPACE_MAP, "r");
+	lfp = AllocateFile(TABLESPACE_MAP, PG_BINARY_R);
 	if (!lfp)
 	{
 		if (errno != ENOENT)

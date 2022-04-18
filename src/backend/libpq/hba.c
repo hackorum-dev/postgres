@@ -371,7 +371,7 @@ tokenize_inc_file(List *tokens,
 		canonicalize_path(inc_fullname);
 	}
 
-	inc_file = AllocateFile(inc_fullname, "r");
+	inc_file = AllocateFile(inc_fullname, PG_BINARY_R);
 	if (inc_file == NULL)
 	{
 		int			save_errno = errno;
@@ -2215,7 +2215,7 @@ load_hba(void)
 	MemoryContext oldcxt;
 	MemoryContext hbacxt;
 
-	file = AllocateFile(HbaFileName, "r");
+	file = AllocateFile(HbaFileName, PG_BINARY_R);
 	if (file == NULL)
 	{
 		ereport(LOG,
@@ -2596,7 +2596,7 @@ load_ident(void)
 	MemoryContext ident_context;
 	IdentLine  *newline;
 
-	file = AllocateFile(IdentFileName, "r");
+	file = AllocateFile(IdentFileName, PG_BINARY_R);
 	if (file == NULL)
 	{
 		/* not fatal ... we just won't do any special ident maps */
