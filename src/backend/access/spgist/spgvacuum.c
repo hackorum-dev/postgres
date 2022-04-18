@@ -964,6 +964,9 @@ spgvacuumcleanup(IndexVacuumInfo *info, IndexBulkDeleteResult *stats)
 	 * double-counting some index tuples, so disbelieve any total that exceeds
 	 * the underlying heap's count ... if we know that accurately.  Otherwise
 	 * this might just make matters worse.
+	 *
+	 * This is also useful as a way of avoiding counting any dead tuples in
+	 * our final num_index_tuples.
 	 */
 	if (!info->estimated_count)
 	{

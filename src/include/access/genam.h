@@ -37,9 +37,10 @@ typedef struct IndexBuildResult
  * Struct for input arguments passed to ambulkdelete and amvacuumcleanup
  *
  * num_heap_tuples is accurate only when estimated_count is false;
- * otherwise it's just an estimate (currently, the estimate is the
- * prior value of the relation's pg_class.reltuples field, so it could
- * even be -1).  It will always just be an estimate during ambulkdelete.
+ * otherwise it's just an estimate (taken from the heap rel's existing
+ * pg_class.reltuples value).  It's always an estimate during ambulkdelete.
+ * During amvacuumcleanup this is the value that VACUUM is about to set
+ * the heap rel's pg_class.reltuples to (even when it's an estimate).
  */
 typedef struct IndexVacuumInfo
 {
@@ -48,7 +49,7 @@ typedef struct IndexVacuumInfo
 	bool		report_progress;	/* emit progress.h status reports */
 	bool		estimated_count;	/* num_heap_tuples is an estimate */
 	int			message_level;	/* ereport level for progress messages */
-	double		num_heap_tuples;	/* tuples remaining in heap */
+	double		num_heap_tuples;	/* live tuples remaining in heap */
 	BufferAccessStrategy strategy;	/* access strategy for reads */
 } IndexVacuumInfo;
 
@@ -67,6 +68,11 @@ typedef struct IndexVacuumInfo
  * deleted by the current vacuum operation.  pages_deleted and pages_free
  * refer to free space within the index file.
  *
+ * Note: num_index_tuples is used by VACUUM to set pg_class.reltuples, which
+ * is defined as the number of live tuples in the relation.  num_heap_tuples
+ * should be used to cap num_index_tuples in amvacuumcleanup routines, though
+ * only when num_heap_tuples is not an estimate.
+ *
  * Note: Some index AMs may compute num_index_tuples by reference to
  * num_heap_tuples, in which case they should copy the estimated_count field
  * from IndexVacuumInfo.
@@ -75,7 +81,7 @@ typedef struct IndexBulkDeleteResult
 {
 	BlockNumber num_pages;		/* pages remaining in index */
 	bool		estimated_count;	/* num_index_tuples is an estimate */
-	double		num_index_tuples;	/* tuples remaining */
+	double		num_index_tuples;	/* live tuples remaining */
 	double		tuples_removed; /* # removed during vacuum operation */
 	BlockNumber pages_newly_deleted;	/* # pages marked deleted by us  */
 	BlockNumber pages_deleted;	/* # pages marked deleted (could be by us) */

@@ -165,8 +165,6 @@ typedef struct LVRelState
 	/* rel's initial relfrozenxid and relminmxid */
 	TransactionId relfrozenxid;
 	MultiXactId relminmxid;
-	double		old_live_tuples;	/* previous value of pg_class.reltuples */
-
 	/* VACUUM operation's cutoffs for freezing and pruning */
 	TransactionId OldestXmin;
 	GlobalVisState *vistest;
@@ -202,12 +200,6 @@ typedef struct LVRelState
 	BlockNumber missed_dead_pages;	/* # pages with missed dead tuples */
 	BlockNumber nonempty_pages; /* actually, last nonempty page + 1 */
 
-	/* Statistics output by us, for table */
-	double		new_rel_tuples; /* new estimated total # of tuples */
-	double		new_live_tuples;	/* new estimated total # of live tuples */
-	/* Statistics output by index AMs */
-	IndexBulkDeleteResult **indstats;
-
 	/* Instrumentation counters */
 	int			num_index_scans;
 	/* Counters that follow are only for scanned_pages */
@@ -216,6 +208,9 @@ typedef struct LVRelState
 	int64		live_tuples;	/* # live tuples remaining */
 	int64		recently_dead_tuples;	/* # dead, but not yet removable */
 	int64		missed_dead_tuples; /* # removable, but not removed */
+
+	/* Per-index instrumentation */
+	IndexBulkDeleteResult **indstats;
 } LVRelState;
 
 /*
@@ -266,7 +261,8 @@ static void lazy_vacuum_heap_rel(LVRelState *vacrel);
 static int	lazy_vacuum_heap_page(LVRelState *vacrel, BlockNumber blkno,
 								  Buffer buffer, int index, Buffer *vmbuffer);
 static bool lazy_check_wraparound_failsafe(LVRelState *vacrel);
-static void lazy_cleanup_all_indexes(LVRelState *vacrel);
+static void lazy_cleanup_all_indexes(LVRelState *vacrel, double new_reltuples,
+									 bool estimate);
 static IndexBulkDeleteResult *lazy_vacuum_one_index(Relation indrel,
 													IndexBulkDeleteResult *istat,
 													double reltuples,
@@ -314,6 +310,7 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 				instrument,
 				aggressive,
 				skipwithvm,
+				estimate,
 				frozenxid_updated,
 				minmulti_updated;
 	TransactionId OldestXmin,
@@ -323,6 +320,7 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 	BlockNumber orig_rel_pages,
 				new_rel_pages,
 				new_rel_allvisible;
+	double		new_reltuples;
 	PGRUsage	ru0;
 	TimestampTz starttime = 0;
 	PgStat_Counter startreadtime = 0,
@@ -445,6 +443,7 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 	vacrel->do_index_vacuuming = true;
 	vacrel->do_index_cleanup = true;
 	vacrel->do_rel_truncate = (params->truncate != VACOPTVALUE_DISABLED);
+	vacrel->bstrategy = bstrategy;
 	if (params->index_cleanup == VACOPTVALUE_DISABLED)
 	{
 		/* Force disable index vacuuming up-front */
@@ -462,32 +461,20 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 		Assert(params->index_cleanup == VACOPTVALUE_AUTO);
 	}
 
-	vacrel->bstrategy = bstrategy;
-	vacrel->relfrozenxid = rel->rd_rel->relfrozenxid;
-	vacrel->relminmxid = rel->rd_rel->relminmxid;
-	vacrel->old_live_tuples = rel->rd_rel->reltuples;
-
-	/* Initialize page counters explicitly (be tidy) */
+	/* Initialize counters explicitly (be tidy) */
 	vacrel->scanned_pages = 0;
 	vacrel->removed_pages = 0;
 	vacrel->lpdead_item_pages = 0;
 	vacrel->missed_dead_pages = 0;
 	vacrel->nonempty_pages = 0;
-	/* dead_items_alloc allocates vacrel->dead_items later on */
-
-	/* Allocate/initialize output statistics state */
-	vacrel->new_rel_tuples = 0;
-	vacrel->new_live_tuples = 0;
-	vacrel->indstats = (IndexBulkDeleteResult **)
-		palloc0(vacrel->nindexes * sizeof(IndexBulkDeleteResult *));
-
-	/* Initialize remaining counters (be tidy) */
 	vacrel->num_index_scans = 0;
 	vacrel->tuples_deleted = 0;
 	vacrel->lpdead_items = 0;
 	vacrel->live_tuples = 0;
 	vacrel->recently_dead_tuples = 0;
 	vacrel->missed_dead_tuples = 0;
+	vacrel->indstats = (IndexBulkDeleteResult **)
+		palloc0(vacrel->nindexes * sizeof(IndexBulkDeleteResult *));
 
 	/*
 	 * Determine the extent of the blocks that we'll scan in lazy_scan_heap,
@@ -506,6 +493,8 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 	 * frozen) during its scan.
 	 */
 	vacrel->rel_pages = orig_rel_pages = RelationGetNumberOfBlocks(rel);
+	vacrel->relfrozenxid = rel->rd_rel->relfrozenxid;
+	vacrel->relminmxid = rel->rd_rel->relminmxid;
 	vacrel->OldestXmin = OldestXmin;
 	vacrel->vistest = GlobalVisTestFor(rel);
 	/* FreezeLimit controls XID freezing (always <= OldestXmin) */
@@ -532,6 +521,24 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 	 * vacuuming, and heap vacuuming (plus related processing)
 	 */
 	lazy_scan_heap(vacrel);
+
+	/*
+	 * Finished all pruning, freezing, and vacuuming.
+	 *
+	 * We still need to do final index cleanup via calls to each index's
+	 * amvacuumcleanup routine.  Most individual index AMs need only finalize
+	 * index statistics, which are set in each index's pg_class entry below.
+	 * But some index AMs (such as GIN) do significant amounts of I/O here,
+	 * even when no index vacuuming occurred.  Parallel workers help us here.
+	 *
+	 * First we need to get our final reltuples for rel's pg_class entry,
+	 * since amvacuumcleanup routines use this information too.
+	 */
+	new_reltuples = vac_estimate_reltuples(vacrel->rel, orig_rel_pages,
+										   vacrel->scanned_pages,
+										   vacrel->live_tuples, &estimate);
+	if (vacrel->nindexes > 0 && vacrel->do_index_cleanup)
+		lazy_cleanup_all_indexes(vacrel, new_reltuples, estimate);
 
 	/*
 	 * Free resources managed by dead_items_alloc.  This ends parallel mode in
@@ -602,12 +609,12 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 	/*
 	 * Now actually update rel's pg_class entry.
 	 *
-	 * In principle new_live_tuples could be -1 indicating that we (still)
+	 * In principle new_reltuples could be -1 indicating that we (still)
 	 * don't know the tuple count.  In practice that can't happen, since we
 	 * scan every page that isn't skipped using the visibility map.
 	 */
-	vac_update_relstats(rel, new_rel_pages, vacrel->new_live_tuples,
-						new_rel_allvisible, vacrel->nindexes > 0,
+	vac_update_relstats(rel, new_rel_pages, new_reltuples, new_rel_allvisible,
+						vacrel->nindexes > 0,
 						vacrel->NewRelfrozenXid, vacrel->NewRelminMxid,
 						&frozenxid_updated, &minmulti_updated, false);
 
@@ -621,9 +628,8 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 	 * soon in cases where the failsafe prevented significant amounts of heap
 	 * vacuuming.
 	 */
-	pgstat_report_vacuum(RelationGetRelid(rel),
-						 rel->rd_rel->relisshared,
-						 Max(vacrel->new_live_tuples, 0),
+	pgstat_report_vacuum(RelationGetRelid(rel), rel->rd_rel->relisshared,
+						 Max(new_reltuples, 0),
 						 vacrel->recently_dead_tuples +
 						 vacrel->missed_dead_tuples);
 	pgstat_progress_end_command();
@@ -694,9 +700,9 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 							 orig_rel_pages == 0 ? 100.0 :
 							 100.0 * vacrel->scanned_pages / orig_rel_pages);
 			appendStringInfo(&buf,
-							 _("tuples: %lld removed, %lld remain, %lld are dead but not yet removable\n"),
+							 _("tuples: %lld removed, %lld live remain, %lld dead but not yet removable remain\n"),
 							 (long long) vacrel->tuples_deleted,
-							 (long long) vacrel->new_rel_tuples,
+							 (long long) Max(new_reltuples, 0),
 							 (long long) vacrel->recently_dead_tuples);
 			if (vacrel->missed_dead_tuples > 0)
 				appendStringInfo(&buf,
@@ -1243,19 +1249,6 @@ lazy_scan_heap(LVRelState *vacrel)
 	/* report that everything is now scanned */
 	pgstat_progress_update_param(PROGRESS_VACUUM_HEAP_BLKS_SCANNED, blkno);
 
-	/* now we can compute the new value for pg_class.reltuples */
-	vacrel->new_live_tuples = vac_estimate_reltuples(vacrel->rel, rel_pages,
-													 vacrel->scanned_pages,
-													 vacrel->live_tuples);
-
-	/*
-	 * Also compute the total number of surviving heap entries.  In the
-	 * (unlikely) scenario that new_live_tuples is -1, take it as zero.
-	 */
-	vacrel->new_rel_tuples =
-		Max(vacrel->new_live_tuples, 0) + vacrel->recently_dead_tuples +
-		vacrel->missed_dead_tuples;
-
 	/*
 	 * Do index vacuuming (call each index's ambulkdelete routine), then do
 	 * related heap vacuuming
@@ -1272,10 +1265,6 @@ lazy_scan_heap(LVRelState *vacrel)
 
 	/* report all blocks vacuumed */
 	pgstat_progress_update_param(PROGRESS_VACUUM_HEAP_BLKS_VACUUMED, blkno);
-
-	/* Do final index cleanup (call each index's amvacuumcleanup routine) */
-	if (vacrel->nindexes > 0 && vacrel->do_index_cleanup)
-		lazy_cleanup_all_indexes(vacrel);
 }
 
 /*
@@ -2300,6 +2289,7 @@ lazy_vacuum(LVRelState *vacrel)
 static bool
 lazy_vacuum_all_indexes(LVRelState *vacrel)
 {
+	double		old_reltuples = vacrel->rel->rd_rel->reltuples;
 	bool		allindexes = true;
 
 	Assert(vacrel->nindexes > 0);
@@ -2325,8 +2315,7 @@ lazy_vacuum_all_indexes(LVRelState *vacrel)
 			IndexBulkDeleteResult *istat = vacrel->indstats[idx];
 
 			vacrel->indstats[idx] =
-				lazy_vacuum_one_index(indrel, istat, vacrel->old_live_tuples,
-									  vacrel);
+				lazy_vacuum_one_index(indrel, istat, old_reltuples, vacrel);
 
 			if (lazy_check_wraparound_failsafe(vacrel))
 			{
@@ -2339,7 +2328,7 @@ lazy_vacuum_all_indexes(LVRelState *vacrel)
 	else
 	{
 		/* Outsource everything to parallel variant */
-		parallel_vacuum_bulkdel_all_indexes(vacrel->pvs, vacrel->old_live_tuples,
+		parallel_vacuum_bulkdel_all_indexes(vacrel->pvs, old_reltuples,
 											vacrel->num_index_scans);
 
 		/*
@@ -2649,11 +2638,9 @@ lazy_check_wraparound_failsafe(LVRelState *vacrel)
  *	lazy_cleanup_all_indexes() -- cleanup all indexes of relation.
  */
 static void
-lazy_cleanup_all_indexes(LVRelState *vacrel)
+lazy_cleanup_all_indexes(LVRelState *vacrel, double new_reltuples,
+						 bool estimate)
 {
-	double		reltuples = vacrel->new_rel_tuples;
-	bool		estimated_count = vacrel->scanned_pages < vacrel->rel_pages;
-
 	Assert(vacrel->do_index_cleanup);
 	Assert(vacrel->nindexes > 0);
 
@@ -2668,17 +2655,17 @@ lazy_cleanup_all_indexes(LVRelState *vacrel)
 			Relation	indrel = vacrel->indrels[idx];
 			IndexBulkDeleteResult *istat = vacrel->indstats[idx];
 
-			vacrel->indstats[idx] =
-				lazy_cleanup_one_index(indrel, istat, reltuples,
-									   estimated_count, vacrel);
+			vacrel->indstats[idx] = lazy_cleanup_one_index(indrel, istat,
+														   new_reltuples,
+														   estimate, vacrel);
 		}
 	}
 	else
 	{
 		/* Outsource everything to parallel variant */
-		parallel_vacuum_cleanup_all_indexes(vacrel->pvs, reltuples,
+		parallel_vacuum_cleanup_all_indexes(vacrel->pvs, new_reltuples,
 											vacrel->num_index_scans,
-											estimated_count);
+											estimate);
 	}
 }
 
@@ -3332,7 +3319,12 @@ heap_page_is_all_visible(LVRelState *vacrel, Buffer buf,
 }
 
 /*
- * Update index statistics in pg_class if the statistics are accurate.
+ * Update index statistics in pg_class if we have accurate information.
+ *
+ * Note: pg_class.reltuples is defined as an estimate of the number of live
+ * tuples.  Index AMs can deal with that provided lazy_cleanup_all_indexes was
+ * called with a non-estimate for the target table's own reltuples.  Otherwise
+ * reltuples might include some dead index tuples, which shouldn't hurt much.
  */
 static void
 update_relstats_all_indexes(LVRelState *vacrel)
@@ -3351,7 +3343,6 @@ update_relstats_all_indexes(LVRelState *vacrel)
 		if (istat == NULL || istat->estimated_count)
 			continue;
 
-		/* Update index statistics */
 		vac_update_relstats(indrel,
 							istat->num_pages,
 							istat->num_index_tuples,

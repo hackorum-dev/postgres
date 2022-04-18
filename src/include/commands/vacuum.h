@@ -273,9 +273,9 @@ extern void vac_open_indexes(Relation relation, LOCKMODE lockmode,
 							 int *nindexes, Relation **Irel);
 extern void vac_close_indexes(int nindexes, Relation *Irel, LOCKMODE lockmode);
 extern double vac_estimate_reltuples(Relation relation,
-									 BlockNumber total_pages,
+									 BlockNumber rel_pages,
 									 BlockNumber scanned_pages,
-									 double scanned_tuples);
+									 double scanned_tuples, bool *estimate);
 extern void vac_update_relstats(Relation relation,
 								BlockNumber num_pages,
 								double num_tuples,

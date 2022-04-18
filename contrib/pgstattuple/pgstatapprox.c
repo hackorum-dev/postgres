@@ -67,6 +67,7 @@ statapprox_heap(Relation rel, output_type *stat)
 	BlockNumber scanned,
 				nblocks,
 				blkno;
+	bool		estimate;
 	Buffer		vmbuffer = InvalidBuffer;
 	BufferAccessStrategy bstrategy;
 	TransactionId OldestXmin;
@@ -193,7 +194,7 @@ statapprox_heap(Relation rel, output_type *stat)
 	 * we already accounted for the space in those pages, too.
 	 */
 	stat->tuple_count = vac_estimate_reltuples(rel, nblocks, scanned,
-											   stat->tuple_count);
+											   stat->tuple_count, &estimate);
 
 	/* It's not clear if we could get -1 here, but be safe. */
 	stat->tuple_count = Max(stat->tuple_count, 0);

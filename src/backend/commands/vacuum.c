@@ -1220,9 +1220,10 @@ vacuum_xid_failsafe_check(TransactionId relfrozenxid, MultiXactId relminmxid)
  */
 double
 vac_estimate_reltuples(Relation relation,
-					   BlockNumber total_pages,
+					   BlockNumber rel_pages,
 					   BlockNumber scanned_pages,
-					   double scanned_tuples)
+					   double scanned_tuples,
+					   bool *estimate)
 {
 	BlockNumber old_rel_pages = relation->rd_rel->relpages;
 	double		old_rel_tuples = relation->rd_rel->reltuples;
@@ -1230,9 +1231,14 @@ vac_estimate_reltuples(Relation relation,
 	double		unscanned_pages;
 	double		total_tuples;
 
+	*estimate = true; /* for now */
+
 	/* If we did scan the whole table, just use the count as-is */
-	if (scanned_pages >= total_pages)
+	if (scanned_pages >= rel_pages)
+	{
+		*estimate = false;
 		return scanned_tuples;
+	}
 
 	/*
 	 * If scanned_pages is zero but total_pages isn't, keep the existing value
@@ -1256,8 +1262,8 @@ vac_estimate_reltuples(Relation relation,
 	 * a few of its pages (less than a quasi-arbitrary threshold of 2%) were
 	 * scanned by this VACUUM, assume that reltuples has not changed at all.
 	 */
-	if (old_rel_pages == total_pages &&
-		scanned_pages < (double) total_pages * 0.02)
+	if (old_rel_pages == rel_pages &&
+		scanned_pages < (double) rel_pages * 0.02)
 		return old_rel_tuples;
 
 	/*
@@ -1265,7 +1271,7 @@ vac_estimate_reltuples(Relation relation,
 	 * scanned_tuples to match total_pages.
 	 */
 	if (old_rel_tuples < 0 || old_rel_pages == 0)
-		return floor((scanned_tuples / scanned_pages) * total_pages + 0.5);
+		return floor((scanned_tuples / scanned_pages) * rel_pages + 0.5);
 
 	/*
 	 * Okay, we've covered the corner cases.  The normal calculation is to
@@ -1274,7 +1280,7 @@ vac_estimate_reltuples(Relation relation,
 	 * and finally add on the number of tuples in the scanned pages.
 	 */
 	old_density = old_rel_tuples / old_rel_pages;
-	unscanned_pages = (double) total_pages - (double) scanned_pages;
+	unscanned_pages = (double) rel_pages - (double) scanned_pages;
 	total_tuples = old_density * unscanned_pages + scanned_tuples;
 	return floor(total_tuples + 0.5);
 }

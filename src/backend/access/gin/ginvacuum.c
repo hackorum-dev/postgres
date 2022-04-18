@@ -724,7 +724,7 @@ ginvacuumcleanup(IndexVacuumInfo *info, IndexBulkDeleteResult *stats)
 	memset(&idxStat, 0, sizeof(idxStat));
 
 	/*
-	 * XXX we always report the heap tuple count as the number of index
+	 * XXX we always report the heap tuple count as the number of live index
 	 * entries.  This is bogus if the index is partial, but it's real hard to
 	 * tell how many distinct heap entries are referenced by a GIN index.
 	 */
