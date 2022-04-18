@@ -1833,36 +1833,28 @@ ApplyWalRecord(XLogReaderState *xlogreader, XLogRecord *record, TimeLineID *repl
 	 */
 	if (record->xl_rmid == RM_XLOG_ID)
 	{
-		TimeLineID	newReplayTLI = *replayTLI;
-		TimeLineID	prevReplayTLI = *replayTLI;
 		uint8		info = record->xl_info & ~XLR_INFO_MASK;
 
-		if (info == XLOG_CHECKPOINT_SHUTDOWN)
-		{
-			CheckPoint	checkPoint;
-
-			memcpy(&checkPoint, XLogRecGetData(xlogreader), sizeof(CheckPoint));
-			newReplayTLI = checkPoint.ThisTimeLineID;
-			prevReplayTLI = checkPoint.PrevTimeLineID;
-		}
-		else if (info == XLOG_END_OF_RECOVERY)
+		if (info == XLOG_END_OF_RECOVERY)
 		{
 			xl_end_of_recovery xlrec;
+			TimeLineID	newReplayTLI;
+			TimeLineID	prevReplayTLI;
 
 			memcpy(&xlrec, XLogRecGetData(xlogreader), sizeof(xl_end_of_recovery));
 			newReplayTLI = xlrec.ThisTimeLineID;
 			prevReplayTLI = xlrec.PrevTimeLineID;
-		}
 
-		if (newReplayTLI != *replayTLI)
-		{
-			/* Check that it's OK to switch to this TLI */
-			checkTimeLineSwitch(xlogreader->EndRecPtr,
-								newReplayTLI, prevReplayTLI, *replayTLI);
+			if (newReplayTLI != *replayTLI)
+			{
+				/* Check that it's OK to switch to this TLI */
+				checkTimeLineSwitch(xlogreader->EndRecPtr,
+									newReplayTLI, prevReplayTLI, *replayTLI);
 
-			/* Following WAL records should be run with new TLI */
-			*replayTLI = newReplayTLI;
-			switchedTLI = true;
+				/* Following WAL records should be run with new TLI */
+				*replayTLI = newReplayTLI;
+				switchedTLI = true;
+			}
 		}
 	}
 

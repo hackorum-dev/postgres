@@ -4539,7 +4539,6 @@ BootStrapXLOG(void)
 	 */
 	checkPoint.redo = wal_segment_size + SizeOfXLogLongPHD;
 	checkPoint.ThisTimeLineID = BootstrapTimeLineID;
-	checkPoint.PrevTimeLineID = BootstrapTimeLineID;
 	checkPoint.fullPageWrites = fullPageWrites;
 	checkPoint.nextXid = starting_fxid;
 	checkPoint.nextOid = FirstGenbkiObjectId;
@@ -6307,7 +6306,6 @@ CreateCheckPoint(int flags)
 	}
 
 	checkPoint.ThisTimeLineID = XLogCtl->InsertTimeLineID;
-	checkPoint.PrevTimeLineID = checkPoint.ThisTimeLineID;
 
 	checkPoint.fullPageWrites = Insert->fullPageWrites;
 

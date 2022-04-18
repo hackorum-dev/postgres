@@ -27627,11 +27627,6 @@ SELECT collation for ('foo' COLLATE "de_DE");
       </row>
 
       <row>
-       <entry><structfield>prev_timeline_id</structfield></entry>
-       <entry><type>integer</type></entry>
-      </row>
-
-      <row>
        <entry><structfield>full_page_writes</structfield></entry>
        <entry><type>boolean</type></entry>
       </row>

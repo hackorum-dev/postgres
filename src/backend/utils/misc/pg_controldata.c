@@ -101,33 +101,31 @@ pg_control_checkpoint(PG_FUNCTION_ARGS)
 					   TEXTOID, -1, 0);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 4, "timeline_id",
 					   INT4OID, -1, 0);
-	TupleDescInitEntry(tupdesc, (AttrNumber) 5, "prev_timeline_id",
-					   INT4OID, -1, 0);
-	TupleDescInitEntry(tupdesc, (AttrNumber) 6, "full_page_writes",
+	TupleDescInitEntry(tupdesc, (AttrNumber) 5, "full_page_writes",
 					   BOOLOID, -1, 0);
-	TupleDescInitEntry(tupdesc, (AttrNumber) 7, "next_xid",
+	TupleDescInitEntry(tupdesc, (AttrNumber) 6, "next_xid",
 					   TEXTOID, -1, 0);
-	TupleDescInitEntry(tupdesc, (AttrNumber) 8, "next_oid",
+	TupleDescInitEntry(tupdesc, (AttrNumber) 7, "next_oid",
 					   OIDOID, -1, 0);
-	TupleDescInitEntry(tupdesc, (AttrNumber) 9, "next_multixact_id",
+	TupleDescInitEntry(tupdesc, (AttrNumber) 8, "next_multixact_id",
 					   XIDOID, -1, 0);
-	TupleDescInitEntry(tupdesc, (AttrNumber) 10, "next_multi_offset",
+	TupleDescInitEntry(tupdesc, (AttrNumber) 9, "next_multi_offset",
 					   XIDOID, -1, 0);
-	TupleDescInitEntry(tupdesc, (AttrNumber) 11, "oldest_xid",
+	TupleDescInitEntry(tupdesc, (AttrNumber) 10, "oldest_xid",
 					   XIDOID, -1, 0);
-	TupleDescInitEntry(tupdesc, (AttrNumber) 12, "oldest_xid_dbid",
+	TupleDescInitEntry(tupdesc, (AttrNumber) 11, "oldest_xid_dbid",
 					   OIDOID, -1, 0);
-	TupleDescInitEntry(tupdesc, (AttrNumber) 13, "oldest_active_xid",
+	TupleDescInitEntry(tupdesc, (AttrNumber) 12, "oldest_active_xid",
 					   XIDOID, -1, 0);
-	TupleDescInitEntry(tupdesc, (AttrNumber) 14, "oldest_multi_xid",
+	TupleDescInitEntry(tupdesc, (AttrNumber) 13, "oldest_multi_xid",
 					   XIDOID, -1, 0);
-	TupleDescInitEntry(tupdesc, (AttrNumber) 15, "oldest_multi_dbid",
+	TupleDescInitEntry(tupdesc, (AttrNumber) 14, "oldest_multi_dbid",
 					   OIDOID, -1, 0);
-	TupleDescInitEntry(tupdesc, (AttrNumber) 16, "oldest_commit_ts_xid",
+	TupleDescInitEntry(tupdesc, (AttrNumber) 15, "oldest_commit_ts_xid",
 					   XIDOID, -1, 0);
-	TupleDescInitEntry(tupdesc, (AttrNumber) 17, "newest_commit_ts_xid",
+	TupleDescInitEntry(tupdesc, (AttrNumber) 16, "newest_commit_ts_xid",
 					   XIDOID, -1, 0);
-	TupleDescInitEntry(tupdesc, (AttrNumber) 18, "checkpoint_time",
+	TupleDescInitEntry(tupdesc, (AttrNumber) 17, "checkpoint_time",
 					   TIMESTAMPTZOID, -1, 0);
 	tupdesc = BlessTupleDesc(tupdesc);
 
@@ -158,49 +156,46 @@ pg_control_checkpoint(PG_FUNCTION_ARGS)
 	values[3] = Int32GetDatum(ControlFile->checkPointCopy.ThisTimeLineID);
 	nulls[3] = false;
 
-	values[4] = Int32GetDatum(ControlFile->checkPointCopy.PrevTimeLineID);
+	values[4] = BoolGetDatum(ControlFile->checkPointCopy.fullPageWrites);
 	nulls[4] = false;
 
-	values[5] = BoolGetDatum(ControlFile->checkPointCopy.fullPageWrites);
-	nulls[5] = false;
-
-	values[6] = CStringGetTextDatum(psprintf("%u:%u",
+	values[5] = CStringGetTextDatum(psprintf("%u:%u",
 											 EpochFromFullTransactionId(ControlFile->checkPointCopy.nextXid),
 											 XidFromFullTransactionId(ControlFile->checkPointCopy.nextXid)));
+	nulls[5] = false;
+
+	values[6] = ObjectIdGetDatum(ControlFile->checkPointCopy.nextOid);
 	nulls[6] = false;
 
-	values[7] = ObjectIdGetDatum(ControlFile->checkPointCopy.nextOid);
+	values[7] = TransactionIdGetDatum(ControlFile->checkPointCopy.nextMulti);
 	nulls[7] = false;
 
-	values[8] = TransactionIdGetDatum(ControlFile->checkPointCopy.nextMulti);
+	values[8] = TransactionIdGetDatum(ControlFile->checkPointCopy.nextMultiOffset);
 	nulls[8] = false;
 
-	values[9] = TransactionIdGetDatum(ControlFile->checkPointCopy.nextMultiOffset);
+	values[9] = TransactionIdGetDatum(ControlFile->checkPointCopy.oldestXid);
 	nulls[9] = false;
 
-	values[10] = TransactionIdGetDatum(ControlFile->checkPointCopy.oldestXid);
+	values[10] = ObjectIdGetDatum(ControlFile->checkPointCopy.oldestXidDB);
 	nulls[10] = false;
 
-	values[11] = ObjectIdGetDatum(ControlFile->checkPointCopy.oldestXidDB);
+	values[11] = TransactionIdGetDatum(ControlFile->checkPointCopy.oldestActiveXid);
 	nulls[11] = false;
 
-	values[12] = TransactionIdGetDatum(ControlFile->checkPointCopy.oldestActiveXid);
+	values[12] = TransactionIdGetDatum(ControlFile->checkPointCopy.oldestMulti);
 	nulls[12] = false;
 
-	values[13] = TransactionIdGetDatum(ControlFile->checkPointCopy.oldestMulti);
+	values[13] = ObjectIdGetDatum(ControlFile->checkPointCopy.oldestMultiDB);
 	nulls[13] = false;
 
-	values[14] = ObjectIdGetDatum(ControlFile->checkPointCopy.oldestMultiDB);
+	values[14] = TransactionIdGetDatum(ControlFile->checkPointCopy.oldestCommitTsXid);
 	nulls[14] = false;
 
-	values[15] = TransactionIdGetDatum(ControlFile->checkPointCopy.oldestCommitTsXid);
+	values[15] = TransactionIdGetDatum(ControlFile->checkPointCopy.newestCommitTsXid);
 	nulls[15] = false;
 
-	values[16] = TransactionIdGetDatum(ControlFile->checkPointCopy.newestCommitTsXid);
+	values[16] = TimestampTzGetDatum(time_t_to_timestamptz(ControlFile->checkPointCopy.time));
 	nulls[16] = false;
-
-	values[17] = TimestampTzGetDatum(time_t_to_timestamptz(ControlFile->checkPointCopy.time));
-	nulls[17] = false;
 
 	htup = heap_form_tuple(tupdesc, values, nulls);
 
