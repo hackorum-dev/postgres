@@ -1560,9 +1560,9 @@ statext_is_compatible_clause(PlannerInfo *root, Node *clause, Index relid,
 							 Bitmapset **attnums, List **exprs)
 {
 	RangeTblEntry *rte = root->simple_rte_array[relid];
-	RestrictInfo *rinfo = (RestrictInfo *) clause;
-	int			clause_relid;
+	Bitmapset  *relids;
 	Oid			userid;
+	int			clause_relid;
 
 	/*
 	 * Special-case handling for bare BoolExpr AND clauses, because the
@@ -1574,10 +1574,7 @@ statext_is_compatible_clause(PlannerInfo *root, Node *clause, Index relid,
 		BoolExpr   *expr = (BoolExpr *) clause;
 		ListCell   *lc;
 
-		/*
-		 * Check that each sub-clause is compatible.  We expect these to be
-		 * RestrictInfos.
-		 */
+		/* Check that each sub-clause is compatible. */
 		foreach(lc, expr->args)
 		{
 			if (!statext_is_compatible_clause(root, (Node *) lfirst(lc),
@@ -1588,21 +1585,30 @@ statext_is_compatible_clause(PlannerInfo *root, Node *clause, Index relid,
 		return true;
 	}
 
-	/* Otherwise it must be a RestrictInfo. */
-	if (!IsA(rinfo, RestrictInfo))
-		return false;
+	/*
+	 * If the clause has a RestrictInfo on top, use the cached results.
+	 * Otherwise (if the clause is bare expression) calculate relids from
+	 * scratch.
+	 */
+	if (IsA(clause, RestrictInfo))
+	{
+		RestrictInfo *rinfo = (RestrictInfo *) clause;
 
-	/* Pseudoconstants are not really interesting here. */
-	if (rinfo->pseudoconstant)
-		return false;
+		relids = rinfo->clause_relids;
+
+		/* extract the bare expression */
+		clause = (Node *) rinfo->clause;
+	}
+	else
+		relids = pull_varnos(root, clause);
 
 	/* Clauses referencing other varnos are incompatible. */
-	if (!bms_get_singleton_member(rinfo->clause_relids, &clause_relid) ||
+	if (!bms_get_singleton_member(relids, &clause_relid) ||
 		clause_relid != relid)
 		return false;
 
 	/* Check the clause and determine what attributes it references. */
-	if (!statext_is_compatible_clause_internal(root, (Node *) rinfo->clause,
+	if (!statext_is_compatible_clause_internal(root, clause,
 											   relid, attnums, exprs))
 		return false;
 

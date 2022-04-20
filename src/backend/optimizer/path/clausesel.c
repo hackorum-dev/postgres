@@ -520,12 +520,18 @@ addRangeClause(RangeQueryClause **rqlist, Node *clause,
  *		Examine each clause in 'clauses' and determine if all clauses
  *		reference only a single relation.  If so return that relation,
  *		otherwise return NULL.
+ *
+ * The clauses may be either RestrictInfos or bare expression clauses, same as
+ * for clauselist_selectivity. The former is preferred since it allows caching
+ * of results, but some callers pass bare expressions.
+
  */
 static RelOptInfo *
 find_single_rel_for_clauses(PlannerInfo *root, List *clauses)
 {
 	int			lastrelid = 0;
 	ListCell   *l;
+	Bitmapset  *clause_relids;
 
 	foreach(l, clauses)
 	{
@@ -560,12 +566,20 @@ find_single_rel_for_clauses(PlannerInfo *root, List *clauses)
 			continue;
 		}
 
-		if (!IsA(rinfo, RestrictInfo))
-			return NULL;
+		/*
+		 * For a RestrictInfo, we can use the cached relids. Otherwise
+		 * inspect the clause to build the bitmap.
+		 */
+		if (IsA(rinfo, RestrictInfo))
+			clause_relids = rinfo->clause_relids;
+		else
+			clause_relids = pull_varnos(root, (Node *) rinfo);
 
-		if (bms_is_empty(rinfo->clause_relids))
-			continue;			/* we can ignore variable-free clauses */
-		if (!bms_get_singleton_member(rinfo->clause_relids, &relid))
+
+		if (bms_is_empty(clause_relids))
+			continue;			/* we can ignore variable-free clauses (this
+								 * includes pseudoconstants) */
+		if (!bms_get_singleton_member(clause_relids, &relid))
 			return NULL;		/* multiple relations in this clause */
 		if (lastrelid == 0)
 			lastrelid = relid;	/* first clause referencing a relation */
