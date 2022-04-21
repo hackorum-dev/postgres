@@ -472,6 +472,11 @@ BitmapPrefetch(BitmapHeapScanState *node, TableScanDesc scan)
 
 		if (prefetch_iterator)
 		{
+
+			/* wait until we can prefetch a batch of buffers */
+			if (node->prefetch_pages > node->prefetch_target - 32)
+				return;
+
 			while (node->prefetch_pages < node->prefetch_target)
 			{
 				TBMIterateResult *tbmpre = tbm_iterate(prefetch_iterator);
@@ -517,7 +522,16 @@ BitmapPrefetch(BitmapHeapScanState *node, TableScanDesc scan)
 
 		if (prefetch_iterator)
 		{
-			while (1)
+			bool	have_batch = false;
+
+			SpinLockAcquire(&pstate->mutex);
+			if (pstate->prefetch_pages < pstate->prefetch_target - 32)
+			{
+				have_batch = true;
+			}
+			SpinLockRelease(&pstate->mutex);
+
+			while (have_batch)
 			{
 				TBMIterateResult *tbmpre;
 				bool		do_prefetch = false;
