@@ -2209,17 +2209,16 @@ jsonb_float8(PG_FUNCTION_ARGS)
 {
 	Jsonb	   *in = PG_GETARG_JSONB_P(0);
 	JsonbValue	v;
-	Datum		retValue;
+	float8		retValue;
 
 	if (!JsonbExtractScalar(&in->root, &v) || v.type != jbvNumeric)
 		cannotCastJsonbValue(v.type, "double precision");
 
-	retValue = DirectFunctionCall1(numeric_float8,
-								   NumericGetDatum(v.val.numeric));
+	retValue = numeric_to_float8(v.val.numeric);
 
 	PG_FREE_IF_COPY(in, 0);
 
-	PG_RETURN_DATUM(retValue);
+	PG_RETURN_FLOAT8(retValue);
 }
 
 /*

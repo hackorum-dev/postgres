@@ -4283,6 +4283,64 @@ numeric_to_uint64_type(Numeric num, char *typeName)
 	return result;
 }
 
+Numeric
+float8_to_numeric(float8 val)
+{
+	Numeric		res;
+	NumericVar	result;
+	char		buf[DBL_DIG + 100];
+
+	if (isnan(val))
+		return make_result(&const_nan);
+
+	if (isinf(val))
+	{
+		if (val < 0)
+			return make_result(&const_ninf);
+		else
+			return make_result(&const_pinf);
+	}
+
+	snprintf(buf, sizeof(buf), "%.*g", DBL_DIG, val);
+
+	init_var(&result);
+
+	/* Assume we need not worry about leading/trailing spaces */
+	(void) set_var_from_str(buf, buf, &result);
+
+	res = make_result(&result);
+
+	free_var(&result);
+
+	return res;
+}
+
+float8
+numeric_to_float8(Numeric num)
+{
+	char	   *tmp;
+	Datum		result;
+
+	if (NUMERIC_IS_SPECIAL(num))
+	{
+		if (NUMERIC_IS_PINF(num))
+			return get_float8_infinity();
+		else if (NUMERIC_IS_NINF(num))
+			return -get_float8_infinity();
+		else
+			return get_float8_nan();
+	}
+
+	tmp = DatumGetCString(DirectFunctionCall1(numeric_out,
+											  NumericGetDatum(num)));
+
+	result = DirectFunctionCall1(float8in, CStringGetDatum(tmp));
+
+	pfree(tmp);
+
+	return DatumGetFloat8(result);
+}
+
 Datum
 int4_numeric(PG_FUNCTION_ARGS)
 {
@@ -4464,33 +4522,8 @@ Datum
 float8_numeric(PG_FUNCTION_ARGS)
 {
 	float8		val = PG_GETARG_FLOAT8(0);
-	Numeric		res;
-	NumericVar	result;
-	char		buf[DBL_DIG + 100];
 
-	if (isnan(val))
-		PG_RETURN_NUMERIC(make_result(&const_nan));
-
-	if (isinf(val))
-	{
-		if (val < 0)
-			PG_RETURN_NUMERIC(make_result(&const_ninf));
-		else
-			PG_RETURN_NUMERIC(make_result(&const_pinf));
-	}
-
-	snprintf(buf, sizeof(buf), "%.*g", DBL_DIG, val);
-
-	init_var(&result);
-
-	/* Assume we need not worry about leading/trailing spaces */
-	(void) set_var_from_str(buf, buf, &result);
-
-	res = make_result(&result);
-
-	free_var(&result);
-
-	PG_RETURN_NUMERIC(res);
+	PG_RETURN_NUMERIC(float8_to_numeric(val));
 }
 
 
@@ -4498,27 +4531,8 @@ Datum
 numeric_float8(PG_FUNCTION_ARGS)
 {
 	Numeric		num = PG_GETARG_NUMERIC(0);
-	char	   *tmp;
-	Datum		result;
 
-	if (NUMERIC_IS_SPECIAL(num))
-	{
-		if (NUMERIC_IS_PINF(num))
-			PG_RETURN_FLOAT8(get_float8_infinity());
-		else if (NUMERIC_IS_NINF(num))
-			PG_RETURN_FLOAT8(-get_float8_infinity());
-		else
-			PG_RETURN_FLOAT8(get_float8_nan());
-	}
-
-	tmp = DatumGetCString(DirectFunctionCall1(numeric_out,
-											  NumericGetDatum(num)));
-
-	result = DirectFunctionCall1(float8in, CStringGetDatum(tmp));
-
-	pfree(tmp);
-
-	PG_RETURN_DATUM(result);
+	PG_RETURN_FLOAT8(numeric_to_float8(num));
 }
 
 

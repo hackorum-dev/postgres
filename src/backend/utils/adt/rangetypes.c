@@ -41,6 +41,7 @@
 #include "utils/lsyscache.h"
 #include "utils/rangetypes.h"
 #include "utils/timestamp.h"
+#include "utils/numeric.h"
 
 
 /* fn_extra cache entry for one of the range I/O functions */
@@ -1577,8 +1578,7 @@ numrange_subdiff(PG_FUNCTION_ARGS)
 
 	numresult = DirectFunctionCall2(numeric_sub, v1, v2);
 
-	floatresult = DatumGetFloat8(DirectFunctionCall1(numeric_float8,
-													 numresult));
+	floatresult = numeric_to_float8(DatumGetNumeric(numresult));
 
 	PG_RETURN_FLOAT8(floatresult);
 }
