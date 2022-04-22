@@ -22,6 +22,8 @@
 #define MAXPG_LSNLEN			17
 #define MAXPG_LSNCOMPONENT	8
 
+static inline XLogRecPtr numeric_to_pg_lsn(Numeric num);
+
 /*----------------------------------------------------------
  * Formatting and conversion routines.
  *---------------------------------------------------------*/
@@ -60,15 +62,18 @@ pg_lsn_in_internal(const char *str, bool *have_error)
 	return result;
 }
 
+static inline XLogRecPtr
+numeric_to_pg_lsn(Numeric num)
+{
+	return (XLogRecPtr) numeric_to_uint64_type(num, "pg_lsn");
+}
+
 Datum
 numeric_pg_lsn(PG_FUNCTION_ARGS)
 {
 	Numeric		num = PG_GETARG_NUMERIC(0);
-	XLogRecPtr	result;
 
-	result = (XLogRecPtr) numeric_to_uint64_type(num, "pg_lsn");
-
-	PG_RETURN_LSN(result);
+	PG_RETURN_LSN(numeric_to_pg_lsn(num));
 }
 
 Datum
@@ -286,7 +291,7 @@ pg_lsn_pli(PG_FUNCTION_ARGS)
 							  NumericGetDatum(nbytes));
 
 	/* Convert to pg_lsn */
-	return DirectFunctionCall1(numeric_pg_lsn, res);
+	PG_RETURN_LSN(numeric_to_pg_lsn(DatumGetNumeric(res)));
 }
 
 /*
@@ -320,5 +325,5 @@ pg_lsn_mii(PG_FUNCTION_ARGS)
 							  NumericGetDatum(nbytes));
 
 	/* Convert to pg_lsn */
-	return DirectFunctionCall1(numeric_pg_lsn, res);
+	PG_RETURN_LSN(numeric_to_pg_lsn(DatumGetNumeric(res)));
 }
