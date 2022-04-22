@@ -5960,8 +5960,8 @@ numeric_poly_avg(PG_FUNCTION_ARGS)
 #ifdef HAVE_INT128
 	PolyNumAggState *state;
 	NumericVar	result;
-	Datum		countd,
-				sumd;
+	Numeric		count,
+				sum;
 
 	state = PG_ARGISNULL(0) ? NULL : (PolyNumAggState *) PG_GETARG_POINTER(0);
 
@@ -5973,12 +5973,12 @@ numeric_poly_avg(PG_FUNCTION_ARGS)
 
 	int128_to_numericvar(state->sumX, &result);
 
-	countd = NumericGetDatum(int64_to_numeric(state->N));
-	sumd = NumericGetDatum(make_result(&result));
+	count = int64_to_numeric(state->N);
+	sum = make_result(&result);
 
 	free_var(&result);
 
-	PG_RETURN_DATUM(DirectFunctionCall2(numeric_div, sumd, countd));
+	PG_RETURN_NUMERIC(numeric_div_opt_error(sum, count, NULL));
 #else
 	return numeric_avg(fcinfo);
 #endif
@@ -5988,8 +5988,7 @@ Datum
 numeric_avg(PG_FUNCTION_ARGS)
 {
 	NumericAggState *state;
-	Datum		N_datum;
-	Datum		sumX_datum;
+	Numeric		sumX;
 	NumericVar	sumX_var;
 
 	state = PG_ARGISNULL(0) ? NULL : (NumericAggState *) PG_GETARG_POINTER(0);
@@ -6009,14 +6008,14 @@ numeric_avg(PG_FUNCTION_ARGS)
 	if (state->nInfcount > 0)
 		PG_RETURN_NUMERIC(make_result(&const_ninf));
 
-	N_datum = NumericGetDatum(int64_to_numeric(state->N));
-
 	init_var(&sumX_var);
 	accum_sum_final(&state->sumX, &sumX_var);
-	sumX_datum = NumericGetDatum(make_result(&sumX_var));
+	sumX = make_result(&sumX_var);
 	free_var(&sumX_var);
 
-	PG_RETURN_DATUM(DirectFunctionCall2(numeric_div, sumX_datum, N_datum));
+	PG_RETURN_NUMERIC(numeric_div_opt_error(sumX,
+											int64_to_numeric(state->N),
+											NULL));
 }
 
 Datum
@@ -6469,6 +6468,7 @@ Datum
 int8_sum(PG_FUNCTION_ARGS)
 {
 	Numeric		oldsum;
+	Numeric		result;
 
 	if (PG_ARGISNULL(0))
 	{
@@ -6492,9 +6492,10 @@ int8_sum(PG_FUNCTION_ARGS)
 		PG_RETURN_NUMERIC(oldsum);
 
 	/* OK to do the addition. */
-	PG_RETURN_DATUM(DirectFunctionCall2(numeric_add,
-										NumericGetDatum(oldsum),
-										NumericGetDatum(int64_to_numeric(PG_GETARG_INT64(1)))));
+	result = numeric_add_opt_error(oldsum,
+								   int64_to_numeric(PG_GETARG_INT64(1)),
+								   NULL);
+	PG_RETURN_NUMERIC(result);
 }
 
 
@@ -6661,8 +6662,8 @@ int8_avg(PG_FUNCTION_ARGS)
 {
 	ArrayType  *transarray = PG_GETARG_ARRAYTYPE_P(0);
 	Int8TransTypeData *transdata;
-	Datum		countd,
-				sumd;
+	Numeric		count,
+				sum;
 
 	if (ARR_HASNULL(transarray) ||
 		ARR_SIZE(transarray) != ARR_OVERHEAD_NONULLS(1) + sizeof(Int8TransTypeData))
@@ -6673,10 +6674,10 @@ int8_avg(PG_FUNCTION_ARGS)
 	if (transdata->count == 0)
 		PG_RETURN_NULL();
 
-	countd = NumericGetDatum(int64_to_numeric(transdata->count));
-	sumd = NumericGetDatum(int64_to_numeric(transdata->sum));
+	count = int64_to_numeric(transdata->count);
+	sum = int64_to_numeric(transdata->sum);
 
-	PG_RETURN_DATUM(DirectFunctionCall2(numeric_div, sumd, countd));
+	PG_RETURN_NUMERIC(numeric_div_opt_error(sum, count, NULL));
 }
 
 /*

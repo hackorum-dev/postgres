@@ -620,22 +620,29 @@ numeric_absolute(Numeric n)
 static Numeric
 numeric_half_rounded(Numeric n)
 {
-	Datum		d = NumericGetDatum(n);
-	Datum		zero;
-	Datum		one;
-	Datum		two;
+	Numeric		d;
+	Numeric		zero;
+	Numeric		one;
+	Numeric		two;
 	Datum		result;
+	bool		gt;
 
-	zero = NumericGetDatum(int64_to_numeric(0));
-	one = NumericGetDatum(int64_to_numeric(1));
-	two = NumericGetDatum(int64_to_numeric(2));
+	zero = int64_to_numeric(0);
+	one = int64_to_numeric(1);
+	two = int64_to_numeric(2);
 
-	if (DatumGetBool(DirectFunctionCall2(numeric_ge, d, zero)))
-		d = DirectFunctionCall2(numeric_add, d, one);
+	gt = DatumGetBool(DirectFunctionCall2(numeric_ge,
+										  NumericGetDatum(n),
+										  NumericGetDatum(zero)));
+
+	if (gt)
+		d = numeric_add_opt_error(n, one, NULL);
 	else
-		d = DirectFunctionCall2(numeric_sub, d, one);
+		d = numeric_sub_opt_error(n, one, NULL);
 
-	result = DirectFunctionCall2(numeric_div_trunc, d, two);
+	result = DirectFunctionCall2(numeric_div_trunc,
+								 NumericGetDatum(d),
+								 NumericGetDatum(two));
 	return DatumGetNumeric(result);
 }
 
@@ -819,9 +826,7 @@ pg_size_bytes(PG_FUNCTION_ARGS)
 
 			mul_num = int64_to_numeric(multiplier);
 
-			num = DatumGetNumeric(DirectFunctionCall2(numeric_mul,
-													  NumericGetDatum(mul_num),
-													  NumericGetDatum(num)));
+			num = numeric_mul_opt_error(mul_num, num, NULL);
 		}
 	}
 
