@@ -701,7 +701,6 @@ pg_size_bytes(PG_FUNCTION_ARGS)
 			   *endptr;
 	char		saved_char;
 	Numeric		num;
-	int64		result;
 	bool		have_digits = false;
 
 	str = text_to_cstring(arg);
@@ -826,10 +825,7 @@ pg_size_bytes(PG_FUNCTION_ARGS)
 		}
 	}
 
-	result = DatumGetInt64(DirectFunctionCall1(numeric_int8,
-											   NumericGetDatum(num)));
-
-	PG_RETURN_INT64(result);
+	PG_RETURN_INT64(numeric_to_int64(num));
 }
 
 /*

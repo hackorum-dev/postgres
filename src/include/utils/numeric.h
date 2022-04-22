@@ -73,6 +73,8 @@ extern char *numeric_out_sci(Numeric num, int scale);
 extern char *numeric_normalize(Numeric num);
 
 extern Numeric int64_to_numeric(int64 val);
+extern int64 numeric_to_int64(Numeric num);
+extern int64 numeric_to_int64_type(Numeric num, char *typeName);
 extern Numeric int64_div_fast_to_numeric(int64 val1, int log10val2);
 extern uint64 numeric_to_uint64_type(Numeric num, char *typeName);
 

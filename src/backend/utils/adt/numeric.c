@@ -4150,6 +4150,45 @@ int64_to_numeric(int64 val)
 	return res;
 }
 
+int64
+numeric_to_int64(Numeric num)
+{
+	return numeric_to_int64_type(num, "bigint");
+}
+
+/*
+ * typeName is the user-visible type name of uint64 used for the error
+ * reporting.
+ */
+int64
+numeric_to_int64_type(Numeric num, char *typeName)
+{
+	NumericVar	x;
+	int64		result;
+
+	if (NUMERIC_IS_SPECIAL(num))
+	{
+		if (NUMERIC_IS_NAN(num))
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("cannot convert NaN to %s", typeName)));
+		else
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("cannot convert infinity to %s", typeName)));
+	}
+
+	/* Convert to variable format and thence to int8 */
+	init_var_from_num(num, &x);
+
+	if (!numericvar_to_int64(&x, &result))
+		ereport(ERROR,
+				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
+				 errmsg("%s out of range", typeName)));
+
+	return result;
+}
+
 /*
  * Convert val1/(10**val2) to numeric.  This is much faster than normal
  * numeric division.

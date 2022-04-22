@@ -2174,17 +2174,16 @@ jsonb_int8(PG_FUNCTION_ARGS)
 {
 	Jsonb	   *in = PG_GETARG_JSONB_P(0);
 	JsonbValue	v;
-	Datum		retValue;
+	int64		retValue;
 
 	if (!JsonbExtractScalar(&in->root, &v) || v.type != jbvNumeric)
 		cannotCastJsonbValue(v.type, "bigint");
 
-	retValue = DirectFunctionCall1(numeric_int8,
-								   NumericGetDatum(v.val.numeric));
+	retValue = numeric_to_int64(v.val.numeric);
 
 	PG_FREE_IF_COPY(in, 0);
 
-	PG_RETURN_DATUM(retValue);
+	PG_RETURN_INT64(retValue);
 }
 
 Datum

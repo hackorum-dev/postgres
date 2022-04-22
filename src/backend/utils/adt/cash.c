@@ -1108,8 +1108,8 @@ numeric_cash(PG_FUNCTION_ARGS)
 	numeric_scale = NumericGetDatum(int64_to_numeric(scale));
 	amount = DirectFunctionCall2(numeric_mul, amount, numeric_scale);
 
-	/* note that numeric_int8 will round to nearest integer for us */
-	result = DatumGetInt64(DirectFunctionCall1(numeric_int8, amount));
+	/* note that numeric_to_int64 will round to nearest integer for us */
+	result = numeric_to_int64_type(DatumGetNumeric(amount), "money");
 
 	PG_RETURN_CASH(result);
 }
