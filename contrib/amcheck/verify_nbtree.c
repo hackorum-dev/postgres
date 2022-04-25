@@ -294,6 +294,14 @@ bt_index_check_internal(Oid indrelid, bool parentcheck, bool heapallindexed,
 				 errmsg("could not open parent table of index \"%s\"",
 						RelationGetRelationName(indrel))));
 
+	/*
+	 * An invalid index could be found here while a concurrent DROP INDEX
+	 * or REINDEX is running in parallel.  There is nothing interesting to
+	 * do, so just leave.
+	 */
+	if (!indrel->rd_index->indisvalid)
+		return;
+
 	/* Relation suitable for checking as B-Tree? */
 	btree_index_checkable(indrel);
 
@@ -361,13 +369,6 @@ btree_index_checkable(Relation rel)
 				 errmsg("cannot access temporary tables of other sessions"),
 				 errdetail("Index \"%s\" is associated with temporary relation.",
 						   RelationGetRelationName(rel))));
-
-	if (!rel->rd_index->indisvalid)
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("cannot check index \"%s\"",
-						RelationGetRelationName(rel)),
-				 errdetail("Index is not valid.")));
 }
 
 /*
