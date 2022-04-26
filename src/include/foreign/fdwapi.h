@@ -38,7 +38,8 @@ typedef ForeignScan *(*GetForeignPlan_function) (PlannerInfo *root,
 												 ForeignPath *best_path,
 												 List *tlist,
 												 List *scan_clauses,
-												 Plan *outer_plan);
+												 Plan *outer_plan,
+												 double est_calls);
 
 typedef void (*BeginForeignScan_function) (ForeignScanState *node,
 										   int eflags);

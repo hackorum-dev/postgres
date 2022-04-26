@@ -1847,6 +1847,7 @@ ReadCommonPlan(Plan *local_node)
 	READ_BOOL_FIELD(parallel_aware);
 	READ_BOOL_FIELD(parallel_safe);
 	READ_BOOL_FIELD(async_capable);
+	READ_BOOL_FIELD(jit);
 	READ_INT_FIELD(plan_node_id);
 	READ_NODE_FIELD(targetlist);
 	READ_NODE_FIELD(qual);

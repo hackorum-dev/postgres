@@ -266,27 +266,32 @@ generation, and later compiling larger parts of queries.
 When to JIT
 ===========
 
-Currently there are a number of GUCs that influence JITing:
+Currently, there are a number of GUCs that influence JITing.  Each of these
+GUCs defines the cost that a given plan node must exceed to enable the given
+JIT feature.  The costs here are calculated by multiplying the total_cost of
+the plan node by the estimated number of rescans the planner exepects the
+executor to perform on the given node.  We refer to this cost as the "overall"
+cost in the text below:
 
-- jit_above_cost = -1, 0-DBL_MAX - all queries with a higher total cost
-  get JITed, *without* optimization (expensive part), corresponding to
-  -O0. This commonly already results in significant speedups if
-  expression/deforming is a bottleneck (removing dynamic branches
-  mostly).
-- jit_optimize_above_cost = -1, 0-DBL_MAX - all queries with a higher total cost
-  get JITed, *with* optimization (expensive part).
-- jit_inline_above_cost = -1, 0-DBL_MAX - inlining is tried if query has
-  higher cost.
+- jit_above_cost = -1, 0-DBL_MAX - all plan nodes which have a overall cost
+  higher than this value get JITed, *without* optimization (expensive part),
+  corresponding to -O0. This commonly already results in significant speedups
+  if expression/deforming is a bottleneck (removing dynamic branches mostly).
+- jit_optimize_above_cost = -1, 0-DBL_MAX - perform an optimization pass
+  during JIT compilation when any plan node that is eligible for JIT reaches
+  this cost.
+- jit_inline_above_cost = -1, 0-DBL_MAX - inlining is tried during JIT
+  compilation if any plan node has a higher overall cost than this value.
 
-Whenever a query's total cost is above these limits, JITing is
-performed.
+It is important to remember that the optimize and inlining options are either
+enabled for all JIT enabled plan nodes or disabled.  If a single node reaches
+the required threshold then all JIT enabled nodes will be JITed using the same
+compilation options.
 
-Alternative costing models, e.g. by generating separate paths for
-parts of a query with lower cpu_* costs, are also a possibility, but
-it's doubtful the overhead of doing so is sufficient.  Another
-alternative would be to count the number of times individual
+An alternative would be to count the number of times individual
 expressions are estimated to be evaluated, and perform JITing of these
-individual expressions.
+individual expressions. This is probably more complexity than it would be
+worth.
 
 The obvious seeming approach of JITing expressions individually after
 a number of execution turns out not to work too well. Primarily

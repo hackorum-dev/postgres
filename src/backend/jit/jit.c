@@ -172,6 +172,14 @@ jit_compile_expr(struct ExprState *state)
 	if (!(state->parent->state->es_jit_flags & PGJIT_EXPR))
 		return false;
 
+	/* don't jit if the plan node is missing */
+	if (state->parent->plan == NULL)
+		return false;
+
+	/* don't jit if it's not enabled for this plan node */
+	if (!state->parent->plan->jit)
+		return false;
+
 	/* this also takes !jit_enabled into account */
 	if (provider_init())
 		return provider.compile_expr(state);

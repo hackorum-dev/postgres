@@ -335,7 +335,8 @@ static ForeignScan *postgresGetForeignPlan(PlannerInfo *root,
 										   ForeignPath *best_path,
 										   List *tlist,
 										   List *scan_clauses,
-										   Plan *outer_plan);
+										   Plan *outer_plan,
+										   double est_calls);
 static void postgresBeginForeignScan(ForeignScanState *node, int eflags);
 static TupleTableSlot *postgresIterateForeignScan(ForeignScanState *node);
 static void postgresReScanForeignScan(ForeignScanState *node);
@@ -1221,7 +1222,8 @@ postgresGetForeignPlan(PlannerInfo *root,
 					   ForeignPath *best_path,
 					   List *tlist,
 					   List *scan_clauses,
-					   Plan *outer_plan)
+					   Plan *outer_plan,
+					   double est_calls)
 {
 	PgFdwRelationInfo *fpinfo = (PgFdwRelationInfo *) foreignrel->fdw_private;
 	Index		scan_relid;
@@ -1385,7 +1387,8 @@ postgresGetForeignPlan(PlannerInfo *root,
 			 * a Result node atop the plan tree.
 			 */
 			outer_plan = change_plan_targetlist(outer_plan, fdw_scan_tlist,
-												best_path->path.parallel_safe);
+												best_path->path.parallel_safe,
+												est_calls);
 		}
 	}
 

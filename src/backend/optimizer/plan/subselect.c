@@ -233,7 +233,11 @@ make_subplan(PlannerInfo *root, Query *orig_subquery,
 	final_rel = fetch_upper_rel(subroot, UPPERREL_FINAL, NULL);
 	best_path = get_cheapest_fractional_path(final_rel, tuple_fraction);
 
-	plan = create_plan(subroot, best_path);
+	/*
+	 * XXX we can't get an accurate est_calls to pass to create_plan here as
+	 * we've not yet planned the outer query!
+	 */
+	plan = create_plan(subroot, best_path, 1.0);
 
 	/* And convert to SubPlan or InitPlan format. */
 	result = build_subplan(root, plan, subroot, plan_params,
@@ -284,7 +288,7 @@ make_subplan(PlannerInfo *root, Query *orig_subquery,
 				AlternativeSubPlan *asplan;
 
 				/* OK, finish planning the ANY subquery */
-				plan = create_plan(subroot, best_path);
+				plan = create_plan(subroot, best_path, 1.0);
 
 				/* ... and convert to SubPlan format */
 				hashplan = castNode(SubPlan,
@@ -997,7 +1001,7 @@ SS_process_ctes(PlannerInfo *root)
 		final_rel = fetch_upper_rel(subroot, UPPERREL_FINAL, NULL);
 		best_path = final_rel->cheapest_total_path;
 
-		plan = create_plan(subroot, best_path);
+		plan = create_plan(subroot, best_path, 1.0);
 
 		/*
 		 * Make a SubPlan node for it.  This is just enough unlike

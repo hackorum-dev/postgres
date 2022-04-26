@@ -341,6 +341,7 @@ _outPlanInfo(StringInfo str, const Plan *node)
 	WRITE_BOOL_FIELD(parallel_aware);
 	WRITE_BOOL_FIELD(parallel_safe);
 	WRITE_BOOL_FIELD(async_capable);
+	WRITE_BOOL_FIELD(jit);
 	WRITE_INT_FIELD(plan_node_id);
 	WRITE_NODE_FIELD(targetlist);
 	WRITE_NODE_FIELD(qual);
@@ -2117,6 +2118,7 @@ _outMemoizePath(StringInfo str, const MemoizePath *node)
 	WRITE_BOOL_FIELD(binary_mode);
 	WRITE_FLOAT_FIELD(calls, "%.0f");
 	WRITE_UINT_FIELD(est_entries);
+	WRITE_FLOAT_FIELD(est_hitratio, "%.6f");
 }
 
 static void

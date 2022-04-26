@@ -2815,6 +2815,12 @@ cost_memoize_rescan(PlannerInfo *root, MemoizePath *mpath,
 	hit_ratio = Max(hit_ratio, 0.0);
 
 	/*
+	 * Since we've just gone to the bother of calculating the estimated hit
+	 * ratio, let's store that in the MemoizePath for later use.
+	 */
+	mpath->est_hitratio = hit_ratio;
+
+	/*
 	 * Set the total_cost accounting for the expected cache hit ratio.  We
 	 * also add on a cpu_operator_cost to account for a cache lookup. This
 	 * will happen regardless of whether it's a cache hit or not.

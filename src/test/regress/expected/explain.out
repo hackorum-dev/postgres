@@ -100,6 +100,7 @@ select explain_filter('explain (analyze, buffers, format xml) select * from int8
        <Total-Cost>N.N</Total-Cost>                    +
        <Plan-Rows>N</Plan-Rows>                        +
        <Plan-Width>N</Plan-Width>                      +
+       <Plan-Calls>N</Plan-Calls>                      +
        <Actual-Startup-Time>N.N</Actual-Startup-Time>  +
        <Actual-Total-Time>N.N</Actual-Total-Time>      +
        <Actual-Rows>N</Actual-Rows>                    +
@@ -148,6 +149,7 @@ select explain_filter('explain (analyze, buffers, format yaml) select * from int
      Total Cost: N.N          +
      Plan Rows: N             +
      Plan Width: N            +
+     Plan Calls: N            +
      Actual Startup Time: N.N +
      Actual Total Time: N.N   +
      Actual Rows: N           +
@@ -199,6 +201,7 @@ select explain_filter('explain (buffers, format json) select * from int8_tbl i8'
        "Total Cost": N.N,          +
        "Plan Rows": N,             +
        "Plan Width": N,            +
+       "Plan Calls": N,            +
        "Shared Hit Blocks": N,     +
        "Shared Read Blocks": N,    +
        "Shared Dirtied Blocks": N, +
@@ -244,6 +247,7 @@ select explain_filter('explain (analyze, buffers, format json) select * from int
        "Total Cost": N.N,          +
        "Plan Rows": N,             +
        "Plan Width": N,            +
+       "Plan Calls": N,            +
        "Actual Startup Time": N.N, +
        "Actual Total Time": N.N,   +
        "Actual Rows": N,           +
@@ -363,6 +367,7 @@ select jsonb_pretty(
                              "Schema": "public",            +
                              "Node Type": "Seq Scan",       +
                              "Plan Rows": 0,                +
+                             "Plan Calls": 0,               +
                              "Plan Width": 0,               +
                              "Total Cost": 0.0,             +
                              "Actual Rows": 0,              +
@@ -409,6 +414,7 @@ select jsonb_pretty(
                      ],                                     +
                      "Node Type": "Sort",                   +
                      "Plan Rows": 0,                        +
+                     "Plan Calls": 0,                       +
                      "Plan Width": 0,                       +
                      "Total Cost": 0.0,                     +
                      "Actual Rows": 0,                      +
@@ -452,6 +458,7 @@ select jsonb_pretty(
              ],                                             +
              "Node Type": "Gather Merge",                   +
              "Plan Rows": 0,                                +
+             "Plan Calls": 0,                               +
              "Plan Width": 0,                               +
              "Total Cost": 0.0,                             +
              "Actual Rows": 0,                              +
