@@ -36,8 +36,8 @@ ItemPointerEquals(const ItemPointerData *pointer1, const ItemPointerData *pointe
 {
 	if (ItemPointerGetBlockNumber(pointer1) ==
 		ItemPointerGetBlockNumber(pointer2) &&
-		ItemPointerGetOffsetNumber(pointer1) ==
-		ItemPointerGetOffsetNumber(pointer2))
+		ItemPointerGetOffsetNumberNoCheck(pointer1) ==
+		ItemPointerGetOffsetNumberNoCheck(pointer2))
 		return true;
 	else
 		return false;
