@@ -1089,12 +1089,12 @@ sub AddProject
 	if ($self->{options}->{lz4})
 	{
 		$proj->AddIncludeDir($self->{options}->{lz4} . '\include');
-		$proj->AddLibrary($self->{options}->{lz4} . '\lib\liblz4.lib');
+		$proj->AddLibrary($self->{options}->{lz4} . '\lib\lz4.lib');
 	}
 	if ($self->{options}->{zstd})
 	{
 		$proj->AddIncludeDir($self->{options}->{zstd} . '\include');
-		$proj->AddLibrary($self->{options}->{zstd} . '\lib\libzstd.lib');
+		$proj->AddLibrary($self->{options}->{zstd} . '\lib\zstd.lib');
 	}
 	if ($self->{options}->{uuid})
 	{

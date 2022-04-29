@@ -175,6 +175,15 @@ sub AddLibrary
 {
 	my ($self, $lib, $dbgsuffix) = @_;
 
+	if ( ! -e $lib)
+	{
+		my ($libname = $lib) =~ s!.*[/\\]!!;
+		my $altlibname =  $libname eq 'zdll.lib' ? 'zlib.lib' : "lib$libname";
+		my ($altlib = $lib) =~ s/$libname/$altlibname/;
+		die "cannot find $lib or $altlib" unless -e $altlib;
+		$lib = $altlib;
+	}
+
 	# quote lib name if it has spaces and isn't already quoted
 	if ($lib =~ m/\s/ && $lib !~ m/^[&]quot;/)
 	{
