@@ -2492,6 +2492,31 @@ compute_function_hashkey(FunctionCallInfo fcinfo,
 		memcpy(hashkey->argtypes, procStruct->proargtypes.values,
 			   procStruct->pronargs * sizeof(Oid));
 
+		/*
+		 * Saved compiled functions with record-typed input args to a hashkey
+		 * that substitutes all known actual composite type OIDs in the
+		 * call signature for the corresponding generic record OID from
+		 * the definition signature.  This avoids a probable error:
+		 * "type of parameter ... does not match that when preparing the plan"
+		 * when such a record variable is used in a query within the function.
+		 */
+		for (int i = 0; i < procStruct->pronargs; i++)
+		{
+			if (hashkey->argtypes[i] != RECORDOID)
+				continue;
+
+			// ??? I presume other parts of the system synchronize these two arrays
+			// In particular for default arguments not specified in the function call
+			// or named-argument function call syntax.
+
+			/* Don't bother trying to substitute once we run out of input arguments */
+			if (i > fcinfo->nargs - 1)
+				break;
+
+			hashkey->argtypes[i] =
+				get_call_expr_argtype(fcinfo->flinfo->fn_expr, i);
+		}
+
 		/* resolve any polymorphic argument types */
 		plpgsql_resolve_polymorphic_argtypes(procStruct->pronargs,
 											 hashkey->argtypes,

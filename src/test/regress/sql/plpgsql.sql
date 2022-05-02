@@ -4711,3 +4711,28 @@ BEGIN
   GET DIAGNOSTICS x = ROW_COUNT;
   RETURN;
 END; $$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE FUNCTION record_to_form_data(p_r record)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+begin
+
+return (SELECT format('%s',p_r));
+
+end;
+$function$;
+
+create table fruit1(id varchar not null,name varchar not null,color varchar);
+create table fruit2(id varchar not null,name varchar not null);
+
+insert into fruit1 values('1','apple','red');
+insert into fruit2 values('1','apple');
+
+select record_to_form_data(fruit1) from fruit1;
+select record_to_form_data(fruit2) from fruit2;
+
+DROP FUNCTION record_to_form_data(record);
+DROP TABLE fruit1;
+DROP TABLE fruit2;
