@@ -5587,8 +5587,7 @@ complete_from_files(const char *text, int state)
 static char *
 pg_strdup_keyword_case(const char *s, const char *ref)
 {
-	char	   *ret,
-			   *p;
+	char	   *ret;
 	unsigned char first = ref[0];
 
 	ret = pg_strdup(s);
@@ -5598,13 +5597,11 @@ pg_strdup_keyword_case(const char *s, const char *ref)
 		  pset.comp_case == PSQL_COMP_CASE_PRESERVE_UPPER) && islower(first)) ||
 		(pset.comp_case == PSQL_COMP_CASE_PRESERVE_LOWER && !isalpha(first)))
 	{
-		for (p = ret; *p; p++)
-			*p = pg_tolower((unsigned char) *p);
+		pg_strtolower(ret);
 	}
 	else
 	{
-		for (p = ret; *p; p++)
-			*p = pg_toupper((unsigned char) *p);
+		pg_strtoupper(ret);
 	}
 
 	return ret;

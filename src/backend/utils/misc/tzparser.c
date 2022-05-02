@@ -50,8 +50,6 @@ static int	ParseTzFile(const char *filename, int depth,
 static bool
 validateTzEntry(tzEntry *tzentry)
 {
-	unsigned char *p;
-
 	/*
 	 * Check restrictions imposed by datetktbl storage format (see datetime.c)
 	 */
@@ -78,8 +76,7 @@ validateTzEntry(tzEntry *tzentry)
 	/*
 	 * Convert abbrev to lowercase (must match datetime.c's conversion)
 	 */
-	for (p = (unsigned char *) tzentry->abbrev; *p; p++)
-		*p = pg_tolower(*p);
+	pg_strtolower(tzentry->abbrev);
 
 	return true;
 }

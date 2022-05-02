@@ -237,7 +237,6 @@ pg_tzset(const char *name)
 	struct state tzstate;
 	char		uppername[TZ_STRLEN_MAX + 1];
 	char		canonname[TZ_STRLEN_MAX + 1];
-	char	   *p;
 
 	if (strlen(name) > TZ_STRLEN_MAX)
 		return NULL;			/* not going to fit */
@@ -252,10 +251,8 @@ pg_tzset(const char *name)
 	 * can get consistently upcased results from tzparse() in case the name is
 	 * a POSIX-style timezone spec.)
 	 */
-	p = uppername;
-	while (*name)
-		*p++ = pg_toupper((unsigned char) *name++);
-	*p = '\0';
+	strlcpy(uppername, name, sizeof(uppername));
+	pg_strtoupper(uppername);
 
 	tzp = (pg_tz_cache *) hash_search(timezone_cache,
 									  uppername,

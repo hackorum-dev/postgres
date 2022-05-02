@@ -112,6 +112,23 @@ pg_toupper(unsigned char ch)
 }
 
 /*
+ * Fold a null-terminated string to upper case.
+ */
+void
+pg_strtoupper(char *str)
+{
+	unsigned char *p;
+
+	for (p = (unsigned char *) str; *p; p++)
+	{
+		if (*p >= 'a' && *p <= 'z')
+			*p += 'A' - 'a';
+		else if (IS_HIGHBIT_SET(*p) && islower(*p))
+			*p = toupper(*p);
+	}
+}
+
+/*
  * Fold a character to lower case.
  *
  * Unlike some versions of tolower(), this is safe to apply to characters
@@ -126,6 +143,23 @@ pg_tolower(unsigned char ch)
 	else if (IS_HIGHBIT_SET(ch) && isupper(ch))
 		ch = tolower(ch);
 	return ch;
+}
+
+/*
+ * Fold a null-terminated string to upper case.
+ */
+void
+pg_strtolower(char *str)
+{
+	unsigned char *p;
+
+	for (p = (unsigned char *) str; *p; p++)
+	{
+		if (*p >= 'A' && *p <= 'Z')
+			*p += 'a' - 'A';
+		else if (IS_HIGHBIT_SET(*p) && isupper(*p))
+			*p = tolower(*p);
+	}
 }
 
 /*

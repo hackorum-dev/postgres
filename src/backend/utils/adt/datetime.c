@@ -1884,13 +1884,11 @@ DetermineTimeZoneAbbrevOffsetInternal(pg_time_t t, const char *abbr, pg_tz *tzp,
 									  int *offset, int *isdst)
 {
 	char		upabbr[TZ_STRLEN_MAX + 1];
-	unsigned char *p;
 	long int	gmtoff;
 
 	/* We need to force the abbrev to upper case */
 	strlcpy(upabbr, abbr, sizeof(upabbr));
-	for (p = (unsigned char *) upabbr; *p; p++)
-		*p = pg_toupper(*p);
+	pg_strtoupper(upabbr);
 
 	/* Look up the abbrev's meaning at this time in this zone */
 	if (pg_interpret_timezone_abbrev(upabbr,
@@ -4929,7 +4927,6 @@ pg_timezone_abbrevs(PG_FUNCTION_ARGS)
 	char		buffer[TOKMAXLEN + 1];
 	int			gmtoffset;
 	bool		is_dst;
-	unsigned char *p;
 	struct pg_itm_in itm_in;
 	Interval   *resInterval;
 
@@ -5018,8 +5015,7 @@ pg_timezone_abbrevs(PG_FUNCTION_ARGS)
 	 * what ParseDateTime() uses.
 	 */
 	strlcpy(buffer, tp->token, sizeof(buffer));
-	for (p = (unsigned char *) buffer; *p; p++)
-		*p = pg_toupper(*p);
+	pg_strtoupper(buffer);
 
 	values[0] = CStringGetTextDatum(buffer);
 

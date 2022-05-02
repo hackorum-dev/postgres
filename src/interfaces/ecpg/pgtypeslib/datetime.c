@@ -507,8 +507,7 @@ PGTYPESdate_defmt_asc(date * d, const char *fmt, const char *str)
 			return -1;
 
 		/* convert the whole string to lower case */
-		for (i = 0; str_copy[i]; i++)
-			str_copy[i] = (char) pg_tolower((unsigned char) str_copy[i]);
+		pg_strtolower(str_copy);
 	}
 
 	/* look for numerical tokens */
