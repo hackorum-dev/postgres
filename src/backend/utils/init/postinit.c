@@ -552,11 +552,11 @@ InitializeMaxBackends(void)
 {
 	Assert(MaxBackends == 0);
 
-	/* the extra unit accounts for the autovacuum launcher */
+	/* The extra unit accounts for the autovacuum launcher */
 	MaxBackends = MaxConnections + autovacuum_max_workers + 1 +
 		max_worker_processes + max_wal_senders;
 
-	/* internal error because the values were all checked previously */
+	/* Internal error because the values were all checked previously */
 	if (MaxBackends > MAX_BACKENDS)
 		elog(ERROR, "too many backends configured");
 }
