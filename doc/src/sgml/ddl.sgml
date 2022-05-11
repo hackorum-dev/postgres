@@ -3171,6 +3171,32 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
    </para>
   </sect2>
 
+  <sect2 id="ddl-schemas-temp">
+   <title>The Temporary Schema</title>
+
+   <indexterm zone="ddl-schemas-temp">
+    <primary>pg_temp</primary>
+    <secondary>schema</secondary>
+   </indexterm>
+
+   <para>
+    Another system schema name, implicitly prepended to the search path is pg_temp.
+    This is an alias, that refers to a temporary schema name of the current session.
+    The real name has the form <literal>pg_temp_<replaceable>nnn</replaceable></literal>,
+    if it already exists.
+   </para>
+
+   <para>
+    The implicit <literal>pg_temp</literal> is searched even before the
+    <literal>pg_catalog</literal>. The alias or the specific temporary
+    schema name of the current session that added to the search path will change
+    that search order. However, it is searched only for relation
+    (table, view, sequence, etc) and data type names, and not for function
+    or operator names.
+  </para>
+  </sect2>
+
+
   <sect2 id="ddl-schemas-patterns">
    <title>Usage Patterns</title>
 
