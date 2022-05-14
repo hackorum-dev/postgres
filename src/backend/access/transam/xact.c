@@ -3305,6 +3305,12 @@ CommitTransactionCommandInternal(void)
 			s->blockState = TBLOCK_DEFAULT;
 			if (s->chain)
 			{
+				/*
+				 * Before starting the new transaction, we'll update the
+				 * statistics so that autovacuum can be triggered without
+				 * waiting for a `commit` or `rollback` without `and chain`.
+				 */
+				pgstat_report_stat(false);
 				StartTransaction();
 				s->blockState = TBLOCK_INPROGRESS;
 				s->chain = false;
@@ -3331,6 +3337,12 @@ CommitTransactionCommandInternal(void)
 			s->blockState = TBLOCK_DEFAULT;
 			if (s->chain)
 			{
+				/*
+				 * Before starting the new transaction, we'll update the
+				 * statistics so that autovacuum can be triggered without
+				 * waiting for a `commit` or `rollback` without `and chain`.
+				 */
+				pgstat_report_stat(false);
 				StartTransaction();
 				s->blockState = TBLOCK_INPROGRESS;
 				s->chain = false;
@@ -3349,6 +3361,12 @@ CommitTransactionCommandInternal(void)
 			s->blockState = TBLOCK_DEFAULT;
 			if (s->chain)
 			{
+				/*
+				 * Before starting the new transaction, we'll update the
+				 * statistics so that autovacuum can be triggered without
+				 * waiting for a `commit` or `rollback` without `and chain`.
+				 */
+				pgstat_report_stat(false);
 				StartTransaction();
 				s->blockState = TBLOCK_INPROGRESS;
 				s->chain = false;
@@ -3415,6 +3433,12 @@ CommitTransactionCommandInternal(void)
 				s->blockState = TBLOCK_DEFAULT;
 				if (s->chain)
 				{
+					/*
+					 * Before starting the new transaction, we'll update the
+					 * statistics so that autovacuum can be triggered without
+					 * waiting for a `commit` or `rollback` without `and chain`.
+					 */
+					pgstat_report_stat(false);
 					StartTransaction();
 					s->blockState = TBLOCK_INPROGRESS;
 					s->chain = false;
