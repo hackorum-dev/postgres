@@ -201,7 +201,7 @@ INIT
 	# Open the test log file, whose name depends on the test name.
 	$test_logfile = basename($0);
 	$test_logfile =~ s/\.[^.]+$//;
-	$test_logfile = "$log_path/regress_log_$test_logfile";
+	$test_logfile = "$log_path/$test_logfile.log";
 	open my $testlog, '>', $test_logfile
 	  or die "could not open STDOUT to logfile \"$test_logfile\": $!";
 

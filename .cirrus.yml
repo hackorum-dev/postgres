@@ -33,7 +33,6 @@ on_failure: &on_failure
     paths:
       - "**/*.log"
       - "**/*.diffs"
-      - "**/regress_log_*"
     type: text/plain
 
 task:

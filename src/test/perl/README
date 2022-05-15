@@ -19,7 +19,7 @@ make check-world PROVE_FLAGS='--verbose'
 
 When a test fails, the terminal output from 'prove' is usually not sufficient
 to diagnose the problem.  Look into the log files that are left under
-tmp_check/log/ to get more info.  Files named 'regress_log_XXX' are log
+tmp_check/log/ to get more info.  Files named '001_testname.log' are log
 output from the perl test scripts themselves, and should be examined first.
 Other files are postmaster logs, and may be helpful as additional data.
 
