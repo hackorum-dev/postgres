@@ -823,9 +823,39 @@ PGAC_ARG_REQ(with, tclconfig, [DIR], [tclConfig.sh is in DIR])
 # Optionally build Perl modules (PL/Perl)
 #
 AC_MSG_CHECKING([whether to build Perl modules])
-PGAC_ARG_BOOL(with, perl, no, [build Perl modules (PL/Perl)])
+PGAC_ARG_OPTARG(with, perl,
+[TRUSTWORTHINESS], [build Perl modules (PL/Perl)],
+[
+  PERL_TRUSTED=yes
+  PERL_UNTRUSTED=yes
+],
+[
+  if test "$withval" = trusted ; then
+    PERL_TRUSTED=yes
+    PERL_UNTRUSTED=no
+  elif test "$withval" = untrusted ; then
+    PERL_TRUSTED=no
+    PERL_UNTRUSTED=yes
+  else
+    AC_MSG_ERROR([invalid --with-perl value: argument must be omitted or specified as 'trusted' or 'untrusted'])
+  fi
+],
+[
+  if test "$PERL_TRUSTED" = yes ; then
+    AC_DEFINE([USE_PERL], 1, [Define to 1 to build with trusted Perl support. (--with-perl='trusted')])
+  fi
+  if test "$PERL_UNTRUSTED" = yes ; then
+    AC_DEFINE([USE_PERLU], 1, [Define to 1 to build with untrusted Perl support. (--with-perl='untrusted')])
+  fi
+],
+[
+  PERL_TRUSTED=no
+  PERL_UNTRUSTED=no
+])
 AC_MSG_RESULT([$with_perl])
 AC_SUBST(with_perl)
+AC_SUBST(PERL_TRUSTED)
+AC_SUBST(PERL_UNTRUSTED)
 
 #
 # Optionally build Python modules (PL/Python)

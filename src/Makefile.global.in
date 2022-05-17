@@ -526,6 +526,8 @@ GENHTML = @GENHTML@
 
 DEF_PGPORT = @default_port@
 WANTED_LANGUAGES = @WANTED_LANGUAGES@
+PERL_TRUSTED = @PERL_TRUSTED@
+PERL_UNTRUSTED = @PERL_UNTRUSTED@
 
 
 ##########################################################################

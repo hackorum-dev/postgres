@@ -445,6 +445,7 @@ _PG_init(void)
 	 * OK since the worst result would be an error.  Your code oughta pass
 	 * use_strict anyway ;-)
 	 */
+#ifdef USE_PERL
 	DefineCustomStringVariable("plperl.on_plperl_init",
 							   gettext_noop("Perl initialization code to execute once when plperl is first used."),
 							   NULL,
@@ -452,7 +453,9 @@ _PG_init(void)
 							   NULL,
 							   PGC_SUSET, 0,
 							   NULL, NULL, NULL);
+#endif  /* USE_PERL */
 
+#ifdef USE_PERLU
 	DefineCustomStringVariable("plperl.on_plperlu_init",
 							   gettext_noop("Perl initialization code to execute once when plperlu is first used."),
 							   NULL,
@@ -460,6 +463,7 @@ _PG_init(void)
 							   NULL,
 							   PGC_SUSET, 0,
 							   NULL, NULL, NULL);
+#endif  /* USE_PERLU */
 
 	MarkGUCPrefixReserved("plperl");
 
@@ -2039,6 +2043,7 @@ plperl_validator_internal(PG_FUNCTION_ARGS, bool trusted)
  * There are three externally visible pieces to plperl: plperl_call_handler,
  * plperl_inline_handler, and plperl_validator.
  */
+#ifdef USE_PERL
 
 PG_FUNCTION_INFO_V1(plperl_call_handler);
 
@@ -2064,11 +2069,14 @@ plperl_validator(PG_FUNCTION_ARGS)
 	return plperl_validator_internal(fcinfo, true);
 }
 
+#endif  /* USE_PERL */
+
 
 /*
  * plperlu likewise requires three externally visible functions:
  * plperlu_call_handler, plperlu_inline_handler, and plperlu_validator.
  */
+#ifdef USE_PERLU
 
 PG_FUNCTION_INFO_V1(plperlu_call_handler);
 
@@ -2094,6 +2102,8 @@ plperlu_validator(PG_FUNCTION_ARGS)
 	/* call plperl validator with our fcinfo so it gets our oid */
 	return plperl_validator_internal(fcinfo, false);
 }
+
+#endif  /* USE_PERLU */
 
 
 /*
