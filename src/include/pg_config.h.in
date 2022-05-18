@@ -955,6 +955,12 @@
 /* Define to select SysV-style shared memory. */
 #undef USE_SYSV_SHARED_MEMORY
 
+/* Define to 1 to build with trusted Tcl support. (--with-tcl='trusted') */
+#undef USE_TCL
+
+/* Define to 1 to build with untrusted Tcl support. (--with-tcl='untrusted') */
+#undef USE_TCLU
+
 /* Define to select unnamed POSIX semaphores. */
 #undef USE_UNNAMED_POSIX_SEMAPHORES
 

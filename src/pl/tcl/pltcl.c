@@ -459,6 +459,7 @@ _PG_init(void)
 	/************************************************************
 	 * Define PL/Tcl's custom GUCs
 	 ************************************************************/
+#ifdef USE_TCL
 	DefineCustomStringVariable("pltcl.start_proc",
 							   gettext_noop("PL/Tcl function to call once when pltcl is first used."),
 							   NULL,
@@ -466,6 +467,10 @@ _PG_init(void)
 							   NULL,
 							   PGC_SUSET, 0,
 							   NULL, NULL, NULL);
+	MarkGUCPrefixReserved("pltcl");
+#endif	/* USE_TCL */
+
+#ifdef USE_TCLU
 	DefineCustomStringVariable("pltclu.start_proc",
 							   gettext_noop("PL/TclU function to call once when pltclu is first used."),
 							   NULL,
@@ -473,9 +478,8 @@ _PG_init(void)
 							   NULL,
 							   PGC_SUSET, 0,
 							   NULL, NULL, NULL);
-
-	MarkGUCPrefixReserved("pltcl");
 	MarkGUCPrefixReserved("pltclu");
+#endif	/* USE_TCLU */
 
 	pltcl_pm_init_done = true;
 }
@@ -690,6 +694,8 @@ start_proc_error_callback(void *arg)
  *				  call this function for execution of
  *				  PL/Tcl procedures.
  **********************************************************************/
+#ifdef USE_TCL
+
 PG_FUNCTION_INFO_V1(pltcl_call_handler);
 
 /* keep non-static */
@@ -698,6 +704,10 @@ pltcl_call_handler(PG_FUNCTION_ARGS)
 {
 	return pltcl_handler(fcinfo, true);
 }
+
+#endif /* USE_TCL */
+
+#ifdef USE_TCLU
 
 /*
  * Alternative handler for unsafe functions
@@ -710,6 +720,8 @@ pltclu_call_handler(PG_FUNCTION_ARGS)
 {
 	return pltcl_handler(fcinfo, false);
 }
+
+#endif	/* USE_TCLU */
 
 
 /**********************************************************************
