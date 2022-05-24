@@ -54,11 +54,11 @@
  */
 #include "postgres.h"
 
+#include <ctype.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <time.h>
 #include <unistd.h>
-#include <signal.h>
-#include <ctype.h>
 #ifdef HAVE_SYSLOG
 #include <syslog.h>
 #endif
@@ -3384,23 +3384,34 @@ write_stderr(const char *fmt,...)
 	fflush(stderr);
 #else
 	vsnprintf(errbuf, sizeof(errbuf), fmt, ap);
+	signal_safe_write_stderr(errbuf, strlen(errbuf));
+#endif
+	va_end(ap);
 
+}
+
+void
+signal_safe_write_stderr(const char *errbuf, size_t buflen)
+{
+#ifndef WIN32
+	/* If this fails, there is not much we can do, so ignore the error */
+	(void) write(fileno(stderr), errbuf, buflen);
+#else
 	/*
 	 * On Win32, we print to stderr if running on a console, or write to
 	 * eventlog if running as a service
 	 */
 	if (pgwin32_is_service())	/* Running as a service */
 	{
-		write_eventlog(ERROR, errbuf, strlen(errbuf));
+		write_eventlog(ERROR, errbuf, buflen);
 	}
 	else
 	{
 		/* Not running as service, write to stderr */
-		write_console(errbuf, strlen(errbuf));
+		write_console(errbuf, buflen);
 		fflush(stderr);
 	}
 #endif
-	va_end(ap);
 }
 
 

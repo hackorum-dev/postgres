@@ -467,4 +467,10 @@ extern void set_syslog_parameters(const char *ident, int facility);
  */
 extern void write_stderr(const char *fmt,...) pg_attribute_printf(1, 2);
 
+/*
+ * Signal-safe function to write error messages. Can be used from inside
+ * signal-handlers.
+ */
+extern void signal_safe_write_stderr(const char* errbuf, size_t buflen);
+
 #endif							/* ELOG_H */

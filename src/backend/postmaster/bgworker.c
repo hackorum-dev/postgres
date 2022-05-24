@@ -719,16 +719,24 @@ SanityCheckBackgroundWorker(BackgroundWorker *worker, int elevel)
 
 /*
  * Standard SIGTERM handler for background workers
+ *
+ * Only use signal-safe function in signal handler, in particular, ereport()
+ * and and any printf()-like functions since they directly or indirectly use
+ * malloc().
  */
 static void
 bgworker_die(SIGNAL_ARGS)
 {
 	PG_SETMASK(&BlockSig);
+	char message[256] = {0};
+	char* ptr = message;
 
-	ereport(FATAL,
-			(errcode(ERRCODE_ADMIN_SHUTDOWN),
-			 errmsg("terminating background worker \"%s\" due to administrator command",
-					MyBgworkerEntry->bgw_type)));
+	ptr = stpncpy(ptr, "terminating background worker \"", sizeof(message) - (message - ptr));
+	ptr = stpncpy(ptr, MyBgworkerEntry->bgw_type, sizeof(message) - (message - ptr));
+	ptr = stpncpy(ptr, "\" due to administrator command", sizeof(message) - (message - ptr));
+
+	signal_safe_write_stderr(message, strlen(message));
+	die(postgres_signal_arg);
 }
 
 /*
