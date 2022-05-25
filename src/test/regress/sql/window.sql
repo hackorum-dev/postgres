@@ -1114,8 +1114,6 @@ SELECT count(*) OVER w FROM tenk1 WINDOW w AS (ORDER BY unique1), w AS (ORDER BY
 
 SELECT rank() OVER (PARTITION BY four, ORDER BY ten) FROM tenk1;
 
-SELECT count() OVER () FROM tenk1;
-
 SELECT generate_series(1, 100) OVER () FROM empsalary;
 
 SELECT ntile(0) OVER (ORDER BY ten), ten, four FROM tenk1;

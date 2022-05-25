@@ -801,17 +801,6 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 		aggref->aggtransno = -1;
 		aggref->location = location;
 
-		/*
-		 * Reject attempt to call a parameterless aggregate without (*)
-		 * syntax.  This is mere pedantry but some folks insisted ...
-		 */
-		if (fargs == NIL && !agg_star && !agg_within_group)
-			ereport(ERROR,
-					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("%s(*) must be used to call a parameterless aggregate function",
-							NameListToString(funcname)),
-					 parser_errposition(pstate, location)));
-
 		if (retset)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_FUNCTION_DEFINITION),
@@ -865,17 +854,6 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("DISTINCT is not implemented for window functions"),
-					 parser_errposition(pstate, location)));
-
-		/*
-		 * Reject attempt to call a parameterless aggregate without (*)
-		 * syntax.  This is mere pedantry but some folks insisted ...
-		 */
-		if (wfunc->winagg && fargs == NIL && !agg_star)
-			ereport(ERROR,
-					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("%s(*) must be used to call a parameterless aggregate function",
-							NameListToString(funcname)),
 					 parser_errposition(pstate, location)));
 
 		/*

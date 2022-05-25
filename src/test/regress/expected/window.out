@@ -3758,10 +3758,6 @@ SELECT rank() OVER (PARTITION BY four, ORDER BY ten) FROM tenk1;
 ERROR:  syntax error at or near "ORDER"
 LINE 1: SELECT rank() OVER (PARTITION BY four, ORDER BY ten) FROM te...
                                                ^
-SELECT count() OVER () FROM tenk1;
-ERROR:  count(*) must be used to call a parameterless aggregate function
-LINE 1: SELECT count() OVER () FROM tenk1;
-               ^
 SELECT generate_series(1, 100) OVER () FROM empsalary;
 ERROR:  OVER specified, but generate_series is not a window function nor an aggregate function
 LINE 1: SELECT generate_series(1, 100) OVER () FROM empsalary;
