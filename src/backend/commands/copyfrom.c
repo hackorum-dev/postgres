@@ -116,6 +116,7 @@ CopyFromErrorCallback(void *arg)
 {
 	CopyFromState cstate = (CopyFromState) arg;
 
+	pgstat_progress_update_param(PROGRESS_COPY_STATUS, CP_ERROR);
 	if (cstate->opts.binary)
 	{
 		/* can't usefully display the data */

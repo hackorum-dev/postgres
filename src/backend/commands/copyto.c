@@ -329,6 +329,7 @@ EndCopy(CopyToState cstate)
 	}
 
 	pgstat_progress_end_command();
+	pgstat_progress_update_param(PROGRESS_COPY_STATUS, CP_SUCCESS);
 
 	MemoryContextDelete(cstate->copycontext);
 	pfree(cstate);
@@ -655,6 +656,7 @@ BeginCopyTo(ParseState *pstate,
 	cstate->encoding_embeds_ascii = PG_ENCODING_IS_CLIENT_ONLY(cstate->file_encoding);
 
 	cstate->copy_dest = COPY_FILE;	/* default */
+	pgstat_progress_update_param(PROGRESS_COPY_STATUS, CP_IN_PROG);
 
 	if (pipe)
 	{

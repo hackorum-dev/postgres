@@ -140,6 +140,14 @@
 #define PROGRESS_COPY_TUPLES_EXCLUDED 3
 #define PROGRESS_COPY_COMMAND 4
 #define PROGRESS_COPY_TYPE 5
+#define PROGRESS_COPY_STATUS 6 // See progress_type below
+
+enum progress_type
+{
+    CP_IN_PROG,
+    CP_ERROR,
+    CP_SUCCESS
+};
 
 /* Commands of COPY (as advertised via PROGRESS_COPY_COMMAND) */
 #define PROGRESS_COPY_COMMAND_FROM 1

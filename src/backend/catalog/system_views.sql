@@ -1258,6 +1258,10 @@ CREATE VIEW pg_stat_progress_copy AS
                       WHEN 3 THEN 'PIPE'
                       WHEN 4 THEN 'CALLBACK'
                       END AS "type",
+        CASE S.param7 WHEN 0 THEN 'IN PROG'
+                      WHEN 1 THEN 'ERR'
+                      WHEN 2 THEN 'PASS'
+                      END AS 'status',
         S.param1 AS bytes_processed,
         S.param2 AS bytes_total,
         S.param3 AS tuples_processed,
