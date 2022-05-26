@@ -119,3 +119,18 @@ SELECT data FROM pg_logical_slot_get_changes('regression_slot_no_lsn', NULL, NUL
 SELECT pg_replication_origin_session_reset();
 SELECT pg_drop_replication_slot('regression_slot_no_lsn');
 SELECT pg_replication_origin_drop('regress_test_decoding: regression_slot_no_lsn');
+
+-- Verify the behaviour of the only-local parameter
+SELECT 'init' FROM pg_create_logical_replication_slot('regression_slot_only_local', 'test_decoding');
+SELECT pg_replication_origin_create('regress_test_decoding: regression_slot_only_local');
+SELECT pg_replication_origin_session_setup('regress_test_decoding: regression_slot_only_local');
+INSERT INTO origin_tbl(data) VALUES ('only_local, commit1');
+-- Remote origin data returned when only-local parameter is not set
+SELECT data FROM pg_logical_slot_get_changes('regression_slot_only_local', NULL, NULL, 'skip-empty-xacts', '1', 'include-xids', '0', 'only-local', '0');
+INSERT INTO origin_tbl(data) VALUES ('only_local, commit2');
+-- Remote origin data not returned when only-local parameter is set
+SELECT data FROM pg_logical_slot_get_changes('regression_slot_only_local', NULL, NULL, 'skip-empty-xacts', '1', 'include-xids', '0', 'only-local', '1');
+-- Clean up
+SELECT pg_replication_origin_session_reset();
+SELECT pg_drop_replication_slot('regression_slot_only_local');
+SELECT pg_replication_origin_drop('regress_test_decoding: regression_slot_only_local');
