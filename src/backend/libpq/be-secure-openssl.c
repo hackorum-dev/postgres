@@ -85,6 +85,13 @@ static const char *ssl_protocol_version_to_string(int v);
 /*						 Public interface						*/
 /* ------------------------------------------------------------ */
 
+/*
+ * Initialize global SSL context.
+ *
+ * If isServerStart is true, report any errors as FATAL (so we don't return).
+ * Otherwise, log errors at LOG level and return -1 to indicate trouble,
+ * preserving the old SSL state if any.  Returns 0 if OK.
+ */
 int
 be_tls_init(bool isServerStart)
 {
@@ -397,6 +404,9 @@ error:
 	return -1;
 }
 
+/*
+ * Destroy global SSL context, if any.
+ */
 void
 be_tls_destroy(void)
 {
@@ -406,6 +416,9 @@ be_tls_destroy(void)
 	ssl_loaded_verify_locations = false;
 }
 
+/*
+ * Attempt to negotiate SSL connection.
+ */
 int
 be_tls_open_server(Port *port)
 {
@@ -659,6 +672,9 @@ aloop:
 	return 0;
 }
 
+/*
+ * Close SSL connection.
+ */
 void
 be_tls_close(Port *port)
 {
@@ -689,6 +705,9 @@ be_tls_close(Port *port)
 	}
 }
 
+/*
+ * Read data from a secure connection.
+ */
 ssize_t
 be_tls_read(Port *port, void *ptr, size_t len, int *waitfor)
 {
@@ -748,6 +767,9 @@ be_tls_read(Port *port, void *ptr, size_t len, int *waitfor)
 	return n;
 }
 
+/*
+ * Write data to a secure connection.
+ */
 ssize_t
 be_tls_write(Port *port, void *ptr, size_t len, int *waitfor)
 {
@@ -1249,6 +1271,10 @@ SSLerrmessage(unsigned long ecode)
 	return errbuf;
 }
 
+/*
+ * The following functions return various information about the SSL connection.
+ */
+
 int
 be_tls_get_cipher_bits(Port *port)
 {
@@ -1320,6 +1346,16 @@ be_tls_get_peer_serial(Port *port, char *ptr, size_t len)
 		ptr[0] = '\0';
 }
 
+/*
+ * Get the server certificate hash for SCRAM channel binding type
+ * tls-server-end-point.
+ *
+ * The result is a palloc'd hash of the server certificate with its
+ * size, and NULL if there is no certificate available.
+ *
+ * This is not supported with old versions of OpenSSL that don't have
+ * the X509_get_signature_nid() function.
+ */
 #ifdef HAVE_X509_GET_SIGNATURE_NID
 char *
 be_tls_get_certificate_hash(Port *port, size_t *len)
