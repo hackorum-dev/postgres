@@ -330,7 +330,7 @@ checkDataDir(void)
 	 *
 	 * XXX can we safely enable this check on Windows?
 	 */
-#if !defined(WIN32) && !defined(__CYGWIN__)
+#if defined(ENABLE_CHECK_PERMISSIONS) && !defined(WIN32) && !defined(__CYGWIN__)
 	if (stat_buf.st_uid != geteuid())
 		ereport(FATAL,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
@@ -350,7 +350,7 @@ checkDataDir(void)
 	 * be proper support for Unix-y file permissions.  Need to think of a
 	 * reasonable check to apply on Windows.
 	 */
-#if !defined(WIN32) && !defined(__CYGWIN__)
+#if defined(ENABLE_CHECK_PERMISSIONS) && !defined(WIN32) && !defined(__CYGWIN__)
 	if (stat_buf.st_mode & PG_MODE_MASK_GROUP)
 		ereport(FATAL,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
