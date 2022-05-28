@@ -18,13 +18,16 @@
 
 #include "access/detoast.h"
 #include "access/htup_details.h"
+#include "catalog/pg_collation.h"
 #include "catalog/pg_type.h"
 #include "funcapi.h"
 #include "libpq/pqformat.h"
 #include "miscadmin.h"
+#include "parser/parse_oper.h"
 #include "utils/builtins.h"
 #include "utils/datum.h"
 #include "utils/lsyscache.h"
+#include "utils/syscache.h"
 #include "utils/typcache.h"
 
 
@@ -1088,6 +1091,8 @@ record_eq(PG_FUNCTION_ARGS)
 	int			i1;
 	int			i2;
 	int			j;
+	Oid			op_func = InvalidOid;
+	FmgrInfo	op_func_finfo;
 
 	check_stack_depth();		/* recurses for record-type columns */
 
@@ -1190,12 +1195,27 @@ record_eq(PG_FUNCTION_ARGS)
 		 * Have two matching columns, they must be same type
 		 */
 		if (att1->atttypid != att2->atttypid)
-			ereport(ERROR,
+		{
+			Operator op;
+
+			op = compatible_oper(NULL, list_make1(makeString("=")),
+								 att1->atttypid, att2->atttypid, false, -1);
+
+			if (!op)
+				ereport(ERROR,
 					(errcode(ERRCODE_DATATYPE_MISMATCH),
 					 errmsg("cannot compare dissimilar column types %s and %s at record column %d",
 							format_type_be(att1->atttypid),
 							format_type_be(att2->atttypid),
 							j + 1)));
+			else
+			{
+				op_func = oprfuncid(op);
+				fmgr_info(op_func, &op_func_finfo);
+				ReleaseSysCache(op);
+			}
+
+		}
 
 		/*
 		 * If they're not same collation, we don't complain here, but the
@@ -1234,8 +1254,18 @@ record_eq(PG_FUNCTION_ARGS)
 			}
 
 			/* Compare the pair of elements */
-			InitFunctionCallInfoData(*locfcinfo, &typentry->eq_opr_finfo, 2,
-									 collation, NULL, NULL);
+			if (!OidIsValid(op_func))
+				/* Compare the pair of elements */
+				InitFunctionCallInfoData(*locfcinfo, &typentry->eq_opr_finfo, 2,
+										 collation, NULL, NULL);
+			else
+			{
+				/* XXX: Some collation matching logic needed. */
+				collation = (collation != InvalidOid) ? collation : DEFAULT_COLLATION_OID;
+				InitFunctionCallInfoData(*locfcinfo, &op_func_finfo, 2,
+										 collation, NULL, NULL);
+			}
+
 			locfcinfo->args[0].value = values1[i1];
 			locfcinfo->args[0].isnull = false;
 			locfcinfo->args[1].value = values2[i2];
