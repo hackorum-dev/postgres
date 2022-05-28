@@ -178,7 +178,7 @@ select a,b from test_table where (a,b) > ('a','a') order by a,b;
 reset enable_sort;
 
 -- Check row comparisons with IN
-select * from int8_tbl i8 where i8 in (row(123,456));  -- fail, type mismatch
+select * from int8_tbl i8 where i8 in (row(123,456));  -- compare rows with columns of slightly different types
 
 explain (costs off)
 select * from int8_tbl i8
