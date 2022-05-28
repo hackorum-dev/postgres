@@ -42,6 +42,10 @@
 /* Define to the file name extension of dynamically-loadable modules. */
 #undef DLSUFFIX
 
+/* Define to 1 to build with permission checks. (--disable-check-permissions)
+   */
+#undef ENABLE_CHECK_PERMISSIONS
+
 /* Define to build with GSSAPI support. (--with-gssapi) */
 #undef ENABLE_GSS
 

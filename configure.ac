@@ -834,6 +834,14 @@ PGAC_ARG_BOOL(enable, cassert, no, [enable assertion checks (for debugging)],
 
 
 #
+# Disable file permission checks
+#
+PGAC_ARG_BOOL(enable, check-permissions, yes, [disable file permission checks (for Docker)],
+              [AC_DEFINE([ENABLE_CHECK_PERMISSIONS], 1,
+                         [Define to 1 to build with permission checks. (--disable-check-permissions)])])
+
+
+#
 # Include directories
 #
 ac_save_IFS=$IFS
