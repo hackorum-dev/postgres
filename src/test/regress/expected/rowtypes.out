@@ -463,8 +463,12 @@ select a,b from test_table where (a,b) > ('a','a') order by a,b;
 
 reset enable_sort;
 -- Check row comparisons with IN
-select * from int8_tbl i8 where i8 in (row(123,456));  -- fail, type mismatch
-ERROR:  cannot compare dissimilar column types bigint and integer at record column 1
+select * from int8_tbl i8 where i8 in (row(123,456));  -- compare rows with columns of slightly different types
+ q1  | q2  
+-----+-----
+ 123 | 456
+(1 row)
+
 explain (costs off)
 select * from int8_tbl i8
 where i8 in (row(123,456)::int8_tbl, '(4567890123456789,123)');
@@ -658,7 +662,8 @@ create type testtype3 as (a int, b text);
 select row(1, 2)::testtype1 < row(1, 'abc')::testtype3;
 ERROR:  cannot compare dissimilar column types integer and text at record column 2
 select row(1, 2)::testtype1 <> row(1, 'abc')::testtype3;
-ERROR:  cannot compare dissimilar column types integer and text at record column 2
+ERROR:  operator does not exist: integer = text
+HINT:  No operator matches the given name and argument types. You might need to add explicit type casts.
 create type testtype5 as (a int);
 select row(1, 2)::testtype1 < row(1)::testtype5;
 ERROR:  cannot compare record types with different numbers of columns
