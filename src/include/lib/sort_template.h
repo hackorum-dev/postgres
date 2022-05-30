@@ -172,6 +172,11 @@
 #define ST_SORT_INVOKE_ARG
 #endif
 
+/* Default input size threshold to control algorithm choice. */
+#ifndef ST_INSERTION_SORT_THRESHOLD
+#define ST_INSERTION_SORT_THRESHOLD 7
+#endif
+
 #ifdef ST_DECLARE
 
 #ifdef ST_COMPARE_RUNTIME_POINTER
@@ -191,6 +196,7 @@ ST_SCOPE void ST_SORT(ST_ELEMENT_TYPE * first, size_t n
 
 /* sort private helper functions */
 #define ST_MED3 ST_MAKE_NAME(ST_SORT, med3)
+#define ST_SORT_INTERNAL ST_MAKE_NAME(ST_SORT, internal)
 #define ST_SWAP ST_MAKE_NAME(ST_SORT, swap)
 #define ST_SWAPN ST_MAKE_NAME(ST_SORT, swapn)
 
@@ -217,7 +223,7 @@ ST_SCOPE void ST_SORT(ST_ELEMENT_TYPE * first, size_t n
 			ST_SORT_INVOKE_COMPARE										\
 			ST_SORT_INVOKE_ARG)
 #define DO_SORT(a_, n_)													\
-	ST_SORT((a_), (n_)													\
+	ST_SORT_INTERNAL((a_), (n_)													\
 			ST_SORT_INVOKE_ELEMENT_SIZE									\
 			ST_SORT_INVOKE_COMPARE										\
 			ST_SORT_INVOKE_ARG)
@@ -273,15 +279,15 @@ ST_SWAPN(ST_POINTER_TYPE * a, ST_POINTER_TYPE * b, size_t n)
 }
 
 /*
- * Sort an array.
+ * Workhorse for ST_SORT
  */
-ST_SCOPE void
-ST_SORT(ST_ELEMENT_TYPE * data, size_t n
+static void
+ST_SORT_INTERNAL(ST_POINTER_TYPE * data, size_t n
 		ST_SORT_PROTO_ELEMENT_SIZE
 		ST_SORT_PROTO_COMPARE
 		ST_SORT_PROTO_ARG)
 {
-	ST_POINTER_TYPE *a = (ST_POINTER_TYPE *) data,
+	ST_POINTER_TYPE *a = data,
 			   *pa,
 			   *pb,
 			   *pc,
@@ -399,6 +405,30 @@ loop:
 		}
 	}
 }
+
+/*
+ * Sort an array.
+ */
+ST_SCOPE void
+ST_SORT(ST_ELEMENT_TYPE * data, size_t n
+		ST_SORT_PROTO_ELEMENT_SIZE
+		ST_SORT_PROTO_COMPARE
+		ST_SORT_PROTO_ARG)
+{
+	ST_POINTER_TYPE *begin = (ST_POINTER_TYPE *) data;
+
+	DO_SORT(begin, n);
+
+#ifdef USE_ASSERT_CHECKING
+	/* WIP: verify the sorting worked */
+	for (ST_POINTER_TYPE *pm = begin + ST_POINTER_STEP; pm < begin + n * ST_POINTER_STEP;
+		 pm += ST_POINTER_STEP)
+	{
+		if (DO_COMPARE(pm, pm - ST_POINTER_STEP) < 0)
+			Assert(false);
+	}
+#endif							/* USE_ASSERT_CHECKING */
+}
 #endif
 
 #undef DO_CHECK_FOR_INTERRUPTS
@@ -422,6 +452,7 @@ loop:
 #undef ST_POINTER_TYPE
 #undef ST_SCOPE
 #undef ST_SORT
+#undef ST_SORT_INTERNAL
 #undef ST_SORT_INVOKE_ARG
 #undef ST_SORT_INVOKE_COMPARE
 #undef ST_SORT_INVOKE_ELEMENT_SIZE
