@@ -573,16 +573,30 @@ ERROR:  could not serialize access due to concurrent update
 
    <para>
     The Repeatable Read mode provides a rigorous guarantee that each
-    transaction sees a completely stable view of the database.  However,
-    this view will not necessarily always be consistent with some serial
-    (one at a time) execution of concurrent transactions of the same level.
-    For example, even a read-only transaction at this level may see a
-    control record updated to show that a batch has been completed but
-    <emphasis>not</emphasis> see one of the detail records which is logically
-    part of the batch because it read an earlier revision of the control
-    record.  Attempts to enforce business rules by transactions running at
-    this isolation level are not likely to work correctly without careful use
-    of explicit locks to block conflicting transactions.
+    transaction sees a completely stable view of the database.  However, even
+    for a read-only transaction, this view will not necessarily always be
+    consistent with some serial (one at a time) execution of concurrent
+    transactions of the same level. Therefore, attempts to enforce business
+    rules by transactions running at this isolation level are not likely to work
+    correctly without careful use of explicit locks to block conflicting
+    transactions.
+   </para>
+
+   <para>
+    For example, imagine a database where records are written with a "batch ID"
+    column, and a transaction T1 "closes" a batch by updating a separate control
+    record to indicate that new records should be written with a new batch ID. Meanwhile,
+    another transaction T2 starts before T1 commits, reads the old version of
+    the control record, inserts records with the old batch ID, and commits after
+    T1 commits. Finally, a read-only transaction T3 starts after T1 commits but
+    before T2 commits, and sees the control record that T1 wrote with the
+    new batch ID indicating that the previous batch was closed, but can't
+    see the records that T2 wrote with the old batch ID. This is a
+    serialization anomaly among the three transactions. Similarly, a
+    serialization anomaly would arise between just T1 and T2 if T1
+    attempted to compute an aggregation over all the records in the
+    previous batch. These anomalies are not detected at the Repeatable Read
+    level, but would be detected at the Serializable level.
    </para>
 
    <para>
