@@ -311,6 +311,7 @@ ConstructTupleDescriptor(Relation heapRelation,
 
 		MemSet(to, 0, ATTRIBUTE_FIXED_PART_SIZE);
 		to->attphysnum = i + 1;
+		to->attnum = to->attphysnum;
 		to->attstattarget = -1;
 		to->attcacheoff = -1;
 		to->attislocal = true;

@@ -518,6 +518,7 @@ DefineAttr(char *name, char *type, int attphysnum, int nullness)
 	namestrcpy(&attrtypes[attphysnum]->attname, name);
 	elog(DEBUG4, "column %s %s", NameStr(attrtypes[attphysnum]->attname), type);
 	attrtypes[attphysnum]->attphysnum = attphysnum + 1;
+	attrtypes[attphysnum]->attnum = attphysnum + 1;
 
 	typeoid = gettype(type);
 

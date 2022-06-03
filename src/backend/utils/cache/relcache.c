@@ -576,8 +576,11 @@ RelationBuildTupleDesc(Relation relation)
 
 		attphysnum = attp->attphysnum;
 		if (attphysnum <= 0 || attphysnum > RelationGetNumberOfAttributes(relation))
-			elog(ERROR, "invalid attribute number %d for relation \"%s\"",
+			elog(ERROR, "invalid physical attribute number %d for relation \"%s\"",
 				 attp->attphysnum, RelationGetRelationName(relation));
+		if (attp->attnum <= 0 || attp->attnum > RelationGetNumberOfAttributes(relation))
+			elog(ERROR, "invalid logical attribute number  %d for relation \"%s\"",
+				 attp->attnum, RelationGetRelationName(relation));
 
 		memcpy(TupleDescAttr(relation->rd_att, attphysnum - 1),
 			   attp,

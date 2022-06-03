@@ -1143,6 +1143,7 @@ _outVar(StringInfo str, const Var *node)
 
 	WRITE_INT_FIELD(varno);
 	WRITE_INT_FIELD(varattno);
+	WRITE_INT_FIELD(varnum);
 	WRITE_OID_FIELD(vartype);
 	WRITE_INT_FIELD(vartypmod);
 	WRITE_OID_FIELD(varcollid);
@@ -1421,6 +1422,7 @@ _outFieldSelect(StringInfo str, const FieldSelect *node)
 
 	WRITE_NODE_FIELD(arg);
 	WRITE_INT_FIELD(fieldnum);
+	WRITE_INT_FIELD(fieldlognum);
 	WRITE_OID_FIELD(resulttype);
 	WRITE_INT_FIELD(resulttypmod);
 	WRITE_OID_FIELD(resultcollid);
@@ -3460,6 +3462,8 @@ _outRangeTblEntry(StringInfo str, const RangeTblEntry *node)
 		case RTE_FUNCTION:
 			WRITE_NODE_FIELD(functions);
 			WRITE_BOOL_FIELD(funcordinality);
+			WRITE_INT_FIELD(nummappings);
+			WRITE_ATTRNUMBER_ARRAY(mappings, node->nummappings);
 			break;
 		case RTE_TABLEFUNC:
 			WRITE_NODE_FIELD(tablefunc);

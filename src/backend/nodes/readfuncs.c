@@ -619,6 +619,7 @@ _readVar(void)
 
 	READ_INT_FIELD(varno);
 	READ_INT_FIELD(varattno);
+	READ_INT_FIELD(varnum);
 	READ_OID_FIELD(vartype);
 	READ_INT_FIELD(vartypmod);
 	READ_OID_FIELD(varcollid);
@@ -939,6 +940,7 @@ _readFieldSelect(void)
 
 	READ_NODE_FIELD(arg);
 	READ_INT_FIELD(fieldnum);
+	READ_INT_FIELD(fieldlognum);
 	READ_OID_FIELD(resulttype);
 	READ_INT_FIELD(resulttypmod);
 	READ_OID_FIELD(resultcollid);
@@ -1686,6 +1688,8 @@ _readRangeTblEntry(void)
 		case RTE_FUNCTION:
 			READ_NODE_FIELD(functions);
 			READ_BOOL_FIELD(funcordinality);
+			READ_INT_FIELD(nummappings);
+			READ_ATTRNUMBER_ARRAY(mappings, local_node->nummappings);
 			break;
 		case RTE_TABLEFUNC:
 			READ_NODE_FIELD(tablefunc);

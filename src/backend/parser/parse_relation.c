@@ -26,6 +26,7 @@
 #include "funcapi.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
+#include "optimizer/tlist.h"
 #include "parser/parse_enr.h"
 #include "parser/parse_relation.h"
 #include "parser/parse_type.h"
@@ -733,6 +734,7 @@ scanNSItemForColumn(ParseState *pstate, ParseNamespaceItem *nsitem,
 					  nscol->p_varcollid,
 					  sublevels_up);
 		/* makeVar doesn't offer parameters for these, so set them by hand: */
+		var->varnum = nscol->p_varnum;
 		var->varnosyn = nscol->p_varnosyn;
 		var->varattnosyn = nscol->p_varattnosyn;
 	}
@@ -1126,26 +1128,63 @@ buildRelationAliases(TupleDesc tupdesc, Alias *alias, Alias *eref)
 {
 	int			maxattrs = tupdesc->natts;
 	List	   *aliaslist;
-	ListCell   *aliaslc;
 	int			numaliases;
 	int			varattno;
 	int			numdropped = 0;
+	int		   *mappings;
 
 	Assert(eref->colnames == NIL);
 
 	if (alias)
 	{
 		aliaslist = alias->colnames;
-		aliaslc = list_head(aliaslist);
 		numaliases = list_length(aliaslist);
 		/* We'll rebuild the alias colname list */
 		alias->colnames = NIL;
+		mappings = palloc0(sizeof(int) * (maxattrs + 1));
 	}
 	else
 	{
 		aliaslist = NIL;
-		aliaslc = NULL;
 		numaliases = 0;
+	}
+
+	/*
+	 * Build a physical/logical position mapping to emit aliases in logical
+	 * order.
+	 */
+	if (numaliases > 0)
+	{
+		TupleDesc sorted = CreateTupleDescCopy(tupdesc);
+		int i = 1;
+
+		TupleDescSortByAttnum(sorted);
+
+		for (varattno = 0; varattno < maxattrs; varattno++)
+		{
+			Form_pg_attribute attr = TupleDescAttr(sorted, varattno);
+
+			if (attr->attisdropped)
+				continue;
+
+			/*
+			 * We record a 1-based position mapping to be able to use
+			 * AttributeNumberIsValid.
+			 */
+			mappings[attr->attphysnum] = i++;
+
+			/* We're done if we already mapped all the provided aliases. */
+			if (i > numaliases)
+				break;
+		}
+		pfree(sorted);
+
+		/* Too many user-supplied aliases? */
+		if (i <= numaliases)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
+					 errmsg("table \"%s\" has %d columns available but %d columns specified",
+							eref->aliasname, i - 1, numaliases)));
 	}
 
 	for (varattno = 0; varattno < maxattrs; varattno++)
@@ -1157,15 +1196,15 @@ buildRelationAliases(TupleDesc tupdesc, Alias *alias, Alias *eref)
 		{
 			/* Always insert an empty string for a dropped column */
 			attrname = makeString(pstrdup(""));
-			if (aliaslc)
-				alias->colnames = lappend(alias->colnames, attrname);
 			numdropped++;
+			if (aliaslist && varattno - numdropped > numaliases)
+				alias->colnames = lappend(alias->colnames, attrname);
 		}
-		else if (aliaslc)
+		else if (aliaslist && AttributeNumberIsValid(mappings[attr->attphysnum]))
 		{
-			/* Use the next user-supplied alias */
-			attrname = lfirst_node(String, aliaslc);
-			aliaslc = lnext(aliaslist, aliaslc);
+			/* Use the next user-supplied alias, in logical order */
+			attrname = list_nth_node(String, aliaslist,
+									 mappings[attr->attphysnum] - 1);
 			alias->colnames = lappend(alias->colnames, attrname);
 		}
 		else
@@ -1176,13 +1215,6 @@ buildRelationAliases(TupleDesc tupdesc, Alias *alias, Alias *eref)
 
 		eref->colnames = lappend(eref->colnames, attrname);
 	}
-
-	/* Too many user-supplied aliases? */
-	if (aliaslc)
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
-				 errmsg("table \"%s\" has %d columns available but %d columns specified",
-						eref->aliasname, maxattrs - numdropped, numaliases)));
 }
 
 /*
@@ -1242,6 +1274,7 @@ buildNSItemFromTupleDesc(RangeTblEntry *rte, Index rtindex, TupleDesc tupdesc)
 {
 	ParseNamespaceItem *nsitem;
 	ParseNamespaceColumn *nscolumns;
+	AttrNumber		   *mappings;
 	int			maxattrs = tupdesc->natts;
 	int			varattno;
 
@@ -1251,6 +1284,7 @@ buildNSItemFromTupleDesc(RangeTblEntry *rte, Index rtindex, TupleDesc tupdesc)
 	/* extract per-column data from the tupdesc */
 	nscolumns = (ParseNamespaceColumn *)
 		palloc0(maxattrs * sizeof(ParseNamespaceColumn));
+	mappings = (AttrNumber *) palloc((maxattrs + 1) * sizeof(AttrNumber));
 
 	for (varattno = 0; varattno < maxattrs; varattno++)
 	{
@@ -1258,15 +1292,24 @@ buildNSItemFromTupleDesc(RangeTblEntry *rte, Index rtindex, TupleDesc tupdesc)
 
 		/* For a dropped column, just leave the entry as zeroes */
 		if (attr->attisdropped)
+		{
+			mappings[attr->attnum] = InvalidAttrNumber;
 			continue;
+		}
+
+		mappings[attr->attnum] = attr->attphysnum;
+
 
 		nscolumns[varattno].p_varno = rtindex;
 		nscolumns[varattno].p_varattno = varattno + 1;
+		nscolumns[varattno].p_varattno = attr->attphysnum;
+		nscolumns[varattno].p_varnum = attr->attnum;
 		nscolumns[varattno].p_vartype = attr->atttypid;
 		nscolumns[varattno].p_vartypmod = attr->atttypmod;
 		nscolumns[varattno].p_varcollid = attr->attcollation;
 		nscolumns[varattno].p_varnosyn = rtindex;
 		nscolumns[varattno].p_varattnosyn = varattno + 1;
+		nscolumns[varattno].p_varattnosyn = attr->attphysnum;
 	}
 
 	/* ... and build the nsitem */
@@ -1275,6 +1318,7 @@ buildNSItemFromTupleDesc(RangeTblEntry *rte, Index rtindex, TupleDesc tupdesc)
 	nsitem->p_rte = rte;
 	nsitem->p_rtindex = rtindex;
 	nsitem->p_nscolumns = nscolumns;
+	nsitem->p_mappings = mappings;
 	/* set default visibility flags; might get changed later */
 	nsitem->p_rel_visible = true;
 	nsitem->p_cols_visible = true;
@@ -1300,6 +1344,7 @@ buildNSItemFromLists(RangeTblEntry *rte, Index rtindex,
 {
 	ParseNamespaceItem *nsitem;
 	ParseNamespaceColumn *nscolumns;
+	AttrNumber		   *mappings;
 	int			maxattrs = list_length(coltypes);
 	int			varattno;
 	ListCell   *lct;
@@ -1315,6 +1360,7 @@ buildNSItemFromLists(RangeTblEntry *rte, Index rtindex,
 	/* extract per-column data from the lists */
 	nscolumns = (ParseNamespaceColumn *)
 		palloc0(maxattrs * sizeof(ParseNamespaceColumn));
+	mappings = (AttrNumber *) palloc((maxattrs + 1) * sizeof(AttrNumber));
 
 	varattno = 0;
 	forthree(lct, coltypes,
@@ -1323,11 +1369,18 @@ buildNSItemFromLists(RangeTblEntry *rte, Index rtindex,
 	{
 		nscolumns[varattno].p_varno = rtindex;
 		nscolumns[varattno].p_varattno = varattno + 1;
+		if (rte->rtekind == RTE_RELATION)
+			nscolumns[varattno].p_varnum = varattno + 1;
+		else
+			nscolumns[varattno].p_varnum = InvalidAttrNumber;
 		nscolumns[varattno].p_vartype = lfirst_oid(lct);
 		nscolumns[varattno].p_vartypmod = lfirst_int(lcm);
 		nscolumns[varattno].p_varcollid = lfirst_oid(lcc);
 		nscolumns[varattno].p_varnosyn = rtindex;
 		nscolumns[varattno].p_varattnosyn = varattno + 1;
+
+		mappings[varattno + 1] = varattno + 1;
+
 		varattno++;
 	}
 
@@ -1337,6 +1390,7 @@ buildNSItemFromLists(RangeTblEntry *rte, Index rtindex,
 	nsitem->p_rte = rte;
 	nsitem->p_rtindex = rtindex;
 	nsitem->p_nscolumns = nscolumns;
+	nsitem->p_mappings = mappings;
 	/* set default visibility flags; might get changed later */
 	nsitem->p_rel_visible = true;
 	nsitem->p_cols_visible = true;
@@ -1408,6 +1462,9 @@ parserOpenTable(ParseState *pstate, const RangeVar *relation, int lockmode)
  *
  * Note: formerly this checked for refname conflicts, but that's wrong.
  * Caller is responsible for checking for conflicts in the appropriate scope.
+ *
+ * Note also that the ParseNamespaceItem is generated using the range table's
+ * logical order (attnum) rather than physical order (attphysnum).
  */
 ParseNamespaceItem *
 addRangeTableEntry(ParseState *pstate,
@@ -1447,7 +1504,7 @@ addRangeTableEntry(ParseState *pstate,
 
 	/*
 	 * Build the list of effective column names using user-supplied aliases
-	 * and/or actual column names.
+	 * and/or actual column names, using the range table logical order.
 	 */
 	rte->eref = makeAlias(refname, NIL);
 	buildRelationAliases(rel->rd_att, alias, rte->eref);
@@ -1688,6 +1745,7 @@ addRangeTableEntryForFunction(ParseState *pstate,
 	Alias	   *alias = rangefunc->alias;
 	Alias	   *eref;
 	char	   *aliasname;
+	AttrNumber *mappings;
 	int			nfuncs = list_length(funcexprs);
 	TupleDesc  *functupdescs;
 	TupleDesc	tupdesc;
@@ -1908,6 +1966,8 @@ addRangeTableEntryForFunction(ParseState *pstate,
 	 */
 	if (nfuncs > 1 || rangefunc->ordinality)
 	{
+		int attnumoffset = 0;
+
 		if (rangefunc->ordinality)
 			totalatts++;
 
@@ -1917,7 +1977,15 @@ addRangeTableEntryForFunction(ParseState *pstate,
 		for (i = 0; i < nfuncs; i++)
 		{
 			for (j = 1; j <= functupdescs[i]->natts; j++)
+			{
 				TupleDescCopyEntry(tupdesc, ++natts, functupdescs[i], j);
+				/*
+				 * TupleDescCopyEntry preserved the original attnum, we still
+				 * need to offset it to take into account previous tuple descs.
+				 */
+				tupdesc->attrs[natts - 1].attnum += attnumoffset;
+			}
+			attnumoffset += functupdescs[i]->natts;
 		}
 
 		/* Add the ordinality column if needed */
@@ -1939,6 +2007,12 @@ addRangeTableEntryForFunction(ParseState *pstate,
 		/* We can just use the single function's tupdesc as-is */
 		tupdesc = functupdescs[0];
 	}
+
+	mappings = palloc(tupdesc->natts * sizeof(AttrNumber));
+	for (i = 0; i < tupdesc->natts; i++)
+		mappings[i] = TupleDescAttr(tupdesc, i)->attnum;
+	rte->nummappings = tupdesc->natts;
+	rte->mappings = mappings;
 
 	/* Use the tupdesc while assigning column aliases for the RTE */
 	buildRelationAliases(tupdesc, alias, eref);
@@ -2169,6 +2243,7 @@ addRangeTableEntryForJoin(ParseState *pstate,
 	Alias	   *eref;
 	int			numaliases;
 	ParseNamespaceItem *nsitem;
+	AttrNumber		   *mappings;
 
 	Assert(pstate != NULL);
 
@@ -2232,6 +2307,10 @@ addRangeTableEntryForJoin(ParseState *pstate,
 	 */
 	pstate->p_rtable = lappend(pstate->p_rtable, rte);
 
+	mappings = palloc((list_length(colnames) + 1) * sizeof(AttrNumber));
+	for (int i = 1; i <= list_length(colnames); i++)
+		mappings[i] = i;
+
 	/*
 	 * Build a ParseNamespaceItem, but don't add it to the pstate's namespace
 	 * list --- caller must do that if appropriate.
@@ -2241,6 +2320,7 @@ addRangeTableEntryForJoin(ParseState *pstate,
 	nsitem->p_rte = rte;
 	nsitem->p_rtindex = list_length(pstate->p_rtable);
 	nsitem->p_nscolumns = nscolumns;
+	nsitem->p_mappings = mappings;
 	/* set default visibility flags; might get changed later */
 	nsitem->p_rel_visible = true;
 	nsitem->p_cols_visible = true;
@@ -3099,6 +3179,7 @@ expandNSItemVars(ParseNamespaceItem *nsitem,
 						  nscol->p_varcollid,
 						  sublevels_up);
 			/* makeVar doesn't offer parameters for these, so set by hand: */
+			var->varnum = nscol->p_varnum;
 			var->varnosyn = nscol->p_varnosyn;
 			var->varattnosyn = nscol->p_varattnosyn;
 			var->location = location;
@@ -3127,13 +3208,15 @@ expandNSItemVars(ParseNamespaceItem *nsitem,
  */
 List *
 expandNSItemAttrs(ParseState *pstate, ParseNamespaceItem *nsitem,
-				  int sublevels_up, bool require_col_privs, int location)
+				  int sublevels_up, bool require_col_privs, bool logical_order,
+				  int location)
 {
 	RangeTblEntry *rte = nsitem->p_rte;
 	List	   *names,
 			   *vars;
 	ListCell   *name,
-			   *var;
+			   *var,
+			   *lc;
 	List	   *te_list = NIL;
 
 	vars = expandNSItemVars(nsitem, sublevels_up, location, &names);
@@ -3149,14 +3232,22 @@ expandNSItemAttrs(ParseState *pstate, ParseNamespaceItem *nsitem,
 	if (rte->rtekind == RTE_RELATION)
 		rte->requiredPerms |= ACL_SELECT;
 
+	/* JOIN are already expanded in the expected order. */
+	if (logical_order && nsitem->p_rte->rtekind == RTE_JOIN)
+		logical_order = false;
+
 	forboth(name, names, var, vars)
 	{
 		char	   *label = strVal(lfirst(name));
 		Var		   *varnode = (Var *) lfirst(var);
 		TargetEntry *te;
 
+		/*
+		 * We don't assign the resno here, as we may have to sort the list by
+		 * logical attnum first.
+		 */
 		te = makeTargetEntry((Expr *) varnode,
-							 (AttrNumber) pstate->p_next_resno++,
+							 0,
 							 label,
 							 false);
 		te_list = lappend(te_list, te);
@@ -3166,6 +3257,17 @@ expandNSItemAttrs(ParseState *pstate, ParseNamespaceItem *nsitem,
 			/* Require read access to each column */
 			markVarForSelectPriv(pstate, varnode);
 		}
+	}
+
+	if (logical_order)
+		list_sort(te_list, cmp_targetentry_logical_order);
+
+	/* Assign the resnos now that the list is in the final order */
+	foreach(lc, te_list)
+	{
+		TargetEntry *te = (TargetEntry *) lfirst(lc);
+
+		te->resno = (AttrNumber) pstate->p_next_resno++;
 	}
 
 	Assert(name == NULL && var == NULL);	/* lists not the same length? */

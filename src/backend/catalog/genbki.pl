@@ -852,6 +852,7 @@ sub gen_pg_attribute
 			$attphysnum++;
 			my %row;
 			$row{attphysnum}   = $attphysnum;
+			$row{attnum}   = $attphysnum;
 			$row{attrelid} = $table->{relation_oid};
 
 			morph_row_for_pgattr(\%row, $schema, $attr, $priorfixedwidth);
@@ -888,6 +889,7 @@ sub gen_pg_attribute
 				$attphysnum--;
 				my %row;
 				$row{attphysnum}        = $attphysnum;
+				$row{attnum}        = $attphysnum;
 				$row{attrelid}      = $table->{relation_oid};
 				$row{attstattarget} = '0';
 

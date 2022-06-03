@@ -20,6 +20,7 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
+#include "optimizer/tlist.h"
 #include "parser/parse_coerce.h"
 #include "parser/parse_expr.h"
 #include "parser/parse_func.h"
@@ -48,15 +49,18 @@ static Node *transformAssignmentSubscripts(ParseState *pstate,
 										   CoercionContext ccontext,
 										   int location);
 static List *ExpandColumnRefStar(ParseState *pstate, ColumnRef *cref,
-								 bool make_target_entry);
-static List *ExpandAllTables(ParseState *pstate, int location);
+								 bool make_target_entry,
+								 bool logical_order);
+static List *ExpandAllTables(ParseState *pstate, bool logical_order,
+							 int location);
 static List *ExpandIndirectionStar(ParseState *pstate, A_Indirection *ind,
-								   bool make_target_entry, ParseExprKind exprKind);
+								   bool make_target_entry, bool logical_order,
+								   ParseExprKind exprKind);
 static List *ExpandSingleTable(ParseState *pstate, ParseNamespaceItem *nsitem,
 							   int sublevels_up, int location,
-							   bool make_target_entry);
+							   bool make_target_entry, bool logical_order);
 static List *ExpandRowReference(ParseState *pstate, Node *expr,
-								bool make_target_entry);
+								bool make_target_entry, bool logical_order);
 static int	FigureColnameInternal(Node *node, char **name);
 
 
@@ -150,10 +154,12 @@ transformTargetList(ParseState *pstate, List *targetlist,
 
 				if (IsA(llast(cref->fields), A_Star))
 				{
-					/* It is something.*, expand into multiple items */
+					/*
+					 $ It is something.*, expand into multiple items
+					 */
 					p_target = list_concat(p_target,
-										   ExpandColumnRefStar(pstate,
-															   cref,
+										   ExpandColumnRefStar(pstate, cref,
+															   true,
 															   true));
 					continue;
 				}
@@ -168,6 +174,7 @@ transformTargetList(ParseState *pstate, List *targetlist,
 					p_target = list_concat(p_target,
 										   ExpandIndirectionStar(pstate,
 																 ind,
+																 true,
 																 true,
 																 exprKind));
 					continue;
@@ -243,7 +250,7 @@ transformExpressionList(ParseState *pstate, List *exprlist,
 				/* It is something.*, expand into multiple items */
 				result = list_concat(result,
 									 ExpandColumnRefStar(pstate, cref,
-														 false));
+														 false, false));
 				continue;
 			}
 		}
@@ -256,7 +263,8 @@ transformExpressionList(ParseState *pstate, List *exprlist,
 				/* It is something.*, expand into multiple items */
 				result = list_concat(result,
 									 ExpandIndirectionStar(pstate, ind,
-														   false, exprKind));
+														   false, false,
+														   exprKind));
 				continue;
 			}
 		}
@@ -1014,6 +1022,8 @@ checkInsertTargets(ParseState *pstate, List *cols, List **attrnos)
 
 	if (cols == NIL)
 	{
+		TupleDesc tupdesc;
+
 		/*
 		 * Generate default column list for INSERT.
 		 */
@@ -1021,12 +1031,15 @@ checkInsertTargets(ParseState *pstate, List *cols, List **attrnos)
 
 		int			i;
 
+		tupdesc = CreateTupleDescCopy(pstate->p_target_relation->rd_att);
+		TupleDescSortByAttnum(tupdesc);
+
 		for (i = 0; i < numcol; i++)
 		{
 			ResTarget  *col;
 			Form_pg_attribute attr;
 
-			attr = TupleDescAttr(pstate->p_target_relation->rd_att, i);
+			attr = TupleDescAttr(tupdesc, i);
 
 			if (attr->attisdropped)
 				continue;
@@ -1037,8 +1050,10 @@ checkInsertTargets(ParseState *pstate, List *cols, List **attrnos)
 			col->val = NULL;
 			col->location = -1;
 			cols = lappend(cols, col);
-			*attrnos = lappend_int(*attrnos, i + 1);
+			*attrnos = lappend_int(*attrnos, attr->attphysnum);
 		}
+
+		pfree(tupdesc);
 	}
 	else
 	{
@@ -1114,7 +1129,7 @@ checkInsertTargets(ParseState *pstate, List *cols, List **attrnos)
  */
 static List *
 ExpandColumnRefStar(ParseState *pstate, ColumnRef *cref,
-					bool make_target_entry)
+					bool make_target_entry, bool logical_order)
 {
 	List	   *fields = cref->fields;
 	int			numnames = list_length(fields);
@@ -1130,7 +1145,7 @@ ExpandColumnRefStar(ParseState *pstate, ColumnRef *cref,
 		 * need not handle the make_target_entry==false case here.
 		 */
 		Assert(make_target_entry);
-		return ExpandAllTables(pstate, cref->location);
+		return ExpandAllTables(pstate, logical_order, cref->location);
 	}
 	else
 	{
@@ -1169,7 +1184,8 @@ ExpandColumnRefStar(ParseState *pstate, ColumnRef *cref,
 
 			node = pstate->p_pre_columnref_hook(pstate, cref);
 			if (node != NULL)
-				return ExpandRowReference(pstate, node, make_target_entry);
+				return ExpandRowReference(pstate, node, make_target_entry,
+										  logical_order);
 		}
 
 		switch (numnames)
@@ -1234,7 +1250,8 @@ ExpandColumnRefStar(ParseState *pstate, ColumnRef *cref,
 							 errmsg("column reference \"%s\" is ambiguous",
 									NameListToString(cref->fields)),
 							 parser_errposition(pstate, cref->location)));
-				return ExpandRowReference(pstate, node, make_target_entry);
+				return ExpandRowReference(pstate, node, make_target_entry,
+										  logical_order);
 			}
 		}
 
@@ -1270,7 +1287,7 @@ ExpandColumnRefStar(ParseState *pstate, ColumnRef *cref,
 		 * OK, expand the nsitem into fields.
 		 */
 		return ExpandSingleTable(pstate, nsitem, levels_up, cref->location,
-								 make_target_entry);
+								 make_target_entry, logical_order);
 	}
 }
 
@@ -1283,10 +1300,13 @@ ExpandColumnRefStar(ParseState *pstate, ColumnRef *cref,
  * that would include input tables of aliasless JOINs, NEW/OLD pseudo-entries,
  * etc.
  *
+ * If logical_order is true, the expansion is done using the relation logical
+ * order (attnum) rather than physical order.
+ *
  * The referenced relations/columns are marked as requiring SELECT access.
  */
 static List *
-ExpandAllTables(ParseState *pstate, int location)
+ExpandAllTables(ParseState *pstate, bool logical_order, int location)
 {
 	List	   *target = NIL;
 	bool		found_table = false;
@@ -1309,6 +1329,7 @@ ExpandAllTables(ParseState *pstate, int location)
 											   nsitem,
 											   0,
 											   true,
+											   logical_order,
 											   location));
 	}
 
@@ -1339,7 +1360,8 @@ ExpandAllTables(ParseState *pstate, int location)
  */
 static List *
 ExpandIndirectionStar(ParseState *pstate, A_Indirection *ind,
-					  bool make_target_entry, ParseExprKind exprKind)
+					  bool make_target_entry, bool logical_order,
+					  ParseExprKind exprKind)
 {
 	Node	   *expr;
 
@@ -1352,7 +1374,7 @@ ExpandIndirectionStar(ParseState *pstate, A_Indirection *ind,
 	expr = transformExpr(pstate, (Node *) ind, exprKind);
 
 	/* Expand the rowtype expression into individual fields */
-	return ExpandRowReference(pstate, expr, make_target_entry);
+	return ExpandRowReference(pstate, expr, make_target_entry, logical_order);
 }
 
 /*
@@ -1366,12 +1388,14 @@ ExpandIndirectionStar(ParseState *pstate, A_Indirection *ind,
  */
 static List *
 ExpandSingleTable(ParseState *pstate, ParseNamespaceItem *nsitem,
-				  int sublevels_up, int location, bool make_target_entry)
+				  int sublevels_up, int location, bool make_target_entry,
+				  bool logical_order)
 {
 	if (make_target_entry)
 	{
 		/* expandNSItemAttrs handles permissions marking */
-		return expandNSItemAttrs(pstate, nsitem, sublevels_up, true, location);
+		return expandNSItemAttrs(pstate, nsitem, sublevels_up, true,
+								 logical_order, location);
 	}
 	else
 	{
@@ -1413,9 +1437,10 @@ ExpandSingleTable(ParseState *pstate, ParseNamespaceItem *nsitem,
  */
 static List *
 ExpandRowReference(ParseState *pstate, Node *expr,
-				   bool make_target_entry)
+				   bool make_target_entry, bool logical_order)
 {
 	List	   *result = NIL;
+	ListCell   *lc;
 	TupleDesc	tupleDesc;
 	int			numAttrs;
 	int			i;
@@ -1436,7 +1461,9 @@ ExpandRowReference(ParseState *pstate, Node *expr,
 		ParseNamespaceItem *nsitem;
 
 		nsitem = GetNSItemByRangeTablePosn(pstate, var->varno, var->varlevelsup);
-		return ExpandSingleTable(pstate, nsitem, var->varlevelsup, var->location, make_target_entry);
+		return ExpandSingleTable(pstate, nsitem, var->varlevelsup,
+								 var->location, make_target_entry,
+								 logical_order);
 	}
 
 	/*
@@ -1472,6 +1499,7 @@ ExpandRowReference(ParseState *pstate, Node *expr,
 		fselect = makeNode(FieldSelect);
 		fselect->arg = (Expr *) copyObject(expr);
 		fselect->fieldnum = i + 1;
+		fselect->fieldlognum = att->attnum;
 		fselect->resulttype = att->atttypid;
 		fselect->resulttypmod = att->atttypmod;
 		/* save attribute's collation for parse_collate.c */
@@ -1482,14 +1510,36 @@ ExpandRowReference(ParseState *pstate, Node *expr,
 			/* add TargetEntry decoration */
 			TargetEntry *te;
 
+			/*
+			 * We don't assign the resno here, as we may have to sort the list
+			 * by logical attnum first.
+			 */
 			te = makeTargetEntry((Expr *) fselect,
-								 (AttrNumber) pstate->p_next_resno++,
+								 0,
 								 pstrdup(NameStr(att->attname)),
 								 false);
 			result = lappend(result, te);
 		}
 		else
 			result = lappend(result, fselect);
+	}
+
+	/*
+	 * If caller didn't ask to make target entries, we can return the list now
+	 */
+	if (!make_target_entry)
+		return result;
+
+	/* If caller asked for logical order, sort the target entries */
+	if (logical_order)
+		list_sort(result, cmp_targetentry_logical_order);
+
+	/* And assign the resnos now that the list is in the final order */
+	foreach(lc, result)
+	{
+		TargetEntry *te = (TargetEntry *) lfirst(lc);
+
+		te->resno = (AttrNumber) pstate->p_next_resno++;
 	}
 
 	return result;

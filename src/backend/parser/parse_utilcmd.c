@@ -1001,7 +1001,13 @@ transformTableLikeClause(CreateStmtContext *cxt, TableLikeClause *table_like_cla
 						   RelationGetRelationName(relation));
 	}
 
-	tupleDesc = RelationGetDescr(relation);
+	/*
+	 * The expansion has to be done in the logical order (attnum) rather than
+	 * the physical order, and the code also needs to access the constraints so
+	 * make a full copy of the tuple desc.
+	 */
+	tupleDesc = CreateTupleDescCopyConstr(RelationGetDescr(relation));
+	TupleDescSortByAttnum(tupleDesc);
 
 	/*
 	 * Insert the copied attributes into the cxt for the new table definition.
@@ -1110,6 +1116,7 @@ transformTableLikeClause(CreateStmtContext *cxt, TableLikeClause *table_like_cla
 			cxt->alist = lappend(cxt->alist, stmt);
 		}
 	}
+	pfree(tupleDesc);
 
 	/*
 	 * We cannot yet deal with defaults, CHECK constraints, or indexes, since

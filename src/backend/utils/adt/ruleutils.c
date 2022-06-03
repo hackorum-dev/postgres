@@ -261,6 +261,10 @@ typedef struct
 	int			num_new_cols;	/* length of new_colnames[] array */
 	char	  **new_colnames;	/* array of C strings */
 	bool	   *is_new_col;		/* array of bool flags */
+	AttrNumber *mappings;		/* attsnum / offset in new_colnames mappings,
+								   can be NULL. attsnum are 0-based, and offset
+								   1-based (to rely on AttributeNumberIsValid).
+								   Array size if num_cols. */
 
 	/* This flag tells whether we should actually print a column alias list */
 	bool		printaliases;
@@ -4320,6 +4324,7 @@ set_relation_column_names(deparse_namespace *dpns, RangeTblEntry *rte,
 {
 	int			ncolumns;
 	char	  **real_colnames;
+	AttrNumber *mappings;
 	bool		changed_any;
 	int			noldcolumns;
 	int			i;
@@ -4341,15 +4346,23 @@ set_relation_column_names(deparse_namespace *dpns, RangeTblEntry *rte,
 
 		ncolumns = tupdesc->natts;
 		real_colnames = (char **) palloc(ncolumns * sizeof(char *));
+		mappings = (AttrNumber *) palloc(ncolumns * sizeof(AttrNumber));
 
+		j = 1;
 		for (i = 0; i < ncolumns; i++)
 		{
 			Form_pg_attribute attr = TupleDescAttr(tupdesc, i);
 
 			if (attr->attisdropped)
+			{
 				real_colnames[i] = NULL;
+				mappings[attr->attnum - 1] = InvalidAttrNumber;
+			}
 			else
+			{
 				real_colnames[i] = pstrdup(NameStr(attr->attname));
+				mappings[attr->attnum - 1] = j++;
+			}
 		}
 		relation_close(rel, AccessShareLock);
 	}
@@ -4360,8 +4373,10 @@ set_relation_column_names(deparse_namespace *dpns, RangeTblEntry *rte,
 
 		ncolumns = list_length(rte->eref->colnames);
 		real_colnames = (char **) palloc(ncolumns * sizeof(char *));
+		mappings = (AttrNumber *) palloc(ncolumns * sizeof(AttrNumber));
 
 		i = 0;
+		j = 1;
 		foreach(lc, rte->eref->colnames)
 		{
 			/*
@@ -4370,9 +4385,24 @@ set_relation_column_names(deparse_namespace *dpns, RangeTblEntry *rte,
 			 * treat it as dropped.
 			 */
 			char	   *cname = strVal(lfirst(lc));
+			AttrNumber	mapping;
+
+			/*
+			 * Rte contains 1-based positions (0 is !AttributeNumberIsValid),
+			 * so shift it to map a position in the colname array
+			 */
+			if (rte->mappings != NULL)
+				mapping = rte->mappings[i] - 1;
+			else
+				mapping = i;
 
 			if (cname[0] == '\0')
+			{
 				cname = NULL;
+				mappings[mapping] = InvalidAttrNumber;
+			}
+			else
+				mappings[mapping] = j++;
 			real_colnames[i] = cname;
 			i++;
 		}
@@ -4398,6 +4428,7 @@ set_relation_column_names(deparse_namespace *dpns, RangeTblEntry *rte,
 	 */
 	colinfo->new_colnames = (char **) palloc(ncolumns * sizeof(char *));
 	colinfo->is_new_col = (bool *) palloc(ncolumns * sizeof(bool));
+	colinfo->mappings = mappings;
 
 	/*
 	 * Scan the columns, select a unique alias for each one, and store it in
@@ -4589,6 +4620,7 @@ set_join_column_names(deparse_namespace *dpns, RangeTblEntry *rte,
 	colinfo->num_new_cols = nnewcolumns;
 	colinfo->new_colnames = (char **) palloc0(nnewcolumns * sizeof(char *));
 	colinfo->is_new_col = (bool *) palloc0(nnewcolumns * sizeof(bool));
+	colinfo->mappings = NULL;
 
 	/*
 	 * Generating the new_colnames array is a bit tricky since any new columns
@@ -4647,7 +4679,8 @@ set_join_column_names(deparse_namespace *dpns, RangeTblEntry *rte,
 				   colinfo->colnames[i] == NULL)
 				i++;
 			Assert(i < colinfo->num_cols);
-			Assert(ic == colinfo->leftattnos[i]);
+			//FIXME not guaranteed anymore if logical order is different
+			//Assert(ic == colinfo->leftattnos[i]);
 			/* Use the already-assigned name of this column */
 			colinfo->new_colnames[j] = colinfo->colnames[i];
 			i++;
@@ -4696,7 +4729,8 @@ set_join_column_names(deparse_namespace *dpns, RangeTblEntry *rte,
 				   colinfo->colnames[i] == NULL)
 				i++;
 			Assert(i < colinfo->num_cols);
-			Assert(ic == colinfo->rightattnos[i]);
+			//FIXME not guaranteed anymore if logical order is different
+			//Assert(ic == colinfo->rightattnos[i]);
 			/* Use the already-assigned name of this column */
 			colinfo->new_colnames[j] = colinfo->colnames[i];
 			i++;
@@ -11889,16 +11923,45 @@ static void
 get_column_alias_list(deparse_columns *colinfo, deparse_context *context)
 {
 	StringInfo	buf = context->buf;
-	int			i;
+	int			i, max;
 	bool		first = true;
 
 	/* Don't print aliases if not needed */
 	if (!colinfo->printaliases)
 		return;
 
-	for (i = 0; i < colinfo->num_new_cols; i++)
+	/*
+	 * Use mappings is those were computed, which length is num_cols, otherwise
+	 * loop on the new_colnames, size num_new_cols.
+	 */
+	if (colinfo->mappings)
+		max = colinfo->num_cols;
+	else
+		max = colinfo->num_new_cols;
+
+	for (i = 0; i < max; i++)
 	{
-		char	   *colname = colinfo->new_colnames[i];
+		char	   *colname;
+		AttrNumber mapping;
+
+		/*
+		 * If no mapping simply use the current loop counter, otherwise fetch
+		 * the correct mapping in new_colnames.
+		 */
+		if (!colinfo->mappings)
+		{
+			mapping = i;
+		}
+		else
+		{
+			/* Skip dropped attributes */
+			if (!AttributeNumberIsValid(colinfo->mappings[i]))
+				continue;
+			mapping = colinfo->mappings[i] - 1;
+		}
+
+		colname = colinfo->new_colnames[mapping];
+		Assert(colname[0] != '\0');
 
 		if (first)
 		{

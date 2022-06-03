@@ -60,12 +60,15 @@ convert_tuples_by_position(TupleDesc indesc,
 						   TupleDesc outdesc,
 						   const char *msg)
 {
+	TupleDesc sorted_outdesc = CreateTupleDescCopy(outdesc);
 	TupleConversionMap *map;
 	int			n;
 	AttrMap    *attrMap;
 
-	/* Verify compatibility and prepare attribute-number map */
-	attrMap = build_attrmap_by_position(indesc, outdesc, msg);
+	/* Verify compatibility and prepare attribute-number map. */
+	TupleDescSortByAttnum(sorted_outdesc);
+	attrMap = build_attrmap_by_position(indesc, sorted_outdesc, msg);
+	pfree(sorted_outdesc);
 
 	if (attrMap == NULL)
 	{

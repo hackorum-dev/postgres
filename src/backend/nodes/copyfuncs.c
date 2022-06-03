@@ -1455,6 +1455,7 @@ _copyVar(const Var *from)
 
 	COPY_SCALAR_FIELD(varno);
 	COPY_SCALAR_FIELD(varattno);
+	COPY_SCALAR_FIELD(varnum);
 	COPY_SCALAR_FIELD(vartype);
 	COPY_SCALAR_FIELD(vartypmod);
 	COPY_SCALAR_FIELD(varcollid);
@@ -1814,6 +1815,7 @@ _copyFieldSelect(const FieldSelect *from)
 
 	COPY_NODE_FIELD(arg);
 	COPY_SCALAR_FIELD(fieldnum);
+	COPY_SCALAR_FIELD(fieldlognum);
 	COPY_SCALAR_FIELD(resulttype);
 	COPY_SCALAR_FIELD(resulttypmod);
 	COPY_SCALAR_FIELD(resultcollid);
@@ -2959,6 +2961,8 @@ _copyRangeTblEntry(const RangeTblEntry *from)
 	COPY_NODE_FIELD(join_using_alias);
 	COPY_NODE_FIELD(functions);
 	COPY_SCALAR_FIELD(funcordinality);
+	COPY_SCALAR_FIELD(nummappings);
+	COPY_POINTER_FIELD(mappings, from->nummappings * sizeof(AttrNumber));
 	COPY_NODE_FIELD(tablefunc);
 	COPY_NODE_FIELD(values_lists);
 	COPY_STRING_FIELD(ctename);

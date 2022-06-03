@@ -1057,6 +1057,49 @@ split_pathtarget_at_srfs(PlannerInfo *root,
 }
 
 /*
+ * Comparator for sorting list of TargetEntries by their logical order.
+ *
+ * The target entry's expr should be either a Var or a FieldSelect.
+ */
+int
+cmp_targetentry_logical_order(const ListCell *a, const ListCell *b)
+{
+	TargetEntry *ta = lfirst_node(TargetEntry, a);
+	TargetEntry *tb = lfirst_node(TargetEntry, b);
+
+	if (IsA(ta->expr, Var))
+	{
+		Var *va;
+		Var *vb;
+
+		Assert(IsA(tb->expr, Var));
+
+		va = (Var *) ta->expr;
+		vb = (Var *) tb->expr;
+
+		if (va->varno != vb->varno)
+			return (va->varno > vb->varno) ? 1 : (va->varno == vb->varno) ? 0 : -1;
+		return (va->varnum > vb->varnum) ? 1 : (va->varnum == vb->varnum) ? 0 : -1;
+	}
+	else
+	{
+		FieldSelect *fa;
+		FieldSelect *fb;
+
+		Assert(IsA(ta->expr, FieldSelect) && IsA(tb->expr, FieldSelect));
+
+		fa = (FieldSelect *) ta->expr;
+		fb = (FieldSelect *) tb->expr;
+
+		Assert(AttributeNumberIsValid(fa->fieldlognum) &&
+			   AttributeNumberIsValid(fb->fieldlognum));
+
+		return (fa->fieldlognum > fb->fieldlognum) ? 1 : (fa->fieldlognum == fb->fieldlognum) ? 0 : -1;
+	}
+
+}
+
+/*
  * Recursively examine expressions for split_pathtarget_at_srfs.
  *
  * Note we make no effort here to prevent duplicate entries in the output

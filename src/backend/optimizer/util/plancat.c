@@ -41,6 +41,7 @@
 #include "optimizer/optimizer.h"
 #include "optimizer/plancat.h"
 #include "optimizer/prep.h"
+#include "optimizer/tlist.h"
 #include "parser/parse_relation.h"
 #include "parser/parsetree.h"
 #include "partitioning/partdesc.h"
@@ -1698,6 +1699,7 @@ build_physical_tlist(PlannerInfo *root, RelOptInfo *rel)
 							  att_tup->atttypmod,
 							  att_tup->attcollation,
 							  0);
+				var->varnum = att_tup->attnum;
 
 				tlist = lappend(tlist,
 								makeTargetEntry((Expr *) var,

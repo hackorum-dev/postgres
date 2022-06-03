@@ -199,6 +199,7 @@ typedef struct Var
 								 * table, or INNER_VAR/OUTER_VAR/etc */
 	AttrNumber	varattno;		/* attribute number of this var, or zero for
 								 * all attrs ("whole-row Var") */
+	AttrNumber	varnum;			/* logical attribute number of this var FIXME */
 	Oid			vartype;		/* pg_type OID for the type of this var */
 	int32		vartypmod;		/* pg_attribute typmod value */
 	Oid			varcollid;		/* OID of collation, or InvalidOid if none */
@@ -815,7 +816,8 @@ typedef struct FieldSelect
 {
 	Expr		xpr;
 	Expr	   *arg;			/* input expression */
-	AttrNumber	fieldnum;		/* attribute number of field to extract */
+	AttrNumber	fieldnum;		/* physical attribute number of field to extract */
+	AttrNumber	fieldlognum;	/* logical attribute number of field (can be 0) */
 	Oid			resulttype;		/* type of the field (result type of this
 								 * node) */
 	int32		resulttypmod;	/* output typmod (usually -1) */

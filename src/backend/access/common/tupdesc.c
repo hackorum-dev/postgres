@@ -128,6 +128,9 @@ CreateTupleDescCopy(TupleDesc tupdesc)
 	{
 		Form_pg_attribute att = TupleDescAttr(desc, i);
 
+		/* Caller should have provided it */
+		Assert(AttributeNumberIsValid(att->attnum));
+
 		att->attnotnull = false;
 		att->atthasdef = false;
 		att->atthasmissing = false;
@@ -284,6 +287,8 @@ TupleDescCopyEntry(TupleDesc dst, AttrNumber dstAttno,
 
 	/*
 	 * Aside from updating the attno, we'd better reset attcacheoff.
+	 *
+	 * The attnum should however be preserved.
 	 *
 	 * XXX Actually, to be entirely safe we'd need to reset the attcacheoff of
 	 * all following columns in dst as well.  Current usage scenarios don't
@@ -620,6 +625,8 @@ TupleDescInitEntry(TupleDesc desc,
 	att->atttypmod = typmod;
 
 	att->attphysnum = attributeNumber;
+	/* FIXME should we put 0 and let caller always set it as needed? */
+	att->attnum = attributeNumber;
 	att->attndims = attdim;
 
 	att->attnotnull = false;
@@ -765,6 +772,40 @@ TupleDescInitEntryCollation(TupleDesc desc,
 	TupleDescAttr(desc, attributeNumber - 1)->attcollation = collationid;
 }
 
+/*
+ * cmp_attnum
+ *
+ * Comparator for sorting TupleDesc attributes by they logical position
+ * (attnum).
+ */
+static int
+cmp_attnum(const void *a, const void *b)
+{
+	FormData_pg_attribute *atta = (FormData_pg_attribute *) a;
+	FormData_pg_attribute *attb = (FormData_pg_attribute *) b;
+
+	return (atta->attnum > attb->attnum) ? 1
+		: (atta->attnum == attb->attnum) ? 0
+		: -1;
+}
+
+/*
+ * TupleDescSortByAttnum
+ *
+ * Sort the attributes by their logical position (attnum) rather than their
+ * physical position (attphysnum).
+ * This function will modify the given TupleDesc, so caller should make a copy
+ * first if needed.
+ */
+void
+TupleDescSortByAttnum(TupleDesc desc)
+{
+	if (desc->natts <= 1)
+		return;
+
+	qsort(desc->attrs, desc->natts, sizeof(FormData_pg_attribute), cmp_attnum);
+}
+
 
 /*
  * BuildDescForRelation
@@ -828,6 +869,8 @@ BuildDescForRelation(List *schema)
 		TupleDescInitEntry(desc, attphysnum, attname,
 						   atttypid, atttypmod, attdim);
 		att = TupleDescAttr(desc, attphysnum - 1);
+		/* FIXME - change me when there's a syntax to specify it */
+		att->attnum = attphysnum;
 
 		/* Override TupleDescInitEntry's settings as requested */
 		TupleDescInitEntryCollation(desc, attphysnum, attcollation);

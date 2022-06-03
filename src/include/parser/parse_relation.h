@@ -114,7 +114,7 @@ extern List *expandNSItemVars(ParseNamespaceItem *nsitem,
 							  List **colnames);
 extern List *expandNSItemAttrs(ParseState *pstate, ParseNamespaceItem *nsitem,
 							   int sublevels_up, bool require_col_privs,
-							   int location);
+							   bool logical_order, int location);
 extern int	attnameAttNum(Relation rd, const char *attname, bool sysColOK);
 extern const NameData *attnumAttName(Relation rd, int attid);
 extern Oid	attnumTypeId(Relation rd, int attid);

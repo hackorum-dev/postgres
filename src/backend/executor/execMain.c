@@ -2245,6 +2245,10 @@ ExecBuildSlotValueDescription(Oid reloid,
 	/* Make sure the tuple is fully deconstructed */
 	slot_getallattrs(slot);
 
+	/* Sort the tuple desc to emit value in logical order */
+	tupdesc = CreateTupleDescCopy(tupdesc);
+	TupleDescSortByAttnum(tupdesc);
+
 	for (i = 0; i < tupdesc->natts; i++)
 	{
 		bool		column_perm = false;
@@ -2282,7 +2286,7 @@ ExecBuildSlotValueDescription(Oid reloid,
 
 		if (table_perm || column_perm)
 		{
-			if (slot->tts_isnull[i])
+			if (slot->tts_isnull[att->attphysnum - 1])
 				val = "null";
 			else
 			{
@@ -2291,7 +2295,8 @@ ExecBuildSlotValueDescription(Oid reloid,
 
 				getTypeOutputInfo(att->atttypid,
 								  &foutoid, &typisvarlena);
-				val = OidOutputFunctionCall(foutoid, slot->tts_values[i]);
+				val = OidOutputFunctionCall(foutoid,
+										    slot->tts_values[att->attphysnum - 1]);
 			}
 
 			if (write_comma)

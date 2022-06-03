@@ -1109,6 +1109,8 @@ typedef struct RangeTblEntry
 	 */
 	List	   *functions;		/* list of RangeTblFunction nodes */
 	bool		funcordinality; /* is this called WITH ORDINALITY? */
+	int			nummappings;
+	AttrNumber *mappings; /* attphysnum / attnum mappings */
 
 	/*
 	 * Fields valid for a TableFunc RTE (else NULL):

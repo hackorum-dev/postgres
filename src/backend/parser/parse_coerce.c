@@ -1018,12 +1018,12 @@ coerce_record_to_complex(ParseState *pstate, Node *node,
 	RowExpr    *rowexpr;
 	Oid			baseTypeId;
 	int32		baseTypeMod = -1;
-	TupleDesc	tupdesc;
+	TupleDesc	tupdesc, sorted_tupdesc;
 	List	   *args = NIL;
 	List	   *newargs;
 	int			i;
 	int			ucolno;
-	ListCell   *arg;
+	AttrNumber *mappings;
 
 	if (node && IsA(node, RowExpr))
 	{
@@ -1059,10 +1059,46 @@ coerce_record_to_complex(ParseState *pstate, Node *node,
 	baseTypeId = getBaseTypeAndTypmod(targetTypeId, &baseTypeMod);
 	tupdesc = lookup_rowtype_tupdesc(baseTypeId, baseTypeMod);
 
+	/*
+	 * Generated an "attnum / position in args" mappings, since there's no
+	 * guarantee of a 1/1 mapping due to dropped columns.
+	 */
+	sorted_tupdesc = CreateTupleDescCopy(tupdesc);
+	TupleDescSortByAttnum(sorted_tupdesc);
+	mappings = palloc0(sizeof(AttrNumber) * (sorted_tupdesc->natts + 1));
+	/* use a 1-based position to  be able to rely on AttributeNumberIsValid. */
+	ucolno = 1;
+	for (i = 0; i < sorted_tupdesc->natts; i++)
+	{
+		Form_pg_attribute attr = TupleDescAttr(tupdesc, i);
+
+		if (attr->attisdropped)
+			continue;
+
+		mappings[attr->attphysnum] = ucolno++;
+	}
+	pfree(sorted_tupdesc);
+
+	if (list_length(args) < (ucolno - 1))
+		ereport(ERROR,
+				(errcode(ERRCODE_CANNOT_COERCE),
+				 errmsg("cannot cast type %s to %s",
+						format_type_be(RECORDOID),
+						format_type_be(targetTypeId)),
+				 errdetail("Input has too few columns."),
+				 parser_coercion_errposition(pstate, location, node)));
+	else if (list_length(args) > (ucolno - 1))
+		ereport(ERROR,
+				(errcode(ERRCODE_CANNOT_COERCE),
+				 errmsg("cannot cast type %s to %s",
+						format_type_be(RECORDOID),
+						format_type_be(targetTypeId)),
+				 errdetail("Input has too many columns."),
+				 parser_coercion_errposition(pstate, location, node)));
+
 	/* Process the fields */
 	newargs = NIL;
 	ucolno = 1;
-	arg = list_head(args);
 	for (i = 0; i < tupdesc->natts; i++)
 	{
 		Node	   *expr;
@@ -1082,15 +1118,8 @@ coerce_record_to_complex(ParseState *pstate, Node *node,
 			continue;
 		}
 
-		if (arg == NULL)
-			ereport(ERROR,
-					(errcode(ERRCODE_CANNOT_COERCE),
-					 errmsg("cannot cast type %s to %s",
-							format_type_be(RECORDOID),
-							format_type_be(targetTypeId)),
-					 errdetail("Input has too few columns."),
-					 parser_coercion_errposition(pstate, location, node)));
-		expr = (Node *) lfirst(arg);
+		Assert(AttributeNumberIsValid(mappings[attr->attphysnum]));
+		expr = list_nth(args, mappings[attr->attnum] - 1);
 		exprtype = exprType(expr);
 
 		cexpr = coerce_to_target_type(pstate,
@@ -1113,16 +1142,7 @@ coerce_record_to_complex(ParseState *pstate, Node *node,
 					 parser_coercion_errposition(pstate, location, expr)));
 		newargs = lappend(newargs, cexpr);
 		ucolno++;
-		arg = lnext(args, arg);
 	}
-	if (arg != NULL)
-		ereport(ERROR,
-				(errcode(ERRCODE_CANNOT_COERCE),
-				 errmsg("cannot cast type %s to %s",
-						format_type_be(RECORDOID),
-						format_type_be(targetTypeId)),
-				 errdetail("Input has too many columns."),
-				 parser_coercion_errposition(pstate, location, node)));
 
 	ReleaseTupleDesc(tupdesc);
 

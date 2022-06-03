@@ -65,6 +65,7 @@ DoCopy(ParseState *pstate, const CopyStmt *stmt,
 	   int stmt_location, int stmt_len,
 	   uint64 *processed)
 {
+	List	   *attlist = stmt->attlist;
 	bool		is_from = stmt->is_from;
 	bool		pipe = (stmt->filename == NULL);
 	Relation	rel;
@@ -147,7 +148,34 @@ DoCopy(ParseState *pstate, const CopyStmt *stmt,
 		}
 
 		tupDesc = RelationGetDescr(rel);
-		attnums = CopyGetAttnums(tupDesc, rel, stmt->attlist);
+
+		/* If no column list has been provided, generate one using the logical
+		 * attribute numbers rather than physical order.
+		 * We don't include generated columns in the generated full list and we
+		 * don't allow them to be specified explicitly.
+		 */
+		if (attlist == NIL)
+		{
+			TupleDesc tmp = CreateTupleDescCopyConstr(tupDesc);
+			TupleDescSortByAttnum(tmp);
+
+			for (int i = 0; i < tmp->natts; i++)
+			{
+				Form_pg_attribute attr = TupleDescAttr(tmp, i);
+
+				if (attr->attisdropped)
+					continue;
+				if (attr->attgenerated)
+					continue;
+
+				attlist = lappend(attlist,
+										makeString(pstrdup(NameStr(attr->attname))));
+			}
+
+			pfree(tmp);
+		}
+
+		attnums = CopyGetAttnums(tupDesc, rel, attlist);
 		foreach(cur, attnums)
 		{
 			int			attno = lfirst_int(cur) -
@@ -199,8 +227,10 @@ DoCopy(ParseState *pstate, const CopyStmt *stmt,
 			 * In the case that columns are specified in the attribute list,
 			 * create a ColumnRef and ResTarget for each column and add them
 			 * to the target list for the resulting SELECT statement.
+			 *
+			 * FIXME - should be dead code
 			 */
-			if (!stmt->attlist)
+			if (!attlist)
 			{
 				cr = makeNode(ColumnRef);
 				cr->fields = list_make1(makeNode(A_Star));
@@ -218,7 +248,7 @@ DoCopy(ParseState *pstate, const CopyStmt *stmt,
 			{
 				ListCell   *lc;
 
-				foreach(lc, stmt->attlist)
+				foreach(lc, attlist)
 				{
 					/*
 					 * Build the ColumnRef for each column.  The ColumnRef
@@ -294,7 +324,7 @@ DoCopy(ParseState *pstate, const CopyStmt *stmt,
 
 		cstate = BeginCopyFrom(pstate, rel, whereClause,
 							   stmt->filename, stmt->is_program,
-							   NULL, stmt->attlist, stmt->options);
+							   NULL, attlist, stmt->options);
 		*processed = CopyFrom(cstate);	/* copy from file to database */
 		EndCopyFrom(cstate);
 	}
@@ -304,7 +334,7 @@ DoCopy(ParseState *pstate, const CopyStmt *stmt,
 
 		cstate = BeginCopyTo(pstate, rel, query, relid,
 							 stmt->filename, stmt->is_program,
-							 stmt->attlist, stmt->options);
+							 attlist, stmt->options);
 		*processed = DoCopyTo(cstate);	/* copy from database to file */
 		EndCopyTo(cstate);
 	}
@@ -724,11 +754,13 @@ CopyGetAttnums(TupleDesc tupDesc, Relation rel, List *attnamelist)
 
 		for (i = 0; i < attr_count; i++)
 		{
-			if (TupleDescAttr(tupDesc, i)->attisdropped)
+			Form_pg_attribute attr = TupleDescAttr(tupDesc, i);
+
+			if (attr->attisdropped)
 				continue;
-			if (TupleDescAttr(tupDesc, i)->attgenerated)
+			if (attr->attgenerated)
 				continue;
-			attnums = lappend_int(attnums, i + 1);
+			attnums = lappend_int(attnums, attr->attphysnum);
 		}
 	}
 	else

@@ -78,7 +78,7 @@ record_in(PG_FUNCTION_ARGS)
 	Oid			tupType = PG_GETARG_OID(1);
 	int32		tupTypmod = PG_GETARG_INT32(2);
 	HeapTupleHeader result;
-	TupleDesc	tupdesc;
+	TupleDesc	tupdesc, sorted_tupdesc;
 	HeapTuple	tuple;
 	RecordIOData *my_extra;
 	bool		needComma = false;
@@ -110,7 +110,9 @@ record_in(PG_FUNCTION_ARGS)
 	 * preserved by binary upgrades.
 	 */
 	tupdesc = lookup_rowtype_tupdesc(tupType, tupTypmod);
-	ncolumns = tupdesc->natts;
+	sorted_tupdesc = CreateTupleDescCopy(tupdesc);
+	TupleDescSortByAttnum(sorted_tupdesc);
+	ncolumns = sorted_tupdesc->natts;
 
 	/*
 	 * We arrange to look up the needed I/O info just once per series of
@@ -161,16 +163,16 @@ record_in(PG_FUNCTION_ARGS)
 
 	for (i = 0; i < ncolumns; i++)
 	{
-		Form_pg_attribute att = TupleDescAttr(tupdesc, i);
-		ColumnIOData *column_info = &my_extra->columns[i];
+		Form_pg_attribute att = TupleDescAttr(sorted_tupdesc, i);
+		ColumnIOData *column_info = &my_extra->columns[att->attphysnum - 1];
 		Oid			column_type = att->atttypid;
 		char	   *column_data;
 
 		/* Ignore dropped columns in datatype, but fill with nulls */
 		if (att->attisdropped)
 		{
-			values[i] = (Datum) 0;
-			nulls[i] = true;
+			values[att->attphysnum - 1] = (Datum) 0;
+			nulls[att->attphysnum - 1] = true;
 			continue;
 		}
 
@@ -191,7 +193,7 @@ record_in(PG_FUNCTION_ARGS)
 		if (*ptr == ',' || *ptr == ')')
 		{
 			column_data = NULL;
-			nulls[i] = true;
+			nulls[att->attphysnum - 1] = true;
 		}
 		else
 		{
@@ -236,7 +238,7 @@ record_in(PG_FUNCTION_ARGS)
 			}
 
 			column_data = buf.data;
-			nulls[i] = false;
+			nulls[att->attphysnum - 1] = false;
 		}
 
 		/*
@@ -252,10 +254,10 @@ record_in(PG_FUNCTION_ARGS)
 			column_info->column_type = column_type;
 		}
 
-		values[i] = InputFunctionCall(&column_info->proc,
-									  column_data,
-									  column_info->typioparam,
-									  att->atttypmod);
+		values[att->attphysnum - 1] = InputFunctionCall(&column_info->proc,
+														column_data,
+														column_info->typioparam,
+														att->atttypmod);
 
 		/*
 		 * Prep for next column
@@ -291,6 +293,7 @@ record_in(PG_FUNCTION_ARGS)
 	pfree(buf.data);
 	pfree(values);
 	pfree(nulls);
+	pfree(sorted_tupdesc);
 	ReleaseTupleDesc(tupdesc);
 
 	PG_RETURN_HEAPTUPLEHEADER(result);
@@ -305,7 +308,7 @@ record_out(PG_FUNCTION_ARGS)
 	HeapTupleHeader rec = PG_GETARG_HEAPTUPLEHEADER(0);
 	Oid			tupType;
 	int32		tupTypmod;
-	TupleDesc	tupdesc;
+	TupleDesc	tupdesc, sorted_tupdesc;
 	HeapTupleData tuple;
 	RecordIOData *my_extra;
 	bool		needComma = false;
@@ -321,7 +324,9 @@ record_out(PG_FUNCTION_ARGS)
 	tupType = HeapTupleHeaderGetTypeId(rec);
 	tupTypmod = HeapTupleHeaderGetTypMod(rec);
 	tupdesc = lookup_rowtype_tupdesc(tupType, tupTypmod);
-	ncolumns = tupdesc->natts;
+	sorted_tupdesc = CreateTupleDescCopy(tupdesc);
+	TupleDescSortByAttnum(sorted_tupdesc);
+	ncolumns = sorted_tupdesc->natts;
 
 	/* Build a temporary HeapTuple control structure */
 	tuple.t_len = HeapTupleHeaderGetDatumLength(rec);
@@ -370,8 +375,8 @@ record_out(PG_FUNCTION_ARGS)
 
 	for (i = 0; i < ncolumns; i++)
 	{
-		Form_pg_attribute att = TupleDescAttr(tupdesc, i);
-		ColumnIOData *column_info = &my_extra->columns[i];
+		Form_pg_attribute att = TupleDescAttr(sorted_tupdesc, i);
+		ColumnIOData *column_info = &my_extra->columns[att->attphysnum - 1];
 		Oid			column_type = att->atttypid;
 		Datum		attr;
 		char	   *value;
@@ -386,7 +391,7 @@ record_out(PG_FUNCTION_ARGS)
 			appendStringInfoChar(&buf, ',');
 		needComma = true;
 
-		if (nulls[i])
+		if (nulls[att->attphysnum - 1])
 		{
 			/* emit nothing... */
 			continue;
@@ -405,7 +410,7 @@ record_out(PG_FUNCTION_ARGS)
 			column_info->column_type = column_type;
 		}
 
-		attr = values[i];
+		attr = values[att->attphysnum - 1];
 		value = OutputFunctionCall(&column_info->proc, attr);
 
 		/* Detect whether we need double quotes for this value */
@@ -442,6 +447,7 @@ record_out(PG_FUNCTION_ARGS)
 
 	pfree(values);
 	pfree(nulls);
+	pfree(sorted_tupdesc);
 	ReleaseTupleDesc(tupdesc);
 
 	PG_RETURN_CSTRING(buf.data);

@@ -2504,7 +2504,14 @@ MergeAttributes(List *schema, List *supers, char relpersistence,
 			aclcheck_error(ACLCHECK_NOT_OWNER, get_relkind_objtype(relation->rd_rel->relkind),
 						   RelationGetRelationName(relation));
 
-		tupleDesc = RelationGetDescr(relation);
+		/*
+		 * Make a copy of the tupledesc and sort it by logical attnum, as this
+		 * is the expected order for inherited relations.
+		 * FIXME - should keep the original attphysnum and compute an attnum
+		 * instead?
+		 */
+		tupleDesc = CreateTupleDescCopyConstr(RelationGetDescr(relation));
+		TupleDescSortByAttnum(tupleDesc);
 		constr = tupleDesc->constr;
 
 		/*
@@ -6815,6 +6822,8 @@ ATExecAddColumn(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	attribute.attstattarget = (newattnum > 0) ? -1 : 0;
 	attribute.attlen = tform->typlen;
 	attribute.attphysnum = newattnum;
+	/* FIXME - change me when there's a syntax to specify it */
+	attribute.attnum = newattnum;
 	attribute.attndims = list_length(colDef->typeName->arrayBounds);
 	attribute.atttypmod = typmod;
 	attribute.attbyval = tform->typbyval;

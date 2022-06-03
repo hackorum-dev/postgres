@@ -53,6 +53,7 @@
 
 
 static int	extractRemainingColumns(ParseNamespaceColumn *src_nscolumns,
+									AttrNumber *mappings,
 									List *src_colnames,
 									List **src_colnos,
 									List **res_colnames, List **res_colvars,
@@ -250,6 +251,7 @@ setTargetTable(ParseState *pstate, RangeVar *relation,
  */
 static int
 extractRemainingColumns(ParseNamespaceColumn *src_nscolumns,
+						AttrNumber *mappings,
 						List *src_colnames,
 						List **src_colnos,
 						List **res_colnames, List **res_colvars,
@@ -273,11 +275,18 @@ extractRemainingColumns(ParseNamespaceColumn *src_nscolumns,
 	}
 
 	attphysnum = 0;
-	foreach(lc, src_colnames)
+	for (int i = 1; i <= list_length(src_colnames); i++)
 	{
-		char	   *colname = strVal(lfirst(lc));
+		char	   *colname;
 
-		attphysnum++;
+		if (!AttributeNumberIsValid(mappings[i]))
+			continue;
+
+		attphysnum = mappings[i];
+		lc = list_nth_cell(src_colnames, attphysnum - 1);
+		colname = strVal(lfirst(lc));
+		Assert(colname[0] != '\0');
+
 		/* Non-dropped and not already merged? */
 		if (colname[0] != '\0' && !bms_is_member(attphysnum, prevcols))
 		{
@@ -1163,6 +1172,7 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 		ParseNamespaceColumn *l_nscolumns,
 				   *r_nscolumns,
 				   *res_nscolumns;
+		AttrNumber *l_mappings, *r_mappings;
 		int			res_colindex;
 		bool		lateral_ok;
 		int			sv_namespace_length;
@@ -1223,8 +1233,10 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 		 */
 		l_nscolumns = l_nsitem->p_nscolumns;
 		l_colnames = l_nsitem->p_names->colnames;
+		l_mappings = l_nsitem->p_mappings;
 		r_nscolumns = r_nsitem->p_nscolumns;
 		r_colnames = r_nsitem->p_names->colnames;
+		r_mappings = r_nsitem->p_mappings;
 
 		/*
 		 * Natural join does not explicitly specify columns; must generate
@@ -1238,22 +1250,27 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 		if (j->isNatural)
 		{
 			List	   *rlist = NIL;
-			ListCell   *lx,
-					   *rx;
 
 			Assert(j->usingClause == NIL);	/* shouldn't have USING() too */
 
-			foreach(lx, l_colnames)
+			for (int i = 1; i <= list_length(l_colnames); i++)
 			{
-				char	   *l_colname = strVal(lfirst(lx));
+				char	   *l_colname;
 				String	   *m_name = NULL;
 
-				if (l_colname[0] == '\0')
+				if (!AttributeNumberIsValid(l_mappings[i]))
 					continue;	/* ignore dropped columns */
 
-				foreach(rx, r_colnames)
+				l_colname = strVal(list_nth(l_colnames, l_mappings[i] - 1));
+
+				for (int j = 1; j <= list_length(r_colnames); j++)
 				{
-					char	   *r_colname = strVal(lfirst(rx));
+					char	   *r_colname;
+
+					if (!AttributeNumberIsValid(r_mappings[j]))
+						continue;	/* ignore dropped columns */
+
+					r_colname = strVal(list_nth(r_colnames, r_mappings[j] - 1));
 
 					if (strcmp(l_colname, r_colname) == 0)
 					{
@@ -1436,11 +1453,13 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 
 		/* Add remaining columns from each side to the output columns */
 		res_colindex +=
-			extractRemainingColumns(l_nscolumns, l_colnames, &l_colnos,
+			extractRemainingColumns(l_nscolumns, l_mappings,
+									l_colnames, &l_colnos,
 									&res_colnames, &res_colvars,
 									res_nscolumns + res_colindex);
 		res_colindex +=
-			extractRemainingColumns(r_nscolumns, r_colnames, &r_colnos,
+			extractRemainingColumns(r_nscolumns, r_mappings,
+									r_colnames, &r_colnos,
 									&res_colnames, &res_colvars,
 									res_nscolumns + res_colindex);
 
@@ -1569,6 +1588,7 @@ buildVarFromNSColumn(ParseNamespaceColumn *nscol)
 				  nscol->p_varcollid,
 				  0);
 	/* makeVar doesn't offer parameters for these, so set by hand: */
+	var->varnum = nscol->p_varnum;
 	var->varnosyn = nscol->p_varnosyn;
 	var->varattnosyn = nscol->p_varattnosyn;
 	return var;

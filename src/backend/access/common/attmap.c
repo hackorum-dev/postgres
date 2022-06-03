@@ -100,6 +100,7 @@ build_attrmap_by_position(TupleDesc indesc,
 		Form_pg_attribute att = TupleDescAttr(outdesc, i);
 		Oid			atttypid;
 		int32		atttypmod;
+		AttrNumber attphysnum = att->attphysnum;
 
 		if (att->attisdropped)
 			continue;			/* attrMap->attnums[i] is already 0 */
@@ -125,11 +126,11 @@ build_attrmap_by_position(TupleDesc indesc,
 								   format_type_with_typemod(atttypid,
 															atttypmod),
 								   noutcols)));
-			attrMap->attnums[i] = (AttrNumber) (j + 1);
+			attrMap->attnums[attphysnum - 1] = (AttrNumber) (j + 1);
 			j++;
 			break;
 		}
-		if (attrMap->attnums[i] == 0)
+		if (attrMap->attnums[attphysnum - 1] == 0)
 			same = false;		/* we'll complain below */
 	}
 

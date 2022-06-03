@@ -270,6 +270,8 @@ struct ParseNamespaceItem
 	int			p_rtindex;		/* The relation's index in the rangetable */
 	/* array of same length as p_names->colnames: */
 	ParseNamespaceColumn *p_nscolumns;	/* per-column data */
+	/* array of length p_names->colnames + 1: */
+	AttrNumber *p_mappings;		/* 1-based attnum -> attphysnum mappings */
 	bool		p_rel_visible;	/* Relation name is visible? */
 	bool		p_cols_visible; /* Column names visible as unqualified refs? */
 	bool		p_lateral_only; /* Is only visible to LATERAL expressions? */
@@ -300,7 +302,8 @@ struct ParseNamespaceItem
 struct ParseNamespaceColumn
 {
 	Index		p_varno;		/* rangetable index */
-	AttrNumber	p_varattno;		/* attribute number of the column */
+	AttrNumber	p_varattno;		/* physical attribute number of the column */
+	AttrNumber	p_varnum;		/* logical attribute number of the column */
 	Oid			p_vartype;		/* pg_type OID */
 	int32		p_vartypmod;	/* type modifier value */
 	Oid			p_varcollid;	/* OID of collation, or InvalidOid */

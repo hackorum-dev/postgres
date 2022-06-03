@@ -1534,6 +1534,7 @@ describeOneTableDetails(const char *schemaname,
 		char		relpersistence;
 		char		relreplident;
 		char	   *relam;
+		bool		haslogicalorder;
 	}			tableinfo;
 	bool		show_column_details = false;
 
@@ -1546,7 +1547,28 @@ describeOneTableDetails(const char *schemaname,
 	initPQExpBuffer(&tmpbuf);
 
 	/* Get general table info */
-	if (pset.sversion >= 120000)
+	if (pset.sversion >= 150000) /* FXME - bump me when pg15 branched */
+	{
+		printfPQExpBuffer(&buf,
+						  "SELECT c.relchecks, c.relkind, c.relhasindex, c.relhasrules, "
+						  "c.relhastriggers, c.relrowsecurity, c.relforcerowsecurity, "
+						  "false AS relhasoids, c.relispartition, %s, c.reltablespace, "
+						  "CASE WHEN c.reloftype = 0 THEN '' ELSE c.reloftype::pg_catalog.regtype::pg_catalog.text END, "
+						  "c.relpersistence, c.relreplident, am.amname,\n"
+						  "  (SELECT count(*) > 0 FROM pg_catalog.pg_attribute a\n"
+						  "   WHERE a.attrelid = c.oid\n"
+						  "   AND a.attphysnum != a.attnum)\n"
+						  "FROM pg_catalog.pg_class c\n "
+						  "LEFT JOIN pg_catalog.pg_class tc ON (c.reltoastrelid = tc.oid)\n"
+						  "LEFT JOIN pg_catalog.pg_am am ON (c.relam = am.oid)\n"
+						  "WHERE c.oid = '%s';",
+						  (verbose ?
+						   "pg_catalog.array_to_string(c.reloptions || "
+						   "array(select 'toast.' || x from pg_catalog.unnest(tc.reloptions) x), ', ')\n"
+						   : "''"),
+						  oid);
+	}
+	else if (pset.sversion >= 120000)
 	{
 		printfPQExpBuffer(&buf,
 						  "SELECT c.relchecks, c.relkind, c.relhasindex, c.relhasrules, "
@@ -1666,6 +1688,11 @@ describeOneTableDetails(const char *schemaname,
 			(char *) NULL : pg_strdup(PQgetvalue(res, 0, 14));
 	else
 		tableinfo.relam = NULL;
+	/* FIXME - bump me when pg15 branched */
+	if (pset.sversion >= 150000)
+		tableinfo.haslogicalorder = strcmp(PQgetvalue(res, 0, 15), "t") == 0;
+	else
+		tableinfo.haslogicalorder = false;
 	PQclear(res);
 	res = NULL;
 
@@ -1955,16 +1982,8 @@ describeOneTableDetails(const char *schemaname,
 	}
 
 	appendPQExpBufferStr(&buf, "\nFROM pg_catalog.pg_attribute a");
-	if (pset.sversion >= 150000) /* FIXME - bump me when pg15 branched */
-	{
-		appendPQExpBuffer(&buf, "\nWHERE a.attrelid = '%s' AND a.attphysnum > 0 AND NOT a.attisdropped", oid);
-		appendPQExpBufferStr(&buf, "\nORDER BY a.attphysnum;");
-	}
-	else
-	{
-		appendPQExpBuffer(&buf, "\nWHERE a.attrelid = '%s' AND a.attnum > 0 AND NOT a.attisdropped", oid);
-		appendPQExpBufferStr(&buf, "\nORDER BY a.attnum;");
-	}
+	appendPQExpBuffer(&buf, "\nWHERE a.attrelid = '%s' AND a.attnum > 0 AND NOT a.attisdropped", oid);
+	appendPQExpBufferStr(&buf, "\nORDER BY a.attnum;");
 
 	res = PSQLexec(buf.data);
 	if (!res)
@@ -2385,6 +2404,36 @@ describeOneTableDetails(const char *schemaname,
 		/* Footer information about a table */
 		PGresult   *result = NULL;
 		int			tuples = 0;
+
+		/*
+		 * print physical attribute order if different from logical
+		 * FIXME - bump me when pg15 branched
+		 */
+		if (pset.sversion >= 150000 && tableinfo.haslogicalorder && verbose)
+		{
+			Assert(tableinfo.relkind == RELKIND_RELATION);
+
+			printfPQExpBuffer(&buf,
+					"SELECT string_agg(a.attname, ', ')\n"
+					"FROM pg_catalog.pg_class c\n"
+					"JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid\n"
+					"WHERE c.oid = '%s' \n"
+					"AND a.attphysnum > 0 \n"
+					"AND NOT a.attisdropped", oid);
+			result = PSQLexec(buf.data);
+			if (!result)
+				goto error_return;
+			else
+				tuples = PQntuples(result);
+
+			Assert(tuples == 1);
+
+			printfPQExpBuffer(&buf, "(%s)", PQgetvalue(result, 0, 0));
+			PQclear(result);
+
+			printTableAddFooter(&cont, _("Physical order:"));
+			printTableAddFooter(&cont, buf.data);
+		}
 
 		/* print indexes */
 		if (tableinfo.hasindex)

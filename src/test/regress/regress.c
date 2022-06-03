@@ -414,9 +414,22 @@ ttdummy(PG_FUNCTION_ARGS)
 		query = (char *) palloc(100 + 16 * natts);
 
 		/*
-		 * Construct query: INSERT INTO _relation_ VALUES ($1, ...)
+		 * Construct query:
+		 * INSERT INTO _relation_ (field1, ...) VALUES ($1, ...)
+		 * We have to specify the fields explicitly as we provide the value in
+		 * the relation physical order and not the possibly different logical
+		 * order.
 		 */
-		sprintf(query, "INSERT INTO %s VALUES (", relname);
+		sprintf(query, "INSERT INTO %s(", relname);
+		for (i = 0; i < natts; i++)
+		{
+			if (i > 0)
+				sprintf(query + strlen(query), ", ");
+
+			sprintf(query + strlen(query),
+					"%s", NameStr(TupleDescAttr(tupdesc, i)->attname));
+		}
+		sprintf(query + strlen(query), ") VALUES (");
 		for (i = 1; i <= natts; i++)
 		{
 			sprintf(query + strlen(query), "$%d%s",

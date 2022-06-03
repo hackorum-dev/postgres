@@ -82,6 +82,11 @@ CATALOG(pg_attribute,1249,AttributeRelationId) BKI_BOOTSTRAP BKI_ROWTYPE_OID(75,
 	 */
 	int16		attphysnum;
 
+	/* FIXME Same as attphysnum, but for the "logical" order, e.g. for a
+	 * star-expansion.
+	 */
+	int16		attnum;
+
 	/*
 	 * attndims is the declared number of dimensions, if an array type,
 	 * otherwise zero.
@@ -207,6 +212,7 @@ CATALOG(pg_attribute,1249,AttributeRelationId) BKI_BOOTSTRAP BKI_ROWTYPE_OID(75,
 typedef FormData_pg_attribute *Form_pg_attribute;
 
 DECLARE_UNIQUE_INDEX(pg_attribute_relid_attnam_index, 2658, AttributeRelidNameIndexId, on pg_attribute using btree(attrelid oid_ops, attname name_ops));
+DECLARE_UNIQUE_INDEX(pg_attribute_relid_attnum_index, 8294, AttributeReliNumIndexId, on pg_attribute using btree(attrelid oid_ops, attnum int2_ops));
 DECLARE_UNIQUE_INDEX_PKEY(pg_attribute_relid_attphysnum_index, 2659, AttributeRelidPhysNumIndexId, on pg_attribute using btree(attrelid oid_ops, attphysnum int2_ops));
 
 #ifdef EXPOSE_TO_CLIENT_CODE
