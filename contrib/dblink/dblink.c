@@ -1694,7 +1694,7 @@ dblink_build_sql_insert(PG_FUNCTION_ARGS)
 	src_pkattvals = get_text_array_contents(src_pkattvals_arry, &src_nitems);
 
 	/*
-	 * There should be one source array key value for each key attnum
+	 * There should be one source array key value for each key attphysnum
 	 */
 	if (src_nitems != pknumatts)
 		ereport(ERROR,
@@ -1708,7 +1708,7 @@ dblink_build_sql_insert(PG_FUNCTION_ARGS)
 	tgt_pkattvals = get_text_array_contents(tgt_pkattvals_arry, &tgt_nitems);
 
 	/*
-	 * There should be one target array key value for each key attnum
+	 * There should be one target array key value for each key attphysnum
 	 */
 	if (tgt_nitems != pknumatts)
 		ereport(ERROR,
@@ -1780,7 +1780,7 @@ dblink_build_sql_delete(PG_FUNCTION_ARGS)
 	tgt_pkattvals = get_text_array_contents(tgt_pkattvals_arry, &tgt_nitems);
 
 	/*
-	 * There should be one target array key value for each key attnum
+	 * There should be one target array key value for each key attphysnum
 	 */
 	if (tgt_nitems != pknumatts)
 		ereport(ERROR,
@@ -1859,7 +1859,7 @@ dblink_build_sql_update(PG_FUNCTION_ARGS)
 	src_pkattvals = get_text_array_contents(src_pkattvals_arry, &src_nitems);
 
 	/*
-	 * There should be one source array key value for each key attnum
+	 * There should be one source array key value for each key attphysnum
 	 */
 	if (src_nitems != pknumatts)
 		ereport(ERROR,
@@ -1873,7 +1873,7 @@ dblink_build_sql_update(PG_FUNCTION_ARGS)
 	tgt_pkattvals = get_text_array_contents(tgt_pkattvals_arry, &tgt_nitems);
 
 	/*
-	 * There should be one target array key value for each key attnum
+	 * There should be one target array key value for each key attphysnum
 	 */
 	if (tgt_nitems != pknumatts)
 		ereport(ERROR,
@@ -2902,7 +2902,7 @@ escape_param_str(const char *str)
  *
  * The user supplies an int2vector of 1-based logical attnums, plus a count
  * argument (the need for the separate count argument is historical, but we
- * still check it).  We check that each attnum corresponds to a valid,
+ * still check it).  We check that each attphysnum corresponds to a valid,
  * non-dropped attribute of the rel.  We do *not* prevent attnums from being
  * listed twice, though the actual use-case for such things is dubious.
  * Note that before Postgres 9.0, the user's attnums were interpreted as
@@ -2923,7 +2923,7 @@ validate_pkattnums(Relation rel,
 	/* Don't take more array elements than there are */
 	pknumatts_arg = Min(pknumatts_arg, pkattnums_arg->dim1);
 
-	/* Must have at least one pk attnum selected */
+	/* Must have at least one pk attphysnum selected */
 	if (pknumatts_arg <= 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),

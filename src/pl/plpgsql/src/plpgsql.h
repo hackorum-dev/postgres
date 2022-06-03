@@ -426,7 +426,7 @@ typedef struct PLpgSQL_recfield
 	int			recparentno;	/* dno of parent record */
 	int			nextfield;		/* dno of next child, or -1 if none */
 	uint64		rectupledescid; /* record's tupledesc ID as of last lookup */
-	ExpandedRecordFieldInfo finfo;	/* field's attnum and type info */
+	ExpandedRecordFieldInfo finfo;	/* field's attphysnum and type info */
 	/* if rectupledescid == INVALID_TUPLEDESC_IDENTIFIER, finfo isn't valid */
 } PLpgSQL_recfield;
 

@@ -852,17 +852,17 @@ fetch_remote_table_info(char *nspname, char *relname,
 	 */
 	resetStringInfo(&cmd);
 	appendStringInfo(&cmd,
-					 "SELECT a.attnum,"
+					 "SELECT a.attphysnum,"
 					 "       a.attname,"
 					 "       a.atttypid,"
-					 "       a.attnum = ANY(i.indkey)"
+					 "       a.attphysnum = ANY(i.indkey)"
 					 "  FROM pg_catalog.pg_attribute a"
 					 "  LEFT JOIN pg_catalog.pg_index i"
 					 "       ON (i.indexrelid = pg_get_replica_identity_index(%u))"
-					 " WHERE a.attnum > 0::pg_catalog.int2"
+					 " WHERE a.attphysnum > 0::pg_catalog.int2"
 					 "   AND NOT a.attisdropped %s"
 					 "   AND a.attrelid = %u"
-					 " ORDER BY a.attnum",
+					 " ORDER BY a.attphysnum",
 					 lrel->remoteid,
 					 (walrcv_server_version(LogRepWorkerWalRcvConn) >= 120000 ?
 					  "AND a.attgenerated = ''" : ""),
@@ -890,13 +890,13 @@ fetch_remote_table_info(char *nspname, char *relname,
 	while (tuplestore_gettupleslot(res->tuplestore, true, false, slot))
 	{
 		char	   *rel_colname;
-		AttrNumber	attnum;
+		AttrNumber	attphysnum;
 
-		attnum = DatumGetInt16(slot_getattr(slot, 1, &isnull));
+		attphysnum = DatumGetInt16(slot_getattr(slot, 1, &isnull));
 		Assert(!isnull);
 
 		/* If the column is not in the column list, skip it. */
-		if (included_cols != NULL && !bms_is_member(attnum, included_cols))
+		if (included_cols != NULL && !bms_is_member(attphysnum, included_cols))
 		{
 			ExecClearTuple(slot);
 			continue;

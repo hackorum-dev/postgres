@@ -299,8 +299,8 @@ alter table mlparted11 drop a;
 alter table mlparted11 add a int;
 alter table mlparted11 drop a;
 alter table mlparted11 add a int not null;
--- attnum for key attribute 'a' is different in mlparted, mlparted1, and mlparted11
-select attrelid::regclass, attname, attnum
+-- attphysnum for key attribute 'a' is different in mlparted, mlparted1, and mlparted11
+select attrelid::regclass, attname, attphysnum
 from pg_attribute
 where attname = 'a'
  and (attrelid = 'mlparted'::regclass

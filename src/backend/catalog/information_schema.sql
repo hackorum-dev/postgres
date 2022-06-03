@@ -293,7 +293,7 @@ CREATE VIEW attributes AS
            CAST(nc.nspname AS sql_identifier) AS udt_schema,
            CAST(c.relname AS sql_identifier) AS udt_name,
            CAST(a.attname AS sql_identifier) AS attribute_name,
-           CAST(a.attnum AS cardinal_number) AS ordinal_position,
+           CAST(a.attphysnum AS cardinal_number) AS ordinal_position,
            CAST(pg_get_expr(ad.adbin, ad.adrelid) AS character_data) AS attribute_default,
            CAST(CASE WHEN a.attnotnull OR (t.typtype = 'd' AND t.typnotnull) THEN 'NO' ELSE 'YES' END
              AS yes_or_no)
@@ -359,16 +359,16 @@ CREATE VIEW attributes AS
            CAST(null AS sql_identifier) AS scope_name,
 
            CAST(null AS cardinal_number) AS maximum_cardinality,
-           CAST(a.attnum AS sql_identifier) AS dtd_identifier,
+           CAST(a.attphysnum AS sql_identifier) AS dtd_identifier,
            CAST('NO' AS yes_or_no) AS is_derived_reference_attribute
 
-    FROM (pg_attribute a LEFT JOIN pg_attrdef ad ON attrelid = adrelid AND attnum = adnum)
+    FROM (pg_attribute a LEFT JOIN pg_attrdef ad ON attrelid = adrelid AND attphysnum = adnum)
          JOIN (pg_class c JOIN pg_namespace nc ON (c.relnamespace = nc.oid)) ON a.attrelid = c.oid
          JOIN (pg_type t JOIN pg_namespace nt ON (t.typnamespace = nt.oid)) ON a.atttypid = t.oid
          LEFT JOIN (pg_collation co JOIN pg_namespace nco ON (co.collnamespace = nco.oid))
            ON a.attcollation = co.oid AND (nco.nspname, co.collname) <> ('pg_catalog', 'default')
 
-    WHERE a.attnum > 0 AND NOT a.attisdropped
+    WHERE a.attphysnum > 0 AND NOT a.attisdropped
           AND c.relkind IN ('c')
           AND (pg_has_role(c.relowner, 'USAGE')
                OR has_type_privilege(c.reltype, 'USAGE'));
@@ -449,13 +449,13 @@ CREATE VIEW check_constraints AS
 
     SELECT CAST(current_database() AS sql_identifier) AS constraint_catalog,
            CAST(n.nspname AS sql_identifier) AS constraint_schema,
-           CAST(CAST(n.oid AS text) || '_' || CAST(r.oid AS text) || '_' || CAST(a.attnum AS text) || '_not_null' AS sql_identifier) AS constraint_name, -- XXX
+           CAST(CAST(n.oid AS text) || '_' || CAST(r.oid AS text) || '_' || CAST(a.attphysnum AS text) || '_not_null' AS sql_identifier) AS constraint_name, -- XXX
            CAST(a.attname || ' IS NOT NULL' AS character_data)
              AS check_clause
     FROM pg_namespace n, pg_class r, pg_attribute a
     WHERE n.oid = r.relnamespace
       AND r.oid = a.attrelid
-      AND a.attnum > 0
+      AND a.attphysnum > 0
       AND NOT a.attisdropped
       AND a.attnotnull
       AND r.relkind IN ('r', 'p')
@@ -519,14 +519,14 @@ CREATE VIEW column_column_usage AS
     WHERE n.oid = c.relnamespace
           AND c.oid = ac.attrelid
           AND c.oid = ad.attrelid
-          AND ac.attnum <> ad.attnum
+          AND ac.attphysnum <> ad.attphysnum
           AND ad.attrelid = atd.adrelid
-          AND ad.attnum = atd.adnum
+          AND ad.attphysnum = atd.adnum
           AND d.classid = 'pg_catalog.pg_attrdef'::regclass
           AND d.refclassid = 'pg_catalog.pg_class'::regclass
           AND d.objid = atd.oid
           AND d.refobjid = ac.attrelid
-          AND d.refobjsubid = ac.attnum
+          AND d.refobjsubid = ac.attphysnum
           AND ad.attgenerated <> ''
           AND pg_has_role(c.relowner, 'USAGE');
 
@@ -556,7 +556,7 @@ CREATE VIEW column_domain_usage AS
           AND a.atttypid = t.oid
           AND t.typtype = 'd'
           AND c.relkind IN ('r', 'v', 'f', 'p')
-          AND a.attnum > 0
+          AND a.attphysnum > 0
           AND NOT a.attisdropped
           AND pg_has_role(t.typowner, 'USAGE');
 
@@ -598,7 +598,7 @@ CREATE VIEW column_privileges AS
                 ) pr_c (oid, relname, relnamespace, relowner, grantor, grantee, prtype, grantable),
                 pg_attribute a
            WHERE a.attrelid = pr_c.oid
-                 AND a.attnum > 0
+                 AND a.attphysnum > 0
                  AND NOT a.attisdropped
            UNION
            SELECT pr_a.grantor,
@@ -611,7 +611,7 @@ CREATE VIEW column_privileges AS
                   c.relowner
            FROM (SELECT attrelid, attname, (aclexplode(coalesce(attacl, acldefault('c', relowner)))).*
                  FROM pg_attribute a JOIN pg_class cc ON (a.attrelid = cc.oid)
-                 WHERE attnum > 0
+                 WHERE attphysnum > 0
                        AND NOT attisdropped
                 ) pr_a (attrelid, attname, grantor, grantee, prtype, grantable),
                 pg_class c
@@ -659,7 +659,7 @@ CREATE VIEW column_udt_usage AS
     WHERE a.attrelid = c.oid
           AND a.atttypid = t.oid
           AND nc.oid = c.relnamespace
-          AND a.attnum > 0 AND NOT a.attisdropped
+          AND a.attphysnum > 0 AND NOT a.attisdropped
           AND c.relkind in ('r', 'v', 'f', 'p')
           AND pg_has_role(coalesce(bt.typowner, t.typowner), 'USAGE');
 
@@ -676,7 +676,7 @@ CREATE VIEW columns AS
            CAST(nc.nspname AS sql_identifier) AS table_schema,
            CAST(c.relname AS sql_identifier) AS table_name,
            CAST(a.attname AS sql_identifier) AS column_name,
-           CAST(a.attnum AS cardinal_number) AS ordinal_position,
+           CAST(a.attphysnum AS cardinal_number) AS ordinal_position,
            CAST(CASE WHEN a.attgenerated = '' THEN pg_get_expr(ad.adbin, ad.adrelid) END AS character_data) AS column_default,
            CAST(CASE WHEN a.attnotnull OR (t.typtype = 'd' AND t.typnotnull) THEN 'NO' ELSE 'YES' END
              AS yes_or_no)
@@ -755,7 +755,7 @@ CREATE VIEW columns AS
            CAST(null AS sql_identifier) AS scope_name,
 
            CAST(null AS cardinal_number) AS maximum_cardinality,
-           CAST(a.attnum AS sql_identifier) AS dtd_identifier,
+           CAST(a.attphysnum AS sql_identifier) AS dtd_identifier,
            CAST('NO' AS yes_or_no) AS is_self_referencing,
 
            CAST(CASE WHEN a.attidentity IN ('a', 'd') THEN 'YES' ELSE 'NO' END AS yes_or_no) AS is_identity,
@@ -771,10 +771,10 @@ CREATE VIEW columns AS
 
            CAST(CASE WHEN c.relkind IN ('r', 'p') OR
                           (c.relkind IN ('v', 'f') AND
-                           pg_column_is_updatable(c.oid, a.attnum, false))
+                           pg_column_is_updatable(c.oid, a.attphysnum, false))
                 THEN 'YES' ELSE 'NO' END AS yes_or_no) AS is_updatable
 
-    FROM (pg_attribute a LEFT JOIN pg_attrdef ad ON attrelid = adrelid AND attnum = adnum)
+    FROM (pg_attribute a LEFT JOIN pg_attrdef ad ON attrelid = adrelid AND attphysnum = adnum)
          JOIN (pg_class c JOIN pg_namespace nc ON (c.relnamespace = nc.oid)) ON a.attrelid = c.oid
          JOIN (pg_type t JOIN pg_namespace nt ON (t.typnamespace = nt.oid)) ON a.atttypid = t.oid
          LEFT JOIN (pg_type bt JOIN pg_namespace nbt ON (bt.typnamespace = nbt.oid))
@@ -782,15 +782,15 @@ CREATE VIEW columns AS
          LEFT JOIN (pg_collation co JOIN pg_namespace nco ON (co.collnamespace = nco.oid))
            ON a.attcollation = co.oid AND (nco.nspname, co.collname) <> ('pg_catalog', 'default')
          LEFT JOIN (pg_depend dep JOIN pg_sequence seq ON (dep.classid = 'pg_class'::regclass AND dep.objid = seq.seqrelid AND dep.deptype = 'i'))
-           ON (dep.refclassid = 'pg_class'::regclass AND dep.refobjid = c.oid AND dep.refobjsubid = a.attnum)
+           ON (dep.refclassid = 'pg_class'::regclass AND dep.refobjid = c.oid AND dep.refobjsubid = a.attphysnum)
 
     WHERE (NOT pg_is_other_temp_schema(nc.oid))
 
-          AND a.attnum > 0 AND NOT a.attisdropped
+          AND a.attphysnum > 0 AND NOT a.attisdropped
           AND c.relkind IN ('r', 'v', 'f', 'p')
 
           AND (pg_has_role(c.relowner, 'USAGE')
-               OR has_column_privilege(c.oid, a.attnum,
+               OR has_column_privilege(c.oid, a.attphysnum,
                                        'SELECT, INSERT, UPDATE, REFERENCES'));
 
 GRANT SELECT ON columns TO PUBLIC;
@@ -818,7 +818,7 @@ CREATE VIEW constraint_column_usage AS
             AND r.oid = a.attrelid
             AND d.refclassid = 'pg_catalog.pg_class'::regclass
             AND d.refobjid = r.oid
-            AND d.refobjsubid = a.attnum
+            AND d.refobjsubid = a.attphysnum
             AND d.classid = 'pg_catalog.pg_constraint'::regclass
             AND d.objid = c.oid
             AND c.connamespace = nc.oid
@@ -836,7 +836,7 @@ CREATE VIEW constraint_column_usage AS
             AND r.oid = a.attrelid
             AND nc.oid = c.connamespace
             AND r.oid = CASE c.contype WHEN 'f' THEN c.confrelid ELSE c.conrelid END
-            AND a.attnum = ANY (CASE c.contype WHEN 'f' THEN c.confkey ELSE c.conkey END)
+            AND a.attphysnum = ANY (CASE c.contype WHEN 'f' THEN c.confkey ELSE c.conkey END)
             AND NOT a.attisdropped
             AND c.contype IN ('p', 'u', 'f')
             AND r.relkind IN ('r', 'p')
@@ -1095,10 +1095,10 @@ CREATE VIEW key_column_usage AS
                 AND r.relkind IN ('r', 'p')
                 AND (NOT pg_is_other_temp_schema(nr.oid)) ) AS ss
     WHERE ss.roid = a.attrelid
-          AND a.attnum = (ss.x).x
+          AND a.attphysnum = (ss.x).x
           AND NOT a.attisdropped
           AND (pg_has_role(relowner, 'USAGE')
-               OR has_column_privilege(roid, a.attnum,
+               OR has_column_privilege(roid, a.attphysnum,
                                        'SELECT, INSERT, UPDATE, REFERENCES'));
 
 GRANT SELECT ON key_column_usage TO PUBLIC;
@@ -1352,7 +1352,7 @@ CREATE VIEW routine_column_usage AS
           AND t.relnamespace = nt.oid
           AND t.relkind IN ('r', 'v', 'f', 'p')
           AND t.oid = a.attrelid
-          AND d.refobjsubid = a.attnum
+          AND d.refobjsubid = a.attphysnum
           AND pg_has_role(t.relowner, 'USAGE');
 
 GRANT SELECT ON routine_column_usage TO PUBLIC;
@@ -1867,7 +1867,7 @@ CREATE VIEW table_constraints AS
 
     SELECT CAST(current_database() AS sql_identifier) AS constraint_catalog,
            CAST(nr.nspname AS sql_identifier) AS constraint_schema,
-           CAST(CAST(nr.oid AS text) || '_' || CAST(r.oid AS text) || '_' || CAST(a.attnum AS text) || '_not_null' AS sql_identifier) AS constraint_name, -- XXX
+           CAST(CAST(nr.oid AS text) || '_' || CAST(r.oid AS text) || '_' || CAST(a.attphysnum AS text) || '_not_null' AS sql_identifier) AS constraint_name, -- XXX
            CAST(current_database() AS sql_identifier) AS table_catalog,
            CAST(nr.nspname AS sql_identifier) AS table_schema,
            CAST(r.relname AS sql_identifier) AS table_name,
@@ -1884,7 +1884,7 @@ CREATE VIEW table_constraints AS
     WHERE nr.oid = r.relnamespace
           AND r.oid = a.attrelid
           AND a.attnotnull
-          AND a.attnum > 0
+          AND a.attphysnum > 0
           AND NOT a.attisdropped
           AND r.relkind IN ('r', 'p')
           AND (NOT pg_is_other_temp_schema(nr.oid))
@@ -2084,12 +2084,12 @@ CREATE VIEW triggered_update_columns AS
     WHERE n.oid = c.relnamespace
           AND c.oid = t.tgrelid
           AND t.oid = ta.tgoid
-          AND (a.attrelid, a.attnum) = (t.tgrelid, ta.tgattnum)
+          AND (a.attrelid, a.attphysnum) = (t.tgrelid, ta.tgattnum)
           AND NOT t.tgisinternal
           AND (NOT pg_is_other_temp_schema(n.oid))
           AND (pg_has_role(c.relowner, 'USAGE')
                -- SELECT privilege omitted, per SQL standard
-               OR has_column_privilege(c.oid, a.attnum, 'INSERT, UPDATE, REFERENCES') );
+               OR has_column_privilege(c.oid, a.attphysnum, 'INSERT, UPDATE, REFERENCES') );
 
 GRANT SELECT ON triggered_update_columns TO PUBLIC;
 
@@ -2537,7 +2537,7 @@ CREATE VIEW view_column_usage AS
           AND t.relnamespace = nt.oid
           AND t.relkind IN ('r', 'v', 'f', 'p')
           AND t.oid = a.attrelid
-          AND dt.refobjsubid = a.attnum
+          AND dt.refobjsubid = a.attphysnum
           AND pg_has_role(t.relowner, 'USAGE');
 
 GRANT SELECT ON view_column_usage TO PUBLIC;
@@ -2763,11 +2763,11 @@ CREATE VIEW element_types AS
            /* columns, attributes */
            SELECT c.relnamespace, CAST(c.relname AS sql_identifier),
                   CASE WHEN c.relkind = 'c' THEN 'USER-DEFINED TYPE'::text ELSE 'TABLE'::text END,
-                  a.attnum, a.atttypid, a.attcollation
+                  a.attphysnum, a.atttypid, a.attcollation
            FROM pg_class c, pg_attribute a
            WHERE c.oid = a.attrelid
                  AND c.relkind IN ('r', 'v', 'f', 'c', 'p')
-                 AND attnum > 0 AND NOT attisdropped
+                 AND attphysnum > 0 AND NOT attisdropped
 
            UNION ALL
 
@@ -2824,12 +2824,12 @@ CREATE VIEW _pg_foreign_table_columns AS
          pg_attribute a
     WHERE u.oid = c.relowner
           AND (pg_has_role(c.relowner, 'USAGE')
-               OR has_column_privilege(c.oid, a.attnum, 'SELECT, INSERT, UPDATE, REFERENCES'))
+               OR has_column_privilege(c.oid, a.attphysnum, 'SELECT, INSERT, UPDATE, REFERENCES'))
           AND n.oid = c.relnamespace
           AND c.oid = t.ftrelid
           AND c.relkind = 'f'
           AND a.attrelid = c.oid
-          AND a.attnum > 0;
+          AND a.attphysnum > 0;
 
 /*
  * 24.2

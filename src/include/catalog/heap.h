@@ -26,7 +26,7 @@
 
 typedef struct RawColumnDefault
 {
-	AttrNumber	attnum;			/* attribute to attach default to */
+	AttrNumber	attphysnum;			/* attribute to attach default to */
 	Node	   *raw_default;	/* default value (untransformed parse tree) */
 	bool		missingMode;	/* true if part of add column processing */
 	char		generated;		/* attgenerated setting */
@@ -37,7 +37,7 @@ typedef struct CookedConstraint
 	ConstrType	contype;		/* CONSTR_DEFAULT or CONSTR_CHECK */
 	Oid			conoid;			/* constr OID if created, otherwise Invalid */
 	char	   *name;			/* name, or NULL if none */
-	AttrNumber	attnum;			/* which attr (only for DEFAULT) */
+	AttrNumber	attphysnum;			/* which attr (only for DEFAULT) */
 	Node	   *expr;			/* transformed default or check expr */
 	bool		skip_validation;	/* skip validation? (only for CHECK) */
 	bool		is_local;		/* constraint has local (non-inherited) def */
@@ -127,10 +127,10 @@ extern Node *cookDefault(ParseState *pstate,
 extern void DeleteRelationTuple(Oid relid);
 extern void DeleteAttributeTuples(Oid relid);
 extern void DeleteSystemAttributeTuples(Oid relid);
-extern void RemoveAttributeById(Oid relid, AttrNumber attnum);
+extern void RemoveAttributeById(Oid relid, AttrNumber attphysnum);
 
 extern void CopyStatistics(Oid fromrelid, Oid torelid);
-extern void RemoveStatistics(Oid relid, AttrNumber attnum);
+extern void RemoveStatistics(Oid relid, AttrNumber attphysnum);
 
 extern const FormData_pg_attribute *SystemAttributeDefinition(AttrNumber attno);
 

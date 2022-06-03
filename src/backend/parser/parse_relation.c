@@ -566,7 +566,7 @@ GetCTEForRTE(ParseState *pstate, RangeTblEntry *rte, int rtelevelsup)
 static void
 updateFuzzyAttrMatchState(int fuzzy_rte_penalty,
 						  FuzzyAttrMatchState *fuzzystate, RangeTblEntry *rte,
-						  const char *actual, const char *match, int attnum)
+						  const char *actual, const char *match, int attphysnum)
 {
 	int			columndistance;
 	int			matchlen;
@@ -613,7 +613,7 @@ updateFuzzyAttrMatchState(int fuzzy_rte_penalty,
 		/* Store new lowest observed distance for RTE */
 		fuzzystate->distance = columndistance;
 		fuzzystate->rfirst = rte;
-		fuzzystate->first = attnum;
+		fuzzystate->first = attphysnum;
 		fuzzystate->rsecond = NULL;
 		fuzzystate->second = InvalidAttrNumber;
 	}
@@ -640,7 +640,7 @@ updateFuzzyAttrMatchState(int fuzzy_rte_penalty,
 		{
 			/* Record as provisional second match for RTE */
 			fuzzystate->rsecond = rte;
-			fuzzystate->second = attnum;
+			fuzzystate->second = attphysnum;
 		}
 		else if (fuzzystate->distance <= MAX_FUZZY_DISTANCE)
 		{
@@ -650,7 +650,7 @@ updateFuzzyAttrMatchState(int fuzzy_rte_penalty,
 			 * than being associated with a real match)
 			 */
 			fuzzystate->rfirst = rte;
-			fuzzystate->first = attnum;
+			fuzzystate->first = attphysnum;
 		}
 	}
 }
@@ -669,23 +669,23 @@ scanNSItemForColumn(ParseState *pstate, ParseNamespaceItem *nsitem,
 					int sublevels_up, const char *colname, int location)
 {
 	RangeTblEntry *rte = nsitem->p_rte;
-	int			attnum;
+	int			attphysnum;
 	Var		   *var;
 
 	/*
 	 * Scan the nsitem's column names (or aliases) for a match.  Complain if
 	 * multiple matches.
 	 */
-	attnum = scanRTEForColumn(pstate, rte, nsitem->p_names,
+	attphysnum = scanRTEForColumn(pstate, rte, nsitem->p_names,
 							  colname, location,
 							  0, NULL);
 
-	if (attnum == InvalidAttrNumber)
+	if (attphysnum == InvalidAttrNumber)
 		return NULL;			/* Return NULL if no match */
 
 	/* In constraint check, no system column is allowed except tableOid */
 	if (pstate->p_expr_kind == EXPR_KIND_CHECK_CONSTRAINT &&
-		attnum < InvalidAttrNumber && attnum != TableOidAttributeNumber)
+		attphysnum < InvalidAttrNumber && attphysnum != TableOidAttributeNumber)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
 				 errmsg("system column \"%s\" reference in check constraint is invalid",
@@ -694,7 +694,7 @@ scanNSItemForColumn(ParseState *pstate, ParseNamespaceItem *nsitem,
 
 	/* In generated column, no system column is allowed except tableOid */
 	if (pstate->p_expr_kind == EXPR_KIND_GENERATED_COLUMN &&
-		attnum < InvalidAttrNumber && attnum != TableOidAttributeNumber)
+		attphysnum < InvalidAttrNumber && attphysnum != TableOidAttributeNumber)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
 				 errmsg("cannot use system column \"%s\" in column generation expression",
@@ -705,7 +705,7 @@ scanNSItemForColumn(ParseState *pstate, ParseNamespaceItem *nsitem,
 	 * In a MERGE WHEN condition, no system column is allowed except tableOid
 	 */
 	if (pstate->p_expr_kind == EXPR_KIND_MERGE_WHEN &&
-		attnum < InvalidAttrNumber && attnum != TableOidAttributeNumber)
+		attphysnum < InvalidAttrNumber && attphysnum != TableOidAttributeNumber)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
 				 errmsg("cannot use system column \"%s\" in MERGE WHEN condition",
@@ -713,10 +713,10 @@ scanNSItemForColumn(ParseState *pstate, ParseNamespaceItem *nsitem,
 				 parser_errposition(pstate, location)));
 
 	/* Found a valid match, so build a Var */
-	if (attnum > InvalidAttrNumber)
+	if (attphysnum > InvalidAttrNumber)
 	{
 		/* Get attribute data from the ParseNamespaceColumn array */
-		ParseNamespaceColumn *nscol = &nsitem->p_nscolumns[attnum - 1];
+		ParseNamespaceColumn *nscol = &nsitem->p_nscolumns[attphysnum - 1];
 
 		/* Complain if dropped column.  See notes in scanRTEForColumn. */
 		if (nscol->p_varno == 0)
@@ -741,9 +741,9 @@ scanNSItemForColumn(ParseState *pstate, ParseNamespaceItem *nsitem,
 		/* System column, so use predetermined type data */
 		const FormData_pg_attribute *sysatt;
 
-		sysatt = SystemAttributeDefinition(attnum);
+		sysatt = SystemAttributeDefinition(attphysnum);
 		var = makeVar(nsitem->p_rtindex,
-					  attnum,
+					  attphysnum,
 					  sysatt->atttypid,
 					  sysatt->atttypmod,
 					  sysatt->attcollation,
@@ -760,7 +760,7 @@ scanNSItemForColumn(ParseState *pstate, ParseNamespaceItem *nsitem,
 /*
  * scanRTEForColumn
  *	  Search the column names of a single RTE for the given name.
- *	  If found, return the attnum (possibly negative, for a system column);
+ *	  If found, return the attphysnum (possibly negative, for a system column);
  *	  else return InvalidAttrNumber.
  *	  If the name proves ambiguous within this RTE, raise error.
  *
@@ -789,7 +789,7 @@ scanRTEForColumn(ParseState *pstate, RangeTblEntry *rte,
 				 FuzzyAttrMatchState *fuzzystate)
 {
 	int			result = InvalidAttrNumber;
-	int			attnum = 0;
+	int			attphysnum = 0;
 	ListCell   *c;
 
 	/*
@@ -809,7 +809,7 @@ scanRTEForColumn(ParseState *pstate, RangeTblEntry *rte,
 	{
 		const char *attcolname = strVal(lfirst(c));
 
-		attnum++;
+		attphysnum++;
 		if (strcmp(attcolname, colname) == 0)
 		{
 			if (result)
@@ -818,13 +818,13 @@ scanRTEForColumn(ParseState *pstate, RangeTblEntry *rte,
 						 errmsg("column reference \"%s\" is ambiguous",
 								colname),
 						 parser_errposition(pstate, location)));
-			result = attnum;
+			result = attphysnum;
 		}
 
 		/* Update fuzzy match state, if provided. */
 		if (fuzzystate != NULL)
 			updateFuzzyAttrMatchState(fuzzy_rte_penalty, fuzzystate,
-									  rte, attcolname, colname, attnum);
+									  rte, attcolname, colname, attphysnum);
 	}
 
 	/*
@@ -843,14 +843,14 @@ scanRTEForColumn(ParseState *pstate, RangeTblEntry *rte,
 		rte->relkind != RELKIND_COMPOSITE_TYPE)
 	{
 		/* quick check to see if name could be a system column */
-		attnum = specialAttNum(colname);
-		if (attnum != InvalidAttrNumber)
+		attphysnum = specialAttNum(colname);
+		if (attphysnum != InvalidAttrNumber)
 		{
 			/* now check to see if column actually is defined */
-			if (SearchSysCacheExists2(ATTNUM,
+			if (SearchSysCacheExists2(ATTPHYSNUM,
 									  ObjectIdGetDatum(rte->relid),
-									  Int16GetDatum(attnum)))
-				result = attnum;
+									  Int16GetDatum(attphysnum)))
+				result = attphysnum;
 		}
 	}
 
@@ -1023,7 +1023,7 @@ markRTEForSelectPriv(ParseState *pstate, int rtindex, AttrNumber col)
 	{
 		/* Make sure the rel as a whole is marked for SELECT access */
 		rte->requiredPerms |= ACL_SELECT;
-		/* Must offset the attnum to fit in a bitmapset */
+		/* Must offset the attphysnum to fit in a bitmapset */
 		rte->selectedCols = bms_add_member(rte->selectedCols,
 										   col - FirstLowInvalidHeapAttributeNumber);
 	}
@@ -2746,7 +2746,7 @@ expandRTE(RangeTblEntry *rte, int rtindex, int sublevels_up,
 							ListCell   *l1;
 							ListCell   *l2;
 							ListCell   *l3;
-							int			attnum = atts_done;
+							int			attphysnum = atts_done;
 
 							forthree(l1, rtfunc->funccoltypes,
 									 l2, rtfunc->funccoltypmods,
@@ -2757,9 +2757,9 @@ expandRTE(RangeTblEntry *rte, int rtindex, int sublevels_up,
 								Oid			attrcollation = lfirst_oid(l3);
 								Var		   *varnode;
 
-								attnum++;
+								attphysnum++;
 								varnode = makeVar(rtindex,
-												  attnum,
+												  attphysnum,
 												  attrtype,
 												  attrtypmod,
 												  attrcollation,
@@ -3181,21 +3181,21 @@ expandNSItemAttrs(ParseState *pstate, ParseNamespaceItem *nsitem,
  * In particular, it will work on an RTE for a subselect or join, whereas
  * get_attname() only works on real relations.
  *
- * "*" is returned if the given attnum is InvalidAttrNumber --- this case
+ * "*" is returned if the given attphysnum is InvalidAttrNumber --- this case
  * occurs when a Var represents a whole tuple of a relation.
  */
 char *
-get_rte_attribute_name(RangeTblEntry *rte, AttrNumber attnum)
+get_rte_attribute_name(RangeTblEntry *rte, AttrNumber attphysnum)
 {
-	if (attnum == InvalidAttrNumber)
+	if (attphysnum == InvalidAttrNumber)
 		return "*";
 
 	/*
 	 * If there is a user-written column alias, use it.
 	 */
 	if (rte->alias &&
-		attnum > 0 && attnum <= list_length(rte->alias->colnames))
-		return strVal(list_nth(rte->alias->colnames, attnum - 1));
+		attphysnum > 0 && attphysnum <= list_length(rte->alias->colnames))
+		return strVal(list_nth(rte->alias->colnames, attphysnum - 1));
 
 	/*
 	 * If the RTE is a relation, go to the system catalogs not the
@@ -3204,17 +3204,17 @@ get_rte_attribute_name(RangeTblEntry *rte, AttrNumber attnum)
 	 * built (which can easily happen for rules).
 	 */
 	if (rte->rtekind == RTE_RELATION)
-		return get_attname(rte->relid, attnum, false);
+		return get_attname(rte->relid, attphysnum, false);
 
 	/*
 	 * Otherwise use the column name from eref.  There should always be one.
 	 */
-	if (attnum > 0 && attnum <= list_length(rte->eref->colnames))
-		return strVal(list_nth(rte->eref->colnames, attnum - 1));
+	if (attphysnum > 0 && attphysnum <= list_length(rte->eref->colnames))
+		return strVal(list_nth(rte->eref->colnames, attphysnum - 1));
 
-	/* else caller gave us a bogus attnum */
-	elog(ERROR, "invalid attnum %d for rangetable entry %s",
-		 attnum, rte->eref->aliasname);
+	/* else caller gave us a bogus attphysnum */
+	elog(ERROR, "invalid attphysnum %d for rangetable entry %s",
+		 attphysnum, rte->eref->aliasname);
 	return NULL;				/* keep compiler quiet */
 }
 
@@ -3223,7 +3223,7 @@ get_rte_attribute_name(RangeTblEntry *rte, AttrNumber attnum)
  *		Check whether attempted attribute ref is to a dropped column
  */
 bool
-get_rte_attribute_is_dropped(RangeTblEntry *rte, AttrNumber attnum)
+get_rte_attribute_is_dropped(RangeTblEntry *rte, AttrNumber attphysnum)
 {
 	bool		result;
 
@@ -3237,12 +3237,12 @@ get_rte_attribute_is_dropped(RangeTblEntry *rte, AttrNumber attnum)
 				HeapTuple	tp;
 				Form_pg_attribute att_tup;
 
-				tp = SearchSysCache2(ATTNUM,
+				tp = SearchSysCache2(ATTPHYSNUM,
 									 ObjectIdGetDatum(rte->relid),
-									 Int16GetDatum(attnum));
+									 Int16GetDatum(attphysnum));
 				if (!HeapTupleIsValid(tp))	/* shouldn't happen */
 					elog(ERROR, "cache lookup failed for attribute %d of relation %u",
-						 attnum, rte->relid);
+						 attphysnum, rte->relid);
 				att_tup = (Form_pg_attribute) GETSTRUCT(tp);
 				result = att_tup->attisdropped;
 				ReleaseSysCache(tp);
@@ -3262,10 +3262,10 @@ get_rte_attribute_is_dropped(RangeTblEntry *rte, AttrNumber attnum)
 		case RTE_NAMEDTUPLESTORE:
 			{
 				/* Check dropped-ness by testing for valid coltype */
-				if (attnum <= 0 ||
-					attnum > list_length(rte->coltypes))
-					elog(ERROR, "invalid varattno %d", attnum);
-				result = !OidIsValid((list_nth_oid(rte->coltypes, attnum - 1)));
+				if (attphysnum <= 0 ||
+					attphysnum > list_length(rte->coltypes))
+					elog(ERROR, "invalid varattno %d", attphysnum);
+				result = !OidIsValid((list_nth_oid(rte->coltypes, attphysnum - 1)));
 			}
 			break;
 		case RTE_JOIN:
@@ -3279,10 +3279,10 @@ get_rte_attribute_is_dropped(RangeTblEntry *rte, AttrNumber attnum)
 				 */
 				Var		   *aliasvar;
 
-				if (attnum <= 0 ||
-					attnum > list_length(rte->joinaliasvars))
-					elog(ERROR, "invalid varattno %d", attnum);
-				aliasvar = (Var *) list_nth(rte->joinaliasvars, attnum - 1);
+				if (attphysnum <= 0 ||
+					attphysnum > list_length(rte->joinaliasvars))
+					elog(ERROR, "invalid varattno %d", attphysnum);
+				aliasvar = (Var *) list_nth(rte->joinaliasvars, attphysnum - 1);
 
 				result = (aliasvar == NULL);
 			}
@@ -3304,8 +3304,8 @@ get_rte_attribute_is_dropped(RangeTblEntry *rte, AttrNumber attnum)
 				{
 					RangeTblFunction *rtfunc = (RangeTblFunction *) lfirst(lc);
 
-					if (attnum > atts_done &&
-						attnum <= atts_done + rtfunc->funccolcount)
+					if (attphysnum > atts_done &&
+						attphysnum <= atts_done + rtfunc->funccolcount)
 					{
 						TupleDesc	tupdesc;
 
@@ -3317,9 +3317,9 @@ get_rte_attribute_is_dropped(RangeTblEntry *rte, AttrNumber attnum)
 							Form_pg_attribute att_tup;
 
 							Assert(tupdesc);
-							Assert(attnum - atts_done <= tupdesc->natts);
+							Assert(attphysnum - atts_done <= tupdesc->natts);
 							att_tup = TupleDescAttr(tupdesc,
-													attnum - atts_done - 1);
+													attphysnum - atts_done - 1);
 							return att_tup->attisdropped;
 						}
 						/* Otherwise, it can't have any dropped columns */
@@ -3329,14 +3329,14 @@ get_rte_attribute_is_dropped(RangeTblEntry *rte, AttrNumber attnum)
 				}
 
 				/* If we get here, must be looking for the ordinality column */
-				if (rte->funcordinality && attnum == atts_done + 1)
+				if (rte->funcordinality && attphysnum == atts_done + 1)
 					return false;
 
 				/* this probably can't happen ... */
 				ereport(ERROR,
 						(errcode(ERRCODE_UNDEFINED_COLUMN),
 						 errmsg("column %d of relation \"%s\" does not exist",
-								attnum,
+								attphysnum,
 								rte->eref->aliasname)));
 				result = false; /* keep compiler quiet */
 			}
@@ -3346,7 +3346,7 @@ get_rte_attribute_is_dropped(RangeTblEntry *rte, AttrNumber attnum)
 			ereport(ERROR,
 					(errcode(ERRCODE_UNDEFINED_COLUMN),
 					 errmsg("column %d of relation \"%s\" does not exist",
-							attnum,
+							attphysnum,
 							rte->eref->aliasname)));
 			result = false;		/* keep compiler quiet */
 			break;
@@ -3402,12 +3402,12 @@ get_parse_rowmark(Query *qry, Index rtindex)
 }
 
 /*
- *	given relation and att name, return attnum of variable
+ *	given relation and att name, return attphysnum of variable
  *
  *	Returns InvalidAttrNumber if the attr doesn't exist (or is dropped).
  *
  *	This should only be used if the relation is already
- *	table_open()'ed.  Use the cache version get_attnum()
+ *	table_open()'ed.  Use the cache version get_attphysnum()
  *	for access to non-opened relations.
  */
 int
@@ -3448,7 +3448,7 @@ specialAttNum(const char *attname)
 
 	sysatt = SystemAttributeByName(attname);
 	if (sysatt != NULL)
-		return sysatt->attnum;
+		return sysatt->attphysnum;
 	return InvalidAttrNumber;
 }
 

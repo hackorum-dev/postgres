@@ -391,31 +391,31 @@ statext_compute_stattarget(int stattarget, int nattrs, VacAttrStats **stats)
 bool
 statext_is_kind_built(HeapTuple htup, char type)
 {
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 
 	switch (type)
 	{
 		case STATS_EXT_NDISTINCT:
-			attnum = Anum_pg_statistic_ext_data_stxdndistinct;
+			attphysnum = Anum_pg_statistic_ext_data_stxdndistinct;
 			break;
 
 		case STATS_EXT_DEPENDENCIES:
-			attnum = Anum_pg_statistic_ext_data_stxddependencies;
+			attphysnum = Anum_pg_statistic_ext_data_stxddependencies;
 			break;
 
 		case STATS_EXT_MCV:
-			attnum = Anum_pg_statistic_ext_data_stxdmcv;
+			attphysnum = Anum_pg_statistic_ext_data_stxdmcv;
 			break;
 
 		case STATS_EXT_EXPRESSIONS:
-			attnum = Anum_pg_statistic_ext_data_stxdexpr;
+			attphysnum = Anum_pg_statistic_ext_data_stxdexpr;
 			break;
 
 		default:
 			elog(ERROR, "unexpected statistics type requested: %d", type);
 	}
 
-	return !heap_attisnull(htup, attnum, NULL);
+	return !heap_attisnull(htup, attphysnum, NULL);
 }
 
 /*
@@ -655,7 +655,7 @@ examine_expression(Node *expr, int stattarget)
 
 	/* initialize some basic fields */
 	stats->attr->attrelid = InvalidOid;
-	stats->attr->attnum = InvalidAttrNumber;
+	stats->attr->attphysnum = InvalidAttrNumber;
 	stats->attr->atttypid = stats->attrtypid;
 
 	typtuple = SearchSysCacheCopy1(TYPEOID,
@@ -722,7 +722,7 @@ lookup_var_attr_stats(Relation rel, Bitmapset *attrs, List *exprs,
 
 	stats = (VacAttrStats **) palloc(natts * sizeof(VacAttrStats *));
 
-	/* lookup VacAttrStats info for the requested columns (same attnum) */
+	/* lookup VacAttrStats info for the requested columns (same attphysnum) */
 	while ((x = bms_next_member(attrs, x)) >= 0)
 	{
 		int			j;
@@ -979,7 +979,7 @@ build_attnums_array(Bitmapset *attrs, int nexprs, int *numattrs)
 	j = -1;
 	while ((j = bms_next_member(attrs, j)) >= 0)
 	{
-		int			attnum = (j - nexprs);
+		int			attphysnum = (j - nexprs);
 
 		/*
 		 * Make sure the bitmap contains only user-defined attributes. As
@@ -987,11 +987,11 @@ build_attnums_array(Bitmapset *attrs, int nexprs, int *numattrs)
 		 * ways. Firstly, the bitmap might contain 0 as a member, and secondly
 		 * the integer value might be larger than MaxAttrNumber.
 		 */
-		Assert(AttributeNumberIsValid(attnum));
-		Assert(attnum <= MaxAttrNumber);
-		Assert(attnum >= (-nexprs));
+		Assert(AttributeNumberIsValid(attphysnum));
+		Assert(attphysnum <= MaxAttrNumber);
+		Assert(attphysnum >= (-nexprs));
 
-		attnums[i++] = (AttrNumber) attnum;
+		attnums[i++] = (AttrNumber) attphysnum;
 
 		/* protect against overflows */
 		Assert(i <= num);
@@ -1070,14 +1070,14 @@ build_sorted_items(StatsBuildData *data, int *nitems,
 			Datum		value;
 			bool		isnull;
 			int			attlen;
-			AttrNumber	attnum = attnums[j];
+			AttrNumber	attphysnum = attnums[j];
 
 			int			idx;
 
-			/* match attnum to the pre-calculated data */
+			/* match attphysnum to the pre-calculated data */
 			for (idx = 0; idx < data->nattnums; idx++)
 			{
-				if (attnum == data->attnums[idx])
+				if (attphysnum == data->attnums[idx])
 					break;
 			}
 
@@ -1635,11 +1635,11 @@ statext_is_compatible_clause(PlannerInfo *root, Node *clause, Index relid,
 		else
 		{
 			/* Check the columns referenced by the clause */
-			int			attnum = -1;
+			int			attphysnum = -1;
 
-			while ((attnum = bms_next_member(clause_attnums, attnum)) >= 0)
+			while ((attphysnum = bms_next_member(clause_attnums, attphysnum)) >= 0)
 			{
-				if (pg_attribute_aclcheck(rte->relid, attnum, userid,
+				if (pg_attribute_aclcheck(rte->relid, attphysnum, userid,
 										  ACL_SELECT) != ACLCHECK_OK)
 					return false;
 			}
@@ -2186,7 +2186,7 @@ compute_expr_stats(Relation onerel, double totalrows,
 		{
 			AttributeOpts *aopt =
 			get_attribute_options(stats->attr->attrelid,
-								  stats->attr->attnum);
+								  stats->attr->attphysnum);
 
 			stats->exprvals = exprvals;
 			stats->exprnulls = exprnulls;

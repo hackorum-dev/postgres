@@ -76,8 +76,8 @@ cmpEntryAccumulator(const RBTNode *a, const RBTNode *b, void *arg)
 	BuildAccumulator *accum = (BuildAccumulator *) arg;
 
 	return ginCompareAttEntries(accum->ginstate,
-								ea->attnum, ea->key, ea->category,
-								eb->attnum, eb->key, eb->category);
+								ea->attphysnum, ea->key, ea->category,
+								eb->attphysnum, eb->key, eb->category);
 }
 
 /* Allocator function for rbtree.c */
@@ -125,12 +125,12 @@ ginInitBA(BuildAccumulator *accum)
  * palloc'd space in accum->allocatedMemory.
  */
 static Datum
-getDatumCopy(BuildAccumulator *accum, OffsetNumber attnum, Datum value)
+getDatumCopy(BuildAccumulator *accum, OffsetNumber attphysnum, Datum value)
 {
 	Form_pg_attribute att;
 	Datum		res;
 
-	att = TupleDescAttr(accum->ginstate->origTupdesc, attnum - 1);
+	att = TupleDescAttr(accum->ginstate->origTupdesc, attphysnum - 1);
 	if (att->attbyval)
 		res = value;
 	else
@@ -146,7 +146,7 @@ getDatumCopy(BuildAccumulator *accum, OffsetNumber attnum, Datum value)
  */
 static void
 ginInsertBAEntry(BuildAccumulator *accum,
-				 ItemPointer heapptr, OffsetNumber attnum,
+				 ItemPointer heapptr, OffsetNumber attphysnum,
 				 Datum key, GinNullCategory category)
 {
 	GinEntryAccumulator eatmp;
@@ -157,7 +157,7 @@ ginInsertBAEntry(BuildAccumulator *accum,
 	 * For the moment, fill only the fields of eatmp that will be looked at by
 	 * cmpEntryAccumulator or ginCombineData.
 	 */
-	eatmp.attnum = attnum;
+	eatmp.attphysnum = attphysnum;
 	eatmp.key = key;
 	eatmp.category = category;
 	/* temporarily set up single-entry itempointer list */
@@ -173,7 +173,7 @@ ginInsertBAEntry(BuildAccumulator *accum,
 		 * copies of the datum (if it's not null) and itempointer.
 		 */
 		if (category == GIN_CAT_NORM_KEY)
-			ea->key = getDatumCopy(accum, attnum, key);
+			ea->key = getDatumCopy(accum, attphysnum, key);
 		ea->maxcount = DEF_NPTR;
 		ea->count = 1;
 		ea->shouldSort = false;
@@ -208,7 +208,7 @@ ginInsertBAEntry(BuildAccumulator *accum,
  */
 void
 ginInsertBAEntries(BuildAccumulator *accum,
-				   ItemPointer heapptr, OffsetNumber attnum,
+				   ItemPointer heapptr, OffsetNumber attphysnum,
 				   Datum *entries, GinNullCategory *categories,
 				   int32 nentries)
 {
@@ -217,7 +217,7 @@ ginInsertBAEntries(BuildAccumulator *accum,
 	if (nentries <= 0)
 		return;
 
-	Assert(ItemPointerIsValid(heapptr) && attnum >= FirstOffsetNumber);
+	Assert(ItemPointerIsValid(heapptr) && attphysnum >= FirstOffsetNumber);
 
 	/*
 	 * step will contain largest power of 2 and <= nentries
@@ -235,7 +235,7 @@ ginInsertBAEntries(BuildAccumulator *accum,
 		int			i;
 
 		for (i = step - 1; i < nentries && i >= 0; i += step << 1 /* *2 */ )
-			ginInsertBAEntry(accum, heapptr, attnum,
+			ginInsertBAEntry(accum, heapptr, attphysnum,
 							 entries[i], categories[i]);
 
 		step >>= 1;				/* /2 */
@@ -266,7 +266,7 @@ ginBeginBAScan(BuildAccumulator *accum)
  */
 ItemPointerData *
 ginGetBAEntry(BuildAccumulator *accum,
-			  OffsetNumber *attnum, Datum *key, GinNullCategory *category,
+			  OffsetNumber *attphysnum, Datum *key, GinNullCategory *category,
 			  uint32 *n)
 {
 	GinEntryAccumulator *entry;
@@ -277,7 +277,7 @@ ginGetBAEntry(BuildAccumulator *accum,
 	if (entry == NULL)
 		return NULL;			/* no more entries */
 
-	*attnum = entry->attnum;
+	*attphysnum = entry->attphysnum;
 	*key = entry->key;
 	*category = entry->category;
 	list = entry->list;

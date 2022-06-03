@@ -4944,8 +4944,8 @@ HINT:  Perhaps you meant to reference the column "t1.unique1" or the column "t2.
 --
 select atts.relid::regclass, s.* from pg_stats s join
     pg_attribute a on s.attname = a.attname and s.tablename =
-    a.attrelid::regclass::text join (select unnest(indkey) attnum,
-    indexrelid from pg_index i) atts on atts.attnum = a.attnum where
+    a.attrelid::regclass::text join (select unnest(indkey) attphysnum,
+    indexrelid from pg_index i) atts on atts.attphysnum = a.attphysnum where
     schemaname != 'pg_catalog';
 ERROR:  column atts.relid does not exist
 LINE 1: select atts.relid::regclass, s.* from pg_stats s join

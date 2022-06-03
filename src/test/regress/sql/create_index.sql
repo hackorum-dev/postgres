@@ -1140,12 +1140,12 @@ SELECT starelid::regclass, count(*) FROM pg_statistic WHERE starelid IN (
   'concur_exprs_index_pred_2'::regclass)
   GROUP BY starelid ORDER BY starelid::regclass::text;
 -- attstattarget should remain intact
-SELECT attrelid::regclass, attnum, attstattarget
+SELECT attrelid::regclass, attphysnum, attstattarget
   FROM pg_attribute WHERE attrelid IN (
     'concur_exprs_index_expr'::regclass,
     'concur_exprs_index_pred'::regclass,
     'concur_exprs_index_pred_2'::regclass)
-  ORDER BY attrelid::regclass::text, attnum;
+  ORDER BY attrelid::regclass::text, attphysnum;
 DROP TABLE concur_exprs_tab;
 
 -- Temporary tables and on-commit actions, where CONCURRENTLY is ignored.

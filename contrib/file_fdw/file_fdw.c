@@ -430,7 +430,7 @@ get_file_fdw_attribute_options(Oid relid)
 	Relation	rel;
 	TupleDesc	tupleDesc;
 	AttrNumber	natts;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 	List	   *fnncolumns = NIL;
 	List	   *fncolumns = NIL;
 
@@ -441,9 +441,9 @@ get_file_fdw_attribute_options(Oid relid)
 	natts = tupleDesc->natts;
 
 	/* Retrieve FDW options for all user-defined attributes. */
-	for (attnum = 1; attnum <= natts; attnum++)
+	for (attphysnum = 1; attphysnum <= natts; attphysnum++)
 	{
-		Form_pg_attribute attr = TupleDescAttr(tupleDesc, attnum - 1);
+		Form_pg_attribute attr = TupleDescAttr(tupleDesc, attphysnum - 1);
 		List	   *options;
 		ListCell   *lc;
 
@@ -451,7 +451,7 @@ get_file_fdw_attribute_options(Oid relid)
 		if (attr->attisdropped)
 			continue;
 
-		options = GetForeignColumnOptions(relid, attnum);
+		options = GetForeignColumnOptions(relid, attphysnum);
 		foreach(lc, options)
 		{
 			DefElem    *def = (DefElem *) lfirst(lc);
@@ -852,7 +852,7 @@ check_selective_binary_conversion(RelOptInfo *baserel,
 	ListCell   *lc;
 	Relation	rel;
 	TupleDesc	tupleDesc;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 	Bitmapset  *attrs_used = NULL;
 	bool		has_wholerow = false;
 	int			numattrs;
@@ -895,25 +895,25 @@ check_selective_binary_conversion(RelOptInfo *baserel,
 	rel = table_open(foreigntableid, AccessShareLock);
 	tupleDesc = RelationGetDescr(rel);
 
-	while ((attnum = bms_first_member(attrs_used)) >= 0)
+	while ((attphysnum = bms_first_member(attrs_used)) >= 0)
 	{
 		/* Adjust for system attributes. */
-		attnum += FirstLowInvalidHeapAttributeNumber;
+		attphysnum += FirstLowInvalidHeapAttributeNumber;
 
-		if (attnum == 0)
+		if (attphysnum == 0)
 		{
 			has_wholerow = true;
 			break;
 		}
 
 		/* Ignore system attributes. */
-		if (attnum < 0)
+		if (attphysnum < 0)
 			continue;
 
 		/* Get user attributes. */
-		if (attnum > 0)
+		if (attphysnum > 0)
 		{
-			Form_pg_attribute attr = TupleDescAttr(tupleDesc, attnum - 1);
+			Form_pg_attribute attr = TupleDescAttr(tupleDesc, attphysnum - 1);
 			char	   *attname = NameStr(attr->attname);
 
 			/* Skip dropped attributes (probably shouldn't see any here). */

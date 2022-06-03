@@ -2289,7 +2289,7 @@ Tue Oct 26 21:40:57 CEST 1999
 <programlisting>
 =&gt; <userinput>SELECT format('create index on my_table(%I)', attname)</userinput>
 -&gt; <userinput>FROM pg_attribute</userinput>
--&gt; <userinput>WHERE attrelid = 'my_table'::regclass AND attnum &gt; 0</userinput>
+-&gt; <userinput>WHERE attrelid = 'my_table'::regclass AND attphysnum &gt; 0</userinput>
 -&gt; <userinput>ORDER BY attnum</userinput>
 -&gt; <userinput>\gexec</userinput>
 CREATE INDEX

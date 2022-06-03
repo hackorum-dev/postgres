@@ -272,7 +272,7 @@ ttdummy(PG_FUNCTION_ARGS)
 	TriggerData *trigdata = (TriggerData *) fcinfo->context;
 	Trigger    *trigger;		/* to get trigger name */
 	char	  **args;			/* arguments */
-	int			attnum[2];		/* fnumbers of start/stop columns */
+	int			attphysnum[2];		/* fnumbers of start/stop columns */
 	Datum		oldon,
 				oldoff;
 	Datum		newon,
@@ -325,29 +325,29 @@ ttdummy(PG_FUNCTION_ARGS)
 
 	for (i = 0; i < 2; i++)
 	{
-		attnum[i] = SPI_fnumber(tupdesc, args[i]);
-		if (attnum[i] <= 0)
+		attphysnum[i] = SPI_fnumber(tupdesc, args[i]);
+		if (attphysnum[i] <= 0)
 			elog(ERROR, "ttdummy (%s): there is no attribute %s",
 				 relname, args[i]);
-		if (SPI_gettypeid(tupdesc, attnum[i]) != INT4OID)
+		if (SPI_gettypeid(tupdesc, attphysnum[i]) != INT4OID)
 			elog(ERROR, "ttdummy (%s): attribute %s must be of integer type",
 				 relname, args[i]);
 	}
 
-	oldon = SPI_getbinval(trigtuple, tupdesc, attnum[0], &isnull);
+	oldon = SPI_getbinval(trigtuple, tupdesc, attphysnum[0], &isnull);
 	if (isnull)
 		elog(ERROR, "ttdummy (%s): %s must be NOT NULL", relname, args[0]);
 
-	oldoff = SPI_getbinval(trigtuple, tupdesc, attnum[1], &isnull);
+	oldoff = SPI_getbinval(trigtuple, tupdesc, attphysnum[1], &isnull);
 	if (isnull)
 		elog(ERROR, "ttdummy (%s): %s must be NOT NULL", relname, args[1]);
 
 	if (newtuple != NULL)		/* UPDATE */
 	{
-		newon = SPI_getbinval(newtuple, tupdesc, attnum[0], &isnull);
+		newon = SPI_getbinval(newtuple, tupdesc, attphysnum[0], &isnull);
 		if (isnull)
 			elog(ERROR, "ttdummy (%s): %s must be NOT NULL", relname, args[0]);
-		newoff = SPI_getbinval(newtuple, tupdesc, attnum[1], &isnull);
+		newoff = SPI_getbinval(newtuple, tupdesc, attphysnum[1], &isnull);
 		if (isnull)
 			elog(ERROR, "ttdummy (%s): %s must be NOT NULL", relname, args[1]);
 
@@ -390,16 +390,16 @@ ttdummy(PG_FUNCTION_ARGS)
 	/* change date column(s) */
 	if (newtuple)				/* UPDATE */
 	{
-		cvals[attnum[0] - 1] = newoff;	/* start_date eq current date */
-		cnulls[attnum[0] - 1] = ' ';
-		cvals[attnum[1] - 1] = TTDUMMY_INFINITY;	/* stop_date eq INFINITY */
-		cnulls[attnum[1] - 1] = ' ';
+		cvals[attphysnum[0] - 1] = newoff;	/* start_date eq current date */
+		cnulls[attphysnum[0] - 1] = ' ';
+		cvals[attphysnum[1] - 1] = TTDUMMY_INFINITY;	/* stop_date eq INFINITY */
+		cnulls[attphysnum[1] - 1] = ' ';
 	}
 	else
 		/* DELETE */
 	{
-		cvals[attnum[1] - 1] = newoff;	/* stop_date eq current date */
-		cnulls[attnum[1] - 1] = ' ';
+		cvals[attphysnum[1] - 1] = newoff;	/* stop_date eq current date */
+		cnulls[attphysnum[1] - 1] = ' ';
 	}
 
 	/* if there is no plan ... */
@@ -442,7 +442,7 @@ ttdummy(PG_FUNCTION_ARGS)
 
 	/* Tuple to return to upper Executor ... */
 	if (newtuple)				/* UPDATE */
-		rettuple = SPI_modifytuple(rel, trigtuple, 1, &(attnum[1]), &newoff, NULL);
+		rettuple = SPI_modifytuple(rel, trigtuple, 1, &(attphysnum[1]), &newoff, NULL);
 	else						/* DELETE */
 		rettuple = trigtuple;
 

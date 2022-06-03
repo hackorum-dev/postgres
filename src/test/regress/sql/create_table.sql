@@ -513,8 +513,8 @@ CREATE TABLE part_a PARTITION OF parted FOR VALUES IN ('a');
 
 -- only inherited attributes (never local ones)
 SELECT attname, attislocal, attinhcount FROM pg_attribute
-  WHERE attrelid = 'part_a'::regclass and attnum > 0
-  ORDER BY attnum;
+  WHERE attrelid = 'part_a'::regclass and attphysnum > 0
+  ORDER BY attphysnum;
 
 -- able to specify column default, column constraint, and table constraint
 

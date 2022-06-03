@@ -423,9 +423,9 @@ create index on idxpart (col_keep);
 alter table idxpart attach partition idxpart1 for values from (0) to (1000);
 \d idxpart
 \d idxpart1
-select attrelid::regclass, attname, attnum from pg_attribute
-  where attrelid::regclass::text like 'idxpart%' and attnum > 0
-  order by attrelid::regclass, attnum;
+select attrelid::regclass, attname, attphysnum from pg_attribute
+  where attrelid::regclass::text like 'idxpart%' and attphysnum > 0
+  order by attrelid::regclass, attphysnum;
 drop table idxpart;
 
 -- Column number mapping: dropped columns in the parent table
@@ -439,9 +439,9 @@ create index on idxpart (col_keep);
 alter table idxpart attach partition idxpart1 for values from (0) to (1000);
 \d idxpart
 \d idxpart1
-select attrelid::regclass, attname, attnum from pg_attribute
-  where attrelid::regclass::text like 'idxpart%' and attnum > 0
-  order by attrelid::regclass, attnum;
+select attrelid::regclass, attname, attphysnum from pg_attribute
+  where attrelid::regclass::text like 'idxpart%' and attphysnum > 0
+  order by attrelid::regclass, attphysnum;
 drop table idxpart;
 
 --

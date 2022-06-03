@@ -379,7 +379,7 @@ ExecBuildProjectionInfo(List *targetList,
 	{
 		TargetEntry *tle = lfirst_node(TargetEntry, lc);
 		Var		   *variable = NULL;
-		AttrNumber	attnum = 0;
+		AttrNumber	attphysnum = 0;
 		bool		isSafeVar = false;
 
 		/*
@@ -396,13 +396,13 @@ ExecBuildProjectionInfo(List *targetList,
 		{
 			/* Non-system Var, but how safe is it? */
 			variable = (Var *) tle->expr;
-			attnum = variable->varattno;
+			attphysnum = variable->varattno;
 
 			if (inputDesc == NULL)
 				isSafeVar = true;	/* can't check, just assume OK */
-			else if (attnum <= inputDesc->natts)
+			else if (attphysnum <= inputDesc->natts)
 			{
-				Form_pg_attribute attr = TupleDescAttr(inputDesc, attnum - 1);
+				Form_pg_attribute attr = TupleDescAttr(inputDesc, attphysnum - 1);
 
 				/*
 				 * If user attribute is dropped or has a type mismatch, don't
@@ -439,7 +439,7 @@ ExecBuildProjectionInfo(List *targetList,
 					break;
 			}
 
-			scratch.d.assign_var.attnum = attnum - 1;
+			scratch.d.assign_var.attphysnum = attphysnum - 1;
 			scratch.d.assign_var.resultnum = tle->resno - 1;
 			ExprEvalPushStep(state, &scratch);
 		}
@@ -584,15 +584,15 @@ ExecBuildUpdateProjection(List *targetList,
 	 * sufficiently deconstructed.  The scan tuple must be deconstructed at
 	 * least as far as the last old column we need.
 	 */
-	for (int attnum = relDesc->natts; attnum > 0; attnum--)
+	for (int attphysnum = relDesc->natts; attphysnum > 0; attphysnum--)
 	{
-		Form_pg_attribute attr = TupleDescAttr(relDesc, attnum - 1);
+		Form_pg_attribute attr = TupleDescAttr(relDesc, attphysnum - 1);
 
 		if (attr->attisdropped)
 			continue;
-		if (bms_is_member(attnum, assignedCols))
+		if (bms_is_member(attphysnum, assignedCols))
 			continue;
-		deform.last_scan = attnum;
+		deform.last_scan = attphysnum;
 		break;
 	}
 
@@ -668,7 +668,7 @@ ExecBuildUpdateProjection(List *targetList,
 		{
 			/* Just assign from the outer tuple. */
 			scratch.opcode = EEOP_ASSIGN_OUTER_VAR;
-			scratch.d.assign_var.attnum = outerattnum;
+			scratch.d.assign_var.attphysnum = outerattnum;
 			scratch.d.assign_var.resultnum = targetattnum - 1;
 			ExprEvalPushStep(state, &scratch);
 		}
@@ -695,9 +695,9 @@ ExecBuildUpdateProjection(List *targetList,
 	 * Now generate code to copy over any old columns that were not assigned
 	 * to, and to ensure that dropped columns are set to NULL.
 	 */
-	for (int attnum = 1; attnum <= relDesc->natts; attnum++)
+	for (int attphysnum = 1; attphysnum <= relDesc->natts; attphysnum++)
 	{
-		Form_pg_attribute attr = TupleDescAttr(relDesc, attnum - 1);
+		Form_pg_attribute attr = TupleDescAttr(relDesc, attphysnum - 1);
 
 		if (attr->attisdropped)
 		{
@@ -710,15 +710,15 @@ ExecBuildUpdateProjection(List *targetList,
 			ExprEvalPushStep(state, &scratch);
 			/* ... then assign it to the result slot */
 			scratch.opcode = EEOP_ASSIGN_TMP;
-			scratch.d.assign_tmp.resultnum = attnum - 1;
+			scratch.d.assign_tmp.resultnum = attphysnum - 1;
 			ExprEvalPushStep(state, &scratch);
 		}
-		else if (!bms_is_member(attnum, assignedCols))
+		else if (!bms_is_member(attphysnum, assignedCols))
 		{
 			/* Certainly the right type, so needn't check */
 			scratch.opcode = EEOP_ASSIGN_SCAN_VAR;
-			scratch.d.assign_var.attnum = attnum - 1;
-			scratch.d.assign_var.resultnum = attnum - 1;
+			scratch.d.assign_var.attphysnum = attphysnum - 1;
+			scratch.d.assign_var.resultnum = attphysnum - 1;
 			ExprEvalPushStep(state, &scratch);
 		}
 	}
@@ -925,7 +925,7 @@ ExecInitExprRec(Expr *node, ExprState *state,
 				else if (variable->varattno <= 0)
 				{
 					/* system column */
-					scratch.d.var.attnum = variable->varattno;
+					scratch.d.var.attphysnum = variable->varattno;
 					scratch.d.var.vartype = variable->vartype;
 					switch (variable->varno)
 					{
@@ -946,7 +946,7 @@ ExecInitExprRec(Expr *node, ExprState *state,
 				else
 				{
 					/* regular user column */
-					scratch.d.var.attnum = variable->varattno - 1;
+					scratch.d.var.attphysnum = variable->varattno - 1;
 					scratch.d.var.vartype = variable->vartype;
 					switch (variable->varno)
 					{
@@ -2890,22 +2890,22 @@ get_last_attnums_walker(Node *node, LastAttnumInfo *info)
 	if (IsA(node, Var))
 	{
 		Var		   *variable = (Var *) node;
-		AttrNumber	attnum = variable->varattno;
+		AttrNumber	attphysnum = variable->varattno;
 
 		switch (variable->varno)
 		{
 			case INNER_VAR:
-				info->last_inner = Max(info->last_inner, attnum);
+				info->last_inner = Max(info->last_inner, attphysnum);
 				break;
 
 			case OUTER_VAR:
-				info->last_outer = Max(info->last_outer, attnum);
+				info->last_outer = Max(info->last_outer, attphysnum);
 				break;
 
 				/* INDEX_VAR is handled by default case */
 
 			default:
-				info->last_scan = Max(info->last_scan, attnum);
+				info->last_scan = Max(info->last_scan, attphysnum);
 				break;
 		}
 		return false;
@@ -4040,7 +4040,7 @@ ExecBuildGroupingEqual(TupleDesc ldesc, TupleDesc rdesc,
 
 		/* left arg */
 		scratch.opcode = EEOP_INNER_VAR;
-		scratch.d.var.attnum = attno - 1;
+		scratch.d.var.attphysnum = attno - 1;
 		scratch.d.var.vartype = latt->atttypid;
 		scratch.resvalue = &fcinfo->args[0].value;
 		scratch.resnull = &fcinfo->args[0].isnull;
@@ -4048,7 +4048,7 @@ ExecBuildGroupingEqual(TupleDesc ldesc, TupleDesc rdesc,
 
 		/* right arg */
 		scratch.opcode = EEOP_OUTER_VAR;
-		scratch.d.var.attnum = attno - 1;
+		scratch.d.var.attphysnum = attno - 1;
 		scratch.d.var.vartype = ratt->atttypid;
 		scratch.resvalue = &fcinfo->args[1].value;
 		scratch.resnull = &fcinfo->args[1].isnull;
@@ -4174,7 +4174,7 @@ ExecBuildParamSetEqual(TupleDesc desc,
 
 		/* left arg */
 		scratch.opcode = EEOP_INNER_VAR;
-		scratch.d.var.attnum = attno;
+		scratch.d.var.attphysnum = attno;
 		scratch.d.var.vartype = att->atttypid;
 		scratch.resvalue = &fcinfo->args[0].value;
 		scratch.resnull = &fcinfo->args[0].isnull;
@@ -4182,7 +4182,7 @@ ExecBuildParamSetEqual(TupleDesc desc,
 
 		/* right arg */
 		scratch.opcode = EEOP_OUTER_VAR;
-		scratch.d.var.attnum = attno;
+		scratch.d.var.attphysnum = attno;
 		scratch.d.var.vartype = att->atttypid;
 		scratch.resvalue = &fcinfo->args[1].value;
 		scratch.resnull = &fcinfo->args[1].isnull;

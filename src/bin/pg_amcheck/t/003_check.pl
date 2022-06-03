@@ -172,7 +172,7 @@ for my $dbname (qw(db1 db2 db3))
 											 endblock bigint default null,
 											 blkno OUT bigint,
 											 offnum OUT integer,
-											 attnum OUT integer,
+											 attphysnum OUT integer,
 											 msg OUT text)
 		RETURNS SETOF record AS $$
 		BEGIN

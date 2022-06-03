@@ -54,7 +54,7 @@ ginbeginscan(Relation rel, int nkeys, int norderbys)
  * in which case just return it
  */
 static GinScanEntry
-ginFillScanEntry(GinScanOpaque so, OffsetNumber attnum,
+ginFillScanEntry(GinScanOpaque so, OffsetNumber attphysnum,
 				 StrategyNumber strategy, int32 searchMode,
 				 Datum queryKey, GinNullCategory queryCategory,
 				 bool isPartialMatch, Pointer extra_data)
@@ -79,8 +79,8 @@ ginFillScanEntry(GinScanOpaque so, OffsetNumber attnum,
 				prevEntry->isPartialMatch == isPartialMatch &&
 				prevEntry->strategy == strategy &&
 				prevEntry->searchMode == searchMode &&
-				prevEntry->attnum == attnum &&
-				ginCompareEntries(ginstate, attnum,
+				prevEntry->attphysnum == attphysnum &&
+				ginCompareEntries(ginstate, attphysnum,
 								  prevEntry->queryKey,
 								  prevEntry->queryCategory,
 								  queryKey,
@@ -100,7 +100,7 @@ ginFillScanEntry(GinScanOpaque so, OffsetNumber attnum,
 	scanEntry->extra_data = extra_data;
 	scanEntry->strategy = strategy;
 	scanEntry->searchMode = searchMode;
-	scanEntry->attnum = attnum;
+	scanEntry->attphysnum = attphysnum;
 
 	scanEntry->buffer = InvalidBuffer;
 	ItemPointerSetMin(&scanEntry->curItem);
@@ -140,7 +140,7 @@ ginScanKeyAddHiddenEntry(GinScanOpaque so, GinScanKey key,
 	int			i = key->nentries++;
 
 	/* strategy is of no interest because this is not a partial-match item */
-	key->scanEntry[i] = ginFillScanEntry(so, key->attnum,
+	key->scanEntry[i] = ginFillScanEntry(so, key->attphysnum,
 										 InvalidStrategy, key->searchMode,
 										 (Datum) 0, queryCategory,
 										 false, NULL);
@@ -150,7 +150,7 @@ ginScanKeyAddHiddenEntry(GinScanOpaque so, GinScanKey key,
  * Initialize the next GinScanKey using the output from the extractQueryFn
  */
 static void
-ginFillScanKey(GinScanOpaque so, OffsetNumber attnum,
+ginFillScanKey(GinScanOpaque so, OffsetNumber attphysnum,
 			   StrategyNumber strategy, int32 searchMode,
 			   Datum query, uint32 nQueryValues,
 			   Datum *queryValues, GinNullCategory *queryCategories,
@@ -175,7 +175,7 @@ ginFillScanKey(GinScanOpaque so, OffsetNumber attnum,
 	key->extra_data = extra_data;
 	key->strategy = strategy;
 	key->searchMode = searchMode;
-	key->attnum = attnum;
+	key->attphysnum = attphysnum;
 
 	/*
 	 * Initially, scan keys of GIN_SEARCH_MODE_ALL mode are marked
@@ -205,11 +205,11 @@ ginFillScanKey(GinScanOpaque so, OffsetNumber attnum,
 		queryKey = queryValues[i];
 		queryCategory = queryCategories[i];
 		isPartialMatch =
-			(ginstate->canPartialMatch[attnum - 1] && partial_matches)
+			(ginstate->canPartialMatch[attphysnum - 1] && partial_matches)
 			? partial_matches[i] : false;
 		this_extra = (extra_data) ? extra_data[i] : NULL;
 
-		key->scanEntry[i] = ginFillScanEntry(so, attnum,
+		key->scanEntry[i] = ginFillScanEntry(so, attphysnum,
 											 strategy, searchMode,
 											 queryKey, queryCategory,
 											 isPartialMatch, this_extra);
@@ -394,11 +394,11 @@ ginNewScanKey(IndexScanDesc scan)
 		if (key->searchMode != GIN_SEARCH_MODE_ALL)
 			continue;
 
-		if (!attrHasNormalScan[key->attnum - 1])
+		if (!attrHasNormalScan[key->attphysnum - 1])
 		{
 			key->excludeOnly = false;
 			ginScanKeyAddHiddenEntry(so, key, GIN_CAT_EMPTY_QUERY);
-			attrHasNormalScan[key->attnum - 1] = true;
+			attrHasNormalScan[key->attphysnum - 1] = true;
 		}
 	}
 

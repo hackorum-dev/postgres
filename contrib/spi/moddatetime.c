@@ -32,7 +32,7 @@ moddatetime(PG_FUNCTION_ARGS)
 	TriggerData *trigdata = (TriggerData *) fcinfo->context;
 	Trigger    *trigger;		/* to get trigger name */
 	int			nargs;			/* # of arguments */
-	int			attnum;			/* positional number of field to change */
+	int			attphysnum;			/* positional number of field to change */
 	Oid			atttypid;		/* type OID of field to change */
 	Datum		newdt;			/* The current datetime. */
 	bool		newdtnull;		/* null flag for it */
@@ -82,13 +82,13 @@ moddatetime(PG_FUNCTION_ARGS)
 	 * This gets the position in the tuple of the field we want. args[0] being
 	 * the name of the field to update, as passed in from the trigger.
 	 */
-	attnum = SPI_fnumber(tupdesc, args[0]);
+	attphysnum = SPI_fnumber(tupdesc, args[0]);
 
 	/*
 	 * This is where we check to see if the field we are supposed to update
 	 * even exists.
 	 */
-	if (attnum <= 0)
+	if (attphysnum <= 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_TRIGGERED_ACTION_EXCEPTION),
 				 errmsg("\"%s\" has no attribute \"%s\"",
@@ -98,7 +98,7 @@ moddatetime(PG_FUNCTION_ARGS)
 	 * Check the target field has an allowed type, and get the current
 	 * datetime as a value of that type.
 	 */
-	atttypid = SPI_gettypeid(tupdesc, attnum);
+	atttypid = SPI_gettypeid(tupdesc, attphysnum);
 	if (atttypid == TIMESTAMPOID)
 		newdt = DirectFunctionCall3(timestamp_in,
 									CStringGetDatum("now"),
@@ -121,7 +121,7 @@ moddatetime(PG_FUNCTION_ARGS)
 
 	/* Replace the attnum'th column with newdt */
 	rettuple = heap_modify_tuple_by_cols(rettuple, tupdesc,
-										 1, &attnum, &newdt, &newdtnull);
+										 1, &attphysnum, &newdt, &newdtnull);
 
 	/* Clean up */
 	pfree(relname);

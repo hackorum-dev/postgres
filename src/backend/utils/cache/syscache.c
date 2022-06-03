@@ -200,12 +200,12 @@ static const struct cachedesc cacheinfo[] = {
 		},
 		32
 	},
-	{AttributeRelationId,		/* ATTNUM */
-		AttributeRelidNumIndexId,
+	{AttributeRelationId,		/* ATTPHYSNUM */
+		AttributeRelidPhysNumIndexId,
 		2,
 		{
 			Anum_pg_attribute_attrelid,
-			Anum_pg_attribute_attnum,
+			Anum_pg_attribute_attphysnum,
 			0,
 			0
 		},
@@ -1368,19 +1368,19 @@ SearchSysCacheExistsAttName(Oid relid, const char *attname)
 /*
  * SearchSysCacheAttNum
  *
- * This routine is equivalent to SearchSysCache on the ATTNUM cache,
+ * This routine is equivalent to SearchSysCache on the ATTPHYSNUM cache,
  * except that it will return NULL if the found attribute is marked
  * attisdropped.  This is convenient for callers that want to act as
  * though dropped attributes don't exist.
  */
 HeapTuple
-SearchSysCacheAttNum(Oid relid, int16 attnum)
+SearchSysCacheAttNum(Oid relid, int16 attphysnum)
 {
 	HeapTuple	tuple;
 
-	tuple = SearchSysCache2(ATTNUM,
+	tuple = SearchSysCache2(ATTPHYSNUM,
 							ObjectIdGetDatum(relid),
-							Int16GetDatum(attnum));
+							Int16GetDatum(attphysnum));
 	if (!HeapTupleIsValid(tuple))
 		return NULL;
 	if (((Form_pg_attribute) GETSTRUCT(tuple))->attisdropped)
@@ -1397,12 +1397,12 @@ SearchSysCacheAttNum(Oid relid, int16 attnum)
  * As above, an attisdropped-aware version of SearchSysCacheCopy.
  */
 HeapTuple
-SearchSysCacheCopyAttNum(Oid relid, int16 attnum)
+SearchSysCacheCopyAttNum(Oid relid, int16 attphysnum)
 {
 	HeapTuple	tuple,
 				newtuple;
 
-	tuple = SearchSysCacheAttNum(relid, attnum);
+	tuple = SearchSysCacheAttNum(relid, attphysnum);
 	if (!HeapTupleIsValid(tuple))
 		return NULL;
 	newtuple = heap_copytuple(tuple);

@@ -2365,15 +2365,15 @@ _bt_keep_natts(Relation rel, IndexTuple lastleft, IndexTuple firstright,
 
 	scankey = itup_key->scankeys;
 	keepnatts = 1;
-	for (int attnum = 1; attnum <= nkeyatts; attnum++, scankey++)
+	for (int attphysnum = 1; attphysnum <= nkeyatts; attphysnum++, scankey++)
 	{
 		Datum		datum1,
 					datum2;
 		bool		isNull1,
 					isNull2;
 
-		datum1 = index_getattr(lastleft, attnum, itupdesc, &isNull1);
-		datum2 = index_getattr(firstright, attnum, itupdesc, &isNull2);
+		datum1 = index_getattr(lastleft, attphysnum, itupdesc, &isNull1);
+		datum2 = index_getattr(firstright, attphysnum, itupdesc, &isNull2);
 
 		if (isNull1 != isNull2)
 			break;
@@ -2428,7 +2428,7 @@ _bt_keep_natts_fast(Relation rel, IndexTuple lastleft, IndexTuple firstright)
 	int			keepnatts;
 
 	keepnatts = 1;
-	for (int attnum = 1; attnum <= keysz; attnum++)
+	for (int attphysnum = 1; attphysnum <= keysz; attphysnum++)
 	{
 		Datum		datum1,
 					datum2;
@@ -2436,9 +2436,9 @@ _bt_keep_natts_fast(Relation rel, IndexTuple lastleft, IndexTuple firstright)
 					isNull2;
 		Form_pg_attribute att;
 
-		datum1 = index_getattr(lastleft, attnum, itupdesc, &isNull1);
-		datum2 = index_getattr(firstright, attnum, itupdesc, &isNull2);
-		att = TupleDescAttr(itupdesc, attnum - 1);
+		datum1 = index_getattr(lastleft, attphysnum, itupdesc, &isNull1);
+		datum2 = index_getattr(firstright, attphysnum, itupdesc, &isNull2);
+		att = TupleDescAttr(itupdesc, attphysnum - 1);
 
 		if (isNull1 != isNull2)
 			break;

@@ -57,7 +57,7 @@ SELECT n.nspname AS schema_name,
   WHERE bc.relnamespace = n.oid
      and i.indrelid = bc.oid
      and i.indexrelid = ic.oid
-     and i.indkey[0] = a.attnum
+     and i.indkey[0] = a.attphysnum
      and i.indnatts = 1
      and a.attrelid = bc.oid
   ORDER BY schema_name, class_name, index_name, attname;
@@ -74,7 +74,7 @@ SELECT n.nspname, c.relname, a.attname, format_type(t.oid, null) as typname
     and c.relkind = 'r'     -- no indices
     and n.nspname not like 'pg\_%' -- no catalogs
     and n.nspname != 'information_schema' -- no information_schema
-    and a.attnum > 0        -- no system att's
+    and a.attphysnum > 0        -- no system att's
     and not a.attisdropped   -- no dropped columns
     and a.attrelid = c.oid
     and a.atttypid = t.oid

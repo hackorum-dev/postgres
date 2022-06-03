@@ -453,7 +453,7 @@ intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 	ObjectAddress intoRelationAddr;
 	Relation	intoRelationDesc;
 	ListCell   *lc;
-	int			attnum;
+	int			attphysnum;
 
 	Assert(into != NULL);		/* else somebody forgot to set it */
 
@@ -468,9 +468,9 @@ intorel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 	 */
 	attrList = NIL;
 	lc = list_head(into->colNames);
-	for (attnum = 0; attnum < typeinfo->natts; attnum++)
+	for (attphysnum = 0; attphysnum < typeinfo->natts; attphysnum++)
 	{
-		Form_pg_attribute attribute = TupleDescAttr(typeinfo, attnum);
+		Form_pg_attribute attribute = TupleDescAttr(typeinfo, attphysnum);
 		ColumnDef  *col;
 		char	   *colname;
 

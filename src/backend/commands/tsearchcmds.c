@@ -62,10 +62,10 @@ static DefElem *buildDefItem(const char *name, const char *val,
 /*
  * lookup a parser support function and return its OID (as a Datum)
  *
- * attnum is the pg_ts_parser column the function will go into
+ * attphysnum is the pg_ts_parser column the function will go into
  */
 static Datum
-get_ts_parser_func(DefElem *defel, int attnum)
+get_ts_parser_func(DefElem *defel, int attphysnum)
 {
 	List	   *funcName = defGetQualifiedName(defel);
 	Oid			typeId[3];
@@ -75,7 +75,7 @@ get_ts_parser_func(DefElem *defel, int attnum)
 
 	retTypeId = INTERNALOID;	/* correct for most */
 	typeId[0] = INTERNALOID;
-	switch (attnum)
+	switch (attphysnum)
 	{
 		case Anum_pg_ts_parser_prsstart:
 			nargs = 2;
@@ -107,7 +107,7 @@ get_ts_parser_func(DefElem *defel, int attnum)
 		default:
 			/* should not be here */
 			elog(ERROR, "unrecognized attribute for text search parser: %d",
-				 attnum);
+				 attphysnum);
 			nargs = 0;			/* keep compiler quiet */
 	}
 
@@ -597,10 +597,10 @@ AlterTSDictionary(AlterTSDictionaryStmt *stmt)
 /*
  * lookup a template support function and return its OID (as a Datum)
  *
- * attnum is the pg_ts_template column the function will go into
+ * attphysnum is the pg_ts_template column the function will go into
  */
 static Datum
-get_ts_template_func(DefElem *defel, int attnum)
+get_ts_template_func(DefElem *defel, int attphysnum)
 {
 	List	   *funcName = defGetQualifiedName(defel);
 	Oid			typeId[4];
@@ -613,7 +613,7 @@ get_ts_template_func(DefElem *defel, int attnum)
 	typeId[1] = INTERNALOID;
 	typeId[2] = INTERNALOID;
 	typeId[3] = INTERNALOID;
-	switch (attnum)
+	switch (attphysnum)
 	{
 		case Anum_pg_ts_template_tmplinit:
 			nargs = 1;
@@ -624,7 +624,7 @@ get_ts_template_func(DefElem *defel, int attnum)
 		default:
 			/* should not be here */
 			elog(ERROR, "unrecognized attribute for text search template: %d",
-				 attnum);
+				 attphysnum);
 			nargs = 0;			/* keep compiler quiet */
 	}
 

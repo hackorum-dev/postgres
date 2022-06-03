@@ -37,7 +37,7 @@ extern void BootstrapModeMain(int argc, char *argv[], bool check_only) pg_attrib
 extern void closerel(char *name);
 extern void boot_openrel(char *name);
 
-extern void DefineAttr(char *name, char *type, int attnum, int nullness);
+extern void DefineAttr(char *name, char *type, int attphysnum, int nullness);
 extern void InsertOneTuple(void);
 extern void InsertOneValue(char *value, int i);
 extern void InsertOneNull(int i);

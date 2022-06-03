@@ -1211,14 +1211,14 @@ EventTriggerSQLDropAddObject(const ObjectAddress *object, bool original, bool no
 
 		if (tuple)
 		{
-			AttrNumber	attnum;
+			AttrNumber	attphysnum;
 			Datum		datum;
 			bool		isnull;
 
-			attnum = get_object_attnum_namespace(obj->address.classId);
-			if (attnum != InvalidAttrNumber)
+			attphysnum = get_object_attnum_namespace(obj->address.classId);
+			if (attphysnum != InvalidAttrNumber)
 			{
-				datum = heap_getattr(tuple, attnum,
+				datum = heap_getattr(tuple, attphysnum,
 									 RelationGetDescr(catalog), &isnull);
 				if (!isnull)
 				{
@@ -1249,10 +1249,10 @@ EventTriggerSQLDropAddObject(const ObjectAddress *object, bool original, bool no
 			if (get_object_namensp_unique(obj->address.classId) &&
 				obj->address.objectSubId == 0)
 			{
-				attnum = get_object_attnum_name(obj->address.classId);
-				if (attnum != InvalidAttrNumber)
+				attphysnum = get_object_attnum_name(obj->address.classId);
+				if (attphysnum != InvalidAttrNumber)
 				{
-					datum = heap_getattr(tuple, attnum,
+					datum = heap_getattr(tuple, attphysnum,
 										 RelationGetDescr(catalog), &isnull);
 					if (!isnull)
 						obj->objname = pstrdup(NameStr(*DatumGetName(datum)));

@@ -136,7 +136,7 @@ typedef struct
 /* Hooks for plugins to get control when we ask for stats */
 typedef bool (*get_relation_stats_hook_type) (PlannerInfo *root,
 											  RangeTblEntry *rte,
-											  AttrNumber attnum,
+											  AttrNumber attphysnum,
 											  VariableStatData *vardata);
 extern PGDLLIMPORT get_relation_stats_hook_type get_relation_stats_hook;
 typedef bool (*get_index_stats_hook_type) (PlannerInfo *root,

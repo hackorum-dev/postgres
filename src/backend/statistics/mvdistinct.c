@@ -373,9 +373,9 @@ pg_ndistinct_out(PG_FUNCTION_ARGS)
 
 		for (j = 0; j < item.nattributes; j++)
 		{
-			AttrNumber	attnum = item.attributes[j];
+			AttrNumber	attphysnum = item.attributes[j];
 
-			appendStringInfo(&str, "%s%d", (j == 0) ? "\"" : ", ", attnum);
+			appendStringInfo(&str, "%s%d", (j == 0) ? "\"" : ", ", attphysnum);
 		}
 		appendStringInfo(&str, "\": %d", (int) item.ndistinct);
 	}

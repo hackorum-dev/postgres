@@ -788,9 +788,9 @@ NextCopyFromRawFields(CopyFromState cstate, char ***fields, int *nfields)
 			fldnum = 0;
 			foreach(cur, cstate->attnumlist)
 			{
-				int			attnum = lfirst_int(cur);
+				int			attphysnum = lfirst_int(cur);
 				char	   *colName;
-				Form_pg_attribute attr = TupleDescAttr(tupDesc, attnum - 1);
+				Form_pg_attribute attr = TupleDescAttr(tupDesc, attphysnum - 1);
 
 				Assert(fldnum < cstate->max_fields);
 
@@ -894,8 +894,8 @@ NextCopyFrom(CopyFromState cstate, ExprContext *econtext,
 		/* Loop to read the user attributes on the line. */
 		foreach(cur, cstate->attnumlist)
 		{
-			int			attnum = lfirst_int(cur);
-			int			m = attnum - 1;
+			int			attphysnum = lfirst_int(cur);
+			int			m = attphysnum - 1;
 			Form_pg_attribute att = TupleDescAttr(tupDesc, m);
 
 			if (fieldno >= fldct)
@@ -991,8 +991,8 @@ NextCopyFrom(CopyFromState cstate, ExprContext *econtext,
 
 		foreach(cur, cstate->attnumlist)
 		{
-			int			attnum = lfirst_int(cur);
-			int			m = attnum - 1;
+			int			attphysnum = lfirst_int(cur);
+			int			m = attphysnum - 1;
 			Form_pg_attribute att = TupleDescAttr(tupDesc, m);
 
 			cstate->cur_attname = NameStr(att->attname);

@@ -257,11 +257,11 @@ extractRemainingColumns(ParseNamespaceColumn *src_nscolumns,
 {
 	int			colcount = 0;
 	Bitmapset  *prevcols;
-	int			attnum;
+	int			attphysnum;
 	ListCell   *lc;
 
 	/*
-	 * While we could just test "list_member_int(*src_colnos, attnum)" to
+	 * While we could just test "list_member_int(*src_colnos, attphysnum)" to
 	 * detect already-merged columns in the loop below, that would be O(N^2)
 	 * for a wide input table.  Instead build a bitmapset of just the merged
 	 * USING columns, which we won't add to within the main loop.
@@ -272,22 +272,22 @@ extractRemainingColumns(ParseNamespaceColumn *src_nscolumns,
 		prevcols = bms_add_member(prevcols, lfirst_int(lc));
 	}
 
-	attnum = 0;
+	attphysnum = 0;
 	foreach(lc, src_colnames)
 	{
 		char	   *colname = strVal(lfirst(lc));
 
-		attnum++;
+		attphysnum++;
 		/* Non-dropped and not already merged? */
-		if (colname[0] != '\0' && !bms_is_member(attnum, prevcols))
+		if (colname[0] != '\0' && !bms_is_member(attphysnum, prevcols))
 		{
 			/* Yes, so emit it as next output column */
-			*src_colnos = lappend_int(*src_colnos, attnum);
+			*src_colnos = lappend_int(*src_colnos, attphysnum);
 			*res_colnames = lappend(*res_colnames, lfirst(lc));
 			*res_colvars = lappend(*res_colvars,
-								   buildVarFromNSColumn(src_nscolumns + attnum - 1));
+								   buildVarFromNSColumn(src_nscolumns + attphysnum - 1));
 			/* Copy the input relation's nscolumn data for this column */
-			res_nscolumns[colcount] = src_nscolumns[attnum - 1];
+			res_nscolumns[colcount] = src_nscolumns[attphysnum - 1];
 			colcount++;
 		}
 	}

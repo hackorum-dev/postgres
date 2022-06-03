@@ -84,7 +84,7 @@ extern void RelationInitTableAccessMethod(Relation relation);
  * Routines to support ereport() reports of relation-related errors
  */
 extern int	errtable(Relation rel);
-extern int	errtablecol(Relation rel, int attnum);
+extern int	errtablecol(Relation rel, int attphysnum);
 extern int	errtablecolname(Relation rel, const char *colname);
 extern int	errtableconstraint(Relation rel, const char *conname);
 

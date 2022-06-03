@@ -291,7 +291,7 @@ TupleDescCopyEntry(TupleDesc dst, AttrNumber dstAttno,
 	 * by other uses of this function or TupleDescInitEntry.  So we cheat a
 	 * bit to avoid a useless O(N^2) penalty.
 	 */
-	dstAtt->attnum = dstAttno;
+	dstAtt->attphysnum = dstAttno;
 	dstAtt->attcacheoff = -1;
 
 	/* since we're not copying constraints or defaults, clear these */
@@ -416,7 +416,7 @@ equalTupleDescs(TupleDesc tupdesc1, TupleDesc tupdesc2)
 
 		/*
 		 * We do not need to check every single field here: we can disregard
-		 * attrelid and attnum (which were used to place the row in the attrs
+		 * attrelid and attphysnum (which were used to place the row in the attrs
 		 * array in the first place).  It might look like we could dispense
 		 * with checking attlen/attbyval/attalign, since these are derived
 		 * from atttypid; but in the case of dropped columns we must check
@@ -619,7 +619,7 @@ TupleDescInitEntry(TupleDesc desc,
 	att->attcacheoff = -1;
 	att->atttypmod = typmod;
 
-	att->attnum = attributeNumber;
+	att->attphysnum = attributeNumber;
 	att->attndims = attdim;
 
 	att->attnotnull = false;
@@ -680,7 +680,7 @@ TupleDescInitBuiltinEntry(TupleDesc desc,
 	att->attcacheoff = -1;
 	att->atttypmod = typmod;
 
-	att->attnum = attributeNumber;
+	att->attphysnum = attributeNumber;
 	att->attndims = attdim;
 
 	att->attnotnull = false;
@@ -777,7 +777,7 @@ TupleDesc
 BuildDescForRelation(List *schema)
 {
 	int			natts;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 	ListCell   *l;
 	TupleDesc	desc;
 	bool		has_not_null;
@@ -794,7 +794,7 @@ BuildDescForRelation(List *schema)
 	desc = CreateTemplateTupleDesc(natts);
 	has_not_null = false;
 
-	attnum = 0;
+	attphysnum = 0;
 
 	foreach(l, schema)
 	{
@@ -807,7 +807,7 @@ BuildDescForRelation(List *schema)
 		 * the list and have TupleDescInitEntry fill in the attribute
 		 * information we need.
 		 */
-		attnum++;
+		attphysnum++;
 
 		attname = entry->colname;
 		typenameTypeIdAndMod(NULL, entry->typeName, &atttypid, &atttypmod);
@@ -825,12 +825,12 @@ BuildDescForRelation(List *schema)
 					 errmsg("column \"%s\" cannot be declared SETOF",
 							attname)));
 
-		TupleDescInitEntry(desc, attnum, attname,
+		TupleDescInitEntry(desc, attphysnum, attname,
 						   atttypid, atttypmod, attdim);
-		att = TupleDescAttr(desc, attnum - 1);
+		att = TupleDescAttr(desc, attphysnum - 1);
 
 		/* Override TupleDescInitEntry's settings as requested */
-		TupleDescInitEntryCollation(desc, attnum, attcollation);
+		TupleDescInitEntryCollation(desc, attphysnum, attcollation);
 		if (entry->storage)
 			att->attstorage = entry->storage;
 
@@ -877,7 +877,7 @@ TupleDesc
 BuildDescFromLists(List *names, List *types, List *typmods, List *collations)
 {
 	int			natts;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 	ListCell   *l1;
 	ListCell   *l2;
 	ListCell   *l3;
@@ -894,7 +894,7 @@ BuildDescFromLists(List *names, List *types, List *typmods, List *collations)
 	 */
 	desc = CreateTemplateTupleDesc(natts);
 
-	attnum = 0;
+	attphysnum = 0;
 	forfour(l1, names, l2, types, l3, typmods, l4, collations)
 	{
 		char	   *attname = strVal(lfirst(l1));
@@ -902,10 +902,10 @@ BuildDescFromLists(List *names, List *types, List *typmods, List *collations)
 		int32		atttypmod = lfirst_int(l3);
 		Oid			attcollation = lfirst_oid(l4);
 
-		attnum++;
+		attphysnum++;
 
-		TupleDescInitEntry(desc, attnum, attname, atttypid, atttypmod, 0);
-		TupleDescInitEntryCollation(desc, attnum, attcollation);
+		TupleDescInitEntry(desc, attphysnum, attname, atttypid, atttypmod, 0);
+		TupleDescInitEntryCollation(desc, attphysnum, attcollation);
 	}
 
 	return desc;

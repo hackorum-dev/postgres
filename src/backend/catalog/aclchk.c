@@ -137,7 +137,7 @@ static AclMode restrict_and_check_grant(bool is_grant, AclMode avail_goptions,
 										Oid objectId, Oid grantorId,
 										ObjectType objtype, const char *objname,
 										AttrNumber att_number, const char *colname);
-static AclMode pg_aclmask(ObjectType objtype, Oid table_oid, AttrNumber attnum,
+static AclMode pg_aclmask(ObjectType objtype, Oid table_oid, AttrNumber attphysnum,
 						  Oid roleid, AclMode mask, AclMaskHow how);
 static void recordExtensionInitPriv(Oid objoid, Oid classoid, int objsubid,
 									Acl *new_acl);
@@ -1578,18 +1578,18 @@ expand_col_privileges(List *colnames, Oid table_oid,
 	foreach(cell, colnames)
 	{
 		char	   *colname = strVal(lfirst(cell));
-		AttrNumber	attnum;
+		AttrNumber	attphysnum;
 
-		attnum = get_attnum(table_oid, colname);
-		if (attnum == InvalidAttrNumber)
+		attphysnum = get_attphysnum(table_oid, colname);
+		if (attphysnum == InvalidAttrNumber)
 			ereport(ERROR,
 					(errcode(ERRCODE_UNDEFINED_COLUMN),
 					 errmsg("column \"%s\" of relation \"%s\" does not exist",
 							colname, get_rel_name(table_oid))));
-		attnum -= FirstLowInvalidHeapAttributeNumber;
-		if (attnum <= 0 || attnum >= num_col_privileges)
+		attphysnum -= FirstLowInvalidHeapAttributeNumber;
+		if (attphysnum <= 0 || attphysnum >= num_col_privileges)
 			elog(ERROR, "column number out of range");	/* safety check */
-		col_privileges[attnum] |= this_privileges;
+		col_privileges[attphysnum] |= this_privileges;
 	}
 }
 
@@ -1623,7 +1623,7 @@ expand_all_col_privileges(Oid table_oid, Form_pg_class classForm,
 		if (classForm->relkind == RELKIND_VIEW && curr_att < 0)
 			continue;
 
-		attTuple = SearchSysCache2(ATTNUM,
+		attTuple = SearchSysCache2(ATTPHYSNUM,
 								   ObjectIdGetDatum(table_oid),
 								   Int16GetDatum(curr_att));
 		if (!HeapTupleIsValid(attTuple))
@@ -1648,7 +1648,7 @@ expand_all_col_privileges(Oid table_oid, Form_pg_class classForm,
  */
 static void
 ExecGrant_Attribute(InternalGrant *istmt, Oid relOid, const char *relname,
-					AttrNumber attnum, Oid ownerId, AclMode col_privileges,
+					AttrNumber attphysnum, Oid ownerId, AclMode col_privileges,
 					Relation attRelation, const Acl *old_rel_acl)
 {
 	HeapTuple	attr_tuple;
@@ -1670,20 +1670,20 @@ ExecGrant_Attribute(InternalGrant *istmt, Oid relOid, const char *relname,
 	Oid		   *oldmembers;
 	Oid		   *newmembers;
 
-	attr_tuple = SearchSysCache2(ATTNUM,
+	attr_tuple = SearchSysCache2(ATTPHYSNUM,
 								 ObjectIdGetDatum(relOid),
-								 Int16GetDatum(attnum));
+								 Int16GetDatum(attphysnum));
 	if (!HeapTupleIsValid(attr_tuple))
 		elog(ERROR, "cache lookup failed for attribute %d of relation %u",
-			 attnum, relOid);
+			 attphysnum, relOid);
 	pg_attribute_tuple = (Form_pg_attribute) GETSTRUCT(attr_tuple);
 
 	/*
 	 * Get working copy of existing ACL. If there's no ACL, substitute the
 	 * proper default.
 	 */
-	aclDatum = SysCacheGetAttr(ATTNUM, attr_tuple, Anum_pg_attribute_attacl,
-							   &isNull);
+	aclDatum = SysCacheGetAttr(ATTPHYSNUM, attr_tuple,
+							   Anum_pg_attribute_attacl, &isNull);
 	if (isNull)
 	{
 		old_acl = acldefault(OBJECT_COLUMN, ownerId);
@@ -1726,7 +1726,7 @@ ExecGrant_Attribute(InternalGrant *istmt, Oid relOid, const char *relname,
 								 (col_privileges == ACL_ALL_RIGHTS_COLUMN),
 								 col_privileges,
 								 relOid, grantorId, OBJECT_COLUMN,
-								 relname, attnum,
+								 relname, attphysnum,
 								 NameStr(pg_attribute_tuple->attname));
 
 	/*
@@ -1776,11 +1776,11 @@ ExecGrant_Attribute(InternalGrant *istmt, Oid relOid, const char *relname,
 		CatalogTupleUpdate(attRelation, &newtuple->t_self, newtuple);
 
 		/* Update initial privileges for extensions */
-		recordExtensionInitPriv(relOid, RelationRelationId, attnum,
+		recordExtensionInitPriv(relOid, RelationRelationId, attphysnum,
 								ACL_NUM(new_acl) > 0 ? new_acl : NULL);
 
 		/* Update the shared dependency ACL info */
-		updateAclDependencies(RelationRelationId, relOid, attnum,
+		updateAclDependencies(RelationRelationId, relOid, attphysnum,
 							  ownerId,
 							  noldmembers, oldmembers,
 							  nnewmembers, newmembers);
@@ -3840,7 +3840,7 @@ aclcheck_error_type(AclResult aclerr, Oid typeOid)
  * Relay for the various pg_*_mask routines depending on object kind
  */
 static AclMode
-pg_aclmask(ObjectType objtype, Oid table_oid, AttrNumber attnum, Oid roleid,
+pg_aclmask(ObjectType objtype, Oid table_oid, AttrNumber attphysnum, Oid roleid,
 		   AclMode mask, AclMaskHow how)
 {
 	switch (objtype)
@@ -3848,7 +3848,7 @@ pg_aclmask(ObjectType objtype, Oid table_oid, AttrNumber attnum, Oid roleid,
 		case OBJECT_COLUMN:
 			return
 				pg_class_aclmask(table_oid, roleid, mask, how) |
-				pg_attribute_aclmask(table_oid, attnum, roleid, mask, how);
+				pg_attribute_aclmask(table_oid, attphysnum, roleid, mask, how);
 		case OBJECT_TABLE:
 		case OBJECT_SEQUENCE:
 			return pg_class_aclmask(table_oid, roleid, mask, how);
@@ -3910,10 +3910,10 @@ pg_aclmask(ObjectType objtype, Oid table_oid, AttrNumber attnum, Oid roleid,
  * superuser-ness here.)
  */
 AclMode
-pg_attribute_aclmask(Oid table_oid, AttrNumber attnum, Oid roleid,
+pg_attribute_aclmask(Oid table_oid, AttrNumber attphysnum, Oid roleid,
 					 AclMode mask, AclMaskHow how)
 {
-	return pg_attribute_aclmask_ext(table_oid, attnum, roleid,
+	return pg_attribute_aclmask_ext(table_oid, attphysnum, roleid,
 									mask, how, NULL);
 }
 
@@ -3924,7 +3924,7 @@ pg_attribute_aclmask(Oid table_oid, AttrNumber attnum, Oid roleid,
  * callers to avoid the missing attribute ERROR when is_missing is non-NULL.
  */
 AclMode
-pg_attribute_aclmask_ext(Oid table_oid, AttrNumber attnum, Oid roleid,
+pg_attribute_aclmask_ext(Oid table_oid, AttrNumber attphysnum, Oid roleid,
 						 AclMode mask, AclMaskHow how, bool *is_missing)
 {
 	AclMode		result;
@@ -3940,9 +3940,9 @@ pg_attribute_aclmask_ext(Oid table_oid, AttrNumber attnum, Oid roleid,
 	/*
 	 * First, get the column's ACL from its pg_attribute entry
 	 */
-	attTuple = SearchSysCache2(ATTNUM,
+	attTuple = SearchSysCache2(ATTPHYSNUM,
 							   ObjectIdGetDatum(table_oid),
-							   Int16GetDatum(attnum));
+							   Int16GetDatum(attphysnum));
 	if (!HeapTupleIsValid(attTuple))
 	{
 		if (is_missing != NULL)
@@ -3955,7 +3955,7 @@ pg_attribute_aclmask_ext(Oid table_oid, AttrNumber attnum, Oid roleid,
 			ereport(ERROR,
 					(errcode(ERRCODE_UNDEFINED_COLUMN),
 					 errmsg("attribute %d of relation with OID %u does not exist",
-							attnum, table_oid)));
+							attphysnum, table_oid)));
 	}
 
 	attributeForm = (Form_pg_attribute) GETSTRUCT(attTuple);
@@ -3974,10 +3974,10 @@ pg_attribute_aclmask_ext(Oid table_oid, AttrNumber attnum, Oid roleid,
 			ereport(ERROR,
 					(errcode(ERRCODE_UNDEFINED_COLUMN),
 					 errmsg("attribute %d of relation with OID %u does not exist",
-							attnum, table_oid)));
+							attphysnum, table_oid)));
 	}
 
-	aclDatum = SysCacheGetAttr(ATTNUM, attTuple, Anum_pg_attribute_attacl,
+	aclDatum = SysCacheGetAttr(ATTPHYSNUM, attTuple, Anum_pg_attribute_attacl,
 							   &isNull);
 
 	/*
@@ -4875,10 +4875,10 @@ pg_type_aclmask(Oid type_oid, Oid roleid, AclMode mask, AclMaskHow how)
  * column are considered here.
  */
 AclResult
-pg_attribute_aclcheck(Oid table_oid, AttrNumber attnum,
+pg_attribute_aclcheck(Oid table_oid, AttrNumber attphysnum,
 					  Oid roleid, AclMode mode)
 {
-	return pg_attribute_aclcheck_ext(table_oid, attnum, roleid, mode, NULL);
+	return pg_attribute_aclcheck_ext(table_oid, attphysnum, roleid, mode, NULL);
 }
 
 
@@ -4889,10 +4889,10 @@ pg_attribute_aclcheck(Oid table_oid, AttrNumber attnum,
  * callers to avoid the missing attribute ERROR when is_missing is non-NULL.
  */
 AclResult
-pg_attribute_aclcheck_ext(Oid table_oid, AttrNumber attnum,
+pg_attribute_aclcheck_ext(Oid table_oid, AttrNumber attphysnum,
 						  Oid roleid, AclMode mode, bool *is_missing)
 {
-	if (pg_attribute_aclmask_ext(table_oid, attnum, roleid, mode,
+	if (pg_attribute_aclmask_ext(table_oid, attphysnum, roleid, mode,
 								 ACLMASK_ANY, is_missing) != 0)
 		return ACLCHECK_OK;
 	else
@@ -4953,7 +4953,7 @@ pg_attribute_aclcheck_all(Oid table_oid, Oid roleid, AclMode mode,
 		HeapTuple	attTuple;
 		AclMode		attmask;
 
-		attTuple = SearchSysCache2(ATTNUM,
+		attTuple = SearchSysCache2(ATTPHYSNUM,
 								   ObjectIdGetDatum(table_oid),
 								   Int16GetDatum(curr_att));
 		if (!HeapTupleIsValid(attTuple))
@@ -6025,7 +6025,7 @@ recordExtObjInitPriv(Oid objoid, Oid classoid)
 				HeapTuple	attTuple;
 				Datum		attaclDatum;
 
-				attTuple = SearchSysCache2(ATTNUM,
+				attTuple = SearchSysCache2(ATTPHYSNUM,
 										   ObjectIdGetDatum(objoid),
 										   Int16GetDatum(curr_att));
 
@@ -6039,7 +6039,7 @@ recordExtObjInitPriv(Oid objoid, Oid classoid)
 					continue;
 				}
 
-				attaclDatum = SysCacheGetAttr(ATTNUM, attTuple,
+				attaclDatum = SysCacheGetAttr(ATTPHYSNUM, attTuple,
 											  Anum_pg_attribute_attacl,
 											  &isNull);
 
@@ -6318,7 +6318,7 @@ removeExtObjInitPriv(Oid objoid, Oid classoid)
 			{
 				HeapTuple	attTuple;
 
-				attTuple = SearchSysCache2(ATTNUM,
+				attTuple = SearchSysCache2(ATTPHYSNUM,
 										   ObjectIdGetDatum(objoid),
 										   Int16GetDatum(curr_att));
 

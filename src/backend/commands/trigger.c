@@ -947,12 +947,12 @@ CreateTriggerFiringOn(CreateTrigStmt *stmt, const char *queryString,
 		foreach(cell, stmt->columns)
 		{
 			char	   *name = strVal(lfirst(cell));
-			int16		attnum;
+			int16		attphysnum;
 			int			j;
 
 			/* Lookup column name.  System columns are not allowed */
-			attnum = attnameAttNum(rel, name, false);
-			if (attnum == InvalidAttrNumber)
+			attphysnum = attnameAttNum(rel, name, false);
+			if (attphysnum == InvalidAttrNumber)
 				ereport(ERROR,
 						(errcode(ERRCODE_UNDEFINED_COLUMN),
 						 errmsg("column \"%s\" of relation \"%s\" does not exist",
@@ -961,14 +961,14 @@ CreateTriggerFiringOn(CreateTrigStmt *stmt, const char *queryString,
 			/* Check for duplicates */
 			for (j = i - 1; j >= 0; j--)
 			{
-				if (columns[j] == attnum)
+				if (columns[j] == attphysnum)
 					ereport(ERROR,
 							(errcode(ERRCODE_DUPLICATE_COLUMN),
 							 errmsg("column \"%s\" specified more than once",
 									name)));
 			}
 
-			columns[i++] = attnum;
+			columns[i++] = attphysnum;
 		}
 	}
 	tgattr = buildint2vector(columns, ncolumns);

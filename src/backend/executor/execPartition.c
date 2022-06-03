@@ -1471,15 +1471,15 @@ ExecBuildSlotPartitionKeyDescription(Relation rel,
 		 */
 		for (i = 0; i < partnatts; i++)
 		{
-			AttrNumber	attnum = get_partition_col_attnum(key, i);
+			AttrNumber	attphysnum = get_partition_col_attnum(key, i);
 
 			/*
 			 * If this partition key column is an expression, we return no
 			 * detail rather than try to figure out what column(s) the
 			 * expression includes and if the user has SELECT rights on them.
 			 */
-			if (attnum == InvalidAttrNumber ||
-				pg_attribute_aclcheck(relid, attnum, GetUserId(),
+			if (attphysnum == InvalidAttrNumber ||
+				pg_attribute_aclcheck(relid, attphysnum, GetUserId(),
 									  ACL_SELECT) != ACLCHECK_OK)
 				return NULL;
 		}

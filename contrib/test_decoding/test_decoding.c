@@ -554,7 +554,7 @@ tuple_to_stringinfo(StringInfo s, TupleDesc tupdesc, HeapTuple tuple, bool skip_
 		 * Don't print system columns, oid will already have been printed if
 		 * present.
 		 */
-		if (attr->attnum < 0)
+		if (attr->attphysnum < 0)
 			continue;
 
 		typid = attr->atttypid;

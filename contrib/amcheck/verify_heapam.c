@@ -71,7 +71,7 @@ typedef struct ToastedAttribute
 	struct varatt_external toast_pointer;
 	BlockNumber blkno;			/* block in main table */
 	OffsetNumber offnum;		/* offset in main table */
-	AttrNumber	attnum;			/* attribute in main table */
+	AttrNumber	attphysnum;			/* attribute in main table */
 } ToastedAttribute;
 
 /*
@@ -130,7 +130,7 @@ typedef struct HeapCheckContext
 
 	/* Values for iterating over attributes within the tuple */
 	uint32		offset;			/* offset in tuple data */
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 
 	/* True if tuple's xmax makes it eligible for pruning */
 	bool		tuple_could_be_pruned;
@@ -272,10 +272,10 @@ verify_heapam(PG_FUNCTION_ARGS)
 
 	/*
 	 * If we report corruption when not examining some individual attribute,
-	 * we need attnum to be reported as NULL.  Set that up before any
+	 * we need attphysnum to be reported as NULL.  Set that up before any
 	 * corruption reporting might happen.
 	 */
-	ctx.attnum = -1;
+	ctx.attphysnum = -1;
 
 	/* Construct the tuplestore and tuple descriptor */
 	SetSingleFuncCall(fcinfo, 0);
@@ -552,7 +552,7 @@ verify_heapam(PG_FUNCTION_ARGS)
 static void
 report_corruption_internal(Tuplestorestate *tupstore, TupleDesc tupdesc,
 						   BlockNumber blkno, OffsetNumber offnum,
-						   AttrNumber attnum, char *msg)
+						   AttrNumber attphysnum, char *msg)
 {
 	Datum		values[HEAPCHECK_RELATION_COLS];
 	bool		nulls[HEAPCHECK_RELATION_COLS];
@@ -562,8 +562,8 @@ report_corruption_internal(Tuplestorestate *tupstore, TupleDesc tupdesc,
 	MemSet(nulls, 0, sizeof(nulls));
 	values[0] = Int64GetDatum(blkno);
 	values[1] = Int32GetDatum(offnum);
-	values[2] = Int32GetDatum(attnum);
-	nulls[2] = (attnum < 0);
+	values[2] = Int32GetDatum(attphysnum);
+	nulls[2] = (attphysnum < 0);
 	values[3] = CStringGetTextDatum(msg);
 
 	/*
@@ -591,7 +591,7 @@ static void
 report_corruption(HeapCheckContext *ctx, char *msg)
 {
 	report_corruption_internal(ctx->tupstore, ctx->tupdesc, ctx->blkno,
-							   ctx->offnum, ctx->attnum, msg);
+							   ctx->offnum, ctx->attphysnum, msg);
 	ctx->is_corrupt = true;
 }
 
@@ -608,7 +608,7 @@ report_toast_corruption(HeapCheckContext *ctx, ToastedAttribute *ta,
 						char *msg)
 {
 	report_corruption_internal(ctx->tupstore, ctx->tupdesc, ta->blkno,
-							   ta->offnum, ta->attnum, msg);
+							   ta->offnum, ta->attphysnum, msg);
 	ctx->is_corrupt = true;
 }
 
@@ -1272,7 +1272,7 @@ check_tuple_attribute(HeapCheckContext *ctx)
 	struct varatt_external toast_pointer;
 
 	infomask = ctx->tuphdr->t_infomask;
-	thisatt = TupleDescAttr(RelationGetDescr(ctx->rel), ctx->attnum);
+	thisatt = TupleDescAttr(RelationGetDescr(ctx->rel), ctx->attphysnum);
 
 	tp = (char *) ctx->tuphdr + ctx->tuphdr->t_hoff;
 
@@ -1287,7 +1287,7 @@ check_tuple_attribute(HeapCheckContext *ctx)
 	}
 
 	/* Skip null values */
-	if (infomask & HEAP_HASNULL && att_isnull(ctx->attnum, ctx->tuphdr->t_bits))
+	if (infomask & HEAP_HASNULL && att_isnull(ctx->attphysnum, ctx->tuphdr->t_bits))
 		return true;
 
 	/* Skip non-varlena values, but update offset first */
@@ -1448,7 +1448,7 @@ check_tuple_attribute(HeapCheckContext *ctx)
 		VARATT_EXTERNAL_GET_POINTER(ta->toast_pointer, attr);
 		ta->blkno = ctx->blkno;
 		ta->offnum = ctx->offnum;
-		ta->attnum = ctx->attnum;
+		ta->attphysnum = ctx->attphysnum;
 		ctx->toasted_attributes = lappend(ctx->toasted_attributes, ta);
 	}
 
@@ -1560,12 +1560,12 @@ check_tuple(HeapCheckContext *ctx)
 	 * attributes collected from the page.
 	 */
 	ctx->offset = 0;
-	for (ctx->attnum = 0; ctx->attnum < ctx->natts; ctx->attnum++)
+	for (ctx->attphysnum = 0; ctx->attphysnum < ctx->natts; ctx->attphysnum++)
 		if (!check_tuple_attribute(ctx))
 			break;				/* cannot continue */
 
-	/* revert attnum to -1 until we again examine individual attributes */
-	ctx->attnum = -1;
+	/* revert attphysnum to -1 until we again examine individual attributes */
+	ctx->attphysnum = -1;
 }
 
 /*

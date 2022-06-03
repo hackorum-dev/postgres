@@ -97,31 +97,31 @@ typedef IndexAttributeBitMapData * IndexAttributeBitMap;
  *
  * ----------------
  */
-#define index_getattr(tup, attnum, tupleDesc, isnull) \
+#define index_getattr(tup, attphysnum, tupleDesc, isnull) \
 ( \
-	AssertMacro(PointerIsValid(isnull) && (attnum) > 0), \
+	AssertMacro(PointerIsValid(isnull) && (attphysnum) > 0), \
 	*(isnull) = false, \
 	!IndexTupleHasNulls(tup) ? \
 	( \
-		TupleDescAttr((tupleDesc), (attnum)-1)->attcacheoff >= 0 ? \
+		TupleDescAttr((tupleDesc), (attphysnum)-1)->attcacheoff >= 0 ? \
 		( \
-			fetchatt(TupleDescAttr((tupleDesc), (attnum)-1), \
+			fetchatt(TupleDescAttr((tupleDesc), (attphysnum)-1), \
 			(char *) (tup) + IndexInfoFindDataOffset((tup)->t_info) \
-			+ TupleDescAttr((tupleDesc), (attnum)-1)->attcacheoff) \
+			+ TupleDescAttr((tupleDesc), (attphysnum)-1)->attcacheoff) \
 		) \
 		: \
-			nocache_index_getattr((tup), (attnum), (tupleDesc)) \
+			nocache_index_getattr((tup), (attphysnum), (tupleDesc)) \
 	) \
 	: \
 	( \
-		(att_isnull((attnum)-1, (char *)(tup) + sizeof(IndexTupleData))) ? \
+		(att_isnull((attphysnum)-1, (char *)(tup) + sizeof(IndexTupleData))) ? \
 		( \
 			*(isnull) = true, \
 			(Datum)NULL \
 		) \
 		: \
 		( \
-			nocache_index_getattr((tup), (attnum), (tupleDesc)) \
+			nocache_index_getattr((tup), (attphysnum), (tupleDesc)) \
 		) \
 	) \
 )
@@ -150,7 +150,7 @@ typedef IndexAttributeBitMapData * IndexAttributeBitMap;
 /* routines in indextuple.c */
 extern IndexTuple index_form_tuple(TupleDesc tupleDescriptor,
 								   Datum *values, bool *isnull);
-extern Datum nocache_index_getattr(IndexTuple tup, int attnum,
+extern Datum nocache_index_getattr(IndexTuple tup, int attphysnum,
 								   TupleDesc tupleDesc);
 extern void index_deform_tuple(IndexTuple tup, TupleDesc tupleDescriptor,
 							   Datum *values, bool *isnull);

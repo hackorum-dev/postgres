@@ -767,7 +767,7 @@ index_can_return(Relation indexRelation, int attno)
  */
 RegProcedure
 index_getprocid(Relation irel,
-				AttrNumber attnum,
+				AttrNumber attphysnum,
 				uint16 procnum)
 {
 	RegProcedure *loc;
@@ -778,7 +778,7 @@ index_getprocid(Relation irel,
 
 	Assert(procnum > 0 && procnum <= (uint16) nproc);
 
-	procindex = (nproc * (attnum - 1)) + (procnum - 1);
+	procindex = (nproc * (attphysnum - 1)) + (procnum - 1);
 
 	loc = irel->rd_support;
 
@@ -801,7 +801,7 @@ index_getprocid(Relation irel,
  */
 FmgrInfo *
 index_getprocinfo(Relation irel,
-				  AttrNumber attnum,
+				  AttrNumber attphysnum,
 				  uint16 procnum)
 {
 	FmgrInfo   *locinfo;
@@ -814,7 +814,7 @@ index_getprocinfo(Relation irel,
 
 	Assert(procnum > 0 && procnum <= (uint16) nproc);
 
-	procindex = (nproc * (attnum - 1)) + (procnum - 1);
+	procindex = (nproc * (attphysnum - 1)) + (procnum - 1);
 
 	locinfo = irel->rd_supportinfo;
 
@@ -840,7 +840,7 @@ index_getprocinfo(Relation irel,
 		 */
 		if (!RegProcedureIsValid(procId))
 			elog(ERROR, "missing support function %d for attribute %d of index \"%s\"",
-				 procnum, attnum, RelationGetRelationName(irel));
+				 procnum, attphysnum, RelationGetRelationName(irel));
 
 		fmgr_info_cxt(procId, locinfo, irel->rd_indexcxt);
 
@@ -850,7 +850,7 @@ index_getprocinfo(Relation irel,
 			bytea	  **attoptions = RelationGetIndexAttOptions(irel, false);
 			MemoryContext oldcxt = MemoryContextSwitchTo(irel->rd_indexcxt);
 
-			set_fn_opclass_options(locinfo, attoptions[attnum - 1]);
+			set_fn_opclass_options(locinfo, attoptions[attphysnum - 1]);
 
 			MemoryContextSwitchTo(oldcxt);
 		}
@@ -936,7 +936,7 @@ index_store_float8_orderby_distances(IndexScanDesc scan, Oid *orderByTypes,
  * ----------------
  */
 bytea *
-index_opclass_options(Relation indrel, AttrNumber attnum, Datum attoptions,
+index_opclass_options(Relation indrel, AttrNumber attphysnum, Datum attoptions,
 					  bool validate)
 {
 	int			amoptsprocnum = indrel->rd_indam->amoptsprocnum;
@@ -946,7 +946,7 @@ index_opclass_options(Relation indrel, AttrNumber attnum, Datum attoptions,
 
 	/* fetch options support procedure if specified */
 	if (amoptsprocnum != 0)
-		procid = index_getprocid(indrel, attnum, amoptsprocnum);
+		procid = index_getprocid(indrel, attphysnum, amoptsprocnum);
 
 	if (!OidIsValid(procid))
 	{
@@ -966,7 +966,7 @@ index_opclass_options(Relation indrel, AttrNumber attnum, Datum attoptions,
 										Anum_pg_index_indclass, &isnull);
 		Assert(!isnull);
 		indclass = (oidvector *) DatumGetPointer(indclassDatum);
-		opclass = indclass->values[attnum - 1];
+		opclass = indclass->values[attphysnum - 1];
 
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
@@ -976,7 +976,7 @@ index_opclass_options(Relation indrel, AttrNumber attnum, Datum attoptions,
 
 	init_local_reloptions(&relopts, 0);
 
-	procinfo = index_getprocinfo(indrel, attnum, amoptsprocnum);
+	procinfo = index_getprocinfo(indrel, attphysnum, amoptsprocnum);
 
 	(void) FunctionCall1(procinfo, PointerGetDatum(&relopts));
 

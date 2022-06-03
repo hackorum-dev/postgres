@@ -95,7 +95,7 @@ static void compute_index_stats(Relation onerel, double totalrows,
 								AnlIndexData *indexdata, int nindexes,
 								HeapTuple *rows, int numrows,
 								MemoryContext col_context);
-static VacAttrStats *examine_attribute(Relation onerel, int attnum,
+static VacAttrStats *examine_attribute(Relation onerel, int attphysnum,
 									   Node *index_expr);
 static int	acquire_sample_rows(Relation onerel, int elevel,
 								HeapTuple *rows, int targrows,
@@ -574,7 +574,7 @@ do_analyze_rel(Relation onerel, VacuumParams *params,
 			 * If the appropriate flavor of the n_distinct option is
 			 * specified, override with the corresponding value.
 			 */
-			aopt = get_attribute_options(onerel->rd_id, stats->attr->attnum);
+			aopt = get_attribute_options(onerel->rd_id, stats->attr->attphysnum);
 			if (aopt != NULL)
 			{
 				float8		n_distinct;
@@ -928,16 +928,16 @@ compute_index_stats(Relation onerel, double totalrows,
 				for (i = 0; i < attr_cnt; i++)
 				{
 					VacAttrStats *stats = thisdata->vacattrstats[i];
-					int			attnum = stats->attr->attnum;
+					int			attphysnum = stats->attr->attphysnum;
 
-					if (isnull[attnum - 1])
+					if (isnull[attphysnum - 1])
 					{
 						exprvals[tcnt] = (Datum) 0;
 						exprnulls[tcnt] = true;
 					}
 					else
 					{
-						exprvals[tcnt] = datumCopy(values[attnum - 1],
+						exprvals[tcnt] = datumCopy(values[attphysnum - 1],
 												   stats->attrtype->typbyval,
 												   stats->attrtype->typlen);
 						exprnulls[tcnt] = false;
@@ -998,9 +998,9 @@ compute_index_stats(Relation onerel, double totalrows,
  * and index_expr is the expression tree representing the column's data.
  */
 static VacAttrStats *
-examine_attribute(Relation onerel, int attnum, Node *index_expr)
+examine_attribute(Relation onerel, int attphysnum, Node *index_expr)
 {
-	Form_pg_attribute attr = TupleDescAttr(onerel->rd_att, attnum - 1);
+	Form_pg_attribute attr = TupleDescAttr(onerel->rd_att, attphysnum - 1);
 	HeapTuple	typtuple;
 	VacAttrStats *stats;
 	int			i;
@@ -1041,8 +1041,8 @@ examine_attribute(Relation onerel, int attnum, Node *index_expr)
 		 * preference to anything else; but if not, fall back to whatever we
 		 * can get from the expression.
 		 */
-		if (OidIsValid(onerel->rd_indcollation[attnum - 1]))
-			stats->attrcollid = onerel->rd_indcollation[attnum - 1];
+		if (OidIsValid(onerel->rd_indcollation[attphysnum - 1]))
+			stats->attrcollid = onerel->rd_indcollation[attphysnum - 1];
 		else
 			stats->attrcollid = exprCollation(index_expr);
 	}
@@ -1059,7 +1059,7 @@ examine_attribute(Relation onerel, int attnum, Node *index_expr)
 		elog(ERROR, "cache lookup failed for type %u", stats->attrtypid);
 	stats->attrtype = (Form_pg_type) GETSTRUCT(typtuple);
 	stats->anl_context = anl_context;
-	stats->tupattnum = attnum;
+	stats->tupattnum = attphysnum;
 
 	/*
 	 * The fields describing the stats->stavalues[n] element types default to
@@ -1656,7 +1656,7 @@ update_attstats(Oid relid, bool inh, int natts, VacAttrStats **vacattrstats)
 		}
 
 		values[Anum_pg_statistic_starelid - 1] = ObjectIdGetDatum(relid);
-		values[Anum_pg_statistic_staattnum - 1] = Int16GetDatum(stats->attr->attnum);
+		values[Anum_pg_statistic_staattnum - 1] = Int16GetDatum(stats->attr->attphysnum);
 		values[Anum_pg_statistic_stainherit - 1] = BoolGetDatum(inh);
 		values[Anum_pg_statistic_stanullfrac - 1] = Float4GetDatum(stats->stanullfrac);
 		values[Anum_pg_statistic_stawidth - 1] = Int32GetDatum(stats->stawidth);
@@ -1725,7 +1725,7 @@ update_attstats(Oid relid, bool inh, int natts, VacAttrStats **vacattrstats)
 		/* Is there already a pg_statistic tuple for this attribute? */
 		oldtup = SearchSysCache3(STATRELATTINH,
 								 ObjectIdGetDatum(relid),
-								 Int16GetDatum(stats->attr->attnum),
+								 Int16GetDatum(stats->attr->attphysnum),
 								 BoolGetDatum(inh));
 
 		if (HeapTupleIsValid(oldtup))
@@ -1761,11 +1761,11 @@ update_attstats(Oid relid, bool inh, int natts, VacAttrStats **vacattrstats)
 static Datum
 std_fetch_func(VacAttrStatsP stats, int rownum, bool *isNull)
 {
-	int			attnum = stats->tupattnum;
+	int			attphysnum = stats->tupattnum;
 	HeapTuple	tuple = stats->rows[rownum];
 	TupleDesc	tupDesc = stats->tupDesc;
 
-	return heap_getattr(tuple, attnum, tupDesc, isNull);
+	return heap_getattr(tuple, attphysnum, tupDesc, isNull);
 }
 
 /*

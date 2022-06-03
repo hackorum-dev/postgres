@@ -219,7 +219,7 @@ typedef struct NewConstraint
  */
 typedef struct NewColumnValue
 {
-	AttrNumber	attnum;			/* which column */
+	AttrNumber	attphysnum;			/* which column */
 	Expr	   *expr;			/* expression to compute */
 	ExprState  *exprstate;		/* execution state */
 	bool		is_generated;	/* is it a GENERATED expression? */
@@ -427,8 +427,8 @@ static ObjectAddress ATExecAddColumn(List **wqueue, AlteredTableInfo *tab,
 									 AlterTableUtilityContext *context);
 static bool check_for_column_name_collision(Relation rel, const char *colname,
 											bool if_not_exists);
-static void add_column_datatype_dependency(Oid relid, int32 attnum, Oid typid);
-static void add_column_collation_dependency(Oid relid, int32 attnum, Oid collid);
+static void add_column_datatype_dependency(Oid relid, int32 attphysnum, Oid typid);
+static void add_column_collation_dependency(Oid relid, int32 attphysnum, Oid collid);
 static void ATPrepDropNotNull(Relation rel, bool recurse, bool recursing);
 static ObjectAddress ATExecDropNotNull(Relation rel, const char *colName, LOCKMODE lockmode);
 static void ATPrepSetNotNull(List **wqueue, Relation rel,
@@ -444,7 +444,7 @@ static bool ConstraintImpliedByRelConstraint(Relation scanrel,
 											 List *testConstraint, List *provenConstraint);
 static ObjectAddress ATExecColumnDefault(Relation rel, const char *colName,
 										 Node *newDefault, LOCKMODE lockmode);
-static ObjectAddress ATExecCookedColumnDefault(Relation rel, AttrNumber attnum,
+static ObjectAddress ATExecCookedColumnDefault(Relation rel, AttrNumber attphysnum,
 											   Node *newDefault);
 static ObjectAddress ATExecAddIdentity(Relation rel, const char *colName,
 									   Node *def, LOCKMODE lockmode);
@@ -670,7 +670,7 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	List	   *cookedDefaults;
 	Datum		reloptions;
 	ListCell   *listptr;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 	bool		partitioned;
 	static char *validnsps[] = HEAP_RELOPT_NAMESPACES;
 	Oid			ofTypeId;
@@ -880,15 +880,15 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	 */
 	rawDefaults = NIL;
 	cookedDefaults = NIL;
-	attnum = 0;
+	attphysnum = 0;
 
 	foreach(listptr, stmt->tableElts)
 	{
 		ColumnDef  *colDef = lfirst(listptr);
 		Form_pg_attribute attr;
 
-		attnum++;
-		attr = TupleDescAttr(descriptor, attnum - 1);
+		attphysnum++;
+		attr = TupleDescAttr(descriptor, attphysnum - 1);
 
 		if (colDef->raw_default != NULL)
 		{
@@ -897,7 +897,7 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 			Assert(colDef->cooked_default == NULL);
 
 			rawEnt = (RawColumnDefault *) palloc(sizeof(RawColumnDefault));
-			rawEnt->attnum = attnum;
+			rawEnt->attphysnum = attphysnum;
 			rawEnt->raw_default = colDef->raw_default;
 			rawEnt->missingMode = false;
 			rawEnt->generated = colDef->generated;
@@ -912,7 +912,7 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 			cooked->contype = CONSTR_DEFAULT;
 			cooked->conoid = InvalidOid;	/* until created */
 			cooked->name = NULL;
-			cooked->attnum = attnum;
+			cooked->attphysnum = attphysnum;
 			cooked->expr = colDef->cooked_default;
 			cooked->skip_validation = false;
 			cooked->is_local = true;	/* not used for defaults */
@@ -2774,7 +2774,7 @@ MergeAttributes(List *schema, List *supers, char relpersistence,
 					cooked->contype = CONSTR_CHECK;
 					cooked->conoid = InvalidOid;	/* until created */
 					cooked->name = pstrdup(name);
-					cooked->attnum = 0; /* not used for constraints */
+					cooked->attphysnum = 0; /* not used for constraints */
 					cooked->expr = expr;
 					cooked->skip_validation = false;
 					cooked->is_local = false;
@@ -3432,7 +3432,7 @@ renameatt_internal(Oid myrelid,
 	Relation	attrelation;
 	HeapTuple	atttup;
 	Form_pg_attribute attform;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 
 	/*
 	 * Grab an exclusive lock on the target table, which we will NOT release
@@ -3520,8 +3520,8 @@ renameatt_internal(Oid myrelid,
 						oldattname)));
 	attform = (Form_pg_attribute) GETSTRUCT(atttup);
 
-	attnum = attform->attnum;
-	if (attnum <= 0)
+	attphysnum = attform->attphysnum;
+	if (attphysnum <= 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot rename system column \"%s\"",
@@ -3550,7 +3550,7 @@ renameatt_internal(Oid myrelid,
 
 	CatalogTupleUpdate(attrelation, &atttup->t_self, atttup);
 
-	InvokeObjectPostAlterHook(RelationRelationId, myrelid, attnum);
+	InvokeObjectPostAlterHook(RelationRelationId, myrelid, attphysnum);
 
 	heap_freetuple(atttup);
 
@@ -3558,7 +3558,7 @@ renameatt_internal(Oid myrelid,
 
 	relation_close(targetrelation, NoLock); /* close rel but keep lock */
 
-	return attnum;
+	return attphysnum;
 }
 
 /*
@@ -3588,7 +3588,7 @@ ObjectAddress
 renameatt(RenameStmt *stmt)
 {
 	Oid			relid;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 	ObjectAddress address;
 
 	/* lock level taken here should match renameatt_internal */
@@ -3605,7 +3605,7 @@ renameatt(RenameStmt *stmt)
 		return InvalidObjectAddress;
 	}
 
-	attnum =
+	attphysnum =
 		renameatt_internal(relid,
 						   stmt->subname,	/* old att name */
 						   stmt->newname,	/* new att name */
@@ -3614,7 +3614,7 @@ renameatt(RenameStmt *stmt)
 						   0,	/* expected inhcount */
 						   stmt->behavior);
 
-	ObjectAddressSubSet(address, RelationRelationId, relid, attnum);
+	ObjectAddressSubSet(address, RelationRelationId, relid, attphysnum);
 
 	return address;
 }
@@ -5899,10 +5899,10 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap, LOCKMODE lockmode)
 					if (ex->is_generated)
 						continue;
 
-					newslot->tts_values[ex->attnum - 1]
+					newslot->tts_values[ex->attphysnum - 1]
 						= ExecEvalExpr(ex->exprstate,
 									   econtext,
-									   &newslot->tts_isnull[ex->attnum - 1]);
+									   &newslot->tts_isnull[ex->attphysnum - 1]);
 				}
 
 				ExecStoreVirtualTuple(newslot);
@@ -5921,10 +5921,10 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap, LOCKMODE lockmode)
 					if (!ex->is_generated)
 						continue;
 
-					newslot->tts_values[ex->attnum - 1]
+					newslot->tts_values[ex->attphysnum - 1]
 						= ExecEvalExpr(ex->exprstate,
 									   econtext,
-									   &newslot->tts_isnull[ex->attnum - 1]);
+									   &newslot->tts_isnull[ex->attphysnum - 1]);
 				}
 
 				insertslot = newslot;
@@ -6814,7 +6814,7 @@ ATExecAddColumn(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	attribute.atttypid = typeOid;
 	attribute.attstattarget = (newattnum > 0) ? -1 : 0;
 	attribute.attlen = tform->typlen;
-	attribute.attnum = newattnum;
+	attribute.attphysnum = newattnum;
 	attribute.attndims = list_length(colDef->typeName->arrayBounds);
 	attribute.atttypmod = typmod;
 	attribute.attbyval = tform->typbyval;
@@ -6865,7 +6865,7 @@ ATExecAddColumn(List **wqueue, AlteredTableInfo *tab, Relation rel,
 		RawColumnDefault *rawEnt;
 
 		rawEnt = (RawColumnDefault *) palloc(sizeof(RawColumnDefault));
-		rawEnt->attnum = attribute.attnum;
+		rawEnt->attphysnum = attribute.attphysnum;
 		rawEnt->raw_default = copyObject(colDef->raw_default);
 
 		/*
@@ -6900,7 +6900,7 @@ ATExecAddColumn(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	 *
 	 * If there is no default, Phase 3 doesn't have to do anything, because
 	 * that effectively means that the default is NULL.  The heap tuple access
-	 * routines always check for attnum > # of attributes in tuple, and return
+	 * routines always check for attphysnum > # of attributes in tuple, and return
 	 * NULL if so, so without any modification of the tuple data we will get
 	 * the effect of NULL values in the new column.
 	 *
@@ -6928,7 +6928,7 @@ ATExecAddColumn(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	 * is certainly not going to touch them.  System attributes don't have
 	 * interesting defaults, either.
 	 */
-	if (RELKIND_HAS_STORAGE(relkind) && attribute.attnum > 0)
+	if (RELKIND_HAS_STORAGE(relkind) && attribute.attphysnum > 0)
 	{
 		/*
 		 * For an identity column, we can't use build_column_default(),
@@ -6947,7 +6947,7 @@ ATExecAddColumn(List **wqueue, AlteredTableInfo *tab, Relation rel,
 			tab->rewrite |= AT_REWRITE_DEFAULT_VAL;
 		}
 		else
-			defval = (Expr *) build_column_default(rel, attribute.attnum);
+			defval = (Expr *) build_column_default(rel, attribute.attphysnum);
 
 		if (!defval && DomainHasConstraints(typeOid))
 		{
@@ -6976,7 +6976,7 @@ ATExecAddColumn(List **wqueue, AlteredTableInfo *tab, Relation rel,
 			NewColumnValue *newval;
 
 			newval = (NewColumnValue *) palloc0(sizeof(NewColumnValue));
-			newval->attnum = attribute.attnum;
+			newval->attphysnum = attribute.attphysnum;
 			newval->expr = expression_planner(defval);
 			newval->is_generated = (colDef->generated != '\0');
 
@@ -6986,7 +6986,7 @@ ATExecAddColumn(List **wqueue, AlteredTableInfo *tab, Relation rel,
 		if (DomainHasConstraints(typeOid))
 			tab->rewrite |= AT_REWRITE_DEFAULT_VAL;
 
-		if (!TupleDescAttr(rel->rd_att, attribute.attnum - 1)->atthasmissing)
+		if (!TupleDescAttr(rel->rd_att, attribute.attphysnum - 1)->atthasmissing)
 		{
 			/*
 			 * If the new column is NOT NULL, and there is no missing value,
@@ -7064,7 +7064,7 @@ check_for_column_name_collision(Relation rel, const char *colname,
 								bool if_not_exists)
 {
 	HeapTuple	attTuple;
-	int			attnum;
+	int			attphysnum;
 
 	/*
 	 * this test is deliberately not attisdropped-aware, since if one tries to
@@ -7076,7 +7076,7 @@ check_for_column_name_collision(Relation rel, const char *colname,
 	if (!HeapTupleIsValid(attTuple))
 		return true;
 
-	attnum = ((Form_pg_attribute) GETSTRUCT(attTuple))->attnum;
+	attphysnum = ((Form_pg_attribute) GETSTRUCT(attTuple))->attphysnum;
 	ReleaseSysCache(attTuple);
 
 	/*
@@ -7084,7 +7084,7 @@ check_for_column_name_collision(Relation rel, const char *colname,
 	 * names, since they are normally not shown and the user might otherwise
 	 * be confused about the reason for the conflict.
 	 */
-	if (attnum <= 0)
+	if (attphysnum <= 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_DUPLICATE_COLUMN),
 				 errmsg("column name \"%s\" conflicts with a system column name",
@@ -7113,14 +7113,14 @@ check_for_column_name_collision(Relation rel, const char *colname,
  * Install a column's dependency on its datatype.
  */
 static void
-add_column_datatype_dependency(Oid relid, int32 attnum, Oid typid)
+add_column_datatype_dependency(Oid relid, int32 attphysnum, Oid typid)
 {
 	ObjectAddress myself,
 				referenced;
 
 	myself.classId = RelationRelationId;
 	myself.objectId = relid;
-	myself.objectSubId = attnum;
+	myself.objectSubId = attphysnum;
 	referenced.classId = TypeRelationId;
 	referenced.objectId = typid;
 	referenced.objectSubId = 0;
@@ -7131,7 +7131,7 @@ add_column_datatype_dependency(Oid relid, int32 attnum, Oid typid)
  * Install a column's dependency on its collation.
  */
 static void
-add_column_collation_dependency(Oid relid, int32 attnum, Oid collid)
+add_column_collation_dependency(Oid relid, int32 attphysnum, Oid collid)
 {
 	ObjectAddress myself,
 				referenced;
@@ -7141,7 +7141,7 @@ add_column_collation_dependency(Oid relid, int32 attnum, Oid collid)
 	{
 		myself.classId = RelationRelationId;
 		myself.objectId = relid;
-		myself.objectSubId = attnum;
+		myself.objectSubId = attphysnum;
 		referenced.classId = CollationRelationId;
 		referenced.objectId = collid;
 		referenced.objectSubId = 0;
@@ -7182,7 +7182,7 @@ ATExecDropNotNull(Relation rel, const char *colName, LOCKMODE lockmode)
 {
 	HeapTuple	tuple;
 	Form_pg_attribute attTup;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 	Relation	attr_rel;
 	List	   *indexoidlist;
 	ListCell   *indexoidscan;
@@ -7200,10 +7200,10 @@ ATExecDropNotNull(Relation rel, const char *colName, LOCKMODE lockmode)
 				 errmsg("column \"%s\" of relation \"%s\" does not exist",
 						colName, RelationGetRelationName(rel))));
 	attTup = (Form_pg_attribute) GETSTRUCT(tuple);
-	attnum = attTup->attnum;
+	attphysnum = attTup->attphysnum;
 
 	/* Prevent them from altering a system attribute */
-	if (attnum <= 0)
+	if (attphysnum <= 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter system column \"%s\"",
@@ -7250,7 +7250,7 @@ ATExecDropNotNull(Relation rel, const char *colName, LOCKMODE lockmode)
 			 */
 			for (i = 0; i < indexStruct->indnkeyatts; i++)
 			{
-				if (indexStruct->indkey.values[i] == attnum)
+				if (indexStruct->indkey.values[i] == attphysnum)
 				{
 					if (indexStruct->indisprimary)
 						ereport(ERROR,
@@ -7279,7 +7279,7 @@ ATExecDropNotNull(Relation rel, const char *colName, LOCKMODE lockmode)
 		TupleDesc	tupDesc = RelationGetDescr(parent);
 		AttrNumber	parent_attnum;
 
-		parent_attnum = get_attnum(parentId, colName);
+		parent_attnum = get_attphysnum(parentId, colName);
 		if (TupleDescAttr(tupDesc, parent_attnum - 1)->attnotnull)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
@@ -7298,13 +7298,13 @@ ATExecDropNotNull(Relation rel, const char *colName, LOCKMODE lockmode)
 		CatalogTupleUpdate(attr_rel, &tuple->t_self, tuple);
 
 		ObjectAddressSubSet(address, RelationRelationId,
-							RelationGetRelid(rel), attnum);
+							RelationGetRelid(rel), attphysnum);
 	}
 	else
 		address = InvalidObjectAddress;
 
 	InvokeObjectPostAlterHook(RelationRelationId,
-							  RelationGetRelid(rel), attnum);
+							  RelationGetRelid(rel), attphysnum);
 
 	table_close(attr_rel, RowExclusiveLock);
 
@@ -7389,7 +7389,7 @@ ATExecSetNotNull(AlteredTableInfo *tab, Relation rel,
 				 const char *colName, LOCKMODE lockmode)
 {
 	HeapTuple	tuple;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 	Relation	attr_rel;
 	ObjectAddress address;
 
@@ -7406,10 +7406,10 @@ ATExecSetNotNull(AlteredTableInfo *tab, Relation rel,
 				 errmsg("column \"%s\" of relation \"%s\" does not exist",
 						colName, RelationGetRelationName(rel))));
 
-	attnum = ((Form_pg_attribute) GETSTRUCT(tuple))->attnum;
+	attphysnum = ((Form_pg_attribute) GETSTRUCT(tuple))->attphysnum;
 
 	/* Prevent them from altering a system attribute */
-	if (attnum <= 0)
+	if (attphysnum <= 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter system column \"%s\"",
@@ -7438,13 +7438,13 @@ ATExecSetNotNull(AlteredTableInfo *tab, Relation rel,
 		}
 
 		ObjectAddressSubSet(address, RelationRelationId,
-							RelationGetRelid(rel), attnum);
+							RelationGetRelid(rel), attphysnum);
 	}
 	else
 		address = InvalidObjectAddress;
 
 	InvokeObjectPostAlterHook(RelationRelationId,
-							  RelationGetRelid(rel), attnum);
+							  RelationGetRelid(rel), attphysnum);
 
 	table_close(attr_rel, RowExclusiveLock);
 
@@ -7501,7 +7501,7 @@ NotNullImpliedByRelConstraints(Relation rel, Form_pg_attribute attr)
 	NullTest   *nnulltest = makeNode(NullTest);
 
 	nnulltest->arg = (Expr *) makeVar(1,
-									  attr->attnum,
+									  attr->attphysnum,
 									  attr->atttypid,
 									  attr->atttypmod,
 									  attr->attcollation,
@@ -7537,39 +7537,39 @@ ATExecColumnDefault(Relation rel, const char *colName,
 					Node *newDefault, LOCKMODE lockmode)
 {
 	TupleDesc	tupdesc = RelationGetDescr(rel);
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 	ObjectAddress address;
 
 	/*
 	 * get the number of the attribute
 	 */
-	attnum = get_attnum(RelationGetRelid(rel), colName);
-	if (attnum == InvalidAttrNumber)
+	attphysnum = get_attphysnum(RelationGetRelid(rel), colName);
+	if (attphysnum == InvalidAttrNumber)
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_COLUMN),
 				 errmsg("column \"%s\" of relation \"%s\" does not exist",
 						colName, RelationGetRelationName(rel))));
 
 	/* Prevent them from altering a system attribute */
-	if (attnum <= 0)
+	if (attphysnum <= 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter system column \"%s\"",
 						colName)));
 
-	if (TupleDescAttr(tupdesc, attnum - 1)->attidentity)
+	if (TupleDescAttr(tupdesc, attphysnum - 1)->attidentity)
 		ereport(ERROR,
 				(errcode(ERRCODE_SYNTAX_ERROR),
 				 errmsg("column \"%s\" of relation \"%s\" is an identity column",
 						colName, RelationGetRelationName(rel)),
 				 newDefault ? 0 : errhint("Use ALTER TABLE ... ALTER COLUMN ... DROP IDENTITY instead.")));
 
-	if (TupleDescAttr(tupdesc, attnum - 1)->attgenerated)
+	if (TupleDescAttr(tupdesc, attphysnum - 1)->attgenerated)
 		ereport(ERROR,
 				(errcode(ERRCODE_SYNTAX_ERROR),
 				 errmsg("column \"%s\" of relation \"%s\" is a generated column",
 						colName, RelationGetRelationName(rel)),
-				 newDefault || TupleDescAttr(tupdesc, attnum - 1)->attgenerated != ATTRIBUTE_GENERATED_STORED ? 0 :
+				 newDefault || TupleDescAttr(tupdesc, attphysnum - 1)->attgenerated != ATTRIBUTE_GENERATED_STORED ? 0 :
 				 errhint("Use ALTER TABLE ... ALTER COLUMN ... DROP EXPRESSION instead.")));
 
 	/*
@@ -7581,7 +7581,7 @@ ATExecColumnDefault(Relation rel, const char *colName,
 	 * is preparatory to adding a new default, but as a user-initiated
 	 * operation when the user asked for a drop.
 	 */
-	RemoveAttrDefault(RelationGetRelid(rel), attnum, DROP_RESTRICT, false,
+	RemoveAttrDefault(RelationGetRelid(rel), attphysnum, DROP_RESTRICT, false,
 					  newDefault != NULL);
 
 	if (newDefault)
@@ -7590,7 +7590,7 @@ ATExecColumnDefault(Relation rel, const char *colName,
 		RawColumnDefault *rawEnt;
 
 		rawEnt = (RawColumnDefault *) palloc(sizeof(RawColumnDefault));
-		rawEnt->attnum = attnum;
+		rawEnt->attphysnum = attphysnum;
 		rawEnt->raw_default = newDefault;
 		rawEnt->missingMode = false;
 		rawEnt->generated = '\0';
@@ -7604,7 +7604,7 @@ ATExecColumnDefault(Relation rel, const char *colName,
 	}
 
 	ObjectAddressSubSet(address, RelationRelationId,
-						RelationGetRelid(rel), attnum);
+						RelationGetRelid(rel), attphysnum);
 	return address;
 }
 
@@ -7614,7 +7614,7 @@ ATExecColumnDefault(Relation rel, const char *colName,
  * Return the address of the affected column.
  */
 static ObjectAddress
-ATExecCookedColumnDefault(Relation rel, AttrNumber attnum,
+ATExecCookedColumnDefault(Relation rel, AttrNumber attphysnum,
 						  Node *newDefault)
 {
 	ObjectAddress address;
@@ -7627,13 +7627,13 @@ ATExecCookedColumnDefault(Relation rel, AttrNumber attnum,
 	 * default.  (In ordinary cases, there could not be a default in place
 	 * anyway, but it's possible when combining LIKE with inheritance.)
 	 */
-	RemoveAttrDefault(RelationGetRelid(rel), attnum, DROP_RESTRICT, false,
+	RemoveAttrDefault(RelationGetRelid(rel), attphysnum, DROP_RESTRICT, false,
 					  true);
 
-	(void) StoreAttrDefault(rel, attnum, newDefault, true, false);
+	(void) StoreAttrDefault(rel, attphysnum, newDefault, true, false);
 
 	ObjectAddressSubSet(address, RelationRelationId,
-						RelationGetRelid(rel), attnum);
+						RelationGetRelid(rel), attphysnum);
 	return address;
 }
 
@@ -7649,7 +7649,7 @@ ATExecAddIdentity(Relation rel, const char *colName,
 	Relation	attrelation;
 	HeapTuple	tuple;
 	Form_pg_attribute attTup;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 	ObjectAddress address;
 	ColumnDef  *cdef = castNode(ColumnDef, def);
 
@@ -7662,10 +7662,10 @@ ATExecAddIdentity(Relation rel, const char *colName,
 				 errmsg("column \"%s\" of relation \"%s\" does not exist",
 						colName, RelationGetRelationName(rel))));
 	attTup = (Form_pg_attribute) GETSTRUCT(tuple);
-	attnum = attTup->attnum;
+	attphysnum = attTup->attphysnum;
 
 	/* Can't alter a system attribute */
-	if (attnum <= 0)
+	if (attphysnum <= 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter system column \"%s\"",
@@ -7699,9 +7699,9 @@ ATExecAddIdentity(Relation rel, const char *colName,
 
 	InvokeObjectPostAlterHook(RelationRelationId,
 							  RelationGetRelid(rel),
-							  attTup->attnum);
+							  attTup->attphysnum);
 	ObjectAddressSubSet(address, RelationRelationId,
-						RelationGetRelid(rel), attnum);
+						RelationGetRelid(rel), attphysnum);
 	heap_freetuple(tuple);
 
 	table_close(attrelation, RowExclusiveLock);
@@ -7721,7 +7721,7 @@ ATExecSetIdentity(Relation rel, const char *colName, Node *def, LOCKMODE lockmod
 	DefElem    *generatedEl = NULL;
 	HeapTuple	tuple;
 	Form_pg_attribute attTup;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 	Relation	attrelation;
 	ObjectAddress address;
 
@@ -7757,9 +7757,9 @@ ATExecSetIdentity(Relation rel, const char *colName, Node *def, LOCKMODE lockmod
 						colName, RelationGetRelationName(rel))));
 
 	attTup = (Form_pg_attribute) GETSTRUCT(tuple);
-	attnum = attTup->attnum;
+	attphysnum = attTup->attphysnum;
 
-	if (attnum <= 0)
+	if (attphysnum <= 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter system column \"%s\"",
@@ -7778,9 +7778,9 @@ ATExecSetIdentity(Relation rel, const char *colName, Node *def, LOCKMODE lockmod
 
 		InvokeObjectPostAlterHook(RelationRelationId,
 								  RelationGetRelid(rel),
-								  attTup->attnum);
+								  attTup->attphysnum);
 		ObjectAddressSubSet(address, RelationRelationId,
-							RelationGetRelid(rel), attnum);
+							RelationGetRelid(rel), attphysnum);
 	}
 	else
 		address = InvalidObjectAddress;
@@ -7801,7 +7801,7 @@ ATExecDropIdentity(Relation rel, const char *colName, bool missing_ok, LOCKMODE 
 {
 	HeapTuple	tuple;
 	Form_pg_attribute attTup;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 	Relation	attrelation;
 	ObjectAddress address;
 	Oid			seqid;
@@ -7816,9 +7816,9 @@ ATExecDropIdentity(Relation rel, const char *colName, bool missing_ok, LOCKMODE 
 						colName, RelationGetRelationName(rel))));
 
 	attTup = (Form_pg_attribute) GETSTRUCT(tuple);
-	attnum = attTup->attnum;
+	attphysnum = attTup->attphysnum;
 
-	if (attnum <= 0)
+	if (attphysnum <= 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter system column \"%s\"",
@@ -7847,15 +7847,15 @@ ATExecDropIdentity(Relation rel, const char *colName, bool missing_ok, LOCKMODE 
 
 	InvokeObjectPostAlterHook(RelationRelationId,
 							  RelationGetRelid(rel),
-							  attTup->attnum);
+							  attTup->attphysnum);
 	ObjectAddressSubSet(address, RelationRelationId,
-						RelationGetRelid(rel), attnum);
+						RelationGetRelid(rel), attphysnum);
 	heap_freetuple(tuple);
 
 	table_close(attrelation, RowExclusiveLock);
 
 	/* drop the internal sequence */
-	seqid = getIdentitySequence(RelationGetRelid(rel), attnum, false);
+	seqid = getIdentitySequence(RelationGetRelid(rel), attphysnum, false);
 	deleteDependencyRecordsForClass(RelationRelationId, seqid,
 									RelationRelationId, DEPENDENCY_INTERNAL);
 	CommandCounterIncrement();
@@ -7921,7 +7921,7 @@ ATExecDropExpression(Relation rel, const char *colName, bool missing_ok, LOCKMOD
 {
 	HeapTuple	tuple;
 	Form_pg_attribute attTup;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 	Relation	attrelation;
 	Oid			attrdefoid;
 	ObjectAddress address;
@@ -7935,9 +7935,9 @@ ATExecDropExpression(Relation rel, const char *colName, bool missing_ok, LOCKMOD
 						colName, RelationGetRelationName(rel))));
 
 	attTup = (Form_pg_attribute) GETSTRUCT(tuple);
-	attnum = attTup->attnum;
+	attphysnum = attTup->attphysnum;
 
-	if (attnum <= 0)
+	if (attphysnum <= 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter system column \"%s\"",
@@ -7970,7 +7970,7 @@ ATExecDropExpression(Relation rel, const char *colName, bool missing_ok, LOCKMOD
 
 	InvokeObjectPostAlterHook(RelationRelationId,
 							  RelationGetRelid(rel),
-							  attnum);
+							  attphysnum);
 	heap_freetuple(tuple);
 
 	table_close(attrelation, RowExclusiveLock);
@@ -7980,10 +7980,10 @@ ATExecDropExpression(Relation rel, const char *colName, bool missing_ok, LOCKMOD
 	 * its INTERNAL dependency on the column, which would otherwise cause
 	 * dependency.c to refuse to perform the deletion.
 	 */
-	attrdefoid = GetAttrDefaultOid(RelationGetRelid(rel), attnum);
+	attrdefoid = GetAttrDefaultOid(RelationGetRelid(rel), attphysnum);
 	if (!OidIsValid(attrdefoid))
-		elog(ERROR, "could not find attrdef tuple for relation %u attnum %d",
-			 RelationGetRelid(rel), attnum);
+		elog(ERROR, "could not find attrdef tuple for relation %u attphysnum %d",
+			 RelationGetRelid(rel), attphysnum);
 	(void) deleteDependencyRecordsFor(AttrDefaultRelationId, attrdefoid, false);
 
 	/* Make above changes visible */
@@ -7994,11 +7994,11 @@ ATExecDropExpression(Relation rel, const char *colName, bool missing_ok, LOCKMOD
 	 * safety, but at present we do not expect anything to depend on the
 	 * default.
 	 */
-	RemoveAttrDefault(RelationGetRelid(rel), attnum, DROP_RESTRICT,
+	RemoveAttrDefault(RelationGetRelid(rel), attphysnum, DROP_RESTRICT,
 					  false, false);
 
 	ObjectAddressSubSet(address, RelationRelationId,
-						RelationGetRelid(rel), attnum);
+						RelationGetRelid(rel), attphysnum);
 	return address;
 }
 
@@ -8014,7 +8014,7 @@ ATExecSetStatistics(Relation rel, const char *colName, int16 colNum, Node *newVa
 	Relation	attrelation;
 	HeapTuple	tuple;
 	Form_pg_attribute attrtuple;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 	ObjectAddress address;
 
 	/*
@@ -8075,8 +8075,8 @@ ATExecSetStatistics(Relation rel, const char *colName, int16 colNum, Node *newVa
 
 	attrtuple = (Form_pg_attribute) GETSTRUCT(tuple);
 
-	attnum = attrtuple->attnum;
-	if (attnum <= 0)
+	attphysnum = attrtuple->attphysnum;
+	if (attphysnum <= 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter system column \"%s\"",
@@ -8085,12 +8085,12 @@ ATExecSetStatistics(Relation rel, const char *colName, int16 colNum, Node *newVa
 	if (rel->rd_rel->relkind == RELKIND_INDEX ||
 		rel->rd_rel->relkind == RELKIND_PARTITIONED_INDEX)
 	{
-		if (attnum > rel->rd_index->indnkeyatts)
+		if (attphysnum > rel->rd_index->indnkeyatts)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("cannot alter statistics on included column \"%s\" of index \"%s\"",
 							NameStr(attrtuple->attname), RelationGetRelationName(rel))));
-		else if (rel->rd_index->indkey.values[attnum - 1] != 0)
+		else if (rel->rd_index->indkey.values[attphysnum - 1] != 0)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("cannot alter statistics on non-expression column \"%s\" of index \"%s\"",
@@ -8104,9 +8104,9 @@ ATExecSetStatistics(Relation rel, const char *colName, int16 colNum, Node *newVa
 
 	InvokeObjectPostAlterHook(RelationRelationId,
 							  RelationGetRelid(rel),
-							  attrtuple->attnum);
+							  attrtuple->attphysnum);
 	ObjectAddressSubSet(address, RelationRelationId,
-						RelationGetRelid(rel), attnum);
+						RelationGetRelid(rel), attphysnum);
 	heap_freetuple(tuple);
 
 	table_close(attrelation, RowExclusiveLock);
@@ -8125,7 +8125,7 @@ ATExecSetOptions(Relation rel, const char *colName, Node *options,
 	HeapTuple	tuple,
 				newtuple;
 	Form_pg_attribute attrtuple;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 	Datum		datum,
 				newOptions;
 	bool		isnull;
@@ -8145,8 +8145,8 @@ ATExecSetOptions(Relation rel, const char *colName, Node *options,
 						colName, RelationGetRelationName(rel))));
 	attrtuple = (Form_pg_attribute) GETSTRUCT(tuple);
 
-	attnum = attrtuple->attnum;
-	if (attnum <= 0)
+	attphysnum = attrtuple->attphysnum;
+	if (attphysnum <= 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter system column \"%s\"",
@@ -8177,9 +8177,9 @@ ATExecSetOptions(Relation rel, const char *colName, Node *options,
 
 	InvokeObjectPostAlterHook(RelationRelationId,
 							  RelationGetRelid(rel),
-							  attrtuple->attnum);
+							  attrtuple->attphysnum);
 	ObjectAddressSubSet(address, RelationRelationId,
-						RelationGetRelid(rel), attnum);
+						RelationGetRelid(rel), attphysnum);
 
 	heap_freetuple(newtuple);
 
@@ -8198,7 +8198,7 @@ ATExecSetOptions(Relation rel, const char *colName, Node *options,
  */
 static void
 SetIndexStorageProperties(Relation rel, Relation attrelation,
-						  AttrNumber attnum,
+						  AttrNumber attphysnum,
 						  bool setstorage, char newstorage,
 						  bool setcompression, char newcompression,
 						  LOCKMODE lockmode)
@@ -8216,7 +8216,7 @@ SetIndexStorageProperties(Relation rel, Relation attrelation,
 
 		for (int i = 0; i < indrel->rd_index->indnatts; i++)
 		{
-			if (indrel->rd_index->indkey.values[i] == attnum)
+			if (indrel->rd_index->indkey.values[i] == attphysnum)
 			{
 				indattnum = i + 1;
 				break;
@@ -8245,7 +8245,7 @@ SetIndexStorageProperties(Relation rel, Relation attrelation,
 
 			InvokeObjectPostAlterHook(RelationRelationId,
 									  RelationGetRelid(rel),
-									  attrtuple->attnum);
+									  attrtuple->attphysnum);
 
 			heap_freetuple(tuple);
 		}
@@ -8267,7 +8267,7 @@ ATExecSetStorage(Relation rel, const char *colName, Node *newValue, LOCKMODE loc
 	Relation	attrelation;
 	HeapTuple	tuple;
 	Form_pg_attribute attrtuple;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 	ObjectAddress address;
 
 	Assert(IsA(newValue, String));
@@ -8301,8 +8301,8 @@ ATExecSetStorage(Relation rel, const char *colName, Node *newValue, LOCKMODE loc
 						colName, RelationGetRelationName(rel))));
 	attrtuple = (Form_pg_attribute) GETSTRUCT(tuple);
 
-	attnum = attrtuple->attnum;
-	if (attnum <= 0)
+	attphysnum = attrtuple->attphysnum;
+	if (attphysnum <= 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter system column \"%s\"",
@@ -8324,7 +8324,7 @@ ATExecSetStorage(Relation rel, const char *colName, Node *newValue, LOCKMODE loc
 
 	InvokeObjectPostAlterHook(RelationRelationId,
 							  RelationGetRelid(rel),
-							  attrtuple->attnum);
+							  attrtuple->attphysnum);
 
 	heap_freetuple(tuple);
 
@@ -8332,7 +8332,7 @@ ATExecSetStorage(Relation rel, const char *colName, Node *newValue, LOCKMODE loc
 	 * Apply the change to indexes as well (only for simple index columns,
 	 * matching behavior of index.c ConstructTupleDescriptor()).
 	 */
-	SetIndexStorageProperties(rel, attrelation, attnum,
+	SetIndexStorageProperties(rel, attrelation, attphysnum,
 							  true, newstorage,
 							  false, 0,
 							  lockmode);
@@ -8340,7 +8340,7 @@ ATExecSetStorage(Relation rel, const char *colName, Node *newValue, LOCKMODE loc
 	table_close(attrelation, RowExclusiveLock);
 
 	ObjectAddressSubSet(address, RelationRelationId,
-						RelationGetRelid(rel), attnum);
+						RelationGetRelid(rel), attphysnum);
 	return address;
 }
 
@@ -8391,7 +8391,7 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 {
 	HeapTuple	tuple;
 	Form_pg_attribute targetatt;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 	List	   *children;
 	ObjectAddress object;
 	bool		is_expr;
@@ -8428,10 +8428,10 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 	}
 	targetatt = (Form_pg_attribute) GETSTRUCT(tuple);
 
-	attnum = targetatt->attnum;
+	attphysnum = targetatt->attphysnum;
 
 	/* Can't drop a system attribute */
-	if (attnum <= 0)
+	if (attphysnum <= 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot drop system column \"%s\"",
@@ -8453,7 +8453,7 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 	 * of the whole table, which is surely not what the user expected.)
 	 */
 	if (has_partition_attrs(rel,
-							bms_make_singleton(attnum - FirstLowInvalidHeapAttributeNumber),
+							bms_make_singleton(attphysnum - FirstLowInvalidHeapAttributeNumber),
 							&is_expr))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
@@ -8557,7 +8557,7 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 	/* Add object to delete */
 	object.classId = RelationRelationId;
 	object.objectId = RelationGetRelid(rel);
-	object.objectSubId = attnum;
+	object.objectSubId = attphysnum;
 	add_exact_object_address(&object, addrs);
 
 	if (!recursing)
@@ -9490,11 +9490,11 @@ validateFkOnDeleteSetColumns(int numfks, const int16 *fkattnums,
  * parentConstr is the OID of a parent constraint; InvalidOid if this is a
  * top-level constraint.
  * numfks is the number of columns in the foreign key
- * pkattnum is the attnum array of referenced attributes.
- * fkattnum is the attnum array of referencing attributes.
+ * pkattnum is the attphysnum array of referenced attributes.
+ * fkattnum is the attphysnum array of referencing attributes.
  * numfkdelsetcols is the number of columns in the ON DELETE SET NULL/DELETE
  *      (...) clause
- * fkdelsetcols is the attnum array of the columns in the ON DELETE SET
+ * fkdelsetcols is the attphysnum array of the columns in the ON DELETE SET
  *      NULL/DELETE clause
  * pf/pp/ffeqoperators are OID array of operators between columns.
  * old_check_ok signals that this constraint replaces an existing one that
@@ -9708,12 +9708,12 @@ addFkRecurseReferenced(List **wqueue, Constraint *fkconstraint, Relation rel,
  * indexOid is the OID of the index (on pkrel) implementing this constraint.
  * parentConstr is the OID of the parent constraint (there is always one).
  * numfks is the number of columns in the foreign key
- * pkattnum is the attnum array of referenced attributes.
- * fkattnum is the attnum array of referencing attributes.
+ * pkattnum is the attphysnum array of referenced attributes.
+ * fkattnum is the attphysnum array of referencing attributes.
  * pf/pp/ffeqoperators are OID array of operators between columns.
  * numfkdelsetcols is the number of columns in the ON DELETE SET NULL/DELETE
  *      (...) clause
- * fkdelsetcols is the attnum array of the columns in the ON DELETE SET
+ * fkdelsetcols is the attphysnum array of the columns in the ON DELETE SET
  *      NULL/DELETE clause
  * old_check_ok signals that this constraint replaces an existing one that
  *		was already validated (thus this one doesn't need validation).
@@ -11144,16 +11144,16 @@ ATExecValidateConstraint(List **wqueue, Relation rel, char *constrName,
 /*
  * transformColumnNameList - transform list of column names
  *
- * Lookup each name and return its attnum and, optionally, type OID
+ * Lookup each name and return its attphysnum and, optionally, type OID
  */
 static int
 transformColumnNameList(Oid relId, List *colList,
 						int16 *attnums, Oid *atttypids)
 {
 	ListCell   *l;
-	int			attnum;
+	int			attphysnum;
 
-	attnum = 0;
+	attphysnum = 0;
 	foreach(l, colList)
 	{
 		char	   *attname = strVal(lfirst(l));
@@ -11165,19 +11165,19 @@ transformColumnNameList(Oid relId, List *colList,
 					(errcode(ERRCODE_UNDEFINED_COLUMN),
 					 errmsg("column \"%s\" referenced in foreign key constraint does not exist",
 							attname)));
-		if (attnum >= INDEX_MAX_KEYS)
+		if (attphysnum >= INDEX_MAX_KEYS)
 			ereport(ERROR,
 					(errcode(ERRCODE_TOO_MANY_COLUMNS),
 					 errmsg("cannot have more than %d keys in a foreign key",
 							INDEX_MAX_KEYS)));
-		attnums[attnum] = ((Form_pg_attribute) GETSTRUCT(atttuple))->attnum;
+		attnums[attphysnum] = ((Form_pg_attribute) GETSTRUCT(atttuple))->attphysnum;
 		if (atttypids != NULL)
-			atttypids[attnum] = ((Form_pg_attribute) GETSTRUCT(atttuple))->atttypid;
+			atttypids[attphysnum] = ((Form_pg_attribute) GETSTRUCT(atttuple))->atttypid;
 		ReleaseSysCache(atttuple);
-		attnum++;
+		attphysnum++;
 	}
 
-	return attnum;
+	return attphysnum;
 }
 
 /*
@@ -11360,7 +11360,7 @@ transformFkeyCheckAttrs(Relation pkrel,
 			indclass = (oidvector *) DatumGetPointer(indclassDatum);
 
 			/*
-			 * The given attnum list may match the index columns in any order.
+			 * The given attphysnum list may match the index columns in any order.
 			 * Check for a match, and extract the appropriate opclasses while
 			 * we're at it.
 			 *
@@ -12070,7 +12070,7 @@ ATPrepAlterColumnType(List **wqueue,
 	Node	   *transform = def->cooked_default;
 	HeapTuple	tuple;
 	Form_pg_attribute attTup;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 	Oid			targettype;
 	int32		targettypmod;
 	Oid			targetcollid;
@@ -12092,10 +12092,10 @@ ATPrepAlterColumnType(List **wqueue,
 				 errmsg("column \"%s\" of relation \"%s\" does not exist",
 						colName, RelationGetRelationName(rel))));
 	attTup = (Form_pg_attribute) GETSTRUCT(tuple);
-	attnum = attTup->attnum;
+	attphysnum = attTup->attphysnum;
 
 	/* Can't alter a system attribute */
-	if (attnum <= 0)
+	if (attphysnum <= 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter system column \"%s\"",
@@ -12114,7 +12114,7 @@ ATPrepAlterColumnType(List **wqueue,
 
 	/* Don't alter columns used in the partition key */
 	if (has_partition_attrs(rel,
-							bms_make_singleton(attnum - FirstLowInvalidHeapAttributeNumber),
+							bms_make_singleton(attphysnum - FirstLowInvalidHeapAttributeNumber),
 							&is_expr))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
@@ -12150,7 +12150,7 @@ ATPrepAlterColumnType(List **wqueue,
 		 */
 		if (!transform)
 		{
-			transform = (Node *) makeVar(1, attnum,
+			transform = (Node *) makeVar(1, attphysnum,
 										 attTup->atttypid, attTup->atttypmod,
 										 attTup->attcollation,
 										 0);
@@ -12195,12 +12195,12 @@ ATPrepAlterColumnType(List **wqueue,
 		 * contents.
 		 */
 		newval = (NewColumnValue *) palloc0(sizeof(NewColumnValue));
-		newval->attnum = attnum;
+		newval->attphysnum = attphysnum;
 		newval->expr = (Expr *) transform;
 		newval->is_generated = false;
 
 		tab->newvals = lappend(tab->newvals, newval);
-		if (ATColumnChangeRequiresRewrite(transform, attnum))
+		if (ATColumnChangeRequiresRewrite(transform, attphysnum))
 			tab->rewrite |= AT_REWRITE_COLUMN_REWRITE;
 	}
 	else if (transform)
@@ -12394,7 +12394,7 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 	HeapTuple	heapTup;
 	Form_pg_attribute attTup,
 				attOldTup;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 	HeapTuple	typeTuple;
 	Form_pg_type tform;
 	Oid			targettype;
@@ -12433,8 +12433,8 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 				 errmsg("column \"%s\" of relation \"%s\" does not exist",
 						colName, RelationGetRelationName(rel))));
 	attTup = (Form_pg_attribute) GETSTRUCT(heapTup);
-	attnum = attTup->attnum;
-	attOldTup = TupleDescAttr(tab->oldDesc, attnum - 1);
+	attphysnum = attTup->attphysnum;
+	attOldTup = TupleDescAttr(tab->oldDesc, attphysnum - 1);
 
 	/* Check for multiple ALTER TYPE on same column --- can't cope */
 	if (attTup->atttypid != attOldTup->atttypid ||
@@ -12465,7 +12465,7 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 	 */
 	if (attTup->atthasdef)
 	{
-		defaultexpr = build_column_default(rel, attnum);
+		defaultexpr = build_column_default(rel, attphysnum);
 		Assert(defaultexpr);
 		defaultexpr = strip_implicit_coercions(defaultexpr);
 		defaultexpr = coerce_to_target_type(NULL,	/* no UNKNOWN params */
@@ -12513,7 +12513,7 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 	ScanKeyInit(&key[2],
 				Anum_pg_depend_refobjsubid,
 				BTEqualStrategyNumber, F_INT4EQ,
-				Int32GetDatum((int32) attnum));
+				Int32GetDatum((int32) attphysnum));
 
 	scan = systable_beginscan(depRel, DependReferenceIndexId, true,
 							  NULL, 3, key);
@@ -12613,7 +12613,7 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 					ObjectAddress col = GetAttrDefaultColumnAddress(foundObject.objectId);
 
 					if (col.objectId == RelationGetRelid(rel) &&
-						col.objectSubId == attnum)
+						col.objectSubId == attphysnum)
 					{
 						/*
 						 * Ignore the column's own default expression, which
@@ -12719,7 +12719,7 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 	ScanKeyInit(&key[2],
 				Anum_pg_depend_objsubid,
 				BTEqualStrategyNumber, F_INT4EQ,
-				Int32GetDatum((int32) attnum));
+				Int32GetDatum((int32) attphysnum));
 
 	scan = systable_beginscan(depRel, DependDependerIndexId, true,
 							  NULL, 3, key);
@@ -12835,16 +12835,16 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 	table_close(attrelation, RowExclusiveLock);
 
 	/* Install dependencies on new datatype and collation */
-	add_column_datatype_dependency(RelationGetRelid(rel), attnum, targettype);
-	add_column_collation_dependency(RelationGetRelid(rel), attnum, targetcollid);
+	add_column_datatype_dependency(RelationGetRelid(rel), attphysnum, targettype);
+	add_column_collation_dependency(RelationGetRelid(rel), attphysnum, targetcollid);
 
 	/*
 	 * Drop any pg_statistic entry for the column, since it's now wrong type
 	 */
-	RemoveStatistics(RelationGetRelid(rel), attnum);
+	RemoveStatistics(RelationGetRelid(rel), attphysnum);
 
 	InvokeObjectPostAlterHook(RelationRelationId,
-							  RelationGetRelid(rel), attnum);
+							  RelationGetRelid(rel), attphysnum);
 
 	/*
 	 * Update the default, if present, by brute force --- remove and re-add
@@ -12862,11 +12862,11 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 		 */
 		if (attTup->attgenerated)
 		{
-			Oid			attrdefoid = GetAttrDefaultOid(RelationGetRelid(rel), attnum);
+			Oid			attrdefoid = GetAttrDefaultOid(RelationGetRelid(rel), attphysnum);
 
 			if (!OidIsValid(attrdefoid))
-				elog(ERROR, "could not find attrdef tuple for relation %u attnum %d",
-					 RelationGetRelid(rel), attnum);
+				elog(ERROR, "could not find attrdef tuple for relation %u attphysnum %d",
+					 RelationGetRelid(rel), attphysnum);
 			(void) deleteDependencyRecordsFor(AttrDefaultRelationId, attrdefoid, false);
 		}
 
@@ -12880,14 +12880,14 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 		 * We use RESTRICT here for safety, but at present we do not expect
 		 * anything to depend on the default.
 		 */
-		RemoveAttrDefault(RelationGetRelid(rel), attnum, DROP_RESTRICT, true,
+		RemoveAttrDefault(RelationGetRelid(rel), attphysnum, DROP_RESTRICT, true,
 						  true);
 
-		StoreAttrDefault(rel, attnum, defaultexpr, true, false);
+		StoreAttrDefault(rel, attphysnum, defaultexpr, true, false);
 	}
 
 	ObjectAddressSubSet(address, RelationRelationId,
-						RelationGetRelid(rel), attnum);
+						RelationGetRelid(rel), attphysnum);
 
 	/* Cleanup */
 	heap_freetuple(heapTup);
@@ -13568,7 +13568,7 @@ ATExecAlterColumnGenericOptions(Relation rel,
 	Datum		datum;
 	Form_pg_foreign_table fttableform;
 	Form_pg_attribute atttableform;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 	ObjectAddress address;
 
 	if (options == NIL)
@@ -13599,8 +13599,8 @@ ATExecAlterColumnGenericOptions(Relation rel,
 
 	/* Prevent them from altering a system attribute */
 	atttableform = (Form_pg_attribute) GETSTRUCT(tuple);
-	attnum = atttableform->attnum;
-	if (attnum <= 0)
+	attphysnum = atttableform->attphysnum;
+	if (attphysnum <= 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter system column \"%s\"", colName)));
@@ -13641,9 +13641,9 @@ ATExecAlterColumnGenericOptions(Relation rel,
 
 	InvokeObjectPostAlterHook(RelationRelationId,
 							  RelationGetRelid(rel),
-							  atttableform->attnum);
+							  atttableform->attphysnum);
 	ObjectAddressSubSet(address, RelationRelationId,
-						RelationGetRelid(rel), attnum);
+						RelationGetRelid(rel), attphysnum);
 
 	ReleaseSysCache(tuple);
 
@@ -13918,7 +13918,7 @@ change_owner_fix_column_acls(Oid relationOid, Oid oldOwnerId, Oid newOwnerId)
 				Anum_pg_attribute_attrelid,
 				BTEqualStrategyNumber, F_OIDEQ,
 				ObjectIdGetDatum(relationOid));
-	scan = systable_beginscan(attRelation, AttributeRelidNumIndexId,
+	scan = systable_beginscan(attRelation, AttributeRelidPhysNumIndexId,
 							  true, NULL, 1, key);
 	while (HeapTupleIsValid(attributeTuple = systable_getnext(scan)))
 	{
@@ -15062,7 +15062,7 @@ MergeAttributesIntoExisting(Relation child_rel, Relation parent_rel)
 
 				for (int i = 0; i < child_constr->num_defval; i++)
 				{
-					if (child_constr->defval[i].adnum == childatt->attnum)
+					if (child_constr->defval[i].adnum == childatt->attphysnum)
 					{
 						child_expr =
 							TextDatumGetCString(DirectFunctionCall2(pg_get_expr,
@@ -15075,7 +15075,7 @@ MergeAttributesIntoExisting(Relation child_rel, Relation parent_rel)
 
 				for (int i = 0; i < parent_constr->num_defval; i++)
 				{
-					if (parent_constr->defval[i].adnum == attribute->attnum)
+					if (parent_constr->defval[i].adnum == attribute->attphysnum)
 					{
 						parent_expr =
 							TextDatumGetCString(DirectFunctionCall2(pg_get_expr,
@@ -15441,7 +15441,7 @@ RemoveInheritance(Relation child_rel, Relation parent_rel, bool expect_detached)
 				Anum_pg_attribute_attrelid,
 				BTEqualStrategyNumber, F_OIDEQ,
 				ObjectIdGetDatum(RelationGetRelid(child_rel)));
-	scan = systable_beginscan(catalogRelation, AttributeRelidNumIndexId,
+	scan = systable_beginscan(catalogRelation, AttributeRelidPhysNumIndexId,
 							  true, NULL, 1, key);
 	while (HeapTupleIsValid(attributeTuple = systable_getnext(scan)))
 	{
@@ -16165,7 +16165,7 @@ ATExecSetCompression(AlteredTableInfo *tab,
 	Relation	attrel;
 	HeapTuple	tuple;
 	Form_pg_attribute atttableform;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 	char	   *compression;
 	char		cmethod;
 	ObjectAddress address;
@@ -16185,8 +16185,8 @@ ATExecSetCompression(AlteredTableInfo *tab,
 
 	/* prevent them from altering a system attribute */
 	atttableform = (Form_pg_attribute) GETSTRUCT(tuple);
-	attnum = atttableform->attnum;
-	if (attnum <= 0)
+	attphysnum = atttableform->attphysnum;
+	if (attphysnum <= 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter system column \"%s\"", column)));
@@ -16203,13 +16203,13 @@ ATExecSetCompression(AlteredTableInfo *tab,
 
 	InvokeObjectPostAlterHook(RelationRelationId,
 							  RelationGetRelid(rel),
-							  attnum);
+							  attphysnum);
 
 	/*
 	 * Apply the change to indexes as well (only for simple index columns,
 	 * matching behavior of index.c ConstructTupleDescriptor()).
 	 */
-	SetIndexStorageProperties(rel, attrel, attnum,
+	SetIndexStorageProperties(rel, attrel, attphysnum,
 							  false, 0,
 							  true, cmethod,
 							  lockmode);
@@ -16222,7 +16222,7 @@ ATExecSetCompression(AlteredTableInfo *tab,
 	CommandCounterIncrement();
 
 	ObjectAddressSubSet(address, RelationRelationId,
-						RelationGetRelid(rel), attnum);
+						RelationGetRelid(rel), attphysnum);
 	return address;
 }
 
@@ -17247,7 +17247,7 @@ ComputePartitionAttrs(ParseState *pstate, Relation rel, List *partParams, AttrNu
 						 parser_errposition(pstate, pelem->location)));
 			attform = (Form_pg_attribute) GETSTRUCT(atttuple);
 
-			if (attform->attnum <= 0)
+			if (attform->attphysnum <= 0)
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 						 errmsg("cannot use system column \"%s\" in partition key",
@@ -17266,7 +17266,7 @@ ComputePartitionAttrs(ParseState *pstate, Relation rel, List *partParams, AttrNu
 								   pelem->name),
 						 parser_errposition(pstate, pelem->location)));
 
-			partattrs[attn] = attform->attnum;
+			partattrs[attn] = attform->attphysnum;
 			atttype = attform->atttypid;
 			attcollation = attform->attcollation;
 			ReleaseSysCache(atttuple);

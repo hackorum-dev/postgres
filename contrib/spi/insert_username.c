@@ -31,7 +31,7 @@ insert_username(PG_FUNCTION_ARGS)
 	Relation	rel;			/* triggered relation */
 	HeapTuple	rettuple = NULL;
 	TupleDesc	tupdesc;		/* tuple description */
-	int			attnum;
+	int			attphysnum;
 
 	/* sanity checks from autoinc.c */
 	if (!CALLED_AS_TRIGGER(fcinfo))
@@ -65,14 +65,14 @@ insert_username(PG_FUNCTION_ARGS)
 	args = trigger->tgargs;
 	tupdesc = rel->rd_att;
 
-	attnum = SPI_fnumber(tupdesc, args[0]);
+	attphysnum = SPI_fnumber(tupdesc, args[0]);
 
-	if (attnum <= 0)
+	if (attphysnum <= 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_TRIGGERED_ACTION_EXCEPTION),
 				 errmsg("\"%s\" has no attribute \"%s\"", relname, args[0])));
 
-	if (SPI_gettypeid(tupdesc, attnum) != TEXTOID)
+	if (SPI_gettypeid(tupdesc, attphysnum) != TEXTOID)
 		ereport(ERROR,
 				(errcode(ERRCODE_TRIGGERED_ACTION_EXCEPTION),
 				 errmsg("attribute \"%s\" of \"%s\" must be type TEXT",
@@ -84,7 +84,7 @@ insert_username(PG_FUNCTION_ARGS)
 
 	/* construct new tuple */
 	rettuple = heap_modify_tuple_by_cols(rettuple, tupdesc,
-										 1, &attnum, &newval, &newnull);
+										 1, &attphysnum, &newval, &newnull);
 
 	pfree(relname);
 

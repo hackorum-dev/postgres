@@ -231,25 +231,25 @@ index_check_primary_key(Relation heapRel,
 	 */
 	for (i = 0; i < indexInfo->ii_NumIndexKeyAttrs; i++)
 	{
-		AttrNumber	attnum = indexInfo->ii_IndexAttrNumbers[i];
+		AttrNumber	attphysnum = indexInfo->ii_IndexAttrNumbers[i];
 		HeapTuple	atttuple;
 		Form_pg_attribute attform;
 
-		if (attnum == 0)
+		if (attphysnum == 0)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("primary keys cannot be expressions")));
 
 		/* System attributes are never null, so no need to check */
-		if (attnum < 0)
+		if (attphysnum < 0)
 			continue;
 
-		atttuple = SearchSysCache2(ATTNUM,
+		atttuple = SearchSysCache2(ATTPHYSNUM,
 								   ObjectIdGetDatum(RelationGetRelid(heapRel)),
-								   Int16GetDatum(attnum));
+								   Int16GetDatum(attphysnum));
 		if (!HeapTupleIsValid(atttuple))
 			elog(ERROR, "cache lookup failed for attribute %d of relation %u",
-				 attnum, RelationGetRelid(heapRel));
+				 attphysnum, RelationGetRelid(heapRel));
 		attform = (Form_pg_attribute) GETSTRUCT(atttuple);
 
 		if (!attform->attnotnull)
@@ -310,7 +310,7 @@ ConstructTupleDescriptor(Relation heapRelation,
 		Oid			keyType;
 
 		MemSet(to, 0, ATTRIBUTE_FIXED_PART_SIZE);
-		to->attnum = i + 1;
+		to->attphysnum = i + 1;
 		to->attstattarget = -1;
 		to->attcacheoff = -1;
 		to->attislocal = true;
@@ -1770,7 +1770,7 @@ index_concurrently_swap(Oid newIndexId, Oid oldIndexId, const char *oldName)
 					Anum_pg_attribute_attrelid,
 					BTEqualStrategyNumber, F_OIDEQ,
 					ObjectIdGetDatum(newIndexId));
-		scan = systable_beginscan(pg_attribute, AttributeRelidNumIndexId,
+		scan = systable_beginscan(pg_attribute, AttributeRelidPhysNumIndexId,
 								  true, NULL, 1, key);
 
 		while (HeapTupleIsValid((attrTuple = systable_getnext(scan))))
@@ -1789,7 +1789,7 @@ index_concurrently_swap(Oid newIndexId, Oid oldIndexId, const char *oldName)
 			/*
 			 * Get attstattarget from the old index and refresh the new value.
 			 */
-			attstattarget = get_attstattarget(oldIndexId, att->attnum);
+			attstattarget = get_attstattarget(oldIndexId, att->attphysnum);
 
 			/* no need for a refresh if both match */
 			if (attstattarget == att->attstattarget)

@@ -506,7 +506,7 @@ ginVacuumEntryPage(GinVacuumState *gvs, Buffer buffer, BlockNumber *roots, uint3
 			/* If any item pointers were removed, recreate the tuple. */
 			if (items)
 			{
-				OffsetNumber attnum;
+				OffsetNumber attphysnum;
 				Datum		key;
 				GinNullCategory category;
 				GinPostingList *plist;
@@ -539,9 +539,9 @@ ginVacuumEntryPage(GinVacuumState *gvs, Buffer buffer, BlockNumber *roots, uint3
 					itup = (IndexTuple) PageGetItem(tmppage, PageGetItemId(tmppage, i));
 				}
 
-				attnum = gintuple_get_attrnum(&gvs->ginstate, itup);
+				attphysnum = gintuple_get_attrnum(&gvs->ginstate, itup);
 				key = gintuple_get_key(&gvs->ginstate, itup, &category);
-				itup = GinFormTuple(&gvs->ginstate, attnum, key, category,
+				itup = GinFormTuple(&gvs->ginstate, attphysnum, key, category,
 									(char *) plist, plistsize,
 									nitems, true);
 				if (plist)

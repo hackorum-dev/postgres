@@ -89,7 +89,7 @@ LookupTypeNameExtended(ParseState *pstate,
 		RangeVar   *rel = makeRangeVar(NULL, NULL, typeName->location);
 		char	   *field = NULL;
 		Oid			relid;
-		AttrNumber	attnum;
+		AttrNumber	attphysnum;
 
 		/* deconstruct the name list */
 		switch (list_length(typeName->names))
@@ -133,8 +133,8 @@ LookupTypeNameExtended(ParseState *pstate,
 		 * penalty and would also require a permissions check.
 		 */
 		relid = RangeVarGetRelid(rel, NoLock, missing_ok);
-		attnum = get_attnum(relid, field);
-		if (attnum == InvalidAttrNumber)
+		attphysnum = get_attphysnum(relid, field);
+		if (attphysnum == InvalidAttrNumber)
 		{
 			if (missing_ok)
 				typoid = InvalidOid;
@@ -147,7 +147,7 @@ LookupTypeNameExtended(ParseState *pstate,
 		}
 		else
 		{
-			typoid = get_atttype(relid, attnum);
+			typoid = get_atttype(relid, attphysnum);
 
 			/* this construct should never have an array indicator */
 			Assert(typeName->arrayBounds == NIL);

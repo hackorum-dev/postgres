@@ -74,7 +74,7 @@ DECLARE_UNIQUE_INDEX_PKEY(pg_statistic_ext_oid_index, 3380, StatisticExtOidIndex
 DECLARE_UNIQUE_INDEX(pg_statistic_ext_name_index, 3997, StatisticExtNameIndexId, on pg_statistic_ext using btree(stxname name_ops, stxnamespace oid_ops));
 DECLARE_INDEX(pg_statistic_ext_relid_index, 3379, StatisticExtRelidIndexId, on pg_statistic_ext using btree(stxrelid oid_ops));
 
-DECLARE_ARRAY_FOREIGN_KEY((stxrelid, stxkeys), pg_attribute, (attrelid, attnum));
+DECLARE_ARRAY_FOREIGN_KEY((stxrelid, stxkeys), pg_attribute, (attrelid, attphysnum));
 
 #ifdef EXPOSE_TO_CLIENT_CODE
 

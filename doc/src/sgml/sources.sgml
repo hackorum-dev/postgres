@@ -326,7 +326,7 @@ ereport(ERROR,
    </listitem>
    <listitem>
     <para>
-     <function>errtablecol(Relation rel, int attnum)</function> specifies
+     <function>errtablecol(Relation rel, int attphysnum)</function> specifies
      a column whose name, table name, and schema name should be included as
      auxiliary fields in the error report.
     </para>

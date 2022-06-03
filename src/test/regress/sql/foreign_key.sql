@@ -1087,7 +1087,7 @@ create rule r1 as on delete to t1 do delete from t2 where t2.b = old.a;
 explain (costs off) delete from t1 where a = 1;
 delete from t1 where a = 1;
 
--- Test a primary key with attributes located in later attnum positions
+-- Test a primary key with attributes located in later attphysnum positions
 -- compared to the fk attributes.
 create table pktable2 (a int, b int, c int, d int, e int, primary key (d, e));
 create table fktable2 (d int, e int, foreign key (d, e) references pktable2);

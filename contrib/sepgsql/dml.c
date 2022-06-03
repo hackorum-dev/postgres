@@ -61,7 +61,7 @@ fixup_whole_row_references(Oid relOid, Bitmapset *columns)
 
 	for (attno = 1; attno <= natts; attno++)
 	{
-		tuple = SearchSysCache2(ATTNUM,
+		tuple = SearchSysCache2(ATTPHYSNUM,
 								ObjectIdGetDatum(relOid),
 								Int16GetDatum(attno));
 		if (!HeapTupleIsValid(tuple))
@@ -117,7 +117,7 @@ fixup_inherited_columns(Oid parentId, Oid childId, Bitmapset *columns)
 		}
 
 		attname = get_attname(parentId, attno, false);
-		attno = get_attnum(childId, attname);
+		attno = get_attphysnum(childId, attname);
 		if (attno == InvalidAttrNumber)
 			elog(ERROR, "cache lookup failed for attribute %s of relation %u",
 				 attname, childId);
@@ -232,7 +232,7 @@ check_relation_privileges(Oid relOid,
 
 	while ((index = bms_first_member(columns)) >= 0)
 	{
-		AttrNumber	attnum;
+		AttrNumber	attphysnum;
 		uint32		column_perms = 0;
 
 		if (bms_is_member(index, selected))
@@ -251,11 +251,11 @@ check_relation_privileges(Oid relOid,
 			continue;
 
 		/* obtain column's permission */
-		attnum = index + FirstLowInvalidHeapAttributeNumber;
+		attphysnum = index + FirstLowInvalidHeapAttributeNumber;
 
 		object.classId = RelationRelationId;
 		object.objectId = relOid;
-		object.objectSubId = attnum;
+		object.objectSubId = attphysnum;
 		audit_name = getObjectDescription(&object, false);
 
 		result = sepgsql_avc_check_perms(&object,

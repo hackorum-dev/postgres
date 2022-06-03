@@ -14,7 +14,7 @@ CREATE FUNCTION verify_heapam(relation regclass,
 							  endblock bigint default null,
 							  blkno OUT bigint,
 							  offnum OUT integer,
-							  attnum OUT integer,
+							  attphysnum OUT integer,
 							  msg OUT text)
 RETURNS SETOF record
 AS 'MODULE_PATHNAME', 'verify_heapam'

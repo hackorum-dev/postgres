@@ -803,7 +803,7 @@ typedef struct Trigger
        <para>
         As an example, to determine whether a column with attribute number
         <varname>attnum</varname> (1-based) is a member of this bitmap set,
-        call <literal>bms_is_member(attnum -
+        call <literal>bms_is_member(attphysnum -
         FirstLowInvalidHeapAttributeNumber,
         trigdata->tg_updatedcols))</literal>.
        </para>

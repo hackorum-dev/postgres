@@ -1202,7 +1202,7 @@ BeginCopyFrom(ParseState *pstate,
 				num_defaults;
 	FmgrInfo   *in_functions;
 	Oid		   *typioparams;
-	int			attnum;
+	int			attphysnum;
 	Oid			in_func_oid;
 	int		   *defmap;
 	ExprState **defexprs;
@@ -1258,15 +1258,15 @@ BeginCopyFrom(ParseState *pstate,
 
 		foreach(cur, attnums)
 		{
-			int			attnum = lfirst_int(cur);
-			Form_pg_attribute attr = TupleDescAttr(tupDesc, attnum - 1);
+			int			attphysnum = lfirst_int(cur);
+			Form_pg_attribute attr = TupleDescAttr(tupDesc, attphysnum - 1);
 
-			if (!list_member_int(cstate->attnumlist, attnum))
+			if (!list_member_int(cstate->attnumlist, attphysnum))
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
 						 errmsg("FORCE_NOT_NULL column \"%s\" not referenced by COPY",
 								NameStr(attr->attname))));
-			cstate->opts.force_notnull_flags[attnum - 1] = true;
+			cstate->opts.force_notnull_flags[attphysnum - 1] = true;
 		}
 	}
 
@@ -1281,15 +1281,15 @@ BeginCopyFrom(ParseState *pstate,
 
 		foreach(cur, attnums)
 		{
-			int			attnum = lfirst_int(cur);
-			Form_pg_attribute attr = TupleDescAttr(tupDesc, attnum - 1);
+			int			attphysnum = lfirst_int(cur);
+			Form_pg_attribute attr = TupleDescAttr(tupDesc, attphysnum - 1);
 
-			if (!list_member_int(cstate->attnumlist, attnum))
+			if (!list_member_int(cstate->attnumlist, attphysnum))
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
 						 errmsg("FORCE_NULL column \"%s\" not referenced by COPY",
 								NameStr(attr->attname))));
-			cstate->opts.force_null_flags[attnum - 1] = true;
+			cstate->opts.force_null_flags[attphysnum - 1] = true;
 		}
 	}
 
@@ -1305,15 +1305,15 @@ BeginCopyFrom(ParseState *pstate,
 
 		foreach(cur, attnums)
 		{
-			int			attnum = lfirst_int(cur);
-			Form_pg_attribute attr = TupleDescAttr(tupDesc, attnum - 1);
+			int			attphysnum = lfirst_int(cur);
+			Form_pg_attribute attr = TupleDescAttr(tupDesc, attphysnum - 1);
 
-			if (!list_member_int(cstate->attnumlist, attnum))
+			if (!list_member_int(cstate->attnumlist, attphysnum))
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
 						 errmsg_internal("selected column \"%s\" not referenced by COPY",
 										 NameStr(attr->attname))));
-			cstate->convert_select_flags[attnum - 1] = true;
+			cstate->convert_select_flags[attphysnum - 1] = true;
 		}
 	}
 
@@ -1401,9 +1401,9 @@ BeginCopyFrom(ParseState *pstate,
 	defmap = (int *) palloc(num_phys_attrs * sizeof(int));
 	defexprs = (ExprState **) palloc(num_phys_attrs * sizeof(ExprState *));
 
-	for (attnum = 1; attnum <= num_phys_attrs; attnum++)
+	for (attphysnum = 1; attphysnum <= num_phys_attrs; attphysnum++)
 	{
-		Form_pg_attribute att = TupleDescAttr(tupDesc, attnum - 1);
+		Form_pg_attribute att = TupleDescAttr(tupDesc, attphysnum - 1);
 
 		/* We don't need info for dropped attributes */
 		if (att->attisdropped)
@@ -1412,19 +1412,19 @@ BeginCopyFrom(ParseState *pstate,
 		/* Fetch the input function and typioparam info */
 		if (cstate->opts.binary)
 			getTypeBinaryInputInfo(att->atttypid,
-								   &in_func_oid, &typioparams[attnum - 1]);
+								   &in_func_oid, &typioparams[attphysnum - 1]);
 		else
 			getTypeInputInfo(att->atttypid,
-							 &in_func_oid, &typioparams[attnum - 1]);
-		fmgr_info(in_func_oid, &in_functions[attnum - 1]);
+							 &in_func_oid, &typioparams[attphysnum - 1]);
+		fmgr_info(in_func_oid, &in_functions[attphysnum - 1]);
 
 		/* Get default info if needed */
-		if (!list_member_int(cstate->attnumlist, attnum) && !att->attgenerated)
+		if (!list_member_int(cstate->attnumlist, attphysnum) && !att->attgenerated)
 		{
 			/* attribute is NOT to be copied from input */
 			/* use default value if one exists */
 			Expr	   *defexpr = (Expr *) build_column_default(cstate->rel,
-																attnum);
+																attphysnum);
 
 			if (defexpr != NULL)
 			{
@@ -1433,7 +1433,7 @@ BeginCopyFrom(ParseState *pstate,
 
 				/* Initialize executable expression in copycontext */
 				defexprs[num_defaults] = ExecInitExpr(defexpr, NULL);
-				defmap[num_defaults] = attnum - 1;
+				defmap[num_defaults] = attphysnum - 1;
 				num_defaults++;
 
 				/*

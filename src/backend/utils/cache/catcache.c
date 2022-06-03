@@ -1909,13 +1909,13 @@ CatCacheFreeKeys(TupleDesc tupdesc, int nkeys, int *attnos, Datum *keys)
 
 	for (i = 0; i < nkeys; i++)
 	{
-		int			attnum = attnos[i];
+		int			attphysnum = attnos[i];
 		Form_pg_attribute att;
 
 		/* system attribute are not supported in caches */
-		Assert(attnum > 0);
+		Assert(attphysnum > 0);
 
-		att = TupleDescAttr(tupdesc, attnum - 1);
+		att = TupleDescAttr(tupdesc, attphysnum - 1);
 
 		if (!att->attbyval)
 			pfree(DatumGetPointer(keys[i]));
@@ -1940,8 +1940,8 @@ CatCacheCopyKeys(TupleDesc tupdesc, int nkeys, int *attnos,
 
 	for (i = 0; i < nkeys; i++)
 	{
-		int			attnum = attnos[i];
-		Form_pg_attribute att = TupleDescAttr(tupdesc, attnum - 1);
+		int			attphysnum = attnos[i];
+		Form_pg_attribute att = TupleDescAttr(tupdesc, attphysnum - 1);
 		Datum		src = srckeys[i];
 		NameData	srcname;
 

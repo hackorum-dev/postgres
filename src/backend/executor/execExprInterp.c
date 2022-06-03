@@ -151,7 +151,7 @@ static Datum ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnul
 static void ExecInitInterpreter(void);
 
 /* support functions */
-static void CheckVarSlotCompatibility(TupleTableSlot *slot, int attnum, Oid vartype);
+static void CheckVarSlotCompatibility(TupleTableSlot *slot, int attphysnum, Oid vartype);
 static void CheckOpSlotCompatibility(ExprEvalStep *op, TupleTableSlot *slot);
 static TupleDesc get_cached_rowtype(Oid type_id, int32 typmod,
 									ExprEvalRowtypeCache *rowcache,
@@ -561,7 +561,7 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 
 		EEO_CASE(EEOP_INNER_VAR)
 		{
-			int			attnum = op->d.var.attnum;
+			int			attphysnum = op->d.var.attphysnum;
 
 			/*
 			 * Since we already extracted all referenced columns from the
@@ -569,35 +569,35 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 			 * directly out of the slot's decomposed-data arrays.  But let's
 			 * have an Assert to check that that did happen.
 			 */
-			Assert(attnum >= 0 && attnum < innerslot->tts_nvalid);
-			*op->resvalue = innerslot->tts_values[attnum];
-			*op->resnull = innerslot->tts_isnull[attnum];
+			Assert(attphysnum >= 0 && attphysnum < innerslot->tts_nvalid);
+			*op->resvalue = innerslot->tts_values[attphysnum];
+			*op->resnull = innerslot->tts_isnull[attphysnum];
 
 			EEO_NEXT();
 		}
 
 		EEO_CASE(EEOP_OUTER_VAR)
 		{
-			int			attnum = op->d.var.attnum;
+			int			attphysnum = op->d.var.attphysnum;
 
 			/* See EEOP_INNER_VAR comments */
 
-			Assert(attnum >= 0 && attnum < outerslot->tts_nvalid);
-			*op->resvalue = outerslot->tts_values[attnum];
-			*op->resnull = outerslot->tts_isnull[attnum];
+			Assert(attphysnum >= 0 && attphysnum < outerslot->tts_nvalid);
+			*op->resvalue = outerslot->tts_values[attphysnum];
+			*op->resnull = outerslot->tts_isnull[attphysnum];
 
 			EEO_NEXT();
 		}
 
 		EEO_CASE(EEOP_SCAN_VAR)
 		{
-			int			attnum = op->d.var.attnum;
+			int			attphysnum = op->d.var.attphysnum;
 
 			/* See EEOP_INNER_VAR comments */
 
-			Assert(attnum >= 0 && attnum < scanslot->tts_nvalid);
-			*op->resvalue = scanslot->tts_values[attnum];
-			*op->resnull = scanslot->tts_isnull[attnum];
+			Assert(attphysnum >= 0 && attphysnum < scanslot->tts_nvalid);
+			*op->resvalue = scanslot->tts_values[attphysnum];
+			*op->resnull = scanslot->tts_isnull[attphysnum];
 
 			EEO_NEXT();
 		}
@@ -631,16 +631,16 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 		EEO_CASE(EEOP_ASSIGN_INNER_VAR)
 		{
 			int			resultnum = op->d.assign_var.resultnum;
-			int			attnum = op->d.assign_var.attnum;
+			int			attphysnum = op->d.assign_var.attphysnum;
 
 			/*
 			 * We do not need CheckVarSlotCompatibility here; that was taken
 			 * care of at compilation time.  But see EEOP_INNER_VAR comments.
 			 */
-			Assert(attnum >= 0 && attnum < innerslot->tts_nvalid);
+			Assert(attphysnum >= 0 && attphysnum < innerslot->tts_nvalid);
 			Assert(resultnum >= 0 && resultnum < resultslot->tts_tupleDescriptor->natts);
-			resultslot->tts_values[resultnum] = innerslot->tts_values[attnum];
-			resultslot->tts_isnull[resultnum] = innerslot->tts_isnull[attnum];
+			resultslot->tts_values[resultnum] = innerslot->tts_values[attphysnum];
+			resultslot->tts_isnull[resultnum] = innerslot->tts_isnull[attphysnum];
 
 			EEO_NEXT();
 		}
@@ -648,16 +648,16 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 		EEO_CASE(EEOP_ASSIGN_OUTER_VAR)
 		{
 			int			resultnum = op->d.assign_var.resultnum;
-			int			attnum = op->d.assign_var.attnum;
+			int			attphysnum = op->d.assign_var.attphysnum;
 
 			/*
 			 * We do not need CheckVarSlotCompatibility here; that was taken
 			 * care of at compilation time.  But see EEOP_INNER_VAR comments.
 			 */
-			Assert(attnum >= 0 && attnum < outerslot->tts_nvalid);
+			Assert(attphysnum >= 0 && attphysnum < outerslot->tts_nvalid);
 			Assert(resultnum >= 0 && resultnum < resultslot->tts_tupleDescriptor->natts);
-			resultslot->tts_values[resultnum] = outerslot->tts_values[attnum];
-			resultslot->tts_isnull[resultnum] = outerslot->tts_isnull[attnum];
+			resultslot->tts_values[resultnum] = outerslot->tts_values[attphysnum];
+			resultslot->tts_isnull[resultnum] = outerslot->tts_isnull[attphysnum];
 
 			EEO_NEXT();
 		}
@@ -665,16 +665,16 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 		EEO_CASE(EEOP_ASSIGN_SCAN_VAR)
 		{
 			int			resultnum = op->d.assign_var.resultnum;
-			int			attnum = op->d.assign_var.attnum;
+			int			attphysnum = op->d.assign_var.attphysnum;
 
 			/*
 			 * We do not need CheckVarSlotCompatibility here; that was taken
 			 * care of at compilation time.  But see EEOP_INNER_VAR comments.
 			 */
-			Assert(attnum >= 0 && attnum < scanslot->tts_nvalid);
+			Assert(attphysnum >= 0 && attphysnum < scanslot->tts_nvalid);
 			Assert(resultnum >= 0 && resultnum < resultslot->tts_tupleDescriptor->natts);
-			resultslot->tts_values[resultnum] = scanslot->tts_values[attnum];
-			resultslot->tts_isnull[resultnum] = scanslot->tts_isnull[attnum];
+			resultslot->tts_values[resultnum] = scanslot->tts_values[attphysnum];
+			resultslot->tts_isnull[resultnum] = scanslot->tts_isnull[attphysnum];
 
 			EEO_NEXT();
 		}
@@ -1879,25 +1879,25 @@ CheckExprStillValid(ExprState *state, ExprContext *econtext)
 		{
 			case EEOP_INNER_VAR:
 				{
-					int			attnum = op->d.var.attnum;
+					int			attphysnum = op->d.var.attphysnum;
 
-					CheckVarSlotCompatibility(innerslot, attnum + 1, op->d.var.vartype);
+					CheckVarSlotCompatibility(innerslot, attphysnum + 1, op->d.var.vartype);
 					break;
 				}
 
 			case EEOP_OUTER_VAR:
 				{
-					int			attnum = op->d.var.attnum;
+					int			attphysnum = op->d.var.attphysnum;
 
-					CheckVarSlotCompatibility(outerslot, attnum + 1, op->d.var.vartype);
+					CheckVarSlotCompatibility(outerslot, attphysnum + 1, op->d.var.vartype);
 					break;
 				}
 
 			case EEOP_SCAN_VAR:
 				{
-					int			attnum = op->d.var.attnum;
+					int			attphysnum = op->d.var.attphysnum;
 
-					CheckVarSlotCompatibility(scanslot, attnum + 1, op->d.var.vartype);
+					CheckVarSlotCompatibility(scanslot, attphysnum + 1, op->d.var.vartype);
 					break;
 				}
 			default:
@@ -1912,7 +1912,7 @@ CheckExprStillValid(ExprState *state, ExprContext *econtext)
  * since the expression tree has been created.
  */
 static void
-CheckVarSlotCompatibility(TupleTableSlot *slot, int attnum, Oid vartype)
+CheckVarSlotCompatibility(TupleTableSlot *slot, int attphysnum, Oid vartype)
 {
 	/*
 	 * What we have to check for here is the possibility of an attribute
@@ -1931,28 +1931,28 @@ CheckVarSlotCompatibility(TupleTableSlot *slot, int attnum, Oid vartype)
 	 * System attributes don't require checking since their types never
 	 * change.
 	 */
-	if (attnum > 0)
+	if (attphysnum > 0)
 	{
 		TupleDesc	slot_tupdesc = slot->tts_tupleDescriptor;
 		Form_pg_attribute attr;
 
-		if (attnum > slot_tupdesc->natts)	/* should never happen */
+		if (attphysnum > slot_tupdesc->natts)	/* should never happen */
 			elog(ERROR, "attribute number %d exceeds number of columns %d",
-				 attnum, slot_tupdesc->natts);
+				 attphysnum, slot_tupdesc->natts);
 
-		attr = TupleDescAttr(slot_tupdesc, attnum - 1);
+		attr = TupleDescAttr(slot_tupdesc, attphysnum - 1);
 
 		if (attr->attisdropped)
 			ereport(ERROR,
 					(errcode(ERRCODE_UNDEFINED_COLUMN),
 					 errmsg("attribute %d of type %s has been dropped",
-							attnum, format_type_be(slot_tupdesc->tdtypeid))));
+							attphysnum, format_type_be(slot_tupdesc->tdtypeid))));
 
 		if (vartype != attr->atttypid)
 			ereport(ERROR,
 					(errcode(ERRCODE_DATATYPE_MISMATCH),
 					 errmsg("attribute %d of type %s has wrong type",
-							attnum, format_type_be(slot_tupdesc->tdtypeid)),
+							attphysnum, format_type_be(slot_tupdesc->tdtypeid)),
 					 errdetail("Table has type %s, but query expects %s.",
 							   format_type_be(attr->atttypid),
 							   format_type_be(vartype))));
@@ -2078,16 +2078,16 @@ static pg_attribute_always_inline Datum
 ExecJustVarImpl(ExprState *state, TupleTableSlot *slot, bool *isnull)
 {
 	ExprEvalStep *op = &state->steps[1];
-	int			attnum = op->d.var.attnum + 1;
+	int			attphysnum = op->d.var.attphysnum + 1;
 
 	CheckOpSlotCompatibility(&state->steps[0], slot);
 
 	/*
 	 * Since we use slot_getattr(), we don't need to implement the FETCHSOME
-	 * step explicitly, and we also needn't Assert that the attnum is in range
+	 * step explicitly, and we also needn't Assert that the attphysnum is in range
 	 * --- slot_getattr() will take care of any problems.
 	 */
-	return slot_getattr(slot, attnum, isnull);
+	return slot_getattr(slot, attphysnum, isnull);
 }
 
 /* Simple reference to inner Var */
@@ -2116,7 +2116,7 @@ static pg_attribute_always_inline Datum
 ExecJustAssignVarImpl(ExprState *state, TupleTableSlot *inslot, bool *isnull)
 {
 	ExprEvalStep *op = &state->steps[1];
-	int			attnum = op->d.assign_var.attnum + 1;
+	int			attphysnum = op->d.assign_var.attphysnum + 1;
 	int			resultnum = op->d.assign_var.resultnum;
 	TupleTableSlot *outslot = state->resultslot;
 
@@ -2127,13 +2127,13 @@ ExecJustAssignVarImpl(ExprState *state, TupleTableSlot *inslot, bool *isnull)
 	 * at compilation time.
 	 *
 	 * Since we use slot_getattr(), we don't need to implement the FETCHSOME
-	 * step explicitly, and we also needn't Assert that the attnum is in range
+	 * step explicitly, and we also needn't Assert that the attphysnum is in range
 	 * --- slot_getattr() will take care of any problems.  Nonetheless, check
 	 * that resultnum is in range.
 	 */
 	Assert(resultnum >= 0 && resultnum < outslot->tts_tupleDescriptor->natts);
 	outslot->tts_values[resultnum] =
-		slot_getattr(inslot, attnum, &outslot->tts_isnull[resultnum]);
+		slot_getattr(inslot, attphysnum, &outslot->tts_isnull[resultnum]);
 	return 0;
 }
 
@@ -2211,7 +2211,7 @@ static pg_attribute_always_inline Datum
 ExecJustVarVirtImpl(ExprState *state, TupleTableSlot *slot, bool *isnull)
 {
 	ExprEvalStep *op = &state->steps[0];
-	int			attnum = op->d.var.attnum;
+	int			attphysnum = op->d.var.attphysnum;
 
 	/*
 	 * As it is guaranteed that a virtual slot is used, there never is a need
@@ -2221,11 +2221,11 @@ ExecJustVarVirtImpl(ExprState *state, TupleTableSlot *slot, bool *isnull)
 	 */
 	Assert(TTS_IS_VIRTUAL(slot));
 	Assert(TTS_FIXED(slot));
-	Assert(attnum >= 0 && attnum < slot->tts_nvalid);
+	Assert(attphysnum >= 0 && attphysnum < slot->tts_nvalid);
 
-	*isnull = slot->tts_isnull[attnum];
+	*isnull = slot->tts_isnull[attphysnum];
 
-	return slot->tts_values[attnum];
+	return slot->tts_values[attphysnum];
 }
 
 /* Like ExecJustInnerVar, optimized for virtual slots */
@@ -2254,7 +2254,7 @@ static pg_attribute_always_inline Datum
 ExecJustAssignVarVirtImpl(ExprState *state, TupleTableSlot *inslot, bool *isnull)
 {
 	ExprEvalStep *op = &state->steps[0];
-	int			attnum = op->d.assign_var.attnum;
+	int			attphysnum = op->d.assign_var.attphysnum;
 	int			resultnum = op->d.assign_var.resultnum;
 	TupleTableSlot *outslot = state->resultslot;
 
@@ -2262,11 +2262,11 @@ ExecJustAssignVarVirtImpl(ExprState *state, TupleTableSlot *inslot, bool *isnull
 
 	Assert(TTS_IS_VIRTUAL(inslot));
 	Assert(TTS_FIXED(inslot));
-	Assert(attnum >= 0 && attnum < inslot->tts_nvalid);
+	Assert(attphysnum >= 0 && attphysnum < inslot->tts_nvalid);
 	Assert(resultnum >= 0 && resultnum < outslot->tts_tupleDescriptor->natts);
 
-	outslot->tts_values[resultnum] = inslot->tts_values[attnum];
-	outslot->tts_isnull[resultnum] = inslot->tts_isnull[attnum];
+	outslot->tts_values[resultnum] = inslot->tts_values[attphysnum];
+	outslot->tts_isnull[resultnum] = inslot->tts_isnull[attphysnum];
 
 	return 0;
 }
@@ -4036,11 +4036,11 @@ ExecEvalGroupingFunc(ExprState *state, ExprEvalStep *op)
 
 	foreach(lc, op->d.grouping_func.clauses)
 	{
-		int			attnum = lfirst_int(lc);
+		int			attphysnum = lfirst_int(lc);
 
 		result <<= 1;
 
-		if (!bms_is_member(attnum, grouped_cols))
+		if (!bms_is_member(attphysnum, grouped_cols))
 			result |= 1;
 	}
 
@@ -4303,7 +4303,7 @@ ExecEvalSysVar(ExprState *state, ExprEvalStep *op, ExprContext *econtext,
 
 	/* slot_getsysattr has sufficient defenses against bad attnums */
 	d = slot_getsysattr(slot,
-						op->d.var.attnum,
+						op->d.var.attphysnum,
 						op->resnull);
 	*op->resvalue = d;
 	/* this ought to be unreachable, but it's cheap enough to check */

@@ -391,7 +391,7 @@ GinInitMetabuffer(Buffer b)
  * Compare two keys of the same index column
  */
 int
-ginCompareEntries(GinState *ginstate, OffsetNumber attnum,
+ginCompareEntries(GinState *ginstate, OffsetNumber attphysnum,
 				  Datum a, GinNullCategory categorya,
 				  Datum b, GinNullCategory categoryb)
 {
@@ -404,8 +404,8 @@ ginCompareEntries(GinState *ginstate, OffsetNumber attnum,
 		return 0;
 
 	/* both not null, so safe to call the compareFn */
-	return DatumGetInt32(FunctionCall2Coll(&ginstate->compareFn[attnum - 1],
-										   ginstate->supportCollation[attnum - 1],
+	return DatumGetInt32(FunctionCall2Coll(&ginstate->compareFn[attphysnum - 1],
+										   ginstate->supportCollation[attphysnum - 1],
 										   a, b));
 }
 
@@ -486,7 +486,7 @@ cmpEntries(const void *a, const void *b, void *arg)
  * This avoids generating redundant index entries.
  */
 Datum *
-ginExtractEntries(GinState *ginstate, OffsetNumber attnum,
+ginExtractEntries(GinState *ginstate, OffsetNumber attphysnum,
 				  Datum value, bool isNull,
 				  int32 *nentries, GinNullCategory **categories)
 {
@@ -511,8 +511,8 @@ ginExtractEntries(GinState *ginstate, OffsetNumber attnum,
 	/* OK, call the opclass's extractValueFn */
 	nullFlags = NULL;			/* in case extractValue doesn't set it */
 	entries = (Datum *)
-		DatumGetPointer(FunctionCall3Coll(&ginstate->extractValueFn[attnum - 1],
-										  ginstate->supportCollation[attnum - 1],
+		DatumGetPointer(FunctionCall3Coll(&ginstate->extractValueFn[attphysnum - 1],
+										  ginstate->supportCollation[attphysnum - 1],
 										  value,
 										  PointerGetDatum(nentries),
 										  PointerGetDatum(&nullFlags)));
@@ -556,8 +556,8 @@ ginExtractEntries(GinState *ginstate, OffsetNumber attnum,
 			keydata[i].isnull = nullFlags[i];
 		}
 
-		arg.cmpDatumFunc = &ginstate->compareFn[attnum - 1];
-		arg.collation = ginstate->supportCollation[attnum - 1];
+		arg.cmpDatumFunc = &ginstate->compareFn[attphysnum - 1];
+		arg.collation = ginstate->supportCollation[attphysnum - 1];
 		arg.haveDups = false;
 		qsort_arg(keydata, *nentries, sizeof(keyEntryData),
 				  cmpEntries, (void *) &arg);

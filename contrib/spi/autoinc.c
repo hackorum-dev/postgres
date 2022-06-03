@@ -70,23 +70,23 @@ autoinc(PG_FUNCTION_ARGS)
 
 	for (i = 0; i < nargs;)
 	{
-		int			attnum = SPI_fnumber(tupdesc, args[i]);
+		int			attphysnum = SPI_fnumber(tupdesc, args[i]);
 		int32		val;
 		Datum		seqname;
 
-		if (attnum <= 0)
+		if (attphysnum <= 0)
 			ereport(ERROR,
 					(errcode(ERRCODE_TRIGGERED_ACTION_EXCEPTION),
 					 errmsg("\"%s\" has no attribute \"%s\"",
 							relname, args[i])));
 
-		if (SPI_gettypeid(tupdesc, attnum) != INT4OID)
+		if (SPI_gettypeid(tupdesc, attphysnum) != INT4OID)
 			ereport(ERROR,
 					(errcode(ERRCODE_TRIGGERED_ACTION_EXCEPTION),
 					 errmsg("attribute \"%s\" of \"%s\" must be type INT4",
 							args[i], relname)));
 
-		val = DatumGetInt32(SPI_getbinval(rettuple, tupdesc, attnum, &isnull));
+		val = DatumGetInt32(SPI_getbinval(rettuple, tupdesc, attphysnum, &isnull));
 
 		if (!isnull && val != 0)
 		{
@@ -95,7 +95,7 @@ autoinc(PG_FUNCTION_ARGS)
 		}
 
 		i++;
-		chattrs[chnattrs] = attnum;
+		chattrs[chnattrs] = attphysnum;
 		seqname = CStringGetTextDatum(args[i]);
 		newvals[chnattrs] = DirectFunctionCall1(nextval, seqname);
 		/* nextval now returns int64; coerce down to int32 */

@@ -347,31 +347,31 @@ markTargetListOrigin(ParseState *pstate, TargetEntry *tle,
 {
 	int			netlevelsup;
 	RangeTblEntry *rte;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 
 	if (var == NULL || !IsA(var, Var))
 		return;
 	netlevelsup = var->varlevelsup + levelsup;
 	rte = GetRTEByRangeTablePosn(pstate, var->varno, netlevelsup);
-	attnum = var->varattno;
+	attphysnum = var->varattno;
 
 	switch (rte->rtekind)
 	{
 		case RTE_RELATION:
 			/* It's a table or view, report it */
 			tle->resorigtbl = rte->relid;
-			tle->resorigcol = attnum;
+			tle->resorigcol = attphysnum;
 			break;
 		case RTE_SUBQUERY:
 			/* Subselect-in-FROM: copy up from the subselect */
-			if (attnum != InvalidAttrNumber)
+			if (attphysnum != InvalidAttrNumber)
 			{
 				TargetEntry *ste = get_tle_by_resno(rte->subquery->targetList,
-													attnum);
+													attphysnum);
 
 				if (ste == NULL || ste->resjunk)
 					elog(ERROR, "subquery %s does not have attribute %d",
-						 rte->eref->aliasname, attnum);
+						 rte->eref->aliasname, attphysnum);
 				tle->resorigtbl = ste->resorigtbl;
 				tle->resorigcol = ste->resorigcol;
 			}
@@ -394,7 +394,7 @@ markTargetListOrigin(ParseState *pstate, TargetEntry *tle,
 			 * recursive CTE, and so any markings on the current targetlist
 			 * are not going to affect the results anyway.
 			 */
-			if (attnum != InvalidAttrNumber && !rte->self_reference)
+			if (attphysnum != InvalidAttrNumber && !rte->self_reference)
 			{
 				CommonTableExpr *cte = GetCTEForRTE(pstate, rte, netlevelsup);
 				TargetEntry *ste;
@@ -410,14 +410,14 @@ markTargetListOrigin(ParseState *pstate, TargetEntry *tle,
 				if (cte->cycle_clause)
 					extra_cols += 2;
 				if (extra_cols &&
-					attnum > list_length(tl) &&
-					attnum <= list_length(tl) + extra_cols)
+					attphysnum > list_length(tl) &&
+					attphysnum <= list_length(tl) + extra_cols)
 					break;
 
-				ste = get_tle_by_resno(tl, attnum);
+				ste = get_tle_by_resno(tl, attphysnum);
 				if (ste == NULL || ste->resjunk)
 					elog(ERROR, "CTE %s does not have attribute %d",
-						 rte->eref->aliasname, attnum);
+						 rte->eref->aliasname, attphysnum);
 				tle->resorigtbl = ste->resorigtbl;
 				tle->resorigcol = ste->resorigcol;
 			}
@@ -745,7 +745,7 @@ transformAssignmentIndirection(ParseState *pstate,
 			Oid			baseTypeId;
 			int32		baseTypeMod;
 			Oid			typrelid;
-			AttrNumber	attnum;
+			AttrNumber	attphysnum;
 			Oid			fieldTypeId;
 			int32		fieldTypMod;
 			Oid			fieldCollation;
@@ -789,22 +789,22 @@ transformAssignmentIndirection(ParseState *pstate,
 								format_type_be(targetTypeId)),
 						 parser_errposition(pstate, location)));
 
-			attnum = get_attnum(typrelid, strVal(n));
-			if (attnum == InvalidAttrNumber)
+			attphysnum = get_attphysnum(typrelid, strVal(n));
+			if (attphysnum == InvalidAttrNumber)
 				ereport(ERROR,
 						(errcode(ERRCODE_UNDEFINED_COLUMN),
 						 errmsg("cannot assign to field \"%s\" of column \"%s\" because there is no such column in data type %s",
 								strVal(n), targetName,
 								format_type_be(targetTypeId)),
 						 parser_errposition(pstate, location)));
-			if (attnum < 0)
+			if (attphysnum < 0)
 				ereport(ERROR,
 						(errcode(ERRCODE_UNDEFINED_COLUMN),
 						 errmsg("cannot assign to system column \"%s\"",
 								strVal(n)),
 						 parser_errposition(pstate, location)));
 
-			get_atttypetypmodcoll(typrelid, attnum,
+			get_atttypetypmodcoll(typrelid, attphysnum,
 								  &fieldTypeId, &fieldTypMod, &fieldCollation);
 
 			/* recurse to create appropriate RHS for field assign */
@@ -825,7 +825,7 @@ transformAssignmentIndirection(ParseState *pstate,
 			fstore = makeNode(FieldStore);
 			fstore->arg = (Expr *) basenode;
 			fstore->newvals = list_make1(rhs);
-			fstore->fieldnums = list_make1_int(attnum);
+			fstore->fieldnums = list_make1_int(attphysnum);
 			fstore->resulttype = baseTypeId;
 
 			/* If target is a domain, apply constraints */
@@ -1512,7 +1512,7 @@ expandRecordVariable(ParseState *pstate, Var *var, int levelsup)
 	TupleDesc	tupleDesc;
 	int			netlevelsup;
 	RangeTblEntry *rte;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 	Node	   *expr;
 
 	/* Check my caller didn't mess up */
@@ -1527,9 +1527,9 @@ expandRecordVariable(ParseState *pstate, Var *var, int levelsup)
 	 */
 	netlevelsup = var->varlevelsup + levelsup;
 	rte = GetRTEByRangeTablePosn(pstate, var->varno, netlevelsup);
-	attnum = var->varattno;
+	attphysnum = var->varattno;
 
-	if (attnum == InvalidAttrNumber)
+	if (attphysnum == InvalidAttrNumber)
 	{
 		/* Whole-row reference to an RTE, so expand the known fields */
 		List	   *names,
@@ -1581,11 +1581,11 @@ expandRecordVariable(ParseState *pstate, Var *var, int levelsup)
 			{
 				/* Subselect-in-FROM: examine sub-select's output expr */
 				TargetEntry *ste = get_tle_by_resno(rte->subquery->targetList,
-													attnum);
+													attphysnum);
 
 				if (ste == NULL || ste->resjunk)
 					elog(ERROR, "subquery %s does not have attribute %d",
-						 rte->eref->aliasname, attnum);
+						 rte->eref->aliasname, attphysnum);
 				expr = (Node *) ste->expr;
 				if (IsA(expr, Var))
 				{
@@ -1608,8 +1608,8 @@ expandRecordVariable(ParseState *pstate, Var *var, int levelsup)
 			break;
 		case RTE_JOIN:
 			/* Join RTE --- recursively inspect the alias variable */
-			Assert(attnum > 0 && attnum <= list_length(rte->joinaliasvars));
-			expr = (Node *) list_nth(rte->joinaliasvars, attnum - 1);
+			Assert(attphysnum > 0 && attphysnum <= list_length(rte->joinaliasvars));
+			expr = (Node *) list_nth(rte->joinaliasvars, attphysnum - 1);
 			Assert(expr != NULL);
 			/* We intentionally don't strip implicit coercions here */
 			if (IsA(expr, Var))
@@ -1636,10 +1636,10 @@ expandRecordVariable(ParseState *pstate, Var *var, int levelsup)
 				CommonTableExpr *cte = GetCTEForRTE(pstate, rte, netlevelsup);
 				TargetEntry *ste;
 
-				ste = get_tle_by_resno(GetCTETargetList(cte), attnum);
+				ste = get_tle_by_resno(GetCTETargetList(cte), attphysnum);
 				if (ste == NULL || ste->resjunk)
 					elog(ERROR, "CTE %s does not have attribute %d",
-						 rte->eref->aliasname, attnum);
+						 rte->eref->aliasname, attphysnum);
 				expr = (Node *) ste->expr;
 				if (IsA(expr, Var))
 				{

@@ -42,10 +42,10 @@ SELECT * FROM brin_revmap_data(get_raw_page('test1_a_idx', 1)) LIMIT 5;
 (5 rows)
 
 SELECT * FROM brin_page_items(get_raw_page('test1_a_idx', 2), 'test1_a_idx')
-    ORDER BY blknum, attnum LIMIT 5;
- itemoffset | blknum | attnum | allnulls | hasnulls | placeholder |  value   
-------------+--------+--------+----------+----------+-------------+----------
-          1 |      0 |      1 | f        | f        | f           | {1 .. 1}
+    ORDER BY blknum, attphysnum LIMIT 5;
+ itemoffset | blknum | attphysnum | allnulls | hasnulls | placeholder |  value   
+------------+--------+------------+----------+----------+-------------+----------
+          1 |      0 |          1 | f        | f        | f           | {1 .. 1}
 (1 row)
 
 -- Failure for non-BRIN index.

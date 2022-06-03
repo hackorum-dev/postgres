@@ -564,8 +564,8 @@ test=# SELECT * FROM brin_revmap_data(get_raw_page('brinidx', 2)) LIMIT 5;
 <screen>
 test=# SELECT * FROM brin_page_items(get_raw_page('brinidx', 5),
                                      'brinidx')
-       ORDER BY blknum, attnum LIMIT 6;
- itemoffset | blknum | attnum | allnulls | hasnulls | placeholder |    value
+       ORDER BY blknum, attphysnum LIMIT 6;
+ itemoffset | blknum | attphysnum | allnulls | hasnulls | placeholder |    value
 ------------+--------+--------+----------+----------+-------------+--------------
         137 |      0 |      1 | t        | f        | f           |
         137 |      0 |      2 | f        | f        | f           | {1 .. 88}

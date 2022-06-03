@@ -82,14 +82,14 @@
  */
 Datum
 getmissingattr(TupleDesc tupleDesc,
-			   int attnum, bool *isnull)
+			   int attphysnum, bool *isnull)
 {
 	Form_pg_attribute att;
 
-	Assert(attnum <= tupleDesc->natts);
-	Assert(attnum > 0);
+	Assert(attphysnum <= tupleDesc->natts);
+	Assert(attphysnum > 0);
 
-	att = TupleDescAttr(tupleDesc, attnum - 1);
+	att = TupleDescAttr(tupleDesc, attphysnum - 1);
 
 	if (att->atthasmissing)
 	{
@@ -98,7 +98,7 @@ getmissingattr(TupleDesc tupleDesc,
 		Assert(tupleDesc->constr);
 		Assert(tupleDesc->constr->missing);
 
-		attrmiss = tupleDesc->constr->missing + (attnum - 1);
+		attrmiss = tupleDesc->constr->missing + (attphysnum - 1);
 
 		if (attrmiss->am_present)
 		{
@@ -356,29 +356,29 @@ heap_fill_tuple(TupleDesc tupleDesc,
  * ----------------
  */
 bool
-heap_attisnull(HeapTuple tup, int attnum, TupleDesc tupleDesc)
+heap_attisnull(HeapTuple tup, int attphysnum, TupleDesc tupleDesc)
 {
 	/*
 	 * We allow a NULL tupledesc for relations not expected to have missing
 	 * values, such as catalog relations and indexes.
 	 */
-	Assert(!tupleDesc || attnum <= tupleDesc->natts);
-	if (attnum > (int) HeapTupleHeaderGetNatts(tup->t_data))
+	Assert(!tupleDesc || attphysnum <= tupleDesc->natts);
+	if (attphysnum > (int) HeapTupleHeaderGetNatts(tup->t_data))
 	{
-		if (tupleDesc && TupleDescAttr(tupleDesc, attnum - 1)->atthasmissing)
+		if (tupleDesc && TupleDescAttr(tupleDesc, attphysnum - 1)->atthasmissing)
 			return false;
 		else
 			return true;
 	}
 
-	if (attnum > 0)
+	if (attphysnum > 0)
 	{
 		if (HeapTupleNoNulls(tup))
 			return false;
-		return att_isnull(attnum - 1, tup->t_data->t_bits);
+		return att_isnull(attphysnum - 1, tup->t_data->t_bits);
 	}
 
-	switch (attnum)
+	switch (attphysnum)
 	{
 		case TableOidAttributeNumber:
 		case SelfItemPointerAttributeNumber:
@@ -390,7 +390,7 @@ heap_attisnull(HeapTuple tup, int attnum, TupleDesc tupleDesc)
 			break;
 
 		default:
-			elog(ERROR, "invalid attnum: %d", attnum);
+			elog(ERROR, "invalid attphysnum: %d", attphysnum);
 	}
 
 	return false;
@@ -421,7 +421,7 @@ heap_attisnull(HeapTuple tup, int attnum, TupleDesc tupleDesc)
  */
 Datum
 nocachegetattr(HeapTuple tuple,
-			   int attnum,
+			   int attphysnum,
 			   TupleDesc tupleDesc)
 {
 	HeapTupleHeader tup = tuple->t_data;
@@ -439,7 +439,7 @@ nocachegetattr(HeapTuple tuple,
 	 * ----------------
 	 */
 
-	attnum--;
+	attphysnum--;
 
 	if (!HeapTupleNoNulls(tuple))
 	{
@@ -448,8 +448,8 @@ nocachegetattr(HeapTuple tuple,
 		 *
 		 * check to see if any preceding bits are null...
 		 */
-		int			byte = attnum >> 3;
-		int			finalbit = attnum & 0x07;
+		int			byte = attphysnum >> 3;
+		int			finalbit = attphysnum & 0x07;
 
 		/* check for nulls "before" final bit of last byte */
 		if ((~bp[byte]) & ((1 << finalbit) - 1))
@@ -480,7 +480,7 @@ nocachegetattr(HeapTuple tuple,
 		 * If we get here, there are no nulls up to and including the target
 		 * attribute.  If we have a cached offset, we can use it.
 		 */
-		att = TupleDescAttr(tupleDesc, attnum);
+		att = TupleDescAttr(tupleDesc, attphysnum);
 		if (att->attcacheoff >= 0)
 			return fetchatt(att, tp + att->attcacheoff);
 
@@ -493,7 +493,7 @@ nocachegetattr(HeapTuple tuple,
 		{
 			int			j;
 
-			for (j = 0; j <= attnum; j++)
+			for (j = 0; j <= attphysnum; j++)
 			{
 				if (TupleDescAttr(tupleDesc, j)->attlen <= 0)
 				{
@@ -541,9 +541,9 @@ nocachegetattr(HeapTuple tuple,
 			off += att->attlen;
 		}
 
-		Assert(j > attnum);
+		Assert(j > attphysnum);
 
-		off = TupleDescAttr(tupleDesc, attnum)->attcacheoff;
+		off = TupleDescAttr(tupleDesc, attphysnum)->attcacheoff;
 	}
 	else
 	{
@@ -601,7 +601,7 @@ nocachegetattr(HeapTuple tuple,
 					att->attcacheoff = off;
 			}
 
-			if (i == attnum)
+			if (i == attphysnum)
 				break;
 
 			off = att_addlength_pointer(off, att->attlen, tp + off);
@@ -611,7 +611,7 @@ nocachegetattr(HeapTuple tuple,
 		}
 	}
 
-	return fetchatt(TupleDescAttr(tupleDesc, attnum), tp + off);
+	return fetchatt(TupleDescAttr(tupleDesc, attphysnum), tp + off);
 }
 
 /* ----------------
@@ -620,11 +620,11 @@ nocachegetattr(HeapTuple tuple,
  *		Fetch the value of a system attribute for a tuple.
  *
  * This is a support routine for the heap_getattr macro.  The macro
- * has already determined that the attnum refers to a system attribute.
+ * has already determined that the attphysnum refers to a system attribute.
  * ----------------
  */
 Datum
-heap_getsysattr(HeapTuple tup, int attnum, TupleDesc tupleDesc, bool *isnull)
+heap_getsysattr(HeapTuple tup, int attphysnum, TupleDesc tupleDesc, bool *isnull)
 {
 	Datum		result;
 
@@ -633,7 +633,7 @@ heap_getsysattr(HeapTuple tup, int attnum, TupleDesc tupleDesc, bool *isnull)
 	/* Currently, no sys attribute ever reads as NULL. */
 	*isnull = false;
 
-	switch (attnum)
+	switch (attphysnum)
 	{
 		case SelfItemPointerAttributeNumber:
 			/* pass-by-reference datatype */
@@ -660,7 +660,7 @@ heap_getsysattr(HeapTuple tup, int attnum, TupleDesc tupleDesc, bool *isnull)
 			result = ObjectIdGetDatum(tup->t_tableOid);
 			break;
 		default:
-			elog(ERROR, "invalid attnum: %d", attnum);
+			elog(ERROR, "invalid attphysnum: %d", attphysnum);
 			result = 0;			/* keep compiler quiet */
 			break;
 	}
@@ -735,7 +735,7 @@ expand_tuple(HeapTuple *targetHeapTuple,
 			 TupleDesc tupleDesc)
 {
 	AttrMissing *attrmiss = NULL;
-	int			attnum;
+	int			attphysnum;
 	int			firstmissingnum;
 	bool		hasNulls = HeapTupleHasNulls(sourceTuple);
 	HeapTupleHeader targetTHeader;
@@ -790,22 +790,22 @@ expand_tuple(HeapTuple *targetHeapTuple,
 		 * Now walk the missing attributes. If there is a missing value make
 		 * space for it. Otherwise, it's going to be NULL.
 		 */
-		for (attnum = firstmissingnum;
-			 attnum < natts;
-			 attnum++)
+		for (attphysnum = firstmissingnum;
+			 attphysnum < natts;
+			 attphysnum++)
 		{
-			if (attrmiss[attnum].am_present)
+			if (attrmiss[attphysnum].am_present)
 			{
-				Form_pg_attribute att = TupleDescAttr(tupleDesc, attnum);
+				Form_pg_attribute att = TupleDescAttr(tupleDesc, attphysnum);
 
 				targetDataLen = att_align_datum(targetDataLen,
 												att->attalign,
 												att->attlen,
-												attrmiss[attnum].am_value);
+												attrmiss[attphysnum].am_value);
 
 				targetDataLen = att_addlength_pointer(targetDataLen,
 													  att->attlen,
-													  attrmiss[attnum].am_value);
+													  attrmiss[attphysnum].am_value);
 			}
 			else
 			{
@@ -922,19 +922,19 @@ expand_tuple(HeapTuple *targetHeapTuple,
 	targetData += sourceDataLen;
 
 	/* Now fill in the missing values */
-	for (attnum = sourceNatts; attnum < natts; attnum++)
+	for (attphysnum = sourceNatts; attphysnum < natts; attphysnum++)
 	{
 
-		Form_pg_attribute attr = TupleDescAttr(tupleDesc, attnum);
+		Form_pg_attribute attr = TupleDescAttr(tupleDesc, attphysnum);
 
-		if (attrmiss && attrmiss[attnum].am_present)
+		if (attrmiss && attrmiss[attphysnum].am_present)
 		{
 			fill_val(attr,
 					 nullBits ? &nullBits : NULL,
 					 &bitMask,
 					 &targetData,
 					 infoMask,
-					 attrmiss[attnum].am_value,
+					 attrmiss[attphysnum].am_value,
 					 false);
 		}
 		else
@@ -1202,12 +1202,12 @@ heap_modify_tuple_by_cols(HeapTuple tuple,
 
 	for (i = 0; i < nCols; i++)
 	{
-		int			attnum = replCols[i];
+		int			attphysnum = replCols[i];
 
-		if (attnum <= 0 || attnum > numberOfAttributes)
-			elog(ERROR, "invalid column number %d", attnum);
-		values[attnum - 1] = replValues[i];
-		isnull[attnum - 1] = replIsnull[i];
+		if (attphysnum <= 0 || attphysnum > numberOfAttributes)
+			elog(ERROR, "invalid column number %d", attphysnum);
+		values[attphysnum - 1] = replValues[i];
+		isnull[attphysnum - 1] = replIsnull[i];
 	}
 
 	/*
@@ -1253,7 +1253,7 @@ heap_deform_tuple(HeapTuple tuple, TupleDesc tupleDesc,
 	bool		hasnulls = HeapTupleHasNulls(tuple);
 	int			tdesc_natts = tupleDesc->natts;
 	int			natts;			/* number of atts to extract */
-	int			attnum;
+	int			attphysnum;
 	char	   *tp;				/* ptr to tuple data */
 	uint32		off;			/* offset in tuple data */
 	bits8	   *bp = tup->t_bits;	/* ptr to null bitmap in tuple */
@@ -1272,19 +1272,19 @@ heap_deform_tuple(HeapTuple tuple, TupleDesc tupleDesc,
 
 	off = 0;
 
-	for (attnum = 0; attnum < natts; attnum++)
+	for (attphysnum = 0; attphysnum < natts; attphysnum++)
 	{
-		Form_pg_attribute thisatt = TupleDescAttr(tupleDesc, attnum);
+		Form_pg_attribute thisatt = TupleDescAttr(tupleDesc, attphysnum);
 
-		if (hasnulls && att_isnull(attnum, bp))
+		if (hasnulls && att_isnull(attphysnum, bp))
 		{
-			values[attnum] = (Datum) 0;
-			isnull[attnum] = true;
+			values[attphysnum] = (Datum) 0;
+			isnull[attphysnum] = true;
 			slow = true;		/* can't use attcacheoff anymore */
 			continue;
 		}
 
-		isnull[attnum] = false;
+		isnull[attphysnum] = false;
 
 		if (!slow && thisatt->attcacheoff >= 0)
 			off = thisatt->attcacheoff;
@@ -1315,7 +1315,7 @@ heap_deform_tuple(HeapTuple tuple, TupleDesc tupleDesc,
 				thisatt->attcacheoff = off;
 		}
 
-		values[attnum] = fetchatt(thisatt, tp + off);
+		values[attphysnum] = fetchatt(thisatt, tp + off);
 
 		off = att_addlength_pointer(off, thisatt->attlen, tp + off);
 
@@ -1327,8 +1327,8 @@ heap_deform_tuple(HeapTuple tuple, TupleDesc tupleDesc,
 	 * If tuple doesn't have all the atts indicated by tupleDesc, read the
 	 * rest as nulls or missing values as appropriate.
 	 */
-	for (; attnum < tdesc_natts; attnum++)
-		values[attnum] = getmissingattr(tupleDesc, attnum + 1, &isnull[attnum]);
+	for (; attphysnum < tdesc_natts; attphysnum++)
+		values[attphysnum] = getmissingattr(tupleDesc, attphysnum + 1, &isnull[attphysnum]);
 }
 
 /*

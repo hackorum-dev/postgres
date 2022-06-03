@@ -1353,7 +1353,7 @@ FROM (SELECT indexrelid, indrelid, unnest(indkey) as ikey,
       FROM pg_index) ss,
       pg_attribute a,
       pg_opclass opc
-WHERE a.attrelid = indrelid AND a.attnum = ikey AND opc.oid = iclass AND
+WHERE a.attrelid = indrelid AND a.attphysnum = ikey AND opc.oid = iclass AND
       (NOT binary_coercible(atttypid, opcintype) OR icoll != attcollation);
 
 -- For system catalogs, be even tighter: nearly all indexes should be
@@ -1367,7 +1367,7 @@ FROM (SELECT indexrelid, indrelid, unnest(indkey) as ikey,
       WHERE indrelid < 16384) ss,
       pg_attribute a,
       pg_opclass opc
-WHERE a.attrelid = indrelid AND a.attnum = ikey AND opc.oid = iclass AND
+WHERE a.attrelid = indrelid AND a.attphysnum = ikey AND opc.oid = iclass AND
       (opcintype != atttypid OR icoll != attcollation)
 ORDER BY 1;
 

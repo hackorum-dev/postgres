@@ -265,7 +265,7 @@ contain_invalid_rfcolumn_walker(Node *node, rf_context *context)
 	if (IsA(node, Var))
 	{
 		Var		   *var = (Var *) node;
-		AttrNumber	attnum = var->varattno;
+		AttrNumber	attphysnum = var->varattno;
 
 		/*
 		 * If pubviaroot is true, we are validating the row filter of the
@@ -275,12 +275,12 @@ contain_invalid_rfcolumn_walker(Node *node, rf_context *context)
 		 */
 		if (context->pubviaroot)
 		{
-			char	   *colname = get_attname(context->parentid, attnum, false);
+			char	   *colname = get_attname(context->parentid, attphysnum, false);
 
-			attnum = get_attnum(context->relid, colname);
+			attphysnum = get_attphysnum(context->relid, colname);
 		}
 
-		if (!bms_is_member(attnum - FirstLowInvalidHeapAttributeNumber,
+		if (!bms_is_member(attphysnum - FirstLowInvalidHeapAttributeNumber,
 						   context->bms_replident))
 			return true;
 	}
@@ -436,7 +436,7 @@ pub_collist_contains_invalid_column(Oid pubid, Relation relation, List *ancestor
 		x = -1;
 		while ((x = bms_next_member(idattrs, x)) >= 0)
 		{
-			AttrNumber	attnum = (x + FirstLowInvalidHeapAttributeNumber);
+			AttrNumber	attphysnum = (x + FirstLowInvalidHeapAttributeNumber);
 
 			/*
 			 * If pubviaroot is true, we are validating the column list of the
@@ -448,17 +448,17 @@ pub_collist_contains_invalid_column(Oid pubid, Relation relation, List *ancestor
 			if (pubviaroot)
 			{
 				/* attribute name in the child table */
-				char	   *colname = get_attname(relid, attnum, false);
+				char	   *colname = get_attname(relid, attphysnum, false);
 
 				/*
-				 * Determine the attnum for the attribute name in parent (we
+				 * Determine the attphysnum for the attribute name in parent (we
 				 * are using the column list defined on the parent).
 				 */
-				attnum = get_attnum(publish_as_relid, colname);
+				attphysnum = get_attphysnum(publish_as_relid, colname);
 			}
 
 			/* replica identity column, not covered by the column list */
-			if (!bms_is_member(attnum, columns))
+			if (!bms_is_member(attphysnum, columns))
 			{
 				result = true;
 				break;
@@ -1228,9 +1228,9 @@ AlterPublicationTables(AlterPublicationStmt *stmt, HeapTuple tup,
 					foreach(lc, newpubrel->columns)
 					{
 						char	   *colname = strVal(lfirst(lc));
-						AttrNumber	attnum = get_attnum(newrelid, colname);
+						AttrNumber	attphysnum = get_attphysnum(newrelid, colname);
 
-						newcolumns = bms_add_member(newcolumns, attnum);
+						newcolumns = bms_add_member(newcolumns, attphysnum);
 					}
 				}
 

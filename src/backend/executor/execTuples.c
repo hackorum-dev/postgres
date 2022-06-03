@@ -137,7 +137,7 @@ tts_virtual_getsomeattrs(TupleTableSlot *slot, int natts)
  * here, but provide a user-friendly message if we do.
  */
 static Datum
-tts_virtual_getsysattr(TupleTableSlot *slot, int attnum, bool *isnull)
+tts_virtual_getsysattr(TupleTableSlot *slot, int attphysnum, bool *isnull)
 {
 	Assert(!TTS_EMPTY(slot));
 
@@ -337,7 +337,7 @@ tts_heap_getsomeattrs(TupleTableSlot *slot, int natts)
 }
 
 static Datum
-tts_heap_getsysattr(TupleTableSlot *slot, int attnum, bool *isnull)
+tts_heap_getsysattr(TupleTableSlot *slot, int attphysnum, bool *isnull)
 {
 	HeapTupleTableSlot *hslot = (HeapTupleTableSlot *) slot;
 
@@ -352,7 +352,7 @@ tts_heap_getsysattr(TupleTableSlot *slot, int attnum, bool *isnull)
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot retrieve a system column in this context")));
 
-	return heap_getsysattr(hslot->tuple, attnum,
+	return heap_getsysattr(hslot->tuple, attphysnum,
 						   slot->tts_tupleDescriptor, isnull);
 }
 
@@ -512,7 +512,7 @@ tts_minimal_getsomeattrs(TupleTableSlot *slot, int natts)
 }
 
 static Datum
-tts_minimal_getsysattr(TupleTableSlot *slot, int attnum, bool *isnull)
+tts_minimal_getsysattr(TupleTableSlot *slot, int attphysnum, bool *isnull)
 {
 	Assert(!TTS_EMPTY(slot));
 
@@ -696,7 +696,7 @@ tts_buffer_heap_getsomeattrs(TupleTableSlot *slot, int natts)
 }
 
 static Datum
-tts_buffer_heap_getsysattr(TupleTableSlot *slot, int attnum, bool *isnull)
+tts_buffer_heap_getsysattr(TupleTableSlot *slot, int attphysnum, bool *isnull)
 {
 	BufferHeapTupleTableSlot *bslot = (BufferHeapTupleTableSlot *) slot;
 
@@ -711,7 +711,7 @@ tts_buffer_heap_getsysattr(TupleTableSlot *slot, int attnum, bool *isnull)
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot retrieve a system column in this context")));
 
-	return heap_getsysattr(bslot->base.tuple, attnum,
+	return heap_getsysattr(bslot->base.tuple, attphysnum,
 						   slot->tts_tupleDescriptor, isnull);
 }
 
@@ -930,7 +930,7 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 	bool	   *isnull = slot->tts_isnull;
 	HeapTupleHeader tup = tuple->t_data;
 	bool		hasnulls = HeapTupleHasNulls(tuple);
-	int			attnum;
+	int			attphysnum;
 	char	   *tp;				/* ptr to tuple data */
 	uint32		off;			/* offset in tuple data */
 	bits8	   *bp = tup->t_bits;	/* ptr to null bitmap in tuple */
@@ -943,8 +943,8 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 	 * Check whether the first call for this tuple, and initialize or restore
 	 * loop state.
 	 */
-	attnum = slot->tts_nvalid;
-	if (attnum == 0)
+	attphysnum = slot->tts_nvalid;
+	if (attphysnum == 0)
 	{
 		/* Start from the first attribute */
 		off = 0;
@@ -959,19 +959,19 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 
 	tp = (char *) tup + tup->t_hoff;
 
-	for (; attnum < natts; attnum++)
+	for (; attphysnum < natts; attphysnum++)
 	{
-		Form_pg_attribute thisatt = TupleDescAttr(tupleDesc, attnum);
+		Form_pg_attribute thisatt = TupleDescAttr(tupleDesc, attphysnum);
 
-		if (hasnulls && att_isnull(attnum, bp))
+		if (hasnulls && att_isnull(attphysnum, bp))
 		{
-			values[attnum] = (Datum) 0;
-			isnull[attnum] = true;
+			values[attphysnum] = (Datum) 0;
+			isnull[attphysnum] = true;
 			slow = true;		/* can't use attcacheoff anymore */
 			continue;
 		}
 
-		isnull[attnum] = false;
+		isnull[attphysnum] = false;
 
 		if (!slow && thisatt->attcacheoff >= 0)
 			off = thisatt->attcacheoff;
@@ -1002,7 +1002,7 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 				thisatt->attcacheoff = off;
 		}
 
-		values[attnum] = fetchatt(thisatt, tp + off);
+		values[attphysnum] = fetchatt(thisatt, tp + off);
 
 		off = att_addlength_pointer(off, thisatt->attlen, tp + off);
 
@@ -1013,7 +1013,7 @@ slot_deform_heap_tuple(TupleTableSlot *slot, HeapTuple tuple, uint32 *offp,
 	/*
 	 * Save state for next execution
 	 */
-	slot->tts_nvalid = attnum;
+	slot->tts_nvalid = attphysnum;
 	*offp = off;
 	if (slow)
 		slot->tts_flags |= TTS_FLAG_SLOW;
@@ -1899,26 +1899,26 @@ slot_getmissingattrs(TupleTableSlot *slot, int startAttNum, int lastAttNum)
  * slot_getsomeattrs_int - workhorse for slot_getsomeattrs()
  */
 void
-slot_getsomeattrs_int(TupleTableSlot *slot, int attnum)
+slot_getsomeattrs_int(TupleTableSlot *slot, int attphysnum)
 {
 	/* Check for caller errors */
-	Assert(slot->tts_nvalid < attnum);	/* checked in slot_getsomeattrs */
-	Assert(attnum > 0);
+	Assert(slot->tts_nvalid < attphysnum);	/* checked in slot_getsomeattrs */
+	Assert(attphysnum > 0);
 
-	if (unlikely(attnum > slot->tts_tupleDescriptor->natts))
-		elog(ERROR, "invalid attribute number %d", attnum);
+	if (unlikely(attphysnum > slot->tts_tupleDescriptor->natts))
+		elog(ERROR, "invalid attribute number %d", attphysnum);
 
 	/* Fetch as many attributes as possible from the underlying tuple. */
-	slot->tts_ops->getsomeattrs(slot, attnum);
+	slot->tts_ops->getsomeattrs(slot, attphysnum);
 
 	/*
 	 * If the underlying tuple doesn't have enough attributes, tuple
 	 * descriptor must have the missing attributes.
 	 */
-	if (unlikely(slot->tts_nvalid < attnum))
+	if (unlikely(slot->tts_nvalid < attphysnum))
 	{
-		slot_getmissingattrs(slot, slot->tts_nvalid, attnum);
-		slot->tts_nvalid = attnum;
+		slot_getmissingattrs(slot, slot->tts_nvalid, attphysnum);
+		slot->tts_nvalid = attphysnum;
 	}
 }
 

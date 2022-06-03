@@ -2575,7 +2575,7 @@ bt_normalize_tuple(BtreeCheckState *state, IndexTuple itup)
 
 		/* Assume untoasted/already normalized datum initially */
 		toast_free[i] = false;
-		normalized[i] = index_getattr(itup, att->attnum,
+		normalized[i] = index_getattr(itup, att->attphysnum,
 									  tupleDescriptor,
 									  &isnull[i]);
 		if (att->attbyval || att->attlen != -1 || isnull[i])

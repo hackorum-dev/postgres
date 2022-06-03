@@ -13,7 +13,7 @@ SELECT * FROM brin_revmap_data(get_raw_page('test1_a_idx', 0)) LIMIT 5;
 SELECT * FROM brin_revmap_data(get_raw_page('test1_a_idx', 1)) LIMIT 5;
 
 SELECT * FROM brin_page_items(get_raw_page('test1_a_idx', 2), 'test1_a_idx')
-    ORDER BY blknum, attnum LIMIT 5;
+    ORDER BY blknum, attphysnum LIMIT 5;
 
 -- Failure for non-BRIN index.
 CREATE INDEX test1_a_btree ON test1 (a);

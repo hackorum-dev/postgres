@@ -111,9 +111,9 @@ scanPostingTree(Relation index, GinScanEntry scanEntry,
  * 1. Partial-match support: scan from current point until the
  *	  comparePartialFn says we're done.
  * 2. SEARCH_MODE_ALL: scan from current point (which should be first
- *	  key for the current attnum) until we hit null items or end of attnum
+ *	  key for the current attphysnum) until we hit null items or end of attphysnum
  * 3. SEARCH_MODE_EVERYTHING: scan from current point (which should be first
- *	  key for the current attnum) until we hit end of attnum
+ *	  key for the current attphysnum) until we hit end of attphysnum
  *
  * Returns true if done, false if it's necessary to restart scan from scratch
  */
@@ -121,7 +121,7 @@ static bool
 collectMatchBitmap(GinBtreeData *btree, GinBtreeStack *stack,
 				   GinScanEntry scanEntry, Snapshot snapshot)
 {
-	OffsetNumber attnum;
+	OffsetNumber attphysnum;
 	Form_pg_attribute attr;
 
 	/* Initialize empty bitmap result */
@@ -133,8 +133,8 @@ collectMatchBitmap(GinBtreeData *btree, GinBtreeStack *stack,
 		return true;
 
 	/* Locate tupdesc entry for key column (for attbyval/attlen data) */
-	attnum = scanEntry->attnum;
-	attr = TupleDescAttr(btree->ginstate->origTupdesc, attnum - 1);
+	attphysnum = scanEntry->attphysnum;
+	attr = TupleDescAttr(btree->ginstate->origTupdesc, attphysnum - 1);
 
 	/*
 	 * Predicate lock entry leaf page, following pages will be locked by
@@ -162,7 +162,7 @@ collectMatchBitmap(GinBtreeData *btree, GinBtreeStack *stack,
 		/*
 		 * If tuple stores another attribute then stop scan
 		 */
-		if (gintuple_get_attrnum(btree->ginstate, itup) != attnum)
+		if (gintuple_get_attrnum(btree->ginstate, itup) != attphysnum)
 			return true;
 
 		/* Safe to fetch attribute value */
@@ -189,8 +189,8 @@ collectMatchBitmap(GinBtreeData *btree, GinBtreeStack *stack,
 			 * case cmp < 0 => not match and continue scan
 			 *----------
 			 */
-			cmp = DatumGetInt32(FunctionCall4Coll(&btree->ginstate->comparePartialFn[attnum - 1],
-												  btree->ginstate->supportCollation[attnum - 1],
+			cmp = DatumGetInt32(FunctionCall4Coll(&btree->ginstate->comparePartialFn[attphysnum - 1],
+												  btree->ginstate->supportCollation[attphysnum - 1],
 												  scanEntry->queryKey,
 												  idatum,
 												  UInt16GetDatum(scanEntry->strategy),
@@ -209,7 +209,7 @@ collectMatchBitmap(GinBtreeData *btree, GinBtreeStack *stack,
 			/*
 			 * In ALL mode, we are not interested in null items, so we can
 			 * stop if we get to a null-item placeholder (which will be the
-			 * last entry for a given attnum).  We do want to include NULL_KEY
+			 * last entry for a given attphysnum).  We do want to include NULL_KEY
 			 * and EMPTY_ITEM entries, though.
 			 */
 			if (icategory == GIN_CAT_NULL_ITEM)
@@ -274,7 +274,7 @@ collectMatchBitmap(GinBtreeData *btree, GinBtreeStack *stack,
 				page = BufferGetPage(stack->buffer);
 				itup = (IndexTuple) PageGetItem(page, PageGetItemId(page, stack->off));
 
-				if (gintuple_get_attrnum(btree->ginstate, itup) == attnum)
+				if (gintuple_get_attrnum(btree->ginstate, itup) == attphysnum)
 				{
 					Datum		newDatum;
 					GinNullCategory newCategory;
@@ -282,7 +282,7 @@ collectMatchBitmap(GinBtreeData *btree, GinBtreeStack *stack,
 					newDatum = gintuple_get_key(btree->ginstate, itup,
 												&newCategory);
 
-					if (ginCompareEntries(btree->ginstate, attnum,
+					if (ginCompareEntries(btree->ginstate, attphysnum,
 										  newDatum, newCategory,
 										  idatum, icategory) == 0)
 						break;	/* Found! */
@@ -299,7 +299,7 @@ collectMatchBitmap(GinBtreeData *btree, GinBtreeStack *stack,
 			ItemPointer ipd;
 			int			nipd;
 
-			ipd = ginReadTuple(btree->ginstate, scanEntry->attnum, itup, &nipd);
+			ipd = ginReadTuple(btree->ginstate, scanEntry->attphysnum, itup, &nipd);
 			tbm_add_tuples(scanEntry->matchBitmap, ipd, nipd, false);
 			scanEntry->predictNumberResult += GinGetNPosting(itup);
 			pfree(ipd);
@@ -340,7 +340,7 @@ restartScanEntry:
 	 * we should find entry, and begin scan of posting tree or just store
 	 * posting list in memory
 	 */
-	ginPrepareEntryScan(&btreeEntry, entry->attnum,
+	ginPrepareEntryScan(&btreeEntry, entry->attphysnum,
 						entry->queryKey, entry->queryCategory,
 						ginstate);
 	stackEntry = ginFindLeafPage(&btreeEntry, true, false, snapshot);
@@ -457,7 +457,7 @@ restartScanEntry:
 							  snapshot);
 			if (GinGetNPosting(itup) > 0)
 			{
-				entry->list = ginReadTuple(ginstate, entry->attnum, itup,
+				entry->list = ginReadTuple(ginstate, entry->attphysnum, itup,
 										   &entry->nlist);
 				entry->predictNumberResult = entry->nlist;
 
@@ -1553,7 +1553,7 @@ matchPartialInPendingList(GinState *ginstate, Page page,
 	{
 		itup = (IndexTuple) PageGetItem(page, PageGetItemId(page, off));
 
-		if (gintuple_get_attrnum(ginstate, itup) != entry->attnum)
+		if (gintuple_get_attrnum(ginstate, itup) != entry->attphysnum)
 			return false;
 
 		if (datumExtracted[off - 1] == false)
@@ -1574,8 +1574,8 @@ matchPartialInPendingList(GinState *ginstate, Page page,
 		 * case cmp < 0 => not match and continue scan
 		 *----------
 		 */
-		cmp = DatumGetInt32(FunctionCall4Coll(&ginstate->comparePartialFn[entry->attnum - 1],
-											  ginstate->supportCollation[entry->attnum - 1],
+		cmp = DatumGetInt32(FunctionCall4Coll(&ginstate->comparePartialFn[entry->attphysnum - 1],
+											  ginstate->supportCollation[entry->attphysnum - 1],
 											  entry->queryKey,
 											  datum[off - 1],
 											  UInt16GetDatum(entry->strategy),
@@ -1658,7 +1658,7 @@ collectMatchesForHeapRow(IndexScanDesc scan, pendingPosition *pos)
 
 				/*
 				 * Interesting tuples are from pos->firstOffset to
-				 * pos->lastOffset and they are ordered by (attnum, Datum) as
+				 * pos->lastOffset and they are ordered by (attphysnum, Datum) as
 				 * it's done in entry tree.  So we can use binary search to
 				 * avoid linear scanning.
 				 */
@@ -1672,12 +1672,12 @@ collectMatchesForHeapRow(IndexScanDesc scan, pendingPosition *pos)
 
 					attrnum = gintuple_get_attrnum(&so->ginstate, itup);
 
-					if (key->attnum < attrnum)
+					if (key->attphysnum < attrnum)
 					{
 						StopHigh = StopMiddle;
 						continue;
 					}
-					if (key->attnum > attrnum)
+					if (key->attphysnum > attrnum)
 					{
 						StopLow = StopMiddle + 1;
 						continue;
@@ -1711,7 +1711,7 @@ collectMatchesForHeapRow(IndexScanDesc scan, pendingPosition *pos)
 					else
 					{
 						res = ginCompareEntries(&so->ginstate,
-												entry->attnum,
+												entry->attphysnum,
 												entry->queryKey,
 												entry->queryCategory,
 												datum[StopMiddle - 1],

@@ -183,15 +183,15 @@ extern IndexBulkDeleteResult *index_bulk_delete(IndexVacuumInfo *info,
 extern IndexBulkDeleteResult *index_vacuum_cleanup(IndexVacuumInfo *info,
 												   IndexBulkDeleteResult *istat);
 extern bool index_can_return(Relation indexRelation, int attno);
-extern RegProcedure index_getprocid(Relation irel, AttrNumber attnum,
+extern RegProcedure index_getprocid(Relation irel, AttrNumber attphysnum,
 									uint16 procnum);
-extern FmgrInfo *index_getprocinfo(Relation irel, AttrNumber attnum,
+extern FmgrInfo *index_getprocinfo(Relation irel, AttrNumber attphysnum,
 								   uint16 procnum);
 extern void index_store_float8_orderby_distances(IndexScanDesc scan,
 												 Oid *orderByTypes,
 												 IndexOrderByDistance *distances,
 												 bool recheckOrderBy);
-extern bytea *index_opclass_options(Relation relation, AttrNumber attnum,
+extern bytea *index_opclass_options(Relation relation, AttrNumber attphysnum,
 									Datum attoptions, bool validate);
 
 

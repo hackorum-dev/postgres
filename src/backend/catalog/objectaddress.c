@@ -107,10 +107,10 @@ typedef struct
 									 * (name) if the object does not live in a
 									 * namespace */
 	AttrNumber	attnum_oid;		/* attribute number of oid column */
-	AttrNumber	attnum_name;	/* attnum of name field */
-	AttrNumber	attnum_namespace;	/* attnum of namespace field */
-	AttrNumber	attnum_owner;	/* attnum of owner field */
-	AttrNumber	attnum_acl;		/* attnum of acl field */
+	AttrNumber	attnum_name;	/* attphysnum of name field */
+	AttrNumber	attnum_namespace;	/* attphysnum of namespace field */
+	AttrNumber	attnum_owner;	/* attphysnum of owner field */
+	AttrNumber	attnum_acl;		/* attphysnum of acl field */
 	ObjectType	objtype;		/* OBJECT_* of this object type */
 	bool		is_nsp_name_unique; /* can the nsp/name combination (or name
 									 * alone, if there's no namespace) be
@@ -1520,7 +1520,7 @@ get_object_address_attribute(ObjectType objtype, List *object,
 	Oid			reloid;
 	Relation	relation;
 	const char *attname;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 
 	/* Extract relation name and open relation. */
 	if (list_length(object) < 2)
@@ -1534,8 +1534,8 @@ get_object_address_attribute(ObjectType objtype, List *object,
 	reloid = RelationGetRelid(relation);
 
 	/* Look up attribute and construct return value. */
-	attnum = get_attnum(reloid, attname);
-	if (attnum == InvalidAttrNumber)
+	attphysnum = get_attphysnum(reloid, attname);
+	if (attphysnum == InvalidAttrNumber)
 	{
 		if (!missing_ok)
 			ereport(ERROR,
@@ -1552,7 +1552,7 @@ get_object_address_attribute(ObjectType objtype, List *object,
 
 	address.classId = RelationRelationId;
 	address.objectId = reloid;
-	address.objectSubId = attnum;
+	address.objectSubId = attphysnum;
 
 	*relp = relation;
 	return address;
@@ -1571,7 +1571,7 @@ get_object_address_attrdef(ObjectType objtype, List *object,
 	Oid			reloid;
 	Relation	relation;
 	const char *attname;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 	TupleDesc	tupdesc;
 	Oid			defoid;
 
@@ -1589,10 +1589,10 @@ get_object_address_attrdef(ObjectType objtype, List *object,
 	tupdesc = RelationGetDescr(relation);
 
 	/* Look up attribute number and fetch the pg_attrdef OID */
-	attnum = get_attnum(reloid, attname);
+	attphysnum = get_attphysnum(reloid, attname);
 	defoid = InvalidOid;
-	if (attnum != InvalidAttrNumber && tupdesc->constr != NULL)
-		defoid = GetAttrDefaultOid(reloid, attnum);
+	if (attphysnum != InvalidAttrNumber && tupdesc->constr != NULL)
+		defoid = GetAttrDefaultOid(reloid, attphysnum);
 	if (!OidIsValid(defoid))
 	{
 		if (!missing_ok)

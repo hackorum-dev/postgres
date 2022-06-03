@@ -150,7 +150,7 @@ make_inh_translation_list(Relation oldrelation, Relation newrelation,
 			if (!HeapTupleIsValid(newtup))
 				elog(ERROR, "could not find inherited attribute \"%s\" of relation \"%s\"",
 					 attname, RelationGetRelationName(newrelation));
-			new_attno = ((Form_pg_attribute) GETSTRUCT(newtup))->attnum - 1;
+			new_attno = ((Form_pg_attribute) GETSTRUCT(newtup))->attphysnum - 1;
 			Assert(new_attno >= 0 && new_attno < newnatts);
 			ReleaseSysCache(newtup);
 

@@ -705,9 +705,9 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid, Oid relowner,
 			/* Add quals for all columns from this index. */
 			for (i = 0; i < indnkeyatts; i++)
 			{
-				int			attnum = indexStruct->indkey.values[i];
+				int			attphysnum = indexStruct->indkey.values[i];
 				Oid			opclass = indclass->values[i];
-				Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum - 1);
+				Form_pg_attribute attr = TupleDescAttr(tupdesc, attphysnum - 1);
 				Oid			attrtype = attr->atttypid;
 				HeapTuple	cla_ht;
 				Form_pg_opclass cla_tup;
@@ -747,9 +747,9 @@ refresh_by_match_merge(Oid matviewOid, Oid tempOid, Oid relowner,
 				 * that's so unlikely it doesn't seem worth spending extra
 				 * code to avoid.
 				 */
-				if (opUsedForQual[attnum - 1] == op)
+				if (opUsedForQual[attphysnum - 1] == op)
 					continue;
-				opUsedForQual[attnum - 1] = op;
+				opUsedForQual[attphysnum - 1] = op;
 
 				/*
 				 * Actually add the qual, ANDed with any others.
@@ -894,9 +894,9 @@ is_usable_unique_index(Relation indexRel)
 
 		for (i = 0; i < numatts; i++)
 		{
-			int			attnum = indexStruct->indkey.values[i];
+			int			attphysnum = indexStruct->indkey.values[i];
 
-			if (attnum <= 0)
+			if (attphysnum <= 0)
 				return false;
 		}
 		return true;

@@ -1770,8 +1770,8 @@ select uunique1 from
 
 select atts.relid::regclass, s.* from pg_stats s join
     pg_attribute a on s.attname = a.attname and s.tablename =
-    a.attrelid::regclass::text join (select unnest(indkey) attnum,
-    indexrelid from pg_index i) atts on atts.attnum = a.attnum where
+    a.attrelid::regclass::text join (select unnest(indkey) attphysnum,
+    indexrelid from pg_index i) atts on atts.attphysnum = a.attphysnum where
     schemaname != 'pg_catalog';
 
 --

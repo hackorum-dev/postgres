@@ -737,7 +737,7 @@ send_relation_and_attrs(Relation relation, TransactionId xid,
 			continue;
 
 		/* Skip this attribute if it's not present in the column list */
-		if (columns != NULL && !bms_is_member(att->attnum, columns))
+		if (columns != NULL && !bms_is_member(att->attphysnum, columns))
 			continue;
 
 		OutputPluginPrepareWrite(ctx, false);

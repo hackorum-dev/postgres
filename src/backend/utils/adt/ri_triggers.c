@@ -85,9 +85,9 @@
 #define MAX_QUOTED_NAME_LEN  (NAMEDATALEN*2+3)
 #define MAX_QUOTED_REL_NAME_LEN  (MAX_QUOTED_NAME_LEN*2)
 
-#define RIAttName(rel, attnum)	NameStr(*attnumAttName(rel, attnum))
-#define RIAttType(rel, attnum)	attnumTypeId(rel, attnum)
-#define RIAttCollation(rel, attnum) attnumCollationId(rel, attnum)
+#define RIAttName(rel, attphysnum)	NameStr(*attnumAttName(rel, attphysnum))
+#define RIAttType(rel, attphysnum)	attnumTypeId(rel, attphysnum)
+#define RIAttCollation(rel, attphysnum) attnumCollationId(rel, attphysnum)
 
 #define RI_TRIGTYPE_INSERT 1
 #define RI_TRIGTYPE_UPDATE 2

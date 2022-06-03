@@ -802,7 +802,7 @@ prepare_heap_command(PQExpBuffer sql, RelationInfo *rel, PGconn *conn)
 {
 	resetPQExpBuffer(sql);
 	appendPQExpBuffer(sql,
-					  "SELECT v.blkno, v.offnum, v.attnum, v.msg "
+					  "SELECT v.blkno, v.offnum, v.attphysnum, v.msg "
 					  "FROM pg_catalog.pg_class c, %s.verify_heapam("
 					  "\nrelation := c.oid, on_error_stop := %s, check_toast := %s, skip := '%s'",
 					  rel->datinfo->amcheck_schema,
@@ -1016,7 +1016,7 @@ verify_heap_slot_handler(PGresult *res, PGconn *conn, void *context)
 					   rel->datinfo->datname, rel->nspname, rel->relname,
 					   PQgetvalue(res, i, 0),	/* blkno */
 					   PQgetvalue(res, i, 1),	/* offnum */
-					   PQgetvalue(res, i, 2));	/* attnum */
+					   PQgetvalue(res, i, 2));	/* attphysnum */
 
 			else if (!PQgetisnull(res, i, 1))
 				printf(_("heap table \"%s.%s.%s\", block %s, offset %s:\n"),

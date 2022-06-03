@@ -508,10 +508,10 @@ EOM
 	print $bki "\n (\n";
 	my $schema = $catalog->{columns};
 	my %attnames;
-	my $attnum = 0;
+	my $attphysnum = 0;
 	foreach my $column (@$schema)
 	{
-		$attnum++;
+		$attphysnum++;
 		my $attname = $column->{name};
 		my $atttype = $column->{type};
 
@@ -537,12 +537,12 @@ EOM
 		}
 
 		# Emit Anum_* constants
-		printf $def "#define Anum_%s_%s %s\n", $catname, $attname, $attnum;
+		printf $def "#define Anum_%s_%s %s\n", $catname, $attname, $attphysnum;
 	}
 	print $bki "\n )\n";
 
 	# Emit Natts_* constant
-	print $def "\n#define Natts_$catname $attnum\n\n";
+	print $def "\n#define Natts_$catname $attphysnum\n\n";
 
 	# Emit client code copied from source header
 	foreach my $line (@{ $catalog->{client_code} })
@@ -845,13 +845,13 @@ sub gen_pg_attribute
 		push @tables_needing_macros, $table_name;
 
 		# Generate entries for user attributes.
-		my $attnum          = 0;
+		my $attphysnum          = 0;
 		my $priorfixedwidth = 1;
 		foreach my $attr (@{ $table->{columns} })
 		{
-			$attnum++;
+			$attphysnum++;
 			my %row;
-			$row{attnum}   = $attnum;
+			$row{attphysnum}   = $attphysnum;
 			$row{attrelid} = $table->{relation_oid};
 
 			morph_row_for_pgattr(\%row, $schema, $attr, $priorfixedwidth);
@@ -875,7 +875,7 @@ sub gen_pg_attribute
 		# We only need postgres.bki entries, not schemapg.h entries.
 		if ($table->{bootstrap})
 		{
-			$attnum = 0;
+			$attphysnum = 0;
 			my @SYS_ATTRS = (
 				{ name => 'ctid',     type => 'tid' },
 				{ name => 'xmin',     type => 'xid' },
@@ -885,9 +885,9 @@ sub gen_pg_attribute
 				{ name => 'tableoid', type => 'oid' });
 			foreach my $attr (@SYS_ATTRS)
 			{
-				$attnum--;
+				$attphysnum--;
 				my %row;
-				$row{attnum}        = $attnum;
+				$row{attphysnum}        = $attphysnum;
 				$row{attrelid}      = $table->{relation_oid};
 				$row{attstattarget} = '0';
 

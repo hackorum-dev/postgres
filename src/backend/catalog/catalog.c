@@ -628,7 +628,7 @@ pg_nextoid(PG_FUNCTION_ARGS)
 						NameStr(*attname), RelationGetRelationName(rel))));
 
 	attform = ((Form_pg_attribute) GETSTRUCT(atttuple));
-	attno = attform->attnum;
+	attno = attform->attphysnum;
 
 	if (attform->atttypid != OIDOID)
 		ereport(ERROR,

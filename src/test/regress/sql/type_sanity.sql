@@ -420,15 +420,15 @@ WHERE pc.relkind IN ('r', 't', 'm') and
 
 SELECT a1.attrelid, a1.attname
 FROM pg_attribute as a1
-WHERE a1.attrelid = 0 OR a1.atttypid = 0 OR a1.attnum = 0 OR
+WHERE a1.attrelid = 0 OR a1.atttypid = 0 OR a1.attphysnum = 0 OR
     a1.attcacheoff != -1 OR a1.attinhcount < 0 OR
     (a1.attinhcount = 0 AND NOT a1.attislocal);
 
--- Cross-check attnum against parent relation
+-- Cross-check attphysnum against parent relation
 
 SELECT a1.attrelid, a1.attname, c1.oid, c1.relname
 FROM pg_attribute AS a1, pg_class AS c1
-WHERE a1.attrelid = c1.oid AND a1.attnum > c1.relnatts;
+WHERE a1.attrelid = c1.oid AND a1.attphysnum > c1.relnatts;
 
 -- Detect missing pg_attribute entries: should have as many non-system
 -- attributes as parent relation expects
@@ -436,7 +436,7 @@ WHERE a1.attrelid = c1.oid AND a1.attnum > c1.relnatts;
 SELECT c1.oid, c1.relname
 FROM pg_class AS c1
 WHERE c1.relnatts != (SELECT count(*) FROM pg_attribute AS a1
-                      WHERE a1.attrelid = c1.oid AND a1.attnum > 0);
+                      WHERE a1.attrelid = c1.oid AND a1.attphysnum > 0);
 
 -- Cross-check against pg_type entry
 -- NOTE: we allow attstorage to be 'plain' even when typstorage is not;
@@ -588,5 +588,5 @@ SELECT oid, typname, typtype, typelem, typarray
     AND NOT EXISTS (SELECT 1
                     FROM pg_attribute a
                     WHERE a.atttypid=t.oid AND
-                          a.attnum > 0 AND
+                          a.attphysnum > 0 AND
                           a.attrelid='tab_core_types'::regclass);

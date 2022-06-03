@@ -165,7 +165,7 @@ struct TupleTableSlotOps
 	 * to false, if it's not NULL. Throws an error if the slot type does not
 	 * support system attributes.
 	 */
-	Datum		(*getsysattr) (TupleTableSlot *slot, int attnum, bool *isnull);
+	Datum		(*getsysattr) (TupleTableSlot *slot, int attphysnum, bool *isnull);
 
 	/*
 	 * Make the contents of the slot solely depend on the slot, and not on
@@ -328,7 +328,7 @@ extern MinimalTuple ExecFetchSlotMinimalTuple(TupleTableSlot *slot,
 extern Datum ExecFetchSlotHeapTupleDatum(TupleTableSlot *slot);
 extern void slot_getmissingattrs(TupleTableSlot *slot, int startAttNum,
 								 int lastAttNum);
-extern void slot_getsomeattrs_int(TupleTableSlot *slot, int attnum);
+extern void slot_getsomeattrs_int(TupleTableSlot *slot, int attphysnum);
 
 
 #ifndef FRONTEND
@@ -338,10 +338,10 @@ extern void slot_getsomeattrs_int(TupleTableSlot *slot, int attnum);
  * valid at least up through the attnum'th entry.
  */
 static inline void
-slot_getsomeattrs(TupleTableSlot *slot, int attnum)
+slot_getsomeattrs(TupleTableSlot *slot, int attphysnum)
 {
-	if (slot->tts_nvalid < attnum)
-		slot_getsomeattrs_int(slot, attnum);
+	if (slot->tts_nvalid < attphysnum)
+		slot_getsomeattrs_int(slot, attphysnum);
 }
 
 /*
@@ -364,31 +364,31 @@ slot_getallattrs(TupleTableSlot *slot)
  * it.
  */
 static inline bool
-slot_attisnull(TupleTableSlot *slot, int attnum)
+slot_attisnull(TupleTableSlot *slot, int attphysnum)
 {
-	AssertArg(attnum > 0);
+	AssertArg(attphysnum > 0);
 
-	if (attnum > slot->tts_nvalid)
-		slot_getsomeattrs(slot, attnum);
+	if (attphysnum > slot->tts_nvalid)
+		slot_getsomeattrs(slot, attphysnum);
 
-	return slot->tts_isnull[attnum - 1];
+	return slot->tts_isnull[attphysnum - 1];
 }
 
 /*
  * slot_getattr - fetch one attribute of the slot's contents.
  */
 static inline Datum
-slot_getattr(TupleTableSlot *slot, int attnum,
+slot_getattr(TupleTableSlot *slot, int attphysnum,
 			 bool *isnull)
 {
-	AssertArg(attnum > 0);
+	AssertArg(attphysnum > 0);
 
-	if (attnum > slot->tts_nvalid)
-		slot_getsomeattrs(slot, attnum);
+	if (attphysnum > slot->tts_nvalid)
+		slot_getsomeattrs(slot, attphysnum);
 
-	*isnull = slot->tts_isnull[attnum - 1];
+	*isnull = slot->tts_isnull[attphysnum - 1];
 
-	return slot->tts_values[attnum - 1];
+	return slot->tts_values[attphysnum - 1];
 }
 
 /*
@@ -399,23 +399,23 @@ slot_getattr(TupleTableSlot *slot, int attnum,
  *  the slot type is the one that supports system attributes.
  */
 static inline Datum
-slot_getsysattr(TupleTableSlot *slot, int attnum, bool *isnull)
+slot_getsysattr(TupleTableSlot *slot, int attphysnum, bool *isnull)
 {
-	AssertArg(attnum < 0);		/* caller error */
+	AssertArg(attphysnum < 0);		/* caller error */
 
-	if (attnum == TableOidAttributeNumber)
+	if (attphysnum == TableOidAttributeNumber)
 	{
 		*isnull = false;
 		return ObjectIdGetDatum(slot->tts_tableOid);
 	}
-	else if (attnum == SelfItemPointerAttributeNumber)
+	else if (attphysnum == SelfItemPointerAttributeNumber)
 	{
 		*isnull = false;
 		return PointerGetDatum(&slot->tts_tid);
 	}
 
 	/* Fetch the system attribute from the underlying tuple. */
-	return slot->tts_ops->getsysattr(slot, attnum, isnull);
+	return slot->tts_ops->getsysattr(slot, attphysnum, isnull);
 }
 
 /*

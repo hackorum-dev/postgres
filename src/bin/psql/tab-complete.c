@@ -516,7 +516,7 @@ static const SchemaQuery Query_for_list_of_arguments = {
 
 static const SchemaQuery Query_for_list_of_attributes = {
 	.catname = "pg_catalog.pg_attribute a, pg_catalog.pg_class c",
-	.selcondition = "c.oid = a.attrelid and a.attnum > 0 and not a.attisdropped",
+	.selcondition = "c.oid = a.attrelid and a.attphysnum > 0 and not a.attisdropped",
 	.result = "a.attname",
 	.refname = "c.relname",
 	.refviscondition = "pg_catalog.pg_table_is_visible(c.oid)",
@@ -525,7 +525,7 @@ static const SchemaQuery Query_for_list_of_attributes = {
 
 static const SchemaQuery Query_for_list_of_attribute_numbers = {
 	.catname = "pg_catalog.pg_attribute a, pg_catalog.pg_class c",
-	.selcondition = "c.oid = a.attrelid and a.attnum > 0 and not a.attisdropped",
+	.selcondition = "c.oid = a.attrelid and a.attphysnum > 0 and not a.attisdropped",
 	.result = "a.attnum::pg_catalog.text",
 	.refname = "c.relname",
 	.refviscondition = "pg_catalog.pg_table_is_visible(c.oid)",

@@ -1348,7 +1348,7 @@ pg_get_indexdef_worker(Oid indexrelid, int colno,
 	sep = "";
 	for (keyno = 0; keyno < idxrec->indnatts; keyno++)
 	{
-		AttrNumber	attnum = idxrec->indkey.values[keyno];
+		AttrNumber	attphysnum = idxrec->indkey.values[keyno];
 		Oid			keycoltype;
 		Oid			keycolcollation;
 
@@ -1369,16 +1369,16 @@ pg_get_indexdef_worker(Oid indexrelid, int colno,
 			appendStringInfoString(&buf, sep);
 		sep = ", ";
 
-		if (attnum != 0)
+		if (attphysnum != 0)
 		{
 			/* Simple index column */
 			char	   *attname;
 			int32		keycoltypmod;
 
-			attname = get_attname(indrelid, attnum, false);
+			attname = get_attname(indrelid, attphysnum, false);
 			if (!colno || colno == keyno + 1)
 				appendStringInfoString(&buf, quote_identifier(attname));
-			get_atttypetypmodcoll(indrelid, attnum,
+			get_atttypetypmodcoll(indrelid, attphysnum,
 								  &keycoltype, &keycoltypmod,
 								  &keycolcollation);
 		}
@@ -1744,13 +1744,13 @@ pg_get_statisticsobj_worker(Oid statextid, bool columns_only, bool missing_ok)
 	/* decode simple column references */
 	for (colno = 0; colno < statextrec->stxkeys.dim1; colno++)
 	{
-		AttrNumber	attnum = statextrec->stxkeys.values[colno];
+		AttrNumber	attphysnum = statextrec->stxkeys.values[colno];
 		char	   *attname;
 
 		if (colno > 0)
 			appendStringInfoString(&buf, ", ");
 
-		attname = get_attname(statextrec->stxrelid, attnum, false);
+		attname = get_attname(statextrec->stxrelid, attphysnum, false);
 
 		appendStringInfoString(&buf, quote_identifier(attname));
 	}
@@ -1990,22 +1990,22 @@ pg_get_partkeydef_worker(Oid relid, int prettyFlags,
 	sep = "";
 	for (keyno = 0; keyno < form->partnatts; keyno++)
 	{
-		AttrNumber	attnum = form->partattrs.values[keyno];
+		AttrNumber	attphysnum = form->partattrs.values[keyno];
 		Oid			keycoltype;
 		Oid			keycolcollation;
 		Oid			partcoll;
 
 		appendStringInfoString(&buf, sep);
 		sep = ", ";
-		if (attnum != 0)
+		if (attphysnum != 0)
 		{
 			/* Simple attribute reference */
 			char	   *attname;
 			int32		keycoltypmod;
 
-			attname = get_attname(relid, attnum, false);
+			attname = get_attname(relid, attphysnum, false);
 			appendStringInfoString(&buf, quote_identifier(attname));
-			get_atttypetypmodcoll(relid, attnum,
+			get_atttypetypmodcoll(relid, attphysnum,
 								  &keycoltype, &keycoltypmod,
 								  &keycolcollation);
 		}
@@ -2798,7 +2798,7 @@ pg_get_serial_sequence(PG_FUNCTION_ARGS)
 	RangeVar   *tablerv;
 	Oid			tableOid;
 	char	   *column;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 	Oid			sequenceId = InvalidOid;
 	Relation	depRel;
 	ScanKeyData key[3];
@@ -2812,8 +2812,8 @@ pg_get_serial_sequence(PG_FUNCTION_ARGS)
 	/* Get the number of the column */
 	column = text_to_cstring(columnname);
 
-	attnum = get_attnum(tableOid, column);
-	if (attnum == InvalidAttrNumber)
+	attphysnum = get_attphysnum(tableOid, column);
+	if (attphysnum == InvalidAttrNumber)
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_COLUMN),
 				 errmsg("column \"%s\" of relation \"%s\" does not exist",
@@ -2833,7 +2833,7 @@ pg_get_serial_sequence(PG_FUNCTION_ARGS)
 	ScanKeyInit(&key[2],
 				Anum_pg_depend_refobjsubid,
 				BTEqualStrategyNumber, F_INT4EQ,
-				Int32GetDatum(attnum));
+				Int32GetDatum(attphysnum));
 
 	scan = systable_beginscan(depRel, DependReferenceIndexId, true,
 							  NULL, 3, key);
@@ -4595,7 +4595,7 @@ set_join_column_names(deparse_namespace *dpns, RangeTblEntry *rte,
 	 * added since parse time must be inserted in the right places.  This code
 	 * must match the parser, which will order a join's columns as merged
 	 * columns first (in USING-clause order), then non-merged columns from the
-	 * left input (in attnum order), then non-merged columns from the right
+	 * left input (in attphysnum order), then non-merged columns from the right
 	 * input (ditto).  If one of the inputs is itself a join, its columns will
 	 * be ordered according to the same rule, which means newly-added columns
 	 * might not be at the end.  We can figure out what's what by consulting
@@ -7118,7 +7118,7 @@ get_variable(Var *var, int levelsup, bool istoplevel, deparse_context *context)
 {
 	StringInfo	buf = context->buf;
 	RangeTblEntry *rte;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 	int			netlevelsup;
 	deparse_namespace *dpns;
 	int			varno;
@@ -7209,7 +7209,7 @@ get_variable(Var *var, int levelsup, bool istoplevel, deparse_context *context)
 		rte = rt_fetch(varno, dpns->rtable);
 		refname = (char *) list_nth(dpns->rtable_names, varno - 1);
 		colinfo = deparse_columns_fetch(varno, dpns);
-		attnum = varattno;
+		attphysnum = varattno;
 	}
 	else
 	{
@@ -7230,16 +7230,16 @@ get_variable(Var *var, int levelsup, bool istoplevel, deparse_context *context)
 	 * we'll have set dpns->inner_plan to reference the child plan node.
 	 */
 	if ((rte->rtekind == RTE_SUBQUERY || rte->rtekind == RTE_CTE) &&
-		attnum > list_length(rte->eref->colnames) &&
+		attphysnum > list_length(rte->eref->colnames) &&
 		dpns->inner_plan)
 	{
 		TargetEntry *tle;
 		deparse_namespace save_dpns;
 
-		tle = get_tle_by_resno(dpns->inner_tlist, attnum);
+		tle = get_tle_by_resno(dpns->inner_tlist, attphysnum);
 		if (!tle)
-			elog(ERROR, "invalid attnum %d for relation \"%s\"",
-				 attnum, rte->eref->aliasname);
+			elog(ERROR, "invalid attphysnum %d for relation \"%s\"",
+				 attphysnum, rte->eref->aliasname);
 
 		Assert(netlevelsup == 0);
 		push_child_plan(dpns, dpns->inner_plan, &save_dpns);
@@ -7274,11 +7274,11 @@ get_variable(Var *var, int levelsup, bool istoplevel, deparse_context *context)
 	{
 		if (rte->joinaliasvars == NIL)
 			elog(ERROR, "cannot decompile join alias var in plan tree");
-		if (attnum > 0)
+		if (attphysnum > 0)
 		{
 			Var		   *aliasvar;
 
-			aliasvar = (Var *) list_nth(rte->joinaliasvars, attnum - 1);
+			aliasvar = (Var *) list_nth(rte->joinaliasvars, attphysnum - 1);
 			/* we intentionally don't strip implicit coercions here */
 			if (aliasvar && IsA(aliasvar, Var))
 			{
@@ -7295,23 +7295,23 @@ get_variable(Var *var, int levelsup, bool istoplevel, deparse_context *context)
 		Assert(refname == NULL);
 	}
 
-	if (attnum == InvalidAttrNumber)
+	if (attphysnum == InvalidAttrNumber)
 		attname = NULL;
-	else if (attnum > 0)
+	else if (attphysnum > 0)
 	{
 		/* Get column name to use from the colinfo struct */
-		if (attnum > colinfo->num_cols)
-			elog(ERROR, "invalid attnum %d for relation \"%s\"",
-				 attnum, rte->eref->aliasname);
-		attname = colinfo->colnames[attnum - 1];
+		if (attphysnum > colinfo->num_cols)
+			elog(ERROR, "invalid attphysnum %d for relation \"%s\"",
+				 attphysnum, rte->eref->aliasname);
+		attname = colinfo->colnames[attphysnum - 1];
 		if (attname == NULL)	/* dropped column? */
-			elog(ERROR, "invalid attnum %d for relation \"%s\"",
-				 attnum, rte->eref->aliasname);
+			elog(ERROR, "invalid attphysnum %d for relation \"%s\"",
+				 attphysnum, rte->eref->aliasname);
 	}
 	else
 	{
 		/* System column - name is fixed, get it from the catalog */
-		attname = get_rte_attribute_name(rte, attnum);
+		attname = get_rte_attribute_name(rte, attphysnum);
 	}
 
 	if (refname && (context->varprefix || attname == NULL))
@@ -7474,7 +7474,7 @@ get_name_for_var_field(Var *var, int fieldno,
 					   int levelsup, deparse_context *context)
 {
 	RangeTblEntry *rte;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 	int			netlevelsup;
 	deparse_namespace *dpns;
 	int			varno;
@@ -7566,7 +7566,7 @@ get_name_for_var_field(Var *var, int fieldno,
 	if (varno >= 1 && varno <= list_length(dpns->rtable))
 	{
 		rte = rt_fetch(varno, dpns->rtable);
-		attnum = varattno;
+		attphysnum = varattno;
 	}
 	else if (varno == OUTER_VAR && dpns->outer_tlist)
 	{
@@ -7628,7 +7628,7 @@ get_name_for_var_field(Var *var, int fieldno,
 		return NULL;			/* keep compiler quiet */
 	}
 
-	if (attnum == InvalidAttrNumber)
+	if (attphysnum == InvalidAttrNumber)
 	{
 		/* Var is whole-row reference to RTE, so select the right field */
 		return get_rte_attribute_name(rte, fieldno);
@@ -7662,11 +7662,11 @@ get_name_for_var_field(Var *var, int fieldno,
 				if (rte->subquery)
 				{
 					TargetEntry *ste = get_tle_by_resno(rte->subquery->targetList,
-														attnum);
+														attphysnum);
 
 					if (ste == NULL || ste->resjunk)
 						elog(ERROR, "subquery %s does not have attribute %d",
-							 rte->eref->aliasname, attnum);
+							 rte->eref->aliasname, attphysnum);
 					expr = (Node *) ste->expr;
 					if (IsA(expr, Var))
 					{
@@ -7711,10 +7711,10 @@ get_name_for_var_field(Var *var, int fieldno,
 					if (!dpns->inner_plan)
 						elog(ERROR, "failed to find plan for subquery %s",
 							 rte->eref->aliasname);
-					tle = get_tle_by_resno(dpns->inner_tlist, attnum);
+					tle = get_tle_by_resno(dpns->inner_tlist, attphysnum);
 					if (!tle)
 						elog(ERROR, "bogus varattno for subquery var: %d",
-							 attnum);
+							 attphysnum);
 					Assert(netlevelsup == 0);
 					push_child_plan(dpns, dpns->inner_plan, &save_dpns);
 
@@ -7730,8 +7730,8 @@ get_name_for_var_field(Var *var, int fieldno,
 			/* Join RTE --- recursively inspect the alias variable */
 			if (rte->joinaliasvars == NIL)
 				elog(ERROR, "cannot decompile join alias var in plan tree");
-			Assert(attnum > 0 && attnum <= list_length(rte->joinaliasvars));
-			expr = (Node *) list_nth(rte->joinaliasvars, attnum - 1);
+			Assert(attphysnum > 0 && attphysnum <= list_length(rte->joinaliasvars));
+			expr = (Node *) list_nth(rte->joinaliasvars, attphysnum - 1);
 			Assert(expr != NULL);
 			/* we intentionally don't strip implicit coercions here */
 			if (IsA(expr, Var))
@@ -7778,11 +7778,11 @@ get_name_for_var_field(Var *var, int fieldno,
 				{
 					Query	   *ctequery = (Query *) cte->ctequery;
 					TargetEntry *ste = get_tle_by_resno(GetCTETargetList(cte),
-														attnum);
+														attphysnum);
 
 					if (ste == NULL || ste->resjunk)
 						elog(ERROR, "subquery %s does not have attribute %d",
-							 rte->eref->aliasname, attnum);
+							 rte->eref->aliasname, attphysnum);
 					expr = (Node *) ste->expr;
 					if (IsA(expr, Var))
 					{
@@ -7832,10 +7832,10 @@ get_name_for_var_field(Var *var, int fieldno,
 					if (!dpns->inner_plan)
 						elog(ERROR, "failed to find plan for CTE %s",
 							 rte->eref->aliasname);
-					tle = get_tle_by_resno(dpns->inner_tlist, attnum);
+					tle = get_tle_by_resno(dpns->inner_tlist, attphysnum);
 					if (!tle)
 						elog(ERROR, "bogus varattno for subquery var: %d",
-							 attnum);
+							 attphysnum);
 					Assert(netlevelsup == 0);
 					push_child_plan(dpns, dpns->inner_plan, &save_dpns);
 

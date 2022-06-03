@@ -43,7 +43,7 @@ static void entrySplitPage(GinBtree btree, Buffer origbuf,
  */
 IndexTuple
 GinFormTuple(GinState *ginstate,
-			 OffsetNumber attnum, Datum key, GinNullCategory category,
+			 OffsetNumber attphysnum, Datum key, GinNullCategory category,
 			 Pointer data, Size dataSize, int nipd,
 			 bool errorTooBig)
 {
@@ -60,13 +60,13 @@ GinFormTuple(GinState *ginstate,
 	}
 	else
 	{
-		datums[0] = UInt16GetDatum(attnum);
+		datums[0] = UInt16GetDatum(attphysnum);
 		isnull[0] = false;
 		datums[1] = key;
 		isnull[1] = (category != GIN_CAT_NORM_KEY);
 	}
 
-	itup = index_form_tuple(ginstate->tupdesc[attnum - 1], datums, isnull);
+	itup = index_form_tuple(ginstate->tupdesc[attphysnum - 1], datums, isnull);
 
 	/*
 	 * Determine and store offset to the posting list, making sure there is
@@ -160,7 +160,7 @@ GinFormTuple(GinState *ginstate,
  * in *nitems.
  */
 ItemPointer
-ginReadTuple(GinState *ginstate, OffsetNumber attnum, IndexTuple itup,
+ginReadTuple(GinState *ginstate, OffsetNumber attphysnum, IndexTuple itup,
 			 int *nitems)
 {
 	Pointer		ptr = GinGetPosting(itup);
@@ -244,7 +244,7 @@ static bool
 entryIsMoveRight(GinBtree btree, Page page)
 {
 	IndexTuple	itup;
-	OffsetNumber attnum;
+	OffsetNumber attphysnum;
 	Datum		key;
 	GinNullCategory category;
 
@@ -252,12 +252,12 @@ entryIsMoveRight(GinBtree btree, Page page)
 		return false;
 
 	itup = getRightMostTuple(page);
-	attnum = gintuple_get_attrnum(btree->ginstate, itup);
+	attphysnum = gintuple_get_attrnum(btree->ginstate, itup);
 	key = gintuple_get_key(btree->ginstate, itup, &category);
 
 	if (ginCompareAttEntries(btree->ginstate,
 							 btree->entryAttnum, btree->entryKey, btree->entryCategory,
-							 attnum, key, category) > 0)
+							 attphysnum, key, category) > 0)
 		return true;
 
 	return false;
@@ -304,18 +304,18 @@ entryLocateEntry(GinBtree btree, GinBtreeStack *stack)
 		}
 		else
 		{
-			OffsetNumber attnum;
+			OffsetNumber attphysnum;
 			Datum		key;
 			GinNullCategory category;
 
 			itup = (IndexTuple) PageGetItem(page, PageGetItemId(page, mid));
-			attnum = gintuple_get_attrnum(btree->ginstate, itup);
+			attphysnum = gintuple_get_attrnum(btree->ginstate, itup);
 			key = gintuple_get_key(btree->ginstate, itup, &category);
 			result = ginCompareAttEntries(btree->ginstate,
 										  btree->entryAttnum,
 										  btree->entryKey,
 										  btree->entryCategory,
-										  attnum, key, category);
+										  attphysnum, key, category);
 		}
 
 		if (result == 0)
@@ -374,19 +374,19 @@ entryLocateLeafEntry(GinBtree btree, GinBtreeStack *stack)
 	{
 		OffsetNumber mid = low + ((high - low) / 2);
 		IndexTuple	itup;
-		OffsetNumber attnum;
+		OffsetNumber attphysnum;
 		Datum		key;
 		GinNullCategory category;
 		int			result;
 
 		itup = (IndexTuple) PageGetItem(page, PageGetItemId(page, mid));
-		attnum = gintuple_get_attrnum(btree->ginstate, itup);
+		attphysnum = gintuple_get_attrnum(btree->ginstate, itup);
 		key = gintuple_get_key(btree->ginstate, itup, &category);
 		result = ginCompareAttEntries(btree->ginstate,
 									  btree->entryAttnum,
 									  btree->entryKey,
 									  btree->entryCategory,
-									  attnum, key, category);
+									  attphysnum, key, category);
 		if (result == 0)
 		{
 			stack->off = mid;
@@ -742,7 +742,7 @@ ginEntryFillRoot(GinBtree btree, Page root,
  * other than a faked-up Relation pointer; the key datum is bogus too.
  */
 void
-ginPrepareEntryScan(GinBtree btree, OffsetNumber attnum,
+ginPrepareEntryScan(GinBtree btree, OffsetNumber attphysnum,
 					Datum key, GinNullCategory category,
 					GinState *ginstate)
 {
@@ -766,7 +766,7 @@ ginPrepareEntryScan(GinBtree btree, OffsetNumber attnum,
 	btree->fullScan = false;
 	btree->isBuild = false;
 
-	btree->entryAttnum = attnum;
+	btree->entryAttnum = attphysnum;
 	btree->entryKey = key;
 	btree->entryCategory = category;
 }

@@ -4171,7 +4171,7 @@ getPublicationTables(Archive *fout, TableInfo tblinfo[], int numTables)
 							 "       FROM\n"
 							 "         pg_catalog.generate_series(0, pg_catalog.array_upper(pr.prattrs::pg_catalog.int2[], 1)) s,\n"
 							 "         pg_catalog.pg_attribute\n"
-							 "      WHERE attrelid = pr.prrelid AND attnum = prattrs[s])\n"
+							 "      WHERE attrelid = pr.prrelid AND attphysnum = prattrs[s])\n"
 							 "  ELSE NULL END) prattrs "
 							 "FROM pg_catalog.pg_publication_rel pr");
 	else
@@ -6719,11 +6719,11 @@ getIndexes(Archive *fout, TableInfo tblinfo[], int numTables)
 						  "inh.inhparent AS parentidx, "
 						  "i.indnkeyatts AS indnkeyatts, "
 						  "i.indnatts AS indnatts, "
-						  "(SELECT pg_catalog.array_agg(attnum ORDER BY attnum) "
+						  "(SELECT pg_catalog.array_agg(attphysnum ORDER BY attphysnum) "
 						  "  FROM pg_catalog.pg_attribute "
 						  "  WHERE attrelid = i.indexrelid AND "
 						  "    attstattarget >= 0) AS indstatcols, "
-						  "(SELECT pg_catalog.array_agg(attstattarget ORDER BY attnum) "
+						  "(SELECT pg_catalog.array_agg(attstattarget ORDER BY attphysnum) "
 						  "  FROM pg_catalog.pg_attribute "
 						  "  WHERE attrelid = i.indexrelid AND "
 						  "    attstattarget >= 0) AS indstatvals, ");
@@ -8130,7 +8130,7 @@ getTableAttrs(Archive *fout, TableInfo *tblinfo, int numTables)
 	appendPQExpBufferStr(q,
 						 "SELECT\n"
 						 "a.attrelid,\n"
-						 "a.attnum,\n"
+						 "a.attphysnum,\n"
 						 "a.attname,\n"
 						 "a.atttypmod,\n"
 						 "a.attstattarget,\n"
@@ -8188,8 +8188,8 @@ getTableAttrs(Archive *fout, TableInfo *tblinfo, int numTables)
 					  "JOIN pg_catalog.pg_attribute a ON (src.tbloid = a.attrelid) "
 					  "LEFT JOIN pg_catalog.pg_type t "
 					  "ON (a.atttypid = t.oid)\n"
-					  "WHERE a.attnum > 0::pg_catalog.int2\n"
-					  "ORDER BY a.attrelid, a.attnum",
+					  "WHERE a.attphysnum > 0::pg_catalog.int2\n"
+					  "ORDER BY a.attrelid, a.attphysnum",
 					  tbloids->data);
 
 	res = ExecuteSqlQuery(fout, q->data, PGRES_TUPLES_OK);
@@ -8197,7 +8197,7 @@ getTableAttrs(Archive *fout, TableInfo *tblinfo, int numTables)
 	ntups = PQntuples(res);
 
 	i_attrelid = PQfnumber(res, "attrelid");
-	i_attnum = PQfnumber(res, "attnum");
+	i_attnum = PQfnumber(res, "attphysnum");
 	i_attname = PQfnumber(res, "attname");
 	i_atttypname = PQfnumber(res, "atttypname");
 	i_atttypmod = PQfnumber(res, "atttypmod");
@@ -11010,7 +11010,7 @@ dumpCompositeType(Archive *fout, const TypeInfo *tyinfo)
 		 */
 		appendPQExpBufferStr(query,
 							 "PREPARE dumpCompositeType(pg_catalog.oid) AS\n"
-							 "SELECT a.attname, a.attnum, "
+							 "SELECT a.attname, a.attphysnum, "
 							 "pg_catalog.format_type(a.atttypid, a.atttypmod) AS atttypdefn, "
 							 "a.attlen, a.attalign, a.attisdropped, "
 							 "CASE WHEN a.attcollation <> at.typcollation "
@@ -11019,7 +11019,7 @@ dumpCompositeType(Archive *fout, const TypeInfo *tyinfo)
 							 "JOIN pg_catalog.pg_attribute a ON a.attrelid = ct.typrelid "
 							 "LEFT JOIN pg_catalog.pg_type at ON at.oid = a.atttypid "
 							 "WHERE ct.oid = $1 "
-							 "ORDER BY a.attnum");
+							 "ORDER BY a.attphysnum");
 
 		ExecuteSqlStatement(fout, query->data);
 
@@ -11214,7 +11214,7 @@ dumpCompositeTypeColComments(Archive *fout, const TypeInfo *tyinfo,
 	target = createPQExpBuffer();
 
 	ntups = PQntuples(res);
-	i_attnum = PQfnumber(res, "attnum");
+	i_attnum = PQfnumber(res, "attphysnum");
 	i_attname = PQfnumber(res, "attname");
 	i_attisdropped = PQfnumber(res, "attisdropped");
 	while (ncomments > 0)
@@ -14869,11 +14869,11 @@ dumpTable(Archive *fout, const TableInfo *tbinfo)
 									 "LEFT JOIN pg_catalog.pg_init_privs pip ON "
 									 "(at.attrelid = pip.objoid "
 									 "AND pip.classoid = 'pg_catalog.pg_class'::pg_catalog.regclass "
-									 "AND at.attnum = pip.objsubid) "
+									 "AND at.attphysnum = pip.objsubid) "
 									 "WHERE at.attrelid = $1 AND "
 									 "NOT at.attisdropped "
 									 "AND (at.attacl IS NOT NULL OR pip.initprivs IS NOT NULL) "
-									 "ORDER BY at.attnum");
+									 "ORDER BY at.attphysnum");
 			}
 			else
 			{
@@ -14883,7 +14883,7 @@ dumpTable(Archive *fout, const TableInfo *tbinfo)
 									 "FROM pg_catalog.pg_attribute "
 									 "WHERE attrelid = $1 AND NOT attisdropped "
 									 "AND attacl IS NOT NULL "
-									 "ORDER BY attnum");
+									 "ORDER BY attphysnum");
 			}
 
 			ExecuteSqlStatement(fout, query->data);

@@ -23,6 +23,6 @@ typedef struct AttributeOpts
 	float8		n_distinct_inherited;
 } AttributeOpts;
 
-extern AttributeOpts *get_attribute_options(Oid spcid, int attnum);
+extern AttributeOpts *get_attribute_options(Oid spcid, int attphysnum);
 
 #endif							/* ATTOPTCACHE_H */

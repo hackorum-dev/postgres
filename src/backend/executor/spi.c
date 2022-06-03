@@ -1101,7 +1101,7 @@ SPI_returntuple(HeapTuple tuple, TupleDesc tupdesc)
 }
 
 HeapTuple
-SPI_modifytuple(Relation rel, HeapTuple tuple, int natts, int *attnum,
+SPI_modifytuple(Relation rel, HeapTuple tuple, int natts, int *attphysnum,
 				Datum *Values, const char *Nulls)
 {
 	MemoryContext oldcxt;
@@ -1111,7 +1111,7 @@ SPI_modifytuple(Relation rel, HeapTuple tuple, int natts, int *attnum,
 	bool	   *n;
 	int			i;
 
-	if (rel == NULL || tuple == NULL || natts < 0 || attnum == NULL || Values == NULL)
+	if (rel == NULL || tuple == NULL || natts < 0 || attphysnum == NULL || Values == NULL)
 	{
 		SPI_result = SPI_ERROR_ARGUMENT;
 		return NULL;
@@ -1137,13 +1137,13 @@ SPI_modifytuple(Relation rel, HeapTuple tuple, int natts, int *attnum,
 	/* replace values and nulls */
 	for (i = 0; i < natts; i++)
 	{
-		if (attnum[i] <= 0 || attnum[i] > numberOfAttributes)
+		if (attphysnum[i] <= 0 || attphysnum[i] > numberOfAttributes)
 			break;
-		v[attnum[i] - 1] = Values[i];
-		n[attnum[i] - 1] = (Nulls && Nulls[i] == 'n');
+		v[attphysnum[i] - 1] = Values[i];
+		n[attphysnum[i] - 1] = (Nulls && Nulls[i] == 'n');
 	}
 
-	if (i == natts)				/* no errors in *attnum */
+	if (i == natts)				/* no errors in *attphysnum */
 	{
 		mtuple = heap_form_tuple(rel->rd_att, v, n);
 
@@ -1186,7 +1186,7 @@ SPI_fnumber(TupleDesc tupdesc, const char *fname)
 
 	sysatt = SystemAttributeByName(fname);
 	if (sysatt != NULL)
-		return sysatt->attnum;
+		return sysatt->attphysnum;
 
 	/* SPI_ERROR_NOATTRIBUTE is different from all sys column numbers */
 	return SPI_ERROR_NOATTRIBUTE;

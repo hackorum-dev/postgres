@@ -124,8 +124,8 @@ SELECT 3 AS x, 'Hello', 4 AS y, true AS "dirty\name" \gdesc \g
 create temporary table gexec_test(a int, b text, c date, d float);
 select format('create index on gexec_test(%I)', attname)
 from pg_attribute
-where attrelid = 'gexec_test'::regclass and attnum > 0
-order by attnum
+where attrelid = 'gexec_test'::regclass and attphysnum > 0
+order by attphysnum
 \gexec
 
 -- \gexec should work in FETCH_COUNT mode too

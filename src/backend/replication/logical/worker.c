@@ -562,7 +562,7 @@ slot_fill_defaults(LogicalRepRelMapEntry *rel, EState *estate,
 	TupleDesc	desc = RelationGetDescr(rel->localrel);
 	int			num_phys_attrs = desc->natts;
 	int			i;
-	int			attnum,
+	int			attphysnum,
 				num_defaults = 0;
 	int		   *defmap;
 	ExprState **defexprs;
@@ -578,17 +578,17 @@ slot_fill_defaults(LogicalRepRelMapEntry *rel, EState *estate,
 	defexprs = (ExprState **) palloc(num_phys_attrs * sizeof(ExprState *));
 
 	Assert(rel->attrmap->maplen == num_phys_attrs);
-	for (attnum = 0; attnum < num_phys_attrs; attnum++)
+	for (attphysnum = 0; attphysnum < num_phys_attrs; attphysnum++)
 	{
 		Expr	   *defexpr;
 
-		if (TupleDescAttr(desc, attnum)->attisdropped || TupleDescAttr(desc, attnum)->attgenerated)
+		if (TupleDescAttr(desc, attphysnum)->attisdropped || TupleDescAttr(desc, attphysnum)->attgenerated)
 			continue;
 
-		if (rel->attrmap->attnums[attnum] >= 0)
+		if (rel->attrmap->attnums[attphysnum] >= 0)
 			continue;
 
-		defexpr = (Expr *) build_column_default(rel->localrel, attnum + 1);
+		defexpr = (Expr *) build_column_default(rel->localrel, attphysnum + 1);
 
 		if (defexpr != NULL)
 		{
@@ -597,7 +597,7 @@ slot_fill_defaults(LogicalRepRelMapEntry *rel, EState *estate,
 
 			/* Initialize executable expression in copycontext */
 			defexprs[num_defaults] = ExecInitExpr(defexpr, NULL);
-			defmap[num_defaults] = attnum;
+			defmap[num_defaults] = attphysnum;
 			num_defaults++;
 		}
 	}
@@ -634,7 +634,7 @@ slot_store_data(TupleTableSlot *slot, LogicalRepRelMapEntry *rel,
 
 			Assert(remoteattnum < tupleData->ncols);
 
-			/* Set attnum for error callback */
+			/* Set attphysnum for error callback */
 			apply_error_callback_arg.remote_attnum = remoteattnum;
 
 			if (tupleData->colstatus[remoteattnum] == LOGICALREP_COLUMN_TEXT)
@@ -683,7 +683,7 @@ slot_store_data(TupleTableSlot *slot, LogicalRepRelMapEntry *rel,
 				slot->tts_isnull[i] = true;
 			}
 
-			/* Reset attnum for error callback */
+			/* Reset attphysnum for error callback */
 			apply_error_callback_arg.remote_attnum = -1;
 		}
 		else
@@ -749,7 +749,7 @@ slot_modify_data(TupleTableSlot *slot, TupleTableSlot *srcslot,
 		{
 			StringInfo	colvalue = &tupleData->colvalues[remoteattnum];
 
-			/* Set attnum for error callback */
+			/* Set attphysnum for error callback */
 			apply_error_callback_arg.remote_attnum = remoteattnum;
 
 			if (tupleData->colstatus[remoteattnum] == LOGICALREP_COLUMN_TEXT)
@@ -794,7 +794,7 @@ slot_modify_data(TupleTableSlot *slot, TupleTableSlot *srcslot,
 				slot->tts_isnull[i] = true;
 			}
 
-			/* Reset attnum for error callback */
+			/* Reset attphysnum for error callback */
 			apply_error_callback_arg.remote_attnum = -1;
 		}
 	}

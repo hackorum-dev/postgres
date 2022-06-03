@@ -290,19 +290,19 @@ logicalrep_rel_mark_updatable(LogicalRepRelMapEntry *entry)
 	i = -1;
 	while ((i = bms_next_member(idkey, i)) >= 0)
 	{
-		int			attnum = i + FirstLowInvalidHeapAttributeNumber;
+		int			attphysnum = i + FirstLowInvalidHeapAttributeNumber;
 
-		if (!AttrNumberIsForUserDefinedAttr(attnum))
+		if (!AttrNumberIsForUserDefinedAttr(attphysnum))
 			ereport(ERROR,
 					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 					 errmsg("logical replication target relation \"%s.%s\" uses "
 							"system columns in REPLICA IDENTITY index",
 							remoterel->nspname, remoterel->relname)));
 
-		attnum = AttrNumberGetAttrOffset(attnum);
+		attphysnum = AttrNumberGetAttrOffset(attphysnum);
 
-		if (entry->attrmap->attnums[attnum] < 0 ||
-			!bms_is_member(entry->attrmap->attnums[attnum], remoterel->attkeys))
+		if (entry->attrmap->attnums[attphysnum] < 0 ||
+			!bms_is_member(entry->attrmap->attnums[attphysnum], remoterel->attkeys))
 		{
 			entry->updatable = false;
 			break;
@@ -410,7 +410,7 @@ logicalrep_rel_open(LogicalRepRelId remoteid, LOCKMODE lockmode)
 		missingatts = bms_add_range(NULL, 0, remoterel->natts - 1);
 		for (i = 0; i < desc->natts; i++)
 		{
-			int			attnum;
+			int			attphysnum;
 			Form_pg_attribute attr = TupleDescAttr(desc, i);
 
 			if (attr->attisdropped || attr->attgenerated)
@@ -419,12 +419,12 @@ logicalrep_rel_open(LogicalRepRelId remoteid, LOCKMODE lockmode)
 				continue;
 			}
 
-			attnum = logicalrep_rel_att_by_name(remoterel,
+			attphysnum = logicalrep_rel_att_by_name(remoterel,
 												NameStr(attr->attname));
 
-			entry->attrmap->attnums[i] = attnum;
-			if (attnum >= 0)
-				missingatts = bms_del_member(missingatts, attnum);
+			entry->attrmap->attnums[i] = attphysnum;
+			if (attphysnum >= 0)
+				missingatts = bms_del_member(missingatts, attphysnum);
 		}
 
 		logicalrep_report_missing_attrs(remoterel, missingatts);

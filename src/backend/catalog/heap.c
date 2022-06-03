@@ -142,7 +142,7 @@ static const FormData_pg_attribute a1 = {
 	.attname = {"ctid"},
 	.atttypid = TIDOID,
 	.attlen = sizeof(ItemPointerData),
-	.attnum = SelfItemPointerAttributeNumber,
+	.attphysnum = SelfItemPointerAttributeNumber,
 	.attcacheoff = -1,
 	.atttypmod = -1,
 	.attbyval = false,
@@ -156,7 +156,7 @@ static const FormData_pg_attribute a2 = {
 	.attname = {"xmin"},
 	.atttypid = XIDOID,
 	.attlen = sizeof(TransactionId),
-	.attnum = MinTransactionIdAttributeNumber,
+	.attphysnum = MinTransactionIdAttributeNumber,
 	.attcacheoff = -1,
 	.atttypmod = -1,
 	.attbyval = true,
@@ -170,7 +170,7 @@ static const FormData_pg_attribute a3 = {
 	.attname = {"cmin"},
 	.atttypid = CIDOID,
 	.attlen = sizeof(CommandId),
-	.attnum = MinCommandIdAttributeNumber,
+	.attphysnum = MinCommandIdAttributeNumber,
 	.attcacheoff = -1,
 	.atttypmod = -1,
 	.attbyval = true,
@@ -184,7 +184,7 @@ static const FormData_pg_attribute a4 = {
 	.attname = {"xmax"},
 	.atttypid = XIDOID,
 	.attlen = sizeof(TransactionId),
-	.attnum = MaxTransactionIdAttributeNumber,
+	.attphysnum = MaxTransactionIdAttributeNumber,
 	.attcacheoff = -1,
 	.atttypmod = -1,
 	.attbyval = true,
@@ -198,7 +198,7 @@ static const FormData_pg_attribute a5 = {
 	.attname = {"cmax"},
 	.atttypid = CIDOID,
 	.attlen = sizeof(CommandId),
-	.attnum = MaxCommandIdAttributeNumber,
+	.attphysnum = MaxCommandIdAttributeNumber,
 	.attcacheoff = -1,
 	.atttypmod = -1,
 	.attbyval = true,
@@ -218,7 +218,7 @@ static const FormData_pg_attribute a6 = {
 	.attname = {"tableoid"},
 	.atttypid = OIDOID,
 	.attlen = sizeof(Oid),
-	.attnum = TableOidAttributeNumber,
+	.attphysnum = TableOidAttributeNumber,
 	.attcacheoff = -1,
 	.atttypmod = -1,
 	.attbyval = true,
@@ -731,7 +731,7 @@ InsertPgAttributeTuples(Relation pg_attribute_rel,
 		slot[slotCount]->tts_values[Anum_pg_attribute_atttypid - 1] = ObjectIdGetDatum(attrs->atttypid);
 		slot[slotCount]->tts_values[Anum_pg_attribute_attstattarget - 1] = Int32GetDatum(attrs->attstattarget);
 		slot[slotCount]->tts_values[Anum_pg_attribute_attlen - 1] = Int16GetDatum(attrs->attlen);
-		slot[slotCount]->tts_values[Anum_pg_attribute_attnum - 1] = Int16GetDatum(attrs->attnum);
+		slot[slotCount]->tts_values[Anum_pg_attribute_attphysnum - 1] = Int16GetDatum(attrs->attphysnum);
 		slot[slotCount]->tts_values[Anum_pg_attribute_attndims - 1] = Int32GetDatum(attrs->attndims);
 		slot[slotCount]->tts_values[Anum_pg_attribute_attcacheoff - 1] = Int32GetDatum(-1);
 		slot[slotCount]->tts_values[Anum_pg_attribute_atttypmod - 1] = Int32GetDatum(attrs->atttypmod);
@@ -1578,7 +1578,7 @@ DeleteAttributeTuples(Oid relid)
 				BTEqualStrategyNumber, F_OIDEQ,
 				ObjectIdGetDatum(relid));
 
-	scan = systable_beginscan(attrel, AttributeRelidNumIndexId, true,
+	scan = systable_beginscan(attrel, AttributeRelidPhysNumIndexId, true,
 							  NULL, 1, key);
 
 	/* Delete all the matching tuples */
@@ -1615,11 +1615,11 @@ DeleteSystemAttributeTuples(Oid relid)
 				BTEqualStrategyNumber, F_OIDEQ,
 				ObjectIdGetDatum(relid));
 	ScanKeyInit(&key[1],
-				Anum_pg_attribute_attnum,
+				Anum_pg_attribute_attphysnum,
 				BTLessEqualStrategyNumber, F_INT2LE,
 				Int16GetDatum(0));
 
-	scan = systable_beginscan(attrel, AttributeRelidNumIndexId, true,
+	scan = systable_beginscan(attrel, AttributeRelidPhysNumIndexId, true,
 							  NULL, 2, key);
 
 	/* Delete all the matching tuples */
@@ -1640,7 +1640,7 @@ DeleteSystemAttributeTuples(Oid relid)
  * is handled by dependency.c.)
  */
 void
-RemoveAttributeById(Oid relid, AttrNumber attnum)
+RemoveAttributeById(Oid relid, AttrNumber attphysnum)
 {
 	Relation	rel;
 	Relation	attr_rel;
@@ -1658,15 +1658,15 @@ RemoveAttributeById(Oid relid, AttrNumber attnum)
 
 	attr_rel = table_open(AttributeRelationId, RowExclusiveLock);
 
-	tuple = SearchSysCacheCopy2(ATTNUM,
+	tuple = SearchSysCacheCopy2(ATTPHYSNUM,
 								ObjectIdGetDatum(relid),
-								Int16GetDatum(attnum));
+								Int16GetDatum(attphysnum));
 	if (!HeapTupleIsValid(tuple))	/* shouldn't happen */
 		elog(ERROR, "cache lookup failed for attribute %d of relation %u",
-			 attnum, relid);
+			 attphysnum, relid);
 	attStruct = (Form_pg_attribute) GETSTRUCT(tuple);
 
-	if (attnum < 0)
+	if (attphysnum < 0)
 	{
 		/* System attribute (probably OID) ... just delete the row */
 
@@ -1703,7 +1703,7 @@ RemoveAttributeById(Oid relid, AttrNumber attnum)
 		 * Change the column name to something that isn't likely to conflict
 		 */
 		snprintf(newattname, sizeof(newattname),
-				 "........pg.dropped.%d........", attnum);
+				 "........pg.dropped.%d........", attphysnum);
 		namestrcpy(&(attStruct->attname), newattname);
 
 		/* clear the missing value if any */
@@ -1740,8 +1740,8 @@ RemoveAttributeById(Oid relid, AttrNumber attnum)
 
 	table_close(attr_rel, RowExclusiveLock);
 
-	if (attnum > 0)
-		RemoveStatistics(relid, attnum);
+	if (attphysnum > 0)
+		RemoveStatistics(relid, attphysnum);
 
 	relation_close(rel, NoLock);
 }
@@ -1941,7 +1941,7 @@ RelationClearMissing(Relation rel)
 	Relation	attr_rel;
 	Oid			relid = RelationGetRelid(rel);
 	int			natts = RelationGetNumberOfAttributes(rel);
-	int			attnum;
+	int			attphysnum;
 	Datum		repl_val[Natts_pg_attribute];
 	bool		repl_null[Natts_pg_attribute];
 	bool		repl_repl[Natts_pg_attribute];
@@ -1964,14 +1964,14 @@ RelationClearMissing(Relation rel)
 	attr_rel = table_open(AttributeRelationId, RowExclusiveLock);
 
 	/* process each non-system attribute, including any dropped columns */
-	for (attnum = 1; attnum <= natts; attnum++)
+	for (attphysnum = 1; attphysnum <= natts; attphysnum++)
 	{
-		tuple = SearchSysCache2(ATTNUM,
+		tuple = SearchSysCache2(ATTPHYSNUM,
 								ObjectIdGetDatum(relid),
-								Int16GetDatum(attnum));
+								Int16GetDatum(attphysnum));
 		if (!HeapTupleIsValid(tuple))	/* shouldn't happen */
 			elog(ERROR, "cache lookup failed for attribute %d of relation %u",
-				 attnum, relid);
+				 attphysnum, relid);
 
 		attrtuple = (Form_pg_attribute) GETSTRUCT(tuple);
 
@@ -2201,7 +2201,7 @@ StoreConstraints(Relation rel, List *cooked_constraints, bool is_internal)
 		switch (con->contype)
 		{
 			case CONSTR_DEFAULT:
-				con->conoid = StoreAttrDefault(rel, con->attnum, con->expr,
+				con->conoid = StoreAttrDefault(rel, con->attphysnum, con->expr,
 											   is_internal, false);
 				break;
 			case CONSTR_CHECK:
@@ -2301,7 +2301,7 @@ AddRelationNewConstraints(Relation rel,
 	foreach(cell, newColDefaults)
 	{
 		RawColumnDefault *colDef = (RawColumnDefault *) lfirst(cell);
-		Form_pg_attribute atp = TupleDescAttr(rel->rd_att, colDef->attnum - 1);
+		Form_pg_attribute atp = TupleDescAttr(rel->rd_att, colDef->attphysnum - 1);
 		Oid			defOid;
 
 		expr = cookDefault(pstate, colDef->raw_default,
@@ -2331,14 +2331,14 @@ AddRelationNewConstraints(Relation rel,
 		if (colDef->missingMode && contain_volatile_functions((Node *) expr))
 			colDef->missingMode = false;
 
-		defOid = StoreAttrDefault(rel, colDef->attnum, expr, is_internal,
+		defOid = StoreAttrDefault(rel, colDef->attphysnum, expr, is_internal,
 								  colDef->missingMode);
 
 		cooked = (CookedConstraint *) palloc(sizeof(CookedConstraint));
 		cooked->contype = CONSTR_DEFAULT;
 		cooked->conoid = defOid;
 		cooked->name = NULL;
-		cooked->attnum = colDef->attnum;
+		cooked->attphysnum = colDef->attphysnum;
 		cooked->expr = expr;
 		cooked->skip_validation = false;
 		cooked->is_local = is_local;
@@ -2469,7 +2469,7 @@ AddRelationNewConstraints(Relation rel,
 		cooked->contype = CONSTR_CHECK;
 		cooked->conoid = constrOid;
 		cooked->name = ccname;
-		cooked->attnum = 0;
+		cooked->attphysnum = 0;
 		cooked->expr = expr;
 		cooked->skip_validation = cdef->skip_validation;
 		cooked->is_local = is_local;
@@ -2695,23 +2695,23 @@ check_nested_generated_walker(Node *node, void *context)
 	{
 		Var		   *var = (Var *) node;
 		Oid			relid;
-		AttrNumber	attnum;
+		AttrNumber	attphysnum;
 
 		relid = rt_fetch(var->varno, pstate->p_rtable)->relid;
 		if (!OidIsValid(relid))
 			return false;		/* XXX shouldn't we raise an error? */
 
-		attnum = var->varattno;
+		attphysnum = var->varattno;
 
-		if (attnum > 0 && get_attgenerated(relid, attnum))
+		if (attphysnum > 0 && get_attgenerated(relid, attphysnum))
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 					 errmsg("cannot use generated column \"%s\" in column generation expression",
-							get_attname(relid, attnum, false)),
+							get_attname(relid, attphysnum, false)),
 					 errdetail("A generated column cannot reference another generated column."),
 					 parser_errposition(pstate, var->location)));
 		/* A whole-row Var is necessarily self-referential, so forbid it */
-		if (attnum == 0)
+		if (attphysnum == 0)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 					 errmsg("cannot use whole-row variable in column generation expression"),
@@ -2899,11 +2899,11 @@ CopyStatistics(Oid fromrelid, Oid torelid)
 /*
  * RemoveStatistics --- remove entries in pg_statistic for a rel or column
  *
- * If attnum is zero, remove all entries for rel; else remove only the one(s)
+ * If attphysnum is zero, remove all entries for rel; else remove only the one(s)
  * for that column.
  */
 void
-RemoveStatistics(Oid relid, AttrNumber attnum)
+RemoveStatistics(Oid relid, AttrNumber attphysnum)
 {
 	Relation	pgstatistic;
 	SysScanDesc scan;
@@ -2918,21 +2918,21 @@ RemoveStatistics(Oid relid, AttrNumber attnum)
 				BTEqualStrategyNumber, F_OIDEQ,
 				ObjectIdGetDatum(relid));
 
-	if (attnum == 0)
+	if (attphysnum == 0)
 		nkeys = 1;
 	else
 	{
 		ScanKeyInit(&key[1],
 					Anum_pg_statistic_staattnum,
 					BTEqualStrategyNumber, F_INT2EQ,
-					Int16GetDatum(attnum));
+					Int16GetDatum(attphysnum));
 		nkeys = 2;
 	}
 
 	scan = systable_beginscan(pgstatistic, StatisticRelidAttnumInhIndexId, true,
 							  NULL, nkeys, key);
 
-	/* we must loop even when attnum != 0, in case of inherited stats */
+	/* we must loop even when attphysnum != 0, in case of inherited stats */
 	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
 		CatalogTupleDelete(pgstatistic, &tuple->t_self);
 

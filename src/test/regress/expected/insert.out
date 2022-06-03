@@ -497,19 +497,19 @@ alter table mlparted11 drop a;
 alter table mlparted11 add a int;
 alter table mlparted11 drop a;
 alter table mlparted11 add a int not null;
--- attnum for key attribute 'a' is different in mlparted, mlparted1, and mlparted11
-select attrelid::regclass, attname, attnum
+-- attphysnum for key attribute 'a' is different in mlparted, mlparted1, and mlparted11
+select attrelid::regclass, attname, attphysnum
 from pg_attribute
 where attname = 'a'
  and (attrelid = 'mlparted'::regclass
    or attrelid = 'mlparted1'::regclass
    or attrelid = 'mlparted11'::regclass)
 order by attrelid::regclass::text;
-  attrelid  | attname | attnum 
-------------+---------+--------
- mlparted   | a       |      1
- mlparted1  | a       |      2
- mlparted11 | a       |      4
+  attrelid  | attname | attphysnum 
+------------+---------+------------
+ mlparted   | a       |          1
+ mlparted1  | a       |          2
+ mlparted11 | a       |          4
 (3 rows)
 
 alter table mlparted1 attach partition mlparted11 for values from (2) to (5);

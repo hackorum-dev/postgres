@@ -805,7 +805,7 @@ exec_object_restorecon(struct selabel_handle *sehnd, Oid catalogId)
 
 				object.classId = RelationRelationId;
 				object.objectId = attForm->attrelid;
-				object.objectSubId = attForm->attnum;
+				object.objectSubId = attForm->attphysnum;
 				break;
 
 			case ProcedureRelationId:

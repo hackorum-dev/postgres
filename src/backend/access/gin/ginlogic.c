@@ -229,16 +229,16 @@ ginInitConsistentFunction(GinState *ginstate, GinScanKey key)
 	}
 	else
 	{
-		key->consistentFmgrInfo = &ginstate->consistentFn[key->attnum - 1];
-		key->triConsistentFmgrInfo = &ginstate->triConsistentFn[key->attnum - 1];
-		key->collation = ginstate->supportCollation[key->attnum - 1];
+		key->consistentFmgrInfo = &ginstate->consistentFn[key->attphysnum - 1];
+		key->triConsistentFmgrInfo = &ginstate->triConsistentFn[key->attphysnum - 1];
+		key->collation = ginstate->supportCollation[key->attphysnum - 1];
 
-		if (OidIsValid(ginstate->consistentFn[key->attnum - 1].fn_oid))
+		if (OidIsValid(ginstate->consistentFn[key->attphysnum - 1].fn_oid))
 			key->boolConsistentFn = directBoolConsistentFn;
 		else
 			key->boolConsistentFn = shimBoolConsistentFn;
 
-		if (OidIsValid(ginstate->triConsistentFn[key->attnum - 1].fn_oid))
+		if (OidIsValid(ginstate->triConsistentFn[key->attphysnum - 1].fn_oid))
 			key->triConsistentFn = directTriConsistentFn;
 		else
 			key->triConsistentFn = shimTriConsistentFn;

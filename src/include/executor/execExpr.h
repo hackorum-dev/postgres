@@ -301,9 +301,9 @@ typedef struct ExprEvalStep
 		/* for EEOP_INNER/OUTER/SCAN_[SYS]VAR[_FIRST] */
 		struct
 		{
-			/* attnum is attr number - 1 for regular VAR ... */
+			/* attphysnum is attr number - 1 for regular VAR ... */
 			/* but it's just the normal (negative) attr number for SYSVAR */
-			int			attnum;
+			int			attphysnum;
 			Oid			vartype;	/* type OID of variable */
 		}			var;
 
@@ -323,7 +323,7 @@ typedef struct ExprEvalStep
 			/* target index in ExprState->resultslot->tts_values/nulls */
 			int			resultnum;
 			/* source attribute number - 1 */
-			int			attnum;
+			int			attphysnum;
 		}			assign_var;
 
 		/* for EEOP_ASSIGN_TMP[_MAKE_RO] */

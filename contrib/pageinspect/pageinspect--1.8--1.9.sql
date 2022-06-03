@@ -127,7 +127,7 @@ DROP FUNCTION brin_page_items(IN page bytea, IN index_oid regclass);
 CREATE FUNCTION brin_page_items(IN page bytea, IN index_oid regclass,
     OUT itemoffset int,
     OUT blknum int8,
-    OUT attnum int,
+    OUT attphysnum int,
     OUT allnulls bool,
     OUT hasnulls bool,
     OUT placeholder bool,

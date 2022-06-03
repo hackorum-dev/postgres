@@ -241,7 +241,7 @@ CreateStatistics(CreateStatsStmt *stmt)
 			attForm = (Form_pg_attribute) GETSTRUCT(atttuple);
 
 			/* Disallow use of system attributes in extended stats */
-			if (attForm->attnum <= 0)
+			if (attForm->attphysnum <= 0)
 				ereport(ERROR,
 						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 						 errmsg("statistics creation on system columns is not supported")));
@@ -254,7 +254,7 @@ CreateStatistics(CreateStatsStmt *stmt)
 						 errmsg("column \"%s\" cannot be used in statistics because its type %s has no default btree operator class",
 								attname, format_type_be(attForm->atttypid))));
 
-			attnums[nattnums] = attForm->attnum;
+			attnums[nattnums] = attForm->attphysnum;
 			nattnums++;
 			ReleaseSysCache(atttuple);
 		}
@@ -296,9 +296,9 @@ CreateStatistics(CreateStatsStmt *stmt)
 			k = -1;
 			while ((k = bms_next_member(attnums, k)) >= 0)
 			{
-				AttrNumber	attnum = k + FirstLowInvalidHeapAttributeNumber;
+				AttrNumber	attphysnum = k + FirstLowInvalidHeapAttributeNumber;
 
-				if (attnum <= 0)
+				if (attphysnum <= 0)
 					ereport(ERROR,
 							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 							 errmsg("statistics creation on system columns is not supported")));

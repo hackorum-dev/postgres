@@ -346,7 +346,7 @@ SendXlogRecPtrResult(XLogRecPtr ptr, TimeLineID tli)
 	/* Field headers */
 	pq_sendstring(&buf, "recptr");
 	pq_sendint32(&buf, 0);		/* table oid */
-	pq_sendint16(&buf, 0);		/* attnum */
+	pq_sendint16(&buf, 0);		/* attphysnum */
 	pq_sendint32(&buf, TEXTOID);	/* type oid */
 	pq_sendint16(&buf, -1);
 	pq_sendint32(&buf, 0);
@@ -354,7 +354,7 @@ SendXlogRecPtrResult(XLogRecPtr ptr, TimeLineID tli)
 
 	pq_sendstring(&buf, "tli");
 	pq_sendint32(&buf, 0);		/* table oid */
-	pq_sendint16(&buf, 0);		/* attnum */
+	pq_sendint16(&buf, 0);		/* attphysnum */
 
 	/*
 	 * int8 may seem like a surprising data type for this, but in theory int4
@@ -401,7 +401,7 @@ SendTablespaceList(List *tablespaces)
 	/* First field - spcoid */
 	pq_sendstring(&buf, "spcoid");
 	pq_sendint32(&buf, 0);		/* table oid */
-	pq_sendint16(&buf, 0);		/* attnum */
+	pq_sendint16(&buf, 0);		/* attphysnum */
 	pq_sendint32(&buf, OIDOID); /* type oid */
 	pq_sendint16(&buf, 4);		/* typlen */
 	pq_sendint32(&buf, 0);		/* typmod */

@@ -1250,8 +1250,8 @@ create table gc1() inherits (c1);
 
 select relname, attname, attinhcount, attislocal
 from pg_class join pg_attribute on (pg_class.oid = pg_attribute.attrelid)
-where relname in ('p1','p2','c1','gc1') and attnum > 0 and not attisdropped
-order by relname, attnum;
+where relname in ('p1','p2','c1','gc1') and attphysnum > 0 and not attisdropped
+order by relname, attphysnum;
 
 -- should work
 alter table only p1 drop column name;
@@ -1273,8 +1273,8 @@ alter table dropColumnExists drop column if exists non_existing; --succeed
 
 select relname, attname, attinhcount, attislocal
 from pg_class join pg_attribute on (pg_class.oid = pg_attribute.attrelid)
-where relname in ('p1','p2','c1','gc1') and attnum > 0 and not attisdropped
-order by relname, attnum;
+where relname in ('p1','p2','c1','gc1') and attphysnum > 0 and not attisdropped
+order by relname, attphysnum;
 
 drop table p1, p2 cascade;
 
@@ -1287,8 +1287,8 @@ alter table depth0 add c text;
 
 select attrelid::regclass, attname, attinhcount, attislocal
 from pg_attribute
-where attnum > 0 and attrelid::regclass in ('depth0', 'depth1', 'depth2')
-order by attrelid::regclass::text, attnum;
+where attphysnum > 0 and attrelid::regclass in ('depth0', 'depth1', 'depth2')
+order by attrelid::regclass::text, attphysnum;
 
 -- test renumbering of child-table columns in inherited operations
 
@@ -2434,7 +2434,7 @@ CREATE TABLE part_1 (
 );
 ALTER TABLE list_parted ATTACH PARTITION part_1 FOR VALUES IN (1);
 -- attislocal and conislocal are always false for merged attributes and constraints respectively.
-SELECT attislocal, attinhcount FROM pg_attribute WHERE attrelid = 'part_1'::regclass AND attnum > 0;
+SELECT attislocal, attinhcount FROM pg_attribute WHERE attrelid = 'part_1'::regclass AND attphysnum > 0;
 SELECT conislocal, coninhcount FROM pg_constraint WHERE conrelid = 'part_1'::regclass AND conname = 'check_a';
 
 -- check that the new partition won't overlap with an existing partition
@@ -2580,7 +2580,7 @@ CREATE TABLE part_7_a_null (
 	c int,
 	d int,
 	e int,
-	LIKE list_parted2,  -- 'a' will have attnum = 4
+	LIKE list_parted2,  -- 'a' will have attphysnum = 4
 	CONSTRAINT check_b CHECK (b IS NULL OR b = 'a'),
 	CONSTRAINT check_a CHECK (a IS NOT NULL AND a = 7)
 );
@@ -2707,7 +2707,7 @@ DROP TABLE not_a_part;
 -- check that, after being detached, attinhcount/coninhcount is dropped to 0 and
 -- attislocal/conislocal is set to true
 ALTER TABLE list_parted2 DETACH PARTITION part_3_4;
-SELECT attinhcount, attislocal FROM pg_attribute WHERE attrelid = 'part_3_4'::regclass AND attnum > 0;
+SELECT attinhcount, attislocal FROM pg_attribute WHERE attrelid = 'part_3_4'::regclass AND attphysnum > 0;
 SELECT coninhcount, conislocal FROM pg_constraint WHERE conrelid = 'part_3_4'::regclass AND conname = 'check_a';
 DROP TABLE part_3_4;
 
@@ -2816,8 +2816,8 @@ alter table p11 drop a;
 alter table p11 add a int;
 alter table p11 drop a;
 alter table p11 add a int not null;
--- attnum for key attribute 'a' is different in p, p1, and p11
-select attrelid::regclass, attname, attnum
+-- attphysnum for key attribute 'a' is different in p, p1, and p11
+select attrelid::regclass, attname, attphysnum
 from pg_attribute
 where attname = 'a'
  and (attrelid = 'p'::regclass

@@ -62,7 +62,7 @@ typedef struct AttStatsSlot
 } AttStatsSlot;
 
 /* Hook for plugins to get control in get_attavgwidth() */
-typedef int32 (*get_attavgwidth_hook_type) (Oid relid, AttrNumber attnum);
+typedef int32 (*get_attavgwidth_hook_type) (Oid relid, AttrNumber attphysnum);
 extern PGDLLIMPORT get_attavgwidth_hook_type get_attavgwidth_hook;
 
 extern bool op_in_opfamily(Oid opno, Oid opfamily);
@@ -88,14 +88,14 @@ extern bool equality_ops_are_compatible(Oid opno1, Oid opno2);
 extern bool comparison_ops_are_compatible(Oid opno1, Oid opno2);
 extern Oid	get_opfamily_proc(Oid opfamily, Oid lefttype, Oid righttype,
 							  int16 procnum);
-extern char *get_attname(Oid relid, AttrNumber attnum, bool missing_ok);
-extern AttrNumber get_attnum(Oid relid, const char *attname);
-extern int	get_attstattarget(Oid relid, AttrNumber attnum);
-extern char get_attgenerated(Oid relid, AttrNumber attnum);
-extern Oid	get_atttype(Oid relid, AttrNumber attnum);
-extern void get_atttypetypmodcoll(Oid relid, AttrNumber attnum,
+extern char *get_attname(Oid relid, AttrNumber attphysnum, bool missing_ok);
+extern AttrNumber get_attphysnum(Oid relid, const char *attname);
+extern int	get_attstattarget(Oid relid, AttrNumber attphysnum);
+extern char get_attgenerated(Oid relid, AttrNumber attphysnum);
+extern Oid	get_atttype(Oid relid, AttrNumber attphysnum);
+extern void get_atttypetypmodcoll(Oid relid, AttrNumber attphysnum,
 								  Oid *typid, int32 *typmod, Oid *collid);
-extern Datum get_attoptions(Oid relid, int16 attnum);
+extern Datum get_attoptions(Oid relid, int16 attphysnum);
 extern Oid	get_cast_oid(Oid sourcetypeid, Oid targettypeid, bool missing_ok);
 extern char *get_collation_name(Oid colloid);
 extern bool get_collation_isdeterministic(Oid colloid);
@@ -184,7 +184,7 @@ extern const struct SubscriptRoutines *getSubscriptingRoutines(Oid typid,
 extern Oid	getBaseType(Oid typid);
 extern Oid	getBaseTypeAndTypmod(Oid typid, int32 *typmod);
 extern int32 get_typavgwidth(Oid typid, int32 typmod);
-extern int32 get_attavgwidth(Oid relid, AttrNumber attnum);
+extern int32 get_attavgwidth(Oid relid, AttrNumber attphysnum);
 extern bool get_attstatsslot(AttStatsSlot *sslot, HeapTuple statstuple,
 							 int reqkind, Oid reqop, int flags);
 extern void free_attstatsslot(AttStatsSlot *sslot);

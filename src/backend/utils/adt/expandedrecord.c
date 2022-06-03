@@ -1031,7 +1031,7 @@ expanded_record_lookup_field(ExpandedRecordHeader *erh, const char *fieldname,
 		if (namestrcmp(&attr->attname, fieldname) == 0 &&
 			!attr->attisdropped)
 		{
-			finfo->fnumber = attr->attnum;
+			finfo->fnumber = attr->attphysnum;
 			finfo->ftypeid = attr->atttypid;
 			finfo->ftypmod = attr->atttypmod;
 			finfo->fcollation = attr->attcollation;
@@ -1043,7 +1043,7 @@ expanded_record_lookup_field(ExpandedRecordHeader *erh, const char *fieldname,
 	sysattr = SystemAttributeByName(fieldname);
 	if (sysattr != NULL)
 	{
-		finfo->fnumber = sysattr->attnum;
+		finfo->fnumber = sysattr->attphysnum;
 		finfo->ftypeid = sysattr->atttypid;
 		finfo->ftypmod = sysattr->atttypmod;
 		finfo->fcollation = sysattr->attcollation;

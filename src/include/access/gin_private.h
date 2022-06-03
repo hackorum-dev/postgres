@@ -95,13 +95,13 @@ extern Buffer GinNewBuffer(Relation index);
 extern void GinInitBuffer(Buffer b, uint32 f);
 extern void GinInitPage(Page page, uint32 f, Size pageSize);
 extern void GinInitMetabuffer(Buffer b);
-extern int	ginCompareEntries(GinState *ginstate, OffsetNumber attnum,
+extern int	ginCompareEntries(GinState *ginstate, OffsetNumber attphysnum,
 							  Datum a, GinNullCategory categorya,
 							  Datum b, GinNullCategory categoryb);
 extern int	ginCompareAttEntries(GinState *ginstate,
 								 OffsetNumber attnuma, Datum a, GinNullCategory categorya,
 								 OffsetNumber attnumb, Datum b, GinNullCategory categoryb);
-extern Datum *ginExtractEntries(GinState *ginstate, OffsetNumber attnum,
+extern Datum *ginExtractEntries(GinState *ginstate, OffsetNumber attphysnum,
 								Datum value, bool isNull,
 								int32 *nentries, GinNullCategory **categories);
 
@@ -119,7 +119,7 @@ extern bool gininsert(Relation index, Datum *values, bool *isnull,
 					  bool indexUnchanged,
 					  struct IndexInfo *indexInfo);
 extern void ginEntryInsert(GinState *ginstate,
-						   OffsetNumber attnum, Datum key, GinNullCategory category,
+						   OffsetNumber attphysnum, Datum key, GinNullCategory category,
 						   ItemPointerData *items, uint32 nitem,
 						   GinStatsData *buildStats);
 
@@ -210,13 +210,13 @@ extern void ginInsertValue(GinBtree btree, GinBtreeStack *stack,
 
 /* ginentrypage.c */
 extern IndexTuple GinFormTuple(GinState *ginstate,
-							   OffsetNumber attnum, Datum key, GinNullCategory category,
+							   OffsetNumber attphysnum, Datum key, GinNullCategory category,
 							   Pointer data, Size dataSize, int nipd, bool errorTooBig);
-extern void ginPrepareEntryScan(GinBtree btree, OffsetNumber attnum,
+extern void ginPrepareEntryScan(GinBtree btree, OffsetNumber attphysnum,
 								Datum key, GinNullCategory category,
 								GinState *ginstate);
 extern void ginEntryFillRoot(GinBtree btree, Page root, BlockNumber lblkno, Page lpage, BlockNumber rblkno, Page rpage);
-extern ItemPointer ginReadTuple(GinState *ginstate, OffsetNumber attnum,
+extern ItemPointer ginReadTuple(GinState *ginstate, OffsetNumber attphysnum,
 								IndexTuple itup, int *nitems);
 
 /* gindatapage.c */
@@ -302,7 +302,7 @@ typedef struct GinScanKeyData
 	Pointer    *extra_data;
 	StrategyNumber strategy;
 	int32		searchMode;
-	OffsetNumber attnum;
+	OffsetNumber attphysnum;
 
 	/*
 	 * An excludeOnly scan key is not able to enumerate all matching tuples.
@@ -340,7 +340,7 @@ typedef struct GinScanEntryData
 	Pointer		extra_data;
 	StrategyNumber strategy;
 	int32		searchMode;
-	OffsetNumber attnum;
+	OffsetNumber attphysnum;
 
 	/* Current page in posting tree */
 	Buffer		buffer;
@@ -419,7 +419,7 @@ typedef struct GinEntryAccumulator
 	RBTNode		rbtnode;
 	Datum		key;
 	GinNullCategory category;
-	OffsetNumber attnum;
+	OffsetNumber attphysnum;
 	bool		shouldSort;
 	ItemPointerData *list;
 	uint32		maxcount;		/* allocated size of list[] */
@@ -438,12 +438,12 @@ typedef struct
 
 extern void ginInitBA(BuildAccumulator *accum);
 extern void ginInsertBAEntries(BuildAccumulator *accum,
-							   ItemPointer heapptr, OffsetNumber attnum,
+							   ItemPointer heapptr, OffsetNumber attphysnum,
 							   Datum *entries, GinNullCategory *categories,
 							   int32 nentries);
 extern void ginBeginBAScan(BuildAccumulator *accum);
 extern ItemPointerData *ginGetBAEntry(BuildAccumulator *accum,
-									  OffsetNumber *attnum, Datum *key, GinNullCategory *category,
+									  OffsetNumber *attphysnum, Datum *key, GinNullCategory *category,
 									  uint32 *n);
 
 /* ginfast.c */
@@ -460,7 +460,7 @@ extern void ginHeapTupleFastInsert(GinState *ginstate,
 								   GinTupleCollector *collector);
 extern void ginHeapTupleFastCollect(GinState *ginstate,
 									GinTupleCollector *collector,
-									OffsetNumber attnum, Datum value, bool isNull,
+									OffsetNumber attphysnum, Datum value, bool isNull,
 									ItemPointer ht_ctid);
 extern void ginInsertCleanup(GinState *ginstate, bool full_clean,
 							 bool fill_fsm, bool forceCleanup, IndexBulkDeleteResult *stats);

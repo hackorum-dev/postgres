@@ -453,7 +453,7 @@ boot_openrel(char *relname)
 			Form_pg_attribute at = attrtypes[i];
 
 			elog(DEBUG4, "create attribute %d name %s len %d num %d type %u",
-				 i, NameStr(at->attname), at->attlen, at->attnum,
+				 i, NameStr(at->attname), at->attlen, at->attphysnum,
 				 at->atttypid);
 		}
 	}
@@ -501,7 +501,7 @@ closerel(char *name)
  * ----------------
  */
 void
-DefineAttr(char *name, char *type, int attnum, int nullness)
+DefineAttr(char *name, char *type, int attphysnum, int nullness)
 {
 	Oid			typeoid;
 
@@ -511,46 +511,46 @@ DefineAttr(char *name, char *type, int attnum, int nullness)
 		closerel(NULL);
 	}
 
-	if (attrtypes[attnum] == NULL)
-		attrtypes[attnum] = AllocateAttribute();
-	MemSet(attrtypes[attnum], 0, ATTRIBUTE_FIXED_PART_SIZE);
+	if (attrtypes[attphysnum] == NULL)
+		attrtypes[attphysnum] = AllocateAttribute();
+	MemSet(attrtypes[attphysnum], 0, ATTRIBUTE_FIXED_PART_SIZE);
 
-	namestrcpy(&attrtypes[attnum]->attname, name);
-	elog(DEBUG4, "column %s %s", NameStr(attrtypes[attnum]->attname), type);
-	attrtypes[attnum]->attnum = attnum + 1;
+	namestrcpy(&attrtypes[attphysnum]->attname, name);
+	elog(DEBUG4, "column %s %s", NameStr(attrtypes[attphysnum]->attname), type);
+	attrtypes[attphysnum]->attphysnum = attphysnum + 1;
 
 	typeoid = gettype(type);
 
 	if (Typ != NIL)
 	{
-		attrtypes[attnum]->atttypid = Ap->am_oid;
-		attrtypes[attnum]->attlen = Ap->am_typ.typlen;
-		attrtypes[attnum]->attbyval = Ap->am_typ.typbyval;
-		attrtypes[attnum]->attalign = Ap->am_typ.typalign;
-		attrtypes[attnum]->attstorage = Ap->am_typ.typstorage;
-		attrtypes[attnum]->attcompression = InvalidCompressionMethod;
-		attrtypes[attnum]->attcollation = Ap->am_typ.typcollation;
+		attrtypes[attphysnum]->atttypid = Ap->am_oid;
+		attrtypes[attphysnum]->attlen = Ap->am_typ.typlen;
+		attrtypes[attphysnum]->attbyval = Ap->am_typ.typbyval;
+		attrtypes[attphysnum]->attalign = Ap->am_typ.typalign;
+		attrtypes[attphysnum]->attstorage = Ap->am_typ.typstorage;
+		attrtypes[attphysnum]->attcompression = InvalidCompressionMethod;
+		attrtypes[attphysnum]->attcollation = Ap->am_typ.typcollation;
 		/* if an array type, assume 1-dimensional attribute */
 		if (Ap->am_typ.typelem != InvalidOid && Ap->am_typ.typlen < 0)
-			attrtypes[attnum]->attndims = 1;
+			attrtypes[attphysnum]->attndims = 1;
 		else
-			attrtypes[attnum]->attndims = 0;
+			attrtypes[attphysnum]->attndims = 0;
 	}
 	else
 	{
-		attrtypes[attnum]->atttypid = TypInfo[typeoid].oid;
-		attrtypes[attnum]->attlen = TypInfo[typeoid].len;
-		attrtypes[attnum]->attbyval = TypInfo[typeoid].byval;
-		attrtypes[attnum]->attalign = TypInfo[typeoid].align;
-		attrtypes[attnum]->attstorage = TypInfo[typeoid].storage;
-		attrtypes[attnum]->attcompression = InvalidCompressionMethod;
-		attrtypes[attnum]->attcollation = TypInfo[typeoid].collation;
+		attrtypes[attphysnum]->atttypid = TypInfo[typeoid].oid;
+		attrtypes[attphysnum]->attlen = TypInfo[typeoid].len;
+		attrtypes[attphysnum]->attbyval = TypInfo[typeoid].byval;
+		attrtypes[attphysnum]->attalign = TypInfo[typeoid].align;
+		attrtypes[attphysnum]->attstorage = TypInfo[typeoid].storage;
+		attrtypes[attphysnum]->attcompression = InvalidCompressionMethod;
+		attrtypes[attphysnum]->attcollation = TypInfo[typeoid].collation;
 		/* if an array type, assume 1-dimensional attribute */
 		if (TypInfo[typeoid].elem != InvalidOid &&
-			attrtypes[attnum]->attlen < 0)
-			attrtypes[attnum]->attndims = 1;
+			attrtypes[attphysnum]->attlen < 0)
+			attrtypes[attphysnum]->attndims = 1;
 		else
-			attrtypes[attnum]->attndims = 0;
+			attrtypes[attphysnum]->attndims = 0;
 	}
 
 	/*
@@ -559,21 +559,21 @@ DefineAttr(char *name, char *type, int attnum, int nullness)
 	 * collation.  This is essential to allow template0 to be cloned with a
 	 * different database collation.
 	 */
-	if (OidIsValid(attrtypes[attnum]->attcollation))
-		attrtypes[attnum]->attcollation = C_COLLATION_OID;
+	if (OidIsValid(attrtypes[attphysnum]->attcollation))
+		attrtypes[attphysnum]->attcollation = C_COLLATION_OID;
 
-	attrtypes[attnum]->attstattarget = -1;
-	attrtypes[attnum]->attcacheoff = -1;
-	attrtypes[attnum]->atttypmod = -1;
-	attrtypes[attnum]->attislocal = true;
+	attrtypes[attphysnum]->attstattarget = -1;
+	attrtypes[attphysnum]->attcacheoff = -1;
+	attrtypes[attphysnum]->atttypmod = -1;
+	attrtypes[attphysnum]->attislocal = true;
 
 	if (nullness == BOOTCOL_NULL_FORCE_NOT_NULL)
 	{
-		attrtypes[attnum]->attnotnull = true;
+		attrtypes[attphysnum]->attnotnull = true;
 	}
 	else if (nullness == BOOTCOL_NULL_FORCE_NULL)
 	{
-		attrtypes[attnum]->attnotnull = false;
+		attrtypes[attphysnum]->attnotnull = false;
 	}
 	else
 	{
@@ -584,19 +584,19 @@ DefineAttr(char *name, char *type, int attnum, int nullness)
 		 * likewise fixed-width and not-null.  This corresponds to case where
 		 * column can be accessed directly via C struct declaration.
 		 */
-		if (attrtypes[attnum]->attlen > 0)
+		if (attrtypes[attphysnum]->attlen > 0)
 		{
 			int			i;
 
 			/* check earlier attributes */
-			for (i = 0; i < attnum; i++)
+			for (i = 0; i < attphysnum; i++)
 			{
 				if (attrtypes[i]->attlen <= 0 ||
 					!attrtypes[i]->attnotnull)
 					break;
 			}
-			if (i == attnum)
-				attrtypes[attnum]->attnotnull = true;
+			if (i == attphysnum)
+				attrtypes[attphysnum]->attnotnull = true;
 		}
 	}
 }

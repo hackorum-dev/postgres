@@ -32,7 +32,7 @@
 
 
 /*
- * Store a default expression for column attnum of relation rel.
+ * Store a default expression for column attphysnum of relation rel.
  *
  * Returns the OID of the new pg_attrdef tuple.
  *
@@ -43,7 +43,7 @@
  * in effect be changing existing tuples.
  */
 Oid
-StoreAttrDefault(Relation rel, AttrNumber attnum,
+StoreAttrDefault(Relation rel, AttrNumber attphysnum,
 				 Node *expr, bool is_internal, bool add_column_mode)
 {
 	char	   *adbin;
@@ -73,7 +73,7 @@ StoreAttrDefault(Relation rel, AttrNumber attnum,
 									Anum_pg_attrdef_oid);
 	values[Anum_pg_attrdef_oid - 1] = ObjectIdGetDatum(attrdefOid);
 	values[Anum_pg_attrdef_adrelid - 1] = RelationGetRelid(rel);
-	values[Anum_pg_attrdef_adnum - 1] = attnum;
+	values[Anum_pg_attrdef_adnum - 1] = attphysnum;
 	values[Anum_pg_attrdef_adbin - 1] = CStringGetTextDatum(adbin);
 
 	tuple = heap_form_tuple(adrel->rd_att, values, nulls);
@@ -95,12 +95,12 @@ StoreAttrDefault(Relation rel, AttrNumber attnum,
 	 * exists.
 	 */
 	attrrel = table_open(AttributeRelationId, RowExclusiveLock);
-	atttup = SearchSysCacheCopy2(ATTNUM,
+	atttup = SearchSysCacheCopy2(ATTPHYSNUM,
 								 ObjectIdGetDatum(RelationGetRelid(rel)),
-								 Int16GetDatum(attnum));
+								 Int16GetDatum(attphysnum));
 	if (!HeapTupleIsValid(atttup))
 		elog(ERROR, "cache lookup failed for attribute %d of relation %u",
-			 attnum, RelationGetRelid(rel));
+			 attphysnum, RelationGetRelid(rel));
 	attStruct = (Form_pg_attribute) GETSTRUCT(atttup);
 	attgenerated = attStruct->attgenerated;
 	if (!attStruct->atthasdef)
@@ -136,7 +136,7 @@ StoreAttrDefault(Relation rel, AttrNumber attnum,
 
 			FreeExecutorState(estate);
 
-			defAttStruct = TupleDescAttr(rel->rd_att, attnum - 1);
+			defAttStruct = TupleDescAttr(rel->rd_att, attphysnum - 1);
 
 			if (missingIsNull)
 			{
@@ -179,7 +179,7 @@ StoreAttrDefault(Relation rel, AttrNumber attnum,
 	 */
 	colobject.classId = RelationRelationId;
 	colobject.objectId = RelationGetRelid(rel);
-	colobject.objectSubId = attnum;
+	colobject.objectSubId = attphysnum;
 
 	recordDependencyOn(&defobject, &colobject,
 					   attgenerated ? DEPENDENCY_INTERNAL : DEPENDENCY_AUTO);
@@ -200,7 +200,7 @@ StoreAttrDefault(Relation rel, AttrNumber attnum,
 	 * needs to distinguish.
 	 */
 	InvokeObjectPostCreateHookArg(AttrDefaultRelationId,
-								  RelationGetRelid(rel), attnum, is_internal);
+								  RelationGetRelid(rel), attphysnum, is_internal);
 
 	return attrdefOid;
 }
@@ -213,7 +213,7 @@ StoreAttrDefault(Relation rel, AttrNumber attnum,
  * (If no default, raise error if complain is true, else return quietly.)
  */
 void
-RemoveAttrDefault(Oid relid, AttrNumber attnum,
+RemoveAttrDefault(Oid relid, AttrNumber attphysnum,
 				  DropBehavior behavior, bool complain, bool internal)
 {
 	Relation	attrdef_rel;
@@ -231,7 +231,7 @@ RemoveAttrDefault(Oid relid, AttrNumber attnum,
 	ScanKeyInit(&scankeys[1],
 				Anum_pg_attrdef_adnum,
 				BTEqualStrategyNumber, F_INT2EQ,
-				Int16GetDatum(attnum));
+				Int16GetDatum(attphysnum));
 
 	scan = systable_beginscan(attrdef_rel, AttrDefaultIndexId, true,
 							  NULL, 2, scankeys);
@@ -256,8 +256,8 @@ RemoveAttrDefault(Oid relid, AttrNumber attnum,
 	table_close(attrdef_rel, RowExclusiveLock);
 
 	if (complain && !found)
-		elog(ERROR, "could not find attrdef tuple for relation %u attnum %d",
-			 relid, attnum);
+		elog(ERROR, "could not find attrdef tuple for relation %u attphysnum %d",
+			 relid, attphysnum);
 }
 
 /*
@@ -310,7 +310,7 @@ RemoveAttrDefaultById(Oid attrdefId)
 	/* Fix the pg_attribute row */
 	attr_rel = table_open(AttributeRelationId, RowExclusiveLock);
 
-	tuple = SearchSysCacheCopy2(ATTNUM,
+	tuple = SearchSysCacheCopy2(ATTPHYSNUM,
 								ObjectIdGetDatum(myrelid),
 								Int16GetDatum(myattnum));
 	if (!HeapTupleIsValid(tuple))	/* shouldn't happen */
@@ -339,7 +339,7 @@ RemoveAttrDefaultById(Oid attrdefId)
  * Returns InvalidOid if there is no such pg_attrdef entry.
  */
 Oid
-GetAttrDefaultOid(Oid relid, AttrNumber attnum)
+GetAttrDefaultOid(Oid relid, AttrNumber attphysnum)
 {
 	Oid			result = InvalidOid;
 	Relation	attrdef;
@@ -357,7 +357,7 @@ GetAttrDefaultOid(Oid relid, AttrNumber attnum)
 				Anum_pg_attrdef_adnum,
 				BTEqualStrategyNumber,
 				F_INT2EQ,
-				Int16GetDatum(attnum));
+				Int16GetDatum(attphysnum));
 	scan = systable_beginscan(attrdef, AttrDefaultIndexId, true,
 							  NULL, 2, keys);
 

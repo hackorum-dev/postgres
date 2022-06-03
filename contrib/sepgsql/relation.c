@@ -40,7 +40,7 @@ static void sepgsql_index_modify(Oid indexOid);
  * although it also defines columns in addition to table.
  */
 void
-sepgsql_attribute_post_create(Oid relOid, AttrNumber attnum)
+sepgsql_attribute_post_create(Oid relOid, AttrNumber attphysnum)
 {
 	Relation	rel;
 	ScanKeyData skey[2];
@@ -72,17 +72,17 @@ sepgsql_attribute_post_create(Oid relOid, AttrNumber attnum)
 				BTEqualStrategyNumber, F_OIDEQ,
 				ObjectIdGetDatum(relOid));
 	ScanKeyInit(&skey[1],
-				Anum_pg_attribute_attnum,
+				Anum_pg_attribute_attphysnum,
 				BTEqualStrategyNumber, F_INT2EQ,
-				Int16GetDatum(attnum));
+				Int16GetDatum(attphysnum));
 
-	sscan = systable_beginscan(rel, AttributeRelidNumIndexId, true,
+	sscan = systable_beginscan(rel, AttributeRelidPhysNumIndexId, true,
 							   SnapshotSelf, 2, &skey[0]);
 
 	tuple = systable_getnext(sscan);
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "could not find tuple for column %d of relation %u",
-			 attnum, relOid);
+			 attphysnum, relOid);
 
 	attForm = (Form_pg_attribute) GETSTRUCT(tuple);
 
@@ -114,7 +114,7 @@ sepgsql_attribute_post_create(Oid relOid, AttrNumber attnum)
 	 */
 	object.classId = RelationRelationId;
 	object.objectId = relOid;
-	object.objectSubId = attnum;
+	object.objectSubId = attphysnum;
 	SetSecurityLabel(&object, SEPGSQL_LABEL_TAG, ncontext);
 
 	systable_endscan(sscan);
@@ -130,7 +130,7 @@ sepgsql_attribute_post_create(Oid relOid, AttrNumber attnum)
  * It checks privileges to drop the supplied column.
  */
 void
-sepgsql_attribute_drop(Oid relOid, AttrNumber attnum)
+sepgsql_attribute_drop(Oid relOid, AttrNumber attphysnum)
 {
 	ObjectAddress object;
 	char	   *audit_name;
@@ -144,7 +144,7 @@ sepgsql_attribute_drop(Oid relOid, AttrNumber attnum)
 	 */
 	object.classId = RelationRelationId;
 	object.objectId = relOid;
-	object.objectSubId = attnum;
+	object.objectSubId = attphysnum;
 	audit_name = getObjectIdentity(&object, false);
 
 	sepgsql_avc_check_perms(&object,
@@ -162,7 +162,7 @@ sepgsql_attribute_drop(Oid relOid, AttrNumber attnum)
  * by the `seclabel'.
  */
 void
-sepgsql_attribute_relabel(Oid relOid, AttrNumber attnum,
+sepgsql_attribute_relabel(Oid relOid, AttrNumber attphysnum,
 						  const char *seclabel)
 {
 	ObjectAddress object;
@@ -176,7 +176,7 @@ sepgsql_attribute_relabel(Oid relOid, AttrNumber attnum,
 
 	object.classId = RelationRelationId;
 	object.objectId = relOid;
-	object.objectSubId = attnum;
+	object.objectSubId = attphysnum;
 	audit_name = getObjectIdentity(&object, false);
 
 	/*
@@ -206,7 +206,7 @@ sepgsql_attribute_relabel(Oid relOid, AttrNumber attnum,
  * It checks privileges to alter the supplied column.
  */
 void
-sepgsql_attribute_setattr(Oid relOid, AttrNumber attnum)
+sepgsql_attribute_setattr(Oid relOid, AttrNumber attphysnum)
 {
 	ObjectAddress object;
 	char	   *audit_name;
@@ -220,7 +220,7 @@ sepgsql_attribute_setattr(Oid relOid, AttrNumber attnum)
 	 */
 	object.classId = RelationRelationId;
 	object.objectId = relOid;
-	object.objectSubId = attnum;
+	object.objectSubId = attphysnum;
 	audit_name = getObjectIdentity(&object, false);
 
 	sepgsql_avc_check_perms(&object,
@@ -363,7 +363,7 @@ sepgsql_relation_post_create(Oid relOid)
 					BTEqualStrategyNumber, F_OIDEQ,
 					ObjectIdGetDatum(relOid));
 
-		ascan = systable_beginscan(arel, AttributeRelidNumIndexId, true,
+		ascan = systable_beginscan(arel, AttributeRelidPhysNumIndexId, true,
 								   SnapshotSelf, 1, &akey);
 
 		while (HeapTupleIsValid(atup = systable_getnext(ascan)))
@@ -392,7 +392,7 @@ sepgsql_relation_post_create(Oid relOid)
 
 			object.classId = RelationRelationId;
 			object.objectId = relOid;
-			object.objectSubId = attForm->attnum;
+			object.objectSubId = attForm->attphysnum;
 			SetSecurityLabel(&object, SEPGSQL_LABEL_TAG, ccontext);
 
 			pfree(ccontext);
@@ -490,7 +490,7 @@ sepgsql_relation_drop(Oid relOid)
 		HeapTuple	atttup;
 		int			i;
 
-		attrList = SearchSysCacheList1(ATTNUM, ObjectIdGetDatum(relOid));
+		attrList = SearchSysCacheList1(ATTPHYSNUM, ObjectIdGetDatum(relOid));
 		for (i = 0; i < attrList->n_members; i++)
 		{
 			atttup = &attrList->members[i]->tuple;
@@ -501,7 +501,7 @@ sepgsql_relation_drop(Oid relOid)
 
 			object.classId = RelationRelationId;
 			object.objectId = relOid;
-			object.objectSubId = attForm->attnum;
+			object.objectSubId = attForm->attphysnum;
 			audit_name = getObjectIdentity(&object, false);
 
 			sepgsql_avc_check_perms(&object,

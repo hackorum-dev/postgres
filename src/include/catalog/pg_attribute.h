@@ -68,7 +68,7 @@ CATALOG(pg_attribute,1249,AttributeRelationId) BKI_BOOTSTRAP BKI_ROWTYPE_OID(75,
 	int16		attlen;
 
 	/*
-	 * attnum is the "attribute number" for the attribute:	A value that
+	 * attphysnum is the "attribute number" for the attribute:	A value that
 	 * uniquely identifies this attribute within its class. For user
 	 * attributes, Attribute numbers are greater than 0 and not greater than
 	 * the number of attributes in the class. I.e. if the Class pg_class says
@@ -78,9 +78,9 @@ CATALOG(pg_attribute,1249,AttributeRelationId) BKI_BOOTSTRAP BKI_ROWTYPE_OID(75,
 	 * System attributes have attribute numbers less than 0 that are unique
 	 * within the class, but not constrained to any particular range.
 	 *
-	 * Note that (attnum - 1) is often used as the index to an array.
+	 * Note that (attphysnum - 1) is often used as the index to an array.
 	 */
-	int16		attnum;
+	int16		attphysnum;
 
 	/*
 	 * attndims is the declared number of dimensions, if an array type,
@@ -207,7 +207,7 @@ CATALOG(pg_attribute,1249,AttributeRelationId) BKI_BOOTSTRAP BKI_ROWTYPE_OID(75,
 typedef FormData_pg_attribute *Form_pg_attribute;
 
 DECLARE_UNIQUE_INDEX(pg_attribute_relid_attnam_index, 2658, AttributeRelidNameIndexId, on pg_attribute using btree(attrelid oid_ops, attname name_ops));
-DECLARE_UNIQUE_INDEX_PKEY(pg_attribute_relid_attnum_index, 2659, AttributeRelidNumIndexId, on pg_attribute using btree(attrelid oid_ops, attnum int2_ops));
+DECLARE_UNIQUE_INDEX_PKEY(pg_attribute_relid_attphysnum_index, 2659, AttributeRelidPhysNumIndexId, on pg_attribute using btree(attrelid oid_ops, attphysnum int2_ops));
 
 #ifdef EXPOSE_TO_CLIENT_CODE
 

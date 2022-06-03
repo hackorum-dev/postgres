@@ -307,11 +307,11 @@ extern void sepgsql_schema_rename(Oid namespaceId);
 /*
  * relation.c
  */
-extern void sepgsql_attribute_post_create(Oid relOid, AttrNumber attnum);
-extern void sepgsql_attribute_drop(Oid relOid, AttrNumber attnum);
-extern void sepgsql_attribute_relabel(Oid relOid, AttrNumber attnum,
+extern void sepgsql_attribute_post_create(Oid relOid, AttrNumber attphysnum);
+extern void sepgsql_attribute_drop(Oid relOid, AttrNumber attphysnum);
+extern void sepgsql_attribute_relabel(Oid relOid, AttrNumber attphysnum,
 									  const char *seclabel);
-extern void sepgsql_attribute_setattr(Oid relOid, AttrNumber attnum);
+extern void sepgsql_attribute_setattr(Oid relOid, AttrNumber attphysnum);
 extern void sepgsql_relation_post_create(Oid relOid);
 extern void sepgsql_relation_drop(Oid relOid);
 extern void sepgsql_relation_truncate(Oid relOid);

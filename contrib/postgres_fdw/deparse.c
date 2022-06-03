@@ -1890,13 +1890,13 @@ deparseInsertSql(StringInfo buf, RangeTblEntry *rte,
 		first = true;
 		foreach(lc, targetAttrs)
 		{
-			int			attnum = lfirst_int(lc);
+			int			attphysnum = lfirst_int(lc);
 
 			if (!first)
 				appendStringInfoString(buf, ", ");
 			first = false;
 
-			deparseColumnRef(buf, rtindex, attnum, rte, false);
+			deparseColumnRef(buf, rtindex, attphysnum, rte, false);
 		}
 
 		appendStringInfoString(buf, ") VALUES (");
@@ -1905,8 +1905,8 @@ deparseInsertSql(StringInfo buf, RangeTblEntry *rte,
 		first = true;
 		foreach(lc, targetAttrs)
 		{
-			int			attnum = lfirst_int(lc);
-			Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum - 1);
+			int			attphysnum = lfirst_int(lc);
+			Form_pg_attribute attr = TupleDescAttr(tupdesc, attphysnum - 1);
 
 			if (!first)
 				appendStringInfoString(buf, ", ");
@@ -1971,8 +1971,8 @@ rebuildInsertSql(StringInfo buf, Relation rel,
 		first = true;
 		foreach(lc, target_attrs)
 		{
-			int			attnum = lfirst_int(lc);
-			Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum - 1);
+			int			attphysnum = lfirst_int(lc);
+			Form_pg_attribute attr = TupleDescAttr(tupdesc, attphysnum - 1);
 
 			if (!first)
 				appendStringInfoString(buf, ", ");
@@ -2021,14 +2021,14 @@ deparseUpdateSql(StringInfo buf, RangeTblEntry *rte,
 	first = true;
 	foreach(lc, targetAttrs)
 	{
-		int			attnum = lfirst_int(lc);
-		Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum - 1);
+		int			attphysnum = lfirst_int(lc);
+		Form_pg_attribute attr = TupleDescAttr(tupdesc, attphysnum - 1);
 
 		if (!first)
 			appendStringInfoString(buf, ", ");
 		first = false;
 
-		deparseColumnRef(buf, rtindex, attnum, rte, false);
+		deparseColumnRef(buf, rtindex, attphysnum, rte, false);
 		if (attr->attgenerated)
 			appendStringInfoString(buf, " = DEFAULT");
 		else
@@ -2099,7 +2099,7 @@ deparseDirectUpdateSql(StringInfo buf, PlannerInfo *root,
 	forboth(lc, targetlist, lc2, targetAttrs)
 	{
 		TargetEntry *tle = lfirst_node(TargetEntry, lc);
-		int			attnum = lfirst_int(lc2);
+		int			attphysnum = lfirst_int(lc2);
 
 		/* update's new-value expressions shouldn't be resjunk */
 		Assert(!tle->resjunk);
@@ -2108,7 +2108,7 @@ deparseDirectUpdateSql(StringInfo buf, PlannerInfo *root,
 			appendStringInfoString(buf, ", ");
 		first = false;
 
-		deparseColumnRef(buf, rtindex, attnum, rte, false);
+		deparseColumnRef(buf, rtindex, attphysnum, rte, false);
 		appendStringInfoString(buf, " = ");
 		deparseExpr((Expr *) tle->expr, &context);
 	}

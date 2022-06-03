@@ -815,18 +815,18 @@ Partition of: idxpart FOR VALUES FROM (0) TO (1000)
 Indexes:
     "idxpart1_col_keep_idx" btree (col_keep)
 
-select attrelid::regclass, attname, attnum from pg_attribute
-  where attrelid::regclass::text like 'idxpart%' and attnum > 0
-  order by attrelid::regclass, attnum;
-       attrelid        |           attname            | attnum 
------------------------+------------------------------+--------
- idxpart1              | ........pg.dropped.1........ |      1
- idxpart1              | ........pg.dropped.2........ |      2
- idxpart1              | col_keep                     |      3
- idxpart1              | ........pg.dropped.4........ |      4
- idxpart1_col_keep_idx | col_keep                     |      1
- idxpart               | col_keep                     |      1
- idxpart_col_keep_idx  | col_keep                     |      1
+select attrelid::regclass, attname, attphysnum from pg_attribute
+  where attrelid::regclass::text like 'idxpart%' and attphysnum > 0
+  order by attrelid::regclass, attphysnum;
+       attrelid        |           attname            | attphysnum 
+-----------------------+------------------------------+------------
+ idxpart1              | ........pg.dropped.1........ |          1
+ idxpart1              | ........pg.dropped.2........ |          2
+ idxpart1              | col_keep                     |          3
+ idxpart1              | ........pg.dropped.4........ |          4
+ idxpart1_col_keep_idx | col_keep                     |          1
+ idxpart               | col_keep                     |          1
+ idxpart_col_keep_idx  | col_keep                     |          1
 (7 rows)
 
 drop table idxpart;
@@ -858,18 +858,18 @@ Partition of: idxpart FOR VALUES FROM (0) TO (1000)
 Indexes:
     "idxpart1_col_keep_idx" btree (col_keep)
 
-select attrelid::regclass, attname, attnum from pg_attribute
-  where attrelid::regclass::text like 'idxpart%' and attnum > 0
-  order by attrelid::regclass, attnum;
-       attrelid        |           attname            | attnum 
------------------------+------------------------------+--------
- idxpart               | ........pg.dropped.1........ |      1
- idxpart               | ........pg.dropped.2........ |      2
- idxpart               | col_keep                     |      3
- idxpart               | ........pg.dropped.4........ |      4
- idxpart1              | col_keep                     |      1
- idxpart1_col_keep_idx | col_keep                     |      1
- idxpart_col_keep_idx  | col_keep                     |      1
+select attrelid::regclass, attname, attphysnum from pg_attribute
+  where attrelid::regclass::text like 'idxpart%' and attphysnum > 0
+  order by attrelid::regclass, attphysnum;
+       attrelid        |           attname            | attphysnum 
+-----------------------+------------------------------+------------
+ idxpart               | ........pg.dropped.1........ |          1
+ idxpart               | ........pg.dropped.2........ |          2
+ idxpart               | col_keep                     |          3
+ idxpart               | ........pg.dropped.4........ |          4
+ idxpart1              | col_keep                     |          1
+ idxpart1_col_keep_idx | col_keep                     |          1
+ idxpart_col_keep_idx  | col_keep                     |          1
 (7 rows)
 
 drop table idxpart;

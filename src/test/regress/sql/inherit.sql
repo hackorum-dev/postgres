@@ -375,7 +375,7 @@ SELECT a.attrelid::regclass, a.attname, a.attinhcount, e.expected
   FROM (SELECT inhrelid, count(*) AS expected FROM pg_inherits
         WHERE inhparent IN (SELECT inhrelid FROM r) GROUP BY inhrelid) e
   JOIN pg_attribute a ON e.inhrelid = a.attrelid WHERE NOT attislocal
-  ORDER BY a.attrelid::regclass::name, a.attnum;
+  ORDER BY a.attrelid::regclass::name, a.attphysnum;
 
 DROP TABLE inht1, inhs1 CASCADE;
 

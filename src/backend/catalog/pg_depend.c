@@ -816,7 +816,7 @@ sequenceIsOwned(Oid seqId, char deptype, Oid *tableId, int32 *colId)
  * with the specified dependency type.
  */
 static List *
-getOwnedSequences_internal(Oid relid, AttrNumber attnum, char deptype)
+getOwnedSequences_internal(Oid relid, AttrNumber attphysnum, char deptype)
 {
 	List	   *result = NIL;
 	Relation	depRel;
@@ -834,14 +834,14 @@ getOwnedSequences_internal(Oid relid, AttrNumber attnum, char deptype)
 				Anum_pg_depend_refobjid,
 				BTEqualStrategyNumber, F_OIDEQ,
 				ObjectIdGetDatum(relid));
-	if (attnum)
+	if (attphysnum)
 		ScanKeyInit(&key[2],
 					Anum_pg_depend_refobjsubid,
 					BTEqualStrategyNumber, F_INT4EQ,
-					Int32GetDatum(attnum));
+					Int32GetDatum(attphysnum));
 
 	scan = systable_beginscan(depRel, DependReferenceIndexId, true,
-							  NULL, attnum ? 3 : 2, key);
+							  NULL, attphysnum ? 3 : 2, key);
 
 	while (HeapTupleIsValid(tup = systable_getnext(scan)))
 	{
@@ -884,9 +884,9 @@ getOwnedSequences(Oid relid)
  * Get owned identity sequence, error if not exactly one.
  */
 Oid
-getIdentitySequence(Oid relid, AttrNumber attnum, bool missing_ok)
+getIdentitySequence(Oid relid, AttrNumber attphysnum, bool missing_ok)
 {
-	List	   *seqlist = getOwnedSequences_internal(relid, attnum, DEPENDENCY_INTERNAL);
+	List	   *seqlist = getOwnedSequences_internal(relid, attphysnum, DEPENDENCY_INTERNAL);
 
 	if (list_length(seqlist) > 1)
 		elog(ERROR, "more than one owned sequence found");

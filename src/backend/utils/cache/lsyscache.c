@@ -822,12 +822,12 @@ get_opfamily_proc(Oid opfamily, Oid lefttype, Oid righttype, int16 procnum)
  * otherwise a not-intended-for-user-consumption error is thrown.
  */
 char *
-get_attname(Oid relid, AttrNumber attnum, bool missing_ok)
+get_attname(Oid relid, AttrNumber attphysnum, bool missing_ok)
 {
 	HeapTuple	tp;
 
-	tp = SearchSysCache2(ATTNUM,
-						 ObjectIdGetDatum(relid), Int16GetDatum(attnum));
+	tp = SearchSysCache2(ATTPHYSNUM,
+						 ObjectIdGetDatum(relid), Int16GetDatum(attphysnum));
 	if (HeapTupleIsValid(tp))
 	{
 		Form_pg_attribute att_tup = (Form_pg_attribute) GETSTRUCT(tp);
@@ -840,7 +840,7 @@ get_attname(Oid relid, AttrNumber attnum, bool missing_ok)
 
 	if (!missing_ok)
 		elog(ERROR, "cache lookup failed for attribute %d of relation %u",
-			 attnum, relid);
+			 attphysnum, relid);
 	return NULL;
 }
 
@@ -848,12 +848,12 @@ get_attname(Oid relid, AttrNumber attnum, bool missing_ok)
  * get_attnum
  *
  *		Given the relation id and the attribute name,
- *		return the "attnum" field from the attribute relation.
+ *		return the "attphysnum" field from the attribute relation.
  *
  *		Returns InvalidAttrNumber if the attr doesn't exist (or is dropped).
  */
 AttrNumber
-get_attnum(Oid relid, const char *attname)
+get_attphysnum(Oid relid, const char *attname)
 {
 	HeapTuple	tp;
 
@@ -863,7 +863,7 @@ get_attnum(Oid relid, const char *attname)
 		Form_pg_attribute att_tup = (Form_pg_attribute) GETSTRUCT(tp);
 		AttrNumber	result;
 
-		result = att_tup->attnum;
+		result = att_tup->attphysnum;
 		ReleaseSysCache(tp);
 		return result;
 	}
@@ -880,18 +880,18 @@ get_attnum(Oid relid, const char *attname)
  *		Errors if not found.
  */
 int
-get_attstattarget(Oid relid, AttrNumber attnum)
+get_attstattarget(Oid relid, AttrNumber attphysnum)
 {
 	HeapTuple	tp;
 	Form_pg_attribute att_tup;
 	int			result;
 
-	tp = SearchSysCache2(ATTNUM,
+	tp = SearchSysCache2(ATTPHYSNUM,
 						 ObjectIdGetDatum(relid),
-						 Int16GetDatum(attnum));
+						 Int16GetDatum(attphysnum));
 	if (!HeapTupleIsValid(tp))
 		elog(ERROR, "cache lookup failed for attribute %d of relation %u",
-			 attnum, relid);
+			 attphysnum, relid);
 	att_tup = (Form_pg_attribute) GETSTRUCT(tp);
 	result = att_tup->attstattarget;
 	ReleaseSysCache(tp);
@@ -910,18 +910,18 @@ get_attstattarget(Oid relid, AttrNumber attnum)
  *		Boolean test.
  */
 char
-get_attgenerated(Oid relid, AttrNumber attnum)
+get_attgenerated(Oid relid, AttrNumber attphysnum)
 {
 	HeapTuple	tp;
 	Form_pg_attribute att_tup;
 	char		result;
 
-	tp = SearchSysCache2(ATTNUM,
+	tp = SearchSysCache2(ATTPHYSNUM,
 						 ObjectIdGetDatum(relid),
-						 Int16GetDatum(attnum));
+						 Int16GetDatum(attphysnum));
 	if (!HeapTupleIsValid(tp))
 		elog(ERROR, "cache lookup failed for attribute %d of relation %u",
-			 attnum, relid);
+			 attphysnum, relid);
 	att_tup = (Form_pg_attribute) GETSTRUCT(tp);
 	result = att_tup->attgenerated;
 	ReleaseSysCache(tp);
@@ -935,13 +935,13 @@ get_attgenerated(Oid relid, AttrNumber attnum)
  *		return the attribute type OID.
  */
 Oid
-get_atttype(Oid relid, AttrNumber attnum)
+get_atttype(Oid relid, AttrNumber attphysnum)
 {
 	HeapTuple	tp;
 
-	tp = SearchSysCache2(ATTNUM,
+	tp = SearchSysCache2(ATTPHYSNUM,
 						 ObjectIdGetDatum(relid),
-						 Int16GetDatum(attnum));
+						 Int16GetDatum(attphysnum));
 	if (HeapTupleIsValid(tp))
 	{
 		Form_pg_attribute att_tup = (Form_pg_attribute) GETSTRUCT(tp);
@@ -965,18 +965,18 @@ get_atttype(Oid relid, AttrNumber attnum)
  * raises an error if it can't obtain the information.
  */
 void
-get_atttypetypmodcoll(Oid relid, AttrNumber attnum,
+get_atttypetypmodcoll(Oid relid, AttrNumber attphysnum,
 					  Oid *typid, int32 *typmod, Oid *collid)
 {
 	HeapTuple	tp;
 	Form_pg_attribute att_tup;
 
-	tp = SearchSysCache2(ATTNUM,
+	tp = SearchSysCache2(ATTPHYSNUM,
 						 ObjectIdGetDatum(relid),
-						 Int16GetDatum(attnum));
+						 Int16GetDatum(attphysnum));
 	if (!HeapTupleIsValid(tp))
 		elog(ERROR, "cache lookup failed for attribute %d of relation %u",
-			 attnum, relid);
+			 attphysnum, relid);
 	att_tup = (Form_pg_attribute) GETSTRUCT(tp);
 
 	*typid = att_tup->atttypid;
@@ -992,20 +992,20 @@ get_atttypetypmodcoll(Oid relid, AttrNumber attnum,
  *		return the attribute options text[] datum, if any.
  */
 Datum
-get_attoptions(Oid relid, int16 attnum)
+get_attoptions(Oid relid, int16 attphysnum)
 {
 	HeapTuple	tuple;
 	Datum		attopts;
 	Datum		result;
 	bool		isnull;
 
-	tuple = SearchSysCache2(ATTNUM,
+	tuple = SearchSysCache2(ATTPHYSNUM,
 							ObjectIdGetDatum(relid),
-							Int16GetDatum(attnum));
+							Int16GetDatum(attphysnum));
 
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "cache lookup failed for attribute %d of relation %u",
-			 attnum, relid);
+			 attphysnum, relid);
 
 	attopts = SysCacheGetAttr(ATTNAME, tuple, Anum_pg_attribute_attoptions,
 							  &isnull);
@@ -3112,20 +3112,20 @@ getSubscriptingRoutines(Oid typid, Oid *typelemp)
  * plug-ins to control the result.
  */
 int32
-get_attavgwidth(Oid relid, AttrNumber attnum)
+get_attavgwidth(Oid relid, AttrNumber attphysnum)
 {
 	HeapTuple	tp;
 	int32		stawidth;
 
 	if (get_attavgwidth_hook)
 	{
-		stawidth = (*get_attavgwidth_hook) (relid, attnum);
+		stawidth = (*get_attavgwidth_hook) (relid, attphysnum);
 		if (stawidth > 0)
 			return stawidth;
 	}
 	tp = SearchSysCache3(STATRELATTINH,
 						 ObjectIdGetDatum(relid),
-						 Int16GetDatum(attnum),
+						 Int16GetDatum(attphysnum),
 						 BoolGetDatum(false));
 	if (HeapTupleIsValid(tp))
 	{

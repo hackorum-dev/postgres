@@ -579,15 +579,15 @@ BeginCopyTo(ParseState *pstate,
 
 		foreach(cur, attnums)
 		{
-			int			attnum = lfirst_int(cur);
-			Form_pg_attribute attr = TupleDescAttr(tupDesc, attnum - 1);
+			int			attphysnum = lfirst_int(cur);
+			Form_pg_attribute attr = TupleDescAttr(tupDesc, attphysnum - 1);
 
-			if (!list_member_int(cstate->attnumlist, attnum))
+			if (!list_member_int(cstate->attnumlist, attphysnum))
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
 						 errmsg("FORCE_QUOTE column \"%s\" not referenced by COPY",
 								NameStr(attr->attname))));
-			cstate->opts.force_quote_flags[attnum - 1] = true;
+			cstate->opts.force_quote_flags[attphysnum - 1] = true;
 		}
 	}
 
@@ -602,15 +602,15 @@ BeginCopyTo(ParseState *pstate,
 
 		foreach(cur, attnums)
 		{
-			int			attnum = lfirst_int(cur);
-			Form_pg_attribute attr = TupleDescAttr(tupDesc, attnum - 1);
+			int			attphysnum = lfirst_int(cur);
+			Form_pg_attribute attr = TupleDescAttr(tupDesc, attphysnum - 1);
 
-			if (!list_member_int(cstate->attnumlist, attnum))
+			if (!list_member_int(cstate->attnumlist, attphysnum))
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
 						 errmsg("FORCE_NOT_NULL column \"%s\" not referenced by COPY",
 								NameStr(attr->attname))));
-			cstate->opts.force_notnull_flags[attnum - 1] = true;
+			cstate->opts.force_notnull_flags[attphysnum - 1] = true;
 		}
 	}
 
@@ -625,15 +625,15 @@ BeginCopyTo(ParseState *pstate,
 
 		foreach(cur, attnums)
 		{
-			int			attnum = lfirst_int(cur);
-			Form_pg_attribute attr = TupleDescAttr(tupDesc, attnum - 1);
+			int			attphysnum = lfirst_int(cur);
+			Form_pg_attribute attr = TupleDescAttr(tupDesc, attphysnum - 1);
 
-			if (!list_member_int(cstate->attnumlist, attnum))
+			if (!list_member_int(cstate->attnumlist, attphysnum))
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
 						 errmsg("FORCE_NULL column \"%s\" not referenced by COPY",
 								NameStr(attr->attname))));
-			cstate->opts.force_null_flags[attnum - 1] = true;
+			cstate->opts.force_null_flags[attphysnum - 1] = true;
 		}
 	}
 
@@ -793,10 +793,10 @@ DoCopyTo(CopyToState cstate)
 	cstate->out_functions = (FmgrInfo *) palloc(num_phys_attrs * sizeof(FmgrInfo));
 	foreach(cur, cstate->attnumlist)
 	{
-		int			attnum = lfirst_int(cur);
+		int			attphysnum = lfirst_int(cur);
 		Oid			out_func_oid;
 		bool		isvarlena;
-		Form_pg_attribute attr = TupleDescAttr(tupDesc, attnum - 1);
+		Form_pg_attribute attr = TupleDescAttr(tupDesc, attphysnum - 1);
 
 		if (cstate->opts.binary)
 			getTypeBinaryOutputInfo(attr->atttypid,
@@ -806,7 +806,7 @@ DoCopyTo(CopyToState cstate)
 			getTypeOutputInfo(attr->atttypid,
 							  &out_func_oid,
 							  &isvarlena);
-		fmgr_info(out_func_oid, &cstate->out_functions[attnum - 1]);
+		fmgr_info(out_func_oid, &cstate->out_functions[attphysnum - 1]);
 	}
 
 	/*
@@ -851,14 +851,14 @@ DoCopyTo(CopyToState cstate)
 
 			foreach(cur, cstate->attnumlist)
 			{
-				int			attnum = lfirst_int(cur);
+				int			attphysnum = lfirst_int(cur);
 				char	   *colname;
 
 				if (hdr_delim)
 					CopySendChar(cstate, cstate->opts.delim[0]);
 				hdr_delim = true;
 
-				colname = NameStr(TupleDescAttr(tupDesc, attnum - 1)->attname);
+				colname = NameStr(TupleDescAttr(tupDesc, attphysnum - 1)->attname);
 
 				if (cstate->opts.csv_mode)
 					CopyAttributeOutCSV(cstate, colname, false,
@@ -950,9 +950,9 @@ CopyOneRowTo(CopyToState cstate, TupleTableSlot *slot)
 
 	foreach(cur, cstate->attnumlist)
 	{
-		int			attnum = lfirst_int(cur);
-		Datum		value = slot->tts_values[attnum - 1];
-		bool		isnull = slot->tts_isnull[attnum - 1];
+		int			attphysnum = lfirst_int(cur);
+		Datum		value = slot->tts_values[attphysnum - 1];
+		bool		isnull = slot->tts_isnull[attphysnum - 1];
 
 		if (!cstate->opts.binary)
 		{
@@ -972,11 +972,11 @@ CopyOneRowTo(CopyToState cstate, TupleTableSlot *slot)
 		{
 			if (!cstate->opts.binary)
 			{
-				string = OutputFunctionCall(&out_functions[attnum - 1],
+				string = OutputFunctionCall(&out_functions[attphysnum - 1],
 											value);
 				if (cstate->opts.csv_mode)
 					CopyAttributeOutCSV(cstate, string,
-										cstate->opts.force_quote_flags[attnum - 1],
+										cstate->opts.force_quote_flags[attphysnum - 1],
 										list_length(cstate->attnumlist) == 1);
 				else
 					CopyAttributeOutText(cstate, string);
@@ -985,7 +985,7 @@ CopyOneRowTo(CopyToState cstate, TupleTableSlot *slot)
 			{
 				bytea	   *outputbytes;
 
-				outputbytes = SendFunctionCall(&out_functions[attnum - 1],
+				outputbytes = SendFunctionCall(&out_functions[attphysnum - 1],
 											   value);
 				CopySendInt32(cstate, VARSIZE(outputbytes) - VARHDRSZ);
 				CopySendData(cstate, VARDATA(outputbytes),

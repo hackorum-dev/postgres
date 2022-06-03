@@ -284,20 +284,20 @@ GetForeignTable(Oid relid)
  * as list of DefElem.
  */
 List *
-GetForeignColumnOptions(Oid relid, AttrNumber attnum)
+GetForeignColumnOptions(Oid relid, AttrNumber attphysnum)
 {
 	List	   *options;
 	HeapTuple	tp;
 	Datum		datum;
 	bool		isnull;
 
-	tp = SearchSysCache2(ATTNUM,
+	tp = SearchSysCache2(ATTPHYSNUM,
 						 ObjectIdGetDatum(relid),
-						 Int16GetDatum(attnum));
+						 Int16GetDatum(attphysnum));
 	if (!HeapTupleIsValid(tp))
 		elog(ERROR, "cache lookup failed for attribute %d of relation %u",
-			 attnum, relid);
-	datum = SysCacheGetAttr(ATTNUM,
+			 attphysnum, relid);
+	datum = SysCacheGetAttr(ATTPHYSNUM,
 							tp,
 							Anum_pg_attribute_attfdwoptions,
 							&isnull);

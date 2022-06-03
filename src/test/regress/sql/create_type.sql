@@ -180,7 +180,7 @@ CREATE TEMP TABLE mytab (foo widget(42,13,7));     -- should fail
 CREATE TEMP TABLE mytab (foo widget(42,13));
 
 SELECT format_type(atttypid,atttypmod) FROM pg_attribute
-WHERE attrelid = 'mytab'::regclass AND attnum > 0;
+WHERE attrelid = 'mytab'::regclass AND attphysnum > 0;
 
 -- might as well exercise the widget type while we're here
 INSERT INTO mytab VALUES ('(1,2,3)'), ('(-44,5.5,12)');

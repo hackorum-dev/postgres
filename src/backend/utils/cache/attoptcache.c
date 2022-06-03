@@ -27,11 +27,11 @@
 /* Hash table for information about each attribute's options */
 static HTAB *AttoptCacheHash = NULL;
 
-/* attrelid and attnum form the lookup key, and must appear first */
+/* attrelid and attphysnum form the lookup key, and must appear first */
 typedef struct
 {
 	Oid			attrelid;
-	int			attnum;
+	int			attphysnum;
 } AttoptCacheKey;
 
 typedef struct
@@ -90,7 +90,7 @@ InitializeAttoptCache(void)
 		CreateCacheMemoryContext();
 
 	/* Watch for invalidation events. */
-	CacheRegisterSyscacheCallback(ATTNUM,
+	CacheRegisterSyscacheCallback(ATTPHYSNUM,
 								  InvalidateAttoptCacheCallback,
 								  (Datum) 0);
 }
@@ -100,7 +100,7 @@ InitializeAttoptCache(void)
  *		Fetch attribute options for a specified table OID.
  */
 AttributeOpts *
-get_attribute_options(Oid attrelid, int attnum)
+get_attribute_options(Oid attrelid, int attphysnum)
 {
 	AttoptCacheKey key;
 	AttoptCacheEntry *attopt;
@@ -112,7 +112,7 @@ get_attribute_options(Oid attrelid, int attnum)
 		InitializeAttoptCache();
 	memset(&key, 0, sizeof(key));	/* make sure any padding bits are unset */
 	key.attrelid = attrelid;
-	key.attnum = attnum;
+	key.attphysnum = attphysnum;
 	attopt =
 		(AttoptCacheEntry *) hash_search(AttoptCacheHash,
 										 (void *) &key,
@@ -124,9 +124,9 @@ get_attribute_options(Oid attrelid, int attnum)
 	{
 		AttributeOpts *opts;
 
-		tp = SearchSysCache2(ATTNUM,
+		tp = SearchSysCache2(ATTPHYSNUM,
 							 ObjectIdGetDatum(attrelid),
-							 Int16GetDatum(attnum));
+							 Int16GetDatum(attphysnum));
 
 		/*
 		 * If we don't find a valid HeapTuple, it must mean someone has
@@ -140,7 +140,7 @@ get_attribute_options(Oid attrelid, int attnum)
 			Datum		datum;
 			bool		isNull;
 
-			datum = SysCacheGetAttr(ATTNUM,
+			datum = SysCacheGetAttr(ATTPHYSNUM,
 									tp,
 									Anum_pg_attribute_attoptions,
 									&isNull);

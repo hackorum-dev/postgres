@@ -193,7 +193,7 @@ vacuumlo(const char *database, const struct _param *param)
 	buf[0] = '\0';
 	strcat(buf, "SELECT s.nspname, c.relname, a.attname ");
 	strcat(buf, "FROM pg_class c, pg_attribute a, pg_namespace s, pg_type t ");
-	strcat(buf, "WHERE a.attnum > 0 AND NOT a.attisdropped ");
+	strcat(buf, "WHERE a.attphysnum > 0 AND NOT a.attisdropped ");
 	strcat(buf, "      AND a.attrelid = c.oid ");
 	strcat(buf, "      AND a.atttypid = t.oid ");
 	strcat(buf, "      AND c.relnamespace = s.oid ");

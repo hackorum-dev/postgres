@@ -35,13 +35,13 @@
  * Given an RTE and an attribute number, return the appropriate
  * variable name or alias for that attribute of that RTE.
  */
-extern char *get_rte_attribute_name(RangeTblEntry *rte, AttrNumber attnum);
+extern char *get_rte_attribute_name(RangeTblEntry *rte, AttrNumber attphysnum);
 
 /*
  * Check whether an attribute of an RTE has been dropped
  */
 extern bool get_rte_attribute_is_dropped(RangeTblEntry *rte,
-										 AttrNumber attnum);
+										 AttrNumber attphysnum);
 
 
 /* ----------------

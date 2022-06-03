@@ -231,7 +231,7 @@ build_attrmap_by_name(TupleDesc indesc,
 									   attname,
 									   format_type_be(outdesc->tdtypeid),
 									   format_type_be(indesc->tdtypeid))));
-				attrMap->attnums[i] = inatt->attnum;
+				attrMap->attnums[i] = inatt->attphysnum;
 				break;
 			}
 		}

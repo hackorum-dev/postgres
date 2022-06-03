@@ -634,7 +634,7 @@ brin_deconstruct_tuple(BrinDesc *brdesc,
 					   char *tp, bits8 *nullbits, bool nulls,
 					   Datum *values, bool *allnulls, bool *hasnulls)
 {
-	int			attnum;
+	int			attphysnum;
 	int			stored;
 	TupleDesc	diskdsc;
 	long		off;
@@ -645,14 +645,14 @@ brin_deconstruct_tuple(BrinDesc *brdesc,
 	 * 1 for a null value (rather than a 1 for a not null value as is the
 	 * att_isnull convention used elsewhere.)  See brin_form_tuple.
 	 */
-	for (attnum = 0; attnum < brdesc->bd_tupdesc->natts; attnum++)
+	for (attphysnum = 0; attphysnum < brdesc->bd_tupdesc->natts; attphysnum++)
 	{
 		/*
 		 * the "all nulls" bit means that all values in the page range for
 		 * this column are nulls.  Therefore there are no values in the tuple
 		 * data area.
 		 */
-		allnulls[attnum] = nulls && !att_isnull(attnum, nullbits);
+		allnulls[attphysnum] = nulls && !att_isnull(attphysnum, nullbits);
 
 		/*
 		 * the "has nulls" bit means that some tuples have nulls, but others
@@ -661,8 +661,8 @@ brin_deconstruct_tuple(BrinDesc *brdesc,
 		 *
 		 * The hasnulls bits follow the allnulls bits in the same bitmask.
 		 */
-		hasnulls[attnum] =
-			nulls && !att_isnull(brdesc->bd_tupdesc->natts + attnum, nullbits);
+		hasnulls[attphysnum] =
+			nulls && !att_isnull(brdesc->bd_tupdesc->natts + attphysnum, nullbits);
 	}
 
 	/*
@@ -673,18 +673,18 @@ brin_deconstruct_tuple(BrinDesc *brdesc,
 	diskdsc = brtuple_disk_tupdesc(brdesc);
 	stored = 0;
 	off = 0;
-	for (attnum = 0; attnum < brdesc->bd_tupdesc->natts; attnum++)
+	for (attphysnum = 0; attphysnum < brdesc->bd_tupdesc->natts; attphysnum++)
 	{
 		int			datumno;
 
-		if (allnulls[attnum])
+		if (allnulls[attphysnum])
 		{
-			stored += brdesc->bd_info[attnum]->oi_nstored;
+			stored += brdesc->bd_info[attphysnum]->oi_nstored;
 			continue;
 		}
 
 		for (datumno = 0;
-			 datumno < brdesc->bd_info[attnum]->oi_nstored;
+			 datumno < brdesc->bd_info[attphysnum]->oi_nstored;
 			 datumno++)
 		{
 			Form_pg_attribute thisatt = TupleDescAttr(diskdsc, stored);

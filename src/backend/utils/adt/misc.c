@@ -636,13 +636,13 @@ Datum
 pg_column_is_updatable(PG_FUNCTION_ARGS)
 {
 	Oid			reloid = PG_GETARG_OID(0);
-	AttrNumber	attnum = PG_GETARG_INT16(1);
-	AttrNumber	col = attnum - FirstLowInvalidHeapAttributeNumber;
+	AttrNumber	attphysnum = PG_GETARG_INT16(1);
+	AttrNumber	col = attphysnum - FirstLowInvalidHeapAttributeNumber;
 	bool		include_triggers = PG_GETARG_BOOL(2);
 	int			events;
 
 	/* System columns are never updatable */
-	if (attnum <= 0)
+	if (attphysnum <= 0)
 		PG_RETURN_BOOL(false);
 
 	events = relation_is_updatable(reloid, NIL, include_triggers,

@@ -1595,7 +1595,7 @@ process_owned_by(Relation seqrel, List *owned_by, bool for_identity)
 	DependencyType deptype;
 	int			nnames;
 	Relation	tablerel;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 
 	deptype = for_identity ? DEPENDENCY_INTERNAL : DEPENDENCY_AUTO;
 
@@ -1610,7 +1610,7 @@ process_owned_by(Relation seqrel, List *owned_by, bool for_identity)
 					 errmsg("invalid OWNED BY option"),
 					 errhint("Specify OWNED BY table.column or OWNED BY NONE.")));
 		tablerel = NULL;
-		attnum = 0;
+		attphysnum = 0;
 	}
 	else
 	{
@@ -1648,8 +1648,8 @@ process_owned_by(Relation seqrel, List *owned_by, bool for_identity)
 					 errmsg("sequence must be in same schema as table it is linked to")));
 
 		/* Now, fetch the attribute number from the system cache */
-		attnum = get_attnum(RelationGetRelid(tablerel), attrname);
-		if (attnum == InvalidAttrNumber)
+		attphysnum = get_attphysnum(RelationGetRelid(tablerel), attrname);
+		if (attphysnum == InvalidAttrNumber)
 			ereport(ERROR,
 					(errcode(ERRCODE_UNDEFINED_COLUMN),
 					 errmsg("column \"%s\" of relation \"%s\" does not exist",
@@ -1687,7 +1687,7 @@ process_owned_by(Relation seqrel, List *owned_by, bool for_identity)
 
 		refobject.classId = RelationRelationId;
 		refobject.objectId = RelationGetRelid(tablerel);
-		refobject.objectSubId = attnum;
+		refobject.objectSubId = attphysnum;
 		depobject.classId = RelationRelationId;
 		depobject.objectId = RelationGetRelid(seqrel);
 		depobject.objectSubId = 0;

@@ -4668,7 +4668,7 @@ ReorderBufferToastReplace(ReorderBuffer *rb, ReorderBufferTXN *txn,
 		Size		data_done = 0;
 
 		/* system columns aren't toasted */
-		if (attr->attnum < 0)
+		if (attr->attphysnum < 0)
 			continue;
 
 		if (attr->attisdropped)

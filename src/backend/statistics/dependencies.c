@@ -76,7 +76,7 @@ static double dependency_degree(StatsBuildData *data, int k, AttrNumber *depende
 static bool dependency_is_fully_matched(MVDependency *dependency,
 										Bitmapset *attnums);
 static bool dependency_is_compatible_clause(Node *clause, Index relid,
-											AttrNumber *attnum);
+											AttrNumber *attphysnum);
 static bool dependency_is_compatible_expression(Node *clause, Index relid,
 												List *statlist, Node **expr);
 static MVDependency *find_strongest_dependency(MVDependencies **dependencies,
@@ -604,9 +604,9 @@ dependency_is_fully_matched(MVDependency *dependency, Bitmapset *attnums)
 	 */
 	for (j = 0; j < dependency->nattributes; j++)
 	{
-		int			attnum = dependency->attributes[j];
+		int			attphysnum = dependency->attributes[j];
 
-		if (!bms_is_member(attnum, attnums))
+		if (!bms_is_member(attphysnum, attnums))
 			return false;
 	}
 
@@ -737,10 +737,10 @@ pg_dependencies_send(PG_FUNCTION_ARGS)
  * Only clauses that have the form of equality to a pseudoconstant, or can be
  * interpreted that way, are currently accepted.  Furthermore the variable
  * part of the clause must be a simple Var belonging to the specified
- * relation, whose attribute number we return in *attnum on success.
+ * relation, whose attribute number we return in *attphysnum on success.
  */
 static bool
-dependency_is_compatible_clause(Node *clause, Index relid, AttrNumber *attnum)
+dependency_is_compatible_clause(Node *clause, Index relid, AttrNumber *attphysnum)
 {
 	Var		   *var;
 	Node	   *clause_expr;
@@ -839,7 +839,7 @@ dependency_is_compatible_clause(Node *clause, Index relid, AttrNumber *attnum)
 		ListCell   *lc;
 
 		/* start with no attribute number */
-		*attnum = InvalidAttrNumber;
+		*attphysnum = InvalidAttrNumber;
 
 		foreach(lc, bool_expr->args)
 		{
@@ -853,11 +853,11 @@ dependency_is_compatible_clause(Node *clause, Index relid, AttrNumber *attnum)
 												 relid, &clause_attnum))
 				return false;
 
-			if (*attnum == InvalidAttrNumber)
-				*attnum = clause_attnum;
+			if (*attphysnum == InvalidAttrNumber)
+				*attphysnum = clause_attnum;
 
-			/* ensure all the variables are the same (same attnum) */
-			if (*attnum != clause_attnum)
+			/* ensure all the variables are the same (same attphysnum) */
+			if (*attphysnum != clause_attnum)
 				return false;
 		}
 
@@ -907,7 +907,7 @@ dependency_is_compatible_clause(Node *clause, Index relid, AttrNumber *attnum)
 	if (!AttrNumberIsForUserDefinedAttr(var->varattno))
 		return false;
 
-	*attnum = var->varattno;
+	*attphysnum = var->varattno;
 	return true;
 }
 
@@ -1041,9 +1041,9 @@ clauselist_apply_dependencies(PlannerInfo *root, List *clauses,
 	{
 		for (j = 0; j < dependencies[i]->nattributes; j++)
 		{
-			AttrNumber	attnum = dependencies[i]->attributes[j];
+			AttrNumber	attphysnum = dependencies[i]->attributes[j];
 
-			attnums = bms_add_member(attnums, attnum);
+			attnums = bms_add_member(attnums, attphysnum);
 		}
 	}
 
@@ -1106,7 +1106,7 @@ clauselist_apply_dependencies(PlannerInfo *root, List *clauses,
 	for (i = ndependencies - 1; i >= 0; i--)
 	{
 		MVDependency *dependency = dependencies[i];
-		AttrNumber	attnum;
+		AttrNumber	attphysnum;
 		Selectivity s2;
 		double		f;
 
@@ -1114,14 +1114,14 @@ clauselist_apply_dependencies(PlannerInfo *root, List *clauses,
 		s1 = 1.0;
 		for (j = 0; j < dependency->nattributes - 1; j++)
 		{
-			attnum = dependency->attributes[j];
-			attidx = bms_member_index(attnums, attnum);
+			attphysnum = dependency->attributes[j];
+			attidx = bms_member_index(attnums, attphysnum);
 			s1 *= attr_sel[attidx];
 		}
 
 		/* Original selectivity of the implied attribute */
-		attnum = dependency->attributes[j];
-		attidx = bms_member_index(attnums, attnum);
+		attphysnum = dependency->attributes[j];
+		attidx = bms_member_index(attnums, attphysnum);
 		s2 = attr_sel[attidx];
 
 		/*
@@ -1454,7 +1454,7 @@ dependencies_clauselist_selectivity(PlannerInfo *root,
 	foreach(l, clauses)
 	{
 		Node	   *clause = (Node *) lfirst(l);
-		AttrNumber	attnum;
+		AttrNumber	attphysnum;
 		Node	   *expr = NULL;
 
 		/* ignore clause by default */
@@ -1464,19 +1464,19 @@ dependencies_clauselist_selectivity(PlannerInfo *root,
 		{
 			/*
 			 * If it's a simple column reference, just extract the attnum. If
-			 * it's an expression, assign a negative attnum as if it was a
+			 * it's an expression, assign a negative attphysnum as if it was a
 			 * system attribute.
 			 */
-			if (dependency_is_compatible_clause(clause, rel->relid, &attnum))
+			if (dependency_is_compatible_clause(clause, rel->relid, &attphysnum))
 			{
-				list_attnums[listidx] = attnum;
+				list_attnums[listidx] = attphysnum;
 			}
 			else if (dependency_is_compatible_expression(clause, rel->relid,
 														 rel->statlist,
 														 &expr))
 			{
-				/* special attnum assigned to this expression */
-				attnum = InvalidAttrNumber;
+				/* special attphysnum assigned to this expression */
+				attphysnum = InvalidAttrNumber;
 
 				Assert(expr != NULL);
 
@@ -1486,22 +1486,22 @@ dependencies_clauselist_selectivity(PlannerInfo *root,
 					if (equal(unique_exprs[i], expr))
 					{
 						/* negative attribute number to expression */
-						attnum = -(i + 1);
+						attphysnum = -(i + 1);
 						break;
 					}
 				}
 
 				/* not found in the list, so add it */
-				if (attnum == InvalidAttrNumber)
+				if (attphysnum == InvalidAttrNumber)
 				{
 					unique_exprs[unique_exprs_cnt++] = expr;
 
 					/* after incrementing the value, to get -1, -2, ... */
-					attnum = (-unique_exprs_cnt);
+					attphysnum = (-unique_exprs_cnt);
 				}
 
-				/* remember which attnum was assigned to this clause */
-				list_attnums[listidx] = attnum;
+				/* remember which attphysnum was assigned to this clause */
+				list_attnums[listidx] = attphysnum;
 			}
 		}
 
@@ -1526,39 +1526,39 @@ dependencies_clauselist_selectivity(PlannerInfo *root,
 	 */
 	for (i = 0; i < list_length(clauses); i++)
 	{
-		AttrNumber	attnum;
+		AttrNumber	attphysnum;
 
 		/* ignore incompatible or already estimated clauses */
 		if (list_attnums[i] == InvalidAttrNumber)
 			continue;
 
-		/* make sure the attnum is in the expected range */
+		/* make sure the attphysnum is in the expected range */
 		Assert(list_attnums[i] >= (-unique_exprs_cnt));
 		Assert(list_attnums[i] <= MaxHeapAttributeNumber);
 
-		/* make sure the attnum is positive (valid AttrNumber) */
-		attnum = list_attnums[i] + attnum_offset;
+		/* make sure the attphysnum is positive (valid AttrNumber) */
+		attphysnum = list_attnums[i] + attnum_offset;
 
 		/*
 		 * Either it's a regular attribute, or it's an expression, in which
 		 * case we must not have seen it before (expressions are unique).
 		 *
 		 * XXX Check whether it's a regular attribute has to be done using the
-		 * original attnum, while the second check has to use the value with
+		 * original attphysnum, while the second check has to use the value with
 		 * an offset.
 		 */
 		Assert(AttrNumberIsForUserDefinedAttr(list_attnums[i]) ||
-			   !bms_is_member(attnum, clauses_attnums));
+			   !bms_is_member(attphysnum, clauses_attnums));
 
 		/*
-		 * Remember the offset attnum, both for attributes and expressions.
+		 * Remember the offset attphysnum, both for attributes and expressions.
 		 * We'll pass list_attnums to clauselist_apply_dependencies, which
 		 * uses it to identify clauses in a bitmap. We could also pass the
 		 * offset, but this is more convenient.
 		 */
-		list_attnums[i] = attnum;
+		list_attnums[i] = attphysnum;
 
-		clauses_attnums = bms_add_member(clauses_attnums, attnum);
+		clauses_attnums = bms_add_member(clauses_attnums, attphysnum);
 	}
 
 	/*
@@ -1606,7 +1606,7 @@ dependencies_clauselist_selectivity(PlannerInfo *root,
 			continue;
 
 		/*
-		 * Count matching attributes - we have to undo the attnum offsets. The
+		 * Count matching attributes - we have to undo the attphysnum offsets. The
 		 * input attribute numbers are not offset (expressions are not
 		 * included in stat->keys, so it's not necessary). But we need to
 		 * offset it before checking against clauses_attnums.
@@ -1615,16 +1615,16 @@ dependencies_clauselist_selectivity(PlannerInfo *root,
 		k = -1;
 		while ((k = bms_next_member(stat->keys, k)) >= 0)
 		{
-			AttrNumber	attnum = (AttrNumber) k;
+			AttrNumber	attphysnum = (AttrNumber) k;
 
 			/* skip expressions */
-			if (!AttrNumberIsForUserDefinedAttr(attnum))
+			if (!AttrNumberIsForUserDefinedAttr(attphysnum))
 				continue;
 
 			/* apply the same offset as above */
-			attnum += attnum_offset;
+			attphysnum += attnum_offset;
 
-			if (bms_is_member(attnum, clauses_attnums))
+			if (bms_is_member(attphysnum, clauses_attnums))
 				nmatched++;
 		}
 
@@ -1695,20 +1695,20 @@ dependencies_clauselist_selectivity(PlannerInfo *root,
 					Node	   *expr;
 					int			k;
 					AttrNumber	unique_attnum = InvalidAttrNumber;
-					AttrNumber	attnum;
+					AttrNumber	attphysnum;
 
 					/* undo the per-statistics offset */
-					attnum = dep->attributes[j];
+					attphysnum = dep->attributes[j];
 
 					/*
 					 * For regular attributes we can simply check if it
 					 * matches any clause. If there's no matching clause, we
-					 * can just ignore it. We need to offset the attnum
+					 * can just ignore it. We need to offset the attphysnum
 					 * though.
 					 */
-					if (AttrNumberIsForUserDefinedAttr(attnum))
+					if (AttrNumberIsForUserDefinedAttr(attphysnum))
 					{
-						dep->attributes[j] = attnum + attnum_offset;
+						dep->attributes[j] = attphysnum + attnum_offset;
 
 						if (!bms_is_member(dep->attributes[j], clauses_attnums))
 						{
@@ -1720,20 +1720,20 @@ dependencies_clauselist_selectivity(PlannerInfo *root,
 					}
 
 					/*
-					 * the attnum should be a valid system attnum (-1, -2,
+					 * the attphysnum should be a valid system attphysnum (-1, -2,
 					 * ...)
 					 */
-					Assert(AttributeNumberIsValid(attnum));
+					Assert(AttributeNumberIsValid(attphysnum));
 
 					/*
 					 * For expressions, we need to do two translations. First
-					 * we have to translate the negative attnum to index in
+					 * we have to translate the negative attphysnum to index in
 					 * the list of expressions (in the statistics object).
 					 * Then we need to see if there's a matching clause. The
-					 * index of the unique expression determines the attnum
+					 * index of the unique expression determines the attphysnum
 					 * (and we offset it).
 					 */
-					idx = -(1 + attnum);
+					idx = -(1 + attphysnum);
 
 					/* Is the expression index is valid? */
 					Assert((idx >= 0) && (idx < list_length(stat->exprs)));
@@ -1744,7 +1744,7 @@ dependencies_clauselist_selectivity(PlannerInfo *root,
 					for (k = 0; k < unique_exprs_cnt; k++)
 					{
 						/*
-						 * found a matching unique expression, use the attnum
+						 * found a matching unique expression, use the attphysnum
 						 * (derived from index of the unique expression)
 						 */
 						if (equal(unique_exprs[k], expr))
@@ -1765,7 +1765,7 @@ dependencies_clauselist_selectivity(PlannerInfo *root,
 						break;
 					}
 
-					/* otherwise remap it to the new attnum */
+					/* otherwise remap it to the new attphysnum */
 					dep->attributes[j] = unique_attnum;
 				}
 
@@ -1816,7 +1816,7 @@ dependencies_clauselist_selectivity(PlannerInfo *root,
 	while (true)
 	{
 		MVDependency *dependency;
-		AttrNumber	attnum;
+		AttrNumber	attphysnum;
 
 		/* the widest/strongest dependency, fully matched by clauses */
 		dependency = find_strongest_dependency(func_dependencies,
@@ -1828,8 +1828,8 @@ dependencies_clauselist_selectivity(PlannerInfo *root,
 		dependencies[ndependencies++] = dependency;
 
 		/* Ignore dependencies using this implied attribute in later loops */
-		attnum = dependency->attributes[dependency->nattributes - 1];
-		clauses_attnums = bms_del_member(clauses_attnums, attnum);
+		attphysnum = dependency->attributes[dependency->nattributes - 1];
+		clauses_attnums = bms_del_member(clauses_attnums, attphysnum);
 	}
 
 	/*

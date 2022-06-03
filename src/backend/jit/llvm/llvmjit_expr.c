@@ -372,7 +372,7 @@ llvm_compile_expr(ExprState *state)
 						v_nulls = v_scannulls;
 					}
 
-					v_attnum = l_int32_const(op->d.var.attnum);
+					v_attnum = l_int32_const(op->d.var.attphysnum);
 					value = l_load_gep1(b, v_values, v_attnum, "");
 					isnull = l_load_gep1(b, v_nulls, v_attnum, "");
 					LLVMBuildStore(b, value, v_resvaluep);
@@ -438,7 +438,7 @@ llvm_compile_expr(ExprState *state)
 					}
 
 					/* load data */
-					v_attnum = l_int32_const(op->d.assign_var.attnum);
+					v_attnum = l_int32_const(op->d.assign_var.attphysnum);
 					v_value = l_load_gep1(b, v_values, v_attnum, "");
 					v_isnull = l_load_gep1(b, v_nulls, v_attnum, "");
 

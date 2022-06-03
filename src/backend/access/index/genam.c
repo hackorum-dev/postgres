@@ -216,16 +216,16 @@ BuildIndexValueDescription(Relation indexRelation,
 		 */
 		for (keyno = 0; keyno < indnkeyatts; keyno++)
 		{
-			AttrNumber	attnum = idxrec->indkey.values[keyno];
+			AttrNumber	attphysnum = idxrec->indkey.values[keyno];
 
 			/*
-			 * Note that if attnum == InvalidAttrNumber, then this is an index
+			 * Note that if attphysnum == InvalidAttrNumber, then this is an index
 			 * based on an expression and we return no detail rather than try
 			 * to figure out what column(s) the expression includes and if the
 			 * user has SELECT rights on them.
 			 */
-			if (attnum == InvalidAttrNumber ||
-				pg_attribute_aclcheck(indrelid, attnum, GetUserId(),
+			if (attphysnum == InvalidAttrNumber ||
+				pg_attribute_aclcheck(indrelid, attphysnum, GetUserId(),
 									  ACL_SELECT) != ACLCHECK_OK)
 			{
 				/* No access, so clean up and return */

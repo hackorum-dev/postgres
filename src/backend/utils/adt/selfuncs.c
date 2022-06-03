@@ -3973,24 +3973,24 @@ estimate_multivariate_ndistinct(PlannerInfo *root, RelOptInfo *rel,
 		{
 			ListCell   *lc3;
 			GroupVarInfo *varinfo = (GroupVarInfo *) lfirst(lc2);
-			AttrNumber	attnum;
+			AttrNumber	attphysnum;
 
 			Assert(varinfo->rel == rel);
 
 			/* simple Var, search in statistics keys directly */
 			if (IsA(varinfo->var, Var))
 			{
-				attnum = ((Var *) varinfo->var)->varattno;
+				attphysnum = ((Var *) varinfo->var)->varattno;
 
 				/*
 				 * Ignore system attributes - we don't support statistics on
 				 * them, so can't match them (and it'd fail as the values are
 				 * negative).
 				 */
-				if (!AttrNumberIsForUserDefinedAttr(attnum))
+				if (!AttrNumberIsForUserDefinedAttr(attphysnum))
 					continue;
 
-				if (bms_is_member(attnum, info->keys))
+				if (bms_is_member(attphysnum, info->keys))
 					nshared_vars++;
 
 				continue;
@@ -4077,25 +4077,25 @@ estimate_multivariate_ndistinct(PlannerInfo *root, RelOptInfo *rel,
 			 */
 			if (IsA(varinfo->var, Var))
 			{
-				AttrNumber	attnum = ((Var *) varinfo->var)->varattno;
+				AttrNumber	attphysnum = ((Var *) varinfo->var)->varattno;
 
 				/*
 				 * Ignore expressions on system attributes. Can't rely on the
 				 * bms check for negative values.
 				 */
-				if (!AttrNumberIsForUserDefinedAttr(attnum))
+				if (!AttrNumberIsForUserDefinedAttr(attphysnum))
 					continue;
 
 				/* Is the variable covered by the statistics object? */
-				if (!bms_is_member(attnum, matched_info->keys))
+				if (!bms_is_member(attphysnum, matched_info->keys))
 					continue;
 
-				attnum = attnum + attnum_offset;
+				attphysnum = attphysnum + attnum_offset;
 
 				/* ensure sufficient offset */
-				Assert(AttrNumberIsForUserDefinedAttr(attnum));
+				Assert(AttrNumberIsForUserDefinedAttr(attphysnum));
 
-				matched = bms_add_member(matched, attnum);
+				matched = bms_add_member(matched, attphysnum);
 
 				found = true;
 			}
@@ -4116,14 +4116,14 @@ estimate_multivariate_ndistinct(PlannerInfo *root, RelOptInfo *rel,
 
 				if (equal(varinfo->var, expr))
 				{
-					AttrNumber	attnum = -(idx + 1);
+					AttrNumber	attphysnum = -(idx + 1);
 
-					attnum = attnum + attnum_offset;
+					attphysnum = attphysnum + attnum_offset;
 
 					/* ensure sufficient offset */
-					Assert(AttrNumberIsForUserDefinedAttr(attnum));
+					Assert(AttrNumberIsForUserDefinedAttr(attphysnum));
 
-					matched = bms_add_member(matched, attnum);
+					matched = bms_add_member(matched, attphysnum);
 
 					/* there should be just one matching expression */
 					break;
@@ -4148,15 +4148,15 @@ estimate_multivariate_ndistinct(PlannerInfo *root, RelOptInfo *rel,
 			/* check that all item attributes/expressions fit the match */
 			for (j = 0; j < tmpitem->nattributes; j++)
 			{
-				AttrNumber	attnum = tmpitem->attributes[j];
+				AttrNumber	attphysnum = tmpitem->attributes[j];
 
 				/*
 				 * Thanks to how we constructed the matched bitmap above, we
 				 * can just offset all attnums the same way.
 				 */
-				attnum = attnum + attnum_offset;
+				attphysnum = attphysnum + attnum_offset;
 
-				if (!bms_is_member(attnum, matched))
+				if (!bms_is_member(attphysnum, matched))
 				{
 					/* nah, it's not this item */
 					item = NULL;
@@ -4189,28 +4189,28 @@ estimate_multivariate_ndistinct(PlannerInfo *root, RelOptInfo *rel,
 			/*
 			 * Let's look at plain variables first, because it's the most
 			 * common case and the check is quite cheap. We can simply get the
-			 * attnum and check (with an offset) matched bitmap.
+			 * attphysnum and check (with an offset) matched bitmap.
 			 */
 			if (IsA(varinfo->var, Var))
 			{
-				AttrNumber	attnum = ((Var *) varinfo->var)->varattno;
+				AttrNumber	attphysnum = ((Var *) varinfo->var)->varattno;
 
 				/*
 				 * If it's a system attribute, we're done. We don't support
 				 * extended statistics on system attributes, so it's clearly
 				 * not matched. Just keep the expression and continue.
 				 */
-				if (!AttrNumberIsForUserDefinedAttr(attnum))
+				if (!AttrNumberIsForUserDefinedAttr(attphysnum))
 				{
 					newlist = lappend(newlist, varinfo);
 					continue;
 				}
 
 				/* apply the same offset as above */
-				attnum += attnum_offset;
+				attphysnum += attnum_offset;
 
 				/* if it's not matched, keep the varinfo */
-				if (!bms_is_member(attnum, matched))
+				if (!bms_is_member(attphysnum, matched))
 					newlist = lappend(newlist, varinfo);
 
 				/* The rest of the loop deals with complex expressions. */
@@ -7804,14 +7804,14 @@ brincostestimate(PlannerInfo *root, IndexPath *path, double loop_count,
 	foreach(l, path->indexclauses)
 	{
 		IndexClause *iclause = lfirst_node(IndexClause, l);
-		AttrNumber	attnum = index->indexkeys[iclause->indexcol];
+		AttrNumber	attphysnum = index->indexkeys[iclause->indexcol];
 
 		/* attempt to lookup stats in relation for this index column */
-		if (attnum != 0)
+		if (attphysnum != 0)
 		{
 			/* Simple variable -- look to stats for the underlying table */
 			if (get_relation_stats_hook &&
-				(*get_relation_stats_hook) (root, rte, attnum, &vardata))
+				(*get_relation_stats_hook) (root, rte, attphysnum, &vardata))
 			{
 				/*
 				 * The hook took control of acquiring a stats tuple.  If it
@@ -7826,7 +7826,7 @@ brincostestimate(PlannerInfo *root, IndexPath *path, double loop_count,
 				vardata.statsTuple =
 					SearchSysCache3(STATRELATTINH,
 									ObjectIdGetDatum(rte->relid),
-									Int16GetDatum(attnum),
+									Int16GetDatum(attphysnum),
 									BoolGetDatum(false));
 				vardata.freefunc = ReleaseSysCache;
 			}
@@ -7838,11 +7838,11 @@ brincostestimate(PlannerInfo *root, IndexPath *path, double loop_count,
 			 * see if there's any stats for it.
 			 */
 
-			/* get the attnum from the 0-based index. */
-			attnum = iclause->indexcol + 1;
+			/* get the attphysnum from the 0-based index. */
+			attphysnum = iclause->indexcol + 1;
 
 			if (get_index_stats_hook &&
-				(*get_index_stats_hook) (root, index->indexoid, attnum, &vardata))
+				(*get_index_stats_hook) (root, index->indexoid, attphysnum, &vardata))
 			{
 				/*
 				 * The hook took control of acquiring a stats tuple.  If it
@@ -7856,7 +7856,7 @@ brincostestimate(PlannerInfo *root, IndexPath *path, double loop_count,
 			{
 				vardata.statsTuple = SearchSysCache3(STATRELATTINH,
 													 ObjectIdGetDatum(index->indexoid),
-													 Int16GetDatum(attnum),
+													 Int16GetDatum(attphysnum),
 													 BoolGetDatum(false));
 				vardata.freefunc = ReleaseSysCache;
 			}

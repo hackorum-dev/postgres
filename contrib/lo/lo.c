@@ -24,7 +24,7 @@ Datum
 lo_manage(PG_FUNCTION_ARGS)
 {
 	TriggerData *trigdata = (TriggerData *) fcinfo->context;
-	int			attnum;			/* attribute number to monitor	*/
+	int			attphysnum;			/* attribute number to monitor	*/
 	char	  **args;			/* Args containing attr name	*/
 	TupleDesc	tupdesc;		/* Tuple Descriptor				*/
 	HeapTuple	rettuple;		/* Tuple to be returned			*/
@@ -61,9 +61,9 @@ lo_manage(PG_FUNCTION_ARGS)
 	isdelete = TRIGGER_FIRED_BY_DELETE(trigdata->tg_event);
 
 	/* Get the column we're interested in */
-	attnum = SPI_fnumber(tupdesc, args[0]);
+	attphysnum = SPI_fnumber(tupdesc, args[0]);
 
-	if (attnum <= 0)
+	if (attphysnum <= 0)
 		elog(ERROR, "%s: column \"%s\" does not exist",
 			 trigdata->tg_trigger->tgname, args[0]);
 
@@ -74,10 +74,10 @@ lo_manage(PG_FUNCTION_ARGS)
 	 * object associated with the original value is unlinked.
 	 */
 	if (newtuple != NULL &&
-		bms_is_member(attnum - FirstLowInvalidHeapAttributeNumber, trigdata->tg_updatedcols))
+		bms_is_member(attphysnum - FirstLowInvalidHeapAttributeNumber, trigdata->tg_updatedcols))
 	{
-		char	   *orig = SPI_getvalue(trigtuple, tupdesc, attnum);
-		char	   *newv = SPI_getvalue(newtuple, tupdesc, attnum);
+		char	   *orig = SPI_getvalue(trigtuple, tupdesc, attphysnum);
+		char	   *newv = SPI_getvalue(newtuple, tupdesc, attphysnum);
 
 		if (orig != NULL && (newv == NULL || strcmp(orig, newv) != 0))
 			DirectFunctionCall1(be_lo_unlink,
@@ -96,7 +96,7 @@ lo_manage(PG_FUNCTION_ARGS)
 	 */
 	if (isdelete)
 	{
-		char	   *orig = SPI_getvalue(trigtuple, tupdesc, attnum);
+		char	   *orig = SPI_getvalue(trigtuple, tupdesc, attphysnum);
 
 		if (orig != NULL)
 		{

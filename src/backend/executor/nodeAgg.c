@@ -1269,10 +1269,10 @@ prepare_projection_slot(AggState *aggstate, TupleTableSlot *slot, int currentSet
 
 			foreach(lc, aggstate->all_grouped_cols)
 			{
-				int			attnum = lfirst_int(lc);
+				int			attphysnum = lfirst_int(lc);
 
-				if (!bms_is_member(attnum, grouped_cols))
-					slot->tts_isnull[attnum - 1] = true;
+				if (!bms_is_member(attphysnum, grouped_cols))
+					slot->tts_isnull[attphysnum - 1] = true;
 			}
 		}
 	}
@@ -1595,10 +1595,10 @@ find_hash_columns(AggState *aggstate)
 
 			foreach(lc, aggstate->all_grouped_cols)
 			{
-				int			attnum = lfirst_int(lc);
+				int			attphysnum = lfirst_int(lc);
 
-				if (!bms_is_member(attnum, grouped_cols))
-					colnos = bms_del_member(colnos, attnum);
+				if (!bms_is_member(attphysnum, grouped_cols))
+					colnos = bms_del_member(colnos, attphysnum);
 			}
 		}
 

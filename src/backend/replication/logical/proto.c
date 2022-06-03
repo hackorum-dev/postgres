@@ -47,9 +47,9 @@ static const char *logicalrep_read_namespace(StringInfo in);
  * all columns.
  */
 static bool
-column_in_column_list(int attnum, Bitmapset *columns)
+column_in_column_list(int attphysnum, Bitmapset *columns)
 {
-	return (columns == NULL || bms_is_member(attnum, columns));
+	return (columns == NULL || bms_is_member(attphysnum, columns));
 }
 
 
@@ -783,7 +783,7 @@ logicalrep_write_tuple(StringInfo out, Relation rel, TupleTableSlot *slot,
 		if (att->attisdropped || att->attgenerated)
 			continue;
 
-		if (!column_in_column_list(att->attnum, columns))
+		if (!column_in_column_list(att->attphysnum, columns))
 			continue;
 
 		nliveatts++;
@@ -804,7 +804,7 @@ logicalrep_write_tuple(StringInfo out, Relation rel, TupleTableSlot *slot,
 		if (att->attisdropped || att->attgenerated)
 			continue;
 
-		if (!column_in_column_list(att->attnum, columns))
+		if (!column_in_column_list(att->attphysnum, columns))
 			continue;
 
 		if (isnull[i])
@@ -946,7 +946,7 @@ logicalrep_write_attrs(StringInfo out, Relation rel, Bitmapset *columns)
 		if (att->attisdropped || att->attgenerated)
 			continue;
 
-		if (!column_in_column_list(att->attnum, columns))
+		if (!column_in_column_list(att->attphysnum, columns))
 			continue;
 
 		nliveatts++;
@@ -967,12 +967,12 @@ logicalrep_write_attrs(StringInfo out, Relation rel, Bitmapset *columns)
 		if (att->attisdropped || att->attgenerated)
 			continue;
 
-		if (!column_in_column_list(att->attnum, columns))
+		if (!column_in_column_list(att->attphysnum, columns))
 			continue;
 
 		/* REPLICA IDENTITY FULL means all columns are sent as part of key. */
 		if (replidentfull ||
-			bms_is_member(att->attnum - FirstLowInvalidHeapAttributeNumber,
+			bms_is_member(att->attphysnum - FirstLowInvalidHeapAttributeNumber,
 						  idattrs))
 			flags |= LOGICALREP_IS_REPLICA_IDENTITY;
 

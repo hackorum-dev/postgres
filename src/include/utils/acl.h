@@ -234,9 +234,9 @@ extern void ExecAlterDefaultPrivilegesStmt(ParseState *pstate, AlterDefaultPrivi
 
 extern void RemoveRoleFromObjectACL(Oid roleid, Oid classid, Oid objid);
 
-extern AclMode pg_attribute_aclmask(Oid table_oid, AttrNumber attnum,
+extern AclMode pg_attribute_aclmask(Oid table_oid, AttrNumber attphysnum,
 									Oid roleid, AclMode mask, AclMaskHow how);
-extern AclMode pg_attribute_aclmask_ext(Oid table_oid, AttrNumber attnum,
+extern AclMode pg_attribute_aclmask_ext(Oid table_oid, AttrNumber attphysnum,
 										Oid roleid, AclMode mask,
 										AclMaskHow how, bool *is_missing);
 extern AclMode pg_class_aclmask(Oid table_oid, Oid roleid,
@@ -267,9 +267,9 @@ extern AclMode pg_foreign_server_aclmask(Oid srv_oid, Oid roleid,
 extern AclMode pg_type_aclmask(Oid type_oid, Oid roleid,
 							   AclMode mask, AclMaskHow how);
 
-extern AclResult pg_attribute_aclcheck(Oid table_oid, AttrNumber attnum,
+extern AclResult pg_attribute_aclcheck(Oid table_oid, AttrNumber attphysnum,
 									   Oid roleid, AclMode mode);
-extern AclResult pg_attribute_aclcheck_ext(Oid table_oid, AttrNumber attnum,
+extern AclResult pg_attribute_aclcheck_ext(Oid table_oid, AttrNumber attphysnum,
 										   Oid roleid, AclMode mode,
 										   bool *is_missing);
 extern AclResult pg_attribute_aclcheck_all(Oid table_oid, Oid roleid,

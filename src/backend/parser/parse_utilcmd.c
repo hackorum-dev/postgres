@@ -487,7 +487,7 @@ generateSerialExtraStmts(CreateStmtContext *cxt, ColumnDef *column,
 	 * owned by this column, and add it to the appropriate list of things to
 	 * be done along with this CREATE/ALTER TABLE.  In a CREATE or ALTER ADD
 	 * COLUMN, it must be done after the statement because we don't know the
-	 * column's attnum yet.  But if we do have the attnum (in AT_AddIdentity),
+	 * column's attphysnum yet.  But if we do have the attphysnum (in AT_AddIdentity),
 	 * we can do the marking immediately, which improves some ALTER TABLE
 	 * behaviors.
 	 */
@@ -1070,7 +1070,7 @@ transformTableLikeClause(CreateStmtContext *cxt, TableLikeClause *table_like_cla
 			 * find sequence owned by old column; extract sequence parameters;
 			 * build new create sequence command
 			 */
-			seq_relid = getIdentitySequence(RelationGetRelid(relation), attribute->attnum, false);
+			seq_relid = getIdentitySequence(RelationGetRelid(relation), attribute->attphysnum, false);
 			seq_options = sequence_options(seq_relid);
 			generateSerialExtraStmts(cxt, def,
 									 InvalidOid, seq_options,
@@ -1097,7 +1097,7 @@ transformTableLikeClause(CreateStmtContext *cxt, TableLikeClause *table_like_cla
 		if ((table_like_clause->options & CREATE_TABLE_LIKE_COMMENTS) &&
 			(comment = GetComment(attribute->attrelid,
 								  RelationRelationId,
-								  attribute->attnum)) != NULL)
+								  attribute->attphysnum)) != NULL)
 		{
 			CommentStmt *stmt = makeNode(CommentStmt);
 
@@ -1701,20 +1701,20 @@ generateClonedIndexStmt(RangeVar *heapRel, Relation source_idx,
 	for (keyno = 0; keyno < idxrec->indnkeyatts; keyno++)
 	{
 		IndexElem  *iparam;
-		AttrNumber	attnum = idxrec->indkey.values[keyno];
+		AttrNumber	attphysnum = idxrec->indkey.values[keyno];
 		Form_pg_attribute attr = TupleDescAttr(RelationGetDescr(source_idx),
 											   keyno);
 		int16		opt = source_idx->rd_indoption[keyno];
 
 		iparam = makeNode(IndexElem);
 
-		if (AttributeNumberIsValid(attnum))
+		if (AttributeNumberIsValid(attphysnum))
 		{
 			/* Simple index column */
 			char	   *attname;
 
-			attname = get_attname(indrelid, attnum, false);
-			keycoltype = get_atttype(indrelid, attnum);
+			attname = get_attname(indrelid, attphysnum, false);
+			keycoltype = get_atttype(indrelid, attphysnum);
 
 			iparam->name = attname;
 			iparam->expr = NULL;
@@ -1793,18 +1793,18 @@ generateClonedIndexStmt(RangeVar *heapRel, Relation source_idx,
 	for (keyno = idxrec->indnkeyatts; keyno < idxrec->indnatts; keyno++)
 	{
 		IndexElem  *iparam;
-		AttrNumber	attnum = idxrec->indkey.values[keyno];
+		AttrNumber	attphysnum = idxrec->indkey.values[keyno];
 		Form_pg_attribute attr = TupleDescAttr(RelationGetDescr(source_idx),
 											   keyno);
 
 		iparam = makeNode(IndexElem);
 
-		if (AttributeNumberIsValid(attnum))
+		if (AttributeNumberIsValid(attphysnum))
 		{
 			/* Simple index column */
 			char	   *attname;
 
-			attname = get_attname(indrelid, attnum, false);
+			attname = get_attname(indrelid, attphysnum, false);
 
 			iparam->name = attname;
 			iparam->expr = NULL;
@@ -1922,9 +1922,9 @@ generateClonedExtStatsStmt(RangeVar *heapRel, Oid heapRelid,
 	for (i = 0; i < statsrec->stxkeys.dim1; i++)
 	{
 		StatsElem  *selem = makeNode(StatsElem);
-		AttrNumber	attnum = statsrec->stxkeys.values[i];
+		AttrNumber	attphysnum = statsrec->stxkeys.values[i];
 
-		selem->name = get_attname(heapRelid, attnum, false);
+		selem->name = get_attname(heapRelid, attphysnum, false);
 		selem->expr = NULL;
 
 		def_names = lappend(def_names, selem);
@@ -2330,23 +2330,23 @@ transformIndexConstraint(Constraint *constraint, CreateStmtContext *cxt)
 
 		for (i = 0; i < index_form->indnatts; i++)
 		{
-			int16		attnum = index_form->indkey.values[i];
+			int16		attphysnum = index_form->indkey.values[i];
 			const FormData_pg_attribute *attform;
 			char	   *attname;
 			Oid			defopclass;
 
 			/*
-			 * We shouldn't see attnum == 0 here, since we already rejected
+			 * We shouldn't see attphysnum == 0 here, since we already rejected
 			 * expression indexes.  If we do, SystemAttributeDefinition will
 			 * throw an error.
 			 */
-			if (attnum > 0)
+			if (attphysnum > 0)
 			{
-				Assert(attnum <= heap_rel->rd_att->natts);
-				attform = TupleDescAttr(heap_rel->rd_att, attnum - 1);
+				Assert(attphysnum <= heap_rel->rd_att->natts);
+				attform = TupleDescAttr(heap_rel->rd_att, attphysnum - 1);
 			}
 			else
-				attform = SystemAttributeDefinition(attnum);
+				attform = SystemAttributeDefinition(attphysnum);
 			attname = pstrdup(NameStr(attform->attname));
 
 			if (i < index_form->indnkeyatts)
@@ -3400,7 +3400,7 @@ transformAlterTableStmt(Oid relid, AlterTableStmt *stmt,
 			case AT_AlterColumnType:
 				{
 					ColumnDef  *def = castNode(ColumnDef, cmd->def);
-					AttrNumber	attnum;
+					AttrNumber	attphysnum;
 
 					/*
 					 * For ALTER COLUMN TYPE, transform the USING clause if
@@ -3417,17 +3417,17 @@ transformAlterTableStmt(Oid relid, AlterTableStmt *stmt,
 					 * For identity column, create ALTER SEQUENCE command to
 					 * change the data type of the sequence.
 					 */
-					attnum = get_attnum(relid, cmd->name);
-					if (attnum == InvalidAttrNumber)
+					attphysnum = get_attphysnum(relid, cmd->name);
+					if (attphysnum == InvalidAttrNumber)
 						ereport(ERROR,
 								(errcode(ERRCODE_UNDEFINED_COLUMN),
 								 errmsg("column \"%s\" of relation \"%s\" does not exist",
 										cmd->name, RelationGetRelationName(rel))));
 
-					if (attnum > 0 &&
-						TupleDescAttr(tupdesc, attnum - 1)->attidentity)
+					if (attphysnum > 0 &&
+						TupleDescAttr(tupdesc, attphysnum - 1)->attidentity)
 					{
-						Oid			seq_relid = getIdentitySequence(relid, attnum, false);
+						Oid			seq_relid = getIdentitySequence(relid, attphysnum, false);
 						Oid			typeOid = typenameTypeId(pstate, def->typeName);
 						AlterSeqStmt *altseqstmt = makeNode(AlterSeqStmt);
 
@@ -3447,21 +3447,21 @@ transformAlterTableStmt(Oid relid, AlterTableStmt *stmt,
 				{
 					Constraint *def = castNode(Constraint, cmd->def);
 					ColumnDef  *newdef = makeNode(ColumnDef);
-					AttrNumber	attnum;
+					AttrNumber	attphysnum;
 
 					newdef->colname = cmd->name;
 					newdef->identity = def->generated_when;
 					cmd->def = (Node *) newdef;
 
-					attnum = get_attnum(relid, cmd->name);
-					if (attnum == InvalidAttrNumber)
+					attphysnum = get_attphysnum(relid, cmd->name);
+					if (attphysnum == InvalidAttrNumber)
 						ereport(ERROR,
 								(errcode(ERRCODE_UNDEFINED_COLUMN),
 								 errmsg("column \"%s\" of relation \"%s\" does not exist",
 										cmd->name, RelationGetRelationName(rel))));
 
 					generateSerialExtraStmts(&cxt, newdef,
-											 get_atttype(relid, attnum),
+											 get_atttype(relid, attphysnum),
 											 def->options, true, true,
 											 NULL, NULL);
 
@@ -3478,7 +3478,7 @@ transformAlterTableStmt(Oid relid, AlterTableStmt *stmt,
 					ListCell   *lc;
 					List	   *newseqopts = NIL;
 					List	   *newdef = NIL;
-					AttrNumber	attnum;
+					AttrNumber	attphysnum;
 					Oid			seq_relid;
 
 					/*
@@ -3495,14 +3495,14 @@ transformAlterTableStmt(Oid relid, AlterTableStmt *stmt,
 							newseqopts = lappend(newseqopts, def);
 					}
 
-					attnum = get_attnum(relid, cmd->name);
-					if (attnum == InvalidAttrNumber)
+					attphysnum = get_attphysnum(relid, cmd->name);
+					if (attphysnum == InvalidAttrNumber)
 						ereport(ERROR,
 								(errcode(ERRCODE_UNDEFINED_COLUMN),
 								 errmsg("column \"%s\" of relation \"%s\" does not exist",
 										cmd->name, RelationGetRelationName(rel))));
 
-					seq_relid = getIdentitySequence(relid, attnum, true);
+					seq_relid = getIdentitySequence(relid, attphysnum, true);
 
 					if (seq_relid)
 					{

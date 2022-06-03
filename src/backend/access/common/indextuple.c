@@ -220,7 +220,7 @@ index_form_tuple(TupleDesc tupleDescriptor,
  */
 Datum
 nocache_index_getattr(IndexTuple tup,
-					  int attnum,
+					  int attphysnum,
 					  TupleDesc tupleDesc)
 {
 	char	   *tp;				/* ptr to data part of tuple */
@@ -240,7 +240,7 @@ nocache_index_getattr(IndexTuple tup,
 
 	data_off = IndexInfoFindDataOffset(tup->t_info);
 
-	attnum--;
+	attphysnum--;
 
 	if (IndexTupleHasNulls(tup))
 	{
@@ -257,8 +257,8 @@ nocache_index_getattr(IndexTuple tup,
 		 * Now check to see if any preceding bits are null...
 		 */
 		{
-			int			byte = attnum >> 3;
-			int			finalbit = attnum & 0x07;
+			int			byte = attphysnum >> 3;
+			int			finalbit = attphysnum & 0x07;
 
 			/* check for nulls "before" final bit of last byte */
 			if ((~bp[byte]) & ((1 << finalbit) - 1))
@@ -290,7 +290,7 @@ nocache_index_getattr(IndexTuple tup,
 		 * If we get here, there are no nulls up to and including the target
 		 * attribute.  If we have a cached offset, we can use it.
 		 */
-		att = TupleDescAttr(tupleDesc, attnum);
+		att = TupleDescAttr(tupleDesc, attphysnum);
 		if (att->attcacheoff >= 0)
 			return fetchatt(att, tp + att->attcacheoff);
 
@@ -303,7 +303,7 @@ nocache_index_getattr(IndexTuple tup,
 		{
 			int			j;
 
-			for (j = 0; j <= attnum; j++)
+			for (j = 0; j <= attphysnum; j++)
 			{
 				if (TupleDescAttr(tupleDesc, j)->attlen <= 0)
 				{
@@ -351,9 +351,9 @@ nocache_index_getattr(IndexTuple tup,
 			off += att->attlen;
 		}
 
-		Assert(j > attnum);
+		Assert(j > attphysnum);
 
-		off = TupleDescAttr(tupleDesc, attnum)->attcacheoff;
+		off = TupleDescAttr(tupleDesc, attphysnum)->attcacheoff;
 	}
 	else
 	{
@@ -411,7 +411,7 @@ nocache_index_getattr(IndexTuple tup,
 					att->attcacheoff = off;
 			}
 
-			if (i == attnum)
+			if (i == attphysnum)
 				break;
 
 			off = att_addlength_pointer(off, att->attlen, tp + off);
@@ -421,7 +421,7 @@ nocache_index_getattr(IndexTuple tup,
 		}
 	}
 
-	return fetchatt(TupleDescAttr(tupleDesc, attnum), tp + off);
+	return fetchatt(TupleDescAttr(tupleDesc, attphysnum), tp + off);
 }
 
 /*
@@ -462,26 +462,26 @@ index_deform_tuple_internal(TupleDesc tupleDescriptor,
 							char *tp, bits8 *bp, int hasnulls)
 {
 	int			natts = tupleDescriptor->natts; /* number of atts to extract */
-	int			attnum;
+	int			attphysnum;
 	int			off = 0;		/* offset in tuple data */
 	bool		slow = false;	/* can we use/set attcacheoff? */
 
 	/* Assert to protect callers who allocate fixed-size arrays */
 	Assert(natts <= INDEX_MAX_KEYS);
 
-	for (attnum = 0; attnum < natts; attnum++)
+	for (attphysnum = 0; attphysnum < natts; attphysnum++)
 	{
-		Form_pg_attribute thisatt = TupleDescAttr(tupleDescriptor, attnum);
+		Form_pg_attribute thisatt = TupleDescAttr(tupleDescriptor, attphysnum);
 
-		if (hasnulls && att_isnull(attnum, bp))
+		if (hasnulls && att_isnull(attphysnum, bp))
 		{
-			values[attnum] = (Datum) 0;
-			isnull[attnum] = true;
+			values[attphysnum] = (Datum) 0;
+			isnull[attphysnum] = true;
 			slow = true;		/* can't use attcacheoff anymore */
 			continue;
 		}
 
-		isnull[attnum] = false;
+		isnull[attphysnum] = false;
 
 		if (!slow && thisatt->attcacheoff >= 0)
 			off = thisatt->attcacheoff;
@@ -512,7 +512,7 @@ index_deform_tuple_internal(TupleDesc tupleDescriptor,
 				thisatt->attcacheoff = off;
 		}
 
-		values[attnum] = fetchatt(thisatt, tp + off);
+		values[attphysnum] = fetchatt(thisatt, tp + off);
 
 		off = att_addlength_pointer(off, thisatt->attlen, tp + off);
 

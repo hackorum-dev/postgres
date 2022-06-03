@@ -1246,9 +1246,9 @@ count_rowexpr_columns(ParseState *pstate, Node *expr)
 	if (IsA(expr, Var))
 	{
 		Var		   *var = (Var *) expr;
-		AttrNumber	attnum = var->varattno;
+		AttrNumber	attphysnum = var->varattno;
 
-		if (attnum > 0 && var->vartype == RECORDOID)
+		if (attphysnum > 0 && var->vartype == RECORDOID)
 		{
 			RangeTblEntry *rte;
 
@@ -1257,7 +1257,7 @@ count_rowexpr_columns(ParseState *pstate, Node *expr)
 			{
 				/* Subselect-in-FROM: examine sub-select's output expr */
 				TargetEntry *ste = get_tle_by_resno(rte->subquery->targetList,
-													attnum);
+													attphysnum);
 
 				if (ste == NULL || ste->resjunk)
 					return -1;

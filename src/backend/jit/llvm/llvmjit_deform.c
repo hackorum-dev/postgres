@@ -87,7 +87,7 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 	/* if true, known_alignment describes definite offset of column */
 	bool		attguaranteedalign = true;
 
-	int			attnum;
+	int			attphysnum;
 
 	/* virtual tuples never need deforming, so don't generate code */
 	if (ops == &TTSOpsVirtual)
@@ -106,9 +106,9 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 	 * Check which columns have to exist, so we don't have to check the row's
 	 * natts unnecessarily.
 	 */
-	for (attnum = 0; attnum < desc->natts; attnum++)
+	for (attphysnum = 0; attphysnum < desc->natts; attphysnum++)
 	{
-		Form_pg_attribute att = TupleDescAttr(desc, attnum);
+		Form_pg_attribute att = TupleDescAttr(desc, attphysnum);
 
 		/*
 		 * If the column is declared NOT NULL then it must be present in every
@@ -124,7 +124,7 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 		if (att->attnotnull &&
 			!att->atthasmissing &&
 			!att->attisdropped)
-			guaranteed_column_number = attnum;
+			guaranteed_column_number = attphysnum;
 	}
 
 	/* Create the signature and function */
@@ -280,20 +280,20 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 	}
 
 	/* build the basic block for each attribute, need them as jump target */
-	for (attnum = 0; attnum < natts; attnum++)
+	for (attphysnum = 0; attphysnum < natts; attphysnum++)
 	{
-		attcheckattnoblocks[attnum] =
-			l_bb_append_v(v_deform_fn, "block.attr.%d.attcheckattno", attnum);
-		attstartblocks[attnum] =
-			l_bb_append_v(v_deform_fn, "block.attr.%d.start", attnum);
-		attisnullblocks[attnum] =
-			l_bb_append_v(v_deform_fn, "block.attr.%d.attisnull", attnum);
-		attcheckalignblocks[attnum] =
-			l_bb_append_v(v_deform_fn, "block.attr.%d.attcheckalign", attnum);
-		attalignblocks[attnum] =
-			l_bb_append_v(v_deform_fn, "block.attr.%d.align", attnum);
-		attstoreblocks[attnum] =
-			l_bb_append_v(v_deform_fn, "block.attr.%d.store", attnum);
+		attcheckattnoblocks[attphysnum] =
+			l_bb_append_v(v_deform_fn, "block.attr.%d.attcheckattno", attphysnum);
+		attstartblocks[attphysnum] =
+			l_bb_append_v(v_deform_fn, "block.attr.%d.start", attphysnum);
+		attisnullblocks[attphysnum] =
+			l_bb_append_v(v_deform_fn, "block.attr.%d.attisnull", attphysnum);
+		attcheckalignblocks[attphysnum] =
+			l_bb_append_v(v_deform_fn, "block.attr.%d.attcheckalign", attphysnum);
+		attalignblocks[attphysnum] =
+			l_bb_append_v(v_deform_fn, "block.attr.%d.align", attphysnum);
+		attstoreblocks[attphysnum] =
+			l_bb_append_v(v_deform_fn, "block.attr.%d.store", attphysnum);
 	}
 
 	/*
@@ -350,11 +350,11 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 		LLVMValueRef v_switch = LLVMBuildSwitch(b, v_nvalid,
 												b_dead, natts);
 
-		for (attnum = 0; attnum < natts; attnum++)
+		for (attphysnum = 0; attphysnum < natts; attphysnum++)
 		{
-			LLVMValueRef v_attno = l_int16_const(attnum);
+			LLVMValueRef v_attno = l_int16_const(attphysnum);
 
-			LLVMAddCase(v_switch, v_attno, attcheckattnoblocks[attnum]);
+			LLVMAddCase(v_switch, v_attno, attcheckattnoblocks[attphysnum]);
 		}
 	}
 	else
@@ -370,23 +370,23 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 	 * Iterate over each attribute that needs to be deformed, build code to
 	 * deform it.
 	 */
-	for (attnum = 0; attnum < natts; attnum++)
+	for (attphysnum = 0; attphysnum < natts; attphysnum++)
 	{
-		Form_pg_attribute att = TupleDescAttr(desc, attnum);
+		Form_pg_attribute att = TupleDescAttr(desc, attphysnum);
 		LLVMValueRef v_incby;
 		int			alignto;
-		LLVMValueRef l_attno = l_int16_const(attnum);
+		LLVMValueRef l_attno = l_int16_const(attphysnum);
 		LLVMValueRef v_attdatap;
 		LLVMValueRef v_resultp;
 
 		/* build block checking whether we did all the necessary attributes */
-		LLVMPositionBuilderAtEnd(b, attcheckattnoblocks[attnum]);
+		LLVMPositionBuilderAtEnd(b, attcheckattnoblocks[attphysnum]);
 
 		/*
 		 * If this is the first attribute, slot->tts_nvalid was 0. Therefore
 		 * also reset offset to 0, it may be from a previous execution.
 		 */
-		if (attnum == 0)
+		if (attphysnum == 0)
 		{
 			LLVMBuildStore(b, l_sizet_const(0), v_offp);
 		}
@@ -396,9 +396,9 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 		 * that many columns stored). We can avoid the branch if we know
 		 * there's a subsequent NOT NULL column.
 		 */
-		if (attnum <= guaranteed_column_number)
+		if (attphysnum <= guaranteed_column_number)
 		{
-			LLVMBuildBr(b, attstartblocks[attnum]);
+			LLVMBuildBr(b, attstartblocks[attphysnum]);
 		}
 		else
 		{
@@ -408,9 +408,9 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 									 l_attno,
 									 v_maxatt,
 									 "heap_natts");
-			LLVMBuildCondBr(b, v_islast, b_out, attstartblocks[attnum]);
+			LLVMBuildCondBr(b, v_islast, b_out, attstartblocks[attphysnum]);
 		}
-		LLVMPositionBuilderAtEnd(b, attstartblocks[attnum]);
+		LLVMPositionBuilderAtEnd(b, attstartblocks[attphysnum]);
 
 		/*
 		 * Check for nulls if necessary. No need to take missing attributes
@@ -428,16 +428,16 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 			LLVMValueRef v_nullbyte;
 			LLVMValueRef v_nullbit;
 
-			b_ifnotnull = attcheckalignblocks[attnum];
-			b_ifnull = attisnullblocks[attnum];
+			b_ifnotnull = attcheckalignblocks[attphysnum];
+			b_ifnull = attisnullblocks[attphysnum];
 
-			if (attnum + 1 == natts)
+			if (attphysnum + 1 == natts)
 				b_next = b_out;
 			else
-				b_next = attcheckattnoblocks[attnum + 1];
+				b_next = attcheckattnoblocks[attphysnum + 1];
 
-			v_nullbyteno = l_int32_const(attnum >> 3);
-			v_nullbytemask = l_int8_const(1 << ((attnum) & 0x07));
+			v_nullbyteno = l_int32_const(attphysnum >> 3);
+			v_nullbytemask = l_int8_const(1 << ((attphysnum) & 0x07));
 			v_nullbyte = l_load_gep1(b, v_bits, v_nullbyteno, "attnullbyte");
 
 			v_nullbit = LLVMBuildICmp(b,
@@ -467,11 +467,11 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 		else
 		{
 			/* nothing to do */
-			LLVMBuildBr(b, attcheckalignblocks[attnum]);
-			LLVMPositionBuilderAtEnd(b, attisnullblocks[attnum]);
-			LLVMBuildBr(b, attcheckalignblocks[attnum]);
+			LLVMBuildBr(b, attcheckalignblocks[attphysnum]);
+			LLVMPositionBuilderAtEnd(b, attisnullblocks[attphysnum]);
+			LLVMBuildBr(b, attcheckalignblocks[attphysnum]);
 		}
-		LLVMPositionBuilderAtEnd(b, attcheckalignblocks[attnum]);
+		LLVMPositionBuilderAtEnd(b, attcheckalignblocks[attphysnum]);
 
 		/* determine required alignment */
 		if (att->attalign == TYPALIGN_INT)
@@ -527,15 +527,15 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 								  v_possible_padbyte, l_int8_const(0),
 								  "ispadbyte");
 				LLVMBuildCondBr(b, v_ispad,
-								attalignblocks[attnum],
-								attstoreblocks[attnum]);
+								attalignblocks[attphysnum],
+								attstoreblocks[attphysnum]);
 			}
 			else
 			{
-				LLVMBuildBr(b, attalignblocks[attnum]);
+				LLVMBuildBr(b, attalignblocks[attphysnum]);
 			}
 
-			LLVMPositionBuilderAtEnd(b, attalignblocks[attnum]);
+			LLVMPositionBuilderAtEnd(b, attalignblocks[attphysnum]);
 
 			/* translation of alignment code (cf TYPEALIGN()) */
 			{
@@ -567,17 +567,17 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 				known_alignment = TYPEALIGN(alignto, known_alignment);
 			}
 
-			LLVMBuildBr(b, attstoreblocks[attnum]);
-			LLVMPositionBuilderAtEnd(b, attstoreblocks[attnum]);
+			LLVMBuildBr(b, attstoreblocks[attphysnum]);
+			LLVMPositionBuilderAtEnd(b, attstoreblocks[attphysnum]);
 		}
 		else
 		{
-			LLVMPositionBuilderAtEnd(b, attcheckalignblocks[attnum]);
-			LLVMBuildBr(b, attalignblocks[attnum]);
-			LLVMPositionBuilderAtEnd(b, attalignblocks[attnum]);
-			LLVMBuildBr(b, attstoreblocks[attnum]);
+			LLVMPositionBuilderAtEnd(b, attcheckalignblocks[attphysnum]);
+			LLVMBuildBr(b, attalignblocks[attphysnum]);
+			LLVMPositionBuilderAtEnd(b, attalignblocks[attphysnum]);
+			LLVMBuildBr(b, attstoreblocks[attphysnum]);
 		}
-		LLVMPositionBuilderAtEnd(b, attstoreblocks[attnum]);
+		LLVMPositionBuilderAtEnd(b, attstoreblocks[attphysnum]);
 
 		/*
 		 * Store the current offset if known to be constant. That allows LLVM
@@ -720,14 +720,14 @@ slot_compile_deform(LLVMJitContext *context, TupleDesc desc,
 		 * jump to next block, unless last possible column, or all desired
 		 * (available) attributes have been fetched.
 		 */
-		if (attnum + 1 == natts)
+		if (attphysnum + 1 == natts)
 		{
 			/* jump out */
 			LLVMBuildBr(b, b_out);
 		}
 		else
 		{
-			LLVMBuildBr(b, attcheckattnoblocks[attnum + 1]);
+			LLVMBuildBr(b, attcheckattnoblocks[attphysnum + 1]);
 		}
 	}
 

@@ -2758,10 +2758,10 @@ AlterDomainNotNull(List *names, bool notNull)
 				/* Test attributes that are of the domain */
 				for (i = 0; i < rtc->natts; i++)
 				{
-					int			attnum = rtc->atts[i];
-					Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum - 1);
+					int			attphysnum = rtc->atts[i];
+					Form_pg_attribute attr = TupleDescAttr(tupdesc, attphysnum - 1);
 
-					if (slot_attisnull(slot, attnum))
+					if (slot_attisnull(slot, attphysnum))
 					{
 						/*
 						 * In principle the auxiliary information for this
@@ -2776,7 +2776,7 @@ AlterDomainNotNull(List *names, bool notNull)
 								 errmsg("column \"%s\" of table \"%s\" contains null values",
 										NameStr(attr->attname),
 										RelationGetRelationName(testrel)),
-								 errtablecol(testrel, attnum)));
+								 errtablecol(testrel, attphysnum)));
 					}
 				}
 			}
@@ -3174,13 +3174,13 @@ validateDomainConstraint(Oid domainoid, char *ccbin)
 			/* Test attributes that are of the domain */
 			for (i = 0; i < rtc->natts; i++)
 			{
-				int			attnum = rtc->atts[i];
+				int			attphysnum = rtc->atts[i];
 				Datum		d;
 				bool		isNull;
 				Datum		conResult;
-				Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum - 1);
+				Form_pg_attribute attr = TupleDescAttr(tupdesc, attphysnum - 1);
 
-				d = slot_getattr(slot, attnum, &isNull);
+				d = slot_getattr(slot, attphysnum, &isNull);
 
 				econtext->domainValue_datum = d;
 				econtext->domainValue_isNull = isNull;
@@ -3204,7 +3204,7 @@ validateDomainConstraint(Oid domainoid, char *ccbin)
 							 errmsg("column \"%s\" of table \"%s\" contains values that violate the new constraint",
 									NameStr(attr->attname),
 									RelationGetRelationName(testrel)),
-							 errtablecol(testrel, attnum)));
+							 errtablecol(testrel, attphysnum)));
 				}
 			}
 

@@ -1731,21 +1731,42 @@ describeOneTableDetails(const char *schemaname,
 			goto error_return;
 
 		/* Get the column that owns this sequence */
-		printfPQExpBuffer(&buf, "SELECT pg_catalog.quote_ident(nspname) || '.' ||"
-						  "\n   pg_catalog.quote_ident(relname) || '.' ||"
-						  "\n   pg_catalog.quote_ident(attname),"
-						  "\n   d.deptype"
-						  "\nFROM pg_catalog.pg_class c"
-						  "\nINNER JOIN pg_catalog.pg_depend d ON c.oid=d.refobjid"
-						  "\nINNER JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace"
-						  "\nINNER JOIN pg_catalog.pg_attribute a ON ("
-						  "\n a.attrelid=c.oid AND"
-						  "\n a.attnum=d.refobjsubid)"
-						  "\nWHERE d.classid='pg_catalog.pg_class'::pg_catalog.regclass"
-						  "\n AND d.refclassid='pg_catalog.pg_class'::pg_catalog.regclass"
-						  "\n AND d.objid='%s'"
-						  "\n AND d.deptype IN ('a', 'i')",
-						  oid);
+		if (pset.sversion >= 150000) /* FIXME - bump me when pg15 branched */
+		{
+			printfPQExpBuffer(&buf, "SELECT pg_catalog.quote_ident(nspname) || '.' ||"
+							  "\n   pg_catalog.quote_ident(relname) || '.' ||"
+							  "\n   pg_catalog.quote_ident(attname),"
+							  "\n   d.deptype"
+							  "\nFROM pg_catalog.pg_class c"
+							  "\nINNER JOIN pg_catalog.pg_depend d ON c.oid=d.refobjid"
+							  "\nINNER JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace"
+							  "\nINNER JOIN pg_catalog.pg_attribute a ON ("
+							  "\n a.attrelid=c.oid AND"
+							  "\n a.attphysnum=d.refobjsubid)"
+							  "\nWHERE d.classid='pg_catalog.pg_class'::pg_catalog.regclass"
+							  "\n AND d.refclassid='pg_catalog.pg_class'::pg_catalog.regclass"
+							  "\n AND d.objid='%s'"
+							  "\n AND d.deptype IN ('a', 'i')",
+							  oid);
+		}
+		else
+		{
+			printfPQExpBuffer(&buf, "SELECT pg_catalog.quote_ident(nspname) || '.' ||"
+							  "\n   pg_catalog.quote_ident(relname) || '.' ||"
+							  "\n   pg_catalog.quote_ident(attname),"
+							  "\n   d.deptype"
+							  "\nFROM pg_catalog.pg_class c"
+							  "\nINNER JOIN pg_catalog.pg_depend d ON c.oid=d.refobjid"
+							  "\nINNER JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace"
+							  "\nINNER JOIN pg_catalog.pg_attribute a ON ("
+							  "\n a.attrelid=c.oid AND"
+							  "\n a.attnum=d.refobjsubid)"
+							  "\nWHERE d.classid='pg_catalog.pg_class'::pg_catalog.regclass"
+							  "\n AND d.refclassid='pg_catalog.pg_class'::pg_catalog.regclass"
+							  "\n AND d.objid='%s'"
+							  "\n AND d.deptype IN ('a', 'i')",
+							  oid);
+		}
 
 		result = PSQLexec(buf.data);
 
@@ -1819,11 +1840,23 @@ describeOneTableDetails(const char *schemaname,
 	if (show_column_details)
 	{
 		/* use "pretty" mode for expression to avoid excessive parentheses */
-		appendPQExpBufferStr(&buf,
-							 ",\n  (SELECT pg_catalog.pg_get_expr(d.adbin, d.adrelid, true)"
-							 "\n   FROM pg_catalog.pg_attrdef d"
-							 "\n   WHERE d.adrelid = a.attrelid AND d.adnum = a.attnum AND a.atthasdef)"
-							 ",\n  a.attnotnull");
+		if (pset.sversion >= 150000) /* FIXME - bump me when pg15 branched */
+		{
+			appendPQExpBufferStr(&buf,
+								 ",\n  (SELECT pg_catalog.pg_get_expr(d.adbin, d.adrelid, true)"
+								 "\n   FROM pg_catalog.pg_attrdef d"
+								 "\n   WHERE d.adrelid = a.attrelid AND d.adnum = a.attphysnum AND a.atthasdef)"
+								 ",\n  a.attnotnull");
+		}
+		else
+		{
+			appendPQExpBufferStr(&buf,
+								 ",\n  (SELECT pg_catalog.pg_get_expr(d.adbin, d.adrelid, true)"
+								 "\n   FROM pg_catalog.pg_attrdef d"
+								 "\n   WHERE d.adrelid = a.attrelid AND d.adnum = a.attnum AND a.atthasdef)"
+								 ",\n  a.attnotnull");
+		}
+
 		attrdef_col = cols++;
 		attnotnull_col = cols++;
 		appendPQExpBufferStr(&buf, ",\n  (SELECT c.collname FROM pg_catalog.pg_collation c, pg_catalog.pg_type t\n"
@@ -1843,7 +1876,15 @@ describeOneTableDetails(const char *schemaname,
 	if (tableinfo.relkind == RELKIND_INDEX ||
 		tableinfo.relkind == RELKIND_PARTITIONED_INDEX)
 	{
-		if (pset.sversion >= 110000)
+		if (pset.sversion >= 150000) /* FIXME - bump me when pg15 branched */
+		{
+			appendPQExpBuffer(&buf, ",\n  CASE WHEN a.attphysnum <= (SELECT i.indnkeyatts FROM pg_catalog.pg_index i WHERE i.indexrelid = '%s') THEN '%s' ELSE '%s' END AS is_key",
+							  oid,
+							  gettext_noop("yes"),
+							  gettext_noop("no"));
+			isindexkey_col = cols++;
+		}
+		else if (pset.sversion >= 110000)
 		{
 			appendPQExpBuffer(&buf, ",\n  CASE WHEN a.attnum <= (SELECT i.indnkeyatts FROM pg_catalog.pg_index i WHERE i.indexrelid = '%s') THEN '%s' ELSE '%s' END AS is_key",
 							  oid,
@@ -1851,7 +1892,11 @@ describeOneTableDetails(const char *schemaname,
 							  gettext_noop("no"));
 			isindexkey_col = cols++;
 		}
-		appendPQExpBufferStr(&buf, ",\n  pg_catalog.pg_get_indexdef(a.attrelid, a.attnum, TRUE) AS indexdef");
+
+		if (pset.sversion >= 150000) /* FIXME - bump me when pg15 branched */
+			appendPQExpBufferStr(&buf, ",\n  pg_catalog.pg_get_indexdef(a.attrelid, a.attphysnum, TRUE) AS indexdef");
+		else
+			appendPQExpBufferStr(&buf, ",\n  pg_catalog.pg_get_indexdef(a.attrelid, a.attnum, TRUE) AS indexdef");
 		indexdef_col = cols++;
 	}
 	/* FDW options for foreign table column */
@@ -1901,14 +1946,25 @@ describeOneTableDetails(const char *schemaname,
 			tableinfo.relkind == RELKIND_COMPOSITE_TYPE ||
 			tableinfo.relkind == RELKIND_PARTITIONED_TABLE)
 		{
-			appendPQExpBufferStr(&buf, ",\n  pg_catalog.col_description(a.attrelid, a.attnum)");
+			if (pset.sversion >= 150000) /* FIXME - bump me when pg15 branched */
+				appendPQExpBufferStr(&buf, ",\n  pg_catalog.col_description(a.attrelid, a.attphysnum)");
+			else
+				appendPQExpBufferStr(&buf, ",\n  pg_catalog.col_description(a.attrelid, a.attnum)");
 			attdescr_col = cols++;
 		}
 	}
 
 	appendPQExpBufferStr(&buf, "\nFROM pg_catalog.pg_attribute a");
-	appendPQExpBuffer(&buf, "\nWHERE a.attrelid = '%s' AND a.attnum > 0 AND NOT a.attisdropped", oid);
-	appendPQExpBufferStr(&buf, "\nORDER BY a.attnum;");
+	if (pset.sversion >= 150000) /* FIXME - bump me when pg15 branched */
+	{
+		appendPQExpBuffer(&buf, "\nWHERE a.attrelid = '%s' AND a.attphysnum > 0 AND NOT a.attisdropped", oid);
+		appendPQExpBufferStr(&buf, "\nORDER BY a.attphysnum;");
+	}
+	else
+	{
+		appendPQExpBuffer(&buf, "\nWHERE a.attrelid = '%s' AND a.attnum > 0 AND NOT a.attisdropped", oid);
+		appendPQExpBufferStr(&buf, "\nORDER BY a.attnum;");
+	}
 
 	res = PSQLexec(buf.data);
 	if (!res)
@@ -2930,7 +2986,39 @@ describeOneTableDetails(const char *schemaname,
 		/* print any publications */
 		if (pset.sversion >= 100000)
 		{
-			if (pset.sversion >= 150000)
+			if (pset.sversion >= 150000) /* FIXME - bump me when pg15 branched */
+			{
+				printfPQExpBuffer(&buf,
+								  "SELECT pubname\n"
+								  "     , NULL\n"
+								  "     , NULL\n"
+								  "FROM pg_catalog.pg_publication p\n"
+								  "     JOIN pg_catalog.pg_publication_namespace pn ON p.oid = pn.pnpubid\n"
+								  "     JOIN pg_catalog.pg_class pc ON pc.relnamespace = pn.pnnspid\n"
+								  "WHERE pc.oid ='%s' and pg_catalog.pg_relation_is_publishable('%s')\n"
+								  "UNION\n"
+								  "SELECT pubname\n"
+								  "     , pg_get_expr(pr.prqual, c.oid)\n"
+								  "     , (CASE WHEN pr.prattrs IS NOT NULL THEN\n"
+								  "         (SELECT string_agg(attname, ', ')\n"
+								  "           FROM pg_catalog.generate_series(0, pg_catalog.array_upper(pr.prattrs::pg_catalog.int2[], 1)) s,\n"
+								  "                pg_catalog.pg_attribute\n"
+								  "          WHERE attrelid = pr.prrelid AND attphysnum = prattrs[s])\n"
+								  "        ELSE NULL END) "
+								  "FROM pg_catalog.pg_publication p\n"
+								  "     JOIN pg_catalog.pg_publication_rel pr ON p.oid = pr.prpubid\n"
+								  "     JOIN pg_catalog.pg_class c ON c.oid = pr.prrelid\n"
+								  "WHERE pr.prrelid = '%s'\n"
+								  "UNION\n"
+								  "SELECT pubname\n"
+								  "     , NULL\n"
+								  "     , NULL\n"
+								  "FROM pg_catalog.pg_publication p\n"
+								  "WHERE p.puballtables AND pg_catalog.pg_relation_is_publishable('%s')\n"
+								  "ORDER BY 1;",
+								  oid, oid, oid, oid);
+			}
+			else if (pset.sversion >= 150000)
 			{
 				printfPQExpBuffer(&buf,
 								  "SELECT pubname\n"
@@ -4609,7 +4697,7 @@ listExtendedStats(const char *pattern)
 						  "   FROM pg_catalog.unnest(es.stxkeys) s(attnum) \n"
 						  "   JOIN pg_catalog.pg_attribute a \n"
 						  "   ON (es.stxrelid = a.attrelid \n"
-						  "   AND a.attnum = s.attnum \n"
+						  "   AND a.attnum = s.attsnum \n"
 						  "   AND NOT a.attisdropped)), \n"
 						  "es.stxrelid::pg_catalog.regclass) AS \"%s\"",
 						  gettext_noop("Definition"));
@@ -6279,7 +6367,21 @@ describePublications(const char *pattern)
 			/* Get the tables for the specified publication */
 			printfPQExpBuffer(&buf,
 							  "SELECT n.nspname, c.relname");
-			if (pset.sversion >= 150000)
+			if (pset.sversion >= 150000) /* FIXME - bump me when pg15 branched */
+			{
+				appendPQExpBufferStr(&buf,
+									 ", pg_get_expr(pr.prqual, c.oid)");
+				appendPQExpBufferStr(&buf,
+									 ", (CASE WHEN pr.prattrs IS NOT NULL THEN\n"
+									 "     pg_catalog.array_to_string("
+									 "      ARRAY(SELECT attname\n"
+									 "              FROM\n"
+									 "                pg_catalog.generate_series(0, pg_catalog.array_upper(pr.prattrs::pg_catalog.int2[], 1)) s,\n"
+									 "                pg_catalog.pg_attribute\n"
+									 "        WHERE attrelid = c.oid AND attphysnum = prattrs[s]), ', ')\n"
+									 "       ELSE NULL END)");
+			}
+			else if (pset.sversion >= 150000)
 			{
 				appendPQExpBufferStr(&buf,
 									 ", pg_get_expr(pr.prqual, c.oid)");

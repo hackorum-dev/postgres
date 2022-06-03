@@ -602,7 +602,7 @@ SendTimeLineHistory(TimeLineHistoryCmd *cmd)
 	/* first field */
 	pq_sendstring(&buf, "filename");	/* col name */
 	pq_sendint32(&buf, 0);		/* table oid */
-	pq_sendint16(&buf, 0);		/* attnum */
+	pq_sendint16(&buf, 0);		/* attphysnum */
 	pq_sendint32(&buf, TEXTOID);	/* type oid */
 	pq_sendint16(&buf, -1);		/* typlen */
 	pq_sendint32(&buf, 0);		/* typmod */
@@ -611,7 +611,7 @@ SendTimeLineHistory(TimeLineHistoryCmd *cmd)
 	/* second field */
 	pq_sendstring(&buf, "content"); /* col name */
 	pq_sendint32(&buf, 0);		/* table oid */
-	pq_sendint16(&buf, 0);		/* attnum */
+	pq_sendint16(&buf, 0);		/* attphysnum */
 	pq_sendint32(&buf, TEXTOID);	/* type oid */
 	pq_sendint16(&buf, -1);		/* typlen */
 	pq_sendint32(&buf, 0);		/* typmod */

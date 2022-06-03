@@ -245,10 +245,10 @@ CREATE VIEW pg_stats WITH (security_barrier) AS
             WHEN stakind5 = 5 THEN stanumbers5
         END AS elem_count_histogram
     FROM pg_statistic s JOIN pg_class c ON (c.oid = s.starelid)
-         JOIN pg_attribute a ON (c.oid = attrelid AND attnum = s.staattnum)
+         JOIN pg_attribute a ON (c.oid = attrelid AND attphysnum = s.staattnum)
          LEFT JOIN pg_namespace n ON (n.oid = c.relnamespace)
     WHERE NOT attisdropped
-    AND has_column_privilege(c.oid, a.attnum, 'select')
+    AND has_column_privilege(c.oid, a.attphysnum, 'select')
     AND (c.relrowsecurity = false OR NOT row_security_active(c.oid));
 
 REVOKE ALL ON pg_statistic FROM public;
@@ -259,10 +259,10 @@ CREATE VIEW pg_stats_ext WITH (security_barrier) AS
            sn.nspname AS statistics_schemaname,
            s.stxname AS statistics_name,
            pg_get_userbyid(s.stxowner) AS statistics_owner,
-           ( SELECT array_agg(a.attname ORDER BY a.attnum)
+           ( SELECT array_agg(a.attname ORDER BY a.attphysnum)
              FROM unnest(s.stxkeys) k
                   JOIN pg_attribute a
-                       ON (a.attrelid = s.stxrelid AND a.attnum = k)
+                       ON (a.attrelid = s.stxrelid AND a.attphysnum = k)
            ) AS attnames,
            pg_get_statisticsobjdef_expressions(s.oid) as exprs,
            s.stxkind AS kinds,
@@ -288,8 +288,8 @@ CREATE VIEW pg_stats_ext WITH (security_barrier) AS
               ( SELECT 1
                 FROM unnest(stxkeys) k
                      JOIN pg_attribute a
-                          ON (a.attrelid = s.stxrelid AND a.attnum = k)
-                WHERE NOT has_column_privilege(c.oid, a.attnum, 'select') )
+                          ON (a.attrelid = s.stxrelid AND a.attphysnum = k)
+                WHERE NOT has_column_privilege(c.oid, a.attphysnum, 'select') )
     AND (c.relrowsecurity = false OR NOT row_security_active(c.oid));
 
 CREATE VIEW pg_stats_ext_exprs WITH (security_barrier) AS
@@ -369,12 +369,12 @@ CREATE VIEW pg_publication_tables AS
         P.pubname AS pubname,
         N.nspname AS schemaname,
         C.relname AS tablename,
-        ( SELECT array_agg(a.attname ORDER BY a.attnum)
+        ( SELECT array_agg(a.attname ORDER BY a.attphysnum)
           FROM unnest(CASE WHEN GPT.attrs IS NOT NULL THEN GPT.attrs
                       ELSE (SELECT array_agg(g) FROM generate_series(1, C.relnatts) g)
                       END) k
                JOIN pg_attribute a
-                    ON (a.attrelid = GPT.relid AND a.attnum = k)
+                    ON (a.attrelid = GPT.relid AND a.attphysnum = k)
         ) AS attnames,
         pg_get_expr(GPT.qual, GPT.relid) AS rowfilter
     FROM pg_publication P,
@@ -446,7 +446,7 @@ FROM
     pg_seclabel l
     JOIN pg_class rel ON l.classoid = rel.tableoid AND l.objoid = rel.oid
     JOIN pg_attribute att
-         ON rel.oid = att.attrelid AND l.objsubid = att.attnum
+         ON rel.oid = att.attrelid AND l.objsubid = att.attphysnum
     JOIN pg_namespace nsp ON rel.relnamespace = nsp.oid
 WHERE
     l.objsubid != 0

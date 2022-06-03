@@ -2444,13 +2444,13 @@ has_any_column_privilege_id_id(PG_FUNCTION_ARGS)
  * has_column_privilege variants
  *		These are all named "has_column_privilege" at the SQL level.
  *		They take various combinations of relation name, relation OID,
- *		column name, column attnum, user name, user OID, or
+ *		column name, column attphysnum, user name, user OID, or
  *		implicit user = current_user.
  *
  *		The result is a boolean value: true if user has the indicated
  *		privilege, false if not.  The variants that take a relation OID
  *		return NULL (rather than throwing an error) if that relation OID
- *		doesn't exist.  Likewise, the variants that take an integer attnum
+ *		doesn't exist.  Likewise, the variants that take an integer attphysnum
  *		return NULL (rather than throwing an error) if there is no such
  *		pg_attribute entry.  All variants return NULL if an attisdropped
  *		column is selected.  These rules are meant to avoid unnecessary
@@ -2464,7 +2464,7 @@ has_any_column_privilege_id_id(PG_FUNCTION_ARGS)
  * Returns 1 if have the privilege, 0 if not, -1 if dropped column/table.
  */
 static int
-column_privilege_check(Oid tableoid, AttrNumber attnum,
+column_privilege_check(Oid tableoid, AttrNumber attphysnum,
 					   Oid roleid, AclMode mode)
 {
 	AclResult	aclresult;
@@ -2473,7 +2473,7 @@ column_privilege_check(Oid tableoid, AttrNumber attnum,
 	/*
 	 * If convert_column_name failed, we can just return -1 immediately.
 	 */
-	if (attnum == InvalidAttrNumber)
+	if (attphysnum == InvalidAttrNumber)
 		return -1;
 
 	/*
@@ -2481,7 +2481,7 @@ column_privilege_check(Oid tableoid, AttrNumber attnum,
 	 * on whether the column even exists, so we need to do it before checking
 	 * table-level privilege.
 	 */
-	aclresult = pg_attribute_aclcheck_ext(tableoid, attnum, roleid,
+	aclresult = pg_attribute_aclcheck_ext(tableoid, attphysnum, roleid,
 										  mode, &is_missing);
 	if (aclresult == ACLCHECK_OK)
 		return 1;
@@ -2530,7 +2530,7 @@ has_column_privilege_name_name_name(PG_FUNCTION_ARGS)
 /*
  * has_column_privilege_name_name_attnum
  *		Check user privileges on a column given
- *		name username, text tablename, int attnum, and text priv name.
+ *		name username, text tablename, int attphysnum, and text priv name.
  */
 Datum
 has_column_privilege_name_name_attnum(PG_FUNCTION_ARGS)
@@ -2584,7 +2584,7 @@ has_column_privilege_name_id_name(PG_FUNCTION_ARGS)
 /*
  * has_column_privilege_name_id_attnum
  *		Check user privileges on a column given
- *		name username, table oid, int attnum, and text priv name.
+ *		name username, table oid, int attphysnum, and text priv name.
  */
 Datum
 has_column_privilege_name_id_attnum(PG_FUNCTION_ARGS)
@@ -2636,7 +2636,7 @@ has_column_privilege_id_name_name(PG_FUNCTION_ARGS)
 /*
  * has_column_privilege_id_name_attnum
  *		Check user privileges on a column given
- *		oid roleid, text tablename, int attnum, and text priv name.
+ *		oid roleid, text tablename, int attphysnum, and text priv name.
  */
 Datum
 has_column_privilege_id_name_attnum(PG_FUNCTION_ARGS)
@@ -2686,7 +2686,7 @@ has_column_privilege_id_id_name(PG_FUNCTION_ARGS)
 /*
  * has_column_privilege_id_id_attnum
  *		Check user privileges on a column given
- *		oid roleid, table oid, int attnum, and text priv name.
+ *		oid roleid, table oid, int attphysnum, and text priv name.
  */
 Datum
 has_column_privilege_id_id_attnum(PG_FUNCTION_ARGS)
@@ -2738,7 +2738,7 @@ has_column_privilege_name_name(PG_FUNCTION_ARGS)
 /*
  * has_column_privilege_name_attnum
  *		Check user privileges on a column given
- *		text tablename, int attnum, and text priv name.
+ *		text tablename, int attphysnum, and text priv name.
  *		current_user is assumed
  */
 Datum
@@ -2792,7 +2792,7 @@ has_column_privilege_id_name(PG_FUNCTION_ARGS)
 /*
  * has_column_privilege_id_attnum
  *		Check user privileges on a column given
- *		table oid, int attnum, and text priv name.
+ *		table oid, int attphysnum, and text priv name.
  *		current_user is assumed
  */
 Datum
@@ -2828,12 +2828,12 @@ convert_column_name(Oid tableoid, text *column)
 {
 	char	   *colname;
 	HeapTuple	attTuple;
-	AttrNumber	attnum;
+	AttrNumber	attphysnum;
 
 	colname = text_to_cstring(column);
 
 	/*
-	 * We don't use get_attnum() here because it will report that dropped
+	 * We don't use get_attphysnum() here because it will report that dropped
 	 * columns don't exist.  We need to treat dropped columns differently from
 	 * nonexistent columns.
 	 */
@@ -2847,9 +2847,9 @@ convert_column_name(Oid tableoid, text *column)
 		attributeForm = (Form_pg_attribute) GETSTRUCT(attTuple);
 		/* We want to return NULL for dropped columns */
 		if (attributeForm->attisdropped)
-			attnum = InvalidAttrNumber;
+			attphysnum = InvalidAttrNumber;
 		else
-			attnum = attributeForm->attnum;
+			attphysnum = attributeForm->attphysnum;
 		ReleaseSysCache(attTuple);
 	}
 	else
@@ -2870,11 +2870,11 @@ convert_column_name(Oid tableoid, text *column)
 							colname, tablename)));
 		}
 		/* tableoid doesn't exist, so act like attisdropped case */
-		attnum = InvalidAttrNumber;
+		attphysnum = InvalidAttrNumber;
 	}
 
 	pfree(colname);
-	return attnum;
+	return attphysnum;
 }
 
 /*

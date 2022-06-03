@@ -197,7 +197,7 @@ typedef struct PgFdwModifyState
 	List	   *retrieved_attrs;	/* attr numbers retrieved by RETURNING */
 
 	/* info about parameters for prepared statement */
-	AttrNumber	ctidAttno;		/* attnum of input resjunk ctid column */
+	AttrNumber	ctidAttno;		/* attphysnum of input resjunk ctid column */
 	int			p_nums;			/* number of parameters to transmit */
 	FmgrInfo   *p_flinfo;		/* output conversion functions for them */
 
@@ -240,8 +240,8 @@ typedef struct PgFdwDirectModifyState
 	int			next_tuple;		/* index of next one to return */
 	Relation	resultRel;		/* relcache entry for the target relation */
 	AttrNumber *attnoMap;		/* array of attnums of input user columns */
-	AttrNumber	ctidAttno;		/* attnum of input ctid column */
-	AttrNumber	oidAttno;		/* attnum of input oid column */
+	AttrNumber	ctidAttno;		/* attphysnum of input ctid column */
+	AttrNumber	oidAttno;		/* attphysnum of input oid column */
 	bool		hasSystemCols;	/* are there system columns of resultRel? */
 
 	/* working memory context */
@@ -1800,14 +1800,14 @@ postgresPlanForeignModify(PlannerInfo *root,
 		 rel->trigdesc->trig_update_before_row))
 	{
 		TupleDesc	tupdesc = RelationGetDescr(rel);
-		int			attnum;
+		int			attphysnum;
 
-		for (attnum = 1; attnum <= tupdesc->natts; attnum++)
+		for (attphysnum = 1; attphysnum <= tupdesc->natts; attphysnum++)
 		{
-			Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum - 1);
+			Form_pg_attribute attr = TupleDescAttr(tupdesc, attphysnum - 1);
 
 			if (!attr->attisdropped)
-				targetAttrs = lappend_int(targetAttrs, attnum);
+				targetAttrs = lappend_int(targetAttrs, attphysnum);
 		}
 	}
 	else if (operation == CMD_UPDATE)
@@ -2139,7 +2139,7 @@ postgresBeginForeignInsert(ModifyTableState *mtstate,
 	Relation	rel = resultRelInfo->ri_RelationDesc;
 	RangeTblEntry *rte;
 	TupleDesc	tupdesc = RelationGetDescr(rel);
-	int			attnum;
+	int			attphysnum;
 	int			values_end_len;
 	StringInfoData sql;
 	List	   *targetAttrs = NIL;
@@ -2164,12 +2164,12 @@ postgresBeginForeignInsert(ModifyTableState *mtstate,
 	initStringInfo(&sql);
 
 	/* We transmit all columns that are defined in the foreign table. */
-	for (attnum = 1; attnum <= tupdesc->natts; attnum++)
+	for (attphysnum = 1; attphysnum <= tupdesc->natts; attphysnum++)
 	{
-		Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum - 1);
+		Form_pg_attribute attr = TupleDescAttr(tupdesc, attphysnum - 1);
 
 		if (!attr->attisdropped)
-			targetAttrs = lappend_int(targetAttrs, attnum);
+			targetAttrs = lappend_int(targetAttrs, attphysnum);
 	}
 
 	/* Check if we add the ON CONFLICT clause to the remote query. */
@@ -4026,8 +4026,8 @@ create_foreign_modify(EState *estate,
 		/* Set up for remaining transmittable parameters */
 		foreach(lc, fmstate->target_attrs)
 		{
-			int			attnum = lfirst_int(lc);
-			Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum - 1);
+			int			attphysnum = lfirst_int(lc);
+			Form_pg_attribute attr = TupleDescAttr(tupdesc, attphysnum - 1);
 
 			Assert(!attr->attisdropped);
 
@@ -4279,15 +4279,15 @@ convert_prep_stmt_params(PgFdwModifyState *fmstate,
 			j = (tupleid != NULL) ? 1 : 0;
 			foreach(lc, fmstate->target_attrs)
 			{
-				int			attnum = lfirst_int(lc);
-				Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum - 1);
+				int			attphysnum = lfirst_int(lc);
+				Form_pg_attribute attr = TupleDescAttr(tupdesc, attphysnum - 1);
 				Datum		value;
 				bool		isnull;
 
 				/* Ignore generated columns; they are set to DEFAULT */
 				if (attr->attgenerated)
 					continue;
-				value = slot_getattr(slots[i], attnum, &isnull);
+				value = slot_getattr(slots[i], attphysnum, &isnull);
 				if (isnull)
 					p_values[pindex] = NULL;
 				else
@@ -5330,10 +5330,10 @@ postgresImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 							   "  JOIN pg_namespace n ON "
 							   "    relnamespace = n.oid "
 							   "  LEFT JOIN pg_attribute a ON "
-							   "    attrelid = c.oid AND attnum > 0 "
+							   "    attrelid = c.oid AND attphysnum > 0 "
 							   "      AND NOT attisdropped "
 							   "  LEFT JOIN pg_attrdef ad ON "
-							   "    adrelid = c.oid AND adnum = attnum ");
+							   "    adrelid = c.oid AND adnum = attphysnum ");
 
 		if (import_collate)
 			appendStringInfoString(&buf,
@@ -5383,7 +5383,7 @@ postgresImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 		}
 
 		/* Append ORDER BY at the end of query to ensure output ordering */
-		appendStringInfoString(&buf, " ORDER BY c.relname, a.attnum");
+		appendStringInfoString(&buf, " ORDER BY c.relname, a.attphysnum");
 
 		/* Fetch the data */
 		res = pgfdw_exec_query(conn, buf.data, NULL);

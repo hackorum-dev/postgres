@@ -739,11 +739,11 @@ CopyGetAttnums(TupleDesc tupDesc, Relation rel, List *attnamelist)
 		foreach(l, attnamelist)
 		{
 			char	   *name = strVal(lfirst(l));
-			int			attnum;
+			int			attphysnum;
 			int			i;
 
 			/* Lookup column name */
-			attnum = InvalidAttrNumber;
+			attphysnum = InvalidAttrNumber;
 			for (i = 0; i < tupDesc->natts; i++)
 			{
 				Form_pg_attribute att = TupleDescAttr(tupDesc, i);
@@ -758,11 +758,11 @@ CopyGetAttnums(TupleDesc tupDesc, Relation rel, List *attnamelist)
 								 errmsg("column \"%s\" is a generated column",
 										name),
 								 errdetail("Generated columns cannot be used in COPY.")));
-					attnum = att->attnum;
+					attphysnum = att->attphysnum;
 					break;
 				}
 			}
-			if (attnum == InvalidAttrNumber)
+			if (attphysnum == InvalidAttrNumber)
 			{
 				if (rel != NULL)
 					ereport(ERROR,
@@ -776,12 +776,12 @@ CopyGetAttnums(TupleDesc tupDesc, Relation rel, List *attnamelist)
 									name)));
 			}
 			/* Check for duplicates */
-			if (list_member_int(attnums, attnum))
+			if (list_member_int(attnums, attphysnum))
 				ereport(ERROR,
 						(errcode(ERRCODE_DUPLICATE_COLUMN),
 						 errmsg("column \"%s\" specified more than once",
 								name)));
-			attnums = lappend_int(attnums, attnum);
+			attnums = lappend_int(attnums, attphysnum);
 		}
 	}
 

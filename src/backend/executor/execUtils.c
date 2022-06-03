@@ -1054,7 +1054,7 @@ GetAttributeByName(HeapTupleHeader tuple, const char *attname, bool *isNull)
 
 		if (namestrcmp(&(att->attname), attname) == 0)
 		{
-			attrno = att->attnum;
+			attrno = att->attphysnum;
 			break;
 		}
 	}

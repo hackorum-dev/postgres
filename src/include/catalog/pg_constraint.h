@@ -173,8 +173,8 @@ DECLARE_UNIQUE_INDEX_PKEY(pg_constraint_oid_index, 2667, ConstraintOidIndexId, o
 DECLARE_INDEX(pg_constraint_conparentid_index, 2579, ConstraintParentIndexId, on pg_constraint using btree(conparentid oid_ops));
 
 /* conkey can contain zero (InvalidAttrNumber) if a whole-row Var is used */
-DECLARE_ARRAY_FOREIGN_KEY_OPT((conrelid, conkey), pg_attribute, (attrelid, attnum));
-DECLARE_ARRAY_FOREIGN_KEY((confrelid, confkey), pg_attribute, (attrelid, attnum));
+DECLARE_ARRAY_FOREIGN_KEY_OPT((conrelid, conkey), pg_attribute, (attrelid, attphysnum));
+DECLARE_ARRAY_FOREIGN_KEY((confrelid, confkey), pg_attribute, (attrelid, attphysnum));
 
 #ifdef EXPOSE_TO_CLIENT_CODE
 

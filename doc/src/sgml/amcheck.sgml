@@ -91,7 +91,7 @@ ORDER BY c.relpages DESC LIMIT 10;
                 | pg_description_o_c_o_index      |       21
                 | pg_attribute_relid_attnam_index |       14
                 | pg_proc_oid_index               |       10
-                | pg_attribute_relid_attnum_index |        9
+                | pg_attribute_relid_attphysnum_index |        9
                 | pg_amproc_fam_proc_index        |        5
                 | pg_amop_opr_fam_index           |        5
                 | pg_amop_fam_strat_index         |        5
@@ -213,7 +213,7 @@ SET client_min_messages = DEBUG1;
                     endblock bigint,
                     blkno OUT bigint,
                     offnum OUT integer,
-                    attnum OUT integer,
+                    attphysnum OUT integer,
                     msg OUT text)
       returns setof record
      </function>

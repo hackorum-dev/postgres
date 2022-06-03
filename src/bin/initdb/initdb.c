@@ -1612,7 +1612,7 @@ setup_privileges(FILE *cmdfd)
 		"    SELECT"
 		"        pg_class.oid,"
 		"        (SELECT oid FROM pg_class WHERE relname = 'pg_class'),"
-		"        pg_attribute.attnum,"
+		"        pg_attribute.attphysnum,"
 		"        pg_attribute.attacl,"
 		"        'i'"
 		"    FROM"

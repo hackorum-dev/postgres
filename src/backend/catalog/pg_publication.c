@@ -502,34 +502,34 @@ publication_translate_columns(Relation targetrel, List *columns,
 	foreach(lc, columns)
 	{
 		char	   *colname = strVal(lfirst(lc));
-		AttrNumber	attnum = get_attnum(RelationGetRelid(targetrel), colname);
+		AttrNumber	attphysnum = get_attphysnum(RelationGetRelid(targetrel), colname);
 
-		if (attnum == InvalidAttrNumber)
+		if (attphysnum == InvalidAttrNumber)
 			ereport(ERROR,
 					errcode(ERRCODE_UNDEFINED_COLUMN),
 					errmsg("column \"%s\" of relation \"%s\" does not exist",
 						   colname, RelationGetRelationName(targetrel)));
 
-		if (!AttrNumberIsForUserDefinedAttr(attnum))
+		if (!AttrNumberIsForUserDefinedAttr(attphysnum))
 			ereport(ERROR,
 					errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
 					errmsg("cannot reference system column \"%s\" in publication column list",
 						   colname));
 
-		if (TupleDescAttr(tupdesc, attnum - 1)->attgenerated)
+		if (TupleDescAttr(tupdesc, attphysnum - 1)->attgenerated)
 			ereport(ERROR,
 					errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
 					errmsg("cannot reference generated column \"%s\" in publication column list",
 						   colname));
 
-		if (bms_is_member(attnum, set))
+		if (bms_is_member(attphysnum, set))
 			ereport(ERROR,
 					errcode(ERRCODE_DUPLICATE_OBJECT),
 					errmsg("duplicate column \"%s\" in publication column list",
 						   colname));
 
-		set = bms_add_member(set, attnum);
-		attarray[n++] = attnum;
+		set = bms_add_member(set, attphysnum);
+		attarray[n++] = attphysnum;
 	}
 
 	/* Be tidy, so that the catalog representation is always sorted */

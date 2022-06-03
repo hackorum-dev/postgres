@@ -41,7 +41,7 @@ printsimple_startup(DestReceiver *self, int operation, TupleDesc tupdesc)
 
 		pq_sendstring(&buf, NameStr(attr->attname));
 		pq_sendint32(&buf, 0);	/* table oid */
-		pq_sendint16(&buf, 0);	/* attnum */
+		pq_sendint16(&buf, 0);	/* attphysnum */
 		pq_sendint32(&buf, (int) attr->atttypid);
 		pq_sendint16(&buf, attr->attlen);
 		pq_sendint32(&buf, attr->atttypmod);

@@ -51,7 +51,7 @@ addItemPointersToLeafTuple(GinState *ginstate,
 						   ItemPointerData *items, uint32 nitem,
 						   GinStatsData *buildStats, Buffer buffer)
 {
-	OffsetNumber attnum;
+	OffsetNumber attphysnum;
 	Datum		key;
 	GinNullCategory category;
 	IndexTuple	res;
@@ -63,11 +63,11 @@ addItemPointersToLeafTuple(GinState *ginstate,
 
 	Assert(!GinIsPostingTree(old));
 
-	attnum = gintuple_get_attrnum(ginstate, old);
+	attphysnum = gintuple_get_attrnum(ginstate, old);
 	key = gintuple_get_key(ginstate, old, &category);
 
 	/* merge the old and new posting lists */
-	oldItems = ginReadTuple(ginstate, attnum, old, &oldNPosting);
+	oldItems = ginReadTuple(ginstate, attphysnum, old, &oldNPosting);
 
 	newItems = ginMergeItemPointers(items, nitem,
 									oldItems, oldNPosting,
@@ -80,7 +80,7 @@ addItemPointersToLeafTuple(GinState *ginstate,
 	pfree(newItems);
 	if (compressedList)
 	{
-		res = GinFormTuple(ginstate, attnum, key, category,
+		res = GinFormTuple(ginstate, attphysnum, key, category,
 						   (char *) compressedList,
 						   SizeOfGinPostingList(compressedList),
 						   newNPosting,
@@ -109,7 +109,7 @@ addItemPointersToLeafTuple(GinState *ginstate,
 							  buildStats);
 
 		/* And build a new posting-tree-only result tuple */
-		res = GinFormTuple(ginstate, attnum, key, category, NULL, 0, 0, true);
+		res = GinFormTuple(ginstate, attphysnum, key, category, NULL, 0, 0, true);
 		GinSetPostingTree(res, postingRoot);
 	}
 	pfree(oldItems);
@@ -127,7 +127,7 @@ addItemPointersToLeafTuple(GinState *ginstate,
  */
 static IndexTuple
 buildFreshLeafTuple(GinState *ginstate,
-					OffsetNumber attnum, Datum key, GinNullCategory category,
+					OffsetNumber attphysnum, Datum key, GinNullCategory category,
 					ItemPointerData *items, uint32 nitem,
 					GinStatsData *buildStats, Buffer buffer)
 {
@@ -138,7 +138,7 @@ buildFreshLeafTuple(GinState *ginstate,
 	compressedList = ginCompressPostingList(items, nitem, GinMaxItemSize, NULL);
 	if (compressedList)
 	{
-		res = GinFormTuple(ginstate, attnum, key, category,
+		res = GinFormTuple(ginstate, attphysnum, key, category,
 						   (char *) compressedList,
 						   SizeOfGinPostingList(compressedList),
 						   nitem, false);
@@ -153,7 +153,7 @@ buildFreshLeafTuple(GinState *ginstate,
 		 * Build posting-tree-only result tuple.  We do this first so as to
 		 * fail quickly if the key is too big.
 		 */
-		res = GinFormTuple(ginstate, attnum, key, category, NULL, 0, 0, true);
+		res = GinFormTuple(ginstate, attphysnum, key, category, NULL, 0, 0, true);
 
 		/*
 		 * Initialize a new posting tree with the TIDs.
@@ -177,7 +177,7 @@ buildFreshLeafTuple(GinState *ginstate,
  */
 void
 ginEntryInsert(GinState *ginstate,
-			   OffsetNumber attnum, Datum key, GinNullCategory category,
+			   OffsetNumber attphysnum, Datum key, GinNullCategory category,
 			   ItemPointerData *items, uint32 nitem,
 			   GinStatsData *buildStats)
 {
@@ -189,7 +189,7 @@ ginEntryInsert(GinState *ginstate,
 
 	insertdata.isDelete = false;
 
-	ginPrepareEntryScan(&btree, attnum, key, category, ginstate);
+	ginPrepareEntryScan(&btree, attphysnum, key, category, ginstate);
 	btree.isBuild = (buildStats != NULL);
 
 	stack = ginFindLeafPage(&btree, false, false, NULL);
@@ -229,7 +229,7 @@ ginEntryInsert(GinState *ginstate,
 		CheckForSerializableConflictIn(ginstate->index, NULL,
 									   BufferGetBlockNumber(stack->buffer));
 		/* no match, so construct a new leaf entry */
-		itup = buildFreshLeafTuple(ginstate, attnum, key, category,
+		itup = buildFreshLeafTuple(ginstate, attphysnum, key, category,
 								   items, nitem, buildStats, stack->buffer);
 
 		/*
@@ -253,7 +253,7 @@ ginEntryInsert(GinState *ginstate,
  * This function is used only during initial index creation.
  */
 static void
-ginHeapTupleBulkInsert(GinBuildState *buildstate, OffsetNumber attnum,
+ginHeapTupleBulkInsert(GinBuildState *buildstate, OffsetNumber attphysnum,
 					   Datum value, bool isNull,
 					   ItemPointer heapptr)
 {
@@ -263,12 +263,12 @@ ginHeapTupleBulkInsert(GinBuildState *buildstate, OffsetNumber attnum,
 	MemoryContext oldCtx;
 
 	oldCtx = MemoryContextSwitchTo(buildstate->funcCtx);
-	entries = ginExtractEntries(buildstate->accum.ginstate, attnum,
+	entries = ginExtractEntries(buildstate->accum.ginstate, attphysnum,
 								value, isNull,
 								&nentries, &categories);
 	MemoryContextSwitchTo(oldCtx);
 
-	ginInsertBAEntries(&buildstate->accum, heapptr, attnum,
+	ginInsertBAEntries(&buildstate->accum, heapptr, attphysnum,
 					   entries, categories, nentries);
 
 	buildstate->indtuples += nentries;
@@ -297,15 +297,15 @@ ginBuildCallback(Relation index, ItemPointer tid, Datum *values,
 		Datum		key;
 		GinNullCategory category;
 		uint32		nlist;
-		OffsetNumber attnum;
+		OffsetNumber attphysnum;
 
 		ginBeginBAScan(&buildstate->accum);
 		while ((list = ginGetBAEntry(&buildstate->accum,
-									 &attnum, &key, &category, &nlist)) != NULL)
+									 &attphysnum, &key, &category, &nlist)) != NULL)
 		{
 			/* there could be many entries, so be willing to abort here */
 			CHECK_FOR_INTERRUPTS();
-			ginEntryInsert(&buildstate->ginstate, attnum, key, category,
+			ginEntryInsert(&buildstate->ginstate, attphysnum, key, category,
 						   list, nlist, &buildstate->buildStats);
 		}
 
@@ -329,7 +329,7 @@ ginbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 	GinNullCategory category;
 	uint32		nlist;
 	MemoryContext oldCtx;
-	OffsetNumber attnum;
+	OffsetNumber attphysnum;
 
 	if (RelationGetNumberOfBlocks(index) != 0)
 		elog(ERROR, "index \"%s\" already contains data",
@@ -390,11 +390,11 @@ ginbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 	oldCtx = MemoryContextSwitchTo(buildstate.tmpCtx);
 	ginBeginBAScan(&buildstate.accum);
 	while ((list = ginGetBAEntry(&buildstate.accum,
-								 &attnum, &key, &category, &nlist)) != NULL)
+								 &attphysnum, &key, &category, &nlist)) != NULL)
 	{
 		/* there could be many entries, so be willing to abort here */
 		CHECK_FOR_INTERRUPTS();
-		ginEntryInsert(&buildstate.ginstate, attnum, key, category,
+		ginEntryInsert(&buildstate.ginstate, attphysnum, key, category,
 					   list, nlist, &buildstate.buildStats);
 	}
 	MemoryContextSwitchTo(oldCtx);
@@ -467,7 +467,7 @@ ginbuildempty(Relation index)
  * (non-fast-update) insertion
  */
 static void
-ginHeapTupleInsert(GinState *ginstate, OffsetNumber attnum,
+ginHeapTupleInsert(GinState *ginstate, OffsetNumber attphysnum,
 				   Datum value, bool isNull,
 				   ItemPointer item)
 {
@@ -476,11 +476,11 @@ ginHeapTupleInsert(GinState *ginstate, OffsetNumber attnum,
 	int32		i,
 				nentries;
 
-	entries = ginExtractEntries(ginstate, attnum, value, isNull,
+	entries = ginExtractEntries(ginstate, attphysnum, value, isNull,
 								&nentries, &categories);
 
 	for (i = 0; i < nentries; i++)
-		ginEntryInsert(ginstate, attnum, entries[i], categories[i],
+		ginEntryInsert(ginstate, attphysnum, entries[i], categories[i],
 					   item, 1, NULL);
 }
 

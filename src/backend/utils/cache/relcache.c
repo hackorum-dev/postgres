@@ -537,7 +537,7 @@ RelationBuildTupleDesc(Relation relation)
 	constr->has_generated_stored = false;
 
 	/*
-	 * Form a scan key that selects only user attributes (attnum > 0).
+	 * Form a scan key that selects only user attributes (attphysnum > 0).
 	 * (Eliminating system attribute rows at the index level is lots faster
 	 * than fetching them.)
 	 */
@@ -546,7 +546,7 @@ RelationBuildTupleDesc(Relation relation)
 				BTEqualStrategyNumber, F_OIDEQ,
 				ObjectIdGetDatum(RelationGetRelid(relation)));
 	ScanKeyInit(&skey[1],
-				Anum_pg_attribute_attnum,
+				Anum_pg_attribute_attphysnum,
 				BTGreaterStrategyNumber, F_INT2GT,
 				Int16GetDatum(0));
 
@@ -557,7 +557,7 @@ RelationBuildTupleDesc(Relation relation)
 	 */
 	pg_attribute_desc = table_open(AttributeRelationId, AccessShareLock);
 	pg_attribute_scan = systable_beginscan(pg_attribute_desc,
-										   AttributeRelidNumIndexId,
+										   AttributeRelidPhysNumIndexId,
 										   criticalRelcachesBuilt,
 										   NULL,
 										   2, skey);
@@ -570,16 +570,16 @@ RelationBuildTupleDesc(Relation relation)
 	while (HeapTupleIsValid(pg_attribute_tuple = systable_getnext(pg_attribute_scan)))
 	{
 		Form_pg_attribute attp;
-		int			attnum;
+		int			attphysnum;
 
 		attp = (Form_pg_attribute) GETSTRUCT(pg_attribute_tuple);
 
-		attnum = attp->attnum;
-		if (attnum <= 0 || attnum > RelationGetNumberOfAttributes(relation))
+		attphysnum = attp->attphysnum;
+		if (attphysnum <= 0 || attphysnum > RelationGetNumberOfAttributes(relation))
 			elog(ERROR, "invalid attribute number %d for relation \"%s\"",
-				 attp->attnum, RelationGetRelationName(relation));
+				 attp->attphysnum, RelationGetRelationName(relation));
 
-		memcpy(TupleDescAttr(relation->rd_att, attnum - 1),
+		memcpy(TupleDescAttr(relation->rd_att, attphysnum - 1),
 			   attp,
 			   ATTRIBUTE_FIXED_PART_SIZE);
 
@@ -628,18 +628,18 @@ RelationBuildTupleDesc(Relation relation)
 				if (attp->attbyval)
 				{
 					/* for copy by val just copy the datum direct */
-					attrmiss[attnum - 1].am_value = missval;
+					attrmiss[attphysnum - 1].am_value = missval;
 				}
 				else
 				{
 					/* otherwise copy in the correct context */
 					oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
-					attrmiss[attnum - 1].am_value = datumCopy(missval,
+					attrmiss[attphysnum - 1].am_value = datumCopy(missval,
 															  attp->attbyval,
 															  attp->attlen);
 					MemoryContextSwitchTo(oldcxt);
 				}
-				attrmiss[attnum - 1].am_present = true;
+				attrmiss[attphysnum - 1].am_present = true;
 			}
 		}
 		need--;
@@ -4046,7 +4046,7 @@ RelationCacheInitializePhase3(void)
 	{
 		load_critical_index(ClassOidIndexId,
 							RelationRelationId);
-		load_critical_index(AttributeRelidNumIndexId,
+		load_critical_index(AttributeRelidPhysNumIndexId,
 							AttributeRelationId);
 		load_critical_index(IndexRelidIndexId,
 							IndexRelationId);
@@ -5708,21 +5708,21 @@ RelationGetIndexRawAttOptions(Relation indexrel)
 	Oid			indexrelid = RelationGetRelid(indexrel);
 	int16		natts = RelationGetNumberOfAttributes(indexrel);
 	Datum	   *options = NULL;
-	int16		attnum;
+	int16		attphysnum;
 
-	for (attnum = 1; attnum <= natts; attnum++)
+	for (attphysnum = 1; attphysnum <= natts; attphysnum++)
 	{
 		if (indexrel->rd_indam->amoptsprocnum == 0)
 			continue;
 
-		if (!OidIsValid(index_getprocid(indexrel, attnum,
+		if (!OidIsValid(index_getprocid(indexrel, attphysnum,
 										indexrel->rd_indam->amoptsprocnum)))
 			continue;
 
 		if (!options)
 			options = palloc0(sizeof(Datum) * natts);
 
-		options[attnum - 1] = get_attoptions(indexrelid, attnum);
+		options[attphysnum - 1] = get_attoptions(indexrelid, attphysnum);
 	}
 
 	return options;
@@ -5767,7 +5767,7 @@ RelationGetIndexAttOptions(Relation relation, bool copy)
 
 	for (i = 0; i < natts; i++)
 	{
-		if (criticalRelcachesBuilt && relid != AttributeRelidNumIndexId)
+		if (criticalRelcachesBuilt && relid != AttributeRelidPhysNumIndexId)
 		{
 			Datum		attoptions = get_attoptions(relid, i + 1);
 
@@ -5827,16 +5827,16 @@ errtable(Relation rel)
  * easier and less error-prone than getting the column name for themselves.
  */
 int
-errtablecol(Relation rel, int attnum)
+errtablecol(Relation rel, int attphysnum)
 {
 	TupleDesc	reldesc = RelationGetDescr(rel);
 	const char *colname;
 
 	/* Use reldesc if it's a user attribute, else consult the catalogs */
-	if (attnum > 0 && attnum <= reldesc->natts)
-		colname = NameStr(TupleDescAttr(reldesc, attnum - 1)->attname);
+	if (attphysnum > 0 && attphysnum <= reldesc->natts)
+		colname = NameStr(TupleDescAttr(reldesc, attphysnum - 1)->attname);
 	else
-		colname = get_attname(RelationGetRelid(rel), attnum, false);
+		colname = get_attname(RelationGetRelid(rel), attphysnum, false);
 
 	return errtablecolname(rel, colname);
 }
