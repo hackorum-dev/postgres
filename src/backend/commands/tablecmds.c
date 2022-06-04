@@ -635,6 +635,18 @@ static void ATDetachCheckNoForeignKeyRefs(Relation partition);
 static char GetAttributeCompression(Oid atttypid, char *compression);
 
 
+static int
+cmp_att_reversed(const void *a, const void *b)
+{
+	FormData_pg_attribute *atta = (FormData_pg_attribute *) a;
+	FormData_pg_attribute *attb = (FormData_pg_attribute *) b;
+
+	return (atta->attphysnum > attb->attphysnum) ? -1
+		: (atta->attphysnum == attb->attphysnum) ? 0
+		: 1;
+}
+
+
 /* ----------------------------------------------------------------
  *		DefineRelation
  *				Creates a new relation.
@@ -931,6 +943,49 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 		if (colDef->compression)
 			attr->attcompression = GetAttributeCompression(attr->atttypid,
 														   colDef->compression);
+	}
+
+	/*
+	 * FIXME
+	 * testing mode: inverse all attribute positions.  This has to be done
+	 * after that defaults have been computed.
+	 */
+	if (relkind == RELKIND_RELATION && inheritOids == NIL
+			&& descriptor->natts > 1
+			/* lame attempt to discard CTAS */
+			&& queryString != NULL)
+	{
+		AttrNumber *mappings;
+
+		mappings = palloc(sizeof(AttrNumber) * (descriptor->natts + 1));
+
+		qsort(descriptor->attrs, descriptor->natts,
+			  sizeof(FormData_pg_attribute),
+			  cmp_att_reversed);
+
+		for (int i = 0; i < descriptor->natts; i++)
+		{
+			Form_pg_attribute att = TupleDescAttr(descriptor, i);
+
+			mappings[att->attphysnum] = i + 1;
+
+			att->attnum = att->attphysnum;
+			att->attphysnum = i + 1;
+		}
+
+		/* Fixup the defautls references */
+		foreach(listptr, rawDefaults)
+		{
+			RawColumnDefault *rowEnt = lfirst(listptr);
+
+			rowEnt->attphysnum = mappings[rowEnt->attphysnum];
+		}
+		foreach(listptr, cookedDefaults)
+		{
+			CookedConstraint *cooked = lfirst(listptr);
+
+			cooked->attphysnum = mappings[cooked->attphysnum];
+		}
 	}
 
 	/*
