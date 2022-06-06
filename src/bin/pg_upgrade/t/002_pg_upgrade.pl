@@ -223,6 +223,9 @@ command_ok(
 	'run of pg_upgrade for new instance');
 $newnode->start;
 
+# Limit all contents to 10k characters.
+my $report_max_chars = 10000;
+
 # Check if there are any logs coming from pg_upgrade, that would only be
 # retained on failure.
 my $log_path = $newnode->data_dir . "/pg_upgrade_output.d/log";
@@ -231,7 +234,8 @@ if (-d $log_path)
 	foreach my $log (glob("$log_path/*"))
 	{
 		note "=== contents of $log ===\n";
-		print slurp_file($log);
+		my $contents = slurp_file($log);
+		print substr($contents, 0, $report_max_chars);
 		print "=== EOF ===\n";
 	}
 }
@@ -256,9 +260,9 @@ if ($compare_res != 0)
 	  run_command([ 'diff', "$tempdir/dump1.sql", "$tempdir/dump2.sql" ]);
 	print "=== diff of $tempdir/dump1.sql and $tempdir/dump2.sql\n";
 	print "=== stdout ===\n";
-	print $stdout;
+	print substr($stdout, 0, $report_max_chars);
 	print "=== stderr ===\n";
-	print $stderr;
+	print substr($stderr, 0, $report_max_chars);
 	print "=== EOF ===\n";
 }
 
