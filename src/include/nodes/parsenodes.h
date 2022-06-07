@@ -2532,6 +2532,7 @@ typedef struct CreateStmt
 	NodeTag		type;
 	RangeVar   *relation;		/* relation to create */
 	List	   *tableElts;		/* column definitions (list of ColumnDef) */
+	List	   *orderElts;		/* column logical order (list of String) */
 	List	   *inhRelations;	/* relations to inherit from (list of
 								 * RangeVar) */
 	PartitionBoundSpec *partbound;	/* FOR VALUES clause */

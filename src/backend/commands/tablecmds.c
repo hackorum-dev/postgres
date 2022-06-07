@@ -945,12 +945,49 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 														   colDef->compression);
 	}
 
+	/* Change rels logical attributes position if needed */
+	if (stmt->orderElts != NIL)
+	{
+		if (list_length(stmt->orderElts) != descriptor->natts)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+					 errmsg("Invalid number of elements in ORDER clause"),
+					 errdetail("expected %d, found %d", descriptor->natts,
+							   list_length(stmt->orderElts))));
+
+		for (int i = 0; i < descriptor->natts; i++)
+		{
+			Form_pg_attribute att = TupleDescAttr(descriptor, i);
+			ListCell *lc;
+			AttrNumber attnum = 1;
+			bool		found = false;
+
+			foreach(lc, stmt->orderElts)
+			{
+				char	   *colname = strVal(lfirst(lc));
+
+				if (strcmp(colname, NameStr(att->attname)) == 0)
+				{
+					found = true;
+					att->attnum = attnum;
+					break;
+				}
+				attnum++;
+			}
+
+			if (!found)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+						 errmsg("order attribute \"%s\" not found in \"%s\" attributes",
+								NameStr(att->attname), relname)));
+		}
+	}
 	/*
 	 * FIXME
 	 * testing mode: inverse all attribute positions.  This has to be done
 	 * after that defaults have been computed.
 	 */
-	if (relkind == RELKIND_RELATION && inheritOids == NIL
+	else if (relkind == RELKIND_RELATION && inheritOids == NIL
 			&& descriptor->natts > 1
 			/* lame attempt to discard CTAS */
 			&& queryString != NULL)

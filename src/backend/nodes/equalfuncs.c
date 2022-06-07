@@ -1647,6 +1647,7 @@ _equalCreateStmt(const CreateStmt *a, const CreateStmt *b)
 {
 	COMPARE_NODE_FIELD(relation);
 	COMPARE_NODE_FIELD(tableElts);
+	COMPARE_NODE_FIELD(orderElts);
 	COMPARE_NODE_FIELD(inhRelations);
 	COMPARE_NODE_FIELD(partbound);
 	COMPARE_NODE_FIELD(partspec);

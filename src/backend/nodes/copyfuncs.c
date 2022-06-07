@@ -4067,6 +4067,7 @@ CopyCreateStmtFields(const CreateStmt *from, CreateStmt *newnode)
 {
 	COPY_NODE_FIELD(relation);
 	COPY_NODE_FIELD(tableElts);
+	COPY_NODE_FIELD(orderElts);
 	COPY_NODE_FIELD(inhRelations);
 	COPY_NODE_FIELD(partspec);
 	COPY_NODE_FIELD(partbound);

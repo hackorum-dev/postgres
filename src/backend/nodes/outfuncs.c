@@ -2870,6 +2870,7 @@ _outCreateStmtInfo(StringInfo str, const CreateStmt *node)
 {
 	WRITE_NODE_FIELD(relation);
 	WRITE_NODE_FIELD(tableElts);
+	WRITE_NODE_FIELD(orderElts);
 	WRITE_NODE_FIELD(inhRelations);
 	WRITE_NODE_FIELD(partspec);
 	WRITE_NODE_FIELD(partbound);

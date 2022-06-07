@@ -425,6 +425,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 %type <list>	parse_toplevel stmtmulti routine_body_stmt_list
 				OptTableElementList TableElementList OptInherit definition
+				OptOrderElementList OrderElementList
 				OptTypedTableElementList TypedTableElementList
 				reloptions opt_reloptions
 				OptWith opt_definition func_args func_args_list
@@ -524,6 +525,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 				 SetResetClause FunctionSetResetClause
 
 %type <node>	TableElement TypedTableElement ConstraintElem TableFuncElement
+				OrderElement
 %type <node>	columnDef columnOptions
 %type <defelt>	def_elem reloption_elem old_aggr_elem operator_def_elem
 %type <node>	def_arg columnElem where_clause where_or_current_clause
@@ -3577,6 +3579,7 @@ copy_generic_opt_arg_list_item:
  *****************************************************************************/
 
 CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
+			OptOrderElementList
 			OptInherit OptPartitionSpec table_access_method_clause OptWith
 			OnCommitOption OptTableSpace
 				{
@@ -3585,14 +3588,15 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					$4->relpersistence = $2;
 					n->relation = $4;
 					n->tableElts = $6;
-					n->inhRelations = $8;
-					n->partspec = $9;
+					n->orderElts = $8;
+					n->inhRelations = $9;
+					n->partspec = $10;
 					n->ofTypename = NULL;
 					n->constraints = NIL;
-					n->accessMethod = $10;
-					n->options = $11;
-					n->oncommit = $12;
-					n->tablespacename = $13;
+					n->accessMethod = $11;
+					n->options = $12;
+					n->oncommit = $13;
+					n->tablespacename = $14;
 					n->if_not_exists = false;
 					$$ = (Node *) n;
 				}
@@ -3605,6 +3609,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					$7->relpersistence = $2;
 					n->relation = $7;
 					n->tableElts = $9;
+					n->orderElts = NIL;
 					n->inhRelations = $11;
 					n->partspec = $12;
 					n->ofTypename = NULL;
@@ -3625,6 +3630,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					$4->relpersistence = $2;
 					n->relation = $4;
 					n->tableElts = $7;
+					n->orderElts = NIL;
 					n->inhRelations = NIL;
 					n->partspec = $8;
 					n->ofTypename = makeTypeNameFromNameList($6);
@@ -3646,6 +3652,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					$7->relpersistence = $2;
 					n->relation = $7;
 					n->tableElts = $10;
+					n->orderElts = NIL;
 					n->inhRelations = NIL;
 					n->partspec = $11;
 					n->ofTypename = makeTypeNameFromNameList($9);
@@ -3667,6 +3674,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					$4->relpersistence = $2;
 					n->relation = $4;
 					n->tableElts = $8;
+					n->orderElts = NIL;
 					n->inhRelations = list_make1($7);
 					n->partbound = $9;
 					n->partspec = $10;
@@ -3688,6 +3696,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					$7->relpersistence = $2;
 					n->relation = $7;
 					n->tableElts = $11;
+					n->orderElts = NIL;
 					n->inhRelations = list_make1($10);
 					n->partbound = $12;
 					n->partspec = $13;
@@ -3733,6 +3742,26 @@ OptTemp:	TEMPORARY					{ $$ = RELPERSISTENCE_TEMP; }
 				}
 			| UNLOGGED					{ $$ = RELPERSISTENCE_UNLOGGED; }
 			| /*EMPTY*/					{ $$ = RELPERSISTENCE_PERMANENT; }
+		;
+
+OptOrderElementList:
+			ORDER '(' OrderElementList ')'		{ $$ = $3; }
+			| /*EMPTY*/							{ $$ = NIL; }
+		;
+
+OrderElementList:
+			OrderElement
+				{
+					$$ = list_make1($1);
+				}
+			| OrderElementList ',' OrderElement
+				{
+					$$ = lappend($1, $3);
+				}
+		;
+
+OrderElement:
+			columnElem							{ $$ = $1; }
 		;
 
 OptTableElementList:
