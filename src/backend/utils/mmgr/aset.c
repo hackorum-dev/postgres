@@ -49,6 +49,8 @@
 #include "port/pg_bitutils.h"
 #include "utils/memdebug.h"
 #include "utils/memutils.h"
+#include "utils/memutils_generichdr.h"
+#include "utils/memutils_internal.h"
 
 /*--------------------
  * Chunk freelist k holds chunks of size 1 << (k + ALLOC_MINBITS),
@@ -66,7 +68,9 @@
  * CAUTION: ALLOC_MINBITS must be large enough so that
  * 1<<ALLOC_MINBITS is at least MAXALIGN,
  * or we may fail to align the smallest chunks adequately.
- * 8-byte alignment is enough on all currently known machines.
+ * 8-byte alignment is enough on all currently known machines.  This 8-byte
+ * minimum also allows us to store a pointer to the next freelist item within
+ * the chunk of memory itself.
  *
  * With the current parameters, request sizes up to 8K are treated as chunks,
  * larger requests go into dedicated blocks.  Change ALLOCSET_NUM_FREELISTS
@@ -98,10 +102,8 @@
  */
 
 #define ALLOC_BLOCKHDRSZ	MAXALIGN(sizeof(AllocBlockData))
-#define ALLOC_CHUNKHDRSZ	sizeof(struct AllocChunkData)
 
 typedef struct AllocBlockData *AllocBlock;	/* forward reference */
-typedef struct AllocChunkData *AllocChunk;
 
 /*
  * AllocPointer
@@ -123,7 +125,7 @@ typedef struct AllocSetContext
 	MemoryContextData header;	/* Standard memory-context fields */
 	/* Info about storage allocated in this context: */
 	AllocBlock	blocks;			/* head of list of blocks in this set */
-	AllocChunk	freelist[ALLOCSET_NUM_FREELISTS];	/* free chunk lists */
+	void	   *freelist[ALLOCSET_NUM_FREELISTS];	/* free pointer lists */
 	/* Allocation parameters for this context: */
 	Size		initBlockSize;	/* initial block size */
 	Size		maxBlockSize;	/* maximum block size */
@@ -139,11 +141,11 @@ typedef AllocSetContext *AllocSet;
 /*
  * AllocBlock
  *		An AllocBlock is the unit of memory that is obtained by aset.c
- *		from malloc().  It contains one or more AllocChunks, which are
- *		the units requested by palloc() and freed by pfree().  AllocChunks
- *		cannot be returned to malloc() individually, instead they are put
- *		on freelists by pfree() and re-used by the next palloc() that has
- *		a matching request size.
+ *		from malloc().  It contains one or more allocated chunks of memory,
+ *		which are the units requested by palloc() and freed by pfree().
+ *		Chunks allocated by palloc cannot be returned to malloc()
+ *		individually, instead they are put on freelists by pfree() and re-used
+ *		by the next palloc() that has a matching chunk size.
  *
  *		AllocBlockData is the header data for a block --- the usable space
  *		within the block begins at the next alignment boundary.
@@ -153,53 +155,10 @@ typedef struct AllocBlockData
 	AllocSet	aset;			/* aset that owns this block */
 	AllocBlock	prev;			/* prev block in aset's blocks list, if any */
 	AllocBlock	next;			/* next block in aset's blocks list, if any */
+	bool		large_chunk;	/* true if the only chunk is a large chunk */
 	char	   *freeptr;		/* start of free space in this block */
 	char	   *endptr;			/* end of space in this block */
 }			AllocBlockData;
-
-/*
- * AllocChunk
- *		The prefix of each piece of memory in an AllocBlock
- *
- * Note: to meet the memory context APIs, the payload area of the chunk must
- * be maxaligned, and the "aset" link must be immediately adjacent to the
- * payload area (cf. GetMemoryChunkContext).  We simplify matters for this
- * module by requiring sizeof(AllocChunkData) to be maxaligned, and then
- * we can ensure things work by adding any required alignment padding before
- * the "aset" field.  There is a static assertion below that the alignment
- * is done correctly.
- */
-typedef struct AllocChunkData
-{
-	/* size is always the size of the usable space in the chunk */
-	Size		size;
-#ifdef MEMORY_CONTEXT_CHECKING
-	/* when debugging memory usage, also store actual requested size */
-	/* this is zero in a free chunk */
-	Size		requested_size;
-
-#define ALLOCCHUNK_RAWSIZE  (SIZEOF_SIZE_T * 2 + SIZEOF_VOID_P)
-#else
-#define ALLOCCHUNK_RAWSIZE  (SIZEOF_SIZE_T + SIZEOF_VOID_P)
-#endif							/* MEMORY_CONTEXT_CHECKING */
-
-	/* ensure proper alignment by adding padding if needed */
-#if (ALLOCCHUNK_RAWSIZE % MAXIMUM_ALIGNOF) != 0
-	char		padding[MAXIMUM_ALIGNOF - ALLOCCHUNK_RAWSIZE % MAXIMUM_ALIGNOF];
-#endif
-
-	/* aset is the owning aset if allocated, or the freelist link if free */
-	void	   *aset;
-	/* there must not be any padding to reach a MAXALIGN boundary here! */
-}			AllocChunkData;
-
-/*
- * Only the "aset" field should be accessed outside this module.
- * We keep the rest of an allocated chunk's header marked NOACCESS when using
- * valgrind.  But note that chunk headers that are in a freelist are kept
- * accessible, for simplicity.
- */
-#define ALLOCCHUNK_PRIVATE_LEN	offsetof(AllocChunkData, aset)
 
 /*
  * AllocPointerIsValid
@@ -212,11 +171,6 @@ typedef struct AllocChunkData
  *		True iff set is valid allocation set.
  */
 #define AllocSetIsValid(set) PointerIsValid(set)
-
-#define AllocPointerGetChunk(ptr)	\
-					((AllocChunk)(((char *)(ptr)) - ALLOC_CHUNKHDRSZ))
-#define AllocChunkGetPointer(chk)	\
-					((AllocPointer)(((char *)(chk)) + ALLOC_CHUNKHDRSZ))
 
 /*
  * Rather than repeatedly creating and deleting memory contexts, we keep some
@@ -258,42 +212,6 @@ static AllocSetFreeList context_freelists[2] =
 	{
 		0, NULL
 	}
-};
-
-/*
- * These functions implement the MemoryContext API for AllocSet contexts.
- */
-static void *AllocSetAlloc(MemoryContext context, Size size);
-static void AllocSetFree(MemoryContext context, void *pointer);
-static void *AllocSetRealloc(MemoryContext context, void *pointer, Size size);
-static void AllocSetReset(MemoryContext context);
-static void AllocSetDelete(MemoryContext context);
-static Size AllocSetGetChunkSpace(MemoryContext context, void *pointer);
-static bool AllocSetIsEmpty(MemoryContext context);
-static void AllocSetStats(MemoryContext context,
-						  MemoryStatsPrintFunc printfunc, void *passthru,
-						  MemoryContextCounters *totals,
-						  bool print_to_stderr);
-
-#ifdef MEMORY_CONTEXT_CHECKING
-static void AllocSetCheck(MemoryContext context);
-#endif
-
-/*
- * This is the virtual function table for AllocSet contexts.
- */
-static const MemoryContextMethods AllocSetMethods = {
-	AllocSetAlloc,
-	AllocSetFree,
-	AllocSetRealloc,
-	AllocSetReset,
-	AllocSetDelete,
-	AllocSetGetChunkSpace,
-	AllocSetIsEmpty,
-	AllocSetStats
-#ifdef MEMORY_CONTEXT_CHECKING
-	,AllocSetCheck
-#endif
 };
 
 
@@ -387,13 +305,6 @@ AllocSetContextCreateInternal(MemoryContext parent,
 	AllocSet	set;
 	AllocBlock	block;
 
-	/* Assert we padded AllocChunkData properly */
-	StaticAssertStmt(ALLOC_CHUNKHDRSZ == MAXALIGN(ALLOC_CHUNKHDRSZ),
-					 "sizeof(AllocChunkData) is not maxaligned");
-	StaticAssertStmt(offsetof(AllocChunkData, aset) + sizeof(MemoryContext) ==
-					 ALLOC_CHUNKHDRSZ,
-					 "padding calculation in AllocChunkData is wrong");
-
 	/*
 	 * First, validate allocation parameters.  Once these were regular runtime
 	 * test and elog's, but in practice Asserts seem sufficient because nobody
@@ -409,6 +320,7 @@ AllocSetContextCreateInternal(MemoryContext parent,
 		   (minContextSize == MAXALIGN(minContextSize) &&
 			minContextSize >= 1024 &&
 			minContextSize <= maxBlockSize));
+	Assert(maxBlockSize <= SMALL_CHUNK_LIMIT);
 
 	/*
 	 * Check whether the parameters match either available freelist.  We do
@@ -443,7 +355,7 @@ AllocSetContextCreateInternal(MemoryContext parent,
 			/* Reinitialize its header, installing correct name and parent */
 			MemoryContextCreate((MemoryContext) set,
 								T_AllocSetContext,
-								&AllocSetMethods,
+								MCTX_ASET_ID,
 								parent,
 								name);
 
@@ -456,7 +368,7 @@ AllocSetContextCreateInternal(MemoryContext parent,
 
 	/* Determine size of initial block */
 	firstBlockSize = MAXALIGN(sizeof(AllocSetContext)) +
-		ALLOC_BLOCKHDRSZ + ALLOC_CHUNKHDRSZ;
+		ALLOC_BLOCKHDRSZ + SMALL_CHUNK_SIZE;
 	if (minContextSize != 0)
 		firstBlockSize = Max(firstBlockSize, minContextSize);
 	else
@@ -486,6 +398,7 @@ AllocSetContextCreateInternal(MemoryContext parent,
 	/* Fill in the initial block's block header */
 	block = (AllocBlock) (((char *) set) + MAXALIGN(sizeof(AllocSetContext)));
 	block->aset = set;
+	block->large_chunk = false;
 	block->freeptr = ((char *) block) + ALLOC_BLOCKHDRSZ;
 	block->endptr = ((char *) set) + firstBlockSize;
 	block->prev = NULL;
@@ -519,22 +432,23 @@ AllocSetContextCreateInternal(MemoryContext parent,
 	 *
 	 * We have to have allocChunkLimit a power of two, because the requested
 	 * and actually-allocated sizes of any chunk must be on the same side of
-	 * the limit, else we get confused about whether the chunk is "big".
+	 * the limit, else we get confused about whether the chunk is large.
 	 *
 	 * Also, allocChunkLimit must not exceed ALLOCSET_SEPARATE_THRESHOLD.
 	 */
 	StaticAssertStmt(ALLOC_CHUNK_LIMIT == ALLOCSET_SEPARATE_THRESHOLD,
 					 "ALLOC_CHUNK_LIMIT != ALLOCSET_SEPARATE_THRESHOLD");
 
-	set->allocChunkLimit = ALLOC_CHUNK_LIMIT;
-	while ((Size) (set->allocChunkLimit + ALLOC_CHUNKHDRSZ) >
+	/* We always want to allocate non-dedicated blocks as small chunks */
+	set->allocChunkLimit = Min(ALLOC_CHUNK_LIMIT, SMALL_CHUNK_LIMIT);
+	while ((Size) (set->allocChunkLimit + SMALL_CHUNK_SIZE) >
 		   (Size) ((maxBlockSize - ALLOC_BLOCKHDRSZ) / ALLOC_CHUNK_FRACTION))
 		set->allocChunkLimit >>= 1;
 
 	/* Finally, do the type-independent part of context creation */
 	MemoryContextCreate((MemoryContext) set,
 						T_AllocSetContext,
-						&AllocSetMethods,
+						MCTX_ASET_ID,
 						parent,
 						name);
 
@@ -555,7 +469,7 @@ AllocSetContextCreateInternal(MemoryContext parent,
  * thrash malloc() when a context is repeatedly reset after small allocations,
  * which is typical behavior for per-tuple contexts.
  */
-static void
+void
 AllocSetReset(MemoryContext context)
 {
 	AllocSet	set = (AllocSet) context;
@@ -623,7 +537,7 @@ AllocSetReset(MemoryContext context)
  *
  * Unlike AllocSetReset, this *must* free all resources of the set.
  */
-static void
+void
 AllocSetDelete(MemoryContext context)
 {
 	AllocSet	set = (AllocSet) context;
@@ -717,15 +631,15 @@ AllocSetDelete(MemoryContext context)
  * is marked, as mcxt.c will set it to UNDEFINED.  In some paths we will
  * return space that is marked NOACCESS - AllocSetRealloc has to beware!
  */
-static void *
+void *
 AllocSetAlloc(MemoryContext context, Size size)
 {
 	AllocSet	set = (AllocSet) context;
 	AllocBlock	block;
-	AllocChunk	chunk;
 	int			fidx;
 	Size		chunk_size;
 	Size		blksize;
+	void	   *pointer;
 
 	AssertArg(AllocSetIsValid(set));
 
@@ -735,8 +649,12 @@ AllocSetAlloc(MemoryContext context, Size size)
 	 */
 	if (size > set->allocChunkLimit)
 	{
+		Size		genhdrsize;
+
 		chunk_size = MAXALIGN(size);
-		blksize = chunk_size + ALLOC_BLOCKHDRSZ + ALLOC_CHUNKHDRSZ;
+		/* err on the side of caution and assume it'll be a large chunk */
+		genhdrsize = GenericChunkHeaderSize(ALLOC_BLOCKHDRSZ + LARGE_CHUNK_SIZE, chunk_size);
+		blksize = ALLOC_BLOCKHDRSZ + genhdrsize + chunk_size;
 		block = (AllocBlock) malloc(blksize);
 		if (block == NULL)
 			return NULL;
@@ -744,20 +662,25 @@ AllocSetAlloc(MemoryContext context, Size size)
 		context->mem_allocated += blksize;
 
 		block->aset = set;
+		/* mark if this is a large chunk or not */
+		block->large_chunk = (genhdrsize == LARGE_CHUNK_SIZE);
 		block->freeptr = block->endptr = ((char *) block) + blksize;
 
-		chunk = (AllocChunk) (((char *) block) + ALLOC_BLOCKHDRSZ);
-		chunk->aset = set;
-		chunk->size = chunk_size;
+		pointer = (void *) (((char *) block) + ALLOC_BLOCKHDRSZ + genhdrsize);
+
 #ifdef MEMORY_CONTEXT_CHECKING
-		chunk->requested_size = size;
+		GenericChunkHeaderEncode(pointer, block, chunk_size, size, MCTX_ASET_ID);
+
 		/* set mark to catch clobber of "unused" space */
 		if (size < chunk_size)
-			set_sentinel(AllocChunkGetPointer(chunk), size);
+			set_sentinel(pointer, size);
+#else
+		GenericChunkHeaderEncode(pointer, block, chunk_size, MCTX_ASET_ID);
 #endif
+
 #ifdef RANDOMIZE_ALLOCATED_MEMORY
 		/* fill the allocated space with junk */
-		randomize_mem((char *) AllocChunkGetPointer(chunk), size);
+		randomize_mem((char *) pointer, size);
 #endif
 
 		/*
@@ -780,13 +703,12 @@ AllocSetAlloc(MemoryContext context, Size size)
 		}
 
 		/* Ensure any padding bytes are marked NOACCESS. */
-		VALGRIND_MAKE_MEM_NOACCESS((char *) AllocChunkGetPointer(chunk) + size,
+		VALGRIND_MAKE_MEM_NOACCESS(((char *) pointer) + size,
 								   chunk_size - size);
 
-		/* Disallow external access to private part of chunk header. */
-		VALGRIND_MAKE_MEM_NOACCESS(chunk, ALLOCCHUNK_PRIVATE_LEN);
+		Assert(GetMemoryChunkMethodID(pointer) == MCTX_ASET_ID);
 
-		return AllocChunkGetPointer(chunk);
+		return pointer;
 	}
 
 	/*
@@ -796,41 +718,58 @@ AllocSetAlloc(MemoryContext context, Size size)
 	 * of the alloc set and return its data address.
 	 */
 	fidx = AllocSetFreeIndex(size);
-	chunk = set->freelist[fidx];
-	if (chunk != NULL)
-	{
-		Assert(chunk->size >= size);
-
-		set->freelist[fidx] = (AllocChunk) chunk->aset;
-
-		chunk->aset = (void *) set;
-
-#ifdef MEMORY_CONTEXT_CHECKING
-		chunk->requested_size = size;
-		/* set mark to catch clobber of "unused" space */
-		if (size < chunk->size)
-			set_sentinel(AllocChunkGetPointer(chunk), size);
-#endif
-#ifdef RANDOMIZE_ALLOCATED_MEMORY
-		/* fill the allocated space with junk */
-		randomize_mem((char *) AllocChunkGetPointer(chunk), size);
-#endif
-
-		/* Ensure any padding bytes are marked NOACCESS. */
-		VALGRIND_MAKE_MEM_NOACCESS((char *) AllocChunkGetPointer(chunk) + size,
-								   chunk->size - size);
-
-		/* Disallow external access to private part of chunk header. */
-		VALGRIND_MAKE_MEM_NOACCESS(chunk, ALLOCCHUNK_PRIVATE_LEN);
-
-		return AllocChunkGetPointer(chunk);
-	}
 
 	/*
 	 * Choose the actual chunk size to allocate.
 	 */
 	chunk_size = (1 << ALLOC_MINBITS) << fidx;
 	Assert(chunk_size >= size);
+
+	pointer = set->freelist[fidx];
+	if (pointer != NULL)
+	{
+		/*
+		 * Point the freelist head at the next free chunk which we stored in
+		 * the allocated memory
+		 */
+		set->freelist[fidx] = *((void **) pointer);
+
+#ifdef MEMORY_CONTEXT_CHECKING
+		{
+			/*
+			 * The chunk header is already set correctly when not doing
+			 * MEMORY_CONTEXT_CHECKING. Here we just need to update the
+			 * requested size.  We must decode it to get the block offset
+			 * before we reencode it again.
+			 */
+			AllocBlock block;
+			Size chksz, blkoff, reqsz;
+
+			GenericChunkHeaderDecode(pointer, &chksz, &blkoff, &reqsz);
+
+			block = (AllocBlock) ((char *) pointer - blkoff);
+
+			GenericChunkHeaderEncode(pointer, block, chunk_size, size, MCTX_ASET_ID);
+		}
+
+		/* set mark to catch clobber of "unused" space */
+		if (size < chunk_size)
+			set_sentinel(pointer, size);
+#endif
+
+#ifdef RANDOMIZE_ALLOCATED_MEMORY
+		/* fill the allocated space with junk */
+		randomize_mem((char *) pointer, size);
+#endif
+
+		/* Ensure any padding bytes are marked NOACCESS. */
+		VALGRIND_MAKE_MEM_NOACCESS(((char *) pointer) + size,
+								   chunk_size - size);
+
+		Assert(GetMemoryChunkMethodID(pointer) == MCTX_ASET_ID);
+
+		return pointer;
+	}
 
 	/*
 	 * If there is enough room in the active allocation block, we will put the
@@ -840,7 +779,9 @@ AllocSetAlloc(MemoryContext context, Size size)
 	{
 		Size		availspace = block->endptr - block->freeptr;
 
-		if (availspace < (chunk_size + ALLOC_CHUNKHDRSZ))
+		Assert(availspace <= SMALL_CHUNK_LIMIT);
+
+		if (availspace < (SMALL_CHUNK_SIZE + chunk_size))
 		{
 			/*
 			 * The existing active (top) block does not have enough room for
@@ -854,9 +795,9 @@ AllocSetAlloc(MemoryContext context, Size size)
 			 * ALLOC_CHUNK_LIMIT left in the block, this loop cannot iterate
 			 * more than ALLOCSET_NUM_FREELISTS-1 times.
 			 */
-			while (availspace >= ((1 << ALLOC_MINBITS) + ALLOC_CHUNKHDRSZ))
+			while (availspace >= ((1 << ALLOC_MINBITS) + SMALL_CHUNK_SIZE + sizeof(void *)))
 			{
-				Size		availchunk = availspace - ALLOC_CHUNKHDRSZ;
+				Size		availchunk = availspace - SMALL_CHUNK_SIZE;
 				int			a_fidx = AllocSetFreeIndex(availchunk);
 
 				/*
@@ -871,22 +812,21 @@ AllocSetAlloc(MemoryContext context, Size size)
 					availchunk = ((Size) 1 << (a_fidx + ALLOC_MINBITS));
 				}
 
-				chunk = (AllocChunk) (block->freeptr);
+				pointer = (void *) (block->freeptr + SMALL_CHUNK_SIZE);
 
-				/* Prepare to initialize the chunk header. */
-				VALGRIND_MAKE_MEM_UNDEFINED(chunk, ALLOC_CHUNKHDRSZ);
+				block->freeptr += (availchunk + SMALL_CHUNK_SIZE);
+				availspace -= (availchunk + SMALL_CHUNK_SIZE);
 
-				block->freeptr += (availchunk + ALLOC_CHUNKHDRSZ);
-				availspace -= (availchunk + ALLOC_CHUNKHDRSZ);
-
-				chunk->size = availchunk;
 #ifdef MEMORY_CONTEXT_CHECKING
-				chunk->requested_size = 0;	/* mark it free */
+				/* mark it free */
+				GenericChunkHeaderEncode(pointer, block, availchunk, 0, MCTX_ASET_ID);
+#else
+				GenericChunkHeaderEncode(pointer, block, availchunk, MCTX_ASET_ID);
 #endif
-				chunk->aset = (void *) set->freelist[a_fidx];
-				set->freelist[a_fidx] = chunk;
+				/* push this chunk onto the freelist */
+				*((void **) pointer) = set->freelist[a_fidx];
+				set->freelist[a_fidx] = pointer;
 			}
-
 			/* Mark that we need to create a new block */
 			block = NULL;
 		}
@@ -912,7 +852,7 @@ AllocSetAlloc(MemoryContext context, Size size)
 		 * If initBlockSize is less than ALLOC_CHUNK_LIMIT, we could need more
 		 * space... but try to keep it a power of 2.
 		 */
-		required_size = chunk_size + ALLOC_BLOCKHDRSZ + ALLOC_CHUNKHDRSZ;
+		required_size = ALLOC_BLOCKHDRSZ + SMALL_CHUNK_SIZE + chunk_size;
 		while (blksize < required_size)
 			blksize <<= 1;
 
@@ -937,6 +877,7 @@ AllocSetAlloc(MemoryContext context, Size size)
 		context->mem_allocated += blksize;
 
 		block->aset = set;
+		block->large_chunk = false;
 		block->freeptr = ((char *) block) + ALLOC_BLOCKHDRSZ;
 		block->endptr = ((char *) block) + blksize;
 
@@ -954,76 +895,83 @@ AllocSetAlloc(MemoryContext context, Size size)
 	/*
 	 * OK, do the allocation
 	 */
-	chunk = (AllocChunk) (block->freeptr);
+	pointer = (void *) (block->freeptr + SMALL_CHUNK_SIZE);
 
-	/* Prepare to initialize the chunk header. */
-	VALGRIND_MAKE_MEM_UNDEFINED(chunk, ALLOC_CHUNKHDRSZ);
-
-	block->freeptr += (chunk_size + ALLOC_CHUNKHDRSZ);
+	block->freeptr += (SMALL_CHUNK_SIZE + chunk_size);
 	Assert(block->freeptr <= block->endptr);
 
-	chunk->aset = (void *) set;
-	chunk->size = chunk_size;
+
 #ifdef MEMORY_CONTEXT_CHECKING
-	chunk->requested_size = size;
+	GenericChunkHeaderEncode(pointer, block, chunk_size, size, MCTX_ASET_ID);
+
 	/* set mark to catch clobber of "unused" space */
-	if (size < chunk->size)
-		set_sentinel(AllocChunkGetPointer(chunk), size);
+	if (size < chunk_size)
+		set_sentinel(pointer, size);
+#else
+	GenericChunkHeaderEncode(pointer, block, chunk_size, MCTX_ASET_ID);
 #endif
+
 #ifdef RANDOMIZE_ALLOCATED_MEMORY
 	/* fill the allocated space with junk */
-	randomize_mem((char *) AllocChunkGetPointer(chunk), size);
+	randomize_mem((char *) pointer, size);
 #endif
 
 	/* Ensure any padding bytes are marked NOACCESS. */
-	VALGRIND_MAKE_MEM_NOACCESS((char *) AllocChunkGetPointer(chunk) + size,
+	VALGRIND_MAKE_MEM_NOACCESS((char *) pointer + size,
 							   chunk_size - size);
 
-	/* Disallow external access to private part of chunk header. */
-	VALGRIND_MAKE_MEM_NOACCESS(chunk, ALLOCCHUNK_PRIVATE_LEN);
+	Assert(GetMemoryChunkMethodID(pointer) == MCTX_ASET_ID);
 
-	return AllocChunkGetPointer(chunk);
+	return pointer;
 }
 
 /*
  * AllocSetFree
  *		Frees allocated memory; memory is removed from the set.
  */
-static void
-AllocSetFree(MemoryContext context, void *pointer)
+void
+AllocSetFree(void *pointer)
 {
-	AllocSet	set = (AllocSet) context;
-	AllocChunk	chunk = AllocPointerGetChunk(pointer);
+	AllocBlock	block;
+	AllocSet	set;
+	Size		chunksize;
+	Size		blockoffset;
+	Size		hdrsize;
+#ifdef MEMORY_CONTEXT_CHECKING
+	Size		reqsize;
 
-	/* Allow access to private part of chunk header. */
-	VALGRIND_MAKE_MEM_DEFINED(chunk, ALLOCCHUNK_PRIVATE_LEN);
+	hdrsize = GenericChunkHeaderDecode(pointer, &chunksize, &blockoffset, &reqsize);
+#else
+	hdrsize = GenericChunkHeaderDecode(pointer, &chunksize, &blockoffset);
+#endif
+
+	block = (AllocBlock) ((char *) pointer - blockoffset);
+	set = block->aset;
 
 #ifdef MEMORY_CONTEXT_CHECKING
 	/* Test for someone scribbling on unused space in chunk */
-	if (chunk->requested_size < chunk->size)
-		if (!sentinel_ok(pointer, chunk->requested_size))
+	if (reqsize < chunksize)
+		if (!sentinel_ok(pointer, reqsize))
 			elog(WARNING, "detected write past chunk end in %s %p",
-				 set->header.name, chunk);
+				 set->header.name, pointer);
 #endif
 
-	if (chunk->size > set->allocChunkLimit)
+	if (chunksize > set->allocChunkLimit)
 	{
 		/*
 		 * Big chunks are certain to have been allocated as single-chunk
 		 * blocks.  Just unlink that block and return it to malloc().
 		 */
-		AllocBlock	block = (AllocBlock) (((char *) chunk) - ALLOC_BLOCKHDRSZ);
 
 		/*
 		 * Try to verify that we have a sane block pointer: it should
 		 * reference the correct aset, and freeptr and endptr should point
 		 * just past the chunk.
 		 */
-		if (block->aset != set ||
-			block->freeptr != block->endptr ||
+		if (block->freeptr != block->endptr ||
 			block->freeptr != ((char *) block) +
-			(chunk->size + ALLOC_BLOCKHDRSZ + ALLOC_CHUNKHDRSZ))
-			elog(ERROR, "could not find block containing chunk %p", chunk);
+			(ALLOC_BLOCKHDRSZ + hdrsize + chunksize))
+			elog(ERROR, "could not find block containing pointer %p", pointer);
 
 		/* OK, remove block from aset's list and free it */
 		if (block->prev)
@@ -1033,7 +981,7 @@ AllocSetFree(MemoryContext context, void *pointer)
 		if (block->next)
 			block->next->prev = block->prev;
 
-		context->mem_allocated -= block->endptr - ((char *) block);
+		set->header.mem_allocated -= block->endptr - ((char *) block);
 
 #ifdef CLOBBER_FREED_MEMORY
 		wipe_mem(block, block->freeptr - ((char *) block));
@@ -1043,19 +991,22 @@ AllocSetFree(MemoryContext context, void *pointer)
 	else
 	{
 		/* Normal case, put the chunk into appropriate freelist */
-		int			fidx = AllocSetFreeIndex(chunk->size);
+		int			fidx = AllocSetFreeIndex(chunksize);
 
-		chunk->aset = (void *) set->freelist[fidx];
+		/* Use the pointer to store the freelist link */
+		*((void **) pointer) = set->freelist[fidx];
 
 #ifdef CLOBBER_FREED_MEMORY
-		wipe_mem(pointer, chunk->size);
+		/* Wipe the memory, but not the freelist link we just set above */
+		wipe_mem(((char *) pointer) + sizeof(void *), chunksize - sizeof(void *));
 #endif
 
 #ifdef MEMORY_CONTEXT_CHECKING
 		/* Reset requested_size to 0 in chunks that are on freelist */
-		chunk->requested_size = 0;
+		GenericChunkHeaderEncode(pointer, block, chunksize, 0, MCTX_ASET_ID);
 #endif
-		set->freelist[fidx] = chunk;
+
+		set->freelist[fidx] = pointer;
 	}
 }
 
@@ -1071,24 +1022,32 @@ AllocSetFree(MemoryContext context, void *pointer)
  * (In principle, we could use VALGRIND_GET_VBITS() to rediscover the old
  * request size.)
  */
-static void *
-AllocSetRealloc(MemoryContext context, void *pointer, Size size)
+void *
+AllocSetRealloc(void *pointer, Size size)
 {
-	AllocSet	set = (AllocSet) context;
-	AllocChunk	chunk = AllocPointerGetChunk(pointer);
+	AllocBlock	block;
+	AllocSet	set;
 	Size		oldsize;
+	Size		blockoffset;
+	Size		hdrsize;
+#ifdef MEMORY_CONTEXT_CHECKING
+	Size		oldreqsize;
 
-	/* Allow access to private part of chunk header. */
-	VALGRIND_MAKE_MEM_DEFINED(chunk, ALLOCCHUNK_PRIVATE_LEN);
+	hdrsize = GenericChunkHeaderDecode(pointer, &oldsize, &blockoffset, &oldreqsize);
+#else
 
-	oldsize = chunk->size;
+	hdrsize = GenericChunkHeaderDecode(pointer, &oldsize, &blockoffset);
+#endif
+
+	block = (AllocBlock) ((char *) pointer - blockoffset);
+	set = block->aset;
 
 #ifdef MEMORY_CONTEXT_CHECKING
 	/* Test for someone scribbling on unused space in chunk */
-	if (chunk->requested_size < oldsize)
-		if (!sentinel_ok(pointer, chunk->requested_size))
+	if (oldreqsize < oldsize)
+		if (!sentinel_ok(pointer, oldreqsize))
 			elog(WARNING, "detected write past chunk end in %s %p",
-				 set->header.name, chunk);
+				 set->header.name, pointer);
 #endif
 
 	if (oldsize > set->allocChunkLimit)
@@ -1098,21 +1057,20 @@ AllocSetRealloc(MemoryContext context, void *pointer, Size size)
 		 * realloc() to make the containing block bigger, or smaller, with
 		 * minimum space wastage.
 		 */
-		AllocBlock	block = (AllocBlock) (((char *) chunk) - ALLOC_BLOCKHDRSZ);
 		Size		chksize;
 		Size		blksize;
 		Size		oldblksize;
+		Size		newhdrsize;
 
 		/*
 		 * Try to verify that we have a sane block pointer: it should
 		 * reference the correct aset, and freeptr and endptr should point
 		 * just past the chunk.
 		 */
-		if (block->aset != set ||
-			block->freeptr != block->endptr ||
+		if (block->freeptr != block->endptr ||
 			block->freeptr != ((char *) block) +
-			(oldsize + ALLOC_BLOCKHDRSZ + ALLOC_CHUNKHDRSZ))
-			elog(ERROR, "could not find block containing chunk %p", chunk);
+			(ALLOC_BLOCKHDRSZ + hdrsize + oldsize))
+			elog(ERROR, "could not find block containing pointer %p", pointer);
 
 		/*
 		 * Even if the new request is less than set->allocChunkLimit, we stick
@@ -1123,41 +1081,66 @@ AllocSetRealloc(MemoryContext context, void *pointer, Size size)
 		chksize = Max(size, set->allocChunkLimit + 1);
 		chksize = MAXALIGN(chksize);
 
+		/* Assume big chunk size */
+		newhdrsize = GenericChunkHeaderSize(ALLOC_BLOCKHDRSZ + LARGE_CHUNK_SIZE, chksize);
+
 		/* Do the realloc */
-		blksize = chksize + ALLOC_BLOCKHDRSZ + ALLOC_CHUNKHDRSZ;
+		blksize = ALLOC_BLOCKHDRSZ + newhdrsize + chksize;
 		oldblksize = block->endptr - ((char *) block);
 
-		block = (AllocBlock) realloc(block, blksize);
-		if (block == NULL)
+		if (newhdrsize == hdrsize)
+			block = (AllocBlock) realloc(block, blksize);
+		else
 		{
-			/* Disallow external access to private part of chunk header. */
-			VALGRIND_MAKE_MEM_NOACCESS(chunk, ALLOCCHUNK_PRIVATE_LEN);
-			return NULL;
+			/*
+			 * When the size of the chunk header changes, we're unable to
+			 * simply call realloc as the offset between the block and the
+			 * pointer will have changed.  For this case we resort to just
+			 * allocating new memory with AllocSetAlloc then copying the old
+			 * memory over before finally freeing the old memory and block
+			 * with AllocSetFree.
+			 */
+			void *newPointer = AllocSetAlloc((MemoryContext) set, size);
+
+			if (newPointer == NULL)
+				return NULL;
+
+			memcpy(newPointer, pointer, Min(oldsize, size));
+
+			AllocSetFree(pointer);
+
+			return newPointer;
 		}
 
+		if (block == NULL)
+			return NULL;
+
 		/* updated separately, not to underflow when (oldblksize > blksize) */
-		context->mem_allocated -= oldblksize;
-		context->mem_allocated += blksize;
+		set->header.mem_allocated -= oldblksize;
+		set->header.mem_allocated += blksize;
 
 		block->freeptr = block->endptr = ((char *) block) + blksize;
 
 		/* Update pointers since block has likely been moved */
-		chunk = (AllocChunk) (((char *) block) + ALLOC_BLOCKHDRSZ);
-		pointer = AllocChunkGetPointer(chunk);
+		pointer = (void *) ((char *) block + ALLOC_BLOCKHDRSZ + newhdrsize);
 		if (block->prev)
 			block->prev->next = block;
 		else
 			set->blocks = block;
 		if (block->next)
 			block->next->prev = block;
-		chunk->size = chksize;
+
+#ifdef MEMORY_CONTEXT_CHECKING
+		GenericChunkHeaderEncode(pointer, block, chksize, size, MCTX_ASET_ID);
+#else
+		GenericChunkHeaderEncode(pointer, block, chksize, MCTX_ASET_ID);
+#endif
 
 #ifdef MEMORY_CONTEXT_CHECKING
 #ifdef RANDOMIZE_ALLOCATED_MEMORY
-		/* We can only fill the extra space if we know the prior request */
-		if (size > chunk->requested_size)
-			randomize_mem((char *) pointer + chunk->requested_size,
-						  size - chunk->requested_size);
+		/* for enlarged chunks, randomize the enlarged portion. */
+		if (size > oldreqsize)
+			randomize_mem(((char *) pointer) + oldreqsize, size - oldreqsize);
 #endif
 
 		/*
@@ -1166,15 +1149,12 @@ AllocSetRealloc(MemoryContext context, void *pointer, Size size)
 		 * old allocation.
 		 */
 #ifdef USE_VALGRIND
-		if (oldsize > chunk->requested_size)
-			VALGRIND_MAKE_MEM_UNDEFINED((char *) pointer + chunk->requested_size,
-										oldsize - chunk->requested_size);
+		if (oldsize > oldreqsize)
+			VALGRIND_MAKE_MEM_UNDEFINED((char *) pointer + oldreqsize,
+										oldsize - oldreqsize);
 #endif
-
-		chunk->requested_size = size;
-
 		/* set mark to catch clobber of "unused" space */
-		if (size < chunk->size)
+		if (size < chksize)
 			set_sentinel(pointer, size);
 #else							/* !MEMORY_CONTEXT_CHECKING */
 
@@ -1189,8 +1169,7 @@ AllocSetRealloc(MemoryContext context, void *pointer, Size size)
 		/* Ensure any padding bytes are marked NOACCESS. */
 		VALGRIND_MAKE_MEM_NOACCESS((char *) pointer + size, chksize - size);
 
-		/* Disallow external access to private part of chunk header. */
-		VALGRIND_MAKE_MEM_NOACCESS(chunk, ALLOCCHUNK_PRIVATE_LEN);
+		Assert(GetMemoryChunkMethodID(pointer) == MCTX_ASET_ID);
 
 		return pointer;
 	}
@@ -1203,24 +1182,19 @@ AllocSetRealloc(MemoryContext context, void *pointer, Size size)
 	else if (oldsize >= size)
 	{
 #ifdef MEMORY_CONTEXT_CHECKING
-		Size		oldrequest = chunk->requested_size;
-
 #ifdef RANDOMIZE_ALLOCATED_MEMORY
 		/* We can only fill the extra space if we know the prior request */
-		if (size > oldrequest)
-			randomize_mem((char *) pointer + oldrequest,
-						  size - oldrequest);
+		if (size > oldreqsize)
+			randomize_mem((char *) pointer + oldreqsize,
+						  size - oldreqsize);
 #endif
-
-		chunk->requested_size = size;
-
 		/*
 		 * If this is an increase, mark any newly-available part UNDEFINED.
 		 * Otherwise, mark the obsolete part NOACCESS.
 		 */
-		if (size > oldrequest)
-			VALGRIND_MAKE_MEM_UNDEFINED((char *) pointer + oldrequest,
-										size - oldrequest);
+		if (size > oldreqsize)
+			VALGRIND_MAKE_MEM_UNDEFINED((char *) pointer + oldreqsize,
+										size - oldreqsize);
 		else
 			VALGRIND_MAKE_MEM_NOACCESS((char *) pointer + size,
 									   oldsize - size);
@@ -1228,6 +1202,9 @@ AllocSetRealloc(MemoryContext context, void *pointer, Size size)
 		/* set mark to catch clobber of "unused" space */
 		if (size < oldsize)
 			set_sentinel(pointer, size);
+
+		/* Re-encode the chunk to apply new request size */
+		GenericChunkHeaderEncode(pointer, block, oldsize, size, MCTX_ASET_ID);
 #else							/* !MEMORY_CONTEXT_CHECKING */
 
 		/*
@@ -1239,8 +1216,7 @@ AllocSetRealloc(MemoryContext context, void *pointer, Size size)
 		VALGRIND_MAKE_MEM_DEFINED(pointer, size);
 #endif
 
-		/* Disallow external access to private part of chunk header. */
-		VALGRIND_MAKE_MEM_NOACCESS(chunk, ALLOCCHUNK_PRIVATE_LEN);
+		Assert(GetMemoryChunkMethodID(pointer) == MCTX_ASET_ID);
 
 		return pointer;
 	}
@@ -1264,11 +1240,7 @@ AllocSetRealloc(MemoryContext context, void *pointer, Size size)
 
 		/* leave immediately if request was not completed */
 		if (newPointer == NULL)
-		{
-			/* Disallow external access to private part of chunk header. */
-			VALGRIND_MAKE_MEM_NOACCESS(chunk, ALLOCCHUNK_PRIVATE_LEN);
 			return NULL;
-		}
 
 		/*
 		 * AllocSetAlloc() may have returned a region that is still NOACCESS.
@@ -1279,8 +1251,9 @@ AllocSetRealloc(MemoryContext context, void *pointer, Size size)
 		 * trailing bytes.
 		 */
 		VALGRIND_MAKE_MEM_UNDEFINED(newPointer, size);
+
 #ifdef MEMORY_CONTEXT_CHECKING
-		oldsize = chunk->requested_size;
+		oldsize = oldreqsize;
 #else
 		VALGRIND_MAKE_MEM_DEFINED(pointer, oldsize);
 #endif
@@ -1289,10 +1262,38 @@ AllocSetRealloc(MemoryContext context, void *pointer, Size size)
 		memcpy(newPointer, pointer, oldsize);
 
 		/* free old chunk */
-		AllocSetFree((MemoryContext) set, pointer);
+		AllocSetFree(pointer);
+
+		Assert(GetMemoryChunkMethodID(newPointer) == MCTX_ASET_ID);
 
 		return newPointer;
 	}
+}
+
+/*
+ * AllocSetGetChunkContext
+ *		Return the MemoryContext that 'pointer' belongs to.
+ */
+MemoryContext
+AllocSetGetChunkContext(void *pointer)
+{
+	AllocBlock	block;
+	AllocSet	set;
+	Size		chunksize;
+	Size		blockoffset;
+#ifdef MEMORY_CONTEXT_CHECKING
+	Size		reqsize;
+
+	GenericChunkHeaderDecode(pointer, &chunksize, &blockoffset, &reqsize);
+#else
+	GenericChunkHeaderDecode(pointer, &chunksize, &blockoffset);
+#endif
+
+	block = (AllocBlock) ((char *) pointer - blockoffset);
+
+	set = block->aset;
+
+	return &set->header;
 }
 
 /*
@@ -1300,23 +1301,28 @@ AllocSetRealloc(MemoryContext context, void *pointer, Size size)
  *		Given a currently-allocated chunk, determine the total space
  *		it occupies (including all memory-allocation overhead).
  */
-static Size
-AllocSetGetChunkSpace(MemoryContext context, void *pointer)
+Size
+AllocSetGetChunkSpace(void *pointer)
 {
-	AllocChunk	chunk = AllocPointerGetChunk(pointer);
-	Size		result;
+	Size		chunksize;
+	Size		blockoffset;
+	Size		hdrsize;
+#ifdef MEMORY_CONTEXT_CHECKING
+	Size		reqsize;
 
-	VALGRIND_MAKE_MEM_DEFINED(chunk, ALLOCCHUNK_PRIVATE_LEN);
-	result = chunk->size + ALLOC_CHUNKHDRSZ;
-	VALGRIND_MAKE_MEM_NOACCESS(chunk, ALLOCCHUNK_PRIVATE_LEN);
-	return result;
+	hdrsize = GenericChunkHeaderDecode(pointer, &chunksize, &blockoffset, &reqsize);
+#else
+	hdrsize = GenericChunkHeaderDecode(pointer, &chunksize, &blockoffset);
+#endif
+
+	return hdrsize + chunksize;
 }
 
 /*
  * AllocSetIsEmpty
  *		Is an allocset empty of any allocated space?
  */
-static bool
+bool
 AllocSetIsEmpty(MemoryContext context)
 {
 	/*
@@ -1339,7 +1345,7 @@ AllocSetIsEmpty(MemoryContext context)
  * totals: if not NULL, add stats about this context into *totals.
  * print_to_stderr: print stats to stderr if true, elog otherwise.
  */
-static void
+void
 AllocSetStats(MemoryContext context,
 			  MemoryStatsPrintFunc printfunc, void *passthru,
 			  MemoryContextCounters *totals, bool print_to_stderr)
@@ -1363,13 +1369,19 @@ AllocSetStats(MemoryContext context,
 	}
 	for (fidx = 0; fidx < ALLOCSET_NUM_FREELISTS; fidx++)
 	{
-		AllocChunk	chunk;
+		void	   *pointer = set->freelist[fidx];
+		Size		chunk_size = (1 << ALLOC_MINBITS) << fidx;
 
-		for (chunk = set->freelist[fidx]; chunk != NULL;
-			 chunk = (AllocChunk) chunk->aset)
+		while (pointer != NULL)
 		{
 			freechunks++;
-			freespace += chunk->size + ALLOC_CHUNKHDRSZ;
+			freespace += chunk_size + SMALL_CHUNK_SIZE;
+
+			/*
+			 * Set pointer to the next freelist item which is stored in the
+			 * pointed to memory.
+			 */
+			pointer = *((void **) pointer);
 		}
 	}
 
@@ -1404,7 +1416,7 @@ AllocSetStats(MemoryContext context,
  * find yourself in an infinite loop when trouble occurs, because this
  * routine will be entered again when elog cleanup tries to release memory!
  */
-static void
+void
 AllocSetCheck(MemoryContext context)
 {
 	AllocSet	set = (AllocSet) context;
@@ -1421,6 +1433,7 @@ AllocSetCheck(MemoryContext context)
 		long		blk_used = block->freeptr - bpoz;
 		long		blk_data = 0;
 		long		nchunks = 0;
+		Size		expected_hdrsize;
 
 		if (set->keeper == block)
 			total_allocated += block->endptr - ((char *) set);
@@ -1447,69 +1460,64 @@ AllocSetCheck(MemoryContext context)
 			elog(WARNING, "problem in alloc set %s: corrupt header in block %p",
 				 name, block);
 
+		if (block->large_chunk)
+			expected_hdrsize = LARGE_CHUNK_SIZE;
+		else
+			expected_hdrsize = SMALL_CHUNK_SIZE;
+
 		/*
 		 * Chunk walker
 		 */
 		while (bpoz < block->freeptr)
 		{
-			AllocChunk	chunk = (AllocChunk) bpoz;
-			Size		chsize,
-						dsize;
+			void	   *pointer;
+			Size		chsize;
+			Size		blkoff;
+			Size		hdrsize;
+			Size		reqsize;
 
-			/* Allow access to private part of chunk header. */
-			VALGRIND_MAKE_MEM_DEFINED(chunk, ALLOCCHUNK_PRIVATE_LEN);
-
-			chsize = chunk->size;	/* aligned chunk size */
-			dsize = chunk->requested_size;	/* real data */
+			pointer = bpoz + expected_hdrsize;
+			hdrsize = GenericChunkHeaderDecode(pointer, &chsize, &blkoff, &reqsize);
 
 			/*
 			 * Check chunk size
 			 */
-			if (dsize > chsize)
-				elog(WARNING, "problem in alloc set %s: req size > alloc size for chunk %p in block %p",
-					 name, chunk, block);
+			if (expected_hdrsize != hdrsize)
+				elog(WARNING, "problem in alloc set %s: expected chunk header size is %zu but actual size is %zu",
+					 name, expected_hdrsize, hdrsize);
+			if (reqsize > chsize)
+				elog(WARNING, "problem in alloc set %s: req size > alloc size for pointer %p in block %p",
+					 name, pointer, block);
 			if (chsize < (1 << ALLOC_MINBITS))
-				elog(WARNING, "problem in alloc set %s: bad size %zu for chunk %p in block %p",
-					 name, chsize, chunk, block);
+				elog(WARNING, "problem in alloc set %s: bad size %zu for pointer %p in block %p",
+					 name, chsize, pointer, block);
 
 			/* single-chunk block? */
 			if (chsize > set->allocChunkLimit &&
-				chsize + ALLOC_CHUNKHDRSZ != blk_used)
-				elog(WARNING, "problem in alloc set %s: bad single-chunk %p in block %p",
-					 name, chunk, block);
+				chsize + expected_hdrsize != blk_used)
+				elog(WARNING, "problem in alloc set %s: bad single-chunk pointer %p in block %p",
+					 name, pointer, block);
 
-			/*
-			 * If chunk is allocated, check for correct aset pointer. (If it's
-			 * free, the aset is the freelist pointer, which we can't check as
-			 * easily...)  Note this is an incomplete test, since palloc(0)
-			 * produces an allocated chunk with requested_size == 0.
-			 */
-			if (dsize > 0 && chunk->aset != (void *) set)
-				elog(WARNING, "problem in alloc set %s: bogus aset link in block %p, chunk %p",
-					 name, block, chunk);
+			/* Check the block offset correctly matches this block */
+			if ((AllocBlock) ((char *) pointer - blkoff) != block)
+				elog(WARNING, "problem in alloc set %s: bad block offset for pointer %p in block %p",
+					 name, pointer, block);
 
 			/*
 			 * Check for overwrite of padding space in an allocated chunk.
 			 */
-			if (chunk->aset == (void *) set && dsize < chsize &&
-				!sentinel_ok(chunk, ALLOC_CHUNKHDRSZ + dsize))
-				elog(WARNING, "problem in alloc set %s: detected write past chunk end in block %p, chunk %p",
-					 name, block, chunk);
-
-			/*
-			 * If chunk is allocated, disallow external access to private part
-			 * of chunk header.
-			 */
-			if (chunk->aset == (void *) set)
-				VALGRIND_MAKE_MEM_NOACCESS(chunk, ALLOCCHUNK_PRIVATE_LEN);
+			if (reqsize > 0 && reqsize < chsize &&
+				!sentinel_ok(pointer, reqsize))
+				elog(WARNING, "problem in alloc set %s: detected write past chunk end in block %p, pointer %p",
+					 name, block, pointer);
 
 			blk_data += chsize;
 			nchunks++;
 
-			bpoz += ALLOC_CHUNKHDRSZ + chsize;
+			bpoz += expected_hdrsize + chsize;
 		}
 
-		if ((blk_data + (nchunks * ALLOC_CHUNKHDRSZ)) != blk_used)
+		if (bpoz != block->freeptr)
 			elog(WARNING, "problem in alloc set %s: found inconsistent memory block %p",
 				 name, block);
 	}

@@ -378,35 +378,54 @@ MemoryContext like the parent and child contexts, and the name of the
 context.
 
 This is essentially an abstract superclass, and the behavior is
-determined by the "methods" pointer is its virtual function table
-(struct MemoryContextMethods).  Specific memory context types will use
-derived structs having these fields as their first fields.  All the
+determined by the "methods" pointer which references which set of
+MemoryContextMethods are to be used.  Specific memory context types will
+use derived structs having these fields as their first fields.  All the
 contexts of a specific type will have methods pointers that point to
-the same static table of function pointers.
+the corresponding element in the mcxt_methods[] array.
 
 While operations like allocating from and resetting a context take the
 relevant MemoryContext as a parameter, operations like free and
 realloc are trickier.  To make those work, we require all memory
 context types to produce allocated chunks that are immediately,
-without any padding, preceded by a pointer to the corresponding
-MemoryContext.
+without any padding, preceded by a uint64 value of which the least
+significant 3 bits are set to the owning context's MemoryContextMethodID.
+This allows the code to determine the correct MemoryContextMethods to
+use by looking up the mcxt_methods[] array using the 3 bits as an index
+into that array.
 
 If a type of allocator needs additional information about its chunks,
 like e.g. the size of the allocation, that information can in turn
-precede the MemoryContext.  This means the only overhead implied by
-the memory context mechanism is a pointer to its context, so we're not
-constraining context-type designers very much.
+either be encoded into the remaining 61 bits of the preceding uint64 value
+or if more space is required, additional values may be stored directly prior
+to the uint64 value.  It is up to the context implementation to manage this.
 
-Given this, routines like pfree determine their corresponding context
-with an operation like (although that is usually encapsulated in
-GetMemoryChunkContext())
+Given this, routines like pfree can determine which set of
+MemoryContextMethods to call the free_p function for by calling
+GetMemoryChunkMethodID() and finding the corresponding MemoryContextMethods
+in the mcxt_methods array[].  For convenience, the MCXT_METHOD() macro is
+provided, making the code as simple as:
 
-    MemoryContext context = *(MemoryContext*) (((char *) pointer) - sizeof(void *));
+void
+pfree(void *pointer)
+{
+	MCXT_METHOD(pointer, free_p)(pointer);
+}
 
-and then invoke the corresponding method for the context
-
-    context->methods->free_p(pointer);
-
+All of the current memory contexts make use of a generic chunk header type
+which is defined in memutils_generichdr.h.  This suits all of the existing
+context types well as it makes use of the remaining 61-bits of the uint64
+header to efficiently encode the size of the chunk of memory and the number
+of bytes which must be subtracted from the pointer in order to obtain a
+reference to the block that the pointer belongs to.  30 bits are used for each
+of these.  If more than 30 bits are required (i.e. > 1GB) then a "large" chunk
+header is used which uses an additional two Size fields in the preceding
+memory.  All memory context implementations store a pointer back to the owning
+context within the block and we can find that block by subtracting the block
+offset bytes, as is stored in the generic header.  During operations like
+pfree, this allows memory contexts such as the generation context to track how
+many chunks have been freed from a given block and then release the memory for
+the block when all chunks have been freed.
 
 More Control Over aset.c Behavior
 ---------------------------------

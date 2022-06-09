@@ -29,11 +29,59 @@
 #include "utils/fmgrprotos.h"
 #include "utils/memdebug.h"
 #include "utils/memutils.h"
+#include "utils/memutils_internal.h"
 
 
 /*****************************************************************************
  *	  GLOBAL MEMORY															 *
  *****************************************************************************/
+
+static const MemoryContextMethods mcxt_methods[] = {
+	[MCTX_ASET_ID] = {
+		AllocSetAlloc,
+		AllocSetFree,
+		AllocSetRealloc,
+		AllocSetReset,
+		AllocSetDelete,
+		AllocSetGetChunkContext,
+		AllocSetGetChunkSpace,
+		AllocSetIsEmpty,
+		AllocSetStats
+#ifdef MEMORY_CONTEXT_CHECKING
+		,AllocSetCheck
+#endif
+	},
+
+	[MCTX_GENERATION_ID] = {
+		GenerationAlloc,
+		GenerationFree,
+		GenerationRealloc,
+		GenerationReset,
+		GenerationDelete,
+		GenerationGetChunkContext,
+		GenerationGetChunkSpace,
+		GenerationIsEmpty,
+		GenerationStats
+#ifdef MEMORY_CONTEXT_CHECKING
+		,GenerationCheck
+#endif
+	},
+
+	[MCTX_SLAB_ID] = {
+		SlabAlloc,
+		SlabFree,
+		SlabRealloc,
+		SlabReset,
+		SlabDelete,
+		SlabGetChunkContext,
+		SlabGetChunkSpace,
+		SlabIsEmpty,
+		SlabStats
+#ifdef MEMORY_CONTEXT_CHECKING
+		,SlabCheck
+#endif
+	},
+};
 
 /*
  * CurrentMemoryContext
@@ -72,6 +120,9 @@ static void MemoryContextStatsPrint(MemoryContext context, void *passthru,
  */
 #define AssertNotInCriticalSection(context) \
 	Assert(CritSectionCount == 0 || (context)->allowInCritSection)
+
+
+#define MCXT_METHOD(pointer, method) mcxt_methods[GetMemoryChunkMethodID(pointer)].method
 
 
 /*****************************************************************************
@@ -423,6 +474,17 @@ MemoryContextAllowInCriticalSection(MemoryContext context, bool allow)
 }
 
 /*
+ * GetMemoryChunkContext
+ *		Given a currently-allocated chunk, determine the MemoryContext that
+ *		the chunk belongs to.
+ */
+MemoryContext
+GetMemoryChunkContext(void *pointer)
+{
+	return MCXT_METHOD(pointer, get_chunk_context)(pointer);
+}
+
+/*
  * GetMemoryChunkSpace
  *		Given a currently-allocated chunk, determine the total space
  *		it occupies (including all memory-allocation overhead).
@@ -433,9 +495,7 @@ MemoryContextAllowInCriticalSection(MemoryContext context, bool allow)
 Size
 GetMemoryChunkSpace(void *pointer)
 {
-	MemoryContext context = GetMemoryChunkContext(pointer);
-
-	return context->methods->get_chunk_space(context, pointer);
+	return MCXT_METHOD(pointer, get_chunk_space)(pointer);
 }
 
 /*
@@ -814,7 +874,7 @@ MemoryContextContains(MemoryContext context, void *pointer)
 void
 MemoryContextCreate(MemoryContext node,
 					NodeTag tag,
-					const MemoryContextMethods *methods,
+					MemoryContextMethodID method_id,
 					MemoryContext parent,
 					const char *name)
 {
@@ -824,7 +884,7 @@ MemoryContextCreate(MemoryContext node,
 	/* Initialize all standard fields of memory context header */
 	node->type = tag;
 	node->isReset = true;
-	node->methods = methods;
+	node->methods = &mcxt_methods[method_id];
 	node->parent = parent;
 	node->firstchild = NULL;
 	node->mem_allocated = 0;
@@ -1174,10 +1234,8 @@ palloc_extended(Size size, int flags)
 void
 pfree(void *pointer)
 {
-	MemoryContext context = GetMemoryChunkContext(pointer);
-
-	context->methods->free_p(context, pointer);
-	VALGRIND_MEMPOOL_FREE(context, pointer);
+	MCXT_METHOD(pointer, free_p)(pointer);
+	VALGRIND_MEMPOOL_FREE(GetMemoryChunkContext(pointer), pointer);
 }
 
 /*
@@ -1187,8 +1245,11 @@ pfree(void *pointer)
 void *
 repalloc(void *pointer, Size size)
 {
-	MemoryContext context = GetMemoryChunkContext(pointer);
 	void	   *ret;
+
+#if defined(USE_ASSERT_CHECKING) || defined(USE_VALGRIND)
+	MemoryContext context = GetMemoryChunkContext(pointer);
+#endif
 
 	if (!AllocSizeIsValid(size))
 		elog(ERROR, "invalid memory alloc request size %zu", size);
@@ -1198,9 +1259,11 @@ repalloc(void *pointer, Size size)
 	/* isReset must be false already */
 	Assert(!context->isReset);
 
-	ret = context->methods->realloc(context, pointer, size);
+	ret = MCXT_METHOD(pointer, realloc)(pointer, size);
 	if (unlikely(ret == NULL))
 	{
+		MemoryContext context = GetMemoryChunkContext(pointer);
+
 		MemoryContextStats(TopMemoryContext);
 		ereport(ERROR,
 				(errcode(ERRCODE_OUT_OF_MEMORY),
@@ -1257,8 +1320,11 @@ MemoryContextAllocHuge(MemoryContext context, Size size)
 void *
 repalloc_huge(void *pointer, Size size)
 {
-	MemoryContext context = GetMemoryChunkContext(pointer);
 	void	   *ret;
+
+#if defined(USE_ASSERT_CHECKING) || defined(USE_VALGRIND)
+	MemoryContext context = GetMemoryChunkContext(pointer);
+#endif
 
 	if (!AllocHugeSizeIsValid(size))
 		elog(ERROR, "invalid memory alloc request size %zu", size);
@@ -1268,9 +1334,11 @@ repalloc_huge(void *pointer, Size size)
 	/* isReset must be false already */
 	Assert(!context->isReset);
 
-	ret = context->methods->realloc(context, pointer, size);
+	ret = MCXT_METHOD(pointer, realloc)(pointer, size);
 	if (unlikely(ret == NULL))
 	{
+		MemoryContext context = GetMemoryChunkContext(pointer);
+
 		MemoryContextStats(TopMemoryContext);
 		ereport(ERROR,
 				(errcode(ERRCODE_OUT_OF_MEMORY),

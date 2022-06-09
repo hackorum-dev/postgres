@@ -55,6 +55,8 @@
 #include "lib/ilist.h"
 #include "utils/memdebug.h"
 #include "utils/memutils.h"
+#include "utils/memutils_generichdr.h"
+#include "utils/memutils_internal.h"
 
 /*
  * SlabContext is a specialized implementation of MemoryContext.
@@ -90,74 +92,15 @@ typedef struct SlabBlock
 	dlist_node	node;			/* doubly-linked list */
 	int			nfree;			/* number of free chunks */
 	int			firstFreeChunk; /* index of the first free chunk in the block */
+	SlabContext *slab;			/* owning context */
 } SlabBlock;
 
-/*
- * SlabChunk
- *		The prefix of each piece of memory in a SlabBlock
- *
- * Note: to meet the memory context APIs, the payload area of the chunk must
- * be maxaligned, and the "slab" link must be immediately adjacent to the
- * payload area (cf. GetMemoryChunkContext).  Since we support no machines on
- * which MAXALIGN is more than twice sizeof(void *), this happens without any
- * special hacking in this struct declaration.  But there is a static
- * assertion below that the alignment is done correctly.
- */
-typedef struct SlabChunk
-{
-	SlabBlock  *block;			/* block owning this chunk */
-	SlabContext *slab;			/* owning context */
-	/* there must not be any padding to reach a MAXALIGN boundary here! */
-} SlabChunk;
-
-
-#define SlabPointerGetChunk(ptr)	\
-	((SlabChunk *)(((char *)(ptr)) - sizeof(SlabChunk)))
-#define SlabChunkGetPointer(chk)	\
-	((void *)(((char *)(chk)) + sizeof(SlabChunk)))
-#define SlabBlockGetChunk(slab, block, idx) \
-	((SlabChunk *) ((char *) (block) + sizeof(SlabBlock)	\
-					+ (idx * slab->fullChunkSize)))
-#define SlabBlockStart(block)	\
-	((char *) block + sizeof(SlabBlock))
-#define SlabChunkIndex(slab, block, chunk)	\
-	(((char *) chunk - SlabBlockStart(block)) / slab->fullChunkSize)
-
-/*
- * These functions implement the MemoryContext API for Slab contexts.
- */
-static void *SlabAlloc(MemoryContext context, Size size);
-static void SlabFree(MemoryContext context, void *pointer);
-static void *SlabRealloc(MemoryContext context, void *pointer, Size size);
-static void SlabReset(MemoryContext context);
-static void SlabDelete(MemoryContext context);
-static Size SlabGetChunkSpace(MemoryContext context, void *pointer);
-static bool SlabIsEmpty(MemoryContext context);
-static void SlabStats(MemoryContext context,
-					  MemoryStatsPrintFunc printfunc, void *passthru,
-					  MemoryContextCounters *totals,
-					  bool print_to_stderr);
-#ifdef MEMORY_CONTEXT_CHECKING
-static void SlabCheck(MemoryContext context);
-#endif
-
-/*
- * This is the virtual function table for Slab contexts.
- */
-static const MemoryContextMethods SlabMethods = {
-	SlabAlloc,
-	SlabFree,
-	SlabRealloc,
-	SlabReset,
-	SlabDelete,
-	SlabGetChunkSpace,
-	SlabIsEmpty,
-	SlabStats
-#ifdef MEMORY_CONTEXT_CHECKING
-	,SlabCheck
-#endif
-};
-
+#define SlabBlockGetPointer(slab, block, idx) \
+	(void *) (((char *) block + sizeof(SlabBlock)) + SMALL_CHUNK_SIZE + ((idx) * (slab)->fullChunkSize))
+#define SlabFirstChunkStart(block)	\
+	((char *) block + sizeof(SlabBlock) + SMALL_CHUNK_SIZE)
+#define SlabPointerGetIdx(slab, block, pointer) \
+	(((char *) pointer - SlabFirstChunkStart(block)) / slab->fullChunkSize)
 
 /*
  * SlabContextCreate
@@ -168,8 +111,7 @@ static const MemoryContextMethods SlabMethods = {
  * blockSize: allocation block size
  * chunkSize: allocation chunk size
  *
- * The chunkSize may not exceed:
- *		MAXALIGN_DOWN(SIZE_MAX) - MAXALIGN(sizeof(SlabBlock)) - sizeof(SlabChunk)
+ * The chunkSize may not exceed SMALL_CHUNK_LIMIT
  */
 MemoryContext
 SlabContextCreate(MemoryContext parent,
@@ -184,19 +126,14 @@ SlabContextCreate(MemoryContext parent,
 	SlabContext *slab;
 	int			i;
 
-	/* Assert we padded SlabChunk properly */
-	StaticAssertStmt(sizeof(SlabChunk) == MAXALIGN(sizeof(SlabChunk)),
-					 "sizeof(SlabChunk) is not maxaligned");
-	StaticAssertStmt(offsetof(SlabChunk, slab) + sizeof(MemoryContext) ==
-					 sizeof(SlabChunk),
-					 "padding calculation in SlabChunk is wrong");
+	Assert(chunkSize <= SMALL_CHUNK_LIMIT);
 
 	/* Make sure the linked list node fits inside a freed chunk */
 	if (chunkSize < sizeof(int))
 		chunkSize = sizeof(int);
 
-	/* chunk, including SLAB header (both addresses nicely aligned) */
-	fullChunkSize = sizeof(SlabChunk) + MAXALIGN(chunkSize);
+	/* chunk, including small chunk header (both addresses nicely aligned) */
+	fullChunkSize = SMALL_CHUNK_SIZE + MAXALIGN(chunkSize);
 
 	/* Make sure the block can store at least one chunk. */
 	if (blockSize < fullChunkSize + sizeof(SlabBlock))
@@ -265,7 +202,7 @@ SlabContextCreate(MemoryContext parent,
 	/* Finally, do the type-independent part of context creation */
 	MemoryContextCreate((MemoryContext) slab,
 						T_SlabContext,
-						&SlabMethods,
+						MCTX_SLAB_ID,
 						parent,
 						name);
 
@@ -279,7 +216,7 @@ SlabContextCreate(MemoryContext parent,
  * The code simply frees all the blocks in the context - we don't keep any
  * keeper blocks or anything like that.
  */
-static void
+void
 SlabReset(MemoryContext context)
 {
 	int			i;
@@ -322,7 +259,7 @@ SlabReset(MemoryContext context)
  * SlabDelete
  *		Free all memory which is allocated in the given context.
  */
-static void
+void
 SlabDelete(MemoryContext context)
 {
 	/* Reset to release all the SlabBlocks */
@@ -336,12 +273,12 @@ SlabDelete(MemoryContext context)
  *		Returns pointer to allocated memory of given size or NULL if
  *		request could not be completed; memory is added to the slab.
  */
-static void *
+void *
 SlabAlloc(MemoryContext context, Size size)
 {
 	SlabContext *slab = castNode(SlabContext, context);
 	SlabBlock  *block;
-	SlabChunk  *chunk;
+	void	   *pointer;
 	int			idx;
 
 	Assert(slab);
@@ -370,16 +307,14 @@ SlabAlloc(MemoryContext context, Size size)
 
 		block->nfree = slab->chunksPerBlock;
 		block->firstFreeChunk = 0;
+		block->slab = slab;
 
 		/*
 		 * Put all the chunks on a freelist. Walk the chunks and point each
 		 * one to the next one.
 		 */
 		for (idx = 0; idx < slab->chunksPerBlock; idx++)
-		{
-			chunk = SlabBlockGetChunk(slab, block, idx);
-			*(int32 *) SlabChunkGetPointer(chunk) = (idx + 1);
-		}
+			*(int32 *) SlabBlockGetPointer(slab, block, idx) = (idx + 1);
 
 		/*
 		 * And add it to the last freelist with all chunks empty.
@@ -411,8 +346,8 @@ SlabAlloc(MemoryContext context, Size size)
 	/* make sure the chunk index is valid, and that it's marked as empty */
 	Assert((idx >= 0) && (idx < slab->chunksPerBlock));
 
-	/* compute the chunk location block start (after the block header) */
-	chunk = SlabBlockGetChunk(slab, block, idx);
+	/* compute the pointer */
+	pointer = SlabBlockGetPointer(slab, block, idx);
 
 	/*
 	 * Update the block nfree count, and also the minFreeChunks as we've
@@ -426,8 +361,8 @@ SlabAlloc(MemoryContext context, Size size)
 	 * Remove the chunk from the freelist head. The index of the next free
 	 * chunk is stored in the chunk itself.
 	 */
-	VALGRIND_MAKE_MEM_DEFINED(SlabChunkGetPointer(chunk), sizeof(int32));
-	block->firstFreeChunk = *(int32 *) SlabChunkGetPointer(chunk);
+	VALGRIND_MAKE_MEM_DEFINED(pointer, sizeof(int32));
+	block->firstFreeChunk = *(int32 *) pointer;
 
 	Assert(block->firstFreeChunk >= 0);
 	Assert(block->firstFreeChunk <= slab->chunksPerBlock);
@@ -464,54 +399,65 @@ SlabAlloc(MemoryContext context, Size size)
 		slab->minFreeChunks = 0;
 
 	/* Prepare to initialize the chunk header. */
-	VALGRIND_MAKE_MEM_UNDEFINED(chunk, sizeof(SlabChunk));
-
-	chunk->block = block;
-	chunk->slab = slab;
+	VALGRIND_MAKE_MEM_UNDEFINED((char *) pointer - SMALL_CHUNK_SIZE, SMALL_CHUNK_SIZE);
 
 #ifdef MEMORY_CONTEXT_CHECKING
+	GenericChunkHeaderEncode(pointer, block, slab->chunkSize, slab->chunkSize, MCTX_SLAB_ID);
+
 	/* slab mark to catch clobber of "unused" space */
-	if (slab->chunkSize < (slab->fullChunkSize - sizeof(SlabChunk)))
+	if (slab->chunkSize < (slab->fullChunkSize - SMALL_CHUNK_SIZE))
 	{
-		set_sentinel(SlabChunkGetPointer(chunk), size);
-		VALGRIND_MAKE_MEM_NOACCESS(((char *) chunk) +
-								   sizeof(SlabChunk) + slab->chunkSize,
-								   slab->fullChunkSize -
-								   (slab->chunkSize + sizeof(SlabChunk)));
+		set_sentinel(pointer, size);
+		VALGRIND_MAKE_MEM_NOACCESS(pointer + slab->chunkSize,
+								   slab->fullChunkSize - slab->chunkSize);
 	}
+#else
+	GenericChunkHeaderEncode(pointer, block, slab->chunkSize, MCTX_SLAB_ID);
 #endif
+
 #ifdef RANDOMIZE_ALLOCATED_MEMORY
 	/* fill the allocated space with junk */
-	randomize_mem((char *) SlabChunkGetPointer(chunk), size);
+	randomize_mem((char *) pointer, size);
 #endif
 
 	Assert(slab->nblocks * slab->blockSize == context->mem_allocated);
 
-	return SlabChunkGetPointer(chunk);
+	return pointer;
 }
 
 /*
  * SlabFree
  *		Frees allocated memory; memory is removed from the slab.
  */
-static void
-SlabFree(MemoryContext context, void *pointer)
+void
+SlabFree(void *pointer)
 {
 	int			idx;
-	SlabContext *slab = castNode(SlabContext, context);
-	SlabChunk  *chunk = SlabPointerGetChunk(pointer);
-	SlabBlock  *block = chunk->block;
+	SlabContext *slab;
+	SlabBlock  *block;
+	Size		chunksize;
+	Size		blockoffset;
+#ifdef MEMORY_CONTEXT_CHECKING
+	Size		reqsize;
+
+	GenericChunkHeaderDecode(pointer, &chunksize, &blockoffset, &reqsize);
+#else
+	GenericChunkHeaderDecode(pointer, &chunksize, &blockoffset);
+#endif
+
+	block = (SlabBlock *) ((char *) pointer - blockoffset);
+	slab = block->slab;
 
 #ifdef MEMORY_CONTEXT_CHECKING
 	/* Test for someone scribbling on unused space in chunk */
-	if (slab->chunkSize < (slab->fullChunkSize - sizeof(SlabChunk)))
+	if (slab->chunkSize < (slab->fullChunkSize - SMALL_CHUNK_SIZE))
 		if (!sentinel_ok(pointer, slab->chunkSize))
 			elog(WARNING, "detected write past chunk end in %s %p",
-				 slab->header.name, chunk);
+				 slab->header.name, pointer);
 #endif
 
 	/* compute index of the chunk with respect to block start */
-	idx = SlabChunkIndex(slab, block, chunk);
+	idx = SlabPointerGetIdx(slab, block, pointer);
 
 	/* add chunk to freelist, and update block nfree count */
 	*(int32 *) pointer = block->firstFreeChunk;
@@ -525,6 +471,10 @@ SlabFree(MemoryContext context, void *pointer)
 	/* XXX don't wipe the int32 index, used for block-level freelist */
 	wipe_mem((char *) pointer + sizeof(int32),
 			 slab->chunkSize - sizeof(int32));
+#endif
+
+#ifdef MEMORY_CONTEXT_CHECKING
+	GenericChunkHeaderEncode(pointer, block, chunksize, 0, MCTX_SLAB_ID);
 #endif
 
 	/* remove the block from a freelist */
@@ -560,13 +510,13 @@ SlabFree(MemoryContext context, void *pointer)
 	{
 		free(block);
 		slab->nblocks--;
-		context->mem_allocated -= slab->blockSize;
+		slab->header.mem_allocated -= slab->blockSize;
 	}
 	else
 		dlist_push_head(&slab->freelist[block->nfree], &block->node);
 
 	Assert(slab->nblocks >= 0);
-	Assert(slab->nblocks * slab->blockSize == context->mem_allocated);
+	Assert(slab->nblocks * slab->blockSize == slab->header.mem_allocated);
 }
 
 /*
@@ -582,10 +532,23 @@ SlabFree(MemoryContext context, void *pointer)
  * rather pointless - Slab is meant for chunks of constant size, and moreover
  * realloc is usually used to enlarge the chunk.
  */
-static void *
-SlabRealloc(MemoryContext context, void *pointer, Size size)
+void *
+SlabRealloc(void *pointer, Size size)
 {
-	SlabContext *slab = castNode(SlabContext, context);
+	SlabContext *slab;
+	SlabBlock	*block;
+	Size		chunksize;
+	Size		blockoffset;
+#ifdef MEMORY_CONTEXT_CHECKING
+	Size		reqsize;
+
+	GenericChunkHeaderDecode(pointer, &chunksize, &blockoffset, &reqsize);
+#else
+	GenericChunkHeaderDecode(pointer, &chunksize, &blockoffset);
+#endif
+
+	block = (SlabBlock *) ((char *) pointer - blockoffset);
+	slab = block->slab;
 
 	Assert(slab);
 
@@ -598,14 +561,53 @@ SlabRealloc(MemoryContext context, void *pointer, Size size)
 }
 
 /*
+ * SlabGetChunkContext
+ */
+MemoryContext
+SlabGetChunkContext(void *pointer)
+{
+	SlabContext *slab;
+	SlabBlock	*block;
+	Size		chunksize;
+	Size		blockoffset;
+#ifdef MEMORY_CONTEXT_CHECKING
+	Size		reqsize;
+
+	GenericChunkHeaderDecode(pointer, &chunksize, &blockoffset, &reqsize);
+#else
+	GenericChunkHeaderDecode(pointer, &chunksize, &blockoffset);
+#endif
+
+	block = (SlabBlock *) ((char *) pointer - blockoffset);
+	slab = block->slab;
+
+	Assert(slab);
+
+	return &slab->header;
+}
+
+/*
  * SlabGetChunkSpace
  *		Given a currently-allocated chunk, determine the total space
  *		it occupies (including all memory-allocation overhead).
  */
-static Size
-SlabGetChunkSpace(MemoryContext context, void *pointer)
+Size
+SlabGetChunkSpace(void *pointer)
 {
-	SlabContext *slab = castNode(SlabContext, context);
+	SlabContext *slab;
+	SlabBlock	*block;
+	Size		chunksize;
+	Size		blockoffset;
+#ifdef MEMORY_CONTEXT_CHECKING
+	Size		reqsize;
+
+	GenericChunkHeaderDecode(pointer, &chunksize, &blockoffset, &reqsize);
+#else
+	GenericChunkHeaderDecode(pointer, &chunksize, &blockoffset);
+#endif
+
+	block = (SlabBlock *) ((char *) pointer - blockoffset);
+	slab = block->slab;
 
 	Assert(slab);
 
@@ -616,7 +618,7 @@ SlabGetChunkSpace(MemoryContext context, void *pointer)
  * SlabIsEmpty
  *		Is an Slab empty of any allocated space?
  */
-static bool
+bool
 SlabIsEmpty(MemoryContext context)
 {
 	SlabContext *slab = castNode(SlabContext, context);
@@ -635,7 +637,7 @@ SlabIsEmpty(MemoryContext context)
  * totals: if not NULL, add stats about this context into *totals.
  * print_to_stderr: print stats to stderr if true, elog otherwise.
  */
-static void
+void
 SlabStats(MemoryContext context,
 		  MemoryStatsPrintFunc printfunc, void *passthru,
 		  MemoryContextCounters *totals,
@@ -697,7 +699,7 @@ SlabStats(MemoryContext context,
  * find yourself in an infinite loop when trouble occurs, because this
  * routine will be entered again when elog cleanup tries to release memory!
  */
-static void
+void
 SlabCheck(MemoryContext context)
 {
 	int			i;
@@ -742,16 +744,16 @@ SlabCheck(MemoryContext context)
 			nfree = 0;
 			while (idx < slab->chunksPerBlock)
 			{
-				SlabChunk  *chunk;
+				void	   *pointer;
 
 				/* count the chunk as free, add it to the bitmap */
 				nfree++;
 				slab->freechunks[idx] = true;
 
 				/* read index of the next free chunk */
-				chunk = SlabBlockGetChunk(slab, block, idx);
-				VALGRIND_MAKE_MEM_DEFINED(SlabChunkGetPointer(chunk), sizeof(int32));
-				idx = *(int32 *) SlabChunkGetPointer(chunk);
+				pointer = SlabBlockGetPointer(slab, block, idx);
+				VALGRIND_MAKE_MEM_DEFINED(pointer, sizeof(int32));
+				idx = *(int32 *) pointer;
 			}
 
 			for (j = 0; j < slab->chunksPerBlock; j++)
@@ -759,22 +761,29 @@ SlabCheck(MemoryContext context)
 				/* non-zero bit in the bitmap means chunk the chunk is used */
 				if (!slab->freechunks[j])
 				{
-					SlabChunk  *chunk = SlabBlockGetChunk(slab, block, j);
+					void	   *pointer = SlabBlockGetPointer(slab, block, j);
+					SlabBlock  *sblock;
+					Size		chunksize;
+					Size		blockoffset;
+					Size		reqSize;
 
-					/* chunks have both block and slab pointers, so check both */
-					if (chunk->block != block)
-						elog(WARNING, "problem in slab %s: bogus block link in block %p, chunk %p",
-							 name, block, chunk);
+					GenericChunkHeaderDecode(pointer, &chunksize, &blockoffset, &reqSize);
+					sblock = (SlabBlock *) ((char *) pointer) - blockoffset;
 
-					if (chunk->slab != slab)
-						elog(WARNING, "problem in slab %s: bogus slab link in block %p, chunk %p",
-							 name, block, chunk);
+					/* check the blockoffset correctly points back to the block */
+					if (sblock != block)
+						elog(WARNING, "problem in slab %s: bogus block link in block %p, pointer %p",
+							 name, block, pointer);
+
+					if (sblock->slab != slab)
+						elog(WARNING, "problem in slab %s: bogus slab link in block %p, pointer %p",
+							 name, block, pointer);
 
 					/* there might be sentinel (thanks to alignment) */
-					if (slab->chunkSize < (slab->fullChunkSize - sizeof(SlabChunk)))
-						if (!sentinel_ok(chunk, slab->chunkSize))
-							elog(WARNING, "problem in slab %s: detected write past chunk end in block %p, chunk %p",
-								 name, block, chunk);
+					if (slab->chunkSize < slab->fullChunkSize)
+						if (!sentinel_ok(pointer, slab->chunkSize))
+							elog(WARNING, "problem in slab %s: detected write past chunk end in block %p, pointer %p",
+								 name, block, pointer);
 				}
 			}
 
