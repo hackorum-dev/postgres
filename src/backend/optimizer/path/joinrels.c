@@ -59,7 +59,7 @@ static void compute_partition_bounds(PlannerInfo *root, RelOptInfo *rel1,
 static void get_matching_part_pairs(PlannerInfo *root, RelOptInfo *joinrel,
 									RelOptInfo *rel1, RelOptInfo *rel2,
 									List **parts1, List **parts2);
-
+static bool rel_is_nullable_side(PlannerInfo *root, Relids joinrelids, Index relid);
 
 /*
  * join_search_one_level
@@ -755,6 +755,25 @@ make_join_rel(PlannerInfo *root, RelOptInfo *rel1, RelOptInfo *rel2)
 	joinrel = build_join_rel(root, joinrelids, rel1, rel2,
 							 sjinfo, pushed_down_joins,
 							 &restrictlist);
+
+	/* test code. */
+
+	if (sjinfo->jointype == JOIN_LEFT)
+	{
+		int relid = -1;
+		while((relid = bms_next_member(rel2->relids, relid)) >= 0)
+		{
+			Assert(rel_is_nullable_side(root, joinrelids, relid));
+		}
+	}
+	else if (sjinfo->jointype == JOIN_FULL)
+	{
+		int relid = -1;
+		while((relid = bms_next_member(joinrelids, relid)) >= 0)
+		{
+			Assert(rel_is_nullable_side(root, joinrelids, relid));
+		}
+	}
 
 	/*
 	 * If we've already proven this join is empty, we needn't consider any
@@ -2111,4 +2130,70 @@ get_matching_part_pairs(PlannerInfo *root, RelOptInfo *joinrel,
 		*parts1 = lappend(*parts1, child_rel1);
 		*parts2 = lappend(*parts2, child_rel2);
 	}
+}
+
+
+/*
+ * rel_in_nullable_side
+ *
+ *	After the SpecialJoinInfo has been applied, return if relid
+ * is in the nullable side.
+ */
+static bool
+rel_in_nullable_side(SpecialJoinInfo *sjinfo, Index relid)
+{
+	if (sjinfo->jointype == JOIN_FULL)
+	{
+		if (bms_is_member(relid, sjinfo->min_lefthand) ||
+			bms_is_member(relid, sjinfo->min_righthand))
+			return true;
+	}
+	else if (sjinfo->jointype == JOIN_LEFT)
+	{
+		if (bms_is_member(relid, sjinfo->min_righthand))
+			return true;
+	}
+
+	return false;
+}
+
+
+/*
+ * rel_is_nullable_side
+ *
+ *	For the given join ID joinrelids, return if the relid is in the nullable
+ * side.
+ */
+static bool
+rel_is_nullable_side(PlannerInfo *root, Relids joinrelids, Index relid)
+{
+	ListCell *lc;
+	Assert(bms_is_member(relid, joinrelids));
+
+	/* Find the SepcialJoinInfo which is possible nullable the relid. */
+	foreach(lc, root->join_info_list)
+	{
+		SpecialJoinInfo *sjinfo = (SpecialJoinInfo *) lfirst(lc);
+
+		/*
+		 * If the sjinfo is possible takes effects on joinrelis, then it must
+		 * contain both sides of min relids.
+		 */
+		Relids min_relids = bms_union(sjinfo->min_lefthand, sjinfo->min_righthand);
+
+		if (!bms_is_subset(min_relids, joinrelids))
+		{
+			bms_free(min_relids);
+			continue;
+		}
+
+		if (rel_in_nullable_side(sjinfo, relid))
+		{
+			bms_free(min_relids);
+			return true;
+		}
+		bms_free(min_relids);
+	}
+
+	return false;
 }
