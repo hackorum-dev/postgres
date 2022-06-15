@@ -216,19 +216,13 @@ main(int argc, char **argv)
 static void
 make_outputdirs(char *pgdata)
 {
-	FILE	   *fp;
-	char	  **filename;
 	time_t		run_time = time(NULL);
-	char		filename_path[MAXPGPATH];
+	char	   *filename_path;
 	char		timebuf[128];
 	struct timeval time;
 	time_t		tt;
-	int			len;
 
-	log_opts.rootdir = (char *) pg_malloc0(MAXPGPATH);
-	len = snprintf(log_opts.rootdir, MAXPGPATH, "%s/%s", pgdata, BASE_OUTPUTDIR);
-	if (len >= MAXPGPATH)
-		pg_fatal("directory path for new cluster is too long\n");
+	log_opts.rootdir = psprintf("%s/%s", pgdata, BASE_OUTPUTDIR);
 
 	/* BASE_OUTPUTDIR/$timestamp/ */
 	gettimeofday(&time, NULL);
@@ -237,25 +231,13 @@ make_outputdirs(char *pgdata)
 	/* append milliseconds */
 	snprintf(timebuf + strlen(timebuf), sizeof(timebuf) - strlen(timebuf),
 			 ".%03d", (int) (time.tv_usec / 1000));
-	log_opts.basedir = (char *) pg_malloc0(MAXPGPATH);
-	len = snprintf(log_opts.basedir, MAXPGPATH, "%s/%s", log_opts.rootdir,
-				   timebuf);
-	if (len >= MAXPGPATH)
-		pg_fatal("directory path for new cluster is too long\n");
+	log_opts.basedir = psprintf("%s/%s", log_opts.rootdir, timebuf);
 
 	/* BASE_OUTPUTDIR/$timestamp/dump/ */
-	log_opts.dumpdir = (char *) pg_malloc0(MAXPGPATH);
-	len = snprintf(log_opts.dumpdir, MAXPGPATH, "%s/%s/%s", log_opts.rootdir,
-				   timebuf, DUMP_OUTPUTDIR);
-	if (len >= MAXPGPATH)
-		pg_fatal("directory path for new cluster is too long\n");
+	log_opts.dumpdir = psprintf("%s/%s/%s", log_opts.rootdir, timebuf, DUMP_OUTPUTDIR);
 
 	/* BASE_OUTPUTDIR/$timestamp/log/ */
-	log_opts.logdir = (char *) pg_malloc0(MAXPGPATH);
-	len = snprintf(log_opts.logdir, MAXPGPATH, "%s/%s/%s", log_opts.rootdir,
-				   timebuf, LOG_OUTPUTDIR);
-	if (len >= MAXPGPATH)
-		pg_fatal("directory path for new cluster is too long\n");
+	log_opts.logdir = psprintf("%s/%s/%s", log_opts.rootdir, timebuf, LOG_OUTPUTDIR);
 
 	/*
 	 * Ignore the error case where the root path exists, as it is kept the
@@ -270,21 +252,17 @@ make_outputdirs(char *pgdata)
 	if (mkdir(log_opts.logdir, pg_dir_create_mode) < 0)
 		pg_fatal("could not create directory \"%s\": %m\n", log_opts.logdir);
 
-	len = snprintf(filename_path, sizeof(filename_path), "%s/%s",
-				   log_opts.logdir, INTERNAL_LOG_FILE);
-	if (len >= sizeof(filename_path))
-		pg_fatal("directory path for new cluster is too long\n");
+	filename_path = psprintf("%s/%s", log_opts.logdir, INTERNAL_LOG_FILE);
 
 	if ((log_opts.internal = fopen_priv(filename_path, "a")) == NULL)
 		pg_fatal("could not open log file \"%s\": %m\n", filename_path);
 
 	/* label start of upgrade in logfiles */
-	for (filename = output_files; *filename != NULL; filename++)
+	for (char **filename = output_files; *filename != NULL; filename++)
 	{
-		len = snprintf(filename_path, sizeof(filename_path), "%s/%s",
-					   log_opts.logdir, *filename);
-		if (len >= sizeof(filename_path))
-			pg_fatal("directory path for new cluster is too long\n");
+		FILE	   *fp;
+
+		filename_path = psprintf("%s/%s", log_opts.logdir, *filename);
 		if ((fp = fopen_priv(filename_path, "a")) == NULL)
 			pg_fatal("could not write to log file \"%s\": %m\n", filename_path);
 
