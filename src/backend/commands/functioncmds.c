@@ -40,6 +40,7 @@
 #include "catalog/indexing.h"
 #include "catalog/objectaccess.h"
 #include "catalog/pg_aggregate.h"
+#include "catalog/pg_authid.h"
 #include "catalog/pg_cast.h"
 #include "catalog/pg_language.h"
 #include "catalog/pg_namespace.h"
@@ -692,8 +693,82 @@ update_proconfig_value(ArrayType *a, List *set_items)
  * https://www.postgresql.org/docs/current/sql-createfunction.html#SQL-CREATEFUNCTION-SECURITY
  */ 
 
-/* XXX This logic should perhaps be moved to namespace.c XXX */
+/* XXX Some or all of this logic should perhaps be moved to namespace.c XXX */
 #include "utils/varlena.h"
+
+static ArrayType *
+fixup_proconfig_value(ArrayType *a, char provolatile, bool prosecdef) {
+	char *search_path = NULL;
+
+	List	   *namelist;
+	ListCell   *l;
+	StringInfoData string;
+
+	if (provolatile != PROVOLATILE_IMMUTABLE && !prosecdef) {
+		return a;
+	}
+	if (a != NULL) {
+		search_path = GUCArrayLookup(a, "search_path");
+	}
+	if (!search_path) {
+		search_path = pstrdup(namespace_search_path);
+	}
+
+	/* Parse string into list of identifiers
+	 * GUCArrayLookup returns a pstrdup'd string so this is safe
+	 */
+	if (!SplitIdentifierString(search_path, ',', &namelist))
+	{
+		/* syntax error in name list */
+		elog(ERROR, "invalid list syntax in search_path setting on function");
+	}
+
+	initStringInfo(&string);
+	appendStringInfoString(&string, "pg_catalog");
+	foreach(l, namelist)
+	{
+		char	   *curname = (char *) lfirst(l);
+
+		if (strcmp(curname, "pg_catalog") == 0)
+		{
+			if (foreach_current_index(l) != 0)
+				elog(WARNING, "moving pg_catalog to first position in search_path for IMMUTABLE or SECURITY DEFINER function");
+			continue;
+		}
+		if (strcmp(curname, "pg_temp") == 0)
+		{
+			if (foreach_current_index(l) != namelist->length-1)
+				elog(WARNING, "moving pg_temp to last position in search_path for IMMUTABLE or SECURITY DEFINER function");
+			continue;
+		}
+		if (strcmp(curname, "$user") == 0)
+		{
+			/* $user --- substitute namespace matching user name, if any */
+			HeapTuple	tuple;
+
+			tuple = SearchSysCache1(AUTHOID, ObjectIdGetDatum(GetUserId()));
+			if (HeapTupleIsValid(tuple))
+			{
+				curname = NameStr(((Form_pg_authid) GETSTRUCT(tuple))->rolname);
+				ReleaseSysCache(tuple);
+				/*elog(WARNING, "IMMUTABLE or SECURITY DEFINER functions should not have a search path including $user");*/
+			} else {
+				/* No great options here */
+				ReleaseSysCache(tuple);
+				elog(WARNING, "removing invalid $user from search_path on IMMUTABLE or SECURITY DEFINER function");
+				continue;
+			}
+		}
+		appendStringInfoChar(&string, ',');
+		appendStringInfoString(&string, quote_identifier(curname));
+	}
+	appendStringInfoChar(&string, ',');
+	appendStringInfoString(&string, "pg_temp");
+
+	a = GUCArrayAdd(a, "search_path", string.data);
+	return a;
+}
+	
 
 static void
 verify_proconfig_value(ArrayType *a, char provolatile, bool prosecdef) {
@@ -1242,6 +1317,7 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 		}
 	}
 
+	proconfig = fixup_proconfig_value(proconfig, volatility, security);
 	verify_proconfig_value(proconfig, volatility, security);
 
 	/*
@@ -1577,6 +1653,7 @@ AlterFunction(ParseState *pstate, AlterFunctionStmt *stmt)
 		/* update according to each SET or RESET item, left to right */
 		a = update_proconfig_value(a, set_items);
 
+		a = fixup_proconfig_value(a, procForm->provolatile, procForm->prosecdef);
 		verify_proconfig_value(a, procForm->provolatile, procForm->prosecdef);
 
 		/* update the tuple */
