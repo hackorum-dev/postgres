@@ -926,9 +926,11 @@ make_scalar_array_op(ParseState *pstate, List *opname,
 	 * Now switch back to the array type on the right, arranging for any
 	 * needed cast to be applied.  Beware of polymorphic operators here;
 	 * enforce_generic_type_consistency may or may not have replaced a
-	 * polymorphic type with a real one.
+	 * polymorphic type with a real one.  RECORD acts like a polymorphic type
+	 * for this purpose, too.
 	 */
-	if (IsPolymorphicType(declared_arg_types[1]))
+	if (IsPolymorphicType(declared_arg_types[1]) ||
+		declared_arg_types[1] == RECORDOID)
 	{
 		/* assume the actual array type is OK */
 		res_atypeId = atypeId;
