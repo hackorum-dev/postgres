@@ -4406,6 +4406,7 @@ getSubscriptions(Archive *fout)
 	int			i_substream;
 	int			i_subtwophasestate;
 	int			i_subdisableonerr;
+	int			i_suborigin;
 	int			i_subconninfo;
 	int			i_subslotname;
 	int			i_subsynccommit;
@@ -4455,12 +4456,18 @@ getSubscriptions(Archive *fout)
 	if (fout->remoteVersion >= 150000)
 		appendPQExpBufferStr(query,
 							 " s.subtwophasestate,\n"
-							 " s.subdisableonerr\n");
+							 " s.subdisableonerr,\n");
 	else
 		appendPQExpBuffer(query,
 						  " '%c' AS subtwophasestate,\n"
-						  " false AS subdisableonerr\n",
+						  " false AS subdisableonerr,\n",
 						  LOGICALREP_TWOPHASE_STATE_DISABLED);
+
+	/* FIXME: 150000 should be changed to 160000 later for PG16. */
+	if (fout->remoteVersion >= 150000)
+		appendPQExpBufferStr(query, " s.suborigin\n");
+	else
+		appendPQExpBuffer(query, " '%s' AS suborigin\n", LOGICALREP_ORIGIN_ANY);
 
 	appendPQExpBufferStr(query,
 						 "FROM pg_subscription s\n"
@@ -4487,6 +4494,7 @@ getSubscriptions(Archive *fout)
 	i_substream = PQfnumber(res, "substream");
 	i_subtwophasestate = PQfnumber(res, "subtwophasestate");
 	i_subdisableonerr = PQfnumber(res, "subdisableonerr");
+	i_suborigin = PQfnumber(res, "suborigin");
 
 	subinfo = pg_malloc(ntups * sizeof(SubscriptionInfo));
 
@@ -4516,6 +4524,7 @@ getSubscriptions(Archive *fout)
 			pg_strdup(PQgetvalue(res, i, i_subtwophasestate));
 		subinfo[i].subdisableonerr =
 			pg_strdup(PQgetvalue(res, i, i_subdisableonerr));
+		subinfo[i].suborigin = pg_strdup(PQgetvalue(res, i, i_suborigin));
 
 		/* Decide whether we want to dump it */
 		selectDumpableObject(&(subinfo[i].dobj), fout);
@@ -4588,6 +4597,9 @@ dumpSubscription(Archive *fout, const SubscriptionInfo *subinfo)
 
 	if (strcmp(subinfo->subdisableonerr, "t") == 0)
 		appendPQExpBufferStr(query, ", disable_on_error = true");
+
+	if (strcmp(subinfo->suborigin, LOGICALREP_ORIGIN_ANY) != 0)
+		appendPQExpBuffer(query, ", origin = %s", subinfo->suborigin);
 
 	if (strcmp(subinfo->subsynccommit, "off") != 0)
 		appendPQExpBuffer(query, ", synchronous_commit = %s", fmtId(subinfo->subsynccommit));

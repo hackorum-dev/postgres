@@ -7903,6 +7903,19 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       </para></entry>
      </row>
 
+    <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>suborigin</structfield> <type>text</type>
+      </para>
+      <para>
+       The origin value must be either <literal>local</literal> or
+       <literal>any</literal>. The default is <literal>any</literal>.
+       If <literal>local</literal>, the subscription will request the publisher
+       to only send changes that originated locally. If <literal>any</literal>,
+       the publisher sends changes regardless of their origin.
+      </para></entry>
+     </row>
+
      <row>
       <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>subconninfo</structfield> <type>text</type>

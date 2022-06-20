@@ -72,6 +72,14 @@ GetSubscription(Oid subid, bool missing_ok)
 	sub->twophasestate = subform->subtwophasestate;
 	sub->disableonerr = subform->subdisableonerr;
 
+	/* Get origin */
+	datum = SysCacheGetAttr(SUBSCRIPTIONOID,
+							tup,
+							Anum_pg_subscription_suborigin,
+							&isnull);
+	Assert(!isnull);
+	sub->origin = TextDatumGetCString(datum);
+
 	/* Get conninfo */
 	datum = SysCacheGetAttr(SUBSCRIPTIONOID,
 							tup,
