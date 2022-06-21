@@ -602,6 +602,11 @@ if test "$GCC" = yes -a "$ICC" = no; then
   PGAC_PROG_CC_VAR_OPT(CFLAGS_UNROLL_LOOPS, [-funroll-loops])
   # Optimization flags for specific files that benefit from vectorization
   PGAC_PROG_CC_VAR_OPT(CFLAGS_VECTORIZE, [-ftree-vectorize])
+  NOT_THE_CFLAGS=""
+  PGAC_PROG_CC_VAR_OPT(NOT_THE_CFLAGS, [-ftabstop=4])
+  if test -n "$NOT_THE_CFLAGS"; then
+    CPPFLAGS="$CPPFLAGS -ftabstop=4"
+  fi
   #
   # The following tests want to suppress various unhelpful warnings by adding
   # -Wno-foo switches.  But gcc won't complain about unrecognized -Wno-foo
