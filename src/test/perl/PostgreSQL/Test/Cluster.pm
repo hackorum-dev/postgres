@@ -995,6 +995,29 @@ sub promote
 	return;
 }
 
+=item $node->status()
+
+Wrapper for pg_ctl status.  Returns the exit code of the command.
+
+=cut
+
+sub status
+{
+	my ($self)  = @_;
+	my $port    = $self->port;
+	my $pgdata  = $self->data_dir;
+	my $logfile = $self->logfile;
+	my $name    = $self->name;
+	my $ret;
+
+	local %ENV = $self->_get_env();
+
+	print "### Retrieving status of node \"$name\"\n";
+	$ret = PostgreSQL::Test::Utils::system_log('pg_ctl', '-D', $pgdata,
+		'-l', $logfile, 'status');
+	return $ret;
+}
+
 =pod
 
 =item $node->logrotate()

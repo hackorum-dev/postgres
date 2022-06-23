@@ -115,6 +115,10 @@ else
 		  . "--max-concurrent-tests=20 "
 		  . "--inputdir=\"$inputdir\" "
 		  . "--outputdir=\"$outputdir\"");
+
+	die "node has crashed while running pg_regress\n"
+	  if ($oldnode->status) != 0;
+
 	if ($rc != 0)
 	{
 		# Dump out the regression diffs file, if there is one
