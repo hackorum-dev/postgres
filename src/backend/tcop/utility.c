@@ -59,12 +59,14 @@
 #include "commands/user.h"
 #include "commands/vacuum.h"
 #include "commands/view.h"
+#include "common/hashfn.h"
 #include "miscadmin.h"
 #include "parser/parse_utilcmd.h"
 #include "postmaster/bgwriter.h"
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rewriteRemove.h"
 #include "storage/fd.h"
+#include "storage/lmgr.h"
 #include "tcop/pquery.h"
 #include "tcop/utility.h"
 #include "utils/acl.h"
@@ -1142,10 +1144,19 @@ ProcessUtilitySlow(ParseState *pstate,
 				{
 					List	   *stmts;
 					RangeVar   *table_rv = NULL;
+					CreateStmt *stmt = (CreateStmt *) parsetree;
+					uint32		tag;
+
+					if (stmt->if_not_exists)
+					{
+						tag = tag_hash(stmt->relation->relname,
+									   strlen(stmt->relation->relname));
+						LockDatabaseObject(RelationRelationId, tag, 0,
+										   ExclusiveLock);
+					}
 
 					/* Run parse analysis ... */
-					stmts = transformCreateStmt((CreateStmt *) parsetree,
-												queryString);
+					stmts = transformCreateStmt(stmt, queryString);
 
 					/*
 					 * ... and do it.  We can't use foreach() because we may
@@ -1263,6 +1274,10 @@ ProcessUtilitySlow(ParseState *pstate,
 						if (stmts != NIL)
 							CommandCounterIncrement();
 					}
+
+					if (stmt->if_not_exists)
+						UnlockDatabaseObject(RelationRelationId, tag, 0,
+											 ExclusiveLock);
 
 					/*
 					 * The multiple commands generated here are stashed
