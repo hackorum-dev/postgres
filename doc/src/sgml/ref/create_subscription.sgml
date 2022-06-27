@@ -408,7 +408,10 @@ CREATE SUBSCRIPTION <replaceable class="parameter">subscription_name</replaceabl
    subscribed to the same table from other publishers and, if so, throw an
    error to prevent possible non-local data from being copied. The user can
    override this check and continue with the copy operation by specifying
-   <literal>copy_data = force</literal>.
+   <literal>copy_data = force</literal>. Refer to
+   <xref linkend="logical-replication-bidirectional"/> for how
+   <literal>copy_data</literal> and <literal>origin</literal> can be used to
+   set up bidirectional replication.
   </para>
 
  </refsect1>

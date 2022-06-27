@@ -1479,4 +1479,305 @@ CREATE SUBSCRIPTION mysub CONNECTION 'dbname=foo host=bar user=repuser' PUBLICAT
    incremental changes to those tables.
   </para>
  </sect1>
+
+ <sect1 id="logical-replication-bidirectional">
+  <title>Bidirectional logical replication</title>
+
+   <para>
+    Bidirectional replication is useful for creating a multi-master database
+    environment for replicating read/write operations performed by any of the
+    member nodes. The steps to create a bidirectional replication in various
+    scenarios are given below.
+   </para>
+
+   <warning>
+    <para>
+     Setting up bidirectional logical replication requires multiple steps to be
+     performed on various nodes. Because not all operations are transactional,
+     the user is advised to take backups.
+    </para>
+   </warning>
+
+  <sect2 id="setting-bidirectional-replication-two-nodes">
+   <title>Setting bidirectional replication between two nodes</title>
+   <para>
+    The following steps demonstrate how to create a two-node bidirectional
+    replication when there is no table data present on both nodes
+    <literal>node1</literal> and <literal>node2</literal>:
+   </para>
+
+   <para>
+    Create a publication on <literal>node1</literal>:
+<programlisting>
+node1=# CREATE PUBLICATION pub_node1 FOR TABLE t1;
+CREATE PUBLICATION
+</programlisting></para>
+
+   <para>
+    Create a publication on <literal>node2</literal>:
+<programlisting>
+node2=# CREATE PUBLICATION pub_node2 FOR TABLE t1;
+CREATE PUBLICATION
+</programlisting></para>
+
+   <para>
+    Lock the table <literal>t1</literal> on <literal>node1</literal> and
+    <literal>node2</literal> in <literal>EXCLUSIVE</literal> mode until the
+    setup is completed.
+   </para>
+
+   <para>
+    Create a subscription on <literal>node2</literal> to subscribe to
+    <literal>node1</literal>:
+<programlisting>
+node2=# CREATE SUBSCRIPTION sub_node2_node1
+node2-# CONNECTION 'dbname=foo host=node1 user=repuser'
+node2-# PUBLICATION pub_node1
+node2-# WITH (copy_data = off, origin = local);
+CREATE SUBSCRIPTION
+</programlisting></para>
+
+   <para>
+    Create a subscription on <literal>node1</literal> to subscribe to
+    <literal>node2</literal>:
+<programlisting>
+node1=# CREATE SUBSCRIPTION sub_node1_node2
+node1-# CONNECTION 'dbname=foo host=node2 user=repuser'
+node1-# PUBLICATION pub_node2
+node1-# WITH (copy_data = off, origin = local);
+CREATE SUBSCRIPTION
+</programlisting></para>
+
+   <para>
+    Now the bidirectional logical replication setup is complete between
+    <literal>node1</literal> and <literal>node2</literal>. Any incremental
+    changes from <literal>node1</literal> will be replicated to
+    <literal>node2</literal>, and any incremental changes from
+    <literal>node2</literal> will be replicated to <literal>node1</literal>.
+   </para>
+  </sect2>
+
+  <sect2 id="add-new-node">
+   <title>Adding a new node when there is no table data on any of the nodes</title>
+   <para>
+    The following steps demonstrate adding a new node <literal>node3</literal>
+    to the existing <literal>node1</literal> and <literal>node2</literal> when
+    there is no <literal>t1</literal> data on any of the nodes. This requires
+    creating subscriptions on <literal>node1</literal> and
+    <literal>node2</literal> to replicate the data from
+    <literal>node3</literal> and creating subscriptions on
+    <literal>node3</literal> to replicate data from <literal>node1</literal>
+    and <literal>node2</literal>. Note: These steps assume that the
+    bidirectional logical replication between <literal>node1</literal> and
+    <literal>node2</literal> is already completed.
+   </para>
+
+   <para>
+    Create a publication on <literal>node3</literal>:
+<programlisting>
+node3=# CREATE PUBLICATION pub_node3 FOR TABLE t1;
+CREATE PUBLICATION
+</programlisting></para>
+
+   <para>
+    Lock table <literal>t1</literal> on all the nodes <literal>node1</literal>,
+    <literal>node2</literal> and <literal>node3</literal> in
+    <literal>EXCLUSIVE</literal> mode until the setup is completed.
+   </para>
+
+   <para>
+    Create a subscription on <literal>node1</literal> to subscribe to
+    <literal>node3</literal>:
+<programlisting>
+node1=# CREATE SUBSCRIPTION sub_node1_node3
+node1-# CONNECTION 'dbname=foo host=node3 user=repuser'
+node1-# PUBLICATION pub_node3
+node1-# WITH (copy_data = off, origin = local);
+CREATE SUBSCRIPTION
+</programlisting></para>
+
+   <para>
+    Create a subscription on <literal>node2</literal> to subscribe to
+    <literal>node3</literal>:
+<programlisting>
+node2=# CREATE SUBSCRIPTION sub_node2_node3
+node2-# CONNECTION 'dbname=foo host=node3 user=repuser'
+node2-# PUBLICATION pub_node3
+node2-# WITH (copy_data = off, origin = local);
+CREATE SUBSCRIPTION
+</programlisting></para>
+
+   <para>
+    Create a subscription on <literal>node3</literal> to subscribe to
+    <literal>node1</literal>:
+<programlisting>
+node3=# CREATE SUBSCRIPTION sub_node3_node1
+node3-# CONNECTION 'dbname=foo host=node1 user=repuser'
+node3-# PUBLICATION pub_node1
+node3-# WITH (copy_data = off, origin = local);
+CREATE SUBSCRIPTION
+</programlisting></para>
+
+   <para>
+    Create a subscription on <literal>node3</literal> to subscribe to
+    <literal>node2</literal>:
+<programlisting>
+node3=# CREATE SUBSCRIPTION sub_node3_node2
+node3-# CONNECTION 'dbname=foo host=node2 user=repuser'
+node3-# PUBLICATION pub_node2
+node3-# WITH (copy_data = off, origin = local);
+CREATE SUBSCRIPTION
+</programlisting></para>
+
+   <para>
+    Now the bidirectional logical replication setup is complete between
+    <literal>node1</literal>, <literal>node2</literal> and
+    <literal>node3</literal>. Incremental changes made on any node will be
+    replicated to the other two nodes.
+   </para>
+  </sect2>
+
+  <sect2 id="add-new-node-data-on-existing-node">
+   <title>Adding a new node when table data is present on the existing nodes</title>
+    <para>
+     The following steps demonstrate adding a new node <literal>node3</literal>
+     which has no <literal>t1</literal> data to the existing
+     <literal>node1</literal> and <literal>node2</literal> where
+     <literal>t1</literal> data is present. This needs similar steps; the only
+     change required here is that <literal>node3</literal> should create a
+     subscription with <literal>copy_data = force</literal> to one of the
+     existing nodes so it can receive the existing <literal>t1</literal> data
+     during initial data synchronization. Note: These steps assume that the
+     bidirectional logical replication between <literal>node1</literal> and
+     <literal>node2</literal> is already completed, and the pre-existing data
+     in table <literal>t1</literal> is already synchronized on both those
+     nodes.
+   </para>
+
+   <para>
+    Create a publication on <literal>node3</literal>:
+<programlisting>
+node3=# CREATE PUBLICATION pub_node3 FOR TABLE t1;
+CREATE PUBLICATION
+</programlisting></para>
+
+   <para>
+    Lock table <literal>t1</literal> on <literal>node2</literal> and
+    <literal>node3</literal> in <literal>EXCLUSIVE</literal> mode until the
+    setup is completed. There is no need to lock table <literal>t1</literal> on
+    <literal>node1</literal> because any data changes made will be synchronized
+    while creating the subscription with <literal>copy_data = force</literal>.
+   </para>
+
+   <para>
+    Create a subscription on <literal>node1</literal> to subscribe to
+    <literal>node3</literal>:
+<programlisting>
+node1=# CREATE SUBSCRIPTION sub_node1_node3
+node1-# CONNECTION 'dbname=foo host=node3 user=repuser'
+node1-# PUBLICATION pub_node3
+node1-# WITH (copy_data = off, origin = local);
+CREATE SUBSCRIPTION
+</programlisting></para>
+
+   <para>
+    Create a subscription on <literal>node2</literal> to subscribe to
+    <literal>node3</literal>:
+<programlisting>
+node2=# CREATE SUBSCRIPTION sub_node2_node3
+node2-# CONNECTION 'dbname=foo host=node3 user=repuser'
+node2-# PUBLICATION pub_node3
+node2-# WITH (copy_data = off, origin = local);
+CREATE SUBSCRIPTION
+</programlisting></para>
+
+   <para>
+    Create a subscription on <literal>node3</literal> to subscribe to
+    <literal>node1</literal>. Use <literal>copy_data = force </literal> so that
+    the existing table data is copied during initial sync:
+<programlisting>
+node3=# CREATE SUBSCRIPTION sub_node3_node1
+node3-# CONNECTION 'dbname=foo host=node1 user=repuser'
+node3-# PUBLICATION pub_node1
+node3-# WITH (copy_data = force, origin = local);
+CREATE SUBSCRIPTION
+</programlisting></para>
+
+   <para>
+    Create a subscription on <literal>node3</literal> to subscribe to
+    <literal>node2</literal>. Use <literal>copy_data = off</literal>
+    because the initial table data would have been
+    already copied in the previous step:
+<programlisting>
+node3=# CREATE SUBSCRIPTION sub_node3_node2
+node3-# CONNECTION 'dbname=foo host=node2 user=repuser'
+node3-# PUBLICATION pub_node2
+node3-# WITH (copy_data = off, origin = local);
+CREATE SUBSCRIPTION
+</programlisting></para>
+
+   <para>
+    Now the bidirectional logical replication setup is complete between
+    <literal>node1</literal>, <literal>node2</literal> and
+    <literal>node3</literal>. Incremental changes made on any node will be
+    replicated to the other two nodes.
+   </para>
+  </sect2>
+
+  <sect2 id="add-node-data-present-on-new-node">
+   <title>Adding a new node when table data is present on the new node</title>
+   <note>
+    <para>
+     Adding a new node when table data is present on the new node is not
+     supported.
+    </para>
+   </note>
+  </sect2>
+
+  <sect2 id="generic-steps-add-new-node">
+   <title>Generic steps for adding a new node to an existing set of nodes</title>
+   <para>
+    Step-1: Create a publication on the new node.
+   </para>
+   <para>
+    Step-2: Lock the required tables of the new node in
+    <literal>EXCLUSIVE</literal> mode until the setup is complete. (This lock
+    is necessary to prevent any modifications from happening on the new node.
+    If data modifications occurred after Step-3, there is a chance they could
+    be published to the first node and then synchronized back to the new node
+    while creating the subscription in Step-5. This would result in
+    inconsistent data).
+   </para>
+   <para>
+    Step-3. Create subscriptions on existing nodes to the publication on the
+    new node with <literal>origin = local</literal> and
+    <literal>copy_data = off</literal>. (The <literal>copy_data = off</literal>
+    is OK here because it is asserted that the published tables of the new node
+    will have no pre-existing data).
+   </para>
+   <para>
+    Step-4. Lock the required tables of the existing nodes except the first node
+    in <literal>EXCLUSIVE</literal> mode until the setup is complete. (This
+    lock is necessary to prevent any modifications from happening. If data
+    modifications occur, there is a chance that modifications done between
+    Step-5 and Step-6 will not be synchronized to the new node. This would
+    result in inconsistent data. There is no need to lock the required tables
+    on the first node because any data changes made will be synchronized while
+    creating the subscription with <literal>copy_data = force</literal>).
+   </para>
+   <para>
+    Step-5. Create a subscription on the new node to the publication on the
+    first node with <literal>origin = local</literal> and
+    <literal>copy_data = force</literal>. (This will copy the same table data
+    from the existing nodes to the new node).
+   </para>
+   <para>
+    Step-6. Create subscriptions on the new node to publications on the
+    remaining nodes with <literal>origin = local</literal> and
+    <literal>copy_data = off</literal>. (The copy_data = off is OK here because
+    the existing node data was already copied to the new node in Step-5).
+   </para>
+  </sect2>
+ </sect1>
+
 </chapter>
