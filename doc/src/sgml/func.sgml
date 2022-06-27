@@ -27751,6 +27751,127 @@ postgres=# SELECT * FROM pg_walfile_name_offset((pg_backup_stop()).lsn);
 
   </sect2>
 
+  <sect2 id="functions-lrg">
+   <title>Logical Replication Groups Management Functions</title>
+
+   <para>
+    The functions shown in <xref linkend="functions-lrg-table"/> are for
+    controlling and interacting with node groups. See <xref linkend="lrg"/>.
+   </para>
+
+   <table id="functions-lrg-table">
+    <title>LRG Management Functions</title>
+    <tgroup cols="1">
+     <thead>
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        Function
+       </para>
+       <para>
+        Description
+       </para></entry>
+      </row>
+     </thead>
+
+     <tbody>
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary></primary>
+        </indexterm>
+        <function>lrg_create</function> ( <parameter>group_name</parameter> <type>name</type>, <parameter>publication_type</parameter> <type>text</type>, <parameter>local_connstring</parameter> <type>text</type>, <parameter>node_name</parameter> <type>name</type> )
+        <returnvalue>void</returnvalue>
+       </para>
+       <para>
+        Creates a node group named <parameter>group_name</parameter> and attach
+        the current node to it, as <parameter>node_name</parameter>. Nodes in
+        the created node group sends and receives change to the specified in
+        <parameter>publication_type</parameter>. If this node is already in a
+        logical replication group, an error is raised. Note that this function
+        returns immediately. This function is just a trigger for starting
+        complex operations by the LRG worker process. If users want to wait
+        until finishing them, <function>lrg_wait</function> can be used.
+       </para></entry>
+      </row>
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary></primary>
+        </indexterm>
+        <function>lrg_node_attach</function> ( <parameter>group_name</parameter> <type>name</type>, <parameter>local_connstring</parameter> <type>text</type>, <parameter>upstream_connstring</parameter> <type>text</type>, <parameter>node_name</parameter> <type>name</type> )
+        <returnvalue>void</returnvalue>
+       </para>
+       <para>
+        Attach the current node to a node group named <parameter>group_name</parameter>
+        as <parameter>node_name</parameter>. The initial data and configuration
+        information of this group will be shared from the <parameter>upstream_connstring</parameter>.
+        <parameter>node_name</parameter> must be unique in the group.
+        If this node is already in a node group, an error is
+        raised. Note that this function returns immediately. This function is
+        just a trigger for starting complex operations by the LRG worker
+        process. If users want to wait until finishing them, <function>lrg_wait</function>
+        can be used.
+       </para></entry>
+      </row>
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary></primary>
+        </indexterm>
+        <function>lrg_node_detach</function> ( <parameter>group_name</parameter> <type>name</type>, <parameter>node_name</parameter> <type>name</type> <optional>, <parameter>force_detach</parameter> <type>boolean</type> </optional> )
+        <returnvalue>void</returnvalue>
+       </para>
+       <para>
+        Detach the node named <parameter>node_name</parameter> from the node
+        group named <parameter>group_name</parameter>. Only nodes in the
+        specified node group can execute this function, and any nodes in
+        the node group can be chosen. If this node is not in a
+        node group, an error is raised.
+        Note that this function returns immediately. This function is just
+        a trigger for starting complex operations by the LRG worker process.
+        If users want to wait until finishing them, <function>lrg_wait</function>
+        can be used.
+        By default, LRG worker process tries to drop subscription in nodes, but
+        it means that it will be failed if specified server goes down.
+        To avoid that <parameter>force_detach</parameter> can be used. When the
+        parameter is set to  <literal>true</literal>, LRG worker process checks
+        the health of the node and does special operations.
+       </para></entry>
+      </row>
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary></primary>
+        </indexterm>
+        <function>lrg_drop</function> ( <parameter>group_name</parameter> <type>name</type> )
+        <returnvalue>void</returnvalue>
+       </para>
+       <para>
+        Removes the node group named <parameter>group_name</parameter> after
+        detaching the current node from it. If this node is not in a node group,
+        or there are still nodes in the group, an error is raised.
+       </para></entry>
+      </row>
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary></primary>
+        </indexterm>
+        <function>lrg_wait</function> ()
+        <returnvalue>void</returnvalue>
+       </para>
+       <para>
+        Wait until LRG related operations are done. This function returns
+        immediately if a node executes this function is not in a node group.
+       </para></entry>
+      </row>
+
+     </tbody>
+    </tgroup>
+   </table>
+
+  </sect2>
+
   <sect2 id="functions-admin-dbobject">
    <title>Database Object Management Functions</title>
 

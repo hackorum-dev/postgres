@@ -1,0 +1,555 @@
+<!-- doc/src/sgml/lrg.sgml -->
+ <chapter id="lrg">
+  <title>Logical Replication Groups (LRG)</title>
+
+  <indexterm zone="lrg">
+   <primary>logical replication group</primary>
+  </indexterm>
+
+ <para>
+  Logical Replication Group (LRG) provides an API that allows a group of nodes
+  to replicate data to each other. All nodes in the group can execute
+  Read-Write operatons, and any changes made on one node will "eventually"
+  replicate to all other member nodes of the group.
+ </para>
+
+ <para>
+  Each node in a node group of N member nodes has 1 publication and N-1
+  subscriptions to the other N-1 nodes.
+ </para>
+
+ <para>
+  LRG is especially useful when working with "data-aware" applications.
+  It is recommended that users build a node group located across different
+  geographical locations, where each node inserts or updates different tuples.
+ </para>
+
+ <para>
+  Advantages of LRG are:
+
+  <itemizedlist>
+   <listitem>
+    <para>
+     Allowing load balancing
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+     Allowing rolling updates of nodes
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+     Improving the availability of the system
+    </para>
+   </listitem>
+  </itemizedlist>
+ </para>
+
+ <sect1 id="lrg-concepts">
+  <title>LRG concepts</title>
+  <sect2 id="lrg-group">
+   <title>Node group</title>
+
+   <para>
+    Node group is a group that participant nodes have same tables and
+    send/receive their data changes. This is done via <link linkend="logical-replication">logical replication</link>.
+    Each node in a group must be connected to all other nodes. LRG make such a
+    group by creating publications and subscriptions on nodes.
+   </para>
+
+  </sect2>
+
+  <sect2 id="lrg-node">
+   <title>Node</title>
+   <para>
+    Node is a database that belongs to a node group and it is identified
+    by a user-given unique name. By definition, all nodes are not only
+    publishers, but also subscribers. They must be connected to all other
+    nodes in a group. If there are N nodes in a node group, each node has
+    one publication and N-1 subscriptions.
+   </para>
+
+  </sect2>
+ </sect1>
+
+ <sect1 id="lrg-configuration">
+  <title>Configuration</title>
+  <para>
+   For a node group consisting of N member nodes, LRG will create 1 publication
+   and N-1 subscriptions on each node. Therefore LRG requires several
+   configuration options:
+  </para>
+
+  <itemizedlist>
+   <listitem>
+    <para>
+     <varname>wal_level</varname> must be <literal>logical</literal>.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+     <varname>max_replication_slots</varname> must be at least N.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+     <varname>max_wal_senders</varname> must be at least <varname>max_replication_slots</varname>.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+     <varname>max_logical_replication_workers</varname> must be more than N.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+     <varname>max_worker_processes</varname> must be larger that <varname>max_logical_replication_workers</varname>.
+    </para>
+   </listitem>
+  </itemizedlist>
+ </sect1>
+
+ <sect1 id="lrg-interface">
+  <title>LRG SQL interface</title>
+  <para>
+   LRG provides several SQL functions for controlling node group.
+   See <xref linkend="functions-lrg"/> for detailed documentation.
+  </para>
+
+  <sect2>
+   <title>Create a node group</title>
+   <para>
+    Node groups are created by <function>lrg_create</function>.
+    The node that executed this function automatically attaches to the created
+    group. This function requires a connection string that is used for
+    connecting to the node from other or connecting to itself. Therefore, it is
+    not recommended to specify the Unix-domain socket or loopback address as the
+    connection string unless testing purposes.
+   </para>
+
+   <para>
+    When users add a node to a node group, the node name must be specified.
+    This can be used for managing node information, and it must be specified
+    when users want to detach a node from a node group. The name must be unique
+    within a node group.
+   </para>
+
+   <para>
+    All tables present in the node group must be set up to allow all changes
+    to be replicated. This requires either of a primary key, or a replica
+    identity with unique index and not-null constraint. LRG does not check
+    them or throw any warnings. Users must define tables properly. Moreover,
+    users must not change any configurations of the automatically defined
+    publication.
+   </para>
+
+  </sect2>
+
+  <sect2>
+   <title>Attach a node to a node group</title>
+   <para>
+    In order to attach to a node group, the function <function>lrg_node_attach</function>
+    can be used. At that time, in addition to specifying connection string for
+    this node, a connection string for connecting to one of the node in the
+    group must be specified. The specified node is called as "upstream node".
+    After executing <function>lrg_node_attach</function>, this node connects
+    to the upstream node, and gets connection strings for other nodes and
+    synchronizes the initial data.
+   </para>
+
+   <para>
+    Currently, each node can attach to only one node group, and changes to all
+    tables are replicated to nodes in the group. This is implemented by
+    defining a publication with target list 'FOR ALL TABLES'. This is an
+    implementation restriction that might be lifted in a future release.
+   </para>
+
+  </sect2>
+
+  <sect2>
+   <title>Detach a node from a node group</title>
+   <para>
+    The user can detach any attached nodes by executing
+    <function>lrg_node_detach</function>. This function can be called from any
+    node that is a member of a node group. This function must be called from a
+    node that is a member of a group.
+   </para>
+  </sect2>
+
+  <sect2>
+   <title>Drop a node group</title>
+   <para>
+    Users can remove useless node group via <function>lrg_drop</function>.
+    This function can only be called from the last remaining node attached to
+    the node group being dropped; it will throw ERROR if there are other
+    members in the group.
+   </para>
+  </sect2>
+
+ </sect1>
+
+ <sect1 id="lrg-locking">
+  <title>Locking over nodes</title>
+  <para>
+   This feature is under development.
+  </para>
+ </sect1>
+
+ <sect1 id="lrg-architecture">
+  <title>Architecture</title>
+
+  <para>
+   LRG implementation uses "LRG launcher" and "LRG worker" processes. The
+   launcher process is registered when the server is not in the recovery mode,
+   and it has a responsibility for starting LRG worker processes. The actual
+   operations for creating or attaching to a node group are done by the LRG
+   worker process. There can be one LRG worker per database.
+  </para>
+
+  <para>
+   More specifically: when SQL functions related with LRG are called by users,
+   tuples will be inserted to catalogs and backend process will notify to the
+   launcher. After receiving the notification, the launcher seek <xref linkend="catalog-pg-lrg-nodes"/>
+   and launches the LRG worker process. This seeking and launching will be
+   also done when server boots.
+  </para>
+ </sect1>
+
+ <sect1 id="lrg-security">
+  <title>Security</title>
+  <para>
+   To execute some APIs, <function>lrg_create</function>, <function>lrg_node_attach</function>,
+   <function>lrg_node_detach</function>, and <function>lrg_create</function>,
+   the user must be a superuser.
+  </para>
+  <para>
+   LRG launcher and LRG worker will run with the privileges of a superuser.
+  </para>
+  <para>
+   The user used in the connection string in APIs must be a superuser. This is
+   because LRG worker uses this string in order to connect to other nodes,
+   and then creates a subscription in the node.
+  </para>
+
+ </sect1>
+
+
+ <sect1 id="lrg-example">
+  <title>Examples</title>
+  <para>
+   The following example demonstrates constructing a node group.
+   Assume that there are three nodes, called Node1, Node2, Node3, and port
+   numbers of them are 5431, 5432, and 5433. All operations will be done by
+   superuser, named postgres. In the example all nodes are in the same server.
+  </para>
+
+  <sect2>
+   <title>Setup</title>
+   <para>
+    Before executing APIs, some configurations must be adjusted. At first
+    <filename>postgresql.conf</filename> must be changed as:
+<programlisting>
+wal_level = logical
+</programlisting>
+    The other parameters have default values that are sufficient for a
+    basic setup. If you will test same thing in your network configuration,
+    <parameter>listen_address</parameter> should be changed.
+   </para>
+
+   <para>
+    <filename>pg_hba.conf</filename> must be also modified based on your
+    system. In this examle all postgres nodes are in the same server, we
+    don't have to care about it. 
+   </para>
+
+<programlisting>
+local   all             all                                     trust
+</programlisting>
+
+  </sect2>
+
+
+  <sect2>
+   <title>Create a node group</title>
+
+   <para>
+    At first, a node group must be created. Here it will be created on Node1.
+   </para>
+<programlisting>
+node1=# -- Create a node group 'testgroup', and attach to it as 'testnode1'
+node1=# SELECT lrg_create('testgroup', 'FOR ALL TABLES', 'user=postgres port=5431', 'testnode1');
+ lrg_create 
+------------
+ 
+(1 row)
+
+node1=# -- Wait until operations by LRG worker are done
+node1=# SELECT lrg_wait();
+ lrg_wait
+----------
+
+(1 row)
+
+</programlisting>
+
+   <para>
+    Information about the node group and nodes can checked via system catalogs:
+   </para>
+<programlisting>
+node1=# -- pg_lrg_info, contains information about node group
+node1=# SELECT * FROM pg_lrg_info ;
+  oid  | groupname |    pub_type    
+-------+-----------+----------------
+ 16389 | testgroup | FOR ALL TABLES
+(1 row)
+
+node1=# -- pg_lrg_nodes, contains information about nodes
+node1=# SELECT * FROM pg_lrg_nodes ;
+  oid  | groupid | dbid | status | nodename  |        nodeid        |        localconn        | upstreamconn 
+-------+---------+------+--------+-----------+----------------------+-------------------------+--------------
+ 16390 |   16389 |    5 |      3 | testnode1 | 71141689070058577515 | user=postgres port=5431 | 
+(1 row)
+
+node1=# -- pg_lrg_pub, contains information publication
+node1=# SELECT * FROM pg_lrg_pub ;
+  oid  | groupid | pubid 
+-------+---------+-------
+ 16392 |   16389 | 16391
+(1 row)
+
+node1=# -- pg_lrg_pub, contains information subscription
+node1=# -- Note that no tuples will be found at the moment - subscriptions will be created when someone attaches to the node group
+node1=# SELECT * FROM pg_lrg_sub ;
+ oid | groupid | subid 
+-----+---------+-------
+(0 rows)
+</programlisting>
+
+  </sect2>
+
+  <sect2>
+   <title>Attach a node to a node group</title>
+
+   <para>
+    Next, the node Node2 can attach to the node group. Note that the upstream
+    connection string to Node1 must be specified.
+   </para>
+
+<programlisting>
+node2=# -- Attach to 'testgroup' as 'testnode2'
+node2=# SELECT lrg_node_attach('testgroup', 'user=postgres port=5432', 'user=postgres port=5431', 'testnode2');
+ lrg_node_attach 
+-----------------
+ 
+(1 row)
+
+node2=# -- Wait until operations by LRG worker are done
+node2=# SELECT lrg_wait();
+ lrg_wait
+----------
+
+(1 row)
+</programlisting>
+
+   <para>
+    The status of all nodes can check via pg_lrg_nodes. Following tuples will be found on both nodes.
+   </para>
+
+<programlisting>
+node2=# SELECT * FROM pg_lrg_info ;
+  oid  | groupname |    pub_type    
+-------+-----------+----------------
+ 16389 | testgroup | FOR ALL TABLES
+(1 row)
+
+node2=# SELECT * FROM pg_lrg_nodes ;
+  oid  | groupid | dbid | status | nodename  |        nodeid        |        localconn        |      upstreamconn       
+-------+---------+------+--------+-----------+----------------------+-------------------------+-------------------------
+ 16391 |   16389 |    5 |      3 | testnode1 | 71141695677943317765 | user=postgres port=5431 | 
+ 16390 |   16389 |    5 |      3 | testnode2 | 71141695737527092585 | user=postgres port=5432 | user=postgres port=5431
+(2 rows)
+
+node2=# SELECT * FROM pg_lrg_pub ;
+  oid  | groupid | pubid 
+-------+---------+-------
+ 16393 |   16389 | 16392
+(1 row)
+
+node2=# -- A tuple will be found because now both of nodes have one subscription
+node1=# SELECT * FROM pg_lrg_sub ;
+  oid  | groupid | subid 
+-------+---------+-------
+ 16395 |   16389 | 16394
+(1 row)
+
+</programlisting>
+
+   <para>
+    Now the LRG system catalogs on Node1 and Node2 have same content, so ether
+    of them can be specified as an upstream node. Below, Node2 is used as the
+    upstream node for attaching a new node Node3.
+   </para>
+
+<programlisting>
+node3=# -- Attach to 'testgroup' as 'testnode3'
+node3=# SELECT lrg_node_attach('testgroup', 'user=postgres port=5433', 'user=postgres port=5432', 'testnode3');
+ lrg_node_attach 
+-----------------
+ 
+(1 row)
+
+node3=# -- Wait until operations by LRG worker are done
+node3=# SELECT lrg_wait();
+ lrg_wait
+----------
+
+(1 row)
+</programlisting>
+
+   <para>
+    Finally pg_lrg_info and pg_lrg_nodes will be like:
+   </para>
+
+<programlisting>
+node3=# SELECT * FROM pg_lrg_info ;
+  oid  | groupname |    pub_type    
+-------+-----------+----------------
+ 16393 | testgroup | FOR ALL TABLES
+(1 row)
+
+node3=# SELECT * FROM pg_lrg_nodes ;
+  oid  | groupid | dbid | status | nodename  |        nodeid        |        localconn        |      upstreamconn       
+-------+---------+------+--------+-----------+----------------------+-------------------------+-------------------------
+ 16391 |   16389 |    5 |      3 | testnode1 | 71141714630795390835 | user=postgres port=5431 | 
+ 16392 |   16389 |    5 |      3 | testnode2 | 71141714693889355845 | user=postgres port=5432 | user=postgres port=5431
+ 16390 |   16389 |    5 |      3 | testnode3 | 71141714753722290355 | user=postgres port=5433 | user=postgres port=5432
+(3 rows)
+
+node3=# SELECT * FROM pg_lrg_pub ;
+  oid  | groupid | pubid 
+-------+---------+-------
+ 16394 |   16389 | 16393
+(1 row)
+
+node3=# -- Two tuple will be found because the # of subscriptions is N-1
+node3=# SELECT * FROM pg_lrg_sub ;
+  oid  | groupid | subid 
+-------+---------+-------
+ 16396 |   16389 | 16395
+ 16398 |   16389 | 16397
+(2 rows)
+
+</programlisting>
+
+   <para>
+    Now each node in the group publishes their changes, and each node
+    subscribes to every other node in the group.
+   </para>
+
+  </sect2>
+
+  <sect2>
+   <title>Detach a node from a node group</title>
+   <para>
+    Consider a case that users want to shrink its system and remove a node from
+    a node group. <function>lrg_node_detach</function> can be used for that.
+   </para>
+
+<programlisting>
+node3=# -- Detach Node3 from 'testgroup'. This can be done from any arbitrary member of the node group.
+node3=# SELECT lrg_node_detach('testgroup', 'testnode3', false);
+ lrg_node_detach 
+-----------------
+ 
+(1 row)
+</programlisting>
+
+   <para>
+    The user-defined data will be not removed even if nodes are detached, but
+    tuples in LRG system catalogs will be deleted.
+   </para>
+
+<programlisting>
+node3=# -- On Node3, there are no tuples in pg_lrg_nodes
+node3=# select * from pg_lrg_nodes;
+ oid | nodeid | groupid | dbid | status | nodename | localconn | upstreamconn
+-----+--------+---------+------+--------+----------+-----------+--------------
+(0 rows)
+</programlisting>
+
+   <para>
+    By default 
+   </para>
+
+<programlisting>
+node1=# -- Detach Node1 from 'testgroup' as "force" mode - it is useful if the specified node goes down
+node1=# SELECT lrg_node_detach('testgroup', 'testnode2', true);
+ lrg_node_detach 
+-----------------
+ 
+(1 row)
+</programlisting>
+
+  </sect2>
+
+  <sect2>
+   <title>Drop a node group</title>
+   <para>
+    Suppose that user finishes operations of a system and wants to remove
+    the node group. In the previous part Node2 and Node3 has been detached,
+    so the testgroup can be removed via <function>lrg_drop</function>.
+   </para>
+
+<programlisting>
+node1=# -- Drop 'testgroup'. Node1 will detach from it automatically.
+node1=# SELECT lrg_drop('testgroup');
+ lrg_drop 
+----------
+ 
+(1 row)
+
+node1=# -- there are no tuples in pg_lrg_info
+node1=# SELECT * from pg_lrg_info ;
+ oid | groupname | pub_type 
+-----+-----------+----------
+(0 rows)
+</programlisting>
+  </sect2>
+
+ </sect1>
+
+ <sect1 id="lrg-restriction">
+  <title>Restrictions</title>
+  <para>
+   LRG currently has the following restrictions or missing functionality.
+   <itemizedlist>
+    <listitem>
+     <para>
+      Each node can attach only one node group at a time.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      All tables in the database must be replicated. That is, only
+      'FOR ALL TABLES' can be specified for <parameter>publication_type</parameter>
+      in <function>lrg_create</function>.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      All replicated objects must be defined on the all nodes.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      LRG does not provide any mechanism for conflict handling (e.g. PK violations).
+      Avoiding conflicts is the user responsibility.
+     </para>
+    </listitem>
+   </itemizedlist>
+  </para>
+ </sect1>
+
+
+ </chapter>

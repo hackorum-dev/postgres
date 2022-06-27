@@ -201,6 +201,26 @@
      </row>
 
      <row>
+      <entry><link linkend="catalog-pg-lrg-info"><structname>pg_lrg_info</structname></link></entry>
+      <entry>logical replication group</entry>
+     </row>
+
+     <row>
+      <entry><link linkend="catalog-pg-lrg-nodes"><structname>pg_lrg_nodes</structname></link></entry>
+      <entry>logical replication group</entry>
+     </row>
+
+     <row>
+      <entry><link linkend="catalog-pg-lrg-pub"><structname>pg_lrg_pub</structname></link></entry>
+      <entry>logical replication group</entry>
+     </row>
+
+     <row>
+      <entry><link linkend="catalog-pg-lrg-sub"><structname>pg_lrg_sub</structname></link></entry>
+      <entry>logical replication group</entry>
+     </row>
+
+     <row>
       <entry><link linkend="catalog-pg-namespace"><structname>pg_namespace</structname></link></entry>
       <entry>schemas</entry>
      </row>
@@ -4970,6 +4990,316 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
   </table>
  </sect1>
 
+ <sect1 id="catalog-pg-lrg-info">
+  <title><structname>pg_lrg_info</structname></title>
+
+  <indexterm zone="catalog-pg-lrg-info">
+   <primary>pg_lrg_info</primary>
+  </indexterm>
+  <para>
+   The catalog <structname>pg_lrg_info</structname> stores information about
+   node groups. A node group is a group of nodes that send and receive their
+   data changes, and it can be created by the <function>lrg_create</function>
+   function. See <xref linkend="lrg"/> for more information about node groups.
+  </para>
+
+  <para>
+   Each database in the same node group has a tuple with the same information
+   except for <structfield>oid</structfield>.
+  </para>
+
+  <para>
+   Currently, a node can participate in only one node group. This means that
+   this system catalog has at most one tuple.
+  </para>
+
+  <table>
+   <title><structname>pg_lrg_info</structname> Columns</title>
+   <tgroup cols="1">
+    <thead>
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       Column Type
+      </para>
+      <para>
+       Description
+      </para></entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>oid</structfield> <type>oid</type>
+      </para>
+      <para>
+       Row identifier
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>groupname</structfield> <type>name</type>
+      </para>
+      <para>
+       Name of the group
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>pub_type</structfield> <type>text</type>
+      </para>
+      <para>
+       List of published tables
+      </para></entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+ </sect1>
+
+ <sect1 id="catalog-pg-lrg-nodes">
+  <title><structname>pg_lrg_nodes</structname></title>
+
+  <indexterm zone="catalog-pg-lrg-nodes">
+   <primary>pg_lrg_nodes</primary>
+  </indexterm>
+  <para>
+   The catalog <structname>pg_lrg_nodes</structname> stores information about
+   nodes in node group that this node is a member of. When <function>lrg_node_attach</function>()
+   is executed, information about other nodes in a group is copied from the
+   upstream node, and information about this node is copied to the other nodes.
+   Therefore, each database in the same node group has tuples with the same
+   information except for <structfield>oid</structfield> and <structfield>dbid</structfield>.
+   See <xref linkend="lrg"/> for more information about LRG.
+  </para>
+
+  <table>
+   <title><structname>pg_lrg_nodes</structname> Columns</title>
+   <tgroup cols="1">
+    <thead>
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       Column Type
+      </para>
+      <para>
+       Description
+      </para></entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>oid</structfield> <type>oid</type>
+      </para>
+      <para>
+       Row identifier
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>groupid</structfield> <type>oid</type>
+       (references <link linkend="catalog-pg-lrg-info"><structname>pg_lrg_info</structname></link>.<structfield>oid</structfield>)
+      </para>
+      <para>
+       Attached group
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>dbid</structfield> <type>oid</type>
+       (references <link linkend="catalog-pg-database"><structname>pg_database</structname></link>.<structfield>oid</structfield>)
+      </para>
+      <para>
+       Database
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>status</structfield> <type>int</type>
+      </para>
+      <para>
+       State code:
+       <literal>0</literal> = initialize,
+       <literal>1</literal> = a publication was created in this node,
+       <literal>2</literal> = subscriptions were created in all nodes,
+       <literal>3</literal> = ready,
+       <literal>4</literal> = this node is now detaching from a group,
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>nodename</structfield> <type>name</type>
+      </para>
+      <para>
+       Name of this node
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>nodeid</structfield> <type>text</type>
+      </para>
+      <para>
+       Identifier of this node
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>localconn</structfield> <type>text</type>
+      </para>
+      <para>
+       Connection string for this node
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>upstreamconn</structfield> <type>text</type>
+      </para>
+      <para>
+       Connection string for upstream node
+      </para></entry>
+     </row>
+
+    </tbody>
+   </tgroup>
+  </table>
+ </sect1>
+
+ <sect1 id="catalog-pg-lrg-pub">
+  <title><structname>pg_lrg_pub</structname></title>
+
+  <indexterm zone="catalog-pg-lrg-pub">
+   <primary>pg_lrg_pub</primary>
+  </indexterm>
+  <para>
+   The catalog <structname>pg_lrg_pub</structname> contains the mapping between
+   node groups and a publication in the database. Since each node is only
+   allowed to be a member of one group, so this catalog has at most one tuple.
+   See <xref linkend="lrg"/> for more information about LRG.
+  </para>
+
+  <table>
+   <title><structname>pg_lrg_pub</structname> Columns</title>
+   <tgroup cols="1">
+    <thead>
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       Column Type
+      </para>
+      <para>
+       Description
+      </para></entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>oid</structfield> <type>oid</type>
+      </para>
+      <para>
+       Row identifier
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>groupid</structfield> <type>oid</type>
+       (references <link linkend="catalog-pg-lrg-info"><structname>pg_lrg_info</structname></link>.<structfield>oid</structfield>)
+      </para>
+      <para>
+       Attached group
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>pubid</structfield> <type>oid</type>
+       (references <link linkend="catalog-pg-publication"><structname>pg_publication</structname></link>.<structfield>oid</structfield>)
+      </para>
+      <para>
+       Publication
+      </para></entry>
+     </row>
+
+
+    </tbody>
+   </tgroup>
+  </table>
+ </sect1>
+
+
+ <sect1 id="catalog-pg-lrg-sub">
+  <title><structname>pg_lrg_sub</structname></title>
+
+  <indexterm zone="catalog-pg-lrg-sub">
+   <primary>pg_lrg_sub</primary>
+  </indexterm>
+  <para>
+   The catalog <structname>pg_lrg_sub</structname> contains the mapping between
+   node groups and subscriptions in the database. Since each node is only
+   allowed to be a member of one group, so this catalog has at most N-1 tuples.
+   See <xref linkend="lrg"/> for more information about LRG.
+  </para>
+
+  <table>
+   <title><structname>pg_lrg_sub</structname> Columns</title>
+   <tgroup cols="1">
+    <thead>
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       Column Type
+      </para>
+      <para>
+       Description
+      </para></entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>oid</structfield> <type>oid</type>
+      </para>
+      <para>
+       Row identifier
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>groupid</structfield> <type>oid</type>
+       (references <link linkend="catalog-pg-lrg-info"><structname>pg_lrg_info</structname></link>.<structfield>oid</structfield>)
+      </para>
+      <para>
+       Attached group
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>subid</structfield> <type>oid</type>
+       (references <link linkend="catalog-pg-subscription"><structname>pg_subscription</structname></link>.<structfield>oid</structfield>)
+      </para>
+      <para>
+       Subscription
+      </para></entry>
+     </row>
+
+
+    </tbody>
+   </tgroup>
+  </table>
+ </sect1>
 
  <sect1 id="catalog-pg-namespace">
   <title><structname>pg_namespace</structname></title>
