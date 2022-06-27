@@ -43,6 +43,7 @@
 #include "catalog/pg_foreign_server.h"
 #include "catalog/pg_foreign_table.h"
 #include "catalog/pg_language.h"
+#include "catalog/pg_lrg_nodes.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_operator.h"
@@ -503,6 +504,28 @@ static const struct cachedesc cacheinfo[] = {
 		1,
 		{
 			Anum_pg_language_oid,
+			0,
+			0,
+			0
+		},
+		4
+	},
+	{LrgNodesRelationId,		/* LRGNODEID */
+		LrgNodeIdIndexId,
+		1,
+		{
+			Anum_pg_lrg_nodes_nodeid,
+			0,
+			0,
+			0
+		},
+		4
+	},
+	{LrgNodesRelationId,		/* LRGNODENAME */
+		LrgNodeNameIndexId,
+		1,
+		{
+			Anum_pg_lrg_nodes_nodename,
 			0,
 			0,
 			0

@@ -594,6 +594,10 @@ LANGUAGE internal
 STRICT IMMUTABLE PARALLEL SAFE
 AS 'unicode_is_normalized';
 
+CREATE OR REPLACE FUNCTION
+  lrg_node_detach(text, text, boolean DEFAULT false)
+RETURNS VOID LANGUAGE internal AS 'lrg_node_detach'
+PARALLEL RESTRICTED;
 --
 -- The default permissions for functions mean that anyone can execute them.
 -- A number of functions shouldn't be executable by just anyone, but rather
@@ -708,6 +712,18 @@ REVOKE EXECUTE ON FUNCTION pg_ls_logicalsnapdir() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION pg_ls_logicalmapdir() FROM PUBLIC;
 
 REVOKE EXECUTE ON FUNCTION pg_ls_replslotdir(text) FROM PUBLIC;
+
+REVOKE EXECUTE ON FUNCTION lrg_create(text, text, text, text) FROM PUBLIC;
+
+REVOKE EXECUTE ON FUNCTION lrg_node_attach(text, text, text, text) FROM PUBLIC;
+
+REVOKE EXECUTE ON FUNCTION lrg_node_detach(text, text, boolean) FROM PUBLIC;
+
+REVOKE EXECUTE ON FUNCTION lrg_drop(text) FROM PUBLIC;
+
+REVOKE EXECUTE ON FUNCTION lrg_insert_into_sub(text) FROM PUBLIC;
+
+REVOKE EXECUTE ON FUNCTION lrg_insert_into_nodes(text, int4, text, text, text) FROM PUBLIC;
 
 --
 -- We also set up some things as accessible to standard roles.

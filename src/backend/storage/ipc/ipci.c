@@ -32,6 +32,7 @@
 #include "postmaster/bgwriter.h"
 #include "postmaster/postmaster.h"
 #include "replication/logicallauncher.h"
+#include "replication/lrg.h"
 #include "replication/origin.h"
 #include "replication/slot.h"
 #include "replication/walreceiver.h"
@@ -284,6 +285,7 @@ CreateSharedMemoryAndSemaphores(void)
 	WalRcvShmemInit();
 	PgArchShmemInit();
 	ApplyLauncherShmemInit();
+	LrgLauncherShmemInit();
 
 	/*
 	 * Set up other modules that need some shared memory space

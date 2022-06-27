@@ -35,7 +35,9 @@ OBJS = \
 	walreceiverfuncs.o \
 	walsender.o
 
-SUBDIRS = logical
+SUBDIRS = \
+	logical \
+	lrg
 
 include $(top_srcdir)/src/backend/common.mk
 

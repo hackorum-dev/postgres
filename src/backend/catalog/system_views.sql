@@ -1311,3 +1311,8 @@ CREATE VIEW pg_stat_subscription_stats AS
         ss.stats_reset
     FROM pg_subscription as s,
          pg_stat_get_subscription_stats(s.oid) as ss;
+
+-- All columns of pg_lrg_nodes except subconninfo are publicly readable.
+REVOKE ALL ON pg_lrg_nodes FROM public;
+GRANT SELECT (oid, groupid, dbid, status, nodename, nodeid)
+    ON pg_lrg_nodes TO public;
