@@ -63,6 +63,9 @@ extern "C"
 #include <llvm/Linker/IRMover.h>
 #include <llvm/Support/ManagedStatic.h>
 #include <llvm/Support/MemoryBuffer.h>
+#if LLVM_VERSION_MAJOR >= 13
+#include <llvm/Transforms/Utils/Cloning.h>
+#endif
 
 
 /*
@@ -378,12 +381,18 @@ llvm_execute_inline_plan(llvm::Module *mod, ImportMapTy *globalsToInline)
 		const llvm::StringSet<>& modGlobalsToInline = toInline.second;
 		llvm::SetVector<llvm::GlobalValue *> GlobalsToImport;
 
-		Assert(module_cache->count(modPath));
-		std::unique_ptr<llvm::Module> importMod(std::move((*module_cache)[modPath]));
-		module_cache->erase(modPath);
-
 		if (modGlobalsToInline.empty())
 			continue;
+
+		auto iter = module_cache->find(modPath);
+		Assert(iter != module_cache->end());
+
+#if LLVM_VERSION_MAJOR >= 13
+		auto importMod = llvm::CloneModule(*iter->second);
+#else
+		auto importMod = std::move(iter->second);
+		module_cache->erase(modPath);
+#endif
 
 		for (auto &glob: modGlobalsToInline)
 		{
@@ -491,7 +500,11 @@ load_module(llvm::StringRef Identifier)
 	if (LLVMCreateMemoryBufferWithContentsOfFile(path, &buf, &msg))
 		elog(FATAL, "failed to open bitcode file \"%s\": %s",
 			 path, msg);
+#if LLVM_VERSION_MAJOR >= 13
+	if (LLVMParseBitcodeInContext2(LLVMGetGlobalContext(), buf, &mod))
+#else
 	if (LLVMGetBitcodeModuleInContext2(LLVMGetGlobalContext(), buf, &mod))
+#endif
 		elog(FATAL, "failed to parse bitcode in file \"%s\"", path);
 
 	/*
