@@ -55,6 +55,14 @@
   </span>
 </xsl:template>
 
+<xsl:template match="comment()">
+  <button class="comment-tooltip">
+    <span class="comment-tooltip-text">
+      <xsl:value-of select="." />
+    </span>
+    🔍
+  </button>
+</xsl:template>
 
 <!-- table of contents configuration -->
 
