@@ -31,6 +31,7 @@
 #include "miscadmin.h"
 #include "storage/indexfsm.h"
 #include "storage/lmgr.h"
+#include "pgstat.h"
 #include "storage/predicate.h"
 #include "storage/procarray.h"
 #include "utils/memdebug.h"
@@ -870,14 +871,23 @@ _bt_log_reuse_page(Relation rel, BlockNumber blkno, FullTransactionId safexid)
 Buffer
 _bt_getbuf(Relation rel, BlockNumber blkno, int access)
 {
-	Buffer		buf;
+	Buffer			buf;
+	Page			page;
+	BTPageOpaque	opaque;
 
 	if (blkno != P_NEW)
 	{
+		bool		hit;
 		/* Read an existing block of the relation */
-		buf = ReadBuffer(rel, blkno);
+		buf = ReadIndexBuffer(rel, blkno, &hit);
 		_bt_lockbuf(rel, buf, access);
 		_bt_checkpage(rel, buf);
+
+		page = BufferGetPage(buf);
+		opaque = BTPageGetOpaque(page);
+		if (hit && P_ISLEAF(opaque))
+		pgstat_count_buffer_hit(rel);
+
 	}
 	else
 	{

@@ -705,6 +705,16 @@ ReadBuffer(Relation reln, BlockNumber blockNum)
 }
 
 /*
+ * ReadIndexBuffer -- a shorthand for ReadIndexBufferExtended, for reading from main
+ *		fork with RBM_NORMAL mode and default strategy.
+ */
+Buffer
+ReadIndexBuffer(Relation reln, BlockNumber blockNum, bool *hit)
+{
+	return ReadIndexBufferExtended(reln, MAIN_FORKNUM, blockNum, RBM_NORMAL, NULL, hit);
+}
+
+/*
  * ReadBufferExtended -- returns a buffer containing the requested
  *		block of the requested relation.  If the blknum
  *		requested is P_NEW, extend the relation file and
@@ -771,6 +781,34 @@ ReadBufferExtended(Relation reln, ForkNumber forkNum, BlockNumber blockNum,
 							forkNum, blockNum, mode, strategy, &hit);
 	if (hit)
 		pgstat_count_buffer_hit(reln);
+	return buf;
+}
+
+/*
+ * Proof-of-concept.
+ *
+ * Same as ReadBufferExtended but returns the value of "hit" to improve 
+ * statistics collection for indexes.
+ */
+Buffer
+ReadIndexBufferExtended(Relation reln, ForkNumber forkNum, BlockNumber blockNum,
+				   ReadBufferMode mode, BufferAccessStrategy strategy, bool *hit)
+{
+	Buffer		buf;
+
+	/*
+	 * Reject attempts to read non-local temporary relations; we would be
+	 * likely to get wrong data since we have no visibility into the owning
+	 * session's local buffers.
+	 */
+	if (RELATION_IS_OTHER_TEMP(reln))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("cannot access temporary tables of other sessions")));
+
+	buf = ReadBuffer_common(RelationGetSmgr(reln), reln->rd_rel->relpersistence,
+							forkNum, blockNum, mode, strategy, hit);
+
 	return buf;
 }
 

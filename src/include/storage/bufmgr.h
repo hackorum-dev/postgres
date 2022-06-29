@@ -179,9 +179,13 @@ extern PrefetchBufferResult PrefetchBuffer(Relation reln, ForkNumber forkNum,
 extern bool ReadRecentBuffer(RelFileNode rnode, ForkNumber forkNum,
 							 BlockNumber blockNum, Buffer recent_buffer);
 extern Buffer ReadBuffer(Relation reln, BlockNumber blockNum);
+extern Buffer ReadIndexBuffer(Relation reln, BlockNumber blockNum, bool *hit);
 extern Buffer ReadBufferExtended(Relation reln, ForkNumber forkNum,
 								 BlockNumber blockNum, ReadBufferMode mode,
 								 BufferAccessStrategy strategy);
+extern Buffer ReadIndexBufferExtended(Relation reln, ForkNumber forkNum,
+									  BlockNumber blockNum, ReadBufferMode mode,
+									  BufferAccessStrategy strategy, bool *hit);
 extern Buffer ReadBufferWithoutRelcache(RelFileNode rnode,
 										ForkNumber forkNum, BlockNumber blockNum,
 										ReadBufferMode mode, BufferAccessStrategy strategy,
