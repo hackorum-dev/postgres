@@ -70,7 +70,39 @@ $node->start;
 
 psql_like($node, '\copyright',   qr/Copyright/, '\copyright');
 psql_like($node, '\help',        qr/ALTER/,     '\help without arguments');
-psql_like($node, '\help SELECT', qr/SELECT/,    '\help with argument');
+
+# ready \help with arguments
+my $help_str = $node->safe_psql('postgres', '\help');
+my @help_commands = split('\n', $help_str);
+shift @help_commands;
+
+map { s/^\s+|\s+$//g; } @help_commands;
+
+my @result;
+foreach (@help_commands) {
+    my @commands = (substr($_, 0, 33), substr($_, 33));
+    push @result, @commands;
+}
+
+s{^\s+|\s+$}{}g foreach @result;
+
+# \help with arguments
+foreach my $args (@result) {
+   psql_like($node, "\\help $args", qr/$args/, "\\help with $args arguments");
+}
+
+# test \e
+$ENV{'PSQL_EDITOR'} = ($PostgreSQL::Test::Utils::windows_os) ? "type" : "/bin/cat";
+
+# create some junk files for \e testing.
+$node->safe_psql('postgres',
+       "\\o e.out\n"
+    .  "SELECT 1;\n");
+
+psql_like($node, "\\e e.out", qr/1/, "test \e");
+
+# test \encoding
+psql_like($node, "\\encoding", qr/UTF8/, "test \encoding");
 
 # Test clean handling of unsupported replication command responses
 psql_fails_like(
