@@ -122,7 +122,7 @@ command_fails_like(
 
 command_fails_like(
 	[ 'pg_dump', '--compress', 'garbage' ],
-	qr/\Qpg_dump: error: invalid compression method "garbage" (gzip, none)\E/,
+	qr/\Qpg_dump: error: invalid compression method "garbage" (gzip, lz4, none)\E/,
 	'pg_dump: invalid --compress');
 
 command_fails_like(

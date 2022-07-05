@@ -1303,7 +1303,7 @@ parse_compression_option(const char *opt,
 			res = parse_compress_algorithm(method,
 										   &compress_spec->algorithm);
 			if (!res)
-				pg_log_error("invalid compression method \"%s\" (gzip, none)",
+				pg_log_error("invalid compression method \"%s\" (gzip, lz4, none)",
 							 method);
 
 			pg_free(method);
@@ -1345,13 +1345,17 @@ parse_compression_option(const char *opt,
 		return false;
 
 	/* verify that the requested compression is supported */
-
 	if (compress_spec->algorithm != PG_COMPRESSION_NONE &&
+		compress_spec->algorithm != PG_COMPRESSION_LZ4 &&
 		compress_spec->algorithm != PG_COMPRESSION_GZIP)
 		supports_compression = false;
 
 #ifndef HAVE_LIBZ
 	if (compress_spec->algorithm == PG_COMPRESSION_GZIP)
+		supports_compression = false;
+#endif
+#ifndef USE_LZ4
+	if (compression_spec->algorithm == PG_COMPRESSION_LZ4)
 		supports_compression = false;
 #endif
 

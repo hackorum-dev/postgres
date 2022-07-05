@@ -38,13 +38,15 @@
  * ----------------------
  *
  *	The compressed stream API is a wrapper around the C standard fopen() and
- *	libz's gzopen() APIs. It allows you to use the same functions for
- *	compressed and uncompressed streams. cfopen_read() first tries to open
- *	the file with given name, and if it fails, it tries to open the same
- *	file with the .gz suffix. cfopen_write() opens a file for writing, an
- *	extra argument specifies if the file should be compressed, and adds the
- *	.gz suffix to the filename if so. This allows you to easily handle both
- *	compressed and uncompressed files.
+ *	libz's gzopen() APIs and custom LZ4 calls which provide similar
+ *	functionality. It allows you to use the same functions for compressed and
+ *	uncompressed streams. cfopen_read() first tries to open the file with given
+ *	name, and if it fails, it tries to open the same file with the .gz suffix,
+ *	failing that it tries to open the same file with the .lz4 suffix.
+ *	cfopen_write() opens a file for writing, an extra argument specifies the
+ *	method to use should the file be compressed, and adds the appropriate
+ *	suffix, .gz or .lz4, to the filename if so. This allows you to easily handle
+ *	both compressed and uncompressed files.
  *
  * IDENTIFICATION
  *	   src/bin/pg_dump/compress_io.c
@@ -57,6 +59,7 @@
 
 #include "compress_io.h"
 #include "compress_gzip.h"
+#include "compress_lz4.h"
 #include "pg_backup_utils.h"
 
 /*----------------------
@@ -125,6 +128,9 @@ AllocateCompressor(const pg_compress_specification compress_spec,
 		case PG_COMPRESSION_GZIP:
 			InitCompressorGzip(cs, compress_spec.level);
 			break;
+		case PG_COMPRESSION_LZ4:
+			InitCompressorLZ4(cs, compress_spec.level);
+			break;
 		default:
 			pg_fatal("invalid compression method");
 			break;
@@ -175,6 +181,7 @@ free_keep_errno(void *p)
 /*
  * Compression None implementation
  */
+
 static size_t
 _read(void *ptr, size_t size, CompressFileHandle * CFH)
 {
@@ -310,6 +317,9 @@ InitCompressFileHandle(const pg_compress_specification compress_spec)
 		case PG_COMPRESSION_GZIP:
 			InitCompressGzip(CFH, compress_spec.level);
 			break;
+		case PG_COMPRESSION_LZ4:
+			InitCompressLZ4(CFH, compress_spec.level);
+			break;
 		default:
 			pg_fatal("invalid compression method");
 			break;
@@ -322,12 +332,12 @@ InitCompressFileHandle(const pg_compress_specification compress_spec)
  * Open a file for reading. 'path' is the file to open, and 'mode' should
  * be either "r" or "rb".
  *
- * If the file at 'path' does not exist, we append the ".gz" suffix (if
+ * If the file at 'path' does not exist, we append the "{.gz,.lz4}" suffix (i
  * 'path' doesn't already have it) and try again. So if you pass "foo" as
- * 'path', this will open either "foo" or "foo.gz", trying in that order.
+ * 'path', this will open either "foo" or "foo.gz" or "foo.lz4", trying in that
+ * order.
  *
  * On failure, return NULL with an error code in errno.
- *
  */
 CompressFileHandle *
 InitDiscoverCompressFileHandle(const char *path, const char *mode)
@@ -362,6 +372,17 @@ InitDiscoverCompressFileHandle(const char *path, const char *mode)
 
 			if (exists)
 				compress_spec.algorithm = PG_COMPRESSION_GZIP;
+		}
+#endif
+#ifdef USE_LZ4
+		if (!exists)
+		{
+			free_keep_errno(fname);
+			fname = psprintf("%s.lz4", path);
+			exists = (stat(fname, &st) == 0);
+
+			if (exists)
+				compress_spec.algorithm = PG_COMPRESSION_LZ4;
 		}
 #endif
 	}

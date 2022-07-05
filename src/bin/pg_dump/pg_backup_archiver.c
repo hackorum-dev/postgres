@@ -353,6 +353,7 @@ RestoreArchive(Archive *AHX)
 	ArchiveHandle *AH = (ArchiveHandle *) AHX;
 	RestoreOptions *ropt = AH->public.ropt;
 	bool		parallel_mode;
+	bool		supports_compression;
 	TocEntry   *te;
 	CompressFileHandle *sav;
 
@@ -382,17 +383,28 @@ RestoreArchive(Archive *AHX)
 	/*
 	 * Make sure we won't need (de)compression we haven't got
 	 */
-#ifndef HAVE_LIBZ
-	if (AH->compress_spec.algorithm == PG_COMPRESSION_GZIP &&
+	supports_compression = true;
+	if ((AH->compress_spec.algorithm == PG_COMPRESSION_GZIP ||
+		 AH->compress_spec.algorithm == PG_COMPRESSION_LZ4) &&
 		AH->PrintTocDataPtr != NULL)
 	{
 		for (te = AH->toc->next; te != AH->toc; te = te->next)
 		{
 			if (te->hadDumper && (te->reqs & REQ_DATA) != 0)
-				pg_fatal("cannot restore from compressed archive (compression not supported in this installation)");
+			{
+#ifndef HAVE_LIBZ
+				if (AH->compress_algorithm == PG_COMPRESSION_GZIP)
+					supports_compression = false;
+#endif
+#ifndef USE_LZ4
+				if (AH->compress_algorithm == PG_COMPRESSION_LZ4)
+					supports_compression = false;
+#endif
+				if (supports_compression == false)
+					pg_fatal("cannot restore from compressed archive (compression not supported in this installation)");
+			}
 		}
 	}
-#endif
 
 	/*
 	 * Prepare index arrays, so we can assume we have them throughout restore.
@@ -2028,6 +2040,18 @@ ReadStr(ArchiveHandle *AH)
 	return buf;
 }
 
+static bool
+_fileExistsInDirectory(const char *dir, const char *filename)
+{
+	struct stat st;
+	char		buf[MAXPGPATH];
+
+	if (snprintf(buf, MAXPGPATH, "%s/%s", dir, filename) >= MAXPGPATH)
+		pg_fatal("directory name too long: \"%s\"", dir);
+
+	return (stat(buf, &st) == 0 && S_ISREG(st.st_mode));
+}
+
 static int
 _discoverArchiveFormat(ArchiveHandle *AH)
 {
@@ -2054,30 +2078,20 @@ _discoverArchiveFormat(ArchiveHandle *AH)
 
 		/*
 		 * Check if the specified archive is a directory. If so, check if
-		 * there's a "toc.dat" (or "toc.dat.gz") file in it.
+		 * there's a "toc.dat" (or "toc.dat.{gz,lz4}") file in it.
 		 */
 		if (stat(AH->fSpec, &st) == 0 && S_ISDIR(st.st_mode))
 		{
-			char		buf[MAXPGPATH];
-
-			if (snprintf(buf, MAXPGPATH, "%s/toc.dat", AH->fSpec) >= MAXPGPATH)
-				pg_fatal("directory name too long: \"%s\"",
-						 AH->fSpec);
-			if (stat(buf, &st) == 0 && S_ISREG(st.st_mode))
-			{
-				AH->format = archDirectory;
+			AH->format = archDirectory;
+			if (_fileExistsInDirectory(AH->fSpec, "toc.dat"))
 				return AH->format;
-			}
-
 #ifdef HAVE_LIBZ
-			if (snprintf(buf, MAXPGPATH, "%s/toc.dat.gz", AH->fSpec) >= MAXPGPATH)
-				pg_fatal("directory name too long: \"%s\"",
-						 AH->fSpec);
-			if (stat(buf, &st) == 0 && S_ISREG(st.st_mode))
-			{
-				AH->format = archDirectory;
+			if (_fileExistsInDirectory(AH->fSpec, "toc.dat.gz"))
 				return AH->format;
-			}
+#endif
+#ifdef USE_LZ4
+			if (_fileExistsInDirectory(AH->fSpec, "toc.dat.lz4"))
+				return AH->format;
 #endif
 			pg_fatal("directory \"%s\" does not appear to be a valid archive (\"toc.dat\" does not exist)",
 					 AH->fSpec);
@@ -3684,6 +3698,7 @@ WriteHead(ArchiveHandle *AH)
 	AH->WriteBytePtr(AH, AH->offSize);
 	AH->WriteBytePtr(AH, AH->format);
 	WriteInt(AH, AH->compress_spec.level);
+	AH->WriteBytePtr(AH, AH->compress_spec.algorithm);
 	crtm = *localtime(&AH->createDate);
 	WriteInt(AH, crtm.tm_sec);
 	WriteInt(AH, crtm.tm_min);
@@ -3765,13 +3780,19 @@ ReadHead(ArchiveHandle *AH)
 	else
 		AH->compress_spec.level = Z_DEFAULT_COMPRESSION;
 
-	if (AH->compress_spec.level != INT_MIN)
-#ifndef HAVE_LIBZ
-		pg_log_warning("archive is compressed, but this installation does not support compression -- no data will be available");
-#else
+	if (AH->version >= K_VERS_1_15)
+		AH->compress_spec.algorithm = AH->ReadBytePtr(AH);
+	else if (AH->compress_spec.level != INT_MIN)
 		AH->compress_spec.algorithm = PG_COMPRESSION_GZIP;
-#endif
 
+#ifndef HAVE_LIBZ
+	if (AH->compress_spec.algorithm == PG_COMPRESSION_GZIP)
+	{
+		pg_log_warning("archive is compressed, but this installation does not support compression -- no data will be available");
+		AH->compress_spec.algorithm = PG_COMPRESSION_NONE;
+		AH->compress_spec.level = 0;
+	}
+#endif
 
 	if (AH->version >= K_VERS_1_4)
 	{
