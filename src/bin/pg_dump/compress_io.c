@@ -51,9 +51,12 @@
  *
  *-------------------------------------------------------------------------
  */
+#include <sys/stat.h>
+#include <unistd.h>
 #include "postgres_fe.h"
 
 #include "compress_io.h"
+#include "compress_gzip.h"
 #include "pg_backup_utils.h"
 
 /*----------------------
@@ -61,316 +64,9 @@
  *----------------------
  */
 
-/* typedef appears in compress_io.h */
-struct CompressorState
-{
-	pg_compress_algorithm compress_algorithm;
-	WriteFunc	writeF;
-
-#ifdef HAVE_LIBZ
-	z_streamp	zp;
-	char	   *zlibOut;
-	size_t		zlibOutSize;
-#endif
-};
-
-/* Routines that support zlib compressed data I/O */
-#ifdef HAVE_LIBZ
-static void InitCompressorZlib(CompressorState *cs, int level);
-static void DeflateCompressorZlib(ArchiveHandle *AH, CompressorState *cs,
-								  bool flush);
-static void ReadDataFromArchiveZlib(ArchiveHandle *AH, ReadFunc readF);
-static void WriteDataToArchiveZlib(ArchiveHandle *AH, CompressorState *cs,
-								   const char *data, size_t dLen);
-static void EndCompressorZlib(ArchiveHandle *AH, CompressorState *cs);
-#endif
-
-/* Routines that support uncompressed data I/O */
-static void ReadDataFromArchiveNone(ArchiveHandle *AH, ReadFunc readF);
-static void WriteDataToArchiveNone(ArchiveHandle *AH, CompressorState *cs,
-								   const char *data, size_t dLen);
-
-/* Public interface routines */
-
-/* Allocate a new compressor */
-CompressorState *
-AllocateCompressor(const pg_compress_specification compress_spec,
-				   WriteFunc writeF)
-{
-	CompressorState *cs;
-
-#ifndef HAVE_LIBZ
-	if (compress_spec.algorithm == PG_COMPRESSION_GZIP)
-		pg_fatal("not built with zlib support");
-#endif
-
-	cs = (CompressorState *) pg_malloc0(sizeof(CompressorState));
-	cs->writeF = writeF;
-	cs->compress_algorithm = compress_spec.algorithm;
-
-	/*
-	 * Perform compression algorithm specific initialization.
-	 */
-#ifdef HAVE_LIBZ
-	if (cs->compress_algorithm == PG_COMPRESSION_GZIP)
-		InitCompressorZlib(cs, compress_spec.level);
-#endif
-
-	return cs;
-}
-
-/*
- * Read all compressed data from the input stream (via readF) and print it
- * out with ahwrite().
- */
-void
-ReadDataFromArchive(ArchiveHandle *AH, pg_compress_specification compress_spec,
-					ReadFunc readF)
-{
-	switch (compress_spec.algorithm)
-	{
-		case PG_COMPRESSION_NONE:
-			ReadDataFromArchiveNone(AH, readF);
-			break;
-		case PG_COMPRESSION_GZIP:
-#ifdef HAVE_LIBZ
-			ReadDataFromArchiveZlib(AH, readF);
-#else
-			pg_fatal("not built with zlib support");
-#endif
-			break;
-		default:
-			pg_fatal("invalid compression method");
-			break;
-	}
-}
-
-/*
- * Compress and write data to the output stream (via writeF).
- */
-void
-WriteDataToArchive(ArchiveHandle *AH, CompressorState *cs,
-				   const void *data, size_t dLen)
-{
-	switch (cs->compress_algorithm)
-	{
-		case PG_COMPRESSION_GZIP:
-#ifdef HAVE_LIBZ
-			WriteDataToArchiveZlib(AH, cs, data, dLen);
-#else
-			pg_fatal("not built with zlib support");
-#endif
-			break;
-		case PG_COMPRESSION_NONE:
-			WriteDataToArchiveNone(AH, cs, data, dLen);
-			break;
-		default:
-			pg_fatal("invalid compression method");
-			break;
-	}
-}
-
-/*
- * Terminate compression library context and flush its buffers.
- */
-void
-EndCompressor(ArchiveHandle *AH, CompressorState *cs)
-{
-	switch (cs->compress_algorithm)
-	{
-		case PG_COMPRESSION_GZIP:
-#ifdef HAVE_LIBZ
-			EndCompressorZlib(AH, cs);
-#else
-			pg_fatal("not built with zlib support");
-#endif
-			break;
-		case PG_COMPRESSION_NONE:
-			free(cs);
-			break;
-
-		default:
-			pg_fatal("invalid compression method");
-			break;
-	}
-}
-
-/* Private routines, specific to each compression method. */
-
-#ifdef HAVE_LIBZ
-/*
- * Functions for zlib compressed output.
- */
-
+/* Private routines that support uncompressed data I/O */
 static void
-InitCompressorZlib(CompressorState *cs, int level)
-{
-	z_streamp	zp;
-
-	zp = cs->zp = (z_streamp) pg_malloc(sizeof(z_stream));
-	zp->zalloc = Z_NULL;
-	zp->zfree = Z_NULL;
-	zp->opaque = Z_NULL;
-
-	/*
-	 * zlibOutSize is the buffer size we tell zlib it can output to.  We
-	 * actually allocate one extra byte because some routines want to append a
-	 * trailing zero byte to the zlib output.
-	 */
-	cs->zlibOut = (char *) pg_malloc(ZLIB_OUT_SIZE + 1);
-	cs->zlibOutSize = ZLIB_OUT_SIZE;
-
-	if (deflateInit(zp, level) != Z_OK)
-		pg_fatal("could not initialize compression library: %s",
-				 zp->msg);
-
-	/* Just be paranoid - maybe End is called after Start, with no Write */
-	zp->next_out = (void *) cs->zlibOut;
-	zp->avail_out = cs->zlibOutSize;
-}
-
-static void
-EndCompressorZlib(ArchiveHandle *AH, CompressorState *cs)
-{
-	z_streamp	zp = cs->zp;
-
-	zp->next_in = NULL;
-	zp->avail_in = 0;
-
-	/* Flush any remaining data from zlib buffer */
-	DeflateCompressorZlib(AH, cs, true);
-
-	if (deflateEnd(zp) != Z_OK)
-		pg_fatal("could not close compression stream: %s", zp->msg);
-
-	free(cs->zlibOut);
-	free(cs->zp);
-}
-
-static void
-DeflateCompressorZlib(ArchiveHandle *AH, CompressorState *cs, bool flush)
-{
-	z_streamp	zp = cs->zp;
-	char	   *out = cs->zlibOut;
-	int			res = Z_OK;
-
-	while (cs->zp->avail_in != 0 || flush)
-	{
-		res = deflate(zp, flush ? Z_FINISH : Z_NO_FLUSH);
-		if (res == Z_STREAM_ERROR)
-			pg_fatal("could not compress data: %s", zp->msg);
-		if ((flush && (zp->avail_out < cs->zlibOutSize))
-			|| (zp->avail_out == 0)
-			|| (zp->avail_in != 0)
-			)
-		{
-			/*
-			 * Extra paranoia: avoid zero-length chunks, since a zero length
-			 * chunk is the EOF marker in the custom format. This should never
-			 * happen but...
-			 */
-			if (zp->avail_out < cs->zlibOutSize)
-			{
-				/*
-				 * Any write function should do its own error checking but to
-				 * make sure we do a check here as well...
-				 */
-				size_t		len = cs->zlibOutSize - zp->avail_out;
-
-				cs->writeF(AH, out, len);
-			}
-			zp->next_out = (void *) out;
-			zp->avail_out = cs->zlibOutSize;
-		}
-
-		if (res == Z_STREAM_END)
-			break;
-	}
-}
-
-static void
-WriteDataToArchiveZlib(ArchiveHandle *AH, CompressorState *cs,
-					   const char *data, size_t dLen)
-{
-	cs->zp->next_in = (void *) unconstify(char *, data);
-	cs->zp->avail_in = dLen;
-	DeflateCompressorZlib(AH, cs, false);
-}
-
-static void
-ReadDataFromArchiveZlib(ArchiveHandle *AH, ReadFunc readF)
-{
-	z_streamp	zp;
-	char	   *out;
-	int			res = Z_OK;
-	size_t		cnt;
-	char	   *buf;
-	size_t		buflen;
-
-	zp = (z_streamp) pg_malloc(sizeof(z_stream));
-	zp->zalloc = Z_NULL;
-	zp->zfree = Z_NULL;
-	zp->opaque = Z_NULL;
-
-	buf = pg_malloc(ZLIB_IN_SIZE);
-	buflen = ZLIB_IN_SIZE;
-
-	out = pg_malloc(ZLIB_OUT_SIZE + 1);
-
-	if (inflateInit(zp) != Z_OK)
-		pg_fatal("could not initialize compression library: %s",
-				 zp->msg);
-
-	/* no minimal chunk size for zlib */
-	while ((cnt = readF(AH, &buf, &buflen)))
-	{
-		zp->next_in = (void *) buf;
-		zp->avail_in = cnt;
-
-		while (zp->avail_in > 0)
-		{
-			zp->next_out = (void *) out;
-			zp->avail_out = ZLIB_OUT_SIZE;
-
-			res = inflate(zp, 0);
-			if (res != Z_OK && res != Z_STREAM_END)
-				pg_fatal("could not uncompress data: %s", zp->msg);
-
-			out[ZLIB_OUT_SIZE - zp->avail_out] = '\0';
-			ahwrite(out, 1, ZLIB_OUT_SIZE - zp->avail_out, AH);
-		}
-	}
-
-	zp->next_in = NULL;
-	zp->avail_in = 0;
-	while (res != Z_STREAM_END)
-	{
-		zp->next_out = (void *) out;
-		zp->avail_out = ZLIB_OUT_SIZE;
-		res = inflate(zp, 0);
-		if (res != Z_OK && res != Z_STREAM_END)
-			pg_fatal("could not uncompress data: %s", zp->msg);
-
-		out[ZLIB_OUT_SIZE - zp->avail_out] = '\0';
-		ahwrite(out, 1, ZLIB_OUT_SIZE - zp->avail_out, AH);
-	}
-
-	if (inflateEnd(zp) != Z_OK)
-		pg_fatal("could not close compression library: %s", zp->msg);
-
-	free(buf);
-	free(out);
-	free(zp);
-}
-#endif							/* HAVE_LIBZ */
-
-
-/*
- * Functions for uncompressed output.
- */
-
-static void
-ReadDataFromArchiveNone(ArchiveHandle *AH, ReadFunc readF)
+ReadDataFromArchiveNone(ArchiveHandle *AH, CompressorState *cs)
 {
 	size_t		cnt;
 	char	   *buf;
@@ -379,7 +75,7 @@ ReadDataFromArchiveNone(ArchiveHandle *AH, ReadFunc readF)
 	buf = pg_malloc(ZLIB_OUT_SIZE);
 	buflen = ZLIB_OUT_SIZE;
 
-	while ((cnt = readF(AH, &buf, &buflen)))
+	while ((cnt = cs->readF(AH, &buf, &buflen)))
 	{
 		ahwrite(buf, 1, cnt, AH);
 	}
@@ -389,416 +85,69 @@ ReadDataFromArchiveNone(ArchiveHandle *AH, ReadFunc readF)
 
 static void
 WriteDataToArchiveNone(ArchiveHandle *AH, CompressorState *cs,
-					   const char *data, size_t dLen)
+					   const void *data, size_t dLen)
 {
 	cs->writeF(AH, data, dLen);
 }
 
+static void
+EndCompressorNone(ArchiveHandle *AH, CompressorState *cs)
+{
+	/* no op */
+}
+
+static void
+InitCompressorNone(CompressorState *cs)
+{
+	cs->readData = ReadDataFromArchiveNone;
+	cs->writeData = WriteDataToArchiveNone;
+	cs->end = EndCompressorNone;
+}
+
+/* Public interface routines */
+
+/* Allocate a new compressor */
+CompressorState *
+AllocateCompressor(const pg_compress_specification compress_spec,
+				   ReadFunc readF, WriteFunc writeF)
+{
+	CompressorState *cs;
+
+	cs = (CompressorState *) pg_malloc0(sizeof(CompressorState));
+	cs->readF = readF;
+	cs->writeF = writeF;
+
+	switch (compress_spec.algorithm)
+	{
+		case PG_COMPRESSION_NONE:
+			InitCompressorNone(cs);
+			break;
+		case PG_COMPRESSION_GZIP:
+			InitCompressorGzip(cs, compress_spec.level);
+			break;
+		default:
+			pg_fatal("invalid compression method");
+			break;
+	}
+
+	return cs;
+}
+
+/*
+ * Terminate compression library context and flush its buffers.
+ */
+void
+EndCompressor(ArchiveHandle *AH, CompressorState *cs)
+{
+	cs->end(AH, cs);
+	pg_free(cs);
+}
 
 /*----------------------
  * Compressed stream API
  *----------------------
  */
 
-/*
- * cfp represents an open stream, wrapping the underlying FILE or gzFile
- * pointer. This is opaque to the callers.
- */
-struct cfp
-{
-	pg_compress_algorithm compress_algorithm;
-	void	   *fp;
-};
-
-#ifdef HAVE_LIBZ
-static int	hasSuffix(const char *filename, const char *suffix);
-#endif
-
-/* free() without changing errno; useful in several places below */
-static void
-free_keep_errno(void *p)
-{
-	int			save_errno = errno;
-
-	free(p);
-	errno = save_errno;
-}
-
-/*
- * Open a file for reading. 'path' is the file to open, and 'mode' should
- * be either "r" or "rb".
- *
- * If the file at 'path' does not exist, we append the ".gz" suffix (if 'path'
- * doesn't already have it) and try again. So if you pass "foo" as 'path',
- * this will open either "foo" or "foo.gz".
- *
- * On failure, return NULL with an error code in errno.
- */
-cfp *
-cfopen_read(const char *path, const char *mode)
-{
-	cfp		   *fp;
-	pg_compress_specification compress_spec = {0};
-
-	compress_spec.algorithm = PG_COMPRESSION_GZIP;
-#ifdef HAVE_LIBZ
-	if (hasSuffix(path, ".gz"))
-		fp = cfopen(path, mode, compress_spec);
-	else
-#endif
-	{
-		compress_spec.algorithm = PG_COMPRESSION_NONE;
-		fp = cfopen(path, mode, compress_spec);
-#ifdef HAVE_LIBZ
-		if (fp == NULL)
-		{
-			char	   *fname;
-
-			compress_spec.algorithm = PG_COMPRESSION_GZIP;
-			fname = psprintf("%s.gz", path);
-			fp = cfopen(fname, mode, compress_spec);
-			free_keep_errno(fname);
-		}
-#endif
-	}
-	return fp;
-}
-
-/*
- * Open a file for writing. 'path' indicates the path name, and 'mode' must
- * be a filemode as accepted by fopen() and gzopen() that indicates writing
- * ("w", "wb", "a", or "ab").
- *
- * If 'compress_spec.algorithm' is GZIP, a gzip compressed stream is opened,
- * and 'compress_spec.level' used. The ".gz" suffix is automatically added to
- * 'path' in that case.
- *
- * On failure, return NULL with an error code in errno.
- */
-cfp *
-cfopen_write(const char *path, const char *mode,
-			 const pg_compress_specification compress_spec)
-{
-	cfp		   *fp;
-
-	if (compress_spec.algorithm == PG_COMPRESSION_NONE)
-		fp = cfopen(path, mode, compress_spec);
-	else
-	{
-#ifdef HAVE_LIBZ
-		char	   *fname;
-
-		fname = psprintf("%s.gz", path);
-		fp = cfopen(fname, mode, compress_spec);
-		free_keep_errno(fname);
-#else
-		pg_fatal("not built with zlib support");
-		fp = NULL;				/* keep compiler quiet */
-#endif
-	}
-	return fp;
-}
-
-/*
- * This is the workhorse for cfopen() or cfdopen(). It opens file 'path' or
- * associates a stream 'fd', if 'fd' is a valid descriptor, in 'mode'. The
- * descriptor is not dup'ed and it is the caller's responsibility to do so.
- * The caller must verify that the 'compress_algorithm' is supported by the
- * current build.
- *
- * On failure, return NULL with an error code in errno.
- */
-static cfp *
-cfopen_internal(const char *path, int fd, const char *mode,
-				pg_compress_algorithm compress_algorithm, int compressionLevel)
-{
-	cfp		   *fp = pg_malloc(sizeof(cfp));
-
-	fp->compress_algorithm = compress_algorithm;
-
-	switch (compress_algorithm)
-	{
-		case PG_COMPRESSION_NONE:
-			if (fd >= 0)
-				fp->fp = fdopen(fd, mode);
-			else
-				fp->fp = fopen(path, mode);
-			if (fp->fp == NULL)
-			{
-				free_keep_errno(fp);
-				fp = NULL;
-			}
-
-			break;
-		case PG_COMPRESSION_GZIP:
-#ifdef HAVE_LIBZ
-			if (compressionLevel != Z_DEFAULT_COMPRESSION)
-			{
-				/*
-				 * user has specified a compression level, so tell zlib to use
-				 * it
-				 */
-				char		mode_compression[32];
-
-				snprintf(mode_compression, sizeof(mode_compression), "%s%d",
-						 mode, compressionLevel);
-				if (fd >= 0)
-					fp->fp = gzdopen(fd, mode_compression);
-				else
-					fp->fp = gzopen(path, mode_compression);
-			}
-			else
-			{
-				/* don't specify a level, just use the zlib default */
-				if (fd >= 0)
-					fp->fp = gzdopen(fd, mode);
-				else
-					fp->fp = gzopen(path, mode);
-			}
-
-			if (fp->fp == NULL)
-			{
-				free_keep_errno(fp);
-				fp = NULL;
-			}
-#else
-			pg_fatal("not built with zlib support");
-#endif
-			break;
-		default:
-			pg_fatal("invalid compression method");
-			break;
-	}
-
-	return fp;
-}
-
-cfp *
-cfopen(const char *path, const char *mode,
-	   const pg_compress_specification compress_spec)
-{
-	return cfopen_internal(path, -1, mode,
-						   compress_spec.algorithm,
-						   compress_spec.level);
-}
-
-cfp *
-cfdopen(int fd, const char *mode,
-		const pg_compress_specification compress_spec)
-{
-	return cfopen_internal(NULL, fd, mode,
-						   compress_spec.algorithm,
-						   compress_spec.level);
-}
-
-int
-cfread(void *ptr, int size, cfp *fp)
-{
-	int			ret;
-
-	if (size == 0)
-		return 0;
-
-	switch (fp->compress_algorithm)
-	{
-		case PG_COMPRESSION_NONE:
-			ret = fread(ptr, 1, size, fp->fp);
-			if (ret != size && !feof(fp->fp))
-				READ_ERROR_EXIT(fp->fp);
-
-			break;
-		case PG_COMPRESSION_GZIP:
-#ifdef HAVE_LIBZ
-			ret = gzread(fp->fp, ptr, size);
-			if (ret != size && !gzeof(fp->fp))
-			{
-				int			errnum;
-				const char *errmsg = gzerror(fp->fp, &errnum);
-
-				pg_fatal("could not read from input file: %s",
-						 errnum == Z_ERRNO ? strerror(errno) : errmsg);
-			}
-#else
-			pg_fatal("not built with zlib support");
-#endif
-			break;
-
-		default:
-			pg_fatal("invalid compression method");
-			break;
-	}
-
-	return ret;
-}
-
-int
-cfwrite(const void *ptr, int size, cfp *fp)
-{
-	int			ret = 0;
-
-	switch (fp->compress_algorithm)
-	{
-		case PG_COMPRESSION_NONE:
-			ret = fwrite(ptr, 1, size, fp->fp);
-			break;
-		case PG_COMPRESSION_GZIP:
-#ifdef HAVE_LIBZ
-			ret = gzwrite(fp->fp, ptr, size);
-#else
-			pg_fatal("not built with zlib support");
-#endif
-			break;
-		default:
-			pg_fatal("invalid compression method");
-			break;
-	}
-
-	return ret;
-}
-
-int
-cfgetc(cfp *fp)
-{
-	int			ret;
-
-	switch (fp->compress_algorithm)
-	{
-		case PG_COMPRESSION_NONE:
-			ret = fgetc(fp->fp);
-			if (ret == EOF)
-				READ_ERROR_EXIT(fp->fp);
-
-			break;
-		case PG_COMPRESSION_GZIP:
-#ifdef HAVE_LIBZ
-			ret = gzgetc((gzFile) fp->fp);
-			if (ret == EOF)
-			{
-				if (!gzeof(fp->fp))
-					pg_fatal("could not read from input file: %s", strerror(errno));
-				else
-					pg_fatal("could not read from input file: end of file");
-			}
-#else
-			pg_fatal("not built with zlib support");
-#endif
-			break;
-		default:
-			pg_fatal("invalid compression method");
-			break;
-	}
-
-	return ret;
-}
-
-char *
-cfgets(cfp *fp, char *buf, int len)
-{
-	char	   *ret;
-
-	switch (fp->compress_algorithm)
-	{
-		case PG_COMPRESSION_NONE:
-			ret = fgets(buf, len, fp->fp);
-
-			break;
-		case PG_COMPRESSION_GZIP:
-#ifdef HAVE_LIBZ
-			ret = gzgets(fp->fp, buf, len);
-#else
-			pg_fatal("not built with zlib support");
-#endif
-			break;
-		default:
-			pg_fatal("invalid compression method");
-			break;
-	}
-
-	return ret;
-}
-
-int
-cfclose(cfp *fp)
-{
-	int			ret;
-
-	if (fp == NULL)
-	{
-		errno = EBADF;
-		return EOF;
-	}
-
-	switch (fp->compress_algorithm)
-	{
-		case PG_COMPRESSION_NONE:
-			ret = fclose(fp->fp);
-			fp->fp = NULL;
-
-			break;
-		case PG_COMPRESSION_GZIP:
-#ifdef HAVE_LIBZ
-			ret = gzclose(fp->fp);
-			fp->fp = NULL;
-#else
-			pg_fatal("not built with zlib support");
-#endif
-			break;
-		default:
-			pg_fatal("invalid compression method");
-			break;
-	}
-
-	free_keep_errno(fp);
-
-	return ret;
-}
-
-int
-cfeof(cfp *fp)
-{
-	int			ret;
-
-	switch (fp->compress_algorithm)
-	{
-		case PG_COMPRESSION_NONE:
-			ret = feof(fp->fp);
-
-			break;
-		case PG_COMPRESSION_GZIP:
-#ifdef HAVE_LIBZ
-			ret = gzeof(fp->fp);
-#else
-			pg_fatal("not built with zlib support");
-#endif
-			break;
-		default:
-			pg_fatal("invalid compression method");
-			break;
-	}
-
-	return ret;
-}
-
-const char *
-get_cfp_error(cfp *fp)
-{
-	if (fp->compress_algorithm == PG_COMPRESSION_GZIP)
-	{
-#ifdef HAVE_LIBZ
-		int			errnum;
-		const char *errmsg = gzerror(fp->fp, &errnum);
-
-		if (errnum != Z_ERRNO)
-			return errmsg;
-#else
-		pg_fatal("not built with zlib support");
-#endif
-	}
-
-	return strerror(errno);
-}
-
-#ifdef HAVE_LIBZ
 static int
 hasSuffix(const char *filename, const char *suffix)
 {
@@ -813,4 +162,230 @@ hasSuffix(const char *filename, const char *suffix)
 				  suffixlen) == 0;
 }
 
+/* free() without changing errno; useful in several places below */
+static void
+free_keep_errno(void *p)
+{
+	int			save_errno = errno;
+
+	free(p);
+	errno = save_errno;
+}
+
+/*
+ * Compression None implementation
+ */
+static size_t
+_read(void *ptr, size_t size, CompressFileHandle * CFH)
+{
+	FILE	   *fp = (FILE *) CFH->private;
+	size_t		ret;
+
+	if (size == 0)
+		return 0;
+
+	ret = fread(ptr, 1, size, fp);
+	if (ret != size && !feof(fp))
+		pg_fatal("could not read from input file: %s",
+				 strerror(errno));
+
+	return ret;
+}
+
+static size_t
+_write(const void *ptr, size_t size, CompressFileHandle * CFH)
+{
+	return fwrite(ptr, 1, size, (FILE *) CFH->private);
+}
+
+static const char *
+_get_error(CompressFileHandle * CFH)
+{
+	return strerror(errno);
+}
+
+static char *
+_gets(char *ptr, int size, CompressFileHandle * CFH)
+{
+	return fgets(ptr, size, (FILE *) CFH->private);
+}
+
+static int
+_getc(CompressFileHandle * CFH)
+{
+	FILE	   *fp = (FILE *) CFH->private;
+	int			ret;
+
+	ret = fgetc(fp);
+	if (ret == EOF)
+	{
+		if (!feof(fp))
+			pg_fatal("could not read from input file: %s", strerror(errno));
+		else
+			pg_fatal("could not read from input file: end of file");
+	}
+
+	return ret;
+}
+
+static int
+_close(CompressFileHandle * CFH)
+{
+	FILE	   *fp = (FILE *) CFH->private;
+	int			ret = 0;
+
+	CFH->private = NULL;
+
+	if (fp)
+		ret = fclose(fp);
+
+	return ret;
+}
+
+static int
+_eof(CompressFileHandle * CFH)
+{
+	return feof((FILE *) CFH->private);
+}
+
+static int
+_open(const char *path, int fd, const char *mode, CompressFileHandle * CFH)
+{
+	Assert(CFH->private == NULL);
+
+	if (fd >= 0)
+		CFH->private = fdopen(dup(fd), mode);
+	else
+		CFH->private = fopen(path, mode);
+
+	if (CFH->private == NULL)
+		return 1;
+
+	return 0;
+}
+
+static int
+_open_write(const char *path, const char *mode, CompressFileHandle * CFH)
+{
+	Assert(CFH->private == NULL);
+
+	CFH->private = fopen(path, mode);
+	if (CFH->private == NULL)
+		return 1;
+
+	return 0;
+}
+
+static void
+InitCompressNone(CompressFileHandle * CFH)
+{
+	CFH->open = _open;
+	CFH->open_write = _open_write;
+	CFH->read = _read;
+	CFH->write = _write;
+	CFH->gets = _gets;
+	CFH->getc = _getc;
+	CFH->close = _close;
+	CFH->eof = _eof;
+	CFH->get_error = _get_error;
+
+	CFH->private = NULL;
+}
+
+/*
+ * Public interface
+ */
+CompressFileHandle *
+InitCompressFileHandle(const pg_compress_specification compress_spec)
+{
+	CompressFileHandle *CFH;
+
+	CFH = pg_malloc0(sizeof(CompressFileHandle));
+
+	switch (compress_spec.algorithm)
+	{
+		case PG_COMPRESSION_NONE:
+			InitCompressNone(CFH);
+			break;
+		case PG_COMPRESSION_GZIP:
+			InitCompressGzip(CFH, compress_spec.level);
+			break;
+		default:
+			pg_fatal("invalid compression method");
+			break;
+	}
+
+	return CFH;
+}
+
+/*
+ * Open a file for reading. 'path' is the file to open, and 'mode' should
+ * be either "r" or "rb".
+ *
+ * If the file at 'path' does not exist, we append the ".gz" suffix (if
+ * 'path' doesn't already have it) and try again. So if you pass "foo" as
+ * 'path', this will open either "foo" or "foo.gz", trying in that order.
+ *
+ * On failure, return NULL with an error code in errno.
+ *
+ */
+CompressFileHandle *
+InitDiscoverCompressFileHandle(const char *path, const char *mode)
+{
+	CompressFileHandle *CFH = NULL;
+	struct stat st;
+	char	   *fname;
+	pg_compress_specification compress_spec = {0};
+
+	compress_spec.algorithm = PG_COMPRESSION_NONE;
+
+	Assert(strcmp(mode, "r") == 0 || strcmp(mode, "rb") == 0);
+
+	fname = strdup(path);
+
+	if (hasSuffix(fname, ".gz"))
+		compress_spec.algorithm = PG_COMPRESSION_GZIP;
+	else
+	{
+		bool		exists;
+
+		exists = (stat(path, &st) == 0);
+		/* avoid unused warning if it is not build with compression */
+		if (exists)
+			compress_spec.algorithm = PG_COMPRESSION_NONE;
+#ifdef HAVE_LIBZ
+		if (!exists)
+		{
+			free_keep_errno(fname);
+			fname = psprintf("%s.gz", path);
+			exists = (stat(fname, &st) == 0);
+
+			if (exists)
+				compress_spec.algorithm = PG_COMPRESSION_GZIP;
+		}
 #endif
+	}
+
+	CFH = InitCompressFileHandle(compress_spec);
+	if (CFH->open(fname, -1, mode, CFH))
+	{
+		free_keep_errno(CFH);
+		CFH = NULL;
+	}
+	free_keep_errno(fname);
+
+	return CFH;
+}
+
+int
+DestroyCompressFileHandle(CompressFileHandle * CFH)
+{
+	int			ret = 0;
+
+	if (CFH->private)
+		ret = CFH->close(CFH);
+
+	free_keep_errno(CFH);
+
+	return ret;
+}

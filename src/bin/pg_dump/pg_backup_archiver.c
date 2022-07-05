@@ -95,8 +95,8 @@ static void dump_lo_buf(ArchiveHandle *AH);
 static void dumpTimestamp(ArchiveHandle *AH, const char *msg, time_t tim);
 static void SetOutput(ArchiveHandle *AH, const char *filename,
 					  const pg_compress_specification compress_spec);
-static cfp *SaveOutput(ArchiveHandle *AH);
-static void RestoreOutput(ArchiveHandle *AH, cfp *savedOutput);
+static CompressFileHandle * SaveOutput(ArchiveHandle *AH);
+static void RestoreOutput(ArchiveHandle *AH, CompressFileHandle * savedOutput);
 
 static int	restore_toc_entry(ArchiveHandle *AH, TocEntry *te, bool is_parallel);
 static void restore_toc_entries_prefork(ArchiveHandle *AH,
@@ -272,7 +272,7 @@ CloseArchive(Archive *AHX)
 
 	/* Close the output */
 	errno = 0;
-	res = cfclose(AH->OF);
+	res = DestroyCompressFileHandle(AH->OF);
 
 	if (res != 0)
 		pg_fatal("could not close output file: %m");
@@ -354,7 +354,7 @@ RestoreArchive(Archive *AHX)
 	RestoreOptions *ropt = AH->public.ropt;
 	bool		parallel_mode;
 	TocEntry   *te;
-	cfp		   *sav;
+	CompressFileHandle *sav;
 
 	AH->stage = STAGE_INITIALIZING;
 
@@ -1119,7 +1119,7 @@ PrintTOCSummary(Archive *AHX)
 	TocEntry   *te;
 	pg_compress_specification out_compress_spec;
 	teSection	curSection;
-	cfp		   *sav;
+	CompressFileHandle *sav;
 	const char *fmtName;
 	char		stamp_str[64];
 
@@ -1495,6 +1495,7 @@ static void
 SetOutput(ArchiveHandle *AH, const char *filename,
 		  const pg_compress_specification compress_spec)
 {
+	CompressFileHandle *CFH;
 	const char *mode;
 	int			fn = -1;
 
@@ -1517,33 +1518,32 @@ SetOutput(ArchiveHandle *AH, const char *filename,
 	else
 		mode = PG_BINARY_W;
 
-	if (fn >= 0)
-		AH->OF = cfdopen(dup(fn), mode, compress_spec);
-	else
-		AH->OF = cfopen(filename, mode, compress_spec);
+	CFH = InitCompressFileHandle(compress_spec);
 
-	if (!AH->OF)
+	if (CFH->open(filename, fn, mode, CFH))
 	{
 		if (filename)
 			pg_fatal("could not open output file \"%s\": %m", filename);
 		else
 			pg_fatal("could not open output file: %m");
 	}
+
+	AH->OF = CFH;
 }
 
-static cfp *
+static CompressFileHandle *
 SaveOutput(ArchiveHandle *AH)
 {
-	return (cfp *) AH->OF;
+	return (CompressFileHandle *) AH->OF;
 }
 
 static void
-RestoreOutput(ArchiveHandle *AH, cfp *savedOutput)
+RestoreOutput(ArchiveHandle *AH, CompressFileHandle * savedOutput)
 {
 	int			res;
 
 	errno = 0;
-	res = cfclose(AH->OF);
+	res = DestroyCompressFileHandle(AH->OF);
 
 	if (res != 0)
 		pg_fatal("could not close output file: %m");
@@ -1682,7 +1682,11 @@ ahwrite(const void *ptr, size_t size, size_t nmemb, ArchiveHandle *AH)
 	else if (RestoringToDB(AH))
 		bytes_written = ExecuteSqlCommandBuf(&AH->public, (const char *) ptr, size * nmemb);
 	else
-		bytes_written = cfwrite(ptr, size * nmemb, AH->OF);
+	{
+		CompressFileHandle *CFH = (CompressFileHandle *) AH->OF;
+
+		bytes_written = CFH->write(ptr, size * nmemb, CFH);
+	}
 
 	if (bytes_written != size * nmemb)
 		WRITE_ERROR_EXIT;
@@ -2171,6 +2175,7 @@ _allocAH(const char *FileSpec, const ArchiveFormat fmt,
 		 SetupWorkerPtrType setupWorkerPtr)
 {
 	ArchiveHandle *AH;
+	CompressFileHandle *CFH;
 	pg_compress_specification out_compress_spec = {0};
 
 	pg_log_debug("allocating AH for %s, format %d",
@@ -2226,7 +2231,10 @@ _allocAH(const char *FileSpec, const ArchiveFormat fmt,
 
 	/* Open stdout with no compression for AH output handle */
 	out_compress_spec.algorithm = PG_COMPRESSION_NONE;
-	AH->OF = cfdopen(dup(fileno(stdout)), PG_BINARY_A, out_compress_spec);
+	CFH = InitCompressFileHandle(out_compress_spec);
+	if (CFH->open(NULL, fileno(stdout), PG_BINARY_A, CFH))
+		pg_fatal("could not open stdout for appending: %m");
+	AH->OF = CFH;
 
 	/*
 	 * On Windows, we need to use binary mode to read/write non-text files,

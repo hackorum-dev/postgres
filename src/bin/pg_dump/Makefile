@@ -23,6 +23,7 @@ LDFLAGS_INTERNAL += -L$(top_builddir)/src/fe_utils -lpgfeutils $(libpq_pgport)
 
 OBJS = \
 	$(WIN32RES) \
+	compress_gzip.o \
 	compress_io.o \
 	dumputils.o \
 	parallel.o \

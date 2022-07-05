@@ -52,34 +52,61 @@ typedef void (*WriteFunc) (ArchiveHandle *AH, const char *buf, size_t len);
  */
 typedef size_t (*ReadFunc) (ArchiveHandle *AH, char **buf, size_t *buflen);
 
-/* struct definition appears in compress_io.c */
 typedef struct CompressorState CompressorState;
+struct CompressorState
+{
+	/*
+	 * Read all compressed data from the input stream (via readF) and print it
+	 * out with ahwrite().
+	 */
+	void		(*readData) (ArchiveHandle *AH, CompressorState *cs);
+
+	/*
+	 * Compress and write data to the output stream (via writeF).
+	 */
+	void		(*writeData) (ArchiveHandle *AH, CompressorState *cs,
+							  const void *data, size_t dLen);
+	void		(*end) (ArchiveHandle *AH, CompressorState *cs);
+
+	ReadFunc	readF;
+	WriteFunc	writeF;
+
+	void	   *private;
+};
 
 extern CompressorState *AllocateCompressor(const pg_compress_specification compress_spec,
+										   ReadFunc readF,
 										   WriteFunc writeF);
-extern void ReadDataFromArchive(ArchiveHandle *AH,
-								const pg_compress_specification compress_spec,
-								ReadFunc readF);
-extern void WriteDataToArchive(ArchiveHandle *AH, CompressorState *cs,
-							   const void *data, size_t dLen);
 extern void EndCompressor(ArchiveHandle *AH, CompressorState *cs);
 
+/*
+ * Compress File Handle
+ */
+typedef struct CompressFileHandle CompressFileHandle;
 
-typedef struct cfp cfp;
+struct CompressFileHandle
+{
+	int			(*open) (const char *path, int fd, const char *mode,
+						 CompressFileHandle * CFH);
+	int			(*open_write) (const char *path, const char *mode,
+							   CompressFileHandle * cxt);
+	size_t		(*read) (void *ptr, size_t size, CompressFileHandle * CFH);
+	size_t		(*write) (const void *ptr, size_t size,
+						  struct CompressFileHandle *CFH);
+	char	   *(*gets) (char *s, int size, CompressFileHandle * CFH);
+	int			(*getc) (CompressFileHandle * CFH);
+	int			(*eof) (CompressFileHandle * CFH);
+	int			(*close) (CompressFileHandle * CFH);
+	const char *(*get_error) (CompressFileHandle * CFH);
 
-extern cfp *cfopen(const char *path, const char *mode,
-				   const pg_compress_specification compress_spec);
-extern cfp *cfdopen(int fd, const char *mode,
-					pg_compress_specification compress_spec);
-extern cfp *cfopen_read(const char *path, const char *mode);
-extern cfp *cfopen_write(const char *path, const char *mode,
-						 const pg_compress_specification compress_spec);
-extern int	cfread(void *ptr, int size, cfp *fp);
-extern int	cfwrite(const void *ptr, int size, cfp *fp);
-extern int	cfgetc(cfp *fp);
-extern char *cfgets(cfp *fp, char *buf, int len);
-extern int	cfclose(cfp *fp);
-extern int	cfeof(cfp *fp);
-extern const char *get_cfp_error(cfp *fp);
+	void	   *private;
+};
 
+
+extern CompressFileHandle * InitCompressFileHandle(const pg_compress_specification compress_spec);
+
+extern CompressFileHandle * InitDiscoverCompressFileHandle(const char *path,
+														   const char *mode);
+
+extern int	DestroyCompressFileHandle(CompressFileHandle * CFH);
 #endif
