@@ -87,7 +87,7 @@ my %pgdump_runs = (
 		compile_option => 'gzip',
 		dump_cmd       => [
 			'pg_dump',                              '--jobs=2',
-			'--format=directory',                   '--compress=1',
+			'--format=directory',                   '--compress=gzip:1',
 			"--file=$tempdir/compression_gzip_dir", 'postgres',
 		],
 		# Give coverage for manually compressed blob.toc files during

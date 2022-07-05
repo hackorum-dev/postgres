@@ -32,30 +32,6 @@
 
 #define LOBBUFSIZE 16384
 
-#ifdef HAVE_LIBZ
-#include <zlib.h>
-#define GZCLOSE(fh) gzclose(fh)
-#define GZWRITE(p, s, n, fh) gzwrite(fh, p, (n) * (s))
-#define GZREAD(p, s, n, fh) gzread(fh, p, (n) * (s))
-#define GZEOF(fh)	gzeof(fh)
-#else
-#define GZCLOSE(fh) fclose(fh)
-#define GZWRITE(p, s, n, fh) (fwrite(p, s, n, fh) * (s))
-#define GZREAD(p, s, n, fh) fread(p, s, n, fh)
-#define GZEOF(fh)	feof(fh)
-/* this is just the redefinition of a libz constant */
-#define Z_DEFAULT_COMPRESSION (-1)
-
-typedef struct _z_stream
-{
-	void	   *next_in;
-	void	   *next_out;
-	size_t		avail_in;
-	size_t		avail_out;
-} z_stream;
-typedef z_stream *z_streamp;
-#endif
-
 /* Data block types */
 #define BLK_DATA 1
 #define BLK_BLOBS 3
@@ -319,8 +295,7 @@ struct _archiveHandle
 
 	char	   *fSpec;			/* Archive File Spec */
 	FILE	   *FH;				/* General purpose file handle */
-	void	   *OF;
-	int			gzOut;			/* Output file */
+	void	   *OF;				/* Output file */
 
 	struct _tocEntry *toc;		/* Header of circular list of TOC entries */
 	int			tocCount;		/* Number of TOC entries */
@@ -331,14 +306,8 @@ struct _archiveHandle
 	DumpId	   *tableDataId;	/* TABLE DATA ids, indexed by table dumpId */
 
 	struct _tocEntry *currToc;	/* Used when dumping data */
-	int			compression;	/*---------
-								 * Compression requested on open().
-								 * Possible values for compression:
-								 * -1	Z_DEFAULT_COMPRESSION
-								 *  0	COMPRESSION_NONE
-								 * 1-9 levels for gzip compression
-								 *---------
-								 */
+	pg_compress_specification compress_spec;	/* Requested specification for
+												 * compression */
 	bool		dosync;			/* data requested to be synced on sight */
 	ArchiveMode mode;			/* File mode - r or w */
 	void	   *formatData;		/* Header data specific to file format */
