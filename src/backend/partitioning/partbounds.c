@@ -661,7 +661,11 @@ create_list_bounds(PartitionBoundSpec **boundspecs, int nparts,
 
 
 	/* All partitions must now have been assigned canonical indexes. */
-	Assert(next_index == nparts);
+	if (next_index != nparts)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+				 errmsg("not all partitions assigned canonical indexes")));
+
 	return boundinfo;
 }
 
@@ -870,7 +874,11 @@ create_range_bounds(PartitionBoundSpec **boundspecs, int nparts,
 	boundinfo->indexes[i] = -1;
 
 	/* All partitions must now have been assigned canonical indexes. */
-	Assert(next_index == nparts);
+	if (next_index != nparts)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+				 errmsg("not all partitions assigned canonical indexes")));
+
 	return boundinfo;
 }
 
