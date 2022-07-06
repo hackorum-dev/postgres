@@ -1545,12 +1545,12 @@ SELECT t1.c1, ss.a, ss.b FROM (SELECT c1 FROM "S 1"."T 3" WHERE c1 = 50) t1 INNE
 -- full outer join + inner join
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT t1.c1, t2.c1, t3.c1 FROM ft4 t1 INNER JOIN ft5 t2 ON (t1.c1 = t2.c1 + 1 and t1.c1 between 50 and 60) FULL JOIN ft4 t3 ON (t2.c1 = t3.c1) ORDER BY t1.c1, t2.c1, t3.c1 LIMIT 10;
-                                                                                                                                                                           QUERY PLAN                                                                                                                                                                           
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                                                 QUERY PLAN                                                                                                                                                 
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: t1.c1, t2.c1, t3.c1
    Relations: ((public.ft4 t1) INNER JOIN (public.ft5 t2)) FULL JOIN (public.ft4 t3)
-   Remote SQL: SELECT r1.c1, r2.c1, r4.c1 FROM (("S 1"."T 3" r1 INNER JOIN "S 1"."T 4" r2 ON (((r1.c1 = (r2.c1 + 1))) AND (((r2.c1 + 1) >= 50)) AND (((r2.c1 + 1) <= 60)) AND ((r1.c1 >= 50)) AND ((r1.c1 <= 60)))) FULL JOIN "S 1"."T 3" r4 ON (((r2.c1 = r4.c1)))) ORDER BY r1.c1 ASC NULLS LAST, r2.c1 ASC NULLS LAST, r4.c1 ASC NULLS LAST LIMIT 10::bigint
+   Remote SQL: SELECT r1.c1, r2.c1, r4.c1 FROM (("S 1"."T 3" r1 INNER JOIN "S 1"."T 4" r2 ON (((r1.c1 = (r2.c1 + 1))) AND ((r1.c1 >= 50)) AND ((r1.c1 <= 60)))) FULL JOIN "S 1"."T 3" r4 ON (((r2.c1 = r4.c1)))) ORDER BY r1.c1 ASC NULLS LAST, r2.c1 ASC NULLS LAST, r4.c1 ASC NULLS LAST LIMIT 10::bigint
 (4 rows)
 
 SELECT t1.c1, t2.c1, t3.c1 FROM ft4 t1 INNER JOIN ft5 t2 ON (t1.c1 = t2.c1 + 1 and t1.c1 between 50 and 60) FULL JOIN ft4 t3 ON (t2.c1 = t3.c1) ORDER BY t1.c1, t2.c1, t3.c1 LIMIT 10;
@@ -2335,12 +2335,12 @@ SELECT ft4.c1, q.* FROM ft4 LEFT JOIN (SELECT 13, ft1.c1, ft2.c1 FROM ft1 RIGHT 
 UPDATE ft5 SET c3 = null where c1 % 9 = 0;
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT ft5, ft5.c1, ft5.c2, ft5.c3, ft4.c1, ft4.c2 FROM ft5 left join ft4 on ft5.c1 = ft4.c1 WHERE ft4.c1 BETWEEN 10 and 30 ORDER BY ft5.c1, ft4.c1;
-                                                                                                                                                    QUERY PLAN                                                                                                                                                     
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                                QUERY PLAN                                                                                                                                 
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Foreign Scan
    Output: ft5.*, ft5.c1, ft5.c2, ft5.c3, ft4.c1, ft4.c2
    Relations: (public.ft5) INNER JOIN (public.ft4)
-   Remote SQL: SELECT CASE WHEN (r1.*)::text IS NOT NULL THEN ROW(r1.c1, r1.c2, r1.c3) END, r1.c1, r1.c2, r1.c3, r2.c1, r2.c2 FROM ("S 1"."T 4" r1 INNER JOIN "S 1"."T 3" r2 ON (((r1.c1 = r2.c1)) AND ((r2.c1 >= 10)) AND ((r2.c1 <= 30)) AND ((r1.c1 >= 10)) AND ((r1.c1 <= 30)))) ORDER BY r1.c1 ASC NULLS LAST
+   Remote SQL: SELECT CASE WHEN (r1.*)::text IS NOT NULL THEN ROW(r1.c1, r1.c2, r1.c3) END, r1.c1, r1.c2, r1.c3, r2.c1, r2.c2 FROM ("S 1"."T 4" r1 INNER JOIN "S 1"."T 3" r2 ON (((r1.c1 = r2.c1)) AND ((r2.c1 >= 10)) AND ((r2.c1 <= 30)))) ORDER BY r1.c1 ASC NULLS LAST
 (4 rows)
 
 SELECT ft5, ft5.c1, ft5.c2, ft5.c3, ft4.c1, ft4.c2 FROM ft5 left join ft4 on ft5.c1 = ft4.c1 WHERE ft4.c1 BETWEEN 10 and 30 ORDER BY ft5.c1, ft4.c1;
@@ -2362,8 +2362,8 @@ SET enable_hashjoin TO false;
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM ft1, ft2, ft4, ft5, local_tbl WHERE ft1.c1 = ft2.c1 AND ft1.c2 = ft4.c1
     AND ft1.c2 = ft5.c1 AND ft1.c2 = local_tbl.c1 AND ft1.c1 < 100 AND ft2.c1 < 100 FOR UPDATE;
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                      QUERY PLAN                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                                                                                                                                                                                                                                                                                                                                               QUERY PLAN                                                                                                                                                                                                                                                                                                                                                                                                                                               
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  LockRows
    Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8, ft4.c1, ft4.c2, ft4.c3, ft5.c1, ft5.c2, ft5.c3, local_tbl.c1, local_tbl.c2, local_tbl.c3, ft1.*, ft2.*, ft4.*, ft5.*, local_tbl.ctid
    ->  Merge Join
@@ -2373,7 +2373,7 @@ SELECT * FROM ft1, ft2, ft4, ft5, local_tbl WHERE ft1.c1 = ft2.c1 AND ft1.c2 = f
          ->  Foreign Scan
                Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*, ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8, ft2.*, ft4.c1, ft4.c2, ft4.c3, ft4.*, ft5.c1, ft5.c2, ft5.c3, ft5.*
                Relations: (((public.ft1) INNER JOIN (public.ft2)) INNER JOIN (public.ft4)) INNER JOIN (public.ft5)
-               Remote SQL: SELECT r1."C 1", r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8, CASE WHEN (r1.*)::text IS NOT NULL THEN ROW(r1."C 1", r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8) END, r2."C 1", r2.c2, r2.c3, r2.c4, r2.c5, r2.c6, r2.c7, r2.c8, CASE WHEN (r2.*)::text IS NOT NULL THEN ROW(r2."C 1", r2.c2, r2.c3, r2.c4, r2.c5, r2.c6, r2.c7, r2.c8) END, r3.c1, r3.c2, r3.c3, CASE WHEN (r3.*)::text IS NOT NULL THEN ROW(r3.c1, r3.c2, r3.c3) END, r4.c1, r4.c2, r4.c3, CASE WHEN (r4.*)::text IS NOT NULL THEN ROW(r4.c1, r4.c2, r4.c3) END FROM ((("S 1"."T 1" r1 INNER JOIN "S 1"."T 1" r2 ON (((r1."C 1" = r2."C 1")) AND ((r2."C 1" < 100)) AND ((r2."C 1" < 100)) AND ((r1."C 1" < 100)) AND ((r1."C 1" < 100)))) INNER JOIN "S 1"."T 3" r3 ON (((r1.c2 = r3.c1)))) INNER JOIN "S 1"."T 4" r4 ON (((r1.c2 = r4.c1)))) ORDER BY r1.c2 ASC NULLS LAST FOR UPDATE OF r1 FOR UPDATE OF r2 FOR UPDATE OF r3 FOR UPDATE OF r4
+               Remote SQL: SELECT r1."C 1", r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8, CASE WHEN (r1.*)::text IS NOT NULL THEN ROW(r1."C 1", r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8) END, r2."C 1", r2.c2, r2.c3, r2.c4, r2.c5, r2.c6, r2.c7, r2.c8, CASE WHEN (r2.*)::text IS NOT NULL THEN ROW(r2."C 1", r2.c2, r2.c3, r2.c4, r2.c5, r2.c6, r2.c7, r2.c8) END, r3.c1, r3.c2, r3.c3, CASE WHEN (r3.*)::text IS NOT NULL THEN ROW(r3.c1, r3.c2, r3.c3) END, r4.c1, r4.c2, r4.c3, CASE WHEN (r4.*)::text IS NOT NULL THEN ROW(r4.c1, r4.c2, r4.c3) END FROM ((("S 1"."T 1" r1 INNER JOIN "S 1"."T 1" r2 ON (((r1."C 1" = r2."C 1")) AND ((r2."C 1" < 100)) AND ((r1."C 1" < 100)))) INNER JOIN "S 1"."T 3" r3 ON (((r1.c2 = r3.c1)))) INNER JOIN "S 1"."T 4" r4 ON (((r1.c2 = r4.c1)))) ORDER BY r1.c2 ASC NULLS LAST FOR UPDATE OF r1 FOR UPDATE OF r2 FOR UPDATE OF r3 FOR UPDATE OF r4
                ->  Merge Join
                      Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*, ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8, ft2.*, ft4.c1, ft4.c2, ft4.c3, ft4.*, ft5.c1, ft5.c2, ft5.c3, ft5.*
                      Merge Cond: (ft1.c2 = ft5.c1)
@@ -2391,12 +2391,12 @@ SELECT * FROM ft1, ft2, ft4, ft5, local_tbl WHERE ft1.c1 = ft2.c1 AND ft1.c2 = f
                                              Sort Key: ft1.c1
                                              ->  Foreign Scan on public.ft1
                                                    Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8, ft1.*
-                                                   Remote SQL: SELECT "C 1", c2, c3, c4, c5, c6, c7, c8 FROM "S 1"."T 1" WHERE (("C 1" < 100)) AND (("C 1" < 100)) FOR UPDATE
+                                                   Remote SQL: SELECT "C 1", c2, c3, c4, c5, c6, c7, c8 FROM "S 1"."T 1" WHERE (("C 1" < 100)) FOR UPDATE
                                        ->  Materialize
                                              Output: ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8, ft2.*
                                              ->  Foreign Scan on public.ft2
                                                    Output: ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8, ft2.*
-                                                   Remote SQL: SELECT "C 1", c2, c3, c4, c5, c6, c7, c8 FROM "S 1"."T 1" WHERE (("C 1" < 100)) AND (("C 1" < 100)) ORDER BY "C 1" ASC NULLS LAST FOR UPDATE
+                                                   Remote SQL: SELECT "C 1", c2, c3, c4, c5, c6, c7, c8 FROM "S 1"."T 1" WHERE (("C 1" < 100)) ORDER BY "C 1" ASC NULLS LAST FOR UPDATE
                            ->  Sort
                                  Output: ft4.c1, ft4.c2, ft4.c3, ft4.*
                                  Sort Key: ft4.c1
@@ -5705,25 +5705,25 @@ UPDATE ft2 AS target SET (c2) = (
 EXPLAIN (VERBOSE, COSTS OFF)
 UPDATE ft2 d SET c2 = CASE WHEN random() >= 0 THEN d.c2 ELSE 0 END
   FROM ft2 AS t WHERE d.c1 = t.c1 AND d.c1 > 1000;
-                                                                                                                                                                                                   QUERY PLAN                                                                                                                                                                                                    
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                                                                                       QUERY PLAN                                                                                                                                                                                        
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Update on public.ft2 d
    Remote SQL: UPDATE "S 1"."T 1" SET c2 = $2 WHERE ctid = $1
    ->  Foreign Scan
          Output: CASE WHEN (random() >= '0'::double precision) THEN d.c2 ELSE 0 END, d.ctid, d.*, t.*
          Relations: (public.ft2 d) INNER JOIN (public.ft2 t)
-         Remote SQL: SELECT r1.c2, r1.ctid, CASE WHEN (r1.*)::text IS NOT NULL THEN ROW(r1."C 1", r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8) END, CASE WHEN (r2.*)::text IS NOT NULL THEN ROW(r2."C 1", r2.c2, r2.c3, r2.c4, r2.c5, r2.c6, r2.c7, r2.c8) END FROM ("S 1"."T 1" r1 INNER JOIN "S 1"."T 1" r2 ON (((r1."C 1" = r2."C 1")) AND ((r2."C 1" > 1000)) AND ((r1."C 1" > 1000)))) FOR UPDATE OF r1
-         ->  Merge Join
+         Remote SQL: SELECT r1.c2, r1.ctid, CASE WHEN (r1.*)::text IS NOT NULL THEN ROW(r1."C 1", r1.c2, r1.c3, r1.c4, r1.c5, r1.c6, r1.c7, r1.c8) END, CASE WHEN (r2.*)::text IS NOT NULL THEN ROW(r2."C 1", r2.c2, r2.c3, r2.c4, r2.c5, r2.c6, r2.c7, r2.c8) END FROM ("S 1"."T 1" r1 INNER JOIN "S 1"."T 1" r2 ON (((r1."C 1" = r2."C 1")) AND ((r1."C 1" > 1000)))) FOR UPDATE OF r1
+         ->  Hash Join
                Output: d.c2, d.ctid, d.*, t.*
-               Merge Cond: (d.c1 = t.c1)
+               Hash Cond: (d.c1 = t.c1)
                ->  Foreign Scan on public.ft2 d
                      Output: d.c2, d.ctid, d.*, d.c1
                      Remote SQL: SELECT "C 1", c2, c3, c4, c5, c6, c7, c8, ctid FROM "S 1"."T 1" WHERE (("C 1" > 1000)) ORDER BY "C 1" ASC NULLS LAST FOR UPDATE
-               ->  Materialize
+               ->  Hash
                      Output: t.*, t.c1
                      ->  Foreign Scan on public.ft2 t
                            Output: t.*, t.c1
-                           Remote SQL: SELECT "C 1", c2, c3, c4, c5, c6, c7, c8 FROM "S 1"."T 1" WHERE (("C 1" > 1000)) ORDER BY "C 1" ASC NULLS LAST
+                           Remote SQL: SELECT "C 1", c2, c3, c4, c5, c6, c7, c8 FROM "S 1"."T 1"
 (17 rows)
 
 UPDATE ft2 d SET c2 = CASE WHEN random() >= 0 THEN d.c2 ELSE 0 END

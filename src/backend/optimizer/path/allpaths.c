@@ -465,7 +465,7 @@ set_rel_size(PlannerInfo *root, RelOptInfo *rel,
 	Assert(rel->rows > 0 || IS_DUMMY_REL(rel));
 
 	/* Now calculating the selectivity impacted by Corrective Qual */
-	if (!rte->inh)  /* not supported in this PoC */
+	if (!rte->inh)  /* Inherited table is not supported in this PoC */
 	{
 		ListCell *l;
 		int i = 0;

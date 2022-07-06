@@ -21,6 +21,7 @@
 #include "access/stratnum.h"
 #include "catalog/pg_am.h"
 #include "catalog/pg_type.h"
+#include "catalog/pg_class.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/appendinfo.h"
@@ -1364,6 +1365,19 @@ generate_base_implied_equalities_no_const(PlannerInfo *root,
 
 			if (!bms_get_singleton_member(cur_em->em_relids, &relid))
 				continue;
+
+			if (root->simple_rte_array[relid]->relkind == RELKIND_FOREIGN_TABLE)
+			{
+				/*
+				 * We do need support EC filter against for foreign table, but when fixing
+				 * the cost model issue, we need to know the selecvitiy of the qual on foregin
+				 * table. However it is impossible for now to know that when use_remote_estimate = true.
+				 * see for postgresGetForeignRelSize. Since we currently only doing PoC for
+				 * this cost-model-fix algorithm, I just disable that for foregin table. At last,
+				 * we need improve the use_remote_estimate somehow to get the selectivity.
+				 */
+				continue;
+			}
 
 			rel = root->simple_rel_array[relid];
 

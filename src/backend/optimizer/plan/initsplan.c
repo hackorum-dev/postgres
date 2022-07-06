@@ -1991,9 +1991,14 @@ distribute_qual_to_rels(PlannerInfo *root, Node *clause,
 
 	/* Check if the qual looks useful to harvest as an EquivalenceFilter */
 	if (filter_qual_list != NULL &&
+
+		// Must be an OpExpr for now.
 		is_opclause(restrictinfo->clause) &&
-		!contain_volatile_functions((Node *)restrictinfo) && // Cachable
-		restrictinfo->btreeineqopfamilies != NIL &&  /* ineq expression */
+		// Checking volatile against RestrictInfo so that the result can be cached.
+		!contain_volatile_functions((Node *)restrictinfo) &&
+
+		restrictinfo->btreeineqopfamilies != NIL && /* ineq expression */
+
 		/* simple & common enough filter, one side references one relation and the other one is a constant */
 		((bms_is_empty(restrictinfo->left_relids) && bms_get_singleton_member(restrictinfo->right_relids, &relid)) ||
 		 (bms_is_empty(restrictinfo->right_relids) && bms_get_singleton_member(restrictinfo->left_relids, &relid)))
