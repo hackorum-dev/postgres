@@ -277,6 +277,7 @@ typedef enum NodeTag
 	T_LimitPath,
 	/* these aren't subclasses of Path: */
 	T_EquivalenceClass,
+	T_EquivalenceFilter,
 	T_EquivalenceMember,
 	T_PathKey,
 	T_PathKeyInfo,
