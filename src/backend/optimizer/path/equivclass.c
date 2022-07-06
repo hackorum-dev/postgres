@@ -1333,17 +1333,33 @@ generate_base_implied_equalities_no_const(PlannerInfo *root,
 				rinfo->right_em = cur_em;
 			}
 		}
+		prev_ems[relid] = cur_em;
+	}
 
-		/*
-		 * Also push any EquivalenceFilter clauses down into all relations
-		 * other than the one which the filter actually originated from.
-		 */
-		foreach(lc2, ec->ec_filters)
+	pfree(prev_ems);
+
+
+	/*
+	 * Also push any EquivalenceFilter clauses down into all relations
+	 * other than the one which the filter actually originated from.
+	 */
+	foreach(lc2, ec->ec_filters)
+	{
+		EquivalenceFilter *ef = (EquivalenceFilter *) lfirst(lc2);
+		Expr *leftexpr;
+		Expr *rightexpr;
+		Oid opno;
+		int relid;
+
+		if (ec->ec_broken)
+			break;
+
+		foreach(lc, ec->ec_members)
 		{
-			EquivalenceFilter *ef = (EquivalenceFilter *) lfirst(lc2);
-			Expr *leftexpr;
-			Expr *rightexpr;
-			Oid opno;
+			EquivalenceMember *cur_em = (EquivalenceMember *) lfirst(lc);
+
+			if (!bms_get_singleton_member(cur_em->em_relids, &relid))
+				continue;
 
 			if (ef->ef_source_rel == relid)
 				continue;
@@ -1360,28 +1376,25 @@ generate_base_implied_equalities_no_const(PlannerInfo *root,
 			}
 
 			opno = get_opfamily_member(ef->opfamily,
-										exprType((Node *) leftexpr),
-										exprType((Node *) rightexpr),
-										ef->amstrategy);
+									   exprType((Node *) leftexpr),
+									   exprType((Node *) rightexpr),
+									   ef->amstrategy);
 
 			if (opno == InvalidOid)
 				continue;
 
+
 			process_implied_equality(root, opno,
-										ec->ec_collation,
-										leftexpr,
-										rightexpr,
-										bms_copy(ec->ec_relids),
-										bms_copy(cur_em->em_nullable_relids),
-										ec->ec_min_security,
-										ec->ec_below_outer_join,
-										false);
+									 ec->ec_collation,
+									 leftexpr,
+									 rightexpr,
+									 bms_copy(ec->ec_relids),
+									 bms_copy(cur_em->em_nullable_relids),
+									 ec->ec_min_security,
+									 ec->ec_below_outer_join,
+									 false);
 		}
-
-		prev_ems[relid] = cur_em;
 	}
-
-	pfree(prev_ems);
 
 	/*
 	 * We also have to make sure that all the Vars used in the member clauses
