@@ -1179,6 +1179,8 @@ typedef struct EquivalenceFilter
 	Oid			ef_opno;		/* Operator Oid of filter operator */
 	bool		ef_const_is_left; /* Is the Const on the left of the OpExrp? */
 	Index		ef_source_rel;	/* relid of originating relation. */
+	Oid			opfamily;
+	int			amstrategy;
 } EquivalenceFilter;
 
 /*

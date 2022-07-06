@@ -1234,18 +1234,16 @@ generate_base_implied_equalities_const(PlannerInfo *root,
 }
 
 /*
- * finds the opfamily and strategy number for the specified 'opno' and 'method'
- * access method. Returns True if one is found and sets 'family' and
- * 'amstrategy', or returns False if none are found.
+ * finds the operator id for the specified 'opno' and 'method' and 'opfamilies'
+ * Returns True if one is found and sets 'opfamily_p' and 'amstrategy_p' or returns
+ * False if none are found.
  */
 static bool
-find_am_family_and_stategy(Oid opno, Oid method, Oid *family, int *amstrategy)
+find_am_family_and_stategy(Oid opno, Oid method, List *opfamilies,
+						   Oid *opfamily_p, int *amstrategy_p)
 {
-	List *opfamilies;
 	ListCell *l;
 	int strategy;
-
-	opfamilies = get_opfamilies(opno, method);
 
 	foreach(l, opfamilies)
 	{
@@ -1255,8 +1253,8 @@ find_am_family_and_stategy(Oid opno, Oid method, Oid *family, int *amstrategy)
 
 		if (strategy)
 		{
-			*amstrategy = strategy;
-			*family = opfamily;
+			*opfamily_p = opfamily;
+			*amstrategy_p = strategy;
 			return true;
 		}
 	}
@@ -1345,15 +1343,9 @@ generate_base_implied_equalities_no_const(PlannerInfo *root,
 			EquivalenceFilter *ef = (EquivalenceFilter *) lfirst(lc2);
 			Expr *leftexpr;
 			Expr *rightexpr;
-			int strategy;
 			Oid opno;
-			Oid family;
 
 			if (ef->ef_source_rel == relid)
-				continue;
-
-			if (!find_am_family_and_stategy(ef->ef_opno, BTREE_AM_OID,
-				&family, &strategy))
 				continue;
 
 			if (ef->ef_const_is_left)
@@ -1367,10 +1359,10 @@ generate_base_implied_equalities_no_const(PlannerInfo *root,
 				rightexpr = (Expr *) ef->ef_const;
 			}
 
-			opno = get_opfamily_member(family,
+			opno = get_opfamily_member(ef->opfamily,
 										exprType((Node *) leftexpr),
 										exprType((Node *) rightexpr),
-										strategy);
+										ef->amstrategy);
 
 			if (opno == InvalidOid)
 				continue;
@@ -1989,9 +1981,12 @@ distribute_filter_quals_to_eclass(PlannerInfo *root, List *quallist)
 	 */
 	foreach(l, quallist)
 	{
-		OpExpr	   *opexpr = (OpExpr *) lfirst(l);
-		Expr	   *leftexpr = (Expr *) linitial(opexpr->args);
-		Expr	   *rightexpr = (Expr *) lsecond(opexpr->args);
+		RestrictInfo *rinfo = lfirst_node(RestrictInfo, l);
+		OpExpr *opexpr = (OpExpr *)(rinfo->clause);
+
+		Oid opfamily;
+		int amstrategy;
+
 		Const	   *constexpr;
 		Expr	   *varexpr;
 		Relids		exprrels;
@@ -2003,23 +1998,29 @@ distribute_filter_quals_to_eclass(PlannerInfo *root, List *quallist)
 		 * Determine if the the OpExpr is in the form "expr op const" or
 		 * "const op expr".
 		 */
-		if (IsA(leftexpr, Const))
+		if (bms_is_empty(rinfo->left_relids))
 		{
-			constexpr = (Const *) leftexpr;
-			varexpr = rightexpr;
+			constexpr = (Const *) get_leftop(rinfo->clause);
+			varexpr = (Expr *) get_rightop(rinfo->clause);
 			const_isleft = true;
+			exprrels = rinfo->right_relids;
 		}
 		else
 		{
-			constexpr = (Const *) rightexpr;
-			varexpr = leftexpr;
+			constexpr = (Const *) get_rightop(rinfo->clause);
+			varexpr = (Expr *) get_leftop(rinfo->clause);
 			const_isleft = false;
+			exprrels = rinfo->left_relids;
 		}
-
-		exprrels = pull_varnos(root, (Node *) varexpr);
 
 		/* should be filtered out, but we need to determine relid anyway */
 		if (!bms_get_singleton_member(exprrels, &relid))
+			continue;
+
+		if (!find_am_family_and_stategy(opexpr->opno, BTREE_AM_OID,
+										rinfo->btreeineqopfamilies,
+										&opfamily,
+										&amstrategy))
 			continue;
 
 		/* search for a matching eclass member in all eclasses */
@@ -2057,6 +2058,8 @@ distribute_filter_quals_to_eclass(PlannerInfo *root, List *quallist)
 					efilter->ef_const_is_left = const_isleft;
 					efilter->ef_opno = opexpr->opno;
 					efilter->ef_source_rel = relid;
+					efilter->opfamily = opfamily;
+					efilter->amstrategy = amstrategy;
 
 					ec->ec_filters = lappend(ec->ec_filters, efilter);
 					break;		/* Onto the next eclass */

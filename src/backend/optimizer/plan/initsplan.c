@@ -651,44 +651,6 @@ create_lateral_join_info(PlannerInfo *root)
 	}
 }
 
-/*
- * is_simple_filter_qual
- *             Analyzes an OpExpr to determine if it may be useful as an
- *             EquivalenceFilter. Returns true if the OpExpr may be of some use, or
- *             false if it should not be used.
- */
-static bool
-is_simple_filter_qual(PlannerInfo *root, OpExpr *expr)
-{
-	Expr *leftexpr;
-	Expr *rightexpr;
-
-	if (!IsA(expr, OpExpr))
-			return false;
-
-	if (list_length(expr->args) != 2)
-			return false;
-
-	leftexpr = (Expr *) linitial(expr->args);
-	rightexpr = (Expr *) lsecond(expr->args);
-
-	/* XXX should we restrict these to simple Var op Const expressions? */
-	if (IsA(leftexpr, Const))
-	{
-		if (bms_membership(pull_varnos(root, (Node *) rightexpr)) == BMS_SINGLETON &&
-			!contain_volatile_functions((Node *) rightexpr))
-			return true;
-	}
-	else if (IsA(rightexpr, Const))
-	{
-		if (bms_membership(pull_varnos(root, (Node *) leftexpr)) == BMS_SINGLETON &&
-			!contain_volatile_functions((Node *) leftexpr))
-			return true;
-	}
-
-	return false;
-}
-
 /*****************************************************************************
  *
  *	  JOIN TREE PROCESSING
@@ -1678,6 +1640,7 @@ distribute_qual_to_rels(PlannerInfo *root, Node *clause,
 	bool		maybe_outer_join;
 	Relids		nullable_relids;
 	RestrictInfo *restrictinfo;
+	int	relid;
 
 	/*
 	 * Retrieve all relids mentioned within the clause.
@@ -2027,8 +1990,15 @@ distribute_qual_to_rels(PlannerInfo *root, Node *clause,
 	distribute_restrictinfo_to_rels(root, restrictinfo);
 
 	/* Check if the qual looks useful to harvest as an EquivalenceFilter */
-	if (filter_qual_list != NULL && is_simple_filter_qual(root, (OpExpr *) clause))
-		*filter_qual_list = lappend(*filter_qual_list, clause);
+	if (filter_qual_list != NULL &&
+		is_opclause(restrictinfo->clause) &&
+		!contain_volatile_functions((Node *)restrictinfo) && // Cachable
+		restrictinfo->btreeineqopfamilies != NIL &&  /* ineq expression */
+		/* simple & common enough filter, one side references one relation and the other one is a constant */
+		((bms_is_empty(restrictinfo->left_relids) && bms_get_singleton_member(restrictinfo->right_relids, &relid)) ||
+		 (bms_is_empty(restrictinfo->right_relids) && bms_get_singleton_member(restrictinfo->left_relids, &relid)))
+		)
+		*filter_qual_list = lappend(*filter_qual_list, restrictinfo);
 }
 
 /*
