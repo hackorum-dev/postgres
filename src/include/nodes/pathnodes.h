@@ -251,6 +251,8 @@ struct PlannerInfo
 
 	bool		ec_merging_done;	/* set true once ECs are canonical */
 
+	List		*correlative_quals;  /* list of CorrelativeQuals for this subquery */
+
 	List	   *canon_pathkeys; /* list of "canonical" PathKeys */
 
 	List	   *left_join_clauses;	/* list of RestrictInfos for mergejoinable
@@ -767,6 +769,18 @@ typedef struct RelOptInfo
 	 * Indexes in PlannerInfo's eq_classes list of ECs that mention this rel
 	 */
 	Bitmapset  *eclass_indexes;
+	List		*cqual_indexes; /* Indexes in PlannerInfo's correlative_quals list of
+								 * CorrelativeQuals that this rel has applied. It is valid
+								 * on both baserel and joinrel. Used to quick check is the
+								 * both sides contains the same CorrectiveQuals object.
+								 */
+	Selectivity	*cqual_selectivity; /*
+								   * The number of elements in cqual_selectivity equals
+								   * the length of cqual_indexes. The semantics is which
+								   * selectivity in the corresponding CorectiveQuals's qual
+								   * list is taking effect. At only time, only 1 Qual
+								   * Selectivity is counted for any-level of joinrel.
+								   */
 	PlannerInfo *subroot;		/* if subquery */
 	List	   *subplan_params; /* if subquery */
 	/* wanted number of parallel workers */
@@ -1181,7 +1195,23 @@ typedef struct EquivalenceFilter
 	Index		ef_source_rel;	/* relid of originating relation. */
 	Oid			opfamily;
 	int			amstrategy;
+	struct RestrictInfo	*rinfo;		/* source restrictInfo for this EquivalenceFilter */
 } EquivalenceFilter;
+
+
+/*
+ * Currently it is as simple as a List of RestrictInfo, it means a). For any joinrel size
+ * estimation, only one restrictinfo on this group should be counted. b). During execution,
+ * at least 1 restrictinfo in this group should be executed.
+ *
+ * Define it as a Node just for better extendability, we can stripe it to a List *
+ * if we are sure nothing else is needed.
+ */
+typedef struct CorrelativeQuals
+{
+	NodeTag	type;
+	List	*corr_restrictinfo;
+} CorrelativeQuals;
 
 /*
  * If an EC contains a const and isn't below-outer-join, any PathKey depending
@@ -2872,7 +2902,7 @@ typedef enum
  *
  * flags indicating what kinds of grouping are possible.
  * partial_costs_set is true if the agg_partial_costs and agg_final_costs
- * 		have been initialized.
+ *		have been initialized.
  * agg_partial_costs gives partial aggregation costs.
  * agg_final_costs gives finalization costs.
  * target_parallel_safe is true if target is parallel safe.
@@ -2902,8 +2932,8 @@ typedef struct
  * limit_tuples is an estimated bound on the number of output tuples,
  *		or -1 if no LIMIT or couldn't estimate.
  * count_est and offset_est are the estimated values of the LIMIT and OFFSET
- * 		expressions computed by preprocess_limit() (see comments for
- * 		preprocess_limit() for more information).
+ *		expressions computed by preprocess_limit() (see comments for
+ *		preprocess_limit() for more information).
  */
 typedef struct
 {

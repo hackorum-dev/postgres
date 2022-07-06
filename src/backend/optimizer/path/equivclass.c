@@ -1272,6 +1272,8 @@ generate_base_implied_equalities_no_const(PlannerInfo *root,
 	EquivalenceMember **prev_ems;
 	ListCell   *lc;
 	ListCell   *lc2;
+	int	start_cq_index = list_length(root->correlative_quals);
+	int	ef_index = 0;
 
 	/*
 	 * We scan the EC members once and track the last-seen member for each
@@ -1338,9 +1340,11 @@ generate_base_implied_equalities_no_const(PlannerInfo *root,
 
 	pfree(prev_ems);
 
+	if (ec->ec_broken)
+		goto ec_filter_done;
 
 	/*
-	 * Also push any EquivalenceFilter clauses down into all relations
+	 * Push any EquivalenceFilter clauses down into all relations
 	 * other than the one which the filter actually originated from.
 	 */
 	foreach(lc2, ec->ec_filters)
@@ -1350,19 +1354,25 @@ generate_base_implied_equalities_no_const(PlannerInfo *root,
 		Expr *rightexpr;
 		Oid opno;
 		int relid;
-
-		if (ec->ec_broken)
-			break;
+		CorrelativeQuals *cquals = makeNode(CorrelativeQuals);
 
 		foreach(lc, ec->ec_members)
 		{
 			EquivalenceMember *cur_em = (EquivalenceMember *) lfirst(lc);
+			RelOptInfo *rel;
+			RestrictInfo *rinfo;
 
 			if (!bms_get_singleton_member(cur_em->em_relids, &relid))
 				continue;
 
+			rel = root->simple_rel_array[relid];
+
 			if (ef->ef_source_rel == relid)
+			{
+				rel->cqual_indexes = lappend_int(rel->cqual_indexes, start_cq_index + ef_index);
+				cquals->corr_restrictinfo = lappend(cquals->corr_restrictinfo, ef->rinfo);
 				continue;
+			}
 
 			if (ef->ef_const_is_left)
 			{
@@ -1383,19 +1393,28 @@ generate_base_implied_equalities_no_const(PlannerInfo *root,
 			if (opno == InvalidOid)
 				continue;
 
-
-			process_implied_equality(root, opno,
-									 ec->ec_collation,
-									 leftexpr,
-									 rightexpr,
-									 bms_copy(ec->ec_relids),
-									 bms_copy(cur_em->em_nullable_relids),
-									 ec->ec_min_security,
-									 ec->ec_below_outer_join,
-									 false);
+			rinfo = process_implied_equality(root, opno,
+											 ec->ec_collation,
+											 leftexpr,
+											 rightexpr,
+											 bms_copy(ec->ec_relids),
+											 bms_copy(cur_em->em_nullable_relids),
+											 ec->ec_min_security,
+											 ec->ec_below_outer_join,
+											 false);
+			cquals->corr_restrictinfo = lappend(cquals->corr_restrictinfo, rinfo);
+			rel->cqual_indexes = lappend_int(rel->cqual_indexes, start_cq_index + ef_index);
 		}
+
+		ef_index += 1;
+
+		root->correlative_quals = lappend(root->correlative_quals, cquals);
 	}
 
+ec_filter_done:
+	/*
+	 * XXX this label can be removed after moving ec_filter to the end of this function.
+	 */
 	/*
 	 * We also have to make sure that all the Vars used in the member clauses
 	 * will be available at any join node we might try to reference them at.
@@ -2073,6 +2092,7 @@ distribute_filter_quals_to_eclass(PlannerInfo *root, List *quallist)
 					efilter->ef_source_rel = relid;
 					efilter->opfamily = opfamily;
 					efilter->amstrategy = amstrategy;
+					efilter->rinfo = rinfo;
 
 					ec->ec_filters = lappend(ec->ec_filters, efilter);
 					break;		/* Onto the next eclass */

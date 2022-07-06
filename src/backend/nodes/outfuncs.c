@@ -2676,6 +2676,7 @@ _outEquivalenceFilter(StringInfo str, const EquivalenceFilter *node)
 	WRITE_UINT_FIELD(ef_source_rel);
 	WRITE_OID_FIELD(opfamily);
 	WRITE_INT_FIELD(amstrategy);
+	WRITE_NODE_FIELD(rinfo);
 }
 
 static void
