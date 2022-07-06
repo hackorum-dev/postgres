@@ -76,7 +76,7 @@ static bool check_outerjoin_delay(PlannerInfo *root, Relids *relids_p,
 static bool check_equivalence_delay(PlannerInfo *root,
 									RestrictInfo *restrictinfo);
 static bool check_redundant_nullability_qual(PlannerInfo *root, Node *clause);
-static void check_mergejoinable(RestrictInfo *restrictinfo);
+static void check_btreeable(RestrictInfo *restrictinfo);
 static void check_hashjoinable(RestrictInfo *restrictinfo);
 static void check_memoizable(RestrictInfo *restrictinfo);
 
@@ -1874,8 +1874,11 @@ distribute_qual_to_rels(PlannerInfo *root, Node *clause,
 	 * We check "mergejoinability" of every clause, not only join clauses,
 	 * because we want to know about equivalences between vars of the same
 	 * relation, or between vars and consts.
+	 *
+	 * We also checked the btree-able properity at the same round of checking
+	 * mergejoinability to support ec filter function.
 	 */
-	check_mergejoinable(restrictinfo);
+	check_btreeable(restrictinfo);
 
 	/*
 	 * If it is a true equivalence clause, send it to the EquivalenceClass
@@ -2389,7 +2392,7 @@ process_implied_equality(PlannerInfo *root,
 	 * from an EquivalenceClass; but we could have reduced the original clause
 	 * to a constant.
 	 */
-	check_mergejoinable(restrictinfo);
+	check_btreeable(restrictinfo);
 
 	/*
 	 * Note we don't do initialize_mergeclause_eclasses(); the caller can
@@ -2456,8 +2459,8 @@ build_implied_join_equality(PlannerInfo *root,
 									 NULL,	/* outer_relids */
 									 nullable_relids);	/* nullable_relids */
 
-	/* Set mergejoinability/hashjoinability flags */
-	check_mergejoinable(restrictinfo);
+	/* Set btreeability/hashjoinability flags */
+	check_btreeable(restrictinfo);
 	check_hashjoinable(restrictinfo);
 	check_memoizable(restrictinfo);
 
@@ -2641,20 +2644,16 @@ match_foreign_keys_to_quals(PlannerInfo *root)
  *****************************************************************************/
 
 /*
- * check_mergejoinable
- *	  If the restrictinfo's clause is mergejoinable, set the mergejoin
- *	  info fields in the restrictinfo.
- *
- *	  Currently, we support mergejoin for binary opclauses where
- *	  the operator is a mergejoinable operator.  The arguments can be
- *	  anything --- as long as there are no volatile functions in them.
+ * check_btreeable
+ *	  If the restrictinfo's clause is btreeable, set the mergejoin
+ *	  info field and btreeineq info field in the restrictinfo. btreeable
+ *	  now is a superset of mergeable.
  */
 static void
-check_mergejoinable(RestrictInfo *restrictinfo)
+check_btreeable(RestrictInfo *restrictinfo)
 {
 	Expr	   *clause = restrictinfo->clause;
 	Oid			opno;
-	Node	   *leftarg;
 
 	if (restrictinfo->pseudoconstant)
 		return;
@@ -2664,11 +2663,11 @@ check_mergejoinable(RestrictInfo *restrictinfo)
 		return;
 
 	opno = ((OpExpr *) clause)->opno;
-	leftarg = linitial(((OpExpr *) clause)->args);
 
-	if (op_mergejoinable(opno, exprType(leftarg)) &&
-		!contain_volatile_functions((Node *) restrictinfo))
-		restrictinfo->mergeopfamilies = get_mergejoin_opfamilies(opno);
+	if (!contain_volatile_functions((Node *) restrictinfo))
+		get_btree_opfamilies(opno,
+							 &restrictinfo->mergeopfamilies,
+							 &restrictinfo->btreeineqopfamilies);
 
 	/*
 	 * Note: op_mergejoinable is just a hint; if we fail to find the operator

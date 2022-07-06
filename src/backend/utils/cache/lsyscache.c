@@ -390,6 +390,41 @@ get_mergejoin_opfamilies(Oid opno)
 }
 
 /*
+ * TODO:  get_mergejoin_opfamilies shoud be replaced with this function.
+ */
+void
+get_btree_opfamilies(Oid opno,
+					 List **mergeable_opfamilies,
+					 List **unmergeable_btree_opfamilies)
+{
+	CatCList   *catlist;
+	int			i;
+
+	/*
+	 * Search pg_amop to see find out all the btree opfamilies.
+	 */
+	catlist = SearchSysCacheList1(AMOPOPID, ObjectIdGetDatum(opno));
+
+	for (i = 0; i < catlist->n_members; i++)
+	{
+		HeapTuple	tuple = &catlist->members[i]->tuple;
+		Form_pg_amop aform = (Form_pg_amop) GETSTRUCT(tuple);
+
+		if (aform->amopmethod == BTREE_AM_OID)
+		{
+			if (aform->amopstrategy == BTEqualStrategyNumber)
+				*mergeable_opfamilies = lappend_oid(*mergeable_opfamilies,
+													aform->amopfamily);
+			else
+				*unmergeable_btree_opfamilies = lappend_oid(*unmergeable_btree_opfamilies,
+															aform->amopfamily);
+		}
+	}
+
+	ReleaseSysCacheList(catlist);
+}
+
+/*
  * get_compatible_hash_operators
  *		Get the OID(s) of hash equality operator(s) compatible with the given
  *		operator, but operating on its LHS and/or RHS datatype.

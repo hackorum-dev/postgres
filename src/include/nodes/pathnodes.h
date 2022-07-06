@@ -2305,6 +2305,7 @@ typedef struct RestrictInfo
 	 * mergejoinable, else NIL
 	 */
 	List	   *mergeopfamilies;
+	List		*btreeineqopfamilies; /* btree families except the mergeable ones */
 
 	/*
 	 * cache space for mergeclause processing; NULL if not yet set
