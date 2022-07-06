@@ -61,11 +61,13 @@
 #include "sys/mman.h"
 #endif
 
+#include "access/transam.h"
 #include "access/xlog_internal.h"
 #include "catalog/pg_authid_d.h"
 #include "catalog/pg_class_d.h" /* pgrminclude ignore */
 #include "catalog/pg_collation_d.h"
 #include "catalog/pg_database_d.h"	/* pgrminclude ignore */
+#include "common/controldata_utils.h"
 #include "common/file_perm.h"
 #include "common/file_utils.h"
 #include "common/logging.h"
@@ -2724,6 +2726,14 @@ initialize_data_directory(void)
 	make_postgres(cmdfd);
 
 	PG_CMD_CLOSE;
+
+	/* Set FirstNormal OID */
+	{
+		bool	crc_ok;
+		ControlFileData *cfd = get_controlfile(pg_data, &crc_ok);
+		cfd->checkPointCopy.nextOid = FirstNormalObjectId;
+		update_controlfile(pg_data, cfd, false);
+	}
 
 	check_ok();
 }
