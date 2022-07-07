@@ -41,8 +41,8 @@
 /*
  * Store label file and tablespace map during backups.
  */
-static StringInfo label_file;
-static StringInfo tblspc_map_file;
+static StringInfo label_file = NULL;
+static StringInfo tblspc_map_file = NULL;
 
 /*
  * pg_backup_start: set up for taking an on-line backup dump
@@ -77,10 +77,18 @@ pg_backup_start(PG_FUNCTION_ARGS)
 	 * Label file and tablespace map file need to be long-lived, since they
 	 * are read in pg_backup_stop.
 	 */
-	oldcontext = MemoryContextSwitchTo(TopMemoryContext);
-	label_file = makeStringInfo();
-	tblspc_map_file = makeStringInfo();
-	MemoryContextSwitchTo(oldcontext);
+	if (label_file == NULL)
+	{
+		oldcontext = MemoryContextSwitchTo(TopMemoryContext);
+		label_file = makeStringInfo();
+		tblspc_map_file = makeStringInfo();
+		MemoryContextSwitchTo(oldcontext);
+	}
+	else
+	{
+		resetStringInfo(label_file);
+		resetStringInfo(tblspc_map_file);
+	}
 
 	register_persistent_abort_backup_handler();
 
@@ -136,13 +144,36 @@ pg_backup_stop(PG_FUNCTION_ARGS)
 	values[1] = CStringGetTextDatum(label_file->data);
 	values[2] = CStringGetTextDatum(tblspc_map_file->data);
 
-	/* Free structures allocated in TopMemoryContext */
-	pfree(label_file->data);
-	pfree(label_file);
-	label_file = NULL;
-	pfree(tblspc_map_file->data);
-	pfree(tblspc_map_file);
-	tblspc_map_file = NULL;
+	/* Returns the record as Datum */
+	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(tupdesc, values, nulls)));
+}
+
+/*
+ * pg_backup_label: return backup_label and tablespace_map
+ */
+Datum
+pg_backup_label(PG_FUNCTION_ARGS)
+{
+	TupleDesc	tupdesc;
+	Datum		values[2];
+	bool		nulls[2];
+
+	/* Initialize attributes information in the tuple descriptor */
+	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
+		elog(ERROR, "return type must be a row type");
+
+	MemSet(values, 0, sizeof(values));
+	MemSet(nulls, 0, sizeof(nulls));
+
+	if (label_file != NULL)
+		values[0] = CStringGetTextDatum(label_file->data);
+	else
+		nulls[0] = true;
+
+	if (tblspc_map_file != NULL)
+		values[1] = CStringGetTextDatum(tblspc_map_file->data);
+	else
+		nulls[1] = true;
 
 	/* Returns the record as Datum */
 	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(tupdesc, values, nulls)));
