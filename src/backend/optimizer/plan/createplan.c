@@ -939,7 +939,7 @@ use_physical_tlist(PlannerInfo *root, Path *path, int flags)
 	 * We can only return that without a projection if all the index's columns
 	 * are returnable.
 	 */
-	if (path->pathtype == T_IndexOnlyScan)
+	if (path->pathtype == T_IndexOnlyScan || path->pathtype == T_IndexScan)
 	{
 		IndexOptInfo *indexinfo = ((IndexPath *) path)->indexinfo;
 
