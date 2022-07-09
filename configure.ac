@@ -647,6 +647,7 @@ fi
 # of many interfaces (sigwait, getpwuid_r, ...).
 if test "$PORTNAME" = "solaris"; then
   CPPFLAGS="$CPPFLAGS -D_POSIX_PTHREAD_SEMANTICS"
+  CPPFLAGS="$CPPFLAGS -D__STDC_WANT_LIB_EXT1__"
 fi
 
 # We already have this in Makefile.win32, but configure needs it too
