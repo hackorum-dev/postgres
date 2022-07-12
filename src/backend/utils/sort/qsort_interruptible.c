@@ -1,5 +1,12 @@
 /*
  *	qsort_interruptible.c: qsort_arg that includes CHECK_FOR_INTERRUPTS
+ *
+ * Portions Copyright (c) 1996-2022, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1994, Regents of the University of California
+ *
+ * IDENTIFICATION
+ *	  src/backend/utils/sort/qsort_interruptible.c
+ *
  */
 
 #include "postgres.h"
