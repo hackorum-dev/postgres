@@ -1,8 +1,7 @@
 # src/bin/pg_verifybackup/nls.mk
 CATALOG_NAME     = pg_verifybackup
 GETTEXT_FILES    = $(FRONTEND_COMMON_GETTEXT_FILES) \
-                   parse_manifest.c \
-                   pg_verifybackup.c \
+                   $(notdir $(wildcard $(srcdir)/*.c)) \
                    ../../common/fe_memutils.c \
                    ../../common/jsonapi.c
 GETTEXT_TRIGGERS = $(FRONTEND_COMMON_GETTEXT_TRIGGERS) \

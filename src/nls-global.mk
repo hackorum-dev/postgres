@@ -103,9 +103,11 @@ endif
 else # GETTEXT_FILES
 po/$(CATALOG_NAME).pot: $(GETTEXT_FILES) $(MAKEFILE_LIST)
 # Change to srcdir explicitly, don't rely on $^.  That way we get
-# consistent #: file references in the po files.
+# consistent #: file references in the po files.  Also, sort to eliminate
+# duplicate references that we might get from use of $(wildcard) alongside
+# explicit references to built files.
 ifdef XGETTEXT
-	$(XGETTEXT) -D $(srcdir) -D . -n $(addprefix -k, $(GETTEXT_TRIGGERS)) $(addprefix --flag=, $(GETTEXT_FLAGS)) $(GETTEXT_FILES)
+	$(XGETTEXT) -D $(srcdir) -D . -n $(addprefix -k, $(GETTEXT_TRIGGERS)) $(addprefix --flag=, $(GETTEXT_FLAGS)) $(sort $(GETTEXT_FILES))
 else
 	@echo "You don't have 'xgettext'."; exit 1
 endif

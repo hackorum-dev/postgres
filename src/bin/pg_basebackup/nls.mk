@@ -1,18 +1,7 @@
 # src/bin/pg_basebackup/nls.mk
 CATALOG_NAME     = pg_basebackup
 GETTEXT_FILES    = $(FRONTEND_COMMON_GETTEXT_FILES) \
-                   bbstreamer_file.c \
-                   bbstreamer_gzip.c \
-                   bbstreamer_inject.c \
-                   bbstreamer_lz4.c \
-                   bbstreamer_tar.c \
-                   bbstreamer_zstd.c \
-                   pg_basebackup.c \
-                   pg_receivewal.c \
-                   pg_recvlogical.c \
-                   receivelog.c \
-                   streamutil.c \
-                   walmethods.c \
+                   $(notdir $(wildcard $(srcdir)/*.c)) \
                    ../../common/compression.c \
                    ../../common/fe_memutils.c \
                    ../../common/file_utils.c \

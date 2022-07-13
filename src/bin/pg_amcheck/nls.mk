@@ -1,7 +1,7 @@
 # src/bin/pg_amcheck/nls.mk
 CATALOG_NAME     = pg_amcheck
 GETTEXT_FILES    = $(FRONTEND_COMMON_GETTEXT_FILES) \
-                   pg_amcheck.c \
+                   $(notdir $(wildcard $(srcdir)/*.c)) \
                    ../../fe_utils/cancel.c \
                    ../../fe_utils/connect_utils.c \
                    ../../fe_utils/option_utils.c \
