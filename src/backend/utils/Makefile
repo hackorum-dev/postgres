@@ -78,9 +78,10 @@ endif
 # themselves may appear older than fmgr-stamp.
 $(top_builddir)/src/include/utils/header-stamp: fmgr-stamp errcodes.h
 	prereqdir=`cd '$(dir $<)' >/dev/null && pwd` && \
-	cd '$(dir $@)' && for file in fmgroids.h fmgrprotos.h errcodes.h; do \
+	cd '$(dir $@)' && for file in fmgroids.h fmgrprotos.h; do \
 	  rm -f $$file && $(LN_S) "$$prereqdir/$$file" . ; \
-	done
+	done && \
+	rm -f errcodes.h && $(LN_S) "$(top_builddir)/src/backend/utils/errcodes.h" . ; \
 	touch $@
 
 # probes.h is handled differently because it's not in the distribution tarball.
