@@ -18030,9 +18030,9 @@ FROM
         or array, but if it is <literal>CONDITIONAL</literal> it will not be
         applied to a single array or object. <literal>UNCONDITIONAL</literal>
         is the default.
-        If the result is a a scalar string, by default the value returned will have
-        surrounding quotes making it a valid JSON value. However, this behavior
-        is reversed if <literal>OMIT QUOTES</literal> is specified.
+        If the result is a scalar string, by default the value returned will
+        have surrounding quotes making it a valid JSON value. However, this
+        behavior is reversed if <literal>OMIT QUOTES</literal> is specified.
         The <literal>ON ERROR</literal> and <literal>ON EMPTY</literal>
         clauses have similar semantics to those clauses for
         <function>json_value</function>.
@@ -18101,7 +18101,7 @@ FROM
    columns. Columns produced by <literal>NESTED PATH</literal>s at the
    same level are considered to be <firstterm>siblings</firstterm>,
    while a column produced by a <literal>NESTED PATH</literal> is
-   considered to be a child of the column produced by and
+   considered to be a child of the column produced by a
    <literal>NESTED PATH</literal> or row expression at a higher level.
    Sibling columns are always joined first. Once they are processed,
    the resulting rows are joined to the parent row.
@@ -18151,9 +18151,9 @@ FROM
      the specified column.
     </para>
     <para>
-     The provided <literal>PATH</literal> expression parses the
-     row pattern defined by <parameter>json_api_common_syntax</parameter>
-     and fills the column with produced SQL/JSON items, one for each row.
+     The provided <literal>PATH</literal> expression is evaluated and
+     and the column is filled with the produced SQL/JSON items, one for each
+     row.
      If the <literal>PATH</literal> expression is omitted,
      <function>JSON_TABLE</function> uses the
      <literal>$.<replaceable>name</replaceable></literal> path expression,
@@ -18185,9 +18185,8 @@ FROM
      item into each row of this column.
     </para>
     <para>
-     The provided <literal>PATH</literal> expression parses the
-     row pattern defined by <parameter>json_api_common_syntax</parameter>
-     and fills the column with produced SQL/JSON items, one for each row.
+     The provided <literal>PATH</literal> expression is evaluated and
+     the column is filled with the produced SQL/JSON items, one for each row.
      If the <literal>PATH</literal> expression is omitted,
      <function>JSON_TABLE</function> uses the
      <literal>$.<parameter>name</parameter></literal> path expression,
@@ -18216,11 +18215,10 @@ FROM
      Generates a column and inserts a boolean item into each row of this column.
     </para>
     <para>
-     The provided <literal>PATH</literal> expression parses the
-     row pattern defined by <parameter>json_api_common_syntax</parameter>,
-     checks whether any SQL/JSON items were returned, and fills the column with
-     resulting boolean value, one for each row.
-     The specified <parameter>type</parameter> should have cast from
+     The provided <literal>PATH</literal> expression is evaluated,
+     a check whether any SQL/JSON items were returned is done, and
+     the column is filled with the resulting boolean value, one for each row.
+     The specified <parameter>type</parameter> should have a cast from the
      <type>boolean</type>.
      If the <literal>PATH</literal> expression is omitted,
      <function>JSON_TABLE</function> uses the
