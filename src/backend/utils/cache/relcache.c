@@ -88,6 +88,7 @@
 #include "utils/resowner_private.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
+#include "optimizer/planner_index_locking.h"
 
 #define RELCACHE_INIT_FILEMAGIC		0x573266	/* version ID value */
 
@@ -292,7 +293,6 @@ static void write_item(const void *data, Size len, FILE *fp);
 static void formrdesc(const char *relationName, Oid relationReltype,
 					  bool isshared, int natts, const FormData_pg_attribute *attrs);
 
-static HeapTuple ScanPgRelation(Oid targetRelId, bool indexOK, bool force_non_historic);
 static Relation AllocateRelationDesc(Form_pg_class relp);
 static void RelationParseRelOptions(Relation relation, HeapTuple tuple);
 static void RelationBuildTupleDesc(Relation relation);
@@ -300,7 +300,6 @@ static Relation RelationBuildDesc(Oid targetRelId, bool insertIt);
 static void RelationInitPhysicalAddr(Relation relation);
 static void load_critical_index(Oid indexoid, Oid heapoid);
 static TupleDesc GetPgClassDescriptor(void);
-static TupleDesc GetPgIndexDescriptor(void);
 static void AttrDefaultFetch(Relation relation, int ndef);
 static int	AttrDefaultCmp(const void *a, const void *b);
 static void CheckConstraintFetch(Relation relation);
@@ -332,7 +331,7 @@ static void unlink_initfile(const char *initfilename, int elevel);
  *		NB: the returned tuple has been copied into palloc'd storage
  *		and must eventually be freed with heap_freetuple.
  */
-static HeapTuple
+HeapTuple
 ScanPgRelation(Oid targetRelId, bool indexOK, bool force_non_historic)
 {
 	HeapTuple	pg_class_tuple;
@@ -4333,7 +4332,7 @@ GetPgClassDescriptor(void)
 	return pgclassdesc;
 }
 
-static TupleDesc
+TupleDesc
 GetPgIndexDescriptor(void)
 {
 	static TupleDesc pgindexdesc = NULL;
@@ -4679,6 +4678,7 @@ RelationGetIndexList(Relation relation)
 	ScanKeyData skey;
 	HeapTuple	htup;
 	List	   *result;
+	List	   *bitmaps;
 	List	   *oldlist;
 	char		replident = relation->rd_rel->relreplident;
 	Oid			pkeyIndex = InvalidOid;
@@ -4696,6 +4696,7 @@ RelationGetIndexList(Relation relation)
 	 * if we get some sort of error partway through.
 	 */
 	result = NIL;
+	bitmaps = NIL;
 
 	/* Prepare to scan pg_index for entries having indrelid = this rel. */
 	ScanKeyInit(&skey,
@@ -4723,6 +4724,10 @@ RelationGetIndexList(Relation relation)
 		/* add index's OID to result list */
 		result = lappend_oid(result, index->indexrelid);
 
+		/* build bitmap and add to bitmaps list, but only for valid indexes */
+		if (index->indisvalid)
+			bitmaps = lappend(bitmaps, s64_RelationBuildIndexBitmapset(htup));
+
 		/*
 		 * Invalid, non-unique, non-immediate or predicate indexes aren't
 		 * interesting for either oid indexes or replication identity indexes,
@@ -4749,10 +4754,14 @@ RelationGetIndexList(Relation relation)
 	/* Sort the result list into OID order, per API spec. */
 	list_sort(result, list_oid_cmp);
 
+	/* sort the bitmaps into OID order, per API spec. */
+	list_sort(bitmaps, list_bitmapset_cmp);
+
 	/* Now save a copy of the completed list in the relcache entry. */
 	oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
 	oldlist = relation->rd_indexlist;
 	relation->rd_indexlist = list_copy(result);
+	relation->rd_indexprs = list_copy(bitmaps);
 	relation->rd_pkindex = pkeyIndex;
 	if (replident == REPLICA_IDENTITY_DEFAULT && OidIsValid(pkeyIndex))
 		relation->rd_replidindex = pkeyIndex;

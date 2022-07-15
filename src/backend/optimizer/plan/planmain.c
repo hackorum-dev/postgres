@@ -29,6 +29,7 @@
 #include "optimizer/paths.h"
 #include "optimizer/placeholder.h"
 #include "optimizer/planmain.h"
+#include "optimizer/planner_index_locking.h"
 
 
 /*
@@ -163,6 +164,7 @@ query_planner(PlannerInfo *root,
 	 * for rels not actively part of the query, for example views.  We don't
 	 * want to make RelOptInfos for them.
 	 */
+	FilterIndexes = true;
 	add_base_rels_to_query(root, (Node *) parse->jointree);
 
 	/*
@@ -212,6 +214,11 @@ query_planner(PlannerInfo *root,
 	 * so marked before.
 	 */
 	fix_placeholder_input_needed_levels(root);
+
+	/* add all required indexes for the baserels, so that the following functions have the required indexes:
+	 * reduce_unique_semijoins, remove_useless_joins. This is therefore the latest we can do this. */
+	s64_add_indexes(root);
+	FilterIndexes = false;
 
 	/*
 	 * Remove any useless outer joins.  Ideally this would be done during

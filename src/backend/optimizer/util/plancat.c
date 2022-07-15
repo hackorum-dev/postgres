@@ -54,6 +54,8 @@
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
 
+#include "optimizer/planner_index_locking.h"
+
 /* GUC parameter */
 int			constraint_exclusion = CONSTRAINT_EXCLUSION_PARTITION;
 
@@ -114,10 +116,7 @@ void
 get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 				  RelOptInfo *rel)
 {
-	Index		varno = rel->relid;
 	Relation	relation;
-	bool		hasindex;
-	List	   *indexinfos = NIL;
 
 	/*
 	 * We need not lock the relation since it was already locked, either by
@@ -151,8 +150,59 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 		estimate_rel_size(relation, rel->attr_widths - rel->min_attr,
 						  &rel->pages, &rel->tuples, &rel->allvisfrac);
 
+	if (!FilterIndexes)
+		s64_add_indexes_for_rel(root, relation->rd_id, inhparent, rel);
+
 	/* Retrieve the parallel_workers reloption, or -1 if not set. */
 	rel->rel_parallel_workers = RelationGetParallelWorkers(relation, -1);
+
+	rel->statlist = get_relation_statistics(rel, relation);
+
+	/* Grab foreign-table info using the relcache, while we have it */
+	if (relation->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
+	{
+		rel->serverid = GetForeignServerIdByRelId(RelationGetRelid(relation));
+		rel->fdwroutine = GetFdwRoutineForRelation(relation, true);
+	}
+	else
+	{
+		rel->serverid = InvalidOid;
+		rel->fdwroutine = NULL;
+	}
+
+	/* Collect info about relation's foreign keys, if relevant */
+	get_relation_foreign_keys(root, rel, relation, inhparent);
+
+	/* Collect info about functions implemented by the rel's table AM. */
+	if (relation->rd_tableam &&
+		relation->rd_tableam->scan_set_tidrange != NULL &&
+		relation->rd_tableam->scan_getnextslot_tidrange != NULL)
+		rel->amflags |= AMFLAG_HAS_TID_RANGE;
+
+	/*
+	 * Collect info about relation's partitioning scheme, if any. Only
+	 * inheritance parents may be partitioned.
+	 */
+	if (inhparent && relation->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
+		set_relation_partition_info(root, rel, relation);
+
+	table_close(relation, NoLock);
+
+	/*
+	 * Allow a plugin to editorialize on the info we obtained from the
+	 * catalogs.  Actions might include altering the assumed relation size,
+	 * removing an index, or adding a hypothetical index to the indexlist.
+	 */
+	if (get_relation_info_hook)
+		(*get_relation_info_hook) (root, relationObjectId, inhparent, rel);
+}
+
+void s64_add_indexes_for_rel(PlannerInfo* root, Oid relationObjectId, bool inhparent, RelOptInfo *rel)
+{
+	Relation relation = table_open(relationObjectId, NoLock);
+	List	   *indexinfos = NIL;
+	Index		varno = rel->relid;
+	bool		hasindex;
 
 	/*
 	 * Make list of indexes.  Ignore indexes on system catalogs if told to.
@@ -166,11 +216,15 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 
 	if (hasindex)
 	{
-		List	   *indexoidlist;
+		List	   *index_bitmaps;
 		LOCKMODE	lmode;
 		ListCell   *l;
+		Bitmapset* requiredTList = s64_RelationUsedTList(root, rel);
+		Bitmapset* requiredClauses = s64_RelationUsedClauses(root, rel);
+		Bitmapset* required = bms_union(requiredTList, requiredClauses);
+		Oid smallestIndex = s64_RelationGetBestIndexForIndexOnly(relation, required);
 
-		indexoidlist = RelationGetIndexList(relation);
+		index_bitmaps = s64_RelationGetIndexBitmapList(relation);
 
 		/*
 		 * For each index, we get the same type of lock that the executor will
@@ -182,9 +236,10 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 		 */
 		lmode = root->simple_rte_array[varno]->rellockmode;
 
-		foreach(l, indexoidlist)
+		foreach(l, index_bitmaps)
 		{
-			Oid			indexoid = lfirst_oid(l);
+			IndexBitmapset* bitmap = (IndexBitmapset*) lfirst(l);
+			Oid		indexoid = bitmap->Index;
 			Relation	indexRelation;
 			Form_pg_index index;
 			IndexAmRoutine *amroutine;
@@ -192,6 +247,9 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 			int			ncolumns,
 						nkeycolumns;
 			int			i;
+
+			if (s64_IsUnnecessaryIndex(root, bitmap, requiredClauses, required, smallestIndex))
+				continue;
 
 			/*
 			 * Extract info from the relation descriptor for the index.
@@ -437,51 +495,27 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 			indexinfos = lcons(info, indexinfos);
 		}
 
-		list_free(indexoidlist);
+		list_free(index_bitmaps);
+		bms_free(requiredTList);
+		bms_free(requiredClauses);
+		bms_free(required);
 	}
 
 	rel->indexlist = indexinfos;
 
-	rel->statlist = get_relation_statistics(rel, relation);
-
-	/* Grab foreign-table info using the relcache, while we have it */
-	if (relation->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
-	{
-		rel->serverid = GetForeignServerIdByRelId(RelationGetRelid(relation));
-		rel->fdwroutine = GetFdwRoutineForRelation(relation, true);
-	}
-	else
-	{
-		rel->serverid = InvalidOid;
-		rel->fdwroutine = NULL;
-	}
-
-	/* Collect info about relation's foreign keys, if relevant */
-	get_relation_foreign_keys(root, rel, relation, inhparent);
-
-	/* Collect info about functions implemented by the rel's table AM. */
-	if (relation->rd_tableam &&
-		relation->rd_tableam->scan_set_tidrange != NULL &&
-		relation->rd_tableam->scan_getnextslot_tidrange != NULL)
-		rel->amflags |= AMFLAG_HAS_TID_RANGE;
-
-	/*
-	 * Collect info about relation's partitioning scheme, if any. Only
-	 * inheritance parents may be partitioned.
-	 */
-	if (inhparent && relation->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
-		set_relation_partition_info(root, rel, relation);
-
 	table_close(relation, NoLock);
-
-	/*
-	 * Allow a plugin to editorialize on the info we obtained from the
-	 * catalogs.  Actions might include altering the assumed relation size,
-	 * removing an index, or adding a hypothetical index to the indexlist.
-	 */
-	if (get_relation_info_hook)
-		(*get_relation_info_hook) (root, relationObjectId, inhparent, rel);
 }
+
+void s64_add_indexes(PlannerInfo *root)
+{
+	for (int i = 0; i < root->simple_rel_array_size; ++i)
+	{
+		RangeTblEntry* rte = root->simple_rte_array[i];
+		RelOptInfo* rel = root->simple_rel_array[i];
+		if (rel != NULL && rte->rtekind == RTE_RELATION && rel->indexlist == NULL)
+			s64_add_indexes_for_rel(root, rte->relid, rte->inh, rel);
+	}
+ }
 
 /*
  * get_relation_foreign_keys -
