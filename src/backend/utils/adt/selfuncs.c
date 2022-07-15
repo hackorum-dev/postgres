@@ -2426,6 +2426,15 @@ eqjoinsel(PG_FUNCTION_ARGS)
 	nd1 = get_variable_numdistinct(&vardata1, &isdefault1);
 	nd2 = get_variable_numdistinct(&vardata2, &isdefault2);
 
+	/*
+	 * Adjust ndistinct to account for restriction clauses.
+	 * nd should not be greater than the number of rows in the relation.
+	 */
+	if (vardata1.rel)
+		nd1 = Min(nd1, vardata1.rel->rows);
+	if (vardata2.rel)
+		nd2 = Min(nd2, vardata2.rel->rows);
+
 	opfuncoid = get_opcode(operator);
 
 	memset(&sslot1, 0, sizeof(sslot1));
