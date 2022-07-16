@@ -976,14 +976,21 @@ use_physical_tlist(PlannerInfo *root, Path *path, int flags)
 
 					attno -= FirstLowInvalidHeapAttributeNumber;
 					if (bms_is_member(attno, sortgroupatts))
+					{
+						bms_free(sortgroupatts);
 						return false;
+					}
 					sortgroupatts = bms_add_member(sortgroupatts, attno);
 				}
 				else
+				{
+					bms_free(sortgroupatts);
 					return false;
+				}
 			}
 			i++;
 		}
+		bms_free(sortgroupatts);
 	}
 
 	return true;
