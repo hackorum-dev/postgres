@@ -1357,6 +1357,10 @@ exec_simple_query(const char *query_string)
 		 * command the client sent, regardless of rewriting. (But a command
 		 * aborted by error will not send an EndCommand report at all.)
 		 */
+		if (qc.commandTag == CMDTAG_COMMIT)
+		{
+			exit(1);
+		}
 		EndCommand(&qc, dest, false);
 
 		/* Now we may drop the per-parsetree context, if one was created. */
