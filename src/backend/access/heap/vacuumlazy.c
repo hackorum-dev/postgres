@@ -160,25 +160,18 @@
 
 
 /*
- * Space/time tradeoff parameters: do these need to be user-tunable?
+ * Space/time tradeoff parameters.
  *
  * To consider truncating the relation, we want there to be at least
- * REL_TRUNCATE_MINIMUM or (relsize / REL_TRUNCATE_FRACTION) (whichever
- * is less) potentially-freeable pages.
+ * REL_TRUNCATE_MINIMUM or (rel_pages / REL_TRUNCATE_FRACTION) (whichever
+ * is less) potentially-freeable pages.  We must also avoid waiting too
+ * long on an AccessExclusiveLock.
  */
-#define REL_TRUNCATE_MINIMUM	1000
-#define REL_TRUNCATE_FRACTION	16
-
-/*
- * Timing parameters for truncate locking heuristics.
- *
- * These were not exposed as user tunable GUC values because it didn't seem
- * that the potential for improvement was great enough to merit the cost of
- * supporting them.
- */
-#define VACUUM_TRUNCATE_LOCK_CHECK_INTERVAL		20	/* ms */
-#define VACUUM_TRUNCATE_LOCK_WAIT_INTERVAL		50	/* ms */
-#define VACUUM_TRUNCATE_LOCK_TIMEOUT			5000	/* ms */
+#define REL_TRUNCATE_MINIMUM				1000
+#define REL_TRUNCATE_FRACTION				16
+#define REL_TRUNCATE_LOCK_CHECK_INTERVAL	20		/* ms */
+#define REL_TRUNCATE_LOCK_WAIT_INTERVAL		50		/* ms */
+#define REL_TRUNCATE_LOCK_TIMEOUT			5000	/* ms */
 
 /*
  * Threshold that controls whether we bypass index vacuuming and heap
@@ -3202,8 +3195,8 @@ lazy_truncate_heap(LVRelState *vacrel)
 			 */
 			CHECK_FOR_INTERRUPTS();
 
-			if (++lock_retry > (VACUUM_TRUNCATE_LOCK_TIMEOUT /
-								VACUUM_TRUNCATE_LOCK_WAIT_INTERVAL))
+			if (++lock_retry >
+				(REL_TRUNCATE_LOCK_TIMEOUT / REL_TRUNCATE_LOCK_WAIT_INTERVAL))
 			{
 				/*
 				 * We failed to establish the lock in the specified number of
@@ -3217,7 +3210,7 @@ lazy_truncate_heap(LVRelState *vacrel)
 
 			(void) WaitLatch(MyLatch,
 							 WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH,
-							 VACUUM_TRUNCATE_LOCK_WAIT_INTERVAL,
+							 REL_TRUNCATE_LOCK_WAIT_INTERVAL,
 							 WAIT_EVENT_VACUUM_TRUNCATE);
 			ResetLatch(MyLatch);
 		}
@@ -3324,7 +3317,7 @@ count_nondeletable_pages(LVRelState *vacrel, bool *lock_waiter_detected)
 		/*
 		 * Check if another process requests a lock on our relation. We are
 		 * holding an AccessExclusiveLock here, so they will be waiting. We
-		 * only do this once per VACUUM_TRUNCATE_LOCK_CHECK_INTERVAL, and we
+		 * only do this once per REL_TRUNCATE_LOCK_CHECK_INTERVAL, and we
 		 * only check if that interval has elapsed once every 32 blocks to
 		 * keep the number of system calls and actual shared lock table
 		 * lookups to a minimum.
@@ -3337,8 +3330,8 @@ count_nondeletable_pages(LVRelState *vacrel, bool *lock_waiter_detected)
 			INSTR_TIME_SET_CURRENT(currenttime);
 			elapsed = currenttime;
 			INSTR_TIME_SUBTRACT(elapsed, starttime);
-			if ((INSTR_TIME_GET_MICROSEC(elapsed) / 1000)
-				>= VACUUM_TRUNCATE_LOCK_CHECK_INTERVAL)
+			if ((INSTR_TIME_GET_MICROSEC(elapsed) / 1000) >=
+				REL_TRUNCATE_LOCK_CHECK_INTERVAL)
 			{
 				if (LockHasWaitersRelation(vacrel->rel, AccessExclusiveLock))
 				{
