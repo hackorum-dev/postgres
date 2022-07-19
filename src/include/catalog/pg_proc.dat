@@ -6930,6 +6930,11 @@
   proname => 'pg_last_xact_replay_timestamp', provolatile => 'v',
   prorettype => 'timestamptz', proargtypes => '',
   prosrc => 'pg_last_xact_replay_timestamp' },
+{ oid => '9319', descr => 'get last replayed wal info such as lsn, timeline id',
+  proname => 'pg_last_wal_replay_info', prorows => '1',
+  provolatile => 'v', prorettype => 'record', proargtypes => '',
+  proallargtypes => '{pg_lsn,int4}', proargmodes => '{o,o}',
+  proargnames => '{lsn, timeline_id}', prosrc => 'pg_last_wal_replay_info' },
 
 { oid => '3071', descr => 'pause wal replay',
   proname => 'pg_wal_replay_pause', provolatile => 'v', prorettype => 'void',
