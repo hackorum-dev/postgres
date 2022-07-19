@@ -1654,7 +1654,7 @@ mcv_get_match_bitmap(PlannerInfo *root, List *clauses,
 			fmgr_info(get_opcode(expr->opno), &opproc);
 
 			/* extract the var/expr and const from the expression */
-			if (!examine_opclause_args(expr->args, &clause_exprs, &cst, &expronleft))
+			if (!examine_opclause_args(expr->args, &clause_exprs, &cst, &expronleft, NULL))
 				elog(ERROR, "incompatible clause");
 
 			if (cst)	/* Expr op Const */
@@ -1820,7 +1820,7 @@ mcv_get_match_bitmap(PlannerInfo *root, List *clauses,
 			fmgr_info(get_opcode(expr->opno), &opproc);
 
 			/* extract the var/expr and const from the expression */
-			if (!examine_opclause_args(expr->args, &clause_exprs, &cst, &expronleft))
+			if (!examine_opclause_args(expr->args, &clause_exprs, &cst, &expronleft, NULL))
 				elog(ERROR, "incompatible clause");
 
 			/* ScalarArrayOpExpr has the Var always on the left */

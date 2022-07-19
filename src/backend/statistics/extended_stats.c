@@ -1320,11 +1320,14 @@ choose_best_statistics(List *stats, char requiredkind, bool inh,
  * statext_is_compatible_clause. It needs to be split like this because
  * of recursion.  The attnums bitmap is an input/output parameter collecting
  * attribute numbers from all compatible clauses (recursively).
+ *
+ * XXX The issimple variable is expected to be initialized by the caller, we
+ * just update it while recursively analyzing the current clause.
  */
 static bool
 statext_is_compatible_clause_internal(PlannerInfo *root, Node *clause,
 									  Index relid, Bitmapset **attnums,
-									  List **exprs)
+									  List **exprs, bool *issimple)
 {
 	/* Look inside any binary-compatible relabeling (as in examine_variable) */
 	if (IsA(clause, RelabelType))
@@ -1372,7 +1375,7 @@ statext_is_compatible_clause_internal(PlannerInfo *root, Node *clause,
 		 * Check if the expression has the right shape. This returns either one
 		 * or two expressions, depending on whether there is a Const.
 		 */
-		if (!examine_opclause_args(expr->args, &clause_exprs, NULL, NULL))
+		if (!examine_opclause_args(expr->args, &clause_exprs, NULL, NULL, issimple))
 			return false;
 
 		/*
@@ -1421,20 +1424,37 @@ statext_is_compatible_clause_internal(PlannerInfo *root, Node *clause,
 		/*
 		 * Check all expressions by recursing. Var expressions are handled as
 		 * a special case (to match it to attnums etc.)
+		 *
+		 * An opclause is simple if it's (Expr op Const) or (Const op Expr). We
+		 * have already checked the overall shape in examine_opclause_args, but
+		 * we haven't checked the expressions are simple (i.e. pretty much Var),
+		 * so we need to check that now. If we discover a complex expression, we
+		 * consider the whole clause complex.
 		 */
 		foreach (lc, clause_exprs)
 		{
 			Node *clause_expr = (Node *) lfirst(lc);
 
+			/*
+			 * XXX Shouldn't this try removing RelabelType, just like we do in
+			 * statext_is_compatible_clause_internal? Otherwise we might treat
+			 * Var (with a RelabelType on top) as complex expression.
+			 */
 			if (IsA(clause_expr, Var))
 			{
 				/* if the Var is incompatible, the whole clause is incompatible */
 				if (!statext_is_compatible_clause_internal(root, clause_expr,
-														   relid, attnums, exprs))
+														   relid, attnums, exprs,
+														   issimple))
 					return false;
 			}
 			else	/* generic expression */
+			{
 				*exprs = lappend(*exprs, clause_expr);
+
+				/* switch to false if there are any complex clauses */
+				*issimple = false;
+			}
 		}
 
 		return true;
@@ -1453,7 +1473,7 @@ statext_is_compatible_clause_internal(PlannerInfo *root, Node *clause,
 			return false;
 
 		/* Check if the expression has the right shape (one Var, one Const) */
-		if (!examine_opclause_args(expr->args, &clause_exprs, NULL, NULL))
+		if (!examine_opclause_args(expr->args, &clause_exprs, NULL, NULL, issimple))
 			return false;
 
 		/* There has to be one expression exactly. */
@@ -1501,7 +1521,8 @@ statext_is_compatible_clause_internal(PlannerInfo *root, Node *clause,
 		/* Check Var IN Array clauses by recursing. */
 		if (IsA(clause_expr, Var))
 			return statext_is_compatible_clause_internal(root, clause_expr,
-														 relid, attnums, exprs);
+														 relid, attnums, exprs,
+														 issimple);
 
 		/* Otherwise we have Expr IN Array. */
 		*exprs = lappend(*exprs, clause_expr);
@@ -1530,6 +1551,18 @@ statext_is_compatible_clause_internal(PlannerInfo *root, Node *clause,
 		BoolExpr   *expr = (BoolExpr *) clause;
 		ListCell   *lc;
 
+		/*
+		 * All AND/OR clauses are considered complex, even if all arguments are
+		 * simple clauses. For NOT clauses we need to check the argument and then
+		 * we can update the flag.
+		 *
+		 * XXX Maybe for AND/OR we should check if all arguments reference the
+		 * same attnum, and consider them complex only when there are multiple
+		 * attnum values (i.e. different Vars)?
+		 */
+		if (!is_notclause(clause))
+			*issimple = false;
+
 		foreach(lc, expr->args)
 		{
 			/*
@@ -1538,7 +1571,8 @@ statext_is_compatible_clause_internal(PlannerInfo *root, Node *clause,
 			 */
 			if (!statext_is_compatible_clause_internal(root,
 													   (Node *) lfirst(lc),
-													   relid, attnums, exprs))
+													   relid, attnums, exprs,
+													   issimple))
 				return false;
 		}
 
@@ -1553,7 +1587,8 @@ statext_is_compatible_clause_internal(PlannerInfo *root, Node *clause,
 		/* Check Var IS NULL clauses by recursing. */
 		if (IsA(nt->arg, Var))
 			return statext_is_compatible_clause_internal(root, (Node *) (nt->arg),
-														 relid, attnums, exprs);
+														 relid, attnums, exprs,
+														 issimple);
 
 		/* Otherwise we have Expr IS NULL. */
 		*exprs = lappend(*exprs, nt->arg);
@@ -1589,7 +1624,7 @@ statext_is_compatible_clause_internal(PlannerInfo *root, Node *clause,
  */
 static bool
 statext_is_compatible_clause(PlannerInfo *root, Node *clause, Index relid,
-							 Bitmapset **attnums, List **exprs)
+							 Bitmapset **attnums, List **exprs, bool *issimple)
 {
 	RangeTblEntry *rte = root->simple_rte_array[relid];
 	RestrictInfo *rinfo = (RestrictInfo *) clause;
@@ -1597,14 +1632,27 @@ statext_is_compatible_clause(PlannerInfo *root, Node *clause, Index relid,
 	Oid			userid;
 
 	/*
+	 * Clauses are considered simple by default, and we mark them as complex
+	 * when we discover a complex part.
+	 */
+	*issimple = true;
+
+	/*
 	 * Special-case handling for bare BoolExpr AND clauses, because the
 	 * restrictinfo machinery doesn't build RestrictInfos on top of AND
 	 * clauses.
+	 *
+	 * AND clauses are considered complex, even if all arguments are
+	 * simple clauses.
 	 */
 	if (is_andclause(clause))
 	{
 		BoolExpr   *expr = (BoolExpr *) clause;
 		ListCell   *lc;
+		bool		tmp = false;	/* ignored result */
+
+		/* AND clauses are complex, even if the arguments are simple. */
+		*issimple = false;
 
 		/*
 		 * Check that each sub-clause is compatible.  We expect these to be
@@ -1613,7 +1661,7 @@ statext_is_compatible_clause(PlannerInfo *root, Node *clause, Index relid,
 		foreach(lc, expr->args)
 		{
 			if (!statext_is_compatible_clause(root, (Node *) lfirst(lc),
-											  relid, attnums, exprs))
+											  relid, attnums, exprs, &tmp))
 				return false;
 		}
 
@@ -1635,7 +1683,7 @@ statext_is_compatible_clause(PlannerInfo *root, Node *clause, Index relid,
 
 	/* Check the clause and determine what attributes it references. */
 	if (!statext_is_compatible_clause_internal(root, (Node *) rinfo->clause,
-											   relid, attnums, exprs))
+											   relid, attnums, exprs, issimple))
 		return false;
 
 	/*
@@ -1725,6 +1773,7 @@ statext_mcv_clauselist_selectivity(PlannerInfo *root, List *clauses, int varReli
 	ListCell   *l;
 	Bitmapset **list_attnums;	/* attnums extracted from the clause */
 	List	  **list_exprs;		/* expressions matched to any statistic */
+	bool	  *list_simple;		/* marks simple expressions */
 	int			listidx;
 	Selectivity sel = (is_or) ? 0.0 : 1.0;
 	RangeTblEntry *rte = planner_rt_fetch(rel->relid, root);
@@ -1738,6 +1787,9 @@ statext_mcv_clauselist_selectivity(PlannerInfo *root, List *clauses, int varReli
 
 	/* expressions extracted from complex expressions */
 	list_exprs = (List **) palloc(sizeof(Node *) * list_length(clauses));
+
+	/* expressions determined to be simple (single expression) */
+	list_simple = (bool *) palloc(sizeof(bool) * list_length(clauses));
 
 	/*
 	 * Pre-process the clauses list to extract the attnums and expressions
@@ -1756,17 +1808,21 @@ statext_mcv_clauselist_selectivity(PlannerInfo *root, List *clauses, int varReli
 		Node	   *clause = (Node *) lfirst(l);
 		Bitmapset  *attnums = NULL;
 		List	   *exprs = NIL;
+		bool		issimple = false;
 
 		if (!bms_is_member(listidx, *estimatedclauses) &&
-			statext_is_compatible_clause(root, clause, rel->relid, &attnums, &exprs))
+			statext_is_compatible_clause(root, clause, rel->relid,
+										 &attnums, &exprs, &issimple))
 		{
 			list_attnums[listidx] = attnums;
 			list_exprs[listidx] = exprs;
+			list_simple[listidx] = issimple;
 		}
 		else
 		{
 			list_attnums[listidx] = NULL;
 			list_exprs[listidx] = NIL;
+			list_simple[listidx] = false;
 		}
 
 		listidx++;
@@ -1803,6 +1859,8 @@ statext_mcv_clauselist_selectivity(PlannerInfo *root, List *clauses, int varReli
 		listidx = -1;
 		foreach(l, clauses)
 		{
+			Node *clause = (Node *) lfirst(l);
+
 			/* Increment the index before we decide if to skip the clause. */
 			listidx++;
 
@@ -1841,13 +1899,12 @@ statext_mcv_clauselist_selectivity(PlannerInfo *root, List *clauses, int varReli
 			/* record simple clauses (single column or expression) */
 			if ((list_attnums[listidx] == NULL &&
 				 list_length(list_exprs[listidx]) == 1) ||
-				(list_exprs[listidx] == NIL &&
-				 bms_membership(list_attnums[listidx]) == BMS_SINGLETON))
+				 list_simple[listidx])
 				simple_clauses = bms_add_member(simple_clauses,
 												list_length(stat_clauses));
 
 			/* add clause to list and mark it as estimated */
-			stat_clauses = lappend(stat_clauses, (Node *) lfirst(l));
+			stat_clauses = lappend(stat_clauses, clause);
 			*estimatedclauses = bms_add_member(*estimatedclauses, listidx);
 
 			/*
@@ -2056,13 +2113,15 @@ statext_clauselist_selectivity(PlannerInfo *root, List *clauses, int varRelid,
  * specifies on which side of the operator we found the expression node.
  */
 bool
-examine_opclause_args(List *args, List **exprsp, Const **cstp, bool *expronleftp)
+examine_opclause_args(List *args, List **exprsp, Const **cstp, bool *expronleftp,
+					  bool *issimplep)
 {
 	List	   *exprs = NIL;
 	Const	   *cst = NULL;
 	bool		expronleft;
 	Node	   *leftop,
 			   *rightop;
+	bool		issimple;
 
 	/* enforced by statext_is_compatible_clause_internal */
 	Assert(list_length(args) == 2);
@@ -2082,18 +2141,21 @@ examine_opclause_args(List *args, List **exprsp, Const **cstp, bool *expronleftp
 		exprs = lappend(exprs, leftop);
 		cst = (Const *) rightop;
 		expronleft = true;
+		issimple = true;
 	}
 	else if (IsA(leftop, Const))
 	{
 		exprs = lappend(exprs, rightop);
 		cst = (Const *) leftop;
 		expronleft = false;
+		issimple = true;
 	}
 	else
 	{
 		exprs = lappend(exprs, leftop);
 		exprs = lappend(exprs, rightop);
 		expronleft = false;
+		issimple = false;
 	}
 
 	/* return pointers to the extracted parts if requested */
@@ -2105,6 +2167,9 @@ examine_opclause_args(List *args, List **exprsp, Const **cstp, bool *expronleftp
 
 	if (expronleftp)
 		*expronleftp = expronleft;
+
+	if (issimplep)
+		*issimplep = (*issimplep && issimple);
 
 	return true;
 }
