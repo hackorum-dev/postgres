@@ -396,6 +396,42 @@ pg_last_wal_replay_lsn(PG_FUNCTION_ARGS)
 	PG_RETURN_LSN(recptr);
 }
 
+#define PG_LAST_WAL_REPLAY_INFO_COLS 2
+Datum
+pg_last_wal_replay_info(PG_FUNCTION_ARGS)
+{
+	HeapTuple	tuple;
+	TupleDesc	tupleDesc;
+	Datum		values[PG_LAST_WAL_REPLAY_INFO_COLS] = {0};
+	bool		nulls[PG_LAST_WAL_REPLAY_INFO_COLS] = {0};
+	Datum		result;
+	XLogRecPtr	recptr;
+	TimeLineID	tli;
+
+	recptr = GetXLogReplayRecPtr(&tli);
+
+	/*
+	 * Build a tuple descriptor for our result type
+	 */
+	if (get_call_result_type(fcinfo, NULL, &tupleDesc) != TYPEFUNC_COMPOSITE)
+		elog(ERROR, "return type must be a row type");
+
+	if (recptr == 0)
+		PG_RETURN_NULL();
+
+	values[0] = Int32GetDatum(recptr);
+	values[1] = Int64GetDatum(tli);
+
+	/*
+	 * Build and return the tuple
+	 */
+	tuple = heap_form_tuple(tupleDesc, values, nulls);
+	result = HeapTupleGetDatum(tuple);
+
+	PG_RETURN_DATUM(result);
+}
+#undef PG_LAST_WAL_REPLAY_INFO_COLS
+
 /*
  * Compute an xlog file name and decimal byte offset given a WAL location,
  * such as is returned by pg_backup_stop() or pg_switch_wal().
