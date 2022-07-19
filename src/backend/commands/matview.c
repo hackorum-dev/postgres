@@ -14,7 +14,7 @@
  */
 #include "postgres.h"
 
-#include "access/genam.h"
+#include "access/amapi.h"
 #include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/multixact.h"
@@ -869,7 +869,7 @@ is_usable_unique_index(Relation indexRel)
 
 	/*
 	 * Must be unique, valid, immediate, non-partial, and be defined over
-	 * plain user columns (not expressions).  We also require it to be a
+	 * plain user columns (not expressions).  We also require it to be like a
 	 * btree.  Even if we had any other unique index kinds, we'd not know how
 	 * to identify the corresponding equality operator, nor could we be sure
 	 * that the planner could implement the required FULL JOIN with non-btree
@@ -877,7 +877,7 @@ is_usable_unique_index(Relation indexRel)
 	 */
 	if (indexStruct->indisunique &&
 		indexStruct->indimmediate &&
-		indexRel->rd_rel->relam == BTREE_AM_OID &&
+		get_amstrategy_am(indexRel->rd_rel->relam) == BTREE_AM_OID &&
 		indexStruct->indisvalid &&
 		RelationGetIndexPredicate(indexRel) == NIL &&
 		indexStruct->indnatts > 0)

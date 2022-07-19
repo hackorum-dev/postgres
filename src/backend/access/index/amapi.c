@@ -141,3 +141,11 @@ amvalidate(PG_FUNCTION_ARGS)
 
 	PG_RETURN_BOOL(result);
 }
+
+Oid
+get_amstrategy_am(Oid indexam_oid)
+{
+	IndexAmRoutine *indexAm = GetIndexAmRoutineByAmId(indexam_oid, false);
+
+	return indexAm->amstrategy_am;
+}

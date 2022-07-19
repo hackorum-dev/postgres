@@ -5998,8 +5998,8 @@ get_actual_variable_range(PlannerInfo *root, VariableStatData *vardata,
 		IndexOptInfo *index = (IndexOptInfo *) lfirst(lc);
 		ScanDirection indexscandir;
 
-		/* Ignore non-btree indexes */
-		if (index->relam != BTREE_AM_OID)
+		/* Ignore indexes that don't behave like btrees */
+		if (index->strategyam != BTREE_AM_OID)
 			continue;
 
 		/*

@@ -17,6 +17,7 @@
 #include "access/gist_private.h"
 #include "access/gistscan.h"
 #include "access/xloginsert.h"
+#include "catalog/pg_am_d.h"
 #include "catalog/pg_collation.h"
 #include "commands/vacuum.h"
 #include "miscadmin.h"
@@ -61,6 +62,7 @@ gisthandler(PG_FUNCTION_ARGS)
 {
 	IndexAmRoutine *amroutine = makeNode(IndexAmRoutine);
 
+	amroutine->amstrategy_am = GIST_AM_OID;
 	amroutine->amstrategies = 0;
 	amroutine->amsupport = GISTNProcs;
 	amroutine->amoptsprocnum = GIST_OPTIONS_PROC;

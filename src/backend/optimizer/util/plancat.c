@@ -268,6 +268,7 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 
 			/* We copy just the fields we need, not all of rd_indam */
 			amroutine = indexRelation->rd_indam;
+			info->strategyam = amroutine->amstrategy_am;
 			info->amcanorderbyop = amroutine->amcanorderbyop;
 			info->amoptionalkey = amroutine->amoptionalkey;
 			info->amsearcharray = amroutine->amsearcharray;
@@ -287,10 +288,10 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 			/*
 			 * Fetch the ordering information for the index, if any.
 			 */
-			if (info->relam == BTREE_AM_OID)
+			if (info->strategyam == BTREE_AM_OID)
 			{
 				/*
-				 * If it's a btree index, we can use its opfamily OIDs
+				 * If it's like a btree index, we can use its opfamily OIDs
 				 * directly as the sort ordering opfamily OIDs.
 				 */
 				Assert(amroutine->amcanorder);
@@ -317,11 +318,7 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 				 *
 				 * XXX This method is rather slow and also requires the
 				 * undesirable assumption that the other index AM numbers its
-				 * strategies the same as btree.  It'd be better to have a way
-				 * to explicitly declare the corresponding btree opfamily for
-				 * each opfamily of the other index type.  But given the lack
-				 * of current or foreseeable amcanorder index types, it's not
-				 * worth expending more effort on now.
+				 * strategies the same as btree.
 				 */
 				info->sortopfamily = (Oid *) palloc(sizeof(Oid) * nkeycolumns);
 				info->reverse_sort = (bool *) palloc(sizeof(bool) * nkeycolumns);
@@ -414,7 +411,7 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 					info->tuples = rel->tuples;
 			}
 
-			if (info->relam == BTREE_AM_OID)
+			if (info->strategyam == BTREE_AM_OID)
 			{
 				/* For btrees, get tree height while we have the index open */
 				info->tree_height = _bt_getrootheight(indexRelation);

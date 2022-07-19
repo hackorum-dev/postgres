@@ -1068,6 +1068,8 @@ struct IndexOptInfo
 	bool	   *canreturn pg_node_attr(read_write_ignore);
 	/* OID of the access method (in pg_am) */
 	Oid			relam;
+	/* OID of the access method that defines strategies */
+	Oid			strategyam;
 
 	/*
 	 * expressions for non-simple index columns; redundant to print since we

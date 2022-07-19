@@ -45,6 +45,7 @@ spghandler(PG_FUNCTION_ARGS)
 {
 	IndexAmRoutine *amroutine = makeNode(IndexAmRoutine);
 
+	amroutine->amstrategy_am = SPGIST_AM_OID;
 	amroutine->amstrategies = 0;
 	amroutine->amsupport = SPGISTNProc;
 	amroutine->amoptsprocnum = SPGIST_OPTIONS_PROC;

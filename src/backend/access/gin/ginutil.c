@@ -39,6 +39,7 @@ ginhandler(PG_FUNCTION_ARGS)
 {
 	IndexAmRoutine *amroutine = makeNode(IndexAmRoutine);
 
+	amroutine->amstrategy_am = GIN_AM_OID;
 	amroutine->amstrategies = 0;
 	amroutine->amsupport = GINNProcs;
 	amroutine->amoptsprocnum = GIN_OPTIONS_PROC;

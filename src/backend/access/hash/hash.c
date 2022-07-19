@@ -58,6 +58,7 @@ hashhandler(PG_FUNCTION_ARGS)
 {
 	IndexAmRoutine *amroutine = makeNode(IndexAmRoutine);
 
+	amroutine->amstrategy_am = HASH_AM_OID;
 	amroutine->amstrategies = HTMaxStrategyNumber;
 	amroutine->amsupport = HASHNProcs;
 	amroutine->amoptsprocnum = HASHOPTIONS_PROC;

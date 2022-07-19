@@ -91,6 +91,7 @@ brinhandler(PG_FUNCTION_ARGS)
 {
 	IndexAmRoutine *amroutine = makeNode(IndexAmRoutine);
 
+	amroutine->amstrategy_am = BRIN_AM_OID;
 	amroutine->amstrategies = 0;
 	amroutine->amsupport = BRIN_LAST_OPTIONAL_PROCNUM;
 	amroutine->amoptsprocnum = BRIN_PROCNUM_OPTIONS;

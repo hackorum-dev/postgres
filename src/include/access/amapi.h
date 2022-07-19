@@ -208,6 +208,14 @@ typedef struct IndexAmRoutine
 	NodeTag		type;
 
 	/*
+	 * The Oid of the AM that defines the strategies. Typically, this would
+	 * be BTREE_AM_OID for any AM that chooses to use BT StrategyNumbers, etc..
+	 * Or put another way, is it like a btree or a hash index etc..
+	 * This is NOT the Oid of the AM itself.
+	 */
+	Oid			amstrategy_am;
+
+	/*
 	 * Total number of strategies (operators) by which we can traverse/search
 	 * this AM.  Zero if AM does not have a fixed set of strategy assignments.
 	 */
@@ -286,5 +294,6 @@ typedef struct IndexAmRoutine
 /* Functions in access/index/amapi.c */
 extern IndexAmRoutine *GetIndexAmRoutine(Oid amhandler);
 extern IndexAmRoutine *GetIndexAmRoutineByAmId(Oid amoid, bool noerror);
+extern Oid get_amstrategy_am(Oid indexam_oid);
 
 #endif							/* AMAPI_H */
