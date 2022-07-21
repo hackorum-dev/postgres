@@ -295,7 +295,7 @@ ST_SORT_INTERNAL(ST_POINTER_TYPE * data, size_t n
 
 loop:
 	DO_CHECK_FOR_INTERRUPTS();
-	if (n < 10)
+	if (n < 18)
 	{
 		for (pm = a + ST_POINTER_STEP; pm < a + n * ST_POINTER_STEP;
 			 pm += ST_POINTER_STEP)
