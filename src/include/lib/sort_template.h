@@ -296,7 +296,7 @@ ST_SORT(ST_ELEMENT_TYPE * data, size_t n
 
 loop:
 	DO_CHECK_FOR_INTERRUPTS();
-	if (n < 7)
+	if (n < 10)
 	{
 		for (pm = a + ST_POINTER_STEP; pm < a + n * ST_POINTER_STEP;
 			 pm += ST_POINTER_STEP)
