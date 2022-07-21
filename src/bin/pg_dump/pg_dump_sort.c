@@ -280,6 +280,34 @@ DOTypeNameCompare(const void *p1, const void *p2)
 		if (cmpval != 0)
 			return cmpval;
 	}
+	else if (obj1->objType == DO_CONSTRAINT ||
+			 obj1->objType == DO_FK_CONSTRAINT)
+	{
+		ConstraintInfo *cobj1 = *(ConstraintInfo *const *) p1;
+		ConstraintInfo *cobj2 = *(ConstraintInfo *const *) p2;
+		const char *objname1;
+		const char *objname2;
+
+		/* Sort by owning object name (namespace was considered already) */
+		if (cobj1->contable)
+			objname1 = cobj1->contable->dobj.name;
+		else if (cobj1->condomain)
+			objname1 = cobj1->condomain->dobj.name;
+		else
+			objname1 = NULL;
+		if (cobj2->contable)
+			objname2 = cobj2->contable->dobj.name;
+		else if (cobj2->condomain)
+			objname2 = cobj2->condomain->dobj.name;
+		else
+			objname2 = NULL;
+		if (objname1 && objname2)
+		{
+			cmpval = strcmp(objname1, objname2);
+			if (cmpval != 0)
+				return cmpval;
+		}
+	}
 	else if (obj1->objType == DO_POLICY)
 	{
 		PolicyInfo *pobj1 = *(PolicyInfo *const *) p1;
@@ -291,6 +319,17 @@ DOTypeNameCompare(const void *p1, const void *p2)
 		if (cmpval != 0)
 			return cmpval;
 	}
+	else if (obj1->objType == DO_RULE)
+	{
+		RuleInfo   *robj1 = *(RuleInfo *const *) p1;
+		RuleInfo   *robj2 = *(RuleInfo *const *) p2;
+
+		/* Sort by table name (table namespace was considered already) */
+		cmpval = strcmp(robj1->ruletable->dobj.name,
+						robj2->ruletable->dobj.name);
+		if (cmpval != 0)
+			return cmpval;
+	}
 	else if (obj1->objType == DO_TRIGGER)
 	{
 		TriggerInfo *tobj1 = *(TriggerInfo *const *) p1;
@@ -299,6 +338,39 @@ DOTypeNameCompare(const void *p1, const void *p2)
 		/* Sort by table name (table namespace was considered already) */
 		cmpval = strcmp(tobj1->tgtable->dobj.name,
 						tobj2->tgtable->dobj.name);
+		if (cmpval != 0)
+			return cmpval;
+	}
+	else if (obj1->objType == DO_DEFAULT_ACL)
+	{
+		DefaultACLInfo *daclobj1 = *(DefaultACLInfo *const *) p1;
+		DefaultACLInfo *daclobj2 = *(DefaultACLInfo *const *) p2;
+
+		/* Sort by role name (objtype and namespace were considered already) */
+		cmpval = strcmp(daclobj1->defaclrole,
+						daclobj2->defaclrole);
+		if (cmpval != 0)
+			return cmpval;
+	}
+	else if (obj1->objType == DO_PUBLICATION_REL)
+	{
+		PublicationRelInfo *probj1 = *(PublicationRelInfo *const *) p1;
+		PublicationRelInfo *probj2 = *(PublicationRelInfo *const *) p2;
+
+		/* Sort by publication name (table name/nsp was considered already) */
+		cmpval = strcmp(probj1->publication->dobj.name,
+						probj2->publication->dobj.name);
+		if (cmpval != 0)
+			return cmpval;
+	}
+	else if (obj1->objType == DO_PUBLICATION_TABLE_IN_SCHEMA)
+	{
+		PublicationSchemaInfo *psobj1 = *(PublicationSchemaInfo *const *) p1;
+		PublicationSchemaInfo *psobj2 = *(PublicationSchemaInfo *const *) p2;
+
+		/* Sort by publication name (schema name was considered already) */
+		cmpval = strcmp(psobj1->publication->dobj.name,
+						psobj2->publication->dobj.name);
 		if (cmpval != 0)
 			return cmpval;
 	}
