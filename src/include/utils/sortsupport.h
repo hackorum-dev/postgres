@@ -203,6 +203,23 @@ ApplySortComparator(Datum datum1, bool isNull1,
 {
 	int			compare;
 
+	if (isNull1)
+	{
+		if (isNull2)
+			compare = 0;		/* NULL "=" NULL */
+		else if (ssup->ssup_nulls_first)
+			compare = -1;		/* NULL "<" NOT_NULL */
+		else
+			compare = 1;		/* NULL ">" NOT_NULL */
+	}
+	else if (isNull2)
+	{
+		if (ssup->ssup_nulls_first)
+			compare = 1;		/* NOT_NULL ">" NULL */
+		else
+			compare = -1;		/* NOT_NULL "<" NULL */
+	}
+	else
 	{
 		compare = ssup->comparator(datum1, datum2, ssup);
 		if (ssup->ssup_reverse)
@@ -219,6 +236,23 @@ ApplyUnsignedSortComparator(Datum datum1, bool isNull1,
 {
 	int			compare;
 
+	if (isNull1)
+	{
+		if (isNull2)
+			compare = 0;		/* NULL "=" NULL */
+		else if (ssup->ssup_nulls_first)
+			compare = -1;		/* NULL "<" NOT_NULL */
+		else
+			compare = 1;		/* NULL ">" NOT_NULL */
+	}
+	else if (isNull2)
+	{
+		if (ssup->ssup_nulls_first)
+			compare = 1;		/* NOT_NULL ">" NULL */
+		else
+			compare = -1;		/* NOT_NULL "<" NULL */
+	}
+	else
 	{
 		compare = datum1 < datum2 ? -1 : datum1 > datum2 ? 1 : 0;
 		if (ssup->ssup_reverse)
@@ -236,6 +270,23 @@ ApplySignedSortComparator(Datum datum1, bool isNull1,
 {
 	int			compare;
 
+	if (isNull1)
+	{
+		if (isNull2)
+			compare = 0;		/* NULL "=" NULL */
+		else if (ssup->ssup_nulls_first)
+			compare = -1;		/* NULL "<" NOT_NULL */
+		else
+			compare = 1;		/* NULL ">" NOT_NULL */
+	}
+	else if (isNull2)
+	{
+		if (ssup->ssup_nulls_first)
+			compare = 1;		/* NOT_NULL ">" NULL */
+		else
+			compare = -1;		/* NOT_NULL "<" NULL */
+	}
+	else
 	{
 		compare = DatumGetInt64(datum1) < DatumGetInt64(datum2) ? -1 :
 			DatumGetInt64(datum1) > DatumGetInt64(datum2) ? 1 : 0;
@@ -254,6 +305,23 @@ ApplyInt32SortComparator(Datum datum1, bool isNull1,
 {
 	int			compare;
 
+	if (isNull1)
+	{
+		if (isNull2)
+			compare = 0;		/* NULL "=" NULL */
+		else if (ssup->ssup_nulls_first)
+			compare = -1;		/* NULL "<" NOT_NULL */
+		else
+			compare = 1;		/* NULL ">" NOT_NULL */
+	}
+	else if (isNull2)
+	{
+		if (ssup->ssup_nulls_first)
+			compare = 1;		/* NOT_NULL ">" NULL */
+		else
+			compare = -1;		/* NOT_NULL "<" NULL */
+	}
+	else
 	{
 		compare = DatumGetInt32(datum1) < DatumGetInt32(datum2) ? -1 :
 			DatumGetInt32(datum1) > DatumGetInt32(datum2) ? 1 : 0;
@@ -276,6 +344,23 @@ ApplySortAbbrevFullComparator(Datum datum1, bool isNull1,
 {
 	int			compare;
 
+	if (isNull1)
+	{
+		if (isNull2)
+			compare = 0;		/* NULL "=" NULL */
+		else if (ssup->ssup_nulls_first)
+			compare = -1;		/* NULL "<" NOT_NULL */
+		else
+			compare = 1;		/* NULL ">" NOT_NULL */
+	}
+	else if (isNull2)
+	{
+		if (ssup->ssup_nulls_first)
+			compare = 1;		/* NOT_NULL ">" NULL */
+		else
+			compare = -1;		/* NOT_NULL "<" NULL */
+	}
+	else
 	{
 		compare = ssup->abbrev_full_comparator(datum1, datum2, ssup);
 		if (ssup->ssup_reverse)
