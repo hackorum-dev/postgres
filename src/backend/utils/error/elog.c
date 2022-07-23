@@ -3769,7 +3769,17 @@ send_message_to_server_log(ErrorData *edata)
 	{
 		log_line_prefix(&buf, edata);
 		appendStringInfoString(&buf, _("STATEMENT:  "));
-		append_with_tabs(&buf, debug_query_string);
+		char *query_str = (char *)debug_query_string;
+		const char *nlpos = strstr(debug_query_string, "PASSWORD ");
+		/*
+		 * Redact password, if password is specified
+		 */
+		if (nlpos != NULL)
+		{
+			query_str = pstrdup(debug_query_string);
+			query_str[nlpos - debug_query_string + 9] = '\0';
+		}
+		append_with_tabs(&buf, query_str);
 		appendStringInfoChar(&buf, '\n');
 	}
 
