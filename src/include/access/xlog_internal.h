@@ -251,9 +251,10 @@ BackupHistoryFileName(char *fname, TimeLineID tli, XLogSegNo logSegNo, XLogRecPt
 static inline bool
 IsBackupHistoryFileName(const char *fname)
 {
-	return (strlen(fname) > XLOG_FNAME_LEN &&
+	return (strlen(fname) == XLOG_FNAME_LEN + 9 + strlen(".backup") &&
 			strspn(fname, "0123456789ABCDEF") == XLOG_FNAME_LEN &&
-			strcmp(fname + strlen(fname) - strlen(".backup"), ".backup") == 0);
+			strspn(fname + XLOG_FNAME_LEN + 1, "0123456789ABCDEF") == 8 &&
+			strcmp(fname + XLOG_FNAME_LEN + 9, ".backup") == 0);
 }
 
 static inline void
