@@ -903,19 +903,14 @@ endif
 # using $(eval).  It will set up a target so that it recurses into a
 # given subdirectory.  For the tree-wide all/install/check/installcheck cases,
 # ensure we do our one-time tasks before recursing (see targets above).
-# Note that to avoid a nasty bug in make 3.80,
-# this function was written to not use any complicated constructs (like
-# multiple targets on a line) and also not contain any lines that expand
-# to more than about 200 bytes.  This is why we make it apply to just one
-# subdirectory at a time, rather than to a list of subdirectories.
 # $1: target name, e.g., all
 # $2: subdir name
 # $3: target to run in subdir, usually same as $1
 define _create_recursive_target
-.PHONY: $(1)-$(2)-recurse
-$(1): $(1)-$(2)-recurse
-$(1)-$(2)-recurse: $(if $(filter all install check installcheck, $(3)), submake-generated-headers) $(if $(filter check, $(3)), temp-install)
-	$$(MAKE) -C $(2) $(3)
+.PHONY: $(patsubst %,$(1)-%-recurse,$(2))
+$(1): $(patsubst %,$(1)-%-recurse,$(2))
+$(2:%=$(1)-%-recurse):
+	$$(MAKE) -C $$(patsubst $(1)-%-recurse,%,$$@) $(3)
 endef
 # Note that the use of $$ on the last line above is important; we want
 # $(MAKE) to be evaluated when the rule is run, not when the $(eval) is run
@@ -926,7 +921,7 @@ endef
 # $1: targets to make recursive (defaults to list of standard targets)
 # $2: list of subdirs (defaults to SUBDIRS variable)
 # $3: target to run in subdir (defaults to current element of $1)
-recurse = $(foreach target,$(if $1,$1,$(standard_targets)),$(foreach subdir,$(if $2,$2,$(SUBDIRS)),$(eval $(call _create_recursive_target,$(target),$(subdir),$(if $3,$3,$(target))))))
+recurse = $(foreach target,$(if $1,$1,$(standard_targets)),$(eval $(call _create_recursive_target,$(target),$(if $2,$2,$(SUBDIRS)),$(if $3,$3,$(target)))))
 
 # If a makefile's list of SUBDIRS varies depending on configuration, then
 # any subdirectories excluded from SUBDIRS should instead be added to
