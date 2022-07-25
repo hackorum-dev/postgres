@@ -63,7 +63,7 @@ ORDER BY 1, 2;
 -- system catalogs without primary keys
 --
 -- Current exceptions:
--- * pg_depend, pg_shdepend don't have a unique key
+-- * pg_depend, pg_shdepend don't have a primary key
 SELECT relname
 FROM pg_class
 WHERE relnamespace = 'pg_catalog'::regnamespace AND relkind = 'r'
