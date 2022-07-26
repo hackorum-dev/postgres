@@ -197,6 +197,7 @@ static SubTransactionId myTempNamespaceSubID = InvalidSubTransactionId;
  * of the GUC variable 'search_path'.
  */
 char	   *namespace_search_path = NULL;
+GucSource	namespace_search_path_source = 0;
 
 
 /* Local functions */
@@ -4347,6 +4348,9 @@ check_search_path(char **newval, void **extra, GucSource source)
 
 	pfree(rawname);
 	list_free(namelist);
+
+	/* Store the source */
+	namespace_search_path_source = source;
 
 	return true;
 }

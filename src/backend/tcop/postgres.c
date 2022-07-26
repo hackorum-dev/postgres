@@ -39,6 +39,7 @@
 #include "access/parallel.h"
 #include "access/printtup.h"
 #include "access/xact.h"
+#include "catalog/namespace.h"
 #include "catalog/pg_type.h"
 #include "commands/async.h"
 #include "commands/prepare.h"
@@ -95,6 +96,15 @@ CommandDest whereToSendOutput = DestDebug;
 bool		Log_disconnections = false;
 
 int			log_statement = LOGSTMT_NONE;
+
+const struct config_enum_entry log_statement_search_path_options[] = {
+        {"never", LOG_STATEMENT_SEARCH_PATH_NEVER, false},
+        {"non_default", LOG_STATEMENT_SEARCH_PATH_NON_DEFAULT, false},
+        {"always", LOG_STATEMENT_SEARCH_PATH_ALWAYS, false},
+        {NULL, 0, false}
+};
+
+int			log_statement_search_path = LOG_STATEMENT_SEARCH_PATH_NEVER;
 
 /* GUC variable for maximum stack depth (measured in kilobytes) */
 int			max_stack_depth = 100;
@@ -1328,11 +1338,25 @@ exec_simple_query(const char *query_string)
 					 errhidestmt(true)));
 			break;
 		case 2:
-			ereport(LOG,
-					(errmsg("duration: %s ms  statement: %s",
-							msec_str, query_string),
-					 errhidestmt(true),
-					 errdetail_execute(parsetree_list)));
+			if ((log_statement_search_path > LOG_STATEMENT_SEARCH_PATH_NEVER)
+				&& (
+					namespace_search_path_source > PGC_S_INTERACTIVE
+					||
+					log_statement_search_path > LOG_STATEMENT_SEARCH_PATH_NON_DEFAULT
+				)) {
+				ereport(LOG,
+						(errmsg("duration: %s ms  statement: %s",
+								msec_str, query_string),
+						errhidestmt(true),
+						errdetail("search_path: %s", namespace_search_path),
+						errdetail_execute(parsetree_list)));
+			} else {
+				ereport(LOG,
+						(errmsg("duration: %s ms  statement: %s",
+								msec_str, query_string),
+						errhidestmt(true),
+						errdetail_execute(parsetree_list)));
+			}
 			break;
 	}
 

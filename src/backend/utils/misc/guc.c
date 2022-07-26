@@ -604,6 +604,7 @@ extern const struct config_enum_entry archive_mode_options[];
 extern const struct config_enum_entry recovery_target_action_options[];
 extern const struct config_enum_entry sync_method_options[];
 extern const struct config_enum_entry dynamic_shared_memory_options[];
+extern const struct config_enum_entry log_statement_search_path_options[];
 
 /*
  * GUC option variables that are exported from this module
@@ -4833,6 +4834,16 @@ static struct config_enum ConfigureNamesEnum[] =
 		},
 		&Log_error_verbosity,
 		PGERROR_DEFAULT, log_error_verbosity_options,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"log_statement_search_path", PGC_SUSET, LOGGING_WHEN,
+			gettext_noop("Sets whether to log the search path of logged statements."),
+			NULL
+		},
+		&log_statement_search_path,
+		LOG_STATEMENT_SEARCH_PATH_NEVER, log_statement_search_path_options,
 		NULL, NULL, NULL
 	},
 

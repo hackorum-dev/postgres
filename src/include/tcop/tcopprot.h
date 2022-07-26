@@ -41,6 +41,14 @@ typedef enum
 	LOGSTMT_ALL					/* log all statements */
 } LogStmtLevel;
 
+typedef enum 
+{
+	LOG_STATEMENT_SEARCH_PATH_NEVER = 0,
+	LOG_STATEMENT_SEARCH_PATH_NON_DEFAULT,
+	LOG_STATEMENT_SEARCH_PATH_ALWAYS
+} LogStmtSearchPathOptions;
+
+
 extern PGDLLIMPORT int log_statement;
 
 extern List *pg_parse_query(const char *query_string);
