@@ -270,6 +270,17 @@ RelationAddExtraBlocks(Relation relation, BulkInsertState bistate)
 }
 
 /*
+ * RelationGetFreeSpaceStrategy
+ *
+ * Allow the FreeSpaceStrategy to be set dynamically using simple heuristics.
+ */
+static FreeSpaceStrategy
+RelationGetFreeSpaceStrategy(Relation rel)
+{
+	return FREESPACE_STRATEGY_MAX_CONCURRENCY;
+}
+
+/*
  * RelationGetBufferForTuple
  *
  *	Returns pinned and exclusive-locked buffer of a page in given relation
@@ -402,11 +413,13 @@ RelationGetBufferForTuple(Relation relation, Size len,
 
 	if (targetBlock == InvalidBlockNumber && use_fsm)
 	{
+		FreeSpaceStrategy fss = RelationGetFreeSpaceStrategy(relation);
+
 		/*
 		 * We have no cached target page, so ask the FSM for an initial
 		 * target.
 		 */
-		targetBlock = GetPageWithFreeSpace(relation, targetFreeSpace);
+		targetBlock = GetPageWithFreeSpaceExt(relation, targetFreeSpace, fss);
 	}
 
 	/*
