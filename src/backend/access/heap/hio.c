@@ -669,6 +669,7 @@ loop:
 	 */
 	if (otherBuffer != InvalidBuffer)
 	{
+		bool need_to_pin = false;
 		Assert(otherBuffer != buffer);
 		targetBlock = BufferGetBlockNumber(buffer);
 		Assert(targetBlock > otherBlock);
@@ -678,7 +679,14 @@ loop:
 			LockBuffer(buffer, BUFFER_LOCK_UNLOCK);
 			LockBuffer(otherBuffer, BUFFER_LOCK_EXCLUSIVE);
 			LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
+			need_to_pin = true;
+		}
+		else
+			need_to_pin = vmbuffer_other == InvalidBuffer &&
+				PageIsAllVisible(BufferGetPage(otherBuffer));
 
+		if (unlikely(need_to_pin))
+		{
 			/*
 			 * Because the buffers were unlocked for a while, it's possible,
 			 * although unlikely, that an all-visible flag became set or that
