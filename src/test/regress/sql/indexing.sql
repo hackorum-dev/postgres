@@ -727,6 +727,13 @@ alter table parted_uniq_detach_test detach partition parted_uniq_detach_test1;
 alter table parted_uniq_detach_test1 drop constraint parted_uniq_detach_test1_a_key;
 drop table parted_uniq_detach_test, parted_uniq_detach_test1;
 
+-- check that the index is marked as dependent on extension
+create table tbl_idx_depends(a int);
+create index idx_depends on tbl_idx_depends(a);
+alter index idx_depends depends on extension plpgsql;
+\dx+ plpgsql
+drop table tbl_idx_depends;
+
 -- check that dropping a column takes with it any partitioned indexes
 -- depending on it.
 create table parted_index_col_drop(a int, b int, c int)

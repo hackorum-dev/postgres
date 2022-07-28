@@ -676,3 +676,19 @@ NOTICE:  relation "matview_ine_tab" already exists, skipping
 (0 rows)
 
 DROP MATERIALIZED VIEW matview_ine_tab;
+-- check that the materialized view is marked as dependent on extension
+CREATE MATERIALIZED VIEW matview_depends AS SELECT 1;
+ALTER MATERIALIZED VIEW matview_depends DEPENDS ON EXTENSION plpgsql;
+\dx+ plpgsql
+      Objects in extension "plpgsql"
+            Object description             
+-------------------------------------------
+ function plpgsql_call_handler()
+ function plpgsql_inline_handler(internal)
+ function plpgsql_validator(oid)
+ language plpgsql
+
+Objects depending on extension:
+    materialized view matview_depends
+
+DROP MATERIALIZED VIEW matview_depends;

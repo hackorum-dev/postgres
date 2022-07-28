@@ -52,7 +52,6 @@ Objects in extension "test_ext7"
  table ext7_table1
  table ext7_table2
  table old_table1
-(6 rows)
 
 alter extension test_ext7 update to '2.0';
 \dx+ test_ext7
@@ -61,7 +60,6 @@ Objects in extension "test_ext7"
 -------------------------------
  sequence ext7_table2_col2_seq
  table ext7_table2
-(2 rows)
 
 -- test handling of temp objects created by extensions
 create extension test_ext8;
@@ -117,7 +115,6 @@ Objects in extension "test_ext8"
  function ext8_even(posint)
  table ext8_table1
  type posint
-(3 rows)
 
 -- dropping it should still work
 drop extension test_ext8;
@@ -238,7 +235,6 @@ Objects in extension "test_ext_cor"
  operator <<@@(point,polygon)
  type test_ext_type
  view ext_cor_view
-(4 rows)
 
 --
 -- CREATE IF NOT EXISTS is an entirely unsound thing for an extension
@@ -294,7 +290,6 @@ Objects in extension "test_ext_cine"
  server ext_cine_srv
  table ext_cine_tab1
  table ext_cine_tab2
-(8 rows)
 
 ALTER EXTENSION test_ext_cine UPDATE TO '1.1';
 \dx+ test_ext_cine
@@ -310,5 +305,4 @@ Objects in extension "test_ext_cine"
  table ext_cine_tab1
  table ext_cine_tab2
  table ext_cine_tab3
-(9 rows)
 

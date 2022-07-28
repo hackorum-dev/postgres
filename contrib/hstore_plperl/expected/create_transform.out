@@ -49,7 +49,6 @@ CREATE EXTENSION hstore_plperl;
  function hstore_to_plperl(internal)
  function plperl_to_hstore(internal)
  transform for hstore language plperl
-(3 rows)
 
 ALTER EXTENSION hstore_plperl DROP TRANSFORM FOR hstore LANGUAGE plperl;
 \dx+ hstore_plperl
@@ -58,7 +57,6 @@ Objects in extension "hstore_plperl"
 -------------------------------------
  function hstore_to_plperl(internal)
  function plperl_to_hstore(internal)
-(2 rows)
 
 ALTER EXTENSION hstore_plperl ADD TRANSFORM FOR hstore LANGUAGE plperl;
 \dx+ hstore_plperl
@@ -68,7 +66,6 @@ ALTER EXTENSION hstore_plperl ADD TRANSFORM FOR hstore LANGUAGE plperl;
  function hstore_to_plperl(internal)
  function plperl_to_hstore(internal)
  transform for hstore language plperl
-(3 rows)
 
 DROP EXTENSION hstore CASCADE;
 NOTICE:  drop cascades to extension hstore_plperl

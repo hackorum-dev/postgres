@@ -20,6 +20,7 @@
 #include "catalog/pg_cast_d.h"
 #include "catalog/pg_class_d.h"
 #include "catalog/pg_default_acl_d.h"
+#include "catalog/pg_extension_d.h"
 #include "common.h"
 #include "common/logging.h"
 #include "describe.h"
@@ -45,7 +46,12 @@ static bool describeOneTSConfig(const char *oid, const char *nspname,
 								const char *cfgname,
 								const char *pnspname, const char *prsname);
 static void printACLColumn(PQExpBuffer buf, const char *colname);
-static bool listOneExtensionContents(const char *extname, const char *oid);
+static bool listOneExtensionContents(const char *extname, const char *oid,
+									 printTableContent *const content,
+									 PQExpBufferData *title,
+									 const printTableOpt *opt);
+static bool addFooterToExtensionDesc(const char *extname, const char *oid,
+									 printTableContent *const content);
 static bool validateSQLNamePattern(PQExpBuffer buf, const char *pattern,
 								   bool have_where, bool force_escape,
 								   const char *schemavar, const char *namevar,
@@ -5994,6 +6000,8 @@ listExtensionContents(const char *pattern)
 	PQExpBufferData buf;
 	PGresult   *res;
 	int			i;
+	PQExpBufferData title;
+	printTableContent cont;
 
 	initPQExpBuffer(&buf);
 	printfPQExpBuffer(&buf,
@@ -6035,15 +6043,31 @@ listExtensionContents(const char *pattern)
 	{
 		const char *extname;
 		const char *oid;
+		printTableOpt myopt = pset.popt.topt;
+		myopt.default_footer = false;
 
 		extname = PQgetvalue(res, i, 0);
 		oid = PQgetvalue(res, i, 1);
 
-		if (!listOneExtensionContents(extname, oid))
+		initPQExpBuffer(&title);
+
+		if (!listOneExtensionContents(extname, oid, &cont, &title, &myopt))
 		{
 			PQclear(res);
 			return false;
 		}
+
+		if (!addFooterToExtensionDesc(extname, oid, &cont))
+		{
+			PQclear(res);
+			return false;
+		}
+
+		printTable(&cont, pset.queryFout, false, pset.logfile);
+		printTableCleanup(&cont);
+
+		termPQExpBuffer(&title);
+
 		if (cancel_pressed)
 		{
 			PQclear(res);
@@ -6056,12 +6080,16 @@ listExtensionContents(const char *pattern)
 }
 
 static bool
-listOneExtensionContents(const char *extname, const char *oid)
+listOneExtensionContents(const char *extname, const char *oid,
+						 printTableContent *const content,
+						 PQExpBufferData *title,
+						 const printTableOpt *opt)
 {
 	PQExpBufferData buf;
 	PGresult   *res;
-	PQExpBufferData title;
-	printQueryOpt myopt = pset.popt;
+	int			ncols = 1;
+	int			nrows;
+	int			i;
 
 	initPQExpBuffer(&buf);
 	printfPQExpBuffer(&buf,
@@ -6077,15 +6105,57 @@ listOneExtensionContents(const char *extname, const char *oid)
 	if (!res)
 		return false;
 
-	myopt.nullPrint = NULL;
-	initPQExpBuffer(&title);
-	printfPQExpBuffer(&title, _("Objects in extension \"%s\""), extname);
-	myopt.title = title.data;
-	myopt.translate_header = true;
+	nrows = PQntuples(res);
 
-	printQuery(res, &myopt, pset.queryFout, false, pset.logfile);
+	printfPQExpBuffer(title, _("Objects in extension \"%s\""), extname);
+	printTableInit(content, opt, title->data, ncols, nrows);
 
-	termPQExpBuffer(&title);
+	printTableAddHeader(content, gettext_noop("Object description"), true, 'l');
+
+	for (i = 0; i < nrows; i++)
+		printTableAddCell(content, pstrdup(PQgetvalue(res, i, 0)), false, false);
+
+	PQclear(res);
+	return true;
+}
+
+static bool
+addFooterToExtensionDesc(const char *extname, const char *oid,
+						 printTableContent *const content)
+{
+	PQExpBufferData buf;
+	PGresult   *res;
+	int			i;
+	int			count;
+
+	initPQExpBuffer(&buf);
+	printfPQExpBuffer(&buf,
+					  "SELECT pg_catalog.pg_describe_object(classid, objid, 0) AS \"%s\"\n"
+					  "FROM pg_catalog.pg_depend\n"
+					  "WHERE refclassid = 'pg_catalog.pg_extension'::pg_catalog.regclass AND refobjid = '%s' AND deptype = 'x'\n"
+					  "ORDER BY 1;",
+					  gettext_noop("Object description"),
+					  oid);
+
+	res = PSQLexec(buf.data);
+	if (!res)
+	{
+		termPQExpBuffer(&buf);
+		return false;
+	}
+	else
+		count = PQntuples(res);
+
+	if (count > 0)
+		printTableAddFooter(content, "\nObjects depending on extension:");
+
+	for (i = 0; i < count; i++)
+	{
+		printfPQExpBuffer(&buf, "    %s", PQgetvalue(res, i, 0));
+		printTableAddFooter(content, buf.data);
+	}
+
+	termPQExpBuffer(&buf);
 	PQclear(res);
 	return true;
 }

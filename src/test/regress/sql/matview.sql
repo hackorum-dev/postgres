@@ -295,3 +295,9 @@ EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF, TIMING OFF)
   CREATE MATERIALIZED VIEW IF NOT EXISTS matview_ine_tab AS
     SELECT 1 / 0 WITH NO DATA; -- ok
 DROP MATERIALIZED VIEW matview_ine_tab;
+
+-- check that the materialized view is marked as dependent on extension
+CREATE MATERIALIZED VIEW matview_depends AS SELECT 1;
+ALTER MATERIALIZED VIEW matview_depends DEPENDS ON EXTENSION plpgsql;
+\dx+ plpgsql
+DROP MATERIALIZED VIEW matview_depends;
