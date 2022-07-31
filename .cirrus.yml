@@ -232,6 +232,7 @@ task:
     CCACHE_DIR: ${HOME}/ccache
     HOMEBREW_CACHE: ${HOME}/homebrew-cache
     PERL5LIB: ${HOME}/perl5/lib/perl5
+    PGCLONEFILE: 1
 
   only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*(macos|darwin|osx).*'
 

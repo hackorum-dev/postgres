@@ -20,6 +20,7 @@
 
 #include <fcntl.h>
 #include <unistd.h>
+#include <stdlib.h>
 #include <sys/stat.h>
 
 #include "miscadmin.h"
@@ -34,7 +35,7 @@
  * a directory or a regular file is ignored.
  */
 void
-copydir(char *fromdir, char *todir, bool recurse)
+copydir(char *fromdir, char *todir, bool recurse, bool clone)
 {
 	DIR		   *xldir;
 	struct dirent *xlde;
@@ -71,7 +72,14 @@ copydir(char *fromdir, char *todir, bool recurse)
 		{
 			/* recurse to handle subdirectories */
 			if (recurse)
-				copydir(fromfile, tofile, true);
+				copydir(fromfile, tofile, true, clone);
+		}
+		else if (S_ISREG(fst.st_mode) && (clone || getenv("PGCLONEFILE")))
+		{
+			if (clone_file(fromfile, tofile))
+				ereport(ERROR,
+						(errcode_for_file_access(),
+						 errmsg("could not clone file \"%s\": %m", fromfile)));
 		}
 		else if (S_ISREG(fst.st_mode))
 			copy_file(fromfile, tofile);

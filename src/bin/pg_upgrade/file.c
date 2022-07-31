@@ -14,10 +14,6 @@
 #ifdef HAVE_COPYFILE_H
 #include <copyfile.h>
 #endif
-#ifdef __linux__
-#include <sys/ioctl.h>
-#include <linux/fs.h>
-#endif
 
 #include "access/visibilitymapdefs.h"
 #include "common/file_perm.h"
@@ -38,36 +34,9 @@ void
 cloneFile(const char *src, const char *dst,
 		  const char *schemaName, const char *relName)
 {
-#if defined(HAVE_COPYFILE) && defined(COPYFILE_CLONE_FORCE)
-	if (copyfile(src, dst, NULL, COPYFILE_CLONE_FORCE) < 0)
-		pg_fatal("error while cloning relation \"%s.%s\" (\"%s\" to \"%s\"): %s",
-				 schemaName, relName, src, dst, strerror(errno));
-#elif defined(__linux__) && defined(FICLONE)
-	int			src_fd;
-	int			dest_fd;
-
-	if ((src_fd = open(src, O_RDONLY | PG_BINARY, 0)) < 0)
-		pg_fatal("error while cloning relation \"%s.%s\": could not open file \"%s\": %s",
-				 schemaName, relName, src, strerror(errno));
-
-	if ((dest_fd = open(dst, O_RDWR | O_CREAT | O_EXCL | PG_BINARY,
-						pg_file_create_mode)) < 0)
-		pg_fatal("error while cloning relation \"%s.%s\": could not create file \"%s\": %s",
-				 schemaName, relName, dst, strerror(errno));
-
-	if (ioctl(dest_fd, FICLONE, src_fd) < 0)
-	{
-		int			save_errno = errno;
-
-		unlink(dst);
-
-		pg_fatal("error while cloning relation \"%s.%s\" (\"%s\" to \"%s\"): %s",
-				 schemaName, relName, src, dst, strerror(save_errno));
-	}
-
-	close(src_fd);
-	close(dest_fd);
-#endif
+	if (clone_file(src, dst))
+		pg_fatal("error while cloning relation \"%s.%s\" (\"%s\" to \"%s\"): %m",
+				schemaName, relName, src, dst);
 }
 
 
@@ -316,6 +285,8 @@ rewriteVisibilityMap(const char *fromfile, const char *tofile,
 	close(src_fd);
 }
 
+
+// move this too ?
 void
 check_file_clone(void)
 {

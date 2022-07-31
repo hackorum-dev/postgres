@@ -13,7 +13,7 @@
 #ifndef COPYDIR_H
 #define COPYDIR_H
 
-extern void copydir(char *fromdir, char *todir, bool recurse);
+extern void copydir(char *fromdir, char *todir, bool recurse, bool clone);
 extern void copy_file(char *fromfile, char *tofile);
 
 #endif							/* COPYDIR_H */

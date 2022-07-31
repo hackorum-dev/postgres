@@ -2791,7 +2791,7 @@ psql_completion(const char *text, int start, int end)
 	else if (Matches("CREATE", "DATABASE", MatchAny, "TEMPLATE"))
 		COMPLETE_WITH_QUERY(Query_for_list_of_template_databases);
 	else if (Matches("CREATE", "DATABASE", MatchAny, "STRATEGY"))
-		COMPLETE_WITH("WAL_LOG", "FILE_COPY");
+		COMPLETE_WITH("WAL_LOG", "FILE_COPY", "FILE_CLONE");
 
 	/* CREATE DOMAIN */
 	else if (Matches("CREATE", "DOMAIN", MatchAny))
