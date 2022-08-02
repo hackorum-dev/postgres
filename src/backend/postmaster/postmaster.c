@@ -116,6 +116,7 @@
 #include "postmaster/interrupt.h"
 #include "postmaster/pgarch.h"
 #include "postmaster/postmaster.h"
+#include "postmaster/startup.h"
 #include "postmaster/syslogger.h"
 #include "replication/logicallauncher.h"
 #include "replication/walsender.h"
@@ -653,7 +654,6 @@ PostmasterMain(int argc, char *argv[])
 	pqsignal_pm(SIGINT, pmdie); /* send SIGTERM and shut down */
 	pqsignal_pm(SIGQUIT, pmdie);	/* send SIGQUIT and die */
 	pqsignal_pm(SIGTERM, pmdie);	/* wait for children and shut down */
-	pqsignal_pm(SIGALRM, SIG_IGN);	/* ignored */
 	pqsignal_pm(SIGPIPE, SIG_IGN);	/* ignored */
 	pqsignal_pm(SIGUSR1, sigusr1_handler);	/* message from child process */
 	pqsignal_pm(SIGUSR2, dummy_handler);	/* unused, reserve for children */
@@ -687,6 +687,11 @@ PostmasterMain(int argc, char *argv[])
 #ifdef SIGXFSZ
 	pqsignal_pm(SIGXFSZ, SIG_IGN);	/* ignored */
 #endif
+
+	InitializeTimeouts();	/* establishes SIGALRM handler */
+
+	RegisterTimeout(STARTUP_PROGRESS_TIMEOUT,
+					startup_progress_timeout_handler);
 
 	/*
 	 * Options setup
@@ -1118,6 +1123,9 @@ PostmasterMain(int argc, char *argv[])
 #ifdef EXEC_BACKEND
 	/* Write out nondefault GUC settings for child processes to use */
 	write_nondefault_variables(PGC_POSTMASTER);
+
+	/* Prepare to report progress of the temporary files removal phase */
+	begin_startup_progress_phase();
 
 	/*
 	 * Clean out the temp directory used to transmit parameters to child
