@@ -38,6 +38,9 @@
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
 
+static inline void
+change_sk_attno_to_index_column_num(Relation indexRelation,
+									int nkeys, ScanKey key);
 
 /* ----------------------------------------------------------------
  *		general access method routines
@@ -420,24 +423,8 @@ systable_beginscan(Relation heapRelation,
 
 	if (irel)
 	{
-		int			i;
-
 		/* Change attribute numbers to be index column numbers. */
-		for (i = 0; i < nkeys; i++)
-		{
-			int			j;
-
-			for (j = 0; j < IndexRelationGetNumberOfAttributes(irel); j++)
-			{
-				if (key[i].sk_attno == irel->rd_index->indkey.values[j])
-				{
-					key[i].sk_attno = j + 1;
-					break;
-				}
-			}
-			if (j == IndexRelationGetNumberOfAttributes(irel))
-				elog(ERROR, "column is not in index");
-		}
+		change_sk_attno_to_index_column_num(irel, nkeys, key);
 
 		sysscan->iscan = index_beginscan(heapRelation, irel,
 										 snapshot, nkeys, 0);
@@ -648,7 +635,6 @@ systable_beginscan_ordered(Relation heapRelation,
 						   int nkeys, ScanKey key)
 {
 	SysScanDesc sysscan;
-	int			i;
 
 	/* REINDEX can probably be a hard error here ... */
 	if (ReindexIsProcessingIndex(RelationGetRelid(indexRelation)))
@@ -679,21 +665,7 @@ systable_beginscan_ordered(Relation heapRelation,
 	}
 
 	/* Change attribute numbers to be index column numbers. */
-	for (i = 0; i < nkeys; i++)
-	{
-		int			j;
-
-		for (j = 0; j < IndexRelationGetNumberOfAttributes(indexRelation); j++)
-		{
-			if (key[i].sk_attno == indexRelation->rd_index->indkey.values[j])
-			{
-				key[i].sk_attno = j + 1;
-				break;
-			}
-		}
-		if (j == IndexRelationGetNumberOfAttributes(indexRelation))
-			elog(ERROR, "column is not in index");
-	}
+	change_sk_attno_to_index_column_num(indexRelation, nkeys, key);
 
 	sysscan->iscan = index_beginscan(heapRelation, indexRelation,
 									 snapshot, nkeys, 0);
@@ -745,4 +717,31 @@ systable_endscan_ordered(SysScanDesc sysscan)
 	if (sysscan->snapshot)
 		UnregisterSnapshot(sysscan->snapshot);
 	pfree(sysscan);
+}
+
+/*
+ * change_sk_attno_to_index_column_num --- change scankey attribute numbers to
+ * index column numbers
+ */
+static inline void
+change_sk_attno_to_index_column_num(Relation indexRelation,
+									int nkeys, ScanKey key)
+{
+	int			i;
+
+	for (i = 0; i < nkeys; i++)
+	{
+		int			j;
+
+		for (j = 0; j < IndexRelationGetNumberOfAttributes(indexRelation); j++)
+		{
+			if (key[i].sk_attno == indexRelation->rd_index->indkey.values[j])
+			{
+				key[i].sk_attno = j + 1;
+				break;
+			}
+		}
+		if (j == IndexRelationGetNumberOfAttributes(indexRelation))
+			elog(ERROR, "column is not in index");
+	}
 }
