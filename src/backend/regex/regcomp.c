@@ -433,7 +433,7 @@ pg_regcomp(regex_t *re,
 	re->re_fns = VS(&functions);
 
 	/* more complex setup, malloced things */
-	re->re_guts = VS(MALLOC(sizeof(struct guts)));
+	re->re_guts = (struct guts *) MALLOC(sizeof(struct guts));
 	if (re->re_guts == NULL)
 		return freev(v, REG_ESPACE);
 	g = (struct guts *) re->re_guts;
