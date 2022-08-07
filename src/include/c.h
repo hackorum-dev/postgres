@@ -360,6 +360,8 @@ typedef void (*pg_funcptr_t) (void);
  */
 #define FLEXIBLE_ARRAY_MEMBER	/* empty */
 
+/* For backwards compatibility */
+#define PG_FUNCNAME_MACRO __func__
 
 /* ----------------------------------------------------------------
  *				Section 2:	bool, true, false
