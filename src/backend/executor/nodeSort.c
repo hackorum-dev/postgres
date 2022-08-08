@@ -102,7 +102,7 @@ ExecSort(PlanState *pstate)
 		if (node->bounded)
 			tuplesortopts |= TUPLESORT_ALLOWBOUNDED;
 
-		if (node->datumSort)
+		if (tupDesc->natts == 1)
 			tuplesortstate = tuplesort_begin_datum(TupleDescAttr(tupDesc, 0)->atttypid,
 												   plannode->sortOperators[0],
 												   plannode->collations[0],
@@ -128,7 +128,7 @@ ExecSort(PlanState *pstate)
 		 * Scan the subplan and feed all the tuples to tuplesort using the
 		 * appropriate method based on the type of sort we're doing.
 		 */
-		if (node->datumSort)
+		if (tupDesc->natts == 1)
 		{
 			for (;;)
 			{
@@ -194,7 +194,7 @@ ExecSort(PlanState *pstate)
 	 * For tuple sorts, tuplesort_gettupleslot manages the slot for us and
 	 * empties the slot when it runs out of tuples.
 	 */
-	if (node->datumSort)
+	if (tupDesc->natts == 1)
 	{
 		ExecClearTuple(slot);
 		if (tuplesort_getdatum(tuplesortstate, ScanDirectionIsForward(dir),
@@ -273,15 +273,6 @@ ExecInitSort(Sort *node, EState *estate, int eflags)
 	 */
 	ExecInitResultTupleSlotTL(&sortstate->ss.ps, &TTSOpsMinimalTuple);
 	sortstate->ss.ps.ps_ProjInfo = NULL;
-
-	/*
-	 * We perform a Datum sort when we're sorting just a single column,
-	 * otherwise we perform a tuple sort.
-	 */
-	if (ExecGetResultType(outerPlanState(sortstate))->natts == 1)
-		sortstate->datumSort = true;
-	else
-		sortstate->datumSort = false;
 
 	SO1_printf("ExecInitSort: %s\n",
 			   "sort node initialized");
