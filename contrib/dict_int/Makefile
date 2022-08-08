@@ -11,6 +11,9 @@ PGFILEDESC = "dict_int - add-on dictionary template for full-text search"
 
 REGRESS = dict_int
 
+REGRESS = old_snapshot
+REGRESS_OPTS = --temp-config $(top_srcdir)/contrib/old_snapshot/old_snapshot.conf
+
 ifdef USE_PGXS
 PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
