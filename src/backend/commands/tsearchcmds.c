@@ -355,6 +355,10 @@ verify_dictoptions(Oid tmplId, List *dictoptions)
 	if (!IsUnderPostmaster)
 		return;
 
+	/* Do not need to verify the dictoptions if it is empty. */
+	if (dictoptions == NIL)
+		return;
+
 	tup = SearchSysCache1(TSTEMPLATEOID, ObjectIdGetDatum(tmplId));
 	if (!HeapTupleIsValid(tup)) /* should not happen */
 		elog(ERROR, "cache lookup failed for text search template %u",
