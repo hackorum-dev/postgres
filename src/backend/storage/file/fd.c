@@ -3309,8 +3309,8 @@ do_syncfs(const char *path)
 {
 	int			fd;
 
-	ereport_startup_progress("syncing data directory (syncfs), elapsed time: %ld.%02d s, current path: %s",
-							 path);
+	ereport_progress("syncing data directory (syncfs), elapsed time: %ld.%02d s, current path: %s",
+					 path);
 
 	fd = OpenTransientFile(path, O_RDONLY);
 	if (fd < 0)
@@ -3392,7 +3392,7 @@ SyncDataDirectory(void)
 		 */
 
 		/* Prepare to report progress syncing the data directory via syncfs. */
-		begin_startup_progress_phase();
+		begin_progress_report_phase(log_startup_progress_interval);
 
 		/* Sync the top level pgdata directory. */
 		do_syncfs(".");
@@ -3418,7 +3418,7 @@ SyncDataDirectory(void)
 
 #ifdef PG_FLUSH_DATA_WORKS
 	/* Prepare to report progress of the pre-fsync phase. */
-	begin_startup_progress_phase();
+	begin_progress_report_phase(log_startup_progress_interval);
 
 	/*
 	 * If possible, hint to the kernel that we're soon going to fsync the data
@@ -3432,7 +3432,7 @@ SyncDataDirectory(void)
 #endif
 
 	/* Prepare to report progress syncing the data directory via fsync. */
-	begin_startup_progress_phase();
+	begin_progress_report_phase(log_startup_progress_interval);
 
 	/*
 	 * Now we do the fsync()s in the same order.
@@ -3536,8 +3536,8 @@ pre_sync_fname(const char *fname, bool isdir, int elevel)
 	if (isdir)
 		return;
 
-	ereport_startup_progress("syncing data directory (pre-fsync), elapsed time: %ld.%02d s, current path: %s",
-							 fname);
+	ereport_progress("syncing data directory (pre-fsync), elapsed time: %ld.%02d s, current path: %s",
+					 fname);
 
 	fd = OpenTransientFile(fname, O_RDONLY | PG_BINARY);
 
@@ -3568,8 +3568,8 @@ pre_sync_fname(const char *fname, bool isdir, int elevel)
 static void
 datadir_fsync_fname(const char *fname, bool isdir, int elevel)
 {
-	ereport_startup_progress("syncing data directory (fsync), elapsed time: %ld.%02d s, current path: %s",
-							 fname);
+	ereport_progress("syncing data directory (fsync), elapsed time: %ld.%02d s, current path: %s",
+					 fname);
 
 	/*
 	 * We want to silently ignoring errors about unreadable files.  Pass that
