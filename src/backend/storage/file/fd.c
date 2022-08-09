@@ -97,11 +97,13 @@
 #include "pgstat.h"
 #include "port/pg_iovec.h"
 #include "portability/mem.h"
+#include "postmaster/postmaster.h"
 #include "postmaster/startup.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
 #include "utils/guc.h"
 #include "utils/resowner_private.h"
+#include "utils/timeout.h"
 
 /* Define PG_FLUSH_DATA_WORKS if we have an implementation for pg_flush_data */
 #if defined(HAVE_SYNC_FILE_RANGE)
@@ -3082,6 +3084,12 @@ RemovePgTempFiles(void)
 	struct dirent *spc_de;
 
 	/*
+	 * Prepare to report progress of the temporary and temporary relation files
+	 * removal phase.
+	 */
+	begin_progress_report_phase(log_postmaster_progress_interval);
+
+	/*
 	 * First process temp files in pg_default ($PGDATA/base)
 	 */
 	snprintf(temp_path, sizeof(temp_path), "base/%s", PG_TEMP_FILES_DIR);
@@ -3153,6 +3161,9 @@ RemovePgTempFilesInDir(const char *tmpdirname, bool missing_ok, bool unlink_all)
 
 		snprintf(rm_path, sizeof(rm_path), "%s/%s",
 				 tmpdirname, temp_de->d_name);
+
+		ereport_progress("removing temporary files under pgsql_tmp directory, elapsed time: %ld.%02d s, current file: %s",
+						 rm_path);
 
 		if (unlink_all ||
 			strncmp(temp_de->d_name,
@@ -3243,6 +3254,9 @@ RemovePgTempRelationFilesInDbspace(const char *dbspacedirname)
 
 		snprintf(rm_path, sizeof(rm_path), "%s/%s",
 				 dbspacedirname, de->d_name);
+
+		ereport_progress("removing temporary relation files under pg_tblspc directory, elapsed time: %ld.%02d s, current file: %s",
+						 rm_path);
 
 		if (unlink(rm_path) < 0)
 			ereport(LOG,
