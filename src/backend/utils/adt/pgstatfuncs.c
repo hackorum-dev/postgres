@@ -473,7 +473,7 @@ pg_stat_get_activity(PG_FUNCTION_ARGS)
 		else
 			nulls[16] = true;
 
-		/* Values only available to role member or pg_read_all_stats */
+		/* Values only available to role member of pg_read_all_stats */
 		if (HAS_PGSTAT_PERMISSIONS(beentry->st_userid))
 		{
 			char	   *clipped_activity;
