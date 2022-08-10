@@ -3051,7 +3051,7 @@ IsBinaryCoercible(Oid srctype, Oid targettype)
 			return true;
 
 	/* Else look in pg_cast */
-	tuple = SearchSysCache2(CASTSOURCETARGET,
+	tuple = SearchSysCache2CASTSOURCETARGET(
 							ObjectIdGetDatum(srctype),
 							ObjectIdGetDatum(targettype));
 	if (!HeapTupleIsValid(tuple))
@@ -3114,7 +3114,7 @@ find_coercion_pathway(Oid targetTypeId, Oid sourceTypeId,
 		return COERCION_PATH_RELABELTYPE;
 
 	/* Look in pg_cast */
-	tuple = SearchSysCache2(CASTSOURCETARGET,
+	tuple = SearchSysCache2CASTSOURCETARGET(
 							ObjectIdGetDatum(sourceTypeId),
 							ObjectIdGetDatum(targetTypeId));
 
@@ -3281,7 +3281,7 @@ find_typmod_coercion_function(Oid typeId,
 	ReleaseSysCache(targetType);
 
 	/* Look in pg_cast */
-	tuple = SearchSysCache2(CASTSOURCETARGET,
+	tuple = SearchSysCache2CASTSOURCETARGET(
 							ObjectIdGetDatum(typeId),
 							ObjectIdGetDatum(typeId));
 

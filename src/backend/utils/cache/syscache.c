@@ -1192,6 +1192,17 @@ SearchSysCache2(int cacheId,
 }
 
 HeapTuple
+SearchSysCache2CASTSOURCETARGET(
+				Datum key1, Datum key2)
+{
+	Assert(CASTSOURCETARGET >= 0 && CASTSOURCETARGET < SysCacheSize &&
+		   PointerIsValid(SysCache[CASTSOURCETARGET]));
+	Assert(SysCache[CASTSOURCETARGET]->cc_nkeys == 2);
+
+	return SearchCatCache2_STRUCT(SysCache[CASTSOURCETARGET], key1, key2);
+}
+
+HeapTuple
 SearchSysCache3(int cacheId,
 				Datum key1, Datum key2, Datum key3)
 {

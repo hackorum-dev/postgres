@@ -132,6 +132,8 @@ extern HeapTuple SearchSysCache1(int cacheId,
 								 Datum key1);
 extern HeapTuple SearchSysCache2(int cacheId,
 								 Datum key1, Datum key2);
+extern HeapTuple SearchSysCache2CASTSOURCETARGET(
+								 Datum key1, Datum key2);
 extern HeapTuple SearchSysCache3(int cacheId,
 								 Datum key1, Datum key2, Datum key3);
 extern HeapTuple SearchSysCache4(int cacheId,
