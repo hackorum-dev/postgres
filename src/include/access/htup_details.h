@@ -652,6 +652,8 @@ struct MinimalTupleData
  * GETSTRUCT - given a HeapTuple pointer, return address of the user data
  */
 #define GETSTRUCT(TUP) ((char *) ((TUP)->t_data) + (TUP)->t_data->t_hoff)
+// FIXME
+#define GETSTRUCT_NEW(CAT, TUP) ((Form_##CAT) ((char *) (TUP)->t_data))
 
 /*
  * Accessor macros to be used with HeapTuple pointers.

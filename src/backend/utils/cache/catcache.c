@@ -21,6 +21,7 @@
 #include "access/table.h"
 #include "access/valid.h"
 #include "access/xact.h"
+#include "catalog/pg_cast.h" // fixme
 #include "catalog/pg_collation.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_type.h"
@@ -2158,6 +2159,42 @@ CatalogCacheCreateEntry(CatCache *cache, HeapTuple ntp, Datum *arguments,
 	return ct;
 }
 
+// WIP: generated functions would look like this and be called through a pointer
+// FIXME: ct->tuple is no longer a real tuple
+// XXX: for now assume the caller has switched to the right memory context
+static CatCTup *
+CatCArrayGetStruct_pg_cast(HeapTuple pg_cast_tuple, CatCTup *ct, Datum *values, bool *isnull)
+{
+	Form_pg_cast pg_cast_struct;
+
+	/* Allocate memory for CatCTup and the cached struct in one go */
+	ct = (CatCTup *) palloc(sizeof(CatCTup) +
+							MAXIMUM_ALIGNOF + sizeof(FormData_pg_cast));
+
+	/* copy the identification info */
+	// WIP: for caches we only need t_self, can we just have that as a
+	// separate field in CatCTup?
+	ct->tuple.t_len = pg_cast_tuple->t_len;
+	ct->tuple.t_self = pg_cast_tuple->t_self;
+	ct->tuple.t_tableOid = pg_cast_tuple->t_tableOid;
+
+	// WIP: treat t_data as a pointer to the struct
+	ct->tuple.t_data = (HeapTupleHeader)
+		MAXALIGN(((char *) ct) + sizeof(CatCTup));
+	pg_cast_struct = (Form_pg_cast) ct->tuple.t_data;
+
+	/* copy tuple contents */
+	// WIP: we can just assign because there are no varlen attributes
+	pg_cast_struct->oid = DatumGetObjectId(values[Anum_pg_cast_oid - 1]);
+	pg_cast_struct->castsource = DatumGetObjectId(values[Anum_pg_cast_castsource - 1]);
+	pg_cast_struct->casttarget = DatumGetObjectId(values[Anum_pg_cast_casttarget - 1]);
+	pg_cast_struct->castfunc = DatumGetObjectId(values[Anum_pg_cast_castfunc - 1]);
+	pg_cast_struct->castcontext = DatumGetChar(values[Anum_pg_cast_castcontext - 1]);
+	pg_cast_struct->castmethod = DatumGetChar(values[Anum_pg_cast_castmethod - 1]);
+
+	return ct;
+}
+
 /*
  * CatalogCacheCreateEntry
  *		Create a new CatCTup entry, copying the given HeapTuple and other
@@ -2176,6 +2213,8 @@ CatalogCacheCreateEntry_STRUCT(CatCache *cache, HeapTuple ntp, Datum *arguments,
 	if (ntp)
 	{
 		int			i;
+		Datum *values;
+		bool *isnull;
 
 		Assert(!negative);
 
@@ -2191,37 +2230,25 @@ CatalogCacheCreateEntry_STRUCT(CatCache *cache, HeapTuple ntp, Datum *arguments,
 		else
 			dtp = ntp;
 
-		/* Allocate memory for CatCTup and the cached tuple in one go */
-		oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
+		/* deform the tuple */
+		values = palloc(cache->cc_tupdesc->natts * sizeof(Datum));
+		isnull = palloc(cache->cc_tupdesc->natts * sizeof(bool));
+		heap_deform_tuple(dtp, cache->cc_tupdesc, values, isnull);
 
-		ct = (CatCTup *) palloc(sizeof(CatCTup) +
-								MAXIMUM_ALIGNOF + dtp->t_len);
-		ct->tuple.t_len = dtp->t_len;
-		ct->tuple.t_self = dtp->t_self;
-		ct->tuple.t_tableOid = dtp->t_tableOid;
-		ct->tuple.t_data = (HeapTupleHeader)
-			MAXALIGN(((char *) ct) + sizeof(CatCTup));
-		/* copy tuple contents */
-		memcpy((char *) ct->tuple.t_data,
-			   (const char *) dtp->t_data,
-			   dtp->t_len);
+		/* copy the tuple-as-struct into the cache */
+		oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
+		ct = CatCArrayGetStruct_pg_cast(dtp, ct, values, isnull);
 		MemoryContextSwitchTo(oldcxt);
 
 		if (dtp != ntp)
 			heap_freetuple(dtp);
 
-		/* extract keys - they'll point into the tuple if not by-value */
+		/* extract keys */
+		// FIXME: this is broken for varlen attributes -- need a way to copy them
 		for (i = 0; i < cache->cc_nkeys; i++)
 		{
-			Datum		atp;
-			bool		isnull;
-
-			atp = heap_getattr(&ct->tuple,
-							   cache->cc_keyno[i],
-							   cache->cc_tupdesc,
-							   &isnull);
-			Assert(!isnull);
-			ct->keys[i] = atp;
+			Assert(!isnull[cache->cc_keyno[i]]);
+			ct->keys[i] = values[cache->cc_keyno[i]];
 		}
 	}
 	else

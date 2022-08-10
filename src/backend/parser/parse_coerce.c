@@ -3056,7 +3056,7 @@ IsBinaryCoercible(Oid srctype, Oid targettype)
 							ObjectIdGetDatum(targettype));
 	if (!HeapTupleIsValid(tuple))
 		return false;			/* no cast */
-	castForm = (Form_pg_cast) GETSTRUCT(tuple);
+	castForm = GETSTRUCT_NEW(pg_cast, tuple);
 
 	result = (castForm->castmethod == COERCION_METHOD_BINARY &&
 			  castForm->castcontext == COERCION_CODE_IMPLICIT);
@@ -3120,7 +3120,7 @@ find_coercion_pathway(Oid targetTypeId, Oid sourceTypeId,
 
 	if (HeapTupleIsValid(tuple))
 	{
-		Form_pg_cast castForm = (Form_pg_cast) GETSTRUCT(tuple);
+		Form_pg_cast castForm = GETSTRUCT_NEW(pg_cast, tuple);
 		CoercionContext castcontext;
 
 		/* convert char value for castcontext to CoercionContext enum */
@@ -3287,7 +3287,7 @@ find_typmod_coercion_function(Oid typeId,
 
 	if (HeapTupleIsValid(tuple))
 	{
-		Form_pg_cast castForm = (Form_pg_cast) GETSTRUCT(tuple);
+		Form_pg_cast castForm = GETSTRUCT_NEW(pg_cast, tuple);
 
 		*funcid = castForm->castfunc;
 		ReleaseSysCache(tuple);
