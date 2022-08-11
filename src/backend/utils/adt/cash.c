@@ -351,6 +351,11 @@ cash_out(PG_FUNCTION_ARGS)
 
 	if (value < 0)
 	{
+		if (pg_sub_s64_overflow(value, 1, &value))
+			ereport(ERROR,
+					(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
+					 errmsg("value is out of range for type money")));
+
 		/* make the amount positive for digit-reconstruction loop */
 		value = -value;
 		/* set up formatting data */
