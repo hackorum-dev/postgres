@@ -15,7 +15,6 @@ $node_primary->init(allows_streaming => 1);
 $node_primary->append_conf(
 	'postgresql.conf', qq(
 	max_prepared_transactions = 10
-	log_checkpoints = true
 ));
 $node_primary->start;
 $node_primary->backup('primary_backup');
