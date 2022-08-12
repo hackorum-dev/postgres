@@ -36,7 +36,6 @@ $node_london->init(allows_streaming => 1);
 $node_london->append_conf(
 	'postgresql.conf', qq(
 	max_prepared_transactions = 10
-	log_checkpoints = true
 ));
 $node_london->start;
 $node_london->backup('london_backup');
