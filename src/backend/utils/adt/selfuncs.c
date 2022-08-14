@@ -97,6 +97,7 @@
 #include <ctype.h>
 #include <math.h>
 
+#include "access/nbtree.h"
 #include "access/brin.h"
 #include "access/brin_page.h"
 #include "access/gin.h"
@@ -6831,6 +6832,13 @@ btcostestimate(PlannerInfo *root, IndexPath *path, double loop_count,
 	 * touched.  The number of such pages is btree tree height plus one (ie,
 	 * we charge for the leaf page too).  As above, charge once per SA scan.
 	 */
+        if (index->tree_height < 0)
+	{
+	    Relation indexRel = index_open(index->indexoid, AccessShareLock);
+	    index->tree_height = _bt_getrootheight(indexRel);
+	    index_close(indexRel, NoLock);
+	}
+
 	descentCost = (index->tree_height + 1) * 50.0 * cpu_operator_cost;
 	costs.indexStartupCost += descentCost;
 	costs.indexTotalCost += costs.num_sa_scans * descentCost;

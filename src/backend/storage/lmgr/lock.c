@@ -164,14 +164,6 @@ typedef struct TwoPhaseLockRecord
 
 
 /*
- * Count of the number of fast path lock slots we believe to be used.  This
- * might be higher than the real number if another backend has transferred
- * our locks to the primary lock table, but it can never be lower than the
- * real value, since only we can acquire locks on our own behalf.
- */
-static int	FastPathLocalUseCount = 0;
-
-/*
  * Flag to indicate if the relation extension lock is held by this backend.
  * This flag is used to ensure that while holding the relation extension lock
  * we don't try to acquire a heavyweight lock on any other object.  This
@@ -203,18 +195,18 @@ static bool IsPageLockHeld PG_USED_FOR_ASSERTS_ONLY = false;
 #define FAST_PATH_LOCKNUMBER_OFFSET		1
 #define FAST_PATH_MASK					((1 << FAST_PATH_BITS_PER_SLOT) - 1)
 #define FAST_PATH_GET_BITS(proc, n) \
-	(((proc)->fpLockBits >> (FAST_PATH_BITS_PER_SLOT * n)) & FAST_PATH_MASK)
+        proc->fpLockBits[n]
 #define FAST_PATH_BIT_POSITION(n, l) \
 	(AssertMacro((l) >= FAST_PATH_LOCKNUMBER_OFFSET), \
 	 AssertMacro((l) < FAST_PATH_BITS_PER_SLOT+FAST_PATH_LOCKNUMBER_OFFSET), \
 	 AssertMacro((n) < FP_LOCK_SLOTS_PER_BACKEND), \
 	 ((l) - FAST_PATH_LOCKNUMBER_OFFSET + FAST_PATH_BITS_PER_SLOT * (n)))
 #define FAST_PATH_SET_LOCKMODE(proc, n, l) \
-	 (proc)->fpLockBits |= UINT64CONST(1) << FAST_PATH_BIT_POSITION(n, l)
+	 (proc)->fpLockBits[n] |= 1<<((l)-FAST_PATH_LOCKNUMBER_OFFSET)
 #define FAST_PATH_CLEAR_LOCKMODE(proc, n, l) \
-	 (proc)->fpLockBits &= ~(UINT64CONST(1) << FAST_PATH_BIT_POSITION(n, l))
+	 (proc)->fpLockBits[n]  &= ~(1 << ((l)-FAST_PATH_LOCKNUMBER_OFFSET))
 #define FAST_PATH_CHECK_LOCKMODE(proc, n, l) \
-	 ((proc)->fpLockBits & (UINT64CONST(1) << FAST_PATH_BIT_POSITION(n, l)))
+	 ((proc)->fpLockBits[n] & (1 << ((l)-FAST_PATH_LOCKNUMBER_OFFSET)))
 
 /*
  * The fast-path lock mechanism is concerned only with relation locks on
@@ -924,8 +916,7 @@ LockAcquireExtended(const LOCKTAG *locktag,
 	 * lock type on a relation we have already locked using the fast-path, but
 	 * for now we don't worry about that case either.
 	 */
-	if (EligibleForRelationFastPath(locktag, lockmode) &&
-		FastPathLocalUseCount < FP_LOCK_SLOTS_PER_BACKEND)
+	if (EligibleForRelationFastPath(locktag, lockmode))
 	{
 		uint32		fasthashcode = FastPathStrongLockHashPartition(hashcode);
 		bool		acquired;
@@ -940,8 +931,7 @@ LockAcquireExtended(const LOCKTAG *locktag,
 		if (FastPathStrongRelationLocks->count[fasthashcode] != 0)
 			acquired = false;
 		else
-			acquired = FastPathGrantRelationLock(locktag->locktag_field2,
-												 lockmode);
+			acquired = FastPathGrantRelationLock(locktag->locktag_field2, lockmode);
 		LWLockRelease(&MyProc->fpInfoLock);
 		if (acquired)
 		{
@@ -2076,8 +2066,7 @@ LockRelease(const LOCKTAG *locktag, LOCKMODE lockmode, bool sessionLock)
 	locallock->lockCleared = false;
 
 	/* Attempt fast release of any lock eligible for the fast path. */
-	if (EligibleForRelationFastPath(locktag, lockmode) &&
-		FastPathLocalUseCount > 0)
+	if (EligibleForRelationFastPath(locktag, lockmode))
 	{
 		bool		released;
 
@@ -2647,6 +2636,11 @@ LockReassignOwner(LOCALLOCK *locallock, ResourceOwner parent)
 	ResourceOwnerForgetLock(CurrentResourceOwner, locallock);
 }
 
+//static int ItersGrant = 0;
+//static int CallsGrant = 0;
+//static int ItersUngrant = 0;
+//static int CallsUngrant = 0;
+
 /*
  * FastPathGrantRelationLock
  *		Grant lock using per-backend fast-path array, if there is space.
@@ -2654,20 +2648,31 @@ LockReassignOwner(LOCALLOCK *locallock, ResourceOwner parent)
 static bool
 FastPathGrantRelationLock(Oid relid, LOCKMODE lockmode)
 {
-	uint32		f;
+	uint32		f, i;
 	uint32		unused_slot = FP_LOCK_SLOTS_PER_BACKEND;
 
+        // if (CallsGrant % 100000 == 0 || CallsUngrant % 100000 == 0)
+        //    elog(WARNING, "counts: %d, %d, %d, %d, %f, %f", CallsGrant, CallsUngrant, ItersGrant, ItersUngrant,
+        //    (float)ItersGrant/(float)CallsGrant, (float)ItersUngrant/(float)CallsUngrant);
+
+        // CallsGrant++;
+
 	/* Scan for existing entry for this relid, remembering empty slot. */
-	for (f = 0; f < FP_LOCK_SLOTS_PER_BACKEND; f++)
+	for (i = 0; i < FP_LOCK_SLOTS_PER_BACKEND; i++)
 	{
-		if (FAST_PATH_GET_BITS(MyProc, f) == 0)
-			unused_slot = f;
-		else if (MyProc->fpRelId[f] == relid)
+                f = ((relid % FP_LOCK_SLOTS_PER_BACKEND) + i) % FP_LOCK_SLOTS_PER_BACKEND;
+		Assert(f < FP_LOCK_SLOTS_PER_BACKEND);
+		// ItersGrant++;
+
+		if (MyProc->fpRelId[f] == relid)
 		{
 			Assert(!FAST_PATH_CHECK_LOCKMODE(MyProc, f, lockmode));
 			FAST_PATH_SET_LOCKMODE(MyProc, f, lockmode);
 			return true;
 		}
+                else if (FAST_PATH_GET_BITS(MyProc, f) == 0)
+			if (unused_slot == FP_LOCK_SLOTS_PER_BACKEND)
+				unused_slot = f;
 	}
 
 	/* If no existing entry, use any empty slot. */
@@ -2675,7 +2680,6 @@ FastPathGrantRelationLock(Oid relid, LOCKMODE lockmode)
 	{
 		MyProc->fpRelId[unused_slot] = relid;
 		FAST_PATH_SET_LOCKMODE(MyProc, unused_slot, lockmode);
-		++FastPathLocalUseCount;
 		return true;
 	}
 
@@ -2691,24 +2695,25 @@ FastPathGrantRelationLock(Oid relid, LOCKMODE lockmode)
 static bool
 FastPathUnGrantRelationLock(Oid relid, LOCKMODE lockmode)
 {
-	uint32		f;
-	bool		result = false;
+	uint32		f, i;
 
-	FastPathLocalUseCount = 0;
-	for (f = 0; f < FP_LOCK_SLOTS_PER_BACKEND; f++)
+        // CallsUngrant++;
+
+	for (i = 0; i < FP_LOCK_SLOTS_PER_BACKEND; i++)
 	{
+                f = ((relid % FP_LOCK_SLOTS_PER_BACKEND) + i) % FP_LOCK_SLOTS_PER_BACKEND;
+		// ItersUngrant++;
+
 		if (MyProc->fpRelId[f] == relid
 			&& FAST_PATH_CHECK_LOCKMODE(MyProc, f, lockmode))
 		{
 			Assert(!result);
 			FAST_PATH_CLEAR_LOCKMODE(MyProc, f, lockmode);
-			result = true;
-			/* we continue iterating so as to update FastPathLocalUseCount */
+			return true;
 		}
-		if (FAST_PATH_GET_BITS(MyProc, f) != 0)
-			++FastPathLocalUseCount;
 	}
-	return result;
+
+	return false;
 }
 
 /*

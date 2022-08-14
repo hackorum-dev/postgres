@@ -80,7 +80,7 @@ struct XidCache
  * rather than the main lock table.  This eases contention on the lock
  * manager LWLocks.  See storage/lmgr/README for additional details.
  */
-#define		FP_LOCK_SLOTS_PER_BACKEND 16
+#define		FP_LOCK_SLOTS_PER_BACKEND 64
 
 /*
  * An invalid pgprocno.  Must be larger than the maximum number of PGPROC
@@ -282,7 +282,7 @@ struct PGPROC
 
 	/* Lock manager data, recording fast-path locks taken by this backend. */
 	LWLock		fpInfoLock;		/* protects per-backend fast-path state */
-	uint64		fpLockBits;		/* lock modes held for each fast-path slot */
+	uint8		fpLockBits[FP_LOCK_SLOTS_PER_BACKEND];		/* lock modes held for each fast-path slot */
 	Oid			fpRelId[FP_LOCK_SLOTS_PER_BACKEND]; /* slots for rel oids */
 	bool		fpVXIDLock;		/* are we holding a fast-path VXID lock? */
 	LocalTransactionId fpLocalTransactionId;	/* lxid for fast-path VXID
