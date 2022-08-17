@@ -365,7 +365,10 @@ PLy_get_sqlerrcode(PyObject *exc, int *sqlerrcode)
 
 	sqlstate = PyObject_GetAttrString(exc, "sqlstate");
 	if (sqlstate == NULL)
+	{
+		PyErr_Clear();
 		return;
+	}
 
 	buffer = PLyUnicode_AsString(sqlstate);
 	if (strlen(buffer) == 5 &&
@@ -405,6 +408,7 @@ PLy_get_spi_error_data(PyObject *exc, int *sqlerrcode, char **detail,
 	}
 	else
 	{
+		PyErr_Clear();
 		/*
 		 * If there's no spidata, at least set the sqlerrcode. This can happen
 		 * if someone explicitly raises a SPI exception from Python code.
@@ -585,6 +589,10 @@ get_string_attr(PyObject *obj, char *attrname, char **str)
 	if (val != NULL && val != Py_None)
 	{
 		*str = PLyUnicode_AsString(val);
+	}
+	else if (val == NULL)
+	{
+		PyErr_Clear();
 	}
 	Py_XDECREF(val);
 }
