@@ -15,6 +15,7 @@
 #define TEST_SHM_MQ_H
 
 #include "storage/dsm.h"
+#include "storage/sharedfileset.h"
 #include "storage/shm_mq.h"
 #include "storage/spin.h"
 
@@ -32,6 +33,7 @@ typedef struct
 	int			workers_total;
 	int			workers_attached;
 	int			workers_ready;
+	SharedFileSet	fileset;
 } test_shm_mq_header;
 
 /* Set up dynamic shared memory and background workers for test run. */

@@ -19,12 +19,15 @@
 
 #include "postgres.h"
 
+#include "access/xact.h"
 #include "miscadmin.h"
+#include "storage/buffile.h"
 #include "storage/ipc.h"
 #include "storage/procarray.h"
 #include "storage/shm_mq.h"
 #include "storage/shm_toc.h"
 #include "tcop/tcopprot.h"
+#include "utils/resowner.h"
 
 #include "test_shm_mq.h"
 
@@ -53,6 +56,7 @@ test_shm_mq_main(Datum main_arg)
 	volatile test_shm_mq_header *hdr;
 	int			myworkernumber;
 	PGPROC	   *registrant;
+	BufFile	   *fd;
 
 	/*
 	 * Establish signal handlers.
@@ -110,6 +114,19 @@ test_shm_mq_main(Datum main_arg)
 	 */
 	attach_to_queues(seg, toc, myworkernumber, &inqh, &outqh);
 
+	CurrentResourceOwner = ResourceOwnerCreate(NULL, "worker");
+
+	/*
+	 * Open shared file. The explicit typecasts are to keep compiler
+	 * happy because hdr is declared as volatile here.
+	 */
+	SharedFileSetAttach((SharedFileSet *)&hdr->fileset, seg);
+#if PG_VERSION_NUM >= 150000
+	fd = BufFileOpenFileSet((FileSet *)&hdr->fileset.fs, "test_mq_sharefile", O_RDONLY, false);
+#else
+	fd = BufFileOpenShared((SharedFileSet *)&hdr->fileset, "test_mq_sharefile", O_RDONLY);
+#endif
+
 	/*
 	 * Indicate that we're fully initialized and ready to begin the main part
 	 * of the parallel operation.
@@ -132,6 +149,14 @@ test_shm_mq_main(Datum main_arg)
 
 	/* Do the work. */
 	copy_messages(inqh, outqh);
+
+	BufFileClose(fd);
+
+	/*
+	 * Force interrupt processing. Not sure why, but this makes it easy
+	 * to reproduce the problem.
+	 */
+	CHECK_FOR_INTERRUPTS();
 
 	/*
 	 * We're done.  For cleanliness, explicitly detach from the shared memory

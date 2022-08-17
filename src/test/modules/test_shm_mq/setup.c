@@ -18,10 +18,16 @@
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "postmaster/bgworker.h"
+#include "storage/buffile.h"
 #include "storage/procsignal.h"
 #include "storage/shm_toc.h"
 #include "test_shm_mq.h"
 #include "utils/memutils.h"
+
+typedef struct
+{
+	SharedFileSet	fileset;
+} shared_state;
 
 typedef struct
 {
@@ -32,7 +38,8 @@ typedef struct
 static void setup_dynamic_shared_memory(int64 queue_size, int nworkers,
 										dsm_segment **segp,
 										test_shm_mq_header **hdrp,
-										shm_mq **outp, shm_mq **inp);
+										shm_mq **outp, shm_mq **inp,
+										BufFile **fdp);
 static worker_state *setup_background_workers(int nworkers,
 											  dsm_segment *seg);
 static void cleanup_background_workers(dsm_segment *seg, Datum arg);
@@ -53,9 +60,10 @@ test_shm_mq_setup(int64 queue_size, int32 nworkers, dsm_segment **segp,
 	shm_mq	   *outq = NULL;	/* placate compiler */
 	shm_mq	   *inq = NULL;		/* placate compiler */
 	worker_state *wstate;
+	BufFile		*fd;
 
 	/* Set up a dynamic shared memory segment. */
-	setup_dynamic_shared_memory(queue_size, nworkers, &seg, &hdr, &outq, &inq);
+	setup_dynamic_shared_memory(queue_size, nworkers, &seg, &hdr, &outq, &inq, &fd);
 	*segp = seg;
 
 	/* Register background workers. */
@@ -68,6 +76,10 @@ test_shm_mq_setup(int64 queue_size, int32 nworkers, dsm_segment **segp,
 	/* Wait for workers to become ready. */
 	wait_for_workers_to_become_ready(wstate, hdr);
 
+	/* Force error processing */
+	elog(ERROR, "force error");
+
+	BufFileClose(fd);
 	/*
 	 * Once we reach this point, all workers are ready.  We no longer need to
 	 * kill them if we die; they'll die on their own as the message queues
@@ -88,7 +100,7 @@ test_shm_mq_setup(int64 queue_size, int32 nworkers, dsm_segment **segp,
 static void
 setup_dynamic_shared_memory(int64 queue_size, int nworkers,
 							dsm_segment **segp, test_shm_mq_header **hdrp,
-							shm_mq **outp, shm_mq **inp)
+							shm_mq **outp, shm_mq **inp, BufFile **fdp)
 {
 	shm_toc_estimator e;
 	int			i;
@@ -96,6 +108,7 @@ setup_dynamic_shared_memory(int64 queue_size, int nworkers,
 	dsm_segment *seg;
 	shm_toc    *toc;
 	test_shm_mq_header *hdr;
+	BufFile		*fd;
 
 	/* Ensure a valid queue size. */
 	if (queue_size < 0 || ((uint64) queue_size) < shm_mq_minimum_size)
@@ -160,9 +173,18 @@ setup_dynamic_shared_memory(int64 queue_size, int nworkers,
 		}
 	}
 
+	SharedFileSetInit(&hdr->fileset, seg);
+#if PG_VERSION_NUM >= 150000
+	fd = BufFileCreateFileSet(&(hdr->fileset.fs), "test_mq_sharefile");
+#else
+	fd = BufFileCreateShared(&(hdr->fileset), "test_mq_sharefile");
+#endif
+
+
 	/* Return results to caller. */
 	*segp = seg;
 	*hdrp = hdr;
+	*fdp = fd;
 }
 
 /*
