@@ -18578,7 +18578,6 @@ DetachPartitionFinalize(Relation rel, Relation partRel, bool concurrent,
 	{
 		Oid			idxid = lfirst_oid(cell);
 		Relation	idx;
-		Oid			constrOid;
 
 		if (!has_superclass(idxid))
 			continue;
@@ -18590,10 +18589,7 @@ DetachPartitionFinalize(Relation rel, Relation partRel, bool concurrent,
 		IndexSetParentIndex(idx, InvalidOid);
 
 		/* If there's a constraint associated with the index, detach it too */
-		constrOid = get_relation_idx_constraint_oid(RelationGetRelid(partRel),
-													idxid);
-		if (OidIsValid(constrOid))
-			ConstraintSetParentConstraint(constrOid, InvalidOid, InvalidOid);
+		detach_relation_idx_constraints(RelationGetRelid(partRel), idxid);
 
 		index_close(idx, NoLock);
 	}

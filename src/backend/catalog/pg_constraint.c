@@ -985,6 +985,46 @@ get_relation_constraint_attnos(Oid relid, const char *conname,
 }
 
 /*
+ * Detaches the constraint(s) associated with the given index in the
+ * given relation.
+ * Returns the number of detached constraints or 0 if no such index is catalogued.
+ */
+int
+detach_relation_idx_constraints(Oid relationId, Oid indexId)
+{
+	Relation	pg_constraint;
+	SysScanDesc scan;
+	ScanKeyData key;
+	HeapTuple	tuple;
+	int			count = 0;
+
+	pg_constraint = table_open(ConstraintRelationId, AccessShareLock);
+
+	ScanKeyInit(&key,
+				Anum_pg_constraint_conrelid,
+				BTEqualStrategyNumber,
+				F_OIDEQ,
+				ObjectIdGetDatum(relationId));
+	scan = systable_beginscan(pg_constraint, ConstraintRelidTypidNameIndexId,
+							  true, NULL, 1, &key);
+	while ((tuple = systable_getnext(scan)) != NULL)
+	{
+		Form_pg_constraint constrForm;
+
+		constrForm = (Form_pg_constraint) GETSTRUCT(tuple);
+		if (constrForm->conindid == indexId)
+		{
+			ConstraintSetParentConstraint(constrForm->oid, InvalidOid, InvalidOid);
+			count++;
+		}
+	}
+	systable_endscan(scan);
+
+	table_close(pg_constraint, AccessShareLock);
+	return count;
+}
+
+/*
  * Return the OID of the constraint associated with the given index in the
  * given relation; or InvalidOid if no such index is catalogued.
  */
