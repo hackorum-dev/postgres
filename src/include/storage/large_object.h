@@ -76,6 +76,8 @@ typedef struct LargeObjectDesc
 #define MAX_LARGE_OBJECT_SIZE	((int64) INT_MAX * LOBLKSIZE)
 
 
+#ifndef FRONTEND
+
 /*
  * GUC: backwards-compatibility flag to suppress LO permission checks
  */
@@ -96,5 +98,7 @@ extern int64 inv_tell(LargeObjectDesc *obj_desc);
 extern int	inv_read(LargeObjectDesc *obj_desc, char *buf, int nbytes);
 extern int	inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes);
 extern void inv_truncate(LargeObjectDesc *obj_desc, int64 len);
+
+#endif
 
 #endif							/* LARGE_OBJECT_H */

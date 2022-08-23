@@ -16,7 +16,10 @@
 #include "storage/block.h"
 #include "storage/buf.h"
 #include "storage/relfilelocator.h"
+
+#ifndef FRONTEND
 #include "utils/relcache.h"
+#endif
 
 /*
  * The minimum size of the WAL construction working area. If you need to
@@ -37,6 +40,8 @@
 									 * will be skipped) */
 #define REGBUF_KEEP_DATA	0x10	/* include data even if a full-page image
 									 * is taken */
+
+#ifndef FRONTEND
 
 /* prototypes for public functions in xloginsert.c: */
 extern void XLogBeginInsert(void);
@@ -62,5 +67,7 @@ extern void log_newpage_range(Relation rel, ForkNumber forkNum,
 extern XLogRecPtr XLogSaveBufferForHint(Buffer buffer, bool buffer_std);
 
 extern void InitXLogInsert(void);
+
+#endif
 
 #endif							/* XLOGINSERT_H */

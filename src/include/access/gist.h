@@ -22,7 +22,10 @@
 #include "access/xlogdefs.h"
 #include "storage/block.h"
 #include "storage/bufpage.h"
+
+#ifndef FRONTEND
 #include "utils/relcache.h"
+#endif
 
 /*
  * amproc indexes for GiST indexes.
@@ -110,6 +113,8 @@ typedef GISTPageOpaqueData *GISTPageOpaque;
  */
 #define GIST_PAGE_ID		0xFF81
 
+#ifndef FRONTEND
+
 /*
  * This is the Split Vector to be returned by the PickSplit method.
  * PickSplit should fill the indexes of tuples to go to the left side into
@@ -163,6 +168,8 @@ typedef struct GISTENTRY
 	OffsetNumber offset;
 	bool		leafkey;
 } GISTENTRY;
+
+#endif
 
 #define GistPageGetOpaque(page) ( (GISTPageOpaque) PageGetSpecialPointer(page) )
 
@@ -226,6 +233,8 @@ GistPageGetDeleteXid(Page page)
 		return FullTransactionIdFromEpochAndXid(0, FirstNormalTransactionId);
 }
 
+#ifndef FRONTEND
+
 /*
  * Vector of GISTENTRY structs; user-defined methods union and picksplit
  * take it as one of their arguments
@@ -244,5 +253,7 @@ typedef struct
 #define gistentryinit(e, k, r, pg, o, l) \
 	do { (e).key = (k); (e).rel = (r); (e).page = (pg); \
 		 (e).offset = (o); (e).leafkey = (l); } while (0)
+
+#endif
 
 #endif							/* GIST_H */

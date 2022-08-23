@@ -15,7 +15,10 @@
 
 #include "access/htup_details.h"
 #include "storage/lockdefs.h"
+
+#ifndef FRONTEND
 #include "utils/relcache.h"
+#endif
 
 /*
  * Find the maximum size of a tuple if there are to be N tuples per page.
@@ -88,6 +91,8 @@
 	 sizeof(int32) -									\
 	 VARHDRSZ)
 
+#ifndef FRONTEND
+
 /* ----------
  * heap_toast_insert_or_update -
  *
@@ -145,5 +150,6 @@ extern HeapTuple toast_build_flattened_tuple(TupleDesc tupleDesc,
 extern void heap_fetch_toast_slice(Relation toastrel, Oid valueid,
 								   int32 attrsize, int32 sliceoffset,
 								   int32 slicelength, struct varlena *result);
+#endif
 
 #endif							/* HEAPTOAST_H */

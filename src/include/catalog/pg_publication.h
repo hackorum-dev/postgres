@@ -103,6 +103,8 @@ typedef struct Publication
 	PublicationActions pubactions;
 } Publication;
 
+#ifndef FRONTEND
+
 typedef struct PublicationRelInfo
 {
 	Relation	relation;
@@ -154,5 +156,7 @@ extern ObjectAddress publication_add_schema(Oid pubid, Oid schemaid,
 
 extern Bitmapset *pub_collist_to_bitmapset(Bitmapset *columns, Datum pubcols,
 										   MemoryContext mcxt);
+
+#endif
 
 #endif							/* PG_PUBLICATION_H */

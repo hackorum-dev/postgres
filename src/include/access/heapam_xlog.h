@@ -20,7 +20,10 @@
 #include "storage/buf.h"
 #include "storage/bufpage.h"
 #include "storage/relfilelocator.h"
+
+#ifndef FRONTEND
 #include "utils/relcache.h"
+#endif
 
 
 /*
@@ -401,6 +404,8 @@ extern void heap2_desc(StringInfo buf, XLogReaderState *record);
 extern const char *heap2_identify(uint8 info);
 extern void heap_xlog_logical_rewrite(XLogReaderState *r);
 
+#ifndef FRONTEND
+
 extern XLogRecPtr log_heap_freeze(Relation reln, Buffer buffer,
 								  TransactionId cutoff_xid, xl_heap_freeze_tuple *tuples,
 								  int ntuples);
@@ -417,5 +422,7 @@ extern void heap_execute_freeze_tuple(HeapTupleHeader tuple,
 									  xl_heap_freeze_tuple *xlrec_tp);
 extern XLogRecPtr log_heap_visible(RelFileLocator rlocator, Buffer heap_buffer,
 								   Buffer vm_buffer, TransactionId cutoff_xid, uint8 flags);
+
+#endif
 
 #endif							/* HEAPAM_XLOG_H */

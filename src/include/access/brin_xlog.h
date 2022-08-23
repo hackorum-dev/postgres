@@ -19,7 +19,6 @@
 #include "storage/bufpage.h"
 #include "storage/itemptr.h"
 #include "storage/relfilelocator.h"
-#include "utils/relcache.h"
 
 
 /*

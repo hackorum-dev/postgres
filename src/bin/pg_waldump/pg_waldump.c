@@ -9,8 +9,7 @@
  *-------------------------------------------------------------------------
  */
 
-#define FRONTEND 1
-#include "postgres.h"
+#include "postgres_fe.h"
 
 #include <dirent.h>
 #include <signal.h>

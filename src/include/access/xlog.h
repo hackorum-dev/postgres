@@ -192,6 +192,12 @@ typedef enum WALAvailability
 
 struct XLogRecData;
 
+extern void xlog_desc(StringInfo buf, XLogReaderState *record);
+extern const char *xlog_identify(uint8 info);
+extern void xlog_redo(XLogReaderState *record);
+
+#ifndef FRONTEND
+
 extern XLogRecPtr XLogInsertRecord(struct XLogRecData *rdata,
 								   XLogRecPtr fpw_lsn,
 								   uint8 flags,
@@ -207,10 +213,6 @@ extern void CheckXLogRemoved(XLogSegNo segno, TimeLineID tli);
 extern XLogSegNo XLogGetLastRemovedSegno(void);
 extern void XLogSetAsyncXactLSN(XLogRecPtr record);
 extern void XLogSetReplicationSlotMinimumLSN(XLogRecPtr lsn);
-
-extern void xlog_redo(XLogReaderState *record);
-extern void xlog_desc(StringInfo buf, XLogReaderState *record);
-extern const char *xlog_identify(uint8 info);
 
 extern void issue_xlog_fsync(int fd, XLogSegNo segno, TimeLineID tli);
 
@@ -259,6 +261,8 @@ extern void SetInstallXLogFileSegmentActive(void);
 extern bool IsInstallXLogFileSegmentActive(void);
 extern void XLogShutdownWalRcv(void);
 
+#endif
+
 /*
  * Routines to start, stop, and get status of a base backup.
  */
@@ -279,6 +283,8 @@ typedef enum SessionBackupState
 	SESSION_BACKUP_RUNNING,
 } SessionBackupState;
 
+#ifndef FRONTEND
+
 extern XLogRecPtr do_pg_backup_start(const char *backupidstr, bool fast,
 									 TimeLineID *starttli_p, StringInfo labelfile,
 									 List **tablespaces, StringInfo tblspcmapfile);
@@ -287,6 +293,8 @@ extern XLogRecPtr do_pg_backup_stop(char *labelfile, bool waitforarchive,
 extern void do_pg_abort_backup(int code, Datum arg);
 extern void register_persistent_abort_backup_handler(void);
 extern SessionBackupState get_backup_status(void);
+
+#endif
 
 /* File path names (all relative to $PGDATA) */
 #define RECOVERY_SIGNAL_FILE	"recovery.signal"

@@ -18,7 +18,10 @@
 #include "access/xlog_internal.h"
 #include "access/xloginsert.h"
 #include "storage/bufpage.h"
+
+#ifndef FRONTEND
 #include "utils/rel.h"
+#endif
 
 #define MAX_GENERIC_XLOG_PAGES	XLR_NORMAL_MAX_BLOCK_ID
 
@@ -29,12 +32,16 @@
 struct GenericXLogState;
 typedef struct GenericXLogState GenericXLogState;
 
+#ifndef FRONTEND
+
 /* API for construction of generic xlog records */
 extern GenericXLogState *GenericXLogStart(Relation relation);
 extern Page GenericXLogRegisterBuffer(GenericXLogState *state, Buffer buffer,
 									  int flags);
 extern XLogRecPtr GenericXLogFinish(GenericXLogState *state);
 extern void GenericXLogAbort(GenericXLogState *state);
+
+#endif
 
 /* functions defined for rmgr */
 extern void generic_redo(XLogReaderState *record);

@@ -14,9 +14,12 @@
 #define OBJECTADDRESS_H
 
 #include "access/htup.h"
-#include "nodes/parsenodes.h"
 #include "storage/lockdefs.h"
+
+#ifndef FRONTEND
+#include "nodes/parsenodes.h"
 #include "utils/relcache.h"
+#endif
 
 /*
  * An ObjectAddress represents a database object of any type.
@@ -39,6 +42,8 @@ extern PGDLLIMPORT const ObjectAddress InvalidObjectAddress;
 
 #define ObjectAddressSet(addr, class_id, object_id) \
 	ObjectAddressSubSet(addr, class_id, object_id, 0)
+
+#ifndef FRONTEND
 
 extern ObjectAddress get_object_address(ObjectType objtype, Node *object,
 										Relation *relp,
@@ -85,5 +90,7 @@ extern char *getObjectIdentityParts(const ObjectAddress *address,
 extern struct ArrayType *strlist_to_textarray(List *list);
 
 extern ObjectType get_relkind_objtype(char relkind);
+
+#endif
 
 #endif							/* OBJECTADDRESS_H */

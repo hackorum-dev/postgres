@@ -15,12 +15,14 @@
 
 #include "access/xlogreader.h"
 #include "catalog/objectaddress.h"
-#include "fmgr.h"
 #include "lib/stringinfo.h"
-#include "nodes/parsenodes.h"
-#include "parser/parse_node.h"
 #include "storage/relfilelocator.h"
 
+#ifndef FRONTEND
+#include "fmgr.h"
+#include "nodes/parsenodes.h"
+#include "parser/parse_node.h"
+#endif
 
 typedef struct FormData_pg_sequence_data
 {
@@ -51,6 +53,8 @@ typedef struct xl_seq_rec
 	/* SEQUENCE TUPLE DATA FOLLOWS AT THE END */
 } xl_seq_rec;
 
+#ifndef FRONTEND
+
 extern int64 nextval_internal(Oid relid, bool check_permissions);
 extern Datum nextval(PG_FUNCTION_ARGS);
 extern List *sequence_options(Oid relid);
@@ -61,6 +65,8 @@ extern void SequenceChangePersistence(Oid relid, char newrelpersistence);
 extern void DeleteSequenceTuple(Oid relid);
 extern void ResetSequence(Oid seq_relid);
 extern void ResetSequenceCaches(void);
+
+#endif
 
 extern void seq_redo(XLogReaderState *rptr);
 extern void seq_desc(StringInfo buf, XLogReaderState *rptr);

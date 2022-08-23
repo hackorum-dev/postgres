@@ -15,6 +15,7 @@
 #include "access/sysattr.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_type.h"
+#include "fmgr.h"
 #include "libpq/pqformat.h"
 #include "replication/logicalproto.h"
 #include "utils/lsyscache.h"

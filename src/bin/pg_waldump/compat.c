@@ -14,9 +14,7 @@
  *-------------------------------------------------------------------------
  */
 
-/* ugly hack, same as in e.g pg_controldata */
-#define FRONTEND 1
-#include "postgres.h"
+#include "postgres_fe.h"
 
 #include <time.h>
 

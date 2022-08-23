@@ -17,7 +17,10 @@
 #include "access/xlogreader.h"
 #include "catalog/objectaddress.h"
 #include "lib/stringinfo.h"
+
+#ifndef FRONTEND
 #include "nodes/parsenodes.h"
+#endif
 
 extern PGDLLIMPORT bool allow_in_place_tablespaces;
 
@@ -45,6 +48,8 @@ typedef struct TableSpaceOpts
 	int			maintenance_io_concurrency;
 } TableSpaceOpts;
 
+#ifndef FRONTEND
+
 extern Oid	CreateTableSpace(CreateTableSpaceStmt *stmt);
 extern void DropTableSpace(DropTableSpaceStmt *stmt);
 extern ObjectAddress RenameTableSpace(const char *oldname, const char *newname);
@@ -61,6 +66,8 @@ extern char *get_tablespace_name(Oid spc_oid);
 
 extern bool directory_is_empty(const char *path);
 extern void remove_tablespace_symlink(const char *linkloc);
+
+#endif
 
 extern void tblspc_redo(XLogReaderState *rptr);
 extern void tblspc_desc(StringInfo buf, XLogReaderState *rptr);

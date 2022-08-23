@@ -74,6 +74,7 @@ typedef IndexAttributeBitMapData * IndexAttributeBitMap;
 
 
 /* routines in indextuple.c */
+#ifndef FRONTEND
 extern IndexTuple index_form_tuple(TupleDesc tupleDescriptor,
 								   Datum *values, bool *isnull);
 extern IndexTuple index_form_tuple_context(TupleDesc tupleDescriptor,
@@ -89,7 +90,7 @@ extern void index_deform_tuple_internal(TupleDesc tupleDescriptor,
 extern IndexTuple CopyIndexTuple(IndexTuple source);
 extern IndexTuple index_truncate_tuple(TupleDesc sourceDescriptor,
 									   IndexTuple source, int leavenatts);
-
+#endif
 
 /*
  * Takes an infomask as argument (primarily because this needs to be usable

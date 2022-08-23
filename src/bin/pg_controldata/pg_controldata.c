@@ -9,14 +9,7 @@
  * src/bin/pg_controldata/pg_controldata.c
  */
 
-/*
- * We have to use postgres.h not postgres_fe.h here, because there's so much
- * backend-only stuff in the XLOG include files we need.  But we need a
- * frontend-ish environment otherwise.  Hence this ugly hack.
- */
-#define FRONTEND 1
-
-#include "postgres.h"
+#include "postgres_fe.h"
 
 #include <time.h>
 

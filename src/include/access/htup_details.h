@@ -690,6 +690,8 @@ struct MinimalTupleData
 #define HeapTupleClearHeapOnly(tuple) \
 		HeapTupleHeaderClearHeapOnly((tuple)->t_data)
 
+#ifndef FRONTEND
+
 /* prototypes for functions in common/heaptuple.c */
 extern Size heap_compute_data_size(TupleDesc tupleDesc,
 								   Datum *values, bool *isnull);
@@ -733,7 +735,6 @@ extern size_t varsize_any(void *p);
 extern HeapTuple heap_expand_tuple(HeapTuple sourceTuple, TupleDesc tupleDesc);
 extern MinimalTuple minimal_expand_tuple(HeapTuple sourceTuple, TupleDesc tupleDesc);
 
-#ifndef FRONTEND
 /*
  *	fastgetattr
  *		Fetch a user attribute's value as a Datum (might be either a
