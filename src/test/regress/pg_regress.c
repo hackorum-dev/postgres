@@ -19,6 +19,7 @@
 #include "postgres_fe.h"
 
 #include <ctype.h>
+#include <fcntl.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -51,10 +52,6 @@ typedef struct _resultmap
  */
 char	   *host_platform = HOST_TUPLE;
 
-#ifndef WIN32					/* not used in WIN32 case */
-static char *shellprog = SHELLPROG;
-#endif
-
 /*
  * On Windows we use -w in diff switches to avoid problems with inconsistent
  * newline representation.  The actual result files will generally have
@@ -73,7 +70,7 @@ _stringlist *dblist = NULL;
 bool		debug = false;
 char	   *inputdir = ".";
 char	   *outputdir = ".";
-char       *expecteddir = ".";
+char	   *expecteddir = ".";
 char	   *bindir = PGBINDIR;
 char	   *launcher = NULL;
 static _stringlist *loadextension = NULL;
@@ -1052,12 +1049,71 @@ psql_end_command(StringInfo buf, const char *database)
 	} while (0)
 
 /*
- * Spawn a process to execute the given shell command; don't wait for it
+ * Redirect f to the file specified by fpath, opened with given flags and mode
+ * Does not return upon failure
+ */
+static void
+redirect_to(FILE *f, const char *fpath, int flags, int mode)
+{
+	int			fh;
+
+	/* Let's just be sure the FILE is idle */
+	fflush(f);
+
+	fh = open(fpath, flags, mode);
+	if (fh < 0)
+	{
+		fprintf(stderr, "could not open file \"%s\": %m\n", fpath);
+		_exit(1);
+	}
+	if (dup2(fh, fileno(f)) < 0)
+	{
+		fprintf(stderr, "could not duplicate descriptor for file \"%s\": %m\n",
+				fpath);
+		_exit(1);
+	}
+	(void) close(fh);
+}
+
+/*
+ * Redirect f to the same file used by fref
+ * Does not return upon failure
+ */
+static void
+redirect_link(FILE *f, FILE *fref)
+{
+	/* Let's just be sure the FILE is idle */
+	fflush(f);
+
+	if (dup2(fileno(fref), fileno(f)) < 0)
+	{
+		fprintf(stderr, "could not duplicate file descriptor: %m\n");
+		_exit(1);
+	}
+}
+
+/*
+ * Spawn a process to execute a sub-command; don't wait for it
  *
  * Returns the process ID (or HANDLE) so we can wait for it later
+ * Does not return upon failure
+ *
+ * Arguments:
+ * file: program to be executed (may be a full path, or just program name)
+ * argv: NULL-terminated array of argument strings, as for execvp(2);
+ *       argv[0] should normally be the same as file
+ * proc_stdin: filename to make child's stdin read from, or NULL
+ *       for no redirection
+ * proc_stdout: filename to make child's stdout write to, or NULL
+ *       for no redirection
+ * proc_stderr: filename to make child's stderr write to, or NULL
+ *       for no redirection, or "&1" to link it to child's stdout
  */
 PID_TYPE
-spawn_process(const char *cmdline)
+spawn_process(const char *file, char *argv[],
+			  const char *proc_stdin,
+			  const char *proc_stdout,
+			  const char *proc_stderr)
 {
 #ifndef WIN32
 	pid_t		pid;
@@ -1085,35 +1141,65 @@ spawn_process(const char *cmdline)
 	if (pid == 0)
 	{
 		/*
-		 * In child
-		 *
-		 * Instead of using system(), exec the shell directly, and tell it to
-		 * "exec" the command too.  This saves two useless processes per
-		 * parallel test case.
+		 * In child: redirect stdio as requested, then execvp()
 		 */
-		char	   *cmdline2;
-
-		cmdline2 = psprintf("exec %s", cmdline);
-		execl(shellprog, shellprog, "-c", cmdline2, (char *) NULL);
+		if (proc_stdin)
+			redirect_to(stdin, proc_stdin, O_RDONLY, 0);
+		if (proc_stdout)
+			redirect_to(stdout, proc_stdout, O_WRONLY | O_CREAT | O_TRUNC,
+						S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+		if (proc_stderr)
+		{
+			if (strcmp(proc_stderr, "&1") == 0)
+				redirect_link(stderr, stdout);
+			else
+				redirect_to(stderr, proc_stderr, O_WRONLY | O_CREAT | O_TRUNC,
+							S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+		}
+		execvp(file, argv);
+		/* must have failed */
 		fprintf(stderr, _("%s: could not exec \"%s\": %s\n"),
-				progname, shellprog, strerror(errno));
+				progname, file, strerror(errno));
 		_exit(1);				/* not exit() here... */
 	}
 	/* in parent */
 	return pid;
 #else
 	PROCESS_INFORMATION pi;
+	StringInfoData cmdline;
 	char	   *cmdline2;
 	HANDLE		restrictedToken;
 	const char *comspec;
+
+	/*
+	 * Construct the equivalent command string.  We assume simplistic double
+	 * quoting of the arguments is sufficient.
+	 */
+	initStringInfo(&cmdline);
+	appendStringInfo(&cmdline, "\"%s\"", path);
+	for (int i = 1; argv[i] != NULL; i++)
+		appendStringInfo(&cmdline, " \"%s\"", argv[i]);
+	if (proc_stdin)
+		appendStringInfo(&cmdline, " <\"%s\"", proc_stdin);
+	if (proc_stdout)
+		appendStringInfo(&cmdline, " >\"%s\"", proc_stdout);
+	if (proc_stderr)
+	{
+		if (strcmp(proc_stderr, "&1") == 0)
+			appendStringInfo(&cmdline, " 2>&1");
+		else
+			appendStringInfo(&cmdline, " 2>\"%s\"", proc_stderr);
+	}
 
 	/* Find CMD.EXE location using COMSPEC, if it's set */
 	comspec = getenv("COMSPEC");
 	if (comspec == NULL)
 		comspec = "CMD";
 
+	/* Prepare command for CMD.EXE */
+	cmdline2 = psprintf("\"%s\" /c \"%s\"", comspec, cmdline.data);
+
 	memset(&pi, 0, sizeof(pi));
-	cmdline2 = psprintf("\"%s\" /c \"%s\"", comspec, cmdline);
 
 	if ((restrictedToken =
 		 CreateRestrictedProcess(cmdline2, &pi)) == 0)
@@ -2228,6 +2314,8 @@ regression_main(int argc, char *argv[],
 		FILE	   *pg_conf;
 		const char *env_wait;
 		int			wait_seconds;
+		char	   *pmargv[20];
+		char	   *outputname;
 
 		/*
 		 * Prepare the temp instance
@@ -2361,16 +2449,30 @@ regression_main(int argc, char *argv[],
 		 * Start the temp postmaster
 		 */
 		header(_("starting postmaster"));
-		snprintf(buf, sizeof(buf),
-				 "\"%s%spostgres\" -D \"%s/data\" -F%s "
-				 "-c \"listen_addresses=%s\" -k \"%s\" "
-				 "> \"%s/log/postmaster.log\" 2>&1",
-				 bindir ? bindir : "",
-				 bindir ? "/" : "",
-				 temp_instance, debug ? " -d 5" : "",
-				 hostname ? hostname : "", sockdir ? sockdir : "",
-				 outputdir);
-		postmaster_pid = spawn_process(buf);
+		i = 0;
+		pmargv[i++] = psprintf("%s%spostgres",
+							   bindir ? bindir : "",
+							   bindir ? "/" : "");
+		pmargv[i++] = "-D";
+		pmargv[i++] = psprintf("%s/data", temp_instance);
+		pmargv[i++] = "-F";
+		if (debug)
+		{
+			pmargv[i++] = "-d";
+			pmargv[i++] = "5";
+		}
+		pmargv[i++] = "-c";
+		pmargv[i++] = psprintf("listen_addresses=%s",
+							   hostname ? hostname : "");
+		pmargv[i++] = "-k";
+		pmargv[i++] = psprintf("%s", sockdir ? sockdir : "");
+		pmargv[i++] = NULL;
+		Assert(i <= lengthof(pmargv));
+		outputname = psprintf("%s/log/postmaster.log", outputdir);
+		postmaster_pid = spawn_process(pmargv[0], pmargv,
+									   NULL,
+									   outputname,
+									   "&1");
 		if (postmaster_pid == INVALID_PID)
 		{
 			fprintf(stderr, _("\n%s: could not spawn postmaster: %s\n"),

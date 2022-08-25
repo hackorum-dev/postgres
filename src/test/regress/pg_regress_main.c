@@ -34,8 +34,8 @@ psql_start_test(const char *testname,
 	char		infile[MAXPGPATH];
 	char		outfile[MAXPGPATH];
 	char		expectfile[MAXPGPATH];
-	char		psql_cmd[MAXPGPATH * 3];
-	size_t		offset = 0;
+	char	   *psqlargv[20];
+	int			i = 0;
 	char	   *appnameenv;
 
 	/*
@@ -63,40 +63,30 @@ psql_start_test(const char *testname,
 	add_stringlist_item(expectfiles, expectfile);
 
 	if (launcher)
-	{
-		offset += snprintf(psql_cmd + offset, sizeof(psql_cmd) - offset,
-						   "%s ", launcher);
-		if (offset >= sizeof(psql_cmd))
-		{
-			fprintf(stderr, _("command too long\n"));
-			exit(2);
-		}
-	}
+		psqlargv[i++] = launcher;
 
-	/*
-	 * Use HIDE_TABLEAM to hide different AMs to allow to use regression tests
-	 * against different AMs without unnecessary differences.
-	 */
-	offset += snprintf(psql_cmd + offset, sizeof(psql_cmd) - offset,
-					   "\"%s%spsql\" -X -a -q -d \"%s\" %s < \"%s\" > \"%s\" 2>&1",
-					   bindir ? bindir : "",
-					   bindir ? "/" : "",
-					   dblist->str,
-					   "-v HIDE_TABLEAM=on -v HIDE_TOAST_COMPRESSION=on",
-					   infile,
-					   outfile);
-	if (offset >= sizeof(psql_cmd))
-	{
-		fprintf(stderr, _("command too long\n"));
-		exit(2);
-	}
+	psqlargv[i++] = psprintf("%s%spsql",
+							 bindir ? bindir : "",
+							 bindir ? "/" : "");
+	psqlargv[i++] = "-Xaq";
+	psqlargv[i++] = "-d";
+	psqlargv[i++] = dblist->str;
+	psqlargv[i++] = "-v";
+	/* Hide TABLEAM and compression to allow tests against different AMs */
+	psqlargv[i++] = "HIDE_TABLEAM=on";
+	psqlargv[i++] = "-v";
+	psqlargv[i++] = "HIDE_TOAST_COMPRESSION=on";
+	psqlargv[i++] = NULL;
+	Assert(i <= lengthof(psqlargv));
 
 	appnameenv = psprintf("pg_regress/%s", testname);
 	setenv("PGAPPNAME", appnameenv, 1);
 	free(appnameenv);
 
-	pid = spawn_process(psql_cmd);
-
+	pid = spawn_process(psqlargv[0], psqlargv,
+						infile,
+						outfile,
+						"&1");
 	if (pid == INVALID_PID)
 	{
 		fprintf(stderr, _("could not start process for test %s\n"),

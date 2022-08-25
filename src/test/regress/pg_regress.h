@@ -65,5 +65,8 @@ int			regression_main(int argc, char *argv[],
 							postprocess_result_function postfunc);
 
 void		add_stringlist_item(_stringlist **listhead, const char *str);
-PID_TYPE	spawn_process(const char *cmdline);
+PID_TYPE	spawn_process(const char *file, char *argv[],
+						  const char *proc_stdin,
+						  const char *proc_stdout,
+						  const char *proc_stderr);
 bool		file_exists(const char *file);
