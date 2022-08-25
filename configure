@@ -647,13 +647,13 @@ MSGFMT
 PG_CRC32C_OBJS
 CFLAGS_ARMV8_CRC32C
 CFLAGS_SSE42
-LIBOBJS
 ZSTD
 LZ4
 UUID_LIBS
 LDAP_LIBS_BE
 LDAP_LIBS_FE
 with_ssl
+LIBOBJS
 PTHREAD_CFLAGS
 PTHREAD_LIBS
 PTHREAD_CC
@@ -12429,6 +12429,7 @@ fi
 
 
 if test "$enable_thread_safety" = yes; then
+  _LIBS="$LIBS"
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing pthread_barrier_wait" >&5
 $as_echo_n "checking for library containing pthread_barrier_wait... " >&6; }
 if ${ac_cv_search_pthread_barrier_wait+:} false; then :
@@ -12485,6 +12486,21 @@ if test "$ac_res" != no; then :
 
 fi
 
+  ac_fn_c_check_func "$LINENO" "pthread_barrier_wait" "ac_cv_func_pthread_barrier_wait"
+if test "x$ac_cv_func_pthread_barrier_wait" = xyes; then :
+  $as_echo "#define HAVE_PTHREAD_BARRIER_WAIT 1" >>confdefs.h
+
+else
+  case " $LIBOBJS " in
+  *" pthread_barrier_wait.$ac_objext "* ) ;;
+  *) LIBOBJS="$LIBOBJS pthread_barrier_wait.$ac_objext"
+ ;;
+esac
+
+fi
+
+
+  LIBS="$_LIBS"
 fi
 
 if test "$with_readline" = yes; then
@@ -16368,23 +16384,6 @@ esac
 fi
 
 
-
-if test "$enable_thread_safety" = yes; then
-  ac_fn_c_check_func "$LINENO" "pthread_barrier_wait" "ac_cv_func_pthread_barrier_wait"
-if test "x$ac_cv_func_pthread_barrier_wait" = xyes; then :
-  $as_echo "#define HAVE_PTHREAD_BARRIER_WAIT 1" >>confdefs.h
-
-else
-  case " $LIBOBJS " in
-  *" pthread_barrier_wait.$ac_objext "* ) ;;
-  *) LIBOBJS="$LIBOBJS pthread_barrier_wait.$ac_objext"
- ;;
-esac
-
-fi
-
-
-fi
 
 if test "$PORTNAME" = "win32" -o "$PORTNAME" = "cygwin"; then
 	# Cygwin and (apparently, based on test results) Mingw both

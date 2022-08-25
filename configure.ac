@@ -1260,7 +1260,10 @@ AC_SEARCH_LIBS(shmget, cygipc)
 AC_SEARCH_LIBS(backtrace_symbols, execinfo)
 
 if test "$enable_thread_safety" = yes; then
+  _LIBS="$LIBS"
   AC_SEARCH_LIBS(pthread_barrier_wait, pthread)
+  AC_REPLACE_FUNCS([pthread_barrier_wait])
+  LIBS="$_LIBS"
 fi
 
 if test "$with_readline" = yes; then
@@ -1830,10 +1833,6 @@ AC_REPLACE_FUNCS(m4_normalize([
 	strlcpy
 	strnlen
 ]))
-
-if test "$enable_thread_safety" = yes; then
-  AC_REPLACE_FUNCS(pthread_barrier_wait)
-fi
 
 if test "$PORTNAME" = "win32" -o "$PORTNAME" = "cygwin"; then
 	# Cygwin and (apparently, based on test results) Mingw both
