@@ -3899,7 +3899,28 @@ if ($collation_check_stderr !~ /ERROR: /)
 	$collation_support = 1;
 }
 
-my $supports_icu  = ($ENV{with_icu} eq 'yes');
+# We need to see if this database encoding supports CREATE COLLATION PROVIDER
+# icu or not. If it doesn't then we will skip all the icu COLLATION-related
+# tests.
+my $supports_icu = 0;
+if ($ENV{with_icu} eq 'yes' && $collation_support)
+{
+	my $icu_check_stderr;
+
+	$node->psql(
+		'postgres',
+		"CREATE COLLATION testing (LOCALE = \"C\", PROVIDER = icu);
+		 DROP COLLATION testing;",
+		on_error_stop => 0,
+		stderr        => \$icu_check_stderr);
+
+	if ($icu_check_stderr !~ /ERROR: /)
+	{
+		$supports_icu = 1;
+	}
+}
+
+# Determine whether build supports LZ4 and gzip.
 my $supports_lz4  = check_pg_config("#define USE_LZ4 1");
 my $supports_gzip = check_pg_config("#define HAVE_LIBZ 1");
 
@@ -3940,11 +3961,6 @@ foreach my $test (
 		$test_db = $tests{$test}->{database};
 	}
 
-	if (defined($tests{$test}->{icu}))
-	{
-		$tests{$test}->{collation} = 1;
-	}
-
 	if ($tests{$test}->{create_sql})
 	{
 
@@ -3954,7 +3970,7 @@ foreach my $test (
 			next;
 		}
 
-		# Skip any icu-related collation commands if build was without icu
+		# Skip any icu-related collation commands if there is no icu support
 		if (!$supports_icu && defined($tests{$test}->{icu}))
 		{
 			next;
@@ -4161,7 +4177,7 @@ foreach my $run (sort keys %pgdump_runs)
 			next;
 		}
 
-		# Skip any icu-related collation commands if build was without icu
+		# Skip any icu-related collation commands if there is no icu support
 		if (!$supports_icu && defined($tests{$test}->{icu}))
 		{
 			next;
