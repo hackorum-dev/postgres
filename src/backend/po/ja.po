@@ -1492,7 +1492,7 @@ msgstr "パラレルワーカの初期化に失敗しました"
 #: access/transam/parallel.c:719 access/transam/parallel.c:838
 #, c-format
 msgid "More details may be available in the server log."
-msgstr "詳細な情報がはサーバログにあるかもしれません。"
+msgstr "詳細な情報はサーバログにあるかもしれません。"
 
 #: access/transam/parallel.c:899
 #, c-format
@@ -1841,7 +1841,7 @@ msgid ""
 "Stop the postmaster and vacuum that database in single-user mode.\n"
 "You might also need to commit or roll back old prepared transactions, or drop stale replication slots."
 msgstr ""
-"postmaster を停止後、シングルユーザモードでデータベースをVACUUMを実行してください。\n"
+"postmaster を停止後、シングルユーザモードでデータベースにVACUUMを実行してください。\n"
 "古い準備済みトランザクションのコミットまたはロールバック、もしくは古いレプリケーションスロットの削除も必要かもしれません。"
 
 #: access/transam/varsup.c:136
@@ -12183,7 +12183,7 @@ msgstr "失敗した行は%sを含みます"
 #: executor/execMain.c:1970
 #, c-format
 msgid "null value in column \"%s\" of relation \"%s\" violates not-null constraint"
-msgstr "リレーション\"%2$s\"の列\"%1$s\"のNULL値がが非NULL制約に違反しています"
+msgstr "リレーション\"%2$s\"の列\"%1$s\"のNULL値が非NULL制約に違反しています"
 
 #: executor/execMain.c:2021
 #, c-format
@@ -12739,7 +12739,7 @@ msgstr "ロールオプション\"%s\"が認識できません"
 #: gram.y:1588 gram.y:1604
 #, c-format
 msgid "CREATE SCHEMA IF NOT EXISTS cannot include schema elements"
-msgstr "CREATE SCHEMA IF NOT EXISTSんはスキーマ要素を含めることはできません"
+msgstr "CREATE SCHEMA IF NOT EXISTSはスキーマ要素を含めることはできません"
 
 #: gram.y:1761
 #, c-format
@@ -17583,7 +17583,7 @@ msgstr "CREATE TABLE では既存のインデックスを使えません"
 #: parser/parse_utilcmd.c:2261
 #, c-format
 msgid "index \"%s\" is already associated with a constraint"
-msgstr "インデックス\"%s\"はすでに1つの制約に割り当てられれいます"
+msgstr "インデックス\"%s\"はすでに1つの制約に割り当てられています"
 
 #: parser/parse_utilcmd.c:2276
 #, c-format
@@ -25012,7 +25012,7 @@ msgstr "設定列\"%s\"をNULLにすることはできません"
 #: utils/adt/tsvector_op.c:2665
 #, c-format
 msgid "text search configuration name \"%s\" must be schema-qualified"
-msgstr "テキスト検索設定名称\"%s\"はスキーマ修飾しなけれナバりません"
+msgstr "テキスト検索設定名称\"%s\"はスキーマ修飾しなければなりません"
 
 #: utils/adt/tsvector_op.c:2690
 #, c-format
@@ -26503,7 +26503,7 @@ msgstr "問い合わせのパースツリーをログに記録します。"
 
 #: utils/misc/guc.c:1498
 msgid "Logs each query's rewritten parse tree."
-msgstr "リライト後の問い合わせのパースツリーをログを記録します。"
+msgstr "リライト後の問い合わせのパースツリーをログに記録します。"
 
 #: utils/misc/guc.c:1507
 msgid "Logs each query's execution plan."
@@ -28443,7 +28443,7 @@ msgstr "固定されたポータル\"%s\"は削除できません"
 #: utils/mmgr/portalmem.c:488
 #, c-format
 msgid "cannot drop active portal \"%s\""
-msgstr "アクテイブなポータル\"%s\"を削除できません"
+msgstr "アクティブなポータル\"%s\"を削除できません"
 
 #: utils/mmgr/portalmem.c:739
 #, c-format
