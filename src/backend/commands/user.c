@@ -726,7 +726,7 @@ AlterRole(ParseState *pstate, AlterRoleStmt *stmt)
 		if (drolemembers && !is_admin_of_role(GetUserId(), roleid))
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("must have admin option on role \"%s\" to add members",
+					 errmsg("must have ADMIN OPTION on role \"%s\" to add members",
 							rolename)));
 	}
 
@@ -1578,7 +1578,7 @@ AddRoleMems(const char *rolename, Oid roleid,
 			!is_admin_of_role(currentUserId, roleid))
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("must have admin option on role \"%s\"",
+					 errmsg("must have ADMIN OPTION on role \"%s\"",
 							rolename)));
 	}
 
@@ -1688,7 +1688,7 @@ AddRoleMems(const char *rolename, Oid roleid,
 			if (memberid == BOOTSTRAP_SUPERUSERID)
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_GRANT_OPERATION),
-						 errmsg("admin option cannot be granted back to your own grantor")));
+						 errmsg("ADMIN OPTION cannot be granted back to your own grantor")));
 			plan_member_revoke(memlist, actions, memberid);
 		}
 
@@ -1713,7 +1713,7 @@ AddRoleMems(const char *rolename, Oid roleid,
 		if (i >= memlist->n_members)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_GRANT_OPERATION),
-					 errmsg("admin option cannot be granted back to your own grantor")));
+					 errmsg("ADMIN OPTION cannot be granted back to your own grantor")));
 
 		ReleaseSysCacheList(memlist);
 	}
@@ -1897,7 +1897,7 @@ DelRoleMems(const char *rolename, Oid roleid,
 			!is_admin_of_role(currentUserId, roleid))
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("must have admin option on role \"%s\"",
+					 errmsg("must have ADMIN OPTION on role \"%s\"",
 							rolename)));
 	}
 
