@@ -316,8 +316,18 @@
 
    <para>
     <firstterm>Read Committed</firstterm> is the default isolation
-    level in <productname>PostgreSQL</productname>.  When a transaction
-    uses this isolation level, a <command>SELECT</command> query
+    level in <productname>PostgreSQL</productname>. Within a transaction at this
+    isolation level, each command starts with a new snapshot that includes the
+    effects of all transactions committed up to that instant, as well as the
+    effects of the previous commands in the current transaction. As described in
+    more detail below, commands that only read from the database simply see its
+    state at the time of this snapshot, but commands that modify or lock
+    rows may inconsistently observe the effects of any transactions that
+    commit while the command is executing.
+   </para>
+
+   <para>
+    A <command>SELECT</command> query
     (without a <literal>FOR UPDATE/SHARE</literal> clause) sees only data
     committed before the query began; it never sees either uncommitted
     data or changes committed during query execution by concurrent
