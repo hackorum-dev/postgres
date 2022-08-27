@@ -2180,7 +2180,7 @@ BaseBackup(char *compression_algorithm, char *compression_detail,
 			pg_fatal("child thread exited with error %u",
 					 (unsigned int) status);
 		/* Exited normally, we're happy */
-#endif
+#endif							/* WIN32 */
 	}
 
 	/* Free the configuration file contents */

@@ -9801,7 +9801,7 @@ sqrt_var(const NumericVar *arg, NumericVar *result, int rscale)
 	int64_to_numericvar(s_int64, &s_var);
 	if (step >= 0)
 		int64_to_numericvar(r_int64, &r_var);
-#endif							/* HAVE_INT128 */
+#endif							/* !HAVE_INT128 */
 
 	/*
 	 * The remaining iterations with src_ndigits > 8 (or 16, if have int128)

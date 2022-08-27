@@ -137,7 +137,7 @@ pg_strong_random(void *buf, size_t len)
 	return false;
 }
 
-#else							/* not USE_OPENSSL or WIN32 */
+#else							/* neither USE_OPENSSL nor WIN32 */
 
 /*
  * Without OpenSSL or Win32 support, just read /dev/urandom ourselves.

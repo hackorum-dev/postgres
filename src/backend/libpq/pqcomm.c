@@ -1668,7 +1668,8 @@ pq_setkeepalivesidle(int idle, Port *port)
 #else							/* WIN32 */
 	return pq_setkeepaliveswin32(port, idle, port->keepalives_interval);
 #endif
-#else
+#else							/* neither PG_TCP_KEEPALIVE_IDLE
+								 * nor SIO_KEEPALIVE_VALS */
 	if (idle != 0)
 	{
 		ereport(LOG,
@@ -1752,7 +1753,7 @@ pq_setkeepalivesinterval(int interval, Port *port)
 #else							/* WIN32 */
 	return pq_setkeepaliveswin32(port, port->keepalives_idle, interval);
 #endif
-#else
+#else							/* neither TCP_KEEPINTVL nor SIO_KEEPALIVE_VALS */
 	if (interval != 0)
 	{
 		ereport(LOG,

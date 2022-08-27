@@ -107,7 +107,7 @@ struct sigpipe_info
 		if (!SIGPIPE_MASKED(conn)) \
 			pqsignal(SIGPIPE, spinfo); \
 	} while (0)
-#endif							/* ENABLE_THREAD_SAFETY */
+#endif							/* !ENABLE_THREAD_SAFETY */
 #else							/* WIN32 */
 
 #define DECLARE_SIGPIPE_INFO(spinfo)

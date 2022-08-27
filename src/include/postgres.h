@@ -277,7 +277,7 @@ typedef struct
 	(((varattrib_1b_e *) (PTR))->va_header = 0x01, \
 	 ((varattrib_1b_e *) (PTR))->va_tag = (tag))
 
-#endif							/* WORDS_BIGENDIAN */
+#endif							/* !WORDS_BIGENDIAN */
 
 #define VARDATA_4B(PTR)		(((varattrib_4b *) (PTR))->va_4byte.va_data)
 #define VARDATA_4B_C(PTR)	(((varattrib_4b *) (PTR))->va_compressed.va_data)

@@ -1692,10 +1692,10 @@ varstr_cmp(const char *arg1, int len1, const char *arg2, int len2, Oid collid)
 					pfree(uchar1);
 					pfree(uchar2);
 				}
-#else							/* not USE_ICU */
+#else							/* !USE_ICU */
 				/* shouldn't happen */
 				elog(ERROR, "unsupported collprovider: %c", mylocale->provider);
-#endif							/* not USE_ICU */
+#endif							/* !USE_ICU */
 			}
 			else
 			{
@@ -2413,10 +2413,10 @@ varstrfastcmp_locale(char *a1p, int len1, char *a2p, int len2, SortSupport ssup)
 				pfree(uchar1);
 				pfree(uchar2);
 			}
-#else							/* not USE_ICU */
+#else							/* !USE_ICU */
 			/* shouldn't happen */
 			elog(ERROR, "unsupported collprovider: %c", sss->locale->provider);
-#endif							/* not USE_ICU */
+#endif							/* !USE_ICU */
 		}
 		else
 		{

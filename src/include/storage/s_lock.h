@@ -710,7 +710,7 @@ spin_delay(void)
 #define S_UNLOCK(lock)	\
 	do { _ReadWriteBarrier(); (*(lock)) = 0; } while (0)
 
-#endif
+#endif	/* _MSC_VER */
 
 
 #endif	/* !defined(HAS_TEST_AND_SET) */
@@ -743,7 +743,7 @@ extern int	tas_sema(volatile slock_t *lock);
 #define TAS(lock)	tas_sema(lock)
 
 
-#endif	/* HAVE_SPINLOCKS */
+#endif	/* !HAVE_SPINLOCKS */
 
 
 /*

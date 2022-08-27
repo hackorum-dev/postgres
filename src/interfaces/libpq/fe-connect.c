@@ -3111,7 +3111,7 @@ keep_going:						/* We will come back to here until there is
 #else							/* !USE_SSL */
 				/* can't get here */
 				goto error_return;
-#endif							/* USE_SSL */
+#endif							/* !USE_SSL */
 			}
 
 		case CONNECTION_GSS_STARTUP:
@@ -3215,7 +3215,7 @@ keep_going:						/* We will come back to here until there is
 #else							/* !ENABLE_GSS */
 				/* unreachable */
 				goto error_return;
-#endif							/* ENABLE_GSS */
+#endif							/* !ENABLE_GSS */
 			}
 
 			/*
@@ -4930,7 +4930,7 @@ ldapServiceLookup(const char *purl, PQconninfoOption *options,
 		ldap_unbind(ld);
 		return 3;
 	}
-#endif							/* WIN32 */
+#endif							/* !WIN32 */
 
 	/* search */
 	res = NULL;

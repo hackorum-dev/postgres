@@ -4213,7 +4213,7 @@ BackendStartup(Port *port)
 		/* And run the backend */
 		BackendRun(port);
 	}
-#endif							/* EXEC_BACKEND */
+#endif							/* !EXEC_BACKEND */
 
 	if (pid < 0)
 	{
@@ -5411,7 +5411,7 @@ StartChildProcess(AuxProcType type)
 
 		AuxiliaryProcessMain(type); /* does not return */
 	}
-#endif							/* EXEC_BACKEND */
+#endif							/* !EXEC_BACKEND */
 
 	if (pid < 0)
 	{

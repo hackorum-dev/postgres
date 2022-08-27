@@ -59,7 +59,7 @@ shiftright128(const uint64 lo, const uint64 hi, const uint32 dist)
 	return __shiftright128(lo, hi, (unsigned char) dist);
 }
 
-#else							/* defined(HAS_64_BIT_INTRINSICS) */
+#else							/* !HAS_64_BIT_INTRINSICS */
 
 static inline uint64
 umul128(const uint64 a, const uint64 b, uint64 *const productHi)
@@ -111,7 +111,7 @@ shiftright128(const uint64 lo, const uint64 hi, const uint32 dist)
 #endif
 }
 
-#endif							/* // defined(HAS_64_BIT_INTRINSICS) */
+#endif							/* !HAS_64_BIT_INTRINSICS */
 
 #ifdef RYU_32_BIT_PLATFORM
 
@@ -171,7 +171,7 @@ div1e8(const uint64 x)
 	return umulh(x, UINT64CONST(0xABCC77118461CEFD)) >> 26;
 }
 
-#else							/* RYU_32_BIT_PLATFORM */
+#else							/* !RYU_32_BIT_PLATFORM */
 
 static inline uint64
 div5(const uint64 x)
@@ -197,6 +197,6 @@ div1e8(const uint64 x)
 	return x / 100000000;
 }
 
-#endif							/* RYU_32_BIT_PLATFORM */
+#endif							/* !RYU_32_BIT_PLATFORM */
 
 #endif							/* RYU_D2S_INTRINSICS_H */

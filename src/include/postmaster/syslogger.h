@@ -36,7 +36,7 @@
 #else
 #define PIPE_CHUNK_SIZE  ((int) PIPE_BUF)
 #endif
-#else							/* not defined */
+#else							/* !PIPE_BUF */
 /* POSIX says the value of PIPE_BUF must be at least 512, so use that */
 #define PIPE_CHUNK_SIZE  512
 #endif

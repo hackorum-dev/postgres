@@ -204,7 +204,7 @@ CatalogTupleCheckConstraints(Relation heapRel, HeapTuple tup)
 
 #define CatalogTupleCheckConstraints(heapRel, tup)  ((void) 0)
 
-#endif							/* USE_ASSERT_CHECKING */
+#endif							/* !USE_ASSERT_CHECKING */
 
 /*
  * CatalogTupleInsert - do heap and indexing work for a new catalog tuple

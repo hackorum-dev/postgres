@@ -147,7 +147,7 @@ mulShift(const uint32 m, const uint64 factor, const int32 shift)
 
 	return (bits1Hi << (32 - s)) | (bits1Lo >> s);
 
-#else							/* RYU_32_BIT_PLATFORM */
+#else							/* !RYU_32_BIT_PLATFORM */
 
 	const uint64 sum = (bits0 >> 32) + bits1;
 	const uint64 shiftedSum = sum >> (shift - 32);
@@ -155,7 +155,7 @@ mulShift(const uint32 m, const uint64 factor, const int32 shift)
 	Assert(shiftedSum <= PG_UINT32_MAX);
 	return (uint32) shiftedSum;
 
-#endif							/* RYU_32_BIT_PLATFORM */
+#endif							/* !RYU_32_BIT_PLATFORM */
 }
 
 static inline uint32

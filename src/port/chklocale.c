@@ -415,7 +415,7 @@ pg_get_encoding_from_locale(const char *ctype, bool write_message)
 	free(sys);
 	return -1;
 }
-#else							/* (HAVE_LANGINFO_H && CODESET) || WIN32 */
+#else							/* neither (HAVE_LANGINFO_H && CODESET) nor WIN32 */
 
 /*
  * stub if no multi-language platform support
@@ -430,4 +430,4 @@ pg_get_encoding_from_locale(const char *ctype, bool write_message)
 	return PG_SQL_ASCII;
 }
 
-#endif							/* (HAVE_LANGINFO_H && CODESET) || WIN32 */
+#endif							/* neither (HAVE_LANGINFO_H && CODESET) nor WIN32 */

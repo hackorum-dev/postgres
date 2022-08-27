@@ -401,7 +401,7 @@ uuid_generate_internal(int v, unsigned char *ns, const char *ptr, int len)
 	return DirectFunctionCall1(uuid_in, CStringGetDatum(strbuf));
 }
 
-#endif							/* HAVE_UUID_OSSP */
+#endif							/* !HAVE_UUID_OSSP */
 
 
 Datum

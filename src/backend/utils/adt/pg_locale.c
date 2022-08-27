@@ -1120,7 +1120,7 @@ IsoLocaleName(const char *winlocname)
 		return get_iso_localename(winlocname);
 }
 
-#else							/* !defined(_MSC_VER) */
+#else							/* !_MSC_VER */
 
 static char *
 IsoLocaleName(const char *winlocname)
@@ -1128,7 +1128,7 @@ IsoLocaleName(const char *winlocname)
 	return NULL;				/* Not supported on MinGW */
 }
 
-#endif							/* defined(_MSC_VER) */
+#endif							/* !_MSC_VER */
 
 #endif							/* WIN32 && LC_MESSAGES */
 
@@ -1420,12 +1420,12 @@ make_icu_collator(const char *iculocstr,
 	/* We will leak this string if the caller errors later :-( */
 	resultp->info.icu.locale = MemoryContextStrdup(TopMemoryContext, iculocstr);
 	resultp->info.icu.ucol = collator;
-#else							/* not USE_ICU */
+#else							/* !USE_ICU */
 	/* could get here if a collation was created by a build with ICU */
 	ereport(ERROR,
 			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 			 errmsg("ICU is not supported in this build")));
-#endif							/* not USE_ICU */
+#endif							/* !USE_ICU */
 }
 
 
@@ -1569,12 +1569,12 @@ pg_newlocale_from_collation(Oid collid)
 			}
 
 			result.info.lt = loc;
-#else							/* not HAVE_LOCALE_T */
+#else							/* !HAVE_LOCALE_T */
 			/* platform that doesn't support locale_t */
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("collation provider LIBC is not supported on this platform")));
-#endif							/* not HAVE_LOCALE_T */
+#endif							/* !HAVE_LOCALE_T */
 		}
 		else if (collform->collprovider == COLLPROVIDER_ICU)
 		{
@@ -2036,12 +2036,12 @@ wchar2char(char *to, const wchar_t *from, size_t tolen, pg_locale_t locale)
 		result = wcstombs(to, from, tolen);
 
 		uselocale(save_locale);
-#endif							/* HAVE_WCSTOMBS_L */
+#endif							/* !HAVE_WCSTOMBS_L */
 #else							/* !HAVE_LOCALE_T */
 		/* Can't have locale != 0 without HAVE_LOCALE_T */
 		elog(ERROR, "wcstombs_l is not available");
 		result = 0;				/* keep compiler quiet */
-#endif							/* HAVE_LOCALE_T */
+#endif							/* !HAVE_LOCALE_T */
 	}
 
 	return result;
@@ -2113,12 +2113,12 @@ char2wchar(wchar_t *to, size_t tolen, const char *from, size_t fromlen,
 			result = mbstowcs(to, str, tolen);
 
 			uselocale(save_locale);
-#endif							/* HAVE_MBSTOWCS_L */
+#endif							/* !HAVE_MBSTOWCS_L */
 #else							/* !HAVE_LOCALE_T */
 			/* Can't have locale != 0 without HAVE_LOCALE_T */
 			elog(ERROR, "mbstowcs_l is not available");
 			result = 0;			/* keep compiler quiet */
-#endif							/* HAVE_LOCALE_T */
+#endif							/* !HAVE_LOCALE_T */
 		}
 
 		pfree(str);

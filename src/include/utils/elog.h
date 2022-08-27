@@ -154,7 +154,7 @@
 		if (elevel_ >= ERROR) \
 			pg_unreachable(); \
 	} while(0)
-#endif							/* HAVE__BUILTIN_CONSTANT_P */
+#endif							/* !HAVE__BUILTIN_CONSTANT_P */
 
 #define ereport(elevel, ...)	\
 	ereport_domain(elevel, TEXTDOMAIN, __VA_ARGS__)

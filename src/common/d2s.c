@@ -213,8 +213,7 @@ mulShiftAll(const uint64 m, const uint64 *const mul, const int32 j,
 	return mulShift(4 * m, mul, j);
 }
 
-#else							/* // !defined(HAVE_INT128) &&
-								 * !defined(HAS_64_BIT_INTRINSICS) */
+#else							/* !HAVE_INT128 && !HAS_64_BIT_INTRINSICS */
 
 static inline uint64
 mulShiftAll(uint64 m, const uint64 *const mul, const int32 j,
@@ -258,7 +257,7 @@ mulShiftAll(uint64 m, const uint64 *const mul, const int32 j,
 	return shiftright128(mid, hi, j - 64 - 1);
 }
 
-#endif							/* // HAS_64_BIT_INTRINSICS */
+#endif							/* !HAVE_INT128 && !HAS_64_BIT_INTRINSICS */
 
 static inline uint32
 decimalLength(const uint64 v)

@@ -78,7 +78,7 @@ GetDataDirectoryCreatePerm(const char *dataDir)
 	/* Set permissions */
 	SetDataDirectoryCreatePerm(statBuf.st_mode);
 	return true;
-#else							/* !defined(WIN32) && !defined(__CYGWIN__) */
+#else							/* WIN32 || __CYGWIN__ */
 	/*
 	 * On Windows, we don't have anything to do here since they don't have
 	 * Unix-y permissions.

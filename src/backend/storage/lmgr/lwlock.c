@@ -311,10 +311,10 @@ LOG_LWDEBUG(const char *where, LWLock *lock, const char *msg)
 	}
 }
 
-#else							/* not LOCK_DEBUG */
+#else							/* !LOCK_DEBUG */
 #define PRINT_LWDEBUG(a,b,c) ((void)0)
 #define LOG_LWDEBUG(a,b,c) ((void)0)
-#endif							/* LOCK_DEBUG */
+#endif							/* !LOCK_DEBUG */
 
 #ifdef LWLOCK_STATS
 

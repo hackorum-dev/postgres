@@ -189,7 +189,7 @@ xslt_process(PG_FUNCTION_ARGS)
 			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 			 errmsg("xslt_process() is not available without libxslt")));
 	PG_RETURN_NULL();
-#endif							/* USE_LIBXSLT */
+#endif							/* !USE_LIBXSLT */
 }
 
 #ifdef USE_LIBXSLT

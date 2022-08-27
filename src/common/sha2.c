@@ -380,7 +380,7 @@ SHA256_Transform(pg_sha256_ctx *context, const uint8 *data)
 	/* Clean up */
 	a = b = c = d = e = f = g = h = T1 = 0;
 }
-#else							/* SHA2_UNROLL_TRANSFORM */
+#else							/* !SHA2_UNROLL_TRANSFORM */
 
 static void
 SHA256_Transform(pg_sha256_ctx *context, const uint8 *data)
@@ -470,7 +470,7 @@ SHA256_Transform(pg_sha256_ctx *context, const uint8 *data)
 	/* Clean up */
 	a = b = c = d = e = f = g = h = T1 = T2 = 0;
 }
-#endif							/* SHA2_UNROLL_TRANSFORM */
+#endif							/* !SHA2_UNROLL_TRANSFORM */
 
 void
 pg_sha256_update(pg_sha256_ctx *context, const uint8 *data, size_t len)
@@ -706,7 +706,7 @@ SHA512_Transform(pg_sha512_ctx *context, const uint8 *data)
 	/* Clean up */
 	a = b = c = d = e = f = g = h = T1 = 0;
 }
-#else							/* SHA2_UNROLL_TRANSFORM */
+#else							/* !SHA2_UNROLL_TRANSFORM */
 
 static void
 SHA512_Transform(pg_sha512_ctx *context, const uint8 *data)
@@ -796,7 +796,7 @@ SHA512_Transform(pg_sha512_ctx *context, const uint8 *data)
 	/* Clean up */
 	a = b = c = d = e = f = g = h = T1 = T2 = 0;
 }
-#endif							/* SHA2_UNROLL_TRANSFORM */
+#endif							/* !SHA2_UNROLL_TRANSFORM */
 
 void
 pg_sha512_update(pg_sha512_ctx *context, const uint8 *data, size_t len)

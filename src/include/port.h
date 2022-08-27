@@ -327,14 +327,14 @@ extern FILE *pgwin32_popen(const char *command, const char *type);
 #define popen(a,b) pgwin32_popen(a,b)
 #define pclose(a) _pclose(a)
 
-#else							/* !WIN32 */
+#else							/* !WIN32 || __CYGWIN__ */
 
 /*
  *	Win32 requires a special close for sockets and pipes, while on Unix
  *	close() does them all.
  */
 #define closesocket close
-#endif							/* WIN32 */
+#endif							/* !WIN32 || __CYGWIN__ */
 
 /*
  * On Windows, setvbuf() does not support _IOLBF mode, and interprets that

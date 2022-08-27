@@ -971,14 +971,14 @@ pg_fe_sendauth(AuthRequest areq, int payloadlen, PGconn *conn)
 				pgunlock_thread();
 			}
 			break;
-#else							/* defined(ENABLE_GSS) || defined(ENABLE_SSPI) */
+#else							/* !ENABLE_GSS || !ENABLE_SSPI */
 			/* No GSSAPI *or* SSPI support */
 		case AUTH_REQ_GSS:
 		case AUTH_REQ_GSS_CONT:
 			appendPQExpBufferStr(&conn->errorMessage,
 								 libpq_gettext("GSSAPI authentication not supported\n"));
 			return STATUS_ERROR;
-#endif							/* defined(ENABLE_GSS) || defined(ENABLE_SSPI) */
+#endif							/* !ENABLE_GSS || !ENABLE_SSPI */
 
 #ifdef ENABLE_SSPI
 		case AUTH_REQ_SSPI:

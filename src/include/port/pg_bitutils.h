@@ -67,7 +67,7 @@ pg_leftmost_one_pos64(uint64 word)
 		shift -= 8;
 
 	return shift + pg_leftmost_one_pos[(word >> shift) & 255];
-#endif							/* HAVE__BUILTIN_CLZ */
+#endif							/* !HAVE__BUILTIN_CLZ */
 }
 
 /*
@@ -126,7 +126,7 @@ pg_rightmost_one_pos64(uint64 word)
 	}
 	result += pg_rightmost_one_pos[word & 255];
 	return result;
-#endif							/* HAVE__BUILTIN_CTZ */
+#endif							/* !HAVE__BUILTIN_CTZ */
 }
 
 /*

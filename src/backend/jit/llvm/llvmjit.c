@@ -101,10 +101,10 @@ static LLVMTargetRef llvm_targetref;
 static LLVMOrcThreadSafeContextRef llvm_ts_context;
 static LLVMOrcLLJITRef llvm_opt0_orc;
 static LLVMOrcLLJITRef llvm_opt3_orc;
-#else							/* LLVM_VERSION_MAJOR > 11 */
+#else							/* LLVM_VERSION_MAJOR <= 11 */
 static LLVMOrcJITStackRef llvm_opt0_orc;
 static LLVMOrcJITStackRef llvm_opt3_orc;
-#endif							/* LLVM_VERSION_MAJOR > 11 */
+#endif							/* LLVM_VERSION_MAJOR <= 11 */
 
 
 static void llvm_release_context(JitContext *context);
@@ -211,11 +211,11 @@ llvm_release_context(JitContext *context)
 			sp = LLVMOrcExecutionSessionGetSymbolStringPool(ee);
 			LLVMOrcSymbolStringPoolClearDeadEntries(sp);
 		}
-#else							/* LLVM_VERSION_MAJOR > 11 */
+#else							/* LLVM_VERSION_MAJOR <= 11 */
 		{
 			LLVMOrcRemoveModule(jit_handle->stack, jit_handle->orc_handle);
 		}
-#endif							/* LLVM_VERSION_MAJOR > 11 */
+#endif							/* LLVM_VERSION_MAJOR <= 11 */
 
 		pfree(jit_handle);
 	}
@@ -849,7 +849,7 @@ llvm_session_initialize(void)
 		llvm_opt3_orc = llvm_create_jit_instance(opt3_tm);
 		opt3_tm = 0;
 	}
-#else							/* LLVM_VERSION_MAJOR > 11 */
+#else							/* LLVM_VERSION_MAJOR <= 11 */
 	{
 		llvm_opt0_orc = LLVMOrcCreateInstance(opt0_tm);
 		llvm_opt3_orc = LLVMOrcCreateInstance(opt3_tm);
@@ -873,7 +873,7 @@ llvm_session_initialize(void)
 		}
 #endif
 	}
-#endif							/* LLVM_VERSION_MAJOR > 11 */
+#endif							/* LLVM_VERSION_MAJOR <= 11 */
 
 	on_proc_exit(llvm_shutdown, 0);
 
@@ -917,7 +917,7 @@ llvm_shutdown(int code, Datum arg)
 			llvm_ts_context = NULL;
 		}
 	}
-#else							/* LLVM_VERSION_MAJOR > 11 */
+#else							/* LLVM_VERSION_MAJOR <= 11 */
 	{
 		/* unregister profiling support, needs to be flushed to be useful */
 
@@ -941,7 +941,7 @@ llvm_shutdown(int code, Datum arg)
 			llvm_opt0_orc = NULL;
 		}
 	}
-#endif							/* LLVM_VERSION_MAJOR > 11 */
+#endif							/* LLVM_VERSION_MAJOR <= 11 */
 }
 
 /* helper for llvm_create_types, returning a function's return type */

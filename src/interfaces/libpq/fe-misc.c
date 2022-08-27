@@ -1161,7 +1161,7 @@ pqSocketPoll(int sock, int forRead, int forWrite, time_t end_time)
 
 	return select(sock + 1, &input_mask, &output_mask,
 				  &except_mask, ptr_timeout);
-#endif							/* HAVE_POLL */
+#endif							/* !HAVE_POLL */
 }
 
 

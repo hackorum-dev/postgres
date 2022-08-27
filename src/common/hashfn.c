@@ -251,7 +251,7 @@ hash_bytes(const unsigned char *k, int keylen)
 				a += k[0];
 				/* case 0: nothing left to add */
 		}
-#endif							/* WORDS_BIGENDIAN */
+#endif							/* !WORDS_BIGENDIAN */
 	}
 	else
 	{
@@ -268,7 +268,7 @@ hash_bytes(const unsigned char *k, int keylen)
 			a += (k[0] + ((uint32) k[1] << 8) + ((uint32) k[2] << 16) + ((uint32) k[3] << 24));
 			b += (k[4] + ((uint32) k[5] << 8) + ((uint32) k[6] << 16) + ((uint32) k[7] << 24));
 			c += (k[8] + ((uint32) k[9] << 8) + ((uint32) k[10] << 16) + ((uint32) k[11] << 24));
-#endif							/* WORDS_BIGENDIAN */
+#endif							/* !WORDS_BIGENDIAN */
 			mix(a, b, c);
 			k += 12;
 			len -= 12;
@@ -351,7 +351,7 @@ hash_bytes(const unsigned char *k, int keylen)
 				a += k[0];
 				/* case 0: nothing left to add */
 		}
-#endif							/* WORDS_BIGENDIAN */
+#endif							/* !WORDS_BIGENDIAN */
 	}
 
 	final(a, b, c);
@@ -490,7 +490,7 @@ hash_bytes_extended(const unsigned char *k, int keylen, uint64 seed)
 				a += k[0];
 				/* case 0: nothing left to add */
 		}
-#endif							/* WORDS_BIGENDIAN */
+#endif							/* !WORDS_BIGENDIAN */
 	}
 	else
 	{
@@ -507,7 +507,7 @@ hash_bytes_extended(const unsigned char *k, int keylen, uint64 seed)
 			a += (k[0] + ((uint32) k[1] << 8) + ((uint32) k[2] << 16) + ((uint32) k[3] << 24));
 			b += (k[4] + ((uint32) k[5] << 8) + ((uint32) k[6] << 16) + ((uint32) k[7] << 24));
 			c += (k[8] + ((uint32) k[9] << 8) + ((uint32) k[10] << 16) + ((uint32) k[11] << 24));
-#endif							/* WORDS_BIGENDIAN */
+#endif							/* !WORDS_BIGENDIAN */
 			mix(a, b, c);
 			k += 12;
 			len -= 12;
@@ -590,7 +590,7 @@ hash_bytes_extended(const unsigned char *k, int keylen, uint64 seed)
 				a += k[0];
 				/* case 0: nothing left to add */
 		}
-#endif							/* WORDS_BIGENDIAN */
+#endif							/* !WORDS_BIGENDIAN */
 	}
 
 	final(a, b, c);

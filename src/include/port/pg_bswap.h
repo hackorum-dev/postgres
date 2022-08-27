@@ -154,8 +154,8 @@ pg_bswap64(uint64 x)
 #define		DatumBigEndianToNative(x)	pg_bswap64(x)
 #else							/* SIZEOF_DATUM != 8 */
 #define		DatumBigEndianToNative(x)	pg_bswap32(x)
-#endif							/* SIZEOF_DATUM == 8 */
-#endif							/* WORDS_BIGENDIAN */
+#endif							/* SIZEOF_DATUM != 8 */
+#endif							/* !WORDS_BIGENDIAN */
 #endif							/* SIZEOF_DATUM */
 
 #endif							/* PG_BSWAP_H */

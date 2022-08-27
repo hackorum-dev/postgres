@@ -900,7 +900,7 @@ extern void ExceptionalCondition(const char *conditionName,
 	StaticAssertStmt(condition, errmessage)
 #define StaticAssertDecl(condition, errmessage) \
 	extern void static_assert_func(int static_assert_failure[(condition) ? 1 : -1])
-#endif							/* HAVE__STATIC_ASSERT */
+#endif							/* !HAVE__STATIC_ASSERT */
 #else							/* C++ */
 #if defined(__cpp_static_assert) && __cpp_static_assert >= 200410
 #define StaticAssertStmt(condition, errmessage) \
@@ -916,7 +916,7 @@ extern void ExceptionalCondition(const char *conditionName,
 	((void) ({ StaticAssertStmt(condition, errmessage); }))
 #define StaticAssertDecl(condition, errmessage) \
 	extern void static_assert_func(int static_assert_failure[(condition) ? 1 : -1])
-#endif							/* __cpp_static_assert */
+#endif							/* !__cpp_static_assert */
 #endif							/* C++ */
 
 
@@ -945,7 +945,7 @@ extern void ExceptionalCondition(const char *conditionName,
 #define AssertVariableIsOfTypeMacro(varname, typename) \
 	(StaticAssertExpr(sizeof(varname) == sizeof(typename), \
 	 CppAsString(varname) " does not have type " CppAsString(typename)))
-#endif							/* HAVE__BUILTIN_TYPES_COMPATIBLE_P */
+#endif							/* !HAVE__BUILTIN_TYPES_COMPATIBLE_P */
 
 
 /* ----------------------------------------------------------------
@@ -1324,7 +1324,7 @@ typedef intptr_t sigjmp_buf[5];
 #define sigjmp_buf jmp_buf
 #define sigsetjmp(x,y) setjmp(x)
 #define siglongjmp longjmp
-#endif							/* __MINGW64__ */
+#endif							/* !__MINGW64__ */
 #endif							/* WIN32 */
 
 /* /port compatibility functions */

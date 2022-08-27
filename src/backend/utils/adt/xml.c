@@ -922,10 +922,10 @@ xml_is_document(xmltype *arg)
 		xmlFreeDoc(doc);
 
 	return result;
-#else							/* not USE_LIBXML */
+#else							/* !USE_LIBXML */
 	NO_XML_SUPPORT();
 	return false;
-#endif							/* not USE_LIBXML */
+#endif							/* !USE_LIBXML */
 }
 
 
@@ -2077,10 +2077,10 @@ map_sql_identifier_to_xml_name(const char *ident, bool fully_escaped,
 	}
 
 	return buf.data;
-#else							/* not USE_LIBXML */
+#else							/* !USE_LIBXML */
 	NO_XML_SUPPORT();
 	return NULL;
-#endif							/* not USE_LIBXML */
+#endif							/* !USE_LIBXML */
 }
 
 

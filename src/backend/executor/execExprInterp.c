@@ -132,7 +132,7 @@ static ExprEvalOpLookup reverse_dispatch_table[EEOP_LAST];
 #define EEO_DISPATCH()		goto starteval
 #define EEO_OPCODE(opcode)	(opcode)
 
-#endif							/* EEO_USE_COMPUTED_GOTO */
+#endif							/* !EEO_USE_COMPUTED_GOTO */
 
 #define EEO_NEXT() \
 	do { \

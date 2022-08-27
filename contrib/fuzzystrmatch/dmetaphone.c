@@ -198,7 +198,7 @@ dmetaphone_alt(PG_FUNCTION_ARGS)
  */
 
 #define META_FREE(x) ((void)true)	/* pfree((x)) */
-#else							/* not defined DMETAPHONE_MAIN */
+#else							/* DMETAPHONE_MAIN */
 
 /* use the standard malloc library when not running in PostgreSQL */
 
@@ -209,7 +209,7 @@ dmetaphone_alt(PG_FUNCTION_ARGS)
 					  (v = (t*)realloc((v),((n)*sizeof(t))))
 
 #define META_FREE(x) free((x))
-#endif							/* defined DMETAPHONE_MAIN */
+#endif							/* DMETAPHONE_MAIN */
 
 
 

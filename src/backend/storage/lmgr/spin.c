@@ -45,7 +45,7 @@ PGSemaphore *SpinlockSemaArray;
 
 #define NUM_EMULATION_SEMAPHORES 0
 
-#endif							/* HAVE_SPINLOCKS */
+#endif							/* !HAVE_SPINLOCKS */
 
 /*
  * Report the amount of shared memory needed to store semaphores for spinlock

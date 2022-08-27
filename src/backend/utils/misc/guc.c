@@ -3635,9 +3635,9 @@ static struct config_int ConfigureNamesInt[] =
 		0,
 #endif
 		0, 5,
-#else							/* not DISCARD_CACHES_ENABLED */
+#else							/* !DISCARD_CACHES_ENABLED */
 		0, 0, 0,
-#endif							/* not DISCARD_CACHES_ENABLED */
+#endif							/* !DISCARD_CACHES_ENABLED */
 		NULL, NULL, NULL
 	},
 
