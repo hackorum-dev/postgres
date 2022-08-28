@@ -1692,8 +1692,11 @@ CREATE FUNCTION test(int, int) RETURNS int
     For functions written in SQL or in any of the standard procedural
     languages, there is a second important property determined by the
     volatility category, namely the visibility of any data changes that have
-    been made by the SQL command that is calling the function.  A
-    <literal>VOLATILE</literal> function will see such changes, a <literal>STABLE</literal>
+    been made either by the SQL command that is calling the function, or (if the
+    function is called in a transaction using the
+    <link linkend="xact-read-committed">Read Committed isolation level</link>)
+    by other transactions that have committed since the calling query
+    began. A <literal>VOLATILE</literal> function will see such changes, a <literal>STABLE</literal>
     or <literal>IMMUTABLE</literal> function will not.  This behavior is implemented
     using the snapshotting behavior of MVCC (see <xref linkend="mvcc"/>):
     <literal>STABLE</literal> and <literal>IMMUTABLE</literal> functions use a snapshot
@@ -1717,7 +1720,8 @@ CREATE FUNCTION test(int, int) RETURNS int
     <productname>PostgreSQL</productname> will execute all commands of a
     <literal>STABLE</literal> function using the snapshot established for the
     calling query, and so it will see a fixed view of the database throughout
-    that query.
+    that query, even within a transaction using the
+    <link linkend="xact-read-committed">Read Committed isolation level</link>.
    </para>
 
    <para>
