@@ -481,6 +481,20 @@ COMMIT;
    </para>
 
    <para>
+    Within a procedure or <literal>VOLATILE</literal> function written in SQL or
+    any of the standard procedural languages, each command starts with a new
+    snapshot, so it may observe a different state of the database from other
+    commands within the function/procedure and from the command that is calling
+    the function. By contrast, commands within a <literal>STABLE</literal>
+    function use the snapshot established at the start of the command that is
+    calling the function, which also means they do not observe any data changes
+    made by the calling command. An <literal>IMMUTABLE</literal> function should
+    not select from tables that can ever change, and therefore should not itself
+    be affected by transaction isolation. See <xref linkend="xfunc-volatility"/>
+    for more details.
+   </para>
+
+   <para>
     The partial transaction isolation provided by Read Committed mode
     is adequate for many applications, and this mode is fast and simple
     to use;  however, it is not sufficient for all cases.  Applications
