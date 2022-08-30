@@ -542,8 +542,8 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <list>	func_arg_list func_arg_list_opt
 %type <node>	func_arg_expr
 %type <list>	row explicit_row implicit_row type_list array_expr_list
-%type <node>	case_expr case_arg when_clause case_default
-%type <list>	when_clause_list
+%type <node>	case_expr case_arg case_default
+%type <list>	when_clause when_clause_list when_expr_list
 %type <node>	opt_search_clause opt_cycle_clause
 %type <ival>	sub_type opt_materialized
 %type <node>	NumericOnly
@@ -17913,25 +17913,38 @@ case_expr:	CASE case_arg when_clause_list case_default END_P
 
 when_clause_list:
 			/* There must be at least one */
-			when_clause								{ $$ = list_make1($1); }
-			| when_clause_list when_clause			{ $$ = lappend($1, $2); }
-		;
-
-when_clause:
-			WHEN a_expr THEN a_expr
-				{
-					CaseWhen   *w = makeNode(CaseWhen);
-
-					w->expr = (Expr *) $2;
-					w->result = (Expr *) $4;
-					w->location = @1;
-					$$ = (Node *) w;
-				}
+			when_clause								{ $$ = $1; }
+			| when_clause_list when_clause			{ $$ = list_concat($1, $2); }
 		;
 
 case_default:
 			ELSE a_expr								{ $$ = $2; }
 			| /*EMPTY*/								{ $$ = NULL; }
+		;
+
+when_expr_list:
+			a_expr									{ $$ = list_make1((Expr *) $1); }
+			| when_expr_list ',' a_expr				{ $$ = lappend($1, (Expr *) $3); }
+			;
+
+when_clause:
+			WHEN when_expr_list THEN a_expr
+				{
+					ListCell   *lc;
+					List	   *when_clause_list = NIL;
+
+					foreach(lc, $2)
+					{
+						CaseWhen   *w = makeNode(CaseWhen);
+
+						w->expr = (Expr *) lfirst(lc);
+						w->result = (Expr *) $4;
+						w->location = @1;
+						when_clause_list = lappend(when_clause_list, w);
+					}
+
+					$$ = when_clause_list;
+				}
 		;
 
 case_arg:	a_expr									{ $$ = $1; }

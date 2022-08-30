@@ -1666,6 +1666,7 @@ transformCaseExpr(ParseState *pstate, CaseExpr *c)
 	ListCell   *l;
 	Node	   *defresult;
 	Oid			ptype;
+	int			prev_location = 0;
 
 	/* transform the test expression, if any */
 	arg = transformExprRecurse(pstate, (Node *) c->arg);
@@ -1711,6 +1712,23 @@ transformCaseExpr(ParseState *pstate, CaseExpr *c)
 		Node	   *warg;
 
 		warg = (Node *) w->expr;
+
+		/*
+		 * Comma separated predicate lists are only allowed for simple case
+		 * statements and not searchec case statements per the SQL standard.
+		 * If the CaseExpr arg isn't set then this is a searched case, and if
+		 * the CaseWhen expression have the same location as the previous then
+		 * it was parsed as a predicate list.
+		 */
+		if (prev_location && w->location == prev_location && !placeholder)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("predicate list is only allowed in simple CASE statements"),
+					 parser_errposition(pstate,
+					 					exprLocation(warg))));
+		else
+			prev_location = w->location;
+
 		if (placeholder)
 		{
 			/* shorthand form was specified, so expand... */
