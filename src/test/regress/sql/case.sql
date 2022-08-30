@@ -148,6 +148,22 @@ SELECT * FROM CASE_TBL WHERE NULLIF(1, 1) IS NOT NULL;
 explain (costs off)
 SELECT * FROM CASE_TBL WHERE NULLIF(1, null) = 2;
 
+-- Test comma separated predicate list for simple CASE
+SELECT
+  CASE i
+    WHEN 1 THEN 'one'
+	WHEN 2 THEN 'two'
+	WHEN 3,4,5 THEN 'many'
+	WHEN 6,7 THEN 'error'
+	END
+FROM case_tbl;
+
+SELECT
+  CASE
+    WHEN 2 > 1, 3 > 1 THEN 'right'
+	WHEN 1 > 2 THEN 'wrong'
+    END;
+
 --
 -- Examples of updates involving tables
 --
