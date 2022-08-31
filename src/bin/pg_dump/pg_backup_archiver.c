@@ -634,7 +634,8 @@ RestoreArchive(Archive *AHX)
 							 */
 							if (strcmp(te->desc, "DEFAULT") == 0 ||
 								strcmp(te->desc, "DATABASE PROPERTIES") == 0 ||
-								strncmp(dropStmt, "CREATE OR REPLACE VIEW", 22) == 0)
+								( strncmp(dropStmt, "CREATE SCHEMA IF NOT EXISTS", 27) == 0 &&
+								  strstr(dropStmt+29, "CREATE OR REPLACE VIEW") ))
 								appendPQExpBufferStr(ftStmt, dropStmt);
 							else
 							{
