@@ -19760,6 +19760,7 @@ dumpRule(Archive *fout, const RuleInfo *rinfo)
 	char	   *qtabname;
 	PGresult   *res;
 	char	   *tag;
+	char	   *qnspname;
 
 	/* Do nothing if not dumping schema */
 	if (!dopt->dumpSchema)
@@ -19860,6 +19861,9 @@ dumpRule(Archive *fout, const RuleInfo *rinfo)
 		 */
 		PQExpBuffer result;
 
+		qnspname = pg_strdup(fmtId(tbinfo->dobj.namespace->dobj.name));
+		appendPQExpBuffer(delcmd, "CREATE SCHEMA IF NOT EXISTS %s;\n", qnspname);
+		free(qnspname);
 		appendPQExpBuffer(delcmd, "CREATE OR REPLACE VIEW %s",
 						  fmtQualifiedDumpable(tbinfo));
 		result = createDummyViewAsClause(fout, tbinfo);
