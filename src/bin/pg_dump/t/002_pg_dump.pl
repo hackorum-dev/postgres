@@ -5196,6 +5196,28 @@ $node->command_ok(
 	'pg_dumpall: option --exclude-database handles database names with embedded dots'
 );
 
+########################################
+# Test pg_restore with --clean --if-exists
+
+$node->psql('postgres', 'create database postgres2;');
+$node->psql('postgres', 'create database postgres3;');
+
+$node->psql('postgres3',
+		  'CREATE SCHEMA dump_test;'
+                  . 'CREATE TABLE dump_test.foo (id INT primary key, payload TEXT);'
+                  . 'CREATE VIEW dump_test.babar AS SELECT * FROM dump_test.foo GROUP BY id;',
+	  );
+
+$node->run_log(
+	[ 'pg_dump', '-p', "$port", '-Fc', '--no-sync', "--file=$tempdir/clean_if_exists.dump", 'postgres3' ]
+);
+
+$node->command_like(
+	[ 'pg_restore', '-p', "$port", '--clean', '--if-exists', '-d', 'postgres2', "$tempdir/clean_if_exists.dump" ],
+	'/^\s*$/',
+	'pg_restore should output no warnings on stderr'
+);
+
 #########################################
 # Test invalid multipart schema names
 
