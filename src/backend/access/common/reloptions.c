@@ -1020,7 +1020,7 @@ add_local_bool_reloption(local_relopts *relopts, const char *name,
 {
 	relopt_bool *newoption = init_bool_reloption(RELOPT_KIND_LOCAL,
 												 name, desc,
-												 default_val, 0);
+												 default_val, NoLock);
 
 	add_local_reloption(relopts, (relopt_gen *) newoption, offset);
 }
@@ -1123,7 +1123,7 @@ add_local_int_reloption(local_relopts *relopts, const char *name,
 {
 	relopt_int *newoption = init_int_reloption(RELOPT_KIND_LOCAL,
 											   name, desc, default_val,
-											   min_val, max_val, 0);
+											   min_val, max_val, NoLock);
 
 	add_local_reloption(relopts, (relopt_gen *) newoption, offset);
 }
@@ -1178,7 +1178,7 @@ add_local_real_reloption(local_relopts *relopts, const char *name,
 	relopt_real *newoption = init_real_reloption(RELOPT_KIND_LOCAL,
 												 name, desc,
 												 default_val, min_val,
-												 max_val, 0);
+												 max_val, NoLock);
 
 	add_local_reloption(relopts, (relopt_gen *) newoption, offset);
 }
@@ -1242,7 +1242,7 @@ add_local_enum_reloption(local_relopts *relopts, const char *name,
 	relopt_enum *newoption = init_enum_reloption(RELOPT_KIND_LOCAL,
 												 name, desc,
 												 members, default_val,
-												 detailmsg, 0);
+												 detailmsg, NoLock);
 
 	add_local_reloption(relopts, (relopt_gen *) newoption, offset);
 }
@@ -1326,7 +1326,7 @@ add_local_string_reloption(local_relopts *relopts, const char *name,
 													 name, desc,
 													 default_val,
 													 validator, filler,
-													 0);
+													 NoLock);
 
 	add_local_reloption(relopts, (relopt_gen *) newoption, offset);
 }
