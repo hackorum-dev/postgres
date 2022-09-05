@@ -171,11 +171,6 @@ typedef struct PlannedStmt
 	ParseLoc	stmt_len;
 } PlannedStmt;
 
-/* macro for fetching the Plan associated with a SubPlan node */
-#define exec_subplan_get_plan(plannedstmt, subplan) \
-	((Plan *) list_nth((plannedstmt)->subplans, (subplan)->plan_id - 1))
-
-
 /* ----------------
  *		Plan node
  *
