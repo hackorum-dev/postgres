@@ -143,7 +143,7 @@ bbsink_server_begin_archive(bbsink *sink, const char *archive_name)
 
 	mysink->file = PathNameOpenFile(filename,
 									O_CREAT | O_EXCL | O_WRONLY | PG_BINARY);
-	if (mysink->file <= 0)
+	if (mysink->file < 0)
 		ereport(ERROR,
 				(errcode_for_file_access(),
 				 errmsg("could not create file \"%s\": %m", filename)));
@@ -236,7 +236,7 @@ bbsink_server_begin_manifest(bbsink *sink)
 
 	mysink->file = PathNameOpenFile(tmp_filename,
 									O_CREAT | O_EXCL | O_WRONLY | PG_BINARY);
-	if (mysink->file <= 0)
+	if (mysink->file < 0)
 		ereport(ERROR,
 				(errcode_for_file_access(),
 				 errmsg("could not create file \"%s\": %m", tmp_filename)));
