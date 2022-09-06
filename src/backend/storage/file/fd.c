@@ -1711,7 +1711,7 @@ PathNameDeleteTemporaryDir(const char *dirname)
 File
 OpenTemporaryFile(bool interXact)
 {
-	File		file = 0;
+	File		file = -1;
 
 	Assert(temporary_files_allowed);	/* check temp file access is up */
 
@@ -1744,7 +1744,7 @@ OpenTemporaryFile(bool interXact)
 	 * tablespace.  MyDatabaseTableSpace should normally be set before we get
 	 * here, but just in case it isn't, fall back to pg_default tablespace.
 	 */
-	if (file <= 0)
+	if (file < 0)
 		file = OpenTemporaryFileInTablespace(MyDatabaseTableSpace ?
 											 MyDatabaseTableSpace :
 											 DEFAULTTABLESPACE_OID,
@@ -1810,7 +1810,7 @@ OpenTemporaryFileInTablespace(Oid tblspcOid, bool rejectError)
 	 */
 	file = PathNameOpenFile(tempfilepath,
 							O_RDWR | O_CREAT | O_TRUNC | PG_BINARY);
-	if (file <= 0)
+	if (file < 0)
 	{
 		/*
 		 * We might need to create the tablespace's tempfile directory, if no
@@ -1824,7 +1824,7 @@ OpenTemporaryFileInTablespace(Oid tblspcOid, bool rejectError)
 
 		file = PathNameOpenFile(tempfilepath,
 								O_RDWR | O_CREAT | O_TRUNC | PG_BINARY);
-		if (file <= 0 && rejectError)
+		if (file < 0 && rejectError)
 			elog(ERROR, "could not create temporary file \"%s\": %m",
 				 tempfilepath);
 	}
@@ -1859,7 +1859,7 @@ PathNameCreateTemporaryFile(const char *path, bool error_on_failure)
 	 * temp file that can be reused.
 	 */
 	file = PathNameOpenFile(path, O_RDWR | O_CREAT | O_TRUNC | PG_BINARY);
-	if (file <= 0)
+	if (file < 0)
 	{
 		if (error_on_failure)
 			ereport(ERROR,
@@ -1897,7 +1897,7 @@ PathNameOpenTemporaryFile(const char *path, int mode)
 	file = PathNameOpenFile(path, mode | PG_BINARY);
 
 	/* If no such file, then we don't raise an error. */
-	if (file <= 0 && errno != ENOENT)
+	if (file < 0 && errno != ENOENT)
 		ereport(ERROR,
 				(errcode_for_file_access(),
 				 errmsg("could not open temporary file \"%s\": %m",

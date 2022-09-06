@@ -98,7 +98,7 @@ FileSetCreate(FileSet *fileset, const char *name)
 	file = PathNameCreateTemporaryFile(path, false);
 
 	/* If we failed, see if we need to create the directory on demand. */
-	if (file <= 0)
+	if (file < 0)
 	{
 		char		tempdirpath[MAXPGPATH];
 		char		filesetpath[MAXPGPATH];
