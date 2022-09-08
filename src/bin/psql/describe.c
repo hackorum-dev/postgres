@@ -36,6 +36,7 @@ static bool describeOneTableDetails(const char *schemaname,
 									bool verbose);
 static void add_tablespace_footer(printTableContent *const cont, char relkind,
 								  Oid tablespace, const bool newline);
+static bool query_and_print_role_graph(const char *pattern, bool verbose, bool showSystem, char *header, char *roleType);
 static void add_role_attribute(PQExpBuffer buf, const char *const str);
 static bool listTSParsersVerbose(const char *pattern);
 static bool describeOneTSParser(const char *oid, const char *nspname,
@@ -3741,6 +3742,113 @@ describeRoles(const char *pattern, bool verbose, bool showSystem)
 	free(attr);
 
 	PQclear(res);
+	return true;
+}
+
+/*
+ * \drr
+ * Describes the role graph for all roles
+ */
+bool
+describeRoleGraph(const char *pattern, bool verbose, bool showSystem)
+{
+	return query_and_print_role_graph(pattern, verbose, showSystem, _("List of role graphs"), NULL);
+}
+
+/*
+ * \dru
+ * Describes roles that behave as users, specifically, they can login.
+ * The design of this output assumes they are also a member of one ormore roles.
+ */
+bool
+describeUsers(const char *pattern, bool verbose, bool showSystem)
+{
+	return query_and_print_role_graph(pattern, verbose, showSystem, _("List of user graphs"), "User");
+}
+
+/*
+ * \drg
+ * Describes roles that behave as groups, specifically they have one or
+ * more member roles.
+ */
+bool
+describeGroups(const char *pattern, bool verbose, bool showSystem)
+{
+	return query_and_print_role_graph(pattern, verbose, showSystem, _("List of group graphs"), "Group");
+}
+
+static bool
+query_and_print_role_graph(const char *pattern, bool verbose, bool showSystem, char *header, char *roleType)
+{
+	PQExpBufferData buf;
+	PGresult   *res;
+	printTableContent cont;
+	printTableOpt myopt = pset.popt.topt;
+	int			ncols = 6;
+	int			nrows = 0;
+	int			i;
+	const char	align = 'l';
+	myopt.default_footer = false;
+
+	initPQExpBuffer(&buf);
+
+	appendPQExpBufferStr(&buf,
+					  "SELECT rg.rolname,\n"
+					  "  rg.administration,\n"
+					  "  rg.memberof_groups, rg.member_groups, rg.member_users, rg.memberof_users\n"
+					  "FROM pg_catalog.pg_roles r\n"
+					  "JOIN pg_catalog.pg_role_graph rg ON rg.oid = r.oid\n"
+					  "WHERE ");
+
+	if (roleType)
+		appendPQExpBuffer(&buf, "rg.role_type = '%s'\n", roleType);
+	else
+		appendPQExpBufferStr(&buf, "true\n");
+
+	if (!showSystem && !pattern)
+		appendPQExpBufferStr(&buf, "AND r.rolname !~ '^pg_'\n");
+
+	if (!validateSQLNamePattern(&buf, pattern, true, false,
+								NULL, "rg.rolname", NULL, NULL,
+								NULL, 1))
+	{
+		termPQExpBuffer(&buf);
+		return false;
+	}
+
+	appendPQExpBufferStr(&buf,
+					  "ORDER BY rg.seq\n"
+					  ";");
+
+	res = PSQLexec(buf.data);
+	if (!res)
+		return false;
+
+	nrows = PQntuples(res);
+
+	termPQExpBuffer(&buf);
+
+	printTableInit(&cont, &myopt, header, ncols, nrows);
+
+	printTableAddHeader(&cont, gettext_noop("Role name"), true, align);
+	printTableAddHeader(&cont, gettext_noop("Administration"), true, align);
+	printTableAddHeader(&cont, gettext_noop("Member of Groups"), true, align);
+	printTableAddHeader(&cont, gettext_noop("Group Members"), true, align);
+	printTableAddHeader(&cont, gettext_noop("User Members"), true, align);
+	printTableAddHeader(&cont, gettext_noop("Member of Users"), true, align);
+
+	for (i = 0; i < nrows; i++)
+	{
+		printTableAddCell(&cont, PQgetvalue(res, i, 0), false, false);
+		printTableAddCell(&cont, PQgetvalue(res, i, 1), false, false);
+		printTableAddCell(&cont, PQgetvalue(res, i, 2), false, false);
+		printTableAddCell(&cont, PQgetvalue(res, i, 3), false, false);
+		printTableAddCell(&cont, PQgetvalue(res, i, 4), false, false);
+		printTableAddCell(&cont, PQgetvalue(res, i, 5), false, false);
+	}
+
+	printTable(&cont, pset.queryFout, false, pset.logfile);
+	printTableCleanup(&cont);
 	return true;
 }
 

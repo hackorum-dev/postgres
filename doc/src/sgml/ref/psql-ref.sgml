@@ -1864,6 +1864,26 @@ testdb=&gt;
       </varlistentry>
 
       <varlistentry>
+        <term><literal>\dr[rgu][S] [ <link linkend="app-psql-patterns"><replaceable class="parameter">pattern</replaceable></link> ]</literal></term>
+        <listitem>
+        <para>
+        Present role memberships, recursively.
+        </para>
+        <para>
+        The mnemonic for the base command is: describe the role-graph for (r)oles, (g)groups
+        , or (u)sers.  The traditional <literal>S</literal> suffix controls whether the default (group) roles
+        (i.e., those prefixed with <literal>pg_</literal>) are displayed.
+        If <replaceable class="parameter">pattern</replaceable> is specified,
+        only those roles whose names match the pattern are listed.
+        </para>
+        <para>
+        Please see the description for the <link linkend="view-pg-role-graph">pg_role_graph</link> system view for details
+        regarding the interpretation of the information presented herein.
+        </para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
         <term><literal>\dRp[+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">pattern</replaceable></link> ]</literal></term>
         <listitem>
         <para>

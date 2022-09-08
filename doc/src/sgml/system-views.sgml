@@ -2464,6 +2464,267 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
   </table>
  </sect1>
 
+ <sect1 id="view-pg-role-graph">
+  <title><structname>pg_roles</structname></title>
+
+  <indexterm zone="view-pg-role-graph">
+   <primary>pg_role_graph</primary>
+  </indexterm>
+
+  <para>
+   The view <structname>pg_role_graph</structname> provides, for each role in
+   the system, those roles it is a member of and those that are a member of it.
+   This includes both direct and indirect membership grants that can be traversed
+   via SET ROLE.  To aid in comprehension of this graph of data it is divided
+   both along the memberof/member dimension and whether the role itself is a
+   user or group role, as determined by holding the explicit login attribute.
+   Additionally, WITH GRANT OPTION is handled via a separate Administration column.
+  </para>
+
+  <para>
+    (While the concepts of <quote>users</quote> and <quote>groups</quote> have been
+    unified within the formal syntax grammar the two concepts remain valid
+    when it comes to the practical administration of a system.  These views segregate
+    information by groups and users when appropriate to aid in comprehension.  A group
+    is simply any role that is not a user, while a user is a role that explicitly has
+    has the login attribute.)
+  </para>
+
+  <para>
+    The view presents, for a named role, grant information using a somewhat condensed coding scheme.
+    The coding scheme is the name of some other role in the system, quoted if necessary, and then either the word
+    "from" or "via".  A "from" means that the grant in question has been directly recorded in the system catalog.
+    A "via" means the grant results from some chain of grants.  In this situation there may be an optional bracketed
+    suffix (e.g., [+2]) indicating how many additional indirect grants are present.  In both cases the grantor owning
+    the grant is reported.  In the "from" case the comma-separated list of roles following the "from" are these grantors.
+    In the "via" case the grantor is separated from the other role with a forward slash.  Additionally, if multiple
+    paths result in the same grant, the individual preceding paths will all be listed with newlines separating them.
+  </para>
+
+  <para>
+    There is an Administration column that shows, including indirectly, <literal>WITH ADMIN OPTION</literal> grants.
+    Roles having this on the named role are denoted by a prefix of "by" combined with the grant specification
+    described above.  A prefix of "of" is used if the named role is the one that is able to change the membership
+    of the role in the grant specification. This information is a duplicated subset of the grant specifications
+    recorded in the remaining four columns.
+  </para>
+
+  <para>
+    The remaining four columns present the grant specifications related to the named role but divided among the
+    two possible options in the role type (Users, Groups) and direction (Member of, Member) dimensions.
+    The use of separate columns communicates the same information that "of" and "by" communicate in the
+    Administration column and so those prefixes are omitted here in the interest of space.
+  </para>
+
+  <para>
+<programlisting>
+GOOD ENOUGH FOR REVIEW - WILL BE UPDATED              List of role graphs
+Role name | Administration                 |    Member of Groups         | Group Members      |    User Members        |  Member of Users  
+-----------+--------------------------------+-----------------------------+--------------------+------------------------+-------------------
+usr1      |                                | grp1 from vagrant          +|                    | usr1a from vagrant     | 
+          |                                | grp2 from usr2, vagrant     |                    |                        | 
+usr1a     |                                | "group 3" from vagrant     +|                    |                        | usr1 from vagrant
+          |                                | grp1 via usr1/vagrant      +|                    |                        | 
+          |                                | grp2 via usr1/usr2         +|                    |                        | 
+          |                                |          usr1/vagrant       |                    |                        |                        
+usr5      | of grp5c via grp5b/vagrant[+1]+| grp5a from vagrant         +|                    |                        | 
+          | of grp5d via grp5c/vagrant[+2] | grp5b via grp5a/vagrant    +|                    |                        | 
+          |                                | grp5c via grp5b/vagrant[+1]+|                    |                        | 
+          |                                | grp5d via grp5c/vagrant[+2] |                    |                        | 
+grp5b     | of grp5c from vagrant         +| grp5c from vagrant         +| grp5a from vagrant | usr5 via grp5a/vagrant | 
+          | of grp5d via grp5c/vagrant     | grp5d via grp5c/vagrant     |                    |                        | 
+</programlisting> 
+    User usr1 has received membership in grp2 from both usr2 and vagrant; and user usr1a is (unusually) a member of it.
+    Since usr1a is a member of usr1 the two paths to membership in grp2 also apply to them.
+    grp5b is granted with admin option of grp5c by vagrant, thus all member roles of grp5b, like usr5, can assume this
+    capability, which extends indirectly to grp5d of which grp5c is a member.  Thus usr5, a member of grp5b indirectly
+    via its direct membership in grp5a, is shown as administrator of grp5c and grp5d two and three steps removed respectively.
+  </para>
+
+  <para>
+    The graph is built using the traversal logic in the pg_role_relationship system view.
+  </para>
+
+  <table>
+   <title><structname>pg_role_graph</structname> Columns</title>
+   <tgroup cols="1">
+    <thead>
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       Column Type
+      </para>
+      <para>
+       Description
+      </para></entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>rolname</structfield> <type>name</type>
+      </para>
+      <para>
+       Role name
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>administration</structfield> <type>text</type>
+      </para>
+      <para>
+       The listed roles can either be administered "by" this role, or this
+       is an administer "of" the listed roles.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>memberof_users</structfield> <type>text</type>
+      </para>
+      <para>
+       User role that this role is a member of.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>memberof_groups</structfield> <type>text</type>
+      </para>
+      <para>
+       Group roles that this role is a member of.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>member_users</structfield> <type>text</type>
+      </para>
+      <para>
+       User roles that are members of this role.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>member_groups</structfield> <type>text</type>
+      </para>
+      <para>
+       Group roles that are members of this role.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>role_type</structfield> <type>text</type>
+      </para>
+      <para>
+       Report "Group" or "User" as appropriate for this role.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>oid</structfield> <type>oid</type>
+      </para>
+      <para>
+       ID of role.
+      </para></entry>
+     </row>
+
+    </tbody>
+   </tgroup>
+  </table>
+ </sect1>
+
+ <sect1 id="view-pg-role-relationship">
+  <title><structname>pg_role_relationship</structname></title>
+
+  <indexterm zone="view-pg-role-relationship">
+   <primary>pg_role_relationship</primary>
+  </indexterm>
+
+  <para>
+   The view <structname>pg_role_relationship</structname> produces one row
+   for every role reachable by another role.
+  </para>
+
+  <table>
+   <title><structname>pg_role_relationship</structname> Columns</title>
+   <tgroup cols="1">
+    <thead>
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       Column Type
+      </para>
+      <para>
+       Description
+      </para></entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>leaf_node</structfield> <type>oid</type>
+      </para>
+      <para>
+       The starting role for the upward-only (member of) graph traversal.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>group_node</structfield> <type>oid</type>
+      </para>
+      <para>
+       The group role that our leaf role is a member of, possibly indirectly
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>grantor</structfield> <type>oid</type>
+      </para>
+      <para>
+       The role responsible for granting the direct grant this membership derives from.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>level</structfield> <type>int4</type>
+      </para>
+      <para>
+       The number of memberships traversed to get to this one. 1 means a direct grant.
+       0 is the starting point where a role is treated as a member of itself.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>via</structfield> <type>oid[]</type>
+      </para>
+      <para>
+       The inclusive path of role OIDs from the leaf_node to this group_node.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>got_auth</structfield> <type>bool</type>
+      </para>
+      <para>
+       True if any of the grants in the via path are granted with admin option.
+      </para></entry>
+     </row>
+
+    </tbody>
+   </tgroup>
+  </table>
+ </sect1>
+
  <sect1 id="view-pg-roles">
   <title><structname>pg_roles</structname></title>
 

@@ -881,6 +881,18 @@ exec_command_d(PsqlScanState scan_state, bool active_branch, const char *cmd)
 
 					free(pattern2);
 				}
+				else if (cmd[2] == 'r')
+				{
+					success = describeRoleGraph(pattern, show_verbose, show_system);
+				}
+				else if (cmd[2] == 'u')
+				{
+					success = describeUsers(pattern, show_verbose, show_system);
+				}
+				else if (cmd[2] == 'g')
+				{
+					success = describeGroups(pattern, show_verbose, show_system);
+				}
 				else
 					status = PSQL_CMD_UNKNOWN;
 				break;

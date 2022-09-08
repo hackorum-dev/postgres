@@ -1310,3 +1310,262 @@ CREATE VIEW pg_stat_subscription_stats AS
         ss.stats_reset
     FROM pg_subscription as s,
          pg_stat_get_subscription_stats(s.oid) as ss;
+
+/* Built using a plpgsql dynamic SQL generator, pg_dump result copied here with name change. */
+/* See: pg_role_graph.plpgsql */
+CREATE VIEW pg_role_relationship AS
+ WITH RECURSIVE cte_role_relationship AS (
+         SELECT r.oid AS leaf_node,
+            r.oid AS group_node,
+            NULL::oid AS grantor,
+            0 AS level,
+            ARRAY[]::oid[] AS via,
+            false AS got_auth
+           FROM pg_roles r
+        UNION ALL
+         SELECT a.leaf_node,
+            m.roleid AS group_node,
+            m.grantor,
+            (a.level + 1),
+            (a.via || m.roleid),
+            (a.got_auth OR m.admin_option)
+           FROM (cte_role_relationship a
+             JOIN pg_auth_members m ON ((m.member = a.group_node)))
+        )
+ SELECT cte_role_relationship.leaf_node,
+    cte_role_relationship.group_node,
+    cte_role_relationship.grantor,
+    cte_role_relationship.level,
+    cte_role_relationship.via,
+    cte_role_relationship.got_auth
+   FROM cte_role_relationship;
+
+CREATE VIEW pg_role_graph AS
+ WITH role_graph_detail AS (
+         SELECT r.oid,
+            r.rolname,
+                CASE
+                    WHEN r.rolcanlogin THEN 'User'::text
+                    ELSE 'Group'::text
+                END AS role_type,
+            mou.memberof_users,
+            mog.memberof_groups,
+            mu.member_users,
+            mg.member_groups,
+            r.rolsuper,
+            r.rolcreaterole
+           FROM ((((pg_roles r
+             JOIN LATERAL ( SELECT array_agg(DISTINCT a.group_node ORDER BY a.group_node) AS array_agg
+                   FROM (pg_role_relationship a
+                     JOIN pg_roles u ON (((u.oid = a.group_node) AND u.rolcanlogin)))
+                  WHERE ((a.leaf_node = r.oid) AND (r.oid <> a.group_node))) mou(memberof_users) ON (true))
+             JOIN LATERAL ( SELECT array_agg(DISTINCT a.group_node ORDER BY a.group_node) AS array_agg
+                   FROM (pg_role_relationship a
+                     JOIN pg_roles u ON (((u.oid = a.group_node) AND (NOT u.rolcanlogin))))
+                  WHERE ((a.leaf_node = r.oid) AND (r.oid <> a.group_node))) mog(memberof_groups) ON (true))
+             JOIN LATERAL ( SELECT array_agg(DISTINCT a.leaf_node ORDER BY a.leaf_node) AS array_agg
+                   FROM (pg_role_relationship a
+                     JOIN pg_roles u ON (((u.oid = a.leaf_node) AND u.rolcanlogin)))
+                  WHERE ((a.group_node = r.oid) AND (r.oid <> a.leaf_node))) mu(member_users) ON (true))
+             JOIN LATERAL ( SELECT array_agg(DISTINCT a.leaf_node ORDER BY a.leaf_node) AS array_agg
+                   FROM (pg_role_relationship a
+                     JOIN pg_roles u ON (((u.oid = a.leaf_node) AND (NOT u.rolcanlogin))))
+                  WHERE ((a.group_node = r.oid) AND (r.oid <> a.leaf_node))) mg(member_groups) ON (true))
+        ), cte_role_graph AS (
+         SELECT leaf_role.oid,
+            leaf_role.role_type,
+            leaf_role.rolname,
+            leaf_role.rolsuper,
+            array_to_string(ARRAY( SELECT vals.v
+                   FROM ( VALUES ('Superuser'::text)) vals(v)
+                  WHERE leaf_role.rolsuper
+                UNION ALL
+                 SELECT vals.v
+                   FROM ( VALUES ('Create Role'::text)) vals(v)
+                  WHERE leaf_role.rolcreaterole
+                UNION ALL
+                 SELECT (
+                        CASE
+                            WHEN bool_or(grant_instance.got_auth) THEN 'of '::text
+                            ELSE ''::text
+                        END ||
+                        CASE
+                            WHEN (cardinality(grant_instance.via) > 1) THEN format('%I via %s'::text, other_role.rolname, string_agg((((quote_ident((ancestor_role.rolname)::text) || '/'::text) || quote_ident((grant_role.rolname)::text)) ||
+                            CASE
+                                WHEN (grant_instance.level > 2) THEN (('[+'::text || (grant_instance.level - 2)) || ']'::text)
+                                ELSE ''::text
+                            END), ('
+'::text || repeat(' '::text, (length((other_role.rolname)::text) + 5)))))
+                            ELSE format('%I from %s'::text, other_role.rolname, string_agg(quote_ident((grant_role.rolname)::text), ', '::text))
+                        END)
+                   FROM ((((unnest(leaf_role.memberof_users) other(other)
+                     JOIN pg_roles other_role ON ((other_role.oid = other.other)))
+                     JOIN pg_role_relationship grant_instance ON (((grant_instance.leaf_node = leaf_role.oid) AND (grant_instance.group_node = other.other))))
+                     JOIN pg_roles grant_role ON ((grant_role.oid = grant_instance.grantor)))
+                     LEFT JOIN pg_roles ancestor_role ON ((ancestor_role.oid = grant_instance.via[(cardinality(grant_instance.via) - 1)])))
+                  GROUP BY other_role.rolname, grant_instance.via
+                 HAVING bool_or(grant_instance.got_auth)
+                UNION ALL
+                 SELECT (
+                        CASE
+                            WHEN bool_or(grant_instance.got_auth) THEN 'of '::text
+                            ELSE ''::text
+                        END ||
+                        CASE
+                            WHEN (cardinality(grant_instance.via) > 1) THEN format('%I via %s'::text, other_role.rolname, string_agg((((quote_ident((ancestor_role.rolname)::text) || '/'::text) || quote_ident((grant_role.rolname)::text)) ||
+                            CASE
+                                WHEN (grant_instance.level > 2) THEN (('[+'::text || (grant_instance.level - 2)) || ']'::text)
+                                ELSE ''::text
+                            END), ('
+'::text || repeat(' '::text, (length((other_role.rolname)::text) + 5)))))
+                            ELSE format('%I from %s'::text, other_role.rolname, string_agg(quote_ident((grant_role.rolname)::text), ', '::text))
+                        END)
+                   FROM ((((unnest(leaf_role.memberof_groups) other(other)
+                     JOIN pg_roles other_role ON ((other_role.oid = other.other)))
+                     JOIN pg_role_relationship grant_instance ON (((grant_instance.leaf_node = leaf_role.oid) AND (grant_instance.group_node = other.other))))
+                     JOIN pg_roles grant_role ON ((grant_role.oid = grant_instance.grantor)))
+                     LEFT JOIN pg_roles ancestor_role ON ((ancestor_role.oid = grant_instance.via[(cardinality(grant_instance.via) - 1)])))
+                  GROUP BY other_role.rolname, grant_instance.via
+                 HAVING bool_or(grant_instance.got_auth)
+                UNION ALL
+                 SELECT (
+                        CASE
+                            WHEN bool_or(grant_instance.got_auth) THEN 'by '::text
+                            ELSE ''::text
+                        END ||
+                        CASE
+                            WHEN (cardinality(grant_instance.via) > 1) THEN format('%I via %s'::text, other_role.rolname, string_agg((((quote_ident((ancestor_role.rolname)::text) || '/'::text) || quote_ident((grant_role.rolname)::text)) ||
+                            CASE
+                                WHEN (grant_instance.level > 2) THEN (('[+'::text || (grant_instance.level - 2)) || ']'::text)
+                                ELSE ''::text
+                            END), ('
+'::text || repeat(' '::text, (length((other_role.rolname)::text) + 5)))))
+                            ELSE format('%I from %s'::text, other_role.rolname, string_agg(quote_ident((grant_role.rolname)::text), ', '::text))
+                        END)
+                   FROM ((((unnest(leaf_role.member_users) other(other)
+                     JOIN pg_roles other_role ON ((other_role.oid = other.other)))
+                     JOIN pg_role_relationship grant_instance ON (((grant_instance.group_node = leaf_role.oid) AND (grant_instance.leaf_node = other.other))))
+                     JOIN pg_roles grant_role ON ((grant_role.oid = grant_instance.grantor)))
+                     LEFT JOIN pg_roles ancestor_role ON ((ancestor_role.oid = grant_instance.via[(cardinality(grant_instance.via) - 1)])))
+                  GROUP BY other_role.rolname, grant_instance.via
+                 HAVING bool_or(grant_instance.got_auth)
+                UNION ALL
+                 SELECT (
+                        CASE
+                            WHEN bool_or(grant_instance.got_auth) THEN 'by '::text
+                            ELSE ''::text
+                        END ||
+                        CASE
+                            WHEN (cardinality(grant_instance.via) > 1) THEN format('%I via %s'::text, other_role.rolname, string_agg((((quote_ident((ancestor_role.rolname)::text) || '/'::text) || quote_ident((grant_role.rolname)::text)) ||
+                            CASE
+                                WHEN (grant_instance.level > 2) THEN (('[+'::text || (grant_instance.level - 2)) || ']'::text)
+                                ELSE ''::text
+                            END), ('
+'::text || repeat(' '::text, (length((other_role.rolname)::text) + 5)))))
+                            ELSE format('%I from %s'::text, other_role.rolname, string_agg(quote_ident((grant_role.rolname)::text), ', '::text))
+                        END)
+                   FROM ((((unnest(leaf_role.member_groups) other(other)
+                     JOIN pg_roles other_role ON ((other_role.oid = other.other)))
+                     JOIN pg_role_relationship grant_instance ON (((grant_instance.group_node = leaf_role.oid) AND (grant_instance.leaf_node = other.other))))
+                     JOIN pg_roles grant_role ON ((grant_role.oid = grant_instance.grantor)))
+                     LEFT JOIN pg_roles ancestor_role ON ((ancestor_role.oid = grant_instance.via[(cardinality(grant_instance.via) - 1)])))
+                  GROUP BY other_role.rolname, grant_instance.via
+                 HAVING bool_or(grant_instance.got_auth)), '
+'::text) AS administration,
+            array_to_string(ARRAY( SELECT
+                        CASE
+                            WHEN (cardinality(grant_instance.via) > 1) THEN format('%I via %s'::text, other_role.rolname, string_agg((((quote_ident((ancestor_role.rolname)::text) || '/'::text) || quote_ident((grant_role.rolname)::text)) ||
+                            CASE
+                                WHEN (grant_instance.level > 2) THEN (('[+'::text || (grant_instance.level - 2)) || ']'::text)
+                                ELSE ''::text
+                            END), ('
+'::text || repeat(' '::text, (length((other_role.rolname)::text) + 5)))))
+                            ELSE format('%I from %s'::text, other_role.rolname, string_agg(quote_ident((grant_role.rolname)::text), ', '::text))
+                        END AS format
+                   FROM ((((unnest(leaf_role.memberof_users) other(other)
+                     JOIN pg_roles other_role ON ((other_role.oid = other.other)))
+                     JOIN pg_role_relationship grant_instance ON (((grant_instance.leaf_node = leaf_role.oid) AND (grant_instance.group_node = other.other))))
+                     JOIN pg_roles grant_role ON ((grant_role.oid = grant_instance.grantor)))
+                     LEFT JOIN pg_roles ancestor_role ON ((ancestor_role.oid = grant_instance.via[(cardinality(grant_instance.via) - 1)])))
+                  GROUP BY other_role.rolname, grant_instance.via), '
+'::text) AS memberof_users,
+            array_to_string(ARRAY( SELECT
+                        CASE
+                            WHEN (cardinality(grant_instance.via) > 1) THEN format('%I via %s'::text, other_role.rolname, string_agg((((quote_ident((ancestor_role.rolname)::text) || '/'::text) || quote_ident((grant_role.rolname)::text)) ||
+                            CASE
+                                WHEN (grant_instance.level > 2) THEN (('[+'::text || (grant_instance.level - 2)) || ']'::text)
+                                ELSE ''::text
+                            END), ('
+'::text || repeat(' '::text, (length((other_role.rolname)::text) + 5)))))
+                            ELSE format('%I from %s'::text, other_role.rolname, string_agg(quote_ident((grant_role.rolname)::text), ', '::text))
+                        END AS format
+                   FROM ((((unnest(leaf_role.memberof_groups) other(other)
+                     JOIN pg_roles other_role ON ((other_role.oid = other.other)))
+                     JOIN pg_role_relationship grant_instance ON (((grant_instance.leaf_node = leaf_role.oid) AND (grant_instance.group_node = other.other))))
+                     JOIN pg_roles grant_role ON ((grant_role.oid = grant_instance.grantor)))
+                     LEFT JOIN pg_roles ancestor_role ON ((ancestor_role.oid = grant_instance.via[(cardinality(grant_instance.via) - 1)])))
+                  GROUP BY other_role.rolname, grant_instance.via), '
+'::text) AS memberof_groups,
+            array_to_string(ARRAY( SELECT
+                        CASE
+                            WHEN (cardinality(grant_instance.via) > 1) THEN format('%I via %s'::text, other_role.rolname, string_agg((((quote_ident((ancestor_role.rolname)::text) || '/'::text) || quote_ident((grant_role.rolname)::text)) ||
+                            CASE
+                                WHEN (grant_instance.level > 2) THEN (('[+'::text || (grant_instance.level - 2)) || ']'::text)
+                                ELSE ''::text
+                            END), ('
+'::text || repeat(' '::text, (length((other_role.rolname)::text) + 5)))))
+                            ELSE format('%I from %s'::text, other_role.rolname, string_agg(quote_ident((grant_role.rolname)::text), ', '::text))
+                        END AS format
+                   FROM ((((unnest(leaf_role.member_users) other(other)
+                     JOIN pg_roles other_role ON ((other_role.oid = other.other)))
+                     JOIN pg_role_relationship grant_instance ON (((grant_instance.group_node = leaf_role.oid) AND (grant_instance.leaf_node = other.other))))
+                     JOIN pg_roles grant_role ON ((grant_role.oid = grant_instance.grantor)))
+                     LEFT JOIN pg_roles ancestor_role ON ((ancestor_role.oid = grant_instance.via[(cardinality(grant_instance.via) - 1)])))
+                  GROUP BY other_role.rolname, grant_instance.via), '
+'::text) AS member_users,
+            array_to_string(ARRAY( SELECT
+                        CASE
+                            WHEN (cardinality(grant_instance.via) > 1) THEN format('%I via %s'::text, other_role.rolname, string_agg((((quote_ident((ancestor_role.rolname)::text) || '/'::text) || quote_ident((grant_role.rolname)::text)) ||
+                            CASE
+                                WHEN (grant_instance.level > 2) THEN (('[+'::text || (grant_instance.level - 2)) || ']'::text)
+                                ELSE ''::text
+                            END), ('
+'::text || repeat(' '::text, (length((other_role.rolname)::text) + 5)))))
+                            ELSE format('%I from %s'::text, other_role.rolname, string_agg(quote_ident((grant_role.rolname)::text), ', '::text))
+                        END AS format
+                   FROM ((((unnest(leaf_role.member_groups) other(other)
+                     JOIN pg_roles other_role ON ((other_role.oid = other.other)))
+                     JOIN pg_role_relationship grant_instance ON (((grant_instance.group_node = leaf_role.oid) AND (grant_instance.leaf_node = other.other))))
+                     JOIN pg_roles grant_role ON ((grant_role.oid = grant_instance.grantor)))
+                     LEFT JOIN pg_roles ancestor_role ON ((ancestor_role.oid = grant_instance.via[(cardinality(grant_instance.via) - 1)])))
+                  GROUP BY other_role.rolname, grant_instance.via), '
+'::text) AS member_groups
+           FROM role_graph_detail leaf_role
+        )
+ SELECT cte_role_graph.rolname,
+    cte_role_graph.administration,
+    cte_role_graph.memberof_users,
+    cte_role_graph.memberof_groups,
+    cte_role_graph.member_users,
+    cte_role_graph.member_groups,
+    cte_role_graph.role_type,
+    cte_role_graph.oid,
+    row_number() OVER (ORDER BY cte_role_graph.role_type,
+        CASE
+            WHEN cte_role_graph.rolsuper THEN (cte_role_graph.oid)::integer
+            ELSE NULL::integer
+        END,
+        CASE
+            WHEN (cte_role_graph.rolname ~ 'pg_'::text) THEN 0
+            ELSE 1
+        END, cte_role_graph.rolname) AS seq
+   FROM cte_role_graph
+  ORDER BY (row_number() OVER (ORDER BY cte_role_graph.role_type,
+        CASE
+            WHEN cte_role_graph.rolsuper THEN (cte_role_graph.oid)::integer
+            ELSE NULL::integer
+        END,
+        CASE
+            WHEN (cte_role_graph.rolname ~ 'pg_'::text) THEN 0
+            ELSE 1
+        END, cte_role_graph.rolname));
