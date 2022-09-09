@@ -6954,34 +6954,7 @@ static void
 plpgsql_param_eval_generic_ro(ExprState *state, ExprEvalStep *op,
 							  ExprContext *econtext)
 {
-	ParamListInfo params;
-	PLpgSQL_execstate *estate;
-	int			dno = op->d.cparam.paramid - 1;
-	PLpgSQL_datum *datum;
-	Oid			datumtype;
-	int32		datumtypmod;
-
-	/* fetch back the hook data */
-	params = econtext->ecxt_param_list_info;
-	estate = (PLpgSQL_execstate *) params->paramFetchArg;
-	Assert(dno >= 0 && dno < estate->ndatums);
-
-	/* now we can access the target datum */
-	datum = estate->datums[dno];
-
-	/* fetch datum's value */
-	exec_eval_datum(estate, datum,
-					&datumtype, &datumtypmod,
-					op->resvalue, op->resnull);
-
-	/* safety check -- needed for, eg, record fields */
-	if (unlikely(datumtype != op->d.cparam.paramtype))
-		ereport(ERROR,
-				(errcode(ERRCODE_DATATYPE_MISMATCH),
-				 errmsg("type of parameter %d (%s) does not match that when preparing the plan (%s)",
-						op->d.cparam.paramid,
-						format_type_be(datumtype),
-						format_type_be(op->d.cparam.paramtype))));
+	plpgsql_param_eval_generic(state, op, econtext);
 
 	/* force the value to read-only */
 	*op->resvalue = MakeExpandedObjectReadOnly(*op->resvalue,
