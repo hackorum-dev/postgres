@@ -258,9 +258,9 @@ pg_log_generic_v(enum pg_log_level level, enum pg_log_part part,
 			if (lineno > 0)
 				fprintf(stderr, UINT64_FORMAT ":", lineno);
 		}
-		fprintf(stderr, " ");
+		fputc(' ', stderr);
 		if (sgr_locus)
-			fprintf(stderr, ANSI_ESCAPE_RESET);
+			fputs(ANSI_ESCAPE_RESET, stderr);
 	}
 
 	if (!(log_flags & PG_LOG_FLAG_TERSE))
@@ -275,14 +275,14 @@ pg_log_generic_v(enum pg_log_level level, enum pg_log_part part,
 							fprintf(stderr, ANSI_ESCAPE_FMT, sgr_error);
 						fprintf(stderr, _("error: "));
 						if (sgr_error)
-							fprintf(stderr, ANSI_ESCAPE_RESET);
+							fputs(ANSI_ESCAPE_RESET, stderr);
 						break;
 					case PG_LOG_WARNING:
 						if (sgr_warning)
 							fprintf(stderr, ANSI_ESCAPE_FMT, sgr_warning);
-						fprintf(stderr, _("warning: "));
+						fputs(_("warning: "), stderr);
 						if (sgr_warning)
-							fprintf(stderr, ANSI_ESCAPE_RESET);
+							fputs(ANSI_ESCAPE_RESET, stderr);
 						break;
 					default:
 						break;
@@ -291,16 +291,16 @@ pg_log_generic_v(enum pg_log_level level, enum pg_log_part part,
 			case PG_LOG_DETAIL:
 				if (sgr_note)
 					fprintf(stderr, ANSI_ESCAPE_FMT, sgr_note);
-				fprintf(stderr, _("detail: "));
+				fputs(_("detail: "), stderr);
 				if (sgr_note)
-					fprintf(stderr, ANSI_ESCAPE_RESET);
+					fputs(ANSI_ESCAPE_RESET, stderr);
 				break;
 			case PG_LOG_HINT:
 				if (sgr_note)
 					fprintf(stderr, ANSI_ESCAPE_FMT, sgr_note);
-				fprintf(stderr, _("hint: "));
+				fputs(_("hint: "), stderr);
 				if (sgr_note)
-					fprintf(stderr, ANSI_ESCAPE_RESET);
+					fputs(ANSI_ESCAPE_RESET, stderr);
 				break;
 		}
 	}

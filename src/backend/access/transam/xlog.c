@@ -8641,7 +8641,7 @@ do_pg_backup_stop(char *labelfile, bool waitforarchive, TimeLineID *stoptli_p)
 		 * Transfer remaining lines including label and start timeline to
 		 * history file.
 		 */
-		fprintf(fp, "%s", remaining);
+		fputs(remaining, fp);
 		fprintf(fp, "STOP TIME: %s\n", strfbuf);
 		fprintf(fp, "STOP TIMELINE: %u\n", stoptli);
 		if (fflush(fp) || ferror(fp) || FreeFile(fp))

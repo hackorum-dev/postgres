@@ -18,7 +18,7 @@ print_ssl_library()
 	const char *lib = PQsslAttribute(NULL, "library");
 
 	if (!lib)
-		fprintf(stderr, "SSL is not enabled\n");
+		fputs("SSL is not enabled\n", stderr);
 	else
 		printf("%s\n", lib);
 }

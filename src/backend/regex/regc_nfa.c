@@ -3667,7 +3667,7 @@ dumpnfa(struct nfa *nfa,
 		else
 			fprintf(f, ", maxmatchall %d", nfa->maxmatchall);
 	}
-	fprintf(f, "\n");
+	fputc('\n', f);
 	for (s = nfa->states; s != NULL; s = s->next)
 	{
 		dumpstate(s, f);
@@ -3730,7 +3730,7 @@ dumparcs(struct state *s,
 		dumparc(a, s, f);
 		if (pos == 5)
 		{
-			fprintf(f, "\n");
+			fputc('\n', f);
 			pos = 1;
 		}
 		else
@@ -3738,7 +3738,7 @@ dumparcs(struct state *s,
 		a = a->outchainRev;
 	} while (a != NULL);
 	if (pos != 1)
-		fprintf(f, "\n");
+		fputc('\n', f);
 }
 
 /*
@@ -3751,7 +3751,7 @@ dumparc(struct arc *a,
 {
 	struct arc *aa;
 
-	fprintf(f, "\t");
+	fputc('\t', );
 	switch (a->type)
 	{
 		case PLAIN:
@@ -3836,7 +3836,7 @@ dumpcnfa(struct cnfa *cnfa,
 		else
 			fprintf(f, ", maxmatchall %d", cnfa->maxmatchall);
 	}
-	fprintf(f, "\n");
+	fputc('\n', f);
 	for (st = 0; st < cnfa->nstates; st++)
 		dumpcstate(st, cnfa, f);
 	fflush(f);
@@ -3868,14 +3868,14 @@ dumpcstate(int st,
 			fprintf(f, "\t:%ld:->%d", (long) (ca->co - cnfa->ncolors), ca->to);
 		if (pos == 5)
 		{
-			fprintf(f, "\n");
+			fputc('\n', f);
 			pos = 1;
 		}
 		else
 			pos++;
 	}
 	if (ca == cnfa->states[st] || pos != 1)
-		fprintf(f, "\n");
+		fputc('\n', f);
 	fflush(f);
 }
 

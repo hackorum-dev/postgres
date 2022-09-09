@@ -11010,7 +11010,7 @@ write_one_nondefault_variable(FILE *fp, struct config_generic *gconf)
 	if (gconf->source == PGC_S_DEFAULT)
 		return;
 
-	fprintf(fp, "%s", gconf->name);
+	fputs(gconf->name, fp);
 	fputc(0, fp);
 
 	switch (gconf->vartype)
@@ -11020,9 +11020,9 @@ write_one_nondefault_variable(FILE *fp, struct config_generic *gconf)
 				struct config_bool *conf = (struct config_bool *) gconf;
 
 				if (*conf->variable)
-					fprintf(fp, "true");
+					fputs("true", fp);
 				else
-					fprintf(fp, "false");
+					fputs("false", fp);
 			}
 			break;
 
@@ -11046,7 +11046,7 @@ write_one_nondefault_variable(FILE *fp, struct config_generic *gconf)
 			{
 				struct config_string *conf = (struct config_string *) gconf;
 
-				fprintf(fp, "%s", *conf->variable);
+				fputs(*conf->variable, fp);
 			}
 			break;
 
@@ -11054,8 +11054,7 @@ write_one_nondefault_variable(FILE *fp, struct config_generic *gconf)
 			{
 				struct config_enum *conf = (struct config_enum *) gconf;
 
-				fprintf(fp, "%s",
-						config_enum_lookup_by_value(conf, *conf->variable));
+				fputs(config_enum_lookup_by_value(conf, *conf->variable), fp);
 			}
 			break;
 	}
@@ -11063,7 +11062,7 @@ write_one_nondefault_variable(FILE *fp, struct config_generic *gconf)
 	fputc(0, fp);
 
 	if (gconf->sourcefile)
-		fprintf(fp, "%s", gconf->sourcefile);
+		fputs(gconf->sourcefile, fp);
 	fputc(0, fp);
 
 	fwrite(&gconf->sourceline, 1, sizeof(gconf->sourceline), fp);

@@ -54,7 +54,7 @@ importFile(PGconn *conn, char *filename)
 	 */
 	lobjId = lo_creat(conn, INV_READ | INV_WRITE);
 	if (lobjId == 0)
-		fprintf(stderr, "cannot create large object");
+		fputs("cannot create large object", stderr);
 
 	lobj_fd = lo_open(conn, lobjId, INV_WRITE);
 
@@ -105,7 +105,7 @@ pickout(PGconn *conn, Oid lobjId, pg_int64 start, int len)
 			break;				/* no more data? */
 	}
 	free(buf);
-	fprintf(stderr, "\n");
+	fputc('\n', stderr);
 	lo_close(conn, lobj_fd);
 }
 
@@ -138,12 +138,12 @@ overwrite(PGconn *conn, Oid lobjId, pg_int64 start, int len)
 		nwritten += nbytes;
 		if (nbytes <= 0)
 		{
-			fprintf(stderr, "\nWRITE FAILED!\n");
+			fputs("\nWRITE FAILED!\n", stderr);
 			break;
 		}
 	}
 	free(buf);
-	fprintf(stderr, "\n");
+	fputc('\n', stderr);
 	lo_close(conn, lobj_fd);
 }
 
@@ -249,7 +249,7 @@ main(int argc, char **argv)
 	/* check to see that the backend connection was successfully made */
 	if (PQstatus(conn) != CONNECTION_OK)
 	{
-		fprintf(stderr, "%s", PQerrorMessage(conn));
+		fputs(PQerrorMessage(conn), stderr);
 		exit_nicely(conn);
 	}
 

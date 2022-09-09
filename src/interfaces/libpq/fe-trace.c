@@ -149,7 +149,7 @@ pqTraceOutputInt32(FILE *pfdebug, const char *data, int *cursor, bool suppress)
 	*cursor += 4;
 	result = (int) pg_ntoh32(result);
 	if (suppress)
-		fprintf(pfdebug, " NNNN");
+		fputs(" NNNN", pfdebug);
 	else
 		fprintf(pfdebug, " %d", result);
 
@@ -166,7 +166,7 @@ pqTraceOutputString(FILE *pfdebug, const char *data, int *cursor, bool suppress)
 
 	if (suppress)
 	{
-		fprintf(pfdebug, " \"SSSS\"");
+		fputs(" \"SSSS\"", pfdebug);
 		*cursor += strlen(data + *cursor) + 1;
 	}
 	else
@@ -191,7 +191,7 @@ pqTraceOutputNchar(FILE *pfdebug, int len, const char *data, int *cursor)
 				next;			/* first char not yet printed */
 	const char *v = data + *cursor;
 
-	fprintf(pfdebug, " \'");
+	fputs(" \'", pfdebug);
 
 	for (next = i = 0; i < len; ++i)
 	{
@@ -207,7 +207,7 @@ pqTraceOutputNchar(FILE *pfdebug, int len, const char *data, int *cursor)
 	if (next < len)
 		fwrite(v + next, 1, len - next, pfdebug);
 
-	fprintf(pfdebug, "\'");
+	fputc('\'', pfdebug);
 	*cursor += len;
 }
 
@@ -219,7 +219,7 @@ pqTraceOutputNchar(FILE *pfdebug, int len, const char *data, int *cursor)
 static void
 pqTraceOutputA(FILE *f, const char *message, int *cursor, bool regress)
 {
-	fprintf(f, "NotificationResponse\t");
+	fputs("NotificationResponse\t", f);
 	pqTraceOutputInt32(f, message, cursor, regress);
 	pqTraceOutputString(f, message, cursor, false);
 	pqTraceOutputString(f, message, cursor, false);
@@ -231,7 +231,7 @@ pqTraceOutputB(FILE *f, const char *message, int *cursor)
 {
 	int			nparams;
 
-	fprintf(f, "Bind\t");
+	fputs("Bind\t", f);
 	pqTraceOutputString(f, message, cursor, false);
 	pqTraceOutputString(f, message, cursor, false);
 	nparams = pqTraceOutputInt16(f, message, cursor);
@@ -262,13 +262,13 @@ pqTraceOutputC(FILE *f, bool toServer, const char *message, int *cursor)
 {
 	if (toServer)
 	{
-		fprintf(f, "Close\t");
+		fputs("Close\t", f);
 		pqTraceOutputByte1(f, message, cursor);
 		pqTraceOutputString(f, message, cursor, false);
 	}
 	else
 	{
-		fprintf(f, "CommandComplete\t");
+		fputs("CommandComplete\t", f);
 		pqTraceOutputString(f, message, cursor, false);
 	}
 }
@@ -279,7 +279,7 @@ pqTraceOutputD(FILE *f, bool toServer, const char *message, int *cursor)
 {
 	if (toServer)
 	{
-		fprintf(f, "Describe\t");
+		fputs("Describe\t", f);
 		pqTraceOutputByte1(f, message, cursor);
 		pqTraceOutputString(f, message, cursor, false);
 	}
@@ -289,7 +289,7 @@ pqTraceOutputD(FILE *f, bool toServer, const char *message, int *cursor)
 		int			len;
 		int			i;
 
-		fprintf(f, "DataRow\t");
+		fputs("DataRow\t", f);
 		nfields = pqTraceOutputInt16(f, message, cursor);
 		for (i = 0; i < nfields; i++)
 		{
@@ -328,7 +328,7 @@ pqTraceOutputE(FILE *f, bool toServer, const char *message, int *cursor, bool re
 {
 	if (toServer)
 	{
-		fprintf(f, "Execute\t");
+		fputs("Execute\t", f);
 		pqTraceOutputString(f, message, cursor, false);
 		pqTraceOutputInt32(f, message, cursor, false);
 	}
@@ -340,7 +340,7 @@ pqTraceOutputE(FILE *f, bool toServer, const char *message, int *cursor, bool re
 static void
 pqTraceOutputf(FILE *f, const char *message, int *cursor)
 {
-	fprintf(f, "CopyFail\t");
+	fputs("CopyFail\t", f);
 	pqTraceOutputString(f, message, cursor, false);
 }
 
@@ -351,7 +351,7 @@ pqTraceOutputF(FILE *f, const char *message, int *cursor, bool regress)
 	int			nfields;
 	int			nbytes;
 
-	fprintf(f, "FunctionCall\t");
+	fputs("FunctionCall\t", f);
 	pqTraceOutputInt32(f, message, cursor, regress);
 	nfields = pqTraceOutputInt16(f, message, cursor);
 
@@ -377,7 +377,7 @@ pqTraceOutputG(FILE *f, const char *message, int *cursor)
 {
 	int			nfields;
 
-	fprintf(f, "CopyInResponse\t");
+	fputs("CopyInResponse\t", f);
 	pqTraceOutputByte1(f, message, cursor);
 	nfields = pqTraceOutputInt16(f, message, cursor);
 
@@ -391,7 +391,7 @@ pqTraceOutputH(FILE *f, const char *message, int *cursor)
 {
 	int			nfields;
 
-	fprintf(f, "CopyOutResponse\t");
+	fputs("CopyOutResponse\t", f);
 	pqTraceOutputByte1(f, message, cursor);
 	nfields = pqTraceOutputInt16(f, message, cursor);
 
@@ -403,7 +403,7 @@ pqTraceOutputH(FILE *f, const char *message, int *cursor)
 static void
 pqTraceOutputK(FILE *f, const char *message, int *cursor, bool regress)
 {
-	fprintf(f, "BackendKeyData\t");
+	fputs("BackendKeyData\t", f);
 	pqTraceOutputInt32(f, message, cursor, regress);
 	pqTraceOutputInt32(f, message, cursor, regress);
 }
@@ -414,7 +414,7 @@ pqTraceOutputP(FILE *f, const char *message, int *cursor, bool regress)
 {
 	int			nparams;
 
-	fprintf(f, "Parse\t");
+	fputs("Parse\t", f);
 	pqTraceOutputString(f, message, cursor, false);
 	pqTraceOutputString(f, message, cursor, false);
 	nparams = pqTraceOutputInt16(f, message, cursor);
@@ -427,7 +427,7 @@ pqTraceOutputP(FILE *f, const char *message, int *cursor, bool regress)
 static void
 pqTraceOutputQ(FILE *f, const char *message, int *cursor)
 {
-	fprintf(f, "Query\t");
+	fputs("Query\t", f);
 	pqTraceOutputString(f, message, cursor, false);
 }
 
@@ -435,7 +435,7 @@ pqTraceOutputQ(FILE *f, const char *message, int *cursor)
 static void
 pqTraceOutputR(FILE *f, const char *message, int *cursor)
 {
-	fprintf(f, "Authentication\t");
+	fputs("Authentication\t", f);
 	pqTraceOutputInt32(f, message, cursor, false);
 }
 
@@ -443,7 +443,7 @@ pqTraceOutputR(FILE *f, const char *message, int *cursor)
 static void
 pqTraceOutputS(FILE *f, const char *message, int *cursor)
 {
-	fprintf(f, "ParameterStatus\t");
+	fputs("ParameterStatus\t", f);
 	pqTraceOutputString(f, message, cursor, false);
 	pqTraceOutputString(f, message, cursor, false);
 }
@@ -454,7 +454,7 @@ pqTraceOutputt(FILE *f, const char *message, int *cursor, bool regress)
 {
 	int			nfields;
 
-	fprintf(f, "ParameterDescription\t");
+	fputs("ParameterDescription\t", f);
 	nfields = pqTraceOutputInt16(f, message, cursor);
 
 	for (int i = 0; i < nfields; i++)
@@ -467,7 +467,7 @@ pqTraceOutputT(FILE *f, const char *message, int *cursor, bool regress)
 {
 	int			nfields;
 
-	fprintf(f, "RowDescription\t");
+	fputs("RowDescription\t", f);
 	nfields = pqTraceOutputInt16(f, message, cursor);
 
 	for (int i = 0; i < nfields; i++)
@@ -486,7 +486,7 @@ pqTraceOutputT(FILE *f, const char *message, int *cursor, bool regress)
 static void
 pqTraceOutputv(FILE *f, const char *message, int *cursor)
 {
-	fprintf(f, "NegotiateProtocolVersion\t");
+	fputs("NegotiateProtocolVersion\t", f);
 	pqTraceOutputInt32(f, message, cursor, false);
 	pqTraceOutputInt32(f, message, cursor, false);
 }
@@ -497,7 +497,7 @@ pqTraceOutputV(FILE *f, const char *message, int *cursor)
 {
 	int			len;
 
-	fprintf(f, "FunctionCallResponse\t");
+	fputs("FunctionCallResponse\t", f);
 	len = pqTraceOutputInt32(f, message, cursor, false);
 	if (len != -1)
 		pqTraceOutputNchar(f, len, message, cursor);
@@ -507,7 +507,7 @@ pqTraceOutputV(FILE *f, const char *message, int *cursor)
 static void
 pqTraceOutputW(FILE *f, const char *message, int *cursor, int length)
 {
-	fprintf(f, "CopyBothResponse\t");
+	fputs("CopyBothResponse\t", f);
 	pqTraceOutputByte1(f, message, cursor);
 
 	while (length > *cursor)
@@ -518,7 +518,7 @@ pqTraceOutputW(FILE *f, const char *message, int *cursor, int length)
 static void
 pqTraceOutputZ(FILE *f, const char *message, int *cursor)
 {
-	fprintf(f, "ReadyForQuery\t");
+	fputs("ReadyForQuery\t", f);
 	pqTraceOutputByte1(f, message, cursor);
 }
 
@@ -563,15 +563,15 @@ pqTraceOutputMessage(PGconn *conn, const char *message, bool toServer)
 	switch (id)
 	{
 		case '1':
-			fprintf(conn->Pfdebug, "ParseComplete");
+			fputs("ParseComplete", conn->Pfdebug);
 			/* No message content */
 			break;
 		case '2':
-			fprintf(conn->Pfdebug, "BindComplete");
+			fputs("BindComplete", conn->Pfdebug);
 			/* No message content */
 			break;
 		case '3':
-			fprintf(conn->Pfdebug, "CloseComplete");
+			fputs("CloseComplete", conn->Pfdebug);
 			/* No message content */
 			break;
 		case 'A':				/* Notification Response */
@@ -581,7 +581,7 @@ pqTraceOutputMessage(PGconn *conn, const char *message, bool toServer)
 			pqTraceOutputB(conn->Pfdebug, message, &logCursor);
 			break;
 		case 'c':
-			fprintf(conn->Pfdebug, "CopyDone");
+			fputs("CopyDone", conn->Pfdebug);
 			/* No message content */
 			break;
 		case 'C':				/* Close(F) or Command Complete(B) */
@@ -610,17 +610,17 @@ pqTraceOutputMessage(PGconn *conn, const char *message, bool toServer)
 			if (!toServer)
 				pqTraceOutputH(conn->Pfdebug, message, &logCursor);
 			else
-				fprintf(conn->Pfdebug, "Flush");	/* no message content */
+				fputs("Flush", conn->Pfdebug);	/* no message content */
 			break;
 		case 'I':
-			fprintf(conn->Pfdebug, "EmptyQueryResponse");
+			fputs("EmptyQueryResponse", conn->Pfdebug);
 			/* No message content */
 			break;
 		case 'K':				/* secret key data from the backend */
 			pqTraceOutputK(conn->Pfdebug, message, &logCursor, regress);
 			break;
 		case 'n':
-			fprintf(conn->Pfdebug, "NoData");
+			fputs("NoData", conn->Pfdebug);
 			/* No message content */
 			break;
 		case 'N':
@@ -637,14 +637,14 @@ pqTraceOutputMessage(PGconn *conn, const char *message, bool toServer)
 			pqTraceOutputR(conn->Pfdebug, message, &logCursor);
 			break;
 		case 's':
-			fprintf(conn->Pfdebug, "PortalSuspended");
+			fputs("PortalSuspended", conn->Pfdebug);
 			/* No message content */
 			break;
 		case 'S':				/* Parameter Status(B) or Sync(F) */
 			if (!toServer)
 				pqTraceOutputS(conn->Pfdebug, message, &logCursor);
 			else
-				fprintf(conn->Pfdebug, "Sync"); /* no message content */
+				fputs("Sync", conn->Pfdebug); /* no message content */
 			break;
 		case 't':				/* Parameter Description */
 			pqTraceOutputt(conn->Pfdebug, message, &logCursor, regress);
@@ -662,7 +662,7 @@ pqTraceOutputMessage(PGconn *conn, const char *message, bool toServer)
 			pqTraceOutputW(conn->Pfdebug, message, &logCursor, length);
 			break;
 		case 'X':
-			fprintf(conn->Pfdebug, "Terminate");
+			fputs("Terminate", conn->Pfdebug);
 			/* No message content */
 			break;
 		case 'Z':				/* Ready For Query */

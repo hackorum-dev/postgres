@@ -80,7 +80,7 @@ pg_fatal_impl(int line, const char *fmt,...)
 	vfprintf(stderr, fmt, args);
 	va_end(args);
 	Assert(fmt[strlen(fmt) - 1] != '\n');
-	fprintf(stderr, "\n");
+	fputc('\n', stderr);
 	exit(1);
 }
 
@@ -89,7 +89,7 @@ test_disallowed_in_pipeline(PGconn *conn)
 {
 	PGresult   *res = NULL;
 
-	fprintf(stderr, "test error cases... ");
+	fputs("test error cases... ", stderr);
 
 	if (PQisnonblocking(conn))
 		pg_fatal("Expected blocking connection mode");
@@ -129,7 +129,7 @@ test_disallowed_in_pipeline(PGconn *conn)
 		pg_fatal("PQexec should succeed after exiting pipeline mode but failed with: %s",
 				 PQerrorMessage(conn));
 
-	fprintf(stderr, "ok\n");
+	fputs("ok\n", stderr);
 }
 
 static void
@@ -139,7 +139,7 @@ test_multi_pipelines(PGconn *conn)
 	const char *dummy_params[1] = {"1"};
 	Oid			dummy_param_oids[1] = {INT4OID};
 
-	fprintf(stderr, "multi pipeline... ");
+	fputs("multi pipeline... ", stderr);
 
 	/*
 	 * Queue up a couple of small pipelines and process each without returning
@@ -227,7 +227,7 @@ test_multi_pipelines(PGconn *conn)
 	if (PQpipelineStatus(conn) != PQ_PIPELINE_OFF)
 		pg_fatal("exiting pipeline mode didn't seem to work");
 
-	fprintf(stderr, "ok\n");
+	fputs("ok\n", stderr);
 }
 
 /*
@@ -241,7 +241,7 @@ test_nosync(PGconn *conn)
 	int			results = 0;
 	int			sock = PQsocket(conn);
 
-	fprintf(stderr, "nosync... ");
+	fputs("nosync... ", stderr);
 
 	if (sock < 0)
 		pg_fatal("invalid socket");
@@ -314,7 +314,7 @@ test_nosync(PGconn *conn)
 		pg_fatal("got unexpected %s\n", PQresStatus(PQresultStatus(res)));
 	}
 
-	fprintf(stderr, "ok\n");
+	fputs("ok\n", stderr);
 }
 
 /*
@@ -336,7 +336,7 @@ test_pipeline_abort(PGconn *conn)
 	int			gotrows;
 	bool		goterror;
 
-	fprintf(stderr, "aborted pipeline... ");
+	fputs("aborted pipeline... ", stderr);
 
 	res = PQexec(conn, drop_table_sql);
 	if (PQresultStatus(res) != PGRES_COMMAND_OK)
@@ -524,7 +524,7 @@ test_pipeline_abort(PGconn *conn)
 	if (PQresultStatus(res) != PGRES_PIPELINE_SYNC)
 		pg_fatal("Unexpected result code %s from pipeline sync",
 				 PQresStatus(PQresultStatus(res)));
-	fprintf(stderr, "ok\n");
+	fputs("ok\n", stderr);
 
 	/* Test single-row mode with an error partways */
 	if (PQsendQuery(conn, "SELECT 1.0/g FROM generate_series(3, -1, -1) g") != 1)
@@ -611,7 +611,7 @@ test_pipeline_abort(PGconn *conn)
 
 	PQclear(res);
 
-	fprintf(stderr, "ok\n");
+	fputs("ok\n", stderr);
 }
 
 /* State machine enum for test_pipelined_insert */
@@ -850,7 +850,7 @@ test_pipelined_insert(PGconn *conn, int n_rows)
 			{
 				if (PQpipelineSync(conn) == 1)
 				{
-					fprintf(stdout, "pipeline sync sent\n");
+					fputs("pipeline sync sent\n", stdout);
 					send_step++;
 				}
 				else
@@ -870,7 +870,7 @@ test_pipelined_insert(PGconn *conn, int n_rows)
 	if (PQsetnonblocking(conn, 0) != 0)
 		pg_fatal("failed to clear nonblocking mode: %s", PQerrorMessage(conn));
 
-	fprintf(stderr, "ok\n");
+	fputs("ok\n", stderr);
 }
 
 static void
@@ -881,7 +881,7 @@ test_prepared(PGconn *conn)
 	Oid			expected_oids[4];
 	Oid			typ;
 
-	fprintf(stderr, "prepared... ");
+	fputs("prepared... ", stderr);
 
 	if (PQenterPipelineMode(conn) != 1)
 		pg_fatal("failed to enter pipeline mode: %s", PQerrorMessage(conn));
@@ -963,7 +963,7 @@ test_prepared(PGconn *conn)
 	if (PQexitPipelineMode(conn) != 1)
 		pg_fatal("could not exit pipeline mode: %s", PQerrorMessage(conn));
 
-	fprintf(stderr, "ok\n");
+	fputs("ok\n", stderr);
 }
 
 /* Notice processor: print notices, and count how many we got */
@@ -983,7 +983,7 @@ test_pipeline_idle(PGconn *conn)
 	PGresult   *res;
 	int			n_notices = 0;
 
-	fprintf(stderr, "\npipeline idle...\n");
+	fputs("\npipeline idle...\n", stderr);
 
 	PQsetNoticeProcessor(conn, notice_processor, &n_notices);
 
@@ -1033,7 +1033,7 @@ test_pipeline_idle(PGconn *conn)
 	 */
 	if (n_notices > 0)
 		pg_fatal("got %d notice(s)", n_notices);
-	fprintf(stderr, "ok - 1\n");
+	fputs("ok - 1\n", stderr);
 
 	/*
 	 * Verify that we can send a query using simple query protocol after one
@@ -1071,7 +1071,7 @@ test_pipeline_idle(PGconn *conn)
 		pg_fatal("did not receive terminating NULL");
 	if (n_notices > 0)
 		pg_fatal("got %d notice(s)", n_notices);
-	fprintf(stderr, "ok - 2\n");
+	fputs("ok - 2\n", fputs);
 
 	/*
 	 * Case 2: exiting pipeline mode is not OK if a second command is sent.
@@ -1149,7 +1149,7 @@ test_pipeline_idle(PGconn *conn)
 
 	if (n_notices > 0)
 		pg_fatal("got %d notice(s)", n_notices);
-	fprintf(stderr, "ok - 3\n");
+	fputs("ok - 3\n", stderr);
 
 	/* Have a WARNING in the middle of a resultset */
 	if (PQenterPipelineMode(conn) != 1)
@@ -1164,7 +1164,7 @@ test_pipeline_idle(PGconn *conn)
 		pg_fatal("unexpected result code %s", PQresStatus(PQresultStatus(res)));
 	if (PQexitPipelineMode(conn) != 1)
 		pg_fatal("failed to exit pipeline mode: %s", PQerrorMessage(conn));
-	fprintf(stderr, "ok - 4\n");
+	fputs("ok - 4\n", stderr);
 }
 
 static void
@@ -1174,7 +1174,7 @@ test_simple_pipeline(PGconn *conn)
 	const char *dummy_params[1] = {"1"};
 	Oid			dummy_param_oids[1] = {INT4OID};
 
-	fprintf(stderr, "simple pipeline... ");
+	fputs("simple pipeline... ", stderr);
 
 	/*
 	 * Enter pipeline mode and dispatch a set of operations, which we'll then
@@ -1251,7 +1251,7 @@ test_simple_pipeline(PGconn *conn)
 	if (PQpipelineStatus(conn) != PQ_PIPELINE_OFF)
 		pg_fatal("Exiting pipeline mode didn't seem to work");
 
-	fprintf(stderr, "ok\n");
+	fputs("ok\n", stderr);
 }
 
 static void
@@ -1308,7 +1308,7 @@ test_singlerowmode(PGconn *conn)
 
 			if (est == PGRES_PIPELINE_SYNC)
 			{
-				fprintf(stderr, "end of pipeline reached\n");
+				fputs("end of pipeline reached\n", stderr);
 				pipeline_ended = true;
 				PQclear(res);
 				if (i != 3)
@@ -1360,7 +1360,7 @@ test_singlerowmode(PGconn *conn)
 	if (PQexitPipelineMode(conn) != 1)
 		pg_fatal("failed to end pipeline mode: %s", PQerrorMessage(conn));
 
-	fprintf(stderr, "ok\n");
+	fputs("ok\n", stderr);
 }
 
 /*
@@ -1507,7 +1507,7 @@ test_transaction(PGconn *conn)
 		pg_fatal("did not get expected tuple");
 	PQclear(res);
 
-	fprintf(stderr, "ok\n");
+	fputs("ok\n", stderr);
 }
 
 /*
@@ -1536,7 +1536,7 @@ test_uniqviol(PGconn *conn)
 	fd_set		in_fds;
 	fd_set		out_fds;
 
-	fprintf(stderr, "uniqviol ...");
+	fputs("uniqviol ...", stderr);
 
 	PQsetnonblocking(conn, 1);
 
@@ -1631,12 +1631,12 @@ test_uniqviol(PGconn *conn)
 				if (switched >= 1 && !error_sent && ctr % socketful >= socketful / 2)
 				{
 					sprintf(paramValue0, "%d", numsent / 2);
-					fprintf(stderr, "E");
+					fputc('E', stderr);
 					error_sent = true;
 				}
 				else
 				{
-					fprintf(stderr, ".");
+					fputc('.', stderr);
 					sprintf(paramValue0, "%d", ctr++);
 				}
 
@@ -1650,7 +1650,7 @@ test_uniqviol(PGconn *conn)
 					if (PQsendFlushRequest(conn) != 1)
 						pg_fatal("failed to send flush request");
 					write_done = true;
-					fprintf(stderr, "\ndone writing\n");
+					fputs("\ndone writing\n", stderr);
 					PQflush(conn);
 					break;
 				}
@@ -1663,7 +1663,7 @@ test_uniqviol(PGconn *conn)
 				{
 					if (socketful == 0)
 						socketful = numsent;
-					fprintf(stderr, "\nswitch to reading\n");
+					fputs("\nswitch to reading\n", stderr);
 					switched++;
 					break;
 				}
@@ -1674,7 +1674,7 @@ test_uniqviol(PGconn *conn)
 	if (!got_error)
 		pg_fatal("did not get expected error");
 
-	fprintf(stderr, "ok\n");
+	fputs("ok\n", stderr);
 }
 
 /*

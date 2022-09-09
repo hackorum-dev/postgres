@@ -2201,7 +2201,7 @@ printSourceNFA(regex_t *regex, TrgmColorInfo *colors, int ncolors)
 		/* dot -Tpng -o /tmp/source.png < /tmp/source.gv */
 		FILE	   *fp = fopen("/tmp/source.gv", "w");
 
-		fprintf(fp, "%s", buf.data);
+		fputs(buf.data, fp);	
 		fclose(fp);
 	}
 
@@ -2263,7 +2263,7 @@ printTrgmNFA(TrgmNFA *trgmNFA)
 		/* dot -Tpng -o /tmp/transformed.png < /tmp/transformed.gv */
 		FILE	   *fp = fopen("/tmp/transformed.gv", "w");
 
-		fprintf(fp, "%s", buf.data);
+		fputs(buf.data, fp);	
 		fclose(fp);
 	}
 
@@ -2354,7 +2354,7 @@ printTrgmPackedGraph(TrgmPackedGraph *packedGraph, TRGM *trigrams)
 		/* dot -Tpng -o /tmp/packed.png < /tmp/packed.gv */
 		FILE	   *fp = fopen("/tmp/packed.gv", "w");
 
-		fprintf(fp, "%s", buf.data);
+		fputs(buf.data, fp);	
 		fclose(fp);
 	}
 

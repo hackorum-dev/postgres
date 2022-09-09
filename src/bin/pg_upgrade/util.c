@@ -181,7 +181,7 @@ pg_log_v(eLogType type, const char *fmt, va_list ap)
 			/* status messages get two leading spaces, see below */
 			fprintf(log_opts.internal, "  %s\n", message);
 		else if (type == PG_REPORT_NONL)
-			fprintf(log_opts.internal, "%s", message);
+			fputs(message, log_opts.internal);
 		else
 			fprintf(log_opts.internal, "%s\n", message);
 		fflush(log_opts.internal);

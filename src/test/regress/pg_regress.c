@@ -245,10 +245,10 @@ status(const char *fmt,...)
 static void
 status_end(void)
 {
-	fprintf(stdout, "\n");
+	fputc('\n', stdout);
 	fflush(stdout);
 	if (logfile)
-		fprintf(logfile, "\n");
+		fputc('\n', logfile);
 }
 
 /*

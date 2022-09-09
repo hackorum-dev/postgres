@@ -726,7 +726,7 @@ main(int argc, char *argv[])
 			if (opts.verbose)
 			{
 				if (opts.show_progress && progress_since_last_stderr)
-					fprintf(stderr, "\n");
+					fputc('\n', stderr);
 				pg_log_info("checking heap table \"%s.%s.%s\"",
 							rel->datinfo->datname, rel->nspname, rel->relname);
 				progress_since_last_stderr = false;
@@ -741,7 +741,7 @@ main(int argc, char *argv[])
 			if (opts.verbose)
 			{
 				if (opts.show_progress && progress_since_last_stderr)
-					fprintf(stderr, "\n");
+					fputc('\n', stderr);
 
 				pg_log_info("checking btree index \"%s.%s.%s\"",
 							rel->datinfo->datname, rel->nspname, rel->relname);
@@ -1095,7 +1095,7 @@ verify_btree_slot_handler(PGresult *res, PGconn *conn, void *context)
 			 * event loop, so it doesn't matter.
 			 */
 			if (opts.show_progress && progress_since_last_stderr)
-				fprintf(stderr, "\n");
+				fputc('\n', stderr);
 			pg_log_warning("btree index \"%s.%s.%s\": btree checking function returned unexpected number of rows: %d",
 						   rel->datinfo->datname, rel->nspname, rel->relname, ntups);
 			if (opts.verbose)

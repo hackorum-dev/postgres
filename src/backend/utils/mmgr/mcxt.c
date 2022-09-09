@@ -680,7 +680,7 @@ MemoryContextStatsInternal(MemoryContext context, int level,
 				int			i;
 
 				for (i = 0; i <= level; i++)
-					fprintf(stderr, "  ");
+					fputs("  ", stderr);
 				fprintf(stderr,
 						"%d more child contexts containing %zu total in %zu blocks; %zu free (%zu chunks); %zu used\n",
 						ichild - max_children,
@@ -782,7 +782,7 @@ MemoryContextStatsPrint(MemoryContext context, void *passthru,
 	if (print_to_stderr)
 	{
 		for (i = 0; i < level; i++)
-			fprintf(stderr, "  ");
+			fputs("  ", stderr);
 		fprintf(stderr, "%s: %s%s\n", name, stats_string, truncated_ident);
 	}
 	else

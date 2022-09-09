@@ -45,7 +45,7 @@ isolation_start_test(const char *testname,
 		if (find_other_exec(saved_argv0, "isolationtester",
 							PG_ISOLATION_VERSIONSTR, isolation_exec) != 0)
 		{
-			fprintf(stderr, _("could not find proper isolationtester binary\n"));
+			fputs(_("could not find proper isolationtester binary\n"), stderr);
 			exit(2);
 		}
 		looked_up_isolation_exec = true;
@@ -81,7 +81,7 @@ isolation_start_test(const char *testname,
 						   "%s ", launcher);
 		if (offset >= sizeof(psql_cmd))
 		{
-			fprintf(stderr, _("command too long\n"));
+			fputs(_("command too long\n"), stderr);
 			exit(2);
 		}
 	}
@@ -94,7 +94,7 @@ isolation_start_test(const char *testname,
 					   outfile);
 	if (offset >= sizeof(psql_cmd))
 	{
-		fprintf(stderr, _("command too long\n"));
+		fputs(_("command too long\n"), stderr);
 		exit(2);
 	}
 

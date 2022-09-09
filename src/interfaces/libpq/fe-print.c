@@ -113,7 +113,7 @@ PQprint(FILE *fout, const PGresult *res, const PQprintOpt *po)
 		fieldMax = (int *) calloc(nFields, sizeof(int));
 		if (!fieldNames || !fieldNotNum || !fieldMax)
 		{
-			fprintf(stderr, libpq_gettext("out of memory\n"));
+			fputs(libpq_gettext("out of memory\n"), stderr);
 			goto exit;
 		}
 		for (numFieldName = 0;
@@ -205,7 +205,7 @@ PQprint(FILE *fout, const PGresult *res, const PQprintOpt *po)
 									  nFields * sizeof(char *));
 			if (!fields)
 			{
-				fprintf(stderr, libpq_gettext("out of memory\n"));
+				fputs(libpq_gettext("out of memory\n"), stderr);
 				goto exit;
 			}
 		}
@@ -404,7 +404,7 @@ do_field(const PQprintOpt *po, const PGresult *res,
 				fieldMax[j] = plen;
 			if (!(fields[i * nFields + j] = (char *) malloc(plen + 1)))
 			{
-				fprintf(stderr, libpq_gettext("out of memory\n"));
+				fputs(libpq_gettext("out of memory\n"), stderr);
 				return false;
 			}
 			strcpy(fields[i * nFields + j], pval);
@@ -475,7 +475,7 @@ do_header(FILE *fout, const PQprintOpt *po, const int nFields, int *fieldMax,
 		border = malloc(tot + 1);
 		if (!border)
 		{
-			fprintf(stderr, libpq_gettext("out of memory\n"));
+			fputs(libpq_gettext("out of memory\n"), stderr);
 			return NULL;
 		}
 		p = border;
@@ -615,7 +615,7 @@ PQdisplayTuples(const PGresult *res,
 		fLength = (int *) malloc(nFields * sizeof(int));
 		if (!fLength)
 		{
-			fprintf(stderr, libpq_gettext("out of memory\n"));
+			fputs(libpq_gettext("out of memory\n"), stderr);
 			return;
 		}
 
@@ -642,7 +642,7 @@ PQdisplayTuples(const PGresult *res,
 				fill(strlen(PQfname(res, i)), fLength[i], ' ', fp);
 			fputs(fieldSep, fp);
 		}
-		fprintf(fp, "\n");
+		fputc('\n', fp);
 
 		/* Underline the attribute names */
 		for (i = 0; i < nFields; i++)
@@ -651,7 +651,7 @@ PQdisplayTuples(const PGresult *res,
 				fill(0, fLength[i], '-', fp);
 			fputs(fieldSep, fp);
 		}
-		fprintf(fp, "\n");
+		fputc('\n', fp);
 	}
 
 	/* next, print out the instances */
@@ -659,12 +659,12 @@ PQdisplayTuples(const PGresult *res,
 	{
 		for (j = 0; j < nFields; j++)
 		{
-			fprintf(fp, "%s", PQgetvalue(res, i, j));
+			fputs(PQgetvalue(res, i, j), fp);
 			if (fillAlign)
 				fill(strlen(PQgetvalue(res, i, j)), fLength[j], ' ', fp);
 			fputs(fieldSep, fp);
 		}
-		fprintf(fp, "\n");
+		fputc('\n', fp);
 	}
 
 	if (!quiet)
@@ -712,7 +712,7 @@ PQprintTuples(const PGresult *res,
 			tborder = (char *) malloc(width + 1);
 			if (!tborder)
 			{
-				fprintf(stderr, libpq_gettext("out of memory\n"));
+				fputs(libpq_gettext("out of memory\n"), stderr);
 				return;
 			}
 			for (i = 0; i < width; i++)
@@ -734,7 +734,7 @@ PQprintTuples(const PGresult *res,
 		if (PrintAttNames)
 		{
 			if (TerseOutput)
-				fprintf(fout, "\n");
+				fputc('\n', fout);
 			else
 				fprintf(fout, "|\n%s\n", tborder);
 		}
@@ -750,7 +750,7 @@ PQprintTuples(const PGresult *res,
 						pval ? pval : "");
 			}
 			if (TerseOutput)
-				fprintf(fout, "\n");
+				fputc('\n', fout);
 			else
 				fprintf(fout, "|\n%s\n", tborder);
 		}

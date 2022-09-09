@@ -495,7 +495,7 @@ verror(const char *string, va_list args)
 	if (rfilename != NULL)
 		fprintf(stderr, _(" (rule from \"%s\", line %d)"),
 				rfilename, rlinenum);
-	fprintf(stderr, "\n");
+	fputc('\n', stderr);
 }
 
 static void
@@ -514,7 +514,7 @@ warning(const char *string,...)
 {
 	va_list		args;
 
-	fprintf(stderr, _("warning: "));
+	fputs(_("warning: "), stderr);
 	va_start(args, string);
 	verror(string, args);
 	va_end(args);

@@ -582,7 +582,7 @@ create_script_for_old_cluster_deletion(char **deletion_script_file_name)
 
 #ifndef WIN32
 	/* add shebang header */
-	fprintf(script, "#!/bin/sh\n\n");
+	fputs("#!/bin/sh\n\n", script);
 #endif
 
 	/* delete old cluster's default tablespace */
@@ -601,7 +601,7 @@ create_script_for_old_cluster_deletion(char **deletion_script_file_name)
 			/* delete per-database directories */
 			int			dbnum;
 
-			fprintf(script, "\n");
+			fputc('\n', script);
 
 			for (dbnum = 0; dbnum < old_cluster.dbarr.ndbs; dbnum++)
 				fprintf(script, RMDIR_CMD " %c%s%c%u%c\n", PATH_QUOTE,

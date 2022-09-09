@@ -29,7 +29,7 @@ check_prepare_conn(PGconn *conn, const char *dbName)
 	/* check to see that the backend connection was successfully made */
 	if (PQstatus(conn) != CONNECTION_OK)
 	{
-		fprintf(stderr, "%s", PQerrorMessage(conn));
+		fputs(PQerrorMessage(conn), stderr);
 		exit(1);
 	}
 

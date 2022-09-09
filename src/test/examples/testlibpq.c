@@ -43,7 +43,7 @@ main(int argc, char **argv)
 	/* Check to see that the backend connection was successfully made */
 	if (PQstatus(conn) != CONNECTION_OK)
 	{
-		fprintf(stderr, "%s", PQerrorMessage(conn));
+		fputs(PQerrorMessage(conn), stderr);
 		exit_nicely(conn);
 	}
 

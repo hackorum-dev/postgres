@@ -750,7 +750,7 @@ make_absolute_path(const char *path)
 						(errcode(ERRCODE_OUT_OF_MEMORY),
 						 errmsg("out of memory")));
 #else
-				fprintf(stderr, _("out of memory\n"));
+				fputs(_("out of memory\n"), stderr);
 				return NULL;
 #endif
 			}
@@ -788,7 +788,7 @@ make_absolute_path(const char *path)
 					(errcode(ERRCODE_OUT_OF_MEMORY),
 					 errmsg("out of memory")));
 #else
-			fprintf(stderr, _("out of memory\n"));
+			fputs(_("out of memory\n"), stderr);
 			return NULL;
 #endif
 		}
@@ -805,7 +805,7 @@ make_absolute_path(const char *path)
 					(errcode(ERRCODE_OUT_OF_MEMORY),
 					 errmsg("out of memory")));
 #else
-			fprintf(stderr, _("out of memory\n"));
+			fputs(_("out of memory\n"), stderr);
 			return NULL;
 #endif
 		}

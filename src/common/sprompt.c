@@ -156,18 +156,18 @@ simple_prompt_extended(const char *prompt, bool echo,
 		/* restore previous echo behavior, then echo \n */
 #if defined(HAVE_TERMIOS_H)
 		tcsetattr(fileno(termin), TCSAFLUSH, &t_orig);
-		fputs("\n", termout);
+		fputc('\n', termout);
 		fflush(termout);
 #elif defined(WIN32)
 		SetConsoleMode(t, t_orig);
-		fputs("\n", termout);
+		fputc('\n', termout);
 		fflush(termout);
 #endif
 	}
 	else if (prompt_ctx && prompt_ctx->canceled)
 	{
 		/* also echo \n if prompt was canceled */
-		fputs("\n", termout);
+		fputc('\n', termout);
 		fflush(termout);
 	}
 

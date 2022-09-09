@@ -617,14 +617,13 @@ helpSQL(const char *topic, unsigned short int pager)
 
 		for (i = 0; i < nrows; i++)
 		{
-			fprintf(output, "  ");
+			fputs("  ", output);
 			for (j = 0; j < ncolumns - 1; j++)
 				fprintf(output, "%-*s",
 						QL_MAX_CMD_LEN + 1,
 						VALUE_OR_NULL(QL_HELP[i + j * nrows].cmd));
 			if (i + j * nrows < QL_HELP_COUNT)
-				fprintf(output, "%s",
-						VALUE_OR_NULL(QL_HELP[i + j * nrows].cmd));
+				fputs(VALUE_OR_NULL(QL_HELP[i + j * nrows].cmd), output);
 			fputc('\n', output);
 		}
 

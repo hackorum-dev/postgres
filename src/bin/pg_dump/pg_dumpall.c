@@ -535,7 +535,7 @@ main(int argc, char *argv[])
 	if (quote_all_identifiers)
 		executeCommand(conn, "SET quote_all_identifiers = true");
 
-	fprintf(OPF, "--\n-- PostgreSQL database cluster dump\n--\n\n");
+	fputs("--\n-- PostgreSQL database cluster dump\n--\n\n", OPF);
 	if (verbose)
 		dumpTimestamp("Started on");
 
@@ -547,15 +547,15 @@ main(int argc, char *argv[])
 	 */
 
 	/* Restore will need to write to the target cluster */
-	fprintf(OPF, "SET default_transaction_read_only = off;\n\n");
+	fputs("SET default_transaction_read_only = off;\n\n", OPF);
 
 	/* Replicate encoding and std_strings in output */
 	fprintf(OPF, "SET client_encoding = '%s';\n",
 			pg_encoding_to_char(encoding));
 	fprintf(OPF, "SET standard_conforming_strings = %s;\n", std_strings);
 	if (strcmp(std_strings, "off") == 0)
-		fprintf(OPF, "SET escape_string_warning = off;\n");
-	fprintf(OPF, "\n");
+		fputs("SET escape_string_warning = off;\n", OPF);
+	fputc('\n', OPF);
 
 	if (!data_only)
 	{
@@ -606,7 +606,7 @@ main(int argc, char *argv[])
 
 	if (verbose)
 		dumpTimestamp("Completed on");
-	fprintf(OPF, "--\n-- PostgreSQL database cluster dump complete\n--\n\n");
+	fputs("--\n-- PostgreSQL database cluster dump complete\n--\n\n", OPF);
 
 	if (filename)
 	{
@@ -716,7 +716,7 @@ dropRoles(PGconn *conn)
 	i_rolname = PQfnumber(res, "rolname");
 
 	if (PQntuples(res) > 0)
-		fprintf(OPF, "--\n-- Drop roles\n--\n\n");
+		fputs("--\n-- Drop roles\n--\n\n", OPF);
 
 	for (i = 0; i < PQntuples(res); i++)
 	{
@@ -732,7 +732,7 @@ dropRoles(PGconn *conn)
 	PQclear(res);
 	destroyPQExpBuffer(buf);
 
-	fprintf(OPF, "\n\n");
+	fputs("\n\n", OPF);
 }
 
 /*
@@ -811,7 +811,7 @@ dumpRoles(PGconn *conn)
 	i_is_current_user = PQfnumber(res, "is_current_user");
 
 	if (PQntuples(res) > 0)
-		fprintf(OPF, "--\n-- Roles\n--\n\n");
+		fputs("--\n-- Roles\n--\n\n", OPF);
 
 	for (i = 0; i < PQntuples(res); i++)
 	{
@@ -915,7 +915,7 @@ dumpRoles(PGconn *conn)
 							 "ROLE", rolename,
 							 buf);
 
-		fprintf(OPF, "%s", buf->data);
+		fputs(buf->data, OPF);
 	}
 
 	/*
@@ -924,14 +924,14 @@ dumpRoles(PGconn *conn)
 	 * names of other roles.
 	 */
 	if (PQntuples(res) > 0)
-		fprintf(OPF, "\n--\n-- User Configurations\n--\n");
+		fputs("\n--\n-- User Configurations\n--\n", OPF);
 
 	for (i = 0; i < PQntuples(res); i++)
 		dumpUserConfig(conn, PQgetvalue(res, i, i_rolname));
 
 	PQclear(res);
 
-	fprintf(OPF, "\n\n");
+	fputs("\n\n", OPF);
 
 	destroyPQExpBuffer(buf);
 }
@@ -989,7 +989,7 @@ dumpRoleMembership(PGconn *conn)
 	i_inherit_option = PQfnumber(res, "inherit_option");
 
 	if (PQntuples(res) > 0)
-		fprintf(OPF, "--\n-- Role memberships\n--\n\n");
+		fputs("--\n-- Role memberships\n--\n\n", OPF);
 
 	/*
 	 * We can't dump these GRANT commands in arbitary order, because a role
@@ -1111,7 +1111,7 @@ dumpRoleMembership(PGconn *conn)
 					fprintf(OPF, " WITH %s", optbuf->data);
 				if (dump_grantors)
 					fprintf(OPF, " GRANTED BY %s", fmtId(grantor));
-				fprintf(OPF, ";\n");
+				fputs(";\n", OPF);
 			}
 		}
 
@@ -1123,7 +1123,7 @@ dumpRoleMembership(PGconn *conn)
 	PQclear(res);
 	destroyPQExpBuffer(buf);
 
-	fprintf(OPF, "\n\n");
+	fputs("\n\n", OPF);
 }
 
 
@@ -1151,7 +1151,7 @@ dumpRoleGUCPrivs(PGconn *conn)
 					   "ORDER BY 1");
 
 	if (PQntuples(res) > 0)
-		fprintf(OPF, "--\n-- Role privileges on configuration parameters\n--\n\n");
+		fputs("--\n-- Role privileges on configuration parameters\n--\n\n", OPF);
 
 	for (i = 0; i < PQntuples(res); i++)
 	{
@@ -1175,14 +1175,14 @@ dumpRoleGUCPrivs(PGconn *conn)
 			exit_nicely(1);
 		}
 
-		fprintf(OPF, "%s", buf->data);
+		fputs(buf->data, OPF);
 
 		free(fparname);
 		destroyPQExpBuffer(buf);
 	}
 
 	PQclear(res);
-	fprintf(OPF, "\n\n");
+	fputs("\n\n", OPF);
 }
 
 
@@ -1205,7 +1205,7 @@ dropTablespaces(PGconn *conn)
 					   "ORDER BY 1");
 
 	if (PQntuples(res) > 0)
-		fprintf(OPF, "--\n-- Drop tablespaces\n--\n\n");
+		fputs("--\n-- Drop tablespaces\n--\n\n", OPF);
 
 	for (i = 0; i < PQntuples(res); i++)
 	{
@@ -1218,7 +1218,7 @@ dropTablespaces(PGconn *conn)
 
 	PQclear(res);
 
-	fprintf(OPF, "\n\n");
+	fputs("\n\n", OPF);
 }
 
 /*
@@ -1245,7 +1245,7 @@ dumpTablespaces(PGconn *conn)
 					   "ORDER BY 1");
 
 	if (PQntuples(res) > 0)
-		fprintf(OPF, "--\n-- Tablespaces\n--\n\n");
+		fputs("--\n-- Tablespaces\n--\n\n", OPF);
 
 	for (i = 0; i < PQntuples(res); i++)
 	{
@@ -1305,14 +1305,14 @@ dumpTablespaces(PGconn *conn)
 							 "TABLESPACE", spcname,
 							 buf);
 
-		fprintf(OPF, "%s", buf->data);
+		fputs(buf->data, OPF);
 
 		free(fspcname);
 		destroyPQExpBuffer(buf);
 	}
 
 	PQclear(res);
-	fprintf(OPF, "\n\n");
+	fputs("\n\n", OPF);
 }
 
 
@@ -1336,7 +1336,7 @@ dropDBs(PGconn *conn)
 					   "ORDER BY datname");
 
 	if (PQntuples(res) > 0)
-		fprintf(OPF, "--\n-- Drop databases (except postgres and template1)\n--\n\n");
+		fputs("--\n-- Drop databases (except postgres and template1)\n--\n\n", OPF);
 
 	for (i = 0; i < PQntuples(res); i++)
 	{
@@ -1359,7 +1359,7 @@ dropDBs(PGconn *conn)
 
 	PQclear(res);
 
-	fprintf(OPF, "\n\n");
+	fputs("\n\n", OPF);
 }
 
 
@@ -1390,7 +1390,7 @@ dumpUserConfig(PGconn *conn, const char *username)
 		makeAlterConfigCommand(conn, PQgetvalue(res, i, 0),
 							   "ROLE", username, NULL, NULL,
 							   buf);
-		fprintf(OPF, "%s", buf->data);
+		fputs(buf->data, OPF);
 	}
 
 	PQclear(res);
@@ -1479,7 +1479,7 @@ dumpDatabases(PGconn *conn)
 					   "ORDER BY (datname <> 'template1'), datname");
 
 	if (PQntuples(res) > 0)
-		fprintf(OPF, "--\n-- Databases\n--\n\n");
+		fputs("--\n-- Databases\n--\n\n", OPF);
 
 	for (i = 0; i < PQntuples(res); i++)
 	{

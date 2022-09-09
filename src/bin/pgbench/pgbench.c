@@ -2532,7 +2532,7 @@ evalStandardFunc(CState *st,
 						st->use_file, st->command + 1);
 
 				if (varg->type == PGBT_NULL)
-					fprintf(stderr, "null\n");
+					fputs("null\n", stderr);
 				else if (varg->type == PGBT_BOOLEAN)
 					fprintf(stderr, "boolean %s\n", varg->u.bval ? "true" : "false");
 				else if (varg->type == PGBT_INT)
@@ -4633,7 +4633,7 @@ disconnect_all(CState *state, int length)
 static void
 initDropTables(PGconn *con)
 {
-	fprintf(stderr, "dropping old tables...\n");
+	fputs("dropping old tables...\n", stderr);
 
 	/*
 	 * We drop all the tables in one command, so that whether there are
@@ -4771,7 +4771,7 @@ initCreateTables(PGconn *con)
 	int			i;
 	PQExpBufferData query;
 
-	fprintf(stderr, "creating tables...\n");
+	fputs("creating tables...\n", stderr);
 
 	initPQExpBuffer(&query);
 
@@ -4845,7 +4845,7 @@ initGenerateDataClientSide(PGconn *con)
 	/* Stay on the same line if reporting to a terminal */
 	char		eol = isatty(fileno(stderr)) ? '\r' : '\n';
 
-	fprintf(stderr, "generating data (client-side)...\n");
+	fputs("generating data (client-side)...\n", stderr);
 
 	/*
 	 * we do all of this in one transaction to enable the backend's
@@ -4970,7 +4970,7 @@ initGenerateDataServerSide(PGconn *con)
 {
 	PQExpBufferData sql;
 
-	fprintf(stderr, "generating data (server-side)...\n");
+	fputs("generating data (server-side)...\n", stderr);
 
 	/*
 	 * we do all of this in one transaction to enable the backend's
@@ -5013,7 +5013,7 @@ initGenerateDataServerSide(PGconn *con)
 static void
 initVacuum(PGconn *con)
 {
-	fprintf(stderr, "vacuuming...\n");
+	fputs("vacuuming...\n", stderr);
 	executeStatement(con, "vacuum analyze pgbench_branches");
 	executeStatement(con, "vacuum analyze pgbench_tellers");
 	executeStatement(con, "vacuum analyze pgbench_accounts");
@@ -5034,7 +5034,7 @@ initCreatePKeys(PGconn *con)
 	int			i;
 	PQExpBufferData query;
 
-	fprintf(stderr, "creating primary keys...\n");
+	fputs("creating primary keys...\n", stderr);
 	initPQExpBuffer(&query);
 
 	for (i = 0; i < lengthof(DDLINDEXes); i++)
@@ -5073,7 +5073,7 @@ initCreateFKeys(PGconn *con)
 	};
 	int			i;
 
-	fprintf(stderr, "creating foreign keys...\n");
+	fputs("creating foreign keys...\n", stderr);
 	for (i = 0; i < lengthof(DDLKEYs); i++)
 	{
 		executeStatement(con, DDLKEYs[i]);
@@ -5992,10 +5992,10 @@ listAvailableScripts(void)
 {
 	int			i;
 
-	fprintf(stderr, "Available builtin scripts:\n");
+	fputs("Available builtin scripts:\n", stderr);
 	for (i = 0; i < lengthof(builtin_script); i++)
 		fprintf(stderr, "  %13s: %s\n", builtin_script[i].name, builtin_script[i].desc);
-	fprintf(stderr, "\n");
+	fputc('\n', stderr);
 }
 
 /* return builtin script "name" if unambiguous, fails if not found */
@@ -6181,7 +6181,7 @@ printProgressReport(TState *threads, int64 test_start, pg_time_usec_t now,
 		fprintf(stderr,
 				", " INT64_FORMAT " retried, " INT64_FORMAT " retries",
 				retried, cur.retries - last->retries);
-	fprintf(stderr, "\n");
+	fputc('\n', stderr);
 
 	*last = cur;
 	*last_report = now;
@@ -7138,17 +7138,17 @@ main(int argc, char **argv)
 
 	if (!is_no_vacuum)
 	{
-		fprintf(stderr, "starting vacuum...");
+		fputs("starting vacuum...", stderr);
 		tryExecuteStatement(con, "vacuum pgbench_branches");
 		tryExecuteStatement(con, "vacuum pgbench_tellers");
 		tryExecuteStatement(con, "truncate pgbench_history");
-		fprintf(stderr, "end.\n");
+		fputs("end.\n", stderr);
 
 		if (do_vacuum_accounts)
 		{
-			fprintf(stderr, "starting vacuum pgbench_accounts...");
+			fputs("starting vacuum pgbench_accounts...", stderr);
 			tryExecuteStatement(con, "vacuum analyze pgbench_accounts");
-			fprintf(stderr, "end.\n");
+			fputs("end.\n", stderr);
 		}
 	}
 	PQfinish(con);

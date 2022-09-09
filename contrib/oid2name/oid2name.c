@@ -422,7 +422,7 @@ sql_exec(PGconn *conn, const char *todo, bool quiet)
 			fprintf(stdout, "%*s", length[j] + 2, PQfname(res, j));
 			l += length[j] + 2;
 		}
-		fprintf(stdout, "\n");
+		fputc('\n', stdout);
 		pad = (char *) pg_malloc(l + 1);
 		memset(pad, '-', l);
 		pad[l] = '\0';
@@ -435,7 +435,7 @@ sql_exec(PGconn *conn, const char *todo, bool quiet)
 	{
 		for (j = 0; j < nfields; j++)
 			fprintf(stdout, "%*s", length[j] + 2, PQgetvalue(res, i, j));
-		fprintf(stdout, "\n");
+		fputc('\n', stdout);
 	}
 
 	/* cleanup */

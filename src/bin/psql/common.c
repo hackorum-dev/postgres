@@ -309,12 +309,12 @@ CheckConnection(void)
 			exit(EXIT_BADCONN);
 		}
 
-		fprintf(stderr, _("The connection to the server was lost. Attempting reset: "));
+		fputs(_("The connection to the server was lost. Attempting reset: "), stderr);
 		PQreset(pset.db);
 		OK = ConnectionUp();
 		if (!OK)
 		{
-			fprintf(stderr, _("Failed.\n"));
+			fputs(_("Failed.\n"), stderr);
 
 			/*
 			 * Transition to having no connection; but stash away the failed
@@ -331,7 +331,7 @@ CheckConnection(void)
 		}
 		else
 		{
-			fprintf(stderr, _("Succeeded.\n"));
+			fputs(_("Succeeded.\n"), stderr);
 
 			/*
 			 * Re-sync, just in case anything changed.  Keep this in sync with
@@ -1404,8 +1404,7 @@ DescribeQuery(const char *query, double *elapsed_msec)
 			termPQExpBuffer(&buf);
 		}
 		else
-			fprintf(pset.queryFout,
-					_("The command has no result, or the result has no columns.\n"));
+			fputs(_("The command has no result, or the result has no columns.\n"), pset.queryFout);
 	}
 
 	SetResultVariables(result, OK);

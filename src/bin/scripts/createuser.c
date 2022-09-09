@@ -233,7 +233,7 @@ main(int argc, char *argv[])
 		pw2 = simple_prompt("Enter it again: ", false);
 		if (strcmp(newpassword, pw2) != 0)
 		{
-			fprintf(stderr, _("Passwords didn't match.\n"));
+			fputs(_("Passwords didn't match.\n"), stderr);
 			exit(1);
 		}
 		free(pw2);

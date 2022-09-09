@@ -68,7 +68,7 @@ psql_start_test(const char *testname,
 						   "%s ", launcher);
 		if (offset >= sizeof(psql_cmd))
 		{
-			fprintf(stderr, _("command too long\n"));
+			fputs(_("command too long\n"), stderr);
 			exit(2);
 		}
 	}
@@ -87,7 +87,7 @@ psql_start_test(const char *testname,
 					   outfile);
 	if (offset >= sizeof(psql_cmd))
 	{
-		fprintf(stderr, _("command too long\n"));
+		fputs(_("command too long\n"), stderr);
 		exit(2);
 	}
 

@@ -5601,10 +5601,10 @@ CreateOptsFile(int argc, char *argv[], char *fullprogname)
 		return false;
 	}
 
-	fprintf(fp, "%s", fullprogname);
+	fputs(fullprogname, fp);
 	for (i = 1; i < argc; i++)
 		fprintf(fp, " \"%s\"", argv[i]);
-	fputs("\n", fp);
+	fputc('\n', fp);
 
 	if (fclose(fp))
 	{

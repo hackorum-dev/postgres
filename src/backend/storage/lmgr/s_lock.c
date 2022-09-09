@@ -139,7 +139,7 @@ perform_spin_delay(SpinDelayStatus *status)
 		pg_usleep(status->cur_delay);
 
 #if defined(S_LOCK_TEST)
-		fprintf(stdout, "*");
+		fputc('*', stdout);
 		fflush(stdout);
 #endif
 

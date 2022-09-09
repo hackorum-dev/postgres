@@ -142,7 +142,7 @@ pvsnprintf(char *buf, size_t len, const char *fmt, va_list args)
 				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
 				 errmsg("out of memory")));
 #else
-		fprintf(stderr, _("out of memory\n"));
+		fputs(_("out of memory\n"), stderr);
 		exit(EXIT_FAILURE);
 #endif
 	}

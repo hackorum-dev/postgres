@@ -40,7 +40,7 @@ main(int argc, char *argv[])
 	defs = PQconndefaults();
 	if (defs == NULL)
 	{
-		fprintf(stderr, "libpq_uri_regress: cannot fetch default options\n");
+		fputs("libpq_uri_regress: cannot fetch default options\n", stderr);
 		return 1;
 	}
 

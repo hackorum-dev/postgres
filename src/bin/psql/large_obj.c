@@ -32,7 +32,7 @@ print_lo_result(const char *fmt,...)
 		if (pset.popt.topt.format == PRINT_HTML)
 			fputs("</p>\n", pset.queryFout);
 		else
-			fputs("\n", pset.queryFout);
+			fputc('\n', pset.queryFout);
 	}
 
 	if (pset.logfile)
@@ -40,7 +40,7 @@ print_lo_result(const char *fmt,...)
 		va_start(ap, fmt);
 		vfprintf(pset.logfile, fmt, ap);
 		va_end(ap);
-		fputs("\n", pset.logfile);
+		fputc('\n', pset.logfile);
 	}
 }
 

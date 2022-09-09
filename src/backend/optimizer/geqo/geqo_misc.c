@@ -114,17 +114,17 @@ print_edge_table(FILE *fp, Edge *edge_table, int num_gene)
 	int			i,
 				j;
 
-	fprintf(fp, "\nEDGE TABLE\n");
+	fputs("\nEDGE TABLE\n", fp);
 
 	for (i = 1; i <= num_gene; i++)
 	{
 		fprintf(fp, "%d :", i);
 		for (j = 0; j < edge_table[i].unused_edges; j++)
 			fprintf(fp, " %d", edge_table[i].edge_list[j]);
-		fprintf(fp, "\n");
+		fputc('\n', fp);
 	}
 
-	fprintf(fp, "\n");
+	fputc('\n', fp);
 
 	fflush(fp);
 }

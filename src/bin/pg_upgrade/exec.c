@@ -159,13 +159,13 @@ exec_prog(const char *log_filename, const char *opt_log_file,
 #ifdef WIN32
 	/* Are we printing "command:" before its output? */
 	if (mainThreadId == GetCurrentThreadId())
-		fprintf(log, "\n\n");
+		fputs("\n\n", log);
 #endif
 	fprintf(log, "command: %s\n", cmd);
 #ifdef WIN32
 	/* Are we printing "command:" after its output? */
 	if (mainThreadId != GetCurrentThreadId())
-		fprintf(log, "\n\n");
+		fputs("\n\n", log);
 #endif
 
 	/*
@@ -213,7 +213,7 @@ exec_prog(const char *log_filename, const char *opt_log_file,
 	 */
 	if ((log = fopen(log_file, "a")) == NULL)
 		pg_fatal("could not write to log file \"%s\": %m", log_file);
-	fprintf(log, "\n\n");
+	fputs("\n\n", log);
 	fclose(log);
 #endif
 

@@ -1640,7 +1640,7 @@ print_aligned_vertical(const printTableContent *cont,
 		{
 			/* Left border */
 			if (opt_border == 2)
-				fprintf(fout, "%s", dformat->leftvrule);
+				fputs(dformat->leftvrule, fout);
 
 			/* Header (never wrapped so just need to deal with newlines) */
 			if (!hcomplete)
@@ -1685,7 +1685,7 @@ print_aligned_vertical(const printTableContent *cont,
 					/* This was the last line of the header */
 					if ((opt_border > 0) ||
 						(hmultiline && (format != &pg_asciiformat_old)))
-						fputs(" ", fout);
+						fputc(' ', fout);
 					hcomplete = 1;
 				}
 			}
@@ -1775,7 +1775,7 @@ print_aligned_vertical(const printTableContent *cont,
 					{
 						if (swidth > 0)
 							fprintf(fout, "%*s", swidth, " ");
-						fputs(" ", fout);
+						fputc(' ', fout);
 					}
 					dcomplete = 1;
 				}
@@ -1784,7 +1784,7 @@ print_aligned_vertical(const printTableContent *cont,
 				if (opt_border == 2)
 					fputs(dformat->rightvrule, fout);
 
-				fputs("\n", fout);
+				fputc('\n', fout);
 			}
 			else
 			{
@@ -1793,7 +1793,7 @@ print_aligned_vertical(const printTableContent *cont,
 				 * data due to newlines in the header)
 				 */
 				if (opt_border < 2)
-					fputs("\n", fout);
+					fputc('\n', fout);
 				else
 					fprintf(fout, "%*s  %s\n", dwidth, "", dformat->rightvrule);
 			}
@@ -1977,7 +1977,7 @@ html_escaped_print(const char *in, FILE *fout)
 				if (leading_space)
 					fputs("&nbsp;", fout);
 				else
-					fputs(" ", fout);
+					fputc(' ', fout);
 				break;
 			default:
 				fputc(*p, fout);
@@ -2195,14 +2195,14 @@ print_asciidoc_text(const printTableContent *cont, FILE *fout)
 	if (cont->opt->start_table)
 	{
 		/* print table in new paragraph - enforce preliminary new line */
-		fputs("\n", fout);
+		fputc('\n', fout);
 
 		/* print title */
 		if (!opt_tuples_only && cont->title)
 		{
-			fputs(".", fout);
+			fputc('.', fout);
 			fputs(cont->title, fout);
-			fputs("\n", fout);
+			fputc('\n', fout);
 		}
 
 		/* print table [] header definition */
@@ -2210,10 +2210,10 @@ print_asciidoc_text(const printTableContent *cont, FILE *fout)
 		for (i = 0; i < cont->ncolumns; i++)
 		{
 			if (i != 0)
-				fputs(",", fout);
-			fprintf(fout, "%s", cont->aligns[(i) % cont->ncolumns] == 'r' ? ">l" : "<l");
+				fputc(',', fout);
+			fputs((cont->aligns[(i) % cont->ncolumns]) == 'r' ? ">l" : "<l", fout);
 		}
-		fputs("\"", fout);
+		fputc('"', fout);
 		switch (opt_border)
 		{
 			case 0:
@@ -2235,11 +2235,11 @@ print_asciidoc_text(const printTableContent *cont, FILE *fout)
 			for (ptr = cont->headers; *ptr; ptr++)
 			{
 				if (ptr != cont->headers)
-					fputs(" ", fout);
+					fputc(' ', fout);
 				fputs("^l|", fout);
 				asciidoc_escaped_print(*ptr, fout);
 			}
-			fputs("\n", fout);
+			fputc('\n', fout);
 		}
 	}
 
@@ -2253,20 +2253,20 @@ print_asciidoc_text(const printTableContent *cont, FILE *fout)
 		}
 
 		if (i % cont->ncolumns != 0)
-			fputs(" ", fout);
-		fputs("|", fout);
+			fputc(' ', fout);
+		fputc('|', fout);
 
 		/* protect against needless spaces */
 		if ((*ptr)[strspn(*ptr, " \t")] == '\0')
 		{
 			if ((i + 1) % cont->ncolumns != 0)
-				fputs(" ", fout);
+				fputc(' ', fout);
 		}
 		else
 			asciidoc_escaped_print(*ptr, fout);
 
 		if ((i + 1) % cont->ncolumns == 0)
-			fputs("\n", fout);
+			fputc('\n', fout);
 	}
 
 	fputs("|====\n", fout);
@@ -2284,7 +2284,7 @@ print_asciidoc_text(const printTableContent *cont, FILE *fout)
 			for (f = footers; f; f = f->next)
 			{
 				fputs(f->data, fout);
-				fputs("\n", fout);
+				fputc('\n', fout);
 			}
 			fputs("....\n", fout);
 		}
@@ -2306,14 +2306,14 @@ print_asciidoc_vertical(const printTableContent *cont, FILE *fout)
 	if (cont->opt->start_table)
 	{
 		/* print table in new paragraph - enforce preliminary new line */
-		fputs("\n", fout);
+		fputc('\n', fout);
 
 		/* print title */
 		if (!opt_tuples_only && cont->title)
 		{
-			fputs(".", fout);
+			fputc('.', fout);
 			fputs(cont->title, fout);
-			fputs("\n", fout);
+			fputc('\n', fout);
 		}
 
 		/* print table [] header definition */
@@ -2355,10 +2355,10 @@ print_asciidoc_vertical(const printTableContent *cont, FILE *fout)
 		fprintf(fout, " %s|", cont->aligns[i % cont->ncolumns] == 'r' ? ">l" : "<l");
 		/* is string only whitespace? */
 		if ((*ptr)[strspn(*ptr, " \t")] == '\0')
-			fputs(" ", fout);
+			fputc(' ', fout);
 		else
 			asciidoc_escaped_print(*ptr, fout);
-		fputs("\n", fout);
+		fputc('\n', fout);
 	}
 
 	fputs("|====\n", fout);
@@ -2374,7 +2374,7 @@ print_asciidoc_vertical(const printTableContent *cont, FILE *fout)
 			for (f = cont->footers; f; f = f->next)
 			{
 				fputs(f->data, fout);
-				fputs("\n", fout);
+				fputc('\n', fout);
 			}
 			fputs("....\n", fout);
 		}
@@ -3150,7 +3150,7 @@ ClosePager(FILE *pagerpipe)
 		 * anywhere ...
 		 */
 		if (cancel_pressed)
-			fprintf(pagerpipe, _("Interrupted\n"));
+			fputs(_("Interrupted\n"), pagerpipe);
 
 		pclose(pagerpipe);
 		restore_sigpipe_trap();

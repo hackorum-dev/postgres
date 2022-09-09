@@ -2517,7 +2517,7 @@ dump(regex_t *re,
 		fprintf(f, "\nla%d (%s):\n", i, latype);
 		dumpcnfa(&lasub->cnfa, f);
 	}
-	fprintf(f, "\n");
+	fputc('\n', f);
 	dumpst(g->tree, f, 0);
 }
 
@@ -2530,7 +2530,7 @@ dumpst(struct subre *t,
 	   int nfapresent)			/* is the original NFA still around? */
 {
 	if (t == NULL)
-		fprintf(f, "null tree\n");
+		fputs("null tree\n", f);
 	else
 		stdump(t, f, nfapresent);
 	fflush(f);
@@ -2586,10 +2586,10 @@ stdump(struct subre *t,
 		fprintf(f, " S:%s", stid(t->sibling, idbuf, sizeof(idbuf)));
 	if (!NULLCNFA(t->cnfa))
 	{
-		fprintf(f, "\n");
+		fputc('\n', f);
 		dumpcnfa(&t->cnfa, f);
 	}
-	fprintf(f, "\n");
+	fputc('\n', f);
 	for (t2 = t->child; t2 != NULL; t2 = t2->sibling)
 		stdump(t2, f, nfapresent);
 }

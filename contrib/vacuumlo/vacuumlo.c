@@ -133,7 +133,7 @@ vacuumlo(const char *database, const struct _param *param)
 	{
 		fprintf(stdout, "Connected to database \"%s\"\n", database);
 		if (param->dry_run)
-			fprintf(stdout, "Test run: no large objects will be removed!\n");
+			fputs("Test run: no large objects will be removed!\n", stdout);
 	}
 
 	res = PQexec(conn, ALWAYS_SECURE_SEARCH_PATH_SQL);

@@ -1904,11 +1904,11 @@ BaseBackup(char *compression_algorithm, char *compression_detail,
 
 	if (showprogress && !verbose)
 	{
-		fprintf(stderr, "waiting for checkpoint");
+		fputs("waiting for checkpoint", stderr);
 		if (isatty(fileno(stderr)))
-			fprintf(stderr, "\r");
+			fputc('\r', stderr);
 		else
-			fprintf(stderr, "\n");
+			fputc('\n', stderr);
 	}
 
 	if (use_new_option_syntax && buf.len > 0)

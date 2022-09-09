@@ -1243,7 +1243,7 @@ exec_command_echo(PsqlScanState scan_state, bool active_branch, const char *cmd)
 			free(value);
 		}
 		if (!no_newline)
-			fputs("\n", fout);
+			fputc('\n', fout);
 	}
 	else
 		ignore_slash_options(scan_state);
@@ -5212,7 +5212,7 @@ do_watch(PQExpBuffer query_buf, double sleep)
 		 * using a pager, because pagers are expected to restore the screen to
 		 * a sane state on exit.
 		 */
-		fprintf(stdout, "\n");
+		fputc('\n', stdout);
 		fflush(stdout);
 	}
 
