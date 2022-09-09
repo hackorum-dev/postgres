@@ -2104,7 +2104,7 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 		xl_heap_header xlhdr;
 		XLogRecPtr	recptr;
 		Page		page = BufferGetPage(buffer);
-		uint8		info = XLOG_HEAP_INSERT;
+		uint8		rminfo = XLOG_HEAP_INSERT;
 		int			bufflags = 0;
 
 		/*
@@ -2122,7 +2122,7 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 		if (ItemPointerGetOffsetNumber(&(heaptup->t_self)) == FirstOffsetNumber &&
 			PageGetMaxOffsetNumber(page) == FirstOffsetNumber)
 		{
-			info |= XLOG_HEAP_INIT_PAGE;
+			rminfo |= XLOG_HEAP_INIT_PAGE;
 			bufflags |= REGBUF_WILL_INIT;
 		}
 
@@ -2171,7 +2171,7 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 		/* filtering by origin on a row level is much more efficient */
 		XLogSetRecordFlags(XLOG_INCLUDE_ORIGIN);
 
-		recptr = XLogInsert(RM_HEAP_ID, info);
+		recptr = XLogInsert(RM_HEAP_ID, rminfo);
 
 		PageSetLSN(page, recptr);
 	}
@@ -2415,7 +2415,7 @@ heap_multi_insert(Relation relation, TupleTableSlot **slots, int ntuples,
 		{
 			XLogRecPtr	recptr;
 			xl_heap_multi_insert *xlrec;
-			uint8		info = XLOG_HEAP2_MULTI_INSERT;
+			uint8		rminfo = XLOG_HEAP2_MULTI_INSERT;
 			char	   *tupledata;
 			int			totaldatalen;
 			char	   *scratchptr = scratch.data;
@@ -2499,7 +2499,7 @@ heap_multi_insert(Relation relation, TupleTableSlot **slots, int ntuples,
 
 			if (init)
 			{
-				info |= XLOG_HEAP_INIT_PAGE;
+				rminfo |= XLOG_HEAP_INIT_PAGE;
 				bufflags |= REGBUF_WILL_INIT;
 			}
 
@@ -2519,7 +2519,7 @@ heap_multi_insert(Relation relation, TupleTableSlot **slots, int ntuples,
 			/* filtering by origin on a row level is much more efficient */
 			XLogSetRecordFlags(XLOG_INCLUDE_ORIGIN);
 
-			recptr = XLogInsert(RM_HEAP2_ID, info);
+			recptr = XLogInsert(RM_HEAP2_ID, rminfo);
 
 			PageSetLSN(page, recptr);
 		}
@@ -8237,7 +8237,7 @@ log_heap_update(Relation reln, Buffer oldbuf,
 	xl_heap_update xlrec;
 	xl_heap_header xlhdr;
 	xl_heap_header xlhdr_idx;
-	uint8		info;
+	uint8		rminfo;
 	uint16		prefix_suffix[2];
 	uint16		prefixlen = 0,
 				suffixlen = 0;
@@ -8253,9 +8253,9 @@ log_heap_update(Relation reln, Buffer oldbuf,
 	XLogBeginInsert();
 
 	if (HeapTupleIsHeapOnly(newtup))
-		info = XLOG_HEAP_HOT_UPDATE;
+		rminfo = XLOG_HEAP_HOT_UPDATE;
 	else
-		info = XLOG_HEAP_UPDATE;
+		rminfo = XLOG_HEAP_UPDATE;
 
 	/*
 	 * If the old and new tuple are on the same page, we only need to log the
@@ -8335,7 +8335,7 @@ log_heap_update(Relation reln, Buffer oldbuf,
 	if (ItemPointerGetOffsetNumber(&(newtup->t_self)) == FirstOffsetNumber &&
 		PageGetMaxOffsetNumber(page) == FirstOffsetNumber)
 	{
-		info |= XLOG_HEAP_INIT_PAGE;
+		rminfo |= XLOG_HEAP_INIT_PAGE;
 		init = true;
 	}
 	else
@@ -8439,7 +8439,7 @@ log_heap_update(Relation reln, Buffer oldbuf,
 	/* filtering by origin on a row level is much more efficient */
 	XLogSetRecordFlags(XLOG_INCLUDE_ORIGIN);
 
-	recptr = XLogInsert(RM_HEAP_ID, info);
+	recptr = XLogInsert(RM_HEAP_ID, rminfo);
 
 	return recptr;
 }
@@ -9122,7 +9122,7 @@ heap_xlog_insert(XLogReaderState *record)
 	 * If we inserted the first and only tuple on the page, re-initialize the
 	 * page from scratch.
 	 */
-	if (XLogRecGetInfo(record) & XLOG_HEAP_INIT_PAGE)
+	if (XLogRecGetRmInfo(record) & XLOG_HEAP_INIT_PAGE)
 	{
 		buffer = XLogInitBufferForRedo(record, 0);
 		page = BufferGetPage(buffer);
@@ -9216,7 +9216,7 @@ heap_xlog_multi_insert(XLogReaderState *record)
 	uint32		newlen;
 	Size		freespace = 0;
 	int			i;
-	bool		isinit = (XLogRecGetInfo(record) & XLOG_HEAP_INIT_PAGE) != 0;
+	bool		isinit = (XLogRecGetRmInfo(record) & XLOG_HEAP_INIT_PAGE) != 0;
 	XLogRedoAction action;
 
 	/*
@@ -9464,7 +9464,7 @@ heap_xlog_update(XLogReaderState *record, bool hot_update)
 		nbuffer = obuffer;
 		newaction = oldaction;
 	}
-	else if (XLogRecGetInfo(record) & XLOG_HEAP_INIT_PAGE)
+	else if (XLogRecGetRmInfo(record) & XLOG_HEAP_INIT_PAGE)
 	{
 		nbuffer = XLogInitBufferForRedo(record, 0);
 		page = (Page) BufferGetPage(nbuffer);
@@ -9828,14 +9828,14 @@ heap_xlog_inplace(XLogReaderState *record)
 void
 heap_redo(XLogReaderState *record)
 {
-	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+	uint8		rminfo = XLogRecGetRmInfo(record);
 
 	/*
 	 * These operations don't overwrite MVCC data so no conflict processing is
 	 * required. The ones in heap2 rmgr do.
 	 */
 
-	switch (info & XLOG_HEAP_OPMASK)
+	switch (rminfo & XLOG_HEAP_OPMASK)
 	{
 		case XLOG_HEAP_INSERT:
 			heap_xlog_insert(record);
@@ -9867,16 +9867,16 @@ heap_redo(XLogReaderState *record)
 			heap_xlog_inplace(record);
 			break;
 		default:
-			elog(PANIC, "heap_redo: unknown op code %u", info);
+			elog(PANIC, "heap_redo: unknown op code %u", rminfo);
 	}
 }
 
 void
 heap2_redo(XLogReaderState *record)
 {
-	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+	uint8		rminfo = XLogRecGetRmInfo(record);
 
-	switch (info & XLOG_HEAP_OPMASK)
+	switch (rminfo & XLOG_HEAP_OPMASK)
 	{
 		case XLOG_HEAP2_PRUNE:
 			heap_xlog_prune(record);
@@ -9907,7 +9907,7 @@ heap2_redo(XLogReaderState *record)
 			heap_xlog_logical_rewrite(record);
 			break;
 		default:
-			elog(PANIC, "heap2_redo: unknown op code %u", info);
+			elog(PANIC, "heap2_redo: unknown op code %u", rminfo);
 	}
 }
 

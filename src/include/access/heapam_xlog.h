@@ -394,11 +394,11 @@ extern void HeapTupleHeaderAdvanceLatestRemovedXid(HeapTupleHeader tuple,
 
 extern void heap_redo(XLogReaderState *record);
 extern void heap_desc(StringInfo buf, XLogReaderState *record);
-extern const char *heap_identify(uint8 info);
+extern const char *heap_identify(uint8 rminfo);
 extern void heap_mask(char *pagedata, BlockNumber blkno);
 extern void heap2_redo(XLogReaderState *record);
 extern void heap2_desc(StringInfo buf, XLogReaderState *record);
-extern const char *heap2_identify(uint8 info);
+extern const char *heap2_identify(uint8 rminfo);
 extern void heap_xlog_logical_rewrite(XLogReaderState *r);
 
 extern XLogRecPtr log_heap_freeze(Relation reln, Buffer buffer,

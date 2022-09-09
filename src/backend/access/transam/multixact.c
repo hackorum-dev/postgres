@@ -365,7 +365,7 @@ static bool MultiXactOffsetWouldWrap(MultiXactOffset boundary,
 									 MultiXactOffset start, uint32 distance);
 static bool SetOffsetVacuumLimit(bool is_startup);
 static bool find_multixact_start(MultiXactId multi, MultiXactOffset *result);
-static void WriteMZeroPageXlogRec(int pageno, uint8 info);
+static void WriteMZeroPageXlogRec(int pageno, uint8 rminfo);
 static void WriteMTruncateXlogRec(Oid oldestMultiDB,
 								  MultiXactId startTruncOff,
 								  MultiXactId endTruncOff,
@@ -3193,11 +3193,11 @@ MultiXactOffsetPrecedes(MultiXactOffset offset1, MultiXactOffset offset2)
  * OFFSETs page (info shows which)
  */
 static void
-WriteMZeroPageXlogRec(int pageno, uint8 info)
+WriteMZeroPageXlogRec(int pageno, uint8 rminfo)
 {
 	XLogBeginInsert();
 	XLogRegisterData((char *) (&pageno), sizeof(int));
-	(void) XLogInsert(RM_MULTIXACT_ID, info);
+	(void) XLogInsert(RM_MULTIXACT_ID, rminfo);
 }
 
 /*
@@ -3234,12 +3234,12 @@ WriteMTruncateXlogRec(Oid oldestMultiDB,
 void
 multixact_redo(XLogReaderState *record)
 {
-	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+	uint8		rminfo = XLogRecGetRmInfo(record);
 
 	/* Backup blocks are not used in multixact records */
 	Assert(!XLogRecHasAnyBlockRefs(record));
 
-	if (info == XLOG_MULTIXACT_ZERO_OFF_PAGE)
+	if (rminfo == XLOG_MULTIXACT_ZERO_OFF_PAGE)
 	{
 		int			pageno;
 		int			slotno;
@@ -3254,7 +3254,7 @@ multixact_redo(XLogReaderState *record)
 
 		LWLockRelease(MultiXactOffsetSLRULock);
 	}
-	else if (info == XLOG_MULTIXACT_ZERO_MEM_PAGE)
+	else if (rminfo == XLOG_MULTIXACT_ZERO_MEM_PAGE)
 	{
 		int			pageno;
 		int			slotno;
@@ -3269,7 +3269,7 @@ multixact_redo(XLogReaderState *record)
 
 		LWLockRelease(MultiXactMemberSLRULock);
 	}
-	else if (info == XLOG_MULTIXACT_CREATE_ID)
+	else if (rminfo == XLOG_MULTIXACT_CREATE_ID)
 	{
 		xl_multixact_create *xlrec =
 		(xl_multixact_create *) XLogRecGetData(record);
@@ -3298,7 +3298,7 @@ multixact_redo(XLogReaderState *record)
 
 		AdvanceNextFullTransactionIdPastXid(max_xid);
 	}
-	else if (info == XLOG_MULTIXACT_TRUNCATE_ID)
+	else if (rminfo == XLOG_MULTIXACT_TRUNCATE_ID)
 	{
 		xl_multixact_truncate xlrec;
 		int			pageno;
@@ -3339,7 +3339,7 @@ multixact_redo(XLogReaderState *record)
 		LWLockRelease(MultiXactTruncationLock);
 	}
 	else
-		elog(PANIC, "multixact_redo: unknown op code %u", info);
+		elog(PANIC, "multixact_redo: unknown op code %u", rminfo);
 }
 
 Datum

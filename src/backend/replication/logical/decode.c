@@ -132,12 +132,12 @@ void
 xlog_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 {
 	SnapBuild  *builder = ctx->snapshot_builder;
-	uint8		info = XLogRecGetInfo(buf->record) & ~XLR_INFO_MASK;
+	uint8		rminfo = XLogRecGetRmInfo(buf->record);
 
 	ReorderBufferProcessXid(ctx->reorder, XLogRecGetXid(buf->record),
 							buf->origptr);
 
-	switch (info)
+	switch (rminfo)
 	{
 			/* this is also used in END_OF_RECOVERY checkpoints */
 		case XLOG_CHECKPOINT_SHUTDOWN:
@@ -164,7 +164,7 @@ xlog_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 		case XLOG_OVERWRITE_CONTRECORD:
 			break;
 		default:
-			elog(ERROR, "unexpected RM_XLOG_ID record type: %u", info);
+			elog(ERROR, "unexpected RM_XLOG_ID record type: %u", rminfo);
 	}
 }
 
@@ -177,7 +177,7 @@ xact_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	SnapBuild  *builder = ctx->snapshot_builder;
 	ReorderBuffer *reorder = ctx->reorder;
 	XLogReaderState *r = buf->record;
-	uint8		info = XLogRecGetInfo(r) & XLOG_XACT_OPMASK;
+	uint8		info = XLogRecGetRmInfo(r) & XLOG_XACT_OPMASK;
 
 	/*
 	 * If the snapshot isn't yet fully built, we cannot decode anything, so
@@ -197,7 +197,7 @@ xact_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 				bool		two_phase = false;
 
 				xlrec = (xl_xact_commit *) XLogRecGetData(r);
-				ParseCommitRecord(XLogRecGetInfo(buf->record), xlrec, &parsed);
+				ParseCommitRecord(XLogRecGetRmInfo(buf->record), xlrec, &parsed);
 
 				if (!TransactionIdIsValid(parsed.twophase_xid))
 					xid = XLogRecGetXid(r);
@@ -225,7 +225,7 @@ xact_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 				bool		two_phase = false;
 
 				xlrec = (xl_xact_abort *) XLogRecGetData(r);
-				ParseAbortRecord(XLogRecGetInfo(buf->record), xlrec, &parsed);
+				ParseAbortRecord(XLogRecGetRmInfo(buf->record), xlrec, &parsed);
 
 				if (!TransactionIdIsValid(parsed.twophase_xid))
 					xid = XLogRecGetXid(r);
@@ -288,7 +288,7 @@ xact_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 
 				/* ok, parse it */
 				xlrec = (xl_xact_prepare *) XLogRecGetData(r);
-				ParsePrepareRecord(XLogRecGetInfo(buf->record),
+				ParsePrepareRecord(XLogRecGetRmInfo(buf->record),
 								   xlrec, &parsed);
 
 				/*
@@ -333,11 +333,11 @@ standby_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 {
 	SnapBuild  *builder = ctx->snapshot_builder;
 	XLogReaderState *r = buf->record;
-	uint8		info = XLogRecGetInfo(r) & ~XLR_INFO_MASK;
+	uint8		rminfo = XLogRecGetRmInfo(r);
 
 	ReorderBufferProcessXid(ctx->reorder, XLogRecGetXid(r), buf->origptr);
 
-	switch (info)
+	switch (rminfo)
 	{
 		case XLOG_RUNNING_XACTS:
 			{
@@ -367,7 +367,7 @@ standby_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 			 */
 			break;
 		default:
-			elog(ERROR, "unexpected RM_STANDBY_ID record type: %u", info);
+			elog(ERROR, "unexpected RM_STANDBY_ID record type: %u", rminfo);
 	}
 }
 
@@ -377,7 +377,7 @@ standby_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 void
 heap2_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 {
-	uint8		info = XLogRecGetInfo(buf->record) & XLOG_HEAP_OPMASK;
+	uint8		rminfo = XLogRecGetRmInfo(buf->record) & XLOG_HEAP_OPMASK;
 	TransactionId xid = XLogRecGetXid(buf->record);
 	SnapBuild  *builder = ctx->snapshot_builder;
 
@@ -391,7 +391,7 @@ heap2_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 		ctx->fast_forward)
 		return;
 
-	switch (info)
+	switch (rminfo)
 	{
 		case XLOG_HEAP2_MULTI_INSERT:
 			if (!ctx->fast_forward &&
@@ -427,7 +427,7 @@ heap2_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 		case XLOG_HEAP2_LOCK_UPDATED:
 			break;
 		default:
-			elog(ERROR, "unexpected RM_HEAP2_ID record type: %u", info);
+			elog(ERROR, "unexpected RM_HEAP2_ID record type: %u", rminfo);
 	}
 }
 
@@ -437,7 +437,7 @@ heap2_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 void
 heap_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 {
-	uint8		info = XLogRecGetInfo(buf->record) & XLOG_HEAP_OPMASK;
+	uint8		rminfo = XLogRecGetRmInfo(buf->record) & XLOG_HEAP_OPMASK;
 	TransactionId xid = XLogRecGetXid(buf->record);
 	SnapBuild  *builder = ctx->snapshot_builder;
 
@@ -451,7 +451,7 @@ heap_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 		ctx->fast_forward)
 		return;
 
-	switch (info)
+	switch (rminfo)
 	{
 		case XLOG_HEAP_INSERT:
 			if (SnapBuildProcessChange(builder, xid, buf->origptr))
@@ -512,7 +512,7 @@ heap_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 			break;
 
 		default:
-			elog(ERROR, "unexpected RM_HEAP_ID record type: %u", info);
+			elog(ERROR, "unexpected RM_HEAP_ID record type: %u", rminfo);
 			break;
 	}
 }
@@ -562,13 +562,13 @@ logicalmsg_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	SnapBuild  *builder = ctx->snapshot_builder;
 	XLogReaderState *r = buf->record;
 	TransactionId xid = XLogRecGetXid(r);
-	uint8		info = XLogRecGetInfo(r) & ~XLR_INFO_MASK;
+	uint8		rminfo = XLogRecGetRmInfo(r);
 	RepOriginId origin_id = XLogRecGetOrigin(r);
 	Snapshot	snapshot;
 	xl_logical_message *message;
 
-	if (info != XLOG_LOGICAL_MESSAGE)
-		elog(ERROR, "unexpected RM_LOGICALMSG_ID record type: %u", info);
+	if (rminfo != XLOG_LOGICAL_MESSAGE)
+		elog(ERROR, "unexpected RM_LOGICALMSG_ID record type: %u", rminfo);
 
 	ReorderBufferProcessXid(ctx->reorder, XLogRecGetXid(r), buf->origptr);
 
