@@ -2953,19 +2953,20 @@ create_data_directory(void)
 			found_existing_pgdata = true;
 			break;
 
-		case 2:
-		case 3:
-		case 4:
-			/* Present and not empty */
-			pg_log_error("directory \"%s\" exists but is not empty", pg_data);
+		case 2: /* warn if exists and contains _only_ dot files */
+		case 3: /* warn if exists and contains a mount point */
+		case 4: /* exit if exists and not empty */
 			if (ret != 4)
 				warn_on_mount_point(ret);
 			else
+			{
+				pg_log_error("directory \"%s\" exists but is not empty", pg_data);
 				pg_log_error_hint("If you want to create a new database system, either remove or empty "
 								  "the directory \"%s\" or run %s "
 								  "with an argument other than \"%s\".",
 								  pg_data, progname, pg_data);
-			exit(1);			/* no further message needed */
+				exit(1);			/* no further message needed */
+			}
 
 		default:
 			/* Trouble accessing directory */
@@ -3025,17 +3026,18 @@ create_xlog_or_symlink(void)
 				found_existing_xlogdir = true;
 				break;
 
-			case 2:
-			case 3:
-			case 4:
-				/* Present and not empty */
-				pg_log_error("directory \"%s\" exists but is not empty", xlog_dir);
+			case 2: /* warn if exists and contains _only_ dot files */
+			case 3: /* warn if exists and contains a mount point */
+			case 4: /* exit if exists and not empty */
 				if (ret != 4)
 					warn_on_mount_point(ret);
 				else
+				{
+					pg_log_error("directory \"%s\" exists but is not empty", xlog_dir);
 					pg_log_error_hint("If you want to store the WAL there, either remove or empty the directory \"%s\".",
 									  xlog_dir);
-				exit(1);
+					exit(1);
+				}
 
 			default:
 				/* Trouble accessing directory */
