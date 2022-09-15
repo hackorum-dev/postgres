@@ -63,7 +63,7 @@
 /* We need two bits per xact, so four xacts fit in a byte */
 #define CLOG_BITS_PER_XACT	2
 #define CLOG_XACTS_PER_BYTE 4
-#define CLOG_XACTS_PER_PAGE (BLCKSZ * CLOG_XACTS_PER_BYTE)
+#define CLOG_XACTS_PER_PAGE ((BLCKSZ - SizeOfPageHeaderData) * CLOG_XACTS_PER_BYTE)
 #define CLOG_XACT_BITMASK	((1 << CLOG_BITS_PER_XACT) - 1)
 
 #define TransactionIdToPage(xid)	((xid) / (TransactionId) CLOG_XACTS_PER_PAGE)
@@ -88,7 +88,7 @@
 
 static Buffer ZeroCLOGPage(int pageno, bool writeXlog);
 static bool CLOGPagePrecedes(int page1, int page2);
-static void WriteZeroPageXlogRec(int pageno);
+static XLogRecPtr WriteZeroPageXlogRec(int pageno);
 static void WriteTruncateXlogRec(int pageno, TransactionId oldestXact,
 								 Oid oldestXactDb);
 static void TransactionIdSetPageStatus(TransactionId xid, int nsubxids,
@@ -353,6 +353,7 @@ TransactionIdSetPageStatusInternal(TransactionId xid, int nsubxids,
 	 * we think.
 	 */
 	buffer = ReadNrelBuffer(NREL_CLOG_REL_ID, pageno);
+
 	LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
 
 	/*
@@ -389,6 +390,7 @@ TransactionIdSetPageStatusInternal(TransactionId xid, int nsubxids,
 		TransactionIdSetStatusBit(subxids[i], status, lsn, buffer);
 	}
 
+	
 	MarkBufferDirty(buffer);
 	UnlockReleaseBuffer(buffer);
 }
@@ -575,7 +577,7 @@ TransactionIdSetStatusBit(TransactionId xid, XidStatus status, XLogRecPtr lsn, B
 	Assert(LWLockHeldByMeInMode(BufferDescriptorGetContentLock(GetBufferDescriptor(buffer - 1)),
 								LW_EXCLUSIVE));
 
-	byteptr = BufferGetPage(buffer) + byteno;
+	byteptr = PageGetContents(BufferGetPage(buffer)) + byteno;
 	curval = (*byteptr >> bshift) & CLOG_XACT_BITMASK;
 
 	/*
@@ -603,6 +605,7 @@ TransactionIdSetStatusBit(TransactionId xid, XidStatus status, XLogRecPtr lsn, B
 	byteval |= (status << bshift);
 	*byteptr = byteval;
 
+
 	/*
 	 * Update the buffer LSN if the transaction completion LSN is higher.
 	 *
@@ -613,8 +616,8 @@ TransactionIdSetStatusBit(TransactionId xid, XidStatus status, XLogRecPtr lsn, B
 	 */
 	if (!XLogRecPtrIsInvalid(lsn))
 	{
-		if (BufferGetExternalLSN(GetBufferDescriptor(buffer)) < lsn)
-			BufferSetExternalLSN(GetBufferDescriptor(buffer), lsn);
+		if (PageGetLSN(BufferGetPage(buffer)) < lsn)
+			PageSetLSN(BufferGetPage(buffer), lsn);
 	}
 }
 
@@ -644,11 +647,11 @@ TransactionIdGetStatus(TransactionId xid, XLogRecPtr *lsn)
 	Buffer		buffer;
 
 	buffer = ReadNrelBuffer(NREL_CLOG_REL_ID, pageno);
-	byteptr = BufferGetPage(buffer) + byteno;
+
+	byteptr = PageGetContents(BufferGetPage(buffer)) + byteno;
 
 	status = (*byteptr >> bshift) & CLOG_XACT_BITMASK;
-
-	*lsn = BufferGetExternalLSN(GetBufferDescriptor(buffer));
+	*lsn   = PageGetLSN(BufferGetPage(buffer));
 
 	ReleaseBuffer(buffer);
 
@@ -688,13 +691,20 @@ static Buffer
 ZeroCLOGPage(int pageno, bool writeXlog)
 {
 	Buffer		buffer;
+	Page 		page;
+	XLogRecPtr  lsn;
 
 	buffer = ZeroNrelBuffer(NREL_CLOG_REL_ID, pageno);
+	
+	page = BufferGetPage(buffer);
+	PageInitNREL(page, BLCKSZ, 0);
 
-	MarkBufferDirty(buffer);
-
+	lsn = 0;
 	if (writeXlog)
-		WriteZeroPageXlogRec(pageno);
+		lsn = WriteZeroPageXlogRec(pageno);
+	
+	PageSetHeaderDataNonRel(page, pageno, lsn, BLCKSZ, PG_METAPAGE_LAYOUT_VERSION);
+	MarkBufferDirty(buffer);
 
 	return buffer;
 }
@@ -738,13 +748,16 @@ TrimCLOG(void)
 
 		buffer = ReadNrelBuffer(NREL_CLOG_REL_ID, pageno);
 
+
 		LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
-		byteptr = BufferGetPage(buffer) + byteno;
+		byteptr = PageGetContents(BufferGetPage(buffer)) + byteno;
 
 		/* Zero so-far-unused positions in the current byte */
 		*byteptr &= (1 << bshift) - 1;
 		/* Zero the rest of the page */
-		MemSet(byteptr + 1, 0, BLCKSZ - byteno - 1);
+		MemSet(byteptr + 1, 0, BLCKSZ - byteno - MAXALIGN(SizeOfPageHeaderData) - 1);
+
+
 
 		MarkBufferDirty(buffer);
 
@@ -871,12 +884,15 @@ CLOGPagePrecedes(int page1, int page2)
 /*
  * Write a ZEROPAGE xlog record
  */
-static void
+static XLogRecPtr 
 WriteZeroPageXlogRec(int pageno)
 {
+	XLogRecPtr lsn;
 	XLogBeginInsert();
 	XLogRegisterData((char *) (&pageno), sizeof(int));
-	(void) XLogInsert(RM_CLOG_ID, CLOG_ZEROPAGE);
+	lsn = XLogInsert(RM_CLOG_ID, CLOG_ZEROPAGE);
+
+	return lsn;
 }
 
 /*

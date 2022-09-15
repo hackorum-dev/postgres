@@ -51,7 +51,7 @@
  */
 
 /* We need four bytes per xact */
-#define SUBTRANS_XACTS_PER_PAGE (BLCKSZ / sizeof(TransactionId))
+#define SUBTRANS_XACTS_PER_PAGE ((BLCKSZ - SizeOfPageHeaderData) / sizeof(TransactionId))
 
 #define TransactionIdToPage(xid) ((xid) / (TransactionId) SUBTRANS_XACTS_PER_PAGE)
 #define TransactionIdToEntry(xid) ((xid) % (TransactionId) SUBTRANS_XACTS_PER_PAGE)
@@ -77,8 +77,9 @@ SubTransSetParent(TransactionId xid, TransactionId parent)
 
 	buffer = ReadNrelBuffer(NREL_SUBTRANS_REL_ID, pageno);
 
+
 	LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
-	ptr = (TransactionId *) BufferGetPage(buffer);
+	ptr = (TransactionId *) PageGetContents(BufferGetPage(buffer));
 	ptr += entryno;
 
 	/*
@@ -118,7 +119,8 @@ SubTransGetParent(TransactionId xid)
 	buffer = ReadNrelBuffer(NREL_SUBTRANS_REL_ID, pageno);
 
 
-	ptr = (TransactionId *) BufferGetPage(buffer);
+
+	ptr = (TransactionId *) PageGetContents(BufferGetPage(buffer));
 	ptr += entryno;
 
 	parent = *ptr;
@@ -208,8 +210,12 @@ static Buffer
 ZeroSUBTRANSPage(int pageno)
 {
 	Buffer		buffer;
+	Page 		page;
 
 	buffer = ZeroNrelBuffer(NREL_SUBTRANS_REL_ID, pageno);
+
+	page = BufferGetPage(buffer);
+	PageInitNREL(page, BLCKSZ, 0);
 
 	MarkBufferDirty(buffer);
 

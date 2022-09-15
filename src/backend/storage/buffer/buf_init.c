@@ -20,7 +20,6 @@
 
 BufferDescPadded *BufferDescriptors;
 char	   *BufferBlocks;
-XLogRecPtr *BufferExternalLSNs;
 ConditionVariableMinimallyPadded *BufferIOCVArray;
 WritebackContext BackendWritebackContext;
 CkptSortItem *CkptBufferIds;
@@ -94,11 +93,6 @@ InitBufferPool(void)
 						NBuffers * sizeof(ConditionVariableMinimallyPadded),
 						&foundIOCV);
 
-	BufferExternalLSNs = (XLogRecPtr *)
-		ShmemInitStruct("Buffer External LSNs",
-						NBuffers * sizeof(XLogRecPtr),
-						&foundLSNs);
-
 	/*
 	 * The array used to sort to-be-checkpointed buffer ids is located in
 	 * shared memory, to avoid having to allocate significant amounts of
@@ -144,8 +138,6 @@ InitBufferPool(void)
 							 LWTRANCHE_BUFFER_CONTENT);
 
 			ConditionVariableInit(BufferDescriptorGetIOCV(buf));
-
-			BufferExternalLSNs[i] = InvalidXLogRecPtr;
 		}
 
 		/* Correct last entry of linked list */

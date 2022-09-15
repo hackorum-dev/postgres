@@ -15,6 +15,7 @@
 
 #include "access/xlogdefs.h"
 
+
 #include "storage/lwlock.h"
 #include "storage/sync.h"
 
@@ -182,6 +183,7 @@ extern bool SlruScanDirCbReportPresence(SlruCtl ctl, char *filename,
 										int segpage, void *data);
 extern bool SlruScanDirCbDeleteAll(SlruCtl ctl, char *filename, int segpage,
 								   void *data);
+
 
 
 #endif							/* SLRU_H */

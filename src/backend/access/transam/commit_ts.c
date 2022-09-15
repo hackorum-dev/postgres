@@ -64,12 +64,14 @@ typedef struct CommitTimestampEntry
 									sizeof(RepOriginId))
 
 #define COMMIT_TS_XACTS_PER_PAGE \
-	(BLCKSZ / SizeOfCommitTimestampEntry)
+	((BLCKSZ - SizeOfPageHeaderData) / SizeOfCommitTimestampEntry)
 
 #define TransactionIdToCTsPage(xid) \
 	((xid) / (TransactionId) COMMIT_TS_XACTS_PER_PAGE)
 #define TransactionIdToCTsEntry(xid)	\
 	((xid) % (TransactionId) COMMIT_TS_XACTS_PER_PAGE)
+
+
 
 /*
  * We keep a cache of the last value set in shared memory.
@@ -105,7 +107,8 @@ static Buffer ZeroCommitTsPage(int pageno, bool writeXlog);
 static bool CommitTsPagePrecedes(int page1, int page2);
 static void ActivateCommitTs(void);
 static void DeactivateCommitTs(void);
-static void WriteZeroPageXlogRec(int pageno);
+static XLogRecPtr WriteZeroPageXlogRec(int pageno);
+
 static void WriteTruncateXlogRec(int pageno, TransactionId oldestXid);
 
 /*
@@ -215,6 +218,7 @@ SetXidCommitTsInPage(TransactionId xid, int nsubxids,
 
 	buffer = ReadNrelBuffer(NREL_COMMITTS_REL_ID, pageno);
 
+
 	LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
 
 	TransactionIdSetCommitTs(xid, ts, nodeid, buffer);
@@ -234,6 +238,8 @@ TransactionIdSetCommitTs(TransactionId xid, TimestampTz ts,
 						 RepOriginId nodeid, Buffer buffer)
 {
 	int			entryno = TransactionIdToCTsEntry(xid);
+	int 		pageno  = TransactionIdToCTsPage(xid);
+	
 	CommitTimestampEntry entry;
 
 	Assert(TransactionIdIsNormal(xid));
@@ -241,8 +247,12 @@ TransactionIdSetCommitTs(TransactionId xid, TimestampTz ts,
 	entry.time = ts;
 	entry.nodeid = nodeid;
 
-	memcpy(BufferGetPage(buffer) + SizeOfCommitTimestampEntry * entryno,
+	Assert(xid == pageno * COMMIT_TS_XACTS_PER_PAGE + entryno);
+
+	memcpy(PageGetContents(BufferGetPage(buffer)) + \
+		   SizeOfCommitTimestampEntry * entryno,
 		   &entry, SizeOfCommitTimestampEntry);
+
 }
 
 /*
@@ -318,12 +328,13 @@ TransactionIdGetCommitTsData(TransactionId xid, TimestampTz *ts,
 
 	buffer = ReadNrelBuffer(NREL_COMMITTS_REL_ID, pageno);
 
+
 	LockBuffer(buffer, BUFFER_LOCK_SHARE);
 
 	memcpy(&entry,
-		   BufferGetPage(buffer) +
-		   SizeOfCommitTimestampEntry * entryno,
-		   SizeOfCommitTimestampEntry);
+			PageGetContents(BufferGetPage(buffer)) + \
+			SizeOfCommitTimestampEntry * entryno,
+			SizeOfCommitTimestampEntry);
 
 	*ts = entry.time;
 	if (nodeid)
@@ -546,14 +557,22 @@ static Buffer
 ZeroCommitTsPage(int pageno, bool writeXlog)
 {
 	Buffer		buffer;
+	Page 		page;
+	XLogRecPtr  lsn;
 
 	buffer = ZeroNrelBuffer(NREL_COMMITTS_REL_ID, pageno);
-
-	MarkBufferDirty(buffer);
-
+	
+	page = BufferGetPage(buffer);
+	PageInitNREL(page, BLCKSZ, 0);
+	
 	if (writeXlog)
-		WriteZeroPageXlogRec(pageno);
-
+	{
+		lsn = WriteZeroPageXlogRec(pageno);
+		page = BufferGetPage(buffer);
+		PageSetHeaderDataNonRel(page, pageno, lsn, BLCKSZ, PG_METAPAGE_LAYOUT_VERSION);
+	}
+	
+	MarkBufferDirty(buffer);
 	return buffer;
 }
 
@@ -677,8 +696,13 @@ ActivateCommitTs(void)
 	if (!NonRelDoesPhysicalPageExist(NREL_COMMITTS_REL_ID, pageno))
 	{
 		Buffer		buffer;
+		Page 		page;
+
 
 		buffer = ZeroNrelBuffer(NREL_COMMITTS_REL_ID, pageno);
+		
+		page = BufferGetPage(buffer);
+		PageInitNREL(page, BLCKSZ, 0);
 
 		MarkBufferDirty(buffer);
 		FlushOneBuffer(buffer);
@@ -889,12 +913,16 @@ CommitTsPagePrecedes(int page1, int page2)
 /*
  * Write a ZEROPAGE xlog record
  */
-static void
+static XLogRecPtr 
 WriteZeroPageXlogRec(int pageno)
 {
+	XLogRecPtr lsn;
+	
 	XLogBeginInsert();
 	XLogRegisterData((char *) (&pageno), sizeof(int));
-	(void) XLogInsert(RM_COMMIT_TS_ID, COMMIT_TS_ZEROPAGE);
+	lsn = XLogInsert(RM_COMMIT_TS_ID, COMMIT_TS_ZEROPAGE);
+	
+	return lsn;
 }
 
 /*
@@ -928,11 +956,15 @@ commit_ts_redo(XLogReaderState *record)
 	{
 		int			pageno;
 		Buffer		buffer;
+		Page		page;
 
 		memcpy(&pageno, XLogRecGetData(record), sizeof(int));
 
 		buffer = ZeroNrelBuffer(NREL_COMMITTS_REL_ID, pageno);
-
+		
+		page = BufferGetPage(buffer);
+		PageInitNREL(page, BLCKSZ, 0);
+		
 		MarkBufferDirty(buffer);
 		FlushOneBuffer(buffer);
 		UnlockReleaseBuffer(buffer);

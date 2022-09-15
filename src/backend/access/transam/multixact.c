@@ -107,7 +107,7 @@
  */
 
 /* We need four bytes per offset */
-#define MULTIXACT_OFFSETS_PER_PAGE (BLCKSZ / sizeof(MultiXactOffset))
+#define MULTIXACT_OFFSETS_PER_PAGE ((BLCKSZ - SizeOfPageHeaderData)/ sizeof(MultiXactOffset))
 
 #define MultiXactIdToOffsetPage(xid) \
 	((xid) / (MultiXactOffset) MULTIXACT_OFFSETS_PER_PAGE)
@@ -139,7 +139,7 @@
 /* size in bytes of a complete group */
 #define MULTIXACT_MEMBERGROUP_SIZE \
 	(sizeof(TransactionId) * MULTIXACT_MEMBERS_PER_MEMBERGROUP + MULTIXACT_FLAGBYTES_PER_GROUP)
-#define MULTIXACT_MEMBERGROUPS_PER_PAGE (BLCKSZ / MULTIXACT_MEMBERGROUP_SIZE)
+#define MULTIXACT_MEMBERGROUPS_PER_PAGE ((BLCKSZ - SizeOfPageHeaderData) / MULTIXACT_MEMBERGROUP_SIZE)
 #define MULTIXACT_MEMBERS_PER_PAGE	\
 	(MULTIXACT_MEMBERGROUPS_PER_PAGE * MULTIXACT_MEMBERS_PER_MEMBERGROUP)
 
@@ -162,9 +162,9 @@
 
 /* Location (byte offset within page) of flag word for a given member */
 #define MXOffsetToFlagsOffset(xid) \
-	((((xid) / (TransactionId) MULTIXACT_MEMBERS_PER_MEMBERGROUP) % \
+	(((((xid) / (TransactionId) MULTIXACT_MEMBERS_PER_MEMBERGROUP) % \
 	  (TransactionId) MULTIXACT_MEMBERGROUPS_PER_PAGE) * \
-	 (TransactionId) MULTIXACT_MEMBERGROUP_SIZE)
+	 (TransactionId) MULTIXACT_MEMBERGROUP_SIZE))
 #define MXOffsetToFlagsBitShift(xid) \
 	(((xid) % (TransactionId) MULTIXACT_MEMBERS_PER_MEMBERGROUP) * \
 	 MXACT_MEMBER_BITS_PER_XACT)
@@ -357,7 +357,7 @@ static bool MultiXactOffsetWouldWrap(MultiXactOffset boundary,
 									 MultiXactOffset start, uint32 distance);
 static bool SetOffsetVacuumLimit(bool is_startup);
 static bool find_multixact_start(MultiXactId multi, MultiXactOffset *result);
-static void WriteMZeroPageXlogRec(int pageno, uint8 info);
+static XLogRecPtr WriteMZeroPageXlogRec(int pageno, uint8 info);
 static void WriteMTruncateXlogRec(Oid oldestMultiDB,
 								  MultiXactId startTruncOff,
 								  MultiXactId endTruncOff,
@@ -876,10 +876,9 @@ RecordNewMultiXact(MultiXactId multi, MultiXactOffset offset,
 	else 
 		offset_buf = ReadNrelBuffer(NREL_MULTIXACT_OFFSET_REL_ID, pageno);
 
-
 	LockBuffer(offset_buf, BUFFER_LOCK_EXCLUSIVE);
 						
-	offptr = (MultiXactOffset *) BufferGetPage(offset_buf);
+	offptr = (MultiXactOffset *) PageGetContents(BufferGetPage(offset_buf));
 	offptr += entryno;
 
 	*offptr = offset;
@@ -921,16 +920,15 @@ RecordNewMultiXact(MultiXactId multi, MultiXactOffset offset,
 			else
 				buffer = ReadNrelBuffer(NREL_MULTIXACT_MEMBER_REL_ID, pageno);
 
-
 			LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
 			prev_pageno = pageno;
 		}
 
-		memberptr = (TransactionId *) (BufferGetPage(buffer) + memberoff);
+		memberptr = (TransactionId *) (PageGetContents(BufferGetPage(buffer)) + memberoff);
 
 		*memberptr = members[i].xid;
 
-		flagsptr = (uint32 *) (BufferGetPage(buffer) + flagsoff);
+		flagsptr = (uint32 *) (PageGetContents(BufferGetPage(buffer)) + flagsoff);
 
 		flagsval = *flagsptr;
 		flagsval &= ~(((1 << MXACT_MEMBER_BITS_PER_XACT) - 1) << bshift);
@@ -1369,7 +1367,7 @@ retry:
 	buffer = ReadNrelBuffer(NREL_MULTIXACT_OFFSET_REL_ID, pageno);
 
 	LockBuffer(buffer, BUFFER_LOCK_SHARE);
-	offptr = (MultiXactOffset *) BufferGetPage(buffer);
+	offptr = (MultiXactOffset *) (PageGetContents(BufferGetPage(buffer)));
 	offptr += entryno;
 	offset = *offptr;
 
@@ -1404,10 +1402,11 @@ retry:
 			UnlockReleaseBuffer(buffer);
 			buffer = ReadNrelBuffer(NREL_MULTIXACT_OFFSET_REL_ID, pageno);
 
+
 			LockBuffer(buffer, BUFFER_LOCK_SHARE);
 		}
 
-		offptr = (MultiXactOffset *) BufferGetPage(buffer);
+		offptr = (MultiXactOffset *) (PageGetContents(BufferGetPage(buffer)));
 		offptr += entryno;
 		nextMXOffset = *offptr;
 
@@ -1450,7 +1449,7 @@ retry:
 			prev_pageno = pageno;
 		}
 
-		xactptr = (TransactionId *) (BufferGetPage(buffer) + memberoff);
+		xactptr = (TransactionId *) (PageGetContents((BufferGetPage(buffer)) + memberoff));
 
 		if (!TransactionIdIsValid(*xactptr))
 		{
@@ -1461,7 +1460,7 @@ retry:
 
 		flagsoff = MXOffsetToFlagsOffset(offset);
 		bshift = MXOffsetToFlagsBitShift(offset);
-		flagsptr = (uint32 *) (BufferGetPage(buffer) + flagsoff);
+		flagsptr = (uint32 *) (PageGetContents(BufferGetPage(buffer)) + flagsoff);
 
 		ptr[truelength].xid = *xactptr;
 		ptr[truelength].status = (*flagsptr >> bshift) & MXACT_MEMBER_XACT_BITMASK;
@@ -1926,13 +1925,21 @@ static Buffer
 ZeroMultiXactOffsetPage(int pageno, bool writeXlog)
 {
 	Buffer		buffer;
+	Page		page;
+	XLogRecPtr	recptr;
+
 
 	buffer = ZeroNrelBuffer(NREL_MULTIXACT_OFFSET_REL_ID, pageno);
+	page = BufferGetPage(buffer);
+	PageInitNREL(page, BLCKSZ, 0);
 
-	MarkBufferDirty(buffer);
-
+	recptr = 0;
+	
 	if (writeXlog)
-		WriteMZeroPageXlogRec(pageno, XLOG_MULTIXACT_ZERO_OFF_PAGE);
+		recptr = WriteMZeroPageXlogRec(pageno, XLOG_MULTIXACT_ZERO_OFF_PAGE);
+
+	PageSetHeaderDataNonRel(page, pageno, recptr, BLCKSZ, PG_METAPAGE_LAYOUT_VERSION);
+	MarkBufferDirty(buffer);
 
 	return buffer;
 }
@@ -1944,14 +1951,20 @@ static Buffer
 ZeroMultiXactMemberPage(int pageno, bool writeXlog)
 {
 	Buffer		buffer;
+	Page 		page;
+	XLogRecPtr 	recptr;
 
 	buffer = ZeroNrelBuffer(NREL_MULTIXACT_MEMBER_REL_ID, pageno);
-
-	MarkBufferDirty(buffer);
-
+	page = BufferGetPage(buffer);
+	PageInitNREL(page, BLCKSZ, 0);
+		
+	recptr = 0;
 	if (writeXlog)
-		WriteMZeroPageXlogRec(pageno, XLOG_MULTIXACT_ZERO_MEM_PAGE);
-
+		recptr = WriteMZeroPageXlogRec(pageno, XLOG_MULTIXACT_ZERO_MEM_PAGE);
+	
+	PageSetHeaderDataNonRel(page, pageno, recptr, BLCKSZ, PG_METAPAGE_LAYOUT_VERSION);
+	MarkBufferDirty(buffer);
+	
 	return buffer;
 }
 
@@ -2041,10 +2054,10 @@ TrimMultiXact(void)
 		buffer = ReadNrelBuffer(NREL_MULTIXACT_OFFSET_REL_ID, pageno);
 
 		LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
-		offptr = (MultiXactOffset *) BufferGetPage(buffer);
+		offptr = (MultiXactOffset *) (PageGetContents(BufferGetPage(buffer)));
 		offptr += entryno;
 
-		MemSet(offptr, 0, BLCKSZ - (entryno * sizeof(MultiXactOffset)));
+		MemSet(offptr, 0, BLCKSZ - MAXALIGN(SizeOfPageHeaderData) - (entryno * sizeof(MultiXactOffset)));
 
 		MarkBufferDirty(buffer);
 		UnlockReleaseBuffer(buffer);
@@ -2067,9 +2080,9 @@ TrimMultiXact(void)
 		buffer = ReadNrelBuffer(NREL_MULTIXACT_MEMBER_REL_ID, pageno);
 
 		LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
-		xidptr = (TransactionId *) (BufferGetPage(buffer) + memberoff);
+		xidptr = (TransactionId *) (PageGetContents(BufferGetPage(buffer)) + memberoff);
 
-		MemSet(xidptr, 0, BLCKSZ - memberoff);
+		MemSet(xidptr, 0, BLCKSZ - memberoff - MAXALIGN(SizeOfPageHeaderData));
 
 		/*
 		 * Note: we don't need to zero out the flag bits in the remaining
@@ -2419,7 +2432,6 @@ ExtendMultiXactMember(MultiXactOffset offset, int nmembers, Buffer ** buffers)
 		{
 			/* do a read buffer call to allocate space beforehand */
 			buf = ReadNrelBuffer(NREL_MULTIXACT_MEMBER_REL_ID, pageno);
-
 		}
 
 		if (buffers)
@@ -2718,7 +2730,7 @@ find_multixact_start(MultiXactId multi, MultiXactOffset *result)
 	buffer = ReadNrelBuffer(NREL_MULTIXACT_OFFSET_REL_ID, pageno);
 
 	LockBuffer(buffer, BUFFER_LOCK_SHARE);
-	offptr = (MultiXactOffset *) BufferGetPage(buffer);
+	offptr = (MultiXactOffset *) (PageGetContents(BufferGetPage(buffer)));
 	offptr += entryno;
 	offset = *offptr;
 	UnlockReleaseBuffer(buffer);
@@ -3138,12 +3150,16 @@ MultiXactOffsetPrecedes(MultiXactOffset offset1, MultiXactOffset offset2)
  * Write an xlog record reflecting the zeroing of either a MEMBERs or
  * OFFSETs page (info shows which)
  */
-static void
+static XLogRecPtr 
 WriteMZeroPageXlogRec(int pageno, uint8 info)
 {
+	XLogRecPtr recptr;
+	
 	XLogBeginInsert();
 	XLogRegisterData((char *) (&pageno), sizeof(int));
-	(void) XLogInsert(RM_MULTIXACT_ID, info);
+	recptr = XLogInsert(RM_MULTIXACT_ID, info);
+
+	return recptr;
 }
 
 /*

@@ -316,7 +316,7 @@
 
 #define SERIAL_PAGESIZE			BLCKSZ
 #define SERIAL_ENTRYSIZE			sizeof(SerCommitSeqNo)
-#define SERIAL_ENTRIESPERPAGE	(SERIAL_PAGESIZE / SERIAL_ENTRYSIZE)
+#define SERIAL_ENTRIESPERPAGE	((SERIAL_PAGESIZE - SizeOfPageHeaderData) / SERIAL_ENTRYSIZE)
 
 /*
  * Set maximum pages based on the number needed to track all transactions.
@@ -326,10 +326,11 @@
 #define SerialNextPage(page) (((page) >= SERIAL_MAX_PAGE) ? 0 : (page) + 1)
 
 #define SerialValue(buffer, xid) (*((SerCommitSeqNo *) \
-	(BufferGetPage(buffer) + \
+	(PageGetContents(BufferGetPage(buffer)) + \
 	((((uint32) (xid)) % SERIAL_ENTRIESPERPAGE) * SERIAL_ENTRYSIZE))))
 
 #define SerialPage(xid)	(((uint32) (xid)) / SERIAL_ENTRIESPERPAGE)
+
 
 typedef struct SerialControlData
 {
@@ -781,7 +782,7 @@ SerialPagePrecedesLogicallyUnitTests(void)
 	 */
 	headPage = oldestPage;
 	targetPage = newestPage;
-	Assert(SerialPagePrecedesLogically(headPage, targetPage - 1));
+	Assert(SerialPagePrecedesLogically(headPage, targetPage - 2));
 #if 0
 	Assert(SerialPagePrecedesLogically(headPage, targetPage));
 #endif
@@ -878,6 +879,7 @@ SerialAdd(TransactionId xid, SerCommitSeqNo minConflictCommitSeqNo)
 		{
 			buffer = ZeroNrelBuffer(NREL_SERIAL_REL_ID, firstZeroPage);
 
+			PageSetHeaderDataNonRel(BufferGetPage(buffer), firstZeroPage, InvalidXLogRecPtr, BLCKSZ, PG_METAPAGE_LAYOUT_VERSION);
 			MarkBufferDirty(buffer);
 			UnlockReleaseBuffer(buffer);
 			firstZeroPage = SerialNextPage(firstZeroPage);
@@ -887,6 +889,7 @@ SerialAdd(TransactionId xid, SerCommitSeqNo minConflictCommitSeqNo)
 	else
 	{
 		buffer = ReadNrelBuffer(NREL_SERIAL_REL_ID, targetPage);
+
 
 		LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
 	}
@@ -932,6 +935,7 @@ SerialGetMinConflictCommitSeqNo(TransactionId xid)
 	 * but will return with that lock held, which must then be released.
 	 */
 	buffer = ReadNrelBuffer(NREL_SERIAL_REL_ID, SerialPage(xid));
+
 
 	val = SerialValue(buffer, xid);
 	ReleaseBuffer(buffer);

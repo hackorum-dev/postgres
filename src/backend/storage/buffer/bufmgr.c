@@ -63,16 +63,12 @@
  * meantime we need some way to identify buffers that hold raw data (no
  * invasive LSN, no checksums).
  */
-#define BufferHasStandardPage(bufHdr)			\
-	((bufHdr)->tag.dbOid != 9)
-
-#define BufferHasExternalLSN(bufHdr)			\
-	!BufferHasStandardPage(bufHdr)
 
 /* Note: these two macros only work on shared buffers, not local ones! */
 #define BufHdrGetBlock(bufHdr)	((Block) (BufferBlocks + ((Size) (bufHdr)->buf_id) * BLCKSZ))
+
 #define BufferGetLSN(bufHdr) \
-	(BufferHasExternalLSN(bufHdr) ? BufferGetExternalLSN(bufHdr) : PageGetLSN(BufHdrGetBlock(bufHdr)))
+		PageGetLSN(BufHdrGetBlock(bufHdr))
 
 /* Note: this macro only works on local buffers, not shared ones! */
 #define LocalBufHdrGetBlock(bufHdr) \
@@ -1155,8 +1151,7 @@ ReadBuffer_common(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 								IOOP_READ, io_start, 1);
 
 		/* check for garbage data */
-		if (BufferHasStandardPage(bufHdr) &&
-			(!PageIsVerifiedExtended((Page) bufBlock, blockNum,
+		if ((!(mode == RBM_TRIM)) && (!PageIsVerifiedExtended((Page) bufBlock, blockNum,
 									PIV_LOG_WARNING | PIV_REPORT_STAT)))
 		{
 			if (mode == RBM_ZERO_ON_ERROR || zero_damaged_pages)
@@ -1388,8 +1383,6 @@ BufferAlloc(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 		return existing_buf_hdr;
 	}
 
-	if (BufferHasExternalLSN(victim_buf_hdr))
-		BufferSetExternalLSN(victim_buf_hdr, InvalidXLogRecPtr);
 
 	/*
 	 * Need to lock the buffer header too in order to change its tag.
@@ -3457,10 +3450,7 @@ FlushBuffer(BufferDesc *buf, SMgrRelation reln, IOObject io_object,
 	 * buffer, other processes might be updating hint bits in it, so we must
 	 * copy the page to private storage if we do checksumming.
 	 */
-	if (BufferHasStandardPage(buf))
-		bufToWrite = PageSetChecksumCopy((Page) bufBlock, buf->tag.blockNum);
-	else
-		bufToWrite = bufBlock;
+	bufToWrite = PageSetChecksumCopy((Page) bufBlock, buf->tag.blockNum);
 
 	io_start = pgstat_prepare_io_time();
 
@@ -3601,10 +3591,8 @@ BufferGetLSNAtomic(Buffer buffer)
 	Assert(BufferIsPinned(buffer));
 
 	buf_state = LockBufHdr(bufHdr);
-	if (BufferHasStandardPage(bufHdr))
-		lsn = PageGetLSN(page);
-	else
-		lsn = BufferGetExternalLSN(bufHdr);
+	lsn = PageGetLSN(page);
+	
 	UnlockBufHdr(bufHdr, buf_state);
 
 	return lsn;
@@ -4199,8 +4187,7 @@ FlushRelationBuffers(Relation rel)
 				errcallback.previous = error_context_stack;
 				error_context_stack = &errcallback;
 
-				if (BufferHasStandardPage(bufHdr))
-					PageSetChecksumInplace(localpage, bufHdr->tag.blockNum);
+				PageSetChecksumInplace(localpage, bufHdr->tag.blockNum);
 
 				io_start = pgstat_prepare_io_time();
 

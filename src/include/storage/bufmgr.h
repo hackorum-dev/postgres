@@ -47,8 +47,11 @@ typedef enum
 	RBM_ZERO_AND_CLEANUP_LOCK,	/* Like RBM_ZERO_AND_LOCK, but locks the page
 								 * in "cleanup" mode */
 	RBM_ZERO_ON_ERROR,			/* Read, but return an all-zeros page on error */
-	RBM_NORMAL_NO_LOG			/* Don't log page as invalid during WAL
+	RBM_NORMAL_NO_LOG,			/* Don't log page as invalid during WAL
 								 * replay; otherwise same as RBM_NORMAL */
+
+	RBM_TRIM				/*Read for TRIM functions in CLOG / MultiXact. 
+						  Don't validate checksum  or zero. */	
 } ReadBufferMode;
 
 /*
