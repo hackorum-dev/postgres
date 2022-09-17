@@ -622,6 +622,11 @@ wait_for_postmaster_start(pgpid_t pm_pid, bool do_checkpoint)
 			 */
 			pmpid = atol(optlines[LOCK_FILE_LINE_PID - 1]);
 			pmstart = atol(optlines[LOCK_FILE_LINE_START_TIME - 1]);
+
+			pg_log_info("wait_for_postmaster_start pmpid %ld", pmpid);
+			pg_log_info("wait_for_postmaster_start pmstart %lu", pmstart);
+			pg_log_info("wait_for_postmaster_start start_time %lu", start_time);
+
 			if (pmstart >= start_time - 2 &&
 #ifndef WIN32
 				pmpid == pm_pid
@@ -936,6 +941,7 @@ do_start(void)
 			write_stderr(_("%s: another server might be running; "
 						   "trying to start server anyway\n"),
 						 progname);
+		pg_log_info("do_start old_pid %ld", old_pid);
 	}
 
 	read_post_opts();
