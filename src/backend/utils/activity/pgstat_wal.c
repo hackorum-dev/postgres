@@ -105,6 +105,8 @@ pgstat_flush_wal(bool nowait)
 	WALSTAT_ACC(wal_sync);
 	WALSTAT_ACC(wal_write_time);
 	WALSTAT_ACC(wal_sync_time);
+	WALSTAT_ACC(xlogreader_cache_hits);
+	WALSTAT_ACC(xlogreader_cache_misses);
 #undef WALSTAT_ACC
 
 	LWLockRelease(&stats_shmem->lock);

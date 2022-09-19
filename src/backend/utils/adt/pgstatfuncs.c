@@ -1732,7 +1732,7 @@ pg_stat_get_buf_alloc(PG_FUNCTION_ARGS)
 Datum
 pg_stat_get_wal(PG_FUNCTION_ARGS)
 {
-#define PG_STAT_GET_WAL_COLS	9
+#define PG_STAT_GET_WAL_COLS	11
 	TupleDesc	tupdesc;
 	Datum		values[PG_STAT_GET_WAL_COLS] = {0};
 	bool		nulls[PG_STAT_GET_WAL_COLS] = {0};
@@ -1759,7 +1759,10 @@ pg_stat_get_wal(PG_FUNCTION_ARGS)
 					   FLOAT8OID, -1, 0);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 9, "stats_reset",
 					   TIMESTAMPTZOID, -1, 0);
-
+	TupleDescInitEntry(tupdesc, (AttrNumber) 10, "xlogreader_cache_hits",
+					   INT8OID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 11, "xlogreader_cache_misses",
+					   INT8OID, -1, 0);
 	BlessTupleDesc(tupdesc);
 
 	/* Get statistics about WAL activity */
@@ -1785,6 +1788,8 @@ pg_stat_get_wal(PG_FUNCTION_ARGS)
 	values[7] = Float8GetDatum(((double) wal_stats->wal_sync_time) / 1000.0);
 
 	values[8] = TimestampTzGetDatum(wal_stats->stat_reset_timestamp);
+	values[9] = Int64GetDatum(wal_stats->xlogreader_cache_hits);
+	values[10] = Int64GetDatum(wal_stats->xlogreader_cache_misses);
 
 	/* Returns the record as Datum */
 	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(tupdesc, values, nulls)));

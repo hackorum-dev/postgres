@@ -1000,7 +1000,16 @@ ReadPageInternal(XLogReaderState *state, XLogRecPtr pageptr, int reqLen)
 	/* check whether we have all the requested data already */
 	if (targetSegNo == state->seg.ws_segno &&
 		targetPageOff == state->segoff && reqLen <= state->readLen)
+	{
+#ifndef FRONTEND
+		PendingWalStats.xlogreader_cache_hits++;
+#endif
 		return state->readLen;
+	}
+
+#ifndef FRONTEND
+	PendingWalStats.xlogreader_cache_misses++;
+#endif
 
 	/*
 	 * Invalidate contents of internal buffer before read attempt.  Just set

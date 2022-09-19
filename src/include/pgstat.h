@@ -393,6 +393,8 @@ typedef struct PgStat_WalStats
 	PgStat_Counter wal_write_time;
 	PgStat_Counter wal_sync_time;
 	TimestampTz stat_reset_timestamp;
+	PgStat_Counter	xlogreader_cache_hits;
+	PgStat_Counter	xlogreader_cache_misses;
 } PgStat_WalStats;
 
 
