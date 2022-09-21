@@ -401,7 +401,11 @@ ProcedureCreate(const char *procedureName,
 		if (!replace)
 			ereport(ERROR,
 					(errcode(ERRCODE_DUPLICATE_FUNCTION),
-					 errmsg("function \"%s\" already exists with same argument types",
+					 errmsg("%s \"%s\" already exists with same argument types",
+							(oldproc->prokind == PROKIND_AGGREGATE ? "aggregate function" :
+							 oldproc->prokind == PROKIND_PROCEDURE ? "procedure" :
+							 oldproc->prokind == PROKIND_WINDOW ? "window function" :
+							 "function"),
 							procedureName)));
 		if (!object_ownercheck(ProcedureRelationId, oldproc->oid, proowner))
 			aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_FUNCTION,
