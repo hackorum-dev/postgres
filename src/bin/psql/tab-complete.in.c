@@ -7139,7 +7139,7 @@ get_previous_words(int point, char **buffer, int *nwords)
 		 */
 		for (start = end; start > 0; start--)
 		{
-			if (buf[start] == '"')
+			if (buf[start] == '"' || buf[start] == '\'')
 				inquotes = !inquotes;
 			if (!inquotes)
 			{
