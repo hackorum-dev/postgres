@@ -30,39 +30,94 @@ elsif ($ENV{PG_TEST_EXTRA} !~ /\bkerberos\b/)
 	plan skip_all => 'Potentially unsafe test GSSAPI/Kerberos not enabled in PG_TEST_EXTRA';
 }
 
-my ($krb5_bin_dir, $krb5_sbin_dir);
-
-if ($^O eq 'darwin')
-{
-	$krb5_bin_dir  = '/usr/local/opt/krb5/bin';
-	$krb5_sbin_dir = '/usr/local/opt/krb5/sbin';
-}
-elsif ($^O eq 'freebsd')
-{
-	$krb5_bin_dir  = '/usr/local/bin';
-	$krb5_sbin_dir = '/usr/local/sbin';
-}
-elsif ($^O eq 'linux')
-{
-	$krb5_sbin_dir = '/usr/sbin';
-}
-
 my $krb5_config  = 'krb5-config';
 my $kinit        = 'kinit';
 my $kdb5_util    = 'kdb5_util';
 my $kadmin_local = 'kadmin.local';
 my $krb5kdc      = 'krb5kdc';
 
-if ($krb5_bin_dir && -d $krb5_bin_dir)
+# control variable for checking if all executables are found
+my $is_krb5_found = 0;
+
+# Given $krb5_path_prefix (possible paths of kerberos executables),
+# first check value of $is_krb5_found:
+# if it is truthy value this means executables are already found so
+# don't try to locate further, else add '/bin/' and '/sbin/'
+# to the $krb5_path_prefix and try to locate all required kerberos executables
+# ($krb5_config, $kinit, $kdb5_util, $kadmin_local, $krb5kdc).
+# If all executables are found, set $is_krb5_found to 1 and use executables
+# from this path; even if one of the executables is not found, skip this path.
+# If all paths are searched and executables are still not found,
+# test will try to use kerberos executables from $PATH.
+sub test_krb5_paths
 {
-	$krb5_config = $krb5_bin_dir . '/' . $krb5_config;
-	$kinit       = $krb5_bin_dir . '/' . $kinit;
+	my ($krb5_path_prefix) = (@_);
+
+	# if executables are already found, return
+	if ($is_krb5_found)
+	{
+		return;
+	}
+
+	my ($kdb5_util_path, $kadmin_local_path, $krb5kdc_path, $krb5_config_path, $kinit_path, @krb5_file_paths, $bin, $sbin);
+
+	# remove '\n' since 'krb5-config --prefix' returns path ends with '\n'
+	chomp($krb5_path_prefix);
+	# remove trailing slashes
+	$krb5_path_prefix =~ s{(.+)/\z}{$1};
+	$bin = '/bin/';
+	$sbin = '/sbin/';
+	$kdb5_util_path    = $krb5_path_prefix . $sbin . $kdb5_util;
+	$kadmin_local_path = $krb5_path_prefix . $sbin . $kadmin_local;
+	$krb5kdc_path      = $krb5_path_prefix . $sbin . $krb5kdc;
+	$krb5_config_path  = $krb5_path_prefix . $bin . $krb5_config;
+	$kinit_path        = $krb5_path_prefix . $bin . $kinit;
+	@krb5_file_paths = ($kdb5_util_path, $kadmin_local_path, $krb5kdc_path, $krb5_config_path, $kinit_path);
+
+	# check if all of the executables exist, even if one of the executables
+	# is not found; return
+	foreach (@krb5_file_paths)
+	{
+		if(! -e $_)
+		{
+			return;
+		}
+	}
+	# all executables are found
+	$krb5_config  = $krb5_config_path;
+	$kinit        = $kinit_path;
+	$kdb5_util    = $kdb5_util_path;
+	$kadmin_local = $kadmin_local_path;
+	$krb5kdc      = $krb5kdc_path;
+
+	# set $is_krb5_found to the 1 to not check other possible paths
+	$is_krb5_found = 1;
 }
-if ($krb5_sbin_dir && -d $krb5_sbin_dir)
+
+# first try to use 'krb5-config --prefix', then try hardcoded paths.
+# if executables are still not found after trying these paths,
+# try to use them from $PATH.
+my $krb5_config_prefix_cmd = $krb5_config . ' --prefix';
+test_krb5_paths(`$krb5_config_prefix_cmd`);
+if (! $is_krb5_found)
 {
-	$kdb5_util    = $krb5_sbin_dir . '/' . $kdb5_util;
-	$kadmin_local = $krb5_sbin_dir . '/' . $kadmin_local;
-	$krb5kdc      = $krb5_sbin_dir . '/' . $krb5kdc;
+	if ($^O eq 'darwin')
+	{
+		# krb5 is placed at /usr/local/opt for Intel CPU darwin
+		test_krb5_paths('/usr/local/opt/krb5/');
+		# krb5 is placed at /opt/homebrew/opt/ for arm CPU darwin
+		test_krb5_paths('/opt/homebrew/opt/krb5/');
+		# krb5 is placed at /opt/local/ for MacPorts
+		test_krb5_paths('/opt/local/');
+	}
+	elsif ($^O eq 'freebsd')
+	{
+		test_krb5_paths('/usr/local/');
+	}
+	elsif ($^O eq 'linux')
+	{
+		test_krb5_paths('/usr/');
+	}
 }
 
 my $host     = 'auth-test-localhost.postgresql.example.com';
