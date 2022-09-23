@@ -22,6 +22,8 @@
 #include "access/xlogreader.h"
 #include "access/xlogrecord.h"
 #include "access/xlogstats.h"
+#include "catalog/pg_control.h"
+#include "common/controldata_utils.h"
 #include "common/fe_memutils.h"
 #include "common/logging.h"
 #include "getopt_long.h"
@@ -57,6 +59,7 @@ typedef struct XLogDumpConfig
 	bool		follow;
 	bool		stats;
 	bool		stats_per_record;
+	bool		output_lastLSN;
 
 	/* filter options */
 	bool		filter_by_rmgr[RM_MAX_ID + 1];
@@ -662,10 +665,12 @@ usage(void)
 	printf(_("\nOptions:\n"));
 	printf(_("  -b, --bkp-details      output detailed information about backup blocks\n"));
 	printf(_("  -B, --block=N          with --relation, only show records that modify block N\n"));
+	printf(_("  -D, --datadir=DATADIR  location of data directory\n"));
 	printf(_("  -e, --end=RECPTR       stop reading at WAL location RECPTR\n"));
 	printf(_("  -f, --follow           keep retrying after reaching end of WAL\n"));
 	printf(_("  -F, --fork=FORK        only show records that modify blocks in fork FORK;\n"
 			 "                         valid names are main, fsm, vm, init\n"));
+	printf(_("  -l, --lastLSN          output latest LSN in the wal directory, then exit\n"));
 	printf(_("  -n, --limit=N          number of records to display\n"));
 	printf(_("  -p, --path=PATH        directory in which to find WAL segment files or a\n"
 			 "                         directory with a ./pg_wal that contains such files\n"
@@ -699,16 +704,19 @@ main(int argc, char **argv)
 	XLogRecord *record;
 	XLogRecPtr	first_record;
 	char	   *waldir = NULL;
+	char	   *datadir = NULL;
 	char	   *errormsg;
 
 	static struct option long_options[] = {
 		{"bkp-details", no_argument, NULL, 'b'},
 		{"block", required_argument, NULL, 'B'},
+		{"datadir", required_argument, NULL, 'D'},
 		{"end", required_argument, NULL, 'e'},
 		{"follow", no_argument, NULL, 'f'},
 		{"fork", required_argument, NULL, 'F'},
 		{"fullpage", no_argument, NULL, 'w'},
 		{"help", no_argument, NULL, '?'},
+		{"lastLSN", no_argument, NULL, 'l'},
 		{"limit", required_argument, NULL, 'n'},
 		{"path", required_argument, NULL, 'p'},
 		{"quiet", no_argument, NULL, 'q'},
@@ -761,6 +769,7 @@ main(int argc, char **argv)
 	config.stop_after_records = -1;
 	config.already_displayed_records = 0;
 	config.follow = false;
+	config.output_lastLSN = false;
 	/* filter_by_rmgr array was zeroed by memset above */
 	config.filter_by_rmgr_enabled = false;
 	config.filter_by_xid = InvalidTransactionId;
@@ -782,7 +791,7 @@ main(int argc, char **argv)
 		goto bad_argument;
 	}
 
-	while ((option = getopt_long(argc, argv, "bB:e:fF:n:p:qr:R:s:t:wx:z",
+	while ((option = getopt_long(argc, argv, "bB:D:e:fF:ln:p:qr:R:s:t:wx:z",
 								 long_options, &optindex)) != -1)
 	{
 		switch (option)
@@ -799,6 +808,10 @@ main(int argc, char **argv)
 				}
 				config.filter_by_relation_block_enabled = true;
 				config.filter_by_extended = true;
+				break;
+			case 'D':
+				datadir = pg_strdup(optarg);
+				setenv("PGDATA", datadir, 1);
 				break;
 			case 'e':
 				if (sscanf(optarg, "%X/%X", &xlogid, &xrecoff) != 2)
@@ -820,6 +833,9 @@ main(int argc, char **argv)
 					goto bad_argument;
 				}
 				config.filter_by_extended = true;
+				break;
+			case 'l':
+				config.output_lastLSN = true;
 				break;
 			case 'n':
 				if (sscanf(optarg, "%d", &config.stop_after_records) != 1)
@@ -947,6 +963,12 @@ main(int argc, char **argv)
 		}
 	}
 
+	if (config.output_lastLSN && !datadir)
+	{
+		pg_log_error("option -l/--lastLSN requires option -D/--datadir to be specified");
+		goto bad_argument;
+	}
+
 	if (config.filter_by_relation_block_enabled &&
 		!config.filter_by_relation_enabled)
 	{
@@ -970,6 +992,28 @@ main(int argc, char **argv)
 			pg_log_error("could not open directory \"%s\": %m", waldir);
 			goto bad_argument;
 		}
+	}
+
+	if (config.output_lastLSN)
+	{
+		ControlFileData	*ControlFile;
+		bool	crc_ok;
+
+		/* read the control file */
+		ControlFile = get_controlfile(datadir, &crc_ok);
+
+		if (!crc_ok)
+		{
+			pg_fatal("Calculated CRC checksum does not match value stored in file.");
+			exit(EXIT_FAILURE);
+		}
+
+		private.timeline = ControlFile->checkPointCopy.ThisTimeLineID;
+		private.startptr = ControlFile->checkPointCopy.redo;
+		private.endptr = InvalidXLogRecPtr;
+		waldir = identify_target_directory(waldir, NULL);
+		config.quiet = true;
+		goto start_reading_wal;
 	}
 
 	/* parse files as start/end boundaries, extract path if not specified */
@@ -1064,6 +1108,7 @@ main(int argc, char **argv)
 	/* done with argument parsing, do the actual work */
 
 	/* we have everything we need, start reading */
+start_reading_wal:
 	xlogreader_state =
 		XLogReaderAllocate(WalSegSz, waldir,
 						   XL_ROUTINE(.page_read = WALDumpReadPage,
@@ -1109,6 +1154,23 @@ main(int argc, char **argv)
 		record = XLogReadRecord(xlogreader_state, &errormsg);
 		if (!record)
 		{
+			if (config.output_lastLSN)
+			{
+				XLogSegNo   xlogsegno;
+				char        xlogfilename[MAXFNAMELEN];
+
+				XLByteToPrevSeg(xlogreader_state->EndRecPtr, xlogsegno, WalSegSz);
+				XLogFileName(xlogfilename, private.timeline, xlogsegno,
+							 WalSegSz);
+
+				printf("Latest LSN: %X/%X\n"
+					   "Latest WAL filename: %s\n",
+					   LSN_FORMAT_ARGS(xlogreader_state->EndRecPtr),
+					   xlogfilename);
+
+				exit(EXIT_SUCCESS);
+			}
+
 			if (!config.follow || private.endptr_reached)
 				break;
 			else
