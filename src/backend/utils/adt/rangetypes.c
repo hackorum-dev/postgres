@@ -31,12 +31,18 @@
 #include "postgres.h"
 
 #include "access/tupmacs.h"
+#include "access/stratnum.h"
 #include "common/hashfn.h"
 #include "lib/stringinfo.h"
 #include "libpq/pqformat.h"
 #include "miscadmin.h"
+#include "nodes/supportnodes.h"
+#include "nodes/makefuncs.h"
+#include "nodes/nodeFuncs.h"
+#include "nodes/pg_list.h"
 #include "port/pg_bitutils.h"
 #include "utils/builtins.h"
+#include "utils/fmgroids.h"
 #include "utils/date.h"
 #include "utils/lsyscache.h"
 #include "utils/rangetypes.h"
@@ -546,7 +552,6 @@ elem_contained_by_range(PG_FUNCTION_ARGS)
 
 	PG_RETURN_BOOL(range_contains_elem_internal(typcache, r, val));
 }
-
 
 /* range, range -> bool functions */
 
@@ -2618,4 +2623,260 @@ datum_write(Pointer ptr, Datum datum, bool typbyval, char typalign,
 	ptr += data_length;
 
 	return ptr;
+}
+
+
+/*
+ * find_index_conditions
+ *	  Try to generate an indexquals for an element contained in a range
+ *
+ * Supports both the ELEM_CONTAINED_BY_RANGE and RANGE_CONTAINS_ELEM cases
+ * 
+ */
+static List*
+find_index_conditions(Node* leftop,
+	Node* rightop,
+	int indexarg,
+	Oid funcid,
+	Oid opfamily)
+
+{
+	List*			result = NIL;
+	RangeType*		range;
+	TypeCacheEntry* rangetypcache;
+	RangeBound		lower;
+	RangeBound		upper;
+	bool			empty;
+	Const*			rangeConst;
+	Expr*			elemExpr;
+	Oid				elemType;
+	int16			elemTypeLen;
+	bool			elemByValue;
+	Oid				elemCollation;
+
+	switch (funcid)
+	{
+		case F_ELEM_CONTAINED_BY_RANGE:
+			/*
+			if (IsA(rightop, FuncExpr))
+			{
+				// What to do here?
+				FuncExpr* func = (FuncExpr*)rightop;
+				ListCell* lc;
+
+				Assert(list_length(func->args) == 3);
+
+				foreach(lc, func->args)
+				{
+					Expr* arg = (Expr*)lfirst(lc);
+					NodeTag nodeTag = nodeTag(arg);
+					arg = NULL;
+				}
+			}
+			*/
+
+			if (!IsA(rightop, Const) || ((Const*)rightop)->constisnull)
+				return NIL;
+
+			elemExpr = (Expr*)leftop;
+			rangeConst = (Const*)rightop;
+			break;
+
+		case F_RANGE_CONTAINS_ELEM:
+
+			if (!IsA(leftop, Const) || ((Const*)leftop)->constisnull)
+				return NIL;
+
+			elemExpr = (Expr*)rightop;
+			rangeConst = (Const*)leftop;
+			break;
+
+		default:
+			return NIL;
+	}
+
+	Assert(IsA(elemExpr, Var));
+	Assert(IsA(rangeConst, Const));
+
+	// We need to figure out what kind of elemType is in the range we are dealing with, and deserialize it to get the bounds.
+	range = DatumGetRangeTypeP(rangeConst->constvalue);
+	rangetypcache = lookup_type_cache(RangeTypeGetOid(range), TYPECACHE_RANGE_INFO);
+
+	elemType = rangetypcache->rngelemtype->type_id;
+	elemByValue = rangetypcache->rngelemtype->typbyval;
+	elemTypeLen = rangetypcache->rngelemtype->typlen;
+	elemCollation = rangetypcache->rngelemtype->typcollation;
+
+	range_deserialize(rangetypcache, range, &lower, &upper, &empty);
+
+	// The planner will call us for an empty range.
+	if (empty)
+		return NIL;
+
+	// We can't do anything useful with a bound if it is not finite.
+	if (!lower.infinite)
+	{
+		Oid oproid = get_opfamily_member(opfamily, elemType, elemType, lower.inclusive?BTGreaterEqualStrategyNumber:BTGreaterStrategyNumber);
+		if (oproid != InvalidOid)
+		{
+			Expr* expr = make_opclause
+			(
+				oproid,
+				BOOLOID,
+				false,
+				elemExpr,
+				(Expr*)makeConst
+				(
+					elemType,
+					-1,
+					elemCollation,
+					elemTypeLen,
+					lower.val,
+					false,
+					elemByValue
+				),
+				InvalidOid,
+				InvalidOid
+			);
+
+			result = lappend(result, expr);
+		}
+	}
+
+	if (!upper.infinite)
+	{
+		Oid oproid = get_opfamily_member(opfamily, elemType, elemType, upper.inclusive?BTLessEqualStrategyNumber:BTLessStrategyNumber);
+		if (oproid != InvalidOid)
+		{
+			Expr* expr = make_opclause
+			(
+				oproid,
+				BOOLOID,
+				false,
+				elemExpr,
+				(Expr*)makeConst
+				(
+					elemType,
+					-1,
+					elemCollation,
+					elemTypeLen,
+					upper.val,
+					false,
+					elemByValue
+				),
+				InvalidOid,
+				InvalidOid
+			);
+
+			result = lappend(result, expr);
+		}
+	}
+
+	return result;
+}
+
+Node * match_support_request(Node* rawreq)
+{
+	Node* ret = NULL;
+
+	if (IsA(rawreq, SupportRequestIndexCondition))
+	{
+		/* Try to convert operator/function call to index conditions */
+		SupportRequestIndexCondition* req = (SupportRequestIndexCondition*)rawreq;
+
+		if (is_opclause(req->node))
+		{
+			OpExpr* clause = (OpExpr*)req->node;
+
+			Assert(list_length(clause->args) == 2);
+
+			ret = (Node*)
+				find_index_conditions((Node*)linitial(clause->args),
+					(Node*)lsecond(clause->args),
+					req->indexarg,
+					req->funcid,
+					req->opfamily);
+
+		}
+		else if (is_funcclause(req->node))
+		{
+			FuncExpr* clause = (FuncExpr*)req->node;
+
+			Assert(list_length(clause->args) == 2);
+
+			ret = (Node*)
+				find_index_conditions((Node*)linitial(clause->args),
+					(Node*)lsecond(clause->args),
+					req->indexarg,
+					req->funcid,
+					req->opfamily);
+		}
+
+		// If matched, the index condition is exact.
+		if (ret != NULL)
+			req->lossy = false;
+	}
+	else if (IsA(rawreq, SupportRequestSimplify))
+	{
+		SupportRequestSimplify* req = (SupportRequestSimplify*)rawreq;
+		FuncExpr* clause = req->fcall;
+		Const* rangeConst;
+		RangeType* range;
+		Node*	leftop = (Node*)linitial(clause->args);
+		Node*	rightop = lsecond(clause->args);
+
+		switch (clause->funcid)
+		{
+		case F_ELEM_CONTAINED_BY_RANGE:
+
+			if (!IsA(rightop, Const) || ((Const*)rightop)->constisnull)
+				return ret;
+
+			rangeConst = (Const*)rightop;
+			break;
+
+		case F_RANGE_CONTAINS_ELEM:
+
+			if (!IsA(leftop, Const) || ((Const*)leftop)->constisnull)
+				return ret;
+
+			rangeConst = (Const*)leftop;
+			break;
+
+		default:
+			return ret;
+		}
+
+		// If the range is empty, then there can be no matches.
+		range = DatumGetRangeTypeP(rangeConst->constvalue);
+		char	flags = range_get_flags(range);
+		if (flags & RANGE_EMPTY)
+			ret = makeBoolConst(false, false);
+	}
+
+	return ret;
+}
+
+/*
+ * Planner support function for elem_contained_by_range operator
+ */
+Datum
+elem_contained_by_range_support(PG_FUNCTION_ARGS)
+{
+	Node* rawreq = (Node*)PG_GETARG_POINTER(0);
+	Node* ret = match_support_request(rawreq);
+
+	PG_RETURN_POINTER(ret);
+}
+
+/*
+ * Planner support function for range_contains_elem operator
+ */
+Datum
+range_contains_elem_support(PG_FUNCTION_ARGS)
+{
+	Node* rawreq = (Node*)PG_GETARG_POINTER(0);
+	Node* ret = match_support_request(rawreq);
+
+	PG_RETURN_POINTER(ret);
 }
