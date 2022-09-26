@@ -293,7 +293,6 @@ task:
   name: macOS - Monterey - Meson
 
   env:
-    CPUS: 12 # always get that much for cirrusci macOS instances
     BUILD_JOBS: $CPUS
     # Test performance regresses noticably when using all cores. 8 seems to
     # work OK. See
@@ -313,15 +312,26 @@ task:
 
   only_if: $CIRRUS_CHANGE_MESSAGE !=~ '.*\nci-os-only:.*' || $CIRRUS_CHANGE_MESSAGE =~ '.*\nci-os-only:[^\n]*(macos|darwin|osx).*'
 
-  osx_instance:
-    image: monterey-base
+  matrix:
+    - name: macOS - Monterey - Meson - ARM CPU
+      macos_instance:
+        image: ghcr.io/cirruslabs/macos-monterey-base:latest
+      env:
+        BREW_PATH: /opt/homebrew
+        CPUS: 4
+
+    - name: macOS - Monterey - Meson - Intel CPU
+      osx_instance:
+        image: monterey-base
+      env:
+        BREW_PATH: /usr/local
+        CPUS: 12 # always get that much for cirrusci macOS instances
 
   sysinfo_script: |
     id
     uname -a
     ulimit -a -H && ulimit -a -S
     export
-
   setup_core_files_script:
     - mkdir ${HOME}/cores
     - sudo sysctl kern.corefile="${HOME}/cores/core.%P"
@@ -360,7 +370,7 @@ task:
   ccache_cache:
     folder: $CCACHE_DIR
   configure_script: |
-    brewpath="/usr/local"
+    brewpath=${BREW_PATH}
     PKG_CONFIG_PATH="${brewpath}/lib/pkgconfig:${PKG_CONFIG_PATH}"
 
     for pkg in icu4c krb5 openldap openssl zstd ; do
