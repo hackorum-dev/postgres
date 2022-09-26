@@ -1462,7 +1462,6 @@ pgoutput_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	/* Switch relation if publishing via root. */
 	if (relentry->publish_as_relid != RelationGetRelid(relation))
 	{
-		Assert(relation->rd_rel->relispartition);
 		ancestor = RelationIdGetRelation(relentry->publish_as_relid);
 		targetrel = ancestor;
 	}
