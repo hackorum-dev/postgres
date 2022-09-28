@@ -2657,9 +2657,6 @@ tuplesort_getdatum(Tuplesortstate *state, bool forward,
 		return false;
 	}
 
-	/* Ensure we copy into caller's memory context */
-	MemoryContextSwitchTo(oldcontext);
-
 	/* Record abbreviated key for caller */
 	if (state->sortKeys->abbrev_converter && abbrev)
 		*abbrev = stup.datum1;
@@ -2675,6 +2672,8 @@ tuplesort_getdatum(Tuplesortstate *state, bool forward,
 		*val = datumCopy(PointerGetDatum(stup.tuple), false, state->datumTypeLen);
 		*isNull = false;
 	}
+
+	MemoryContextSwitchTo(oldcontext);
 
 	return true;
 }
