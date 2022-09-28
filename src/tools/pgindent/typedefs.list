@@ -470,6 +470,7 @@ CopySource
 CopyStmt
 CopyToState
 CopyToStateData
+correlated_t
 Cost
 CostSelector
 Counters
