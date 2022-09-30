@@ -8188,17 +8188,17 @@ log_heap_freeze(Relation reln, Buffer buffer, TransactionId cutoff_xid,
 }
 
 /*
- * Perform XLogInsert for a heap-visible operation.  'block' is the block
- * being marked all-visible, and vm_buffer is the buffer containing the
- * corresponding visibility map block.  Both should have already been modified
- * and dirtied.
+ * Perform XLogInsert for a heap-visible operation. heap_buffer is the buffer
+ * containing the block being marked all-visible, and vm_buffer is the buffer
+ * containing the corresponding visibility map block. Both should have already
+ * been modified and dirtied.
  *
  * If checksums are enabled, we also generate a full-page image of
  * heap_buffer, if necessary.
  */
 XLogRecPtr
-log_heap_visible(RelFileLocator rlocator, Buffer heap_buffer, Buffer vm_buffer,
-				 TransactionId cutoff_xid, uint8 vmflags)
+log_heap_visible(Buffer heap_buffer, Buffer vm_buffer, TransactionId cutoff_xid,
+				 uint8 vmflags)
 {
 	xl_heap_visible xlrec;
 	XLogRecPtr	recptr;

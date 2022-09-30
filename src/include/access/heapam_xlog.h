@@ -415,7 +415,7 @@ extern bool heap_prepare_freeze_tuple(HeapTupleHeader tuple,
 									  MultiXactId *relminmxid_out);
 extern void heap_execute_freeze_tuple(HeapTupleHeader tuple,
 									  xl_heap_freeze_tuple *frz);
-extern XLogRecPtr log_heap_visible(RelFileLocator rlocator, Buffer heap_buffer,
-								   Buffer vm_buffer, TransactionId cutoff_xid, uint8 vmflags);
+extern XLogRecPtr log_heap_visible(Buffer heap_buffer, Buffer vm_buffer,
+								   TransactionId cutoff_xid, uint8 vmflags);
 
 #endif							/* HEAPAM_XLOG_H */
