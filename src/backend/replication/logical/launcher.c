@@ -363,7 +363,8 @@ retry:
 		ereport(WARNING,
 				(errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED),
 				 errmsg("out of logical replication worker slots"),
-				 errhint("You might need to increase max_logical_replication_workers.")));
+				 errhint("You might need to increase %s.",
+						 "max_logical_replication_workers")));
 		return;
 	}
 
@@ -420,7 +421,8 @@ retry:
 		ereport(WARNING,
 				(errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED),
 				 errmsg("out of background worker slots"),
-				 errhint("You might need to increase max_worker_processes.")));
+				 errhint("You might need to increase %s.",
+						 "max_worker_processes")));
 		return;
 	}
 
