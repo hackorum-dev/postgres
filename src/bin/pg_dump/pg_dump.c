@@ -96,6 +96,15 @@ typedef enum OidOptions
 	zeroAsNone = 4
 } OidOptions;
 
+
+typedef struct
+{
+	char			*table_pattern; /* name pattern of filtered table */
+	char			*filter_condition;	/* filter where condition */
+	SimpleOidList	 table_oids;	/* filtered tables OIDs */
+}WhereConditionData;
+
+
 /* global decls */
 static bool dosync = true;		/* Issue fsync() to make dump durable on disk. */
 
@@ -127,6 +136,8 @@ static SimpleOidList foreign_servers_include_oids = {NULL, NULL};
 static SimpleStringList extension_include_patterns = {NULL, NULL};
 static SimpleOidList extension_include_oids = {NULL, NULL};
 
+static SimplePtrList filter_bindigs = {NULL, NULL};
+
 static const CatalogId nilCatalogId = {0, 0};
 
 /* override for standard extra_float_digits setting */
@@ -145,6 +156,8 @@ static int	ncomments = 0;
 static SecLabelItem *seclabels = NULL;
 static int	nseclabels = 0;
 
+/* global filter for all data in database */
+static char *global_filter_where_condition = NULL;
 /*
  * The default number of rows per INSERT when
  * --inserts is specified without --rows-per-insert
@@ -317,7 +330,13 @@ static void appendReloptionsArrayAH(PQExpBuffer buffer, const char *reloptions,
 static char *get_synchronized_snapshot(Archive *fout);
 static void setupDumpWorker(Archive *AHX);
 static TableInfo *getRootTableInfo(const TableInfo *tbinfo);
-
+static char *getTableDataCondition(Oid table_oid);
+static bool parseFileToFilters(char* filename, DumpOptions *dopt);
+static void addFilterString(char* filter);
+static void supplementWhereConditionDataWithOids(Archive *fount,
+													  bool strict_names);
+static void appendWhereConditionData(char *filter_condition,
+													   char *table_pattern);
 
 int
 main(int argc, char **argv)
@@ -412,7 +431,8 @@ main(int argc, char **argv)
 		{"on-conflict-do-nothing", no_argument, &dopt.do_nothing, 1},
 		{"rows-per-insert", required_argument, NULL, 10},
 		{"include-foreign-data", required_argument, NULL, 11},
-
+		{"where", required_argument, NULL, 15},
+		{"file-filter", required_argument, NULL, 16},	
 		{NULL, 0, NULL, 0}
 	};
 
@@ -621,6 +641,14 @@ main(int argc, char **argv)
 				simple_string_list_append(&foreign_servers_include_patterns,
 										  optarg);
 				break;
+			
+			case 15:
+				addFilterString(optarg);
+				break;
+
+			case 16:
+				parseFileToFilters(optarg, &dopt);
+				break;
 
 			default:
 				/* getopt_long already emitted a complaint */
@@ -790,6 +818,11 @@ main(int argc, char **argv)
 	expand_table_name_patterns(fout, &tabledata_exclude_patterns,
 							   &tabledata_exclude_oids,
 							   false);
+
+	if(filter_bindigs.head != NULL)
+	{
+		supplementWhereConditionDataWithOids(fout,strict_names);
+	}
 
 	expand_foreign_server_name_patterns(fout, &foreign_servers_include_patterns,
 										&foreign_servers_include_oids);
@@ -1027,6 +1060,7 @@ help(const char *progname)
 			 "                               access to)\n"));
 	printf(_("  --exclude-table-data=PATTERN do NOT dump data for the specified table(s)\n"));
 	printf(_("  --extra-float-digits=NUM     override default setting for extra_float_digits\n"));
+	printf(_("  --filter-file=FILEPATH       dump only specified tables and rows described in file\n"));
 	printf(_("  --if-exists                  use IF EXISTS when dropping objects\n"));
 	printf(_("  --include-foreign-data=PATTERN\n"
 			 "                               include data of foreign tables on foreign\n"
@@ -1052,7 +1086,8 @@ help(const char *progname)
 	printf(_("  --use-set-session-authorization\n"
 			 "                               use SET SESSION AUTHORIZATION commands instead of\n"
 			 "                               ALTER OWNER commands to set ownership\n"));
-
+	printf(_("  --where=WHEREDEFENITION      set WHERE condition to filter data rows for last specified table.\n"
+			 "                               if it sent before table pattern, all data in base will be filtered\n"));
 	printf(_("\nConnection options:\n"));
 	printf(_("  -d, --dbname=DBNAME      database to dump\n"));
 	printf(_("  -h, --host=HOSTNAME      database server host or socket directory\n"));
@@ -2614,7 +2649,7 @@ makeTableDataInfo(DumpOptions *dopt, TableInfo *tbinfo)
 	tdinfo->dobj.name = tbinfo->dobj.name;
 	tdinfo->dobj.namespace = tbinfo->dobj.namespace;
 	tdinfo->tdtable = tbinfo;
-	tdinfo->filtercond = NULL;	/* might get set later */
+	tdinfo->filtercond = getTableDataCondition(tbinfo->dobj.catId.oid);
 	addObjectDependency(&tdinfo->dobj, tbinfo->dobj.dumpId);
 
 	/* A TableDataInfo contains data, of course */
@@ -2625,6 +2660,44 @@ makeTableDataInfo(DumpOptions *dopt, TableInfo *tbinfo)
 	/* Make sure that we'll collect per-column info for this table. */
 	tbinfo->interesting = true;
 }
+
+
+/*
+ * getTableDataCondition -
+ *	  find the where condition by OID and return a clause based on it or default otherwise.
+ *
+ * Note: default filter is the global filter, if it exists, or null value.
+ * If found filter is empty return null value.
+ */
+static char*
+getTableDataCondition(Oid table_oid)
+{
+	char		*filter = NULL;
+
+	for(SimplePtrListCell *filter_bind = filter_bindigs.head;
+		filter_bind != NULL;
+		filter_bind = filter_bind->next)
+	{
+		WhereConditionData *condition_data = (WhereConditionData*)filter_bind->ptr;
+		if(simple_oid_list_member(&condition_data->table_oids, table_oid))
+		{
+			filter = condition_data->filter_condition;
+		}
+	}
+	
+	if (filter == NULL || strcmp(filter,"") == 0)
+	{
+		if( global_filter_where_condition == NULL)
+		{
+			return filter;
+		}else{
+
+			filter = global_filter_where_condition;
+		}
+	}
+	return psprintf("where %s", filter);
+}
+
 
 /*
  * The refresh for a materialized view must be dependent on the refresh for
@@ -18163,4 +18236,124 @@ appendReloptionsArrayAH(PQExpBuffer buffer, const char *reloptions,
 								fout->std_strings);
 	if (!res)
 		pg_log_warning("could not parse %s array", "reloptions");
+}
+
+/*
+ * parseFileToFilters -
+ *	  read file and convert its content into parametrs "-t" or "--where".
+ */
+static bool
+parseFileToFilters(char *filename, DumpOptions *dopt)
+{
+	FILE	    *fd;
+	char        filter_buffer[500];
+	char        *table_name;
+	char        *filter;
+
+	canonicalize_path(filename);
+	fd = fopen(filename, PG_BINARY_R);
+	if (!fd)
+	{
+		pg_log_error("file %s does not exist", filename);
+		return EXIT_FAILURE;
+	}
+	while (fgets(filter_buffer,500,fd))
+	{
+		table_name = strtok(filter_buffer, " \n");
+		if(table_name)
+		{
+			/*
+			 * If first word in string is "where", next filter will be global
+			 */
+			if(strcmp(table_name,"where") == 0)
+			{
+				filter = strtok(NULL, "\n");
+				global_filter_where_condition = pg_strdup(filter);
+			}
+			else
+			{
+				filter = strtok(NULL, " ");
+				if(filter && strcmp(filter,"where") == 0)
+				{
+					filter = strtok(NULL, "\n");
+					appendWhereConditionData(filter, table_name);
+				}
+				else
+				{
+					simple_string_list_append(&table_include_patterns, table_name);
+					dopt->include_everything = false;
+				}
+			}
+		}
+	}
+	fclose(fd);
+	return EXIT_SUCCESS;
+}
+
+/*
+ * addFilterString -
+ *	  Add condition string in local filter list or in global filter.
+ * Note:
+ * 	  String has a format like "table_pattern@condition". If string withaut
+ *    divider '@', pattern will be linked for last added table.
+ */
+static void
+addFilterString(char* filter)
+{
+	char				*table_pattern;
+	char				*where_condition;
+
+	table_pattern = strtok(filter, "@");
+	where_condition = strtok(NULL, "@");
+	if(where_condition == NULL)
+	{
+		if(table_include_patterns.head == NULL)
+		{
+			global_filter_where_condition = pg_strdup(filter);
+		}
+		else
+		{
+			appendWhereConditionData(filter, table_include_patterns.tail->val);
+		}
+	}
+	else
+	{
+		appendWhereConditionData(where_condition, table_pattern);
+	}
+}
+
+/*
+ * appendWhereConditionData -
+ *	  create and append data struct for filtering strings
+ */
+static void
+appendWhereConditionData(char *filter_contition, char *table_pattern)
+{
+	WhereConditionData	*condition_data = pg_malloc(sizeof(WhereConditionData));
+	condition_data->filter_condition = pg_strdup(filter_contition);
+	condition_data->table_pattern = pg_strdup(table_pattern);
+	simple_ptr_list_append(&filter_bindigs, condition_data);
+}
+
+/*
+ * supplementWhereConditionDataWithOids -
+ *	  find oids that are responded with table patterns of filtering condition
+ */
+static void
+supplementWhereConditionDataWithOids(Archive *fount, bool strict_names)
+{
+	SimpleStringList *patterns = pg_malloc(sizeof(SimpleStringList));
+	
+	for(SimplePtrListCell *filter_bind = filter_bindigs.head;
+		filter_bind;
+		filter_bind = filter_bind->next
+		)
+	{
+		WhereConditionData *condition_data = (WhereConditionData*)filter_bind->ptr;
+
+		simple_string_list_append(patterns, condition_data->table_pattern);
+		expand_table_name_patterns(fount, patterns, &condition_data->table_oids ,strict_names);
+		simple_string_list_destroy(patterns);
+	}
+	pg_free(patterns);
 }
