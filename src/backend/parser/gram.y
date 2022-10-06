@@ -1563,6 +1563,7 @@ VariableSetStmt:
 					VariableSetStmt *n = $2;
 
 					n->is_local = false;
+					n->is_session = false;
 					$$ = (Node *) n;
 				}
 			| SET LOCAL set_rest
@@ -1570,6 +1571,7 @@ VariableSetStmt:
 					VariableSetStmt *n = $3;
 
 					n->is_local = true;
+					n->is_session = false;
 					$$ = (Node *) n;
 				}
 			| SET SESSION set_rest
@@ -1577,6 +1579,7 @@ VariableSetStmt:
 					VariableSetStmt *n = $3;
 
 					n->is_local = false;
+					n->is_session = true;
 					$$ = (Node *) n;
 				}
 		;
