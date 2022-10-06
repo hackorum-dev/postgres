@@ -3125,14 +3125,22 @@ StartTransactionCommand(void)
 
 			/*
 			 * We are somewhere in a transaction block or subtransaction and
-			 * about to start a new command.  For now we do nothing, but
-			 * someday we may do command-local resource initialization. (Note
-			 * that any needed CommandCounterIncrement was done by the
-			 * previous CommitTransactionCommand.)
+			 * about to start a new command. (Note that any needed
+			 * CommandCounterIncrement was done by the previous
+			 * CommitTransactionCommand.)
 			 */
 		case TBLOCK_INPROGRESS:
-		case TBLOCK_IMPLICIT_INPROGRESS:
 		case TBLOCK_SUBINPROGRESS:
+			AcceptInvalidationMessages();
+			break;
+
+			/*
+			 * We are somewhere in implicit transaction block. For now we do
+			 * nothing, but someday we may do command-local resource
+			 * initialization. (Note that any needed  CommandCounterIncrement
+			 * was done by the previous CommitTransactionCommand.)
+			 */
+		case TBLOCK_IMPLICIT_INPROGRESS:
 			break;
 
 			/*
