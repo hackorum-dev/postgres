@@ -255,7 +255,7 @@ deleteObjectsInList(ObjectAddresses *targetObjects, Relation *depRel,
 			if (extra->flags & DEPFLAG_REVERSE)
 				normal = true;
 
-			if (EventTriggerSupportsObjectClass(getObjectClass(thisobj)))
+			if (EventTriggerSupportsObject(thisobj))
 			{
 				EventTriggerSQLDropAddObject(thisobj, original, normal);
 			}
