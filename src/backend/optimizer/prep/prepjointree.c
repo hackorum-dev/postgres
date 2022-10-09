@@ -130,6 +130,7 @@ static void substitute_phv_relids(Node *node,
 static void fix_append_rel_relids(List *append_rel_list, int varno,
 								  Relids subrelids);
 static Node *find_jointree_node_for_rel(Node *jtnode, int relid);
+static void transform_IN_sublink_to_EXIST_recurse(Node *jtnode);
 
 
 /*
@@ -256,6 +257,222 @@ replace_empty_jointree(Query *parse)
 	parse->jointree->fromlist = list_make1(rtr);
 }
 
+
+/*
+ * is_IN_sublink
+ *
+ * 	Check if the sublink is a IN sublink.
+ */
+static bool
+is_IN_sublink(SubLink *sublink)
+{
+	const char* operName;
+
+	if (sublink->subLinkType != ANY_SUBLINK || list_length(sublink->operName) != 1)
+		return false;
+
+	operName = linitial_node(String, sublink->operName)->sval;
+
+	return strcmp(operName, "=") == 0;
+}
+
+
+/*
+ * replace_param_sublink_node
+ *
+ *	Replace the PARAM_SUBLINK in src with target.
+ */
+static Node *
+replace_param_sublink_node(Node *src, Node *target)
+{
+
+	if (IsA(src, Param))
+		return target;
+
+	switch (nodeTag(src))
+	{
+		case T_RelabelType:
+			{
+				RelabelType *rtype = castNode(RelabelType, src);
+				rtype->arg = (Expr *)target;
+				break;
+			}
+		case T_FuncExpr:
+			{
+				FuncExpr *fexpr = castNode(FuncExpr, src);
+				Assert(list_length(fexpr->args));
+				Assert(linitial_node(Param, fexpr->args)->paramkind == PARAM_SUBLINK);
+				linitial(fexpr->args) = target;
+				break;
+			}
+		default:
+			{
+				Assert(false);
+				elog(ERROR, "Unexpected node type: %d", nodeTag(src));
+			}
+	}
+
+	/* src is in-placed updated. */
+	return src;
+	
+}
+
+/*
+ * transform_IN_sublink_to_EXIST_qual_recurse
+ *
+ *   Transform IN-SUBLINK with level-1 var to EXISTS-SUBLINK recursly.
+ */
+static Node *
+transform_IN_sublink_to_EXIST_qual_recurse(Node *node)
+{
+	if (node == NULL)
+		return NULL;
+
+	if (IsA(node, SubLink))
+	{
+		SubLink *sublink = (SubLink *) node;
+		Query *subselect = (Query *)sublink->subselect;
+		FromExpr *sub_fromexpr;
+
+		Assert(IsA(subselect, Query));
+
+		if (!is_IN_sublink(sublink) ||
+			!contain_vars_of_level((Node *) subselect, 1) ||
+			list_length(subselect->rtable) == 0 ||
+			subselect->hasWindowFuncs ||
+			subselect->hasAggs ||
+			subselect->hasTargetSRFs)
+		{
+			/*
+			 * WindowFunc and AggFunc can't be used in qual, so can't do the transform.
+			 * recurse to subselect's jointree anyway.
+			 *
+			 * Only transform the In-Sublink with level-1 var is useful. For the other
+			 * cases convert_ANY_sublink_to_join can handle it and may handle it better
+			 * for example Hashed SubPlan.
+			 */
+			transform_IN_sublink_to_EXIST_recurse((Node *) subselect->jointree);
+			return node;
+		}
+
+		/*
+		 * make up the push-downed node from sublink->testexpr which
+		 * will be set to NULL later, so in-place update would be OK.
+		 */
+		IncrementVarSublevelsUp(sublink->testexpr, 1, 0);
+
+		if (is_andclause(sublink->testexpr))
+		{
+			BoolExpr *and_expr = castNode(BoolExpr, sublink->testexpr);
+			ListCell *l1, *l2;
+			forboth(l1, and_expr->args, l2, subselect->targetList)
+			{
+				OpExpr *opexpr = lfirst_node(OpExpr, l1);
+				TargetEntry *tle = lfirst_node(TargetEntry, l2);
+				lsecond(opexpr->args) = replace_param_sublink_node(lsecond(opexpr->args),
+																   (Node *) tle->expr);
+			}
+		}
+		else
+		{
+			OpExpr *opexpr = (OpExpr *) sublink->testexpr;
+			TargetEntry *tle = linitial_node(TargetEntry, subselect->targetList);
+			Assert(IsA(sublink->testexpr, OpExpr));
+			lsecond(opexpr->args) = replace_param_sublink_node(lsecond(opexpr->args),
+															   (Node *) tle->expr);
+		}
+
+		sub_fromexpr = subselect->jointree;
+		if (sub_fromexpr->quals == NULL)
+			sub_fromexpr->quals = sublink->testexpr;
+		else
+			sub_fromexpr->quals = make_and_qual(sub_fromexpr->quals,
+												(Node *) sublink->testexpr);
+
+		transform_IN_sublink_to_EXIST_recurse((Node *)sub_fromexpr);
+
+		/*
+		 * Turn the IN-Sublink to exist-SUBLINK for the parent query.
+		 * sublink->subselect has already been modified.
+		 */
+		sublink->subLinkType = EXISTS_SUBLINK;
+		sublink->operName = NIL;
+		sublink->testexpr = NULL;
+
+		return node;
+	}
+
+	if (is_andclause(node))
+	{
+		List	*newclauses = NIL;
+		ListCell	*l;
+		foreach(l, ((BoolExpr *) node)->args)
+		{
+			Node	*oldclause = (Node *) lfirst(l);
+			Node	*newclause;
+
+			newclause = transform_IN_sublink_to_EXIST_qual_recurse(oldclause);
+			newclauses = lappend(newclauses, newclause);
+		}
+
+		if (newclauses == NIL)
+			return NULL;
+		else if (list_length(newclauses) == 1)
+			return (Node *) linitial(newclauses);
+		else
+			return (Node *) make_andclause(newclauses);
+	}
+	else if (is_notclause(node))
+	{
+		/*
+		 * NOT-IN can't be converted into NOT-exists, the IN sublink in
+		 * the subselect can be converted during the next subquery_planner.
+		 */
+		return node;
+	}
+
+	return node;
+}
+
+/*
+ * transform_IN_sublink_to_EXIST_recurse
+ *
+ *	Transform IN sublink to EXIST sublink if it benefits for sublink
+ * pull-ups.
+ */
+static void
+transform_IN_sublink_to_EXIST_recurse(Node *jtnode)
+{
+	if (jtnode == NULL || IsA(jtnode, RangeTblRef))
+	{
+		return;
+	}
+	else if (IsA(jtnode, FromExpr))
+	{
+		FromExpr *f = (FromExpr *) jtnode;
+		ListCell *l;
+		foreach(l, f->fromlist)
+		{
+			transform_IN_sublink_to_EXIST_recurse(lfirst(l));
+		}
+		f->quals = transform_IN_sublink_to_EXIST_qual_recurse(f->quals);
+	}
+	else if (IsA(jtnode, JoinExpr))
+	{
+		JoinExpr *j = (JoinExpr *) jtnode;
+		transform_IN_sublink_to_EXIST_recurse(j->larg);
+		transform_IN_sublink_to_EXIST_recurse(j->rarg);
+		
+		j->quals = transform_IN_sublink_to_EXIST_qual_recurse(j->quals);
+	}
+	else
+	{
+		elog(ERROR, "unrecognized node type: %d",
+			 (int) nodeTag(jtnode));
+	}
+}
+
+
 /*
  * pull_up_sublinks
  *		Attempt to pull up ANY and EXISTS SubLinks to be treated as
@@ -289,6 +506,8 @@ pull_up_sublinks(PlannerInfo *root)
 {
 	Node	   *jtnode;
 	Relids		relids;
+
+	transform_IN_sublink_to_EXIST_recurse((Node *)root->parse->jointree);
 
 	/* Begin recursion through the jointree */
 	jtnode = pull_up_sublinks_jointree_recurse(root,
