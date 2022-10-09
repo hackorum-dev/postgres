@@ -1264,6 +1264,8 @@ inline_cte_walker(Node *node, inline_cte_walker_context *context)
  * subselect to the query's rangetable, so that it can be referenced in
  * the JoinExpr's rarg.
  */
+extern bool enable_lateral_pullup;
+
 JoinExpr *
 convert_ANY_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 							Relids available_rels)
@@ -1286,7 +1288,7 @@ convert_ANY_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 	 * The sub-select must not refer to any Vars of the parent query. (Vars of
 	 * higher levels should be okay, though.)
 	 */
-	if (contain_vars_of_level((Node *) subselect, 1))
+	if (contain_vars_of_level((Node *) subselect, 1) && !enable_lateral_pullup)
 		return NULL;
 
 	/*
@@ -1324,7 +1326,8 @@ convert_ANY_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 	nsitem = addRangeTableEntryForSubquery(pstate,
 										   subselect,
 										   makeAlias("ANY_subquery", NIL),
-										   false,
+										   /* lateral */
+										   enable_lateral_pullup ? contain_vars_of_level((Node *) subselect, 1) : false,
 										   false);
 	rte = nsitem->p_rte;
 	parse->rtable = lappend(parse->rtable, rte);

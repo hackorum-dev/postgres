@@ -763,8 +763,31 @@ StaticAssertDecl(lengthof(config_type_names) == (PGC_ENUM + 1),
  *	  variable_is_guc_list_quote() in src/bin/pg_dump/dumputils.c.
  */
 
+bool enable_in_exists_transfrom = false;
+bool enable_lateral_pullup = false;
+
 struct config_bool ConfigureNamesBool[] =
 {
+	{
+		{"enable_in_exists_transfrom", PGC_USERSET, QUERY_TUNING_METHOD,
+			gettext_noop("Enables the transform from in to exists."),
+			NULL,
+			GUC_EXPLAIN
+		},
+		&enable_in_exists_transfrom,
+		false,
+		NULL, NULL, NULL
+	},
+	{
+		{"enable_lateral_pullup", PGC_USERSET, QUERY_TUNING_METHOD,
+			gettext_noop("pull up any sublink with lateral"),
+			NULL,
+			GUC_EXPLAIN
+		},
+		&enable_lateral_pullup,
+		false,
+		NULL, NULL, NULL
+	},
 	{
 		{"enable_seqscan", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables the planner's use of sequential-scan plans."),
