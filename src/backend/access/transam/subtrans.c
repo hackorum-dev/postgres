@@ -347,7 +347,7 @@ TruncateSUBTRANS(TransactionId oldestXact)
 	 * a page and oldestXact == next XID.  In that case, if we didn't subtract
 	 * one, we'd trigger SimpleLruTruncate's wraparound detection.
 	 */
-	TransactionIdRetreat(oldestXact);
+	TransactionIdRetreat(&oldestXact);
 	cutoffPage = TransactionIdToPage(oldestXact);
 
 	SimpleLruTruncate(SubTransCtl, cutoffPage);

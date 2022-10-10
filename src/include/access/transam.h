@@ -88,12 +88,14 @@ FullTransactionIdFromU64(uint64 value)
 }
 
 /* advance a transaction ID variable, handling wraparound correctly */
-#define TransactionIdAdvance(dest)	\
-	do { \
-		(dest)++; \
-		if ((dest) < FirstNormalTransactionId) \
-			(dest) = FirstNormalTransactionId; \
-	} while(0)
+static inline void
+TransactionIdAdvance(TransactionId *dest)
+{
+	(*dest)++;
+
+	if (*dest < FirstNormalTransactionId)
+		*dest = FirstNormalTransactionId;
+}
 
 /*
  * Retreat a FullTransactionId variable, stepping over xids that would appear
@@ -138,10 +140,14 @@ FullTransactionIdAdvance(FullTransactionId *dest)
 }
 
 /* back up a transaction ID variable, handling wraparound correctly */
-#define TransactionIdRetreat(dest)	\
-	do { \
-		(dest)--; \
-	} while ((dest) < FirstNormalTransactionId)
+static inline void
+TransactionIdRetreat(TransactionId *dest)
+{
+	(*dest)--;
+
+	 while (*dest < FirstNormalTransactionId)
+		(*dest)--;
+}
 
 /* compare two XIDs already known to be normal; this is a macro for speed */
 #define NormalTransactionIdPrecedes(id1, id2) \

@@ -1023,7 +1023,7 @@ ProcArrayInitRecovery(TransactionId initializedUptoXID)
 	 * ProcArrayApplyRecoveryInfo().
 	 */
 	latestObservedXid = initializedUptoXID;
-	TransactionIdRetreat(latestObservedXid);
+	TransactionIdRetreat(&latestObservedXid);
 }
 
 /*
@@ -1216,13 +1216,13 @@ ProcArrayApplyRecoveryInfo(RunningTransactions running)
 	 * haven't gone through RecordKnownAssignedTransactionId().
 	 */
 	Assert(TransactionIdIsNormal(latestObservedXid));
-	TransactionIdAdvance(latestObservedXid);
+	TransactionIdAdvance(&latestObservedXid);
 	while (TransactionIdPrecedes(latestObservedXid, running->nextXid))
 	{
 		ExtendSUBTRANS(latestObservedXid);
-		TransactionIdAdvance(latestObservedXid);
+		TransactionIdAdvance(&latestObservedXid);
 	}
-	TransactionIdRetreat(latestObservedXid);	/* = running->nextXid - 1 */
+	TransactionIdRetreat(&latestObservedXid);	/* = running->nextXid - 1 */
 
 	/* ----------
 	 * Now we've got the running xids we need to set the global values that
@@ -1733,7 +1733,7 @@ ComputeXidHorizons(ComputeXidHorizonsResult *h)
 
 		initial = XidFromFullTransactionId(h->latest_completed);
 		Assert(TransactionIdIsValid(initial));
-		TransactionIdAdvance(initial);
+		TransactionIdAdvance(&initial);
 
 		h->oldest_considered_running = initial;
 		h->shared_oldest_nonremovable = initial;
@@ -2274,7 +2274,7 @@ GetSnapshotData(Snapshot snapshot)
 
 	/* xmax is always latestCompletedXid + 1 */
 	xmax = XidFromFullTransactionId(latest_completed);
-	TransactionIdAdvance(xmax);
+	TransactionIdAdvance(&xmax);
 	Assert(TransactionIdIsNormal(xmax));
 
 	/* initialize xmin calculation with xmax */
@@ -4400,7 +4400,7 @@ RecordKnownAssignedTransactionIds(TransactionId xid)
 		next_expected_xid = latestObservedXid;
 		while (TransactionIdPrecedes(next_expected_xid, xid))
 		{
-			TransactionIdAdvance(next_expected_xid);
+			TransactionIdAdvance(&next_expected_xid);
 			ExtendSUBTRANS(next_expected_xid);
 		}
 		Assert(next_expected_xid == xid);
@@ -4419,7 +4419,7 @@ RecordKnownAssignedTransactionIds(TransactionId xid)
 		 * Add (latestObservedXid, xid] onto the KnownAssignedXids array.
 		 */
 		next_expected_xid = latestObservedXid;
-		TransactionIdAdvance(next_expected_xid);
+		TransactionIdAdvance(&next_expected_xid);
 		KnownAssignedXidsAdd(next_expected_xid, xid, false);
 
 		/*
@@ -4685,7 +4685,7 @@ KnownAssignedXidsAdd(TransactionId from_xid, TransactionId to_xid,
 		while (TransactionIdPrecedes(next_xid, to_xid))
 		{
 			nxids++;
-			TransactionIdAdvance(next_xid);
+			TransactionIdAdvance(&next_xid);
 		}
 	}
 
@@ -4741,7 +4741,7 @@ KnownAssignedXidsAdd(TransactionId from_xid, TransactionId to_xid,
 	{
 		KnownAssignedXids[head] = next_xid;
 		KnownAssignedXidsValid[head] = true;
-		TransactionIdAdvance(next_xid);
+		TransactionIdAdvance(&next_xid);
 		head++;
 	}
 

@@ -634,7 +634,7 @@ SnapBuildInitialSnapshot(SnapBuild *builder)
 			newxip[newxcnt++] = xid;
 		}
 
-		TransactionIdAdvance(xid);
+		TransactionIdAdvance(&xid);
 	}
 
 	/* adjust remaining snapshot fields as needed */
@@ -1126,7 +1126,7 @@ SnapBuildCommitTxn(SnapBuild *builder, XLogRecPtr lsn, TransactionId xid,
 		 TransactionIdFollowsOrEquals(xmax, builder->xmax)))
 	{
 		builder->xmax = xmax;
-		TransactionIdAdvance(builder->xmax);
+		TransactionIdAdvance(&builder->xmax);
 	}
 
 	/* if there's any reason to build a historic snapshot, do so now */

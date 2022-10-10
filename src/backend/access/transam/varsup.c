@@ -300,7 +300,7 @@ AdvanceNextFullTransactionIdPastXid(TransactionId xid)
 	 * because the span of active xids cannot exceed one epoch at any given
 	 * point in the WAL stream.
 	 */
-	TransactionIdAdvance(xid);
+	TransactionIdAdvance(&xid);
 	epoch = EpochFromFullTransactionId(ShmemVariableCache->nextXid);
 	if (unlikely(xid < next_xid))
 		++epoch;

@@ -8944,7 +8944,7 @@ heap_xlog_freeze_page(XLogReaderState *record)
 		RelFileLocator rlocator;
 		TransactionId latestRemovedXid = cutoff_xid;
 
-		TransactionIdRetreat(latestRemovedXid);
+		TransactionIdRetreat(&latestRemovedXid);
 
 		XLogRecGetBlockTag(record, 0, &rlocator, NULL, NULL);
 		ResolveRecoveryConflictWithSnapshot(latestRemovedXid, rlocator);
