@@ -1162,9 +1162,27 @@ CREATE VIEW pg_stat_progress_vacuum AS
                       END AS phase,
         S.param2 AS heap_blks_total, S.param3 AS heap_blks_scanned,
         S.param4 AS heap_blks_vacuumed, S.param5 AS index_vacuum_count,
-        S.param6 AS max_dead_tuples, S.param7 AS num_dead_tuples
+        S.param6 AS max_dead_tuples, S.param7 AS num_dead_tuples,
+        S.param10 AS indexes_total, S.param11 AS indexes_completed
     FROM pg_stat_get_progress_info('VACUUM') AS S
         LEFT JOIN pg_database D ON S.datid = D.oid;
+
+CREATE VIEW pg_stat_progress_vacuum_index AS
+    SELECT
+        S.pid AS pid,
+        S.param9 AS leader_pid,
+        S.param8 AS indexrelid
+    FROM pg_stat_get_progress_info('VACUUM') AS S
+        LEFT JOIN pg_database D ON S.datid = D.oid
+    WHERE S.param1 in (2, 4) AND S.param8 > 0
+    UNION ALL
+    SELECT
+        S.pid AS pid,
+        S.param9 AS leader_pid,
+        S.param8 AS indexrelid
+    FROM pg_stat_get_progress_info('VACUUM_PARALLEL') AS S
+        LEFT JOIN pg_database D ON S.datid = D.oid
+    WHERE S.param1 in (2, 4) AND S.param8 > 0;
 
 CREATE VIEW pg_stat_progress_cluster AS
     SELECT

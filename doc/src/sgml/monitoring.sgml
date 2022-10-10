@@ -393,6 +393,15 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
      </row>
 
      <row>
+      <entry><structname>pg_stat_progress_vacuum_index</structname><indexterm><primary>pg_stat_progress_vacuum_index</primary>
+       </indexterm>
+      </entry>
+      <entry>One row for each backend (including autovacuum worker processes) performing the <literal>vacuuming indexes</literal>
+       or <literal>cleaning up indexes</literal> phase of a <command>VACUUM</command>.
+      </entry>
+     </row>
+
+     <row>
       <entry><structname>pg_stat_progress_cluster</structname><indexterm><primary>pg_stat_progress_cluster</primary></indexterm></entry>
       <entry>One row for each backend running
        <command>CLUSTER</command> or <command>VACUUM FULL</command>, showing current progress.
@@ -6412,6 +6421,89 @@ FROM pg_stat_get_backend_idset() AS backendid;
       </para>
       <para>
        Number of dead tuples collected since the last index vacuum cycle.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>indexes_total</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Number of indexes that wil be vacuumed. This value will be
+       <literal>0</literal> if there are no indexes to vacuum or
+       vacuum failsafe is triggered. See <xref linkend="guc-vacuum-failsafe-age"/>
+       for more on vacuum failsafe.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>indexes_completed</structfield> <type>bigint</type>
+      </para>
+      <para>
+       Number of indexes vacuumed in the current vacuum cycle.
+      </para></entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+  <indexterm>
+   <primary>pg_stat_progress_vacuum_index</primary>
+  </indexterm>
+
+  <para>
+   Whenever <command>VACUUM</command> is running, the
+   <structname>pg_stat_progress_vacuum_index</structname> view will contain
+   one row for each backend (including autovacuum worker processes) performing
+   the <literal>vacuuming indexes</literal> or <literal>cleaning up indexes</literal>
+   phase of a <command>VACUUM</command>.
+  </para>
+
+  <table id="pg-stat-progress-vacuum-view_index" xreflabel="pg_stat_progress_vacuum_index">
+   <title><structname>pg_stat_progress_vacuum_index</structname> View</title>
+   <tgroup cols="1">
+    <thead>
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       Column Type
+      </para>
+      <para>
+       Description
+      </para></entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>pid</structfield> <type>integer</type>
+      </para>
+      <para>
+       Process ID of backend.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>leader_pid</structfield> <type>integer</type>
+      </para>
+      <para>
+       Process ID of the leader backend in a parallel <command>VACUUM</command>. This value
+       will match the <structfield>pid</structfield> value whenever the leader
+       is processing an index or the <command>VACUUM</command> is not using parallel.
+       This field can be joined to <structfield>pid</structfield>
+       of <structfield>pg_stat_progress_vacuum</structfield> to get more details about
+       the <command>VACUUM</command>.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>indexrelid</structfield> <type>integer</type>
+      </para>
+      <para>
+       OID of the index being processed in the current vacuum phase.
       </para></entry>
      </row>
     </tbody>

@@ -350,8 +350,10 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 		}
 	}
 
+	/* start the vacuum progress command and report the leader pid. */
 	pgstat_progress_start_command(PROGRESS_COMMAND_VACUUM,
 								  RelationGetRelid(rel));
+	pgstat_progress_update_param(PROGRESS_VACUUM_LEADER_PID, MyProcPid);
 
 	/*
 	 * Get OldestXmin cutoff, which is used to determine which deleted tuples
@@ -420,6 +422,10 @@ heap_vacuum_rel(Relation rel, VacuumParams *params,
 	vacrel->rel = rel;
 	vac_open_indexes(vacrel->rel, RowExclusiveLock, &vacrel->nindexes,
 					 &vacrel->indrels);
+
+	/* report number of indexes to vacuum */
+	pgstat_progress_update_param(PROGRESS_VACUUM_INDEX_TOTAL, vacrel->nindexes);
+
 	if (instrument && vacrel->nindexes > 0)
 	{
 		/* Copy index names used by instrumentation (not error reporting) */
@@ -2337,9 +2343,20 @@ lazy_vacuum_all_indexes(LVRelState *vacrel)
 			Relation	indrel = vacrel->indrels[idx];
 			IndexBulkDeleteResult *istat = vacrel->indstats[idx];
 
+			/* report the index relid being vacuumed */
+			pgstat_progress_update_param(PROGRESS_VACUUM_INDRELID, RelationGetRelid(indrel));
+
 			vacrel->indstats[idx] =
 				lazy_vacuum_one_index(indrel, istat, vacrel->old_live_tuples,
 									  vacrel);
+
+			/*
+			 * Done vacuuming an index.
+			 * Increment the indexes completed and reset the index relid to 0
+			 */
+			pgstat_progress_update_param(PROGRESS_VACUUM_INDEX_COMPLETED,
+										 idx + 1);
+			pgstat_progress_update_param(PROGRESS_VACUUM_INDRELID, 0);
 
 			if (lazy_check_wraparound_failsafe(vacrel))
 			{
@@ -2383,6 +2400,13 @@ lazy_vacuum_all_indexes(LVRelState *vacrel)
 	vacrel->num_index_scans++;
 	pgstat_progress_update_param(PROGRESS_VACUUM_NUM_INDEX_VACUUMS,
 								 vacrel->num_index_scans);
+
+	/*
+	 * Reset the indexes completed at this point.
+	 * If we end up in another index vacuum cycle, we will
+	 * start counting from the start.
+	 */
+	pgstat_progress_update_param(PROGRESS_VACUUM_INDEX_COMPLETED, 0);
 
 	return allindexes;
 }
@@ -2633,10 +2657,17 @@ lazy_check_wraparound_failsafe(LVRelState *vacrel)
 	{
 		vacrel->failsafe_active = true;
 
-		/* Disable index vacuuming, index cleanup, and heap rel truncation */
+		/*
+		 * Disable index vacuuming, index cleanup, and heap rel truncation
+		 *
+		 * Also, report to progress.h that we are no longer tracking
+		 * index vacuum/cleanup.
+		 */
 		vacrel->do_index_vacuuming = false;
 		vacrel->do_index_cleanup = false;
 		vacrel->do_rel_truncate = false;
+		pgstat_progress_update_param(PROGRESS_VACUUM_INDEX_TOTAL, 0);
+		pgstat_progress_update_param(PROGRESS_VACUUM_INDEX_COMPLETED, 0);
 
 		ereport(WARNING,
 				(errmsg("bypassing nonessential maintenance of table \"%s.%s.%s\" as a failsafe after %d index scans",
@@ -2681,9 +2712,20 @@ lazy_cleanup_all_indexes(LVRelState *vacrel)
 			Relation	indrel = vacrel->indrels[idx];
 			IndexBulkDeleteResult *istat = vacrel->indstats[idx];
 
+			/*+ report the index relid being cleaned */
+			pgstat_progress_update_param(PROGRESS_VACUUM_INDRELID, RelationGetRelid(indrel));
+
 			vacrel->indstats[idx] =
 				lazy_cleanup_one_index(indrel, istat, reltuples,
 									   estimated_count, vacrel);
+
+			/*
+			 * Done cleaning an index.
+			 * Increment the indexes completed and reset the index relid to 0
+			 */
+			pgstat_progress_update_param(PROGRESS_VACUUM_INDEX_COMPLETED,
+										 idx + 1);
+			pgstat_progress_update_param(PROGRESS_VACUUM_INDRELID, 0);
 		}
 	}
 	else

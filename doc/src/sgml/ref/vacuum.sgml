@@ -411,7 +411,13 @@ VACUUM [ FULL ] [ FREEZE ] [ VERBOSE ] [ ANALYZE ] [ <replaceable class="paramet
    <para>
     Each backend running <command>VACUUM</command> without the
     <literal>FULL</literal> option will report its progress in the
-    <structname>pg_stat_progress_vacuum</structname> view. Backends running
+    <structname>pg_stat_progress_vacuum</structname> view.
+    <structname>pg_stat_progress_vacuum</structname> view. Whenever a
+    <command>VACUUM</command> is in the <literal>vacuuming indexes</literal>
+    or <literal>cleaning up indexes</literal> phase,
+    the current index being processed is reported in
+    <structname>pg_stat_progress_vacuum_index</structname>.
+    <command>VACUUM FULL</command> will report their progress in the Backends running
     <command>VACUUM FULL</command> will instead report their progress in the
     <structname>pg_stat_progress_cluster</structname> view. See
     <xref linkend="vacuum-progress-reporting"/> and

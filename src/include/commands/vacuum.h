@@ -338,4 +338,6 @@ extern double anl_random_fract(void);
 extern double anl_init_selection_state(int n);
 extern double anl_get_next_S(double t, int n, double *stateptr);
 
+extern void parallel_vacuum_progress_report(void);
+
 #endif							/* VACUUM_H */

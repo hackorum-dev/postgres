@@ -17,6 +17,10 @@
 
 /* ----------
  * Command type for progress reporting purposes
+ *
+ * Note: PROGRESS_COMMAND_VACUUM_PARALLEL is not
+ * a command per se, but this type is used to track
+ * parallel vacuum workers progress.
  * ----------
  */
 typedef enum ProgressCommandType
@@ -27,7 +31,8 @@ typedef enum ProgressCommandType
 	PROGRESS_COMMAND_CLUSTER,
 	PROGRESS_COMMAND_CREATE_INDEX,
 	PROGRESS_COMMAND_BASEBACKUP,
-	PROGRESS_COMMAND_COPY
+	PROGRESS_COMMAND_COPY,
+	PROGRESS_COMMAND_VACUUM_PARALLEL
 } ProgressCommandType;
 
 #define PGSTAT_NUM_PROGRESS_PARAM	20

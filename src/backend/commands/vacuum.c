@@ -2173,11 +2173,17 @@ vac_close_indexes(int nindexes, Relation *Irel, LOCKMODE lockmode)
  *
  * This should be called in each major loop of VACUUM processing,
  * typically once per page processed.
+ *
+ * NOTE: For convenience, parallel_vacuum_progress_report, is called
+ * here so the leader can report the number of indexes vacuumed in
+ * while inside all the major VACUUM loops.
  */
 void
 vacuum_delay_point(void)
 {
 	double		msec = 0;
+
+	parallel_vacuum_progress_report();
 
 	/* Always check for interrupts */
 	CHECK_FOR_INTERRUPTS();
