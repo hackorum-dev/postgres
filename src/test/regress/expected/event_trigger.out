@@ -447,7 +447,6 @@ NOTICE:  NORMAL: orig=t normal=f istemp=f type=table constraint identity=one_pke
 NOTICE:  END: command_tag=ALTER TABLE type=table identity=evttrig.one
 ALTER TABLE evttrig.one DROP COLUMN col_c;
 NOTICE:  NORMAL: orig=t normal=f istemp=f type=table column identity=evttrig.one.col_c name={evttrig,one,col_c} args={}
-NOTICE:  NORMAL: orig=f normal=t istemp=f type=default value identity=for evttrig.one.col_c name={evttrig,one,col_c} args={}
 NOTICE:  END: command_tag=ALTER TABLE type=table identity=evttrig.one
 ALTER TABLE evttrig.id ALTER COLUMN col_d SET DATA TYPE bigint;
 NOTICE:  END: command_tag=ALTER SEQUENCE type=sequence identity=evttrig.id_col_d_seq
@@ -466,7 +465,6 @@ drop cascades to table evttrig.parted
 NOTICE:  NORMAL: orig=t normal=f istemp=f type=schema identity=evttrig name={evttrig} args={}
 NOTICE:  NORMAL: orig=f normal=t istemp=f type=table identity=evttrig.one name={evttrig,one} args={}
 NOTICE:  NORMAL: orig=f normal=t istemp=f type=sequence identity=evttrig.one_col_a_seq name={evttrig,one_col_a_seq} args={}
-NOTICE:  NORMAL: orig=f normal=t istemp=f type=default value identity=for evttrig.one.col_a name={evttrig,one,col_a} args={}
 NOTICE:  NORMAL: orig=f normal=t istemp=f type=table identity=evttrig.two name={evttrig,two} args={}
 NOTICE:  NORMAL: orig=f normal=t istemp=f type=table identity=evttrig.id name={evttrig,id} args={}
 NOTICE:  NORMAL: orig=f normal=t istemp=f type=table identity=evttrig.parted name={evttrig,parted} args={}

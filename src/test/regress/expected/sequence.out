@@ -291,9 +291,8 @@ CREATE TEMP TABLE t1 (
 );
 -- Both drops should fail, but with different error messages:
 DROP SEQUENCE t1_f1_seq;
-ERROR:  cannot drop sequence t1_f1_seq because other objects depend on it
-DETAIL:  default value for column f1 of table t1 depends on sequence t1_f1_seq
-HINT:  Use DROP ... CASCADE to drop the dependent objects too.
+ERROR:  cannot drop sequence t1_f1_seq because column f1 of table t1 requires it
+HINT:  You can drop column f1 of table t1 instead.
 DROP SEQUENCE myseq2;
 ERROR:  cannot drop sequence myseq2 because other objects depend on it
 DETAIL:  default value for column f2 of table t1 depends on sequence myseq2
@@ -478,28 +477,22 @@ CREATE SEQUENCE sequence_test3;  -- not read from, to test is_called
 SELECT * FROM information_schema.sequences
   WHERE sequence_name ~ ANY(ARRAY['sequence_test', 'serialtest'])
   ORDER BY sequence_name ASC;
- sequence_catalog | sequence_schema |   sequence_name    | data_type | numeric_precision | numeric_precision_radix | numeric_scale | start_value |    minimum_value     |    maximum_value    | increment | cycle_option 
-------------------+-----------------+--------------------+-----------+-------------------+-------------------------+---------------+-------------+----------------------+---------------------+-----------+--------------
- regression       | public          | sequence_test10    | smallint  |                16 |                       2 |             0 | 1           | -20000               | 32767               | 1         | NO
- regression       | public          | sequence_test11    | integer   |                32 |                       2 |             0 | 1           | 1                    | 2147483647          | 1         | NO
- regression       | public          | sequence_test12    | integer   |                32 |                       2 |             0 | -1          | -2147483648          | -1                  | -1        | NO
- regression       | public          | sequence_test13    | integer   |                32 |                       2 |             0 | -32768      | -2147483648          | 2147483647          | 1         | NO
- regression       | public          | sequence_test14    | integer   |                32 |                       2 |             0 | 32767       | -2147483648          | 2147483647          | -1        | NO
- regression       | public          | sequence_test2     | bigint    |                64 |                       2 |             0 | 32          | 5                    | 36                  | 4         | YES
- regression       | public          | sequence_test3     | bigint    |                64 |                       2 |             0 | 1           | 1                    | 9223372036854775807 | 1         | NO
- regression       | public          | sequence_test4     | bigint    |                64 |                       2 |             0 | -1          | -9223372036854775808 | -1                  | -1        | NO
- regression       | public          | sequence_test5     | smallint  |                16 |                       2 |             0 | 1           | 1                    | 32767               | 1         | NO
- regression       | public          | sequence_test6     | smallint  |                16 |                       2 |             0 | 1           | 1                    | 32767               | 1         | NO
- regression       | public          | sequence_test7     | bigint    |                64 |                       2 |             0 | 1           | 1                    | 9223372036854775807 | 1         | NO
- regression       | public          | sequence_test8     | smallint  |                16 |                       2 |             0 | 1           | 1                    | 20000               | 1         | NO
- regression       | public          | sequence_test9     | smallint  |                16 |                       2 |             0 | -1          | -32768               | -1                  | -1        | NO
- regression       | public          | serialtest1_f2_foo | integer   |                32 |                       2 |             0 | 1           | 1                    | 2147483647          | 1         | NO
- regression       | public          | serialtest2_f2_seq | integer   |                32 |                       2 |             0 | 1           | 1                    | 2147483647          | 1         | NO
- regression       | public          | serialtest2_f3_seq | smallint  |                16 |                       2 |             0 | 1           | 1                    | 32767               | 1         | NO
- regression       | public          | serialtest2_f4_seq | smallint  |                16 |                       2 |             0 | 1           | 1                    | 32767               | 1         | NO
- regression       | public          | serialtest2_f5_seq | bigint    |                64 |                       2 |             0 | 1           | 1                    | 9223372036854775807 | 1         | NO
- regression       | public          | serialtest2_f6_seq | bigint    |                64 |                       2 |             0 | 1           | 1                    | 9223372036854775807 | 1         | NO
-(19 rows)
+ sequence_catalog | sequence_schema |  sequence_name  | data_type | numeric_precision | numeric_precision_radix | numeric_scale | start_value |    minimum_value     |    maximum_value    | increment | cycle_option 
+------------------+-----------------+-----------------+-----------+-------------------+-------------------------+---------------+-------------+----------------------+---------------------+-----------+--------------
+ regression       | public          | sequence_test10 | smallint  |                16 |                       2 |             0 | 1           | -20000               | 32767               | 1         | NO
+ regression       | public          | sequence_test11 | integer   |                32 |                       2 |             0 | 1           | 1                    | 2147483647          | 1         | NO
+ regression       | public          | sequence_test12 | integer   |                32 |                       2 |             0 | -1          | -2147483648          | -1                  | -1        | NO
+ regression       | public          | sequence_test13 | integer   |                32 |                       2 |             0 | -32768      | -2147483648          | 2147483647          | 1         | NO
+ regression       | public          | sequence_test14 | integer   |                32 |                       2 |             0 | 32767       | -2147483648          | 2147483647          | -1        | NO
+ regression       | public          | sequence_test2  | bigint    |                64 |                       2 |             0 | 32          | 5                    | 36                  | 4         | YES
+ regression       | public          | sequence_test3  | bigint    |                64 |                       2 |             0 | 1           | 1                    | 9223372036854775807 | 1         | NO
+ regression       | public          | sequence_test4  | bigint    |                64 |                       2 |             0 | -1          | -9223372036854775808 | -1                  | -1        | NO
+ regression       | public          | sequence_test5  | smallint  |                16 |                       2 |             0 | 1           | 1                    | 32767               | 1         | NO
+ regression       | public          | sequence_test6  | smallint  |                16 |                       2 |             0 | 1           | 1                    | 32767               | 1         | NO
+ regression       | public          | sequence_test7  | bigint    |                64 |                       2 |             0 | 1           | 1                    | 9223372036854775807 | 1         | NO
+ regression       | public          | sequence_test8  | smallint  |                16 |                       2 |             0 | 1           | 1                    | 20000               | 1         | NO
+ regression       | public          | sequence_test9  | smallint  |                16 |                       2 |             0 | -1          | -32768               | -1                  | -1        | NO
+(13 rows)
 
 SELECT schemaname, sequencename, start_value, min_value, max_value, increment_by, cycle, cache_size, last_value
 FROM pg_sequences
@@ -545,7 +538,7 @@ SELECT * FROM pg_sequence_parameters('sequence_test4'::regclass);
   Type   | Start | Minimum |  Maximum   | Increment | Cycles? | Cache 
 ---------+-------+---------+------------+-----------+---------+-------
  integer |     1 |       1 | 2147483647 |         1 | no      |     1
-Owned by: public.serialtest2.f2
+Sequence for identity column: public.serialtest2.f2
 
 -- Test comments
 COMMENT ON SEQUENCE asdf IS 'won''t work';

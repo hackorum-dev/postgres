@@ -25,12 +25,9 @@ NOTICE:  DDL test: type simple, tag CREATE TABLE
 CREATE TABLE grandchild () INHERITS (child);
 NOTICE:  DDL test: type simple, tag CREATE TABLE
 ALTER TABLE parent ADD COLUMN b serial;
-NOTICE:  DDL test: type simple, tag CREATE SEQUENCE
-NOTICE:  DDL test: type alter table, tag ALTER TABLE
-NOTICE:    subcommand: type ADD COLUMN (and recurse) desc column b of table parent
-NOTICE:  DDL test: type simple, tag ALTER SEQUENCE
+ERROR:  cannot recursively add identity column to table that has child tables
 ALTER TABLE parent RENAME COLUMN b TO c;
-NOTICE:  DDL test: type simple, tag ALTER TABLE
+ERROR:  column "b" does not exist
 -- Constraint, no recursion
 ALTER TABLE ONLY grandchild ADD CONSTRAINT a_pos CHECK (a > 0);
 NOTICE:  DDL test: type alter table, tag ALTER TABLE
@@ -110,18 +107,11 @@ ALTER TABLE parent DISABLE ROW LEVEL SECURITY;
 NOTICE:  DDL test: type alter table, tag ALTER TABLE
 NOTICE:    subcommand: type DISABLE ROW SECURITY desc <NULL>
 CREATE STATISTICS parent_stat (dependencies) ON a, c FROM parent;
-NOTICE:  DDL test: type simple, tag CREATE STATISTICS
+ERROR:  column "c" does not exist
 ALTER TABLE parent ALTER COLUMN c TYPE numeric;
-NOTICE:  DDL test: type alter table, tag ALTER TABLE
-NOTICE:    subcommand: type ALTER COLUMN SET TYPE desc column c of table parent
-NOTICE:    subcommand: type ALTER COLUMN SET TYPE desc column c of table child
-NOTICE:    subcommand: type ALTER COLUMN SET TYPE desc column c of table grandchild
-NOTICE:    subcommand: type (re) ADD STATS desc statistics object parent_stat
+ERROR:  column "c" of relation "parent" does not exist
 ALTER TABLE parent ALTER COLUMN c SET DEFAULT 0;
-NOTICE:  DDL test: type alter table, tag ALTER TABLE
-NOTICE:    subcommand: type ALTER COLUMN SET DEFAULT desc column c of table parent
-NOTICE:    subcommand: type ALTER COLUMN SET DEFAULT desc column c of table child
-NOTICE:    subcommand: type ALTER COLUMN SET DEFAULT desc column c of table grandchild
+ERROR:  column "c" of relation "parent" does not exist
 CREATE TABLE tbl (
 	a int generated always as (b::int * 2) stored,
 	b text

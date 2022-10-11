@@ -2688,7 +2688,7 @@ create table psql_serial_tab (id serial);
   Type   | Start | Minimum |  Maximum   | Increment | Cycles? | Cache 
 ---------+-------+---------+------------+-----------+---------+-------
  integer |     1 |       1 | 2147483647 |         1 | no      |     1
-Owned by: public.psql_serial_tab.id
+Sequence for identity column: public.psql_serial_tab.id
 
 \pset tuples_only true
 \df exp
@@ -2708,7 +2708,7 @@ Increment | 1
 Cycles?   | no
 Cache     | 1
 
-Owned by: public.psql_serial_tab.id
+Sequence for identity column: public.psql_serial_tab.id
 
 \pset tuples_only true
 \df exp
@@ -2735,7 +2735,7 @@ select 1 where false;
 Sequence "public.psql_serial_tab_id_seq"
 Type|Start|Minimum|Maximum|Increment|Cycles?|Cache
 integer|1|1|2147483647|1|no|1
-Owned by: public.psql_serial_tab.id
+Sequence for identity column: public.psql_serial_tab.id
 \pset tuples_only true
 \df exp
 pg_catalog|exp|double precision|double precision|func
@@ -2753,7 +2753,7 @@ Increment|1
 Cycles?|no
 Cache|1
 
-Owned by: public.psql_serial_tab.id
+Sequence for identity column: public.psql_serial_tab.id
 \pset tuples_only true
 \df exp
 Schema|pg_catalog
@@ -2775,7 +2775,7 @@ Type|func
   Type   | Start | Minimum |  Maximum   | Increment | Cycles? | Cache 
 ---------+-------+---------+------------+-----------+---------+-------
  integer |     1 |       1 | 2147483647 |         1 | no      |     1
-Owned by: public.psql_serial_tab.id
+Sequence for identity column: public.psql_serial_tab.id
 
 \pset tuples_only true
 \df exp
@@ -2795,7 +2795,7 @@ Increment | 1
 Cycles?   | no
 Cache     | 1
 
-Owned by: public.psql_serial_tab.id
+Sequence for identity column: public.psql_serial_tab.id
 
 \pset tuples_only true
 \df exp
@@ -2940,7 +2940,7 @@ from generate_series(0,3) n;
 |====
 
 ....
-Owned by: public.psql_serial_tab.id
+Sequence for identity column: public.psql_serial_tab.id
 ....
 \pset tuples_only true
 \df exp
@@ -2968,7 +2968,7 @@ Owned by: public.psql_serial_tab.id
 |====
 
 ....
-Owned by: public.psql_serial_tab.id
+Sequence for identity column: public.psql_serial_tab.id
 ....
 \pset tuples_only true
 \df exp
@@ -3190,7 +3190,7 @@ select '\' as d1, '' as d2;
     <td align="right">1</td>
   </tr>
 </table>
-<p>Owned by: public.psql_serial_tab.id<br />
+<p>Sequence for identity column: public.psql_serial_tab.id<br />
 </p>
 \pset tuples_only true
 \df exp
@@ -3247,7 +3247,7 @@ select '\' as d1, '' as d2;
     <td align="right">1</td>
   </tr>
 </table>
-<p>Owned by: public.psql_serial_tab.id<br />
+<p>Sequence for identity column: public.psql_serial_tab.id<br />
 </p>
 \pset tuples_only true
 \df exp
@@ -3530,7 +3530,7 @@ Sequence "public.psql\_serial\_tab\_id\_seq"
 integer & 1 & 1 & 2147483647 & 1 & no & 1 \\
 \end{tabular}
 
-\noindent Owned by: public.psql\_serial\_tab.id \\
+\noindent Sequence for identity column: public.psql\_serial\_tab.id \\
 
 \pset tuples_only true
 \df exp
@@ -3559,7 +3559,7 @@ Cycles? & no \\
 Cache & 1 \\
 \end{tabular}
 
-\noindent Owned by: public.psql\_serial\_tab.id \\
+\noindent Sequence for identity column: public.psql\_serial\_tab.id \\
 
 \pset tuples_only true
 \df exp
@@ -3783,7 +3783,7 @@ Cycles? & no \\
 Cache & 1 \\
 \end{tabular}
 
-\noindent Owned by: public.psql\_serial\_tab.id \\
+\noindent Sequence for identity column: public.psql\_serial\_tab.id \\
 
 \pset tuples_only true
 \df exp
@@ -4068,7 +4068,7 @@ _
 integer	1	1	2147483647	1	no	1
 .TE
 .DS L
-Owned by: public.psql_serial_tab.id
+Sequence for identity column: public.psql_serial_tab.id
 .DE
 \pset tuples_only true
 \df exp
@@ -4105,7 +4105,7 @@ Cycles?	no
 Cache	1
 .TE
 .DS L
-Owned by: public.psql_serial_tab.id
+Sequence for identity column: public.psql_serial_tab.id
 .DE
 \pset tuples_only true
 \df exp

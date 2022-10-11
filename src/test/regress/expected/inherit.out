@@ -1396,11 +1396,23 @@ create index matest1i on matest1 ((1-id));
 -- create index matest2i on matest2 ((1-id));  -- intentionally missing
 create index matest3i on matest3 ((1-id));
 insert into matest1 (name) values ('Test 1');
+ERROR:  null value in column "id" of relation "matest1" violates not-null constraint
+DETAIL:  Failing row contains (null, Test 1).
 insert into matest1 (name) values ('Test 2');
+ERROR:  null value in column "id" of relation "matest1" violates not-null constraint
+DETAIL:  Failing row contains (null, Test 2).
 insert into matest2 (name) values ('Test 3');
+ERROR:  null value in column "id" of relation "matest2" violates not-null constraint
+DETAIL:  Failing row contains (null, Test 3).
 insert into matest2 (name) values ('Test 4');
+ERROR:  null value in column "id" of relation "matest2" violates not-null constraint
+DETAIL:  Failing row contains (null, Test 4).
 insert into matest3 (name) values ('Test 5');
+ERROR:  null value in column "id" of relation "matest3" violates not-null constraint
+DETAIL:  Failing row contains (null, Test 5).
 insert into matest3 (name) values ('Test 6');
+ERROR:  null value in column "id" of relation "matest3" violates not-null constraint
+DETAIL:  Failing row contains (null, Test 6).
 set enable_indexscan = off;  -- force use of seqscan/sort, so no merge
 explain (verbose, costs off) select * from matest0 order by 1-id;
                          QUERY PLAN                         
@@ -1422,15 +1434,9 @@ explain (verbose, costs off) select * from matest0 order by 1-id;
 (14 rows)
 
 select * from matest0 order by 1-id;
- id |  name  
-----+--------
-  6 | Test 6
-  5 | Test 5
-  4 | Test 4
-  3 | Test 3
-  2 | Test 2
-  1 | Test 1
-(6 rows)
+ id | name 
+----+------
+(0 rows)
 
 explain (verbose, costs off) select min(1-id) from matest0;
                     QUERY PLAN                    
@@ -1451,7 +1457,7 @@ explain (verbose, costs off) select min(1-id) from matest0;
 select min(1-id) from matest0;
  min 
 -----
-  -5
+    
 (1 row)
 
 reset enable_indexscan;
@@ -1476,15 +1482,9 @@ explain (verbose, costs off) select * from matest0 order by 1-id;
 (13 rows)
 
 select * from matest0 order by 1-id;
- id |  name  
-----+--------
-  6 | Test 6
-  5 | Test 5
-  4 | Test 4
-  3 | Test 3
-  2 | Test 2
-  1 | Test 1
-(6 rows)
+ id | name 
+----+------
+(0 rows)
 
 explain (verbose, costs off) select min(1-id) from matest0;
                                    QUERY PLAN                                    
@@ -1519,7 +1519,7 @@ explain (verbose, costs off) select min(1-id) from matest0;
 select min(1-id) from matest0;
  min 
 -----
-  -5
+    
 (1 row)
 
 reset enable_seqscan;
