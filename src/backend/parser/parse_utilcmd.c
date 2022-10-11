@@ -361,15 +361,12 @@ transformCreateStmt(CreateStmt *stmt, const char *queryString)
  *		Generate CREATE SEQUENCE and ALTER SEQUENCE ... OWNED BY statements
  *		to create the sequence for a serial or identity column.
  *
- * This includes determining the name the sequence will have.  The caller
- * can ask to get back the name components by passing non-null pointers
- * for snamespace_p and sname_p.
+ * This includes determining the name the sequence will have.
  */
 static void
 generateSerialExtraStmts(CreateStmtContext *cxt, ColumnDef *column,
 						 Oid seqtypid, List *seqoptions,
-						 bool for_identity, bool col_exists,
-						 char **snamespace_p, char **sname_p)
+						 bool col_exists)
 {
 	ListCell   *option;
 	DefElem    *nameEl = NULL;
@@ -453,7 +450,7 @@ generateSerialExtraStmts(CreateStmtContext *cxt, ColumnDef *column,
 	 * it to the list of things to be done before this CREATE/ALTER TABLE.
 	 */
 	seqstmt = makeNode(CreateSeqStmt);
-	seqstmt->for_identity = for_identity;
+	seqstmt->for_identity = true;
 	seqstmt->sequence = makeRangeVar(snamespace, sname, -1);
 	seqstmt->sequence->relpersistence = cxt->relation->relpersistence;
 	seqstmt->options = seqoptions;
@@ -508,17 +505,12 @@ generateSerialExtraStmts(CreateStmtContext *cxt, ColumnDef *column,
 							 makeString(column->colname));
 	altseqstmt->options = list_make1(makeDefElem("owned_by",
 												 (Node *) attnamelist, -1));
-	altseqstmt->for_identity = for_identity;
+	altseqstmt->for_identity = true;
 
 	if (col_exists)
 		cxt->blist = lappend(cxt->blist, altseqstmt);
 	else
 		cxt->alist = lappend(cxt->alist, altseqstmt);
-
-	if (snamespace_p)
-		*snamespace_p = snamespace;
-	if (sname_p)
-		*sname_p = sname;
 }
 
 /*
@@ -588,51 +580,11 @@ transformColumnDefinition(CreateStmtContext *cxt, ColumnDef *column)
 	/* Special actions for SERIAL pseudo-types */
 	if (is_serial)
 	{
-		char	   *snamespace;
-		char	   *sname;
-		char	   *qstring;
-		A_Const    *snamenode;
-		TypeCast   *castnode;
-		FuncCall   *funccallnode;
 		Constraint *constraint;
 
-		generateSerialExtraStmts(cxt, column,
-								 column->typeName->typeOid, NIL,
-								 false, false,
-								 &snamespace, &sname);
-
-		/*
-		 * Create appropriate constraints for SERIAL.  We do this in full,
-		 * rather than shortcutting, so that we will detect any conflicting
-		 * constraints the user wrote (like a different DEFAULT).
-		 *
-		 * Create an expression tree representing the function call
-		 * nextval('sequencename').  We cannot reduce the raw tree to cooked
-		 * form until after the sequence is created, but there's no need to do
-		 * so.
-		 */
-		qstring = quote_qualified_identifier(snamespace, sname);
-		snamenode = makeNode(A_Const);
-		snamenode->val.node.type = T_String;
-		snamenode->val.sval.sval = qstring;
-		snamenode->location = -1;
-		castnode = makeNode(TypeCast);
-		castnode->typeName = SystemTypeName("regclass");
-		castnode->arg = (Node *) snamenode;
-		castnode->location = -1;
-		funccallnode = makeFuncCall(SystemFuncName("nextval"),
-									list_make1(castnode),
-									COERCE_EXPLICIT_CALL,
-									-1);
 		constraint = makeNode(Constraint);
-		constraint->contype = CONSTR_DEFAULT;
-		constraint->location = -1;
-		constraint->raw_expr = (Node *) funccallnode;
-		constraint->cooked_expr = NULL;
-		column->constraints = lappend(column->constraints, constraint);
-
-		constraint = makeNode(Constraint);
-		constraint->contype = CONSTR_NOTNULL;
+		constraint->contype = CONSTR_IDENTITY;
+		constraint->generated_when = ATTRIBUTE_IDENTITY_BY_DEFAULT;
 		constraint->location = -1;
 		column->constraints = lappend(column->constraints, constraint);
 	}
@@ -714,10 +666,7 @@ transformColumnDefinition(CreateStmtContext *cxt, ColumnDef *column)
 								 parser_errposition(cxt->pstate,
 													constraint->location)));
 
-					generateSerialExtraStmts(cxt, column,
-											 typeOid, constraint->options,
-											 true, false,
-											 NULL, NULL);
+					generateSerialExtraStmts(cxt, column, typeOid, constraint->options, false);
 
 					column->identity = constraint->generated_when;
 					saw_identity = true;
@@ -1082,10 +1031,7 @@ transformTableLikeClause(CreateStmtContext *cxt, TableLikeClause *table_like_cla
 			 */
 			seq_relid = getIdentitySequence(RelationGetRelid(relation), attribute->attnum, false);
 			seq_options = sequence_options(seq_relid);
-			generateSerialExtraStmts(cxt, def,
-									 InvalidOid, seq_options,
-									 true, false,
-									 NULL, NULL);
+			generateSerialExtraStmts(cxt, def, InvalidOid, seq_options, false);
 			def->identity = attribute->attidentity;
 		}
 
@@ -3468,10 +3414,7 @@ transformAlterTableStmt(Oid relid, AlterTableStmt *stmt,
 								 errmsg("column \"%s\" of relation \"%s\" does not exist",
 										cmd->name, RelationGetRelationName(rel))));
 
-					generateSerialExtraStmts(&cxt, newdef,
-											 get_atttype(relid, attnum),
-											 def->options, true, true,
-											 NULL, NULL);
+					generateSerialExtraStmts(&cxt, newdef, get_atttype(relid, attnum), def->options, true);
 
 					newcmds = lappend(newcmds, cmd);
 					break;

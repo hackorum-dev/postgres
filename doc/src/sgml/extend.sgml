@@ -1003,9 +1003,7 @@ CREATE SEQUENCE my_config_seq;
 SELECT pg_catalog.pg_extension_config_dump('my_config', '');
 SELECT pg_catalog.pg_extension_config_dump('my_config_seq', '');
 </programlisting>
-     Any number of tables or sequences can be marked this way. Sequences
-     associated with <type>serial</type> or <type>bigserial</type> columns can
-     be marked as well.
+     Any number of tables or sequences can be marked this way.
     </para>
 
     <para>
@@ -1054,12 +1052,6 @@ SELECT pg_catalog.pg_extension_config_dump('my_config', 'WHERE NOT standard_entr
      supported.  When circular dependencies exist, the data will still be dumped
      out but the dump will not be able to be restored directly and user
      intervention will be required.
-    </para>
-
-    <para>
-     Sequences associated with <type>serial</type> or <type>bigserial</type> columns
-     need to be directly marked to dump their state. Marking their parent
-     relation is not enough for this purpose.
     </para>
    </sect2>
 
