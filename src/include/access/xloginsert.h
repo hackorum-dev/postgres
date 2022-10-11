@@ -42,7 +42,7 @@
 extern void XLogBeginInsert(void);
 extern void XLogSetRecordFlags(uint8 flags);
 extern XLogRecPtr XLogInsert(RmgrId rmid, uint8 rminfo);
-extern XLogRecPtr XLogInsertExtended(RmgrId rmid, uint8 info, uint8 rminfo);
+extern XLogRecPtr XLogInsertExtended(RmgrId rmid, uint8 info, uint8 rminfo, CommandId cid);
 extern void XLogEnsureRecordSpace(int max_block_id, int ndatas);
 extern void XLogRegisterData(char *data, uint32 len);
 extern void XLogRegisterBuffer(uint8 block_id, Buffer buffer, uint8 flags);

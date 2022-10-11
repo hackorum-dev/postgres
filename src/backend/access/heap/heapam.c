@@ -2171,7 +2171,8 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 		/* filtering by origin on a row level is much more efficient */
 		XLogSetRecordFlags(XLOG_INCLUDE_ORIGIN);
 
-		recptr = XLogInsert(RM_HEAP_ID, rminfo);
+		recptr = XLogInsertExtended(RM_HEAP_ID, XLR_HAS_XID,
+									rminfo, InvalidCommandId);
 
 		PageSetLSN(page, recptr);
 	}
@@ -2519,7 +2520,8 @@ heap_multi_insert(Relation relation, TupleTableSlot **slots, int ntuples,
 			/* filtering by origin on a row level is much more efficient */
 			XLogSetRecordFlags(XLOG_INCLUDE_ORIGIN);
 
-			recptr = XLogInsert(RM_HEAP2_ID, rminfo);
+			recptr = XLogInsertExtended(RM_HEAP2_ID, XLR_HAS_XID,
+										rminfo, InvalidCommandId);
 
 			PageSetLSN(page, recptr);
 		}
@@ -3018,7 +3020,8 @@ l1:
 		/* filtering by origin on a row level is much more efficient */
 		XLogSetRecordFlags(XLOG_INCLUDE_ORIGIN);
 
-		recptr = XLogInsert(RM_HEAP_ID, XLOG_HEAP_DELETE);
+		recptr = XLogInsertExtended(RM_HEAP_ID, XLR_HAS_XID,
+									XLOG_HEAP_DELETE, InvalidCommandId);
 
 		PageSetLSN(page, recptr);
 	}
@@ -5813,7 +5816,8 @@ heap_finish_speculative(Relation relation, ItemPointer tid)
 		XLogRegisterData((char *) &xlrec, SizeOfHeapConfirm);
 		XLogRegisterBuffer(0, buffer, REGBUF_STANDARD);
 
-		recptr = XLogInsert(RM_HEAP_ID, XLOG_HEAP_CONFIRM);
+		recptr = XLogInsertExtended(RM_HEAP_ID, XLR_HAS_XID,
+									XLOG_HEAP_CONFIRM, InvalidCommandId);
 
 		PageSetLSN(page, recptr);
 	}
@@ -5956,7 +5960,8 @@ heap_abort_speculative(Relation relation, ItemPointer tid)
 
 		/* No replica identity & replication origin logged */
 
-		recptr = XLogInsert(RM_HEAP_ID, XLOG_HEAP_DELETE);
+		recptr = XLogInsertExtended(RM_HEAP_ID, XLR_HAS_XID,
+									XLOG_HEAP_DELETE, InvalidCommandId);
 
 		PageSetLSN(page, recptr);
 	}
@@ -6067,7 +6072,8 @@ heap_inplace_update(Relation relation, HeapTuple tuple)
 
 		/* inplace updates aren't decoded atm, don't log the origin */
 
-		recptr = XLogInsert(RM_HEAP_ID, XLOG_HEAP_INPLACE);
+		recptr = XLogInsertExtended(RM_HEAP_ID, XLR_HAS_XID,
+									XLOG_HEAP_INPLACE, InvalidCommandId);
 
 		PageSetLSN(page, recptr);
 	}
@@ -8439,7 +8445,8 @@ log_heap_update(Relation reln, Buffer oldbuf,
 	/* filtering by origin on a row level is much more efficient */
 	XLogSetRecordFlags(XLOG_INCLUDE_ORIGIN);
 
-	recptr = XLogInsert(RM_HEAP_ID, rminfo);
+	recptr = XLogInsertExtended(RM_HEAP_ID, XLR_HAS_XID,
+								rminfo, InvalidCommandId);
 
 	return recptr;
 }
@@ -8513,7 +8520,8 @@ log_heap_new_cid(Relation relation, HeapTuple tup)
 
 	/* will be looked at irrespective of origin */
 
-	recptr = XLogInsert(RM_HEAP2_ID, XLOG_HEAP2_NEW_CID);
+	recptr = XLogInsertExtended(RM_HEAP2_ID, XLR_HAS_XID,
+								XLOG_HEAP2_NEW_CID, InvalidCommandId);
 
 	return recptr;
 }

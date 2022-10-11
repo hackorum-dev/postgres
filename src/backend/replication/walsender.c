@@ -3019,7 +3019,7 @@ retry:
 static void
 XLogSendLogical(void)
 {
-	XLogRecord *record;
+	XLRHeaderData *record;
 	char	   *errm;
 
 	/*

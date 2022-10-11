@@ -1632,6 +1632,7 @@ LogLogicalInvalidations(void)
 		ProcessMessageSubGroupMulti(group, RelCacheMsgs,
 									XLogRegisterData((char *) msgs,
 													 n * sizeof(SharedInvalidationMessage)));
-		XLogInsert(RM_XACT_ID, XLOG_XACT_INVALIDATIONS);
+		XLogInsertExtended(RM_XACT_ID, XLR_HAS_XID,
+						   XLOG_XACT_INVALIDATIONS, InvalidCommandId);
 	}
 }

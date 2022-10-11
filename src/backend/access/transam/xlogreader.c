@@ -49,7 +49,8 @@ static int	ReadPageInternal(XLogReaderState *state, XLogRecPtr pageptr,
 static void XLogReaderInvalReadState(XLogReaderState *state);
 static XLogPageReadResult XLogDecodeNextRecord(XLogReaderState *state, bool nonblocking);
 static bool ValidXLogRecordHeader(XLogReaderState *state, XLogRecPtr RecPtr,
-								  XLogRecPtr PrevRecPtr, XLogRecord *record, bool randAccess);
+								  XLogRecPtr PrevRecPtr, XLogRecord *record,
+								  bool randAccess);
 static bool ValidXLogRecord(XLogReaderState *state, XLogRecord *record,
 							XLogRecPtr recptr);
 static void ResetDecoder(XLogReaderState *state);
@@ -418,7 +419,7 @@ XLogNextRecord(XLogReaderState *state, char **errormsg)
  * The returned pointer (or *errormsg) points to an internal buffer that's
  * valid until the next call to XLogReadRecord.
  */
-XLogRecord *
+XLRHeaderData *
 XLogReadRecord(XLogReaderState *state, char **errormsg)
 {
 	DecodedXLogRecord *decoded;
@@ -531,6 +532,83 @@ XLogReadRecordAlloc(XLogReaderState *state, size_t xl_tot_len, bool allow_oversi
 	return NULL;
 }
 
+/*
+ * Fills contdata with pointer to record continuation data of the next page,
+ * and len with the length of the data on that page.
+ */
+#define ReadPageData(dataNeeded, gotLen, expectLen, strict) \
+	do \
+	{ \
+		/* Wait for the next page to become available */ \
+		readOff = ReadPageInternal(state, targetPagePtr, \
+								   Min((dataNeeded) + SizeOfXLogShortPHD, \
+									   XLOG_BLCKSZ)); \
+		\
+		if (readOff == XLREAD_WOULDBLOCK) \
+			return XLREAD_WOULDBLOCK; \
+		else if (readOff < 0) \
+			goto err; \
+		Assert(SizeOfXLogShortPHD <= readOff); \
+		pageHeader = (XLogPageHeader) state->readBuf; \
+		/*
+		 * If we were expecting a continuation record and got an
+		 * "overwrite contrecord" flag, that means the continuation record
+		 * was overwritten with a different record.  Restart the read by
+		 * assuming the address to read is the location where we found
+		 * this flag; but keep track of the LSN of the record we were
+		 * reading, for later verification.
+		 */ \
+		if (pageHeader->xlp_info & XLP_FIRST_IS_OVERWRITE_CONTRECORD) \
+		{ \
+			state->overwrittenRecPtr = RecPtr; \
+			RecPtr = targetPagePtr; \
+			goto restart; \
+		} \
+		\
+		/* Check that the continuation on next page looks valid */ \
+		if (!(pageHeader->xlp_info & XLP_FIRST_IS_CONTRECORD)) \
+		{ \
+			report_invalid_record(state, \
+								  "there is no contrecord flag at %X/%X", \
+								  LSN_FORMAT_ARGS(RecPtr)); \
+			goto err; \
+		} \
+		/*
+		 * Cross-check that xlp_rem_len agrees with how much of the record
+		 * we expect there to be left.
+		 */ \
+		if (pageHeader->xlp_rem_len == 0 || (strict) ? ( \
+				(expectLen) != (pageHeader->xlp_rem_len + (gotLen)) \
+			) : ( \
+				(expectLen) < (pageHeader->xlp_rem_len + (gotLen)) \
+			)) \
+		{ \
+			report_invalid_record(state, \
+								  "invalid contrecord length %u (expected %lld) at %X/%X", \
+								  pageHeader->xlp_rem_len, \
+								  ((long long) (expectLen)) - (gotLen), \
+								  LSN_FORMAT_ARGS(RecPtr)); \
+			goto err; \
+		} \
+		/* Append the continuation from this page to the buffer */ \
+		pageHeaderSize = XLogPageHeaderSize(pageHeader); \
+		\
+		if (readOff < Min(pageHeaderSize + (dataNeeded), XLOG_BLCKSZ)) \
+		{ \
+			readOff = ReadPageInternal(state, targetPagePtr, \
+									   Min(pageHeaderSize + (dataNeeded), XLOG_BLCKSZ)); \
+			if (readOff == XLREAD_WOULDBLOCK) \
+				return XLREAD_WOULDBLOCK; \
+			else if (readOff < 0) \
+				goto err; \
+		} \
+		Assert(pageHeaderSize <= readOff); \
+		\
+		/* point to the right */\
+		contdata = (char *) state->readBuf + pageHeaderSize; \
+		len = readOff - pageHeaderSize; \
+	} while (false)
+
 static XLogPageReadResult
 XLogDecodeNextRecord(XLogReaderState *state, bool nonblocking)
 {
@@ -543,10 +621,16 @@ XLogDecodeNextRecord(XLogReaderState *state, bool nonblocking)
 	uint32		targetRecOff;
 	uint32		pageHeaderSize;
 	bool		assembled;
-	bool		gotheader;
 	int			readOff;
 	DecodedXLogRecord *decoded;
 	char	   *errormsg;		/* not used */
+	union {
+		char bytes[MaxXLogHeaderSize];
+		XLogRecord hdr;
+	} rechdr = {0}; /* record header buffer for cross-page header reads */
+	uint32		rechdrsize = 0;
+	XLogPageHeader pageHeader;
+	char	   *contdata;
 
 	/*
 	 * randAccess indicates whether to verify the previous-record pointer of
@@ -602,7 +686,8 @@ restart:
 	 * fits on the same page.
 	 */
 	readOff = ReadPageInternal(state, targetPagePtr,
-							   Min(targetRecOff + SizeOfXLogRecord, XLOG_BLCKSZ));
+							   Min(targetRecOff + MAXALIGN(MinXLogHeaderSize),
+								   XLOG_BLCKSZ));
 	if (readOff == XLREAD_WOULDBLOCK)
 		return XLREAD_WOULDBLOCK;
 	else if (readOff < 0)
@@ -639,46 +724,125 @@ restart:
 	/* ReadPageInternal has verified the page header */
 	Assert(pageHeaderSize <= readOff);
 
-	/*
-	 * Read the record length.
-	 *
-	 * NB: Even though we use an XLogRecord pointer here, the whole record
-	 * header might not fit on this page. xl_tot_len is the first field of the
-	 * struct, so it must be on this page (the records are MAXALIGNed), but we
-	 * cannot access any other fields until we've verified that we got the
-	 * whole header.
-	 */
-	record = (XLogRecord *) (state->readBuf + RecPtr % XLOG_BLCKSZ);
-	total_len = record->xl_tot_len;
+	contdata = state->readBuf + targetRecOff;
+	len = state->readLen - targetRecOff;
+
+	rechdrsize = Min(len, MinXLogHeaderSize);
+
+	memcpy(&rechdr.bytes[0], contdata, rechdrsize);
+
+	contdata += rechdrsize;
+	len -= rechdrsize;
+
 
 	/*
-	 * If the whole record header is on this page, validate it immediately.
-	 * Otherwise do just a basic sanity check on xl_tot_len, and validate the
-	 * rest of the header after reading it from the next page.  The xl_tot_len
-	 * check is necessary here to ensure that we enter the "Need to reassemble
-	 * record" code path below; otherwise we might fail to apply
-	 * ValidXLogRecordHeader at all.
+	 * If we don't yet have the minimum required data of an XLogRecord,
+	 * we have to read from the next page.
 	 */
-	if (targetRecOff <= XLOG_BLCKSZ - SizeOfXLogRecord)
+	if (rechdrsize < MinXLogHeaderSize)
 	{
-		if (!ValidXLogRecordHeader(state, RecPtr, state->DecodeRecPtr, record,
-								   randAccess))
-			goto err;
-		gotheader = true;
+		int gotlen;
+
+		/* Calculate pointer to beginning of next page */
+		targetPagePtr += XLOG_BLCKSZ;
+		ReadPageData(MinXLogHeaderSize - rechdrsize,
+					 rechdrsize,
+					 MinXLogHeaderSize,
+					 false);
+
+		gotlen = Min(len, MinXLogHeaderSize - rechdrsize);
+
+		memcpy(&rechdr.bytes[rechdrsize],
+			   contdata,
+			   gotlen);
+		rechdrsize += gotlen;
+		contdata += gotlen;
+		len -= gotlen;
 	}
-	else
+
+	Assert(rechdrsize >= MinXLogHeaderSize);
+
+	/*
+	 * We now have a minimal XLogHeader in buffers. This is enough
+	 * to determine the size of all header data, but we don't yet have
+	 * all of that.
+	 */
+
+	total_len = XLRSizeOfHeader(rechdr.hdr.xl_info);
+
+	/*
+	 * We now known the expected size of the xlog header structures
+	 * (which includes the xl_rec_len field).
+	 * 
+	 * If the full headers section requires more data than what we've loaded
+	 * by now, we need to read that data.
+	 */
+	if (total_len > rechdrsize)
 	{
-		/* XXX: more validation should be done here */
-		if (total_len < SizeOfXLogRecord)
+		/* Consume any bytes that are still in the buffer */
+		if (len > 0)
 		{
-			report_invalid_record(state,
-								  "invalid record length at %X/%X: wanted %u, got %u",
-								  LSN_FORMAT_ARGS(RecPtr),
-								  (uint32) SizeOfXLogRecord, total_len);
-			goto err;
+			int consumed = Min(len, total_len - rechdrsize);
+
+			memcpy(&rechdr.bytes[rechdrsize],
+				   contdata,
+				   consumed);
+			contdata += consumed;
+			rechdrsize += consumed;
+			len -= consumed;
 		}
-		gotheader = false;
+
+		/* Continue reading from this page if the page wasn't fully read */
+		if (total_len > rechdrsize && state->readLen < XLOG_BLCKSZ)
+		{
+			int consumed;
+			int needed = Min(state->readLen + total_len - rechdrsize,
+							 XLOG_BLCKSZ);
+
+			ReadPageData(needed, rechdrsize, total_len, false);
+			consumed = Min(total_len - rechdrsize, len);
+
+			memcpy(&rechdr.bytes[rechdrsize],
+				   contdata,
+				   consumed);
+
+			contdata += consumed;
+			rechdrsize += consumed;
+			len -= consumed;
+		}
+
+		/* If we're still not done, read from the next page */
+		if (total_len > rechdrsize && state->readLen >= XLOG_BLCKSZ)
+		{
+			int consumed,
+				needed = total_len - rechdrsize;
+			targetPagePtr += XLOG_BLCKSZ;
+
+			ReadPageData(needed, rechdrsize, total_len, false);
+			consumed = Min(total_len - rechdrsize, len);
+
+			memcpy(&rechdr.bytes[rechdrsize],
+				   contdata,
+				   consumed);
+
+			contdata += consumed;
+			rechdrsize += consumed;
+			len -= consumed;
+		}
 	}
+
+	/*
+	 * By now, the full record header is loaded; allowing us to read the
+	 * record's length field.
+	*/
+	total_len = XLogRecordGetLength(&rechdr.hdr);
+
+	/*
+	 * Because the xlog header is loaded, we should validate it as well.
+	 */
+	if (!ValidXLogRecordHeader(state, RecPtr, state->DecodeRecPtr, &rechdr.hdr,
+							   randAccess))
+		goto err;
 
 	/*
 	 * Find space to decode this record.  Don't allow oversized allocation if
@@ -705,12 +869,9 @@ restart:
 		goto err;
 	}
 
-	len = XLOG_BLCKSZ - RecPtr % XLOG_BLCKSZ;
-	if (total_len > len)
+	if (total_len > (XLOG_BLCKSZ - RecPtr % XLOG_BLCKSZ))
 	{
 		/* Need to reassemble record */
-		char	   *contdata;
-		XLogPageHeader pageHeader;
 		char	   *buffer;
 		uint32		gotlen;
 
@@ -728,104 +889,50 @@ restart:
 			goto err;
 		}
 
-		/* Copy the first fragment of the record from the first page. */
-		memcpy(state->readRecordBuf,
-			   state->readBuf + RecPtr % XLOG_BLCKSZ, len);
-		buffer = state->readRecordBuf + len;
-		gotlen = len;
+		/* Copy the buffered record header fragment */
+		memcpy(state->readRecordBuf, &rechdr.bytes[0], rechdrsize);
+
+		len = Min(len, total_len - rechdrsize);
+
+		/* Copy the remaining bytes of the page */
+		memcpy(state->readRecordBuf + rechdrsize, contdata, len);
+
+		buffer = state->readRecordBuf + rechdrsize + len;
+		gotlen = rechdrsize + len;
+		
+		/* Finish the last bytes of this page when available */
+		if (state->readLen < XLOG_BLCKSZ)
+		{
+			int buffered = state->readLen;
+			ReadPageData((state->readLen - SizeOfXLogShortPHD) + (total_len - gotlen),
+						 gotlen, total_len, true);
+
+			if (pageHeader->xlp_rem_len < len)
+				len = pageHeader->xlp_rem_len;
+
+			buffer += buffered;
+			len -= buffered;
+
+			memcpy(buffer, contdata, len);
+
+			buffer += len;
+			gotlen += len;
+		}
 
 		do
 		{
 			/* Calculate pointer to beginning of next page */
 			targetPagePtr += XLOG_BLCKSZ;
 
-			/* Wait for the next page to become available */
-			readOff = ReadPageInternal(state, targetPagePtr,
-									   Min(total_len - gotlen + SizeOfXLogShortPHD,
-										   XLOG_BLCKSZ));
+			ReadPageData(total_len - gotlen, gotlen, total_len, true);
 
-			if (readOff == XLREAD_WOULDBLOCK)
-				return XLREAD_WOULDBLOCK;
-			else if (readOff < 0)
-				goto err;
-
-			Assert(SizeOfXLogShortPHD <= readOff);
-
-			pageHeader = (XLogPageHeader) state->readBuf;
-
-			/*
-			 * If we were expecting a continuation record and got an
-			 * "overwrite contrecord" flag, that means the continuation record
-			 * was overwritten with a different record.  Restart the read by
-			 * assuming the address to read is the location where we found
-			 * this flag; but keep track of the LSN of the record we were
-			 * reading, for later verification.
-			 */
-			if (pageHeader->xlp_info & XLP_FIRST_IS_OVERWRITE_CONTRECORD)
-			{
-				state->overwrittenRecPtr = RecPtr;
-				RecPtr = targetPagePtr;
-				goto restart;
-			}
-
-			/* Check that the continuation on next page looks valid */
-			if (!(pageHeader->xlp_info & XLP_FIRST_IS_CONTRECORD))
-			{
-				report_invalid_record(state,
-									  "there is no contrecord flag at %X/%X",
-									  LSN_FORMAT_ARGS(RecPtr));
-				goto err;
-			}
-
-			/*
-			 * Cross-check that xlp_rem_len agrees with how much of the record
-			 * we expect there to be left.
-			 */
-			if (pageHeader->xlp_rem_len == 0 ||
-				total_len != (pageHeader->xlp_rem_len + gotlen))
-			{
-				report_invalid_record(state,
-									  "invalid contrecord length %u (expected %lld) at %X/%X",
-									  pageHeader->xlp_rem_len,
-									  ((long long) total_len) - gotlen,
-									  LSN_FORMAT_ARGS(RecPtr));
-				goto err;
-			}
-
-			/* Append the continuation from this page to the buffer */
-			pageHeaderSize = XLogPageHeaderSize(pageHeader);
-
-			if (readOff < pageHeaderSize)
-				readOff = ReadPageInternal(state, targetPagePtr,
-										   pageHeaderSize);
-
-			Assert(pageHeaderSize <= readOff);
-
-			contdata = (char *) state->readBuf + pageHeaderSize;
-			len = XLOG_BLCKSZ - pageHeaderSize;
 			if (pageHeader->xlp_rem_len < len)
 				len = pageHeader->xlp_rem_len;
 
-			if (readOff < pageHeaderSize + len)
-				readOff = ReadPageInternal(state, targetPagePtr,
-										   pageHeaderSize + len);
-
-			memcpy(buffer, (char *) contdata, len);
+			memcpy(buffer, contdata, len);
 			buffer += len;
 			gotlen += len;
-
-			/* If we just reassembled the record header, validate it. */
-			if (!gotheader)
-			{
-				record = (XLogRecord *) state->readRecordBuf;
-				if (!ValidXLogRecordHeader(state, RecPtr, state->DecodeRecPtr,
-										   record, randAccess))
-					goto err;
-				gotheader = true;
-			}
 		} while (gotlen < total_len);
-
-		Assert(gotheader);
 
 		record = (XLogRecord *) state->readRecordBuf;
 		if (!ValidXLogRecord(state, record, RecPtr))
@@ -846,6 +953,8 @@ restart:
 		else if (readOff < 0)
 			goto err;
 
+		record = (XLogRecord *) (state->readBuf + targetRecOff);
+
 		/* Record does not cross a page boundary */
 		if (!ValidXLogRecord(state, record, RecPtr))
 			goto err;
@@ -859,7 +968,7 @@ restart:
 	 * Special processing if it's an XLOG SWITCH record
 	 */
 	if (record->xl_rmid == RM_XLOG_ID &&
-		record->xl_rminfo == XLOG_SWITCH)
+		XLogRecordGetRMInfo(record) == XLOG_SWITCH)
 	{
 		/* Pretend it extends to end of segment */
 		state->NextRecPtr += state->segcxt.ws_segsize - 1;
@@ -1116,12 +1225,13 @@ ValidXLogRecordHeader(XLogReaderState *state, XLogRecPtr RecPtr,
 					  XLogRecPtr PrevRecPtr, XLogRecord *record,
 					  bool randAccess)
 {
-	if (record->xl_tot_len < SizeOfXLogRecord)
+	uint32 reclen = XLogRecordGetLength(record);
+	if (reclen < MinXLogHeaderSize)
 	{
 		report_invalid_record(state,
 							  "invalid record length at %X/%X: wanted %u, got %u",
 							  LSN_FORMAT_ARGS(RecPtr),
-							  (uint32) SizeOfXLogRecord, record->xl_tot_len);
+							  (uint32) MinXLogHeaderSize, reclen);
 		return false;
 	}
 	if (!RmgrIdIsValid(record->xl_rmid))
@@ -1184,16 +1294,28 @@ ValidXLogRecord(XLogReaderState *state, XLogRecord *record, XLogRecPtr recptr)
 
 	/* Calculate the CRC */
 	INIT_CRC32C(crc);
-	COMP_CRC32C(crc, ((char *) record) + SizeOfXLogRecord, record->xl_tot_len - SizeOfXLogRecord);
-	/* include the record header last */
+	COMP_CRC32C(crc,
+				((char *) record) + offsetof(XLogRecord, xl_rmid),
+				XLogRecordGetLength(record) - offsetof(XLogRecord, xl_rmid));
+	/* include the xl_prev pointer last */
 	COMP_CRC32C(crc, (char *) record, offsetof(XLogRecord, xl_crc));
 	FIN_CRC32C(crc);
 
 	if (!EQ_CRC32C(record->xl_crc, crc))
 	{
 		report_invalid_record(state,
-							  "incorrect resource manager data checksum in record at %X/%X",
-							  LSN_FORMAT_ARGS(recptr));
+							  "incorrect resource manager data checksum in record at %X/%X\n"
+							  "xl_crc: record: %d; calculated: %d\n"
+							  "xl_info: %x\n"
+							  "xl_prev: %X/%X\n"
+							  "xl_rmid: %X\n",
+							  LSN_FORMAT_ARGS(recptr),
+							  record->xl_crc,
+							  crc,
+							  record->xl_info,
+							  LSN_FORMAT_ARGS(record->xl_prev),
+							  record->xl_rmid);
+		Assert(false);
 		return false;
 	}
 
@@ -1657,11 +1779,11 @@ DecodeXLogRecord(XLogReaderState *state,
 	 */
 #define COPY_HEADER_FIELD(_dst, _size)			\
 	do {										\
-		if (remaining < _size)					\
+		if (remaining < (_size))				\
 			goto shortdata_err;					\
-		memcpy(_dst, ptr, _size);				\
-		ptr += _size;							\
-		remaining -= _size;						\
+		memcpy((_dst), ptr, (_size));			\
+		ptr += (_size);							\
+		remaining -= (_size);					\
 	} while(0)
 
 	char	   *ptr;
@@ -1671,7 +1793,7 @@ DecodeXLogRecord(XLogReaderState *state,
 	RelFileLocator *rlocator = NULL;
 	uint8		block_id;
 
-	decoded->header = *record;
+	decoded->header = (XLRHeaderData) {0};
 	decoded->lsn = lsn;
 	decoded->next = NULL;
 	decoded->record_origin = InvalidRepOriginId;
@@ -1679,11 +1801,53 @@ DecodeXLogRecord(XLogReaderState *state,
 	decoded->main_data = NULL;
 	decoded->main_data_len = 0;
 	decoded->max_block_id = -1;
-	ptr = (char *) record;
-	ptr += SizeOfXLogRecord;
-	remaining = record->xl_tot_len - SizeOfXLogRecord;
 
-	/* Decode the headers */
+	decoded->header.xl_prev = record->xl_prev;
+	decoded->header.xl_crc = record->xl_crc;
+	decoded->header.xl_rmid = record->xl_rmid;
+	decoded->header.xl_info = record->xl_info;
+	decoded->header.xl_tot_len = XLogRecordGetLength(record);
+	
+	remaining = decoded->header.xl_tot_len - MinXLogHeaderSize;
+	ptr = (char *) record;
+	ptr += MinXLogHeaderSize;
+
+	switch (record->xl_info & XLR2_LEN_MASK)
+	{
+		case XLR2_LEN_ABSENT:
+			break;
+		case XLR2_LEN_1B:
+			ptr += 1;
+			remaining -= 1;
+			break;
+		case XLR2_LEN_2B:
+			ptr += 2;
+			remaining -= 2;
+			break;
+		case XLR2_LEN_4B:
+			ptr += 4;
+			remaining -= 4;
+			break;
+		default:
+			pg_unreachable();
+	}
+	
+	if (record->xl_info & XLR_HAS_XID)
+		COPY_HEADER_FIELD(&decoded->header.xl_xid, sizeof(TransactionId));
+	else
+		decoded->header.xl_xid = InvalidTransactionId;
+	
+	if (record->xl_info & XLR_HAS_CID)
+		COPY_HEADER_FIELD(&decoded->header.xl_cid, sizeof(CommandId));
+	else
+		decoded->header.xl_cid = InvalidCommandId;
+	
+	if (record->xl_info & XLR_HAS_RMINFO)
+		COPY_HEADER_FIELD(&decoded->header.xl_rminfo, sizeof(uint8));
+	else
+		decoded->header.xl_rminfo = 0;
+
+	/* Decode the block headers */
 	datatotal = 0;
 	while (remaining > datatotal)
 	{
@@ -1933,7 +2097,7 @@ DecodeXLogRecord(XLogReaderState *state,
 
 	/* Report the actual size we used. */
 	decoded->size = MAXALIGN(out - (char *) decoded);
-	Assert(DecodeXLogRecordRequiredSpace(record->xl_tot_len) >=
+	Assert(DecodeXLogRecordRequiredSpace(decoded->header.xl_tot_len) >=
 		   decoded->size);
 
 	return true;

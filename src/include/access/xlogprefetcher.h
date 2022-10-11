@@ -47,8 +47,8 @@ extern XLogReaderState *XLogPrefetcherGetReader(XLogPrefetcher *prefetcher);
 extern void XLogPrefetcherBeginRead(XLogPrefetcher *prefetcher,
 									XLogRecPtr recPtr);
 
-extern XLogRecord *XLogPrefetcherReadRecord(XLogPrefetcher *prefetcher,
-											char **errmsg);
+extern XLRHeaderData *XLogPrefetcherReadRecord(XLogPrefetcher *prefetcher,
+											   char **errmsg);
 
 extern void XLogPrefetcherComputeStats(XLogPrefetcher *prefetcher);
 

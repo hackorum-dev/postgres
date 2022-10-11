@@ -163,7 +163,7 @@ typedef struct DecodedXLogRecord
 	/* Public members. */
 	XLogRecPtr	lsn;			/* location */
 	XLogRecPtr	next_lsn;		/* location of next record */
-	XLogRecord	header;			/* header */
+	XLRHeaderData header;	/* header */
 	RepOriginId record_origin;
 	TransactionId toplevel_xid; /* XID of top-level transaction */
 	char	   *main_data;		/* record's main data portion */
@@ -355,8 +355,8 @@ typedef enum XLogPageReadResult
 } XLogPageReadResult;
 
 /* Read the next XLog record. Returns NULL on end-of-WAL or failure */
-extern struct XLogRecord *XLogReadRecord(XLogReaderState *state,
-										 char **errormsg);
+extern struct XLRHeaderData *XLogReadRecord(XLogReaderState *state,
+											char **errormsg);
 
 /* Consume the next record or error. */
 extern DecodedXLogRecord *XLogNextRecord(XLogReaderState *state,

@@ -495,7 +495,7 @@ pg_logical_replication_slot_advance(XLogRecPtr moveto)
 		while (ctx->reader->EndRecPtr < moveto)
 		{
 			char	   *errm = NULL;
-			XLogRecord *record;
+			XLRHeaderData *record;
 
 			/*
 			 * Read records.  No changes are generated in fast_forward mode,

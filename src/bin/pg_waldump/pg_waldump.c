@@ -696,7 +696,7 @@ main(int argc, char **argv)
 	XLogDumpPrivate private;
 	XLogDumpConfig config;
 	XLogStats	stats;
-	XLogRecord *record;
+	XLRHeaderData *record;
 	XLogRecPtr	first_record;
 	char	   *waldir = NULL;
 	char	   *errormsg;

@@ -384,7 +384,7 @@ static char recoveryStopName[MAXFNAMELEN];
 static bool recoveryStopAfter;
 
 /* prototypes for local functions */
-static void ApplyWalRecord(XLogReaderState *xlogreader, XLogRecord *record, TimeLineID *replayTLI);
+static void ApplyWalRecord(XLogReaderState *xlogreader, XLRHeaderData *record, TimeLineID *replayTLI);
 
 static void readRecoverySignalFile(void);
 static void validateRecoveryParameters(void);
@@ -412,9 +412,9 @@ static void recoveryPausesHere(bool endOfRecovery);
 static bool recoveryApplyDelay(XLogReaderState *record);
 static void ConfirmRecoveryPaused(void);
 
-static XLogRecord *ReadRecord(XLogPrefetcher *xlogprefetcher,
-							  int emode, bool fetching_ckpt,
-							  TimeLineID replayTLI);
+static XLRHeaderData *ReadRecord(XLogPrefetcher *xlogprefetcher,
+								 int emode, bool fetching_ckpt,
+								 TimeLineID replayTLI);
 
 static int	XLogPageRead(XLogReaderState *xlogreader, XLogRecPtr targetPagePtr,
 						 int reqLen, XLogRecPtr targetRecPtr, char *readBuf);
@@ -426,8 +426,8 @@ static XLogPageReadResult WaitForWALToBecomeAvailable(XLogRecPtr RecPtr,
 													  XLogRecPtr replayLSN,
 													  bool nonblocking);
 static int	emode_for_corrupt_record(int emode, XLogRecPtr RecPtr);
-static XLogRecord *ReadCheckpointRecord(XLogPrefetcher *xlogprefetcher,
-										XLogRecPtr RecPtr, TimeLineID replayTLI);
+static XLRHeaderData *ReadCheckpointRecord(XLogPrefetcher *xlogprefetcher,
+										   XLogRecPtr RecPtr, TimeLineID replayTLI);
 static bool rescanLatestTimeLine(TimeLineID replayTLI, XLogRecPtr replayLSN);
 static int	XLogFileRead(XLogSegNo segno, int emode, TimeLineID tli,
 						 XLogSource source, bool notfoundOk);
@@ -497,7 +497,7 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 	XLogPageReadPrivate *private;
 	struct stat st;
 	bool		wasShutdown;
-	XLogRecord *record;
+	XLRHeaderData *record;
 	DBState		dbstate_at_startup;
 	bool		haveTblspcMap = false;
 	bool		haveBackupLabel = false;
@@ -1566,7 +1566,7 @@ ShutdownWalRecovery(void)
 void
 PerformWalRecovery(void)
 {
-	XLogRecord *record;
+	XLRHeaderData *record;
 	bool		reachedRecoveryTarget = false;
 	TimeLineID	replayTLI;
 
@@ -1811,7 +1811,7 @@ PerformWalRecovery(void)
  * Subroutine of PerformWalRecovery, to apply one WAL record.
  */
 static void
-ApplyWalRecord(XLogReaderState *xlogreader, XLogRecord *record, TimeLineID *replayTLI)
+ApplyWalRecord(XLogReaderState *xlogreader, XLRHeaderData *record, TimeLineID *replayTLI)
 {
 	ErrorContextCallback errcallback;
 	bool		switchedTLI = false;
@@ -3004,11 +3004,11 @@ ConfirmRecoveryPaused(void)
  * (emode must be either PANIC, LOG). In standby mode, retries until a valid
  * record is available.
  */
-static XLogRecord *
+static XLRHeaderData *
 ReadRecord(XLogPrefetcher *xlogprefetcher, int emode,
 		   bool fetching_ckpt, TimeLineID replayTLI)
 {
-	XLogRecord *record;
+	XLRHeaderData *record;
 	XLogReaderState *xlogreader = XLogPrefetcherGetReader(xlogprefetcher);
 	XLogPageReadPrivate *private = (XLogPageReadPrivate *) xlogreader->private_data;
 
@@ -3912,11 +3912,11 @@ emode_for_corrupt_record(int emode, XLogRecPtr RecPtr)
 /*
  * Subroutine to try to fetch and validate a prior checkpoint record.
  */
-static XLogRecord *
+static XLRHeaderData *
 ReadCheckpointRecord(XLogPrefetcher *xlogprefetcher, XLogRecPtr RecPtr,
 					 TimeLineID replayTLI)
 {
-	XLogRecord *record;
+	XLRHeaderData *record;
 	uint8		rminfo;
 
 	Assert(xlogreader != NULL);
@@ -3951,7 +3951,10 @@ ReadCheckpointRecord(XLogPrefetcher *xlogprefetcher, XLogRecPtr RecPtr,
 				(errmsg("invalid xl_info in checkpoint record")));
 		return NULL;
 	}
-	if (record->xl_tot_len != SizeOfXLogRecord + SizeOfXLogRecordDataHeaderShort + sizeof(CheckPoint))
+	if (record->xl_tot_len != (MinXLogHeaderSize
+								   + sizeof(uint8) /* length field */
+								   + SizeOfXLogRecordDataHeaderShort
+								   + sizeof(CheckPoint)))
 	{
 		ereport(LOG,
 				(errmsg("invalid length of checkpoint record")));

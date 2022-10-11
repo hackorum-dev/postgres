@@ -1046,6 +1046,9 @@ WriteEmptyXLOG(void)
 	int			fd;
 	int			nbytes;
 	char	   *recptr;
+	const uint32 rec_tot_len = MinXLogHeaderSize + sizeof(uint8) /* xl_tot_len */
+		+ SizeOfXLogRecordDataHeaderShort + sizeof(CheckPoint);
+	const uint8 rec_len = rec_tot_len;
 
 	memset(buffer.data, 0, XLOG_BLCKSZ);
 
@@ -1060,23 +1063,33 @@ WriteEmptyXLOG(void)
 	longpage->xlp_seg_size = WalSegSz;
 	longpage->xlp_xlog_blcksz = XLOG_BLCKSZ;
 
+	/*
+	 * Ensure that the length actually fits within the 8-bit length field in
+	 * the header.
+	 */
+	Assert(rec_tot_len < UINT8_MAX);
+
 	/* Insert the initial checkpoint record */
 	recptr = (char *) page + SizeOfXLogLongPHD;
 	record = (XLogRecord *) recptr;
 	record->xl_prev = 0;
-	record->xl_xid = InvalidTransactionId;
-	record->xl_tot_len = SizeOfXLogRecord + SizeOfXLogRecordDataHeaderShort + sizeof(CheckPoint);
-	record->xl_info = XLOG_CHECKPOINT_SHUTDOWN;
+	record->xl_info = XLR2_LEN_1B;
 	record->xl_rmid = RM_XLOG_ID;
 
-	recptr += SizeOfXLogRecord;
+	recptr += MinXLogHeaderSize;
+
+	memcpy(recptr, (char *) &rec_len, sizeof(uint8));
+	recptr += sizeof(uint8);
+
 	*(recptr++) = (char) XLR_BLOCK_ID_DATA_SHORT;
 	*(recptr++) = sizeof(CheckPoint);
 	memcpy(recptr, &ControlFile.checkPointCopy,
 		   sizeof(CheckPoint));
 
 	INIT_CRC32C(crc);
-	COMP_CRC32C(crc, ((char *) record) + SizeOfXLogRecord, record->xl_tot_len - SizeOfXLogRecord);
+	COMP_CRC32C(crc,
+				((char *) record) + offsetof(XLogRecord, xl_rmid),
+				rec_len - offsetof(XLogRecord, xl_rmid));
 	COMP_CRC32C(crc, (char *) record, offsetof(XLogRecord, xl_crc));
 	FIN_CRC32C(crc);
 	record->xl_crc = crc;

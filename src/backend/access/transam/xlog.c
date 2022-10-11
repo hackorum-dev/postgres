@@ -742,16 +742,16 @@ XLogInsertRecord(XLogRecData *rdata,
 	pg_crc32c	rdata_crc;
 	bool		inserted;
 	XLogRecord *rechdr = (XLogRecord *) rdata->data;
-	uint8		rminfo = rechdr->xl_rminfo;
-	bool		isLogSwitch = (rechdr->xl_rmid == RM_XLOG_ID &&
-							   rminfo == XLOG_SWITCH);
+	uint8		rminfo;
+	uint32		reclength;
+	bool		isLogSwitch;
 	XLogRecPtr	StartPos;
 	XLogRecPtr	EndPos;
 	bool		prevDoPageWrites = doPageWrites;
 	TimeLineID	insertTLI;
 
 	/* we assume that all of the record header is in the first chunk */
-	Assert(rdata->len >= SizeOfXLogRecord);
+	Assert(rdata->len >= MinXLogHeaderSize);
 
 	/* cross-check on whether we should be here or not */
 	if (!XLogInsertAllowed())
@@ -762,6 +762,40 @@ XLogInsertRecord(XLogRecData *rdata,
 	 * change, so we can read it without a lock.
 	 */
 	insertTLI = XLogCtl->InsertTimeLineID;
+
+	if (rechdr->xl_info & XLR_HAS_RMINFO)
+	{
+		Size offset = MinXLogHeaderSize;
+
+		switch (rechdr->xl_info & XLR2_LEN_MASK)
+		{
+			case XLR2_LEN_ABSENT:
+				break;
+			case XLR2_LEN_1B:
+				offset += 1;
+				break;
+			case XLR2_LEN_2B:
+				offset += 2;
+				break;
+			case XLR2_LEN_4B:
+				offset += 4;
+				break;
+			default:
+				pg_unreachable();
+		}
+		if (rechdr->xl_info & XLR_HAS_XID)
+			offset += sizeof(TransactionId);
+		if (rechdr->xl_info & XLR_HAS_CID)
+			offset += sizeof(CommandId);
+
+		rminfo = *((uint8 *) (rdata->data + offset));
+	}
+	else
+		rminfo = 0;
+
+	reclength = XLogRecordGetLength(rechdr);
+
+	isLogSwitch = (rechdr->xl_rmid == RM_XLOG_ID && rminfo == XLOG_SWITCH);
 
 	/*----------
 	 *
@@ -845,7 +879,7 @@ XLogInsertRecord(XLogRecData *rdata,
 		inserted = ReserveXLogSwitch(&StartPos, &EndPos, &rechdr->xl_prev);
 	else
 	{
-		ReserveXLogInsertLocation(rechdr->xl_tot_len, &StartPos, &EndPos,
+		ReserveXLogInsertLocation(reclength, &StartPos, &EndPos,
 								  &rechdr->xl_prev);
 		inserted = true;
 	}
@@ -865,7 +899,7 @@ XLogInsertRecord(XLogRecData *rdata,
 		 * All the record data, including the header, is now ready to be
 		 * inserted. Copy the record in the space reserved.
 		 */
-		CopyXLogRecordToWAL(rechdr->xl_tot_len, isLogSwitch, rdata,
+		CopyXLogRecordToWAL(reclength, isLogSwitch, rdata,
 							StartPos, EndPos, insertTLI);
 
 		/*
@@ -896,14 +930,18 @@ XLogInsertRecord(XLogRecData *rdata,
 
 	END_CRIT_SECTION();
 
-	MarkCurrentTransactionIdLoggedIfAny();
+	if (rechdr->xl_info & XLR_HAS_XID)
+		MarkCurrentTransactionIdLoggedIfAny();
 
 	/*
 	 * Mark top transaction id is logged (if needed) so that we should not try
 	 * to log it again with the next WAL record in the current subtransaction.
 	 */
 	if (topxid_included)
+	{
+		Assert(rechdr->xl_info & XLR_HAS_XID);
 		MarkSubxactTopXidLogged();
+	}
 
 	/*
 	 * Update shared LogwrtRqst.Write, if we crossed page boundary.
@@ -936,7 +974,8 @@ XLogInsertRecord(XLogRecData *rdata,
 		 */
 		if (inserted)
 		{
-			EndPos = StartPos + SizeOfXLogRecord;
+			/* switch record is no more than a min-sized header plus rminfo */
+			EndPos = StartPos + MAXALIGN(MinXLogHeaderSize + sizeof(uint8));
 			if (StartPos / XLOG_BLCKSZ != EndPos / XLOG_BLCKSZ)
 			{
 				uint64		offset = XLogSegmentOffset(EndPos, wal_segment_size);
@@ -977,7 +1016,7 @@ XLogInsertRecord(XLogRecData *rdata,
 		/* We also need temporary space to decode the record. */
 		record = (XLogRecord *) recordBuf.data;
 		decoded = (DecodedXLogRecord *)
-			palloc(DecodeXLogRecordRequiredSpace(record->xl_tot_len));
+			palloc(DecodeXLogRecordRequiredSpace(reclength));
 
 		if (!debug_reader)
 			debug_reader = XLogReaderAllocate(wal_segment_size, NULL,
@@ -1022,7 +1061,7 @@ XLogInsertRecord(XLogRecData *rdata,
 	/* Report WAL traffic to the instrumentation. */
 	if (inserted)
 	{
-		pgWalUsage.wal_bytes += rechdr->xl_tot_len;
+		pgWalUsage.wal_bytes += reclength;
 		pgWalUsage.wal_records++;
 		pgWalUsage.wal_fpi += num_fpi;
 	}
@@ -1056,7 +1095,7 @@ ReserveXLogInsertLocation(int size, XLogRecPtr *StartPos, XLogRecPtr *EndPos,
 	size = MAXALIGN(size);
 
 	/* All (non xlog-switch) records should contain data. */
-	Assert(size > SizeOfXLogRecord);
+	Assert(size > MinXLogHeaderSize);
 
 	/*
 	 * The duration the spinlock needs to be held is minimized by minimizing
@@ -1107,7 +1146,7 @@ ReserveXLogSwitch(XLogRecPtr *StartPos, XLogRecPtr *EndPos, XLogRecPtr *PrevPtr)
 	uint64		startbytepos;
 	uint64		endbytepos;
 	uint64		prevbytepos;
-	uint32		size = MAXALIGN(SizeOfXLogRecord);
+	uint32		size = MAXALIGN(MinXLogHeaderSize + sizeof(uint8));
 	XLogRecPtr	ptr;
 	uint32		segleft;
 
@@ -1250,8 +1289,11 @@ CopyXLogRecordToWAL(int write_len, bool isLogSwitch, XLogRecData *rdata,
 	 */
 	if (isLogSwitch && XLogSegmentOffset(CurrPos, wal_segment_size) != 0)
 	{
-		/* An xlog-switch record doesn't contain any data besides the header */
-		Assert(write_len == SizeOfXLogRecord);
+		/*
+		 * An xlog-switch record doesn't contain any data besides the basic
+		 * header and rminfo
+		 */
+		Assert(write_len == MAXALIGN(MinXLogHeaderSize + sizeof(uint8)));
 
 		/* Assert that we did reserve the right amount of space */
 		Assert(XLogSegmentOffset(EndPos, wal_segment_size) == 0);
@@ -4672,6 +4714,9 @@ BootStrapXLOG(void)
 	uint64		sysidentifier;
 	struct timeval tv;
 	pg_crc32c	crc;
+	const uint32 rec_tot_len = MinXLogHeaderSize + sizeof(uint8) /* xl_tot_len */
+		+ SizeOfXLogRecordDataHeaderShort + sizeof(checkPoint);
+	const uint8 rec_len = rec_tot_len;
 
 	/* allow ordinary WAL segment creation, like StartupXLOG() would */
 	SetInstallXLogFileSegmentActive();
@@ -4746,20 +4791,23 @@ BootStrapXLOG(void)
 	recptr = ((char *) page + SizeOfXLogLongPHD);
 	record = (XLogRecord *) recptr;
 	record->xl_prev = 0;
-	record->xl_xid = InvalidTransactionId;
-	record->xl_tot_len = SizeOfXLogRecord + SizeOfXLogRecordDataHeaderShort + sizeof(checkPoint);
-	record->xl_info = XLOG_CHECKPOINT_SHUTDOWN;
+	record->xl_info = XLR2_LEN_1B;
 	record->xl_rmid = RM_XLOG_ID;
-	recptr += SizeOfXLogRecord;
+
+	recptr += MinXLogHeaderSize;
+
+	memcpy(recptr, (char *) &rec_len, sizeof(uint8));
+	recptr += sizeof(uint8);
+
 	/* fill the XLogRecordDataHeaderShort struct */
 	*(recptr++) = (char) XLR_BLOCK_ID_DATA_SHORT;
 	*(recptr++) = sizeof(checkPoint);
-	memcpy(recptr, &checkPoint, sizeof(checkPoint));
+	memcpy(recptr, (char *) &checkPoint, sizeof(checkPoint));
 	recptr += sizeof(checkPoint);
-	Assert(recptr - (char *) record == record->xl_tot_len);
+	Assert(recptr - (char *) record == rec_len);
 
 	INIT_CRC32C(crc);
-	COMP_CRC32C(crc, ((char *) record) + SizeOfXLogRecord, record->xl_tot_len - SizeOfXLogRecord);
+	COMP_CRC32C(crc, ((char *) record) + offsetof(XLogRecord, xl_rmid), rec_len - offsetof(XLogRecord, xl_rmid));
 	COMP_CRC32C(crc, (char *) record, offsetof(XLogRecord, xl_crc));
 	FIN_CRC32C(crc);
 	record->xl_crc = crc;

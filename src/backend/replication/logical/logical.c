@@ -600,7 +600,7 @@ DecodingContextFindStartpoint(LogicalDecodingContext *ctx)
 	/* Wait for a consistent starting point */
 	for (;;)
 	{
-		XLogRecord *record;
+		XLRHeaderData *record;
 		char	   *err = NULL;
 
 		/* the read_page callback waits for new WAL */

@@ -38,7 +38,7 @@ PG_FUNCTION_INFO_V1(pg_get_wal_stats_till_end_of_wal);
 
 static bool IsFutureLSN(XLogRecPtr lsn, XLogRecPtr *curr_lsn);
 static XLogReaderState *InitXLogReaderState(XLogRecPtr lsn);
-static XLogRecord *ReadNextXLogRecord(XLogReaderState *xlogreader);
+static XLRHeaderData *ReadNextXLogRecord(XLogReaderState *xlogreader);
 static void GetWALRecordInfo(XLogReaderState *record, Datum *values,
 							 bool *nulls, uint32 ncols);
 static XLogRecPtr ValidateInputLSNs(bool till_end_of_wal,
@@ -138,7 +138,7 @@ InitXLogReaderState(XLogRecPtr lsn)
  * encounter errors if the flush pointer falls in the middle of a record. In
  * that case we'll return NULL.
  */
-static XLogRecord *
+static XLRHeaderData *
 ReadNextXLogRecord(XLogReaderState *xlogreader)
 {
 	XLogRecord *record;

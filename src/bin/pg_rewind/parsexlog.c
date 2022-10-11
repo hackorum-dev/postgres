@@ -66,7 +66,7 @@ void
 extractPageMap(const char *datadir, XLogRecPtr startpoint, int tliIndex,
 			   XLogRecPtr endpoint, const char *restoreCommand)
 {
-	XLogRecord *record;
+	XLRHeaderData *record;
 	XLogReaderState *xlogreader;
 	char	   *errormsg;
 	XLogPageReadPrivate private;
@@ -124,7 +124,7 @@ XLogRecPtr
 readOneRecord(const char *datadir, XLogRecPtr ptr, int tliIndex,
 			  const char *restoreCommand)
 {
-	XLogRecord *record;
+	XLRHeaderData *record;
 	XLogReaderState *xlogreader;
 	char	   *errormsg;
 	XLogPageReadPrivate private;
@@ -170,7 +170,7 @@ findLastCheckpoint(const char *datadir, XLogRecPtr forkptr, int tliIndex,
 				   XLogRecPtr *lastchkptredo, const char *restoreCommand)
 {
 	/* Walk backwards, starting from the given record */
-	XLogRecord *record;
+	XLRHeaderData *record;
 	XLogRecPtr	searchptr;
 	XLogReaderState *xlogreader;
 	char	   *errormsg;

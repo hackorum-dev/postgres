@@ -927,7 +927,8 @@ logical_heap_rewrite_flush_mappings(RewriteState state)
 		XLogRegisterData(waldata_start, len);
 
 		/* write xlog record */
-		XLogInsert(RM_HEAP2_ID, XLOG_HEAP2_REWRITE);
+		XLogInsertExtended(RM_HEAP2_ID, XLR_HAS_XID,
+						   XLOG_HEAP2_REWRITE, InvalidCommandId);
 
 		pfree(waldata_start);
 	}

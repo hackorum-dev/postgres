@@ -19,7 +19,11 @@
 
 /*
  * The overall layout of an XLOG record is:
- *		Fixed-size header (XLogRecord struct)
+ *		Fixed-size header (XLogRecord struct) + variable-sized header data:
+ *		 - xl_cid (0 or 4 bytes)
+ *		 - xl_cid (0 or 4 bytes)
+ *		 - xl_rmgr_flags (0 or 1 byte)
+ *		 - xl_len (0, 1, 2 or 4 bytes)
  *		XLogRecordBlockHeader struct
  *		XLogRecordBlockHeader struct
  *		...
@@ -37,23 +41,97 @@
  * The XLogRecordBlockHeader, XLogRecordDataHeaderShort and
  * XLogRecordDataHeaderLong structs all begin with a single 'id' byte. It's
  * used to distinguish between block references, and the main data structs.
+ *
+ * The smallest size that XLogRecord header takes up is now 14 bytes: 8 bytes
+ * in xl_prev, 4 in checksum, and 1 in xl_rmid and xl_info each, while the
+ * max-sized xlog header now takes up 27 bytes; with 4 bytes each in
+ * xl_tot_len, xl_xid and xl_cid, plus one in xl_rminfo.
  */
-typedef struct XLogRecord
-{
-	uint32		xl_tot_len;		/* total len of entire record */
-	TransactionId xl_xid;		/* xact id */
-	XLogRecPtr	xl_prev;		/* ptr to previous record in log */
-	uint8		xl_info;		/* flag bits, see below */
-	RmgrId		xl_rmid;		/* resource manager for this record */
-	uint8		xl_rminfo;		/* flag bits for rmgr use */
-	/* 1 byte of padding here, initialize to zero */
-	pg_crc32c	xl_crc;			/* CRC for this record */
+typedef struct XLogRecord {
+	XLogRecPtr	xl_prev;
+	pg_crc32c	xl_crc;
+	RmgrId		xl_rmid;
 
-	/* XLogRecordBlockHeaders and XLogRecordDataHeader follow, no padding */
-
+	/* Flags for record handling and variable-length header fields */
+	uint8		xl_info;
+	/*
+	 * Without padding:
+	 * - depending on flags, length field follows (0, 1, 2 or 4 bytes)
+	 * - if HAS_XID, TransactionId follows
+	 * - if HAS_CID, CommandID follows
+	 * - if HAS_RMINFO, uint8 with rminfo flags follows
+	 * - XLogRecordBlockHeaders and XLogRecordDataHeader follow
+	 */
 } XLogRecord;
 
-#define SizeOfXLogRecord	(offsetof(XLogRecord, xl_crc) + sizeof(pg_crc32c))
+/*
+ * 
+ */
+typedef struct XLRHeaderData {
+	XLogRecPtr	xl_prev;
+	pg_crc32c	xl_crc;
+	RmgrId		xl_rmid;
+	uint8		xl_info;
+	TransactionId xl_xid;
+	CommandId	xl_cid;
+	uint8		xl_rminfo;
+	uint32		xl_tot_len;
+} XLRHeaderData;
+
+#define MinXLogHeaderSize	( \
+	offsetof(XLogRecord, xl_info) \
+	+ sizeof(uint8) /* xl_info */ \
+)
+
+#define MaxXLogHeaderSize	( \
+	MinXLogHeaderSize \
+	+ sizeof(TransactionId) /* xl_xid */ \
+	+ sizeof(CommandId) /* xl_cid */ \
+	+ sizeof(uint8) /* xl_rminfo */ \
+	+ sizeof(uint32) /* xl_len */ \
+)
+
+/*
+ * Mask for getting the size of the length field
+ */
+#define XLR2_LEN_MASK			(0x03)
+
+/*
+ * IFF the record does not contain any registered data, the length field will
+ * be absent (as the size of a plain record is knowable from just the
+ * fixed-size struct's flags)
+ */
+#define XLR2_LEN_ABSENT			0x00
+/*
+ * Size of the xlog record is <= 255 bytes
+ */
+#define XLR2_LEN_1B				0x01
+/*
+ * Size of the xlog record is <= (2^16 - 1)
+ */
+#define XLR2_LEN_2B				0x02
+/*
+ * Size of the xlog record is <= (2^32 - 1)
+ */
+#define XLR2_LEN_4B				0x03
+
+/*
+ * Does this record contain an XID? This must be included if the data has
+ * transactional visibility.
+ */
+#define XLR_HAS_XID			0x04
+
+/*
+ * Doest this record contain a CID? This must be included if the data has
+ * transactional visibility, and remote snapshot transfer support is enabled.
+ */
+#define XLR_HAS_CID			0x08
+
+/*
+ * If the redo manager needs non-zero bits in the header to discern different
+ * types of WAL records, this flag is set.
+ */
+#define XLR_HAS_RMINFO			0x10
 
 /*
  * If a WAL record modifies any relation files, in ways not covered by the
@@ -61,7 +139,7 @@ typedef struct XLogRecord
  * by PostgreSQL itself, but it allows external tools that read WAL and keep
  * track of modified blocks to recognize such special record types.
  */
-#define XLR_SPECIAL_REL_UPDATE	0x01
+#define XLR_SPECIAL_REL_UPDATE	0x20
 
 /*
  * Enforces consistency checks of replayed WAL at recovery. If enabled,
@@ -70,7 +148,68 @@ typedef struct XLogRecord
  * of XLogInsert can use this value if necessary, but if
  * wal_consistency_checking is enabled for a rmgr this is set unconditionally.
  */
-#define XLR_CHECK_CONSISTENCY	0x02
+#define XLR_CHECK_CONSISTENCY	0x40
+
+#define XLR_INFO_USERFLAGS		( \
+	XLR_HAS_XID \
+		| XLR_HAS_CID \
+		| XLR_SPECIAL_REL_UPDATE \
+		| XLR_CHECK_CONSISTENCY \
+)
+
+#define XLRSizeOfHeader(infomask) ( \
+	MinXLogHeaderSize \
+		+ ((1 << ((infomask) & XLR2_LEN_MASK)) >> 1) \
+		+ (((infomask) & XLR_HAS_XID) ? sizeof(TransactionId) : 0) \
+		+ (((infomask) & XLR_HAS_CID) ? sizeof(CommandId) : 0) \
+		+ (((infomask) & XLR_HAS_RMINFO) ? sizeof(uint8) : 0) \
+)
+
+static inline uint32
+XLogRecordGetLength(XLogRecord *record)
+{
+	char *lenptr = (char *) record;
+	uint8 len8;
+	uint16 len16;
+	uint32 len32;
+
+	lenptr += MinXLogHeaderSize;
+
+	switch ((record->xl_info) & XLR2_LEN_MASK) {
+		case XLR2_LEN_ABSENT:
+			return XLRSizeOfHeader(record->xl_info);
+		case XLR2_LEN_1B:
+			memcpy(&len8, lenptr, sizeof(uint8));
+			return (uint32) len8;
+		case XLR2_LEN_2B:
+			memcpy(&len16, lenptr, sizeof(uint16));
+			return (uint32) len16;
+		case XLR2_LEN_4B:
+			memcpy(&len32, lenptr, sizeof(uint32));
+			return (uint32) len32;
+		default:
+			pg_unreachable();
+	}
+}
+
+static inline int8
+XLogRecordGetRMInfo(XLogRecord *record)
+{
+	int infooff = MinXLogHeaderSize;
+
+	if (!(record->xl_info & XLR_HAS_RMINFO))
+		return 0;
+
+	infooff += (1 << (record->xl_info & XLR2_LEN_MASK)) >> 1;
+
+	if (record->xl_info & XLR_HAS_XID)
+		infooff += sizeof(TransactionId);
+
+	if (record->xl_info & XLR_HAS_CID)
+		infooff += sizeof(CommandId);
+
+	return *(((uint8 *) record) + infooff);
+}
 
 /*
  * Header info for block data appended to an XLOG record.
@@ -145,7 +284,7 @@ typedef struct XLogRecordBlockImageHeader
 #define BKPIMAGE_COMPRESS_ZSTD	0x10
 
 #define	BKPIMAGE_COMPRESSED(info) \
-	((info & (BKPIMAGE_COMPRESS_PGLZ | BKPIMAGE_COMPRESS_LZ4 | \
+	(((info) & (BKPIMAGE_COMPRESS_PGLZ | BKPIMAGE_COMPRESS_LZ4 | \
 			  BKPIMAGE_COMPRESS_ZSTD)) != 0)
 
 /*

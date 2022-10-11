@@ -5769,7 +5769,8 @@ XactLogCommitRecord(TimestampTz commit_time,
 	/* we allow filtering by xacts */
 	XLogSetRecordFlags(XLOG_INCLUDE_ORIGIN);
 
-	return XLogInsertExtended(RM_XACT_ID, info, rminfo);
+	return XLogInsertExtended(RM_XACT_ID, info | XLR_HAS_XID,
+							  rminfo, InvalidCommandId);
 }
 
 /*
@@ -5917,7 +5918,8 @@ XactLogAbortRecord(TimestampTz abort_time,
 	if (TransactionIdIsValid(twophase_xid))
 		XLogSetRecordFlags(XLOG_INCLUDE_ORIGIN);
 
-	return XLogInsertExtended(RM_XACT_ID, info, rminfo);
+	return XLogInsertExtended(RM_XACT_ID, info | XLR_HAS_XID,
+							  rminfo, InvalidCommandId);
 }
 
 /*

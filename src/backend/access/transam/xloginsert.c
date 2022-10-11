@@ -118,7 +118,7 @@ static char *hdr_scratch = NULL;
 #define SizeOfXLogTransactionId	(sizeof(TransactionId) + sizeof(char))
 
 #define HEADER_SCRATCH_SIZE \
-	(SizeOfXLogRecord + \
+	(MaxXLogHeaderSize + \
 	 MaxSizeOfXLogRecordBlockHeader * (XLR_MAX_BLOCK_ID + 1) + \
 	 SizeOfXLogRecordDataHeaderLong + SizeOfXlogOrigin + \
 	 SizeOfXLogTransactionId)
@@ -135,10 +135,11 @@ static bool begininsert_called = false;
 /* Memory context to hold the registered buffer and data references. */
 static MemoryContext xloginsert_cxt;
 
-static XLogRecData *XLogRecordAssemble(RmgrId rmid, uint8 info, uint8 rminfo,
-									   XLogRecPtr RedoRecPtr, bool doPageWrites,
-									   XLogRecPtr *fpw_lsn, int *num_fpi,
-									   bool *topxid_included);
+static XLogRecData *
+XLogRecordAssemble(RmgrId rmid, uint8 info, uint8 rminfo,
+				   XLogRecPtr RedoRecPtr, bool doPageWrites,
+				   XLogRecPtr *fpw_lsn, int *num_fpi, bool *topxid_included,
+				   CommandId cid);
 static bool XLogCompressBackupBlock(char *page, uint16 hole_offset,
 									uint16 hole_length, char *dest, uint16 *dlen);
 
@@ -447,11 +448,15 @@ XLogSetRecordFlags(uint8 flags)
  * (LSN is the XLOG point up to which the XLOG must be flushed to disk
  * before the data page can be written out.  This implements the basic
  * WAL rule "write the log before the data".)
+ *
+ * Note: To include the XID in the record, you have to use
+ * XLogInsertExtended with info = XLR2_HAS_XID. To include CID, do the
+ * same with HAS_CID, and specify the command ID.
  */
 XLogRecPtr
 XLogInsert(RmgrId rmid, uint8 rminfo)
 {
-	return XLogInsertExtended(rmid, 0, rminfo);
+	return XLogInsertExtended(rmid, 0, rminfo, InvalidCommandId);
 }
 
 
@@ -459,11 +464,15 @@ XLogInsert(RmgrId rmid, uint8 rminfo)
  * Insert an XLOG record having the specified RMID, info and rminfo bytes,
  * with the body of the record being the data and buffer references
  * registered earlier with XLogRegister* calls.
+ * 
+ * CommandId is an argument to be called by the user, while TransactionId
+ * (if needed) is taken from this backend's state: There is at any time
+ * only one running XID, while there may be more than one active CommandIds.
  *
  * See also XLogInsert above.
  */
 XLogRecPtr
-XLogInsertExtended(RmgrId rmid, uint8 info, uint8 rminfo)
+XLogInsertExtended(RmgrId rmid, uint8 info, uint8 rminfo, CommandId cid)
 {
 	XLogRecPtr	EndPos;
 
@@ -475,8 +484,7 @@ XLogInsertExtended(RmgrId rmid, uint8 info, uint8 rminfo)
 	 * The caller can set XLR_SPECIAL_REL_UPDATE and
 	 * XLR_CHECK_CONSISTENCY; the rest are reserved for use by me.
 	 */
-	if ((info & ~(XLR_SPECIAL_REL_UPDATE |
-				  XLR_CHECK_CONSISTENCY)) != 0)
+	if ((info & ~XLR_INFO_USERFLAGS) != 0)
 		elog(PANIC, "invalid xlog info mask %02X", info);
 
 	TRACE_POSTGRESQL_WAL_INSERT(rmid, info);
@@ -509,7 +517,8 @@ XLogInsertExtended(RmgrId rmid, uint8 info, uint8 rminfo)
 		GetFullPageWriteInfo(&RedoRecPtr, &doPageWrites);
 
 		rdt = XLogRecordAssemble(rmid, info, rminfo, RedoRecPtr, doPageWrites,
-								 &fpw_lsn, &num_fpi, &topxid_included);
+								 &fpw_lsn, &num_fpi, &topxid_included,
+								 cid);
 
 		EndPos = XLogInsertRecord(rdt, fpw_lsn, curinsert_flags, num_fpi,
 								  topxid_included);
@@ -538,29 +547,56 @@ XLogInsertExtended(RmgrId rmid, uint8 info, uint8 rminfo)
 static XLogRecData *
 XLogRecordAssemble(RmgrId rmid, uint8 info, uint8 rminfo,
 				   XLogRecPtr RedoRecPtr, bool doPageWrites,
-				   XLogRecPtr *fpw_lsn, int *num_fpi, bool *topxid_included)
+				   XLogRecPtr *fpw_lsn, int *num_fpi, bool *topxid_included,
+				   CommandId cid)
 {
 	XLogRecData *rdt;
 	uint32		total_len = 0;
 	int			block_id;
+	bool		only_hdr = true;
 	pg_crc32c	rdata_crc;
 	registered_buffer *prev_regbuf = NULL;
 	XLogRecData *rdt_datas_last;
-	XLogRecord *rechdr;
+	XLogRecord *rechdr = (XLogRecord *) hdr_scratch;
 	char	   *scratch = hdr_scratch;
+
+	Assert((info & ~(XLR_INFO_USERFLAGS)) == 0);
 
 	/*
 	 * Note: this function can be called multiple times for the same record.
 	 * All the modifications we do to the rdata chains below must handle that.
 	 */
 
-	/* The record begins with the fixed-size header */
-	rechdr = (XLogRecord *) scratch;
-	scratch += SizeOfXLogRecord;
+	/*
+	 * The record begins with the variable-size header data. We pre-allocate
+	 * the fixed part of the xlog header section, plus the length field, as
+	 * we'll only fill those at the end of the record. The rest can be
+	 * pre-filled.
+	 */
+	scratch += MinXLogHeaderSize + sizeof(uint32);
 
 	hdr_rdt.next = NULL;
 	rdt_datas_last = &hdr_rdt;
 	hdr_rdt.data = hdr_scratch;
+
+	if (IsSubxactTopXidLogPending())
+		info |= XLR_HAS_XID;
+
+	if (info & XLR_HAS_XID)
+	{
+		TransactionId xid = GetCurrentTransactionIdIfAny();
+		memcpy(scratch, (char *) &xid, sizeof(TransactionId));
+		scratch += sizeof(TransactionId);
+	}
+
+	if (info & XLR_HAS_CID)
+	{
+		memcpy(scratch, (char *) &cid, sizeof(CommandId));
+		scratch += sizeof(CommandId);
+	}
+
+	if (rminfo != 0)
+		*(scratch++) = rminfo;
 
 	/*
 	 * Enforce consistency checks for this record if user is looking for it.
@@ -592,6 +628,7 @@ XLogRecordAssemble(RmgrId rmid, uint8 info, uint8 rminfo,
 		if (!regbuf->in_use)
 			continue;
 
+		only_hdr = false;
 		/* Determine if this block needs to be backed up */
 		if (regbuf->flags & REGBUF_FORCE_IMAGE)
 			needs_backup = true;
@@ -832,6 +869,7 @@ XLogRecordAssemble(RmgrId rmid, uint8 info, uint8 rminfo,
 	if ((curinsert_flags & XLOG_INCLUDE_ORIGIN) &&
 		replorigin_session_origin != InvalidRepOriginId)
 	{
+		only_hdr = false;
 		*(scratch++) = (char) XLR_BLOCK_ID_ORIGIN;
 		memcpy(scratch, &replorigin_session_origin, sizeof(replorigin_session_origin));
 		scratch += sizeof(replorigin_session_origin);
@@ -845,6 +883,7 @@ XLogRecordAssemble(RmgrId rmid, uint8 info, uint8 rminfo,
 		/* Set the flag that the top xid is included in the WAL */
 		*topxid_included = true;
 
+		only_hdr = false;
 		*(scratch++) = (char) XLR_BLOCK_ID_TOPLEVEL_XID;
 		memcpy(scratch, &xid, sizeof(TransactionId));
 		scratch += sizeof(TransactionId);
@@ -853,6 +892,8 @@ XLogRecordAssemble(RmgrId rmid, uint8 info, uint8 rminfo,
 	/* followed by main data, if any */
 	if (mainrdata_len > 0)
 	{
+		only_hdr = false;
+
 		if (mainrdata_len > 255)
 		{
 			*(scratch++) = (char) XLR_BLOCK_ID_DATA_LONG;
@@ -873,16 +914,75 @@ XLogRecordAssemble(RmgrId rmid, uint8 info, uint8 rminfo,
 	hdr_rdt.len = (scratch - hdr_scratch);
 	total_len += hdr_rdt.len;
 
+
+	/* ensure that we haven't yet set the length mask */
+	Assert((info & XLR2_LEN_MASK) == 0);
+
+	/*
+	 * Here, the full xlog header has been constructed, except for the xlog
+	 * record length, and the constant fields in the xlog header.
+	 */
+
+	/* fill the xlog header length field and mask */
+	if (only_hdr)
+	{
+		Assert(total_len - sizeof(uint32) == XLRSizeOfHeader(info));
+		info |= XLR2_LEN_ABSENT;
+		memmove(hdr_scratch + MinXLogHeaderSize,
+				hdr_scratch + MinXLogHeaderSize + sizeof(uint32),
+				hdr_rdt.len - MinXLogHeaderSize - sizeof(uint32));
+		hdr_rdt.len = hdr_rdt.len - sizeof(uint32);
+	}
+	else if (total_len - sizeof(uint32) <= UINT8_MAX - sizeof(uint8))
+	{
+		uint8 size = (uint8) (total_len - sizeof(uint32)) + sizeof(uint8);
+		info |= XLR2_LEN_1B;
+		memmove(hdr_scratch + MinXLogHeaderSize + sizeof(uint8),
+				hdr_scratch + MinXLogHeaderSize + sizeof(uint32),
+				hdr_rdt.len - MinXLogHeaderSize - sizeof(uint32));
+		memcpy(hdr_scratch + MinXLogHeaderSize, (char *) &size, sizeof(uint8));
+		total_len = size;
+		hdr_rdt.len = hdr_rdt.len - sizeof(uint32) + sizeof(uint8);
+	}
+	else if (total_len - sizeof(uint32) <= UINT16_MAX - sizeof(uint16))
+	{
+		uint16 size = (uint16) (total_len - sizeof(uint32)) + sizeof(uint16);
+		info |= XLR2_LEN_2B;
+		memmove(hdr_scratch + MinXLogHeaderSize + sizeof(uint16),
+				hdr_scratch + MinXLogHeaderSize + sizeof(uint32),
+				hdr_rdt.len - MinXLogHeaderSize - sizeof(uint32));
+		memcpy(hdr_scratch + MinXLogHeaderSize, (char *) &size, sizeof(uint16));
+		total_len = size;
+		hdr_rdt.len = hdr_rdt.len - sizeof(uint32) + sizeof(uint16);
+	}
+	else
+	{
+		uint32 size = total_len;
+		info |= XLR2_LEN_4B;
+		memcpy(hdr_scratch + MinXLogHeaderSize, (char *) &size, sizeof(uint32));
+		total_len = size;
+	}
+
+	/*
+	 * We've filled all variable-length data of the xlog header section,
+	 * which allows us to start CRC-ing the data.
+	 */
+
+	rechdr->xl_rmid = rmid;
+	rechdr->xl_info = info;
+
 	/*
 	 * Calculate CRC of the data
 	 *
 	 * Note that the record header isn't added into the CRC initially since we
 	 * don't know the prev-link yet.  Thus, the CRC will represent the CRC of
-	 * the whole record in the order: rdata, then backup blocks, then record
-	 * header.
+	 * the whole record in the order: xl_rmid, xl_info, varlen header fields,
+	 * rdata, then backup blocks, then prevptr.
 	 */
 	INIT_CRC32C(rdata_crc);
-	COMP_CRC32C(rdata_crc, hdr_scratch + SizeOfXLogRecord, hdr_rdt.len - SizeOfXLogRecord);
+	COMP_CRC32C(rdata_crc,
+				hdr_rdt.data + offsetof(XLogRecord, xl_rmid),
+				hdr_rdt.len - offsetof(XLogRecord, xl_rmid));
 	for (rdt = hdr_rdt.next; rdt != NULL; rdt = rdt->next)
 		COMP_CRC32C(rdata_crc, rdt->data, rdt->len);
 
@@ -891,11 +991,6 @@ XLogRecordAssemble(RmgrId rmid, uint8 info, uint8 rminfo,
 	 * once we know where in the WAL the record will be inserted. The CRC does
 	 * not include the record header yet.
 	 */
-	rechdr->xl_xid = GetCurrentTransactionIdIfAny();
-	rechdr->xl_tot_len = total_len;
-	rechdr->xl_info = info;
-	rechdr->xl_rmid = rmid;
-	rechdr->xl_rminfo = rminfo;
 	rechdr->xl_prev = InvalidXLogRecPtr;
 	rechdr->xl_crc = rdata_crc;
 

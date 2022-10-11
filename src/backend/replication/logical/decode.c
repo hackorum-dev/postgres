@@ -200,7 +200,10 @@ xact_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 				ParseCommitRecord(XLogRecGetRmInfo(buf->record), xlrec, &parsed);
 
 				if (!TransactionIdIsValid(parsed.twophase_xid))
+				{
+					Assert(info == XLOG_XACT_COMMIT);
 					xid = XLogRecGetXid(r);
+				}
 				else
 					xid = parsed.twophase_xid;
 
@@ -228,7 +231,10 @@ xact_decode(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 				ParseAbortRecord(XLogRecGetRmInfo(buf->record), xlrec, &parsed);
 
 				if (!TransactionIdIsValid(parsed.twophase_xid))
+				{
+					Assert(info == XLOG_XACT_ABORT);
 					xid = XLogRecGetXid(r);
+				}
 				else
 					xid = parsed.twophase_xid;
 

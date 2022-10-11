@@ -835,7 +835,8 @@ MultiXactIdCreateFromMembers(int nmembers, MultiXactMember *members)
 	XLogRegisterData((char *) (&xlrec), SizeOfMultiXactCreate);
 	XLogRegisterData((char *) members, nmembers * sizeof(MultiXactMember));
 
-	(void) XLogInsert(RM_MULTIXACT_ID, XLOG_MULTIXACT_CREATE_ID);
+	(void) XLogInsertExtended(RM_MULTIXACT_ID, XLR_HAS_XID,
+							  XLOG_MULTIXACT_CREATE_ID, InvalidCommandId);
 
 	/* Now enter the information into the OFFSETs and MEMBERs logs */
 	RecordNewMultiXact(multi, offset, nmembers, members);

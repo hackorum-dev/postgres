@@ -256,7 +256,7 @@ pg_logical_slot_get_changes_guts(FunctionCallInfo fcinfo, bool confirm, bool bin
 		/* Decode until we run out of records */
 		while (ctx->reader->EndRecPtr < end_of_wal)
 		{
-			XLogRecord *record;
+			XLRHeaderData *record;
 			char	   *errm = NULL;
 
 			record = XLogReadRecord(ctx->reader, &errm);

@@ -983,7 +983,7 @@ XLogPrefetcherBeginRead(XLogPrefetcher *prefetcher, XLogRecPtr recPtr)
  * A wrapper for XLogReadRecord() that provides the same interface, but also
  * tries to initiate I/O for blocks referenced in future WAL records.
  */
-XLogRecord *
+XLRHeaderData *
 XLogPrefetcherReadRecord(XLogPrefetcher *prefetcher, char **errmsg)
 {
 	DecodedXLogRecord *record;

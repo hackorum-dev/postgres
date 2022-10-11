@@ -1396,7 +1396,7 @@ ReadTwoPhaseFile(TransactionId xid, bool missing_ok)
 static void
 XlogReadTwoPhaseData(XLogRecPtr lsn, char **buf, int *len)
 {
-	XLogRecord *record;
+	XLRHeaderData *record;
 	XLogReaderState *xlogreader;
 	char	   *errormsg;
 
