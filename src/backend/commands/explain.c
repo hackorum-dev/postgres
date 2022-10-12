@@ -21,6 +21,7 @@
 #include "executor/nodeHash.h"
 #include "foreign/fdwapi.h"
 #include "jit/jit.h"
+#include "lib/bloomfilter.h"
 #include "nodes/extensible.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
@@ -108,6 +109,10 @@ static void show_tablesample(TableSampleClause *tsc, PlanState *planstate,
 static void show_sort_info(SortState *sortstate, ExplainState *es);
 static void show_incremental_sort_info(IncrementalSortState *incrsortstate,
 									   ExplainState *es);
+static void show_semijoin_metadata(List *equijoins, PlanState *planstate,
+								   List *ancestors, ExplainState *es);
+static void show_semijoin_filters_info(Plan *plan, PlanState *planstate,
+									   List *ancestors, ExplainState *es);
 static void show_hash_info(HashState *hashstate, ExplainState *es);
 static void show_memoize_info(MemoizeState *mstate, List *ancestors,
 							  ExplainState *es);
@@ -1687,6 +1692,15 @@ ExplainNode(PlanState *planstate, List *ancestors,
 	if (es->format == EXPLAIN_FORMAT_TEXT)
 		appendStringInfoChar(es->str, '\n');
 
+	switch (nodeTag(plan))
+	{
+		case T_SeqScan:
+			show_semijoin_filters_info((Plan *) plan, planstate, ancestors, es);
+			break;
+		default:
+			break;
+	}
+
 	/* prepare per-worker general execution details */
 	if (es->workers_state && es->verbose)
 	{
@@ -1981,6 +1995,11 @@ ExplainNode(PlanState *planstate, List *ancestors,
 							"Merge Cond", planstate, ancestors, es);
 			show_upper_qual(((MergeJoin *) plan)->join.joinqual,
 							"Join Filter", planstate, ancestors, es);
+			if (((MergeJoinState *) planstate)->sjf)
+			{
+				show_semijoin_metadata(((MergeJoin *) plan)->mergeclauses,
+									   planstate, ancestors, es);
+			}
 			if (((MergeJoin *) plan)->join.joinqual)
 				show_instrumentation_count("Rows Removed by Join Filter", 1,
 										   planstate, es);
@@ -5040,4 +5059,120 @@ static void
 escape_yaml(StringInfo buf, const char *str)
 {
 	escape_json(buf, str);
+}
+
+/*
+ * Show a list of expressions (or ExprState's), wrapped in the specified bounding characters
+ */
+static void
+show_expression_list(List *expr_list, const char *qlabel,
+					 const char *list_start, const char *list_separator, const char *list_end,
+					 PlanState *planstate, List *ancestors, ExplainState *es)
+{
+	List	   *context;
+	ListCell   *lc;
+	char	   *exprstr;
+	bool		first = true;
+	Node	   *nth_expr = NULL;
+	Node	   *nth_list_elem = NULL;
+
+	/* Set up deparsing context */
+	context = set_deparse_context_plan(es->deparse_cxt, planstate->plan, ancestors);
+
+	/* Insert header */
+	appendStringInfoSpaces(es->str, es->indent * 2);
+	appendStringInfo(es->str, "%s: ", qlabel);
+	appendStringInfo(es->str, "%s", list_start);
+
+	/* Deparse each expressions, and append it */
+	foreach(lc, expr_list)
+	{
+		if (!first)
+		{
+			appendStringInfo(es->str, "%s", list_separator);
+		}
+		nth_expr = NULL;
+		nth_list_elem = (Node *) lfirst(lc);
+		if (nth_list_elem->type == T_ExprState)
+		{
+			nth_expr = (Node *) (((ExprState *) nth_list_elem)->expr);
+		}
+		else
+		{
+			nth_expr = nth_list_elem;
+		}
+		if (nth_expr)
+		{
+			exprstr = deparse_expression(nth_expr, context, /* useprefix */ true, false);
+			appendStringInfo(es->str, "%s", exprstr);
+		}
+		else
+		{
+			appendStringInfo(es->str, "%s", "<?>");
+		}
+		first = false;
+	}
+
+	/* Finalize with trailer */
+	appendStringInfo(es->str, "%s\n", list_end);
+}
+
+static void
+show_semijoin_metadata(List *equijoins, PlanState *planstate,
+					   List *ancestors, ExplainState *es)
+{
+	char		createStr[256];
+	Node	   *best_equijoin_clause;
+	SemijoinFilterJoinData *sj_metadata = (((MergeJoin *) planstate->plan)->sj_metadata);
+
+	Assert(planstate);
+	Assert(nodeTag(planstate) == T_MergeJoinState);
+	Assert(planstate->plan);
+	Assert(nodeTag(planstate->plan) == T_MergeJoin);
+
+	snprintf(createStr, sizeof(createStr), "%s", "SemiJoin Filter Created Based on");
+	best_equijoin_clause = (Node *) list_nth_node(OpExpr, equijoins, sj_metadata->best_mergeclause_pos);
+	show_expression(best_equijoin_clause, createStr, planstate, ancestors, true, es);
+	ExplainPropertyFloat("SemiJoin Estimated Filtering Rate", NULL, sj_metadata->filtering_rate, 4, es);
+	if (es->analyze)
+	{
+		SemiJoinFilterJoinNodeState *sjf = ((MergeJoinState *) planstate)->sjf;
+
+		ExplainPropertyInteger("SemiJoin Filter Size", "kB", (sjf->filter->m) / 8 / 1024, es);
+		ExplainPropertyInteger("SemiJoin Filter Hashes", NULL, sjf->filter->k_hash_funcs, es);
+		ExplainPropertyFloat("SemiJoin Actual Filtering Rate", NULL, ((double) sjf->elements_filtered) / sjf->elements_checked, 4, es);
+	}
+}
+
+static void
+show_semijoin_filter_info(SemijoinFilterScanData * sj_md, PlanState *planstate, List *ancestors, ExplainState *es)
+{
+	if (sj_md->is_building_node)
+	{
+		show_expression_list(sj_md->semijoin_keys,
+							 "Semijoin Filter building based on", "{ ", ", ", " }",
+							 planstate, ancestors, es);
+	}
+	else
+	{
+		show_expression_list(sj_md->semijoin_keys,
+							 "Semijoin Filter checking based on", "{ ", ", ", " }",
+							 planstate, ancestors, es);
+	}
+}
+
+static void
+show_semijoin_filters_info(Plan *plan, PlanState *planstate, List *ancestors, ExplainState *es)
+{
+	List	   *sj_md_list = plan->sj_md_list;
+
+	if (sj_md_list != NIL)
+	{
+		ListCell   *lc;
+
+		foreach(lc, sj_md_list)
+		{
+			show_semijoin_filter_info((SemijoinFilterScanData *) lfirst(lc), planstate, ancestors, es);
+		}
+	}
 }
