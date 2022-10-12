@@ -25,7 +25,7 @@
 
 
 bool		ExecScanUsingSemiJoinFilter(SeqScanState *node, ExprContext *econtext);
-void		ExecSemiJoinFilterFinishScan(List *semijoin_filters, List *semijoin_scan);
+void		ExecSemiJoinFilterFinishScan(List *semijoin_filters, List *semijoin_scan, dsa_area *parallel_area);
 
 
 /*
@@ -213,7 +213,8 @@ ExecScan(ScanState *node,
 		{
 			if (IsA(node, SeqScanState) && ((SeqScanState *) node)->apply_semijoin_filter)
 			{
-				ExecSemiJoinFilterFinishScan(((SeqScanState *) node)->semijoin_filters, ((SeqScanState *) node)->sj_scan_data);
+				ExecSemiJoinFilterFinishScan(((SeqScanState *) node)->semijoin_filters, ((SeqScanState *) node)->sj_scan_data,
+											 node->ps.state->es_query_dsa);
 			}
 			if (projInfo)
 				return ExecClearTuple(projInfo->pi_state.resultslot);
@@ -425,7 +426,7 @@ ExecScanUsingSemiJoinFilter(SeqScanState *node, ExprContext *econtext)
  *	represents the steps after the bloom filter is done building/checking.
  */
 void
-ExecSemiJoinFilterFinishScan(List *semijoin_filters, List *semijoin_scan)
+ExecSemiJoinFilterFinishScan(List *semijoin_filters, List *semiJoinScan, dsa_area *parallel_area)
 {
 	ListCell   *cell;
 	int			i = 0;
@@ -433,12 +434,79 @@ ExecSemiJoinFilterFinishScan(List *semijoin_filters, List *semijoin_scan)
 	foreach(cell, semijoin_filters)
 	{
 		SemiJoinFilterJoinNodeState *sjf = ((SemiJoinFilterJoinNodeState *) (lfirst(cell)));
-		SemiJoinFilterScanNodeState *sj_scan = ((SemiJoinFilterScanNodeState *) (lfirst(list_nth_cell(semijoin_scan, i))));;
+		SemiJoinFilterScanNodeState *sj_scan = ((SemiJoinFilterScanNodeState *) (lfirst(list_nth_cell(semiJoinScan, i))));;
 
 		++i;
 		if (!sjf->done_building && sj_scan->is_building_side)
 		{
-			sjf->done_building = true;
+			if (!sjf->is_parallel)
+			{
+				/*
+				 * not parallel, so only one process running and that process
+				 * is now complete
+				 */
+				sjf->done_building = true;
+			}
+			else
+			{
+				/* parallel, so need to sync with the other processes */
+				SemiJoinFilterParallelState *parallel_state =
+				(SemiJoinFilterParallelState *) dsa_get_address(parallel_area, sjf->parallel_state);
+				bloom_filter *shared_bloom = (bloom_filter *) dsa_get_address(parallel_area, parallel_state->bloom_dsa_address);
+
+				/*
+				 * this process takes control of the lock and updates the
+				 * shared bloom filter. These locks are created by the
+				 * SemiJoinFilterParallelState and are unique to that struct.
+				 */
+				LWLockAcquire(&parallel_state->lock, LW_EXCLUSIVE);
+				parallel_state->elements_added += sjf->elements_added;
+				add_to_filter(shared_bloom, sjf->filter);
+				parallel_state->workers_done++;
+				LWLockRelease(&parallel_state->lock);
+
+				/*
+				 * we need to wait until all threads have had their chance to
+				 * update the shared bloom filter, since our next step is to
+				 * copy the finished bloom filter back into all of the
+				 * separate processes
+				 */
+				if (parallel_state->workers_done == parallel_state->num_processes)
+				{
+					LWLockUpdateVar(&parallel_state->secondlock, &parallel_state->lock_stop, 1);
+				}
+				LWLockWaitForVar(&parallel_state->secondlock, &parallel_state->lock_stop, 0, &parallel_state->lock_stop);
+
+				/*
+				 * now the shared Bloom filter is fully updated, so each
+				 * individual process copies the finished Bloom filter to the
+				 * local SemiJoinFilterJoinNodeState
+				 */
+				LWLockAcquire(&parallel_state->lock, LW_EXCLUSIVE);
+				replace_bitset(sjf->filter, shared_bloom);
+				sjf->elements_added = parallel_state->elements_added;
+				sjf->done_building = true;
+				parallel_state->workers_done++;
+				LWLockRelease(&parallel_state->lock);
+
+				/*
+				 * again, we need to wait for all processes to finish copying
+				 * the completed bloom filter because the main process will
+				 * free the shared memory afterwards
+				 */
+				if (parallel_state->workers_done == 2 * parallel_state->num_processes)
+				{
+					LWLockUpdateVar(&parallel_state->secondlock, &parallel_state->lock_stop, 2);
+				}
+				LWLockWaitForVar(&parallel_state->secondlock, &parallel_state->lock_stop, 1, &parallel_state->lock_stop);
+				/* release allocated shared memory in main process */
+				if (!sjf->is_worker)
+				{
+					LWLockRelease(&parallel_state->secondlock);
+					bloom_free_in_dsa(parallel_area, parallel_state->bloom_dsa_address);
+					dsa_free(parallel_area, sjf->parallel_state);
+				}
+			}
 		}
 	}
 }

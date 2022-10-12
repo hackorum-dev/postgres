@@ -98,6 +98,10 @@
 #include "executor/nodeMergejoin.h"
 #include "lib/bloomfilter.h"
 #include "miscadmin.h"
+#include "storage/dsm.h"
+#include "storage/lwlock.h"
+#include "storage/shm_toc.h"
+#include "utils/dsa.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 
@@ -656,6 +660,23 @@ ExecMergeJoin(PlanState *pstate)
 
 				outerTupleSlot = ExecProcNode(outerPlan);
 				node->mj_OuterTupleSlot = outerTupleSlot;
+
+				/*
+				 * Check if outer plan has an SJF and the inner plan does not.
+				 * This case will only arise during parallel execution, when
+				 * the outer plan is initialized with the SJF but the inner
+				 * plan does not because it is not included in the memory
+				 * copied over during worker creation. If this is the case,
+				 * then push down the filter to the inner plan level to
+				 * correct this error and then proceed as normal.
+				 */
+				if (GetSemiJoinFilter(outerPlan, pstate->plan->plan_node_id)
+					&& !GetSemiJoinFilter(innerPlan, pstate->plan->plan_node_id))
+				{
+					SemiJoinFilterJoinNodeState *sjf = GetSemiJoinFilter(outerPlan, pstate->plan->plan_node_id);
+
+					PushDownFilter(innerPlan, sjf, sjf->checking_node_id, NULL);
+				}
 
 				/* Compute join values and check for unmatchability */
 				switch (MJEvalOuterValues(node))
@@ -1804,4 +1825,73 @@ PushDownFilter(PlanState *node, SemiJoinFilterJoinNodeState * sjf, int target_no
 		PushDownFilter(node->lefttree, sjf, target_node_id, plan_rows);
 		PushDownFilter(node->righttree, sjf, target_node_id, plan_rows);
 	}
+}
+
+dsa_pointer
+CreateFilterParallelState(dsa_area *area, SemiJoinFilterJoinNodeState * sjf, int sjf_num)
+{
+	dsa_pointer bloom_dsa_address = bloom_create_in_dsa(area, sjf->num_elements,
+														sjf->work_mem, sjf->seed);
+	dsa_pointer parallel_address = dsa_allocate0(area, sizeof(SemiJoinFilterParallelState));
+	SemiJoinFilterParallelState *parallel_state = (SemiJoinFilterParallelState *) dsa_get_address(area, parallel_address);
+
+	/* copy over information to parallel state */
+	parallel_state->done_building = sjf->done_building;
+	parallel_state->seed = sjf->seed;
+	parallel_state->num_elements = sjf->num_elements;
+	parallel_state->work_mem = sjf->work_mem;
+	parallel_state->bloom_dsa_address = bloom_dsa_address;
+	parallel_state->sjf_num = sjf_num;
+	parallel_state->mergejoin_plan_id = sjf->mergejoin_plan_id;
+	/* initialize locks */
+	LWLockInitialize(&parallel_state->lock, LWLockNewTrancheId());
+	LWLockInitialize(&parallel_state->secondlock, LWLockNewTrancheId());
+	/* should be main process that acquires lock */
+	LWLockAcquire(&parallel_state->secondlock, LW_EXCLUSIVE);
+	return parallel_address;
+}
+
+/* Checks a side of the execution tree and fetches an SJF if its mergejoin plan ID matches that of the method's mergejoin ID.
+ * Used during parallel execution, where SJF information is lost during information copying to the worker.
+ */
+SemiJoinFilterJoinNodeState *
+GetSemiJoinFilter(PlanState *node, int plan_id)
+{
+	if (node == NULL)
+	{
+		return NULL;
+	}
+	check_stack_depth();
+	if (node->type == T_SeqScanState)
+	{
+		SeqScanState *scan = (SeqScanState *) node;
+
+		Assert(IsA(scan, SeqScanState));
+		if (scan->apply_semijoin_filter)
+		{
+			ListCell   *lc;
+
+			foreach(lc, scan->semijoin_filters)
+			{
+				SemiJoinFilterJoinNodeState *sjf = (SemiJoinFilterJoinNodeState *) lfirst(lc);
+
+				if (sjf->mergejoin_plan_id == plan_id)
+				{
+					return sjf;
+				}
+			}
+			return NULL;
+		}
+	}
+	if (PushDownDirection(node) == 1)
+	{
+		/* check both children and return the non-null one */
+		return GetSemiJoinFilter(node->lefttree, plan_id) != NULL ? GetSemiJoinFilter(node->lefttree, plan_id)
+			: GetSemiJoinFilter(node->righttree, plan_id);
+	}
+	if (PushDownDirection(node) == 0)
+	{
+		return GetSemiJoinFilter(node->lefttree, plan_id);
+	}
+	return NULL;
 }

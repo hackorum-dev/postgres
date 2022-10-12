@@ -48,6 +48,8 @@
 #include "utils/sortsupport.h"
 #include "utils/tuplesort.h"
 #include "utils/tuplestore.h"
+#include "storage/shm_toc.h"
+#include "storage/lwlock.h"
 
 struct PlanState;				/* forward references in this file */
 struct ParallelHashJoinState;
@@ -2023,7 +2025,39 @@ typedef struct SemiJoinFilterJoinNodeState
 	int			elements_checked;
 	int			elements_filtered;
 	int			mergejoin_plan_id;
+	/* Parallel information */
+	dsa_pointer parallel_state;
+	bool		is_parallel;
+	bool		is_worker;
 }			SemiJoinFilterJoinNodeState;
+
+/* ----------------
+ *	 SemiJoinFilterParallelState information
+ *
+ *		SemiJoinFilter information used in parallel workers.
+ * ----------------
+ */
+typedef struct SemiJoinFilterParallelState
+{
+	/* bloom filter information */
+	uint64		seed;
+	int64		num_elements;
+	int			work_mem;
+	dsa_pointer bloom_dsa_address;
+	int			elements_added;
+	/* information for parallelization and locking */
+	bool		done_building;
+	int			workers_done;
+	int			num_processes;
+	uint64		lock_stop;
+	LWLock		lock;
+	LWLock		secondlock;
+	int			sjf_num;
+	int			mergejoin_plan_id;
+
+	int			building_node_id;
+	int			checking_node_id;
+}			SemiJoinFilterParallelState;
 
 /* ----------------
  *	 MergeJoinState information

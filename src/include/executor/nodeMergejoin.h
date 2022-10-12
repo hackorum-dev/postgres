@@ -22,5 +22,7 @@ extern void ExecReScanMergeJoin(MergeJoinState *node);
 extern void FreeSemiJoinFilter(SemiJoinFilterJoinNodeState * sjf);
 extern int	PushDownDirection(PlanState *node);
 extern void PushDownFilter(PlanState *node, SemiJoinFilterJoinNodeState * sjf, int target_node_id, int64 *plan_rows);
+extern dsa_pointer CreateFilterParallelState(dsa_area *area, SemiJoinFilterJoinNodeState * sjf, int sjf_num);
+extern SemiJoinFilterJoinNodeState * GetSemiJoinFilter(PlanState *node, int plan_id);
 
 #endif							/* NODEMERGEJOIN_H */

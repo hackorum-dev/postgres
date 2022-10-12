@@ -292,3 +292,77 @@ mod_m(uint32 val, uint64 m)
 
 	return val & (m - 1);
 }
+
+/*
+ * Create Bloom filter in dsa shared memory
+ */
+dsa_pointer
+bloom_create_in_dsa(dsa_area *area, int64 total_elems, int bloom_work_mem, uint64 seed)
+{
+	dsa_pointer filter_dsa_address;
+	bloom_filter *filter;
+	int			bloom_power;
+	uint64		bitset_bytes;
+	uint64		bitset_bits;
+
+	/*
+	 * Aim for two bytes per element; this is sufficient to get a false
+	 * positive rate below 1%, independent of the size of the bitset or total
+	 * number of elements.  Also, if rounding down the size of the bitset to
+	 * the next lowest power of two turns out to be a significant drop, the
+	 * false positive rate still won't exceed 2% in almost all cases.
+	 */
+	bitset_bytes = Min(bloom_work_mem * UINT64CONST(1024), total_elems * 2);
+	bitset_bytes = Max(1024 * 1024, bitset_bytes);
+
+	/*
+	 * Size in bits should be the highest power of two <= target.  bitset_bits
+	 * is uint64 because PG_UINT32_MAX is 2^32 - 1, not 2^32
+	 */
+	bloom_power = my_bloom_power(bitset_bytes * BITS_PER_BYTE);
+	bitset_bits = UINT64CONST(1) << bloom_power;
+	bitset_bytes = bitset_bits / BITS_PER_BYTE;
+
+	/* Allocate bloom filter with unset bitset */
+	filter_dsa_address = dsa_allocate0(area, offsetof(bloom_filter, bitset) +
+									   sizeof(unsigned char) * bitset_bytes);
+	filter = (bloom_filter *) dsa_get_address(area, filter_dsa_address);
+	filter->k_hash_funcs = optimal_k(bitset_bits, total_elems);
+	filter->seed = seed;
+	filter->m = bitset_bits;
+
+	return filter_dsa_address;
+}
+
+/*
+ * Free Bloom filter in dsa shared memory
+ */
+void
+bloom_free_in_dsa(dsa_area *area, dsa_pointer filter_dsa_address)
+{
+	dsa_free(area, filter_dsa_address);
+}
+
+/*
+ * Add secondary filter to main filter, essentially "combining" the two filters together.
+ * This happens in-place, with main_filter being the combined filter.
+ * Both filters must have the same seed and size for this to work.
+ */
+void
+add_to_filter(bloom_filter *main_filter, bloom_filter *to_add)
+{
+	Assert(main_filter->seed == to_add->seed);
+	Assert(main_filter->m == to_add->m);
+	/* m is in bits not bytes */
+	for (int i = 0; i < main_filter->m / BITS_PER_BYTE; i++)
+	{
+		main_filter->bitset[i] = main_filter->bitset[i] | to_add->bitset[i];
+	}
+}
+
+void
+replace_bitset(bloom_filter *main_filter, bloom_filter *overriding_filter)
+{
+	Assert(main_filter->m == overriding_filter->m);
+	memcpy(&main_filter->bitset, &overriding_filter->bitset, main_filter->m / BITS_PER_BYTE);
+}
