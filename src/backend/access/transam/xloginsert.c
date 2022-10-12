@@ -559,6 +559,7 @@ XLogRecordAssemble(RmgrId rmid, uint8 info, uint8 rminfo,
 	XLogRecData *rdt_datas_last;
 	XLogRecord *rechdr = (XLogRecord *) hdr_scratch;
 	char	   *scratch = hdr_scratch;
+	uint8	   *first_blockid = NULL;
 
 	Assert((info & ~(XLR_INFO_USERFLAGS)) == 0);
 
@@ -626,7 +627,10 @@ XLogRecordAssemble(RmgrId rmid, uint8 info, uint8 rminfo,
 		bool		include_image;
 
 		if (!regbuf->in_use)
+		{
+			first_blockid = NULL;
 			continue;
+		}
 
 		only_hdr = false;
 		/* Determine if this block needs to be backed up */
@@ -843,8 +847,115 @@ XLogRecordAssemble(RmgrId rmid, uint8 info, uint8 rminfo,
 		prev_regbuf = regbuf;
 
 		/* Ok, copy the header to the scratch buffer */
-		memcpy(scratch, &bkpb, SizeOfXLogRecordBlockHeader);
-		scratch += SizeOfXLogRecordBlockHeader;
+		/* First block needs to initialize optional batching */
+		if (block_id == 0)
+		{
+			first_blockid = (uint8 *) scratch;
+
+			if (bkpb.data_length <= UINT8_MAX)
+			{
+				/*
+				 * Optimistic guess: if the first registered block has no data,
+				 * it is likely that subsequent blocks have little data too.
+				 * If we're wrong, a subsequent block will have 1 more byte
+				 * than when we would have guessed correctly. If we're right,
+				 * it saves a byte for each correctly guessed block.
+				 */
+				bkpb.id |= XLR_BLOCK_DATA_SMALL;
+				memcpy(scratch, &bkpb, offsetof(XLogRecordBlockHeader, data_length));
+				scratch += offsetof(XLogRecordBlockHeader, data_length);
+
+				if (bkpb.data_length == 0)
+					Assert((bkpb.fork_flags & BKPBLOCK_HAS_DATA) == 0);
+				else
+				{
+					uint8	data_length = bkpb.data_length;
+					memcpy(scratch++, &data_length, sizeof(uint8));
+				}
+			}
+			else
+			{
+				memcpy(scratch, &bkpb, SizeOfXLogRecordBlockHeader);
+				scratch += SizeOfXLogRecordBlockHeader;
+			}
+		}
+		/* in a sequence of block ids; with sequence data at first_blockid */
+		else if (first_blockid != NULL)
+		{
+			if (bkpb.data_length == 0)
+			{
+				/*
+				 * Empty blocks don't care about data_length field size, as
+				 * it is not emitted.
+				 */
+				*first_blockid += 1;
+				*first_blockid |= XLR_BLOCK_FIRST_NP1_SEQ;
+
+				memcpy(scratch++, &bkpb.fork_flags, sizeof(bkpb.fork_flags));
+			}
+			else if (*first_blockid & XLR_BLOCK_DATA_SMALL)
+			{
+				if (bkpb.data_length <= UINT8_MAX)
+				{
+					uint8	fork_flags = bkpb.fork_flags;
+					uint8	data_length = bkpb.data_length;
+
+					*first_blockid += 1;
+					*first_blockid |= XLR_BLOCK_FIRST_NP1_SEQ;
+
+					memcpy(scratch++, &fork_flags, sizeof(uint8));
+					memcpy(scratch++, &data_length, sizeof(uint8));
+				}
+				else
+				{
+					first_blockid = NULL;
+					memcpy(scratch, &bkpb, SizeOfXLogRecordBlockHeader);
+					scratch += SizeOfXLogRecordBlockHeader;
+				}
+			}
+			else
+			{
+				/*
+				 * It would save 1 byte in the length field to break the chain,
+				 * but that would cost 1 byte as well, and completely disable
+				 * any chances of saving 1 byte in the block header of a
+				 * later block.
+				 * So as long as the chain continues, we won't have a large
+				 * record header.
+				 * We do still ignore the block_id field in the block header.
+				 */
+				*first_blockid += 1;
+				*first_blockid |= XLR_BLOCK_FIRST_NP1_SEQ;
+
+				memcpy(scratch,
+					   ((char *) &bkpb) + offsetof(XLogRecordBlockHeader, fork_flags),
+					   SizeOfXLogRecordBlockHeader - offsetof(XLogRecordBlockHeader, fork_flags));
+				scratch += SizeOfXLogRecordBlockHeader - offsetof(XLogRecordBlockHeader, fork_flags);
+			}
+		}
+		/* not in a sequence of block ids */
+		else
+		{
+			if (bkpb.data_length <= UINT8_MAX)
+			{
+				memcpy(scratch, &bkpb, offsetof(XLogRecordBlockHeader, data_length));
+				scratch += offsetof(XLogRecordBlockHeader, data_length);
+
+				if (bkpb.data_length == 0)
+					Assert((bkpb.fork_flags & BKPBLOCK_HAS_DATA) == 0);
+				else
+				{
+					uint8	data_length = bkpb.data_length;
+					memcpy(scratch++, &data_length, sizeof(uint8));
+				}
+			}
+			else
+			{
+				memcpy(scratch, &bkpb, SizeOfXLogRecordBlockHeader);
+				scratch += SizeOfXLogRecordBlockHeader;
+			}
+		}
+
 		if (include_image)
 		{
 			memcpy(scratch, &bimg, SizeOfXLogRecordBlockImageHeader);

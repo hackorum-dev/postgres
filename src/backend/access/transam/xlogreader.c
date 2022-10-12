@@ -1792,6 +1792,9 @@ DecodeXLogRecord(XLogReaderState *state,
 	uint32		datatotal;
 	RelFileLocator *rlocator = NULL;
 	uint8		block_id;
+	bool		shorthdr = false;
+	bool		in_bid_seq = false;
+	uint8		bid_seq_end = 0;
 
 	decoded->header = (XLRHeaderData) {0};
 	decoded->lsn = lsn;
@@ -1851,7 +1854,10 @@ DecodeXLogRecord(XLogReaderState *state,
 	datatotal = 0;
 	while (remaining > datatotal)
 	{
-		COPY_HEADER_FIELD(&block_id, sizeof(uint8));
+		if (in_bid_seq)
+			block_id++;
+		else
+			COPY_HEADER_FIELD(&block_id, sizeof(uint8));
 
 		if (block_id == XLR_BLOCK_ID_DATA_SHORT)
 		{
@@ -1884,11 +1890,23 @@ DecodeXLogRecord(XLogReaderState *state,
 		{
 			COPY_HEADER_FIELD(&decoded->toplevel_xid, sizeof(TransactionId));
 		}
-		else if (block_id <= XLR_MAX_BLOCK_ID)
+		else if ((block_id & XLR_BLOCK_ID_MASK) <= XLR_MAX_BLOCK_ID)
 		{
 			/* XLogRecordBlockHeader */
 			DecodedBkpBlock *blk;
 			uint8		fork_flags;
+
+			if (!in_bid_seq)
+			{
+				shorthdr = (block_id & XLR_BLOCK_DATA_SMALL) != 0;
+
+				if (block_id & XLR_BLOCK_FIRST_NP1_SEQ)
+				{
+					bid_seq_end = (block_id & XLR_BLOCK_ID_MASK) + 1;
+					block_id = decoded->max_block_id + 1;
+					in_bid_seq = true;
+				}
+			}
 
 			/* mark any intervening block IDs as not in use */
 			for (int i = decoded->max_block_id + 1; i < block_id; ++i)
@@ -1915,8 +1933,19 @@ DecodeXLogRecord(XLogReaderState *state,
 			blk->has_data = ((fork_flags & BKPBLOCK_HAS_DATA) != 0);
 
 			blk->prefetch_buffer = InvalidBuffer;
+			if (!blk->has_data)
+			{
+				/* no data == no data_len, in all situations */
+			}
+			else if (shorthdr)
+			{
+				uint8 len = 0;
+				COPY_HEADER_FIELD(&len, sizeof(uint8));
+				blk->data_len = len;
+			}
+			else
+				COPY_HEADER_FIELD(&blk->data_len, sizeof(uint16));
 
-			COPY_HEADER_FIELD(&blk->data_len, sizeof(uint16));
 			/* cross-check that the HAS_DATA flag is set iff data_length > 0 */
 			if (blk->has_data && blk->data_len == 0)
 			{
@@ -2033,6 +2062,10 @@ DecodeXLogRecord(XLogReaderState *state,
 				blk->rlocator = *rlocator;
 			}
 			COPY_HEADER_FIELD(&blk->blkno, sizeof(BlockNumber));
+
+			/* finish the sequence we're in */
+			if (block_id == bid_seq_end)
+				in_bid_seq = false;
 		}
 		else
 		{

@@ -220,13 +220,18 @@ XLogRecordGetRMInfo(XLogRecord *record)
  *
  * Note that we don't attempt to align the XLogRecordBlockHeader struct!
  * So, the struct must be copied to aligned local storage before use.
+ * 
+ * Note that if .id & 0x80 is set; the block header is small instead.
+ * If .id & 0x40 is set, there will be id + 1 following block headers
+ * of this type, having incremental ids, but written to disk without
+ * the id field.
  */
 typedef struct XLogRecordBlockHeader
 {
 	uint8		id;				/* block reference ID */
 	uint8		fork_flags;		/* fork within the relation, and flags */
 	uint16		data_length;	/* number of payload bytes (not including page
-								 * image) */
+								 * image). Emitted iff BKPBLOCK_HAS_DATA */
 
 	/* If BKPBLOCK_HAS_IMAGE, an XLogRecordBlockImageHeader struct follows */
 	/* If BKPBLOCK_SAME_REL is not set, a RelFileLocator follows */
@@ -359,11 +364,17 @@ typedef struct XLogRecordDataHeaderLong
  * need a handful of block references, but there are a few exceptions that
  * need more.
  */
-#define XLR_MAX_BLOCK_ID			32
+#define XLR_MAX_BLOCK_ID			0x20
 
-#define XLR_BLOCK_ID_DATA_SHORT		255
-#define XLR_BLOCK_ID_DATA_LONG		254
-#define XLR_BLOCK_ID_ORIGIN			253
-#define XLR_BLOCK_ID_TOPLEVEL_XID	252
+#define XLR_BLOCK_ID_DATA_SHORT		0x3F
+#define XLR_BLOCK_ID_DATA_LONG		0x3E
+#define XLR_BLOCK_ID_ORIGIN			0x3D
+#define XLR_BLOCK_ID_TOPLEVEL_XID	0x3C
+
+#define XLR_BLOCK_ID_MASK			0x3F
+#define XLR_BLOCK_FIRST_NP1_SEQ		0x40 /* the following blocks are 
+										  * 0..block_id + 1, and have omitted
+										  * their block ID */
+#define XLR_BLOCK_DATA_SMALL		0x80 /* data_length field is uint8 */
 
 #endif							/* XLOGRECORD_H */
