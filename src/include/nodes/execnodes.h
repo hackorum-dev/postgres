@@ -32,6 +32,7 @@
 #include "access/tupconvert.h"
 #include "executor/instrument.h"
 #include "fmgr.h"
+#include "lib/bloomfilter.h"
 #include "lib/ilist.h"
 #include "lib/pairingheap.h"
 #include "nodes/params.h"
@@ -1451,6 +1452,10 @@ typedef struct SeqScanState
 {
 	ScanState	ss;				/* its first field is NodeTag */
 	Size		pscan_len;		/* size of parallel heap scan descriptor */
+	/* for use of SemiJoinFilter during merge join */
+	bool		apply_semijoin_filter;
+	List	   *semijoin_filters;	/* SemiJoinFilterJoinNodeState	*/
+	List	   *sj_scan_data;	/* SemiJoinFilterScanNodeState */
 } SeqScanState;
 
 /* ----------------
@@ -1988,6 +1993,39 @@ typedef struct NestLoopState
 } NestLoopState;
 
 /* ----------------
+ *	 SemiJoinFilterScanNodeState information
+ *
+ *		SemiJoinFilter information used in Scan node.
+ * ----------------
+ */
+typedef struct SemiJoinFilterScanNodeState
+{
+	bool		is_building_side;
+	ExprState  *expr_state;
+}			SemiJoinFilterScanNodeState;
+
+/* ----------------
+ *	 SemiJoinFilterJoinNodeState information
+ *
+ *		SemiJoinFilter information used in Scan node.
+ * ----------------
+ */
+typedef struct SemiJoinFilterJoinNodeState
+{
+	bloom_filter *filter;
+	int			building_node_id;
+	int			checking_node_id;
+	bool		done_building;
+	uint64		seed;
+	int64		num_elements;
+	int			work_mem;
+	int			elements_added;
+	int			elements_checked;
+	int			elements_filtered;
+	int			mergejoin_plan_id;
+}			SemiJoinFilterJoinNodeState;
+
+/* ----------------
  *	 MergeJoinState information
  *
  *		NumClauses		   number of mergejoinable join clauses
@@ -2032,6 +2070,7 @@ typedef struct MergeJoinState
 	TupleTableSlot *mj_NullInnerTupleSlot;
 	ExprContext *mj_OuterEContext;
 	ExprContext *mj_InnerEContext;
+	SemiJoinFilterJoinNodeState *sjf;
 } MergeJoinState;
 
 /* ----------------

@@ -93,12 +93,13 @@
 #include "postgres.h"
 
 #include "access/nbtree.h"
+#include "common/pg_prng.h"
 #include "executor/execdebug.h"
 #include "executor/nodeMergejoin.h"
+#include "lib/bloomfilter.h"
 #include "miscadmin.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
-
 
 /*
  * States of the ExecMergeJoin state machine
@@ -1604,6 +1605,40 @@ ExecInitMergeJoin(MergeJoin *node, EState *estate, int eflags)
 											(PlanState *) mergestate);
 
 	/*
+	 * initialize SemiJoinFilter, if planner decided to do so
+	 */
+	if (node->sj_metadata && node->sj_metadata->apply_semijoin_filter)
+	{
+		SemiJoinFilterJoinNodeState *sjf;
+		uint64		seed;
+
+		/* create Bloom filter */
+		sjf = (SemiJoinFilterJoinNodeState *) palloc0(sizeof(SemiJoinFilterJoinNodeState));
+
+		/*
+		 * Push down filter down outer and inner subtrees and apply filter to
+		 * the nodes that correspond to the ones identified during planning.
+		 * We are pushing down first because we need some metadata from the
+		 * scan nodes (i.e. Relation Id's and planner-estimated number of
+		 * rows).
+		 */
+		sjf->building_node_id = ((MergeJoin *) mergestate->js.ps.plan)->sj_metadata->building_node_id;
+		sjf->checking_node_id = ((MergeJoin *) mergestate->js.ps.plan)->sj_metadata->checking_node_id;
+		PushDownFilter(mergestate->js.ps.lefttree, sjf, sjf->building_node_id, &sjf->num_elements);
+		PushDownFilter(mergestate->js.ps.righttree, sjf, sjf->checking_node_id, &sjf->num_elements);
+
+		/* Initialize SJF data and create Bloom filter */
+		seed = pg_prng_uint64(&pg_global_prng_state);
+		sjf->filter = bloom_create(sjf->num_elements, work_mem, seed);
+		sjf->work_mem = work_mem;
+		sjf->seed = seed;
+		sjf->done_building = false;
+
+		sjf->mergejoin_plan_id = mergestate->js.ps.plan->plan_node_id;
+		mergestate->sjf = sjf;
+	}
+
+	/*
 	 * initialize join state
 	 */
 	mergestate->mj_JoinState = EXEC_MJ_INITIALIZE_OUTER;
@@ -1646,6 +1681,14 @@ ExecEndMergeJoin(MergeJoinState *node)
 	ExecClearTuple(node->mj_MarkedTupleSlot);
 
 	/*
+	 * free SemiJoinFilterJoinNodeState
+	 */
+	if (node->sjf)
+	{
+		FreeSemiJoinFilter(node->sjf);
+	}
+
+	/*
 	 * shut down the subplans
 	 */
 	ExecEndNode(innerPlanState(node));
@@ -1677,4 +1720,88 @@ ExecReScanMergeJoin(MergeJoinState *node)
 		ExecReScan(outerPlan);
 	if (innerPlan->chgParam == NULL)
 		ExecReScan(innerPlan);
+}
+
+void
+FreeSemiJoinFilter(SemiJoinFilterJoinNodeState * sjf)
+{
+	bloom_free(sjf->filter);
+	pfree(sjf);
+}
+
+/*
+ * Determines the direction that a pushdown filter can be pushed. This is not very robust, but this
+ * is because we've already done the careful calculations at the plan level. If we end up pushing where
+ * we're not supposed to, it's fine because we've done the verifications in the planner.
+ */
+int
+PushDownDirection(PlanState *node)
+{
+	switch (nodeTag(node))
+	{
+		case T_HashState:
+		case T_MaterialState:
+		case T_GatherState:
+		case T_GatherMergeState:
+		case T_SortState:
+		case T_UniqueState:
+		case T_AggState:
+			{
+				return 0;
+			}
+		case T_NestLoopState:
+		case T_MergeJoinState:
+		case T_HashJoinState:
+			{
+				return 1;
+			}
+		default:
+			{
+				return -1;
+			}
+	}
+}
+
+/* Recursively pushes down the filter until an appropriate SeqScan node is reached. Then, it
+ * verifies if that SeqScan node is the one we want to push the filter to, and if it is, then
+ * appends the SJF to the node. */
+void
+PushDownFilter(PlanState *node, SemiJoinFilterJoinNodeState * sjf, int target_node_id, int64 *plan_rows)
+{
+	if (node == NULL)
+	{
+		return;
+	}
+
+	check_stack_depth();
+	if (node->type == T_SeqScanState)
+	{
+		SeqScanState *scan = (SeqScanState *) node;
+
+		/*
+		 * found the right Scan node that we want to apply the filter onto via
+		 * matching plan id.
+		 */
+		if (scan->ss.ps.plan->plan_node_id == target_node_id)
+		{
+			scan->apply_semijoin_filter = true;
+			scan->semijoin_filters = lappend(scan->semijoin_filters, sjf);
+			/* double row estimate to reduce error rate for Bloom filter */
+			if (plan_rows)
+			{
+				*plan_rows = Max(*plan_rows, scan->ss.ps.plan->plan_rows * 2);
+			}
+		}
+		return;
+	}
+	if (PushDownDirection(node) == 0)
+	{
+		PushDownFilter(node->lefttree, sjf, target_node_id, plan_rows);
+		return;
+	}
+	if (PushDownDirection(node) == 1)
+	{
+		PushDownFilter(node->lefttree, sjf, target_node_id, plan_rows);
+		PushDownFilter(node->righttree, sjf, target_node_id, plan_rows);
+	}
 }

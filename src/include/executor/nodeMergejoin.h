@@ -19,5 +19,8 @@
 extern MergeJoinState *ExecInitMergeJoin(MergeJoin *node, EState *estate, int eflags);
 extern void ExecEndMergeJoin(MergeJoinState *node);
 extern void ExecReScanMergeJoin(MergeJoinState *node);
+extern void FreeSemiJoinFilter(SemiJoinFilterJoinNodeState * sjf);
+extern int	PushDownDirection(PlanState *node);
+extern void PushDownFilter(PlanState *node, SemiJoinFilterJoinNodeState * sjf, int target_node_id, int64 *plan_rows);
 
 #endif							/* NODEMERGEJOIN_H */

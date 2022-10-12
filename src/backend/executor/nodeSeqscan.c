@@ -171,6 +171,25 @@ ExecInitSeqScan(SeqScan *node, EState *estate, int eflags)
 	scanstate->ss.ps.qual =
 		ExecInitQual(node->scan.plan.qual, (PlanState *) scanstate);
 
+	/*
+	 * Initialize semijoin filter expressions.
+	 */
+	if (node->scan.plan.sj_md_list)
+	{
+		ListCell   *lc;
+
+		scanstate->sj_scan_data = NIL;
+		foreach(lc, node->scan.plan.sj_md_list)
+		{
+			SemijoinFilterScanData *md = (SemijoinFilterScanData *) lfirst(lc);
+			SemiJoinFilterScanNodeState *sj_filter = (SemiJoinFilterScanNodeState *) palloc0(sizeof(SemiJoinFilterScanNodeState));
+
+			sj_filter->is_building_side = md->is_building_node;
+			sj_filter->expr_state = ExecInitExpr(lfirst(list_nth_cell(md->semijoin_keys, 0)), (PlanState *) scanstate);
+			scanstate->sj_scan_data = lappend(scanstate->sj_scan_data, sj_filter);
+		}
+	}
+
 	return scanstate;
 }
 

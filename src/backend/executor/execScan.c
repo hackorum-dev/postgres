@@ -20,8 +20,12 @@
 
 #include "executor/executor.h"
 #include "miscadmin.h"
+#include "nodes/execnodes.h"
 #include "utils/memutils.h"
 
+
+bool		ExecScanUsingSemiJoinFilter(SeqScanState *node, ExprContext *econtext);
+void		ExecSemiJoinFilterFinishScan(List *semijoin_filters, List *semijoin_scan);
 
 
 /*
@@ -173,10 +177,11 @@ ExecScan(ScanState *node,
 	/* interrupt checks are in ExecScanFetch */
 
 	/*
-	 * If we have neither a qual to check nor a projection to do, just skip
-	 * all the overhead and return the raw scan tuple.
+	 * If we have neither a qual to check nor a projection to do nor a Bloom
+	 * filter to check, just skip all the overhead and return the raw scan
+	 * tuple.
 	 */
-	if (!qual && !projInfo)
+	if (!qual && !projInfo && !(IsA(node, SeqScanState) && ((SeqScanState *) node)->apply_semijoin_filter))
 	{
 		ResetExprContext(econtext);
 		return ExecScanFetch(node, accessMtd, recheckMtd);
@@ -206,6 +211,10 @@ ExecScan(ScanState *node,
 		 */
 		if (TupIsNull(slot))
 		{
+			if (IsA(node, SeqScanState) && ((SeqScanState *) node)->apply_semijoin_filter)
+			{
+				ExecSemiJoinFilterFinishScan(((SeqScanState *) node)->semijoin_filters, ((SeqScanState *) node)->sj_scan_data);
+			}
 			if (projInfo)
 				return ExecClearTuple(projInfo->pi_state.resultslot);
 			else
@@ -232,16 +241,33 @@ ExecScan(ScanState *node,
 			if (projInfo)
 			{
 				/*
-				 * Form a projection tuple, store it in the result tuple slot
-				 * and return it.
+				 * Form a projection tuple, store it in the result tuple slot,
+				 * check against SemiJoinFilter, then return it.
 				 */
-				return ExecProject(projInfo);
+				TupleTableSlot *projectedSlot = ExecProject(projInfo);
+
+				if (IsA(node, SeqScanState) && ((SeqScanState *) node)->apply_semijoin_filter
+					&& !ExecScanUsingSemiJoinFilter((SeqScanState *) node, econtext))
+				{
+					/* slot did not pass SemiJoinFilter, so skipping it. */
+					ResetExprContext(econtext);
+					continue;
+				}
+				return projectedSlot;
 			}
 			else
 			{
 				/*
-				 * Here, we aren't projecting, so just return scan tuple.
+				 * Here, we aren't projecting, so check against
+				 * SemiJoinFilter, then return tuple.
 				 */
+				if (IsA(node, SeqScanState) && ((SeqScanState *) node)->apply_semijoin_filter
+					&& !ExecScanUsingSemiJoinFilter((SeqScanState *) node, econtext))
+				{
+					/* slot did not pass SemiJoinFilter, so skipping it. */
+					ResetExprContext(econtext);
+					continue;
+				}
 				return slot;
 			}
 		}
@@ -337,6 +363,82 @@ ExecScanReScan(ScanState *node)
 				Assert(rtindex > 0);
 				epqstate->relsubs_done[rtindex - 1] = false;
 			}
+		}
+	}
+}
+
+/*
+ *	ExecScanUsingSemiJoinFilter
+ *
+ *	This must be called within ExecScan function of SeqScanState node. This
+ *	function builds/checks the semijoin filter (bloom filter) in the node. If
+ *	this node is the building node of the bloom filter, it always returns true;
+ *	if this node is the checking node of the bloom filter, it returns true if
+ *	the value is in the bloom filter and returns false if not.
+ */
+bool
+ExecScanUsingSemiJoinFilter(SeqScanState *node, ExprContext *econtext)
+{
+	List	   *sj_scan_data;
+	List	   *sj_filters;
+	int			i;
+	ListCell   *lc;
+	SemiJoinFilterJoinNodeState *sjf;
+	SemiJoinFilterScanNodeState *sj_scan;
+	Datum		data;
+	bool		is_null;
+
+	sj_scan_data = node->sj_scan_data;
+	sj_filters = node->semijoin_filters;
+
+	Assert(list_length(sj_scan_data) == list_length(sj_filters));
+
+	i = 0;
+	foreach(lc, sj_scan_data)
+	{
+		is_null = false;
+		sjf = ((SemiJoinFilterJoinNodeState *) (lfirst(list_nth_cell(sj_filters, i))));
+		sj_scan = (SemiJoinFilterScanNodeState *) lfirst(lc);
+
+		data = ExecEvalExpr(sj_scan->expr_state, econtext, &is_null);
+
+		if (!sjf->done_building && sj_scan->is_building_side && !is_null)
+		{
+			bloom_add_element(sjf->filter, (unsigned char *) &data, sizeof(data));
+			++(sjf->elements_added);
+		}
+		else if (sjf->done_building && !sj_scan->is_building_side && !is_null &&
+				 bloom_lacks_element(sjf->filter, (unsigned char *) &data, sizeof(data)))
+		{
+			++(sjf->elements_filtered);
+			return false;
+		}
+		++i;
+	}
+	return true;
+}
+
+/*
+ *	ExecSemiJoinFilterFinishScan
+ *
+ *	This must be called within ExecScan function of SeqScanState node, and
+ *	represents the steps after the bloom filter is done building/checking.
+ */
+void
+ExecSemiJoinFilterFinishScan(List *semijoin_filters, List *semijoin_scan)
+{
+	ListCell   *cell;
+	int			i = 0;
+
+	foreach(cell, semijoin_filters)
+	{
+		SemiJoinFilterJoinNodeState *sjf = ((SemiJoinFilterJoinNodeState *) (lfirst(cell)));
+		SemiJoinFilterScanNodeState *sj_scan = ((SemiJoinFilterScanNodeState *) (lfirst(list_nth_cell(semijoin_scan, i))));;
+
+		++i;
+		if (!sjf->done_building && sj_scan->is_building_side)
+		{
+			sjf->done_building = true;
 		}
 	}
 }
