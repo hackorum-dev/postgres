@@ -1,0 +1,480 @@
+SET enable_hashjoin = OFF;
+SET enable_nestloop = OFF;
+SET enable_mergejoin = ON;
+SET enable_mergejoin_semijoin_filter = ON;
+SET force_mergejoin_semijoin_filter = ON;
+CREATE TABLE t1 (
+  i integer,
+  j integer
+);
+CREATE TABLE t2 (
+  i integer,
+  k integer
+);
+CREATE TABLE t3 (
+  i integer,
+  m integer
+);
+insert into t1 (i, j)
+  select
+    generate_series(1,100000) as i,
+    generate_series(1,100000) as j;
+insert into t2 (i, k)
+  select
+    generate_series(1,100000) as i,
+    generate_series(1,100000) as k;
+insert into t3 (i, m)
+  select
+    generate_series(1,100000) as i,
+    generate_series(1,100000) as m;
+-- Semijoin filter is not used when force_mergejoin_semijoin_filter is OFF.
+SET force_mergejoin_semijoin_filter = OFF;
+EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(*) FROM t1 JOIN t2 ON t1.i = t2.i;
+               QUERY PLAN                
+-----------------------------------------
+ Aggregate
+   Output: count(*)
+   ->  Merge Join
+         Merge Cond: (t1.i = t2.i)
+         ->  Sort
+               Output: t1.i
+               Sort Key: t1.i
+               ->  Seq Scan on public.t1
+                     Output: t1.i
+         ->  Sort
+               Output: t2.i
+               Sort Key: t2.i
+               ->  Seq Scan on public.t2
+                     Output: t2.i
+(14 rows)
+
+SET force_mergejoin_semijoin_filter = ON;
+-- One level of inner mergejoin: push semi-join filter to outer scan.
+EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(*) FROM t1 JOIN t2 ON t1.i = t2.i;
+                           QUERY PLAN                            
+-----------------------------------------------------------------
+ Aggregate
+   Output: count(*)
+   ->  Merge Join
+         Merge Cond: (t1.i = t2.i)
+         SemiJoin Filter Created Based on: (t1.i = t2.i)
+         SemiJoin Estimated Filtering Rate: -0.0100
+         ->  Sort
+               Output: t1.i
+               Sort Key: t1.i
+               ->  Seq Scan on public.t1
+                     Semijoin Filter building based on: { t1.i }
+                     Output: t1.i
+         ->  Sort
+               Output: t2.i
+               Sort Key: t2.i
+               ->  Seq Scan on public.t2
+                     Semijoin Filter checking based on: { t2.i }
+                     Output: t2.i
+(18 rows)
+
+SELECT COUNT(*) FROM t1 JOIN t2 ON t1.i = t2.i;
+ count  
+--------
+ 100000
+(1 row)
+
+-- Push semijoin filter through SORT node.
+EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(*) FROM (SELECT DISTINCT t1.i FROM t1 ORDER BY t1.i) x JOIN t2 ON x.i = t2.i;
+                             QUERY PLAN                             
+--------------------------------------------------------------------
+ Aggregate
+   Output: count(*)
+   ->  Merge Join
+         Merge Cond: (t1.i = t2.i)
+         SemiJoin Filter Created Based on: (t1.i = t2.i)
+         SemiJoin Estimated Filtering Rate: -0.0100
+         ->  Sort
+               Output: t1.i
+               Sort Key: t1.i
+               ->  HashAggregate
+                     Output: t1.i
+                     Group Key: t1.i
+                     ->  Seq Scan on public.t1
+                           Semijoin Filter building based on: { i }
+                           Output: t1.i, t1.j
+         ->  Sort
+               Output: t2.i
+               Sort Key: t2.i
+               ->  Seq Scan on public.t2
+                     Semijoin Filter checking based on: { t2.i }
+                     Output: t2.i
+(21 rows)
+
+SELECT COUNT(*) FROM (SELECT DISTINCT t1.i FROM t1 ORDER BY t1.i) x JOIN t2 ON x.i = t2.i;
+ count  
+--------
+ 100000
+(1 row)
+
+-- Push semijoin filter through LIMIT node: not supported.
+EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(*) FROM (SELECT DISTINCT t1.i FROM t1 ORDER BY t1.i LIMIT 1) x JOIN t2 ON x.i = t2.i;
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Aggregate
+   Output: count(*)
+   ->  Merge Join
+         Merge Cond: (t1.i = t2.i)
+         ->  Limit
+               Output: t1.i
+               ->  Sort
+                     Output: t1.i
+                     Sort Key: t1.i
+                     ->  HashAggregate
+                           Output: t1.i
+                           Group Key: t1.i
+                           ->  Seq Scan on public.t1
+                                 Output: t1.i, t1.j
+         ->  Sort
+               Output: t2.i
+               Sort Key: t2.i
+               ->  Seq Scan on public.t2
+                     Output: t2.i
+(19 rows)
+
+-- Push SJF through MAX: not supported.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT COUNT(*) FROM (SELECT MAX(t1.i) AS i, t1.j FROM t1 GROUP BY t1.j) x JOIN t2 ON x.i = t2.i;
+                     QUERY PLAN                      
+-----------------------------------------------------
+ Aggregate
+   Output: count(*)
+   ->  Merge Join
+         Merge Cond: (x.i = t2.i)
+         ->  Sort
+               Output: x.i
+               Sort Key: x.i
+               ->  Subquery Scan on x
+                     Output: x.i
+                     ->  HashAggregate
+                           Output: max(t1.i), t1.j
+                           Group Key: t1.j
+                           ->  Seq Scan on public.t1
+                                 Output: t1.i, t1.j
+         ->  Sort
+               Output: t2.i
+               Sort Key: t2.i
+               ->  Seq Scan on public.t2
+                     Output: t2.i
+(19 rows)
+
+-- SJF with UNION: not supported.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT COUNT(*) FROM (SELECT t1.i FROM t1 UNION ALL SELECT t2.i FROM t2) x JOIN t3 ON x.i = t3.i;
+                                    QUERY PLAN                                    
+----------------------------------------------------------------------------------
+ Finalize Aggregate
+   Output: count(*)
+   ->  Gather
+         Output: (PARTIAL count(*))
+         Workers Planned: 2
+         ->  Partial Aggregate
+               Output: PARTIAL count(*)
+               ->  Merge Join
+                     Merge Cond: (t1.i = t3.i)
+                     SemiJoin Filter Created Based on: (t1.i = t3.i)
+                     SemiJoin Estimated Filtering Rate: -0.0100
+                     ->  Sort
+                           Output: t1.i
+                           Sort Key: t1.i
+                           ->  Parallel Append
+                                 ->  Parallel Seq Scan on public.t1
+                                       Output: t1.i
+                                 ->  Parallel Seq Scan on public.t2
+                                       Semijoin Filter building based on: { x.i }
+                                       Output: t2.i
+                     ->  Sort
+                           Output: t3.i
+                           Sort Key: t3.i
+                           ->  Seq Scan on public.t3
+                                 Semijoin Filter checking based on: { t3.i }
+                                 Output: t3.i
+(26 rows)
+
+-- Join clause is an expression: not supported.
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT COUNT(*) FROM t1 JOIN t2 ON 1 + t1.i = t2.i;
+                  QUERY PLAN                  
+----------------------------------------------
+ Aggregate
+   Output: count(*)
+   ->  Merge Join
+         Merge Cond: (((1 + t1.i)) = t2.i)
+         ->  Sort
+               Output: t1.i, ((1 + t1.i))
+               Sort Key: ((1 + t1.i))
+               ->  Seq Scan on public.t1
+                     Output: t1.i, (1 + t1.i)
+         ->  Sort
+               Output: t2.i
+               Sort Key: t2.i
+               ->  Seq Scan on public.t2
+                     Output: t2.i
+(14 rows)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT COUNT(*) FROM t1 JOIN t2 ON t1.i = 2 * t2.i;
+                  QUERY PLAN                  
+----------------------------------------------
+ Aggregate
+   Output: count(*)
+   ->  Merge Join
+         Merge Cond: (t1.i = ((2 * t2.i)))
+         ->  Sort
+               Output: t1.i
+               Sort Key: t1.i
+               ->  Seq Scan on public.t1
+                     Output: t1.i
+         ->  Sort
+               Output: t2.i, ((2 * t2.i))
+               Sort Key: ((2 * t2.i))
+               ->  Seq Scan on public.t2
+                     Output: t2.i, (2 * t2.i)
+(14 rows)
+
+-- Two levels of MergeJoin
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT COUNT(*) FROM t1 JOIN t2 ON t1.i = t2.i JOIN t3 ON t2.i = t3.i;
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ Aggregate
+   Output: count(*)
+   ->  Merge Join
+         Merge Cond: (t3.i = t1.i)
+         SemiJoin Filter Created Based on: (t3.i = t1.i)
+         SemiJoin Estimated Filtering Rate: -0.0100
+         ->  Sort
+               Output: t3.i
+               Sort Key: t3.i
+               ->  Seq Scan on public.t3
+                     Semijoin Filter building based on: { t3.i }
+                     Output: t3.i
+         ->  Materialize
+               Output: t1.i, t2.i
+               ->  Merge Join
+                     Output: t1.i, t2.i
+                     Merge Cond: (t1.i = t2.i)
+                     SemiJoin Filter Created Based on: (t1.i = t2.i)
+                     SemiJoin Estimated Filtering Rate: -0.0100
+                     ->  Sort
+                           Output: t1.i
+                           Sort Key: t1.i
+                           ->  Seq Scan on public.t1
+                                 Semijoin Filter building based on: { t1.i }
+                                 Semijoin Filter checking based on: { t1.i }
+                                 Output: t1.i
+                     ->  Sort
+                           Output: t2.i
+                           Sort Key: t2.i
+                           ->  Seq Scan on public.t2
+                                 Semijoin Filter checking based on: { t2.i }
+                                 Output: t2.i
+(32 rows)
+
+SELECT COUNT(*) FROM t1 JOIN t2 ON t1.i = t2.i JOIN t3 ON t2.i = t3.i;
+ count  
+--------
+ 100000
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT COUNT(*) FROM t1 JOIN (t2 JOIN t3 ON t2.i = t3.i) ON t1.i = t2.i;
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ Aggregate
+   Output: count(*)
+   ->  Merge Join
+         Merge Cond: (t3.i = t2.i)
+         SemiJoin Filter Created Based on: (t3.i = t2.i)
+         SemiJoin Estimated Filtering Rate: -0.0100
+         ->  Sort
+               Output: t3.i
+               Sort Key: t3.i
+               ->  Seq Scan on public.t3
+                     Semijoin Filter building based on: { t3.i }
+                     Output: t3.i
+         ->  Materialize
+               Output: t1.i, t2.i
+               ->  Merge Join
+                     Output: t1.i, t2.i
+                     Merge Cond: (t1.i = t2.i)
+                     SemiJoin Filter Created Based on: (t1.i = t2.i)
+                     SemiJoin Estimated Filtering Rate: -0.0100
+                     ->  Sort
+                           Output: t1.i
+                           Sort Key: t1.i
+                           ->  Seq Scan on public.t1
+                                 Semijoin Filter building based on: { t1.i }
+                                 Output: t1.i
+                     ->  Sort
+                           Output: t2.i
+                           Sort Key: t2.i
+                           ->  Seq Scan on public.t2
+                                 Semijoin Filter checking based on: { t2.i }
+                                 Semijoin Filter checking based on: { t2.i }
+                                 Output: t2.i
+(32 rows)
+
+SELECT COUNT(*) FROM t1 JOIN (t2 JOIN t3 ON t2.i = t3.i) ON t1.i = t2.i;
+ count  
+--------
+ 100000
+(1 row)
+
+EXPLAIN (VERBOSE, COSTS OFF) 
+SELECT COUNT(*) FROM (SELECT * FROM t1 JOIN t2 ON t1.i = t2.i) x JOIN t2 y ON x.k = y.k;
+                                    QUERY PLAN                                     
+-----------------------------------------------------------------------------------
+ Aggregate
+   Output: count(*)
+   ->  Merge Join
+         Merge Cond: (y.k = t2.k)
+         SemiJoin Filter Created Based on: (y.k = t2.k)
+         SemiJoin Estimated Filtering Rate: -0.0100
+         ->  Sort
+               Output: y.k
+               Sort Key: y.k
+               ->  Seq Scan on public.t2 y
+                     Semijoin Filter building based on: { y.k }
+                     Output: y.k
+         ->  Materialize
+               Output: t2.k
+               ->  Sort
+                     Output: t2.k
+                     Sort Key: t2.k
+                     ->  Merge Join
+                           Output: t2.k
+                           Merge Cond: (t1.i = t2.i)
+                           SemiJoin Filter Created Based on: (t1.i = t2.i)
+                           SemiJoin Estimated Filtering Rate: -0.0100
+                           ->  Sort
+                                 Output: t1.i
+                                 Sort Key: t1.i
+                                 ->  Seq Scan on public.t1
+                                       Semijoin Filter building based on: { t1.i }
+                                       Output: t1.i
+                           ->  Sort
+                                 Output: t2.i, t2.k
+                                 Sort Key: t2.i
+                                 ->  Seq Scan on public.t2
+                                       Semijoin Filter checking based on: { t2.i }
+                                       Semijoin Filter checking based on: { t2.k }
+                                       Output: t2.i, t2.k
+(35 rows)
+
+SELECT COUNT(*) FROM (SELECT * FROM t1 JOIN t2 ON t1.i = t2.i) x JOIN t2 y ON x.k = y.k;
+ count  
+--------
+ 100000
+(1 row)
+
+-- Test Parallel Query
+SET max_parallel_workers_per_gather = 8;
+SET max_parallel_workers = 8;
+SET min_parallel_table_scan_size = 0;
+ALTER TABLE t1 SET (parallel_workers = 8);
+ALTER TABLE t2 SET (parallel_workers = 8);
+ALTER TABLE t3 SET (parallel_workers = 8);
+-- one level of merge join
+-- inner join: push bloom filter to outer scan
+EXPLAIN (VERBOSE, COSTS OFF) SELECT COUNT(*) FROM t1 JOIN t2 ON t1.i = t2.i;
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ Finalize Aggregate
+   Output: count(*)
+   ->  Gather
+         Output: (PARTIAL count(*))
+         Workers Planned: 8
+         ->  Partial Aggregate
+               Output: PARTIAL count(*)
+               ->  Merge Join
+                     Merge Cond: (t1.i = t2.i)
+                     SemiJoin Filter Created Based on: (t1.i = t2.i)
+                     SemiJoin Estimated Filtering Rate: -0.0100
+                     ->  Sort
+                           Output: t1.i
+                           Sort Key: t1.i
+                           ->  Parallel Seq Scan on public.t1
+                                 Semijoin Filter building based on: { t1.i }
+                                 Output: t1.i
+                     ->  Sort
+                           Output: t2.i
+                           Sort Key: t2.i
+                           ->  Seq Scan on public.t2
+                                 Semijoin Filter checking based on: { t2.i }
+                                 Output: t2.i
+(23 rows)
+
+SELECT COUNT(*) FROM t1 JOIN t2 ON t1.i = t2.i;
+ count  
+--------
+ 100000
+(1 row)
+
+-- Two levels of  merge join
+EXPLAIN (VERBOSE, COSTS OFF) 
+SELECT COUNT(*) FROM (SELECT * FROM t1 JOIN t2 ON t1.i = t2.i) x JOIN t2 y ON x.k = y.k;
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Finalize Aggregate
+   Output: count(*)
+   ->  Gather
+         Output: (PARTIAL count(*))
+         Workers Planned: 8
+         ->  Partial Aggregate
+               Output: PARTIAL count(*)
+               ->  Merge Join
+                     Merge Cond: (t2.k = y.k)
+                     SemiJoin Filter Created Based on: (t2.k = y.k)
+                     SemiJoin Estimated Filtering Rate: -0.0100
+                     ->  Sort
+                           Output: t2.k
+                           Sort Key: t2.k
+                           ->  Merge Join
+                                 Output: t2.k
+                                 Merge Cond: (t1.i = t2.i)
+                                 SemiJoin Filter Created Based on: (t1.i = t2.i)
+                                 SemiJoin Estimated Filtering Rate: -0.0100
+                                 ->  Sort
+                                       Output: t1.i
+                                       Sort Key: t1.i
+                                       ->  Parallel Seq Scan on public.t1
+                                             Semijoin Filter building based on: { t1.i }
+                                             Output: t1.i
+                                 ->  Sort
+                                       Output: t2.i, t2.k
+                                       Sort Key: t2.i
+                                       ->  Seq Scan on public.t2
+                                             Semijoin Filter checking based on: { t2.i }
+                                             Semijoin Filter building based on: { t2.k }
+                                             Output: t2.i, t2.k
+                     ->  Sort
+                           Output: y.k
+                           Sort Key: y.k
+                           ->  Seq Scan on public.t2 y
+                                 Semijoin Filter checking based on: { y.k }
+                                 Output: y.k
+(38 rows)
+
+SELECT COUNT(*) FROM (SELECT * FROM t1 JOIN t2 ON t1.i = t2.i) x JOIN t2 y ON x.k = y.k;
+ count  
+--------
+ 100000
+(1 row)
+
+RESET max_parallel_workers_per_gather;
+RESET max_parallel_workers;
+RESET min_parallel_table_scan_size;
+DROP TABLE t1;
+DROP TABLE t2;
+DROP TABLE t3;
+RESET enable_mergejoin;
+RESET enable_memoize;
+RESET enable_mergejoin;
+RESET enable_mergejoin_semijoin_filter;
+RESET force_mergejoin_semijoin_filter;
