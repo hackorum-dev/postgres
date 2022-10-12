@@ -208,7 +208,9 @@ extern Selectivity rowcomparesel(PlannerInfo *root,
 extern void mergejoinscansel(PlannerInfo *root, Node *clause,
 							 Oid opfamily, int strategy, bool nulls_first,
 							 Selectivity *leftstart, Selectivity *leftend,
-							 Selectivity *rightstart, Selectivity *rightend);
+							 Selectivity *rightstart, Selectivity *rightend,
+							 Datum *leftmin, Datum *leftmax,
+							 Datum *rightmin, Datum *rightmax);
 
 extern double estimate_num_groups(PlannerInfo *root, List *groupExprs,
 								  double input_rows, List **pgset,

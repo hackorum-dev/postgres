@@ -30,6 +30,7 @@
 #include "optimizer/optimizer.h"
 #include "optimizer/paramassign.h"
 #include "optimizer/paths.h"
+#include "optimizer/pathnode.h"
 #include "optimizer/placeholder.h"
 #include "optimizer/plancat.h"
 #include "optimizer/planmain.h"
@@ -314,7 +315,31 @@ static ModifyTable *make_modifytable(PlannerInfo *root, Plan *subplan,
 									 List *mergeActionLists, int epqParam);
 static GatherMerge *create_gather_merge_plan(PlannerInfo *root,
 											 GatherMergePath *best_path);
-
+static int	depth_of_semijoin_target(Plan *plan,
+									 const Var *target_var,
+									 Bitmapset *target_relids,
+									 int cur_depth,
+									 const PlannerInfo *root,
+									 Plan **target_node);
+static bool is_side_of_join_source_of_var(const Plan *plan,
+										  bool testing_outer_side,
+										  const Var *target_var);
+static bool
+			is_table_scan_node_source_of_relids_or_var(const Plan *plan,
+													   const Var *target_var,
+													   Bitmapset *target_relids);
+static int	position_of_var_in_targetlist(const Var *target_var,
+										  const List *targetlist);
+static TargetEntry *get_nth_targetentry(int posn,
+										const List *targetlist);
+static void get_partition_table_relids(RelOptInfo *rel,
+									   Bitmapset **target_relids);
+static int	get_appendrel_occluded_references(const Expr *ex,
+											  Expr **occluded_exprs,
+											  int num_exprs,
+											  const PlannerInfo *root);
+static Expr *get_subquery_var_occluded_reference(const Expr *ex,
+												 const PlannerInfo *root);
 
 /*
  * create_plan
@@ -4691,6 +4716,57 @@ create_mergejoin_plan(PlannerInfo *root,
 	/* Costs of sort and material steps are included in path cost already */
 	copy_generic_path_info(&join_plan->join.plan, &best_path->jpath.path);
 
+	/* Check if we should attach a pushdown semijoin to this join */
+	if (best_path->sj_metadata && best_path->sj_metadata->best_mergeclause_pos >= 0)
+	{
+		ListCell   *clause_cell = list_nth_cell(mergeclauses, best_path->sj_metadata->best_mergeclause_pos);
+		OpExpr	   *joinclause = (OpExpr *) lfirst(clause_cell);
+		Node	   *outer_join_arg = linitial(joinclause->args);
+		Node	   *inner_join_arg = llast(joinclause->args);
+		SemiJoinFilterExprMetadata *outer_arg_md = (SemiJoinFilterExprMetadata *) palloc0(sizeof(SemiJoinFilterExprMetadata));
+		SemiJoinFilterExprMetadata *inner_arg_md = (SemiJoinFilterExprMetadata *) palloc0(sizeof(SemiJoinFilterExprMetadata));
+		int			outer_depth;
+		int			inner_depth;
+		Plan	   *building_node;
+		Plan	   *checking_node;
+
+		join_plan->sj_metadata = best_path->sj_metadata;
+
+		Assert(IsA(joinclause, OpExpr));
+		Assert(list_length(joinclause->args) == 2);
+		analyze_expr_for_metadata(root, (Expr *) outer_join_arg, outer_arg_md);
+		analyze_expr_for_metadata(root, (Expr *) inner_join_arg, inner_arg_md);
+
+		outer_depth = depth_of_semijoin_target((Plan *) join_plan,
+											   outer_arg_md->local_column_expr, NULL, 0, root, &building_node);
+		inner_depth = depth_of_semijoin_target((Plan *) join_plan,
+											   inner_arg_md->local_column_expr, NULL, 0, root, &checking_node);
+		if (inner_depth > -1 && outer_depth > -1)
+		{
+			SemijoinFilterScanData *building_node_data = makeNode(SemijoinFilterScanData);
+			SemijoinFilterScanData *checking_node_data = makeNode(SemijoinFilterScanData);
+
+			building_node_data->semijoin_keys =
+				lappend(building_node_data->semijoin_keys, (Node *) outer_arg_md->local_column_expr);
+			building_node_data->is_building_node = true;
+
+			building_node->sj_md_list =
+				lappend(building_node->sj_md_list, building_node_data);
+
+			checking_node_data->semijoin_keys =
+				lappend(checking_node_data->semijoin_keys, (Node *) inner_arg_md->local_column_expr);
+			checking_node_data->is_building_node = false;
+
+			checking_node->sj_md_list =
+				lappend(checking_node->sj_md_list, checking_node_data);
+
+			join_plan->sj_metadata->apply_semijoin_filter = true;
+			join_plan->sj_metadata->filtering_rate = best_path->sj_metadata->filtering_rate;
+		}
+		pfree(outer_arg_md);
+		pfree(inner_arg_md);
+	}
+
 	return join_plan;
 }
 
@@ -7215,4 +7291,543 @@ is_projection_capable_plan(Plan *plan)
 			break;
 	}
 	return true;
+}
+
+/*
+ *  Determine whether a semijoin condition could be pushed from the join
+ *  all the way to the leaf scan node.  If so, determine the number of
+ *  nodes between the join and the scan node (inclusive of the scan node).
+ *  If the search was terminated by a node the semijoin could not be
+ *  pushed through, the function returns -1.
+ *
+ *  Parameters:
+ *  plan: plan node to be considered for semijoin push down.
+ *  target_var:  the outer side join key for a potential semijoin.
+ *  target_relids: relids of all target leaf relations,
+ *  	used only for partitioned table.
+ *  cur_depth: current depth from the root hash join plan node.
+ *  target_node: stores the target plan node where filter will be applied
+ */
+static int
+depth_of_semijoin_target(Plan *plan,
+						 const Var *target_var,
+						 Bitmapset *target_relids,
+						 int cur_depth,
+						 const PlannerInfo *root,
+						 Plan **target_node)
+{
+	int			depth = -1;
+
+	Assert(plan);
+	Assert(target_var && IsA(target_var, Var));
+	Assert(target_var->varno > 0);
+
+	/* Guard against stack overflow due to overly complex plan trees */
+	check_stack_depth();
+
+	switch (nodeTag(plan))
+	{
+		case T_Hash:
+		case T_Material:
+		case T_Gather:
+		case T_GatherMerge:
+		case T_Sort:
+		case T_Unique:
+			{					/* Directly push bloom through these node
+								 * types  */
+				depth = depth_of_semijoin_target(plan->lefttree, target_var,
+												 target_relids, cur_depth + 1, root, target_node);
+				break;
+			}
+
+		case T_Agg:
+			{					/* Directly push bloom through GROUP BYs and
+								 * DISTINCTs, as long as there are no grouping
+								 * sets */
+				Agg		   *agg_pn = (Agg *) plan;
+
+				if (!agg_pn->groupingSets
+					|| list_length(agg_pn->groupingSets) == 0)
+				{
+					depth = depth_of_semijoin_target(plan->lefttree, target_var,
+													 target_relids, cur_depth + 1,
+													 root, target_node);
+				}
+				break;
+			}
+
+		case T_SubqueryScan:
+			{
+				/*
+				 * Directly push semijoin into subquery if we can, but we need
+				 * to map the target var to the occluded expression within the
+				 * SELECT list of the subquery
+				 */
+				SubqueryScan *subq_scan = (SubqueryScan *) plan;
+				RelOptInfo *rel = NULL;
+				RangeTblEntry *rte = NULL;
+				Var		   *subq_target_var = NULL;
+
+				/*
+				 * To travel into a subquery we need to use the subquery's
+				 * PlannerInfo, the root of subquery's plan tree, and the
+				 * subquery's SELECT list item that was occluded by the Var
+				 * used within this query block
+				 */
+				rte = root->simple_rte_array[subq_scan->scan.scanrelid];
+				Assert(rte);
+				Assert(rte->subquery);
+				Assert(rte->rtekind == RTE_SUBQUERY);
+				Assert(rte->subquery->targetList);
+
+				rel = find_base_rel((PlannerInfo *) root,
+									subq_scan->scan.scanrelid);
+				Assert(rel->rtekind == RTE_SUBQUERY);
+				Assert(rel->subroot);
+
+				if (rel && rel->subroot
+					&& rte && rte->subquery && rte->subquery->targetList)
+				{
+					/* Find the target_var's occluded expression */
+					Expr	   *occluded_expr =
+					get_subquery_var_occluded_reference((Expr *) target_var,
+														root);
+
+					if (occluded_expr && IsA(occluded_expr, Var))
+					{
+						subq_target_var = (Var *) occluded_expr;
+						if (subq_target_var->varno > 0)
+							depth = depth_of_semijoin_target(subq_scan->subplan,
+															 subq_target_var,
+															 target_relids,
+															 cur_depth + 1,
+															 rel->subroot,
+															 target_node);
+					}
+				}
+				break;
+			}
+
+			/* Either from a partitioned table or Union All */
+		case T_Append:
+			{
+				int			max_depth = -1;
+				Append	   *append = (Append *) plan;
+				RelOptInfo *rel = NULL;
+				RangeTblEntry *rte = NULL;
+
+				rte = root->simple_rte_array[target_var->varno];
+				rel = find_base_rel((PlannerInfo *) root, target_var->varno);
+
+				if (rte->inh && append->appendplans)
+				{
+					int			num_exprs = list_length(append->appendplans);
+					Expr	  **occluded_exprs = alloca(num_exprs * sizeof(Expr *));
+					int			idx = 0;
+					ListCell   *lc = NULL;
+
+					/* Partitioned table */
+					if (rel->part_scheme && rel->part_rels)
+					{
+						get_partition_table_relids(rel, &target_relids);
+
+						foreach(lc, append->appendplans)
+						{
+							Plan	   *appendplan = (Plan *) lfirst(lc);
+
+							depth = depth_of_semijoin_target(appendplan,
+															 target_var,
+															 target_relids,
+															 cur_depth + 1,
+															 root,
+															 target_node);
+
+							if (depth > max_depth)
+								max_depth = depth;
+						}
+					}
+					/* Union All, not partitioned table */
+					else if (num_exprs == get_appendrel_occluded_references(
+																			(Expr *) target_var,
+																			occluded_exprs,
+																			num_exprs,
+																			root))
+					{
+						Var		   *subq_target_var = NULL;
+
+						foreach(lc, append->appendplans)
+						{
+							Expr	   *occluded_expr = occluded_exprs[idx++];
+							Plan	   *appendplan = (Plan *) lfirst(lc);
+
+							if (occluded_expr && IsA(occluded_expr, Var))
+							{
+								subq_target_var = (Var *) occluded_expr;
+
+								depth = depth_of_semijoin_target(appendplan,
+																 subq_target_var,
+																 target_relids,
+																 cur_depth + 1,
+																 root,
+																 target_node);
+
+								if (depth > max_depth)
+									max_depth = depth;
+							}
+						}
+					}
+				}
+				depth = max_depth;
+				break;
+			}
+
+			/* Leaf nodes */
+		case T_IndexScan:
+		case T_BitmapHeapScan:
+			{
+				return -1;
+			}
+		case T_SeqScan:
+			{
+				if (is_table_scan_node_source_of_relids_or_var(plan, target_var, target_relids))
+				{
+					/* Found ultimate source of the join key!  */
+					*target_node = plan;
+					depth = cur_depth;
+				}
+				break;
+			}
+
+		case T_NestLoop:
+		case T_MergeJoin:
+		case T_HashJoin:
+			{
+				/*
+				 * plan->path_jointype is not always the same as
+				 * join->jointype. Avoid using plan->path_jointype when you
+				 * need accurate jointype, use join->jointype instead.
+				 */
+				Join	   *join = (Join *) plan;
+
+				/*
+				 * Push bloom filter to outer node if (target relation is
+				 * under the outer plan node, decided by
+				 * is_side_of_join_source_of_var() ) and either the following
+				 * condition satisfies: 1. this is an inner join or semi join
+				 * 2. this is a root right join 3. this is an intermediate
+				 * left join
+				 */
+				if (is_side_of_join_source_of_var(plan, true, target_var))
+				{
+					if (join->jointype == JOIN_INNER
+						|| join->jointype == JOIN_SEMI
+						|| (join->jointype == JOIN_RIGHT && cur_depth == 0)
+						|| (join->jointype == JOIN_LEFT && cur_depth > 0))
+					{
+						depth = depth_of_semijoin_target(plan->lefttree, target_var,
+														 target_relids, cur_depth + 1, root,
+														 target_node);
+					}
+				}
+				else
+				{
+					/*
+					 * Push bloom filter to inner node if (target rel is under
+					 * the inner node, decided by
+					 * is_side_of_join_source_of_var() ), and either the
+					 * following condition satisfies: 1. this is an inner join
+					 * or semi join 2. this is an intermediate right join
+					 */
+					Assert(is_side_of_join_source_of_var(plan, false, target_var));
+					if (join->jointype == JOIN_INNER
+						|| join->jointype == JOIN_SEMI
+						|| (join->jointype == JOIN_RIGHT && cur_depth > 0))
+					{
+						depth = depth_of_semijoin_target(plan->righttree, target_var,
+														 target_relids, cur_depth + 1, root,
+														 target_node);
+					}
+				}
+				break;
+			}
+
+		default:
+			{					/* For all other node types, just bail out and
+								 * apply the semijoin filter somewhere above
+								 * this node. */
+				depth = -1;
+			}
+	}
+	return depth;
+}
+
+static bool
+is_side_of_join_source_of_var(const Plan *plan,
+							  bool testing_outer_side,
+							  const Var *target_var)
+{
+	/* Determine if target_var is from the indicated child of the join  */
+	Plan	   *target_child = NULL;
+
+	Assert(plan);
+	Assert(target_var && nodeTag(target_var) == T_Var);
+	Assert(nodeTag(plan) == T_NestLoop || nodeTag(plan) == T_MergeJoin
+		   || nodeTag(plan) == T_HashJoin);
+
+	if (testing_outer_side)
+	{
+		target_child = plan->lefttree;
+	}
+	else
+	{
+		target_child = plan->righttree;
+	}
+
+	return (position_of_var_in_targetlist(target_var,
+										  target_child->targetlist) >= 0);
+}
+
+/*
+ * Determine if this scan node is the source of the specified relids,
+ * or the source of the specified var if target_relids is not given.
+ */
+static bool
+is_table_scan_node_source_of_relids_or_var(const Plan *plan,
+										   const Var *target_var,
+										   Bitmapset *target_relids)
+{
+	Scan	   *scan_node = (Scan *) plan;
+	Index		scan_node_varno = 0;
+
+	Assert(plan);
+	Assert(target_var && nodeTag(target_var) == T_Var);
+	Assert(nodeTag(plan) == T_SeqScan || nodeTag(plan) == T_IndexScan
+		   || nodeTag(plan) == T_BitmapHeapScan);
+
+	scan_node_varno = scan_node->scanrelid;
+
+	if (target_relids)
+	{
+		return bms_is_member(scan_node_varno, target_relids);
+	}
+	return scan_node_varno == target_var->varno;
+}
+
+/*
+ *  Return the index of a given var `target_var` from the `targetlist`, -1 if not found.
+ */
+static int
+position_of_var_in_targetlist(const Var *target_var, const List *targetlist)
+{
+	ListCell   *lc = NULL;
+	int			i = 1;
+
+	Assert(target_var && nodeTag(target_var) == T_Var);
+	Assert(targetlist && nodeTag(targetlist) == T_List);
+
+	if (targetlist && target_var)
+	{
+		foreach(lc, targetlist)
+		{
+			TargetEntry *te = lfirst(lc);
+
+			if (IsA(te->expr, Var))
+			{
+				Var		   *cur_var = (Var *) te->expr;
+
+				if (cur_var->varno == target_var->varno
+					&& cur_var->varattno == target_var->varattno)
+				{
+					return i;
+				}
+			}
+			i++;
+		}
+	}
+	return -1;
+}
+
+/*
+ * Recursively gather all relids of the given partitioned table rel.
+ */
+static void
+get_partition_table_relids(RelOptInfo *rel, Bitmapset **target_relids)
+{
+	int			i;
+
+	Assert(rel->part_scheme && rel->part_rels);
+
+	for (i = 0; i < rel->nparts; i++)
+	{
+		RelOptInfo *part_rel = rel->part_rels[i];
+
+		if (part_rel->part_scheme && part_rel->part_rels)
+		{
+			get_partition_table_relids(part_rel, target_relids);
+		}
+		else
+		{
+			*target_relids = bms_union(*target_relids,
+									   part_rel->relids);
+		}
+	}
+}
+
+/*
+ *  Given a virtual column from an Union ALL subquery,
+ *  returns the last index of expression it immediately occludes that satisfy
+ *  the inheritance condition,
+ *  i.e. appendRelInfo->parent_relid == outside_subq_var->varno
+ */
+static int
+get_appendrel_occluded_references(const Expr *ex,
+								  Expr **occluded_exprs,
+								  int num_exprs,
+								  const PlannerInfo *root)
+{
+	Var		   *outside_subq_var = (Var *) ex;
+	RangeTblEntry *outside_subq_rte = NULL;
+	int			idx = 0;
+
+
+	Assert(ex && root);
+	Assert(IsA(ex, Var));
+	Assert(outside_subq_var->varno < root->simple_rel_array_size);
+
+	outside_subq_rte = root->simple_rte_array[outside_subq_var->varno];
+
+	/* System Vars have varattno < 0, don't bother */
+	if (outside_subq_var->varattno <= 0)
+		return 0;
+
+	/*
+	 * If inheritance, subquery has append, leg of append in subquery may not
+	 * have subroot, process it according to root->append_rel_list.
+	 */
+	if (outside_subq_rte->inh)
+	{
+		ListCell   *lc = NULL;
+
+		Assert(root->append_rel_list &&
+			   num_exprs <= list_length(root->append_rel_list));
+
+		foreach(lc, root->append_rel_list)
+		{
+			AppendRelInfo *appendRelInfo = lfirst(lc);
+
+			if (appendRelInfo->parent_relid == outside_subq_var->varno)
+			{
+				Assert(appendRelInfo->translated_vars &&
+					   outside_subq_var->varattno <=
+					   list_length(appendRelInfo->translated_vars));
+
+				occluded_exprs[idx++] =
+					list_nth(appendRelInfo->translated_vars,
+							 outside_subq_var->varattno - 1);
+			}
+		}
+	}
+
+	return idx;
+}
+
+static Expr *
+get_subquery_var_occluded_reference(const Expr *ex, const PlannerInfo *root)
+{
+	/*
+	 * Given a virtual column from an unflattened subquery, return the
+	 * expression it immediately occludes
+	 */
+	Var		   *outside_subq_var = (Var *) ex;
+	RelOptInfo *outside_subq_relation = NULL;
+	RangeTblEntry *outside_subq_rte = NULL;
+	TargetEntry *te = NULL;
+	Expr	   *inside_subq_expr = NULL;
+
+	Assert(ex && root);
+	Assert(IsA(ex, Var));
+	Assert(outside_subq_var->varno < root->simple_rel_array_size);
+
+	outside_subq_relation = root->simple_rel_array[outside_subq_var->varno];
+	outside_subq_rte = root->simple_rte_array[outside_subq_var->varno];
+
+	/*
+	 * If inheritance, subquery has append, leg of append in subquery may not
+	 * have subroot, we may be able to better process it according to
+	 * root->append_rel_list. For now just return the first leg... TODO better
+	 * handling of Union All, we only return statistics of the first leg atm.
+	 * TODO similarly, need better handling of partitioned tables, according
+	 * to outside_subq_relation->part_scheme and part_rels.
+	 */
+	if (outside_subq_rte->inh)
+	{
+		AppendRelInfo *appendRelInfo = NULL;
+
+		Assert(root->append_rel_list);
+
+		/* TODO remove this check once we add better handling of inheritance */
+		appendRelInfo = list_nth(root->append_rel_list, 0);
+		Assert(appendRelInfo->parent_relid == outside_subq_var->varno);
+
+		Assert(appendRelInfo->translated_vars &&
+			   outside_subq_var->varattno <=
+			   list_length(appendRelInfo->translated_vars));
+		inside_subq_expr = list_nth(appendRelInfo->translated_vars,
+									outside_subq_var->varattno - 1);
+	}
+
+	/* Subquery without append or partitioned tables */
+	else
+	{
+		Assert(outside_subq_relation && IsA(outside_subq_relation, RelOptInfo));
+		Assert(outside_subq_relation->reloptkind == RELOPT_BASEREL);
+		Assert(outside_subq_relation->rtekind == RTE_SUBQUERY);
+		Assert(outside_subq_relation->subroot->processed_tlist);
+
+		te = get_nth_targetentry(outside_subq_var->varattno,
+								 outside_subq_relation->subroot->processed_tlist);
+		Assert(te && outside_subq_var->varattno == te->resno);
+		inside_subq_expr = te->expr;
+
+		/*
+		 * Strip off any Relabel present, and return the underlying expression
+		 */
+		while (inside_subq_expr && IsA(inside_subq_expr, RelabelType))
+		{
+			inside_subq_expr = ((RelabelType *) inside_subq_expr)->arg;
+		}
+	}
+
+	return inside_subq_expr;
+}
+
+/*
+ *  Return the nth (starting from 1) entry from the `targetlist`.
+ *
+ * 	If n is larger than the length of `targetlist`, an assertion will fail.
+ */
+static TargetEntry *
+get_nth_targetentry(int n, const List *targetlist)
+{
+	int			i = 1;
+	ListCell   *lc = NULL;
+
+	Assert(n > 0);
+	Assert(targetlist && nodeTag(targetlist) == T_List);
+	Assert(list_length(targetlist) >= n);
+
+	if (targetlist && list_length(targetlist) >= n)
+	{
+		foreach(lc, targetlist)
+		{
+			if (i == n)
+			{
+				TargetEntry *te = lfirst(lc);
+
+				return te;
+			}
+			i++;
+		}
+	}
+	return NULL;
 }

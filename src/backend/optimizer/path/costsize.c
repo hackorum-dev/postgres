@@ -95,6 +95,7 @@
 #include "optimizer/restrictinfo.h"
 #include "parser/parsetree.h"
 #include "utils/lsyscache.h"
+#include "utils/guc.h"
 #include "utils/selfuncs.h"
 #include "utils/spccache.h"
 #include "utils/tuplesort.h"
@@ -192,6 +193,27 @@ static double relation_byte_size(double tuples, int width);
 static double page_size(double tuples, int width);
 static double get_parallel_divisor(Path *path);
 
+/*
+ *  Local functions and option variables to support
+ *  semijoin pushdowns from join nodes
+ */
+static double evaluate_semijoin_filtering_rate(PlannerInfo *root,
+											   JoinPath *join_path,
+											   List *hash_equijoins,
+											   JoinCostWorkspace *workspace,
+											   int *best_clause,
+											   int *rows_filtered);
+static bool verify_valid_pushdown(PlannerInfo *root, Path *p,
+								  Index pushdown_target_key_no);
+static TargetEntry *get_nth_targetentry(int posn,
+										List *targetlist);
+static bool is_fk_pk(PlannerInfo *root, Var *outer_var,
+					 Var *inner_var, Oid op_oid);
+static List *get_switched_clauses(List *clauses, Relids outerrelids);
+
+/* Global variables to store semijoin control options */
+bool		enable_mergejoin_semijoin_filter;
+bool		force_mergejoin_semijoin_filter;
 
 /*
  * clamp_row_est
@@ -3333,6 +3355,11 @@ initial_cost_mergejoin(PlannerInfo *root, JoinCostWorkspace *workspace,
 			innerstartsel = 0.0;
 			innerendsel = 1.0;
 		}
+
+		workspace->outer_min_val = cache->leftmin;
+		workspace->outer_max_val = cache->leftmax;
+		workspace->inner_min_val = cache->rightmin;
+		workspace->inner_max_val = cache->rightmax;
 	}
 	else
 	{
@@ -3494,6 +3521,10 @@ final_cost_mergejoin(PlannerInfo *root, MergePath *path,
 	double		mergejointuples,
 				rescannedtuples;
 	double		rescanratio;
+	List	   *mergeclauses_for_sjf;
+	double		filtering_rate;
+	int			best_filter_clause;
+	int			rows_filtered;
 
 	/* Protect some assumptions below that rowcounts aren't zero */
 	if (inner_path_rows <= 0)
@@ -3545,6 +3576,54 @@ final_cost_mergejoin(PlannerInfo *root, MergePath *path,
 		path->skip_mark_restore = true;
 	else
 		path->skip_mark_restore = false;
+
+	if (enable_mergejoin_semijoin_filter)
+	{
+		/*
+		 * Rearrange mergeclauses if needed, so that the outer variable is
+		 * always on the left;
+		 */
+		mergeclauses_for_sjf = get_switched_clauses(path->path_mergeclauses,
+													path->jpath.outerjoinpath->parent->relids);
+
+		/*
+		 * TODO: 1. Update the costing model; the current costing model is too
+		 * naive and doesn't fit in complex queries; 2. Update the hard-coded
+		 * numbers; these numbers only serves as a temporary solution; 3.
+		 * Adjust other properties of the mergejoin node (in addition to
+		 * cost), such as estimated rows etc; 4. Check the bloom filter size
+		 * against work_mem, false positive rate etc.
+		 */
+		filtering_rate = evaluate_semijoin_filtering_rate(root, (JoinPath *) path, mergeclauses_for_sjf,
+														  workspace, &best_filter_clause, &rows_filtered);
+
+		/* want at least 1000 rows_filtered to avoid any nasty edge cases */
+		if (force_mergejoin_semijoin_filter ||
+			(filtering_rate >= 0.35 && rows_filtered > 1000 && best_filter_clause >= 0))
+		{
+			double		improvement;
+			SemijoinFilterJoinData *result = makeNode(SemijoinFilterJoinData);
+
+			result->best_mergeclause_pos = best_filter_clause;
+			result->filtering_rate = filtering_rate;
+			path->sj_metadata = result;
+
+			/*
+			 * Based on experimental data, we have found that there is a
+			 * linear relationship between the estimated filtering rate and
+			 * improvement to the cost of Merge Join. In fact, this
+			 * improvement can be modeled by this equation: improvement = 0.83 *
+			 * filtering rate - 0.137 i.e., a filtering rate of 0.4 yields an
+			 * improvement of 19.5%. This equation also concludes thata a 17%
+			 * filtering rate is the break-even point, so we use 35% just be
+			 * conservative. We use this information to adjust the MergeJoin's
+			 * planned cost.
+			 */
+			improvement = 0.83 * filtering_rate - 0.137;
+			run_cost = (1 - improvement) * run_cost;
+			workspace->run_cost = run_cost;
+		}
+	}
 
 	/*
 	 * Get approx # tuples passing the mergequals.  We use approx_tuple_count
@@ -3727,6 +3806,10 @@ cached_scansel(PlannerInfo *root, RestrictInfo *rinfo, PathKey *pathkey)
 				leftendsel,
 				rightstartsel,
 				rightendsel;
+	Datum		leftmin,
+				leftmax,
+				rightmin,
+				rightmax;
 	MemoryContext oldcontext;
 
 	/* Do we have this result already? */
@@ -3749,7 +3832,11 @@ cached_scansel(PlannerInfo *root, RestrictInfo *rinfo, PathKey *pathkey)
 					 &leftstartsel,
 					 &leftendsel,
 					 &rightstartsel,
-					 &rightendsel);
+					 &rightendsel,
+					 &leftmin,
+					 &leftmax,
+					 &rightmin,
+					 &rightmax);
 
 	/* Cache the result in suitably long-lived workspace */
 	oldcontext = MemoryContextSwitchTo(root->planner_cxt);
@@ -3763,6 +3850,10 @@ cached_scansel(PlannerInfo *root, RestrictInfo *rinfo, PathKey *pathkey)
 	cache->leftendsel = leftendsel;
 	cache->rightstartsel = rightstartsel;
 	cache->rightendsel = rightendsel;
+	cache->leftmin = leftmin;
+	cache->leftmax = leftmax;
+	cache->rightmin = rightmin;
+	cache->rightmax = rightmax;
 
 	rinfo->scansel_cache = lappend(rinfo->scansel_cache, cache);
 
@@ -6234,4 +6325,1122 @@ compute_bitmap_pages(PlannerInfo *root, RelOptInfo *baserel, Path *bitmapqual,
 		*tuple = tuples_fetched;
 
 	return pages_fetched;
+}
+
+/*
+ * Initialize SemiJoinFilterExprMetadata struct.
+ */
+static void
+init_semijoin_filter_expr_metadata(SemiJoinFilterExprMetadata * md)
+{
+	/* Should only be called by analyze_expr_for_metadata */
+	Assert(md);
+
+	md->is_or_maps_to_constant = false;
+	md->is_or_maps_to_base_column = false;
+	md->local_column_expr = NULL;
+	md->local_relation = NULL;
+	md->est_col_width = 0;
+	md->base_column_expr = NULL;
+	md->base_rel = NULL;
+	md->base_rel_root = NULL;
+	md->base_rel_row_count = 0.0;
+	md->base_rel_filt_row_count = 0.0;
+	md->base_col_distincts = -1.0;
+	md->est_distincts_reliable = false;
+	md->expr_est_distincts = -1.0;
+}
+
+/*
+	* Estimates the number of distinct values still present within a column
+	* after some local filtering has been applied to that table and thereby
+	* restricted the set of relevant rows.
+	*
+	* This method assumes that the original_distinct_count comes from a
+	* column whose values are uncorrelated with the row restricting
+	* condition(s) on this table.  Other mechanisms need to be added to more
+	* accurately handle the cases where the row restrincting condition is
+	* directly on the current column.
+	*
+	* The most probable number of distinct values remaining can be computed
+	* exactly using Yao's iterative expansion formula from: "Approximating
+	* block accesses in database organizations", S. B. Yao, CACM, V20, N4,
+	* April 1977, p. 260-261 However, this formula gets very expensive to
+	* compute whenever the number of distinct values is large.
+	*
+	* This function instead uses a non-iterative approximation of Yao's
+	* iterative formula from: "Estimating Block Accesses in Database
+	* Organizations: A Closed Noniterative Formula", Kyu-Young Whang, Gio
+	* Wiederhold, and Daniel Sagalowicz CACM V26, N11, November 1983, p.
+	* 945-947 This approximation starts with terms for the first three
+	* iterations of Yao's formula, and then inserts two adjustment factors
+	* into the third term which minimize the total error related to the
+	* missing subsequent terms.
+	*
+	* Internally this function uses M, N, P, and K as variables to match the
+	* notation used in the equation in the paper.
+	*/
+static double
+estimate_distincts_remaining(double original_table_row_count,
+							 double original_distinct_count,
+							 double est_row_count_after_predicates)
+{
+	double		n = original_table_row_count;
+	double		m = original_distinct_count;
+	double		k = est_row_count_after_predicates;
+	double		p = 0.0;		/* avg rows per distinct */
+	double		result;
+
+	/* The three partial probabality terms */
+	double		term_1 = 0.0;
+	double		term_2 = 0.0;
+	double		term_3 = 0.0;
+	double		sum_terms = 0.0;
+
+	/* In debug builds, validate the sanity of the inputs  */
+	Assert(isfinite(original_table_row_count));
+	Assert(isfinite(original_distinct_count));
+	Assert(isfinite(est_row_count_after_predicates));
+	Assert(original_table_row_count >= 0.0);
+	Assert(original_distinct_count >= 0.0);
+	Assert(est_row_count_after_predicates >= 0.0);
+	Assert(original_distinct_count <= original_table_row_count);
+	Assert(est_row_count_after_predicates <= original_table_row_count);
+
+	if (n > 0.0 && m > 0.0)
+	{
+		p = (n / m);
+	}
+	Assert(isfinite(p));
+
+	if (k > (n - p))
+	{							/* All distincts almost guaranteed to still be
+								 * present */
+		result = m;
+	}
+	else if (m < 0.000001)
+	{							/* When all values are NULL, avoid division by
+								 * zero */
+		result = 0.0;
+	}
+	else if (k <= 1.000001)
+	{							/* When only one or zero rows after filtering */
+		result = k;
+	}
+	else
+	{
+		/*
+		 * When this is not a special case, compute the partial probabilities.
+		 * However, if the probability calculation overflows, then revert to
+		 * the estimate we can get from the upper bound analysis.
+		 */
+		result = fmin(original_distinct_count, est_row_count_after_predicates);
+
+		if (isfinite(1.0 / m) && isfinite(pow((1.0 - (1.0 / m)), k)))
+		{
+			term_1 = (1.0 - pow((1.0 - (1.0 / m)), k));
+
+			if (isfinite(term_1))
+			{
+				/*
+				 * As long as we at least have a usable term_1, then proceed
+				 * to the much smaller term_2 and to the even smaller term_3.
+				 *
+				 * If no usable term_1, then just use the hard upper bounds.
+				 */
+				if (isfinite(m * m * p)
+					&& isfinite(pow((1.0 - (1.0 / m)), (k - 1.0))))
+				{
+					term_2 = ((1.0 / (m * m * p))
+							  * ((k * (k - 1.0)) / 2.0)
+							  * pow((1.0 - (1.0 / m)), (k - 1.0))
+						);
+				}
+				if (!isfinite(term_2))
+				{
+					term_2 = 0.0;
+				}
+				if (isfinite(pow(m, 3.0))
+					&& isfinite(pow(p, 4.0))
+					&& isfinite(pow(m, 3.0) * pow(p, 4.0))
+					&& isfinite(k * (k - 1.0) * ((2 * k) - 1.0))
+					&& isfinite(pow((1.0 - (1.0 / m)), (k - 1.0))))
+				{
+					term_3 = ((1.5 / (pow(m, 3.0) * pow(p, 4.0)))
+							  * ((k * (k - 1.0) * ((2 * k) - 1.0)) / 6.0)
+							  * pow((1.0 - (1.0 / m)), (k - 1.0)));
+				}
+				if (!isfinite(term_3))
+				{
+					term_3 = 0.0;
+				}
+				sum_terms = term_1 + term_2 + term_3;
+
+				/* In debug builds, validate the partial probability terms */
+				Assert(term_1 <= 1.0 && term_1 >= 0.0);
+				Assert(term_2 <= 1.0 && term_2 >= 0.0);
+				Assert(term_3 <= 1.0 && term_3 >= 0.0);
+				Assert(term_1 > term_2);
+				Assert(term_2 >= term_3);
+				Assert(isfinite(sum_terms));
+				Assert(sum_terms <= 1.0);
+
+				if (isfinite(m * sum_terms))
+				{
+					result = round(m * sum_terms);
+				}
+
+				/* Ensure hard upper bounds still satisfied  */
+				result = fmin(result,
+							  fmin(original_distinct_count,
+								   est_row_count_after_predicates));
+
+				/* Since empty tables were handled above, must be >= 1 */
+				result = fmax(result, 1.0);
+			}
+		}
+	}
+
+	Assert(result >= 0.0);
+	Assert(result <= original_distinct_count);
+	Assert(result <= est_row_count_after_predicates);
+
+	return result;
+}
+
+/*
+ * Gather metadata for the given column `base_col` in the given relation `base_rel`, and return the metadata using `md`.
+ */
+static void
+gather_base_column_metadata(PlannerInfo *root,
+							Var *base_col,
+							RelOptInfo *base_rel,
+							SemiJoinFilterExprMetadata * md)
+{
+	/*
+	 * Given a Var for a base column, gather metadata about that column Should
+	 * only be called indirectly under analyze_expr_for_metadata
+	 */
+	VariableStatData base_col_vardata;
+	Oid			base_col_reloid = InvalidOid;
+	bool		is_default;
+
+	Assert(md && base_rel && root);
+	Assert(base_col && IsA(base_col, Var));
+	Assert(base_rel->reloptkind == RELOPT_BASEREL ||
+		   base_rel->reloptkind == RELOPT_OTHER_MEMBER_REL);
+	Assert(base_rel->rtekind == RTE_RELATION);
+
+	md->base_column_expr = base_col;
+	md->base_rel = base_rel;
+	md->base_rel_root = root;
+	md->is_or_maps_to_base_column = true;
+
+	examine_variable((PlannerInfo *) root, (Node *) base_col, 0,
+					 &base_col_vardata);
+	Assert(base_col_vardata.rel);
+	Assert(base_col_vardata.rel == base_rel);
+
+	md->base_rel_row_count = md->base_rel->tuples;
+	md->base_rel_filt_row_count = md->base_rel->rows;
+	md->base_col_distincts =
+		fmin(get_variable_numdistinct(&base_col_vardata, &is_default),
+			 md->base_rel_row_count);
+	md->est_distincts_reliable = !is_default;
+
+	/*
+	 * For indirectly filtered columns estimate the effect of the rows
+	 * filtered on the remaining column distinct count.
+	 */
+	md->expr_est_distincts =
+		fmax(1.0,
+			 estimate_distincts_remaining(md->base_rel_row_count,
+										  md->base_col_distincts,
+										  md->base_rel_filt_row_count));
+
+	base_col_reloid = (planner_rt_fetch(base_rel->relid, root))->relid;
+	if (base_col_reloid != InvalidOid && base_col->varattno > 0)
+	{
+		md->est_col_width =
+			get_attavgwidth(base_col_reloid, base_col->varattno);
+	}
+	ReleaseVariableStats(base_col_vardata);
+}
+
+static Expr *
+get_subquery_var_occluded_reference(PlannerInfo *root, Expr *ex)
+{
+	/*
+	 * Given a virtual column from an unflattened subquery, return the
+	 * expression it immediately occludes
+	 */
+	Var		   *outside_subq_var = (Var *) ex;
+	RelOptInfo *outside_subq_relation = NULL;
+	RangeTblEntry *outside_subq_rte = NULL;
+	TargetEntry *te = NULL;
+	Expr	   *inside_subq_expr = NULL;
+
+	Assert(ex && root);
+	Assert(IsA(ex, Var));
+	Assert(outside_subq_var->varno < root->simple_rel_array_size);
+
+	outside_subq_relation = root->simple_rel_array[outside_subq_var->varno];
+	outside_subq_rte = root->simple_rte_array[outside_subq_var->varno];
+
+	/*
+	 * If inheritance, subquery has append, leg of append in subquery may not
+	 * have subroot, we may be able to better process it according to
+	 * root->append_rel_list. For now just return the first leg... TODO better
+	 * handling of Union All, we only return statistics of the first leg atm.
+	 * TODO similarly, need better handling of partitioned tables, according
+	 * to outside_subq_relation->part_scheme and part_rels.
+	 */
+	if (outside_subq_rte->inh)
+	{
+		AppendRelInfo *appendRelInfo = NULL;
+
+		Assert(root->append_rel_list);
+
+		/* TODO remove this check once we add better handling of inheritance */
+		if (force_mergejoin_semijoin_filter)
+		{
+			appendRelInfo = list_nth(root->append_rel_list, 0);
+			Assert(appendRelInfo->parent_relid == outside_subq_var->varno);
+
+			Assert(appendRelInfo->translated_vars &&
+				   outside_subq_var->varattno <=
+				   list_length(appendRelInfo->translated_vars));
+			inside_subq_expr = list_nth(appendRelInfo->translated_vars,
+										outside_subq_var->varattno - 1);
+		}
+	}
+
+	/* Subquery without append and partitioned tables */
+	else
+	{
+		Assert(outside_subq_relation && IsA(outside_subq_relation, RelOptInfo));
+		Assert(outside_subq_relation->reloptkind == RELOPT_BASEREL);
+		Assert(outside_subq_relation->rtekind == RTE_SUBQUERY);
+		Assert(outside_subq_relation->subroot->processed_tlist);
+
+		te = get_nth_targetentry(outside_subq_var->varattno,
+								 outside_subq_relation->subroot->processed_tlist);
+		Assert(te && outside_subq_var->varattno == te->resno);
+		inside_subq_expr = te->expr;
+
+		/*
+		 * Strip off any Relabel present, and return the underlying expression
+		 */
+		while (inside_subq_expr && IsA(inside_subq_expr, RelabelType))
+		{
+			inside_subq_expr = ((RelabelType *) inside_subq_expr)->arg;
+		}
+	}
+
+	return inside_subq_expr;
+}
+
+/*
+ * Analyze the supplied expression, and if possible, gather metadata about
+ * it.
+ * Should only be called by analyze_expr_for_metadata, or itself.
+ */
+static void
+recursively_analyze_expr_metadata(PlannerInfo *root,
+								  Expr *ex,
+								  SemiJoinFilterExprMetadata * md)
+{
+	Assert(md && ex && root);
+
+	if (IsA(ex, Const))
+	{
+		md->is_or_maps_to_constant = true;
+		md->expr_est_distincts = 1.0;
+		md->est_distincts_reliable = true;
+	}
+	else if (IsA(ex, RelabelType))
+	{
+		recursively_analyze_expr_metadata(root, ((RelabelType *) ex)->arg, md);
+	}
+	else if (IsA(ex, Var))
+	{
+		Var		   *local_var = (Var *) ex;
+		RelOptInfo *local_relation = NULL;
+
+		Assert(local_var->varno < root->simple_rel_array_size);
+
+		/* Bail out if varno is invalid */
+		if (local_var->varno == InvalidOid)
+			return;
+
+		local_relation = root->simple_rel_array[local_var->varno];
+		Assert(local_relation && IsA(local_relation, RelOptInfo));
+
+		/*
+		 * For top level call (i.e. not a recursive invocation) cache the
+		 * relation pointer
+		 */
+		if (!md->local_relation
+			&& (local_relation->reloptkind == RELOPT_BASEREL ||
+				local_relation->reloptkind == RELOPT_OTHER_MEMBER_REL))
+		{
+			md->local_relation = local_relation;
+			md->local_column_expr = local_var;
+		}
+
+		if ((local_relation->reloptkind == RELOPT_BASEREL ||
+			 local_relation->reloptkind == RELOPT_OTHER_MEMBER_REL)
+			&& local_relation->rtekind == RTE_RELATION)
+		{
+			/* Found Var is a base column, so gather the metadata we can  */
+			gather_base_column_metadata(root, local_var, local_relation, md);
+		}
+		else if (local_relation->reloptkind == RELOPT_BASEREL
+				 && local_relation->rtekind == RTE_SUBQUERY)
+		{
+			RangeTblEntry *outside_subq_rte =
+			root->simple_rte_array[local_relation->relid];
+
+			/* root doesn't change for inheritance case, e.g. for UNION ALL */
+			PlannerInfo *new_root = outside_subq_rte->inh ?
+			root : local_relation->subroot;
+
+			/*
+			 * Found that this Var is a subquery SELECT list item, so continue
+			 * to recurse on the occluded expression
+			 */
+			Expr	   *occluded_expr =
+			get_subquery_var_occluded_reference(root, ex);
+
+			if (occluded_expr)
+			{
+				recursively_analyze_expr_metadata(new_root, occluded_expr,
+												  md);
+			}
+		}
+	}
+}
+
+/*
+ * Analyze the supplied expression, and if possible, gather metadata about
+ * it.
+ * Currently handles: base table columns, constants, and virtual
+ * columns from unflattened subquery blocks.  The metadata collected is
+ * placed into the supplied SemiJoinFilterExprMetadata object.
+ */
+void
+analyze_expr_for_metadata(PlannerInfo *root, Expr *ex,
+						  SemiJoinFilterExprMetadata * md)
+{
+	Assert(md && ex && root);
+
+	init_semijoin_filter_expr_metadata(md);
+	recursively_analyze_expr_metadata(root, ex, md);
+}
+
+
+/*
+ *  Function:  evaluate_semijoin_filtering_rate
+ *
+ *  Given a merge join path, determine two things.
+ *  First, can a Bloom filter based semijoin be created on the
+ *  outer scan relation and checked on the inner scan relation to
+ *  filter out rows from the inner relation? And second, if this
+ *  is possible, determine the single equijoin condition that is most
+ *  useful as well as the estimated filtering rate of the filter.
+ *
+ *  The output args, inner_semijoin_keys and
+ *  outer_semijoin_keys, will each contain a single key column
+ *  from one of the hash equijoin conditions. probe_semijoin_keys
+ *  contains keys from the target relation to probe the semijoin filter.
+ *
+ *  A potential semijoin will be deemed valid only if all
+ *  of the following are true:
+ *    a) The enable_mergejoin_semijoin_filter option is set true
+ *    b) The equijoin key from the outer side is or maps
+ *       to a base table column
+ *    c) The equijoin key from the inner side is or maps to
+ *       a base column
+ *
+ *  A potential semijoin will be deemed useful only if the
+ *  force_mergejoin_semijoin_filter is set true, or if all of the
+ *  following are true:
+ *    a) The equijoin key base column from the outer side has
+ *       reliable metadata (i.e. ANALYZE was done on it)
+ *    b) The key column(s) from the outer side equijoin keys
+ *       have width metadata available.
+ *    c) The estimated outer side key column width(s) are not
+ *       excessively wide.
+ *    d) The equijoin key from the inner side either:
+ *         1) maps to a base column with reliable metadata, or
+ *         2) is constrained by the incoming estimated tuple
+ *            count to have a distinct count smaller than the
+ *            outer side key column's distinct count.
+ *    e) The semijoin must be estimated to filter at least some of
+ *       the rows from the inner relation. However, the exact filtering
+ *       rate where the semijoin is deemed useful is determined by the
+ *       mergejoin cost model itself, not this function.
+ *
+ *  If there is more than one equijoin condition, we favor the one with the
+ *  higher estimated filtering rate.
+ *
+ *  If this function finds an appropriate semijoin, it will
+ *  allocate a SemijoinFilterJoinData object to store the
+ *  semijoin metadata, and then attach it to the Join plan node.
+ */
+#define MAX_SEMIJOIN_SINGLE_KEY_WIDTH	  128
+
+static double
+evaluate_semijoin_filtering_rate(PlannerInfo *root,
+								 JoinPath *join_path,
+								 List *equijoin_list,
+								 JoinCostWorkspace *workspace,
+								 int *best_clause,
+								 int *rows_filtered)
+{
+	const Path *outer_path;
+	const Path *inner_path;
+	ListCell   *equijoin_lc = NULL;
+	int			equijoin_ordinal = -1;
+	int			best_single_col_sj_ordinal = -1;
+	double		best_sj_selectivity = 1.01;
+	double		best_sj_inner_rows_filtered = -1.0;
+	int			num_md;
+	SemiJoinFilterExprMetadata *outer_md_array = NULL;
+	SemiJoinFilterExprMetadata *inner_md_array = NULL;
+
+	Assert(equijoin_list);
+	Assert(list_length(equijoin_list) > 0);
+
+	if (!enable_mergejoin_semijoin_filter && !force_mergejoin_semijoin_filter)
+	{
+		return 0;				/* option setting disabled semijoin insertion  */
+	}
+
+	num_md = list_length(equijoin_list);
+	outer_md_array = palloc(sizeof(SemiJoinFilterExprMetadata) * num_md);
+	inner_md_array = palloc(sizeof(SemiJoinFilterExprMetadata) * num_md);
+	if (!outer_md_array || !inner_md_array)
+	{
+		return 0;				/* a stack array allocation failed  */
+	}
+
+	outer_path = join_path->outerjoinpath;
+	inner_path = join_path->innerjoinpath;
+
+#ifdef TRACE_SORT
+	if (trace_sort)
+		elog(LOG,
+			 "evaluate_semijoin_filtering_rate: inner path est rows: %.1lf, outer path est rows: %.1lf."
+			 ,inner_path->rows, outer_path->rows);
+#endif
+
+	/*
+	 * Consider each of the individual equijoin conditions as a possible basis
+	 * for creating a semijoin condition
+	 */
+	foreach(equijoin_lc, equijoin_list)
+	{
+		OpExpr	   *equijoin;
+		Node	   *outer_equijoin_arg = NULL;
+		SemiJoinFilterExprMetadata *outer_arg_md = NULL;
+		Node	   *inner_equijoin_arg = NULL;
+		SemiJoinFilterExprMetadata *inner_arg_md = NULL;
+		double		est_sj_selectivity = 1.01;
+		double		est_sj_inner_rows_filtered = -1.0;
+
+		equijoin_ordinal++;
+		equijoin = (OpExpr *) lfirst(equijoin_lc);
+
+		Assert(IsA(equijoin, OpExpr));
+		Assert(list_length(equijoin->args) == 2);
+
+		outer_equijoin_arg = linitial(equijoin->args);
+		outer_arg_md = &(outer_md_array[equijoin_ordinal]);
+		analyze_expr_for_metadata(root, (Expr *) outer_equijoin_arg,
+								  outer_arg_md);
+
+		inner_equijoin_arg = llast(equijoin->args);
+		inner_arg_md = &(inner_md_array[equijoin_ordinal]);
+		analyze_expr_for_metadata(root, (Expr *) inner_equijoin_arg,
+								  inner_arg_md);
+
+		/*
+		 * If outer key - inner key has FK/PK relationship to each other and
+		 * there is no restriction on the primary key side, the semijoin
+		 * filter will be useless, we should bail out, even if the
+		 * force_semijoin_push_down guc is set. There might be exceptions, if
+		 * the outer key has restrictions on the key variable, but we won't be
+		 * able to tell until the Plan level. We will be conservative and
+		 * assume that an FK/PK relationship will yield a useless filter.
+		 */
+		if (outer_arg_md->base_column_expr &&
+			inner_arg_md->base_column_expr && is_fk_pk(root, outer_arg_md->base_column_expr,
+													   inner_arg_md->base_column_expr,
+													   equijoin->opno))
+		{
+
+#ifdef TRACE_SORT
+			if (trace_sort)
+				elog(LOG,
+					 "evaluate_semijoin_filtering_rate: inner and outer equijoin columns are PK/FK; semijoin would not be useful.");
+#endif
+			continue;
+		}
+
+		/* Now see if we can push a semijoin to its source scan node  */
+		if (!outer_arg_md->local_column_expr || !inner_arg_md->local_column_expr)
+		{
+#ifdef TRACE_SORT
+			if (trace_sort)
+				elog(LOG,
+					 "evaluate_semijoin_filtering_rate:  could not find a local outer or inner column to use as semijoin basis; semijoin is not valid.");
+#endif
+			continue;
+		}
+
+		if (!verify_valid_pushdown(root, (Path *) (join_path->innerjoinpath),
+								   inner_arg_md->local_column_expr->varno))
+		{
+#ifdef TRACE_SORT
+			if (trace_sort)
+				elog(LOG,
+					 "evaluate_semijoin_filtering_rate: could not find a place to evaluate a semijoin condition; semijoin is not valid.");
+#endif
+			continue;
+		}
+
+		/*
+		 * Adjust cached estimated inner key distinct counts down using the
+		 * inner side tuple count as an upper bound
+		 */
+		inner_arg_md->expr_est_distincts =
+			fmax(1.0, fmin(inner_path->rows,
+						   inner_arg_md->expr_est_distincts));
+
+		/*
+		 * We need to estimate the outer key distinct count as close as
+		 * possible to the where the semijoin filter will actually be applied,
+		 * ignoring the effects of any indirect filtering that would occur
+		 * after the semijoin.
+		 */
+		outer_arg_md->expr_est_distincts =
+			fmax(1.0, fmin(outer_path->rows,
+						   outer_arg_md->expr_est_distincts));
+
+		/*
+		 * If force_mergejoin_semijoin_filter is used, set the default clause
+		 * as the first valid one.
+		 */
+		if (force_mergejoin_semijoin_filter && best_single_col_sj_ordinal == -1)
+		{
+			best_single_col_sj_ordinal = equijoin_ordinal;
+		}
+
+		/* Next, see if this equijoin is valid as a semijoin basis */
+		if (!outer_arg_md->is_or_maps_to_base_column
+			&& !outer_arg_md->is_or_maps_to_constant)
+		{
+#ifdef TRACE_SORT
+			if (trace_sort)
+				elog(LOG,
+					 "evaluate_semijoin_filtering_rate: outer equijoin arg does not map to a base column nor a constant; semijoin is not valid.");
+#endif
+
+			continue;
+		}
+		if (!inner_arg_md->is_or_maps_to_base_column
+			&& !inner_arg_md->is_or_maps_to_constant)
+		{
+#ifdef TRACE_SORT
+			if (trace_sort)
+				elog(LOG,
+					 "evaluate_semijoin_filtering_rate: inner equijoin arg does not map to a base column nor a constant; semijoin is not valid.");
+#endif
+			continue;
+		}
+
+		/* Now we know it's valid, see if this potential semijoin is useful */
+		if (!outer_arg_md->est_distincts_reliable)
+		{
+#ifdef TRACE_SORT
+			if (trace_sort)
+				elog(LOG,
+					 "evaluate_semijoin_filtering_rate:  outer equijoin column's distinct estimates are not reliable; condition rejected.");
+#endif
+			continue;
+		}
+		if (outer_arg_md->est_col_width == 0)
+		{
+#ifdef TRACE_SORT
+			if (trace_sort)
+				elog(LOG,
+					 "evaluate_semijoin_filtering_rate:  outer equijoin column's width estimates are not reliable; condition rejected.");
+#endif
+			continue;
+		}
+		if (outer_arg_md->est_col_width > MAX_SEMIJOIN_SINGLE_KEY_WIDTH)
+		{
+#ifdef TRACE_SORT
+			if (trace_sort)
+				elog(LOG,
+					 "evaluate_semijoin_filtering_rate:  outer equijoin column's width estimates are was excessive; condition rejected.");
+#endif
+			continue;
+		}
+		if (!(outer_arg_md->is_or_maps_to_constant
+			  || (inner_arg_md->is_or_maps_to_base_column
+				  && inner_arg_md->est_distincts_reliable)
+			  || (inner_path->rows
+				  < outer_arg_md->expr_est_distincts)))
+		{
+#ifdef TRACE_SORT
+			if (trace_sort)
+				elog(LOG,
+					 "evaluate_semijoin_filtering_rate: inner equijoin arg does not have a reliable distinct count; condition rejected.");
+#endif
+			continue;
+		}
+
+		/*
+		 * We now try to estimate the filtering rate (1 minus selectivity) and
+		 * rows filtered of the filter. We first start by finding the ranges
+		 * of both the outer and inner var, and find the overlap between these
+		 * ranges. We assume an equal distribution of variables among this
+		 * range, and we can then calculate the amount of filtering our SJF
+		 * would do.
+		 */
+		if (workspace->inner_min_val > workspace->outer_max_val
+			|| workspace->inner_max_val < workspace->outer_min_val)
+		{
+			/*
+			 * This would mean that the outer and inner tuples are completely
+			 * disjoin from each other. We will not be as optimistic, and just
+			 * assign a filtering rate of 95%.
+			 */
+			est_sj_selectivity = 0.05;	/* selectivity is 1 minus filtering
+										 * rate */
+			est_sj_inner_rows_filtered = 0.95 * inner_arg_md->base_rel_filt_row_count;
+		}
+		else
+		{
+#define APPROACH_1_DAMPENING_FACTOR 0.8
+#define APPROACH_2_DAMPENING_FACTOR 0.66
+			/*
+			 * There are two approaches to estimating the filtering rate. We
+			 * have already outlined the first approach above, finding the
+			 * range and assuming an equal distribution. For the second
+			 * approach, we do not assume anything about the distribution, but
+			 * compare the number of distincts. If, for example, the inner
+			 * relation has 1000 distincts and the outer has 500, then there
+			 * is guaranteed to be at least 500 rows filtered from the inner
+			 * relation, regardless of the data distribution. We make an
+			 * assumption here that the distribution of distinct variables is
+			 * equal to the distribution of all rows so we can multiply by the
+			 * ratio of duplicate values. We then take the geometric mean of
+			 * these two approaches for our final estimated filtering rate. We
+			 * also multiply these values by dampening factors, which we have
+			 * found via experimentation and probably need fine-tuning.
+			 */
+			double		approach_1_selectivity; /* finding selectivity instead
+												 * of filtering rate for
+												 * legacy code reasons */
+			double		approach_2_selectivity;
+			double		inner_overlapping_range = Max(0, workspace->outer_max_val - workspace->inner_min_val);
+
+			/* we are assuming an equal distribution of val's */
+			double		inner_overlapping_ratio = Min(1, inner_overlapping_range / inner_arg_md->base_rel_filt_row_count);
+
+			/*
+			 * testing has found that this method is generaly over-optimistic,
+			 * so we multiply by a dampening effect.
+			 */
+			approach_1_selectivity = inner_overlapping_ratio * APPROACH_1_DAMPENING_FACTOR;
+			if (inner_arg_md->expr_est_distincts > outer_arg_md->expr_est_distincts)
+			{
+				int			inner_more_distincts = inner_arg_md->expr_est_distincts - outer_arg_md->expr_est_distincts;
+
+				approach_2_selectivity = 1 - ((double) inner_more_distincts) / inner_arg_md->expr_est_distincts;
+
+				/*
+				 * testing has found that this method is generaly
+				 * over-optimistic, so we multiply by a dampening effect.
+				 */
+				approach_2_selectivity = 1 - ((1 - approach_2_selectivity) * APPROACH_2_DAMPENING_FACTOR);
+			}
+			else
+			{
+				/*
+				 * This means that the outer relation has the same or more
+				 * distincts than the inner relation, which is not good for
+				 * our filtering rate. We will assume a base filtering rate of
+				 * 10% in this case.
+				 */
+				approach_2_selectivity = 0.9;
+			}
+			est_sj_selectivity = sqrt(approach_1_selectivity * approach_2_selectivity);
+			est_sj_inner_rows_filtered = (1 - est_sj_selectivity) * inner_arg_md->base_rel_filt_row_count;
+		}
+		est_sj_selectivity = fmin(1.0, est_sj_selectivity);
+		est_sj_inner_rows_filtered = fmax(1.0, est_sj_inner_rows_filtered);
+
+#ifdef TRACE_SORT
+		if (trace_sort)
+			elog(LOG,
+				 "evaluate_semijoin_filtering_rate: eligible semijoin selectivity: %.7lf; eligible semijoin rows filtered: %.7lf", est_sj_selectivity, est_sj_inner_rows_filtered);
+#endif
+
+		if (est_sj_selectivity < best_sj_selectivity)
+		{
+			best_sj_selectivity = est_sj_selectivity;
+			best_sj_inner_rows_filtered = est_sj_inner_rows_filtered;
+			best_single_col_sj_ordinal = equijoin_ordinal;
+		}
+	}
+
+	if (best_single_col_sj_ordinal != -1)
+	{
+#ifdef TRACE_SORT
+		if (trace_sort)
+			elog(LOG,
+				 "evaluate_semijoin_filtering_rate: best single column sj selectivity: %.7lf; best single column rows filtered: %.7lf", best_sj_selectivity, best_sj_inner_rows_filtered);
+#endif
+	}
+
+	*best_clause = best_single_col_sj_ordinal;
+	*rows_filtered = best_sj_inner_rows_filtered;
+	return 1 - best_sj_selectivity;
+}
+
+/*
+ *  Determine whether a semijoin condition could be pushed from the join
+ *  all the way to the leaf scan node.
+ *
+ *  Parameters:
+ *  node: path node to be considered for semijoin push down.
+ *  target_var:  the inner side join key for a potential semijoin.
+ *  target_relids: relids of all target leaf relations,
+ *  	used only for partitioned table.
+ */
+static bool
+verify_valid_pushdown(PlannerInfo *root, Path *path,
+					  Index target_var_no)
+{
+	Assert(path);
+	Assert(target_var_no > 0);
+
+	/* Guard against stack overflow due to overly complex plan trees */
+	check_stack_depth();
+
+	switch (path->pathtype)
+	{
+			/* directly push through these paths */
+		case T_Material:
+			{
+				return verify_valid_pushdown(root, ((MaterialPath *) path)->subpath, target_var_no);
+			}
+		case T_Gather:
+			{
+				return verify_valid_pushdown(root, ((GatherPath *) path)->subpath, target_var_no);
+			}
+		case T_GatherMerge:
+			{
+				return verify_valid_pushdown(root, ((GatherMergePath *) path)->subpath, target_var_no);
+			}
+		case T_Sort:
+			{
+				return verify_valid_pushdown(root, ((SortPath *) path)->subpath, target_var_no);
+			}
+		case T_Unique:
+			{
+				return verify_valid_pushdown(root, ((UniquePath *) path)->subpath, target_var_no);
+			}
+
+		case T_Agg:
+			{					/* We can directly push bloom through GROUP
+								 * BYs and DISTINCTs, as long as there are no
+								 * grouping sets. However, we cannot validate
+								 * this fact until the Plan has been created.
+								 * We will push through for now, but verify
+								 * again during Plan creation. */
+				return verify_valid_pushdown(root, ((AggPath *) path)->subpath, target_var_no);
+			}
+
+		case T_Append:
+		case T_SubqueryScan:
+			{
+				/*
+				 * Both append and subquery paths are currently unimplemented,
+				 * so we will just return false, but theoretically there are
+				 * ways to check if a filter can be pushed through them. The
+				 * previous HashJoin CR has implemented these cases, but that
+				 * code is run these after the plan has been created, so code
+				 * will need to be adjusted to do it during Path evaluation.
+				 */
+				return false;
+			}
+
+			/* Leaf nodes */
+		case T_IndexScan:
+		case T_BitmapHeapScan:
+			{
+				/*
+				 * We could definitely implement pushdown filters for Index
+				 * and Bitmap Scans, but currently it is only implemented for
+				 * SeqScan. For now, we return false.
+				 */
+				return false;
+			}
+		case T_SeqScan:
+			{
+				/*
+				 * Found source of target var! We know that the pushdown is
+				 * valid now.
+				 */
+				return path->parent->relid == target_var_no;
+			}
+
+		case T_NestLoop:
+		case T_MergeJoin:
+		case T_HashJoin:
+			{
+				/*
+				 * since this is going to be a sub-join, we can push through
+				 * both sides and don't need to worry about left/right/inner
+				 * joins.
+				 */
+				JoinPath   *join = (JoinPath *) path;
+
+				return verify_valid_pushdown(root, join->outerjoinpath, target_var_no) ||
+					verify_valid_pushdown(root, join->innerjoinpath, target_var_no);
+			}
+
+		default:
+			{
+				return false;
+			}
+	}
+}
+
+/*
+ *  Return the nth (starting from 1) entry from the `targetlist`.
+ *
+ * 	If n is larger than the length of `targetlist`, an assertion will fail.
+ */
+static TargetEntry *
+get_nth_targetentry(int n, List *targetlist)
+{
+	int			i = 1;
+	ListCell   *lc = NULL;
+
+	Assert(n > 0);
+	Assert(targetlist && nodeTag(targetlist) == T_List);
+	Assert(list_length(targetlist) >= n);
+
+	if (targetlist && list_length(targetlist) >= n)
+	{
+		foreach(lc, targetlist)
+		{
+			if (i == n)
+			{
+				TargetEntry *te = lfirst(lc);
+
+				return te;
+			}
+			i++;
+		}
+	}
+	return NULL;
+}
+
+/*
+ * expressions_match_foreign_key
+ *		True if the given con_exprs, ref_exprs and operators will exactly
+ *      	reflect the expressions referenced by the given foreign key fk.
+ *
+ * Note: This function expects con_exprs and ref_exprs to only contain Var types.
+ *       Expression indexes are not supported by foreign keys.
+ */
+bool
+expressions_match_foreign_key(ForeignKeyOptInfo *fk,
+							  List *con_exprs,
+							  List *ref_exprs,
+							  List *operators)
+{
+	ListCell   *lc;
+	ListCell   *lc2;
+	ListCell   *lc3;
+	int			col;
+	Bitmapset  *all_vars;
+	Bitmapset  *matched_vars;
+	int			idx;
+
+	Assert(list_length(con_exprs) == list_length(ref_exprs));
+	Assert(list_length(con_exprs) == list_length(operators));
+
+	/*
+	 * Fast path out if there's not enough conditions to match each column in
+	 * the foreign key. Note that we cannot check that the number of
+	 * expressions are equal here since it would cause any expressions which
+	 * are duplicated not to match.
+	 */
+	if (list_length(con_exprs) < fk->nkeys)
+		return false;
+
+	/*
+	 * We need to ensure that each item in con_exprs/ref_exprs can be matched
+	 * to a foreign key column in the actual foreign key data fk. We can do
+	 * this by looping over each fk column and checking that we find a
+	 * matching con_expr/ref_expr in con_exprs/ref_exprs. This method does not
+	 * however, allow us to ensure that there are no additional items in
+	 * con_exprs/ref_exprs that have not been matched. To remedy this we will
+	 * create 2 bitmapsets, one which will keep track of all of the vars, the
+	 * other which will keep track of the vars that we have matched. After
+	 * matching is complete, we will ensure that these bitmapsets are equal to
+	 * ensure we have complete mapping in both directions (fk cols to vars and
+	 * vars to fk cols)
+	 */
+	all_vars = NULL;
+	matched_vars = NULL;
+
+	/*
+	 * Build a bitmapset which tracks all vars by their index
+	 */
+	for (idx = 0; idx < list_length(con_exprs); idx++)
+		all_vars = bms_add_member(all_vars, idx);
+
+	for (col = 0; col < fk->nkeys; col++)
+	{
+		bool		matched = false;
+
+		idx = 0;
+
+		forthree(lc, con_exprs, lc2, ref_exprs, lc3, operators)
+		{
+			Var		   *con_expr = (Var *) lfirst(lc);
+			Var		   *ref_expr = (Var *) lfirst(lc2);
+			Oid			opr = lfirst_oid(lc3);
+
+			Assert(IsA(con_expr, Var));
+			Assert(IsA(ref_expr, Var));
+
+			/* Does this join qual match up to the current fkey column? */
+			if (fk->conkey[col] == con_expr->varattno &&
+				fk->confkey[col] == ref_expr->varattno &&
+				equality_ops_are_compatible(opr, fk->conpfeqop[col]))
+			{
+				matched = true;
+
+				/* mark the index of this var as matched */
+				matched_vars = bms_add_member(matched_vars, idx);
+
+				/*
+				 * Don't break here as there may be duplicate expressions that
+				 * match this column that we also need to mark as matched
+				 */
+			}
+			idx++;
+		}
+
+		/*
+		 * can't remove a join if there's no match to fkey column on join
+		 * condition.
+		 */
+		if (!matched)
+			return false;
+	}
+
+	/*
+	 * Ensure that we managed to match every var in con_var/ref_var to a
+	 * foreign key constraint.
+	 */
+	return bms_equal(all_vars, matched_vars);
+}
+
+/*
+ * Determine if the given outer and inner Exprs satisfy any fk-pk
+ * relationship.
+ */
+static bool
+is_fk_pk(PlannerInfo *root, Var *outer_var,
+		 Var *inner_var, Oid op_oid)
+{
+	ListCell   *lc = NULL;
+	List	   *outer_key_list = list_make1((Var *) outer_var);
+	List	   *inner_key_list = list_make1((Var *) inner_var);
+	List	   *operators = list_make1_oid(op_oid);
+
+	foreach(lc, root->fkey_list)
+	{
+		ForeignKeyOptInfo *fk = (ForeignKeyOptInfo *) lfirst(lc);
+
+		if (expressions_match_foreign_key(fk,
+										  outer_key_list,
+										  inner_key_list,
+										  operators))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/*
+ * get_switched_clauses
+ *	  Given a list of merge or hash joinclauses (as RestrictInfo nodes),
+ *	  extract the bare clauses, and rearrange the elements within the
+ *	  clauses, if needed, so the outer join variable is on the left and
+ *	  the inner is on the right.  The original clause data structure is not
+ *	  touched; a modified list is returned.  We do, however, set the transient
+ *	  outer_is_left field in each RestrictInfo to show which side was which.
+ */
+static List *
+get_switched_clauses(List *clauses, Relids outerrelids)
+{
+	List	   *t_list = NIL;
+	ListCell   *l;
+
+	foreach(l, clauses)
+	{
+		RestrictInfo *restrictinfo = (RestrictInfo *) lfirst(l);
+		OpExpr	   *clause = (OpExpr *) restrictinfo->clause;
+
+		Assert(is_opclause(clause));
+
+		/* TODO: handle the case where the operator doesn't hava a commutator */
+		if (bms_is_subset(restrictinfo->right_relids, outerrelids)
+			&& OidIsValid(get_commutator(clause->opno)))
+		{
+			/*
+			 * Duplicate just enough of the structure to allow commuting the
+			 * clause without changing the original list.  Could use
+			 * copyObject, but a complete deep copy is overkill.
+			 */
+			OpExpr	   *temp = makeNode(OpExpr);
+
+			temp->opno = clause->opno;
+			temp->opfuncid = InvalidOid;
+			temp->opresulttype = clause->opresulttype;
+			temp->opretset = clause->opretset;
+			temp->opcollid = clause->opcollid;
+			temp->inputcollid = clause->inputcollid;
+			temp->args = list_copy(clause->args);
+			temp->location = clause->location;
+			/* Commute it --- note this modifies the temp node in-place. */
+			CommuteOpExpr(temp);
+			t_list = lappend(t_list, temp);
+			restrictinfo->outer_is_left = false;
+		}
+		else
+		{
+			/*
+			 * TODO: check if Assert(bms_is_subset(restrictinfo->left_relids,
+			 * outerrelids)) is necessary.
+			 */
+			t_list = lappend(t_list, clause);
+			restrictinfo->outer_is_left = true;
+		}
+	}
+	return t_list;
 }

@@ -61,6 +61,8 @@ extern PGDLLIMPORT bool enable_nestloop;
 extern PGDLLIMPORT bool enable_material;
 extern PGDLLIMPORT bool enable_memoize;
 extern PGDLLIMPORT bool enable_mergejoin;
+extern PGDLLIMPORT bool enable_mergejoin_semijoin_filter;
+extern PGDLLIMPORT bool force_mergejoin_semijoin_filter;
 extern PGDLLIMPORT bool enable_hashjoin;
 extern PGDLLIMPORT bool enable_gathermerge;
 extern PGDLLIMPORT bool enable_partitionwise_join;
@@ -210,5 +212,49 @@ extern void set_foreign_size_estimates(PlannerInfo *root, RelOptInfo *rel);
 extern PathTarget *set_pathtarget_cost_width(PlannerInfo *root, PathTarget *target);
 extern double compute_bitmap_pages(PlannerInfo *root, RelOptInfo *baserel,
 								   Path *bitmapqual, int loop_count, Cost *cost, double *tuple);
+
+/*
+ *  Container for metadata about an expression, used by semijoin decision logic
+ */
+typedef struct SemiJoinFilterExprMetadata
+{
+	bool		is_or_maps_to_constant;
+	bool		is_or_maps_to_base_column;
+
+	/* Var and relation from the current query block, if it is a Var */
+	Var		   *local_column_expr;
+	RelOptInfo *local_relation;
+
+	int32		est_col_width;
+
+	/*
+	 * The following will be the same as local Var and relation when the local
+	 * relation is a base table (i.e. no occluding query blocks).  Otherwise
+	 * it will be the occluded base column, if the final occluded expression
+	 * is a base column.
+	 */
+	Var		   *base_column_expr;
+	RelOptInfo *base_rel;
+	PlannerInfo *base_rel_root;
+	double		base_rel_row_count;
+	double		base_rel_filt_row_count;
+	double		base_col_distincts;
+	Datum		base_col_min_value;
+	Datum		base_col_max_value;
+
+	/* True if the distinct est is based on something meaningful  */
+	bool		est_distincts_reliable;
+	bool		est_minmax_reliable;
+
+	/* Estimated distincts after local filtering, and row count adjustments */
+	double		expr_est_distincts;
+}			SemiJoinFilterExprMetadata;
+
+extern void analyze_expr_for_metadata(PlannerInfo *root, Expr *ex,
+									  SemiJoinFilterExprMetadata * md);
+extern bool expressions_match_foreign_key(ForeignKeyOptInfo *fk,
+										  List *con_exprs,
+										  List *ref_exprs,
+										  List *operators);
 
 #endif							/* COST_H */

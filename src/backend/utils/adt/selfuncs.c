@@ -2900,12 +2900,18 @@ scalargejoinsel(PG_FUNCTION_ARGS)
  *		*leftend is set to the fraction of the left-hand variable expected
  *		 to be scanned before the join terminates (0 to 1).
  *		*rightstart, *rightend similarly for the right-hand variable.
+ *
+ * 		*leftmin is set to the min value of the left-hand clause.
+ * 		*leftmax is set to the max value of the left-hand clause.
+ * 		*rightmin, *rightmax similarly for the right-hand clause.
  */
 void
 mergejoinscansel(PlannerInfo *root, Node *clause,
 				 Oid opfamily, int strategy, bool nulls_first,
 				 Selectivity *leftstart, Selectivity *leftend,
-				 Selectivity *rightstart, Selectivity *rightend)
+				 Selectivity *rightstart, Selectivity *rightend,
+				 Datum *leftmin, Datum *leftmax,
+				 Datum *rightmin, Datum *rightmax)
 {
 	Node	   *left,
 			   *right;
@@ -2925,10 +2931,6 @@ mergejoinscansel(PlannerInfo *root, Node *clause,
 				revltop,
 				revleop;
 	bool		isgt;
-	Datum		leftmin,
-				leftmax,
-				rightmin,
-				rightmax;
 	double		selec;
 
 	/* Set default results if we can't figure anything out. */
@@ -3075,20 +3077,20 @@ mergejoinscansel(PlannerInfo *root, Node *clause,
 	if (!isgt)
 	{
 		if (!get_variable_range(root, &leftvar, lstatop, collation,
-								&leftmin, &leftmax))
+								leftmin, leftmax))
 			goto fail;			/* no range available from stats */
 		if (!get_variable_range(root, &rightvar, rstatop, collation,
-								&rightmin, &rightmax))
+								rightmin, rightmax))
 			goto fail;			/* no range available from stats */
 	}
 	else
 	{
 		/* need to swap the max and min */
 		if (!get_variable_range(root, &leftvar, lstatop, collation,
-								&leftmax, &leftmin))
+								leftmax, leftmin))
 			goto fail;			/* no range available from stats */
 		if (!get_variable_range(root, &rightvar, rstatop, collation,
-								&rightmax, &rightmin))
+								rightmax, rightmin))
 			goto fail;			/* no range available from stats */
 	}
 
@@ -3098,13 +3100,13 @@ mergejoinscansel(PlannerInfo *root, Node *clause,
 	 * non-default estimates, else stick with our 1.0.
 	 */
 	selec = scalarineqsel(root, leop, isgt, true, collation, &leftvar,
-						  rightmax, op_righttype);
+						  *rightmax, op_righttype);
 	if (selec != DEFAULT_INEQ_SEL)
 		*leftend = selec;
 
 	/* And similarly for the right variable. */
 	selec = scalarineqsel(root, revleop, isgt, true, collation, &rightvar,
-						  leftmax, op_lefttype);
+						  *leftmax, op_lefttype);
 	if (selec != DEFAULT_INEQ_SEL)
 		*rightend = selec;
 
@@ -3128,13 +3130,13 @@ mergejoinscansel(PlannerInfo *root, Node *clause,
 	 * our own default.
 	 */
 	selec = scalarineqsel(root, ltop, isgt, false, collation, &leftvar,
-						  rightmin, op_righttype);
+						  *rightmin, op_righttype);
 	if (selec != DEFAULT_INEQ_SEL)
 		*leftstart = selec;
 
 	/* And similarly for the right variable. */
 	selec = scalarineqsel(root, revltop, isgt, false, collation, &rightvar,
-						  leftmin, op_lefttype);
+						  *leftmin, op_lefttype);
 	if (selec != DEFAULT_INEQ_SEL)
 		*rightstart = selec;
 

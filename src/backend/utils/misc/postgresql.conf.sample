@@ -379,6 +379,8 @@
 #enable_material = on
 #enable_memoize = on
 #enable_mergejoin = on
+#enable_mergejoin_semijoin_filter = on
+#force_mergejoin_semijoin_filter = on
 #enable_nestloop = on
 #enable_parallel_append = on
 #enable_parallel_hash = on

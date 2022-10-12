@@ -886,6 +886,26 @@ struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 	{
+		{"enable_mergejoin_semijoin_filter", PGC_USERSET, QUERY_TUNING_METHOD,
+			gettext_noop("Enables the planner's use of using Semijoin Bloom filters during merge join."),
+			NULL,
+			GUC_EXPLAIN
+		},
+		&enable_mergejoin_semijoin_filter,
+		false,
+		NULL, NULL, NULL
+	},
+	{
+		{"force_mergejoin_semijoin_filter", PGC_USERSET, QUERY_TUNING_METHOD,
+			gettext_noop("Forces the planner's use of using Semijoin Bloom filters during merge join. Overrides enable_mergejoin_semijoin_filter."),
+			NULL,
+			GUC_EXPLAIN
+		},
+		&force_mergejoin_semijoin_filter,
+		false,
+		NULL, NULL, NULL
+	},
+	{
 		{"enable_hashjoin", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables the planner's use of hash join plans."),
 			NULL,

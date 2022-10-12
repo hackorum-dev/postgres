@@ -1960,6 +1960,41 @@ typedef struct NestPath
 } NestPath;
 
 /*
+ * Information used in (Merge)Join node to support semijoin filter pushdowns.
+ */
+typedef struct SemijoinFilterJoinData
+{
+	NodeTag		type;
+	double		est_inner_semijoin_keys_distincts;
+	double		est_outer_semijoin_keys_distincts;
+	double		est_semijoin_selectivity;
+	double		est_semijoin_outer_rows_filtered;
+
+	double		filtering_rate; /* estimated filtering rate of SJF */
+	int			best_mergeclause_pos;	/* best clause index to build SJF on */
+	bool		apply_semijoin_filter;	/* whether semijoin filter should be
+										 * applied */
+
+	int			building_node_id;	/* scan node id where the bloom filter is
+									 * built */
+	int			checking_node_id;	/* scan node id where the bloom filter is
+									 * checked */
+}			SemijoinFilterJoinData;
+
+/*
+ * Information used in Scan node to support semijoin filter pushdowns.
+ */
+typedef struct SemijoinFilterScanData
+{
+	NodeTag		type;
+	bool		is_building_node;	/* True if the bloom filter is built on
+									 * this node; otherwise, the bloom filter
+									 * is checked on this node. */
+	List	   *semijoin_keys;	/* List of keys used to build/check the bloom
+								 * filter. */
+}			SemijoinFilterScanData;
+
+/*
  * A mergejoin path has these fields.
  *
  * Unlike other path types, a MergePath node doesn't represent just a single
@@ -2002,6 +2037,7 @@ typedef struct MergePath
 	List	   *innersortkeys;	/* keys for explicit sort, if any */
 	bool		skip_mark_restore;	/* can executor skip mark/restore? */
 	bool		materialize_inner;	/* add Materialize to inner? */
+	SemijoinFilterJoinData *sj_metadata;
 } MergePath;
 
 /*
@@ -2579,6 +2615,11 @@ typedef struct MergeScanSelCache
 	Selectivity leftendsel;		/* last-join fraction for clause left side */
 	Selectivity rightstartsel;	/* first-join fraction for clause right side */
 	Selectivity rightendsel;	/* last-join fraction for clause right side */
+
+	Datum		leftmin;		/* min value in clause left side */
+	Datum		leftmax;		/* max value in clause left side */
+	Datum		rightmin;		/* min value in clause right side */
+	Datum		rightmax;		/* max value in clause right side */
 } MergeScanSelCache;
 
 /*
@@ -3126,6 +3167,10 @@ typedef struct JoinCostWorkspace
 	Cardinality inner_rows;
 	Cardinality outer_skip_rows;
 	Cardinality inner_skip_rows;
+	Datum		outer_min_val;
+	Datum		outer_max_val;
+	Datum		inner_min_val;
+	Datum		inner_max_val;
 
 	/* private for cost_hashjoin code */
 	int			numbuckets;

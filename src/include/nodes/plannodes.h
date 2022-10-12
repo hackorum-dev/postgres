@@ -21,8 +21,8 @@
 #include "nodes/bitmapset.h"
 #include "nodes/lockoptions.h"
 #include "nodes/parsenodes.h"
+#include "nodes/pathnodes.h"
 #include "nodes/primnodes.h"
-
 
 /* ----------------------------------------------------------------
  *						node definitions
@@ -167,6 +167,9 @@ typedef struct Plan
 	 */
 	Bitmapset  *extParam;
 	Bitmapset  *allParam;
+
+	/* List of SemijoinFilterScanData that gets pushed to this node */
+	List	   *sj_md_list;
 } Plan;
 
 /* ----------------
@@ -844,6 +847,9 @@ typedef struct MergeJoin
 
 	/* per-clause nulls ordering */
 	bool	   *mergeNullsFirst pg_node_attr(array_size(mergeclauses));
+
+	/* Semijoin filter metadata */
+	SemijoinFilterJoinData *sj_metadata;
 } MergeJoin;
 
 /* ----------------
