@@ -1,14 +1,16 @@
 
 # Copyright (c) 2021-2022, PostgreSQL Global Development Group
 
-# Test replication statistics data in pg_stat_replication_slots is sane after
-# drop replication slot and restart.
+# Test replication statistics data in pg_stat_replication_slots
 use strict;
 use warnings;
 use File::Path qw(rmtree);
 use PostgreSQL::Test::Cluster;
 use PostgreSQL::Test::Utils;
 use Test::More;
+
+# Test if statistics data in pg_stat_replication_slots is sane after drop replication
+# slot and restart.
 
 # Test set-up
 my $node = PostgreSQL::Test::Cluster->new('test');
@@ -116,6 +118,86 @@ $node->safe_psql('postgres',
 	"SELECT pg_drop_replication_slot('regression_slot2')");
 
 # shutdown
+$node->stop;
+
+# Test if resetting statistics data in pg_stat_replication_slots while decoding is
+# ongoing works correctly.
+
+# Start pg_recvlogical process and wait for it to become active.
+sub start_pg_recvlogical
+{
+	my ($node, $slot_name, $create_slot) = @_;
+
+	my @cmd = (
+		'pg_recvlogical', '-S', "$slot_name", '-d',
+		$node->connstr('postgres'),
+		'--start', '--no-loop', '-f', '-');
+	push @cmd, '--create-slot' if $create_slot;
+
+	# start pg_recvlogical process.
+	my $pg_recvlogical = IPC::Run::start(@cmd);
+
+	# Wait for the replication slot to become active.
+	$node->poll_query_until('postgres',
+		"SELECT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = '$slot_name' AND active_pid IS NOT NULL)"
+	) or die "slot never became active";
+
+	return $pg_recvlogical;
+}
+
+$node = PostgreSQL::Test::Cluster->new('test2');
+$node->init(allows_streaming => 'logical');
+$node->start;
+$node->safe_psql('postgres', "CREATE TABLE test(i int)");
+
+# Start pg_recvlogical process. The walsender process creates and acquires
+# the replication slot.
+my $slot_name = "regression_slot";
+my $pg_recvlogical = start_pg_recvlogical($node, $slot_name, 1);
+
+# Reset the replication slot statistics.
+$node->safe_psql('postgres',
+	"SELECT pg_stat_reset_replication_slot('$slot_name');");
+my $result = $node->safe_psql('postgres',
+	"SELECT stats_reset IS NOT NULL FROM pg_stat_replication_slots WHERE slot_name = '$slot_name'"
+);
+is($result, "t", "replication slot statistics are reset");
+
+# Test if the walsender properly updates the statistics.
+$node->safe_psql('postgres', "INSERT INTO test VALUES (1)");
+$node->poll_query_until('postgres',
+	"SELECT total_txns > 0 FROM pg_stat_replication_slots WHERE slot_name = '$slot_name'"
+);
+
+# Shutdown
+$pg_recvlogical->kill_kill;
+$node->stop;
+
+# Remove the stats file and restart the server.
+$datadir = $node->data_dir;
+my $stats_file = "$datadir/pg_stat/pgstat.stat";
+unlink($stats_file)
+  or die "could not remove $stats_file";
+$node->start;
+
+# Start pg_recvlogical again.
+$pg_recvlogical = start_pg_recvlogical($node, $slot_name, 0);
+
+# Check if the replication slot statistics have been removed.
+$result = $node->safe_psql('postgres',
+	"SELECT stats_reset IS NULL FROM pg_stat_replication_slots WHERE slot_name = '$slot_name'"
+);
+is($result, "t", "replication slot statistics are removed");
+
+# Test if the replication slot statistics continue to be accumulated even
+# after statistics have been removed.
+$node->safe_psql('postgres', "INSERT INTO test VALUES (1)");
+$node->poll_query_until('postgres',
+	"SELECT total_txns > 0 FROM pg_stat_replication_slots WHERE slot_name = '$slot_name'"
+);
+
+# Shutdown
+$pg_recvlogical->kill_kill;
 $node->stop;
 
 done_testing();
