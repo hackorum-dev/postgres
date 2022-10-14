@@ -105,9 +105,9 @@ refint$(DLSUFFIX): $(top_builddir)/contrib/spi/refint$(DLSUFFIX)
 autoinc$(DLSUFFIX): $(top_builddir)/contrib/spi/autoinc$(DLSUFFIX)
 	cp $< $@
 
-$(top_builddir)/contrib/spi/refint$(DLSUFFIX): | submake-contrib-spi ;
+$(top_builddir)/contrib/spi/refint$(DLSUFFIX): submake-contrib-spi ;
 
-$(top_builddir)/contrib/spi/autoinc$(DLSUFFIX): | submake-contrib-spi ;
+$(top_builddir)/contrib/spi/autoinc$(DLSUFFIX): submake-contrib-spi ;
 
 submake-contrib-spi: | submake-libpgport submake-generated-headers
 	$(MAKE) -C $(top_builddir)/contrib/spi
