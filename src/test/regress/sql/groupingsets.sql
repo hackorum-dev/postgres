@@ -589,4 +589,31 @@ explain (costs off)
 select (select grouping(v1)) from (values ((select 1))) v(v1) group by v1;
 select (select grouping(v1)) from (values ((select 1))) v(v1) group by v1;
 
+-- test duplicate alias used in multiple grouping set specs and sort ordering
+set enable_hashagg=off;
+explain (costs off)
+select i as ai1, i as ai2 from (values (1),(2),(3)) v(i) group by ai1, rollup(ai2) order by ai2, ai1;
+select i as ai1, i as ai2 from (values (1),(2),(3)) v(i) group by ai1, rollup(ai2) order by ai2, ai1;
+explain (costs off)
+select i as ai1, i as ai2 from (values (1),(2),(3)) v(i) group by ai1, rollup(ai2) order by ai1, ai2;
+select i as ai1, i as ai2 from (values (1),(2),(3)) v(i) group by ai1, rollup(ai2) order by ai1, ai2;
+
+explain (costs off)
+select i as ai1, i as ai2 from generate_series(1,3)i group by ai1, rollup(ai2) order by ai2, ai1;
+select i as ai1, i as ai2 from generate_series(1,3)i group by ai1, rollup(ai2) order by ai2, ai1;
+explain (costs off)
+select i as ai1, i as ai2 from generate_series(1,3)i group by ai1, rollup(ai2) order by ai1, ai2;
+select i as ai1, i as ai2 from generate_series(1,3)i group by ai1, rollup(ai2) order by ai1, ai2;
+
+create table gs_dup_alias as
+select i from generate_series(1, 3) i;
+explain (costs off)
+select i as ai1, i as ai2 from gs_dup_alias group by ai1, rollup(ai2) order by ai2, ai1;
+select i as ai1, i as ai2 from gs_dup_alias group by ai1, rollup(ai2) order by ai2, ai1;
+explain (costs off)
+select i as ai1, i as ai2 from gs_dup_alias group by ai1, rollup(ai2) order by ai1, ai2;
+select i as ai1, i as ai2 from gs_dup_alias group by ai1, rollup(ai2) order by ai1, ai2;
+
+reset enable_hashagg;
+
 -- end

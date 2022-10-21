@@ -2932,6 +2932,7 @@ create_incremental_sort_path(PlannerInfo *root,
 	pathnode->path.pathkeys = pathkeys;
 
 	pathnode->subpath = subpath;
+	pathnode->need_evaluation = false;
 
 	cost_incremental_sort(&pathnode->path,
 						  root, pathkeys, presorted_keys,
@@ -2979,6 +2980,7 @@ create_sort_path(PlannerInfo *root,
 	pathnode->path.pathkeys = pathkeys;
 
 	pathnode->subpath = subpath;
+	pathnode->need_evaluation = false;
 
 	cost_sort(&pathnode->path, root, pathkeys,
 			  subpath->total_cost,

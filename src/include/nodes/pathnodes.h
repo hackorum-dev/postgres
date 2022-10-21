@@ -2065,6 +2065,8 @@ typedef struct SortPath
 {
 	Path		path;
 	Path	   *subpath;		/* path representing input source */
+
+	bool		need_evaluation;	/* if sort must re-build from parse tree */
 } SortPath;
 
 /*

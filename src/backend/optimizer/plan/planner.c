@@ -4853,6 +4853,60 @@ create_final_distinct_paths(PlannerInfo *root, RelOptInfo *input_rel,
 }
 
 /*
+ * path_is_sorted
+ *
+ * Check whether the Path satisfies sort requirement or needs evaulation.
+ *
+ * Under normal circumstances it is sufficient to simply check that the
+ * grouping path is at least as sorted as the sort path. However, this is not
+ * the case for multiple grouping sets using duplicate alias columns. The
+ * reason is because the parser removes the duplicate column from the projected
+ * range table targets, which in turn removes it from the group and sort paths.
+ * In that case, require an explict sort that needs evaulation.
+ */
+static bool
+path_is_sorted(PlannerInfo *root,
+			   Path *input_path,
+			   int *presorted_keys,
+			   bool *need_evaluation)
+{
+	*need_evaluation = false;
+
+	if (IsA(input_path, GroupingSetsPath))
+	{
+		ListCell   *lc1,
+				   *lc2,
+				   *lc3;
+		GroupingSetsPath *gspath = (GroupingSetsPath *) input_path;
+
+		if (list_length(gspath->rollups) > 1)
+			*need_evaluation = true;
+
+		foreach(lc1, gspath->rollups)
+		{
+			List	   *groupClause = ((RollupData *) lfirst(lc1))->groupClause;
+
+			if (list_length(groupClause) == list_length(root->parse->sortClause))
+			{
+				forboth(lc2, groupClause, lc3, root->parse->sortClause)
+				{
+					if (!equal(lfirst(lc2), lfirst(lc3)))
+					{
+						*need_evaluation = true;
+						break;
+					}
+				}
+			}
+		}
+	}
+
+	return pathkeys_count_contained_in(root->sort_pathkeys,
+									   input_path->pathkeys, presorted_keys) &&
+		!(*need_evaluation);
+
+}
+
+/*
  * create_ordered_paths
  *
  * Build a new upperrel containing Paths for ORDER BY evaluation.
@@ -4904,10 +4958,12 @@ create_ordered_paths(PlannerInfo *root,
 		Path	   *input_path = (Path *) lfirst(lc);
 		Path	   *sorted_path = input_path;
 		bool		is_sorted;
+		bool		need_evaluation;
 		int			presorted_keys;
 
-		is_sorted = pathkeys_count_contained_in(root->sort_pathkeys,
-												input_path->pathkeys, &presorted_keys);
+		is_sorted = path_is_sorted(root, input_path,
+								   &presorted_keys,
+								   &need_evaluation);
 
 		if (is_sorted)
 		{
@@ -4936,6 +4992,8 @@ create_ordered_paths(PlannerInfo *root,
 														input_path,
 														root->sort_pathkeys,
 														limit_tuples);
+				((SortPath *) sorted_path)->need_evaluation = need_evaluation;
+
 				/* Add projection step if needed */
 				if (sorted_path->pathtarget != target)
 					sorted_path = apply_projection_to_path(root, ordered_rel,
@@ -4965,6 +5023,7 @@ create_ordered_paths(PlannerInfo *root,
 																root->sort_pathkeys,
 																presorted_keys,
 																limit_tuples);
+			((IncrementalSortPath *) sorted_path)->spath.need_evaluation = need_evaluation;
 
 			/* Add projection step if needed */
 			if (sorted_path->pathtarget != target)

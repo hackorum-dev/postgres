@@ -2158,6 +2158,46 @@ change_plan_targetlist(Plan *subplan, List *tlist, bool tlist_parallel_safe)
 }
 
 /*
+ * reevaluate_sort_info
+ *
+ * Build the sort node info from the parse tree.
+ */
+static void
+reevaluate_sort_info(Query *parse, Sort *plan)
+{
+	int			i = 0;
+	ListCell   *l1;
+	ListCell   *l2;
+
+	plan->numCols = list_length(parse->sortClause);
+
+	plan->sortColIdx = palloc(sizeof(int) * plan->numCols);
+	plan->sortOperators = palloc(sizeof(int) * plan->numCols);
+	plan->collations = palloc(sizeof(int) * plan->numCols);
+	plan->nullsFirst = palloc(sizeof(int) * plan->numCols);
+
+	foreach(l1, parse->sortClause)
+	{
+		foreach(l2, parse->targetList)
+		{
+			SortGroupClause *sortClause = (SortGroupClause *) lfirst(l1);
+			TargetEntry *targetEntry = (TargetEntry *) lfirst(l2);
+
+			if (sortClause->tleSortGroupRef == targetEntry->ressortgroupref)
+			{
+				plan->sortColIdx[i] = targetEntry->resno;
+				plan->sortOperators[i] = sortClause->sortop;
+				plan->collations[i] = exprCollation((Node *) targetEntry->expr);
+				plan->nullsFirst[i] = sortClause->nulls_first;
+
+				i++;
+				break;
+			}
+		}
+	}
+}
+
+/*
  * create_sort_plan
  *
  *	  Create a Sort plan for 'best_path' and (recursively) plans
@@ -2187,6 +2227,9 @@ create_sort_plan(PlannerInfo *root, SortPath *best_path, int flags)
 								   IS_OTHER_REL(best_path->subpath->parent) ?
 								   best_path->path.parent->relids : NULL);
 
+	if (best_path->need_evaluation)
+		reevaluate_sort_info(root->parse, plan);
+
 	copy_generic_path_info(&plan->plan, (Path *) best_path);
 
 	return plan;
@@ -2212,6 +2255,9 @@ create_incrementalsort_plan(PlannerInfo *root, IncrementalSortPath *best_path,
 											  IS_OTHER_REL(best_path->spath.subpath->parent) ?
 											  best_path->spath.path.parent->relids : NULL,
 											  best_path->nPresortedCols);
+
+	if (best_path->spath.need_evaluation)
+		reevaluate_sort_info(root->parse, &plan->sort);
 
 	copy_generic_path_info(&plan->sort.plan, (Path *) best_path);
 

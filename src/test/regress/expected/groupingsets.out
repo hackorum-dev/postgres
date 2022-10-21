@@ -2151,4 +2151,154 @@ select (select grouping(v1)) from (values ((select 1))) v(v1) group by v1;
         0
 (1 row)
 
+-- test duplicate alias used in multiple grouping set specs and sort ordering
+set enable_hashagg=off;
+explain (costs off)
+select i as ai1, i as ai2 from (values (1),(2),(3)) v(i) group by ai1, rollup(ai2) order by ai2, ai1;
+                        QUERY PLAN                         
+-----------------------------------------------------------
+ Sort
+   Sort Key: "*VALUES*".column1, "*VALUES*".column1
+   ->  GroupAggregate
+         Group Key: "*VALUES*".column1, "*VALUES*".column1
+         Group Key: "*VALUES*".column1
+         ->  Sort
+               Sort Key: "*VALUES*".column1
+               ->  Values Scan on "*VALUES*"
+(8 rows)
+
+select i as ai1, i as ai2 from (values (1),(2),(3)) v(i) group by ai1, rollup(ai2) order by ai2, ai1;
+ ai1 | ai2 
+-----+-----
+   1 |   1
+   2 |   2
+   3 |   3
+   1 |    
+   2 |    
+   3 |    
+(6 rows)
+
+explain (costs off)
+select i as ai1, i as ai2 from (values (1),(2),(3)) v(i) group by ai1, rollup(ai2) order by ai1, ai2;
+                     QUERY PLAN                      
+-----------------------------------------------------
+ GroupAggregate
+   Group Key: "*VALUES*".column1, "*VALUES*".column1
+   Group Key: "*VALUES*".column1
+   ->  Sort
+         Sort Key: "*VALUES*".column1
+         ->  Values Scan on "*VALUES*"
+(6 rows)
+
+select i as ai1, i as ai2 from (values (1),(2),(3)) v(i) group by ai1, rollup(ai2) order by ai1, ai2;
+ ai1 | ai2 
+-----+-----
+   1 |   1
+   1 |    
+   2 |   2
+   2 |    
+   3 |   3
+   3 |    
+(6 rows)
+
+explain (costs off)
+select i as ai1, i as ai2 from generate_series(1,3)i group by ai1, rollup(ai2) order by ai2, ai1;
+                      QUERY PLAN                      
+------------------------------------------------------
+ Sort
+   Sort Key: i, i
+   ->  GroupAggregate
+         Group Key: i, i
+         Group Key: i
+         ->  Sort
+               Sort Key: i
+               ->  Function Scan on generate_series i
+(8 rows)
+
+select i as ai1, i as ai2 from generate_series(1,3)i group by ai1, rollup(ai2) order by ai2, ai1;
+ ai1 | ai2 
+-----+-----
+   1 |   1
+   2 |   2
+   3 |   3
+   1 |    
+   2 |    
+   3 |    
+(6 rows)
+
+explain (costs off)
+select i as ai1, i as ai2 from generate_series(1,3)i group by ai1, rollup(ai2) order by ai1, ai2;
+                   QUERY PLAN                   
+------------------------------------------------
+ GroupAggregate
+   Group Key: i, i
+   Group Key: i
+   ->  Sort
+         Sort Key: i
+         ->  Function Scan on generate_series i
+(6 rows)
+
+select i as ai1, i as ai2 from generate_series(1,3)i group by ai1, rollup(ai2) order by ai1, ai2;
+ ai1 | ai2 
+-----+-----
+   1 |   1
+   1 |    
+   2 |   2
+   2 |    
+   3 |   3
+   3 |    
+(6 rows)
+
+create table gs_dup_alias as
+select i from generate_series(1, 3) i;
+explain (costs off)
+select i as ai1, i as ai2 from gs_dup_alias group by ai1, rollup(ai2) order by ai2, ai1;
+                 QUERY PLAN                 
+--------------------------------------------
+ Incremental Sort
+   Sort Key: i, i
+   Presorted Key: i
+   ->  GroupAggregate
+         Group Key: i, i
+         Group Key: i
+         ->  Sort
+               Sort Key: i
+               ->  Seq Scan on gs_dup_alias
+(9 rows)
+
+select i as ai1, i as ai2 from gs_dup_alias group by ai1, rollup(ai2) order by ai2, ai1;
+ ai1 | ai2 
+-----+-----
+   1 |   1
+   2 |   2
+   3 |   3
+   1 |    
+   2 |    
+   3 |    
+(6 rows)
+
+explain (costs off)
+select i as ai1, i as ai2 from gs_dup_alias group by ai1, rollup(ai2) order by ai1, ai2;
+              QUERY PLAN              
+--------------------------------------
+ GroupAggregate
+   Group Key: i, i
+   Group Key: i
+   ->  Sort
+         Sort Key: i
+         ->  Seq Scan on gs_dup_alias
+(6 rows)
+
+select i as ai1, i as ai2 from gs_dup_alias group by ai1, rollup(ai2) order by ai1, ai2;
+ ai1 | ai2 
+-----+-----
+   1 |   1
+   1 |    
+   2 |   2
+   2 |    
+   3 |   3
+   3 |    
+(6 rows)
+
+reset enable_hashagg;
 -- end
