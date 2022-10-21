@@ -34,10 +34,12 @@ SELECT 'À'::citext <> 'B'::citext AS t;
 SELECT 'Ä'::text   <> 'Ä'::text   AS t;
 SELECT 'Ä'::citext <> 'Ä'::citext AS t;
 
--- Test the Turkish dotted I. The lowercase is a single byte while the
+-- Test the Turkish dotted I. The lowercase might be a single byte while the
 -- uppercase is multibyte. This is why the comparison code can't be optimized
 -- to compare string lengths.
-SELECT 'i'::citext = 'İ'::citext AS t;
+-- Note that lower('İ') is 'i' (U+0069) in tr and az locales,
+-- but 'i̇' (U+0069 U+0307) in C and most (all?) other locales.
+SELECT 'İ'::citext in ('i'::citext, 'i̇'::citext) AS t;
 
 -- Regression.
 SELECT 'láska'::citext <> 'laská'::citext AS t;
