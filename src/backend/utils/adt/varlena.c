@@ -1521,6 +1521,8 @@ varstr_cmp(const char *arg1, int len1, const char *arg2, int len2, Oid collid)
 
 	check_collation_set(collid);
 
+	elog(NOTICE, "varstr_cmp lc_collate_is_c(collid) %d", lc_collate_is_c(collid));
+
 	/*
 	 * Unfortunately, there is no strncoll(), so in the non-C locale case we
 	 * have to do some memory copying.  This turns out to be significantly
@@ -1542,6 +1544,14 @@ varstr_cmp(const char *arg1, int len1, const char *arg2, int len2, Oid collid)
 		pg_locale_t mylocale;
 
 		mylocale = pg_newlocale_from_collation(collid);
+
+		elog(NOTICE, "varstr_cmp mylocale %p", mylocale);
+		if (mylocale)
+		{
+			elog(NOTICE, "varstr_cmp mylocale->provider %c", mylocale->provider);
+			if (mylocale->provider == COLLPROVIDER_ICU)
+				elog(NOTICE, "varstr_cmp mylocale->info.icu.locale %s", mylocale->info.icu.locale ? mylocale->info.icu.locale : "(null)");
+		}
 
 		/*
 		 * memcmp() can't tell us which of two unequal strings sorts first,
@@ -2377,6 +2387,14 @@ varstrfastcmp_locale(char *a1p, int len1, char *a2p, int len2, SortSupport ssup)
 		return sss->last_returned;
 	}
 
+	elog(NOTICE, "varstrfastcmp_locale sss->collate_c %d sss->locale %p", sss->collate_c, sss->locale);
+	if (sss->locale)
+	{
+		elog(NOTICE, "varstrfastcmp_locale sss->locale->provider %c", sss->locale->provider);
+		if (sss->locale->provider == COLLPROVIDER_ICU)
+			elog(NOTICE, "varstrfastcmp_locale sss->locale->info.icu.locale %s", sss->locale->info.icu.locale ? sss->locale->info.icu.locale : "(null)");
+	}
+
 	if (sss->locale)
 	{
 		if (sss->locale->provider == COLLPROVIDER_ICU)
@@ -2471,6 +2489,14 @@ varstr_abbrev_convert(Datum original, SortSupport ssup)
 	/* Get number of bytes, ignoring trailing spaces */
 	if (sss->typid == BPCHAROID)
 		len = bpchartruelen(authoritative_data, len);
+
+	elog(NOTICE, "varstr_abbrev_convert sss->collate_c %d sss->locale %p", sss->collate_c, sss->locale);
+	if (sss->locale)
+	{
+		elog(NOTICE, "varstr_abbrev_convert sss->locale->provider %c", sss->locale->provider);
+		if (sss->locale->provider == COLLPROVIDER_ICU)
+			elog(NOTICE, "varstr_abbrev_convert sss->locale->info.icu.locale %s", sss->locale->info.icu.locale ? sss->locale->info.icu.locale : "(null)");
+	}
 
 	/*
 	 * If we're using the C collation, use memcpy(), rather than strxfrm(), to

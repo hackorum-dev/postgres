@@ -243,6 +243,8 @@ pg_set_regex_collation(Oid collation)
 				 errhint("Use the COLLATE clause to set the collation explicitly.")));
 	}
 
+	elog(NOTICE, "pg_set_regex_collation lc_ctype_is_c(collid) %d", lc_ctype_is_c(collation));
+
 	if (lc_ctype_is_c(collation))
 	{
 		/* C/POSIX collations use this path regardless of database encoding */
@@ -258,6 +260,14 @@ pg_set_regex_collation(Oid collation)
 		 * be considered below.
 		 */
 		pg_regex_locale = pg_newlocale_from_collation(collation);
+
+		elog(NOTICE, "pg_set_regex_collation pg_regex_locale %p", pg_regex_locale);
+		if (pg_regex_locale)
+		{
+			elog(NOTICE, "pg_set_regex_collation pg_regex_locale->provider %c", pg_regex_locale->provider);
+			if (pg_regex_locale->provider == COLLPROVIDER_ICU)
+				elog(NOTICE, "pg_set_regex_collation pg_regex_locale->info.icu.locale %s", pg_regex_locale->info.icu.locale ? pg_regex_locale->info.icu.locale : "(null)");
+		}
 
 		if (pg_regex_locale && !pg_regex_locale->deterministic)
 			ereport(ERROR,

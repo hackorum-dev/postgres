@@ -1682,6 +1682,8 @@ str_tolower(const char *buff, size_t nbytes, Oid collid)
 				 errhint("Use the COLLATE clause to set the collation explicitly.")));
 	}
 
+	elog(NOTICE, "str_tolower lc_ctype_is_c(collid) %d", lc_ctype_is_c(collid));
+
 	/* C/POSIX collations use this path regardless of database encoding */
 	if (lc_ctype_is_c(collid))
 	{
@@ -1692,6 +1694,14 @@ str_tolower(const char *buff, size_t nbytes, Oid collid)
 		pg_locale_t mylocale;
 
 		mylocale = pg_newlocale_from_collation(collid);
+
+		elog(NOTICE, "str_tolower mylocale %p", mylocale);
+		if (mylocale)
+		{
+			elog(NOTICE, "str_tolower mylocale->provider %c", mylocale->provider);
+			if (mylocale->provider == COLLPROVIDER_ICU)
+				elog(NOTICE, "str_tolower mylocale->info.icu.locale %s", mylocale->info.icu.locale ? mylocale->info.icu.locale : "(null)");
+		}
 
 #ifdef USE_ICU
 		if (mylocale && mylocale->provider == COLLPROVIDER_ICU)
@@ -1804,6 +1814,8 @@ str_toupper(const char *buff, size_t nbytes, Oid collid)
 				 errhint("Use the COLLATE clause to set the collation explicitly.")));
 	}
 
+	elog(NOTICE, "str_toupper lc_ctype_is_c(collid) %d", lc_ctype_is_c(collid));
+
 	/* C/POSIX collations use this path regardless of database encoding */
 	if (lc_ctype_is_c(collid))
 	{
@@ -1814,6 +1826,14 @@ str_toupper(const char *buff, size_t nbytes, Oid collid)
 		pg_locale_t mylocale;
 
 		mylocale = pg_newlocale_from_collation(collid);
+
+		elog(NOTICE, "str_toupper mylocale %p", mylocale);
+		if (mylocale)
+		{
+			elog(NOTICE, "str_toupper mylocale->provider %c", mylocale->provider);
+			if (mylocale->provider == COLLPROVIDER_ICU)
+				elog(NOTICE, "str_toupper mylocale->info.icu.locale %s", mylocale->info.icu.locale ? mylocale->info.icu.locale : "(null)");
+		}
 
 #ifdef USE_ICU
 		if (mylocale && mylocale->provider == COLLPROVIDER_ICU)
@@ -1927,6 +1947,8 @@ str_initcap(const char *buff, size_t nbytes, Oid collid)
 				 errhint("Use the COLLATE clause to set the collation explicitly.")));
 	}
 
+	elog(NOTICE, "str_initcap lc_ctype_is_c(collid) %d", lc_ctype_is_c(collid));
+
 	/* C/POSIX collations use this path regardless of database encoding */
 	if (lc_ctype_is_c(collid))
 	{
@@ -1937,6 +1959,14 @@ str_initcap(const char *buff, size_t nbytes, Oid collid)
 		pg_locale_t mylocale;
 
 		mylocale = pg_newlocale_from_collation(collid);
+
+		elog(NOTICE, "str_initcap mylocale %p", mylocale);
+		if (mylocale)
+		{
+			elog(NOTICE, "str_initcap mylocale->provider %c", mylocale->provider);
+			if (mylocale->provider == COLLPROVIDER_ICU)
+				elog(NOTICE, "str_initcap mylocale->info.icu.locale %s", mylocale->info.icu.locale ? mylocale->info.icu.locale : "(null)");
+		}
 
 #ifdef USE_ICU
 		if (mylocale && mylocale->provider == COLLPROVIDER_ICU)
