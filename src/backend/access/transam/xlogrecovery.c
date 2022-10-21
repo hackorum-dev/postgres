@@ -4331,6 +4331,7 @@ XLogFileReadAnyTLI(XLogSegNo segno, XLogSource source)
 	{
 		TimeLineHistoryEntry *hent = (TimeLineHistoryEntry *) lfirst(cell);
 		TimeLineID	tli = hent->tli;
+		XLogSegNo	beginseg = 0;
 
 		if (tli < curFileTLI)
 			break;				/* don't bother looking at too-old TLIs */
@@ -4341,7 +4342,6 @@ XLogFileReadAnyTLI(XLogSegNo segno, XLogSource source)
 		 */
 		if (XLogRecPtrIsValid(hent->begin))
 		{
-			XLogSegNo	beginseg = 0;
 
 			XLByteToSeg(hent->begin, beginseg, wal_segment_size);
 
@@ -4381,6 +4381,14 @@ XLogFileReadAnyTLI(XLogSegNo segno, XLogSource source)
 				return fd;
 			}
 		}
+
+		/*
+		 * For segments containing known timeline switches only consider the
+		 * last timeline as redo otherwise doesn't know when to switch
+		 * timelines.
+		 */
+		if (segno == beginseg && beginseg > 0)
+			break;
 	}
 
 	/* Couldn't find it.  For simplicity, complain about front timeline */
