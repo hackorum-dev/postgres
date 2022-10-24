@@ -1185,7 +1185,7 @@ ineq_histogram_selectivity(PlannerInfo *root,
 
 			while (lobound < hibound)
 			{
-				int			probe = (lobound + hibound) / 2;
+				int			probe = (lobound + hibound - 1) / 2;
 				bool		ltcmp;
 
 				/*
