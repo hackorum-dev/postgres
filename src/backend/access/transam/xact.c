@@ -197,7 +197,6 @@ typedef struct TransactionStateData
 	FullTransactionId fullTransactionId;	/* my FullTransactionId */
 	SubTransactionId subTransactionId;	/* my subxact ID */
 	char	   *name;			/* savepoint name, if any */
-	int			savepointLevel; /* savepoint level */
 	TransState	state;			/* low-level state */
 	TBlockState blockState;		/* high-level state */
 	int			nestingLevel;	/* transaction nesting depth */
@@ -3439,12 +3438,10 @@ CommitTransactionCommandInternal(void)
 		case TBLOCK_SUBRESTART:
 			{
 				char	   *name;
-				int			savepointLevel;
 
 				/* save name and keep Cleanup from freeing it */
 				name = s->name;
 				s->name = NULL;
-				savepointLevel = s->savepointLevel;
 
 				AbortSubTransaction();
 				CleanupSubTransaction();
@@ -3452,7 +3449,6 @@ CommitTransactionCommandInternal(void)
 				DefineSavepoint(NULL);
 				s = CurrentTransactionState;	/* changed by push */
 				s->name = name;
-				s->savepointLevel = savepointLevel;
 
 				/* This is the same as TBLOCK_SUBBEGIN case */
 				Assert(s->blockState == TBLOCK_SUBBEGIN);
@@ -3468,19 +3464,16 @@ CommitTransactionCommandInternal(void)
 		case TBLOCK_SUBABORT_RESTART:
 			{
 				char	   *name;
-				int			savepointLevel;
 
 				/* save name and keep Cleanup from freeing it */
 				name = s->name;
 				s->name = NULL;
-				savepointLevel = s->savepointLevel;
 
 				CleanupSubTransaction();
 
 				DefineSavepoint(NULL);
 				s = CurrentTransactionState;	/* changed by push */
 				s->name = name;
-				s->savepointLevel = savepointLevel;
 
 				/* This is the same as TBLOCK_SUBBEGIN case */
 				Assert(s->blockState == TBLOCK_SUBBEGIN);
@@ -4587,11 +4580,6 @@ ReleaseSavepoint(const char *name)
 				(errcode(ERRCODE_S_E_INVALID_SPECIFICATION),
 				 errmsg("savepoint \"%s\" does not exist", name)));
 
-	/* disallow crossing savepoint level boundaries */
-	if (target->savepointLevel != s->savepointLevel)
-		ereport(ERROR,
-				(errcode(ERRCODE_S_E_INVALID_SPECIFICATION),
-				 errmsg("savepoint \"%s\" does not exist within current savepoint level", name)));
 
 	/*
 	 * Mark "commit pending" all subtransactions up to the target
@@ -4696,11 +4684,6 @@ RollbackToSavepoint(const char *name)
 				(errcode(ERRCODE_S_E_INVALID_SPECIFICATION),
 				 errmsg("savepoint \"%s\" does not exist", name)));
 
-	/* disallow crossing savepoint level boundaries */
-	if (target->savepointLevel != s->savepointLevel)
-		ereport(ERROR,
-				(errcode(ERRCODE_S_E_INVALID_SPECIFICATION),
-				 errmsg("savepoint \"%s\" does not exist within current savepoint level", name)));
 
 	/*
 	 * Mark "abort pending" all subtransactions up to the target
@@ -5507,7 +5490,6 @@ PushTransaction(void)
 	s->parent = p;
 	s->nestingLevel = p->nestingLevel + 1;
 	s->gucNestLevel = NewGUCNestLevel();
-	s->savepointLevel = p->savepointLevel;
 	s->state = TRANS_DEFAULT;
 	s->blockState = TBLOCK_SUBBEGIN;
 	GetUserIdAndSecContext(&s->prevUser, &s->prevSecContext);
