@@ -31,9 +31,6 @@ extern RestrictInfo *make_restrictinfo(PlannerInfo *root,
 									   Relids outer_relids,
 									   Relids nullable_relids);
 extern RestrictInfo *commute_restrictinfo(RestrictInfo *rinfo, Oid comm_op);
-extern bool restriction_is_or_clause(RestrictInfo *restrictinfo);
-extern bool restriction_is_securely_promotable(RestrictInfo *restrictinfo,
-											   RelOptInfo *rel);
 extern List *get_actual_clauses(List *restrictinfo_list);
 extern List *extract_actual_clauses(List *restrictinfo_list,
 									bool pseudoconstant);
@@ -45,5 +42,34 @@ extern bool join_clause_is_movable_to(RestrictInfo *rinfo, RelOptInfo *baserel);
 extern bool join_clause_is_movable_into(RestrictInfo *rinfo,
 										Relids currentrelids,
 										Relids current_and_outer);
+
+/*
+ * restriction_is_or_clause
+ *
+ * Returns true iff the restrictinfo node contains an 'or' clause.
+ */
+static inline bool
+restriction_is_or_clause(RestrictInfo *restrictinfo)
+{
+	return (restrictinfo->orclause != NULL);
+}
+
+/*
+ * restriction_is_securely_promotable
+ *
+ * Returns true if it's okay to evaluate this clause "early", that is before
+ * other restriction clauses attached to the specified relation.
+ */
+static inline bool
+restriction_is_securely_promotable(RestrictInfo *restrictinfo,
+								   RelOptInfo *rel)
+{
+	/*
+	 * It's okay if there are no baserestrictinfo clauses for the rel that
+	 * would need to go before this one, *or* if this one is leakproof.
+	 */
+	return (restrictinfo->security_level <= rel->baserestrict_min_security ||
+			restrictinfo->leakproof);
+}
 
 #endif							/* RESTRICTINFO_H */

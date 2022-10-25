@@ -376,41 +376,6 @@ commute_restrictinfo(RestrictInfo *rinfo, Oid comm_op)
 }
 
 /*
- * restriction_is_or_clause
- *
- * Returns t iff the restrictinfo node contains an 'or' clause.
- */
-bool
-restriction_is_or_clause(RestrictInfo *restrictinfo)
-{
-	if (restrictinfo->orclause != NULL)
-		return true;
-	else
-		return false;
-}
-
-/*
- * restriction_is_securely_promotable
- *
- * Returns true if it's okay to evaluate this clause "early", that is before
- * other restriction clauses attached to the specified relation.
- */
-bool
-restriction_is_securely_promotable(RestrictInfo *restrictinfo,
-								   RelOptInfo *rel)
-{
-	/*
-	 * It's okay if there are no baserestrictinfo clauses for the rel that
-	 * would need to go before this one, *or* if this one is leakproof.
-	 */
-	if (restrictinfo->security_level <= rel->baserestrict_min_security ||
-		restrictinfo->leakproof)
-		return true;
-	else
-		return false;
-}
-
-/*
  * get_actual_clauses
  *
  * Returns a list containing the bare clauses from 'restrictinfo_list'.
