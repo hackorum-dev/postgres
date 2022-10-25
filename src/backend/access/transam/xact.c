@@ -755,10 +755,6 @@ AssignTransactionId(TransactionState s)
 		unreportedXids[nUnreportedXids] = XidFromFullTransactionId(s->fullTransactionId);
 		nUnreportedXids++;
 
-		/*
-		 * ensure this test matches similar one in
-		 * RecoverPreparedTransactions()
-		 */
 		if (nUnreportedXids >= PGPROC_MAX_CACHED_SUBXIDS ||
 			log_unknown_top)
 		{
