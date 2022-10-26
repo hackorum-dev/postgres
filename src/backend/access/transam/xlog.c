@@ -8311,9 +8311,7 @@ do_pg_backup_start(const char *backupidstr, bool fast, List **tablespaces,
 	 * runningBackups, to ensure adequate interlocking against
 	 * XLogInsertRecord().
 	 */
-	WALInsertLockAcquireExclusive();
-	XLogCtl->Insert.runningBackups++;
-	WALInsertLockRelease();
+	XLogBackupSetRunning();
 
 	/*
 	 * Ensure we decrement runningBackups if we fail below. NB -- for this to
@@ -8383,12 +8381,8 @@ do_pg_backup_start(const char *backupidstr, bool fast, List **tablespaces,
 			 * to restore starting from the checkpoint is precisely the REDO
 			 * pointer.
 			 */
-			LWLockAcquire(ControlFileLock, LW_SHARED);
-			state->checkpointloc = ControlFile->checkPoint;
-			state->startpoint = ControlFile->checkPointCopy.redo;
-			state->starttli = ControlFile->checkPointCopy.ThisTimeLineID;
-			checkpointfpw = ControlFile->checkPointCopy.fullPageWrites;
-			LWLockRelease(ControlFileLock);
+			GetCheckpointLocation(&state->checkpointloc, &state->startpoint,
+								  &state->starttli, &checkpointfpw);
 
 			if (backup_started_in_recovery)
 			{
@@ -8399,9 +8393,7 @@ do_pg_backup_start(const char *backupidstr, bool fast, List **tablespaces,
 				 * (i.e., since last restartpoint used as backup starting
 				 * checkpoint) contain full-page writes.
 				 */
-				SpinLockAcquire(&XLogCtl->info_lck);
-				recptr = XLogCtl->lastFpwDisableRecPtr;
-				SpinLockRelease(&XLogCtl->info_lck);
+				recptr = XLogGetLastFPWDisableRecptr();
 
 				if (!checkpointfpw || state->startpoint <= recptr)
 					ereport(ERROR,
@@ -8434,13 +8426,7 @@ do_pg_backup_start(const char *backupidstr, bool fast, List **tablespaces,
 			 * taking a checkpoint right after another is not that expensive
 			 * either because only few buffers have been dirtied yet.
 			 */
-			WALInsertLockAcquireExclusive();
-			if (XLogCtl->Insert.lastBackupStart < state->startpoint)
-			{
-				XLogCtl->Insert.lastBackupStart = state->startpoint;
-				gotUniqueStartpoint = true;
-			}
-			WALInsertLockRelease();
+			gotUniqueStartpoint = XLogBackupSetLastStart(state->startpoint);
 		} while (!gotUniqueStartpoint);
 
 		/*
@@ -8550,6 +8536,15 @@ get_backup_status(void)
 }
 
 /*
+ * Utility routine to reset the session-level status of a backup running.
+ */
+void
+reset_backup_status(void)
+{
+	sessionBackupState = SESSION_BACKUP_NONE;
+}
+
+/*
  * do_pg_backup_stop
  *
  * Utility function called at the end of an online backup.  It creates history
@@ -8590,33 +8585,16 @@ do_pg_backup_stop(BackupState *state, bool waitforarchive)
 				 errhint("wal_level must be set to \"replica\" or \"logical\" at server start.")));
 
 	/*
-	 * OK to update backup counter and session-level lock.
+	 * OK to reset backup counter and session-level lock.
 	 *
 	 * Note that CHECK_FOR_INTERRUPTS() must not occur while updating them,
 	 * otherwise they can be updated inconsistently, which might cause
 	 * do_pg_abort_backup() to fail.
-	 */
-	WALInsertLockAcquireExclusive();
-
-	/*
+	 *
 	 * It is expected that each do_pg_backup_start() call is matched by
 	 * exactly one do_pg_backup_stop() call.
 	 */
-	Assert(XLogCtl->Insert.runningBackups > 0);
-	XLogCtl->Insert.runningBackups--;
-
-	/*
-	 * Clean up session-level lock.
-	 *
-	 * You might think that WALInsertLockRelease() can be called before
-	 * cleaning up session-level lock because session-level lock doesn't need
-	 * to be protected with WAL insertion lock. But since
-	 * CHECK_FOR_INTERRUPTS() can occur in it, session-level lock must be
-	 * cleaned up before it.
-	 */
-	sessionBackupState = SESSION_BACKUP_NONE;
-
-	WALInsertLockRelease();
+	XLogBackupResetRunning();
 
 	/*
 	 * If we are taking an online backup from the standby, we confirm that the
@@ -8666,9 +8644,7 @@ do_pg_backup_stop(BackupState *state, bool waitforarchive)
 		 * Check to see if all WAL replayed during online backup contain
 		 * full-page writes.
 		 */
-		SpinLockAcquire(&XLogCtl->info_lck);
-		recptr = XLogCtl->lastFpwDisableRecPtr;
-		SpinLockRelease(&XLogCtl->info_lck);
+		recptr = XLogGetLastFPWDisableRecptr();
 
 		if (state->startpoint <= recptr)
 			ereport(ERROR,
@@ -8681,10 +8657,7 @@ do_pg_backup_stop(BackupState *state, bool waitforarchive)
 							 "and then try an online backup again.")));
 
 
-		LWLockAcquire(ControlFileLock, LW_SHARED);
-		state->stoppoint = ControlFile->minRecoveryPoint;
-		state->stoptli = ControlFile->minRecoveryPointTLI;
-		LWLockRelease(ControlFileLock);
+		XLogGetMinRecoveryPoint(&state->stoppoint, &state->stoptli);
 	}
 	else
 	{
@@ -8702,7 +8675,7 @@ do_pg_backup_stop(BackupState *state, bool waitforarchive)
 		 * Given that we're not in recovery, InsertTimeLineID is set and can't
 		 * change, so we can read it without a lock.
 		 */
-		state->stoptli = XLogCtl->InsertTimeLineID;
+		state->stoptli = GetWALInsertionTimeLine();
 
 		/*
 		 * Force a switch to a new xlog segment file, so that the backup is
@@ -8846,12 +8819,7 @@ do_pg_abort_backup(int code, Datum arg)
 
 	if (during_backup_start || sessionBackupState != SESSION_BACKUP_NONE)
 	{
-		WALInsertLockAcquireExclusive();
-		Assert(XLogCtl->Insert.runningBackups > 0);
-		XLogCtl->Insert.runningBackups--;
-
-		sessionBackupState = SESSION_BACKUP_NONE;
-		WALInsertLockRelease();
+		XLogBackupResetRunning();
 
 		if (!during_backup_start)
 			ereport(WARNING,
@@ -8872,6 +8840,107 @@ register_persistent_abort_backup_handler(void)
 		return;
 	before_shmem_exit(do_pg_abort_backup, DatumGetBool(false));
 	already_done = true;
+}
+
+/*
+ * Get the checkpoint location.
+ */
+void
+GetCheckpointLocation(XLogRecPtr *loc, XLogRecPtr *redoloc,
+					  TimeLineID *tli, bool *fpw)
+{
+	LWLockAcquire(ControlFileLock, LW_SHARED);
+	*loc = ControlFile->checkPoint;
+	*redoloc = ControlFile->checkPointCopy.redo;
+	*tli = ControlFile->checkPointCopy.ThisTimeLineID;
+	*fpw = ControlFile->checkPointCopy.fullPageWrites;
+	LWLockRelease(ControlFileLock);
+}
+
+/*
+ * Get the minRecoveryPoint and minRecoveryPointTLI.
+ */
+void
+XLogGetMinRecoveryPoint(XLogRecPtr *loc, TimeLineID *tli)
+{
+	LWLockAcquire(ControlFileLock, LW_SHARED);
+	*loc = ControlFile->minRecoveryPoint;
+	*tli = ControlFile->minRecoveryPointTLI;
+	LWLockRelease(ControlFileLock);
+}
+
+/*
+ * Get the lastFpwDisableRecPtr.
+ */
+XLogRecPtr
+XLogGetLastFPWDisableRecptr(void)
+{
+	XLogRecPtr recptr;
+
+	SpinLockAcquire(&XLogCtl->info_lck);
+	recptr = XLogCtl->lastFpwDisableRecPtr;
+	SpinLockRelease(&XLogCtl->info_lck);
+
+	return recptr;
+}
+
+/*
+ * Set the lastBackupStar only if it is less than passed-in rectpr and return
+ * true. Otherwise return false.
+ *
+ * Note: For those who want to set lastBackupStar unconditionally, pass rectpr
+ * value as PG_UINT64_MAX, which is higher than any real XLogRecPtr value.
+ */
+bool
+XLogBackupSetLastStart(XLogRecPtr recptr)
+{
+	bool is_set = false;
+
+	WALInsertLockAcquireExclusive();
+	if (XLogCtl->Insert.lastBackupStart < recptr)
+	{
+		XLogCtl->Insert.lastBackupStart = recptr;
+		is_set = true;
+	}
+	WALInsertLockRelease();
+
+	return is_set;
+}
+
+/*
+ * Set the runningBackups.
+ */
+void
+XLogBackupSetRunning(void)
+{
+	WALInsertLockAcquireExclusive();
+	XLogCtl->Insert.runningBackups++;
+	WALInsertLockRelease();
+}
+
+/*
+ * Reset backup activity such as runningBackups and session-level lock.
+ */
+void
+XLogBackupResetRunning(void)
+{
+	WALInsertLockAcquireExclusive();
+
+	Assert(XLogCtl->Insert.runningBackups > 0);
+	XLogCtl->Insert.runningBackups--;
+
+	/*
+	 * Reset session-level lock.
+	 *
+	 * You might think that WALInsertLockRelease() can be called before
+	 * cleaning up session-level lock because session-level lock doesn't need
+	 * to be protected with WAL insertion lock. But since
+	 * CHECK_FOR_INTERRUPTS() can occur in it, session-level lock must be
+	 * cleaned up before it.
+	 */
+	reset_backup_status();
+
+	WALInsertLockRelease();
 }
 
 /*
