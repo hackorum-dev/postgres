@@ -267,7 +267,7 @@ insert into part_default_p2 values ('de', 35);
 insert into list_parted values ('ab', 21);
 insert into list_parted values ('xx', 1);
 insert into list_parted values ('yy', 2);
-select tableoid::regclass, * from list_parted;
+select tableoid::regclass, * from list_parted order by 1, 3;
 
 -- Check tuple routing for partitioned tables
 
@@ -305,7 +305,7 @@ insert into part_ee_ff values ('EE', 0);
 -- ok
 insert into list_parted values ('EE', 1);
 insert into part_ee_ff values ('EE', 10);
-select tableoid::regclass, * from list_parted;
+select tableoid::regclass, * from list_parted order by 1, 3;
 
 -- some more tests to exercise tuple-routing with multi-level partitioning
 create table part_gg partition of list_parted for values in ('gg') partition by range (b);
