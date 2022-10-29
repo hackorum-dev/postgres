@@ -1010,6 +1010,14 @@ hashbpchar(PG_FUNCTION_ARGS)
 	if (!lc_collate_is_c(collid))
 		mylocale = pg_newlocale_from_collation(collid);
 
+	elog(NOTICE, "hashbpchar lc_collate_is_c(collid) %d mylocale %p", lc_collate_is_c(collid), mylocale);
+	if (mylocale)
+	{
+		elog(NOTICE, "hashbpchar mylocale->provider %c", mylocale->provider);
+		if (mylocale->provider == COLLPROVIDER_ICU)
+			elog(NOTICE, "hashbpchar mylocale->info.icu.locale %s", mylocale->info.icu.locale ? mylocale->info.icu.locale : "(null)");
+	}
+
 	if (!mylocale || mylocale->deterministic)
 	{
 		result = hash_any((unsigned char *) keydata, keylen);
@@ -1069,6 +1077,14 @@ hashbpcharextended(PG_FUNCTION_ARGS)
 
 	if (!lc_collate_is_c(collid))
 		mylocale = pg_newlocale_from_collation(collid);
+
+	elog(NOTICE, "hashbpcharextended lc_collate_is_c(collid) %d mylocale %p", lc_collate_is_c(collid), mylocale);
+	if (mylocale)
+	{
+		elog(NOTICE, "hashbpcharextended mylocale->provider %c", mylocale->provider);
+		if (mylocale->provider == COLLPROVIDER_ICU)
+			elog(NOTICE, "hashbpcharextended mylocale->info.icu.locale %s", mylocale->info.icu.locale ? mylocale->info.icu.locale : "(null)");
+	}
 
 	if (!mylocale || mylocale->deterministic)
 	{
