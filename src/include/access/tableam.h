@@ -642,6 +642,15 @@ typedef struct TableAmRoutine
 												 MultiXactId *minmulti);
 
 	/*
+	 * This callback needs to schedule the removal of all associations with
+	 * the relation `rel` since the relation is about to be dropped or the
+	 * storage recycled for other reasons.
+	 *
+	 * See also table_relation_reset_filelocator().
+	 */
+	void        (*relation_reset_filelocator) (Relation rel);
+
+	/*
 	 * This callback needs to remove all contents from `rel`'s current
 	 * relfilelocator. No provisions for transactional behaviour need to be
 	 * made.  Often this can be implemented by truncating the underlying
@@ -1693,6 +1702,22 @@ table_relation_set_new_filelocator(Relation rel,
 	rel->rd_tableam->relation_set_new_filelocator(rel, newrlocator,
 												  persistence, freezeXid,
 												  minmulti);
+}
+
+/*
+ * Schedule the removal of all association with storage for the relation.
+ *
+ * This is used when a relation is about to be dropped and removed from the
+ * catalog.
+ *
+ * Since not all access methods require this callback, we do not require the
+ * reset callback to be defined and only call it if it is actually available.
+ */
+static inline void
+table_relation_reset_filelocator(Relation rel)
+{
+	if (rel->rd_tableam)
+		rel->rd_tableam->relation_reset_filelocator(rel);
 }
 
 /*

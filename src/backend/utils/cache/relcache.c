@@ -3858,9 +3858,14 @@ RelationSetNewRelfilenumber(Relation relation, char persistence)
 		smgrdounlinkall(&srel, 1, false);
 		smgrclose(srel);
 	}
+	if (RELKIND_HAS_TABLE_AM(relation->rd_rel->relkind))
+	{
+		table_relation_reset_filelocator(relation);
+	}
 	else
 	{
-		/* Not a binary upgrade, so just schedule it to happen later. */
+		/* Not a binary upgrade and not a relation with a table access method,
+		 * so just schedule it to happen later. */
 		RelationDropStorage(relation);
 	}
 
