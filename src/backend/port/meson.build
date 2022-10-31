@@ -25,6 +25,10 @@ if cdata.has('USE_WIN32_SHARED_MEMORY')
   backend_sources += files('win32_shmem.c')
 endif
 
+if host_system == 'linux'
+  backend_sources += files('huge_page.c')
+endif
+
 if host_system == 'windows'
   subdir('win32')
 endif

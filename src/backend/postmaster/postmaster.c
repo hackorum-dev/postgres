@@ -106,6 +106,7 @@
 #include "pg_getopt.h"
 #include "pgstat.h"
 #include "port/pg_bswap.h"
+#include "port/huge_page.h"
 #include "postmaster/autovacuum.h"
 #include "postmaster/auxprocess.h"
 #include "postmaster/bgworker_internals.h"
@@ -1006,6 +1007,12 @@ PostmasterMain(int argc, char *argv[])
 	 * process any libraries that should be preloaded at postmaster start
 	 */
 	process_shared_preload_libraries();
+
+	/*
+	 * Try to map the binary code to huge pages. We do this just after
+	 * any shared libraries are preloaded for future-proofing.
+	 */
+	MapStaticCodeToLargePages();
 
 	/*
 	 * Initialize SSL library, if specified.
