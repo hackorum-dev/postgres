@@ -5178,17 +5178,17 @@ examine_variable(PlannerInfo *root, Node *node, int varRelid,
 									Index		varno = index->rel->relid;
 
 									appinfo = root->append_rel_array[varno];
-									while (appinfo &&
-										   planner_rt_fetch(appinfo->parent_relid,
-															root)->rtekind == RTE_RELATION)
+									while (appinfo)
 									{
+										rte = planner_rt_fetch(appinfo->parent_relid, root);
+										if (rte->rtekind != RTE_RELATION)
+											break;
 										varno = appinfo->parent_relid;
 										appinfo = root->append_rel_array[varno];
 									}
 									if (varno != index->rel->relid)
 									{
 										/* Repeat access check on this rel */
-										rte = planner_rt_fetch(varno, root);
 										Assert(rte->rtekind == RTE_RELATION);
 
 										userid = rte->checkAsUser ? rte->checkAsUser : GetUserId();
