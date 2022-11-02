@@ -2289,11 +2289,11 @@ ri_PlanCheck(const char *querystr, int nargs, Oid *argtypes,
 	/* Create the plan */
 	qplan = SPI_prepare(querystr, nargs, argtypes);
 
-	if (qplan == NULL)
-		elog(ERROR, "SPI_prepare returned %s for %s", SPI_result_code_string(SPI_result), querystr);
-
 	/* Restore UID and security context */
 	SetUserIdAndSecContext(save_userid, save_sec_context);
+
+	if (qplan == NULL)
+		elog(ERROR, "SPI_prepare returned %s for %s", SPI_result_code_string(SPI_result), querystr);
 
 	/* Save the plan */
 	SPI_keepplan(qplan);
@@ -2405,13 +2405,19 @@ ri_PerformCheck(const RI_ConstraintInfo *riinfo,
 						   SECURITY_NOFORCE_RLS);
 
 	/* Finally we can run the query. */
-	spi_result = SPI_execute_snapshot(qplan,
-									  vals, nulls,
-									  test_snapshot, crosscheck_snapshot,
-									  false, false, limit);
-
-	/* Restore UID and security context */
-	SetUserIdAndSecContext(save_userid, save_sec_context);
+	PG_TRY();
+	{
+		spi_result = SPI_execute_snapshot(qplan,
+										  vals, nulls,
+										  test_snapshot, crosscheck_snapshot,
+										  false, false, limit);
+	}
+	PG_FINALLY();
+	{
+		/* Restore UID and security context */
+		SetUserIdAndSecContext(save_userid, save_sec_context);
+	}
+	PG_END_TRY();
 
 	/* Check result */
 	if (spi_result < 0)
