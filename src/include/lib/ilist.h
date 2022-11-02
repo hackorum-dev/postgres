@@ -534,7 +534,7 @@ dlist_node_is_detached(const dlist_node *node)
  * Return the next node in the list (there must be one).
  */
 static inline dlist_node *
-dlist_next_node(dlist_head *head, dlist_node *node)
+dlist_next_node(const dlist_head *head, const dlist_node *node)
 {
 	Assert(dlist_has_next(head, node));
 	return node->next;
@@ -544,7 +544,7 @@ dlist_next_node(dlist_head *head, dlist_node *node)
  * Return previous node in the list (there must be one).
  */
 static inline dlist_node *
-dlist_prev_node(dlist_head *head, dlist_node *node)
+dlist_prev_node(const dlist_head *head, const dlist_node *node)
 {
 	Assert(dlist_has_prev(head, node));
 	return node->prev;
@@ -552,7 +552,7 @@ dlist_prev_node(dlist_head *head, dlist_node *node)
 
 /* internal support function to get address of head element's struct */
 static inline void *
-dlist_head_element_off(dlist_head *head, size_t off)
+dlist_head_element_off(const dlist_head *head, size_t off)
 {
 	Assert(!dlist_is_empty(head));
 	return (char *) head->head.next - off;
@@ -562,14 +562,14 @@ dlist_head_element_off(dlist_head *head, size_t off)
  * Return the first node in the list (there must be one).
  */
 static inline dlist_node *
-dlist_head_node(dlist_head *head)
+dlist_head_node(const dlist_head *head)
 {
 	return (dlist_node *) dlist_head_element_off(head, 0);
 }
 
 /* internal support function to get address of tail element's struct */
 static inline void *
-dlist_tail_element_off(dlist_head *head, size_t off)
+dlist_tail_element_off(const dlist_head *head, size_t off)
 {
 	Assert(!dlist_is_empty(head));
 	return (char *) head->head.prev - off;
@@ -579,7 +579,7 @@ dlist_tail_element_off(dlist_head *head, size_t off)
  * Return the last node in the list (there must be one).
  */
 static inline dlist_node *
-dlist_tail_node(dlist_head *head)
+dlist_tail_node(const dlist_head *head)
 {
 	return (dlist_node *) dlist_tail_element_off(head, 0);
 }
@@ -864,7 +864,7 @@ dclist_has_prev(const dclist_head *head, const dlist_node *node)
  *		Return the next node in the list (there must be one).
  */
 static inline dlist_node *
-dclist_next_node(dclist_head *head, dlist_node *node)
+dclist_next_node(const dclist_head *head, const dlist_node *node)
 {
 	Assert(head->count > 0);
 
@@ -876,7 +876,7 @@ dclist_next_node(dclist_head *head, dlist_node *node)
  *		Return the prev node in the list (there must be one).
  */
 static inline dlist_node *
-dclist_prev_node(dclist_head *head, dlist_node *node)
+dclist_prev_node(const dclist_head *head, const dlist_node *node)
 {
 	Assert(head->count > 0);
 
@@ -885,7 +885,7 @@ dclist_prev_node(dclist_head *head, dlist_node *node)
 
 /* internal support function to get address of head element's struct */
 static inline void *
-dclist_head_element_off(dclist_head *head, size_t off)
+dclist_head_element_off(const dclist_head *head, size_t off)
 {
 	Assert(!dclist_is_empty(head));
 
@@ -897,7 +897,7 @@ dclist_head_element_off(dclist_head *head, size_t off)
  *		Return the first node in the list (there must be one).
  */
 static inline dlist_node *
-dclist_head_node(dclist_head *head)
+dclist_head_node(const dclist_head *head)
 {
 	Assert(head->count > 0);
 
@@ -906,7 +906,7 @@ dclist_head_node(dclist_head *head)
 
 /* internal support function to get address of tail element's struct */
 static inline void *
-dclist_tail_element_off(dclist_head *head, size_t off)
+dclist_tail_element_off(const dclist_head *head, size_t off)
 {
 	Assert(!dclist_is_empty(head));
 
@@ -917,7 +917,7 @@ dclist_tail_element_off(dclist_head *head, size_t off)
  * Return the last node in the list (there must be one).
  */
 static inline dlist_node *
-dclist_tail_node(dclist_head *head)
+dclist_tail_node(const dclist_head *head)
 {
 	Assert(head->count > 0);
 
@@ -1051,7 +1051,7 @@ slist_has_next(const slist_head *head, const slist_node *node)
  * Return the next node in the list (there must be one).
  */
 static inline slist_node *
-slist_next_node(slist_head *head, slist_node *node)
+slist_next_node(const slist_head *head, const slist_node *node)
 {
 	Assert(slist_has_next(head, node));
 	return node->next;
@@ -1059,7 +1059,7 @@ slist_next_node(slist_head *head, slist_node *node)
 
 /* internal support function to get address of head element's struct */
 static inline void *
-slist_head_element_off(slist_head *head, size_t off)
+slist_head_element_off(const slist_head *head, size_t off)
 {
 	Assert(!slist_is_empty(head));
 	return (char *) head->head.next - off;
@@ -1069,7 +1069,7 @@ slist_head_element_off(slist_head *head, size_t off)
  * Return the first node in the list (there must be one).
  */
 static inline slist_node *
-slist_head_node(slist_head *head)
+slist_head_node(const slist_head *head)
 {
 	return (slist_node *) slist_head_element_off(head, 0);
 }
