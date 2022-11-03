@@ -393,7 +393,7 @@ logicalrep_rel_open(LogicalRepRelId remoteid, LOCKMODE lockmode)
 		entry->localreloid = relid;
 
 		/* Check for supported relkind. */
-		CheckSubscriptionRelkind(entry->localrel->rd_rel->relkind,
+		CheckSubscriptionRelkind(entry->localrel,
 								 remoterel->nspname, remoterel->relname);
 
 		/*

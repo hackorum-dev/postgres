@@ -646,7 +646,7 @@ extern void ExecSimpleRelationDelete(ResultRelInfo *resultRelInfo,
 									 TupleTableSlot *searchslot);
 extern void CheckCmdReplicaIdentity(Relation rel, CmdType cmd);
 
-extern void CheckSubscriptionRelkind(char relkind, const char *nspname,
+extern void CheckSubscriptionRelkind(Relation rel, const char *nspname,
 									 const char *relname);
 
 /*

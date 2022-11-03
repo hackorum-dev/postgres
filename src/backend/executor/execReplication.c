@@ -649,16 +649,23 @@ CheckCmdReplicaIdentity(Relation rel, CmdType cmd)
 /*
  * Check if we support writing into specific relkind.
  *
- * The nspname and relname are only needed for error reporting.
+ * If nspname and relname are not NULL, they are used for error reporting, otherwise these values are fetched from relcache.
  */
 void
-CheckSubscriptionRelkind(char relkind, const char *nspname,
-						 const char *relname)
+CheckSubscriptionRelkind(Relation rel, const char *nspname, const char *relname)
 {
+	char		relkind = rel->rd_rel->relkind;
+
 	if (relkind != RELKIND_RELATION && relkind != RELKIND_PARTITIONED_TABLE)
+	{
+		if (relname == NULL)
+			relname = RelationGetRelationName(rel);
+		if (nspname == NULL)
+			nspname = get_namespace_name(RelationGetNamespace(rel));
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 				 errmsg("cannot use relation \"%s.%s\" as logical replication target",
 						nspname, relname),
 				 errdetail_relkind_not_supported(relkind)));
+	}
 }
