@@ -1333,7 +1333,6 @@ DecodeDateTime(char **field, int *ftype, int nf,
 				if (type == IGNORE_DTF)
 					continue;
 
-				tmask = DTK_M(type);
 				switch (type)
 				{
 					case RESERV:
