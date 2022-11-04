@@ -19,6 +19,7 @@
 #include "catalog/pg_authid.h"
 #include "miscadmin.h"
 #include "pgstat.h"
+#include "postmaster/interrupt.h"
 #include "postmaster/syslogger.h"
 #include "storage/pmsignal.h"
 #include "storage/proc.h"
@@ -291,6 +292,8 @@ pg_reload_conf(PG_FUNCTION_ARGS)
 				(errmsg("failed to send signal to postmaster: %m")));
 		PG_RETURN_BOOL(false);
 	}
+
+	ConfigReloadPending = true;
 
 	PG_RETURN_BOOL(true);
 }
