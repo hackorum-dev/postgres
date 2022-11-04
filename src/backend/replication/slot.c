@@ -1265,7 +1265,7 @@ InvalidatePossiblyObsoleteSlot(ReplicationSlot *s, XLogRecPtr oldestLSN,
 		 * If the slot is already invalid or is fresh enough, we don't need to
 		 * do anything.
 		 */
-		if (XLogRecPtrIsInvalid(restart_lsn) || restart_lsn >= oldestLSN)
+		if (!XLogRecPtrIsInvalid(s->data.invalidated_at) || restart_lsn >= oldestLSN)
 		{
 			SpinLockRelease(&s->mutex);
 			if (released_lock)
@@ -1286,7 +1286,6 @@ InvalidatePossiblyObsoleteSlot(ReplicationSlot *s, XLogRecPtr oldestLSN,
 			MyReplicationSlot = s;
 			s->active_pid = MyProcPid;
 			s->data.invalidated_at = restart_lsn;
-			s->data.restart_lsn = InvalidXLogRecPtr;
 
 			/* Let caller know */
 			*invalidated = true;
