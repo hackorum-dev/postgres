@@ -19628,7 +19628,7 @@ dumpTrigger(Archive *fout, const TriggerInfo *tginfo)
 	appendPQExpBuffer(trigprefix, "TRIGGER %s ON",
 					  fmtId(tginfo->dobj.name));
 
-	tag = psprintf("%s %s", tbinfo->dobj.name, tginfo->dobj.name);
+	tag = psprintf("%s", tginfo->dobj.name);
 
 	if (tginfo->dobj.dump & DUMP_COMPONENT_DEFINITION)
 		ArchiveEntry(fout, tginfo->dobj.catId, tginfo->dobj.dumpId,
