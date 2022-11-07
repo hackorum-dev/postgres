@@ -653,7 +653,7 @@ TransactionGroupUpdateXidStatus(TransactionId xid, XidStatus status,
 
 		wakeproc->clogGroupMember = false;
 
-		if (wakeproc != MyProc)
+		if (wakeproc != proc)
 			PGSemaphoreUnlock(wakeproc->sem);
 	}
 
