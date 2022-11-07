@@ -882,7 +882,7 @@ ProcArrayGroupClearXid(PGPROC *proc, TransactionId latestXid)
 
 		nextproc->procArrayGroupMember = false;
 
-		if (nextproc != MyProc)
+		if (nextproc != proc)
 			PGSemaphoreUnlock(nextproc->sem);
 	}
 }
