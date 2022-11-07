@@ -132,15 +132,23 @@ init_libpq_conn(PGconn *conn)
 	PQclear(res);
 
 	/*
-	 * Also check that full_page_writes is enabled.  We can get torn pages if
-	 * a page is modified while we read it with pg_read_binary_file(), and we
-	 * rely on full page images to fix them.
+	 * If ensure_full_page_writes is true (the default), check that
+	 * full_page_writes is enabled. The goal here is to not run into a torn
+	 * page. Torn page can happend if a page is modified while we read it
+	 * with pg_read_binary_file(). Some file systems are immune to torn page,
+	 * this is why there is an option to disable this check. Outside of those
+	 * specific systems, we rely on full_page_writes to avoid it.
 	 */
-	str = run_simple_query(conn, "SHOW full_page_writes");
-	if (strcmp(str, "on") != 0)
-		pg_fatal("full_page_writes must be enabled in the source server");
+	if (ensure_full_page_writes)
+	{
+		str = run_simple_query(conn, "SHOW full_page_writes");
+		if (strcmp(str, "on") != 0)
+			pg_fatal("full_page_writes is currently disabled on the "
+				"source server, use the option --no-ensure-full"
+				"-page-write to bypass this check if you kown "
+				"what you are doing");
+	}
 	pg_free(str);
-
 	/* Prepare a statement we'll use to fetch files */
 	res = PQprepare(conn, "fetch_chunks_stmt",
 					"SELECT path, begin,\n"

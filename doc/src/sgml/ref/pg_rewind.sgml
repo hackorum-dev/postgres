@@ -99,7 +99,13 @@ PostgreSQL documentation
    in <filename>postgresql.conf</filename> or data checksums enabled when
    the cluster was initialized with <application>initdb</application>.  Neither of these
    are currently on by default.  <xref linkend="guc-full-page-writes"/>
-   must also be set to <literal>on</literal>, but is enabled by default.
+   should also be set to <literal>on</literal> (which is the default) when the
+   underlying file system can write data in an increment of less than the page size.
+   Some file systems (like ZFS when configured with a recordsize as a multiple of
+   the page size) don't need this parameter since they will never write less than a
+   complete page to disk. If you are running such a system, you can add the option
+   --no-enforce-full-page-writes so that <application>pg_rewind</application> will run
+   even when <xref linkend="guc-full-page-writes"/> is set to <literal>off</literal>.
   </para>
 
   <warning>
@@ -279,6 +285,25 @@ PostgreSQL documentation
         this and errors out immediately if the server is not cleanly shut
         down. Users are expected to handle the situation themselves in that
         case.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--no-ensure-full-page-writes</option></term>
+      <listitem>
+       <para>
+        <application>pg_rewind</application> by default requires that <xref linkend="guc-full-page-writes"/>
+        is set to on. This ensures that <application>pg_rewind</application> do
+        not run into torn pages while running. This option is necessary most of
+        the time since very few filesystems enforce the flush of full page to disk.
+        One such system is ZFS where the page is always flushed to disk in its
+        entirety. Other storage system may also have the same warranty. This option
+        is here to allow pg_rewind to run on such systems without enforcing that
+        <xref linkend="guc-full-page-writes"/> is on. It's important to know what
+        you are doing before setting this setting because in case your system does
+        not really guarantee that the page is persisted to disk in its entirety, you
+        may run into data corruption.
        </para>
       </listitem>
      </varlistentry>

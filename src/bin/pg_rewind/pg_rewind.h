@@ -23,6 +23,7 @@ extern char *datadir_target;
 extern bool showprogress;
 extern bool dry_run;
 extern bool do_sync;
+extern bool ensure_full_page_writes;
 extern int	WalSegSz;
 
 /* Target history */

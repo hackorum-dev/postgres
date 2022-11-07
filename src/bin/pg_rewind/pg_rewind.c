@@ -68,6 +68,7 @@ bool		showprogress = false;
 bool		dry_run = false;
 bool		do_sync = true;
 bool		restore_wal = false;
+bool		ensure_full_page_writes = true;
 
 /* Target history */
 TimeLineHistoryEntry *targetHistory;
@@ -86,23 +87,24 @@ usage(const char *progname)
 	printf(_("%s resynchronizes a PostgreSQL cluster with another copy of the cluster.\n\n"), progname);
 	printf(_("Usage:\n  %s [OPTION]...\n\n"), progname);
 	printf(_("Options:\n"));
-	printf(_("  -c, --restore-target-wal       use restore_command in target configuration to\n"
-			 "                                 retrieve WAL files from archives\n"));
-	printf(_("  -D, --target-pgdata=DIRECTORY  existing data directory to modify\n"));
-	printf(_("      --source-pgdata=DIRECTORY  source data directory to synchronize with\n"));
-	printf(_("      --source-server=CONNSTR    source server to synchronize with\n"));
-	printf(_("  -n, --dry-run                  stop before modifying anything\n"));
-	printf(_("  -N, --no-sync                  do not wait for changes to be written\n"
-			 "                                 safely to disk\n"));
-	printf(_("  -P, --progress                 write progress messages\n"));
-	printf(_("  -R, --write-recovery-conf      write configuration for replication\n"
-			 "                                 (requires --source-server)\n"));
-	printf(_("      --config-file=FILENAME     use specified main server configuration\n"
-			 "                                 file when running target cluster\n"));
-	printf(_("      --debug                    write a lot of debug messages\n"));
-	printf(_("      --no-ensure-shutdown       do not automatically fix unclean shutdown\n"));
-	printf(_("  -V, --version                  output version information, then exit\n"));
-	printf(_("  -?, --help                     show this help, then exit\n"));
+	printf(_("  -c, --restore-target-wal               use restore_command in target configuration to\n"
+			 "                                         retrieve WAL files from archives\n"));
+	printf(_("  -D, --target-pgdata=DIRECTORY          existing data directory to modify\n"));
+	printf(_("      --source-pgdata=DIRECTORY          source data directory to synchronize with\n"));
+	printf(_("      --source-server=CONNSTR            source server to synchronize with\n"));
+	printf(_("  -n, --dry-run                          stop before modifying anything\n"));
+	printf(_("  -N, --no-sync                          do not wait for changes to be written\n"
+			 "                                         safely to disk\n"));
+	printf(_("  -P, --progress                         write progress messages\n"));
+	printf(_("  -R, --write-recovery-conf              write configuration for replication\n"
+			 "                                         (requires --source-server)\n"));
+	printf(_("      --config-file=FILENAME             use specified main server configuration\n"
+			 "                                         file when running target cluster\n"));
+	printf(_("      --debug                            write a lot of debug messages\n"));
+	printf(_("      --no-ensure-shutdown               do not automatically fix unclean shutdown\n"));
+	printf(_("      --no-ensure-full-page-writes       do not make sure that full_page_writes is on\n"));
+	printf(_("  -V, --version                          output version information, then exit\n"));
+	printf(_("  -?, --help                             show this help, then exit\n"));
 	printf(_("\nReport bugs to <%s>.\n"), PACKAGE_BUGREPORT);
 	printf(_("%s home page: <%s>\n"), PACKAGE_NAME, PACKAGE_URL);
 }
@@ -118,7 +120,8 @@ main(int argc, char **argv)
 		{"source-pgdata", required_argument, NULL, 1},
 		{"source-server", required_argument, NULL, 2},
 		{"no-ensure-shutdown", no_argument, NULL, 4},
-		{"config-file", required_argument, NULL, 5},
+		{"no-ensure-full-page-writes", no_argument, NULL, 5},
+		{"config-file", required_argument, NULL, 6},
 		{"version", no_argument, NULL, 'V'},
 		{"restore-target-wal", no_argument, NULL, 'c'},
 		{"dry-run", no_argument, NULL, 'n'},
@@ -207,6 +210,10 @@ main(int argc, char **argv)
 				break;
 
 			case 5:
+				ensure_full_page_writes = false;
+				break;
+
+			case 6:
 				config_file = pg_strdup(optarg);
 				break;
 
