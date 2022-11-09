@@ -275,14 +275,33 @@ basic_archive_file_internal(const char *file, const char *path)
 	 * Copy the file to its temporary destination.  Note that this will fail
 	 * if temp already exists.
 	 */
-	copy_file(unconstify(char *, path), temp);
+	if (copy_file(unconstify(char *, path), temp, LOG) != 0)
+	{
+		/* Remove the leftover temporary file. */
+		if (errno != EEXIST)
+			unlink(temp);
+
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not copy file \"%s\" to temporary file \"%s\": %m",
+						path, temp)));
+	}
 
 	/*
 	 * Sync the temporary file to disk and move it to its final destination.
 	 * Note that this will overwrite any existing file, but this is only
 	 * possible if someone else created the file since the stat() above.
 	 */
-	(void) durable_rename(temp, destination, ERROR);
+	if (durable_rename(temp, destination, LOG) != 0)
+	{
+		/* Remove the leftover temporary file. */
+		unlink(temp);
+
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not rename temporary file \"%s\" to \"%s\": %m",
+						temp, destination)));
+	}
 
 	ereport(DEBUG1,
 			(errmsg("archived \"%s\" via basic_archive", file)));

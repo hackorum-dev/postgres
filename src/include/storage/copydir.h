@@ -14,6 +14,6 @@
 #define COPYDIR_H
 
 extern void copydir(char *fromdir, char *todir, bool recurse);
-extern void copy_file(char *fromfile, char *tofile);
+extern int copy_file(char *fromfile, char *tofile, int elevel);
 
 #endif							/* COPYDIR_H */

@@ -71,7 +71,7 @@ copydir(char *fromdir, char *todir, bool recurse)
 				copydir(fromfile, tofile, true);
 		}
 		else if (xlde_type == PGFILETYPE_REG)
-			copy_file(fromfile, tofile);
+			copy_file(fromfile, tofile, ERROR);
 	}
 	FreeDir(xldir);
 
@@ -113,8 +113,8 @@ copydir(char *fromdir, char *todir, bool recurse)
 /*
  * copy one file
  */
-void
-copy_file(char *fromfile, char *tofile)
+int
+copy_file(char *fromfile, char *tofile, int elevel)
 {
 	char	   *buffer;
 	int			srcfd;
@@ -138,28 +138,35 @@ copy_file(char *fromfile, char *tofile)
 #define FLUSH_DISTANCE (1024 * 1024)
 #endif
 
-	/* Use palloc to ensure we get a maxaligned buffer */
-	buffer = palloc(COPY_BUF_SIZE);
-
 	/*
 	 * Open the files
 	 */
 	srcfd = OpenTransientFile(fromfile, O_RDONLY | PG_BINARY);
 	if (srcfd < 0)
-		ereport(ERROR,
+	{
+		ereport(elevel,
 				(errcode_for_file_access(),
 				 errmsg("could not open file \"%s\": %m", fromfile)));
+		return -1;
+	}
 
 	dstfd = OpenTransientFile(tofile, O_RDWR | O_CREAT | O_EXCL | PG_BINARY);
 	if (dstfd < 0)
-		ereport(ERROR,
+	{
+		ereport(elevel,
 				(errcode_for_file_access(),
 				 errmsg("could not create file \"%s\": %m", tofile)));
+		return -1;
+	}
 
 	/*
 	 * Do the data copying.
 	 */
 	flush_offset = 0;
+
+	/* Use palloc to ensure we get a maxaligned buffer */
+	buffer = palloc(COPY_BUF_SIZE);
+
 	for (offset = 0;; offset += nbytes)
 	{
 		/* If we got a cancel signal during the copy of the file, quit */
@@ -180,37 +187,60 @@ copy_file(char *fromfile, char *tofile)
 		nbytes = read(srcfd, buffer, COPY_BUF_SIZE);
 		pgstat_report_wait_end();
 		if (nbytes < 0)
-			ereport(ERROR,
+		{
+			ereport(elevel,
 					(errcode_for_file_access(),
 					 errmsg("could not read file \"%s\": %m", fromfile)));
+			pfree(buffer);
+			CloseTransientFile(srcfd);
+			CloseTransientFile(dstfd);
+			return -1;
+		}
 		if (nbytes == 0)
 			break;
 		errno = 0;
 		pgstat_report_wait_start(WAIT_EVENT_COPY_FILE_WRITE);
 		if ((int) write(dstfd, buffer, nbytes) != nbytes)
 		{
+			pgstat_report_wait_end();
+
 			/* if write didn't set errno, assume problem is no disk space */
 			if (errno == 0)
 				errno = ENOSPC;
-			ereport(ERROR,
+			ereport(elevel,
 					(errcode_for_file_access(),
 					 errmsg("could not write to file \"%s\": %m", tofile)));
+
+			pfree(buffer);
+			CloseTransientFile(srcfd);
+			CloseTransientFile(dstfd);
+			return -1;
 		}
 		pgstat_report_wait_end();
 	}
+
+	pfree(buffer);
 
 	if (offset > flush_offset)
 		pg_flush_data(dstfd, flush_offset, offset - flush_offset);
 
 	if (CloseTransientFile(dstfd) != 0)
-		ereport(ERROR,
+	{
+		ereport(elevel,
 				(errcode_for_file_access(),
 				 errmsg("could not close file \"%s\": %m", tofile)));
 
+		CloseTransientFile(srcfd);
+		return -1;
+	}
+
 	if (CloseTransientFile(srcfd) != 0)
-		ereport(ERROR,
+	{
+		ereport(elevel,
 				(errcode_for_file_access(),
 				 errmsg("could not close file \"%s\": %m", fromfile)));
+		return -1;
+	}
 
-	pfree(buffer);
+	return 0;
 }
