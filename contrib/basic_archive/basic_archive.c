@@ -42,10 +42,12 @@ PG_MODULE_MAGIC;
 
 static char *archive_directory = NULL;
 static MemoryContext basic_archive_context;
+static char	tempfilepath[MAXPGPATH + 256];
 
 static bool basic_archive_configured(void);
 static bool basic_archive_file(const char *file, const char *path);
 static void basic_archive_file_internal(const char *file, const char *path);
+static void basic_archive_shutdown(void);
 static bool check_archive_directory(char **newval, void **extra, GucSource source);
 static bool compare_files(const char *file1, const char *file2);
 
@@ -85,6 +87,7 @@ _PG_archive_module_init(ArchiveModuleCallbacks *cb)
 
 	cb->check_configured_cb = basic_archive_configured;
 	cb->archive_file_cb = basic_archive_file;
+	cb->shutdown_cb = basic_archive_shutdown;
 }
 
 /*
@@ -215,7 +218,6 @@ static void
 basic_archive_file_internal(const char *file, const char *path)
 {
 	char		destination[MAXPGPATH];
-	char		temp[MAXPGPATH + 256];
 	struct stat st;
 	struct timeval tv;
 	uint64		epoch;			/* milliseconds */
@@ -268,23 +270,23 @@ basic_archive_file_internal(const char *file, const char *path)
 		pg_add_u64_overflow(epoch, (uint64) (tv.tv_usec / 1000), &epoch))
 		elog(ERROR, "could not generate temporary file name for archiving");
 
-	snprintf(temp, sizeof(temp), "%s/%s.%s.%d." UINT64_FORMAT,
+	snprintf(tempfilepath, sizeof(tempfilepath), "%s/%s.%s.%d." UINT64_FORMAT,
 			 archive_directory, "archtemp", file, MyProcPid, epoch);
 
 	/*
 	 * Copy the file to its temporary destination.  Note that this will fail
 	 * if temp already exists.
 	 */
-	if (copy_file(unconstify(char *, path), temp, LOG) != 0)
+	if (copy_file(unconstify(char *, path), tempfilepath, LOG) != 0)
 	{
 		/* Remove the leftover temporary file. */
 		if (errno != EEXIST)
-			unlink(temp);
+			unlink(tempfilepath);
 
 		ereport(ERROR,
 				(errcode_for_file_access(),
 				 errmsg("could not copy file \"%s\" to temporary file \"%s\": %m",
-						path, temp)));
+						path, tempfilepath)));
 	}
 
 	/*
@@ -292,16 +294,23 @@ basic_archive_file_internal(const char *file, const char *path)
 	 * Note that this will overwrite any existing file, but this is only
 	 * possible if someone else created the file since the stat() above.
 	 */
-	if (durable_rename(temp, destination, LOG) != 0)
+	if (durable_rename(tempfilepath, destination, LOG) != 0)
 	{
 		/* Remove the leftover temporary file. */
-		unlink(temp);
+		unlink(tempfilepath);
 
 		ereport(ERROR,
 				(errcode_for_file_access(),
 				 errmsg("could not rename temporary file \"%s\" to \"%s\": %m",
-						temp, destination)));
+						tempfilepath, destination)));
 	}
+
+	/*
+	 * Reset tempfilepath after renaming the temporary file to the final file
+	 * so that the shutdown callback, if called after this point, will not
+	 * attempt to remove it and fail.
+	 */
+	tempfilepath[0] = '\0';
 
 	ereport(DEBUG1,
 			(errmsg("archived \"%s\" via basic_archive", file)));
@@ -386,4 +395,17 @@ compare_files(const char *file1, const char *file2)
 				 errmsg("could not close file \"%s\": %m", file2)));
 
 	return ret;
+}
+
+static void
+basic_archive_shutdown(void)
+{
+	if (tempfilepath[0] == '\0')
+		return;
+
+	/* Remove the leftover temporary file. */
+	if (unlink(tempfilepath) < 0)
+		ereport(WARNING,
+				(errcode_for_file_access(),
+				 errmsg("could not unlink file \"%s\": %m", tempfilepath)));
 }
