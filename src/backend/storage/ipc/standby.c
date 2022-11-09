@@ -1342,6 +1342,9 @@ LogStandbySnapshot(void)
 	 */
 	running = GetRunningTransactionData();
 
+	/* GetRunningTransactionData() acquired XidGenLock, we must release it */
+	LWLockRelease(XidGenLock);
+
 	/*
 	 * GetRunningTransactionData() acquired ProcArrayLock, we must release it.
 	 * For Hot Standby this can be done before inserting the WAL record
@@ -1362,9 +1365,6 @@ LogStandbySnapshot(void)
 	/* Release lock if we kept it longer ... */
 	if (logical_decoding_enabled)
 		LWLockRelease(ProcArrayLock);
-
-	/* GetRunningTransactionData() acquired XidGenLock, we must release it */
-	LWLockRelease(XidGenLock);
 
 	return recptr;
 }
