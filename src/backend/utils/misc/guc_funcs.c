@@ -1052,9 +1052,9 @@ show_all_file_settings(PG_FUNCTION_ARGS)
 
 
 #include "common/zpq_stream.h"
-static bool check_libpq_compression(char **newval, void **extra, GucSource source);
+bool check_libpq_compression(char **newval, void **extra, GucSource source);
 
-static bool
+bool
 check_libpq_compression(char **newval, void **extra, GucSource source)
 {
 	zpq_compressor *compressors;

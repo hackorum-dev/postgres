@@ -742,6 +742,7 @@
 #dynamic_library_path = '$libdir'
 #gin_fuzzy_search_limit = 0
 
+#libpq_compression = on
 
 #------------------------------------------------------------------------------
 # LOCK MANAGEMENT

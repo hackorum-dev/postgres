@@ -3691,6 +3691,8 @@ struct config_real ConfigureNamesReal[] =
 };
 
 
+extern bool check_libpq_compression(char **newval, void **extra, GucSource source);
+
 struct config_string ConfigureNamesString[] =
 {
 	{
@@ -4453,7 +4455,7 @@ struct config_string ConfigureNamesString[] =
 			NULL
 		},
 		&libpq_compress_algorithms,
-		"zlib",
+		"on",
 		check_libpq_compression, NULL, NULL
 	},
 

@@ -30,6 +30,8 @@ common_sources = files(
   'username.c',
   'wait_error.c',
   'wchar.c',
+  'z_stream.c',
+  'zpq_stream.c',
 )
 
 if ssl.found()
@@ -132,7 +134,7 @@ pgcommon_variants = {
   '_shlib': default_lib_args + {
     'pic': true,
     'sources': common_sources_frontend_shlib,
-    'dependencies': [frontend_common_code],
+    'dependencies': [frontend_common_code, lz4],
   },
 }
 
