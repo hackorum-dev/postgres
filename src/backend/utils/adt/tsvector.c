@@ -192,6 +192,7 @@ tsvectorin(PG_FUNCTION_ARGS)
 	int			poslen;
 	char	   *strbuf;
 	int			stroff;
+	bool        overflow_warn = false;
 
 	/*
 	 * Tokens are appended to tmpbuf, cur is a pointer to the end of used
@@ -216,11 +217,14 @@ tsvectorin(PG_FUNCTION_ARGS)
 							(long) toklen,
 							(long) (MAXSTRLEN - 1))));
 
-		if (cur - tmpbuf > MAXSTRPOS)
-			ereport(ERROR,
+		if (!overflow_warn && (cur - tmpbuf > MAXSTRPOS))
+		{
+			ereport(WARNING,
 					(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
 					 errmsg("string is too long for tsvector (%ld bytes, max %ld bytes)",
 							(long) (cur - tmpbuf), (long) MAXSTRPOS)));
+			overflow_warn = true;
+		}
 
 		/*
 		 * Enlarge buffers if needed

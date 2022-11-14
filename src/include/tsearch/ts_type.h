@@ -42,12 +42,12 @@ typedef struct
 {
 	uint32
 				haspos:1,
-				len:11,			/* MAX 2Kb */
-				pos:20;			/* MAX 1Mb */
+				len:9,			/* MAX 512 bytes */
+				pos:22;			/* MAX 4Mb */
 } WordEntry;
 
-#define MAXSTRLEN ( (1<<11) - 1)
-#define MAXSTRPOS ( (1<<20) - 1)
+#define MAXSTRLEN ( (1<<9) - 1)
+#define MAXSTRPOS ( (1<<22) - 1)
 
 extern int	compareWordEntryPos(const void *a, const void *b);
 
