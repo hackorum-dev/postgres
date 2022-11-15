@@ -2200,7 +2200,7 @@ if cc.has_type('locale_t', prefix: '#include <locale.h>')
 elif cc.has_type('locale_t', prefix: '#include <xlocale.h>')
   cdata.set('HAVE_LOCALE_T', 1)
   cdata.set('LOCALE_T_IN_XLOCALE', 1)
-elif cc.get_id() == 'msvc'
+elif host_system == 'windows'
   cdata.set('HAVE_LOCALE_T', 1)
 endif
 
@@ -2415,7 +2415,7 @@ endif
 
 
 # MSVC has replacements defined in src/include/port/win32_port.h.
-if cc.get_id() == 'msvc'
+if host_system == 'windows'
   cdata.set('HAVE_WCSTOMBS_L', 1)
   cdata.set('HAVE_MBSTOWCS_L', 1)
 endif
