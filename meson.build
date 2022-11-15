@@ -981,15 +981,15 @@ endif
 ###############################################################
 
 pyopt = get_option('plpython')
+python3_dep = not_found_dep
 if not pyopt.disabled()
   pm = import('python')
-  python3_inst = pm.find_installation(required: pyopt.enabled())
+  # Requires distutils to be installed
+  python3_inst = pm.find_installation(required: pyopt.enabled(), disabler: true)
   python3_dep = python3_inst.dependency(embed: true, required: pyopt.enabled())
-  if not cc.check_header('Python.h', dependencies: python3_dep, required: pyopt.enabled())
-    python3_dep = not_found_dep
+  if cc.check_header('Python.h', dependencies: python3_dep, required: pyopt.enabled())
+    python3_dep = python3_dep
   endif
-else
-  python3_dep = not_found_dep
 endif
 
 
