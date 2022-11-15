@@ -2154,9 +2154,15 @@ adjust_data_dir(void)
 	fflush(NULL);
 
 	fd = popen(cmd, "r");
-	if (fd == NULL || fgets(filename, sizeof(filename), fd) == NULL || pclose(fd) != 0)
+	if (fd == NULL || fgets(filename, sizeof(filename), fd) == NULL)
 	{
+		pclose(fd);
 		write_stderr(_("%s: could not determine the data directory using command \"%s\"\n"), progname, cmd);
+		exit(1);
+	}
+	if (pclose(fd) != 0)
+	{
+		write_stderr(_("%s: could not close the file following command \"%s\"\n"), progname, cmd);
 		exit(1);
 	}
 	free(my_exec_path);
