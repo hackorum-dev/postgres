@@ -601,8 +601,7 @@ _hash_pageinit(Page page, Size size)
 /*
  * Attempt to expand the hash table by creating one new bucket.
  *
- * This will silently do nothing if we don't get cleanup lock on old or
- * new bucket.
+ * This will silently do nothing if we don't get cleanup lock on old bucket.
  *
  * Complete the pending splits and remove the tuples from old bucket,
  * if there are any left over from the previous split.
@@ -806,21 +805,12 @@ restart_expand:
 	/*
 	 * Physically allocate the new bucket's primary page.  We want to do this
 	 * before changing the metapage's mapping info, in case we can't get the
-	 * disk space.
-	 *
-	 * XXX It doesn't make sense to call _hash_getnewbuf first, zeroing the
-	 * buffer, and then only afterwards check whether we have a cleanup lock.
-	 * However, since no scan can be accessing the buffer yet, any concurrent
-	 * accesses will just be from processes like the bgwriter or checkpointer
-	 * which don't care about its contents, so it doesn't really matter.
+	 * disk space.  Unlike old bucket, we don't need to acquire a cleanup lock
+	 * on the new bucket as no scan can be accessing the buffer yet, any
+	 * concurrent accesses will just be from processes like the bgwriter or
+	 * checkpointer which don't care about its contents.
 	 */
 	buf_nblkno = _hash_getnewbuf(rel, start_nblkno, MAIN_FORKNUM);
-	if (!IsBufferCleanupOK(buf_nblkno))
-	{
-		_hash_relbuf(rel, buf_oblkno);
-		_hash_relbuf(rel, buf_nblkno);
-		goto fail;
-	}
 
 	/*
 	 * Since we are scribbling on the pages in the shared buffers, establish a
