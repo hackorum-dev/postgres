@@ -150,14 +150,14 @@ on that buffer.  For hash indexes, a cleanup lock on a primary bucket page
 represents the right to perform an arbitrary reorganization of the entire
 bucket.  Therefore, scans retain a pin on the primary bucket page for the
 bucket they are currently scanning.  Splitting a bucket requires a cleanup
-lock on both the old and new primary bucket pages.  VACUUM therefore takes
-a cleanup lock on every bucket page in order to remove tuples.  It can also
-remove tuples copied to a new bucket by any previous split operation, because
-the cleanup lock taken on the primary bucket page guarantees that no scans
-which started prior to the most recent split can still be in progress.  After
-cleaning each page individually, it attempts to take a cleanup lock on the
-primary bucket page in order to "squeeze" the bucket down to the minimum
-possible number of pages.
+lock on the old primary bucket page.  VACUUM therefore takes a cleanup lock
+on every bucket page in order to remove tuples.  It can also remove tuples
+copied to a new bucket by any previous split operation, because the cleanup
+lock taken on the primary bucket page guarantees that no scans which started
+prior to the most recent split can still be in progress.  After cleaning each
+page individually, it attempts to take a cleanup lock on the primary bucket
+page in order to "squeeze" the bucket down to the minimum possible number of
+pages.
 
 To avoid deadlocks, we must be consistent about the lock order in which we
 lock the buckets for operations that requires locks on two different buckets.
