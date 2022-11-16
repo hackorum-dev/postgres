@@ -294,9 +294,9 @@ hash_xlog_split_allocate_page(XLogReaderState *record)
 	XLogRedoAction action;
 
 	/*
-	 * To be consistent with normal operation, here we take cleanup locks on
-	 * both the old and new buckets even though there can't be any concurrent
-	 * inserts.
+	 * To be consistent with normal operation, here we take cleanup lock on the
+	 * old bucket and an exclusive lock on the new bucket even though there
+	 * can't be any concurrent inserts.
 	 */
 
 	/* replay the record for old bucket */
@@ -322,8 +322,7 @@ hash_xlog_split_allocate_page(XLogReaderState *record)
 	}
 
 	/* replay the record for new bucket */
-	XLogReadBufferForRedoExtended(record, 1, RBM_ZERO_AND_CLEANUP_LOCK, true,
-								  &newbuf);
+	newbuf = XLogInitBufferForRedo(record, 1);
 	_hash_initbuf(newbuf, xlrec->new_bucket, xlrec->new_bucket,
 				  xlrec->new_bucket_flag, true);
 	MarkBufferDirty(newbuf);
