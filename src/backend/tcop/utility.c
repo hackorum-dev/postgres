@@ -1523,17 +1523,6 @@ ProcessUtilitySlow(ParseState *pstate,
 						list_free(inheritors);
 					}
 
-					/*
-					 * If the IndexStmt is already transformed, it must have
-					 * come from generateClonedIndexStmt, which in current
-					 * usage means it came from expandTableLikeClause rather
-					 * than from original parse analysis.  And that means we
-					 * must treat it like ALTER TABLE ADD INDEX, not CREATE.
-					 * (This is a bit grotty, but currently it doesn't seem
-					 * worth adding a separate bool field for the purpose.)
-					 */
-					is_alter_table = stmt->transformed;
-
 					/* Run parse analysis ... */
 					stmt = transformIndexStmt(relid, stmt, queryString);
 
@@ -1545,7 +1534,7 @@ ProcessUtilitySlow(ParseState *pstate,
 									InvalidOid, /* no predefined OID */
 									InvalidOid, /* no parent index */
 									InvalidOid, /* no parent constraint */
-									is_alter_table,
+									false,
 									true,	/* check_rights */
 									true,	/* check_not_in_use */
 									false,	/* skip_build */
