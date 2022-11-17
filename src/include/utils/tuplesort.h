@@ -247,6 +247,16 @@ typedef struct
 			elog(ERROR, "unexpected end of data"); \
 	} while(0)
 
+extern void tuplesort_mark_global_sort(Tuplesortstate *state);
+
+extern void tuplesort_copy_sharedsort(Sharedsort *shared1, Sharedsort *shared2);
+
+extern void tuplesort_copy_sharedsort2(Sharedsort *shared1, Tuplesortstate *state);
+
+extern int	tuplesort_get_curr_workers(Sharedsort *shared);
+
+extern void tuplesort_register_cleanup_callback(Sharedsort *shared, dsm_segment *seg);
+
 /*
  * We provide multiple interfaces to what is essentially the same code,
  * since different callers have different data to be sorted and want to
