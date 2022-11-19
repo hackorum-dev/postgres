@@ -944,6 +944,15 @@ build-postgresql:
          order to avoid use of <productname>pkg-config</productname>, for
          example, <literal>ICU_CFLAGS=' '</literal>.)
         </para>
+
+        <note>
+         <para>
+          Building without
+          <productname>ICU</productname><indexterm><primary>ICU</primary></indexterm>
+          library is considered a marginal configuration and is not recommended
+          unless really necessary.
+         </para>
+        </note>
        </listitem>
       </varlistentry>
 
