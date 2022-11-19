@@ -125,7 +125,8 @@ postgres_fdw_validator(PG_FUNCTION_ARGS)
 			strcmp(def->defname, "truncatable") == 0 ||
 			strcmp(def->defname, "async_capable") == 0 ||
 			strcmp(def->defname, "parallel_commit") == 0 ||
-			strcmp(def->defname, "keep_connections") == 0)
+			strcmp(def->defname, "keep_connections") == 0 ||
+			strcmp(def->defname, "binary_format") == 0)
 		{
 			/* these accept only boolean values */
 			(void) defGetBoolean(def);
@@ -253,6 +254,9 @@ InitPgFdwOptions(void)
 		/* async_capable is available on both server and table */
 		{"async_capable", ForeignServerRelationId, false},
 		{"async_capable", ForeignTableRelationId, false},
+		/* async_capable is available on both server and table */
+		{"binary_format", ForeignServerRelationId, false},
+		{"binary_format", ForeignTableRelationId, false},
 		{"parallel_commit", ForeignServerRelationId, false},
 		{"keep_connections", ForeignServerRelationId, false},
 		{"password_required", UserMappingRelationId, false},

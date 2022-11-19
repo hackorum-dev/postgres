@@ -80,6 +80,7 @@ typedef struct PgFdwRelationInfo
 	Cost		fdw_tuple_cost;
 	List	   *shippable_extensions;	/* OIDs of shippable extensions */
 	bool		async_capable;
+	bool binary_format;
 
 	/* Cached catalog information. */
 	ForeignTable *table;
