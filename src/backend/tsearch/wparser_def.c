@@ -2085,6 +2085,33 @@ hlCover(HeadlineParsedText *prs, TSQuery query, int max_cover,
 		/* No luck here, so try next feasible startpoint */
 		pmin = nextpmin;
 	}
+
+	/*
+	 * If there is no max_cover-or-less substring anywhere that satisfies the
+	 * query, throw up our hands and return a single-word "match" that is just
+	 * the first word appearing in the first query match, if any.  (We need to
+	 * verify a match to avoid possibly returning a word that is negated in
+	 * the query.)
+	 */
+	if (*p == 0)
+	{
+		pmin = hlFirstIndex(prs, *p);
+		while (pmin >= 0)
+		{
+			/* Try to match query against pmin .. end of text */
+			ch.words = &(prs->words[pmin]);
+			ch.len = prs->curwords - pmin;
+			if (TS_execute(GETQUERY(query), &ch,
+						   TS_EXEC_EMPTY, checkcondition_HL))
+			{
+				*p = *q = pmin;
+				return true;
+			}
+			/* Nope, so advance pmin to next feasible start point */
+			pmin = hlFirstIndex(prs, pmin + 1);
+		}
+	}
+
 	return false;
 }
 
@@ -2581,12 +2608,11 @@ prsd_headline(PG_FUNCTION_ARGS)
 
 	/*
 	 * We might eventually make max_cover a user-settable parameter, but for
-	 * now, just compute a reasonable value based on max_words and
-	 * max_fragments.
+	 * now, just compute a reasonable value based on max_words.  Note that it
+	 * has to be several times more than max_words, because max_cover needs to
+	 * allow for non-word tokens appearing between the word tokens.
 	 */
 	max_cover = Max(max_words * 10, 100);
-	if (max_fragments > 0)
-		max_cover *= max_fragments;
 
 	/* in HighlightAll mode these parameters are ignored */
 	if (!highlightall)
