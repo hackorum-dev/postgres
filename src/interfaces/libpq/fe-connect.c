@@ -1793,6 +1793,7 @@ pqConnectOptions2(PGconn *conn)
 			&& strcmp(conn->sslmode, "allow") != 0
 			&& strcmp(conn->sslmode, "prefer") != 0
 			&& strcmp(conn->sslmode, "require") != 0
+			&& strcmp(conn->sslmode, "no-clientcert") != 0
 			&& strcmp(conn->sslmode, "verify-ca") != 0
 			&& strcmp(conn->sslmode, "verify-full") != 0)
 		{
