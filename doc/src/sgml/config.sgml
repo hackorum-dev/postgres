@@ -8850,6 +8850,24 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-rollback-on-commit" xreflabel="default_rollback_on_commit">
+      <term><varname>default_rollback_on_commit</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary>rollback on commit</primary>
+      </indexterm>
+      <indexterm>
+       <primary><varname>rollback_on_commit</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+        <para>
+        This parameter controls whether a <command>COMMIT</command>
+        will rollback each transaction (<literal>on</literal>), or
+        commit each transaction. The default is <literal>off</literal>.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="guc-default-transaction-deferrable" xreflabel="default_transaction_deferrable">
       <term><varname>default_transaction_deferrable</varname> (<type>boolean</type>)
       <indexterm>

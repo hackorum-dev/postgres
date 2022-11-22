@@ -83,6 +83,9 @@ bool		XactReadOnly;
 bool		DefaultXactDeferrable = false;
 bool		XactDeferrable;
 
+bool		DefaultXactRollbackOnCommit = false;
+bool		XactRollbackOnCommit;
+
 int			DefaultXactNesting;
 int			XactNesting = XACT_NEST_OFF;
 int			XactNestingLevel = 0;
@@ -2057,6 +2060,7 @@ StartTransaction(void)
 	XactIsoLevel = DefaultXactIsoLevel;
 	XactNesting = DefaultXactNesting;
 	XactNestingLevel = 0;
+	XactRollbackOnCommit = DefaultXactRollbackOnCommit;
 	forceSyncCommit = false;
 	MyXactFlags = 0;
 
@@ -3013,6 +3017,7 @@ SaveTransactionCharacteristics(SavedTransactionCharacteristics *s)
 	s->save_XactReadOnly = XactReadOnly;
 	s->save_XactDeferrable = XactDeferrable;
 	s->save_XactNesting = XactNesting;
+	s->save_XactRollbackOnCommit = XactRollbackOnCommit;
 }
 
 void
@@ -3022,6 +3027,7 @@ RestoreTransactionCharacteristics(const SavedTransactionCharacteristics *s)
 	XactReadOnly = s->save_XactReadOnly;
 	XactDeferrable = s->save_XactDeferrable;
 	XactNesting = s->save_XactNesting;
+	XactRollbackOnCommit = s->save_XactRollbackOnCommit;
 }
 
 
@@ -4136,6 +4142,12 @@ EndTransactionBlock(bool chain)
 		   s->blockState == TBLOCK_ABORT_PENDING);
 
 	s->chain = chain;
+
+	if (s->blockState == TBLOCK_END && XactRollbackOnCommit)
+	{
+		s->blockState = TBLOCK_ABORT_PENDING;
+		result = false;
+	}
 
 	return result;
 }

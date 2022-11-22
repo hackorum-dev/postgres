@@ -1554,6 +1554,15 @@ struct config_bool ConfigureNamesBool[] =
 		check_transaction_deferrable, NULL, NULL
 	},
 	{
+		{"rollback_on_commit", PGC_USERSET, CLIENT_CONN_STATEMENT,
+			gettext_noop("Whether to rollback the current transaction when a COMMIT statement is issued."),
+			NULL
+		},
+		&DefaultXactRollbackOnCommit,
+		false,
+		NULL, NULL, NULL
+	},
+	{
 		{"row_security", PGC_USERSET, CLIENT_CONN_STATEMENT,
 			gettext_noop("Enable row security."),
 			gettext_noop("When enabled, row security will be applied to all users.")

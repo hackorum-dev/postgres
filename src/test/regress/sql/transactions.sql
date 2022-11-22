@@ -773,6 +773,16 @@ SELECT * FROM abc ORDER BY 1;
 
 RESET nested_transactions;
 
+SET rollback_on_commit = true;
+
+TRUNCATE abc;
+BEGIN;
+INSERT INTO abc VALUES (1);
+COMMIT;
+SELECT * FROM abc ORDER BY 1;
+
+RESET rollback_on_commit;
+
 DROP TABLE abc;
 
 -- Test for successful cleanup of an aborted transaction at session exit.
