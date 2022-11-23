@@ -826,7 +826,9 @@ ProcArrayGroupClearXid(PGPROC *proc, TransactionId latestXid)
 		}
 		pgstat_report_wait_end();
 
-		Assert(pg_atomic_read_u32(&proc->procArrayGroupNext) == INVALID_PGPROCNO);
+		Assert(pg_atomic_read_u32(&proc->procArrayGroupNext) != INVALID_PGPROCNO);
+
+		pg_atomic_write_u32(&proc->procArrayGroupNext, INVALID_PGPROCNO);
 
 		/* Fix semaphore count for any absorbed wakeups */
 		while (extraWaits-- > 0)
@@ -874,10 +876,6 @@ ProcArrayGroupClearXid(PGPROC *proc, TransactionId latestXid)
 		PGPROC	   *nextproc = &allProcs[wakeidx];
 
 		wakeidx = pg_atomic_read_u32(&nextproc->procArrayGroupNext);
-		pg_atomic_write_u32(&nextproc->procArrayGroupNext, INVALID_PGPROCNO);
-
-		/* ensure all previous writes are visible before follower continues. */
-		pg_write_barrier();
 
 		nextproc->procArrayGroupMember = false;
 
