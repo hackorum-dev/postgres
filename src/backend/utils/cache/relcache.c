@@ -1248,7 +1248,11 @@ retry:
 	 * extracting the relation's reloptions.
 	 */
 	if (relation->rd_rel->relhasrules)
+	{
 		RelationBuildRuleLock(relation);
+		if (relation->rd_rules == NULL)
+			relation->rd_rel->relhasrules = false;
+	}
 	else
 	{
 		relation->rd_rules = NULL;
