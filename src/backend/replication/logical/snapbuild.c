@@ -288,7 +288,8 @@ static void SnapBuildFreeSnapshot(Snapshot snap);
 
 static void SnapBuildSnapIncRefcount(Snapshot snap);
 
-static void SnapBuildDistributeNewCatalogSnapshot(SnapBuild *builder, XLogRecPtr lsn);
+static void SnapBuildDistributeNewCatalogSnapshot(SnapBuild *builder, XLogRecPtr lsn,
+												  TransactionId xid);
 
 static inline bool SnapBuildXidHasCatalogChanges(SnapBuild *builder, TransactionId xid,
 												 uint32 xinfo);
@@ -853,7 +854,8 @@ SnapBuildProcessNewCid(SnapBuild *builder, TransactionId xid,
  * contents).
  */
 static void
-SnapBuildDistributeNewCatalogSnapshot(SnapBuild *builder, XLogRecPtr lsn)
+SnapBuildDistributeNewCatalogSnapshot(SnapBuild *builder, XLogRecPtr lsn,
+									  TransactionId xid)
 {
 	dlist_iter	txn_i;
 	ReorderBufferTXN *txn;
@@ -868,6 +870,14 @@ SnapBuildDistributeNewCatalogSnapshot(SnapBuild *builder, XLogRecPtr lsn)
 		txn = dlist_container(ReorderBufferTXN, node, txn_i.cur);
 
 		Assert(TransactionIdIsValid(txn->xid));
+
+		/*
+		 * We've already done required modifications in snapshot for the
+		 * transaction that just committed, so there's no need to add a new
+		 * snapshot for the transaction again.
+		 */
+		if (xid == txn->xid)
+			continue;
 
 		/*
 		 * If we don't have a base snapshot yet, there are no changes in this
@@ -1171,7 +1181,7 @@ SnapBuildCommitTxn(SnapBuild *builder, XLogRecPtr lsn, TransactionId xid,
 		SnapBuildSnapIncRefcount(builder->snapshot);
 
 		/* add a new catalog snapshot to all currently running transactions */
-		SnapBuildDistributeNewCatalogSnapshot(builder, lsn);
+		SnapBuildDistributeNewCatalogSnapshot(builder, lsn, xid);
 	}
 }
 
