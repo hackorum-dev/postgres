@@ -788,6 +788,15 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 
 	path->path.startup_cost = startup_cost;
 	path->path.total_cost = startup_cost + run_cost;
+
+	//这里李正师兄添加这一块保证在查询的时候强制性的使用索引扫描
+	if (path->indexinfo->relam == 6015 && enable_indexscan && !indexonly)
+	{
+		 // 当可匹配spb时，强制使用spb索引
+		 path->indextotalcost = 0;
+		 path->path.startup_cost = 0;
+		 path->path.total_cost = 0;
+	}
 }
 
 /*

@@ -667,6 +667,8 @@ typedef struct OpExpr
 
 	/* token location, or -1 if unknown */
 	int			location;
+
+	int			KNNValue;
 } OpExpr;
 
 /*

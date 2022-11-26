@@ -2573,7 +2573,28 @@ match_opclause_to_indexcol(PlannerInfo *root,
 											 indexcol,
 											 index);
 	}
-
+	if (leftop && IsA(leftop, OpExpr) && strcmp(get_opname(expr_op),"<") == 0) {
+			OpExpr* opert = (OpExpr*)leftop;
+			Node* left = (Node*)linitial(opert->args);
+			Node* right = (Node*)lsecond(opert->args);
+			expr_op = opert->opno;
+			if (left&&match_index_to_operand(left, indexcol, index) &&
+				!bms_is_member(index_relid, rinfo->right_relids) &&
+				!contain_volatile_functions(right))
+			{
+				char* name = get_am_name_me(index->relam);
+				if (strcmp(name,"spb") == 0)
+				{
+					iclause = makeNode(IndexClause);
+					iclause->rinfo = rinfo;
+					iclause->indexquals = list_make1(rinfo);
+					iclause->lossy = false;
+					iclause->indexcol = indexcol;
+					iclause->indexcols = NIL;
+					return iclause;
+				}
+			} 
+	}
 	return NULL;
 }
 

@@ -1370,6 +1370,9 @@ typedef struct PathKey
 	Oid			pk_opfamily;	/* btree opfamily defining the ordering */
 	int			pk_strategy;	/* sort direction (ASC or DESC) */
 	bool		pk_nulls_first; /* do NULLs come before normal values? */
+	
+	int64 limitCount;
+	int64 limitOffset;
 } PathKey;
 
 /*
