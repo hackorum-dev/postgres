@@ -3679,3 +3679,23 @@ get_subscription_name(Oid subid, bool missing_ok)
 
 	return subname;
 }
+
+/*
+ * get_am_name - given an access method OID name and type, look up its name.
+ */
+char*
+get_am_name_me(Oid amOid)
+{
+	HeapTuple	tup;
+	char* result = NULL;
+
+	tup = SearchSysCache1(AMOID, ObjectIdGetDatum(amOid));
+	if (HeapTupleIsValid(tup))
+	{
+		Form_pg_am	amform = (Form_pg_am)GETSTRUCT(tup);
+
+		result = pstrdup(NameStr(amform->amname));
+		ReleaseSysCache(tup);
+	}
+	return result;
+}

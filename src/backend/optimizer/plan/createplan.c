@@ -5137,8 +5137,10 @@ fix_indexqual_operand(Node *node, IndexOptInfo *index, int indexcol)
 			result->varno = INDEX_VAR;
 			result->varattno = indexcol + 1;
 			return (Node *) result;
-		}
-		else
+		}else if (IsA(node, OpExpr))
+		{
+			return (Node*)copyObject(node);
+		}else
 			elog(ERROR, "index key does not match expected index column");
 	}
 
