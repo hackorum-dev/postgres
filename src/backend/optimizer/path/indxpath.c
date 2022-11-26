@@ -3181,6 +3181,10 @@ match_pathkeys_to_index(IndexOptInfo *index, List *pathkeys,
 												   pathkey->pk_opfamily);
 				if (expr)
 				{
+					if (pathkey->limitCount != -1)
+					{
+						((OpExpr*)expr)->KNNValue = pathkey->limitCount;
+					}
 					orderby_clauses = lappend(orderby_clauses, expr);
 					clause_columns = lappend_int(clause_columns, indexcol);
 					found = true;
