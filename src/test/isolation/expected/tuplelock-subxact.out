@@ -1,0 +1,36 @@
+Parsed test spec with 3 sessions
+
+starting permutation: s1_b s1_u1 s1_u2 s1_u3 s2_u3 s1_subcommit2 s1_abort1 s3_u3 s1_c s1_s
+step s1_b: BEGIN;
+step s1_u1: UPDATE subxid_conflict SET b=1 WHERE a=1;
+step s1_u2: SAVEPOINT s1;	UPDATE subxid_conflict SET b=1 WHERE a=2;
+step s1_u3: SAVEPOINT s2;	UPDATE subxid_conflict SET b=1 WHERE a=3;
+step s2_u3: BEGIN;			UPDATE subxid_conflict SET b=2 WHERE a=3; COMMIT; <waiting ...>
+step s1_subcommit2: RELEASE SAVEPOINT s2;
+step s1_abort1: ROLLBACK TO s1;
+step s2_u3: <... completed>
+step s3_u3: BEGIN;			UPDATE subxid_conflict SET b=3 WHERE a=3; COMMIT;
+step s1_c: COMMIT;
+step s1_s: SELECT a, b FROM subxid_conflict WHERE a = 3;
+a|b
+-+-
+3|3
+(1 row)
+
+
+starting permutation: s1_b s1_u1 s1_u2 s1_u3 s2_u3 s1_abort2 s3_u3 s1_c s1_s
+step s1_b: BEGIN;
+step s1_u1: UPDATE subxid_conflict SET b=1 WHERE a=1;
+step s1_u2: SAVEPOINT s1;	UPDATE subxid_conflict SET b=1 WHERE a=2;
+step s1_u3: SAVEPOINT s2;	UPDATE subxid_conflict SET b=1 WHERE a=3;
+step s2_u3: BEGIN;			UPDATE subxid_conflict SET b=2 WHERE a=3; COMMIT; <waiting ...>
+step s1_abort2: ROLLBACK TO s2;
+step s2_u3: <... completed>
+step s3_u3: BEGIN;			UPDATE subxid_conflict SET b=3 WHERE a=3; COMMIT;
+step s1_c: COMMIT;
+step s1_s: SELECT a, b FROM subxid_conflict WHERE a = 3;
+a|b
+-+-
+3|3
+(1 row)
+
