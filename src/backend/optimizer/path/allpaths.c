@@ -136,8 +136,7 @@ static void check_output_expressions(Query *subquery,
 static void compare_tlist_datatypes(List *tlist, List *colTypes,
 									pushdown_safety_info *safetyInfo);
 static bool targetIsInAllPartitionLists(TargetEntry *tle, Query *query);
-static bool qual_is_pushdown_safe(Query *subquery, Index rti,
-								  RestrictInfo *rinfo,
+static bool qual_is_pushdown_safe(Index rti, RestrictInfo *rinfo,
 								  pushdown_safety_info *safetyInfo);
 static void subquery_push_qual(Query *subquery,
 							   RangeTblEntry *rte, Index rti, Node *qual);
@@ -2527,7 +2526,7 @@ set_subquery_pathlist(PlannerInfo *root, RelOptInfo *rel,
 			Node	   *clause = (Node *) rinfo->clause;
 
 			if (!rinfo->pseudoconstant &&
-				qual_is_pushdown_safe(subquery, rti, rinfo, &safetyInfo))
+				qual_is_pushdown_safe(rti, rinfo, &safetyInfo))
 			{
 				/* Push it down */
 				subquery_push_qual(subquery, rte, rti, clause);
@@ -3787,7 +3786,7 @@ targetIsInAllPartitionLists(TargetEntry *tle, Query *query)
 /*
  * qual_is_pushdown_safe - is a particular rinfo safe to push down?
  *
- * rinfo is a restriction clause applying to the given subquery (whose RTE
+ * rinfo is a restriction clause applying to a subquery (whose RTE
  * has index rti in the parent query).
  *
  * Conditions checked here:
@@ -3813,7 +3812,7 @@ targetIsInAllPartitionLists(TargetEntry *tle, Query *query)
  * found to be unsafe to reference by subquery_is_pushdown_safe().
  */
 static bool
-qual_is_pushdown_safe(Query *subquery, Index rti, RestrictInfo *rinfo,
+qual_is_pushdown_safe(Index rti, RestrictInfo *rinfo,
 					  pushdown_safety_info *safetyInfo)
 {
 	bool		safe = true;
